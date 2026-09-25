@@ -20,6 +20,17 @@ chain diagnostics do not apply. This is the accessor \code{\link[=diagnostics]{d
 gates on. For the provenance-agnostic posterior sample used by summaries,
 see \code{\link[=posterior_sample]{posterior_sample()}}.
 }
+\examples{
+\donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(60))
+d$y <- rpois(60, exp(0.5 + 0.3 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "hmc",
+             control = list(n_iter = 400L, warmup = 200L, n_chains = 2L,
+                            seed = 1L))
+dim(mcmc_draws(fit))
+}
+}
 \seealso{
 \code{\link[=posterior_sample]{posterior_sample()}}, \code{\link[=diagnostics]{diagnostics()}}
 }

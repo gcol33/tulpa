@@ -70,6 +70,21 @@ NULL
 #'
 #' @return Numeric vector of length n_obs with values in `[0, 1]`
 #'
+#' @examples
+#' # From a matrix of replicates (n_obs x nsim) and the observed response:
+#' set.seed(1)
+#' y <- rpois(30, 3)
+#' sims <- matrix(rpois(30 * 100, 3), nrow = 30)
+#' r <- pit_residuals(sims, observed = y)
+#' summary(r)
+#' \donttest{
+#' # From a fitted model with a simulate() method:
+#' set.seed(1)
+#' d <- data.frame(x = rnorm(80))
+#' d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+#' head(pit_residuals(fit, nsim = 50))
+#' }
 #' @export
 pit_residuals <- function(object, ...) {
   UseMethod("pit_residuals")
@@ -124,6 +139,16 @@ pit_residuals.default <- function(object, observed = NULL, nsim = 250L,
 #'
 #' @return An `htest` object (KS test result)
 #'
+#' @examples
+#' set.seed(1)
+#' test_uniformity(runif(50))   # PIT residuals supplied directly
+#' \donttest{
+#' set.seed(1)
+#' d <- data.frame(x = rnorm(80))
+#' d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+#' test_uniformity(fit, nsim = 50)
+#' }
 #' @export
 test_uniformity <- function(object, observed = NULL, nsim = 250L, seed = 123L,
                             plot = FALSE) {
@@ -178,6 +203,14 @@ test_uniformity <- function(object, observed = NULL, nsim = 250L, seed = 123L,
 #'
 #' @return An `htest` object with dispersion ratio and p-value
 #'
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' d <- data.frame(x = rnorm(80))
+#' d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+#' test_dispersion(fit, nsim = 50)
+#' }
 #' @export
 test_dispersion <- function(object, ...) {
   UseMethod("test_dispersion")
@@ -238,6 +271,14 @@ test_dispersion.default <- function(object, observed = NULL, nsim = 250L,
 #'
 #' @return An `htest` object (binomial test)
 #'
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' d <- data.frame(x = rnorm(80))
+#' d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+#' test_outliers(fit, nsim = 50)
+#' }
 #' @export
 test_outliers <- function(object, ...) {
   UseMethod("test_outliers")
@@ -282,6 +323,14 @@ test_outliers.default <- function(object, observed = NULL, nsim = 250L,
 #'
 #' @return An `htest` object with zero-inflation ratio and p-value
 #'
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' d <- data.frame(x = rnorm(80))
+#' d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+#' test_zero_inflation(fit, nsim = 50)
+#' }
 #' @export
 test_zero_inflation <- function(object, ...) {
   UseMethod("test_zero_inflation")
@@ -442,15 +491,50 @@ moran_i <- function(object, coords,
 #'
 #' Tests first-order autocorrelation in temporally-ordered residuals.
 #'
-#' @param object A numeric vector of temporally-ordered residuals
+#' @param object A fitted model, or a numeric vector of temporally-ordered
+#'   residuals. A fit's residuals are in its data's row order, so pass `time`
+#'   unless the rows already are in time order.
 #' @param alternative `"two.sided"`, `"greater"` (positive autocorr), or `"less"`
+#' @param time Optional time index, one per residual; the residuals are put in
+#'   increasing `time` order before the statistic is formed. `NULL` (default)
+#'   takes them in the order given.
+#' @param resid_type Residual type if extracting from a model (default
+#'   `"pearson"`), as for [moran_i()].
 #'
 #' @return An `htest` object with DW statistic, lag-1 r, and p-value
 #'
+#' @examples
+#' set.seed(1)
+#' e <- as.numeric(arima.sim(list(ar = 0.6), n = 100))
+#' durbin_watson(e)
+#' # Residuals recorded out of time order:
+#' tt <- sample(100)
+#' durbin_watson(e[tt], time = tt)
+#'
 #' @export
-durbin_watson <- function(object, alternative = c("two.sided", "greater", "less")) {
+durbin_watson <- function(object, alternative = c("two.sided", "greater", "less"),
+                          time = NULL, resid_type = "pearson") {
   alternative <- match.arg(alternative)
-  x <- as.numeric(object)
+  # A fit is read through its residuals, as moran_i() and tulpa_variogram()
+  # read one (gcol33/tulpa#899); anything else must already be the residuals.
+  x <- if (is.numeric(object) && is.null(dim(object))) {
+    as.numeric(object)
+  } else if (inherits(object, "tulpa_fit") ||
+             !is.null(utils::getS3method("residuals", class(object)[1L],
+                                         optional = TRUE))) {
+    as.numeric(residuals(object, type = resid_type))
+  } else {
+    stop("`object` must be a fitted model or a numeric vector of residuals; ",
+         "got an object of class '", class(object)[1L], "'.", call. = FALSE)
+  }
+  if (!is.null(time)) {
+    if (length(time) != length(x) || anyNA(time)) {
+      stop(sprintf(paste0("`time` must give one non-missing time per residual ",
+                          "(%d); got %d value(s)."), length(x), length(time)),
+           call. = FALSE)
+    }
+    x <- x[order(time)]
+  }
   n <- length(x)
   if (n < 3L) stop("need at least 3 observations for Durbin-Watson test", call. = FALSE)
 
@@ -496,6 +580,10 @@ durbin_watson <- function(object, alternative = c("two.sided", "greater", "less"
 #'
 #' @return A `tulpa_variogram` data.frame with columns `dist`, `gamma`, `n_pairs`
 #'
+#' @examples
+#' set.seed(1)
+#' coords <- cbind(runif(60), runif(60))
+#' tulpa_variogram(rnorm(60), coords, n_bins = 5)
 #' @export
 tulpa_variogram <- function(object, coords, n_bins = 15L, max_dist = NULL,
                             resid_type = "pearson") {
@@ -571,6 +659,14 @@ plot.tulpa_variogram <- function(x, ...) {
 #'
 #' @return Invisible list with `ks_p`, `disp_ratio`, `moran` (if spatial)
 #'
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' d <- data.frame(x = rnorm(80))
+#' d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+#' check_model(fit, nsim = 50)
+#' }
 #' @export
 check_model <- function(object, ...) {
   UseMethod("check_model")

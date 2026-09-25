@@ -39,12 +39,15 @@
 #'
 #' @seealso [ccd_to_theta()] to map z-coordinates to physical theta.
 #' @keywords internal
+#' @examples
+#' g <- ccd_grid(3)
+#' g$n_points
+#' table(g$kind)
 #' @export
 ccd_grid <- function(k, f_0 = sqrt(k)) {
-  k <- as.integer(k)
-  if (k < 1L) stop("`k` must be >= 1.", call. = FALSE)
-  if (!is.finite(f_0) || f_0 <= 0)
-    stop("`f_0` must be a positive finite scalar.", call. = FALSE)
+  # A fractional `k` is refused, not truncated: ccd_grid(2.7) was a 2-D design.
+  k <- .check_count(k, "k", min = 1L)
+  .check_scalar(f_0, "f_0", positive = TRUE)
 
   # Centre point.
   z_center <- matrix(0, nrow = 1L, ncol = k)
@@ -121,6 +124,9 @@ ccd_grid <- function(k, f_0 = sqrt(k)) {
 #' @return Numeric matrix `[n_points x k]` of physical theta-values.
 #'
 #' @keywords internal
+#' @examples
+#' g <- ccd_grid(2)
+#' ccd_to_theta(g$z, theta_hat = c(0, 1), L = diag(c(0.5, 0.2)))
 #' @export
 ccd_to_theta <- function(z, theta_hat, L, log_scale = FALSE) {
   if (!is.matrix(z)) stop("`z` must be a matrix.", call. = FALSE)
@@ -166,6 +172,8 @@ ccd_to_theta <- function(z, theta_hat, L, log_scale = FALSE) {
 #'
 #' @seealso [ccd_grid()], [ccd_to_theta()].
 #' @keywords internal
+#' @examples
+#' ccd_weights(ccd_grid(3))
 #' @export
 ccd_weights <- function(ccd) {
   m  <- ncol(ccd$z)

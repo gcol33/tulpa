@@ -175,6 +175,7 @@ prior_predict <- function(formula, family, data,
   process_names <- family$process_names
   n_processes <- length(process_names)
   formulas <- normalize_formulas(formula, process_names)
+  data <- .fill_absent_response(formulas, data)
 
   parsed <- lapply(formulas, tulpa_parse_formula)
   built  <- lapply(parsed, tulpa_build_model_data, data = data)

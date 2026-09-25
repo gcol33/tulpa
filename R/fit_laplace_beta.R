@@ -35,9 +35,11 @@
 #'   for `mode = "laplace"`).
 #'
 #' @return For `mode = "laplace"`, the list returned by [tulpa_laplace()] at the
-#'   optimum, augmented with `phi` (the optimised precision) and
-#'   `phi_log_marginal` (the optimisation trace). For `mode = "nuts"`, the draws
-#'   object returned by [tulpa_nuts_beta()].
+#'   optimum, augmented with `phi` (the optimised precision), `phi_trace` (the
+#'   optimisation trace: a matrix with one row per objective evaluation and
+#'   columns `phi` and `log_marginal`) and `phi_converged` (`TRUE` when the
+#'   Brent search reported convergence). For `mode = "nuts"`, the draws object
+#'   returned by [tulpa_nuts_beta()].
 #'
 #' @examples
 #' set.seed(1)

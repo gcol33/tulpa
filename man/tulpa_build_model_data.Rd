@@ -38,4 +38,11 @@ predictive may have no response; the fitting doors refuse them. Unused
 levels of a grouping factor are dropped, so \code{n_groups} counts the groups
 that have data.
 }
+\examples{
+d <- data.frame(y = rnorm(6), x = 1:6, g = rep(1:2, 3))
+parsed <- tulpa_parse_formula(y ~ x + (1 | g))
+md <- tulpa_build_model_data(parsed, d)
+dim(md$X)
+md$n_re_terms
+}
 \keyword{internal}

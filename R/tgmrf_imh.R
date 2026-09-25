@@ -36,10 +36,21 @@
 #' the engine used.
 #' @seealso [tgmrf()] for the block, [tgmrf_cpp()] for the compiled-block form.
 #' @examples
-#' \dontrun{
-#' # `block` is a tgmrf latent block (from tgmrf() / tgmrf_cpp()); the inference
-#' # method is an argument, not a parallel verb. See vignette("tgmrf").
-#' fit <- tulpa_tgmrf(y, rep(1L, length(y)), X, block = blk, mode = "imh")
+#' \donttest{
+#' # An iid random intercept written as a tgmrf block over 15 groups; the
+#' # inference method is an argument, not a parallel verb. See
+#' # vignette("tgmrf").
+#' set.seed(3)
+#' J <- 15L; g <- rep(seq_len(J), each = 6L); n <- length(g); x <- rnorm(n)
+#' y <- rpois(n, exp(0.3 + 0.5 * x + rnorm(J, 0, 0.6)[g]))
+#' blk <- tgmrf(
+#'   Q = function(theta) Matrix::Diagonal(J, exp(-2 * theta[1])),
+#'   prior = function(theta) stats::dnorm(theta[1], 0, 1, log = TRUE),
+#'   init = c(log_sigma = 0), obs_idx = g)
+#' fit <- tulpa_tgmrf(y, rep(1L, n), cbind(1, x), block = blk,
+#'                    family = "poisson", mode = "imh",
+#'                    control = list(n_iter = 300L, warmup = 150L))
+#' mean(exp(fit$draws[, "log_sigma"]))   # posterior mean group SD
 #' }
 #' @export
 tulpa_tgmrf <- function(y, n_trials, X, block,

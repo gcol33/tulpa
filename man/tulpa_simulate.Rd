@@ -20,7 +20,8 @@ tulpa_simulate(
 
 \item{family}{A \code{tulpa_family} object (see \code{\link[=tulpa_family]{tulpa_family()}}).}
 
-\item{data}{Data frame with covariates and grouping factors.}
+\item{data}{Data frame with covariates and grouping factors. The response
+column may be absent or NA; it is not read.}
 
 \item{theta}{One of:
 \itemize{

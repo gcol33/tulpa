@@ -229,12 +229,27 @@
 #'   [tulpa_nested_laplace_joint()] for the family-specific outer-grid
 #'   driver that this helper generalises.
 #' @examples
-#' \dontrun{
-#' # Integrate an inner fit over a hyperparameter grid: inner_fit(theta) returns
-#' # a per-cell fit and hyper_specs names the axes. tulpa_nested_laplace() is the
-#' # packaged driver built on this.
-#' res <- tulpa_hyper_grid(hyper_specs, inner_fit)
+#' # Integrate a Gaussian linear model's residual SD: inner_fit(hypers) returns
+#' # the per-cell log marginal and the conditional fixed-effect posterior, and
+#' # the axis spec names the grid. tulpa_nested_laplace() is the packaged driver
+#' # built on this.
+#' set.seed(1)
+#' n <- 40L; X <- cbind(1, rnorm(n)); y <- as.numeric(X %*% c(0.5, -1) + rnorm(n))
+#' XtX <- crossprod(X); Xty <- crossprod(X, y)
+#' inner_fit <- function(hypers) {
+#'   sigma <- as.numeric(hypers["sigma"])
+#'   V <- solve(XtX / sigma^2 + diag(1e-4, 2))
+#'   mu <- as.numeric(V %*% (Xty / sigma^2))
+#'   list(log_marginal = -n * log(sigma) - 0.5 * sum((y - X %*% mu)^2) / sigma^2 +
+#'          0.5 * as.numeric(determinant(V)$modulus),
+#'        beta_mean = stats::setNames(mu, c("b0", "b1")), beta_cov = V)
 #' }
+#' specs <- list(hyper_axis_spec("sigma", grid = exp(seq(log(0.5), log(2),
+#'                                                       length.out = 9)),
+#'                               log_scale = TRUE, bounds = c(0, Inf)))
+#' res <- tulpa_hyper_grid(specs, inner_fit, n_draws = 500L, seed = 1L)
+#' res$theta_median
+#' res$beta
 #' @export
 tulpa_hyper_grid <- function(hyper_specs, inner_fit,
                              combine = c("law_of_total_cov",

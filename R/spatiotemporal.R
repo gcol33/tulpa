@@ -104,6 +104,13 @@ NULL
 #'
 #' @seealso [spatial_car()], [spatial_gp()], [temporal_rw1()], [temporal_ar1()]
 #'
+#' @examples
+#' adj <- matrix(0, 4, 4)
+#' for (i in 1:3) adj[i, i + 1] <- adj[i + 1, i] <- 1
+#' # No backend fits an interaction term, so the constructor refuses; the
+#' # additive model is tulpa(spatial = , temporal = ).
+#' try(spatiotemporal(spatial_car(adj, group_var = "region"),
+#'                    temporal_rw1("year"), type = "IV"))
 #' @export
 spatiotemporal <- function(spatial,
                            temporal,
@@ -426,6 +433,9 @@ plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
 #' stationary covariance functions. Journal of the American Statistical
 #' Association, 94(448), 1330-1340.
 #'
+#' @examples
+#' # No backend fits a joint space-time covariance, so the constructor refuses:
+#' try(spatiotemporal_gp(~ lon + lat, "year", nonsep_type = "gneiting"))
 #' @export
 spatiotemporal_gp <- function(coords,
                               time_var,

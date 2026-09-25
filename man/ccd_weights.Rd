@@ -29,6 +29,9 @@ and the centre point gets \eqn{w_0 = 1 - (np - 1) w}. Used as
 (whitened) hyperparameter posterior these reproduce the Gaussian moments
 exactly.
 }
+\examples{
+ccd_weights(ccd_grid(3))
+}
 \seealso{
 \code{\link[=ccd_grid]{ccd_grid()}}, \code{\link[=ccd_to_theta]{ccd_to_theta()}}.
 }

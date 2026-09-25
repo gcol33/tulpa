@@ -19,6 +19,9 @@
 #'
 #' @seealso [spatial_rsr()], [temporal_rw1()], [temporal_ar1()]
 #'
+#' @examples
+#' # No backend fits a restricted temporal field, so the constructor refuses:
+#' try(temporal_rtr(temporal_rw1("year"), ~ x))
 #' @export
 temporal_rtr <- function(temporal, restrict_to) {
   stop("Restricted temporal regression is not fitted by any tulpa backend: ",

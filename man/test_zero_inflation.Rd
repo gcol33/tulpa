@@ -27,3 +27,12 @@ An \code{htest} object with zero-inflation ratio and p-value
 Compares the number of zeros in observed data to the distribution
 expected under the fitted model. Equivalent to \code{DHARMa::testZeroInflation()}.
 }
+\examples{
+\donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(80))
+d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+test_zero_inflation(fit, nsim = 50)
+}
+}

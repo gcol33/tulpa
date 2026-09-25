@@ -639,6 +639,8 @@
 #' (e.g. `"gamma_inverse"`) are listed separately by [linked_family_names()].
 #'
 #' @return A character vector of family names.
+#' @examples
+#' family_names()
 #' @export
 family_names <- function() names(.FAMILY_OPS)
 

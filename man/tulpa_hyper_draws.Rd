@@ -57,6 +57,25 @@ cell-conditional of the SAME construction the fit reports its interval from
 does not admit the box read), so the draws reproduce the fit's own
 \code{theta_ci_lo} / \code{theta_median} / \code{theta_ci_hi} to Monte Carlo error.
 }
+\examples{
+\donttest{
+set.seed(1)
+S <- 30L                                   # spatial units in a chain
+nb <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+nn <- lengths(nb)
+field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4))))
+idx <- rep(seq_len(S), each = 6L); n <- length(idx); x <- rnorm(n)
+y <- rbinom(n, 1L, plogis(-0.2 + 0.6 * x + field[idx]))
+prior <- list(type = "icar", n_spatial_units = S, spatial_idx = idx,
+              adj_row_ptr = c(0L, cumsum(nn)), adj_col_idx = unlist(nb) - 1L,
+              n_neighbors = nn, tau_grid = c(0.5, 1, 2, 4, 8))
+fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
+                            family = "binomial",
+                            control = list(progress = FALSE))
+th <- tulpa_hyper_draws(fit, n = 200)
+quantile(th[, "tau"], c(0.025, 0.5, 0.975))
+}
+}
 \seealso{
 \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}}, \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}
 }

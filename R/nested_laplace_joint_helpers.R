@@ -686,23 +686,23 @@
         refine_priority <- if (a == "alpha") 1L
                            else if (startsWith(a, "phi_")) 2L
                            else 100L
+        # The copy scale carries an explicit zero level ("no coupling"), which
+        # is a point mass rather than part of the log continuum, so it needs a
+        # declared prior probability. Fixing it here keeps it independent of how
+        # many continuum nodes the grid ends up with.
         spec <- hyper_axis_spec(
             name      = a,
             grid      = sort(unique(as.numeric(grids[[a]]))),
             log_scale = log_scale,
             bounds    = bounds,
             refinable = !identical(mode, "none"),
-            extend    = identical(mode, "extend")
+            extend    = identical(mode, "extend"),
+            atom_mass = if (identical(bare, "alpha")) copy_atom_mass
         )
         spec$refine_priority <- refine_priority
         # An axis this table does not classify keeps equal node weights, which
         # is what the engine integrated before any coordinate was declared.
         if (is.na(scale_known)) spec$unweighted <- TRUE
-        # The copy scale carries an explicit zero level ("no coupling"), which
-        # is a point mass rather than part of the log continuum, so it needs a
-        # declared prior probability. Fixing it here keeps it independent of how
-        # many continuum nodes the grid ends up with.
-        if (identical(bare, "alpha")) spec$atom_mass <- copy_atom_mass
         # A flat measure on a log axis is improper, so the support is a prior
         # choice. The incoming grid is what the user declared, so the support is
         # its span widened by half a node step at each end: that is the region
@@ -779,6 +779,24 @@
 #'   no axis names.
 #' @seealso [tulpa_theta_matrix()], [tulpa_grid_log_quad()],
 #'   [tulpa_hyper_grid_supports()]
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' S <- 30L                                   # spatial units in a chain
+#' nb <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+#' nn <- lengths(nb)
+#' field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4))))
+#' idx <- rep(seq_len(S), each = 6L); n <- length(idx); x <- rnorm(n)
+#' y <- rbinom(n, 1L, plogis(-0.2 + 0.6 * x + field[idx]))
+#' prior <- list(type = "icar", n_spatial_units = S, spatial_idx = idx,
+#'               adj_row_ptr = c(0L, cumsum(nn)), adj_col_idx = unlist(nb) - 1L,
+#'               n_neighbors = nn, tau_grid = c(0.5, 1, 2, 4, 8))
+#' fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
+#'                             family = "binomial",
+#'                             control = list(progress = FALSE))
+#' specs <- tulpa_joint_axis_specs_from_grid(tulpa_theta_matrix(fit))
+#' specs[[1]]$log_scale
+#' }
 #' @export
 tulpa_joint_axis_specs_from_grid <- function(
     theta_grid, copy_slab = "exponential", folded_axes = NULL,

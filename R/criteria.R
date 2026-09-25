@@ -31,6 +31,9 @@
 #' @return A `tulpa_loglik` object: a list with `get(cols)`, `n_obs`,
 #'   `n_draws`, and `materialized`.
 #' @seealso [tulpa_criteria()]
+#' @examples
+#' ll <- tulpa_loglik(matrix(rnorm(20 * 5, -1), nrow = 20))  # 20 draws x 5 obs
+#' c(ll$n_draws, ll$n_obs)
 #' @export
 tulpa_loglik <- function(x, n_obs = NULL, n_draws = NULL) {
   if (inherits(x, "tulpa_loglik")) return(x)
@@ -221,10 +224,13 @@ tulpa_criteria <- function(log_lik,
     if (want_loo) {
       for (jj in seq_along(cols)) {
         col <- B[, jj]
+        if (anyNA(col)) {                   # NA, as lppd_i is for this column
+          eloo_i[cols[jj]] <- NA_real_
+          next
+        }
         ps  <- tulpa_psis(-col)             # IS weights w_s ~ 1 / p(y | theta_s)
         lw  <- ps$log_weights               # normalized, log-sum-exp == 0
-        eloo_i[cols[jj]] <- if (length(lw)) .tulpa_logsumexp(lw + col) else
-          (.tulpa_logsumexp(col) - log(S))
+        eloo_i[cols[jj]] <- .tulpa_logsumexp(lw + col)
         pk_i[cols[jj]] <- ps$pareto_k
       }
     }
@@ -377,6 +383,11 @@ print.tulpa_criteria <- function(x, digits = 1, ...) {
 #'   observation per thread). Ignored unless `log_lik` is supplied.
 #' @return Numeric vector of length `n_obs` of PIT values in `[0, 1]`.
 #' @seealso [tulpa_criteria()], [tulpa_psis()]
+#' @examples
+#' set.seed(1)
+#' Fl <- matrix(runif(200 * 10, 0, 0.4), 200, 10)   # per-draw CDF limits
+#' Fu <- Fl + 0.3
+#' tulpa_pit(Fu, cdf_lower = Fl)
 #' @export
 tulpa_pit <- function(cdf, cdf_lower = NULL, jitter = TRUE, log_lik = NULL,
                        tail_points = NULL, n_threads = 1L) {

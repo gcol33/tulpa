@@ -21,6 +21,10 @@ the prior mass above \code{upper}, so a caller that reads this off a fit's own
 declared grid gets the exact rate the outer integration used -- rather
 than restating a PC-prior rate that could silently drift from it.
 }
+\examples{
+lp <- tulpa_hyper_copy_slab_density(upper = 2)
+lp(c(0.1, 1, 2))
+}
 \seealso{
 \code{\link[=tulpa_hyper_check_copy_slab]{tulpa_hyper_check_copy_slab()}}, \code{\link[=tulpa_joint_axis_specs_from_grid]{tulpa_joint_axis_specs_from_grid()}}
 }

@@ -21,3 +21,12 @@ evaluates the inner expression in the formula's environment, removes
 the \code{latent(...)} term from the fixed-effects formula, and attaches the
 resulting object to \code{parsed$latent_blocks}.
 }
+\examples{
+n <- 8
+blk <- tgmrf(
+  Q = function(theta) Matrix::Diagonal(n, exp(-2 * theta[1])),
+  prior = function(theta) stats::dnorm(theta[1], 0, 1, log = TRUE),
+  init = c(log_sigma = 0))
+parsed <- tulpa_parse_formula(y ~ x + latent(blk))
+parsed$n_latent_blocks
+}

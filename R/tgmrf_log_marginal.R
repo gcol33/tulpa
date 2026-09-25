@@ -37,7 +37,11 @@
       y = y, n_trials = n_trials, X = X, prior = blk,
       re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       family = family, phi = phi,
-      control = list(max_iter = max_iter, tol = tol, n_threads = n_threads)
+      # One-cell solve made on the sampler's behalf: its outer-grid progress
+      # line would print once per theta evaluation, whatever the caller's
+      # `verbose` (gcol33/tulpa#890).
+      control = list(max_iter = max_iter, tol = tol, n_threads = n_threads,
+                     progress = FALSE)
     )
     as.numeric(out$log_marginal[1])
   }

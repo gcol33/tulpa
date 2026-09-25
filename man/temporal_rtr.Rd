@@ -26,6 +26,10 @@ No tulpa backend applies that projection to a temporal field, so this
 constructor errors rather than returning a specification that would fit as the
 unrestricted temporal model. \code{\link[=spatial_rsr]{spatial_rsr()}} is the wired spatial analogue.
 }
+\examples{
+# No backend fits a restricted temporal field, so the constructor refuses:
+try(temporal_rtr(temporal_rw1("year"), ~ x))
+}
 \seealso{
 \code{\link[=spatial_rsr]{spatial_rsr()}}, \code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_ar1]{temporal_ar1()}}
 }

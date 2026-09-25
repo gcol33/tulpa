@@ -689,6 +689,7 @@ print.tulpa_fit <- function(x, ...) {
 #'   the paths that express no Gaussian prior on the fixed effects.
 #' @export
 summary.tulpa_fit <- function(object, level = 0.95, ...) {
+  .check_unit_interval(level, "level")
   tab <- .fit_fixed_table(object, level = level)
   out <- data.frame(
     estimate  = tab$estimate,
@@ -707,11 +708,58 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
   out
 }
 
+# The rows of a confint() matrix `ci` (the fixed effects) that `parm` asks
+# for. Indices address the fixed effects; a name that is not a fixed effect
+# is read off the posterior draws when the fit carries a column of that name
+# (a sampler's hyperparameters, e.g. `log_sigma_re`), as the equal-tailed
+# quantile interval the fixed effects of a sampler fit report. Anything else
+# is an error naming what is available, not "subscript out of bounds".
+#' @keywords internal
+.confint_rows <- function(object, ci, parm, level) {
+  if (is.numeric(parm)) {
+    if (anyNA(parm) || any(parm != round(parm)) || any(parm < 1) ||
+        any(parm > nrow(ci))) {
+      stop("`parm` indices must be whole numbers in 1..", nrow(ci),
+           " (the fixed effects); got ", .arg_repr(parm), ".", call. = FALSE)
+    }
+    return(ci[parm, , drop = FALSE])
+  }
+  if (!is.character(parm) || anyNA(parm)) {
+    stop("`parm` must be a character vector of parameter names or a numeric ",
+         "vector of fixed-effect indices.", call. = FALSE)
+  }
+  extra <- setdiff(parm, rownames(ci))
+  if (length(extra)) {
+    dm <- if (.reports_gaussian_posterior(object)) NULL else
+      tryCatch(.tulpa_pooled_draws(object), error = function(e) NULL)
+    have <- intersect(extra, colnames(dm))
+    unknown <- setdiff(extra, have)
+    if (length(unknown)) {
+      stop("Unknown `parm`: ", paste(unknown, collapse = ", "),
+           ". Available: the fixed effects (", paste(rownames(ci), collapse = ", "),
+           ")", if (length(colnames(dm)))
+             " and the columns of the fit's posterior draws" else "",
+           ".", call. = FALSE)
+    }
+    a  <- (1 - level) / 2
+    qx <- t(vapply(have, function(p) stats::quantile(dm[, p], c(a, 1 - a),
+                                                     names = FALSE),
+                   numeric(2)))
+    dimnames(qx) <- list(have, colnames(ci))
+    ci <- rbind(ci, qx)
+  }
+  ci[parm, , drop = FALSE]
+}
+
 #' Credible intervals for the fixed effects
 #'
 #' @param object A `tulpa_fit` object.
 #' @param parm Parameter names or indices (default: all fixed effects).
-#' @param level Interval level (default 0.95).
+#'   Indices address the fixed effects. A name that is not a fixed effect is
+#'   read off the fit's posterior draws when they carry a column of that name
+#'   (for example a sampler's `log_sigma_re`), as their equal-tailed quantile
+#'   interval; any other name is an error.
+#' @param level Interval level, a single number in `(0, 1)` (default 0.95).
 #' @param ... Ignored.
 #' @return Matrix with lower and upper columns, labelled as
 #'   [stats::confint.default()] labels them (`"2.5 %"` and `"97.5 %"` at the
@@ -723,14 +771,15 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
 #'   inner-Laplace skew-corrected quantiles or not. See [summary.tulpa_fit()].
 #' @export
 confint.tulpa_fit <- function(object, parm = NULL, level = 0.95, ...) {
+  .check_unit_interval(level, "level")
   tab <- .fit_fixed_table(object, level = level)
   ci <- as.matrix(tab[, c("conf.low", "conf.high")])
   rownames(ci) <- tab$term
   colnames(ci) <- .interval_colnames(level)
   sa <- attr(tab, "skew_applied")
   if (!is.null(parm)) {
-    ci <- ci[parm, , drop = FALSE]
-    if (!is.null(sa)) sa <- sa[parm]
+    ci <- .confint_rows(object, ci, parm, level)
+    if (!is.null(sa)) sa <- stats::setNames(sa[rownames(ci)], rownames(ci))
   }
   attr(ci, "skew_applied")      <- sa
   attr(ci, "interval_source")   <- attr(tab, "interval_source")
@@ -1021,6 +1070,7 @@ generics::glance
 #' }
 #' @export
 tidy.tulpa_fit <- function(x, conf.level = 0.95, ...) {
+  .check_unit_interval(conf.level, "conf.level")
   .fit_fixed_table(x, level = conf.level)
 }
 

@@ -33,6 +33,24 @@ A \code{tulpa_priors} object
 \description{
 Specify priors for model parameters. Supports both PC (penalized complexity)
 priors for variance components and standard distributions for other parameters.
+
+A \code{tulpa_priors} object is what the simulation tools draw parameters from:
+\code{\link[=prior_predict]{prior_predict()}} and \code{\link[=tulpa_simulate]{tulpa_simulate()}} with \code{theta = NULL}. The model
+fitters do not read one. \code{\link[=tulpa]{tulpa()}} carries its own defaults, set per backend
+through its \code{beta_prior}, \code{re_prior} and \code{hyperprior} arguments:
+\itemize{
+\item Fixed effects: \code{prior_normal(0, 2.5)} on every backend -- the same default
+as \code{beta} here.
+\item Random-effect SDs: a PC prior with \code{P(sigma > 3) = 0.01} (plus an LKJ(2)
+prior on a correlated block's correlations) on the routes that integrate or
+maximize over them (nested Laplace, \code{re_cov_nested}, \code{mode = "eb"});
+half-Cauchy(2.5) on the samplers (\code{re_prior$sigma_re_scale}, and
+\code{re_prior$prior_sigma_scale} for \code{mode = "gibbs"}); an inverse-Wishart
+under \code{control$re_cov = "gibbs"}.
+}
+
+The \code{sigma}, \code{phi}, \code{rho_temporal} and \code{rho_spatial} defaults below are
+therefore the simulation defaults, not the priors a fit ran under.
 }
 \details{
 PC priors (Simpson et al., 2017) provide principled regularization that:

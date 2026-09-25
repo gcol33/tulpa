@@ -34,3 +34,19 @@ For integer-valued responses, a randomisation step avoids discrete
 artefacts: the residual is drawn uniformly between P(sim < obs) and
 P(sim <= obs).
 }
+\examples{
+# From a matrix of replicates (n_obs x nsim) and the observed response:
+set.seed(1)
+y <- rpois(30, 3)
+sims <- matrix(rpois(30 * 100, 3), nrow = 30)
+r <- pit_residuals(sims, observed = y)
+summary(r)
+\donttest{
+# From a fitted model with a simulate() method:
+set.seed(1)
+d <- data.frame(x = rnorm(80))
+d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+head(pit_residuals(fit, nsim = 50))
+}
+}

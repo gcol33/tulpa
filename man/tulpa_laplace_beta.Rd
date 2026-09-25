@@ -55,9 +55,11 @@ for \code{mode = "laplace"}).}
 }
 \value{
 For \code{mode = "laplace"}, the list returned by \code{\link[=tulpa_laplace]{tulpa_laplace()}} at the
-optimum, augmented with \code{phi} (the optimised precision) and
-\code{phi_log_marginal} (the optimisation trace). For \code{mode = "nuts"}, the draws
-object returned by \code{\link[=tulpa_nuts_beta]{tulpa_nuts_beta()}}.
+optimum, augmented with \code{phi} (the optimised precision), \code{phi_trace} (the
+optimisation trace: a matrix with one row per objective evaluation and
+columns \code{phi} and \code{log_marginal}) and \code{phi_converged} (\code{TRUE} when the
+Brent search reported convergence). For \code{mode = "nuts"}, the draws object
+returned by \code{\link[=tulpa_nuts_beta]{tulpa_nuts_beta()}}.
 }
 \description{
 Thin wrapper around \code{\link[=tulpa_laplace]{tulpa_laplace()}} for \code{family = "beta"}. The

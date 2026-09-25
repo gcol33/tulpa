@@ -39,11 +39,36 @@ Cholesky factorize:
   fit <- attr(p, "value")
 }
 }
+\section{Which fits are timed}{
+
+Only the SPARSE path of the joint nested-Laplace inner solver carries phase
+timers: \code{tulpa_nested_laplace_joint()} (and the joint drivers built on
+it) when its inner solve runs sparse, which
+\code{control = list(force_sparse = TRUE)} selects outright. The
+single-response solvers behind \code{tulpa_laplace()},
+\code{tulpa_nested_laplace()} and \code{tulpa()}, the dense joint path and
+the samplers are not instrumented; profiling one of them records nothing,
+and \code{tulpa_profile()} then warns rather than returning an all-zero
+table as if it were a measurement.
+}
+
 \examples{
 \donttest{
+# A binomial response over a 30-unit ICAR chain, joint solver forced sparse.
 set.seed(1)
-n <- 200L; X <- cbind(1, rnorm(n))
-y <- rbinom(n, 1, plogis(X \%*\% c(0, 0.5)))
-tulpa_profile(tulpa_laplace(y, rep(1L, n), X, family = "binomial"))
+n_s <- 30L; N <- 150L
+s <- sample.int(n_s, N, replace = TRUE)
+x <- rnorm(N)
+y <- rbinom(N, 1, plogis(0.3 * x + sin(s / 5)))
+nb <- lapply(seq_len(n_s), function(i) setdiff(c(i - 1L, i + 1L), c(0L, n_s + 1L)))
+prior <- list(type = "icar", n_spatial_units = n_s,
+              adj_row_ptr = as.integer(c(0L, cumsum(lengths(nb)))),
+              adj_col_idx = as.integer(unlist(nb)) - 1L,
+              n_neighbors = lengths(nb), sigma_grid = c(0.5, 1))
+arm <- list(y = y, n_trials = rep(1L, N), X = cbind(1, x),
+            spatial_idx = s, family = "binomial")
+tulpa_profile(tulpa_nested_laplace_joint(
+  responses = list(occ = arm), prior = prior,
+  control = list(force_sparse = TRUE, progress = FALSE)))
 }
 }

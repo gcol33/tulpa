@@ -1594,7 +1594,10 @@
 #'   `"eb"` estimates the random-effect covariance(s) by empirical Bayes instead
 #'   of conditioning on `sigma_re` (see [tulpa_eb()]); it is opt-in by name,
 #'   because its intervals are conditional on that estimate rather than marginal
-#'   over it.
+#'   over it. The maximized likelihood integrates the fixed effects out rather
+#'   than profiling them, so with `hyperprior = "flat"` the estimate is
+#'   restricted (REML-type) -- it matches `glmmTMB(..., REML = TRUE)`, not the
+#'   ML fit of `lme4::glmer()`.
 #' @param sigma_re Random-effect SDs to condition on: length 1 (recycled) or one
 #'   per RE term. Defaults to 1 per term with a warning. Ignored by every
 #'   backend that DETERMINES the RE scale itself -- by integrating it
@@ -1615,7 +1618,9 @@
 #'   joins the empirical-Bayes maximization as one further coordinate carrying
 #'   the exact derivative of the Laplace log-marginal, so the estimate is
 #'   ML-II: the hyperprior covers the random-effect covariances only and the
-#'   dispersion enters unpenalized. `fit$phi` is the estimate and
+#'   dispersion enters unpenalized. That marginal integrates the fixed effects
+#'   out, so the estimate is the restricted (REML-type) one -- for a gaussian
+#'   response, the REML residual variance. `fit$phi` is the estimate and
 #'   `fit$phi_estimated` distinguishes it from a conditioned value.
 #'
 #'   Available under `mode = "eb"`, and for the families whose dispersion

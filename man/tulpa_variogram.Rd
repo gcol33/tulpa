@@ -30,3 +30,8 @@ A \code{tulpa_variogram} data.frame with columns \code{dist}, \code{gamma}, \cod
 Computes the empirical semivariogram in distance bins for visual
 assessment of remaining spatial structure in residuals.
 }
+\examples{
+set.seed(1)
+coords <- cbind(runif(60), runif(60))
+tulpa_variogram(rnorm(60), coords, n_bins = 5)
+}

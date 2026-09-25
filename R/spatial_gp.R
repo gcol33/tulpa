@@ -510,6 +510,11 @@ print.tulpa_multiscale <- function(x, ...) {
 #' @return Updated spatial object with computed neighbor structure.
 #' @seealso [validate_temporal_multiscale()], [spatial_gp()],
 #'   [spatial_multiscale()]
+#' @examples
+#' set.seed(1)
+#' d <- data.frame(lon = runif(30), lat = runif(30))
+#' gp <- validate_gp(spatial_gp(~ lon + lat, nn = 5), d)
+#' gp$n_spatial
 #' @export
 validate_gp <- function(gp, data) {
   if (is.null(gp)) return(NULL)

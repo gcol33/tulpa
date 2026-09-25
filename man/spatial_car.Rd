@@ -40,6 +40,11 @@ adjacency matrix. With \code{proper = FALSE} (the default) this is the
 improper CAR / ICAR (\code{type = "car"}); with \code{proper = TRUE} it returns
 the same object as \code{\link[=spatial_car_proper]{spatial_car_proper()}}.
 }
+\examples{
+adj <- matrix(0, 10, 10)
+for (i in 1:9) adj[i, i + 1] <- adj[i + 1, i] <- 1
+spatial_car(adj, level = "group", group_var = "region")
+}
 \seealso{
 \code{\link[=spatial_car_proper]{spatial_car_proper()}}, \code{\link[=spatial_bym2]{spatial_bym2()}}.
 }

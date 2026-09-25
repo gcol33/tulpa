@@ -50,7 +50,10 @@ reliable Tier 1/Tier 2 method expected to finish; a tier (\code{"exact"},
 \code{"eb"} estimates the random-effect covariance(s) by empirical Bayes instead
 of conditioning on \code{sigma_re} (see \code{\link[=tulpa_eb]{tulpa_eb()}}); it is opt-in by name,
 because its intervals are conditional on that estimate rather than marginal
-over it.}
+over it. The maximized likelihood integrates the fixed effects out rather
+than profiling them, so with \code{hyperprior = "flat"} the estimate is
+restricted (REML-type) -- it matches \code{glmmTMB(..., REML = TRUE)}, not the
+ML fit of \code{lme4::glmer()}.}
 
 \item{sigma_re}{Random-effect SDs to condition on: length 1 (recycled) or one
 per RE term. Defaults to 1 per term with a warning. Ignored by every
@@ -86,7 +89,9 @@ conditioning on \code{phi}, which then supplies the starting value. \code{log(ph
 joins the empirical-Bayes maximization as one further coordinate carrying
 the exact derivative of the Laplace log-marginal, so the estimate is
 ML-II: the hyperprior covers the random-effect covariances only and the
-dispersion enters unpenalized. \code{fit$phi} is the estimate and
+dispersion enters unpenalized. That marginal integrates the fixed effects
+out, so the estimate is the restricted (REML-type) one -- for a gaussian
+response, the REML residual variance. \code{fit$phi} is the estimate and
 \code{fit$phi_estimated} distinguishes it from a conditioned value.
 
 Available under \code{mode = "eb"}, and for the families whose dispersion

@@ -9,23 +9,31 @@ geweke_test(fit, frac1 = 0.1, frac2 = 0.5, pars = NULL)
 \arguments{
 \item{fit}{A \code{tulpa_fit} object.}
 
-\item{frac1}{Fraction of chain for first window (default: 0.1).}
+\item{frac1}{Fraction of each chain for the first window (default: 0.1).}
 
-\item{frac2}{Fraction of chain for second window (default: 0.5).}
+\item{frac2}{Fraction of each chain for the second window (default: 0.5).
+Both lie in \verb{(0, 1)} and the windows may not overlap:
+\code{frac1 + frac2 <= 1}.}
 
 \item{pars}{Character vector of parameter names (default: all main params).}
 }
 \value{
-A data frame with columns: parameter, z_score, p_value.
+A data frame of class \code{tulpa_geweke} with columns \code{chain},
+\code{parameter}, \code{z_score} and \code{p_value}, one row per chain and parameter.
 }
 \description{
 Performs Geweke's convergence diagnostic, comparing the mean of the first
-portion of a chain to the last portion. Useful for single-chain diagnostics.
+portion of a chain to the last portion. It is a within-chain diagnostic, so
+on a multi-chain fit it is computed for each chain separately.
 }
 \details{
 The Geweke test computes a z-score comparing the means of early and late
 portions of a chain. Large z-scores (|z| > 2) indicate the chain has not
-converged.
+converged. The chains are never pooled: concatenated, the "first" window
+would come from the first chain and the "last" from another, which compares
+two chains rather than a chain's start with its end (use \code{\link[=diagnostics]{diagnostics()}}
+for the between-chain R-hat). A parameter that is constant within a chain
+has an undefined z-score, reported as \code{NA}.
 }
 \examples{
 \donttest{

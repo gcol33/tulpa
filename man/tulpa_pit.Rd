@@ -60,6 +60,12 @@ the PIT does not use the observation to predict itself. A column whose
 importance ratio is not all finite falls back to the equal-weight average
 for that observation.
 }
+\examples{
+set.seed(1)
+Fl <- matrix(runif(200 * 10, 0, 0.4), 200, 10)   # per-draw CDF limits
+Fu <- Fl + 0.3
+tulpa_pit(Fu, cdf_lower = Fl)
+}
 \seealso{
 \code{\link[=tulpa_criteria]{tulpa_criteria()}}, \code{\link[=tulpa_psis]{tulpa_psis()}}
 }

@@ -41,8 +41,8 @@ test_that("a resolution override is refused where there is no resolution", {
     # An axis declared as explicit nodes has no `lo`/`hi` to redistribute
     # between, so raising it would have to invent a rule.
     expect_error(tulpa:::.nl_grid_axis("bym2_rho", n = 9L), "explicit nodes")
-    expect_error(tulpa:::.nl_grid_axis("copy_alpha", n = 0L), "integer >= 1")
-    expect_error(tulpa:::.nl_grid_axis("copy_alpha", n = c(3L, 4L)), "integer >= 1")
+    expect_error(tulpa:::.nl_grid_axis("copy_alpha", n = 0L), "whole number >= 1")
+    expect_error(tulpa:::.nl_grid_axis("copy_alpha", n = c(3L, 4L)), "whole number >= 1")
 })
 
 test_that("alpha_grid and alpha_n answer different questions and cannot be mixed", {

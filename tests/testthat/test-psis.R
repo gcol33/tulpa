@@ -39,6 +39,52 @@ test_that("a tail tied at the cutoff is left unsmoothed, as loo::psis leaves it"
                tolerance = 1e-12)
 })
 
+test_that("tulpa_psis keeps one weight per draw on non-finite ratios (#892)", {
+  set.seed(1)
+  lr <- rnorm(100)
+
+  # +Inf is the worst ratio there is: an infinite shape, all the weight on it,
+  # never a healthy k read off the draws left after dropping it.
+  r <- tulpa_psis(c(lr, Inf))
+  expect_identical(r$pareto_k, Inf)
+  expect_length(r$log_weights, 101L)
+  expect_equal(exp(r$log_weights), c(rep(0, 100), 1))
+  expect_equal(r$is_ess, 1)
+
+  # -Inf is a zero-weight draw that keeps its place.
+  r <- tulpa_psis(c(lr[1:50], -Inf, lr[51:100]))
+  expect_length(r$log_weights, 101L)
+  expect_identical(r$log_weights[51], -Inf)
+  expect_equal(sum(exp(r$log_weights)), 1)
+  expect_true(is.finite(r$pareto_k))
+
+  expect_error(tulpa_psis(c(1, 2, NA, 4)), "`log_ratios`")
+  expect_error(tulpa_psis(c(lr, NaN)), "`log_ratios`")
+  expect_error(tulpa_psis("a"), "`log_ratios`")
+  expect_error(tulpa_psis(rep(-Inf, 10)), "all -Inf")
+
+  # Too few draws for a tail fit: still one normalized weight per draw.
+  r <- tulpa_psis(c(0, 1, 2))
+  expect_true(is.na(r$pareto_k))
+  expect_equal(r$log_weights, c(0, 1, 2) - log(sum(exp(0:2))))
+})
+
+test_that("a -Inf ratio is the limit of a vanishing finite one (#892)", {
+  # A zero-weight draw is still a draw from the proposal: it sits below the
+  # tail, counts towards S, and weighs exactly what a ratio far enough down
+  # that its exponential underflows weighs.
+  set.seed(2)
+  lr <- c(rnorm(300) + rexp(300), rep(-Inf, 20))[sample(320)]
+  lr_fin <- lr
+  lr_fin[!is.finite(lr)] <- min(lr[is.finite(lr)]) - 1e4
+  ours <- tulpa_psis(lr)
+  ref  <- tulpa_psis(lr_fin)
+  expect_equal(ours$pareto_k, ref$pareto_k, tolerance = 1e-12)
+  expect_equal(ours$tail_len, ref$tail_len)
+  expect_equal(exp(ours$log_weights), exp(ref$log_weights), tolerance = 1e-12)
+  expect_true(all(ours$log_weights[!is.finite(lr)] == -Inf))
+})
+
 # --------------------------------------------------------------------------- #
 # Fast outer Pareto-k diagnostic helpers (gcol33/tulpa#118): near-neighbour     #
 # batch ordering + the speed knobs. Pure-R, no fitting.                         #

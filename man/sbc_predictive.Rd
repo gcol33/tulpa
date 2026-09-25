@@ -20,12 +20,14 @@ sbc_rank(rank, n_ref)
 sbc_draws(x)
 }
 \arguments{
-\item{mu, var, w}{Component means, variances and weights. \code{w} defaults to
-equal weights and is normalized.}
+\item{mu, var, w}{Component means, variances (\verb{>= 0}) and non-negative
+weights, one of each per component. \code{w} defaults to equal weights and is
+normalized.}
 
-\item{mean, sd}{Mean and standard deviation of a single Gaussian.}
+\item{mean, sd}{Mean and standard deviation (\verb{>= 0}) of a single Gaussian.}
 
-\item{support, probs}{Finite support and its probabilities, normalized.}
+\item{support, probs}{Finite support and its non-negative probabilities, one
+per support point; normalized.}
 
 \item{rank, n_ref}{The rank in \code{0:n_ref} of the truth among \code{n_ref} reference
 values, and that reference count.}

@@ -24,6 +24,17 @@ rows; a single pooled chain yields a one-chain array.
 As with \code{\link[=posterior_sample]{posterior_sample()}}, a fit that carries no draws returns \code{NULL} with
 a message naming its backend and the representation it carries instead.
 }
+\examples{
+\donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(60))
+d$y <- rpois(60, exp(0.5 + 0.3 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "hmc",
+             control = list(n_iter = 400L, warmup = 200L, n_chains = 2L,
+                            seed = 1L))
+dim(tulpa_draws_array(fit))   # [iteration, chain, parameter]
+}
+}
 \seealso{
 \code{\link[=posterior_sample]{posterior_sample()}}, \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}}, \code{\link[=diagnostics]{diagnostics()}}
 }

@@ -28,3 +28,12 @@ Counts how many observations fall outside the min-to-max range of
 all simulations. Under a correct model, the expected number is
 approximately \code{2 * N / (nsim + 1)}. Equivalent to \code{DHARMa::testOutliers()}.
 }
+\examples{
+\donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(80))
+d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+test_outliers(fit, nsim = 50)
+}
+}

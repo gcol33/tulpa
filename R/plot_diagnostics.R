@@ -1605,19 +1605,27 @@ plot_diagnostics <- function(fit, pars = NULL) {
 #'
 #' @description
 #' Performs Geweke's convergence diagnostic, comparing the mean of the first
-#' portion of a chain to the last portion. Useful for single-chain diagnostics.
+#' portion of a chain to the last portion. It is a within-chain diagnostic, so
+#' on a multi-chain fit it is computed for each chain separately.
 #'
 #' @param fit A `tulpa_fit` object.
-#' @param frac1 Fraction of chain for first window (default: 0.1).
-#' @param frac2 Fraction of chain for second window (default: 0.5).
+#' @param frac1 Fraction of each chain for the first window (default: 0.1).
+#' @param frac2 Fraction of each chain for the second window (default: 0.5).
+#'   Both lie in `(0, 1)` and the windows may not overlap:
+#'   `frac1 + frac2 <= 1`.
 #' @param pars Character vector of parameter names (default: all main params).
 #'
-#' @return A data frame with columns: parameter, z_score, p_value.
+#' @return A data frame of class `tulpa_geweke` with columns `chain`,
+#'   `parameter`, `z_score` and `p_value`, one row per chain and parameter.
 #'
 #' @details
 #' The Geweke test computes a z-score comparing the means of early and late
 #' portions of a chain. Large z-scores (|z| > 2) indicate the chain has not
-#' converged.
+#' converged. The chains are never pooled: concatenated, the "first" window
+#' would come from the first chain and the "last" from another, which compares
+#' two chains rather than a chain's start with its end (use [diagnostics()]
+#' for the between-chain R-hat). A parameter that is constant within a chain
+#' has an undefined z-score, reported as `NA`.
 #'
 #' @examples
 #' \donttest{
@@ -1636,6 +1644,12 @@ geweke_test <- function(fit, frac1 = 0.1, frac2 = 0.5, pars = NULL) {
   if (!inherits(fit, "tulpa_fit")) {
     stop("fit must be a tulpa_fit object", call. = FALSE)
   }
+  .check_unit_interval(frac1, "frac1")
+  .check_unit_interval(frac2, "frac2")
+  if (frac1 + frac2 > 1) {
+    stop("`frac1 + frac2` must not exceed 1: the two windows would overlap.",
+         call. = FALSE)
+  }
   if (!.tulpa_is_chain(fit)) {
     message(.tulpa_non_chain_msg(fit))
     return(invisible(NULL))
@@ -1645,6 +1659,12 @@ geweke_test <- function(fit, frac1 = 0.1, frac2 = 0.5, pars = NULL) {
   if (is.null(draws)) {
     stop("No draws available in fit object", call. = FALSE)
   }
+  # One series per chain (gcol33/tulpa#895); the pooled matrix only supplies
+  # the resolved parameter names, in the same column order.
+  chains <- lapply(.tulpa_chain_list(fit), function(m) {
+    colnames(m) <- colnames(draws)
+    m
+  })
 
   # Select parameters
   if (is.null(pars)) {
@@ -1653,33 +1673,43 @@ geweke_test <- function(fit, frac1 = 0.1, frac2 = 0.5, pars = NULL) {
     pars <- grep_params(pars, colnames(draws))
   }
 
-  n <- nrow(draws)
+  n <- min(vapply(chains, nrow, integer(1)))
   n1 <- floor(frac1 * n)
   n2 <- floor(frac2 * n)
+  if (n1 < 2L || n2 < 2L) {
+    stop(sprintf(paste0(
+      "The Geweke windows hold %d and %d draws of a %d-draw chain; each needs ",
+      "at least 2. Raise `frac1` / `frac2` or run longer chains."),
+      as.integer(n1), as.integer(n2), as.integer(n)), call. = FALSE)
+  }
 
-  results <- lapply(pars, function(p) {
-    x <- draws[, p]
+  results <- lapply(seq_along(chains), function(k) {
+    ch <- chains[[k]]
+    nk <- nrow(ch)
+    do.call(rbind, lapply(pars, function(p) {
+      x <- ch[, p]
 
-    # First window
-    x1 <- x[1:n1]
-    mean1 <- mean(x1)
-    var1 <- spectrum0_ar(x1) / n1
+      # First window
+      x1 <- x[seq_len(floor(frac1 * nk))]
+      var1 <- spectrum0_ar(x1) / length(x1)
 
-    # Second window (last portion)
-    x2 <- x[(n - n2 + 1):n]
-    mean2 <- mean(x2)
-    var2 <- spectrum0_ar(x2) / n2
+      # Second window (last portion)
+      x2 <- x[(nk - floor(frac2 * nk) + 1):nk]
+      var2 <- spectrum0_ar(x2) / length(x2)
 
-    # Z-score
-    z <- (mean1 - mean2) / sqrt(var1 + var2)
-    p_val <- 2 * (1 - pnorm(abs(z)))
+      # Z-score; a window with no variation leaves it undefined, not infinite
+      z <- if (isTRUE(var1 + var2 > 0)) (mean(x1) - mean(x2)) / sqrt(var1 + var2) else
+        NA_real_
+      p_val <- 2 * (1 - pnorm(abs(z)))
 
-    data.frame(
-      parameter = p,
-      z_score = z,
-      p_value = p_val,
-      stringsAsFactors = FALSE
-    )
+      data.frame(
+        chain = k,
+        parameter = p,
+        z_score = z,
+        p_value = p_val,
+        stringsAsFactors = FALSE
+      )
+    }))
   })
 
   result <- do.call(rbind, results)
@@ -1728,10 +1758,16 @@ print.tulpa_geweke <- function(x, ...) {
 
   print.data.frame(x, row.names = FALSE)
 
-  # Flag potential issues
-  bad <- abs(x$z_score) > 2
+  # Flag potential issues; an NA z (a window without variation) is not one
+  bad <- !is.na(x$z_score) & abs(x$z_score) > 2
   if (any(bad)) {
-    cat("\nWarning:", sum(bad), "parameter(s) have |z| > 2 (potential non-convergence)\n")
+    what <- if (!is.null(x$chain) && length(unique(x$chain)) > 1L) {
+      "chain/parameter pair(s)"
+    } else {
+      "parameter(s)"
+    }
+    cat("\nWarning:", sum(bad), what,
+        "have |z| > 2 (potential non-convergence)\n")
   }
 
   invisible(x)
@@ -1771,6 +1807,16 @@ grep_params <- function(pattern, names) {
 #' @param fit A `tulpa_fit` object.
 #' @return Integer count of divergent transitions (0 if none are recorded).
 #' @seealso [plot_divergences()], [check_diagnostics()]
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' d <- data.frame(x = rnorm(60))
+#' d$y <- rpois(60, exp(0.5 + 0.3 * d$x))
+#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 400L, warmup = 200L, n_chains = 2L,
+#'                             seed = 1L))
+#' n_divergent(fit)
+#' }
 #' @export
 n_divergent <- function(fit) {
   .tulpa_divergence_record(fit)$n

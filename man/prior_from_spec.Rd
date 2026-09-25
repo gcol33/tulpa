@@ -40,3 +40,8 @@ SPDE is the one continuous field not built here -- it carries its own
 (range, sigma) FEM integrator; call \code{\link[=fit_spde]{fit_spde()}} with the \code{spatial_spde()}
 spec.
 }
+\examples{
+d <- data.frame(year = rep(1:10, each = 3))
+pr <- prior_from_spec(temporal_ar1("year"), d)
+str(pr)
+}

@@ -162,6 +162,10 @@ print.tulpa_temporal_multiscale <- function(x, ...) {
 #'
 #' @return Updated object with indices computed.
 #' @seealso [validate_gp()], [temporal_multiscale()]
+#' @examples
+#' tm <- temporal_multiscale("t", trend = "rw1", seasonal = 12)
+#' tm <- validate_temporal_multiscale(tm, data.frame(t = 1:36))
+#' class(tm)
 #' @export
 validate_temporal_multiscale <- function(temporal, data) {
   if (is.null(temporal)) return(NULL)

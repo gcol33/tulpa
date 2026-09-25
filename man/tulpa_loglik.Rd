@@ -26,6 +26,10 @@ block generator (a function of an integer column vector returning the
 over observation blocks, so an EVA-scale \verb{[200 x 1.16M]} log-likelihood is
 consumed a few thousand columns at a time.
 }
+\examples{
+ll <- tulpa_loglik(matrix(rnorm(20 * 5, -1), nrow = 20))  # 20 draws x 5 obs
+c(ll$n_draws, ll$n_obs)
+}
 \seealso{
 \code{\link[=tulpa_criteria]{tulpa_criteria()}}
 }

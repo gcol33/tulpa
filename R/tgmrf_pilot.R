@@ -61,7 +61,10 @@
     prior = pilot_block,
     re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
     family = family, phi = phi,
-    control = list(max_iter = max_iter, tol = tol, n_threads = n_threads)
+    # An inner solve on the adapter's behalf, silent like the per-theta ones
+    # in `.tgmrf_make_log_marginal` (gcol33/tulpa#890).
+    control = list(max_iter = max_iter, tol = tol, n_threads = n_threads,
+                   progress = FALSE)
   )
 
   # A joint grid carries block-prefixed axis names, so its width is the

@@ -28,6 +28,16 @@ model tulpa's own SPDE front doors (\code{fit_spde()}, \code{spatial_spde()}) do
 fit directly -- e.g. a per-species community layer sharing one spatial
 field.
 }
+\examples{
+n <- 6L
+G <- Matrix::bandSparse(n, k = c(-1, 0, 1),
+                        diagonals = list(rep(-1, n - 1), c(1, rep(2, n - 2), 1),
+                                         rep(-1, n - 1)))
+sp <- spatial_spde_custom(Matrix::Diagonal(n), G, Matrix::Diagonal(n),
+                          prior_range = c(1, 0.5), prior_sigma = c(1, 0.01))
+Q <- tulpa_spde_precision_Q(sp, kappa = sqrt(8) / 1, tau_spde = 1)
+dim(Q)
+}
 \seealso{
 \code{\link[=tulpa_spde_log_hyperprior]{tulpa_spde_log_hyperprior()}}, \code{\link[=fit_spde]{fit_spde()}}, \code{\link[=spatial_spde]{spatial_spde()}}
 }

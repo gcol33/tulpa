@@ -19,7 +19,10 @@ VarCorr(x, sigma = 1, ...)
 \value{
 A data frame with one row per random-effect coefficient: \code{term},
 \code{coef}, \code{sd}, and \code{source} (one of \code{"estimated"}, \code{"sampled"},
-\code{"conditioned"}). Correlated terms additionally carry the covariance
+\code{"conditioned"}). A gaussian fit adds a final \code{term = "Residual"} row
+(\code{coef} \code{NA}) with the residual SD \code{sqrt(phi)}, labelled \code{"estimated"}
+under \code{estimate_phi = TRUE} and \code{"conditioned"} otherwise; it has no entry
+in \code{"cov"}. Correlated terms additionally carry the covariance
 matrices in the \code{"cov"} attribute, one per term, each with a \code{"correlation"}
 attribute. Returns an empty data frame when the fit has no random effects.
 }

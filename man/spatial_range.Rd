@@ -29,3 +29,17 @@ the default of \code{\link[=spatial_gp]{spatial_gp()}} and \code{\link[=spatial_
 conditions on the field's hyperparameters rather than inferring them, so it
 carries no posterior for this function to summarise.
 }
+\examples{
+\donttest{
+set.seed(1)
+S <- 12L
+adj <- matrix(0, S, S)
+for (i in 1:(S - 1)) adj[i, i + 1] <- adj[i + 1, i] <- 1
+d <- data.frame(region = factor(rep(1:S, each = 5)), x = rnorm(S * 5))
+field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.5))))
+d$y <- rpois(nrow(d), exp(0.3 + 0.4 * d$x + field[d$region]))
+fit <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
+             spatial = spatial_car(adj, level = "group", group_var = "region"))
+spatial_range(fit)
+}
+}

@@ -29,6 +29,11 @@ warning rather than \code{NaN}. Intended for reconstructing a fit's outer-grid
 posterior weights (with \code{\link[=tulpa_theta_matrix]{tulpa_theta_matrix()}} and
 \code{\link[=tulpa_grid_log_quad]{tulpa_grid_log_quad()}}) when the fit doesn't already carry \code{fit$weights}.
 }
+\examples{
+tulpa_normalise_weights_safe(c(-1, 0, -2))
+# With per-cell log quadrature weights (cell prior masses):
+tulpa_normalise_weights_safe(c(-1, 0, -2), log_quad = log(c(0.2, 0.5, 0.3)))
+}
 \seealso{
 \code{\link[=tulpa_theta_matrix]{tulpa_theta_matrix()}}, \code{\link[=tulpa_grid_log_quad]{tulpa_grid_log_quad()}}
 }

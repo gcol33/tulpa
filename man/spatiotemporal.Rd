@@ -109,6 +109,14 @@ same structure as the marginal effects.
 For GP-based effects, assumes separable covariance:
 \deqn{C(\mathbf{s}_1, t_1; \mathbf{s}_2, t_2) = C_s(\mathbf{s}_1, \mathbf{s}_2) \cdot C_t(t_1, t_2)}
 }
+\examples{
+adj <- matrix(0, 4, 4)
+for (i in 1:3) adj[i, i + 1] <- adj[i + 1, i] <- 1
+# No backend fits an interaction term, so the constructor refuses; the
+# additive model is tulpa(spatial = , temporal = ).
+try(spatiotemporal(spatial_car(adj, group_var = "region"),
+                   temporal_rw1("year"), type = "IV"))
+}
 \references{
 Knorr-Held, L. (2000). Bayesian modelling of inseparable space-time variation
 in disease risk. Statistics in Medicine, 19(17-18), 2555-2567.

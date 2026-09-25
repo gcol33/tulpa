@@ -138,6 +138,14 @@
 #' @return Numeric vector of log-density values, one per `(range, sigma)`
 #'   pair.
 #' @seealso [tulpa_spde_precision_Q()], [spatial_spde()]
+#' @examples
+#' n <- 6L
+#' G <- Matrix::bandSparse(n, k = c(-1, 0, 1),
+#'                         diagonals = list(rep(-1, n - 1), c(1, rep(2, n - 2), 1),
+#'                                          rep(-1, n - 1)))
+#' sp <- spatial_spde_custom(Matrix::Diagonal(n), G, Matrix::Diagonal(n),
+#'                           prior_range = c(1, 0.5), prior_sigma = c(1, 0.01))
+#' tulpa_spde_log_hyperprior(range = c(0.5, 1, 2), sigma = 1, sp = sp)
 #' @export
 tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   .spde_log_hyperprior(range, sigma, sp, hyperprior)

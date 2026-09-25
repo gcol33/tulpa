@@ -34,4 +34,8 @@ transform per component. \code{L} is typically a Cholesky factor of the
 negative Hessian inverse evaluated at the (working) mode \eqn{\hat\theta}
 -- i.e. it scales \code{z} to one posterior standard deviation per axis.
 }
+\examples{
+g <- ccd_grid(2)
+ccd_to_theta(g$z, theta_hat = c(0, 1), L = diag(c(0.5, 0.2)))
+}
 \keyword{internal}

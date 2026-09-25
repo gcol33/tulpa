@@ -391,6 +391,16 @@ posterior_sample <- function(fit) {
 #' @param fit A `tulpa_fit` (or subclass) carrying posterior `$draws`.
 #' @return The chain draws matrix/array, or `NULL` for a non-chain fit.
 #' @seealso [posterior_sample()], [diagnostics()]
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' d <- data.frame(x = rnorm(60))
+#' d$y <- rpois(60, exp(0.5 + 0.3 * d$x))
+#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 400L, warmup = 200L, n_chains = 2L,
+#'                             seed = 1L))
+#' dim(mcmc_draws(fit))
+#' }
 #' @export
 mcmc_draws <- function(fit) {
   if (!.tulpa_is_chain(fit)) return(NULL)
@@ -475,6 +485,16 @@ mcmc_draws <- function(fit) {
 #'   parameter names on the third dimension, or `NULL` if the fit carries no
 #'   draws. Chains of unequal length are truncated to the shortest.
 #' @seealso [posterior_sample()], [tulpa_posterior_draws()], [diagnostics()]
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' d <- data.frame(x = rnorm(60))
+#' d$y <- rpois(60, exp(0.5 + 0.3 * d$x))
+#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 400L, warmup = 200L, n_chains = 2L,
+#'                             seed = 1L))
+#' dim(tulpa_draws_array(fit))   # [iteration, chain, parameter]
+#' }
 #' @export
 tulpa_draws_array <- function(fit) {
   arr <- .tulpa_draws_array(fit)
@@ -560,6 +580,8 @@ get_draws_array <- function(fit) list(draws = tulpa_draws_array(fit))
 #' @param param_names Character vector of parameter names.
 #' @return The subset of `param_names` that are not bracketed-index entries
 #'   (or the full vector if that would be empty).
+#' @examples
+#' select_main_params(c("beta[1]", "beta[2]", "log_sigma_re", "re[1]", "re[2]"))
 #' @export
 select_main_params <- function(param_names) {
   keep <- !grepl("\\[[0-9]+(,[0-9]+)*\\]$", param_names)

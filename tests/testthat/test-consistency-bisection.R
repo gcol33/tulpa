@@ -7,10 +7,9 @@
 # ESS clears the floor, and nothing re-checks the result.
 
 log_axis_spec <- function(lev, atom = FALSE) {
-    s <- hyper_axis_spec("alpha", grid = lev, log_scale = TRUE,
-                         bounds = c(0, Inf), refinable = TRUE)
-    if (atom) s$atom_mass <- 0.5
-    s
+    hyper_axis_spec("alpha", grid = lev, log_scale = TRUE,
+                    bounds = c(0, Inf), refinable = TRUE,
+                    atom_mass = if (atom) 0.5)
 }
 
 test_that("the heavy gap is bisected on the integration coordinate, first", {

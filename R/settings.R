@@ -303,11 +303,8 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
              call. = FALSE)
     }
     if (!is.null(n)) {
-        n <- suppressWarnings(as.integer(n))
-        if (length(n) != 1L || is.na(n) || n < 1L) {
-            stop("Grid axis resolution `n` must be a single integer >= 1.",
-                 call. = FALSE)
-        }
+        # Refused rather than truncated: n = 2.5 was a 2-node axis (#896).
+        n <- .check_count(n, "n", min = 1L)
         if (!is.null(spec$nodes)) {
             stop("Default grid axis '", key, "' is declared as explicit nodes, ",
                  "so it has no resolution to raise.", call. = FALSE)

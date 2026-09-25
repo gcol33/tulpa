@@ -1509,6 +1509,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 #' @return Numeric vector of posterior cell weights summing to 1, the same
 #'   length as `lm`, or all-`NA` if no cell carries finite mass.
 #' @seealso [tulpa_theta_matrix()], [tulpa_grid_log_quad()]
+#' @examples
+#' tulpa_normalise_weights_safe(c(-1, 0, -2))
+#' # With per-cell log quadrature weights (cell prior masses):
+#' tulpa_normalise_weights_safe(c(-1, 0, -2), log_quad = log(c(0.2, 0.5, 0.3)))
 #' @export
 tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
                                           log_quad = NULL) {
@@ -2323,6 +2327,10 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 #' @param spec A `tulpa_temporal` or `tulpa_spatial` object.
 #' @param data Data frame the spec resolves time/group/site indices against.
 #' @return A `prior` list ready for [tulpa_nested_laplace()].
+#' @examples
+#' d <- data.frame(year = rep(1:10, each = 3))
+#' pr <- prior_from_spec(temporal_ar1("year"), d)
+#' str(pr)
 #' @export
 prior_from_spec <- function(spec, data) {
   if (inherits(spec, "tulpa_temporal")) {

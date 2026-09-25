@@ -37,3 +37,12 @@ Compares the variance of observed data to the variance expected under
 the fitted model (via simulation). Ratio > 1 = overdispersion;
 < 1 = underdispersion. Equivalent to \code{DHARMa::testDispersion()}.
 }
+\examples{
+\donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(80))
+d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+test_dispersion(fit, nsim = 50)
+}
+}

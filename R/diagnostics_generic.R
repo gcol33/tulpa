@@ -428,6 +428,19 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 #' @return A data.frame with rows for each spatial hyperparameter and columns
 #'   `mean`, `sd`, and one quantile column per entry of `probs` (named from the
 #'   probability, e.g. `q2.5`, `q97.5` for the defaults).
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' S <- 12L
+#' adj <- matrix(0, S, S)
+#' for (i in 1:(S - 1)) adj[i, i + 1] <- adj[i + 1, i] <- 1
+#' d <- data.frame(region = factor(rep(1:S, each = 5)), x = rnorm(S * 5))
+#' field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.5))))
+#' d$y <- rpois(nrow(d), exp(0.3 + 0.4 * d$x + field[d$region]))
+#' fit <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
+#'              spatial = spatial_car(adj, level = "group", group_var = "region"))
+#' spatial_range(fit)
+#' }
 #' @export
 spatial_range <- function(object, probs = c(0.025, 0.975)) {
   # The kernel ran on coordinates divided by one common factor; a range is a
@@ -614,6 +627,16 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
 #' @param object A `tulpa_fit` object fitted with a temporal component.
 #' @param probs Quantile probabilities (default 0.025, 0.975).
 #' @return A data.frame with rows for each temporal hyperparameter.
+#' @examples
+#' \donttest{
+#' set.seed(127)
+#' df <- data.frame(year = rep(1:20, each = 3), x = rnorm(60))
+#' f <- as.numeric(arima.sim(list(ar = 0.7), 20, sd = 0.4))
+#' df$count <- rpois(60, exp(1 + 0.3 * df$x + f[df$year]))
+#' fit <- tulpa(count ~ x, data = df, family = "poisson",
+#'              temporal = temporal_ar1("year"))
+#' temporal_corr(fit)
+#' }
 #' @export
 temporal_corr <- function(object, probs = c(0.025, 0.975)) {
   # Nested-Laplace fits carry the hyperparameter posterior on the outer grid,

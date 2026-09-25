@@ -9,9 +9,13 @@
 \arguments{
 \item{object}{A \code{tulpa_fit} object.}
 
-\item{parm}{Parameter names or indices (default: all fixed effects).}
+\item{parm}{Parameter names or indices (default: all fixed effects).
+Indices address the fixed effects. A name that is not a fixed effect is
+read off the fit's posterior draws when they carry a column of that name
+(for example a sampler's \code{log_sigma_re}), as their equal-tailed quantile
+interval; any other name is an error.}
 
-\item{level}{Interval level (default 0.95).}
+\item{level}{Interval level, a single number in \verb{(0, 1)} (default 0.95).}
 
 \item{...}{Ignored.}
 }

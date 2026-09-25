@@ -18,3 +18,6 @@ Drops per-element latent-field entries (names ending in a bracketed index,
 e.g. \code{u[12]}, \code{w[3]}) so plots and summaries focus on scalar coefficients
 and hyperparameters rather than thousands of latent values.
 }
+\examples{
+select_main_params(c("beta[1]", "beta[2]", "log_sigma_re", "re[1]", "re[2]"))
+}

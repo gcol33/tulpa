@@ -20,6 +20,10 @@
 #'   `"car_proper"` when `proper = TRUE`).
 #'
 #' @seealso [spatial_car_proper()], [spatial_bym2()].
+#' @examples
+#' adj <- matrix(0, 10, 10)
+#' for (i in 1:9) adj[i, i + 1] <- adj[i + 1, i] <- 1
+#' spatial_car(adj, level = "group", group_var = "region")
 #' @export
 spatial_car <- function(adjacency, level = c("group", "obs"),
                         group_var = NULL, proper = FALSE, shared = NULL,
