@@ -78,37 +78,6 @@
 }
 
 
-# Resolve a spatial(col) / temporal(col) column to 1-based contiguous unit
-# indices for the per-observation field map. Integer/numeric columns are taken
-# as already-1-based ids (matching adjacency row / coordinate order); factor or
-# character columns are factored and the level order then defines the unit
-# order (which must align with the adjacency / coordinate spec). `n_units`, when
-# known (areal adjacency), bounds the index so an out-of-range id fails in R
-# rather than indexing out of bounds in the C++ kernel.
-.resolve_unit_index <- function(col, var, n_units = NULL) {
-  if (is.factor(col)) {
-    idx <- as.integer(col)
-  } else if (is.numeric(col) && !anyNA(col) && all(col == as.integer(col))) {
-    idx <- as.integer(col)
-  } else {
-    idx <- as.integer(as.factor(col))
-  }
-  if (anyNA(idx)) {
-    stop("Spatial/temporal index column '", var, "' has missing values.",
-         call. = FALSE)
-  }
-  if (min(idx) < 1L) {
-    stop("Spatial/temporal index column '", var,
-         "' must resolve to 1-based positive integers.", call. = FALSE)
-  }
-  if (!is.null(n_units) && max(idx) > n_units) {
-    stop("Spatial index column '", var, "' references unit ", max(idx),
-         " but the adjacency has only ", n_units, " unit(s).", call. = FALSE)
-  }
-  idx
-}
-
-
 # Convert the front-door spatial spec into the `prior` block that
 # tulpa_nested_laplace() integrates over. Three families:
 #  * Areal (icar/car/bym2/car_proper): built from type + adjacency + a 1-based
@@ -2138,11 +2107,17 @@ tulpa <- function(formula, data,
         stop("spatial(", parsed$spatial_var, ") column not found in data.",
              call. = FALSE)
       }
-      n_units <- if (!is.null(spatial_spec$adjacency)) {
-        nrow(as.matrix(spatial_spec$adjacency))
-      } else NULL
-      spatial_spec$spatial_idx <-
-        .resolve_unit_index(data[[parsed$spatial_var]], parsed$spatial_var, n_units)
+      if (is.null(spatial_spec$adjacency)) {
+        stop("An areal spatial field needs its adjacency matrix ",
+             "(spatial_car(adjacency, ...)).", call. = FALSE)
+      }
+      adj_mat <- as.matrix(spatial_spec$adjacency)
+      n_units <- nrow(adj_mat)
+      # The unit column is matched to graph nodes by the one resolver every
+      # areal door shares: by rownames(adjacency) when the ids are labels,
+      # never by their sort order (gcol33/tulpa#900).
+      spatial_spec$spatial_idx <- .resolve_spatial_idx(
+        data[[parsed$spatial_var]], n_units, adj_mat, parsed$spatial_var)
       if (isTRUE(spatial_spec$rsr)) {
         # The unit-level projector orthogonal to the restrict_to design -- the
         # whole point of the modifier. dispatch_gibbs_spatial() consumes the

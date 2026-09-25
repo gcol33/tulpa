@@ -142,17 +142,25 @@ spatial_car_proper <- function(adjacency,
 #                                   to lie in [1, n_spatial_units].
 #   * character / factor values + rownames(adjacency) set
 #                              -> match by name.
-#   * character / factor values, no rownames
-#                              -> fall back to as.integer(as.factor(.)),
-#                                  but require the number of unique values
-#                                  to equal n_spatial_units (otherwise the
-#                                  factor levels reindex the cells and lose
-#                                  the user's cell identity).
+#   * character / factor values, no rownames, every label a whole number
+#                              -> read as the numeric node index the label
+#                                  spells ("10" is node 10), never as a sort
+#                                  position ("10" sorting before "2").
+#   * factor values, no rownames, other labels
+#                              -> the level order is the node order, and the
+#                                  number of levels must equal n_spatial_units
+#                                  (otherwise the levels reindex the cells and
+#                                  lose the user's cell identity).
+#   * character values, no rownames, other labels
+#                              -> refused. A character vector states no order,
+#                                  so the only order available is the sort
+#                                  order of the labels ("r1", "r10", "r11",
+#                                  "r2", ...), which is not the graph's; it
+#                                  scrambled the field silently
+#                                  (gcol33/tulpa#900).
 #
-# The fallback restriction is the original behavior, kept
-# for backward compatibility with tests that pass factors covering every
-# cell. Users hitting the empty-cell case should switch to integer 1-based
-# indices or attach `rownames(adjacency)`.
+# This is the one resolver for an areal unit column at every door -- tulpa()'s
+# sampler / Laplace / nested routes and the inline spatial() field alike.
 .resolve_spatial_idx <- function(values, n_spatial_units, adjacency,
                                  group_var = "group") {
   if (length(values) == 0L) return(integer(0))
@@ -195,7 +203,19 @@ spatial_car_proper <- function(adjacency,
       }
       return(idx)
     }
-    f <- as.factor(values)
+    if (all(grepl("^[[:space:]]*[0-9]+[[:space:]]*$", char_vals))) {
+      return(.resolve_spatial_idx(as.integer(char_vals), n_spatial_units,
+                                  adjacency, group_var))
+    }
+    if (is.character(values)) {
+      stop("Spatial group variable '", group_var, "' holds character labels ",
+           "but the adjacency carries no rownames, so nothing says which ",
+           "label is which node (sorting the labels gives \"r1\", \"r10\", ",
+           "\"r2\", ..., not the graph's order). Set rownames(adjacency) to ",
+           "the labels, pass 1-based integer node indices, or pass a factor ",
+           "whose levels are in node order.", call. = FALSE)
+    }
+    f <- values
     if (nlevels(f) != n_spatial_units) {
       stop("Spatial group variable '", group_var,
            "' has ", nlevels(f), " unique values but adjacency has ",

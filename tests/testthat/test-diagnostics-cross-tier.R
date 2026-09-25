@@ -19,7 +19,7 @@ nested_areal_fit <- function(type) {
   nr <- nc <- 5L; S <- nr * nc; reps <- 4L; W <- rook_ct(nr, nc)
   unit <- rep(seq_len(S), each = reps); N <- length(unit)
   x <- rnorm(N); y <- rbinom(N, 3, plogis(-0.3 + 0.6 * x))
-  idx <- tulpa:::.resolve_unit_index(factor(unit), "region", S)
+  idx <- tulpa:::.resolve_spatial_idx(factor(unit), S, W, "region")
   csr <- tulpa:::adjacency_to_csr_tulpa(W)
   prior <- list(type = type, spatial_idx = idx, n_spatial_units = S,
                 adj_row_ptr = csr$row_ptr, adj_col_idx = csr$col_idx,

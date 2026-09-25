@@ -263,7 +263,7 @@ test_that("nested_laplace grid fit: aperture reproduces the reported k-hat", {
     unit <- rep(seq_len(S), each = reps); N <- length(unit)
     x <- rnorm(N); ntr <- rep(3L, N)
     y <- rbinom(N, ntr, plogis(-0.3 + 0.6 * x))
-    idx <- tulpa:::.resolve_unit_index(factor(unit), "region", S)
+    idx <- tulpa:::.resolve_spatial_idx(factor(unit), S, W, "region")
     csr <- tulpa:::adjacency_to_csr_tulpa(W)
     prior <- list(type = "icar", spatial_idx = idx, n_spatial_units = S,
                   adj_row_ptr = csr$row_ptr, adj_col_idx = csr$col_idx,

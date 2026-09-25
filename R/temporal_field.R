@@ -91,15 +91,15 @@
 # format tulpa_nested_laplace_joint() consumes: one block per design column,
 # carrying the per-arm temporal_idx and (for non-intercept columns) the per-arm
 # svc_weight (the temporally varying slope). The time-index column is mapped to
-# 1..n_times by its sorted unique levels, matching the TVC convention.
+# 1..n_times in time order by `.resolve_time_index()`, the resolver the TVC and
+# `temporal =` doors share.
 .temporal_field_blocks <- function(spec, data) {
   tvals <- data[[spec$group_var]]
   if (is.null(tvals)) {
     stop("temporal() time-index column '", spec$group_var,
          "' was not found in the data.", call. = FALSE)
   }
-  levels_t <- sort(unique(tvals))
-  tfac <- factor(tvals, levels = levels_t)
+  tfac <- .resolve_time_index(tvals, spec$group_var)
   idx <- as.integer(tfac)
   n_times <- nlevels(tfac)
   struct <- spec$structure

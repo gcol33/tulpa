@@ -222,13 +222,11 @@ validate_tvc <- function(tvc, data, X) {
 
   # Get time values and create indices
   time_vals <- data[[tvc$time_var]]
-  unique_times <- NULL
-  if (is.factor(time_vals)) {
-    time_factor <- time_vals
-  } else {
-    unique_times <- sort(unique(time_vals))
-    time_factor <- factor(time_vals, levels = unique_times)
-  }
+  time_factor <- .resolve_time_index(time_vals, tvc$time_var)
+  # The distinct instants in chain order, as values (NULL for a factor, which
+  # states an order and no spacing).
+  unique_times <- if (is.factor(time_vals)) NULL else
+    time_vals[match(levels(time_factor), as.character(time_vals))]
 
   tvc$n_times <- nlevels(time_factor)
   tvc$time_index <- as.integer(time_factor)

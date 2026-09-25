@@ -175,15 +175,8 @@ validate_temporal_multiscale <- function(temporal, data) {
     assert_columns_exist(temporal$group_var, data, role = "Temporal group")
   }
 
-  # Get time values and create indices
-  time_vals <- data[[temporal$time_var]]
-
-  if (is.factor(time_vals)) {
-    time_factor <- time_vals
-  } else {
-    unique_times <- sort(unique(time_vals))
-    time_factor <- factor(time_vals, levels = unique_times)
-  }
+  time_factor <- .resolve_time_index(data[[temporal$time_var]],
+                                     temporal$time_var)
 
   temporal$n_times <- nlevels(time_factor)
   temporal$time_index <- as.integer(time_factor)
