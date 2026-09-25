@@ -168,11 +168,23 @@ test_that("the slope redirect re-checks features instead of blindly redirecting"
   dg <- data.frame(x = rnorm(n), g = factor(sample(1:12, n, TRUE)))
   dg$y <- 1 + 0.5 * dg$x + rnorm(12)[dg$g] + rnorm(n)
   w <- rep(1:2, n / 2)
-  # Neither re_cov_gibbs nor re_cov_nested carries weights, so there is no
-  # backend that can integrate this slope's covariance under this call --
-  # this now refuses with a message naming the feature, instead of blindly
-  # redirecting to re_cov_gibbs and surfacing ITS unrelated refusal.
+  # re_cov_gibbs does not carry weights, so this used to be redirected to it
+  # blindly and surface ITS refusal. re_cov_nested carries them
+  # (gcol33/tulpa#874), so the slope's covariance is integrated there instead.
+  fit <- tulpa(y ~ x + (1 + x | g), data = dg, weights = w, phi = 1)
+  expect_identical(fit$backend, "re_cov_nested")
+})
+
+test_that("auto honours a named control$re_cov integrator", {
+  skip_on_cran()
+  # auto's RE arm picks the integrator itself, so the redirect that reads
+  # control$re_cov never ran there: re_cov = "nested" still gave re_cov_gibbs.
+  f1 <- tulpa(yp ~ x + (1 | g), data = d, family = "poisson", mode = "auto",
+              control = list(re_cov = "nested"))
+  expect_identical(f1$backend, "re_cov_nested")
+  # ... and naming the integrator auto would refuse for this call errors.
   expect_error(
-    tulpa(y ~ x + (1 + x | g), data = dg, weights = w),
-    "weights")
+    tulpa(yp ~ x + offset(off) + (1 | g), data = d, family = "poisson",
+          mode = "auto", control = list(re_cov = "gibbs")),
+    "does not carry")
 })

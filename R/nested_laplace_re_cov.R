@@ -670,7 +670,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
                               estimate_phi = FALSE,
                               outer_reltol = NULL,
                               sigma_init = NULL,
-                              X_zi = NULL, zi_prior_sd = 2.5) {
+                              X_zi = NULL, zi_prior_sd = 2.5,
+                              weights = NULL) {
   re_terms <- .as_re_terms_list(re_terms)
   if (!is.matrix(X)) X <- as.matrix(X)
   vd <- .validate_glm_design(y, X, n_trials, caller)
@@ -784,6 +785,15 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
          "no offset term. Use `n_quad = 1` (the joint-field Laplace inner ",
          "solve), which does.", call. = FALSE)
   }
+  # Observation weights scale each row's log-likelihood inside the joint-field
+  # inner solve (tulpa_laplace() validates them). The per-group oracle has no
+  # weight channel, so the same refusal as the offset.
+  if (use_core && !is.null(weights) && any(weights != 1)) {
+    stop(caller, "(): `n_quad > 1` (the adaptive Gauss-Hermite inner marginal) ",
+         "does not support observation weights -- the compiled per-group ",
+         "oracle carries no weight term. Use `n_quad = 1` (the joint-field ",
+         "Laplace inner solve), which does.", call. = FALSE)
+  }
 
   # Inner solve: Laplace log-marginal at the supplied per-block covariances.
   # Failures at extreme grid edges (non-finite / non-convergent) return -Inf so
@@ -797,7 +807,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
         y = y, n_trials = n_trials, X = X,
         re_list = .re_cov_build_re_list(L_list, layout),
         family = family, phi = phi_, phi2 = phi2, return_hessian = FALSE,
-        beta_prior = beta_prior, offset = offset,
+        beta_prior = beta_prior, offset = offset, weights = weights,
         X_zi = X_zi, zi_prior_sd = zi_prior_sd,
         max_iter = max_iter, tol = tol, n_threads = n_threads
       )$log_marginal,
@@ -820,7 +830,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
         re_list = .re_cov_build_re_list(L_list, layout),
         family = family, phi = phi_, phi2 = phi2, return_hessian = FALSE,
         return_joint_hessian = TRUE,
-        beta_prior = beta_prior, offset = offset,
+        beta_prior = beta_prior, offset = offset, weights = weights,
         X_zi = X_zi, zi_prior_sd = zi_prior_sd,
         max_iter = max_iter, tol = tol, n_threads = n_threads
       ),
@@ -855,7 +865,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
         family = family, phi = phi_, phi2 = phi2, return_hessian = TRUE,
         return_re_cov = isTRUE(re_cov),
         return_joint_hessian = isTRUE(joint_hessian),
-        beta_prior = beta_prior, offset = offset,
+        beta_prior = beta_prior, offset = offset, weights = weights,
         X_zi = X_zi, zi_prior_sd = zi_prior_sd,
         max_iter = max_iter, tol = tol, n_threads = n_threads,
         compute_skew = isTRUE(compute_skew), skew_idx = skew_idx,
@@ -874,7 +884,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
       y = y, n_trials = n_trials, X = X,
       re_list = .re_cov_build_re_list(L0_list, layout),
       family = family, phi = phi, phi2 = phi2, return_hessian = FALSE,
-      beta_prior = beta_prior, offset = offset,
+      beta_prior = beta_prior, offset = offset, weights = weights,
       X_zi = X_zi, zi_prior_sd = zi_prior_sd,
       max_iter = max_iter, tol = tol, n_threads = n_threads
     ),
@@ -1147,7 +1157,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     val <- if (is.null(fit) || !is.finite(fit$log_marginal %||% NA_real_)) NULL else {
       r <- .laplace_exact_re_grad(
         fit = fit, y = y, X = X, n_trials = n_trials, offset = offset,
-        weights = NULL,
+        weights = weights,
         re_list = .re_cov_build_re_list(L_list, layout),
         layout = layout, L_list = L_list, family = family,
         # The same phi2 the inner solves ran at: the gradient has to describe
@@ -1528,6 +1538,11 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #' @param offset Optional observation-level offset on the linear predictor
 #'   (length `length(y)`), e.g. `log(exposure)` for a rate model. Not supported
 #'   with `n_quad > 1`, which errors rather than dropping it.
+#' @param weights Optional non-negative observation weights (length
+#'   `length(y)`), each scaling its row's log-likelihood in every inner
+#'   [tulpa_laplace()] solve, so the covariance is integrated under the
+#'   weighted likelihood. Not supported with `n_quad > 1`, which errors rather
+#'   than dropping them.
 #' @param n_quad Quadrature order for the inner marginal. `1` (default) uses the
 #'   joint-field Laplace inner solve ([tulpa_laplace()]). `> 1` refines the inner
 #'   marginal with `n_quad`-point adaptive Gauss-Hermite quadrature (the
@@ -1673,7 +1688,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                 prior_sigma = NULL, eta = NULL,
                                 hyperprior = c("proper", "flat"),
                                 log_prior_theta = NULL,
-                                beta_prior = NULL, offset = NULL, n_quad = 1L,
+                                beta_prior = NULL, offset = NULL,
+                                weights = NULL, n_quad = 1L,
                                 X_zi = NULL, zi_prior_sd = 2.5,
                                 control = list()) {
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
@@ -1709,7 +1725,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     max_iter = max_iter, tol = tol, n_threads = n_threads,
     caller = "tulpa_re_cov_nested", need_scale = TRUE,
     outer_maxit = as.integer(control$outer_maxit %||% 500L),
-    offset = offset, X_zi = X_zi, zi_prior_sd = zi_prior_sd)
+    offset = offset, X_zi = X_zi, zi_prior_sd = zi_prior_sd,
+    weights = weights)
 
   layout          <- core$layout
   k               <- core$k
@@ -1791,7 +1808,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   re_cond <- isTRUE(core$re_conditional)
   ckpt <- .re_cov_node_checkpoint(checkpoint, fingerprint = list(
     y = as.numeric(y), n_trials = as.integer(n_trials), X = X,
-    family = family, phi = phi,
+    family = family, phi = phi, weights = weights,
     layout = lapply(layout, function(b) b[c("k", "nc", "full")]),
     theta_grid = theta_grid, max_iter = max_iter, tol = tol,
     beta_prior = beta_prior, n_quad = n_quad, re_cov = re_cond,

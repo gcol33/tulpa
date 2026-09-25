@@ -683,15 +683,16 @@
 
   # Observation weights scale each row's log-likelihood. Supported where the
   # likelihood carries a per-obs multiplier today: the non-spatial Laplace
-  # kernel and the R log-posterior builder. Everything else refuses loudly
-  # rather than silently fitting unweighted.
+  # kernel (directly, or as re_cov_nested's inner solve) and the R
+  # log-posterior builder. Everything else refuses loudly rather than silently
+  # fitting unweighted.
   if (!is.null(weights) &&
-      !(input == "logpost" ||
-        (backend == "laplace" && is.null(spatial)))) {
+      !.backend_carries_weights(backend, spatial = !is.null(spatial))) {
     stop(sprintf(paste0(
       "`weights` is not supported by backend '%s'. Weighted fits run through ",
-      "mode = 'laplace' (non-spatial) or a log-posterior sampler ",
-      "('mala', 'imh_laplace', 'pathfinder')."), backend), call. = FALSE)
+      "mode = 'laplace' (non-spatial), 're_cov_nested', or a log-posterior ",
+      "sampler ('mala', 'imh_laplace', 'pathfinder')."), backend),
+      call. = FALSE)
   }
 
   # Second dispersion (Student-t df, Tweedie power). The backend list is derived
@@ -986,6 +987,7 @@
         n_quad <- as.integer(control$n_quad %||%
                                (if (re_cov_method == "aghq") 9L else 1L))
         return(c(common, list(
+          weights     = weights,
           beta_prior  = beta_prior_default,
           prior_sigma = rp$prior_sigma,
           eta         = rp$eta,
@@ -1581,9 +1583,11 @@
 #'   length `nrow(data)`): each observation's log-likelihood contribution is
 #'   scaled by its weight (prior / frequency weights, e.g. survey weights or
 #'   aggregated-data counts -- a weight of 2 is equivalent to duplicating the
-#'   row). Supported on the non-spatial Laplace path (`mode = "laplace"`) and
-#'   the log-posterior samplers (`mala`, `imh_laplace`, `pathfinder`); other
-#'   backends reject weights loudly.
+#'   row). Supported on the non-spatial Laplace path (`mode = "laplace"`), the
+#'   nested-Laplace random-effect covariance integrator (`re_cov_nested`, which
+#'   `mode = "auto"` / `"structured"` pick for a weighted random-effect model,
+#'   so its scale is still integrated) and the log-posterior samplers (`mala`,
+#'   `imh_laplace`, `pathfinder`); other backends reject weights loudly.
 #' @template phi
 #' @param estimate_phi Estimate the dispersion from the data instead of
 #'   conditioning on `phi`, which then supplies the starting value. `log(phi)`
@@ -2416,6 +2420,30 @@ tulpa <- function(formula, data,
       call. = FALSE)
   }
 
+  # auto's RE arm picks a covariance integrator itself, so the redirect below --
+  # which reads `control$re_cov` only off a conditional backend -- never saw the
+  # knob there, and `control$re_cov = "nested"` under auto ran re_cov_gibbs
+  # anyway. A caller who NAMES the integrator gets it on this path too, refused
+  # rather than swapped when that integrator cannot carry the call.
+  if (has_re && identical(sel$requested, "auto") && !is.null(control$re_cov) &&
+      sel$backend %in% c("re_cov_gibbs", "re_cov_nested")) {
+    re_cov_method <- .re_cov_method(control, "nested")
+    want <- if (re_cov_method == "gibbs") "re_cov_gibbs" else "re_cov_nested"
+    if (!identical(want, sel$backend)) {
+      if (!.auto_backend_ok(want, fam_obj, call_feat)) {
+        conflicting <- names(call_feat)[vapply(call_feat, isTRUE, logical(1))]
+        stop(sprintf(paste0(
+          "control$re_cov = '%s' names %s, which does not carry this call's ",
+          "feature(s) (%s). Drop control$re_cov to let auto pick the ",
+          "integrator that does."), re_cov_method, want,
+          paste(conflicting, collapse = ", ")), call. = FALSE)
+      }
+      sel <- .sel_redirect(sel, want, sprintf(
+        "control$re_cov = '%s' requested; RE covariance(s) integrated via %s",
+        re_cov_method, want), notify = FALSE)
+    }
+  }
+
   slope_scalar_backends <- c("laplace", "mala", "pathfinder", "imh_laplace")
   # A slope term MUST have its covariance integrated -- there is no scalar
   # sigma_re to condition on -- and a caller who NAMES an integrator gets one
@@ -2694,9 +2722,26 @@ tulpa <- function(formula, data,
       BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
     if (is.null(sigma_re)) {
       sigma_re <- rep(1, K)
+      # A tier mode (auto / structured) integrates an unsupplied scale wherever
+      # a backend carries the call (gcol33/tulpa#787), so landing on a
+      # conditional backend from one is a change of estimand the caller did not
+      # ask for; name what caused it rather than leave the generic line
+      # (gcol33/tulpa#874).
+      req <- sel$requested %||% ""
+      why <- ""
+      if (nzchar(req) && !req %in% ALL_BACKENDS) {
+        on_feat <- names(call_feat)[vapply(call_feat, isTRUE, logical(1))]
+        why <- sprintf(paste0(
+          " mode = '%s' integrates an unsupplied RE scale where a backend ",
+          "carries the call, but it resolved to '%s'%s, which conditions."),
+          req, sel$backend,
+          if (length(on_feat)) sprintf(
+            " (no scale-integrating backend carries this call's %s)",
+            paste(on_feat, collapse = ", ")) else "")
+      }
       warning("tulpa(): `sigma_re` not supplied; conditioning on sigma_re = 1 for ",
-              "each of the ", K, " RE term(s). Pass `sigma_re` to override.",
-              call. = FALSE)
+              "each of the ", K, " RE term(s).", why, " Pass `sigma_re` to ",
+              "override.", call. = FALSE)
     } else if (length(sigma_re) == 1L) {
       sigma_re <- rep(sigma_re, K)
     } else if (length(sigma_re) != K) {

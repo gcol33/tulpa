@@ -133,3 +133,51 @@ test_that("weighted MALA shifts toward the up-weighted observations", {
   expect_equal(coef(fit_4), coef(fit_1), tolerance = 0.1)
   expect_lt(mean(diag(vcov(fit_4))), mean(diag(vcov(fit_1))))
 })
+
+# gcol33/tulpa#874: the tier modes integrate an unsupplied RE scale
+# (gcol33/tulpa#787). Supplying weights used to route them to a conditional
+# backend -- 'laplace' under structured, 'mala' under auto -- that fixed
+# sigma_re at 1, a different estimand, flagged only by the generic
+# "not supplied" warning. re_cov_nested's inner solve is the weighted Laplace
+# kernel, so it carries the weights and the scale stays integrated.
+test_that("weights reach the scale-integrating backend, not a conditional one", {
+  fam <- list(name = "poisson", distribution = "poisson")
+  expect_true(tulpa:::.backend_carries_weights("re_cov_nested"))
+  expect_true(tulpa:::.backend_carries_weights("laplace"))
+  expect_false(tulpa:::.backend_carries_weights("laplace", spatial = TRUE))
+  expect_true(tulpa:::.backend_carries_weights("mala"))
+  expect_false(tulpa:::.backend_carries_weights("hmc"))
+  expect_false(tulpa:::.backend_carries_weights("re_cov_gibbs"))
+
+  feat <- list(weights = TRUE, n_re_terms = 1L)
+  for (m in c("auto", "structured")) {
+    sel <- tulpa:::select_inference_mode(m, family = fam, n_obs = 200L,
+                                         has_spatial = FALSE,
+                                         has_temporal = FALSE, has_re = TRUE,
+                                         feat = feat)
+    expect_identical(sel$backend, "re_cov_nested", info = m)
+  }
+})
+
+test_that("a weighted (1 | g) fit under structured / auto integrates the scale", {
+  skip_on_cran()
+  set.seed(12); J <- 15; n <- 200; gi <- sample(J, n, TRUE); x <- rnorm(n)
+  d <- data.frame(y = rpois(n, exp(.5 + .4 * x + rnorm(J, 0, .6)[gi])), x,
+                  g = factor(gi))
+  w <- rep(c(1, 3), length.out = n)
+
+  f <- expect_no_warning(tulpa(y ~ x + (1 | g), d, family = "poisson",
+                               weights = w, mode = "structured"))
+  expect_identical(f$backend, "re_cov_nested")
+  # An integer weight is that many copies of the row: the weighted fit is the
+  # duplicated-row fit.
+  dd <- d[rep(seq_len(n), w), ]
+  fd <- tulpa(y ~ x + (1 | g), dd, family = "poisson", mode = "structured")
+  expect_equal(VarCorr(f)$sd, VarCorr(fd)$sd, tolerance = 1e-3)
+  expect_equal(coef(f), coef(fd), tolerance = 0.05)
+  expect_gt(abs(VarCorr(f)$sd - 1), 0.1)
+
+  fa <- tulpa(y ~ x + (1 | g), d, family = "poisson", weights = w,
+              mode = "auto")
+  expect_identical(fa$backend, "re_cov_nested")
+})

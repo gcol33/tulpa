@@ -130,6 +130,10 @@ TIER_META <- list(
 #' * `cabi`     -- the registered C-ABI callable backing the backend (the symbol
 #'     a model package reaches via `LinkingTo: tulpa`, and the one an R wrapper
 #'     would call), or `NULL`.
+#' * `carries_weights` -- `TRUE` when a `"design"` backend threads observation
+#'     `weights` into its likelihood (non-spatially); absent otherwise. Every
+#'     `"logpost"` backend carries them through the log-posterior builder, and
+#'     `.backend_carries_weights()` is the one predicate reading both.
 #' * `hyperprior` -- `TRUE` when the backend's fitter takes the outer
 #'     `hyperprior = c("proper", "flat")` choice `tulpa()` forwards; absent
 #'     otherwise.
@@ -231,12 +235,17 @@ BACKEND_REGISTRY <- list(
   laplace = list(
     emits = "iid",
     tier = "structured", input = "design", fitter = "tulpa_laplace",
-    families = NULL, cabi = "tulpa_laplace_spec_dense"
+    families = NULL, cabi = "tulpa_laplace_spec_dense", carries_weights = TRUE
   ),
   re_cov_nested = list(
     emits = "iid",
     tier = "structured", input = "design", fitter = "tulpa_re_cov_nested",
     families = NULL, cabi = NULL, hyperprior = TRUE,
+    # Its inner solve is tulpa_laplace()'s non-spatial kernel, which scales each
+    # row's log-likelihood by its weight, so a weighted (1 | g) model keeps its
+    # scale INTEGRATED rather than being routed to a conditional backend
+    # (gcol33/tulpa#874).
+    carries_weights = TRUE,
     note = paste("Correlated random-slope term (1 + x | g): nested-Laplace",
                  "integration over the RE covariance Sigma (CCD design + PC/LKJ",
                  "prior). Auto-selected from the Laplace path for a single",
@@ -1180,7 +1189,9 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   # ~ 1)` picked this branch unconditionally and errored at the front door's
   # zero-inflation guard on the very call that picked it). Gate on
   # .auto_backend_ok() and fall back to the exact ModelData sampler, which
-  # carries ziformula / phi2 / offset / weights all at once, before refusing.
+  # carries ziformula / phi2 / offset at once, before refusing. It does NOT
+  # carry weights (the ModelData likelihood has no per-row multiplier), and a
+  # weighted call reaching here refuses rather than fits unweighted.
   if (.auto_backend_ok("mala", family, feat)) {
     return(list(
       mode = "exact", backend = "mala", tier = 1L, tier_name = "Exact",
@@ -1226,15 +1237,29 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
       identical(reg$carries_continuous_spatial_re, FALSE)) return(FALSE)
   if (on("ziformula") && !backend %in% .zi_backends()) return(FALSE)
   if (on("phi2") && !backend %in% .phi2_backends()) return(FALSE)
-  # Weights run through a log-posterior sampler, or through the non-spatial
-  # Laplace kernel; the spatial qualification is a property of the CALL, so it
-  # travels in `feat` rather than in the registry.
+  # The spatial qualification is a property of the CALL, so it travels in
+  # `feat` rather than in the registry.
   if (on("weights") &&
-      !(identical(reg$input, "logpost") ||
-        (identical(backend, "laplace") && !on("spatial")))) return(FALSE)
+      !.backend_carries_weights(backend, spatial = on("spatial"))) return(FALSE)
   mx <- reg$max_re_terms
   if (!is.null(mx) && isTRUE((feat$n_re_terms %||% 0L) > mx)) return(FALSE)
   TRUE
+}
+
+
+# Does `backend` carry observation weights on a call with (`spatial = TRUE`) or
+# without a spatial field? Every log-posterior backend does, through the R
+# log-posterior builder; a design backend does when the registry declares
+# `carries_weights`, and then non-spatially only -- the spatial Laplace solvers
+# have no weight channel. The one predicate the auto selector and the fitter
+# argument assembly both read, so what auto picks for a weighted call is what
+# dispatch accepts.
+#' @keywords internal
+.backend_carries_weights <- function(backend, spatial = FALSE) {
+  reg <- BACKEND_REGISTRY[[backend]]
+  if (is.null(reg)) return(FALSE)
+  if (identical(reg$input, "logpost")) return(TRUE)
+  isTRUE(reg$carries_weights) && !isTRUE(spatial)
 }
 
 
