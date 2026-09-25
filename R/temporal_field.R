@@ -135,12 +135,7 @@
 .tulpa_fit_temporal_field <- function(parsed, bundle, data, family, mode, phi,
                                       sigma_re, n_trials, control, formula,
                                       call = NULL) {
-  mode_lc <- tolower(mode %||% "auto")
-  if (!mode_lc %in% c("auto", "laplace", "nested_laplace")) {
-    stop("Inline temporal() varying-coefficient fields are fit by nested ",
-         "Laplace; `mode` must be 'auto' or 'laplace' (got '", mode, "').",
-         call. = FALSE)
-  }
+  .bar_field_check_mode(mode, "temporal")
   if (!is.null(parsed$temporal_var)) {
     stop("Cannot combine an inline temporal(formula = ) field with a ",
          "temporal(col) term. Use one or the other.", call. = FALSE)

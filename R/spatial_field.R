@@ -716,6 +716,22 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 }
 
 
+# The modes an inline spatial() / temporal() varying-coefficient field accepts.
+# Both route to the one-arm joint nested-Laplace fit, so the list and the
+# message naming it are shared; the message lists every accepted spelling
+# (gcol33/tulpa#912), where it used to leave out `nested_laplace`.
+.BAR_FIELD_MODES <- c("auto", "laplace", "nested_laplace")
+
+.bar_field_check_mode <- function(mode, what) {
+  if (!tolower(mode %||% "auto") %in% .BAR_FIELD_MODES) {
+    stop("Inline ", what, "() varying-coefficient fields are fit by nested ",
+         "Laplace; `mode` must be one of ",
+         paste0("'", .BAR_FIELD_MODES, "'", collapse = ", "),
+         " (got '", mode, "').", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
 # Front-door fit for inline spatial() varying-coefficient fields. The bar
 # expands to a list of independent CAR blocks (one per design column, the
 # slope columns carrying a per-row svc_weight); a single response is fit as a
@@ -724,12 +740,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 .tulpa_fit_spatial_field <- function(parsed, bundle, data, family, mode, phi,
                                      sigma_re, n_trials, control, formula,
                                      call = NULL) {
-  mode_lc <- tolower(mode %||% "auto")
-  if (!mode_lc %in% c("auto", "laplace", "nested_laplace")) {
-    stop("Inline spatial() varying-coefficient fields are fit by nested ",
-         "Laplace; `mode` must be 'auto' or 'laplace' (got '", mode, "').",
-         call. = FALSE)
-  }
+  .bar_field_check_mode(mode, "spatial")
   if (!is.null(parsed$spatial_var)) {
     stop("Cannot combine an inline spatial(graph = , formula = ) field with a ",
          "spatial(col) term. Use one or the other.", call. = FALSE)

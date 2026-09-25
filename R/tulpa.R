@@ -650,6 +650,28 @@
 # Assemble the fitter argument list for a backend from the model pieces. Routes
 # on the backend's input contract (BACKEND_REGISTRY$<backend>$input). Backends
 # that are reachable but not yet wired through tulpa() error with guidance.
+# `control$n_threads` under mode = "auto" (gcol33/tulpa#911). The sampler
+# branch of .tulpa_fitter_args() refuses the knob, because a sampler reads no
+# thread count and a knob dropped in silence is what the control check exists
+# to prevent. That refusal is right for a mode the caller NAMED; under "auto"
+# the caller cannot know which backend the router will pick, and the knob is
+# one every Laplace candidate reads, so refusing it made the same call fail or
+# succeed depending on the model's terms. Under auto the knob is dropped with a
+# message naming the backend that ignored it; an explicit mode keeps the error.
+#' @keywords internal
+.auto_drop_unread_threads <- function(control, sel) {
+  if (is.null(control$n_threads) || isTRUE(sel$explicit) ||
+      !identical(BACKEND_REGISTRY[[sel$backend]]$input, "modeldata")) {
+    return(control)
+  }
+  message("tulpa(): mode = 'auto' resolved to the sampler backend '",
+          sel$backend, "', which does not read `control$n_threads`; it is ",
+          "ignored. A sampler run's OpenMP teams are sized from ",
+          "`control$n_chains` and the environment (OMP_NUM_THREADS).")
+  control$n_threads <- NULL
+  control
+}
+
 .tulpa_fitter_args <- function(backend, bundle, family, sigma_re,
                                n_trials, phi, beta_prior, control,
                                latent_blocks = list(), spatial = NULL,
@@ -2611,10 +2633,23 @@ tulpa <- function(formula, data,
     }
     # This branch reaches ANY explicit Tier-1 backend under an SPDE field
     # (gibbs, mala, ess, ...), not only the natural mode = 'exact' / 'hmc'
-    # route that maps to it -- so an explicit request for one of the others is
-    # an override, recorded and warned about like every other one
-    # (gcol33/tulpa#768). The natural route is not, since nothing was lost:
-    # it is the same exact-NUTS tier reaching its own field-specific engine.
+    # route that maps to it. A request NAMING one of the others asked for an
+    # algorithm this field has no implementation of, so it is refused rather
+    # than run as NUTS under a warning (gcol33/tulpa#912; the warning was
+    # gcol33/tulpa#768, and a script that suppresses warnings got a different
+    # sampler in silence). A TIER request ("exact") promised a tier, not an
+    # algorithm, and that promise holds here, so it keeps the recorded override.
+    # The natural route is not an override at all, since nothing was lost: it
+    # is the same exact-NUTS tier reaching its own field-specific engine.
+    if (isTRUE(sel$explicit) && identical(sel$requested, sel$backend) &&
+        !identical(sel$backend, "hmc")) {
+      stop(sprintf(paste0(
+        "mode = '%s' has no implementation for an SPDE field. Its exact ",
+        "(Tier-1) sampler is NUTS over the Matern field and hyperparameters: ",
+        "pass mode = 'exact' or 'hmc' for it, or mode = 'auto' / ",
+        "'nested_laplace' for the nested-Laplace SPDE path."), sel$backend),
+        call. = FALSE)
+    }
     sel <- .sel_redirect(sel, "spde",
       "SPDE field, Tier-1 mode: exact NUTS over the Matern field + hyperparameters",
       notify = !identical(sel$backend, "hmc"))
@@ -2739,6 +2774,8 @@ tulpa <- function(formula, data,
   # Resolved before backend dispatch; `beta_prior` itself stays as supplied, so
   # the branches that reject a fixed-effect prior still see NULL when none was.
   beta_prior_resolved <- beta_prior %||% .tulpa_default_beta_prior()
+
+  control <- .auto_drop_unread_threads(control, sel)
 
   args <- .tulpa_fitter_args(sel$backend, bundle, family, sigma_re,
                              n_trials, phi, beta_prior, control,
