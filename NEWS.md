@@ -154,8 +154,10 @@
   (`matvec`, the sparse CSR product, the SE kernel product and the NNGP
   gradient loops) size their OpenMP team by the arithmetic they split rather
   than by the row count, so a small model no longer opens a full-width
-  parallel region per leapfrog step to share a few hundred multiply-adds
-  (gcol33/tulpa#897).
+  parallel region per leapfrog step to share a few hundred multiply-adds.
+  A 40 x 2 product took 1.47 ms per call on a four-thread team on a loaded
+  machine and now takes 0.06 microseconds on one thread; a 20000 x 10 product
+  keeps its four threads (gcol33/tulpa#897).
 
 ## Documentation
 
