@@ -259,6 +259,55 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
 }
 
 
+# Scalar-argument checks shared by the constructors and post-fit methods, each
+# naming the argument the caller set. `x` is refused unless it is ONE finite
+# number, so an NA, a character, a vector or a NULL reaches the user as that
+# message rather than as "missing value where TRUE/FALSE needed" from the first
+# comparison it meets.
+#' @keywords internal
+.arg_repr <- function(x) {
+  if (is.null(x)) return("NULL")
+  s <- paste(deparse(x, width.cutoff = 60L, nlines = 1L), collapse = "")
+  if (nchar(s) > 60L) paste0(substr(s, 1L, 57L), "...") else s
+}
+
+#' @keywords internal
+.is_scalar_num <- function(x) {
+  is.numeric(x) && length(x) == 1L && is.finite(x)
+}
+
+# One number in the open unit interval: a probability, an interval level, a
+# window fraction.
+#' @keywords internal
+.check_unit_interval <- function(x, arg) {
+  if (!.is_scalar_num(x) || x <= 0 || x >= 1) {
+    stop("`", arg, "` must be a single number in (0, 1); got ", .arg_repr(x),
+         ".", call. = FALSE)
+  }
+  invisible(x)
+}
+
+# One finite number (a location); `positive = TRUE` also demands > 0 (a scale).
+#' @keywords internal
+.check_scalar <- function(x, arg, positive = FALSE) {
+  if (!.is_scalar_num(x) || (positive && x <= 0)) {
+    stop("`", arg, "` must be a single ", if (positive) "positive" else "finite",
+         " number; got ", .arg_repr(x), ".", call. = FALSE)
+  }
+  invisible(x)
+}
+
+# One whole number >= `min` (a count, a grid size). A fractional value is
+# refused rather than truncated, which is what as.integer() would do with it.
+#' @keywords internal
+.check_count <- function(x, arg, min = 1L) {
+  if (!.is_scalar_num(x) || x != round(x) || x < min) {
+    stop("`", arg, "` must be a single whole number >= ", min, "; got ",
+         .arg_repr(x), ".", call. = FALSE)
+  }
+  invisible(as.integer(x))
+}
+
 # Penalized-complexity anchors: P(sigma > U) = alpha calibrates the exponential
 # rate lambda = -log(alpha) / U, which exists only for U > 0 and alpha in
 # (0, 1). At alpha = 1 the rate is 0 and log(rate) is -Inf, so the prior is -Inf

@@ -39,7 +39,10 @@
 #'
 #' @return A data frame with one row per random-effect coefficient: `term`,
 #'   `coef`, `sd`, and `source` (one of `"estimated"`, `"sampled"`,
-#'   `"conditioned"`). Correlated terms additionally carry the covariance
+#'   `"conditioned"`). A gaussian fit adds a final `term = "Residual"` row
+#'   (`coef` `NA`) with the residual SD `sqrt(phi)`, labelled `"estimated"`
+#'   under `estimate_phi = TRUE` and `"conditioned"` otherwise; it has no entry
+#'   in `"cov"`. Correlated terms additionally carry the covariance
 #'   matrices in the `"cov"` attribute, one per term, each with a `"correlation"`
 #'   attribute. Returns an empty data frame when the fit has no random effects.
 #'
@@ -202,6 +205,24 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 }
 
 
+# The residual row of a gaussian fit, `phi = sigma_eps^2`, as lme4 reports it
+# beside the random-effect SDs (gcol33/tulpa#899). It carries the same
+# estimated / conditioned label as the rows above it: `phi_estimated` marks
+# `estimate_phi = TRUE`; anything else is the `phi` the fit was handed.
+#' @keywords internal
+.varcorr_residual <- function(object) {
+  if (!identical(object$family, "gaussian")) return(NULL)
+  phi <- object$phi
+  if (!is.numeric(phi) || length(phi) != 1L || !is.finite(phi) || phi < 0) {
+    return(NULL)
+  }
+  data.frame(term = "Residual", coef = NA_character_, sd = sqrt(phi),
+             source = if (isTRUE(object$phi_estimated)) "estimated" else
+               "conditioned",
+             row.names = NULL, stringsAsFactors = FALSE)
+}
+
+
 #' @rdname VarCorr
 #' @export
 VarCorr.tulpa_fit <- function(x, sigma = 1, ...) {
@@ -263,7 +284,7 @@ VarCorr.tulpa_fit <- function(x, sigma = 1, ...) {
   names(covs) <- vapply(seq_along(layout), function(m)
     layout[[m]]$group_var %||% paste0("term", m), character(1))
 
-  out <- do.call(rbind, rows)
+  out <- do.call(rbind, c(rows, list(.varcorr_residual(x))))
   attr(out, "cov") <- covs
   out
 }

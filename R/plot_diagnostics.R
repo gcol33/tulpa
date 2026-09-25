@@ -1644,12 +1644,8 @@ geweke_test <- function(fit, frac1 = 0.1, frac2 = 0.5, pars = NULL) {
   if (!inherits(fit, "tulpa_fit")) {
     stop("fit must be a tulpa_fit object", call. = FALSE)
   }
-  for (a in c("frac1", "frac2")) {
-    v <- get(a)
-    if (!is.numeric(v) || length(v) != 1L || !is.finite(v) || v <= 0 || v >= 1) {
-      stop(sprintf("`%s` must be a single number in (0, 1).", a), call. = FALSE)
-    }
-  }
+  .check_unit_interval(frac1, "frac1")
+  .check_unit_interval(frac2, "frac2")
   if (frac1 + frac2 > 1) {
     stop("`frac1 + frac2` must not exceed 1: the two windows would overlap.",
          call. = FALSE)

@@ -4,16 +4,39 @@
 \alias{durbin_watson}
 \title{Durbin-Watson test for temporal autocorrelation}
 \usage{
-durbin_watson(object, alternative = c("two.sided", "greater", "less"))
+durbin_watson(
+  object,
+  alternative = c("two.sided", "greater", "less"),
+  time = NULL,
+  resid_type = "pearson"
+)
 }
 \arguments{
-\item{object}{A numeric vector of temporally-ordered residuals}
+\item{object}{A fitted model, or a numeric vector of temporally-ordered
+residuals. A fit's residuals are in its data's row order, so pass \code{time}
+unless the rows already are in time order.}
 
 \item{alternative}{\code{"two.sided"}, \code{"greater"} (positive autocorr), or \code{"less"}}
+
+\item{time}{Optional time index, one per residual; the residuals are put in
+increasing \code{time} order before the statistic is formed. \code{NULL} (default)
+takes them in the order given.}
+
+\item{resid_type}{Residual type if extracting from a model (default
+\code{"pearson"}), as for \code{\link[=moran_i]{moran_i()}}.}
 }
 \value{
 An \code{htest} object with DW statistic, lag-1 r, and p-value
 }
 \description{
 Tests first-order autocorrelation in temporally-ordered residuals.
+}
+\examples{
+set.seed(1)
+e <- as.numeric(arima.sim(list(ar = 0.6), n = 100))
+durbin_watson(e)
+# Residuals recorded out of time order:
+tt <- sample(100)
+durbin_watson(e[tt], time = tt)
+
 }

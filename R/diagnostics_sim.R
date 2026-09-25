@@ -442,15 +442,50 @@ moran_i <- function(object, coords,
 #'
 #' Tests first-order autocorrelation in temporally-ordered residuals.
 #'
-#' @param object A numeric vector of temporally-ordered residuals
+#' @param object A fitted model, or a numeric vector of temporally-ordered
+#'   residuals. A fit's residuals are in its data's row order, so pass `time`
+#'   unless the rows already are in time order.
 #' @param alternative `"two.sided"`, `"greater"` (positive autocorr), or `"less"`
+#' @param time Optional time index, one per residual; the residuals are put in
+#'   increasing `time` order before the statistic is formed. `NULL` (default)
+#'   takes them in the order given.
+#' @param resid_type Residual type if extracting from a model (default
+#'   `"pearson"`), as for [moran_i()].
 #'
 #' @return An `htest` object with DW statistic, lag-1 r, and p-value
 #'
+#' @examples
+#' set.seed(1)
+#' e <- as.numeric(arima.sim(list(ar = 0.6), n = 100))
+#' durbin_watson(e)
+#' # Residuals recorded out of time order:
+#' tt <- sample(100)
+#' durbin_watson(e[tt], time = tt)
+#'
 #' @export
-durbin_watson <- function(object, alternative = c("two.sided", "greater", "less")) {
+durbin_watson <- function(object, alternative = c("two.sided", "greater", "less"),
+                          time = NULL, resid_type = "pearson") {
   alternative <- match.arg(alternative)
-  x <- as.numeric(object)
+  # A fit is read through its residuals, as moran_i() and tulpa_variogram()
+  # read one (gcol33/tulpa#899); anything else must already be the residuals.
+  x <- if (is.numeric(object) && is.null(dim(object))) {
+    as.numeric(object)
+  } else if (inherits(object, "tulpa_fit") ||
+             !is.null(utils::getS3method("residuals", class(object)[1L],
+                                         optional = TRUE))) {
+    as.numeric(residuals(object, type = resid_type))
+  } else {
+    stop("`object` must be a fitted model or a numeric vector of residuals; ",
+         "got an object of class '", class(object)[1L], "'.", call. = FALSE)
+  }
+  if (!is.null(time)) {
+    if (length(time) != length(x) || anyNA(time)) {
+      stop(sprintf(paste0("`time` must give one non-missing time per residual ",
+                          "(%d); got %d value(s)."), length(x), length(time)),
+           call. = FALSE)
+    }
+    x <- x[order(time)]
+  }
   n <- length(x)
   if (n < 3L) stop("need at least 3 observations for Durbin-Watson test", call. = FALSE)
 
