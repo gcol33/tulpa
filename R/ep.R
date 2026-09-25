@@ -177,8 +177,15 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
                      beta_prior = .tulpa_default_beta_prior("ep"),
                      control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
-  mf <- stats::model.frame(formula, data)
-  y  <- as.numeric(stats::model.response(mf))
+  # na.pass, then ep_fit()'s finite guard: an incomplete row is refused, as at
+  # every other door, rather than dropped by model.frame()'s default na.action
+  # (gcol33/tulpa#886).
+  mf <- stats::model.frame(formula, data, na.action = stats::na.pass)
+  # A cbind(successes, failures) response resolves to successes plus their
+  # denominators, as at the tulpa() front door (gcol33/tulpa#882).
+  resp <- .decode_response(stats::model.response(mf))
+  y  <- as.numeric(resp$y)
+  n_trials <- .resolve_pair_trials(family, resp$n_trials, n_trials)
   X  <- stats::model.matrix(stats::terms(mf), mf)
   off <- stats::model.offset(mf)
   fit <- ep_fit(y = y, X = X, family = family, phi = phi, phi2 = phi2,
@@ -207,12 +214,23 @@ ep_fit <- function(y, X, family = "binomial", phi = 1.0, phi2 = NULL,
   X  <- as.matrix(X)
   n  <- nrow(X); p <- ncol(X)
   beta_prior_sd <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("ep"))
-  nt <- if (is.null(n_trials)) rep(1L, n) else as.integer(n_trials)
-  off <- if (is.null(offset)) rep(0, n) else as.numeric(offset)
+  if (length(y) != n) {
+    stop(sprintf("length(y) (%d) must equal nrow(X) (%d).", length(y), n),
+         call. = FALSE)
+  }
+  n_trials <- .normalize_n_trials(family, n_trials, n)
+  off <-if (is.null(offset)) rep(0, n) else as.numeric(offset)
   if (length(off) != n) {
     stop(sprintf("length(offset) (%d) must equal nrow(X) (%d).",
                  length(off), n), call. = FALSE)
   }
+  # The support rules and finite guard every other door applies: y > n_trials
+  # was fitted as nonsense with converged = TRUE (gcol33/tulpa#882), and an NA
+  # row reached the site updates.
+  .assert_finite_model_inputs(X, y, n_trials = n_trials, offset = off,
+                              where = "tulpa_ep")
+  .validate_family_support(family, y, n_trials = n_trials)
+  nt <- if (is.null(n_trials)) rep(1L, n) else as.integer(n_trials)
   gh <- .gauss_hermite(n_quad)
 
   P0 <- diag(1 / beta_prior_sd^2, p)               # prior precision

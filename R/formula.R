@@ -766,35 +766,9 @@ tulpa_build_model_data <- function(parsed, data) {
     }
   }
 
-  # A two-column response is the lme4/glm binomial idiom, cbind(successes,
-  # failures). The kernels take successes plus a denominator, so the pair is
-  # resolved here into a length-n `y` and an `n_trials` vector, and everything
-  # downstream sees the single representation. Leaving the matrix in place
-  # would put 2n response values against the n rows of `X`, which recycles
-  # rather than errors once it reaches the linear algebra.
-  n_trials <- NULL
-  if (!is.null(y) && (is.matrix(y) || is.data.frame(y))) {
-    ym <- as.matrix(y)
-    if (ncol(ym) == 1L) {
-      y <- as.numeric(ym[, 1L])
-    } else if (ncol(ym) == 2L) {
-      successes <- as.numeric(ym[, 1L])
-      failures  <- as.numeric(ym[, 2L])
-      fin <- is.finite(successes) & is.finite(failures)
-      if (any(successes[fin] < 0) || any(failures[fin] < 0)) {
-        stop("A cbind(successes, failures) response must have non-negative ",
-             "entries in both columns.", call. = FALSE)
-      }
-      y <- successes
-      n_trials <- successes + failures
-    } else {
-      stop(sprintf(paste0(
-        "A matrix response must have 2 columns, cbind(successes, failures); ",
-        "got %d. Categorical responses are fit through family = ",
-        "'multinomial' / 'ordinal' with a factor response."), ncol(ym)),
-        call. = FALSE)
-    }
-  }
+  resp <- .decode_response(y)
+  y <- resp$y
+  n_trials <- resp$n_trials
 
   # Fixed-effects design matrix + offset extraction.
   # model.frame parses offset() terms and exposes them via model.offset();
@@ -861,6 +835,64 @@ tulpa_build_model_data <- function(parsed, data) {
     n_re_terms  = length(re_terms),
     fixed_names = colnames(X)
   )
+}
+
+# A two-column response is the lme4/glm binomial idiom, cbind(successes,
+# failures). The kernels take successes plus a denominator, so the pair is
+# resolved here into a length-n `y` and an `n_trials` vector, and everything
+# downstream sees the single representation. Leaving the matrix in place
+# would put 2n response values against the n rows of `X`, which recycles
+# rather than errors once it reaches the linear algebra -- and reading only
+# its first column, as tulpa_ep() did, fitted the successes against a
+# denominator of 1 (gcol33/tulpa#882). Returns list(y, n_trials), `n_trials`
+# NULL for a single-column response. One reading for tulpa_build_model_data()
+# and the standalone formula fitters.
+#' @keywords internal
+.decode_response <- function(y) {
+  if (is.null(y) || !(is.matrix(y) || is.data.frame(y))) {
+    return(list(y = y, n_trials = NULL))
+  }
+  ym <- as.matrix(y)
+  if (ncol(ym) == 1L) {
+    return(list(y = as.numeric(ym[, 1L]), n_trials = NULL))
+  }
+  if (ncol(ym) != 2L) {
+    stop(sprintf(paste0(
+      "A matrix response must have 2 columns, cbind(successes, failures); ",
+      "got %d. Categorical responses are fit through family = ",
+      "'multinomial' / 'ordinal' with a factor response."), ncol(ym)),
+      call. = FALSE)
+  }
+  successes <- as.numeric(ym[, 1L])
+  failures  <- as.numeric(ym[, 2L])
+  fin <- is.finite(successes) & is.finite(failures)
+  if (any(successes[fin] < 0) || any(failures[fin] < 0)) {
+    stop("A cbind(successes, failures) response must have non-negative ",
+         "entries in both columns.", call. = FALSE)
+  }
+  list(y = successes, n_trials = successes + failures)
+}
+
+# The binomial denominators a fit runs with, given the ones a cbind(successes,
+# failures) response carried (`pair_trials`, from `.decode_response()`) and the
+# `n_trials` argument. Only the binomial families have a denominator, and a
+# user-supplied `n_trials` alongside the pair would be two answers to the same
+# question, so both are refused rather than silently resolved in favour of one.
+#' @keywords internal
+.resolve_pair_trials <- function(family, pair_trials, n_trials) {
+  if (is.null(pair_trials)) return(n_trials)
+  if (!.family_reads_trials(family)) {
+    stop(sprintf(paste0(
+      "A cbind(successes, failures) response is the binomial idiom; ",
+      "family = '%s' takes a single-column response."), family),
+      call. = FALSE)
+  }
+  if (!is.null(n_trials)) {
+    stop("`n_trials` was supplied alongside a cbind(successes, failures) ",
+         "response, which already carries the denominators. Drop one.",
+         call. = FALSE)
+  }
+  pair_trials
 }
 
 #' Resolve a parsed RE spec to a grouping factor

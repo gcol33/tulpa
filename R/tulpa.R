@@ -1892,24 +1892,8 @@ tulpa <- function(formula, data,
   parsed <- tulpa_parse_formula(formula)
   bundle <- tulpa_build_model_data(parsed, data)
 
-  # A cbind(successes, failures) response carries its own denominators. Only
-  # the binomial families have one, and a user-supplied `n_trials` alongside it
-  # would be two answers to the same question, so both are refused rather than
-  # silently resolved in favour of one.
-  if (!is.null(bundle$n_trials)) {
-    if (!.family_reads_trials(family)) {
-      stop(sprintf(paste0(
-        "A cbind(successes, failures) response is the binomial idiom; ",
-        "family = '%s' takes a single-column response."), family),
-        call. = FALSE)
-    }
-    if (!is.null(n_trials)) {
-      stop("`n_trials` was supplied alongside a cbind(successes, failures) ",
-           "response, which already carries the denominators. Drop one.",
-           call. = FALSE)
-    }
-    n_trials <- bundle$n_trials
-  }
+  # A cbind(successes, failures) response carries its own denominators.
+  n_trials <- .resolve_pair_trials(family, bundle$n_trials, n_trials)
 
   # One R-side reading of `n_trials`, so every door answers the same
   # (gcol33/tulpa#677). It used to be checked only at the C++ boundary, which
@@ -1917,24 +1901,7 @@ tulpa <- function(formula, data,
   # on one door and a recycled vector on the others, and a `n_trials` handed to
   # a non-binomial family was read by nothing at all -- no signal for a user who
   # meant a binomial and typed poisson.
-  if (!is.null(n_trials)) {
-    if (!.family_reads_trials(family)) {
-      stop(sprintf(paste0(
-        "`n_trials` is the binomial denominator and is not read by ",
-        "family = '%s'. Drop it, or use family = 'binomial'."), family),
-        call. = FALSE)
-    }
-    n_trials <- as.integer(n_trials)
-    if (length(n_trials) == 1L) n_trials <- rep(n_trials, bundle$n_obs)
-    if (length(n_trials) != bundle$n_obs) {
-      stop(sprintf(paste0(
-        "`n_trials` must have length 1 (recycled) or nrow(data) (%d); got %d."),
-        bundle$n_obs, length(n_trials)), call. = FALSE)
-    }
-    if (any(!is.na(n_trials) & n_trials < 1L)) {
-      stop("`n_trials` must be a positive integer count.", call. = FALSE)
-    }
-  }
+  n_trials <- .normalize_n_trials(family, n_trials, bundle$n_obs)
 
   # Zero inflation: a second linear predictor for the structural-zero logit.
   # The compiled Laplace kernel carries it as process 1 (eta[1]); see

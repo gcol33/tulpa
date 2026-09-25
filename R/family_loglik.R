@@ -757,6 +757,32 @@ family_names <- function() names(.FAMILY_OPS)
   .family_base(family) %in% c("binomial", "beta_binomial")
 }
 
+# One R-side reading of `n_trials`, so every door answers the same
+# (gcol33/tulpa#677): NULL stays NULL; otherwise the family must read a
+# denominator, a scalar is recycled to `n_obs`, and the result is a length-
+# `n_obs` integer vector of positive counts (NA passes to the finite guard).
+#' @keywords internal
+.normalize_n_trials <- function(family, n_trials, n_obs) {
+  if (is.null(n_trials)) return(NULL)
+  if (!.family_reads_trials(family)) {
+    stop(sprintf(paste0(
+      "`n_trials` is the binomial denominator and is not read by ",
+      "family = '%s'. Drop it, or use family = 'binomial'."), family),
+      call. = FALSE)
+  }
+  n_trials <- as.integer(n_trials)
+  if (length(n_trials) == 1L) n_trials <- rep(n_trials, n_obs)
+  if (length(n_trials) != n_obs) {
+    stop(sprintf(paste0(
+      "`n_trials` must have length 1 (recycled) or nrow(data) (%d); got %d."),
+      n_obs, length(n_trials)), call. = FALSE)
+  }
+  if (any(!is.na(n_trials) & n_trials < 1L)) {
+    stop("`n_trials` must be a positive integer count.", call. = FALSE)
+  }
+  n_trials
+}
+
 #' Validate the dispersion parameter `phi` for a family.
 #'
 #' Errors when `family` carries a dispersion / precision parameter and `phi` is

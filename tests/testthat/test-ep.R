@@ -151,3 +151,43 @@ test_that("EP recovers logistic-GLM coefficients", {
   expect_true(all(eigen(vcov(fit), symmetric = TRUE, only.values = TRUE)$values > 0))
   expect_equal(ncol(fit$draws), 2L)
 })
+
+# gcol33/tulpa#882: the first column of cbind(successes, failures) was read as
+# y against n_trials = 1, and y > n_trials was fitted with converged = TRUE.
+# gcol33/tulpa#886: an incomplete row was dropped by model.frame() in silence.
+test_that("EP refuses y > n_trials, a doubled denominator and NA rows", {
+  set.seed(1)
+  n <- 40L
+  x <- rnorm(n)
+  nt <- rep(5L, n)
+  yb <- rbinom(n, nt, plogis(-0.5 + 0.8 * x))
+  d <- data.frame(yb, nt, x)
+  expect_error(tulpa_ep(yb ~ x, d, family = "binomial"),
+               "with no `n_trials` requires a 0/1 response")
+  expect_error(tulpa_ep(yb ~ x, d, family = "binomial", n_trials = 2L),
+               "requires `y <= n_trials`")
+  expect_error(tulpa_ep(cbind(yb, nt - yb) ~ x, d, family = "binomial",
+                        n_trials = nt), "alongside a cbind")
+  expect_error(tulpa_ep(cbind(yb, nt - yb) ~ x, d, family = "poisson"),
+               "family = 'poisson' takes a single-column response")
+  expect_error(tulpa_ep(yb ~ x, d, family = "poisson", n_trials = nt),
+               "not read by family = 'poisson'")
+  d$x[3] <- NA
+  expect_error(tulpa_ep(yb ~ x, d, family = "binomial", n_trials = nt),
+               "tulpa_ep: Non-finite value\\(s\\) in the model matrix")
+})
+
+test_that("EP decodes a cbind(successes, failures) response", {
+  skip_on_cran()
+  set.seed(1)
+  n <- 200L
+  x <- rnorm(n)
+  nt <- rep(5L, n)
+  yb <- rbinom(n, nt, plogis(-0.5 + 0.8 * x))
+  d <- data.frame(yb, nt, x)
+  pair <- tulpa_ep(cbind(yb, nt - yb) ~ x, d, family = "binomial")
+  expl <- tulpa_ep(yb ~ x, d, family = "binomial", n_trials = nt)
+  expect_equal(unname(coef(pair)), unname(coef(expl)), tolerance = 1e-8)
+  mle <- unname(coef(stats::glm(cbind(yb, nt - yb) ~ x, binomial, data = d)))
+  expect_lt(max(abs(unname(coef(pair)) - mle)), 0.02)
+})
