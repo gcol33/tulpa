@@ -8,7 +8,11 @@ tulpa_psis(log_ratios, tail_points = NULL)
 }
 \arguments{
 \item{log_ratios}{Numeric vector of (unnormalized) log importance ratios
-\verb{log p_target(x) - log q_proposal(x)} evaluated at draws \code{x ~ q}.}
+\verb{log p_target(x) - log q_proposal(x)} evaluated at draws \code{x ~ q}. \code{-Inf}
+marks a draw of zero weight (it keeps its place and counts towards \code{S});
+\code{NA} / \code{NaN} is an error. A \code{+Inf} ratio is the worst
+possible one and returns \code{pareto_k = Inf} with all the weight on the
+\code{+Inf} draws.}
 
 \item{tail_points}{Number of upper-tail order statistics for the
 generalized-Pareto fit, or \code{NULL} (default) for the automatic PSIS rule
@@ -21,7 +25,9 @@ shape estimate).}
 A list with \code{pareto_k} (the tail shape, \code{NA} if the sample is too
 small to fit), \code{is_ess} (importance-sampling effective sample size,
 \code{1 / sum(w^2)} on the normalized smoothed weights), \code{log_weights}
-(the normalized smoothed log weights), \code{tail_len} (the tail size used), and
+(the normalized smoothed log weights, one per element of \code{log_ratios} and
+in the same order; with fewer than 5 draws the raw ratios, normalized),
+\code{tail_len} (the tail size used, \code{0} when no tail was fitted), and
 \code{tail_smoothed} (\code{FALSE} when the tail kept its raw log ratios because the
 generalized-Pareto fit was not attempted or returned a shape / scale the
 quantile function is undefined at; \code{pareto_k} then reports the attempted fit

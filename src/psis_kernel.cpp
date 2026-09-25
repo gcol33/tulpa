@@ -142,7 +142,7 @@ inline void check_tail_len(int tail_len, int S) {
 
 // [[Rcpp::export]]
 Rcpp::List cpp_tulpa_psis(Rcpp::NumericVector log_ratios, int tail_len) {
-  const int S = log_ratios.size();               // R filtered finite, S >= 5
+  const int S = log_ratios.size();  // R refused NA / +Inf; -Inf kept; S >= 5
   check_tail_len(tail_len, S);
   std::vector<double> lw; double k_hat; bool tail_smoothed;
   psis_logweights(log_ratios.begin(), S, tail_len, lw, k_hat, tail_smoothed);

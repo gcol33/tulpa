@@ -221,10 +221,13 @@ tulpa_criteria <- function(log_lik,
     if (want_loo) {
       for (jj in seq_along(cols)) {
         col <- B[, jj]
+        if (anyNA(col)) {                   # NA, as lppd_i is for this column
+          eloo_i[cols[jj]] <- NA_real_
+          next
+        }
         ps  <- tulpa_psis(-col)             # IS weights w_s ~ 1 / p(y | theta_s)
         lw  <- ps$log_weights               # normalized, log-sum-exp == 0
-        eloo_i[cols[jj]] <- if (length(lw)) .tulpa_logsumexp(lw + col) else
-          (.tulpa_logsumexp(col) - log(S))
+        eloo_i[cols[jj]] <- .tulpa_logsumexp(lw + col)
         pk_i[cols[jj]] <- ps$pareto_k
       }
     }
