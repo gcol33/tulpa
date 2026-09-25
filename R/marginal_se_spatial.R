@@ -457,41 +457,20 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 
 #' Connected components of an adjacency graph, as a list of node-index vectors.
 #'
-#' Iterative depth-first search, so it carries no recursion-depth risk on a
-#' large map. Returns what `graph_partition` (`inst/include/tulpa/graph_components.h`)
-#' returns -- the actual component MEMBERSHIP, not just a count -- so a genuine
-#' disconnected map (a mainland plus islands) pins each component's constant
-#' over that component's real nodes rather than an equal-size contiguous split.
-#' Takes the dense adjacency rather than a sparse one because symmetric sparse
-#' storage (`dsCMatrix`) keeps a single triangle, which would put an edge's two
-#' endpoints in different components.
+#' Breadth-first over the sparse structure of W + W' (`.adj_component_labels`,
+#' shared with the adjacency validator), so an edge stored in one triangle only
+#' still joins its endpoints and no dense copy is made. Returns what
+#' `graph_partition` (`inst/include/tulpa/graph_components.h`) returns -- the
+#' actual component MEMBERSHIP, not just a count -- so a genuine disconnected
+#' map (a mainland plus islands) pins each component's constant over that
+#' component's real nodes rather than an equal-size contiguous split.
+#' Components are ordered by their lowest node, members increasing.
 #'
 #' @keywords internal
 .graph_components <- function(adjacency) {
-  A <- as.matrix(adjacency)
-  n <- nrow(A)
-  if (n == 0L) return(list())
-  nb   <- lapply(seq_len(n), function(i) which(A[i, ] != 0))
-  seen <- logical(n)
-  comps <- list()
-  for (s0 in seq_len(n)) {
-    if (seen[s0]) next
-    seen[s0] <- TRUE
-    stack <- s0
-    members <- integer(0)
-    while (length(stack) > 0L) {
-      s <- stack[[length(stack)]]
-      stack <- stack[-length(stack)]
-      members <- c(members, s)
-      new <- nb[[s]][!seen[nb[[s]]]]
-      if (length(new) > 0L) {
-        seen[new] <- TRUE
-        stack <- c(stack, new)
-      }
-    }
-    comps[[length(comps) + 1L]] <- sort.int(members)
-  }
-  comps
+  lab <- .adj_component_labels(adjacency)
+  if (length(lab) == 0L) return(list())
+  unname(split(seq_along(lab), factor(lab, levels = seq_len(max(lab)))))
 }
 
 #' Number of connected components of an adjacency graph.

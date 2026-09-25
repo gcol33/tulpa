@@ -298,6 +298,7 @@ validate_temporal <- function(temporal, data) {
 
  # Get time values and create indices
  time_vals <- data[[temporal$time_var]]
+ .check_time_complete(time_vals, temporal$time_var)
 
  # Convert to factor to get consistent indexing
  if (is.factor(time_vals)) {
@@ -315,6 +316,14 @@ validate_temporal <- function(temporal, data) {
  # Check minimum time points for RW2
  if (temporal$type == "rw2" && temporal$n_times < 3) {
    stop("RW2 requires at least 3 time points", call. = FALSE)
+ }
+ # A chain over a single time point has no increment to penalise (RW1) and no
+ # lag to correlate (AR1); it used to surface as an internal "unvalidated
+ # spec" error from the nested kernel (gcol33/tulpa#909).
+ if (temporal$type %in% c("rw1", "ar1") && temporal$n_times < 2) {
+   stop(sprintf(paste0("%s requires at least 2 distinct time points; '%s' has ",
+                       "%d."), toupper(temporal$type), temporal$time_var,
+                temporal$n_times), call. = FALSE)
  }
 
  # Handle grouping
@@ -334,4 +343,18 @@ validate_temporal <- function(temporal, data) {
  }
 
  temporal
+}
+
+# Every observation of a temporal field needs a time: a missing one has no
+# position on the chain, and it used to reach a kernel as an NA index (an RW
+# field) or as "TVC `time_index[3]` is -2147483648" (a TVC; gcol33/tulpa#909).
+# Shared by validate_temporal() and validate_tvc().
+.check_time_complete <- function(time_vals, time_var) {
+  if (anyNA(time_vals)) {
+    stop(sprintf(paste0("Time variable '%s' has %d missing value(s) (first at ",
+                        "row %d); every observation needs a time."),
+                 time_var, sum(is.na(time_vals)),
+                 which(is.na(time_vals))[1L]), call. = FALSE)
+  }
+  invisible(TRUE)
 }

@@ -148,6 +148,7 @@ fit_spde <- function(y, X, spatial,
   if (!inherits(spatial, "tulpa_spatial") || spatial$type != "spde") {
     stop("spatial must be an SPDE tulpa_spatial object", call. = FALSE)
   }
+  .check_spde_rows(spatial, length(y), "fit_spde()")
   if (mode == "nuts") {
     # The inference method is an argument, not a parallel verb: delegate to the
     # NUTS engine (tulpa_nuts_spde). The Laplace-path-only structure (an offset,
@@ -217,9 +218,8 @@ fit_spde <- function(y, X, spatial,
 
   y <- as.numeric(y)
   n_obs <- length(y)
-  if (is.null(n_trials)) n_trials <- rep(1L, n_obs)
-  n_trials <- as.integer(n_trials)
   X <- as.matrix(X)
+  n_trials <- .validate_glm_design(y, X, n_trials, "fit_spde()")$n_trials
 
   sp <- spatial  # shorthand
 
@@ -436,4 +436,23 @@ fit_spde <- function(y, X, spatial,
                 n_fixed = ncol(X), fixed_names = colnames(X),
                 data = list(y = y, n_trials = n_trials, model_matrix = X,
                            family = family, offset = offset, phi = phi))
+}
+
+
+# The SPDE projector A maps observations to mesh nodes, one row per
+# observation, and every SPDE kernel indexes it by the observation index with no
+# bound of its own. A longer response than A has rows used to be accepted, the
+# extra rows reaching the likelihood with no field term; a shorter one reached
+# the kernel's CSC check as "A: row index 10 at slot 11 is outside [0, 10)"
+# (gcol33/tulpa#908). One check, at every R door into an SPDE fit.
+#' @keywords internal
+.check_spde_rows <- function(spatial, n_obs, where) {
+  n_a <- tryCatch(nrow(spatial$A), error = function(e) NULL)
+  if (is.null(n_a) || n_a != n_obs) {
+    stop(where, ": the SPDE projector matrix A has ", n_a %||% "?",
+         " row(s) but the response has ", n_obs, " observation(s). Build the ",
+         "SPDE spec from the same data (spatial_spde(~ lon + lat, data = ",
+         "<data>)), one row per observation.", call. = FALSE)
+  }
+  invisible(TRUE)
 }

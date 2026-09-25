@@ -147,6 +147,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
   if (nrow(X) != N) {
     stop("nrow(X) must equal length(y).", call. = FALSE)
   }
+  .check_spde_rows(spatial, N, "tulpa_nuts_spde()")
 
   joint <- isTRUE(joint)
 

@@ -120,6 +120,35 @@ assert_columns_exist <- function(vars, data, role = "Required") {
   matrix(as.numeric(x), nrow(x), 2L)
 }
 
+# Coordinates reaching a spatial field: every value finite, and -- where they
+# are about to be standardised -- no column constant, since scale() divides by
+# its SD. Each case used to reach a kernel as "NA/NaN/Inf in foreign function
+# call (arg 1)" (gcol33/tulpa#909). `where` names the caller or the columns.
+#' @keywords internal
+#' @noRd
+.check_coords_finite <- function(coords, where, scale = FALSE) {
+  coords <- as.matrix(coords)
+  bad <- !is.finite(suppressWarnings(as.numeric(coords)))
+  if (any(bad)) {
+    rows <- unique(((which(bad) - 1L) %% nrow(coords)) + 1L)
+    stop(where, ": the coordinates contain ", sum(bad), " missing or ",
+         "non-finite value(s) (NA / NaN / Inf), first at row ", rows[1L],
+         ". Remove or impute them before fitting.", call. = FALSE)
+  }
+  if (isTRUE(scale) && nrow(coords) > 0L) {
+    sds <- apply(coords, 2L, stats::sd)
+    const <- which(!(sds > 0))
+    if (length(const)) {
+      nm <- colnames(coords)[const] %||% paste0("column ", const)
+      stop(where, ": coordinate ", paste0("`", nm, "`", collapse = ", "),
+           " is constant, so it cannot be standardised (scale_coords = TRUE ",
+           "divides by its SD). Drop it from the coordinates, or pass ",
+           "scale_coords = FALSE.", call. = FALSE)
+    }
+  }
+  invisible(TRUE)
+}
+
 #' Extract a coordinate matrix, check for missing values, optionally scale.
 #'
 #' Wraps the coord-validation pattern shared by `validate_hsgp()` and
@@ -134,9 +163,7 @@ assert_columns_exist <- function(vars, data, role = "Required") {
 prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
   assert_columns_exist(coord_vars, data, role = "Coordinate")
   coords <- as.matrix(data[, coord_vars, drop = FALSE])
-  if (any(is.na(coords))) {
-    stop("Coordinate columns contain missing values", call. = FALSE)
-  }
+  .check_coords_finite(coords, "Coordinate columns", scale = scale_coords)
   if (isTRUE(scale_coords)) {
     coords <- scale(coords)
   }
@@ -230,6 +257,18 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
   if (!report$square) {
     stop("`", arg, "` must be square (got ", report$nrow, " x ",
          report$ncol, ").", call. = FALSE)
+  }
+  if (!report$finite) {
+    stop("`", arg, "` has ", report$n_nonfinite, " missing or non-finite ",
+         "entr", if (report$n_nonfinite == 1L) "y" else "ies",
+         " (NA / NaN / Inf); an adjacency must be 0 / 1 (or non-negative ",
+         "weights) everywhere.", call. = FALSE)
+  }
+  if (!report$nonneg) {
+    stop("`", arg, "` has ", report$n_negative, " negative entr",
+         if (report$n_negative == 1L) "y" else "ies", "; an adjacency weight ",
+         "must be non-negative (D - W is not a precision otherwise).",
+         call. = FALSE)
   }
   if (!report$symmetric) {
     stop("`", arg, "` must be symmetric (max |W - t(W)| = ",

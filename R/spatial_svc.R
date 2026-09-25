@@ -192,10 +192,9 @@ validate_svc <- function(svc, data, X) {
     data[[svc$coord_vars[2]]]
   )
 
-  # Check for missing coordinates
-  if (any(is.na(coords))) {
-    stop("Coordinate columns contain missing values", call. = FALSE)
-  }
+  .check_coords_finite(
+    structure(coords, dimnames = list(NULL, svc$coord_vars[1:2])),
+    "Coordinate columns", scale = svc$scale_coords)
 
   # Scale coordinates if requested
   if (svc$scale_coords) {
@@ -287,8 +286,23 @@ validate_svc <- function(svc, data, X) {
 #' @export
 #' @keywords internal
 compute_nngp_neighbors <- function(coords, k) {
+  coords <- as.matrix(coords)
   N <- nrow(coords)
   d <- ncol(coords)
+  # A neighbour set is drawn from the locations ordered BEFORE a site, so at
+  # most N - 1 can condition it. k = 0 is the degenerate independent field
+  # (every Vecchia factor marginal) and stays available. A k past N - 1, a
+  # non-whole one, or a coordinate that is not a number used to be accepted and
+  # fill the table with sentinels or NA distances (gcol33/tulpa#909). `nn_idx`
+  # is 1-based; 0 marks an empty slot only.
+  .check_coords_finite(coords, "compute_nngp_neighbors()")
+  if (!is.numeric(k) || length(k) != 1L || !is.finite(k) || k != round(k) ||
+      k < 0 || k > max(N - 1L, 0L)) {
+    stop("compute_nngp_neighbors(): `k` must be a whole number in [0, ",
+         max(N - 1L, 0L), "] for ", N, " location(s); got ", format(k), ".",
+         call. = FALSE)
+  }
+  k <- as.integer(k)
 
   # Order observations lexicographically by coordinate (a valid NNGP ordering
   # that improves conditioning over the raw input order), over however many

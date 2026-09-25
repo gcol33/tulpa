@@ -480,18 +480,21 @@ node_index <- function(graph, ids) {
 #'
 #' @description
 #' Check that a hand-built adjacency matrix is a well-formed spatial graph
-#' before passing it to [spatial()] / [spatial_car()]: square, symmetric, zero
-#' on the diagonal, 0/1 valued, and free of isolated nodes. [adjacency()] runs
-#' the same checks on the graphs it constructs.
+#' before passing it to [spatial()] / [spatial_car()]: square, finite,
+#' symmetric, zero on the diagonal, 0/1 valued, free of negative weights and of
+#' isolated nodes, and connected. [adjacency()] runs the same checks on the
+#' graphs it constructs. The spatial constructors refuse a graph with a
+#' missing, non-finite or negative entry.
 #'
 #' @param adjacency A matrix (dense or sparse `Matrix`).
 #' @param ids Optional cell identifiers; if supplied, their length must match
 #'   `nrow(adjacency)` and they must be unique.
 #'
 #' @return Invisibly, a `tulpa_adjacency_check` list with the per-check results
-#'   (`square`, `symmetric`, `zero_diag`, `binary`, isolated-node indices, edge
-#'   count) and an overall `ok` flag. Issues are reported via `warning()` and
-#'   printed; the function does not stop, so every problem surfaces in one pass.
+#'   (`square`, `finite`, `symmetric`, `zero_diag`, `binary`, `nonneg`,
+#'   isolated-node indices, `n_components` and `component_sizes`, edge count)
+#'   and an overall `ok` flag. Issues are reported via `warning()` and printed;
+#'   the function does not stop, so every problem surfaces in one pass.
 #'
 #' @seealso [adjacency()] to construct a graph, [node_index()].
 #'
@@ -509,7 +512,16 @@ check_adjacency <- function(adjacency, ids = NULL) {
   if (!report$square) {
     warning("Adjacency matrix is not square (", report$nrow, " x ",
             report$ncol, ").", call. = FALSE)
+  } else if (!report$finite) {
+    warning("Adjacency matrix has ", report$n_nonfinite, " missing or ",
+            "non-finite entr", if (report$n_nonfinite == 1L) "y" else "ies",
+            " (NA / NaN / Inf); no further check is possible.", call. = FALSE)
   } else {
+    if (!report$nonneg) {
+      warning("Adjacency matrix has ", report$n_negative, " negative ",
+              "entr", if (report$n_negative == 1L) "y" else "ies",
+              "; the spatial constructors refuse it.", call. = FALSE)
+    }
     if (!report$symmetric) {
       warning("Adjacency matrix is not symmetric (max |W - t(W)| = ",
               signif(report$asymmetry, 3), ").", call. = FALSE)
@@ -527,6 +539,18 @@ check_adjacency <- function(adjacency, ids = NULL) {
               "ICAR/CAR field is improper on disconnected nodes.",
               call. = FALSE)
     }
+    # Isolated nodes are reported above; this names a split into several
+    # multi-node pieces, which is otherwise silent (gcol33/tulpa#902).
+    n_multi <- sum(report$component_sizes > 1L)
+    if (n_multi > 1L) {
+      warning("Adjacency graph has ", n_multi, " connected components of more ",
+              "than one node (sizes ",
+              paste(sort(report$component_sizes[report$component_sizes > 1L],
+                         decreasing = TRUE), collapse = ", "),
+              "); an intrinsic field identifies each component's level ",
+              "separately and a BYM2 field scales each one separately.",
+              call. = FALSE)
+    }
   }
   if (!is.null(report$id_error)) warning(report$id_error, call. = FALSE)
   print(report)
@@ -541,22 +565,35 @@ check_adjacency <- function(adjacency, ids = NULL) {
   square <- nr == nc
   out <- list(square = square, nrow = nr, ncol = nc)
 
-  if (!square) {
+  Wm <- if (square) {
+    methods::as(methods::as(W, "CsparseMatrix"), "generalMatrix")
+  }
+  # A missing or infinite weight makes every later check undefined (the
+  # symmetry test itself returned NA, which surfaced as "missing value where
+  # TRUE/FALSE needed"; gcol33/tulpa#909), so it is reported on its own and the
+  # rest is not attempted.
+  out$finite <- !square || all(is.finite(as.numeric(Wm@x)))
+  out$n_nonfinite <- if (square) sum(!is.finite(as.numeric(Wm@x))) else 0L
+
+  if (!square || !out$finite) {
     out$symmetric <- FALSE
     out$zero_diag <- FALSE
     out$binary <- FALSE
+    out$nonneg <- FALSE
+    out$n_negative <- NA_integer_
     out$n_self <- NA_integer_
     out$asymmetry <- NA_real_
     out$n_isolated <- NA_integer_
     out$isolated <- integer(0)
     out$n_edges <- NA_integer_
+    out$n_components <- NA_integer_
+    out$component_sizes <- integer(0)
     out$id_error <- .adj_check_ids(ids, nr)
     out$ok <- FALSE
     class(out) <- c("tulpa_adjacency_check", "list")
     return(out)
   }
 
-  Wm <- methods::as(methods::as(W, "CsparseMatrix"), "generalMatrix")
   asym <- max(abs(Wm - Matrix::t(Wm)))
   out$asymmetry <- asym
   out$symmetric <- asym <= 1e-8 * max(1, max(abs(Wm)))
@@ -565,19 +602,65 @@ check_adjacency <- function(adjacency, ids = NULL) {
   out$n_self <- sum(diag_vals != 0)
   out$zero_diag <- out$n_self == 0L
 
-  nz <- Wm@x
+  nz <- as.numeric(Wm@x)
   out$binary <- length(nz) == 0L || all(nz %in% c(0, 1))
+  # A negative weight is not a graph: D - W is then not a precision (a CAR /
+  # ICAR quadratic form can go negative), where a positive non-unit weight is
+  # only a weighted graph.
+  out$n_negative <- sum(nz < 0)
+  out$nonneg <- out$n_negative == 0L
 
   deg <- Matrix::rowSums(Wm != 0)
   out$isolated <- which(deg == 0)
   out$n_isolated <- length(out$isolated)
   out$n_edges <- sum(Matrix::tril(Wm) != 0)
+  # Connected components, islands included. An intrinsic field has one constant
+  # null direction per component, and a BYM2 scaling is per component, so a
+  # disconnected graph is reported rather than read as a single map
+  # (gcol33/tulpa#902).
+  comp <- .adj_component_labels(Wm)
+  out$n_components <- max(0L, comp)
+  out$component_sizes <- as.integer(tabulate(comp, nbins = out$n_components))
 
   out$id_error <- .adj_check_ids(ids, nr)
-  out$ok <- out$symmetric && out$zero_diag && out$binary &&
-    out$n_isolated == 0L && is.null(out$id_error)
+  out$ok <- out$symmetric && out$zero_diag && out$binary && out$nonneg &&
+    out$n_isolated == 0L && out$n_components <= 1L && is.null(out$id_error)
   class(out) <- c("tulpa_adjacency_check", "list")
   out
+}
+
+# Connected-component label (1..K) of every node of a square adjacency, read
+# off the sparse column structure of W + W' (so an edge stored in one triangle
+# only still joins its endpoints). Breadth-first over the CSC arrays: O(n + nnz)
+# with no dense copy, which is what lets the validator report components on a
+# large map. The R twin of label_graph_components (graph_components.h); the
+# order of the labels is the order of each component's lowest node.
+#' @keywords internal
+.adj_component_labels <- function(W) {
+  n <- nrow(W)
+  if (n == 0L) return(integer(0))
+  S <- methods::as(methods::as(W, "CsparseMatrix"), "generalMatrix")
+  S <- methods::as(methods::as((S != 0) | Matrix::t(S != 0), "CsparseMatrix"),
+                   "generalMatrix")
+  p <- S@p
+  ii <- S@i + 1L
+  label <- integer(n)
+  k <- 0L
+  for (s0 in seq_len(n)) {
+    if (label[s0] != 0L) next
+    k <- k + 1L
+    label[s0] <- k
+    queue <- s0
+    while (length(queue)) {
+      nb <- unlist(lapply(queue, function(s) {
+        if (p[s + 1L] > p[s]) ii[(p[s] + 1L):p[s + 1L]] else integer(0)
+      }), use.names = FALSE)
+      nb <- unique(nb[label[nb] == 0L])
+      label[nb] <- k
+      queue <- nb
+    }
+  }
+  label
 }
 
 .adj_check_ids <- function(ids, n) {
@@ -619,11 +702,26 @@ print.tulpa_adjacency_check <- function(x, ...) {
   cat("<adjacency check>\n")
   ok_mark <- function(v) if (isTRUE(v)) "ok" else "FAIL"
   cat(sprintf("  square:    %s (%d x %d)\n", ok_mark(x$square), x$nrow, x$ncol))
-  if (x$square) {
+  if (x$square && !isTRUE(x$finite %||% TRUE)) {
+    cat(sprintf("  finite:    FAIL (%d NA / NaN / Inf entries)\n",
+                x$n_nonfinite))
+  } else if (x$square) {
     cat(sprintf("  symmetric: %s\n", ok_mark(x$symmetric)))
     cat(sprintf("  zero diag: %s\n", ok_mark(x$zero_diag)))
     cat(sprintf("  binary:    %s\n", ok_mark(x$binary)))
+    if (!isTRUE(x$nonneg %||% TRUE)) {
+      cat(sprintf("  negative:  FAIL (%d entries)\n", x$n_negative))
+    }
     cat(sprintf("  isolated:  %d node(s)\n", x$n_isolated))
+    if (!is.null(x$n_components)) {
+      cat(sprintf("  components: %d%s\n", x$n_components,
+                  if (x$n_components > 1L) {
+                    sz <- sort(x$component_sizes, decreasing = TRUE)
+                    sprintf(" (sizes %s%s)", paste(utils::head(sz, 10L),
+                                                   collapse = ", "),
+                            if (length(sz) > 10L) ", ..." else "")
+                  } else ""))
+    }
     cat(sprintf("  edges:     %d\n", x$n_edges))
   }
   if (!is.null(x$id_error)) cat(sprintf("  ids:       %s\n", x$id_error))

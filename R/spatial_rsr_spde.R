@@ -398,6 +398,7 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
   }
 
   if (ncol(obs_coords) != 2) stop("coords must have 2 columns", call. = FALSE)
+  .check_coords_finite(obs_coords, "spatial_spde()")
   .check_spde_prior_args(prior_range, prior_sigma, "spatial_spde()")
   prior_stated <- c(range = !is.null(prior_range), sigma = !is.null(prior_sigma))
   prior_range <- prior_range %||% .nl_default_range_prior(obs_coords)
@@ -408,9 +409,13 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
          call. = FALSE)
   }
 
-  # Build mesh if not provided
+  # Build mesh if not provided. The mesh is built on the DISTINCT sites: a
+  # repeated-measures design puts several observations at one location, and a
+  # triangulation cannot take a vertex twice (it stopped with the vendored
+  # CDT's "Duplicate vertex detected"; gcol33/tulpa#909). Every observation,
+  # repeats included, still gets its own row of the projector A below.
   if (is.null(mesh)) {
-    mesh_args <- list(coords = obs_coords, cutoff = cutoff)
+    mesh_args <- list(coords = unique(obs_coords), cutoff = cutoff)
     if (!is.null(boundary)) mesh_args$boundary <- boundary
     if (!is.null(max_edge)) mesh_args$max_edge <- max_edge
     mesh <- do.call(tulpaMesh::tulpa_mesh, mesh_args)

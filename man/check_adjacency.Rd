@@ -14,15 +14,18 @@ check_adjacency(adjacency, ids = NULL)
 }
 \value{
 Invisibly, a \code{tulpa_adjacency_check} list with the per-check results
-(\code{square}, \code{symmetric}, \code{zero_diag}, \code{binary}, isolated-node indices, edge
-count) and an overall \code{ok} flag. Issues are reported via \code{warning()} and
-printed; the function does not stop, so every problem surfaces in one pass.
+(\code{square}, \code{finite}, \code{symmetric}, \code{zero_diag}, \code{binary}, \code{nonneg},
+isolated-node indices, \code{n_components} and \code{component_sizes}, edge count)
+and an overall \code{ok} flag. Issues are reported via \code{warning()} and printed;
+the function does not stop, so every problem surfaces in one pass.
 }
 \description{
 Check that a hand-built adjacency matrix is a well-formed spatial graph
-before passing it to \code{\link[=spatial]{spatial()}} / \code{\link[=spatial_car]{spatial_car()}}: square, symmetric, zero
-on the diagonal, 0/1 valued, and free of isolated nodes. \code{\link[=adjacency]{adjacency()}} runs
-the same checks on the graphs it constructs.
+before passing it to \code{\link[=spatial]{spatial()}} / \code{\link[=spatial_car]{spatial_car()}}: square, finite,
+symmetric, zero on the diagonal, 0/1 valued, free of negative weights and of
+isolated nodes, and connected. \code{\link[=adjacency]{adjacency()}} runs the same checks on the
+graphs it constructs. The spatial constructors refuse a graph with a
+missing, non-finite or negative entry.
 }
 \examples{
 adj <- matrix(0, 4, 4)

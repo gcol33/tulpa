@@ -2125,13 +2125,7 @@ tulpa <- function(formula, data,
         # The SPDE projector A maps observations -> mesh nodes; it must have one
         # row per observation in `data`. spatial_spde() builds A from the same
         # data, so a mismatch means the spec was built from a different frame.
-        n_a <- tryCatch(nrow(spatial_spec$A), error = function(e) NULL)
-        if (is.null(n_a) || n_a != bundle$n_obs) {
-          stop("SPDE projector matrix A has ", n_a %||% "?", " row(s) but `data` ",
-               "has ", bundle$n_obs, " observation(s). Build the SPDE spec from ",
-               "the same data (spatial_spde(~ lon + lat, data = <data>)).",
-               call. = FALSE)
-        }
+        .check_spde_rows(spatial_spec, bundle$n_obs, "tulpa()")
       } else if (sp_lc == "hsgp") {
         if (!inherits(spatial_spec, "tulpa_hsgp")) {
           stop("An HSGP spatial field must be a spatial_gp(~ lon + lat, approx = 'hsgp') spec ",
