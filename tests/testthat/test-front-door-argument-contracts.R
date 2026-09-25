@@ -103,6 +103,41 @@ test_that("a family object maps to the engine's own family name", {
                    "binomial_probit")
 })
 
+test_that("a family object's link is never replaced by the engine's default", {
+  # gcol33/tulpa#873: the suffix was decided against stats' canonical link, and
+  # stats' Gamma() defaults to inverse where tulpa's bare "gamma" means log, so
+  # Gamma() fitted a log link in silence.
+  f <- tulpa:::.family_object_to_name
+  expect_identical(f(stats::Gamma()), "gamma_inverse")
+  expect_identical(f(stats::Gamma("log")), "gamma")
+  expect_identical(f(stats::Gamma("identity")), "gamma_identity")
+  # stats spells the family with a dot and its default link as "1/mu^2".
+  expect_identical(f(stats::inverse.gaussian()), "inverse_gaussian_1mu2")
+  expect_identical(f(stats::inverse.gaussian("log")), "inverse_gaussian")
+  expect_identical(f(stats::gaussian("log")), "gaussian_log")
+  expect_identical(f(stats::poisson("sqrt")), "poisson_sqrt")
+  # Every mapped name resolves in the registry: nothing reaches "Unknown family".
+  for (fam in list(stats::Gamma(), stats::inverse.gaussian(),
+                   stats::inverse.gaussian("inverse"))) {
+    expect_no_error(tulpa:::.family_or_stop(tulpa:::.canonical_family(f(fam))))
+  }
+  # A link the base does not admit is refused naming the object, not fitted.
+  expect_error(f(stats::poisson("identity")), NA)
+  expect_error(f(stats::binomial("identity")), "not available for binomial")
+})
+
+test_that("family = Gamma() fits the inverse link glm() fits", {
+  skip_on_cran()
+  set.seed(9)
+  n <- 300; x <- stats::runif(n)
+  d <- data.frame(y = stats::rgamma(n, 5, 5 * (0.5 + x)), x = x)
+  ref <- stats::coef(stats::glm(y ~ x, stats::Gamma(), d))
+  fit <- suppressWarnings(tulpa(y ~ x, d, family = stats::Gamma(),
+                                mode = "laplace", phi = 5))
+  expect_identical(fit$family, "gamma_inverse")
+  expect_equal(unname(coef(fit)), unname(ref), tolerance = 0.05)
+})
+
 test_that("the ziformula RE guard walks the AST", {
   # gcol33/tulpa#680: a regex on deparsed code false-positives on a `|` inside a
   # string literal and is papered over by any() when the deparse wraps.

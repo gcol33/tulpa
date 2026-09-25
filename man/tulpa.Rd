@@ -215,6 +215,22 @@ accepts its own set, checked at the door: \code{n_iter} / \code{warmup} / \code{
 and \code{re_cov} (\code{"nested"} / \code{"gibbs"} / \code{"aghq"}), which selects the
 RE-covariance integrator on any random-effect model.
 
+\code{n_iter} does not count the same thing on every sampler, and \code{warmup}
+(alias \code{n_warmup}) is validated against it before any sampler runs:
+\itemize{
+\item On \code{hmc}, \code{ess}, \code{sghmc}, \code{sgld}, \code{gibbs}, \code{mala} and \code{imh_laplace},
+\code{n_iter} is the TOTAL number of iterations, warmup included, so the fit
+keeps \code{n_iter - warmup} draws per chain and \code{warmup < n_iter} is
+required (\verb{n_iter = 2000, warmup = 1000} keeps 1000).
+\item On \code{re_cov_gibbs} (\code{control$re_cov = "gibbs"}) and \code{mclmc}, \code{n_iter} is
+the number of KEPT iterations and warmup runs on top of it, so any
+\code{warmup >= 0} is valid (\verb{n_iter = 1000, warmup = 1000} keeps 1000).
+\item \code{smc} and \code{vi} read neither (\code{n_particles}, \code{vi_max_iter} instead).
+}
+
+The default \code{warmup} is \code{n_iter \%/\% 2} on the ModelData samplers and 1000
+on \code{gibbs} / \code{re_cov_gibbs}.
+
 One statistical knob lives here rather than in the signature: \code{marginal}
 (\code{mode = "eb"} only) turns on the marginal-Laplace covariance correction,
 which widens the reported intervals to account for the hyperparameter

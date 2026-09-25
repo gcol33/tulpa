@@ -102,9 +102,7 @@ imh_laplace <- function(log_posterior,
     stop(sprintf("`hessian` must be a %d x %d matrix.", d, d),
          call. = FALSE)
   }
-  if (n_iter < 2L || warmup < 0L || warmup >= n_iter) {
-    stop("Need 0 <= warmup < n_iter and n_iter >= 2.", call. = FALSE)
-  }
+  .check_run_length(n_iter, warmup, "imh_laplace")
   if (scale <= 0) stop("`scale` must be positive.", call. = FALSE)
 
   # Proposal: theta ~ N(mode, scale^2 * H^{-1}).

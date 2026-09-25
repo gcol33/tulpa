@@ -92,9 +92,7 @@ mala <- function(log_posterior,
   }
   .seed_scoped(seed)
   d <- length(init)
-  if (n_iter < 2L || warmup < 0L || warmup >= n_iter) {
-    stop("Need 0 <= warmup < n_iter and n_iter >= 2.", call. = FALSE)
-  }
+  .check_run_length(n_iter, warmup, "mala")
   if (epsilon <= 0) stop("`epsilon` must be positive.", call. = FALSE)
 
   if (is.null(mass_diag)) mass_diag <- rep(1, d)

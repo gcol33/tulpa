@@ -241,6 +241,7 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   family    <- .canonical_family(family)
   n_iter    <- as.integer(control$n_iter %||% 2000L)
   warmup    <- as.integer(control$warmup %||% 1000L)
+  .check_run_length(n_iter, warmup, "tulpa_re_cov_gibbs", counts = "post")
   thin      <- as.integer(control$thin %||% 1L)
   seed      <- control$seed
   max_iter  <- as.integer(control$max_iter %||% 100L)

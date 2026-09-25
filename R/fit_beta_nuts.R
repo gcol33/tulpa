@@ -68,6 +68,10 @@ tulpa_nuts_beta <- function(y, X,
       !is.finite(log_phi_prior_sd) || log_phi_prior_sd <= 0) {
     stop("`log_phi_prior_sd` must be a positive scalar.", call. = FALSE)
   }
+  n_iter   <- control$n_iter %||% 2000L
+  n_warmup <- control$n_warmup %||% 1000L
+  .check_run_length(n_iter, n_warmup, "tulpa_nuts_beta",
+                    warmup_name = "n_warmup")
 
   res <- cpp_tulpa_fit_beta_nuts(
     y_r              = as.numeric(y),
@@ -75,8 +79,8 @@ tulpa_nuts_beta <- function(y, X,
     sigma_beta       = sigma_beta,
     log_phi_prior_sd = log_phi_prior_sd,
     log_phi_init     = log_phi_init,
-    n_iter           = as.integer(control$n_iter %||% 2000L),
-    n_warmup         = as.integer(control$n_warmup %||% 1000L),
+    n_iter           = as.integer(n_iter),
+    n_warmup         = as.integer(n_warmup),
     max_treedepth    = as.integer(control$max_treedepth %||% 10L),
     adapt_delta      = control$adapt_delta %||% 0.8,
     seed             = as.integer(control$seed %||% sample.int(.Machine$integer.max, 1L)),

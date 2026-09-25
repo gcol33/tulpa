@@ -994,19 +994,39 @@ family_names <- function() names(.FAMILY_OPS)
 # length > 1" (gcol33/tulpa#679). The link rides the name in this engine's own
 # `<base>_<link>` convention, so a non-canonical link is carried rather than
 # silently fitted at the canonical one.
+#
+# The suffix is decided against THIS engine's default link (`.LINK_DEFAULTS`),
+# not against stats' canonical one: the two differ for gamma and inverse
+# gaussian, where stats defaults to the inverse / 1/mu^2 link and tulpa's bare
+# name means log. Comparing against stats' table mapped `Gamma()` to the bare
+# `"gamma"` and fitted a log link with no warning (gcol33/tulpa#873). stats'
+# spellings of the family (`inverse.gaussian`) and of a link (`1/mu^2`) are
+# translated to the registry's before either is compared, and a link the base
+# does not admit is refused here, naming the object the user wrote.
+.STATS_FAMILY_NAMES <- c(inverse.gaussian = "inverse_gaussian")
+.STATS_LINK_NAMES   <- c(`1/mu^2` = "1mu2")
+
 #' @keywords internal
 .family_object_to_name <- function(fam) {
   nm <- tolower(fam$family %||% "")
   if (!nzchar(nm)) {
     stop("`family` object carries no $family name.", call. = FALSE)
   }
-  canon <- c(binomial = "logit", poisson = "log", gaussian = "identity",
-             gamma = "inverse", inverse.gaussian = "1/mu^2")
+  base <- unname(.STATS_FAMILY_NAMES[nm])
+  if (is.na(base)) base <- nm
   lk <- fam$link
-  if (!is.null(lk) && nm %in% names(canon) && !identical(lk, unname(canon[nm]))) {
-    return(paste0(nm, "_", lk))
+  if (is.null(lk) || !(base %in% names(.LINK_DEFAULTS))) return(base)
+  link <- unname(.STATS_LINK_NAMES[lk])
+  if (is.na(link)) link <- lk
+  if (!(link %in% .OK_LINKS[[base]])) {
+    stop(sprintf(
+      "`family = %s(link = \"%s\")`: the %s link is not available for %s. ",
+      fam$family, lk, lk, base),
+      "Supported links: ", paste(.OK_LINKS[[base]], collapse = ", "), ".",
+      call. = FALSE)
   }
-  nm
+  if (identical(link, unname(.LINK_DEFAULTS[[base]]))) base
+  else paste0(base, "_", link)
 }
 
 #' Resolve a family spelling to its canonical registry name.

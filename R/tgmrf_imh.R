@@ -147,6 +147,8 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
   if (!inherits(block, "tgmrf")) {
     stop("`block` must be a tgmrf object.", call. = FALSE)
   }
+  # imh_laplace() checks this too, but only after the pilot grid has been paid.
+  .check_run_length(n_iter, warmup, "tulpa_tgmrf[mode = 'imh']")
 
   d <- block$theta_dim
   N <- length(y)

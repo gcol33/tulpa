@@ -22,6 +22,7 @@ tulpa_gaussian <- function(formula, data,
   sigma_beta <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("gaussian"))
   iter       <- as.integer(control$iter %||% 2000L)
   warmup     <- as.integer(control$warmup %||% 1000L)
+  .check_run_length(iter, warmup, "tulpa_gaussian", n_iter_name = "iter")
   step_size  <- control$step_size %||% 0.05
   n_leapfrog <- as.integer(control$n_leapfrog %||% 10L)
   seed       <- control$seed

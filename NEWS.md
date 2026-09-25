@@ -1,3 +1,35 @@
+# tulpa 0.6.4
+
+## `family = Gamma()` fits the inverse link it names
+
+* A `stats::family()` object's link decided the `<base>_<link>` suffix by
+  comparison with stats' canonical link rather than with the engine's own
+  default, and the two differ for gamma and inverse gaussian: stats' `Gamma()`
+  defaults to the inverse link, tulpa's bare `"gamma"` means log, so
+  `family = Gamma()` fitted a log-link model with no warning. The object is
+  now read against the engine's defaults, so `Gamma()` fits `gamma_inverse`
+  (the coefficients `glm(, Gamma())` reports) and `Gamma("log")` the bare
+  `gamma`. `inverse.gaussian()` resolves to `inverse_gaussian` (it was
+  "Unknown family") with stats' `1/mu^2` link carried as `1mu2`, and a link
+  the base family does not admit is refused naming the object
+  (gcol33/tulpa#873).
+
+## `warmup >= n_iter` is refused before any sampler runs
+
+* Only `mala` and `imh_laplace` checked the run length. `hmc`, `ess`,
+  `sghmc`, `sgld`, `tulpa_nuts_beta()` and `tulpa_gibbs()` returned a fit with
+  no draws at `n_iter == warmup` (`coef()` read zeros under NA names,
+  `summary()` failed), `mode = "gibbs"` returned NaN, and `warmup > n_iter`
+  aborted inside C++ with `vector::_M_default_append`. One check,
+  `.check_run_length()`, now runs in every sampling fitter once its defaults
+  are resolved, and states what `n_iter` counts there. A bare `n_iter` below
+  a 1000-iteration default `warmup` (`tulpa_gibbs(control = list(n_iter =
+  500))`) is caught by the same check (gcol33/tulpa#872).
+* `?tulpa`'s `control` section now documents that `n_iter` is the TOTAL
+  iteration count (warmup included) on `hmc`, `ess`, `sghmc`, `sgld`,
+  `gibbs`, `mala` and `imh_laplace`, and the KEPT count (warmup on top) on
+  `re_cov_gibbs` and `mclmc`, where `warmup >= n_iter` stays valid.
+
 # tulpa 0.6.3
 
 ## `mode = "laplace"` reads its `control` knobs

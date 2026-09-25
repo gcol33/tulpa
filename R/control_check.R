@@ -24,6 +24,60 @@
 #' @keywords internal
 .CONTROL_ALIASES <- c(n_warmup = "warmup")
 
+# The one check on a sampler's run length, applied by every sampling fitter
+# once its `n_iter` / `warmup` defaults are resolved (gcol33/tulpa#872). Only
+# `mala()` and `imh_laplace()` used to refuse `warmup >= n_iter`; everywhere
+# else it reached the kernel, which returned a fit with no draws (coef() read
+# zeros under NA names, summary() failed on missing row names), NaN (the
+# Polya-Gamma Gibbs), or aborted on a negative vector size. The natural
+# `n_iter = 300, n_warmup = 300` hit it, because `n_iter` does not mean the
+# same thing everywhere:
+#
+#   * "total" -- `n_iter` counts every iteration, warmup included, so the run
+#     keeps `n_iter - warmup` draws: the NUTS / HMC, ESS, SGHMC, SGLD, Gibbs,
+#     MALA and IMH kernels. Needs `0 <= warmup < n_iter` and `n_iter >= 2`.
+#   * "post"  -- `n_iter` counts only the kept iterations and warmup runs on
+#     top: `tulpa_re_cov_gibbs()` and MCLMC. Any `warmup >= 0` is valid; the
+#     run needs `n_iter >= 1` (MCLMC's own kernel then asks for 2).
+#
+# The message states the convention so a caller who meant the other one sees
+# which it is.
+#' @keywords internal
+.check_run_length <- function(n_iter, warmup, where,
+                              counts = c("total", "post"),
+                              n_iter_name = "n_iter",
+                              warmup_name = "warmup") {
+  counts <- match.arg(counts)
+  is_count <- function(v) {
+    is.numeric(v) && length(v) == 1L && !is.na(v) && is.finite(v) &&
+      v == round(v)
+  }
+  if (!is_count(n_iter) || !is_count(warmup)) {
+    stop(sprintf("%s(): `%s` and `%s` must each be a single whole number.",
+                 where, n_iter_name, warmup_name), call. = FALSE)
+  }
+  if (identical(counts, "total")) {
+    if (n_iter < 2 || warmup < 0 || warmup >= n_iter) {
+      stop(sprintf(paste0(
+        "Need 0 <= %s < %s and %s >= 2 in %s(); got %s = %d, %s = %d. ",
+        "Here `%s` counts every iteration, warmup included, so the run keeps ",
+        "%s - %s draws: for 1000 kept draws after 1000 warmup, pass ",
+        "%s = 2000, %s = 1000."),
+        warmup_name, n_iter_name, n_iter_name, where,
+        n_iter_name, as.integer(n_iter), warmup_name, as.integer(warmup),
+        n_iter_name, n_iter_name, warmup_name, n_iter_name, warmup_name),
+        call. = FALSE)
+    }
+  } else if (n_iter < 1 || warmup < 0) {
+    stop(sprintf(paste0(
+      "Need %s >= 1 and %s >= 0 in %s(); got %s = %d, %s = %d. Here `%s` ",
+      "counts the kept iterations only, and warmup runs on top of them."),
+      n_iter_name, warmup_name, where, n_iter_name, as.integer(n_iter),
+      warmup_name, as.integer(warmup), n_iter_name), call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 # Subset a validated front-door control list to the keys an inner fitter
 # accepts, so wholesale forwarding does not carry front-door-only knobs
 # (grid shape, backend selection) into the inner fitter's narrower check.

@@ -640,6 +640,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
   family        <- .canonical_family(family)
   n_iter        <- as.integer(control$n_iter %||% 2000L)
   warmup        <- as.integer(control$warmup %||% 1000L)
+  .check_run_length(n_iter, warmup, "tulpa_gibbs")
   thin          <- as.integer(control$thin %||% 1L)
   verbose       <- isTRUE(control$verbose)
   n_threads     <- as.integer(control$n_threads %||% 1L)

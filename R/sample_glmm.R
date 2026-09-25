@@ -184,6 +184,14 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
 
   n_iter  <- control$n_iter %||% 2000L
   warmup  <- control$warmup %||% (n_iter %/% 2L)
+  # SMC and VI read neither knob (particles / optimizer iterations instead);
+  # MCLMC runs its warmup on top of `n_iter` kept draws, every other kernel
+  # counts it inside (gcol33/tulpa#872).
+  if (!backend %in% c("smc", "vi")) {
+    .check_run_length(n_iter, warmup,
+                      sprintf("tulpa_sample_glmm[backend = '%s']", backend),
+                      counts = if (identical(backend, "mclmc")) "post" else "total")
+  }
   vi_max_iter   <- as.integer(control$vi_max_iter %||% 10000L)
   vi_mc_samples <- as.integer(control$vi_mc_samples %||% 10L)
   if (is.na(vi_max_iter) || vi_max_iter < 1L) {

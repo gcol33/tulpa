@@ -1710,6 +1710,20 @@
 #'   and `re_cov` (`"nested"` / `"gibbs"` / `"aghq"`), which selects the
 #'   RE-covariance integrator on any random-effect model.
 #'
+#'   `n_iter` does not count the same thing on every sampler, and `warmup`
+#'   (alias `n_warmup`) is validated against it before any sampler runs:
+#'   * On `hmc`, `ess`, `sghmc`, `sgld`, `gibbs`, `mala` and `imh_laplace`,
+#'     `n_iter` is the TOTAL number of iterations, warmup included, so the fit
+#'     keeps `n_iter - warmup` draws per chain and `warmup < n_iter` is
+#'     required (`n_iter = 2000, warmup = 1000` keeps 1000).
+#'   * On `re_cov_gibbs` (`control$re_cov = "gibbs"`) and `mclmc`, `n_iter` is
+#'     the number of KEPT iterations and warmup runs on top of it, so any
+#'     `warmup >= 0` is valid (`n_iter = 1000, warmup = 1000` keeps 1000).
+#'   * `smc` and `vi` read neither (`n_particles`, `vi_max_iter` instead).
+#'
+#'   The default `warmup` is `n_iter %/% 2` on the ModelData samplers and 1000
+#'   on `gibbs` / `re_cov_gibbs`.
+#'
 #'   One statistical knob lives here rather than in the signature: `marginal`
 #'   (`mode = "eb"` only) turns on the marginal-Laplace covariance correction,
 #'   which widens the reported intervals to account for the hyperparameter
