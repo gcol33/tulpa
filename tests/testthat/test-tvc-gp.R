@@ -197,11 +197,13 @@ test_that("temporal_corr() reports the GP coefficient's own hyperparameters", {
   expect_true("lengthscale_tvc_gp" %in% rownames(tc))
   # An amplitude is a standard deviation, not the log-variance sampled, and a
   # lengthscale is on the time axis, not the unit position of the logit that
-  # samples it: the support is (0.01, 10) at both GP doors.
+  # samples it: the support is (0.01, 10) in the kernel's standardized units,
+  # reported in the user's own time units (gcol33/tulpa#907).
   expect_gt(tc["sigma_tvc_gp", "mean"], 0)
   ell <- tc["lengthscale_tvc_gp", "mean"]
-  expect_gt(ell, 0.01)
-  expect_lt(ell, 10)
+  ts <- fit$temporal$time_scale
+  expect_gt(ell, fit$temporal$phi_prior_lower * ts)
+  expect_lt(ell, fit$temporal$phi_prior_upper * ts)
   # A discrete-structure fit reports the precision instead, and neither row.
   fit_rw <- .tvcgp_fit(sim, temporal_tvc("day", terms = ~ x - 1,
                                          structure = "rw1"), n_iter = 60L)

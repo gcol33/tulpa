@@ -540,6 +540,8 @@
     # The period in the units `time_values` now carries, which is what the
     # kernel measures its lag in.
     spec$period      <- temporal$period_scaled %||% temporal$period
+    spec$phi_prior_lower <- temporal$phi_prior_lower %||% .GP_PHI_PRIOR_BOUNDS[["lower"]]
+    spec$phi_prior_upper <- temporal$phi_prior_upper %||% .GP_PHI_PRIOR_BOUNDS[["upper"]]
   }
   spec
 }
@@ -1373,7 +1375,10 @@
         # The period in the kernel's own time units (validate_temporal_gp);
         # equal to the declared one when scale_coords = FALSE.
         period           = temporal$period_scaled %||% temporal$period,
-        parameterization = temporal$parameterization %||% "noncentered"
+        parameterization = temporal$parameterization %||% "noncentered",
+        # The lengthscale support in the same kernel units (validate_temporal_gp).
+        phi_prior_lower  = temporal$phi_prior_lower %||% .GP_PHI_PRIOR_BOUNDS[["lower"]],
+        phi_prior_upper  = temporal$phi_prior_upper %||% .GP_PHI_PRIOR_BOUNDS[["upper"]]
       )
     } else if (!is.null(temporal)) {
       ttype <- tolower(temporal$type %||% "")

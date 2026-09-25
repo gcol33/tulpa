@@ -266,6 +266,11 @@ validate_tvc <- function(tvc, data, X) {
     tvc$time_values <- tvals
     tvc$period_scaled <- if (is.null(tvc$period)) NULL else
       as.numeric(tvc$period) / tvc$time_scale
+    # The lengthscale support on the spread of the times the kernel sees, as
+    # temporal_gp() lays its own out (gcol33/tulpa#907).
+    phi_b <- .gp_phi_bounds(stats::sd(as.numeric(time_vals)) / tvc$time_scale)
+    tvc$phi_prior_lower <- phi_b[["lower"]]
+    tvc$phi_prior_upper <- phi_b[["upper"]]
   }
 
   # Handle grouping

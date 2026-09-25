@@ -50,7 +50,10 @@
 #'   multi-process model. `NULL` (default) shares the effect; `FALSE` fits
 #'   process-specific effects and emits a warning.
 #' @param scale_coords Logical. Standardize coordinates before fitting
-#'   (default `TRUE`).
+#'   (default `TRUE`): each column is centred and all are divided by one
+#'   common factor, so distances keep their proportions and an isotropic
+#'   kernel stays isotropic. [spatial_range()] reports the range in the
+#'   original coordinate units either way.
 #' @param parameterization Latent parameterization for the exact-NUTS field.
 #'   One of `"noncentered"` (default; samples `z ~ N(0, I)` and reconstructs the
 #'   field as `w = f(z, sigma2, phi)`, avoiding the field/hyperparameter funnel),
@@ -281,8 +284,9 @@ validate_hsgp_multiscale <- function(spatial, data) {
 #' @param nn_regional Number of nearest neighbors for regional scale. Default 30.
 #' @param shared Logical; if TRUE (default), spatial effects enter both
 #'   all processes.
-#' @param scale_coords Logical; if TRUE (default), coordinates are scaled to
-#'   unit variance before computing distances.
+#' @param scale_coords Logical; if TRUE (default), coordinates are centred
+#'   and divided by one common factor before computing distances (see
+#'   [spatial_gp()]).
 #' @param approx Approximation method: `"nngp"` (default) for Nearest Neighbor
 #'   GP; `"hsgp"` for Hilbert Space GP (faster for smooth fields).
 #' @param m Number of HSGP basis functions per dimension (default 6). Only
@@ -532,9 +536,10 @@ validate_gp <- function(gp, data) {
     stop("Coordinate columns contain missing values", call. = FALSE)
   }
 
-  # Scale coordinates if requested
+  # Scale coordinates if requested, by one common factor so an isotropic kernel
+  # stays isotropic in the user's geometry (gcol33/tulpa#907).
   if (gp$scale_coords) {
-    coords <- scale(coords)
+    coords <- .scale_coords_isotropic(coords)
   }
 
   # Detect unique coordinates (NNGP requires unique locations)

@@ -44,7 +44,9 @@ If provided, separate GPs are estimated for each group.}
 all processes.}
 
 \item{scale_coords}{Logical; if TRUE (default), time values are scaled to
-unit variance before computing distances.}
+unit variance before computing distances. Either way the lengthscale's
+support is placed relative to the spread of the times, and
+\code{\link[=temporal_corr]{temporal_corr()}} reports the lengthscale in the original time units.}
 
 \item{parameterization}{Parameterization for GP effects:
 \code{"noncentered"} (default) stores z ~ N(0,1) and scales by covariance

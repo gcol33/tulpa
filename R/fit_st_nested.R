@@ -50,6 +50,43 @@
     })
 }
 
+# Which field each spatiotemporal outer axis belongs to, and the bare
+# hyperparameter it is in the vocabulary spatial_range() / temporal_corr()
+# summarize with (`.SPATIAL_HYPER_TRANSFORM` / `.TEMPORAL_HYPER_TRANSFORM`).
+# The grid carries no `b<k>.` block prefixes and no prior list, so this is how
+# the generic accessors read a fit_st_nested() fit (gcol33/tulpa#910). `rho` is
+# the TEMPORAL AR1 correlation and is an axis only under ar1 (a rw1 / rw2 grid
+# holds it at a placeholder 0); bym2's mixing weight is `rho_spatial`.
+.ST_AXIS_MAP <- list(
+  tau_spatial   = c(role = "spatial",  bare = "tau"),
+  sigma_spatial = c(role = "spatial",  bare = "sigma"),
+  rho_spatial   = c(role = "spatial",  bare = "rho"),
+  sigma2        = c(role = "spatial",  bare = "sigma2"),
+  lengthscale   = c(role = "spatial",  bare = "lengthscale"),
+  phi_gp        = c(role = "spatial",  bare = "phi_gp"),
+  tau_temporal  = c(role = "temporal", bare = "tau"),
+  rho           = c(role = "temporal", bare = "rho")
+)
+
+.st_axis_map <- function(object, axes) {
+  m <- .ST_AXIS_MAP[axes]
+  role <- vapply(m, function(e) if (is.null(e)) "other" else e[["role"]],
+                 character(1), USE.NAMES = FALSE)
+  bare <- ifelse(vapply(m, is.null, logical(1)), axes,
+                 vapply(m, function(e) if (is.null(e)) "" else e[["bare"]],
+                        character(1), USE.NAMES = FALSE))
+  if (!identical(object$temporal_type, "ar1")) role[axes == "rho"] <- "other"
+  type <- ifelse(role == "spatial", object$spatial_type %||% NA_character_,
+                 ifelse(role == "temporal", object$temporal_type %||% NA_character_,
+                        NA_character_))
+  # The two correlations' supports: the temporal AR1's (-1, 1) and bym2's
+  # mixing weight on (0, 1).
+  lo <- ifelse(axes == "rho", -1, ifelse(axes == "rho_spatial", 0, NA_real_))
+  hi <- ifelse(axes %in% c("rho", "rho_spatial"), 1, NA_real_)
+  data.frame(bare = bare, role = role, type = type, block = NA_integer_,
+             lo = lo, hi = hi, stringsAsFactors = FALSE)
+}
+
 # The spatiotemporal grid's hyperprior (`R/hyperprior_default.R`): under
 # `"proper"` the PC prior on both precisions and, for ar1, the uniform on the
 # autocorrelation's domain; under `"flat"` none of them. `rho` is always the
@@ -470,26 +507,32 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   # is `.nl_diag("within_cell")`.
   within_cell <- .nl_within_cell_mode(control$within_cell)
   out <- .nl_posterior_moments(out, "st", within = within_cell)
-  out <- .nl_attach_grid_hessians(out, ncol(X))
 
-  # Grid-marginalised field posterior means: the latent block after the fixed
-  # effects is [spatial (n_s), temporal (n_times)] for icar / car_proper /
-  # nngp, [structured (n_s), unstructured (n_s), temporal (n_times)] for
-  # bym2 -- its spatial contribution to eta is the sigma/rho-weighted MIX of
-  # the two raw (standardized) sub-fields, not either one alone
-  # (gcol33/tulpa#776; see bym2_mixing.h for the same `sigma * (sqrt(rho) *
-  # scale_factor * phi + sqrt(1 - rho) * theta)` combination the kernel's own
-  # d_fac applies) -- or [basis weights (M), temporal (n_times)] for hsgp,
-  # whose field has no per-location layout: the reported `spatial_effects` is
-  # the per-observation field `phi_basis %*% beta_bar`, projecting the
-  # weight-averaged basis coefficients through the same basis every
-  # observation shares.
+  # The latent layout (src/nested_laplace.cpp): [beta (p), re (n_re_groups),
+  # spatial, temporal (n_times)], where the spatial part is [spatial (n_s)] for
+  # icar / car_proper / nngp, [structured (n_s), unstructured (n_s)] for bym2,
+  # and [basis weights (M)] for hsgp. Recorded on the fit as `field_cols`, the
+  # layout temporal() reads the field through (gcol33/tulpa#910).
   p <- ncol(X)
+  lat0 <- p + as.integer(n_re_groups)
+  n_sp_cols <- switch(spatial_type, bym2 = 2L * n_s,
+                      hsgp = ncol(basis$phi_basis), n_s)
+  sp_block <- lat0 + seq_len(n_sp_cols)
+  te_cols  <- lat0 + n_sp_cols + seq_len(n_times)
+  out <- .nl_attach_grid_hessians(out, p, var_cols = te_cols)
+
+  # Grid-marginalised field posterior means. bym2's spatial contribution to eta
+  # is the sigma/rho-weighted MIX of its two raw (standardized) sub-fields, not
+  # either one alone (gcol33/tulpa#776; see bym2_mixing.h for the same
+  # `sigma * (sqrt(rho) * scale_factor * phi + sqrt(1 - rho) * theta)`
+  # combination the kernel's own d_fac applies). hsgp's field has no
+  # per-location layout: the reported `spatial_effects` is the per-observation
+  # field `phi_basis %*% beta_bar`, projecting the weight-averaged basis
+  # coefficients through the same basis every observation shares.
   w <- out$weights
   if (spatial_type == "bym2") {
-    phi_cols   <- p + seq_len(n_s)
-    theta_cols <- p + n_s + seq_len(n_s)
-    te_cols    <- p + 2L * n_s + seq_len(n_times)
+    phi_cols   <- sp_block[seq_len(n_s)]
+    theta_cols <- sp_block[n_s + seq_len(n_s)]
     sigma_k <- out$theta_grid[, "sigma_spatial"]
     rho_k   <- out$theta_grid[, "rho_spatial"]
     combined <- out$modes[, phi_cols, drop = FALSE] *
@@ -497,17 +540,21 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
       out$modes[, theta_cols, drop = FALSE] * (sigma_k * sqrt(1 - rho_k))
     out$spatial_effects <- as.numeric(crossprod(w, combined))
   } else if (spatial_type == "hsgp") {
-    m_basis <- ncol(basis$phi_basis)
-    sp_cols <- p + seq_len(m_basis)
-    te_cols <- p + m_basis + seq_len(n_times)
-    beta_bar <- as.numeric(crossprod(w, out$modes[, sp_cols, drop = FALSE]))
+    beta_bar <- as.numeric(crossprod(w, out$modes[, sp_block, drop = FALSE]))
     out$spatial_effects <- as.numeric(basis$phi_basis %*% beta_bar)
   } else {
-    sp_cols <- p + seq_len(n_s)
-    te_cols <- p + n_s + seq_len(n_times)
-    out$spatial_effects <- as.numeric(crossprod(w, out$modes[, sp_cols, drop = FALSE]))
+    out$spatial_effects <- as.numeric(crossprod(w, out$modes[, sp_block, drop = FALSE]))
   }
   out$temporal_effects <- as.numeric(crossprod(w, out$modes[, te_cols, drop = FALSE]))
+  out$field_cols <- list(spatial = sp_block, temporal = te_cols)
+  # The fields' descriptions, in the shape the generic accessors read off a
+  # tulpa() fit: temporal() takes the time layout from `temporal`, and
+  # spatial_range() / temporal_corr() find which outer axis belongs to which
+  # field through `.st_axis_map()` (gcol33/tulpa#910).
+  out$temporal <- structure(
+    list(type = temporal_type, n_times = as.integer(n_times), n_groups = 1L,
+         time_levels = seq_len(n_times), cyclic = isTRUE(cyclic)),
+    class = c("tulpa_temporal", "list"))
   out$spatial_type  <- spatial_type
   out$temporal_type <- temporal_type
   out$N <- N

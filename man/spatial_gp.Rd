@@ -55,7 +55,10 @@ multi-process model. \code{NULL} (default) shares the effect; \code{FALSE} fits
 process-specific effects and emits a warning.}
 
 \item{scale_coords}{Logical. Standardize coordinates before fitting
-(default \code{TRUE}).}
+(default \code{TRUE}): each column is centred and all are divided by one
+common factor, so distances keep their proportions and an isotropic
+kernel stays isotropic. \code{\link[=spatial_range]{spatial_range()}} reports the range in the
+original coordinate units either way.}
 
 \item{parameterization}{Latent parameterization for the exact-NUTS field.
 One of \code{"noncentered"} (default; samples \code{z ~ N(0, I)} and reconstructs the

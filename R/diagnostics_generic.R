@@ -190,18 +190,42 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   colMeans(W)
 }
 
-# Latent block types (lower-case) carried on a nested-Laplace fit's `$prior`,
-# whether a single block or a list of blocks. Used to route spatial_range() /
-# temporal_corr() to the grid-based hyperparameter posterior.
+# Latent block types (lower-case) that classify an UNTAGGED nested-Laplace
+# block as a spatial or a temporal field (`.nl_block_roles()`); a block tulpa()
+# built for `spatial =` / `temporal =` carries its role instead. `iid` is not
+# temporal: it is how a `(1 | g)` term rides the nested path, and reading it as
+# one reported a random-intercept SD as `sigma_temporal` (gcol33/tulpa#906).
 .SPATIAL_NL_TYPES <- c("icar", "bym2", "car_proper", "gp", "nngp", "hsgp",
                        "spde", "rsr", "rsr_spde")
-.TEMPORAL_NL_TYPES <- c("rw1", "rw2", "ar1", "iid", "seasonal")
+.TEMPORAL_NL_TYPES <- c("rw1", "rw2", "ar1", "seasonal")
 
-.nested_block_types <- function(object) {
+# One row per outer-grid axis of a nested-Laplace fit: the bare hyperparameter
+# name, the role of the field it belongs to ("spatial" / "temporal" /
+# "other"), that block's type, and its index in the prior list. Multi-block
+# grids prefix each axis with its block (`b<k>.<axis>`); a single block's axes
+# are bare and belong to it; a fit_st_nested() grid is read through its own map.
+.nested_axis_map <- function(object, axes) {
+  if (inherits(object, "tulpa_st_nested")) return(.st_axis_map(object, axes))
   pr <- object$prior
-  if (is.null(pr)) return(character(0))
-  if (!is.null(pr$type)) return(tolower(pr$type))
-  vapply(pr, function(b) tolower(b$type %||% ""), character(1))
+  blocks <- if (is.null(pr)) list() else if (!is.null(pr$type)) list(pr) else pr
+  roles <- .nl_block_roles(pr)
+  types <- vapply(blocks, function(b) tolower(b$type %||% ""), character(1))
+  bi <- suppressWarnings(as.integer(sub("^b([0-9]+)\\..*$", "\\1", axes)))
+  bi[is.na(bi) & length(blocks) >= 1L] <- 1L
+  ok <- !is.na(bi) & bi >= 1L & bi <= length(blocks)
+  out <- data.frame(bare  = sub("^b[0-9]+\\.", "", axes),
+                    role  = ifelse(ok, roles[pmax(bi, 1L)], "other"),
+                    type  = ifelse(ok, types[pmax(bi, 1L)], NA_character_),
+                    block = ifelse(ok, bi, NA_integer_),
+                    lo = NA_real_, hi = NA_real_,
+                    stringsAsFactors = FALSE)
+  # A proper-CAR correlation lives on its adjacency's eigenvalue interval, which
+  # the block carries.
+  for (j in which(ok & out$type == "car_proper" & out$bare == "rho")) {
+    rb <- blocks[[out$block[j]]]$rho_bounds
+    if (length(rb) == 2L) { out$lo[j] <- min(rb); out$hi[j] <- max(rb) }
+  }
+  out
 }
 
 # Natural-scale -> interpretable-quantity maps for the nested-Laplace grid axes,
@@ -235,16 +259,32 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 # interval, so the draw column is a position in that interval and not the
 # lengthscale. These are the engine's own defaults
 # (`temporal_gp_phi_prior_lower` / `_upper` and the TVC pair beside them in
-# `inst/include/tulpa/model_data.h`), which is the support both GP doors run on:
-# neither exposes the bounds from R, and the C++ reader takes them off the spec
-# only for a consumer building one by hand.
+# `inst/include/tulpa/model_data.h`), stated for STANDARDIZED times: both GP
+# doors lay the interval out as `.gp_phi_bounds()` of the data's spread in the
+# units the kernel measures lag in, and send it on the spec.
 .GP_PHI_PRIOR_BOUNDS <- c(lower = 0.01, upper = 10)
 
+# The lengthscale support in kernel units, for times whose spread (sd) in those
+# units is `spread`. Scaled times (`scale_coords = TRUE`) have spread 1 and get
+# the defaults; raw times get the same interval measured in their own spread,
+# so the support is one statement about the data whichever units the kernel
+# runs in. It used to stay (0.01, 10) in raw units, where a true lengthscale of
+# 15 was unreachable (gcol33/tulpa#907).
+.gp_phi_bounds <- function(spread = 1) {
+  s <- if (is.numeric(spread) && length(spread) == 1L && is.finite(spread) &&
+           spread > 0) spread else 1
+  .GP_PHI_PRIOR_BOUNDS * s
+}
+
+# A lengthscale draw on the natural scale, in the USER's time units: the logit
+# mapped onto the spec's own support (kernel units), times the scale the times
+# were divided by before they reached the kernel (`time_scale`, 1 when they
+# were not). `spec` is the validated temporal_gp() / temporal_tvc() spec.
 #' @keywords internal
-.gp_phi_from_logit <- function(raw) {
-  lo <- .GP_PHI_PRIOR_BOUNDS[["lower"]]
-  hi <- .GP_PHI_PRIOR_BOUNDS[["upper"]]
-  lo + (hi - lo) / (1 + exp(-raw))
+.gp_phi_from_logit <- function(raw, spec = NULL) {
+  lo <- spec$phi_prior_lower %||% .GP_PHI_PRIOR_BOUNDS[["lower"]]
+  hi <- spec$phi_prior_upper %||% .GP_PHI_PRIOR_BOUNDS[["upper"]]
+  (lo + (hi - lo) / (1 + exp(-raw))) * (spec$time_scale %||% 1)
 }
 #
 # A transformed entry also names the DOMAIN of the quantity it produces, which
@@ -282,7 +322,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 # renamed; axes absent from the map are summarized raw. NULL when the grid is
 # not retained.
 .nested_hyper_summary <- function(object, probs, transform = NULL,
-                                  keep_types = NULL) {
+                                  keep_role = NULL) {
   tg <- object$theta_grid
   w  <- object$weights
   if (is.null(tg) || is.null(w)) return(NULL)
@@ -293,21 +333,16 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   }
   axes <- colnames(tg) %||% object$theta_names %||%
     paste0("theta", seq_len(ncol(tg)))
-  # Multi-block joint grids prefix each axis with its block index
-  # (`b<idx>.<axis>`); map every axis to its block type so a mixed / spatiotemporal
-  # fit can be restricted to just the spatial (or temporal) axes. Bare (single-
-  # block) axis names have no prefix and belong to the sole block.
-  block_types <- .nested_block_types(object)
-  axis_block  <- suppressWarnings(as.integer(sub("^b([0-9]+)\\..*$", "\\1", axes)))
-  axis_kind   <- vapply(seq_along(axes), function(j) {
-    bi <- axis_block[j]
-    if (!is.na(bi) && bi >= 1L && bi <= length(block_types)) block_types[bi]
-    else if (length(block_types) >= 1L) block_types[1L] else NA_character_
-  }, character(1))
-  bare_axes <- sub("^b[0-9]+\\.", "", axes)
-  keep <- if (is.null(keep_types)) seq_along(axes)
-          else which(axis_kind %in% keep_types)
+  # Map every axis to the field it belongs to, so a mixed / spatiotemporal fit
+  # can be restricted to just its spatial (or temporal) axes -- by the block's
+  # ROLE, since its type does not say (an s(x) smoother is an rw2 block).
+  amap <- .nested_axis_map(object, axes)
+  bare_axes <- amap$bare
+  keep <- if (is.null(keep_role)) seq_along(axes)
+          else which(amap$role %in% keep_role)
   if (length(keep) == 0L) return(NULL)
+  blocks <- object$prior
+  if (!is.null(blocks$type)) blocks <- list(blocks)
   # The outer integrator decides how a quantile may be read off these weights: a
   # tensor grid's uniform cells discretize the density, a CCD is a moment rule
   # whose node positions carry no mass of their own.
@@ -336,14 +371,43 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
     }
     m  <- sum(w * v)
     s  <- sqrt(max(0, sum(w * v^2) - m^2))
-    qs <- .nl_summary_quantile(v, w, probs, dm, support, within, at,
-                               .nl_axis_cell_rows(tg, j, object$refining_axis))
-    out <- data.frame(mean = m, sd = s, row.names = nm,
-                      stringsAsFactors = FALSE)
+    # A correlation on a bounded interval other than (0, 1) -- a proper CAR's
+    # eigenvalue interval, a spatiotemporal AR1's (-1, 1) -- has no name in the
+    # domain vocabulary, so the axis is undeclared and its outer cells were
+    # mirrored past the support (q97.5 = 1.04 on an interval ending at 1;
+    # gcol33/tulpa#906). Read it on that interval mapped to the unit one, whose
+    # domain the partition does honour, and map back.
+    lo <- amap$lo[j]; hi <- amap$hi[j]
+    rows_j <- .nl_axis_cell_rows(tg, j, object$refining_axis)
+    qs <- if (is.finite(lo) && is.finite(hi) && hi > lo &&
+              all(v > lo & v < hi)) {
+      lo + (hi - lo) * .nl_summary_quantile((v - lo) / (hi - lo), w, probs,
+                                            "unit", support, within, NA_real_,
+                                            rows_j)
+    } else {
+      .nl_summary_quantile(v, w, probs, dm, support, within, at, rows_j)
+    }
+    out <- data.frame(mean = m, sd = s, stringsAsFactors = FALSE)
     out[.quantile_colnames(probs)] <- as.list(qs)
-    out
+    list(row = out, name = nm)
   })
-  do.call(rbind, rows)
+  out <- do.call(rbind, lapply(rows, `[[`, "row"))
+  # Two fields reporting the same quantity (the per-column blocks of an inline
+  # spatial() / temporal() field, each with its own `sigma`) are told apart by
+  # the block they came from, not by a positional suffix.
+  nms <- vapply(rows, `[[`, character(1), "name")
+  dup <- nms %in% nms[duplicated(nms)]
+  if (any(dup)) {
+    tag <- vapply(keep, function(j) {
+      b <- amap$block[j]
+      bn <- if (!is.na(b) && length(blocks) >= b) blocks[[b]]$name else NULL
+      if (is.character(bn) && length(bn) == 1L) bn
+      else if (!is.na(b)) paste0("b", b) else axes[j]
+    }, character(1))
+    nms[dup] <- paste0(nms[dup], "[", tag[dup], "]")
+  }
+  rownames(out) <- make.unique(nms)
+  out
 }
 
 #' Extract spatial range and variance from a fitted spatial model
@@ -353,6 +417,12 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 #' summarises the outer hyperparameter grid. Works with ICAR, BYM2, GP (NNGP),
 #' CAR, SPDE, and SVC spatial types.
 #'
+#' A range is reported in the units of the coordinates as supplied, also when
+#' the field was fitted on standardized coordinates (`scale_coords = TRUE`,
+#' the default of [spatial_gp()] and [spatial_svc()]). A `mode = "laplace"` fit
+#' conditions on the field's hyperparameters rather than inferring them, so it
+#' carries no posterior for this function to summarise.
+#'
 #' @param object A `tulpa_fit` object fitted with a spatial component.
 #' @param probs Quantile probabilities for the summary (default 0.025, 0.975).
 #' @return A data.frame with rows for each spatial hyperparameter and columns
@@ -360,16 +430,47 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 #'   probability, e.g. `q2.5`, `q97.5` for the defaults).
 #' @export
 spatial_range <- function(object, probs = c(0.025, 0.975)) {
+  # The kernel ran on coordinates divided by one common factor; a range is a
+  # distance, so it converts back to the user's units by that factor
+  # (gcol33/tulpa#907).
+  .range_to_data_units(.spatial_range_kernel_units(object, probs),
+                       .coord_scale(object$spatial))
+}
+
+# Multiply the `range*` rows of a hyperparameter summary by the coordinate
+# scale `k`. Every column is a location or scale statistic of a positive
+# quantity, so each maps by the same factor.
+.range_to_data_units <- function(s, k) {
+  if (!is.data.frame(s) || identical(k, 1)) return(s)
+  r <- startsWith(rownames(s), "range")
+  s[r, ] <- s[r, , drop = FALSE] * k
+  s
+}
+
+# The empty-draws message of spatial_range() / temporal_corr(). A fit that
+# carries the field (`what` names it) but no hyperparameter posterior is one
+# that conditioned on the hyperparameters -- `mode = "laplace"` -- which is what
+# to say rather than asking whether the model has the field at all
+# (gcol33/tulpa#906).
+.hyper_empty_msg <- function(object, field, what) {
+  if (is.null(object[[field]])) {
+    return(sprintf("No %s hyperparameters found. Is this a %s model?", what, what))
+  }
+  sprintf(paste0(
+    "This fit carries a %s field but no posterior over its hyperparameters: ",
+    "mode = \"laplace\" conditions on them rather than inferring them. Refit ",
+    "with mode = \"nested_laplace\" (integrates them) or a sampler mode ",
+    "(e.g. \"hmc\") to summarise them."), what)
+}
+
+.spatial_range_kernel_units <- function(object, probs) {
   # Nested-Laplace fits carry the hyperparameter posterior on the outer grid,
   # not as draw columns; summarize the grid for a pure-spatial nested fit.
   if (!is.null(object$theta_grid)) {
-    types <- .nested_block_types(object)
-    if (length(types) && any(types %in% .SPATIAL_NL_TYPES)) {
-      s <- .nested_hyper_summary(object, probs,
-                                 transform = .SPATIAL_HYPER_TRANSFORM,
-                                 keep_types = .SPATIAL_NL_TYPES)
-      if (!is.null(s)) return(s)
-    }
+    s <- .nested_hyper_summary(object, probs,
+                               transform = .SPATIAL_HYPER_TRANSFORM,
+                               keep_role = "spatial")
+    if (!is.null(s)) return(s)
   }
   # fit_spde()'s CCD / grid path (the "auto"/nested SPDE backend) carries its
   # own (range, sigma) outer-grid posterior in $nested rather than a generic
@@ -382,10 +483,16 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
       list(range = object$nested$range_grid, sigma = object$nested$sigma_grid),
       object$nested$weights, probs))
   }
+  # The sampler's own column names (src/sampler_model_data.h): BYM2 samples
+  # its total SD as `log_sigma_spatial` and its mixing weight as
+  # `logit_rho_bym2`; a proper CAR its precision as `log_tau_spatial` and its
+  # correlation as `logit_rho_car`. The BYM2 SD and the proper-CAR correlation
+  # were missing from this table, so those fits reported one hyperparameter of
+  # two (gcol33/tulpa#906).
   patterns <- c(
     range = "^(log_phi_gp|log_phi_gp_local|phi_gp)$",
-    sigma = "^(log_sigma2_gp|log_sigma_bym2|log_tau_spatial)$",
-    rho   = "^(logit_rho_bym2)$",
+    sigma = "^(log_sigma2_gp|log_sigma_bym2|log_sigma_spatial|log_tau_spatial)$",
+    rho   = "^(logit_rho_bym2|logit_rho_car)$",
     sigma_local  = "^(log_sigma2_gp_local)$",
     sigma_regional = "^(log_sigma2_gp_regional)$",
     range_local  = "^(log_phi_gp_local)$",
@@ -421,6 +528,12 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
       list(vals = .hyper_nat$sigma_from_precision(exp(raw)), row = "sigma")
     } else if (grepl("^log_sigma", label)) {
       list(vals = exp(raw), row = nm)                  # log_sigma -> sigma
+    } else if (identical(label, "logit_rho_car")) {
+      # rho = lower + (upper - lower) * invlogit, on the adjacency's eigenvalue
+      # interval (src/tulpa_priors_icar.h), not the unit one.
+      rb <- object$spatial$rho_bounds %||%
+        compute_car_rho_bounds(object$spatial$adjacency)
+      list(vals = min(rb) + abs(diff(rb)) / (1 + exp(-raw)), row = nm)
     } else if (grepl("^logit_rho", label)) {
       list(vals = 1 / (1 + exp(-raw)), row = nm)       # logit_rho -> rho
     } else {
@@ -428,7 +541,7 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
     }
   }
   .hyperparam_summary(.fit_draws(object), patterns, transform_fn, probs,
-                      "No spatial hyperparameters found. Is this a spatial model?")
+                      .hyper_empty_msg(object, "spatial", "spatial"))
 }
 
 # Column names for a set of quantile probabilities, e.g. c(0.025, 0.975) ->
@@ -506,18 +619,14 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
   # Nested-Laplace fits carry the hyperparameter posterior on the outer grid,
   # not as draw columns; summarize the grid for a pure-temporal nested fit.
   if (!is.null(object$theta_grid)) {
-    types <- .nested_block_types(object)
-    if (length(types) && any(types %in% .TEMPORAL_NL_TYPES)) {
-      s <- .nested_hyper_summary(object, probs,
-                                 transform = .TEMPORAL_HYPER_TRANSFORM,
-                                 keep_types = .TEMPORAL_NL_TYPES)
-      if (!is.null(s)) return(s)
-    }
+    s <- .nested_hyper_summary(object, probs,
+                               transform = .TEMPORAL_HYPER_TRANSFORM,
+                               keep_role = "temporal")
+    if (!is.null(s)) return(s)
     # latent(temporal_ar2()) / latent(temporal_ar()): a user-defined tgmrf
     # block tagged tulpa_temporal_latent_block (R/temporal_ar2.R) rather than
-    # one of the built-in temporal block types above, so it never appears in
-    # .TEMPORAL_NL_TYPES and .nested_block_types() reads its generic
-    # type = "tgmrf".
+    # one of the built-in temporal block types above, so `.nl_block_roles()`
+    # classifies its generic type = "tgmrf" as neither field.
     s <- .nl_ar_p_hyper_summary(object, probs)
     if (!is.null(s)) return(s)
   }
@@ -547,11 +656,11 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
     } else if (nm == "sigma") {
       list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = "sigma_temporal")
     } else if (nm == "lengthscale") {
-      list(vals = .gp_phi_from_logit(raw), row = "lengthscale")
+      list(vals = .gp_phi_from_logit(raw, object$temporal), row = "lengthscale")
     } else if (grepl("^log_sigma2_tvc_gp", label)) {
       list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = nm)
     } else if (grepl("^logit_phi_tvc_gp", label)) {
-      list(vals = .gp_phi_from_logit(raw), row = nm)
+      list(vals = .gp_phi_from_logit(raw, object$temporal), row = nm)
     } else if (grepl("^log_sigma2_(trend|seasonal|short)$", label)) {
       list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = nm)
     } else if (nm == "rho_short") {
@@ -567,11 +676,11 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
     }
   }
   .hyperparam_summary(.fit_draws(object), patterns, transform_fn, probs,
-                      "No temporal hyperparameters found. Is this a temporal model?")
+                      .hyper_empty_msg(object, "temporal", "temporal"))
 }
 
-# spatial_range()/temporal_corr()'s draw-column table and .SPATIAL_NL_TYPES /
-# .TEMPORAL_NL_TYPES both key off a block's string `type`; a latent(temporal_ar2()
+# spatial_range()/temporal_corr()'s draw-column table and `.nl_block_roles()`
+# both key off a block's string `type` or role tag; a latent(temporal_ar2()
 # / temporal_ar()) block is a generic tgmrf() (type = "tgmrf") rather than one of
 # the named built-in types, so it matches neither and is found instead via its
 # class tag (R/temporal_ar2.R, the same tag temporal.tulpa_fit() uses through
