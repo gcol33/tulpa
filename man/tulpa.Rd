@@ -68,9 +68,11 @@ over it (\code{eb}, \code{agq}) -- and supplying it there warns.}
 length \code{nrow(data)}): each observation's log-likelihood contribution is
 scaled by its weight (prior / frequency weights, e.g. survey weights or
 aggregated-data counts -- a weight of 2 is equivalent to duplicating the
-row). Supported on the non-spatial Laplace path (\code{mode = "laplace"}) and
-the log-posterior samplers (\code{mala}, \code{imh_laplace}, \code{pathfinder}); other
-backends reject weights loudly.}
+row). Supported on the non-spatial Laplace path (\code{mode = "laplace"}), the
+nested-Laplace random-effect covariance integrator (\code{re_cov_nested}, which
+\code{mode = "auto"} / \code{"structured"} pick for a weighted random-effect model,
+so its scale is still integrated) and the log-posterior samplers (\code{mala},
+\code{imh_laplace}, \code{pathfinder}); other backends reject weights loudly.}
 
 \item{phi}{Dispersion passed to the family, held fixed. One convention at
 every door: for \code{gaussian} / \code{lognormal} this is the residual VARIANCE

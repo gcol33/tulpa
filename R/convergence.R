@@ -264,6 +264,51 @@
   is.na(k) || identical(k, "chain")
 }
 
+# Fit-time floor on a chain's mixing, below which the draws are not a usable
+# posterior sample at all: split-Rhat above 1.05 or bulk-ESS under 100 on any
+# main (non-indexed) parameter. Looser than check_diagnostics()'s 1.01 / 400 on
+# purpose -- that is the bar for reporting, this is the bar for "the numbers
+# printed are not yet the posterior" -- so a routine fit does not warn and an
+# unconverged one cannot pass silently. A chain with bulk-ESS 2 printed clean
+# intervals, and only an opt-in diagnostic said otherwise (gcol33/tulpa#875,
+# #878).
+.TULPA_FIT_RHAT_MAX <- 1.05
+.TULPA_FIT_ESS_MIN  <- 100
+
+# Check a fitted chain against that floor. Records the verdict on the fit
+# (`$convergence`, which print() reads) and warns naming the offending
+# parameters. A fit that is not a chain, or is too short to diagnose, passes
+# through untouched.
+.tulpa_check_fit_convergence <- function(fit, caller = "tulpa()") {
+  if (!is.list(fit) || !.tulpa_is_chain(fit)) return(fit)
+  diag <- tryCatch(suppressWarnings(suppressMessages(
+    diagnostics(fit, measures = c("rhat", "ess_bulk")))),
+    error = function(e) NULL)
+  if (is.null(diag) || !NROW(diag)) return(fit)
+  diag <- diag[diag$parameter %in% select_main_params(diag$parameter), ,
+               drop = FALSE]
+  bad_r <- is.finite(diag$rhat) & diag$rhat > .TULPA_FIT_RHAT_MAX
+  bad_e <- is.finite(diag$ess_bulk) & diag$ess_bulk < .TULPA_FIT_ESS_MIN
+  fit$convergence <- list(
+    ok = !any(bad_r | bad_e),
+    rhat_max = suppressWarnings(max(diag$rhat, na.rm = TRUE)),
+    ess_bulk_min = suppressWarnings(min(diag$ess_bulk, na.rm = TRUE)),
+    parameters = diag$parameter[bad_r | bad_e])
+  if (fit$convergence$ok) return(fit)
+  worst <- diag[bad_r | bad_e, , drop = FALSE]
+  worst <- worst[order(worst$ess_bulk), , drop = FALSE]
+  shown <- utils::head(worst, 5L)
+  warning(sprintf(paste0(
+    "%s: the '%s' chain has not converged -- %s. Its estimates and intervals ",
+    "are not yet the posterior. Run longer (control$n_iter / control$warmup), ",
+    "or use mode = 'hmc'; see check_diagnostics()."),
+    caller, fit$backend %||% "sampler",
+    paste(sprintf("%s: Rhat %.2f, bulk-ESS %.0f", shown$parameter, shown$rhat,
+                  shown$ess_bulk), collapse = "; ")),
+    call. = FALSE)
+  fit
+}
+
 # Shared explanation for why chain diagnostics are withheld on a non-chain fit.
 .tulpa_non_chain_msg <- function(fit) {
   k <- .tulpa_draws_kind(fit)

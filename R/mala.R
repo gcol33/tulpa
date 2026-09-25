@@ -40,6 +40,14 @@
 #'   `rep(1, d)`. For posteriors with very different scales across
 #'   dimensions, set this to (an estimate of) the posterior variances,
 #'   i.e. the squared posterior SDs.
+#' @param mass_matrix Optional dense preconditioner: a `d x d` symmetric
+#'   positive-definite inverse mass `M^-1`, typically (an estimate of) the
+#'   posterior covariance. The proposal is then
+#'   `N(theta + (eps^2/2) * M^-1 * grad, eps^2 * M^-1)`, which also reaches the
+#'   correlations a diagonal cannot: in a random-effect model the fixed
+#'   intercept and the group effects are strongly correlated a posteriori, and
+#'   an identity or diagonal metric crosses that ridge at the rate of its
+#'   narrowest direction. Supply at most one of `mass_diag` / `mass_matrix`.
 #' @param thin Keep every `thin`-th post-warmup sample (default 1).
 #' @param seed Optional integer RNG seed. Scoped to this call: the caller's
 #'   `.Random.seed` is restored on exit, so two calls with the same `seed`
@@ -82,6 +90,7 @@ mala <- function(log_posterior,
                  epsilon = 0.1,
                  target_accept = 0.574,
                  mass_diag = NULL,
+                 mass_matrix = NULL,
                  thin = 1L,
                  seed = NULL,
                  verbose = FALSE) {
@@ -95,14 +104,38 @@ mala <- function(log_posterior,
   .check_run_length(n_iter, warmup, "mala")
   if (epsilon <= 0) stop("`epsilon` must be positive.", call. = FALSE)
 
-  if (is.null(mass_diag)) mass_diag <- rep(1, d)
-  if (length(mass_diag) != d || any(mass_diag <= 0)) {
-    stop("`mass_diag` must be a positive vector of length d.",
-         call. = FALSE)
+  if (!is.null(mass_diag) && !is.null(mass_matrix)) {
+    stop("Supply at most one of `mass_diag` and `mass_matrix`.", call. = FALSE)
   }
-  # Diagonal inverse mass: a variance per dimension, so the proposal noise
-  # scale is eps * sqrt(M_inv).
-  M_inv <- mass_diag
+  # The inverse mass enters three places -- the drift, the noise, and the
+  # proposal density's whitening -- and the diagonal and dense metrics differ
+  # only in how each is applied, so both reduce to the same three closures.
+  if (!is.null(mass_matrix)) {
+    mass_matrix <- as.matrix(mass_matrix)
+    if (!identical(dim(mass_matrix), c(d, d)) || any(!is.finite(mass_matrix))) {
+      stop("`mass_matrix` must be a finite d x d matrix.", call. = FALSE)
+    }
+    mass_matrix <- 0.5 * (mass_matrix + t(mass_matrix))
+    R_chol <- tryCatch(chol(mass_matrix), error = function(e) NULL)
+    if (is.null(R_chol)) {
+      stop("`mass_matrix` must be symmetric positive definite.", call. = FALSE)
+    }
+    L_mass <- t(R_chol)
+    apply_minv <- function(v) drop(mass_matrix %*% v)
+    apply_half <- function(z) drop(L_mass %*% z)
+    whiten     <- function(r) forwardsolve(L_mass, r)
+  } else {
+    if (is.null(mass_diag)) mass_diag <- rep(1, d)
+    if (length(mass_diag) != d || any(mass_diag <= 0)) {
+      stop("`mass_diag` must be a positive vector of length d.",
+           call. = FALSE)
+    }
+    # Diagonal inverse mass: a variance per dimension, so the proposal noise
+    # scale is eps * sqrt(M_inv).
+    apply_minv <- function(v) mass_diag * v
+    apply_half <- function(z) sqrt(mass_diag) * z
+    whiten     <- function(r) r / sqrt(mass_diag)
+  }
 
   # The gradient enters the drift elementwise against d-vectors, so a short
   # return value was recycled and the chain ran on a wrong drift in silence
@@ -146,20 +179,20 @@ mala <- function(log_posterior,
   t0 <- 10
   kappa <- 0.75
 
-  # MALA proposal density q(theta' | theta).
+  # MALA proposal density q(theta' | theta), up to the metric's log-determinant
+  # (the same in both directions, so it cancels in the MH ratio).
   # theta' ~ N(theta + (eps^2/2) * M_inv * grad, eps^2 * M_inv)
   log_q <- function(to, from, grad_from, eps) {
-    drift <- from + 0.5 * eps^2 * M_inv * grad_from
-    z <- (to - drift) / (eps * sqrt(M_inv))
-    -0.5 * d * log(2 * pi) - sum(log(eps * sqrt(M_inv))) -
-      0.5 * sum(z^2)
+    drift <- from + 0.5 * eps^2 * apply_minv(grad_from)
+    z <- whiten(to - drift) / eps
+    -0.5 * d * log(2 * pi) - d * log(eps) - 0.5 * sum(z^2)
   }
 
   for (t in seq_len(n_iter)) {
     eps <- exp(log_eps)
     z <- rnorm(d)
-    prop <- theta + 0.5 * eps^2 * M_inv * grad_curr +
-      eps * sqrt(M_inv) * z
+    prop <- theta + 0.5 * eps^2 * apply_minv(grad_curr) +
+      eps * apply_half(z)
 
     log_p_prop <- log_posterior(prop)
     if (!is.finite(log_p_prop)) {
@@ -217,6 +250,7 @@ mala <- function(log_posterior,
     mean_accept = mean_accept,
     epsilon = exp(log_eps),
     mass_diag = mass_diag,
+    mass_matrix = mass_matrix,
     inference_mode = "exact",
     inference_tier = 1L,
     backend = "mala"

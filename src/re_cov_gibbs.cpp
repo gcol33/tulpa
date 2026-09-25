@@ -69,7 +69,8 @@ static void check_block_dims(int m, const char* field,
 // blocks: list of per-block specs, each a list with
 //   Z (n x nc), idx (n, 1-based), nc, full (logical), n_groups, nu0,
 //   Lambda0 (nc x nc, full only) or lambda0 (nc, diagonal only),
-//   b0 (G x nc), Lg0 (list of nc x nc), Sigma0 (nc x nc).
+//   b0 (G x nc), Lg0 (list of nc x nc), Sigma0 (nc x nc), and optionally
+//   alias (nc integers, 0-based fixed-effect column or -1).
 // [[Rcpp::export]]
 List cpp_re_cov_gibbs_sweep(std::string family, double phi,
                             NumericVector y, NumericVector n_trials,
@@ -125,6 +126,21 @@ List cpp_re_cov_gibbs_sweep(std::string family, double phi,
         } else {
             cb[m].lambda0 = as<Eigen::VectorXd>(bm["lambda0"]);
             check_block_dims(m, "lambda0", cb[m].lambda0.size(), 1, nc, 1);
+        }
+
+        // Optional: the fixed-effect column each coefficient's design repeats
+        // (0-based, -1 for none). Absent means no translation move.
+        cb[m].alias.assign(nc, -1);
+        if (bm.containsElementNamed("alias")) {
+            IntegerVector al = bm["alias"];
+            check_block_dims(m, "alias", al.size(), 1, nc, 1);
+            for (int c = 0; c < nc; ++c) {
+                if (al[c] != NA_INTEGER && al[c] >= p) {
+                    stop("cpp_re_cov_gibbs_sweep: block %d alias[%d] = %d, but "
+                         "X has %d columns.", m + 1, c + 1, al[c], p);
+                }
+                cb[m].alias[c] = (al[c] == NA_INTEGER || al[c] < 0) ? -1 : al[c];
+            }
         }
 
         b0[m]     = as<Eigen::MatrixXd>(bm["b0"]);

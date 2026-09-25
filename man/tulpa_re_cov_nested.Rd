@@ -18,6 +18,7 @@ tulpa_re_cov_nested(
   log_prior_theta = NULL,
   beta_prior = NULL,
   offset = NULL,
+  weights = NULL,
   n_quad = 1L,
   X_zi = NULL,
   zi_prior_sd = 2.5,
@@ -69,6 +70,12 @@ every inner \code{\link[=tulpa_laplace]{tulpa_laplace()}} solve (\code{list(mean
 \item{offset}{Optional observation-level offset on the linear predictor
 (length \code{length(y)}), e.g. \code{log(exposure)} for a rate model. Not supported
 with \code{n_quad > 1}, which errors rather than dropping it.}
+
+\item{weights}{Optional non-negative observation weights (length
+\code{length(y)}), each scaling its row's log-likelihood in every inner
+\code{\link[=tulpa_laplace]{tulpa_laplace()}} solve, so the covariance is integrated under the
+weighted likelihood. Not supported with \code{n_quad > 1}, which errors rather
+than dropping them.}
 
 \item{n_quad}{Quadrature order for the inner marginal. \code{1} (default) uses the
 joint-field Laplace inner solve (\code{\link[=tulpa_laplace]{tulpa_laplace()}}). \verb{> 1} refines the inner

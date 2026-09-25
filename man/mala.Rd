@@ -13,6 +13,7 @@ mala(
   epsilon = 0.1,
   target_accept = 0.574,
   mass_diag = NULL,
+  mass_matrix = NULL,
   thin = 1L,
   seed = NULL,
   verbose = FALSE
@@ -47,6 +48,15 @@ standard deviation is \code{eps * sqrt(mass_diag[j])}. Default
 \code{rep(1, d)}. For posteriors with very different scales across
 dimensions, set this to (an estimate of) the posterior variances,
 i.e. the squared posterior SDs.}
+
+\item{mass_matrix}{Optional dense preconditioner: a \verb{d x d} symmetric
+positive-definite inverse mass \code{M^-1}, typically (an estimate of) the
+posterior covariance. The proposal is then
+\code{N(theta + (eps^2/2) * M^-1 * grad, eps^2 * M^-1)}, which also reaches the
+correlations a diagonal cannot: in a random-effect model the fixed
+intercept and the group effects are strongly correlated a posteriori, and
+an identity or diagonal metric crosses that ridge at the rate of its
+narrowest direction. Supply at most one of \code{mass_diag} / \code{mass_matrix}.}
 
 \item{thin}{Keep every \code{thin}-th post-warmup sample (default 1).}
 

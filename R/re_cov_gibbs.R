@@ -113,6 +113,24 @@
   }
 }
 
+# For each coefficient of a block, the fixed-effect column of `X` its design
+# column repeats row for row (0-based, for the compiled sweep), or -1. Such a
+# pair is a direction eta cannot see -- beta_j + d, b_{g,c} - d for every
+# group -- which the sweep crosses with an exact Gaussian draw
+# (translate_aliased_block, src/re_cov_gibbs_sweep.h; gcol33/tulpa#875). The
+# match is exact up to rounding, because only an exact repeat leaves eta
+# unchanged; a column merely correlated with one is not a translation.
+.re_gibbs_fixed_alias <- function(Z, X) {
+  Z <- as.matrix(Z)
+  vapply(seq_len(ncol(Z)), function(c) {
+    z <- Z[, c]
+    tol <- 1e-10 * max(1, max(abs(z)))
+    hit <- which(vapply(seq_len(ncol(X)), function(j)
+      max(abs(X[, j] - z)) <= tol, logical(1)))
+    if (length(hit)) hit[[1L]] - 1L else -1L
+  }, integer(1))
+}
+
 #' Gibbs estimation of random-effect covariances (exact-target debias)
 #'
 #' @description
@@ -360,7 +378,8 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
     bl <- layout[[m]]; pr <- priors[[m]]
     spec <- list(Z = bl$Z, idx = bl$idx, nc = bl$nc, full = isTRUE(bl$full),
                  n_groups = bl$n_groups, nu0 = pr$nu0,
-                 b0 = B_list[[m]], Lg0 = L_g_list[[m]], Sigma0 = Sigma_list[[m]])
+                 b0 = B_list[[m]], Lg0 = L_g_list[[m]], Sigma0 = Sigma_list[[m]],
+                 alias = .re_gibbs_fixed_alias(bl$Z, X))
     if (pr$full) spec$Lambda0 <- pr$Lambda0 else spec$lambda0 <- pr$lambda0
     spec
   })

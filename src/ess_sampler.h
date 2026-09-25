@@ -332,8 +332,26 @@ inline std::vector<int> get_non_gaussian_params(
 ) {
     std::vector<int> non_gaussian;
 
-    // Variance parameters (log scale) - use random walk MH
-    if (layout.has_re && layout.log_sigma_re_idx >= 0) {
+    // Variance parameters (log scale) - use random walk MH. A slope term
+    // carries one log-SD per coefficient plus, when correlated, its Cholesky
+    // block; log_sigma_re_idx names the FIRST coefficient's only, so reading
+    // it alone froze every other scale of the term at its initial value --
+    // the slope SD of (1 + x | g) sat at exactly 1 for every draw
+    // (gcol33/tulpa#877).
+    if (layout.has_re && layout.has_re_slopes) {
+        for (size_t t = 0; t < layout.log_sigma_re_slopes.size(); t++) {
+            for (int idx : layout.log_sigma_re_slopes[t]) {
+                if (idx >= 0) non_gaussian.push_back(idx);
+            }
+            if (t < layout.chol_re_start_multi.size() &&
+                layout.chol_re_start_multi[t] >= 0) {
+                for (int k = layout.chol_re_start_multi[t];
+                     k < layout.chol_re_end_multi[t]; k++) {
+                    non_gaussian.push_back(k);
+                }
+            }
+        }
+    } else if (layout.has_re && layout.log_sigma_re_idx >= 0) {
         non_gaussian.push_back(layout.log_sigma_re_idx);
     }
 
@@ -379,6 +397,30 @@ inline std::vector<int> get_non_gaussian_params(
     }
 
     return non_gaussian;
+}
+
+// Every coordinate the sweep does not reach is a coordinate the chain never
+// moves: its "draws" are the initial value repeated, and every quantity it
+// feeds is conditioned on that value with nothing in the output to say so
+// (gcol33/tulpa#877, and #201 before it across RE terms). The two lists above
+// are built from named layout fields, so a field they do not name falls
+// through silently. Close the partition here instead: any index in neither a
+// Gaussian block nor the RWMH list joins the RWMH list, which is valid for any
+// coordinate (a Metropolis step on the full log-posterior) and only slower
+// than a dedicated move.
+inline void complete_ess_partition(
+    const std::vector<GaussianPrior>& gaussian_priors,
+    std::vector<int>& non_gaussian,
+    int n_params
+) {
+    std::vector<bool> covered(n_params, false);
+    for (const auto& prior : gaussian_priors)
+        for (int j : prior.param_indices)
+            if (j >= 0 && j < n_params) covered[j] = true;
+    for (int j : non_gaussian)
+        if (j >= 0 && j < n_params) covered[j] = true;
+    for (int j = 0; j < n_params; j++)
+        if (!covered[j]) non_gaussian.push_back(j);
 }
 
 // ============================================================================
@@ -493,6 +535,7 @@ inline ESSResult run_ess_sampler(
 
     // Get non-Gaussian parameters for RWMH
     std::vector<int> non_gaussian = get_non_gaussian_params(layout, n_params);
+    complete_ess_partition(gaussian_priors, non_gaussian, n_params);
 
     // Adaptive proposals for RWMH parameters
     AdaptiveProposal adaptive(non_gaussian.size(), config.adapt_interval);

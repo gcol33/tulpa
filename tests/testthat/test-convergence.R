@@ -221,6 +221,32 @@ test_that("plotting and summary layer runs end-to-end on a multi-chain fit", {
   expect_no_error(plot_pairs(fit, pars = c("theta1", "theta2")))
 })
 
+# gcol33/tulpa#875 / #878: a chain with bulk-ESS in single digits printed clean
+# intervals, and only an opt-in diagnostic said otherwise. The front door now
+# checks every chain fit against a floor and warns, and print() repeats it.
+test_that("an unmixed chain warns at fit time and says so when printed", {
+  set.seed(7L)
+  # A random walk: every draw carries the last one, so bulk-ESS is tiny.
+  rw <- cbind(a = cumsum(rnorm(1000L)), b = rnorm(1000L))
+  fit <- structure(list(draws = rw, backend = "mala", N = 10L),
+                   class = "tulpa_fit")
+  expect_warning(out <- .tulpa_check_fit_convergence(fit),
+                 "has not converged.*a: Rhat")
+  expect_false(out$convergence$ok)
+  expect_identical(out$convergence$parameters, "a")
+  expect_output(print(out), "chain not converged")
+
+  ok <- structure(list(draws = cbind(a = rnorm(1000L), b = rnorm(1000L)),
+                       backend = "mala", N = 10L), class = "tulpa_fit")
+  expect_no_warning(ok <- .tulpa_check_fit_convergence(ok))
+  expect_true(ok$convergence$ok)
+
+  # i.i.d. draws are not a chain: Rhat / ESS say nothing about them.
+  iid <- structure(list(draws = rw, backend = "smc"), class = "tulpa_fit")
+  expect_no_warning(iid2 <- .tulpa_check_fit_convergence(iid))
+  expect_null(iid2$convergence)
+})
+
 test_that("every backend declares a draws-provenance (emits) class", {
   emits <- vapply(BACKEND_REGISTRY, function(e) e$emits %||% NA_character_,
                   character(1))

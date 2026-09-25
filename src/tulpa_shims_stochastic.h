@@ -197,9 +197,9 @@ extern "C" void tulpa_mclmc_fit_impl(
 // ============================================================================
 //
 // Drives tulpa::run_smc_sampler. The mutation kernel is pluggable: if
-// the model package passes nullptr, tulpa uses its built-in random-walk
-// Metropolis kernel scaled by 1 / sqrt(beta) targeting
-// log_prior + beta * log_lik.
+// the model package passes nullptr, tulpa tempers along the reference bridge
+// with its built-in population-preconditioned HMC kernel; a supplied kernel
+// targets log_prior + beta * log_lik (smc_modeldata.h has both paths).
 
 extern "C" void tulpa_smc_fit_impl(
     const tulpa::ModelData* data,

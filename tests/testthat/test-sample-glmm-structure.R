@@ -32,10 +32,9 @@ test_that("NUTS recovers a poisson random-intercept model", {
   expect_lt(abs(exp(m[["log_sigma_re"]]) - sigma_re_true), 0.30)
 })
 
-# The SMC and VI kernels run on the same RE ModelData. The variance funnel is
-# hard for both approximate kernels (SMC collapses sigma toward 0), so we assert
-# only that they return a finite, correctly shaped full latent draw matrix and
-# recover the fixed-effect slope -- not the variance component.
+# The SMC and VI kernels run on the same RE ModelData. Shape / finiteness here;
+# the SMC variance component has its own recovery test below (it used to
+# collapse sigma toward 0, gcol33/tulpa#876), VI's is not asserted.
 test_that("SMC and VI return finite full-latent draws on a binomial RE model", {
   skip_if_not_slow()
   set.seed(2)
@@ -59,6 +58,30 @@ test_that("SMC and VI return finite full-latent draws on a binomial RE model", {
     expect_true(all(is.finite(fit$means)), info = backend)
     expect_lt(abs(fit$means[["x"]] - beta_true[2]), 0.30, label = backend)
   }
+})
+
+# gcol33/tulpa#876: SMC is registered Exact, but it started its particles from
+# a Gaussian around the initial point and tempered the likelihood alone as if
+# they were prior draws, with a random-walk mutation that could not follow the
+# (log sigma, z) curve of a non-centered random effect. The RE SD came back
+# 3-10x too small. It now bridges from that Gaussian to the posterior and
+# mutates with population-preconditioned HMC.
+test_that("SMC recovers the random-effect SD a gaussian (1 | g) posterior has", {
+  skip_on_cran()
+  set.seed(11)
+  J <- 20; n <- 200; gi <- sample(J, n, TRUE); u <- rnorm(J, 0, 0.7)
+  x <- rnorm(n)
+  d <- data.frame(y = 1 + .5 * x + u[gi] + rnorm(n, 0, .5), x, g = factor(gi))
+  f <- suppressWarnings(tulpa(y ~ x + (1 | g), d, phi = .25, mode = "smc",
+                              control = list(seed = 1L)))
+  s <- exp(f$draws[, "log_sigma_re"])
+  # The HMC posterior on this fixture: median 0.69, 90% interval (0.52, 0.94);
+  # slope 0.453.
+  expect_gt(stats::median(s), 0.55)
+  expect_lt(stats::median(s), 0.85)
+  expect_gt(stats::quantile(s, 0.95) - stats::quantile(s, 0.05), 0.25)
+  expect_gt(length(unique(s)), 500L)
+  expect_equal(unname(coef(f)[["x"]]), 0.453, tolerance = 0.1)
 })
 
 # Areal ICAR spatial field (poisson) through NUTS: the covariate slope recovers
