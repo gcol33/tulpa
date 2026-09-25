@@ -227,8 +227,13 @@ test_that("the spatial mode and its H_beta describe the same weighted model", {
 
   H <- ref$hess(fit$mode)
   idx_b <- seq_len(p); idx_u <- p + seq_len(ref$n_units)
+  # The field's level is a hard sum-to-zero constraint, so the Schur takes the
+  # field block's inverse conditioned on 1'u = 0 (gcol33/tulpa#901).
+  Pinv <- solve(H[idx_u, idx_u])
+  a <- rowSums(Pinv)
+  Pinv_c <- Pinv - tcrossprod(a) / sum(a)
   schur <- H[idx_b, idx_b] -
-    H[idx_b, idx_u] %*% solve(H[idx_u, idx_u], t(H[idx_b, idx_u]))
+    H[idx_b, idx_u] %*% Pinv_c %*% t(H[idx_b, idx_u])
   # The engine's marginal omits the weak fixed-effect ridge the mode carries.
   schur <- schur - diag(1 / 100^2, p)
 

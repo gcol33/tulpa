@@ -553,18 +553,24 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 
 # Fully supplied pre-paired fields must line up cell for cell; unequal lengths
 # were recycled by the theta builder's cbind() with a warning before the kernel
-# refused them (gcol33/tulpa#884).
+# refused them (gcol33/tulpa#884). A length-1 field is a value held fixed
+# across every cell and is broadcast; any other mismatch is refused.
 .nl_check_paired_axes <- function(p, fields) {
     if (length(fields) < 2L) return(p)
     lens <- vapply(fields, function(f) length(p[[f]]), integer(1))
-    if (length(unique(lens)) > 1L) {
+    n <- unique(lens[lens != 1L])
+    if (length(n) > 1L) {
         stop(sprintf(paste0(
             "%s are PAIRED outer-grid cells -- the i-th entries of each form ",
-            "one cell -- so they need one length; got %s. Supply one axis ",
-            "alone to cross it with the default of the other(s), or pass ",
-            "expand.grid() columns for a tensor grid."),
+            "one cell -- so they need one length (a length-1 field is held ",
+            "fixed); got %s. Supply one axis alone to cross it with the ",
+            "default of the other(s), or pass expand.grid() columns for a ",
+            "tensor grid."),
             paste0("`", fields, "`", collapse = " and "),
             paste(lens, collapse = " / ")), call. = FALSE)
+    }
+    if (length(n) == 1L) {
+        for (f in fields[lens == 1L]) p[[f]] <- rep(p[[f]], n)
     }
     p
 }

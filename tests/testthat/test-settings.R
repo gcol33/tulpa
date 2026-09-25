@@ -186,6 +186,9 @@ test_that("registry defaults() fill exactly the bound fields, crossed", {
     expect_equal(pinned$rho_grid, c(0.5, 0.5))
     expect_error(fill("bym2", list(sigma_grid = c(1, 2, 3), rho_grid = c(0.5, 0.7))),
                  "PAIRED outer-grid cells.*got 3 / 2")
+    # A length-1 field is a value held fixed and is broadcast across the cells.
+    held <- fill("bym2", list(sigma_grid = c(1, 2, 3), rho_grid = 0.5))
+    expect_equal(held$rho_grid, rep(0.5, 3))
 
     # ONE supplied axis is kept as an axis and crossed with the default of the
     # other; replacing it by the default too discarded it (gcol33/tulpa#884).

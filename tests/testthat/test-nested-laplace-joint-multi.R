@@ -228,8 +228,10 @@ test_that("joint multi-block (BYM2 copy + AR1 + IID) runs end-to-end", {
         list(
             type = "ar1",
             n_times = as.integer(n_years),
+            # Paired cells: three (tau, rho) tuples, one per entry
+            # (gcol33/tulpa#884 refuses unequal lengths).
             tau_grid = c(3, 8, 20),
-            rho_grid = c(0.4, 0.8),
+            rho_grid = c(0.4, 0.8, 0.4),
             temporal_idx = list(t_idx_1, t_idx_2)
         ),
         list(
