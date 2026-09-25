@@ -269,20 +269,21 @@ test_that("the withdrawn ESS cholesky knob is rejected", {
     "ess_use_cholesky")
 })
 
-# The draw matrix is sized by the number of times the store condition fires, so
-# a warmup at least as long as the run stores nothing instead of asking Eigen
-# for a negative extent.
-test_that("sampler backends size the draw matrix by ceil (gcol33/tulpa#473)", {
-  skip_on_cran()
+# The draw matrix is sized by the number of times the store condition fires,
+# and a warmup at least as long as the run stored nothing (gcol33/tulpa#473).
+# Such a run is now refused before it reaches the store, by the one
+# run-length check every sampler resolves its defaults through
+# (gcol33/tulpa#872).
+test_that("sampler backends refuse warmup >= n_iter (gcol33/tulpa#473, #872)", {
   set.seed(31)
   n <- 60L
   x <- rnorm(n); X <- cbind(1, x)
   y <- as.numeric(rbinom(n, 1L, plogis(0.1 + 0.4 * x)))
   for (backend in c("sghmc", "sgld", "ess")) {
-    fit <- suppressWarnings(tulpa_sample_glmm(
+    expect_error(tulpa_sample_glmm(
       y, rep(1L, n), X, "binomial", backend,
-      control = list(n_iter = 40L, warmup = 60L, seed = 3L)))
-    expect_equal(nrow(fit$draws), 0L, info = backend)
+      control = list(n_iter = 40L, warmup = 60L, seed = 3L)),
+      "warmup", info = backend)
   }
 })
 

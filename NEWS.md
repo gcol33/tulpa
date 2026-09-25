@@ -1,3 +1,137 @@
+# tulpa 0.6.5
+
+## Wrong answers returned with no warning
+
+* `weights =` no longer switches `mode = "auto"` / `"structured"` from
+  integrating the random-effect scale to conditioning on `sigma_re = 1`.
+  `tulpa_re_cov_nested()` gains a `weights` argument and weighted
+  random-effect models route there; the RE SD now equals the fit on rows
+  duplicated by weight (gcol33/tulpa#874). `mode = "auto"` also honours
+  `control$re_cov`, which it previously ignored.
+* `mode = "smc"` targets the posterior: it bridges from its starting Gaussian
+  to the posterior with an exact tempering path and mutates with HMC scaled
+  to the particle cloud. Random-effect SDs no longer collapse 3-10x
+  (gaussian `(1 | g)`: 0.24 -> 0.77 against HMC 0.81) (gcol33/tulpa#876).
+* `mode = "ess"` updates every log-SD and correlation parameter of a slope
+  term; the slope SD of `(1 + x | g)` was pinned at 1. Any parameter no block
+  updates is now routed to a Metropolis step (gcol33/tulpa#877).
+* `re_cov_gibbs` draws the shift shared by a fixed effect and its matching
+  random-effect column exactly each sweep; bulk ESS went from 1-11 to over
+  1300 of 2000 (gcol33/tulpa#875). `mala()` gains `mass_matrix`, and
+  `tulpa(mode = "mala")` starts at the posterior mode scaled by the Laplace
+  covariance; bulk ESS went from 1-9 to about 190. `auto` no longer routes
+  weighted RE models to `mala` (gcol33/tulpa#878).
+* `tulpa()` now warns when a sampler chain fails a convergence floor
+  (split-R-hat above 1.05 or bulk ESS below 100), records `$convergence`, and
+  `print()` reports it. `ess` still mixes slowly on hierarchical models, and
+  this warning is what flags it (gcol33/tulpa#875, gcol33/tulpa#878).
+* `tulpa_simulate(theta = fit)` simulates at the fit's own random effects
+  (the draws `ranef()` / `posterior_predict()` use, matched to `data` by
+  group level) instead of setting every random effect to zero. A level the
+  fit never saw, or a fit with no random-effect posterior, is an error;
+  `theta$u` blocks are validated for shape (gcol33/tulpa#891).
+* Character / factor areal ids are matched to graph nodes by
+  `rownames(adjacency)`, whole-number labels are read as node numbers, and
+  other character labels on an adjacency without rownames are refused; they
+  were attached in sorted order, scrambling the field (8x8 lattice
+  field-truth correlation 0.16 -> 0.98). Numeric-looking time labels are
+  ordered numerically, and non-numeric character time labels are refused
+  (gcol33/tulpa#900).
+* Fixed-effect standard errors under an intrinsic field (ICAR, BYM2, RW1 /
+  RW2) on `laplace` / `nested_laplace` are conditioned on the field's
+  sum-to-zero constraint; the intercept SE was 3-4x the exact posterior SD
+  (gcol33/tulpa#901).
+* `spatial_bym2()` scales each connected component separately and gives
+  islands unit structured variance (Freni-Sterrantino et al. 2018) instead
+  of an infinite scale factor that produced NA or frozen fits. The
+  ModelData samplers refuse a disconnected BYM2 graph with a message naming
+  the modes that fit it; `check_adjacency()` reports connected components
+  (gcol33/tulpa#902).
+* `temporal()` on a nested-Laplace fit with a spatial and a temporal field
+  returns the temporal field, located through the fit's block layout
+  (gcol33/tulpa#903), and reports the Gaussian mixture over grid cells
+  including each cell's conditional variance (conditioned on the sum-to-zero
+  constraint for an intrinsic field); 95% intervals covered the truth 57% of
+  the time (gcol33/tulpa#904).
+* `temporal()` for a non-centered `temporal_gp()` sampler fit returns the
+  field rather than its whitened coordinates, with the time values in the
+  `time` column (gcol33/tulpa#905).
+* `scale_coords = TRUE` scales all coordinates by one common factor, so
+  isotropic kernels stay isotropic, and `spatial_range()` / `svc()` report
+  ranges and coordinates in the original units. Temporal-GP and GP-TVC
+  lengthscale supports are placed relative to the spread of the times and
+  reported in time units (gcol33/tulpa#907).
+
+## Accessors and labels
+
+* `spatial_range()` / `temporal_corr()` no longer report a `(1 | g)` SD as
+  `sigma_temporal`, report both hyperparameters of BYM2 and proper-CAR
+  sampler fits, keep proper-CAR and AR1 correlation intervals inside their
+  support, and name duplicate field rows by block (gcol33/tulpa#906). They
+  and `temporal()` read `fit_st_nested()` fits, whose field columns are now
+  also right with a random-intercept term (gcol33/tulpa#910).
+* `VarCorr()` labels a `re_cov_gibbs` covariance `"sampled"` and reports a
+  `Residual` row for gaussian fits; `confint()` validates `level` / `parm`
+  and reads sampler hyperparameters off the draws; `durbin_watson()` accepts
+  a fit and a `time` index (gcol33/tulpa#881, gcol33/tulpa#899).
+* `validate_mode()` matches the backend a fit ran as well as its tier and
+  accepts a set of modes (gcol33/tulpa#879).
+* `rubins_pool()` standardizes the pooled skewness by the mixture variance,
+  pools every submodel any draw carries, and refuses mismatched draws
+  (gcol33/tulpa#888). `geweke_test()` is computed per chain and validates its
+  windows (gcol33/tulpa#895). `tulpa_psis()` keeps one weight per draw and
+  reports `pareto_k = Inf` for an infinite ratio (gcol33/tulpa#892).
+* `tulpa_gaussian()` runs the AD-gradient NUTS sampler (2000 iterations in
+  about 0.1 s where one iteration took ~1 s) and reports a real
+  `accept_rate` (gcol33/tulpa#897). `tulpa_tgmrf()` no longer prints the inner
+  progress line per evaluation (gcol33/tulpa#890). `tulpa_profile()` warns
+  when no instrumented phase was reached (gcol33/tulpa#887).
+
+## Input validation and messages
+
+* Four messages that crashed inside `sprintf()` print again
+  (gcol33/tulpa#885).
+* `tulpa()` reads a logical binomial response as 0/1, refuses other
+  non-numeric responses and `NA` grouping values by name, drops unused
+  grouping levels, and drops aliased columns of a rank-deficient design with
+  a warning, as `lm()` does. `y ~ 0 + (1 | g)` is refused by name on the
+  backends that need a fixed effect (gcol33/tulpa#880, gcol33/tulpa#881).
+* `tulpa_ep()` decodes `cbind(successes, failures)` and refuses
+  `y > n_trials` (gcol33/tulpa#882); `tulpa_laplace()` accepts `re_list`
+  `idx = 0` with `return_hessian = TRUE` (gcol33/tulpa#883).
+* `tulpa_nested_laplace()` keeps a lone supplied axis of a two-axis prior and
+  crosses it with the other's default; fully supplied axes are paired cells
+  and must share a length; an AR1 `rho_grid` outside (-1, 1) is refused
+  (gcol33/tulpa#884).
+* Standalone fitters (`tulpa_eb()`, `tulpa_laplace()`, `agq_fit()`,
+  `tulpa_ordinal()`, `tulpa_multinomial()`, `mala()`) refuse family typos,
+  non-integer `n_quad`, `NA` rows, `y > n_trials` and non-positive scales by
+  name (gcol33/tulpa#886). A non-normal `beta_prior` and `re_prior` keys the
+  backend does not read are errors (gcol33/tulpa#893).
+* `spatial_spde()` checks its PC anchors at construction and a non-positive
+  LKJ `eta` is refused wherever it is set (gcol33/tulpa#894).
+* `sbc_*()`, `prior_*()`, `ccd_grid()`, `tulpa_grid_axis()`,
+  `tulpa_check_control()` and `hyper_axis_spec()` refuse invalid input by
+  name (gcol33/tulpa#896).
+* `fit_spde()` / `tulpa_nuts_spde()` refuse a response whose length differs
+  from the projector's rows (gcol33/tulpa#908). `spatial_spde()` accepts
+  repeated sites; spatial and temporal constructors refuse NA / Inf /
+  constant coordinates, NA or negative adjacency entries and missing times
+  (gcol33/tulpa#909).
+* `mode = "auto"` no longer errors on `control$n_threads` when it picks a
+  sampler (gcol33/tulpa#911). Inline field errors list every accepted mode,
+  and `mode = "gibbs"` with an SPDE field is refused instead of silently
+  running NUTS (gcol33/tulpa#912).
+
+## Documentation
+
+* `hyperprior = "flat"` in `tulpa_eb()` / `tulpa_re_cov_nested()` /
+  `mode = "eb"` is documented as the REML-type estimate it is (matches
+  `lmer(REML = TRUE)`), not ML (gcol33/tulpa#889).
+* `tulpa_priors()` / `priors_default()` describe what they feed and the
+  defaults `tulpa()` actually applies; return-value docs fixed; runnable
+  examples added to 49 exports (gcol33/tulpa#898).
+
 # tulpa 0.6.4
 
 ## `family = Gamma()` fits the inverse link it names
