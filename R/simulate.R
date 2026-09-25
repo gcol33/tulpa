@@ -17,9 +17,18 @@ NULL
 #' @param data Data frame with covariates and grouping factors.
 #' @param theta One of:
 #'   - A named list with `beta` (numeric or list per process), `u` (list of RE
-#'     coefficient vectors, one per RE term per process), `extras` (named list
-#'     of family-specific extras like `phi`, `sigma_y`).
-#'   - A `tulpa_fit` object: posterior draws are sampled from `$draws`.
+#'     blocks, one per RE term per process, each an `n_groups x n_coefs`
+#'     matrix; a vector of length `n_groups` is accepted for a
+#'     single-coefficient term), `extras` (named list of family-specific
+#'     extras like `phi`, `sigma_y`).
+#'   - A `tulpa_fit` object: each simulation takes one posterior draw of the
+#'     fixed effects and, paired with it, of the FITTED random effects (read
+#'     through the same accessor as [ranef()] and [posterior_predict()]). The
+#'     data are therefore simulated conditional on the fitted groups: every
+#'     level of a grouping variable in `data` must be one the fit estimated
+#'     (matched by level), and a fit that carries no random-effect posterior
+#'     is an error rather than a set of zero effects. To simulate NEW groups,
+#'     pass `theta` as a list with `u` drawn for them.
 #'   - `NULL`: equivalent to a single prior draw (shortcut).
 #' @param n_sims Number of simulated datasets. When `theta` is a fit, draws are
 #'   subsampled (or recycled) to `n_sims`. Default 1.
@@ -69,6 +78,10 @@ tulpa_simulate <- function(formula, family, data,
 
   # Resolve theta source
   theta_source <- classify_theta(theta)
+  fit_source <- if (identical(theta_source, "fit") &&
+                    !.sim_fit_is_named_list(theta)) {
+    .sim_fit_source(theta, built, n_sims)
+  }
 
   y_list <- vector("list", n_sims)
   theta_list <- vector("list", n_sims)
@@ -77,7 +90,7 @@ tulpa_simulate <- function(formula, family, data,
   for (s in seq_len(n_sims)) {
     th <- switch(theta_source,
       "list" = validate_theta(theta, built, family),
-      "fit"  = theta_from_fit(theta, s, built, family),
+      "fit"  = theta_from_fit(theta, s, built, family, fit_source),
       "null" = {
         if (is.null(priors)) priors <- tulpa_priors()
         draw_theta_from_priors(built, priors, family)
@@ -408,9 +421,43 @@ validate_theta <- function(theta, built, family) {
   if (is.numeric(theta$beta) && length(process_names) == 1L) {
     theta$beta <- stats::setNames(list(theta$beta), process_names)
   }
+  # A single process's lone RE block may be written bare (a vector or matrix
+  # rather than a list of one).
+  if (is.numeric(theta$u) && length(process_names) == 1L) {
+    theta$u <- list(theta$u)
+  }
   if (is.list(theta$u) && length(process_names) == 1L &&
       !all(process_names %in% names(theta$u))) {
     theta$u <- stats::setNames(list(theta$u), process_names)
+  }
+  if (!is.list(theta$u)) {
+    stop("theta$u must be a list of random-effect blocks per process",
+         call. = FALSE)
+  }
+  for (pname in process_names) {
+    re_terms <- built[[pname]]$re_terms
+    u_p <- theta$u[[pname]]
+    if (is.numeric(u_p)) u_p <- list(u_p)
+    for (j in seq_along(re_terms)) {
+      re <- re_terms[[j]]
+      u_j <- if (is.list(u_p) && length(u_p) >= j) u_p[[j]]
+      if (is.numeric(u_j) && is.null(dim(u_j)) && re$n_coefs == 1L) {
+        u_j <- matrix(u_j, ncol = 1L)
+      }
+      if (!is.matrix(u_j) || !is.numeric(u_j) ||
+          nrow(u_j) != re$n_groups || ncol(u_j) != re$n_coefs) {
+        got <- if (is.null(u_j)) "nothing" else if (is.matrix(u_j))
+          sprintf("a %d x %d matrix", nrow(u_j), ncol(u_j))
+          else sprintf("a %s of length %d", class(u_j)[1L], length(u_j))
+        stop(sprintf(paste0(
+          "theta$u$%s[[%d]] must be a %d x %d numeric matrix (groups of `%s` ",
+          "x random-effect coefficients); got %s."),
+          pname, j, re$n_groups, re$n_coefs, re$group_var, got),
+          call. = FALSE)
+      }
+      u_p[[j]] <- u_j
+    }
+    if (length(re_terms)) theta$u[[pname]] <- u_p
   }
   for (pname in process_names) {
     if (is.null(theta$beta[[pname]])) {
@@ -436,51 +483,33 @@ validate_theta <- function(theta, built, family) {
 
 # Pull a parameter draw from a fitted tulpa_fit object. Handles both the
 # multi-process named-list `$draws` (beta_<proc> / u_<proc>_<j>) and the
-# single-process layout-named matrix a tulpa() engine fit produces.
+# single-process draws matrix a tulpa() engine fit produces; `fit_source` is
+# the latter's `.sim_fit_source()`, computed once per simulate call.
 #' @keywords internal
-theta_from_fit <- function(fit, sim_index, built, family) {
+theta_from_fit <- function(fit, sim_index, built, family, fit_source = NULL) {
   draws <- fit$draws
-  if (is.null(draws)) {
-    stop("tulpa_fit has no $draws slot to simulate from", call. = FALSE)
-  }
 
-  # A tulpa() engine fit stores $draws as a layout-named matrix (columns
-  # beta[.], re[.], hyperparameters) for a single process, not the named-list
-  # layout the multi-process path below expects. Map its columns directly.
-  if (is.matrix(draws)) {
-    if (length(built) != 1L) {
-      stop("Simulating from a matrix-draws fit is supported only for a ",
-           "single-process model; call simulate() on the fit instead.",
-           call. = FALSE)
-    }
-    b1  <- built[[1L]]
-    cn  <- colnames(draws)
-    ridx <- ((sim_index - 1L) %% nrow(draws)) + 1L
-    row  <- draws[ridx, , drop = TRUE]
-    if (length(row) < b1$n_fixed) {
-      stop(sprintf("draws row has %d entries, expected >= %d fixed effects",
-                   length(row), b1$n_fixed), call. = FALSE)
-    }
-    beta1 <- as.numeric(row[seq_len(b1$n_fixed)])
-    re_cols <- .re_col_idx(cn)
-    re_vals <- if (length(re_cols)) as.numeric(row[re_cols]) else numeric(0)
-    u_blocks <- vector("list", length(b1$re_terms))
-    pos <- 0L
-    for (j in seq_along(b1$re_terms)) {
-      re <- b1$re_terms[[j]]
-      w  <- re$n_groups * re$n_coefs
-      vals <- if (pos + w <= length(re_vals)) re_vals[(pos + 1L):(pos + w)]
-              else rep(0, w)
-      u_blocks[[j]] <- matrix(vals, nrow = re$n_groups, ncol = re$n_coefs)
-      pos <- pos + w
-    }
+  # A tulpa() engine fit stores $draws as a matrix for a single process (or
+  # none at all, on a Laplace / EB fit), not the named-list layout the
+  # multi-process path below expects. Its fixed and random effects were
+  # resolved once, up front, by `.sim_fit_source()`.
+  if (!.sim_fit_is_named_list(fit)) {
+    src <- fit_source %||% .sim_fit_source(fit, built)
+    r <- ((sim_index - 1L) %% nrow(src$beta)) + 1L
+    u_blocks <- lapply(src$u_cols, function(cols) {
+      matrix(src$re[r, cols], nrow = nrow(cols), ncol = ncol(cols))
+    })
+    cn <- colnames(draws)
     extras <- list()
     for (nm in names(family$extra_params)) {
-      extras[[nm]] <- if (!is.null(cn) && nm %in% cn) row[[nm]]
-                      else rprior(family$extra_params[[nm]], 1)
+      extras[[nm]] <- if (!is.null(src$keep) && nm %in% cn) {
+        draws[src$keep[r], nm]
+      } else {
+        rprior(family$extra_params[[nm]], 1)
+      }
     }
     pn <- names(built)
-    return(list(beta = stats::setNames(list(beta1), pn),
+    return(list(beta = stats::setNames(list(src$beta[r, ]), pn),
                 u = stats::setNames(list(u_blocks), pn),
                 sigma = NULL, extras = extras))
   }
@@ -523,11 +552,20 @@ theta_from_fit <- function(fit, sim_index, built, family) {
       u_slot_name <- paste0("u_", pname, "_", j)
       u_slot <- draws[[u_slot_name]]
       if (is.null(u_slot)) {
-        u_blocks[[j]] <- matrix(0, nrow = re$n_groups, ncol = re$n_coefs)
-      } else {
-        u_row <- as.numeric(pick_row(u_slot))
-        u_blocks[[j]] <- matrix(u_row, nrow = re$n_groups, ncol = re$n_coefs)
+        stop(sprintf(paste0(
+          "tulpa_simulate(): the fit carries no random-effect draws ",
+          "`%s` for term %d of process '%s'. Pass `theta` as a list whose ",
+          "`u` sets them."), u_slot_name, j, pname), call. = FALSE)
       }
+      u_row <- as.numeric(pick_row(u_slot))
+      if (length(u_row) != re$n_groups * re$n_coefs) {
+        stop(sprintf(paste0(
+          "tulpa_simulate(): `%s` has %d entries per draw; the formula's term ",
+          "%d of process '%s' needs %d (%d groups x %d coefficients)."),
+          u_slot_name, length(u_row), j, pname, re$n_groups * re$n_coefs,
+          re$n_groups, re$n_coefs), call. = FALSE)
+      }
+      u_blocks[[j]] <- matrix(u_row, nrow = re$n_groups, ncol = re$n_coefs)
     }
     u[[k]] <- u_blocks
   }
@@ -541,6 +579,96 @@ theta_from_fit <- function(fit, sim_index, built, family) {
   }
 
   list(beta = beta, u = u, sigma = NULL, extras = extras)
+}
+
+
+# TRUE for a model-package fit whose `$draws` is the multi-process named list
+# (`beta_<proc>` / `u_<proc>_<j>`); FALSE for a tulpa() engine fit, whose
+# `$draws` is a matrix or absent.
+#' @keywords internal
+.sim_fit_is_named_list <- function(fit) {
+  is.list(fit$draws) && !is.data.frame(fit$draws)
+}
+
+# The parameter draws a single-process tulpa() fit is simulated at, resolved
+# once per tulpa_simulate() call: fixed effects `beta` (S x p, in the column
+# order of the formula's design) and random effects `re` (S x n_re, the fit's
+# group-major layout) row-paired, `keep` the stored draw rows they came from
+# (NULL for a Gaussian draw at coef() / vcov()), and per RE term `u_cols`, an
+# (n_groups x n_coefs) matrix of `re` column indices for the groups of `data`.
+#
+# The random effects are the FITTED ones, read through the accessor
+# posterior_predict() uses (`.tulpa_re_coef_draws()`), and matched to `data`
+# by group level. Positional reading of `re[`-named columns set every effect
+# to zero on a fit whose draws do not carry that name -- an unnamed MALA tail,
+# a re_cov_gibbs `$re` -- so the simulated data lost the group structure
+# (gcol33/tulpa#891). A missing RE block, a level the fit never saw, or a term
+# the fit does not have is an error, never a zero.
+#' @keywords internal
+.sim_fit_source <- function(fit, built, n_sims = NULL) {
+  if (length(built) != 1L) {
+    stop("Simulating from a tulpa() fit is supported only for a ",
+         "single-process model; call simulate() on the fit instead.",
+         call. = FALSE)
+  }
+  b1 <- built[[1L]]
+  cd <- .fixed_coef_draws(fit, n_sims)
+  beta <- cd$beta
+  xn <- colnames(b1$X)
+  bn <- colnames(beta)
+  if (!is.null(xn) && !is.null(bn) && all(xn %in% bn)) {
+    beta <- beta[, xn, drop = FALSE]
+  } else if (ncol(beta) != b1$n_fixed) {
+    stop(sprintf(paste0(
+      "tulpa_simulate(): the fit has %d fixed effect(s) but the formula's ",
+      "design has %d; simulate from the formula the model was fitted with."),
+      ncol(beta), b1$n_fixed), call. = FALSE)
+  }
+
+  u_cols <- list()
+  re <- matrix(0, nrow(beta), 0L)
+  if (length(b1$re_terms)) {
+    layout <- fit$re_layout
+    if (length(layout) != length(b1$re_terms)) {
+      stop(sprintf(paste0(
+        "tulpa_simulate(): the formula has %d random-effect term(s) but the ",
+        "fit carries %d; simulate from the formula the model was fitted with."),
+        length(b1$re_terms), length(layout)), call. = FALSE)
+    }
+    widths <- vapply(layout, function(l) l$n_groups * l$n_coefs, numeric(1))
+    re <- .tulpa_re_coef_draws(fit, cd$beta, cd$keep, sum(widths))
+    if (is.null(re)) {
+      stop(paste0(
+        "tulpa_simulate(): the fit carries no random-effect draws or point ",
+        "values to simulate at. Pass `theta` as a list whose `u` sets them."),
+        call. = FALSE)
+    }
+    offsets <- c(0, cumsum(widths))
+    for (j in seq_along(b1$re_terms)) {
+      bt <- b1$re_terms[[j]]
+      lt <- layout[[j]]
+      if (bt$n_coefs != lt$n_coefs) {
+        stop(sprintf(paste0(
+          "tulpa_simulate(): random-effect term %d (%s) has %d coefficient(s) ",
+          "in the formula but %d in the fit."),
+          j, bt$group_var, bt$n_coefs, lt$n_coefs), call. = FALSE)
+      }
+      pos <- match(bt$levels, lt$levels)
+      if (anyNA(pos)) {
+        new <- bt$levels[is.na(pos)]
+        stop(sprintf(paste0(
+          "tulpa_simulate(): `data` has level(s) of `%s` the fit never saw ",
+          "(%s). A fitted model simulates conditional on its own random ",
+          "effects; to simulate new groups pass `theta` as a list with `u` ",
+          "drawn for them."),
+          bt$group_var, paste(utils::head(new, 5L), collapse = ", ")),
+          call. = FALSE)
+      }
+      nc <- lt$n_coefs
+      u_cols[[j]] <- offsets[j] + outer((pos - 1L) * nc, seq_len(nc), "+")
+    }
+  }
+  list(beta = beta, re = re, keep = cd$keep, u_cols = u_cols)
 }
 
 

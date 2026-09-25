@@ -25,9 +25,18 @@ tulpa_simulate(
 \item{theta}{One of:
 \itemize{
 \item A named list with \code{beta} (numeric or list per process), \code{u} (list of RE
-coefficient vectors, one per RE term per process), \code{extras} (named list
-of family-specific extras like \code{phi}, \code{sigma_y}).
-\item A \code{tulpa_fit} object: posterior draws are sampled from \verb{$draws}.
+blocks, one per RE term per process, each an \verb{n_groups x n_coefs}
+matrix; a vector of length \code{n_groups} is accepted for a
+single-coefficient term), \code{extras} (named list of family-specific
+extras like \code{phi}, \code{sigma_y}).
+\item A \code{tulpa_fit} object: each simulation takes one posterior draw of the
+fixed effects and, paired with it, of the FITTED random effects (read
+through the same accessor as \code{\link[=ranef]{ranef()}} and \code{\link[=posterior_predict]{posterior_predict()}}). The
+data are therefore simulated conditional on the fitted groups: every
+level of a grouping variable in \code{data} must be one the fit estimated
+(matched by level), and a fit that carries no random-effect posterior
+is an error rather than a set of zero effects. To simulate NEW groups,
+pass \code{theta} as a list with \code{u} drawn for them.
 \item \code{NULL}: equivalent to a single prior draw (shortcut).
 }}
 

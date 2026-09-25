@@ -97,6 +97,28 @@
   t(b)
 }
 
+# Random-effect coefficient draws (S x n_re, group-major / coef-within-group)
+# paired row for row with the fixed-effect draws `beta` that
+# `.fixed_coef_draws()` returned alongside `keep`. The one resolution order
+# posterior_predict() and tulpa_simulate(theta = fit) share: the fit's own RE
+# draws (rows `keep`), else a Laplace / EB conditional draw given `beta`, else
+# the point value repeated on every row. NULL when the fit carries none of the
+# three, so a caller decides what a missing RE block means rather than reading
+# it as zero (gcol33/tulpa#891).
+#' @keywords internal
+.tulpa_re_coef_draws <- function(object, beta, keep, n_re) {
+  rd <- .re_coef_draws(object)
+  if (!is.null(rd) && ncol(rd) == n_re) {
+    if (!is.null(keep)) rd <- rd[keep, , drop = FALSE]
+    return(rd)
+  }
+  rd <- .laplace_re_conditional_draws(object, beta, n_re)
+  if (!is.null(rd)) return(rd)
+  b <- .tulpa_re_point(object, n_re)
+  if (is.null(b)) return(NULL)
+  matrix(b, nrow(beta), n_re, byrow = TRUE)
+}
+
 # Where a fit's in-sample linear predictor comes from.
 #
 # `"sampler_model"`: a ModelData sampler fit. Each draw row is the full
@@ -365,21 +387,12 @@
   if (is.null(newdata)) {
     M <- .tulpa_re_map(object)
     if (!is.null(M)) {
-      rd <- .re_coef_draws(object)
-      if (!is.null(rd) && ncol(rd) == nrow(M)) {
-        if (!is.null(keep)) rd <- rd[keep, , drop = FALSE]
-        eta <- eta + as.matrix(rd %*% M)
-      } else if (!is.null(rd <- .laplace_re_conditional_draws(object, beta,
-                                                             nrow(M)))) {
+      rd <- .tulpa_re_coef_draws(object, beta, keep, nrow(M))
+      if (!is.null(rd)) {
         eta <- eta + as.matrix(rd %*% M)
       } else {
-        b <- .tulpa_re_point(object, nrow(M))
-        if (!is.null(b)) {
-          eta <- sweep(eta, 2, as.numeric(Matrix::crossprod(M, b)), "+")
-        } else {
-          message("posterior_predict(): no random-effect draws or point ",
-                  "values available; replicates are population-level.")
-        }
+        message("posterior_predict(): no random-effect draws or point ",
+                "values available; replicates are population-level.")
       }
     }
 
