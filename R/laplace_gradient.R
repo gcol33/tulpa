@@ -63,24 +63,25 @@
 # terms in `re_list` order, and within a term [g1_c1, g1_c2, g2_c1, ...].
 # Extracted from the marginal-H_beta Schur block in tulpa_laplace(), which
 # needs the same matrix -- one construction, so the two cannot drift.
+#
+# `idx = 0` is "no group" (the kernel skips the row, `src/re_structure.h`), so
+# such a row carries no RE column here either; indexing column 0 was a
+# sparseMatrix error on the Hessian path only (gcol33/tulpa#883).
 .re_design_matrix <- function(re_list, n_obs) {
   if (length(re_list) == 0L) return(NULL)
   parts <- lapply(re_list, function(r) {
     nc <- r$n_coefs %||% 1L
-    if (nc == 1L && is.null(r$Z)) {
-      Matrix::sparseMatrix(
-        i = seq_len(n_obs), j = r$idx,
-        x = rep(1.0, n_obs), dims = c(n_obs, r$n_groups)
-      )
-    } else {
-      Z_full <- r$Z %||% matrix(1, nrow = n_obs, ncol = 1)
-      ii <- rep(seq_len(n_obs), each = nc)
-      jj <- rep((r$idx - 1L) * nc, each = nc) + rep(seq_len(nc), n_obs)
-      Matrix::sparseMatrix(
-        i = ii, j = jj, x = as.numeric(t(Z_full)),
-        dims = c(n_obs, r$n_groups * nc)
-      )
-    }
+    idx <- as.integer(r$idx)
+    in_grp <- which(idx > 0L)
+    Z_full <- r$Z %||% matrix(1, nrow = n_obs, ncol = 1)
+    Z_full <- as.matrix(Z_full)[in_grp, , drop = FALSE]
+    ii <- rep(in_grp, each = nc)
+    jj <- rep((idx[in_grp] - 1L) * nc, each = nc) +
+      rep(seq_len(nc), length(in_grp))
+    Matrix::sparseMatrix(
+      i = ii, j = jj, x = as.numeric(t(Z_full)),
+      dims = c(n_obs, r$n_groups * nc)
+    )
   })
   do.call(cbind, parts)
 }
