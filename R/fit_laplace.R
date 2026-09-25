@@ -538,13 +538,17 @@ tulpa_laplace <- function(y, n_trials, X,
     stop("`beta_prior` must be NULL or a list with `sd` (and optional `mean`); ",
          "got ", class(beta_prior)[1], ".", call. = FALSE)
   }
+  # A tulpa_prior of any other family is refused whether or not it happens to
+  # carry an `sd` field: prior_half_normal(1) does, and was fitted as the
+  # N(0, 1) it is not (gcol33/tulpa#893).
+  if (inherits(beta_prior, "tulpa_prior") &&
+      !identical(beta_prior$distribution, "normal")) {
+    stop("`beta_prior` is a ",
+         beta_prior$distribution %||% class(beta_prior)[1L],
+         " prior. The fixed-effect prior is Gaussian on every fitter: supply ",
+         "prior_normal(mean, sd) or list(mean = , sd = ).", call. = FALSE)
+  }
   if (is.null(beta_prior$sd)) {
-    if (inherits(beta_prior, "tulpa_prior")) {
-      stop("`beta_prior` is a ",
-           beta_prior$distribution %||% class(beta_prior)[1L],
-           " prior. The fixed-effect prior is Gaussian on every fitter: supply ",
-           "prior_normal(mean, sd) or list(mean = , sd = ).", call. = FALSE)
-    }
     stop("`beta_prior` must supply `sd` (prior standard deviation on the ",
          "fixed effects).", call. = FALSE)
   }

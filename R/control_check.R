@@ -324,3 +324,38 @@ tulpa_check_control <- function(control, allowed, where) {
 # (gcol33/tulpa#667).
 .RE_PRIOR_KEYS <- c("prior_sigma", "eta", "prior_df", "prior_scale",
                     "prior_sigma_scale", "sigma_re_scale")
+
+# The `re_prior` keys one backend actually reads (`.tulpa_fitter_args()`). The
+# union above only says a key exists somewhere; checked alone it let a key the
+# resolved backend never reads pass as though it had been applied -- a
+# `sigma_re_scale` on `mode = "mala"`, which conditions on sigma_re
+# (gcol33/tulpa#893). The ModelData samplers share one spec builder, so they
+# are named by their registry input rather than listed.
+#' @keywords internal
+.re_prior_backend_keys <- function(backend) {
+  if (identical(BACKEND_REGISTRY[[backend]]$input, "modeldata")) {
+    return("sigma_re_scale")
+  }
+  switch(backend,
+         eb = , re_cov_nested = c("prior_sigma", "eta"),
+         re_cov_gibbs = c("prior_df", "prior_scale"),
+         gibbs = "prior_sigma_scale",
+         character(0))
+}
+
+# Refuse `re_prior` keys the resolved backend does not read, naming the
+# backends that do.
+#' @keywords internal
+.check_re_prior_backend <- function(re_prior, backend) {
+  unread <- setdiff(names(re_prior), .re_prior_backend_keys(backend))
+  if (!length(unread)) return(invisible(TRUE))
+  readers <- vapply(unread, function(k) {
+    b <- Filter(function(bk) k %in% .re_prior_backend_keys(bk), ALL_BACKENDS)
+    paste(b, collapse = ", ")
+  }, character(1))
+  stop(sprintf(paste0(
+    "re_prior key(s) not read by backend '%s', so they would have no effect: ",
+    "%s. Drop them, or use a mode whose backend reads them."),
+    backend, paste(sprintf("`%s` (read by %s)", unread, readers),
+                   collapse = "; ")), call. = FALSE)
+}

@@ -98,6 +98,35 @@ test_that("VarCorr labels a sampled Sigma_mean 'sampled' (#881)", {
   expect_equal(VarCorr(smp)$sd, 0.5)
 })
 
+test_that("a non-normal tulpa_prior is refused as beta_prior (#893)", {
+  expect_error(.beta_prior_fields(prior_half_normal(1)),
+               "`beta_prior` is a half_normal prior.*prior_normal\\(mean, sd\\)")
+  expect_error(.normalize_beta_prior(prior_half_normal(1), 2L),
+               "half_normal prior")
+  expect_equal(.beta_prior_fields(prior_normal(0, 2))$sd, 2)
+  expect_equal(.beta_prior_fields(list(sd = 3))$sd, 3)
+  set.seed(1)
+  d <- data.frame(x = rnorm(30))
+  d$y <- 1 + 2 * d$x + rnorm(30)
+  expect_error(tulpa(y ~ x, d, family = "gaussian", mode = "laplace", phi = 1,
+                     beta_prior = prior_half_normal(1)),
+               "half_normal prior")
+})
+
+test_that("re_prior keys the resolved backend does not read are refused (#893)", {
+  expect_silent(.check_re_prior_backend(list(sigma_re_scale = 1), "hmc"))
+  expect_silent(.check_re_prior_backend(list(prior_sigma = c(1, 0.05), eta = 2),
+                                        "re_cov_nested"))
+  expect_error(.check_re_prior_backend(list(sigma_re_scale = 0.01), "mala"),
+               "not read by backend 'mala'.*`sigma_re_scale` \\(read by hmc, ess")
+  expect_error(.check_re_prior_backend(list(prior_df = 3), "re_cov_nested"),
+               "`prior_df` \\(read by re_cov_gibbs\\)")
+  d <- .rg_data()
+  expect_error(tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "mala",
+                     re_prior = list(sigma_re_scale = 0.01)),
+               "not read by backend 'mala'")
+})
+
 test_that("a logical binomial response is read as 0/1 on every door (#880)", {
   skip_on_cran()
   d <- .rg_data()

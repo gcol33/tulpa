@@ -679,6 +679,7 @@
   # Statistical random-effect / variance-component hyperpriors ride in a single
   # `re_prior` list (a statistical argument), never in `control` (tuning only).
   rp <- re_prior %||% list()
+  .check_re_prior_backend(rp, backend)
   input <- BACKEND_REGISTRY[[backend]]$input
 
   # Observation weights scale each row's log-likelihood. Supported where the
@@ -1625,7 +1626,8 @@
 #'   (inverse-Wishart on the RE covariance, `control$re_cov = "gibbs"`),
 #'   `prior_sigma_scale` (half-Cauchy scale on the RE SD for `mode = "gibbs"`),
 #'   and `sigma_re_scale` (half-Cauchy scale on the RE / BYM2 SD for the
-#'   ModelData samplers).
+#'   ModelData samplers). An entry the resolved backend does not read is an
+#'   error naming the backends that do.
 #' @param hyperprior The outer hyperparameter prior, `"proper"` (default) or
 #'   `"flat"`, forwarded to every route that integrates or maximizes over
 #'   hyperparameters: the nested-Laplace path (see [tulpa_nested_laplace()]),
@@ -1946,6 +1948,14 @@ tulpa <- function(formula, data,
   K <- length(bundle$re_terms %||% list())
 
   has_latent <- (parsed$n_latent_blocks %||% 0L) > 0L
+
+  # The inline field paths below return before `.tulpa_fitter_args()`, where
+  # `re_prior` is checked against the backend; their joint nested-Laplace
+  # driver reads none of its keys (gcol33/tulpa#893).
+  if ((parsed$n_spatial_field_blocks %||% 0L) > 0L ||
+      (parsed$n_temporal_field_blocks %||% 0L) > 0L) {
+    .check_re_prior_backend(re_prior %||% list(), "nested_laplace_joint")
+  }
 
   # Inline areal varying-coefficient field(s): spatial(graph = , formula =
   # ~ ... || cell). Each bar term expands to independent CAR blocks (one per
