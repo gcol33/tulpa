@@ -846,6 +846,27 @@ tulpa_build_model_data <- function(parsed, data) {
   )
 }
 
+# The fixed design with its aliased columns removed. A rank-deficient design
+# was fitted whole, the prior alone identifying the aliased coefficient -- a
+# `poly(x, 2)1` beside `x` read 0.043, a number the data say nothing about
+# (gcol33/tulpa#881). The rule is lm()'s and lme4's: a pivoted QR at lm()'s
+# tolerance keeps the earlier of two aliased columns and drops the later, with
+# a warning naming each dropped column. The design's column names carry the
+# fixed-effect names, so coef() and a `newdata` design rebuilt from the formula
+# (matched by name) see the reduced set.
+#' @keywords internal
+.drop_aliased_fixed <- function(X, tol = 1e-7) {
+  if (NCOL(X) < 2L) return(X)
+  q <- qr(X, tol = tol)
+  if (q$rank == ncol(X)) return(X)
+  drop <- sort(q$pivot[seq.int(q$rank + 1L, ncol(X))])
+  warning(sprintf(paste0(
+    "The fixed-effect design is rank deficient; dropping %d aliased ",
+    "column(s): %s. Their coefficients are not identified by the data."),
+    length(drop), paste(colnames(X)[drop], collapse = ", ")), call. = FALSE)
+  X[, -drop, drop = FALSE]
+}
+
 # A two-column response is the lme4/glm binomial idiom, cbind(successes,
 # failures). The kernels take successes plus a denominator, so the pair is
 # resolved here into a length-n `y` and an `n_trials` vector, and everything

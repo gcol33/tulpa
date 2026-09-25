@@ -128,7 +128,10 @@ test_that("an integrated covariance is reported, not the conditioning fallback",
 
     expect_null(fit$sigma_re, info = rc)
     expect_equal(nrow(vc), 2L, info = rc)
-    expect_true(all(vc$source == "estimated"), info = rc)
+    # re_cov_gibbs SAMPLES Sigma, so its posterior mean is "sampled"; the
+    # nested integrator's is "estimated" (gcol33/tulpa#881).
+    expect_true(all(vc$source == if (fit$backend == "re_cov_gibbs") "sampled"
+                                 else "estimated"), info = rc)
     # The reported SDs are the fit's own integrated covariance, read off
     # Sigma_mean rather than re-derived.
     expect_equal(vc$sd, unname(sqrt(diag(fit$Sigma_mean))),

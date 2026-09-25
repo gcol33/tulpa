@@ -253,6 +253,7 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
 
   re_terms <- .as_re_terms_list(re_terms)
   if (!is.matrix(X)) X <- as.matrix(X)
+  .require_fixed_effects(X, "tulpa_re_cov_gibbs")
   vd <- .validate_glm_design(y, X, n_trials, "tulpa_re_cov_gibbs")
   n_obs    <- vd$N
   n_trials <- vd$n_trials

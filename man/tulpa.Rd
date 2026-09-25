@@ -29,9 +29,13 @@ tulpa(
 }
 \arguments{
 \item{formula}{A model formula. Fixed effects, \code{(1 | g)} / \code{(1 + x | g)}
-random effects, and \code{offset(...)} terms are recognised.}
+random effects, and \code{offset(...)} terms are recognised. As in \code{\link[stats:lm]{stats::lm()}} and
+lme4, aliased fixed-effect columns of a rank-deficient design are dropped
+with a warning, and unused levels of a grouping factor are dropped. A
+binomial response may be logical (\code{TRUE} a success).}
 
-\item{data}{A data frame.}
+\item{data}{A data frame. Incomplete rows (an \code{NA} in the response, a
+predictor or a grouping variable) are refused, not dropped.}
 
 \item{family}{Character family name: one of \code{\link[=family_names]{family_names()}}
 (\code{"binomial"}, \code{"poisson"}, \code{"neg_binomial_2"}, \code{"gaussian"}, \code{"beta"},

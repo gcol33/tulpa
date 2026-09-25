@@ -1555,8 +1555,12 @@
 #'   on the dedicated nested-Laplace / SPDE / Polya-Gamma paths.
 #'
 #' @param formula A model formula. Fixed effects, `(1 | g)` / `(1 + x | g)`
-#'   random effects, and `offset(...)` terms are recognised.
-#' @param data A data frame.
+#'   random effects, and `offset(...)` terms are recognised. As in [stats::lm()] and
+#'   lme4, aliased fixed-effect columns of a rank-deficient design are dropped
+#'   with a warning, and unused levels of a grouping factor are dropped. A
+#'   binomial response may be logical (`TRUE` a success).
+#' @param data A data frame. Incomplete rows (an `NA` in the response, a
+#'   predictor or a grouping variable) are refused, not dropped.
 #' @param family Character family name: one of [family_names()]
 #'   (`"binomial"`, `"poisson"`, `"neg_binomial_2"`, `"gaussian"`, `"beta"`,
 #'   ...), or a categorical response family -- `"multinomial"`
@@ -1928,6 +1932,9 @@ tulpa <- function(formula, data,
   # silently into the C++ kernels as a NaN estimate.
   .assert_finite_model_inputs(bundle$X, bundle$y, n_trials = n_trials,
                               offset = bundle$offset)
+  bundle$X <- .drop_aliased_fixed(bundle$X)
+  bundle$n_fixed <- ncol(bundle$X)
+  bundle$fixed_names <- colnames(bundle$X)
   if (!is.null(weights)) {
     weights <- as.numeric(weights)
     if (length(weights) != bundle$n_obs || anyNA(weights) ||

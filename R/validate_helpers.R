@@ -281,3 +281,19 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
   }
   invisible(TRUE)
 }
+
+
+# A model with random effects only (`y ~ 0 + (1 | g)`) has an empty fixed
+# design. The sampler and conditional-Laplace backends carry it; the fitters
+# that summarize or integrate over a fixed-effect block do not, and failed on
+# the empty block in their own words ("'names' attribute [1] must be the same
+# length as the vector [0]", "subscript out of bounds", "0 x 0 matrix";
+# gcol33/tulpa#881). They refuse it here, naming the backends that fit it.
+#' @keywords internal
+.require_fixed_effects <- function(X, where) {
+  if (NCOL(X) >= 1L) return(invisible(TRUE))
+  stop(where, "() needs at least one fixed-effect column, and the design has ",
+       "none (a formula such as y ~ 0 + (1 | g)). Keep an intercept ",
+       "(y ~ 1 + (1 | g)), or fit the random-effects-only model with mode = ",
+       "'hmc', 'mala', 'imh_laplace', 'vi' or 'laplace'.", call. = FALSE)
+}

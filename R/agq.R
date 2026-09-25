@@ -103,6 +103,7 @@ agq_fit <- function(y, X, group,
   storage.mode(X) <- "double"
   n_obs <- length(y)
   p <- ncol(X)
+  .require_fixed_effects(X, "agq_fit")
   if (nrow(X) != n_obs) {
     stop(sprintf("nrow(X) (%d) must equal length(y) (%d).",
                  nrow(X), n_obs), call. = FALSE)

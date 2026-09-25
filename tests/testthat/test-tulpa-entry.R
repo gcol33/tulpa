@@ -149,7 +149,8 @@ test_that("auto mode infers a random-intercept's SD instead of conditioning it a
   expect_equal(fit$inference_tier, 1L)
 
   vc <- VarCorr(fit)
-  expect_equal(vc$source, "estimated")
+  # Inferred, not conditioned: re_cov_gibbs samples Sigma (gcol33/tulpa#881).
+  expect_equal(vc$source, "sampled")
   # A real recovery bound against the simulated truth (0.9), not a shape check.
   expect_lt(abs(vc$sd - 0.9), 0.35)
 

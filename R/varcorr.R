@@ -10,9 +10,9 @@
 # flattened into one column:
 #
 #   estimated    the backend maximized or integrated over Sigma and this is the
-#                result (empirical Bayes, the RE-covariance integrators).
+#                result (empirical Bayes, the nested RE-covariance integrator).
 #   sampled      Sigma was a sampled parameter; the summary is a posterior mean
-#                over draws.
+#                over draws (the samplers, and re_cov_gibbs).
 #   conditioned  Sigma was fixed by the caller and the fit conditions on it, so
 #                this is an input echoed back, not an estimate.
 #
@@ -215,8 +215,12 @@ VarCorr.tulpa_fit <- function(x, sigma = 1, ...) {
   # Order matters: a fit that estimated Sigma also has a conditioning fallback
   # available, and reporting the fallback would understate what it did.
   cov_list <- .varcorr_from_sigma(x)
-  src <- "estimated"
+  # re_cov_gibbs draws Sigma from its conjugate full conditional, so its
+  # `Sigma_mean` is a posterior mean over sampled covariances -- "sampled", the
+  # label the documentation gives exactly that case (gcol33/tulpa#881).
+  src <- if (!is.null(x[["Sigma_draws"]])) "sampled" else "estimated"
   if (is.null(cov_list)) {
+    src <- "estimated"
     # Also "estimated": the nested grid integrated the SD rather than maximizing
     # it, which is the stronger of the two claims that share this label.
     cov_list <- .varcorr_from_nested_re_blocks(x, layout)

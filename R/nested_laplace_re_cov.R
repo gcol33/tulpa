@@ -674,6 +674,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
                               X_zi = NULL, zi_prior_sd = 2.5) {
   re_terms <- .as_re_terms_list(re_terms)
   if (!is.matrix(X)) X <- as.matrix(X)
+  .require_fixed_effects(X, caller)
   vd <- .validate_glm_design(y, X, n_trials, caller)
   n_trials <- vd$n_trials
   # Zero inflation adds a SECOND linear predictor, so the inner solve's mode is

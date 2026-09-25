@@ -53,6 +53,51 @@ test_that("tulpa_build_model_data drops unused grouping levels (#880, #881)", {
   expect_equal(b$re_terms[[1]]$group_idx, c(1L, 1L, 2L, 2L, 3L, 3L))
 })
 
+test_that("a random-effects-only formula is refused by name where unsupported (#881)", {
+  d <- .rg_data()
+  for (m in c("eb", "structured", "agq", "re_cov_gibbs")) {
+    expect_error(tulpa(y ~ 0 + (1 | g), d, family = "poisson", mode = m),
+                 "needs at least one fixed-effect column", info = m)
+  }
+})
+
+test_that("an aliased fixed-effect column is dropped with a warning (#881)", {
+  set.seed(1)
+  x <- rnorm(50)
+  X <- cbind(`(Intercept)` = 1, x = x, x2 = 2 * x, z = rnorm(50))
+  expect_warning(Xd <- .drop_aliased_fixed(X),
+                 "rank deficient; dropping 1 aliased column\\(s\\): x2")
+  expect_equal(colnames(Xd), c("(Intercept)", "x", "z"))
+  expect_identical(.drop_aliased_fixed(X[, -3]), X[, -3])
+})
+
+test_that("a rank-deficient formula fits the identified columns (#881)", {
+  skip_on_cran()
+  set.seed(1)
+  n <- 200L
+  d <- data.frame(g = factor(sample(1:12, n, TRUE)), x = rnorm(n),
+                  z = rnorm(n))
+  d$y <- rpois(n, exp(0.5 + 0.3 * d$x))
+  expect_warning(
+    fit <- tulpa(y ~ x + z + poly(x, 2) + (1 | g), d, family = "poisson",
+                 mode = "laplace", sigma_re = 0.5),
+    "dropping 1 aliased column\\(s\\): poly\\(x, 2\\)1")
+  expect_equal(names(coef(fit)), c("(Intercept)", "x", "z", "poly(x, 2)2"))
+  expect_true(all(is.finite(sqrt(diag(vcov(fit))))))
+})
+
+test_that("VarCorr labels a sampled Sigma_mean 'sampled' (#881)", {
+  base <- list(re_layout = list(list(group_var = "g", n_coefs = 1L,
+                                     coef_labels = "(Intercept)")),
+               Sigma_mean = matrix(0.25))
+  est <- structure(base, class = "tulpa_fit")
+  smp <- structure(c(base, list(Sigma_draws = list(matrix(0.2), matrix(0.3)))),
+                   class = "tulpa_fit")
+  expect_equal(VarCorr(est)$source, "estimated")
+  expect_equal(VarCorr(smp)$source, "sampled")
+  expect_equal(VarCorr(smp)$sd, 0.5)
+})
+
 test_that("a logical binomial response is read as 0/1 on every door (#880)", {
   skip_on_cran()
   d <- .rg_data()
