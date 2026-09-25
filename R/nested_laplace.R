@@ -676,7 +676,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res <- .nl_attach_outer_integration(res, "outer grid")
   res <- .nl_posterior_moments(res, type, within = within_cell)
   if (isTRUE(keep_grid_hessians)) {
-    res <- .nl_attach_grid_hessians(res, p_fixed, keep_joint_prec)
+    res <- .nl_attach_grid_hessians(
+      res, p_fixed, keep_joint_prec,
+      var_cols = .nl_role_cols(prior, NULL, res$Q_csc_n, "temporal"))
   }
   tm$mark("postproc")
   res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
@@ -697,7 +699,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       r <- solve_grid(prior_i)
       r <- .nl_attach_outer_integration(r, "outer grid")
       r <- .nl_posterior_moments(r, type, within = within_cell)
-      if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed, keep_joint_prec)
+      if (isTRUE(keep_grid_hessians)) {
+        r <- .nl_attach_grid_hessians(
+          r, p_fixed, keep_joint_prec,
+          var_cols = .nl_role_cols(prior_i, NULL, r$Q_csc_n, "temporal"))
+      }
       .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "single", type, NULL,
                           k_samples, compute = diagnose_k,
                           tail_points = k_tail_points)
@@ -1622,7 +1628,23 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   L + Matrix::t(L) - Matrix::Diagonal(n_x, Matrix::diag(L))
 }
 
-.nl_attach_grid_hessians <- function(res, p_fixed, keep_joint = FALSE) {
+#
+# `var_cols` names latent coordinates whose per-cell MARGINAL variance,
+# diag(Q_k^{-1}), is retained alongside (`grid_field_var`, n_grid x
+# length(var_cols), with the columns in `grid_field_var_cols`). The same solve
+# delivers it: those unit columns join E. It defaults to the temporal field (the
+# `temporal =` block, or a latent(temporal_ar*()) block), so
+# temporal() reports each cell's Gaussian -- mode AND curvature -- mixed over
+# the grid rather than the cell modes alone, which carried only the spread
+# between cells and covered the truth at 57% for a nominal 95%
+# (gcol33/tulpa#904). Only a field whose read-back needs it is retained: one
+# column per coordinate per cell, and a large spatial field is not asked for.
+.nl_attach_grid_hessians <- function(res, p_fixed, keep_joint = FALSE,
+                                     var_cols = c(
+                                       .nl_role_cols(res$blocks,
+                                                     res$block_latent_offsets,
+                                                     res$Q_csc_n, "temporal"),
+                                       .nl_temporal_latent_block(res)$cols)) {
   Q_p <- res$Q_csc_p_per_grid
   Q_i <- res$Q_csc_i_per_grid
   Q_x <- res$Q_csc_x_per_grid
@@ -1639,8 +1661,13 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   grid_hessians <- vector("list", n_grid)
   grid_modes    <- vector("list", n_grid)
 
-  E <- matrix(0, nrow = n_x, ncol = p_fixed)
-  for (j in seq_len(p_fixed)) E[j, j] <- 1
+  var_cols <- as.integer(var_cols)
+  var_cols <- var_cols[var_cols > p_fixed & var_cols <= n_x]
+  n_var <- length(var_cols)
+  field_var <- if (n_var) matrix(NA_real_, n_grid, n_var) else NULL
+
+  E <- matrix(0, nrow = n_x, ncol = p_fixed + n_var)
+  E[cbind(c(seq_len(p_fixed), var_cols), seq_len(p_fixed + n_var))] <- 1
 
   modes_mat <- res$modes  # n_grid x n_x
 
@@ -1674,8 +1701,9 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
         as.matrix(Matrix::solve(Qk + Matrix::Diagonal(n_x, jit), E))
       }
     )
-    Sigma_bb <- V[seq_len(p_fixed), , drop = FALSE]
+    Sigma_bb <- V[seq_len(p_fixed), seq_len(p_fixed), drop = FALSE]
     grid_hessians[[k]] <- solve(Sigma_bb)
+    if (n_var) field_var[k, ] <- V[cbind(var_cols, p_fixed + seq_len(n_var))]
 
     grid_modes[[k]] <- if (!is.null(modes_mat)) {
       as.numeric(modes_mat[k, seq_len(p_fixed)])
@@ -1686,6 +1714,10 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 
   res$grid_hessians <- grid_hessians
   res$grid_modes    <- grid_modes
+  if (n_var) {
+    res$grid_field_var      <- field_var
+    res$grid_field_var_cols <- var_cols
+  }
   if (isTRUE(keep_joint)) res$H_joint <- .nl_modal_joint_precision(res)
   # Strip the verbose CSC scratch fields once Hessians are assembled.
   res$Q_csc_p_per_grid <- NULL
@@ -1705,6 +1737,57 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 .is_multi_block_prior <- function(p) {
   is.list(p) && is.null(p$type) && length(p) > 0 &&
     all(vapply(p, function(x) is.list(x) && !is.null(x$type), logical(1)))
+}
+
+# What each block of a nested prior is FOR: "spatial", "temporal" or "other".
+# tulpa() tags its `spatial =` / `temporal =` blocks with `role`, and on a tagged
+# prior every untagged block (an s(x) smoother, a latent() block, a `(1 | g)`
+# iid block) is "other" -- a type does not say what a block is for, since a
+# smoother is an rw1 / rw2 block and a random intercept an iid one. A prior
+# built by hand carries no tags, and its blocks are classified by type
+# (`.SPATIAL_NL_TYPES` / `.TEMPORAL_NL_TYPES`). `prior` is a single block or a
+# list of blocks; the result has one entry per block.
+.nl_block_roles <- function(prior) {
+  if (is.null(prior) || !is.list(prior) || !length(prior)) return(character(0))
+  blocks <- if (!is.null(prior$type)) list(prior) else prior
+  tagged <- vapply(blocks, function(b) {
+    r <- if (is.list(b)) b$role else NULL
+    if (is.character(r) && length(r) == 1L) r else NA_character_
+  }, character(1))
+  if (any(!is.na(tagged))) return(ifelse(is.na(tagged), "other", tagged))
+  types <- vapply(blocks, function(b) tolower(b$type %||% ""), character(1))
+  ifelse(types %in% .SPATIAL_NL_TYPES, "spatial",
+         ifelse(types %in% .TEMPORAL_NL_TYPES, "temporal", "other"))
+}
+
+# Columns of a nested fit's latent vector (`modes`, the per-cell precision)
+# holding the first block whose role is `role`, or NULL. A multi-block solve
+# reports where each block starts (`block_latent_offsets`, from the C++ block
+# builders, which are what decide a block's width); a single-block solve lays
+# out [fixed, RE, field], so its field is the tail. `blocks` is the fit's block
+# list (or single block), `n_x` the latent length.
+.nl_role_cols <- function(blocks, offsets, n_x, role) {
+  roles <- .nl_block_roles(blocks)
+  k <- which(roles == role)[1L]
+  if (is.na(k) || is.null(n_x)) return(NULL)
+  if (length(roles) == 1L && !is.null(blocks$type)) {
+    w <- .nl_single_block_width(blocks)
+    if (is.null(w) || w < 1L || w > n_x) return(NULL)
+    return(as.integer(seq.int(n_x - w + 1L, n_x)))
+  }
+  if (length(offsets) != length(roles) + 1L) return(NULL)
+  lo <- offsets[k]; hi <- offsets[k + 1L]
+  if (!is.finite(lo) || !is.finite(hi) || hi <= lo || hi > n_x) return(NULL)
+  as.integer(seq.int(lo + 1L, hi))
+}
+
+# Width of a single temporal block's field (the only single-block field whose
+# coefficients a read-back slices; the rest report through their own
+# accessors). NULL when the block does not say.
+.nl_single_block_width <- function(p) {
+  nt <- p$n_times
+  if (is.null(nt)) return(NULL)
+  as.integer(nt) * max(as.integer(p$n_groups %||% 1L), 1L)
 }
 
 # Structural spec for one block sent to cpp_nested_laplace_multi. Grid values

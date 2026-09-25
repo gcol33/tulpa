@@ -714,9 +714,18 @@
     # or any field with latent terms forms a multi-block prior the joint driver
     # integrates -- every obs touches each block, so they are Laplace-marginalised
     # jointly (the spatio-temporal cross term is assembled from each block's idx).
+    # The `spatial =` / `temporal =` fields carry a `role` tag. A block's type
+    # does not say what it is for -- an s(x) smoother is an rw1 / rw2 block and
+    # a `(1 | g)` term an iid one -- so the accessors that read one field back
+    # off the fit (temporal(), spatial_range(), temporal_corr()) find it by
+    # role (`.nl_block_roles()`), never by type or position (gcol33/tulpa#903,
+    # #906).
+    with_role <- function(blk, role) { blk$role <- role; blk }
     field_blocks <- c(
-      if (!is.null(spatial))  list(.spatial_spec_to_nl_prior(spatial))   else list(),
-      if (!is.null(temporal)) list(.temporal_spec_to_nl_prior(temporal)) else list(),
+      if (!is.null(spatial))
+        list(with_role(.spatial_spec_to_nl_prior(spatial), "spatial")) else list(),
+      if (!is.null(temporal))
+        list(with_role(.temporal_spec_to_nl_prior(temporal), "temporal")) else list(),
       smoothers
     )
     all_blocks <- c(field_blocks, latent_blocks)

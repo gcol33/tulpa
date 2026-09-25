@@ -505,6 +505,10 @@ validate_temporal_gp <- function(temporal, data) {
 
   # Extract time values
   time_vals <- data[[temporal$time_var]]
+  # The distinct instants in the user's own units (and class), which is what a
+  # read-back labels the field by; the kernel sees the scaled numeric values
+  # below, in the same order (gcol33/tulpa#905).
+  temporal$time_levels <- sort(unique(time_vals))
 
   # Convert to numeric
   if (!is.numeric(time_vals)) {

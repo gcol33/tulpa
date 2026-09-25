@@ -513,16 +513,24 @@ Rcpp::List cpp_nested_laplace_multi(
     int n_grid = theta_grid.nrow();
     int latent_offset = p + n_re_groups;
 
+    // Where each spec block's coefficients start in the latent vector (0-based,
+    // B + 1 entries, the last one n_x). The builders are what decide a block's
+    // width -- bym2 lays out two sub-fields, a tgmrf its own n_latent -- so the
+    // layout is reported from here rather than re-derived in R, which is how an
+    // accessor finds one field among several in `modes` (gcol33/tulpa#903).
+    Rcpp::IntegerVector block_latent_offsets(B + 1);
     std::vector<tulpa::LatentBlock> blocks;
     blocks.reserve(B + 2);
     for (int b = 0; b < B; b++) {
         Rcpp::List bs = blocks_spec[b];
         int axis0 = axis_offsets[b];
         int axis_count = axis_offsets[b + 1] - axis0;
+        block_latent_offsets[b] = latent_offset;
         latent_offset = build_blocks_from_spec(
             bs, theta_grid, axis0, axis_count, latent_offset, N, blocks
         );
     }
+    block_latent_offsets[B] = latent_offset;
 
     Rcpp::NumericVector x_init;
     if (x_init_nullable.isNotNull()) {
@@ -617,5 +625,6 @@ Rcpp::List cpp_nested_laplace_multi(
     out["theta_grid"]     = theta_grid;
     out["axis_offsets"]   = axis_offsets;
     out["block_centered"] = tulpa::block_center_flags(blocks);
+    out["block_latent_offsets"] = block_latent_offsets;
     return out;
 }

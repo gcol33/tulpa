@@ -50,6 +50,15 @@ in a \code{tulpa()} model formula, the temporal mirror of \code{\link[=spatial]{
 temporal level (the intercept column) plus a temporally varying slope on each
 covariate column. \code{structure} is one of \code{"rw1"} (default), \code{"rw2"}, or
 \code{"ar1"}; only the double bar \code{||} (independent fields) is supported.
+
+On a sampler fit the posterior is the field's own draws. On a
+nested-Laplace fit it is the Gaussian mixture the outer grid defines: each
+hyperparameter cell contributes its conditional mode and marginal variance,
+weighted by the cell's posterior weight, and \code{summary()} reports that
+mixture's exact mean, SD and quantiles. The \code{draws} of such a fit are
+sampled from the same mixture; they reproduce each time point's marginal
+but not the within-cell correlation between time points. The \code{time} column
+of the summary holds the time values the field was fitted on.
 }
 \examples{
 \donttest{

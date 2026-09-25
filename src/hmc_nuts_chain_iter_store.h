@@ -71,6 +71,28 @@
                                    tv.n_groups * tv.n_tvc, tv.n_times);
       }
 
+      // NC temporal GP: the sampled slice is z, and the field the likelihood saw
+      // is f = sigma L z. compute_temporal_prior() is the one place that
+      // transform lives -- it overwrites its field argument with f for the
+      // observation loop -- so the stored draw is taken from the same call
+      // rather than from a second copy of the OU / dense forward map
+      // (gcol33/tulpa#905). Its return value (the prior density) is not needed.
+      if (data.temporal_gp_parameterization == 1 && layout.has_temporal &&
+          layout.is_temporal_gp) {
+          std::vector<double> f_store;
+          double tau_unused = 0.0, rho_unused = 0.0;
+          double sigma2_unused = 0.0, phi_unused = 0.0;
+          (void)tulpa::priors::compute_temporal_prior<double>(
+              q, data, layout, f_store, tau_unused, rho_unused,
+              sigma2_unused, phi_unused);
+          const int n_temporal = layout.temporal_end - layout.temporal_start;
+          if ((int)f_store.size() == n_temporal) {
+              for (int t = 0; t < n_temporal; t++) {
+                  row[layout.temporal_start + t] = f_store[t];
+              }
+          }
+      }
+
       // NC multiscale GP: same transform, once per scale.
       if (data.msgp_parameterization == 1 && data.has_multiscale_gp &&
           layout.is_multiscale_gp && !data.msgp_is_hsgp) {

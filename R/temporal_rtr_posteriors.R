@@ -46,6 +46,15 @@ temporal_rtr <- function(temporal, restrict_to) {
 #' covariate column. `structure` is one of `"rw1"` (default), `"rw2"`, or
 #' `"ar1"`; only the double bar `||` (independent fields) is supported.
 #'
+#' On a sampler fit the posterior is the field's own draws. On a
+#' nested-Laplace fit it is the Gaussian mixture the outer grid defines: each
+#' hyperparameter cell contributes its conditional mode and marginal variance,
+#' weighted by the cell's posterior weight, and `summary()` reports that
+#' mixture's exact mean, SD and quantiles. The `draws` of such a fit are
+#' sampled from the same mixture; they reproduce each time point's marginal
+#' but not the within-cell correlation between time points. The `time` column
+#' of the summary holds the time values the field was fitted on.
+#'
 #' @param object A `tulpa_fit` object fitted with `temporal` argument
 #' @param component Which component to extract for multi-scale models:
 #'   `"all"` (default), `"trend"`, `"seasonal"`, or `"short_term"`.
@@ -114,47 +123,69 @@ temporal <- function(object, component = "all", summary = FALSE,
 }
 
 
-# A nested-Laplace fit carries no phi_temporal draws: the field lives in the
-# tail of each outer-grid cell's latent mode (`object$modes`, one row per
-# cell), weighted by `object$weights`. `.nl_attach_grid_hessians()` retains a
-# per-cell precision for the FIXED block only, so there is no per-cell field
-# covariance to draw from -- the same limit `ranef()`'s "mode" source has on a
-# nested fit. Resampling the cell modes by grid weight (rather than reporting
-# one weighted-average point) is what lets print/summary/plot reuse the exact
-# machinery a sampler's real draws go through, at the cost of carrying only
-# the between-cell spread and none of the within-cell curvature.
+# A nested-Laplace fit carries no phi_temporal draws: the field is a block of
+# each outer-grid cell's latent vector, and the cell's Laplace approximation
+# is a Gaussian with that cell's mode (`object$modes`, one row per cell) and
+# its marginal variance (`object$grid_field_var`, retained for the temporal
+# field by `.nl_attach_grid_hessians()`). The posterior is their mixture over
+# the grid weights. Reading the cell modes alone carried only the spread
+# BETWEEN cells: sd ~0.05 against an exact ~0.13-0.48, and 95% intervals that
+# covered the truth 57% of the time (gcol33/tulpa#904).
+#
+# `.nl_field_mixture()` returns the components (mu, var: n_cell x width; w);
+# summary() reads them exactly through `.nl_gauss_mixture_summary()`, and the
+# draws print / plot / a user's own derived quantity go through are sampled
+# from the same mixture -- a cell by its weight, then each coordinate from
+# that cell's Gaussian. The cell's cross-time covariance is not retained, so a
+# draw has the right marginal at every time point but not the within-cell
+# correlation between two of them.
 .NL_TEMPORAL_DRAW_N <- 2000L
 
-.nl_field_mixture_draws <- function(object, offset, width) {
+.nl_field_mixture <- function(object, cols) {
   M <- object$modes
   w <- object$weights
   if (!is.matrix(M) || is.null(w) || length(w) != nrow(M)) return(NULL)
-  if (!is.finite(width) || width <= 0L || offset + width > ncol(M)) return(NULL)
-  field <- M[, (offset + 1L):(offset + width), drop = FALSE]
+  if (!length(cols) || max(cols) > ncol(M)) return(NULL)
+  V <- object$grid_field_var
+  vcols <- object$grid_field_var_cols
+  var <- if (is.matrix(V) && nrow(V) == nrow(M) && all(cols %in% vcols)) {
+    V[, match(cols, vcols), drop = FALSE]
+  } else NULL
   w <- w / sum(w)
-  keep <- is.finite(w) & w > 0
+  keep <- is.finite(w) & w > 0 & is.finite(rowSums(M[, cols, drop = FALSE]))
+  if (!is.null(var)) keep <- keep & is.finite(rowSums(var))
   if (!any(keep)) return(NULL)
-  field <- field[keep, , drop = FALSE]
-  idx <- sample.int(nrow(field), size = .NL_TEMPORAL_DRAW_N, replace = TRUE,
-                     prob = w[keep])
-  field[idx, , drop = FALSE]
+  list(mu = M[keep, cols, drop = FALSE],
+       var = if (is.null(var)) NULL else pmax(var[keep, , drop = FALSE], 0),
+       w = w[keep] / sum(w[keep]))
 }
 
-# Column offset + width of the `temporal =` field in a nested fit's `$modes`:
-# the fixed block is first (`.nl_attach_grid_hessians()`'s own convention), and
-# a fit reaching `temporal =` alone carries no other latent block, so the
-# field is exactly the tail of that width.
-.nl_temporal_field_loc <- function(object, info) {
-  list(offset = object$n_fixed %||% 0L,
-       width = (info$n_times %||% 0L) * max(info$n_groups %||% 1L, 1L))
+.nl_field_mixture_draws <- function(mix) {
+  idx <- sample.int(nrow(mix$mu), size = .NL_TEMPORAL_DRAW_N, replace = TRUE,
+                    prob = mix$w)
+  mu <- mix$mu[idx, , drop = FALSE]
+  if (is.null(mix$var)) return(mu)
+  mu + sqrt(mix$var[idx, , drop = FALSE]) *
+    matrix(stats::rnorm(length(mu)), nrow(mu), ncol(mu))
+}
+
+# Columns of the `temporal =` field in a nested fit's latent vector, located
+# through the fit's own block layout (`.nl_role_cols()`), never at a fixed
+# offset: behind a spatial block the slice right after the fixed effects IS the
+# spatial field (gcol33/tulpa#903). fit_st_nested() records its own layout.
+.nl_temporal_field_cols <- function(object) {
+  if (!is.null(object$field_cols$temporal)) return(object$field_cols$temporal)
+  .nl_role_cols(object$prior, object$block_latent_offsets,
+                if (is.matrix(object$modes)) ncol(object$modes), "temporal")
 }
 
 # `latent(temporal_ar2(...))` / `latent(temporal_ar(...))` build a `tgmrf`
 # block tagged `tulpa_temporal_latent_block` (R/temporal_ar2.R) rather than
 # filling `object$temporal`, so this is the second place a nested fit's field
-# is found: the first such block in `object$blocks`, offset by the fixed block
-# plus every earlier block's own width (blocks are laid out left to right after
-# the fixed effects). Returns NULL when the fit carries no such block.
+# is found: the first such block in `object$blocks`, at the column the solve
+# reported for it (`block_latent_offsets`) -- summing the earlier blocks'
+# `n_latent` held only when every earlier block was itself a tgmrf. Returns
+# NULL when the fit carries no such block.
 .nl_temporal_latent_block <- function(object) {
   blocks <- object$blocks
   if (!is.list(blocks) || !length(blocks)) return(NULL)
@@ -162,18 +193,19 @@ temporal <- function(object, component = "all", summary = FALSE,
                          what = "tulpa_temporal_latent_block")
   if (!any(is_temporal)) return(NULL)
   k <- which(is_temporal)[1L]
-  earlier <- if (k > 1L) {
-    sum(vapply(blocks[seq_len(k - 1L)], function(b) b$n_latent %||% 0L, numeric(1)))
-  } else 0
   blk <- blocks[[k]]
+  off <- object$block_latent_offsets
+  start <- if (length(off) == length(blocks) + 1L) off[k] else {
+    (object$n_fixed %||% 0L) + if (k > 1L) sum(vapply(
+      blocks[seq_len(k - 1L)], function(b) b$n_latent %||% 0L, numeric(1))) else 0
+  }
   list(
     info = structure(
       list(n_times = blk$n_times %||% blk$n_latent, n_groups = 1L,
            type = blk$name %||% "ar", time_levels = NULL),
       class = "tulpa_temporal"
     ),
-    offset = as.integer((object$n_fixed %||% 0L) + earlier),
-    width  = as.integer(blk$n_latent %||% 0L)
+    cols = as.integer(start) + seq_len(as.integer(blk$n_latent %||% 0L))
   )
 }
 
@@ -211,11 +243,24 @@ temporal.tulpa_fit <- function(object, component = "all", summary = FALSE,
   }
 
   # No phi_temporal draws: on a nested-Laplace fit the field is read off the
-  # grid modes instead, either as the sole latent block behind `temporal =`
-  # or as the tagged `latent(temporal_ar*())` block located above.
+  # grid instead, as the per-cell Gaussian mixture of either the `temporal =`
+  # block or the tagged `latent(temporal_ar*())` block located above.
+  mixture <- NULL
   if (is.null(temp_draws) && !inherits(temp_info, "tulpa_temporal_multiscale")) {
-    loc <- if (!is.null(latent_blk)) latent_blk else .nl_temporal_field_loc(object, temp_info)
-    temp_draws <- .nl_field_mixture_draws(object, loc$offset, loc$width)
+    cols <- if (!is.null(latent_blk)) latent_blk$cols else .nl_temporal_field_cols(object)
+    width <- (temp_info$n_times %||% 0L) * max(temp_info$n_groups %||% 1L, 1L)
+    if (is.null(latent_blk) && length(cols) != width) cols <- NULL
+    mixture <- if (length(cols)) .nl_field_mixture(object, cols)
+    if (!is.null(mixture)) {
+      if (is.null(mixture$var)) {
+        warning("This nested-Laplace fit retained no per-cell variance for ",
+                "the temporal field (refit with the default ",
+                "`control$keep_grid_hessians = TRUE`), so its temporal() ",
+                "intervals carry only the spread between grid cells and are ",
+                "too narrow.", call. = FALSE)
+      }
+      temp_draws <- .nl_field_mixture_draws(mixture)
+    }
   }
 
   if (is.null(temp_draws)) {
@@ -248,7 +293,10 @@ temporal.tulpa_fit <- function(object, component = "all", summary = FALSE,
       type = temp_info$type,
       components = if (inherits(temp_info, "tulpa_temporal_multiscale"))
         temp_info$components else temp_info$type,
-      component_requested = component
+      component_requested = component,
+      # A nested fit's exact posterior, which summary() reads in place of the
+      # sampled draws.
+      mixture = mixture
     ),
     class = "tulpa_temporal_posterior"
   )
@@ -336,13 +384,25 @@ summary.tulpa_temporal_posterior <- function(object, probs = c(0.025, 0.5, 0.975
     # Single component
     draws <- object$draws
     n_times <- ncol(draws)
+    # A nested fit's mixture is summarized exactly (moments by the law of total
+    # variance, quantiles by inverting the mixture CDF) rather than off draws
+    # sampled from it; without per-cell variances the mixture gives no SD, and
+    # the draws (cell modes alone) are what is left to read.
+    mx <- if (!is.null(object$mixture$var)) {
+      .nl_gauss_mixture_summary(object$mixture$mu, object$mixture$var,
+                                object$mixture$w, probs = probs)
+    }
+    stats_tbl <- if (!is.null(mx)) {
+      data.frame(mean = mx$mean, sd = mx$sd, mx$quantiles)
+    } else {
+      data.frame(mean = colMeans(draws), sd = apply(draws, 2, sd),
+                 t(apply(draws, 2, quantile, probs = probs)))
+    }
 
     result <- data.frame(
       time_idx = seq_len(n_times),
       time = if (!is.null(object$time_levels)) object$time_levels else seq_len(n_times),
-      mean = colMeans(draws),
-      sd = apply(draws, 2, sd),
-      t(apply(draws, 2, quantile, probs = probs))
+      stats_tbl
     )
     names(result)[5:ncol(result)] <- paste0("q", probs * 100)
     rownames(result) <- NULL
