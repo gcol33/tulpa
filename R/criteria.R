@@ -329,7 +329,7 @@ print.tulpa_criteria <- function(x, digits = 1, ...) {
   }
   if (!is.null(x$n_high_k) && x$n_high_k > 0L) {
     cat(sprintf("  %d obs with Pareto k >= %s (PSIS-LOO unreliable there)\n",
-                format(.nl_diag("k_usable")), x$n_high_k))
+                as.integer(x$n_high_k), format(.nl_diag("k_usable"))))
   }
   if (!is.null(x$n_high_p_waic) && x$n_high_p_waic > 0L) {
     cat(sprintf("  %d obs with p_waic > 0.4 (WAIC biased; prefer elpd_loo)\n",

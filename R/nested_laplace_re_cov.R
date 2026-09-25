@@ -137,8 +137,9 @@
       return(c(base, list(idx = NULL, Z = NULL)))
     }
     if (nc > 1L && is.null(rt$Z)) {
-      stop(sprintf("RE block %d (n_coefs = %d) requires `Z` (the n_obs x ",
-                   "n_coefs RE design).", m, nc), call. = FALSE)
+      stop(sprintf(paste0("RE block %d (n_coefs = %d) requires `Z` (the ",
+                          "n_obs x n_coefs RE design)."), m, nc),
+           call. = FALSE)
     }
     # Design: a supplied Z (slopes, incl. a single `(0 + x | g)`) or the
     # intercept indicator when absent (a `(1 | g)` block).

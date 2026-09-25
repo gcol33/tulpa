@@ -94,8 +94,9 @@
                all(dim(as.matrix(prior_scale)) == nc)) as.matrix(prior_scale)
            else diag(nc)
     if (nu0 <= nc - 1L) {
-      stop(sprintf("`prior_df` = %g must exceed n_coefs - 1 = %d for a proper ",
-                   "inverse-Wishart prior.", nu0, nc - 1L), call. = FALSE)
+      stop(sprintf(paste0("`prior_df` = %g must exceed n_coefs - 1 = %d for ",
+                          "a proper inverse-Wishart prior."), nu0, nc - 1L),
+           call. = FALSE)
     }
     list(full = TRUE, nu0 = nu0, Lambda0 = Lam)
   } else {
@@ -104,8 +105,8 @@
                all(dim(as.matrix(prior_scale)) == nc))
              diag(as.matrix(prior_scale)) else rep(1, nc)
     if (nu0 <= 0) {
-      stop(sprintf("`prior_df` = %g must be > 0 for a proper scalar ",
-                   "inverse-gamma prior on a diagonal block.", nu0),
+      stop(sprintf(paste0("`prior_df` = %g must be > 0 for a proper scalar ",
+                          "inverse-gamma prior on a diagonal block."), nu0),
            call. = FALSE)
     }
     list(full = FALSE, nu0 = nu0, lambda0 = lam)
