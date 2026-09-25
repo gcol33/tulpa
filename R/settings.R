@@ -517,12 +517,22 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     unique(c(fromtab, frompath))
 }
 
-# Fill in a prior block's absent default axes from the family binding. When any
-# of `fields` is missing, ALL of them are rebuilt and crossed as a Cartesian
-# product -- the registry's per-family convention: a family's axes are stored
-# pre-paired (one row of `theta_grid` per tuple), so a partially-supplied set
-# cannot be honoured by pairing a user axis of length 4 against a default of
-# length 5. `fields` defaults to every field the family binds, in table order.
+# Fill in a prior block's absent default axes from the family binding. A
+# family's axes are stored PRE-PAIRED -- one row of `theta_grid` per tuple, the
+# i-th entries of every field together -- so:
+#
+#   * every field supplied: the fields ARE the paired cells and are kept as
+#     given; they must have one length (`.nl_check_paired_axes()`). A tensor
+#     grid is written as expand.grid() columns.
+#   * some fields supplied: each supplied field is an AXIS (its distinct
+#     values) and is kept; only the missing ones take the family default, and
+#     the axes are crossed. Replacing the supplied axis by the default as well
+#     discarded it -- an ar1 `tau_grid` or a bym2 `sigma_grid` given alone was
+#     never integrated, and an invalid `rho_grid` given alone was thrown away
+#     rather than refused (gcol33/tulpa#884). car_proper already did this.
+#   * none supplied: the family default, crossed.
+#
+# `fields` defaults to every field the family binds, in table order.
 #
 # This is the materialisation half of `.NL_FAMILY_AXES`: with it, a registry
 # family that defaults a plain Cartesian grid is one line in its `defaults()`
@@ -532,12 +542,51 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     fam <- .NL_FAMILY_AXES[[tolower(type %||% "")]]
     if (is.null(fam)) return(p)
     if (is.null(fields)) fields <- names(fam)
-    if (!any(vapply(fields, function(f) is.null(p[[f]]), logical(1)))) return(p)
-    axes <- lapply(fields, function(f) .nl_grid_axis(fam[[f]]))
+    given <- !vapply(fields, function(f) is.null(p[[f]]), logical(1))
+    if (all(given)) return(.nl_check_paired_axes(p, fields))
+    axes <- lapply(fields, function(f) {
+        if (is.null(p[[f]])) .nl_grid_axis(fam[[f]])
+        else sort(unique(as.numeric(p[[f]])))
+    })
     names(axes) <- fields
     gr <- expand.grid(axes, KEEP.OUT.ATTRS = FALSE)
     for (f in fields) p[[f]] <- as.numeric(gr[[f]])
     p
+}
+
+# Fully supplied pre-paired fields must line up cell for cell; unequal lengths
+# were recycled by the theta builder's cbind() with a warning before the kernel
+# refused them (gcol33/tulpa#884).
+.nl_check_paired_axes <- function(p, fields) {
+    if (length(fields) < 2L) return(p)
+    lens <- vapply(fields, function(f) length(p[[f]]), integer(1))
+    if (length(unique(lens)) > 1L) {
+        stop(sprintf(paste0(
+            "%s are PAIRED outer-grid cells -- the i-th entries of each form ",
+            "one cell -- so they need one length; got %s. Supply one axis ",
+            "alone to cross it with the default of the other(s), or pass ",
+            "expand.grid() columns for a tensor grid."),
+            paste0("`", fields, "`", collapse = " and "),
+            paste(lens, collapse = " / ")), call. = FALSE)
+    }
+    p
+}
+
+# A supplied grid axis whose values must lie inside an open interval (an AR1
+# correlation in (-1, 1)). Checked on the block before it is filled, where the
+# message can name the field the user set; a kernel that is handed a value
+# outside it does not refuse it.
+.nl_check_axis_open_interval <- function(p, field, lo, hi, what) {
+    v <- p[[field]]
+    if (is.null(v)) return(invisible(TRUE))
+    bad <- which(!is.finite(v) | v <= lo | v >= hi)
+    if (length(bad)) {
+        stop(sprintf(paste0(
+            "`%s[%d]` is %s; %s must lie strictly inside (%s, %s)."),
+            field, bad[1L], format(v[bad[1L]]), what, format(lo), format(hi)),
+            call. = FALSE)
+    }
+    invisible(TRUE)
 }
 
 # The axis key a family defaults on a field, or NULL when it defaults none.

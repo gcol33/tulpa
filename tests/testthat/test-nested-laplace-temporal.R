@@ -116,6 +116,30 @@ test_that("nested_laplace AR1 recovers high autocorrelation in the simulation", 
   expect_gt(res$theta_mean[["rho"]], 0.5)
 })
 
+test_that("AR1 keeps a lone supplied axis and refuses a bad or unpaired rho_grid (#884)", {
+  d <- simulate_temporal_binomial(T = 20L, n_per_t = 3L)
+  base <- list(type = "ar1", temporal_idx = d$time, n_times = d$T)
+  # Refused before any fit: an out-of-range correlation, and paired axes of
+  # unequal length (recycled with a warning before the kernel refused them).
+  expect_error(tulpa_nested_laplace(d$y, d$n_trials, d$X,
+                                    prior = c(base, list(rho_grid = c(0.5, 1.2))),
+                                    family = "binomial"),
+               "`rho_grid\\[2\\]` is 1.2; an AR1 correlation must lie strictly inside \\(-1, 1\\)")
+  expect_error(tulpa_nested_laplace(d$y, d$n_trials, d$X,
+                                    prior = c(base, list(tau_grid = c(1, 2, 4),
+                                                         rho_grid = c(0.5, 0.7))),
+                                    family = "binomial"),
+               "PAIRED outer-grid cells")
+
+  skip_on_cran()
+  res <- tulpa_nested_laplace(d$y, d$n_trials, d$X,
+                              prior = c(base, list(tau_grid = c(1, 2, 4, 8))),
+                              family = "binomial")
+  expect_equal(sort(unique(res$theta_grid[, "tau"])), c(1, 2, 4, 8))
+  expect_equal(nrow(res$theta_grid),
+               4L * length(tulpa:::.nl_grid_axis("ar1_rho")))
+})
+
 test_that("nested_laplace accepts tulpa_temporal spec via spec= + data=", {
   skip_on_cran()
   d <- simulate_temporal_binomial(T = 25L, ar1_rho = 0.7)

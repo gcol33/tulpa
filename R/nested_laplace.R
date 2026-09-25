@@ -36,7 +36,15 @@
 #'           `rho_bounds = c(lower, upper)` (defaults to (0, 1)).
 #'   * rw1/rw2: `temporal_idx` (1-based), `n_times`; optional `tau_grid`,
 #'             `cyclic` (default FALSE).
-#'   * ar1:   `temporal_idx`, `n_times`; optional `tau_grid`, `rho_grid`.
+#'   * ar1:   `temporal_idx`, `n_times`; optional `tau_grid`, `rho_grid`
+#'           (each `rho_grid` value strictly inside (-1, 1)).
+#'
+#'   Grids of a two-axis type (`bym2`, `car_proper`, `ar1`) are PAIRED when
+#'   both are supplied: the i-th entries of `tau_grid` / `sigma_grid` and
+#'   `rho_grid` form the i-th outer-grid cell, so the two must have equal
+#'   length, and a tensor grid is written as `expand.grid()` columns. A single
+#'   supplied axis is kept as an axis (its distinct values) and crossed with
+#'   the default of the other.
 #'
 #'   A default grid axis is a starting axis, not a hard ceiling: for `icar`
 #'   (`tau_grid`) and `bym2` (`sigma_grid`) a posterior mode that rails a
@@ -1015,7 +1023,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       p$rho_grid <- p$rho_grid %||% p$rho_car_grid
       # Both axes supplied -> treat as the pre-paired integration grid (the
       # theta builder pairs them with cbind), matching bym2 / ar1.
-      if (!is.null(p$tau_grid) && !is.null(p$rho_grid)) return(p)
+      if (!is.null(p$tau_grid) && !is.null(p$rho_grid)) {
+        return(.nl_check_paired_axes(p, c("tau_grid", "rho_grid")))
+      }
       # Otherwise default each missing axis independently and cross the two, so
       # supplying only one axis keeps it instead of discarding it.
       rb <- p$rho_bounds %||% .nl_grid_par("car_rho", "bounds")
@@ -1288,7 +1298,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     cpp_fn = "cpp_nested_laplace_temporal",
     required = list(single = .NL_REQ_TEMPORAL, multi = .NL_REQ_TEMPORAL,
                     joint = .NL_REQ_TEMPORAL),
-    defaults = function(p, a) .nl_fill_family_axes(p, "ar1"),
+    defaults = function(p, a) {
+      # The temporal kernel takes rho as given, so an AR1 correlation outside
+      # (-1, 1) -- a non-stationary process -- is refused here, by name.
+      .nl_check_axis_open_interval(p, "rho_grid", -1, 1,
+                                   "an AR1 correlation")
+      .nl_fill_family_axes(p, "ar1")
+    },
     pack = function(p) list(
       temporal_idx  = as.integer(p$temporal_idx),
       n_times       = as.integer(p$n_times),

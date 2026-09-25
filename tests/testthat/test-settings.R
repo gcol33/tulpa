@@ -184,6 +184,20 @@ test_that("registry defaults() fill exactly the bound fields, crossed", {
     pinned <- fill("bym2", list(sigma_grid = c(1, 2), rho_grid = c(0.5, 0.5)))
     expect_equal(pinned$sigma_grid, c(1, 2))
     expect_equal(pinned$rho_grid, c(0.5, 0.5))
+    expect_error(fill("bym2", list(sigma_grid = c(1, 2, 3), rho_grid = c(0.5, 0.7))),
+                 "PAIRED outer-grid cells.*got 3 / 2")
+
+    # ONE supplied axis is kept as an axis and crossed with the default of the
+    # other; replacing it by the default too discarded it (gcol33/tulpa#884).
+    half <- fill("bym2", list(sigma_grid = c(0.4, 0.2, 0.2)))
+    gr <- expand.grid(sigma = c(0.2, 0.4),
+                      rho   = tulpa:::.nl_grid_axis("bym2_rho"))
+    expect_equal(half$sigma_grid, gr$sigma)
+    expect_equal(half$rho_grid, gr$rho)
+    a1 <- fill("ar1", list(tau_grid = c(1, 2, 4, 8)))
+    expect_equal(sort(unique(a1$tau_grid)), c(1, 2, 4, 8))
+    expect_equal(sort(unique(a1$rho_grid)), tulpa:::.nl_grid_axis("ar1_rho"))
+    expect_identical(length(a1$tau_grid), 4L * length(tulpa:::.nl_grid_axis("ar1_rho")))
 
     # nngp / hsgp share the GP axes, so they default identically.
     expect_equal(fill("nngp")$sigma2_grid, fill("hsgp")$sigma2_grid)

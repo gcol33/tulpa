@@ -48,8 +48,16 @@ SPDE one). Absent, the field enters unweighted.
 \code{rho_bounds = c(lower, upper)} (defaults to (0, 1)).
 \item rw1/rw2: \code{temporal_idx} (1-based), \code{n_times}; optional \code{tau_grid},
 \code{cyclic} (default FALSE).
-\item ar1:   \code{temporal_idx}, \code{n_times}; optional \code{tau_grid}, \code{rho_grid}.
+\item ar1:   \code{temporal_idx}, \code{n_times}; optional \code{tau_grid}, \code{rho_grid}
+(each \code{rho_grid} value strictly inside (-1, 1)).
 }
+
+Grids of a two-axis type (\code{bym2}, \code{car_proper}, \code{ar1}) are PAIRED when
+both are supplied: the i-th entries of \code{tau_grid} / \code{sigma_grid} and
+\code{rho_grid} form the i-th outer-grid cell, so the two must have equal
+length, and a tensor grid is written as \code{expand.grid()} columns. A single
+supplied axis is kept as an axis (its distinct values) and crossed with
+the default of the other.
 
 A default grid axis is a starting axis, not a hard ceiling: for \code{icar}
 (\code{tau_grid}) and \code{bym2} (\code{sigma_grid}) a posterior mode that rails a
