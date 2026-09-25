@@ -225,7 +225,7 @@ tulpa_check_control <- function(control, allowed, where) {
     eb = c("max_iter", "tol", "n_threads", "outer_maxit", "outer_reltol",
            "sigma_init", "marginal", "marginal_step", "marginal_richardson"),
     ep = c("max_sweeps", "tol", "damping", "n_quad", "n_draws", "seed"),
-    gaussian = c("iter", "warmup", "step_size", "n_leapfrog", "seed"),
+    gaussian = c("iter", "warmup", "max_treedepth", "adapt_delta", "seed"),
     gibbs = c("n_iter", "warmup", "thin", "seed", "verbose", "n_threads"),
     nuts_beta = c("n_iter", "n_warmup", "max_treedepth", "adapt_delta",
                   "seed", "verbose"),

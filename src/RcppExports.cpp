@@ -4558,24 +4558,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// cpp_tulpa_fit_gaussian
-Rcpp::List cpp_tulpa_fit_gaussian(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, double sigma_beta, int n_iter, int n_warmup, double step_size, int n_leapfrog, int seed);
-RcppExport SEXP _tulpa_cpp_tulpa_fit_gaussian(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP step_sizeSEXP, SEXP n_leapfrogSEXP, SEXP seedSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y_r(y_rSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_r(X_rSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
-    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
-    Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
-    Rcpp::traits::input_parameter< double >::type step_size(step_sizeSEXP);
-    Rcpp::traits::input_parameter< int >::type n_leapfrog(n_leapfrogSEXP);
-    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_fit_gaussian(y_r, X_r, sigma_beta, n_iter, n_warmup, step_size, n_leapfrog, seed));
-    return rcpp_result_gen;
-END_RCPP
-}
 // cpp_tulpa_fit_generic
 Rcpp::List cpp_tulpa_fit_generic(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, double sigma_beta, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericVector> init, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_generic(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP) {
@@ -5236,7 +5218,6 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_tgmrf_eval_mu", (DL_FUNC) &_tulpa_cpp_tgmrf_eval_mu, 2},
     {"_tulpa_cpp_truncated_gaussian_terms", (DL_FUNC) &_tulpa_cpp_truncated_gaussian_terms, 4},
     {"_tulpa_cpp_tulpa_fit_beta_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_beta_nuts, 11},
-    {"_tulpa_cpp_tulpa_fit_gaussian", (DL_FUNC) &_tulpa_cpp_tulpa_fit_gaussian, 8},
     {"_tulpa_cpp_tulpa_fit_generic", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic, 11},
     {"_tulpa_cpp_tulpa_fit_generic_chains", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic_chains, 13},
     {"_tulpa_cpp_test_c_abi_resume_roundtrip", (DL_FUNC) &_tulpa_cpp_test_c_abi_resume_roundtrip, 9},

@@ -1061,10 +1061,6 @@ cpp_tulpa_fit_beta_nuts <- function(y_r, X_r, sigma_beta = 10.0, log_phi_prior_s
     .Call(`_tulpa_cpp_tulpa_fit_beta_nuts`, y_r, X_r, sigma_beta, log_phi_prior_sd, log_phi_init, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose)
 }
 
-cpp_tulpa_fit_gaussian <- function(y_r, X_r, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, step_size = 0.05, n_leapfrog = 10L, seed = 42L) {
-    .Call(`_tulpa_cpp_tulpa_fit_gaussian`, y_r, X_r, sigma_beta, n_iter, n_warmup, step_size, n_leapfrog, seed)
-}
-
 cpp_tulpa_fit_generic <- function(y_r, X_r, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = TRUE, init = NULL, inv_metric_init = NULL) {
     .Call(`_tulpa_cpp_tulpa_fit_generic`, y_r, X_r, sigma_beta, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, init, inv_metric_init)
 }
