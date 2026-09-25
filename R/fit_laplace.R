@@ -164,7 +164,7 @@ tulpa_laplace <- function(y, n_trials, X,
   }
 
   # Validate
-  stopifnot(is.numeric(y) || is.integer(y))
+  y <- .numeric_response(family, y)
   stopifnot(is.matrix(X))
   stopifnot(nrow(X) == n_obs)
   if (!is.null(X_zi) && !is.null(spatial)) {

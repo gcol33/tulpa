@@ -178,6 +178,7 @@ prior_predict <- function(formula, family, data,
 
   parsed <- lapply(formulas, tulpa_parse_formula)
   built  <- lapply(parsed, tulpa_build_model_data, data = data)
+  for (b in built) .assert_complete_groups(b$re_terms, where = "prior_predict")
   n_obs <- built[[1]]$n_obs
 
   y_list      <- vector("list", n_draws)

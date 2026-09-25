@@ -74,6 +74,7 @@ tulpa_simulate <- function(formula, family, data,
   formulas <- normalize_formulas(formula, process_names)
   parsed <- lapply(formulas, tulpa_parse_formula)
   built  <- lapply(parsed, tulpa_build_model_data, data = data)
+  for (b in built) .assert_complete_groups(b$re_terms, where = "tulpa_simulate")
   n_obs <- built[[1]]$n_obs
 
   # Resolve theta source

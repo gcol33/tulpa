@@ -735,6 +735,11 @@ tulpa_parse_formula <- function(formula) {
 #' - RE group index vectors
 #' - RE slope matrices (if applicable)
 #'
+#' Missing values pass through (`na.action = na.pass`), because a prior
+#' predictive may have no response; the fitting doors refuse them. Unused
+#' levels of a grouping factor are dropped, so `n_groups` counts the groups
+#' that have data.
+#'
 #' @param parsed A `tulpa_parsed_formula` object
 #' @param data A data frame
 #' @return A list with:
@@ -782,7 +787,11 @@ tulpa_build_model_data <- function(parsed, data) {
   for (i in seq_along(parsed$random_effects)) {
     re_spec <- parsed$random_effects[[i]]
 
-    group_factor <- resolve_group_factor(re_spec, data, formula_env)
+    # A level with no rows has no likelihood, so its effect would be the prior
+    # alone, reported by ranef() beside the estimated ones; lme4 drops such
+    # levels and so does this (gcol33/tulpa#881). An NA group stays NA here
+    # and is refused by the fitting doors (`.assert_complete_groups()`).
+    group_factor <- droplevels(resolve_group_factor(re_spec, data, formula_env))
     group_idx <- as.integer(group_factor)
     n_groups <- nlevels(group_factor)
 

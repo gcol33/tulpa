@@ -972,6 +972,75 @@ family_names <- function() names(.FAMILY_OPS)
   invisible(TRUE)
 }
 
+#' The response as the numeric vector the kernels read.
+#'
+#' A logical response is the binary idiom `glm()` accepts for a binomial
+#' family, `TRUE` a success; it is read as 0/1 there. Anywhere else, and for
+#' any other non-numeric response (a factor, a character vector), the family
+#' has no reading of it, so it is refused by name rather than left to fail
+#' inside a backend in that backend's words -- `is.numeric(y) is not TRUE` on
+#' the Laplace door, a failed inner solve on EB, non-finite integration nodes
+#' on the structured tier (gcol33/tulpa#880).
+#'
+#' @param family Family identifier, canonical or aliased.
+#' @param y The response, or `NULL`.
+#' @keywords internal
+.numeric_response <- function(family, y) {
+  if (is.null(y) || is.numeric(y)) return(y)
+  if (is.logical(y) && .family_reads_trials(family)) {
+    return(as.integer(y))
+  }
+  hint <- if (is.logical(y)) {
+    "Use family = 'binomial' for a binary response, or convert it with as.numeric()."
+  } else if (is.factor(y) || is.character(y)) {
+    paste0("Code a binary response as 0/1 (e.g. as.integer(y == \"<level>\")), ",
+           "or use family = 'multinomial' / 'ordinal' for a categorical one.")
+  } else {
+    "Convert it to a numeric vector."
+  }
+  stop(sprintf("The response is %s, which family = '%s' does not read. %s",
+               if (is.logical(y)) "logical" else paste0("a ", class(y)[1L]),
+               family, hint), call. = FALSE)
+}
+
+#' Reject an incomplete random-effect design.
+#'
+#' The formula's grouping factors and random-slope covariates are built with
+#' `na.action = na.pass` as the fixed design is, so an NA group or slope value
+#' survives into `re_terms`. There it reached each backend in its own words --
+#' an `re_idx_list` index message on the Laplace door, "NAs are not allowed in
+#' subscripted assignments" on the samplers (gcol33/tulpa#880). Refused here
+#' with the message `.assert_finite_model_inputs()` gives the predictors.
+#'
+#' @param re_terms The `re_terms` of [tulpa_build_model_data()].
+#' @param where Caller name for the message prefix, or `NULL` for none.
+#' @keywords internal
+.assert_complete_groups <- function(re_terms, where = NULL) {
+  pre <- if (is.null(where)) "" else paste0(where, ": ")
+  for (rt in re_terms) {
+    bad <- which(is.na(rt$group_idx))
+    if (length(bad)) {
+      stop(sprintf(paste0(
+        "%sMissing value(s) in the grouping variable `%s` (%d row(s), first ",
+        "at row %d). tulpa does not drop incomplete cases; remove those rows ",
+        "or give them a group before fitting."),
+        pre, rt$group_var %||% "?", length(bad), bad[1L]), call. = FALSE)
+    }
+    if (!is.null(rt$slope_matrix)) {
+      ok <- .all_finite_rows(as.matrix(rt$slope_matrix))
+      if (!all(ok)) {
+        bad <- which(!ok)
+        stop(sprintf(paste0(
+          "%sNon-finite value(s) in the random-slope covariate(s) of `%s` ",
+          "(%d row(s), first at row %d). tulpa does not drop incomplete ",
+          "cases; remove or impute NA/NaN/Inf before fitting."),
+          pre, rt$group_var %||% "?", length(bad), bad[1L]), call. = FALSE)
+      }
+    }
+  }
+  invisible(TRUE)
+}
+
 # Row-wise all-finite test for a numeric matrix.
 .all_finite_rows <- function(X) {
   fin <- is.finite(X)

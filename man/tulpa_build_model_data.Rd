@@ -32,4 +32,10 @@ Takes a parsed formula and data frame, and constructs:
 \item RE slope matrices (if applicable)
 }
 }
+\details{
+Missing values pass through (\code{na.action = na.pass}), because a prior
+predictive may have no response; the fitting doors refuse them. Unused
+levels of a grouping factor are dropped, so \code{n_groups} counts the groups
+that have data.
+}
 \keyword{internal}

@@ -1891,6 +1891,8 @@ tulpa <- function(formula, data,
 
   parsed <- tulpa_parse_formula(formula)
   bundle <- tulpa_build_model_data(parsed, data)
+  bundle$y <- .numeric_response(family, bundle$y)
+  .assert_complete_groups(bundle$re_terms)
 
   # A cbind(successes, failures) response carries its own denominators.
   n_trials <- .resolve_pair_trials(family, bundle$n_trials, n_trials)
