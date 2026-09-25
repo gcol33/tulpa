@@ -9,7 +9,8 @@ validate_mode(fit, expected_mode, error = TRUE)
 \arguments{
 \item{fit}{A tulpa_fit object}
 
-\item{expected_mode}{Mode that should have been used}
+\item{expected_mode}{Mode(s) that should have been used: a character vector
+of backend and / or tier names, any one of which is accepted.}
 
 \item{error}{If TRUE (default), error on mismatch. If FALSE, return logical.}
 }
@@ -19,4 +20,12 @@ If error = FALSE, returns TRUE/FALSE. Otherwise errors on mismatch.
 \description{
 Ensures the fit object was created with the expected inference mode.
 Useful for enforcing mode requirements in downstream analysis.
+
+A fit matches a mode when the mode names either the backend that ran
+(\code{fit$backend}, e.g. \code{"laplace"}, \code{"mala"}, \code{"re_cov_gibbs"}) or the tier it
+ran in (\code{fit$inference_mode}: \code{"exact"}, \code{"structured"}, \code{"optimized"}). So a
+fit made with \code{mode = "laplace"} validates against both \code{"laplace"} and
+\code{"structured"}, and a fit made with \code{mode = "auto"} validates against the
+backend and the tier auto chose. A request that \code{tulpa()} overrode (see
+\code{fit$mode_overridden}) validates against what ran, not what was asked for.
 }

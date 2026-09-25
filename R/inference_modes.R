@@ -1317,8 +1317,17 @@ select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_tempor
 #' Ensures the fit object was created with the expected inference mode.
 #' Useful for enforcing mode requirements in downstream analysis.
 #'
+#' A fit matches a mode when the mode names either the backend that ran
+#' (`fit$backend`, e.g. `"laplace"`, `"mala"`, `"re_cov_gibbs"`) or the tier it
+#' ran in (`fit$inference_mode`: `"exact"`, `"structured"`, `"optimized"`). So a
+#' fit made with `mode = "laplace"` validates against both `"laplace"` and
+#' `"structured"`, and a fit made with `mode = "auto"` validates against the
+#' backend and the tier auto chose. A request that `tulpa()` overrode (see
+#' `fit$mode_overridden`) validates against what ran, not what was asked for.
+#'
 #' @param fit A tulpa_fit object
-#' @param expected_mode Mode that should have been used
+#' @param expected_mode Mode(s) that should have been used: a character vector
+#'   of backend and / or tier names, any one of which is accepted.
 #' @param error If TRUE (default), error on mismatch. If FALSE, return logical.
 #'
 #' @return If error = FALSE, returns TRUE/FALSE. Otherwise errors on mismatch.
@@ -1328,32 +1337,49 @@ validate_mode <- function(fit, expected_mode, error = TRUE) {
   if (!inherits(fit, "tulpa_fit")) {
     stop("fit must be a tulpa_fit object", call. = FALSE)
   }
-
-  actual_mode <- fit$inference_mode %||% "unknown"
-  actual_tier <- fit$inference_tier %||% NA
-
-  expected_mode <- tolower(expected_mode)
-
-  # Check if modes match
-  match <- (actual_mode == expected_mode)
-
-  # Also accept tier-based matching
- if (!match && expected_mode %in% names(INFERENCE_TIERS)) {
-    expected_tier <- INFERENCE_TIERS[[expected_mode]]$tier
-    match <- !is.na(actual_tier) && (actual_tier == expected_tier)
+  if (!is.character(expected_mode) || !length(expected_mode) ||
+      anyNA(expected_mode)) {
+    stop("`expected_mode` must be a non-empty character vector of mode names.",
+         call. = FALSE)
   }
 
-  if (!match && error) {
+  actual_backend <- tolower(fit$backend %||% NA_character_)
+  actual_mode    <- tolower(fit$inference_mode %||% NA_character_)
+  actual_tier    <- fit$inference_tier %||% NA
+
+  # `fit$inference_mode` holds the TIER name, so comparing against it alone
+  # rejected the backend a fit was run with (gcol33/tulpa#879). A name that is
+  # neither a tier, a backend, nor this fit's own backend is a typo rather
+  # than a mismatch, and says so.
+  expected_mode <- tolower(expected_mode)
+  known <- c(names(INFERENCE_TIERS), ALL_BACKENDS, actual_backend)
+  unknown <- setdiff(expected_mode, known)
+  if (length(unknown)) {
+    stop(sprintf(paste0(
+      "`expected_mode` names unknown mode(s): %s. Use a tier (%s) or a ",
+      "backend (%s)."),
+      paste0("'", unknown, "'", collapse = ", "),
+      paste(names(INFERENCE_TIERS), collapse = ", "),
+      paste(ALL_BACKENDS, collapse = ", ")), call. = FALSE)
+  }
+
+  expected_tiers <- vapply(intersect(expected_mode, names(INFERENCE_TIERS)),
+                           function(m) INFERENCE_TIERS[[m]]$tier, integer(1))
+  match <- any(expected_mode %in% c(actual_backend, actual_mode)) ||
+    (!is.na(actual_tier) && actual_tier %in% expected_tiers)
+
+  if (!match && isTRUE(error)) {
     stop(sprintf(
-      "Mode mismatch: fit used '%s' (Tier %s) but expected '%s'.\n%s",
-      actual_mode,
+      "Mode mismatch: fit used backend '%s' (%s, Tier %s) but expected %s.\n%s",
+      fit$backend %||% "unknown",
+      fit$inference_mode %||% "unknown tier",
       ifelse(is.na(actual_tier), "?", actual_tier),
-      expected_mode,
+      paste0("'", expected_mode, "'", collapse = " or "),
       "Refit the model with the correct mode, or adjust your expectations."
     ), call. = FALSE)
   }
 
-  return(match)
+  match
 }
 
 
