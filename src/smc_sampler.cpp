@@ -82,8 +82,10 @@ Rcpp::List cpp_smc_test(
         }
     };
 
+    // Prior path: the initial draws are exact prior draws, so the tempering
+    // direction is the log-likelihood alone.
     auto result = tulpa_smc::smc_sample(
-        log_prior, log_lik, prior_sample, mutation,
+        log_lik, prior_sample, mutation,
         dim, n_particles, 0.5, n_mcmc_steps,
         static_cast<unsigned int>(seed)
     );

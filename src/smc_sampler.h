@@ -161,28 +161,45 @@ inline double find_next_temperature(
 // Main SMC sampler
 // ============================================================================
 
-// Callbacks:
-//   log_prior(theta)        -> log p(theta)
-//   log_likelihood(theta)   -> log p(y | theta)
-//   prior_sample(theta, rng, beta) -> fill theta with a draw from the prior
-//   mcmc_mutation(theta, beta, rng) -> one MCMC step targeting p(theta) * p(y|theta)^beta
+// The sampler walks the geometric path
+//   pi_beta(theta)  proportional to  pi_0(theta) * exp(beta * h(theta)),
+// beta from 0 to 1, where pi_0 is the distribution the initial population
+// represents. Callbacks:
+//   log_increment(theta)             -> h(theta), the tempering direction
+//   initial_sample(theta, rng, beta) -> fill theta with a draw from q
+//   mcmc_mutation(theta, beta, rng)  -> one MCMC step invariant for pi_beta
+//   initial_log_weight(theta)        -> optional log(pi_0 / q); empty means
+//                                       the draws already represent pi_0
+//   prepare_mutation(particles, beta)-> optional hook fired once per
+//                                       temperature, after resampling and
+//                                       before the mutations, so a kernel can
+//                                       adapt to the current population
 //
-// log_marginal_likelihood is an estimate of log Z only when `prior_sample`
-// draws from the NORMALIZED prior p(theta): the step-0 increment
-// log mean_n L(theta_n)^(beta_1) estimates Z_1 / Z_0 under that population and
-// no other, and nothing here carries a p / q correction. A caller whose
-// prior_sample is a stand-in must discard the field.
+// The two paths a caller composes from these:
+//   * prior path   : q = pi_0 = p(theta), h = log L. Needs exact prior draws.
+//   * reference path: q = pi_0 = any normalized reference r(theta),
+//                    h = log p + log L - log r, so pi_1 = p L / Z whatever r
+//                    is. The one path open to a prior with no generic sampler.
+// Starting from draws that do NOT represent pi_0 and tempering in L alone is
+// not a path to the posterior at all: the weights assume pi_0 and the kernel
+// is invariant for another distribution, and what comes out is neither
+// (gcol33/tulpa#876 -- the RE scale collapsed 3-10x that way).
+//
+// log_marginal_likelihood estimates log(integral pi_0 exp(h)) and is the
+// evidence only when pi_0 and exp(h) carry every normalizing constant.
 
 inline SMCResult smc_sample(
-    const std::function<double(const std::vector<double>&)>& log_prior,
-    const std::function<double(const std::vector<double>&)>& log_likelihood,
-    const std::function<void(std::vector<double>&, std::mt19937&, double)>& prior_sample,
+    const std::function<double(const std::vector<double>&)>& log_increment,
+    const std::function<void(std::vector<double>&, std::mt19937&, double)>& initial_sample,
     const std::function<void(std::vector<double>&, double, std::mt19937&)>& mcmc_mutation,
     int dim,
     int n_particles = 1000,
     double ess_threshold = 0.5,
     int n_mcmc_steps = 5,
-    unsigned int seed = 42
+    unsigned int seed = 42,
+    const std::function<double(const std::vector<double>&)>& initial_log_weight = nullptr,
+    const std::function<void(const std::vector<std::vector<double>>&, double)>&
+        prepare_mutation = nullptr
 ) {
     int N = n_particles;
     std::mt19937 rng(seed);
@@ -194,21 +211,75 @@ inline SMCResult smc_sample(
     result.temperatures.push_back(0.0);
 
     // ------------------------------------------------------------------
-    // 1. Initialize: draw N particles from the prior
+    // 1. Initialize: draw N particles from q
     // ------------------------------------------------------------------
     std::vector<std::vector<double>> particles(N, std::vector<double>(dim));
     for (int n = 0; n < N; n++) {
-        prior_sample(particles[n], rng, 0.0);
+        initial_sample(particles[n], rng, 0.0);
     }
 
-    // Pre-compute log-likelihoods
-    std::vector<double> log_liks(N);
+    // Tempering direction h at each particle, refreshed after every mutation.
+    std::vector<double> incr(N);
     for (int n = 0; n < N; n++) {
-        log_liks[n] = log_likelihood(particles[n]);
+        incr[n] = log_increment(particles[n]);
     }
 
     double beta = 0.0;
     double ess_target = ess_threshold * N;
+
+    // Reweight by exp(log_w), accumulate the normalizing-constant increment,
+    // and resample. Resampling at every step leaves the particles equally
+    // weighted, which is exactly the assumption the equal-weight temperature
+    // search (find_next_temperature), the log-mean-weight Z increment, and the
+    // uniform final weights all rely on. Adaptive resampling (only when
+    // ess < target) would instead require carrying normalized weights across
+    // rounds and feeding them back into all three. Resampling unconditionally
+    // keeps these consistent (Del Moral et al. 2006); the modest extra Monte
+    // Carlo variance is offset by the per-particle MCMC mutations that follow.
+    auto reweight_resample = [&](const std::vector<double>& log_w) {
+        double max_lw = *std::max_element(log_w.begin(), log_w.end());
+        double sum_w = 0.0;
+        for (int n = 0; n < N; n++) sum_w += std::exp(log_w[n] - max_lw);
+        result.log_marginal_likelihood += max_lw + std::log(sum_w / N);
+        std::vector<double> weights(N);
+        for (int n = 0; n < N; n++) {
+            weights[n] = std::exp(log_w[n] - max_lw) / sum_w;
+        }
+        result.ess_history.push_back(compute_ess(log_w));
+
+        auto ancestors = systematic_resample(weights, N, rng);
+        auto old_particles = particles;
+        auto old_incr = incr;
+        for (int n = 0; n < N; n++) {
+            particles[n] = old_particles[ancestors[n]];
+            incr[n] = old_incr[ancestors[n]];
+        }
+        result.n_resamples++;
+    };
+
+    auto mutate = [&]() {
+        if (prepare_mutation) prepare_mutation(particles, beta);
+        for (int n = 0; n < N; n++) {
+            for (int k = 0; k < n_mcmc_steps; k++) {
+                mcmc_mutation(particles[n], beta, rng);
+            }
+            incr[n] = log_increment(particles[n]);
+        }
+        result.n_mutations += N * n_mcmc_steps;
+    };
+
+    // A population drawn from q but meant to represent pi_0 != q is corrected
+    // once, up front, by importance weights pi_0 / q, then moved at beta = 0.
+    if (initial_log_weight) {
+        std::vector<double> log_w0(N);
+        for (int n = 0; n < N; n++) log_w0[n] = initial_log_weight(particles[n]);
+        if (!std::isfinite(*std::max_element(log_w0.begin(), log_w0.end()))) {
+            throw std::runtime_error(
+                "SMC: no initial particle carries a finite pi_0 / q weight.");
+        }
+        reweight_resample(log_w0);
+        mutate();
+    }
 
     // ------------------------------------------------------------------
     // 2. Tempering loop
@@ -227,66 +298,18 @@ inline SMCResult smc_sample(
         }
 
         // (a) Adaptive temperature selection
-        double beta_new = find_next_temperature(log_liks, beta, ess_target, N);
+        double beta_new = find_next_temperature(incr, beta, ess_target, N);
         double delta = beta_new - beta;
 
-        // (b) Compute incremental log-weights
+        // (b) Incremental log-weights, reweight and resample
         std::vector<double> log_w(N);
-        double max_lw = -std::numeric_limits<double>::infinity();
-        for (int n = 0; n < N; n++) {
-            log_w[n] = delta * log_liks[n];
-            if (log_w[n] > max_lw) max_lw = log_w[n];
-        }
+        for (int n = 0; n < N; n++) log_w[n] = delta * incr[n];
+        reweight_resample(log_w);
 
-        // Accumulate log marginal likelihood: log Z_t = log mean(w_n)
-        double sum_w = 0.0;
-        for (int n = 0; n < N; n++) {
-            sum_w += std::exp(log_w[n] - max_lw);
-        }
-        result.log_marginal_likelihood += max_lw + std::log(sum_w / N);
-
-        // Normalize weights for resampling
-        std::vector<double> weights(N);
-        for (int n = 0; n < N; n++) {
-            weights[n] = std::exp(log_w[n] - max_lw) / sum_w;
-        }
-
-        // ESS diagnostic
-        double ess = compute_ess(log_w);
-        result.ess_history.push_back(ess);
-
-        // (c) Resample every step. After resampling the particles are equally
-        // weighted, which is exactly the assumption the equal-weight temperature
-        // search (find_next_temperature), the log-mean-weight Z increment above,
-        // and the uniform final weights below all rely on. Adaptive resampling
-        // (only when ess < target) would instead require carrying normalized
-        // weights across rounds and feeding them back into all three.
-        // Resampling unconditionally keeps these consistent (Del Moral
-        // et al. 2006); the modest extra Monte Carlo variance is offset by the
-        // per-particle MCMC mutations that follow.
-        {
-            auto ancestors = systematic_resample(weights, N, rng);
-            auto old_particles = particles;
-            auto old_log_liks = log_liks;
-            for (int n = 0; n < N; n++) {
-                particles[n] = old_particles[ancestors[n]];
-                log_liks[n] = old_log_liks[ancestors[n]];
-            }
-            result.n_resamples++;
-        }
-
-        // (d) MCMC mutations
+        // (c) MCMC mutations at the new temperature
         beta = beta_new;
         result.temperatures.push_back(beta);
-
-        for (int n = 0; n < N; n++) {
-            for (int k = 0; k < n_mcmc_steps; k++) {
-                mcmc_mutation(particles[n], beta, rng);
-            }
-            // Refresh log-likelihood after mutation
-            log_liks[n] = log_likelihood(particles[n]);
-        }
-        result.n_mutations += N * n_mcmc_steps;
+        mutate();
     }
 
     // ------------------------------------------------------------------

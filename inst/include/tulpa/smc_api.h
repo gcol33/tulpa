@@ -1,22 +1,25 @@
 // smc_api.h
 // Cross-package SMC API for model packages (tulpaGlmm, tulpaObs, tulpaRatio).
 //
-// SMC runs a particle population through a tempering schedule from prior
-// to posterior. The model package builds a populated ModelData and
-// ParamLayout, supplies an `init` vector (used to build the prior-sample
-// distribution), and optionally supplies a domain-specific
-// `SmcMutationFn` mutation kernel. Without a kernel, tulpa falls back to
-// a built-in random-walk Metropolis kernel scaling by 1 / sqrt(beta) and
-// targeting log_prior + beta * log_lik.
+// SMC runs a particle population through a tempering schedule to the
+// posterior. The model package builds a populated ModelData and ParamLayout,
+// supplies an `init` vector (the centre of the Gaussian reference
+// q = N(init, prior_sigma^2 I) the population is drawn from), and optionally
+// supplies a domain-specific `SmcMutationFn` mutation kernel.
 //
-// The default prior sampler is a Gaussian perturbation around `init`
-// with SD `prior_sigma`. This is a smoke-test default — proper prior
-// draws need per-prior closed-form samplers tulpa lacks generically.
-// Because those particles are not draws from p(theta), the SMC log-Z
-// accumulator estimates a different integral than the marginal likelihood:
-// SMCShimResult::log_evidence comes back NaN and must not be read as a
-// model-comparison number. The draws themselves recover, because the MCMC
-// mutations target p(theta) L(theta)^beta.
+// q is not the prior -- proper prior draws need per-prior closed-form
+// samplers tulpa lacks generically -- and a population drawn from it cannot
+// simply be tempered in the likelihood as if it were (gcol33/tulpa#876):
+//   * Without a kernel (nullptr), the population tempers along the bridge
+//     q^(1 - beta) (p L)^beta, mutated by a built-in HMC kernel preconditioned
+//     by the population covariance, so beta = 1 is the posterior whatever q is.
+//   * With a kernel, whose target is log_prior + beta * log_lik, the
+//     population is first importance-corrected from q to the prior (weights
+//     p / q, resampled, then mutated at beta = 0) and tempered in L alone.
+//     That correction is exact but degrades when q is far from the prior.
+// The log-Z accumulator does not carry every normalizing constant of the
+// ModelData prior and likelihood, so SMCShimResult::log_evidence comes back
+// NaN and must not be read as a model-comparison number.
 
 #ifndef TULPA_SMC_API_H
 #define TULPA_SMC_API_H
@@ -38,7 +41,7 @@ struct SMCShimResult {
     int n_params;
     double* particles;     // [n_particles * n_params] row-major
     double* log_weights;   // [n_particles]
-    double  log_evidence;  // NaN under the default prior sampler (see above)
+    double  log_evidence;  // NaN (see above)
     int     success;       // 0 / 1
     char    error_msg[256];
 
@@ -64,12 +67,11 @@ typedef void (*SmcMutationFn)(
 //   - n_particles   : population size (e.g. 500-2000).
 //   - n_mcmc_steps  : MCMC mutation steps applied per particle per
 //                     temperature change.
-//   - ess_threshold : resample when ESS < threshold * n_particles
-//                     (e.g. 0.5).
-//   - prior_sigma   : SD of the default Gaussian prior_sample around
-//                     `init`.
+//   - ess_threshold : each temperature step is sized so the reweighted ESS
+//                     is threshold * n_particles (e.g. 0.5).
+//   - prior_sigma   : SD of the Gaussian reference q around `init`.
 //   - mutation      : optional pluggable mutation kernel. Pass nullptr
-//                     to use the built-in RWM kernel.
+//                     to use the built-in HMC kernel on the bridge.
 //   - user_data     : opaque pointer forwarded to `mutation`.
 // ----------------------------------------------------------------------------
 typedef void (*SmcFitFn)(
