@@ -1,14 +1,17 @@
-#' Profile the inner Laplace solve by phase
+#' Profile a fit by solver phase
 #'
-#' Times the sparse joint Laplace solver one phase at a time -- scatter (the
-#' Hessian and gradient assembly), factorize (numeric Cholesky), eta, line
-#' search, and the rest -- and returns the breakdown as a data frame. The
-#' accumulator aggregates across the parallel outer-grid worker threads, so the
-#' reported times cover the whole fit rather than only the calling thread.
+#' Times a fit one solver phase at a time -- the inner Newton solve's eta,
+#' scatter (the Hessian and gradient assembly), factorize (Cholesky), line
+#' search and final pass, the nested-Laplace outer grid's cell solves, and the
+#' NUTS sampler's iterations and gradient evaluations -- and returns the
+#' breakdown as a data frame. The accumulator aggregates across the parallel
+#' outer-grid worker threads and across concurrently run chains, so the
+#' reported times cover the whole fit rather than only the calling thread
+#' (and can therefore exceed its wall time).
 #'
-#' Use it to settle where a per-cell solve spends its time, e.g. whether a slow
-#' joint \code{occu_cover()} fit is bound by the assembly scatter or the
-#' Cholesky factorize:
+#' Use it to settle where a fit spends its time, e.g. whether a slow joint
+#' \code{occu_cover()} fit is bound by the assembly scatter or the Cholesky
+#' factorize:
 #'
 #' \preformatted{
 #'   p <- tulpa_profile(
@@ -18,65 +21,83 @@
 #'   fit <- attr(p, "value")
 #' }
 #'
+#' Timing is off outside \code{tulpa_profile()}: an ordinary fit pays one
+#' flag read per phase scope and nothing else.
+#'
 #' @section Which fits are timed:
-#' Only the SPARSE path of the joint nested-Laplace inner solver carries phase
-#' timers: \code{tulpa_nested_laplace_joint()} (and the joint drivers built on
-#' it) when its inner solve runs sparse, which
-#' \code{control = list(force_sparse = TRUE)} selects outright. The
-#' single-response solvers behind \code{tulpa_laplace()},
-#' \code{tulpa_nested_laplace()} and \code{tulpa()}, the dense joint path and
-#' the samplers are not instrumented; profiling one of them records nothing,
-#' and \code{tulpa_profile()} then warns rather than returning an all-zero
-#' table as if it were a measurement.
+#' \itemize{
+#'   \item The single-response Laplace solve behind \code{tulpa_laplace()},
+#'     \code{tulpa(mode = "laplace")} and every per-cell inner solve of
+#'     \code{tulpa_nested_laplace()} / \code{tulpa(mode = "nested_laplace")}:
+#'     phases \code{eta}, \code{scatter}, \code{factorize},
+#'     \code{line_search}, \code{log_det}, \code{log_lik_prior},
+#'     \code{hessian_extract} and \code{inner_diagnostics}.
+#'   \item The joint solver behind \code{tulpa_nested_laplace_joint()}, on both
+#'     its dense and its sparse path (the sparse one adds
+#'     \code{pattern_build} and \code{prep}).
+#'   \item The nested-Laplace outer grid, single-response and joint:
+#'     \code{outer_grid_cell}, one call per solved cell.
+#'   \item The samplers: \code{nuts_warmup} and \code{nuts_sampling}, one call
+#'     per NUTS iteration per chain, and \code{gradient}, one call per
+#'     log-density gradient evaluation (NUTS leapfrog steps, static HMC, the
+#'     step-size search and the other samplers that evaluate the gradient
+#'     through the engine).
+#' }
+#' An expression that reaches none of these -- a Gibbs or quadrature backend
+#' that runs neither an engine Newton solve nor an engine gradient, or no fit
+#' at all -- records nothing, and \code{tulpa_profile()} then warns rather than returning an
+#' all-zero table as if it were a measurement.
+#'
+#' @section Enclosing phases:
+#' \code{outer_grid_cell}, \code{nuts_warmup} and \code{nuts_sampling}
+#' ENCLOSE the leaf phases timed inside them (a cell's inner Newton phases, an
+#' iteration's gradient evaluations), so their seconds overlap the leaves'
+#' rather than adding to them. Their \code{share} is \code{NA}; the shares of
+#' the leaf phases sum to one.
 #'
 #' @param expr An expression that runs a fit (for example a call to
-#'   \code{tulpa_nested_laplace_joint()}). Evaluated once, after the profile
-#'   counters are reset.
+#'   \code{tulpa_laplace()} or \code{tulpa()}). Evaluated once, after the
+#'   profile counters are reset and timing is switched on.
 #' @param sort Logical; order rows by descending time. Default \code{TRUE}.
 #'
 #' @return A data frame with one row per phase and columns \code{phase},
 #'   \code{seconds}, \code{calls}, \code{ms_per_call} (mean wall time per phase
-#'   call), and \code{share} (fraction of total timed seconds). The fit result
-#'   is attached as the \code{"value"} attribute.
+#'   call), and \code{share} (fraction of the total timed seconds of the leaf
+#'   phases; \code{NA} for an enclosing phase). The fit result is attached as
+#'   the \code{"value"} attribute.
 #'
 #' @examples
 #' \donttest{
-#' # A binomial response over a 30-unit ICAR chain, joint solver forced sparse.
 #' set.seed(1)
-#' n_s <- 30L; N <- 150L
-#' s <- sample.int(n_s, N, replace = TRUE)
-#' x <- rnorm(N)
-#' y <- rbinom(N, 1, plogis(0.3 * x + sin(s / 5)))
-#' nb <- lapply(seq_len(n_s), function(i) setdiff(c(i - 1L, i + 1L), c(0L, n_s + 1L)))
-#' prior <- list(type = "icar", n_spatial_units = n_s,
-#'               adj_row_ptr = as.integer(c(0L, cumsum(lengths(nb)))),
-#'               adj_col_idx = as.integer(unlist(nb)) - 1L,
-#'               n_neighbors = lengths(nb), sigma_grid = c(0.5, 1))
-#' arm <- list(y = y, n_trials = rep(1L, N), X = cbind(1, x),
-#'             spatial_idx = s, family = "binomial")
-#' tulpa_profile(tulpa_nested_laplace_joint(
-#'   responses = list(occ = arm), prior = prior,
-#'   control = list(force_sparse = TRUE, progress = FALSE)))
+#' n <- 200L; X <- cbind(1, rnorm(n))
+#' y <- rbinom(n, 1, plogis(X %*% c(0, 0.5)))
+#' tulpa_profile(tulpa_laplace(y, rep(1L, n), X, family = "binomial"))
 #' }
 #' @export
 tulpa_profile <- function(expr, sort = TRUE) {
     cpp_profile_reset()
+    was_on <- cpp_profile_enable(TRUE)
+    # Restored however `expr` exits, so an error inside the fit does not leave
+    # every later fit in the session paying for the clock reads.
+    on.exit(cpp_profile_enable(was_on), add = TRUE)
     value <- expr  # lazy arg: forced here, after the reset
     prof  <- cpp_profile_read()
 
     us    <- as.numeric(prof$us)
     calls <- as.integer(prof$calls)
+    leaf  <- !as.logical(prof$enclosing)
     sec   <- us / 1e6
-    total <- sum(sec)
+    # An enclosing phase overlaps the leaves timed inside it, so the total the
+    # shares divide by is the leaves' alone.
+    total <- sum(sec[leaf])
 
     # An all-zero table reads as "every phase took no time"; what it means is
     # that the expression never reached an instrumented solver (#887).
     if (all(calls == 0L)) {
         warning("tulpa_profile(): no instrumented phase was reached, so ",
-                "nothing was timed. Only the sparse path of the joint ",
-                "nested-Laplace solver is instrumented ",
-                "(tulpa_nested_laplace_joint(), e.g. with ",
-                "control = list(force_sparse = TRUE)); see ?tulpa_profile.",
+                "nothing was timed. The Laplace, nested-Laplace and joint ",
+                "solvers and the NUTS sampler are instrumented; see ",
+                "?tulpa_profile for which fits are timed.",
                 call. = FALSE)
     }
 
@@ -85,7 +106,8 @@ tulpa_profile <- function(expr, sort = TRUE) {
         seconds     = sec,
         calls       = calls,
         ms_per_call = ifelse(calls > 0, (us / 1e3) / calls, 0),
-        share       = if (total > 0) sec / total else 0,
+        share       = ifelse(leaf, if (total > 0) sec / total else 0,
+                             NA_real_),
         stringsAsFactors = FALSE
     )
     if (isTRUE(sort)) df <- df[order(-df$seconds), , drop = FALSE]

@@ -115,6 +115,7 @@
 #define TULPA_NESTED_LAPLACE_GRID_H
 
 #include "laplace_core.h"
+#include "laplace_profile.h"      // TULPA_PROFILE_PHASE (outer_grid_cell)
 #include "nested_laplace_checkpoint.h"
 #include "omp_threads.h"          // tulpa_omp_team_size_req (cache-safe clamp)
 #include "sparse_cholesky.h"
@@ -639,7 +640,7 @@ template<typename SolveAtTheta, typename CheapEval = NoCheapEval,
          typename ResumeRefill = NoResumeRefill>
 inline Rcpp::List run_nested_laplace_grid(
     int n_grid, int n_x,
-    SolveAtTheta solve_at_theta,
+    SolveAtTheta solve_at_theta_fn,
     Rcpp::NumericVector x_init = Rcpp::NumericVector(),
     bool store_modes = true,
     int n_threads_outer = 1,
@@ -668,6 +669,16 @@ inline Rcpp::List run_nested_laplace_grid(
     }
     const auto screen_off = [&](int k) -> double {
         return screen_log_offset.empty() ? 0.0 : screen_log_offset[k];
+    };
+    // Every full cell solve below -- pilot, serial chain, parallel tiles --
+    // goes through this wrapper, so tulpa_profile() counts one outer_grid_cell
+    // per solved cell whichever branch ran it. The scope encloses the inner
+    // Newton phases the solve itself records, and runs on the worker thread
+    // around the whole solve rather than inside any worksharing loop.
+    auto solve_at_theta = [&solve_at_theta_fn](
+        int k, const std::vector<double>& warm, SparseCholeskySolver* solver) {
+        TULPA_PROFILE_PHASE(PHASE_OUTER_CELL);
+        return solve_at_theta_fn(k, warm, solver);
     };
     // At least one step: a zero-step screen would rank every cell at the
     // warm-start it inherited rather than at its own quasi-mode.
