@@ -216,6 +216,11 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                      X_zi = NULL, zi_prior_sd = 2.5,
                      control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$eb, "tulpa_eb")
+  # A family typo reached the inner solve and came back as 39 warnings and "the
+  # inner Laplace solve failed" (gcol33/tulpa#886); name it, as
+  # tulpa_re_cov_nested() does.
+  family <- .canonical_family(family)
+  .family_or_stop(family)
   hyperprior <- .hp_choice(match.arg(hyperprior))
   log_prior_theta <- .re_cov_resolve_hyperprior(hyperprior, log_prior_theta)
   max_iter    <- as.integer(control$max_iter %||% 100L)
@@ -248,8 +253,7 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
     stop("`control$marginal_step` must be a single positive number.",
          call. = FALSE)
   }
-  n_quad <- as.integer(n_quad)
-  if (n_quad < 1L) stop("`n_quad` must be >= 1.", call. = FALSE)
+  n_quad <- .check_n_quad(n_quad)
 
   # need_scale = FALSE: the numerical outer Hessian exists to place integration
   # nodes. EB places none, and asking Nelder-Mead for it costs O(k^2) extra

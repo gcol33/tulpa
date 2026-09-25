@@ -13,6 +13,33 @@
 # multinomial [class 1 terms, ..., class K-1 terms]; ordinal [beta, cutpoints].
 # ------------------------------------------------------------------------------
 
+# The response and design of a categorical fit, read from `formula` / `data`
+# the way every other door reads them: incomplete rows refused rather than
+# dropped by model.frame()'s default na.action, which took N from 150 to 145
+# in silence (gcol33/tulpa#886), and every response level observed. A level
+# with no rows is not identified -- an empty top level of an ordinal response
+# put its cutpoint at 12.1, an empty middle one two cutpoints on top of each
+# other -- so it is refused by name, pointing at droplevels(). Returns
+# list(y = factor, X = model matrix).
+#' @keywords internal
+.categorical_model_frame <- function(formula, data, fitter, ordered) {
+  mf <- stats::model.frame(formula, data, na.action = stats::na.pass)
+  y  <- stats::model.response(mf)
+  if (!is.factor(y)) y <- factor(y, ordered = ordered)
+  X  <- stats::model.matrix(stats::terms(mf), mf)
+  .assert_finite_model_inputs(X, as.integer(y), where = fitter)
+  counts <- tabulate(as.integer(y), nlevels(y))
+  if (any(counts == 0L)) {
+    stop(sprintf(paste0(
+      "%s(): response level(s) %s have no observations, so their class ",
+      "parameters are not identified. Drop them with droplevels() or merge ",
+      "them into a neighbouring level."),
+      fitter, paste0("'", levels(y)[counts == 0L], "'", collapse = ", ")),
+      call. = FALSE)
+  }
+  list(y = y, X = X)
+}
+
 # Covariate design at the training data or rebuilt at `newdata`, restricted to
 # the columns the fit estimated (the ordinal model carries no intercept).
 #' @keywords internal

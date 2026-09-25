@@ -154,6 +154,9 @@ tulpa_laplace <- function(y, n_trials, X,
   n_obs <- length(y)
   n_fixed <- ncol(X)
   family <- .canonical_family(family)
+  # Named against the family registry, not by the C++ lookup, whose message
+  # names a header rather than the typo (gcol33/tulpa#886).
+  .family_or_stop(family)
 
   if (!is.null(phi2)) {
     .phi2_or_stop(family, phi2)

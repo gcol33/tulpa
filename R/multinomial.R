@@ -59,9 +59,9 @@ tulpa_multinomial <- function(formula, data,
   tol      <- control$tol %||% 1e-8
   n_draws  <- as.integer(control$n_draws %||% 2000L)
 
-  mf <- stats::model.frame(formula, data)
-  y  <- stats::model.response(mf)
-  if (!is.factor(y)) y <- factor(y)
+  cm <- .categorical_model_frame(formula, data, "tulpa_multinomial",
+                                 ordered = FALSE)
+  y  <- cm$y
   K  <- nlevels(y)
   if (K < 3L) {
     stop("tulpa_multinomial() needs a response with >= 3 levels; for 2 use ",
@@ -69,7 +69,7 @@ tulpa_multinomial <- function(formula, data,
   }
   K1  <- K - 1L
   cls <- as.integer(y)                       # 1..K, K = baseline
-  X   <- stats::model.matrix(stats::terms(mf), mf)
+  X   <- cm$X
   n   <- nrow(X); p <- ncol(X)
   tau <- 1 / (beta_prior_sd^2)               # ridge precision
 

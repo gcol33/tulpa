@@ -283,6 +283,20 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
 }
 
 
+# The number of adaptive Gauss-Hermite nodes per group: a single whole number
+# >= 1. `as.integer()` truncated 2.5 to 2 and ran a quadrature the caller did
+# not ask for (gcol33/tulpa#886). Returns it as an integer.
+#' @keywords internal
+.check_n_quad <- function(n_quad) {
+  if (!is.numeric(n_quad) || length(n_quad) != 1L || !is.finite(n_quad) ||
+      n_quad < 1 || n_quad != round(n_quad)) {
+    stop("`n_quad` must be a single whole number >= 1; got ",
+         paste(format(n_quad), collapse = ", "), ".", call. = FALSE)
+  }
+  as.integer(n_quad)
+}
+
+
 # A model with random effects only (`y ~ 0 + (1 | g)`) has an empty fixed
 # design. The sampler and conditional-Laplace backends carry it; the fitters
 # that summarize or integrate over a fixed-effect block do not, and failed on

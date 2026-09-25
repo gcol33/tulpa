@@ -113,16 +113,46 @@ agq_fit <- function(y, X, group,
                  length(group), n_obs), call. = FALSE)
   }
   group <- as.integer(group)
+  if (anyNA(group)) {
+    stop(sprintf(paste0(
+      "`group` has missing value(s) (first at row %d). tulpa does not drop ",
+      "incomplete cases; remove those rows or give them a group."),
+      which(is.na(group))[1L]), call. = FALSE)
+  }
   if (any(group < 1L) || any(group > n_groups)) {
     stop("`group` indices must lie in 1..n_groups.", call. = FALSE)
   }
-  if (n_quad < 1L) stop("`n_quad` must be >= 1.", call. = FALSE)
-  if (is.null(n_trials)) n_trials <- rep(1L, n_obs)
-  if (is.null(beta_init)) beta_init <- rep(0, p)
+  n_quad <- .check_n_quad(n_quad)
+  # The scales reach log() and the oracle's density: a non-positive
+  # `sigma_init` was "non-finite value supplied by optim", and a negative
+  # `sigma_eps` was squared into a valid variance without a word
+  # (gcol33/tulpa#886).
+  for (arg in list(list(v = sigma_init, nm = "sigma_init"),
+                   list(v = sigma_eps, nm = "sigma_eps"))) {
+    if (!is.numeric(arg$v) || length(arg$v) != 1L || !is.finite(arg$v) ||
+        arg$v <= 0) {
+      stop(sprintf("`%s` must be a single positive number; got %s.",
+                   arg$nm, paste(format(arg$v), collapse = ", ")),
+           call. = FALSE)
+    }
+  }
+  n_trials <- .normalize_n_trials(family, n_trials, n_obs)
   if (is.null(offset)) offset <- rep(0, n_obs)
   if (length(offset) != n_obs) {
     stop(sprintf("length(offset) (%d) must equal length(y) (%d).",
                  length(offset), n_obs), call. = FALSE)
+  }
+  # The finite guard and the support rules every other door applies: an NA
+  # response and a binomial y > n_trials both surfaced as a per-group solve
+  # failure advising a different beta_init / sigma_init (gcol33/tulpa#886).
+  .assert_finite_model_inputs(X, y, n_trials = n_trials, offset = offset,
+                              where = "agq_fit")
+  .validate_family_support(family, y, n_trials = n_trials)
+  if (is.null(n_trials)) n_trials <- rep(1L, n_obs)
+  if (is.null(beta_init)) beta_init <- rep(0, p)
+  if (length(beta_init) != p) {
+    stop(sprintf("length(beta_init) (%d) must equal ncol(X) (%d).",
+                 length(beta_init), p), call. = FALSE)
   }
 
   # Intercept-only RE: route through the shared compiled GLMM oracle, so the

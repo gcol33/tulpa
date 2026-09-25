@@ -1699,8 +1699,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   n_threads   <- as.integer(control$n_threads %||% 1L)
   checkpoint  <- control$checkpoint
   sd_cfg      <- .subspace_debias_config(control$subspace_debias)
-  n_quad <- as.integer(n_quad)
-  if (n_quad < 1L) stop("`n_quad` must be >= 1.", call. = FALSE)
+  n_quad <- .check_n_quad(n_quad)
   .seed_scoped(seed)
 
   core <- .re_cov_theta_fit(

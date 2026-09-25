@@ -104,11 +104,30 @@ mala <- function(log_posterior,
   # scale is eps * sqrt(M_inv).
   M_inv <- mass_diag
 
+  # The gradient enters the drift elementwise against d-vectors, so a short
+  # return value was recycled and the chain ran on a wrong drift in silence
+  # (gcol33/tulpa#886). Checked at every evaluation: a gradient can change
+  # shape with its argument.
+  grad_at <- function(th) {
+    g <- grad_log_posterior(th)
+    if (!is.numeric(g) || length(g) != d) {
+      stop(sprintf(paste0(
+        "`grad_log_posterior()` must return a numeric vector of length %d ",
+        "(one entry per element of `init`); got %s of length %d."),
+        d, class(g)[1L], length(g)), call. = FALSE)
+    }
+    as.numeric(g)
+  }
+
   theta <- as.numeric(init)
   log_p_curr <- log_posterior(theta)
-  grad_curr <- grad_log_posterior(theta)
-  if (!is.finite(log_p_curr)) {
+  if (!is.numeric(log_p_curr) || length(log_p_curr) != 1L ||
+      !is.finite(log_p_curr)) {
     stop("`log_posterior(init)` is not finite.", call. = FALSE)
+  }
+  grad_curr <- grad_at(theta)
+  if (!all(is.finite(grad_curr))) {
+    stop("`grad_log_posterior(init)` is not finite.", call. = FALSE)
   }
 
   draws_all <- matrix(NA_real_, nrow = n_iter, ncol = d)
@@ -149,7 +168,7 @@ mala <- function(log_posterior,
       log_alpha <- -Inf
       grad_prop <- grad_curr
     } else {
-      grad_prop <- grad_log_posterior(prop)
+      grad_prop <- grad_at(prop)
       log_alpha <- (log_p_prop + log_q(theta, prop, grad_prop, eps)) -
         (log_p_curr + log_q(prop, theta, grad_curr, eps))
     }

@@ -15,7 +15,9 @@ tulpa_ordinal(
 }
 \arguments{
 \item{formula}{Model formula; the response must be an ordered (or coercible)
-factor with >= 3 levels. An intercept in \code{formula} is dropped.}
+factor with >= 3 levels, each observed at least once. An intercept in
+\code{formula} is dropped; \code{y ~ 1} fits the cutpoints alone. Incomplete rows
+are refused, not dropped.}
 
 \item{data}{A data frame.}
 

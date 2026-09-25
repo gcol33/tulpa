@@ -402,6 +402,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             control = list()) {
 
   tulpa_check_control(control, .CONTROL_KEYS$nested_laplace, "tulpa_nested_laplace")
+  # A typo is named here, against the family registry, rather than by the C++
+  # family lookup, whose message names a header (gcol33/tulpa#886). A consumer
+  # `likelihood` supplies its own density and bypasses the builtin family.
+  if (is.null(likelihood)) .family_or_stop(.canonical_family(family))
   hyperprior <- .hp_choice(match.arg(hyperprior))
   tm <- .tulpa_timer()
 
