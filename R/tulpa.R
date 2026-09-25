@@ -63,6 +63,41 @@
 }
 
 
+# Starting point and metric for the front door's MALA: the posterior mode and
+# the Laplace covariance there, the inverse of the precision above.
+#
+# MALA's own default is the identity metric from the builder's zero start, and
+# on a GLMM that is a metric off by an order of magnitude in both directions --
+# a fixed slope resolved to ~0.05, a group effect spanning its whole prior SD --
+# with the fixed intercept and the group effects tied along a ridge the data
+# never resolve. The step size dual-averages down to the narrowest direction
+# and the chain crawls along the rest: bulk ESS 1 to 9 of 1000 on the intercept
+# of a 15-group poisson (1 | g), point estimates 0.31 to 0.48 across seeds
+# against imh_laplace's 0.41 (gcol33/tulpa#878). The dense Laplace covariance
+# carries both the scales and that correlation; the MH step keeps the target
+# exact whatever metric is used, so a poor Laplace fit costs efficiency, never
+# correctness. Falls back to the precision's diagonal, then to the builder's
+# own start, when the mode search or the factorization fails.
+.glmm_mala_metric <- function(m) {
+  fallback <- list(init = m$init)
+  mp <- tryCatch(.glmm_mode_precision(m), error = function(e) NULL)
+  if (is.null(mp) || !all(is.finite(mp$mode)) ||
+      !is.finite(m$log_posterior(mp$mode))) {
+    return(fallback)
+  }
+  init <- stats::setNames(mp$mode, names(m$init))
+  S <- tryCatch(chol2inv(chol(mp$precision)), error = function(e) NULL)
+  if (!is.null(S) && all(is.finite(S))) {
+    return(list(init = init, mass_matrix = S))
+  }
+  dg <- diag(mp$precision)
+  if (all(is.finite(dg) & dg > 0)) {
+    return(list(init = init, mass_diag = 1 / dg))
+  }
+  list(init = init)
+}
+
+
 # Build the `prior` argument for tulpa_nested_laplace() from the formula's
 # parsed latent blocks. Every `latent(...)` term resolves to a
 # tulpa_latent_block (a tgmrf), which is itself a valid nested-Laplace prior
@@ -1224,10 +1259,13 @@
     # invisible from the other -- the drift gcol33/tulpa#632 measured on
     # `k_samples` (gcol33/tulpa#676).
     if (backend == "mala") {
+      pre <- .glmm_mala_metric(m)
       return(.drop_null(list(
         log_posterior = m$log_posterior,
         grad_log_posterior = m$grad_log_posterior,
-        init = m$init,
+        init = pre$init,
+        mass_matrix = pre$mass_matrix,
+        mass_diag = pre$mass_diag,
         n_iter = control$n_iter,
         warmup = control$warmup,
         epsilon = control$epsilon,
@@ -2868,5 +2906,8 @@ tulpa <- function(formula, data,
       fit$n_latent_blocks <- parsed$n_latent_blocks %||% 0L
     }
   }
-  fit
+  # A chain that has not mixed is flagged here, where every sampler door
+  # returns, rather than only by a diagnostic the caller has to think to run
+  # (gcol33/tulpa#875, #878).
+  .tulpa_check_fit_convergence(fit)
 }

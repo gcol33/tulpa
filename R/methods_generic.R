@@ -624,6 +624,13 @@ print.tulpa_fit <- function(x, ...) {
   .print_smooth_section(x)
   adl <- .tulpa_axis_dropped_line(.tulpa_axis_dropped(x))
   if (!is.null(adl)) cat("\n", adl, "\n", sep = "")
+  cv <- x$convergence
+  if (is.list(cv) && identical(cv$ok, FALSE)) {
+    cat(sprintf(paste0(
+      "\nWARNING: chain not converged (max Rhat %.2f, min bulk-ESS %.0f on %s);",
+      "\n  these estimates are not yet the posterior. See check_diagnostics().\n"),
+      cv$rhat_max, cv$ess_bulk_min, paste(cv$parameters, collapse = ", ")))
+  }
   invisible(x)
 }
 

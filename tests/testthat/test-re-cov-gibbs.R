@@ -211,3 +211,37 @@ test_that("tulpa_re_cov_gibbs() refuses a model with no random-effect term", {
     tulpa(y ~ x, data = d, family = "binomial", mode = "re_cov_gibbs"),
     "no random-effect terms")
 })
+
+# gcol33/tulpa#875: where a block's design column repeats a fixed-effect column,
+# beta_j + d, b_{g,c} - d leaves eta unchanged, and the one-block random walks
+# crossed that ridge at the narrow conditional step: intercept bulk-ESS 1 to 11
+# of 2000 on a gaussian (1 + x | g), estimates 0.42 to 0.92 across seeds
+# against lmer's 0.82. The sweep now draws the translation exactly.
+test_that("the fixed-effect alias of each RE design column is found exactly", {
+  X <- cbind(1, x = c(0.5, -1, 2, 0.3), z = c(1, 1, 2, 2))
+  expect_identical(.re_gibbs_fixed_alias(cbind(1, X[, "x"]), X), c(0L, 1L))
+  # a slope with no matching fixed column, and an intercept-free term
+  expect_identical(.re_gibbs_fixed_alias(cbind(c(3, 1, 4, 1)), X), -1L)
+  expect_identical(.re_gibbs_fixed_alias(cbind(X[, "z"]), X), 2L)
+  # correlated with a fixed column is not a repeat of it
+  expect_identical(.re_gibbs_fixed_alias(cbind(X[, "x"] + 1e-3), X), -1L)
+})
+
+test_that("re_cov_gibbs mixes the fixed effects of a gaussian (1 + x | g)", {
+  skip_on_cran()
+  set.seed(1); J <- 30; n <- 300; gi <- sample(J, n, TRUE); x <- rnorm(n)
+  S <- matrix(c(1, -.3, -.3, .25), 2)
+  B <- MASS::mvrnorm(J, c(0, 0), S)
+  d <- data.frame(y = 1 + .5 * x + B[gi, 1] + B[gi, 2] * x + rnorm(n, 0, .3),
+                  x, g = factor(gi))
+  for (s in 1:2) {
+    f <- expect_no_warning(tulpa(y ~ x + (1 + x | g), d, family = "gaussian",
+                                 phi = 0.09, mode = "auto",
+                                 control = list(seed = s)))
+    expect_identical(f$backend, "re_cov_gibbs")
+    expect_true(isTRUE(f$convergence$ok))
+    expect_gt(f$convergence$ess_bulk_min, 500)
+    # lme4::lmer on this fixture: (Intercept) 0.823, x 0.648.
+    expect_equal(unname(coef(f)), c(0.823, 0.648), tolerance = 0.05)
+  }
+})

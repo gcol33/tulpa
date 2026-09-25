@@ -78,6 +78,50 @@ test_that("mala mass_diag preconditioner improves mixing on scaled target", {
 })
 
 
+test_that("mala's dense metric samples a strongly correlated target exactly", {
+  # A dense inverse mass changes the proposal, never the target: the MH step
+  # keeps the draws exact, so the moments come back whatever the metric.
+  set.seed(306L)
+  S <- matrix(c(1, 0.95, 0.95, 1), 2)
+  P <- solve(S)
+  log_post <- function(t) -0.5 * drop(t %*% P %*% t)
+  grad <- function(t) -drop(P %*% t)
+  fit <- mala(log_post, grad, init = c(0, 0), n_iter = 4000L, warmup = 1000L,
+              mass_matrix = S, seed = 1L)
+  expect_equal(unname(cov(fit$draws)), S, tolerance = 0.15)
+  expect_equal(unname(colMeans(fit$draws)), c(0, 0), tolerance = 0.15)
+  expect_error(mala(log_post, grad, init = c(0, 0), mass_diag = c(1, 1),
+                    mass_matrix = S), "at most one")
+  expect_error(mala(log_post, grad, init = c(0, 0),
+                    mass_matrix = matrix(c(1, 2, 2, 1), 2)),
+               "positive definite")
+})
+
+
+# gcol33/tulpa#878: the front door ran MALA from the builder's zero start on an
+# identity metric. On a GLMM the step dual-averaged down to the narrowest
+# direction and the intercept chain crawled along the intercept / group-effect
+# ridge: bulk ESS 1 to 9 of 1000, point estimates 0.31 to 0.48 across seeds
+# against imh_laplace's 0.41. It now starts at the mode with the Laplace covariance
+# as a dense metric.
+test_that("front-door MALA mixes on a poisson random intercept at default length", {
+  skip_on_cran()
+  set.seed(12); J <- 15; n <- 200; gi <- sample(J, n, TRUE); x <- rnorm(n)
+  d <- data.frame(y = rpois(n, exp(.5 + .4 * x + rnorm(J, 0, .6)[gi])), x,
+                  g = factor(gi))
+  lap <- tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "laplace",
+               sigma_re = .6)
+  for (s in 1:2) {
+    f <- expect_no_warning(tulpa(y ~ x + (1 | g), d, family = "poisson",
+                                 mode = "mala", sigma_re = .6,
+                                 control = list(seed = s)))
+    expect_true(isTRUE(f$convergence$ok))
+    expect_gt(f$convergence$ess_bulk_min, 100)
+    expect_equal(coef(f), coef(lap), tolerance = 0.15)
+  }
+})
+
+
 test_that("mala errors on non-finite init", {
   log_post <- function(t) {
     if (t[1] > 100) -Inf else sum(dnorm(t, log = TRUE))

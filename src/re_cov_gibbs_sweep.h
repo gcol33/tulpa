@@ -18,6 +18,10 @@
 //                             Cholesky L_g (the pilot Laplace posterior block).
 //   * Sigma_m | b_m         -- exact conjugate inverse-Wishart per block (full =>
 //                             matrix IW; diagonal => per-coordinate scalar IW).
+//   * (beta_A, b_{m,A})     -- exact Gaussian draw along the translation that
+//                             leaves eta unchanged, wherever a block's design
+//                             column repeats a fixed-effect column
+//                             (translate_aliased_block).
 //
 // The shared linear predictor xb + sum_m re_contrib_m is maintained incrementally
 // so each block update sees the others held fixed (the cross-block eta coupling
@@ -98,6 +102,10 @@ struct CovBlock {
     double nu0 = 0.0;
     Eigen::MatrixXd Lambda0;      // full
     Eigen::VectorXd lambda0;      // diagonal
+    // alias[c]: the fixed-effect column whose design equals this block's
+    // coefficient-c design column row for row (0-based), or -1. See
+    // translate_aliased_block().
+    std::vector<int> alias;
 };
 
 // Exact conjugate draw of one block's Sigma given its random effects B_m
@@ -174,6 +182,62 @@ inline double log_re_gaussian(const Eigen::MatrixXd& B, const Eigen::MatrixXd& S
         lp += -0.5 * nc * std::log(2.0 * M_PI) - half_logdet - 0.5 * w.squaredNorm();
     }
     return lp;
+}
+
+// ---------------------------------------------------------------------------
+// Exact draw along the direction the likelihood cannot see.
+//
+// Where a block's coefficient-c design column equals fixed-effect column j (the
+// intercept of a (1 | g) term against the model intercept, x in (1 + x | g)
+// against the fixed slope), eta is unchanged by beta_j += d, b_{g,c} -= d for
+// every group g. The data never resolve that ridge: only the RE prior and the
+// beta prior do, so the one-block-at-a-time random walks above cross it at the
+// rate of the narrow conditional step, and the fixed-effect chain barely moves
+// -- bulk ESS 2 to 20 of 2000 on the intercept of a gaussian (1 + x | g), with
+// lag-1 autocorrelation 0.995 (gcol33/tulpa#875). The translation is a group
+// move with unit Jacobian and a Lebesgue Haar measure, so drawing d from its
+// full conditional pi(T_d(state)) leaves the target invariant (Liu & Sabatti
+// 2000). With the likelihood constant along it, that conditional is Gaussian:
+//   log pi(d) = -0.5 sum_g (b_g - P d)' Q (b_g - P d)
+//               -0.5 sum_i (beta_{j_i} + d_i - m_i)^2 / s_i^2 + const,
+// precision  G P'QP + diag(1 / s^2)  and linear term
+// P'Q sum_g b_g - (beta_A - m_A) / s^2, where P selects the aliased
+// coefficients. One joint draw per block, every aliased coefficient at once.
+// ---------------------------------------------------------------------------
+inline bool translate_aliased_block(Eigen::MatrixXd& B_m, Eigen::VectorXd& beta,
+                                    const Eigen::MatrixXd& Q_m,
+                                    const std::vector<int>& alias,
+                                    const Eigen::VectorXd& prior_mean,
+                                    const Eigen::VectorXd& prior_sd) {
+    std::vector<int> cs;
+    for (int c = 0; c < static_cast<int>(alias.size()); ++c)
+        if (alias[c] >= 0) cs.push_back(c);
+    const int a = static_cast<int>(cs.size());
+    if (a == 0) return false;
+    const double G = static_cast<double>(B_m.rows());
+    const Eigen::VectorXd Qb = Q_m * Eigen::VectorXd(B_m.colwise().sum().transpose());
+
+    Eigen::MatrixXd Lam(a, a);
+    Eigen::VectorXd h(a);
+    for (int i = 0; i < a; ++i) {
+        for (int k = 0; k < a; ++k) Lam(i, k) = G * Q_m(cs[i], cs[k]);
+        const int j = alias[cs[i]];
+        const double s = prior_sd(j);
+        const double prec = (std::isfinite(s) && s > 0.0) ? 1.0 / (s * s) : 0.0;
+        Lam(i, i) += prec;
+        h(i) = Qb(cs[i]) - prec * (beta(j) - prior_mean(j));
+    }
+    Eigen::LLT<Eigen::MatrixXd> llt(0.5 * (Lam + Lam.transpose()));
+    if (llt.info() != Eigen::Success) return false;
+    Eigen::VectorXd z(a);
+    for (int i = 0; i < a; ++i) z(i) = R::rnorm(0.0, 1.0);
+    // d = Lam^-1 h + L^-T z, with Lam = L L'.
+    const Eigen::VectorXd d = llt.solve(h) + llt.matrixU().solve(z);
+    for (int i = 0; i < a; ++i) {
+        beta(alias[cs[i]]) += d(i);
+        B_m.col(cs[i]).array() -= d(i);
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +417,17 @@ inline GibbsOutput run_glmm_gibbs(
                                         static_cast<double>(acc_m) / G, tgt_b[m]);
             n_acc_b  += acc_m;
             n_prop_b += G;
+
+            // Translation along the ridge the likelihood cannot see. eta is
+            // unchanged, so only the bookkeeping moves: the rebound beta and
+            // this block's contribution.
+            if (translate_aliased_block(B[m], beta, Qm, blocks[m].alias,
+                                        cfg.beta_prior_mean, cfg.beta_prior_sd)) {
+                for (int mm = 0; mm < M; ++mm) oracles[mm]->rebind(beta.data());
+                oracles[m]->re_contribution(B[m], nc_contrib);
+                re_total += nc_contrib - re_contrib[m];
+                re_contrib[m] = nc_contrib;
+            }
         }
 
         // --- Sigma_m | b_m : exact conjugate draw per block -----------------
