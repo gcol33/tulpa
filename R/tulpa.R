@@ -147,6 +147,8 @@
     )
     if (backend == "bym2") {
       prior$scale_factor <- as.numeric(spatial$scale_factor %||% 1.0)
+      # Per-component scaling beyond the reference scale (gcol33/tulpa#902).
+      prior$node_prec <- spatial$node_prec
     }
     if (backend == "car_proper" && !is.null(spatial$rho_bounds)) {
       prior$rho_bounds <- as.numeric(spatial$rho_bounds)
@@ -650,6 +652,28 @@
 # Assemble the fitter argument list for a backend from the model pieces. Routes
 # on the backend's input contract (BACKEND_REGISTRY$<backend>$input). Backends
 # that are reachable but not yet wired through tulpa() error with guidance.
+# `control$n_threads` under mode = "auto" (gcol33/tulpa#911). The sampler
+# branch of .tulpa_fitter_args() refuses the knob, because a sampler reads no
+# thread count and a knob dropped in silence is what the control check exists
+# to prevent. That refusal is right for a mode the caller NAMED; under "auto"
+# the caller cannot know which backend the router will pick, and the knob is
+# one every Laplace candidate reads, so refusing it made the same call fail or
+# succeed depending on the model's terms. Under auto the knob is dropped with a
+# message naming the backend that ignored it; an explicit mode keeps the error.
+#' @keywords internal
+.auto_drop_unread_threads <- function(control, sel) {
+  if (is.null(control$n_threads) || isTRUE(sel$explicit) ||
+      !identical(BACKEND_REGISTRY[[sel$backend]]$input, "modeldata")) {
+    return(control)
+  }
+  message("tulpa(): mode = 'auto' resolved to the sampler backend '",
+          sel$backend, "', which does not read `control$n_threads`; it is ",
+          "ignored. A sampler run's OpenMP teams are sized from ",
+          "`control$n_chains` and the environment (OMP_NUM_THREADS).")
+  control$n_threads <- NULL
+  control
+}
+
 .tulpa_fitter_args <- function(backend, bundle, family, sigma_re,
                                n_trials, phi, beta_prior, control,
                                latent_blocks = list(), spatial = NULL,
@@ -1334,6 +1358,19 @@
           "'nested_laplace'), or fit_spde() for SPDE."),
           backend, sp$type), call. = FALSE)
       }
+      # The ModelData sampler's BYM2 carries ONE scale for the whole graph, in
+      # an exported struct; per-component scaling (a disconnected graph, an
+      # island) lives on the nested-Laplace, Laplace and Gibbs kernels, so the
+      # sampler refuses it rather than fit a differently scaled model
+      # (gcol33/tulpa#902).
+      if (identical(sp$type, "bym2") && !is.null(sp$node_prec)) {
+        stop(sprintf(paste0(
+          "Backend '%s' scales a BYM2 field with one factor for the whole ",
+          "graph, and this graph has several connected components (or an ",
+          "isolated node), which are scaled separately. Fit it with ",
+          "mode = 'auto' / 'nested_laplace' / 'laplace', or mode = 'gibbs' for ",
+          "a binomial response."), backend), call. = FALSE)
+      }
       spatial_spec_arg <- list(
         type            = sp$type,
         spatial_idx     = sp$spatial_idx,
@@ -1819,6 +1856,15 @@ tulpa <- function(formula, data,
          "`hyperprior = \"proper\"` or `\"flat\"` there.", call. = FALSE)
   }
   tulpa_check_control(re_prior, .RE_PRIOR_KEYS, "tulpa (re_prior)")
+  # The RE-covariance hyperprior anchors, named as the user set them rather
+  # than as whichever backend builds the prior (gcol33/tulpa#894).
+  if (!is.null(re_prior$eta)) {
+    .check_lkj_eta(re_prior$eta, "re_prior$eta", "tulpa()")
+  }
+  if (!is.null(re_prior$prior_sigma)) {
+    .check_pc_anchor_pair(re_prior$prior_sigma, "re_prior$prior_sigma",
+                          "tulpa()")
+  }
   hyperprior <- .hp_choice(match.arg(hyperprior))
   if (!is.logical(estimate_phi) || length(estimate_phi) != 1L ||
       is.na(estimate_phi)) {
@@ -2080,13 +2126,7 @@ tulpa <- function(formula, data,
         # The SPDE projector A maps observations -> mesh nodes; it must have one
         # row per observation in `data`. spatial_spde() builds A from the same
         # data, so a mismatch means the spec was built from a different frame.
-        n_a <- tryCatch(nrow(spatial_spec$A), error = function(e) NULL)
-        if (is.null(n_a) || n_a != bundle$n_obs) {
-          stop("SPDE projector matrix A has ", n_a %||% "?", " row(s) but `data` ",
-               "has ", bundle$n_obs, " observation(s). Build the SPDE spec from ",
-               "the same data (spatial_spde(~ lon + lat, data = <data>)).",
-               call. = FALSE)
-        }
+        .check_spde_rows(spatial_spec, bundle$n_obs, "tulpa()")
       } else if (sp_lc == "hsgp") {
         if (!inherits(spatial_spec, "tulpa_hsgp")) {
           stop("An HSGP spatial field must be a spatial_gp(~ lon + lat, approx = 'hsgp') spec ",
@@ -2588,10 +2628,23 @@ tulpa <- function(formula, data,
     }
     # This branch reaches ANY explicit Tier-1 backend under an SPDE field
     # (gibbs, mala, ess, ...), not only the natural mode = 'exact' / 'hmc'
-    # route that maps to it -- so an explicit request for one of the others is
-    # an override, recorded and warned about like every other one
-    # (gcol33/tulpa#768). The natural route is not, since nothing was lost:
-    # it is the same exact-NUTS tier reaching its own field-specific engine.
+    # route that maps to it. A request NAMING one of the others asked for an
+    # algorithm this field has no implementation of, so it is refused rather
+    # than run as NUTS under a warning (gcol33/tulpa#912; the warning was
+    # gcol33/tulpa#768, and a script that suppresses warnings got a different
+    # sampler in silence). A TIER request ("exact") promised a tier, not an
+    # algorithm, and that promise holds here, so it keeps the recorded override.
+    # The natural route is not an override at all, since nothing was lost: it
+    # is the same exact-NUTS tier reaching its own field-specific engine.
+    if (isTRUE(sel$explicit) && identical(sel$requested, sel$backend) &&
+        !identical(sel$backend, "hmc")) {
+      stop(sprintf(paste0(
+        "mode = '%s' has no implementation for an SPDE field. Its exact ",
+        "(Tier-1) sampler is NUTS over the Matern field and hyperparameters: ",
+        "pass mode = 'exact' or 'hmc' for it, or mode = 'auto' / ",
+        "'nested_laplace' for the nested-Laplace SPDE path."), sel$backend),
+        call. = FALSE)
+    }
     sel <- .sel_redirect(sel, "spde",
       "SPDE field, Tier-1 mode: exact NUTS over the Matern field + hyperparameters",
       notify = !identical(sel$backend, "hmc"))
@@ -2716,6 +2769,8 @@ tulpa <- function(formula, data,
   # Resolved before backend dispatch; `beta_prior` itself stays as supplied, so
   # the branches that reject a fixed-effect prior still see NULL when none was.
   beta_prior_resolved <- beta_prior %||% .tulpa_default_beta_prior()
+
+  control <- .auto_drop_unread_threads(control, sel)
 
   args <- .tulpa_fitter_args(sel$backend, bundle, family, sigma_re,
                              n_trials, phi, beta_prior, control,

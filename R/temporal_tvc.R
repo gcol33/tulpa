@@ -222,6 +222,7 @@ validate_tvc <- function(tvc, data, X) {
 
   # Get time values and create indices
   time_vals <- data[[tvc$time_var]]
+  .check_time_complete(time_vals, tvc$time_var)
   unique_times <- NULL
   if (is.factor(time_vals)) {
     time_factor <- time_vals
@@ -248,10 +249,6 @@ validate_tvc <- function(tvc, data, X) {
            "which read the index as a position on a grid.", call. = FALSE)
     }
     tvals <- as.numeric(unique_times)
-    if (anyNA(tvals)) {
-      stop("`temporal_tvc(structure = \"gp\")`: time variable '", tvc$time_var,
-           "' has missing values.", call. = FALSE)
-    }
     # Scaled the way temporal_gp() scales its own: the lengthscale then lives on
     # one support whatever units the time variable is measured in. `period` is a
     # LAG stated in the raw units and makes the same trip; centring cancels in a

@@ -187,6 +187,17 @@ test_that("an SPDE spec rejects a spatial(col) term, a bad dimension, RE, and a 
   )
 })
 
+test_that("a named sampler with no SPDE implementation is refused, not run as NUTS (#912)", {
+  # mode = 'gibbs' under an SPDE field used to run the SPDE NUTS engine under a
+  # warning, so a script that suppressed warnings got a different algorithm.
+  set.seed(1)
+  d <- data.frame(lon = runif(40), lat = runif(40), x = rnorm(40))
+  d$y <- rpois(40, 2)
+  sp <- spatial_spde(~ lon + lat, data = d)
+  expect_error(tulpa(y ~ x, d, family = "poisson", spatial = sp, mode = "gibbs"),
+               "mode = 'gibbs' has no implementation for an SPDE field")
+})
+
 test_that("generic accessors work on an auto-mode SPDE fit (coef/vcov/confint/summary)", {
   skip_if_not_installed("fmesher")
   skip_on_cran()

@@ -7,13 +7,13 @@
 .graph_components(adjacency)
 }
 \description{
-Iterative depth-first search, so it carries no recursion-depth risk on a
-large map. Returns what \code{graph_partition} (\code{inst/include/tulpa/graph_components.h})
-returns -- the actual component MEMBERSHIP, not just a count -- so a genuine
-disconnected map (a mainland plus islands) pins each component's constant
-over that component's real nodes rather than an equal-size contiguous split.
-Takes the dense adjacency rather than a sparse one because symmetric sparse
-storage (\code{dsCMatrix}) keeps a single triangle, which would put an edge's two
-endpoints in different components.
+Breadth-first over the sparse structure of W + W' (\code{.adj_component_labels},
+shared with the adjacency validator), so an edge stored in one triangle only
+still joins its endpoints and no dense copy is made. Returns what
+\code{graph_partition} (\code{inst/include/tulpa/graph_components.h}) returns -- the
+actual component MEMBERSHIP, not just a count -- so a genuine disconnected
+map (a mainland plus islands) pins each component's constant over that
+component's real nodes rather than an equal-size contiguous split.
+Components are ordered by their lowest node, members increasing.
 }
 \keyword{internal}

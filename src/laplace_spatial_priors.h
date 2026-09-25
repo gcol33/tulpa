@@ -15,6 +15,7 @@
 #include "laplace_types.h"
 #include "tulpa/graph_components.h"   // GraphPartition
 #include <Rcpp.h>
+#include <cmath>
 #include <cstdlib>
 #include <utility>
 #include <vector>
@@ -34,18 +35,28 @@ class SparseHessianBuilder;
 // whole graph as before; only the intrinsic null-space treatment is per
 // component -- one sum-to-zero penalty per component's nodes, and the
 // rank-deficiency normalizer uses (n - n_components).
+//
+// `node_prec` (optional, length n_spatial_units, constant within a component)
+// multiplies the precision of each component: component c carries
+// tau * w_c * (Q_c + 1_c 1_c' / J_c). It is how a BYM2 structured field is
+// scaled per connected component, the scalar scale_factor carrying the
+// reference component and w_c the rest (.bym2_component_scaling in R;
+// gcol33/tulpa#902). nullptr is w = 1 everywhere, byte-identical to the
+// unweighted path.
 void add_icar_prior(
     DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
     int spatial_start, int n_spatial_units, double tau_spatial,
     const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
-    const Rcpp::IntegerVector& n_neighbors, const GraphPartition& partition
+    const Rcpp::IntegerVector& n_neighbors, const GraphPartition& partition,
+    const double* node_prec = nullptr
 );
 
 void add_icar_prior_sparse(
     DenseVec& grad, SparseHessianBuilder& H, const Rcpp::NumericVector& x,
     int spatial_start, int n_spatial_units, double tau_spatial,
     const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
-    const Rcpp::IntegerVector& n_neighbors, const GraphPartition& partition
+    const Rcpp::IntegerVector& n_neighbors, const GraphPartition& partition,
+    const double* node_prec = nullptr
 );
 
 // The augmentation's dense rank-1 (1 1') Hessian, its densify-vs-fold storage
@@ -68,7 +79,8 @@ double log_prior_icar(
     const Rcpp::NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
     const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
-    const Rcpp::IntegerVector& n_neighbors, const GraphPartition& partition
+    const Rcpp::IntegerVector& n_neighbors, const GraphPartition& partition,
+    const double* node_prec = nullptr
 );
 
 // Structured intrinsic (ICAR, rank-deficient) field log-prior contribution,
@@ -82,7 +94,8 @@ double log_prior_icar_structured(
     const Rcpp::NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
     const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
-    const Rcpp::IntegerVector& n_neighbors, const GraphPartition& partition
+    const Rcpp::IntegerVector& n_neighbors, const GraphPartition& partition,
+    const double* node_prec = nullptr
 );
 
 void add_car_proper_prior(
@@ -117,6 +130,32 @@ void add_car_pattern(
     int spatial_start, int n_spatial_units,
     const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx
 );
+
+// The BYM2 structured field's per-node precision multipliers (`node_prec`
+// above), read off an optional R vector at an entry point: empty for NULL (the
+// unweighted path), otherwise checked to be n_units finite positive numbers.
+// Read here, once, so the Laplace, nested and joint entries refuse the same
+// malformed vector the same way.
+inline std::vector<double> read_node_prec(SEXP x, int n_units, const char* who) {
+    if (Rf_isNull(x)) return std::vector<double>();
+    Rcpp::NumericVector v(x);
+    if (v.size() != n_units) {
+        Rcpp::stop("%s: node_prec has length %d; expected n_spatial_units = %d.",
+                   who, (int) v.size(), n_units);
+    }
+    std::vector<double> out(v.begin(), v.end());
+    for (int s = 0; s < n_units; s++) {
+        if (!(out[s] > 0.0) || !std::isfinite(out[s])) {
+            Rcpp::stop("%s: node_prec[%d] (%g) must be finite and positive.",
+                       who, s + 1, out[s]);
+        }
+    }
+    return out;
+}
+
+inline const double* node_prec_ptr(const std::vector<double>& v) {
+    return v.empty() ? nullptr : v.data();
+}
 
 } // namespace tulpa
 

@@ -78,7 +78,8 @@ Rcpp::List cpp_nested_laplace_bym2(
     double prune_tol,
     int screen_iters,
     bool compute_fitted_var,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset,
+    Rcpp::Nullable<Rcpp::NumericVector> node_prec
 );
 
 Rcpp::List cpp_nested_laplace_car_proper(
@@ -330,7 +331,8 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     double prune_tol,
     int screen_iters,
     bool compute_fitted_var,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset,
+    Rcpp::Nullable<Rcpp::NumericVector> node_prec
 );
 
 Rcpp::List cpp_nested_laplace_st_hsgp(

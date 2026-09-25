@@ -98,7 +98,11 @@ void update_spatial_bym2(
     double beta0,                     // intercept the structured level shares
     double prior_beta_sd,             // its prior SD (PgInterceptLevel)
     Rcpp::NumericVector& u,           // out: combined spatial effect
-    double& removed_mean              // out: field level removed by centering phi
+    double& removed_mean,             // out: field level removed by centering phi
+    // Per-node precision multipliers of phi's ICAR prior: the per-component
+    // BYM2 scaling beyond `scale_factor`, which also gives an island its unit
+    // structured variance (gcol33/tulpa#902). nullptr: unweighted.
+    const double* node_prec = nullptr
 );
 
 // The BYM2 mixing weight is drawn on a fixed grid of cell midpoints over

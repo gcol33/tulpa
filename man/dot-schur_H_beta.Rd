@@ -4,7 +4,7 @@
 \alias{.schur_H_beta}
 \title{Schur complement of the latent block out of the joint Hessian.}
 \usage{
-.schur_H_beta(X, D, Q_latent, W)
+.schur_H_beta(X, D, Q_latent, W, constr = NULL)
 }
 \description{
 Given the fixed-effect design \code{X}, the combined latent design \code{D} (the iid
@@ -12,5 +12,16 @@ RE indicator block stacked with the spatial-field design), the latent prior
 precision \code{Q_latent}, and the GLM weights \code{W}, returns the marginal fixed-
 effect precision \verb{H_beta = X'WX - (X'WD) (D'WD + Q_latent)^\{-1\} (X'WD)'}.
 Shared by the SPDE and NNGP marginal-SE paths.
+}
+\details{
+\code{constr} (optional, \verb{ncol(D) x m}) holds hard linear constraints
+\verb{constr' u = 0} on the latent -- the sum-to-zero of an intrinsic field. The
+latent is then integrated over the constrained subspace only, so the Schur
+complement takes the constrained latent covariance
+\verb{P^\{-1\} - P^\{-1\} A (A' P^\{-1\} A)^\{-1\} A' P^\{-1\}} (conditioning by kriging,
+Rue & Held 2005) in place of \code{P^{-1}}, \verb{P = D'WD + Q_latent}. Without it the
+augmentation's finite variance on the intrinsic field's level, which the
+intercept aliases, lands in the intercept's standard error
+(gcol33/tulpa#901).
 }
 \keyword{internal}

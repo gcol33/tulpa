@@ -161,7 +161,8 @@ void update_spatial_bym2(
     double beta0,
     double prior_beta_sd,
     NumericVector& u,
-    double& removed_mean
+    double& removed_mean,
+    const double* node_prec
 ) {
   const int N = kappa.size();
   const int J = adj.n;
@@ -195,11 +196,17 @@ void update_spatial_bym2(
       neighbor_sum += phi_scaled[adj.col_idx[e]];
     }
 
-    const double prior_prec = (n_j > 0) ? n_j : PG_ICAR_ISOLATED_PREC;
+    // Unweighted, an island keeps the near-flat PG_ICAR_ISOLATED_PREC. With
+    // per-component scaling its multiplier IS its prior precision -- the unit
+    // structured variance the scaling gives an island -- and a connected
+    // node's row of the ICAR precision is scaled by its component's.
+    const double w_j = node_prec ? node_prec[j] : 1.0;
+    const double prior_prec = (n_j > 0) ? w_j * n_j
+                            : (node_prec ? w_j : PG_ICAR_ISOLATED_PREC);
     const double data_prec = sum_omega[j] * coef * coef;
 
     double post_prec = prior_prec + data_prec;
-    double post_mean_num = neighbor_sum + sum_resid[j] * coef;
+    double post_mean_num = w_j * neighbor_sum + sum_resid[j] * coef;
     level.add(phi_scaled[j], post_prec, post_mean_num);
 
     const double x_new =

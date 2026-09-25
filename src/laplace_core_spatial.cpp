@@ -99,9 +99,7 @@ Rcpp::List cpp_laplace_fit_spatial(
                                        adj_row_ptr, adj_col_idx, n_neighbors,
                                        sp_part);
     };
-    block.center = [&](Rcpp::NumericVector& x) {
-        return tulpa::center_intercept(x, block_start, n_spatial_units);
-    };
+    tulpa::centre_intrinsic_level(block);
     std::vector<tulpa::LatentBlock> blocks{ block };
 
     std::vector<double> params(in.layout.total_params, 0.0);
@@ -144,7 +142,8 @@ Rcpp::List cpp_laplace_fit_bym2(
     int force_sparse = 0,
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> node_prec_nullable = R_NilValue
 ) {
     // Fixed effects + optional iid RE + BYM2's two latent blocks (phi:
     // ICAR-structured & centered, theta: IID) through the unified spec solver.
@@ -173,6 +172,9 @@ Rcpp::List cpp_laplace_fit_bym2(
     // One constant null direction per connected component, as for plain ICAR.
     const tulpa::GraphPartition sp_part = tulpa::graph_partition(
         n_spatial_units, adj_row_ptr.begin(), adj_col_idx.begin());
+    // Per-component BYM2 scaling beyond the reference scale_factor (#902).
+    const std::vector<double> node_prec = tulpa::read_node_prec(
+        node_prec_nullable, n_spatial_units, "cpp_laplace_fit_bym2");
 
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);
@@ -195,7 +197,8 @@ Rcpp::List cpp_laplace_fit_bym2(
     phi_block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
                               const Rcpp::NumericVector& x, int /*k*/) {
         tulpa::add_icar_prior(grad, H, x, phi_start, n_spatial_units, 1.0,
-                               adj_row_ptr, adj_col_idx, n_neighbors, sp_part);
+                               adj_row_ptr, adj_col_idx, n_neighbors, sp_part,
+                               tulpa::node_prec_ptr(node_prec));
     };
     phi_block.log_prior = [&](const Rcpp::NumericVector& x, int /*k*/) {
         // Structured ICAR component (tau = 1); shares the quadratic form and the
@@ -204,11 +207,10 @@ Rcpp::List cpp_laplace_fit_bym2(
         return tulpa::log_prior_icar_structured(x, phi_start, n_spatial_units,
                                                 /*tau=*/1.0, adj_row_ptr,
                                                 adj_col_idx, n_neighbors,
-                                                sp_part);
+                                                sp_part,
+                                                tulpa::node_prec_ptr(node_prec));
     };
-    phi_block.center = [&](Rcpp::NumericVector& x) {
-        return tulpa::center_intercept(x, phi_start, n_spatial_units);
-    };
+    tulpa::centre_intrinsic_level(phi_block);
 
     // theta block: IID, d = sigma * sqrt(1 - rho), no centering.
     tulpa::LatentBlock theta_block;

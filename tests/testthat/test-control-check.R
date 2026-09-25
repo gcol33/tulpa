@@ -92,3 +92,44 @@ test_that("mode = 'laplace' refuses control knobs tulpa_laplace() does not read"
           control = list(checkpoint = list(path = tempfile()))),
     "Unknown control knob.*checkpoint")
 })
+
+# Under mode = "auto" the caller cannot know which backend the router picks, so
+# `n_threads` -- read by every Laplace candidate -- was a hard error exactly
+# when the model's terms sent auto to a sampler (gcol33/tulpa#911). Auto drops
+# it with a message naming the backend; an explicit sampler mode still refuses.
+test_that("mode = 'auto' drops n_threads when it resolves to a sampler", {
+  ctl <- list(n_threads = 2L, n_iter = 10L)
+  auto_hmc <- list(backend = "hmc", explicit = FALSE, requested = "auto")
+  expect_message(out <- tulpa:::.auto_drop_unread_threads(ctl, auto_hmc),
+                 "resolved to the sampler backend 'hmc'.*n_threads")
+  expect_null(out$n_threads)
+  expect_identical(out$n_iter, 10L)
+  # An explicit mode keeps its knob (the sampler branch refuses it), and a
+  # Laplace backend reads it.
+  expect_identical(
+    tulpa:::.auto_drop_unread_threads(ctl, list(backend = "hmc", explicit = TRUE)),
+    ctl)
+  expect_identical(
+    tulpa:::.auto_drop_unread_threads(
+      ctl, list(backend = "nested_laplace", explicit = FALSE)),
+    ctl)
+})
+
+test_that("auto + n_threads fits a sampler-only field; hmc + n_threads refuses", {
+  skip_if_not_slow()
+  set.seed(1)
+  tt <- sort(runif(15, 0, 50))
+  d <- data.frame(t = rep(tt, each = 2))
+  d$x <- rnorm(30)
+  d$y <- d$x + sin(d$t / 5) + rnorm(30, 0, 0.3)
+  expect_message(
+    f <- tulpa(y ~ x, d, phi = 0.09, temporal = temporal_gp("t"),
+               control = list(n_threads = 1, n_iter = 200, warmup = 100,
+                              n_chains = 1, seed = 1)),
+    "does not read `control\\$n_threads`")
+  expect_identical(f$backend, "hmc")
+  expect_error(
+    tulpa(y ~ x, d, phi = 0.09, temporal = temporal_gp("t"), mode = "hmc",
+          control = list(n_threads = 1)),
+    "does not read `control\\$n_threads`")
+})

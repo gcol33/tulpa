@@ -26,7 +26,11 @@ when \code{level = "group"}.}
 \item{shared}{Optional shared-effect handle (see model docs).}
 
 \item{scale_factor}{Scaling factor for the ICAR component. If NULL
-(default), computed from the adjacency matrix following Riebler et al.}
+(default), computed from the adjacency matrix following Riebler et al.
+On a graph with several connected components each component is scaled
+to unit generalized variance separately and an isolated node (island)
+gets unit variance on its structured part, following Freni-Sterrantino
+et al. (2018). A supplied value is one scale for the whole graph.}
 
 \item{parameterization}{\code{"standard"} (default) or \code{"collapsed"} (deprecated).}
 }
@@ -83,4 +87,8 @@ summary(fit)
 Riebler, A., Sorbye, S. H., Simpson, D., & Rue, H. (2016). An intuitive
 Bayesian spatial model for disease mapping that accounts for scaling.
 Statistical Methods in Medical Research, 25(4), 1145-1165.
+
+Freni-Sterrantino, A., Ventrucci, M., & Rue, H. (2018). A note on intrinsic
+conditional autoregressive models for disconnected graphs. Spatial and
+Spatio-temporal Epidemiology, 26, 25-34.
 }

@@ -398,6 +398,8 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
   }
 
   if (ncol(obs_coords) != 2) stop("coords must have 2 columns", call. = FALSE)
+  .check_coords_finite(obs_coords, "spatial_spde()")
+  .check_spde_prior_args(prior_range, prior_sigma, "spatial_spde()")
   prior_stated <- c(range = !is.null(prior_range), sigma = !is.null(prior_sigma))
   prior_range <- prior_range %||% .nl_default_range_prior(obs_coords)
   prior_sigma <- prior_sigma %||% .nl_scale_anchor()
@@ -407,9 +409,13 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
          call. = FALSE)
   }
 
-  # Build mesh if not provided
+  # Build mesh if not provided. The mesh is built on the DISTINCT sites: a
+  # repeated-measures design puts several observations at one location, and a
+  # triangulation cannot take a vertex twice (it stopped with the vendored
+  # CDT's "Duplicate vertex detected"; gcol33/tulpa#909). Every observation,
+  # repeats included, still gets its own row of the projector A below.
   if (is.null(mesh)) {
-    mesh_args <- list(coords = obs_coords, cutoff = cutoff)
+    mesh_args <- list(coords = unique(obs_coords), cutoff = cutoff)
     if (!is.null(boundary)) mesh_args$boundary <- boundary
     if (!is.null(max_edge)) mesh_args$max_edge <- max_edge
     mesh <- do.call(tulpaMesh::tulpa_mesh, mesh_args)
@@ -478,6 +484,7 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
                                 prior_sigma = NULL,
                                 coords = NULL) {
   .validate_spde_nu(nu)
+  .check_spde_prior_args(prior_range, prior_sigma, "spatial_spde_custom()")
   prior_stated <- c(range = !is.null(prior_range), sigma = !is.null(prior_sigma))
   if (is.null(prior_range)) {
     if (!is.null(coords)) prior_range <- .nl_default_range_prior(coords)
@@ -519,6 +526,21 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
     ),
     class = c("tulpa_spatial", "list")
   )
+}
+
+# A stated SPDE anchor pair is checked where the user set it, so a range or
+# scale anchor the PC calibration cannot represent is refused naming the
+# argument, not at fit time as an unnamed anchor or a failed grid construction
+# (gcol33/tulpa#894). NULL takes the data-anchored default and is not checked.
+.check_spde_prior_args <- function(prior_range, prior_sigma, where) {
+  if (!is.null(prior_range)) {
+    .check_pc_anchor_pair(prior_range, "prior_range", where,
+                          param = "range", lower = TRUE)
+  }
+  if (!is.null(prior_sigma)) {
+    .check_pc_anchor_pair(prior_sigma, "prior_sigma", where)
+  }
+  invisible(TRUE)
 }
 
 # print.tulpa_spatial (including the SPDE branch) is defined once in

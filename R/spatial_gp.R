@@ -527,10 +527,7 @@ validate_gp <- function(gp, data) {
   coords <- as.matrix(data[, gp$coord_vars, drop = FALSE])
   storage.mode(coords) <- "double"
 
-  # Check for missing coordinates
-  if (any(is.na(coords))) {
-    stop("Coordinate columns contain missing values", call. = FALSE)
-  }
+  .check_coords_finite(coords, "Coordinate columns", scale = gp$scale_coords)
 
   # Scale coordinates if requested
   if (gp$scale_coords) {

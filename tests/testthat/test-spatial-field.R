@@ -121,6 +121,25 @@ test_that("inline spatial() does not leak its bar into random effects", {
   expect_null(p$spatial_var)
 })
 
+test_that("an inline field refuses a mode naming every mode it accepts (#912)", {
+  # The message used to list only 'auto' and 'laplace', leaving out the
+  # `nested_laplace` spelling the check itself accepts.
+  expect_error(tulpa:::.bar_field_check_mode("hmc", "spatial"),
+               "'auto', 'laplace', 'nested_laplace' \\(got 'hmc'\\)")
+  expect_error(tulpa:::.bar_field_check_mode("vi", "temporal"),
+               "Inline temporal\\(\\).*'nested_laplace'")
+  for (m in c("auto", "laplace", "nested_laplace", "NESTED_LAPLACE"))
+    expect_true(tulpa:::.bar_field_check_mode(m, "spatial"))
+
+  adj <- .chain_adj_field(6L)
+  set.seed(1)
+  d <- data.frame(y = rnorm(24), time = rnorm(24), cell = rep(1:6, 4))
+  expect_error(
+    tulpa(y ~ time + spatial(graph = adj, formula = ~ 1 || cell), data = d,
+          mode = "hmc"),
+    "'nested_laplace'")
+})
+
 test_that("the bare spatial(col) areal-naming path still parses", {
   p <- tulpa_parse_formula(y ~ x + spatial(region))
   expect_identical(p$spatial_var, "region")

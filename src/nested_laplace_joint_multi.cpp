@@ -661,6 +661,11 @@ int build_joint_blocks_from_spec(
         int theta_start = phi_start + size;
         const tulpa::GraphPartition sp_part = tulpa::graph_partition(
             size, adj_rp.begin(), adj_ci.begin());
+        // Per-component BYM2 scaling beyond the reference scale_factor (#902).
+        const std::vector<double> node_prec = tulpa::read_node_prec(
+            bs.containsElementNamed("node_prec") ? SEXP(bs["node_prec"])
+                                                 : R_NilValue,
+            size, "blocks_spec (bym2)");
 
         auto idx_fn = make_per_arm_idx_fn(spatial_idx_list, n_arms,
                                            "spatial_idx", block_index, arms_ptr);
@@ -717,18 +722,22 @@ int build_joint_blocks_from_spec(
         phi_block.d_fac = d_fac_phi_fn;
         if (arm_scale_fn)  phi_block.arm_scale  = arm_scale_fn;
         if (row_weight_fn) phi_block.row_weight = row_weight_fn;
-        phi_block.add_prior = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part](
+        phi_block.add_prior = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part,
+                               node_prec](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
             const Rcpp::NumericVector& x, int /*k*/) {
             tulpa::add_icar_prior(grad, H, x, phi_start, size, /*tau=*/1.0,
-                                   adj_rp, adj_ci, n_nbr, sp_part);
+                                   adj_rp, adj_ci, n_nbr, sp_part,
+                                   tulpa::node_prec_ptr(node_prec));
         };
-        phi_block.add_prior_sparse = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part](
+        phi_block.add_prior_sparse = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part,
+                                      node_prec](
             tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
             const Rcpp::NumericVector& x, int /*k*/) {
             tulpa::add_icar_prior_sparse(grad, H, x, phi_start, size,
                                           /*tau=*/1.0,
-                                          adj_rp, adj_ci, n_nbr, sp_part);
+                                          adj_rp, adj_ci, n_nbr, sp_part,
+                                          tulpa::node_prec_ptr(node_prec));
         };
         phi_block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
         phi_block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
@@ -736,13 +745,15 @@ int build_joint_blocks_from_spec(
             std::vector<std::pair<int,int>>& out) {
             tulpa::add_icar_pattern(out, phi_start, size, adj_rp, adj_ci, sp_part);
         };
-        phi_block.log_prior = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part](
+        phi_block.log_prior = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part,
+                               node_prec](
             const Rcpp::NumericVector& x, int /*k*/) -> double {
             // Structured ICAR component (tau = 1); shares the quadratic form and
             // the sum-to-zero penalty with add_icar_prior so the objective stays
             // consistent with the gradient, instead of re-deriving them inline.
             return tulpa::log_prior_icar_structured(x, phi_start, size, /*tau=*/1.0,
-                                                    adj_rp, adj_ci, n_nbr, sp_part);
+                                                    adj_rp, adj_ci, n_nbr, sp_part,
+                                                    tulpa::node_prec_ptr(node_prec));
         };
         // BYM2's structured component aliases like a plain ICAR (uniform: arm
         // intercept; weighted areal SVC: the covariate coefficient). The

@@ -532,6 +532,13 @@ inline Rcpp::List run_multi_block_nested_laplace(
     );
     pattern_guard.check("the single-block nested-Laplace outer grid");
 
+    // The intrinsic blocks' sum-to-zero groups, for conditioning the
+    // fixed-effect covariance read off the stored precisions (#901).
+    {
+        Rcpp::List cc = intrinsic_constraint_cols(blocks);
+        if (cc.size() > 0) out["constraint_cols"] = cc;
+    }
+
     // Per-row fitted linear predictor at every grid cell, reconstructed from the
     // stored modes with the SAME accumulation as the inner solve's compute_eta
     // (beta + RE + sum_b d_fac_b(k) * x_block[idx_b(i)]). `run_nested_laplace_

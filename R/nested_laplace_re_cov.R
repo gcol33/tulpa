@@ -199,11 +199,9 @@
 .re_cov_block_logprior <- function(nc, full, prior_sigma = NULL, eta = NULL) {
   prior_sigma <- prior_sigma %||% .nl_scale_anchor()
   eta <- eta %||% .nl_hyperprior("lkj_eta")
+  .check_pc_anchor_pair(prior_sigma, "prior_sigma", "RE covariance prior")
+  .check_lkj_eta(eta, "eta", "RE covariance prior")
   U <- prior_sigma[1L]; alpha <- prior_sigma[2L]
-  if (U <= 0 || alpha <= 0 || alpha >= 1) {
-    stop("`prior_sigma = c(U, alpha)` needs U > 0 and 0 < alpha < 1.",
-         call. = FALSE)
-  }
   lambda     <- -log(alpha) / U
   log_lambda <- log(lambda)
 

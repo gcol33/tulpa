@@ -414,7 +414,9 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
     kargs$adj_col_idx <- as.integer(csr$col_idx)
     kargs$n_neighbors <- as.integer(csr$n_neighbors)
     if (spatial_type == "bym2") {
-      kargs$scale_factor       <- compute_bym2_scale(adjacency)
+      sc <- .bym2_component_scaling(adjacency)
+      kargs$scale_factor       <- sc$scale_factor
+      kargs$node_prec          <- sc$node_prec
       kargs$sigma_spatial_grid <- as.numeric(grid$sigma_spatial)
       kargs$rho_spatial_grid   <- as.numeric(grid$rho_spatial)
     } else {

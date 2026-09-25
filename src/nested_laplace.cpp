@@ -119,9 +119,7 @@ inline std::vector<tulpa::LatentBlock> make_icar_latent_blocks(
                                        adj_row_ptr, adj_col_idx, n_neighbors,
                                        sp_part);
     };
-    block.center = [start, n_units](Rcpp::NumericVector& x) {
-        return tulpa::center_intercept(x, start, n_units);
-    };
+    tulpa::centre_intrinsic_level(block);
     block.add_prior_pattern = [start, n_units, sp_part, &adj_row_ptr, &adj_col_idx]
                               (std::vector<std::pair<int,int>>& out) {
         tulpa::add_icar_pattern(out, start, n_units, adj_row_ptr, adj_col_idx,
@@ -181,7 +179,10 @@ inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
     const Rcpp::NumericVector& rho_grid,
     const Rcpp::IntegerVector& adj_row_ptr,
     const Rcpp::IntegerVector& adj_col_idx,
-    const Rcpp::IntegerVector& n_neighbors
+    const Rcpp::IntegerVector& n_neighbors,
+    // Per-node precision multipliers of phi's ICAR prior -- the per-component
+    // BYM2 scaling beyond the reference `scale_factor` (#902). Empty: none.
+    const std::vector<double>& node_prec = std::vector<double>()
 ) {
     int phi_start   = start;
     int theta_start = start + n_s;
@@ -197,14 +198,15 @@ inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
     phi_block.d_fac = [&sigma_spatial_grid, &rho_grid, scale_factor](int k) {
         return sigma_spatial_grid[k] * tulpa::bym2_sd_structured(rho_grid[k]) * scale_factor;
     };
-    phi_block.add_prior = [phi_start, n_s, sp_part,
+    phi_block.add_prior = [phi_start, n_s, sp_part, node_prec,
                            &adj_row_ptr, &adj_col_idx, &n_neighbors]
                           (tulpa::DenseVec& grad, tulpa::DenseMat& H,
                            const Rcpp::NumericVector& x, int /*k*/) {
         tulpa::add_icar_prior(grad, H, x, phi_start, n_s, 1.0,
-                               adj_row_ptr, adj_col_idx, n_neighbors, sp_part);
+                               adj_row_ptr, adj_col_idx, n_neighbors, sp_part,
+                               tulpa::node_prec_ptr(node_prec));
     };
-    phi_block.log_prior = [phi_start, n_s, sp_part,
+    phi_block.log_prior = [phi_start, n_s, sp_part, node_prec,
                            &adj_row_ptr, &adj_col_idx, &n_neighbors]
                           (const Rcpp::NumericVector& x, int /*k*/) {
         // Structured ICAR component (tau = 1); shares the quadratic form and the
@@ -212,23 +214,22 @@ inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
         // with the gradient, instead of re-deriving them inline.
         return tulpa::log_prior_icar_structured(x, phi_start, n_s, /*tau=*/1.0,
                                                 adj_row_ptr, adj_col_idx,
-                                                n_neighbors, sp_part);
+                                                n_neighbors, sp_part,
+                                                tulpa::node_prec_ptr(node_prec));
     };
-    phi_block.center = [phi_start, n_s](Rcpp::NumericVector& x) {
-        return tulpa::center_intercept(x, phi_start, n_s);
-    };
+    tulpa::centre_intrinsic_level(phi_block);
     phi_block.add_prior_pattern = [phi_start, n_s, sp_part, &adj_row_ptr, &adj_col_idx]
                                   (std::vector<std::pair<int,int>>& out) {
         tulpa::add_icar_pattern(out, phi_start, n_s, adj_row_ptr, adj_col_idx,
                                 sp_part);
     };
-    phi_block.add_prior_sparse = [phi_start, n_s, sp_part,
+    phi_block.add_prior_sparse = [phi_start, n_s, sp_part, node_prec,
                                   &adj_row_ptr, &adj_col_idx, &n_neighbors]
                                  (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
                                   const Rcpp::NumericVector& x, int /*k*/) {
         tulpa::add_icar_prior_sparse(grad, H, x, phi_start, n_s, 1.0,
                                        adj_row_ptr, adj_col_idx, n_neighbors,
-                                       sp_part);
+                                       sp_part, tulpa::node_prec_ptr(node_prec));
     };
 
     tulpa::LatentBlock theta_block;
@@ -332,7 +333,8 @@ Rcpp::List cpp_nested_laplace_bym2(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> node_prec = R_NilValue
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -345,7 +347,9 @@ Rcpp::List cpp_nested_laplace_bym2(
     std::vector<tulpa::LatentBlock> blocks = make_bym2_latent_blocks(
         X.ncol() + n_re_groups, n_spatial_units, spatial_idx, scale_factor,
         sigma_spatial_grid, rho_grid,
-        adj_row_ptr, adj_col_idx, n_neighbors);
+        adj_row_ptr, adj_col_idx, n_neighbors,
+        tulpa::read_node_prec(node_prec, n_spatial_units,
+                              "cpp_nested_laplace_bym2"));
 
     return tulpa::nl_run_multi_block_entry(
         TULPA_NL_ENTRY_INPUTS, n_grid,
@@ -979,11 +983,7 @@ inline tulpa::LatentBlock make_temporal_latent_block(
     // groups only the one GLOBAL level confounds the intercept, so a single
     // whole-block centering is what identifies it. AR1 is proper at |rho| < 1
     // and has no null direction, so it keeps its own mode.
-    if (temporal_type != "ar1") {
-        block.center = [start, n_units](Rcpp::NumericVector& x) {
-            return tulpa::center_intercept(x, start, n_units);
-        };
-    }
+    if (temporal_type != "ar1") tulpa::centre_intrinsic_level(block);
     return block;
 }
 
@@ -1066,6 +1066,10 @@ inline Rcpp::List run_indexed_st_nested_laplace_joint(
         screen_log_offset
     );
     tulpa::nl_attach_fitted_eta_single_arm(out, arms, parsed, blocks);
+    // Read by .nl_attach_grid_hessians() exactly as the single-block driver's
+    // (#901): the spatial and temporal intrinsic blocks' sum-to-zero groups.
+    Rcpp::List cc = tulpa::intrinsic_constraint_cols(blocks);
+    if (cc.size() > 0) out["constraint_cols"] = cc;
     return out;
 }
 
@@ -1351,7 +1355,8 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> node_prec = R_NilValue
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -1370,7 +1375,9 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     std::vector<tulpa::LatentBlock> blocks = make_bym2_latent_blocks(
         s_start, n_spatial_units, spatial_idx, scale_factor,
         sigma_spatial_grid, rho_spatial_grid,
-        adj_row_ptr, adj_col_idx, n_neighbors);
+        adj_row_ptr, adj_col_idx, n_neighbors,
+        tulpa::read_node_prec(node_prec, n_spatial_units,
+                              "cpp_nested_laplace_st_bym2"));
 
     return run_st_spatial_entry(
         TULPA_NL_ENTRY_INPUTS, n_grid,
