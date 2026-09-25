@@ -4,7 +4,7 @@
 \alias{.icar_precision_Q}
 \title{Intrinsic ICAR field precision, augmented to full rank.}
 \usage{
-.icar_precision_Q(spatial)
+.icar_precision_Q(spatial, node_prec = NULL)
 }
 \description{
 \code{L = D - W} (degree minus adjacency) plus the sum-to-zero augmentation
@@ -22,5 +22,10 @@ and rho in its \code{d_fac} instead), and the field enters the linear predictor
 with \code{d_fac = 1}, so this is exactly the field block of that fit's joint
 Hessian. \code{test-marginal-se-areal.R} pins it against the kernel's own
 \code{log_prior_icar}.
+
+\code{node_prec} (optional, one multiplier per node, constant within a
+component) scales each component's block, \verb{diag(node_prec) Q_aug} -- the
+per-component BYM2 scaling the kernels apply to the structured prior
+(\code{.bym2_component_scaling()}, gcol33/tulpa#902).
 }
 \keyword{internal}

@@ -201,6 +201,9 @@
     )
     if (type == "bym2") {
         block_spec$scale_factor <- as.numeric(prior$scale_factor %||% 1.0)
+        if (!is.null(prior$node_prec)) {
+            block_spec$node_prec <- as.numeric(prior$node_prec)
+        }
     }
 
     # Construct theta_grid columns in the order the C++ kernel expects.

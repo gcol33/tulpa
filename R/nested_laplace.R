@@ -996,7 +996,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     pack = function(p) c(.nl_adj_args(p), list(
       scale_factor       = as.numeric(p$scale_factor %||% 1.0),
       sigma_spatial_grid = as.numeric(p$sigma_grid),
-      rho_grid           = as.numeric(p$rho_grid)
+      rho_grid           = as.numeric(p$rho_grid),
+      node_prec          = if (!is.null(p$node_prec)) as.numeric(p$node_prec)
     )),
     theta = function(p) list(
       grid  = cbind(sigma = p$sigma_grid, rho = p$rho_grid),
@@ -1644,6 +1645,29 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 
   modes_mat <- res$modes  # n_grid x n_x
 
+  # An intrinsic block (ICAR, BYM2's structured part, RW1 / RW2) stands for a
+  # field whose constant is a HARD sum-to-zero constraint. The inner solve
+  # augments that direction so the Hessian inverts, and centres it into the
+  # intercept, so the stored precision carries a finite 1 / (tau J) variance
+  # on the level -- and the unconditioned inverse puts it into the intercept's
+  # standard error (3-4x the exact posterior SD on a 50-node ICAR,
+  # gcol33/tulpa#901). The driver names each intrinsic block's constraint group
+  # (`constraint_cols`), and the fixed-effect block is conditioned on them by
+  # the same kriging correction a joint fit's retained block and posterior
+  # draws use (cpp_joint_inner_vcov_blocks, Rue & Held 2005). The mode needs no
+  # correction: the centring already put it on the constraint.
+  constr_blocks <- NULL
+  if (length(res$constraint_cols) > 0L) {
+    constr_blocks <- tryCatch(
+      cpp_joint_inner_vcov_blocks(
+        Q_p_per_grid = Q_p, Q_i_per_grid = Q_i, Q_x_per_grid = Q_x,
+        n_x = as.integer(n_x), idx = seq_len(p_fixed),
+        n_dense = as.integer(p_fixed),
+        A_cols_list = lapply(res$constraint_cols, as.integer),
+        field_marginal = FALSE, n_threads = 1L),
+      error = function(e) NULL)
+  }
+
   for (k in seq_len(n_grid)) {
     # A cell the cheap screen pruned is never solved, so it holds no precision
     # to retain and its CSC slot is empty. Skip the write and the slot stays
@@ -1654,6 +1678,16 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     # parallel to `weights` -- assigning NULL removes the element and shortens
     # the list, which NAs the whole coefficient table (gcol33/tulpa#345).
     if (length(Q_p[[k]]) != n_x + 1L) next
+    grid_modes[[k]] <- if (!is.null(modes_mat)) {
+      as.numeric(modes_mat[k, seq_len(p_fixed)])
+    } else {
+      rep(NA_real_, p_fixed)
+    }
+    Sigma_c <- if (!is.null(constr_blocks)) constr_blocks[[k]]
+    if (!is.null(Sigma_c)) {
+      grid_hessians[[k]] <- solve((Sigma_c + t(Sigma_c)) / 2)
+      next
+    }
     L <- Matrix::sparseMatrix(
       i = Q_i[[k]], p = Q_p[[k]], x = Q_x[[k]],
       dims = c(n_x, n_x), index1 = FALSE
@@ -1676,12 +1710,6 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     )
     Sigma_bb <- V[seq_len(p_fixed), , drop = FALSE]
     grid_hessians[[k]] <- solve(Sigma_bb)
-
-    grid_modes[[k]] <- if (!is.null(modes_mat)) {
-      as.numeric(modes_mat[k, seq_len(p_fixed)])
-    } else {
-      rep(NA_real_, p_fixed)
-    }
   }
 
   res$grid_hessians <- grid_hessians
@@ -1739,6 +1767,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     )
     if (type == "bym2") {
       out$scale_factor <- as.numeric(p$scale_factor %||% 1.0)
+      if (!is.null(p$node_prec)) out$node_prec <- as.numeric(p$node_prec)
     }
     .with_svc(out)
   } else if (type %in% c("rw1", "rw2", "ar1")) {

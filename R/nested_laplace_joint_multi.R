@@ -243,6 +243,7 @@
         )
         if (type == "bym2") {
             out$scale_factor <- as.numeric(p$scale_factor %||% 1.0)
+            if (!is.null(p$node_prec)) out$node_prec <- as.numeric(p$node_prec)
         }
         # Optional per-arm per-row design weight (areal SVC). When set, the
         # field's contribution to arm k row i is row-scaled by svc_weight[[k]][i]:

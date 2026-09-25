@@ -14,6 +14,14 @@ namespace tulpa {
 
 namespace {
 
+// Precision multiplier of node s: 1 without a per-node vector. A node's row of
+// Q is scaled by its own multiplier; `node_prec` is constant within a connected
+// component and every edge joins two nodes of one component, so the scaled Q
+// stays symmetric (gcol33/tulpa#902).
+inline double node_w(const double* node_prec, int s) {
+    return node_prec ? node_prec[s] : 1.0;
+}
+
 // Shared kernel: add tau * Q(rho) contributions to (grad, H) for any
 // CAR/ICAR-shaped precision Q(rho) = D - rho*W. ICAR is the special case
 // rho = 1.0; proper-CAR uses rho in (rho_lower, rho_upper).
@@ -21,23 +29,24 @@ inline void add_car_grad_hess(
     DenseVec& grad, DenseMat& H, const NumericVector& x,
     int spatial_start, int n_spatial_units, double tau, double rho,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors
+    const IntegerVector& n_neighbors, const double* node_prec = nullptr
 ) {
     for (int s = 0; s < n_spatial_units; s++) {
         int sp_idx = spatial_start + s;
         double phi_s = x[sp_idx];
+        const double tau_s = tau * node_w(node_prec, s);
 
         double neighbor_sum = 0.0;
         for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
             int neighbor = adj_col_idx[k];
             neighbor_sum += x[spatial_start + neighbor];
         }
-        grad[sp_idx] -= tau * (n_neighbors[s] * phi_s - rho * neighbor_sum);
-        H[sp_idx][sp_idx] += tau * n_neighbors[s];
+        grad[sp_idx] -= tau_s * (n_neighbors[s] * phi_s - rho * neighbor_sum);
+        H[sp_idx][sp_idx] += tau_s * n_neighbors[s];
 
         for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
             int neighbor = adj_col_idx[k];
-            H[sp_idx][spatial_start + neighbor] -= tau * rho;
+            H[sp_idx][spatial_start + neighbor] -= tau_s * rho;
         }
     }
 }
@@ -51,24 +60,25 @@ inline void add_car_grad_hess_sparse(
     DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
     int spatial_start, int n_spatial_units, double tau, double rho,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors
+    const IntegerVector& n_neighbors, const double* node_prec = nullptr
 ) {
     for (int s = 0; s < n_spatial_units; s++) {
         int sp_idx = spatial_start + s;
         double phi_s = x[sp_idx];
+        const double tau_s = tau * node_w(node_prec, s);
 
         double neighbor_sum = 0.0;
         for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
             int neighbor = adj_col_idx[k];
             neighbor_sum += x[spatial_start + neighbor];
         }
-        grad[sp_idx] -= tau * (n_neighbors[s] * phi_s - rho * neighbor_sum);
-        H.add(sp_idx, sp_idx, tau * n_neighbors[s]);
+        grad[sp_idx] -= tau_s * (n_neighbors[s] * phi_s - rho * neighbor_sum);
+        H.add(sp_idx, sp_idx, tau_s * n_neighbors[s]);
 
         for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
             int neighbor = adj_col_idx[k];
             if (neighbor < s) continue;  // visit each edge once
-            H.add(sp_idx, spatial_start + neighbor, -tau * rho);
+            H.add(sp_idx, spatial_start + neighbor, -tau_s * rho);
         }
     }
 }
@@ -78,20 +88,28 @@ inline void add_car_grad_hess_sparse(
 inline double car_quadratic_form(
     const NumericVector& x, int spatial_start, int n_spatial_units, double rho,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors
+    const IntegerVector& n_neighbors, const double* node_prec = nullptr
 ) {
     double quad_form = 0.0;
     for (int s = 0; s < n_spatial_units; s++) {
         double phi_s = x[spatial_start + s];
-        quad_form += n_neighbors[s] * phi_s * phi_s;
+        const double w_s = node_w(node_prec, s);
+        quad_form += w_s * n_neighbors[s] * phi_s * phi_s;
         for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
             int neighbor = adj_col_idx[k];
             if (neighbor > s) {
-                quad_form -= 2.0 * rho * phi_s * x[spatial_start + neighbor];
+                quad_form -= 2.0 * w_s * rho * phi_s * x[spatial_start + neighbor];
             }
         }
     }
     return quad_form;
+}
+
+// The precision multiplier of a component, read off its first node (it is
+// constant within the component).
+inline double component_w(const double* node_prec, int start_local,
+                          const int* idx) {
+    return node_prec ? node_prec[idx ? idx[0] : start_local] : 1.0;
 }
 
 // Sum-to-zero identification of the intrinsic (rank-deficient) ICAR field.
@@ -112,20 +130,23 @@ void add_icar_prior(
     DenseVec& grad, DenseMat& H, const NumericVector& x,
     int spatial_start, int n_spatial_units, double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors, const GraphPartition& partition
+    const IntegerVector& n_neighbors, const GraphPartition& partition,
+    const double* node_prec
 ) {
     // ICAR = CAR(rho = 1). The quadratic form is over the whole (block-diagonal
     // for a replicated field) graph; the CSR already carries the per-component
     // edge structure, so no per-component handling is needed here.
     add_car_grad_hess(grad, H, x, spatial_start, n_spatial_units,
                       tau_spatial, /*rho=*/1.0,
-                      adj_row_ptr, adj_col_idx, n_neighbors);
+                      adj_row_ptr, adj_col_idx, n_neighbors, node_prec);
     // Augmented Q_aug = Q + sum_c 1_c 1_c'/J_c: the component's constant
     // direction carries the field's own tau (exact rank-1 tau/J_c * 11' on the
-    // dense Hessian, over the component's nodes).
+    // dense Hessian, over the component's nodes), times the component's own
+    // precision multiplier.
     for_each_icar_component(spatial_start, partition,
         [&](int start, const int* idx, int csize) {
-            add_s2z_pin(grad, H, x, start, idx, csize, tau_spatial);
+            add_s2z_pin(grad, H, x, start, idx, csize,
+                        tau_spatial * component_w(node_prec, start - spatial_start, idx));
         });
 }
 
@@ -133,11 +154,12 @@ void add_icar_prior_sparse(
     DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
     int spatial_start, int n_spatial_units, double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors, const GraphPartition& partition
+    const IntegerVector& n_neighbors, const GraphPartition& partition,
+    const double* node_prec
 ) {
     add_car_grad_hess_sparse(grad, H, x, spatial_start, n_spatial_units,
                               tau_spatial, /*rho=*/1.0,
-                              adj_row_ptr, adj_col_idx, n_neighbors);
+                              adj_row_ptr, adj_col_idx, n_neighbors, node_prec);
     // Augmented Q_aug = Q + sum_c 1_c 1_c'/J_c:
     // -0.5 tau sum_c (sum_{i in c} phi_i)^2 / J_c, Hessian (tau/J_c) 11' per
     // component block. Storage is switched per component by size (s2z_densify):
@@ -147,7 +169,8 @@ void add_icar_prior_sparse(
     // at solve time (Sherman-Morrison step + matrix-determinant-lemma log-det).
     for_each_icar_component(spatial_start, partition,
         [&](int start, const int* idx, int csize) {
-            add_s2z_pin_sparse(grad, H, x, start, idx, csize, tau_spatial);
+            add_s2z_pin_sparse(grad, H, x, start, idx, csize,
+                               tau_spatial * component_w(node_prec, start - spatial_start, idx));
         });
 }
 
@@ -174,17 +197,19 @@ double log_prior_icar_structured(
     const NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors, const GraphPartition& partition
+    const IntegerVector& n_neighbors, const GraphPartition& partition,
+    const double* node_prec
 ) {
     double quad_form = car_quadratic_form(
         x, spatial_start, n_spatial_units, /*rho=*/1.0,
-        adj_row_ptr, adj_col_idx, n_neighbors);
+        adj_row_ptr, adj_col_idx, n_neighbors, node_prec);
     // Augmentation to the quadratic form (matches the gradient in
-    // add_icar_prior[_sparse]): tau sum_c (sum_{i in c} phi_i)^2 / J_c.
+    // add_icar_prior[_sparse]): tau sum_c w_c (sum_{i in c} phi_i)^2 / J_c.
     double s2z = 0.0;
     for_each_icar_component(spatial_start, partition,
         [&](int start, const int* idx, int csize) {
-            s2z += s2z_pin_quad(x, start, idx, csize, tau_spatial);
+            s2z += s2z_pin_quad(x, start, idx, csize,
+                                tau_spatial * component_w(node_prec, start - spatial_start, idx));
         });
     // -0.5 tau phi'Q_aug phi, Q_aug = Q + sum_c 1_c 1_c'/J_c.
     return -0.5 * tau_spatial * quad_form - 0.5 * s2z;
@@ -194,7 +219,8 @@ double log_prior_icar(
     const NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors, const GraphPartition& partition
+    const IntegerVector& n_neighbors, const GraphPartition& partition,
+    const double* node_prec
 ) {
     // Q is rank (n - n_components), and ICAR's null space is exactly those
     // n_components constants, every one of which the augmentation Q_aug = Q +
@@ -202,12 +228,18 @@ double log_prior_icar(
     // contribute to log|tau Q_aug|. Keeping the deficient rank here while the
     // quadratic carries the augmentation would make the tau-marginal wrong and
     // bias the variance component low.
+    // The per-node multipliers scale the determinant by prod_i w_i.
     const int L = partition.n_components();
+    double log_w = 0.0;
+    if (node_prec) {
+        for (int s = 0; s < n_spatial_units; s++) log_w += std::log(node_prec[s]);
+    }
     return log_prior_icar_structured(x, spatial_start, n_spatial_units,
                                      tau_spatial, adj_row_ptr, adj_col_idx,
-                                     n_neighbors, partition)
+                                     n_neighbors, partition, node_prec)
          + 0.5 * s2z_aug_rank(n_spatial_units - L, L)
-               * std::log(tau_spatial / (2.0 * M_PI));
+               * std::log(tau_spatial / (2.0 * M_PI))
+         + 0.5 * log_w;
 }
 
 void add_car_proper_prior(

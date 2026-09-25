@@ -147,6 +147,8 @@
     )
     if (backend == "bym2") {
       prior$scale_factor <- as.numeric(spatial$scale_factor %||% 1.0)
+      # Per-component scaling beyond the reference scale (gcol33/tulpa#902).
+      prior$node_prec <- spatial$node_prec
     }
     if (backend == "car_proper" && !is.null(spatial$rho_bounds)) {
       prior$rho_bounds <- as.numeric(spatial$rho_bounds)
@@ -1354,6 +1356,19 @@
           "through this path. Use a nested-Laplace mode ('auto' / 'structured' /\n",
           "'nested_laplace'), or fit_spde() for SPDE."),
           backend, sp$type), call. = FALSE)
+      }
+      # The ModelData sampler's BYM2 carries ONE scale for the whole graph, in
+      # an exported struct; per-component scaling (a disconnected graph, an
+      # island) lives on the nested-Laplace, Laplace and Gibbs kernels, so the
+      # sampler refuses it rather than fit a differently scaled model
+      # (gcol33/tulpa#902).
+      if (identical(sp$type, "bym2") && !is.null(sp$node_prec)) {
+        stop(sprintf(paste0(
+          "Backend '%s' scales a BYM2 field with one factor for the whole ",
+          "graph, and this graph has several connected components (or an ",
+          "isolated node), which are scaled separately. Fit it with ",
+          "mode = 'auto' / 'nested_laplace' / 'laplace', or mode = 'gibbs' for ",
+          "a binomial response."), backend), call. = FALSE)
       }
       spatial_spec_arg <- list(
         type            = sp$type,

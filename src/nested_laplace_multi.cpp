@@ -121,9 +121,7 @@ int build_blocks_of_type(
             return tulpa::log_prior_icar(x, start, size, tau,
                                           adj_rp, adj_ci, n_nbr, sp_part);
         };
-        block.center = [start, size](Rcpp::NumericVector& x) {
-            return tulpa::center_intercept(x, start, size);
-        };
+        tulpa::centre_intrinsic_level(block);
         blocks.push_back(block);
         return start + size;
     }
@@ -149,6 +147,11 @@ int build_blocks_of_type(
         int theta_start = phi_start + size;
         const tulpa::GraphPartition sp_part = tulpa::graph_partition(
             size, adj_rp.begin(), adj_ci.begin());
+        // Per-component BYM2 scaling beyond the reference scale_factor (#902).
+        const std::vector<double> node_prec = tulpa::read_node_prec(
+            bs.containsElementNamed("node_prec") ? SEXP(bs["node_prec"])
+                                                 : R_NilValue,
+            size, "blocks_spec (bym2)");
 
         tulpa::LatentBlock phi_block;
         phi_block.start = phi_start;
@@ -159,23 +162,25 @@ int build_blocks_of_type(
             double rho_k   = theta_grid(k, axis0 + 1);
             return sigma_k * tulpa::bym2_sd_structured(rho_k) * scale_factor;
         };
-        phi_block.add_prior = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part](
+        phi_block.add_prior = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part,
+                               node_prec](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
             const Rcpp::NumericVector& x, int) {
             tulpa::add_icar_prior(grad, H, x, phi_start, size, 1.0,
-                                   adj_rp, adj_ci, n_nbr, sp_part);
+                                   adj_rp, adj_ci, n_nbr, sp_part,
+                                   tulpa::node_prec_ptr(node_prec));
         };
-        phi_block.log_prior = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part](
+        phi_block.log_prior = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part,
+                               node_prec](
             const Rcpp::NumericVector& x, int) {
             // Structured ICAR component (tau = 1); shares the quadratic form and
             // the sum-to-zero penalty with add_icar_prior so the objective stays
             // consistent with the gradient, instead of re-deriving them inline.
             return tulpa::log_prior_icar_structured(x, phi_start, size, /*tau=*/1.0,
-                                                    adj_rp, adj_ci, n_nbr, sp_part);
+                                                    adj_rp, adj_ci, n_nbr, sp_part,
+                                                    tulpa::node_prec_ptr(node_prec));
         };
-        phi_block.center = [phi_start, size](Rcpp::NumericVector& x) {
-            return tulpa::center_intercept(x, phi_start, size);
-        };
+        tulpa::centre_intrinsic_level(phi_block);
         blocks.push_back(phi_block);
 
         tulpa::LatentBlock theta_block;
@@ -337,9 +342,7 @@ int build_blocks_of_type(
                 return tulpa::log_prior_rw2_field(x, start, 1, size, tau, cyclic);
             };
         }
-        block.center = [start, size](Rcpp::NumericVector& x) {
-            return tulpa::center_intercept(x, start, size);
-        };
+        tulpa::centre_intrinsic_level(block);
         blocks.push_back(block);
         return start + size;
     }

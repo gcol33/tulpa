@@ -302,7 +302,8 @@ extern "C" void tulpa_nested_laplace_bym2_impl(
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
                 true /* compute_fitted_var */,
-                R_NilValue /* screen_log_offset */);
+                R_NilValue /* screen_log_offset */,
+                R_NilValue /* node_prec: one scale for the graph */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_bym2")
 }
@@ -648,7 +649,8 @@ extern "C" void tulpa_nested_laplace_st_bym2_impl(
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
                 true /* compute_fitted_var */,
-                R_NilValue /* screen_log_offset */);
+                R_NilValue /* screen_log_offset */,
+                R_NilValue /* node_prec: one scale for the graph */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_bym2")
 }

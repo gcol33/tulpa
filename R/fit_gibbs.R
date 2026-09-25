@@ -326,6 +326,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
   } else if (spatial_type == "bym2") {
     .pg_as_chain(do.call(cpp_pg_binomial_gibbs_bym2, c(common, areal, list(
       scale_factor              = spatial$scale_factor %||% 1.0,
+      node_prec_nullable        = spatial$node_prec,
       prior_sigma_spatial_scale = spatial$prior_sigma_spatial_scale %||% 2.5,
       prior_rho_alpha           = spatial$prior_rho_alpha %||% 0.5,
       prior_rho_beta            = spatial$prior_rho_beta  %||% 0.5
