@@ -788,13 +788,32 @@ apply_m_step_extra <- function(m_step_extra, fits, weights, ...) {
 #' giving a pooled skewness `$gamma` alongside the usual `$mean` / `$se`.
 #' If any draw is missing `$gamma`, the third-cumulant path is skipped.
 #'
+#' `kappa3` is the third cumulant of the equal-weight mixture of the draws, so
+#' `gamma` is standardized by that mixture's variance,
+#' `mean(se^2) + mean((beta - mean(beta))^2)`, not by `V_total`: Rubin's
+#' `(1 + 1/K)` inflation of the between-draw variance is a correction to the
+#' standard error for finite `K`, not a moment of the mixture.
+#'
 #' @param draws List of K draws. Each draw is a named list of submodel
-#'   results, each with `beta` (numeric vector), `se` (numeric vector), and
-#'   optionally `gamma` (numeric vector, same length as `beta`).
-#' @return A named list of pooled submodel summaries, each with `mean`,
-#'   `se`, `V_within`, `V_between`, `V_total`, `K` (number of draws that
-#'   contributed), and when applicable `gamma` (pooled skewness) and
-#'   `kappa3` (pooled third cumulant).
+#'   results, each with `beta` (numeric vector), `se` (numeric vector, same
+#'   length as `beta`), and optionally `gamma` (numeric vector, same length as
+#'   `beta`). Every draw of a submodel must carry the same number of
+#'   coefficients. A submodel absent from some draws is pooled over the draws
+#'   that carry it; one carried by a single draw is skipped with a warning.
+#' @return A named list of pooled submodel summaries (every submodel any draw
+#'   carries), each with `mean`, `se`, `V_within`, `V_between`, `V_total`, `K`
+#'   (number of draws that contributed), and when applicable `gamma` (pooled
+#'   skewness) and `kappa3` (pooled third cumulant).
+#' @examples
+#' # Three imputation draws of a two-coefficient submodel.
+#' draws <- list(
+#'   list(m = list(beta = c(1.0, 0.50), se = c(0.2, 0.10))),
+#'   list(m = list(beta = c(1.2, 0.45), se = c(0.2, 0.10))),
+#'   list(m = list(beta = c(0.9, 0.55), se = c(0.2, 0.10)))
+#' )
+#' pooled <- rubins_pool(draws)
+#' pooled$m$mean
+#' pooled$m$se
 #' @export
 rubins_pool <- function(draws) {
   K <- length(draws)
@@ -804,22 +823,46 @@ rubins_pool <- function(draws) {
          "between-imputation variance; got K = ", K, ".", call. = FALSE)
   }
 
-  submodel_names <- names(draws[[1]])
+  if (!is.list(draws) ||
+      !all(vapply(draws, function(d) is.list(d) && !is.null(names(d)),
+                  logical(1)))) {
+    stop("`draws` must be a list of named lists of submodel results.",
+         call. = FALSE)
+  }
+
+  # Every submodel any draw carries, in order of first appearance: reading the
+  # names off draw 1 alone dropped a submodel that draw lacked (#888).
+  submodel_names <- unique(unlist(lapply(draws, names), use.names = FALSE))
   result <- list()
 
   for (nm in submodel_names) {
-    betas <- lapply(draws, function(d) {
-      if (is.null(d[[nm]])) return(NULL)
-      d[[nm]]$beta
-    })
-    betas <- betas[!vapply(betas, is.null, logical(1))]
-    if (length(betas) < 2L) next
-
-    ses <- lapply(draws, function(d) {
-      if (is.null(d[[nm]])) return(NULL)
-      d[[nm]]$se
-    })
-    ses <- ses[!vapply(ses, is.null, logical(1))]
+    # The draws that carry this submodel; a draw without it does not count
+    # towards its K.
+    sub <- Filter(Negate(is.null), lapply(draws, function(d) d[[nm]]))
+    if (length(sub) < 2L) {
+      warning(sprintf(paste0(
+        "rubins_pool(): submodel '%s' appears in only %d draw; at least 2 are ",
+        "needed for the between-draw variance, so it is not pooled."),
+        nm, length(sub)), call. = FALSE)
+      next
+    }
+    betas <- lapply(sub, `[[`, "beta")
+    ses   <- lapply(sub, `[[`, "se")
+    p     <- length(betas[[1]])
+    # Draws of different lengths were recycled against each other by rbind(),
+    # and a draw without `se` still counted in K while V_within averaged over
+    # the draws that had one (#888). Each draw is one coefficient vector with
+    # its standard errors, or it is not a draw of this submodel.
+    ok <- vapply(seq_along(sub), function(k) {
+      is.numeric(betas[[k]]) && length(betas[[k]]) == p &&
+        is.numeric(ses[[k]]) && length(ses[[k]]) == p
+    }, logical(1))
+    if (!all(ok)) {
+      stop(sprintf(paste0(
+        "rubins_pool(): every draw of submodel '%s' needs a numeric `beta` ",
+        "and a numeric `se` of one common length (%d in its first draw)."),
+        nm, p), call. = FALSE)
+    }
 
     K_actual <- length(betas)
     beta_mat <- do.call(rbind, betas)        # K x p
@@ -841,23 +884,25 @@ rubins_pool <- function(draws) {
 
     # Third-cumulant pooling. Engaged only when every draw supplies a
     # per-coefficient `gamma` vector matching `beta` in length.
-    gammas <- lapply(draws, function(d) {
-      if (is.null(d[[nm]])) return(NULL)
-      d[[nm]]$gamma
-    })
+    gammas <- lapply(sub, `[[`, "gamma")
     have_gamma <- vapply(gammas, function(g) {
       !is.null(g) && length(g) == ncol(beta_mat) && all(is.finite(g))
     }, logical(1))
-    if (length(have_gamma) == K_actual && all(have_gamma)) {
+    if (all(have_gamma)) {
       gamma_mat <- do.call(rbind, gammas)    # K x p
       sigma_mat <- se_mat                    # K x p (sd, not variance)
       mu_centered <- sweep(beta_mat, 2L, pooled_mean, FUN = "-")
       kappa3 <- colMeans(sigma_mat^3 * gamma_mat) +
         3 * colMeans(mu_centered * sigma_mat^2) +
         colMeans(mu_centered^3)
-      sigma_pooled <- sqrt(V_total)
-      # Guard against division when V_total underflows.
-      pooled$gamma  <- ifelse(sigma_pooled > 0, kappa3 / sigma_pooled^3, NA_real_)
+      # kappa3 is the third cumulant of the equal-weight mixture of the K
+      # draws, so its standardization is that mixture's own variance,
+      # E[sigma_k^2] + Var(mu_k) with the 1/K moment -- not Rubin's V_total,
+      # whose (1 + 1/K) B inflation belongs to the SE and pulled the skewness
+      # towards zero (#888).
+      V_mix <- colMeans(sigma_mat^2) + colMeans(mu_centered^2)
+      # Guard against division when the mixture variance underflows.
+      pooled$gamma  <- ifelse(V_mix > 0, kappa3 / V_mix^1.5, NA_real_)
       pooled$kappa3 <- kappa3
     }
 
