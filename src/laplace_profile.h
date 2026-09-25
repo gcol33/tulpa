@@ -1,20 +1,38 @@
 // laplace_profile.h
-// Lightweight phase accumulator for the sparse Laplace path. The accumulator
-// is process-global and mutex-guarded so the per-cell solves the parallel
-// outer grid runs on its worker threads all add into the same buffer; a
-// thread-local buffer would leave cpp_profile_read() (called on the R main
-// thread) seeing only the cells that happened to run on that thread.
+// Lightweight phase accumulator behind tulpa_profile(). It times the inner
+// Newton solvers (the single-response loop laplace_newton_solve_ll, the dense
+// and sparse joint loops), the nested-Laplace outer grid (one scope per cell
+// solve) and the NUTS chain (warmup / sampling iterations and every gradient
+// evaluation). One facility: every site uses TULPA_PROFILE_PHASE below.
 //
-// The phase timers fire at per-iteration granularity (one add() per scatter /
-// factorize / line-search scope, never per observation), so the lock taken
-// after each measurement adds no measurable overhead.
+// The accumulator is process-global and mutex-guarded so the per-cell solves
+// the parallel outer grid runs on its worker threads, and the chains the
+// across-chain sampler runs concurrently, all add into the same buffer; a
+// thread-local buffer would leave cpp_profile_read() (called on the R main
+// thread) seeing only the work that happened to run on that thread.
+//
+// Timing is OFF unless tulpa_profile() switches it on (cpp_profile_enable()).
+// A disabled scope costs one relaxed atomic load: no clock read and no lock,
+// so the gradient-evaluation scope in the sampler's leapfrog is free in an
+// ordinary fit. An enabled scope fires at per-iteration granularity (one add()
+// per scatter / factorize / line search / gradient / cell, never per
+// observation), and no scope sits inside an OpenMP worksharing loop: a scope
+// is opened around a call that may run its own parallel region, never within
+// one. Nothing here throws on the timed path.
+//
+// Phases NEST in one place only: an ENCLOSING phase (outer_grid_cell,
+// nuts_warmup, nuts_sampling; see phase_is_enclosing) contains the leaf phases
+// timed inside it, so its seconds are not added to theirs when shares are
+// formed.
 //
 // Usage from R:
-//   cpp_profile_reset()
-//   fit <- tulpa_nested_laplace_joint(...)
-//   times <- cpp_profile_read()  # named numeric vector, microseconds
+//   tulpa_profile(fit_expression)
+// or, by hand,
+//   cpp_profile_reset(); old <- cpp_profile_enable(TRUE)
+//   fit <- ...
+//   times <- cpp_profile_read(); cpp_profile_enable(old)
 //
-// Usage from C++ instrumentation site:
+// Usage from a C++ instrumentation site:
 //   { TULPA_PROFILE_PHASE(tulpa::PHASE_FACTORIZE); ... }
 //
 // Phase ordering is fixed (see PhaseIdx); profile_read() returns a named
@@ -24,6 +42,7 @@
 #define TULPA_LAPLACE_PROFILE_H
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <mutex>
@@ -43,8 +62,21 @@ enum PhaseIdx : int {
     PHASE_LINE_SEARCH   = 7,  // per-iter line_search_backtrack (incl re-eta)
     PHASE_LOG_DET       = 8,  // final-pass log_determinant
     PHASE_LOG_LIK_PRIOR = 9,  // final-pass log_lik + log_prior + center
-    PHASE_COUNT         = 10
+    PHASE_HESSIAN_EXTRACT = 10, // final-pass H^-1 blocks / fixed block / Q export
+    PHASE_INNER_DIAG    = 11, // final-pass skew / inner k-hat / debias / CILA probes
+    PHASE_GRADIENT      = 12, // sampler log-density gradient evaluation
+    PHASE_OUTER_CELL    = 13, // ENCLOSING: one nested-Laplace outer-grid cell solve
+    PHASE_NUTS_WARMUP   = 14, // ENCLOSING: one NUTS warmup iteration
+    PHASE_NUTS_SAMPLING = 15, // ENCLOSING: one NUTS sampling iteration
+    PHASE_COUNT         = 16
 };
+
+// Whether a phase encloses other timed phases rather than being a leaf of the
+// partition. Shares are formed over the leaves only (tulpa_profile()).
+constexpr bool phase_is_enclosing(int idx) {
+    return idx == PHASE_OUTER_CELL || idx == PHASE_NUTS_WARMUP ||
+           idx == PHASE_NUTS_SAMPLING;
+}
 
 struct PhaseAccumulator {
     std::array<double, PHASE_COUNT> us{};  // microseconds per phase
@@ -62,6 +94,13 @@ struct PhaseAccumulator {
     }
 };
 
+// Whether timing is on. Read relaxed on every scope entry; written only from
+// the R main thread by cpp_profile_enable(), outside any parallel region.
+inline std::atomic<bool>& phase_profiling_enabled() {
+    static std::atomic<bool> on{false};
+    return on;
+}
+
 // Process-global accumulator shared across the outer-grid worker threads, and
 // the mutex that guards every add / reset / read of it.
 inline std::mutex& phase_mutex() {
@@ -75,10 +114,17 @@ inline PhaseAccumulator& global_phase_accumulator() {
 
 struct PhaseTimer {
     int idx;
+    bool on;
     std::chrono::steady_clock::time_point t0;
     explicit PhaseTimer(int i)
-        : idx(i), t0(std::chrono::steady_clock::now()) {}
+        : idx(i),
+          on(phase_profiling_enabled().load(std::memory_order_relaxed)) {
+        if (on) t0 = std::chrono::steady_clock::now();
+    }
+    PhaseTimer(const PhaseTimer&) = delete;
+    PhaseTimer& operator=(const PhaseTimer&) = delete;
     ~PhaseTimer() {
+        if (!on) return;
         auto t1 = std::chrono::steady_clock::now();
         double us = static_cast<double>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count()

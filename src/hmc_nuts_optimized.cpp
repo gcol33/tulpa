@@ -10,8 +10,21 @@
 
 #include "hmc_mass_drift.h"
 #include "hmc_sampler.h"
+#include "laplace_profile.h"  // TULPA_PROFILE_PHASE (gradient)
 
 namespace tulpa_hmc {
+
+// One gradient evaluation of the leapfrog at the workspace's params_buf, into
+// its grad_buf, timed as the profiler's gradient phase (tulpa_profile()). The
+// full and the prior-only (multiple-time-stepping) forces both come through
+// here, so every evaluation the NUTS tree pays for is counted once.
+static inline void ws_eval_gradient(GradientFn fn, NUTSWorkspace& ws,
+                                    const ModelData& data,
+                                    const ParamLayout& layout,
+                                    double* log_post_out) {
+  TULPA_PROFILE_PHASE(::tulpa::PHASE_GRADIENT);
+  fn(ws.params_buf, data, layout, ws.grad_buf, log_post_out);
+}
 
 // =====================================================================
 // Optimized NUTS: zero-allocation infrastructure
@@ -62,7 +75,7 @@ LeapfrogInPlaceResult leapfrog_step_inplace(
     // Prior (fast) gradient at the entry position. The entry `grad` is the full
     // gradient here (first-same-as-last from the previous leaf).
     std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
-    ws.prior_gradient_fn(ws.params_buf, data, layout, ws.grad_buf, nullptr);
+    ws_eval_gradient(ws.prior_gradient_fn, ws, data, layout, nullptr);
     std::memcpy(gp, ws.grad_buf.data(), n * sizeof(double));
 
     // Outer half kick with the slow force F_slow(q0) = grad_full - grad_prior.
@@ -73,7 +86,7 @@ LeapfrogInPlaceResult leapfrog_step_inplace(
       for (int i = 0; i < n; i++) p[i] += inner_half * gp[i];
       apply_drift(inner, q, p, mass, ws.dense_scratch.data(), n);
       std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
-      ws.prior_gradient_fn(ws.params_buf, data, layout, ws.grad_buf, nullptr);
+      ws_eval_gradient(ws.prior_gradient_fn, ws, data, layout, nullptr);
       std::memcpy(gp, ws.grad_buf.data(), n * sizeof(double));
       for (int i = 0; i < n; i++) p[i] += inner_half * gp[i];
     }
@@ -82,7 +95,7 @@ LeapfrogInPlaceResult leapfrog_step_inplace(
     // leaf); `grad` becomes grad_full(q_end) for the next leaf's FSAL. gp holds
     // grad_prior(q_end) from the last inner substep.
     std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
-    ws.gradient_fn(ws.params_buf, data, layout, ws.grad_buf, &ws.logp_at(slot));
+    ws_eval_gradient(ws.gradient_fn, ws, data, layout, &ws.logp_at(slot));
     std::memcpy(grad, ws.grad_buf.data(), n * sizeof(double));
 
     // Outer half kick with the slow force F_slow(q_end).
@@ -98,7 +111,7 @@ LeapfrogInPlaceResult leapfrog_step_inplace(
       if (op.first == simp::Op::Kick) {
         if (!grad_fresh) {
           std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
-          ws.gradient_fn(ws.params_buf, data, layout, ws.grad_buf, &ws.logp_at(slot));
+          ws_eval_gradient(ws.gradient_fn, ws, data, layout, &ws.logp_at(slot));
           std::memcpy(grad, ws.grad_buf.data(), n * sizeof(double));
           grad_fresh = true;
         }
@@ -114,7 +127,7 @@ LeapfrogInPlaceResult leapfrog_step_inplace(
     // any drift-terminated scheme without disturbing the common case.
     if (!grad_fresh) {
       std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
-      ws.gradient_fn(ws.params_buf, data, layout, ws.grad_buf, &ws.logp_at(slot));
+      ws_eval_gradient(ws.gradient_fn, ws, data, layout, &ws.logp_at(slot));
       std::memcpy(grad, ws.grad_buf.data(), n * sizeof(double));
     }
     result.log_prob = ws.logp_at(slot);

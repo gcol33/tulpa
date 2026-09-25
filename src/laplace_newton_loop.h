@@ -12,6 +12,7 @@
 
 #include "laplace_cholesky.h"
 #include "laplace_family_link.h"
+#include "laplace_profile.h"   // TULPA_PROFILE_PHASE (newton_step)
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
@@ -481,6 +482,10 @@ inline bool newton_step_tail(
 // whichever container holds it and writes `scratch.delta`. Everything else is
 // newton_damped_fallback and newton_step_tail above, which the sparse joint
 // driver calls directly around its own factor-reuse block.
+//
+// The factorize and line-search profiler scopes live here, so both drivers
+// report them under one name; the eta / scatter split is the driver's, since
+// only it can see inside `refresh_grad_hess`.
 template <typename Scratch, typename RefreshFn, typename SolveFn,
           typename EvalObj>
 inline bool newton_step(
@@ -497,12 +502,16 @@ inline bool newton_step(
 ) {
     refresh_grad_hess();
 
-    if (!cholesky_solve()) {
+    bool solved;
+    { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
+      solved = cholesky_solve(); }
+    if (!solved) {
         newton_damped_fallback(x, scratch.delta, n_x, obj_valid);
         n_iter_out = iter + 1;
         return false;
     }
 
+    TULPA_PROFILE_PHASE(PHASE_LINE_SEARCH);
     return newton_step_tail(x, scratch, n_x, iter, tol, eval_objective,
                             obj_current, obj_valid, conv_state, n_iter_out);
 }

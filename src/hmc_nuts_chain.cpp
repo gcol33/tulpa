@@ -26,6 +26,7 @@
 
 #include "hmc_mass_st_gmrf.h"
 #include "hmc_sampler.h"
+#include "laplace_profile.h"  // TULPA_PROFILE_PHASE (nuts_warmup / nuts_sampling)
 #include "tulpa_priors_temporal.h"  // compute_temporal_prior (NC temporal GP storage)
 #include "simp/adapt.h"  // step-adapted multistage constructors, resolved at
                          // warmup end (Eigen-heavy; kept out of the widely
@@ -82,6 +83,11 @@ HMCResultCpp run_hmc_chain_cpp(
   ActiveGridProgressScope progress_scope(own_progress.get());
 
   for (int iter = 0; iter < n_iter; iter++) {
+    // One enclosing profiler scope per iteration (tulpa_profile()); the
+    // gradient evaluations inside it are timed as their own leaf phase. Per
+    // chain, so across-chain runs add chain-seconds, like the outer grid does.
+    TULPA_PROFILE_PHASE(iter < n_warmup ? ::tulpa::PHASE_NUTS_WARMUP
+                                        : ::tulpa::PHASE_NUTS_SAMPLING);
 #include "hmc_nuts_chain_iter_window.h"
 
 #include "hmc_nuts_chain_iter_nuts.h"

@@ -5,6 +5,7 @@
 // every model to the generic-LikelihoodSpec gradient path.
 
 #include "hmc_sampler.h"
+#include "laplace_profile.h"  // TULPA_PROFILE_PHASE (gradient)
 #include "tulpa/likelihood.h"
 
 #include <Rcpp.h>
@@ -25,6 +26,10 @@ void compute_gradient(
     double* log_post_out
 ) {
     GradientFn fn = resolve_gradient_fn(g_gradient_mode, data, layout);
+    // The same gradient phase the NUTS leapfrog times (hmc_nuts_optimized.cpp),
+    // so the static-HMC path, the step-size search and the other samplers that
+    // come through here report under one name.
+    TULPA_PROFILE_PHASE(::tulpa::PHASE_GRADIENT);
     fn(params, data, layout, grad, log_post_out);
 }
 

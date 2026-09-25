@@ -1084,6 +1084,17 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_profile_enable
+bool cpp_profile_enable(bool on);
+RcppExport SEXP _tulpa_cpp_profile_enable(SEXP onSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< bool >::type on(onSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_profile_enable(on));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_profile_reset
 void cpp_profile_reset();
 RcppExport SEXP _tulpa_cpp_profile_reset() {
@@ -5028,6 +5039,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_line_search_probe", (DL_FUNC) &_tulpa_cpp_line_search_probe, 2},
     {"_tulpa_cpp_newton_converged_probe", (DL_FUNC) &_tulpa_cpp_newton_converged_probe, 4},
     {"_tulpa_cpp_newton_trust_probe", (DL_FUNC) &_tulpa_cpp_newton_trust_probe, 1},
+    {"_tulpa_cpp_profile_enable", (DL_FUNC) &_tulpa_cpp_profile_enable, 1},
     {"_tulpa_cpp_profile_reset", (DL_FUNC) &_tulpa_cpp_profile_reset, 0},
     {"_tulpa_cpp_profile_read", (DL_FUNC) &_tulpa_cpp_profile_read, 0},
     {"_tulpa_cpp_s2z_densify_max", (DL_FUNC) &_tulpa_cpp_s2z_densify_max, 0},

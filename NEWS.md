@@ -99,8 +99,18 @@
 * `tulpa_gaussian()` runs the AD-gradient NUTS sampler (2000 iterations in
   about 0.1 s where one iteration took ~1 s) and reports a real
   `accept_rate` (gcol33/tulpa#897). `tulpa_tgmrf()` no longer prints the inner
-  progress line per evaluation (gcol33/tulpa#890). `tulpa_profile()` warns
-  when no instrumented phase was reached (gcol33/tulpa#887).
+  progress line per evaluation (gcol33/tulpa#890).
+* `tulpa_profile()` times more than the sparse joint solver: the
+  single-response Laplace solve behind `tulpa_laplace()` /
+  `tulpa(mode = "laplace")` and every nested-Laplace cell, the dense joint
+  solve, the nested-Laplace outer grid (`outer_grid_cell`, one call per
+  cell) and the NUTS sampler (`nuts_warmup` / `nuts_sampling` per iteration,
+  `gradient` per evaluation). New leaf phases `hessian_extract` and
+  `inner_diagnostics` time the final pass. The enclosing phases take a share
+  of `NA`, so the leaf shares still sum to one. Timing is off outside
+  `tulpa_profile()`, so an ordinary fit no longer takes a lock per phase. It
+  still warns when an expression reaches no timed phase
+  (gcol33/tulpa#887).
 
 ## Input validation and messages
 

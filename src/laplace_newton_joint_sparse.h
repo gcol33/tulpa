@@ -294,55 +294,58 @@ inline void joint_newton_finalize_sparse(
     std::vector<double> pre_center_x(n_x);
     for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
     DenseCholeskyScratch unused_dense_chol;  // sparse-only path never reads it
-    if (compute_skew) {
-        std::vector<int> all_idx;
-        const std::vector<int>& probe =
-            inner_probe_indices(n_x, skew_probe_idx, all_idx);
-        if (!skew_factor_valid) {
-            inner_probe_decline(result, probe, factor_declined);
-        } else if (curvature3_fns) {
-            InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
-                n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
-                compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
-                *curvature3_fns, probe
-            );
-            result.inner_skew = std::move(sk.gamma3);
-            result.inner_skew_gamma1 = std::move(sk.gamma1);
-            result.inner_skew_gamma1_declined = sk.gamma1_declined;
-            result.inner_skew_idx = probe;
-            result.inner_skew_dropped = sk.n_nonfinite_dropped;
-            result.inner_skew_declined = sk.declined;
-            result.inner_skew_arms_declined = sk.arms_declined;
-        } else {
-            result.inner_skew.assign(probe.size(),
-                                     std::numeric_limits<double>::quiet_NaN());
-            result.inner_skew_idx = probe;
-            result.inner_skew_declined = "curvature3_unavailable";
-            result.inner_skew_gamma1_declined = "curvature3_unavailable";
+    {   // post-mode probes of the inner layer, timed as one phase
+        TULPA_PROFILE_PHASE(PHASE_INNER_DIAG);
+        if (compute_skew) {
+            std::vector<int> all_idx;
+            const std::vector<int>& probe =
+                inner_probe_indices(n_x, skew_probe_idx, all_idx);
+            if (!skew_factor_valid) {
+                inner_probe_decline(result, probe, factor_declined);
+            } else if (curvature3_fns) {
+                InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
+                    n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
+                    compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
+                    *curvature3_fns, probe
+                );
+                result.inner_skew = std::move(sk.gamma3);
+                result.inner_skew_gamma1 = std::move(sk.gamma1);
+                result.inner_skew_gamma1_declined = sk.gamma1_declined;
+                result.inner_skew_idx = probe;
+                result.inner_skew_dropped = sk.n_nonfinite_dropped;
+                result.inner_skew_declined = sk.declined;
+                result.inner_skew_arms_declined = sk.arms_declined;
+            } else {
+                result.inner_skew.assign(probe.size(),
+                                         std::numeric_limits<double>::quiet_NaN());
+                result.inner_skew_idx = probe;
+                result.inner_skew_declined = "curvature3_unavailable";
+                result.inner_skew_gamma1_declined = "curvature3_unavailable";
+            }
+
+            // The likelihood-agnostic inner k-hat over the same probed subspace.
+            if (skew_factor_valid) {
+                InnerISOutcome is_out = compute_inner_is_curve(
+                    n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
+                    eval_objective, x, probe
+                );
+                result.inner_is_z         = std::move(is_out.z);
+                result.inner_is_log_joint = std::move(is_out.log_joint);
+                result.inner_is_sigma     = std::move(is_out.sigma);
+                result.inner_is_declined  = is_out.declined;
+            }
         }
 
-        // The likelihood-agnostic inner k-hat over the same probed subspace.
-        if (skew_factor_valid) {
-            InnerISOutcome is_out = compute_inner_is_curve(
-                n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
-                eval_objective, x, probe
-            );
-            result.inner_is_z         = std::move(is_out.z);
-            result.inner_is_log_joint = std::move(is_out.log_joint);
-            result.inner_is_sigma     = std::move(is_out.sigma);
-            result.inner_is_declined  = is_out.declined;
-        }
+        run_subspace_debias(result, n_x, pre_center_x, unused_dense_chol,
+                            solver, /*use_sparse=*/true,
+                            eval_objective, x, debias,
+                            result.converged ? factor_declined : nullptr);
+
+        run_inner_cila(result, n_x, pre_center_x, unused_dense_chol, solver,
+                       /*use_sparse=*/true, eval_objective,
+                       [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); },
+                       x, cila, cila_cell_key);
     }
-
-    run_subspace_debias(result, n_x, pre_center_x, unused_dense_chol,
-                        solver, /*use_sparse=*/true,
-                        eval_objective, x, debias,
-                        result.converged ? factor_declined : nullptr);
-
-    run_inner_cila(result, n_x, pre_center_x, unused_dense_chol, solver,
-                   /*use_sparse=*/true, eval_objective,
-                   [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); },
-                   x, cila, cila_cell_key);
 
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
       center_effects_fn(x); }
@@ -353,6 +356,7 @@ inline void joint_newton_finalize_sparse(
     // covariance of that rather than of a ridge-inflated matrix. The pattern is
     // fit-level and untouched by the escalation, so only the values are held.
     if (want_block) {
+        TULPA_PROFILE_PHASE(PHASE_HESSIAN_EXTRACT);
         extract_joint_fixed_block(
             H_builder.col_ptr.data(), H_builder.row_idx.data(),
             H_values_at_mode.data(), n_x,
@@ -362,6 +366,7 @@ inline void joint_newton_finalize_sparse(
     }
 
     if (want_eta_var) {
+        TULPA_PROFILE_PHASE(PHASE_HESSIAN_EXTRACT);
         RowLoadings loadings;
         eta_var->loadings(pre_center_x.data(), loadings);
         result.eta_var.assign(static_cast<std::size_t>(loadings.n_rows()),

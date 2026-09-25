@@ -285,6 +285,10 @@ cpp_newton_trust_probe <- function(decrements) {
     .Call(`_tulpa_cpp_newton_trust_probe`, decrements)
 }
 
+cpp_profile_enable <- function(on) {
+    .Call(`_tulpa_cpp_profile_enable`, on)
+}
+
 cpp_profile_reset <- function() {
     invisible(.Call(`_tulpa_cpp_profile_reset`))
 }
