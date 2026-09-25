@@ -138,3 +138,41 @@ test_that("tulpa_profile resets between runs (no carry-over)", {
   # Deterministic inputs -> same number of scatter calls, not double.
   expect_equal(s2, s1)
 })
+
+test_that("tulpa_profile warns when nothing instrumented ran (#887)", {
+  # An all-zero table is not a measurement: the expression never reached a
+  # timed solver.
+  expect_warning(p <- tulpa_profile(1 + 1), "no instrumented phase")
+  expect_true(all(p$calls == 0L))
+  expect_identical(attr(p, "value"), 2)
+})
+
+test_that("the single-response Laplace is not timed and says so (#887)", {
+  skip_on_cran()
+  set.seed(1)
+  n <- 200L; X <- cbind(1, rnorm(n))
+  y <- rbinom(n, 1, plogis(X %*% c(0, 0.5)))
+  expect_warning(
+    tulpa_profile(tulpa_laplace(y, rep(1L, n), X, family = "binomial")),
+    "no instrumented phase")
+})
+
+test_that("the documented example reaches the instrumented sparse path (#887)", {
+  skip_on_cran()
+  set.seed(1)
+  n_s <- 30L; N <- 150L
+  s <- sample.int(n_s, N, replace = TRUE)
+  x <- rnorm(N)
+  y <- rbinom(N, 1, plogis(0.3 * x + sin(s / 5)))
+  adj <- .profile_chain_adj(n_s)
+  prior <- list(type = "icar", n_spatial_units = n_s,
+                adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                n_neighbors = adj$n_neighbors, sigma_grid = c(0.5, 1))
+  arm <- list(y = y, n_trials = rep(1L, N), X = cbind(1, x),
+              spatial_idx = s, family = "binomial")
+  expect_no_warning(p <- tulpa_profile(tulpa_nested_laplace_joint(
+    responses = list(occ = arm), prior = prior,
+    control = list(force_sparse = TRUE, progress = FALSE))))
+  expect_gt(p$calls[p$phase == "scatter"], 0L)
+  expect_gt(p$calls[p$phase == "factorize"], 0L)
+})
