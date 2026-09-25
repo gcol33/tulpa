@@ -686,23 +686,23 @@
         refine_priority <- if (a == "alpha") 1L
                            else if (startsWith(a, "phi_")) 2L
                            else 100L
+        # The copy scale carries an explicit zero level ("no coupling"), which
+        # is a point mass rather than part of the log continuum, so it needs a
+        # declared prior probability. Fixing it here keeps it independent of how
+        # many continuum nodes the grid ends up with.
         spec <- hyper_axis_spec(
             name      = a,
             grid      = sort(unique(as.numeric(grids[[a]]))),
             log_scale = log_scale,
             bounds    = bounds,
             refinable = !identical(mode, "none"),
-            extend    = identical(mode, "extend")
+            extend    = identical(mode, "extend"),
+            atom_mass = if (identical(bare, "alpha")) copy_atom_mass
         )
         spec$refine_priority <- refine_priority
         # An axis this table does not classify keeps equal node weights, which
         # is what the engine integrated before any coordinate was declared.
         if (is.na(scale_known)) spec$unweighted <- TRUE
-        # The copy scale carries an explicit zero level ("no coupling"), which
-        # is a point mass rather than part of the log continuum, so it needs a
-        # declared prior probability. Fixing it here keeps it independent of how
-        # many continuum nodes the grid ends up with.
-        if (identical(bare, "alpha")) spec$atom_mass <- copy_atom_mass
         # A flat measure on a log axis is improper, so the support is a prior
         # choice. The incoming grid is what the user declared, so the support is
         # its span widened by half a node step at each end: that is the region

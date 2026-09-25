@@ -47,16 +47,19 @@ test_that("hyper_axis_spec carries `extend`, defaulting to the historical answer
 
 test_that("the node limit is the declared span, and skips a log axis's atom", {
     b <- hyper_axis_spec("alpha", grid = c(0, 0.2, 0.35, 0.5), log_scale = TRUE,
-                         bounds = c(0, Inf), refinable = TRUE, extend = FALSE)
+                         bounds = c(0, Inf), refinable = TRUE, extend = FALSE,
+                         atom_mass = 0.5)
     expect_equal(tulpa:::.hyper_axis_node_limit(b), c(0.2, 0.5))
 
     e <- hyper_axis_spec("alpha", grid = c(0, 0.2, 0.5), log_scale = TRUE,
-                         bounds = c(0, Inf), refinable = TRUE, extend = TRUE)
+                         bounds = c(0, Inf), refinable = TRUE, extend = TRUE,
+                         atom_mass = 0.5)
     expect_null(tulpa:::.hyper_axis_node_limit(e))
 
     # One continuum node leaves no interior, so nothing may be proposed.
     one <- hyper_axis_spec("alpha", grid = c(0, 0.3), log_scale = TRUE,
-                           bounds = c(0, Inf), refinable = TRUE, extend = FALSE)
+                           bounds = c(0, Inf), refinable = TRUE, extend = FALSE,
+                           atom_mass = 0.5)
     expect_length(tulpa:::.hyper_clip_to_node_limit(c(0.1, 0.3, 0.9), one), 0L)
 })
 
@@ -324,7 +327,7 @@ test_that("axis_span separates the half-node-step term from refinement", {
     # An axis with a single continuum level has no span to report, matching what
     # `.hyper_grid_supports()` leaves out.
     one <- hyper_axis_spec("alpha", grid = c(0, 0.3), log_scale = TRUE,
-                           bounds = c(0, Inf))
+                           bounds = c(0, Inf), atom_mass = 0.5)
     tg1 <- matrix(c(0, 0.3), ncol = 1L, dimnames = list(NULL, "alpha"))
     expect_null(tulpa:::.joint_axis_span(tg1, tg1, list(one)))
 })

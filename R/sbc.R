@@ -80,10 +80,12 @@
 #' [sbc()]; reading a rank against a continuous uniform is the classic silent
 #' SBC bug.
 #'
-#' @param mu,var,w Component means, variances and weights. `w` defaults to
-#'   equal weights and is normalized.
-#' @param mean,sd Mean and standard deviation of a single Gaussian.
-#' @param support,probs Finite support and its probabilities, normalized.
+#' @param mu,var,w Component means, variances (`>= 0`) and non-negative
+#'   weights, one of each per component. `w` defaults to equal weights and is
+#'   normalized.
+#' @param mean,sd Mean and standard deviation (`>= 0`) of a single Gaussian.
+#' @param support,probs Finite support and its non-negative probabilities, one
+#'   per support point; normalized.
 #' @param rank,n_ref The rank in `0:n_ref` of the truth among `n_ref` reference
 #'   values, and that reference count.
 #' @param x Posterior draws.
@@ -96,12 +98,43 @@
 #' @name sbc_predictive
 #' @export
 sbc_mixture <- function(mu, var, w = NULL) {
-  mu <- as.numeric(mu); var <- as.numeric(var)
+  .sbc_check_numeric(mu, "mu")
+  .sbc_check_numeric(var, "var", nonneg = TRUE)
+  if (length(var) != length(mu)) {
+    stop("`var` must have one entry per component of `mu` (", length(mu),
+         "); got ", length(var), ".", call. = FALSE)
+  }
   if (is.null(w)) w <- rep(1 / length(mu), length(mu))
-  w <- as.numeric(w) / sum(w)
-  stopifnot(length(mu) == length(var), length(mu) == length(w),
-            all(is.finite(mu)), all(is.finite(var)), all(var >= 0))
-  list(kind = "mixture", mu = mu, var = var, w = w)
+  w <- .sbc_weights(w, length(mu), "w", "mu")
+  list(kind = "mixture", mu = as.numeric(mu), var = as.numeric(var), w = w)
+}
+
+# Shared input checks for the predictive constructors (#896): a finite numeric
+# vector, and a weight vector normalized over its components. A negative weight
+# or one of the wrong length is refused rather than normalized into a
+# "distribution" that is not one, or recycled against the components.
+#' @keywords internal
+.sbc_check_numeric <- function(x, arg, nonneg = FALSE) {
+  if (!is.numeric(x) || !length(x) || !all(is.finite(x)) ||
+      (nonneg && any(x < 0))) {
+    stop("`", arg, "` must be a non-empty vector of finite",
+         if (nonneg) " non-negative" else "", " numbers; got ", .arg_repr(x),
+         ".", call. = FALSE)
+  }
+  invisible(x)
+}
+
+#' @keywords internal
+.sbc_weights <- function(w, n, arg, of) {
+  .sbc_check_numeric(w, arg, nonneg = TRUE)
+  if (length(w) != n) {
+    stop("`", arg, "` must have one entry per element of `", of, "` (", n,
+         "); got ", length(w), ".", call. = FALSE)
+  }
+  if (sum(w) <= 0) {
+    stop("`", arg, "` must carry positive total mass.", call. = FALSE)
+  }
+  as.numeric(w) / sum(w)
 }
 
 # A single Gaussian: the one-component mixture, with its own constructor so a
@@ -109,7 +142,15 @@ sbc_mixture <- function(mu, var, w = NULL) {
 
 #' @rdname sbc_predictive
 #' @export
-sbc_normal <- function(mean, sd) sbc_mixture(mean, sd^2, 1)
+sbc_normal <- function(mean, sd) {
+  .check_scalar(mean, "mean")
+  .check_scalar(sd, "sd")
+  if (sd < 0) {
+    stop("`sd` must be a single non-negative number; got ", .arg_repr(sd),
+         ".", call. = FALSE)
+  }
+  sbc_mixture(mean, sd^2, 1)
+}
 
 # A distribution on a finite support, which is what a discrete hyperparameter
 # grid defines for its own axis.
@@ -117,7 +158,9 @@ sbc_normal <- function(mean, sd) sbc_mixture(mean, sd^2, 1)
 #' @rdname sbc_predictive
 #' @export
 sbc_discrete <- function(support, probs) {
-  support <- as.numeric(support); probs <- as.numeric(probs) / sum(probs)
+  .sbc_check_numeric(support, "support")
+  probs <- .sbc_weights(probs, length(support), "probs", "support")
+  support <- as.numeric(support)
   o <- order(support)
   list(kind = "discrete", support = support[o], probs = probs[o])
 }
@@ -128,7 +171,13 @@ sbc_discrete <- function(support, probs) {
 #' @rdname sbc_predictive
 #' @export
 sbc_rank <- function(rank, n_ref) {
-  list(kind = "rank", rank = as.integer(rank), n_ref = as.integer(n_ref))
+  n_ref <- .check_count(n_ref, "n_ref", min = 1L)
+  rank  <- .check_count(rank, "rank", min = 0L)
+  if (rank > n_ref) {
+    stop("`rank` must lie in 0:n_ref (0:", n_ref, "); got ", rank, ".",
+         call. = FALSE)
+  }
+  list(kind = "rank", rank = rank, n_ref = n_ref)
 }
 
 # Posterior draws, for a backend that reports no analytic marginal.

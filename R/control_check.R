@@ -147,6 +147,14 @@ tulpa_check_control <- function(control, allowed, where) {
       where, paste(sQuote(unknown, q = FALSE), collapse = ", "),
       paste(sort(allowed), collapse = ", ")), call. = FALSE)
   }
+  # `control$key` reads the first of two same-named entries, so a repeated knob
+  # set a value the fit never saw (#896).
+  dup <- unique(nm[duplicated(nm)])
+  if (length(dup)) {
+    stop(sprintf(
+      "control knob(s) given more than once in %s(): %s. Set each once.",
+      where, paste(sQuote(dup, q = FALSE), collapse = ", ")), call. = FALSE)
+  }
   invisible(NULL)
 }
 

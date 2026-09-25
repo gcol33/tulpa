@@ -261,8 +261,12 @@ test_that("hyper_axis_spec validates its inputs", {
   expect_error(hyper_axis_spec("a", grid = numeric(0)), "non-empty")
   expect_error(hyper_axis_spec("a", grid = c(-0.5, 1),  log_scale = TRUE),
                "negative")
-  # `0` is allowed in a log-scale grid (no-effect atom).
-  expect_silent(hyper_axis_spec("a", grid = c(0, 1, 2), log_scale = TRUE))
+  # `0` is allowed in a log-scale grid as a no-effect atom, whose prior mass
+  # has to be declared (#896).
+  expect_silent(hyper_axis_spec("a", grid = c(0, 1, 2), log_scale = TRUE,
+                                atom_mass = 0.5))
+  expect_error(hyper_axis_spec("a", grid = c(0, 1, 2), log_scale = TRUE),
+               "declare its prior probability with `atom_mass`")
   expect_error(hyper_axis_spec("a", grid = c(0, 1),  bounds = c(0.5, 0.5)),
                "lower < upper")
   expect_error(hyper_axis_spec("a", grid = c(0, 1),  bounds = c(2, 3)),

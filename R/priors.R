@@ -95,19 +95,19 @@ validate_prior <- function(prior, name) {
   }
 }
 
-# Validate that a prior parameter is strictly positive. Centralised so every
-# prior_*() constructor checks the same way and the error wording stays in sync.
-.assert_positive <- function(value, name) {
-  if (value <= 0) stop(sprintf("%s must be positive", name), call. = FALSE)
-}
-
-# Constructor for the elementary tulpa_prior objects: validate the
-# positive-constrained parameters, then box the distribution name and its
+# Constructor for the elementary tulpa_prior objects: validate every parameter
+# as one finite number (the `positive` ones also > 0) through the shared
+# `.check_scalar()`, so every prior_*() constructor checks the same way and
+# the error names the argument; then box the distribution name and its
 # parameters with the standard two-level class. Single source of truth for the
 # simple prior_*() constructors; priors carrying derived fields (e.g.
-# prior_pc()'s rate) build their object directly.
+# prior_pc()'s rate) build their object directly. Checking the positive ones
+# alone let an NA or character location through, and turned an NA scale into
+# "missing value where TRUE/FALSE needed" (#896).
 .make_prior <- function(distribution, params, positive = character()) {
-  for (nm in positive) .assert_positive(params[[nm]], nm)
+  for (nm in names(params)) {
+    .check_scalar(params[[nm]], nm, positive = nm %in% positive)
+  }
   structure(
     c(list(distribution = distribution), params),
     class = c(paste0("tulpa_prior_", distribution), "tulpa_prior")
@@ -271,8 +271,7 @@ prior_beta <- function(alpha = 1, beta = 1) {
 #'
 #' @export
 prior_pc <- function(U = 1, alpha = 0.01) {
-  .assert_positive(U, "U")
-  if (alpha <= 0 || alpha >= 1) stop("alpha must be in (0, 1)", call. = FALSE)
+  .check_pc_anchors(U, alpha, "U", "alpha", "prior_pc()")
 
   rate <- -log(alpha) / U
 

@@ -41,10 +41,9 @@
 #' @keywords internal
 #' @export
 ccd_grid <- function(k, f_0 = sqrt(k)) {
-  k <- as.integer(k)
-  if (k < 1L) stop("`k` must be >= 1.", call. = FALSE)
-  if (!is.finite(f_0) || f_0 <= 0)
-    stop("`f_0` must be a positive finite scalar.", call. = FALSE)
+  # A fractional `k` is refused, not truncated: ccd_grid(2.7) was a 2-D design.
+  k <- .check_count(k, "k", min = 1L)
+  .check_scalar(f_0, "f_0", positive = TRUE)
 
   # Centre point.
   z_center <- matrix(0, nrow = 1L, ncol = k)
