@@ -545,11 +545,9 @@ validate_gp <- function(gp, data) {
   }
 
   # Detect unique coordinates (NNGP requires unique locations)
-  coord_key <- do.call(paste, c(
-    lapply(seq_len(ncol(coords)), function(j) coords[, j]), list(sep = ",")))
-  unique_keys <- unique(coord_key)
-  obs_to_loc <- match(coord_key, unique_keys)
-  unique_coords <- coords[match(unique_keys, coord_key), , drop = FALSE]
+  ul <- .unique_locations(coords)
+  obs_to_loc <- ul$obs_to_loc
+  unique_coords <- ul$unique_coords
   n_unique <- nrow(unique_coords)
 
   if (n_unique < N) {
@@ -583,4 +581,17 @@ validate_gp <- function(gp, data) {
   }
 
   gp
+}
+
+
+# The distinct locations of a coordinate matrix and each row's one, in order of
+# first appearance. An NNGP field lives on locations, not rows: two rows at one
+# site would be two field values at distance 0, perfectly correlated, and the
+# neighbour covariance singular. Shared by validate_gp() and validate_svc().
+.unique_locations <- function(coords) {
+  coord_key <- do.call(paste, c(
+    lapply(seq_len(ncol(coords)), function(j) coords[, j]), list(sep = ",")))
+  unique_keys <- unique(coord_key)
+  list(obs_to_loc = as.integer(match(coord_key, unique_keys)),
+       unique_coords = coords[match(unique_keys, coord_key), , drop = FALSE])
 }

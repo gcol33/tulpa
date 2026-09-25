@@ -433,10 +433,13 @@ inline void vec_copy(const double* src, double* dst, int n) {
 inline void matvec(const double* X_flat, const double* beta,
                    double* y, int N, int p) {
   // Reached per leapfrog step through precompute_generic_fixed_eta, so the
-  // region entry is on the sampler's hot path: at a team of one
+  // region entry is on the sampler's hot path. The team is sized by the WORK,
+  // N * p multiply-adds, not by the row count: a 40-row design is a few
+  // hundred nanoseconds of arithmetic, and a full-width region to split it
+  // cost more than the product (gcol33/tulpa#897). At a team of one
   // tulpa_parallel_for takes a plain loop instead of entering libgomp. Rows
   // write disjoint y slots, so the routes are bit-identical.
-  const int team = tulpa_omp_team_size(N);
+  const int team = tulpa_omp_team_size_grain(N, p);
   tulpa_parallel_for(team, N, [&](int i) {
     y[i] = dot_product(&X_flat[i * p], beta, p);
   });
@@ -449,7 +452,7 @@ inline void matvec_add(const double* X_flat, const double* beta,
   // Same one-thread route as matvec above: rows write disjoint y slots, so
   // the plain loop and the region are bit-identical, and a team of one skips
   // libgomp instead of entering it to run the body serially anyway.
-  tulpa_parallel_for(tulpa_omp_team_size(N), N, [&](int i) {
+  tulpa_parallel_for(tulpa_omp_team_size_grain(N, p), N, [&](int i) {
     y[i] += dot_product(&X_flat[i * p], beta, p);
   });
 }
@@ -500,7 +503,10 @@ inline void sparse_matvec_csr(
     const int* row_ptr, const int* col_idx, const double* values,
     const double* x, double* y, int n_rows) {
 
-  tulpa_parallel_for(tulpa_omp_team_size(n_rows), n_rows, [&](int i) {
+  const long long nnz = n_rows > 0 ? row_ptr[n_rows] - row_ptr[0] : 0;
+  const long long per_row = n_rows > 0 ? nnz / n_rows : 0;
+  tulpa_parallel_for(tulpa_omp_team_size_grain(n_rows, per_row), n_rows,
+                     [&](int i) {
     double sum = 0.0;
     for (int k = row_ptr[i]; k < row_ptr[i + 1]; k++) {
       sum += values[k] * x[col_idx[k]];
@@ -883,7 +889,7 @@ inline auto make_se_kernel_matvec(
   return [=](const double* v, double* result) {
     const double inv_l2 = 1.0 / (lengthscale * lengthscale);
 
-    tulpa_parallel_for(tulpa_omp_team_size(N), N, [&](int i) {
+    tulpa_parallel_for(tulpa_omp_team_size_grain(N, N), N, [&](int i) {
       double sum = 0.0;
       double xi = coords[2*i];
       double yi = coords[2*i + 1];

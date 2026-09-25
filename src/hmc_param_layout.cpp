@@ -255,6 +255,20 @@ ParamLayout compute_param_layout(const ModelData& data) {
 
   if (layout.has_spatial) {
     require_spatial_partition(data);
+    if (layout.is_bym2 && !data.bym2_node_prec.empty()) {
+      // Per-component BYM2 scaling (#902) is read by the sampled phi's prior;
+      // the collapsed parameterization marginalizes phi and has no prior to
+      // carry it, so it would fit the one-scale model instead.
+      if ((int)data.bym2_node_prec.size() != data.n_spatial_units) {
+        Rcpp::stop("tulpa: bym2_node_prec has %d entries for %d spatial units.",
+                   (int)data.bym2_node_prec.size(), data.n_spatial_units);
+      }
+      if (data.bym2_collapsed) {
+        Rcpp::stop("tulpa: the collapsed BYM2 parameterization carries one "
+                   "scale for the whole graph, and this graph is scaled per "
+                   "connected component. Use parameterization = \"standard\".");
+      }
+    }
     if (layout.is_bym2) {
       // BYM2 Riebler: log_sigma_total, logit_rho, [phi_scaled, theta if not collapsed]
       layout.log_sigma_bym2_idx = idx++;

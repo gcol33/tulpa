@@ -73,7 +73,9 @@ inline void gp_nngp_gradients(
                         grads.grad_log_sigma2);
 
   // Team size, and with it the number of chunks the rows are cut into
-  int n_threads = tulpa_omp_team_size(N - 1);
+  // Each row factors an nn x nn neighbour covariance, so a small field
+  // stays on one thread rather than splitting a few microseconds of work.
+  int n_threads = tulpa_omp_team_size_grain(N - 1, (long long)nn * nn * nn);
 
   // Per-chunk accumulators: grad_w[t * N + k], sigma2[t], phi[t]
   std::vector<double> tl_grad_w(n_threads * N, 0.0);

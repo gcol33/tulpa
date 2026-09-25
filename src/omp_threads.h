@@ -47,6 +47,27 @@ inline int tulpa_omp_team_size(int n_work_items) {
 #endif
 }
 
+// Team size for a region whose items are cheap: no more threads than there are
+// `min_work_per_thread` units of work, where an item costs `work_per_item`
+// units (a multiply-add, say). Bounding the team by the ITEM count alone sends a
+// 40-row matvec into a full-width region whose entry and barrier cost more than
+// the 40 dot products it splits -- the one kernel every generic log-posterior
+// evaluation reaches (precompute_generic_fixed_eta), paid per leapfrog step
+// (gcol33/tulpa#897). Below the grain this returns 1 and tulpa_parallel_for
+// takes its plain loop.
+inline constexpr long long TULPA_OMP_MIN_WORK_PER_THREAD = 16384;
+
+inline int tulpa_omp_team_size_grain(
+        int n_work_items, long long work_per_item,
+        long long min_work_per_thread = TULPA_OMP_MIN_WORK_PER_THREAD) {
+    const long long total =
+        static_cast<long long>(n_work_items) * std::max(1LL, work_per_item);
+    const long long by_work = total / std::max(1LL, min_work_per_thread);
+    const int by_work_i = static_cast<int>(
+        std::min<long long>(by_work, static_cast<long long>(n_work_items)));
+    return std::max(1, std::min(tulpa_omp_team_size(n_work_items), by_work_i));
+}
+
 // Team size for a region whose caller supplies an explicit thread count:
 // the requested count, clamped by the environment (OMP_THREAD_LIMIT, max
 // threads) and the number of work items. Use this as a num_threads(...)

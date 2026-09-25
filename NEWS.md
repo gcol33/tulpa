@@ -43,10 +43,19 @@
   (gcol33/tulpa#901).
 * `spatial_bym2()` scales each connected component separately and gives
   islands unit structured variance (Freni-Sterrantino et al. 2018) instead
-  of an infinite scale factor that produced NA or frozen fits. The
-  ModelData samplers refuse a disconnected BYM2 graph with a message naming
-  the modes that fit it; `check_adjacency()` reports connected components
-  (gcol33/tulpa#902).
+  of an infinite scale factor that produced NA or frozen fits. The samplers
+  (`mode = "hmc"` and the other ModelData modes) fit the same per-component
+  model: each component's scale rides on the structured field's prior as a
+  per-node precision multiplier, the construction the Laplace,
+  nested-Laplace and Gibbs kernels use. `check_adjacency()` reports
+  connected components (gcol33/tulpa#902). This adds a field to the exported
+  `ModelData` struct (`TULPA_ABI_VERSION` 45), so packages linking to tulpa
+  must be rebuilt.
+* `spatial_svc(approx = "nngp")` accepts rows that share coordinates. Each
+  term's field lives on the distinct locations and every row reads the value
+  at its own site, as `spatial_gp()` already did; duplicated coordinates were
+  refused before. `svc()` still reports one row per observation. `SVCData`
+  gains `obs_to_loc` (same ABI bump).
 * `temporal()` on a nested-Laplace fit with a spatial and a temporal field
   returns the temporal field, located through the fit's block layout
   (gcol33/tulpa#903), and reports the Gaussian mixture over grid cells
@@ -128,6 +137,15 @@
   sampler (gcol33/tulpa#911). Inline field errors list every accepted mode,
   and `mode = "gibbs"` with an SPDE field is refused instead of silently
   running NUTS (gcol33/tulpa#912).
+
+## Performance
+
+* The matrix-vector kernels behind every generic log-posterior evaluation
+  (`matvec`, the sparse CSR product, the SE kernel product and the NNGP
+  gradient loops) size their OpenMP team by the arithmetic they split rather
+  than by the row count, so a small model no longer opens a full-width
+  parallel region per leapfrog step to share a few hundred multiply-adds
+  (gcol33/tulpa#897).
 
 ## Documentation
 

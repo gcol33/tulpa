@@ -26,21 +26,31 @@ using namespace math;
 // summed over units, minus twice the cross term summed over each edge once
 // (the j > i test picks each edge from its lower-indexed endpoint). `rho` null
 // is the intrinsic case, rho == 1, where the cross term carries no coefficient.
+// `w` null is the unweighted form; otherwise it is phi' diag(w) Q phi with w
+// constant within each connected component (BYM2's per-component scaling,
+// `ModelData::bym2_node_prec`), so an edge's two endpoints share one weight and
+// the product stays symmetric.
 template<typename T>
-T icar_quad_form(const T* phi, const ModelData& data, const T* rho)
+T icar_quad_form(const T* phi, const ModelData& data, const T* rho,
+                 const double* w = nullptr)
 {
     T quad_form = T(0.0);
     for (int i = 0; i < data.n_spatial_units; i++) {
-        quad_form = quad_form + T(data.n_neighbors[i]) * phi[i] * phi[i];
+        // Weighted: node i's own terms, scaled by its component's weight. The
+        // unweighted form keeps its single running sum, so its value is the
+        // same to the last bit as before the weight existed.
+        T qi = w ? T(0.0) : quad_form;
+        qi = qi + T(data.n_neighbors[i]) * phi[i] * phi[i];
         int row_start = data.adj_row_ptr[i];
         int row_end = data.adj_row_ptr[i + 1];
         for (int k = row_start; k < row_end; k++) {
             int j = data.adj_col_idx[k];
             if (j <= i) continue;
-            quad_form = rho
-                ? quad_form - T(2.0) * (*rho) * phi[i] * phi[j]
-                : quad_form - T(2.0) * phi[i] * phi[j];
+            qi = rho
+                ? qi - T(2.0) * (*rho) * phi[i] * phi[j]
+                : qi - T(2.0) * phi[i] * phi[j];
         }
+        quad_form = w ? quad_form + T(w[i]) * qi : qi;
     }
     return quad_form;
 }
@@ -51,14 +61,19 @@ T icar_quad_form(const T* phi, const ModelData& data, const T* rho)
 // it scales phi'Q phi by. The constant direction of each component then carries
 // the field's own precision, and `icar_center_field` removes it on the way into
 // eta. Shared by the BYM2 and ICAR branches so the two cannot drift apart.
+// `w` weights each component's term by its (constant) node weight, the
+// augmentation's share of diag(w) Q_aug.
 template<typename T>
-T icar_sum_to_zero_augment(const T* phi, const GraphPartition& partition)
+T icar_sum_to_zero_augment(const T* phi, const GraphPartition& partition,
+                           const double* w = nullptr)
 {
     T aug = T(0.0);
     tulpa::for_each_icar_component(0, partition,
         [&](int start, const int* idx, int csize) {
             const T s = tulpa::s2z_component_sum(phi, start, idx, csize);
-            aug = aug + tulpa::s2z_aug_coef(T(1.0), csize) * s * s;
+            const int first = idx ? idx[0] : start;
+            aug = w ? aug + T(w[first]) * (tulpa::s2z_aug_coef(T(1.0), csize) * s * s)
+                    : aug + tulpa::s2z_aug_coef(T(1.0), csize) * s * s;
         });
     return aug;
 }
@@ -118,13 +133,19 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
                                 + safe_log(T(1.0) - rho_bym2);
 
             // ICAR prior on phi_spatial
-            T quad_form = icar_quad_form<T>(phi_spatial_out, data, nullptr);
+            // A disconnected graph is scaled per component (#902): the prior
+            // is diag(node_prec) Q_aug, node_prec constant within a component.
+            // Its log-determinant adds 0.5 * sum_i log node_prec_i, a constant
+            // in every sampled parameter, so it is left out like log|Q_aug|.
+            const double* w = data.bym2_node_prec.empty()
+                ? nullptr : data.bym2_node_prec.data();
+            T quad_form = icar_quad_form<T>(phi_spatial_out, data, nullptr, w);
             // Augmented Q_aug = Q + sum_c 1_c 1_c'/J_c. BYM2's phi is unit-scale
             // (tau = 1; the scale lives in sigma_s_bym2), so the augmentation
             // enters at coefficient 1 and there is no log-tau normalizer to
             // move -- 0.5 * J * log(1) and 0.5 * (J - L) * log(1) are both 0.
             log_post = log_post - T(0.5) * (quad_form + icar_sum_to_zero_augment(
-                phi_spatial_out, data.spatial_partition));
+                phi_spatial_out, data.spatial_partition, w));
 
             // N(0, I) prior on theta
             for (int s = 0; s < data.n_spatial_units; s++) {

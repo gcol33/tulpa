@@ -224,22 +224,25 @@ T nngp_log_lik(
 // =============================================================================
 
 // Compute SVC contribution to linear predictor for all observations
-// eta_svc[i] = sum_j X_svc[i,j] * w_j[i]
+// eta_svc[i] = sum_j X_svc[i,j] * w_j[loc(i)], the field read at the row's
+// location (the identity unless rows share a site).
 template<typename T>
 void compute_svc_eta(
-    const std::vector<T>& w_flat,  // n_obs x n_svc flattened
+    const std::vector<T>& w_flat,  // n_svc x n_obs (locations), term-major
     const SVCData& svc_data,
-    std::vector<T>& eta_svc         // Output: length n_obs
+    std::vector<T>& eta_svc         // Output: length n_rows()
 ) {
-    int N = svc_data.n_obs;
+    const int n_loc = svc_data.n_obs;
+    const int N = svc_data.n_rows();
     int n_svc = svc_data.n_svc;
 
     eta_svc.assign(N, T(0.0));
 
     for (int i = 0; i < N; i++) {
+        const int loc = svc_data.loc_of(i);
         for (int j = 0; j < n_svc; j++) {
-            // w_flat is stored as [w1[1..N], w2[1..N], ...]
-            T w_ij = w_flat[j * N + i];
+            // w_flat is stored as [w1[1..n_loc], w2[1..n_loc], ...]
+            T w_ij = w_flat[j * n_loc + loc];
             double x_ij = svc_data.X_svc[i * n_svc + j];
             eta_svc[i] = eta_svc[i] + T(x_ij) * w_ij;
         }

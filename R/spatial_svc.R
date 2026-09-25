@@ -111,6 +111,8 @@ spatial_svc <- function(coords,
       parameterization = parameterization,
       # Filled in during validation
       n_obs = NULL,
+      n_loc = NULL,
+      obs_to_loc = NULL,
       n_svc = NULL,
       svc_indices = NULL,
       svc_names = NULL,
@@ -229,29 +231,34 @@ validate_svc <- function(svc, data, X) {
     svc_names <- coef_names[svc_indices]
   }
 
-  # Compute nearest neighbors (NNGP only)
+  # Compute nearest neighbors (NNGP only). An NNGP field lives on LOCATIONS:
+  # rows that share coordinates read one field value, so the neighbour sets
+  # are built over the distinct sites and `obs_to_loc` maps each row to its
+  # own. Duplicated coordinates were refused before -- as rows they are a
+  # distance-0 pair, perfectly correlated, and the neighbour covariance is
+  # singular.
   approx <- svc$approx %||% "nngp"
+  obs_to_loc <- NULL
+  n_loc <- N
   if (approx == "nngp") {
-    # The NNGP SVC field puts one effect per observation, so two rows sharing
-    # coordinates place a distance-0 point in a conditioning set -> correlation
-    # 1 -> a singular per-node covariance in the marginal-SE / kernel solve.
-    # Reject duplicates rather than fail silently downstream.
-    if (anyDuplicated(coords)) {
-      dup <- which(duplicated(coords) | duplicated(coords, fromLast = TRUE))
-      stop(sprintf(paste0(
-        "svc() with approx = 'nngp' requires distinct coordinates: %d row(s) ",
-        "share coordinates with another (first at row %d). Jitter or aggregate ",
-        "the duplicated locations before fitting."), length(dup), dup[1L]),
-        call. = FALSE)
+    ul <- .unique_locations(coords)
+    n_loc <- nrow(ul$unique_coords)
+    if (n_loc < N) obs_to_loc <- ul$obs_to_loc
+    if (n_loc < 2L) {
+      stop("svc() with approx = 'nngp' needs at least two distinct ",
+           "locations.", call. = FALSE)
     }
-    nn <- min(svc$nn, N - 1)
-    neighbor_info <- compute_nngp_neighbors(coords, nn)
+    nn <- min(svc$nn, n_loc - 1)
+    neighbor_info <- compute_nngp_neighbors(ul$unique_coords, nn)
   } else {
     neighbor_info <- NULL
   }
 
   # Update SVC object
   svc$n_obs <- N
+  svc$n_loc <- n_loc
+  svc$obs_to_loc <- obs_to_loc
+  svc$unique_coords <- if (approx == "nngp") ul$unique_coords
   svc$n_svc <- length(svc_indices)
   svc$svc_indices <- svc_indices
   svc$svc_names <- svc_names
@@ -263,7 +270,7 @@ validate_svc <- function(svc, data, X) {
     m <- svc$m %||% 6L
     svc$n_spatial <- length(svc_indices) * as.integer(m)^2  # m^2 basis per SVC term
   } else {
-    svc$n_spatial <- svc$n_obs * svc$n_svc  # N effects per SVC term
+    svc$n_spatial <- n_loc * svc$n_svc  # one effect per location per SVC term
   }
 
   svc
@@ -433,8 +440,13 @@ svc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
     names_field = "svc_names",
     field_slot = "spatial",
     draws_prefix = "svc_w",
-    n_units_field = "n_obs",
+    n_units_field = "n_loc",
     build_result = function(info, draws, term_names) {
+      # The field is sampled per location; report it per row, as before, so
+      # rows sharing a site carry the same draws.
+      if (!is.null(info$obs_to_loc) && dim(draws)[2] == info$n_loc) {
+        draws <- draws[, info$obs_to_loc, , drop = FALSE]
+      }
       structure(
         list(
           draws = draws,

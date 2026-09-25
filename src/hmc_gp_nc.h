@@ -442,7 +442,8 @@ inline void nngp_nc_backward(
     grad_log_phi_jac = 0.0;
 
     // Thread-local workspace setup
-    int n_threads = tulpa_omp_team_size(N - 1);
+    // Per-row work is an nn x nn neighbour solve; see hmc_gp_gradients.h.
+    int n_threads = tulpa_omp_team_size_grain(N - 1, (long long)nn * nn * nn);
 
     std::vector<double> tl_phi_lik(n_threads, 0.0);
     std::vector<double> tl_phi_jac(n_threads, 0.0);

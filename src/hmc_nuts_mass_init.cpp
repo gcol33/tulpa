@@ -360,8 +360,14 @@ void warm_start_mass_matrix(
   // Riebler parameterization: phi[s] carries scale_factor variance
   if (layout.is_bym2) {
     double sf = std::max(data.bym2_scale_factor, 0.1);
+    const bool per_node = !data.bym2_node_prec.empty();
     for (int s = layout.spatial_start; s < layout.spatial_end; s++) {
-      inv_m[s] = sf * sf;  // ICAR variance ~ scale_factor^2
+      // A disconnected graph's component c carries its own scale s_c, which
+      // the reference sf reaches through node_prec = (sf / s_c)^2 (#902).
+      const double sf_s = per_node
+        ? std::max(sf / std::sqrt(data.bym2_node_prec[s - layout.spatial_start]), 0.1)
+        : sf;
+      inv_m[s] = sf_s * sf_s;  // ICAR variance ~ scale_factor^2
     }
     for (int s = layout.theta_bym2_start; s < layout.theta_bym2_end; s++) {
       inv_m[s] = 1.0;  // IID: N(0,1)

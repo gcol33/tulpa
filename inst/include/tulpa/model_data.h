@@ -153,8 +153,19 @@ namespace tulpa {
 // ParamLayout gained the per-coefficient `log_sigma2_tvc_gp` /
 // `logit_phi_tvc_gp` spans it samples them on. Three exported struct layouts
 // change, so a model package linking against tulpa rebuilds.
+//
+// 44 -> 45: a BYM2 field on a disconnected graph is scaled per connected
+// component in the samplers too (gcol33/tulpa#902). ModelData gained the
+// trailing spatial-section container `bym2_node_prec`: one precision
+// multiplier per node, constant within a component, (s_ref / s_c)^2 for a
+// component of scale s_c against the reference `bym2_scale_factor`, and empty
+// on a connected graph. The sampler previously refused such a graph because
+// the one scalar could not carry it. SVCData gained `obs_to_loc`, so an NNGP
+// varying-coefficient field lives on the distinct coordinates and rows that
+// share a site read one field value; X_svc stays one row per observation.
+// Before, duplicated coordinates were refused.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 44;
+constexpr int TULPA_ABI_VERSION = 45;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -321,6 +332,17 @@ struct ModelData {
             n_spatial_units, adj_row_ptr.data(), adj_col_idx.data());
         n_spatial_components = spatial_partition.n_components();
     }
+
+    // BYM2 per-component scaling (Freni-Sterrantino, Ventrucci & Rue 2018;
+    // gcol33/tulpa#902). The structured field enters eta through the one
+    // reference scale `bym2_scale_factor`, and each component's remaining
+    // factor rides on phi's prior as a precision multiplier: the prior is
+    // diag(bym2_node_prec) Q_aug, the same construction the Laplace,
+    // nested-Laplace and Gibbs kernels take from R's `node_prec`. Constant
+    // within a component, so the product stays symmetric; an isolated node's
+    // multiplier gives its structured part unit variance. EMPTY on a connected
+    // graph, where every multiplier is 1 and the unweighted path runs.
+    std::vector<double> bym2_node_prec;
 
     // Proper CAR rho bounds (eigenvalue-derived, default to (0, 1))
     // Only used when spatial_type == CAR_PROPER.

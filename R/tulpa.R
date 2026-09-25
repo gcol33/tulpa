@@ -487,6 +487,9 @@
     stop("SVC spec is unvalidated (neighbor_info NULL). tulpa() validates ",
          "it via validate_svc().", call. = FALSE)
   }
+  # The NNGP field lives on the distinct locations; rows sharing one read it
+  # through obs_to_loc (0-based across the boundary). X_svc stays per row.
+  cm <- as.matrix(spatial$unique_coords %||% cm)
   n_obs <- nrow(cm)
   nn    <- as.integer(spatial$nn %||% ncol(ni$nn_idx))
   pos_d <- ni$nn_dist[is.finite(ni$nn_dist) & ni$nn_dist > 0]
@@ -502,7 +505,9 @@
     nn_order        = as.integer(ni$nn_order) - 1L,
     nn_order_inv    = as.integer(ni$nn_order_inv %||% seq_len(n_obs)) - 1L,
     svc_indices     = idx,
-    X_svc           = as.numeric(t(Xs)),            # row-major [n_obs x n_svc]
+    X_svc           = as.numeric(t(Xs)),            # row-major [n_rows x n_svc]
+    obs_to_loc      = if (!is.null(spatial$obs_to_loc))
+      as.integer(spatial$obs_to_loc) - 1L,
     cov_type        = gp_cov_type(spatial),
     phi_prior_U     = as.numeric(U),
     phi_prior_alpha = 0.05,
@@ -1378,19 +1383,6 @@
           "'nested_laplace'), or fit_spde() for SPDE."),
           backend, sp$type), call. = FALSE)
       }
-      # The ModelData sampler's BYM2 carries ONE scale for the whole graph, in
-      # an exported struct; per-component scaling (a disconnected graph, an
-      # island) lives on the nested-Laplace, Laplace and Gibbs kernels, so the
-      # sampler refuses it rather than fit a differently scaled model
-      # (gcol33/tulpa#902).
-      if (identical(sp$type, "bym2") && !is.null(sp$node_prec)) {
-        stop(sprintf(paste0(
-          "Backend '%s' scales a BYM2 field with one factor for the whole ",
-          "graph, and this graph has several connected components (or an ",
-          "isolated node), which are scaled separately. Fit it with ",
-          "mode = 'auto' / 'nested_laplace' / 'laplace', or mode = 'gibbs' for ",
-          "a binomial response."), backend), call. = FALSE)
-      }
       spatial_spec_arg <- list(
         type            = sp$type,
         spatial_idx     = sp$spatial_idx,
@@ -1398,7 +1390,13 @@
         adj_row_ptr     = sp$adj_row_ptr,
         adj_col_idx     = sp$adj_col_idx,
         n_neighbors     = sp$n_neighbors,
-        scale_factor    = sp$scale_factor %||% 1.0
+        scale_factor    = sp$scale_factor %||% 1.0,
+        # A disconnected BYM2 graph is scaled per connected component: the
+        # reference scale above, and each component's remainder as a
+        # precision multiplier on phi's prior (gcol33/tulpa#902). NULL on a
+        # connected graph.
+        node_prec       = if (identical(sp$type, "bym2") && !is.null(sp$node_prec))
+          as.numeric(sp$node_prec)
       )
     }
 

@@ -364,6 +364,42 @@ inline void build_sampler_model_inputs(
                 in.data.bym2_scale_factor =
                     sp.containsElementNamed("scale_factor")
                         ? Rcpp::as<double>(sp["scale_factor"]) : 1.0;
+                // Per-component scaling of a disconnected graph (#902): one
+                // multiplier per node, constant within each component, which
+                // is what keeps diag(node_prec) Q_aug symmetric. Checked here,
+                // at the spec boundary, because the prior that reads it runs
+                // inside gradient loops where a throw is std::terminate.
+                if (sp.containsElementNamed("node_prec") &&
+                    !Rf_isNull(sp["node_prec"])) {
+                    Rcpp::NumericVector np =
+                        Rcpp::as<Rcpp::NumericVector>(sp["node_prec"]);
+                    if (np.size() != n_units) {
+                        Rcpp::stop("spatial(type = \"bym2\"): node_prec has "
+                                   "%d entries for %d spatial units.",
+                                   (int)np.size(), n_units);
+                    }
+                    for (int s = 0; s < n_units; s++) {
+                        if (!std::isfinite(np[s]) || np[s] <= 0.0) {
+                            Rcpp::stop("spatial(type = \"bym2\"): node_prec "
+                                       "must be finite and positive "
+                                       "(entry %d is %g).", s + 1, np[s]);
+                        }
+                    }
+                    const GraphPartition& part = in.data.spatial_partition;
+                    for (int c = 0; c < part.n_components(); c++) {
+                        const int* idx = part.nodes(c);
+                        const int m = part.size(c);
+                        auto node = [&](int k) { return idx ? idx[k] : k; };
+                        for (int k = 1; k < m; k++) {
+                            if (np[node(k)] != np[node(0)]) {
+                                Rcpp::stop("spatial(type = \"bym2\"): node_prec "
+                                           "must be constant within each "
+                                           "connected component.");
+                            }
+                        }
+                    }
+                    in.data.bym2_node_prec.assign(np.begin(), np.end());
+                }
             }
         } else if (stype == "gp" || stype == "nngp") {
             // Continuous single-scale NNGP field. compute_param_layout keys the
@@ -777,14 +813,35 @@ inline void build_sampler_model_inputs(
         Rcpp::IntegerVector svci = Rcpp::as<Rcpp::IntegerVector>(sv["svc_indices"]);
         check_vec_len(svci.size(), n_svc, SVC_WHO, "svc_indices");
         s.svc_indices.assign(svci.begin(), svci.end());
+        // Rows sharing a location (NNGP only): the field lives on the
+        // distinct coordinates above and each row reads its own.
+        s.obs_to_loc.clear();
+        if (sv.containsElementNamed("obs_to_loc") && !Rf_isNull(sv["obs_to_loc"])) {
+            Rcpp::IntegerVector o2l = Rcpp::as<Rcpp::IntegerVector>(sv["obs_to_loc"]);
+            for (R_xlen_t i = 0; i < o2l.size(); ++i) {
+                if (o2l[i] == NA_INTEGER || o2l[i] < 0 || o2l[i] >= n_obs) {
+                    Rcpp::stop("%s: obs_to_loc[%d] = %d is not a location in "
+                               "[0, %d).", SVC_WHO, (int)i + 1, o2l[i], n_obs);
+                }
+            }
+            s.obs_to_loc.assign(o2l.begin(), o2l.end());
+        }
+        if (s.n_rows() != N) {
+            Rcpp::stop("%s: the field covers %d rows for %d observations.",
+                       SVC_WHO, s.n_rows(), N);
+        }
         Rcpp::NumericVector xsvc = Rcpp::as<Rcpp::NumericVector>(sv["X_svc"]);
-        check_vec_len(xsvc.size(), (R_xlen_t)n_obs * n_svc, SVC_WHO, "X_svc");
-        s.X_svc.assign(xsvc.begin(), xsvc.end());   // row-major [n_obs x n_svc]
+        check_vec_len(xsvc.size(), (R_xlen_t)s.n_rows() * n_svc, SVC_WHO, "X_svc");
+        s.X_svc.assign(xsvc.begin(), xsvc.end());   // row-major [n_rows x n_svc]
         in.data.has_svc = true;
 
         const std::string svc_approx = sv.containsElementNamed("approx")
             ? Rcpp::as<std::string>(sv["approx"]) : "nngp";
         if (svc_approx == "hsgp") {
+            if (!s.obs_to_loc.empty()) {
+                Rcpp::stop("%s: an HSGP basis is evaluated at every row and "
+                           "takes no obs_to_loc.", SVC_WHO);
+            }
             // Hilbert-space GP: one shared Laplacian basis (all SVC terms sit
             // at the same coordinates; only each term's own sigma2/lengthscale
             // scales the spectral density -- see compute_svc_prior()'s HSGP

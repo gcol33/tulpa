@@ -191,3 +191,72 @@ test_that("hsgp svc exact NUTS recovers the varying-coefficient surface", {
   fm <- .hsgp_svc_field_from_draws(fit, spatial)
   expect_gt(cor(fm - mean(fm), s$bsurf - mean(s$bsurf)), 0.8)
 })
+
+# Rows sharing a site: the NNGP field lives on the distinct locations and each
+# row reads its own. Refused before -- as rows, two observations at one site are
+# a distance-0 pair, perfectly correlated, and the neighbour covariance singular.
+make_svc_sites <- function(n_site = 30L, per = 3L, seed = 405L) {
+  set.seed(seed)
+  lon <- runif(n_site); lat <- runif(n_site)
+  bsurf <- 0.9 * sin(2.8 * lon) + 0.7 * cos(2.2 * lat)
+  site <- rep(seq_len(n_site), each = per)
+  d <- data.frame(lon = lon[site], lat = lat[site], x = rnorm(n_site * per))
+  d$y <- rpois(nrow(d), exp(0.2 + (0.8 + bsurf[site]) * d$x))
+  list(d = d, bsurf = bsurf, site = site)
+}
+
+test_that("svc(approx = 'nngp') puts the field on the distinct locations", {
+  s <- make_svc_sites()
+  X <- model.matrix(~ x, s$d)
+  v <- validate_svc(spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 5L), s$d, X)
+  expect_identical(v$n_obs, nrow(s$d))
+  expect_identical(v$n_loc, 30L)
+  expect_identical(v$obs_to_loc, s$site)
+  expect_identical(nrow(v$neighbor_info$nn_idx), 30L)
+  expect_identical(v$n_spatial, 30L)
+  spec <- tulpa:::.svc_sampler_spec(v, X)
+  expect_identical(nrow(spec$coords), 30L)
+  expect_identical(spec$obs_to_loc, s$site - 1L)
+  expect_length(spec$X_svc, nrow(s$d))            # still one row per observation
+  # Distinct coordinates keep the identity map.
+  s1 <- make_svc_pois(n = 30L)
+  v1 <- validate_svc(spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 5L),
+                     s1$d, model.matrix(~ x, s1$d))
+  expect_null(v1$obs_to_loc)
+  expect_null(tulpa:::.svc_sampler_spec(v1, model.matrix(~ x, s1$d))$obs_to_loc)
+})
+
+test_that("rows sharing a site read one field value in eta", {
+  s <- make_svc_sites(n_site = 12L, per = 2L)
+  X <- model.matrix(~ x, s$d)
+  v <- validate_svc(spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 4L,
+                                parameterization = "centered"), s$d, X)
+  spec <- tulpa:::.svc_sampler_spec(v, X)
+  set.seed(9)
+  w <- rnorm(12L)
+  draw <- matrix(c(0.2, 0.8, log(0.5), log(0.3), w), nrow = 1L)
+  eta <- tulpa:::cpp_tulpa_glmm_eta_draws(
+    draw, s$d$y, rep(1L, nrow(s$d)), X, "poisson", svc_spec = spec)
+  wc <- w - mean(w)                                 # the level is centred away
+  expect_equal(as.numeric(eta),
+               as.numeric(X %*% c(0.2, 0.8) + s$d$x * wc[s$site]),
+               tolerance = 1e-12)
+})
+
+test_that("svc exact NUTS fits a field with repeated sites", {
+  skip_on_cran()
+  s <- make_svc_sites()
+  fit <- tulpa(y ~ x, data = s$d, family = "poisson",
+               spatial = spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 5L),
+               mode = "exact",
+               control = list(n_iter = 600L, n_warmup = 300L, n_chains = 2L,
+                              seed = 1L))
+  expect_equal(sum(grepl("^svc_w\\[", colnames(fit$draws))), 30L)
+  post <- svc(fit)
+  expect_identical(dim(post$draws)[2], nrow(s$d))  # reported per row
+  # Rows at one site carry the same draws.
+  expect_identical(post$draws[, 1L, 1L], post$draws[, 2L, 1L])
+  sm <- summary(post)
+  site_mean <- tapply(sm$mean, s$site, `[`, 1L)
+  expect_gt(cor(site_mean, s$bsurf - mean(s$bsurf)), 0.5)
+})

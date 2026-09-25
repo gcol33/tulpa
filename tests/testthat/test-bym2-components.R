@@ -132,11 +132,70 @@ test_that("the Polya-Gamma Gibbs BYM2 gives the island its unit prior", {
   expect_lt(stats::sd(ph), 5 / sqrt(sp$node_prec[16]))
 })
 
-test_that("the ModelData sampler refuses a per-component BYM2 by name", {
+test_that("the ModelData sampler's BYM2 prior is diag(node_prec) Q_aug (#902)", {
+  # Shifting phi by a constant leaves the centred field -- and so eta and the
+  # likelihood -- unchanged, so the log-posterior difference is the prior's
+  # alone. Q 1 = 0 on every component, so what moves is each component's
+  # augmentation, sum_c w_c (S_c + c J_c)^2 / J_c: weighted by the component's
+  # multiplier, where the one-scale prior weighted every component by 1.
   dd <- .island_data()
-  expect_error(
-    tulpa(y ~ x + spatial(region), dd$d, family = "poisson", mode = "hmc",
-          spatial = suppressWarnings(spatial_bym2(dd$A, group_var = "region")),
-          control = list(n_chains = 1, n_iter = 20, warmup = 10)),
-    "scales a BYM2 field with one factor for the whole graph")
+  sp <- suppressWarnings(spatial_bym2(dd$A, group_var = "region"))
+  sp$spatial_idx <- dd$d$region
+  nl <- tulpa:::.spatial_spec_to_nl_prior(sp)
+  spec <- list(type = "bym2", spatial_idx = nl$spatial_idx,
+               n_spatial_units = nl$n_spatial_units,
+               adj_row_ptr = nl$adj_row_ptr, adj_col_idx = nl$adj_col_idx,
+               n_neighbors = nl$n_neighbors, scale_factor = sp$scale_factor,
+               node_prec = sp$node_prec)
+  X <- cbind(1, dd$d$x)
+  S <- nrow(dd$A)
+  set.seed(4)
+  base <- c(0.3, 0.5, log(0.8), 0.2, rnorm(S, 0, 0.3), rnorm(S, 0, 0.3))
+  shift <- 0.7
+  up <- base; up[4L + seq_len(S)] <- up[4L + seq_len(S)] + shift
+  lp <- function(sp_spec) tulpa:::cpp_tulpa_glmm_log_prob_draws(
+    rbind(base, up), dd$d$y, rep(1L, nrow(dd$d)), X, "poisson",
+    spatial_spec = sp_spec)
+  aug <- function(phi, w) {
+    comps <- list(1:15, 16L)
+    sum(vapply(comps, function(cc) w[cc[1]] * sum(phi[cc])^2 / length(cc),
+               numeric(1)))
+  }
+  phi0 <- base[4L + seq_len(S)]
+  expect_equal(diff(lp(spec)),
+               -0.5 * (aug(phi0 + shift, sp$node_prec) - aug(phi0, sp$node_prec)),
+               tolerance = 1e-8)
+  # The one-scale prior (no node_prec) weights the island by 1 instead, and
+  # the island's multiplier is not 1 on this graph.
+  expect_false(isTRUE(all.equal(sp$node_prec[16], 1)))
+  spec1 <- spec; spec1$node_prec <- NULL
+  expect_equal(diff(lp(spec1)),
+               -0.5 * (aug(phi0 + shift, rep(1, S)) - aug(phi0, rep(1, S))),
+               tolerance = 1e-8)
+  # A multiplier that is not constant within a component is refused.
+  bad <- spec; bad$node_prec[1] <- 2
+  expect_error(lp(bad), "constant within each connected component")
+})
+
+test_that("mode = 'hmc' fits a BYM2 field with an island (#902)", {
+  skip_on_cran()
+  dd <- .island_data()
+  sp <- suppressWarnings(spatial_bym2(dd$A, group_var = "region"))
+  f <- suppressWarnings(tulpa(
+    y ~ x + spatial(region), dd$d, family = "poisson", mode = "hmc",
+    spatial = sp,
+    control = list(n_chains = 2, n_iter = 1000, warmup = 500, seed = 1)))
+  cf <- coef(f)
+  expect_true(all(is.finite(cf)))
+  expect_equal(unname(cf[2]), 0.5, tolerance = 0.3)
+  # The island's structured draw is N(0, 1 / node_prec) a priori; the data
+  # barely inform it, so its spread is the prior's and not a frozen chain.
+  ph <- f$draws[, "phi_spatial[16]"]
+  expect_gt(stats::sd(ph), 0.2 / sqrt(sp$node_prec[16]))
+  expect_lt(stats::sd(ph), 5 / sqrt(sp$node_prec[16]))
+  # Agrees with the nested-Laplace fit of the same per-component model.
+  fn <- suppressWarnings(tulpa(
+    y ~ x + spatial(region), dd$d, family = "poisson", mode = "nested_laplace",
+    spatial = sp, control = list(n_threads = 1L)))
+  expect_lt(max(abs(coef(f) - coef(fn))), 0.15)
 })
