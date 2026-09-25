@@ -232,6 +232,35 @@
 }
 
 
+# The joint negative-log-posterior curvature over the whole latent vector at
+# the mode, at the OBSERVED weight: the kernel's joint Hessian plus the
+# correction for the families whose Newton weight is not the observed curvature
+# (zero elsewhere). One matrix, read by both the marginal fixed-effect precision
+# below and the fit's joint latent draws (`H_latent`, gcol33/tulpa#871), so the
+# random effects are drawn under the curvature the reported SEs came from.
+#
+# The count design has to span the whole latent vector, or the observed-weight
+# correction cannot be formed. Refused (NULL) rather than skipped: for the two
+# families whose working weight is not the observed curvature, skipping it
+# silently returns a precision that is wrong by a percent.
+.laplace_observed_H_joint <- function(H_joint, mode, y, n_trials, X, X_zi,
+                                      re_list, family, phi, phi2 = NULL,
+                                      weights = NULL, offset = NULL) {
+  if (is.null(H_joint) || is.null(mode)) return(NULL)
+  n_x <- nrow(H_joint)
+  if (length(mode) != n_x) return(NULL)
+  A <- .laplace_count_design(X, X_zi, re_list, length(y))
+  if (ncol(A) != n_x) return(NULL)
+  eta <- as.numeric(A %*% mode) + (offset %||% 0)
+  delta <- .laplace_obs_delta(y, n_trials, eta, family, phi, phi2,
+                              weights, has_zi = !is.null(X_zi))
+  if (is.null(delta)) return(NULL)
+  if (max(abs(delta)) > 1e-12) {
+    H_joint <- H_joint + Matrix::crossprod(A, Matrix::Diagonal(x = delta) %*% A)
+  }
+  H_joint
+}
+
 # Marginal fixed-effect precision from the kernel's joint curvature.
 #
 # The joint Hessian is the negative-log-POSTERIOR curvature over the whole
@@ -247,27 +276,17 @@
 # vcov() and confint() slice.
 .laplace_marginal_H_fixed <- function(H_joint, mode, y, n_trials, X, X_zi,
                                       re_list, family, phi, phi2 = NULL,
-                                      weights = NULL, offset = NULL) {
+                                      weights = NULL, offset = NULL,
+                                      H_obs = NULL) {
   if (is.null(H_joint) || is.null(mode)) return(NULL)
-  n_obs   <- length(y)
   p_fixed <- ncol(X) + (if (is.null(X_zi)) 0L else ncol(X_zi))
   n_x     <- nrow(H_joint)
   if (length(mode) != n_x || p_fixed > n_x) return(NULL)
 
-  # The count design has to span the whole latent vector, or the observed-weight
-  # correction below cannot be formed. Refused rather than skipped: for the two
-  # families whose working weight is not the observed curvature, skipping it
-  # silently returns a precision that is wrong by a percent.
-  H <- H_joint
-  A <- .laplace_count_design(X, X_zi, re_list, n_obs)
-  if (ncol(A) != n_x) return(NULL)
-  eta <- as.numeric(A %*% mode) + (offset %||% 0)
-  delta <- .laplace_obs_delta(y, n_trials, eta, family, phi, phi2,
-                              weights, has_zi = !is.null(X_zi))
-  if (is.null(delta)) return(NULL)
-  if (max(abs(delta)) > 1e-12) {
-    H <- H + Matrix::crossprod(A, Matrix::Diagonal(x = delta) %*% A)
-  }
+  H <- H_obs %||% .laplace_observed_H_joint(
+    H_joint, mode, y, n_trials, X, X_zi, re_list, family, phi, phi2,
+    weights, offset)
+  if (is.null(H)) return(NULL)
 
   idx <- seq_len(p_fixed)
   if (p_fixed == n_x) return(as.matrix(H))

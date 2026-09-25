@@ -277,9 +277,15 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
   phi_fit   <- core$phi_hat %||% phi
 
   # Re-solve at theta_hat through the SAME closure the optimizer drove, so the
-  # reported fit cannot come from a differently-configured inner solve.
+  # reported fit cannot come from a differently-configured inner solve. It keeps
+  # the joint latent precision (`H_latent`), so posterior_predict() and the
+  # WAIC/LOO criteria draw the random effects jointly with the fixed effects
+  # rather than holding them at the mode (gcol33/tulpa#871). The raw kernel copy
+  # is dropped: `H_latent` is the one a caller reads. The AGHQ inner marginal
+  # (n_quad > 1) integrates each group out and has no joint field to keep.
   L_hat <- .re_cov_theta_to_L_list(theta_hat, layout)
-  fit_hat <- core$inner_fit(L_hat, phi_fit)
+  fit_hat <- core$inner_fit(L_hat, phi_fit, joint_hessian = (n_quad == 1L))
+  if (!is.null(fit_hat)) fit_hat$H_joint <- NULL
   if (is.null(fit_hat) || is.null(fit_hat$mode) ||
       length(fit_hat$log_marginal) != 1L || !is.finite(fit_hat$log_marginal)) {
     stop("tulpa_eb(): the inner Laplace solve failed at the maximizing Sigma. ",

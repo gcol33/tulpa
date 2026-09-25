@@ -120,7 +120,11 @@ full joint posterior precision of the latent field \verb{[beta | random effects]
 Laplace approximation takes the determinant of, so it is what an exact
 derivative of the log-marginal has to differentiate through; \code{H_beta} is
 only its fixed-effect Schur complement. Costs one extra copy of the
-Hessian, so it is off by default. Non-spatial multi-RE path only.}
+Hessian, so it is off by default. Non-spatial multi-RE path only. With
+\code{return_hessian = TRUE} it also returns \code{H_latent}, the same precision at
+the observed curvature (identical to \code{H_joint} except for the families
+whose Newton weight is the expected one); \code{H_beta} is its Schur
+complement, and \code{\link[=posterior_predict]{posterior_predict()}} draws the random effects from it.}
 
 \item{compute_skew}{If \code{TRUE}, additionally return the inner-Laplace
 reliability material at \code{skew_idx}: \code{inner_skew} (gamma_3, Rue Martino &
@@ -154,6 +158,8 @@ different question from \code{converged} and the one anything differentiating
 through the mode depends on
 \item \code{log_det_Q}: log-determinant of the Hessian
 \item \code{H_beta}: fixed-effect block of the Hessian (if return_hessian = TRUE)
+\item \code{H_joint}, \code{H_latent}: the joint latent precision, at the kernel's and
+at the observed curvature (if return_joint_hessian = TRUE)
 \item \code{cov_blocks}: list of per-group posterior covariance matrices, one per
 (RE term, group) in term-major then group order (if return_re_cov = TRUE)
 }

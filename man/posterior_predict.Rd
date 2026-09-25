@@ -58,10 +58,16 @@ within a replicate are independent given the cell. A fit run with
 replicates hold the across-cell spread only.
 \item Any other fit carries its coefficients rather than its linear
 predictor. Fits with posterior draws use them (fixed and random effects
-jointly per draw); the Laplace tier samples the fixed effects from
-\code{N(coef(fit), vcov(fit))} and holds the random effects at their posterior
-mode, so its replicates understate the RE posterior uncertainty; an SPDE
-field enters at its posterior mean.
+jointly per draw). A Laplace or EB fit (\code{mode = "laplace"} / \code{"eb"})
+samples the fixed effects from \code{N(coef(fit), vcov(fit))} and each
+draw's random effects from their Gaussian conditional given those fixed
+effects under the joint Laplace precision of \verb{[beta | b]} at the mode,
+so the two carry their posterior correlation (on a conditional Laplace
+fit this is the joint Gaussian draw; an EB fit is conditional on the
+estimated variance components). A conditional-Laplace spatial fit holds
+its random effects and areal field at their posterior mode, which
+over-disperses the linear predictor wherever the intercept is aliased
+with them; an SPDE field enters at its posterior mean.
 }
 At \code{newdata} the prediction is population level (random effects at zero),
 matching \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}}.

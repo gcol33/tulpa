@@ -242,7 +242,7 @@ private:
 // fingerprint of everything NOT visible here -- the kernel tag plus its latent
 // structure (adjacency, coords / neighbour graph, temporal layout) -- folded by
 // the caller; this helper then folds the shared observation inputs (y, X,
-// re_idx, ...) and the grid axes on top. Keys are the per-cell coordinate over
+// re_idx, ...) and the grid's axis count on top. Keys are the per-cell coordinate over
 // `grid_axes` (each a
 // length-n_grid column; multi-axis grids are pre-expanded to n_grid R-side).
 // Returns nullptr when `path` is empty, so a caller wires it unconditionally.
@@ -282,16 +282,27 @@ inline std::unique_ptr<GridCheckpoint> make_nl_grid_checkpoint(
     fp.fold_rvec(re_idx);
     fp.fold_rvec_nullable(offset);
     fp.fold_rvec_nullable(weights);
+    // The grid's axis VALUES are not folded: a cell's key is its own exact
+    // coordinate, so a cell solved on one grid is the same solve wherever else
+    // that coordinate appears, and only fully solved cells are recorded (a
+    // screened one never is). Folding them gave every grid of one fit its own
+    // fingerprint, so the placement pass's recentred refit -- the second kernel
+    // call on the same path -- refused the file its first call had just written,
+    // and a front-door fit whose default axis recentred could not checkpoint at
+    // all. The axis COUNT still separates layouts (a key's length is one double
+    // per non-empty axis), as the multi-block entry's `axis_offsets` does.
     int n_grid = grid_axes.empty() ? 0 : static_cast<int>(grid_axes[0].size());
     CellKeyBuilder kb(n_grid);
+    int n_axes = 0;
     for (const auto& ax : grid_axes) {
         // Skip a degenerate (empty) axis: rw1 / rw2 pass an empty rho_grid, and
         // reading n_grid doubles from ax.begin() would run off the buffer.
         if (ax.size()) {
-            fp.fold(ax.begin(), (std::size_t)ax.size() * sizeof(double));
             kb.add_axis(ax.begin());
+            n_axes++;
         }
     }
+    fp.fold_pod(n_axes);
     return std::unique_ptr<GridCheckpoint>(
         new GridCheckpoint(path, fp.value(), kb.take()));
 }

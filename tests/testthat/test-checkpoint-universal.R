@@ -351,3 +351,34 @@ test_that("a changed design of the same shape is refused too", {
   run(X1, cp)
   expect_error(run(X2, cp), "fingerprint mismatch")
 })
+
+# A front-door nested fit whose default outer axis is recentred solves a
+# SECOND grid onto the same checkpoint path. The single-block fingerprint used
+# to fold the grid's axis values, so that refit refused the file the first grid
+# had just written and the fit could not checkpoint at all -- hidden while the
+# checkpoint vignette ran mode = "laplace", which dropped `control$checkpoint`
+# (gcol33/tulpa#870). Cells are keyed by their exact coordinate, so the two
+# grids share one file.
+test_that("a recentred front-door nested fit checkpoints and resumes", {
+  skip_on_cran()
+  set.seed(20260716)
+  S <- 30L
+  W <- matrix(0, S, S)
+  for (i in 1:(S - 1)) W[i, i + 1] <- W[i + 1, i] <- 1
+  df <- data.frame(region = factor(seq_len(S)))
+  df$x <- as.integer(df$region) / 10 + rnorm(S, 0, 0.3)
+  df$y <- rbinom(S, 20, plogis(-0.4 + 0.5 * df$x))
+  path <- tempfile(fileext = ".ckpt"); on.exit(unlink(path), add = TRUE)
+  fit <- function(resume) suppressMessages(tulpa(
+    y ~ x + spatial(region), data = df, family = "binomial",
+    n_trials = rep(20L, S), spatial = spatial_car(W, level = "obs"),
+    mode = "structured",
+    control = list(checkpoint = list(path = path, resume = resume))))
+  f1 <- fit(FALSE)
+  expect_true(file.exists(path))
+  sz <- file.size(path)
+  expect_gt(sz, 16)
+  f2 <- fit(TRUE)
+  expect_equal(coef(f2), coef(f1), tolerance = 1e-9)
+  expect_equal(file.size(path), sz)  # the resume re-solved nothing
+})

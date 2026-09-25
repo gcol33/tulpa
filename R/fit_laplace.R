@@ -74,7 +74,11 @@
 #'   Laplace approximation takes the determinant of, so it is what an exact
 #'   derivative of the log-marginal has to differentiate through; `H_beta` is
 #'   only its fixed-effect Schur complement. Costs one extra copy of the
-#'   Hessian, so it is off by default. Non-spatial multi-RE path only.
+#'   Hessian, so it is off by default. Non-spatial multi-RE path only. With
+#'   `return_hessian = TRUE` it also returns `H_latent`, the same precision at
+#'   the observed curvature (identical to `H_joint` except for the families
+#'   whose Newton weight is the expected one); `H_beta` is its Schur
+#'   complement, and [posterior_predict()] draws the random effects from it.
 #'
 #' @param X_zi Optional zero-inflation design matrix (`length(y)` rows). When
 #'   supplied the latent fixed-effect block becomes `[beta_count | beta_zi]` and
@@ -113,6 +117,8 @@
 #'     through the mode depends on
 #'   - `log_det_Q`: log-determinant of the Hessian
 #'   - `H_beta`: fixed-effect block of the Hessian (if return_hessian = TRUE)
+#'   - `H_joint`, `H_latent`: the joint latent precision, at the kernel's and
+#'     at the observed curvature (if return_joint_hessian = TRUE)
 #'   - `cov_blocks`: list of per-group posterior covariance matrices, one per
 #'     (RE term, group) in term-major then group order (if return_re_cov = TRUE)
 #'
@@ -351,12 +357,23 @@ tulpa_laplace <- function(y, n_trials, X,
   # 1.8% apart on neg_binomial_2, where the joint Hessian matches a direct
   # finite difference of the negative joint log posterior to 2.8e-7 and the
   # hand-assembled version does not.
+  #
+  # The observed-curvature joint precision is formed once and read twice: by
+  # the Schur complement here and, under `return_joint_hessian`, as the fit's
+  # `H_latent`, which posterior_predict() draws the random effects from
+  # jointly with the fixed effects (gcol33/tulpa#871).
+  H_obs <- NULL
   if (return_hessian && !is.null(result$mode) && !is_spatial_field) {
-    H_fixed <- .laplace_marginal_H_fixed(
+    H_obs <- .laplace_observed_H_joint(
       H_joint = result$H_joint, mode = result$mode, y = y,
       n_trials = n_trials, X = X, X_zi = X_zi, re_list = re_list,
       family = family, phi = phi, phi2 = phi2,
       weights = weights, offset = offset)
+    H_fixed <- .laplace_marginal_H_fixed(
+      H_joint = result$H_joint, mode = result$mode, y = y,
+      n_trials = n_trials, X = X, X_zi = X_zi, re_list = re_list,
+      family = family, phi = phi, phi2 = phi2,
+      weights = weights, offset = offset, H_obs = H_obs)
     if (is.null(H_fixed)) {
       warning("The marginal fixed-effect precision could not be formed from ",
               "the joint curvature (a singular random-effect block is the ",
@@ -369,6 +386,7 @@ tulpa_laplace <- function(y, n_trials, X,
   # H_joint is what callers read, and only when they asked for it.
   result[c("H_joint_p", "H_joint_i", "H_joint_x", "H_joint_n")] <- NULL
   if (!isTRUE(return_joint_hessian)) result$H_joint <- NULL
+  if (isTRUE(return_joint_hessian) && !is.null(H_obs)) result$H_latent <- H_obs
 
   # Marginal H_beta for spatial-field Laplace via Schur on the joint Hessian.
   # See .marginal_H_beta_spde() / .marginal_H_beta_gp().

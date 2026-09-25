@@ -55,7 +55,7 @@ ckpt <- tempfile(fileext = ".ckpt")
 fit <- tulpa(y ~ x + spatial(region), data = df, family = "binomial",
              n_trials = rep(20L, S),
              spatial = spatial_car(W, level = "obs"),
-             mode = "laplace",
+             mode = "structured",
              control = list(checkpoint = list(path = ckpt, resume = FALSE)))
 coef(fit)
 ```
@@ -76,7 +76,7 @@ call returns essentially instantly and to the same result.
 fit2 <- tulpa(y ~ x + spatial(region), data = df, family = "binomial",
               n_trials = rep(20L, S),
               spatial = spatial_car(W, level = "obs"),
-              mode = "laplace",
+              mode = "structured",
               control = list(checkpoint = list(path = ckpt, resume = TRUE)))
 all.equal(coef(fit), coef(fit2))
 ```

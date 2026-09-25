@@ -202,7 +202,11 @@ tulpa_check_control <- function(control, allowed, where) {
     pathfinder  = c("n_draws", "max_iter", "tol", "seed", "verbose"),
     # agq_fit() is a marginal-likelihood maximizer: no sampler knobs
     # (n_iter / warmup / seed / n_chains / thin) do anything there.
-    agq = c("n_quad", "beta_init", "sigma_init", "max_iter", "tol", "verbose")
+    agq = c("n_quad", "beta_init", "sigma_init", "max_iter", "tol", "verbose"),
+    # tulpa_laplace() at a fixed hyperparameter: one inner Newton solve, whose
+    # numerical knobs are plain formals. No grid, no draws, no sampler, so
+    # nothing else a tulpa() union key names is read there (gcol33/tulpa#870).
+    laplace = c("max_iter", "tol", "n_threads")
   )
   # tulpa() dispatches across the nested / spde / re_cov / gibbs / agq /
   # sampler backends and forwards `control` wholesale on the nested and
@@ -227,7 +231,7 @@ tulpa_check_control <- function(control, allowed, where) {
     keys$nested_laplace, keys$nested_laplace_joint, keys$spde,
     keys$re_cov_nested, keys$re_cov_gibbs, keys$eb,
     keys$sample_glmm, keys$ep, keys$nuts_spde,
-    keys$mala, keys$imh_laplace, keys$pathfinder, keys$agq,
+    keys$mala, keys$imh_laplace, keys$pathfinder, keys$agq, keys$laplace,
     c("re_cov", "n_quad", "sigma_init", "beta_init",
       "scale", "method")
   ), .tulpa_hyperprior_keys)))

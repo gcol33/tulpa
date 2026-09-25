@@ -54,6 +54,49 @@
   NULL
 }
 
+# Random-effect draws (S x n_re) for a Laplace / EB fit, from the joint
+# Gaussian of the latent vector [beta | b] at the mode, conditional on the
+# fixed-effect draws `beta` (S x p) it is paired with. NULL when the fit
+# carries no joint precision (`H_latent`) laid out as [fixed, n_re].
+#
+# The fixed effects are drawn from N(coef, vcov) upstream and the random
+# effects used to be held at their mode. That kept the marginal fixed-effect
+# spread -- which includes the intercept's aliasing with the random effects --
+# and dropped the negative posterior correlation that cancels it, so every draw
+# shifted the whole linear predictor: p_waic / p_loo inflated about 2.5x and a
+# Laplace fit ranked ~17 elpd below the same model fitted by HMC
+# (gcol33/tulpa#871). Under precision H with blocks B = H[beta, b] and
+# D = H[b, b], b | beta ~ N(b_hat - D^-1 B' (beta - beta_hat), D^-1), so this
+# draw paired with N(beta_hat, Schur(H)^-1) IS the joint draw, and paired with
+# a corrected marginal (EB's `cov_marginal`) it keeps that correction on beta.
+#' @keywords internal
+.laplace_re_conditional_draws <- function(object, beta, n_re) {
+  H <- object$H_latent
+  mode <- object$mode
+  nf <- object$n_fixed %||% 0L
+  if (is.null(H) || !is.numeric(mode) || nf < 1L || n_re < 1L ||
+      !is.matrix(beta) || ncol(beta) != nf ||
+      nrow(H) != nf + n_re || length(mode) != nrow(H)) {
+    return(NULL)
+  }
+  i_f <- seq_len(nf)
+  i_r <- nf + seq_len(n_re)
+  D <- Matrix::forceSymmetric(H[i_r, i_r, drop = FALSE])
+  ch <- tryCatch(Matrix::Cholesky(D, perm = TRUE, LDL = FALSE),
+                 error = function(e) NULL)
+  if (is.null(ch)) return(NULL)
+  S <- nrow(beta)
+  dbeta <- sweep(beta, 2L, mode[i_f], "-")                  # S x nf
+  shift <- Matrix::solve(ch, Matrix::crossprod(H[i_f, i_r, drop = FALSE],
+                                               t(dbeta)))   # n_re x S
+  # D = P' L L' P, so P' L'^-1 z has covariance D^-1.
+  z <- matrix(stats::rnorm(n_re * S), n_re, S)
+  noise <- Matrix::solve(ch, Matrix::solve(ch, z, system = "Lt"),
+                         system = "Pt")
+  b <- mode[i_r] - as.matrix(shift) + as.matrix(noise)
+  t(b)
+}
+
 # Where a fit's in-sample linear predictor comes from.
 #
 # `"sampler_model"`: a ModelData sampler fit. Each draw row is the full
@@ -326,6 +369,9 @@
       if (!is.null(rd) && ncol(rd) == nrow(M)) {
         if (!is.null(keep)) rd <- rd[keep, , drop = FALSE]
         eta <- eta + as.matrix(rd %*% M)
+      } else if (!is.null(rd <- .laplace_re_conditional_draws(object, beta,
+                                                             nrow(M)))) {
+        eta <- eta + as.matrix(rd %*% M)
       } else {
         b <- .tulpa_re_point(object, nrow(M))
         if (!is.null(b)) {
@@ -493,10 +539,16 @@
 #'     replicates hold the across-cell spread only.
 #'   \item Any other fit carries its coefficients rather than its linear
 #'     predictor. Fits with posterior draws use them (fixed and random effects
-#'     jointly per draw); the Laplace tier samples the fixed effects from
-#'     `N(coef(fit), vcov(fit))` and holds the random effects at their posterior
-#'     mode, so its replicates understate the RE posterior uncertainty; an SPDE
-#'     field enters at its posterior mean.
+#'     jointly per draw). A Laplace or EB fit (`mode = "laplace"` / `"eb"`)
+#'     samples the fixed effects from `N(coef(fit), vcov(fit))` and each
+#'     draw's random effects from their Gaussian conditional given those fixed
+#'     effects under the joint Laplace precision of `[beta | b]` at the mode,
+#'     so the two carry their posterior correlation (on a conditional Laplace
+#'     fit this is the joint Gaussian draw; an EB fit is conditional on the
+#'     estimated variance components). A conditional-Laplace spatial fit holds
+#'     its random effects and areal field at their posterior mode, which
+#'     over-disperses the linear predictor wherever the intercept is aliased
+#'     with them; an SPDE field enters at its posterior mean.
 #' }
 #' At `newdata` the prediction is population level (random effects at zero),
 #' matching [predict.tulpa_fit()].

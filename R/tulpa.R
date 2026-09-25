@@ -1003,6 +1003,18 @@
       )))
     }
     if (backend == "laplace") {
+      # tulpa_laplace() takes its numerical knobs as plain formals, and this
+      # arg list used to carry none of them: `max_iter` / `tol` / `n_threads`
+      # passed tulpa()'s union check and were dropped, as was every knob only
+      # another backend reads (`n_iter`, `adapt_delta`, `adaptive_grid`, ...).
+      # Validate against what the fitter reads, then forward it
+      # (gcol33/tulpa#870, the #770 fix for this branch). An unset knob is
+      # omitted so tulpa_laplace()'s own formal default applies.
+      tulpa_check_control(control, .CONTROL_KEYS$laplace,
+                          "tulpa[mode = 'laplace']")
+      numerics <- .drop_null(list(max_iter  = control$max_iter,
+                                  tol       = control$tol,
+                                  n_threads = control$n_threads))
       if (!is.null(spatial)) {
         # Spatial Laplace: route the field spec through tulpa_laplace(spatial=),
         # which dispatches on spatial$type (icar/car/bym2/spde/gp). At most one
@@ -1023,21 +1035,25 @@
                "`beta_prior`, or use a sampler for a custom prior under a field.",
                call. = FALSE)
         }
-        return(list(
+        return(c(list(
           y = bundle$y, n_trials = n_trials, X = bundle$X,
           re_list = .bundle_to_re_list(bundle, sigma_re),
           family = family, phi = phi, spatial = spatial,
           offset = bundle$offset
-        ))
+        ), numerics))
       }
-      return(list(
+      return(c(list(
         y = bundle$y, n_trials = n_trials, X = bundle$X,
         re_list = .bundle_to_re_list(bundle, sigma_re),
         family = family, phi = phi, phi2 = phi2,
         offset = bundle$offset, beta_prior = beta_prior_default,
         weights = weights, X_zi = bundle$X_zi,
-        zi_prior_sd = zi_prior_sd
-      ))
+        zi_prior_sd = zi_prior_sd,
+        # Keeps the joint latent precision (`H_latent`) on the fit, so the
+        # linear-predictor draws behind posterior_predict() and WAIC / LOO take
+        # the random effects jointly with the fixed effects (gcol33/tulpa#871).
+        return_joint_hessian = TRUE
+      ), numerics))
     }
     if (backend == "gibbs") {
       re <- bundle$re_terms %||% list()
@@ -2738,6 +2754,10 @@ tulpa <- function(formula, data,
     fit$beta_prior <- .beta_prior_applied(args, beta_prior_resolved)
     fit$sigma_re_conditioned <- sigma_re_conditioned
     fit$call <- match.call()
+    # The laplace branch asks for the joint precision to keep `H_latent`
+    # (gcol33/tulpa#871); the kernel-curvature copy that comes with it is read
+    # by nothing on a front-door fit.
+    if (identical(sel$backend, "laplace")) fit$H_joint <- NULL
 
     # Canonical parameter layout for the S3 accessors: the fixed-effect count and
     # names plus the [fixed, random] name vector both posterior shapes share, so

@@ -1,3 +1,48 @@
+# tulpa 0.6.3
+
+## `mode = "laplace"` reads its `control` knobs
+
+* The non-spatial and spatial `laplace` branches built their `tulpa_laplace()`
+  call with no `control` field, so `max_iter`, `tol` and `n_threads` passed
+  `tulpa()`'s validation and were then dropped (a `max_iter = 1` fit reported
+  the fully converged answer), and knobs only another backend reads
+  (`n_iter`, `adapt_delta`, `adaptive_grid`, `checkpoint`, ...) were accepted
+  in silence. The three numerical knobs are now forwarded, and anything else
+  errors naming the knobs `mode = "laplace"` reads, as the sampler backends do
+  since gcol33/tulpa#770 (gcol33/tulpa#870).
+* The "Checkpoint and resume" vignette ran its demonstration fit at
+  `mode = "laplace"`, the conditional path with no grid, so its
+  `control$checkpoint` was one of those dropped knobs and no file was ever
+  written. It now runs `mode = "structured"`, the nested-Laplace fit it
+  describes.
+* That exposed a nested-Laplace checkpoint defect: the single-block grid
+  kernels folded the grid's axis values into the file fingerprint, so when a
+  default outer axis was recentred the refit on the moved grid refused the
+  file the first grid had just written, and a front-door fit that recentred
+  could not checkpoint at all. Cells are keyed by their exact coordinate and
+  only fully solved cells are recorded, so the fingerprint now folds the axis
+  count, not the values -- as the multi-block entry already did. Checkpoint
+  files written by earlier versions no longer match and are re-solved.
+
+## Laplace and EB predictive draws carry the random effects jointly
+
+* On `mode = "laplace"` and `mode = "eb"` fits the linear-predictor draws
+  behind `posterior_predict()`, `pp_check()`, `bayes_R2()` and the WAIC / LOO
+  / CPO / DIC criteria took the fixed effects from `N(coef, vcov)` -- a
+  marginal spread that includes the intercept's aliasing with the random
+  effects -- and held the random effects at their mode, dropping the negative
+  correlation that cancels it. Every draw shifted the whole linear predictor:
+  on a 10-group Poisson GLMM, p_waic read 28.7 against HMC's 11.3, and
+  `compare_models()` ranked the Laplace fit about 17 elpd below the same model
+  fitted by HMC. Each draw's random effects now come from their Gaussian
+  conditional given its fixed effects under the joint Laplace precision of
+  `[beta | b]` (kept on the fit as `H_latent`), which is the joint Gaussian
+  draw; the same model reads p_waic 11.0 / elpd -313.3 against HMC's
+  11.3 / -313.6, and the EB fit's p_loo 11.0 where it read 19.8
+  (gcol33/tulpa#871). The spatial conditional-Laplace path carries no joint
+  precision and still holds its random effects and field at the mode; the
+  documentation now says that over-disperses the linear predictor.
+
 # tulpa 0.6.2
 
 ## The default fixed-effect prior reaches the Laplace-family backends
