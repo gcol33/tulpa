@@ -56,9 +56,13 @@ nested-Laplace fit it is the Gaussian mixture the outer grid defines: each
 hyperparameter cell contributes its conditional mode and marginal variance,
 weighted by the cell's posterior weight, and \code{summary()} reports that
 mixture's exact mean, SD and quantiles. The \code{draws} of such a fit are
-sampled from the same mixture; they reproduce each time point's marginal
-but not the within-cell correlation between time points. The \code{time} column
-of the summary holds the time values the field was fitted on.
+sampled from the same mixture, each from its cell's joint Gaussian, so they
+carry the correlation between time points as well as each point's marginal,
+and a quantity derived from them (a trend, a difference between two times)
+has the right spread. A field so large that its per-cell covariance was not
+retained (more than 4 million values over the grid) is drawn with
+independent time points within each cell instead. The \code{time} column of the
+summary holds the time values the field was fitted on.
 }
 \examples{
 \donttest{

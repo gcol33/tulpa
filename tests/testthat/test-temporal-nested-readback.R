@@ -81,6 +81,66 @@ test_that("nested temporal() intervals carry the within-cell variance", {
   expect_gte(mean(f >= tp$q2.5 & f <= tp$q97.5), 0.8)
 })
 
+test_that("mixture draws carry each cell's cross-time covariance", {
+  # Two cells, three time points each, strongly correlated within a cell and
+  # one of them singular (an intrinsic field's constrained covariance).
+  S1 <- 0.5 * outer(1:3, 1:3, function(i, j) 0.9^abs(i - j))
+  a <- c(1, -1, 0) / sqrt(2)
+  S2 <- diag(3) - tcrossprod(c(1, 1, 1) / sqrt(3))
+  mix <- list(mu = rbind(c(0, 0, 0), c(1, 2, 3)),
+              var = rbind(diag(S1), diag(S2)),
+              cov = list(S1, S2), w = c(0.3, 0.7))
+  set.seed(7)
+  dr <- tulpa:::.nl_field_mixture_draws(mix)
+  m <- colSums(mix$w * mix$mu)
+  exact <- 0.3 * (S1 + tcrossprod(mix$mu[1, ])) +
+    0.7 * (S2 + tcrossprod(mix$mu[2, ])) - tcrossprod(m)
+  expect_equal(cov(dr), exact, tolerance = 0.12)
+  # The sum-to-zero direction of the singular cell stays at zero spread.
+  from2 <- abs(rowMeans(dr) - 2) < 1e-8
+  expect_gt(mean(from2), 0.6)
+  # Without the covariance the coordinates are independent within a cell.
+  mix$cov <- NULL
+  dr0 <- tulpa:::.nl_field_mixture_draws(mix)
+  exact0 <- 0.3 * (diag(diag(S1)) + tcrossprod(mix$mu[1, ])) +
+    0.7 * (diag(diag(S2)) + tcrossprod(mix$mu[2, ])) - tcrossprod(m)
+  expect_equal(cov(dr0), exact0, tolerance = 0.12)
+  expect_gt(abs(var(drop(dr %*% a)) - var(drop(dr0 %*% a))), 0.05)
+})
+
+test_that("nested temporal() draws reproduce the within-cell correlation", {
+  skip_on_cran()
+  Tn <- 30L
+  f <- sim_ar1_rb(Tn, 0.8, 0.6, 21)
+  set.seed(22)
+  d <- data.frame(time = rep(1:Tn, each = 5), x = rnorm(5 * Tn))
+  d$y <- 0.4 + 0.7 * d$x + f[d$time] + rnorm(nrow(d), sd = 0.3)
+  ft <- tulpa(y ~ x, data = d, phi = 0.09, mode = "nested_laplace",
+              temporal = temporal_ar1("time"), control = list(n_threads = 1))
+  expect_true(is.list(ft$grid_field_cov))
+  cols <- tulpa:::.nl_temporal_field_cols(ft)
+  k <- which.max(ft$weights)
+  expect_equal(diag(ft$grid_field_cov[[k]]), ft$grid_field_var[k, ],
+               tolerance = 1e-10)
+  # The exact mixture covariance of the field, against the draws' own.
+  w <- ft$weights / sum(ft$weights)
+  mu <- ft$modes[, cols]
+  m <- colSums(w * mu)
+  exact <- Reduce(`+`, lapply(seq_along(w), function(i) if (w[i] > 0)
+    w[i] * (ft$grid_field_cov[[i]] + tcrossprod(mu[i, ])) else 0)) -
+    tcrossprod(m)
+  set.seed(5)
+  tp <- temporal(ft)
+  # A year-on-year change: under an AR1 near rho = 0.8 its variance is far
+  # below the sum of the two marginals, which independent draws would give.
+  a <- numeric(Tn); a[c(15, 16)] <- c(-1, 1)
+  v_exact <- drop(crossprod(a, exact %*% a))
+  v_draw <- var(drop(tp$draws %*% a))
+  expect_lt(abs(v_draw / v_exact - 1), 0.15)
+  expect_lt(v_exact, 0.8 * (exact[15, 15] + exact[16, 16]))
+  expect_gt(cor(tp$draws[, 15], tp$draws[, 16]), 0.3)
+})
+
 test_that("nested temporal() intervals cover at the nominal rate", {
   skip_if_not_slow()
   Tn <- 30L

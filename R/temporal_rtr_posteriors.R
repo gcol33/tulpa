@@ -54,9 +54,13 @@ temporal_rtr <- function(temporal, restrict_to) {
 #' hyperparameter cell contributes its conditional mode and marginal variance,
 #' weighted by the cell's posterior weight, and `summary()` reports that
 #' mixture's exact mean, SD and quantiles. The `draws` of such a fit are
-#' sampled from the same mixture; they reproduce each time point's marginal
-#' but not the within-cell correlation between time points. The `time` column
-#' of the summary holds the time values the field was fitted on.
+#' sampled from the same mixture, each from its cell's joint Gaussian, so they
+#' carry the correlation between time points as well as each point's marginal,
+#' and a quantity derived from them (a trend, a difference between two times)
+#' has the right spread. A field so large that its per-cell covariance was not
+#' retained (more than 4 million values over the grid) is drawn with
+#' independent time points within each cell instead. The `time` column of the
+#' summary holds the time values the field was fitted on.
 #'
 #' @param object A `tulpa_fit` object fitted with `temporal` argument
 #' @param component Which component to extract for multi-scale models:
@@ -138,10 +142,11 @@ temporal <- function(object, component = "all", summary = FALSE,
 # `.nl_field_mixture()` returns the components (mu, var: n_cell x width; w);
 # summary() reads them exactly through `.nl_gauss_mixture_summary()`, and the
 # draws print / plot / a user's own derived quantity go through are sampled
-# from the same mixture -- a cell by its weight, then each coordinate from
-# that cell's Gaussian. The cell's cross-time covariance is not retained, so a
-# draw has the right marginal at every time point but not the within-cell
-# correlation between two of them.
+# from the same mixture -- a cell by its weight, then the whole field from that
+# cell's joint Gaussian (`object$grid_field_cov`), so a draw carries the
+# correlation between time points as well as each one's marginal. A field too
+# large for `.NL_FIELD_COV_MAX` retains only the marginals, and its draws then
+# take the coordinates independently within a cell.
 .NL_TEMPORAL_DRAW_N <- 2000L
 
 .nl_field_mixture <- function(object, cols) {
@@ -154,13 +159,29 @@ temporal <- function(object, component = "all", summary = FALSE,
   var <- if (is.matrix(V) && nrow(V) == nrow(M) && all(cols %in% vcols)) {
     V[, match(cols, vcols), drop = FALSE]
   } else NULL
+  C <- object$grid_field_cov
+  cov <- if (!is.null(var) && is.list(C) && length(C) == nrow(M)) {
+    j <- match(cols, vcols)
+    lapply(C, function(Ck) if (is.matrix(Ck)) Ck[j, j, drop = FALSE])
+  }
   w <- w / sum(w)
   keep <- is.finite(w) & w > 0 & is.finite(rowSums(M[, cols, drop = FALSE]))
   if (!is.null(var)) keep <- keep & is.finite(rowSums(var))
   if (!any(keep)) return(NULL)
+  if (!is.null(cov) && !all(vapply(cov[keep], is.matrix, logical(1)))) cov <- NULL
   list(mu = M[keep, cols, drop = FALSE],
        var = if (is.null(var)) NULL else pmax(var[keep, , drop = FALSE], 0),
+       cov = if (!is.null(cov)) cov[keep],
        w = w[keep] / sum(w[keep]))
+}
+
+# A factor R with crossprod(R) == S, for a covariance that may be singular: the
+# constrained covariance of an intrinsic field (RW1 / RW2) has the sum-to-zero
+# direction at exactly zero variance, where chol() refuses. Eigenvalues below
+# zero are rounding and are clipped.
+.nl_cov_factor <- function(S) {
+  e <- eigen(S, symmetric = TRUE)
+  sqrt(pmax(e$values, 0)) * t(e$vectors)
 }
 
 .nl_field_mixture_draws <- function(mix) {
@@ -168,8 +189,15 @@ temporal <- function(object, component = "all", summary = FALSE,
                     prob = mix$w)
   mu <- mix$mu[idx, , drop = FALSE]
   if (is.null(mix$var)) return(mu)
-  mu + sqrt(mix$var[idx, , drop = FALSE]) *
-    matrix(stats::rnorm(length(mu)), nrow(mu), ncol(mu))
+  z <- matrix(stats::rnorm(length(mu)), nrow(mu), ncol(mu))
+  if (is.null(mix$cov)) return(mu + sqrt(mix$var[idx, , drop = FALSE]) * z)
+  # Each cell's draws from its own joint Gaussian, factored once per cell drawn.
+  for (k in unique(idx)) {
+    r <- which(idx == k)
+    mu[r, ] <- mu[r, , drop = FALSE] +
+      z[r, , drop = FALSE] %*% .nl_cov_factor(mix$cov[[k]])
+  }
+  mu
 }
 
 # Columns of the `temporal =` field in a nested fit's latent vector, located

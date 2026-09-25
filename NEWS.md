@@ -52,7 +52,13 @@
   (gcol33/tulpa#903), and reports the Gaussian mixture over grid cells
   including each cell's conditional variance (conditioned on the sum-to-zero
   constraint for an intrinsic field); 95% intervals covered the truth 57% of
-  the time (gcol33/tulpa#904).
+  the time (gcol33/tulpa#904). Its `draws` are taken from each cell's joint
+  Gaussian, which the fit now retains as `$grid_field_cov`, so they carry the
+  correlation between time points and not only each point's marginal. A
+  quantity derived from them now has the right spread; on an AR1 fit the SD
+  of a year-on-year change read 1.34 against an exact 0.18, and now reads
+  0.19. A field whose covariance would exceed 4 million values over the grid
+  keeps only the marginals.
 * `temporal()` for a non-centered `temporal_gp()` sampler fit returns the
   field rather than its whitened coordinates, with the time values in the
   `time` column (gcol33/tulpa#905).

@@ -1664,6 +1664,17 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # between cells and covered the truth at 57% for a nominal 95%
 # (gcol33/tulpa#904). Only a field whose read-back needs it is retained: one
 # column per coordinate per cell, and a large spatial field is not asked for.
+#
+# The field's full within-cell covariance (`grid_field_cov`, a list of
+# n_var x n_var matrices parallel to the cells, NULL where a cell was pruned)
+# is retained too, so temporal()'s draws carry the correlation BETWEEN time
+# points a cell's Gaussian implies and not only each point's marginal: a
+# derived quantity over time (a trend, a difference between two years, a
+# cumulative sum) read off draws with independent coordinates has the wrong
+# spread. Capped at `.NL_FIELD_COV_MAX` doubles over the grid; past the cap only
+# the marginals are kept and the draws fall back to independent coordinates.
+.NL_FIELD_COV_MAX <- 4e6
+
 .nl_attach_grid_hessians <- function(res, p_fixed, keep_joint = FALSE,
                                      var_cols = c(
                                        .nl_role_cols(res$blocks,
@@ -1690,6 +1701,11 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   var_cols <- var_cols[var_cols > p_fixed & var_cols <= n_x]
   n_var <- length(var_cols)
   field_var <- if (n_var) matrix(NA_real_, n_grid, n_var) else NULL
+  # The field's whole within-cell covariance is the lower-right block of the
+  # same S, so retaining it costs no further solve -- only the storage, which
+  # grows as n_var^2 per cell and is capped by `.NL_FIELD_COV_MAX`.
+  keep_cov <- n_var > 0L && as.numeric(n_grid) * n_var^2 <= .NL_FIELD_COV_MAX
+  field_cov <- if (keep_cov) vector("list", n_grid)
 
   E <- matrix(0, nrow = n_x, ncol = p_fixed + n_var)
   E[cbind(c(seq_len(p_fixed), var_cols), seq_len(p_fixed + n_var))] <- 1
@@ -1766,7 +1782,14 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     }
     Sigma_bb <- S[seq_len(p_fixed), seq_len(p_fixed), drop = FALSE]
     grid_hessians[[k]] <- solve((Sigma_bb + t(Sigma_bb)) / 2)
-    if (n_var) field_var[k, ] <- diag(S)[p_fixed + seq_len(n_var)]
+    if (n_var) {
+      fi <- p_fixed + seq_len(n_var)
+      field_var[k, ] <- diag(S)[fi]
+      if (keep_cov) {
+        Sf <- S[fi, fi, drop = FALSE]
+        field_cov[[k]] <- (Sf + t(Sf)) / 2
+      }
+    }
   }
 
   res$grid_hessians <- grid_hessians
@@ -1774,6 +1797,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   if (n_var) {
     res$grid_field_var      <- field_var
     res$grid_field_var_cols <- var_cols
+    if (keep_cov) res$grid_field_cov <- field_cov
   }
   if (isTRUE(keep_joint)) res$H_joint <- .nl_modal_joint_precision(res)
   # Strip the verbose CSC scratch fields once Hessians are assembled.
