@@ -268,7 +268,8 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
 # name the argument the user set. C++ carries the same predicate
 # (pc_anchors_valid, src/pc_prior.h) for specs assembled without this door.
 #' @keywords internal
-.check_pc_anchors <- function(U, alpha, arg_U, arg_alpha, where) {
+.check_pc_anchors <- function(U, alpha, arg_U, arg_alpha, where,
+                              tail = paste0("P(sigma > ", arg_U, ")")) {
   if (!is.numeric(U) || length(U) != 1L || !is.finite(U) || U <= 0) {
     stop(where, ": `", arg_U, "` must be a single positive number; got ",
          format(U), ".", call. = FALSE)
@@ -276,8 +277,40 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
   if (!is.numeric(alpha) || length(alpha) != 1L || !is.finite(alpha) ||
       alpha <= 0 || alpha >= 1) {
     stop(where, ": `", arg_alpha, "` is the tail probability ",
-         "P(sigma > ", arg_U, ") and must lie in (0, 1); got ",
-         format(alpha), ".", call. = FALSE)
+         tail, " and must lie in (0, 1); got ", format(alpha), ".",
+         call. = FALSE)
   }
   invisible(TRUE)
+}
+
+# The LKJ(eta) density det(R)^(eta - 1) / c_d is a density only for eta > 0:
+# its normaliser is a product of Beta functions B(eta + (d - k - 1) / 2, ...),
+# which at d = 2 is B(eta, eta) and is not finite for eta <= 0. A non-positive
+# shape therefore reached the outer integration as a NaN log-prior at every
+# node and surfaced as "every integration node returned a non-finite
+# log-marginal" (gcol33/tulpa#894).
+#' @keywords internal
+.check_lkj_eta <- function(eta, arg, where) {
+  if (!is.numeric(eta) || length(eta) != 1L || !is.finite(eta) || eta <= 0) {
+    stop(where, ": `", arg, "` is the LKJ shape and must be a single ",
+         "positive number; got ", format(eta), ".", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+# The same check for an anchor pair passed as one `c(U, alpha)` argument (the
+# SPDE `prior_range` / `prior_sigma`), naming that argument and its elements.
+# `param` and `lower` say which tail the pair calibrates: P(sigma > U) for a
+# scale, P(range < U) for a range.
+#' @keywords internal
+.check_pc_anchor_pair <- function(pair, arg, where, param = "sigma",
+                                  lower = FALSE) {
+  if (!is.numeric(pair) || length(pair) != 2L) {
+    stop(where, ": `", arg, "` must be a length-2 numeric c(U, alpha); got ",
+         "length ", length(pair), ".", call. = FALSE)
+  }
+  .check_pc_anchors(pair[[1L]], pair[[2L]],
+                    paste0(arg, "[1]"), paste0(arg, "[2]"), where,
+                    tail = paste0("P(", param, if (lower) " < " else " > ",
+                                  arg, "[1])"))
 }

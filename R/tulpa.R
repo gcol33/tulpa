@@ -1813,6 +1813,15 @@ tulpa <- function(formula, data,
          "`hyperprior = \"proper\"` or `\"flat\"` there.", call. = FALSE)
   }
   tulpa_check_control(re_prior, .RE_PRIOR_KEYS, "tulpa (re_prior)")
+  # The RE-covariance hyperprior anchors, named as the user set them rather
+  # than as whichever backend builds the prior (gcol33/tulpa#894).
+  if (!is.null(re_prior$eta)) {
+    .check_lkj_eta(re_prior$eta, "re_prior$eta", "tulpa()")
+  }
+  if (!is.null(re_prior$prior_sigma)) {
+    .check_pc_anchor_pair(re_prior$prior_sigma, "re_prior$prior_sigma",
+                          "tulpa()")
+  }
   hyperprior <- .hp_choice(match.arg(hyperprior))
   if (!is.logical(estimate_phi) || length(estimate_phi) != 1L ||
       is.na(estimate_phi)) {

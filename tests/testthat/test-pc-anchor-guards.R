@@ -86,3 +86,49 @@ test_that("a random-effect scale reaching a logarithm must be positive", {
     "sigma_re"
   )
 })
+
+test_that("spatial_spde() checks its anchor pairs where they are set (#894)", {
+  set.seed(1)
+  co <- cbind(runif(30), runif(30))
+  # Each used to be accepted and fail at fit time: an unnamed anchor error for
+  # the sigma tail, a grid-construction error ("'from' must be a finite
+  # number") for a negative range anchor.
+  expect_error(spatial_spde(co, prior_sigma = c(1, 1.5)),
+               "prior_sigma\\[2\\].*P\\(sigma > prior_sigma\\[1\\]\\)")
+  expect_error(spatial_spde(co, prior_range = c(-0.3, 0.5)),
+               "prior_range\\[1\\]")
+  expect_error(spatial_spde(co, prior_range = c(0.3, 1)),
+               "P\\(range < prior_range\\[1\\]\\)")
+  expect_error(spatial_spde(co, prior_sigma = 3), "length-2")
+  expect_error(
+    spatial_spde_custom(Matrix::Diagonal(3), Matrix::Diagonal(3),
+                        Matrix::Diagonal(3), prior_range = c(1, 0),
+                        prior_sigma = c(1, 0.01)),
+    "prior_range\\[2\\]")
+  # A valid pair and the data-anchored default are untouched.
+  s <- spatial_spde(co, prior_range = c(0.3, 0.5), prior_sigma = c(1, 0.01))
+  expect_equal(s$prior_sigma, c(1, 0.01))
+  expect_s3_class(spatial_spde(co), "tulpa_spatial")
+})
+
+test_that("an LKJ shape must be positive at every door (#894)", {
+  # eta <= 0 has no normaliser (B(eta, eta) at d = 2), so it used to give a NaN
+  # log-prior and, at the front door, "every integration node returned a
+  # non-finite log-marginal".
+  expect_error(re_cov_pc_lkj_prior(2, eta = -1), "LKJ shape")
+  expect_error(re_cov_pc_lkj_prior(2, eta = 0), "LKJ shape")
+  expect_error(re_cov_pc_lkj_prior(2, prior_sigma = c(1, 2)),
+               "prior_sigma\\[2\\]")
+  expect_true(is.finite(re_cov_pc_lkj_prior(2, eta = 2)(c(0, 0, 0))))
+
+  set.seed(1)
+  d <- data.frame(x = rnorm(40), y = rpois(40, 2), g = factor(rep(1:8, 5)))
+  expect_error(
+    tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "laplace",
+          re_prior = list(eta = -1)),
+    "re_prior\\$eta")
+  expect_error(
+    tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "laplace",
+          re_prior = list(prior_sigma = c(1, 2))),
+    "re_prior\\$prior_sigma")
+})

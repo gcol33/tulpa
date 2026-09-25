@@ -172,18 +172,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
     # from the spec. Each must be a length-2 c(value, alpha) pair.
     if (is.null(prior_range)) prior_range <- spatial$prior_range
     if (is.null(prior_sigma)) prior_sigma <- spatial$prior_sigma
-    if (!is.numeric(prior_range) || length(prior_range) != 2L ||
-        any(!is.finite(prior_range)) || prior_range[1] <= 0 ||
-        prior_range[2] <= 0 || prior_range[2] >= 1) {
-      stop("`prior_range` must be a length-2 numeric c(value, alpha) with ",
-           "value > 0 and alpha in (0, 1).", call. = FALSE)
-    }
-    if (!is.numeric(prior_sigma) || length(prior_sigma) != 2L ||
-        any(!is.finite(prior_sigma)) || prior_sigma[1] <= 0 ||
-        prior_sigma[2] <= 0 || prior_sigma[2] >= 1) {
-      stop("`prior_sigma` must be a length-2 numeric c(value, alpha) with ",
-           "value > 0 and alpha in (0, 1).", call. = FALSE)
-    }
+    .check_spde_prior_args(prior_range, prior_sigma, "tulpa_nuts_spde()")
     prior_range_0     <- prior_range[1]
     prior_range_alpha <- prior_range[2]
     prior_sigma_0     <- prior_sigma[1]

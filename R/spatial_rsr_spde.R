@@ -398,6 +398,7 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
   }
 
   if (ncol(obs_coords) != 2) stop("coords must have 2 columns", call. = FALSE)
+  .check_spde_prior_args(prior_range, prior_sigma, "spatial_spde()")
   prior_stated <- c(range = !is.null(prior_range), sigma = !is.null(prior_sigma))
   prior_range <- prior_range %||% .nl_default_range_prior(obs_coords)
   prior_sigma <- prior_sigma %||% .nl_scale_anchor()
@@ -478,6 +479,7 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
                                 prior_sigma = NULL,
                                 coords = NULL) {
   .validate_spde_nu(nu)
+  .check_spde_prior_args(prior_range, prior_sigma, "spatial_spde_custom()")
   prior_stated <- c(range = !is.null(prior_range), sigma = !is.null(prior_sigma))
   if (is.null(prior_range)) {
     if (!is.null(coords)) prior_range <- .nl_default_range_prior(coords)
@@ -519,6 +521,21 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
     ),
     class = c("tulpa_spatial", "list")
   )
+}
+
+# A stated SPDE anchor pair is checked where the user set it, so a range or
+# scale anchor the PC calibration cannot represent is refused naming the
+# argument, not at fit time as an unnamed anchor or a failed grid construction
+# (gcol33/tulpa#894). NULL takes the data-anchored default and is not checked.
+.check_spde_prior_args <- function(prior_range, prior_sigma, where) {
+  if (!is.null(prior_range)) {
+    .check_pc_anchor_pair(prior_range, "prior_range", where,
+                          param = "range", lower = TRUE)
+  }
+  if (!is.null(prior_sigma)) {
+    .check_pc_anchor_pair(prior_sigma, "prior_sigma", where)
+  }
+  invisible(TRUE)
 }
 
 # print.tulpa_spatial (including the SPDE branch) is defined once in
