@@ -248,7 +248,12 @@ weakly-informative PC + LKJ hyperprior, built per block by
 via \code{prior_sigma}, LKJ prior on each correlated block's correlation matrix via
 \code{eta}), expressed in the same parameterization with the exact
 change-of-variables Jacobian. \code{hyperprior = "flat"} makes it the zero
-function, flat in log(theta). Supply a custom \code{log_prior_theta}
+function, flat in log(theta). The likelihood it multiplies is the inner
+Laplace marginal, which integrates the fixed effects out together with the
+random effects rather than profiling them, so under \code{"flat"} the node centre
+\code{theta_hat} is a restricted (REML-type) estimate -- REML for a gaussian
+response, agreeing with \code{glmmTMB(..., REML = TRUE)} rather than with the ML
+fit of \code{lme4::glmer()} otherwise (see \code{\link[=tulpa_eb]{tulpa_eb()}}). Supply a custom \code{log_prior_theta}
 function to override either default (then \code{prior_sigma} / \code{eta} /
 \code{hyperprior} are ignored); it must act on the full stacked parameter vector.
 \code{\link[=tulpa_eb]{tulpa_eb()}} shares this same objective and the same default, so

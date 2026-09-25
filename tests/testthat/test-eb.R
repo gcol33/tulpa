@@ -468,6 +468,26 @@ test_that("estimate_phi is refused where the dispersion is conditioned on", {
     "must be TRUE or FALSE")
 })
 
+test_that("flat EB is the restricted (REML) estimate, not ML (#889)", {
+  # The inner Laplace marginal integrates beta out, so for a gaussian response
+  # the flat-hyperprior maximizer is exactly REML -- both the RE SD and, with
+  # estimate_phi, the residual SD -- and sits away from the ML fit.
+  skip_on_cran()
+  skip_if_not_installed("lme4")
+  set.seed(5)
+  J <- 40L; n <- J * 6L; g <- rep(seq_len(J), each = 6L); x <- rnorm(n)
+  y <- -0.4 + 0.8 * x + rnorm(J, 0, 1.2)[g] + rnorm(n, 0, 0.7)
+  eb <- tulpa_eb(y, NULL, cbind(1, x),
+                 list(idx = g, n_groups = J, n_coefs = 1L),
+                 family = "gaussian", phi = 1, estimate_phi = TRUE,
+                 hyperprior = "flat", beta_prior = list(sd = 1e4))
+  sd_of <- function(m) as.data.frame(lme4::VarCorr(m))$sdcor
+  reml <- sd_of(lme4::lmer(y ~ x + (1 | g), REML = TRUE))
+  ml   <- sd_of(lme4::lmer(y ~ x + (1 | g), REML = FALSE))
+  expect_equal(c(eb$map$sigma, sqrt(eb$phi)), reml, tolerance = 1e-4)
+  expect_gt(abs(eb$map$sigma - ml[1]), 1e-2)
+})
+
 test_that("estimate_phi is refused for a family with no free dispersion", {
   skip_on_cran()
   d <- sim_re_pois(53L, G = 20L, per = 8L)

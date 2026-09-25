@@ -49,8 +49,9 @@ prior is part of the maximized objective, so it regularizes the estimate:
 with few groups it is what keeps a block off the \code{sigma = 0} boundary.}
 
 \item{hyperprior}{\code{"proper"} (default) or \code{"flat"}. \code{"flat"} maximizes with
-\code{log_prior_theta} the zero function -- an unpenalized maximum-marginal-
-likelihood estimate, which can reach the \code{sigma = 0} boundary on small
+\code{log_prior_theta} the zero function -- an unpenalized restricted
+(REML-type) estimate, \code{beta} integrated out rather than profiled (see
+Details), which can reach the \code{sigma = 0} boundary on small
 designs (see the \code{"lower end of the search bracket"} warning). \code{"proper"}
 builds the PC + LKJ prior from \code{prior_sigma} / \code{eta}, regularizing the
 estimate away from that boundary. Ignored when \code{log_prior_theta} is
@@ -97,7 +98,9 @@ coordinate for BFGS and not a second optimization.
 
 The dispersion enters unpenalized -- the hyperprior covers the covariance
 coordinates only -- so this is the ML-II estimate of \code{phi}, not a MAP under
-an undeclared prior.
+an undeclared prior. Like the covariances it is read off the likelihood
+marginal over \code{beta}, so it is the restricted (REML-type) estimate: for a
+gaussian response, the REML residual variance.
 
 Available for every family carrying a dispersion, which is every front-door
 family except \code{poisson}, \code{binomial} and \code{truncated_poisson} -- those have no
@@ -197,6 +200,21 @@ PC + LKJ prior (see \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}) a
 of the engine defaults to, which at small G keeps a block off the
 \code{sigma = 0} boundary. \code{hyperprior = "flat"} maximizes the marginal likelihood
 alone.
+
+The marginal likelihood is marginal over the fixed effects too: the inner
+Laplace approximation integrates \code{beta} out together with the random
+effects (under \code{beta_prior}, or the inner solve's vague \code{N(0, 100^2)} default)
+rather than profiling it. \code{hyperprior = "flat"} is therefore a RESTRICTED,
+REML-type estimate, not maximum likelihood: for a gaussian response it is
+REML, and for a non-gaussian one it agrees with
+\code{glmmTMB(..., REML = TRUE)}, not with the ML fit of \code{lme4::glmer()} or
+\code{glmmTMB(..., REML = FALSE)}. On a binomial random intercept with 40 groups
+of 6 the three read RE SDs of 0.7931 (\code{tulpa_eb}), 0.7931 (glmmTMB REML) and
+0.7594 (ML); the fixed effects at \code{theta_hat} match the REML fit's as well.
+The restriction is what removes ML's downward bias in the variance
+components when \code{beta} is estimated from the same data, and it carries over
+to \code{n_quad > 1} and to \code{estimate_phi = TRUE}. Validating against \code{glmer()}
+should expect exactly that gap.
 
 The reported fixed-effect covariance is the conditional one at \code{theta_hat}
 (\code{solve(H_beta)}). It does not include the hyperparameter uncertainty that

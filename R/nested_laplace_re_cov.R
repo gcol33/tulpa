@@ -1484,7 +1484,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #' via `prior_sigma`, LKJ prior on each correlated block's correlation matrix via
 #' `eta`), expressed in the same parameterization with the exact
 #' change-of-variables Jacobian. `hyperprior = "flat"` makes it the zero
-#' function, flat in log(theta). Supply a custom `log_prior_theta`
+#' function, flat in log(theta). The likelihood it multiplies is the inner
+#' Laplace marginal, which integrates the fixed effects out together with the
+#' random effects rather than profiling them, so under `"flat"` the node centre
+#' `theta_hat` is a restricted (REML-type) estimate -- REML for a gaussian
+#' response, agreeing with `glmmTMB(..., REML = TRUE)` rather than with the ML
+#' fit of `lme4::glmer()` otherwise (see [tulpa_eb()]). Supply a custom `log_prior_theta`
 #' function to override either default (then `prior_sigma` / `eta` /
 #' `hyperprior` are ignored); it must act on the full stacked parameter vector.
 #' [tulpa_eb()] shares this same objective and the same default, so
