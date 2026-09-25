@@ -115,6 +115,8 @@ sim_one_seed <- function(seed) {
 
 fit_one_seed <- function(d) {
   # Coarse Cartesian per-block grids -- keep joint grid manageable.
+  bym2_g <- expand.grid(sigma = c(0.3, 0.6, 1.0, 1.5), rho = c(0.3, 0.6, 0.85))
+  ar1_g  <- expand.grid(tau = c(3, 8, 15, 30), rho = c(0.4, 0.7, 0.9))
   prior_list <- list(
     list(
       type = "bym2",
@@ -124,15 +126,18 @@ fit_one_seed <- function(d) {
       adj_col_idx = adj$adj_col_idx,
       n_neighbors = adj$n_neighbors,
       scale_factor = 1.0,
-      sigma_grid = c(0.3, 0.6, 1.0, 1.5),
-      rho_grid   = c(0.3, 0.6, 0.85)
+      # A two-axis family's fields are PAIRED cells; the tensor grid the
+      # cell count below assumes is written as expand.grid() columns
+      # (gcol33/tulpa#884).
+      sigma_grid = bym2_g$sigma,
+      rho_grid   = bym2_g$rho
     ),
     list(
       type = "ar1",
       temporal_idx = as.integer(d$year_idx),
       n_times = as.integer(n_years),
-      tau_grid = c(3, 8, 15, 30),
-      rho_grid = c(0.4, 0.7, 0.9)
+      tau_grid = ar1_g$tau,
+      rho_grid = ar1_g$rho
     ),
     list(
       type = "iid",
