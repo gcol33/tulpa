@@ -119,6 +119,12 @@
 #'
 #' @seealso [tulpa_hyper_grid()].
 #' @keywords internal
+#' @examples
+#' hyper_axis_spec("sigma", grid = c(0.5, 1, 2), log_scale = TRUE,
+#'                 bounds = c(0, Inf))
+#' # A zero level on a log-scale axis is a point mass with a declared share:
+#' hyper_axis_spec("alpha", grid = c(0, 0.5, 1), log_scale = TRUE,
+#'                 bounds = c(0, Inf), atom_mass = 0.5)
 #' @export
 hyper_axis_spec <- function(name, grid, log_prior = NULL,
                             log_scale = FALSE, bounds = NULL,

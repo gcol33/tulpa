@@ -7,9 +7,12 @@
 priors_default(family = NULL, spatial = FALSE, temporal = FALSE)
 }
 \arguments{
-\item{family}{A tulpa family object (e.g. a ratio family constructor from
-a model package such as tulpaRatio). If NULL (default), shows defaults
-for all families.}
+\item{family}{\code{NULL} (default) for the general printout, or a
+\code{tulpa_family} object -- a model package's family constructor, such as a
+tulpaRatio ratio family, or one built with \code{\link[=tulpa_family]{tulpa_family()}} -- for the
+parameters that family carries. A family NAME (\code{"poisson"}) is not a
+\code{tulpa_family} and is refused; the built-in \code{\link[=family_names]{family_names()}} share the
+general printout.}
 
 \item{spatial}{Logical; if TRUE, include spatial priors. Default FALSE.}
 
@@ -20,12 +23,20 @@ Invisibly returns a \code{tulpa_priors} object with the defaults.
 Primarily called for its side effect of printing.
 }
 \description{
-Display the default prior specifications used for each model family.
-Useful for understanding what priors are applied before fitting
-and as a starting point for customization.
+Display the default \code{\link[=tulpa_priors]{tulpa_priors()}} specification: the priors the
+simulation tools (\code{\link[=prior_predict]{prior_predict()}}, \code{\link[=tulpa_simulate]{tulpa_simulate()}}) draw from, and a
+starting point for customizing them. \code{\link[=tulpa]{tulpa()}} does not read a
+\code{tulpa_priors} object; the no-family printout closes with the defaults a
+\code{tulpa()} fit does use, which differ for the random-effect SDs (see
+\code{\link[=tulpa_priors]{tulpa_priors()}}).
 }
 \details{
-Default priors in tulpa follow these principles:
+The family-specific overdispersion lines name the ratio families a model
+package registers (\code{negbin_negbin}, \code{negbin_gamma}, \code{poisson_gamma},
+\code{gamma_gamma}, \code{beta_binomial}); they are not among tulpa's own
+\code{\link[=family_names]{family_names()}}.
+
+Default priors in \code{\link[=tulpa_priors]{tulpa_priors()}} follow these principles:
 \itemize{
 \item \strong{Fixed effects (beta)}: Normal(0, 2.5) - weakly informative, allows
 coefficients roughly in [-5, 5] on the link scale.

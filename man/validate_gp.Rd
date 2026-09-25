@@ -21,6 +21,12 @@ from a \verb{spatial =} spec, since those design-matrix doors take no \code{data
 argument to validate one themselves. \code{\link[=tulpa]{tulpa()}} calls this internally, so it
 only needs to be called directly when fitting through a design-matrix door.
 }
+\examples{
+set.seed(1)
+d <- data.frame(lon = runif(30), lat = runif(30))
+gp <- validate_gp(spatial_gp(~ lon + lat, nn = 5), d)
+gp$n_spatial
+}
 \seealso{
 \code{\link[=validate_temporal_multiscale]{validate_temporal_multiscale()}}, \code{\link[=spatial_gp]{spatial_gp()}},
 \code{\link[=spatial_multiscale]{spatial_multiscale()}}

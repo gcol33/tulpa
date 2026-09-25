@@ -20,3 +20,15 @@ If error = FALSE, returns TRUE/FALSE. Otherwise errors on mismatch.
 Ensures the fit object was created with the expected inference mode.
 Useful for enforcing mode requirements in downstream analysis.
 }
+\examples{
+\donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(60))
+d$y <- rpois(60, exp(0.5 + 0.3 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "hmc",
+             control = list(n_iter = 400L, warmup = 200L, n_chains = 2L,
+                            seed = 1L))
+validate_mode(fit, "exact")                      # the tier hmc runs in
+validate_mode(fit, "structured", error = FALSE)  # FALSE
+}
+}

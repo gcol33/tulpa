@@ -66,6 +66,10 @@ space-time interaction.
 \strong{Cressie-Huang class:}
 Constructed via Fourier transform methods to ensure positive definiteness.
 }
+\examples{
+# No backend fits a joint space-time covariance, so the constructor refuses:
+try(spatiotemporal_gp(~ lon + lat, "year", nonsep_type = "gneiting"))
+}
 \references{
 Gneiting, T. (2002). Nonseparable, stationary covariance functions for
 space-time data. Journal of the American Statistical Association, 97(458), 590-600.

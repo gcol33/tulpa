@@ -20,6 +20,17 @@ sampler in this package writes, or \verb{$diagnostics$divergent},
 It reads the same record \code{\link[=plot_divergences]{plot_divergences()}} locates the divergent rows
 from, so the two always agree on one fit.
 }
+\examples{
+\donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(60))
+d$y <- rpois(60, exp(0.5 + 0.3 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "hmc",
+             control = list(n_iter = 400L, warmup = 200L, n_chains = 2L,
+                            seed = 1L))
+n_divergent(fit)
+}
+}
 \seealso{
 \code{\link[=plot_divergences]{plot_divergences()}}, \code{\link[=check_diagnostics]{check_diagnostics()}}
 }

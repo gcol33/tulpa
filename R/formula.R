@@ -30,6 +30,8 @@ NULL
 #' @param term A language object (formula term)
 #' @return A list of language objects, each a `|` or `||` call
 #' @keywords internal
+#' @examples
+#' findbars(y ~ x + (1 | g) + (1 + x | h))
 #' @export
 findbars <- function(term) {
   if (is.name(term) || !is.language(term)) return(NULL)
@@ -112,6 +114,8 @@ findbars <- function(term) {
 #' @param term A language object (formula term)
 #' @return A language object with all bar terms removed, or NULL if nothing remains
 #' @keywords internal
+#' @examples
+#' nobars(y ~ x + (1 | g) + (1 + x | h))
 #' @export
 nobars <- function(term) {
   .strip_rhs(term, function(x) {
@@ -747,6 +751,12 @@ tulpa_parse_formula <- function(formula) {
 #'   - `re_terms`: list of RE data structures (group indices, slope matrices)
 #'
 #' @keywords internal
+#' @examples
+#' d <- data.frame(y = rnorm(6), x = 1:6, g = rep(1:2, 3))
+#' parsed <- tulpa_parse_formula(y ~ x + (1 | g))
+#' md <- tulpa_build_model_data(parsed, d)
+#' dim(md$X)
+#' md$n_re_terms
 #' @export
 tulpa_build_model_data <- function(parsed, data) {
   stopifnot(inherits(parsed, "tulpa_parsed_formula"))

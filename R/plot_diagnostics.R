@@ -1807,6 +1807,16 @@ grep_params <- function(pattern, names) {
 #' @param fit A `tulpa_fit` object.
 #' @return Integer count of divergent transitions (0 if none are recorded).
 #' @seealso [plot_divergences()], [check_diagnostics()]
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' d <- data.frame(x = rnorm(60))
+#' d$y <- rpois(60, exp(0.5 + 0.3 * d$x))
+#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 400L, warmup = 200L, n_chains = 2L,
+#'                             seed = 1L))
+#' n_divergent(fit)
+#' }
 #' @export
 n_divergent <- function(fit) {
   .tulpa_divergence_record(fit)$n

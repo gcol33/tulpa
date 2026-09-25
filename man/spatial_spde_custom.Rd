@@ -42,3 +42,15 @@ A \code{tulpa_spatial} object with type \code{"spde"}.
 Specify a continuous Matern spatial field using externally-provided FEM
 matrices. Use this with meshes from fmesher, rSPDE, or any other source.
 }
+\examples{
+# FEM matrices of a 6-node 1-D chain mesh, observed at the nodes:
+n <- 6L
+C <- Matrix::Diagonal(n)
+G <- Matrix::bandSparse(n, k = c(-1, 0, 1),
+                        diagonals = list(rep(-1, n - 1), c(1, rep(2, n - 2), 1),
+                                         rep(-1, n - 1)))
+A <- Matrix::Diagonal(n)
+sp <- spatial_spde_custom(C, G, A, prior_range = c(1, 0.5),
+                          prior_sigma = c(1, 0.01))
+sp$type
+}

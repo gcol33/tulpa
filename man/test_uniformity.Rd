@@ -32,3 +32,14 @@ If the model is correct, PIT residuals should follow Uniform(0, 1).
 Applies a Kolmogorov-Smirnov test against that null.
 Equivalent to \code{DHARMa::testUniformity()}.
 }
+\examples{
+set.seed(1)
+test_uniformity(runif(50))   # PIT residuals supplied directly
+\donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(80))
+d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+test_uniformity(fit, nsim = 50)
+}
+}

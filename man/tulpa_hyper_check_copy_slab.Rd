@@ -20,6 +20,10 @@ anything else. Intended so a consumer package's own \code{copy_slab} argument
 stays in sync with tulpa's own accepted choices rather than restating
 them.
 }
+\examples{
+tulpa_hyper_check_copy_slab("exponential")
+try(tulpa_hyper_check_copy_slab("uniform"))
+}
 \seealso{
 \code{\link[=tulpa_hyper_copy_slab_density]{tulpa_hyper_copy_slab_density()}}
 }

@@ -4,6 +4,23 @@
 #' Specify priors for model parameters. Supports both PC (penalized complexity)
 #' priors for variance components and standard distributions for other parameters.
 #'
+#' A `tulpa_priors` object is what the simulation tools draw parameters from:
+#' [prior_predict()] and [tulpa_simulate()] with `theta = NULL`. The model
+#' fitters do not read one. [tulpa()] carries its own defaults, set per backend
+#' through its `beta_prior`, `re_prior` and `hyperprior` arguments:
+#'
+#' - Fixed effects: `prior_normal(0, 2.5)` on every backend -- the same default
+#'   as `beta` here.
+#' - Random-effect SDs: a PC prior with `P(sigma > 3) = 0.01` (plus an LKJ(2)
+#'   prior on a correlated block's correlations) on the routes that integrate or
+#'   maximize over them (nested Laplace, `re_cov_nested`, `mode = "eb"`);
+#'   half-Cauchy(2.5) on the samplers (`re_prior$sigma_re_scale`, and
+#'   `re_prior$prior_sigma_scale` for `mode = "gibbs"`); an inverse-Wishart
+#'   under `control$re_cov = "gibbs"`.
+#'
+#' The `sigma`, `phi`, `rho_temporal` and `rho_spatial` defaults below are
+#' therefore the simulation defaults, not the priors a fit ran under.
+#'
 #' @param beta Prior for fixed effects. Default: `prior_normal(0, 2.5)`.
 #' @param sigma Prior for random effect SDs. Default: PC prior with
 #'   P(sigma > 1) = 0.01.
@@ -404,13 +421,19 @@ format.tulpa_prior <- function(x, indent = "", ...) {
 #' Show default priors for a tulpa family
 #'
 #' @description
-#' Display the default prior specifications used for each model family.
-#' Useful for understanding what priors are applied before fitting
-#' and as a starting point for customization.
+#' Display the default [tulpa_priors()] specification: the priors the
+#' simulation tools ([prior_predict()], [tulpa_simulate()]) draw from, and a
+#' starting point for customizing them. [tulpa()] does not read a
+#' `tulpa_priors` object; the no-family printout closes with the defaults a
+#' `tulpa()` fit does use, which differ for the random-effect SDs (see
+#' [tulpa_priors()]).
 #'
-#' @param family A tulpa family object (e.g. a ratio family constructor from
-#'   a model package such as tulpaRatio). If NULL (default), shows defaults
-#'   for all families.
+#' @param family `NULL` (default) for the general printout, or a
+#'   `tulpa_family` object -- a model package's family constructor, such as a
+#'   tulpaRatio ratio family, or one built with [tulpa_family()] -- for the
+#'   parameters that family carries. A family NAME (`"poisson"`) is not a
+#'   `tulpa_family` and is refused; the built-in [family_names()] share the
+#'   general printout.
 #' @param spatial Logical; if TRUE, include spatial priors. Default FALSE.
 #' @param temporal Logical; if TRUE, include temporal priors. Default FALSE.
 #'
@@ -418,7 +441,12 @@ format.tulpa_prior <- function(x, indent = "", ...) {
 #'   Primarily called for its side effect of printing.
 #'
 #' @details
-#' Default priors in tulpa follow these principles:
+#' The family-specific overdispersion lines name the ratio families a model
+#' package registers (`negbin_negbin`, `negbin_gamma`, `poisson_gamma`,
+#' `gamma_gamma`, `beta_binomial`); they are not among tulpa's own
+#' [family_names()].
+#'
+#' Default priors in [tulpa_priors()] follow these principles:
 #'
 #' - **Fixed effects (beta)**: Normal(0, 2.5) - weakly informative, allows
 #'   coefficients roughly in \[-5, 5\] on the link scale.
@@ -469,7 +497,9 @@ priors_default <- function(family = NULL, spatial = FALSE, temporal = FALSE) {
     cat("Default priors for tulpa models\n")
     cat("================================\n\n")
 
-    cat("These defaults apply to all families unless overridden.\n\n")
+    cat("These are tulpa_priors()'s defaults: what prior_predict() and\n")
+    cat("tulpa_simulate() draw from. tulpa() fits do not read them; their own\n")
+    cat("defaults are listed at the end.\n\n")
 
     cat("Fixed effects (beta):\n")
     cat("  Normal(0, 2.5)\n")
@@ -501,15 +531,24 @@ priors_default <- function(family = NULL, spatial = FALSE, temporal = FALSE) {
       cat("  Customization: prior_beta(alpha, beta)\n\n")
     }
 
-    cat("Family-specific notes:\n")
+    cat("Family-specific notes (model-package ratio families):\n")
     cat("  negbin_negbin: Uses phi for both processes\n")
     cat("  binomial: No overdispersion parameter (unless beta_binomial)\n")
-    cat("  poisson_gamma: Uses phi for gamma shape parameter\n")
+    cat("  poisson_gamma: Uses phi for gamma shape parameter\n\n")
+
+    cat("What a tulpa() fit uses instead (set via beta_prior / re_prior):\n")
+    cat("  Fixed effects: Normal(0, 2.5) on every backend\n")
+    cat("  Random-effect SD: PC prior P(sigma > 3) = 0.01 (+ LKJ(2) on\n")
+    cat("    correlations) on nested Laplace / re_cov_nested / eb;\n")
+    cat("    half-Cauchy(2.5) on the samplers and mode = \"gibbs\"\n")
 
   } else {
     # Show defaults for specific family
     if (!inherits(family, "tulpa_family")) {
-      stop("`family` must be a tulpa_family object", call. = FALSE)
+      stop("`family` must be NULL or a tulpa_family object (a model package's ",
+           "family constructor, or one built with tulpa_family()); got ",
+           .arg_repr(family), ". A built-in family name shares the general ",
+           "printout: call priors_default() with no family.", call. = FALSE)
     }
 
     family_name <- family$name

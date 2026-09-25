@@ -15,3 +15,6 @@ console.
 Displays information about the inference modes available in tulpa,
 including their tiers, guarantees, and appropriate use cases.
 }
+\examples{
+inference_mode_info()
+}

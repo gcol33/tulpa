@@ -14,7 +14,8 @@ NULL
 #'
 #' @param formula A model formula, or list of formulas keyed by process name.
 #' @param family A `tulpa_family` object (see [tulpa_family()]).
-#' @param data Data frame with covariates and grouping factors.
+#' @param data Data frame with covariates and grouping factors. The response
+#'   column may be absent or NA; it is not read.
 #' @param theta One of:
 #'   - A named list with `beta` (numeric or list per process), `u` (list of RE
 #'     coefficient vectors, one per RE term per process), `extras` (named list
@@ -63,6 +64,7 @@ tulpa_simulate <- function(formula, family, data,
 
   process_names <- family$process_names
   formulas <- normalize_formulas(formula, process_names)
+  data <- .fill_absent_response(formulas, data)
   parsed <- lapply(formulas, tulpa_parse_formula)
   built  <- lapply(parsed, tulpa_build_model_data, data = data)
   n_obs <- built[[1]]$n_obs
@@ -256,6 +258,18 @@ validate_family <- function(family) {
 # Normalize a formula or list-of-formulas argument against expected processes.
 # Returns a named list of formulas keyed by process_names.
 #' @keywords internal
+# A simulator reads the data for its design only, so a response the data does
+# not carry is filled with NA rather than refused by tulpa_build_model_data()
+# ("Response 'y' not found in data"): the response is what is being simulated
+# (gcol33/tulpa#898). Only bare-name response variables are filled.
+.fill_absent_response <- function(formulas, data) {
+  resp <- unique(unlist(lapply(formulas, function(f) {
+    if (length(f) == 3L) all.vars(f[[2L]]) else character(0)
+  }), use.names = FALSE))
+  for (v in setdiff(resp, names(data))) data[[v]] <- rep(NA_real_, nrow(data))
+  data
+}
+
 normalize_formulas <- function(formula, process_names) {
   n_proc <- length(process_names)
   if (inherits(formula, "formula")) {

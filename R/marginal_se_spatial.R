@@ -66,6 +66,15 @@ NULL
 #'   `(range, sigma)` -> `(kappa, tau)` mapping via `.spde_kappa_tau()`).
 #' @return A sparse `n_mesh x n_mesh` precision matrix.
 #' @seealso [tulpa_spde_log_hyperprior()], [fit_spde()], [spatial_spde()]
+#' @examples
+#' n <- 6L
+#' G <- Matrix::bandSparse(n, k = c(-1, 0, 1),
+#'                         diagonals = list(rep(-1, n - 1), c(1, rep(2, n - 2), 1),
+#'                                          rep(-1, n - 1)))
+#' sp <- spatial_spde_custom(Matrix::Diagonal(n), G, Matrix::Diagonal(n),
+#'                           prior_range = c(1, 0.5), prior_sigma = c(1, 0.01))
+#' Q <- tulpa_spde_precision_Q(sp, kappa = sqrt(8) / 1, tau_spde = 1)
+#' dim(Q)
 #' @export
 tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
   .spde_precision_Q(spatial, kappa, tau_spde)

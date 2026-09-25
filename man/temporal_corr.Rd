@@ -18,3 +18,14 @@ A data.frame with rows for each temporal hyperparameter.
 Returns posterior summary for temporal hyperparameters (tau, rho for AR1,
 sigma/lengthscale for temporal GP).
 }
+\examples{
+\donttest{
+set.seed(127)
+df <- data.frame(year = rep(1:20, each = 3), x = rnorm(60))
+f <- as.numeric(arima.sim(list(ar = 0.7), 20, sd = 0.4))
+df$count <- rpois(60, exp(1 + 0.3 * df$x + f[df$year]))
+fit <- tulpa(count ~ x, data = df, family = "poisson",
+             temporal = temporal_ar1("year"))
+temporal_corr(fit)
+}
+}

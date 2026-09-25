@@ -14,3 +14,6 @@ The response families \verb{family = } accepts on the engine's front doors, in
 their canonical (default-link) spelling. A family's \verb{*_<link>} variants
 (e.g. \code{"gamma_inverse"}) are listed separately by \code{\link[=linked_family_names]{linked_family_names()}}.
 }
+\examples{
+family_names()
+}

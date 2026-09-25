@@ -39,8 +39,14 @@ the automatic rule.}
 \item{Z}{Optional pre-drawn \verb{S x d} whitened sample; \code{NULL} draws it here.}
 }
 \value{
-A list with \code{pareto_k}, \code{is_ess}, \code{n_eval}, and \code{declined} (a
-reason string, or \code{NULL} when the diagnostic ran to completion).
+A list with \code{pareto_k}, \code{is_ess} and \code{n_eval} (the number of draws
+whose log importance ratio was finite). When the diagnostic ran to
+completion it also carries \code{lr}, those \code{n_eval} finite log importance
+ratios in draw order (what \code{pareto_k} was fitted on, so
+\code{tulpa_psis(lr, tail_points)$pareto_k} reproduces it), and with
+\code{return_draws = TRUE} the evaluated draws \code{U} (\verb{n_eval x d}) and their
+smoothed \code{log_weights}. When it declined, \code{pareto_k} and \code{is_ess} are
+\code{NA} and \code{declined} names the reason (e.g. \code{"draws_too_few"}).
 }
 \description{
 Outer Pareto-k-hat reliability diagnostic for a grid-integrated nested fit
@@ -51,6 +57,14 @@ heavy-tail escalation, then reports \code{pareto_k} / \code{is_ess} via the shar
 PSIS/GPD core. This is more than plain PSIS smoothing over an
 already-computed log-ratio vector -- see \code{\link[=tulpa_psis]{tulpa_psis()}} for that -- because
 it also builds the proposal, draws, and evaluates the target.
+}
+\examples{
+set.seed(1)
+# A Gaussian target a little wider than the standard-normal proposal:
+lt <- function(U) -0.5 * rowSums(sweep(U, 2L, c(1.2, 0.8), "/")^2)
+k <- tulpa_batched_pareto_k(theta_hat = c(0, 0), L_scale = diag(2),
+                            log_target_batched = lt, n_samples = 500)
+k$pareto_k
 }
 \seealso{
 \code{\link[=tulpa_psis]{tulpa_psis()}}

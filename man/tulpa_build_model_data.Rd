@@ -32,4 +32,11 @@ Takes a parsed formula and data frame, and constructs:
 \item RE slope matrices (if applicable)
 }
 }
+\examples{
+d <- data.frame(y = rnorm(6), x = 1:6, g = rep(1:2, 3))
+parsed <- tulpa_parse_formula(y ~ x + (1 | g))
+md <- tulpa_build_model_data(parsed, d)
+dim(md$X)
+md$n_re_terms
+}
 \keyword{internal}

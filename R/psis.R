@@ -585,9 +585,22 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 #' @param tail_points Optional override for the PSIS tail size; `NULL` uses
 #'   the automatic rule.
 #' @param Z Optional pre-drawn `S x d` whitened sample; `NULL` draws it here.
-#' @return A list with `pareto_k`, `is_ess`, `n_eval`, and `declined` (a
-#'   reason string, or `NULL` when the diagnostic ran to completion).
+#' @return A list with `pareto_k`, `is_ess` and `n_eval` (the number of draws
+#'   whose log importance ratio was finite). When the diagnostic ran to
+#'   completion it also carries `lr`, those `n_eval` finite log importance
+#'   ratios in draw order (what `pareto_k` was fitted on, so
+#'   `tulpa_psis(lr, tail_points)$pareto_k` reproduces it), and with
+#'   `return_draws = TRUE` the evaluated draws `U` (`n_eval x d`) and their
+#'   smoothed `log_weights`. When it declined, `pareto_k` and `is_ess` are
+#'   `NA` and `declined` names the reason (e.g. `"draws_too_few"`).
 #' @seealso [tulpa_psis()]
+#' @examples
+#' set.seed(1)
+#' # A Gaussian target a little wider than the standard-normal proposal:
+#' lt <- function(U) -0.5 * rowSums(sweep(U, 2L, c(1.2, 0.8), "/")^2)
+#' k <- tulpa_batched_pareto_k(theta_hat = c(0, 0), L_scale = diag(2),
+#'                             log_target_batched = lt, n_samples = 500)
+#' k$pareto_k
 #' @export
 tulpa_batched_pareto_k <- function(theta_hat, L_scale, log_target_batched,
                                     n_samples = .nl_diag("k_samples"),

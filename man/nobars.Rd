@@ -16,4 +16,7 @@ A language object with all bar terms removed, or NULL if nothing remains
 Recursively rewrites the formula AST, removing any \code{|} or \code{||} nodes
 found inside parentheses. Returns the fixed-effects-only formula.
 }
+\examples{
+nobars(y ~ x + (1 | g) + (1 + x | h))
+}
 \keyword{internal}

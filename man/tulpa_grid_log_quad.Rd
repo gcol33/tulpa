@@ -47,6 +47,27 @@ posterior weights (with \code{\link[=tulpa_theta_matrix]{tulpa_theta_matrix()}} 
 \code{\link[=tulpa_normalise_weights_safe]{tulpa_normalise_weights_safe()}}) when the fit doesn't already carry
 \code{fit$log_quad}.
 }
+\examples{
+\donttest{
+set.seed(1)
+S <- 30L                                   # spatial units in a chain
+nb <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+nn <- lengths(nb)
+field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4))))
+idx <- rep(seq_len(S), each = 6L); n <- length(idx); x <- rnorm(n)
+y <- rbinom(n, 1L, plogis(-0.2 + 0.6 * x + field[idx]))
+prior <- list(type = "icar", n_spatial_units = S, spatial_idx = idx,
+              adj_row_ptr = c(0L, cumsum(nn)), adj_col_idx = unlist(nb) - 1L,
+              n_neighbors = nn, tau_grid = c(0.5, 1, 2, 4, 8))
+fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
+                            family = "binomial",
+                            control = list(progress = FALSE))
+tg <- tulpa_theta_matrix(fit)
+lq <- tulpa_grid_log_quad(tg)
+# The fit's own cell weights, rebuilt from its log marginals:
+tulpa_normalise_weights_safe(fit$log_marginal, log_quad = lq)
+}
+}
 \seealso{
 \code{\link[=tulpa_theta_matrix]{tulpa_theta_matrix()}}, \code{\link[=tulpa_normalise_weights_safe]{tulpa_normalise_weights_safe()}},
 \code{\link[=tulpa_joint_axis_specs_from_grid]{tulpa_joint_axis_specs_from_grid()}}

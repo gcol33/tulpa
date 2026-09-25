@@ -389,6 +389,9 @@
 #' @return A function `log p(x) = log(lambda) - lambda * x`, or `NULL` if
 #'   `upper` is not a finite positive number.
 #' @seealso [tulpa_hyper_check_copy_slab()], [tulpa_joint_axis_specs_from_grid()]
+#' @examples
+#' lp <- tulpa_hyper_copy_slab_density(upper = 2)
+#' lp(c(0.1, 1, 2))
 #' @export
 tulpa_hyper_copy_slab_density <- function(upper) .hyper_copy_slab_density(upper)
 
@@ -501,6 +504,24 @@ tulpa_hyper_copy_slab_density <- function(upper) .hyper_copy_slab_density(upper)
 #'   in `specs` that carries a declared coordinate, or `NULL` if `theta_grid`
 #'   or `specs` is `NULL`.
 #' @seealso [tulpa_joint_axis_specs_from_grid()], [tulpa_hyper_slice_home()]
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' S <- 30L                                   # spatial units in a chain
+#' nb <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+#' nn <- lengths(nb)
+#' field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4))))
+#' idx <- rep(seq_len(S), each = 6L); n <- length(idx); x <- rnorm(n)
+#' y <- rbinom(n, 1L, plogis(-0.2 + 0.6 * x + field[idx]))
+#' prior <- list(type = "icar", n_spatial_units = S, spatial_idx = idx,
+#'               adj_row_ptr = c(0L, cumsum(nn)), adj_col_idx = unlist(nb) - 1L,
+#'               n_neighbors = nn, tau_grid = c(0.5, 1, 2, 4, 8))
+#' fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
+#'                             family = "binomial",
+#'                             control = list(progress = FALSE))
+#' tg <- tulpa_theta_matrix(fit)
+#' tulpa_hyper_grid_supports(tg, tulpa_joint_axis_specs_from_grid(tg))
+#' }
 #' @export
 tulpa_hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
   .hyper_grid_supports(theta_grid, specs, refining = refining)
@@ -683,6 +704,9 @@ tulpa_hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
 #' @return A character vector of length `n`: `""` for a base cell, the axis
 #'   name for a refinement-slice cell.
 #' @seealso [tulpa_hyper_grid_supports()], [tulpa_joint_axis_specs_from_grid()]
+#' @examples
+#' tulpa_hyper_slice_home(NULL, 3)
+#' tulpa_hyper_slice_home(c("", "", "sigma"), 3)
 #' @export
 tulpa_hyper_slice_home <- function(refining, n) .hyper_slice_home(refining, n)
 
@@ -1094,6 +1118,9 @@ tulpa_hyper_slice_home <- function(refining, n) .hyper_slice_home(refining, n)
 #' @param x A `copy_slab` value: `NULL`, `"exponential"`, or `"flat"`.
 #' @return `x`, defaulted to `"exponential"` when `NULL`.
 #' @seealso [tulpa_hyper_copy_slab_density()]
+#' @examples
+#' tulpa_hyper_check_copy_slab("exponential")
+#' try(tulpa_hyper_check_copy_slab("uniform"))
 #' @export
 tulpa_hyper_check_copy_slab <- function(x) .hyper_check_copy_slab(x)
 
@@ -1148,6 +1175,26 @@ tulpa_hyper_check_copy_slab <- function(x) .hyper_check_copy_slab(x)
 #'   `nrow(theta_grid)`, or `NULL` if `theta_grid` has no axis names.
 #' @seealso [tulpa_theta_matrix()], [tulpa_normalise_weights_safe()],
 #'   [tulpa_joint_axis_specs_from_grid()]
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' S <- 30L                                   # spatial units in a chain
+#' nb <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+#' nn <- lengths(nb)
+#' field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4))))
+#' idx <- rep(seq_len(S), each = 6L); n <- length(idx); x <- rnorm(n)
+#' y <- rbinom(n, 1L, plogis(-0.2 + 0.6 * x + field[idx]))
+#' prior <- list(type = "icar", n_spatial_units = S, spatial_idx = idx,
+#'               adj_row_ptr = c(0L, cumsum(nn)), adj_col_idx = unlist(nb) - 1L,
+#'               n_neighbors = nn, tau_grid = c(0.5, 1, 2, 4, 8))
+#' fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
+#'                             family = "binomial",
+#'                             control = list(progress = FALSE))
+#' tg <- tulpa_theta_matrix(fit)
+#' lq <- tulpa_grid_log_quad(tg)
+#' # The fit's own cell weights, rebuilt from its log marginals:
+#' tulpa_normalise_weights_safe(fit$log_marginal, log_quad = lq)
+#' }
 #' @export
 tulpa_grid_log_quad <- function(theta_grid, specs = NULL,
                                  copy_slab = "exponential",

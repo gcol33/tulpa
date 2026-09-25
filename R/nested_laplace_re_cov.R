@@ -282,6 +282,13 @@
 #'   block's integration coordinates, suitable for one block of the
 #'   `log_prior_theta` argument of [tulpa_re_cov_nested()].
 #' @seealso [tulpa_re_cov_nested()]
+#' @examples
+#' # Log prior of a correlated 2 x 2 block at the origin of its log-Cholesky
+#' # coordinates (log sd_1, log sd_2, L_21):
+#' lp <- re_cov_pc_lkj_prior(2)
+#' lp(c(0, 0, 0))
+#' # A diagonal block takes one log-SD coordinate per coefficient:
+#' re_cov_pc_lkj_prior(2, correlated = FALSE)(c(0, 0))
 #' @export
 re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
                                 correlated = TRUE) {

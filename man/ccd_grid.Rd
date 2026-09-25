@@ -50,6 +50,11 @@ Used by \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for higher-d
 blocks. The standardised z-coordinates are mapped to physical
 hyperparameters \eqn{\theta} via \code{\link[=ccd_to_theta]{ccd_to_theta()}}.
 }
+\examples{
+g <- ccd_grid(3)
+g$n_points
+table(g$kind)
+}
 \seealso{
 \code{\link[=ccd_to_theta]{ccd_to_theta()}} to map z-coordinates to physical theta.
 }

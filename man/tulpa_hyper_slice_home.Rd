@@ -24,6 +24,10 @@ base grid apart from its refinement slices wherever a reader needs to
 restrict to one or the other, e.g. rebuilding axis specs from a grid's
 declared nodes only (see \code{\link[=tulpa_joint_axis_specs_from_grid]{tulpa_joint_axis_specs_from_grid()}}).
 }
+\examples{
+tulpa_hyper_slice_home(NULL, 3)
+tulpa_hyper_slice_home(c("", "", "sigma"), 3)
+}
 \seealso{
 \code{\link[=tulpa_hyper_grid_supports]{tulpa_hyper_grid_supports()}}, \code{\link[=tulpa_joint_axis_specs_from_grid]{tulpa_joint_axis_specs_from_grid()}}
 }

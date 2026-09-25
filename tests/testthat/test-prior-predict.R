@@ -100,6 +100,26 @@ test_that("prior_predict works without extra_params", {
 })
 
 
+test_that("prior_predict and tulpa_simulate take data without the response (#898)", {
+  # The response is what is simulated, and the docs say the column may be
+  # absent; it was refused as "Response 'y' not found in data".
+  fam <- make_poisson_family()
+  no_y <- df[, setdiff(names(df), "y"), drop = FALSE]
+  pp <- prior_predict(y ~ x, fam, no_y, n_draws = 3, seed = 1)
+  expect_length(pp$y, 3)
+  expect_equal(pp$n_obs, nrow(df))
+  sim <- tulpa_simulate(y ~ x, fam, no_y, n_sims = 2, seed = 1)
+  expect_length(sim$y, 2)
+})
+
+test_that("priors_default() names what it takes and what tulpa() uses (#898)", {
+  expect_error(priors_default("poisson"),
+               "tulpa_family object .*built-in family name")
+  out <- capture.output(priors_default())
+  expect_true(any(grepl("prior_predict", out)))
+  expect_true(any(grepl("half-Cauchy\\(2.5\\)", out)))
+})
+
 test_that("prior_predict rejects bad inputs", {
   fam <- make_gaussian_family()
   expect_error(prior_predict(y ~ x, "not a family", df), "tulpa_family")
