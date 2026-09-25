@@ -17,7 +17,8 @@
 #'   multi-process model. `NULL` (default) shares it; `FALSE` fits
 #'   process-specific effects and emits a warning.
 #' @param scale_coords Logical. Standardize coordinates before fitting
-#'   (default `TRUE`).
+#'   (default `TRUE`), by one common factor as in [spatial_gp()]. Ranges and
+#'   the coordinates [svc()] reports are in the original units either way.
 #' @param approx Spatial approximation. `"nngp"` (nearest-neighbour GP) or
 #'   `"hsgp"` (Hilbert-space GP).
 #' @param m Number of basis functions per dimension for the HSGP approximation
@@ -198,7 +199,7 @@ validate_svc <- function(svc, data, X) {
 
   # Scale coordinates if requested
   if (svc$scale_coords) {
-    coords <- scale(coords)
+    coords <- .scale_coords_isotropic(coords)
   }
 
   # Resolve SVC terms
@@ -437,7 +438,9 @@ svc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
       structure(
         list(
           draws = draws,
-          coords = info$coords_matrix,
+          # In the user's coordinate units, not the standardized ones the
+          # kernel ran on (gcol33/tulpa#907).
+          coords = .unscale_coords(info$coords_matrix),
           term_names = term_names,
           n_obs = info$n_obs,
           n_svc = length(term_names),

@@ -165,9 +165,67 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
   coords <- as.matrix(data[, coord_vars, drop = FALSE])
   .check_coords_finite(coords, "Coordinate columns", scale = scale_coords)
   if (isTRUE(scale_coords)) {
-    coords <- scale(coords)
+    coords <- .scale_coords_isotropic(coords)
   }
   coords
+}
+
+#' Standardize spatial coordinates by one common factor.
+#'
+#' Each column is centred on its own mean and every column is divided by the
+#' SAME scale, the root mean of the column variances. `scale()` divided lon and
+#' lat by their own spreads, which stretches one axis against the other and
+#' turns an isotropic kernel anisotropic in the data's geometry
+#' (gcol33/tulpa#907); one factor keeps every distance proportional to the
+#' user's, so a fitted range converts back to data units by that one factor
+#' (`.coord_scale()`). The attributes are the ones `scale()` sets --
+#' `scaled:center` per column and `scaled:scale` (the common factor, repeated
+#' per column) -- so a reader re-applying the training standardization to new
+#' coordinates is unchanged.
+#'
+#' @param coords Numeric coordinate matrix.
+#' @return The standardized matrix, carrying `scaled:center` / `scaled:scale`.
+#' @keywords internal
+#' @noRd
+.scale_coords_isotropic <- function(coords) {
+  coords <- as.matrix(coords)
+  storage.mode(coords) <- "double"
+  ctr <- colMeans(coords)
+  s <- if (nrow(coords) > 1L) sqrt(mean(apply(coords, 2L, stats::var))) else NA
+  if (!is.finite(s) || s <= 0) s <- 1
+  out <- sweep(coords, 2L, ctr, "-") / s
+  attr(out, "scaled:center") <- ctr
+  attr(out, "scaled:scale") <- rep(s, ncol(coords))
+  out
+}
+
+#' The factor a spec's coordinates were divided by (1 when they were not), which
+#' converts a distance the kernel measured -- a range, a lengthscale -- back to
+#' the user's coordinate units.
+#' @param spec A validated spatial spec carrying `coords_matrix`.
+#' @keywords internal
+#' @noRd
+.coord_scale <- function(spec) {
+  s <- attr(spec$coords_matrix, "scaled:scale")
+  if (!isTRUE(spec$scale_coords) || !length(s) || !is.finite(s[1L]) || s[1L] <= 0)
+    return(1)
+  s[1L]
+}
+
+#' A standardized coordinate matrix mapped back to the user's units, via the
+#' attributes `.scale_coords_isotropic()` (or `scale()`) set; returned as is when
+#' it carries none.
+#' @keywords internal
+#' @noRd
+.unscale_coords <- function(coords) {
+  if (is.null(coords)) return(NULL)
+  ctr <- attr(coords, "scaled:center")
+  scl <- attr(coords, "scaled:scale")
+  if (is.null(ctr) || is.null(scl)) return(coords)
+  out <- sweep(sweep(unclass(as.matrix(coords)), 2L, scl, "*"), 2L, ctr, "+")
+  attr(out, "scaled:center") <- NULL
+  attr(out, "scaled:scale") <- NULL
+  out
 }
 
 #' Coerce a variable argument given as a formula or a string to a bare name.

@@ -58,8 +58,9 @@ intervals separated is what identifies the scales against each other.}
 \item{shared}{Logical; if TRUE (default), spatial effects enter both
 all processes.}
 
-\item{scale_coords}{Logical; if TRUE (default), coordinates are scaled to
-unit variance before computing distances.}
+\item{scale_coords}{Logical; if TRUE (default), coordinates are centred
+and divided by one common factor before computing distances (see
+\code{\link[=spatial_gp]{spatial_gp()}}).}
 
 \item{sampler}{Latent parameterization for the exact-NUTS field. \code{"auto"}
 (default) and \code{"noncentered"} sample \code{z ~ N(0, I)} per scale and

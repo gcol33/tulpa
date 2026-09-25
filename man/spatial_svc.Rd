@@ -35,7 +35,8 @@ multi-process model. \code{NULL} (default) shares it; \code{FALSE} fits
 process-specific effects and emits a warning.}
 
 \item{scale_coords}{Logical. Standardize coordinates before fitting
-(default \code{TRUE}).}
+(default \code{TRUE}), by one common factor as in \code{\link[=spatial_gp]{spatial_gp()}}. Ranges and
+the coordinates \code{\link[=svc]{svc()}} reports are in the original units either way.}
 
 \item{approx}{Spatial approximation. \code{"nngp"} (nearest-neighbour GP) or
 \code{"hsgp"} (Hilbert-space GP).}

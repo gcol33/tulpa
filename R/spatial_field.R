@@ -423,7 +423,12 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 .spatial_field_blocks <- function(spec, data) {
   base_adj <- as.matrix(spec$adjacency)
   n_units <- nrow(base_adj)
-  idx <- .resolve_unit_index(data[[spec$group_var]], spec$group_var, n_units)
+  if (is.null(data[[spec$group_var]])) {
+    stop("spatial() node column '", spec$group_var,
+         "' was not found in the data.", call. = FALSE)
+  }
+  idx <- .resolve_spatial_idx(data[[spec$group_var]], n_units, base_adj,
+                              spec$group_var)
   proper <- isTRUE(spec$proper)
   # rho_car bounds come from the base graph's eigenvalue interval of D^-1 W;
   # block-diagonal replication leaves the spectrum unchanged (L identical

@@ -26,6 +26,7 @@
 
 #include "hmc_mass_st_gmrf.h"
 #include "hmc_sampler.h"
+#include "tulpa_priors_temporal.h"  // compute_temporal_prior (NC temporal GP storage)
 #include "simp/adapt.h"  // step-adapted multistage constructors, resolved at
                          // warmup end (Eigen-heavy; kept out of the widely
                          // included hmc_sampler_decls.h, pulled into this TU).

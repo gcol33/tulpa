@@ -163,24 +163,30 @@ test_that("temporal() reads a nested-Laplace fit's field as a grid mixture (gcol
   fit <- tulpa(y ~ x, data = d, family = "poisson", temporal = temporal_rw1("tidx"))
   expect_identical(fit$backend, "nested_laplace")
 
-  # The exact posterior this fit implies: the fixed-effect-tail of each outer
-  # grid cell's mode, weighted by the grid weights -- what
-  # `.nl_field_mixture_draws()` resamples from.
+  # The exact posterior this fit implies: the Gaussian mixture of each outer
+  # grid cell's field (mode, and the marginal variance the grid retains),
+  # weighted by the grid weights -- what `.nl_field_mixture_draws()` samples
+  # from (gcol33/tulpa#904).
   p <- fit$n_fixed
   field <- fit$modes[, (p + 1L):ncol(fit$modes), drop = FALSE]
   w <- fit$weights / sum(fit$weights)
   exact_mean <- as.numeric(crossprod(w, field))
+  exact_sd <- sqrt(as.numeric(crossprod(w, fit$grid_field_var + field^2)) -
+                     exact_mean^2)
 
   set.seed(42)
   post <- temporal(fit)
   expect_s3_class(post, "tulpa_temporal_posterior")
   expect_true(is.matrix(post$draws))
   expect_identical(ncol(post$draws), fit$temporal$n_times)
-  expect_equal(colMeans(post$draws), exact_mean, tolerance = 0.02, ignore_attr = TRUE)
+  mc_se <- exact_sd / sqrt(nrow(post$draws))
+  expect_true(all(abs(colMeans(post$draws) - exact_mean) < 5 * mc_se))
 
   s <- summary(post)
   expect_s3_class(s, "tulpa_temporal_summary")
   expect_identical(nrow(s), fit$temporal$n_times)
+  expect_equal(s$mean, exact_mean, tolerance = 1e-10)
+  expect_equal(s$sd, exact_sd, tolerance = 1e-10)
 
   # temporal_corr() already worked on this backend and stays unaffected.
   expect_s3_class(temporal_corr(fit), "data.frame")

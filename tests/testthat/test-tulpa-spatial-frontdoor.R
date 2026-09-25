@@ -258,8 +258,8 @@ test_that("the nested spatial route is numerically identical to a direct call", 
   # Build the same areal prior the front door builds, then call the fitter
   # directly: the routing layer adds no math.
   spec <- list(type = "icar", adjacency = s$W,
-               spatial_idx = tulpa:::.resolve_unit_index(
-                 s$data$region, "region", nrow(s$W)))
+               spatial_idx = tulpa:::.resolve_spatial_idx(
+                 s$data$region, nrow(s$W), s$W, "region"))
   prior <- tulpa:::.spatial_spec_to_nl_prior(spec)
   direct <- tulpa_nested_laplace(
     y = s$data$y, n_trials = s$data$ntrials,
