@@ -26,6 +26,11 @@ items:
 * `family = Gamma()` fits the inverse link it names, and `VarCorr()` /
   `ranef()` report the quantities a fit actually used or sampled.
 
+* `control$max_grid_cells` counted the latent cells before a dispersion grid
+  was crossed on top, so it admitted several times the inner solves it named;
+  it now counts the crossed grid. A declined `"grid_adaptive"` lattice records
+  why on the fit instead of reporting a plain grid (gcol33/tulpa#915).
+
 Messages: a one-level categorical predictor is named in the error rather than
 reaching `model.matrix()`'s bare contrasts error, and a refused outer grid
 names the axes that produced its cell count (gcol33/tulpa#913).
@@ -36,6 +41,7 @@ names the axes that produced its cell count (gcol33/tulpa#913).
 
 The expected NOTE on the incoming check is "Days since last update", explained
 above.
+
 ## Test environments
 
 * local: Windows 11, R 4.6.1, `R CMD check --as-cran` including the PDF manual
