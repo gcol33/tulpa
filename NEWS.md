@@ -14,6 +14,17 @@
   tensor grid`; and an error in the flood is raised as a warning carrying its
   message.
 
+## The grid cap counts the dispersion cells crossed on top
+
+* `control$max_grid_cells` on a joint multi-block fit counted the latent cells
+  before an active `phi_grid` was crossed on top, so a 2500-cell ceiling
+  admitted 2500 latent cells times 4 dispersion values, 10000 inner solves. The
+  cap now counts the crossed grid, the number of inner solves the fit pays, and
+  the refusal names the dispersion axes beside the block axes (`... x phi_pos
+  4`). This covers the dense tensor that a declined `"grid_adaptive"` falls
+  back to. A fit that set the cap for the latent grid alone raises it by the
+  dispersion node count.
+
 # tulpa 0.6.1
 
 ## A one-level categorical predictor is named in the error

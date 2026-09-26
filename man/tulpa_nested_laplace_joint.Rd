@@ -780,7 +780,10 @@ with the knob off. What the pilot detected on is recorded in
 \item \code{max_grid_cells} (\code{2048L}) -- cell-count ceiling on a multi-block tensor
 outer grid, refused with an error above it. Each cell is one inner
 Newton solve, so the default catches per-block grids that multiplied out
-to a run nobody asked for; a deliberate converged tensor reference grid
+to a run nobody asked for. The count includes an active \code{phi_grid}: 2500
+latent cells crossed with 4 dispersion values are 10000 cells. It bounds
+the dense tensor, including the one a declined \code{"grid_adaptive"} falls
+back to; a deliberate converged tensor reference grid
 (4 axes at 7 levels is 2401 cells) raises it here, which \code{integration = "ccd"} cannot serve since a CCD is a different integration design.
 \item \code{checkpoint} (\code{NULL}) -- grid-cell checkpoint/resume. Set
 \code{list(path = "fit.ckpt", resume = TRUE)} to make a killed or interrupted

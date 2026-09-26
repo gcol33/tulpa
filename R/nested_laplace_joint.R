@@ -773,7 +773,10 @@
 #'   * `max_grid_cells` (`2048L`) -- cell-count ceiling on a multi-block tensor
 #'     outer grid, refused with an error above it. Each cell is one inner
 #'     Newton solve, so the default catches per-block grids that multiplied out
-#'     to a run nobody asked for; a deliberate converged tensor reference grid
+#'     to a run nobody asked for. The count includes an active `phi_grid`: 2500
+#'     latent cells crossed with 4 dispersion values are 10000 cells. It bounds
+#'     the dense tensor, including the one a declined `"grid_adaptive"` falls
+#'     back to; a deliberate converged tensor reference grid
 #'     (4 axes at 7 levels is 2401 cells) raises it here, which `integration =
 #'     "ccd"` cannot serve since a CCD is a different integration design.
 #'   * `checkpoint` (`NULL`) -- grid-cell checkpoint/resume. Set

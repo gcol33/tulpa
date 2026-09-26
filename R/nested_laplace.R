@@ -2150,12 +2150,19 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # deliberate one. `block_grids` (the per-block axis grids the tensor crosses)
 # lets the message say which axes produced the count: a fit that set no grid
 # gets its size from the default axes, and "reduce the per-block grids" alone
-# does not tell it which ones (gcol33/tulpa#913).
-.nl_check_grid_cap <- function(n_cells, max_cells, remedy, block_grids = NULL) {
+# does not tell it which ones (gcol33/tulpa#913). `n_cells` is the number of
+# inner solves the grid costs, so a joint fit passes the latent cell count times
+# the dispersion cells crossed on top of it, and `phi_axes` (the active named
+# per-arm dispersion axes) puts those on the layout as `phi_<arm> <levels>`.
+.nl_check_grid_cap <- function(n_cells, max_cells, remedy, block_grids = NULL,
+                               phi_axes = NULL) {
   if (n_cells <= max_cells) return(invisible(n_cells))
   fmt <- function(x) format(x, scientific = FALSE, trim = TRUE)
-  layout <- if (length(block_grids))
-    paste0(" It crosses ", .nl_grid_layout(block_grids), ".") else ""
+  parts <- c(if (length(block_grids)) .nl_grid_layout(block_grids),
+             if (length(phi_axes))
+               paste0("phi_", names(phi_axes), " ", lengths(phi_axes)))
+  layout <- if (length(parts))
+    paste0(" It crosses ", paste(parts, collapse = " x "), ".") else ""
   stop(sprintf(
     paste0("Multi-block outer grid has %s cells (hard cap %s).%s %s ",
            "A deliberate reference grid raises the cap with ",

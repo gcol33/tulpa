@@ -231,6 +231,30 @@ test_that("the layout names each block's rows and per-axis levels", {
                fixed = TRUE)
 })
 
+test_that("the joint ceiling counts the dispersion cells crossed on top", {
+  msg <- tryCatch(
+    .nl_check_grid_cap(24, 4, "Reduce it.",
+                       block_grids = list(matrix(1:6, ncol = 1,
+                                                 dimnames = list(NULL, "tau"))),
+                       phi_axes = list(b = c(0.1, 0.4, 1, 3))),
+    error = conditionMessage)
+  expect_match(msg, "It crosses b1 (6 rows: tau 6) x phi_b 4.", fixed = TRUE)
+
+  # 2 x 2 latent cells fit under a ceiling of 4, and the same grid crossed with
+  # three dispersion values is 12 inner solves (gcol33/tulpa#915).
+  f <- .cap_joint_fixture(c(0.5, 2.0), c(0.5, 2.0))
+  msg <- tryCatch(
+    tulpa_nested_laplace_joint(responses = f$responses, prior = f$prior,
+                               phi_grid = list(b = c(0.1, 0.25, 0.6)),
+                               control = list(diagnose_k = FALSE,
+                                              integration = "grid",
+                                              max_grid_cells = 4)),
+    error = conditionMessage)
+  expect_match(msg, "12 cells (hard cap 4)", fixed = TRUE)
+  expect_match(msg, " x phi_b 3.", fixed = TRUE)
+  expect_match(msg, "Reduce per-block or phi grid sizes", fixed = TRUE)
+})
+
 test_that("both dispatch sites name the crossed axes in the refusal", {
   d <- .cap_iid_data()
   prior <- .cap_iid_prior(d, c(0.2, 0.5, 1.0), c(0.2, 0.5, 1.0))   # 9 cells

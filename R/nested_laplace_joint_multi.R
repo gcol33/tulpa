@@ -1725,7 +1725,11 @@
         # Cartesian product of per-block axis grids.
         row_counts <- vapply(block_grids, nrow, integer(1))
         idx <- do.call(expand.grid, lapply(row_counts, seq_len))
-        n_cells <- nrow(idx)
+        # Every latent cell is solved once per dispersion cell crossed on top
+        # below, so the count the cap and the timing warning read is the
+        # crossed one: that is the number of inner solves the fit will pay.
+        phi_active <- if (has_phi) phi_axes[lengths(phi_axes) > 0L]
+        n_cells <- nrow(idx) * prod(lengths(phi_active))
         # The CCD and the adaptive lattice are remedies for the cell count only
         # while they are still available. Once this fit has already declined
         # one, advising the caller to set the option they set is noise, so the
@@ -1741,7 +1745,8 @@
                     else "CCD integration declined (%s)",
                     integration_declined)
         grid_warn_remedy <- paste0(
-            "Reduce per-block grid sizes",
+            if (length(phi_active)) "Reduce per-block or phi grid sizes"
+            else "Reduce per-block grid sizes",
             if (length(alt))
                 paste0(" or set control$integration = ",
                        paste(alt, collapse = " or ")),
@@ -1749,7 +1754,7 @@
                 paste0("; ", paste(declined, collapse = "; ")),
             ".")
         .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), grid_warn_remedy,
-                           block_grids = block_grids)
+                           block_grids = block_grids, phi_axes = phi_active)
 
         joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
             block_grids[[b]][idx[[b]], , drop = FALSE]
