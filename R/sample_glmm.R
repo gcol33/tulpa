@@ -117,15 +117,27 @@
 #'   inert on other backends. Note that `ess_threshold` above is SMC's
 #'   resampling threshold and not one of them -- the two unrelated senses of
 #'   "ESS" are why these carry the prefix.
-#'   `ess_adapt_during_warmup` (default `FALSE`) adapts the random-walk
-#'   proposal SDs on the non-Gaussian parameters during warmup and
-#'   `ess_adapt_interval` (default 50) is how many sweeps sit between those
-#'   updates, so it **acts only while adapting**.
-#'   `ess_joint_sigma_re` toggles the joint `(log_sigma_re, re)` rescaling move,
-#'   which defaults to on whenever a random-effect term is present because the
-#'   two are strongly anti-correlated under the centered parameterization and
-#'   mix poorly when moved separately; forcing it off is how one demonstrates
-#'   that. `ess_joint_proposal_sd` (default 0.1) is that move's step.
+#'   `ess_adapt_during_warmup` (default `TRUE`) adapts during warmup: the
+#'   random-walk proposal SDs on the non-Gaussian parameters, the widths of the
+#'   one-dimensional slice moves, and each Gaussian block's ellipse, which is
+#'   refitted to the block's own warmup draws (mean and SD per coordinate) in
+#'   place of its prior. Every adaptation stops at the end of warmup.
+#'   `ess_adapt_interval` (default 50) is how many sweeps sit between the
+#'   proposal-SD and width updates, so it **acts only while adapting**.
+#'   `ess_joint_sigma_re` toggles the slice updates of each random-effect
+#'   log-SD, one holding the latent block fixed and one holding the effects
+#'   themselves fixed (the other parameterization's update), which default to
+#'   on whenever a random-effect term is present: a scale and its effects are
+#'   strongly dependent under either parameterization alone, and forcing them
+#'   off is how one demonstrates that. `ess_joint_proposal_sd` (default 0.1) is
+#'   those moves' initial slice width.
+#'
+#'   Two further moves run whenever the model has a random-effect term and a
+#'   single linear predictor, with no knob: an exact draw of the level a fixed
+#'   effect shares with a random-effect coefficient whose design column repeats
+#'   it (the intercept against `(1 | g)`), and a slice update moving every other
+#'   fixed effect together with the between-group part of it the group effects
+#'   carry (gcol33/tulpa#877).
 #'
 #'   The elliptical-slice kernel draws from R's own RNG, so `control$seed` does
 #'   not reach it: `set.seed()` before the call is what reproduces an ESS run.
@@ -275,7 +287,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     mass_matrix = match.arg(control$mass_matrix %||% "diag",
                             c("diag", "dense", "block_diag", "auto")),
     # ESS kernel knobs; inert on every other backend.
-    ess_adapt_during_warmup = isTRUE(control$ess_adapt_during_warmup %||% FALSE),
+    ess_adapt_during_warmup = isTRUE(control$ess_adapt_during_warmup %||% TRUE),
     ess_adapt_interval = as.integer(control$ess_adapt_interval %||% 50L),
     # -1 keeps the layout-driven rule (on whenever an RE term is present).
     ess_joint_sigma_re = if (is.null(control$ess_joint_sigma_re)) -1L

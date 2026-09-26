@@ -13,9 +13,8 @@ test_that("ESS moves every scale and correlation coordinate of a slope term", {
                   x, g = factor(gi))
 
   for (form in c("y ~ x + (1 + x | g)", "y ~ x + (1 + x || g)")) {
-    # The ESS block updates still cross the intercept / group-effect ridge
-    # slowly at the default length; that is flagged by the fit-time
-    # convergence check, not asserted away here.
+    # Mixing is test-ess-mixing.R's; this asserts only that every scale and
+    # correlation coordinate moves.
     f <- suppressWarnings(tulpa(stats::as.formula(form), d, family = "gaussian",
                                 phi = .09, mode = "ess",
                                 control = list(seed = 1L)))

@@ -15,6 +15,22 @@
 * `mode = "ess"` updates every log-SD and correlation parameter of a slope
   term; the slope SD of `(1 + x | g)` was pinned at 1. Any parameter no block
   updates is now routed to a Metropolis step (gcol33/tulpa#877).
+* `mode = "ess"` mixes on hierarchical models. Each sweep now draws the level
+  the intercept shares with the group intercepts exactly (as `re_cov_gibbs`
+  does), moves each covariate together with the between-group part the group
+  effects absorb, and slice-samples each random-effect SD holding the latent
+  values fixed, holding the effects fixed, and along a partially non-centered
+  path between the two. Warmup now adapts by default
+  (`control$ess_adapt_during_warmup = TRUE`), including an ellipse fitted to
+  each Gaussian block's warmup draws. On `y ~ x + (1 | g)`, 30 groups x 8,
+  four default-length chains: gaussian intercept split-R-hat 1.15 -> 1.00 and
+  bulk ESS 20 -> 3310 (random-effect log-SD 69 -> 3722); poisson intercept
+  R-hat 1.75 -> 1.00, bulk ESS 6 -> 2633 (log-SD 14 -> 1188). Across 32
+  chains on 8 datasets every chain now passes the fit-time check; the lowest
+  per-chain bulk ESS was 152 of 1000. Estimates match `mode = "hmc"`. The RE
+  block's slice ellipse is now its N(0, 1) non-centered prior rather than
+  N(0, sigma_re^2), and `ess_joint_proposal_sd` is the initial slice width of
+  the scale moves (gcol33/tulpa#877).
 * `re_cov_gibbs` draws the shift shared by a fixed effect and its matching
   random-effect column exactly each sweep; bulk ESS went from 1-11 to over
   1300 of 2000 (gcol33/tulpa#875). `mala()` gains `mass_matrix`, and
@@ -23,8 +39,8 @@
   weighted RE models to `mala` (gcol33/tulpa#878).
 * `tulpa()` now warns when a sampler chain fails a convergence floor
   (split-R-hat above 1.05 or bulk ESS below 100), records `$convergence`, and
-  `print()` reports it. `ess` still mixes slowly on hierarchical models, and
-  this warning is what flags it (gcol33/tulpa#875, gcol33/tulpa#878).
+  `print()` reports it. It flagged `ess` on every hierarchical fit until the
+  mixing fix above (gcol33/tulpa#875, gcol33/tulpa#878).
 * `tulpa_simulate(theta = fit)` simulates at the fit's own random effects
   (the draws `ranef()` / `posterior_predict()` use, matched to `data` by
   group level) instead of setting every random effect to zero. A level the
