@@ -38,6 +38,10 @@ test_that(".joint_ccd_engage applies the auto (>=4) / ccd (>=3) / grid threshold
     # explicit "ccd" lowers the threshold to >= 3 axes.
     expect_false(eng("ccd", 2L))
     expect_true(eng("ccd", 3L));   expect_true(eng("ccd", 4L))
+    # "grid_adaptive" names the tensor lattice at every axis count, so the CCD
+    # does not take it over at >= 4 axes (gcol33/tulpa#914).
+    expect_false(eng("grid_adaptive", 3L)); expect_false(eng("grid_adaptive", 4L))
+    expect_false(eng("grid_adaptive", 6L))
 })
 
 test_that(".joint_announce_integration names the engaged outer integrator (gcol33/tulpa#63)", {

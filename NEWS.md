@@ -22,6 +22,15 @@
   the posterior mass sits) ahead of `"ccd"`, naming either one as declined once
   the fit has declined it. The cap and the grid are unchanged.
 
+## `integration = "grid_adaptive"` stays on the lattice at four or more axes
+
+* On a multi-block joint prior with 4 or more latent axes, an explicit
+  `control$integration = "grid_adaptive"` ran the CCD, the design `"auto"`
+  picks at that axis count, and the fit reported `integration = "ccd"` with no
+  decline recorded (gcol33/tulpa#914). The CCD now engages only under `"auto"`
+  and `"ccd"`; `"grid_adaptive"` integrates on the mass-carrying subset of the
+  tensor lattice at any axis count, and declines to the dense tensor as before.
+
 ## Wrong answers returned with no warning
 
 * `weights =` no longer switches `mode = "auto"` / `"structured"` from

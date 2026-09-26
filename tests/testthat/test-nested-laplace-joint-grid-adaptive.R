@@ -203,6 +203,33 @@ test_that("grid_adaptive works at 2 latent axes (ICAR sigma + copy alpha)", {
     }
 })
 
+test_that("grid_adaptive stays on the lattice at 4 latent axes", {
+    skip_on_cran()
+    # Two ICAR blocks, each copied onto the pos arm: sigma + alpha per block, 4
+    # latent axes -- the axis count at which "auto" hands the grid to the CCD.
+    # An explicit "grid_adaptive" names the tensor lattice at any axis count, so
+    # the fit integrates on the lattice (or declines to the dense tensor on a
+    # diffuse posterior) and never on a CCD (gcol33/tulpa#914).
+    sim <- .sim_joint_ga(13L, N = 1400L, n_s = 40L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    icar <- function() list(type = "icar", spatial_idx = sp,
+                            n_spatial_units = sim$adj$n_spatial_units,
+                            adj_row_ptr = sim$adj$adj_row_ptr,
+                            adj_col_idx = sim$adj$adj_col_idx,
+                            n_neighbors = sim$adj$n_neighbors, scale_factor = 1.0,
+                            sigma_grid = c(0.3, 0.7, 1.4, 2.6))
+    ag  <- c(0.3, 0.9, 1.6)
+    fit <- suppressWarnings(tulpa_nested_laplace_joint(
+        sim$responses, list(icar(), icar()),
+        copy = list(list(arm = "pos", block = 1L, alpha_grid = ag),
+                    list(arm = "pos", block = 2L, alpha_grid = ag)),
+        control = list(integration = "grid_adaptive", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE)))
+    expect_true(fit$integration %in% c("grid_adaptive", "grid"))
+    expect_equal(ncol(fit$theta_grid), 4L)
+    expect_true(abs(sum(fit$weights) - 1) < 1e-8)
+})
+
 test_that("grid_adaptive declines to the dense tensor on a small outer grid", {
     skip_on_cran()
     sim <- .sim_joint_ga(5L, N = 900L, n_s = 40L)

@@ -23,12 +23,15 @@
 # NULL to DECLINE CCD when any axis has unguessable support (CAR_proper's
 # rho_car, a non-BYM2 rho) -- the caller then falls back to the tensor grid.
 # Does the CCD engage at this transformable-axis count for this integration
-# mode? "grid" never engages; "ccd" lowers the threshold to
-# >= 3 axes (explicit opt-in); "auto" (the default) engages only at >= 4 axes,
-# where the tensor product's k^d blow-up bites hardest, and keeps the cheaper,
-# more ridge-robust tensor grid at <= 3 axes.
+# mode? "ccd" lowers the threshold to >= 3 axes (explicit opt-in); "auto" (the
+# default) engages only at >= 4 axes, where the tensor product's k^d blow-up
+# bites hardest, and keeps the cheaper, more ridge-robust tensor grid at <= 3
+# axes. "grid" and "grid_adaptive" never engage: both name the tensor lattice,
+# the full one or its mass-carrying subset, and a CCD is a different design
+# (gcol33/tulpa#914).
 .joint_ccd_engage <- function(integration, d_axes) {
-    if (identical(integration, "grid")) return(FALSE)
+    integration <- integration %||% "auto"
+    if (!integration %in% c("auto", "ccd")) return(FALSE)
     min_axes <- if (identical(integration, "ccd")) 3L else 4L
     d_axes >= min_axes
 }
