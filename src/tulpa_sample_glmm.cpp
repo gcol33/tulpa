@@ -297,7 +297,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
     Rcpp::Nullable<Rcpp::NumericMatrix> init_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> inv_metric_diag_nullable = R_NilValue,
     std::string mass_matrix = "diag",
-    bool ess_adapt_during_warmup = false,
+    bool ess_adapt_during_warmup = true,
     int ess_adapt_interval = 50,
     int ess_joint_sigma_re = -1,
     double ess_joint_proposal_sd = 0.1,
