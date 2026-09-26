@@ -2,66 +2,40 @@
 
 ## Update
 
-This is an update of tulpa 0.5.0, published on 2026-09-21. It comes three days
-later because 0.5.0 returns wrong numbers, without an error, in the reported
-hyperparameter posterior. Every item below is a correctness fix; there is no
-new user-facing surface.
+This is an update of tulpa 0.6.0, published on 2026-09-24. It follows closely
+because 0.6.0 returns wrong numbers without an error on several paths. The main
+items:
 
-* A refined outer axis read the wrong box for a cell in a row it had not
-  refined. A slice point re-tiles only its own row, but the box-uniform
-  interval and `tulpa_hyper_draws()` laid one partition over every distinct
-  value on the axis, so an untouched cell was drawn on the narrow box beside
-  the slice points while holding its whole base box's mass. On a reference
-  fit the `phi_pos` draws' interquartile range held 0.453 of the fit's own
-  measure instead of 0.5 (gcol33/tulpa#858).
+* `mode = "ess"` did not mix on hierarchical models: each sweep left the
+  intercept, the covariates and the random-effect scales where they started
+  (gcol33/tulpa#877). It now draws them every sweep.
 
-* The copy coefficient's default outer axis carried five nodes, a node ratio
-  of 2.34, so a posterior over the amplitude sat on two adjacent nodes. It is
-  now declared at nine, the resolution the other outer axes of such a fit run
-  at: simulation-based calibration on the reference fixture goes from 9 of 11
-  and 7 of 11 parameters inside the family-wise band to 11 of 11 at both
-  configurations (gcol33/tulpa#858).
+* `mode = "smc"` bridged to the wrong target, and `mode = "ess"` did not update
+  the log-SD and correlation parameters of a random-slope block. Both now
+  target the stated posterior.
 
-* Hyperparameter draws lost the posterior's correlation between outer axes.
-  Independent within-cell jitter added the full box variance of both axes in
-  the direction a strongly correlated posterior pins down, so a product of
-  anticorrelated scales came out too wide. On an analytic two-scale posterior
-  with log correlation -0.9 (exact log-product sd 0.224) the draws' sd goes
-  from 0.281 to 0.232 (gcol33/tulpa#859).
+* Fixed-effect standard errors under an intrinsic field (ICAR, BYM2, RW1 / RW2)
+  and the per-component scaling of `spatial_bym2()` on a disconnected graph are
+  corrected; `weights =` no longer changes which backend `mode = "auto"`
+  selects.
 
-* That coupling fell back to independent draws on a coarse grid under a strong
-  correlation, because the off-ridge cells' masses fell below the rank test of
-  the quadratic that sets its target. At 3 x 3 nodes and log correlation
-  -0.97 the log product's sd goes from 0.580 to 0.182 against an exact 0.122
-  (gcol33/tulpa#860).
+* An explicit `control$integration = "grid_adaptive"` ran a different
+  integration design at four or more hyperparameter axes and reported it
+  without saying so (gcol33/tulpa#914).
 
-* A pair's within-cell coupling could take a conditional dependence of the
-  opposite sign from the posterior's: a curved posterior at log correlation
-  -0.76 was coupled at +0.55 inside the cell, and the log product read 19.6%
-  wide at 5 x 5 nodes. Such a pair is now conditionally independent inside the
-  cell and reads 1.8% wide (gcol33/tulpa#861).
+* `family = Gamma()` fits the inverse link it names, and `VarCorr()` /
+  `ranef()` report the quantities a fit actually used or sampled.
 
-* The subspace-debias closure declined on every grid or joint fit. It grows the
-  corrected set over strongly coupled coordinates, because a coordinate coupled
-  to a member of the set and left out of it is carried linearly -- the error
-  the correction exists to remove -- and it needs the joint precision, which
-  those drivers computed per cell and discarded. The modal cell's copy is now
-  assembled from the scratch the inner solves already return
-  (gcol33/tulpa#862).
-
-Reporting added in the same cycle: a nested fit carries the share of each
-fixed-effect marginal that the integrated hyperparameter contributed, the
-collapsed-grid regime carries its reading beside its code, and a flagged inner
-layer names the correction it did not run. These are new columns on
-`diagnostics()`, not changes to any estimate.
+Messages: a one-level categorical predictor is named in the error rather than
+reaching `model.matrix()`'s bare contrasts error, and a refused outer grid
+names the axes that produced its cell count (gcol33/tulpa#913).
 
 ## R CMD check results
 
 0 errors | 0 warnings | 0 notes locally.
 
-The expected NOTE on the incoming check is "Days since last update: 3",
-explained above.
-
+The expected NOTE on the incoming check is "Days since last update", explained
+above.
 ## Test environments
 
 * local: Windows 11, R 4.6.1, `R CMD check --as-cran` including the PDF manual
