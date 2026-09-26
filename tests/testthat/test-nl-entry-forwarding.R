@@ -299,8 +299,7 @@ for (.case in .nlf_cases()) local({
       family      = list(family = "gaussian"),
       phi         = list(phi = 2),
       max_iter    = list(max_iter = case$args$max_iter - 1L),
-      tol         = list(tol = case$args$tol * 10),
-      grid_axis   = setNames(list(axis + 0.125), case$axis)
+      tol         = list(tol = case$args$tol * 10)
     )
     for (nm in names(perturbed)) {
       expect_error(
@@ -309,6 +308,11 @@ for (.case in .nlf_cases()) local({
         info = paste(case$name, "did not fingerprint", nm)
       )
     }
+
+    # A cell is keyed by its own coordinate, so a moved grid shares the file
+    # its predecessor wrote instead of being refused by it.
+    expect_no_error(do.call(case$fn, modifyList(
+      args, setNames(list(axis + 0.125), case$axis))))
   })
 })
 
