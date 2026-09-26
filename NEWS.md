@@ -1,4 +1,4 @@
-# tulpa 0.6.5
+# tulpa 0.6.1
 
 ## Wrong answers returned with no warning
 
@@ -184,8 +184,6 @@
   defaults `tulpa()` actually applies; return-value docs fixed; runnable
   examples added to 49 exports (gcol33/tulpa#898).
 
-# tulpa 0.6.4
-
 ## `family = Gamma()` fits the inverse link it names
 
 * A `stats::family()` object's link decided the `<base>_<link>` suffix by
@@ -215,8 +213,6 @@
   iteration count (warmup included) on `hmc`, `ess`, `sghmc`, `sgld`,
   `gibbs`, `mala` and `imh_laplace`, and the KEPT count (warmup on top) on
   `re_cov_gibbs` and `mclmc`, where `warmup >= n_iter` stays valid.
-
-# tulpa 0.6.3
 
 ## `mode = "laplace"` reads its `control` knobs
 
@@ -261,8 +257,6 @@
   precision and still holds its random effects and field at the mode; the
   documentation now says that over-disperses the linear predictor.
 
-# tulpa 0.6.2
-
 ## The default fixed-effect prior reaches the Laplace-family backends
 
 * `mode = "laplace"`, `"eb"` and `"re_cov_nested"` (and the Laplace / EB
@@ -283,8 +277,6 @@
   of the same name. The front door now stores the resolved value as
   `fit$sigma_re_conditioned`, default included, and `VarCorr()` reads it
   (gcol33/tulpa#868).
-
-# tulpa 0.6.1
 
 ## ranef() on a sampler fit reports the random effects, not their z
 
