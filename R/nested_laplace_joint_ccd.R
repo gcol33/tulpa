@@ -972,8 +972,10 @@
 # was kept, or (on a ridged posterior) the CCD declined back to the tensor --
 # rather than having to read `fit$...$integration` after the fact. `n_latent` is
 # the latent node / cell count, `n_phi` the crossed phi-tensor cell count,
-# `n_total` their product; `declined` flags a CCD that engaged by axis count but
-# fell back (the specific reason is messaged by .joint_ccd_grid just before).
+# `n_total` their product; `declined` names the integrator that was asked for
+# and fell back to the tensor ("CCD", "adaptive lattice"), NULL when none did
+# (the specific reason is messaged by the declining builder just before and
+# recorded on the fit as `integration_declined`).
 .joint_announce_integration <- function(integration_used, d_axes,
                                         n_latent, n_phi, n_total,
                                         declined) {
@@ -983,10 +985,10 @@
         message(sprintf(
             "tulpa joint: outer integration: CCD (%d latent axes, %d nodes%s)",
             d_axes, n_latent, phi_part))
-    } else if (isTRUE(declined)) {
+    } else if (!is.null(declined)) {
         message(sprintf(
-            "tulpa joint: outer integration: CCD declined -> tensor grid (%d cells)",
-            n_total))
+            "tulpa joint: outer integration: %s declined -> tensor grid (%d cells)",
+            declined, n_total))
     } else {
         message(sprintf(
             "tulpa joint: outer integration: tensor grid (%d cells)", n_total))

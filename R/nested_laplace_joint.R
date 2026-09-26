@@ -1015,7 +1015,7 @@
 #'      local CCD was off or declined (single-block, `< 4` axes, an active
 #'      `phi_grid`, or no peaked interior cell).
 #'   * `integration_requested`, `integration_declined` -- what `integration`
-#'      asked for, and why the CCD did not run. `$integration` names the
+#'      asked for, and why the requested CCD or adaptive lattice did not run. `$integration` names the
 #'      integrator that RAN, and `.nl_node_support()` keys the interval
 #'      construction off it, so a caller who asked for a moment rule and
 #'      received a density grid reads the reason here rather than inferring it.
@@ -1029,7 +1029,17 @@
 #'      design splits into, see `copy_atom_mass`), `"copy_atom_mass"` (a
 #'      declared atom mass outside `[0, 1)`) or `"placement_budget"` (placing
 #'      the design would cost more inner solves than integrating the tensor grid
-#'      it replaces; see the `ccd_budget` control knob). Multi-block fits only.
+#'      it replaces; see the `ccd_budget` control knob). Under
+#'      `integration = "grid_adaptive"` it is one of
+#'      `"adaptive_small_grid"` (fewer outer cells than
+#'      `adaptive_grid_min_cells`), `"adaptive_degenerate_lattice"`,
+#'      `"adaptive_seed_failed"` (no finite marginal in the coarse seed),
+#'      `"adaptive_diffuse_seed"` / `"adaptive_flood_cap"` /
+#'      `"adaptive_kept_cap"` (the posterior mass spreads over more than
+#'      `adaptive_grid_max_frac` of the dense grid, read at the seed, during the
+#'      flood, or on the closed kept region), or `"adaptive_error"` (the flood
+#'      raised an error, reported as a warning carrying its message); the fit
+#'      then integrates the dense tensor. Multi-block fits only.
 #'   * `ccd_modefind_evals`, `ccd_modefind_budget`, `ccd_modefind_rounds`,
 #'      `ccd_modefind_seconds` -- what PLACING the CCD cost: inner Newton solves
 #'      spent by the mode-find (seed, step calibration and every round of every

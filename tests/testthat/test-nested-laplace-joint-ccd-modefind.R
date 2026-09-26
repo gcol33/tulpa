@@ -49,23 +49,28 @@ test_that(".joint_announce_integration names the engaged outer integrator (gcol3
     # CCD engaged, no phi: latent axes + node count, no cell product.
     expect_message(
         ann("ccd", d_axes = 4L, n_latent = 25L, n_phi = 1L, n_total = 25L,
-            declined = FALSE),
+            declined = NULL),
         "outer integration: CCD \\(4 latent axes, 25 nodes\\)")
     # CCD engaged with a crossed phi tensor: nodes x phi = total cells.
     expect_message(
         ann("ccd", d_axes = 4L, n_latent = 25L, n_phi = 2L, n_total = 50L,
-            declined = FALSE),
+            declined = NULL),
         "CCD \\(4 latent axes, 25 nodes x 2 phi = 50 cells\\)")
     # Plain tensor grid (e.g. <= 3 axes or integration = \"grid\").
     expect_message(
         ann("grid", d_axes = 3L, n_latent = 27L, n_phi = 1L, n_total = 27L,
-            declined = FALSE),
+            declined = NULL),
         "outer integration: tensor grid \\(27 cells\\)")
     # CCD engaged by axis count but declined (ridge / unguessable axis) -> tensor.
     expect_message(
         ann("grid", d_axes = 4L, n_latent = 81L, n_phi = 1L, n_total = 81L,
-            declined = TRUE),
+            declined = "CCD"),
         "CCD declined -> tensor grid \\(81 cells\\)")
+    # An explicit grid_adaptive request whose lattice declined -> tensor.
+    expect_message(
+        ann("grid", d_axes = 3L, n_latent = 150L, n_phi = 1L, n_total = 150L,
+            declined = "adaptive lattice"),
+        "adaptive lattice declined -> tensor grid \\(150 cells\\)")
 })
 
 test_that(".joint_ccd_outer_hess_ok accepts neg-def, rejects ridge / indefinite", {

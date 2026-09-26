@@ -120,9 +120,9 @@
 #                expanded.
 #   cutoff       keep / expand a cell when log_marginal >= max_lm - cutoff.
 #   stride       coarse-seed subsample stride per axis.
-#   max_frac     decline (return NULL) if the evaluated set would exceed this
-#                fraction of the dense grid -- a diffuse posterior the tensor
-#                serves as well, so fall back rather than pay flood overhead.
+#   max_frac     decline if the evaluated set would exceed this fraction of the
+#                dense grid -- a diffuse posterior the tensor serves as well, so
+#                fall back rather than pay flood overhead.
 #   max_layers   hard cap on flood layers (a backstop; the cutoff normally stops
 #                the flood well before this).
 #
@@ -130,16 +130,25 @@
 # modes = [m x n_x] or NULL, n_eval, n_dense) with the cells kept for the
 # quadrature (those within `cutoff` of the peak, plus the one-cell boundary ring
 # the flood evaluated to prove the cutoff -- included at their true low weight,
-# exactly as the dense tensor would carry them). NULL when the builder declines
-# (degenerate lattice, all-failed seed, or the max_frac cap).
+# exactly as the dense tensor would carry them). When the builder declines it
+# returns list(declined = <reason>) instead, the reason one of
+# "adaptive_degenerate_lattice" (an empty axis or a non-finite cell count),
+# "adaptive_small_grid" (fewer than `min_dense` cells), "adaptive_seed_failed"
+# (no finite marginal in the coarse seed), "adaptive_diffuse_seed" (the seed
+# already keeps `max_frac` of its cells), "adaptive_flood_cap" (the flood would
+# evaluate more than `max_frac` of the dense grid) or "adaptive_kept_cap" (the
+# closed kept region holds `max_frac` of it). The caller records the reason on
+# the fit as `integration_declined`.
 .joint_adaptive_flood <- function(axis_values, eval_fn, cutoff = 10,
                                   stride = 2L, max_frac = 0.75,
                                   min_dense = 48, max_layers = 64L) {
     D    <- length(axis_values)
     dims <- vapply(axis_values, length, integer(1))
-    if (D == 0L || any(dims < 1L)) return(NULL)
+    decline <- function(reason) list(declined = reason)
+    if (D == 0L || any(dims < 1L)) return(decline("adaptive_degenerate_lattice"))
     n_dense <- prod(as.numeric(dims))
-    if (!is.finite(n_dense) || n_dense < 1) return(NULL)
+    if (!is.finite(n_dense) || n_dense < 1)
+        return(decline("adaptive_degenerate_lattice"))
     # Small-tensor gate: on a grid this small the coarse seed is already a large
     # fraction of the cells, so locating the mass costs about as much as just
     # evaluating the whole tensor -- there is no tail worth skipping. Decline
@@ -147,7 +156,7 @@
     # overhead. (The dense path is where small outer grids belong; the adaptive
     # lattice earns its keep only when the tensor is large enough that the mass
     # sits in a small fraction of it.)
-    if (n_dense < min_dense) return(NULL)
+    if (n_dense < min_dense) return(decline("adaptive_small_grid"))
     cap <- max(1L, floor(max_frac * n_dense))
 
     key_fn <- function(M) {
@@ -187,7 +196,7 @@
     dimnames(seed_idx) <- NULL
     storage.mode(seed_idx) <- "integer"
     absorb(seed_idx)
-    if (!any(is.finite(acc_lm))) return(NULL)
+    if (!any(is.finite(acc_lm))) return(decline("adaptive_seed_failed"))
 
     # Early diffuse-posterior decline. The seed is a coarse read on how the mass
     # spreads: if a large fraction of seed cells already sit within `cutoff` of
@@ -197,25 +206,22 @@
     # than flooding to the cap first. The threshold is `max_frac`, the same
     # kept-fraction ceiling the post-flood cap uses, so both declines are
     # consistent. (A sharp posterior keeps few seed cells and passes here.)
-    seed_max <- max(acc_lm)
-    if (is.finite(seed_max)) {
-        seed_keep_frac <- mean(acc_lm >= seed_max - cutoff)
-        if (seed_keep_frac >= max_frac) return(NULL)
-    }
+    seed_keep_frac <- mean(acc_lm >= max(acc_lm) - cutoff)
+    if (seed_keep_frac >= max_frac) return(decline("adaptive_diffuse_seed"))
 
     # Flood: from every currently-kept cell (within cutoff of the running max),
     # propose its un-evaluated lattice neighbours and evaluate the whole layer.
     # Stop when a layer proposes nothing new (the kept region is closed under the
-    # cutoff) or a backstop trips.
+    # cutoff) or a backstop trips. `acc_lm` only grows and already holds a
+    # finite seed marginal, so its maximum stays finite and the peak cell is
+    # always in the frontier.
     for (layer in seq_len(max_layers)) {
-        max_lm <- max(acc_lm)
-        if (!is.finite(max_lm)) return(NULL)
-        keep_mask <- acc_lm >= max_lm - cutoff
-        if (!any(keep_mask)) return(NULL)
+        keep_mask <- acc_lm >= max(acc_lm) - cutoff
         frontier <- acc_idx[keep_mask, , drop = FALSE]
         prop <- .joint_adaptive_neighbors(frontier, dims, seen, key_fn)
         if (nrow(prop) == 0L) break
-        if (nrow(acc_idx) + nrow(prop) > cap) return(NULL)
+        if (nrow(acc_idx) + nrow(prop) > cap)
+            return(decline("adaptive_flood_cap"))
         absorb(prop)
     }
 
@@ -223,12 +229,10 @@
     # evaluated a one-cell ring just past the cutoff (to prove the boundary);
     # those below-cutoff cells are dropped from the quadrature (their dense-grid
     # weight is < exp(-cutoff), the truncation the exactness bound accounts for).
-    max_lm <- max(acc_lm)
-    keep <- which(acc_lm >= max_lm - cutoff)
-    if (length(keep) == 0L) return(NULL)
+    keep <- which(acc_lm >= max(acc_lm) - cutoff)
     # A diffuse posterior whose kept region rivals the dense grid is served just
     # as well by the tensor; decline so the caller pays the simpler dense path.
-    if (length(keep) >= cap) return(NULL)
+    if (length(keep) >= cap) return(decline("adaptive_kept_cap"))
 
     list(idx          = acc_idx[keep, , drop = FALSE],
          log_marginal = acc_lm[keep],
@@ -246,13 +250,16 @@
 # and returns list(log_marginal, modes) -- it owns the latent / phi column split
 # and the parallel kernel call. Returns list(grid, log_marginal, modes, info) with
 # `grid` the [m x D] physical node matrix (colnames = col_names) at uniform lattice
-# weight (the caller uses the plain softmax, dnode = NULL), or NULL to fall back to
-# the dense tensor.
+# weight (the caller uses the plain softmax, dnode = NULL), or list(declined =
+# <reason>) to fall back to the dense tensor (reasons as .joint_adaptive_flood()).
+# An error raised while flooding is a failed inner solve rather than a property
+# of the posterior, so it is not folded into a quiet decline: it is raised as a
+# warning carrying its message, and the fit records "adaptive_error".
 .joint_adaptive_grid <- function(axis_values, col_names, eval_theta,
                                  cutoff = 10, stride = 2L, max_frac = 0.75,
                                  min_dense = 48, verbose = FALSE) {
     D <- length(axis_values)
-    if (D == 0L) return(NULL)
+    if (D == 0L) return(list(declined = "adaptive_degenerate_lattice"))
     # Map integer lattice indices -> physical theta, then hand to eval_theta.
     eval_idx <- function(idx_mat) {
         theta <- matrix(0, nrow(idx_mat), D, dimnames = list(NULL, col_names))
@@ -263,8 +270,20 @@
         .joint_adaptive_flood(axis_values, eval_idx, cutoff = cutoff,
                               stride = stride, max_frac = max_frac,
                               min_dense = min_dense),
-        error = function(e) NULL)
-    if (is.null(fl)) return(NULL)
+        error = function(e) {
+            warning(sprintf(paste0(
+                "The adaptive outer lattice failed (%s); integrating the dense ",
+                "tensor instead."), conditionMessage(e)), call. = FALSE)
+            list(declined = "adaptive_error")
+        })
+    if (!is.null(fl$declined)) {
+        if (isTRUE(verbose)) {
+            message(sprintf(
+                "tulpa joint: outer integration: adaptive lattice declined (%s)",
+                fl$declined))
+        }
+        return(fl)
+    }
 
     grid <- matrix(0, nrow(fl$idx), D, dimnames = list(NULL, col_names))
     for (j in seq_len(D)) grid[, j] <- axis_values[[j]][fl$idx[, j]]

@@ -1,3 +1,19 @@
+# tulpa 0.6.2
+
+## A declined adaptive lattice says why
+
+* `control$integration = "grid_adaptive"` falls back to the dense tensor when
+  the grid is small or the posterior mass spreads over most of it, and that
+  fallback left no trace: the fit reported `integration = "grid"` as if the
+  tensor had been asked for, and an error raised inside the flood was folded
+  into the same quiet fallback (gcol33/tulpa#915). The reason is now recorded as
+  `integration_declined` (`"adaptive_small_grid"`, `"adaptive_diffuse_seed"`,
+  `"adaptive_flood_cap"`, `"adaptive_kept_cap"`, `"adaptive_seed_failed"`,
+  `"adaptive_degenerate_lattice"` or `"adaptive_error"`), the field a declined
+  CCD already fills; `verbose = TRUE` announces `adaptive lattice declined ->
+  tensor grid`; and an error in the flood is raised as a warning carrying its
+  message.
+
 # tulpa 0.6.1
 
 ## A one-level categorical predictor is named in the error

@@ -1022,7 +1022,7 @@ embedded-rule local error indicator of adaptive cubature). NULL when
 local CCD was off or declined (single-block, \verb{< 4} axes, an active
 \code{phi_grid}, or no peaked interior cell).
 \item \code{integration_requested}, \code{integration_declined} -- what \code{integration}
-asked for, and why the CCD did not run. \verb{$integration} names the
+asked for, and why the requested CCD or adaptive lattice did not run. \verb{$integration} names the
 integrator that RAN, and \code{.nl_node_support()} keys the interval
 construction off it, so a caller who asked for a moment rule and
 received a density grid reads the reason here rather than inferring it.
@@ -1036,7 +1036,17 @@ axis), \code{"modefind_ridge"} / \code{"modefind_boundary"} /
 design splits into, see \code{copy_atom_mass}), \code{"copy_atom_mass"} (a
 declared atom mass outside \verb{[0, 1)}) or \code{"placement_budget"} (placing
 the design would cost more inner solves than integrating the tensor grid
-it replaces; see the \code{ccd_budget} control knob). Multi-block fits only.
+it replaces; see the \code{ccd_budget} control knob). Under
+\code{integration = "grid_adaptive"} it is one of
+\code{"adaptive_small_grid"} (fewer outer cells than
+\code{adaptive_grid_min_cells}), \code{"adaptive_degenerate_lattice"},
+\code{"adaptive_seed_failed"} (no finite marginal in the coarse seed),
+\code{"adaptive_diffuse_seed"} / \code{"adaptive_flood_cap"} /
+\code{"adaptive_kept_cap"} (the posterior mass spreads over more than
+\code{adaptive_grid_max_frac} of the dense grid, read at the seed, during the
+flood, or on the closed kept region), or \code{"adaptive_error"} (the flood
+raised an error, reported as a warning carrying its message); the fit
+then integrates the dense tensor. Multi-block fits only.
 \item \code{ccd_modefind_evals}, \code{ccd_modefind_budget}, \code{ccd_modefind_rounds},
 \code{ccd_modefind_seconds} -- what PLACING the CCD cost: inner Newton solves
 spent by the mode-find (seed, step calibration and every round of every

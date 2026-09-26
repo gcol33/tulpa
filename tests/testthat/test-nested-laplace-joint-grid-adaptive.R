@@ -82,6 +82,7 @@ test_that("grid_adaptive engages, keeps fewer cells, and normalises", {
 
     fit <- .fit_ga(sim, "grid_adaptive", sg, rg, ag)
     expect_identical(fit$integration, "grid_adaptive")
+    expect_true(is.na(fit$integration_declined))
     expect_true(abs(sum(fit$weights) - 1) < 1e-8)
     expect_true(all(is.finite(fit$theta_mean)))
     # A peaked posterior: the flood must skip a real fraction of the dense grid.
@@ -226,6 +227,9 @@ test_that("grid_adaptive stays on the lattice at 4 latent axes", {
         control = list(integration = "grid_adaptive", diagnose_k = FALSE,
                        var_of_means_consistency = FALSE)))
     expect_true(fit$integration %in% c("grid_adaptive", "grid"))
+    # A tensor result is never an unexplained one (gcol33/tulpa#915).
+    expect_identical(is.na(fit$integration_declined),
+                     identical(fit$integration, "grid_adaptive"))
     expect_equal(ncol(fit$theta_grid), 4L)
     expect_true(abs(sum(fit$weights) - 1) < 1e-8)
 })
@@ -238,10 +242,43 @@ test_that("grid_adaptive declines to the dense tensor on a small outer grid", {
     # small-grid case never pays the coarse-seed overhead.
     fit <- .fit_ga(sim, "grid_adaptive", c(0.5, 1.5), c(0.4, 0.8), c(0.6, 1.2))
     expect_identical(fit$integration, "grid")     # declined to the tensor
+    expect_identical(fit$integration_requested, "grid_adaptive")
+    expect_identical(fit$integration_declined, "adaptive_small_grid")
     expect_null(fit$adaptive_grid_info)
     expect_equal(length(fit$log_marginal), 2L * 2L * 2L)
     # And the same fit forced dense is identical (decline is a pure no-op).
     fit_grid <- .fit_ga(sim, "grid", c(0.5, 1.5), c(0.4, 0.8), c(0.6, 1.2))
     expect_equal(sort(fit$log_marginal), sort(fit_grid$log_marginal),
                  tolerance = 1e-10)
+})
+
+test_that("the adaptive builder names why it declined (gcol33/tulpa#915)", {
+    grid_fn <- tulpa:::.joint_adaptive_grid
+    ax <- list(seq(-3, 3, length.out = 10), seq(-3, 3, length.out = 10))
+    cn <- c("a", "b")
+    lm_of <- function(scale) function(theta)
+        list(log_marginal = -0.5 * rowSums(theta^2) / scale^2, modes = NULL)
+
+    # A peaked surface engages: no reason, a strict subset of the lattice.
+    ok <- grid_fn(ax, cn, lm_of(0.3), cutoff = 10)
+    expect_null(ok$declined)
+    expect_lt(nrow(ok$grid), 100L)
+
+    expect_identical(grid_fn(ax, cn, lm_of(0.3), min_dense = 101)$declined,
+                     "adaptive_small_grid")
+    expect_identical(grid_fn(ax, cn, lm_of(100))$declined,
+                     "adaptive_diffuse_seed")
+    expect_identical(
+        grid_fn(ax, cn, function(theta)
+            list(log_marginal = rep(NaN, nrow(theta)), modes = NULL))$declined,
+        "adaptive_seed_failed")
+    expect_identical(grid_fn(list(), character(0), lm_of(1))$declined,
+                     "adaptive_degenerate_lattice")
+
+    # An error inside the flood is warned about with its message and recorded,
+    # never folded into a quiet decline.
+    expect_warning(
+        err <- grid_fn(ax, cn, function(theta) stop("inner solve blew up")),
+        "adaptive outer lattice failed (inner solve blew up)", fixed = TRUE)
+    expect_identical(err$declined, "adaptive_error")
 })

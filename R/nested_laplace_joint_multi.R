@@ -1707,8 +1707,10 @@
                                    max_frac  = adaptive_max_frac,
                                    min_dense = adaptive_min_cells,
                                    verbose   = verbose)
-        adaptive_declined <- is.null(ad)
-        if (!is.null(ad)) {
+        adaptive_declined <- !is.null(ad$declined)
+        if (adaptive_declined) {
+            integration_declined <- ad$declined
+        } else {
             joint_grid            <- ad$grid
             integration_used      <- "grid_adaptive"
             use_adaptive          <- TRUE
@@ -1732,12 +1734,12 @@
         alt <- c(
             if (!adaptive_declined)
                 "\"grid_adaptive\" (the same lattice, solved where the posterior mass sits)",
-            if (is.na(integration_declined)) "\"ccd\"")
-        declined <- c(
-            if (adaptive_declined)
-                "the adaptive lattice declined to the dense tensor",
-            if (!is.na(integration_declined))
-                sprintf("CCD integration declined (%s)", integration_declined))
+            if (adaptive_declined || is.na(integration_declined)) "\"ccd\"")
+        declined <- if (!is.na(integration_declined))
+            sprintf(if (adaptive_declined)
+                        "the adaptive lattice declined to the dense tensor (%s)"
+                    else "CCD integration declined (%s)",
+                    integration_declined)
         grid_warn_remedy <- paste0(
             "Reduce per-block grid sizes",
             if (length(alt))
@@ -1787,7 +1789,9 @@
         .joint_announce_integration(
             integration_used, d_axes, n_latent_cells, n_phi_cells,
             nrow(joint_grid),
-            declined = ccd_requested && !identical(integration_used, "ccd"))
+            declined = if (adaptive_declined) "adaptive lattice"
+                       else if (ccd_requested && !identical(integration_used, "ccd"))
+                           "CCD")
     }
 
     # Tile partition for the three-tier warm-start.

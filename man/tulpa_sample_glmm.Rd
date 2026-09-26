@@ -145,15 +145,27 @@ The elliptical-slice kernel takes four more, all prefixed \code{ess_} and all
 inert on other backends. Note that \code{ess_threshold} above is SMC's
 resampling threshold and not one of them -- the two unrelated senses of
 "ESS" are why these carry the prefix.
-\code{ess_adapt_during_warmup} (default \code{FALSE}) adapts the random-walk
-proposal SDs on the non-Gaussian parameters during warmup and
-\code{ess_adapt_interval} (default 50) is how many sweeps sit between those
-updates, so it \strong{acts only while adapting}.
-\code{ess_joint_sigma_re} toggles the joint \verb{(log_sigma_re, re)} rescaling move,
-which defaults to on whenever a random-effect term is present because the
-two are strongly anti-correlated under the centered parameterization and
-mix poorly when moved separately; forcing it off is how one demonstrates
-that. \code{ess_joint_proposal_sd} (default 0.1) is that move's step.
+\code{ess_adapt_during_warmup} (default \code{TRUE}) adapts during warmup: the
+random-walk proposal SDs on the non-Gaussian parameters, the widths of the
+one-dimensional slice moves, and each Gaussian block's ellipse, which is
+refitted to the block's own warmup draws (mean and SD per coordinate) in
+place of its prior. Every adaptation stops at the end of warmup.
+\code{ess_adapt_interval} (default 50) is how many sweeps sit between the
+proposal-SD and width updates, so it \strong{acts only while adapting}.
+\code{ess_joint_sigma_re} toggles the slice updates of each random-effect
+log-SD, one holding the latent block fixed and one holding the effects
+themselves fixed (the other parameterization's update), which default to
+on whenever a random-effect term is present: a scale and its effects are
+strongly dependent under either parameterization alone, and forcing them
+off is how one demonstrates that. \code{ess_joint_proposal_sd} (default 0.1) is
+those moves' initial slice width.
+
+Two further moves run whenever the model has a random-effect term and a
+single linear predictor, with no knob: an exact draw of the level a fixed
+effect shares with a random-effect coefficient whose design column repeats
+it (the intercept against \code{(1 | g)}), and a slice update moving every other
+fixed effect together with the between-group part of it the group effects
+carry (gcol33/tulpa#877).
 
 The elliptical-slice kernel draws from R's own RNG, so \code{control$seed} does
 not reach it: \code{set.seed()} before the call is what reproduces an ESS run.
