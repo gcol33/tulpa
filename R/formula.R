@@ -687,6 +687,33 @@ tulpa_parse_formula <- function(formula) {
   )
 }
 
+# A categorical predictor with a single level has no contrast, and
+# `model.matrix()` reports that without naming the variable. Name it here, with
+# the level it is stuck at, so a model fitted over many subsets says which
+# subset and which column collapsed.
+.check_contrast_levels <- function(mf, where) {
+  for (v in names(mf)) {
+    col <- mf[[v]]
+    n_levels <- if (is.factor(col)) {
+      nlevels(col)
+    } else if (is.character(col) || is.logical(col)) {
+      length(unique(col[!is.na(col)]))
+    } else {
+      next
+    }
+    if (n_levels < 2L) {
+      only <- if (is.factor(col)) levels(col) else unique(col[!is.na(col)])
+      stop(sprintf(paste0(
+        "`%s` in %s is categorical with %d level%s%s, so it has no contrast. ",
+        "Drop it from the formula, or supply data where it varies."),
+        v, where, n_levels, if (n_levels == 1L) "" else "s",
+        if (length(only)) sprintf(" (only \"%s\")", only[[1L]]) else ""),
+        call. = FALSE)
+    }
+  }
+  invisible(NULL)
+}
+
 #' Build the zero-inflation design matrix from `ziformula`.
 #'
 #' A one-sided formula giving the fixed effects of the structural-zero logit.
@@ -712,6 +739,7 @@ tulpa_parse_formula <- function(formula) {
   # ~ 0 / ~ -1 leaves no columns, which is "no zero inflation" written the long
   # way round; treat it as such rather than building a zero-column process.
   mf <- stats::model.frame(ziformula, data, na.action = stats::na.pass)
+  .check_contrast_levels(mf, "`ziformula`")
   X_zi <- stats::model.matrix(ziformula, mf)
   if (ncol(X_zi) == 0L) return(NULL)
   if (nrow(X_zi) != n_obs) {
@@ -789,6 +817,7 @@ tulpa_build_model_data <- function(parsed, data) {
   # model.frame parses offset() terms and exposes them via model.offset();
   # model.matrix excludes them from the design.
   mf <- model.frame(parsed$fixed_formula, data, na.action = na.pass)
+  .check_contrast_levels(mf, "the fixed-effects formula")
   X <- model.matrix(parsed$fixed_formula, mf)
   off <- stats::model.offset(mf)
 
@@ -817,6 +846,7 @@ tulpa_build_model_data <- function(parsed, data) {
       }
       slope_formula <- as.formula(call("~", slope_rhs), env = formula_env)
       slope_mf <- model.frame(slope_formula, data, na.action = na.pass)
+      .check_contrast_levels(slope_mf, "a random-slope term")
       slope_mat <- model.matrix(slope_formula, slope_mf)
       intercept_col <- which(colnames(slope_mat) == "(Intercept)")
       if (length(intercept_col) > 0) {

@@ -1,5 +1,14 @@
 # tulpa 0.6.1
 
+## A one-level categorical predictor is named in the error
+
+* A factor, character or logical column with a single level in the fixed
+  effects, a random-slope term or `ziformula` reached `model.matrix()`, which
+  stopped with "contrasts can be applied only to factors with 2 or more levels"
+  and no variable name. A model fitted over many subsets (one species at a time)
+  could not say which column collapsed. The error now names the variable, the
+  formula part it sits in and the level it is stuck at.
+
 ## Wrong answers returned with no warning
 
 * `weights =` no longer switches `mode = "auto"` / `"structured"` from
