@@ -9,6 +9,19 @@
   could not say which column collapsed. The error now names the variable, the
   formula part it sits in and the level it is stuck at.
 
+## The grid-cap refusal names the axes that produced the count
+
+* A multi-block outer grid past `control$max_grid_cells` was refused with
+  "Reduce per-block grid sizes", which does not help a fit that set no grid:
+  its size came from the default axes (gcol33/tulpa#913). Two copied ICAR
+  blocks at the default field-SD axis (5 nodes) and copy axis (atom + 9 slab
+  nodes since 0.5.1) cross to 50 x 50 = 2500 cells, past the 2048 default,
+  whatever the data; before 0.5.1 the same model was 30 x 30 = 900. The error
+  now lists each block's rows and per-axis levels, and on the joint driver
+  offers `control$integration = "grid_adaptive"` (the same lattice, solved where
+  the posterior mass sits) ahead of `"ccd"`, naming either one as declined once
+  the fit has declined it. The cap and the grid are unchanged.
+
 ## Wrong answers returned with no warning
 
 * `weights =` no longer switches `mode = "auto"` / `"structured"` from
@@ -732,7 +745,7 @@
   bounds, and `ParamLayout` the per-coefficient `log_sigma2_tvc_gp` /
   `logit_phi_tvc_gp` spans. A model package linking against tulpa rebuilds.
 
-## A GP lengthscale started five times the spread of its own data
+## A GP TVC lengthscale started five times the spread of its own data
 
 * **A bounded lengthscale started at the midpoint of its support, which is not
   a place any fit wants to begin.** The support defaults to `(0.01, 10)` and

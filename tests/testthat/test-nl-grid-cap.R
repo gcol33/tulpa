@@ -214,3 +214,51 @@ test_that("the same joint grid fits under a ceiling that admits it", {
   expect_s3_class(fit, "tulpa_nested_laplace_joint_multi")
   expect_equal(length(fit$weights), 4L)
 })
+
+# --------------------------------------------------------------------------- #
+# (5) The refusal names the axes that produced the count (gcol33/tulpa#913)    #
+# --------------------------------------------------------------------------- #
+
+test_that("the layout names each block's rows and per-axis levels", {
+  g1 <- as.matrix(expand.grid(sigma = c(0.1, 1, 3), alpha = c(0, 0.5, 1, 2)))
+  g2 <- matrix(c(1, 2), ncol = 1, dimnames = list(NULL, "tau"))
+  expect_identical(.nl_grid_layout(list(g1, g2)),
+                   "b1 (12 rows: sigma 3 x alpha 4) x b2 (2 rows: tau 2)")
+  msg <- tryCatch(.nl_check_grid_cap(24, 4, "Reduce it.",
+                                     block_grids = list(g1, g2)),
+                  error = conditionMessage)
+  expect_match(msg, "24 cells (hard cap 4). It crosses b1 (12 rows: sigma 3 x alpha 4)",
+               fixed = TRUE)
+})
+
+test_that("both dispatch sites name the crossed axes in the refusal", {
+  d <- .cap_iid_data()
+  prior <- .cap_iid_prior(d, c(0.2, 0.5, 1.0), c(0.2, 0.5, 1.0))   # 9 cells
+  msg <- tryCatch(
+    tulpa_nested_laplace(y = d$y, n_trials = d$n, X = d$X, prior = prior,
+                         family = "binomial",
+                         control = list(max_grid_cells = 4)),
+    error = conditionMessage)
+  expect_match(msg, "It crosses b1 (3 rows: ", fixed = TRUE)
+  expect_match(msg, " x b2 (3 rows: ", fixed = TRUE)
+
+  f <- .cap_joint_fixture(c(0.5, 2.0), c(0.5, 2.0))               # 4 cells
+  msg <- tryCatch(
+    tulpa_nested_laplace_joint(responses = f$responses, prior = f$prior,
+                               control = list(diagnose_k = FALSE,
+                                               max_grid_cells = 3)),
+    error = conditionMessage)
+  expect_match(msg, "It crosses b1 (2 rows: ", fixed = TRUE)
+})
+
+test_that("the joint refusal offers the adaptive lattice until it has declined", {
+  f <- .cap_joint_fixture(c(0.5, 2.0), c(0.5, 2.0))               # 4 cells
+  msg <- tryCatch(
+    tulpa_nested_laplace_joint(responses = f$responses, prior = f$prior,
+                               control = list(diagnose_k = FALSE,
+                                               max_grid_cells = 3,
+                                               integration = "grid")),
+    error = conditionMessage)
+  expect_match(msg, "control$integration = \"grid_adaptive\"", fixed = TRUE)
+  expect_match(msg, "or \"ccd\"", fixed = TRUE)
+})

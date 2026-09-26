@@ -2147,16 +2147,38 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # The single enforcement of that ceiling, shared by the multi-block
 # nested-Laplace dispatch and the joint multi-block dispatch. `remedy` is the
 # caller's advice for the accidental case; the override is named for the
-# deliberate one.
-.nl_check_grid_cap <- function(n_cells, max_cells, remedy) {
+# deliberate one. `block_grids` (the per-block axis grids the tensor crosses)
+# lets the message say which axes produced the count: a fit that set no grid
+# gets its size from the default axes, and "reduce the per-block grids" alone
+# does not tell it which ones (gcol33/tulpa#913).
+.nl_check_grid_cap <- function(n_cells, max_cells, remedy, block_grids = NULL) {
   if (n_cells <= max_cells) return(invisible(n_cells))
   fmt <- function(x) format(x, scientific = FALSE, trim = TRUE)
+  layout <- if (length(block_grids))
+    paste0(" It crosses ", .nl_grid_layout(block_grids), ".") else ""
   stop(sprintf(
-    paste0("Joint multi-block grid has %s cells (hard cap %s). %s ",
+    paste0("Multi-block outer grid has %s cells (hard cap %s).%s %s ",
            "A deliberate reference grid raises the cap with ",
            "control$max_grid_cells = %s."),
-    fmt(n_cells), fmt(max_cells), remedy, fmt(n_cells)
+    fmt(n_cells), fmt(max_cells), layout, remedy, fmt(n_cells)
   ), call. = FALSE)
+}
+
+# One block's grid as "b<k> (<rows> rows: <axis> <levels> x ...)", the levels
+# being each axis's distinct node count. A block grid is a tensor of its axes
+# for the grid-axis families and a paired node list for others (BYM2's
+# (sigma, rho) nodes), so the row count is stated alongside the per-axis
+# levels rather than derived from them.
+.nl_grid_layout <- function(block_grids) {
+  parts <- vapply(seq_along(block_grids), function(b) {
+    g <- as.matrix(block_grids[[b]])
+    nm <- colnames(g) %||% paste0("axis", seq_len(ncol(g)))
+    lv <- vapply(seq_len(ncol(g)), function(j)
+      length(unique(as.numeric(g[, j]))), integer(1))
+    sprintf("b%d (%d rows: %s)", b, nrow(g),
+            paste(nm, lv, collapse = " x "))
+  }, character(1))
+  paste(parts, collapse = " x ")
 }
 
 .nl_dispatch_multi <- function(cargs, prior_list, likelihood = NULL,
@@ -2232,7 +2254,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     idx <- do.call(expand.grid, lapply(row_counts, seq_len))
     n_cells <- nrow(idx)
     grid_warn_remedy <- "Reduce per-block grid sizes."
-    .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), grid_warn_remedy)
+    .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), grid_warn_remedy,
+                       block_grids = block_grids)
 
     # Concatenate per-block axis grids into the joint theta_grid.
     joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {

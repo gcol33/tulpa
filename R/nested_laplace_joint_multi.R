@@ -1524,6 +1524,7 @@
     integration_used      <- "grid"
     joint_grid            <- NULL
     use_adaptive          <- FALSE
+    adaptive_declined     <- FALSE
     adaptive_info         <- NULL
     # Mode-Hessian outer proposal. Set only when the CCD
     # integrator engages: its Gaussian (centre `u_hat`, scale `L_scale` from the
@@ -1706,6 +1707,7 @@
                                    max_frac  = adaptive_max_frac,
                                    min_dense = adaptive_min_cells,
                                    verbose   = verbose)
+        adaptive_declined <- is.null(ad)
         if (!is.null(ad)) {
             joint_grid            <- ad$grid
             integration_used      <- "grid_adaptive"
@@ -1722,15 +1724,30 @@
         row_counts <- vapply(block_grids, nrow, integer(1))
         idx <- do.call(expand.grid, lapply(row_counts, seq_len))
         n_cells <- nrow(idx)
-        # The CCD is only a remedy for the cell count while it is still
-        # available. Once this fit has already declined one, advising the caller
-        # to set the option they set is noise, so the advice
-        # names the decline instead.
-        grid_warn_remedy <- if (is.na(integration_declined))
-            "Reduce per-block grid sizes or set control$integration = \"ccd\"." else
-            sprintf("Reduce per-block grid sizes; CCD integration declined (%s).",
-                    integration_declined)
-        .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), grid_warn_remedy)
+        # The CCD and the adaptive lattice are remedies for the cell count only
+        # while they are still available. Once this fit has already declined
+        # one, advising the caller to set the option they set is noise, so the
+        # advice names the decline instead. The adaptive lattice is named first:
+        # it integrates the same lattice, where the CCD is a different design.
+        alt <- c(
+            if (!adaptive_declined)
+                "\"grid_adaptive\" (the same lattice, solved where the posterior mass sits)",
+            if (is.na(integration_declined)) "\"ccd\"")
+        declined <- c(
+            if (adaptive_declined)
+                "the adaptive lattice declined to the dense tensor",
+            if (!is.na(integration_declined))
+                sprintf("CCD integration declined (%s)", integration_declined))
+        grid_warn_remedy <- paste0(
+            "Reduce per-block grid sizes",
+            if (length(alt))
+                paste0(" or set control$integration = ",
+                       paste(alt, collapse = " or ")),
+            if (length(declined))
+                paste0("; ", paste(declined, collapse = "; ")),
+            ".")
+        .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), grid_warn_remedy,
+                           block_grids = block_grids)
 
         joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
             block_grids[[b]][idx[[b]], , drop = FALSE]
