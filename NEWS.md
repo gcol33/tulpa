@@ -8,10 +8,11 @@
   the cost of one inner solve: the same 2500-cell default grid is a short fit on
   a sparse species and a long one on a data-rich species, and the engine's own
   default two-field copy spec already exceeded the 2048-cell default. The cost
-  signals are the running grid ETA (`verbose` or `control$progress_file`),
-  checkpoint/resume, and the post-solve timing warning, which now names the
-  axes that produced the count (`It crosses b1 (...) x phi_pos 4.`). Passing
-  `max_grid_cells` is an unknown-knob error.
+  signals are a warning before a dense tensor of more than 2048 cells is
+  solved, the running grid ETA (`verbose` or `control$progress_file`),
+  checkpoint/resume, and the post-solve timing warning. Both warnings name the
+  axes that produced the count, dispersion axes included (`It crosses b1 (...)
+  x phi_pos 4.`). Passing `max_grid_cells` is an unknown-knob error.
 
 # tulpa 0.6.2
 

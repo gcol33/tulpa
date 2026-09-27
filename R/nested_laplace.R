@@ -2084,6 +2084,28 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   invisible(NULL)
 }
 
+# Cell count above which a dense multi-block outer tensor is announced with a
+# warning BEFORE its solve starts. Each cell is one inner Laplace solve, so the
+# count is the run's size in solves; it does not know the per-solve cost, which
+# is why it warns rather than refuses and why the post-solve warning above reads
+# measured time.
+.NL_DENSE_GRID_WARN_CELLS <- 2048L
+
+# Shared by both multi-block dispatchers: the dense tensor about to be solved
+# has `n_cells` inner solves, `layout` (`.nl_grid_crossing()`) names the axes
+# that produced them and `remedy` is the dispatcher's advice. Gated like the
+# timing warning, so an internal batch the caller did not size stays quiet.
+.nl_dense_grid_warn <- function(n_cells, remedy, layout = "") {
+  if (isTRUE(n_cells > .NL_DENSE_GRID_WARN_CELLS) && !.nl_internal_batch()) {
+    warning(sprintf(
+      paste0("Multi-block outer grid is a dense tensor of %s cells, one inner ",
+             "solve each.%s %s"),
+      format(n_cells, scientific = FALSE, trim = TRUE), layout, remedy
+    ), call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 # Whether the dispatch currently running is an INTERNAL batch rather than the
 # grid the caller asked for. The soft-cap warning above is advice addressed to
 # whoever chose the cell count, and on an internal batch that is not the caller:
@@ -2214,6 +2236,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     n_cells <- nrow(idx)
     grid_warn_remedy <- "Reduce per-block grid sizes."
     grid_layout <- .nl_grid_crossing(block_grids)
+    .nl_dense_grid_warn(n_cells, grid_warn_remedy, grid_layout)
 
     # Concatenate per-block axis grids into the joint theta_grid.
     joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {

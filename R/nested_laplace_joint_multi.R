@@ -1755,6 +1755,7 @@
                 paste0("; ", paste(declined, collapse = "; ")),
             ".")
         grid_layout <- .nl_grid_crossing(block_grids, phi_active)
+        .nl_dense_grid_warn(n_cells, grid_warn_remedy, grid_layout)
 
         joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
             block_grids[[b]][idx[[b]], , drop = FALSE]

@@ -54,8 +54,19 @@ test_that("the timing warning carries the count, the layout and the remedy", {
            "or phi grid sizes\\."))
 })
 
+test_that("a dense grid past the threshold is announced before its solve", {
+  n <- .NL_DENSE_GRID_WARN_CELLS + 1L
+  expect_warning(
+    .nl_dense_grid_warn(n, "Reduce per-block grid sizes.",
+                        " It crosses b1 (x) x phi_pos 4."),
+    paste0("dense tensor of ", n, " cells, one inner solve each\\. It crosses ",
+           "b1 \\(x\\) x phi_pos 4\\. Reduce per-block grid sizes\\."))
+  expect_silent(.nl_dense_grid_warn(.NL_DENSE_GRID_WARN_CELLS, "x"))
+  expect_silent(.nl_with_internal_batch(.nl_dense_grid_warn(n, "x")))
+})
+
 # --------------------------------------------------------------------------- #
-# (3) Grids past the former 2048-cell default are solved                       #
+# (3) Grids past the threshold warn and are solved                             #
 # --------------------------------------------------------------------------- #
 
 .cap_iid_data <- function(seed = 11L, N = 40L, n_a = 5L, n_b = 4L) {
@@ -74,6 +85,20 @@ test_that("the timing warning carries the count, the layout and the remedy", {
     list(type = "iid", obs_idx = d$ib, n_units = d$n_b, sigma_grid = g_b)
   )
 }
+
+# The warning is raised before the first inner solve, so catching it as a
+# condition stops the fit there and nothing below is fitted.
+test_that("the multi-block dispatch warns before solving a large dense grid", {
+  d <- .cap_iid_data()
+  prior <- .cap_iid_prior(d, seq(0.05, 2, length.out = 46L),
+                             seq(0.05, 2, length.out = 46L))       # 2116 cells
+  msg <- tryCatch(
+    tulpa_nested_laplace(y = d$y, n_trials = d$n, X = d$X, prior = prior,
+                         family = "binomial"),
+    warning = conditionMessage)
+  expect_match(msg, "dense tensor of 2116 cells", fixed = TRUE)
+  expect_match(msg, "It crosses b1 (46 rows: ", fixed = TRUE)
+})
 
 test_that("the multi-block dispatch integrates a 2116-cell grid end to end", {
   skip_on_cran()
@@ -124,6 +149,22 @@ test_that("the multi-block dispatch integrates a 2116-cell grid end to end", {
          spatial_idx = list(as.integer(iB), as.integer(iB))))
   list(responses = responses, prior = prior)
 }
+
+test_that("the joint dispatch counts the phi cells in the pre-solve warning", {
+  # 46 x 23 = 1058 latent cells, under the threshold alone; crossed with two
+  # dispersion values it is 2116 inner solves.
+  f <- .cap_joint_fixture(seq(0.5, 20, length.out = 46L),
+                          seq(0.5, 20, length.out = 23L))
+  msg <- tryCatch(
+    tulpa_nested_laplace_joint(responses = f$responses, prior = f$prior,
+                               phi_grid = list(b = c(0.1, 0.4)),
+                               control = list(diagnose_k = FALSE,
+                                              integration = "grid")),
+    warning = conditionMessage)
+  expect_match(msg, "dense tensor of 2116 cells", fixed = TRUE)
+  expect_match(msg, " x phi_b 2.", fixed = TRUE)
+  expect_match(msg, "Reduce per-block or phi grid sizes", fixed = TRUE)
+})
 
 test_that("the joint dispatch solves every latent x phi cell of the dense tensor", {
   skip_on_cran()
