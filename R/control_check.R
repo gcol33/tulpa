@@ -169,7 +169,7 @@ tulpa_check_control <- function(control, allowed, where) {
                        "k_tail_points",
                        "diagnose_skew", "skew_idx", "skew_correct",
                        "auto_recenter", "subspace_debias", "cila",
-                       "max_grid_cells", "within_cell",
+                       "within_cell",
                        "prune", "prune_tol", "prune_log_gap", "screen_iters",
                        "fitted_var",
                        "checkpoint", progress),
@@ -189,7 +189,7 @@ tulpa_check_control <- function(control, allowed, where) {
       "k_max_rounds", "k_bootstrap", "k_tail_points", "k_conf_bands",
       "diagnose_skew", "skew_idx", "skew_correct", "auto_recenter",
       "recenter_pilot",
-      "subspace_debias", "cila", "max_grid_cells", "within_cell",
+      "subspace_debias", "cila", "within_cell",
       "checkpoint", progress),
     # `tulpa_hyper_grid()`'s own surface: the refinement / consistency passes
     # it drives and nothing else, since the inner solve is the caller's own

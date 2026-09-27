@@ -248,11 +248,6 @@
 #'     in silence. The per-axis policy names are the standalone registry path
 #'     only -- [tulpa_nested_laplace_joint()] and [fit_st_nested()] refuse them
 #'     rather than accept them and ignore them.
-#'   * `max_grid_cells` (`2048L`) -- cell-count ceiling on a multi-block outer
-#'     grid, refused with an error above it. Each cell is one inner Newton
-#'     solve, so the default catches a per-block grid that multiplied out to a
-#'     run nobody asked for; a deliberate converged tensor reference grid (4
-#'     axes at 7 levels is 2401 cells) raises it here.
 #'   * `checkpoint` (`list(path =, resume =)`) -- grid-cell checkpoint /
 #'     resume. Each solved outer cell is appended to `path`, keyed by its
 #'     hyperparameter coordinate; `resume = TRUE` loads the finished cells and
@@ -473,12 +468,6 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   if (nzchar(.ckpt$path) && !isTRUE(.ckpt$resume) && file.exists(.ckpt$path)) {
     file.remove(.ckpt$path)
   }
-
-  # Multi-block outer-grid cell ceiling, published for the duration of this fit
-  # so the initial dispatch and every re-dispatch (the k-hat re-evaluations, the
-  # subspace-debias refit) enforce the caller's value rather than the default.
-  .op_grid_cap <- options(tulpa.nl_max_grid_cells = .nl_max_grid_cells(control))
-  on.exit(options(.op_grid_cap), add = TRUE)
 
   if (!is.null(spec)) {
     if (!is.null(prior)) {
@@ -2067,10 +2056,6 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   list(grid = grid, names = colnames(grid), prepared = p)
 }
 
-# Hard cap on the joint-grid cell count, and the default value of
-# `control$max_grid_cells`.
-.NL_MULTI_GRID_HARD_CAP <- 2048L
-
 # Wall-clock threshold, in seconds, above which a multi-block outer-grid
 # solve gets a "this was slow" warning. Cell count alone does not predict
 # solve time -- a family/likelihood pair, N, or a block's own per-cell cost
@@ -2086,12 +2071,14 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # (`R/nested_laplace_joint_multi.R`): both solve their outer grid in one call
 # and mark its elapsed time as the "grid" timing bucket, so both warn off that
 # measurement through this one function rather than keeping two copies of the
-# same message.
-.nl_multi_grid_warn <- function(elapsed, n_cells, remedy) {
+# same message. `layout` is `.nl_grid_crossing()`'s account of the axes that
+# produced the count, so the advice names which grids to shrink.
+.nl_multi_grid_warn <- function(elapsed, n_cells, remedy, layout = "") {
   if (isTRUE(elapsed > .NL_MULTI_GRID_WARN_SECONDS) && !.nl_internal_batch()) {
     warning(sprintf(
-      "Multi-block outer grid (%d cells) took %s to solve. %s",
-      n_cells, .format_duration(elapsed), remedy
+      "Multi-block outer grid (%s cells) took %s to solve.%s %s",
+      format(n_cells, scientific = FALSE, trim = TRUE),
+      .format_duration(elapsed), layout, remedy
     ), call. = FALSE)
   }
   invisible(NULL)
@@ -2104,9 +2091,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # importance draws by substituting them for the block's grid axis, so a 7-node
 # fit warned about a cell count the diagnostic's own budget set and advised
 # reducing per-block grid sizes, which does not reach the number in the message
-# (gcol33/tulpa#614). The HARD cap is deliberately not gated: it is a resource
-# ceiling the front door publishes so every re-dispatch enforces the caller's
-# value, and an internal batch is exactly as expensive as a user one.
+# (gcol33/tulpa#614).
 #
 # Transported on an option rather than an argument because the two warning sites
 # sit behind different dispatchers -- `.nl_dispatch_multi()` takes `cargs`, the
@@ -2124,51 +2109,17 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   force(expr)
 }
 
-# Resolve the hard cap for one fit. `control$max_grid_cells = <n>` moves the
-# ceiling in either direction: the default refuses the accidental blow-up, and a
-# deliberate converged tensor reference grid (4 axes x 7 levels = 2401 cells) is
-# a run a caller can knowingly ask for. The front doors
-# publish the resolved value on the scoped `tulpa.nl_max_grid_cells` option, so
-# every grid built inside the fit -- the multi-block dispatch, the joint
-# multi-block dispatch, the k-hat re-evaluations -- reads one ceiling without
-# carrying it in each signature, the transport `tulpa.nl_progress` and
-# `tulpa.nl_checkpoint` already use.
-.nl_max_grid_cells <- function(control = list()) {
-  v <- control$max_grid_cells
-  if (is.null(v)) v <- getOption("tulpa.nl_max_grid_cells", NULL)
-  if (is.null(v)) return(as.numeric(.NL_MULTI_GRID_HARD_CAP))
-  if (!is.numeric(v) || length(v) != 1L || is.na(v) || v < 1) {
-    stop("`control$max_grid_cells` must be a single number >= 1 ",
-         "(the cell-count ceiling on a multi-block outer grid).", call. = FALSE)
-  }
-  as.numeric(v)
-}
-
-# The single enforcement of that ceiling, shared by the multi-block
-# nested-Laplace dispatch and the joint multi-block dispatch. `remedy` is the
-# caller's advice for the accidental case; the override is named for the
-# deliberate one. `block_grids` (the per-block axis grids the tensor crosses)
-# lets the message say which axes produced the count: a fit that set no grid
-# gets its size from the default axes, and "reduce the per-block grids" alone
-# does not tell it which ones (gcol33/tulpa#913). `n_cells` is the number of
-# inner solves the grid costs, so a joint fit passes the latent cell count times
-# the dispersion cells crossed on top of it, and `phi_axes` (the active named
-# per-arm dispersion axes) puts those on the layout as `phi_<arm> <levels>`.
-.nl_check_grid_cap <- function(n_cells, max_cells, remedy, block_grids = NULL,
-                               phi_axes = NULL) {
-  if (n_cells <= max_cells) return(invisible(n_cells))
-  fmt <- function(x) format(x, scientific = FALSE, trim = TRUE)
+# The axes a dense outer tensor crosses, as the sentence the timing warning
+# carries: " It crosses b1 (...) x phi_pos 4." `block_grids` are the per-block
+# axis grids, so a fit that set no grid learns which default axes produced its
+# count (gcol33/tulpa#913); `phi_axes` are the active named per-arm dispersion
+# axes crossed on top, each a factor on the number of inner solves.
+.nl_grid_crossing <- function(block_grids = NULL, phi_axes = NULL) {
   parts <- c(if (length(block_grids)) .nl_grid_layout(block_grids),
              if (length(phi_axes))
                paste0("phi_", names(phi_axes), " ", lengths(phi_axes)))
-  layout <- if (length(parts))
-    paste0(" It crosses ", paste(parts, collapse = " x "), ".") else ""
-  stop(sprintf(
-    paste0("Multi-block outer grid has %s cells (hard cap %s).%s %s ",
-           "A deliberate reference grid raises the cap with ",
-           "control$max_grid_cells = %s."),
-    fmt(n_cells), fmt(max_cells), layout, remedy, fmt(n_cells)
-  ), call. = FALSE)
+  if (length(parts)) paste0(" It crosses ", paste(parts, collapse = " x "), ".")
+  else ""
 }
 
 # One block's grid as "b<k> (<rows> rows: <axis> <levels> x ...)", the levels
@@ -2243,6 +2194,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   # (skew / k-hat / recenter probes -- already never the caller's own grid).
   n_cells <- NA_integer_
   grid_warn_remedy <- NULL
+  grid_layout <- ""
 
   if (!is.null(theta_grid_override)) {
     joint_grid <- as.matrix(theta_grid_override)
@@ -2261,8 +2213,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     idx <- do.call(expand.grid, lapply(row_counts, seq_len))
     n_cells <- nrow(idx)
     grid_warn_remedy <- "Reduce per-block grid sizes."
-    .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), grid_warn_remedy,
-                       block_grids = block_grids)
+    grid_layout <- .nl_grid_crossing(block_grids)
 
     # Concatenate per-block axis grids into the joint theta_grid.
     joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
@@ -2333,7 +2284,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   )
   if (!is.null(grid_warn_remedy)) {
     .nl_multi_grid_warn(proc.time()[["elapsed"]] - grid_solve_start,
-                        n_cells, grid_warn_remedy)
+                        n_cells, grid_warn_remedy, grid_layout)
   }
 
   out$theta_grid   <- joint_grid

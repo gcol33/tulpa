@@ -770,15 +770,6 @@
 #'     a placement. A fit that declines both is bit-identical to the same fit
 #'     with the knob off. What the pilot detected on is recorded in
 #'     `outer_grid_pilot`.
-#'   * `max_grid_cells` (`2048L`) -- cell-count ceiling on a multi-block tensor
-#'     outer grid, refused with an error above it. Each cell is one inner
-#'     Newton solve, so the default catches per-block grids that multiplied out
-#'     to a run nobody asked for. The count includes an active `phi_grid`: 2500
-#'     latent cells crossed with 4 dispersion values are 10000 cells. It bounds
-#'     the dense tensor, including the one a declined `"grid_adaptive"` falls
-#'     back to; a deliberate converged tensor reference grid
-#'     (4 axes at 7 levels is 2401 cells) raises it here, which `integration =
-#'     "ccd"` cannot serve since a CCD is a different integration design.
 #'   * `checkpoint` (`NULL`) -- grid-cell checkpoint/resume. Set
 #'     `list(path = "fit.ckpt", resume = TRUE)` to make a killed or interrupted
 #'     fit resumable: each completed outer-grid cell is appended to `path`, and
@@ -1864,14 +1855,6 @@ tulpa_nested_laplace_joint <- function(responses,
     .ckpt <- .nl_checkpoint_args(control)
     .op_checkpoint <- options(tulpa.nl_checkpoint = .ckpt)
     on.exit(options(.op_checkpoint), add = TRUE)
-
-    # Multi-block outer-grid cell ceiling, on the same scoped-option transport:
-    # the tensor grid is built inside .joint_dispatch_multi() and again on each
-    # refinement pass, so the caller's value is read where the grid is, not
-    # carried through every backend signature.
-    .op_grid_cap <- options(
-        tulpa.nl_max_grid_cells = .nl_max_grid_cells(control))
-    on.exit(options(.op_grid_cap), add = TRUE)
 
     if (!is.list(responses) || length(responses) < 1L) {
         stop("`responses` must be a non-empty list of arm specs.", call. = FALSE)

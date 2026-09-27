@@ -1554,6 +1554,7 @@
     # post-solve timing check reports does not apply to them).
     n_cells <- NA_integer_
     grid_warn_remedy <- NULL
+    grid_layout <- ""
     if (use_ccd) {
         axis_values <- latent_axis_values
 
@@ -1726,8 +1727,8 @@
         row_counts <- vapply(block_grids, nrow, integer(1))
         idx <- do.call(expand.grid, lapply(row_counts, seq_len))
         # Every latent cell is solved once per dispersion cell crossed on top
-        # below, so the count the cap and the timing warning read is the
-        # crossed one: that is the number of inner solves the fit will pay.
+        # below, so the count the timing warning reads is the crossed one: that
+        # is the number of inner solves the fit pays.
         phi_active <- if (has_phi) phi_axes[lengths(phi_axes) > 0L]
         n_cells <- nrow(idx) * prod(lengths(phi_active))
         # The CCD and the adaptive lattice are remedies for the cell count only
@@ -1753,8 +1754,7 @@
             if (length(declined))
                 paste0("; ", paste(declined, collapse = "; ")),
             ".")
-        .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), grid_warn_remedy,
-                           block_grids = block_grids, phi_axes = phi_active)
+        grid_layout <- .nl_grid_crossing(block_grids, phi_active)
 
         joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
             block_grids[[b]][idx[[b]], , drop = FALSE]
@@ -1864,7 +1864,7 @@
     }
     if (!is.null(grid_warn_remedy)) {
         .nl_multi_grid_warn(proc.time()[["elapsed"]] - grid_solve_start,
-                            n_cells, grid_warn_remedy)
+                            n_cells, grid_warn_remedy, grid_layout)
     }
     tm$mark("grid")
 

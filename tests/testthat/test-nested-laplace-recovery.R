@@ -749,8 +749,8 @@ test_that("a locally CCD-refined outer grid covers as the grid it refined does",
 #   the same grid, locally refined         0.2399          0.08527       146/150
 #   six-level base grid, 1296 cells        0.6391          0.08527       146/150
 #
-# The six-level grid is the finest tensor base reachable at four axes under the
-# joint driver's 2048-cell cap, and it is a materially better integration -- the
+# The six-level grid is a finer tensor base at the same four axes, and it is a
+# materially better integration -- the
 # sigma_1 posterior-median bias goes +0.0546 -> -0.0097 and its interval narrows
 # on every one of the 150 seeds (width ratio at most 0.9334, median 0.5098). The
 # INTERCEPT reads that: its width ratio runs 0.8573 to 1.2282, median 0.9460. The

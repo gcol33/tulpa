@@ -1,3 +1,18 @@
+# tulpa 0.6.3
+
+## No cell-count cap on a multi-block outer grid
+
+* `control$max_grid_cells` is removed, and a multi-block or joint multi-block
+  outer grid is solved at the size its axes multiply out to
+  (gcol33/tulpa#916). The cap counted cells, and a run's cost is cells times
+  the cost of one inner solve: the same 2500-cell default grid is a short fit on
+  a sparse species and a long one on a data-rich species, and the engine's own
+  default two-field copy spec already exceeded the 2048-cell default. The cost
+  signals are the running grid ETA (`verbose` or `control$progress_file`),
+  checkpoint/resume, and the post-solve timing warning, which now names the
+  axes that produced the count (`It crosses b1 (...) x phi_pos 4.`). Passing
+  `max_grid_cells` is an unknown-knob error.
+
 # tulpa 0.6.2
 
 ## A declined adaptive lattice says why

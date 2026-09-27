@@ -146,8 +146,8 @@ fit_one_seed <- function(d) {
       sigma_grid = c(0.1, 0.3, 0.6, 1.0)
     )
   )
-  # 12 (bym2) x 12 (ar1) x 4 (iid) = ~576 cells -- well above the warn
-  # threshold but inside the hard cap. Each cell is one inner Newton solve.
+  # 12 (bym2) x 12 (ar1) x 4 (iid) = ~576 cells. Each cell is one inner
+  # Newton solve.
   suppressWarnings(
     tulpa_nested_laplace(
       y = d$y, n_trials = rep(1L, length(d$y)), X = d$X,
