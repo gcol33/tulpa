@@ -1,27 +1,49 @@
 # test-nl-grid-cap.R
 # A multi-block outer grid is solved at whatever size its axes multiply out to
-# (gcol33/tulpa#916). A cell count does not measure the run's cost -- that is
-# cells times the cost of one inner solve -- so the cost signals are the running
-# grid ETA and the post-solve timing warning, and the warning names the axes
-# that produced the count (gcol33/tulpa#913) including the dispersion axes
-# crossed on top (gcol33/tulpa#915).
+# unless the caller sets `control$max_grid_cells` (gcol33/tulpa#916). A cell
+# count does not measure the run's cost -- that is cells times the cost of one
+# inner solve -- so by default a large dense grid is announced with a warning
+# before its solve, and the warnings and the opt-in refusal name the axes that
+# produced the count (gcol33/tulpa#913), dispersion axes included
+# (gcol33/tulpa#915).
 
 # --------------------------------------------------------------------------- #
-# (1) No cell-count knob                                                       #
+# (1) The opt-in ceiling                                                       #
 # --------------------------------------------------------------------------- #
 
-test_that("max_grid_cells is refused as an unknown control knob", {
-  expect_error(tulpa_check_control(list(max_grid_cells = 4096),
-                                   .CONTROL_KEYS$nested_laplace,
-                                   "tulpa_nested_laplace"),
-               "Unknown control knob")
-  expect_error(tulpa_check_control(list(max_grid_cells = 4096),
-                                   .CONTROL_KEYS$nested_laplace_joint,
-                                   "tulpa_nested_laplace_joint"),
-               "Unknown control knob")
-  expect_error(tulpa_check_control(list(max_grid_cells = 4096),
-                                   .CONTROL_KEYS$tulpa, "tulpa"),
-               "Unknown control knob")
+test_that(".nl_max_grid_cells() has no default ceiling and reads the knob", {
+  expect_identical(.nl_max_grid_cells(), Inf)
+  expect_identical(.nl_max_grid_cells(list()), Inf)
+  expect_identical(.nl_max_grid_cells(list(max_grid_cells = 4096L)), 4096)
+  op <- options(tulpa.nl_max_grid_cells = 3000)
+  on.exit(options(op), add = TRUE)
+  expect_identical(.nl_max_grid_cells(), 3000)
+  expect_identical(.nl_max_grid_cells(list(max_grid_cells = 12)), 12)
+})
+
+test_that(".nl_max_grid_cells() rejects a malformed knob", {
+  for (v in list(0, -5, c(10, 20), "many", NA_real_))
+    expect_error(.nl_max_grid_cells(list(max_grid_cells = v)), "max_grid_cells")
+})
+
+test_that("max_grid_cells is an accepted control knob on every front door", {
+  expect_silent(tulpa_check_control(list(max_grid_cells = 4096),
+                                    .CONTROL_KEYS$nested_laplace,
+                                    "tulpa_nested_laplace"))
+  expect_silent(tulpa_check_control(list(max_grid_cells = 4096),
+                                    .CONTROL_KEYS$nested_laplace_joint,
+                                    "tulpa_nested_laplace_joint"))
+  expect_silent(tulpa_check_control(list(max_grid_cells = 4096),
+                                    .CONTROL_KEYS$tulpa, "tulpa"))
+})
+
+test_that("the guard refuses past a set ceiling and names the axes", {
+  expect_silent(.nl_check_grid_cap(1e6, Inf, "Reduce it."))
+  expect_silent(.nl_check_grid_cap(2401, 2401, "Reduce it."))
+  expect_error(
+    .nl_check_grid_cap(24, 4, "Reduce it.", " It crosses b1 (x) x phi_b 4."),
+    "24 cells, past control$max_grid_cells = 4. It crosses b1 (x) x phi_b 4. Reduce it.",
+    fixed = TRUE)
 })
 
 # --------------------------------------------------------------------------- #
@@ -100,6 +122,17 @@ test_that("the multi-block dispatch warns before solving a large dense grid", {
   expect_match(msg, "It crosses b1 (46 rows: ", fixed = TRUE)
 })
 
+test_that("a set ceiling reaches the multi-block dispatch", {
+  d <- .cap_iid_data()
+  prior <- .cap_iid_prior(d, c(0.2, 0.5, 1.0), c(0.2, 0.5, 1.0))   # 9 cells
+  msg <- tryCatch(
+    tulpa_nested_laplace(y = d$y, n_trials = d$n, X = d$X, prior = prior,
+                         family = "binomial", control = list(max_grid_cells = 4)),
+    error = conditionMessage)
+  expect_match(msg, "9 cells, past control$max_grid_cells = 4.", fixed = TRUE)
+  expect_match(msg, "It crosses b1 (3 rows: ", fixed = TRUE)
+})
+
 test_that("the multi-block dispatch integrates a 2116-cell grid end to end", {
   skip_on_cran()
   d <- .cap_iid_data()
@@ -163,6 +196,22 @@ test_that("the joint dispatch counts the phi cells in the pre-solve warning", {
     warning = conditionMessage)
   expect_match(msg, "dense tensor of 2116 cells", fixed = TRUE)
   expect_match(msg, " x phi_b 2.", fixed = TRUE)
+  expect_match(msg, "Reduce per-block or phi grid sizes", fixed = TRUE)
+})
+
+test_that("a set ceiling on the joint dispatch counts the phi cells", {
+  # 2 x 2 latent cells fit under a ceiling of 4; crossed with three dispersion
+  # values they are 12 inner solves.
+  f <- .cap_joint_fixture(c(0.5, 2.0), c(0.5, 2.0))
+  msg <- tryCatch(
+    tulpa_nested_laplace_joint(responses = f$responses, prior = f$prior,
+                               phi_grid = list(b = c(0.1, 0.25, 0.6)),
+                               control = list(diagnose_k = FALSE,
+                                              integration = "grid",
+                                              max_grid_cells = 4)),
+    error = conditionMessage)
+  expect_match(msg, "12 cells, past control$max_grid_cells = 4.", fixed = TRUE)
+  expect_match(msg, " x phi_b 3.", fixed = TRUE)
   expect_match(msg, "Reduce per-block or phi grid sizes", fixed = TRUE)
 })
 

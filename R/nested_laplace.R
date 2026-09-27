@@ -248,6 +248,11 @@
 #'     in silence. The per-axis policy names are the standalone registry path
 #'     only -- [tulpa_nested_laplace_joint()] and [fit_st_nested()] refuse them
 #'     rather than accept them and ignore them.
+#'   * `max_grid_cells` (`NULL`, no ceiling) -- a ceiling on a multi-block
+#'     outer grid's cell count, one inner Newton solve per cell; a grid past it
+#'     is refused before any solve, naming the axes that produced the count.
+#'     Unset, a grid of any size is solved, and one past 2048 cells is announced
+#'     with a warning first.
 #'   * `checkpoint` (`list(path =, resume =)`) -- grid-cell checkpoint /
 #'     resume. Each solved outer cell is appended to `path`, keyed by its
 #'     hyperparameter coordinate; `resume = TRUE` loads the finished cells and
@@ -468,6 +473,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   if (nzchar(.ckpt$path) && !isTRUE(.ckpt$resume) && file.exists(.ckpt$path)) {
     file.remove(.ckpt$path)
   }
+
+  # The caller's outer-grid ceiling, published for the duration of this fit so
+  # the initial dispatch and every re-dispatch (the k-hat re-evaluations, the
+  # subspace-debias refit) read the same value.
+  .op_grid_cap <- options(tulpa.nl_max_grid_cells = .nl_max_grid_cells(control))
+  on.exit(options(.op_grid_cap), add = TRUE)
 
   if (!is.null(spec)) {
     if (!is.null(prior)) {
@@ -2131,6 +2142,40 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   force(expr)
 }
 
+# The caller's ceiling on a dense multi-block outer tensor, in inner solves.
+# Unset there is none: a cell count does not measure the run's cost, so the
+# default is the pre-solve warning above, and a caller who wants a hard stop
+# (a batch of fits on a shared node, say) sets `control$max_grid_cells`. The
+# front doors publish the resolved value on the scoped
+# `tulpa.nl_max_grid_cells` option, so every grid built inside the fit -- the
+# multi-block dispatch, the joint multi-block dispatch, the k-hat
+# re-evaluations -- reads one ceiling without carrying it in each signature,
+# the transport `tulpa.nl_progress` and `tulpa.nl_checkpoint` already use.
+.nl_max_grid_cells <- function(control = list()) {
+  v <- control$max_grid_cells
+  if (is.null(v)) v <- getOption("tulpa.nl_max_grid_cells", NULL)
+  if (is.null(v)) return(Inf)
+  if (!is.numeric(v) || length(v) != 1L || is.na(v) || v < 1) {
+    stop("`control$max_grid_cells` must be a single number >= 1 ",
+         "(the cell-count ceiling on a multi-block outer grid).", call. = FALSE)
+  }
+  as.numeric(v)
+}
+
+# The single enforcement of that ceiling, shared by both multi-block
+# dispatchers, before any inner solve. `layout` is `.nl_grid_crossing()`'s
+# account of the axes that produced the count and `remedy` the dispatcher's
+# advice.
+.nl_check_grid_cap <- function(n_cells, max_cells, remedy, layout = "") {
+  if (n_cells <= max_cells) return(invisible(n_cells))
+  fmt <- function(x) format(x, scientific = FALSE, trim = TRUE)
+  stop(sprintf(
+    paste0("Multi-block outer grid has %s cells, past control$max_grid_cells ",
+           "= %s.%s %s"),
+    fmt(n_cells), fmt(max_cells), layout, remedy
+  ), call. = FALSE)
+}
+
 # The axes a dense outer tensor crosses, as the sentence the timing warning
 # carries: " It crosses b1 (...) x phi_pos 4." `block_grids` are the per-block
 # axis grids, so a fit that set no grid learns which default axes produced its
@@ -2236,6 +2281,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     n_cells <- nrow(idx)
     grid_warn_remedy <- "Reduce per-block grid sizes."
     grid_layout <- .nl_grid_crossing(block_grids)
+    .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), grid_warn_remedy,
+                       grid_layout)
     .nl_dense_grid_warn(n_cells, grid_warn_remedy, grid_layout)
 
     # Concatenate per-block axis grids into the joint theta_grid.

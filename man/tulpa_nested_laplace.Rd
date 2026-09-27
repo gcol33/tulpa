@@ -316,6 +316,11 @@ records which through \code{outer_grid_recenter_declined} rather than passing
 in silence. The per-axis policy names are the standalone registry path
 only -- \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} and \code{\link[=fit_st_nested]{fit_st_nested()}} refuse them
 rather than accept them and ignore them.
+\item \code{max_grid_cells} (\code{NULL}, no ceiling) -- a ceiling on a multi-block
+outer grid's cell count, one inner Newton solve per cell; a grid past it
+is refused before any solve, naming the axes that produced the count.
+Unset, a grid of any size is solved, and one past 2048 cells is announced
+with a warning first.
 \item \code{checkpoint} (\code{list(path =, resume =)}) -- grid-cell checkpoint /
 resume. Each solved outer cell is appended to \code{path}, keyed by its
 hyperparameter coordinate; \code{resume = TRUE} loads the finished cells and

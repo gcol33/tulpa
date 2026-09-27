@@ -777,6 +777,14 @@ full fit, which then gets its own detection, so the pilot only ever adds
 a placement. A fit that declines both is bit-identical to the same fit
 with the knob off. What the pilot detected on is recorded in
 \code{outer_grid_pilot}.
+\item \code{max_grid_cells} (\code{NULL}, no ceiling) -- a ceiling on a multi-block
+tensor outer grid's cell count, refused before any inner solve with the
+axes that produced the count. The count is the number of inner solves,
+so it includes an active \code{phi_grid}: 2500 latent cells crossed with 4
+dispersion values are 10000 cells. It bounds the dense tensor, including
+the one a declined \code{"grid_adaptive"} falls back to. Unset, a tensor of
+any size is solved, and one past 2048 cells is announced with a warning
+first.
 \item \code{checkpoint} (\code{NULL}) -- grid-cell checkpoint/resume. Set
 \code{list(path = "fit.ckpt", resume = TRUE)} to make a killed or interrupted
 fit resumable: each completed outer-grid cell is appended to \code{path}, and

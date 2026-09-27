@@ -668,7 +668,7 @@ auto_grid_place <- function(x)
 }
 
 # Publish the drop record for the duration of one fit, the way every front door
-# publishes a fit-scoped setting (`tulpa.nl_progress`, `tulpa.nl_checkpoint`).
+# publishes a fit-scoped setting (`tulpa.nl_max_grid_cells`, `tulpa.nl_progress`).
 # `.finalize_fit()` reads it onto `$axis_fields_dropped`, so every fit the front
 # door produces -- the first solve and any rescue refit -- carries it, and
 # nothing outside the scope sees it. Call as
