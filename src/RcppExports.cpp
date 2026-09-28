@@ -4973,17 +4973,17 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_vi_convergence_replay
-Rcpp::List cpp_vi_convergence_replay(const Rcpp::NumericVector& elbo, double grad_norm, double tol_grad, double tol_rel_elbo, int patience);
-RcppExport SEXP _tulpa_cpp_vi_convergence_replay(SEXP elboSEXP, SEXP grad_normSEXP, SEXP tol_gradSEXP, SEXP tol_rel_elboSEXP, SEXP patienceSEXP) {
+Rcpp::List cpp_vi_convergence_replay(const Rcpp::NumericVector& elbo, const Rcpp::NumericMatrix& grad, double tol_grad, double tol_rel_elbo, int patience);
+RcppExport SEXP _tulpa_cpp_vi_convergence_replay(SEXP elboSEXP, SEXP gradSEXP, SEXP tol_gradSEXP, SEXP tol_rel_elboSEXP, SEXP patienceSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type elbo(elboSEXP);
-    Rcpp::traits::input_parameter< double >::type grad_norm(grad_normSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type grad(gradSEXP);
     Rcpp::traits::input_parameter< double >::type tol_grad(tol_gradSEXP);
     Rcpp::traits::input_parameter< double >::type tol_rel_elbo(tol_rel_elboSEXP);
     Rcpp::traits::input_parameter< int >::type patience(patienceSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_vi_convergence_replay(elbo, grad_norm, tol_grad, tol_rel_elbo, patience));
+    rcpp_result_gen = Rcpp::wrap(cpp_vi_convergence_replay(elbo, grad, tol_grad, tol_rel_elbo, patience));
     return rcpp_result_gen;
 END_RCPP
 }

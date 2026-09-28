@@ -177,7 +177,8 @@ test_that("offset = 0 reproduces the no-offset sampler draws exactly (gcol33/tul
 # finite-difference checked per variant in test-vi-gradient.R; these two fits
 # are the recovery arm.
 for (.vi_variant in list(list(code = 2L, name = "full-rank"),
-                         list(code = 1L, name = "low-rank"))) {
+                         list(code = 1L, name = "low-rank"),
+                         list(code = 0L, name = "mean-field"))) {
   local({
     code <- .vi_variant$code
     name <- .vi_variant$name

@@ -7,16 +7,26 @@
 # sit -- at ELBO ~ -742 any gain under 7.4 nats per iteration counted as no
 # improvement (gcol33/tulpa#821). It now compares the ELBO gain across the
 # patience window against the span the run has covered, both of them
-# differences.
+# differences, and stops only where the stochastic gradient is stationary
+# (gcol33/tulpa#917).
+
+# A stationary stochastic gradient: zero-mean noise on three coordinates, the
+# same draws on every call so a replay is a function of the ELBO alone.
+stationary_grad <- function(n, p = 3L) {
+  withr::with_seed(99L, matrix(rnorm(n * p), n, p))
+}
+replay <- function(elbo, grad = stationary_grad(length(elbo)), ...) {
+  cpp_vi_convergence_replay(elbo, grad, ...)
+}
 
 test_that("the stopping rule is invariant to an ELBO offset", {
   # The property the old rule failed. An ELBO's additive constant is not part
   # of the model, so shifting a whole run by one must not move the stop.
   set.seed(11)
   base <- -3000 + 2800 * (1 - exp(-seq_len(400) / 60)) + rnorm(400, 0, 1.5)
-  ref <- cpp_vi_convergence_replay(base)
+  ref <- replay(base)
   for (shift in c(-1e5, -1000, 0, 1000, 1e5)) {
-    got <- cpp_vi_convergence_replay(base + shift)
+    got <- replay(base + shift)
     expect_equal(got$iteration, ref$iteration,
                  info = sprintf("shift = %g", shift))
     expect_equal(got$reason, ref$reason, info = sprintf("shift = %g", shift))
@@ -28,9 +38,9 @@ test_that("the stopping rule is invariant to an ELBO rescaling", {
   # positive scale cancels out of the comparison.
   set.seed(12)
   base <- -500 + 450 * (1 - exp(-seq_len(400) / 50)) + rnorm(400, 0, 0.4)
-  ref <- cpp_vi_convergence_replay(base)
+  ref <- replay(base)
   for (s in c(0.01, 1, 100)) {
-    expect_equal(cpp_vi_convergence_replay(s * base)$iteration, ref$iteration,
+    expect_equal(replay(s * base)$iteration, ref$iteration,
                  info = sprintf("scale = %g", s))
   }
 })
@@ -40,27 +50,27 @@ test_that("a run still climbing is not stopped", {
   # rule stopped this at iteration 50 for any |ELBO| above 100, because 1 nat
   # is under 1% of it.
   climb <- -800 + seq_len(400)
-  res <- cpp_vi_convergence_replay(climb, patience = 50)
+  res <- replay(climb, patience = 50)
   expect_false(res$stopped)
 
   # ... at every offset, including one where the old test's threshold would
   # have been far above the per-iteration gain.
   for (shift in c(0, 1e4, -1e4)) {
-    expect_false(cpp_vi_convergence_replay(climb + shift)$stopped,
+    expect_false(replay(climb + shift)$stopped,
                  info = sprintf("shift = %g", shift))
   }
 })
 
 test_that("a flat run stops once the window is full", {
   flat <- rep(-123.456, 200)
-  res <- cpp_vi_convergence_replay(flat, patience = 50)
+  res <- replay(flat, patience = 50)
   expect_true(res$stopped)
   expect_equal(res$reason, "patience")
   expect_equal(res$iteration, 50L)
 })
 
 test_that("a falling run stops", {
-  res <- cpp_vi_convergence_replay(-100 - seq_len(300), patience = 40)
+  res <- replay(-100 - seq_len(300), patience = 40)
   expect_true(res$stopped)
   expect_equal(res$reason, "patience")
 })
@@ -68,17 +78,36 @@ test_that("a falling run stops", {
 test_that("tol_rel_elbo and patience move the stop in the expected direction", {
   set.seed(13)
   s <- -2000 + 1900 * (1 - exp(-seq_len(2000) / 120)) + rnorm(2000, 0, 1)
-  loose <- cpp_vi_convergence_replay(s, tol_rel_elbo = 0.05, patience = 50)
-  tight <- cpp_vi_convergence_replay(s, tol_rel_elbo = 0,    patience = 50)
+  loose <- replay(s, tol_rel_elbo = 0.05, patience = 50)
+  tight <- replay(s, tol_rel_elbo = 0,    patience = 50)
   expect_lt(loose$iteration, tight$iteration)
 
-  short <- cpp_vi_convergence_replay(s, tol_rel_elbo = 0, patience = 20)
-  long  <- cpp_vi_convergence_replay(s, tol_rel_elbo = 0, patience = 200)
+  short <- replay(s, tol_rel_elbo = 0, patience = 20)
+  long  <- replay(s, tol_rel_elbo = 0, patience = 200)
   expect_lt(short$iteration, long$iteration)
 })
 
+test_that("a flat ELBO does not stop a run whose gradient keeps its sign", {
+  # The #917 shape: the ELBO shows no gain while one scale is still
+  # contracting, which shows as a gradient coordinate with a steady mean far
+  # above its noise. Once that coordinate settles to zero mean the run stops
+  # at the end of the next complete block.
+  n <- 400L
+  elbo <- rep(-50, n)
+  g <- stationary_grad(n)
+  g[1:200, 1] <- g[1:200, 1] - 2
+  res <- replay(elbo, grad = g, patience = 50)
+  expect_true(res$stopped)
+  expect_equal(res$iteration, 250L)
+  expect_equal(res$reason, "patience")
+
+  g[, 1] <- g[, 1] - 2
+  expect_false(replay(elbo, grad = g, patience = 50)$stopped)
+})
+
 test_that("a small gradient norm stops the run whatever the ELBO does", {
-  res <- cpp_vi_convergence_replay(-100 + seq_len(300), grad_norm = 1e-9)
+  res <- replay(-100 + seq_len(300),
+                grad = matrix(1e-9, 300, 3))
   expect_true(res$stopped)
   expect_equal(res$reason, "gradient_norm")
   expect_equal(res$iteration, 1L)

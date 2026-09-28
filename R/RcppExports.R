@@ -1129,7 +1129,7 @@ cpp_test_funnel_nuts <- function(K = 9L, gamma = 3.0, n_iter = 3000L, n_warmup =
     .Call(`_tulpa_cpp_test_funnel_nuts`, K, gamma, n_iter, n_warmup, max_treedepth, adapt_delta, seed, riemannian, verbose)
 }
 
-cpp_vi_convergence_replay <- function(elbo, grad_norm = 1.0, tol_grad = 1e-4, tol_rel_elbo = 0.01, patience = 50L) {
-    .Call(`_tulpa_cpp_vi_convergence_replay`, elbo, grad_norm, tol_grad, tol_rel_elbo, patience)
+cpp_vi_convergence_replay <- function(elbo, grad, tol_grad = 1e-4, tol_rel_elbo = 0.01, patience = 50L) {
+    .Call(`_tulpa_cpp_vi_convergence_replay`, elbo, grad, tol_grad, tol_rel_elbo, patience)
 }
 

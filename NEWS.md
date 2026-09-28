@@ -21,6 +21,23 @@
 * Without `wbic = TRUE` the SMC path is the one-leg path it was, and a fit
   with a given seed is unchanged.
 
+## VI stops at a stationary point
+
+* The VI stopping rule stopped runs while the variational scales were still
+  contracting (gcol33/tulpa#917). A window's ELBO gain was tested against 1%
+  of the run's whole ELBO span, a span set by the mean's first moves; the
+  scales then gain a few nats per dimension, below that share and below the
+  noise of a 10-sample ELBO estimate. A poisson GLM stopped at iteration
+  94-137 with marginal SDs 1.5-4.4x the asymptotic SE. The rule now also
+  requires the stochastic gradient to be stationary over the last block of
+  `vi_patience` iterations: every coordinate's mean gradient within a
+  Bonferroni-corrected z of zero in units of its own standard error. On the
+  same fit the SD ratios are 1.12 / 0.90 (full-rank), 1.10 / 1.11
+  (low-rank) and 0.88 / 0.85 (mean-field). VI runs take more iterations.
+* The automatic low-rank VI rank never exceeds the parameter dimension; the
+  floor of 10 gave a 2-parameter model a rank-10 factor. An explicit rank
+  above the dimension is refused.
+
 # tulpa 0.6.3
 
 ## A large outer grid warns instead of being refused

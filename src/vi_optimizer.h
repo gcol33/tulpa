@@ -128,6 +128,22 @@ public:
 // bounds what the rule can discard: the per-iteration form tolerated
 // `patience` consecutive gains each just under the threshold, so up to 50x
 // the tolerance in total.
+//
+// A flat ELBO window is not a stationary point. The span is set by the first
+// iterations, where the mean travels from its start to the data and the ELBO
+// climbs by thousands of nats; the variances then contract over many more
+// iterations for a gain of a few nats per dimension, below both a 1% share of
+// that span and the Monte-Carlo noise of a 10-sample ELBO estimate. A poisson
+// GLM stopped at iteration 94-198 with its marginal SDs 1.5-4.4x the
+// asymptotic SE (gcol33/tulpa#917). The stochastic gradient resolves what the
+// ELBO cannot: while a scale is still contracting its reparameterisation
+// gradient keeps one sign, far above its noise, and at the optimum every
+// coordinate's gradient has mean zero. So the ELBO rule also has to find the
+// gradient stationary: over the last complete block of `patience` iterations,
+// every coordinate's mean gradient within z of zero in units of its own
+// standard error, z Bonferroni-corrected over the coordinates at level
+// kVIStationaryAlpha.
+const double kVIStationaryAlpha = 0.05;
 class ConvergenceChecker {
 public:
   double tol_grad;         // Gradient norm tolerance
@@ -139,6 +155,12 @@ public:
   double best_elbo;
   double worst_elbo;
   bool has_best;           // false until the first ELBO has been recorded
+
+  // Gradient moments over the current block of `patience` iterations, and the
+  // verdict of the last complete block.
+  Eigen::VectorXd grad_sum, grad_sumsq;
+  int block_count = 0;
+  bool grad_stationary = false;
 
   ConvergenceChecker(double tol_grad_ = 1e-4,
                      double tol_rel_elbo_ = 0.01,
@@ -155,14 +177,47 @@ public:
     best_elbo = -std::numeric_limits<double>::infinity();
     worst_elbo = std::numeric_limits<double>::infinity();
     has_best = false;
+    grad_sum.resize(0);
+    grad_sumsq.resize(0);
+    block_count = 0;
+    grad_stationary = false;
+  }
+
+  // Fold one stochastic gradient into the block; at the block's end, test
+  // every coordinate's mean against zero and start the next block.
+  void observe_gradient(const Eigen::VectorXd& g) {
+    if (grad_sum.size() != g.size()) {
+      grad_sum = Eigen::VectorXd::Zero(g.size());
+      grad_sumsq = Eigen::VectorXd::Zero(g.size());
+      block_count = 0;
+    }
+    if (!g.allFinite()) return;
+    grad_sum += g;
+    grad_sumsq += g.array().square().matrix();
+    if (++block_count < patience) return;
+
+    const double n = block_count;
+    const double z = R::qnorm(1.0 - 0.5 * kVIStationaryAlpha / g.size(),
+                              0.0, 1.0, 1, 0);
+    bool stationary = true;
+    for (int j = 0; j < g.size() && stationary; ++j) {
+      const double mean = grad_sum(j) / n;
+      const double var = std::max(0.0, (grad_sumsq(j) - n * mean * mean) / (n - 1.0));
+      stationary = std::abs(mean) <= z * std::sqrt(var / n);
+    }
+    grad_stationary = stationary;
+    grad_sum.setZero();
+    grad_sumsq.setZero();
+    block_count = 0;
   }
 
   // Check if converged, returns convergence reason or empty string
-  std::string check(double elbo, double grad_norm) {
+  std::string check(double elbo, const Eigen::VectorXd& grad) {
     // Check gradient norm
-    if (grad_norm < tol_grad) {
+    if (grad.norm() < tol_grad) {
       return "gradient_norm";
     }
+    observe_gradient(grad);
 
     // A non-finite ELBO carries no information about the plateau; it neither
     // extends the run's span nor enters the window.
@@ -183,7 +238,7 @@ public:
     const double gain = (second - first) / h;
     const double span = best_elbo - worst_elbo;
 
-    if (gain <= tol_rel_elbo * span) {
+    if (gain <= tol_rel_elbo * span && grad_stationary) {
       return "patience";
     }
 
@@ -222,7 +277,7 @@ inline bool vi_adam_step(Params& params,
                          PostUpdate post_update) {
   double grad_norm = grad_flat.norm();
 
-  std::string converged = checker.check(elbo, grad_norm);
+  std::string converged = checker.check(elbo, grad_flat);
   if (!converged.empty()) {
     result.converged = true;
     result.converged_reason = converged;

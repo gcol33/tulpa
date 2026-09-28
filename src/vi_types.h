@@ -185,12 +185,20 @@ inline VIVariant select_variant(int D, const VIConfig& config) {
   }
 }
 
+// A factor of rank r >= D already spans every covariance, so columns past D
+// only add directions along which the ELBO is flat: at D = 2 the old floor of
+// 10 left 20 factor entries to shrink for 3 covariance entries, and the fit
+// stopped with its SDs several times too wide (gcol33/tulpa#917).
 inline int select_rank(int D, const VIConfig& config) {
   if (config.rank > 0) {
+    if (config.rank > D) {
+      Rcpp::stop("VI rank %d exceeds the parameter dimension %d; a low-rank "
+                 "factor needs at most D columns.", config.rank, D);
+    }
     return config.rank;
   }
-  // Auto: D/10 clamped to [10, 50]
-  return std::max(10, std::min(D / 10, 50));
+  // Auto: D/10 clamped to [10, 50], and never past D.
+  return std::min(D, std::max(10, std::min(D / 10, 50)));
 }
 
 // ---------------------------------------------------------------------
