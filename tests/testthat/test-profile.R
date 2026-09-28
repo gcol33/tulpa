@@ -193,7 +193,12 @@ test_that("the single-response Laplace is timed by phase (#887)", {
     p <- tulpa_profile(tulpa_laplace(y, rep(1L, n), X, family = "binomial")))
   timed <- p$phase[p$calls > 0L]
   expect_true(all(.profile_newton_phases %in% timed))
-  expect_true(all(p$seconds[p$phase %in% .profile_newton_phases] > 0))
+  # A phase shorter than one clock tick reads 0: the single log-determinant of
+  # this 2 x 2 system does in about 1 run in 12. Each phase is non-negative
+  # and the solve as a whole registers time.
+  secs <- p$seconds[p$phase %in% .profile_newton_phases]
+  expect_true(all(secs >= 0))
+  expect_gt(sum(secs), 0)
   # One scatter per Newton iteration plus the final pass, and one factorize
   # per iteration: so exactly one more scatter than factorize.
   n_sc <- p$calls[p$phase == "scatter"]
@@ -235,7 +240,9 @@ test_that("the nested-Laplace outer grid times each cell and its inner solve (#8
   expect_gt(p$seconds[p$phase == "outer_grid_cell"], 0)
   # Every cell ran a full inner solve: at least one final-pass log-det each.
   expect_gte(p$calls[p$phase == "log_det"], n_cell)
-  expect_true(all(p$seconds[p$phase %in% .profile_newton_phases] > 0))
+  secs <- p$seconds[p$phase %in% .profile_newton_phases]
+  expect_true(all(secs >= 0))
+  expect_gt(sum(secs), 0)
   # The enclosing cell phase overlaps the leaves and takes no share.
   expect_true(is.na(p$share[p$phase == "outer_grid_cell"]))
   expect_equal(sum(p$share, na.rm = TRUE), 1, tolerance = 1e-8)
