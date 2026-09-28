@@ -69,9 +69,17 @@
 #' log-likelihood (a deterministic / point approximation) yields `NA` criterion
 #' columns rather than an error, so the table always has one row per model.
 #'
+#' `"wbic"` ranks by [wbic()], an estimate of each fit's negative log evidence,
+#' and needs every fit to carry its tempered draws (`mode = "smc"`,
+#' `control = list(wbic = TRUE)`); a fit without them gets an `NA` row.
+#'
 #' @param ... Named `tulpa_fit` objects.
-#' @param criterion `"waic"` (default), `"loo"`, or `"loglik"`.
-#' @return A data frame. For `"loglik"`: `model`, `n_params`, `logLik`,
+#' @param criterion `"waic"` (default), `"loo"`, `"wbic"`, or `"loglik"`.
+#' @return A data frame. For `"wbic"` (ranked best-first): `model`, `wbic`,
+#'   `delta` (WBIC gap to the best model, >= 0), and `weight`
+#'   (`exp(-delta)` normalized: the posterior model probability under equal
+#'   prior model weights, with each log evidence read off its WBIC).
+#'   For `"loglik"`: `model`, `n_params`, `logLik`,
 #'   `quantity` and `conditioned_on` (which log-scale quantity [logLik()]
 #'   reports, and the hyperparameters it holds fixed; fits that disagree on
 #'   either are refused rather than ranked). For
@@ -91,9 +99,22 @@
 #' compare_models(full = f1, null = f2, criterion = "waic")
 #' }
 #' @export
-compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
+compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) {
   criterion <- match.arg(criterion)
   models <- .name_models(list(...))
+
+  if (criterion == "wbic") {
+    w <- vapply(models, function(fit) {
+      tryCatch(wbic(fit)$wbic, error = function(e) NA_real_)
+    }, numeric(1))
+    ord   <- order(w, na.last = TRUE)
+    delta <- w - w[ord[1]]
+    rel   <- exp(-delta)
+    out <- data.frame(model = names(models), wbic = w, delta = delta,
+                      weight = rel / sum(rel, na.rm = TRUE),
+                      row.names = NULL, stringsAsFactors = FALSE)
+    return(out[ord, , drop = FALSE])
+  }
 
   if (criterion == "loglik") {
     rows <- lapply(names(models), function(nm) {

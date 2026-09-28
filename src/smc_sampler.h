@@ -38,8 +38,11 @@ struct SMCResult {
     std::vector<std::vector<double>> particles;  // final N particles x dim
     std::vector<double> weights;                  // final normalized weights
     double log_marginal_likelihood;               // log Z estimate
-    std::vector<double> temperatures;             // beta schedule (including 0 and 1)
+    std::vector<double> temperatures;             // path coordinate schedule (0 .. n_legs)
     int n_temperatures;                           // number of tempering steps
+    // The equally weighted population at the end of every leg but the last,
+    // after its mutations: a sample of that leg's end distribution.
+    std::vector<std::vector<std::vector<double>>> leg_end_particles;
     std::vector<double> ess_history;              // ESS at each step
     int n_resamples;                              // how many times resampling triggered
     int n_mutations;                              // total MCMC mutation steps applied
@@ -158,19 +161,51 @@ inline double find_next_temperature(
 }
 
 // ============================================================================
+// The two-leg path through a tempered posterior
+// ============================================================================
+//
+// A path that passes through p L^b on its way to the posterior p L, as a
+// function of the path coordinate tau. From a reference q the target at tau is
+//   (1 - s) log q + s log p + s lambda log L,
+// with leg 1 (tau in [0, 1]) at s = tau, lambda = b, bridging q to p L^b, and
+// leg 2 (tau in (1, 2]) at s = 1, lambda = b + (tau - 1)(1 - b), tempering the
+// likelihood from b to 1. At b = 1 there is one leg, s = tau and lambda = 1:
+// the plain bridge q^(1 - tau) (p L)^tau.
+
+struct PathPoint {
+    double s;        // weight moved off the reference onto p L^lambda
+    double lambda;   // likelihood power
+};
+
+inline PathPoint path_point(double tau, double b) {
+    if (tau <= 1.0) return {tau, b};
+    return {1.0, b + (tau - 1.0) * (1.0 - b)};
+}
+
+// The likelihood power at tau when the population represents p from the start
+// and only L is tempered: b tau on leg 1, then from b to 1 on leg 2.
+inline double prior_path_power(double tau, double b) {
+    if (tau <= 1.0) return tau * b;
+    return b + (tau - 1.0) * (1.0 - b);
+}
+
+// ============================================================================
 // Main SMC sampler
 // ============================================================================
 
-// The sampler walks the geometric path
-//   pi_beta(theta)  proportional to  pi_0(theta) * exp(beta * h(theta)),
-// beta from 0 to 1, where pi_0 is the distribution the initial population
-// represents. Callbacks:
-//   log_increment(theta)             -> h(theta), the tempering direction
-//   initial_sample(theta, rng, beta) -> fill theta with a draw from q
-//   mcmc_mutation(theta, beta, rng)  -> one MCMC step invariant for pi_beta
+// The sampler walks a path of geometric legs. Leg k runs
+//   pi_{k,t}(theta)  proportional to  pi_{k,0}(theta) * exp(t * h_k(theta)),
+// t from 0 to 1, where pi_{0,0} is the distribution the initial population
+// represents and pi_{k+1,0} = pi_{k,1}, so every leg starts where the last one
+// ended. The path coordinate tau = k + t runs from 0 to the number of legs and
+// is what the kernel and the schedule see; a single leg is the plain tempering
+// path with tau = beta. Callbacks:
+//   legs[k](theta)                   -> h_k(theta), leg k's tempering direction
+//   initial_sample(theta, rng, tau)  -> fill theta with a draw from q
+//   mcmc_mutation(theta, tau, rng)   -> one MCMC step invariant for pi at tau
 //   initial_log_weight(theta)        -> optional log(pi_0 / q); empty means
 //                                       the draws already represent pi_0
-//   prepare_mutation(particles, beta)-> optional hook fired once per
+//   prepare_mutation(particles, tau) -> optional hook fired once per
 //                                       temperature, after resampling and
 //                                       before the mutations, so a kernel can
 //                                       adapt to the current population
@@ -185,11 +220,12 @@ inline double find_next_temperature(
 // is invariant for another distribution, and what comes out is neither
 // (gcol33/tulpa#876 -- the RE scale collapsed 3-10x that way).
 //
-// log_marginal_likelihood estimates log(integral pi_0 exp(h)) and is the
-// evidence only when pi_0 and exp(h) carry every normalizing constant.
+// log_marginal_likelihood estimates log(integral pi_0 exp(sum_k h_k)) and is
+// the evidence only when pi_0 and every exp(h_k) carry every normalizing
+// constant.
 
 inline SMCResult smc_sample(
-    const std::function<double(const std::vector<double>&)>& log_increment,
+    const std::vector<std::function<double(const std::vector<double>&)>>& legs,
     const std::function<void(std::vector<double>&, std::mt19937&, double)>& initial_sample,
     const std::function<void(std::vector<double>&, double, std::mt19937&)>& mcmc_mutation,
     int dim,
@@ -203,6 +239,10 @@ inline SMCResult smc_sample(
 ) {
     int N = n_particles;
     std::mt19937 rng(seed);
+    const int n_legs = static_cast<int>(legs.size());
+    if (n_legs < 1) {
+        throw std::invalid_argument("tulpa SMC: the path needs at least one leg.");
+    }
 
     SMCResult result;
     result.log_marginal_likelihood = 0.0;
@@ -218,13 +258,15 @@ inline SMCResult smc_sample(
         initial_sample(particles[n], rng, 0.0);
     }
 
-    // Tempering direction h at each particle, refreshed after every mutation.
+    // Tempering direction h of the current leg at each particle, refreshed
+    // after every mutation and when a leg begins.
+    int leg = 0;
     std::vector<double> incr(N);
     for (int n = 0; n < N; n++) {
-        incr[n] = log_increment(particles[n]);
+        incr[n] = legs[leg](particles[n]);
     }
 
-    double beta = 0.0;
+    double tau = 0.0;
     double ess_target = ess_threshold * N;
 
     // Reweight by exp(log_w), accumulate the normalizing-constant increment,
@@ -258,12 +300,12 @@ inline SMCResult smc_sample(
     };
 
     auto mutate = [&]() {
-        if (prepare_mutation) prepare_mutation(particles, beta);
+        if (prepare_mutation) prepare_mutation(particles, tau);
         for (int n = 0; n < N; n++) {
             for (int k = 0; k < n_mcmc_steps; k++) {
-                mcmc_mutation(particles[n], beta, rng);
+                mcmc_mutation(particles[n], tau, rng);
             }
-            incr[n] = log_increment(particles[n]);
+            incr[n] = legs[leg](particles[n]);
         }
         result.n_mutations += N * n_mcmc_steps;
     };
@@ -285,31 +327,41 @@ inline SMCResult smc_sample(
     // 2. Tempering loop
     // ------------------------------------------------------------------
     int n_steps = 0;
-    while (beta < 1.0) {
-        Rcpp::checkUserInterrupt();
-        if (++n_steps > kMaxTemperatureSteps) {
-            throw std::runtime_error(
-                "SMC tempering did not reach beta = 1 within " +
-                std::to_string(kMaxTemperatureSteps) + " steps (stalled at "
-                "beta = " + std::to_string(beta) + "). The ESS target is "
-                "unreachable at every temperature above it, which a particle "
-                "carrying a non-finite log-likelihood produces; check the "
-                "initial population and the likelihood at it.");
+    for (leg = 0; leg < n_legs; leg++) {
+        if (leg > 0) {
+            for (int n = 0; n < N; n++) incr[n] = legs[leg](particles[n]);
         }
+        double t = 0.0;
+        while (t < 1.0) {
+            Rcpp::checkUserInterrupt();
+            if (++n_steps > kMaxTemperatureSteps) {
+                throw std::runtime_error(
+                    "SMC tempering did not reach the end of its path within " +
+                    std::to_string(kMaxTemperatureSteps) + " steps (stalled at "
+                    "leg " + std::to_string(leg + 1) + " of " +
+                    std::to_string(n_legs) + ", t = " + std::to_string(t) +
+                    "). The ESS target is unreachable at every temperature "
+                    "above it, which a particle carrying a non-finite "
+                    "log-likelihood produces; check the initial population "
+                    "and the likelihood at it.");
+            }
 
-        // (a) Adaptive temperature selection
-        double beta_new = find_next_temperature(incr, beta, ess_target, N);
-        double delta = beta_new - beta;
+            // (a) Adaptive temperature selection within the leg
+            double t_new = find_next_temperature(incr, t, ess_target, N);
+            double delta = t_new - t;
 
-        // (b) Incremental log-weights, reweight and resample
-        std::vector<double> log_w(N);
-        for (int n = 0; n < N; n++) log_w[n] = delta * incr[n];
-        reweight_resample(log_w);
+            // (b) Incremental log-weights, reweight and resample
+            std::vector<double> log_w(N);
+            for (int n = 0; n < N; n++) log_w[n] = delta * incr[n];
+            reweight_resample(log_w);
 
-        // (c) MCMC mutations at the new temperature
-        beta = beta_new;
-        result.temperatures.push_back(beta);
-        mutate();
+            // (c) MCMC mutations at the new temperature
+            t = t_new;
+            tau = leg + t;
+            result.temperatures.push_back(tau);
+            mutate();
+        }
+        if (leg + 1 < n_legs) result.leg_end_particles.push_back(particles);
     }
 
     // ------------------------------------------------------------------

@@ -18,11 +18,15 @@ Rcpp::List cpp_smc_test(
     Rcpp::NumericVector sigma_target,
     int n_particles = 500,
     int n_mcmc_steps = 5,
-    int seed = 42
+    int seed = 42,
+    double bridge_end = 1.0
 ) {
     int dim = mu_target.size();
     if (dim != sigma_target.size()) {
         stop("mu_target and sigma_target must have the same length");
+    }
+    if (!(bridge_end > 0.0 && bridge_end <= 1.0)) {
+        stop("bridge_end must lie in (0, 1]");
     }
 
     std::vector<double> mu_t(mu_target.begin(), mu_target.end());
@@ -63,7 +67,8 @@ Rcpp::List cpp_smc_test(
     // Proposal SD is set analytically from the tempered posterior variance:
     //   v_i = sp^2 * st_i^2 / (st_i^2 + beta * sp^2)
     // Optimal RWM scaling: prop_sd_i = 2.38 * sqrt(v_i) / sqrt(d)
-    auto mutation = [&](std::vector<double>& x, double beta, std::mt19937& rng) {
+    auto mutation = [&](std::vector<double>& x, double tau, std::mt19937& rng) {
+        const double beta = tulpa_smc::prior_path_power(tau, bridge_end);
         std::uniform_real_distribution<double> unif(0.0, 1.0);
         double lp_curr = log_prior(x) + beta * log_lik(x);
 
@@ -83,37 +88,56 @@ Rcpp::List cpp_smc_test(
     };
 
     // Prior path: the initial draws are exact prior draws, so the tempering
-    // direction is the log-likelihood alone.
+    // direction is the log-likelihood alone -- to bridge_end on the first leg,
+    // then on to 1.
+    std::vector<std::function<double(const std::vector<double>&)>> legs;
+    legs.push_back([&](const std::vector<double>& x) { return bridge_end * log_lik(x); });
+    if (bridge_end < 1.0) {
+        legs.push_back([&](const std::vector<double>& x) {
+            return (1.0 - bridge_end) * log_lik(x);
+        });
+    }
     auto result = tulpa_smc::smc_sample(
-        log_lik, prior_sample, mutation,
+        legs, prior_sample, mutation,
         dim, n_particles, 0.5, n_mcmc_steps,
         static_cast<unsigned int>(seed)
     );
 
-    // Compute weighted posterior mean
+    // Equally weighted population moments.
     int N = n_particles;
-    Rcpp::NumericVector means(dim, 0.0);
-    for (int n = 0; n < N; n++) {
-        for (int i = 0; i < dim; i++) {
-            means[i] += result.weights[n] * result.particles[n][i];
-        }
-    }
+    auto moments = [dim, N](const std::vector<std::vector<double>>& pop,
+                            Rcpp::NumericVector& means, Rcpp::NumericVector& sds) {
+        means = Rcpp::NumericVector(dim, 0.0);
+        sds = Rcpp::NumericVector(dim, 0.0);
+        for (int n = 0; n < N; n++)
+            for (int i = 0; i < dim; i++) means[i] += pop[n][i] / N;
+        for (int n = 0; n < N; n++)
+            for (int i = 0; i < dim; i++) {
+                double diff = pop[n][i] - means[i];
+                sds[i] += diff * diff / N;
+            }
+        for (int i = 0; i < dim; i++) sds[i] = std::sqrt(sds[i]);
+    };
+    Rcpp::NumericVector means, sds;
+    moments(result.particles, means, sds);
 
-    // Compute weighted posterior SD
-    Rcpp::NumericVector sds(dim, 0.0);
-    for (int n = 0; n < N; n++) {
-        for (int i = 0; i < dim; i++) {
-            double diff = result.particles[n][i] - means[i];
-            sds[i] += result.weights[n] * diff * diff;
-        }
-    }
-    for (int i = 0; i < dim; i++) {
-        sds[i] = std::sqrt(sds[i]);
+    // The tempered population at bridge_end, and its mean log-likelihood (the
+    // WBIC average when bridge_end = 1 / log n).
+    Rcpp::NumericVector t_means, t_sds;
+    double t_mean_loglik = NA_REAL;
+    if (!result.leg_end_particles.empty()) {
+        const auto& pop = result.leg_end_particles.front();
+        moments(pop, t_means, t_sds);
+        t_mean_loglik = 0.0;
+        for (int n = 0; n < N; n++) t_mean_loglik += log_lik(pop[n]) / N;
     }
 
     return Rcpp::List::create(
         Rcpp::Named("means") = means,
         Rcpp::Named("sds") = sds,
+        Rcpp::Named("tempered_means") = t_means,
+        Rcpp::Named("tempered_sds") = t_sds,
+        Rcpp::Named("tempered_mean_loglik") = t_mean_loglik,
         Rcpp::Named("log_marginal_likelihood") = result.log_marginal_likelihood,
         Rcpp::Named("n_temperatures") = result.n_temperatures,
         Rcpp::Named("n_particles") = N,

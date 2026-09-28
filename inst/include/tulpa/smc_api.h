@@ -20,6 +20,13 @@
 // The log-Z accumulator does not carry every normalizing constant of the
 // ModelData prior and likelihood, so SMCShimResult::log_evidence comes back
 // NaN and must not be read as a model-comparison number.
+//
+// With bridge_end = b < 1 either path passes through the tempered posterior
+// p L^b exactly, and the equally weighted population there comes back in
+// SMCShimResult::tempered_particles. At b = 1 / log(n) those are the draws
+// Watanabe's WBIC averages the model package's own normalized log-likelihood
+// over: WBIC = -mean_s sum_i log p(y_i | theta_s). b = 1 records nothing and
+// runs the plain path.
 
 #ifndef TULPA_SMC_API_H
 #define TULPA_SMC_API_H
@@ -44,10 +51,19 @@ struct SMCShimResult {
     double  log_evidence;  // NaN (see above)
     int     success;       // 0 / 1
     char    error_msg[256];
+    // The population at the tempered posterior p L^tempered_beta, row-major
+    // (n_tempered x n_params); nullptr, 0 and NaN when bridge_end = 1.
+    double* tempered_particles;
+    int     n_tempered;
+    double  tempered_beta;
 
     void free_buffers() {
         if (particles)   { delete[] particles;   particles   = nullptr; }
         if (log_weights) { delete[] log_weights; log_weights = nullptr; }
+        if (tempered_particles) {
+            delete[] tempered_particles;
+            tempered_particles = nullptr;
+        }
     }
 };
 
@@ -73,6 +89,8 @@ typedef void (*SmcMutationFn)(
 //   - mutation      : optional pluggable mutation kernel. Pass nullptr
 //                     to use the built-in HMC kernel on the bridge.
 //   - user_data     : opaque pointer forwarded to `mutation`.
+//   - bridge_end    : likelihood power in (0, 1] the path passes through and
+//                     records the population at; 1 for none.
 // ----------------------------------------------------------------------------
 typedef void (*SmcFitFn)(
     const ModelData* data,
@@ -87,6 +105,7 @@ typedef void (*SmcFitFn)(
     void* user_data,
     unsigned int seed,
     int verbose,
+    double bridge_end,
     SMCShimResult* result_out
 );
 

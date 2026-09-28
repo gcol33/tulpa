@@ -513,8 +513,15 @@ Implemented in `R/methods_generic.R` (`coef`, `confint`, `vcov`, `logLik`,
 (`compare_models`, `model_average`, `spatial_range`, `temporal_corr`), and
 `R/diagnostics_sim.R` (`moran_i`, `durbin_watson`, `tulpa_variogram`,
 `pit_residuals`, `test_uniformity`, `test_dispersion`, `test_outliers`,
-`test_zero_inflation`, `check_model`).
+`test_zero_inflation`, `check_model`), and `R/criteria.R` (`dic`, `cpo`,
+`wbic`, and the `loo::waic` / `loo::loo` methods).
 Model packages inherit via `class = c("model_fit", "tulpa_fit")`.
+
+`wbic()` reads draws from the posterior tempered at `1 / log(n)`, which only
+the SMC path visits: `SMCConfig::bridge_end = b < 1` runs it in two legs,
+reference -> `p L^b` (population recorded) -> `p L`, via
+`tulpa_smc::path_point` / `prior_path_power` (`smc_sampler.h`). At `b = 1`
+it is the one-leg path, bit-identical to what ran before the legs existed.
 
 ## Engineering history
 

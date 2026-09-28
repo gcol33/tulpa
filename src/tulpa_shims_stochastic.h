@@ -214,8 +214,14 @@ extern "C" void tulpa_smc_fit_impl(
     void* user_data,
     unsigned int seed,
     int verbose,
+    double bridge_end,
     tulpa::SMCShimResult* result_out
 ) {
+    result_out->particles = nullptr;
+    result_out->log_weights = nullptr;
+    result_out->tempered_particles = nullptr;
+    result_out->n_tempered = 0;
+    result_out->tempered_beta = std::numeric_limits<double>::quiet_NaN();
     TULPA_SHIM_GUARD_BEGIN
     std::vector<double> init_vec(init, init + n_params);
 
@@ -226,6 +232,7 @@ extern "C" void tulpa_smc_fit_impl(
     cfg.prior_sigma    = prior_sigma;
     cfg.seed           = seed;
     cfg.verbose        = (verbose != 0);
+    cfg.bridge_end     = bridge_end;
 
     tulpa::SMCDriverResult res = tulpa::run_smc_sampler(
         init_vec, *data, *layout, cfg, mutation, user_data);
@@ -257,6 +264,19 @@ extern "C" void tulpa_smc_fit_impl(
         int W = (int)res.log_weights.size();
         result_out->log_weights = new double[W > 0 ? W : 1];
         for (int i = 0; i < W; i++) result_out->log_weights[i] = res.log_weights[i];
+    }
+
+    const int T = (int)res.tempered_particles.size();
+    if (T > 0 && P > 0) {
+        result_out->tempered_particles = new double[(size_t)T * (size_t)P];
+        for (int i = 0; i < T; i++) {
+            for (int j = 0; j < P; j++) {
+                result_out->tempered_particles[(size_t)i * P + j] =
+                    res.tempered_particles[i][j];
+            }
+        }
+        result_out->n_tempered = T;
+        result_out->tempered_beta = res.tempered_beta;
     }
     TULPA_SHIM_GUARD_END("tulpa_smc_fit")
 }

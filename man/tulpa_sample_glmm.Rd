@@ -87,7 +87,13 @@ any other backend errors rather than sampling from the default start.}
 \code{batch_size}, \code{alpha}, \code{n_particles}, \code{n_mcmc_steps}, \code{ess_threshold},
 \code{vi_variant}, \code{vi_mc_samples}, \code{vi_max_iter}, \code{vi_max_grad_norm},
 \code{vi_tol_grad}, \code{vi_tol_rel_elbo}, \code{vi_patience},
-\code{n_draws}, \code{verbose}, \code{mass_matrix}, \code{checkpoint}).
+\code{n_draws}, \code{verbose}, \code{mass_matrix}, \code{checkpoint}, \code{wbic}).
+
+\code{wbic = TRUE} (SMC only) routes the tempering path through the posterior
+tempered at \code{1 / log(n)}, \verb{p(theta) L(theta)^(1 / log n)}, and stores the
+equally weighted population there as \verb{$tempered_draws} (with
+\verb{$tempered_beta}), which \code{\link[=wbic]{wbic()}} reads. The run then continues to the
+posterior, so \verb{$draws} are posterior draws as without it.
 
 \code{checkpoint = list(path =, resume =)} is per-chain checkpoint/resume on
 the NUTS/HMC kernel only (a chain is the checkpoint unit, deterministic

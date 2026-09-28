@@ -59,7 +59,13 @@
 #'   `batch_size`, `alpha`, `n_particles`, `n_mcmc_steps`, `ess_threshold`,
 #'   `vi_variant`, `vi_mc_samples`, `vi_max_iter`, `vi_max_grad_norm`,
 #'   `vi_tol_grad`, `vi_tol_rel_elbo`, `vi_patience`,
-#'   `n_draws`, `verbose`, `mass_matrix`, `checkpoint`).
+#'   `n_draws`, `verbose`, `mass_matrix`, `checkpoint`, `wbic`).
+#'
+#'   `wbic = TRUE` (SMC only) routes the tempering path through the posterior
+#'   tempered at `1 / log(n)`, `p(theta) L(theta)^(1 / log n)`, and stores the
+#'   equally weighted population there as `$tempered_draws` (with
+#'   `$tempered_beta`), which [wbic()] reads. The run then continues to the
+#'   posterior, so `$draws` are posterior draws as without it.
 #'
 #'   `checkpoint = list(path =, resume =)` is per-chain checkpoint/resume on
 #'   the NUTS/HMC kernel only (a chain is the checkpoint unit, deterministic
@@ -189,6 +195,25 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
          backend, "' has no per-chain state to checkpoint. Drop it, or use ",
          "backend = 'hmc'.", call. = FALSE)
   }
+  # WBIC (Watanabe 2013) averages the log-likelihood over the posterior
+  # tempered at 1 / log(n). The SMC path passes through that distribution on
+  # its way to the posterior and records the population there; no other kernel
+  # visits it.
+  smc_bridge_end <- 1.0
+  if (!is.null(control$wbic)) {
+    if (!is.logical(control$wbic) || length(control$wbic) != 1L ||
+        is.na(control$wbic)) {
+      stop("`control$wbic` must be TRUE or FALSE.", call. = FALSE)
+    }
+    if (isTRUE(control$wbic)) {
+      if (!identical(backend, "smc")) {
+        stop("`control$wbic` is only read by the SMC kernel; backend '",
+             backend, "' does not visit the tempered posterior. Use ",
+             "backend = 'smc'.", call. = FALSE)
+      }
+      smc_bridge_end <- .wbic_temperature(N)
+    }
+  }
   .ckpt <- .nl_checkpoint_args(control, use_option = FALSE)
   if (nzchar(.ckpt$path) && !isTRUE(.ckpt$resume) && file.exists(.ckpt$path)) {
     file.remove(.ckpt$path)
@@ -293,8 +318,10 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     ess_joint_sigma_re = if (is.null(control$ess_joint_sigma_re)) -1L
                          else as.integer(isTRUE(control$ess_joint_sigma_re)),
     ess_joint_proposal_sd = as.numeric(control$ess_joint_proposal_sd %||% 0.1),
-    checkpoint_path = .ckpt$path
+    checkpoint_path = .ckpt$path,
+    smc_bridge_end  = smc_bridge_end
   )
+  if (is.null(res$tempered_draws)) res$tempered_beta <- NULL
 
   # The C++ kernel names every column of the full parameter vector (fixed effects
   # + latent effects + variance-component hyperparameters) via the ParamLayout,

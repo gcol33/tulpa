@@ -124,6 +124,7 @@ reference:
   contents:
   - tulpa_criteria
   - criteria_doors
+  - wbic
   - tulpa_kfold
   - tulpa_reloo
   - tulpa_psis

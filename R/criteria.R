@@ -588,6 +588,130 @@ loo.tulpa_fit <- function(x, ...) {
   loo::loo(ll, r_eff = .tulpa_loglik_r_eff(x, ll), ...)
 }
 
+#' Widely applicable Bayesian information criterion (WBIC)
+#'
+#' @description
+#' Watanabe's (2013) WBIC: the expected negative log-likelihood under the
+#' posterior tempered at inverse temperature `beta = 1 / log(n)`,
+#' \deqn{\mathrm{WBIC} = -E_\beta\left[\sum_{i=1}^n \log p(y_i \mid \theta)\right],
+#'   \qquad p_\beta(\theta) \propto p(\theta) \prod_{i=1}^n p(y_i \mid \theta)^\beta.}
+#' It estimates the Bayes free energy `-log p(y)`, the negative log evidence,
+#' and shares its asymptotic expansion up to `O_p(1)` terms in singular models
+#' as well as regular ones -- mixtures, reduced-rank and latent-factor
+#' structure, a variance component at zero -- where BIC's `(d / 2) log n`
+#' penalty does not describe the evidence. Lower is better.
+#'
+#' @details
+#' No draw from the posterior itself can supply the expectation: it is taken
+#' under a different distribution, and importance-reweighting posterior draws
+#' down to `beta` degenerates as `n` grows. A `tulpa_fit` therefore carries the
+#' tempered draws only when its sampler visited that distribution, which the
+#' SMC path does when asked: fit with `mode = "smc"` and
+#' `control = list(wbic = TRUE)`. The population is then carried from the
+#' reference through `p(theta) L(theta)^beta`, recorded there, and tempered on
+#' to the posterior, so the fit's own `$draws` are posterior draws as usual.
+#' A fit without the tempered draws is refused.
+#'
+#' The log-likelihood is the normalized pointwise density [pointwise_loglik()]
+#' returns, the input of [loo::waic()] and [loo::loo()] too, so WBIC is on the
+#' scale of `-log p(y)` and comparable across fits of the same response. The
+#' parameter vector tempered is the one the sampler samples -- fixed effects,
+#' latent effects and hyperparameters -- with the likelihood conditional on
+#' it, so the free energy estimated is that of the marginal likelihood
+#' integrating all of them.
+#'
+#' The default method takes an `[n_draws x n_obs]` pointwise log-likelihood
+#' whose rows are draws from the posterior tempered at `1 / log(n_obs)`. A
+#' model package with its own likelihood draws them through the `tulpa_smc_fit`
+#' C entry with `bridge_end = 1 / log(n)` and evaluates its density there.
+#'
+#' @param object A `tulpa_fit` fitted with `mode = "smc"` and
+#'   `control = list(wbic = TRUE)`, or an `[n_draws x n_obs]` pointwise
+#'   log-likelihood matrix (or [tulpa_loglik()]) at draws from the posterior
+#'   tempered at `1 / log(n_obs)`.
+#' @param ... Unused.
+#' @return A `tulpa_wbic` object: a list with `wbic`, the inverse temperature
+#'   `beta`, `n_obs` and `n_draws`.
+#' @references
+#' Watanabe, S. (2013). A widely applicable Bayesian information criterion.
+#' \emph{Journal of Machine Learning Research} 14:867-897.
+#' @seealso [loo::waic()], [dic()] and [compare_models()] for the other
+#'   criteria; [tulpa_criteria()].
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' d <- data.frame(x = rnorm(80))
+#' d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "smc",
+#'              control = list(wbic = TRUE, n_particles = 500L, seed = 1L))
+#' wbic(fit)
+#' }
+#' @export
+wbic <- function(object, ...) {
+  UseMethod("wbic")
+}
+
+#' @rdname wbic
+#' @export
+wbic.default <- function(object, ...) {
+  .criteria_matrix_or_stop(object, "wbic()")
+  ll <- tulpa_loglik(object)
+  S <- ll$n_draws
+  N <- ll$n_obs
+  beta <- .wbic_temperature(N)
+  if (S < 1L) stop("wbic(): the log-likelihood holds no draws.", call. = FALSE)
+  chunk <- if (ll$materialized) N else max(1L, floor(4e6 / S))
+  total <- numeric(S)
+  for (st in seq.int(1L, N, by = chunk)) {
+    total <- total + rowSums(ll$get(st:min(st + chunk - 1L, N)))
+  }
+  if (anyNA(total)) {
+    stop("wbic(): the pointwise log-likelihood is NA at ",
+         sum(is.na(total)), " of ", S, " draws.", call. = FALSE)
+  }
+  structure(list(wbic = -mean(total), beta = beta, n_obs = N, n_draws = S),
+            class = "tulpa_wbic")
+}
+
+#' @rdname wbic
+#' @export
+wbic.tulpa_fit <- function(object, ...) {
+  td <- object[["tempered_draws"]]
+  if (is.null(td)) {
+    stop("wbic(): the fit carries no draws from the posterior tempered at ",
+         "1 / log(n). Fit with mode = 'smc' and control = list(wbic = TRUE); ",
+         "no other backend visits that distribution.", call. = FALSE)
+  }
+  tempered <- object
+  tempered$draws <- td
+  ll <- .tulpa_pointwise_loglik(tempered, caller = "wbic()")
+  beta <- .wbic_temperature(ncol(ll))
+  if (!isTRUE(all.equal(object$tempered_beta, beta, tolerance = 1e-12))) {
+    stop(sprintf(paste0("wbic(): the stored draws were tempered at beta = %.6g, ",
+                        "but the fit's %d observations give 1 / log(n) = %.6g."),
+                 object$tempered_beta, ncol(ll), beta), call. = FALSE)
+  }
+  wbic.default(ll)
+}
+
+#' @export
+print.tulpa_wbic <- function(x, digits = 2, ...) {
+  cat(sprintf("WBIC  %.*f  (beta = 1 / log(%d) = %.4f, %d draws)\n",
+              digits, x$wbic, x$n_obs, x$beta, x$n_draws))
+  invisible(x)
+}
+
+# Watanabe's inverse temperature for `n` observations. It lies below 1, and
+# so names a distribution other than the posterior, only from n = 3 on.
+.wbic_temperature <- function(n) {
+  n <- as.integer(n)
+  if (is.na(n) || n < 3L) {
+    stop("WBIC's inverse temperature 1 / log(n) is below 1 only for n >= 3 ",
+         "observations; got n = ", n, ".", call. = FALSE)
+  }
+  1 / log(n)
+}
+
 # The default doors take a pointwise log-likelihood; anything else reaching them
 # is an object no method is registered for, and is named as such.
 .criteria_matrix_or_stop <- function(object, caller) {

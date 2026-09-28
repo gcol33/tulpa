@@ -164,8 +164,15 @@ namespace tulpa {
 // varying-coefficient field lives on the distinct coordinates and rows that
 // share a site read one field value; X_svc stays one row per observation.
 // Before, duplicated coordinates were refused.
+//
+// 45 -> 46: the SMC entry can pass through the tempered posterior p L^b on its
+// way to the posterior and return the population there, the draws WBIC
+// averages over. `SmcFitFn` gained a `bridge_end` argument before
+// `result_out`, and SMCShimResult gained the trailing `tempered_particles` /
+// `n_tempered` / `tempered_beta`, so a package calling `tulpa_smc_fit`
+// rebuilds.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 45;
+constexpr int TULPA_ABI_VERSION = 46;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

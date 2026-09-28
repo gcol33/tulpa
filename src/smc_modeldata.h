@@ -62,11 +62,20 @@ struct SMCConfig {
     double prior_sigma   = 1.0;   // SD of the Gaussian reference q
     unsigned int seed    = 42;
     bool verbose         = false;
+    // Likelihood power b in (0, 1] at which the path passes through the
+    // tempered posterior p L^b and records its population (see run_smc_sampler).
+    // 1 is the plain path to the posterior with nothing recorded.
+    double bridge_end    = 1.0;
 };
 
 struct SMCDriverResult {
     std::vector<std::vector<double>> particles;
     std::vector<double> log_weights;   // log of normalized final weights
+
+    // Equally weighted draws from the tempered posterior p L^tempered_beta,
+    // present when SMCConfig::bridge_end < 1; empty and NaN otherwise.
+    std::vector<std::vector<double>> tempered_particles;
+    double tempered_beta = std::numeric_limits<double>::quiet_NaN();
 
     // log Z. The accumulator estimates the integral of pi_0 exp(h) along the
     // path it ran, which is the evidence only when both carry every
@@ -276,12 +285,15 @@ struct SmcPopulationHmc {
 // Two paths, by kernel (smc_sampler.h has why a start from q must be either
 // bridged or corrected):
 //   * built-in kernel : the REFERENCE path. pi_0 = q, and the population
-//     tempers along q^(1 - beta) (p L)^beta, so the kernel targets
-//     (1 - beta) log q + beta (log p + log L) and pi_1 is the posterior
-//     whatever q is.
+//     bridges to p L^b along q^(1 - s) (p L^b)^s (tulpa_smc::path_point), so the
+//     endpoint is the tempered posterior whatever q is; for b < 1 a second
+//     leg then tempers L from b to 1.
 //   * user kernel     : its documented target is p L^beta, so the population
 //     is corrected to pi_0 = p once, by importance weights p / q, and then
-//     tempered in L alone.
+//     tempered in L alone, to b and on to 1 (tulpa_smc::prior_path_power).
+// With b = cfg.bridge_end < 1 both paths pass through p L^b exactly at the
+// end of leg 1, and the population there is returned as tempered_particles --
+// the draws Watanabe's WBIC averages the log-likelihood over.
 // ----------------------------------------------------------------------------
 inline SMCDriverResult run_smc_sampler(
     const std::vector<double>& init,
@@ -298,6 +310,13 @@ inline SMCDriverResult run_smc_sampler(
         out.error_msg = "init has zero length";
         return out;
     }
+    const double b = cfg.bridge_end;
+    if (!(b > 0.0 && b <= 1.0)) {
+        out.success = false;
+        out.error_msg = "bridge_end must lie in (0, 1]";
+        return out;
+    }
+    const bool two_legs = b < 1.0;
 
     // Closures: prior + likelihood. log_prior + log_lik_only sums exactly to
     // compute_log_post by construction (hmc_sampler_decls.h).
@@ -321,7 +340,8 @@ inline SMCDriverResult run_smc_sampler(
         }
     };
 
-    std::function<double(const std::vector<double>&)> log_increment;
+    using IncrementFn = std::function<double(const std::vector<double>&)>;
+    std::vector<IncrementFn> legs;
     std::function<double(const std::vector<double>&)> initial_log_weight;
     std::function<void(std::vector<double>&, double, std::mt19937&)> mutation;
     std::function<void(const std::vector<std::vector<double>>&, double)> prepare;
@@ -331,8 +351,8 @@ inline SMCDriverResult run_smc_sampler(
     if (mutation_fn != nullptr) {
         const ModelData* data_ptr = &data;
         const ParamLayout* layout_ptr = &layout;
-        mutation = [mutation_fn, data_ptr, layout_ptr, user_data, dim](
-            std::vector<double>& theta, double beta, std::mt19937& rng
+        mutation = [mutation_fn, data_ptr, layout_ptr, user_data, dim, b](
+            std::vector<double>& theta, double tau, std::mt19937& rng
         ) {
             // Generate a per-call seed from the rng so the user kernel
             // sees independent randomness across calls but stays
@@ -340,52 +360,80 @@ inline SMCDriverResult run_smc_sampler(
             std::uniform_int_distribution<unsigned int> seed_dist(
                 0u, std::numeric_limits<unsigned int>::max());
             unsigned int seed = seed_dist(rng);
-            mutation_fn(theta.data(), dim, beta,
+            mutation_fn(theta.data(), dim, tulpa_smc::prior_path_power(tau, b),
                         data_ptr, layout_ptr, seed, user_data);
         };
-        log_increment = log_lik_fn;
+        legs.push_back([&log_lik_fn, b](const std::vector<double>& theta) {
+            return smc_finite_or_neg_inf(b * log_lik_fn(theta));
+        });
         initial_log_weight = [&log_prior_fn, &log_ref_fn](const std::vector<double>& theta) {
             return log_prior_fn(theta) - log_ref_fn(theta);
         };
     } else {
-        log_increment = [&log_prior_fn, &log_lik_fn, &log_ref_fn](
+        legs.push_back([&log_prior_fn, &log_lik_fn, &log_ref_fn, b](
             const std::vector<double>& theta
         ) -> double {
             const double lp = log_prior_fn(theta);
             if (!std::isfinite(lp)) return lp;
-            return smc_finite_or_neg_inf(lp + log_lik_fn(theta) - log_ref_fn(theta));
-        };
-        // (1 - beta) log q + beta log p L and its gradient, from one fused
-        // compute_gradient pass for the log-posterior half.
-        auto log_target = [&data, &layout, &init, sigma_ref](
-            const std::vector<double>& theta, double beta,
+            return smc_finite_or_neg_inf(lp + b * log_lik_fn(theta) - log_ref_fn(theta));
+        });
+        // (1 - s) log q + s (log p + lambda log L) and its gradient. The
+        // log-posterior half is one fused compute_gradient pass; off lambda = 1
+        // the prior gradient is taken as well, since grad log L is the
+        // difference of the two.
+        tulpa_hmc::GradientFn prior_grad_fn = two_legs
+            ? tulpa_hmc::resolve_prior_gradient_fn(tulpa_hmc::get_gradient_mode(),
+                                                   data, layout)
+            : nullptr;
+        auto log_target = [&data, &layout, &init, sigma_ref, b, prior_grad_fn](
+            const std::vector<double>& theta, double tau,
             std::vector<double>& grad
         ) -> double {
+            const tulpa_smc::PathPoint pt = tulpa_smc::path_point(tau, b);
+            const double s = pt.s;
+            const double lambda = pt.lambda;
             const double lq = smc_gaussian_reference_log_density(theta, init, sigma_ref);
             double lpost = 0.0;
             tulpa_hmc::compute_gradient(theta, data, layout, grad, &lpost);
+            double lpath = lpost;
+            if (lambda != 1.0) {
+                std::vector<double> gprior(theta.size());
+                double lprior = 0.0;
+                prior_grad_fn(theta, data, layout, gprior, &lprior);
+                lpath = lprior + lambda * (lpost - lprior);
+                for (size_t j = 0; j < theta.size(); j++) {
+                    grad[j] = (1.0 - lambda) * gprior[j] + lambda * grad[j];
+                }
+            }
             const double inv_s2 = 1.0 / (sigma_ref * sigma_ref);
             for (size_t j = 0; j < theta.size(); j++) {
-                grad[j] = beta * grad[j] - (1.0 - beta) * (theta[j] - init[j]) * inv_s2;
+                grad[j] = s * grad[j] - (1.0 - s) * (theta[j] - init[j]) * inv_s2;
             }
-            if (!std::isfinite(lpost)) return -std::numeric_limits<double>::infinity();
-            return (1.0 - beta) * lq + beta * lpost;
+            if (!std::isfinite(lpath)) return -std::numeric_limits<double>::infinity();
+            return (1.0 - s) * lq + s * lpath;
         };
         mutation = [&hmc, log_target](
-            std::vector<double>& theta, double beta, std::mt19937& rng
+            std::vector<double>& theta, double tau, std::mt19937& rng
         ) {
-            hmc.step(theta, beta, rng, log_target);
+            hmc.step(theta, tau, rng, log_target);
         };
         prepare = [&hmc](const std::vector<std::vector<double>>& particles,
-                         double beta) {
+                         double tau) {
             hmc.adapt(particles);
-            if (hmc.verbose) Rcpp::Rcout << "SMC temperature " << beta << "\n";
+            if (hmc.verbose) Rcpp::Rcout << "SMC path coordinate " << tau << "\n";
         };
+    }
+    // Leg 2, on either path: the population already represents p L^b, and
+    // (1 - b) log L carries it to the posterior.
+    if (two_legs) {
+        legs.push_back([&log_lik_fn, b](const std::vector<double>& theta) {
+            return smc_finite_or_neg_inf((1.0 - b) * log_lik_fn(theta));
+        });
     }
 
     try {
         auto res = tulpa_smc::smc_sample(
-            log_increment, ref_sample, mutation,
+            legs, ref_sample, mutation,
             dim,
             cfg.n_particles,
             cfg.ess_threshold,
@@ -396,6 +444,10 @@ inline SMCDriverResult run_smc_sampler(
         );
 
         out.particles  = std::move(res.particles);
+        if (two_legs) {
+            out.tempered_particles = std::move(res.leg_end_particles.front());
+            out.tempered_beta = b;
+        }
         out.log_weights.resize(res.weights.size());
         for (size_t i = 0; i < res.weights.size(); ++i) {
             out.log_weights[i] = (res.weights[i] > 0.0)

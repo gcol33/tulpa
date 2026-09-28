@@ -1,3 +1,26 @@
+# tulpa 0.6.4
+
+## WBIC
+
+* `wbic()` returns Watanabe's (2013) widely applicable Bayesian information
+  criterion: the expected negative log-likelihood under the posterior tempered
+  at `1 / log(n)`, an estimate of the negative log evidence that keeps its
+  asymptotics in singular models (mixtures, latent factors, a variance
+  component at zero) where BIC's parameter count does not. Fit with
+  `mode = "smc"` and `control = list(wbic = TRUE)`: the SMC path then runs in
+  two legs, from its reference to `p(theta) L(theta)^(1 / log n)`, where the
+  population is recorded as `$tempered_draws`, and on to the posterior, so
+  `$draws` are posterior draws as before. The log-likelihood is the same
+  normalized pointwise density `waic()` and `loo()` read. The default method
+  takes a pointwise log-likelihood matrix at tempered draws, and
+  `compare_models(criterion = "wbic")` ranks fits by it.
+* The `tulpa_smc_fit` C entry takes a `bridge_end` argument and returns the
+  population at that likelihood power in `SMCShimResult::tempered_particles`,
+  so a model package can compute WBIC from its own likelihood.
+  `TULPA_ABI_VERSION` is 46; packages calling the SMC entry rebuild.
+* Without `wbic = TRUE` the SMC path is the one-leg path it was, and a fit
+  with a given seed is unchanged.
+
 # tulpa 0.6.3
 
 ## A large outer grid warns instead of being refused

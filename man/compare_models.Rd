@@ -4,15 +4,19 @@
 \alias{compare_models}
 \title{Compare models by information criteria}
 \usage{
-compare_models(..., criterion = c("waic", "loo", "loglik"))
+compare_models(..., criterion = c("waic", "loo", "wbic", "loglik"))
 }
 \arguments{
 \item{...}{Named \code{tulpa_fit} objects.}
 
-\item{criterion}{\code{"waic"} (default), \code{"loo"}, or \code{"loglik"}.}
+\item{criterion}{\code{"waic"} (default), \code{"loo"}, \code{"wbic"}, or \code{"loglik"}.}
 }
 \value{
-A data frame. For \code{"loglik"}: \code{model}, \code{n_params}, \code{logLik},
+A data frame. For \code{"wbic"} (ranked best-first): \code{model}, \code{wbic},
+\code{delta} (WBIC gap to the best model, >= 0), and \code{weight}
+(\code{exp(-delta)} normalized: the posterior model probability under equal
+prior model weights, with each log evidence read off its WBIC).
+For \code{"loglik"}: \code{model}, \code{n_params}, \code{logLik},
 \code{quantity} and \code{conditioned_on} (which log-scale quantity \code{\link[=logLik]{logLik()}}
 reports, and the hyperparameters it holds fixed; fits that disagree on
 either are refused rather than ranked). For
@@ -30,6 +34,10 @@ Rank fitted models best-first by an information criterion. \code{"waic"} and
 log-likelihood with the parameter count. A fit carrying no pointwise
 log-likelihood (a deterministic / point approximation) yields \code{NA} criterion
 columns rather than an error, so the table always has one row per model.
+
+\code{"wbic"} ranks by \code{\link[=wbic]{wbic()}}, an estimate of each fit's negative log evidence,
+and needs every fit to carry its tempered draws (\code{mode = "smc"},
+\code{control = list(wbic = TRUE)}); a fit without them gets an \code{NA} row.
 }
 \examples{
 \donttest{

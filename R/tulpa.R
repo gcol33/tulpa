@@ -1879,6 +1879,13 @@ tulpa <- function(formula, data,
          "residual VARIANCE) instead.", call. = FALSE)
   }
   tulpa_check_control(control, .CONTROL_KEYS$tulpa, "tulpa")
+  # The tempered-posterior population WBIC reads is recorded by the SMC path
+  # alone; on any other mode the knob would be dropped on the way in.
+  if (!is.null(control$wbic) && !identical(mode, "smc")) {
+    stop("`control$wbic` records the SMC population at the WBIC temperature ",
+         "1 / log(n); it is read by mode = 'smc' only, not by mode = '",
+         mode, "'.", call. = FALSE)
+  }
   if ("hyperprior" %in% names(re_prior)) {
     stop("`re_prior$hyperprior` is the `hyperprior` argument of tulpa(). Pass ",
          "`hyperprior = \"proper\"` or `\"flat\"` there.", call. = FALSE)
