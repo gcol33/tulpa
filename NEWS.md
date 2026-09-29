@@ -1,3 +1,22 @@
+# tulpa 0.6.5
+
+## Bug fixes
+
+* **Matrix's CHOLMOD stubs now resolve on the R main thread at load**
+  (gcol33/tulpa#918). Each `M_cholmod_*` stub looks its target up with
+  `R_GetCCallable()` on its first call, and that lookup pushes and pops the R
+  protect stack. In a fresh session the first call to some stubs came from
+  OpenMP workers (per-cell solvers in `cpp_joint_inner_vcov_blocks` and the
+  outer-grid loops), so concurrent lookups raced `R_PPStackTop` and a `.Call`
+  returned with the stack off by one: R then printed a cascade of
+  `Warning: stack imbalance in '.Call', ...` lines. The DLL's init now runs
+  one 1 x 1 factor-and-solve through every stub tulpa uses, so no worker
+  resolves one. It showed up intermittently, in about one run in four of
+  tulpaObs `test-occu-joint-predict.R` with a package build running
+  alongside, because it needs two first-lookups to overlap.
+  `test-cholmod-stub-resolve.R` fails if a stub used in `src/` is missing
+  from the resolver.
+
 # tulpa 0.6.4
 
 ## WBIC

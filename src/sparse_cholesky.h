@@ -312,6 +312,11 @@ cholmod_sparse* dense_to_cholmod_sparse_drop(
     cholmod_common* common
 );
 
+// Calls every M_cholmod_* stub tulpa uses once, so each resolves its target
+// on the calling thread. Run on the R main thread at DLL load
+// (cholmod_stub_resolve.cpp).
+void cholmod_resolve_stubs();
+
 } // namespace tulpa
 
 #endif // TULPA_SPARSE_CHOLESKY_H

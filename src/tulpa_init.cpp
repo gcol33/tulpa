@@ -243,6 +243,10 @@ void tulpa_register_tgmrf_callables(DllInfo* dll);
 // load time.
 void tulpa_register_cell_coupling_callables(DllInfo* dll);
 
+// Defined in cholmod_stub_resolve.cpp -- calls every Matrix CHOLMOD stub tulpa
+// uses once, so each resolves its target on the R main thread.
+namespace tulpa { void cholmod_resolve_stubs(); }
+
 // [[Rcpp::init]]
 void tulpa_register_callables(DllInfo* dll) {
     R_RegisterCCallable("tulpa", "tulpa_run_nuts_generic",
@@ -259,4 +263,8 @@ void tulpa_register_callables(DllInfo* dll) {
     tulpa_register_shims(dll);
     tulpa_register_tgmrf_callables(dll);
     tulpa_register_cell_coupling_callables(dll);
+
+    // Resolve the Matrix CHOLMOD stubs here, on the main thread: a stub's first
+    // call runs R_GetCCallable(), which must not happen on an OpenMP worker.
+    tulpa::cholmod_resolve_stubs();
 }
