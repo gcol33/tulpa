@@ -1,3 +1,53 @@
+# tulpa 0.6.7
+
+## Bug fixes
+
+* **A railed outer axis is placed at the outer posterior mode**
+  (gcol33/tulpa#919). The joint driver's placement rescues laid a railed axis
+  around the grid's heaviest node with a spread read off the grid weights. On a
+  railed grid that node is the boundary node, and on a collapsed axis the
+  weighted spread is zero, so the placement either moved the axis by at most
+  2.5 floored SDs per attempt or declined with `no_usable_curvature` whenever
+  another axis still carried spread. On the full 25 km Calluna `occu_cover` fit
+  the dense tensor kept the field SD on its 3.0 ceiling and the default
+  (piloted, screened) fit left it on the edge of a recentred axis at 0.21, the
+  two about 189,000 WAIC units apart. The placement now finds the mode: the
+  damped Newton mode-find the CCD integrator already uses, started at the
+  heaviest cell, run over every outer axis through full inner solves at the
+  fit's own tolerances, and laid out as `mode +/- 2.5 sd` from the curvature it
+  reaches (`.joint_placement_mode()`). The mode it used is on the fit
+  (`outer_mode_u`, `outer_mode_cov_u`, `outer_mode_status`,
+  `outer_mode_rounds`, `outer_mode_evals`) and the search reports on the
+  progress channel as `[outer placement]`.
+* **An axis still on a boundary after placement is named in a warning.**
+  `tulpa_nested_laplace_joint()` warns with each default axis whose mode stayed
+  on a grid edge, its side and the reason (`outer_grid_axis_declined`, which now
+  records `attempts_exhausted` on an axis a pass moved and that still rails). A
+  caller's own pin stays silent and on the fit.
+* **The cheap-pass screen ranks a cell by its converged estimate.** A screened
+  cell is ranked by its truncated log-marginal plus half the Newton decrement
+  where the screen stopped, the second-order gain of the steps it did not take.
+  The truncated value alone reads lowest where the inner mode has furthest to
+  move from its warm start, and on the Calluna data that was the outer mode:
+  from a warm start on a plateau 318 nats below it, its cell took 258 inner
+  iterations against 12 to 21 on the plateau, so the screen pruned the mode and
+  the placement was laid around a plateau cell. The per-cell decrement is
+  reported as `prune_screen_decrement`.
+* **An unresolved axis reports the SD of the distribution its interval is read
+  off.** Where an axis's weight sits on too few nodes to have a spread
+  (`.nl_diag("axis_sd_ess")`) and the modal parabola declines, the reported SD
+  was the weighted read's zero beside an interval spanning the node's whole
+  cell (`sd = 0` with a 95% interval of `[2.03, 4.52]`). It is now the SD of
+  the same within-cell read (`theta_sd_source = "within_cell"`). The two
+  multi-block moment paths now choose each axis's SD by its resolution as every
+  other nested path does, which they never had.
+* The outer mode-find's line search laid a one-axis search's candidates as a
+  single row, so the second round of a `d = 1` search stepped in `k`
+  dimensions. The CCD never runs at one axis; the placement does.
+* The placement mode-find hands each stencil cell its own warm start, so its
+  batches skip the serial pilot cell (gcol33/tulpa#920) and fan out across
+  the outer threads.
+
 # tulpa 0.6.6
 
 ## Bug fixes

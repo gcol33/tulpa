@@ -110,6 +110,15 @@
 // after the parallel region. Per-cell LaplaceResult objects use only
 // std::vector storage (laplace_core.h:LaplaceResult), so they are safe to
 // populate across threads.
+//
+// What a cell is ranked by is not the truncated solve's log-marginal but its
+// second-order estimate of the converged one: that value plus half the Newton
+// decrement at the point the screen stopped (`screen_log_marginal()`). A
+// truncated solve reads lowest where its inner mode has furthest to go, and on
+// the full 25 km occu_cover fit of gcol33/tulpa#919 that was the outer mode
+// itself -- ~250 inner iterations there against 12 to 21 on the plateau it was
+// ranked below -- so a ranking on the raw value pruned the mode and passed its
+// own safety gate, which checks the screen only on the cells it kept.
 
 #ifndef TULPA_NESTED_LAPLACE_GRID_H
 #define TULPA_NESTED_LAPLACE_GRID_H
@@ -394,6 +403,17 @@ static const int CHEAP_SCREEN_ITERS = 2;
 // Five full solves against the 1-2 a collapsed screen leaves is a cost the
 // screening is not measured against: the cells it skips number in the hundreds.
 static const int CHEAP_SCREEN_MIN_KEEP = 5;
+
+// A screened cell's estimate of its converged log-marginal: the truncated
+// solve's value plus half the Newton decrement where it stopped, the gain of
+// the steps it did not take to second order. A solve that left no decrement
+// reads as it stands.
+inline double screen_log_marginal(const LaplaceResult& r) {
+    if (!std::isfinite(r.log_marginal)) return r.log_marginal;
+    const double d = r.newton_decrement;
+    return (std::isfinite(d) && d > 0.0) ? r.log_marginal + 0.5 * d
+                                         : r.log_marginal;
+}
 
 // Pack per-cell inner-solve results into the outer-grid result list every
 // nested-Laplace grid entry returns: per-cell log-marginal and solve health,
@@ -850,6 +870,7 @@ inline Rcpp::List run_nested_laplace_grid(
     double prune_log_gap_cut = NA_REAL;
     double prune_cheap_spread = NA_REAL;
     std::vector<double> cheap_lm;  // size n_grid when prune_active
+    std::vector<double> cheap_dec; // the screen's Newton decrement per cell
     int cheap_argmax = -1;          // cell with the largest cheap log-marginal
 
     std::vector<double> pilot_mode;
@@ -888,6 +909,13 @@ inline Rcpp::List run_nested_laplace_grid(
         if (prune_active) {
             cheap_lm.assign(n_grid,
                             -std::numeric_limits<double>::infinity());
+            cheap_dec.assign(n_grid, NA_REAL);
+            // Each cell is screened by exactly one thread, so the two writes
+            // below never race.
+            auto record_screen = [&](int k, const LaplaceResult& cr) {
+                cheap_lm[k]  = screen_log_marginal(cr);
+                cheap_dec[k] = cr.newton_decrement;
+            };
 
             // A completed (checkpoint-loaded) cell needs no screening: its
             // true log-marginal ranks it and its stored mode warms the chain,
@@ -923,7 +951,7 @@ inline Rcpp::List run_nested_laplace_grid(
                     if (ckpt_done[k]) { use_loaded_for_chain(k, warm); continue; }
                     LaplaceResult cr =
                         cheap_eval(k, warm, screen_steps, /*worker=*/0);
-                    cheap_lm[k] = cr.log_marginal;
+                    record_screen(k, cr);
                     // Chain the warm-start only across feasible cells; an
                     // infeasible cell (prep failed, log_marginal = -inf) leaves
                     // `warm` at the last good quasi-mode so the next feasible
@@ -974,7 +1002,7 @@ inline Rcpp::List run_nested_laplace_grid(
                         }
                         LaplaceResult cr =
                             cheap_eval(kp, warm, screen_steps, /*worker=*/0);
-                        cheap_lm[kp] = cr.log_marginal;
+                        record_screen(kp, cr);
                         if (std::isfinite(cr.log_marginal) &&
                             static_cast<int>(cr.mode.size()) == n_x) {
                             warm = cr.mode;
@@ -1009,7 +1037,7 @@ inline Rcpp::List run_nested_laplace_grid(
                             }
                             LaplaceResult cr =
                                 cheap_eval(k, warm, screen_steps, worker);
-                            cheap_lm[k] = cr.log_marginal;
+                            record_screen(k, cr);
                             if (std::isfinite(cr.log_marginal) &&
                                 static_cast<int>(cr.mode.size()) == n_x) {
                                 warm = cr.mode;
@@ -1381,6 +1409,7 @@ inline Rcpp::List run_nested_laplace_grid(
             pruned_out[k]   = (pruned[k] != 0);
         }
         out["prune_cheap_log_marginal"] = cheap_lm_out;
+        out["prune_screen_decrement"]   = Rcpp::wrap(cheap_dec);
         out["prune_mask"]                = pruned_out;
         out["prune_n_pruned"]           = n_cells_pruned;
         out["prune_tol"]                = prune_tol;

@@ -6,6 +6,87 @@ a regression. Extracted from CLAUDE.md on 2026-09-17 to keep that file
 under the auto-load size limit — this file is reference material Claude
 reads on demand (grep by issue number or topic), not auto-loaded context.
 
+### A placement is laid at the outer mode, and a screen ranks by its converged estimate (gcol33/tulpa#919)
+
+The full 25 km Calluna `occu_cover` fit (4,435 ICAR cells, 12,179 sites,
+923,098 plots; axes field SD `sigma`, copy scale `alpha`, Beta precision
+`phi_pos`) railed `sigma` under both integrations, at opposite ends: the dense
+tensor at its 3.0 ceiling (alpha 0.23), the default piloted and screened fit at
+0.21 (alpha 3.0, the slab's top), about 189,000 WAIC units apart.
+
+**Which end is the mode.** Inner log-marginals at fixed `phi_pos = 3.91`,
+tulpa 0.6.5, relative to the best cell (the shared25 script's captured
+`tulpa_nested_laplace_joint()` call re-run with every placement and screening
+pass off):
+
+| sigma \ alpha | 0.234 | 3.0 | 6.5 |
+|---|---|---|---|
+| 0.1   | -2047 | -389 | -326 |
+| 0.212 | -1431 | -318 | -714 |
+| 3.1   | **0** | -2985 | -4450 |
+
+So the dense arm is at the mode and the default arm on a plateau along the
+`sigma * alpha ~ 0.65` ridge 318 nats below it. The mode's cell took **258**
+inner Newton iterations from a warm start on the plateau; plateau cells took
+12 to 21.
+
+**Three defects composed.**
+
+1. *The screen pruned the mode.* A 2-step chained screen reads a cell's
+   log-marginal where the truncation left it, which is lowest where the inner
+   mode has furthest to move. The kept set was 5 plateau cells, and the safety
+   gate -- which compares cheap and full values only on KEPT cells -- passed,
+   because the screen is accurate exactly where it converged. The screen now
+   ranks by `log_marginal + 0.5 * newton_decrement` (g' H^-1 g at the stopped
+   point, read off the factor the final pass already builds;
+   `screen_log_marginal()`, `src/nested_laplace_grid.h`). On the full data the
+   gate then trips on the pilot and falls back to the full pilot grid.
+2. *Placement centred on the argmax node.* The rescues laid a railed axis at
+   `mode_u +/- 2.5 sd` where `mode_u` was the grid-weighted mean or the argmax
+   cell and `sd` a grid moment -- zero on a collapsed axis, so either the floor
+   (0.15 in log) substituted or, when ANY other axis carried weighted spread,
+   the finite-difference fallback never ran and the rescue declined
+   `no_usable_curvature` (a screened 25 km Calluna fit of 2026-09-01 on tulpa
+   0.2.12: a weighted variance of 9e-125 on `alpha` against exactly 0 on the
+   railed `sigma`). A railed axis moved at most 0.375 in log per attempt, two
+   attempts.
+   Placement now runs the CCD's damped Newton mode-find
+   (`.joint_ccd_modefind(ridge_check = FALSE)`) from the heaviest cell over every
+   varying axis at the fit's own inner settings (`.nl_placement_mode()`,
+   `R/nested_laplace_placement.R`), shared by the joint and registry rescues.
+   The old stencil ran at `.K_DIAG_MAX_ITER = 25` and `.K_DIAG_TOL`, a
+   diagnostic budget; a curvature of values the cap stopped short is a
+   difference of stopping points.
+3. *The hyper summary mixed two distributions.* `theta_sd` was the node-moment
+   read (0 on a collapsed axis) and the interval the within-cell box read (the
+   node's whole cell, `[2.03, 4.52]` around 3.0). On an axis below
+   `axis_sd_ess` whose parabola declines, the SD is now the SD of the read the
+   interval comes from (`.nl_align_unresolved_sd()`). The two multi-block
+   moment builders now run `.nl_attach_axis_sd()` like every other path; they
+   never had, despite its comment.
+
+**The placement target has no Jacobian.** The mode-find maximises the grid's own
+log-density, the one `.nl_axis_rail(measure = "inner")` reads. On log axes the
+term is zero either way; on a BYM2 `rho` (logit) it is not, and with it the
+search centred on a different density than the rail test, so the refit read as
+railed again (`test-nested-laplace-axis-rail.R`, synthetic mode at logit 8.5).
+
+**The d = 1 line search.** `t(vapply(steps, ..., numeric(d)))` is `[k x d]` only
+for `d >= 2`; at one axis it is one row carrying all k candidates, and the next
+stencil was laid in k dimensions (99 evaluations). The CCD never runs at d = 1,
+so it had never been hit.
+
+**The 2-cell passes are the consistency pass, not a walk.** The trailing
+two-cell kernel calls in both arm logs are `.hyper_consistency_pass()`
+bisecting the caller-pinned `phi_pos` axis (`h / sd` 301: nodes 1.365 apart in
+log against a posterior SD of ~0.0045) and `alpha`, two slice cells per round,
+one round after another, capped at `axis_refine_nodes = 8` per axis. They
+terminate; on this data the cap is reached before the axis resolves. Proposing
+the rounds ahead from the modal parabola is not safe here: the three coarse
+nodes put its vertex ~0.24 in log from the mode (about 50 SDs). An engine-placed
+dispersion axis (`auto_grid()` on `phi_grid`) is laid from the mode-find's
+curvature instead and needs no bisection.
+
 ### The copy scale's point mass, and the fourth reader that did not split on it (gcol33/tulpa#854)
 
 **Two failures, one geometry, and the geometry came from the wrong question.**

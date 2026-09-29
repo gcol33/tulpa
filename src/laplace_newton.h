@@ -256,6 +256,12 @@ LaplaceResult laplace_newton_solve_ll(
     // live serves both the inverse-block extraction and the skew probes below.
     const bool used_sparse_factor = use_sparse && sparse_solver.factored();
 
+    if (result.hessian_pd_at_mode) {
+        result.newton_decrement = newton_decrement_live(
+            scratch.grad.data(), n_x, used_sparse_factor, sparse_solver,
+            scratch.chol);
+    }
+
     if (inv_block_layout && !inv_block_layout->empty() &&
         result.hessian_pd_at_mode) {
         TULPA_PROFILE_PHASE(PHASE_HESSIAN_EXTRACT);

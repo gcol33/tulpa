@@ -1318,6 +1318,18 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # parabola spans 0.080 to 0.642, which is the grid dependence gcol33/tulpa#621
 # reports as a factor of two on a copy axis.
 #
+# Where an axis is below `axis_sd_ess` AND the parabola declines (the mode on an
+# edge node, a curvature that is not negative), neither estimator above has a
+# spread to offer, and the weighted read's floor of zero sat beside an interval
+# read off the within-cell construction, which spreads the same node's mass over
+# its whole cell (gcol33/tulpa#919: `sd = 0` beside a 95% interval of
+# `[2.03, 4.52]`). The reported SD is then the SD of the distribution the
+# interval is read from (`.nl_align_unresolved_sd()`), so the two describe one
+# distribution. `read_sd_nodes` is the midpoint rule that SD is taken over, on
+# the read's own quantile function: on a uniform cell it returns
+# `W / sqrt(12) * sqrt(1 - 1 / K^2)`, a relative error of `1 / (2 K^2)`, 1.9e-06
+# at 512.
+#
 # `axis_refine_nodes` caps the nodes the consistency pass
 # (`.hyper_consistency_pass()`) adds to one axis while bisecting it towards
 # `axis_sd_ess`. It is a cost cap, one slice cell per node: 8 is one bisection
@@ -1362,6 +1374,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     within_cell          = "box_uniform",
     grid_resolved        = 1,
     axis_sd_ess          = 3,
+    read_sd_nodes        = 512L,
     axis_refine_nodes    = 8L,
     edge_mass_lift       = 1,
     k_usable             = 0.7,

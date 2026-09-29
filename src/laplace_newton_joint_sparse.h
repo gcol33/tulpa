@@ -254,10 +254,27 @@ inline void joint_newton_finalize_sparse(
     if (store_Q || want_block || want_eta_var) H_values_at_mode = H_builder.values;
 
     bool pd_conditioned = false;
+    bool step_ok = false;
     { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
-      joint_pd_step_solve(H_builder, solver, n_x, pd_mode,
-                          grad.data(), scratch.delta.data(),
-                          &result.log_det_Q, &pd_conditioned); }
+      step_ok = joint_pd_step_solve(H_builder, solver, n_x, pd_mode,
+                                    grad.data(), scratch.delta.data(),
+                                    &result.log_det_Q, &pd_conditioned); }
+    // The Newton decrement off the step that solve produced, with the
+    // sum-to-zero pins folded in the way the Newton loop folds them, so it is the
+    // step one more iteration would take.
+    if (step_ok) {
+        bool folded = true;
+        if (pd_mode == JointPDMode::LM && !H_builder.s2z_rank1.empty()) {
+            folded = apply_s2z_rank1_correction(solver, n_x, H_builder.s2z_rank1,
+                                                scratch.delta.data(),
+                                                H_builder.s2z_coupling);
+        }
+        if (folded) {
+            double dec = 0.0;
+            for (int j = 0; j < n_x; j++) dec += grad[j] * scratch.delta[j];
+            if (std::isfinite(dec)) result.newton_decrement = dec;
+        }
+    }
     // Prefer the cancellation-free direct factor; keep the PD-enforced value only
     // if the direct factor was non-PD (NaN fallback).
     if (s2z_direct && std::isfinite(s2z_log_det)) result.log_det_Q = s2z_log_det;

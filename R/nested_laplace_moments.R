@@ -34,7 +34,7 @@
   qs <- .nl_axis_quantiles(tg, res$log_marginal, res$refining_axis,
                            log_quad = res$log_quad,
                            domains = geo$domain, within = within,
-                           atoms = geo$atom)
+                           atoms = geo$atom, sd = TRUE)
   res$theta_median <- qs$median
   res$theta_ci_lo  <- qs$ci_lo
   res$theta_ci_hi  <- qs$ci_hi
@@ -1096,6 +1096,23 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   chord(bx$declined)
 }
 
+# The standard deviation of the distribution `.nl_summary_quantile_read()` reads
+# an interval off, taken from that read's own quantile function by the midpoint
+# rule over `.nl_diag("read_sd_nodes")` probabilities. The same dispatch with
+# the same arguments takes the same construction -- box, chord, moment rule, a
+# point mass split off -- so the SD and the interval describe one distribution
+# whichever of them ran. NA where the read has no finite quantile function.
+.nl_read_sd <- function(values, weights, domain = NA_character_,
+                        support = .NL_SUPPORT_KINDS,
+                        within = .NL_WITHIN_CELL,
+                        atom = NA_real_, rows = NULL) {
+  k <- as.integer(.nl_diag("read_sd_nodes"))
+  q <- .nl_summary_quantile_read(values, weights, (seq_len(k) - 0.5) / k,
+                                 domain, support, within, atom, rows)$q
+  if (is.null(q) || !all(is.finite(q))) return(NA_real_)
+  sqrt(mean((q - mean(q))^2))
+}
+
 # What kind of node set the producer left behind. `integration` names what RAN,
 # which describes a HOMOGENEOUS support: the central-composite design is a moment
 # rule, a Gibbs sweep leaves draws, and the tensor grid and its adaptive subset
@@ -1368,7 +1385,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
                                 support = .NL_SUPPORT_KINDS,
                                 domains = NULL,
                                 within = .NL_WITHIN_CELL,
-                                atoms = NULL) {
+                                atoms = NULL, sd = FALSE) {
   support <- match.arg(support)
   within  <- match.arg(within)
   if (is.null(dim(tg))) {
@@ -1383,13 +1400,17 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     return(list(median = empty, ci_lo = empty, ci_hi = empty,
                 within = empty_c, within_declined = empty_c,
                 edge_coord = empty_c, edge_declined = empty_c,
-                outside_nodes = empty_c))
+                outside_nodes = empty_c, sd = empty, ess = empty))
   }
   nms <- .nl_axis_names(tg)
   n_ax <- length(nms)
   lo  <- setNames(rep(NA_real_, n_ax), nms)
   med <- setNames(rep(NA_real_, n_ax), nms)
   hi  <- setNames(rep(NA_real_, n_ax), nms)
+  # The SD of the distribution each interval is read off, and the effective
+  # number of levels its marginal spreads over; filled only when `sd` asks.
+  rsd <- setNames(rep(NA_real_, n_ax), nms)
+  ess <- setNames(rep(NA_real_, n_ax), nms)
   wc  <- setNames(rep(NA_character_, n_ax), nms)
   wcd <- setNames(rep(NA_character_, n_ax), nms)
   ec  <- setNames(rep(NA_character_, n_ax), nms)
@@ -1435,6 +1456,12 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     rows <- .nl_cell_rows_subset(.nl_axis_cell_rows(tg, j, refining), use)
     rd <- .nl_summary_quantile_read(as.numeric(tg[use, j]), ws, probs, dm,
                                     support, within, at, rows)
+    if (isTRUE(sd)) {
+      rsd[j] <- .nl_read_sd(as.numeric(tg[use, j]), ws, dm, support, within,
+                            at, rows)
+      lev <- as.numeric(tapply(ws, as.numeric(tg[use, j]), sum))
+      ess[j] <- .nl_axis_quad_ess(log(lev))
+    }
     qs <- rd$q
     lo[j]  <- qs[1L]
     med[j] <- qs[2L]
@@ -1456,7 +1483,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   list(median = med, ci_lo = lo, ci_hi = hi,
        within = wc, within_declined = wcd,
        edge_coord = ec, edge_declined = ecd,
-       outside_nodes = onn)
+       outside_nodes = onn, sd = rsd, ess = ess)
 }
 
 # The RESOLUTION of each outer-grid axis: its cell width `h`, the posterior SD
@@ -1583,6 +1610,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     res$outer_grid_axis_sd    <- rs$sd
     res$outer_grid_h_over_sd  <- rs$h_over_sd
     res$outer_grid_resolution_declined <- rs$declined
+    res <- .nl_align_unresolved_sd(res, qs)
   }
   # An axis whose grid does not contain its own mode is a placement fact, and
   # `.nl_axis_rail()` reads it off the stored weights alone. Attached here so a
@@ -1596,6 +1624,41 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   # on it, so it is named on its own rather than only when it also rails.
   res$outer_grid_edge_mass_axes <- res$outer_grid_edge_mass_axes %||%
     .nl_edge_mass_axes(res)
+  res
+}
+
+# An axis the grid did not resolve reports the SD of the distribution its
+# interval is read off. Below `.nl_diag("axis_sd_ess")` the weighted read is
+# not a spread, and where no parabola could be formed either it stayed the
+# reported number -- zero on an axis collapsed onto one node, beside an interval
+# the within-cell read spreads over that node's whole cell (gcol33/tulpa#919).
+# The replacement is `qs$sd`, the SD `.nl_axis_quantiles()` took off the very
+# read that produced `theta_ci_lo` / `theta_ci_hi`, and the axis's
+# `theta_sd_source` says `"within_cell"`. A finite parabola is kept: it is a
+# curvature the grid measured, which the cell width is not.
+#
+# A path that stamps no `theta_sd_source` reported the weighted read on every
+# axis, and says so once one is aligned.
+.nl_align_unresolved_sd <- function(res, qs) {
+  sd <- res$theta_sd
+  if (is.null(sd) || is.null(qs$sd) || length(qs$sd) != length(sd)) return(res)
+  src <- res$theta_sd_source
+  if (length(src) != length(sd)) src <- rep("weighted", length(sd))
+  names(src) <- names(sd)
+  min_ess <- .nl_diag("axis_sd_ess")
+  hit <- FALSE
+  for (j in seq_along(sd)) {
+    e <- qs$ess[[j]]
+    r <- qs$sd[[j]]
+    if (!is.finite(e) || e >= min_ess || !is.finite(r)) next
+    if (identical(unname(src[j]), "stencil")) next
+    sd[[j]] <- r
+    src[j]  <- "within_cell"
+    hit     <- TRUE
+  }
+  if (!hit) return(res)
+  res$theta_sd        <- sd
+  res$theta_sd_source <- src
   res
 }
 
@@ -1864,7 +1927,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 }
 
 # Which estimator produced a reported axis SD.
-.NL_AXIS_SD_SOURCE <- c("weighted", "stencil")
+.NL_AXIS_SD_SOURCE <- c("weighted", "stencil", "within_cell")
 
 # The SD to report for ONE axis, and which estimator produced it.
 #
@@ -1924,9 +1987,10 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # Report `theta_sd` (and `block_moments[[b]]$sd` when present) per axis, each
 # from the estimator its own resolution calls for (`.nl_axis_sd_choice()`).
 #
-# Called from `.nl_posterior_moments()`, so every nested path -- single-block,
-# spatiotemporal, joint, joint multi-block -- reports one rule, and separately
-# by `tulpa_hyper_grid()`, which assembles its own moments.
+# Called from `.nl_posterior_moments()` (single-block, spatiotemporal, joint),
+# from the two multi-block moment builders (`.nl_posterior_moments_multi()`,
+# `.joint_posterior_moments_multi()`), and by `tulpa_hyper_grid()`, which
+# assembles its own moments -- so every nested path reports one rule.
 #
 # The marginal carries the fit's cell measure `log_quad`, under which every cell
 # of a refined grid holds its own box's mass, so every cell is read; a grid with
@@ -2040,6 +2104,9 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     )
   }
   out$block_moments <- per_block_moments
+  # Each axis's SD from the estimator its own resolution calls for, the rule
+  # `.nl_posterior_moments()` applies on every other nested path.
+  out <- .nl_attach_axis_sd(out)
 
   # Weighted-quantile median + 2.5/97.5 CI per axis (calibrated summary
   # for right-skewed scale-like hyperparameters; see `.nl_axis_quantiles`).
@@ -2048,7 +2115,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
                                    blocks = prepared))
   qs <- .nl_axis_quantiles(
     joint_grid, out$log_marginal, out$refining_axis, log_quad = out$log_quad,
-    domains = geo$domain, within = within, atoms = geo$atom)
+    domains = geo$domain, within = within, atoms = geo$atom, sd = TRUE)
   out$theta_median <- qs$median
   out$theta_ci_lo  <- qs$ci_lo
   out$theta_ci_hi  <- qs$ci_hi

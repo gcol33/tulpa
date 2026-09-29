@@ -76,17 +76,23 @@ in \verb{[0.1, 3]}).
 \code{sigma_grid}'s default is a starting axis, not a hard ceiling: when the
 fitted field-SD posterior mode rails the top node (the axis's own
 marginal is maximal there, or the whole grid collapsed onto it:
-\code{pareto_k_regime = "collapsed_edge"}, see below), the driver re-centres
-the axis on a
-mode-Hessian and refits (up to two attempts, the second adding a light
+\code{pareto_k_regime = "collapsed_edge"}, see below), the driver finds the
+outer posterior mode -- a damped Newton search over every outer axis,
+started at the grid's heaviest cell and read through full inner solves,
+the same mode-find the CCD integrator places its design with -- lays the
+axis at that mode +/- 2.5 of the SDs its curvature there gives, and refits
+(up to two attempts, the second adding a light
 default PC(U=3, alpha=0.01) prior on sigma unless \code{prior_sigma} was pinned
 -- see there), so a sparse or strongly-identified species is not silently
 truncated at 3.0. This engages whether or not \code{control$diagnose_k}
-computed the full outer Pareto-k diagnostic: the mode-Hessian is reused
-from the diagnostic when it ran, or computed on its own (one extra batched
-finite-difference solve, only when the axis actually railed) when it
-did not -- so \code{diagnose_k = FALSE}, the default, does not leave a railed
-axis stuck. A \code{sigma_grid} the caller PINNED always wins: auto-recenter
+computed the full outer Pareto-k diagnostic, and only when an axis
+actually railed. A field SD still on a boundary of its grid after the
+attempts is named in a warning, with the reason it stayed, in
+\code{outer_grid_axis_declined} (gcol33/tulpa#919). The mode the placement
+was laid around is on the fit as \code{outer_mode_u} / \code{outer_mode_cov_u} (in
+each axis's \code{outer_mode_axis_tags} coordinate), with \code{outer_mode_status},
+\code{outer_mode_rounds} and \code{outer_mode_evals}. A \code{sigma_grid} the caller
+PINNED always wins: auto-recenter
 engages when the field is left \code{NULL}, when it is marked with
 \code{\link[=auto_grid]{auto_grid()}} (how a wrapper package declares an axis it defaulted rather
 than one the user chose), or when its nodes are exactly
@@ -899,8 +905,9 @@ caller pinned \code{sigma_grid}; mark it with \code{\link[=auto_grid]{auto_grid(
 default rather than a choice), \code{"default_axis_pinned"} (a wrapper
 package declared the nodes with \code{auto_grid(place = FALSE)} and asked
 for them as written -- nothing you pinned), or \code{"no_usable_curvature"}
-(the mode-Hessian the recenter needs was unavailable or degenerate,
-e.g. a car_proper grid whose \code{rho_car} axis has unguessable support).
+(the outer mode-find the recenter lays the axis from did not reach a
+mode with a usable curvature, e.g. a car_proper grid whose \code{rho_car}
+axis has unguessable support).
 Absent when the fit WAS recentred. A joint fit's field SD and its
 per-arm dispersion are placed by different passes over the same grid,
 and this slot reduces over them rather than holding the last to speak:
@@ -914,7 +921,9 @@ the axis that stayed -- which is the axis \code{grid_coarsest_axis} then
 names. Written by the field-SD passes for \code{sigma} (\verb{b<k>.sigma} on a
 copy block) and by the per-arm dispersion pass for \verb{phi_<arm>}, and
 carried across a later pass placing a different axis; absent on a fit
-no pass declined an axis of.
+no pass declined an axis of. An axis a pass DID move that still rails
+reads \code{"attempts_exhausted"} (or the reason its last attempt could not be
+laid), and is the axis the railed-mode warning names.
 \item \code{outer_grid_pilot} -- present only when \code{control$recenter_pilot} ran: the
 pilot's resolution (\code{n_pilot}), its cell count (\code{cells}), the axes it
 thinned (\code{axes}) and those it could not (\code{axes_kept}), and what the
@@ -1126,7 +1135,12 @@ one is present rather than being read off the axes that did score.
 \item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned},
 \code{prune_tol}, \code{prune_screen_iters} -- present only when \code{prune = TRUE}
 and the safety gate did not fall back. Cheap-pass log-marginals at every
-cell, a logical mask of pruned cells, the pruned-cell count, the
+cell -- the truncated solve's value plus half its Newton decrement, the
+second-order estimate of the converged value the screen ranks by, so a
+cell whose inner mode had far to move from its warm start is not ranked
+on where the truncation left it (gcol33/tulpa#919); that decrement is
+\code{prune_screen_decrement} --
+a logical mask of pruned cells, the pruned-cell count, the
 threshold actually applied, and the screening depth the driver actually
 ran at. Pruned cells have \code{log_marginal = -Inf} so they get zero
 weight under \code{.nl_normalise_weights_safe}.

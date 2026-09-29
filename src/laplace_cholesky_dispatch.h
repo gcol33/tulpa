@@ -14,6 +14,7 @@
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #ifdef _OPENMP
@@ -129,6 +130,29 @@ inline bool dispatch_factor_log_det_ridged(
         dense_cholesky_log_det_raw(H, n_x, dense_scratch, log_det_out);
     }
     return std::isfinite(log_det_out);
+}
+
+// g' H^-1 g off the factor a dispatch above left live: the CHOLMOD factor when
+// `sparse_live`, the dense lower factor in `dense_scratch` otherwise. It is the
+// Newton decrement at the point H and g were scattered at
+// (`LaplaceResult::newton_decrement`). NaN where the solve fails.
+inline double newton_decrement_live(const double* grad, int n_x,
+                                    bool sparse_live,
+                                    SparseCholeskySolver& sparse_solver,
+                                    DenseCholeskyScratch& dense_scratch) {
+    std::vector<double> step(n_x, 0.0);
+    bool ok;
+    if (sparse_live) {
+        ok = sparse_solver.solve(grad, step.data(), n_x);
+    } else {
+        std::vector<double> z_work(n_x, 0.0);
+        ok = chol_substitute_raw(dense_scratch.L.data(), n_x, grad, step.data(),
+                                 z_work.data());
+    }
+    if (!ok) return std::numeric_limits<double>::quiet_NaN();
+    double dec = 0.0;
+    for (int j = 0; j < n_x; j++) dec += grad[j] * step[j];
+    return std::isfinite(dec) ? dec : std::numeric_limits<double>::quiet_NaN();
 }
 
 // Factor H and return log|H + ridge*I| via the diagonal of L. Same

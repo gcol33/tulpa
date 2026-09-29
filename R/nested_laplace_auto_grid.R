@@ -1238,18 +1238,17 @@ auto_grid_place <- function(x)
                       min_sd_u = min_sd_u, max_sd_u = max_sd_u)
 }
 
-# Build the recentered axis for `axis` from the (mode, covariance) a fit's
-# outer Pareto-k diagnostic already attached -- `mode_u` / `cov_u` /
-# `axis_tags` / `axis_names` are the `res$pareto_k_mode_u` /
-# `res$pareto_k_cov_u` / `res$pareto_k_axis_tags` / `res$pareto_k_axis_names`
-# fields (`R/nested_laplace_joint_pareto_k.R`, `R/nested_laplace.R`). `axis` is
+# Build the recentered axis for `axis` from the (mode, covariance) a fit
+# carries -- `mode_u` / `cov_u` / `axis_tags` / `axis_names` are the joint
+# fit's `res$outer_mode_u` / `res$outer_mode_cov_u` / `res$outer_mode_axis_tags`
+# / `res$outer_mode_axis_names`, the outer mode its placement mode-find reached
+# (`.joint_attach_placement()`, R/nested_laplace_placement.R). `axis` is
 # the bare axis name; `block_index` / `n_blocks` resolve it against the fit's
 # own spelling (see `.nl_axis_alias()`). Only recentres a positive-scale
 # ("log"-tagged) axis; declines (returns NULL) for an axis absent from the
 # grid, an axis on a different transform (e.g. a BYM2 `rho` or a CAR_proper
-# `rho_car`), or when the diagnostic that would supply the curvature did not
-# run or itself declined (an unguessable axis elsewhere in the same grid, such
-# as `rho_car`, makes the whole proposal decline -- see
+# `rho_car`), or when no mode was attached (an unguessable axis elsewhere in
+# the same grid, such as `rho_car`, declines the whole mode-find -- see
 # `.joint_pareto_axis_tags()` -- so a fit's `sigma` mode is only ever recentred
 # when EVERY axis in that fit's grid is guessable).
 # `ref_nodes` is the axis's incoming nodes in its OWN coordinates, when the
@@ -1319,9 +1318,8 @@ auto_grid_place <- function(x)
 # survives a later rescue placing a DIFFERENT axis (the dispersion rescue below),
 # which leaves the fit `auto_recentered` and the whole-fit slot empty.
 #
-# Two attempts, both reusing the mode/Hessian the outer Pareto-k diagnostic
-# already computed rather than a fresh optimization (see
-# `.nl_axis_recenter_from_fit()`):
+# Two attempts, each laid around the outer mode and curvature the detecting
+# fit's placement mode-find reached (`.joint_attach_placement()`):
 #   1. Recentre `sigma_grid` alone.
 #   2. If STILL railed (a genuinely unidentified / near-separation
 #      case whose mode has no finite curvature to settle on), additionally
@@ -1370,8 +1368,8 @@ auto_grid_place <- function(x)
     while (attempt < max_attempts && .nl_axis_railed(res, "sigma")) {
         attempt <- attempt + 1L
         rc <- .nl_axis_recenter_from_fit_full(
-            res$pareto_k_mode_u, res$pareto_k_cov_u,
-            res$pareto_k_axis_tags, res$pareto_k_axis_names, "sigma",
+            res$outer_mode_u, res$outer_mode_cov_u,
+            res$outer_mode_axis_tags, res$outer_mode_axis_names, "sigma",
             ref_nodes = .nl_axis_ref_nodes(res, "sigma"))
         if (is.null(rc$nodes)) {
             reason <- rc$reason
@@ -1393,45 +1391,39 @@ auto_grid_place <- function(x)
             if (attempt >= 2L && prior_pinned) "prior_pinned" else NULL
         out <- list(res = res, prior = cur_prior, prior_sigma = cur_prior_sigma)
     }
+    # An axis the pass moved and that still rails says why, on the axis: the
+    # whole-fit slot is written only while a fit is unplaced.
+    if (attempt > 0L && .nl_axis_railed(out$res, "sigma")) {
+        out$res <- .nl_decline_axis(
+            out$res, "sigma",
+            if (attempt >= max_attempts) "attempts_exhausted" else reason)
+    }
     out$res <- decline(out$res, reason)
     out
 }
 
-# Mode + FD-Hessian covariance of a REGISTRY fit's outer grid -- the standalone
-# `tulpa_nested_laplace()` counterpart of the joint path's
-# `.joint_pareto_prepare()` delta-collapse rescue, reusing the SAME generic
-# tagging (`.joint_pareto_block_tags()`, read through
-# `.nl_registry_axis_tags()`) and FD-Hessian machinery
-# (`.joint_pareto_mode_cov()`) rather than a fresh implementation. `tags` is
-# one transform tag per grid column; `refit_log_marginal(theta_mat)`
+# Outer mode + covariance of a REGISTRY fit's grid -- the standalone
+# `tulpa_nested_laplace()` counterpart of the joint path's placement mode, found
+# by the same mode-find (`.nl_placement_mode()`) over the same generic tagging
+# (`.joint_pareto_block_tags()`, read through `.nl_registry_axis_tags()`).
+# `tags` is one transform tag per grid column; `refit_log_marginal(theta_mat)`
 # re-evaluates the inner marginal at an arbitrary `[S x d]` theta matrix
 # (columns named per `res$theta_names`) through the SAME kernel the fit used.
 # Declines (NULL) when any axis in the grid has unguessable support -- e.g.
 # car_proper's `rho`, the identical limitation the joint path already has for
-# that family.
+# that family -- or when the mode-find reaches no usable curvature.
 .nl_registry_axis_mode_cov <- function(res, tags, refit_log_marginal) {
     cn <- res$theta_names
     tg <- res$theta_grid
     if (is.null(cn) || is.null(tg)) return(NULL)
     if (!is.matrix(tg)) tg <- matrix(as.numeric(tg), ncol = 1L)
     colnames(tg) <- cn
-    w <- res$weights
-    if (is.null(w) || length(w) != nrow(tg)) return(NULL)
-
-    if (is.null(tags) || length(tags) != ncol(tg) || anyNA(tags)) return(NULL)
-    d <- ncol(tg)
-    u_grid <- matrix(0, nrow(tg), d)
-    for (j in seq_len(d)) u_grid[, j] <- .joint_pareto_fwd(tags[j], as.numeric(tg[, j]))
-    if (any(!is.finite(u_grid))) return(NULL)
-    u_mode <- as.numeric(u_grid[which.max(w), ])
-
-    refit_lm <- function(theta_mat) {
+    pm <- .nl_placement_mode(tg, res$weights, tags, function(theta_mat) {
         colnames(theta_mat) <- cn
         refit_log_marginal(theta_mat)
-    }
-    cov_h <- .joint_pareto_mode_cov(u_mode, tags, cn, refit_lm, d, vary = seq_len(d))
-    if (is.null(cov_h)) return(NULL)
-    list(u_mode = u_mode, cov = cov_h, tags = tags, col_names = cn)
+    })
+    if (!is.null(pm$declined)) return(NULL)
+    list(u_mode = pm$mode_u, cov = pm$cov_u, tags = pm$tags, col_names = cn)
 }
 
 # Multi-block joint auto-recenter rescue, the
@@ -1503,8 +1495,8 @@ auto_grid_place <- function(x)
         attempt <- attempt + 1L
         n_b <- .nl_fit_n_blocks(res)
         rc <- .nl_axis_recenter_from_fit_full(
-            res$pareto_k_mode_u, res$pareto_k_cov_u,
-            res$pareto_k_axis_tags, res$pareto_k_axis_names, "sigma",
+            res$outer_mode_u, res$outer_mode_cov_u,
+            res$outer_mode_axis_tags, res$outer_mode_axis_names, "sigma",
             block_index = target_b, n_blocks = n_b,
             ref_nodes = .nl_axis_ref_nodes(res, "sigma", target_b, n_b))
         if (is.null(rc$nodes)) {
@@ -1532,6 +1524,12 @@ auto_grid_place <- function(x)
         res$outer_grid_prior_declined      <-
             if (attempt >= 2L && prior_pinned) "prior_pinned" else NULL
         out <- list(res = res, prior = cur_prior, prior_sigma = cur_prior_sigma)
+    }
+    for (b in moved_b) {
+        if (!.nl_axis_railed(out$res, "sigma", b)) next
+        out$res <- .nl_decline_axis(
+            out$res, axis_of(b),
+            if (attempt >= max_attempts) "attempts_exhausted" else reason)
     }
     for (b in setdiff(copy_b, moved_b)) {
         held <- .nl_axis_hold(prior[[b]], "sigma_grid",
@@ -1623,10 +1621,9 @@ auto_grid_place <- function(x)
 # Would a placement pass on `axes` fire on this fit? The `"resolve"` trigger,
 # read off the weights the fit already stored, so asking costs nothing.
 #
-# The diagnose_k-independent placement stencil
-# (`.joint_attach_pareto_k_placement()`) exists for the two sigma rescues, whose
-# own trigger is a railed field SD -- so it only computes a mode and Hessian on
-# such a grid. A dispersion axis is crossed onto the
+# The placement mode-find (`.joint_attach_placement()`) exists for the two
+# sigma rescues, whose own trigger is a railed field SD -- so it only computes
+# a mode and Hessian on such a grid. A dispersion axis is crossed onto the
 # tensor independently of the field's geometry and fires on its OWN sizing, and
 # `collapsed_interior` (weight concentrated, but the modal cell interior on every
 # axis) is precisely the regime the reported case sat in: the field SD axis had
@@ -1684,6 +1681,36 @@ auto_grid_place <- function(x)
         new_res$outer_grid_prior_declined <- prev_res$outer_grid_prior_declined
     }
     new_res
+}
+
+# A default axis the placement pass could not bring off a boundary of its grid
+# is reported off that endpoint, not off a mode. Said once per fit, naming each
+# such axis, its side and the reason it stayed (gcol33/tulpa#919). An axis the
+# caller pinned, declared as written, or held by switching the pass off is the
+# caller's own statement; it stays on the fit (`outer_grid_railed_axes`,
+# `outer_grid_axis_declined`) without a warning.
+.NL_RAIL_CALLER_HOLDS <- c("axis_pinned", "default_axis_pinned",
+                           "auto_recenter_disabled")
+
+.nl_warn_unplaced_rail <- function(res, fn) {
+    railed <- res$outer_grid_railed_axes
+    dec    <- res$outer_grid_axis_declined
+    if (!length(railed) || !length(dec)) return(invisible(res))
+    parts <- strsplit(railed, ":", fixed = TRUE)
+    hits  <- character(0)
+    for (p in parts) {
+        why <- dec[p[1L]]
+        if (is.na(why) || why %in% .NL_RAIL_CALLER_HOLDS) next
+        hits <- c(hits, sprintf("`%s` (%s edge: %s)", p[1L], p[2L], why))
+    }
+    if (length(hits)) {
+        warning(sprintf(paste0(
+            "%s: the outer posterior mode lies on the boundary of %s, which ",
+            "placement could not move it off; the reported value is that grid ",
+            "endpoint, not an estimate. See `outer_grid_axis_declined`."),
+            fn, paste(hits, collapse = ", ")), call. = FALSE)
+    }
+    invisible(res)
 }
 
 # PER-AXIS decline record, beside the whole-fit `outer_grid_recenter_declined`.
@@ -1761,8 +1788,8 @@ auto_grid_place <- function(x)
         for (i in which(!pinned)) {
             s  <- slots[[i]]
             rc <- .nl_axis_recenter_from_fit_full(
-                res$pareto_k_mode_u, res$pareto_k_cov_u,
-                res$pareto_k_axis_tags, res$pareto_k_axis_names, s$axis,
+                res$outer_mode_u, res$outer_mode_cov_u,
+                res$outer_mode_axis_tags, res$outer_mode_axis_names, s$axis,
                 ref_nodes = .nl_rescue_axis_nodes(res, s$axis))
             # The RAW SD is recorded even for an axis this attempt could not
             # place -- that reading is what says whether declining was right.
@@ -1800,12 +1827,20 @@ auto_grid_place <- function(x)
         placed <- moved_axes
         out  <- list(res = res, phi_grid = cur)
     }
-    # An axis the pass left alone says why, whether or not a sibling moved.
+    # An axis the pass left alone says why, whether or not a sibling moved, and
+    # so does one it moved that still rails.
     for (i in seq_along(slots)) {
-        if (axis_of(slots[[i]]) %in% placed) next
+        ax <- axis_of(slots[[i]])
+        if (ax %in% placed) {
+            if (.nl_axis_railed(out$res, ax)) {
+                out$res <- .nl_decline_axis(
+                    out$res, ax,
+                    if (attempt >= max_attempts) "attempts_exhausted" else reason)
+            }
+            next
+        }
         out$res <- .nl_decline_axis(
-            out$res, axis_of(slots[[i]]),
-            if (pinned[i]) held[[i]] else reason)
+            out$res, ax, if (pinned[i]) held[[i]] else reason)
     }
     out$res <- .nl_decline_recenter(out$res, reason)
     out
@@ -1830,7 +1865,7 @@ auto_grid_place <- function(x)
 # MEMBERSHIP is decided by one question, not by hand: does
 # `.joint_pareto_block_tags()` name a coordinate for EVERY axis of the family's
 # grid? A recentred axis is laid in that coordinate (`.nl_recenter_axis()`) and
-# the FD stencil differences the whole grid in it (`.joint_pareto_mode_cov()`),
+# the placement mode-find searches the whole grid in it (`.nl_placement_mode()`),
 # so one unguessable axis takes the fit's curvature with it. The five registry
 # families absent below are absent for a stated reason, and each records it on
 # the fit rather than passing in silence:
@@ -2041,7 +2076,7 @@ auto_grid_place <- function(x)
     reason  <- if (identical(policy, "resolve")) "grid_resolves_posterior" else
         "no_axis_railed"
     while (attempt < max_attempts) {
-        # Every policy shares the FD mode/Hessian stencil, the `mode +/- span *
+        # Every policy shares the placement mode-find, the `mode +/- span *
         # sd` node layout, the provenance gate and the attempt budget; they
         # differ only in WHEN the pass fires and, once it does, in HOW MANY of
         # the family's axes it re-places.

@@ -412,7 +412,10 @@ dropped for a non-finite third derivative (see \code{control$diagnose_skew}).
 Laplace pass that scales with grid size. Surfaced one-line in \code{print}.
 \item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned}, \code{prune_tol}:
 present only when \code{control$prune = TRUE} and the safety gate did not
-trip -- the cheap-screen log-marginal per cell, the logical mask of
+trip -- the cheap-screen log-marginal per cell (the truncated solve's
+value plus half its Newton decrement, the second-order estimate of the
+converged value the cells are ranked by; the decrement itself is
+\code{prune_screen_decrement}), the logical mask of
 pruned cells, the pruned-cell count, and the threshold actually applied.
 \item \code{prune_log_gap_cut}, \code{prune_cheap_lm_spread}, \code{prune_min_keep},
 \code{prune_n_floor_restored}: the same screen read on the scale it operates

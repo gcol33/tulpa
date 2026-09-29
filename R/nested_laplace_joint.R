@@ -87,17 +87,23 @@
 #'   `sigma_grid`'s default is a starting axis, not a hard ceiling: when the
 #'   fitted field-SD posterior mode rails the top node (the axis's own
 #'   marginal is maximal there, or the whole grid collapsed onto it:
-#'   `pareto_k_regime = "collapsed_edge"`, see below), the driver re-centres
-#'   the axis on a
-#'   mode-Hessian and refits (up to two attempts, the second adding a light
+#'   `pareto_k_regime = "collapsed_edge"`, see below), the driver finds the
+#'   outer posterior mode -- a damped Newton search over every outer axis,
+#'   started at the grid's heaviest cell and read through full inner solves,
+#'   the same mode-find the CCD integrator places its design with -- lays the
+#'   axis at that mode +/- 2.5 of the SDs its curvature there gives, and refits
+#'   (up to two attempts, the second adding a light
 #'   default PC(U=3, alpha=0.01) prior on sigma unless `prior_sigma` was pinned
 #'   -- see there), so a sparse or strongly-identified species is not silently
 #'   truncated at 3.0. This engages whether or not `control$diagnose_k`
-#'   computed the full outer Pareto-k diagnostic: the mode-Hessian is reused
-#'   from the diagnostic when it ran, or computed on its own (one extra batched
-#'   finite-difference solve, only when the axis actually railed) when it
-#'   did not -- so `diagnose_k = FALSE`, the default, does not leave a railed
-#'   axis stuck. A `sigma_grid` the caller PINNED always wins: auto-recenter
+#'   computed the full outer Pareto-k diagnostic, and only when an axis
+#'   actually railed. A field SD still on a boundary of its grid after the
+#'   attempts is named in a warning, with the reason it stayed, in
+#'   `outer_grid_axis_declined` (gcol33/tulpa#919). The mode the placement
+#'   was laid around is on the fit as `outer_mode_u` / `outer_mode_cov_u` (in
+#'   each axis's `outer_mode_axis_tags` coordinate), with `outer_mode_status`,
+#'   `outer_mode_rounds` and `outer_mode_evals`. A `sigma_grid` the caller
+#'   PINNED always wins: auto-recenter
 #'   engages when the field is left `NULL`, when it is marked with
 #'   [auto_grid()] (how a wrapper package declares an axis it defaulted rather
 #'   than one the user chose), or when its nodes are exactly
@@ -890,8 +896,9 @@
 #'      default rather than a choice), `"default_axis_pinned"` (a wrapper
 #'      package declared the nodes with `auto_grid(place = FALSE)` and asked
 #'      for them as written -- nothing you pinned), or `"no_usable_curvature"`
-#'      (the mode-Hessian the recenter needs was unavailable or degenerate,
-#'      e.g. a car_proper grid whose `rho_car` axis has unguessable support).
+#'      (the outer mode-find the recenter lays the axis from did not reach a
+#'      mode with a usable curvature, e.g. a car_proper grid whose `rho_car`
+#'      axis has unguessable support).
 #'      Absent when the fit WAS recentred. A joint fit's field SD and its
 #'      per-arm dispersion are placed by different passes over the same grid,
 #'      and this slot reduces over them rather than holding the last to speak:
@@ -905,7 +912,9 @@
 #'      names. Written by the field-SD passes for `sigma` (`b<k>.sigma` on a
 #'      copy block) and by the per-arm dispersion pass for `phi_<arm>`, and
 #'      carried across a later pass placing a different axis; absent on a fit
-#'      no pass declined an axis of.
+#'      no pass declined an axis of. An axis a pass DID move that still rails
+#'      reads `"attempts_exhausted"` (or the reason its last attempt could not be
+#'      laid), and is the axis the railed-mode warning names.
 #'   * `outer_grid_pilot` -- present only when `control$recenter_pilot` ran: the
 #'      pilot's resolution (`n_pilot`), its cell count (`cells`), the axes it
 #'      thinned (`axes`) and those it could not (`axes_kept`), and what the
@@ -1118,7 +1127,12 @@
 #'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
 #'      `prune_tol`, `prune_screen_iters` -- present only when `prune = TRUE`
 #'      and the safety gate did not fall back. Cheap-pass log-marginals at every
-#'      cell, a logical mask of pruned cells, the pruned-cell count, the
+#'      cell -- the truncated solve's value plus half its Newton decrement, the
+#'      second-order estimate of the converged value the screen ranks by, so a
+#'      cell whose inner mode had far to move from its warm start is not ranked
+#'      on where the truncation left it (gcol33/tulpa#919); that decrement is
+#'      `prune_screen_decrement` --
+#'      a logical mask of pruned cells, the pruned-cell count, the
 #'      threshold actually applied, and the screening depth the driver actually
 #'      ran at. Pruned cells have `log_marginal = -Inf` so they get zero
 #'      weight under `.nl_normalise_weights_safe`.
@@ -1591,6 +1605,7 @@ tulpa_nested_laplace_joint <- function(responses,
         }
         res$k_quality_k_trace <- k_trace
     }
+    .nl_warn_unplaced_rail(res, "tulpa_nested_laplace_joint()")
     .nl_attach_outer_threads(res, outer_threads)
 }
 

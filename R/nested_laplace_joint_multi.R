@@ -1205,10 +1205,9 @@
 
 # Multi-block counterpart of `.joint_attach_pareto_k_single()`
 # (`R/nested_laplace_joint_pareto_k.R`). Same `diagnose_k = FALSE` behaviour:
-# `pareto_k` / `pareto_k_is_ess` stay NA, but `pareto_k_mode_u` / `cov_u` /
-# `axis_tags` / `axis_names` are still populated on a collapsed-edge grid via
-# the diagnose_k-independent placement path, so the
-# auto-recenter rescue engages regardless of `diagnose_k`.
+# `pareto_k` / `pareto_k_is_ess` stay NA, and the placement mode the
+# auto-recenter rescues read (`outer_mode_*`, `.joint_attach_placement()`) is
+# attached either way.
 .joint_attach_pareto_k_multi <- function(res, call_kernel,
                                          axis_offsets, B, arm_names,
                                          fn_sigma, fn_alpha, fn_phi = NULL,
@@ -1268,15 +1267,33 @@
                             hyperprior = hyperprior, declared = k_declared)
     }
 
+    # The placement mode-find at the fit's own inner settings (see
+    # `.joint_attach_pareto_k_single()`).
+    place_warm <- warm_mode
+    place_fn <- function(theta_mat) {
+        r <- .joint_with_quiet_opts(call_kernel(
+            theta_mat,
+            x_init           = place_warm,
+            phi_grid_per_arm = .joint_multi_phi_per_arm(theta_mat, arm_names),
+            n_threads_outer  = n_to,
+            x_init_per_cell  = .joint_rows_of(place_warm, nrow(theta_mat))))
+        lp <- .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
+                                  fn_sigma, fn_alpha, fn_phi,
+                                  blocks = hp_blocks, families = hp_families,
+                                  copy_atom_mass = copy_atom_mass,
+                                  hyperprior = hyperprior, declared = k_declared)
+        if (is.matrix(r$modes)) attr(lp, "modes") <- r$modes
+        lp
+    }
+    place_set_warm <- function(mode) {
+        mode <- as.numeric(mode)
+        if (length(mode) && all(is.finite(mode))) place_warm <<- mode
+    }
+
     if (!isTRUE(diagnose_k)) {
-        # Placement-only recenter curvature: cheap (one
-        # batched FD-stencil solve, only when the grid actually collapsed on a
-        # boundary) even though the full diagnostic below never runs. `proposal`
-        # (the CCD mode-Hessian, when the CCD grid path built one) is threaded
-        # through here too -- it is available independent of `diagnose_k`.
         res <- .k_attach_declined(res, .k_decline("not_requested"))
-        return(.joint_attach_pareto_k_placement(res, solve_fn, proposal = proposal,
-                                                extra_axes = placement_axes))
+        return(.joint_attach_placement(res, place_fn, place_set_warm,
+                                       extra_axes = placement_axes))
     }
 
     # Per-cell warm start (nearest grid mode, serial + parallel) when modes are
@@ -1298,7 +1315,8 @@
     res <- .joint_attach_pareto_k_regime(res, kd)
     res <- .joint_attach_pareto_k_uncertainty(res, kd)
     res <- .joint_attach_by_arm_k(res, kd)
-    res
+    .joint_attach_placement(res, place_fn, place_set_warm,
+                            extra_axes = placement_axes)
 }
 
 # Inner-Laplace skewness diagnostic for the multi-block
@@ -2339,6 +2357,9 @@
         )
     }
     res$block_moments <- per_block_moments
+    # Each axis's SD from the estimator its own resolution calls for, the rule
+    # `.nl_posterior_moments()` applies on every other nested path.
+    res <- .nl_attach_axis_sd(res)
 
     # Weighted-quantile median + 2.5/97.5 CI per axis. Generic helper
     # filters foreign-axis slice cells per axis name. After the (sigma,
@@ -2354,7 +2375,7 @@
     qs <- .nl_axis_quantiles(joint_grid, res$log_marginal,
                               res$refining_axis, weights = int_weights,
                               support = support, domains = geo$domain,
-                              within = within, atoms = geo$atom)
+                              within = within, atoms = geo$atom, sd = TRUE)
     res$theta_median <- qs$median
     res$theta_ci_lo  <- qs$ci_lo
     res$theta_ci_hi  <- qs$ci_hi

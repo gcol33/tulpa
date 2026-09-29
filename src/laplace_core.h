@@ -48,6 +48,16 @@ struct LaplaceResult {
   // so this is read off that pass at no extra cost.
   double score_max = 0.0;
 
+  // Newton decrement at the returned point, g' H^-1 g on the matrix a Newton
+  // step there would solve with. Half of it is what one more step would add to
+  // the log joint to second order, so a solve stopped short of its mode reports
+  // how far short. The cheap-pass screen reads it: a truncated solve's
+  // log-marginal is lowest exactly where the inner mode moved most from its warm
+  // start, and ranking cells on that value alone pruned the outer mode of the
+  // full 25 km occu_cover fit, whose cells take ~250 inner iterations
+  // (gcol33/tulpa#919). NaN where the final pass had no PD factor to solve with.
+  double newton_decrement = std::numeric_limits<double>::quiet_NaN();
+
   // Whether the Hessian at the returned point is the positive-definite matrix
   // the Laplace expansion needs. False where the final factorization had to
   // condition it -- a diagonal load or an eigenvalue clamp -- or could not

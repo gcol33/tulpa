@@ -244,9 +244,9 @@
 # refinement and the var-of-means consistency pass would add cells to a grid
 # that is not integrated, and the inner-skew / correction / debias / CILA layers
 # are per-cell payloads nothing downstream of a pilot reads. The outer k-hat
-# diagnostic goes with them; the placement path
-# (`.joint_attach_pareto_k_placement()`) supplies the mode and Hessian without
-# it, which is the same route a `diagnose_k = FALSE` fit already takes.
+# diagnostic goes with them; the placement mode-find
+# (`.joint_attach_placement()`) supplies the mode and Hessian without it, which
+# is the same route a `diagnose_k = FALSE` fit already takes.
 .nl_pilot_control <- function(control) {
     utils::modifyList(control, list(
         adaptive_grid            = FALSE,

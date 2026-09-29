@@ -258,10 +258,10 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
     stub_res <- list(pareto_k_regime = "collapsed_edge",
                      pareto_k_grid_edge_axes = "sigma",
                      pareto_k_grid_edge_sides = "upper",
-                     pareto_k_mode_u = log(3),
-                     pareto_k_cov_u = matrix(0.25, 1, 1),
-                     pareto_k_axis_tags = "log",
-                     pareto_k_axis_names = "sigma",
+                     outer_mode_u = log(3),
+                     outer_mode_cov_u = matrix(0.25, 1, 1),
+                     outer_mode_axis_tags = "log",
+                     outer_mode_axis_names = "sigma",
                      outer_grid_placement = "fixed")
     calls <- new.env(parent = emptyenv())
     calls$n <- 0L
@@ -321,8 +321,8 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
 
     # 6. Collapsed, but no curvature to recentre on -> untouched, own reason.
     calls$n <- 0L
-    blind <- utils::modifyList(stub_res, list(pareto_k_mode_u = NULL,
-                                              pareto_k_cov_u = NULL))
+    blind <- utils::modifyList(stub_res, list(outer_mode_u = NULL,
+                                              outer_mode_cov_u = NULL))
     out <- tulpa:::.joint_sigma_grid_rescue(blind, icar, NULL, refit)
     expect_identical(out$res$outer_grid_recenter_declined, "no_usable_curvature")
     expect_identical(out$res$outer_grid_axis_declined,
@@ -361,10 +361,10 @@ test_that("the second recenter attempt engages the PC prior unless it was PINNED
     stub_res <- list(pareto_k_regime = "collapsed_edge",
                      pareto_k_grid_edge_axes = "sigma",
                      pareto_k_grid_edge_sides = "upper",
-                     pareto_k_mode_u = log(3),
-                     pareto_k_cov_u = matrix(0.25, 1, 1),
-                     pareto_k_axis_tags = "log",
-                     pareto_k_axis_names = "sigma",
+                     outer_mode_u = log(3),
+                     outer_mode_cov_u = matrix(0.25, 1, 1),
+                     outer_mode_axis_tags = "log",
+                     outer_mode_axis_names = "sigma",
                      outer_grid_placement = "fixed")
     calls <- new.env(parent = emptyenv())
     # Never leaves collapsed_edge, so the loop runs its full two attempts.
@@ -415,10 +415,10 @@ test_that("auto_grid() marks a prior specification as well as a grid or a knob",
 test_that("the multi-block rescue reports a pinned copy-block axis", {
     stub_res <- list(pareto_k_regime = "collapsed_edge",
                      pareto_k_grid_edge_axes = "b1.sigma",
-                     pareto_k_mode_u = c(log(3), 0.4),
-                     pareto_k_cov_u = diag(c(0.25, 0.09)),
-                     pareto_k_axis_tags = c("log", "identity"),
-                     pareto_k_axis_names = c("b1.sigma", "b1.alpha"),
+                     outer_mode_u = c(log(3), 0.4),
+                     outer_mode_cov_u = diag(c(0.25, 0.09)),
+                     outer_mode_axis_tags = c("log", "identity"),
+                     outer_mode_axis_names = c("b1.sigma", "b1.alpha"),
                      outer_grid_placement = "fixed",
                      blocks = list(list(type = "icar")))
     cp <- list(has_copy = TRUE, copy_blocks_zero = 0L)
@@ -453,13 +453,14 @@ test_that("the multi-block rescue reports a pinned copy-block axis", {
                      c(b1.sigma = "auto_recenter_disabled"))
 
     # Two collapsed copy blocks and one attempt: the block the pass moved is
-    # listed as moved, the one it ran out of attempts on says so.
+    # listed as moved, and both say they ran out of attempts -- the refit here
+    # leaves the moved block railed too.
     two <- utils::modifyList(stub_res, list(
         pareto_k_grid_edge_axes = c("b1.sigma", "b2.sigma"),
-        pareto_k_mode_u = c(log(3), log(3)),
-        pareto_k_cov_u = diag(c(0.25, 0.25)),
-        pareto_k_axis_tags = c("log", "log"),
-        pareto_k_axis_names = c("b1.sigma", "b2.sigma"),
+        outer_mode_u = c(log(3), log(3)),
+        outer_mode_cov_u = diag(c(0.25, 0.25)),
+        outer_mode_axis_tags = c("log", "log"),
+        outer_mode_axis_names = c("b1.sigma", "b2.sigma"),
         blocks = list(list(type = "icar"), list(type = "icar"))))
     still <- function(prior_i, prior_sigma_i) two
     out <- tulpa:::.joint_multi_sigma_grid_rescue(
@@ -469,7 +470,8 @@ test_that("the multi-block rescue reports a pinned copy-block axis", {
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
     expect_identical(out$res$outer_grid_recenter_axes, "b1.sigma")
     expect_identical(out$res$outer_grid_axis_declined,
-                     c(b2.sigma = "attempts_exhausted"))
+                     c(b1.sigma = "attempts_exhausted",
+                       b2.sigma = "attempts_exhausted"))
 
     # Engine default on the donor block (the shape a wrapper package writes)
     # -> recenters.

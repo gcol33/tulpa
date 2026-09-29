@@ -44,7 +44,7 @@
 }
 
 .fit_joint_prune <- function(sim, prune, prune_tol = 1e-3,
-                              n_threads_outer = 1L) {
+                              n_threads_outer = 1L, screen_iters = NULL) {
     adj <- .chain_adj(sim$n_s)
     arm_occ <- list(
         y = as.numeric(sim$occur), n_trials = rep(1L, sim$N),
@@ -68,9 +68,10 @@
     tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
-        control = list(n_threads = 1L, n_threads_outer = n_threads_outer,
-                       prune = prune, prune_tol = prune_tol,
-                       adaptive_grid = FALSE, var_of_means_consistency = FALSE)
+        control = c(list(n_threads = 1L, n_threads_outer = n_threads_outer,
+                         prune = prune, prune_tol = prune_tol,
+                         adaptive_grid = FALSE, var_of_means_consistency = FALSE),
+                    if (!is.null(screen_iters)) list(screen_iters = screen_iters))
     )
 }
 
@@ -102,6 +103,34 @@ test_that("a per-cell warm-started batch solves the same cells in parallel", {
     expect_true(is.finite(one$pareto_k))
     expect_identical(two$pareto_k, one$pareto_k)
     expect_identical(two$pareto_k_is_ess, one$pareto_k_is_ess)
+})
+
+test_that("the screen ranks a cell by its second-order converged estimate", {
+    # gcol33/tulpa#919: a truncated screen reads lowest where its inner mode has
+    # furthest to go from its warm start, so it ranked the outer mode of the
+    # full 25 km occu_cover fit below a plateau that converges in a few steps.
+    # The screen's value is the truncated log-marginal plus half the Newton
+    # decrement where it stopped; on the cells solved in full it sits nearer
+    # the converged log-marginal than the truncated value it corrects.
+    skip_on_cran()
+    sim <- .sim_joint_bym2(8101L)
+    fit <- .fit_joint_prune(sim, prune = TRUE, prune_tol = 1e-12,
+                            screen_iters = 1L)
+    dec <- fit$prune_screen_decrement
+    expect_length(dec, length(fit$log_marginal))
+    kept <- !fit$prune_mask & is.finite(dec)
+    expect_gt(sum(kept), 5L)
+    expect_true(all(dec[kept] >= 0))
+
+    # The screen reads the kernel's own scale; the fit's log-marginal carries
+    # the hyperprior R folded in.
+    folded <- tulpa:::.nl_log_hyperprior_folded(fit, length(fit$log_marginal))
+    full <- (fit$log_marginal - folded)[kept]
+    est  <- fit$prune_cheap_log_marginal[kept]
+    raw  <- est - 0.5 * dec[kept]
+    moved <- abs(raw - full) > 1e-6
+    expect_gt(sum(moved), 0L)
+    expect_lt(sum(abs(est - full)[moved]), sum(abs(raw - full)[moved]))
 })
 
 test_that("prune = FALSE leaves no prune fields in the result", {

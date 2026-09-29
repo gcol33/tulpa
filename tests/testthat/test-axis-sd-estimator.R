@@ -185,6 +185,46 @@ test_that("a design-weighted grid keeps the weighted read at any ESS", {
   expect_lt(design$theta_sd[["a"]], mass$theta_sd[["a"]])
 })
 
+test_that("an axis collapsed onto its boundary node reports the SD its interval is read off", {
+  # gcol33/tulpa#919: `sd = 0` beside a 95% interval spanning the top node's
+  # cell. The parabola declines at an edge node, so the SD comes from the read
+  # the interval does: the top cell's mass spread uniformly over the cell, of
+  # which the 95% interval is 0.95.
+  v  <- exp(seq(log(0.1), log(3), length.out = 5L))
+  lm <- -1e4 * (log(v) - log(3))^2
+  w  <- exp(lm - max(lm))
+  res <- .nl_posterior_moments(
+    list(theta_grid = v, log_marginal = lm, weights = w / sum(w)), "icar")
+  expect_identical(res$theta_sd_stencil_declined, "mode_at_edge")
+  expect_identical(res$theta_sd_source, "within_cell")
+  expect_gt(res$theta_ci_hi[[1L]], 3)
+  expect_equal(res$theta_sd,
+               (res$theta_ci_hi[[1L]] - res$theta_ci_lo[[1L]]) /
+                 (0.95 * sqrt(12)), tolerance = 1e-5)
+
+  # An axis the grid resolves keeps the weighted read, and the record is
+  # untouched.
+  lm2 <- -0.5 * ((log(v) - log(0.6)) / 1.5)^2
+  w2  <- exp(lm2 - max(lm2))
+  res2 <- .nl_posterior_moments(
+    list(theta_grid = v, log_marginal = lm2, weights = w2 / sum(w2)), "icar")
+  expect_identical(res2$theta_sd_source, "weighted")
+})
+
+test_that("the read SD is the SD of the distribution the interval is read off", {
+  v <- c(1, 2, 4)
+  w <- c(0.2, 0.5, 0.3)
+  q <- .nl_summary_quantile_read(v, w, (seq_len(4096L) - 0.5) / 4096L,
+                                 "positive", "density", "box_uniform")$q
+  expect_equal(.nl_read_sd(v, w, "positive", "density", "box_uniform"),
+               sqrt(mean((q - mean(q))^2)), tolerance = 1e-4)
+  # A single uniform cell: W / sqrt(12) to the midpoint rule's 1 / (2 K^2).
+  e <- .nl_box_edges(c(1, 2))
+  expect_equal(.nl_read_sd(c(1, 2), c(1, 0), NA_character_, "density",
+                           "box_uniform"),
+               (e[2L] - e[1L]) / sqrt(12), tolerance = 1e-5)
+})
+
 test_that("every nested path reports the estimator it used", {
   # The choice is made inside `.nl_posterior_moments()`, which every nested
   # driver goes through, rather than at each driver.

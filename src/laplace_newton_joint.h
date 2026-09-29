@@ -538,10 +538,18 @@ inline void joint_newton_finalize_dense(
     result.pd_conditioned = !hessian_pd_at_mode;
     if (!hessian_pd_at_mode) {
         TULPA_PROFILE_PHASE(PHASE_LOG_DET);
-        joint_pd_step_solve_dense_ridged(H, grad, scratch.delta,
-                                         n_x, sparse_solver, use_sparse,
-                                         scratch.chol, pd_mode,
-                                         &result.log_det_Q);
+        if (joint_pd_step_solve_dense_ridged(H, grad, scratch.delta,
+                                             n_x, sparse_solver, use_sparse,
+                                             scratch.chol, pd_mode,
+                                             &result.log_det_Q)) {
+            double dec = 0.0;
+            for (int j = 0; j < n_x; j++) dec += grad[j] * scratch.delta[j];
+            if (std::isfinite(dec)) result.newton_decrement = dec;
+        }
+    } else {
+        result.newton_decrement = newton_decrement_live(
+            grad.data(), n_x, use_sparse && sparse_solver.factored(),
+            sparse_solver, scratch.chol);
     }
 
     double log_lik, log_prior;

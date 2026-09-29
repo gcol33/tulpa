@@ -189,13 +189,17 @@
 # The running meter: one per `.joint_ccd_grid()` call, shared by every mixture
 # component, so the ceiling bounds the whole placement rather than each design
 # separately. It is also the heartbeat's state (elapsed, rounds, spend).
-.ccd_meter_new <- function(budget, progress = .ccd_progress_opts()) {
+# `label` names the search on the heartbeat line; the outer-grid placement
+# (`.joint_placement_mode()`) drives the same mode-find under its own.
+.ccd_meter_new <- function(budget, progress = .ccd_progress_opts(),
+                           label = "ccd mode-find") {
     e <- new.env(parent = emptyenv())
     e$evals    <- 0
     e$rounds   <- 0L
     e$budget   <- budget
     e$t0       <- .ccd_now()
     e$progress <- progress
+    e$label    <- label
     e
 }
 
@@ -249,8 +253,8 @@
     spent   <- if (is.finite(meter$budget))
         sprintf("%.0f/%.0f evals", meter$evals, meter$budget) else
         sprintf("%.0f evals", meter$evals)
-    line <- sprintf("[ccd mode-find] %s | %s%s | elapsed %s | %s/eval",
-                    phase, spent,
+    line <- sprintf("[%s] %s | %s%s | elapsed %s | %s/eval",
+                    meter$label %||% "ccd mode-find", phase, spent,
                     if (nzchar(detail)) paste0(" | ", detail) else "",
                     .ccd_format_secs(elapsed), .ccd_format_secs(per))
     cat(line, "\n", sep = "")
@@ -490,6 +494,14 @@
 # the current iterate solve in a few Newton steps instead of cold from the
 # centre).
 #
+# `ridge_check = FALSE` drops the first guard. A CCD starts from a point it
+# means to centre a design on, so a flat curvature there already answers the
+# question; an outer-grid PLACEMENT starts from the cell a railed grid piled its
+# weight on, which sits away from the mode by construction and whose curvature
+# can be indefinite for that reason alone. The step is still an ascent step --
+# the Hessian is regularised negative-definite and the step trust-clamped and
+# backtracked -- so the search runs from there.
+#
 # Returns list(par, hess, value, converged, status) with status in
 # {"ok", "ridge", "fail"}; only "ok" yields a usable CCD scale.
 .joint_ccd_modefind <- function(u0, eval1, lower, upper, h,
@@ -497,7 +509,8 @@
                                 tol = 1e-3,
                                 max_halve = .ccd_placement("max_halve"),
                                 trust = NULL,
-                                on_accept = NULL, meter = NULL) {
+                                on_accept = NULL, meter = NULL,
+                                ridge_check = TRUE) {
     d <- length(u0)
     if (is.null(trust)) trust <- rep(Inf, d)
     fail <- function(u, H, f) {
@@ -523,7 +536,7 @@
         # Fast decline on a ridge / flat curvature: the centre Hessian already
         # tells us the Gaussian CCD scale is ill-defined, so bail BEFORE the
         # expensive backtracking line search.
-        if (iter == 1L && !.joint_ccd_outer_hess_ok(H)) {
+        if (ridge_check && iter == 1L && !.joint_ccd_outer_hess_ok(H)) {
             .ccd_meter_beat(meter, "declined",
                             "outer curvature flat / ridged")
             return(list(par = u, hess = H, value = f_u,
@@ -543,9 +556,10 @@
         # inner solve (a full-field Laplace) the line search would otherwise
         # dominate the mode-find. Accept the largest step that improves -- the
         # same point a sequential backtrack would take.
+        # One candidate per row, at every `d` including a single axis.
         t_steps <- 0.5 ^ (seq_len(max_halve + 1L) - 1L)
-        cands   <- t(vapply(t_steps, function(ts)
-                       pmin(pmax(u + ts * step, lower), upper), numeric(d)))
+        cands   <- do.call(rbind, lapply(t_steps, function(ts)
+                       pmin(pmax(u + ts * step, lower), upper)))
         fce     <- eval1(cands)
         f_cands <- as.numeric(fce)
         u_try <- u; f_try <- f_u; mode_try <- NULL

@@ -341,7 +341,10 @@
 #'     Laplace pass that scales with grid size. Surfaced one-line in `print`.
 #'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`, `prune_tol`:
 #'     present only when `control$prune = TRUE` and the safety gate did not
-#'     trip -- the cheap-screen log-marginal per cell, the logical mask of
+#'     trip -- the cheap-screen log-marginal per cell (the truncated solve's
+#'     value plus half its Newton decrement, the second-order estimate of the
+#'     converged value the cells are ranked by; the decrement itself is
+#'     `prune_screen_decrement`), the logical mask of
 #'     pruned cells, the pruned-cell count, and the threshold actually applied.
 #'   * `prune_log_gap_cut`, `prune_cheap_lm_spread`, `prune_min_keep`,
 #'     `prune_n_floor_restored`: the same screen read on the scale it operates
