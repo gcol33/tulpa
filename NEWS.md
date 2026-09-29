@@ -1,3 +1,16 @@
+# tulpa 0.6.6
+
+## Bug fixes
+
+* **A batch that carries every cell's warm start fans out at once**
+  (gcol33/tulpa#920). The parallel outer-grid driver solved one pilot cell
+  serially before the parallel loop so the others could start from its mode;
+  a batch handing every cell its own warm start (the outer Pareto-k draws,
+  each warm-started from its nearest stored grid mode) never reads that mode,
+  so the pilot was a serial inner solve per batch with the other threads idle.
+  The pilot now runs only where a cell reads it: under the prune screen, or on
+  a batch without per-cell warm starts. The per-cell results are unchanged.
+
 # tulpa 0.6.5
 
 ## Bug fixes

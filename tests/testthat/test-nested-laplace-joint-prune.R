@@ -74,6 +74,36 @@
     )
 }
 
+test_that("a per-cell warm-started batch solves the same cells in parallel", {
+    # gcol33/tulpa#920: the outer Pareto-k batch hands every draw its own warm
+    # start, so the parallel driver fans it out with no serial pilot cell. Each
+    # cell is solved from its own row either way, so the diagnostic is the
+    # same at one outer thread and at two.
+    skip_on_cran()
+    sim <- .sim_joint_bym2(8101L)
+    fit_k <- function(kt) {
+        adj <- .chain_adj(sim$n_s)
+        tulpa_nested_laplace_joint(
+            responses = list(occ = list(
+                y = as.numeric(sim$occur), n_trials = rep(1L, sim$N),
+                X = sim$Xocc, spatial_idx = sim$spatial_idx,
+                family = "binomial", phi = 1.0)),
+            prior = list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                         adj_row_ptr = adj$adj_row_ptr,
+                         adj_col_idx = adj$adj_col_idx,
+                         n_neighbors = adj$n_neighbors,
+                         sigma_grid = c(0.3, 0.6, 1.0, 1.6)),
+            control = list(n_threads = 1L, diagnose_k = TRUE, k_samples = 200L,
+                           k_threads = kt, auto_recenter = FALSE,
+                           progress = FALSE))
+    }
+    one <- fit_k(1L)
+    two <- fit_k(2L)
+    expect_true(is.finite(one$pareto_k))
+    expect_identical(two$pareto_k, one$pareto_k)
+    expect_identical(two$pareto_k_is_ess, one$pareto_k_is_ess)
+})
+
 test_that("prune = FALSE leaves no prune fields in the result", {
     skip_on_cran()
     sim <- .sim_joint_bym2(8101L)

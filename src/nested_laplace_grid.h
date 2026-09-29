@@ -822,14 +822,19 @@ inline Rcpp::List run_nested_laplace_grid(
     // Determine whether we need an explicit pilot pass. Required either by
     // outer parallelism (the parallel branches use the pilot mode as the
     // warm-start for every other cell) or by cheap-pass pruning (the prune
-    // step needs the pilot mode to evaluate cheap log-marginals). When the
+    // step needs the pilot mode to evaluate cheap log-marginals). A caller
+    // supplying every cell's own warm start (`x_init_per_cell`) leaves the
+    // parallel branch nothing to read off a pilot, so an unscreened batch of
+    // that kind fans out at once instead of solving one cell serially first
+    // (gcol33/tulpa#920). When the
     // caller leaves cheap_eval at the NoCheapEval default, prune_tol is
     // ignored — the no-op cheap_eval would prune everything otherwise.
     const bool cheap_eval_supplied =
         !std::is_same<CheapEval, NoCheapEval>::value;
     const bool prune_active =
         cheap_eval_supplied && prune_tol > 0.0 && n_grid > 1;
-    const bool need_pilot = (n_threads_outer > 1) || prune_active;
+    const bool need_pilot =
+        prune_active || (n_threads_outer > 1 && !has_pc);
     const int k_pilot = n_grid / 2;
 
     // Output flags (filled below). pruned[k]: cheap-pass below threshold,
@@ -1198,7 +1203,7 @@ inline Rcpp::List run_nested_laplace_grid(
             }
         }
     } else {
-        // Parallel path: pilot already solved above.
+        // Parallel path: the pilot, where one was needed, is solved above.
         // One CHOLMOD solver per outer thread. CHOLMOD's cholmod_common is
         // *not* thread-safe — each thread must own its own. We use
         // unique_ptr so the solvers RAII-clean on scope exit even if a
@@ -1212,9 +1217,14 @@ inline Rcpp::List run_nested_laplace_grid(
         // Decide whether tile metadata is usable. Need both vectors set
         // and `tile_ids` of length n_grid; otherwise fall back to single-
         // tier Phase 1 behaviour.
-        const bool use_tiles =
+        // The tiers exist to hand each cell a warm start; per-cell warm
+        // starts already give every cell its own.
+        const bool use_tiles = !has_pc &&
             (static_cast<int>(tile_ids.size()) == n_grid) &&
             (!tile_pilot_cells.empty());
+        if (!need_pilot && progress && n_loaded) {
+            progress->set_total(n_grid - n_loaded);
+        }
 
         if (!use_tiles) {
             // Phase 1 path: every cell warm-started from the global pilot.
@@ -1223,7 +1233,7 @@ inline Rcpp::List run_nested_laplace_grid(
                 num_threads(n_threads_outer)
             #endif
             for (int k = 0; k < n_grid; k++) {
-                if (k == k_pilot) continue;  // already solved
+                if (need_pilot && k == k_pilot) continue;  // already solved
                 if (pruned[k]) continue;     // cheap-pass pruned
                 if (ckpt_done[k]) continue;  // checkpoint-loaded
                 #ifdef _OPENMP
