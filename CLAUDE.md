@@ -232,6 +232,15 @@ A placement refit is handed the mode it was laid from
 (`tulpa.nl_outer_mode`) and reuses it unless the placed grid rails
 (`outer_mode_carried`); the var-of-means consistency pass lays a collapsed
 axis's points at that mode (`.hyper_propose_at_mode()`) before bisecting.
+A node's measure is the box to its neighbours' midpoints, so points laid into
+a wide gap are closed on each side (`.hyper_at_mode_closing()`), or the
+outermost one reads half the gap. A slice re-tiles only the fibre through the
+modal cell: the pass takes the axis farthest from its mode first
+(`.hyper_consistency_order()`) and holds an axis whose fibre cannot add one
+effective node (`.hyper_fibre_ess_reach()`, `info$held`). On a pinned axis
+tens of SDs from its mode, no base row carries the posterior once that axis
+is resolved, so the other axes stay single-node and read their spread
+within-cell.
 
 The cheap-pass screen is ON by default for the joint and registry doors
 (`.NL_SCREEN$prune`, per door; the SPDE fitter stays opt-in because its CCD

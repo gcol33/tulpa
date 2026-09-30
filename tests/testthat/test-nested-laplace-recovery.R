@@ -96,11 +96,15 @@ beta_post <- function(fit, z = 1.96) {
   w  <- fit$weights
   gm <- fit$grid_modes
   gh <- fit$grid_hessians
-  # An empty cell would be dropped by rbind() below and silently shift every
-  # weight onto the wrong component, so require the retention to be complete.
-  stopifnot(length(gm) == length(w), length(gh) == length(w),
-            !any(vapply(gm, is.null, logical(1))),
-            !any(vapply(gh, is.null, logical(1))))
+  # A cell the screen dropped holds no mode and no weight, so the mixture runs
+  # over the cells that carry weight. An empty one among THOSE would be dropped
+  # by rbind() below and silently shift every weight onto the wrong component,
+  # so require their retention to be complete.
+  stopifnot(length(gm) == length(w), length(gh) == length(w))
+  keep <- w > 0
+  stopifnot(!any(vapply(gm[keep], is.null, logical(1))),
+            !any(vapply(gh[keep], is.null, logical(1))))
+  w <- w[keep]; gm <- gm[keep]; gh <- gh[keep]
   p  <- length(gm[[1]])
   mu_k  <- do.call(rbind, gm)                                    # K x p modes
   var_k <- t(vapply(gh, function(H) diag(solve(H)), numeric(p))) # K x p variances

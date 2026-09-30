@@ -84,6 +84,27 @@
   at ESS 1.0. A mode whose SD is past the placement ceiling is not used; the
   pass bisects as before.
 
+* **Points laid into a wide gap are closed on each side.** A node's measure is
+  the box to the midpoints with its neighbours, so the outermost of the five
+  points owns half the gap to the next declared node. On the Calluna fit's
+  pinned dispersion axis that gap is 36 posterior SDs, and the point at 2 SDs
+  ended the pass holding 62% of the axis's weight with the mean 1.2 SDs above
+  the mode. Walking outward on each side, a gap whose inner node would read
+  more than `.NL_DIAG$at_mode_edge_mass` (1%, the screen's own bound) of the
+  posterior into it gets one more point where that reading meets the bound.
+
+* **The consistency pass takes the axis farthest from its mode first, and
+  holds an axis it cannot resolve.** A slice re-tiles the one fibre through the
+  modal cell. Resolving an axis whose nodes sit far from its mode moves the
+  posterior into that axis's slice, so a slice laid on another axis before it
+  re-tiles a row that is left with none of the mass: on the Calluna fit the
+  copy scale took eight nodes in a row 650 nats below the mode. Axes with a
+  found mode now go in order of the distance from their nearest node, in the
+  mode's own SDs, and before each round the pass reads the most the fibre can
+  do for the axis (`.hyper_fibre_ess_reach()`). An axis whose fibre cannot add
+  one effective node to its marginal is held and listed in
+  `var_of_means_consistency_info$held`.
+
 # tulpa 0.6.11
 
 ## Performance

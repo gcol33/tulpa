@@ -165,14 +165,16 @@ sbc_loglik <- function(d, beta, sigma, phi = d$phi) {
 # `auto_recenter = FALSE` is required, not a speed knob. Section 7's uniformity
 # argument needs the fitted grid to equal the prior support; section 8's needs
 # the sigma support at the truth-draw stage to be the one the augmented fit
-# reports on. A recentred grid breaks both.
+# reports on. A recentred grid breaks both. `prune = FALSE` for the same
+# reason: the exact reference integrates every cell of that support, and the
+# screen would read the mixture over the cells it kept.
 sbc_fit_nested <- function(d, phi = d$phi,
                            family = if (is.null(d$family)) "gaussian" else d$family,
                            ntr = if (is.null(d$ntr)) 1L else d$ntr,
                            control = NULL) {
   ctl <- list(max_iter = 200L, tol = 1e-10, n_threads = 1L,
               keep_grid_hessians = TRUE, diagnose_k = FALSE,
-              diagnose_skew = FALSE, auto_recenter = FALSE)
+              diagnose_skew = FALSE, auto_recenter = FALSE, prune = FALSE)
   if (length(control)) ctl <- utils::modifyList(ctl, control)
   suppressWarnings(tulpa_nested_laplace(
     y = d$y, n_trials = rep(ntr, d$N), X = d$X,

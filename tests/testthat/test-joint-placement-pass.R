@@ -90,8 +90,12 @@ test_that("points at the mode are one SD apart, inside a stated span", {
                             log_scale = TRUE, refinable = TRUE, extend = FALSE)
     mode <- list(mode_u = log(4.2), sd_u = 0.02, tag = "log")
     pts <- .hyper_propose_at_mode(spec, c(1, 3.91, 15.3, 60), mode)
-    # Nearest the mode first, five of them, one SD apart.
-    expect_equal(log(pts), log(4.2) + c(0, -1, 1, -2, 2) * 0.02)
+    # Nearest the mode first: five one SD apart, then the points closing the
+    # gaps the outermost node on each side would otherwise read across.
+    k <- (log(pts) - log(4.2)) / 0.02
+    expect_equal(k[1:5], c(0, -1, 1, -2, 2))
+    expect_true(all(abs(k[-(1:5)]) > 2))
+    expect_identical(order(abs(k)), seq_along(k))
     # A node within half an SD of a point already reads the density there.
     near <- list(mode_u = log(3.9), sd_u = 0.1, tag = "log")
     expect_false(any(abs(log(.hyper_propose_at_mode(
@@ -123,6 +127,61 @@ test_that("a transported mode leaves out an axis the mode-find did not resolve",
     expect_null(.nl_outer_mode_axes(NULL))
 })
 
+# The axis mean on the log scale, read off the weights a consistency pass left.
+.cp_log_mean <- function(out, specs, axis) {
+    lq <- .hyper_log_quad_weights(out$theta_grid, specs,
+                                  refining = out$refining_axis)
+    lw <- out$log_marginal + lq
+    w <- exp(lw - max(lw))
+    sum(w * log(out$theta_grid[, axis])) / sum(w)
+}
+
+# A two-axis grid shaped like the full 25 km Calluna fit's outer posterior: the
+# copy scale laid around its mode at the placement's SD floor, the dispersion
+# axis pinned at declared nodes 36 posterior SDs from its mode.
+.cp_calluna_like <- function() {
+    a0 <- 0.274; sa <- 0.0464; p0 <- 3.25; sp <- 0.0053
+    alpha <- a0 * exp(c(-2, -1, 0, 1, 2) * 1.25 * 0.15)
+    phi <- c(1, 3.91, 15.3, 60)
+    tg <- as.matrix(expand.grid(alpha = alpha, phi_pos = phi))
+    lp <- function(g) -0.5 * ((log(g[, "alpha"]) - log(a0)) / sa)^2 -
+        0.5 * ((log(g[, "phi_pos"]) - log(p0)) / sp)^2
+    specs <- list(
+        hyper_axis_spec("alpha", grid = alpha, log_scale = TRUE,
+                        refinable = TRUE, extend = TRUE),
+        hyper_axis_spec("phi_pos", grid = phi, log_scale = TRUE,
+                        refinable = TRUE, extend = FALSE))
+    modes <- list(alpha   = list(mode_u = log(a0), sd_u = sa, tag = "log"),
+                  phi_pos = list(mode_u = log(p0), sd_u = sp, tag = "log"))
+    list(tg = tg, lp = lp, specs = specs, modes = modes, p0 = p0, sp = sp)
+}
+
+test_that("the axis farthest from its mode is refined first, and a fibre it empties is held", {
+    f <- .cp_calluna_like()
+    expect_identical(.hyper_consistency_order(c("alpha", "phi_pos"), f$tg, f$modes),
+                     c("phi_pos", "alpha"))
+    expect_identical(.hyper_consistency_order(c("alpha", "phi_pos"), f$tg, NULL),
+                     c("alpha", "phi_pos"))
+    calls <- 0L
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
+        calls <<- calls + 1L
+        list(log_marginal = f$lp(new_cells))
+    }
+    out <- .hyper_consistency_pass(f$tg, f$lp(f$tg), NULL, rep("", nrow(f$tg)),
+                                   f$specs, kernel_fn, axis_modes = f$modes)
+    # The dispersion slice moves the whole posterior into its own fibre, so a
+    # copy-scale slice in any base row would re-tile rows holding none of it.
+    expect_identical(calls, 1L)
+    expect_identical(out$info$axes, "phi_pos")
+    expect_identical(out$info$held, "alpha")
+    expect_false(any(out$refining_axis == "consistency_alpha"))
+    expect_gte(out$info$ess_after, .nl_diag("axis_sd_ess"))
+    # The points closing the gaps keep the read on the mode: without them the
+    # outermost point owned half a 36-SD gap and the mean sat 1.2 SDs high.
+    expect_lt(abs(.cp_log_mean(out, f$specs, "phi_pos") - log(f$p0)),
+              0.1 * f$sp)
+})
+
 test_that("a collapsed axis with a known mode is resolved in one round", {
     grid <- c(1, 3.91, 15.3, 60)
     spec <- hyper_axis_spec("phi_pos", grid = grid, log_scale = TRUE,
@@ -141,6 +200,8 @@ test_that("a collapsed axis with a known mode is resolved in one round", {
                                        tag = "log")))
     expect_identical(calls, 1L)
     expect_gte(at_mode$info$ess_after, .nl_diag("axis_sd_ess"))
+    expect_lt(abs(.cp_log_mean(at_mode, list(spec), "phi_pos") - log(4.2)),
+              0.1 * 0.05)
     # Without the mode the pass bisects towards it and spends its node cap
     # without reaching the floor.
     calls <- 0L

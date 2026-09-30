@@ -296,28 +296,63 @@
 # there, so on an axis a placement laid at 1.25 SDs the proposal comes back
 # empty and the pass bisects as it would without a mode. They come back nearest
 # the mode first, so a caller spending a node budget spends it there.
-.hyper_propose_at_mode <- function(spec, vals, mode) {
+#
+# A node's measure is the box to the midpoints with its neighbours, so the
+# outermost node before a gap owns half of it. Laid into a gap tens of SDs
+# wide, the point at 2 SDs reads its density across a span the posterior does
+# not fill: on the full 25 km Calluna fit's pinned dispersion axis (a gap of
+# 36 SDs) it ended the pass holding 62% of the axis's weight, and the mean read
+# 1.2 posterior SDs above the mode. Walking outward from that point on each
+# side, a node at `e` SDs whose next node sits at `g` reads
+# `phi(e) (g - e) / 2` of the posterior into the gap; past `at_mode_edge_mass`
+# one more point closes the gap at the SD where that reading falls to the
+# bound, at least one SD beyond `e` (`.hyper_at_mode_closing()`).
+.hyper_propose_at_mode <- function(spec, vals, mode,
+                                   edge_mass = .nl_diag("at_mode_edge_mass")) {
   if (is.null(mode) || length(mode$mode_u) != 1L || length(mode$sd_u) != 1L ||
       !is.finite(mode$mode_u) || !is.finite(mode$sd_u) || mode$sd_u <= 0) {
     return(numeric(0))
   }
-  k   <- c(0, -1, 1, -2, 2)
+  vals <- as.numeric(vals)
+  cont <- vals[is.finite(vals) & !.hyper_is_atom_level(vals, spec)]
+  u_nodes <- .joint_pareto_fwd(mode$tag, cont)
+  u_nodes <- u_nodes[is.finite(u_nodes)]
+  d <- (u_nodes - mode$mode_u) / mode$sd_u
+  k <- c(0, -1, 1, -2, 2,
+         -.hyper_at_mode_closing(-d[d < 0], edge_mass),
+         .hyper_at_mode_closing(d[d > 0], edge_mass))
+  k <- k[order(abs(k))]
   pts <- .joint_pareto_inv(mode$tag, mode$mode_u + k * mode$sd_u)$theta
   pts <- pts[is.finite(pts)]
   if (.hyper_axis_is_log_scale(spec)) pts <- pts[pts > 0]
   bounds <- .hyper_axis_bounds(spec)
   if (!is.null(bounds)) pts <- pts[pts > bounds[1L] & pts < bounds[2L]]
-  vals <- as.numeric(vals)
-  cont <- vals[is.finite(vals) & !.hyper_is_atom_level(vals, spec)]
   if (!isTRUE(spec$extend) && length(cont)) {
     pts <- pts[pts >= min(cont) & pts <= max(cont)]
   }
-  u_nodes <- .joint_pareto_fwd(mode$tag, cont)
-  u_nodes <- u_nodes[is.finite(u_nodes)]
   u_pts   <- .joint_pareto_fwd(mode$tag, pts)
   keep <- vapply(u_pts, function(u)
     all(abs(u_nodes - u) > (0.5 + 1e-6) * mode$sd_u), logical(1))
   pts[keep]
+}
+
+# The closing points one side of an at-mode proposal needs, in SDs from the
+# mode. `d` holds the existing nodes' distances on that side (positive), and
+# the proposal's own outermost point sits at 2. A point is added inside a gap
+# `(e, g)` whose inner node reads more than `edge_mass` into it, where
+# `phi(k) (g - e) / 2` meets the bound, and never within one SD of `e`.
+.hyper_at_mode_closing <- function(d, edge_mass) {
+  d <- sort(d[d > 2])
+  out <- numeric(0)
+  e <- 2
+  for (g in d) {
+    if (stats::dnorm(e) * (g - e) / 2 > edge_mass) {
+      k <- max(sqrt(2 * log((g - e) / (2 * edge_mass * sqrt(2 * pi)))), e + 1)
+      if (k < g - 0.5) out <- c(out, k)
+    }
+    e <- g
+  }
+  out
 }
 
 # ============================================================================
@@ -335,14 +370,9 @@
                                              axis_name, new_pts, anchor_lev,
                                              refining_axis = NULL) {
   if (length(new_pts) == 0L) return(NULL)
-  v <- as.numeric(theta_grid[, axis_name])
-  mask <- abs(v - anchor_lev) < 1e-12 * max(1, abs(anchor_lev)) &
-    .hyper_slice_anchor_ok(refining_axis, axis_name, length(v))
-  if (!any(mask)) return(NULL)
-  anchor_lm   <- log_marginal[mask]
-  if (!any(is.finite(anchor_lm))) return(NULL)
-  k_map_local <- which.max(anchor_lm)
-  idx_global  <- which(mask)[k_map_local]
+  idx_global <- .hyper_slice_anchor(theta_grid, log_marginal, axis_name,
+                                    anchor_lev, refining_axis)
+  if (is.na(idx_global)) return(NULL)
 
   axis_names <- colnames(theta_grid)
   n_new <- length(new_pts)
@@ -354,6 +384,68 @@
   }
   list(new_cells      = new_cells,
        warm_start_idx = idx_global)
+}
+
+# The cell a slice on `axis_name` at `anchor_lev` is laid through: the heaviest
+# base-tensor or same-axis slice cell at that level, or NA when none carries a
+# finite log-marginal.
+.hyper_slice_anchor <- function(theta_grid, log_marginal, axis_name, anchor_lev,
+                                refining_axis = NULL) {
+  v <- as.numeric(theta_grid[, axis_name])
+  mask <- abs(v - anchor_lev) < 1e-12 * max(1, abs(anchor_lev)) &
+    .hyper_slice_anchor_ok(refining_axis, axis_name, length(v))
+  if (!any(mask) || !any(is.finite(log_marginal[mask]))) return(NA_integer_)
+  which(mask)[which.max(log_marginal[mask])]
+}
+
+# The cells a slice on `axis_name` through cell `anchor` re-tiles: the base and
+# same-axis slice cells sharing the anchor's coordinates off that axis.
+.hyper_slice_fibre <- function(theta_grid, axis_name, anchor,
+                               refining_axis = NULL) {
+  n <- nrow(theta_grid)
+  in_row <- .hyper_slice_anchor_ok(refining_axis, axis_name, n)
+  for (b in setdiff(colnames(theta_grid), axis_name)) {
+    in_row <- in_row & theta_grid[, b] == theta_grid[anchor, b]
+  }
+  in_row
+}
+
+# The largest quadrature ESS an axis's marginal can reach by re-tiling one
+# fibre. However a slice spreads the fibre's own mass over new nodes, the mass
+# outside the fibre stays on the levels it already sits on, so the marginal's
+# sum of squared shares is at least that of the outside mass alone. `lm_eff` is
+# the per-cell log weight (log-marginal plus log measure). `Inf` when the fibre
+# holds the whole marginal, `NA` when no level carries finite mass.
+.hyper_fibre_ess_reach <- function(vals, lm_eff, in_fibre, spec) {
+  tot <- .nl_axis_marginal_logdensity(vals, lm_eff)
+  out <- .nl_axis_marginal_logdensity(vals, lm_eff, keep = !in_fibre)
+  lt <- tot$log_marg[!.hyper_is_atom_level(tot$vals, spec)]
+  lo <- out$log_marg[!.hyper_is_atom_level(out$vals, spec)]
+  top <- if (length(lt)) max(lt) else -Inf
+  if (!is.finite(top)) return(NA_real_)
+  r <- exp(lo - top) / sum(exp(lt - top))
+  r <- r[is.finite(r)]
+  if (!any(r > 0)) return(Inf)
+  1 / sum(r^2)
+}
+
+# The order the consistency pass takes its axes in. A slice re-tiles the fibre
+# through the modal cell, and resolving an axis whose nodes sit far from its
+# mode moves the modal cell into another fibre, which leaves a slice laid on a
+# different axis before it in a fibre that no longer holds the posterior. Axes
+# with a found mode (`axis_modes`) therefore go first, the one whose nearest
+# node is most of the mode's own SDs away leading; the rest keep their order.
+.hyper_consistency_order <- function(axes, theta_grid, axis_modes) {
+  if (is.null(axis_modes) || length(axes) < 2L) return(axes)
+  gap <- vapply(axes, function(a) {
+    m <- axis_modes[[a]]
+    if (is.null(m)) return(-Inf)
+    u <- .joint_pareto_fwd(m$tag, unique(as.numeric(theta_grid[, a])))
+    u <- u[is.finite(u)]
+    if (!length(u)) return(-Inf)
+    min(abs(u - m$mode_u)) / m$sd_u
+  }, numeric(1))
+  axes[order(-gap, seq_along(axes))]
 }
 
 # Stitch slice cells from multiple (axis, side) packs into one matrix. Drops
@@ -570,15 +662,24 @@
 # `axis_modes` names, per axis, the outer mode a placement mode-find found for
 # it (`list(mode_u, sd_u, tag)`, `.nl_outer_mode_axes()`). Such an axis's first
 # round lays its points AT the mode (`.hyper_propose_at_mode()`), and any round
-# after that bisects as above.
+# after that bisects as above. The axes are taken in
+# `.hyper_consistency_order()`.
+#
+# A round is a kernel call per node, and the nodes it lays re-tile one fibre.
+# Before each round the pass reads the most the fibre can do for the axis
+# (`.hyper_fibre_ess_reach()`), and an axis whose fibre cannot add one effective
+# node to its marginal is held rather than refined: its marginal's mass sits in
+# rows the slice does not reach. Held axes are listed in `info$held`.
 .hyper_consistency_pass <- function(theta_grid, log_marginal, extras,
                                     refining_axis, specs, kernel_fn,
                                     min_ess = .nl_diag("axis_sd_ess"),
                                     max_nodes = .nl_diag("axis_refine_nodes"),
                                     hp_fn = NULL, axis_modes = NULL) {
-  refinable <- .hyper_refinable_names(specs)
+  refinable <- .hyper_consistency_order(.hyper_refinable_names(specs),
+                                        theta_grid, axis_modes)
   info <- list(axes = character(0), n_added = integer(0),
-               ess_before = numeric(0), ess_after = numeric(0))
+               ess_before = numeric(0), ess_after = numeric(0),
+               held = character(0))
   n_added_total <- 0L
   if (length(refinable) == 0L) {
     return(list(theta_grid = theta_grid, log_marginal = log_marginal,
@@ -597,7 +698,8 @@
     }
     marg <- .nl_axis_marginal_logdensity(as.numeric(theta_grid[, axis]), lm_eff)
     cont <- !.hyper_is_atom_level(marg$vals, spec)
-    list(marg = marg, ess = .nl_axis_quad_ess(marg$log_marg[cont]))
+    list(marg = marg, ess = .nl_axis_quad_ess(marg$log_marg[cont]),
+         lm_eff = lm_eff)
   }
   for (axis in refinable) {
     spec <- .hyper_spec_by_name(specs, axis)
@@ -610,6 +712,16 @@
     added <- 0L
     at_mode <- axis_modes[[axis]]
     while (added < max_nodes && is.finite(rd$ess) && rd$ess < min_ess) {
+      anchor <- .hyper_slice_anchor(theta_grid, log_marginal, axis, anchor_lev,
+                                    refining_axis)
+      if (is.na(anchor)) break
+      reach <- .hyper_fibre_ess_reach(
+        as.numeric(theta_grid[, axis]), rd$lm_eff,
+        .hyper_slice_fibre(theta_grid, axis, anchor, refining_axis), spec)
+      if (is.finite(reach) && reach < rd$ess + 1) {
+        info$held <- c(info$held, axis)
+        break
+      }
       new_pts <- if (!is.null(at_mode))
         .hyper_propose_at_mode(spec, rd$marg$vals, at_mode) else numeric(0)
       at_mode <- NULL
@@ -642,7 +754,7 @@
     info$ess_after  <- c(info$ess_after, rd$ess)
     n_added_total   <- n_added_total + added
   }
-  if (length(info$axes) == 0L) info <- NULL
+  if (length(info$axes) == 0L && length(info$held) == 0L) info <- NULL
   list(theta_grid = theta_grid, log_marginal = log_marginal,
        extras = extras, refining_axis = refining_axis, info = info,
        n_added = n_added_total)
