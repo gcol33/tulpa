@@ -139,6 +139,10 @@ skip_if_not_slow()
                                  n_sites = adj$n_spatial_units,
                                  n_years = n_years, n_obs = n_obs,
                                  alpha = alpha_true)
+    # A fully supplied (tau, rho) pair is read cell for cell, so the AR1
+    # tensor is spelled out; the copied BYM2 block crosses its own axes.
+    ar1_cells <- expand.grid(tau = tau_grid, rho = rho_ar1_grid,
+                             KEEP.OUT.ATTRS = FALSE)
     prior <- list(
         list(type = "bym2",
              n_spatial_units = adj$n_spatial_units,
@@ -147,7 +151,7 @@ skip_if_not_slow()
              sigma_grid = sigma_grid, rho_grid = rho_grid,
              spatial_idx = list(sim$s_idx_1, sim$s_idx_2)),
         list(type = "ar1", n_times = n_years,
-             tau_grid = tau_grid, rho_grid = rho_ar1_grid,
+             tau_grid = ar1_cells$tau, rho_grid = ar1_cells$rho,
              temporal_idx = list(sim$t_idx_1, sim$t_idx_2)),
         list(type = "iid", n_units = n_obs,
              sigma_grid = sigma_iid_grid,
