@@ -418,7 +418,7 @@ test_that("one prior_alpha reaches both copy blocks of a fitted grid", {
     expect_equal(rec$alpha$blocks, c(1L, 2L))
     expect_equal(rec$alpha$axes, c("b1.alpha", "b2.alpha"))
     expect_null(rec$sigma)
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
 })
 
 test_that("a per-block prior_alpha reaches the block it names", {
@@ -435,7 +435,7 @@ test_that("a per-block prior_alpha reaches the block it names", {
     expect_equal(rec$alpha$scope, "per_block")
     expect_equal(rec$alpha$blocks, 2L)
     expect_equal(rec$alpha$axes, "b2.alpha")
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
 })
 
 test_that("the two shapes do not produce the same posterior", {

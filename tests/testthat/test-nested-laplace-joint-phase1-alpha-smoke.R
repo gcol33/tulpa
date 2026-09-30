@@ -119,9 +119,9 @@ test_that("(sigma, alpha) reparam recovers sigma/alpha across alpha in {0, 1, 2}
                                    max_iter = 60L, tol = 1e-5)
                 )
             )
-            expect_true(all(is.finite(fit$log_marginal)),
-                        info = sprintf("%s seed %d: non-finite log_marginal",
-                                        r$name, seeds[i]))
+            expect_cells_solved(fit,
+                                info = sprintf("%s seed %d: non-finite log_marginal",
+                                               r$name, seeds[i]))
 
             sigma_hat[i] <- fit$theta_mean[["sigma"]]
             alpha_hat[i] <- fit$theta_mean[["alpha"]]

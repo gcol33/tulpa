@@ -181,7 +181,7 @@ skip_if_not_slow()
         alpha_hi        = fit$theta_ci_hi[["b1.alpha"]],
         sigma_iid_mean  = bm3$mean[["sigma"]],
         sigma_iid_sd    = bm3$sd[["sigma"]],
-        log_marg_ok     = all(is.finite(fit$log_marginal)),
+        log_marg_ok     = all(is.finite(fit$log_marginal[!cells_dropped(fit)])),
         sim             = sim
     )
 }

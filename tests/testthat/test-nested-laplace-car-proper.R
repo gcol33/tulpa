@@ -24,7 +24,7 @@ test_that("proper-CAR nested Laplace runs on a 2D grid", {
   )
 
   expect_equal(result$n_grid, 9L)
-  expect_true(all(is.finite(result$log_marginal)))
+  expect_cells_solved(result)
   expect_true(all(result$n_iter > 0))
   # Log-marginal varies across the (tau, rho) grid
   expect_gt(max(result$log_marginal) - min(result$log_marginal), 0.01)
@@ -128,5 +128,5 @@ test_that("tulpa_nested_laplace() accepts spatial_car_proper spec", {
 
   expect_s3_class(res, "tulpa_nested_laplace")
   expect_named(res$theta_mean, c("tau", "rho"))
-  expect_true(all(is.finite(res$log_marginal)))
+  expect_cells_solved(res)
 })

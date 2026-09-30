@@ -96,14 +96,14 @@ test_that("joint CAR_proper with alpha = 0 leaves beta_occ unchanged", {
         prior = prior
     )
     expect_s3_class(fit_joint, "tulpa_nested_laplace_joint")
-    expect_true(all(is.finite(fit_joint$log_marginal)))
+    expect_cells_solved(fit_joint)
 
     fit_single_occ <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ),
         prior = prior,
         copy = NULL
     )
-    expect_true(all(is.finite(fit_single_occ$log_marginal)))
+    expect_cells_solved(fit_single_occ)
 
     layout_j <- fit_joint$arm_layout
     layout_s <- fit_single_occ$arm_layout
@@ -157,7 +157,7 @@ test_that("joint CAR_proper recovers per-arm betas and locates the alpha mode", 
         prior = prior
     )
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
 
     layout <- fit$arm_layout
 

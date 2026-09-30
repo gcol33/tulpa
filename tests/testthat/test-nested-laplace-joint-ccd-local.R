@@ -184,7 +184,8 @@ test_that("local CCD engages on a 4-axis multi-block fit and conserves the integ
   skip_on_cran()
   sim  <- .lccd_sim_joint()
   ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
-               var_of_means_consistency = FALSE, integration = "grid")
+               var_of_means_consistency = FALSE, integration = "grid",
+               prune = FALSE)
 
   fit  <- suppressWarnings(tulpa_nested_laplace_joint(
     sim$responses, sim$prior, copy = sim$copy, control = ctrl))
@@ -269,7 +270,8 @@ test_that("local CCD keeps the fixed-effect retention aligned with the refined g
   skip_on_cran()
   sim  <- .lccd_sim_joint()
   ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
-               var_of_means_consistency = FALSE, integration = "grid")
+               var_of_means_consistency = FALSE, integration = "grid",
+               prune = FALSE)
   fitl <- suppressWarnings(tulpa_nested_laplace_joint(
     sim$responses, sim$prior, copy = sim$copy,
     control = c(ctrl, list(local_ccd = list(max_cells = 4L)))))
@@ -484,7 +486,8 @@ test_that("a fit reports its weight kind per cell and the design mass share", {
   skip_on_cran()
   sim  <- .lccd_sim_joint()
   ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
-               var_of_means_consistency = FALSE, integration = "grid")
+               var_of_means_consistency = FALSE, integration = "grid",
+               prune = FALSE)
   fit  <- suppressWarnings(tulpa_nested_laplace_joint(
     sim$responses, sim$prior, copy = sim$copy, control = ctrl))
   fitl <- suppressWarnings(tulpa_nested_laplace_joint(
@@ -644,7 +647,8 @@ test_that("a locally refined fit says what its interval was read off", {
   skip_on_cran()
   sim  <- .lccd_sim_joint()
   ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
-               var_of_means_consistency = FALSE, integration = "grid")
+               var_of_means_consistency = FALSE, integration = "grid",
+               prune = FALSE)
   fit  <- suppressWarnings(tulpa_nested_laplace_joint(
     sim$responses, sim$prior, copy = sim$copy, control = ctrl))
   fitl <- suppressWarnings(tulpa_nested_laplace_joint(
@@ -1020,7 +1024,8 @@ test_that("the gate declines this fixture's own cell, and the read moves toward 
   skip_on_cran()
   sim  <- .lccd_sim_joint()
   ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
-               var_of_means_consistency = FALSE, integration = "grid")
+               var_of_means_consistency = FALSE, integration = "grid",
+               prune = FALSE)
   # Pinned to the chord within-cell read, because the reference below WAS one:
   # at a converged m = 13 the chord read reproduces `ref_w` to five decimals on
   # the two axes whose 95% bound lies inside the node set, and the shipped

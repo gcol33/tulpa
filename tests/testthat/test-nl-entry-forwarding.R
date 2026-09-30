@@ -210,7 +210,7 @@ for (.case in .nlf_cases()) local({
   test_that(paste(case$name, "forwards the arguments the result reports"), {
     skip_on_cran()
     base <- do.call(case$fn, case$args)
-    expect_true(all(is.finite(base$log_marginal)))
+    expect_cells_solved(base)
     expect_gt(max(base$n_iter), 1L)
 
     capped <- do.call(case$fn, modifyList(case$args, list(max_iter = 1L)))

@@ -1024,8 +1024,12 @@ tulpa_joint_axis_specs_from_grid <- function(
 # `kind` is how a cell is taken out of a result and put back:
 #   "row" -- an [n_grid x m] matrix; cell k is row k, a cell without one is NA
 #   "int" -- a length-n_grid integer vector
+#   "lgl" -- a length-n_grid logical vector; a cell without one reads FALSE
 #   "elt" -- a length-n_grid list; cell k is element k
 .JOINT_CELL_FIELDS <- list(
+    # The cells the cheap-pass screen dropped unsolved. Every cell a refinement
+    # or consistency pass adds is solved in full, so it reads FALSE.
+    list(res = "prune_mask",        extra = "pruned",    kind = "lgl"),
     list(res = "modes",             extra = "mode",      kind = "row"),
     # The per-cell linear predictor and its within-cell variance: the pair a
     # grid-mixture predictive read draws a replicate from
@@ -1054,6 +1058,7 @@ tulpa_joint_axis_specs_from_grid <- function(
             e[[f$extra]] <- switch(f$kind,
                                    row = as.numeric(v[k, ]),
                                    int = as.integer(v[k]),
+                                   lgl = as.logical(v[k]),
                                    elt = v[[k]])
         }
         e
@@ -1115,6 +1120,7 @@ tulpa_joint_axis_specs_from_grid <- function(
                 v <- e[[f$extra]]
                 if (is.null(v)) NA_integer_ else as.integer(v)
             }, integer(1)),
+            lgl = vapply(extras, function(e) isTRUE(e[[f$extra]]), logical(1)),
             elt = lapply(extras, `[[`, f$extra))
     }
     res

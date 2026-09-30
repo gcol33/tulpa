@@ -35,7 +35,7 @@ test_that("fit_st_nested recovers the spatial and temporal fields (icar x rw1)",
   expect_gt(ct, 0.80)
   # Weights are a proper posterior over the (tau_spatial, tau_temporal, rho) grid.
   expect_equal(sum(fit$weights), 1, tolerance = 1e-8)
-  expect_true(all(is.finite(fit$log_marginal)))
+  expect_cells_solved(fit)
 })
 
 test_that("fit_st_nested supports ar1 temporal and the generic accessors", {
@@ -117,7 +117,7 @@ test_that("fit_st_nested reaches bym2 x every temporal type (gcol33/tulpa#776)",
     expect_gt(cs, 0.6)
     expect_gt(ct, 0.6)
     expect_equal(sum(fit$weights), 1, tolerance = 1e-8)
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
     expect_true(all(c("sigma_spatial", "rho_spatial") %in% fit$theta_names))
     if (identical(tty, "ar1")) expect_true("rho" %in% fit$theta_names)
   }

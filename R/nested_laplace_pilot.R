@@ -116,10 +116,26 @@
 # re-reads the engine's own axis at a lower resolution and keeps the atom and
 # the slab bounds (gcol33/tulpa#633). A spec that STATES its nodes therefore
 # keeps them, and says so.
+#
+# A grid a wrapper MARKED as its own default (`auto_grid()`) is not a statement
+# the pilot has to keep: the placement pass may move it, so the pilot thins it
+# the way it thins every other default axis, with the atom and both ends of the
+# slab kept (`.nl_pilot_alpha_grid()`).
+.nl_pilot_alpha_grid <- function(g, n) {
+    if (!is_auto_grid(g) || !auto_grid_place(g)) return(NULL)
+    v <- as.numeric(g)
+    slab <- .nl_pilot_axis(v[v > 0], n)
+    if (is.null(slab)) return(NULL)
+    auto_grid(c(v[v <= 0], slab))
+}
+
 .nl_pilot_alpha <- function(spec, n) {
     if (!is.list(spec)) return(list(spec = spec, moved = FALSE))
     if (!is.null(spec$alpha_grid) && length(spec$alpha_grid) > 0L) {
-        return(list(spec = spec, moved = FALSE))
+        thin <- .nl_pilot_alpha_grid(spec$alpha_grid, n)
+        if (is.null(thin)) return(list(spec = spec, moved = FALSE))
+        spec$alpha_grid <- thin
+        return(list(spec = spec, moved = TRUE))
     }
     cur <- spec$alpha_n
     if (!is.null(cur) && length(cur) > 0L && as.integer(cur) <= n) {
@@ -134,7 +150,8 @@
 }
 
 # The per-arm `field_coef` counterpart, for the single-block path's inline copy
-# declaration. Same rule: a stated `grid` is kept, a resolution is lowered.
+# declaration. Same rule: a stated `grid` is kept, a marked one is thinned, a
+# resolution is lowered.
 .nl_pilot_field_coef <- function(arm, n) {
     fc <- arm$field_coef
     if (is.null(fc)) return(list(arm = arm, moved = FALSE))
@@ -142,7 +159,11 @@
     if (is.character(fc) && length(fc) == 1L) fc <- list(name = fc)
     if (!is.list(fc)) return(list(arm = arm, moved = FALSE))
     if (!is.null(fc$grid) && length(fc$grid) > 0L) {
-        return(list(arm = arm, moved = FALSE))
+        thin <- .nl_pilot_alpha_grid(fc$grid, n)
+        if (is.null(thin)) return(list(arm = arm, moved = FALSE))
+        fc$grid <- thin
+        arm$field_coef <- fc
+        return(list(arm = arm, moved = TRUE))
     }
     cur <- fc[["n"]]
     if (!is.null(cur) && length(cur) > 0L && as.integer(cur) <= n) {

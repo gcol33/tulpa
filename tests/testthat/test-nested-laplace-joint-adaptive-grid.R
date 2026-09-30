@@ -52,7 +52,7 @@
          truth = list(sd_pos = sd_pos, alpha = alpha_true))
 }
 
-.fit_joint_icar <- function(sim, alpha_grid, adaptive_grid) {
+.fit_joint_icar <- function(sim, alpha_grid, adaptive_grid, control = list()) {
     adj <- .chain_adj(sim$n_s)
     arm_occ <- list(
         y = as.numeric(sim$occur), n_trials = rep(1L, sim$N),
@@ -83,8 +83,9 @@
                 field_coef = list(name = "alpha", grid = alpha_grid)))
         ),
         prior = prior,
-        control = list(adaptive_grid = adaptive_grid,
-                       var_of_means_consistency = FALSE)
+        control = utils::modifyList(
+            list(adaptive_grid = adaptive_grid,
+                 var_of_means_consistency = FALSE), control)
     )
 }
 
@@ -115,10 +116,17 @@ test_that("adaptive_grid = TRUE extends alpha when boundary carries mass", {
     # `auto_grid()` declares these nodes a default rather than a statement of
     # where the fit integrates, which is what makes the axis extendable: a grid
     # the caller wrote down plainly is a bound and is only densified
-    # (gcol33/tulpa#658, asserted in test-joint-axis-refinable.R).
+    # (gcol33/tulpa#658, asserted in test-joint-axis-refinable.R). A default
+    # axis is also one the placement pass lays at the outer mode, which moves
+    # this one off the edge before refinement sees it (gcol33/tulpa#925), so
+    # the boundary rung is read with placement held off.
     ag <- auto_grid(c(0.2, 0.4, 0.6))
-    fit_F <- .fit_joint_icar(sim, alpha_grid = ag, adaptive_grid = FALSE)
-    fit_T <- .fit_joint_icar(sim, alpha_grid = ag, adaptive_grid = TRUE)
+    held <- list(auto_recenter = FALSE)
+    fit_F <- .fit_joint_icar(sim, alpha_grid = ag, adaptive_grid = FALSE,
+                             control = held)
+    fit_T <- .fit_joint_icar(sim, alpha_grid = ag, adaptive_grid = TRUE,
+                             control = held)
+    fit_P <- .fit_joint_icar(sim, alpha_grid = ag, adaptive_grid = FALSE)
 
     # Refinement metadata is populated.
     expect_false(is.null(fit_T$adaptive_grid_info))
@@ -146,6 +154,9 @@ test_that("adaptive_grid = TRUE extends alpha when boundary carries mass", {
     # 0.4 is well above MCSE for n=600, sigma=1.
     expect_lt(fit_F$theta_mean[["alpha"]], 0.6 + 1e-6)
     expect_gt(fit_T$theta_mean[["alpha"]], fit_F$theta_mean[["alpha"]] + 0.4)
+    # Placement reaches the same side on its own.
+    expect_identical(fit_P$outer_grid_placement, "auto_recentered")
+    expect_gt(fit_P$theta_mean[["alpha"]], fit_F$theta_mean[["alpha"]] + 0.4)
 })
 
 

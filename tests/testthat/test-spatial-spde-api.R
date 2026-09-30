@@ -418,5 +418,5 @@ test_that("fit_spde works with nested Laplace", {
   expect_true(!is.null(result$nested))
   expect_true(result$nested$range_mean > 0)
   expect_true(result$nested$sigma_mean > 0)
-  expect_true(all(is.finite(result$log_marginal)))
+  expect_cells_solved(result)
 })

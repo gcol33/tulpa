@@ -107,5 +107,5 @@ test_that("a fractional fit runs clean and integrates no declined coordinate", {
   ext <- sqrt(sum(apply(as.matrix(d[, c("lon", "lat")]), 2,
                         function(z) diff(range(z)))^2))
   expect_lt(max(fit$nested$range_grid), ext)
-  expect_true(all(is.finite(fit$log_marginal)))
+  expect_cells_solved(fit)
 })

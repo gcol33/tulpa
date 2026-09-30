@@ -318,43 +318,29 @@
 # --- cheap-pass prune safety gate --------------------------------------------
 #
 # After a pruned kernel run, decide whether the kept set can be trusted. The
-# cheap screen ranks cells; the full inner Newton only ran on survivors. If
-# the screen's ranking disagrees with the full-solve ranking the prune may
-# have dropped the true posterior mode, so we WARN and fall
-# back to the full grid rather than silently returning the pruned answer.
+# screen ranked every cell; the full inner Newton ran on the kept cells only, so
+# on those the screen's error is measured and on the dropped ones it is not.
+# What the gate bounds is the posterior MASS the prune may have dropped
+# (`.nl_prune_dropped_mass()`), taking a dropped cell's error to be no worse
+# than the worst one measured on a kept cell. Past `.nl_screen("gate_mass")`
+# it warns and falls back to the full grid.
 #
-# Two triggers, either of which forces the fallback:
-#   1) argmax disagreement: the cheap-screen argmax cell is not the cell the
-#      full solve favours among survivors (or the cheap argmax was itself
-#      pruned). The kernel flags this in `prune_argmax_disagree`.
-#   2) cheap-vs-full gap collapse: the kept set's posterior collapses onto one
-#      cell (low quadrature ESS) AND the cheap screen badly mis-estimated that
-#      cell's log-marginal (`prune_cheap_full_gap` large relative to the margin
-#      the screen discarded cells by). A large gap on the cell the whole
-#      posterior sits on means the screen could just as easily have ranked it
-#      below the threshold and pruned it.
-#
-# What the gap is judged against is the screen's own CUT, `prune_log_gap_cut`:
-# the number of nats below the best cheap cell at which the tolerance started
-# dropping cells. An error larger than that cut is an error large enough to have
-# moved a dropped cell across it, which is exactly the failure the trigger is
-# for. The spread of the log-marginals across KEPT cells cannot serve: it is a
-# property of the set the gate is meant to validate, so on a steep surface it
-# makes the threshold enormous (a 340-nat mis-estimate judged small against a
-# 49000-nat threshold read off a 98000-nat kept spread) and the trigger cannot
-# bound the error on the set it discarded. A result carrying no cut -- an older
-# kernel, or a hand-built one -- falls back to the kept spread.
+# The mass, not the ranking, is the question. On a grid placed around its mode
+# the neighbouring cells sit within a few nats of each other, so which of them
+# the screen puts first says nothing about whether a cell it dropped carried
+# weight; and a screen that is off by the same amount on every cell ranks them
+# exactly as the full pass does, however large that amount is
+# (gcol33/tulpa#925).
 #
 # `res` is the pruned kernel result (already carries the prune_* fields).
 # `resolve_full` is a zero-argument thunk re-running the SAME kernel call with
 # `prune_tol = 0` (the full grid). `fn` is the front door the fit came in
-# through, so the warning names the function whose `control` the reader set. Returns either `res` (gate passed) or the
-# full-grid result (gate tripped). When the gate trips, the returned result
-# carries `prune_fallback_triggered = TRUE` and `prune_fallback_reason`.
+# through, so the warning names the function whose `control` the reader set.
+# Returns either `res` (gate passed) or the full-grid result (gate tripped),
+# each carrying the bound in `prune_dropped_mass_bound`; a tripped gate adds
+# `prune_fallback_triggered = TRUE` and `prune_fallback_reason`.
 .joint_prune_safety_gate <- function(res, resolve_full,
-                                      gap_abs_floor = 5.0,
-                                      gap_frac = 0.5,
-                                      ess_collapse_frac = 0.05,
+                                      gate_mass = .nl_screen("gate_mass"),
                                       fn = "tulpa_nested_laplace_joint()") {
     # No prune ran (prune off, prune_tol = 0, or single-cell grid): nothing
     # to gate. The kernel only emits prune_mask when it actually screened.
@@ -363,53 +349,60 @@
     # compare the screen against, and is never integrated.
     if (isTRUE(res$prune_screen_only)) return(res)
 
-    disagree <- isTRUE(res$prune_argmax_disagree)
-
-    # Gap-collapse trigger. Quadrature ESS over the kept (finite-weight)
-    # cells; "collapse" = ESS below a small fraction of the kept count. The ESS
-    # is of the posterior the screen ranked: the kernel's log-marginal with the
-    # offset it screened by (hyperprior + cell measure) in place of any
-    # hyperprior already folded in.
-    lm   <- res$log_marginal
-    off  <- res$prune_screen_log_offset
-    if (length(off) == length(lm)) {
-        folded <- .nl_log_hyperprior_folded(res, length(lm))
-        lm <- lm - (if (is.null(folded)) 0 else folded) + off
+    bound <- .nl_prune_dropped_mass(res)
+    if (is.finite(bound) && bound <= gate_mass) {
+        res$prune_dropped_mass_bound <- bound
+        return(res)
     }
-    kept <- is.finite(lm)
-    n_kept <- sum(kept)
-    gap_collapse <- FALSE
-    if (n_kept >= 1L && !is.null(res$prune_cheap_full_gap) &&
-        is.finite(res$prune_cheap_full_gap)) {
-        w <- .nl_normalise_weights_safe(lm, "cheap-screen gate")
-        ess <- if (sum(w^2, na.rm = TRUE) > 0) (sum(w, na.rm = TRUE)^2) / sum(w^2, na.rm = TRUE) else 1
-        lm_kept <- lm[kept]
-        lm_spread <- if (n_kept > 1L) diff(range(lm_kept)) else 0
-        cut <- res$prune_log_gap_cut
-        gap_thresh <- if (length(cut) == 1L && is.finite(cut) && cut > 0) {
-            max(gap_abs_floor, cut)
-        } else {
-            max(gap_abs_floor, gap_frac * lm_spread)
-        }
-        gap_collapse <- (ess <= max(1.0, ess_collapse_frac * n_kept)) &&
-                        (res$prune_cheap_full_gap > gap_thresh)
-    }
-
-    if (!disagree && !gap_collapse) return(res)
-
-    reason <- if (disagree && gap_collapse) {
-        "cheap-screen argmax disagrees with full-solve argmax and the kept posterior collapses onto a cell the screen badly mis-estimated"
-    } else if (disagree) {
-        "cheap-screen argmax disagrees with the full-solve argmax"
-    } else {
-        "kept posterior collapses onto a cell whose cheap-vs-full log-marginal gap is large"
-    }
-    warning(sprintf(
-        "%s: cheap-pass prune is unreliable for this fit (%s); falling back to the full grid. Set control$prune = FALSE to silence this, or leave it -- the full grid is correct.",
-        fn, reason), call. = FALSE)
+    reason <- if (is.na(bound)) {
+        "the screened result carries no per-cell screen to bound the dropped mass"
+    } else if (is.infinite(bound)) {
+        "the screen kept no cell with a finite log-marginal"
+    } else sprintf(paste0(
+        "the cells the screen dropped may carry up to %s of the posterior ",
+        "mass, taking their screening error to be the worst one measured on ",
+        "the cells it kept"), format(signif(bound, 3)))
+    warning(sprintf(paste0(
+        "%s: cheap-pass prune is unreliable for this fit (%s); falling back to ",
+        "the full grid. Set control$prune = FALSE to skip the screen, or leave ",
+        "it -- the full grid is correct."), fn, reason), call. = FALSE)
 
     full <- resolve_full()
     full$prune_fallback_triggered <- TRUE
     full$prune_fallback_reason    <- reason
+    full$prune_dropped_mass_bound <- bound
     full
+}
+
+# The share of the posterior a screened grid's dropped cells may carry. With c
+# a cell's screened and f its full log-posterior -- the kernel's log-marginal
+# plus the hyperprior and cell measure the screen ranked with -- and
+# e_max = max over kept cells of (f - c), the worst error measured,
+#
+#   B = sum_{j dropped} exp(c_j + e_max) / sum_{k kept} exp(f_k).
+#
+# A constant error cancels (B is then the screened share of the dropped cells,
+# which the tolerance already bounds); an error that varies across the kept
+# cells lifts every dropped cell by the worst of it. `Inf` when nothing was
+# kept, `NA` when the result carries no screen to read.
+.nl_prune_dropped_mass <- function(res) {
+    mask  <- as.logical(res$prune_mask)
+    lm    <- as.numeric(res$log_marginal)
+    cheap <- as.numeric(res$prune_cheap_log_marginal)
+    n <- length(lm)
+    if (length(mask) != n || length(cheap) != n) return(NA_real_)
+    folded <- .nl_log_hyperprior_folded(res, n)
+    if (!is.null(folded)) lm <- lm - folded
+    off <- res$prune_screen_log_offset
+    if (length(off) == n) {
+        lm    <- lm + off
+        cheap <- cheap + off
+    }
+    kept <- !mask & is.finite(lm) & is.finite(cheap)
+    drop <- mask & is.finite(cheap)
+    if (!any(kept)) return(Inf)
+    if (!any(drop)) return(0)
+    e_max <- max(lm[kept] - cheap[kept])
+    top   <- max(lm[kept])
+    sum(exp(cheap[drop] + e_max - top)) / sum(exp(lm[kept] - top))
 }

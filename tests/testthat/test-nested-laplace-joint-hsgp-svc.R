@@ -124,7 +124,7 @@ test_that("joint HSGP (no svc) runs end-to-end via multi-block dispatch", {
         control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
     expect_equal(sum(fit$weights), 1.0, tolerance = 1e-6)
 })
 
@@ -174,7 +174,7 @@ test_that("svc_column on a varying X column shifts the HSGP fit", {
         prior = list(.hsgp_block(sim, svc_column = 2L)),
         control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
-    expect_true(all(is.finite(fit_svc$log_marginal)))
+    expect_cells_solved(fit_svc)
     # The fits must differ on at least one cell; the basis row-scaling
     # actually changes the latent contribution to eta.
     expect_gt(max(abs(fit_svc$log_marginal - fit_plain$log_marginal)),
@@ -268,7 +268,7 @@ test_that("multi-scale HSGP (two blocks) composes via the multi-block prior", {
     )
     expect_s3_class(fit_multi, "tulpa_nested_laplace_joint")
     expect_identical(fit_multi$integration, "grid")
-    expect_true(all(is.finite(fit_multi$log_marginal)))
+    expect_cells_solved(fit_multi)
     expect_equal(sum(fit_multi$weights), 1.0, tolerance = 1e-6)
     # Cartesian product of two 4-cell blocks = 16 cells.
     expect_equal(length(fit_multi$log_marginal), 16L)

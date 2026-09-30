@@ -42,7 +42,11 @@ muffled; the replay raises them again.
 Raises a \code{tulpa_grid_batch_ineligible} condition (catchable with
 \code{tryCatch(..., tulpa_grid_batch_ineligible = ...)}) when the fits do not
 share a design or a request uses a setting the fused driver does not
-carry. The random number state is restored to where the batch was called
+carry, and says so on the first fit's capture when the setting is the
+request's own. The cheap-pass screen is one: it prunes each response's grid
+to its own kept set, which one fused grid walk cannot, and it is on by
+default, so fits meant for the fused solve pass \code{control$prune = FALSE}.
+The random number state is restored to where the batch was called
 before that condition leaves, so a caller that falls back to fitting the
 responses one at a time draws the stream it would have drawn without the
 batch.

@@ -59,7 +59,7 @@ test_that("the spec and joint entry families agree on log_marginal", {
     hyperprior = "flat",
     control = list(diagnose_k = FALSE, diagnose_skew = FALSE))
 
-  expect_true(all(is.finite(spec$log_marginal)))
+  expect_cells_solved(spec)
   # Exactly, cell for cell: the joint path used to be offset by the density and
   # normalizer of the weak default beta prior at its own mode.
   expect_equal(joint$log_marginal, spec$log_marginal, tolerance = 1e-10)

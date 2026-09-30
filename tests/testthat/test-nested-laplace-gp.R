@@ -96,7 +96,7 @@ test_that("nested_laplace NNGP runs on a 2D (sigma2, phi_gp) grid", {
   )
 
   expect_equal(res$n_grid, 9L)
-  expect_true(all(is.finite(res$log_marginal)))
+  expect_cells_solved(res)
   expect_true(all(res$n_iter > 0))
   expect_gt(max(res$log_marginal) - min(res$log_marginal), 0.01)
 })
@@ -182,7 +182,7 @@ test_that("nested_laplace HSGP runs on a 2D (sigma2, lengthscale) grid", {
   )
 
   expect_equal(res$n_grid, 9L)
-  expect_true(all(is.finite(res$log_marginal)))
+  expect_cells_solved(res)
   expect_true(all(res$n_iter > 0))
   expect_gt(max(res$log_marginal) - min(res$log_marginal), 0.01)
 })

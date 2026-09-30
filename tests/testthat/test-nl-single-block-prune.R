@@ -2,14 +2,14 @@
 #
 # `run_nested_laplace_grid` ranks every cell with a short warm-started inner
 # Newton and skips the full solve on cells the ranking puts below a tolerance.
-# The single-block entries declare the toggle, so `tulpa_nested_laplace()` can
-# reach it, and five things have to hold once it can:
+# The single-block entries screen by default (gcol33/tulpa#925), and five
+# things have to hold:
 #
 #   1. a screened fit reports the screen (or the gate's fallback), never
 #      neither, so a reader can always tell which grid produced the numbers;
 #   2. the pruned posterior agrees with the full one on the fixed effects, to
 #      within the mass the screen dropped;
-#   3. the OFF path is the path it always was, to the bit;
+#   3. the default is the screen, and `prune = FALSE` solves every cell;
 #   4. a tolerance outside [0, 1) and a screening depth below one step are
 #      refused where the caller set them;
 #   5. a screen the gate distrusts is REPLACED by the full grid, and says so.
@@ -85,8 +85,8 @@ test_that("an explicit prune_tol reaches the kernel", {
 test_that("a pruned fit agrees with the full grid on the fixed effects", {
   skip_on_cran()
   f <- .nlp_fixture()
-  full <- .nlp_fit(f)
-  pruned <- .nlp_fit(f, list(prune = TRUE))
+  full <- .nlp_fit(f, list(prune = FALSE))
+  pruned <- .nlp_fit(f)
   skip_if(isTRUE(pruned$prune_fallback_triggered),
           "the safety gate replaced the pruned grid with the full one")
 
@@ -102,23 +102,29 @@ test_that("a pruned fit agrees with the full grid on the fixed effects", {
               max(1, max(abs(full$theta_mean))), 0.05)
 })
 
-test_that("prune = FALSE is the default path, unchanged", {
+test_that("the screen is the default, and prune = FALSE solves every cell", {
   skip_on_cran()
   f <- .nlp_fixture()
   a <- .nlp_fit(f)
+  on <- .nlp_fit(f, list(prune = TRUE))
   b <- .nlp_fit(f, list(prune = FALSE))
   # An explicit tolerance with the toggle off is still the full grid: the
   # toggle, not the tolerance, is what turns screening on.
   d <- .nlp_fit(f, list(prune = FALSE, prune_tol = 0.5))
 
+  expect_true(isTRUE(tulpa:::.nl_screen("prune")[["registry"]]))
+  expect_true("prune_mask" %in% names(a))
+  for (nm in c("log_marginal", "weights", "theta_grid", "theta_mean",
+               "theta_sd", "modes", "n_iter", "prune_mask")) {
+    expect_equal(on[[nm]], a[[nm]], tolerance = 0)
+  }
   for (nm in c("log_marginal", "weights", "theta_grid", "theta_mean",
                "theta_sd", "modes", "n_iter")) {
-    expect_equal(b[[nm]], a[[nm]], tolerance = 0)
-    expect_equal(d[[nm]], a[[nm]], tolerance = 0)
+    expect_equal(d[[nm]], b[[nm]], tolerance = 0)
   }
-  expect_false("prune_mask" %in% names(a))
   expect_false("prune_mask" %in% names(b))
   expect_false("prune_mask" %in% names(d))
+  expect_true(all(is.finite(b$log_marginal)))
 })
 
 test_that("the screening knobs are validated where the caller set them", {
@@ -138,13 +144,15 @@ test_that("the screening knobs are validated where the caller set them", {
   expect_error(.nlp_fit(f, list(prune_tolerance = 1e-3)), "Unknown control knob")
 })
 
+# The gate reads the mass the dropped cells may carry, lifting each by the worst
+# screening error measured on a kept cell. Here the kept cells' screens are off
+# by 0.1, and the dropped cell screened at -3.5 against a best kept cell at -3.
 test_that(".nl_prune_gate replaces a screen it distrusts with the full grid", {
-  screened <- list(log_marginal = c(-10, -3, -4),
+  screened <- list(log_marginal = c(-Inf, -3, -4),
+                   prune_cheap_log_marginal = c(-3.5, -3.1, -4.1),
                    prune_mask = c(TRUE, FALSE, FALSE),
-                   prune_n_pruned = 1L,
-                   prune_argmax_disagree = TRUE,
-                   prune_cheap_full_gap = 0.1)
-  full <- list(log_marginal = c(-9, -3, -4))
+                   prune_n_pruned = 1L)
+  full <- list(log_marginal = c(-3.4, -3, -4))
   calls <- 0L
   resolve_full <- function() {
     calls <<- calls + 1L
@@ -162,21 +170,28 @@ test_that(".nl_prune_gate replaces a screen it distrusts with the full grid", {
     "cheap-pass prune is unreliable")
   expect_identical(calls, 1L)
   expect_true(out$prune_fallback_triggered)
-  expect_match(out$prune_fallback_reason, "argmax")
+  expect_match(out$prune_fallback_reason, "posterior mass")
+  expect_equal(out$prune_dropped_mass_bound,
+               exp(-3.4 + 3) / (1 + exp(-1)), tolerance = 1e-12)
   expect_false("prune_mask" %in% names(out))
   expect_equal(out$log_marginal, full$log_marginal)
+
+  # A screen with nothing to bound it by is distrusted too, and says why.
+  bare <- screened[setdiff(names(screened), "prune_cheap_log_marginal")]
+  expect_warning(out <- tulpa:::.nl_prune_gate(bare, 1e-3, resolve_full),
+                 "no per-cell screen")
+  expect_true(out$prune_fallback_triggered)
 })
 
 test_that(".nl_prune_gate keeps a screen it trusts", {
-  screened <- list(log_marginal = c(-10, -3, -4),
+  screened <- list(log_marginal = c(-Inf, -3, -4),
+                   prune_cheap_log_marginal = c(-20, -3.1, -4.1),
                    prune_mask = c(TRUE, FALSE, FALSE),
-                   prune_n_pruned = 1L,
-                   prune_argmax_disagree = FALSE,
-                   prune_cheap_full_gap = 0.1)
-  expect_identical(
-    tulpa:::.nl_prune_gate(screened, 1e-3,
-                           function() stop("the full grid must not be solved")),
-    screened)
+                   prune_n_pruned = 1L)
+  out <- tulpa:::.nl_prune_gate(screened, 1e-3,
+                                function() stop("the full grid must not be solved"))
+  expect_identical(out[names(screened)], screened)
+  expect_lte(out$prune_dropped_mass_bound, tulpa:::.nl_screen("gate_mass"))
 })
 
 # The per-cell fixed-effect retention was written against a grid where every
@@ -237,7 +252,7 @@ test_that("the screen ranks the posterior weight the grid integrates (#734)", {
   # the kernel, so it is handed both, fixed by the grid before any cell is
   # solved, and ranks cells by what their weight will be.
   f <- .nlp_fixture()
-  full <- .nlp_fit(f)
+  full <- .nlp_fit(f, list(prune = FALSE))
   p <- .nlp_fit(f, list(prune = TRUE))
   skip_if(isTRUE(p$prune_fallback_triggered),
           "the gate replaced the screen with the full grid")

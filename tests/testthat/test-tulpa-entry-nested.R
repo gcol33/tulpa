@@ -215,9 +215,7 @@ test_that("tulpa(latent(...)) recovers beta across seeds", {
                                   keep_grid_hessians = TRUE))
       gm <- fit$grid_modes
     }
-    w  <- fit$weights
-    b_cells <- do.call(rbind, lapply(gm, function(m) m[1:2]))
-    bhat[s, ] <- as.numeric(crossprod(w, b_cells))
+    bhat[s, ] <- grid_mean_fixed(fit, 1:2, gm)
   }
 
   # The slope b1 is cleanly identified; the intercept b0 aliases with the

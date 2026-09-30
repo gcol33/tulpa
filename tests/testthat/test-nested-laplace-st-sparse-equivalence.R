@@ -367,7 +367,7 @@ test_that("ST: HSGP x AR1 runs through the joint sparse path (finite)", {
         max_iter = 40L, tol = 1e-7, n_threads = 1L
     )
     expect_equal(length(as.numeric(fit$log_marginal)), 2L)
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
 })
 
 test_that("ST: NNGP x RW1 runs through the joint sparse path (finite)", {
@@ -404,5 +404,5 @@ test_that("ST: NNGP x RW1 runs through the joint sparse path (finite)", {
         max_iter = 40L, tol = 1e-7, n_threads = 1L
     )
     expect_equal(length(as.numeric(fit$log_marginal)), 2L)
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
 })

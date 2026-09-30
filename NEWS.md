@@ -1,3 +1,89 @@
+# tulpa 0.6.12
+
+## Behaviour changes
+
+* **The nested-Laplace grid is screened by default** (gcol33/tulpa#925).
+  `control$prune` now defaults to `TRUE` on `tulpa_nested_laplace_joint()`
+  and `tulpa_nested_laplace()`; `prune = FALSE` solves every cell as before.
+  A grid placed around its mode crosses axes the posterior does not fill (a
+  pinned dispersion axis dozens of posterior SDs per node, the far cells of a
+  placed tensor), and solving each of those in full was most of a large fit's
+  cost. The SPDE fitter stays opt-in: its CCD mode-find reads the
+  log-marginal through the same screened entry, where a screen would drop
+  stencil points. The per-door defaults live in one table, `.NL_SCREEN$prune`.
+  A dropped cell carries `log_marginal = -Inf`, zero weight and no retained
+  mode or precision, so the evidence (`logLik()`) and every summary are read
+  over the cells the fit solved; the bound below caps what they leave out.
+
+* **`control$local_ccd` solves every cell unless the screen is asked for.**
+  Local CCD refinement reads a finite-difference stencil off each refined
+  cell's axis neighbours, and a dropped neighbour has no log-marginal to read,
+  so a fit that asks for it (directly, or through `k_refine = "ccd"`) keeps
+  the full grid unless `control$prune = TRUE` is set.
+
+* **`tulpa_joint_grid_batch()` refuses a screened grid on the first fit it
+  captures.** The fused solve walks one grid for the whole batch and cannot
+  carry a screen that prunes each species to its own kept set, so a batch of
+  fits on the engine defaults stops with `tulpa_grid_batch_ineligible` before
+  a second fit is captured; pass `control$prune = FALSE` to batch.
+
+* **`prune_mask` indexes the grid the fit reports.** It is carried cell by
+  cell through the refinement and consistency passes like the other per-cell
+  fields, and a cell those passes add reads `FALSE`; it used to keep the
+  length of the base tensor.
+
+* **The prune is held to a bound on the mass it may have dropped, and the
+  driver repairs it rather than solving the grid again.** After the full
+  pass, each dropped cell is lifted by the worst screening error measured on a
+  kept cell, and the share of the posterior they may then carry is
+  `prune_dropped_mass_bound`. Past 1% (`.NL_SCREEN$gate_mass`, mirrored by
+  `CHEAP_SCREEN_GATE_MASS`) the driver solves the dropped cells that
+  contribute most to the bound, largest first, and reads it again
+  (`prune_n_repaired`). The safety gate reads the same bound and falls back to
+  the full grid only if it still fails. It replaces two triggers that read the
+  ranking: a disagreement between the screen's and the full solve's top cell,
+  and a kept posterior collapsed onto a cell the screen mis-read. On a grid
+  placed around its mode the neighbouring cells sit within a few nats of each
+  other, so which one the screen ranked first carries no information about
+  the dropped cells. A screen off by the same amount on every cell also ranks
+  them as the full pass does, however large that amount is. On the full 25 km
+  Calluna `occu_cover` fit both triggers fired on both screened grids, and
+  each fell back to the full grid (90 and 200 cells).
+
+* **Every movable axis is placed from the one outer mode, with one refit, and
+  the copy scale is among them.** The field SD, a copy block's field SD, the
+  per-arm dispersions and now the copy scale `alpha` are the families of one
+  placement pass (`.joint_place_axes()`, `R/joint_placement_pass.R`). Each
+  axis that fires, by railing or by a grid that does not resolve its own
+  posterior, is laid from the mode the placement mode-find reached, and the
+  grid is refit once with all of them. Before, each family refit the grid on
+  its own, and the copy scale was never placed, so the 25 km Calluna fit's
+  final grid crossed a placed field SD with the declared 10-level copy axis and
+  4-node dispersion axis: 200 cells. A copy scale's continuum is laid at the
+  mode and its "no coupling" atom at 0 kept. An axis whose posterior sits on
+  the atom is neither placed nor reported as railed: `outer_grid_railed_axes`
+  no longer lists such an axis as `alpha:lower`, since the atom is a model and
+  not an endpoint. The placement pilot thins a wrapper's `auto_grid()` copy
+  axis like any other default axis (the Calluna pilot goes from 3 x 10 x 3 to
+  3 x 4 x 3 cells).
+
+* **A placement refit reads the mode it was laid from.** Unless the placed
+  grid rails, the refit attaches the detecting fit's outer mode
+  (`outer_mode_carried = TRUE`) instead of running the mode-find again. An
+  axis placed at the SD floor, which a sharp full-data posterior always is,
+  reads as unresolved on its refit, so before this each such refit cost a
+  second mode-find: about fifty full grid solves on the Calluna fit.
+
+* **The var-of-means consistency pass lays an axis's points at the found
+  mode.** When the fit was placed from a mode, a collapsed axis's first round
+  lays five points one measured SD apart around it (`.hyper_propose_at_mode()`),
+  which resolves a Gaussian marginal (quadrature ESS 3.48 against the floor of
+  3) in one kernel call. Bisection without a mode can take up to four rounds and
+  may not resolve it within its eight-node cap at all: the Calluna fit's pinned
+  dispersion axis sat at 301 posterior SDs per node and ended its eight nodes
+  at ESS 1.0. A mode whose SD is past the placement ceiling is not used; the
+  pass bisects as before.
+
 # tulpa 0.6.11
 
 ## Performance

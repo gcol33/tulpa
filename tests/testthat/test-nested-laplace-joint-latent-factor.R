@@ -70,7 +70,7 @@ test_that("joint dispatch routes `type = 'lf'` and converges on a 2-arm fit", {
         control = list(max_iter = 60L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
     # No outer-grid axes -> single cell.
     expect_equal(length(fit$log_marginal), 1L)
     # `modes` is [n_cells x n_x]. The latent vector holds per-arm beta
@@ -100,7 +100,7 @@ test_that("lf block recovers loading ratio and factor field up to sign", {
         responses = sim$responses, prior = prior, copy = NULL,
         control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L, verbose = FALSE)
     )
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
 
     # `modes` is [n_cells x n_x] (1 row in the lf-only case). Read off the
     # lf block from arm_layout$block_start (0-based offset into the row).

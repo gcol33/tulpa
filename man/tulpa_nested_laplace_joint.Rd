@@ -309,6 +309,12 @@ dispatched across \code{n_threads_outer} threads with its own CHOLMOD solver
 and NewtonScratch (inner OpenMP auto-disabled). \code{1L} is serial, chained
 warm-starts -- bitwise identical to the pre-speedup driver. Recommended
 on multi-core workstations: \code{parallel::detectCores() - 1L}.
+A solve that runs alone holds every thread the fit was granted, the
+larger of \code{n_threads} and \code{n_threads_outer} under the \code{n_threads_scatter}
+cap, on its inner loop: the pilot, every cell of a refinement or
+var-of-means consistency round, and the skew probe. A fit is therefore
+reproducible bit for bit at a given pair of \code{n_threads} and
+\code{n_threads_outer}.
 It is a REQUEST: the driver clamps it to the team the OpenMP environment
 hands out (\code{omp_get_max_threads()}, \code{OMP_THREAD_LIMIT}, and the check
 farm's core cap), because the per-cell block cache sizes its slot array
@@ -322,29 +328,35 @@ coefficient \code{alpha}, solve one warm Tier-2 per tile from the centre
 pilot, and warm-start the rest from their tile pilot. Falls back to the
 single-tier path when no copy block / single tile / \code{n_threads_outer <= 1L}. \code{FALSE} recovers the pre-tiling behaviour (e.g. regression
 testing).
-\item \code{prune} (\code{FALSE}), \code{prune_tol} (\code{1e-3}) -- opt-in cheap-pass screening.
-When \code{prune = TRUE}, the driver sweeps the outer lattice running a short
-inner Newton per cell, each warm-started from the previous screened
-cell's quasi-mode (lattice-adjacent), computes a screening Laplace
-log-marginal, softmax-normalises, and skips the full inner Newton on
-cells whose normalised weight is \verb{< prune_tol}. The neighbour-warm-start
-sweep keeps every cheap mode near its cell's true mode, so the cheap
-ranking is faithful to the full-solve ranking even when the inner latent
-mode moves substantially across the grid. Pruned cells get
-\code{log_marginal = -Inf}, \code{n_iter = 0}, and inherit the pilot mode; the
-pilot cell is never pruned, and at least \code{prune_min_keep} cells (5) are
-solved in full whatever the tolerance says -- the highest-ranked dropped
-cells are restored up to that floor, because the outer grid placement
-pass reads a finite-difference curvature off the cells that were SOLVED
-and a kept set of one carries none. Two fallbacks to the full grid, each
-with a warning: the cheap-pass safety gate (the cheap-screen argmax
-disagrees with the full-solve argmax, or the kept posterior collapses
-onto a cell the screen mis-estimated by more than the margin it discarded
-cells by), and a screened fit whose grid placement declined for want of
-curvature. Neither bounds the error from a cell that was discarded and
-never solved: the gate compares the screen against the cells it kept.
-Stacks with \code{n_threads_outer}. \code{prune_tol} must be in \verb{[0, 1)}. Default
-\code{FALSE} (the full grid is correct).
+\item \code{prune} (\code{TRUE}), \code{prune_tol} (\code{1e-3}) -- cheap-pass screening. The
+driver sweeps the outer lattice running a short inner Newton per cell,
+each warm-started from the previous screened cell's quasi-mode
+(lattice-adjacent), computes a screening Laplace log-marginal,
+softmax-normalises, and skips the full inner Newton on cells whose
+normalised weight is \verb{< prune_tol}. The neighbour-warm-start sweep keeps
+every cheap mode near its cell's true mode, so the cheap ranking is
+faithful to the full-solve ranking even when the inner latent mode moves
+substantially across the grid. Pruned cells get \code{log_marginal = -Inf},
+\code{n_iter = 0}, and inherit the pilot mode; the pilot cell is never
+pruned, and at least \code{prune_min_keep} cells (5) are solved in full
+whatever the tolerance says -- the highest-ranked dropped cells are
+restored up to that floor, because the outer grid placement pass reads a
+finite-difference curvature off the cells that were SOLVED and a kept set
+of one carries none. After the full pass the kept cells say how far off
+the screen was, and the posterior mass the dropped cells may carry is
+bounded by lifting each by the worst error measured on a kept cell
+(\code{prune_dropped_mass_bound}). Past 1\% the driver solves the dropped cells
+that contribute most to the bound until it is under 1\%
+(\code{prune_n_repaired}), so what the fit returns holds that bound. Two
+fallbacks to the full grid remain, each with a warning: a bound the
+repair could not bring under 1\%, and a screened fit whose grid placement
+declined for want of curvature. On by default: a grid placed around its
+mode crosses axes the posterior does not fill (gcol33/tulpa#925), and
+solving every one of those cells is most of a large fit's cost. \code{FALSE}
+solves every cell, and is the default when the fit asks for local CCD
+refinement (\code{local_ccd}, or \code{k_refine = "ccd"}), whose stencil reads each
+refined cell's axis neighbours. Stacks with \code{n_threads_outer}.
+\code{prune_tol} must be in \verb{[0, 1)}.
 \item \code{prune_log_gap} (unset) -- the screening cut in nats: keep every cell
 within this many nats of the best screened cell. \code{prune_tol} is a
 normalised weight, so what it cuts at is the gap
@@ -752,8 +764,13 @@ refused here with an error rather than accepted and ignored. A per-arm
 dispersion axis (\code{phi_grid}) is the exception and fires on its own
 sizing: it is crossed onto the tensor independently of the field's
 geometry, so whether the field's grid collapsed says nothing about
-whether the dispersion axis brackets its own posterior. \code{FALSE} holds
-that axis too.
+whether the dispersion axis brackets its own posterior. The copy scale
+\code{alpha} fires the same way when its grid is the engine's own or a
+wrapper's \code{auto_grid()} default: its continuum is laid at the mode and
+its "no coupling" atom at 0 kept, and an axis whose posterior sits on
+that atom is left where it is. Every axis that fires is laid from the ONE
+outer mode the placement mode-find reached, and the grid is refit once
+with all of them (gcol33/tulpa#925). \code{FALSE} holds these axes too.
 \item \code{recenter_pilot} (\code{FALSE}) -- detect the placement above on a THINNED
 grid rather than on the full one. Placement reads two things, the argmax
 cell and an FD curvature stencil at it, and reads both off
@@ -1150,6 +1167,13 @@ how many nats below the best screened cell the tolerance cut at, how
 many nats the screened surface spans, the kept-cell floor applied, and
 how many cells that floor put back. A cut that is a sliver of the spread
 is a tolerance with no resolution on this grid.
+\item \code{prune_dropped_mass_bound}, \code{prune_n_repaired}, \code{prune_gate_mass} -- the
+posterior mass the dropped cells may carry, with each lifted by the
+worst screening error measured on a kept cell; how many dropped cells
+the driver solved in full to bring that under the gate; and the gate.
+\item \code{outer_mode_carried} -- \code{TRUE} on a placement refit that read the outer
+mode it was laid from rather than finding it again, which it does unless
+the placed grid rails.
 \item \code{prune_fallback_triggered}, \code{prune_fallback_reason} -- present only when
 a fallback to the full grid fired. The returned fit is the full-grid
 (unpruned) result; the reason string records whether the cheap-pass

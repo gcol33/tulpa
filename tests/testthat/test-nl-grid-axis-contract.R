@@ -59,7 +59,7 @@ test_that("both mixing-weight endpoints stay in domain and finite", {
   fx <- .axis_fixture()
   res <- .fit_bym2(fx, c(0.7, 0.7), c(0, 1))
   expect_equal(res$n_grid, 2L)
-  expect_true(all(is.finite(res$log_marginal)))
+  expect_cells_solved(res)
 })
 
 test_that("the paired-length rule is one rule across the grid kernels", {

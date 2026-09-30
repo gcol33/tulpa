@@ -352,7 +352,7 @@ test_that("nested Laplace SPDE runs with 2D hyperparameter grid", {
   )
 
   expect_equal(length(result$log_marginal), 9L)
-  expect_true(all(is.finite(result$log_marginal)))
+  expect_cells_solved(result)
   expect_true(all(result$n_iter > 0))
 
   # Log-marginals should vary across grid
@@ -397,7 +397,7 @@ test_that("nested Laplace SPDE warm-start reduces iterations", {
     max_iter = 50L, tol = 1e-6, n_threads = 1L
   )
 
-  expect_true(all(is.finite(result$log_marginal)))
+  expect_cells_solved(result)
 
   # Later grid points should converge faster due to warm-start
   expect_true(any(result$n_iter[2:5] <= result$n_iter[1]))

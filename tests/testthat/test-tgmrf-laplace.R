@@ -137,7 +137,7 @@ test_that("tgmrf AR1 recovers theta on a Poisson sim", {
     family = "poisson",
     control = list(max_iter = 100L, tol = 1e-8)
   )
-  expect_true(all(is.finite(fit$log_marginal)))
+  expect_cells_solved(fit)
   # Posterior weight should sit in a sensible band around the truth in the
   # block's parameterisation. Single-seed sanity, not a strict recovery
   # threshold (the multi-seed recovery test is the user-driven validation
@@ -210,7 +210,7 @@ test_that("tgmrf inside a multi-block prior composes with an iid block", {
     family = "poisson",
     control = list(max_iter = 80L, tol = 1e-7)
   ))
-  expect_true(all(is.finite(fit$log_marginal)))
+  expect_cells_solved(fit)
   # 5x5 tgmrf grid * 3 sigma grid = 75 cells.
   expect_equal(nrow(fit$theta_grid), 75L)
 })

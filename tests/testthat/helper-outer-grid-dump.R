@@ -549,7 +549,9 @@ ogd_fixture_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L,
 # re-targets what the recorded numbers measure when that default changes. The
 # defaults here are the engine's own, so the rules are scored against what a
 # user gets; a file whose experiment is about another read or another prior
-# passes it and says so.
+# passes it and says so. The grid is solved in full (`prune = FALSE`): a dump
+# rebuilds weight rules off every cell's log-marginal, and a screened cell has
+# none (gcol33/tulpa#925 turned the screen on by default).
 ogd_fixture_fit <- function(sim, levels, spread = 3,
                             within_cell = "box_uniform",
                             hyperprior = "proper") {
@@ -567,7 +569,7 @@ ogd_fixture_fit <- function(sim, levels, spread = 3,
     prior = prior,
     hyperprior = hyperprior,
     control = list(n_threads = 1L, diagnose_k = FALSE, max_iter = 100L,
-                   tol = 1e-8, integration = "grid",
+                   tol = 1e-8, integration = "grid", prune = FALSE,
                    within_cell = within_cell)))
 }
 

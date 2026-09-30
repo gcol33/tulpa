@@ -239,9 +239,7 @@ test_that("mode = nested_laplace integrates an areal field through tulpa()", {
   # Recovery: marginalize beta over the tau grid (grid modes weighted by the
   # integration weights), never a plug-in MAP (CLAUDE.md "Marginalize Derived
   # Quantities"). grid_modes[[k]] holds the length-p fixed-effect block.
-  w  <- fit$weights
-  bm <- do.call(rbind, lapply(fit$grid_modes, function(m) m[1:2]))
-  beta_hat <- as.numeric(crossprod(w, bm))
+  beta_hat <- grid_mean_fixed(fit, 1:2)
   expect_lt(abs(beta_hat[1] - s$beta[1]), 0.45)   # intercept
   expect_lt(abs(beta_hat[2] - s$beta[2]), 0.30)   # slope
 })

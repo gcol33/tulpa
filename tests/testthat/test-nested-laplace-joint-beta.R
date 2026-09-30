@@ -96,7 +96,7 @@ test_that("joint BYM2 with beta-positive arm runs and recovers betas", {
     )
 
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
 
     layout <- fit$arm_layout
     slope_occ <- .weighted_mode_mean(fit, layout$beta_start[1] + 2L)

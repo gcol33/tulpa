@@ -97,7 +97,7 @@ test_that("a batched spec can read n_trials without dereferencing null", {
   fit <- .wg_fit(sim, matrix(1, nrow = 2L, ncol = sim$n_batch))
   for (s in seq_len(sim$n_batch)) {
     sp <- .wg_species(fit, s)
-    expect_true(all(is.finite(sp$log_marginal)))
+    expect_cells_solved(sp)
     expect_true(all(is.finite(sp$modes)))
   }
 })

@@ -473,12 +473,37 @@ test_that("a grid-batched fit is the fit its front-door call returns", {
   expect_false(isTRUE(all.equal(fits[[1L]]$log_marginal, fits[[2L]]$log_marginal)))
 })
 
-# The engine's own defaults, with the per-cell precision kept for the draws:
-# placement, refinement and the outer k-hat all run kernel calls of their own
-# after the main grid solve, and the k-hat draws from the random number stream. Every species replays those calls itself, so the
-# batch returns the fits, and leaves the stream where, the same calls made in
-# sequence return and leave them.
-test_that("a grid batch on the engine defaults is the fits called in sequence", {
+# The engine's own defaults screen the grid, and the fused solve walks one grid
+# for the whole batch, so it cannot carry a screen that prunes each species to
+# its own kept set. The batch says so on the first capture, before a second fit
+# pays for its own (gcol33/tulpa#925).
+test_that("a grid batch on the engine defaults is refused on the first capture", {
+  skip_on_cran()
+  coupled_occ_register()
+
+  sim <- .nlb_occ_sim(seed = 7104L, n_batch = 2L, n_cells = 40L, n_visits = 3L)
+  sigma_grid <- c(0.3, 0.6, 1.2, 2.4)
+  captured <- 0L
+  one <- function(s) function() {
+    captured <<- captured + 1L
+    suppressWarnings(tulpa_nested_laplace_joint(
+      responses = coupled_occ_arms(sim$d[[s]]),
+      prior     = .nlb_occ_prior(sim, sigma_grid),
+      cell_coupling = "test_occupancy_mixture",
+      control = list(max_iter = 60L, tol = 1e-8, n_threads = 1L)))
+  }
+  expect_error(tulpa_joint_grid_batch(lapply(seq_len(sim$n_batch), one)),
+               class = "tulpa_grid_batch_ineligible", regexp = "prune_tol")
+  expect_identical(captured, 1L)
+})
+
+# The engine's own defaults otherwise, with the per-cell precision kept for the
+# draws: placement, refinement and the outer k-hat all run kernel calls of
+# their own after the main grid solve, and the k-hat draws from the random
+# number stream. Every species replays those calls itself, so the batch returns
+# the fits, and leaves the stream where, the same calls made in sequence return
+# and leave them.
+test_that("a grid batch on the defaults without the screen is the fits called in sequence", {
   skip_on_cran()
   coupled_occ_register()
 
@@ -489,7 +514,7 @@ test_that("a grid batch on the engine defaults is the fits called in sequence", 
     prior     = .nlb_occ_prior(sim, sigma_grid),
     cell_coupling = "test_occupancy_mixture",
     control = list(max_iter = 60L, tol = 1e-8, n_threads = 1L,
-                   store_Q = TRUE)))
+                   store_Q = TRUE, prune = FALSE)))
 
   set.seed(5501L)
   fits <- tulpa_joint_grid_batch(lapply(seq_len(sim$n_batch), function(s)

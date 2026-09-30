@@ -128,7 +128,7 @@ test_that("hsgp_mo joint dispatch runs end-to-end on 2 arms (K = n_arms = 2)", {
         control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
     expect_equal(sum(fit$weights), 1.0, tolerance = 1e-6)
     expect_equal(length(fit$log_marginal), nrow(gr))
 })
@@ -224,7 +224,7 @@ test_that("hsgp_mo at rho = 0 stays finite and matches independent-fields scale"
         responses = sim$responses, prior = list(block), copy = NULL,
         control = list(max_iter = 60L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
     expect_equal(length(fit$log_marginal), 1L)
 })
 
@@ -249,7 +249,7 @@ test_that("hsgp_mo posterior weight concentrates on rho_true > 0 cells", {
         responses = sim$responses, prior = list(block), copy = NULL,
         control = list(max_iter = 80L, tol = 1e-8, n_threads = 1L, verbose = FALSE)
     )
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
 
     w <- fit$weights
     rho_cells <- gr$rh

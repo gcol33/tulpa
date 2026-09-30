@@ -75,7 +75,7 @@ test_that("an NNGP fit is a function of its data, at any coordinate dimension", 
   # that was the first suspect and it was not the cause: n = 49 is on the CPU
   # path and broke, n = 60 is on the GPU path and was clean in the issue's run.
   skip_on_cran()
-  fit_lm <- function(co, seed = 11L) {
+  fit_nngp <- function(co, seed = 11L) {
     n <- nrow(co)
     d1 <- as.matrix(dist(co))
     nn <- 4L
@@ -89,7 +89,7 @@ test_that("an NNGP fit is a function of its data, at any coordinate dimension", 
     idx <- rep(seq_len(n), each = 4L)
     X   <- cbind(1, rnorm(length(idx)))
     y   <- as.numeric(X %*% c(-0.2, 0.7)) + rnorm(length(idx), 0, 0.5)
-    f <- suppressWarnings(tulpa_nested_laplace(
+    suppressWarnings(tulpa_nested_laplace(
       y = y, n_trials = rep(1L, length(idx)), X = X,
       prior = list(type = "nngp", coords = co, nn_idx = ni, nn_dist = nd,
                    n_spatial = n, nn = nn, spatial_idx = idx, cov_type = 0L),
@@ -97,17 +97,18 @@ test_that("an NNGP fit is a function of its data, at any coordinate dimension", 
       control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
                      progress = FALSE, diagnose_k = FALSE,
                      diagnose_skew = FALSE)))
-    f$log_marginal
   }
+  fit_lm <- function(co, seed = 11L) fit_nngp(co, seed)$log_marginal
 
   for (n in c(30L, 49L, 60L)) {
     co1 <- matrix(seq(0, 3, length.out = n), ncol = 1L)
-    a <- fit_lm(co1)
+    fa <- fit_nngp(co1)
+    a <- fa$log_marginal
     b <- fit_lm(co1)
     # A deterministic single-threaded computation on identical inputs. Any
     # difference at all is the defect, so this is exact rather than toleranced.
     expect_identical(a, b, info = paste("n =", n))
-    expect_true(all(is.finite(a)))
+    expect_cells_solved(fa)
 
     # THE ARBITER that the out-of-bounds column was what was being read: a
     # CONSTANT second column cancels in `(coords(o1,1) - coords(o2,1))^2`, so it

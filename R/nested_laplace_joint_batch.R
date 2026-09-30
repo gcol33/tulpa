@@ -97,7 +97,11 @@
 #' Raises a `tulpa_grid_batch_ineligible` condition (catchable with
 #' `tryCatch(..., tulpa_grid_batch_ineligible = ...)`) when the fits do not
 #' share a design or a request uses a setting the fused driver does not
-#' carry. The random number state is restored to where the batch was called
+#' carry, and says so on the first fit's capture when the setting is the
+#' request's own. The cheap-pass screen is one: it prunes each response's grid
+#' to its own kept set, which one fused grid walk cannot, and it is on by
+#' default, so fits meant for the fused solve pass `control$prune = FALSE`.
+#' The random number state is restored to where the batch was called
 #' before that condition leaves, so a caller that falls back to fitting the
 #' responses one at a time draws the stream it would have drawn without the
 #' batch.
@@ -166,6 +170,10 @@ tulpa_joint_grid_batch <- function(fits) {
       .joint_grid_batch_ineligible(sprintf(
         "fit %d writes a grid checkpoint, which the fused solve does not.", s))
     }
+    # A setting the fused solve does not carry is refused on the first capture,
+    # before the other fits pay for theirs: the fits share a design, so the
+    # first one's request answers for the batch.
+    if (s == 1L) .joint_grid_request_check(captured)
     requests[[s]] <- captured
   }
 
@@ -240,26 +248,26 @@ tulpa_joint_grid_batch <- function(fits) {
   req
 }
 
-# One fused grid solve over captured `.cpp_joint_multi()` requests. Returns one
-# grid result per request, each the list the single-species kernel returns for
-# it.
-.cpp_joint_multi_batch <- function(requests) {
-  requests <- lapply(requests, .joint_grid_request_canonical)
-  B <- length(requests)
-  req1 <- requests[[1L]]
+# Refuse a request that uses a setting the fused solve does not carry. The
+# cheap-pass screen is one of them: it prunes each species' grid to that
+# species' own kept set, while the fused solve walks one grid for the whole
+# batch, so a batch of fits on the engine's defaults (which screen) is refused
+# and its caller fits one response at a time.
+.joint_grid_request_check <- function(req) {
+  req <- .joint_grid_request_canonical(req)
   unsupported <- c(
-    x_init            = length(req1$x_init_nullable) > 0L,
-    x_init_per_cell   = !is.null(req1$x_init_per_cell),
-    n_threads_outer   = as.integer(req1$n_threads_outer %||% 1L) != 1L,
-    tile_ids          = length(req1$tile_ids) > 0L,
-    prune_tol         = as.numeric(req1$prune_tol %||% 0) > 0,
-    compute_skew      = isTRUE(req1$compute_skew),
-    debias            = !is.null(req1$debias),
-    cila              = !is.null(req1$cila),
-    inner_refresh     = as.integer(req1$inner_refresh %||% 1L) != 1L,
-    inner_sparse_override = as.integer(req1$inner_sparse_override %||% 0L) != 0L,
-    screen_log_offset = !is.null(req1$screen_log_offset),
-    uncoupled_arm     = !all(vapply(req1$arms_list, function(a)
+    x_init            = length(req$x_init_nullable) > 0L,
+    x_init_per_cell   = !is.null(req$x_init_per_cell),
+    n_threads_outer   = as.integer(req$n_threads_outer %||% 1L) != 1L,
+    tile_ids          = length(req$tile_ids) > 0L,
+    prune_tol         = as.numeric(req$prune_tol %||% 0) > 0,
+    compute_skew      = isTRUE(req$compute_skew),
+    debias            = !is.null(req$debias),
+    cila              = !is.null(req$cila),
+    inner_refresh     = as.integer(req$inner_refresh %||% 1L) != 1L,
+    inner_sparse_override = as.integer(req$inner_sparse_override %||% 0L) != 0L,
+    screen_log_offset = !is.null(req$screen_log_offset),
+    uncoupled_arm     = !all(vapply(req$arms_list, function(a)
       isTRUE(a$coupled), logical(1))))
   if (any(unsupported)) {
     .joint_grid_batch_ineligible(paste0(
@@ -267,6 +275,17 @@ tulpa_joint_grid_batch <- function(fits) {
                                       collapse = ", "),
       ", which the fused solve does not carry."))
   }
+  invisible(TRUE)
+}
+
+# One fused grid solve over captured `.cpp_joint_multi()` requests. Returns one
+# grid result per request, each the list the single-species kernel returns for
+# it.
+.cpp_joint_multi_batch <- function(requests) {
+  requests <- lapply(requests, .joint_grid_request_canonical)
+  B <- length(requests)
+  req1 <- requests[[1L]]
+  .joint_grid_request_check(req1)
   design1 <- .joint_grid_request_design(req1)
   for (s in seq_len(B)[-1L]) {
     ds <- .joint_grid_request_design(requests[[s]])

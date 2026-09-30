@@ -276,6 +276,50 @@
   if (.hyper_axis_is_log_scale(spec)) exp(u_mid) else u_mid
 }
 
+# Points laid at an axis's outer MODE, when the fit has one: the mode and the
+# SD the placement mode-find measured there (`.nl_placement_mode()`), five
+# nodes one SD apart in the coordinate the mode was found in. A Gaussian
+# marginal read at that spacing has a quadrature ESS of 3.48, clear of the
+# `axis_sd_ess` floor of 3, so an axis collapsed onto one node is resolved in
+# the round that lays them rather than after a chain of bisections, each a
+# kernel call of its own.
+#
+# This is what bisection could not do without a mode: its only spread was the
+# grid's own, and a parabola read off coarse nodes places its vertex tens of
+# posterior SDs from the mode (gcol33/tulpa#919). The mode-find's is a
+# converged Newton step's, measured on the posterior itself.
+#
+# `mode` is `list(mode_u, sd_u, tag)`. Points leave out a declared point mass,
+# stay inside the axis's bounds and, on an axis the caller stated
+# (`extend = FALSE`), inside its declared span. A point with a node of the axis
+# within half an SD of it is dropped: that node already reads the density
+# there, so on an axis a placement laid at 1.25 SDs the proposal comes back
+# empty and the pass bisects as it would without a mode. They come back nearest
+# the mode first, so a caller spending a node budget spends it there.
+.hyper_propose_at_mode <- function(spec, vals, mode) {
+  if (is.null(mode) || length(mode$mode_u) != 1L || length(mode$sd_u) != 1L ||
+      !is.finite(mode$mode_u) || !is.finite(mode$sd_u) || mode$sd_u <= 0) {
+    return(numeric(0))
+  }
+  k   <- c(0, -1, 1, -2, 2)
+  pts <- .joint_pareto_inv(mode$tag, mode$mode_u + k * mode$sd_u)$theta
+  pts <- pts[is.finite(pts)]
+  if (.hyper_axis_is_log_scale(spec)) pts <- pts[pts > 0]
+  bounds <- .hyper_axis_bounds(spec)
+  if (!is.null(bounds)) pts <- pts[pts > bounds[1L] & pts < bounds[2L]]
+  vals <- as.numeric(vals)
+  cont <- vals[is.finite(vals) & !.hyper_is_atom_level(vals, spec)]
+  if (!isTRUE(spec$extend) && length(cont)) {
+    pts <- pts[pts >= min(cont) & pts <= max(cont)]
+  }
+  u_nodes <- .joint_pareto_fwd(mode$tag, cont)
+  u_nodes <- u_nodes[is.finite(u_nodes)]
+  u_pts   <- .joint_pareto_fwd(mode$tag, pts)
+  keep <- vapply(u_pts, function(u)
+    all(abs(u_nodes - u) > (0.5 + 1e-6) * mode$sd_u), logical(1))
+  pts[keep]
+}
+
 # ============================================================================
 # Slice-cell builder. For each new axis value the helper produces ONE cell at
 # (axis = pt, other_axes = the modal cell at the anchor level). The cell is a
@@ -522,11 +566,16 @@
 # certify what it produced: bisecting two heavy nodes can leave the mass on the
 # new midpoint and one of them, and a marginal is only resolved once the ESS it
 # ends on says so (gcol33/tulpa#858).
+#
+# `axis_modes` names, per axis, the outer mode a placement mode-find found for
+# it (`list(mode_u, sd_u, tag)`, `.nl_outer_mode_axes()`). Such an axis's first
+# round lays its points AT the mode (`.hyper_propose_at_mode()`), and any round
+# after that bisects as above.
 .hyper_consistency_pass <- function(theta_grid, log_marginal, extras,
                                     refining_axis, specs, kernel_fn,
                                     min_ess = .nl_diag("axis_sd_ess"),
                                     max_nodes = .nl_diag("axis_refine_nodes"),
-                                    hp_fn = NULL) {
+                                    hp_fn = NULL, axis_modes = NULL) {
   refinable <- .hyper_refinable_names(specs)
   info <- list(axes = character(0), n_added = integer(0),
                ess_before = numeric(0), ess_after = numeric(0))
@@ -559,9 +608,15 @@
     # points of one axis re-tile one fibre rather than scattering across rows.
     anchor_lev <- as.numeric(theta_grid[which.max(log_marginal), axis])
     added <- 0L
+    at_mode <- axis_modes[[axis]]
     while (added < max_nodes && is.finite(rd$ess) && rd$ess < min_ess) {
-      new_pts <- .hyper_propose_mass_bisection(spec, rd$marg$vals,
-                                               rd$marg$log_marg, min_ess)
+      new_pts <- if (!is.null(at_mode))
+        .hyper_propose_at_mode(spec, rd$marg$vals, at_mode) else numeric(0)
+      at_mode <- NULL
+      if (length(new_pts) == 0L) {
+        new_pts <- .hyper_propose_mass_bisection(spec, rd$marg$vals,
+                                                 rd$marg$log_marg, min_ess)
+      }
       if (length(new_pts) == 0L) break
       new_pts <- utils::head(new_pts, max_nodes - added)
       pack <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,

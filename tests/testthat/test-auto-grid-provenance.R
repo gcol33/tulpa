@@ -252,6 +252,26 @@ test_that("a decline reason is stamped only when the recenter did not run", {
     expect_null(ran$outer_grid_recenter_declined)
 })
 
+# The joint placement pass over one family, driven with a
+# `refit(prior, prior_sigma)` callback.
+.place_field_sd <- function(res, prior, prior_sigma, refit, auto = logical(0),
+                            enabled = TRUE, max_attempts = 2L) {
+    tulpa:::.joint_place_axes(
+        res, list(prior = prior, prior_sigma = prior_sigma),
+        refit = function(st, from) refit(st$prior, st$prior_sigma),
+        families = tulpa:::.joint_placement_families(auto = auto)["sigma"],
+        enabled = enabled, max_attempts = max_attempts)
+}
+.place_copy_sd <- function(res, prior, copy, cp, prior_sigma, refit,
+                           auto = list(), enabled = TRUE, max_attempts = 2L) {
+    tulpa:::.joint_place_axes(
+        res, list(prior = prior, prior_sigma = prior_sigma, copy = copy,
+                  cp = cp),
+        refit = function(st, from) refit(st$prior, st$prior_sigma),
+        families = tulpa:::.joint_placement_families(auto = auto)["copy_sigma"],
+        enabled = enabled, max_attempts = max_attempts)
+}
+
 test_that("the single-block rescue guard honours a pin and passes a default", {
     # No fit: a stub `res` carrying only the diagnostic fields the rescue reads,
     # and a refit that records whether it was called.
@@ -275,7 +295,7 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
     icar <- list(type = "icar")
 
     # 1. Axis absent -> recenters.
-    out <- tulpa:::.joint_sigma_grid_rescue(stub_res, icar, NULL, refit)
+    out <- .place_field_sd(stub_res, icar, NULL, refit)
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
     expect_identical(calls$n, 1L)
     expect_gt(max(calls$grid), 3)
@@ -285,7 +305,7 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
 
     # 2. Engine default handed in unmarked -> still recenters (#293).
     calls$n <- 0L
-    out <- tulpa:::.joint_sigma_grid_rescue(
+    out <- .place_field_sd(
         stub_res, c(icar, list(sigma_grid = tulpa:::.nl_grid_axis("field_sd"))),
         NULL, refit)
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
@@ -293,7 +313,7 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
 
     # 3. A marked caller default -> recenters.
     calls$n <- 0L
-    out <- tulpa:::.joint_sigma_grid_rescue(
+    out <- .place_field_sd(
         stub_res, c(icar, list(sigma_grid = auto_grid(c(0.2, 0.6, 1.8)))),
         NULL, refit, auto = "sigma_grid")
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
@@ -301,7 +321,7 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
 
     # 4. A genuine pin -> untouched, with the reason recorded.
     calls$n <- 0L
-    out <- tulpa:::.joint_sigma_grid_rescue(
+    out <- .place_field_sd(
         stub_res, c(icar, list(sigma_grid = c(0.1, 0.5, 1, 2, 3))), NULL, refit)
     expect_identical(out$res$outer_grid_placement, "fixed")
     expect_identical(out$res$outer_grid_recenter_declined, "axis_pinned")
@@ -313,7 +333,7 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
     spread <- utils::modifyList(stub_res,
                                 list(pareto_k_regime = "spread",
                                      pareto_k_grid_edge_axes = character(0)))
-    out <- tulpa:::.joint_sigma_grid_rescue(spread, icar, NULL, refit)
+    out <- .place_field_sd(spread, icar, NULL, refit)
     expect_identical(out$res$outer_grid_recenter_declined, "grid_not_collapsed")
     expect_identical(out$res$outer_grid_axis_declined,
                      c(sigma = "grid_not_collapsed"))
@@ -323,20 +343,20 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
     calls$n <- 0L
     blind <- utils::modifyList(stub_res, list(outer_mode_u = NULL,
                                               outer_mode_cov_u = NULL))
-    out <- tulpa:::.joint_sigma_grid_rescue(blind, icar, NULL, refit)
+    out <- .place_field_sd(blind, icar, NULL, refit)
     expect_identical(out$res$outer_grid_recenter_declined, "no_usable_curvature")
     expect_identical(out$res$outer_grid_axis_declined,
                      c(sigma = "no_usable_curvature"))
     expect_identical(calls$n, 0L)
 
-    out <- tulpa:::.joint_sigma_grid_rescue(stub_res, icar, NULL, refit,
+    out <- .place_field_sd(stub_res, icar, NULL, refit,
                                             enabled = FALSE)
     expect_identical(out$res$outer_grid_axis_declined,
                      c(sigma = "auto_recenter_disabled"))
 
     # 7. A prior shape this rescue does not cover stamps nothing at all -- the
     #    multi-block rescue chained after it owns that fit.
-    out <- tulpa:::.joint_sigma_grid_rescue(stub_res, list(icar), NULL, refit)
+    out <- .place_field_sd(stub_res, list(icar), NULL, refit)
     expect_null(out$res$outer_grid_recenter_declined)
     expect_null(out$res$outer_grid_axis_declined)
 })
@@ -376,7 +396,7 @@ test_that("the second recenter attempt engages the PC prior unless it was PINNED
     pc <- tulpa:::.nl_recenter("sigma_pc_prior")
 
     # No prior at all -> attempt 2 adds the engine's PC prior.
-    out <- tulpa:::.joint_sigma_grid_rescue(stub_res, icar, NULL, refit)
+    out <- .place_field_sd(stub_res, icar, NULL, refit)
     expect_identical(out$res$outer_grid_recenter_attempts, 2L)
     expect_true(out$res$outer_grid_prior_added)
     expect_equal(calls$last_prior_sigma, pc)
@@ -385,7 +405,7 @@ test_that("the second recenter attempt engages the PC prior unless it was PINNED
     # A wrapper's own default, declared -> the escalation still engages, and the
     # engine's prior replaces the declared default.
     wrapper_default <- auto_grid(list("pc.prec", c(U = 1, alpha = 0.01)))
-    out <- tulpa:::.joint_sigma_grid_rescue(stub_res, icar, wrapper_default, refit)
+    out <- .place_field_sd(stub_res, icar, wrapper_default, refit)
     expect_true(out$res$outer_grid_prior_added)
     expect_equal(calls$last_prior_sigma, pc)
     expect_null(out$res$outer_grid_prior_declined)
@@ -393,7 +413,7 @@ test_that("the second recenter attempt engages the PC prior unless it was PINNED
     # A deliberate, undeclared choice -> held, and the suppression is legible
     # rather than an `attempts = 2` that quietly did the same thing twice.
     chosen <- list("pc.prec", c(U = 1, alpha = 0.01))
-    out <- tulpa:::.joint_sigma_grid_rescue(stub_res, icar, chosen, refit)
+    out <- .place_field_sd(stub_res, icar, chosen, refit)
     expect_identical(out$res$outer_grid_recenter_attempts, 2L)
     expect_false(out$res$outer_grid_prior_added)
     expect_identical(out$res$outer_grid_prior_declined, "prior_pinned")
@@ -429,7 +449,7 @@ test_that("the multi-block rescue reports a pinned copy-block axis", {
     }
 
     # Default (absent) donor axis -> recenters.
-    out <- tulpa:::.joint_multi_sigma_grid_rescue(
+    out <- .place_copy_sd(
         stub_res, list(list(type = "icar")), NULL, cp, NULL, refit)
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
     expect_gt(max(out$res$.grid), 3)
@@ -438,7 +458,7 @@ test_that("the multi-block rescue reports a pinned copy-block axis", {
 
     # Pinned donor axis -> untouched, reason recorded (was previously
     # indistinguishable from "did not need it").
-    out <- tulpa:::.joint_multi_sigma_grid_rescue(
+    out <- .place_copy_sd(
         stub_res, list(list(type = "icar", sigma_grid = c(0.1, 0.5, 1, 2, 3))),
         NULL, cp, NULL, refit)
     expect_identical(out$res$outer_grid_placement, "fixed")
@@ -446,15 +466,15 @@ test_that("the multi-block rescue reports a pinned copy-block axis", {
     expect_identical(out$res$outer_grid_axis_declined,
                      c(b1.sigma = "axis_pinned"))
 
-    out <- tulpa:::.joint_multi_sigma_grid_rescue(
+    out <- .place_copy_sd(
         stub_res, list(list(type = "icar")), NULL, cp, NULL, refit,
         enabled = FALSE)
     expect_identical(out$res$outer_grid_axis_declined,
                      c(b1.sigma = "auto_recenter_disabled"))
 
-    # Two collapsed copy blocks and one attempt: the block the pass moved is
-    # listed as moved, and both say they ran out of attempts -- the refit here
-    # leaves the moved block railed too.
+    # Two collapsed copy blocks and one attempt: both are laid from the one
+    # mode in the same refit, and both say they ran out of attempts -- the
+    # refit here leaves them railed.
     two <- utils::modifyList(stub_res, list(
         pareto_k_grid_edge_axes = c("b1.sigma", "b2.sigma"),
         outer_mode_u = c(log(3), log(3)),
@@ -463,19 +483,19 @@ test_that("the multi-block rescue reports a pinned copy-block axis", {
         outer_mode_axis_names = c("b1.sigma", "b2.sigma"),
         blocks = list(list(type = "icar"), list(type = "icar"))))
     still <- function(prior_i, prior_sigma_i) two
-    out <- tulpa:::.joint_multi_sigma_grid_rescue(
+    out <- .place_copy_sd(
         two, list(list(type = "icar"), list(type = "icar")), NULL,
         list(has_copy = TRUE, copy_blocks_zero = c(0L, 1L)), NULL, still,
         max_attempts = 1L)
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
-    expect_identical(out$res$outer_grid_recenter_axes, "b1.sigma")
+    expect_identical(out$res$outer_grid_recenter_axes, c("b1.sigma", "b2.sigma"))
     expect_identical(out$res$outer_grid_axis_declined,
                      c(b1.sigma = "attempts_exhausted",
                        b2.sigma = "attempts_exhausted"))
 
     # Engine default on the donor block (the shape a wrapper package writes)
     # -> recenters.
-    out <- tulpa:::.joint_multi_sigma_grid_rescue(
+    out <- .place_copy_sd(
         stub_res,
         list(list(type = "icar", sigma_grid = tulpa:::.nl_grid_axis("field_sd"))),
         NULL, cp, NULL, refit)

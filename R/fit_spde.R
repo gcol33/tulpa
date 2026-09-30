@@ -186,7 +186,7 @@ fit_spde <- function(y, X, spatial,
   # correction requests, resolved exactly as tulpa_nested_laplace() resolves
   # them. They were unreachable on this path until the SPDE entry went through
   # the shared bundle (gcol33/tulpa#699), which hardcoded prune_tol = 0.
-  prune       <- isTRUE(control$prune %||% FALSE)
+  prune       <- isTRUE(control$prune %||% .nl_screen("prune")[["spde"]])
   prune_tol   <- .nl_prune_tol_from_control(
     control,
     .nl_check_prune_tol(control$prune_tol %||% .nl_screen("prune_tol")))

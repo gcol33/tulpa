@@ -248,7 +248,7 @@ test_that("areal svc_weight recovers a per-row-weighted field; ignoring it is wo
         control = list(max_iter = 50L, tol = 1e-6)))
 
     expect_s3_class(fit_w, "tulpa_nested_laplace_joint_multi")
-    expect_true(all(is.finite(fit_w$log_marginal)))
+    expect_cells_solved(fit_w)
 
     cor_w   <- abs(cor(field_hat(fit_w),   f))
     cor_ign <- abs(cor(field_hat(fit_ign), f))

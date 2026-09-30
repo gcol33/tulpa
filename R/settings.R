@@ -1435,10 +1435,30 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # The value is mirrored by `CHEAP_SCREEN_MIN_KEEP` in `src/nested_laplace_grid.h`
 # -- the driver applies it, and a C++ constant cannot read this registry -- and
 # the two are pinned together by test.
+#
+# `prune` is whether a fit screens at all when its caller does not say, per
+# door, in this one table. On for the two nested-Laplace doors: a grid placed
+# around its mode crosses axes the posterior does not fill -- a pinned axis
+# dozens of posterior SDs per node, the far corners of a placed tensor -- and
+# solving every one of those cells in full is most of a large fit's cost
+# (gcol33/tulpa#925). Their safety gate is what makes on the safe default
+# rather than a gamble on the ranking. Off for the SPDE fitter: its CCD
+# mode-find reads the log-marginal through the same screened entry as the grid,
+# and a screen there drops stencil points rather than cells, with no gate to
+# catch it.
+#
+# `gate_mass` is how much posterior mass the prune may, at worst, have dropped
+# before the gate refuses it and solves the full grid
+# (`.nl_prune_dropped_mass()`): one per cent, ten times the default tolerance
+# a single dropped cell may carry. A fit that wants the prune held tighter
+# lowers `prune_tol`: the cut widens, fewer cells are dropped, and less mass is
+# left for the gate to bound.
 .NL_SCREEN <- list(
+    prune     = c(joint = TRUE, registry = TRUE, spde = FALSE),
     prune_tol = 1e-3,
     iters     = 2L,
-    min_keep  = 5L
+    min_keep  = 5L,
+    gate_mass = 0.01
 )
 
 .nl_screen <- function(par) {

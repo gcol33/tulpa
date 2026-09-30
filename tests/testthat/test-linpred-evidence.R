@@ -133,36 +133,44 @@ test_that("a grid with every axis pinned has its one cell's marginal as evidence
   expect_equal(fit$log_evidence, as.numeric(fit$log_marginal), tolerance = 1e-14)
 })
 
-.lev_rw1_fit <- function(d, tg) {
+.lev_rw1_fit <- function(d, tg, prune = NULL) {
   tulpa_nested_laplace(
     y = d$df$y, n_trials = rep(1L, nrow(d$df)), X = cbind(1, d$df$x),
     prior = list(type = "rw1", temporal_idx = as.integer(d$time),
                  n_times = 24L, tau_grid = tg),
     family = "binomial",
     control = list(diagnose_k = FALSE, diagnose_skew = FALSE,
-                   auto_recenter = FALSE))
+                   auto_recenter = FALSE, prune = prune))
 }
 
 test_that("logLik() on a single-axis grid does not move with its nodes or its support", {
   # The PC prior on tau is proper, so the evidence is one integral whatever
   # node set reads it: the same support at three resolutions, and two supports
-  # that both cover the posterior.
+  # that both cover the posterior. Read on every cell, that is quadrature error
+  # alone; the default screen reads it over the cells it kept, which may leave
+  # out up to `gate_mass` of it on each fit.
   skip_on_cran()
   d <- make_trend_data(20260529)
   grid_on <- function(lo, hi, K) exp(lo + (hi - lo) / K * (seq_len(K) - 0.5))
-  ev <- c(
-    vapply(c(9L, 33L, 129L), function(K) {
-      as.numeric(logLik(.lev_rw1_fit(d, grid_on(log(0.5), log(200), K))))
-    }, numeric(1)),
-    wide = as.numeric(logLik(.lev_rw1_fit(d, grid_on(log(0.05), log(2000), 129L)))))
+  grids <- list(grid_on(log(0.5), log(200), 9L),
+                grid_on(log(0.5), log(200), 33L),
+                grid_on(log(0.5), log(200), 129L),
+                wide = grid_on(log(0.05), log(2000), 129L))
+  ev_on <- function(prune) vapply(grids, function(tg) {
+    as.numeric(logLik(.lev_rw1_fit(d, tg, prune = prune)))
+  }, numeric(1))
+  ev <- ev_on(FALSE)
   expect_true(all(is.finite(ev)))
   expect_lt(diff(range(ev)), 2e-3)
+  screened <- ev_on(NULL)
+  expect_true(all(screened <= ev + 1e-6))
+  expect_true(all(ev - screened <= -log1p(-tulpa:::.nl_screen("gate_mass"))))
 
   # Arbiter: a trapezoid in log tau of the kernel's own marginal against the PC
   # density on the precision written out by hand, P(sigma > 1) = 0.01 with
   # sigma = tau^(-1/2), on a support wide enough to hold the whole posterior.
   tg <- exp(seq(log(0.01), log(1e4), length.out = 801L))
-  f <- .lev_rw1_fit(d, tg)
+  f <- .lev_rw1_fit(d, tg, prune = FALSE)
   lam <- -log(0.01)
   u <- log(tg)
   lp <- log(lam / 2) - 1.5 * u - lam * exp(-u / 2) + u

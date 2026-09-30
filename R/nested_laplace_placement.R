@@ -1,9 +1,9 @@
 # Outer-grid placement mode.
 #
-# A placement rescue -- the joint driver's `.joint_sigma_grid_rescue()`,
-# `.joint_multi_sigma_grid_rescue()` and `.joint_phi_grid_rescue()`, and the
-# standalone `.nl_registry_grid_rescue()` (R/nested_laplace_auto_grid.R) --
-# lays a railed or under-resolved axis at `mode +/- span * sd`. What it needs
+# A placement -- the joint driver's placement pass (`.joint_place_axes()`,
+# R/joint_placement_pass.R) and the standalone `.nl_registry_grid_rescue()`
+# (R/nested_laplace_auto_grid.R) -- lays a railed or under-resolved axis at
+# `mode +/- span * sd`. What it needs
 # from the fit it detected on is the outer MODE and the curvature there: a
 # property of the log-posterior surface, which the grid it detected on cannot
 # supply on exactly the fits that need placing. A railed grid's argmax is its
@@ -152,6 +152,49 @@
                        set_warm = set_warm)
 }
 
+# The outer mode a placement mode-find reached, per axis, in the shape the
+# var-of-means consistency pass lays its points at (`.hyper_propose_at_mode()`).
+# `mode` is `list(mode_u, cov_u, tags, names)` as a fit carries it
+# (`outer_mode_*`). An axis the mode-find held fixed has no variance and is left
+# out, and so is one whose SD is past the ceiling a placement refuses
+# (`.NL_RECENTER$max_sd_u`): a curvature that flat did not resolve the
+# direction, and points laid from it land orders of magnitude off either side.
+# An SD under the placement's FLOOR is kept as measured: resolving a posterior
+# sharper than the floor lets a placement lay it is what the pass is for.
+.nl_outer_mode_axes <- function(mode) {
+    if (is.null(mode) || is.null(mode$names) || is.null(mode$cov_u)) return(NULL)
+    out <- list()
+    for (j in seq_along(mode$names)) {
+        v <- mode$cov_u[j, j]
+        if (!is.finite(v) || v <= 0 || !is.finite(mode$mode_u[j])) next
+        if (sqrt(v) > .nl_recenter("max_sd_u")) next
+        out[[mode$names[j]]] <- list(mode_u = mode$mode_u[j], sd_u = sqrt(v),
+                                     tag = mode$tags[j])
+    }
+    if (length(out)) out
+}
+
+# A fit's placement mode, as the record `.nl_outer_mode_axes()` reads and a
+# placement refit is handed, or NULL when it carries none.
+.nl_fit_outer_mode <- function(res) {
+    if (is.null(res$outer_mode_u) || is.null(res$outer_mode_cov_u)) return(NULL)
+    list(mode_u = res$outer_mode_u, cov_u = res$outer_mode_cov_u,
+         tags = res$outer_mode_axis_tags, names = res$outer_mode_axis_names,
+         status = res$outer_mode_status, rounds = res$outer_mode_rounds,
+         evals = res$outer_mode_evals)
+}
+
+# Does a fit rail on an axis the placement pass may move? The one condition
+# under which a placement refit finds its mode again rather than reading the
+# one it was laid from: a rail says the mode left the span.
+.joint_placement_railed <- function(res, extra_axes = character(0)) {
+    if (identical(res$pareto_k_regime, "collapsed_edge") ||
+        .nl_sigma_axis_railed(res)) return(TRUE)
+    cn <- colnames(res$theta_grid) %||% character(0)
+    any(vapply(intersect(extra_axes, cn), function(a) .nl_axis_railed(res, a),
+               logical(1)))
+}
+
 # Should this fit carry a placement mode? The rescues fire on a field SD that
 # railed -- the whole grid collapsed onto a boundary cell, or the axis's own
 # marginal maximal at an endpoint -- and on a movable dispersion axis that
@@ -163,11 +206,32 @@
         .nl_placement_axis_wanted(res, extra_axes)
 }
 
-# Attach the placement mode the rescues read (`outer_mode_*`), or the reason
-# there is none (`outer_mode_declined`). A no-op on a fit no rescue would place.
+# Attach the placement mode the placement pass reads (`outer_mode_*`), or the
+# reason there is none (`outer_mode_declined`). A no-op on a fit nothing would
+# place.
+#
+# A placement REFIT is handed the mode it was laid from (the
+# `tulpa.nl_outer_mode` option, set by `.joint_place_axes()`'s caller). Unless
+# the placed grid rails, that is still the mode -- the posterior is the same
+# function, only its nodes moved -- and it is attached as it came
+# (`outer_mode_carried`) rather than found again: on the full 25 km Calluna
+# fit a mode-find is about fifty full grid solves, and an axis placed at the SD
+# floor reads as unresolved on its refit by construction (gcol33/tulpa#925).
 .joint_attach_placement <- function(res, eval_logpost, set_warm = NULL,
                                     extra_axes = character(0)) {
     if (!.joint_placement_wanted(res, extra_axes)) return(res)
+    carried <- getOption("tulpa.nl_outer_mode")
+    if (!is.null(carried) && !.joint_placement_railed(res, extra_axes)) {
+        res$outer_mode_u          <- carried$mode_u
+        res$outer_mode_cov_u      <- carried$cov_u
+        res$outer_mode_axis_tags  <- carried$tags
+        res$outer_mode_axis_names <- carried$names
+        res$outer_mode_status     <- carried$status
+        res$outer_mode_rounds     <- carried$rounds
+        res$outer_mode_evals      <- carried$evals
+        res$outer_mode_carried    <- TRUE
+        return(res)
+    }
     pm <- .joint_placement_mode(res, eval_logpost, set_warm = set_warm)
     if (!is.null(pm$declined)) {
         res$outer_mode_declined <- pm$declined

@@ -39,7 +39,7 @@ test_that("the coupled scatter returns the same fit at every thread count", {
   skip_on_cran()
   one  <- .cci_fit(1L)
   four <- .cci_fit(4L)
-  expect_true(all(is.finite(one$log_marginal)))
+  expect_cells_solved(one)
   expect_identical(as.numeric(one$log_marginal), as.numeric(four$log_marginal))
   expect_identical(as.matrix(one$modes), as.matrix(four$modes))
 })

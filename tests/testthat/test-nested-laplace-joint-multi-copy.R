@@ -85,7 +85,7 @@ test_that("joint multi-block recovers TWO coupled ICAR fields (list-of-specs cop
     )
 
     expect_s3_class(fit, "tulpa_nested_laplace_joint_multi")
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
     expect_length(fit$block_moments, 2L)
 
     # Each copy block exposes its own (sigma, alpha) axis pair.
@@ -200,7 +200,7 @@ test_that("joint multi-block recovers a copied TEMPORAL (rw1) field", {
     )
 
     expect_s3_class(fit, "tulpa_nested_laplace_joint_multi")
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
     expect_named(fit$block_moments[[1L]]$mean, c("sigma", "alpha"))
 
     alpha_hat <- fit$block_moments[[1L]]$mean[["alpha"]]
@@ -266,7 +266,7 @@ test_that("joint multi-block recovers a copied TEMPORAL (ar1) field", {
     )
 
     expect_s3_class(fit, "tulpa_nested_laplace_joint_multi")
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
     expect_named(fit$block_moments[[1L]]$mean, c("sigma", "alpha", "rho"))
 
     alpha_hat <- fit$block_moments[[1L]]$mean[["alpha"]]
@@ -327,7 +327,7 @@ test_that("joint multi-block recovers a copied IID field", {
     )
 
     expect_s3_class(fit, "tulpa_nested_laplace_joint_multi")
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
     expect_named(fit$block_moments[[1L]]$mean, c("sigma", "alpha"))
 
     alpha_hat <- fit$block_moments[[1L]]$mean[["alpha"]]

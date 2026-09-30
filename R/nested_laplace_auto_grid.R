@@ -97,19 +97,19 @@
 # which is what `test-recenter-pilot.R` asserts it on, and not against the
 # field.
 #
-# An axis NO rescue moves -- a copy `alpha`, a caller-pinned per-arm dispersion
-# axis -- carries no such relation at all: its ratio is whatever its own fixed
+# An axis NO placement moves -- a caller-pinned copy `alpha` or per-arm
+# dispersion axis -- carries no such relation at all: its ratio is whatever its own fixed
 # nodes and its own posterior make it (median 1605 and 1.95 on the same
 # fixture), and reading a large one there as a placement failure mistakes a
 # sharp posterior on a fixed axis for a mis-sized one.
 #
-# A DECLARED per-arm dispersion axis is no longer in that set
-# (`.joint_phi_grid_rescue()`, gcol33/tulpa#663): marked with `auto_grid()` it
-# is placed like a field SD, and left unmarked it is a pin whose ratio means
+# A DECLARED per-arm dispersion axis or copy scale is not in that set
+# (`.joint_place_axes()`, gcol33/tulpa#663, gcol33/tulpa#925): marked with
+# `auto_grid()` it is placed like a field SD, and left unmarked it is a pin whose ratio means
 # what the paragraph above says it means. Which of the two a given axis is, is
 # recorded on the fit per axis (`outer_grid_axis_declined`), because the
-# whole-fit `outer_grid_recenter_declined` slot holds the reason from ONE rescue
-# and says nothing about an axis a different one left alone.
+# whole-fit `outer_grid_recenter_declined` slot holds one reason for the fit
+# and says nothing about an axis the pass left alone beside one it moved.
 #
 # The default is "resolve" and not "always" for COST, and the two are closer
 # than the coverage table alone reads. They agree seed for seed on five of the
@@ -839,9 +839,21 @@ auto_grid_place <- function(x)
 # lift of a railed fit is flat in the node count (2.70 / 2.81 / 2.87 / 2.94 /
 # 3.02 at m = 4 / 5 / 6 / 8 / 12) where its share collapses (0.68 / 0.56 / 0.48
 # / 0.37 / 0.25).
+#
+# A declared point mass is not an endpoint. The copy scale's zero level on its
+# log axis (`.hyper_axis_scale()`'s one rule) is the "no coupling" model: a
+# marginal heaviest there has its mass ON the model the atom states, not past
+# the span, so the axis is not railed; otherwise the rail is read on the
+# continuum alone.
 .nl_axis_rail <- function(res, axis, edge_mult = .nl_recenter("edge_mass_mult")) {
     mw <- .nl_axis_marginal_w(res, axis, measure = "inner")
     if (is.null(mw)) return(NULL)
+    if (isTRUE(.hyper_axis_scale(sub("^b[0-9]+[.]", "", axis))) &&
+        any(mw$vals <= 0)) {
+        if (mw$vals[which.max(mw$w)] <= 0) return(NULL)
+        mw <- .nl_axis_continuum(mw, "log")
+        if (is.null(mw) || length(mw$w) < 2L) return(NULL)
+    }
     m <- length(mw$w)
     k <- which.max(mw$w)
     if (k != 1L && k != m) return(NULL)
@@ -900,9 +912,15 @@ auto_grid_place <- function(x)
 # bit, because a uniform coordinate spacing gives every cell the same width and
 # a constant shifts no softmax. The ratio spans 0.78 to 1.34 where they differ,
 # which is inside the 1.6 headroom the threshold was chosen with.
+#
+# A declared point mass is not part of the resolution: the copy scale's zero
+# level on its log axis (`.hyper_axis_scale()`'s one rule) is a separate model
+# the continuum's spacing says nothing about, so the read is taken over the
+# continuum alone.
 .nl_axis_h_over_sd <- function(res, axis, tag) {
     if (length(tag) != 1L || is.na(tag)) return(NA_real_)
-    mw <- .nl_axis_marginal_w(res, axis, measure = "posterior")
+    mw <- .nl_axis_continuum(.nl_axis_marginal_w(res, axis, measure = "posterior"),
+                             tag)
     if (is.null(mw) || length(mw$vals) < 2L) return(NA_real_)
     u <- as.numeric(.joint_pareto_fwd(tag, mw$vals))
     if (any(!is.finite(u))) return(NA_real_)
@@ -911,6 +929,34 @@ auto_grid_place <- function(x)
     if (!is.finite(sd)) return(NA_real_)
     if (sd <= 0) return(Inf)
     stats::median(diff(sort(u))) / sd
+}
+
+# One axis's marginal read (`.nl_axis_marginal_w()`) with any declared point
+# mass dropped and the rest renormalized: the zero level of a log-tagged axis.
+# An axis with no such level is returned as it came.
+.nl_axis_continuum <- function(mw, tag) {
+    if (is.null(mw) || !identical(tag, "log")) return(mw)
+    keep <- mw$vals > 0
+    if (all(keep)) return(mw)
+    s <- sum(mw$w[keep])
+    if (!any(keep) || !is.finite(s) || s <= 0) return(NULL)
+    list(vals = mw$vals[keep], w = mw$w[keep] / s, col = mw$col)
+}
+
+# Does a MOVABLE axis need placing on this fit? It does when it rails, or when
+# its own grid does not resolve its own posterior (`h / sd` past
+# `.NL_RECENTER$resolve_mult`, or unreadable). An axis whose heaviest level is a
+# declared point mass does not: the mode-find holds the point where it is
+# (`.nl_placement_mode()`), so a placement asked for there would pay a
+# mode-find and lay nothing. The one predicate every family of the joint
+# placement pass and the mode-find's own trigger read.
+.nl_axis_placement_fires <- function(res, axis, tag = "log") {
+    mw <- .nl_axis_marginal_w(res, axis, measure = "posterior")
+    if (!is.null(mw) && identical(tag, "log") &&
+        mw$vals[which.max(mw$w)] <= 0) return(FALSE)
+    if (.nl_axis_railed(res, axis)) return(TRUE)
+    hs <- .nl_axis_h_over_sd(res, axis, tag)
+    !is.finite(hs) || hs > .nl_recenter("resolve_mult")
 }
 
 # Every axis of a fit that is railed, as `axis:side`, whether or not any rescue
@@ -1298,110 +1344,6 @@ auto_grid_place <- function(x)
 }
 
 
-# Single-block joint auto-recenter rescue. `res` is the
-# just-completed single-block fit (bym2 / icar / car_proper); `refit(prior_i,
-# prior_sigma_i)` reruns the SAME fit with a modified prior / prior_sigma and
-# returns the new result (already carrying its own `pareto_k_regime`, since
-# it re-enters the normal driver). `auto` is the provenance record
-# `.nl_grid_provenance()` took at the front door.
-#
-# Declines (returns `res`, `prior`, `prior_sigma` unchanged) when the prior has
-# no `type` in `c("bym2", "icar", "car_proper")` (multi-block priors have no
-# top-level `$type` and fall through here harmlessly, unstamped), when the
-# `sigma_grid` axis is PINNED (`.nl_axis_is_pinned()`: named by the caller and
-# neither marked with `auto_grid()` nor equal to the engine's own default
-# axis), or when the sigma axis never railed in the first place
-# (`.nl_axis_railed()`) -- so this is a zero-cost, byte-stable no-op for every fit that did not
-# need it, and the reason is recorded in
-# `res$outer_grid_recenter_declined` and, per axis, in
-# `res$outer_grid_axis_declined[["sigma"]]`. The per-axis record is what
-# survives a later rescue placing a DIFFERENT axis (the dispersion rescue below),
-# which leaves the fit `auto_recentered` and the whole-fit slot empty.
-#
-# Two attempts, each laid around the outer mode and curvature the detecting
-# fit's placement mode-find reached (`.joint_attach_placement()`):
-#   1. Recentre `sigma_grid` alone.
-#   2. If STILL railed (a genuinely unidentified / near-separation
-#      case whose mode has no finite curvature to settle on), additionally
-#      apply the light default PC(U=3, alpha=0.01) prior (only if the caller
-#      PINNED no `prior_sigma` of their own -- `.nl_prior_sigma_is_pinned()`,
-#      the same provenance question the axis asks, so a wrapper stamping a
-#      default prior does not silently disable the escalation; the suppression
-#      is recorded in `res$outer_grid_prior_declined`) and recentre once more.
-# Gives up (keeps the last, still-improved fit) rather than looping when a
-# recenter attempt cannot be built (e.g. the diagnostic declined because
-# another axis in the same grid is unguessable, such as CAR_proper's
-# `rho_car` -- see `.nl_axis_recenter_from_fit()`).
-#
-# Returns `list(res=, prior=, prior_sigma=)`: the possibly-refit result, and
-# the prior / prior_sigma that produced it, so a caller chaining further
-# refinement (e.g. the k_quality escalation loop) continues from the
-# recentered grid rather than the original one.
-.joint_sigma_grid_rescue <- function(res, prior, prior_sigma, refit,
-                                     auto = character(0), enabled = TRUE,
-                                     max_attempts = .nl_recenter("max_attempts_joint")) {
-    out <- list(res = res, prior = prior, prior_sigma = prior_sigma)
-    type <- tolower(prior$type %||% "")
-    if (!type %in% c("bym2", "icar", "car_proper")) return(out)
-    decline <- function(r, why) {
-        if (!identical(r$outer_grid_placement, "auto_recentered")) {
-            r <- .nl_decline_axis(r, "sigma", why)
-        }
-        .nl_decline_recenter(r, why)
-    }
-    if (!isTRUE(enabled)) {
-        out$res <- decline(res, "auto_recenter_disabled")
-        return(out)
-    }
-    hold <- .nl_axis_hold(prior, "sigma_grid", .nl_auto_fields_at(auto),
-                          type = ".joint_areal")
-    if (!is.null(hold)) {
-        out$res <- decline(res, hold)
-        return(out)
-    }
-
-    prior_pinned    <- .nl_prior_sigma_is_pinned(prior_sigma)
-    cur_prior       <- prior
-    cur_prior_sigma <- .nl_strip_auto(prior_sigma)
-    attempt <- 0L
-    reason  <- "grid_not_collapsed"
-    while (attempt < max_attempts && .nl_axis_railed(res, "sigma")) {
-        attempt <- attempt + 1L
-        rc <- .nl_axis_recenter_from_fit_full(
-            res$outer_mode_u, res$outer_mode_cov_u,
-            res$outer_mode_axis_tags, res$outer_mode_axis_names, "sigma",
-            ref_nodes = .nl_axis_ref_nodes(res, "sigma"))
-        if (is.null(rc$nodes)) {
-            reason <- rc$reason
-            break
-        }
-        cur_prior$sigma_grid <- rc$nodes
-        if (attempt >= 2L && !prior_pinned) {
-            cur_prior_sigma <- .nl_recenter("sigma_pc_prior")
-        }
-        res <- refit(cur_prior, cur_prior_sigma)
-        res$outer_grid_placement           <- "auto_recentered"
-        res$outer_grid_recenter_attempts   <- attempt
-        res$outer_grid_recenter_axes       <- "sigma"
-        res$outer_grid_recenter_sd_clamp   <- stats::setNames(rc$sd_clamp, "sigma")
-        res$outer_grid_recenter_sd_used    <- stats::setNames(rc$sd_used, "sigma")
-        res$outer_grid_recenter_sd_raw     <- stats::setNames(rc$sd_raw, "sigma")
-        res$outer_grid_prior_added         <- attempt >= 2L && !prior_pinned
-        res$outer_grid_prior_declined      <-
-            if (attempt >= 2L && prior_pinned) "prior_pinned" else NULL
-        out <- list(res = res, prior = cur_prior, prior_sigma = cur_prior_sigma)
-    }
-    # An axis the pass moved and that still rails says why, on the axis: the
-    # whole-fit slot is written only while a fit is unplaced.
-    if (attempt > 0L && .nl_axis_railed(out$res, "sigma")) {
-        out$res <- .nl_decline_axis(
-            out$res, "sigma",
-            if (attempt >= max_attempts) "attempts_exhausted" else reason)
-    }
-    out$res <- decline(out$res, reason)
-    out
-}
-
 # Outer mode + covariance of a REGISTRY fit's grid -- the standalone
 # `tulpa_nested_laplace()` counterpart of the joint path's placement mode, found
 # by the same mode-find (`.nl_placement_mode()`) over the same generic tagging
@@ -1424,130 +1366,6 @@ auto_grid_place <- function(x)
     })
     if (!is.null(pm$declined)) return(NULL)
     list(u_mode = pm$mode_u, cov = pm$cov_u, tags = pm$tags, col_names = cn)
-}
-
-# Multi-block joint auto-recenter rescue, the
-# multi-block counterpart of `.joint_sigma_grid_rescue()`. Scope: a COPY
-# block's own scalar `sigma` axis (icar / bym2 / car_proper / rw1 / rw2 /
-# ar1 / iid copy blocks all build it via the identical
-# `p$sigma_grid %||% .nl_grid_axis("field_sd")` default -- see
-# `.joint_block_axis_grid()`, `R/nested_laplace_joint_multi.R`), the
-# donor field amplitude a copy coefficient scales -- the exact axis role
-# `occu_cover` hits. A non-copy block's axis
-# (RW1/RW2 tau, MCAR's log-Cholesky Sigma, ...) reuses
-# `.NL_REGISTRY`/`.nl_block_axis_grid()` and is out of scope here (a
-# materially larger, per-block-type surface than the single shared "donor
-# sigma" convention every copy block shares).
-#
-# `res$blocks`/`res$axis_offsets` (attached whenever a fit carries >= 1
-# block) name each block's columns `b<index>.<axis>` (1-based), which
-# `.nl_axis_alias()` resolves along with the bare and coerced spellings; `cp` is
-# the resolved copy spec (`.resolve_copy_multi()`) telling which block indices
-# are copy blocks, and `auto` the per-block provenance record. Fixes at most one
-# collapsed copy block per attempt (the documented case is a single copy block;
-# a fit with several SIMULTANEOUSLY collapsed copy blocks partially improves
-# within `max_attempts` rather than looping without bound).
-#
-# Every copy block's `sigma` axis the pass left where it was records why in
-# `outer_grid_axis_declined`, whether or not a sibling block moved:
-# `"axis_pinned"`, the stencil's own reason for the block it could not place,
-# `"attempts_exhausted"` for a block still railed when `max_attempts` ran out
-# on another, and `"grid_not_collapsed"` otherwise.
-.joint_multi_sigma_grid_rescue <- function(res, prior, copy, cp, prior_sigma,
-                                           refit, auto = list(), enabled = TRUE,
-                                           max_attempts = .nl_recenter("max_attempts_joint")) {
-    out <- list(res = res, prior = prior, prior_sigma = prior_sigma)
-    if (!.is_multi_block_prior(prior) || is.null(cp) || !isTRUE(cp$has_copy)) {
-        return(out)
-    }
-    copy_b  <- cp$copy_blocks_zero + 1L
-    axis_of <- function(b) .nl_axis_alias("sigma", b, .nl_fit_n_blocks(res))[1L]
-    if (!isTRUE(enabled)) {
-        r <- res
-        for (b in copy_b) r <- .nl_decline_axis(r, axis_of(b),
-                                                "auto_recenter_disabled")
-        out$res <- .nl_decline_recenter(r, "auto_recenter_disabled")
-        return(out)
-    }
-
-    prior_pinned    <- .nl_prior_sigma_is_pinned(prior_sigma)
-    cur_prior       <- prior
-    cur_prior_sigma <- .nl_strip_auto(prior_sigma)
-    attempt  <- 0L
-    reason   <- "grid_not_collapsed"
-    moved_b  <- integer(0)
-    failed_b <- NA_integer_
-    while (attempt < max_attempts && .nl_sigma_axis_railed(res)) {
-        target_b <- NULL
-        for (b0 in cp$copy_blocks_zero) {
-            b <- b0 + 1L
-            if (!.nl_axis_railed(res, "sigma", b)) next
-            hold <- .nl_axis_hold(cur_prior[[b]], "sigma_grid",
-                                  .nl_auto_fields_at(auto, b), type = ".copy")
-            if (!is.null(hold)) {
-                reason <- hold
-                next
-            }
-            target_b <- b
-            break
-        }
-        if (is.null(target_b)) break
-        attempt <- attempt + 1L
-        n_b <- .nl_fit_n_blocks(res)
-        rc <- .nl_axis_recenter_from_fit_full(
-            res$outer_mode_u, res$outer_mode_cov_u,
-            res$outer_mode_axis_tags, res$outer_mode_axis_names, "sigma",
-            block_index = target_b, n_blocks = n_b,
-            ref_nodes = .nl_axis_ref_nodes(res, "sigma", target_b, n_b))
-        if (is.null(rc$nodes)) {
-            reason   <- rc$reason
-            failed_b <- target_b
-            break
-        }
-        cur_prior[[target_b]]$sigma_grid <- rc$nodes
-        moved_b <- union(moved_b, target_b)
-        if (attempt >= 2L && !prior_pinned) {
-            cur_prior_sigma <- .nl_recenter("sigma_pc_prior")
-        }
-        res <- refit(cur_prior, cur_prior_sigma)
-        res$outer_grid_placement           <- "auto_recentered"
-        res$outer_grid_recenter_attempts   <- attempt
-        res$outer_grid_recenter_axes       <- vapply(moved_b, axis_of,
-                                                     character(1))
-        res$outer_grid_recenter_sd_clamp   <- stats::setNames(
-            rc$sd_clamp, .nl_axis_alias("sigma", target_b, n_b)[1L])
-        res$outer_grid_recenter_sd_used    <- stats::setNames(
-            rc$sd_used, .nl_axis_alias("sigma", target_b, n_b)[1L])
-        res$outer_grid_recenter_sd_raw     <- stats::setNames(
-            rc$sd_raw, .nl_axis_alias("sigma", target_b, n_b)[1L])
-        res$outer_grid_prior_added         <- attempt >= 2L && !prior_pinned
-        res$outer_grid_prior_declined      <-
-            if (attempt >= 2L && prior_pinned) "prior_pinned" else NULL
-        out <- list(res = res, prior = cur_prior, prior_sigma = cur_prior_sigma)
-    }
-    for (b in moved_b) {
-        if (!.nl_axis_railed(out$res, "sigma", b)) next
-        out$res <- .nl_decline_axis(
-            out$res, axis_of(b),
-            if (attempt >= max_attempts) "attempts_exhausted" else reason)
-    }
-    for (b in setdiff(copy_b, moved_b)) {
-        held <- .nl_axis_hold(prior[[b]], "sigma_grid",
-                              .nl_auto_fields_at(auto, b), type = ".copy")
-        why <- if (!is.null(held)) {
-            held
-        } else if (isTRUE(b == failed_b)) {
-            reason
-        } else if (attempt >= max_attempts &&
-                   .nl_axis_railed(out$res, "sigma", b)) {
-            "attempts_exhausted"
-        } else {
-            "grid_not_collapsed"
-        }
-        out$res <- .nl_decline_axis(out$res, axis_of(b), why)
-    }
-    out$res <- .nl_decline_recenter(out$res, reason)
-    out
 }
 
 # --- per-arm dispersion axes -------------------------------------------------
@@ -1634,53 +1452,9 @@ auto_grid_place <- function(x)
     if (!length(axes)) return(FALSE)
     cn <- colnames(res$theta_grid) %||% character(0)
     for (a in intersect(axes, cn)) {
-        if (.nl_axis_railed(res, a)) return(TRUE)
-        hs <- .nl_axis_h_over_sd(res, a, "log")
-        if (!is.finite(hs) || hs > .nl_recenter("resolve_mult")) return(TRUE)
+        if (.nl_axis_placement_fires(res, a, "log")) return(TRUE)
     }
     FALSE
-}
-
-# A rescue refits through the ordinary driver, so the fit it hands back carries
-# no placement record at all. When two rescues fire on one fit the later one
-# would therefore report itself as the only axis placed. Carry the earlier
-# record forward and append: the per-axis vectors merge by name, the attempt
-# counter sums (it counts extra fits), and the prior-escalation flags stay with
-# whichever rescue set them.
-#
-# The per-axis decline record is carried whatever the predecessor's placement:
-# a field-SD rescue that declined leaves an UNPLACED fit, and its reason for
-# that axis is exactly what a dispersion placement must not erase. An axis the
-# new fit moved drops its old decline.
-.nl_carry_recenter_stamps <- function(new_res, prev_res) {
-    merge_named <- function(old, new) {
-        if (is.null(old)) return(new)
-        keep <- setdiff(names(old), names(new))
-        c(old[keep], new)
-    }
-    dec <- prev_res$outer_grid_axis_declined
-    if (length(dec)) {
-        dec <- dec[!names(dec) %in% new_res$outer_grid_recenter_axes]
-        dec <- merge_named(dec, new_res$outer_grid_axis_declined)
-        if (length(dec)) new_res$outer_grid_axis_declined <- dec
-    }
-    if (!identical(prev_res$outer_grid_placement, "auto_recentered")) return(new_res)
-    for (f in c("outer_grid_recenter_sd_clamp", "outer_grid_recenter_sd_used",
-                "outer_grid_recenter_sd_raw")) {
-        new_res[[f]] <- merge_named(prev_res[[f]], new_res[[f]])
-    }
-    new_res$outer_grid_recenter_axes <- unique(c(
-        prev_res$outer_grid_recenter_axes, new_res$outer_grid_recenter_axes))
-    new_res$outer_grid_recenter_attempts <-
-        (prev_res$outer_grid_recenter_attempts %||% 0L) +
-        (new_res$outer_grid_recenter_attempts %||% 0L)
-    if (is.null(new_res$outer_grid_prior_added)) {
-        new_res$outer_grid_prior_added <- prev_res$outer_grid_prior_added
-    }
-    if (is.null(new_res$outer_grid_prior_declined)) {
-        new_res$outer_grid_prior_declined <- prev_res$outer_grid_prior_declined
-    }
-    new_res
 }
 
 # A default axis the placement pass could not bring off a boundary of its grid
@@ -1725,125 +1499,6 @@ auto_grid_place <- function(x)
     rec[axis] <- reason
     res$outer_grid_axis_declined <- rec
     res
-}
-
-# Per-arm dispersion auto-recenter rescue. `res` is the just-completed fit;
-# `phi_grid` the NORMALISED (named-by-arm, markers stripped) argument that
-# produced it; `refit(phi_grid_i)` reruns the fit at a modified one. `auto` is
-# the arm-name record `.nl_phi_provenance()` took at the front door.
-#
-# Trigger is per axis and matches the registry path's `"resolve"` policy rather
-# than the two sigma rescues' rail-only one: a dispersion axis is crossed onto
-# the tensor independently of the field's own geometry, so whether the field SD
-# railed says nothing about whether this axis is sized to its own posterior. It fires on an axis that RAILS (its own marginal
-# maximal at one of its own endpoints) or that does not RESOLVE its own
-# posterior (`h / sd` past `.NL_RECENTER$resolve_mult`), and moves every
-# unpinned dispersion axis when either does -- the mode/Hessian stencil and the
-# refit are paid once per fit, not once per axis.
-#
-# Declines leave `res` and `phi_grid` untouched and record the reason per axis
-# (`.nl_decline_axis()`) as well as on the fit.
-.joint_phi_grid_rescue <- function(res, phi_grid, refit,
-                                   auto = character(0), enabled = TRUE,
-                                   max_attempts = .nl_recenter("max_attempts_joint")) {
-    out <- list(res = res, phi_grid = phi_grid)
-    slots <- .nl_phi_axis_slots(res, phi_grid)
-    if (!length(slots)) return(out)
-    axis_of <- function(s) s$axis
-    mark <- function(r, reason) {
-        for (s in slots) r <- .nl_decline_axis(r, axis_of(s), reason)
-        .nl_decline_recenter(r, reason)
-    }
-    if (!isTRUE(enabled)) {
-        out$res <- mark(res, "auto_recenter_disabled")
-        return(out)
-    }
-    held <- lapply(slots, function(s) .nl_phi_axis_hold(s$arm, auto))
-    pinned <- !vapply(held, is.null, logical(1))
-    if (all(pinned)) {
-        for (i in seq_along(slots)) out$res <- .nl_decline_axis(
-            out$res, axis_of(slots[[i]]), held[[i]])
-        out$res <- .nl_decline_recenter(out$res, .nl_reduce_decline(held))
-        return(out)
-    }
-
-    cur     <- phi_grid
-    attempt <- 0L
-    placed  <- character(0)
-    reason  <- "grid_resolves_posterior"
-    while (attempt < max_attempts) {
-        fire <- vapply(slots, function(s) {
-            if (.nl_axis_railed(res, s$axis)) return(TRUE)
-            hs <- .nl_axis_h_over_sd(res, s$axis, "log")
-            !is.finite(hs) || hs > .nl_recenter("resolve_mult")
-        }, logical(1))
-        if (!any(fire)) break
-
-        moved   <- list()
-        moved_axes <- character(0)
-        clamps  <- character(0)
-        sd_used <- numeric(0)
-        sd_raw  <- numeric(0)
-        declines <- character(0)
-        for (i in which(!pinned)) {
-            s  <- slots[[i]]
-            rc <- .nl_axis_recenter_from_fit_full(
-                res$outer_mode_u, res$outer_mode_cov_u,
-                res$outer_mode_axis_tags, res$outer_mode_axis_names, s$axis,
-                ref_nodes = .nl_rescue_axis_nodes(res, s$axis))
-            # The RAW SD is recorded even for an axis this attempt could not
-            # place -- that reading is what says whether declining was right.
-            sd_raw[s$axis] <- rc$sd_raw
-            if (is.null(rc$nodes)) {
-                clamps[s$axis] <- rc$sd_clamp
-                declines <- c(declines, rc$reason)
-                next
-            }
-            clamps[s$axis]  <- rc$sd_clamp
-            sd_used[s$axis] <- rc$sd_used
-            moved_axes      <- c(moved_axes, s$axis)
-            moved[[s$arm]]  <- rc$nodes
-        }
-        if (!length(moved)) {
-            reason <- if (length(unique(declines)) == 1L) unique(declines) else
-                "no_usable_curvature"
-            break
-        }
-
-        for (arm in names(moved)) cur[[arm]] <- moved[[arm]]
-        attempt <- attempt + 1L
-        prev <- res
-        res  <- refit(cur)
-        res$outer_grid_placement         <- "auto_recentered"
-        res$outer_grid_recenter_attempts <- attempt
-        # The axes this attempt actually LAID, not the ones it targeted: a
-        # movable axis whose curvature came back unusable is reported as
-        # declined below, and listing it here would silence that.
-        res$outer_grid_recenter_axes     <- moved_axes
-        res$outer_grid_recenter_sd_clamp <- clamps
-        res$outer_grid_recenter_sd_used  <- sd_used
-        res$outer_grid_recenter_sd_raw   <- sd_raw
-        res  <- .nl_carry_recenter_stamps(res, prev)
-        placed <- moved_axes
-        out  <- list(res = res, phi_grid = cur)
-    }
-    # An axis the pass left alone says why, whether or not a sibling moved, and
-    # so does one it moved that still rails.
-    for (i in seq_along(slots)) {
-        ax <- axis_of(slots[[i]])
-        if (ax %in% placed) {
-            if (.nl_axis_railed(out$res, ax)) {
-                out$res <- .nl_decline_axis(
-                    out$res, ax,
-                    if (attempt >= max_attempts) "attempts_exhausted" else reason)
-            }
-            next
-        }
-        out$res <- .nl_decline_axis(
-            out$res, ax, if (pinned[i]) held[[i]] else reason)
-    }
-    out$res <- .nl_decline_recenter(out$res, reason)
-    out
 }
 
 # Which axes the registry rescue below can move, per family: the prior-list
@@ -1998,7 +1653,7 @@ auto_grid_place <- function(x)
 }
 
 # Standalone (non-joint) `tulpa_nested_laplace()` registry rescue -- the
-# registry generalization of `.joint_sigma_grid_rescue()`. Scope: every axis
+# registry counterpart of the joint placement pass (`.joint_place_axes()`). Scope: every axis
 # `.NL_REGISTRY_AXIS_FIELD` lists, on every block of the prior, each moved on
 # its own rail in whichever coordinate the engine's transform registry gives it
 # (`log` for a scale, `logit01` for the BYM2 mixing weight). The families it
@@ -2013,8 +1668,8 @@ auto_grid_place <- function(x)
 # one rescue, not one per path.
 #
 # One recenter attempt (not the joint path's two): the "runaway mode needs
-# a regularizing prior" pathology `.joint_sigma_grid_rescue()`'s second
-# attempt targets is specific to a donor/copy-coupled fit pushing toward
+# a regularizing prior" pathology the joint pass's second attempt on a field SD
+# targets is specific to a donor/copy-coupled fit pushing toward
 # near-separation; a standalone
 # single-response fit has no such coupling, so a geometry-only recenter is
 # the proportionate fix here.

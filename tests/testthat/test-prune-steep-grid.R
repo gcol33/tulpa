@@ -21,10 +21,10 @@
 #   3. DISTINGUISHABILITY. `no_usable_curvature` on a screened grid is a
 #      different event from the same reason on a full one, and a fit says which
 #      it was.
-#   4. The gate's gap threshold is judged against the margin the screen
-#      DISCARDED cells by, not against the spread of the cells it kept. A
-#      threshold computed from the set the trigger is meant to validate cannot
-#      bound the error on the set it discarded.
+#   4. The gate bounds the posterior mass the DISCARDED cells may carry,
+#      lifting each by the worst error measured on a kept one. A threshold read
+#      off the spread of the kept cells is a property of the set the gate is
+#      meant to validate, and cannot bound the error on the set it discarded.
 
 # --- 1. the cut, in the units the surface is measured in ---------------------
 
@@ -38,6 +38,18 @@ test_that("the kept-cell floor is one value across the R and C++ defaults", {
                readLines(src, warn = FALSE), value = TRUE)
   expect_length(line, 1L)
   expect_identical(as.integer(sub(".*=\\s*([0-9]+).*", "\\1", line)), ref)
+})
+
+test_that("the dropped-mass gate is one value across the R and C++ defaults", {
+  ref <- tulpa:::.nl_screen("gate_mass")
+  expect_true(is.finite(ref) && ref > 0 && ref < 1)
+
+  src <- test_path("..", "..", "src", "nested_laplace_grid.h")
+  skip_if_not(file.exists(src), "package sources not available")
+  line <- grep("static const double CHEAP_SCREEN_GATE_MASS",
+               readLines(src, warn = FALSE), value = TRUE)
+  expect_length(line, 1L)
+  expect_identical(as.numeric(sub(".*=\\s*([0-9.eE+-]+);.*", "\\1", line)), ref)
 })
 
 test_that("prune_log_gap states a cut the tolerance cannot reach", {
@@ -100,20 +112,18 @@ test_that("the driver reports the cut and the surface it was applied to", {
 
 # --- 4. the gate's threshold -------------------------------------------------
 
-test_that("the gate judges the screen's error against the cut, not the kept spread", {
+test_that("the gate judges the screen's error by the mass it could have moved", {
   # The measured shape: five kept cells spanning ~98000 nats, the posterior a
   # point mass on one of them, and the screen out by 339.5 nats on exactly that
-  # cell. Judged against half the kept spread the threshold is 49025.8 and the
-  # trigger is silent; judged against the 6.9-nat margin the screen actually
-  # discarded cells by, a 339.5-nat error is enormous.
-  lm_steep <- c(0, -98051.6, -40000, -60000, -80000,
-                rep(-Inf, 115))          # 115 cells the screen never solved
+  # cell. Read off the spread of the kept cells the error is small; what it
+  # means is that a dropped cell may be under-read by as much, and cells the
+  # screen put 300 nats down are then the heaviest cells of the grid.
+  lm_steep <- c(0, -98051.6, -40000, -60000, -80000, rep(-Inf, 115))
+  cheap    <- c(-339.5, -98051.6, -40000, -60000, -80000, rep(-300, 115))
   res_steep <- list(
     log_marginal = lm_steep,
     prune_mask = c(rep(FALSE, 5L), rep(TRUE, 115L)),
-    prune_cheap_log_marginal = lm_steep,
-    prune_argmax_disagree = FALSE,
-    prune_cheap_full_gap = 339.5,
+    prune_cheap_log_marginal = cheap,
     prune_n_pruned = 115L,
     prune_log_gap_cut = -log(1e-3),
     prune_cheap_lm_spread = 98051.6)
@@ -126,25 +136,22 @@ test_that("the gate judges the screen's error against the cut, not the kept spre
     "falling back to the full grid")
   expect_true(isTRUE(out$ITS_THE_FULL))
   expect_true(isTRUE(out$prune_fallback_triggered))
-  expect_match(out$prune_fallback_reason, "gap|collapse")
+  expect_match(out$prune_fallback_reason, "posterior mass")
 
-  # Drop the cut and the old threshold comes back, computed from the very set
-  # the trigger is meant to validate -- and the same fit passes. This is the
-  # measured defect, and the assertion is that the cut is what changed it.
-  res_old <- res_steep
-  res_old$prune_log_gap_cut <- NULL
+  # The same error with the dropped cells far past it moves nothing.
+  res_far <- res_steep
+  res_far$prune_cheap_log_marginal <- c(cheap[1:5], rep(-2000, 115))
   expect_warning(
     kept <- tulpa:::.joint_prune_safety_gate(
-      res_old, resolve_full = function() stop("must not re-solve")),
+      res_far, resolve_full = function() stop("must not re-solve")),
     regexp = NA)
   expect_null(kept$prune_fallback_triggered)
 })
 
 test_that("the tighter threshold leaves a healthy screened fit alone", {
-  # A cut of 6.9 nats and a screen accurate to a twentieth of one, on a grid
-  # whose kept posterior has not collapsed: the ESS conjunct is false, so the
-  # trigger cannot fire whatever the threshold is. This is what makes the
-  # change a no-op on a well-conditioned pruned fit.
+  # A cut of 6.9 nats and a screen accurate to a twentieth of one: the dropped
+  # cell, lifted by that error, may carry 3.5e-4 of the posterior, far under
+  # the gate. A well-conditioned pruned fit is left as it came.
   res_ok <- list(
     log_marginal = c(-1, -1.2, -1.1, -Inf),
     prune_mask = c(FALSE, FALSE, FALSE, TRUE),
@@ -305,15 +312,20 @@ test_that("a screened fit still tracks the full grid on the fixed effects", {
   expect_lt(max(abs(coef(p) - coef(s))), 0.05)
 })
 
-test_that("screening off is the path it always was", {
+test_that("the joint fit screens by default, and prune = FALSE solves every cell", {
   skip_on_cran()
   f <- .psg_fixture()
   a <- .psg_fit(f, list(prune = FALSE))
   b <- .psg_fit(f)
 
-  # Nothing in the floor, the log-space cut or the reported fields reaches a
-  # fit that never screened.
-  expect_equal(a$log_marginal, b$log_marginal, tolerance = 0)
+  # Off: nothing in the floor, the log-space cut or the reported fields reaches
+  # the fit.
   expect_false("prune_mask" %in% names(a))
   expect_false("prune_log_gap_cut" %in% names(a))
+  expect_true(all(is.finite(a$log_marginal)))
+  # On is the default (gcol33/tulpa#925), and what reaches the caller holds the
+  # gate: its dropped cells may carry at most `gate_mass` of the posterior.
+  expect_true(isTRUE(tulpa:::.nl_screen("prune")[["joint"]]))
+  expect_true("prune_mask" %in% names(b))
+  expect_lte(b$prune_dropped_mass_bound, tulpa:::.nl_screen("gate_mass"))
 })

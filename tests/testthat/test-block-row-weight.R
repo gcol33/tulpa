@@ -87,8 +87,8 @@ test_that("an SPDE block's svc_weight reaches eta and the mode", {
     wtd   <- .rw_fit(.rw_spde_block(f$A, f$fem, f$m, f$N, f$w),
                      f$y, f$X, f$theta_grid)
 
-    expect_true(all(is.finite(plain$log_marginal)))
-    expect_true(all(is.finite(wtd$log_marginal)))
+    expect_cells_solved(plain)
+    expect_cells_solved(wtd)
 
     # A weight of exactly 1 enters at one layer and cannot perturb anything.
     expect_identical(as.numeric(ones$log_marginal),

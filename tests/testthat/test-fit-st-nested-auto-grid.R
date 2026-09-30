@@ -56,7 +56,7 @@ test_that("a true tau_spatial above the default ceiling (16) recenters the grid"
     expect_gt(max(fit$theta_grid[, "tau_spatial"]), 16)
     expect_lt(min(fit$theta_grid[, "tau_spatial"]), 60)
     expect_gt(max(fit$theta_grid[, "tau_spatial"]), 60)
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
 })
 
 test_that("a true tau_temporal below the default floor (0.25) recenters the grid", {
@@ -80,7 +80,7 @@ test_that("a true tau_temporal below the default floor (0.25) recenters the grid
     expect_lt(min(fit$theta_grid[, "tau_temporal"]), 0.25)
     expect_lt(min(fit$theta_grid[, "tau_temporal"]), 0.03)
     expect_gt(max(fit$theta_grid[, "tau_temporal"]), 0.03)
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
 })
 
 # One railed fixture, reused by every provenance case below.
@@ -227,7 +227,7 @@ test_that("ar1's rho axis rides along with the recenter when both precision axes
     # rho stays within its model-level stationarity bound regardless of how
     # far the recenter pushes it.
     expect_true(all(fit$theta_grid[, "rho"] > -1 & fit$theta_grid[, "rho"] < 1))
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
 
     # The mode-find searches rho on its logit coordinate against the posterior
     # there, the uniform prior on (-1, 1) carried by its change of variables,

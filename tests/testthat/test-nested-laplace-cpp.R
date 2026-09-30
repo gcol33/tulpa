@@ -29,7 +29,7 @@ test_that("cpp_nested_laplace_icar runs and returns correct structure", {
   expect_equal(length(result$n_iter), 7L)
   expect_equal(nrow(result$modes), 7L)
   expect_equal(ncol(result$modes), 1L + 25L)
-  expect_true(all(is.finite(result$log_marginal)))
+  expect_cells_solved(result)
   expect_true(all(result$n_iter > 0))
 })
 
@@ -104,7 +104,7 @@ test_that("cpp_nested_laplace_icar works with sparse Cholesky (300 sites)", {
   )
 
   expect_equal(result$n_grid, 9L)
-  expect_true(all(is.finite(result$log_marginal)))
+  expect_cells_solved(result)
   expect_equal(ncol(result$modes), 1L + 300L)
 
   # Log-marginals should vary across the grid (not constant)
@@ -207,5 +207,5 @@ test_that("C++ grid is faster than R loop (benchmark)", {
   message("    Speedup:   ", round(t_r["elapsed"] / max(t_cpp["elapsed"], 0.001), 1), "x")
 
   # Both should produce valid results
-  expect_true(all(is.finite(cpp_result$log_marginal)))
+  expect_cells_solved(cpp_result)
 })

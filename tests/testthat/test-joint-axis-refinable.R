@@ -461,15 +461,19 @@ test_that("a refinement slice carries the log marginal a tensor cell does", {
     tag <- fit$refining_axis
     expect_true(any(nzchar(tag)))
 
+    # The tensor is the reference, so it solves every cell; the fit's own
+    # screen drops tensor cells it may, and never a slice cell.
     tensor <- .axr_fit(sim, sort(unique(as.numeric(fit$theta_grid[, "alpha"]))),
-                       control = list(adaptive_grid = FALSE,
+                       control = list(adaptive_grid = FALSE, prune = FALSE,
                                       axis_refine = c(alpha = "none")))
     expect_false(any(nzchar(tensor$refining_axis %||% "")))
     key <- function(g) sprintf("%.12g|%.12g", g[, "sigma"], g[, "alpha"])
     m <- match(key(fit$theta_grid), key(tensor$theta_grid))
     expect_false(anyNA(m))
+    solved <- !cells_dropped(fit)
+    expect_true(all(solved[nzchar(tag)]))
     expect_equal(fit$log_marginal[nzchar(tag)],
                  tensor$log_marginal[m][nzchar(tag)], tolerance = 1e-6)
-    expect_equal(fit$log_marginal[!nzchar(tag)],
-                 tensor$log_marginal[m][!nzchar(tag)], tolerance = 1e-6)
+    expect_equal(fit$log_marginal[!nzchar(tag) & solved],
+                 tensor$log_marginal[m][!nzchar(tag) & solved], tolerance = 1e-6)
 })

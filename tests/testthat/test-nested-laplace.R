@@ -110,7 +110,7 @@ test_that("nested_laplace dispatches ICAR with explicit grid", {
   expect_s3_class(result, "tulpa_nested_laplace")
   expect_equal(length(result$theta_grid), 5L)
   expect_equal(length(result$log_marginal), 5L)
-  expect_true(all(is.finite(result$log_marginal)))
+  expect_cells_solved(result)
   expect_true(result$theta_mean > 0)
   expect_true(result$theta_sd > 0)
   expect_equal(sum(result$weights), 1.0, tolerance = 1e-6)
@@ -135,7 +135,7 @@ test_that("nested_laplace ICAR uses default grid when none supplied", {
   )
 
   expect_true(result$theta_mean > 0)
-  expect_true(all(is.finite(result$log_marginal)))
+  expect_cells_solved(result)
   expect_true(length(result$theta_grid) >= 5L)
 })
 

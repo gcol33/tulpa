@@ -33,7 +33,7 @@ test_that("nested_laplace RW1 returns interior-peaked log-marginal", {
 
   expect_s3_class(res, "tulpa_nested_laplace")
   expect_equal(length(res$log_marginal), 9L)
-  expect_true(all(is.finite(res$log_marginal)))
+  expect_cells_solved(res)
   expect_equal(sum(res$weights), 1.0, tolerance = 1e-6)
   # Posterior mean within the grid
   expect_true(res$theta_mean > min(prior$tau_grid))
@@ -109,7 +109,7 @@ test_that("nested_laplace AR1 recovers high autocorrelation in the simulation", 
 
   expect_s3_class(res, "tulpa_nested_laplace")
   expect_equal(length(res$log_marginal), nrow(gr))
-  expect_true(all(is.finite(res$log_marginal)))
+  expect_cells_solved(res)
   expect_equal(sum(res$weights), 1.0, tolerance = 1e-6)
   # Posterior rho should pull above 0.5 given the simulation
   expect_named(res$theta_mean, c("tau", "rho"))
@@ -189,7 +189,7 @@ test_that("nested_laplace AR1 fills default grid when missing", {
   res <- tulpa_nested_laplace(d$y, d$n_trials, d$X, prior = prior,
                         family = "binomial")
 
-  expect_true(all(is.finite(res$log_marginal)))
+  expect_cells_solved(res)
   expect_true(length(res$log_marginal) > 5L)
 })
 

@@ -218,6 +218,31 @@ only when the session STARTS in the package root and startup files are not
 skipped, so a build driven from another directory or under `--vanilla` still
 takes the debug flags.
 
+## The joint outer grid: one placement pass, a default screen
+
+`tulpa_nested_laplace_joint()` places every movable axis -- the field SD, a
+copy block's field SD, the per-arm dispersions, the copy scale `alpha` -- in
+ONE pass (`.joint_place_axes()`, `R/joint_placement_pass.R`) from the one outer
+mode the placement mode-find reached, with one refit per attempt. An axis is a
+row of `.joint_placement_families()` (slots / hold / fires / write); a new
+movable axis is a new row, never a new chained rescue. The one fire predicate is
+`.nl_axis_placement_fires()`. A declared point mass (the copy scale's zero
+level on its log axis) is a model, not an endpoint: it neither rails nor fires.
+A placement refit is handed the mode it was laid from
+(`tulpa.nl_outer_mode`) and reuses it unless the placed grid rails
+(`outer_mode_carried`); the var-of-means consistency pass lays a collapsed
+axis's points at that mode (`.hyper_propose_at_mode()`) before bisecting.
+
+The cheap-pass screen is ON by default for the joint and registry doors
+(`.NL_SCREEN$prune`, per door; the SPDE fitter stays opt-in because its CCD
+mode-find reads through the screened entry). The driver bounds the mass the
+dropped cells may carry, lifting each by the worst screening error measured on
+a kept cell, and repairs past `CHEAP_SCREEN_GATE_MASS` (mirrors
+`.NL_SCREEN$gate_mass`) by solving the dropped cells that carry the bound. The
+R gate reads the same bound. Do not reintroduce a gate on the screen's argmax:
+on a placed grid neighbouring cells are within a few nats, and the ranking says
+nothing about the dropped mass (gcol33/tulpa#925).
+
 ## Restricted spatial regression is a MODIFIER, and it changes the estimand
 
 `spatial_rsr()` flags `$rsr` on a field's own spec; the field keeps its `$type`

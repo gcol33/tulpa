@@ -330,37 +330,35 @@ settings or grid) errors rather than resuming onto a stale result. See
 \item \code{progress}, \code{progress.every}, \code{progress.file}, \code{progress.throttle} --
 the outer-grid progress reporter: whether to print, how often (in
 cells), where to, and the minimum seconds between lines.
-\item \code{prune} (\code{FALSE}), \code{prune_tol} (\code{1e-3}), \code{screen_iters}
-(\code{.NL_SCREEN$iters}, 2 -- the doc said 5 while the engine read 2, which
-is what gcol33/tulpa#640 measured the depth down to) --
-opt-in cheap-pass screening of the outer grid. When \code{prune = TRUE}, the
-driver first sweeps the lattice running a \code{screen_iters}-step inner
-Newton per cell, each warm-started from the previous screened cell's
-quasi-mode, computes a screening Laplace log-marginal, softmax-normalises
-it, and skips the full inner Newton on every cell whose screened weight
-is below \code{prune_tol}. The neighbour warm-start keeps each cheap mode near
-its cell's own mode, so the cheap ranking tracks the full-solve ranking
-even where the latent mode moves across the grid. Pruned cells get
+\item \code{prune} (\code{TRUE}), \code{prune_tol} (\code{1e-3}), \code{screen_iters}
+(\code{.NL_SCREEN$iters}, 2 -- the depth gcol33/tulpa#640 measured the screen
+down to) -- cheap-pass screening of the outer grid. The driver first
+sweeps the lattice running a \code{screen_iters}-step inner Newton per cell,
+each warm-started from the previous screened cell's quasi-mode, computes
+a screening Laplace log-marginal, softmax-normalises it, and skips the
+full inner Newton on every cell whose screened weight is below
+\code{prune_tol}. The neighbour warm-start keeps each cheap mode near its
+cell's own mode, so the cheap ranking tracks the full-solve ranking even
+where the latent mode moves across the grid. Pruned cells get
 \code{log_marginal = -Inf}, \code{n_iter = 0} and inherit the pilot mode; the pilot
 cell is never pruned, and at least \code{prune_min_keep} cells (5) are solved
 in full whatever the tolerance says -- the highest-ranked dropped cells
 are restored up to that floor, because the outer grid placement pass
 reads a finite-difference curvature off the cells that were SOLVED and a
-kept set of one carries none. A safety gate falls back to the full grid
-(with a warning) whenever the cheap-screen argmax disagrees with the
-full-solve argmax, or the kept posterior collapses onto a cell the screen
-mis-estimated by more than the margin it discarded cells by. The gate
-bounds a MIS-RANKING, not the whole error: it compares the screen against
-the cells that were solved, so a cell it discarded and never solved is
-outside what it can see. The default \code{prune = FALSE} is the setting under
-which no such question arises.
+kept set of one carries none. After the full pass the posterior mass the
+dropped cells may carry is bounded by lifting each by the worst screening
+error measured on a kept cell (\code{prune_dropped_mass_bound}); past 1\% the
+driver solves the dropped cells that contribute most to it until it is
+under 1\% (\code{prune_n_repaired}), and a safety gate falls back to the full
+grid (with a warning) if the bound still fails. The bound assumes a
+dropped cell is screened no worse than the worst kept one. On by default
+(gcol33/tulpa#925); \code{FALSE} solves every cell.
 \code{prune_tol} must be a finite numeric in \verb{[0, 1)} and \code{screen_iters} a
-single integer \verb{>= 1}; both are validated whatever \code{prune} says. Pruning
-is OPT-IN: the default \code{FALSE} solves every cell, which is correct
-whatever the grid looks like. \code{prune} / \code{prune_tol} reach both the
-single-block and the multi-block dispatch; the screening DEPTH is
-declared by the single-block kernels only, so a multi-block prior refuses
-a pinned \code{screen_iters} rather than accepting it and ignoring it.
+single integer \verb{>= 1}; both are validated whatever \code{prune} says.
+\code{prune} / \code{prune_tol} reach both the single-block and the multi-block
+dispatch; the screening DEPTH is declared by the single-block kernels
+only, so a multi-block prior refuses a pinned \code{screen_iters} rather than
+accepting it and ignoring it.
 \item \code{prune_log_gap} (unset) -- the screening cut stated in nats instead of as
 a normalised weight: keep every cell within this many nats of the best
 screened cell. \code{prune_tol} is a weight, so what it cuts at is the gap
@@ -411,7 +409,7 @@ dropped for a non-finite third derivative (see \code{control$diagnose_skew}).
 \code{grid}, \code{postproc}, \code{diagnostics}); the \code{grid} phase is the inner
 Laplace pass that scales with grid size. Surfaced one-line in \code{print}.
 \item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned}, \code{prune_tol}:
-present only when \code{control$prune = TRUE} and the safety gate did not
+present when the grid was screened and the safety gate did not
 trip -- the cheap-screen log-marginal per cell (the truncated solve's
 value plus half its Newton decrement, the second-order estimate of the
 converged value the cells are ranked by; the decrement itself is
@@ -423,6 +421,10 @@ on -- how many nats below the best screened cell the tolerance cut at,
 how many nats the screened surface spans, the kept-cell floor applied,
 and how many cells that floor put back. A cut that is a sliver of the
 spread is a tolerance with no resolution on this grid.
+\item \code{prune_dropped_mass_bound}, \code{prune_n_repaired}, \code{prune_gate_mass}: the
+posterior mass the dropped cells may carry, with each lifted by the worst
+screening error measured on a kept cell; how many dropped cells the
+driver solved in full to bring that under the gate; and the gate.
 \item \code{prune_fallback_triggered}, \code{prune_fallback_reason}: present only when
 the gate did trip; the rest of the fit is then the full-grid result and
 the reason string records which check fired.

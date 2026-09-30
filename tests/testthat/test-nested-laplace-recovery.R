@@ -165,7 +165,9 @@ recov_fit_joint_ccd <- function(d, sg, family, cfg) {
 # here: four transformable latent axes, a tensor grid (`integration = "grid"`),
 # no phi grid, `store_Q` off. `local_ccd` is the ONLY setting that differs
 # between the two fits, so a difference in what they report is a difference the
-# refinement made (gcol33/tulpa#320).
+# refinement made (gcol33/tulpa#320). The refinement reads its stencil off every
+# base cell, so asking for it turns the default screen off; the base fit solves
+# every cell too, or the screen would be a second difference.
 #
 # `levels` selects the base-grid resolution off `sg`: four levels by default,
 # and `sg` itself at seven. `phi` is the arm's residual scale, which the joint
@@ -187,7 +189,8 @@ recov_fit_joint_coarse <- function(d, sg, family, cfg, local_ccd = NULL,
     hyperprior = hyperprior,
     control = c(list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
                      diagnose_k = diagnose_k, integration = "grid",
-                     local_ccd = local_ccd, skew_correct = TRUE),
+                     local_ccd = local_ccd, skew_correct = TRUE,
+                     prune = FALSE),
                 if (is.null(within_cell)) list() else
                   list(within_cell = within_cell))))
 }

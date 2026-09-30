@@ -263,7 +263,7 @@ test_that("a coupled occupancy fit recovers both intercepts and stays non-separa
   # set accordingly; the detection intercept is sharper.
   expect_lt(abs(md[1L] - b_occ), 0.6)
   expect_lt(abs(md[2L] - b_det), 0.35)
-  expect_true(all(is.finite(fit$log_marginal)))
+  expect_cells_solved(fit)
   expect_true(fit$theta_mean[[1L]] > 0)
 
   # The cross-arm curvature at the FITTED mode, not at an arbitrary eta: the

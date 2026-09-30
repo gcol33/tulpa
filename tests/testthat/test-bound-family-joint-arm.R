@@ -39,7 +39,7 @@ test_that("a truncated_gaussian arm carrying its ceiling fits", {
   set.seed(3L)
   y <- trunc_y(24L)
   fit <- bound_arm_fit(list(trunc_upper = rep(0, 24L)), "truncated_gaussian", y)
-  expect_true(all(is.finite(fit$log_marginal)))
+  expect_cells_solved(fit)
   expect_true(all(is.finite(fit$beta_mean)))
 })
 
@@ -51,7 +51,7 @@ test_that("an interval_gaussian arm carrying its bounds fits", {
   hi <- rep(c(-1, 0, Inf), length.out = 24L)
   fit <- bound_arm_fit(list(lower = lo, upper = hi), "interval_gaussian",
                        rep(0, 24L))
-  expect_true(all(is.finite(fit$log_marginal)))
+  expect_cells_solved(fit)
   expect_true(all(is.finite(fit$beta_mean)))
 })
 

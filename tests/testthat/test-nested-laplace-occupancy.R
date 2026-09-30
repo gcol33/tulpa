@@ -104,7 +104,7 @@ test_that("occupancy fit exposes calibrated fitted_eta / fitted_eta_var", {
   expect_true(all(is.finite(f$fitted_eta)))
   expect_true(all(is.finite(f$fitted_eta_var)))
   expect_true(all(f$fitted_eta_var >= 0))
-  expect_true(all(is.finite(f$log_marginal)))
+  expect_cells_solved(f)
 })
 
 test_that("occupancy with det_prob == 1 reduces to a logit Bernoulli", {

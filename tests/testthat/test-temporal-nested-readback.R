@@ -68,10 +68,13 @@ test_that("nested temporal() intervals carry the within-cell variance", {
   ft <- tulpa(y ~ x, data = d, phi = 0.09, mode = "nested_laplace",
               temporal = temporal_ar1("time"), control = list(n_threads = 1))
   tp <- temporal(ft, summary = TRUE)
-  # The summary is the exact mixture of the per-cell Gaussians.
+  # The summary is the exact mixture of the per-cell Gaussians, over the cells
+  # that carry weight: a cell the screen dropped holds no field variance.
   cols <- tulpa:::.nl_temporal_field_cols(ft)
-  w <- ft$weights / sum(ft$weights)
-  mu <- ft$modes[, cols]; v <- ft$grid_field_var
+  keep <- ft$weights > 0
+  w <- ft$weights[keep] / sum(ft$weights)
+  mu <- ft$modes[keep, cols, drop = FALSE]
+  v <- ft$grid_field_var[keep, , drop = FALSE]
   m <- colSums(w * mu)
   expect_equal(tp$mean, m, tolerance = 1e-10)
   expect_equal(tp$sd, sqrt(colSums(w * (v + mu^2)) - m^2), tolerance = 1e-10)

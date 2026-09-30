@@ -113,7 +113,7 @@ test_that("field_coef = 0 on arm 2 matches a no-field independent fit", {
         prior = prior
     )
     expect_s3_class(fit_joint, "tulpa_nested_laplace_joint")
-    expect_true(all(is.finite(fit_joint$log_marginal)))
+    expect_cells_solved(fit_joint)
 
     # Reference: independent single-arm OLS for the positive arm (no
     # field). With field_coef = 0 the positive arm's eta is exactly
@@ -265,7 +265,7 @@ test_that("3-arm (field_coef = 1, 0, 0.5) runs and recovers betas", {
 
     fit <- tulpa_nested_laplace_joint(responses = responses, prior = prior)
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
 
     layout <- fit$arm_layout
     slope1 <- .fc_weighted_mode_mean(fit, layout$beta_start[1] + 2L)

@@ -150,11 +150,12 @@ test_that("parallel per-tile cheap screen is rank-faithful (gcol33/tulpa#68)", {
               label = "parallel vs serial screen theta_mean max-abs-diff")
 })
 
-test_that("safety gate warns and falls back on argmax disagreement", {
+test_that("safety gate falls back when the screen dropped its own top cell", {
     skip_on_cran()
-    # Construct a pruned-result shape whose cheap-screen argmax disagrees with
-    # the full-solve argmax, and a resolve_full thunk standing in for the
-    # full-grid re-solve. The gate must warn and return the full-grid result.
+    # Construct a pruned-result shape whose cheap-screen argmax was dropped, and
+    # a resolve_full thunk standing in for the full-grid re-solve. The dropped
+    # cell out-ranks everything kept, so the mass it may carry is most of the
+    # posterior: the gate must warn and return the full-grid result.
     res_pruned <- list(
         log_marginal = c(-10, -Inf, -5, -Inf),   # full argmax = cell 3 (kept)
         prune_mask = c(FALSE, TRUE, FALSE, TRUE),
@@ -174,14 +175,15 @@ test_that("safety gate warns and falls back on argmax disagreement", {
                                  resolve_full = function() full_sentinel))
     expect_true(isTRUE(out$ITS_THE_FULL))
     expect_true(isTRUE(out$prune_fallback_triggered))
-    expect_match(out$prune_fallback_reason, "argmax")
+    expect_match(out$prune_fallback_reason, "posterior mass")
+    expect_gt(out$prune_dropped_mass_bound, 1)
 })
 
-test_that("safety gate warns and falls back on gap-collapse", {
+test_that("safety gate falls back when the kept cell was screened far too low", {
     skip_on_cran()
     # Posterior collapses onto one kept cell whose cheap-vs-full gap is huge:
-    # argmax agrees, but the screen badly mis-estimated the cell the whole
-    # posterior sits on, so the prune is not trustworthy.
+    # the screen under-read the cell the whole posterior sits on by 500 nats, so
+    # a dropped cell may have been under-read by as much.
     res_pruned <- list(
         # Spike on cell 1 (ESS ~ 1); cells 2..4 pruned.
         log_marginal = c(0, -Inf, -Inf, -Inf),
@@ -204,7 +206,34 @@ test_that("safety gate warns and falls back on gap-collapse", {
                                  resolve_full = function() full_sentinel))
     expect_true(isTRUE(out$ITS_THE_FULL))
     expect_true(isTRUE(out$prune_fallback_triggered))
-    expect_match(out$prune_fallback_reason, "gap|collapse")
+    expect_match(out$prune_fallback_reason, "posterior mass")
+})
+
+test_that("a re-ordering among near-equal kept cells is not a fallback", {
+    skip_on_cran()
+    # A placed grid's neighbouring cells sit within a nat of each other, so the
+    # screen may put a different one first than the full solve does. Here it
+    # under-reads cell 2 by 0.6 nats and ranks cell 1 first; the cells it
+    # dropped sit 40 nats down, far past anything a 0.6-nat error could lift.
+    res_pruned <- list(
+        log_marginal = c(-1.0, -0.8, -1.5, -Inf, -Inf),
+        prune_mask = c(FALSE, FALSE, FALSE, TRUE, TRUE),
+        prune_cheap_log_marginal = c(-1.0, -1.4, -1.5, -40, -42),
+        prune_n_pruned = 2L
+    )
+    out <- expect_warning(
+        .joint_prune_safety_gate(res_pruned,
+                                 resolve_full = function()
+                                     stop("must not re-solve")),
+        regexp = NA)
+    expect_null(out$prune_fallback_triggered)
+    expect_lt(out$prune_dropped_mass_bound, 1e-15)
+    # The bound lifts every dropped cell by the worst error measured on a kept
+    # one: 0.6 nats here.
+    top <- -0.8
+    expect_equal(out$prune_dropped_mass_bound,
+                 sum(exp(c(-40, -42) + 0.6 - top)) /
+                     sum(exp(c(-1.0, -0.8, -1.5) - top)))
 })
 
 test_that("safety gate is a no-op when the ranking is trustworthy", {

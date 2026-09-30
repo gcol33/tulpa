@@ -25,7 +25,7 @@ test_that("BYM2 nested Laplace runs with 2D grid", {
   )
 
   expect_equal(result$n_grid, 9L)
-  expect_true(all(is.finite(result$log_marginal)))
+  expect_cells_solved(result)
   expect_true(all(result$n_iter > 0))
 
   # Log-marginals should vary
@@ -55,7 +55,7 @@ test_that("BYM2 nested Laplace warm-start works", {
     max_iter = 50L, tol = 1e-6, n_threads = 1L
   )
 
-  expect_true(all(is.finite(result$log_marginal)))
+  expect_cells_solved(result)
   # Warm-start should help later points converge faster
   expect_true(any(result$n_iter[2:5] <= result$n_iter[1]))
 })

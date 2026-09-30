@@ -117,9 +117,12 @@ test_that("joint multi-block (1 x ICAR copy) matches joint ICAR cell-by-cell", {
     # compose the same operations (per-arm scatter, ICAR prior at tau=1,
     # arm_scale = sigma/(alpha*sigma), no centering on theta) in the same
     # order, so the cell-by-cell difference should be at the level of
-    # accumulated rounding, well under 1e-10.
-    expect_lt(max(abs(fit_legacy$log_marginal - fit_multi$log_marginal)),
-              1e-10)
+    # accumulated rounding, well under 1e-10. The screen reads the same cheap
+    # pass on both, so both drop the same cells.
+    expect_identical(cells_dropped(fit_legacy), cells_dropped(fit_multi))
+    kept <- !cells_dropped(fit_legacy)
+    expect_lt(max(abs(fit_legacy$log_marginal[kept] -
+                      fit_multi$log_marginal[kept])), 1e-10)
 
     # Both fits should agree on the joint posterior weights.
     expect_lt(max(abs(fit_legacy$weights - fit_multi$weights)), 1e-10)
@@ -253,7 +256,7 @@ test_that("joint multi-block (BYM2 copy + AR1 + IID) runs end-to-end", {
     )
 
     expect_s3_class(fit, "tulpa_nested_laplace_joint_multi")
-    expect_true(all(is.finite(fit$log_marginal)))
+    expect_cells_solved(fit)
     expect_length(fit$block_moments, 3L)
 
     # Each block reports the expected axis names (after stripping the

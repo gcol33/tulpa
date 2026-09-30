@@ -317,29 +317,35 @@
 #'     single-tier path when no copy block / single tile / `n_threads_outer
 #'     <= 1L`. `FALSE` recovers the pre-tiling behaviour (e.g. regression
 #'     testing).
-#'   * `prune` (`FALSE`), `prune_tol` (`1e-3`) -- opt-in cheap-pass screening.
-#'     When `prune = TRUE`, the driver sweeps the outer lattice running a short
-#'     inner Newton per cell, each warm-started from the previous screened
-#'     cell's quasi-mode (lattice-adjacent), computes a screening Laplace
-#'     log-marginal, softmax-normalises, and skips the full inner Newton on
-#'     cells whose normalised weight is `< prune_tol`. The neighbour-warm-start
-#'     sweep keeps every cheap mode near its cell's true mode, so the cheap
-#'     ranking is faithful to the full-solve ranking even when the inner latent
-#'     mode moves substantially across the grid. Pruned cells get
-#'     `log_marginal = -Inf`, `n_iter = 0`, and inherit the pilot mode; the
-#'     pilot cell is never pruned, and at least `prune_min_keep` cells (5) are
-#'     solved in full whatever the tolerance says -- the highest-ranked dropped
-#'     cells are restored up to that floor, because the outer grid placement
-#'     pass reads a finite-difference curvature off the cells that were SOLVED
-#'     and a kept set of one carries none. Two fallbacks to the full grid, each
-#'     with a warning: the cheap-pass safety gate (the cheap-screen argmax
-#'     disagrees with the full-solve argmax, or the kept posterior collapses
-#'     onto a cell the screen mis-estimated by more than the margin it discarded
-#'     cells by), and a screened fit whose grid placement declined for want of
-#'     curvature. Neither bounds the error from a cell that was discarded and
-#'     never solved: the gate compares the screen against the cells it kept.
-#'     Stacks with `n_threads_outer`. `prune_tol` must be in `[0, 1)`. Default
-#'     `FALSE` (the full grid is correct).
+#'   * `prune` (`TRUE`), `prune_tol` (`1e-3`) -- cheap-pass screening. The
+#'     driver sweeps the outer lattice running a short inner Newton per cell,
+#'     each warm-started from the previous screened cell's quasi-mode
+#'     (lattice-adjacent), computes a screening Laplace log-marginal,
+#'     softmax-normalises, and skips the full inner Newton on cells whose
+#'     normalised weight is `< prune_tol`. The neighbour-warm-start sweep keeps
+#'     every cheap mode near its cell's true mode, so the cheap ranking is
+#'     faithful to the full-solve ranking even when the inner latent mode moves
+#'     substantially across the grid. Pruned cells get `log_marginal = -Inf`,
+#'     `n_iter = 0`, and inherit the pilot mode; the pilot cell is never
+#'     pruned, and at least `prune_min_keep` cells (5) are solved in full
+#'     whatever the tolerance says -- the highest-ranked dropped cells are
+#'     restored up to that floor, because the outer grid placement pass reads a
+#'     finite-difference curvature off the cells that were SOLVED and a kept set
+#'     of one carries none. After the full pass the kept cells say how far off
+#'     the screen was, and the posterior mass the dropped cells may carry is
+#'     bounded by lifting each by the worst error measured on a kept cell
+#'     (`prune_dropped_mass_bound`). Past 1% the driver solves the dropped cells
+#'     that contribute most to the bound until it is under 1%
+#'     (`prune_n_repaired`), so what the fit returns holds that bound. Two
+#'     fallbacks to the full grid remain, each with a warning: a bound the
+#'     repair could not bring under 1%, and a screened fit whose grid placement
+#'     declined for want of curvature. On by default: a grid placed around its
+#'     mode crosses axes the posterior does not fill (gcol33/tulpa#925), and
+#'     solving every one of those cells is most of a large fit's cost. `FALSE`
+#'     solves every cell, and is the default when the fit asks for local CCD
+#'     refinement (`local_ccd`, or `k_refine = "ccd"`), whose stencil reads each
+#'     refined cell's axis neighbours. Stacks with `n_threads_outer`.
+#'     `prune_tol` must be in `[0, 1)`.
 #'   * `prune_log_gap` (unset) -- the screening cut in nats: keep every cell
 #'     within this many nats of the best screened cell. `prune_tol` is a
 #'     normalised weight, so what it cuts at is the gap
@@ -751,8 +757,13 @@
 #'     dispersion axis (`phi_grid`) is the exception and fires on its own
 #'     sizing: it is crossed onto the tensor independently of the field's
 #'     geometry, so whether the field's grid collapsed says nothing about
-#'     whether the dispersion axis brackets its own posterior. `FALSE` holds
-#'     that axis too.
+#'     whether the dispersion axis brackets its own posterior. The copy scale
+#'     `alpha` fires the same way when its grid is the engine's own or a
+#'     wrapper's `auto_grid()` default: its continuum is laid at the mode and
+#'     its "no coupling" atom at 0 kept, and an axis whose posterior sits on
+#'     that atom is left where it is. Every axis that fires is laid from the ONE
+#'     outer mode the placement mode-find reached, and the grid is refit once
+#'     with all of them (gcol33/tulpa#925). `FALSE` holds these axes too.
 #'   * `recenter_pilot` (`FALSE`) -- detect the placement above on a THINNED
 #'     grid rather than on the full one. Placement reads two things, the argmax
 #'     cell and an FD curvature stencil at it, and reads both off
@@ -1148,6 +1159,13 @@
 #'      many nats the screened surface spans, the kept-cell floor applied, and
 #'      how many cells that floor put back. A cut that is a sliver of the spread
 #'      is a tolerance with no resolution on this grid.
+#'   * `prune_dropped_mass_bound`, `prune_n_repaired`, `prune_gate_mass` -- the
+#'      posterior mass the dropped cells may carry, with each lifted by the
+#'      worst screening error measured on a kept cell; how many dropped cells
+#'      the driver solved in full to bring that under the gate; and the gate.
+#'   * `outer_mode_carried` -- `TRUE` on a placement refit that read the outer
+#'      mode it was laid from rather than finding it again, which it does unless
+#'      the placed grid rails.
 #'   * `prune_fallback_triggered`, `prune_fallback_reason` -- present only when
 #'      a fallback to the full grid fired. The returned fit is the full-grid
 #'      (unpruned) result; the reason string records whether the cheap-pass
@@ -1288,21 +1306,29 @@ tulpa_nested_laplace_joint <- function(responses,
     outer_threads <- .nl_outer_threads(control$n_threads_outer %||% 1L,
                                        fn = "tulpa_nested_laplace_joint()")
 
-    # The dispersion axes `.joint_phi_grid_rescue()` is allowed to move, named
-    # as the grid names them. Handed to every fit so the placement stencil knows
-    # to compute a curvature for them on a grid that concentrated without
-    # railing; empty when every one is held -- pinned by the caller or declared
-    # as-written with `auto_grid(place = FALSE)` -- which is the gate that keeps
-    # such a fit paying nothing for a pass that could not run.
-    phi_movable <- if (!auto_recenter) character(0) else
-        paste0("phi_", intersect(names(which(phi_prov$auto)),
-                                 names(phi_grid) %||% character(0)))
+    # The call state the placement pass reads and rewrites
+    # (R/joint_placement_pass.R): every argument a placed axis lives on, and the
+    # resolved copy spec a copy block's axes are found through.
+    state <- list(prior = prior, prior_sigma = prior_sigma, phi_grid = phi_grid,
+                  responses = responses, copy = copy,
+                  cp = tryCatch(.resolve_copy_multi(copy, responses, prior),
+                                error = function(e) NULL))
+    families <- .joint_placement_families(auto = prov$auto,
+                                          phi_auto = phi_prov$auto)
+
+    # The axes beyond a field SD the placement pass may move -- the per-arm
+    # dispersions and the copy scale -- named as the grid names them. Handed to
+    # every fit so the mode-find runs on a grid that concentrated without
+    # railing; empty when every one is held, which is the gate that keeps such a
+    # fit paying nothing for a pass that could not run.
+    placement_axes <- if (!auto_recenter) character(0) else
+        .joint_movable_extra_axes(state, phi_prov$auto)
 
     # Grid-cell checkpoint. `resume = FALSE` starts THIS FIT over, so any prior
     # file is removed once, here, before the first solve. An outer-grid
-    # placement rescue refits, so the per-solve `.tulpa_nl_joint_once()` runs
-    # several times within one fit; taking the removal there deleted the cells
-    # an earlier solve of the same fit had already written, and a later resume
+    # placement refits, so the per-solve `.tulpa_nl_joint_once()` runs several
+    # times within one fit; taking the removal there deleted the cells an
+    # earlier solve of the same fit had already written, and a later resume
     # then re-appended the whole pre-placement grid on top of the survivors.
     .ckpt_fit <- .nl_checkpoint_args(control)
     if (nzchar(.ckpt_fit$path) && !isTRUE(.ckpt_fit$resume) &&
@@ -1317,26 +1343,28 @@ tulpa_nested_laplace_joint <- function(responses,
         attach_q(.tulpa_nl_joint_once(responses_i, prior_i, copy_i, phi_grid_i,
                                       prior_sigma_i, prior_alpha, prior_phi,
                                       cell_coupling, ctrl_i,
-                                      placement_axes = phi_movable,
+                                      placement_axes = placement_axes,
                                       hyperprior = hyperprior,
                                       phi_auto = phi_prov$auto))
+    fit_state <- function(st, ctrl_i = ctrl)
+        fit_once(st$prior, st$prior_sigma, ctrl_i = ctrl_i,
+                 phi_grid_i = st$phi_grid, copy_i = st$copy,
+                 responses_i = st$responses)
 
     # Placement pilot (gcol33/tulpa#636). Placement reads an argmax cell and an
     # FD curvature stencil, and reads them off `log_marginal` -- not off the
     # integration the detecting pass paid for, every cell of which is discarded
     # the moment a placement fires. With the pilot on, the DETECTING grid is a
     # thinned read of the same spans and the full grid is solved once, at the
-    # placed axes. The rescues below are untouched by this: each detects on the
-    # fit it is handed and writes onto the PRIOR it is handed, so passing the
-    # pilot fit alongside the full prior places the full grid. What the pilot
+    # placed axes. The placement pass is untouched by this: it detects on the
+    # fit it is handed and writes onto the STATE it is handed, so passing the
+    # pilot fit alongside the full state places the full grid. What the pilot
     # obliges this caller to add is the other half -- a pilot grid is too coarse
     # to integrate, so a placement that declines is followed by the full fit the
     # pilot stood in for (`pilot_fallback` below).
-    cp_pilot <- tryCatch(.resolve_copy_multi(copy, responses, prior),
-                         error = function(e) NULL)
     pilot <- .nl_recenter_pilot(
         prior, phi_grid, copy, responses,
-        copy_blocks = as.integer(cp_pilot$copy_blocks_zero %||% integer(0)) + 1L,
+        copy_blocks = as.integer(state$cp$copy_blocks_zero %||% integer(0)) + 1L,
         n = .nl_pilot_n(control), enabled = auto_recenter)
 
     res <- if (isTRUE(pilot$active)) {
@@ -1357,54 +1385,37 @@ tulpa_nested_laplace_joint <- function(responses,
     res$k_quality_rounds <- 0L
     res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
 
-    # Auto-recenter a collapsed sigma axis before the
-    # k_quality escalation below: that loop assumes the grid's BOUNDS are
-    # right and only needs densifying / refining, so a mis-centred axis
-    # (mode beyond the fixed ceiling) must be fixed first, not densified.
-    # A no-op (zero extra fit) unless the detecting fit actually railed on
-    # sigma; `prior` / `prior_sigma` are reassigned to the recentered
-    # values so escalation, if it still runs, continues from there.
+    # Place the grid before the k_quality escalation below: that loop assumes
+    # the grid's BOUNDS are right and only needs densifying / refining, so a
+    # mis-centred axis (mode beyond the fixed ceiling) must be fixed first, not
+    # densified. A no-op (zero extra fit) unless an axis fires; the call state
+    # is reassigned to the placed axes so escalation, if it still runs,
+    # continues from there.
     #
-    # The two rescues are mutually exclusive -- each declines immediately on the
-    # other's prior shape, the single-block one on a block list and the
-    # multi-block one on anything with no copy -- so chaining them
-    # unconditionally is safe, and the pair is one step: DETECT on `res_i`,
-    # place onto `prior_i`, refit. Detecting fit and placed prior are separate
-    # arguments, which is what lets a pilot fit stand in for the first without
-    # either rescue knowing a pilot exists.
-    #
-    # The third moves a per-arm dispersion axis, which is orthogonal to both:
-    # it reads `phi_grid` rather than the prior, so a fit can have its field SD
-    # placed by one of the pair AND its dispersion placed here, and the two
-    # records merge rather than overwrite (`.nl_carry_recenter_stamps()`).
-    run_rescues <- function(res_i, prior_i, prior_sigma_i, phi_i = phi_grid,
-                            ctrl_i = ctrl) {
-        r1 <- .joint_sigma_grid_rescue(
-            res_i, prior_i, prior_sigma_i,
-            refit = function(p, ps) fit_once(p, ps, ctrl_i = ctrl_i,
-                                             phi_grid_i = phi_i),
-            auto = prov$auto, enabled = auto_recenter)
-        cp_i <- tryCatch(.resolve_copy_multi(copy, responses, r1$prior),
-                         error = function(e) NULL)
-        r2 <- .joint_multi_sigma_grid_rescue(
-            r1$res, r1$prior, copy, cp_i, r1$prior_sigma,
-            refit = function(p, ps) fit_once(p, ps, ctrl_i = ctrl_i,
-                                             phi_grid_i = phi_i),
-            auto = prov$auto, enabled = auto_recenter)
-        r3 <- .joint_phi_grid_rescue(
-            r2$res, phi_i,
-            refit = function(pg) fit_once(r2$prior, r2$prior_sigma,
-                                          ctrl_i = ctrl_i, phi_grid_i = pg),
-            auto = phi_prov$auto, enabled = auto_recenter)
-        list(res = r3$res, prior = r2$prior, prior_sigma = r2$prior_sigma,
-             phi_grid = r3$phi_grid)
+    # A refit is handed the outer mode the placement was read off, so the
+    # var-of-means consistency pass inside it lays an axis still collapsed onto
+    # one node at that mode instead of bisecting towards it
+    # (`.hyper_propose_at_mode()`).
+    place <- function(res_i, st_i, ctrl_i = ctrl)
+        .joint_place_axes(
+            res_i, st_i,
+            refit = function(st, from) {
+                op <- options(tulpa.nl_outer_mode = .nl_fit_outer_mode(from))
+                on.exit(options(op), add = TRUE)
+                fit_state(st, ctrl_i)
+            },
+            families = families, enabled = auto_recenter)
+    adopt <- function(placed) {
+        state       <<- placed$st
+        prior       <<- state$prior
+        prior_sigma <<- state$prior_sigma
+        phi_grid    <<- state$phi_grid
+        responses   <<- state$responses
+        copy        <<- state$copy
+        placed$res
     }
 
-    rescue      <- run_rescues(res, prior, prior_sigma)
-    res         <- rescue$res
-    prior       <- rescue$prior
-    prior_sigma <- rescue$prior_sigma
-    phi_grid    <- rescue$phi_grid
+    res <- adopt(place(res, state))
 
     # The pilot's other half. A placement that fired has already produced a full
     # fit at the placed axes; one that DECLINED has left `res` on the pilot's own
@@ -1417,14 +1428,10 @@ tulpa_nested_laplace_joint <- function(responses,
     # nothing, and the fit is bit-identical to the un-piloted one.
     if (isTRUE(pilot$active)) {
         if (!identical(res$outer_grid_placement, "auto_recentered")) {
-            res         <- fit_once(prior, prior_sigma)
+            res <- fit_state(state)
             res$k_quality_rounds     <- 0L
             res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
-            rescue      <- run_rescues(res, prior, prior_sigma)
-            res         <- rescue$res
-            prior       <- rescue$prior
-            prior_sigma <- rescue$prior_sigma
-            phi_grid    <- rescue$phi_grid
+            res <- adopt(place(res, state))
             pilot_placed <- FALSE
         } else {
             pilot_placed <- TRUE
@@ -1445,14 +1452,10 @@ tulpa_nested_laplace_joint <- function(responses,
     if (.nl_prune_placement_lost(res)) {
         ctrl_full <- utils::modifyList(ctrl, list(prune = FALSE))
         res <- .nl_prune_placement_fallback(res, function() {
-            r <- fit_once(prior, prior_sigma, ctrl_i = ctrl_full)
+            r <- fit_state(state, ctrl_full)
             r$k_quality_rounds     <- 0L
             r$outer_grid_placement <- r$outer_grid_placement %||% "fixed"
-            rr <- run_rescues(r, prior, prior_sigma, ctrl_i = ctrl_full)
-            prior       <<- rr$prior
-            prior_sigma <<- rr$prior_sigma
-            phi_grid    <<- rr$phi_grid
-            rr$res
+            adopt(place(r, state, ctrl_full))
         })
         ctrl <- ctrl_full
     }
@@ -1659,7 +1662,12 @@ tulpa_nested_laplace_joint <- function(responses,
         .tulpa_thread_grant(n_threads_outer, control$n_threads %||% 1L),
         control$n_threads_scatter)
     tile_warm                 <- control$tile_warm %||% TRUE
-    prune                     <- control$prune %||% FALSE
+    # Local CCD refinement reads a finite-difference stencil off each refined
+    # cell's axis neighbours on the solved grid, and a dropped neighbour carries
+    # no log-marginal to read, so a fit that asks for it solves every cell
+    # unless its caller asked for the screen outright.
+    prune                     <- control$prune %||%
+        (.nl_screen("prune")[["joint"]] && is.null(control$local_ccd))
     # `prune_log_gap` states the same screening cut in nats and replaces the
     # tolerance when set; the two together are refused rather than ranked.
     prune_tol                 <- .nl_prune_tol_from_control(
@@ -2237,7 +2245,12 @@ tulpa_nested_laplace_joint <- function(responses,
             refining_axis = refining_axis,
             specs         = specs,
             kernel_fn     = kernel_fn,
-            hp_fn         = hp_fn
+            hp_fn         = hp_fn,
+            # The outer mode a placement refit was laid from, carried in by the
+            # front door (`.joint_place_axes()`), which the pass lays a
+            # collapsed axis's points at.
+            axis_modes    = .nl_outer_mode_axes(
+                getOption("tulpa.nl_outer_mode"))
         )
         if (consistency$n_added > 0L) {
             theta_grid_M  <- consistency$theta_grid

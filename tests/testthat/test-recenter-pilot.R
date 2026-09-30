@@ -242,9 +242,12 @@ test_that("the pilot is a pre-screen: it never costs a placement the full grid w
         expect_gt(max(on$theta_grid[, "sigma"]), 3.0)
     }
     # Whatever each arm placed, the REPORTED grid is the full one: a pilot grid
-    # is a detector and is never integrated.
-    expect_identical(nrow(on$theta_grid), nrow(off$theta_grid))
-    expect_gt(nrow(on$theta_grid), on$outer_grid_pilot$cells)
+    # is a detector and is never integrated. The base tensor is what the two
+    # arms share; the consistency pass's slice cells are laid at each arm's own
+    # found mode, so their count is each fit's own.
+    base <- function(f) sum(f$refining_axis == "")
+    expect_identical(base(on), base(off))
+    expect_gt(base(on), on$outer_grid_pilot$cells)
 })
 
 test_that("a screened pilot detects off the screen and still places", {
@@ -266,7 +269,8 @@ test_that("a screened pilot detects off the screen and still places", {
         expect_gt(max(on$theta_grid[, "sigma"]), 3.0)
     }
     # The reported grid is the full one, solved in full.
-    expect_identical(nrow(on$theta_grid), nrow(off$theta_grid))
+    base <- function(f) sum(f$refining_axis == "")
+    expect_identical(base(on), base(off))
     expect_false(isTRUE(on$prune_screen_only))
     expect_true(all(is.finite(on$log_marginal[on$weights > 0])))
 })

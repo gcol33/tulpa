@@ -97,7 +97,7 @@ test_that("tgmrf_cpp() compiles, registers, and fits a periodic-AR1 sim", {
     prior = blk, family = "poisson",
     control = list(max_iter = 100L, tol = 1e-8)
   )
-  expect_true(all(is.finite(fit$log_marginal)))
+  expect_cells_solved(fit)
   # Posterior weight should sit in a sensible band around the truth. Single
   # seed -- not a strict recovery threshold (see test-tgmrf-recovery.R).
   expect_true(abs(fit$theta_mean[1] - log(sigma_true)) < 2.0)

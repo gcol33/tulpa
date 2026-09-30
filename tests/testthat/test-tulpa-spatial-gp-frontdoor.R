@@ -55,9 +55,7 @@ test_that("mode = nested_laplace integrates an NNGP field through tulpa()", {
   # Recovery: marginalize beta over the (sigma2, phi_gp) grid (grid modes
   # weighted by the integration weights), never a plug-in MAP. grid_modes[[k]]
   # holds the length-p fixed-effect block.
-  w  <- fit$weights
-  bm <- do.call(rbind, lapply(fit$grid_modes, function(m) m[1:2]))
-  beta_hat <- as.numeric(crossprod(w, bm))
+  beta_hat <- grid_mean_fixed(fit, 1:2)
 
   # The NNGP field carries no sum-to-zero constraint, so the intercept alone is
   # NOT identified: the field absorbs an arbitrary level and the intercept
@@ -69,7 +67,9 @@ test_that("mode = nested_laplace integrates an NNGP field through tulpa()", {
   # exactly, while the sum sits at mean +0.03 (sd 0.08, max 0.17). A band on the
   # intercept alone is therefore a seed lottery -- 0.5 fails on 4 of those 14 --
   # and the sum is the quantity worth a tight one.
-  field_level <- sum(w * rowMeans(fit$modes[, -(1:2), drop = FALSE]))
+  keep <- fit$weights > 0
+  field_level <- sum(fit$weights[keep] *
+                     rowMeans(fit$modes[keep, -(1:2), drop = FALSE]))
   expect_lt(abs((beta_hat[1] + field_level) - s$beta[1]), 0.25)  # identified level
   expect_lt(abs(beta_hat[2] - s$beta[2]), 0.3)                   # slope
 })
@@ -233,9 +233,7 @@ test_that("mode = nested_laplace integrates an HSGP field through tulpa()", {
 
   # Recovery: marginalize beta over the (sigma2, lengthscale) grid (grid modes
   # weighted by the integration weights), never a plug-in MAP.
-  w  <- fit$weights
-  bm <- do.call(rbind, lapply(fit$grid_modes, function(m) m[1:2]))
-  beta_hat <- as.numeric(crossprod(w, bm))
+  beta_hat <- grid_mean_fixed(fit, 1:2)
   # Like NNGP, the HSGP field has no sum-to-zero constraint, so the intercept
   # aliases the field's overall level -> wide band; the slope is clean.
   expect_lt(abs(beta_hat[1] - s$beta[1]), 0.6)   # intercept

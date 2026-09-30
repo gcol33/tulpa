@@ -224,7 +224,7 @@ test_that("multi-block (BYM2 + AR1 + IID) runs end-to-end and roughly recovers",
   d <- sim_one_seed(1001L)
   res <- fit_one_seed(d)
   expect_s3_class(res, "tulpa_nested_laplace")
-  expect_true(all(is.finite(res$log_marginal)))
+  expect_cells_solved(res)
   expect_length(res$block_moments, 3L)
   # Each block returns the expected axis names.
   expect_named(res$block_moments[[1]]$mean, c("sigma", "rho"))
