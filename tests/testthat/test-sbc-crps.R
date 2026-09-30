@@ -310,29 +310,32 @@ test_that("the nested fit reproduces the exact posterior of the SBC fixture", {
 #
 #                          raw ECDF              folded ECDF
 #   arm          quantity   ks       p            ks       p
-#   exact        beta1     0.0143   4.40e-01     0.0191   4.56e-01
-#   mixture      beta1     0.0143   4.40e-01     0.0191   4.56e-01
-#   collapsed    beta1     0.0199   1.94e-04     0.0339   2.50e-04
-#   wide         beta1     0.0724   6.34e-14     0.1358   7.51e-14
-#   narrow       beta1     0.0488   0            0.0870   0
-#   phi_crossed  beta1     0.0228   3.58e-02     0.0370   1.45e-02
-#   exact        beta2     0.0158   8.17e-01     0.0117   9.66e-01
-#   mixture      beta2     0.0158   8.16e-01     0.0117   9.66e-01
-#   collapsed    beta2     0.0159   8.08e-01     0.0118   9.64e-01
-#   phi_crossed  beta2     0.0907   0            0.1673   0
-#   mixture      sigma     0.0216   8.04e-01     0.0272   8.23e-02
-#   phi_crossed  sigma     0.0888   6.61e-14     0.0692   4.20e-13
-#   mixture      log_lik   0.0120   4.57e-01     0.0133   2.47e-01
-#   phi_crossed  log_lik   0.1731   7.88e-14     0.0922   0
+#   exact        beta1     0.0114   9.27e-01     0.0159   4.63e-01
+#   mixture      beta1     0.0114   9.27e-01     0.0159   4.63e-01
+#   collapsed    beta1     0.0293   5.64e-02     0.0480   1.06e-03
+#   wide         beta1     0.0793   0            0.1480   6.25e-14
+#   narrow       beta1     0.0471   0            0.0782   0
+#   phi_crossed  beta1     0.0201   2.28e-01     0.0231   4.68e-01
+#   exact        beta2     0.0140   8.81e-01     0.0173   4.08e-01
+#   mixture      beta2     0.0141   8.81e-01     0.0173   4.09e-01
+#   collapsed    beta2     0.0139   9.09e-01     0.0175   4.03e-01
+#   phi_crossed  beta2     0.0944   0            0.1767   0
+#   exact        sigma     0.0152   2.84e-01     0.0173   5.36e-01
+#   mixture      sigma     0.0109   8.18e-01     0.0131   4.24e-01
+#   phi_crossed  sigma     0.0932   7.64e-14     0.0648   4.99e-13
+#   mixture      log_lik   0.0122   3.99e-01     0.0178   4.81e-01
+#   phi_crossed  log_lik   0.1722   6.18e-14     0.0930   0
 #
 # THE ACCEPTANCE READING. The mixture read of the intercept is uniform and the
-# collapsed Gaussian of the SAME two moments is not, at p = 1.9e-4 raw and
-# 2.5e-4 folded, on seeds where a coverage indicator at two nominal levels moved
-# 0 or 1 trials of 200 (gcol33/tulpa#336). The slope separates neither read,
-# which is the same thing gcol33/tulpa#325 found by a different route: a
-# within-group contrast barely reads the outer grid, so there is no shape there
-# to discard. The full table and the CRPS half of the answer are in
-# dev_notes/issue335/RESULTS.md.
+# collapsed Gaussian of the SAME two moments is not: its folded ECDF leaves the
+# band at p = 1.1e-3, on seeds where a coverage indicator at two nominal levels
+# moved 0 or 1 trials of 200 (gcol33/tulpa#336). Its raw ECDF stays inside
+# (p = 0.056). Two reads of equal mean and variance differ in the tails on both
+# sides at once, a symmetric error, which is the one the folded rank is there to
+# catch. The slope separates neither read, which is the same thing
+# gcol33/tulpa#325 found by a different route: a within-group contrast barely
+# reads the outer grid, so there is no shape there to discard. The run behind
+# the table and the CRPS half of the answer are in dev_notes/issue923/.
 #
 # The gate below runs the first 300 of those seeds. It judges the reference arms
 # against a 99.9% band -- sixteen in-band assertions at 95% would fail
@@ -368,14 +371,14 @@ test_that("SBC and CRPS pass the reference reads and catch the broken ones", {
     }
   }
   # The engine's mixture read and the independently computed exact posterior are
-  # the same posterior to 7.3e-06 in the PIT, so nothing below is the solve.
+  # the same posterior to 9.4e-06 in the PIT, so nothing below is the solve.
   expect_lt(max(abs(u("exact", "beta1") - u("mixture", "beta1"))), 1e-4)
   expect_lt(max(abs(u("exact", "beta2") - u("mixture", "beta2"))), 1e-4)
 
   # The harness can fail. A posterior mis-scaled by 25% either way is a
   # symmetric dispersion error, so the FOLDED read is what has to catch it: the
-  # over-dispersed arm's raw ECDF at ks = 0.0716 on the slope sits inside the
-  # 99.9% band while its folded ECDF at 0.1166 is outside, which is the reason
+  # over-dispersed arm's raw ECDF at ks = 0.0720 on the slope sits inside the
+  # 99.9% band while its folded ECDF at 0.1023 is outside, which is the reason
   # the folded rank is in the harness at all.
   for (a in c("wide", "narrow")) {
     for (q in c("beta1", "beta2")) {
@@ -385,13 +388,13 @@ test_that("SBC and CRPS pass the reference reads and catch the broken ones", {
   }
   expect_false(sbc_ecdf_inside(sbc_fold(u("wide", "beta2")), wide_band))
 
-  # The gcol33/tulpa#332 crossing -- a fit at phi^2 where the door reads a
-  # residual SD -- shows on the slope, the hyperparameter and the joint
+  # The gcol33/tulpa#332 crossing -- a fit whose residual SD is the true
+  # residual variance -- shows on the slope, the hyperparameter and the joint
   # log-likelihood. Its INTERCEPT stays inside both bands, which is the
   # gcol33/tulpa#325 attribution again: the intercept's posterior is carried by
   # the RE-SD grid and barely reads the residual scale. A harness with only
   # per-coefficient marginals on the intercept would have missed this fit; the
-  # joint log-likelihood rank has ks = 0.202 on it.
+  # joint log-likelihood rank has ks = 0.196 on it.
   for (q in c("beta2", "sigma", "log_lik")) {
     expect_false(sbc_ecdf_inside(u("phi_crossed", q), band),
                  label = sprintf("phi_crossed / %s outside", q))
@@ -414,13 +417,16 @@ test_that("SBC and CRPS pass the reference reads and catch the broken ones", {
   expect_gt(b1$delta[b1$arm == "collapsed"], -1e-5)
   expect_gt(b2$delta[b2$arm == "collapsed"], -1e-5)
 
-  # And the same verdicts read off the front door's own report, at its own
-  # nominal level: the two reference arms inside the band on every quantity, the
-  # three known-bad controls outside on at least one of theirs.
+  # And the same verdicts read off the front door's own report: the two
+  # reference arms uniform on every quantity by the report's exact simultaneous
+  # p-value at the 99.9% level the assertions above use, for the same reason,
+  # and the three known-bad controls outside the report's own 95% band on at
+  # least one of theirs.
   rp <- fit_sbc$report
   ok <- rp[rp$arm %in% c("exact", "mixture"), ]
-  expect_true(all(ok$inside), label = "reference arms inside the 95% band")
-  expect_true(all(ok$inside_folded), label = "reference arms folded inside")
+  expect_true(all(ok$p_unif > 0.001), label = "reference arms at p > 0.001")
+  expect_true(all(ok$p_unif_folded > 0.001),
+              label = "reference arms folded at p > 0.001")
   for (a in c("wide", "narrow", "phi_crossed")) {
     bad <- rp[rp$arm == a, ]
     expect_true(any(!bad$inside | !bad$inside_folded),

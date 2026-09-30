@@ -218,10 +218,11 @@ sbc_loglik_rank <- function(d, mu, cov, w, phi = d$phi, n_ref = 200L,
 #   collapsed    the same two moments as one Gaussian (the pre-#336 read)
 #   wide         collapsed with its SD multiplied by `bad_factor`
 #   narrow       collapsed with its SD divided by `bad_factor`
-#   phi_crossed  a SECOND solve at sqrt(phi) where the door reads the residual
-#                VARIANCE -- the gcol33/tulpa#332 generator / inference
-#                convention crossing, restated on the door's own axis after
-#                657f179 moved it (gcol33/tulpa#661)
+#   phi_crossed  a SECOND solve whose residual SD is the true residual VARIANCE
+#                -- the gcol33/tulpa#332 generator / inference convention
+#                crossing, at the magnitude that issue measured (log SD error
+#                log(0.7) = -0.357 at these fixtures), handed to the door in
+#                whatever convention it currently reads
 # `wide`, `narrow` and `phi_crossed` are the known-bad controls: a calibration
 # harness that cannot fail is worthless, so a deliberately mis-scaled posterior
 # has to land outside the band.
@@ -252,9 +253,13 @@ sbc_arms_gaussian <- function(d, bad_factor = 1.25, n_ref = 200L,
     wide      = coll(bad_factor),
     narrow    = coll(1 / bad_factor))
   if (phi_crossed) {
-    # The broken control: hand the door the OTHER convention's number, which is
-    # the kernel's, which is what `.phi_to_kernel()` returns.
-    crossed <- .phi_to_kernel("gaussian", d$phi)
+    # The broken control: a fit whose residual SD is the residual variance.
+    # `.phi_to_registry()` turns that kernel SD into the door's own number, so
+    # the crossing keeps its size whichever convention the door reads. Handing
+    # the door the kernel's SD as its variance instead is the mirror crossing,
+    # and it carries half the log error (+0.179): at 300 seeds its sigma read
+    # is inside the band (gcol33/tulpa#923).
+    crossed <- .phi_to_registry("gaussian", sbc_resid_var(d$phi))
     arms$phi_crossed <- mk(sbc_engine_post(sbc_fit_nested(d, phi = crossed)),
                            phi = crossed)
   }
