@@ -290,24 +290,28 @@
 # converged Newton step's, measured on the posterior itself.
 #
 # How far the ladder runs is set by the box rule. A node's measure is the box
-# to the midpoints with its neighbours, so the outermost node before a gap owns
-# half of it, and the box rule reads a Gaussian to within its tails only on an
-# even spacing. Five points laid into the Calluna fit's 36-SD gap on its pinned
-# dispersion axis left the one at 2 SDs holding 62% of the axis's weight and
-# the mean 1.2 SDs above the mode. On each side the ladder therefore runs out
-# to the first step `K >= 2` whose reading into the gap beyond it,
-# `phi(K) (g - K) / 2` with `g` the next node, is under `at_mode_edge_mass`
-# (`.hyper_at_mode_reach()`): 4 and 5 SDs on that axis.
+# to the midpoints with its neighbours in its row, so the outermost node before
+# a gap owns half of it, and a read that spreads a node's mass over its box --
+# as the reported interval and SD do -- carries that mass across the gap. Five
+# points laid into the Calluna fit's 36-SD gap on its pinned dispersion axis
+# left the one at 2 SDs holding 62% of the axis's weight and the mean 1.2 SDs
+# above the mode; bounding the MASS each end node reads into its gap was not
+# enough either, since 0.7% of the posterior spread across a 100-SD box
+# quadrupled the reported SD. On each side the ladder therefore runs out to the
+# first step `K >= 2` whose reading into the gap beyond it adds at most
+# `at_mode_gap_var` to the axis's variance (`.hyper_at_mode_reach()`,
+# `.hyper_gap_read()`): 5 and 6 SDs on that axis.
 #
-# `mode` is `list(mode_u, sd_u, tag)`. Points leave out a declared point mass,
-# stay inside the axis's bounds and, on an axis the caller stated
-# (`extend = FALSE`), inside its declared span. A point with a node of the axis
-# within half an SD of it is dropped: that node already reads the density
-# there, so on an axis a placement laid at 1.25 SDs the proposal comes back
-# empty and the pass bisects as it would without a mode. They come back nearest
-# the mode first.
+# `vals` are the nodes of the row the points will be laid in (the fibre), whose
+# gaps are the ones the new points' boxes take. `mode` is
+# `list(mode_u, sd_u, tag)`. Points leave out a declared point mass, stay inside
+# the axis's bounds and, on an axis the caller stated (`extend = FALSE`), inside
+# its declared span. A point with a node of the axis within half an SD of it is
+# dropped: that node already reads the density there, so on an axis a placement
+# laid at 1.25 SDs the proposal comes back empty and the pass bisects as it
+# would without a mode. They come back nearest the mode first.
 .hyper_propose_at_mode <- function(spec, vals, mode,
-                                   edge_mass = .nl_diag("at_mode_edge_mass")) {
+                                   gap_var = .nl_diag("at_mode_gap_var")) {
   if (is.null(mode) || length(mode$mode_u) != 1L || length(mode$sd_u) != 1L ||
       !is.finite(mode$mode_u) || !is.finite(mode$sd_u) || mode$sd_u <= 0) {
     return(numeric(0))
@@ -317,21 +321,30 @@
   u_nodes <- .joint_pareto_fwd(mode$tag, cont)
   u_nodes <- u_nodes[is.finite(u_nodes)]
   d <- (u_nodes - mode$mode_u) / mode$sd_u
-  k <- c(0, -seq_len(.hyper_at_mode_reach(-d[d < 0], edge_mass)),
-         seq_len(.hyper_at_mode_reach(d[d > 0], edge_mass)))
+  k <- c(0, -seq_len(.hyper_at_mode_reach(-d[d < 0], gap_var)),
+         seq_len(.hyper_at_mode_reach(d[d > 0], gap_var)))
   .hyper_mode_points(spec, cont, u_nodes, mode, k[order(abs(k))])
 }
 
+# What a node reads into a gap under the box rule, as a share of the axis's
+# posterior variance about the mode: the part of its box past half an SD,
+# `[a, b]` in the mode's SDs, holding density `dens` spread uniformly, has
+# second moment `dens |b - a| (a^2 + a b + b^2) / 3` about the mode.
+.hyper_gap_read <- function(dens, a, b) dens * abs(b - a) * (a^2 + a * b + b^2) / 3
+
 # How many SDs an at-mode ladder runs out on one side: the first step `K >= 2`
-# whose box reads at most `edge_mass` into the gap to the next node beyond it.
-# `d` holds the existing nodes' distances on that side (positive). A side with
-# no node beyond the ladder stops at 2, where the pass has no gap to read.
-.hyper_at_mode_reach <- function(d, edge_mass) {
+# whose box reads at most `gap_var` of the axis's variance into the gap to the
+# next node beyond it, at the Gaussian density the mode-find measured. `d`
+# holds the row's existing nodes' distances on that side (positive). A side
+# with no node beyond the ladder stops at 2, where the pass has no gap to read.
+.hyper_at_mode_reach <- function(d, gap_var) {
   K <- 2
   repeat {
     beyond <- d[d > K + 0.5]
     if (!length(beyond)) return(K)
-    if (stats::dnorm(K) * (min(beyond) - K) / 2 <= edge_mass) return(K)
+    h <- (min(beyond) - K) / 2
+    if (h <= 0.5 ||
+        .hyper_gap_read(stats::dnorm(K), K + 0.5, K + h) <= gap_var) return(K)
     K <- K + 1
   }
 }
@@ -355,20 +368,20 @@
   pts[keep]
 }
 
-# The points that close a solved axis's marginal where its nodes still read
-# across a gap. The at-mode points are laid from where the mode-find stopped,
-# and a mode a fraction of an SD off moves the density against them: on the
-# Calluna fit the dispersion axis peaked 1.1 SDs above the found mode, and the
-# point closing that side, laid for a density centred on the mode, held a
-# quarter of the axis. Read off the solved marginal instead: a node's weight is
-# its density times its box, and the part of the box past half an SD on one
-# side is the part it reads into that gap. Where that part carries more than
-# `edge_mass` of the marginal, which is the same reading the closing points
-# are laid to, the node gets a point one SD out on that side; so does the
-# outermost node on a side while it carries more than `edge_mass` at all.
-# `marg` is the axis marginal (`vals`, `log_marg`).
+# The points that close a solved row where its nodes still read across a gap.
+# The at-mode points are laid from where the mode-find stopped, and a mode a
+# fraction of an SD off moves the density against them: on the Calluna fit the
+# dispersion axis peaked 1.1 SDs above the found mode, and a ladder sized for a
+# density centred on the mode left its end node reading a quarter of the axis
+# into the gap. Read off the solved row instead: in each gap, the half a node
+# owns is misread by the difference between its density held flat and the
+# log-linear run to its neighbour's (`.hyper_gap_misread()`), and a node
+# misreading more than `gap_var` of the axis's variance into a gap more than
+# 1.5 SDs wide gets a point one SD out into it; so does the outermost node on
+# a side while it carries more than `gap_var` of the row at all. `marg` is the
+# row's marginal along the axis (`vals`, `log_marg`).
 .hyper_propose_edge_close <- function(spec, marg, mode,
-                                      edge_mass = .nl_diag("at_mode_edge_mass")) {
+                                      gap_var = .nl_diag("at_mode_gap_var")) {
   if (is.null(mode) || !is.finite(mode$sd_u) || mode$sd_u <= 0) return(numeric(0))
   vals <- as.numeric(marg$vals)
   cont <- is.finite(vals) & !.hyper_is_atom_level(vals, spec)
@@ -379,20 +392,48 @@
   top <- if (length(lm)) max(lm) else -Inf
   if (!is.finite(top)) return(numeric(0))
   o <- order(u); u <- u[o]; p <- exp(lm[o] - top); p <- p / sum(p)
-  n <- length(u)
+  x <- (u - mode$mode_u) / mode$sd_u
+  n <- length(x)
+  # A node's density is its share over the box it owns, both in the mode's SDs;
+  # an outermost box is mirrored by its own half-spacing.
+  edges <- if (n >= 2L) {
+    c(x[1L] - (x[2L] - x[1L]) / 2, (x[-1L] + x[-n]) / 2,
+      x[n] + (x[n] - x[n - 1L]) / 2)
+  } else c(x - 0.5, x + 0.5)
+  dens <- p / diff(edges)
   k <- numeric(0)
-  half <- 0.5 * mode$sd_u
-  for (j in which(p > edge_mass)) {
-    lo <- if (j > 1L) (u[j] - u[j - 1L]) / 2 else Inf
-    hi <- if (j < n) (u[j + 1L] - u[j]) / 2 else Inf
-    box <- lo + hi
-    reads <- function(side) if (is.infinite(side)) TRUE
-                            else p[j] * max(0, side - half) / box > edge_mass
-    if (reads(lo)) k <- c(k, (u[j] - mode$sd_u - mode$mode_u) / mode$sd_u)
-    if (reads(hi)) k <- c(k, (u[j] + mode$sd_u - mode$mode_u) / mode$sd_u)
+  if (n >= 1L && p[1L] > gap_var) k <- c(k, x[1L] - 1)
+  if (n >= 2L && p[n] > gap_var)  k <- c(k, x[n] + 1)
+  for (j in seq_len(n - 1L)) {
+    L <- x[j + 1L] - x[j]
+    if (L <= 1.5) next
+    if (is.finite(dens[j]) &&
+        .hyper_gap_misread(dens[j], dens[j + 1L], x[j], L, 1) > gap_var) {
+      k <- c(k, x[j] + 1)
+    }
+    if (is.finite(dens[j + 1L]) &&
+        .hyper_gap_misread(dens[j + 1L], dens[j], x[j + 1L], L, -1) > gap_var) {
+      k <- c(k, x[j + 1L] - 1)
+    }
   }
   if (!length(k)) return(numeric(0))
   .hyper_mode_points(spec, vals[cont], u, mode, unique(k[order(abs(k))]))
+}
+
+# What the box rule misreads in the half of a gap of length `L` a node at `x0`
+# owns, on side `side`: its density `d0` held flat over the half, against the
+# log-linear run to the neighbour's density `d1` at the gap's far end, weighted
+# by the half's second moment about the mode. In the mode's SDs. A neighbour
+# with no density leaves the whole flat half misread.
+.hyper_gap_misread <- function(d0, d1, x0, L, side) {
+  h <- L / 2
+  flat <- d0 * h
+  beta <- if (is.finite(d1) && d1 > 0) (log(d1) - log(d0)) / L else -Inf
+  run <- if (is.infinite(beta)) 0
+         else if (abs(beta) < 1e-12) flat
+         else d0 * (exp(beta * h) - 1) / beta
+  b <- x0 + side * h
+  (flat - run) * (x0^2 + x0 * b + b^2) / 3
 }
 
 # ============================================================================
@@ -476,6 +517,17 @@
   lm <- log_marginal[near]
   lm[!is.finite(lm)] <- -Inf
   structure(near[which.max(lm)], mode_dist2 = min(dist))
+}
+
+# The cells a slice on `axis_name` through cell `anchor` re-tiles: the base and
+# same-axis slice cells sharing the anchor's coordinates off that axis.
+.hyper_slice_fibre <- function(theta_grid, axis_name, anchor,
+                               refining_axis = NULL) {
+  in_row <- .hyper_slice_anchor_ok(refining_axis, axis_name, nrow(theta_grid))
+  for (b in setdiff(colnames(theta_grid), axis_name)) {
+    in_row <- in_row & theta_grid[, b] == theta_grid[anchor, b]
+  }
+  in_row
 }
 
 # The order the consistency pass takes its axes in. A slice re-tiles the fibre
@@ -720,7 +772,7 @@
 # Under the mode-find's Gaussian, a fibre whose coordinates off the axis sit
 # `D` of the mode's SDs from it holds at most `exp(-D^2 / 2)` of what the fibre
 # through the mode does, however its own axis is tiled. Past
-# `at_mode_edge_mass` of that the axis is held rather than refined, and listed
+# `consistency_row_mass` of that the axis is held rather than refined, and listed
 # in `info$held`: the row the slice could be laid in is not where the posterior
 # is. Without a found mode on the other axes there is no such bound, and every
 # collapsed axis is refined.
@@ -752,7 +804,8 @@
     }
     marg <- .nl_axis_marginal_logdensity(as.numeric(theta_grid[, axis]), lm_eff)
     cont <- !.hyper_is_atom_level(marg$vals, spec)
-    list(marg = marg, ess = .nl_axis_quad_ess(marg$log_marg[cont]))
+    list(marg = marg, ess = .nl_axis_quad_ess(marg$log_marg[cont]),
+         lm_eff = lm_eff)
   }
   for (axis in refinable) {
     spec <- .hyper_spec_by_name(specs, axis)
@@ -767,7 +820,7 @@
     if (is.na(anchor)) next
     far <- attr(anchor, "mode_dist2")
     if (!is.null(far) &&
-        far > 2 * log(1 / .nl_diag("at_mode_edge_mass"))) {
+        far > 2 * log(1 / .nl_diag("consistency_row_mass"))) {
       info$held <- c(info$held, axis)
       next
     }
@@ -780,10 +833,14 @@
     while (added - ladder < max_nodes && is.finite(rd$ess)) {
       collapsed <- rd$ess < min_ess
       # The first round lays the points at the mode; every later one closes
-      # what those points, solved, still read across a gap.
+      # what those points, solved, still read across a gap. Both read the row
+      # the points go in, whose gaps are the ones their boxes take.
+      row <- .nl_axis_marginal_logdensity(
+        as.numeric(theta_grid[, axis]), rd$lm_eff,
+        keep = .hyper_slice_fibre(theta_grid, axis, anchor, refining_axis))
       new_pts <- if (first)
-        .hyper_propose_at_mode(spec, rd$marg$vals, at_mode)
-        else .hyper_propose_edge_close(spec, rd$marg, at_mode)
+        .hyper_propose_at_mode(spec, row$vals, at_mode)
+        else .hyper_propose_edge_close(spec, row, at_mode)
       is_ladder <- first && length(new_pts) > 0L
       first <- FALSE
       if (length(new_pts) == 0L && collapsed) {

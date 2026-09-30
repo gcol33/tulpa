@@ -85,19 +85,23 @@
   pass bisects as before.
 
 * **The points laid at the mode run out to where the box rule reads the
-  tails.** A node's measure is the box to the midpoints with its neighbours,
-  so the outermost of the five points owned half the gap to the next declared
-  node. On the Calluna fit's pinned dispersion axis that gap is 36 posterior
-  SDs, and the point at 2 SDs ended the pass holding 62% of the axis's weight
-  with the mean 1.2 SDs above the mode. The points now form a ladder one SD
-  apart that runs, on each side, to the first step whose box reads less than
-  `.NL_DIAG$at_mode_edge_mass` (1%, the screen's own bound) of the posterior
-  into the gap beyond it: 4 and 5 SDs on that axis. The ladder is sized by the
-  posterior and does not count against `axis_refine_nodes`. Each later round
-  reads the solved points and gives a node that still reads more than that
-  bound into a gap a neighbour one SD out, which is what takes up a mode the
-  mode-find left a fraction of an SD off (1.1 SDs on the Calluna dispersion
-  axis).
+  tails.** A node's measure is the box to the midpoints with its neighbours in
+  its row, so the outermost of the five points owned half the gap to the next
+  declared node, and the reported interval and SD, which spread a node's mass
+  over its box, carried that mass across the gap. On the Calluna fit's pinned
+  dispersion axis the gap is 36 posterior SDs, and the point at 2 SDs ended
+  the pass holding 62% of the axis's weight with the mean 1.2 SDs above the
+  mode. The points now form a ladder one SD apart that runs, on each side of
+  the row it is laid in, to the first step whose box adds at most
+  `.NL_DIAG$at_mode_gap_var` (1%) to the axis's variance by reading into the
+  gap beyond it: 5 and 6 SDs on that axis. The bound is on the variance, since
+  0.7% of the posterior read across a 100-SD box still quadrupled the reported
+  SD. The ladder is sized by the posterior and does not count against
+  `axis_refine_nodes`. Each later round reads the solved row and gives a node
+  whose flat box misreads more than that bound into a gap, against the
+  log-linear run to its neighbour, a neighbour one SD out: that takes up a mode
+  the mode-find left a fraction of an SD off (1.1 SDs on the Calluna
+  dispersion axis).
 
 * **The consistency pass lays its slices through the row of the outer mode.**
   A slice re-tiles one fibre, and the pass laid it through the heaviest base
@@ -109,8 +113,8 @@
   row nearest the outer mode, in each axis's own SDs
   (`.hyper_consistency_anchor()`). Axes with a found mode are taken farthest
   from their nearest node first, and an axis whose row sits more than
-  `sqrt(2 log(1 / at_mode_edge_mass))` mode-SDs from the mode, where under the
-  mode's Gaussian it can hold under 1% of what the row through the mode does,
+  `sqrt(2 log(1 / consistency_row_mass))` mode-SDs from the mode, where under
+  the mode's Gaussian it can hold under 1% of what the row through the mode does,
   is held and listed in `var_of_means_consistency_info$held` (on the Calluna
   fit the copy scale, which took eight nodes carrying nothing).
 

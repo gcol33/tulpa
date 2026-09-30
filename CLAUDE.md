@@ -232,17 +232,19 @@ A placement refit is handed the mode it was laid from
 (`tulpa.nl_outer_mode`) and reuses it unless the placed grid rails
 (`outer_mode_carried`); the var-of-means consistency pass lays a collapsed
 axis's points at that mode (`.hyper_propose_at_mode()`) before bisecting.
-A node's measure is the box to its neighbours' midpoints, and the box rule
-reads a Gaussian's tails only on an even spacing, so the points form a 1-SD
-ladder run out until the box beyond its last step reads under
-`at_mode_edge_mass` (`.hyper_at_mode_reach()`); later rounds close any gap the
-solved points still read across (`.hyper_propose_edge_close()`). A slice
+A node's measure is the box to its neighbours' midpoints in its row, and the
+reported read spreads a node's mass over that box, so the points form a 1-SD
+ladder run out in the row they go in until the box beyond its last step adds
+under `at_mode_gap_var` to the axis's VARIANCE (`.hyper_at_mode_reach()`; a
+mass bound let 0.7% of the posterior quadruple a reported SD); later rounds
+close any gap a solved node still misreads against the log-linear run to its
+neighbour (`.hyper_propose_edge_close()`). A slice
 re-tiles one fibre, laid through the row nearest the outer mode
 (`.hyper_consistency_anchor()`), not through the heaviest base cell: where a
 pinned axis sits tens of SDs from its mode, that cell is the others' best GIVEN
 the far level. The pass takes the axis farthest from its mode first
 (`.hyper_consistency_order()`) and holds an axis whose row sits more than
-`sqrt(2 log(1 / at_mode_edge_mass))` mode-SDs from the mode (`info$held`). An
+`sqrt(2 log(1 / consistency_row_mass))` mode-SDs from the mode (`info$held`). An
 axis the grid leaves collapsed on one node reports the mode's Gaussian, SD and
 interval together (`theta_sd_source = "mode"`, `.nl_mode_read_unresolved()`),
 because no read off such a grid is a spread.

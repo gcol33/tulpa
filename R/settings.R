@@ -1335,12 +1335,20 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # `axis_sd_ess`. It is a cost cap, one slice cell per node: 8 is one bisection
 # of every gap of a declared 9-node slab, the resolution the default outer axes
 # are declared at.
-# `at_mode_edge_mass` is the share of an axis's posterior a node the consistency
-# pass laid at the mode may read into the gap beyond it, where the box rule
-# hands it half the gap (`.hyper_at_mode_reach()`,
-# `.hyper_propose_edge_close()`). The same share the
-# cheap-pass screen may drop (`.NL_SCREEN$gate_mass`): both bound how much of
-# the posterior the outer grid may misplace.
+# `at_mode_gap_var` is the share of an axis's posterior variance, about the
+# mode and in its SDs, that a node the consistency pass laid at the mode may
+# read into the gap beyond it, where the box rule hands it half the gap
+# (`.hyper_at_mode_reach()`, `.hyper_propose_edge_close()`). It bounds the
+# variance rather than the mass because a read that spreads a node over its box
+# carries that mass across the gap: 0.7% of the posterior read across a 100-SD
+# box quadrupled the Calluna fit's reported dispersion SD.
+# `consistency_row_mass` is the share, relative to the row through the outer
+# mode, below which a row holds too little of the posterior for the
+# consistency pass to lay a slice in it (`.hyper_consistency_pass()`): a row
+# `D` mode-SDs out holds at most `exp(-D^2 / 2)` of it.
+# Both are 1%, the share the cheap-pass screen may drop
+# (`.NL_SCREEN$gate_mass`): each bounds how much of the posterior the outer
+# grid may misplace.
 # `edge_mass_lift` is how far above a FLAT marginal an outer axis's boundary
 # node has to sit before the axis is NAMED as holding boundary mass
 # (`.nl_axis_edge_mass()`, `$outer_grid_edge_mass_axes`). Same currency as the
@@ -1382,7 +1390,8 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     axis_sd_ess          = 3,
     read_sd_nodes        = 512L,
     axis_refine_nodes    = 8L,
-    at_mode_edge_mass    = 0.01,
+    at_mode_gap_var      = 0.01,
+    consistency_row_mass = 0.01,
     edge_mass_lift       = 1,
     k_usable             = 0.7,
     k_samples            = 500L,
