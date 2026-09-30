@@ -90,12 +90,12 @@ test_that("points at the mode are one SD apart, inside a stated span", {
                             log_scale = TRUE, refinable = TRUE, extend = FALSE)
     mode <- list(mode_u = log(4.2), sd_u = 0.02, tag = "log")
     pts <- .hyper_propose_at_mode(spec, c(1, 3.91, 15.3, 60), mode)
-    # Nearest the mode first: five one SD apart, then the points closing the
-    # gaps the outermost node on each side would otherwise read across.
+    # Nearest the mode first, one SD apart, running on past 2 SDs on a side
+    # until the box beyond the last step reads under the bound: to 3 below,
+    # where the declared node at 3.58 SDs closes the gap, and to 4 above,
+    # where the next node is 65 SDs out.
     k <- (log(pts) - log(4.2)) / 0.02
-    expect_equal(k[1:5], c(0, -1, 1, -2, 2))
-    expect_true(all(abs(k[-(1:5)]) > 2))
-    expect_identical(order(abs(k)), seq_along(k))
+    expect_equal(k, c(0, -1, 1, -2, 2, -3, 3, 4), tolerance = 1e-9)
     # A node within half an SD of a point already reads the density there.
     near <- list(mode_u = log(3.9), sd_u = 0.1, tag = "log")
     expect_false(any(abs(log(.hyper_propose_at_mode(
@@ -139,21 +139,39 @@ test_that("a transported mode leaves out an axis the mode-find did not resolve",
 # A two-axis grid shaped like the full 25 km Calluna fit's outer posterior: the
 # copy scale laid around its mode at the placement's SD floor, the dispersion
 # axis pinned at declared nodes 36 posterior SDs from its mode.
-.cp_calluna_like <- function() {
+.cp_calluna_like <- function(offset = 0, beta = 0) {
     a0 <- 0.274; sa <- 0.0464; p0 <- 3.25; sp <- 0.0053
+    p_true <- p0 * exp(offset * sp)
     alpha <- a0 * exp(c(-2, -1, 0, 1, 2) * 1.25 * 0.15)
     phi <- c(1, 3.91, 15.3, 60)
     tg <- as.matrix(expand.grid(alpha = alpha, phi_pos = phi))
-    lp <- function(g) -0.5 * ((log(g[, "alpha"]) - log(a0)) / sa)^2 -
-        0.5 * ((log(g[, "phi_pos"]) - log(p0)) / sp)^2
+    # `beta` couples the copy scale to the dispersion: log alpha given log phi
+    # moves by `beta` per unit of log phi off its mode.
+    lp <- function(g) {
+        dp <- log(g[, "phi_pos"]) - log(p_true)
+        -0.5 * ((log(g[, "alpha"]) - log(a0) - beta * dp) / sa)^2 -
+            0.5 * (dp / sp)^2
+    }
     specs <- list(
         hyper_axis_spec("alpha", grid = alpha, log_scale = TRUE,
                         refinable = TRUE, extend = TRUE),
         hyper_axis_spec("phi_pos", grid = phi, log_scale = TRUE,
                         refinable = TRUE, extend = FALSE))
-    modes <- list(alpha   = list(mode_u = log(a0), sd_u = sa, tag = "log"),
+    modes <- list(alpha   = list(mode_u = log(a0),
+                                 sd_u = sqrt(sa^2 + beta^2 * sp^2), tag = "log"),
                   phi_pos = list(mode_u = log(p0), sd_u = sp, tag = "log"))
-    list(tg = tg, lp = lp, specs = specs, modes = modes, p0 = p0, sp = sp)
+    list(tg = tg, lp = lp, specs = specs, modes = modes, p0 = p_true, sp = sp,
+         a0 = a0)
+}
+
+# The axis SD on the log scale, read off the weights a consistency pass left.
+.cp_log_sd <- function(out, specs, axis) {
+    lq <- .hyper_log_quad_weights(out$theta_grid, specs,
+                                  refining = out$refining_axis)
+    lw <- out$log_marginal + lq
+    w <- exp(lw - max(lw)); w <- w / sum(w)
+    x <- log(out$theta_grid[, axis])
+    sqrt(sum(w * x^2) - sum(w * x)^2)
 }
 
 test_that("the axis farthest from its mode is refined first, and a fibre it empties is held", {
@@ -176,8 +194,44 @@ test_that("the axis farthest from its mode is refined first, and a fibre it empt
     expect_identical(out$info$held, "alpha")
     expect_false(any(out$refining_axis == "consistency_alpha"))
     expect_gte(out$info$ess_after, .nl_diag("axis_sd_ess"))
-    # The points closing the gaps keep the read on the mode: without them the
-    # outermost point owned half a 36-SD gap and the mean sat 1.2 SDs high.
+    # The ladder keeps the read on the mode: five points alone left the
+    # outermost owning half a 36-SD gap and the mean 1.2 SDs high.
+    expect_lt(abs(.cp_log_mean(out, f$specs, "phi_pos") - log(f$p0)),
+              0.1 * f$sp)
+})
+
+test_that("points laid from a mode off the peak are closed where they are read", {
+    # On the Calluna fit the dispersion axis peaked 1.1 SDs above the mode the
+    # mode-find reached, and the point closing that side, laid for a density
+    # centred on the mode, held a quarter of the axis.
+    f <- .cp_calluna_like(offset = 1.1)
+    calls <- 0L
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
+        calls <<- calls + 1L
+        list(log_marginal = f$lp(new_cells))
+    }
+    out <- .hyper_consistency_pass(f$tg, f$lp(f$tg), NULL, rep("", nrow(f$tg)),
+                                   f$specs, kernel_fn, axis_modes = f$modes)
+    # The ladder, then one round closing the side the density sits against.
+    expect_identical(calls, 2L)
+    expect_lt(abs(.cp_log_mean(out, f$specs, "phi_pos") - log(f$p0)),
+              0.1 * f$sp)
+    expect_lt(abs(.cp_log_sd(out, f$specs, "phi_pos") / f$sp - 1), 0.1)
+})
+
+test_that("a slice is laid through the row of the joint mode", {
+    # The copy scale correlates with the pinned dispersion, so at the declared
+    # dispersion node 36 SDs off its best level is one grid step from its joint
+    # mode, and that is where the base grid's heaviest cell sits.
+    f <- .cp_calluna_like(beta = (1.25 * 0.15) / log(3.91 / 3.25))
+    base_best <- f$tg[which.max(f$lp(f$tg)), "alpha"]
+    expect_gt(abs(log(base_best / f$a0)), 0.15)
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE)
+        list(log_marginal = f$lp(new_cells))
+    out <- .hyper_consistency_pass(f$tg, f$lp(f$tg), NULL, rep("", nrow(f$tg)),
+                                   f$specs, kernel_fn, axis_modes = f$modes)
+    top <- out$theta_grid[which.max(out$log_marginal), ]
+    expect_equal(unname(top[["alpha"]]), f$a0, tolerance = 1e-12)
     expect_lt(abs(.cp_log_mean(out, f$specs, "phi_pos") - log(f$p0)),
               0.1 * f$sp)
 })
@@ -208,4 +262,39 @@ test_that("a collapsed axis with a known mode is resolved in one round", {
     blind <- run(NULL)
     expect_gt(calls, 1L)
     expect_lt(blind$info$ess_after, .nl_diag("axis_sd_ess"))
+})
+
+test_that("an axis the grid left on one node reports the mode's Gaussian", {
+    tg <- as.matrix(expand.grid(sigma = exp(1.1 + c(-1, 0, 1) * 0.19),
+                                alpha = c(0, 0.27, 0.33)))
+    w <- rep(0, nrow(tg)); w[tg[, "sigma"] == exp(1.1) & tg[, "alpha"] == 0.27] <- 1
+    res <- list(theta_grid = tg, weights = w,
+                theta_sd = c(sigma = 0.015, alpha = 0.02),
+                theta_sd_ess = c(sigma = 1, alpha = 3.5),
+                theta_sd_source = c(sigma = "stencil", alpha = "weighted"),
+                theta_median = c(sigma = exp(1.1), alpha = 0.27),
+                theta_ci_lo = c(sigma = 2.74, alpha = 0.25),
+                theta_ci_hi = c(sigma = 3.27, alpha = 0.30),
+                outer_mode_u = c(1.1, log(0.27)),
+                outer_mode_cov_u = diag(c(0.0477, 0.0464)^2),
+                outer_mode_axis_tags = c("log", "log"),
+                outer_mode_axis_names = c("sigma", "alpha"))
+    out <- .nl_mode_read_unresolved(res)
+    z <- stats::qnorm(0.975)
+    expect_identical(unname(out$theta_sd_source), c("mode", "weighted"))
+    expect_equal(out$theta_sd[["sigma"]], exp(1.1) * sinh(0.0477))
+    expect_equal(out$theta_ci_lo[["sigma"]], exp(1.1 - z * 0.0477))
+    expect_equal(out$theta_ci_hi[["sigma"]], exp(1.1 + z * 0.0477))
+    expect_equal(out$theta_median[["sigma"]], exp(1.1))
+    # A resolved axis keeps the grid's read.
+    expect_identical(out$theta_sd[["alpha"]], 0.02)
+    expect_identical(out$theta_ci_lo[["alpha"]], 0.25)
+    # A declared point mass the weights carry is the grid's atom split.
+    res$theta_sd_ess[["alpha"]] <- 1
+    res$weights[tg[, "alpha"] == 0][1] <- 0.2
+    out <- .nl_mode_read_unresolved(res)
+    expect_identical(out$theta_sd_source[["alpha"]], "weighted")
+    # No mode, nothing to read.
+    res$outer_mode_u <- NULL
+    expect_identical(.nl_mode_read_unresolved(res), res)
 })

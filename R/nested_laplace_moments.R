@@ -1662,6 +1662,66 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   res
 }
 
+# An axis the grid did not resolve (`theta_sd_ess` under the floor) that the
+# placement mode-find measured is read off that mode's Gaussian: the SD, the
+# median and the 95% interval are the inverse-Hessian marginal of the outer
+# log-posterior carried to the axis's own scale, and `theta_sd_source` says
+# `"mode"`. Nothing read off the grid is a spread there. The weighted SD is
+# zero; the within-cell read spreads the node's mass over a cell whose width
+# the placement chose; and the parabola through the level sums reads whatever
+# the neighbouring levels integrate. On the full 25 km Calluna fit the field
+# SD's modal level held the dispersion slice while its neighbours held only
+# rows 36 dispersion SDs off, and the parabola returned a ninth of the SD the
+# mode-find measured, beside an interval nine times its width.
+#
+# An axis whose declared point mass carries weight the doubles resolve is left
+# to the grid's atom split, which this read does not model.
+.nl_mode_read_unresolved <- function(res) {
+  ax  <- .nl_outer_mode_axes(.nl_fit_outer_mode(res))
+  sd  <- res$theta_sd
+  ess <- res$theta_sd_ess
+  tg  <- res$theta_grid
+  if (is.null(ax) || is.null(names(sd)) || is.null(names(ess)) ||
+      !is.matrix(tg)) {
+    return(res)
+  }
+  src <- res$theta_sd_source
+  if (length(src) != length(sd)) src <- rep("weighted", length(sd))
+  names(src) <- names(sd)
+  w <- res$weights / sum(res$weights)
+  z <- stats::qnorm(0.975)
+  min_ess <- .nl_diag("axis_sd_ess")
+  read <- character(0)
+  for (a in intersect(intersect(names(ax), names(sd)), colnames(tg))) {
+    e <- ess[[a]]
+    if (!is.finite(e) || e >= min_ess) next
+    m <- ax[[a]]
+    if (identical(m$tag, "log") &&
+        sum(w[tg[, a] == 0], na.rm = TRUE) >= .Machine$double.eps) next
+    th <- .joint_pareto_inv(m$tag, m$mode_u + c(-z, -1, 0, 1, z) * m$sd_u)$theta
+    if (!all(is.finite(th))) next
+    sd[[a]]  <- abs(th[4L] - th[2L]) / 2
+    src[[a]] <- "mode"
+    if (a %in% names(res$theta_median)) res$theta_median[[a]] <- th[3L]
+    if (a %in% names(res$theta_ci_lo))  res$theta_ci_lo[[a]]  <- min(th[c(1L, 5L)])
+    if (a %in% names(res$theta_ci_hi))  res$theta_ci_hi[[a]]  <- max(th[c(1L, 5L)])
+    read <- c(read, a)
+  }
+  if (!length(read)) return(res)
+  res$theta_sd        <- sd
+  res$theta_sd_source <- src
+  for (b in seq_along(res$block_moments)) {
+    cols <- res$block_moments[[b]]$axis_cols
+    for (j in seq_along(cols)) {
+      a <- colnames(tg)[cols[j]]
+      if (!a %in% read) next
+      res$block_moments[[b]]$sd[[j]]        <- sd[[a]]
+      res$block_moments[[b]]$sd_source[j]   <- "mode"
+    }
+  }
+  res
+}
+
 # The within-cell construction a fit was asked for, from its own control list.
 # One resolver, so every front door spells the knob the same way and an unknown
 # value is refused at the door rather than silently read as the default.
@@ -1927,7 +1987,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 }
 
 # Which estimator produced a reported axis SD.
-.NL_AXIS_SD_SOURCE <- c("weighted", "stencil", "within_cell")
+.NL_AXIS_SD_SOURCE <- c("weighted", "stencil", "within_cell", "mode")
 
 # The SD to report for ONE axis, and which estimator produced it.
 #

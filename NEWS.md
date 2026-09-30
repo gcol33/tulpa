@@ -84,26 +84,48 @@
   at ESS 1.0. A mode whose SD is past the placement ceiling is not used; the
   pass bisects as before.
 
-* **Points laid into a wide gap are closed on each side.** A node's measure is
-  the box to the midpoints with its neighbours, so the outermost of the five
-  points owns half the gap to the next declared node. On the Calluna fit's
-  pinned dispersion axis that gap is 36 posterior SDs, and the point at 2 SDs
-  ended the pass holding 62% of the axis's weight with the mean 1.2 SDs above
-  the mode. Walking outward on each side, a gap whose inner node would read
-  more than `.NL_DIAG$at_mode_edge_mass` (1%, the screen's own bound) of the
-  posterior into it gets one more point where that reading meets the bound.
+* **The points laid at the mode run out to where the box rule reads the
+  tails.** A node's measure is the box to the midpoints with its neighbours,
+  so the outermost of the five points owned half the gap to the next declared
+  node. On the Calluna fit's pinned dispersion axis that gap is 36 posterior
+  SDs, and the point at 2 SDs ended the pass holding 62% of the axis's weight
+  with the mean 1.2 SDs above the mode. The points now form a ladder one SD
+  apart that runs, on each side, to the first step whose box reads less than
+  `.NL_DIAG$at_mode_edge_mass` (1%, the screen's own bound) of the posterior
+  into the gap beyond it: 4 and 5 SDs on that axis. The ladder is sized by the
+  posterior and does not count against `axis_refine_nodes`. Each later round
+  reads the solved points and gives a node that still reads more than that
+  bound into a gap a neighbour one SD out, which is what takes up a mode the
+  mode-find left a fraction of an SD off (1.1 SDs on the Calluna dispersion
+  axis).
 
-* **The consistency pass takes the axis farthest from its mode first, and
-  holds an axis it cannot resolve.** A slice re-tiles the one fibre through the
-  modal cell. Resolving an axis whose nodes sit far from its mode moves the
-  posterior into that axis's slice, so a slice laid on another axis before it
-  re-tiles a row that is left with none of the mass: on the Calluna fit the
-  copy scale took eight nodes in a row 650 nats below the mode. Axes with a
-  found mode now go in order of the distance from their nearest node, in the
-  mode's own SDs, and before each round the pass reads the most the fibre can
-  do for the axis (`.hyper_fibre_ess_reach()`). An axis whose fibre cannot add
-  one effective node to its marginal is held and listed in
-  `var_of_means_consistency_info$held`.
+* **The consistency pass lays its slices through the row of the outer mode.**
+  A slice re-tiles one fibre, and the pass laid it through the heaviest base
+  cell. Where the placement could not move an axis and it sits tens of SDs
+  from its mode, that cell is the best of the other axes GIVEN the far level:
+  on the Calluna fit the dispersion slice went through the copy scale's best
+  level at a dispersion node 36 SDs off, 4 copy-scale SDs from the joint mode,
+  and every summary was read in that row. A slice is now laid through the base
+  row nearest the outer mode, in each axis's own SDs
+  (`.hyper_consistency_anchor()`). Axes with a found mode are taken farthest
+  from their nearest node first, and an axis whose row sits more than
+  `sqrt(2 log(1 / at_mode_edge_mass))` mode-SDs from the mode, where under the
+  mode's Gaussian it can hold under 1% of what the row through the mode does,
+  is held and listed in `var_of_means_consistency_info$held` (on the Calluna
+  fit the copy scale, which took eight nodes carrying nothing).
+
+* **An axis the grid leaves on one node reports the mode's Gaussian.** Once
+  the posterior sits in another axis's slice, nothing read off the grid is a
+  spread for the axes that slice holds fixed: the weighted SD is zero, the
+  within-cell read spreads the node over a cell the placement sized, and the
+  parabola through level sums reads whatever the neighbouring levels
+  integrate. On the Calluna fit that parabola reported the field SD at 0.0155,
+  a ninth of the 0.143 the placement mode-find measured, beside an interval
+  nine times its width. An axis under the ESS floor that the mode-find
+  measured now reports that mode's inverse-Hessian marginal, SD, median and
+  95% interval together, with `theta_sd_source = "mode"`
+  (`.nl_mode_read_unresolved()`). An axis whose declared point mass carries
+  weight is left to the grid's atom split.
 
 # tulpa 0.6.11
 

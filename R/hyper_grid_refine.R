@@ -277,8 +277,8 @@
 }
 
 # Points laid at an axis's outer MODE, when the fit has one: the mode and the
-# SD the placement mode-find measured there (`.nl_placement_mode()`), five
-# nodes one SD apart in the coordinate the mode was found in. A Gaussian
+# SD the placement mode-find measured there (`.nl_placement_mode()`), a ladder
+# of nodes one SD apart in the coordinate the mode was found in. A Gaussian
 # marginal read at that spacing has a quadrature ESS of 3.48, clear of the
 # `axis_sd_ess` floor of 3, so an axis collapsed onto one node is resolved in
 # the round that lays them rather than after a chain of bisections, each a
@@ -289,24 +289,23 @@
 # posterior SDs from the mode (gcol33/tulpa#919). The mode-find's is a
 # converged Newton step's, measured on the posterior itself.
 #
+# How far the ladder runs is set by the box rule. A node's measure is the box
+# to the midpoints with its neighbours, so the outermost node before a gap owns
+# half of it, and the box rule reads a Gaussian to within its tails only on an
+# even spacing. Five points laid into the Calluna fit's 36-SD gap on its pinned
+# dispersion axis left the one at 2 SDs holding 62% of the axis's weight and
+# the mean 1.2 SDs above the mode. On each side the ladder therefore runs out
+# to the first step `K >= 2` whose reading into the gap beyond it,
+# `phi(K) (g - K) / 2` with `g` the next node, is under `at_mode_edge_mass`
+# (`.hyper_at_mode_reach()`): 4 and 5 SDs on that axis.
+#
 # `mode` is `list(mode_u, sd_u, tag)`. Points leave out a declared point mass,
 # stay inside the axis's bounds and, on an axis the caller stated
 # (`extend = FALSE`), inside its declared span. A point with a node of the axis
 # within half an SD of it is dropped: that node already reads the density
 # there, so on an axis a placement laid at 1.25 SDs the proposal comes back
 # empty and the pass bisects as it would without a mode. They come back nearest
-# the mode first, so a caller spending a node budget spends it there.
-#
-# A node's measure is the box to the midpoints with its neighbours, so the
-# outermost node before a gap owns half of it. Laid into a gap tens of SDs
-# wide, the point at 2 SDs reads its density across a span the posterior does
-# not fill: on the full 25 km Calluna fit's pinned dispersion axis (a gap of
-# 36 SDs) it ended the pass holding 62% of the axis's weight, and the mean read
-# 1.2 posterior SDs above the mode. Walking outward from that point on each
-# side, a node at `e` SDs whose next node sits at `g` reads
-# `phi(e) (g - e) / 2` of the posterior into the gap; past `at_mode_edge_mass`
-# one more point closes the gap at the SD where that reading falls to the
-# bound, at least one SD beyond `e` (`.hyper_at_mode_closing()`).
+# the mode first.
 .hyper_propose_at_mode <- function(spec, vals, mode,
                                    edge_mass = .nl_diag("at_mode_edge_mass")) {
   if (is.null(mode) || length(mode$mode_u) != 1L || length(mode$sd_u) != 1L ||
@@ -318,10 +317,30 @@
   u_nodes <- .joint_pareto_fwd(mode$tag, cont)
   u_nodes <- u_nodes[is.finite(u_nodes)]
   d <- (u_nodes - mode$mode_u) / mode$sd_u
-  k <- c(0, -1, 1, -2, 2,
-         -.hyper_at_mode_closing(-d[d < 0], edge_mass),
-         .hyper_at_mode_closing(d[d > 0], edge_mass))
-  k <- k[order(abs(k))]
+  k <- c(0, -seq_len(.hyper_at_mode_reach(-d[d < 0], edge_mass)),
+         seq_len(.hyper_at_mode_reach(d[d > 0], edge_mass)))
+  .hyper_mode_points(spec, cont, u_nodes, mode, k[order(abs(k))])
+}
+
+# How many SDs an at-mode ladder runs out on one side: the first step `K >= 2`
+# whose box reads at most `edge_mass` into the gap to the next node beyond it.
+# `d` holds the existing nodes' distances on that side (positive). A side with
+# no node beyond the ladder stops at 2, where the pass has no gap to read.
+.hyper_at_mode_reach <- function(d, edge_mass) {
+  K <- 2
+  repeat {
+    beyond <- d[d > K + 0.5]
+    if (!length(beyond)) return(K)
+    if (stats::dnorm(K) * (min(beyond) - K) / 2 <= edge_mass) return(K)
+    K <- K + 1
+  }
+}
+
+# Points `k` SDs from a mode, on the natural scale, that an axis admits: inside
+# its bounds and, on an axis the caller stated (`extend = FALSE`), inside its
+# declared span `cont`, with none within half an SD of a node `u_nodes` already
+# holds. Kept in the order `k` gives them.
+.hyper_mode_points <- function(spec, cont, u_nodes, mode, k) {
   pts <- .joint_pareto_inv(mode$tag, mode$mode_u + k * mode$sd_u)$theta
   pts <- pts[is.finite(pts)]
   if (.hyper_axis_is_log_scale(spec)) pts <- pts[pts > 0]
@@ -330,29 +349,50 @@
   if (!isTRUE(spec$extend) && length(cont)) {
     pts <- pts[pts >= min(cont) & pts <= max(cont)]
   }
-  u_pts   <- .joint_pareto_fwd(mode$tag, pts)
+  u_pts <- .joint_pareto_fwd(mode$tag, pts)
   keep <- vapply(u_pts, function(u)
     all(abs(u_nodes - u) > (0.5 + 1e-6) * mode$sd_u), logical(1))
   pts[keep]
 }
 
-# The closing points one side of an at-mode proposal needs, in SDs from the
-# mode. `d` holds the existing nodes' distances on that side (positive), and
-# the proposal's own outermost point sits at 2. A point is added inside a gap
-# `(e, g)` whose inner node reads more than `edge_mass` into it, where
-# `phi(k) (g - e) / 2` meets the bound, and never within one SD of `e`.
-.hyper_at_mode_closing <- function(d, edge_mass) {
-  d <- sort(d[d > 2])
-  out <- numeric(0)
-  e <- 2
-  for (g in d) {
-    if (stats::dnorm(e) * (g - e) / 2 > edge_mass) {
-      k <- max(sqrt(2 * log((g - e) / (2 * edge_mass * sqrt(2 * pi)))), e + 1)
-      if (k < g - 0.5) out <- c(out, k)
-    }
-    e <- g
+# The points that close a solved axis's marginal where its nodes still read
+# across a gap. The at-mode points are laid from where the mode-find stopped,
+# and a mode a fraction of an SD off moves the density against them: on the
+# Calluna fit the dispersion axis peaked 1.1 SDs above the found mode, and the
+# point closing that side, laid for a density centred on the mode, held a
+# quarter of the axis. Read off the solved marginal instead: a node's weight is
+# its density times its box, and the part of the box past half an SD on one
+# side is the part it reads into that gap. Where that part carries more than
+# `edge_mass` of the marginal, which is the same reading the closing points
+# are laid to, the node gets a point one SD out on that side; so does the
+# outermost node on a side while it carries more than `edge_mass` at all.
+# `marg` is the axis marginal (`vals`, `log_marg`).
+.hyper_propose_edge_close <- function(spec, marg, mode,
+                                      edge_mass = .nl_diag("at_mode_edge_mass")) {
+  if (is.null(mode) || !is.finite(mode$sd_u) || mode$sd_u <= 0) return(numeric(0))
+  vals <- as.numeric(marg$vals)
+  cont <- is.finite(vals) & !.hyper_is_atom_level(vals, spec)
+  u  <- .joint_pareto_fwd(mode$tag, vals[cont])
+  lm <- as.numeric(marg$log_marg)[cont]
+  ok <- is.finite(u)
+  u <- u[ok]; lm <- lm[ok]
+  top <- if (length(lm)) max(lm) else -Inf
+  if (!is.finite(top)) return(numeric(0))
+  o <- order(u); u <- u[o]; p <- exp(lm[o] - top); p <- p / sum(p)
+  n <- length(u)
+  k <- numeric(0)
+  half <- 0.5 * mode$sd_u
+  for (j in which(p > edge_mass)) {
+    lo <- if (j > 1L) (u[j] - u[j - 1L]) / 2 else Inf
+    hi <- if (j < n) (u[j + 1L] - u[j]) / 2 else Inf
+    box <- lo + hi
+    reads <- function(side) if (is.infinite(side)) TRUE
+                            else p[j] * max(0, side - half) / box > edge_mass
+    if (reads(lo)) k <- c(k, (u[j] - mode$sd_u - mode$mode_u) / mode$sd_u)
+    if (reads(hi)) k <- c(k, (u[j] + mode$sd_u - mode$mode_u) / mode$sd_u)
   }
-  out
+  if (!length(k)) return(numeric(0))
+  .hyper_mode_points(spec, vals[cont], u, mode, unique(k[order(abs(k))]))
 }
 
 # ============================================================================
@@ -364,14 +404,18 @@
 #
 # The anchor is chosen among base-tensor cells and slice cells on the SAME axis,
 # never a slice cell placed on another one, so every slice cell sits on base
-# levels off its own axis and its row is a row of the base tensor.
+# levels off its own axis and its row is a row of the base tensor. A caller that
+# chose the anchor cell itself (`.hyper_consistency_anchor()`) passes it as
+# `anchor`, and `anchor_lev` is then not read.
 # ============================================================================
 .hyper_new_mode_tracked_triples <- function(theta_grid, log_marginal, specs,
                                              axis_name, new_pts, anchor_lev,
-                                             refining_axis = NULL) {
+                                             refining_axis = NULL,
+                                             anchor = NULL) {
   if (length(new_pts) == 0L) return(NULL)
-  idx_global <- .hyper_slice_anchor(theta_grid, log_marginal, axis_name,
-                                    anchor_lev, refining_axis)
+  idx_global <- anchor %||% .hyper_slice_anchor(theta_grid, log_marginal,
+                                                axis_name, anchor_lev,
+                                                refining_axis)
   if (is.na(idx_global)) return(NULL)
 
   axis_names <- colnames(theta_grid)
@@ -398,35 +442,40 @@
   which(mask)[which.max(log_marginal[mask])]
 }
 
-# The cells a slice on `axis_name` through cell `anchor` re-tiles: the base and
-# same-axis slice cells sharing the anchor's coordinates off that axis.
-.hyper_slice_fibre <- function(theta_grid, axis_name, anchor,
-                               refining_axis = NULL) {
+# The cell a consistency slice on `axis_name` is laid through. Without a found
+# mode on any other axis it is the heaviest cell at the modal cell's level
+# (`.hyper_slice_anchor()`). With one it is the row through that mode: the base
+# or same-axis slice cell nearest the mode on the other axes, in each one's own
+# SDs, the heaviest among ties. The two part where an axis the placement could
+# not move sits far from its own mode and the others correlate with it: the
+# heaviest base cell is then the best of the others GIVEN that far level, not
+# at the joint mode. On the full 25 km Calluna fit the dispersion slice went
+# through the copy scale's conditional best at a dispersion node 36 SDs off,
+# 4 copy-scale SDs from the joint mode, and every summary was read in that
+# row. The row through the mode need not have been solved: a slice is a set of
+# new solves, and a screened-out anchor only loses its warm start. The anchor
+# carries its squared distance from the mode as `mode_dist2`.
+.hyper_consistency_anchor <- function(theta_grid, log_marginal, axis_name,
+                                      refining_axis = NULL, axis_modes = NULL) {
   n <- nrow(theta_grid)
-  in_row <- .hyper_slice_anchor_ok(refining_axis, axis_name, n)
-  for (b in setdiff(colnames(theta_grid), axis_name)) {
-    in_row <- in_row & theta_grid[, b] == theta_grid[anchor, b]
+  others <- intersect(setdiff(colnames(theta_grid), axis_name), names(axis_modes))
+  dist <- numeric(n)
+  for (b in others) {
+    m <- axis_modes[[b]]
+    u <- .joint_pareto_fwd(m$tag, as.numeric(theta_grid[, b]))
+    dist <- dist + ((u - m$mode_u) / m$sd_u)^2
   }
-  in_row
-}
-
-# The largest quadrature ESS an axis's marginal can reach by re-tiling one
-# fibre. However a slice spreads the fibre's own mass over new nodes, the mass
-# outside the fibre stays on the levels it already sits on, so the marginal's
-# sum of squared shares is at least that of the outside mass alone. `lm_eff` is
-# the per-cell log weight (log-marginal plus log measure). `Inf` when the fibre
-# holds the whole marginal, `NA` when no level carries finite mass.
-.hyper_fibre_ess_reach <- function(vals, lm_eff, in_fibre, spec) {
-  tot <- .nl_axis_marginal_logdensity(vals, lm_eff)
-  out <- .nl_axis_marginal_logdensity(vals, lm_eff, keep = !in_fibre)
-  lt <- tot$log_marg[!.hyper_is_atom_level(tot$vals, spec)]
-  lo <- out$log_marg[!.hyper_is_atom_level(out$vals, spec)]
-  top <- if (length(lt)) max(lt) else -Inf
-  if (!is.finite(top)) return(NA_real_)
-  r <- exp(lo - top) / sum(exp(lt - top))
-  r <- r[is.finite(r)]
-  if (!any(r > 0)) return(Inf)
-  1 / sum(r^2)
+  dist[!.hyper_slice_anchor_ok(refining_axis, axis_name, n) | !is.finite(dist)] <- Inf
+  if (!length(others) || !any(is.finite(dist))) {
+    return(.hyper_slice_anchor(theta_grid, log_marginal, axis_name,
+                               as.numeric(theta_grid[which.max(log_marginal),
+                                                     axis_name]),
+                               refining_axis))
+  }
+  near <- which(dist <= min(dist) * (1 + 1e-9) + 1e-12)
+  lm <- log_marginal[near]
+  lm[!is.finite(lm)] <- -Inf
+  structure(near[which.max(lm)], mode_dist2 = min(dist))
 }
 
 # The order the consistency pass takes its axes in. A slice re-tiles the fibre
@@ -661,15 +710,20 @@
 #
 # `axis_modes` names, per axis, the outer mode a placement mode-find found for
 # it (`list(mode_u, sd_u, tag)`, `.nl_outer_mode_axes()`). Such an axis's first
-# round lays its points AT the mode (`.hyper_propose_at_mode()`), and any round
-# after that bisects as above. The axes are taken in
-# `.hyper_consistency_order()`.
+# round lays its points AT the mode (`.hyper_propose_at_mode()`); each later
+# round first closes any gap the solved points still read across
+# (`.hyper_propose_edge_close()`), which runs until none is left even once the
+# ESS is met, and bisects as above while the ESS is short. The axes are taken
+# in `.hyper_consistency_order()`.
 #
 # A round is a kernel call per node, and the nodes it lays re-tile one fibre.
-# Before each round the pass reads the most the fibre can do for the axis
-# (`.hyper_fibre_ess_reach()`), and an axis whose fibre cannot add one effective
-# node to its marginal is held rather than refined: its marginal's mass sits in
-# rows the slice does not reach. Held axes are listed in `info$held`.
+# Under the mode-find's Gaussian, a fibre whose coordinates off the axis sit
+# `D` of the mode's SDs from it holds at most `exp(-D^2 / 2)` of what the fibre
+# through the mode does, however its own axis is tiled. Past
+# `at_mode_edge_mass` of that the axis is held rather than refined, and listed
+# in `info$held`: the row the slice could be laid in is not where the posterior
+# is. Without a found mode on the other axes there is no such bound, and every
+# collapsed axis is refined.
 .hyper_consistency_pass <- function(theta_grid, log_marginal, extras,
                                     refining_axis, specs, kernel_fn,
                                     min_ess = .nl_diag("axis_sd_ess"),
@@ -698,42 +752,50 @@
     }
     marg <- .nl_axis_marginal_logdensity(as.numeric(theta_grid[, axis]), lm_eff)
     cont <- !.hyper_is_atom_level(marg$vals, spec)
-    list(marg = marg, ess = .nl_axis_quad_ess(marg$log_marg[cont]),
-         lm_eff = lm_eff)
+    list(marg = marg, ess = .nl_axis_quad_ess(marg$log_marg[cont]))
   }
   for (axis in refinable) {
     spec <- .hyper_spec_by_name(specs, axis)
     rd <- axis_ess(axis, spec)
     ess_before <- rd$ess
     if (!is.finite(ess_before) || ess_before >= min_ess) next
-    # Every round anchors in the same row, the modal cell's, so the slice
-    # points of one axis re-tile one fibre rather than scattering across rows.
-    anchor_lev <- as.numeric(theta_grid[which.max(log_marginal), axis])
+    # Every round anchors in the same row (`.hyper_consistency_anchor()`), so
+    # the slice points of one axis re-tile one fibre rather than scattering
+    # across rows.
+    anchor <- .hyper_consistency_anchor(theta_grid, log_marginal, axis,
+                                        refining_axis, axis_modes)
+    if (is.na(anchor)) next
+    far <- attr(anchor, "mode_dist2")
+    if (!is.null(far) &&
+        far > 2 * log(1 / .nl_diag("at_mode_edge_mass"))) {
+      info$held <- c(info$held, axis)
+      next
+    }
     added <- 0L
+    # The at-mode ladder is sized by the posterior it is laid from, so the
+    # node cap binds on the rounds after it.
+    ladder <- 0L
     at_mode <- axis_modes[[axis]]
-    while (added < max_nodes && is.finite(rd$ess) && rd$ess < min_ess) {
-      anchor <- .hyper_slice_anchor(theta_grid, log_marginal, axis, anchor_lev,
-                                    refining_axis)
-      if (is.na(anchor)) break
-      reach <- .hyper_fibre_ess_reach(
-        as.numeric(theta_grid[, axis]), rd$lm_eff,
-        .hyper_slice_fibre(theta_grid, axis, anchor, refining_axis), spec)
-      if (is.finite(reach) && reach < rd$ess + 1) {
-        info$held <- c(info$held, axis)
-        break
-      }
-      new_pts <- if (!is.null(at_mode))
-        .hyper_propose_at_mode(spec, rd$marg$vals, at_mode) else numeric(0)
-      at_mode <- NULL
-      if (length(new_pts) == 0L) {
+    first <- TRUE
+    while (added - ladder < max_nodes && is.finite(rd$ess)) {
+      collapsed <- rd$ess < min_ess
+      # The first round lays the points at the mode; every later one closes
+      # what those points, solved, still read across a gap.
+      new_pts <- if (first)
+        .hyper_propose_at_mode(spec, rd$marg$vals, at_mode)
+        else .hyper_propose_edge_close(spec, rd$marg, at_mode)
+      is_ladder <- first && length(new_pts) > 0L
+      first <- FALSE
+      if (length(new_pts) == 0L && collapsed) {
         new_pts <- .hyper_propose_mass_bisection(spec, rd$marg$vals,
                                                  rd$marg$log_marg, min_ess)
       }
       if (length(new_pts) == 0L) break
-      new_pts <- utils::head(new_pts, max_nodes - added)
+      if (!is_ladder) new_pts <- utils::head(new_pts, max_nodes - (added - ladder))
       pack <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
-                                               axis, new_pts, anchor_lev,
-                                               refining_axis = refining_axis)
+                                               axis, new_pts, NULL,
+                                               refining_axis = refining_axis,
+                                               anchor = anchor)
       if (is.null(pack)) break
       step <- .hyper_apply_axis_refinement(theta_grid, log_marginal, extras,
                                             refining_axis, list(pack), axis,
@@ -745,6 +807,7 @@
       extras        <- step$extras
       refining_axis <- step$refining_axis
       added <- added + step$n_new
+      if (is_ladder) ladder <- step$n_new
       rd <- axis_ess(axis, spec)
     }
     if (added == 0L) next

@@ -829,6 +829,13 @@
 #'      a boundary), where the posterior mean is pulled by the right
 #'      tail away from the bulk and `mean +/- 1.96 sd` mis-states the
 #'      uncertainty.
+#'   * `theta_sd_source` -- per axis, what the reported SD was read off:
+#'      `"weighted"` (the spread of the weights, on a resolved axis),
+#'      `"stencil"` (a parabola at the modal node), `"within_cell"` (the
+#'      modal node's mass spread over its cell) or `"mode"`. An axis the grid
+#'      left collapsed on one node that the placement mode-find measured
+#'      reports that mode's Gaussian, its SD, median and interval together
+#'      (`outer_mode_u` / `outer_mode_cov_u`).
 #'   * `modes` -- `[n_grid x n_x]` matrix of inner modes.
 #'   * `fitted_eta` -- `[n_grid x N]` matrix of the linear predictor at each
 #'      cell's own mode, offset and latent field included. Present on a

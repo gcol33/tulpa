@@ -230,7 +230,7 @@
         res$outer_mode_rounds     <- carried$rounds
         res$outer_mode_evals      <- carried$evals
         res$outer_mode_carried    <- TRUE
-        return(res)
+        return(.nl_mode_read_unresolved(res))
     }
     pm <- .joint_placement_mode(res, eval_logpost, set_warm = set_warm)
     if (!is.null(pm$declined)) {
@@ -244,5 +244,5 @@
     res$outer_mode_status     <- pm$status
     res$outer_mode_rounds     <- pm$rounds
     res$outer_mode_evals      <- pm$evals
-    res
+    .nl_mode_read_unresolved(res)
 }

@@ -1335,9 +1335,10 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # `axis_sd_ess`. It is a cost cap, one slice cell per node: 8 is one bisection
 # of every gap of a declared 9-node slab, the resolution the default outer axes
 # are declared at.
-# `at_mode_edge_mass` is the share of an axis's posterior the outermost point of
-# an at-mode proposal (`.hyper_propose_at_mode()`) may read into the gap beyond
-# it, where the box rule hands that point half the gap. The same share the
+# `at_mode_edge_mass` is the share of an axis's posterior a node the consistency
+# pass laid at the mode may read into the gap beyond it, where the box rule
+# hands it half the gap (`.hyper_at_mode_reach()`,
+# `.hyper_propose_edge_close()`). The same share the
 # cheap-pass screen may drop (`.NL_SCREEN$gate_mass`): both bound how much of
 # the posterior the outer grid may misplace.
 # `edge_mass_lift` is how far above a FLAT marginal an outer axis's boundary
