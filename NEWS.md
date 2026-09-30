@@ -1,3 +1,20 @@
+# tulpa 0.6.9
+
+## Performance
+
+* **The outer mode-find stops at a converged Newton decrement and reuses that
+  round's stencil as the closing curvature** (gcol33/tulpa#922). The placement
+  and CCD mode-find stopped only when an accepted step was below 1e-3 in the
+  unconstrained coordinates, and then always ran a fresh finite-difference
+  stencil at the final point. On the full 25 km Calluna `occu_cover` fit, 45
+  inner solves (about 2.5 h) followed a round whose log posterior no longer
+  changed. The search now stops when the full Newton step predicted by the
+  round's stencil is shorter than `stop_sd = 0.05` outer posterior SDs (in
+  `.CCD_PLACEMENT`). That stencil was taken at the final point, so it is used
+  as the design's curvature, and the same reuse applies when a line search
+  accepts no step. On an exact quadratic over four axes the placement costs 74
+  inner solves instead of 114.
+
 # tulpa 0.6.8
 
 ## Performance

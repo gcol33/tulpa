@@ -281,13 +281,15 @@ test_that("a placement reports the inner solves it spent, to the eval", {
     expect_identical(nrow(res$grid), ccd_grid(4L)$n_points)
 
     # Two Newton rounds on an exact quadratic: the first steps to the mode, the
-    # second finds a zero gradient there. So the placement is the opening centre
-    # evaluation, two rounds of (stencil + line search) and the closing stencil
-    # that supplies the design's curvature.
+    # second's stencil finds a zero Newton decrement there and stops before its
+    # line search (gcol33/tulpa#922). That stencil was taken at the final point,
+    # so it is the design's curvature and no closing stencil follows. The
+    # placement is the opening centre evaluation, one round of (stencil + line
+    # search) and one stencil.
     expect_identical(res$modefind_rounds, 2L)
     expect_equal(res$modefind_evals,
-                 1 + 2 * (.CCD_BUD_STENCIL + .CCD_BUD_HALVE) + .CCD_BUD_STENCIL)
-    expect_equal(res$modefind_evals, 114)
+                 1 + 2 * .CCD_BUD_STENCIL + .CCD_BUD_HALVE)
+    expect_equal(res$modefind_evals, 74)
     # The counter is the number of rows the objective was actually handed, not
     # a projection of it.
     expect_equal(res$modefind_evals, rec$rows)
@@ -325,19 +327,20 @@ test_that("a hopeless ceiling declines before a single inner solve is paid", {
 test_that("a ceiling reached mid-placement declines with the spend recorded", {
     fx  <- .ccd_bud_fixture()
     rec <- .ccd_bud_rec()
-    # A ceiling of 112: above the 74 the up-front projection tests, below the
-    # 114 this placement takes. The abort lands on the closing stencil, whose
-    # 33 rows would cross, so the spend stops at the two completed rounds.
-    cfg <- .ccd_bud_cfg(budget_floor = FALSE, evals_per_cell = 2)
+    # With the Newton-decrement stop off, the second round runs its line search
+    # too: 81 evals. A ceiling of 77 is above the 74 the up-front projection
+    # tests and below that; the abort lands on the second line search, whose 7
+    # rows would cross, so the spend stops at the second stencil.
+    cfg <- .ccd_bud_cfg(budget_floor = FALSE, evals_per_cell = 1.375,
+                        stop_sd = 0)
     res <- tulpa:::.joint_ccd_grid(
         fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
         .ccd_bud_eval(fx$tags, fx$mode, fx$prec, rec), cfg = cfg)
     expect_identical(res$declined, "placement_budget")
     expect_null(res$grid)
-    expect_equal(res$modefind_budget, 112)
-    expect_equal(res$modefind_evals,
-                 1 + 2 * (.CCD_BUD_STENCIL + .CCD_BUD_HALVE))
-    expect_equal(res$modefind_evals, 81)
+    expect_equal(res$modefind_budget, 77)
+    expect_equal(res$modefind_evals, 1 + 2 * .CCD_BUD_STENCIL + .CCD_BUD_HALVE)
+    expect_equal(res$modefind_evals, 74)
     # Never more than the ceiling: the crossing batch is refused, not paid.
     expect_lte(res$modefind_evals, res$modefind_budget)
     expect_equal(res$modefind_evals, rec$rows)

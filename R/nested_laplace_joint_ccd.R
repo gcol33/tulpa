@@ -510,7 +510,8 @@
                                 max_halve = .ccd_placement("max_halve"),
                                 trust = NULL,
                                 on_accept = NULL, meter = NULL,
-                                ridge_check = TRUE) {
+                                ridge_check = TRUE,
+                                stop_sd = .ccd_placement("stop_sd")) {
     d <- length(u0)
     if (is.null(trust)) trust <- rep(Inf, d)
     fail <- function(u, H, f) {
@@ -527,6 +528,9 @@
     }
     H <- NULL
     converged <- FALSE
+    # TRUE once H is the stencil taken at the current `u`, so the closing
+    # stencil below would repeat it.
+    hess_at_u <- FALSE
     for (iter in seq_len(max_rounds)) {
         st <- tryCatch(.joint_ccd_fd_stencil(u, eval1, h),
                        error = .ccd_rethrow_budget)
@@ -546,6 +550,20 @@
         step  <- tryCatch(as.numeric(-solve(H_reg, st$grad)),
                           error = function(e) NULL)
         if (is.null(step) || any(!is.finite(step))) return(fail(u, H, f_u))
+        # Newton decrement: the full step's length in outer posterior SDs. Below
+        # `stop_sd` the point is the mode to within that, and this round's
+        # stencil (at `u`) is the closing curvature.
+        lambda2 <- sum(st$grad * step)
+        if (is.finite(lambda2) && sqrt(max(lambda2, 0)) < stop_sd) {
+            .ccd_meter_round(meter)
+            .ccd_meter_beat(meter,
+                            sprintf("round %d/%d", iter, as.integer(max_rounds)),
+                            sprintf("Newton step %.3g sd | logpost %.7g",
+                                    sqrt(max(lambda2, 0)), f_u))
+            converged <- TRUE
+            hess_at_u <- TRUE
+            break
+        }
         # Trust-region clamp: bound each coordinate's step so a near-singular
         # Hessian cannot send a candidate to an extreme hyperparameter where the
         # inner Newton needs many iterations.
@@ -578,14 +596,19 @@
                         sprintf("|step| %.3g | logpost %.7g", delta, f_u))
         if (delta < tol) {
             converged <- TRUE
+            # No step taken: this round's stencil is already at `u`.
+            hess_at_u <- delta == 0
             break
         }
     }
     # Clean Hessian at the final point for the CCD scale. Always the full
-    # stencil: this is the curvature the design is oriented by.
-    st_fin <- tryCatch(.joint_ccd_fd_stencil(u, eval1, h),
-                       error = .ccd_rethrow_budget)
-    if (!is.null(st_fin) && all(is.finite(st_fin$hess))) H <- st_fin$hess
+    # stencil: this is the curvature the design is oriented by. A round whose
+    # stencil was taken at the final point already measured it.
+    if (!hess_at_u) {
+        st_fin <- tryCatch(.joint_ccd_fd_stencil(u, eval1, h),
+                           error = .ccd_rethrow_budget)
+        if (!is.null(st_fin) && all(is.finite(st_fin$hess))) H <- st_fin$hess
+    }
     .ccd_meter_beat(meter, "mode-find done",
                     sprintf("logpost %.7g", f_u))
     list(par = u, hess = H, value = f_u, converged = converged, status = "ok")
@@ -741,7 +764,8 @@
         mf <- .joint_ccd_modefind(u_start, eval1, lower, upper, h_step,
                                   trust = trust, on_accept = on_accept,
                                   max_rounds = max_rounds, meter = meter,
-                                  max_halve = cfg$max_halve)
+                                  max_halve = cfg$max_halve,
+                                  stop_sd = cfg$stop_sd)
         if (is.null(mf) || !identical(mf$status, "ok"))
             return(list(reason = if (!is.null(mf) && identical(mf$status, "ridge"))
                                  "ridge" else "fail"))

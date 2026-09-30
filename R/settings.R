@@ -1634,6 +1634,15 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # the best inner log-marginal on the design fell by up to 7.5 nats at d = 3 and
 # 16.3 at d = 4. Do not reintroduce one without re-reading
 # `dev_notes/issue662/RESULTS662.md`.
+#
+# `stop_sd` ends the mode-find when the full Newton step the round's stencil
+# predicts is shorter than this many outer posterior SDs: the Newton decrement
+# sqrt(g' (-H)^-1 g), which is that step's length in the metric of the curvature
+# the design is then oriented by. Below it the centre is already within a small
+# fraction of a node spacing of the mode, and a further round only moves it
+# within the inner log-marginal's finite-difference noise. The round's stencil
+# was taken at the final point, so it doubles as the closing curvature and the
+# closing stencil is not re-run (gcol33/tulpa#922).
 .CCD_PLACEMENT <- list(
     evals_per_cell   = 1,
     budget_floor     = TRUE,
@@ -1641,7 +1650,8 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     max_rounds       = 30L,
     calibrate_rounds = 4L,
     seed_max_pts     = 256L,
-    max_halve        = 6L
+    max_halve        = 6L,
+    stop_sd          = 0.05
 )
 
 .ccd_placement <- function(par) {
