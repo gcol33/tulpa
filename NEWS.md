@@ -118,18 +118,15 @@
   is held and listed in `var_of_means_consistency_info$held` (on the Calluna
   fit the copy scale, which took eight nodes carrying nothing).
 
-* **An axis the grid leaves on one node reports the mode's Gaussian.** Once
-  the posterior sits in another axis's slice, nothing read off the grid is a
-  spread for the axes that slice holds fixed: the weighted SD is zero, the
-  within-cell read spreads the node over a cell the placement sized, and the
-  parabola through level sums reads whatever the neighbouring levels
-  integrate. On the Calluna fit that parabola reported the field SD at 0.0155,
-  a ninth of the 0.143 the placement mode-find measured, beside an interval
-  nine times its width. An axis under the ESS floor that the mode-find
-  measured now reports that mode's inverse-Hessian marginal, SD, median and
-  95% interval together, with `theta_sd_source = "mode"`
-  (`.nl_mode_read_unresolved()`). An axis whose declared point mass carries
-  weight is left to the grid's atom split.
+* **A parabola is not read across another axis's slice.** Once the posterior
+  sits in one axis's slice, the other axes' modal levels hold that slice while
+  their neighbouring levels integrate it on the base nodes alone, and the
+  three-point parabola at the modal node compares unlike sums. On the Calluna
+  fit it reported the field SD at 0.0155, a ninth of the 0.143 the placement
+  mode-find measured, beside an interval nine times its width. The parabola now
+  declines there (`theta_sd_stencil_declined = "cross_slice"`,
+  `.nl_axis_cross_slice()`), and the SD is the within-cell one the interval is
+  read from.
 
 # tulpa 0.6.11
 

@@ -1662,66 +1662,6 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   res
 }
 
-# An axis the grid did not resolve (`theta_sd_ess` under the floor) that the
-# placement mode-find measured is read off that mode's Gaussian: the SD, the
-# median and the 95% interval are the inverse-Hessian marginal of the outer
-# log-posterior carried to the axis's own scale, and `theta_sd_source` says
-# `"mode"`. Nothing read off the grid is a spread there. The weighted SD is
-# zero; the within-cell read spreads the node's mass over a cell whose width
-# the placement chose; and the parabola through the level sums reads whatever
-# the neighbouring levels integrate. On the full 25 km Calluna fit the field
-# SD's modal level held the dispersion slice while its neighbours held only
-# rows 36 dispersion SDs off, and the parabola returned a ninth of the SD the
-# mode-find measured, beside an interval nine times its width.
-#
-# An axis whose declared point mass carries weight the doubles resolve is left
-# to the grid's atom split, which this read does not model.
-.nl_mode_read_unresolved <- function(res) {
-  ax  <- .nl_outer_mode_axes(.nl_fit_outer_mode(res))
-  sd  <- res$theta_sd
-  ess <- res$theta_sd_ess
-  tg  <- res$theta_grid
-  if (is.null(ax) || is.null(names(sd)) || is.null(names(ess)) ||
-      !is.matrix(tg)) {
-    return(res)
-  }
-  src <- res$theta_sd_source
-  if (length(src) != length(sd)) src <- rep("weighted", length(sd))
-  names(src) <- names(sd)
-  w <- res$weights / sum(res$weights)
-  z <- stats::qnorm(0.975)
-  min_ess <- .nl_diag("axis_sd_ess")
-  read <- character(0)
-  for (a in intersect(intersect(names(ax), names(sd)), colnames(tg))) {
-    e <- ess[[a]]
-    if (!is.finite(e) || e >= min_ess) next
-    m <- ax[[a]]
-    if (identical(m$tag, "log") &&
-        sum(w[tg[, a] == 0], na.rm = TRUE) >= .Machine$double.eps) next
-    th <- .joint_pareto_inv(m$tag, m$mode_u + c(-z, -1, 0, 1, z) * m$sd_u)$theta
-    if (!all(is.finite(th))) next
-    sd[[a]]  <- abs(th[4L] - th[2L]) / 2
-    src[[a]] <- "mode"
-    if (a %in% names(res$theta_median)) res$theta_median[[a]] <- th[3L]
-    if (a %in% names(res$theta_ci_lo))  res$theta_ci_lo[[a]]  <- min(th[c(1L, 5L)])
-    if (a %in% names(res$theta_ci_hi))  res$theta_ci_hi[[a]]  <- max(th[c(1L, 5L)])
-    read <- c(read, a)
-  }
-  if (!length(read)) return(res)
-  res$theta_sd        <- sd
-  res$theta_sd_source <- src
-  for (b in seq_along(res$block_moments)) {
-    cols <- res$block_moments[[b]]$axis_cols
-    for (j in seq_along(cols)) {
-      a <- colnames(tg)[cols[j]]
-      if (!a %in% read) next
-      res$block_moments[[b]]$sd[[j]]        <- sd[[a]]
-      res$block_moments[[b]]$sd_source[j]   <- "mode"
-    }
-  }
-  res
-}
-
 # The within-cell construction a fit was asked for, from its own control list.
 # One resolver, so every front door spells the knob the same way and an unknown
 # value is refused at the door rather than silently read as the default.
@@ -1987,7 +1927,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 }
 
 # Which estimator produced a reported axis SD.
-.NL_AXIS_SD_SOURCE <- c("weighted", "stencil", "within_cell", "mode")
+.NL_AXIS_SD_SOURCE <- c("weighted", "stencil", "within_cell")
 
 # The SD to report for ONE axis, and which estimator produced it.
 #
@@ -2000,11 +1940,12 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # discrete spread is not a spread. `.nl_diag("axis_sd_ess")` carries the
 # measured threshold and the ladder it came off.
 #
-# `stencil_ok = FALSE` withholds the parabola entirely. A design-weighted grid
-# is the case: a central-composite design's nodes are not a per-axis lattice, so
-# a 3-point profile across them is not the curvature of anything, while the
-# corrected design weights reproduce the Gaussian moments and the weighted read
-# IS the calibrated SD there.
+# `stencil_ok = FALSE` withholds the parabola entirely, and `stencil_declined`
+# names why. A design-weighted grid is one case: a central-composite design's
+# nodes are not a per-axis lattice, so a 3-point profile across them is not the
+# curvature of anything, while the corrected design weights reproduce the
+# Gaussian moments and the weighted read IS the calibrated SD there. A modal
+# level held by another axis's slice is the other (`.nl_axis_cross_slice()`).
 #
 # Returns the SD, its source, the ESS the choice was made on, and -- where the
 # parabola was wanted and could not be formed -- the reason it declined, so a
@@ -2012,7 +1953,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # than reporting a floor as a spread.
 .nl_axis_sd_choice <- function(vals, log_marg, log_axis = NULL, coord = NULL,
                                min_ess = .nl_diag("axis_sd_ess"),
-                               stencil_ok = TRUE, mass = FALSE) {
+                               stencil_ok = TRUE, mass = FALSE,
+                               stencil_declined = "design_weighted") {
   out <- list(sd = NA_real_, source = NA_character_, ess = NA_real_,
               declined = NA_character_)
   if (!length(vals)) return(out)
@@ -2030,7 +1972,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   resolved <- is.finite(ess) && ess >= min_ess
   if (resolved && is.finite(out$sd)) return(out)
   if (!isTRUE(stencil_ok)) {
-    out$declined <- "design_weighted"
+    out$declined <- stencil_declined
     return(out)
   }
   sd_sten <- .nl_laplace_at_mode_sd_axis(vals, log_marg, log_axis = log_axis,
@@ -2042,6 +1984,26 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     out$declined <- .nl_axis_sd_reason(sd_sten)
   }
   out
+}
+
+# Is an axis's modal level held by a slice on ANOTHER axis? Its level sum then
+# integrates that axis on the slice's finer nodes while the levels beside it
+# integrate it on the base nodes alone, and a parabola through the three
+# compares unlike sums. On the full 25 km Calluna fit the dispersion slice held
+# the field SD's modal level while its neighbours held only rows 36 dispersion
+# SDs off the mode, and the parabola read a ninth of the field SD's spread. The
+# question is asked of the heaviest cell at the modal level. `home` is the
+# per-cell refinement home (`.hyper_slice_home()`), `marg` the axis's read.
+.nl_axis_cross_slice <- function(tg, j, lm_eff, keep, home, marg) {
+  if (!any(nzchar(home)) || !length(marg$vals)) return(FALSE)
+  m <- which.max(marg$log_marg)
+  if (!length(m)) return(FALSE)
+  v <- as.numeric(tg[, j])
+  at <- which(keep & is.finite(lm_eff) &
+                abs(v - marg$vals[m]) <= 1e-12 * max(1, abs(marg$vals[m])))
+  if (!length(at)) return(FALSE)
+  h <- home[at[which.max(lm_eff[at])]]
+  nzchar(h) && !identical(h, colnames(tg)[j])
 }
 
 # Report `theta_sd` (and `block_moments[[b]]$sd` when present) per axis, each
@@ -2093,10 +2055,14 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     dec <- src
     for (col in col_names) {
       if (!col %in% names(res$theta_sd)) next
-      marg <- .nl_axis_marginal_read(tg, match(col, col_names), lm_eff, keep,
-                                     home)
+      j <- match(col, col_names)
+      marg <- .nl_axis_marginal_read(tg, j, lm_eff, keep, home)
+      cross <- .nl_axis_cross_slice(tg, j, lm_eff, keep, home, marg)
       ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg,
-                               stencil_ok = stencil_ok, mass = measured)
+                               stencil_ok = stencil_ok && !cross,
+                               mass = measured,
+                               stencil_declined = if (cross) "cross_slice"
+                                                  else "design_weighted")
       if (is.finite(ch$sd)) res$theta_sd[[col]] <- ch$sd
       src[[col]] <- ch$source
       ess[[col]] <- ch$ess
@@ -2114,8 +2080,12 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
       for (j in seq_along(axis_cols)) {
         col_ix <- axis_cols[j]
         marg <- .nl_axis_marginal_read(tg, col_ix, lm_eff, keep, home)
+        cross <- .nl_axis_cross_slice(tg, col_ix, lm_eff, keep, home, marg)
         ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg,
-                                 stencil_ok = stencil_ok, mass = measured)
+                                 stencil_ok = stencil_ok && !cross,
+                                 mass = measured,
+                                 stencil_declined = if (cross) "cross_slice"
+                                                    else "design_weighted")
         if (is.finite(ch$sd)) res$block_moments[[b]]$sd[[j]] <- ch$sd
         res$block_moments[[b]]$sd_source[j] <- ch$source
       }

@@ -268,37 +268,22 @@ test_that("a collapsed axis with a known mode is resolved without bisecting to i
     expect_lt(blind$info$ess_after, .nl_diag("axis_sd_ess"))
 })
 
-test_that("an axis the grid left on one node reports the mode's Gaussian", {
-    tg <- as.matrix(expand.grid(sigma = exp(1.1 + c(-1, 0, 1) * 0.19),
-                                alpha = c(0, 0.27, 0.33)))
-    w <- rep(0, nrow(tg)); w[tg[, "sigma"] == exp(1.1) & tg[, "alpha"] == 0.27] <- 1
-    res <- list(theta_grid = tg, weights = w,
-                theta_sd = c(sigma = 0.015, alpha = 0.02),
-                theta_sd_ess = c(sigma = 1, alpha = 3.5),
-                theta_sd_source = c(sigma = "stencil", alpha = "weighted"),
-                theta_median = c(sigma = exp(1.1), alpha = 0.27),
-                theta_ci_lo = c(sigma = 2.74, alpha = 0.25),
-                theta_ci_hi = c(sigma = 3.27, alpha = 0.30),
-                outer_mode_u = c(1.1, log(0.27)),
-                outer_mode_cov_u = diag(c(0.0477, 0.0464)^2),
-                outer_mode_axis_tags = c("log", "log"),
-                outer_mode_axis_names = c("sigma", "alpha"))
-    out <- .nl_mode_read_unresolved(res)
-    z <- stats::qnorm(0.975)
-    expect_identical(unname(out$theta_sd_source), c("mode", "weighted"))
-    expect_equal(out$theta_sd[["sigma"]], exp(1.1) * sinh(0.0477))
-    expect_equal(out$theta_ci_lo[["sigma"]], exp(1.1 - z * 0.0477))
-    expect_equal(out$theta_ci_hi[["sigma"]], exp(1.1 + z * 0.0477))
-    expect_equal(out$theta_median[["sigma"]], exp(1.1))
-    # A resolved axis keeps the grid's read.
-    expect_identical(out$theta_sd[["alpha"]], 0.02)
-    expect_identical(out$theta_ci_lo[["alpha"]], 0.25)
-    # A declared point mass the weights carry is the grid's atom split.
-    res$theta_sd_ess[["alpha"]] <- 1
-    res$weights[tg[, "alpha"] == 0][1] <- 0.2
-    out <- .nl_mode_read_unresolved(res)
-    expect_identical(out$theta_sd_source[["alpha"]], "weighted")
-    # No mode, nothing to read.
-    res$outer_mode_u <- NULL
-    expect_identical(.nl_mode_read_unresolved(res), res)
+test_that("a modal level held by another axis's slice declines the parabola", {
+    # Two base sigma levels around the mode's; a dispersion slice laid at the
+    # middle one holds the posterior, while the base rows sit far off it.
+    tg <- rbind(cbind(sigma = c(2.5, 3, 3.6), phi = 3.9),
+                cbind(sigma = 3, phi = c(3.2, 3.25, 3.3)))
+    lm <- c(-650, -649, -651, -1, 0, -1)
+    home <- c("", "", "", "phi", "phi", "phi")
+    keep <- rep(TRUE, 6L)
+    marg <- .nl_axis_marginal_logdensity(tg[, "sigma"], lm)
+    expect_true(.nl_axis_cross_slice(tg, 1L, lm, keep, home, marg))
+    # The slice's own axis reads its own slice, which is comparable.
+    marg_phi <- .nl_axis_marginal_logdensity(tg[, "phi"], lm)
+    expect_false(.nl_axis_cross_slice(tg, 2L, lm, keep, home, marg_phi))
+    # Without slices nothing declines.
+    expect_false(.nl_axis_cross_slice(tg, 1L, lm, keep, rep("", 6L), marg))
+    ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg, stencil_ok = FALSE,
+                             stencil_declined = "cross_slice")
+    expect_identical(ch$declined, "cross_slice")
 })

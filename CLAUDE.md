@@ -244,10 +244,10 @@ re-tiles one fibre, laid through the row nearest the outer mode
 pinned axis sits tens of SDs from its mode, that cell is the others' best GIVEN
 the far level. The pass takes the axis farthest from its mode first
 (`.hyper_consistency_order()`) and holds an axis whose row sits more than
-`sqrt(2 log(1 / consistency_row_mass))` mode-SDs from the mode (`info$held`). An
-axis the grid leaves collapsed on one node reports the mode's Gaussian, SD and
-interval together (`theta_sd_source = "mode"`, `.nl_mode_read_unresolved()`),
-because no read off such a grid is a spread.
+`sqrt(2 log(1 / consistency_row_mass))` mode-SDs from the mode (`info$held`). Where
+another axis's slice holds an axis's modal level, the three-point parabola
+declines (`cross_slice`, `.nl_axis_cross_slice()`) and the SD aligns with the
+within-cell read the interval comes from.
 
 The cheap-pass screen is ON by default for the joint and registry doors
 (`.NL_SCREEN$prune`, per door; the SPDE fitter stays opt-in because its CCD
