@@ -247,8 +247,17 @@
 # diagnostic goes with them; the placement mode-find
 # (`.joint_attach_placement()`) supplies the mode and Hessian without it, which
 # is the same route a `diagnose_k = FALSE` fit already takes.
+#
+# `pilot_screen` goes one step further on a screened fit: the pilot's grid is
+# read off the cheap screen alone (`screen_only` in run_nested_laplace_grid),
+# with no full pass over the kept cells. The rail test, the heaviest cell and
+# the weights the placement seeds from are all readings of where the posterior
+# sits, which is what the screen ranks, and whichever way the placement goes
+# the pilot's cells are discarded (gcol33/tulpa#922). An unscreened pilot
+# (prune off) is unaffected.
 .nl_pilot_control <- function(control) {
     utils::modifyList(control, list(
+        pilot_screen             = TRUE,
         adaptive_grid            = FALSE,
         var_of_means_consistency = FALSE,
         keep_grid_hessians       = FALSE,
@@ -278,7 +287,10 @@
         # detector answers differently.
         regime    = detect$regime %||% NA_character_,
         ess_grid  = detect$ess_grid %||% NA_real_,
-        edge_axes = detect$edge_axes %||% character(0)
+        edge_axes = detect$edge_axes %||% character(0),
+        # TRUE when the detecting grid was read off the cheap screen alone,
+        # with no full pass over its cells.
+        screened  = isTRUE(detect$screened)
     )
     res$outer_grid_pilot_declined <- declined
     res

@@ -1346,7 +1346,8 @@ tulpa_nested_laplace_joint <- function(responses,
         cells      = nrow(res$theta_grid),
         regime     = res$pareto_k_regime,
         ess_grid   = .nl_grid_ess(res$weights),
-        edge_axes  = res$pareto_k_grid_edge_axes)
+        edge_axes  = res$pareto_k_grid_edge_axes,
+        screened   = isTRUE(res$prune_screen_only))
     res$k_quality_rounds <- 0L
     res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
 
@@ -1943,6 +1944,15 @@ tulpa_nested_laplace_joint <- function(responses,
     .op_screen <- options(tulpa.nl_screen_iters = screen_iters)
     on.exit(options(.op_screen), add = TRUE)
 
+    # A placement pilot's detecting grid (`.nl_pilot_control()`), read by the
+    # multi-block main grid solve alone: that grid is solved only to find where
+    # the posterior sits, so its screened surface is returned without the full
+    # pass. The placement probes and every refinement solve of the same fit go
+    # through other call sites and are full solves.
+    .op_pilot_screen <- options(
+        tulpa.nl_pilot_screen = isTRUE(control$pilot_screen))
+    on.exit(options(.op_pilot_screen), add = TRUE)
+
     # The per-row predictive variance of the linear predictor rides the same
     # transport. It is what a grid-mixture replicate draws its WITHIN-cell
     # spread from (`posterior_predict()`), and a real per-cell solve sweep, so
@@ -2095,6 +2105,9 @@ tulpa_nested_laplace_joint <- function(responses,
     screen_offset <- if (prune_tol_eff > 0)
         .nl_screen_log_offset(theta_grid_init, list(hp_init), specs = specs)
 
+    # A placement pilot's detecting grid is read off the screen alone
+    # (`.nl_pilot_control()`); the full-grid fallback below never is.
+    pilot_screen <- isTRUE(getOption("tulpa.nl_pilot_screen", FALSE))
     call_kernel_with_tol <- function(tol_prune) {
         backend$call_kernel(arms, prior, cp, grids, max_iter, tol,
                             n_threads, x_init, isTRUE(store_Q),
@@ -2109,7 +2122,8 @@ tulpa_nested_laplace_joint <- function(responses,
                             hessian_pd_mode = hessian_pd_mode,
                             step_curvature_mode = step_curvature_mode,
                             inner_refresh = inner_refresh,
-                            screen_log_offset = if (tol_prune > 0) screen_offset)
+                            screen_log_offset = if (tol_prune > 0) screen_offset,
+                            screen_only = pilot_screen && tol_prune > 0)
     }
     res <- .joint_main_grid_solve(function() call_kernel_with_tol(prune_tol_eff))
     # Safety gate: if the cheap-pass ranking is unreliable (the screen's

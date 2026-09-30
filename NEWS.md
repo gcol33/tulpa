@@ -1,3 +1,22 @@
+# tulpa 0.6.10
+
+## Performance
+
+* **A screened placement pilot detects off the cheap screen alone**
+  (gcol33/tulpa#922). With `recenter_pilot` and the cheap screen both on, the
+  pilot's detecting grid solved every kept cell in full, though all it is read
+  for is where the posterior sits. That means the rail test, the heaviest cell
+  that seeds the placement mode-find, and the weights. Its cells are then
+  discarded whichever way the placement goes. The detecting grid now returns
+  the screen's own log-marginal for every cell, the pilot cell included (which
+  keeps its full-solve mode as the placement's warm start), and skips the full
+  pass (`screen_only` in `run_nested_laplace_grid()`). The placement probes,
+  the refinement solves and the reported grid remain full solves, and the
+  prune safety gate stands down on a screened read. `outer_grid_pilot$screened`
+  records whether the pilot was read this way. On the full 25 km Calluna fit
+  this targets the ~1.5 h 90-cell detecting pass; that saving has not been
+  measured yet.
+
 # tulpa 0.6.9
 
 ## Performance

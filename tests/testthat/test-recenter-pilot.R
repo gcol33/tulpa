@@ -247,6 +247,30 @@ test_that("the pilot is a pre-screen: it never costs a placement the full grid w
     expect_gt(nrow(on$theta_grid), on$outer_grid_pilot$cells)
 })
 
+test_that("a screened pilot detects off the screen and still places", {
+    skip_on_cran()
+    # gcol33/tulpa#922: with the cheap screen on, the pilot's detecting grid is
+    # read off the screen alone -- no full pass over its cells -- and the
+    # placement it triggers is the one the unpiloted screened fit makes.
+    sim   <- .pilot_sim(N2 = 8L, f_coef = 0.05)
+    prior <- .pilot_prior(sim)
+    # The full grids' own prune gate may fall back to an unscreened solve on
+    # this small fixture; its warning is not what is under test.
+    off <- suppressWarnings(
+        .pilot_fit(sim, prior, FALSE, extra = list(prune = TRUE)))
+    on  <- suppressWarnings(
+        .pilot_fit(sim, prior, TRUE,  extra = list(prune = TRUE)))
+    expect_true(isTRUE(on$outer_grid_pilot$screened))
+    if (identical(off$outer_grid_placement, "auto_recentered")) {
+        expect_identical(on$outer_grid_placement, "auto_recentered")
+        expect_gt(max(on$theta_grid[, "sigma"]), 3.0)
+    }
+    # The reported grid is the full one, solved in full.
+    expect_identical(nrow(on$theta_grid), nrow(off$theta_grid))
+    expect_false(isTRUE(on$prune_screen_only))
+    expect_true(all(is.finite(on$log_marginal[on$weights > 0])))
+})
+
 test_that("recenter_pilot is refused where the placement pass is off", {
     skip_on_cran()
     sim  <- .pilot_sim()

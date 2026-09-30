@@ -1166,7 +1166,10 @@
              cila             = NULL,
              # Per-cell log hyperprior + log cell measure a screened solve
              # ranks with, in `theta_mat` row order.
-             screen_log_offset = NULL) {
+             screen_log_offset = NULL,
+             # Return the screened surface without the full pass: a placement
+             # pilot's detecting grid only (`.nl_pilot_screen_only()`).
+             screen_only = FALSE) {
         .cpp_joint_multi(
             arms_list           = arms,
             copy_arms           = as.integer(cp$copy_arms_zero),
@@ -1199,7 +1202,8 @@
             debias              = debias,
             cila                = cila,
             inner_sparse_override = as.integer(inner_sparse_override),
-            screen_log_offset   = screen_log_offset)
+            screen_log_offset   = screen_log_offset,
+            screen_only         = isTRUE(screen_only))
     }
 }
 
@@ -1860,6 +1864,9 @@
                                   copy_slab, copy_atom_mass,
                                   logchol = hp_declared$logchol))
 
+    # A placement pilot's detecting grid is read off the screen alone
+    # (`.nl_pilot_control()`); the full-grid fallback below never is.
+    pilot_screen <- isTRUE(getOption("tulpa.nl_pilot_screen", FALSE))
     call_kernel_with_tol <- function(tol_prune) {
         call_kernel(
             joint_grid,
@@ -1871,7 +1878,8 @@
             tile_ids         = tile_partition$tile_ids,
             tile_pilot_cells = tile_partition$tile_pilot_cells,
             prune_tol        = tol_prune,
-            screen_log_offset = if (tol_prune > 0) screen_offset)
+            screen_log_offset = if (tol_prune > 0) screen_offset,
+            screen_only      = pilot_screen && tol_prune > 0)
     }
     tm$mark("setup")
     grid_solve_start <- proc.time()[["elapsed"]]

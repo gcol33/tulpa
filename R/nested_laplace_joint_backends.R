@@ -42,7 +42,8 @@
              fixed_block_constraints = NULL,
              debias = NULL,
              cila = NULL,
-             screen_log_offset = NULL) {
+             screen_log_offset = NULL,
+             screen_only = FALSE) {
         .joint_call_kernel_via_multi(backend_name, arms, prior, cp, grids,
                                       max_iter, tol, n_threads,
                                       x_init, store_Q, arm_names,
@@ -62,7 +63,8 @@
                                           fixed_block_constraints,
                                       debias = debias,
                                       cila = cila,
-                                      screen_log_offset = screen_log_offset)
+                                      screen_log_offset = screen_log_offset,
+                                      screen_only = screen_only)
     }
 }
 
@@ -178,7 +180,8 @@
                                           fixed_block_constraints = NULL,
                                           debias = NULL,
                                           cila = NULL,
-                                          screen_log_offset = NULL) {
+                                          screen_log_offset = NULL,
+                                          screen_only = FALSE) {
     n_arms <- length(arms)
     blk <- prior; blk$type <- type
     .nl_check_block_fields(blk, "joint_single")
@@ -301,7 +304,8 @@
         fixed_block_constraints = fixed_block_constraints,
         debias = debias,
         cila = cila,
-        screen_log_offset = screen_log_offset
+        screen_log_offset = screen_log_offset,
+        screen_only = isTRUE(screen_only)
     )
     # Strip the C++-side theta_grid / axis_offsets -- the backend's
     # `theta_grid()` callback rebuilds them with the user-facing bare
@@ -355,6 +359,9 @@
     # No prune ran (prune off, prune_tol = 0, or single-cell grid): nothing
     # to gate. The kernel only emits prune_mask when it actually screened.
     if (is.null(res$prune_mask)) return(res)
+    # A screened read (a placement pilot's detecting grid) has no full pass to
+    # compare the screen against, and is never integrated.
+    if (isTRUE(res$prune_screen_only)) return(res)
 
     disagree <- isTRUE(res$prune_argmax_disagree)
 

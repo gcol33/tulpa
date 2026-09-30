@@ -1689,7 +1689,10 @@ Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     bool                             compute_eta_var = false,
     // Per-cell log hyperprior + log cell measure the cheap screen ranks with
     // (run_nested_laplace_grid); empty ranks on the log-marginal alone.
-    const std::vector<double>&       screen_log_offset = std::vector<double>()
+    const std::vector<double>&       screen_log_offset = std::vector<double>(),
+    // Return the screened surface without the full pass (a placement pilot's
+    // detecting grid; see run_nested_laplace_grid).
+    bool                             screen_only = false
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -1752,7 +1755,10 @@ Rcpp::List run_multi_block_nested_laplace_joint(
     bool                             compute_eta_var = false,
     // Per-cell log hyperprior + log cell measure the cheap screen ranks with
     // (run_nested_laplace_grid); empty ranks on the log-marginal alone.
-    const std::vector<double>&       screen_log_offset = std::vector<double>()
+    const std::vector<double>&       screen_log_offset = std::vector<double>(),
+    // Return the screened surface without the full pass (a placement pilot's
+    // detecting grid; see run_nested_laplace_grid).
+    bool                             screen_only = false
 );
 
 } // namespace tulpa

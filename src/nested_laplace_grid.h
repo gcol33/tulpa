@@ -680,7 +680,13 @@ inline Rcpp::List run_nested_laplace_grid(
     ResumeRefill resume_refill = ResumeRefill{},
     // Per-cell log hyperprior + log cell measure the screen ranks with; empty
     // ranks on the kernel's log-marginal alone.
-    const std::vector<double>& screen_log_offset = std::vector<double>()
+    const std::vector<double>& screen_log_offset = std::vector<double>(),
+    // Return the screened surface instead of solving the kept cells in full:
+    // every cell but the pilot carries its cheap log-marginal and the pilot's
+    // mode. For a grid read only to DETECT where the posterior sits (a
+    // placement pilot), never for one that is integrated. Inert without a
+    // screen (prune_tol = 0).
+    bool screen_only = false
 ) {
     if (!screen_log_offset.empty() &&
         static_cast<int>(screen_log_offset.size()) != n_grid) {
@@ -1179,7 +1185,32 @@ inline Rcpp::List run_nested_laplace_grid(
         if (progress) progress->set_total(n_grid - n_cells_pruned - n_loaded);
     }
 
-    if (n_threads_outer <= 1) {
+    // A screened read: the screen's own log-marginal for every cell it ranked,
+    // none pruned, no full solve, so the surface is one quantity throughout.
+    // The pilot keeps the mode of the full solve it already carries (the warm
+    // start a placement reads) but reports its screened log-marginal; a
+    // checkpoint-loaded cell keeps its full solve, which the screen ranked it
+    // by.
+    const bool screen_read = screen_only && prune_active;
+    if (screen_read) {
+        for (int k = 0; k < n_grid; k++) {
+            if (ckpt_done[k]) continue;
+            if (k == k_pilot) {
+                if (std::isfinite(cheap_lm[k]))
+                    cell_results[k].log_marginal = cheap_lm[k];
+                continue;
+            }
+            LaplaceResult r;
+            r.mode = pilot_mode;
+            r.log_marginal = cheap_lm[k];
+            r.n_iter = 0;
+            r.converged = false;
+            r.log_det_Q = 0.0;
+            cell_results[k] = r;
+            pruned[k] = 0;
+        }
+        n_cells_pruned = 0;
+    } else if (n_threads_outer <= 1) {
         // Serial path. Two sub-cases:
         //  - prune off, pilot off: classic mode-chained warm-start across
         //    every cell.
@@ -1426,6 +1457,7 @@ inline Rcpp::List run_nested_laplace_grid(
         out["prune_min_keep"]           = std::min(n_grid,
                                                    CHEAP_SCREEN_MIN_KEEP);
         out["prune_n_floor_restored"]   = n_floor_restored;
+        out["prune_screen_only"]        = screen_read;
 
         // ---- Safety gate -------------------------------------------------
         // The full pass only ran on survivors, so the full-solve argmax is
