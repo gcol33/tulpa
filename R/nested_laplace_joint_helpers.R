@@ -952,7 +952,8 @@ tulpa_joint_axis_specs_from_grid <- function(
         # O(tol^2). Never tighter than the fit's own tol.
         tl <- if (is.null(tol_override)) tol else max(as.numeric(tol_override), tol)
         # The refinement / consistency passes call serially (n_threads_outer
-        # left at 1) and chain warm-starts cell-to-cell; the outer Pareto-k
+        # left at 1) and chain warm-starts cell-to-cell, each cell on the fit's
+        # whole thread grant (`n_threads`, gcol33/tulpa#924); the outer Pareto-k
         # re-evaluation passes its whole importance batch in one call with
         # n_threads_outer > 1 so the independent re-solves run concurrently,
         # each warm-started from the broadcast modal mode. Tiling is left off:

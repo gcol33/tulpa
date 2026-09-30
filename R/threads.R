@@ -25,3 +25,13 @@
     if (length(cap) != 1L || is.na(cap) || cap < 1L) return(n_threads)
     as.integer(min(n_threads, cap))
 }
+
+# The fit's thread grant: every thread the caller handed it, through either
+# knob, with the outer request resolved against the team the environment hands
+# out. A solve that runs alone -- the pilot of a parallel grid, the screen's
+# serial backbone, every cell of a refinement or consistency round, the skew
+# probe -- has all of them, so its inner loop is sized off the grant rather than
+# off the inner request (gcol33/tulpa#924).
+.tulpa_thread_grant <- function(n_threads_outer, n_threads) {
+    max(1L, .nl_outer_width(n_threads_outer), as.integer(n_threads))
+}

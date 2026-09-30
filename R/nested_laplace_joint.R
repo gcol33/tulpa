@@ -297,6 +297,12 @@
 #'     and NewtonScratch (inner OpenMP auto-disabled). `1L` is serial, chained
 #'     warm-starts -- bitwise identical to the pre-speedup driver. Recommended
 #'     on multi-core workstations: `parallel::detectCores() - 1L`.
+#'     A solve that runs alone holds every thread the fit was granted, the
+#'     larger of `n_threads` and `n_threads_outer` under the `n_threads_scatter`
+#'     cap, on its inner loop: the pilot, every cell of a refinement or
+#'     var-of-means consistency round, and the skew probe. A fit is therefore
+#'     reproducible bit for bit at a given pair of `n_threads` and
+#'     `n_threads_outer`.
 #'     It is a REQUEST: the driver clamps it to the team the OpenMP environment
 #'     hands out (`omp_get_max_threads()`, `OMP_THREAD_LIMIT`, and the check
 #'     farm's core cap), because the per-cell block cache sizes its slot array
@@ -1644,9 +1650,14 @@ tulpa_nested_laplace_joint <- function(responses,
     # validated at the front of tulpa_nested_laplace_joint().
     max_iter                  <- control$max_iter %||% 50L
     tol                       <- control$tol %||% 1e-6
-    n_threads                 <- .tulpa_inner_threads(control$n_threads %||% 1L,
-                                                       control$n_threads_scatter)
     n_threads_outer           <- control$n_threads_outer %||% 1L
+    # The kernel's inner thread count is the fit's whole grant. A solve inside
+    # the outer team takes its share of the pool whatever this says; a solve
+    # that runs alone -- a grid's pilot, a refinement or consistency round, the
+    # skew probe -- takes all of it (`nl_cell_solve_threads()`).
+    n_threads                 <- .tulpa_inner_threads(
+        .tulpa_thread_grant(n_threads_outer, control$n_threads %||% 1L),
+        control$n_threads_scatter)
     tile_warm                 <- control$tile_warm %||% TRUE
     prune                     <- control$prune %||% FALSE
     # `prune_log_gap` states the same screening cut in nats and replaces the

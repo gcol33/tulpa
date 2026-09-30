@@ -1,3 +1,26 @@
+# tulpa 0.6.11
+
+## Performance
+
+* **A solve that runs alone holds every thread the fit was granted**
+  (gcol33/tulpa#924). A kernel call that solves its cells one after another
+  ran each cell on the inner request, `n_threads`. That covers the rounds of
+  the var-of-means consistency pass and of the adaptive refinement, the skew
+  probe, and the pilot every parallel grid solves before its team starts. A
+  fit run the recommended way (`n_threads = 1`, the cores on
+  `n_threads_outer`) therefore solved all of these on one thread while the
+  rest of the pool waited. On the full 25 km Calluna `occu_cover` fit the
+  consistency rounds ran at 17 to 35 min each with 1 of 24 threads busy.
+  The joint driver now resolves the fit's grant once (`.tulpa_thread_grant()`:
+  the larger of `n_threads` and the realised `n_threads_outer`, under the
+  `n_threads_scatter` cap) and hands it to the kernel as the inner count. A cell
+  solved inside the outer team still takes its share of the pool; a cell solved
+  alone takes the whole grant (`nl_cell_solve_threads()`), including the
+  coupled-cell scatter's team. On a coupled `occu_cover` fixture (3,600 sites,
+  8 threads) a consistency round goes from 1.34 s to 0.38 s at the same
+  log-marginal. A fit is reproducible bit for bit at a given pair of
+  `n_threads` and `n_threads_outer`.
+
 # tulpa 0.6.10
 
 ## Performance

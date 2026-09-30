@@ -363,7 +363,7 @@
 .tulpa_pareto_k_threads <- function(n_threads_outer, n_threads, k_samples,
                                     k_threads = NULL) {
     ks         <- max(1L, as.integer(k_samples))
-    auto_grant <- max(1L, as.integer(n_threads_outer), as.integer(n_threads))
+    auto_grant <- .tulpa_thread_grant(n_threads_outer, n_threads)
 
     if (is.null(k_threads)) {
         w <- auto_grant

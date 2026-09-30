@@ -362,6 +362,9 @@ inline Rcpp::List run_multi_block_nested_laplace(
             d_fac_cache[b] = blocks[b].d_fac_at(k);
         }
 
+        const int n_inner =
+            nl_cell_solve_threads(n_threads, n_threads_inner_eff);
+
         int tid;
         #ifdef _OPENMP
         tid = omp_in_parallel() ? omp_get_thread_num() : 0;
@@ -384,7 +387,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
 
         LaplaceResult res = spec_inner_solve(
             data, layout, &blocks, k, *spec_ptr, resp_ptr, re_group_1based,
-            max_iter_use, tol, n_threads_inner_eff, base_params,
+            max_iter_use, tol, n_inner, base_params,
             scratch, solver, store_Q, /*inv_block_layout=*/nullptr,
             /*beta_prior=*/nullptr, /*sparse_override=*/0,
             allow_probe && compute_skew, skew_probe_idx,

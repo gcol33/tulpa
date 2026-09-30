@@ -9,7 +9,8 @@
 // aggregates log-marginals + modes.
 //
 // Parallel mode: when `n_threads_outer > 1` the driver
-//   1) runs a pilot solve at the grid centre cell (serial),
+//   1) runs a pilot solve at the grid centre cell (serial, on the whole pool:
+//      `nl_cell_solve_threads()`),
 //   2) allocates one SparseCholeskySolver per outer thread (CHOLMOD common
 //      workspace is not thread-safe — each thread needs its own),
 //   3) dispatches the remaining cells across an OpenMP parallel for, with
@@ -146,6 +147,21 @@
 #endif
 
 namespace tulpa {
+
+// Inner threads for one cell solve. A solve inside the outer team holds its
+// share of the pool, `in_team`. A solve that runs alone holds `n_threads`, the
+// caller's grant for the whole fit (the R side resolves it as the larger of the
+// inner request and the outer width, under the performance-core cap): the pilot
+// the parallel branches warm-start from, the screen's serial backbone, and
+// every cell of a call with the outer loop off. Held to the in-team share, the
+// pilot of every parallel grid ran on one thread while the rest of the pool
+// waited for it (gcol33/tulpa#924).
+inline int nl_cell_solve_threads(int n_threads, int in_team) {
+#ifdef _OPENMP
+    if (omp_in_parallel()) return std::max(1, in_team);
+#endif
+    return std::max(1, n_threads);
+}
 
 // ---------------------------------------------------------------------
 // Outer-grid axis contract

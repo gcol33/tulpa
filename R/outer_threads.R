@@ -26,12 +26,8 @@
 # than predicted here.
 .nl_outer_threads <- function(n_requested,
                               fn = "tulpa_nested_laplace_joint()") {
-  req <- suppressWarnings(as.integer(n_requested)[1L])
-  if (length(req) != 1L || is.na(req)) req <- 1L
-  cap <- tryCatch(as.integer(cpp_get_max_threads())[1L],
-                  error = function(e) NA_integer_)
-  if (length(cap) != 1L || is.na(cap) || cap < 1L) cap <- 1L
-  realised <- if (req <= 0L) cap else min(req, cap)
+  req <- .nl_outer_request(n_requested)
+  realised <- .nl_outer_width(req)
   if (req > 1L && realised < req) {
     message(sprintf(
       paste0("%s: n_threads_outer: %d requested, running %d (capped by ",
@@ -39,6 +35,21 @@
       fn, req, realised, req))
   }
   list(requested = req, realised = realised)
+}
+
+.nl_outer_request <- function(n_requested) {
+  req <- suppressWarnings(as.integer(n_requested)[1L])
+  if (length(req) != 1L || is.na(req)) 1L else req
+}
+
+# The width a request resolves to, without the report: a request of 0 or less
+# is the whole team the environment hands out, anything else is clamped to it.
+.nl_outer_width <- function(n_requested) {
+  req <- .nl_outer_request(n_requested)
+  cap <- tryCatch(as.integer(cpp_get_max_threads())[1L],
+                  error = function(e) NA_integer_)
+  if (length(cap) != 1L || is.na(cap) || cap < 1L) cap <- 1L
+  if (req <= 0L) cap else min(req, cap)
 }
 
 # Stamp both numbers on the fit, beside the other outer-grid diagnostics. The

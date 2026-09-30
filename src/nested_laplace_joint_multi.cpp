@@ -2266,6 +2266,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                                    = nullptr,
                                    int cheap_worker = 0) -> LaplaceResult
     {
+        const int n_inner = tulpa::nl_cell_solve_threads(n_threads, n_threads_inner_eff);
         // A cheap-screen call (scratch_override != nullptr) uses its worker's
         // private specs view; the full solve uses the shared `specs`.
         const bool is_cheap = (scratch_override != nullptr);
@@ -2346,7 +2347,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                 // tulpa_parallel_for takes a plain loop rather than entering
                 // libgomp for a team of one. Each row
                 // is independent, so the two routes compute the same numbers.
-                tulpa_parallel_for(n_threads_inner_eff, N_k, [&](int i) {
+                tulpa_parallel_for(n_inner, N_k, [&](int i) {
                     etas[k_arm][i] = row_eta(i);
                 });
             }
@@ -2405,14 +2406,14 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                                        ? *scratch_override
                                        : scratch_pool[tid];
 
-        JointSpecLogLik joint_ll{&specs_use.views, n_threads_inner_eff};
+        JointSpecLogLik joint_ll{&specs_use.views, n_inner};
         if (any_coupling) {
             joint_ll.skip_arm = &arm_is_coupled;
             joint_ll.cell_coupling_log_lik_fn =
                 [&](const std::vector<Rcpp::NumericVector>& e) {
                     return eval_cell_coupling_log_lik(
                         *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
-                        arms, e, /*phi_override=*/nullptr, n_threads
+                        arms, e, /*phi_override=*/nullptr, n_inner
                     );
                 };
         }
@@ -2772,6 +2773,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                                    bool use_cheap_scratch,
                                    int cheap_worker = 0) -> LaplaceResult
     {
+        const int n_inner = tulpa::nl_cell_solve_threads(n_threads, n_threads_inner_eff);
         // Pick this outer thread's resource slot. The cheap-screen sweep uses
         // the cheap_* pool indexed by its worker slot (serial -> 0, per-tile
         // parallel -> omp thread id); the full solve uses the per-thread pool
@@ -2885,7 +2887,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                     blocks, k_grid, grad, H,
                     active_scratch, basis_scratch, multi_scratch,
                     active_db_scratch, db_buffers,
-                    idx_cache_use, n_threads_inner_eff
+                    idx_cache_use, n_inner
                 );
             }
             if (any_coupling) {
@@ -2893,14 +2895,14 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                 // spec may skip its Hessian (digamma/trigamma) work; the
                 // curvature mode is irrelevant on such a step. The chunks run
                 // as tasks inside the outer grid (idle grid threads take them)
-                // and on a team of n_threads outside it (the serial pilot and
-                // screen).
+                // and on a team of n_inner outside it (the serial pilot and
+                // screen, which have the whole pool).
                 const CurvatureMode cm =
                     finalize ? CurvatureMode::Observed : step_curvature;
                 scatter_cell_coupling_sparse_branch(
                     *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
                     arms, parsed, etas, blocks, k_grid, grad, H, coupled_plan,
-                    cm, grad_only, coupled_phi_ptr, n_threads
+                    cm, grad_only, coupled_phi_ptr, n_inner
                 );
             }
             for (const auto& b : blocks) {
@@ -2922,14 +2924,14 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         };
 
         NewtonScratchJointSparse& sc = scratches[slot];
-        JointSpecLogLik joint_ll{&specs_use.views, n_threads_inner_eff};
+        JointSpecLogLik joint_ll{&specs_use.views, n_inner};
         if (any_coupling) {
             joint_ll.skip_arm = &arm_is_coupled;
             joint_ll.cell_coupling_log_lik_fn =
                 [&](const std::vector<Rcpp::NumericVector>& e) {
                     return eval_cell_coupling_log_lik(
                         *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
-                        arms, e, coupled_phi_ptr, n_threads
+                        arms, e, coupled_phi_ptr, n_inner
                     );
                 };
         }
