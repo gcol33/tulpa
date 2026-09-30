@@ -2409,7 +2409,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                 [&](const std::vector<Rcpp::NumericVector>& e) {
                     return eval_cell_coupling_log_lik(
                         *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
-                        arms, e
+                        arms, e, /*phi_override=*/nullptr, n_threads
                     );
                 };
         }
@@ -2554,8 +2554,10 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // Outer-grid parallelism. Each full per-cell solve owns mutable state that
     // cannot be shared across concurrent cells -- the sparse Hessian builder,
     // the Newton scratch, the per-arm likelihood specs (whose built-in
-    // dispersion the phi-grid axis rewrites per cell), the scatter index cache,
-    // and the DENSE_BASIS scratch -- so each outer thread gets its own. The
+    // dispersion the phi-grid axis rewrites per cell) and the DENSE_BASIS
+    // scratch -- so each outer thread gets its own. The scatter index cache and
+    // the coupled scatter plan are read-only offsets into the shared pattern,
+    // so one of each serves every thread. The
     // cheap-screen sweep is not serial either -- it chains per-tile across the
     // same outer workers -- so it is worker-indexed the same way and SHARES
     // these pools slot for slot, the two phases being disjoint in time; only
@@ -2580,9 +2582,9 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // The pattern is fit-level invariant; a builder copy shares the read-only
     // entry_map (shared_ptr, O(1)) and deep-copies only the per-thread CSC
     // arrays + the mutable `values`, so the copies cost a memcpy rather than a
-    // re-enumeration. The scatter cache's flat slots are identical across
-    // builders sharing the pattern, so it too is built once and copied,
-    // re-pointed at the owning builder.
+    // re-enumeration. The scatter cache's and the coupled plan's flat slots are
+    // identical across builders sharing the pattern, and both are keyed on the
+    // pattern rather than on a builder, so each is built once and shared.
     std::vector<SparseHessianBuilder> H_builders(1);
     if (progress) progress->note("preparing joint Hessian sparsity pattern");
     { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
@@ -2630,10 +2632,11 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         // a fixed 2 GB, when the queries are unavailable.
         //
         // Both readings are taken ONCE per session. A live reading makes the
-        // resolved outer width -- and through it the scatter partition, the
-        // summation order, and the last bits of every reported number -- a
-        // function of what else the machine happened to be doing at the moment
-        // of the call, so the same model fitted twice in one session could
+        // resolved outer width -- and through it the warm-start route, the
+        // uncoupled arms' inner reduction width, and the last bits of every
+        // reported number -- a function of what else the machine happened to
+        // be doing at the moment of the call, so the same model fitted twice
+        // in one session could
         // disagree. The model-dependent term (`per_thread`) is still computed
         // per call, so a larger model is still clamped harder; only the
         // machine-state term is frozen.
@@ -2687,15 +2690,21 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // the copies bind to it.
     H_builders.resize(n_outer);
 
-    // Per-thread scatter index cache (validity keyed on the owning builder's H
-    // pointer). Built once against slot 0, then copied + re-pointed below.
-    std::vector<ScatterIndexCache> idx_caches(n_outer);
+    // Scatter index cache for the uncoupled arms and flat-offset plan for the
+    // coupled ones, resolved once against slot 0's pattern and read by every
+    // builder that shares it.
+    ScatterIndexCache  idx_cache;
+    CoupledScatterPlan coupled_plan;
     { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
-      build_scatter_index_cache(parsed, arms, blocks, H_builders[0], idx_caches[0]);
+      build_scatter_index_cache(parsed, arms, blocks, H_builders[0], idx_cache,
+                                &arm_is_coupled);
+      if (any_coupling) {
+          build_coupled_scatter_plan(parsed, arms, blocks, coupled_arms,
+                                     cell_rows, n_cells, n_x, H_builders[0],
+                                     coupled_plan);
+      }
       for (int t = 1; t < n_outer; t++) {
           H_builders[t] = H_builders[0];     // shares the read-only pattern
-          idx_caches[t] = idx_caches[0];
-          idx_caches[t].cache_H_ptr = static_cast<const void*>(&H_builders[t]);
       } }
 
     const bool want_fixed_block = fixed_block && fixed_block->active();
@@ -2774,42 +2783,6 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         const int slot = use_cheap_scratch ? cheap_worker : tid;
         JointArmSpecs& specs_use = specs_pool[slot];
 
-        // Inner-thread budget for the coupled-cell scatter, and with it the
-        // number of chunks that scatter partitions its cell loop into. Floor at
-        // the static grid budget (1 whenever the outer grid saturates the pool,
-        // so the bulk stays byte-identical); raise it in the grid's tail, where
-        // fewer cells remain than the outer pool is wide, so the freed threads
-        // steal this cell's scatter chunks.
-        //
-        // The tail width is read from the cell INDEX, not from a count of solves
-        // in flight. The chunk count sets the partition, the partition sets the
-        // summation order, and floating-point addition is not associative -- so
-        // deriving it from instantaneous concurrency made the returned numbers a
-        // function of what else the machine was doing, and two identical fits
-        // could disagree in their last bits. `n_grid - k_grid` bounds the peers
-        // this cell can have exactly as the in-flight count estimated it, while
-        // depending only on the grid geometry. `n_outer` stands in for the team
-        // width for the same reason: omp_get_num_threads() can be moved by an
-        // OMP dynamic team adjustment, and n_outer cannot.
-        //
-        // Parallelism is NOT lost by this: the chunks are dispatched as OpenMP
-        // tasks, so however many threads are actually idle drain them. Only the
-        // partition is pinned, never the number of workers that execute it.
-        int inner_budget = n_threads_inner_eff;
-        if (!use_cheap_scratch) {
-            // tulpa::kCouplingForceParallel (TULPA_COUPLING_FORCE_PARALLEL)
-            // hands every cell the full inner width rather than only the tail
-            // cells, so a small grid exercises the parallel reduce.
-            const int remaining = n_grid - k_grid;   // this cell included
-            const int peers = remaining < 1 ? 1
-                            : (remaining < n_outer ? remaining : n_outer);
-            const int tail = tulpa::kCouplingForceParallel
-                             ? n_outer : n_outer / peers;
-            if (tail > inner_budget) inner_budget = tail;
-            if (inner_budget > n_outer) inner_budget = n_outer;
-            if (inner_budget < 1) inner_budget = 1;
-        }
-
         // phi-grid axis: prep_at_grid rewrites the SHARED `arms` dispersion for
         // this cell, then sync copies it into THIS thread's specs. Both run
         // under one short critical so a concurrent cell's prep cannot clobber
@@ -2886,7 +2859,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         };
 
         SparseHessianBuilder& H_use = H_builders[slot];
-        const ScatterIndexCache* idx_cache_use = &idx_caches[slot];
+        const ScatterIndexCache* idx_cache_use = &idx_cache;
 
         // `finalize` selects the curvature for the coupled-cell scatter: the
         // inner Newton step uses `step_curvature` (Expected = Fisher scoring,
@@ -2913,13 +2886,16 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
             if (any_coupling) {
                 // A grad-only step reuses a cached factor, so the coupled-cell
                 // spec may skip its Hessian (digamma/trigamma) work; the
-                // curvature mode is irrelevant on such a step.
+                // curvature mode is irrelevant on such a step. The chunks run
+                // as tasks inside the outer grid (idle grid threads take them)
+                // and on a team of n_threads outside it (the serial pilot and
+                // screen).
                 const CurvatureMode cm =
                     finalize ? CurvatureMode::Observed : step_curvature;
                 scatter_cell_coupling_sparse_branch(
                     *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
-                    arms, parsed, etas, blocks, k_grid, grad, H, cm, grad_only,
-                    coupled_phi_ptr, inner_budget
+                    arms, parsed, etas, blocks, k_grid, grad, H, coupled_plan,
+                    cm, grad_only, coupled_phi_ptr, n_threads
                 );
             }
             for (const auto& b : blocks) {
@@ -2948,7 +2924,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                 [&](const std::vector<Rcpp::NumericVector>& e) {
                     return eval_cell_coupling_log_lik(
                         *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
-                        arms, e, coupled_phi_ptr
+                        arms, e, coupled_phi_ptr, n_threads
                     );
                 };
         }
@@ -3016,9 +2992,11 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     );
     pattern_guard.check("the sparse joint nested-Laplace outer grid");
     // Report the outer width the solve actually ran at. It is what the memory
-    // clamp above resolved to, not what the caller asked for, and it fixes the
-    // scatter partition -- so when two fits of one model report different
-    // widths, that is the explanation for a change in their last bits.
+    // clamp above resolved to, not what the caller asked for, and it sets the
+    // warm-start route (one chained pass, or a pilot fanned out) and the
+    // uncoupled arms' inner reduction width -- so when two fits of one model
+    // report different widths, that is the explanation for a change in their
+    // last bits. The coupled-cell partition does not depend on it.
     out["n_outer"] = n_outer;
     return out;
 }

@@ -89,260 +89,79 @@ struct BatchArmBuffers {
     }
 };
 
-// Per-species scatter policy for the fused batched cell-coupling pass.
-//
-// The cell scaffolding (row counts, view setup, the multi-response
-// evaluate_cell pass, the species-invariant design chains) is owned by
+// Per-species scatter targets for the fused batched cell-coupling pass. The
+// cell scaffolding (row counts, view setup, the multi-response evaluate_cell
+// pass, the species-invariant design chains) is owned by
 // scatter_cell_coupling_batch_impl below and identical for every Hessian
-// container. The two policies differ only in how a species' per-row / per-pair
-// derivatives reach its Hessian:
-//
-//   * DenseScatterPolicy writes into an n_x x n_x DenseMat through the
-//     index-direct dense helpers (no lookup table needed).
-//
-//   * SparseScatterPolicy writes into a SparseHessianBuilder. Because all B
-//     species share one structural pattern, the (row, col) -> flat values[]
-//     slot resolution is species-invariant: it is computed ONCE per cell from
-//     species 0's pattern and reused for every species, turning each
-//     per-species write from a std::map lookup into a flat values[slot] += .
-//     This per-cell slot sharing across species is the scatter
-//     amortization.
-//
-// The within-arm row Hessian is the lower triangle of H_row * outer(chain,
-// chain) for the row's design chain (the same chain the cross-arm scatter
-// walks), so a single chain representation drives the within-arm gradient,
-// within-arm Hessian, and cross-arm Hessian for the sparse policy.
+// container; a target decides where species s's row and cross-row writes land:
+//   within_row(s, kk, k, row, g, h, pa, blocks, d_eff)
+//   cross(s, kk, ll, Hkl, chain_k, chain_l)
+// with begin_cell(c) before a cell's first write. Each is the single-species
+// target (CoupledDenseScatter / CoupledPlannedScatter) applied to species s, so
+// a species is written exactly as its own single-species fit writes it.
 
-// Lower-triangle flat slots of outer(chain, chain): one entry per (a, b) with
-// b <= a, resolved against the shared sparse pattern. Cleared and rebuilt per
-// cell row; reused across all B species of that cell. The two chain weights are
-// stored separately and pre-ordered (w_first applied before w_second) so the
-// per-species write reproduces scatter_one_arm_row_sparse's exact multiply
-// association `(H_row * w_first) * w_second`.
-struct WithinRowSlots {
-    std::vector<int>    slot;     // flat values[] index, or -1 if absent
-    std::vector<double> w_first;  // first weight in the oracle's association
-    std::vector<double> w_second; // second weight in the oracle's association
-};
+struct BatchDenseScatter {
+    std::vector<DenseVec>& grad;   // [B]
+    std::vector<DenseMat>& H;      // [B]
+    std::vector<int>       active_idx;
+    std::vector<double>    active_d;
 
-// Flat slots of the full outer(chain_k, chain_l) product for one cross-arm row
-// pair. chain_k's weight is stored separately from chain_l's so the write
-// reproduces scatter_cross_chain_sparse's `(Hkl * w_k) * w_l`. The diagonal
-// (idx_k == idx_l) is marked so its symmetric contribution is written as two
-// separate accumulations into the slot, matching the oracle's two H.add calls.
-struct CrossPairSlots {
-    std::vector<int>    slot;
-    std::vector<double> w_k;
-    std::vector<double> w_l;
-    std::vector<char>   is_diag;
-};
-
-struct DenseScatterPolicy {
-    using HContainer = DenseMat;
-
-    void chains_ptr(
-        const std::vector<std::vector<std::vector<ArmRowChainEntry>>>*) {}
-
-    // Dense path needs no per-cell slot cache; the helpers index H directly.
-    template <typename ChainsT>
-    void prepare_cell(const std::vector<int>& /*coupled_arms*/,
-                      const std::vector<int>& /*arm_row_count*/,
-                      const std::vector<const int*>& /*arm_rows_ptr*/,
-                      const std::vector<ParsedArm>& /*parsed*/,
-                      const std::vector<LatentBlock>& /*blocks*/,
-                      const std::vector<std::vector<double>>& /*d_eff_per_arm*/,
-                      const ChainsT& /*chains_per_arm*/,
-                      std::vector<DenseMat>& /*H_per_sp*/) {}
-
-    void scatter_within_row(int row, double g_row, double H_row,
-                            const ParsedArm& pa, int k_arm,
-                            const std::vector<LatentBlock>& blocks,
-                            const std::vector<double>& d_eff,
-                            int /*kk*/, int /*j*/,
-                            DenseVec& grad, DenseMat& H,
-                            std::vector<int>& active_idx,
-                            std::vector<double>& active_d) {
-        scatter_one_arm_row_dense(row, g_row, H_row, pa, k_arm, blocks, d_eff,
-                                  grad, H, active_idx, active_d);
+    BatchDenseScatter(std::vector<DenseVec>& g, std::vector<DenseMat>& h,
+                      int n_blocks)
+        : grad(g), H(h) {
+        active_idx.reserve(n_blocks);
+        active_d.reserve(n_blocks);
     }
-
-    void scatter_cross_pair(double Hkl,
-                            const std::vector<ArmRowChainEntry>& chain_k,
-                            const std::vector<ArmRowChainEntry>& chain_l,
-                            int /*kk*/, int /*ll*/, int /*j*/, int /*m*/,
-                            DenseMat& H) {
-        scatter_cross_chain_dense(Hkl, chain_k, chain_l, H);
+    void begin_cell(int) {}
+    void within_row(int s, int, int k, int row, double g, double h,
+                    const ParsedArm& pa, const std::vector<LatentBlock>& blocks,
+                    const std::vector<double>& d_eff) {
+        scatter_one_arm_row_dense(row, g, h, pa, k, blocks, d_eff, grad[s], H[s],
+                                  active_idx, active_d);
+    }
+    void cross(int s, int, int, double Hkl,
+               const std::vector<ArmRowChainEntry>& ck,
+               const std::vector<ArmRowChainEntry>& cl) {
+        scatter_cross_chain_dense(Hkl, ck, cl, H[s]);
     }
 };
 
-struct SparseScatterPolicy {
-    using HContainer = SparseHessianBuilder;
+// One chunk's planned sparse targets, one per species. All B species share one
+// pattern and therefore one plan; each writes through its own chunk sink.
+struct BatchPlannedScatter {
+    std::vector<CoupledPlannedScatter> sp;   // [B]
 
-    // Per-cell slot caches, keyed by within-arm row and cross-arm pair. The
-    // outer dims (coupled arm / arm pair) are sized once; the per-row inner
-    // storage grows monotonically.
-    std::vector<std::vector<WithinRowSlots>> within;            // [kk][j]
-    std::vector<std::vector<std::vector<CrossPairSlots>>> cross; // [kk*n+ll][j][m]
-    int n_coupled_ = 0;
-
-    // Resolve the species-invariant flat slots for the current cell from the
-    // shared sparse pattern (species 0's builder). within[kk][j] holds the LT
-    // self-product of chain j; cross[kk*n+ll][j][m] holds the full
-    // chain_k x chain_l product for off-diagonal-eligible pairs.
-    template <typename ChainsT>
-    void prepare_cell(const std::vector<int>& coupled_arms,
-                      const std::vector<int>& arm_row_count,
-                      const std::vector<const int*>& /*arm_rows_ptr*/,
-                      const std::vector<ParsedArm>& /*parsed*/,
-                      const std::vector<LatentBlock>& /*blocks*/,
-                      const std::vector<std::vector<double>>& /*d_eff_per_arm*/,
-                      const ChainsT& chains_per_arm,
-                      std::vector<SparseHessianBuilder>& H_per_sp) {
-        const int n_coupled = (int) coupled_arms.size();
-        n_coupled_ = n_coupled;
-        const SparseHessianBuilder& Hp = H_per_sp[0];
-
-        if ((int) within.size() < n_coupled) within.resize(n_coupled);
-        if ((int) cross.size() < n_coupled * n_coupled)
-            cross.resize((std::size_t) n_coupled * n_coupled);
-
-        for (int kk = 0; kk < n_coupled; kk++) {
-            const int rc = arm_row_count[kk];
-            auto& wkk = within[kk];
-            if ((int) wkk.size() < rc) wkk.resize(rc);
-            for (int j = 0; j < rc; j++) {
-                const std::vector<ArmRowChainEntry>& ch = chains_per_arm[kk][j];
-                const int L = (int) ch.size();
-                WithinRowSlots& w = wkk[j];
-                w.slot.clear();
-                w.w_first.clear();
-                w.w_second.clear();
-                for (int a = 0; a < L; a++) {
-                    for (int b = 0; b <= a; b++) {
-                        w.slot.push_back(Hp.lookup(ch[a].idx, ch[b].idx));
-                        // Same block group: oracle's outer loop owns ch[a] (the
-                        // later chain entry) -> (H_row * w_a) * w_b. Cross group:
-                        // the earlier block (ch[b]) owns the outer loop ->
-                        // (H_row * w_b) * w_a.
-                        if (ch[a].grp == ch[b].grp) {
-                            w.w_first.push_back(ch[a].w);
-                            w.w_second.push_back(ch[b].w);
-                        } else {
-                            w.w_first.push_back(ch[b].w);
-                            w.w_second.push_back(ch[a].w);
-                        }
-                    }
-                }
-            }
-        }
-
-        for (int kk = 0; kk < n_coupled; kk++) {
-            const int rc_k = arm_row_count[kk];
-            for (int ll = kk; ll < n_coupled; ll++) {
-                const int rc_l = arm_row_count[ll];
-                auto& cpair = cross[(std::size_t) kk * n_coupled + ll];
-                if ((int) cpair.size() < rc_k) cpair.resize(rc_k);
-                for (int j = 0; j < rc_k; j++) {
-                    const std::vector<ArmRowChainEntry>& chain_k =
-                        chains_per_arm[kk][j];
-                    auto& cj = cpair[j];
-                    if ((int) cj.size() < rc_l) cj.resize(rc_l);
-                    const int m_start = (kk == ll) ? (j + 1) : 0;
-                    for (int m = m_start; m < rc_l; m++) {
-                        const std::vector<ArmRowChainEntry>& chain_l =
-                            chains_per_arm[ll][m];
-                        CrossPairSlots& cs = cj[m];
-                        cs.slot.clear();
-                        cs.w_k.clear();
-                        cs.w_l.clear();
-                        cs.is_diag.clear();
-                        for (const auto& e_k : chain_k) {
-                            for (const auto& e_l : chain_l) {
-                                cs.slot.push_back(Hp.lookup(e_k.idx, e_l.idx));
-                                cs.w_k.push_back(e_k.w);
-                                cs.w_l.push_back(e_l.w);
-                                cs.is_diag.push_back(e_k.idx == e_l.idx ? 1 : 0);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    void begin_cell(int c) { for (auto& t : sp) t.begin_cell(c); }
+    void within_row(int s, int kk, int k, int row, double g, double h,
+                    const ParsedArm& pa, const std::vector<LatentBlock>& blocks,
+                    const std::vector<double>& d_eff) {
+        sp[s].row(kk, k, row, g, h, pa, blocks, d_eff);
     }
-
-    // Within-arm gradient + Hessian for one species' row. Gradient writes use
-    // the row's chain (dense grad, no lookup); Hessian writes use the cached LT
-    // self-product slots (flat values[] += , no lookup). Matches
-    // scatter_one_arm_row_sparse cell-for-cell.
-    void scatter_within_row(int /*row*/, double g_row, double H_row,
-                            const ParsedArm& /*pa*/, int /*k_arm*/,
-                            const std::vector<LatentBlock>& /*blocks*/,
-                            const std::vector<double>& /*d_eff*/,
-                            int kk, int j,
-                            DenseVec& grad, SparseHessianBuilder& H,
-                            std::vector<int>& /*active_idx*/,
-                            std::vector<double>& /*active_d*/) {
-        const std::vector<ArmRowChainEntry>& chain = (*chains_)[kk][j];
-        for (const auto& e : chain) grad[e.idx] += g_row * e.w;
-
-        const WithinRowSlots& w = within[kk][j];
-        double* __restrict__ Hv = H.values.data();
-        const int nw = (int) w.slot.size();
-        for (int t = 0; t < nw; t++) {
-            const int s = w.slot[t];
-            scatter_slot(Hv, s, (H_row * w.w_first[t]) * w.w_second[t]);
-        }
+    void cross(int s, int kk, int ll, double Hkl,
+               const std::vector<ArmRowChainEntry>& ck,
+               const std::vector<ArmRowChainEntry>& cl) {
+        sp[s].cross(kk, ll, Hkl, ck, cl);
     }
-
-    void scatter_cross_pair(double Hkl,
-                            const std::vector<ArmRowChainEntry>& /*chain_k*/,
-                            const std::vector<ArmRowChainEntry>& /*chain_l*/,
-                            int kk, int ll, int j, int m,
-                            SparseHessianBuilder& H) {
-        if (Hkl == 0.0) return;
-        const CrossPairSlots& cs =
-            cross[(std::size_t) kk * n_coupled_ + ll][j][m];
-        double* __restrict__ Hv = H.values.data();
-        const int nc = (int) cs.slot.size();
-        for (int t = 0; t < nc; t++) {
-            // Through the guard, like scatter_within_row above: the cross-arm
-            // block is where the coupling lives, so a (row, col) the pattern
-            // builder did not enumerate is exactly the miss the drop counter
-            // exists to surface. A diagonal entry takes the term twice, since
-            // the chain product covers both directions of the pair.
-            const double val = (Hkl * cs.w_k[t]) * cs.w_l[t];
-            scatter_slot(Hv, cs.slot[t], cs.is_diag[t] ? 2.0 * val : val);
-        }
-    }
-
-    void chains_ptr(
-        const std::vector<std::vector<std::vector<ArmRowChainEntry>>>* c) {
-        chains_ = c;
-    }
-
-    // Pointer to the cell's chains, set by the impl before per-species scatter.
-    const std::vector<std::vector<std::vector<ArmRowChainEntry>>>* chains_ =
-        nullptr;
 };
 
-// Fused batched cell-coupling scatter, templated on the per-species scatter
-// policy (DenseScatterPolicy or SparseScatterPolicy). One pass over cells:
-// build the B-batch CellEtas / CellResponse / CellDerivs views (species-major
-// buffers, n_batch = B), dispatch the multi-response spec ONCE per cell (it
-// loops species inner), then scatter each species s's per-row derivatives into
-// its own grad_per_sp[s] / H_per_sp[s].
+// Fused batched cell-coupling scatter over the cells [c0, c1), templated on
+// the per-species scatter target (BatchDenseScatter or BatchPlannedScatter).
+// One pass over cells: build the B-batch CellEtas / CellResponse / CellDerivs
+// views (species-major buffers, n_batch = B), dispatch the multi-response spec
+// ONCE per cell (it loops species inner), then hand each species s's per-row
+// derivatives and cross-row entries to the target, which writes them into that
+// species' own gradient and Hessian.
 //
 // The species-INVARIANT cell layout (row counts, row pointers, view setup, the
-// design-row chains the cross-arm scatter walks, and -- for the sparse policy --
-// the (row, col) -> flat-slot resolution against the shared pattern) is computed
-// ONCE per cell and reused across all B species; only the per-species
-// derivative slice and its scatter into H_s depend on the species. This is the
-// Amortization: the bandwidth-bound evaluate, the design bookkeeping, and
-// the sparse slot lookups are paid once, not B times.
+// design-row chains the cross-arm scatter walks) is computed ONCE per cell and
+// reused across all B species; only the per-species derivative slice and its
+// scatter depend on the species. That is the amortization: the
+// bandwidth-bound evaluate and the design bookkeeping are paid once, not B
+// times. The sparse target's flat offsets come from the coupled plan, resolved
+// once per fit and shared by every species, since all B share one pattern.
 //
 // `buf.etas` must already hold the current per-species etas (species-major).
-// d_eff is per coupled-arm and shared across species (one outer grid). The
-// dense and sparse paths share this body; only the policy differs. B = 1
+// d_eff is per coupled-arm and shared across species (one outer grid). B = 1
 // reproduces the single-species per-cell branch.
 template <typename Policy>
 inline void scatter_cell_coupling_batch_impl(
@@ -355,13 +174,12 @@ inline void scatter_cell_coupling_batch_impl(
     const std::vector<LatentBlock>&                   blocks,
     int                                               k_grid,
     const BatchArmBuffers&                            buf,
-    std::vector<DenseVec>&                            grad_per_sp,  // [B]
-    std::vector<typename Policy::HContainer>&         H_per_sp,     // [B]
     Policy&                                           policy,
     CurvatureMode                                     curvature,
-    bool                                              grad_only
+    bool                                              grad_only,
+    int                                               c0,
+    int                                               c1
 ) {
-    using HContainer = typename Policy::HContainer;
     const int n_coupled = (int) coupled_arms.size();
     const int Bn        = (int) blocks.size();
     const int B         = buf.B;
@@ -423,18 +241,14 @@ inline void scatter_cell_coupling_batch_impl(
         cross_hess_outer[kk] = cross_hess_ptr_inner[kk].data();
     }
 
-    std::vector<int>    active_idx;
-    std::vector<double> active_d;
-    active_idx.reserve(Bn);
-    active_d.reserve(Bn);
-
     // Species-invariant design chains for the current cell's cross-arm pairs.
     // chains_per_arm[kk][r] is the eta -> joint-vector chain for the r-th row of
     // coupled arm kk; built once per cell (depends only on parsed / blocks /
     // d_eff, not on species) and reused for every species' cross scatter.
     std::vector<std::vector<std::vector<ArmRowChainEntry>>> chains_per_arm(n_coupled);
 
-    for (int c = 0; c < n_cells; c++) {
+    for (int c = c0; c < c1; c++) {
+        policy.begin_cell(c);
         for (int kk = 0; kk < n_coupled; kk++) {
             int rc = (int) cell_rows[kk][c].size();
             arm_row_count[kk] = rc;
@@ -498,10 +312,7 @@ inline void scatter_cell_coupling_batch_impl(
         spec.evaluate_cell(c, etas_view, y_view, out);
 
         // Species-invariant design chains for this cell, built once and reused
-        // across every species' within-arm and cross-arm scatter. The within-
-        // arm row Hessian is the lower triangle of H_row * outer(chain, chain),
-        // so the same chain drives within-arm gradient + Hessian and the cross-
-        // arm Hessian.
+        // across every species' cross-arm scatter.
         for (int kk = 0; kk < n_coupled; kk++) {
             int k  = coupled_arms[kk];
             int rc = arm_row_count[kk];
@@ -514,17 +325,8 @@ inline void scatter_cell_coupling_batch_impl(
             }
         }
 
-        // Resolve the policy's species-invariant per-cell scatter caches once
-        // (the sparse policy's flat-slot lookups against the shared pattern;
-        // the dense policy is a no-op).
-        policy.chains_ptr(&chains_per_arm);
-        policy.prepare_cell(coupled_arms, arm_row_count, arm_rows_ptr, parsed,
-                            blocks, d_eff_per_arm, chains_per_arm, H_per_sp);
-
-        // Per-species scatter into that species' own grad_s / H_s.
+        // Per-species scatter into that species' own gradient and Hessian.
         for (int s = 0; s < B; s++) {
-            DenseVec& grad = grad_per_sp[s];
-            HContainer& H  = H_per_sp[s];
 
             // Within-arm per-row scatter (gradient + diagonal-curvature
             // Hessian).
@@ -535,15 +337,13 @@ inline void scatter_cell_coupling_batch_impl(
                 const double* g = arm_grad_buf[kk].data() + (std::size_t) s * rc;
                 const double* h = arm_neg_hess_diag_buf[kk].data() + (std::size_t) s * rc;
                 for (int j = 0; j < rc; j++) {
-                    policy.scatter_within_row(
-                        rows[j], g[j], h[j],
-                        parsed[k], k, blocks, d_eff_per_arm[kk], kk, j,
-                        grad, H, active_idx, active_d);
+                    policy.within_row(s, kk, k, rows[j], g[j], h[j],
+                                      parsed[k], blocks, d_eff_per_arm[kk]);
                 }
             }
 
             // Cross-arm Hessian scatter (species s's slice), reusing the
-            // per-cell design chains / slot caches.
+            // per-cell design chains.
             if (!grad_only) {
                 for (int kk = 0; kk < n_coupled; kk++) {
                     int rc_k = arm_row_count[kk];
@@ -559,9 +359,8 @@ inline void scatter_cell_coupling_batch_impl(
                             for (int m = m_start; m < rc_l; m++) {
                                 double Hkl = ch[base + (std::size_t) j * rc_l + m];
                                 if (Hkl == 0.0) continue;
-                                policy.scatter_cross_pair(
-                                    Hkl, chain_k, chains_per_arm[ll][m],
-                                    kk, ll, j, m, H);
+                                policy.cross(s, kk, ll, Hkl, chain_k,
+                                             chains_per_arm[ll][m]);
                             }
                         }
                     }
@@ -571,8 +370,8 @@ inline void scatter_cell_coupling_batch_impl(
     }
 }
 
-// Dense wrapper: fused batched scatter into per-species DenseMat H_per_sp via
-// scatter_one_arm_row_dense + scatter_cross_chain_dense.
+// Dense wrapper: fused batched scatter into per-species DenseMat H_per_sp, every
+// cell in one pass.
 inline void scatter_cell_coupling_batch_dense(
     const CellCouplingSpec&                           spec,
     const std::vector<int>&                           coupled_arms,
@@ -588,18 +387,18 @@ inline void scatter_cell_coupling_batch_dense(
     CurvatureMode                                     curvature = CurvatureMode::Observed,
     bool                                              grad_only = false
 ) {
-    DenseScatterPolicy policy;
+    BatchDenseScatter policy(grad_per_sp, H_per_sp,
+                             static_cast<int>(blocks.size()));
     scatter_cell_coupling_batch_impl(
         spec, coupled_arms, cell_rows, n_cells, arms, parsed, blocks, k_grid,
-        buf, grad_per_sp, H_per_sp, policy, curvature, grad_only);
+        buf, policy, curvature, grad_only, 0, n_cells);
 }
 
 // Sparse wrapper: fused batched scatter into per-species SparseHessianBuilder
-// H_per_sp via scatter_one_arm_row_sparse + scatter_cross_chain_sparse. Each
-// builder must already carry the joint structural pattern (built once by
-// build_joint_hessian_pattern) so H.add() lands every (row, col) the per-row /
-// cross helpers touch -- the same pattern, hence the same nnz, as the
-// single-species sparse oracle.
+// H_per_sp over the coupled plan's fixed chunks, each species' shared entries
+// reduced in chunk order -- the single-species sparse branch's partition and
+// reduction, so each species reproduces its own single-species fit. Every
+// builder must carry the pattern the plan was resolved against.
 inline void scatter_cell_coupling_batch_sparse(
     const CellCouplingSpec&                           spec,
     const std::vector<int>&                           coupled_arms,
@@ -612,13 +411,44 @@ inline void scatter_cell_coupling_batch_sparse(
     const BatchArmBuffers&                            buf,
     std::vector<DenseVec>&                            grad_per_sp,  // [B]
     std::vector<SparseHessianBuilder>&                H_per_sp,     // [B]
-    SparseScatterPolicy&                              policy,
+    const CoupledScatterPlan&                         plan,
     CurvatureMode                                     curvature = CurvatureMode::Observed,
     bool                                              grad_only = false
 ) {
-    scatter_cell_coupling_batch_impl(
-        spec, coupled_arms, cell_rows, n_cells, arms, parsed, blocks, k_grid,
-        buf, grad_per_sp, H_per_sp, policy, curvature, grad_only);
+    const int B = buf.B;
+    if (coupled_arms.empty() || n_cells == 0) return;
+    for (int s = 0; s < B; s++) {
+        if (!plan.valid_for(H_per_sp[s], n_cells)) {
+            throw std::logic_error(
+                "coupled scatter plan was not resolved against this Hessian "
+                "pattern");
+        }
+    }
+    std::vector<ArmIndexedView> views;
+    views.reserve(plan.arm.size());
+    for (const auto& ac : plan.arm) views.emplace_back(ac);
+
+    std::vector<CoupledChunkPartials> partials;
+    partials.reserve(B);
+    for (int s = 0; s < B; s++) partials.emplace_back(plan);
+
+    for (int ch = 0; ch < plan.n_chunks; ch++) {
+        BatchPlannedScatter policy;
+        policy.sp.reserve(B);
+        for (int s = 0; s < B; s++) {
+            policy.sp.emplace_back(
+                plan, views,
+                partials[s].sink(ch, grad_per_sp[s].data(),
+                                 H_per_sp[s].values.data()));
+        }
+        scatter_cell_coupling_batch_impl(
+            spec, coupled_arms, cell_rows, n_cells, arms, parsed, blocks,
+            k_grid, buf, policy, curvature, grad_only,
+            plan.chunk_lo(ch), plan.chunk_lo(ch + 1));
+    }
+    for (int s = 0; s < B; s++) {
+        partials[s].reduce(grad_per_sp[s].data(), H_per_sp[s].values.data());
+    }
 }
 
 // Batched outer-grid driver. Defined in nested_laplace_joint_batch.cpp.

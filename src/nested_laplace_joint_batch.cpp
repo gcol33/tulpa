@@ -12,9 +12,9 @@
 // that only scatters sparsely): the dense path carries an n_x by n_x DenseMat
 // per species and scatters through scatter_cell_coupling_batch_dense; the sparse
 // path carries a SparseHessianBuilder per species seeded from one fit-level
-// joint pattern and scatters through scatter_cell_coupling_batch_sparse, whose
-// SparseScatterPolicy resolves the (row, col) -> flat-slot caches once per cell
-// for all B species.
+// joint pattern and scatters through scatter_cell_coupling_batch_sparse, which
+// writes through the coupled plan's flat offsets (resolved once per fit, shared
+// by all B species) over the single-species branch's fixed cell partition.
 //
 // Cell-coupling families with ALL arms coupled (occu_cover) only; plain
 // outer-grid sweep with per-species warm-start chaining, as the single-species
@@ -155,7 +155,8 @@ inline double species_cell_loglik(
                                                  : buf.n_trials[k].data();
             r.phi = buf.phi[(std::size_t) k * buf.B + s];
             return r;
-        });
+        },
+        /*n_threads=*/1);
 }
 
 // Add the block priors + per-arm beta/RE priors into a freshly-scattered sparse
@@ -250,11 +251,14 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     std::vector<DenseVec> grad_per_sp(B);
     std::vector<DenseMat> H_per_sp;
     std::vector<SparseHessianBuilder> H_sparse_per_sp;
-    SparseScatterPolicy sparse_policy;
+    CoupledScatterPlan coupled_plan;
     if (use_sparse) {
         SparseHessianBuilder pattern;
         build_joint_hessian_pattern(parsed, arms, blocks, n_x, pattern,
                                     coupled_arms, cell_rows, n_cells);
+        build_coupled_scatter_plan(parsed, arms, blocks, coupled_arms,
+                                   cell_rows, n_cells, n_x, pattern,
+                                   coupled_plan);
         H_sparse_per_sp.assign(B, pattern);
     } else {
         H_per_sp.assign(B, DenseMat());
@@ -266,7 +270,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
             for (int s = 0; s < B; s++) H_sparse_per_sp[s].zero();
             scatter_cell_coupling_batch_sparse(
                 *spec, coupled_arms, cell_rows, n_cells, arms, parsed, blocks,
-                kg, wbuf, grad_per_sp, H_sparse_per_sp, sparse_policy,
+                kg, wbuf, grad_per_sp, H_sparse_per_sp, coupled_plan,
                 curvature, false);
         } else {
             for (int s = 0; s < B; s++)

@@ -1,3 +1,32 @@
+# tulpa 0.6.8
+
+## Performance
+
+* **The cell-coupled sparse scatter writes through a precomputed flat-offset
+  plan and no longer idles free threads on a long cell** (gcol33/tulpa#921).
+  Every Hessian write of the coupled branch (row block, cross-row pair,
+  rank-1 self-cross) went through a `std::map` lookup in
+  `SparseHessianBuilder::add()`, repeated on every Newton iteration of every
+  outer cell. A `CoupledScatterPlan` (`src/coupled_scatter_plan.h`) now
+  resolves those offsets once per fit, and the coupled rows share the
+  per-observation row body (`scatter_row_indexed`) with the uncoupled path.
+  The batched multi-species driver reads the same plan in place of its
+  per-cell lookups. The coupled cell loop is split into a fixed number of
+  chunks set by the cell count alone (`coupled_chunk_count()`): up to 64,
+  with one chunk per 64 cells. An entry owned by a single chunk is written in
+  place, in single-pass order. An entry shared by several chunks is summed
+  per chunk and then added in chunk order. The chunks run as OpenMP tasks
+  inside the outer grid, so grid threads that have run out of cells take a
+  straggler cell's chunks, and on a team of `n_threads` outside it (the
+  serial pilot and screen). The coupled log-likelihood is summed over the
+  same partition. At fewer than 128 cells (one chunk) a fit is bit-identical
+  to 0.6.7. Above that, the shared entries' summation order changes the last
+  bits (2e-12 in the log-marginal on a 600-cell fixture), and a fit is now
+  identical at every inner thread count. `TULPA_GRID_WORKSTEAL` and
+  `TULPA_COUPLING_FORCE_PARALLEL` are removed: the partition they switched no
+  longer depends on thread count. The scatter index cache is keyed on the
+  shared pattern and built once, instead of being copied per outer thread.
+
 # tulpa 0.6.7
 
 ## Bug fixes

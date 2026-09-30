@@ -38,10 +38,11 @@
 //     - idx_re_active    [ k_arm.rxa_off + plan.rxa_start + a ]
 //     - idx_act_act      [ k_arm.axa_off + plan.axa_start + col-major LT pos ]
 //
-// Cache validity is keyed on (H_builder pointer, H_builder.nnz, n_arms,
-// blocks fingerprint). Built explicitly via `build_scatter_index_cache`
-// after the pattern is finalized; reused unmodified across all outer-grid
-// cells in a fit.
+// Cache validity is keyed on the builder's pattern (its shared entry map), so
+// one cache serves every builder copied from the one it was resolved against:
+// the copies share the pattern and therefore every flat offset. Built
+// explicitly via `build_scatter_index_cache` after the pattern is finalized;
+// reused unmodified across all outer-grid cells and threads in a fit.
 
 #ifndef TULPA_SCATTER_INDEXED_CACHE_H
 #define TULPA_SCATTER_INDEXED_CACHE_H
@@ -54,6 +55,7 @@
 #include <Rcpp.h>
 #include <cstddef>
 #include <cstdlib>
+#include <memory>
 #include <vector>
 
 #ifdef _OPENMP
@@ -103,6 +105,10 @@ struct ArmIndexedCache {
     std::vector<int> idx_beta_active;
     std::vector<int> idx_re_active;
     std::vector<int> idx_act_act;
+
+    // Largest A_idx over the arm's rows: the size of the per-row active-weight
+    // scratch the row body needs.
+    int max_A = 0;
 };
 
 struct ScatterIndexCache {
@@ -110,15 +116,237 @@ struct ScatterIndexCache {
     bool any_dense_basis = false; // true if any block is DENSE_BASIS — DB cross terms keep using the per-obs map path
     bool any_bilinear   = false;  // true if any block is BILINEAR_FACTOR (active weights computed from x at scatter time)
 
-    // Validity key
-    const void* cache_H_ptr = nullptr;
-    int         cache_H_nnz = -1;
-    // See scatter_dense_basis.h: the builder's pattern generation closes the
-    // same-nnz re-init hole in the (pointer, nnz) key.
-    unsigned long long cache_H_gen = 0;
+    // Validity key: the pattern the flat offsets were resolved against. Held,
+    // not merely compared, so the address cannot be reused by a later pattern.
+    std::shared_ptr<const SparseHessianBuilder::EntryMap> pattern;
 
     std::vector<ArmIndexedCache> arm;
 };
+
+// Resolve one arm's cache against the pattern in `H`: the flat values[] offset
+// of every Hessian entry the arm's rows write, and each row's active latent
+// dofs in the block order the scatter walks them. INDEXED_SINGLE and
+// INDEXED_MULTI dofs are always resolved; BILINEAR_FACTOR dofs only when
+// `with_bilinear` is set (their weights are read off x at scatter time, through
+// `active_paired_slot`, which is allocated exactly then). DENSE_BASIS is never
+// resolved here; scatter_dense_basis.h owns it.
+inline void build_arm_indexed_cache(
+    const ParsedArm&                     pa,
+    int                                  N_k,
+    int                                  k_arm,
+    const std::vector<LatentBlock>&      blocks,
+    const SparseHessianBuilder&          H,
+    bool                                 with_bilinear,
+    ArmIndexedCache&                     ac,
+    std::vector<std::pair<int,double>>&  multi_scratch
+) {
+    const int B      = static_cast<int>(blocks.size());
+    const int p_k    = pa.p;
+    const int n_re_k = pa.n_re_groups;
+    const int bstart = pa.beta_start;
+    const int rstart = pa.re_start;
+
+    ac = ArmIndexedCache{};
+    // β × β lower triangle, column-major (l outer, j inner over [l, p_k)).
+    ac.idx_bb.resize(static_cast<size_t>(p_k) * (p_k + 1) / 2);
+    {
+        int t = 0;
+        for (int l = 0; l < p_k; l++) {
+            const int c = bstart + l;
+            for (int j = l; j < p_k; j++) {
+                const int r = bstart + j;
+                ac.idx_bb[t++] = H.lookup(r, c);
+            }
+        }
+    }
+
+    // RE × RE diagonal (rstart+g, rstart+g).
+    ac.idx_re_diag.resize(static_cast<size_t>(n_re_k));
+    for (int g = 0; g < n_re_k; g++) {
+        const int r = rstart + g;
+        ac.idx_re_diag[g] = H.lookup(r, r);
+    }
+
+    // β × RE: layout [g * p_k + j] for g in [0,n_re_k), j in [0,p_k).
+    ac.idx_beta_re.resize(static_cast<size_t>(n_re_k) * p_k);
+    for (int g = 0; g < n_re_k; g++) {
+        const int c = rstart + g;
+        for (int j = 0; j < p_k; j++) {
+            const int r = bstart + j;
+            ac.idx_beta_re[static_cast<size_t>(g) * p_k + j] =
+                H.lookup(r, c);
+        }
+    }
+
+    // Per-obs plans.
+    ac.plans.assign(N_k, PerObsScatterPlan{});
+
+    // First pass: resolve active dofs per obs to size the flat arrays.
+    // Counts INDEXED_SINGLE / INDEXED_MULTI / BILINEAR_FACTOR; DENSE_BASIS
+    // is handled outside the cache by scatter_dense_basis.h (2.2a).
+    size_t total_A = 0;
+    for (int i = 0; i < N_k; i++) {
+        int A_i = 0;
+        for (int b = 0; b < B; b++) {
+            const LatentBlock& blk = blocks[b];
+            if (blk.contrib_kind == BlockContribKind::INDEXED_SINGLE) {
+                int l = blk.idx ? blk.idx(i, k_arm) : -1;
+                if (l > 0 && l <= blk.size) A_i++;
+            } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
+                if (!blk.obs_indices) continue;
+                blk.fill_obs_indices(i, k_arm, multi_scratch);
+                for (const auto& [l, w_local] : multi_scratch) {
+                    if (l > 0 && l <= blk.size) {
+                        A_i++;
+                        (void)w_local;
+                    }
+                }
+            } else if (with_bilinear &&
+                       blk.contrib_kind == BlockContribKind::BILINEAR_FACTOR) {
+                if (!blk.obs_factor_lambda) continue;
+                auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
+                if (u_slot >= 0 && lambda_slot >= 0) A_i += 2;
+            }
+            // DENSE_BASIS skipped from cache; handled by 2.2a.
+        }
+        ac.plans[i].A_idx = A_i;
+        if (A_i > ac.max_A) ac.max_A = A_i;
+        total_A += static_cast<size_t>(A_i);
+    }
+
+    ac.active_dof_global.resize(total_A);
+    ac.active_block_idx .resize(total_A);
+    ac.active_local_w   .resize(total_A);
+    // Allocate paired-slot storage only when bilinear dofs are
+    // resolved. Pure-INDEXED arms keep `active_paired_slot` empty so
+    // the scatter hot loop takes the no-branch path
+    // (aps == nullptr) — see scatter_row_indexed.
+    if (with_bilinear) {
+        ac.active_paired_slot.assign(total_A, -1);
+    } else {
+        ac.active_paired_slot.clear();
+    }
+
+    // Size flat-index arrays via prefix sums.
+    size_t total_bxa = 0, total_rxa = 0, total_axa = 0;
+    for (int i = 0; i < N_k; i++) {
+        const int A_i = ac.plans[i].A_idx;
+        ac.plans[i].bxa_start = static_cast<int>(total_bxa);
+        ac.plans[i].rxa_start = static_cast<int>(total_rxa);
+        ac.plans[i].axa_start = static_cast<int>(total_axa);
+        total_bxa += static_cast<size_t>(p_k) * A_i;
+        total_rxa += static_cast<size_t>(A_i);
+        total_axa += static_cast<size_t>(A_i) * (A_i + 1) / 2;
+    }
+    ac.idx_beta_active.resize(total_bxa);
+    ac.idx_re_active  .resize(total_rxa);
+    ac.idx_act_act    .resize(total_axa);
+
+    // Second pass: fill active dofs and flat indices.
+    size_t act_cursor = 0;
+    for (int i = 0; i < N_k; i++) {
+        PerObsScatterPlan& plan = ac.plans[i];
+        plan.act_start = static_cast<int>(act_cursor);
+
+        // g_re for this obs.
+        int g_re_global = -1;
+        if (n_re_k > 0) {
+            int gi = static_cast<int>(pa.re_idx[i]) - 1;
+            if (gi >= 0 && gi < n_re_k) g_re_global = rstart + gi;
+        }
+        plan.g_re_global = g_re_global;
+
+        // Resolve active dofs in the same block order as the scatter path.
+        int a = 0;
+        for (int b = 0; b < B; b++) {
+            const LatentBlock& blk = blocks[b];
+            // The per-row SVC weight multiplies the block-local weight on
+            // every indexed kind: an SPDE (INDEXED_MULTI) field carries it
+            // across its mesh nodes as an areal one carries it on its
+            // single cell. Unset -> 1.0, leaving the unweighted plan
+            // byte-identical.
+            const double rw = block_row_weight(blk, i, k_arm);
+            if (blk.contrib_kind == BlockContribKind::INDEXED_SINGLE) {
+                if (!blk.idx) continue;
+                int l = blk.idx(i, k_arm);
+                if (l > 0 && l <= blk.size) {
+                    ac.active_dof_global[act_cursor + a] = blk.start + l - 1;
+                    ac.active_block_idx [act_cursor + a] = b;
+                    ac.active_local_w   [act_cursor + a] = rw;
+                    a++;
+                }
+            } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
+                if (!blk.obs_indices) continue;
+                blk.fill_obs_indices(i, k_arm, multi_scratch);
+                for (const auto& [l, w_local] : multi_scratch) {
+                    if (l > 0 && l <= blk.size) {
+                        ac.active_dof_global[act_cursor + a] = blk.start + l - 1;
+                        ac.active_block_idx [act_cursor + a] = b;
+                        ac.active_local_w   [act_cursor + a] = w_local * rw;
+                        a++;
+                    }
+                }
+            } else if (with_bilinear &&
+                       blk.contrib_kind == BlockContribKind::BILINEAR_FACTOR) {
+                if (!blk.obs_factor_lambda) continue;
+                auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
+                if (u_slot >= 0 && lambda_slot >= 0) {
+                    // u active dof: weight = x[lambda_slot] * d_eff[b]
+                    ac.active_dof_global  [act_cursor + a] = u_slot;
+                    ac.active_block_idx   [act_cursor + a] = b;
+                    ac.active_local_w     [act_cursor + a] = 0.0;
+                    ac.active_paired_slot [act_cursor + a] = lambda_slot;
+                    a++;
+                    // lambda active dof: weight = x[u_slot] * d_eff[b]
+                    ac.active_dof_global  [act_cursor + a] = lambda_slot;
+                    ac.active_block_idx   [act_cursor + a] = b;
+                    ac.active_local_w     [act_cursor + a] = 0.0;
+                    ac.active_paired_slot [act_cursor + a] = u_slot;
+                    a++;
+                }
+            }
+            // DENSE_BASIS: skipped (per-obs path retained).
+        }
+        act_cursor += static_cast<size_t>(plan.A_idx);
+
+        const int A_i = plan.A_idx;
+
+        // β × active: layout [j * A_i + a] for j in [0,p_k), a in [0,A_i).
+        for (int j = 0; j < p_k; j++) {
+            const int r = bstart + j;
+            for (int aa = 0; aa < A_i; aa++) {
+                const int d = ac.active_dof_global[plan.act_start + aa];
+                ac.idx_beta_active[static_cast<size_t>(plan.bxa_start)
+                                   + static_cast<size_t>(j) * A_i + aa] =
+                    H.lookup(r, d);
+            }
+        }
+
+        // RE × active: layout [a] for a in [0,A_i); -1 entries when no RE.
+        if (g_re_global >= 0) {
+            for (int aa = 0; aa < A_i; aa++) {
+                const int d = ac.active_dof_global[plan.act_start + aa];
+                ac.idx_re_active[static_cast<size_t>(plan.rxa_start) + aa] =
+                    H.lookup(g_re_global, d);
+            }
+        } else {
+            for (int aa = 0; aa < A_i; aa++) {
+                ac.idx_re_active[static_cast<size_t>(plan.rxa_start) + aa] = -1;
+            }
+        }
+
+        // active × active lower triangle column-major (a2 outer, a1 inner over [a2, A_i)).
+        int t = 0;
+        for (int a2 = 0; a2 < A_i; a2++) {
+            const int d2 = ac.active_dof_global[plan.act_start + a2];
+            for (int a1 = a2; a1 < A_i; a1++) {
+                const int d1 = ac.active_dof_global[plan.act_start + a1];
+                ac.idx_act_act[static_cast<size_t>(plan.axa_start) + t++] =
+                    H.lookup(d1, d2);
+            }
+        }
+    }
+}
 
 // Build the cache. Must be called AFTER `H_builder.init()` so the
 // entry_map has its final pattern. Inspects blocks: DENSE_BASIS sets
@@ -128,325 +356,143 @@ struct ScatterIndexCache {
 // and the flat indices, and weights are derived from x[] at scatter
 // time. The cached fast path engages when no DENSE_BASIS block is
 // present (BILINEAR is fine — it has its own dedicated weight branch in
-// scatter_arm_obs_indexed_cached).
+// scatter_row_indexed). An arm flagged in `skip_arm` keeps an empty entry:
+// the cell-coupled arms are scattered through CoupledScatterPlan, which
+// resolves its own copy of their rows (coupled_scatter_plan.h).
 inline void build_scatter_index_cache(
     const std::vector<ParsedArm>&    parsed,
     const std::vector<JointArm>&     arms,
     const std::vector<LatentBlock>&  blocks,
     const SparseHessianBuilder&      H,
-    ScatterIndexCache&               cache
+    ScatterIndexCache&               cache,
+    const std::vector<bool>*         skip_arm = nullptr
 ) {
     const int n_arms = static_cast<int>(arms.size());
-    const int B      = static_cast<int>(blocks.size());
 
-    cache.cache_H_ptr = static_cast<const void*>(&H);
-    cache.cache_H_nnz = H.nnz;
-    cache.cache_H_gen = H.pattern_generation;
-
+    cache.pattern         = H.entry_map;
     cache.enabled         = true;
     cache.any_dense_basis = false;
     cache.any_bilinear    = false;
-    for (int b = 0; b < B; b++) {
-        if (blocks[b].contrib_kind == BlockContribKind::DENSE_BASIS) {
+    for (const auto& blk : blocks) {
+        if (blk.contrib_kind == BlockContribKind::DENSE_BASIS) {
             cache.any_dense_basis = true;
-        } else if (blocks[b].contrib_kind == BlockContribKind::BILINEAR_FACTOR) {
+        } else if (blk.contrib_kind == BlockContribKind::BILINEAR_FACTOR) {
             cache.any_bilinear = true;
         }
     }
 
     cache.arm.assign(n_arms, ArmIndexedCache{});
-
     std::vector<std::pair<int,double>> multi_scratch;
-
     for (int k_arm = 0; k_arm < n_arms; k_arm++) {
-        const ParsedArm& pa = parsed[k_arm];
-        const int N_k    = arms[k_arm].N;
-        const int p_k    = pa.p;
-        const int n_re_k = pa.n_re_groups;
-        const int bstart = pa.beta_start;
-        const int rstart = pa.re_start;
-
-        ArmIndexedCache& ac = cache.arm[k_arm];
-
-        // β × β lower triangle, column-major (l outer, j inner over [l, p_k)).
-        ac.idx_bb.resize(static_cast<size_t>(p_k) * (p_k + 1) / 2);
-        {
-            int t = 0;
-            for (int l = 0; l < p_k; l++) {
-                const int c = bstart + l;
-                for (int j = l; j < p_k; j++) {
-                    const int r = bstart + j;
-                    ac.idx_bb[t++] = H.lookup(r, c);
-                }
-            }
-        }
-
-        // RE × RE diagonal (rstart+g, rstart+g).
-        ac.idx_re_diag.resize(static_cast<size_t>(n_re_k));
-        for (int g = 0; g < n_re_k; g++) {
-            const int r = rstart + g;
-            ac.idx_re_diag[g] = H.lookup(r, r);
-        }
-
-        // β × RE: layout [g * p_k + j] for g in [0,n_re_k), j in [0,p_k).
-        ac.idx_beta_re.resize(static_cast<size_t>(n_re_k) * p_k);
-        for (int g = 0; g < n_re_k; g++) {
-            const int c = rstart + g;
-            for (int j = 0; j < p_k; j++) {
-                const int r = bstart + j;
-                ac.idx_beta_re[static_cast<size_t>(g) * p_k + j] =
-                    H.lookup(r, c);
-            }
-        }
-
-        // Per-obs plans.
-        ac.plans.assign(N_k, PerObsScatterPlan{});
-
-        // First pass: resolve active dofs per obs to size the flat arrays.
-        // Counts INDEXED_SINGLE / INDEXED_MULTI / BILINEAR_FACTOR; DENSE_BASIS
-        // is handled outside the cache by scatter_dense_basis.h (2.2a).
-        size_t total_A = 0;
-        for (int i = 0; i < N_k; i++) {
-            int A_i = 0;
-            for (int b = 0; b < B; b++) {
-                const LatentBlock& blk = blocks[b];
-                if (blk.contrib_kind == BlockContribKind::INDEXED_SINGLE) {
-                    int l = blk.idx ? blk.idx(i, k_arm) : -1;
-                    if (l > 0 && l <= blk.size) A_i++;
-                } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
-                    if (!blk.obs_indices) continue;
-                    blk.fill_obs_indices(i, k_arm, multi_scratch);
-                    for (const auto& [l, w_local] : multi_scratch) {
-                        if (l > 0 && l <= blk.size) {
-                            A_i++;
-                            (void)w_local;
-                        }
-                    }
-                } else if (blk.contrib_kind == BlockContribKind::BILINEAR_FACTOR) {
-                    if (!blk.obs_factor_lambda) continue;
-                    auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
-                    if (u_slot >= 0 && lambda_slot >= 0) A_i += 2;
-                }
-                // DENSE_BASIS skipped from cache; handled by 2.2a.
-            }
-            ac.plans[i].A_idx = A_i;
-            total_A += static_cast<size_t>(A_i);
-        }
-
-        ac.active_dof_global.resize(total_A);
-        ac.active_block_idx .resize(total_A);
-        ac.active_local_w   .resize(total_A);
-        // Allocate paired-slot storage only when bilinear blocks are
-        // present. Pure-INDEXED arms keep `active_paired_slot` empty so
-        // the scatter hot loop takes the no-branch path
-        // (aps == nullptr) — see scatter_arm_obs_indexed_cached.
-        if (cache.any_bilinear) {
-            ac.active_paired_slot.assign(total_A, -1);
-        } else {
-            ac.active_paired_slot.clear();
-        }
-
-        // Size flat-index arrays via prefix sums.
-        size_t total_bxa = 0, total_rxa = 0, total_axa = 0;
-        for (int i = 0; i < N_k; i++) {
-            const int A_i = ac.plans[i].A_idx;
-            ac.plans[i].bxa_start = static_cast<int>(total_bxa);
-            ac.plans[i].rxa_start = static_cast<int>(total_rxa);
-            ac.plans[i].axa_start = static_cast<int>(total_axa);
-            total_bxa += static_cast<size_t>(p_k) * A_i;
-            total_rxa += static_cast<size_t>(A_i);
-            total_axa += static_cast<size_t>(A_i) * (A_i + 1) / 2;
-        }
-        ac.idx_beta_active.resize(total_bxa);
-        ac.idx_re_active  .resize(total_rxa);
-        ac.idx_act_act    .resize(total_axa);
-
-        // Second pass: fill active dofs and flat indices.
-        size_t act_cursor = 0;
-        for (int i = 0; i < N_k; i++) {
-            PerObsScatterPlan& plan = ac.plans[i];
-            plan.act_start = static_cast<int>(act_cursor);
-
-            // g_re for this obs.
-            int g_re_global = -1;
-            if (n_re_k > 0) {
-                int gi = static_cast<int>(pa.re_idx[i]) - 1;
-                if (gi >= 0 && gi < n_re_k) g_re_global = rstart + gi;
-            }
-            plan.g_re_global = g_re_global;
-
-            // Resolve active dofs in the same block order as the scatter path.
-            int a = 0;
-            for (int b = 0; b < B; b++) {
-                const LatentBlock& blk = blocks[b];
-                // The per-row SVC weight multiplies the block-local weight on
-                // every indexed kind: an SPDE (INDEXED_MULTI) field carries it
-                // across its mesh nodes as an areal one carries it on its
-                // single cell. Unset -> 1.0, leaving the unweighted plan
-                // byte-identical.
-                const double rw = block_row_weight(blk, i, k_arm);
-                if (blk.contrib_kind == BlockContribKind::INDEXED_SINGLE) {
-                    if (!blk.idx) continue;
-                    int l = blk.idx(i, k_arm);
-                    if (l > 0 && l <= blk.size) {
-                        ac.active_dof_global[act_cursor + a] = blk.start + l - 1;
-                        ac.active_block_idx [act_cursor + a] = b;
-                        ac.active_local_w   [act_cursor + a] = rw;
-                        a++;
-                    }
-                } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
-                    if (!blk.obs_indices) continue;
-                    blk.fill_obs_indices(i, k_arm, multi_scratch);
-                    for (const auto& [l, w_local] : multi_scratch) {
-                        if (l > 0 && l <= blk.size) {
-                            ac.active_dof_global[act_cursor + a] = blk.start + l - 1;
-                            ac.active_block_idx [act_cursor + a] = b;
-                            ac.active_local_w   [act_cursor + a] = w_local * rw;
-                            a++;
-                        }
-                    }
-                } else if (blk.contrib_kind == BlockContribKind::BILINEAR_FACTOR) {
-                    if (!blk.obs_factor_lambda) continue;
-                    auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
-                    if (u_slot >= 0 && lambda_slot >= 0) {
-                        // u active dof: weight = x[lambda_slot] * d_eff[b]
-                        ac.active_dof_global  [act_cursor + a] = u_slot;
-                        ac.active_block_idx   [act_cursor + a] = b;
-                        ac.active_local_w     [act_cursor + a] = 0.0;
-                        ac.active_paired_slot [act_cursor + a] = lambda_slot;
-                        a++;
-                        // lambda active dof: weight = x[u_slot] * d_eff[b]
-                        ac.active_dof_global  [act_cursor + a] = lambda_slot;
-                        ac.active_block_idx   [act_cursor + a] = b;
-                        ac.active_local_w     [act_cursor + a] = 0.0;
-                        ac.active_paired_slot [act_cursor + a] = u_slot;
-                        a++;
-                    }
-                }
-                // DENSE_BASIS: skipped (per-obs path retained).
-            }
-            act_cursor += static_cast<size_t>(plan.A_idx);
-
-            const int A_i = plan.A_idx;
-
-            // β × active: layout [j * A_i + a] for j in [0,p_k), a in [0,A_i).
-            for (int j = 0; j < p_k; j++) {
-                const int r = bstart + j;
-                for (int aa = 0; aa < A_i; aa++) {
-                    const int d = ac.active_dof_global[plan.act_start + aa];
-                    ac.idx_beta_active[static_cast<size_t>(plan.bxa_start)
-                                       + static_cast<size_t>(j) * A_i + aa] =
-                        H.lookup(r, d);
-                }
-            }
-
-            // RE × active: layout [a] for a in [0,A_i); -1 entries when no RE.
-            if (g_re_global >= 0) {
-                for (int aa = 0; aa < A_i; aa++) {
-                    const int d = ac.active_dof_global[plan.act_start + aa];
-                    ac.idx_re_active[static_cast<size_t>(plan.rxa_start) + aa] =
-                        H.lookup(g_re_global, d);
-                }
-            } else {
-                for (int aa = 0; aa < A_i; aa++) {
-                    ac.idx_re_active[static_cast<size_t>(plan.rxa_start) + aa] = -1;
-                }
-            }
-
-            // active × active lower triangle column-major (a2 outer, a1 inner over [a2, A_i)).
-            int t = 0;
-            for (int a2 = 0; a2 < A_i; a2++) {
-                const int d2 = ac.active_dof_global[plan.act_start + a2];
-                for (int a1 = a2; a1 < A_i; a1++) {
-                    const int d1 = ac.active_dof_global[plan.act_start + a1];
-                    ac.idx_act_act[static_cast<size_t>(plan.axa_start) + t++] =
-                        H.lookup(d1, d2);
-                }
-            }
-        }
+        if (skip_arm && (*skip_arm)[k_arm]) continue;
+        build_arm_indexed_cache(parsed[k_arm], arms[k_arm].N, k_arm, blocks, H,
+                                cache.any_bilinear, cache.arm[k_arm],
+                                multi_scratch);
     }
 }
 
-// Returns true if the cache is built and consistent with H. Caller passes
-// the H currently being scattered into; if the H pointer/nnz differ from
-// the cache, the cache is treated as stale.
+// True when the cache is built and its offsets were resolved against the
+// pattern `H` carries. Every builder copied from the one the cache was built
+// against shares that pattern, so one cache serves all of them.
 inline bool scatter_index_cache_valid(
     const ScatterIndexCache& cache,
     const SparseHessianBuilder& H
 ) {
-    if (!cache.enabled) return false;
-    if (cache.cache_H_ptr != static_cast<const void*>(&H)) return false;
-    if (cache.cache_H_nnz != H.nnz) return false;
-    if (cache.cache_H_gen != H.pattern_generation) return false;
-    return true;
+    return cache.enabled && cache.pattern && cache.pattern == H.entry_map;
 }
 
-// Cached scatter for one arm. Used when no DENSE_BASIS block is present
-// (INDEXED_SINGLE / INDEXED_MULTI / BILINEAR_FACTOR are all supported).
-// Writes the same gradient and Hessian entries as the per-obs path in
-// scatter_arm_obs_joint_multi_sparse, but replaces every H.add() with a
-// direct values[idx] += val using flat indices precomputed at fit-time.
-//
-// Caller passes:
-//   - x: current latent vector. Read only by BILINEAR_FACTOR dofs; ignored
-//     for purely INDEXED arms.
-//   - eta, pa, arm: per-arm data (same as the legacy scatter).
-//   - d_eff_cache[b]: per-block effective coefficient at this outer-grid
-//     cell (arm_scale * d_fac). Length = blocks.size().
-//   - arm_cache: precomputed cache for this k_arm.
-//   - view: resolved spec view; the per-obs score + Fisher curvature come
-//     from view.spec (built-in family or model-supplied likelihood).
-// Scatter one observation's gradient and Hessian contributions into the
-// supplied `grad_out` / `Hv_out` arrays, using `w_buf` (size >= max A_idx)
-// as the per-obs active-weight scratch. Pulled out of the obs loop so the
-// serial and parallel drivers share one body (no duplicated scatter logic).
-inline void scatter_one_obs_indexed(
-    int i,
-    const Rcpp::NumericVector&  eta,
-    const ParsedArm&            pa,
-    const ArmSpecView&          view,
-    const std::vector<double>&  d_eff_cache,
-    const ArmIndexedCache&      ac,
-    int p_k, int bstart, int rstart,
-    const int* __restrict__ bb,  const int* __restrict__ bre,
-    const int* __restrict__ red, const int* __restrict__ bxa,
-    const int* __restrict__ rxa, const int* __restrict__ axa,
-    const int* __restrict__ adg, const int* __restrict__ abi,
-    const double* __restrict__ alw, const int* __restrict__ aps,
-    const double* __restrict__ xv,
-    double* __restrict__ w_buf,
-    double* __restrict__ grad_out,
-    double* __restrict__ Hv_out
-) {
-    auto gh = arm_grad_hess(view, i, eta[i]);
+// Raw views of one arm's cache, taken once per scatter call so the row body
+// reads restrict-qualified pointers rather than going through the vectors.
+struct ArmIndexedView {
+    const PerObsScatterPlan* plans;
+    const int*    bb;   // idx_bb
+    const int*    bre;  // idx_beta_re
+    const int*    red;  // idx_re_diag
+    const int*    bxa;  // idx_beta_active
+    const int*    rxa;  // idx_re_active
+    const int*    axa;  // idx_act_act
+    const int*    adg;  // active_dof_global
+    const int*    abi;  // active_block_idx
+    const double* alw;  // active_local_w
+    const int*    aps;  // active_paired_slot, nullptr when no bilinear dof
+    int           max_A;
 
-    const PerObsScatterPlan& plan = ac.plans[i];
+    explicit ArmIndexedView(const ArmIndexedCache& ac)
+        : plans(ac.plans.data()),
+          bb(ac.idx_bb.data()), bre(ac.idx_beta_re.data()),
+          red(ac.idx_re_diag.data()), bxa(ac.idx_beta_active.data()),
+          rxa(ac.idx_re_active.data()), axa(ac.idx_act_act.data()),
+          adg(ac.active_dof_global.data()), abi(ac.active_block_idx.data()),
+          alw(ac.active_local_w.data()),
+          aps(ac.active_paired_slot.empty() ? nullptr
+                                            : ac.active_paired_slot.data()),
+          max_A(ac.max_A) {}
+};
+
+// Writes a row's contributions straight into a gradient and a builder's value
+// array; a slot absent from the pattern is discarded and counted.
+struct DirectScatterSink {
+    double* __restrict__ grad;
+    double* __restrict__ Hv;
+    void hess(int slot, double v) const { scatter_slot(Hv, slot, v); }
+    void grad_add(int dof, double v) const { grad[dof] += v; }
+};
+
+// One row's gradient and Hessian contributions, given its eta-space score `g`
+// and negative curvature `h`, written through the flat offsets the row's plan
+// carries. The single row body for every indexed scatter: the per-obs sparse
+// path reaches it with the arm spec's own derivatives (scatter_one_obs_indexed)
+// and the cell-coupled path with the derivatives the coupling spec returns for
+// the row (coupled_scatter_plan.h), so the two cannot write a row differently.
+//
+// `d_eff[b]` is block b's effective amplitude at this outer-grid cell
+// (arm_scale * d_fac); `xv` is the latent vector, read only by a bilinear dof;
+// `w_buf` holds at least `v.max_A` entries. The multiply association of every
+// Hessian entry is (h * w_later) * w_earlier, in the block order beta, RE,
+// latent -- the association the batched and dense coupled scatters reproduce.
+template <class Sink>
+inline void scatter_row_indexed(
+    int                        i,
+    double                     g,
+    double                     h,
+    const ParsedArm&           pa,
+    const double*              d_eff,
+    const ArmIndexedView&      v,
+    const double* __restrict__ xv,
+    double* __restrict__       w_buf,
+    const Sink&                sink
+) {
+    const int p_k    = pa.p;
+    const int rstart = pa.re_start;
+    const int bstart = pa.beta_start;
+
+    const PerObsScatterPlan& plan = v.plans[i];
     const int A_i      = plan.A_idx;
     const int g_re_glb = plan.g_re_global;
 
     // Compose per-obs active weights:
-    //   bilinear (paired_slot >= 0): d_eff_cache[block] * x[paired_slot]
-    //   else                       : d_eff_cache[block] * local_w
-    if (aps) {
+    //   bilinear (paired_slot >= 0): d_eff[block] * x[paired_slot]
+    //   else                       : d_eff[block] * local_w
+    if (v.aps) {
         for (int a = 0; a < A_i; a++) {
             const int  base   = plan.act_start + a;
-            const int  paired = aps[base];
-            const double d_eff = d_eff_cache[abi[base]];
+            const int  paired = v.aps[base];
+            const double de   = d_eff[v.abi[base]];
             w_buf[a] = (paired >= 0)
-                       ? d_eff * xv[paired]
-                       : d_eff * alw[base];
+                       ? de * xv[paired]
+                       : de * v.alw[base];
         }
     } else {
         for (int a = 0; a < A_i; a++) {
-            w_buf[a] = d_eff_cache[abi[plan.act_start + a]]
-                       * alw[plan.act_start + a];
+            w_buf[a] = d_eff[v.abi[plan.act_start + a]]
+                       * v.alw[plan.act_start + a];
         }
     }
 
     // β block: gradient + β/β diagonal + β × RE + β × active.
     for (int j = 0; j < p_k; j++) {
         const double Xij = pa.X(i, j);
-        grad_out[bstart + j] += gh.grad * Xij;
+        sink.grad_add(bstart + j, g * Xij);
     }
     // β/β lower triangle column-major: idx_bb layout matches.
     {
@@ -454,8 +500,7 @@ inline void scatter_one_obs_indexed(
         for (int l = 0; l < p_k; l++) {
             const double Xil = pa.X(i, l);
             for (int j = l; j < p_k; j++) {
-                const int k = bb[t++];
-                scatter_slot(Hv_out, k, gh.neg_hess * pa.X(i, j) * Xil);
+                sink.hess(v.bb[t++], h * pa.X(i, j) * Xil);
             }
         }
     }
@@ -464,8 +509,7 @@ inline void scatter_one_obs_indexed(
         const int g_local = g_re_glb - rstart;
         const int row_off = g_local * p_k;
         for (int j = 0; j < p_k; j++) {
-            const int k = bre[row_off + j];
-            scatter_slot(Hv_out, k, gh.neg_hess * pa.X(i, j));
+            sink.hess(v.bre[row_off + j], h * pa.X(i, j));
         }
     }
     // β × active: idx_beta_active[bxa_start + j*A_i + a].
@@ -474,21 +518,18 @@ inline void scatter_one_obs_indexed(
             const double Xij = pa.X(i, j);
             const int row_off = plan.bxa_start + j * A_i;
             for (int a = 0; a < A_i; a++) {
-                const int k = bxa[row_off + a];
-                scatter_slot(Hv_out, k, gh.neg_hess * Xij * w_buf[a]);
+                sink.hess(v.bxa[row_off + a], h * Xij * w_buf[a]);
             }
         }
     }
 
     // RE block: gradient + RE/RE diagonal + RE × active.
     if (g_re_glb >= 0) {
-        grad_out[g_re_glb] += gh.grad;
+        sink.grad_add(g_re_glb, g);
         const int g_local = g_re_glb - rstart;
-        const int k_re = red[g_local];
-        scatter_slot(Hv_out, k_re, gh.neg_hess);
+        sink.hess(v.red[g_local], h);
         for (int a = 0; a < A_i; a++) {
-            const int k = rxa[plan.rxa_start + a];
-            scatter_slot(Hv_out, k, gh.neg_hess * w_buf[a]);
+            sink.hess(v.rxa[plan.rxa_start + a], h * w_buf[a]);
         }
     }
 
@@ -498,13 +539,30 @@ inline void scatter_one_obs_indexed(
         for (int a2 = 0; a2 < A_i; a2++) {
             const double w_a2 = w_buf[a2];
             // active gradient (one entry per active dof).
-            grad_out[adg[plan.act_start + a2]] += gh.grad * w_a2;
+            sink.grad_add(v.adg[plan.act_start + a2], g * w_a2);
             for (int a1 = a2; a1 < A_i; a1++) {
-                const int k = axa[plan.axa_start + t++];
-                scatter_slot(Hv_out, k, gh.neg_hess * w_buf[a1] * w_a2);
+                sink.hess(v.axa[plan.axa_start + t++], h * w_buf[a1] * w_a2);
             }
         }
     }
+}
+
+// One observation of an uncoupled arm: its score and Fisher curvature from the
+// arm's own spec view, scattered through the shared row body.
+template <class Sink>
+inline void scatter_one_obs_indexed(
+    int                         i,
+    const Rcpp::NumericVector&  eta,
+    const ParsedArm&            pa,
+    const ArmSpecView&          view,
+    const double*               d_eff,
+    const ArmIndexedView&       v,
+    const double*               xv,
+    double*                     w_buf,
+    const Sink&                 sink
+) {
+    const auto gh = arm_grad_hess(view, i, eta[i]);
+    scatter_row_indexed(i, gh.grad, gh.neg_hess, pa, d_eff, v, xv, w_buf, sink);
 }
 
 inline void scatter_arm_obs_indexed_cached(
@@ -519,28 +577,14 @@ inline void scatter_arm_obs_indexed_cached(
     SparseHessianBuilder&       H,
     int                         n_threads = 1
 ) {
-    const int p_k    = pa.p;
-    const int bstart = pa.beta_start;
-    const int rstart = pa.re_start;
+    const int p_k = pa.p;
 
-    const int* __restrict__    bb  = ac.idx_bb.data();
-    const int* __restrict__    bre = ac.idx_beta_re.data();
-    const int* __restrict__    red = ac.idx_re_diag.data();
-    const int* __restrict__    bxa = ac.idx_beta_active.data();
-    const int* __restrict__    rxa = ac.idx_re_active.data();
-    const int* __restrict__    axa = ac.idx_act_act.data();
-    const int* __restrict__    adg = ac.active_dof_global.data();
-    const int* __restrict__    abi = ac.active_block_idx.data();
-    const double* __restrict__ alw = ac.active_local_w.data();
-    const int* __restrict__    aps = ac.active_paired_slot.empty()
-                                     ? nullptr
-                                     : ac.active_paired_slot.data();
-    const double* __restrict__ xv  = REAL(x);
+    const ArmIndexedView v(ac);
+    const double* xv    = REAL(x);
+    const double* d_eff = d_eff_cache.data();
 
     // Per-obs active weight buffer sized to max A_idx.
-    int max_A = 0;
-    for (const auto& p : ac.plans) if (p.A_idx > max_A) max_A = p.A_idx;
-    const int w_sz = (max_A > 0) ? max_A : 1;
+    const int w_sz = (v.max_A > 0) ? v.max_A : 1;
 
     const std::size_t nnz   = H.values.size();
     const std::size_t n_x   = grad.size();
@@ -598,16 +642,13 @@ inline void scatter_arm_obs_indexed_cached(
         #pragma omp parallel num_threads(T)
         {
             const int t = omp_get_thread_num();
-            std::vector<double>& Hl = Hbuf[t];
-            std::vector<double>& gl = gbuf[t];
-            std::vector<double>& w_buf = wbuf[t];
+            const DirectScatterSink sink{gbuf[t].data(), Hbuf[t].data()};
+            double* w_buf = wbuf[t].data();
 
             #pragma omp for schedule(static)
             for (int i = 0; i < arm.N; i++) {
-                scatter_one_obs_indexed(
-                    i, eta, pa, view, d_eff_cache, ac, p_k, bstart, rstart,
-                    bb, bre, red, bxa, rxa, axa, adg, abi, alw, aps, xv,
-                    w_buf.data(), gl.data(), Hl.data());
+                scatter_one_obs_indexed(i, eta, pa, view, d_eff, v, xv, w_buf,
+                                        sink);
             }
 
             // Reduce thread-private buffers into the shared targets. Each
@@ -629,15 +670,14 @@ inline void scatter_arm_obs_indexed_cached(
         return;
     }
 #else
-    (void) n_threads; (void) n_x; (void) nnz;
+    (void) n_threads; (void) n_x; (void) nnz; (void) p_k;
 #endif
 
     std::vector<double> w_buf(w_sz, 0.0);
+    const DirectScatterSink sink{grad.data(), Hv};
     for (int i = 0; i < arm.N; i++) {
-        scatter_one_obs_indexed(
-            i, eta, pa, view, d_eff_cache, ac, p_k, bstart, rstart,
-            bb, bre, red, bxa, rxa, axa, adg, abi, alw, aps, xv,
-            w_buf.data(), grad.data(), Hv);
+        scatter_one_obs_indexed(i, eta, pa, view, d_eff, v, xv, w_buf.data(),
+                                sink);
     }
 }
 

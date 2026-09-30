@@ -30,6 +30,7 @@
 #ifndef TULPA_NESTED_LAPLACE_JOINT_MULTI_H
 #define TULPA_NESTED_LAPLACE_JOINT_MULTI_H
 
+#include "coupled_scatter_plan.h"
 #include "joint_hessian_pattern.h"
 #include "laplace_core.h"
 #include "laplace_family_link.h"
@@ -63,40 +64,12 @@
 
 namespace tulpa {
 
-// Environment-driven kernel switches, resolved at namespace scope so the read
-// happens at load time. A function-local static first evaluated inside an
-// OpenMP region emits a thread-safe-initialization guard and runs std::getenv
-// concurrently with the other workers reaching the same line, which is the
-// construct the per-thread scratch note below avoids for the same reason.
-//
-// TULPA_GRID_WORKSTEAL=0 forces the serial per-cell coupling scatter, so a grid
-// solved with several outer threads reproduces the serial reduction exactly.
-// TULPA_COUPLING_FORCE_PARALLEL takes the chunked parallel reduce on every cell
-// instead of only where the cell count pays for the per-chunk partial buffers,
-// so a small grid can exercise the parallel path; the reduce is in fixed chunk
-// order, so the result is the same either way.
-inline bool nl_env_present(const char* name) {
-    return std::getenv(name) != nullptr;
-}
-inline bool nl_env_not_zero(const char* name) {
-    const char* e = std::getenv(name);
-    return !(e != nullptr && e[0] == '0');
-}
-inline const bool kGridWorkstealEnabled = nl_env_not_zero("TULPA_GRID_WORKSTEAL");
-inline const bool kCouplingForceParallel =
-    nl_env_present("TULPA_COUPLING_FORCE_PARALLEL");
-
 // Initial capacity of the two chain scratch buffers. Pure allocation hints:
 // both grow on demand and nothing depends on the value. One cell's rank-1
 // self-cross touches at most its own rows, a row's chain at most one entry per
 // latent block, so these are sized for the common case and never a bound.
 inline constexpr int kCellChainScratchHint = 64;
 inline constexpr int kRowChainScratchHint  = 32;
-
-// Cell count below which the chunked coupling scatter is not worth its
-// per-chunk partial gradient and Hessian buffers (each a full copy of the
-// joint values array), so the serial pass runs instead.
-inline constexpr int kCouplingWorkstealMinCells = 64;
 
 // Threshold below which a centering fold is skipped: the level the centerer
 // removed is numerically zero, so folding it would only perturb the coefficient
@@ -246,16 +219,18 @@ inline void for_each_row_block_latent(
 // `d_eff_cache[b]` is the per-block arm_scale * d_fac amplitude (a zero entry
 // skips the block). Entries are APPENDED to out_idx / out_w (the caller clears
 // them). Single source of truth for the active-latent resolution used by both
-// `scatter_one_arm_row_{dense,sparse}` (gradient + Hessian) and
-// `build_arm_row_chain` (cross-arm Hessian chain). DENSE_BASIS / BILINEAR_FACTOR
-// are not coupled-scatter kinds (no coupled family uses them) and are skipped.
+// `scatter_one_arm_row_dense` (gradient + Hessian) and `build_arm_row_chain`
+// (cross-arm Hessian chain); the sparse row scatter reads the same dofs off the
+// coupled plan (coupled_cell_arm_dofs / build_arm_indexed_cache resolve them
+// from the same blocks). DENSE_BASIS / BILINEAR_FACTOR are not coupled-scatter
+// kinds (no coupled family uses them) and are skipped.
 //
 // PRECONDITION: the appended entries resolve to DISTINCT global latent indices.
 // Block ranges are laid out disjointly (each factory returns start + size) and
 // every INDEXED_MULTI producer emits one slot per row per field, so it holds by
 // construction. The dense row scatter sums all (a, b) pairs and writes both
-// directions while the sparse twin sums b <= a and lets H.add() normalise; the
-// two agree only for distinct indices, since a repeated index would gain
+// directions while the sparse row body sums the lower triangle once; the two
+// agree only for distinct indices, since a repeated index would gain
 // 2 * d_a * d_b on the dense diagonal against d_a * d_b on the sparse one.
 inline void collect_coupled_row_latents(
     int                              i,
@@ -411,79 +386,6 @@ inline void scatter_one_arm_row_dense(
         for (int b = 0; b < A; b++) {
             H[active_idx[a]][active_idx[b]] +=
                 H_row * active_d[a] * active_d[b];
-        }
-    }
-}
-
-// Sparse-builder analogue of scatter_one_arm_row_dense. Scope matches the
-// dense helper: INDEXED_SINGLE and INDEXED_MULTI blocks (resolved by
-// collect_coupled_row_latents); DENSE_BASIS / BILINEAR_FACTOR are handled only
-// by the per-obs sparse scatter's own optimized fast path, not the coupled
-// per-cell branch.
-//
-// Lower-triangle writes only -- H.add() normalizes (row, col) to
-// (max, min) internally, so a single call covers both directions of an
-// off-diagonal entry. Caller-owned scratch (active_idx, active_d) is
-// reused across rows.
-inline void scatter_one_arm_row_sparse(
-    int                              i,
-    double                           g_row,
-    double                           H_row,
-    const ParsedArm&                 pa,
-    int                              k_arm,
-    const std::vector<LatentBlock>&  blocks,
-    const std::vector<double>&       d_eff_cache,
-    DenseVec&                        grad,
-    SparseHessianBuilder&            H,
-    std::vector<int>&                active_idx,
-    std::vector<double>&             active_d
-) {
-    const int p_k    = pa.p;
-    const int n_re_k = pa.n_re_groups;
-    const int bstart = pa.beta_start;
-    const int rstart = pa.re_start;
-
-    int g_re = -1;
-    if (n_re_k > 0) {
-        int gi = static_cast<int>(pa.re_idx[i]) - 1;
-        if (gi >= 0 && gi < n_re_k) g_re = rstart + gi;
-    }
-
-    active_idx.clear();
-    active_d.clear();
-    collect_coupled_row_latents(i, k_arm, blocks, d_eff_cache, active_idx, active_d);
-    const int A = static_cast<int>(active_idx.size());
-
-    // beta block: gradient + lower-triangle beta/beta + beta/RE + beta/active.
-    for (int j = 0; j < p_k; j++) {
-        const double Xij = pa.X(i, j);
-        grad[bstart + j] += g_row * Xij;
-        for (int l = 0; l <= j; l++) {
-            H.add(bstart + j, bstart + l, H_row * Xij * pa.X(i, l));
-        }
-        if (g_re >= 0) {
-            H.add(bstart + j, g_re, H_row * Xij);
-        }
-        for (int a = 0; a < A; a++) {
-            H.add(bstart + j, active_idx[a], H_row * Xij * active_d[a]);
-        }
-    }
-
-    // RE block: gradient + diagonal + RE/active.
-    if (g_re >= 0) {
-        grad[g_re] += g_row;
-        H.add(g_re, g_re, H_row);
-        for (int a = 0; a < A; a++) {
-            H.add(g_re, active_idx[a], H_row * active_d[a]);
-        }
-    }
-
-    // Active x active (intra + inter block): gradient + lower triangle.
-    for (int a = 0; a < A; a++) {
-        grad[active_idx[a]] += g_row * active_d[a];
-        for (int b = 0; b <= a; b++) {
-            H.add(active_idx[a], active_idx[b],
-                  H_row * active_d[a] * active_d[b]);
         }
     }
 }
@@ -699,6 +601,12 @@ inline CellArmResponse coupled_arm_own_response(const JointArm& arm, int kk,
 // The cell-coupling log-likelihood at the given per-arm etas, summed over
 // cells. `arm_response(kk, k)` returns arm k's response for this evaluation.
 //
+// The cells are summed over the coupled scatter's fixed chunk partition
+// (coupled_chunk_count): each chunk in cell order, then the chunk sums in chunk
+// order, so the value is the same at every thread count and the chunks can run
+// on whatever threads are idle (run_coupled_chunks; `n_threads` is the team it
+// may open outside a parallel region).
+//
 // Derivatives are discarded here, so the spec may skip its curvature work; the
 // zero-filled diagonal buffers and the outer cross array are still supplied,
 // which is what the CellDerivs contract promises.
@@ -710,35 +618,44 @@ inline double eval_cell_coupling_log_lik_impl(
     int                                           n_cells,
     const std::vector<JointArm>&                  arms,
     const std::vector<Rcpp::NumericVector>&       etas,
-    ArmResponseFn&&                               arm_response
+    ArmResponseFn&&                               arm_response,
+    int                                           n_threads
 ) {
     const int n_coupled = (int)coupled_arms.size();
     if (n_coupled == 0 || n_cells == 0) return 0.0;
 
-    CoupledArmViews views(coupled_arms, arms, etas,
-                          std::forward<ArmResponseFn>(arm_response));
+    const int n_chunks = coupled_chunk_count(n_cells);
+    std::vector<double> chunk_ll(n_chunks, 0.0);
+    run_coupled_chunks(n_chunks, n_threads, spec.thread_safe(), [&](int ch) {
+        CoupledArmViews views(coupled_arms, arms, etas, arm_response);
 
-    // Outer cross-Hessian array with every inner block null. A spec is required
-    // to test the INNER pointer only, so an objective-only call supplies the
-    // outer array rather than a null one.
-    std::vector<double*>        cross_hess_null_inner(n_coupled, nullptr);
-    std::vector<double* const*> cross_hess_outer(n_coupled,
-                                                 cross_hess_null_inner.data());
+        // Outer cross-Hessian array with every inner block null. A spec is
+        // required to test the INNER pointer only, so an objective-only call
+        // supplies the outer array rather than a null one.
+        std::vector<double*>        cross_hess_null_inner(n_coupled, nullptr);
+        std::vector<double* const*> cross_hess_outer(
+            n_coupled, cross_hess_null_inner.data());
+
+        double total = 0.0;
+        const int c_hi = coupled_chunk_lo(ch + 1, n_chunks, n_cells);
+        for (int c = coupled_chunk_lo(ch, n_chunks, n_cells); c < c_hi; c++) {
+            views.bind_cell(c, cell_rows);
+            CellEtas     etas_view = views.etas_view();
+            CellResponse y_view    = views.response_view();
+            CellDerivs out;
+            out.arm_grad           = views.grad_ptr.data();
+            out.arm_neg_hess_diag  = views.neg_hess_diag_ptr.data();
+            out.arm_cross_hess     = cross_hess_outer.data();
+            out.arm_row_count      = views.row_count.data();
+            out.n_arms_            = n_coupled;
+            out.grad_only          = true;
+            total += spec.evaluate_cell(c, etas_view, y_view, out);
+        }
+        chunk_ll[ch] = total;
+    });
 
     double total = 0.0;
-    for (int c = 0; c < n_cells; c++) {
-        views.bind_cell(c, cell_rows);
-        CellEtas     etas_view = views.etas_view();
-        CellResponse y_view    = views.response_view();
-        CellDerivs out;
-        out.arm_grad           = views.grad_ptr.data();
-        out.arm_neg_hess_diag  = views.neg_hess_diag_ptr.data();
-        out.arm_cross_hess     = cross_hess_outer.data();
-        out.arm_row_count      = views.row_count.data();
-        out.n_arms_            = n_coupled;
-        out.grad_only          = true;
-        total += spec.evaluate_cell(c, etas_view, y_view, out);
-    }
+    for (int ch = 0; ch < n_chunks; ch++) total += chunk_ll[ch];
     return total;
 }
 
@@ -751,13 +668,15 @@ inline double eval_cell_coupling_log_lik(
     int                                           n_cells,
     const std::vector<JointArm>&                  arms,
     const std::vector<Rcpp::NumericVector>&       etas,
-    const double*                                 phi_override = nullptr
+    const double*                                 phi_override,
+    int                                           n_threads
 ) {
     return eval_cell_coupling_log_lik_impl(
         spec, coupled_arms, cell_rows, n_cells, arms, etas,
         [&](int kk, int k) {
             return coupled_arm_own_response(arms[k], kk, phi_override);
-        });
+        },
+        n_threads);
 }
 
 // Per-cell row index inversion. For each coupled arm kk (= index into
@@ -874,28 +793,6 @@ inline void scatter_cross_chain_dense(
     }
 }
 
-// Cross-chain scatter (sparse). H.add() normalizes to (max, min); a single
-// write per (a, b) iter accumulates the correct off-diagonal contribution
-// to the symmetric matrix. The diagonal (a == b) case needs an extra write
-// to match the dense version's 2*val accumulation.
-inline void scatter_cross_chain_sparse(
-    double                                Hkl,
-    const std::vector<ArmRowChainEntry>&  chain_k,
-    const std::vector<ArmRowChainEntry>&  chain_l,
-    SparseHessianBuilder&                 H
-) {
-    if (Hkl == 0.0) return;
-    for (const auto& e_k : chain_k) {
-        for (const auto& e_l : chain_l) {
-            double val = Hkl * e_k.w * e_l.w;
-            H.add(e_k.idx, e_l.idx, val);
-            if (e_k.idx == e_l.idx) {
-                H.add(e_k.idx, e_l.idx, val);
-            }
-        }
-    }
-}
-
 // ============================================================================
 // Rank-1 self-cross fast path.
 //
@@ -970,34 +867,129 @@ inline void scatter_self_rank1_dense(
     }
 }
 
-// Scatter the symmetric rank-1 `coef * u u^T` (sparse, lower triangle). `u`
-// has unique dof indices (merged by accumulate_self_rank1_u), so the
-// `idx >= idx` guard writes each lower-triangle cell exactly once.
-inline void scatter_self_rank1_sparse(
-    double                                coef,
-    const std::vector<ArmRowChainEntry>&  u,
-    SparseHessianBuilder&                 H
-) {
-    if (coef == 0.0) return;
-    for (const auto& ea : u) {
-        for (const auto& eb : u) {
-            if (ea.idx >= eb.idx) {
-                H.add(ea.idx, eb.idx, coef * ea.w * eb.w);
+// Where the coupled per-cell scatter's writes land. The cell walk
+// (scatter_cell_coupling_branch_impl) owns the cell iteration, the spec call
+// and the chain construction; a target owns the three kinds of write:
+//   row(kk, k, i, g, h, pa, blocks, d_eff)  -- row i of arm k (coupled index
+//       kk), through its design, from its eta-space score g and negative
+//       curvature h;
+//   cross(kk, ll, Hkl, chain_k, chain_l)    -- Hkl * (chain_k chain_l' + its
+//       transpose) for a row of arm kk against a row of arm ll;
+//   rank1(kk, coef, u)                      -- the rank-1 self-cross coef u u';
+// with begin_cell(c) before a cell's first write.
+
+// Dense target: the n_x x n_x matrix, both triangles written.
+struct CoupledDenseScatter {
+    DenseVec&           grad;
+    DenseMat&           H;
+    std::vector<int>    active_idx;
+    std::vector<double> active_d;
+
+    CoupledDenseScatter(DenseVec& g, DenseMat& h, int n_blocks)
+        : grad(g), H(h) {
+        active_idx.reserve(n_blocks);
+        active_d.reserve(n_blocks);
+    }
+    void begin_cell(int) {}
+    void row(int, int k, int i, double g, double h, const ParsedArm& pa,
+             const std::vector<LatentBlock>& blocks,
+             const std::vector<double>& d_eff) {
+        scatter_one_arm_row_dense(i, g, h, pa, k, blocks, d_eff, grad, H,
+                                  active_idx, active_d);
+    }
+    void cross(int, int, double Hkl, const std::vector<ArmRowChainEntry>& ck,
+               const std::vector<ArmRowChainEntry>& cl) {
+        scatter_cross_chain_dense(Hkl, ck, cl, H);
+    }
+    void rank1(int, double coef, const std::vector<ArmRowChainEntry>& u) {
+        scatter_self_rank1_dense(coef, u, H);
+    }
+};
+
+// Sparse target for one chunk of cells: every write goes through the coupled
+// plan's flat offsets into the chunk's sink (coupled_scatter_plan.h), lower
+// triangle only. A chain entry's position is a fixed effect's place in the
+// coupled fixed-effect block, or a dof's place in the current cell's own list.
+struct CoupledPlannedScatter {
+    const CoupledScatterPlan&           plan;
+    const std::vector<ArmIndexedView>&  views;   // [kk]
+    CoupledChunkSink                    sink;
+    std::vector<double>                 w_buf;
+    CoupledCellSlots                    cell;
+    std::vector<int>                    pos_a, pos_b;
+
+    CoupledPlannedScatter(const CoupledScatterPlan&           p,
+                          const std::vector<ArmIndexedView>&  v,
+                          CoupledChunkSink                    s)
+        : plan(p), views(v), sink(s) {
+        int max_A = 1;
+        for (const auto& av : v) max_A = std::max(max_A, av.max_A);
+        w_buf.assign(max_A, 0.0);
+        pos_a.reserve(kRowChainScratchHint);
+        pos_b.reserve(kRowChainScratchHint);
+    }
+
+    void begin_cell(int c) { cell = plan.cell(c); }
+
+    void row(int kk, int, int i, double g, double h, const ParsedArm& pa,
+             const std::vector<LatentBlock>&, const std::vector<double>& d_eff) {
+        scatter_row_indexed(i, g, h, pa, d_eff.data(), views[kk],
+                            /*xv=*/nullptr, w_buf.data(), sink);
+    }
+
+    void positions(int kk, const std::vector<ArmRowChainEntry>& ch,
+                   std::vector<int>& pos) const {
+        pos.resize(ch.size());
+        for (std::size_t t = 0; t < ch.size(); t++) {
+            pos[t] = (ch[t].grp == CHAIN_BETA)
+                     ? ch[t].idx + plan.beta_delta[kk]
+                     : cell.local_pos(ch[t].idx);
+        }
+    }
+
+    // Both directions of a pair land in one lower-triangle entry, so each
+    // (a, b) is written once; a dof the two chains share is a diagonal entry,
+    // which takes the pair's term from each direction.
+    void cross(int kk, int ll, double Hkl,
+               const std::vector<ArmRowChainEntry>& ck,
+               const std::vector<ArmRowChainEntry>& cl) {
+        if (Hkl == 0.0) return;
+        positions(kk, ck, pos_a);
+        positions(ll, cl, pos_b);
+        for (std::size_t a = 0; a < ck.size(); a++) {
+            for (std::size_t b = 0; b < cl.size(); b++) {
+                const double val = Hkl * ck[a].w * cl[b].w;
+                const int s = cell.slot(pos_a[a], pos_b[b]);
+                sink.hess(s, val);
+                if (ck[a].idx == cl[b].idx) sink.hess(s, val);
             }
         }
     }
-}
 
-// Per-cell scatter branch. Walks cells, dispatches to
-// `spec->evaluate_cell()`, and scatters per-arm row derivatives via the
-// caller-supplied per-row helper (`scatter_one_arm_row_dense` or
-// `scatter_one_arm_row_sparse`) plus the cross-arm Hessian via the
-// caller-supplied cross-chain helper. Single source of truth for the
-// cell iteration, view construction, per-cell cross_hess buffer
-// allocation, and per-arm bookkeeping; dense/sparse share everything
-// except the H container and the two helpers.
-template <typename HType, typename ScatterRowFn, typename ScatterCrossFn,
-          typename ScatterSymRank1Fn>
+    // `u` carries unique dofs (merged by accumulate_self_rank1_u), so the
+    // `idx >= idx` guard writes each lower-triangle entry exactly once.
+    void rank1(int kk, double coef, const std::vector<ArmRowChainEntry>& u) {
+        if (coef == 0.0) return;
+        positions(kk, u, pos_a);
+        for (std::size_t a = 0; a < u.size(); a++) {
+            for (std::size_t b = 0; b < u.size(); b++) {
+                if (u[a].idx >= u[b].idx) {
+                    sink.hess(cell.slot(pos_a[a], pos_a[b]),
+                              coef * u[a].w * u[b].w);
+                }
+            }
+        }
+    }
+};
+
+// Per-cell scatter branch over the cells [c0, c1). Walks cells, dispatches to
+// `spec->evaluate_cell()`, and hands each row's eta-space derivatives, each
+// nonzero cross-row entry and each rank-1 self-cross to the target `sc`
+// (CoupledDenseScatter or CoupledPlannedScatter). Single source of truth for
+// the cell iteration, view construction, per-cell cross_hess buffer allocation
+// and per-arm bookkeeping; the targets differ only in where a write lands. All
+// scratch is function-local, so distinct cell ranges run independently.
+template <typename Scatter>
 inline void scatter_cell_coupling_branch_impl(
     const CellCouplingSpec&                       spec,
     const std::vector<int>&                       coupled_arms,
@@ -1008,25 +1000,17 @@ inline void scatter_cell_coupling_branch_impl(
     const std::vector<Rcpp::NumericVector>&       etas,
     const std::vector<LatentBlock>&               blocks,
     int                                           k_grid,
-    DenseVec&                                     grad,
-    HType&                                        H,
-    ScatterRowFn                                  scatter_row,
-    ScatterCrossFn                                scatter_cross,
-    ScatterSymRank1Fn                             scatter_symrank1,
-    CurvatureMode                                 curvature = CurvatureMode::Observed,
-    bool                                          grad_only = false,
-    const double*                                 phi_override = nullptr,
-    int                                           c0 = 0,
-    int                                           c1 = -1
+    Scatter&                                      sc,
+    CurvatureMode                                 curvature,
+    bool                                          grad_only,
+    const double*                                 phi_override,
+    int                                           c0,
+    int                                           c1
 ) {
     const int n_coupled = (int)coupled_arms.size();
     const int B         = (int)blocks.size();
     if (n_coupled == 0 || n_cells == 0) return;
-    // Cell range [c0, cend): the whole grid by default, a contiguous chunk when
-    // scatter_cell_coupling_sparse_branch splits the loop across worker tasks.
-    // The per-cell scratch below is all function-local, so distinct ranges run
-    // independently with no shared mutable state (the reduce is done by caller).
-    const int cend = (c1 < 0) ? n_cells : c1;
+    const int cend = c1;
 
     // Per-arm d_eff cache (one entry per coupled arm × block).
     std::vector<std::vector<double>> d_eff_per_arm(n_coupled,
@@ -1079,10 +1063,6 @@ inline void scatter_cell_coupling_branch_impl(
     rank1_u_scratch.reserve(kCellChainScratchHint);
 
     // Per-row chain scratch reused across rows / pairs.
-    std::vector<int>    active_idx;
-    std::vector<double> active_d;
-    active_idx.reserve(B);
-    active_d.reserve(B);
     std::vector<ArmRowChainEntry> chain_k_scratch;
     std::vector<ArmRowChainEntry> chain_l_scratch;
     chain_k_scratch.reserve(kRowChainScratchHint);
@@ -1106,6 +1086,7 @@ inline void scatter_cell_coupling_branch_impl(
 
     for (int c = c0; c < cend; c++) {
         views.bind_cell(c, cell_rows);
+        sc.begin_cell(c);
         for (int kk = 0; kk < n_coupled; kk++) {
             const int rc = arm_row_count[kk];
             // Rank-1 self-cross descriptor: re-zero the coefficient (the spec
@@ -1166,11 +1147,8 @@ inline void scatter_cell_coupling_branch_impl(
             const double* g    = views.grad_buf[kk].data();
             const double* h    = views.neg_hess_diag_buf[kk].data();
             for (int j = 0; j < rc; j++) {
-                scatter_row(
-                    rows[j], g[j], h[j],
-                    parsed[k], k, blocks, d_eff_per_arm[kk],
-                    grad, H, active_idx, active_d
-                );
+                sc.row(kk, k, rows[j], g[j], h[j], parsed[k], blocks,
+                       d_eff_per_arm[kk]);
             }
         }
 
@@ -1191,7 +1169,7 @@ inline void scatter_cell_coupling_branch_impl(
                     accumulate_self_rank1_u(
                         rank1_vec_ptr[kk], rc_k, rows_k, parsed[k], k, blocks,
                         d_eff_per_arm[kk], chain_k_scratch, rank1_u_scratch);
-                    scatter_symrank1(rank1_coef[kk], rank1_u_scratch, H);
+                    sc.rank1(kk, rank1_coef[kk], rank1_u_scratch);
                 } else if (const double* ch = cross_hess_ptr_inner[kk][kk]) {
                     for (int j = 0; j < rc_k; j++) {
                         build_arm_row_chain(rows_k[j], parsed[k], k, blocks,
@@ -1201,7 +1179,7 @@ inline void scatter_cell_coupling_branch_impl(
                             if (Hkl == 0.0) continue;
                             build_arm_row_chain(rows_k[m], parsed[k], k, blocks,
                                                 d_eff_per_arm[kk], chain_l_scratch);
-                            scatter_cross(Hkl, chain_k_scratch, chain_l_scratch, H);
+                            sc.cross(kk, kk, Hkl, chain_k_scratch, chain_l_scratch);
                         }
                     }
                 }
@@ -1221,7 +1199,7 @@ inline void scatter_cell_coupling_branch_impl(
                             if (Hkl == 0.0) continue;
                             build_arm_row_chain(rows_l[m], parsed[l], l, blocks,
                                                 d_eff_per_arm[ll], chain_l_scratch);
-                            scatter_cross(Hkl, chain_k_scratch, chain_l_scratch, H);
+                            sc.cross(kk, ll, Hkl, chain_k_scratch, chain_l_scratch);
                         }
                     }
                 }
@@ -1230,8 +1208,8 @@ inline void scatter_cell_coupling_branch_impl(
     }
 }
 
-// Dense wrapper: per-cell branch with `scatter_one_arm_row_dense` (writes
-// both directions into the n_x x n_x DenseMat).
+// Dense wrapper: every cell in one pass, written into the n_x x n_x DenseMat
+// (both triangles).
 inline void scatter_cell_coupling_dense_branch(
     const CellCouplingSpec&                       spec,
     const std::vector<int>&                       coupled_arms,
@@ -1247,21 +1225,21 @@ inline void scatter_cell_coupling_dense_branch(
     CurvatureMode                                 curvature = CurvatureMode::Observed,
     const double*                                 phi_override = nullptr
 ) {
+    CoupledDenseScatter sc(grad, H, static_cast<int>(blocks.size()));
     scatter_cell_coupling_branch_impl(
         spec, coupled_arms, cell_rows, n_cells,
-        arms, parsed, etas, blocks, k_grid, grad, H,
-        scatter_one_arm_row_dense,
-        scatter_cross_chain_dense,
-        scatter_self_rank1_dense,
-        curvature, /*grad_only=*/false, phi_override
-    );
+        arms, parsed, etas, blocks, k_grid, sc,
+        curvature, /*grad_only=*/false, phi_override, 0, n_cells);
 }
 
-// Sparse wrapper: per-cell branch with `scatter_one_arm_row_sparse`
-// (lower-triangle writes into the joint SparseHessianBuilder; the pattern
-// must already cover every (row, col) the per-row helper touches, which
-// build_joint_hessian_pattern guarantees per arm regardless of coupling
-// since it iterates all arms).
+// Sparse wrapper: the cells in the plan's fixed chunks, each written through
+// the plan's flat offsets (lower triangle) into the joint SparseHessianBuilder,
+// then the shared entries' chunk partials added in chunk order. The chunks run
+// on whatever threads are idle -- inside the outer grid's parallel region the
+// grid threads that have run out of cells take a long cell's chunks -- and the
+// answer is the same however many do. `n_threads` is the team opened when the
+// call is not already inside a parallel region (a serial pilot, a one-thread
+// grid).
 inline void scatter_cell_coupling_sparse_branch(
     const CellCouplingSpec&                       spec,
     const std::vector<int>&                       coupled_arms,
@@ -1274,92 +1252,35 @@ inline void scatter_cell_coupling_sparse_branch(
     int                                           k_grid,
     DenseVec&                                     grad,
     SparseHessianBuilder&                         H,
-    CurvatureMode                                 curvature = CurvatureMode::Observed,
-    bool                                          grad_only = false,
-    const double*                                 phi_override = nullptr,
-    int                                           n_threads = 1
+    const CoupledScatterPlan&                     plan,
+    CurvatureMode                                 curvature,
+    bool                                          grad_only,
+    const double*                                 phi_override,
+    int                                           n_threads
 ) {
-    auto run_range = [&](DenseVec& g_out, SparseHessianBuilder& H_out,
-                         int lo, int hi) {
+    if (coupled_arms.empty() || n_cells == 0) return;
+    if (!plan.valid_for(H, n_cells)) {
+        throw std::logic_error(
+            "coupled scatter plan was not resolved against this Hessian "
+            "pattern");
+    }
+    std::vector<ArmIndexedView> views;
+    views.reserve(plan.arm.size());
+    for (const auto& ac : plan.arm) views.emplace_back(ac);
+
+    CoupledChunkPartials partials(plan);
+    double* gv = grad.data();
+    double* Hv = H.values.data();
+    run_coupled_chunks(plan.n_chunks, n_threads, spec.thread_safe(),
+                       [&](int ch) {
+        CoupledPlannedScatter sc(plan, views, partials.sink(ch, gv, Hv));
         scatter_cell_coupling_branch_impl(
             spec, coupled_arms, cell_rows, n_cells,
-            arms, parsed, etas, blocks, k_grid, g_out, H_out,
-            scatter_one_arm_row_sparse,
-            scatter_cross_chain_sparse,
-            scatter_self_rank1_sparse,
-            curvature, grad_only, phi_override, lo, hi);
-    };
-
-#ifdef _OPENMP
-    // Split the per-cell loop across worker tasks ONLY when there are idle team
-    // threads to steal them (omp_in_parallel: the outer grid's parallel-for is
-    // running, and its finished threads drain the task pool at the loop
-    // barrier), the spec permits concurrent evaluate_cell(), and the cell count
-    // is worth the per-chunk partial buffers. Otherwise fall through to the
-    // byte-identical serial pass.
-    const bool go_parallel =
-        kGridWorkstealEnabled && n_threads > 1 &&
-        (n_cells >= kCouplingWorkstealMinCells || kCouplingForceParallel) &&
-        spec.thread_safe() && omp_in_parallel();
-
-    if (go_parallel) {
-        const int C = n_threads;
-        const std::size_t nnz = H.values.size();
-        const std::size_t n_x = grad.size();
-        // Per-chunk partials: a copied builder shares H's read-only entry_map /
-        // pattern but owns a zeroed values array; a zeroed
-        // gradient. Each chunk writes only its own partials, so no locks.
-        std::vector<SparseHessianBuilder> H_chunk;
-        H_chunk.reserve(C);
-        std::vector<DenseVec> g_chunk(C);
-        for (int c = 0; c < C; c++) {
-            H_chunk.push_back(H);
-            H_chunk[c].zero();
-            g_chunk[c].assign(n_x, 0.0);
-        }
-        // An exception escaping an omp task is undefined behaviour, so each task
-        // catches; the first failure's message is surfaced from the main thread
-        // after the taskgroup joins. evaluate_cell / the sparse scatter are
-        // exception-free in practice, so this never fires on the happy path.
-        std::atomic<bool> task_failed{false};
-        std::string       task_err;
-        #pragma omp taskgroup
-        {
-            for (int c = 0; c < C; c++) {
-                #pragma omp task default(shared) firstprivate(c)
-                {
-                    try {
-                        const int lo = (int)((long)c       * n_cells / C);
-                        const int hi = (int)((long)(c + 1) * n_cells / C);
-                        run_range(g_chunk[c], H_chunk[c], lo, hi);
-                    } catch (const std::exception& e) {
-                        if (!task_failed.exchange(true)) {
-                            #pragma omp critical(tulpa_coupling_task_err)
-                            task_err = e.what();
-                        }
-                    } catch (...) {
-                        task_failed.store(true);
-                    }
-                }
-            }
-        }
-        if (task_failed.load()) {
-            Rcpp::stop("coupled-cell scatter task failed: %s",
-                       task_err.empty() ? "unknown error" : task_err.c_str());
-        }
-        // Deterministic reduce in chunk order 0..C-1 (independent of which
-        // thread executed each chunk), so the result is run-to-run reproducible.
-        double* __restrict__ Hv = H.values.data();
-        for (int c = 0; c < C; c++) {
-            const double* __restrict__ hv = H_chunk[c].values.data();
-            for (std::size_t k = 0; k < nnz; k++) Hv[k] += hv[k];
-            const double* __restrict__ gv = g_chunk[c].data();
-            for (std::size_t j = 0; j < n_x; j++) grad[j] += gv[j];
-        }
-        return;
-    }
-#endif
-    run_range(grad, H, 0, n_cells);
+            arms, parsed, etas, blocks, k_grid, sc,
+            curvature, grad_only, phi_override,
+            plan.chunk_lo(ch), plan.chunk_lo(ch + 1));
+    });
+    partials.reduce(gv, Hv);
 }
 
 // Sparse-builder analogue of scatter_arm_obs_joint_multi. Writes into a

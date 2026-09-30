@@ -113,6 +113,54 @@ inline void resolve_indexed_dofs(
 
 } // namespace detail
 
+// Every joint dof that the rows `rows` of coupled arm `k_arm` reach within one
+// cell, sorted and unique: the arm's fixed effects (when `with_beta`), each
+// row's RE group, and each row's INDEXED_SINGLE / INDEXED_MULTI latent dofs.
+// It mirrors collect_coupled_row_latents (the coupled scatter's own resolver)
+// without that resolver's d_eff / row_weight zero-skips. The set is fit-level
+// (no k_grid), so it over-includes a dof whose weight is zero at some grid
+// point rather than guess which points those are. DENSE_BASIS and
+// BILINEAR_FACTOR blocks are not coupled-scatter kinds, and
+// collect_coupled_row_latents skips them too. The Hessian pattern's
+// cell-coupled section and the coupled scatter plan both read this set, so the
+// entries the plan resolves are exactly the ones the pattern holds.
+inline void coupled_cell_arm_dofs(
+    const ParsedArm&                     pa,
+    int                                  k_arm,
+    const std::vector<LatentBlock>&      blocks,
+    const std::vector<int>&              rows,
+    bool                                 with_beta,
+    std::vector<std::pair<int,double>>&  row_scratch,
+    std::vector<int>&                    out
+) {
+    out.clear();
+    if (with_beta) {
+        for (int j = 0; j < pa.p; j++) out.push_back(pa.beta_start + j);
+    }
+    for (int row : rows) {
+        if (pa.n_re_groups > 0) {
+            int gi = static_cast<int>(pa.re_idx[row]) - 1;
+            if (gi >= 0 && gi < pa.n_re_groups) out.push_back(pa.re_start + gi);
+        }
+        for (const LatentBlock& blk : blocks) {
+            if (blk.contrib_kind == BlockContribKind::INDEXED_SINGLE) {
+                if (!blk.idx) continue;
+                int l = blk.idx(row, k_arm);
+                if (l > 0 && l <= blk.size) out.push_back(blk.start + l - 1);
+            } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
+                if (!blk.obs_indices) continue;
+                blk.fill_obs_indices(row, k_arm, row_scratch);
+                for (const auto& jw : row_scratch) {
+                    int l = jw.first;
+                    if (l > 0 && l <= blk.size) out.push_back(blk.start + l - 1);
+                }
+            }
+        }
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+}
+
 // Build the joint Hessian sparsity pattern and initialize `out_builder`.
 // See file header for algorithm details.
 //
@@ -368,47 +416,13 @@ inline void build_joint_hessian_pattern(
         std::vector<std::pair<int,double>> row_scratch;
 
         // Every (beta, RE, active-latent) dof any row of coupled arm `kk`
-        // touches within cell `c`. Mirrors collect_coupled_row_latents (the
-        // scatter's own resolver) exactly, minus the d_eff / row_weight
-        // zero-skips: the pattern is fit-level (no k_grid), so like sections
-        // 3-4 it over-includes rather than guess which grid points a weight
-        // is zero at. Sorted + deduped so the O(|dofs|^2) self-cross below
-        // stays cheap even when many rows in a cell share the same RE group
-        // or field cell.
+        // touches within cell `c` (coupled_cell_arm_dofs). Sorted + deduped
+        // so the O(|dofs|^2) self-cross below stays cheap even when many rows
+        // in a cell share the same RE group or field cell.
         auto cell_arm_dofs = [&](int kk, int c, std::vector<int>& out) {
-            out.clear();
             const int k = coupled_arms[kk];
-            const ParsedArm& pa = parsed[k];
-            for (int j = 0; j < pa.p; j++) out.push_back(pa.beta_start + j);
-            for (int row : cell_rows[kk][c]) {
-                if (pa.n_re_groups > 0) {
-                    int gi = static_cast<int>(pa.re_idx[row]) - 1;
-                    if (gi >= 0 && gi < pa.n_re_groups)
-                        out.push_back(pa.re_start + gi);
-                }
-                for (int b = 0; b < B; b++) {
-                    const LatentBlock& blk = blocks[b];
-                    if (blk.contrib_kind == BlockContribKind::INDEXED_SINGLE) {
-                        if (!blk.idx) continue;
-                        int l = blk.idx(row, k);
-                        if (l > 0 && l <= blk.size)
-                            out.push_back(blk.start + l - 1);
-                    } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
-                        if (!blk.obs_indices) continue;
-                        blk.fill_obs_indices(row, k, row_scratch);
-                        for (const auto& jw : row_scratch) {
-                            int l = jw.first;
-                            if (l > 0 && l <= blk.size)
-                                out.push_back(blk.start + l - 1);
-                        }
-                    }
-                    // DENSE_BASIS / BILINEAR_FACTOR: not a coupled-scatter
-                    // kind (collect_coupled_row_latents skips them too; no
-                    // coupled family reaches one of these through a row).
-                }
-            }
-            std::sort(out.begin(), out.end());
-            out.erase(std::unique(out.begin(), out.end()), out.end());
+            coupled_cell_arm_dofs(parsed[k], k, blocks, cell_rows[kk][c],
+                                  /*with_beta=*/true, row_scratch, out);
         };
 
         for (int c = 0; c < n_cells; c++) {
