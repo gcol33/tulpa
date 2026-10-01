@@ -234,6 +234,8 @@ private:
     cholmod_sparse* A_owned_;
     bool analyzed_;
     bool factored_;
+    // One read cursor per CSC column for refill_from_dense's row-order walk.
+    std::vector<int> refill_cursor_;
 };
 
 // =====================================================================

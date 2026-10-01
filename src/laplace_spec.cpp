@@ -539,6 +539,13 @@ inline void compute_eta_spec(
 //   neg_hess_eta[k * np + l]          = -d^2 log_lik_i / (d eta_i_k d eta_i_l)
 // At the end the prior contribution is added: beta ridge + per-term RE
 // precision Q_t (computed once from σ_t and L_t).
+//
+// `grad` and `H` arrive zeroed (the Newton loop's NewtonScratch::zero_for_iter
+// runs immediately before every scatter) and only H's LOWER triangle is
+// assembled: every reader of the spec Hessian -- the dense Cholesky, the CHOLMOD
+// refill, the store_Q export -- reads the lower triangle alone, so mirroring it
+// into the upper half would be an O(n_x^2) strided pass per Newton step whose
+// result nothing reads.
 inline void scatter_spec(
     const std::vector<double>& params,
     const std::vector<double>& eta_flat,
@@ -557,12 +564,10 @@ inline void scatter_spec(
     int /*n_threads*/,
     const BetaPrior* beta_prior
 ) {
-    std::fill(grad.begin(), grad.end(), 0.0);
-    H.zero();
-
     const int np = L.np;
     std::vector<double> grad_eta(np, 0.0);
     std::vector<double> neg_hess_eta((size_t)np * np, 0.0);
+    std::vector<double> w_l_vec(np, 0.0);
     const int K = (int)L.re_terms.size();
     const int n_terms_unified = (data.n_re_terms > 0) ? data.n_re_terms : 1;
 
@@ -685,7 +690,6 @@ inline void scatter_spec(
         // The RE row is always larger than any beta column (latent_offset
         // for RE blocks sits after all beta blocks), so this is lower-tri.
         // Precompute w_l once per obs.
-        std::vector<double> w_l_vec(np, 0.0);
         for (int l = 0; l < np; l++) {
             double w_l = 0.0;
             for (int k = 0; k < np; k++) {
@@ -871,13 +875,6 @@ inline void scatter_spec(
                     }
                 }
             }
-        }
-    }
-
-    // Symmetrise lower → upper triangle.
-    for (int j = 0; j < L.n_x; j++) {
-        for (int k = j + 1; k < L.n_x; k++) {
-            H[j][k] = H[k][j];
         }
     }
 

@@ -1230,9 +1230,9 @@ because the draws spread 0.85 in log sigma, too far for the linear path, so it
 was not built.
 
 What remains is the solve count: 500 draws at about 4 steps against a fit of
-about 25 heavier solves. Serial, the diagnostic is 2.6x to 4.4x the fit
-between G = 60 and G = 600, roughly constant because both scale with the
-inner solve; on four threads it is 0.7x to 1.2x. `k_threads` follows the
+about 25 heavier solves. Serial, the diagnostic is 3.2x, 3.8x and 1.9x the
+fit at G = 60, 200 and 600 (after the Hessian passes below), because both
+scale with the inner solve; on four threads it is 0.9x, 1.0x and 0.5x. `k_threads` follows the
 fit's thread grant by default, as on the joint doors, so a serial fit keeps a
 serial diagnostic.
 
@@ -1244,6 +1244,26 @@ different samples: first-pass k 0.44 against 0.79 on the same data, and 0.79
 is above `k_usable`, which buys a moment-matching pass of another 500 solves.
 The sample is now drawn from the stream the fit started on (`k_stream`), and
 both arms report one k-hat.
+
+**The dense Hessian's dead passes.** `tulpa_profile()` on the batch put the
+spec solve's time in scatter (39-42%), factorize (27-31%) and the line search,
+and at 602 latents most of the first two was not arithmetic but whole-matrix
+traffic over the n_x x n_x `DenseMat`: `scatter_spec` zeroed it after
+`zero_for_iter()` had, mirrored the lower triangle into the upper half with a
+strided walk, and `refill_from_dense` then read the row-major matrix column by
+column twice (a pattern check and a fill). Every reader of that Hessian -- the
+dense Cholesky, the CHOLMOD refill and pattern build, the `store_Q` export --
+reads the lower triangle only, so the mirror was removed, the second zeroing
+dropped, and the refill made one contiguous row-order pass with a cursor per
+CSC column. Scatter 0.276 -> 0.143 ms and factorize 0.251 -> 0.142 ms per step
+at G = 600; the 500-draw batch 1.92 -> 1.30 s. Nine fits across the dense and
+sparse paths (random intercepts at 60 / 600 groups, a correlated slope with a
+crossed term, ZIP, re_cov nested plain and subspace, ICAR nested Laplace at 40
+/ 300 units) are `identical()` to the previous build in every field but
+`timing`. What remains O(n_x^2) per step is the zeroing and the refill read
+themselves; removing them means a sparse Hessian container on the spec path,
+which reaches the `LatentBlock::add_prior(grad, DenseMat&, ...)` interface
+every block factory writes through.
 
 ### The draw budget moves the outer k-hat, not just its interval (gcol33/tulpa#631)
 

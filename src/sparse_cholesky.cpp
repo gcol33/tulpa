@@ -147,37 +147,42 @@ cholmod_sparse* SparseCholeskySolver::refill_from_dense(
     // re-analyze each time. Discarding instead would factor a matrix that is
     // missing curvature, and the Newton direction, log|H| and the standard
     // errors would all inherit it.
+    //
+    // The walk is in ROW order. H is row-major, so a column-order walk of its
+    // lower triangle reads it at stride n; row i instead reads H[i][0..i]
+    // contiguously, and the CSC slot for (i, j) is the next unread one in
+    // column j, because each column's row indices ascend. One cursor per column
+    // tracks it. The check and the fill are one pass: an entry off the pattern
+    // stops the walk, and the grown pattern is then rebuilt from H itself, so
+    // the slots already written are simply overwritten.
     const int* Ap = static_cast<const int*>(A_owned_->p);
     const int* Ai = static_cast<const int*>(A_owned_->i);
     double* Ax    = static_cast<double*>(A_owned_->x);
+    refill_cursor_.assign(Ap, Ap + n);
+    int* cur = refill_cursor_.data();
     bool grow = false;
-    for (int j = 0; j < n && !grow; j++) {
-        int idx = Ap[j];
-        const int end = Ap[j + 1];
-        for (int i = j; i < n; i++) {
-            const double v = H[i][j];
-            if (idx < end && Ai[idx] == i) {
-                idx++;
-            } else if (i == j || std::abs(v) > drop_tol) {
+    for (int i = 0; i < n && !grow; i++) {
+        const double* row = H[i];
+        for (int j = 0; j <= i; j++) {
+            const int idx = cur[j];
+            if (idx < Ap[j + 1] && Ai[idx] == i) {
+                Ax[idx] = row[j];
+                cur[j] = idx + 1;
+            } else if (i == j || std::abs(row[j]) > drop_tol) {
                 grow = true;
                 break;
             }
         }
     }
+    if (!grow) return A_owned_;
 
-    if (grow) {
-        // Union with the cached pattern, so an entry that mattered at an
-        // earlier cell keeps its slot even where it vanishes at this one.
-        if (build_owned_pattern(H, n, drop_tol, A_owned_)) return A_owned_;
-        // Out of memory for the grown pattern. Keep the cached one and record
-        // what it cannot hold, so the enclosing HessianPatternGuard reports a
-        // factorization that is missing curvature instead of it passing
-        // silently.
-        Ap = static_cast<const int*>(A_owned_->p);
-        Ai = static_cast<const int*>(A_owned_->i);
-        Ax = static_cast<double*>(A_owned_->x);
-    }
+    // Union with the cached pattern, so an entry that mattered at an earlier
+    // cell keeps its slot even where it vanishes at this one.
+    if (build_owned_pattern(H, n, drop_tol, A_owned_)) return A_owned_;
 
+    // Out of memory for the grown pattern. Keep the cached one and record what
+    // it cannot hold, so the enclosing HessianPatternGuard reports a
+    // factorization that is missing curvature instead of it passing silently.
     for (int j = 0; j < n; j++) {
         int idx = Ap[j];
         const int end = Ap[j + 1];

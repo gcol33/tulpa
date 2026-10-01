@@ -86,6 +86,15 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   so a subspace-debiased fit reports the plain fit's k-hat rather than one
   scored on a different sample, which had also bought it a second
   moment-matching pass (gcol33/tulpa#934).
+* A Newton step of the multi-term random-effect Laplace solve (`tulpa_laplace()`
+  and everything built on it, the nested-Laplace grid included) no longer makes
+  full passes over the dense Hessian that nothing reads: the scatter assembles
+  the lower triangle the factorizations read without mirroring it, the
+  Hessian is zeroed once per step instead of twice, and the CHOLMOD refill
+  reads it in one row-order pass instead of two column-order ones. At 602
+  latents (600 groups) the scatter takes 0.143 ms instead of 0.276 ms and the
+  factorization 0.142 ms instead of 0.251 ms; every mode, log-marginal and
+  Hessian is bit-identical (gcol33/tulpa#934).
 
 On that Calluna fit (LiSC, 32 threads) the engine defaults take 25.3 min and
 20 full solves in the final grid besides the 79-evaluation mode-find; the
