@@ -254,80 +254,27 @@ tulpa_laplace <- function(y, n_trials, X,
   } else {
     # All non-spatial paths: use cpp_laplace_fit_multi_re
     # (handles single RE, multiple RE, slopes, weights, offset)
-    if (length(re_list) == 0) {
-      # No random effects: fit a pure fixed-effects model (n_terms = 0 in the
-      # kernel, so the latent vector is beta only). No dummy 1-group RE is
-      # injected: a global random intercept (sigma = 1) would confound
-      # with the fixed intercept once a `beta_prior` is active: the prior pulls
-      # the penalised beta toward its mean while the unpenalised RE absorbs the
-      # difference, biasing the fixed-effect MAP (the penalty's effective
-      # precision on the intercept collapses to 1). An empty RE set removes the
-      # spurious latent entirely so the MAP is the true penalised optimum.
-      re_idx_list <- list()
-      re_ngroups <- integer(0)
-      re_sigma_list <- list()
-    } else {
-      re_idx_list <- lapply(re_list, function(r) as.integer(r$idx))
-      re_ngroups <- vapply(re_list, function(r) as.integer(r$n_groups), integer(1))
-    }
-
-    re_ncoefs <- vapply(
-      if (length(re_list) > 0) re_list else list(list(n_coefs = 1L)),
-      function(r) as.integer(r$n_coefs %||% 1L), integer(1)
-    )
-
-    if (length(re_list) > 0) {
-      # `pack` is the value the C++ kernel consumes: a length-n_coefs marginal-SD
-      # vector (diagonal) or a packed lower-triangular Cholesky (correlated).
-      re_sigma_list <- lapply(re_list, function(r) .re_cov_spec(r)$pack)
-    }
-
-    # Per-term RE design: an intercept-only term carries no Z (the kernel
-    # defaults to a column of 1s); a slope term -- including a single random
-    # slope `(0 + x | g)` with n_coefs == 1 -- carries its own design Z.
-    re_Z_list <- lapply(
-      if (length(re_list) > 0) re_list else list(list(n_coefs = 1L)),
-      function(r) r$Z
-    )
-
-    # The kernel needs the Z / n_coefs metadata whenever any term has a
-    # non-intercept design: a correlated/uncorrelated slope (n_coefs > 1) or a
-    # single random slope that supplied its own Z.
-    has_design <- any(re_ncoefs > 1L) ||
-      any(vapply(re_Z_list, Negate(is.null), logical(1)))
-
     # The joint curvature is what the marginal fixed-effect precision is built
     # from below, so it is requested whenever a Hessian is wanted -- not only
     # when the caller asked to see it. Attached to the result only if they did.
     want_joint <- isTRUE(return_joint_hessian) || isTRUE(return_hessian)
 
-    result <- cpp_laplace_fit_multi_re(
-      y = as.numeric(y),
-      n = as.integer(n_trials),
-      X = X,
-      re_idx_list = re_idx_list,
-      re_ngroups = re_ngroups,
-      re_sigma_list = re_sigma_list,
-      family = family,
-      phi = .phi_to_kernel(family, phi),
-      max_iter = as.integer(max_iter),
-      tol = tol,
-      n_threads = as.integer(n_threads),
-      re_Z_list = if (has_design) re_Z_list else NULL,
-      re_ncoefs = if (has_design) re_ncoefs else NULL,
-      weights = weights,
-      offset = offset,
-      beta_prior_mean = if (is.null(bp)) NULL else bp$mean,
-      beta_prior_sd   = if (is.null(bp)) NULL else bp$sd,
-      return_re_cov   = isTRUE(return_re_cov),
-      phi2 = phi2 %||% NA_real_,
-      X_zi = X_zi,
-      zi_prior_sd = zi_prior_sd,
-      return_joint_hessian = want_joint,
-      compute_skew = isTRUE(compute_skew),
-      skew_idx = if (is.null(skew_idx)) NULL else as.integer(skew_idx),
-      debias = debias_req
-    )
+    result <- do.call(cpp_laplace_fit_multi_re, c(
+      .laplace_multi_re_model_args(
+        y = y, n_trials = n_trials, X = X, re_list = re_list,
+        family = family, phi = phi, phi2 = phi2, weights = weights,
+        offset = offset, bp = bp, X_zi = X_zi, zi_prior_sd = zi_prior_sd),
+      list(
+        re_sigma_list = .laplace_multi_re_sigma_list(re_list),
+        max_iter = as.integer(max_iter),
+        tol = tol,
+        n_threads = as.integer(n_threads),
+        return_re_cov   = isTRUE(return_re_cov),
+        return_joint_hessian = want_joint,
+        compute_skew = isTRUE(compute_skew),
+        skew_idx = if (is.null(skew_idx)) NULL else as.integer(skew_idx),
+        debias = debias_req
+      )))
     if (want_joint) {
       result$H_joint <- .laplace_joint_hessian(result)
     }
@@ -514,6 +461,79 @@ tulpa_laplace <- function(y, n_trials, X,
                 data = list(y = y, n_trials = n_trials, model_matrix = X,
                            family = family, offset = offset,
                            phi = phi, phi2 = phi2))
+}
+
+# The arguments that describe a multi-term random-effect Laplace MODEL to the
+# compiled kernels -- response, designs, grouping, family, priors -- in the
+# form both `cpp_laplace_fit_multi_re()` (one covariance) and
+# `cpp_laplace_log_marginal_multi_re_batch()` (many) take them. Nothing here
+# moves with the random-effect covariance; that is
+# `.laplace_multi_re_sigma_list()`. `re_list` supplies the structure only (its
+# `sigma` / `L` are not read), and `bp` is the normalized fixed-effect prior
+# (`.normalize_beta_prior()`), NULL for none. The inputs are taken as already
+# validated: `tulpa_laplace()` validates them before calling this.
+.laplace_multi_re_model_args <- function(y, n_trials, X, re_list, family, phi,
+                                         phi2 = NULL, weights = NULL,
+                                         offset = NULL, bp = NULL,
+                                         X_zi = NULL, zi_prior_sd = 2.5) {
+  if (length(re_list) == 0) {
+    # No random effects: fit a pure fixed-effects model (n_terms = 0 in the
+    # kernel, so the latent vector is beta only). No dummy 1-group RE is
+    # injected: a global random intercept (sigma = 1) would confound
+    # with the fixed intercept once a `beta_prior` is active: the prior pulls
+    # the penalised beta toward its mean while the unpenalised RE absorbs the
+    # difference, biasing the fixed-effect MAP (the penalty's effective
+    # precision on the intercept collapses to 1). An empty RE set removes the
+    # spurious latent entirely so the MAP is the true penalised optimum.
+    re_idx_list <- list()
+    re_ngroups <- integer(0)
+  } else {
+    re_idx_list <- lapply(re_list, function(r) as.integer(r$idx))
+    re_ngroups <- vapply(re_list, function(r) as.integer(r$n_groups), integer(1))
+  }
+
+  re_ncoefs <- vapply(
+    if (length(re_list) > 0) re_list else list(list(n_coefs = 1L)),
+    function(r) as.integer(r$n_coefs %||% 1L), integer(1)
+  )
+
+  # Per-term RE design: an intercept-only term carries no Z (the kernel
+  # defaults to a column of 1s); a slope term -- including a single random
+  # slope `(0 + x | g)` with n_coefs == 1 -- carries its own design Z.
+  re_Z_list <- lapply(
+    if (length(re_list) > 0) re_list else list(list(n_coefs = 1L)),
+    function(r) r$Z
+  )
+
+  # The kernel needs the Z / n_coefs metadata whenever any term has a
+  # non-intercept design: a correlated/uncorrelated slope (n_coefs > 1) or a
+  # single random slope that supplied its own Z.
+  has_design <- any(re_ncoefs > 1L) ||
+    any(vapply(re_Z_list, Negate(is.null), logical(1)))
+
+  list(
+    y = as.numeric(y),
+    n = as.integer(n_trials),
+    X = X,
+    re_idx_list = re_idx_list,
+    re_ngroups = re_ngroups,
+    family = family,
+    phi = .phi_to_kernel(family, phi),
+    re_Z_list = if (has_design) re_Z_list else NULL,
+    re_ncoefs = if (has_design) re_ncoefs else NULL,
+    weights = weights,
+    offset = offset,
+    beta_prior_mean = if (is.null(bp)) NULL else bp$mean,
+    beta_prior_sd   = if (is.null(bp)) NULL else bp$sd,
+    phi2 = phi2 %||% NA_real_,
+    X_zi = X_zi,
+    zi_prior_sd = zi_prior_sd
+  )
+}
+
+# The covariance half of the kernel's input: one `.re_cov_pack()` per term.
+.laplace_multi_re_sigma_list <- function(re_list) {
+  lapply(re_list, .re_cov_pack)
 }
 
 
@@ -746,21 +766,20 @@ tulpa_laplace <- function(y, n_trials, X,
 }
 
 
-#' Interpret an RE term's covariance specification
+#' Pack an RE term's covariance specification for the C++ kernel
 #'
-#' Maps one `re_list` element to the two representations the Laplace path needs:
-#' `pack`, the value the C++ kernel consumes (a length-`n_coefs` marginal-SD
-#' vector for a diagonal / uncorrelated term, or a packed lower-triangular
-#' Cholesky of length `n_coefs (n_coefs + 1) / 2` for a correlated one), and
-#' `Q`, the `n_coefs x n_coefs` RE precision `Sigma^{-1}` used to build the
-#' marginal fixed-effect SE. A correlated term is signalled by `r$L` (a lower-
-#' triangular Cholesky factor, `Sigma = L L'`) or `r$cov` (the covariance
-#' matrix); when present these take precedence over `r$sigma`.
+#' Maps one `re_list` element to the value the multi-term Laplace kernels
+#' consume: a length-`n_coefs` marginal-SD vector for a diagonal / uncorrelated
+#' term, or a packed lower-triangular Cholesky of length
+#' `n_coefs (n_coefs + 1) / 2` for a correlated one. A correlated term is
+#' signalled by `r$L` (a lower-triangular Cholesky factor, `Sigma = L L'`) or
+#' `r$cov` (the covariance matrix); when present these take precedence over
+#' `r$sigma`.
 #'
 #' @param r One element of a `re_list` (see [tulpa_laplace()]).
-#' @return `list(pack, Q, diagonal)`.
+#' @return The packed numeric vector.
 #' @keywords internal
-.re_cov_spec <- function(r) {
+.re_cov_pack <- function(r) {
   nc <- r$n_coefs %||% 1L
 
   if (nc > 1L && (!is.null(r$L) || !is.null(r$cov))) {
@@ -771,17 +790,13 @@ tulpa_laplace <- function(y, n_trials, X,
     }
     # Column-major lower-triangular packing, unpacked by the C++ kernel as
     # L[r, c] = pack[idx] over columns c = 1..nc, rows r = c..nc.
-    pack <- L[lower.tri(L, diag = TRUE)]
-    # Q = Sigma^{-1} = (L L')^{-1}. t(L) is the upper factor with
-    # (t(L))' t(L) = L L' = Sigma, so chol2inv(t(L)) = Sigma^{-1}.
-    Q <- chol2inv(t(L))
-    return(list(pack = pack, Q = Q, diagonal = FALSE))
+    return(L[lower.tri(L, diag = TRUE)])
   }
 
   # Diagonal (uncorrelated) covariance: per-coefficient marginal SD.
   sig <- r$sigma
   if (length(sig) == 1L && nc > 1L) sig <- rep(sig, nc)
-  list(pack = sig, Q = diag(1 / (sig^2 + 1e-10), nc), diagonal = TRUE)
+  sig
 }
 
 

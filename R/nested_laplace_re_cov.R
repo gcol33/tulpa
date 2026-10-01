@@ -882,6 +882,32 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     )
   }
 
+  # inner_logmarg at many covariances: `L_lists` is a list of per-block factor
+  # lists, the value one log-marginal per element, -Inf where inner_logmarg
+  # would give -Inf. One compiled call marshals the model once and solves every
+  # point against it, starting each Newton iteration from `x_init` (the latent
+  # mode at the proposal centre, or NULL for a cold start), across
+  # `n_threads_outer` threads. This is the target an importance batch over the
+  # covariances evaluates; inner_logmarg stays the one-point objective the
+  # optimizer calls. The model arguments are the ones the inner solves above
+  # validate on their first call through tulpa_laplace(), so the batch reads
+  # them as validated.
+  inner_logmarg_batch <- function(L_lists, x_init = NULL, n_threads_outer = 1L) {
+    if (!length(L_lists)) return(numeric(0))
+    model_args <- .laplace_multi_re_model_args(
+      y = .numeric_response(family, y), n_trials = n_trials, X = X,
+      re_list = .re_cov_build_re_list(L_lists[[1L]], layout), family = family,
+      phi = phi, phi2 = phi2, weights = weights, offset = offset,
+      bp = .normalize_beta_prior(beta_prior, ncol(X)), X_zi = X_zi,
+      zi_prior_sd = zi_prior_sd)
+    batch <- lapply(L_lists, function(L_list)
+      .laplace_multi_re_sigma_list(.re_cov_build_re_list(L_list, layout)))
+    do.call(cpp_laplace_log_marginal_multi_re_batch, c(model_args, list(
+      re_sigma_batch = batch, max_iter = as.integer(max_iter), tol = tol,
+      n_threads_outer = as.integer(n_threads_outer),
+      x_init = if (is.null(x_init)) NULL else as.numeric(x_init))))
+  }
+
   # --- pilot init: method-of-moments per block from a Sigma = I fit ----------
   p_fix   <- ncol(X)
   p_fixed <- p_fix + p_zi
@@ -1026,6 +1052,14 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     # rebuilding the oracle per solve would copy X, Z and y for nothing.
     inner_logmarg <- function(L_list, phi_ = phi) {
       r <- core_solve(L_list); if (is.null(r)) -Inf else r$log_marginal
+    }
+    # Each point is a beta profile optimized in R against the compiled oracle,
+    # so the batch is that profile per point. There is no latent mode to warm
+    # start from (`x_init` is the joint-field solve's) and the profile's optim
+    # runs on the R thread, so `n_threads_outer` has nothing to spread.
+    inner_logmarg_batch <- function(L_lists, x_init = NULL,
+                                    n_threads_outer = 1L) {
+      vapply(L_lists, inner_logmarg, numeric(1))
     }
     # `re_cov` is accepted and ignored: this inner solve integrates each group's
     # random effects out by quadrature rather than conditioning at their mode, so
@@ -1425,6 +1459,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
        X_zi = X_zi, p_zi = p_zi, p_fixed = p_fixed,
        log_prior_theta = log_prior_theta,
        inner_logmarg = inner_logmarg, inner_fit = inner_fit,
+       inner_logmarg_batch = inner_logmarg_batch,
        # Does `inner_fit` condition on the random effects (returning their mode
        # in the latent tail of `$mode`, and their covariance blocks on request)?
        # TRUE for the joint-field Laplace inner solve, FALSE for the AGHQ one,
@@ -1606,6 +1641,14 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'       the fraction that default budget implies, so raising it supplies more
 #'       tail ratios for the SAME estimand rather than moving the fit to a
 #'       deeper quantile of the weight distribution (gcol33/tulpa#631).
+#'       Each draw is one inner Laplace solve, so this sets the diagnostic's
+#'       cost; the draws are solved in one compiled batch, each started from
+#'       the mode at the proposal centre.
+#'     \item `k_threads`: thread width for those draws (`NULL`, the default,
+#'       follows `n_threads`; `"auto"` takes the physical performance cores; an
+#'       integer sets it, `1L` forcing serial). Each draw is solved
+#'       single-threaded and from the same start, so the k-hat does not depend
+#'       on the width.
 #'     \item `k_tail_points`: expert override for that tail size, in upper-tail
 #'       order statistics. Silently capped at 20% of the draws, beyond which
 #'       body ratios enter the tail and bias the shape.
@@ -1723,10 +1766,18 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   max_iter    <- as.integer(control$max_iter %||% 100L)
   tol         <- control$tol %||% 1e-8
   n_threads   <- as.integer(control$n_threads %||% 1L)
+  k_width     <- .tulpa_pareto_k_threads(1L, n_threads, k_samples,
+                                         control$k_threads)
   checkpoint  <- control$checkpoint
   sd_cfg      <- .subspace_debias_config(control$subspace_debias)
   n_quad <- .check_n_quad(n_quad)
   .seed_scoped(seed)
+  # The stream the outer Pareto-k diagnostic draws its proposal sample from:
+  # the one the fit starts on, so the diagnostic's draws do not depend on how
+  # many random numbers the fit consumed first. The subspace debias consumes
+  # them and the plain fit does not, and both score one proposal against one
+  # target, so they read one k-hat from one sample (gcol33/tulpa#934).
+  k_stream    <- .snapshot_seed()
 
   core <- .re_cov_theta_fit(
     y = y, n_trials = n_trials, X = X, re_terms = re_terms,
@@ -1748,7 +1799,6 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # per-node covariance and the draw synthesis follow from this one number.
   p_fix           <- core$p_fixed
   log_prior_theta <- core$log_prior_theta
-  inner_logmarg   <- core$inner_logmarg
   inner_fit       <- core$inner_fit
   theta_hat       <- core$theta_hat
   L_scale         <- core$L_scale
@@ -1846,6 +1896,11 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   debias_accept  <- rep(NA_real_, ng)
   re_nodes     <- if (re_cond) matrix(NA_real_, ng, n_re) else NULL
   re_var_nodes <- if (re_cond) matrix(NA_real_, ng, n_re) else NULL
+  # The latent mode at the node nearest the proposal centre (the centre itself
+  # on a CCD or an odd tensor), where the outer Pareto-k's importance draws
+  # start their inner Newton iterations.
+  i_centre <- which.min(rowSums(z^2))
+  x_centre <- NULL
   for (i in seq_len(ng)) {
     th     <- theta_grid[i, ]
     L_list <- .re_cov_theta_to_L_list(th, layout)
@@ -1862,6 +1917,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     }
     if (is.null(fit_i) || is.null(fit_i$mode) ||
         length(fit_i$log_marginal) != 1L || !is.finite(fit_i$log_marginal)) next
+    if (i == i_centre && re_cond) x_centre <- fit_i$mode
     lp_theta_nodes[i]  <- log_prior_theta(th)
     logm[i]            <- fit_i$log_marginal + lp_theta_nodes[i]
     beta_nodes[i, ]    <- fit_i$mode[seq_len(p_fix)]
@@ -1967,7 +2023,11 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # the nested integration is trustworthy (< 0.7) or the hyperparameter
   # posterior is too skewed / heavy-tailed for the grid (>= 0.7). Run after the
   # draw synthesis and with the RNG state restored, so existing draws are
-  # bit-for-bit unchanged whether or not the diagnostic is requested.
+  # bit-for-bit unchanged whether or not the diagnostic is requested; the
+  # proposal sample comes from `k_stream`, the stream the fit started on.
+  # Its `k_samples` inner solves are the diagnostic's whole cost, so they go to
+  # the compiled batch in one call per proposal, warm-started at the centre
+  # node's mode and spread over `k_width` threads.
   # A decline says which one it was rather than a bare NA.
   pareto_k <- NA_real_; k_is_ess <- NA_real_; k_source <- NA_character_
   k_first  <- NA_real_; k_tp <- NA_integer_
@@ -1975,13 +2035,21 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                 else .k_decline_label(.k_decline("no_varying_axis",
                                                  "no free covariance coordinate"))
   if (isTRUE(diagnose_k) && k > 0L) {
-    kd <- .with_preserved_seed(tryCatch(
-      .nested_outer_pareto_k(
-        log_target = function(th) inner_logmarg(.re_cov_theta_to_L_list(th, layout)) +
-          log_prior_theta(th),
-        theta_hat = theta_hat, L_scale = L_scale, n_samples = k_samples,
-        tail_points = k_tail_points),
-      error = function(e) NULL))
+    log_target_batched <- function(Th) {
+      L_lists <- lapply(seq_len(nrow(Th)), function(i)
+        .re_cov_theta_to_L_list(Th[i, ], layout))
+      core$inner_logmarg_batch(L_lists, x_init = x_centre,
+                               n_threads_outer = k_width) +
+        apply(Th, 1L, log_prior_theta)
+    }
+    kd <- .with_preserved_seed({
+      if (!is.null(k_stream)) .make_seed_restore(k_stream)()
+      tryCatch(
+        .nested_outer_pareto_k(
+          log_target_batched, theta_hat = theta_hat, L_scale = L_scale,
+          n_samples = k_samples, tail_points = k_tail_points),
+        error = function(e) NULL)
+    })
     if (is.null(kd)) {
       k_declined <- .k_decline_label(.k_decline("degenerate_proposal",
                                                 "the scorer errored"))

@@ -73,6 +73,19 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   16x16 two-arm ICAR fixture the 95% field-SD width is 0.967 of a dense
   reference against the box read's 0.931; on the 24x24 one it is 0.916 against
   0.986, so `"box_uniform"` stays the default (gcol33/tulpa#932).
+* The outer Pareto-k of `tulpa_re_cov_nested()` solves its importance draws in
+  one compiled batch, each warm-started from the latent mode at the proposal
+  centre, where it paid one `tulpa_laplace()` call per draw. The draws spread
+  over `control$k_threads` (new on this door, following `n_threads` by
+  default), and the values do not depend on the width. On the binomial random
+  intercept of #931 (10 seeds, serial) the diagnostic takes 0.041 s instead of
+  0.195 s at 20 groups x 3 and 0.143 s instead of 0.327 s at 60 groups x 3; at
+  600 groups it takes 1.75 s serial and 0.45 s on four threads against a
+  0.67 s fit. Its cost scales with the inner solve, so it is not confined to
+  small fits. The proposal sample is drawn from the stream the fit started on,
+  so a subspace-debiased fit reports the plain fit's k-hat rather than one
+  scored on a different sample, which had also bought it a second
+  moment-matching pass (gcol33/tulpa#934).
 
 On that Calluna fit (LiSC, 32 threads) the engine defaults take 25.3 min and
 20 full solves in the final grid besides the 79-evaluation mode-find; the

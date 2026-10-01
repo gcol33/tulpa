@@ -187,9 +187,9 @@ test_that(".nested_outer_pareto_k is low when the proposal covers the target", {
   mu    <- c(0.4, -0.2)
   Sigma <- matrix(c(1, 0.3, 0.3, 0.5), 2)
   Sinv  <- solve(Sigma)
-  log_target <- function(th) {
-    d <- th - mu
-    -0.5 * as.numeric(t(d) %*% Sinv %*% d)            # up to a constant
+  log_target <- function(U) {
+    D <- sweep(U, 2L, mu)
+    -0.5 * rowSums((D %*% Sinv) * D)                  # up to a constant
   }
   L_scale <- t(chol(1.5 * Sigma))                     # proposal scale > target
 
@@ -206,7 +206,9 @@ test_that(".nested_outer_pareto_k rises when the target is heavier than the prop
   mu <- c(0, 0)
   # Student-t(df = 2) target (infinite variance) against a unit-Gaussian
   # proposal of matching scale: tails the Gaussian cannot cover -> high k-hat.
-  log_target_t <- function(th) sum(stats::dt(th - mu, df = 2, log = TRUE))
+  log_target_t <- function(U) {
+    rowSums(stats::dt(sweep(U, 2L, mu), df = 2, log = TRUE))
+  }
   kd <- .nested_outer_pareto_k(log_target_t, theta_hat = mu,
                                L_scale = diag(1, 2), n_samples = 4000L)
   expect_gt(kd$pareto_k, 0.5)                          # heavier target -> not correctable
@@ -219,7 +221,7 @@ test_that("the IS cores decline before evaluating the target below the floor", {
   expect_lt(20L, .PSIS_MIN_EVAL)
 
   hit <- 0L
-  target_counting <- function(th) { hit <<- hit + 1L; 0 }
+  target_counting <- function(U) { hit <<- hit + nrow(U); rep(0, nrow(U)) }
   kd <- .nested_outer_pareto_k(target_counting, theta_hat = c(0, 0),
                                L_scale = diag(1, 2), n_samples = 20L)
   expect_true(is.na(kd$pareto_k))

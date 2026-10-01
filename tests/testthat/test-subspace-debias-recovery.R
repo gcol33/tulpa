@@ -178,9 +178,9 @@ test_that("subspace debias tracks the full Gibbs debias at a fraction of its cos
   # the same loop so the saving is a number rather than a claim.
   #
   # The nested arms run without the outer Pareto-k diagnostic, which the Gibbs
-  # arm has no counterpart of: it is most of a nested fit's time here (0.195 of
-  # 0.225 s) and leaves the draws bit-for-bit unchanged, so with it on the
-  # comparison times a diagnostic rather than the two inferences.
+  # arm has no counterpart of: its importance batch costs a multiple of a
+  # nested fit's time here and leaves the draws bit-for-bit unchanged, so with
+  # it on the comparison times a diagnostic rather than the two inferences.
   n_seed <- 40L
   cov <- c(plain = 0L, sub = 0L, gibbs = 0L)
   secs <- c(plain = 0, sub = 0, gibbs = 0)

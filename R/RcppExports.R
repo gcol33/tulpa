@@ -261,6 +261,10 @@ cpp_laplace_fit_multi_re <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_
     .Call(`_tulpa_cpp_laplace_fit_multi_re`, y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads, re_Z_list, re_ncoefs, weights, offset, x_init, beta_prior_mean, beta_prior_sd, return_re_cov, phi2, X_zi, zi_prior_sd, return_joint_hessian, compute_skew, skew_idx, debias)
 }
 
+cpp_laplace_log_marginal_multi_re_batch <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_batch, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads_outer = 1L, re_Z_list = NULL, re_ncoefs = NULL, weights = NULL, offset = NULL, x_init = NULL, beta_prior_mean = NULL, beta_prior_sd = NULL, phi2 = NA_real_, X_zi = NULL, zi_prior_sd = 2.5) {
+    .Call(`_tulpa_cpp_laplace_log_marginal_multi_re_batch`, y, n, X, re_idx_list, re_ngroups, re_sigma_batch, family, phi, max_iter, tol, n_threads_outer, re_Z_list, re_ncoefs, weights, offset, x_init, beta_prior_mean, beta_prior_sd, phi2, X_zi, zi_prior_sd)
+}
+
 cpp_laplace_fit_gp <- function(y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, offset_nullable = NULL, obs_to_loc_nullable = NULL, compute_skew = FALSE, skew_idx = NULL, weights_nullable = NULL) {
     .Call(`_tulpa_cpp_laplace_fit_gp`, y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi, max_iter, tol, n_threads, offset_nullable, obs_to_loc_nullable, compute_skew, skew_idx, weights_nullable)
 }

@@ -214,7 +214,7 @@ tulpa_check_control <- function(control, allowed, where) {
              "fitted_var", "subspace_debias", "cila"),
     re_cov_nested = c("integration", "n_per_axis", "span", "n_draws", "seed",
                       "max_iter", "tol", "n_threads", "diagnose_k",
-                      "k_samples", "k_tail_points", "checkpoint",
+                      "k_samples", "k_threads", "k_tail_points", "checkpoint",
                       "outer_maxit", "subspace_debias"),
     re_cov_gibbs = c("n_iter", "warmup", "thin", "seed", "max_iter", "tol",
                      "n_threads"),

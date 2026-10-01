@@ -75,6 +75,18 @@ LaplaceResult spec_inner_solve(
     std::uint64_t cila_cell_key = 0
 );
 
+// The structural checks laplace_mode_spec_dense_solve makes before it solves
+// (process count, spec callbacks, design shapes, block support), returning the
+// compacted latent dimension n_x. A caller that solves one model description at
+// many hyperparameter values runs this once on the main thread and then calls
+// spec_inner_solve directly, with a Newton scratch sized (n_x, N * n_processes),
+// from inside a parallel region where an R error is not available.
+int laplace_spec_dense_check(
+    const ModelData& data,
+    const ParamLayout& layout,
+    const std::vector<LatentBlock>* blocks = nullptr
+);
+
 // Result-returning standalone spec Laplace (defined in laplace_spec.cpp).
 // Builds the [beta | RE | blocks] layout, runs spec_inner_solve, and returns the
 // full LaplaceResult: compacted mode, log_marginal, and -- when return_re_cov --

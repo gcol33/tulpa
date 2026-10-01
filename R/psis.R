@@ -498,7 +498,10 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 # normalizing constant is common to every draw, so it drops under PSIS's
 # self-normalization and only the quadratic 0.5 ||z||^2 enters. Each evaluation
 # is one inner Laplace solve, so `n_samples` extra solves are paid -- the cost
-# the `diagnose_k` switch controls.
+# the `diagnose_k` switch controls. `log_target_batched(U)` takes the S x d
+# draw matrix and returns S log-densities, so the caller evaluates a whole
+# proposal's draws in one call (re_cov_nested's compiled batch); a non-finite
+# value is a zero-weight draw.
 #
 # This path applies NO radius cap (unlike the grid/joint `.nested_is_pareto_k`):
 # its inner solve is a dense `tulpa_laplace()` that converges in a handful of
@@ -507,18 +510,16 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 # and the unbiased choice -- consistent in correctness with the grid/joint path,
 # whose cap now folds the far tail back in whenever it would matter
 
-.nested_outer_pareto_k <- function(log_target, theta_hat, L_scale,
+.nested_outer_pareto_k <- function(log_target_batched, theta_hat, L_scale,
                                    n_samples = .nl_diag("k_samples"),
                                    tail_points = NULL) {
-  # The per-sample closure is the length-1 case of the batched target the shared
-  # core (.nested_is_pareto_k) drives; wrap it (non-finite -> -Inf, matching the
-  # old drop) and evaluate every draw (radius_cap = Inf). The sampling transform
-  # theta_hat + L_scale %*% Z[s, ] equals the core's Z %*% t(L_scale), so the
-  # draws -- and the k-hat -- are identical to the previous open-coded version.
-  batched <- function(Umat) vapply(seq_len(nrow(Umat)), function(i) {
-    lt <- log_target(Umat[i, ])
-    if (is.finite(lt)) lt else -Inf
-  }, numeric(1))
+  # Every draw is evaluated (radius_cap = Inf, below), and a non-finite target
+  # value is a draw of zero weight.
+  batched <- function(Umat) {
+    lt <- as.numeric(log_target_batched(Umat))
+    lt[!is.finite(lt)] <- -Inf
+    lt
+  }
   # The proposal is the mode-find's own Gaussian, not a set of integration
   # nodes, so the spec carries no grid: the mixture candidate declines (its bump
   # width is a grid RESOLUTION, which a CCD design does not have) and the radius

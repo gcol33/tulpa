@@ -131,6 +131,14 @@ the reported k-hat is 0.3 to 0.8.
 the fraction that default budget implies, so raising it supplies more
 tail ratios for the SAME estimand rather than moving the fit to a
 deeper quantile of the weight distribution (gcol33/tulpa#631).
+Each draw is one inner Laplace solve, so this sets the diagnostic's
+cost; the draws are solved in one compiled batch, each started from
+the mode at the proposal centre.
+\item \code{k_threads}: thread width for those draws (\code{NULL}, the default,
+follows \code{n_threads}; \code{"auto"} takes the physical performance cores; an
+integer sets it, \code{1L} forcing serial). Each draw is solved
+single-threaded and from the same start, so the k-hat does not depend
+on the width.
 \item \code{k_tail_points}: expert override for that tail size, in upper-tail
 order statistics. Silently capped at 20\% of the draws, beyond which
 body ratios enter the tail and bias the shape.

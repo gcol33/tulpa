@@ -328,7 +328,7 @@ inline void build_spec_family_inputs(
 //   diagonal   (correlated = false): pack is length q of marginal SDs ->
 //       log_sigma[c] = log(pack[c]); tanh_raw empty.
 //   correlated (correlated = true) : pack is the column-major lower-triangular
-//       Cholesky of Sigma (Sigma = L L', as packed by .re_cov_spec). Decompose
+//       Cholesky of Sigma (Sigma = L L', as packed by .re_cov_pack). Decompose
 //       Sigma = D R D with D = diag(sd), R the correlation matrix: the spec
 //       stores log(sd) and the canonical partial correlations of L_R =
 //       D^{-1} L through atanh (build_chol_L re-applies the forward map,

@@ -1227,28 +1227,17 @@ LaplaceResult spec_inner_solve(
     );
 }
 
-// Result-returning standalone spec Laplace. Carries the full LaplaceResult
-// (compacted [beta | RE | blocks] mode, log_marginal, and -- when return_re_cov
-// -- the per-(term,group) marginal covariance blocks the EM M-step consumes).
-// beta_prior overrides the scalar sigma_beta ridge with a full per-coef Gaussian.
-// The void laplace_mode_spec_dense_impl (the cross-package shim entry) is a thin
-// wrapper over this; the standalone single-point Laplace R exports
-// (cpp_laplace_fit_multi_re{,_spatial,_bym2}) call it directly.
-LaplaceResult laplace_mode_spec_dense_solve(
+namespace {
+
+// The structural checks a spec solve needs before it can run, and the latent
+// layout they validate. Every condition here is a property of the model
+// description rather than of a hyperparameter value, so a caller solving one
+// description at many values (laplace_spec_dense_check) runs them once, on the
+// main thread, where an Rcpp::stop is an R error rather than std::terminate.
+SpecLatentLayout spec_dense_checked_layout(
     const ModelData& data,
     const ParamLayout& layout,
-    std::vector<double>& params_inout,
-    const std::vector<int>& re_group_1based,
-    int max_iter, double tol, int n_threads,
-    const std::vector<LatentBlock>* blocks,
-    int k_grid,
-    const BetaPrior* beta_prior,
-    bool return_re_cov,
-    int sparse_override,
-    bool store_Q,
-    bool compute_skew,
-    const std::vector<int>* skew_probe_idx,
-    const SubspaceDebiasOptions* debias
+    const std::vector<LatentBlock>* blocks
 ) {
     if (data.n_processes < 1) {
         Rcpp::stop("laplace_spec_dense: requires n_processes >= 1 (got %d)",
@@ -1295,6 +1284,46 @@ LaplaceResult laplace_mode_spec_dense_solve(
                    "n_processes == 1 (got %d); joint/multi-arm blocks land at "
                    "L4 of the solver unification.", np);
     }
+    return L;
+}
+
+} // namespace
+
+int laplace_spec_dense_check(
+    const ModelData& data,
+    const ParamLayout& layout,
+    const std::vector<LatentBlock>* blocks
+) {
+    return spec_dense_checked_layout(data, layout, blocks).n_x;
+}
+
+// Result-returning standalone spec Laplace. Carries the full LaplaceResult
+// (compacted [beta | RE | blocks] mode, log_marginal, and -- when return_re_cov
+// -- the per-(term,group) marginal covariance blocks the EM M-step consumes).
+// beta_prior overrides the scalar sigma_beta ridge with a full per-coef Gaussian.
+// The void laplace_mode_spec_dense_impl (the cross-package shim entry) is a thin
+// wrapper over this; the standalone single-point Laplace R exports
+// (cpp_laplace_fit_multi_re{,_spatial,_bym2}) call it directly.
+LaplaceResult laplace_mode_spec_dense_solve(
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& params_inout,
+    const std::vector<int>& re_group_1based,
+    int max_iter, double tol, int n_threads,
+    const std::vector<LatentBlock>* blocks,
+    int k_grid,
+    const BetaPrior* beta_prior,
+    bool return_re_cov,
+    int sparse_override,
+    bool store_Q,
+    bool compute_skew,
+    const std::vector<int>* skew_probe_idx,
+    const SubspaceDebiasOptions* debias
+) {
+    const SpecLatentLayout L = spec_dense_checked_layout(data, layout, blocks);
+    const int np = L.np;
+    const LikelihoodSpec* spec =
+        static_cast<const LikelihoodSpec*>(data.likelihood_spec);
 
     // Per-block feasibility at this grid cell (e.g. proper-CAR PD interval).
     // Mirror the nested kernel: infeasible -> log_marginal = -inf, no solve.

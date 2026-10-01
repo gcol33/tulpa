@@ -1208,6 +1208,43 @@ moves, so the remaining #932 gap is the refined grid's measure rather than
 the spread inside a cell. The 24x24 narrowing under the log-quadratic read is
 not explained. `"box_uniform"` stays the default.
 
+### What the re_cov outer k-hat costs, and why it is still a multiple of the fit (gcol33/tulpa#934)
+
+`tulpa_re_cov_nested()`'s outer Pareto-k evaluated each importance draw with
+its own `tulpa_laplace()` call: R validation, a fresh marshalling of the model,
+and a cold Newton start, for each of 500 draws. `Rprof` put 77% of a small fit
+there. The draws now go to `cpp_laplace_log_marginal_multi_re_batch()`, which
+builds the model once (`MultiReProblem`, `src/laplace_multi_re_problem.h`, the
+same object `cpp_laplace_fit_multi_re()` builds for one covariance) and solves
+every draw against it, each from the latent mode at the centre node. A cold
+batch is bit-identical to the per-call path (including -Inf on a draw whose
+SD overflows); the warm one agrees to 3e-14 and returns the same vector at any
+`k_threads` width, because no draw starts from another's result.
+
+Measured per solve on the binomial random intercept (n_x = G + 2): a Newton
+step costs about 60 us at G = 60 and 0.7 ms at G = 600, with a fixed cost of
+about 80 us / 0.82 ms (the factorization and log-determinant at the mode). A
+cold solve takes 7 steps and a centre-warm one 4.3. Moving the start along the
+mode's first-order theta path (centre mode + J (theta - theta_hat)) gave 3.95,
+because the draws spread 0.85 in log sigma, too far for the linear path, so it
+was not built.
+
+What remains is the solve count: 500 draws at about 4 steps against a fit of
+about 25 heavier solves. Serial, the diagnostic is 2.6x to 4.4x the fit
+between G = 60 and G = 600, roughly constant because both scale with the
+inner solve; on four threads it is 0.7x to 1.2x. `k_threads` follows the
+fit's thread grant by default, as on the joint doors, so a serial fit keeps a
+serial diagnostic.
+
+The subspace arm cost about twice the plain one (0.680 against 0.327 s at
+G = 60) for a reason unrelated to the debias's own work. The debias consumes
+random numbers and the diagnostic drew its proposal sample from the stream
+after the fit, so the two arms scored ONE proposal against ONE target on two
+different samples: first-pass k 0.44 against 0.79 on the same data, and 0.79
+is above `k_usable`, which buys a moment-matching pass of another 500 solves.
+The sample is now drawn from the stream the fit started on (`k_stream`), and
+both arms report one k-hat.
+
 ### The draw budget moves the outer k-hat, not just its interval (gcol33/tulpa#631)
 
 `control$k_samples` was documented as the outer k-hat's precision knob. It is

@@ -944,6 +944,37 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_laplace_log_marginal_multi_re_batch
+Rcpp::NumericVector cpp_laplace_log_marginal_multi_re_batch(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::List re_idx_list, Rcpp::IntegerVector re_ngroups, Rcpp::List re_sigma_batch, std::string family, double phi, int max_iter, double tol, int n_threads_outer, Rcpp::Nullable<Rcpp::List> re_Z_list, Rcpp::Nullable<Rcpp::IntegerVector> re_ncoefs, Rcpp::Nullable<Rcpp::NumericVector> weights, Rcpp::Nullable<Rcpp::NumericVector> offset, Rcpp::Nullable<Rcpp::NumericVector> x_init, Rcpp::Nullable<Rcpp::NumericVector> beta_prior_mean, Rcpp::Nullable<Rcpp::NumericVector> beta_prior_sd, double phi2, Rcpp::Nullable<Rcpp::NumericMatrix> X_zi, double zi_prior_sd);
+RcppExport SEXP _tulpa_cpp_laplace_log_marginal_multi_re_batch(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idx_listSEXP, SEXP re_ngroupsSEXP, SEXP re_sigma_batchSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threads_outerSEXP, SEXP re_Z_listSEXP, SEXP re_ncoefsSEXP, SEXP weightsSEXP, SEXP offsetSEXP, SEXP x_initSEXP, SEXP beta_prior_meanSEXP, SEXP beta_prior_sdSEXP, SEXP phi2SEXP, SEXP X_ziSEXP, SEXP zi_prior_sdSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type re_idx_list(re_idx_listSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type re_ngroups(re_ngroupsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type re_sigma_batch(re_sigma_batchSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads_outer(n_threads_outerSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type re_Z_list(re_Z_listSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type re_ncoefs(re_ncoefsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type weights(weightsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset(offsetSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init(x_initSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type beta_prior_mean(beta_prior_meanSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type beta_prior_sd(beta_prior_sdSEXP);
+    Rcpp::traits::input_parameter< double >::type phi2(phi2SEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type X_zi(X_ziSEXP);
+    Rcpp::traits::input_parameter< double >::type zi_prior_sd(zi_prior_sdSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_laplace_log_marginal_multi_re_batch(y, n, X, re_idx_list, re_ngroups, re_sigma_batch, family, phi, max_iter, tol, n_threads_outer, re_Z_list, re_ncoefs, weights, offset, x_init, beta_prior_mean, beta_prior_sd, phi2, X_zi, zi_prior_sd));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_laplace_fit_gp
 Rcpp::List cpp_laplace_fit_gp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int n_spatial, int nn, double sigma2_gp, double phi_gp, int cov_type, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::IntegerVector> obs_to_loc_nullable, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::NumericVector> weights_nullable);
 RcppExport SEXP _tulpa_cpp_laplace_fit_gp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP n_spatialSEXP, SEXP nnSEXP, SEXP sigma2_gpSEXP, SEXP phi_gpSEXP, SEXP cov_typeSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP offset_nullableSEXP, SEXP obs_to_loc_nullableSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP weights_nullableSEXP) {
@@ -5055,6 +5086,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_interval_gaussian_terms", (DL_FUNC) &_tulpa_cpp_interval_gaussian_terms, 4},
     {"_tulpa_cpp_joint_inner_vcov_blocks", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_blocks, 9},
     {"_tulpa_cpp_laplace_fit_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_fit_multi_re, 26},
+    {"_tulpa_cpp_laplace_log_marginal_multi_re_batch", (DL_FUNC) &_tulpa_cpp_laplace_log_marginal_multi_re_batch, 21},
     {"_tulpa_cpp_laplace_fit_gp", (DL_FUNC) &_tulpa_cpp_laplace_fit_gp, 25},
     {"_tulpa_cpp_laplace_fit_spatial", (DL_FUNC) &_tulpa_cpp_laplace_fit_spatial, 23},
     {"_tulpa_cpp_laplace_fit_bym2", (DL_FUNC) &_tulpa_cpp_laplace_fit_bym2, 25},
