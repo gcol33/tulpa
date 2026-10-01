@@ -410,28 +410,38 @@ the outermost node adds that row's extension region) --
 edge score is \verb{max(marginal_weight_at_boundary, exp(max_log_marginal_at _boundary - max_log_marginal_overall))}, catching both boundary pile-up
 and integrand truncation; \code{0.02} is ~4 log units of decay.
 \code{adaptive_grid_max_passes} caps the passes (one usually suffices). Fixes
-posterior CI under-coverage when truth sits near a grid edge.
+posterior CI under-coverage when truth sits near a grid edge. Both the
+single-block and the multi-block driver run the passes on a tensor grid;
+a CCD design, the adaptive lattice and a locally CCD-refined grid keep the
+nodes they were laid on.
 
 How far a given axis may be moved depends on where its nodes came from.
-An axis whose nodes the CALLER wrote down -- \code{copy$alpha_grid} /
-\code{field_coef$grid}, an entry of \code{phi_grid} -- states where the fit
-integrates, so refinement densifies it and never places a node past
-either end node; a mode outside that range shows up as mass at the edge.
+An axis whose nodes the CALLER wrote down -- a block's \code{sigma_grid},
+\code{copy$alpha_grid} / \code{field_coef$grid}, an entry of \code{phi_grid} -- states
+where the fit integrates, so refinement densifies it and never places a
+node past either end node; a mode outside that range shows up as mass at
+the edge.
 An axis the ENGINE placed (\code{alpha_n} / \code{field_coef$n}, or no nodes given)
 carries no such statement, so refinement may follow the posterior out
 past its ends. Nodes a wrapper package computed as a default of its own
 are declared with \code{\link[=auto_grid]{auto_grid()}} and count as engine-placed.
 \item \code{axis_refine} (\code{NULL}) -- per-axis override of the rule above, named by
-outer-grid axis (\code{"alpha"}, \code{"phi_<arm>"}): \code{"none"} (the axis takes no
-refinement nodes), \code{"densify"} (nodes inside the declared span only) or
+outer-grid axis (\code{"sigma"}, \code{"alpha"}, \code{"phi_<arm>"}; \code{"b<k>.sigma"},
+\code{"b<k>.tau"} and \code{"b<k>.alpha"} on a multi-block grid): \code{"none"} (the
+axis takes no refinement nodes), \code{"densify"} (nodes inside the declared
+span only) or
 \code{"extend"} (nodes past the end nodes too). A single unnamed value applies
 to every refinable axis. An unknown axis name, or a request for nodes on
 an axis this driver does not refine, is an error rather than a silent
 no-op. Read only when \code{adaptive_grid = TRUE} or
 \code{var_of_means_consistency = TRUE}.
 \item \code{var_of_means_consistency} (\code{TRUE}) -- run a post-integration
-consistency pass on the variance of the per-arm posterior means and
-attach \code{var_of_means_consistency_info}.
+consistency pass over the refinable axes (a block's field SD, the copy
+scale and the per-arm dispersions). An axis whose marginal has collapsed
+onto too few nodes to carry a spread, such as a field SD narrower than
+its placed cell, has nodes laid in its modal cell's row until its
+marginal resolves, so the reported interval is read off the posterior and
+not off a cell box. Attaches \code{var_of_means_consistency_info}.
 \item \code{inner_factorization} (\code{"auto"}) -- which factorization the dense inner
 Newton applies to the Hessian it assembled: \code{"auto"} by the latent
 dimension, \code{"sparse"} for CHOLMOD, \code{"dense"} for the dense Cholesky.
@@ -838,6 +848,12 @@ scale-like axes (alpha at small n_pos, sigma/range/phi near
 a boundary), where the posterior mean is pulled by the right
 tail away from the bulk and \verb{mean +/- 1.96 sd} mis-states the
 uncertainty.
+\item \code{theta_sd_source} -- per axis, what the reported SD was read off:
+\code{"weighted"} (the spread of the weights, on a resolved axis),
+\code{"stencil"} (a parabola at the modal node) or \code{"within_cell"} (the
+modal node's mass spread over its cell, the read the interval of an
+unresolved axis comes from). \code{theta_sd_stencil_declined} says why a
+parabola was not formed.
 \item \code{modes} -- \verb{[n_grid x n_x]} matrix of inner modes.
 \item \code{fitted_eta} -- \verb{[n_grid x N]} matrix of the linear predictor at each
 cell's own mode, offset and latent field included. Present on a

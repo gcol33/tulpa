@@ -1,3 +1,31 @@
+# tulpa 0.7.1
+
+* `tulpa_nested_laplace_joint()` runs the same outer-grid refinement on a
+  multi-block prior as on a single block: the var-of-means consistency pass,
+  the opt-in boundary / interior pass and `control$axis_refine`, through one
+  runner, `.joint_refine_outer_grid()`. A CCD design, the adaptive lattice and
+  a locally CCD-refined grid keep the nodes they were laid on. Where a
+  multi-block tensor fit refines, its reported intervals are read under the
+  cell measure `log_quad`, as the single-block driver's are
+  (gcol33/tulpa#926).
+* The field SD is a refinable axis on both joint doors: `sigma` on a field-SD
+  grid, `tau` on a precision grid, and their `b<k>.` names on a multi-block
+  grid. A field SD narrower than its placed cell, which sat on one node and
+  reported the cell as its interval, has nodes laid in its modal cell's row
+  until its marginal resolves. On the two-arm ICAR fixture (200 seeds per row)
+  the SD's median effective node count goes from 1.0-2.4 to 5.4-8.9, and
+  coverage of the true value at sigma 2 on a 12 x 12 grid from 0.765 to 0.855,
+  on 16 x 16 from 0.860 to 0.870; summed |coverage - 0.95| over the eight rows
+  falls from 0.500 to 0.395, at 0.2 to 1.7 s more per fit. Nodes a caller
+  wrote down are densified inside their span and an engine-placed axis may be
+  followed past its ends, the rule the copy scale and the dispersions already
+  follow (`control$axis_refine = "none"` holds an axis). The remaining
+  under-coverage is gcol33/tulpa#928; the registry door runs no refinement pass
+  (gcol33/tulpa#927). On the ladder whose truth is drawn from the prior and
+  scored against the exact posterior (80 seeds, 12 rungs) summed
+  |coverage - 0.95| goes from 0.325 to 0.238 and the CRPS falls on every rung
+  that gains nodes.
+
 # tulpa 0.7.0
 
 This release collects 0.6.11 and 0.6.12; their entries below carry the detail.

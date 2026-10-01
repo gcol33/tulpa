@@ -296,8 +296,13 @@ test_that("a recentred axis's h/sd is 1.25 * sd_used / sd_realized, not 1.25", {
     # reported ratio divides by the weighted posterior SD the placed grid
     # realizes. Wherever the clamp SUBSTITUTED a bound they cannot agree, and
     # the identity below is what says which of the two a large reading is.
+    #
+    # The quantity is the PLACED layout's, so the field SD takes no refinement
+    # nodes: the consistency pass lays more on an axis the placement left
+    # collapsed, and the spacing read here is the placement's own.
     sim   <- .pilot_sim(seed = 1)
-    fit   <- .pilot_fit(sim, .pilot_prior(sim), FALSE)
+    fit   <- .pilot_fit(sim, .pilot_prior(sim), FALSE,
+                        extra = list(axis_refine = c(sigma = "none")))
     expect_identical(fit$outer_grid_placement, "auto_recentered")
 
     tags <- .joint_pareto_axis_tags(fit)

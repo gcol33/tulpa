@@ -414,6 +414,13 @@ outer_grid_read_diff <- function(a, b) {
   if (!any(is.finite(ws)) || sum(ws, na.rm = TRUE) <= 0) {
     return(rep(NA_real_, length(dump$probs)))
   }
+  # A refined axis's cells are not tiled by one partition over its values: a
+  # slice re-tiles only the row it was placed in. The engine reads that
+  # structure off the refinement tags, so the uncoarsened read does too; a
+  # coarsened one merges atoms across rows and has none.
+  rows <- if (stride == 1L)
+    tulpa:::.nl_cell_rows_subset(
+      tulpa:::.nl_axis_cell_rows(dump$joint_grid, j, dump$refining_axis), use)
   ws[!is.finite(ws)] <- 0
   ws <- ws / sum(ws)
   if (stride > 1L) {
@@ -432,7 +439,7 @@ outer_grid_read_diff <- function(a, b) {
   at <- if (length(dump$axis_atoms) < j) NA_real_ else dump$axis_atoms[[j]]
   tulpa:::.nl_summary_quantile(v, ws, dump$probs, dm, dump$support,
                                dump$within %||% tulpa:::.nl_within_cell_mode(NULL),
-                               at)
+                               at, rows)
 }
 
 # Every axis at one coarsening, in the shape `outer_grid_rebuild()` returns.
@@ -568,9 +575,11 @@ ogd_fixture_fit <- function(sim, levels, spread = 3,
                               phi = sim$phi)),
     prior = prior,
     hyperprior = hyperprior,
+    # The grid is the one the caller wrote down, so a weight rule is scored on
+    # the same cells whichever hyperprior or construction it is read under.
     control = list(n_threads = 1L, diagnose_k = FALSE, max_iter = 100L,
                    tol = 1e-8, integration = "grid", prune = FALSE,
-                   within_cell = within_cell)))
+                   within_cell = within_cell, axis_refine = "none")))
 }
 
 for (.nm in c("OGD_PROBS", "OGD_PARTS", "outer_grid_dump", "outer_grid_load",

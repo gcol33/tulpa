@@ -140,7 +140,11 @@ test_that("icar tau = 1 / sigma^2 is the engine's own conversion", {
             hyperprior = hp, control = list(diagnose_k = FALSE)))
 
     f <- axc_fit("flat")
-    expect_length(f$prec$log_marginal, length(s))
+    # Both doors run the same refinement passes, so a field SD the base grid
+    # leaves collapsed gains the same nodes on either, and the cells still agree
+    # one by one.
+    expect_length(f$prec$log_marginal, length(f$sd$log_marginal))
+    expect_gte(length(f$prec$log_marginal), length(s))
     expect_lt(max(abs(as.numeric(f$sd$log_marginal) -
                           as.numeric(f$prec$log_marginal))), 1e-8)
     expect_lt(max(abs(as.numeric(f$sd$weights) -

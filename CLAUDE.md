@@ -259,6 +259,24 @@ R gate reads the same bound. Do not reintroduce a gate on the screen's argmax:
 on a placed grid neighbouring cells are within a few nats, and the ranking says
 nothing about the dropped mass (gcol33/tulpa#925).
 
+**Both joint doors refine through one runner.** `.joint_refine_outer_grid()`
+(`R/nested_laplace_joint_helpers.R`) runs the opt-in boundary / interior pass
+and then the var-of-means consistency pass over the specs and a `kernel_fn`
+closure; the single-block driver supplies `.joint_make_kernel_fn()` and the
+multi-block one `.joint_multi_make_kernel_fn()`. The refinable axes are a
+field SD (`sigma` or `tau`), the copy scale and the per-arm dispersions
+(`.joint_axis_refine_eligible()`, by bare name, so `b2.sigma` is one and
+`b1.phi_gp` is not). How far each moves follows from who wrote its nodes, one
+rule (`.joint_axis_refine_modes_by()`) with a provenance reader per door
+(`.joint_axis_is_stated()`, `.joint_multi_axis_is_stated()`). A multi-block
+CCD design, the adaptive lattice and a locally CCD-refined grid keep their
+nodes. The specs behind a refined grid's measure are built from its BASE cells
+and carry the `refining` tags (`.joint_multi_attach_integration()`), since an
+axis's declared nodes fix a prior read off them. The registry door,
+`tulpa_nested_laplace()`, runs no pass (gcol33/tulpa#927), so a test that
+asserts a joint fit equals a registry fit, or reads a plain tensor cell by cell,
+holds the joint grid with `control$axis_refine = "none"`.
+
 ## Restricted spatial regression is a MODIFIER, and it changes the estimand
 
 `spatial_rsr()` flags `$rsr` on a field's own spec; the field keeps its `$type`

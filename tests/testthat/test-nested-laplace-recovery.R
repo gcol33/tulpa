@@ -135,15 +135,15 @@ recov_fit_single <- function(d, sg, family, cfg) {
                    keep_grid_hessians = TRUE, skew_correct = TRUE)))
 }
 
-recov_fit_joint <- function(d, sg, family, cfg) {
+recov_fit_joint <- function(d, sg, family, cfg, control = list()) {
   suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(a = list(y = as.numeric(d$y),
                               n_trials = rep(cfg$ntr, d$N), X = d$X,
                               family = family, phi = cfg$phi)),
     prior = list(list(type = "iid", obs_idx = list(d$region),
                       n_units = d$nr, sigma_grid = sg)),
-    control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
-                   diagnose_k = FALSE, skew_correct = TRUE)))
+    control = c(list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
+                     diagnose_k = FALSE, skew_correct = TRUE), control)))
 }
 
 # The same joint fitter over every grouping the simulator produced, with the CCD
@@ -191,10 +191,12 @@ recov_fit_joint_coarse <- function(d, sg, family, cfg, local_ccd = NULL,
     prior = lapply(d$regions, function(g)
       list(type = "iid", obs_idx = list(g), n_units = d$nr, sigma_grid = sgc)),
     hyperprior = hyperprior,
+    # The base grid is the coarse tensor the nodes were written as, so no axis
+    # is refined: the arms scored on it read the same cells.
     control = c(list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
                      diagnose_k = diagnose_k, integration = "grid",
                      local_ccd = local_ccd, skew_correct = TRUE,
-                     prune = FALSE),
+                     prune = FALSE, axis_refine = "none"),
                 if (is.null(within_cell)) list() else
                   list(within_cell = within_cell))))
 }
@@ -549,7 +551,9 @@ test_that("a one-arm joint fit reproduces the single-block fixed-effect posterio
     d  <- sim_re(4100L, fam, cfg$nr, cfg$spr, cfg$ntr, cfg$beta, cfg$su, cfg$phi)
     sg <- exp(seq(log(0.2), log(1.5), length.out = 7))
     fs <- recov_fit_single(d, sg, fam, cfg)
-    fj <- recov_fit_joint(d, sg, fam, cfg)
+    # The single-block fit integrates the grid it was handed, so the joint fit
+    # is held to the same nodes.
+    fj <- recov_fit_joint(d, sg, fam, cfg, control = list(axis_refine = "none"))
 
     expect_true(is.na(fj$grid_fixed_declined))
     # The joint tier reports real uncertainty at all -- the #305 defect.

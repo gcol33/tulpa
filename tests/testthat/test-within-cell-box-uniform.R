@@ -412,9 +412,11 @@ test_that("a fit selects the construction, reports it, and stays byte-identical 
   y <- as.numeric(X %*% c(-0.2, 0.7)) + rnorm(G, 0, 0.7)[g] +
        rnorm(N, 0, sqrt(0.5))
   sg <- exp(seq(log(0.2), log(1.5), length.out = 9L))
+  # The read is rebuilt below from the nine nodes written down, so no node is
+  # added to the axis.
   ctrl <- list(max_iter = 100L, tol = 1e-8, n_threads = 1L, diagnose_k = FALSE,
                diagnose_skew = FALSE, integration = "grid", local_ccd = NULL,
-               auto_recenter = FALSE)
+               auto_recenter = FALSE, axis_refine = "none")
   fit <- function(wc) suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(a = list(y = y, n_trials = rep(1L, N), X = X,
                               family = "gaussian", phi = 0.5)),

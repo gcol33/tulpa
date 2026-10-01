@@ -400,28 +400,38 @@
 #'     _boundary - max_log_marginal_overall))`, catching both boundary pile-up
 #'     and integrand truncation; `0.02` is ~4 log units of decay.
 #'     `adaptive_grid_max_passes` caps the passes (one usually suffices). Fixes
-#'     posterior CI under-coverage when truth sits near a grid edge.
+#'     posterior CI under-coverage when truth sits near a grid edge. Both the
+#'     single-block and the multi-block driver run the passes on a tensor grid;
+#'     a CCD design, the adaptive lattice and a locally CCD-refined grid keep the
+#'     nodes they were laid on.
 #'
 #'     How far a given axis may be moved depends on where its nodes came from.
-#'     An axis whose nodes the CALLER wrote down -- `copy$alpha_grid` /
-#'     `field_coef$grid`, an entry of `phi_grid` -- states where the fit
-#'     integrates, so refinement densifies it and never places a node past
-#'     either end node; a mode outside that range shows up as mass at the edge.
+#'     An axis whose nodes the CALLER wrote down -- a block's `sigma_grid`,
+#'     `copy$alpha_grid` / `field_coef$grid`, an entry of `phi_grid` -- states
+#'     where the fit integrates, so refinement densifies it and never places a
+#'     node past either end node; a mode outside that range shows up as mass at
+#'     the edge.
 #'     An axis the ENGINE placed (`alpha_n` / `field_coef$n`, or no nodes given)
 #'     carries no such statement, so refinement may follow the posterior out
 #'     past its ends. Nodes a wrapper package computed as a default of its own
 #'     are declared with [auto_grid()] and count as engine-placed.
 #'   * `axis_refine` (`NULL`) -- per-axis override of the rule above, named by
-#'     outer-grid axis (`"alpha"`, `"phi_<arm>"`): `"none"` (the axis takes no
-#'     refinement nodes), `"densify"` (nodes inside the declared span only) or
+#'     outer-grid axis (`"sigma"`, `"alpha"`, `"phi_<arm>"`; `"b<k>.sigma"`,
+#'     `"b<k>.tau"` and `"b<k>.alpha"` on a multi-block grid): `"none"` (the
+#'     axis takes no refinement nodes), `"densify"` (nodes inside the declared
+#'     span only) or
 #'     `"extend"` (nodes past the end nodes too). A single unnamed value applies
 #'     to every refinable axis. An unknown axis name, or a request for nodes on
 #'     an axis this driver does not refine, is an error rather than a silent
 #'     no-op. Read only when `adaptive_grid = TRUE` or
 #'     `var_of_means_consistency = TRUE`.
 #'   * `var_of_means_consistency` (`TRUE`) -- run a post-integration
-#'     consistency pass on the variance of the per-arm posterior means and
-#'     attach `var_of_means_consistency_info`.
+#'     consistency pass over the refinable axes (a block's field SD, the copy
+#'     scale and the per-arm dispersions). An axis whose marginal has collapsed
+#'     onto too few nodes to carry a spread, such as a field SD narrower than
+#'     its placed cell, has nodes laid in its modal cell's row until its
+#'     marginal resolves, so the reported interval is read off the posterior and
+#'     not off a cell box. Attaches `var_of_means_consistency_info`.
 #'   * `inner_factorization` (`"auto"`) -- which factorization the dense inner
 #'     Newton applies to the Hessian it assembled: `"auto"` by the latent
 #'     dimension, `"sparse"` for CHOLMOD, `"dense"` for the dense Cholesky.
@@ -1351,7 +1361,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                       cell_coupling, ctrl_i,
                                       placement_axes = placement_axes,
                                       hyperprior = hyperprior,
-                                      phi_auto = phi_prov$auto))
+                                      phi_auto = phi_prov$auto,
+                                      grid_auto = prov$auto))
     fit_state <- function(st, ctrl_i = ctrl)
         fit_once(st$prior, st$prior_sigma, ctrl_i = ctrl_i,
                  phi_grid_i = st$phi_grid, copy_i = st$copy,
@@ -1585,10 +1596,9 @@ tulpa_nested_laplace_joint <- function(responses,
                 # can add a node. For the CCD rung this means no peaked interior
                 # cell was found. For the grid rung it means the grid was not
                 # extended this round -- either no boundary mass beyond the
-                # current width, or (on a multi-block fit) the boolean
-                # adaptive_grid rung does not engage the multi-block flood
-                # integrator, which is selected by control$integration =
-                # "grid_adaptive".
+                # current width, or (on a multi-block fit) the outer integrator
+                # is a CCD design or the adaptive lattice, whose nodes the
+                # boundary pass does not extend.
                 exhausted <- TRUE
                 if (identical(res$k_quality_miss, "precision")) {
                     # What is left is the interval's width, not the grid, and
@@ -1603,9 +1613,9 @@ tulpa_nested_laplace_joint <- function(responses,
                     ">= 4-axis multi-block tensor grid); the bad k is not a ",
                     "coarse-grid resolution deficiency") else paste0(
                     "grid refinement did not extend the outer grid this round ",
-                    "(no boundary mass beyond the current width, or -- on a ",
-                    "multi-block fit -- set control$integration = \"grid_adaptive\" ",
-                    "to engage adaptive refinement)")
+                    "(no boundary mass beyond the current width, or the outer ",
+                    "integrator is a CCD design or an adaptive lattice, whose ",
+                    "nodes are not extended)")
                 break
             }
         }
@@ -1631,7 +1641,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                  cell_coupling = "separable", control = list(),
                                  placement_axes = character(0),
                                  hyperprior = "proper",
-                                 phi_auto = NULL) {
+                                 phi_auto = NULL,
+                                 grid_auto = logical(0)) {
     tm <- .tulpa_timer()
     # Resolve and validate the cell-coupling spec name against the C++
     # registry (separable default is auto-registered on first touch). The
@@ -2032,6 +2043,12 @@ tulpa_nested_laplace_joint <- function(responses,
             adaptive_min_cells = adaptive_min_cells,
             placement_axes = placement_axes,
             hyperprior = hyperprior,
+            adaptive_grid = adaptive_grid,
+            adaptive_grid_edge_thresh = adaptive_grid_edge_thresh,
+            adaptive_grid_max_passes = adaptive_grid_max_passes,
+            var_of_means_consistency = var_of_means_consistency,
+            axis_refine = axis_refine,
+            grid_auto = grid_auto, phi_auto = phi_auto,
             timer = tm
         ))
     }
@@ -2081,7 +2098,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # here whoever wrote it.
     axis_refine_modes <- .joint_axis_refine_modes(
         grids, cp, arms, phi_grid = phi_grid, arm_names = arm_names,
-        phi_auto = phi_auto,
+        phi_auto = phi_auto, prior = prior, grid_auto = grid_auto,
         user = .joint_check_axis_refine(axis_refine,
                                         .joint_spec_axis_names(grids, cp)))
     force_sparse <- .resolve_force_sparse(force_sparse, function() {
@@ -2195,30 +2212,32 @@ tulpa_nested_laplace_joint <- function(responses,
     theta_grid_M  <- theta_grid_init
     log_marginal  <- res$log_marginal
     extras_list   <- .joint_init_extras_from_res(res)
-    refining_axis <- rep("", length(log_marginal))
 
-    refine_info <- NULL
-    if (isTRUE(adaptive_grid)) {
-        refined <- .hyper_adaptive_refine_pass(
-            theta_grid    = theta_grid_M,
-            log_marginal  = log_marginal,
-            extras        = extras_list,
-            refining_axis = refining_axis,
-            specs         = specs,
-            kernel_fn     = kernel_fn,
-            edge_thresh   = adaptive_grid_edge_thresh,
-            max_passes    = adaptive_grid_max_passes,
-            hp_fn         = hp_fn
-        )
-        theta_grid_M  <- refined$theta_grid
-        log_marginal  <- refined$log_marginal
-        extras_list   <- refined$extras
-        refining_axis <- refined$refining_axis
-        refine_info   <- refined$info
-    }
+    # Boundary / interior refinement (opt in), then the var-of-means consistency
+    # pass. Sharply peaked axes (gaussian noise SD, beta phi at high n_pos, a
+    # field SD narrower than its placed cell) collapse joint weight onto a single
+    # grid cell, so `sum(w*x^2) - mean^2` on that axis is a floor at zero rather
+    # than a spread. The consistency pass bisects the gaps the axis's mass sits
+    # across, with slice points in the modal cell's row, until the axis marginal's
+    # ESS reaches the floor, so the merged grid carries the support the spread is
+    # read off. The outer mode a placement refit was laid from is carried in by
+    # the front door (`.joint_place_axes()`), which the pass lays a collapsed
+    # axis's points at.
+    ref <- .joint_refine_outer_grid(
+        theta_grid_M, log_marginal, extras_list, specs, kernel_fn, hp_fn,
+        adaptive_grid = adaptive_grid,
+        edge_thresh   = adaptive_grid_edge_thresh,
+        max_passes    = adaptive_grid_max_passes,
+        consistency   = var_of_means_consistency,
+        axis_modes    = .nl_outer_mode_axes(getOption("tulpa.nl_outer_mode")))
+    theta_grid_M  <- ref$theta_grid
+    log_marginal  <- ref$log_marginal
+    extras_list   <- ref$extras
+    refining_axis <- ref$refining_axis
+    refine_info   <- ref$adaptive_info
     res <- .joint_glue_extras_to_res(res, theta_grid_M, log_marginal,
                                       extras_list, refining_axis)
-    tm$mark("grid")                          # adaptive-refinement inner solves
+    tm$mark("grid")                          # refinement inner solves
 
     res$theta_grid  <- theta_grid_M
     res$theta_names <- colnames(res$theta_grid)
@@ -2234,57 +2253,10 @@ tulpa_nested_laplace_joint <- function(responses,
     res             <- .nl_attach_evidence(res, res$theta_grid, specs)
     res             <- .nl_posterior_moments(res, paste0("joint_", type),
                                              within = within_cell)
-    tm$mark("postproc")
-
-    # Var-of-means consistency pass. Sharply peaked axes (gaussian
-    # noise SD, beta phi at high n_pos) collapse joint weight onto a
-    # single grid cell, so `sum(w*x^2) - mean^2` on that axis is a floor at
-    # zero rather than a spread. Bisect the gaps the axis's mass sits across,
-    # with slice points in the modal cell's row, until the axis marginal's ESS
-    # reaches the floor, so the merged grid carries the support the spread is
-    # read off.
     if (isTRUE(var_of_means_consistency)) {
-        consistency <- .hyper_consistency_pass(
-            theta_grid    = theta_grid_M,
-            log_marginal  = res$log_marginal,
-            extras        = extras_list,
-            refining_axis = refining_axis,
-            specs         = specs,
-            kernel_fn     = kernel_fn,
-            hp_fn         = hp_fn,
-            # The outer mode a placement refit was laid from, carried in by the
-            # front door (`.joint_place_axes()`), which the pass lays a
-            # collapsed axis's points at.
-            axis_modes    = .nl_outer_mode_axes(
-                getOption("tulpa.nl_outer_mode"))
-        )
-        if (consistency$n_added > 0L) {
-            theta_grid_M  <- consistency$theta_grid
-            log_marginal  <- consistency$log_marginal
-            extras_list   <- consistency$extras
-            refining_axis <- consistency$refining_axis
-            res <- .joint_glue_extras_to_res(res, theta_grid_M, log_marginal,
-                                              extras_list, refining_axis)
-            res$theta_grid  <- theta_grid_M
-            res$theta_names <- colnames(res$theta_grid)
-            res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, specs,
-                                                        refining = refining_axis)
-            res$axis_support <- .hyper_grid_supports(res$theta_grid, specs,
-                                                     refining = refining_axis)
-            res$axis_span    <- .joint_axis_span(theta_grid_init,
-                                                  res$theta_grid, specs,
-                                                  refining = refining_axis)
-            res$weights     <- .nl_normalise_weights_safe(res$log_marginal,
-                                                          "outer grid",
-                                                          log_quad = res$log_quad)
-            res$log_hyperprior <- hp_fn(res$theta_grid)
-            res             <- .nl_attach_evidence(res, res$theta_grid, specs)
-            res             <- .nl_posterior_moments(res, paste0("joint_", type),
-                                                     within = within_cell)
-        }
-        res$var_of_means_consistency_info <- consistency$info
-        tm$mark("grid")                      # consistency-pass inner solves
+        res$var_of_means_consistency_info <- ref$consistency_info
     }
+    tm$mark("postproc")
     # The copy scale's point mass, reported beside the posterior mass left on
     # it. A point mass competes against a continuum, so how much of a "no
     # coupling" read is prior and how much is data is not visible from the

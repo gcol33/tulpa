@@ -53,9 +53,11 @@ cila_binom_data <- function(seed = 4L, n_trial = 6L) {
 }
 
 cila_binom_fit <- function(d, cila = NULL) {
+  # The grid is the nodes written down, one cell per entry of the reference.
   ctl <- list(max_iter = 300L, tol = 1e-11, n_threads = 1L,
               keep_grid_hessians = TRUE, diagnose_k = FALSE,
-              diagnose_skew = FALSE, auto_recenter = FALSE, progress = FALSE)
+              diagnose_skew = FALSE, auto_recenter = FALSE, progress = FALSE,
+              axis_refine = "none")
   if (!is.null(cila)) ctl$cila <- cila
   suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(list(y = d$y, n_trials = rep(1L, d$n_trial), X = d$X,

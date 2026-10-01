@@ -171,10 +171,13 @@ test_that("adaptive_grid = TRUE leaves grid alone when boundary is empty", {
     # Wide grid: well past alpha_true = 2.0 (boundary near 4 has
     # negligible weight under any seed of this simulator).
     sp_wide <- c(0.1, 0.3, 0.6, 1.0, 1.5, 2.5, 4.0)
+    # The field SD's nodes are another stated axis the pass would visit, so it
+    # is held and the test reads the copy axis alone.
+    held <- list(axis_refine = c(sigma = "none"))
     fit_F <- .fit_joint_icar(sim, alpha_grid = sp_wide,
-                              adaptive_grid = FALSE)
+                              adaptive_grid = FALSE, control = held)
     fit_T <- .fit_joint_icar(sim, alpha_grid = sp_wide,
-                              adaptive_grid = TRUE)
+                              adaptive_grid = TRUE, control = held)
 
     expect_null(fit_T$adaptive_grid_info)
     expect_equal(length(fit_T$log_marginal), length(fit_F$log_marginal))

@@ -225,5 +225,7 @@ test_that("the joint dispatch solves every latent x phi cell of the dense tensor
     control = list(diagnose_k = FALSE, integration = "grid",
                    max_iter = 60L, tol = 1e-6))
   expect_s3_class(fit, "tulpa_nested_laplace_joint_multi")
-  expect_equal(length(fit$weights), 12L)
+  # Refinement nodes come on top of the tensor, which is solved whole.
+  expect_equal(sum(!nzchar(fit$refining_axis)), 12L)
+  expect_gte(length(fit$weights), 12L)
 })

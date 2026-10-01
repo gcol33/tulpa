@@ -496,11 +496,23 @@
 }
 
 # Which axes the joint refinement machinery can place nodes on at all. This is
-# a property of the DRIVER -- the copy coefficient and the per-arm dispersions
-# are the axes its passes know how to propose on -- not of where the nodes came
-# from, which is the separate question `.joint_axis_is_stated()` answers.
+# a property of the DRIVER -- the field SD, the copy coefficient and the per-arm
+# dispersions are the axes its passes know how to propose on -- not of where the
+# nodes came from, which is the separate question `.joint_axis_is_stated()`
+# answers.
+#
+# A multi-block grid prefixes the axes a block owns (`b2.sigma`) and leaves the
+# per-arm dispersions bare (`phi_<arm>`), so a `phi_`-prefixed name is a
+# dispersion only when no block prefix is present: `b1.phi_gp` is a block's own
+# lengthscale. The field SD is `sigma` on a field-SD parameterisation and `tau`
+# on a precision one, and the two are one axis under `tau = 1 / sigma^2`.
+.JOINT_REFINABLE_BLOCK_AXES <- c("sigma", "tau", "alpha")
+
 .joint_axis_refine_eligible <- function(axis) {
-    identical(axis, "alpha") || startsWith(axis, "phi_")
+    if (grepl("^b[0-9]+[.]", axis)) {
+        return(.hyper_axis_bare(axis) %in% .JOINT_REFINABLE_BLOCK_AXES)
+    }
+    axis %in% .JOINT_REFINABLE_BLOCK_AXES || startsWith(axis, "phi_")
 }
 
 # One entry of the user-facing `phi_grid` argument, by arm name. The argument is
@@ -530,7 +542,13 @@
 # package default marked `auto_grid(place = FALSE)` is NOT among them: asking
 # for the nodes as written is the statement, whoever made it.
 .joint_axis_is_stated <- function(axis, arms, phi_grid = NULL,
-                                  arm_names = NULL, phi_auto = NULL) {
+                                  arm_names = NULL, phi_auto = NULL,
+                                  prior = NULL, grid_auto = logical(0)) {
+    if (identical(axis, "sigma")) {
+        return(!is.null(.nl_axis_hold(prior, "sigma_grid",
+                                      .nl_auto_fields_at(grid_auto),
+                                      type = ".joint_areal")))
+    }
     if (identical(axis, "alpha")) {
         for (a in arms) {
             fc <- a$field_coef_axis
@@ -542,39 +560,84 @@
         }
         return(FALSE)
     }
-    if (startsWith(axis, "phi_")) {
-        arm <- sub("^phi_", "", axis)
-        v <- .joint_phi_grid_entry(phi_grid, arm, arm_names)
-        if (is.null(v) || length(v) < 2L) return(FALSE)
-        # The front door's record first: it is taken before the markers are
-        # stripped, so it is the only reading available once they are gone. A
-        # caller reaching this with the marked value itself is read off the
-        # value.
-        if (!is.null(phi_auto)) return(!is.null(.nl_phi_axis_hold(arm, phi_auto)))
-        return(!is_auto_grid(v) || !auto_grid_place(v))
-    }
-    FALSE
+    .joint_phi_axis_is_stated(axis, phi_grid, arm_names, phi_auto)
+}
+
+# Did the caller write down the nodes of a per-arm dispersion axis
+# (`phi_<arm>`)? Anything else is not this helper's business and reads FALSE.
+.joint_phi_axis_is_stated <- function(axis, phi_grid = NULL, arm_names = NULL,
+                                      phi_auto = NULL) {
+    if (!startsWith(axis, "phi_")) return(FALSE)
+    arm <- sub("^phi_", "", axis)
+    v <- .joint_phi_grid_entry(phi_grid, arm, arm_names)
+    if (is.null(v) || length(v) < 2L) return(FALSE)
+    # The front door's record first: it is taken before the markers are
+    # stripped, so it is the only reading available once they are gone. A
+    # caller reaching this with the marked value itself is read off the
+    # value.
+    if (!is.null(phi_auto)) return(!is.null(.nl_phi_axis_hold(arm, phi_auto)))
+    !is_auto_grid(v) || !auto_grid_place(v)
 }
 
 # The refinement mode of every axis of one joint grid, as a named character
 # vector over `.NL_AXIS_REFINE_MODES`. Eligible axes take the provenance
-# default; everything else takes "none". `user` -- the caller's
-# `control$axis_refine`, already validated -- overrides per axis.
-.joint_axis_refine_modes <- function(grids, cp, arms, phi_grid = NULL,
-                                     arm_names = NULL, user = NULL,
-                                     phi_auto = NULL) {
-    axes <- .joint_spec_axis_names(grids, cp)
-    out  <- stats::setNames(rep("none", length(axes)), axes)
+# default, `is_stated(axis)` saying whether the caller wrote the axis's nodes
+# down; everything else takes "none". `user` -- the caller's
+# `control$axis_refine`, already validated -- overrides per axis. The one rule
+# both joint drivers resolve their modes through, each supplying only how it
+# reads provenance off its own call.
+.joint_axis_refine_modes_by <- function(axes, is_stated, user = NULL) {
+    out <- stats::setNames(rep("none", length(axes)), axes)
     for (a in axes) {
         if (!.joint_axis_refine_eligible(a)) next
-        out[[a]] <- if (.joint_axis_is_stated(a, arms, phi_grid, arm_names,
-                                              phi_auto))
-            .nl_axis_refine("stated") else .nl_axis_refine("placed")
+        out[[a]] <- if (is_stated(a)) .nl_axis_refine("stated")
+                    else .nl_axis_refine("placed")
     }
     if (!is.null(user)) {
         for (a in intersect(names(user), axes)) out[[a]] <- user[[a]]
     }
     out
+}
+
+.joint_axis_refine_modes <- function(grids, cp, arms, phi_grid = NULL,
+                                     arm_names = NULL, user = NULL,
+                                     phi_auto = NULL, prior = NULL,
+                                     grid_auto = logical(0)) {
+    .joint_axis_refine_modes_by(
+        .joint_spec_axis_names(grids, cp),
+        function(a) .joint_axis_is_stated(a, arms, phi_grid, arm_names,
+                                          phi_auto, prior, grid_auto),
+        user)
+}
+
+# The multi-block counterpart of `.joint_axis_is_stated()`: the same question,
+# asked of the prior's blocks and the copy specs instead of one prior and the
+# arms' `field_coef`. A block's field SD is stated when the block carries the
+# grid field it is laid on -- `sigma_grid` or `tau_grid` -- as something other
+# than the engine's own default (`.nl_axis_hold()`), compared against the axis
+# the block's path defaults: a copy block's `sigma_grid` is the copy convention,
+# any other block's the registry's. The copy scale reads the copy spec's
+# `alpha_grid`, and a dispersion the front door's `phi_auto` record.
+.joint_multi_axis_is_stated <- function(axis, prior, grid_auto, copy = NULL,
+                                        copy_blocks = integer(0),
+                                        phi_grid = NULL, arm_names = NULL,
+                                        phi_auto = NULL) {
+    if (!grepl("^b[0-9]+[.]", axis)) {
+        return(.joint_phi_axis_is_stated(axis, phi_grid, arm_names, phi_auto))
+    }
+    b <- as.integer(sub("^b([0-9]+)[.].*$", "\\1", axis))
+    bare <- .hyper_axis_bare(axis)
+    if (identical(bare, "alpha")) {
+        i <- .joint_copy_spec_for_block(copy, b)
+        declared <- if (is.na(i)) NULL
+                    else .joint_copy_specs(copy)[[i]]$alpha_grid
+        return(!is.null(.nl_axis_hold(list(alpha_grid = declared), "alpha_grid",
+                                      type = ".copy")))
+    }
+    !is.null(.nl_axis_hold(
+        prior[[b]], paste0(bare, "_grid"), .nl_auto_fields_at(grid_auto, b),
+        type = if (b %in% copy_blocks) ".copy"
+               else tolower(prior[[b]]$type %||% "")))
 }
 
 # Validate `control$axis_refine` against the axes this fit actually has.
@@ -683,7 +746,7 @@
         # -- deciding by axis NAME would opt a caller's stated nodes into being
         # extended (gcol33/tulpa#658).
         mode <- .joint_axis_refine_mode(axis_refine, a)
-        refine_priority <- if (a == "alpha") 1L
+        refine_priority <- if (identical(bare, "alpha")) 1L
                            else if (startsWith(a, "phi_")) 2L
                            else 100L
         # The copy scale carries an explicit zero level ("no coupling"), which
@@ -808,7 +871,8 @@ tulpa_joint_axis_specs_from_grid <- function(
 .joint_axis_specs_from_grid <- function(theta_grid,
                                         copy_slab = "exponential",
                                         folded_axes = NULL,
-                                        logchol = .hp_logchol_designs(theta_grid)) {
+                                        logchol = .hp_logchol_designs(theta_grid),
+                                        axis_refine = NULL) {
     if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
     theta_grid <- as.matrix(theta_grid)
     grids <- stats::setNames(
@@ -824,7 +888,8 @@ tulpa_joint_axis_specs_from_grid <- function(
     grids <- grids[vapply(grids, function(g) length(g) > 1L, logical(1))]
     if (length(grids) == 0L) return(NULL)
     specs <- .joint_axis_specs(grids, list(has_copy = TRUE), copy_slab = copy_slab,
-                               folded_axes = folded_axes)
+                               folded_axes = folded_axes,
+                               axis_refine = axis_refine)
     lapply(specs, function(sp) {
         if (.hp_is_logchol_col(.hyper_axis_bare(sp$name))) {
             sp$logchol_design <- logchol[[.hp_logchol_key(.hp_col_prefix(sp$name))]]
@@ -892,6 +957,70 @@ tulpa_joint_axis_specs_from_grid <- function(
     }
     if (!length(out)) return(NULL)
     out
+}
+
+# The joint drivers' outer-grid refinement, run once the base grid is solved:
+# the boundary / interior pass (opt in, `adaptive_grid`) and then the var-of-means
+# consistency pass, both driven by the axis specs and a `kernel_fn` closure over
+# the driver's own kernel call. Both drivers go through here so an axis refines
+# the same way whichever door its fit entered by; each supplies what is its own --
+# the specs, `kernel_fn`, `hp_fn` -- and reads the merged grid back. `axis_modes`
+# is the outer mode a placement refit was laid from (`.nl_outer_mode_axes()`),
+# which the consistency pass lays a collapsed axis's points at.
+#
+# Returns the merged `theta_grid`, `log_marginal`, `extras` and `refining_axis`,
+# the two passes' records, and the number of nodes either added.
+.joint_refine_outer_grid <- function(theta_grid, log_marginal, extras, specs,
+                                     kernel_fn, hp_fn, adaptive_grid = FALSE,
+                                     edge_thresh = 0.02, max_passes = 1L,
+                                     consistency = TRUE, axis_modes = NULL) {
+    refining_axis <- rep("", length(log_marginal))
+    adaptive_info <- NULL
+    consistency_info <- NULL
+    n_added <- 0L
+    if (isTRUE(adaptive_grid)) {
+        refined <- .hyper_adaptive_refine_pass(
+            theta_grid    = theta_grid,
+            log_marginal  = log_marginal,
+            extras        = extras,
+            refining_axis = refining_axis,
+            specs         = specs,
+            kernel_fn     = kernel_fn,
+            edge_thresh   = edge_thresh,
+            max_passes    = max_passes,
+            hp_fn         = hp_fn
+        )
+        n_added       <- n_added + length(refined$log_marginal) -
+                         length(log_marginal)
+        theta_grid    <- refined$theta_grid
+        log_marginal  <- refined$log_marginal
+        extras        <- refined$extras
+        refining_axis <- refined$refining_axis
+        adaptive_info <- refined$info
+    }
+    if (isTRUE(consistency)) {
+        cons <- .hyper_consistency_pass(
+            theta_grid    = theta_grid,
+            log_marginal  = log_marginal,
+            extras        = extras,
+            refining_axis = refining_axis,
+            specs         = specs,
+            kernel_fn     = kernel_fn,
+            hp_fn         = hp_fn,
+            axis_modes    = axis_modes
+        )
+        if (cons$n_added > 0L) {
+            theta_grid    <- cons$theta_grid
+            log_marginal  <- cons$log_marginal
+            extras        <- cons$extras
+            refining_axis <- cons$refining_axis
+            n_added       <- n_added + cons$n_added
+        }
+        consistency_info <- cons$info
+    }
+    list(theta_grid = theta_grid, log_marginal = log_marginal, extras = extras,
+         refining_axis = refining_axis, adaptive_info = adaptive_info,
+         consistency_info = consistency_info, n_added = n_added)
 }
 
 # Convert a generic `new_cells` matrix [n_new x n_axes] back to the joint

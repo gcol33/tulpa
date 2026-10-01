@@ -82,20 +82,24 @@ test_that(".joint_axis_specs reads the resolved mode, not the axis name", {
     expect_false(by$alpha$extend)
     expect_true(by$phi_y$refinable)
     expect_true(by$phi_y$extend)
-    expect_false(by$sigma$refinable)
+    # An axis the override does not name keeps the driver's own eligibility.
+    expect_true(by$sigma$refinable)
 
     # This is the field `.hyper_refinable_axes()` reads, which is what the issue
     # says was already in place and unreachable.
-    expect_equal(tulpa:::.hyper_refinable_names(specs), c("alpha", "phi_y"))
+    expect_equal(tulpa:::.hyper_refinable_names(specs),
+                 c("sigma", "alpha", "phi_y"))
 
     none <- tulpa:::.joint_axis_specs(
-        grids, cp, axis_refine = c(alpha = "none", phi_y = "none"))
+        grids, cp,
+        axis_refine = c(sigma = "none", alpha = "none", phi_y = "none"))
     expect_length(tulpa:::.hyper_refinable_names(none), 0L)
 
     # No provenance supplied -- a spec list rebuilt from an assembled grid, which
     # no refinement pass reads -- keeps the driver's own eligibility.
     bare <- tulpa:::.joint_axis_specs(grids, cp)
-    expect_equal(tulpa:::.hyper_refinable_names(bare), c("alpha", "phi_y"))
+    expect_equal(tulpa:::.hyper_refinable_names(bare),
+                 c("sigma", "alpha", "phi_y"))
 })
 
 
@@ -226,7 +230,8 @@ test_that(".joint_axis_refine_modes resolves every axis of one grid", {
                                           arm_names = "y")
     expect_equal(m[["alpha"]], "densify")
     expect_equal(m[["phi_y"]], "densify")
-    expect_equal(m[["sigma"]], "none")
+    # A field SD with no recorded provenance is the engine's own axis.
+    expect_equal(m[["sigma"]], "extend")
 
     p <- tulpa:::.joint_axis_refine_modes(grids, cp, list(arm_placed),
                                           phi_grid = NULL, arm_names = "y")
@@ -250,12 +255,29 @@ test_that(".joint_axis_refine_modes resolves every axis of one grid", {
 })
 
 
+test_that("a field SD's refinement mode follows who wrote its nodes", {
+    grids <- list(sigma = c(0.5, 1, 2))
+    cp <- list(has_copy = FALSE)
+    mode <- function(prior, grid_auto = logical(0))
+        tulpa:::.joint_axis_refine_modes(grids, cp, list(list()), prior = prior,
+                                         grid_auto = grid_auto)[["sigma"]]
+    pinned <- list(type = "icar", sigma_grid = c(0.3, 0.9, 2.7))
+    expect_equal(mode(pinned), "densify")
+    # Marked as a wrapper's default, the nodes carry no statement.
+    expect_equal(mode(pinned, c(sigma_grid = TRUE)), "extend")
+    # `place = FALSE` asks for the nodes as written, whoever made them.
+    expect_equal(mode(pinned, c(sigma_grid = FALSE)), "densify")
+    # The engine's own default axis is not a statement either.
+    expect_equal(mode(list(type = "icar")), "extend")
+})
+
+
 # --------------------------------------------------------------------------- #
 # 5. The control knob                                                          #
 # --------------------------------------------------------------------------- #
 
 test_that("control$axis_refine is validated against the fit's own axes", {
-    axes <- c("sigma", "alpha", "phi_y")
+    axes <- c("sigma", "alpha", "phi_y", "rho_car")
 
     expect_null(tulpa:::.joint_check_axis_refine(NULL, axes))
     expect_equal(tulpa:::.joint_check_axis_refine(c(alpha = "none"), axes),
@@ -265,7 +287,7 @@ test_that("control$axis_refine is validated against the fit's own axes", {
 
     # One unnamed value applies to every refinable axis, and only to those.
     blanket <- tulpa:::.joint_check_axis_refine("none", axes)
-    expect_equal(sort(names(blanket)), c("alpha", "phi_y"))
+    expect_equal(sort(names(blanket)), c("alpha", "phi_y", "sigma"))
     expect_true(all(blanket == "none"))
 
     expect_error(tulpa:::.joint_check_axis_refine(c(alpha = "widen"), axes),
@@ -274,10 +296,12 @@ test_that("control$axis_refine is validated against the fit's own axes", {
                  "does not have")
     # Asking for nodes on an axis this driver never places any on is an error,
     # not a silent no-op that leaves the caller believing it took effect.
-    expect_error(tulpa:::.joint_check_axis_refine(c(sigma = "extend"), axes),
+    expect_error(tulpa:::.joint_check_axis_refine(c(rho_car = "extend"), axes),
                  "only \"none\"")
-    expect_equal(tulpa:::.joint_check_axis_refine(c(sigma = "none"), axes),
-                 c(sigma = "none"))
+    expect_equal(tulpa:::.joint_check_axis_refine(c(rho_car = "none"), axes),
+                 c(rho_car = "none"))
+    expect_equal(tulpa:::.joint_check_axis_refine(c(sigma = "densify"), axes),
+                 c(sigma = "densify"))
     expect_error(tulpa:::.joint_check_axis_refine(c("none", "extend"), axes),
                  "named by axis")
 })
@@ -418,7 +442,8 @@ test_that("axis_refine = 'none' keeps the copy axis out of refinement entirely",
     stated <- c(0.2, 0.4, 0.6)
 
     fit <- .axr_fit(sim, stated,
-                    control = list(axis_refine = c(alpha = "none")))
+                    control = list(axis_refine = c(alpha = "none",
+                                                   sigma = "none")))
     expect_null(fit$adaptive_grid_info)
     expect_equal(length(fit$log_marginal), 9L)   # 3 sigma x 3 alpha, untouched
     expect_equal(sort(unique(as.numeric(fit$theta_grid[, "alpha"]))), stated)
@@ -457,7 +482,8 @@ test_that("a refinement slice carries the log marginal a tensor cell does", {
     # every slice (gcol33/tulpa#760).
     skip_on_cran()
     sim <- .axr_sim()
-    fit <- .axr_fit(sim, c(0.2, 0.4, 0.6))
+    fit <- .axr_fit(sim, c(0.2, 0.4, 0.6),
+                    control = list(axis_refine = c(sigma = "none")))
     tag <- fit$refining_axis
     expect_true(any(nzchar(tag)))
 
@@ -465,7 +491,8 @@ test_that("a refinement slice carries the log marginal a tensor cell does", {
     # screen drops tensor cells it may, and never a slice cell.
     tensor <- .axr_fit(sim, sort(unique(as.numeric(fit$theta_grid[, "alpha"]))),
                        control = list(adaptive_grid = FALSE, prune = FALSE,
-                                      axis_refine = c(alpha = "none")))
+                                      axis_refine = c(alpha = "none",
+                                                      sigma = "none")))
     expect_false(any(nzchar(tensor$refining_axis %||% "")))
     key <- function(g) sprintf("%.12g|%.12g", g[, "sigma"], g[, "alpha"])
     m <- match(key(fit$theta_grid), key(tensor$theta_grid))
@@ -476,4 +503,167 @@ test_that("a refinement slice carries the log marginal a tensor cell does", {
                  tensor$log_marginal[m][nzchar(tag)], tolerance = 1e-6)
     expect_equal(fit$log_marginal[!nzchar(tag) & solved],
                  tensor$log_marginal[m][!nzchar(tag) & solved], tolerance = 1e-6)
+})
+
+
+test_that("a field SD collapsed onto one node is resolved by the consistency pass", {
+    # Informative data make the field SD's posterior narrower than the placed
+    # grid's cell, so the whole axis sits on one node and its spread is a cell
+    # box. `axis_refine = "none"` is the grid as placed; the default lets the
+    # consistency pass lay nodes on the axis until its marginal is resolved.
+    skip_on_cran()
+    set.seed(1)
+    nr <- 12L
+    n  <- nr * nr
+    adj <- lapply(grid_neighbours(nr, nr), sort)
+    nn  <- vapply(adj, length, integer(1))
+    W <- matrix(0, n, n)
+    for (i in seq_len(n)) W[i, adj[[i]]] <- 1
+    ev <- eigen(diag(nn) - W, symmetric = TRUE)
+    k  <- seq_len(n - 1L)
+    u  <- as.numeric(ev$vectors[, k] %*% (rnorm(n - 1L) / sqrt(ev$values[k])))
+    X1 <- cbind(1, rnorm(n))
+    X2 <- cbind(1, rnorm(n))
+    eta1 <- as.numeric(X1 %*% c(0.2, 0.5)) + 2 * u
+    eta2 <- as.numeric(X2 %*% c(-0.3, 0.8)) + 2 * u
+    responses <- list(
+        occ = list(y = rbinom(n, 20L, plogis(eta1)), n_trials = rep(20L, n),
+                   X = X1, spatial_idx = seq_len(n), family = "binomial"),
+        cover = list(y = rnorm(n, eta2, 0.3), n_trials = rep(1L, n), X = X2,
+                     spatial_idx = seq_len(n), family = "gaussian",
+                     field_coef = list(name = "alpha",
+                                       grid = seq(0.3, 1.7, length.out = 7))))
+    prior <- list(type = "icar", n_spatial_units = n,
+                  adj_row_ptr = c(0L, cumsum(nn)),
+                  adj_col_idx = unlist(adj) - 1L, n_neighbors = nn,
+                  sigma_grid = auto_grid(c(0.5, 1, 2)))
+    fit <- function(control)
+        suppressWarnings(tulpa_nested_laplace_joint(
+            responses, prior, phi_grid = list(cover = c(0.05, 0.09, 0.15)),
+            control = c(list(diagnose_k = FALSE), control)))
+    min_ess <- tulpa:::.nl_diag("axis_sd_ess")
+
+    held <- fit(list(axis_refine = c(sigma = "none")))
+    expect_lt(held$theta_sd_ess[["sigma"]], min_ess)
+
+    resolved <- fit(list())
+    expect_gte(resolved$theta_sd_ess[["sigma"]], min_ess)
+    expect_gt(length(resolved$log_marginal), length(held$log_marginal))
+})
+
+
+# --------------------------------------------------------------------------- #
+# 7. The multi-block driver runs the same passes                               #
+# --------------------------------------------------------------------------- #
+
+test_that("a multi-block axis is eligible by its bare name, a dispersion by its prefix", {
+    elig <- tulpa:::.joint_axis_refine_eligible
+    expect_true(all(vapply(c("b1.sigma", "b2.tau", "b2.alpha", "sigma", "tau",
+                             "alpha", "phi_y"), elig, logical(1))))
+    # `phi_gp` is a block's own lengthscale; only a bare `phi_<arm>` is a
+    # dispersion.
+    expect_false(elig("b1.phi_gp"))
+    expect_false(any(vapply(c("b1.rho", "b2.rho_car", "rho"), elig, logical(1))))
+})
+
+test_that("a multi-block axis's refinement mode follows who wrote its nodes", {
+    stated <- tulpa:::.joint_multi_axis_is_stated
+    icar <- function(...) list(type = "icar", ...)
+    copy <- list(arm = "y", block = 2L, alpha_grid = c(0.2, 0.5, 0.9))
+
+    # A non-copy block lays its field SD on the registry's precision axis.
+    expect_true(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
+                       list(logical(0))))
+    expect_false(stated("b1.tau", list(icar()), list(logical(0))))
+    expect_false(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
+                        list(c(tau_grid = TRUE))))
+    # `place = FALSE` asks for the nodes as written.
+    expect_true(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
+                       list(c(tau_grid = FALSE))))
+
+    # A copy block's field SD and copy scale follow the copy convention.
+    blocks <- list(icar(), icar(sigma_grid = c(0.3, 0.9, 2.7)))
+    expect_true(stated("b2.sigma", blocks, list(logical(0), logical(0)), copy,
+                       copy_blocks = 2L))
+    expect_false(stated("b2.sigma", blocks, list(logical(0), c(sigma_grid = TRUE)),
+                        copy, copy_blocks = 2L))
+    expect_true(stated("b2.alpha", blocks, list(), copy, copy_blocks = 2L))
+    copy$alpha_grid <- auto_grid(copy$alpha_grid)
+    expect_false(stated("b2.alpha", blocks, list(), copy, copy_blocks = 2L))
+    expect_false(stated("b2.alpha", blocks, list(), list(arm = "y", block = 2L),
+                        copy_blocks = 2L))
+
+    # A dispersion reads the front door's record, as it does single-block.
+    expect_true(stated("phi_y", blocks, list(), phi_grid = list(y = c(0.1, 0.2))))
+    expect_false(stated("phi_y", blocks, list(), phi_grid = list(y = 0.1)))
+})
+
+.axr_multi_sim <- function(seed = 1L, nr = 12L) {
+    set.seed(seed)
+    n  <- nr * nr
+    adj <- lapply(grid_neighbours(nr, nr), sort)
+    nn  <- vapply(adj, length, integer(1))
+    W <- matrix(0, n, n)
+    for (i in seq_len(n)) W[i, adj[[i]]] <- 1
+    ev <- eigen(diag(nn) - W, symmetric = TRUE)
+    k  <- seq_len(n - 1L)
+    u  <- as.numeric(ev$vectors[, k] %*% (rnorm(n - 1L) / sqrt(ev$values[k])))
+    X1 <- cbind(1, rnorm(n))
+    X2 <- cbind(1, rnorm(n))
+    list(
+        responses = list(
+            occ = list(y = rbinom(n, 20L, plogis(as.numeric(X1 %*% c(0.2, 0.5)) +
+                                                     2 * u)),
+                       n_trials = rep(20L, n), X = X1, family = "binomial"),
+            cover = list(y = rnorm(n, as.numeric(X2 %*% c(-0.3, 0.8)) + 2 * u, 0.3),
+                         n_trials = rep(1L, n), X = X2, family = "gaussian")),
+        block = list(type = "icar", n_spatial_units = n,
+                     adj_row_ptr = c(0L, cumsum(nn)),
+                     adj_col_idx = unlist(adj) - 1L, n_neighbors = nn,
+                     spatial_idx = list(seq_len(n), seq_len(n))),
+        copy = list(arm = "cover", block = 1L,
+                    alpha_grid = seq(0.3, 1.7, length.out = 7)))
+}
+
+.axr_multi_fit <- function(sim, sigma_grid, control = list()) {
+    prior <- list(c(sim$block, list(sigma_grid = sigma_grid)))
+    suppressWarnings(tulpa_nested_laplace_joint(
+        sim$responses, prior, copy = sim$copy,
+        phi_grid = list(cover = c(0.05, 0.09, 0.15)),
+        control = c(list(diagnose_k = FALSE), control)))
+}
+
+test_that("a multi-block field SD collapsed onto one node is resolved by the consistency pass", {
+    skip_on_cran()
+    sim <- .axr_multi_sim()
+    min_ess <- tulpa:::.nl_diag("axis_sd_ess")
+
+    held <- .axr_multi_fit(sim, auto_grid(c(0.5, 1, 2)),
+                           list(axis_refine = c(b1.sigma = "none")))
+    expect_lt(held$theta_sd_ess[["b1.sigma"]], min_ess)
+    expect_false(any(grepl("b1.sigma", held$refining_axis, fixed = TRUE)))
+
+    resolved <- .axr_multi_fit(sim, auto_grid(c(0.5, 1, 2)))
+    expect_gte(resolved$theta_sd_ess[["b1.sigma"]], min_ess)
+    expect_gt(length(resolved$log_marginal), length(held$log_marginal))
+    expect_true(any(grepl("b1.sigma", resolved$refining_axis, fixed = TRUE)))
+    expect_false(is.null(resolved$var_of_means_consistency_info))
+    # The measure and the weights carry the appended nodes: one entry per cell.
+    n <- length(resolved$log_marginal)
+    expect_equal(nrow(resolved$theta_grid), n)
+    expect_length(resolved$weights, n)
+    expect_length(resolved$log_quad, n)
+    expect_equal(sum(resolved$weights, na.rm = TRUE), 1, tolerance = 1e-8)
+    expect_length(resolved$modes[, 1L], n)
+})
+
+test_that("a multi-block axis_refine naming an axis the fit lacks is refused", {
+    skip_on_cran()
+    sim <- .axr_multi_sim()
+    expect_error(
+        .axr_multi_fit(sim, c(0.5, 1, 2), list(axis_refine = c(sigma = "none"))),
+        "does not have")
+    expect_error(
+        .axr_multi_fit(sim, c(0.5, 1, 2), list(axis_refine = c(b1.rho = "none"))),
+        "does not have")
 })

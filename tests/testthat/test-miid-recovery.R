@@ -179,11 +179,15 @@ test_that("miid p=1 matches the scalar iid block on the inner log-marginal", {
 
   s_vals <- c(0.3, 0.45, 0.6, 0.8, 1.1)
 
+  # The iid field SD is a refinable axis and the miid log-Cholesky one is not,
+  # so the iid grid is held to the nodes written down for the cell-by-cell
+  # comparison.
   fit_iid <- suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(arm = arm),
     prior = list(list(type = "iid", n_units = G, obs_idx = list(grp),
                       sigma_grid = s_vals)),
-    control = list(max_iter = 80L, tol = 1e-7, diagnose_k = FALSE)))
+    control = list(max_iter = 80L, tol = 1e-7, diagnose_k = FALSE,
+                   axis_refine = c(b1.sigma = "none"))))
 
   # miid with p = 1 on the matched log-Cholesky grid logL11 = log(sigma): the
   # centered N(0, sigma^2) reparameterization of the non-centered iid field.
