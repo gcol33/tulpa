@@ -859,7 +859,11 @@ test_that("k_refine = 'grid' refines the integration grid driven by bad k and lo
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors, sigma_grid = c(0.2, 0.35, 0.5))
     arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0))
-    ctrl <- list(k_quality = "good", k_samples = 800L, k_max_rounds = 3L)
+    # Both grids are stated, and a stated axis is a bound that refinement
+    # densifies inside; `axis_refine = "extend"` is the per-axis opt-in to
+    # growing it past its ends, which is what a grid below the support needs.
+    ctrl <- list(k_quality = "good", k_samples = 800L, k_max_rounds = 3L,
+                 axis_refine = c(sigma = "extend", alpha = "extend"))
 
     # k_refine = "none": the band is reported but not chased -- no escalation, the
     # grid is left untouched (k_quality_rounds stays 0).
