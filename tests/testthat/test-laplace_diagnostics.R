@@ -179,10 +179,12 @@ test_that("diagnostics() returns one finite row per parameter on a small joint f
   rel <- diagnostics(fit)
   expect_s3_class(rel, "laplace_diagnostics")
   expect_equal(nrow(rel), 4L)
-  # i.i.d. draws carry no chain, so the table withholds rhat / ESS.
-  expect_setequal(names(rel), c("parameter", "mean", "sd"))
+  # i.i.d. draws carry no chain, so the table withholds rhat / ESS and reports
+  # the Monte-Carlo error of the mean instead (gcol33/tulpa#713).
+  expect_setequal(names(rel), c("parameter", "mean", "sd", "n_draws", "mcse_mean"))
   expect_true(all(is.finite(rel$mean)))
   expect_true(all(is.finite(rel$sd)))
+  expect_equal(rel$mcse_mean, rel$sd / sqrt(rel$n_draws))
 
   # The headline k-hat is finite (the pinned-alpha fit no longer declines) and
   # carries a band; grid quadrature reliability is attached.
