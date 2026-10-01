@@ -2,6 +2,7 @@ name: slow-tests
 
 # The tier holding the statistical evidence: sampler chains, multi-seed
 # recovery, interval coverage. Hours, so it runs on demand rather than on push.
+# It runs every test file carrying a skip_if_not_slow() gate.
 #
 # One job per file. The cost is concentrated in a few files, and as a single
 # job the tier reports nothing at all when one of them runs past the cap --
@@ -15,8 +16,9 @@ permissions:
   contents: read
 
 jobs:
-  # The matrix is built from the same rows run-tests.R filters on, so the jobs
-  # and the files cannot drift apart.
+  # The matrix is read off the skip_if_not_slow() gates by the same function
+  # run-tests.R selects with, so a new slow block is a job without editing a
+  # list.
   plan:
     runs-on: ubuntu-latest
     timeout-minutes: 10

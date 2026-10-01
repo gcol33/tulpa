@@ -12,7 +12,7 @@
 # Environment:
 #   TULPA_TIER        2 (recovery / equivalence) or 3 (samplers / coverage).
 #   TULPA_TEST_FILES  comma-separated file names, overriding the tier list.
-#                     The scheduled tier-3 matrix runs one file per job.
+#                     The tier-3 matrix runs one file per job.
 #   TULPA_TEST_SCOPE  "curated" (default) runs the tier list. "all-gated" runs
 #                     every file carrying a skip_on_cran() gate, which is the
 #                     measurement run the curated list is chosen from.
@@ -37,7 +37,7 @@ out_dir <- Sys.getenv("TULPA_TEST_OUT", "")
 assigned <- if (nzchar(explicit)) {
   sort(trimws(strsplit(explicit, ",", fixed = TRUE)[[1]]))
 } else if (identical(scope, "all-gated") && identical(tier, "2")) {
-  sort(setdiff(tier_gated_files("cran"), tier_files(3)))
+  tier_gated_files("cran")
 } else {
   tier_files(tier)
 }
