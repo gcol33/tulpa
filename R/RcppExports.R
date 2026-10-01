@@ -309,12 +309,12 @@ cpp_laplace_spec_test_gaussian <- function(y, X, re_idx, n_re_groups, sigma_re, 
     .Call(`_tulpa_cpp_laplace_spec_test_gaussian`, y, X, re_idx, n_re_groups, sigma_re, sigma_beta, phi, max_iter, tol, n_threads)
 }
 
-cpp_laplace_spec_test_gaussian2p <- function(y1, y2, X1, X2, offset1, offset2, re_idx, n_re_groups, sigma_re, sigma_beta, phi1, phi2, re_into_proc0 = TRUE, re_into_proc1 = TRUE, max_iter = 100L, tol = 1e-10, n_threads = 1L) {
-    .Call(`_tulpa_cpp_laplace_spec_test_gaussian2p`, y1, y2, X1, X2, offset1, offset2, re_idx, n_re_groups, sigma_re, sigma_beta, phi1, phi2, re_into_proc0, re_into_proc1, max_iter, tol, n_threads)
+cpp_laplace_spec_test_gaussian2p <- function(y1, y2, X1, X2, offset1, offset2, re_idx, n_re_groups, sigma_re, sigma_beta, phi1, phi2, re_into_proc0 = TRUE, re_into_proc1 = TRUE, max_iter = 100L, tol = 1e-10, n_threads = 1L, sparse_override = 0L) {
+    .Call(`_tulpa_cpp_laplace_spec_test_gaussian2p`, y1, y2, X1, X2, offset1, offset2, re_idx, n_re_groups, sigma_re, sigma_beta, phi1, phi2, re_into_proc0, re_into_proc1, max_iter, tol, n_threads, sparse_override)
 }
 
-cpp_laplace_spec_test_multi_re <- function(y, X, re_terms, sigma_beta, phi, max_iter = 200L, tol = 1e-12, n_threads = 1L) {
-    .Call(`_tulpa_cpp_laplace_spec_test_multi_re`, y, X, re_terms, sigma_beta, phi, max_iter, tol, n_threads)
+cpp_laplace_spec_test_multi_re <- function(y, X, re_terms, sigma_beta, phi, max_iter = 200L, tol = 1e-12, n_threads = 1L, sparse_override = 0L, store_Q = FALSE, return_re_cov = FALSE) {
+    .Call(`_tulpa_cpp_laplace_spec_test_multi_re`, y, X, re_terms, sigma_beta, phi, max_iter, tol, n_threads, sparse_override, store_Q, return_re_cov)
 }
 
 cpp_test_tri_solve <- function(Lbuf, n, b, layout, transpose) {

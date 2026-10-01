@@ -28,13 +28,21 @@
 
 namespace tulpa {
 
+// Process-wide source of SparseHessianBuilder pattern generations. Unique across
+// builders, so a generation also names a pattern to a SparseCholeskySolver
+// shared between Hessians (SparseCholeskySolver::ensure_analyzed).
+inline unsigned long long next_hessian_pattern_generation() {
+    static std::atomic<unsigned long long> counter{0};
+    return ++counter;
+}
+
 class SparseHessianBuilder {
 public:
-    int n;                          // dimension
+    int n = 0;                      // dimension
     std::vector<int> col_ptr;       // CSC column pointers
     std::vector<int> row_idx;       // CSC row indices
     std::vector<double> values;     // CSC values (zeroed each iteration)
-    int nnz;
+    int nnz = 0;
 
     // Map from (row, col) to flat index in values array, for lower triangle
     // only (symmetric, stype=-1).
@@ -90,7 +98,8 @@ public:
     std::vector<double> s2z_coupling;
     void set_s2z_coupling(std::vector<double> D) { s2z_coupling = std::move(D); }
 
-    // Bumped by every init(). The flat-write-index caches (scatter_dense_basis.h,
+    // Renewed by every init(), from a process-wide counter, so no two patterns
+    // share a generation. The flat-write-index caches (scatter_dense_basis.h,
     // scatter_indexed_cache.h) hold offsets into `values` resolved by
     // lookup(row, col), and keyed on this builder's identity plus its shape.
     // Two different patterns installed into the same builder object with equal
@@ -104,7 +113,7 @@ public:
     // Only lower triangle entries needed (row >= col).
     void init(int dim, const std::vector<std::pair<int,int>>& pattern) {
         n = dim;
-        ++pattern_generation;
+        pattern_generation = next_hessian_pattern_generation();
 
         // Deduplicate and sort by (col, row). A pair outside [0, dim) is not
         // registered: col_ptr is sized dim + 1 and the CSC build below walks
@@ -167,6 +176,63 @@ public:
             cur_col++;
         }
         entry_map = std::move(local_map);
+    }
+
+    // Install a pattern already in lower-triangle CSC form: column j holds rows
+    // >= j in strictly ascending order, its diagonal first. Same result as
+    // init() over the equivalent pair list, without the set-based dedupe. A
+    // malformed CSC is refused rather than installed, since every slot read off
+    // it would be wrong.
+    void init_csc(int dim, std::vector<int> csc_p, std::vector<int> csc_i) {
+        if (dim < 0 || static_cast<int>(csc_p.size()) != dim + 1 ||
+            csc_p[0] != 0 || csc_p[dim] != static_cast<int>(csc_i.size())) {
+            throw std::invalid_argument(
+                "SparseHessianBuilder::init_csc: inconsistent column pointers.");
+        }
+        for (int j = 0; j < dim; j++) {
+            const int b = csc_p[j], e = csc_p[j + 1];
+            if (e <= b || csc_i[b] != j) {
+                throw std::invalid_argument(
+                    "SparseHessianBuilder::init_csc: a column lacks its diagonal.");
+            }
+            for (int k = b + 1; k < e; k++) {
+                if (csc_i[k] <= csc_i[k - 1] || csc_i[k] >= dim) {
+                    throw std::invalid_argument(
+                        "SparseHessianBuilder::init_csc: rows must ascend "
+                        "strictly within [0, dim).");
+                }
+            }
+        }
+        n = dim;
+        pattern_generation = next_hessian_pattern_generation();
+        nnz = static_cast<int>(csc_i.size());
+        col_ptr = std::move(csc_p);
+        row_idx = std::move(csc_i);
+        values.assign(nnz, 0.0);
+        auto local_map = std::make_shared<EntryMap>();
+        for (int j = 0; j < n; j++) {
+            for (int k = col_ptr[j]; k < col_ptr[j + 1]; k++) {
+                local_map->emplace(std::make_pair(row_idx[k], j), k);
+            }
+        }
+        entry_map = std::move(local_map);
+        s2z_rank1.clear();
+        s2z_coupling.clear();
+    }
+
+    // Flat index of the lower-triangle entry (row, col), row >= col, or -1 off
+    // the pattern. Constant time when column `col` stores every row from col to
+    // `row` contiguously -- a dense panel, or a dense diagonal block -- and a
+    // binary search over the column otherwise; no map lookup either way.
+    int csc_slot(int row, int col) const {
+        const int b = col_ptr[col], e = col_ptr[col + 1];
+        const int k = b + (row - col);
+        if (k < e && row_idx[k] == row) return k;
+        const int* first = row_idx.data() + b;
+        const int* last  = row_idx.data() + e;
+        const int* it = std::lower_bound(first, last, row);
+        return (it != last && *it == row)
+                   ? static_cast<int>(it - row_idx.data()) : -1;
     }
 
     // Zero all values (call at start of each Newton iteration)

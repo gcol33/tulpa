@@ -1230,9 +1230,9 @@ because the draws spread 0.85 in log sigma, too far for the linear path, so it
 was not built.
 
 What remains is the solve count: 500 draws at about 4 steps against a fit of
-about 25 heavier solves. Serial, the diagnostic is 3.2x, 3.8x and 1.9x the
-fit at G = 60, 200 and 600 (after the Hessian passes below), because both
-scale with the inner solve; on four threads it is 0.9x, 1.0x and 0.5x. `k_threads` follows the
+about 25 heavier solves. Serial, the diagnostic is 3.2x, 3.1x and 1.4x the
+fit at G = 60, 200 and 600 (after the Hessian work below), because both
+scale with the inner solve; on four threads it is 0.9x, 0.8x and 0.3x. `k_threads` follows the
 fit's thread grant by default, as on the joint doors, so a serial fit keeps a
 serial diagnostic.
 
@@ -1260,10 +1260,37 @@ at G = 600; the 500-draw batch 1.92 -> 1.30 s. Nine fits across the dense and
 sparse paths (random intercepts at 60 / 600 groups, a correlated slope with a
 crossed term, ZIP, re_cov nested plain and subspace, ICAR nested Laplace at 40
 / 300 units) are `identical()` to the previous build in every field but
-`timing`. What remains O(n_x^2) per step is the zeroing and the refill read
-themselves; removing them means a sparse Hessian container on the spec path,
-which reaches the `LatentBlock::add_prior(grad, DenseMat&, ...)` interface
-every block factory writes through.
+`timing`.
+
+**A structural sparse Hessian on the spec path.** What stayed O(n_x^2) per step
+was the zeroing and the refill read themselves. A sparse spec solve over a
+`[beta | RE]` layout now assembles into a `SparseHessianBuilder` on a pattern
+read off the model's structure (`build_spec_hessian_pattern`): the full beta
+panel, which every RE row reaches; each group's q x q block; and, for crossed
+terms, the blocks of later-term groups that share an observation. The pattern
+is a function of the layout and the group indices, not of any iterate, so it is
+built once per scratch and reused by every draw of a batch and every cell of a
+grid, together with the solver's symbolic factor. `scatter_spec` is one body
+over a sink (`DenseSpecSink` writes `H[r][c]`, `SparseSpecSink` resolves a slot
+with `csc_slot`, constant time on a contiguous column and a binary search
+otherwise), and `laplace_newton_solve_ll` runs against either Hessian store
+(`DenseNewtonHessian`, `SparseNewtonHessian`); a scatter that cannot write into
+a builder compiles against the dense store alone. A `SparseCholeskySolver` now
+records which pattern its symbolic factor belongs to (`ensure_analyzed`), so
+one solver can serve the dense route's discovered pattern and a builder's
+without factorizing against the wrong one. Layouts with latent blocks keep the
+dense assembly: a block's fill comes from its own pattern callbacks, and an
+intrinsic block's sum-to-zero augmentation is a dense rank-1 term the sparse
+route would have to fold in by Woodbury, as the joint sparse driver does.
+
+Factorize 0.142 -> 0.051 ms per step at G = 600 and the 500-draw batch 1.30 ->
+0.92 s. The random-intercept fits at 600 groups and the correlated-slope fit at
+250 are `identical()` to the dense-refill build: on the same pattern CHOLMOD
+receives the same CSC arrays. The ZIP fit moves by 7.5e-15 relative, because
+its structural pattern keeps cross-process entries the numeric discovery
+dropped, which can change the fill-reducing order. Scatter (0.146 ms) and the
+line search (0.110 ms) are now the bulk of a step, and both are per-observation
+work.
 
 ### The draw budget moves the outer k-hat, not just its interval (gcol33/tulpa#631)
 

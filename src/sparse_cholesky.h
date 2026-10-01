@@ -52,6 +52,22 @@ public:
     // A must be symmetric (stype != 0) or will be treated as A+A'.
     void analyze(cholmod_sparse* A);
 
+    // Analyze A and record `pattern_tag` as the pattern the symbolic factor
+    // belongs to. Untagged analyses (above) record 0.
+    void analyze(cholmod_sparse* A, unsigned long long pattern_tag);
+
+    // Analyze A unless the live symbolic factor was built for `pattern_tag`.
+    // One solver can serve Hessians assembled on different patterns -- the
+    // pattern refill_from_dense discovers (kOwnedPatternTag) and a
+    // SparseHessianBuilder's (its pattern_generation) -- and analyzed() alone
+    // cannot tell which one the factor belongs to; factorizing a matrix against
+    // another pattern's symbolic factor is undefined. Returns analyzed().
+    bool ensure_analyzed(cholmod_sparse* A, unsigned long long pattern_tag);
+
+    // Tag of the pattern refill_from_dense owns. Builder generations count up
+    // from 1, so they never reach it.
+    static constexpr unsigned long long kOwnedPatternTag = ~0ULL;
+
     // Phase 2: Numeric factorization. Computes L such that PAP' = LL'.
     // Returns true on success, false if matrix is not positive definite.
     // A must have the same sparsity pattern as in analyze().
@@ -234,6 +250,7 @@ private:
     cholmod_sparse* A_owned_;
     bool analyzed_;
     bool factored_;
+    unsigned long long pattern_tag_ = 0;
     // One read cursor per CSC column for refill_from_dense's row-order walk.
     std::vector<int> refill_cursor_;
 };

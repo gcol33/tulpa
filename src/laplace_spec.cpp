@@ -45,6 +45,7 @@
 #include "nested_laplace_grid.h"   // nl_check_positive
 #include "omp_threads.h"          // tulpa_parallel_for (serial route at one thread)
 #include "sparse_cholesky.h"
+#include "sparse_hessian.h"         // SparseHessianBuilder (sparse spec assembly)
 #include <Rcpp.h>
 #include "lkj_chol_helpers.h"
 #include <algorithm>
@@ -532,6 +533,44 @@ inline void compute_eta_spec(
     });
 }
 
+// Where scatter_spec writes. Both sinks take lower-triangle (row >= col)
+// entries.
+//
+// DenseSpecSink writes into the row-major dense Hessian; a block's prior goes
+// through its dense add_prior.
+struct DenseSpecSink {
+    DenseMat& H;
+    void add(int r, int c, double v) { H[r][c] += v; }
+    void add_block_prior(const LatentBlock& blk, DenseVec& grad,
+                         const Rcpp::NumericVector& x, int k_grid) {
+        if (blk.add_prior) blk.add_prior(grad, H, x, k_grid);
+    }
+};
+
+// SparseSpecSink writes into a SparseHessianBuilder, resolving each entry's slot
+// through csc_slot; a nonzero write off the pattern is counted for the
+// enclosing HessianPatternGuard. A block's prior goes through add_prior_sparse.
+struct SparseSpecSink {
+    SparseHessianBuilder& H;
+    void add(int r, int c, double v) {
+        const int k = H.csc_slot(r, c);
+        if (k >= 0) {
+            H.values[k] += v;
+        } else if (v != 0.0) {
+            record_hessian_pattern_drop();
+        }
+    }
+    void add_block_prior(const LatentBlock& blk, DenseVec& grad,
+                         const Rcpp::NumericVector& x, int k_grid) {
+        if (blk.add_prior_sparse) blk.add_prior_sparse(H, grad, x, k_grid);
+    }
+};
+
+inline DenseSpecSink spec_sink(DenseMat& H) { return DenseSpecSink{H}; }
+inline SparseSpecSink spec_sink(SparseHessianBuilder& H) {
+    return SparseSpecSink{H};
+}
+
 // Per-observation gradient + neg-Hessian assembled into the latent gradient
 // and Hessian in (beta_0..beta_{np-1}, re_term_0..re_term_{K-1}) space.
 // eta_weights_fn writes
@@ -540,12 +579,15 @@ inline void compute_eta_spec(
 // At the end the prior contribution is added: beta ridge + per-term RE
 // precision Q_t (computed once from σ_t and L_t).
 //
-// `grad` and `H` arrive zeroed (the Newton loop's NewtonScratch::zero_for_iter
-// runs immediately before every scatter) and only H's LOWER triangle is
-// assembled: every reader of the spec Hessian -- the dense Cholesky, the CHOLMOD
-// refill, the store_Q export -- reads the lower triangle alone, so mirroring it
-// into the upper half would be an O(n_x^2) strided pass per Newton step whose
-// result nothing reads.
+// `grad` and `H` arrive zeroed (the Newton loop zeroes its Hessian store
+// immediately before every scatter) and only H's LOWER triangle is assembled:
+// every reader of the spec Hessian -- the dense Cholesky, CHOLMOD, the store_Q
+// export -- reads the lower triangle alone.
+//
+// `H` is a sink (DenseSpecSink / SparseSpecSink below), so one assembly serves
+// the dense scratch Hessian and a SparseHessianBuilder on the pattern
+// build_spec_hessian_pattern derives.
+template <typename Sink>
 inline void scatter_spec(
     const std::vector<double>& params,
     const std::vector<double>& eta_flat,
@@ -560,7 +602,7 @@ inline void scatter_spec(
     const Rcpp::NumericVector* x_latent,
     double /*tau_re_legacy*/,
     DenseVec& grad,
-    DenseMat& H,
+    Sink H,
     int /*n_threads*/,
     const BetaPrior* beta_prior
 ) {
@@ -665,17 +707,15 @@ inline void scatter_spec(
                     if (k == l) {
                         for (int j = 0; j < pk.p; j++) {
                             const double w_xj = w_kl * xk[j];
-                            double* row_j = H[off_k + j];
                             for (int m = 0; m <= j; m++) {
-                                row_j[off_l + m] += w_xj * xl[m];
+                                H.add(off_k + j, off_l + m, w_xj * xl[m]);
                             }
                         }
                     } else {
                         for (int j = 0; j < pk.p; j++) {
                             const double w_xj = w_kl * xk[j];
-                            double* row_j = H[off_k + j];
                             for (int m = 0; m < pl.p; m++) {
-                                row_j[off_l + m] += w_xj * xl[m];
+                                H.add(off_k + j, off_l + m, w_xj * xl[m]);
                             }
                         }
                     }
@@ -706,7 +746,7 @@ inline void scatter_spec(
             for (int c = 0; c < q; c++) {
                 const double zc = z_term[t][c];
                 if (zc == 0.0) continue;
-                double* row = H[re_row_base + c];
+                const int r = re_row_base + c;
                 for (int l = 0; l < np; l++) {
                     const ProcessData& pl = data.processes[l];
                     if (pl.p == 0) continue;
@@ -717,7 +757,7 @@ inline void scatter_spec(
                     const double zc_w = zc * w_l;
                     const int off_l = L.latent_offset[l];
                     for (int m = 0; m < pl.p; m++) {
-                        row[off_l + m] += zc_w * xl[m];
+                        H.add(r, off_l + m, zc_w * xl[m]);
                     }
                 }
             }
@@ -749,21 +789,21 @@ inline void scatter_spec(
                     for (int c = 0; c < qt; c++) {
                         const double zc = z_term[t][c];
                         if (zc == 0.0) continue;
-                        double* row = H[row_base_t + c];
+                        const int r = row_base_t + c;
                         if (t == tp) {
                             // A term reads one group per observation, so
                             // tp == t carries gp == g: the block sits on the
                             // diagonal of the H lower triangle and cp <= c.
                             for (int cp = 0; cp <= c; cp++) {
-                                row[row_base_tp + cp] +=
-                                    zc * z_term[tp][cp] * s_hess;
+                                H.add(r, row_base_tp + cp,
+                                      zc * z_term[tp][cp] * s_hess);
                             }
                         } else {
                             // Different term, tp < t: we are below the
                             // diagonal block by construction.
                             for (int cp = 0; cp < qtp; cp++) {
-                                row[row_base_tp + cp] +=
-                                    zc * z_term[tp][cp] * s_hess;
+                                H.add(r, row_base_tp + cp,
+                                      zc * z_term[tp][cp] * s_hess);
                             }
                         }
                     }
@@ -787,7 +827,7 @@ inline void scatter_spec(
         //   H[idx_c, re_row]          += a_c * z * s_hess
         //   H[idx_c, idx_d] (lower)   += a_c * a_d * s_hess  (every pair, incl.
         //                                the diagonal and cross-node SPDE terms)
-        // The block prior Q(theta) is added once after symmetrisation below.
+        // The block prior Q(theta) is added once, after the observation loop.
         if (L.n_blocks > 0) {
             blk_contrib.clear();
             for (int b = 0; b < L.n_blocks; b++) {
@@ -839,7 +879,6 @@ inline void scatter_spec(
                 grad[idx_c] += a_c * s_grad;
 
                 // block x beta (block row > beta col -> lower triangle)
-                double* row_c = H[idx_c];
                 for (int l = 0; l < np; l++) {
                     const ProcessData& pl = data.processes[l];
                     if (pl.p == 0) continue;
@@ -848,7 +887,9 @@ inline void scatter_spec(
                     const double* xl = pl.X_flat.data() + (std::ptrdiff_t)i * pl.p;
                     const double a_w = a_c * w_l;
                     const int off_l = L.latent_offset[l];
-                    for (int m = 0; m < pl.p; m++) row_c[off_l + m] += a_w * xl[m];
+                    for (int m = 0; m < pl.p; m++) {
+                        H.add(idx_c, off_l + m, a_w * xl[m]);
+                    }
                 }
 
                 if (s_hess != 0.0) {
@@ -861,7 +902,7 @@ inline void scatter_spec(
                         for (int cc = 0; cc < qn; cc++) {
                             const double zc = z_term[t][cc];
                             if (zc == 0.0) continue;
-                            row_c[re_row_base + cc] += a_c * zc * s_hess;
+                            H.add(idx_c, re_row_base + cc, a_c * zc * s_hess);
                         }
                     }
                     // block x block over every contribution pair (route to the
@@ -871,7 +912,7 @@ inline void scatter_spec(
                         const int    idx_d = blk_contrib[d].first;
                         if (idx_d > idx_c) continue;   // upper handled when c,d swap
                         const double v = a_c * blk_contrib[d].second * s_hess;
-                        row_c[idx_d] += v;
+                        H.add(idx_c, idx_d, v);
                     }
                 }
             }
@@ -892,7 +933,7 @@ inline void scatter_spec(
                 const double tau  = beta_prior ? beta_prior->tau_at(bj)  : tau_scalar;
                 const double mean = beta_prior ? beta_prior->mean_at(bj) : 0.0;
                 grad[off_k + j] += -tau * (params[L.beta_start[k] + j] - mean);
-                H[off_k + j][off_k + j] += tau;
+                H.add(off_k + j, off_k + j, tau);
             }
         }
     }
@@ -925,29 +966,124 @@ inline void scatter_spec(
                     }
                     grad[base_lat + c] += -acc;
                 }
-                // H += Q on the q×q sub-block
+                // H += Q on the lower triangle of the q x q sub-block
                 for (int c = 0; c < q; c++) {
-                    for (int cp = 0; cp < q; cp++) {
-                        H[base_lat + c][base_lat + cp]
-                            += Q_flat[(size_t)c * q + cp];
+                    for (int cp = 0; cp <= c; cp++) {
+                        H.add(base_lat + c, base_lat + cp,
+                              Q_flat[(size_t)c * q + cp]);
                     }
                 }
             }
         }
     }
 
-    // Block prior Q(theta): added AFTER symmetrisation so the block factory's
-    // full-symmetric write (e.g. add_icar_prior fills both adjacency triangles
-    // and the diagonal) is not clobbered by the lower->upper copy. add_prior
-    // reads the current field from x_latent (gathered in compacted order, so
-    // x_latent[block.start + s] holds unit s's value) and scatters -Q.field
-    // into grad and +Q into H at the same compacted offsets.
+    // Block prior Q(theta). The block reads the current field from x_latent
+    // (gathered in compacted order, so x_latent[block.start + s] holds unit s's
+    // value) and scatters -Q.field into grad and +Q into H at the same compacted
+    // offsets.
     if (L.n_blocks > 0 && x_latent != nullptr) {
         for (int b = 0; b < L.n_blocks; b++) {
-            const LatentBlock& blk = (*L.blocks)[b];
-            if (blk.add_prior) blk.add_prior(grad, H, *x_latent, k_grid);
+            H.add_block_prior((*L.blocks)[b], grad, *x_latent, k_grid);
         }
     }
+}
+
+// Structural pattern of the spec Hessian over a [beta | RE] latent layout, as
+// lower-triangle CSC: every entry scatter_spec can write, independent of the
+// values at any iterate.
+//
+//   * beta x beta: the full lower triangle. A beta column also takes every RE
+//     row, since an observation in group g of any term couples b_g with every
+//     fixed effect. Each beta column is therefore contiguous from its diagonal
+//     to n_x - 1.
+//   * RE term t, group g: the lower triangle of its q_t x q_t block (data and
+//     prior), and, for a later term t' > t, the q_t' x q_t block of every group
+//     of t' that shares an observation with g.
+//
+// Latent blocks are not described (their fill comes from each block's own
+// pattern callbacks, which this layout does not carry), so a layout holding any
+// returns false, as does one whose RE spans do not tile [P, n_x).
+inline bool build_spec_hessian_pattern(
+    const SpecLatentLayout& L, const ModelData& data, int N,
+    std::vector<int>& csc_p, std::vector<int>& csc_i
+) {
+    if (L.n_blocks != 0) return false;
+    const int n_x = L.n_x;
+    const int P = L.latent_offset[L.np];
+    const int K = static_cast<int>(L.re_terms.size());
+    {
+        int running = P;
+        for (const ReTermSlot& s : L.re_terms) {
+            if (s.latent_offset != running) return false;
+            running += s.n_groups * s.n_coefs;
+        }
+        if (running != n_x) return false;
+    }
+
+    // Groups of later terms sharing an observation with each (term, group),
+    // stored as the first latent row of the partner group.
+    std::vector<int> group_base(K + 1, 0);
+    for (int t = 0; t < K; t++)
+        group_base[t + 1] = group_base[t] + L.re_terms[t].n_groups;
+    std::vector<std::vector<int>> partners(K > 1 ? group_base[K] : 0);
+    if (K > 1) {
+        const int n_terms_unified = (data.n_re_terms > 0) ? data.n_re_terms : 1;
+        std::vector<int> g_term(K, -1);
+        for (int i = 0; i < N; i++) {
+            for (int t = 0; t < K; t++) {
+                int g = re_group_at(data, i, t, n_terms_unified);
+                if (g >= L.re_terms[t].n_groups) g = -1;
+                g_term[t] = g;
+            }
+            for (int tp = 0; tp < K; tp++) {
+                if (g_term[tp] < 0) continue;
+                std::vector<int>& out = partners[group_base[tp] + g_term[tp]];
+                for (int t = tp + 1; t < K; t++) {
+                    if (g_term[t] < 0) continue;
+                    const ReTermSlot& s = L.re_terms[t];
+                    out.push_back(s.latent_offset + g_term[t] * s.n_coefs);
+                }
+            }
+        }
+        for (std::vector<int>& v : partners) {
+            std::sort(v.begin(), v.end());
+            v.erase(std::unique(v.begin(), v.end()), v.end());
+        }
+    }
+    // A partner's coefficient count, read off its first row.
+    auto partner_q = [&](int row_base) {
+        int t = K - 1;
+        while (t > 0 && L.re_terms[t].latent_offset > row_base) t--;
+        return L.re_terms[t].n_coefs;
+    };
+
+    csc_p.assign(n_x + 1, 0);
+    csc_i.clear();
+    for (int c = 0; c < P; c++) {
+        csc_p[c] = static_cast<int>(csc_i.size());
+        for (int r = c; r < n_x; r++) csc_i.push_back(r);
+    }
+    for (int t = 0; t < K; t++) {
+        const ReTermSlot& s = L.re_terms[t];
+        const int q = s.n_coefs;
+        for (int g = 0; g < s.n_groups; g++) {
+            const int base = s.latent_offset + g * q;
+            const std::vector<int>* part =
+                (K > 1) ? &partners[group_base[t] + g] : nullptr;
+            for (int cp = 0; cp < q; cp++) {
+                csc_p[base + cp] = static_cast<int>(csc_i.size());
+                for (int c = cp; c < q; c++) csc_i.push_back(base + c);
+                if (part) {
+                    for (int row_base : *part) {
+                        const int qp = partner_q(row_base);
+                        for (int c = 0; c < qp; c++) csc_i.push_back(row_base + c);
+                    }
+                }
+            }
+        }
+    }
+    csc_p[n_x] = static_cast<int>(csc_i.size());
+    return true;
 }
 
 // The spec path's data log-likelihood, threaded the way compute_eta_spec and
@@ -1147,15 +1283,17 @@ LaplaceResult spec_inner_solve(
                          eta_flat, n_threads);
         for (int i = 0; i < n_eta; i++) eta_out[i] = eta_flat[i];
     };
+    // Generic over the Hessian store: the dense scratch matrix, or the
+    // structural-pattern builder below.
     auto scatter_grad_hess = [&](const Rcpp::NumericVector& x,
                                  const Rcpp::NumericVector& eta,
-                                 DenseVec& grad, DenseMat& H) {
+                                 DenseVec& grad, auto& H) {
         scatter_compacted_latent(L, x.begin(), params_work);
         for (int i = 0; i < n_eta; i++) eta_flat[i] = eta[i];
         // x is the compacted latent the block callbacks index -> pass &x as x_latent.
         scatter_spec(params_work, eta_flat, re_group_1based, L,
                      data, layout, spec, response_data, N, k_grid,
-                     &x, 1.0, grad, H, n_threads, beta_prior);
+                     &x, 1.0, grad, spec_sink(H), n_threads, beta_prior);
     };
     auto center_effects_fn = [&](Rcpp::NumericVector& x) {
         for (int b = 0; b < L.n_blocks; b++) {
@@ -1215,12 +1353,31 @@ LaplaceResult spec_inner_solve(
                                                   layout, params_work);
     }
 
+    // A sparse solve of a [beta | RE] layout assembles straight into a builder
+    // on the structural pattern, so a Newton step never zeroes or reads an
+    // n_x x n_x matrix. The scratch keeps the installed pattern; a solve on the
+    // same structure (every draw of a batch, every cell of a grid) finds it
+    // equal and reuses it, together with the solver's symbolic factor. A layout
+    // with latent blocks assembles densely.
+    SparseHessianBuilder* sparse_H = nullptr;
+    if (newton_use_sparse(n_x, sparse_override)) {
+        std::vector<int> csc_p, csc_i;
+        if (build_spec_hessian_pattern(L, data, N, csc_p, csc_i)) {
+            SparseHessianBuilder& B = scratch.H_sparse;
+            if (B.n != n_x || B.col_ptr != csc_p || B.row_idx != csc_i) {
+                B.init_csc(n_x, std::move(csc_p), std::move(csc_i));
+            }
+            sparse_H = &B;
+        }
+    }
+
     return laplace_newton_solve_ll(
         n_eta, n_x, max_iter, tol,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
         log_lik_fn, scratch, x_init, solver, store_Q, inv_block_layout,
         sparse_override, &feasible_start_coords,
-        compute_skew, skew_probe_idx, &curvature3, debias, cila, cila_cell_key
+        compute_skew, skew_probe_idx, &curvature3, debias, cila, cila_cell_key,
+        sparse_H
     );
 }
 
@@ -1695,7 +1852,8 @@ Rcpp::List cpp_laplace_spec_test_gaussian2p(
     bool re_into_proc1 = true,
     int max_iter = 100,
     double tol = 1e-10,
-    int n_threads = 1
+    int n_threads = 1,
+    int sparse_override = 0
 ) {
     int N = y1.size();
     int p1 = X1.ncol();
@@ -1769,14 +1927,10 @@ Rcpp::List cpp_laplace_spec_test_gaussian2p(
     std::vector<int> re_group_1based;
     if (has_re) re_group_1based.assign(re_idx.begin(), re_idx.end());
 
-    int n_iter = 0;
-    int converged = 0;
-    double log_det_Q = 0.0;
-    double log_marginal = 0.0;
-    tulpa::laplace_mode_spec_dense_impl(
-        data, layout, params, re_group_1based,
-        max_iter, tol, n_threads,
-        &n_iter, &converged, &log_det_Q, &log_marginal
+    const tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
+        data, layout, params, re_group_1based, max_iter, tol, n_threads,
+        /*blocks=*/nullptr, /*k_grid=*/0, /*beta_prior=*/nullptr,
+        /*return_re_cov=*/false, sparse_override
     );
 
     int n_x = p1 + p2 + (has_re ? n_re_groups : 0);
@@ -1790,10 +1944,10 @@ Rcpp::List cpp_laplace_spec_test_gaussian2p(
     }
     return Rcpp::List::create(
         Rcpp::Named("mode")         = mode,
-        Rcpp::Named("log_det_Q")    = log_det_Q,
-        Rcpp::Named("log_marginal") = log_marginal,
-        Rcpp::Named("n_iter")       = n_iter,
-        Rcpp::Named("converged")    = (converged != 0)
+        Rcpp::Named("log_det_Q")    = res.log_det_Q,
+        Rcpp::Named("log_marginal") = res.log_marginal,
+        Rcpp::Named("n_iter")       = res.n_iter,
+        Rcpp::Named("converged")    = res.converged
     );
 }
 
@@ -1802,7 +1956,9 @@ Rcpp::List cpp_laplace_spec_test_gaussian2p(
 // (group_idx, n_groups, n_coefs, sigma vector, correlated, optional slope
 // matrix, optional chol_raw vector) and runs the spec-Laplace path on a
 // Gaussian likelihood. Returns the mode in the canonical concatenation
-// order [beta | term_0 | term_1 | ...].
+// order [beta | term_0 | term_1 | ...]. `sparse_override` forces the dense
+// (< 0) or sparse (> 0) Newton path; `store_Q` adds the exported lower-CSC
+// Hessian and `return_re_cov` the per-group marginal covariance blocks.
 // ============================================================================
 
 // [[Rcpp::export]]
@@ -1814,7 +1970,10 @@ Rcpp::List cpp_laplace_spec_test_multi_re(
     double phi,
     int max_iter = 200,
     double tol = 1e-12,
-    int n_threads = 1
+    int n_threads = 1,
+    int sparse_override = 0,
+    bool store_Q = false,
+    bool return_re_cov = false
 ) {
     // Each element of re_terms is a list with fields:
     //   group_idx   IntegerVector length N, 1-based
@@ -2005,15 +2164,11 @@ Rcpp::List cpp_laplace_spec_test_multi_re(
         }
     }
 
-    int n_iter = 0;
-    int converged = 0;
-    double log_det_Q = 0.0;
-    double log_marginal = 0.0;
     std::vector<int> empty_group;
-    tulpa::laplace_mode_spec_dense_impl(
-        data, layout, params, empty_group,
-        max_iter, tol, n_threads,
-        &n_iter, &converged, &log_det_Q, &log_marginal
+    const tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
+        data, layout, params, empty_group, max_iter, tol, n_threads,
+        /*blocks=*/nullptr, /*k_grid=*/0, /*beta_prior=*/nullptr,
+        return_re_cov, sparse_override, store_Q
     );
 
     // Build mode = [beta | term_0_block | term_1_block | ...]
@@ -2031,9 +2186,13 @@ Rcpp::List cpp_laplace_spec_test_multi_re(
     }
     return Rcpp::List::create(
         Rcpp::Named("mode")         = mode,
-        Rcpp::Named("log_det_Q")    = log_det_Q,
-        Rcpp::Named("log_marginal") = log_marginal,
-        Rcpp::Named("n_iter")       = n_iter,
-        Rcpp::Named("converged")    = (converged != 0)
+        Rcpp::Named("log_det_Q")    = res.log_det_Q,
+        Rcpp::Named("log_marginal") = res.log_marginal,
+        Rcpp::Named("n_iter")       = res.n_iter,
+        Rcpp::Named("converged")    = res.converged,
+        Rcpp::Named("Q_p")          = Rcpp::wrap(res.Q_csc_p),
+        Rcpp::Named("Q_i")          = Rcpp::wrap(res.Q_csc_i),
+        Rcpp::Named("Q_x")          = Rcpp::wrap(res.Q_csc_x),
+        Rcpp::Named("re_cov")       = Rcpp::wrap(res.re_cov_flat)
     );
 }

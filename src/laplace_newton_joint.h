@@ -773,9 +773,7 @@ LaplaceResult laplace_newton_solve_joint_ll(
     } else {
         for (int j = 0; j < n_x; j++) x[j] = 0.0;
     }
-    bool use_sparse = (sparse_override == 0)
-                          ? (n_x >= SPARSE_THRESHOLD)
-                          : (sparse_override > 0);
+    const bool use_sparse = newton_use_sparse(n_x, sparse_override);
 
     SparseCholeskySolver local_solver;
     SparseCholeskySolver& sparse_solver = shared_solver ? *shared_solver : local_solver;

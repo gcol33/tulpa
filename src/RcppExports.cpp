@@ -1176,8 +1176,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_laplace_spec_test_gaussian2p
-Rcpp::List cpp_laplace_spec_test_gaussian2p(Rcpp::NumericVector y1, Rcpp::NumericVector y2, Rcpp::NumericMatrix X1, Rcpp::NumericMatrix X2, Rcpp::NumericVector offset1, Rcpp::NumericVector offset2, Rcpp::IntegerVector re_idx, int n_re_groups, double sigma_re, double sigma_beta, double phi1, double phi2, bool re_into_proc0, bool re_into_proc1, int max_iter, double tol, int n_threads);
-RcppExport SEXP _tulpa_cpp_laplace_spec_test_gaussian2p(SEXP y1SEXP, SEXP y2SEXP, SEXP X1SEXP, SEXP X2SEXP, SEXP offset1SEXP, SEXP offset2SEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP sigma_betaSEXP, SEXP phi1SEXP, SEXP phi2SEXP, SEXP re_into_proc0SEXP, SEXP re_into_proc1SEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP) {
+Rcpp::List cpp_laplace_spec_test_gaussian2p(Rcpp::NumericVector y1, Rcpp::NumericVector y2, Rcpp::NumericMatrix X1, Rcpp::NumericMatrix X2, Rcpp::NumericVector offset1, Rcpp::NumericVector offset2, Rcpp::IntegerVector re_idx, int n_re_groups, double sigma_re, double sigma_beta, double phi1, double phi2, bool re_into_proc0, bool re_into_proc1, int max_iter, double tol, int n_threads, int sparse_override);
+RcppExport SEXP _tulpa_cpp_laplace_spec_test_gaussian2p(SEXP y1SEXP, SEXP y2SEXP, SEXP X1SEXP, SEXP X2SEXP, SEXP offset1SEXP, SEXP offset2SEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP sigma_betaSEXP, SEXP phi1SEXP, SEXP phi2SEXP, SEXP re_into_proc0SEXP, SEXP re_into_proc1SEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP sparse_overrideSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1198,13 +1198,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
     Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
     Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_laplace_spec_test_gaussian2p(y1, y2, X1, X2, offset1, offset2, re_idx, n_re_groups, sigma_re, sigma_beta, phi1, phi2, re_into_proc0, re_into_proc1, max_iter, tol, n_threads));
+    Rcpp::traits::input_parameter< int >::type sparse_override(sparse_overrideSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_laplace_spec_test_gaussian2p(y1, y2, X1, X2, offset1, offset2, re_idx, n_re_groups, sigma_re, sigma_beta, phi1, phi2, re_into_proc0, re_into_proc1, max_iter, tol, n_threads, sparse_override));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_laplace_spec_test_multi_re
-Rcpp::List cpp_laplace_spec_test_multi_re(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::List re_terms, double sigma_beta, double phi, int max_iter, double tol, int n_threads);
-RcppExport SEXP _tulpa_cpp_laplace_spec_test_multi_re(SEXP ySEXP, SEXP XSEXP, SEXP re_termsSEXP, SEXP sigma_betaSEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP) {
+Rcpp::List cpp_laplace_spec_test_multi_re(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::List re_terms, double sigma_beta, double phi, int max_iter, double tol, int n_threads, int sparse_override, bool store_Q, bool return_re_cov);
+RcppExport SEXP _tulpa_cpp_laplace_spec_test_multi_re(SEXP ySEXP, SEXP XSEXP, SEXP re_termsSEXP, SEXP sigma_betaSEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP sparse_overrideSEXP, SEXP store_QSEXP, SEXP return_re_covSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1216,7 +1217,10 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
     Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
     Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_laplace_spec_test_multi_re(y, X, re_terms, sigma_beta, phi, max_iter, tol, n_threads));
+    Rcpp::traits::input_parameter< int >::type sparse_override(sparse_overrideSEXP);
+    Rcpp::traits::input_parameter< bool >::type store_Q(store_QSEXP);
+    Rcpp::traits::input_parameter< bool >::type return_re_cov(return_re_covSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_laplace_spec_test_multi_re(y, X, re_terms, sigma_beta, phi, max_iter, tol, n_threads, sparse_override, store_Q, return_re_cov));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -5098,8 +5102,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_profile_read", (DL_FUNC) &_tulpa_cpp_profile_read, 0},
     {"_tulpa_cpp_s2z_densify_max", (DL_FUNC) &_tulpa_cpp_s2z_densify_max, 0},
     {"_tulpa_cpp_laplace_spec_test_gaussian", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian, 10},
-    {"_tulpa_cpp_laplace_spec_test_gaussian2p", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian2p, 17},
-    {"_tulpa_cpp_laplace_spec_test_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_multi_re, 8},
+    {"_tulpa_cpp_laplace_spec_test_gaussian2p", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian2p, 18},
+    {"_tulpa_cpp_laplace_spec_test_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_multi_re, 11},
     {"_tulpa_cpp_test_tri_solve", (DL_FUNC) &_tulpa_cpp_test_tri_solve, 5},
     {"_tulpa_cpp_test_chol_factor", (DL_FUNC) &_tulpa_cpp_test_chol_factor, 3},
     {"_tulpa_cpp_test_nngp_moments", (DL_FUNC) &_tulpa_cpp_test_nngp_moments, 7},

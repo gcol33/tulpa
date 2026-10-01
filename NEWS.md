@@ -96,6 +96,16 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   factorization 0.142 ms instead of 0.251 ms; every mode, log-marginal and
   Hessian is bit-identical (gcol33/tulpa#934).
 
+* At 200 or more latents, the same solve assembles its Hessian into a sparse
+  matrix on the model's structural pattern instead of a dense one, so a Newton
+  step no longer touches an n x n matrix at all. The pattern is built once and
+  reused across the draws of the Pareto-k batch and the cells of a grid. At 602
+  latents the factorization takes 0.051 ms instead of 0.142 ms per step, and
+  the 500-draw diagnostic batch 0.92 s instead of 1.30 s; the serial
+  diagnostic of `tulpa_re_cov_nested()` costs 1.4x the fit there (from 1.9x).
+  Models with spatial or temporal latent blocks keep the dense assembly
+  (gcol33/tulpa#934).
+
 On that Calluna fit (LiSC, 32 threads) the engine defaults take 25.3 min and
 20 full solves in the final grid besides the 79-evaluation mode-find; the
 engine behind the 78 EVA fits took 198.85 min on a 22-cell grid for an

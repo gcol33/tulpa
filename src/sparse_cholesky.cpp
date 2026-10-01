@@ -200,6 +200,18 @@ cholmod_sparse* SparseCholeskySolver::refill_from_dense(
 }
 
 void SparseCholeskySolver::analyze(cholmod_sparse* A) {
+    analyze(A, 0ULL);
+}
+
+bool SparseCholeskySolver::ensure_analyzed(cholmod_sparse* A,
+                                           unsigned long long pattern_tag) {
+    if (!analyzed_ || pattern_tag_ != pattern_tag) analyze(A, pattern_tag);
+    return analyzed_;
+}
+
+void SparseCholeskySolver::analyze(cholmod_sparse* A,
+                                   unsigned long long pattern_tag) {
+    pattern_tag_ = pattern_tag;
     if (factor_) {
         M_cholmod_free_factor(&factor_, &common_);
         factor_ = nullptr;

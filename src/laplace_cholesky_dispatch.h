@@ -12,6 +12,7 @@
 
 #include "laplace_cholesky.h"
 #include "sparse_cholesky.h"
+#include "sparse_hessian.h"
 #include <Rcpp.h>
 #include <cmath>
 #include <limits>
@@ -66,8 +67,9 @@ inline bool dispatch_factor_solve_ridged(
         cholmod_sparse* A = sparse_solver.refill_from_dense(
             H, n_x, SPARSE_DROP_TOL_DISPATCH);
         if (A) {
-            if (!sparse_solver.analyzed()) sparse_solver.analyze(A);
-            if (sparse_solver.factorize(A)) {
+            if (sparse_solver.ensure_analyzed(
+                    A, SparseCholeskySolver::kOwnedPatternTag) &&
+                sparse_solver.factorize(A)) {
                 ok = sparse_solver.solve(grad.data(), delta.data(), n_x);
                 for (int j = 0; ok && j < n_x; j++) {
                     if (!std::isfinite(delta[j])) { ok = false; break; }
@@ -121,8 +123,9 @@ inline bool dispatch_factor_log_det_ridged(
         cholmod_sparse* A = sparse_solver.refill_from_dense(
             H, n_x, SPARSE_DROP_TOL_DISPATCH);
         if (A) {
-            if (!sparse_solver.analyzed()) sparse_solver.analyze(A);
-            sparse_ok = sparse_solver.factorize(A);
+            sparse_ok = sparse_solver.ensure_analyzed(
+                            A, SparseCholeskySolver::kOwnedPatternTag) &&
+                        sparse_solver.factorize(A);
             if (sparse_ok) log_det_out = sparse_solver.log_determinant();
         }
     }
@@ -167,6 +170,110 @@ inline bool dispatch_factor_log_det(
     add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
     return dispatch_factor_log_det_ridged(H, n_x, sparse_solver, prefer_sparse,
                                           dense_scratch, log_det_out);
+}
+
+// ---- The same dispatch over a Hessian assembled into a SparseHessianBuilder.
+//
+// The builder holds only the structural nonzeros, so a Newton step neither
+// zeroes nor reads an n x n matrix. CHOLMOD factors the builder's own CSC
+// arrays in place; the symbolic factor is tied to the builder's pattern
+// generation, so a solver shared with the dense route above re-analyzes when the
+// pattern it last saw was the other one. Where CHOLMOD fails the builder is
+// expanded into `dense_fallback` and the dense Cholesky runs on it, which is the
+// fallback the dense route takes on the same matrix.
+
+// Expand the builder's lower triangle into `H` (whose upper triangle is left
+// zero, as no reader of a Newton Hessian touches it).
+inline void sparse_builder_to_dense_lower(const SparseHessianBuilder& B,
+                                          DenseMat& H) {
+    H.zero();
+    for (int j = 0; j < B.n; j++) {
+        for (int k = B.col_ptr[j]; k < B.col_ptr[j + 1]; k++) {
+            H[B.row_idx[k]][j] = B.values[k];
+        }
+    }
+}
+
+// The builder's lower triangle as CSC arrays under dense_to_csc_lower_drop_raw's
+// rule: every diagonal kept, an off-diagonal kept when |value| > drop_tol.
+inline void sparse_builder_to_csc_lower_drop(
+    const SparseHessianBuilder& B, double drop_tol,
+    std::vector<int>& csc_p, std::vector<int>& csc_i, std::vector<double>& csc_x
+) {
+    csc_p.assign(B.n + 1, 0);
+    csc_i.clear();
+    csc_x.clear();
+    csc_i.reserve(B.nnz);
+    csc_x.reserve(B.nnz);
+    for (int j = 0; j < B.n; j++) {
+        csc_p[j] = static_cast<int>(csc_i.size());
+        for (int k = B.col_ptr[j]; k < B.col_ptr[j + 1]; k++) {
+            const int r = B.row_idx[k];
+            const double v = B.values[k];
+            if (r == j || std::fabs(v) > drop_tol) {
+                csc_i.push_back(r);
+                csc_x.push_back(v);
+            }
+        }
+    }
+    csc_p[B.n] = static_cast<int>(csc_i.size());
+}
+
+// Factor a builder that ALREADY carries its diagonal ridge and solve
+// H delta = grad. Counterpart of dispatch_factor_solve_ridged.
+inline bool dispatch_factor_solve_sparse_ridged(
+    SparseHessianBuilder& H, const DenseVec& grad, std::vector<double>& delta,
+    int n_x, SparseCholeskySolver& sparse_solver,
+    DenseMat& dense_fallback, DenseCholeskyScratch& dense_scratch
+) {
+    cholmod_sparse A = H.as_cholmod(&sparse_solver.common());
+    bool ok = sparse_solver.ensure_analyzed(&A, H.pattern_generation) &&
+              sparse_solver.factorize(&A) &&
+              sparse_solver.solve(grad.data(), delta.data(), n_x);
+    for (int j = 0; ok && j < n_x; j++) {
+        if (!std::isfinite(delta[j])) ok = false;
+    }
+    if (!ok) {
+        sparse_builder_to_dense_lower(H, dense_fallback);
+        double log_det = 0.0;
+        ok = dense_cholesky_solve_raw(dense_fallback, grad, n_x, dense_scratch,
+                                      delta, log_det);
+    }
+    return ok;
+}
+
+inline bool dispatch_factor_solve_sparse(
+    SparseHessianBuilder& H, const DenseVec& grad, std::vector<double>& delta,
+    int n_x, SparseCholeskySolver& sparse_solver,
+    DenseMat& dense_fallback, DenseCholeskyScratch& dense_scratch
+) {
+    H.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
+    return dispatch_factor_solve_sparse_ridged(H, grad, delta, n_x,
+                                               sparse_solver, dense_fallback,
+                                               dense_scratch);
+}
+
+// Ridge, factor and return log|H| from the builder. Counterpart of
+// dispatch_factor_log_det, with the same finiteness contract.
+inline bool dispatch_factor_log_det_sparse(
+    SparseHessianBuilder& H, int n_x, SparseCholeskySolver& sparse_solver,
+    DenseMat& dense_fallback, DenseCholeskyScratch& dense_scratch,
+    double& log_det_out
+) {
+    H.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
+    log_det_out = 0.0;
+    cholmod_sparse A = H.as_cholmod(&sparse_solver.common());
+    const bool sparse_ok =
+        sparse_solver.ensure_analyzed(&A, H.pattern_generation) &&
+        sparse_solver.factorize(&A);
+    if (sparse_ok) {
+        log_det_out = sparse_solver.log_determinant();
+    } else {
+        sparse_builder_to_dense_lower(H, dense_fallback);
+        dense_cholesky_log_det_raw(dense_fallback, n_x, dense_scratch,
+                                   log_det_out);
+    }
+    return std::isfinite(log_det_out);
 }
 
 } // namespace tulpa
