@@ -1,5 +1,24 @@
-# tulpa 0.7.1
+# tulpa 0.7.0
 
+This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
+
+* The nested-Laplace outer grid is screened by default on
+  `tulpa_nested_laplace_joint()` and `tulpa_nested_laplace()`
+  (`control$prune = FALSE` switches it off), held to a 1% bound on the
+  posterior mass the dropped cells may carry and repaired rather than refit
+  when it misses (gcol33/tulpa#925).
+* Every movable outer axis, the copy scale included, is placed from the one
+  outer mode in one pass, and a placement refit reuses that mode
+  (gcol33/tulpa#925).
+* The var-of-means consistency pass lays its slices through the row of the
+  outer mode, as a ladder one SD apart run out until the box rule reads the
+  tails, and a parabola is no longer read across another axis's slice.
+  Summaries of a fit whose pinned axis sits far from its mode move: on the
+  full 25 km Calluna `occu_cover` fit the copy scale went from 0.274 to the
+  joint mode's 0.227 and the positive arm's intercept from -2.378 to -2.312
+  (gcol33/tulpa#925).
+* A solve that runs alone holds the fit's whole thread grant
+  (gcol33/tulpa#924).
 * `tulpa_nested_laplace_joint()` runs the same outer-grid refinement on a
   multi-block prior as on a single block: the var-of-means consistency pass,
   the opt-in boundary / interior pass and `control$axis_refine`, through one
@@ -39,28 +58,6 @@
   `refining = fit$refining_axis`. The subspace debias and the corrected
   integrated Laplace re-solve the fit's own cells, refinement nodes included
   (gcol33/tulpa#927).
-
-# tulpa 0.7.0
-
-This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
-
-* The nested-Laplace outer grid is screened by default on
-  `tulpa_nested_laplace_joint()` and `tulpa_nested_laplace()`
-  (`control$prune = FALSE` switches it off), held to a 1% bound on the
-  posterior mass the dropped cells may carry and repaired rather than refit
-  when it misses (gcol33/tulpa#925).
-* Every movable outer axis, the copy scale included, is placed from the one
-  outer mode in one pass, and a placement refit reuses that mode
-  (gcol33/tulpa#925).
-* The var-of-means consistency pass lays its slices through the row of the
-  outer mode, as a ladder one SD apart run out until the box rule reads the
-  tails, and a parabola is no longer read across another axis's slice.
-  Summaries of a fit whose pinned axis sits far from its mode move: on the
-  full 25 km Calluna `occu_cover` fit the copy scale went from 0.274 to the
-  joint mode's 0.227 and the positive arm's intercept from -2.378 to -2.312
-  (gcol33/tulpa#925).
-* A solve that runs alone holds the fit's whole thread grant
-  (gcol33/tulpa#924).
 
 On that Calluna fit (LiSC, 32 threads) the engine defaults take 25.3 min and
 20 full solves in the final grid besides the 79-evaluation mode-find; the
