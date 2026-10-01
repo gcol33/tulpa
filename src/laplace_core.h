@@ -34,6 +34,9 @@ struct LaplaceResult {
   double log_marginal = -std::numeric_limits<double>::infinity();
   int n_iter = 0;                   // Newton iterations used
   bool converged = false;           // Convergence flag
+  // Whether the factor left live for back-solves is the CHOLMOD one in the
+  // caller's solver (true) or the dense one in its scratch (false).
+  bool sparse_factor_live = false;
 
   // Achieved residual: max_j |d(log p(y|x,theta) + log p(x|theta))/dx_j| at the
   // reported mode. The solve's convergence flag says the STOPPING RULE was met;

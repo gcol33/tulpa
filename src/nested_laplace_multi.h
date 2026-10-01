@@ -407,9 +407,8 @@ inline Rcpp::List run_multi_block_nested_laplace(
         // the calibrated variance falls out directly.
         if (want_var && std::isfinite(res.log_marginal) &&
             static_cast<std::size_t>(k + 1) * N <= fitted_var_buf.size()) {
-            const bool use_sparse = newton_use_sparse(n_x, 0);
             const bool used_sparse_factor =
-                use_sparse && solver && solver->factored();
+                res.sparse_factor_live && solver != nullptr;
             std::vector<double> a(n_x, 0.0), z(n_x, 0.0), zwork;
             if (!used_sparse_factor) zwork.assign(n_x, 0.0);
             std::vector<std::pair<int,double>> a_multi;

@@ -19,6 +19,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <type_traits>
@@ -33,12 +34,21 @@ namespace tulpa {
 
 constexpr int SPARSE_THRESHOLD = 200;
 
+// The crossover for a solve that assembles into a structural-pattern builder
+// (laplace_newton_solve_ll's `sparse_H`). That route neither zeroes nor reads a
+// dense matrix, so CHOLMOD overtakes the dense Cholesky far earlier than on the
+// dense route's discovered pattern: on a one-term random-intercept spec solve,
+// timed per fit with its CHOLMOD analysis included, dense / sparse were 33 / 40
+// us at n_x = 32, 90 / 67 at 62, 410 / 130 at 122 and 1703 / 210 at 192.
+constexpr int STRUCTURAL_SPARSE_THRESHOLD = 50;
+
 // Whether a Newton solve of dimension n_x factors sparsely. sparse_override:
 // 0 = auto (size threshold), > 0 = force sparse, < 0 = force dense. The override
 // lets the test suite drive one problem through both factorization paths for a
 // dense == sparse equivalence gate, mirroring the joint path's force_sparse.
-inline bool newton_use_sparse(int n_x, int sparse_override) {
-    return (sparse_override == 0) ? (n_x >= SPARSE_THRESHOLD)
+inline bool newton_use_sparse(int n_x, int sparse_override,
+                              int threshold = SPARSE_THRESHOLD) {
+    return (sparse_override == 0) ? (n_x >= threshold)
                                   : (sparse_override > 0);
 }
 // SPARSE_DROP_TOL lives in laplace_cholesky_dispatch.h as SPARSE_DROP_TOL_DISPATCH.
@@ -211,9 +221,9 @@ LaplaceResult laplace_newton_solve_ll(
     // randomized-QMC shifts.
     std::uint64_t cila_cell_key = 0,
     // A builder carrying the structural pattern of this problem's Hessian. When
-    // set, the solve factors sparsely, and `scatter_grad_hess` accepts a
-    // SparseHessianBuilder&, the Hessian is assembled into it instead of the
-    // dense scratch.H. The scatter must write only inside the pattern; a write
+    // set, the solve factors sparsely from STRUCTURAL_SPARSE_THRESHOLD on, and
+    // where `scatter_grad_hess` accepts a SparseHessianBuilder&, the Hessian is
+    // assembled into it instead of the dense scratch.H. The scatter must write only inside the pattern; a write
     // off it is counted for the enclosing HessianPatternGuard.
     SparseHessianBuilder* sparse_H = nullptr
 ) {
@@ -230,7 +240,9 @@ LaplaceResult laplace_newton_solve_ll(
     } else {
         for (int j = 0; j < n_x; j++) x[j] = 0.0;
     }
-    const bool use_sparse = newton_use_sparse(n_x, sparse_override);
+    const bool use_sparse = newton_use_sparse(
+        n_x, sparse_override,
+        sparse_H ? STRUCTURAL_SPARSE_THRESHOLD : SPARSE_THRESHOLD);
 
     SparseCholeskySolver local_solver;
     SparseCholeskySolver& sparse_solver = shared_solver ? *shared_solver : local_solver;
@@ -240,10 +252,48 @@ LaplaceResult laplace_newton_solve_ll(
     // scatter, etc.) to inherit the per-thread context. The closures and the
     // log-lik functor own their own threading.
 
+    // The last objective evaluation: the linear predictor it ran at, that
+    // predictor's data log-likelihood, and the iterate it came from. An
+    // accepted line-search trial is the next iterate, so the refresh that
+    // follows reads its eta from here instead of recomputing it, and the
+    // log-marginal after the loop reads the converged iterate's log-likelihood
+    // the last trial already paid for. Both are keyed on bits (the iterate for
+    // eta, eta for the log-likelihood), so a hit returns exactly what the call
+    // would have; compute_eta and log_lik_fn are functions of their arguments.
+    std::vector<double> ll_memo_eta;
+    std::vector<double> eta_memo_x;
+    double ll_memo_value = 0.0;
+    auto log_lik_memo = [&](const Rcpp::NumericVector& eta) -> double {
+        const std::size_t n = static_cast<std::size_t>(eta.size());
+        if (n > 0 && ll_memo_eta.size() == n &&
+            std::memcmp(ll_memo_eta.data(), eta.begin(),
+                        n * sizeof(double)) == 0) {
+            return ll_memo_value;
+        }
+        ll_memo_value = log_lik_fn(eta);
+        ll_memo_eta.assign(eta.begin(), eta.end());
+        eta_memo_x.clear();   // eval_objective re-keys it to its own iterate
+        return ll_memo_value;
+    };
+
     auto eval_objective = [&](const Rcpp::NumericVector& xv) -> double {
-        return eval_penalized_log_lik_ll(
-            xv, compute_eta, compute_log_prior, log_lik_fn, scratch.eta_tmp
+        const double obj = eval_penalized_log_lik_ll(
+            xv, compute_eta, compute_log_prior, log_lik_memo, scratch.eta_tmp
         );
+        eta_memo_x.assign(xv.begin(), xv.end());
+        return obj;
+    };
+    auto eta_from_memo = [&](const Rcpp::NumericVector& xv,
+                             Rcpp::NumericVector& eta_out) -> bool {
+        const std::size_t nx = static_cast<std::size_t>(xv.size());
+        if (nx == 0 || eta_memo_x.size() != nx ||
+            ll_memo_eta.size() != static_cast<std::size_t>(eta_out.size()) ||
+            std::memcmp(eta_memo_x.data(), xv.begin(),
+                        nx * sizeof(double)) != 0) {
+            return false;
+        }
+        std::copy(ll_memo_eta.begin(), ll_memo_eta.end(), eta_out.begin());
+        return true;
     };
 
     double obj_current = -1e300;
@@ -271,7 +321,7 @@ LaplaceResult laplace_newton_solve_ll(
         // line_search inside the shared newton_step, and the final pass below.
         auto refresh_grad_hess = [&]() {
             { TULPA_PROFILE_PHASE(PHASE_ETA);
-              compute_eta(x, scratch.eta); }
+              if (!eta_from_memo(x, scratch.eta)) compute_eta(x, scratch.eta); }
             store.zero();
             { TULPA_PROFILE_PHASE(PHASE_SCATTER);
               scatter_grad_hess(x, scratch.eta, scratch.grad, store.hessian()); }
@@ -327,6 +377,7 @@ LaplaceResult laplace_newton_solve_ll(
         // Nothing after the loop refactorizes, so this reading of which factor is
         // live serves both the inverse-block extraction and the skew probes below.
         const bool used_sparse_factor = store.sparse_live();
+        result.sparse_factor_live = used_sparse_factor;
 
         if (result.hessian_pd_at_mode) {
             result.newton_decrement = newton_decrement_live(
@@ -354,7 +405,7 @@ LaplaceResult laplace_newton_solve_ll(
 
         double log_lik, log_prior;
         { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
-          log_lik = log_lik_fn(scratch.eta);
+          log_lik = log_lik_memo(scratch.eta);
           log_prior = compute_log_prior(x, scratch.eta); }
 
         result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);

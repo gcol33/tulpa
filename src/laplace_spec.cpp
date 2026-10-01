@@ -375,23 +375,39 @@ inline int re_group_at(
 // data.re_slope_matrices[t] at column c-1. When the term has no intercept
 // (lme4 `(0 + x | g)`) every coef 0..q_t-1 is a slope read at column c.
 // Returns 0 when the term is intercept-only or the index is out of range.
-inline double slope_at(
-    const ModelData& data,
-    int t,
-    int i,
-    int c        // coefficient index in 0..q_t-1
-) {
-    const bool has_int = re_term_has_intercept(data, t);
-    if (has_int && c <= 0) return 1.0; // implicit intercept
-    const int col = has_int ? (c - 1) : c;
-    if (col < 0) return 0.0;
-    if ((int)data.re_slope_matrices.size() <= t) return 0.0;
+//
+// TermDesign resolves term t's intercept flag and slope matrix once, so a pass
+// over the observations reads z_{t,i,c} with one branch and one load.
+struct TermDesign {
+    bool has_int = true;
+    const double* M = nullptr;   // N x n_slopes row-major, or null
+    int n_slopes = 0;
+
+    double z(int i, int c) const {
+        if (has_int && c <= 0) return 1.0; // implicit intercept
+        const int col = has_int ? (c - 1) : c;
+        if (col < 0 || M == nullptr || col >= n_slopes) return 0.0;
+        return M[(size_t)i * n_slopes + col];
+    }
+};
+
+inline TermDesign term_design(const ModelData& data, int t) {
+    TermDesign d;
+    d.has_int = re_term_has_intercept(data, t);
+    if ((int)data.re_slope_matrices.size() <= t) return d;
     const auto& M = data.re_slope_matrices[t];
-    if (M.empty()) return 0.0;
-    if ((int)data.re_n_slopes.size() <= t) return 0.0;
+    if (M.empty() || (int)data.re_n_slopes.size() <= t) return d;
     const int n_slopes = data.re_n_slopes[t];
-    if (n_slopes <= 0 || col >= n_slopes) return 0.0;
-    return M[(size_t)i * n_slopes + col];
+    if (n_slopes <= 0) return d;
+    d.M = M.data();
+    d.n_slopes = n_slopes;
+    return d;
+}
+
+inline std::vector<TermDesign> term_designs(const ModelData& data, int K) {
+    std::vector<TermDesign> out(K);
+    for (int t = 0; t < K; t++) out[t] = term_design(data, t);
+    return out;
 }
 
 // True iff the RE contributes to process k's linear predictor. Falls back
@@ -410,6 +426,7 @@ inline double obs_re_contrib(
     const ModelData& data,
     const std::vector<double>& params,
     const SpecLatentLayout& L,
+    const std::vector<TermDesign>& designs,
     int i,
     int n_terms_unified,
     bool& used_out
@@ -425,10 +442,10 @@ inline double obs_re_contrib(
         const int q = s.n_coefs;
         const int base = s.param_start + g * q;
         // z_{t,i,c} = 1 for the implicit intercept (when present) and the
-        // slope design value otherwise; slope_at() encodes both cases.
+        // slope design value otherwise; TermDesign::z encodes both cases.
         double contrib = 0.0;
         for (int c = 0; c < q; c++) {
-            contrib += params[base + c] * slope_at(data, t, i, c);
+            contrib += params[base + c] * designs[t].z(i, c);
         }
         re_eff += contrib;
         used_out = true;
@@ -454,6 +471,10 @@ inline void compute_eta_spec(
 ) {
     const int np = L.np;
     const int n_terms_unified = (data.n_re_terms > 0) ? data.n_re_terms : 1;
+    const std::vector<TermDesign> designs =
+        term_designs(data, static_cast<int>(L.re_terms.size()));
+    std::vector<char> shared(np);
+    for (int k = 0; k < np; k++) shared[k] = re_shared_into(data, k);
 
     // Per-block grid-mixing coefficient d_fac(k_grid) (BYM2/IID reparam; 1.0
     // for plain indexed blocks). Constant across observations, so cache once.
@@ -470,7 +491,8 @@ inline void compute_eta_spec(
     // bit-identical.
     tulpa_parallel_for(n_threads, N, [&](int i) {
         bool re_used = false;
-        double re_eff = obs_re_contrib(data, params, L, i, n_terms_unified, re_used);
+        double re_eff = obs_re_contrib(data, params, L, designs, i,
+                                       n_terms_unified, re_used);
 
         // Block contribution to this obs's predictor (single-process: blocks
         // are guarded to np == 1 at the impl entry, so they enter process 0).
@@ -526,7 +548,7 @@ inline void compute_eta_spec(
                 for (int j = 0; j < proc.p; j++) e += row[j] * beta[j];
             }
             if (!proc.offset.empty()) e += proc.offset[i];
-            if (re_used && re_shared_into(data, k)) e += re_eff;
+            if (re_used && shared[k]) e += re_eff;
             if (k == 0) e += blk_eff;
             eta_flat[(std::ptrdiff_t)i * np + k] = e;
         }
@@ -612,6 +634,9 @@ inline void scatter_spec(
     std::vector<double> w_l_vec(np, 0.0);
     const int K = (int)L.re_terms.size();
     const int n_terms_unified = (data.n_re_terms > 0) ? data.n_re_terms : 1;
+    const std::vector<TermDesign> designs = term_designs(data, K);
+    std::vector<char> shared(np);
+    for (int k = 0; k < np; k++) shared[k] = re_shared_into(data, k);
 
     // Per-obs caches reused across the obs loop.
     std::vector<int>     g_term(K, -1);    // 0-based group at obs i for each term
@@ -657,7 +682,7 @@ inline void scatter_spec(
             q_term[t] = s.n_coefs;
             if (g < 0) continue;
             for (int c = 0; c < s.n_coefs; c++) {
-                z_term[t][c] = slope_at(data, t, i, c);
+                z_term[t][c] = designs[t].z(i, c);
             }
         }
 
@@ -674,7 +699,7 @@ inline void scatter_spec(
                 double* gbeta = &grad[L.latent_offset[k]];
                 for (int j = 0; j < proc.p; j++) gbeta[j] += row[j] * gk;
             }
-            if (re_shared_into(data, k)) s_grad += gk;
+            if (shared[k]) s_grad += gk;
         }
         for (int t = 0; t < K; t++) {
             int g = g_term[t]; if (g < 0) continue;
@@ -733,7 +758,7 @@ inline void scatter_spec(
         for (int l = 0; l < np; l++) {
             double w_l = 0.0;
             for (int k = 0; k < np; k++) {
-                if (!re_shared_into(data, k)) continue;
+                if (!shared[k]) continue;
                 w_l += neg_hess_eta[(size_t)k * np + l];
             }
             w_l_vec[l] = w_l;
@@ -769,9 +794,9 @@ inline void scatter_spec(
         // Compute s_hess once per obs.
         double s_hess = 0.0;
         for (int k = 0; k < np; k++) {
-            if (!re_shared_into(data, k)) continue;
+            if (!shared[k]) continue;
             for (int l = 0; l < np; l++) {
-                if (!re_shared_into(data, l)) continue;
+                if (!shared[l]) continue;
                 s_hess += neg_hess_eta[(size_t)k * np + l];
             }
         }
@@ -1353,14 +1378,14 @@ LaplaceResult spec_inner_solve(
                                                   layout, params_work);
     }
 
-    // A sparse solve of a [beta | RE] layout assembles straight into a builder
-    // on the structural pattern, so a Newton step never zeroes or reads an
-    // n_x x n_x matrix. The scratch keeps the installed pattern; a solve on the
-    // same structure (every draw of a batch, every cell of a grid) finds it
-    // equal and reuses it, together with the solver's symbolic factor. A layout
-    // with latent blocks assembles densely.
+    // From STRUCTURAL_SPARSE_THRESHOLD latents on, a [beta | RE] layout
+    // assembles straight into a builder on the structural pattern, so a Newton
+    // step never zeroes or reads an n_x x n_x matrix. The scratch keeps the
+    // installed pattern; a solve on the same structure (every draw of a batch,
+    // every cell of a grid) finds it equal and reuses it, together with the
+    // solver's symbolic factor. A layout with latent blocks assembles densely.
     SparseHessianBuilder* sparse_H = nullptr;
-    if (newton_use_sparse(n_x, sparse_override)) {
+    if (newton_use_sparse(n_x, sparse_override, STRUCTURAL_SPARSE_THRESHOLD)) {
         std::vector<int> csc_p, csc_i;
         if (build_spec_hessian_pattern(L, data, N, csc_p, csc_i)) {
             SparseHessianBuilder& B = scratch.H_sparse;

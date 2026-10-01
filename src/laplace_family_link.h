@@ -738,13 +738,16 @@ inline GradHess grad_hess_for_family_core(
     double y, int n_trials, double eta, FamilyKind kind, const FamilyLink* fl,
     double phi, double phi2
 ) {
+    // One inverse link serves the score and the weight; the arithmetic is
+    // that of grad_log_lik_* / neg_hess_log_lik_*, so the values match them
+    // bit for bit.
     if (kind == FamilyKind::BINOMIAL) {
-        return {grad_log_lik_binomial((int)y, n_trials, eta),
-                neg_hess_log_lik_binomial((int)y, n_trials, eta)};
+        const double p = binomial_mean_logit(eta);
+        return {(int)y - n_trials * p, n_trials * p * (1.0 - p)};
     }
     if (kind == FamilyKind::POISSON) {
-        return {grad_log_lik_poisson((int)y, eta),
-                neg_hess_log_lik_poisson((int)y, eta)};
+        const double mu = tulpa_linalg::safe_exp(eta);
+        return {(int)y - mu, mu};
     }
     if (kind == FamilyKind::NEG_BINOMIAL_2) {
         return {grad_log_lik_negbin((int)y, eta, phi),

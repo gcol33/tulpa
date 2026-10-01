@@ -498,12 +498,21 @@ test_that("a tiny-binary RE-covariance k-hat is a proposal scale, not a skewed p
   expect_lt(median(ka), 2.0)
   expect_lt(median(kb), median(fpb) / 10)
 
-  # 3. The regime is not uniformly benign, and the report says which fits are
-  #    which: at least one tiny-binary fit is beyond any Gaussian's reach and
-  #    keeps a k-hat past the escalation threshold, while the well-identified
-  #    arm never needs the mixture or the rescue.
-  expect_gt(max(kb), .nl_diag("k_usable"))
-  expect_true(all(vapply(c(fa, fb), function(f)
-    f$pareto_k_proposal_source %in% c("mode_hessian", "moment_matched"),
-    logical(1))))
+  # 3. The report says which proposal each k-hat belongs to. Every tiny-binary
+  #    placement is past the escalation threshold; a fit whose k-hat comes from
+  #    the moment-matched proposal improved on its first pass, and one left on
+  #    the mode-Hessian proposal reports that first pass unchanged. Whether a
+  #    given seed's rescue succeeds is not asserted: these modes sit on a ridge
+  #    where the slope variance collapses (log sigma_2 near -11), and a
+  #    rounding-level change in the inner solve moves the stopping point along
+  #    it by ~0.4, enough to turn seed 203's rescue from failing (k 68) to
+  #    succeeding (k 0.66) with its per-draw log-marginals unchanged to 2e-12.
+  expect_true(all(fpb > .nl_diag("k_usable")))
+  src <- vapply(c(fa, fb), function(f) f$pareto_k_proposal_source, "")
+  expect_true(all(src %in% c("mode_hessian", "moment_matched")))
+  k_all  <- c(ka, kb)
+  fp_all <- c(fpa, fpb)
+  mm <- src == "moment_matched"
+  expect_true(all(k_all[mm] < fp_all[mm]))
+  expect_identical(k_all[!mm], fp_all[!mm])
 })

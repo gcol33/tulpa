@@ -2,7 +2,9 @@
 # Hessian straight into a SparseHessianBuilder on the structural pattern
 # (build_spec_hessian_pattern); a dense one assembles into the row-major scratch
 # matrix. The two are one Newton solve on two containers, so a problem driven
-# through both (sparse_override = +1 / -1) has to give the same answer.
+# through both (sparse_override = +1 / -1) has to give the same answer. The
+# structural route is chosen from 50 latents on (STRUCTURAL_SPARSE_THRESHOLD),
+# below the dense route's 200.
 
 sparse_asm_fixture <- function(seed, G1, G2, per = 3L, empty = 2L) {
   set.seed(seed)
@@ -63,11 +65,21 @@ test_that("sparse and dense assembly agree at a sparse size", {
   expect_identical(sparse_asm_fit(fx, 0L), sp)
 })
 
+test_that("the structural route is chosen below the dense route's threshold", {
+  fx <- sparse_asm_fixture(15L, G1 = 30L, G2 = 6L)
+  expect_gte(fx$n_x, 50L)
+  expect_lt(fx$n_x, 200L)
+  sp <- sparse_asm_fit(fx, 1L)
+  expect_identical(sparse_asm_fit(fx, 0L), sp)
+  expect_assemblies_agree(sparse_asm_fit(fx, -1L), sp, fx$n_x)
+})
+
 test_that("sparse assembly forced at a dense size agrees with the dense one", {
   fx <- sparse_asm_fixture(12L, G1 = 14L, G2 = 5L)
-  expect_lt(fx$n_x, 200L)
-  expect_assemblies_agree(sparse_asm_fit(fx, -1L), sparse_asm_fit(fx, 1L),
-                          fx$n_x)
+  expect_lt(fx$n_x, 50L)
+  dn <- sparse_asm_fit(fx, -1L)
+  expect_identical(sparse_asm_fit(fx, 0L), dn)
+  expect_assemblies_agree(dn, sparse_asm_fit(fx, 1L), fx$n_x)
 })
 
 test_that("two processes sharing a random effect assemble identically", {

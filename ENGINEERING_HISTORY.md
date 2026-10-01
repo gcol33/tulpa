@@ -1230,9 +1230,10 @@ because the draws spread 0.85 in log sigma, too far for the linear path, so it
 was not built.
 
 What remains is the solve count: 500 draws at about 4 steps against a fit of
-about 25 heavier solves. Serial, the diagnostic is 3.2x, 3.1x and 1.4x the
-fit at G = 60, 200 and 600 (after the Hessian work below), because both
-scale with the inner solve; on four threads it is 0.9x, 0.8x and 0.3x. `k_threads` follows the
+about 25 heavier solves. Serial, the diagnostic is 2.1x, 3.2x and 1.1x the
+fit at G = 60, 200 and 600 (after the Hessian and per-observation work below,
+which speeds up the fit too), because both scale with the inner solve; on four
+threads it is 0.6x, 0.9x and 0.3x. `k_threads` follows the
 fit's thread grant by default, as on the joint doors, so a serial fit keeps a
 serial diagnostic.
 
@@ -1291,6 +1292,39 @@ its structural pattern keeps cross-process entries the numeric discovery
 dropped, which can change the fill-reducing order. Scatter (0.146 ms) and the
 line search (0.110 ms) are now the bulk of a step, and both are per-observation
 work.
+
+**The per-observation work.** Temporary rdtsc counters around the spec
+closures (500 draws, G = 600, N = 1800) put the binomial weights call at ~210
+cycles per observation and the log-likelihood at ~195 per evaluation, against
+`std::exp` at 80 and `std::log` at 51 cycles on this toolchain (UCRT). The
+weights paid two `exp`: `grad_log_lik_binomial` and `neg_hess_log_lik_binomial`
+each recomputed the inverse logit, out of line in `laplace_likelihoods.cpp`.
+They are now inline over one `binomial_mean_logit`, and
+`grad_hess_for_family_core` reads it once for both (Poisson likewise reads one
+`safe_exp`); weights 1124 -> 699 cycles per observation per draw. The Newton
+loop now keeps its last objective evaluation: the accepted line-search trial
+is the next iterate, so the refresh copies that trial's eta (keyed on the
+iterate's bits) and the log-marginal reads the converged iterate's
+log-likelihood (keyed on eta's bits) instead of evaluating either again;
+compute_eta 249 -> 124 and log-likelihood 1052 -> 878 cycles per observation
+per draw. Hoisting each RE term's design (`TermDesign`) and the per-process
+sharing flags out of the observation loop was worth 3%. All of this is
+bit-identical on the nine reference fixtures.
+
+With the assembly cheap, CHOLMOD overtakes the dense Cholesky far below
+`SPARSE_THRESHOLD`: a one-term random-intercept spec solve, timed per fit with
+its analysis included, measured dense / sparse 33 / 40 us at n_x = 32, 90 / 67
+at 62, 410 / 130 at 122 and 1703 / 210 at 192. A solve carrying a structural
+pattern therefore goes sparse from `STRUCTURAL_SPARSE_THRESHOLD` = 50, and
+`LaplaceResult::sparse_factor_live` reports which factor a back-solve should
+read, where `nested_laplace_multi.h` used to re-derive it from the size rule.
+Fits between 50 and 200 latents move at rounding level (at most 7e-13 relative
+on the fixtures). The 500-draw batch is 0.70 s at G = 600 and 0.080 s at
+G = 60. What remains is `exp` and `log` themselves, about 65% of a solve's
+closure time: the weights' `exp` could be shared with the line search's
+evaluation at the same eta through a fused likelihood callback, which is an
+exported `LikelihoodSpec` slot and an ABI bump, and a faster `exp` / `log`
+would change every fit's values in the last bits.
 
 ### The draw budget moves the outer k-hat, not just its interval (gcol33/tulpa#631)
 
