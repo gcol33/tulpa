@@ -1309,12 +1309,15 @@
   out <- c(out, paste0(
     "hyperparameter intervals read with the '", req, "' within-cell ",
     "construction rather than the default '", dflt, "': ",
-    if (identical(req, "chord"))
-      paste0("each cell's mass placed at its own coordinate rather than spread ",
-             "over its box, which is the wider read of the two")
-    else
+    switch(req,
+      chord = paste0("each cell's mass placed at its own coordinate rather ",
+                     "than spread over its box, which is the wider read of ",
+                     "the two"),
+      log_quadratic = paste0("each row's node log densities joined by ",
+                             "quadratics and continued past the outer node, ",
+                             "on the rows that resolve their own conditional"),
       paste0("the same cell masses spread over the cells' own boxes, so an ",
-             "endpoint is resolved to within one box"),
+             "endpoint is resolved to within one box")),
     " -- see `outer_grid_h_over_sd` for how wide a box is on each axis"))
   if (length(fell)) {
     nm <- if (length(ax) >= max(fell)) ax[fell] else as.character(fell)

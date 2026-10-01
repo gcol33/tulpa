@@ -18,7 +18,10 @@ hyperparameter row and the latent row of a draw come from the same cell.
 \item{n}{Number of draws when \code{cells} is \code{NULL} (default 1000); ignored
 otherwise.}
 
-\item{within}{Within-cell construction, \code{"box_uniform"} or \code{"chord"}.
+\item{within}{Within-cell construction, \code{"box_uniform"}, \code{"log_quadratic"}
+or \code{"chord"}. Under \code{"log_quadratic"} a draw in a cell is the point its
+row's reconstructed CDF reaches inside the share of that CDF the cell's
+mass owns, so the draws in one cell stay around it.
 \code{NULL} (default) takes the one the fit was read with
 (\code{fit$within_cell_requested}).}
 }

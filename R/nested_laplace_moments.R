@@ -614,15 +614,25 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   n <- nrow(tg)
   slice <- .hyper_slice_home(refining, n) == colnames(tg)[j]
   if (!any(slice)) return(NULL)
-  others <- tg[, -j, drop = FALSE]
-  key <- if (ncol(others) == 0L) rep("", n) else
-    do.call(paste, c(lapply(seq_len(ncol(others)),
-                            function(k) sprintf("%.17g", others[, k])),
-                     sep = "|"))
+  key <- .nl_axis_row_id(tg, j)
   retiled <- unique(key[slice])
   row <- match(key, retiled)
   row[is.na(row)] <- 0L
   list(row = as.integer(row), base = !slice)
+}
+
+# The row of the grid each cell lies on along axis `j`: one integer per cell,
+# shared by the cells whose coordinates on every OTHER axis agree, so a row is
+# the line through the grid that the axis's conditional density lives on. A
+# single-axis grid is one row.
+.nl_axis_row_id <- function(tg, j) {
+  if (is.null(dim(tg))) return(rep(1L, length(tg)))
+  others <- tg[, -j, drop = FALSE]
+  if (ncol(others) == 0L) return(rep(1L, nrow(tg)))
+  key <- do.call(paste, c(lapply(seq_len(ncol(others)),
+                                 function(k) sprintf("%.17g", others[, k])),
+                          sep = "|"))
+  match(key, unique(key))
 }
 
 # The cells of `rows` (`.nl_axis_cell_rows()`) that `keep` selects, NULL when
@@ -668,7 +678,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     e[length(e)] <- max(e[length(e)], eb[length(eb)])
     place(sel, lev, e)
   }
-  list(lo = lo, hi = hi, coord = pt$coord, declined = pt$declined)
+  list(lo = lo, hi = hi, tr = pt$tr, coord = pt$coord, declined = pt$declined)
 }
 
 # Quantiles of a piecewise-uniform density on a tiling: box `k` owns
@@ -983,7 +993,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 #    width, which is the same reason its `outside` policy clamps.
 #  * `moment_rule` -- never reaches the quantile read at all.
 .NL_SUPPORT <- list(
-  density     = list(outside = "extend",      within = c("box_uniform", "chord")),
+  density     = list(outside = "extend",
+                     within = c("box_uniform", "log_quadratic", "chord")),
   moment_rule = list(outside = NA_character_, within = "chord"),
   mixed       = list(outside = "extend",      within = "chord"),
   sample      = list(outside = "clamp",       within = "chord")
@@ -1004,7 +1015,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # is the subset it admits, and is held to this vocabulary by
 # `test-within-cell-box-uniform.R` the same way `outside` is held to
 # `.nl_wtd_quantile()`'s.
-.NL_WITHIN_CELL <- c("box_uniform", "chord")
+.NL_WITHIN_CELL <- c("box_uniform", "log_quadratic", "chord")
 
 # Median and interval of one quantity, given what KIND of node set carries it.
 #
@@ -1043,9 +1054,10 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
                                  domain = NA_character_,
                                  support = .NL_SUPPORT_KINDS,
                                  within = .NL_WITHIN_CELL,
-                                 atom = NA_real_, rows = NULL) {
+                                 atom = NA_real_, rows = NULL, row_id = NULL,
+                                 log_density = NULL) {
   .nl_summary_quantile_read(values, weights, probs, domain, support, within,
-                            atom, rows)$q
+                            atom, rows, row_id, log_density)$q
 }
 
 # The same dispatch, returning what actually RAN alongside the numbers: the
@@ -1057,7 +1069,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
                                       domain = NA_character_,
                                       support = .NL_SUPPORT_KINDS,
                                       within = .NL_WITHIN_CELL,
-                                      atom = NA_real_, rows = NULL) {
+                                      atom = NA_real_, rows = NULL,
+                                      row_id = NULL, log_density = NULL) {
   support <- match.arg(support)
   within  <- match.arg(within)
   chord <- function(declined = NA_character_) {
@@ -1087,12 +1100,23 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   if (!within %in% .NL_SUPPORT[[support]]$within) {
     return(chord(paste0("support_", support)))
   }
-  bx <- .nl_box_quantile(values, weights, probs, domain, atom, rows)
-  if (is.na(bx$declined)) {
-    return(list(q = bx$q, within = within, declined = NA_character_,
-                edge_coord    = bx$edge_coord    %||% NA_character_,
-                edge_declined = bx$edge_declined %||% NA_character_))
+  ran <- function(r, what, declined) {
+    list(q = r$q, within = what, declined = declined,
+         edge_coord    = r$edge_coord    %||% NA_character_,
+         edge_declined = r$edge_declined %||% NA_character_)
   }
+  # The log-quadratic read declines to the box read, which declines to the
+  # chord read; the reason recorded is the requested read's own, unless the box
+  # read declined too, whose reason then names why neither ran.
+  lq_declined <- NA_character_
+  if (identical(within, "log_quadratic")) {
+    lq <- .nl_lq_quantile(values, weights, probs, domain, atom, rows, row_id,
+                          log_density)
+    if (is.na(lq$declined)) return(ran(lq, within, NA_character_))
+    lq_declined <- lq$declined
+  }
+  bx <- .nl_box_quantile(values, weights, probs, domain, atom, rows)
+  if (is.na(bx$declined)) return(ran(bx, "box_uniform", lq_declined))
   chord(bx$declined)
 }
 
@@ -1105,10 +1129,12 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 .nl_read_sd <- function(values, weights, domain = NA_character_,
                         support = .NL_SUPPORT_KINDS,
                         within = .NL_WITHIN_CELL,
-                        atom = NA_real_, rows = NULL) {
+                        atom = NA_real_, rows = NULL, row_id = NULL,
+                        log_density = NULL) {
   k <- as.integer(.nl_diag("read_sd_nodes"))
   q <- .nl_summary_quantile_read(values, weights, (seq_len(k) - 0.5) / k,
-                                 domain, support, within, atom, rows)$q
+                                 domain, support, within, atom, rows,
+                                 row_id, log_density)$q
   if (is.null(q) || !all(is.finite(q))) return(NA_real_)
   sqrt(mean((q - mean(q))^2))
 }
@@ -1427,6 +1453,9 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   # say so.
   onn <- setNames(rep(NA_character_, n_ax), nms)
   if (!is.null(log_quad) && length(log_quad) != nrow(tg)) log_quad <- NULL
+  # The node density, before any cell measure is folded in: what the
+  # log-quadratic read interpolates.
+  log_density <- if (length(log_marginal) == nrow(tg)) log_marginal else NULL
   if (is.null(weights) && !is.null(log_quad)) {
     log_marginal <- log_marginal + log_quad
     log_marginal[is.na(log_marginal)] <- -Inf
@@ -1454,11 +1483,13 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     dm <- if (length(domains) < j) NA_character_ else domains[[j]]
     at <- if (length(atoms) < j) NA_real_ else atoms[[j]]
     rows <- .nl_cell_rows_subset(.nl_axis_cell_rows(tg, j, refining), use)
+    rid  <- .nl_axis_row_id(tg, j)[use]
+    lmd  <- log_density[use]
     rd <- .nl_summary_quantile_read(as.numeric(tg[use, j]), ws, probs, dm,
-                                    support, within, at, rows)
+                                    support, within, at, rows, rid, lmd)
     if (isTRUE(sd)) {
       rsd[j] <- .nl_read_sd(as.numeric(tg[use, j]), ws, dm, support, within,
-                            at, rows)
+                            at, rows, rid, lmd)
       lev <- as.numeric(tapply(ws, as.numeric(tg[use, j]), sum))
       ess[j] <- .nl_axis_quad_ess(log(lev))
     }

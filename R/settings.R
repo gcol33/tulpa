@@ -1240,6 +1240,31 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 #
 # `control$within_cell = "chord"` restores the previous report per fit, exactly.
 #
+# `"log_quadratic"` (`R/within_cell_log_quadratic.R`, gcol33/tulpa#932) is the
+# third construction and is OPT-IN. `lq_max_h_over_sd` is the per-row gate it
+# runs under. On a prior-free ladder of exact gaussian-LMM posteriors (150
+# seeds x G 10 / 40 / 160, grids at h / sd 0.25 to 4 laid on or off the mode,
+# `dev_notes/issue932/gate_ladder.R`) its mean endpoint error |F(lo) - 0.025| +
+# |F(hi) - 0.975| is 0.0002 to 0.008 against the box read's 0.007 to 0.028 up
+# to h / sd 2, 0.006 against 0.031 at 2 to 2.5, 0.012 against 0.068 at 3 to 4,
+# and 0.073 against 0.036 past 4. The gate sits at 2, inside the range where it
+# wins on every arrangement class, not at the crossover.
+#
+# It is not the default because on the engine's own REFINED grids it does not
+# beat the box read. Against dense references of the two-arm ICAR fixture
+# (16 seeds each, `dev_notes/issue932/dense932.R`), mean |F_ref(q) - p| over
+# seven levels summed over the field SD, copy scale and dispersion of the 16x16
+# and 24x24 fields is 0.151 against the box read's 0.156: better on the 16x16
+# field SD (0.013 against 0.015, 95% width 0.967 against 0.931 of the
+# reference), worse on the 24x24 one (0.032 against 0.027, 0.916 against
+# 0.986). On those grids the error that remains is mostly a shift of location
+# shared by every level, which is the cell masses rather than the spread inside
+# a cell.
+#
+# `lq_tail_nats` and `lq_tail_sd` bound how far a row's tail is tabulated past
+# its outer node, and `lq_grid_points` is the minimum size of the table the
+# rows' CDFs are read off; `R/within_cell_log_quadratic.R` gives the reasons.
+#
 # `grid_resolved = 1` is `h / sd`, both in the axis's own coordinate. It is not
 # a tuning cutoff: at `h / sd` below 1 the cell is narrower than the posterior
 # it discretizes, the two constructions converge to each other
@@ -1412,6 +1437,10 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # (gcol33/tulpa#660).
 .NL_DIAG <- list(
     within_cell          = "box_uniform",
+    lq_max_h_over_sd     = 2,
+    lq_tail_nats         = 36,
+    lq_tail_sd           = 10,
+    lq_grid_points       = 8193L,
     grid_resolved        = 1,
     axis_sd_ess          = 3,
     read_sd_nodes        = 512L,

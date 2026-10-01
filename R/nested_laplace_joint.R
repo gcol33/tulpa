@@ -679,7 +679,12 @@
 #'     and interpolates between coordinates -- the same masses over the same
 #'     boxes with the knots moved half a cell, which measures as a whole order
 #'     of convergence (2.00 against 1.04 on a fixture with a closed-form
-#'     posterior). THE DEFAULT IS `"box_uniform"` since 0.0.188, decided on
+#'     posterior). `"log_quadratic"` joins each row's node log densities by
+#'     overlapping quadratics, exact for a Gaussian at any spacing, and
+#'     continues the end quadratic past the outer node instead of stopping at
+#'     the box edge; it runs on the rows that resolve their own conditional
+#'     (`h / sd <= 2`) and reads every other row as boxes, declining to
+#'     `"box_uniform"` where no row qualifies. THE DEFAULT IS `"box_uniform"` since 0.0.188, decided on
 #'     FIXED-TRUTH coverage at the placement the engine ships, with
 #'     `auto_recenter = "resolve"` as the default. Summed
 #'     |coverage - nominal| over nominal 0.95 / 0.80 / 0.50, chord against
@@ -1120,11 +1125,14 @@
 #'      the cumulative full mass at each cell edge; `"chord"`
 #'      (`control$within_cell`) puts the cumulative mid-mass at each cell
 #'      coordinate, the same masses over the same boxes with the knots moved half
-#'      a cell. The
+#'      a cell; `"log_quadratic"` interpolates each row's node log densities. The
 #'      construction is recorded per axis, and an axis whose cell partition could
 #'      not be built falls back to `"chord"` on its own with the reason in
 #'      `theta_within_cell_declined` (`"support_<kind>"`, `"single_node"`,
-#'      `"boxes_do_not_tile"`, `"no_usable_node"`).
+#'      `"boxes_do_not_tile"`, `"no_usable_node"`). A `"log_quadratic"` request
+#'      falls back to `"box_uniform"` first, with `"unresolved"` (no row
+#'      resolves its own conditional), `"not_a_grid_axis"` or
+#'      `"no_node_density"` as the reason.
 #'   * `theta_cell_edge_coord`, `theta_cell_edge_declined` -- per axis, the
 #'      COORDINATE that axis's outer cell edges were mirrored in, and why the
 #'      support the axis declares did not produce them. A

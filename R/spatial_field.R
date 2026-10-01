@@ -698,12 +698,16 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     has_col <- function(nm) !is.null(tg) && nm %in% colnames(tg)
     tau_nm <- paste0(prefix, "tau")
     rho_nm <- paste0(prefix, "rho")
+    rid <- function(nm) .nl_axis_row_id(tg, match(nm, colnames(tg)))
+    lmd <- if (length(jfit$log_marginal) == nrow(tg)) jfit$log_marginal
     sigma <- if (has_col(tau_nm))
       .nl_summary_quantile(1 / sqrt(tg[, tau_nm]), w, probs,
-                           "positive", support, within) else NULL
+                           "positive", support, within,
+                           row_id = rid(tau_nm), log_density = lmd) else NULL
     rho <- if (has_col(rho_nm))
       .nl_summary_quantile(tg[, rho_nm], w, probs,
-                           dom_of(rho_nm), support, within) else NULL
+                           dom_of(rho_nm), support, within,
+                           row_id = rid(rho_nm), log_density = lmd) else NULL
     list(name = block_names[b], structure = blocks[[b]]$type,
          sigma = sigma, rho = rho)
   })

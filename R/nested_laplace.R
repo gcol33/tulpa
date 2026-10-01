@@ -107,7 +107,12 @@
 #'     and interpolates between coordinates -- the same masses over the same
 #'     boxes with the knots moved half a cell, which measures as a whole order
 #'     of convergence (2.00 against 1.04 on a fixture with a closed-form
-#'     posterior). THE DEFAULT IS `"box_uniform"` since 0.0.188, decided on
+#'     posterior). `"log_quadratic"` joins each row's node log densities by
+#'     overlapping quadratics, exact for a Gaussian at any spacing, and
+#'     continues the end quadratic past the outer node instead of stopping at
+#'     the box edge; it runs on the rows that resolve their own conditional
+#'     (`h / sd <= 2`) and reads every other row as boxes, declining to
+#'     `"box_uniform"` where no row qualifies. THE DEFAULT IS `"box_uniform"` since 0.0.188, decided on
 #'     FIXED-TRUTH coverage at the placement the engine ships, with
 #'     `auto_recenter = "resolve"` as the default. Summed
 #'     |coverage - nominal| over nominal 0.95 / 0.80 / 0.50, chord against

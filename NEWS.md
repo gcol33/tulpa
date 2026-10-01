@@ -65,6 +65,14 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   exactly zero; off the mode the (beta, z) blocks agree with central
   differences to 1.2e-08 and 7.5e-09 on the periodic AR1 example
   (gcol33/tulpa#929).
+* `control$within_cell = "log_quadratic"` is a third within-cell read for the
+  hyperparameter intervals, opt-in: each row's node log densities joined by
+  overlapping quadratics and the end quadratic continued past the outer node,
+  on the rows that resolve their own conditional (`h / sd <= 2`), boxes
+  elsewhere. `tulpa_hyper_draws()` samples the same reconstruction. On the
+  16x16 two-arm ICAR fixture the 95% field-SD width is 0.967 of a dense
+  reference against the box read's 0.931; on the 24x24 one it is 0.916 against
+  0.986, so `"box_uniform"` stays the default (gcol33/tulpa#932).
 
 On that Calluna fit (LiSC, 32 threads) the engine defaults take 25.3 min and
 20 full solves in the final grid besides the 79-evaluation mode-find; the

@@ -1145,6 +1145,69 @@ is not a cell width -- the same objection that makes `sample` decline. The
 measurement was taken on the outer hyperparameter axes and is not extended past
 them.
 
+### The log-quadratic read, and why it is not the default (gcol33/tulpa#932)
+
+The 16x16 two-arm ICAR fixture read its 95% field-SD interval 6.6% narrow at
+the shipped 5-node recentre ladder, +0.3% at 9 and -3.7% at 13. Two effects
+add. `.NL_RECENTER` lays `n_pts` nodes over mode +/- 2.5 SDs whatever `n_pts`
+is, so the box read's outer edge closes in on 2.5 SDs as nodes are added and
+the read converges to a truncated Gaussian (95% width 0.952 of the true one);
+and at h = 1.25 SD the box read's O(h^2) tail error is narrow when the mode
+sits on a node. An ideal Gaussian read through the same construction gives
+0.948 / 1.013 / 0.973 of the true width, so the cancellation at 9 is an
+accident. Moving the extent with the box read kept swings the error between
+-6.4% and +5.9%; within 1% takes h / sd <= 0.7, about four times the cells.
+
+`within_cell = "log_quadratic"` (`R/within_cell_log_quadratic.R`) joins node
+log densities by overlapping quadratics and continues the end quadratic past
+the outer node. Three things were found building it, each measured:
+
+- **Rows, not the marginal.** Each row along the axis is a conditional, nearer
+  a Gaussian than the mixture of rows. On the trace fixture, per-row reads put
+  the width at -1.5% / -0.7% / -0.8% of the dense reference, the declared
+  levels' summed density read as one row at -1.7% / -1.3% / -1.3%.
+- **Density times slab.** On a refined grid the cell at the outer mode has its
+  other-axis boxes cut by the slices through it, so its mass over its own width
+  is a false dip (3.7 nats below both neighbours on the 24x24 fixture: width
+  -8.7%, coverage 0.922 against the box read's 0.953 over 600 seeds), and its
+  `log_marginal` alone double-counts the modal box (-7% on the 5-node trace).
+  The read interpolates `log_marginal` and multiplies by each cell's slab
+  `w / (exp(log_marginal) width)` over its box.
+- **The gate is per row.** A gate on the axis's level marginal counts the slice
+  cells of other axes at the modal level and read h / sd 2.18 on a fixture whose
+  rows sit at 1.3. Each row is gated on its own spacing and its own parabola.
+
+The gate (`lq_max_h_over_sd = 2`) comes from a ladder of exact gaussian-LMM
+posteriors with no prior edge near them (`dev_notes/issue932/gate_ladder.R`,
+150 seeds x G 10 / 40 / 160, grids at h / sd 0.25 to 4, mode on a node or at a
+random offset, spans 2.5 and 6 SDs). Mean endpoint error |F(lo) - 0.025| +
+|F(hi) - 0.975|, log-quadratic against box: 0.0002-0.0009 / 0.007-0.009 below
+h / sd 1; 0.002-0.008 / 0.011-0.028 at 1 to 2; 0.006 / 0.031 at 2 to 2.5;
+0.012 / 0.068 at 3 to 4; 0.073 / 0.036 past 4, where the quadratic reads the
+location of a skewed posterior off its tails (the #357 coarse-rung and #925
+`cell_normal_read.patch` failure).
+
+On the engine's own refined grids it does not beat the box read. Against dense
+references (`dense932.R`: 61 x 51 x 13 cells, no prune, no recentre, no
+refinement; 16 seeds per size), mean |F_ref(q) - p| over seven levels:
+
+| | box | log-quadratic |
+|---|---|---|
+| 16x16 field SD | 0.0152 (width 0.931) | 0.0129 (0.967) |
+| 24x24 field SD | 0.0265 (0.986) | 0.0317 (0.916) |
+| 16x16 copy scale | 0.0131 | 0.0143 |
+| 24x24 copy scale | 0.0308 | 0.0283 |
+| 16x16 dispersion | 0.0343 | 0.0284 |
+| 24x24 dispersion | 0.0359 | 0.0358 |
+
+Sums 0.156 / 0.151. On fixed-truth coverage over the 1000 + 600 sweep fits the
+16x16 field SD moves 0.922 -> 0.930 at 95% and 0.808 -> 0.773 at 80%, the 24x24
+one 0.953 -> 0.930. Several rows carry a signed error of one sign at every
+level, a shift of location that the cell masses set and no within-cell read
+moves, so the remaining #932 gap is the refined grid's measure rather than
+the spread inside a cell. The 24x24 narrowing under the log-quadratic read is
+not explained. `"box_uniform"` stays the default.
+
 ### The draw budget moves the outer k-hat, not just its interval (gcol33/tulpa#631)
 
 `control$k_samples` was documented as the outer k-hat's precision knob. It is

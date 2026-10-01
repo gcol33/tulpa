@@ -44,7 +44,7 @@ hd_two_axis <- function(within = "box_uniform") {
 
 test_that("jittered hyperparameter draws reproduce the fit's own quantiles", {
   skip_on_cran()
-  for (wc in c("box_uniform", "chord")) {
+  for (wc in c("box_uniform", "log_quadratic", "chord")) {
     fit <- hd_two_axis(wc)
     set.seed(823)
     th <- tulpa_hyper_draws(fit, n = 4e5L)
@@ -63,6 +63,23 @@ test_that("jittered hyperparameter draws reproduce the fit's own quantiles", {
       expect_lt(max(abs(q - rep_q)), 5e-3)
     }
   }
+})
+
+test_that("a log-quadratic cell's draws sit on the stretch of its row it owns", {
+  # The cell-conditional is the part of its row's reconstructed CDF its level
+  # owns, so the draws in one cell stay around that cell rather than spreading
+  # along the whole row, and the latent half drawn in the same cell is matched
+  # with a hyperparameter near it.
+  fit <- hd_two_axis("log_quadratic")
+  set.seed(9321)
+  th <- tulpa_hyper_draws(fit, n = 4e4L)
+  cells <- attr(th, "cells")
+  tg <- fit$theta_grid
+  modal <- which.max(fit$weights)
+  d <- log(th[cells == modal, "tau"])
+  lev <- sort(unique(log(tg[, "tau"])))
+  h <- diff(lev)[1L]
+  expect_lt(max(abs(d - log(tg[modal, "tau"]))), 1.5 * h)
 })
 
 test_that("the atom is gone: draws take more values than the grid has nodes", {

@@ -66,12 +66,25 @@
 # geometry is PER CELL: `values` is the axis coordinate of every cell and
 # `lo` / `hi` the box that cell owns (`.nl_cell_boxes()`), flagged `per_cell`.
 .nl_hyper_axis_geometry <- function(v, w, domain, within, outside,
-                                    atom = NA_real_, rows = NULL) {
+                                    atom = NA_real_, rows = NULL,
+                                    row_id = NULL, log_density = NULL) {
   none <- function(declined) {
     list(kind = "none", values = numeric(0), lo = numeric(0),
          hi = numeric(0), declined = declined)
   }
   if (is.na(outside)) return(none("support_moment_rule"))
+
+  # The log-quadratic read declines to the box read exactly as the interval
+  # does (`.nl_summary_quantile_read()`), and carries its own reason unless the
+  # box read declined as well.
+  if (identical(within, "log_quadratic")) {
+    g <- .nl_lq_axis_geometry(v, w, domain, atom, rows, row_id, log_density)
+    if (is.na(g$declined)) return(g)
+    b <- .nl_hyper_axis_geometry(v, w, domain, "box_uniform", outside, atom,
+                                 rows)
+    if (is.na(b$declined)) b$declined <- g$declined
+    return(b)
+  }
 
   if (!is.null(rows) && !identical(within, "chord")) {
     ia <- length(atom) == 1L && is.finite(atom) && any(v == atom) &&
@@ -161,7 +174,9 @@
                                 u = stats::runif(length(v_cell))) {
   if (identical(geom$kind, "none")) return(v_cell)
   k <- .nl_hyper_axis_index(geom, v_cell, cells)
-  out <- if (identical(geom$kind, "box_uniform")) {
+  out <- if (identical(geom$kind, "log_quadratic")) {
+    .nl_lq_axis_draw(geom, k, u)
+  } else if (identical(geom$kind, "box_uniform")) {
     geom$lo[k] + u * (geom$hi[k] - geom$lo[k])
   } else {
     # Half the cell's mass on either side, each uniform on its own segment:
@@ -417,7 +432,10 @@
 #'   `NULL` (default) allocates `n` fresh draws across the cells by weight.
 #' @param n Number of draws when `cells` is `NULL` (default 1000); ignored
 #'   otherwise.
-#' @param within Within-cell construction, `"box_uniform"` or `"chord"`.
+#' @param within Within-cell construction, `"box_uniform"`, `"log_quadratic"`
+#'   or `"chord"`. Under `"log_quadratic"` a draw in a cell is the point its
+#'   row's reconstructed CDF reaches inside the share of that CDF the cell's
+#'   mass owns, so the draws in one cell stay around it.
 #'   `NULL` (default) takes the one the fit was read with
 #'   (`fit$within_cell_requested`).
 #'
@@ -490,6 +508,11 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
   doms <- geo$domain
   atoms <- geo$atom
 
+  # The node density the log-quadratic read is built from; a fit carrying no
+  # `log_marginal` leaves that read to decline.
+  lmd <- fit$log_marginal
+  if (length(lmd) != nrow(tg)) lmd <- NULL
+
   nms <- .nl_axis_names(tg)
   out <- matrix(0.0, length(cells), ncol(tg), dimnames = list(NULL, nms))
   used <- stats::setNames(rep(NA_character_, ncol(tg)), nms)
@@ -498,7 +521,8 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
     dm <- if (length(doms) < j) NA_character_ else doms[[j]]
     at <- if (length(atoms) < j) NA_real_ else atoms[[j]]
     .nl_hyper_axis_geometry(as.numeric(tg[, j]), w, dm, req, outside, at,
-                            .nl_axis_cell_rows(tg, j, fit$refining_axis))
+                            .nl_axis_cell_rows(tg, j, fit$refining_axis),
+                            .nl_axis_row_id(tg, j), lmd)
   })
   # One uniform per draw and axis, tied across axes by the copula that keeps
   # the grid's own correlation (`.nl_hyper_copula()`).

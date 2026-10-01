@@ -200,7 +200,8 @@
 #'   `"hsgp"`/`"nngp"`, same reason), `rho_spatial` (the proper-CAR mixing
 #'   value the `car_proper` axis is held
 #'   at, default `.NL_ST_GRID$rho_spatial`; unrelated to bym2's own integrated
-#'   `rho_spatial` grid axis) and `within_cell` (`"box_uniform"` / `"chord"`,
+#'   `rho_spatial` grid axis) and `within_cell` (`"box_uniform"` /
+#'   `"log_quadratic"` / `"chord"`,
 #'   the within-cell construction the reported per-axis intervals are read
 #'   with; defaults to
 #'   `.NL_DIAG$within_cell`, as on every other nested door).

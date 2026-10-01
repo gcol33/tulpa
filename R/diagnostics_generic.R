@@ -352,6 +352,8 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
     tg <- matrix(tg, ncol = 1L,
                  dimnames = list(NULL, object$theta_names %||% "theta"))
   }
+  lmd <- object$log_marginal
+  if (length(lmd) != nrow(tg)) lmd <- NULL
   axes <- colnames(tg) %||% object$theta_names %||%
     paste0("theta", seq_len(ncol(tg)))
   # Map every axis to the field it belongs to, so a mixed / spatiotemporal fit
@@ -400,13 +402,15 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
     # domain the partition does honour, and map back.
     lo <- amap$lo[j]; hi <- amap$hi[j]
     rows_j <- .nl_axis_cell_rows(tg, j, object$refining_axis)
+    rid_j  <- .nl_axis_row_id(tg, j)
     qs <- if (is.finite(lo) && is.finite(hi) && hi > lo &&
               all(v > lo & v < hi)) {
       lo + (hi - lo) * .nl_summary_quantile((v - lo) / (hi - lo), w, probs,
                                             "unit", support, within, NA_real_,
-                                            rows_j)
+                                            rows_j, rid_j, lmd)
     } else {
-      .nl_summary_quantile(v, w, probs, dm, support, within, at, rows_j)
+      .nl_summary_quantile(v, w, probs, dm, support, within, at, rows_j, rid_j,
+                           lmd)
     }
     out <- data.frame(mean = m, sd = s, stringsAsFactors = FALSE)
     out[.quantile_colnames(probs)] <- as.list(qs)
