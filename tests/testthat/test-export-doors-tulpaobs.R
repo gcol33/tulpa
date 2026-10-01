@@ -67,8 +67,8 @@ test_that("tulpa_theta_matrix / tulpa_grid_log_quad / tulpa_normalise_weights_sa
   M2 <- tulpa:::.nl_theta_matrix(fit)
   expect_identical(M1, M2)
 
-  lq1 <- tulpa_grid_log_quad(M1)
-  lq2 <- tulpa:::.nl_grid_log_quad(M1)
+  lq1 <- tulpa_grid_log_quad(M1, refining = fit$refining_axis)
+  lq2 <- tulpa:::.nl_grid_log_quad(M1, refining = fit$refining_axis)
   expect_identical(lq1, lq2)
 
   w1 <- tulpa_normalise_weights_safe(fit$log_marginal, log_quad = lq1)

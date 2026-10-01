@@ -1197,7 +1197,7 @@ auto_grid_place <- function(x)
 # by callers that have it; the `"relative"` ceiling caps the re-placed span by
 # it, and falls back to the absolute ceiling where a caller has none.
 .nl_recenter_sd_clamp <- function(sd_u,
-                                  min_sd_u   = .nl_recenter("min_sd_u"),
+                                  min_sd_u   = .nl_recenter_floor(),
                                   max_sd_u   = .nl_recenter("max_sd_u"),
                                   span       = .nl_recenter("span"),
                                   ref_span_u = NULL,
@@ -1235,7 +1235,7 @@ auto_grid_place <- function(x)
 .nl_recenter_axis_full <- function(tag, mode_u, sd_u,
                                    n_pts      = .nl_recenter("n_pts"),
                                    span       = .nl_recenter("span"),
-                                   min_sd_u   = .nl_recenter("min_sd_u"),
+                                   min_sd_u   = .nl_recenter_floor(),
                                    max_sd_u   = .nl_recenter("max_sd_u"),
                                    ref_span_u = NULL) {
     bad <- function(reason, clamp = NA_character_, raw = NA_real_) {
@@ -1267,7 +1267,7 @@ auto_grid_place <- function(x)
 .nl_recenter_axis <- function(tag, mode_u, sd_u,
                               n_pts    = .nl_recenter("n_pts"),
                               span     = .nl_recenter("span"),
-                              min_sd_u = .nl_recenter("min_sd_u"),
+                              min_sd_u = .nl_recenter_floor(),
                               max_sd_u = .nl_recenter("max_sd_u")) {
     .nl_recenter_axis_full(tag, mode_u, sd_u, n_pts = n_pts, span = span,
                            min_sd_u = min_sd_u, max_sd_u = max_sd_u)$nodes
@@ -1278,7 +1278,7 @@ auto_grid_place <- function(x)
 .nl_recenter_log_axis <- function(mode_u, sd_u,
                                    n_pts    = .nl_recenter("n_pts"),
                                    span     = .nl_recenter("span"),
-                                   min_sd_u = .nl_recenter("min_sd_u"),
+                                   min_sd_u = .nl_recenter_floor(),
                                    max_sd_u = .nl_recenter("max_sd_u")) {
     .nl_recenter_axis("log", mode_u, sd_u, n_pts = n_pts, span = span,
                       min_sd_u = min_sd_u, max_sd_u = max_sd_u)

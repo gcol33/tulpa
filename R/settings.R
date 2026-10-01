@@ -667,6 +667,24 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     min_sd_u  = 0.15,
     max_sd_u  = 3,
 
+    # The floor on the joint doors, where the consistency pass resolves an axis
+    # the placement left on one node (gcol33/tulpa#926). The registry floor above
+    # was swept without that pass, and where it binds the placed cell is wider
+    # than the posterior -- 0.1875 against a log-SD of 0.066 on the two-arm ICAR
+    # fixture -- so the pass has one node to start from in every row but the
+    # modal one. Two-arm ICAR, 200 seeds per row, eight rows (8x8 to 24x24,
+    # sigma 0.5 to 3), summed |coverage - 0.95| of the field SD:
+    #
+    #   floor        0.15    0.075   0.05    0.03
+    #   field SD     0.395   0.255   0.175   0.190
+    #   copy scale   0.305   0.205   0.260   0.212
+    #
+    # (0.500 and 0.300 with no pass). 0.05 is taken, between the two ends the
+    # sweep supports; the registry door keeps 0.15 until its own ladder is
+    # re-run with the pass (`min_sd_u_joint` is read where `tulpa.nl_door` is
+    # "joint", `.nl_recenter_floor()`).
+    min_sd_u_joint = 0.05,
+
     # What the pass DOES when that ceiling binds.
     #
     # A clamp is not a spread the stencil measured -- it is the stencil failing
@@ -827,6 +845,14 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     ov <- getOption(paste0("tulpa.recenter.", par), NULL)
     if (!is.null(ov)) return(ov)
     .NL_RECENTER[[par]]
+}
+
+# The placement floor of the door the fit entered by. The joint front door
+# publishes `tulpa.nl_door` for the duration of its fit; every other path reads
+# the registry floor.
+.nl_recenter_floor <- function() {
+    .nl_recenter(if (identical(getOption("tulpa.nl_door"), "joint"))
+        "min_sd_u_joint" else "min_sd_u")
 }
 
 # --- spatiotemporal driver grid ----------------------------------------------

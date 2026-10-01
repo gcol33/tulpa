@@ -36,11 +36,13 @@ test_that("cyclic RW2 changes the multi-block nested-Laplace fit", {
   fit_c <- suppressWarnings(tulpa_nested_laplace(
     y = y, n_trials = rep(1L, N), X = X, family = "binomial",
     prior = list(rw2_block(TRUE), iid_block),
-    control = list(max_iter = 30L, tol = 1e-6, n_threads = 1L, diagnose_k = FALSE)))
+    control = list(max_iter = 30L, tol = 1e-6, n_threads = 1L, diagnose_k = FALSE,
+                   axis_refine = "none")))
   fit_a <- suppressWarnings(tulpa_nested_laplace(
     y = y, n_trials = rep(1L, N), X = X, family = "binomial",
     prior = list(rw2_block(FALSE), iid_block),
-    control = list(max_iter = 30L, tol = 1e-6, n_threads = 1L, diagnose_k = FALSE)))
+    control = list(max_iter = 30L, tol = 1e-6, n_threads = 1L, diagnose_k = FALSE,
+                   axis_refine = "none")))
 
   # The flag must move the inner marginal: identical log_marginal vectors would
   # mean cyclic was dropped (the pre-#218 behavior).

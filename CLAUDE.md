@@ -273,9 +273,17 @@ CCD design, the adaptive lattice and a locally CCD-refined grid keep their
 nodes. The specs behind a refined grid's measure are built from its BASE cells
 and carry the `refining` tags (`.joint_multi_attach_integration()`), since an
 axis's declared nodes fix a prior read off them. The registry door,
-`tulpa_nested_laplace()`, runs no pass (gcol33/tulpa#927), so a test that
-asserts a joint fit equals a registry fit, or reads a plain tensor cell by cell,
-holds the joint grid with `control$axis_refine = "none"`.
+`tulpa_nested_laplace()`, runs the same runner through `.nl_refine_registry()`
+(`R/nested_laplace_refine.R`) over the field SD axes its dispatcher can write a
+cell onto (`.nl_refinable_registry_axes()`): the passes need only a cell's log
+marginal, so each call's whole dispatcher result is kept and bound onto the base
+result by shape (`.nl_bind_cell_results()`), and anything that re-dispatches a
+settled fit (the debias, the corrected integrated Laplace) solves the fit's own
+cells (`.nl_refined_theta()`), not the declared grid. A test that reads a plain
+tensor or the declared cell count holds the grid with
+`control$axis_refine = "none"` on either door. The placement floor is per door
+(`min_sd_u_joint` on the joint doors, `min_sd_u` on the registry,
+`.nl_recenter_floor()`).
 
 ## Restricted spatial regression is a MODIFIER, and it changes the estimand
 

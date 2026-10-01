@@ -104,7 +104,8 @@ test_that("nested_laplace dispatches ICAR with explicit grid", {
 
   result <- tulpa_nested_laplace(
     y = dat$y, n_trials = dat$n_trials, X = dat$X,
-    prior = prior, family = "binomial"
+    prior = prior, family = "binomial",
+    control = list(axis_refine = "none")
   )
 
   expect_s3_class(result, "tulpa_nested_laplace")

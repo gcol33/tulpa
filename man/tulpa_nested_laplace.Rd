@@ -380,6 +380,21 @@ coefficient summaries sets \code{FALSE} and the fit then carries no
 SPDE and spatiotemporal fields included, each read off its cell's own
 precision at the mode; a multi-block prior refuses \code{FALSE} rather than
 accepting it and ignoring it.
+\item \code{var_of_means_consistency} (\code{TRUE}) -- the consistency pass of
+\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}: a field SD (\code{tau} of an \code{icar}, \code{rw1} or
+\code{rw2} block, \code{sigma} of an \code{iid}, \code{bym2} or \code{spde} block) whose marginal
+has collapsed onto too few nodes to carry a spread has nodes laid in its
+modal cell's row until it resolves, and the refined cells are solved and
+carried like the rest (\code{refining_axis} tags them, \code{var_of_means_consistency_info}
+records the pass). Other axes keep the nodes they were laid on.
+\item \code{adaptive_grid} (\code{FALSE}), \code{adaptive_grid_edge_thresh} (\code{0.02}),
+\code{adaptive_grid_max_passes} (\code{1L}) -- the opt-in boundary / interior pass,
+on the same axes.
+\item \code{axis_refine} (\code{NULL}) -- per-axis override of how far those axes may be
+moved, named by the grid's axes (\code{"tau"}; \code{"b1.tau"} on a multi-block
+prior): \code{"none"}, \code{"densify"} (inside the declared span) or \code{"extend"}.
+Nodes the caller wrote down densify by default and an engine-placed axis
+extends, as in \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}.
 }}
 }
 \value{

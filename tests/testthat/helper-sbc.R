@@ -174,7 +174,8 @@ sbc_fit_nested <- function(d, phi = d$phi,
                            control = NULL) {
   ctl <- list(max_iter = 200L, tol = 1e-10, n_threads = 1L,
               keep_grid_hessians = TRUE, diagnose_k = FALSE,
-              diagnose_skew = FALSE, auto_recenter = FALSE, prune = FALSE)
+              diagnose_skew = FALSE, auto_recenter = FALSE, prune = FALSE,
+              axis_refine = "none")
   if (length(control)) ctl <- utils::modifyList(ctl, control)
   suppressWarnings(tulpa_nested_laplace(
     y = d$y, n_trials = rep(ntr, d$N), X = d$X,

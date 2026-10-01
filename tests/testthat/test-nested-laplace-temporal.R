@@ -29,7 +29,8 @@ test_that("nested_laplace RW1 returns interior-peaked log-marginal", {
                 tau_grid = exp(seq(log(0.3), log(30), length.out = 9)))
 
   res <- tulpa_nested_laplace(d$y, d$n_trials, d$X, prior = prior,
-                        family = "binomial")
+                        family = "binomial",
+                        control = list(axis_refine = "none"))
 
   expect_s3_class(res, "tulpa_nested_laplace")
   expect_equal(length(res$log_marginal), 9L)

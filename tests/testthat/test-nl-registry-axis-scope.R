@@ -151,7 +151,8 @@ test_that("a newly-covered family recentres end to end and honours a pin", {
             family = "gaussian", phi = 0.49,
             control = utils::modifyList(
                 list(max_iter = 200L, tol = 1e-8, n_threads = 1L,
-                     diagnose_k = FALSE, diagnose_skew = FALSE), ctrl)))
+                     diagnose_k = FALSE, diagnose_skew = FALSE,
+                     axis_refine = "none"), ctrl)))
     }
     moved <- fit_rw1(ctrl = list(auto_recenter = "always"))
     expect_identical(moved$outer_grid_placement, "auto_recentered")
@@ -203,7 +204,8 @@ test_that("a multi-block registry fit always records a placement", {
         family = "gaussian", phi = 0.49,
         control = utils::modifyList(
             list(max_iter = 200L, tol = 1e-8, n_threads = 1L, progress = FALSE,
-                 diagnose_k = FALSE, diagnose_skew = FALSE), ctrl)))
+                 diagnose_k = FALSE, diagnose_skew = FALSE,
+                 axis_refine = "none"), ctrl)))
 
     base <- fit_iid()
     expect_true(base$outer_grid_placement %in% c("fixed", "auto_recentered"))

@@ -365,7 +365,8 @@ test_that("auto_recenter = \"always\" recentres an axis that did not rail", {
     always <- suppressWarnings(tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X, prior = prior,
         family = "gaussian", phi = 0.5,
-        control = c(ctrl, list(auto_recenter = "always"))))
+        control = c(ctrl, list(auto_recenter = "always",
+                               axis_refine = "none"))))
 
     # The default axis contains its own mode, so the rail-gated policy leaves
     # it alone and the unconditional one still moves it.

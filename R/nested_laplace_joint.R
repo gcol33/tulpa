@@ -1299,6 +1299,9 @@ tulpa_nested_laplace_joint <- function(responses,
         .nl_check_axis_fields(prior, "joint", auto = prov$auto,
                               copy = copy, responses = responses))
     on.exit(options(.op_axis), add = TRUE)
+    # The placement floor is the joint doors' own (`.nl_recenter_floor()`).
+    .op_door <- options(tulpa.nl_door = "joint")
+    on.exit(options(.op_door), add = TRUE)
     # `control$auto_recenter = FALSE` holds every grid exactly as given -- the
     # opt-out for a caller who wants the default axis integrated as-is. The
     # joint rescues trigger on the whole grid's `collapsed_edge` regime rather

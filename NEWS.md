@@ -12,19 +12,33 @@
   grid, `tau` on a precision grid, and their `b<k>.` names on a multi-block
   grid. A field SD narrower than its placed cell, which sat on one node and
   reported the cell as its interval, has nodes laid in its modal cell's row
-  until its marginal resolves. On the two-arm ICAR fixture (200 seeds per row)
-  the SD's median effective node count goes from 1.0-2.4 to 5.4-8.9, and
-  coverage of the true value at sigma 2 on a 12 x 12 grid from 0.765 to 0.855,
-  on 16 x 16 from 0.860 to 0.870; summed |coverage - 0.95| over the eight rows
-  falls from 0.500 to 0.395, at 0.2 to 1.7 s more per fit. Nodes a caller
-  wrote down are densified inside their span and an engine-placed axis may be
-  followed past its ends, the rule the copy scale and the dispersions already
-  follow (`control$axis_refine = "none"` holds an axis). The remaining
-  under-coverage is gcol33/tulpa#928; the registry door runs no refinement pass
-  (gcol33/tulpa#927). On the ladder whose truth is drawn from the prior and
-  scored against the exact posterior (80 seeds, 12 rungs) summed
-  |coverage - 0.95| goes from 0.325 to 0.238 and the CRPS falls on every rung
-  that gains nodes.
+  until its marginal resolves. Nodes a caller wrote down are densified inside
+  their span and an engine-placed axis may be followed past its ends, the rule
+  the copy scale and the dispersions already follow
+  (`control$axis_refine = "none"` holds an axis) (gcol33/tulpa#926).
+* The joint doors place a recentred axis with their own SD floor,
+  `min_sd_u_joint = 0.05` against the registry's `min_sd_u = 0.15`. With the
+  floor at 0.15 the placed cell stayed wider than the posterior and the
+  consistency pass resolved the field SD in one row only (coverage at sigma 2
+  on 12 x 12: 0.855). On the two-arm ICAR fixture (200 seeds per row, eight
+  rows) the field SD's coverage of the true value at sigma 2 goes from 0.765 to
+  0.945 on 12 x 12 and from 0.860 to 0.915 on 16 x 16, and summed
+  |coverage - 0.95| over the rows from 0.500 to 0.175 (copy scale 0.300 to
+  0.260). On the ladder whose truth is drawn from the prior and scored against
+  the exact posterior (80 seeds, 12 rungs, no placement) the refinement alone
+  takes it from 0.325 to 0.238 and the CRPS falls on every rung that gains
+  nodes (gcol33/tulpa#928).
+* `tulpa_nested_laplace()` runs the consistency pass (`control$var_of_means_consistency`,
+  on by default), the opt-in boundary / interior pass (`control$adaptive_grid`)
+  and `control$axis_refine` over its field SD axes: `tau` of an `icar`, `rw1` or
+  `rw2` block and `sigma` of an `iid`, `bym2` or `spde` block, single and
+  multi-block. The cells a pass adds are solved by the dispatcher and carry the
+  same per-cell data as the rest (modes, precisions, `fitted_eta`), tagged in
+  `refining_axis`. A fit whose field SD had collapsed onto a few nodes gains
+  cells and its summaries move; `tulpa_grid_log_quad()` of such a fit needs
+  `refining = fit$refining_axis`. The subspace debias and the corrected
+  integrated Laplace re-solve the fit's own cells, refinement nodes included
+  (gcol33/tulpa#927).
 
 # tulpa 0.7.0
 

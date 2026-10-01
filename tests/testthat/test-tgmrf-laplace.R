@@ -208,7 +208,7 @@ test_that("tgmrf inside a multi-block prior composes with an iid block", {
     y = y, n_trials = rep(1L, n), X = X,
     prior = list(blk_tgmrf, iid_blk),
     family = "poisson",
-    control = list(max_iter = 80L, tol = 1e-7)
+    control = list(max_iter = 80L, tol = 1e-7, axis_refine = "none")
   ))
   expect_cells_solved(fit)
   # 5x5 tgmrf grid * 3 sigma grid = 75 cells.

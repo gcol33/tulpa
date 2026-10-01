@@ -312,6 +312,21 @@
 #'     SPDE and spatiotemporal fields included, each read off its cell's own
 #'     precision at the mode; a multi-block prior refuses `FALSE` rather than
 #'     accepting it and ignoring it.
+#'   * `var_of_means_consistency` (`TRUE`) -- the consistency pass of
+#'     [tulpa_nested_laplace_joint()]: a field SD (`tau` of an `icar`, `rw1` or
+#'     `rw2` block, `sigma` of an `iid`, `bym2` or `spde` block) whose marginal
+#'     has collapsed onto too few nodes to carry a spread has nodes laid in its
+#'     modal cell's row until it resolves, and the refined cells are solved and
+#'     carried like the rest (`refining_axis` tags them, `var_of_means_consistency_info`
+#'     records the pass). Other axes keep the nodes they were laid on.
+#'   * `adaptive_grid` (`FALSE`), `adaptive_grid_edge_thresh` (`0.02`),
+#'     `adaptive_grid_max_passes` (`1L`) -- the opt-in boundary / interior pass,
+#'     on the same axes.
+#'   * `axis_refine` (`NULL`) -- per-axis override of how far those axes may be
+#'     moved, named by the grid's axes (`"tau"`; `"b1.tau"` on a multi-block
+#'     prior): `"none"`, `"densify"` (inside the declared span) or `"extend"`.
+#'     Nodes the caller wrote down densify by default and an engine-placed axis
+#'     extends, as in [tulpa_nested_laplace_joint()].
 #'
 #' @return A list with:
 #'   * `theta_grid`: matrix or vector of grid hyperparameter values.
@@ -464,6 +479,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # `.nl_diag("within_cell")`, and `"chord"` restores the pre-0.0.188 report
   # byte-identically.
   within_cell        <- .nl_within_cell_mode(control$within_cell)
+  # Outer-grid refinement: the passes the joint drivers run
+  # (`.joint_refine_outer_grid()`), over the field SD axes this door can write a
+  # cell onto. The consistency pass is on by default, the boundary / interior
+  # pass opt in, as there.
+  var_of_means_consistency  <- isTRUE(control$var_of_means_consistency %||% TRUE)
+  adaptive_grid             <- isTRUE(control$adaptive_grid %||% FALSE)
+  adaptive_grid_edge_thresh <- control$adaptive_grid_edge_thresh %||% 0.02
+  adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
 
   # Grid-cell checkpoint/resume. `control$checkpoint =
   # list(path =, resume =)` makes every grid cell append to `path`; a resume
@@ -588,7 +611,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # pass's refit -- is screened at the same tolerance and gated the same way,
     # so no reported grid is a pruned one whose screen ranking was unreliable.
     solve_grid_multi <- function(prior_i) {
-      .nl_prune_gate(
+      out <- .nl_prune_gate(
         .nl_dispatch_multi(cargs, prior_i, likelihood = likelihood,
                            progress = .nl_progress_args(control),
                            within_cell = within_cell),
@@ -597,6 +620,22 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
           utils::modifyList(cargs, list(prune_tol = 0)), prior_i,
           likelihood = likelihood, progress = .nl_progress_args(control),
           within_cell = within_cell))
+      refined <- .nl_refine_registry(
+        out, function(theta_mat) .nl_dispatch_multi(
+          cargs_no_ckpt, prior_i, likelihood = likelihood,
+          theta_grid_override = theta_mat),
+        prior_i, TRUE, .prov$auto,
+        consistency = var_of_means_consistency,
+        adaptive_grid = adaptive_grid,
+        edge_thresh = adaptive_grid_edge_thresh,
+        max_passes = adaptive_grid_max_passes,
+        user = control$axis_refine)
+      if (is.null(refined$refining_axis)) return(refined)
+      # The dispatcher integrated the base grid; the appended cells are measured
+      # and read with the rest.
+      refined <- .nl_attach_outer_integration(refined, "multi-block outer grid")
+      .nl_posterior_moments_multi(refined, refined$blocks, refined$axis_offsets,
+                                  refined$theta_grid, within = within_cell)
     }
     res <- solve_grid_multi(prior)
     tm$mark("grid")
@@ -639,12 +678,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res <- .nl_subspace_debias_attach(
       res, sd_cfg,
       redispatch = function(req) .nl_dispatch_multi(
-        cargs_no_ckpt, prior, likelihood = likelihood, debias = req),
+        cargs_no_ckpt, prior, likelihood = likelihood, debias = req,
+        theta_grid_override = .nl_refined_theta(res)),
       p_fixed = p_fixed, beta_names = colnames(X))
     res <- .nl_cila_attach(
       res, cila_cfg,
       redispatch = function(req) .nl_dispatch_multi(
-        cargs_no_ckpt, prior, likelihood = likelihood, cila = req),
+        cargs_no_ckpt, prior, likelihood = likelihood, cila = req,
+        theta_grid_override = .nl_refined_theta(res)),
       p_fixed = p_fixed, beta_names = colnames(X),
       remoments = function(r) .nl_posterior_moments_multi(
         r, r$blocks, r$axis_offsets, r$theta_grid, within = within_cell))
@@ -674,11 +715,23 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # refit -- is screened at the same tolerance and gated the same way, so no
   # reported grid is a pruned one whose screen ranking was unreliable.
   solve_grid <- function(prior_i) {
-    .nl_prune_gate(
+    out <- .nl_prune_gate(
       .nl_dispatch(type, cargs, prior_i, prior_i),
       prune_tol_eff,
       function() .nl_dispatch(type, utils::modifyList(cargs, list(prune_tol = 0)),
                               prior_i, prior_i))
+    .nl_refine_registry(
+      out, function(theta_mat) {
+        blk2 <- .nl_registry_write_theta(
+          list(prior_i), theta_mat, colnames(theta_mat))[[1L]]
+        .nl_dispatch(type, cargs_no_ckpt, blk2, prior_i)
+      },
+      prior_i, FALSE, .prov$auto,
+      consistency = var_of_means_consistency,
+      adaptive_grid = adaptive_grid,
+      edge_thresh = adaptive_grid_edge_thresh,
+      max_passes = adaptive_grid_max_passes,
+      user = control$axis_refine)
   }
   res <- solve_grid(prior)
   tm$mark("grid")
@@ -743,12 +796,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res <- .nl_subspace_debias_attach(
     res, sd_cfg,
     redispatch = function(req) .nl_dispatch(
-      type, utils::modifyList(cargs_no_ckpt, list(debias = req)), prior, prior),
+      type, utils::modifyList(cargs_no_ckpt, list(debias = req)),
+      .nl_refined_block(res, prior), prior),
     p_fixed = p_fixed, beta_names = colnames(X))
   res <- .nl_cila_attach(
     res, cila_cfg,
     redispatch = function(req) .nl_dispatch(
-      type, utils::modifyList(cargs_no_ckpt, list(cila = req)), prior, prior),
+      type, utils::modifyList(cargs_no_ckpt, list(cila = req)),
+      .nl_refined_block(res, prior), prior),
     p_fixed = p_fixed, beta_names = colnames(X),
     remoments = function(r) .nl_posterior_moments(r, type, within = within_cell))
   tm$mark("diagnostics")
@@ -1473,10 +1528,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # clipped to the span the nodes were declared over.
 .nl_attach_outer_integration <- function(res, what = "outer grid") {
   tg    <- .nl_theta_matrix(res)
+  # A node a refinement pass appended was not declared, so the specs are read
+  # off the base cells and the cells' tags carry the rest.
+  refining <- res$refining_axis
+  base  <- !nzchar(.hyper_slice_home(refining, nrow(tg)))
   specs <- .joint_axis_specs_from_grid(
-    tg, folded_axes = res$log_hyperprior_axes)
-  res$log_quad     <- .hyper_log_quad_weights(tg, specs)
-  res$axis_support <- .hyper_grid_supports(tg, specs)
+    tg[base, , drop = FALSE], folded_axes = res$log_hyperprior_axes)
+  res$log_quad     <- .hyper_log_quad_weights(tg, specs, refining = refining)
+  res$axis_support <- .hyper_grid_supports(tg, specs, refining = refining)
   res$weights      <- .nl_normalise_weights_safe(res$log_marginal, what,
                                                  log_quad = res$log_quad)
   .nl_attach_evidence(res, tg, specs)

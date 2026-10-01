@@ -46,7 +46,8 @@
   tulpa_nested_laplace(
     f$y, f$n_trials, f$X, prior = f$prior, family = "poisson",
     control = utils::modifyList(
-      list(auto_recenter = FALSE, diagnose_k = FALSE, diagnose_skew = FALSE),
+      list(auto_recenter = FALSE, diagnose_k = FALSE, diagnose_skew = FALSE,
+           axis_refine = "none"),
       ctrl))
 }
 

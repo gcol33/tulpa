@@ -505,12 +505,15 @@ test_that("both doors apply a stated density under hyperprior = \"flat\"", {
   # and its marginal is the proper fit's less the PC density on tau.
   icar <- c(list(type = "icar", spatial_idx = site,
                  tau_grid = c(0.5, 1, 2, 4, 8)), adj)
+  # The two fits are read on the nodes written down, so no axis is refined.
   np <- tulpa_nested_laplace(y, rep(1L, length(y)), X, prior = icar,
                              family = "binomial",
-                             control = list(n_threads = 1L, diagnose_k = FALSE))
+                             control = list(n_threads = 1L, diagnose_k = FALSE,
+                                            axis_refine = "none"))
   nf <- tulpa_nested_laplace(y, rep(1L, length(y)), X, prior = icar,
                              family = "binomial", hyperprior = "flat",
-                             control = list(n_threads = 1L, diagnose_k = FALSE))
+                             control = list(n_threads = 1L, diagnose_k = FALSE,
+                                            axis_refine = "none"))
   expect_identical(nf$theta_grid, np$theta_grid)
   expect_true(all(nf$log_hyperprior == 0))
   expect_equal(nf$log_marginal, np$log_marginal - np$log_hyperprior,

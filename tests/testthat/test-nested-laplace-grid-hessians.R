@@ -29,7 +29,7 @@ test_that("keep_grid_hessians exposes per-grid H_beta and modes", {
   result <- tulpa_nested_laplace(
     y = dat$y, n_trials = dat$n_trials, X = dat$X,
     prior = prior, family = "binomial",
-    control = list(keep_grid_hessians = TRUE)
+    control = list(keep_grid_hessians = TRUE, axis_refine = "none")
   )
 
   expect_type(result$grid_hessians, "list")
@@ -71,7 +71,8 @@ test_that("default keep_grid_hessians = TRUE retains per-grid H_beta and modes",
 
   result <- tulpa_nested_laplace(
     y = dat$y, n_trials = dat$n_trials, X = dat$X,
-    prior = prior, family = "binomial"
+    prior = prior, family = "binomial",
+    control = list(axis_refine = "none")
   )
 
   expect_type(result$grid_hessians, "list")

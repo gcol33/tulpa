@@ -508,11 +508,15 @@
 # on a precision one, and the two are one axis under `tau = 1 / sigma^2`.
 .JOINT_REFINABLE_BLOCK_AXES <- c("sigma", "tau", "alpha")
 
-.joint_axis_refine_eligible <- function(axis) {
+#
+# `dispersions = FALSE` is the registry door's single-block grid, whose axes are
+# bare but name no per-arm dispersion (`phi_gp` is the nngp lengthscale there).
+.joint_axis_refine_eligible <- function(axis, dispersions = TRUE) {
     if (grepl("^b[0-9]+[.]", axis)) {
         return(.hyper_axis_bare(axis) %in% .JOINT_REFINABLE_BLOCK_AXES)
     }
-    axis %in% .JOINT_REFINABLE_BLOCK_AXES || startsWith(axis, "phi_")
+    axis %in% .JOINT_REFINABLE_BLOCK_AXES ||
+        (isTRUE(dispersions) && startsWith(axis, "phi_"))
 }
 
 # One entry of the user-facing `phi_grid` argument, by arm name. The argument is
@@ -586,10 +590,11 @@
 # `control$axis_refine`, already validated -- overrides per axis. The one rule
 # both joint drivers resolve their modes through, each supplying only how it
 # reads provenance off its own call.
-.joint_axis_refine_modes_by <- function(axes, is_stated, user = NULL) {
+.joint_axis_refine_modes_by <- function(axes, is_stated, user = NULL,
+                                        eligible = .joint_axis_refine_eligible) {
     out <- stats::setNames(rep("none", length(axes)), axes)
     for (a in axes) {
-        if (!.joint_axis_refine_eligible(a)) next
+        if (!eligible(a)) next
         out[[a]] <- if (is_stated(a)) .nl_axis_refine("stated")
                     else .nl_axis_refine("placed")
     }
@@ -647,7 +652,8 @@
 # than a silent no-op, and so is asking for nodes on an axis the driver's passes
 # cannot place any on: a knob that quietly does nothing is how a caller comes to
 # believe a range was honoured when it was not.
-.joint_check_axis_refine <- function(x, axis_names) {
+.joint_check_axis_refine <- function(x, axis_names,
+                                     eligible_fn = .joint_axis_refine_eligible) {
     if (is.null(x)) return(NULL)
     if (is.list(x)) x <- unlist(x, use.names = TRUE)
     if (!is.character(x) || !length(x) || anyNA(x)) {
@@ -662,8 +668,7 @@
              paste(sprintf('"%s"', .NL_AXIS_REFINE_MODES), collapse = ", "),
              ".", call. = FALSE)
     }
-    eligible <- axis_names[vapply(axis_names, .joint_axis_refine_eligible,
-                                  logical(1))]
+    eligible <- axis_names[vapply(axis_names, eligible_fn, logical(1))]
     nm <- names(x)
     if (is.null(nm) || !all(nzchar(nm))) {
         if (length(x) != 1L) {

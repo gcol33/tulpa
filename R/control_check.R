@@ -171,7 +171,9 @@ tulpa_check_control <- function(control, allowed, where) {
                        "auto_recenter", "subspace_debias", "cila",
                        "max_grid_cells", "within_cell",
                        "prune", "prune_tol", "prune_log_gap", "screen_iters",
-                       "fitted_var",
+                       "fitted_var", "var_of_means_consistency", "axis_refine",
+                       "adaptive_grid", "adaptive_grid_edge_thresh",
+                       "adaptive_grid_max_passes",
                        "checkpoint", progress),
     nested_laplace_joint = c(
       "max_iter", "tol", "n_threads", "n_threads_outer", "n_threads_scatter",

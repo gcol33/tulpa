@@ -551,9 +551,7 @@ test_that("a one-arm joint fit reproduces the single-block fixed-effect posterio
     d  <- sim_re(4100L, fam, cfg$nr, cfg$spr, cfg$ntr, cfg$beta, cfg$su, cfg$phi)
     sg <- exp(seq(log(0.2), log(1.5), length.out = 7))
     fs <- recov_fit_single(d, sg, fam, cfg)
-    # The single-block fit integrates the grid it was handed, so the joint fit
-    # is held to the same nodes.
-    fj <- recov_fit_joint(d, sg, fam, cfg, control = list(axis_refine = "none"))
+    fj <- recov_fit_joint(d, sg, fam, cfg)
 
     expect_true(is.na(fj$grid_fixed_declined))
     # The joint tier reports real uncertainty at all -- the #305 defect.
