@@ -361,6 +361,45 @@ test_that("a grid-width deficiency stays unreliable: the reported k is never the
          n_neighbors = as.integer(nn), n_spatial_units = n_s)
 }
 
+# Two ICAR blocks (40 and 30 units) behind a binomial donor arm and a gaussian
+# copy arm that reads both fields; `alpha_a` / `alpha_b` are the two copy scales'
+# grids. A grid that carries 0 declares the copy scale's "no coupling" level,
+# which the CCD design splits at (`atom_split`), so the grids decide whether the
+# design has a single mode-Hessian Gaussian to carry.
+.pkp_two_block_fixture <- function(alpha_a = c(0, 0.6, 1.2, 1.8),
+                                   alpha_b = c(0, 0.5, 1.0, 1.5)) {
+    set.seed(31)
+    N <- 800L; nA <- 40L; nB <- 30L
+    iA <- sample.int(nA, N, TRUE); iB <- sample.int(nB, N, TRUE)
+    pA <- { r <- cumsum(rnorm(nA, 0, 1.1 / sqrt(nA))); r - mean(r) }
+    pB <- { r <- cumsum(rnorm(nB, 0, 0.9 / sqrt(nB))); r - mean(r) }
+    x <- rnorm(N); Xo <- cbind(1, x)
+    oc <- rbinom(N, 1, plogis(as.numeric(Xo %*% c(-0.3, 0.5)) + pA[iA] + pB[iB]))
+    ip <- oc == 1L; Xp <- Xo[ip, , drop = FALSE]; iAp <- iA[ip]; iBp <- iB[ip]
+    yp <- rnorm(sum(ip),
+                as.numeric(Xp %*% c(0.2, -0.4)) + 1.2 * pA[iAp] + 0.8 * pB[iBp], 0.5)
+    aA <- .pkp_adj(nA); aB <- .pkp_adj(nB)
+    arms <- list(
+        occ = list(y = as.numeric(oc), n_trials = rep(1L, N), X = Xo,
+                   spatial_idx = as.integer(iA), re_idx = rep(0, N),
+                   n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0),
+        pos = list(y = yp, n_trials = rep(1L, length(yp)), X = Xp,
+                   spatial_idx = as.integer(iAp), re_idx = rep(0, length(yp)),
+                   n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.25))
+    prior <- list(
+        list(type = "icar", n_spatial_units = nA, adj_row_ptr = aA$adj_row_ptr,
+             adj_col_idx = aA$adj_col_idx, n_neighbors = aA$n_neighbors,
+             sigma_grid = c(0.4, 0.8, 1.2, 1.6),
+             spatial_idx = list(as.integer(iA), as.integer(iAp))),
+        list(type = "icar", n_spatial_units = nB, adj_row_ptr = aB$adj_row_ptr,
+             adj_col_idx = aB$adj_col_idx, n_neighbors = aB$n_neighbors,
+             sigma_grid = c(0.3, 0.7, 1.1),
+             spatial_idx = list(as.integer(iB), as.integer(iBp))))
+    cp <- list(list(block = 1, arm = "pos", alpha_grid = alpha_a),
+               list(block = 2, arm = "pos", alpha_grid = alpha_b))
+    list(arms = arms, prior = prior, copy = cp)
+}
+
 # --------------------------------------------------------------------------- #
 # Opt-in per-arm outer Pareto-k (gcol33/tulpa#120)                            #
 # --------------------------------------------------------------------------- #
@@ -424,47 +463,36 @@ test_that("per-arm k is reported and leaves the joint k bit-identical", {
 
 test_that("a multi-block CCD fit sources the k-hat from the mode Hessian", {
     skip_if_not_slow()
-    set.seed(31)
-    N <- 800L; nA <- 40L; nB <- 30L
-    iA <- sample.int(nA, N, TRUE); iB <- sample.int(nB, N, TRUE)
-    pA <- { r <- cumsum(rnorm(nA, 0, 1.1 / sqrt(nA))); r - mean(r) }
-    pB <- { r <- cumsum(rnorm(nB, 0, 0.9 / sqrt(nB))); r - mean(r) }
-    x <- rnorm(N); Xo <- cbind(1, x)
-    oc <- rbinom(N, 1, plogis(as.numeric(Xo %*% c(-0.3, 0.5)) + pA[iA] + pB[iB]))
-    ip <- oc == 1L; Xp <- Xo[ip, , drop = FALSE]; iAp <- iA[ip]; iBp <- iB[ip]
-    yp <- rnorm(sum(ip),
-                as.numeric(Xp %*% c(0.2, -0.4)) + 1.2 * pA[iAp] + 0.8 * pB[iBp], 0.5)
-    aA <- .pkp_adj(nA); aB <- .pkp_adj(nB)
-    arms <- list(
-        occ = list(y = as.numeric(oc), n_trials = rep(1L, N), X = Xo,
-                   spatial_idx = as.integer(iA), re_idx = rep(0, N),
-                   n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0),
-        pos = list(y = yp, n_trials = rep(1L, length(yp)), X = Xp,
-                   spatial_idx = as.integer(iAp), re_idx = rep(0, length(yp)),
-                   n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.25))
-    prior <- list(
-        list(type = "icar", n_spatial_units = nA, adj_row_ptr = aA$adj_row_ptr,
-             adj_col_idx = aA$adj_col_idx, n_neighbors = aA$n_neighbors,
-             sigma_grid = c(0.4, 0.8, 1.2, 1.6),
-             spatial_idx = list(as.integer(iA), as.integer(iAp))),
-        list(type = "icar", n_spatial_units = nB, adj_row_ptr = aB$adj_row_ptr,
-             adj_col_idx = aB$adj_col_idx, n_neighbors = aB$n_neighbors,
-             sigma_grid = c(0.3, 0.7, 1.1),
-             spatial_idx = list(as.integer(iB), as.integer(iBp))))
-    cp <- list(list(block = 1, arm = "pos", alpha_grid = c(0, 0.6, 1.2, 1.8)),
-               list(block = 2, arm = "pos", alpha_grid = c(0, 0.5, 1.0, 1.5)))
+    # No copy grid carries 0, so the design has one Gaussian to carry.
+    fx <- .pkp_two_block_fixture(alpha_a = c(0.3, 0.6, 1.2, 1.8),
+                                 alpha_b = c(0.25, 0.5, 1.0, 1.5))
     fit <- tulpa_nested_laplace_joint(
-        responses = arms, prior = prior, copy = cp,
+        responses = fx$arms, prior = fx$prior, copy = fx$copy,
         control = list(integration = "ccd", diagnose_k = TRUE, k_samples = 200L,
                        var_of_means_consistency = FALSE))
     expect_identical(fit$integration, "ccd")
-    # A CCD fit's Pareto-k proposal is the mode-Hessian Gaussian; the dispatcher
-    # returns it raw ("mode_hessian") or moment-match-refined ("moment_matched"),
-    # never a grid proposal (prep$proposal_source is mode_hessian, so the
-    # grid_moment / grid_mixture branch is not reached). Post-#221 the corrected
-    # outer target (no spurious log-axis Jacobian on the sigma axes) is
-    # well-covered enough that the moment-matching refinement engages.
-    expect_true(fit$pareto_k_proposal_source %in% c("mode_hessian", "moment_matched"))
+    # The proposal descends from the CCD Gaussian: the mode Hessian as it stands
+    # ("mode_hessian"), moment-match-refined ("moment_matched"), or the
+    # skew-normal rescue laid over it ("skew_normal"). No grid proposal.
+    expect_true(fit$pareto_k_proposal_source %in%
+                    c("mode_hessian", "moment_matched", "skew_normal"))
+    expect_true(is.finite(fit$pareto_k))
+    expect_gt(fit$pareto_k_is_ess, 0)
+})
+
+test_that("a multi-block CCD fit split at the copy atom scores a grid proposal", {
+    skip_if_not_slow()
+    # A grid carrying 0 declares the copy scale's "no coupling" level and the
+    # design splits there. One Gaussian does not describe the split's
+    # components, so no mode-Hessian proposal is carried and the diagnostic
+    # reads the grid-weighted one.
+    fx <- .pkp_two_block_fixture()
+    fit <- tulpa_nested_laplace_joint(
+        responses = fx$arms, prior = fx$prior, copy = fx$copy,
+        control = list(integration = "ccd", diagnose_k = TRUE, k_samples = 200L,
+                       var_of_means_consistency = FALSE))
+    expect_identical(fit$integration, "ccd")
+    expect_false(identical(fit$pareto_k_proposal_source, "mode_hessian"))
     expect_true(is.finite(fit$pareto_k))
     expect_gt(fit$pareto_k_is_ess, 0)
 })
@@ -514,35 +542,8 @@ test_that("a collapsed tensor fit recovers a usable k-hat (grid-moment + moment 
 
 test_that("diagnose_k = 'by_arm' adds per-arm k and leaves the joint k unchanged", {
     skip_if_not_slow()
-    set.seed(31)
-    N <- 800L; nA <- 40L; nB <- 30L
-    iA <- sample.int(nA, N, TRUE); iB <- sample.int(nB, N, TRUE)
-    pA <- { r <- cumsum(rnorm(nA, 0, 1.1 / sqrt(nA))); r - mean(r) }
-    pB <- { r <- cumsum(rnorm(nB, 0, 0.9 / sqrt(nB))); r - mean(r) }
-    x <- rnorm(N); Xo <- cbind(1, x)
-    oc <- rbinom(N, 1, plogis(as.numeric(Xo %*% c(-0.3, 0.5)) + pA[iA] + pB[iB]))
-    ip <- oc == 1L; Xp <- Xo[ip, , drop = FALSE]; iAp <- iA[ip]; iBp <- iB[ip]
-    yp <- rnorm(sum(ip),
-                as.numeric(Xp %*% c(0.2, -0.4)) + 1.2 * pA[iAp] + 0.8 * pB[iBp], 0.5)
-    aA <- .pkp_adj(nA); aB <- .pkp_adj(nB)
-    arms <- list(
-        occ = list(y = as.numeric(oc), n_trials = rep(1L, N), X = Xo,
-                   spatial_idx = as.integer(iA), re_idx = rep(0, N),
-                   n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0),
-        pos = list(y = yp, n_trials = rep(1L, length(yp)), X = Xp,
-                   spatial_idx = as.integer(iAp), re_idx = rep(0, length(yp)),
-                   n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.25))
-    prior <- list(
-        list(type = "icar", n_spatial_units = nA, adj_row_ptr = aA$adj_row_ptr,
-             adj_col_idx = aA$adj_col_idx, n_neighbors = aA$n_neighbors,
-             sigma_grid = c(0.4, 0.8, 1.2, 1.6),
-             spatial_idx = list(as.integer(iA), as.integer(iAp))),
-        list(type = "icar", n_spatial_units = nB, adj_row_ptr = aB$adj_row_ptr,
-             adj_col_idx = aB$adj_col_idx, n_neighbors = aB$n_neighbors,
-             sigma_grid = c(0.3, 0.7, 1.1),
-             spatial_idx = list(as.integer(iB), as.integer(iBp))))
-    cp <- list(list(block = 1, arm = "pos", alpha_grid = c(0, 0.6, 1.2, 1.8)),
-               list(block = 2, arm = "pos", alpha_grid = c(0, 0.5, 1.0, 1.5)))
+    fx <- .pkp_two_block_fixture()
+    arms <- fx$arms; prior <- fx$prior; cp <- fx$copy
     ctrl <- list(integration = "ccd", k_samples = 200L,
                  var_of_means_consistency = FALSE)
 
