@@ -744,10 +744,41 @@ Rcpp::List cpp_tgmrf_nuts_joint(
         Rcpp::stop("cpp_tgmrf_nuts_joint: initial (beta, z, theta) gave non-finite log-post.");
     }
 
-    // ---- Optional gradient check: analytic vs central differences at init ----
+    // ---- Optional gradient check: analytic vs central differences -------------
+    //
+    // Run one mass-matrix SD off the initial point, not at it. The initial point
+    // is the pilot Laplace mode, where the inner Newton has driven the z block of
+    // the gradient to roundoff (|g| ~ 1e-15, some entries exactly 0.0): no
+    // central difference resolves an entry that small, and an exactly-zero entry
+    // there is the mode rather than a dropped term. Off the mode every entry is of
+    // the order of the inverse SD. The direction comes from its own seeded
+    // stream, so the sampler's draws do not depend on whether the check ran; the
+    // displacement is halved until the point has a finite log posterior.
     Rcpp::RObject gradient_check = R_NilValue;
     if (debug_gradient_check) {
-        const GradientCheck gc = joint_gradient_check(st, q, grad, fd_check_step);
+        std::mt19937 check_rng((unsigned)seed ^ 0x9e3779b9u);
+        std::normal_distribution<double> check_norm(0.0, 1.0);
+        std::vector<double> dir(D);
+        for (int k = 0; k < D; ++k) {
+            dir[k] = check_norm(check_rng) * std::sqrt(std::max(1e-8, (double)M_inv_diag[k]));
+        }
+        std::vector<double> q_check(D), grad_check;
+        double scale = 1.0;
+        bool ok_check = false;
+        for (int halving = 0; halving <= 10; ++halving) {
+            for (int k = 0; k < D; ++k) q_check[k] = q[k] + scale * dir[k];
+            const double lp = log_post_and_grad(st, q_check, true, &grad_check, ok_check);
+            ok_check = ok_check && std::isfinite(lp);
+            if (ok_check) break;
+            scale *= 0.5;
+        }
+        if (!ok_check) {
+            Rcpp::stop("cpp_tgmrf_nuts_joint: no point within 2^-10 mass-matrix SDs "
+                       "of the initial (beta, z, theta) gave a finite log-post for the "
+                       "gradient check.");
+        }
+        const GradientCheck gc = joint_gradient_check(st, q_check, grad_check,
+                                                      fd_check_step);
         if (verbose) {
             Rcpp::Rcout << "[gradient-check] |grad|_max = " << gc.grad_scale
                         << "; max relative error = " << gc.max_rel
@@ -769,7 +800,8 @@ Rcpp::List cpp_tgmrf_nuts_joint(
             Rcpp::Named("n_zero")        = gc.n_zero,
             Rcpp::Named("n_checked")     = gc.n_checked,
             Rcpp::Named("n_params")      = gc.n_params,
-            Rcpp::Named("step")          = fd_check_step);
+            Rcpp::Named("step")          = fd_check_step,
+            Rcpp::Named("displacement")  = scale);
         if (gradient_check_tol > 0.0 && gc.max_rel > gradient_check_tol) {
             Rcpp::stop("cpp_tgmrf_nuts_joint: joint gradient disagrees with "
                        "central differences: max relative error %g at index %d "

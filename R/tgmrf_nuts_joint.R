@@ -57,12 +57,17 @@
 #'   \eqn{\partial_m Q}, \eqn{\partial_m \mu}, \eqn{d\log p(\theta)/d\theta_m}.
 #'   Default 1e-3.
 #' @param debug_gradient_check If `TRUE`, compares the analytic joint gradient
-#'   at the initial \eqn{q} against central differences across all
-#'   `D = p + n_lat + theta_dim` components and returns the comparison as
-#'   `gradient_check` on the fit: `max_rel` (largest relative error),
-#'   `grad_scale` (\eqn{\max_k|\partial_k|}, the scale the relative error is
-#'   taken against), `max_rel_beta` / `max_rel_z` / `max_rel_theta` per block,
-#'   `n_zero` (analytic entries that are identically zero) and `n_checked`.
+#'   against central differences across all `D = p + n_lat + theta_dim`
+#'   components and returns the comparison as `gradient_check` on the fit:
+#'   `max_rel` (largest relative error), `grad_scale`
+#'   (\eqn{\max_k|\partial_k|}, the scale the relative error is taken
+#'   against), `max_rel_beta` / `max_rel_z` / `max_rel_theta` per block,
+#'   `n_zero` (analytic entries that are identically zero), `n_checked` and
+#'   `displacement`. The check runs a seeded random direction of
+#'   `displacement` mass-matrix SDs (1, halved until the log posterior is
+#'   finite) off the initial \eqn{q}: the initial point is the pilot mode,
+#'   where the z block of the gradient is at roundoff and no central
+#'   difference resolves it.
 #'   The theta block is held to a looser accuracy than the other two: its
 #'   analytic gradient is itself a central difference at `fd_step`, so it
 #'   carries that rule's own truncation.

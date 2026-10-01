@@ -58,6 +58,13 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   `refining = fit$refining_axis`. The subspace debias and the corrected
   integrated Laplace re-solve the fit's own cells, refinement nodes included
   (gcol33/tulpa#927).
+* The joint tgmrf NUTS gradient check (`debug_gradient_check = TRUE`) runs one
+  mass-matrix SD off the initial point in a seeded direction, reported as
+  `gradient_check$displacement`. At the pilot mode the z block of the gradient
+  is at roundoff, so the check could not resolve it and 20 of 83 entries read
+  exactly zero; off the mode the (beta, z) blocks agree with central
+  differences to 1.2e-08 and 7.5e-09 on the periodic AR1 example
+  (gcol33/tulpa#929).
 
 On that Calluna fit (LiSC, 32 threads) the engine defaults take 25.3 min and
 20 full solves in the final grid besides the 79-evaluation mode-find; the
