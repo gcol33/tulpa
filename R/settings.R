@@ -667,23 +667,21 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     min_sd_u  = 0.15,
     max_sd_u  = 3,
 
-    # The floor on the joint doors, where the consistency pass resolves an axis
-    # the placement left on one node (gcol33/tulpa#926). The registry floor above
-    # was swept without that pass, and where it binds the placed cell is wider
-    # than the posterior -- 0.1875 against a log-SD of 0.066 on the two-arm ICAR
-    # fixture -- so the pass has one node to start from in every row but the
-    # modal one. Two-arm ICAR, 200 seeds per row, eight rows (8x8 to 24x24,
-    # sigma 0.5 to 3), summed |coverage - 0.95| of the field SD:
-    #
-    #   floor        0.15    0.075   0.05    0.03
-    #   field SD     0.395   0.255   0.175   0.190
-    #   copy scale   0.305   0.205   0.260   0.212
-    #
-    # (0.500 and 0.300 with no pass). 0.05 is taken, between the two ends the
-    # sweep supports; the registry door keeps 0.15 until its own ladder is
-    # re-run with the pass (`min_sd_u_joint` is read where `tulpa.nl_door` is
-    # "joint", `.nl_recenter_floor()`).
-    min_sd_u_joint = 0.05,
+    # The joint doors lay an axis at the SD the mode-find measured, with no
+    # floor (`min_sd_u_joint` is read where `tulpa.nl_door` is "joint",
+    # `.nl_recenter_floor()`). A floor widens a placed axis past its posterior,
+    # which compensated the box read's narrowing at 1.25 SDs (the ladder above
+    # was scored under it) and which the log-quadratic read does not need: it is
+    # exact for a Gaussian at that spacing and continues the end quadratic past
+    # the outer node. Where a floor binds, the consistency pass lays the at-mode
+    # ladder between the floored nodes as new levels, so the grid ends resolved
+    # either way and the floor only costs cells. On the two-arm ICAR fixture of
+    # gcol33/tulpa#932, where the field SD's log-SD is 0.037 and the copy
+    # scale's 0.024 at 24x24, the 0.05 floor of gcol33/tulpa#926 bound on both:
+    # 464 cells against 144 without it, at the same error against a dense
+    # reference. The registry door keeps 0.15 until its own ladder is re-run
+    # under the log-quadratic read.
+    min_sd_u_joint = 0,
 
     # What the pass DOES when that ceiling binds.
     #
@@ -1198,7 +1196,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # exact tie, 0.9933 and 0.9067 both 0.0433 from nominal -- at 0.46 to 0.92x the
 # width (`dev_notes/issue357/RESULTS.md` sections 4 and 6.6).
 #
-# THE DEFAULT IS `box_uniform` (0.0.188), decided on
+# `box_uniform` WAS THE DEFAULT from 0.0.188 to gcol33/tulpa#932, decided on
 # FIXED-TRUTH coverage -- the pre-registered instrument for this choice -- at
 # the placement the engine ships, which is what changed. Before the placement
 # pass the default axes were laid without reference to the posterior, and every
@@ -1240,26 +1238,28 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 #
 # `control$within_cell = "chord"` restores the previous report per fit, exactly.
 #
-# `"log_quadratic"` (`R/within_cell_log_quadratic.R`, gcol33/tulpa#932) is the
-# third construction and is OPT-IN. `lq_max_h_over_sd` is the per-row gate it
-# runs under. On a prior-free ladder of exact gaussian-LMM posteriors (150
-# seeds x G 10 / 40 / 160, grids at h / sd 0.25 to 4 laid on or off the mode,
+# THE DEFAULT IS `"log_quadratic"` (`R/within_cell_log_quadratic.R`,
+# gcol33/tulpa#932). `lq_max_h_over_sd` is the per-row gate it runs under. On a
+# prior-free ladder of exact gaussian-LMM posteriors (150 seeds x G 10 / 40 /
+# 160, grids at h / sd 0.25 to 4 laid on or off the mode,
 # `dev_notes/issue932/gate_ladder.R`) its mean endpoint error |F(lo) - 0.025| +
 # |F(hi) - 0.975| is 0.0002 to 0.008 against the box read's 0.007 to 0.028 up
 # to h / sd 2, 0.006 against 0.031 at 2 to 2.5, 0.012 against 0.068 at 3 to 4,
 # and 0.073 against 0.036 past 4. The gate sits at 2, inside the range where it
-# wins on every arrangement class, not at the crossover.
+# wins on every arrangement class, not at the crossover; a row past it is read
+# as boxes, so where the box read wins the box read is what runs.
 #
-# It is not the default because on the engine's own REFINED grids it does not
-# beat the box read. Against dense references of the two-arm ICAR fixture
-# (16 seeds each, `dev_notes/issue932/dense932.R`), mean |F_ref(q) - p| over
-# seven levels summed over the field SD, copy scale and dispersion of the 16x16
-# and 24x24 fields is 0.151 against the box read's 0.156: better on the 16x16
-# field SD (0.013 against 0.015, 95% width 0.967 against 0.931 of the
-# reference), worse on the 24x24 one (0.032 against 0.027, 0.916 against
-# 0.986). On those grids the error that remains is mostly a shift of location
-# shared by every level, which is the cell masses rather than the spread inside
-# a cell.
+# A placement lays an axis at h / sd 1.25, where the box read is narrow by
+# construction (95% width 0.952 of the true one in the limit of a fixed
+# extent), so the default had to wait on the grid: with refinement laying
+# levels rather than slices and no joint placement floor, the log-quadratic read
+# against dense references of the two-arm ICAR fixture (16 seeds each,
+# `dev_notes/issue932/dense932.R`), mean |F_ref(q) - p| over seven levels
+# summed over the field SD, copy scale and dispersion of the 16x16 and 24x24
+# fields, is 0.038, where the box read on the same grids is 0.110 and the
+# shipped grid before the change read 0.156 (box) and 0.151 (log-quadratic).
+# The 16x16 field SD's 95% width is 0.976 of the reference against the box
+# read's 0.932. `ENGINEERING_HISTORY.md` has the fixed-truth coverage.
 #
 # `lq_tail_nats` and `lq_tail_sd` bound how far a row's tail is tabulated past
 # its outer node, and `lq_grid_points` is the minimum size of the table the
@@ -1383,23 +1383,18 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 #
 # `axis_refine_nodes` caps the nodes the consistency pass
 # (`.hyper_consistency_pass()`) adds to one axis while bisecting it towards
-# `axis_sd_ess`. It is a cost cap, one slice cell per node: 8 is one bisection
-# of every gap of a declared 9-node slab, the resolution the default outer axes
-# are declared at.
+# `axis_sd_ess`. It counts levels, each laid in every row of the other axes: 8
+# is one bisection of every gap of a declared 9-node slab, the resolution the
+# default outer axes are declared at.
 # `at_mode_gap_var` is the share of an axis's posterior variance, about the
 # mode and in its SDs, that a node the consistency pass laid at the mode may
 # read into the gap beyond it, where the box rule hands it half the gap
 # (`.hyper_at_mode_reach()`, `.hyper_propose_edge_close()`). It bounds the
 # variance rather than the mass because a read that spreads a node over its box
 # carries that mass across the gap: 0.7% of the posterior read across a 100-SD
-# box quadrupled the Calluna fit's reported dispersion SD.
-# `consistency_row_mass` is the share, relative to the row through the outer
-# mode, below which a row holds too little of the posterior for the
-# consistency pass to lay a slice in it (`.hyper_consistency_pass()`): a row
-# `D` mode-SDs out holds at most `exp(-D^2 / 2)` of it.
-# Both are 1%, the share the cheap-pass screen may drop
-# (`.NL_SCREEN$gate_mass`): each bounds how much of the posterior the outer
-# grid may misplace.
+# box quadrupled the Calluna fit's reported dispersion SD. It is 1%, the share
+# the cheap-pass screen may drop (`.NL_SCREEN$gate_mass`): both bound how much
+# of the posterior the outer grid may misplace.
 # `edge_mass_lift` is how far above a FLAT marginal an outer axis's boundary
 # node has to sit before the axis is NAMED as holding boundary mass
 # (`.nl_axis_edge_mass()`, `$outer_grid_edge_mass_axes`). Same currency as the
@@ -1436,7 +1431,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # outermost cell, which is not a width the sweep could have seen
 # (gcol33/tulpa#660).
 .NL_DIAG <- list(
-    within_cell          = "box_uniform",
+    within_cell          = "log_quadratic",
     lq_max_h_over_sd     = 2,
     lq_tail_nats         = 36,
     lq_tail_sd           = 10,
@@ -1446,7 +1441,6 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     read_sd_nodes        = 512L,
     axis_refine_nodes    = 8L,
     at_mode_gap_var      = 0.01,
-    consistency_row_mass = 0.01,
     edge_mass_lift       = 1,
     k_usable             = 0.7,
     k_samples            = 500L,

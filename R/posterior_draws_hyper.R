@@ -61,12 +61,10 @@
 # degenerate interval a `clamp` support's extreme cell takes above, reached
 # from the other direction.
 #
-# On an axis a refinement pass re-tiled (`rows`, `.nl_axis_cell_rows()`) a
-# cell's box depends on its row as well as its value, so the box-uniform
-# geometry is PER CELL: `values` is the axis coordinate of every cell and
-# `lo` / `hi` the box that cell owns (`.nl_cell_boxes()`), flagged `per_cell`.
+# `declared` is `.nl_level_edges()`'s: the levels the axis was declared on,
+# which fix the partition's outer edges where a refinement pass added others.
 .nl_hyper_axis_geometry <- function(v, w, domain, within, outside,
-                                    atom = NA_real_, rows = NULL,
+                                    atom = NA_real_, declared = NULL,
                                     row_id = NULL, log_density = NULL) {
   none <- function(declined) {
     list(kind = "none", values = numeric(0), lo = numeric(0),
@@ -78,30 +76,13 @@
   # does (`.nl_summary_quantile_read()`), and carries its own reason unless the
   # box read declined as well.
   if (identical(within, "log_quadratic")) {
-    g <- .nl_lq_axis_geometry(v, w, domain, atom, rows, row_id, log_density)
+    g <- .nl_lq_axis_geometry(v, w, domain, atom, declared, row_id,
+                              log_density)
     if (is.na(g$declined)) return(g)
     b <- .nl_hyper_axis_geometry(v, w, domain, "box_uniform", outside, atom,
-                                 rows)
+                                 declared)
     if (is.na(b$declined)) b$declined <- g$declined
     return(b)
-  }
-
-  if (!is.null(rows) && !identical(within, "chord")) {
-    ia <- length(atom) == 1L && is.finite(atom) && any(v == atom) &&
-          !any(v < atom, na.rm = TRUE)
-    cont <- if (ia) is.na(v) | v != atom else rep(TRUE, length(v))
-    rc <- list(row = rows$row[cont], base = rows$base[cont])
-    bx <- .nl_cell_boxes(v[cont], domain, rc)
-    if (is.null(bx)) {
-      g <- .nl_hyper_axis_geometry(v, w, domain, "chord", outside, atom)
-      g$declined <- "boxes_do_not_tile"
-      return(g)
-    }
-    lo <- hi <- v
-    lo[cont] <- bx$lo
-    hi[cont] <- bx$hi
-    return(list(kind = "box_uniform", per_cell = TRUE, values = v,
-                lo = lo, hi = hi, declined = NA_character_))
   }
 
   # A declared point mass is not a cell: its box is its own coordinate, so a
@@ -115,7 +96,8 @@
         !any(v < atom, na.rm = TRUE)
   if (ia) {
     keep <- v != atom
-    g <- .nl_hyper_axis_geometry(v[keep], w[keep], domain, within, outside)
+    g <- .nl_hyper_axis_geometry(v[keep], w[keep], domain, within, outside,
+                                 declared = declared)
     if (identical(g$kind, "none")) return(g)
     g$values <- c(atom, g$values)
     g$lo     <- c(atom, g$lo)
@@ -148,10 +130,10 @@
   if (!any(fin)) return(none("no_usable_node"))
   uv <- sort(unique(as.numeric(v[fin])))
   if (length(uv) < 2L) return(none("single_node"))
-  e <- .nl_box_edges_from(.nl_cell_partition(uv, domain), uv)
-  if (is.null(e)) return(chord("boxes_do_not_tile"))
+  le <- .nl_level_edges(uv, domain, declared)
+  if (is.null(le)) return(chord("boxes_do_not_tile"))
   list(kind = "box_uniform", values = uv,
-       lo = e[-length(e)], hi = e[-1L], declined = NA_character_)
+       lo = le$e[-length(le$e)], hi = le$e[-1L], declined = NA_character_)
 }
 
 # The geometry coordinate each cell value is matched to: the cell itself on a
@@ -521,7 +503,7 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
     dm <- if (length(doms) < j) NA_character_ else doms[[j]]
     at <- if (length(atoms) < j) NA_real_ else atoms[[j]]
     .nl_hyper_axis_geometry(as.numeric(tg[, j]), w, dm, req, outside, at,
-                            .nl_axis_cell_rows(tg, j, fit$refining_axis),
+                            .nl_axis_declared_levels(tg, j, fit$refining_axis),
                             .nl_axis_row_id(tg, j), lmd)
   })
   # One uniform per draw and axis, tied across axes by the copula that keeps

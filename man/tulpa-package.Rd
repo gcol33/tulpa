@@ -28,6 +28,7 @@ Other contributors:
 \itemize{
   \item Frances Y. Kuo (Sobol direction numbers in src/sobol_direction_numbers.h, BSD-3-clause) [contributor, copyright holder]
   \item Stephen Joe (Sobol direction numbers in src/sobol_direction_numbers.h, BSD-3-clause) [contributor, copyright holder]
+  \item Arm Limited (exp and log routines in src/fastmath.h and src/fastmath_data.cpp, MIT) [copyright holder]
 }
 
 }

@@ -13,7 +13,7 @@ tulpa_hyper_grid_supports(theta_grid, specs, refining = NULL)
 \item{specs}{Per-axis spec list, e.g. from
 \code{\link[=tulpa_joint_axis_specs_from_grid]{tulpa_joint_axis_specs_from_grid()}}.}
 
-\item{refining}{Optional per-cell refinement-slice tag vector (see
+\item{refining}{Optional per-cell refinement tag vector (see
 \code{\link[=tulpa_hyper_slice_home]{tulpa_hyper_slice_home()}}).}
 }
 \value{
@@ -24,7 +24,7 @@ or \code{specs} is \code{NULL}.
 \description{
 The natural-scale support of every axis in \code{specs} that carries one, as a
 named list of intervals -- the region each axis's outer-grid measure
-actually integrates, accounting for refinement slice cells. Intended for
+actually integrates, including levels a refinement pass added. Intended for
 recovering an axis's integrated span from a settled grid, e.g. so a
 sampled-hyperparameter prior can be derived from what the outer
 integration used rather than restated alongside it.

@@ -1145,68 +1145,101 @@ is not a cell width -- the same objection that makes `sample` decline. The
 measurement was taken on the outer hyperparameter axes and is not extended past
 them.
 
-### The log-quadratic read, and why it is not the default (gcol33/tulpa#932)
+### Refinement adds levels, the joint floor is gone, and the log-quadratic read is the default (gcol33/tulpa#932)
 
-The 16x16 two-arm ICAR fixture read its 95% field-SD interval 6.6% narrow at
-the shipped 5-node recentre ladder, +0.3% at 9 and -3.7% at 13. Two effects
-add. `.NL_RECENTER` lays `n_pts` nodes over mode +/- 2.5 SDs whatever `n_pts`
-is, so the box read's outer edge closes in on 2.5 SDs as nodes are added and
-the read converges to a truncated Gaussian (95% width 0.952 of the true one);
-and at h = 1.25 SD the box read's O(h^2) tail error is narrow when the mode
-sits on a node. An ideal Gaussian read through the same construction gives
-0.948 / 1.013 / 0.973 of the true width, so the cancellation at 9 is an
-accident. Moving the extent with the box read kept swings the error between
--6.4% and +5.9%; within 1% takes h / sd <= 0.7, about four times the cells.
+The 16x16 two-arm ICAR fixture (binomial donor arm, gaussian copy arm reading
+the same field; sigma 2, alpha 1, residual variance 0.09, the dispersion axis
+stated as 0.05 / 0.09 / 0.15) read its 95% field-SD interval 6.6% narrow against
+a converged grid, with fixed-truth coverage 0.922 over 1000 seeds; the 24x24
+copy scale covered 0.922 over 600. Three causes, each measured against dense
+references (`dev_notes/issue932/dense932.R`, 61 x 51 x 13 cells, no screen, no
+placement, no refinement; 16 seeds per size, mean |F_ref(q) - p| over seven
+levels) and fixed in turn (`dev_notes/issue932/fix/`):
 
-`within_cell = "log_quadratic"` (`R/within_cell_log_quadratic.R`) joins node
-log densities by overlapping quadratics and continues the end quadratic past
-the outer node. Three things were found building it, each measured:
+1. **The box read at the placement's spacing.** `.NL_RECENTER` lays 5 nodes over
+   the mode +/- 2.5 SDs, h / sd 1.25. The box read there is O(h^2) narrow with
+   the mode on a node, and as nodes are added its outer edge closes in on
+   2.5 SDs, so it converges to a truncated Gaussian (95% width 0.952 of the
+   true one). The log-quadratic read (`R/within_cell_log_quadratic.R`) joins
+   each row's node log densities by overlapping quadratics, exact for a Gaussian
+   at any spacing, and continues the end quadratic past the outer node. A row is
+   interpolated where its own h / sd <= 2 (`lq_max_h_over_sd`) and read as boxes
+   elsewhere; the gate ladder (`gate_ladder.R`, exact gaussian-LMM posteriors,
+   150 seeds x G 10 / 40 / 160) has it at 0.0002-0.008 endpoint error against
+   the box read's 0.007-0.028 up to h / sd 2, and losing only past 4.
 
-- **Rows, not the marginal.** Each row along the axis is a conditional, nearer
-  a Gaussian than the mixture of rows. On the trace fixture, per-row reads put
-  the width at -1.5% / -0.7% / -0.8% of the dense reference, the declared
-  levels' summed density read as one row at -1.7% / -1.3% / -1.3%.
-- **Density times slab.** On a refined grid the cell at the outer mode has its
-  other-axis boxes cut by the slices through it, so its mass over its own width
-  is a false dip (3.7 nats below both neighbours on the 24x24 fixture: width
-  -8.7%, coverage 0.922 against the box read's 0.953 over 600 seeds), and its
-  `log_marginal` alone double-counts the modal box (-7% on the 5-node trace).
-  The read interpolates `log_marginal` and multiplies by each cell's slab
-  `w / (exp(log_marginal) width)` over its box.
-- **The gate is per row.** A gate on the axis's level marginal counts the slice
-  cells of other axes at the modal level and read h / sd 2.18 on a fixture whose
-  rows sit at 1.3. Each row is gated on its own spacing and its own parabola.
+2. **The joint placement floor.** `min_sd_u_joint = 0.05` (gcol33/tulpa#926)
+   bound at 24x24, where the field SD's log-SD is 0.037 and the copy scale's
+   0.024: both axes were laid at h / sd 1.7 and 2.6, conditional h / sd up to
+   3.3, where a midpoint rule's error swings by tens of percent with where the
+   peak falls between nodes, and the peak moves from row to row with the
+   correlation (-0.5 between them). The floor was set when the box read was the
+   default and widened the ladder past the posterior, which compensated the box
+   read's narrowing; it is 0 on the joint doors now. Lowering it alone took the
+   24x24 field SD from 0.023 to 0.012.
 
-The gate (`lq_max_h_over_sd = 2`) comes from a ladder of exact gaussian-LMM
-posteriors with no prior edge near them (`dev_notes/issue932/gate_ladder.R`,
-150 seeds x G 10 / 40 / 160, grids at h / sd 0.25 to 4, mode on a node or at a
-random offset, spans 2.5 and 6 SDs). Mean endpoint error |F(lo) - 0.025| +
-|F(hi) - 0.975|, log-quadratic against box: 0.0002-0.0009 / 0.007-0.009 below
-h / sd 1; 0.002-0.008 / 0.011-0.028 at 1 to 2; 0.006 / 0.031 at 2 to 2.5;
-0.012 / 0.068 at 3 to 4; 0.073 / 0.036 past 4, where the quadratic reads the
-location of a skewed posterior off its tails (the #357 coarse-rung and #925
-`cell_normal_read.patch` failure).
+3. **Slices.** The consistency pass laid its points in ONE row (a slice), so
+   the modal row integrated the axis finely and every other row at the coarse
+   levels. The other axes' levels then carried quadrature errors that differ
+   from row to row, and the slice cells were rows of one node along every other
+   axis. Even with the floor gone the pass fired on placed axes (a 5-node
+   ladder at 1.25 SDs has quadrature ESS 2.8, under `axis_sd_ess` = 3) and its
+   slices took the field SD from 0.0034 / 0.0016 back to 0.010 / 0.012. Fixed
+   two ways: an axis whose at-mode proposal is empty -- the placement laid it at
+   the mode -- is left as it is, and every point either pass adds is a LEVEL of
+   the tensor laid in every row that holds a solved cell
+   (`.hyper_tensor_level_cells()`), so the product rule measures the grid. The
+   cell-by-cell slice measure (#733: `.hyper_refined_log_quad()`, the fibre
+   tiling, the cross-slice parabola decline, the per-row box partitions) is
+   deleted. The `refining` tag names the axis whose pass added a cell; the
+   declared cells fix the outer edges (`.hyper_span_coord_bounds()`,
+   `.nl_level_edges()`), since a level laid beside an outer node shortens its
+   own mirror and cut 4.6% off the 16x16 stated dispersion span, and fix any
+   prior read off the nodes (specs rebuilt from declared cells).
 
-On the engine's own refined grids it does not beat the box read. Against dense
-references (`dense932.R`: 61 x 51 x 13 cells, no prune, no recentre, no
-refinement; 16 seeds per size), mean |F_ref(q) - p| over seven levels:
+Against the dense references (16 seeds each), log-quadratic read:
 
-| | box | log-quadratic |
-|---|---|---|
-| 16x16 field SD | 0.0152 (width 0.931) | 0.0129 (0.967) |
-| 24x24 field SD | 0.0265 (0.986) | 0.0317 (0.916) |
-| 16x16 copy scale | 0.0131 | 0.0143 |
-| 24x24 copy scale | 0.0308 | 0.0283 |
-| 16x16 dispersion | 0.0343 | 0.0284 |
-| 24x24 dispersion | 0.0359 | 0.0358 |
+| | shipped before (box) | before, log-quadratic | now |
+| --- | --- | --- | --- |
+| 16x16 field SD | 0.0152 (width 0.931) | 0.0129 (0.967) | 0.0039 (0.976) |
+| 24x24 field SD | 0.0265 (0.986) | 0.0317 (0.916) | 0.0014 (0.989) |
+| 16x16 copy scale | 0.0131 | 0.0143 | 0.0080 |
+| 24x24 copy scale | 0.0308 | 0.0283 | 0.0040 |
+| 16x16 dispersion | 0.0343 | 0.0284 | 0.0171 |
+| 24x24 dispersion | 0.0359 | 0.0358 | 0.0041 |
+| **sum** | **0.156** | **0.151** | **0.038** |
 
-Sums 0.156 / 0.151. On fixed-truth coverage over the 1000 + 600 sweep fits the
-16x16 field SD moves 0.922 -> 0.930 at 95% and 0.808 -> 0.773 at 80%, the 24x24
-one 0.953 -> 0.930. Several rows carry a signed error of one sign at every
-level, a shift of location that the cell masses set and no within-cell read
-moves, so the remaining #932 gap is the refined grid's measure rather than
-the spread inside a cell. The 24x24 narrowing under the log-quadratic read is
-not explained. `"box_uniform"` stays the default.
+The 16x16 dispersion residual is the fixture's statement: 3.4% of the dense
+posterior lies below the stated span's lower edge and 1.1% above its upper one,
+and a stated axis is densified, never extended.
+
+Fixed truth, the fit's own reported interval, 1000 (16x16) and 600 (24x24)
+seeds:
+
+| | before | now |
+| --- | --- | --- |
+| 16x16 field SD 95% | 0.922 | 0.936 |
+| 16x16 copy scale 95% | 0.993 | 0.960 |
+| 16x16 dispersion 95% | 0.991 | 0.988 |
+| 24x24 field SD 95% | 0.953 | 0.952 |
+| 24x24 copy scale 95% | 0.922 | 0.965 |
+| 24x24 dispersion 95% | 0.977 | 0.975 |
+
+Summed |coverage - nominal| over 95 / 80 / 50% and the three axes: 16x16 0.470 -> 0.219, 24x24
+0.535 -> 0.147. The 16x16 field SD's 0.936 is the posterior's own
+coverage at this truth, not the grid's: a converged placement (9 nodes over the
+mode +/- 4 SDs, h / sd 1.0, 350 cells against 179) on the same 1000 seeds
+covers 0.935, with one discordant seed and a width ratio of 0.996; the copy
+scale reads 0.963 against 0.960 and the dispersion 0.988 on both
+(`dev_notes/issue932/fix/score_paired.R`).
+
+Cost: the 16x16 fit takes 4.6 s for 187 cells against 3.3 s for 106 before,
+the 24x24 one 1.1 s for 146 cells against 0.94 s for 114 (beast, serial).
+
+What did not work: box-integral (kappa) weights in the measure add h^2 / 12 to
+every moment (+13% variance at h = 1.25 SDs); merging slice cells into their
+anchor rows left the 24x24 field SD at width 0.921; the old prototype's mass
+over width as the node density has a false dip at a refined grid's modal cell.
 
 ### What the re_cov outer k-hat costs, and why it is still a multiple of the fit (gcol33/tulpa#934)
 
@@ -1793,7 +1826,9 @@ what the node owns and `l_k` the widened interval, both in units of `|B_k|`).
 The measure integrates the union of the widened boxes, whose extent along each
 axis is `axis_support`. The base
 area is conserved exactly, to 1e-12 with an extension and a crossing. A grid
-with no slices takes the product rule bit for bit.
+with no slices takes the product rule bit for bit. (Superseded at
+gcol33/tulpa#932: refinement adds levels to the tensor, and this cell-by-cell
+measure is gone.)
 
 **A slice cell is a point evaluation, never a stand-in for its level.** It used
 to carry a calibration `log S` (the anchor level's summed marginal) in

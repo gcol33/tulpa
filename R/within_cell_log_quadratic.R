@@ -26,20 +26,14 @@
 #
 # DENSITY TIMES SLAB. Along a row, a cell's mass is the posterior density at its
 # node times its box on this axis times its box on the OTHER axes -- its slab.
-# On a tensor grid the slab is one number along the row. On a refined grid it is
-# not: the slice points a refinement pass lays on another axis cut the boxes of
-# the cells they pass through, so the cell at the outer mode, through which the
-# slices of every axis pass, holds a small part of its row-mates' slab, and the
-# rest of its box is held by the slice rows that cross it. So the row's density
-# along the axis is `exp(q(u)) t(u)`: `q` interpolates the cells' own
-# `log_marginal` (the node density on the coordinate the cell measure is taken
-# in, the axis's own), and `t` is each cell's slab, `w / (exp(log_marginal)
-# width)`, held over that cell's box. On a tensor grid `t` is constant and the
-# read is the plain interpolation. Each half alone is wrong on a refined grid:
-# the mass over width folds the slab into the density and puts a dip at the
-# modal cell (3.7 nats below both neighbours on the 24x24 two-arm ICAR fixture),
-# and `log_marginal` alone spreads the row's mass as if its slab were constant,
-# which counts the modal box twice.
+# So the row's density along the axis is `exp(q(u)) t(u)`: `q` interpolates the
+# cells' own `log_marginal` (the node density on the coordinate the cell measure
+# is taken in, the axis's own), and `t` is each cell's slab,
+# `w / (exp(log_marginal) width)`, held over that cell's box. The refinement
+# passes add levels to the tensor, so `t` is one number along a row and the read
+# is the plain interpolation; a row whose cells carry a measure the product rule
+# did not build (a caller's own weights) is still read on its own slabs. The
+# mass over width alone would fold the slab into the density.
 #
 # THE GATE, PER ROW. A quadratic through nodes several posterior SDs apart reads
 # the location of a skewed conditional off its tails, and on such a grid the box
@@ -70,8 +64,8 @@
 # table over a range where its spacing no longer resolves the nodes.
 
 # The reconstruction of ONE axis's continuum. `v` / `w` are the cells'
-# coordinates and masses, `rows` the re-tiling (`.nl_axis_cell_rows()`, NULL on
-# an axis no pass re-tiled), `row_id` each cell's row (`.nl_axis_row_id()`) and
+# coordinates and masses, `declared` the levels the axis was declared on
+# (`.nl_level_edges()`), `row_id` each cell's row (`.nl_axis_row_id()`) and
 # `log_density` each cell's `log_marginal`. Returns either
 # `list(declined = <reason>)` or the tables: `x` the grid on the coordinate
 # `tr`, `F` the axis CDF on it, `G` the per-row CDFs (one column per row, each
@@ -79,7 +73,7 @@
 # rows that were interpolated, `h_over_sd` the heaviest such row's resolution,
 # and per cell its row and the CDF interval `[c0, c1]` it owns inside that row
 # (NA for a cell that holds no mass).
-.nl_lq_reconstruct <- function(v, w, domain = NA_character_, rows = NULL,
+.nl_lq_reconstruct <- function(v, w, domain = NA_character_, declared = NULL,
                                row_id = NULL, log_density = NULL) {
   if (is.null(row_id) || length(row_id) != length(v)) {
     return(list(declined = "not_a_grid_axis"))
@@ -90,19 +84,13 @@
   fin <- is.finite(v)
   wpos <- fin & is.finite(w) & w > 0
   if (!any(wpos)) return(list(declined = "no_usable_node"))
-  if (is.null(rows)) {
-    uv <- sort(unique(v[fin]))
-    if (length(uv) < 2L) return(list(declined = "single_node"))
-    pt <- .nl_cell_partition(uv, domain)
-    e <- .nl_box_edges_from(pt, uv)
-    if (is.null(e)) return(list(declined = "boxes_do_not_tile"))
-    k <- match(v, uv)
-    bx <- list(lo = e[k], hi = e[k + 1L], tr = pt$tr, coord = pt$coord,
-               declined = pt$declined)
-  } else {
-    bx <- .nl_cell_boxes(v, domain, rows)
-    if (is.null(bx)) return(list(declined = "boxes_do_not_tile"))
-  }
+  uv <- sort(unique(v[fin]))
+  if (length(uv) < 2L) return(list(declined = "single_node"))
+  le <- .nl_level_edges(uv, domain, declared)
+  if (is.null(le)) return(list(declined = "boxes_do_not_tile"))
+  k <- match(v, uv)
+  bx <- list(lo = le$e[k], hi = le$e[k + 1L], tr = le$pt$tr,
+             coord = le$pt$coord, declined = le$pt$declined)
   tr <- bx$tr
   u  <- tr$to(v)
   ulo <- tr$to(bx$lo)
@@ -290,7 +278,7 @@
 # declared point mass is split off and the continuum read on the probabilities
 # above it, as the box read does.
 .nl_lq_quantile <- function(values, weights, probs, domain = NA_character_,
-                            atom = NA_real_, rows = NULL, row_id = NULL,
+                            atom = NA_real_, declared = NULL, row_id = NULL,
                             log_density = NULL) {
   v <- as.numeric(values)
   w <- as.numeric(weights)
@@ -307,13 +295,13 @@
       return(list(q = rep(atom, length(probs)), declined = "single_node"))
     }
     r <- .nl_lq_quantile(v[!ia], w[!ia], .nl_atom_rescale(probs, mass), domain,
-                         NA_real_, .nl_cell_rows_subset(rows, !ia),
+                         NA_real_, declared,
                          if (is.null(row_id)) NULL else row_id[!ia],
                          if (is.null(log_density)) NULL else log_density[!ia])
     if (!is.null(r$q)) r$q[probs <= mass] <- atom
     return(r)
   }
-  rc <- .nl_lq_reconstruct(v, w, domain, rows, row_id, log_density)
+  rc <- .nl_lq_reconstruct(v, w, domain, declared, row_id, log_density)
   if (!is.na(rc$declined)) return(list(q = NULL, declined = rc$declined))
   list(q = .nl_lq_cdf_quantile(rc, probs), declined = NA_character_,
        edge_coord = rc$coord, edge_declined = rc$edge_declined)
@@ -323,13 +311,12 @@
 # per cell, its row's CDF table and the interval `[c0, c1]` of that CDF its
 # level owns. `lo` / `hi` stay the cell's box, which is what the copula reads a
 # node density off.
-.nl_lq_axis_geometry <- function(v, w, domain, atom = NA_real_, rows = NULL,
+.nl_lq_axis_geometry <- function(v, w, domain, atom = NA_real_, declared = NULL,
                                  row_id = NULL, log_density = NULL) {
   ia <- length(atom) == 1L && is.finite(atom) && any(v == atom, na.rm = TRUE) &&
         !any(v < atom, na.rm = TRUE)
   cont <- if (ia) is.na(v) | v != atom else rep(TRUE, length(v))
-  rc <- .nl_lq_reconstruct(v[cont], w[cont], domain,
-                           .nl_cell_rows_subset(rows, cont),
+  rc <- .nl_lq_reconstruct(v[cont], w[cont], domain, declared,
                            if (is.null(row_id)) NULL else row_id[cont],
                            if (is.null(log_density)) NULL else
                              log_density[cont])

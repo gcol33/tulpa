@@ -110,8 +110,8 @@ per-axis rail; declines outright for \code{spatial_type = "bym2"}, whose
 \code{"hsgp"}/\code{"nngp"}, same reason), \code{rho_spatial} (the proper-CAR mixing
 value the \code{car_proper} axis is held
 at, default \code{.NL_ST_GRID$rho_spatial}; unrelated to bym2's own integrated
-\code{rho_spatial} grid axis) and \code{within_cell} (\code{"box_uniform"} /
-\code{"log_quadratic"} / \code{"chord"},
+\code{rho_spatial} grid axis) and \code{within_cell} (\code{"log_quadratic"} /
+\code{"box_uniform"} / \code{"chord"},
 the within-cell construction the reported per-axis intervals are read
 with; defaults to
 \code{.NL_DIAG$within_cell}, as on every other nested door).

@@ -90,7 +90,7 @@ test_that("the pass re-reads the ESS and bisects until the axis is resolved", {
     # Every added node lies between two nodes the axis already had.
     added <- out$theta_grid[-seq_along(lev), "alpha"]
     expect_true(all(added > min(lev) & added < max(lev)))
-    expect_true(all(out$refining_axis[-seq_along(lev)] == "consistency_alpha"))
+    expect_true(all(out$refining_axis[-seq_along(lev)] == "alpha"))
 })
 
 test_that("the node budget stops a marginal no bisection can resolve", {

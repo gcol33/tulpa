@@ -140,14 +140,21 @@ test_that("adaptive_grid = TRUE extends alpha when boundary carries mass", {
     expect_gt(max(fit_T$theta_grid[, "alpha"]),
               max(fit_F$theta_grid[, "alpha"]) + 1e-6)
 
-    # Mode-tracked path: new cells = new axis points (slice), not new ×
-    # other_cartesian. With sigma_grid = 3 levels (icar, no rho axis), the
-    # legacy cartesian path would have added `n_new_axis_pts * 3` cells;
-    # the slice path adds exactly `n_new_axis_pts`. Three boundary-side
-    # extension points => 3 new cells, 3 kernel solves, total 9 + 3 = 12.
-    expect_equal(length(fit_T$log_marginal) - length(fit_F$log_marginal),
-                  sum(fit_T$adaptive_grid_info$n_points_added))
-    expect_lte(sum(fit_T$adaptive_grid_info$n_points_added), 6L)
+    # Each extension point is a new level of the tensor, laid in every row of
+    # the other axes the grid solved (gcol33/tulpa#932).
+    others <- setdiff(colnames(fit_T$theta_grid), "alpha")
+    key <- function(g) do.call(paste, lapply(others, function(a) g[, a]))
+    old_lev <- unique(fit_F$theta_grid[, "alpha"])
+    declared <- fit_T$theta_grid[, "alpha"] %in% old_lev &
+        is.finite(fit_T$log_marginal)
+    rows <- unique(key(fit_T$theta_grid[declared, , drop = FALSE]))
+    new_lev <- setdiff(unique(fit_T$theta_grid[, "alpha"]), old_lev)
+    expect_gt(length(new_lev), 0L)
+    expect_lte(length(new_lev), sum(fit_T$adaptive_grid_info$n_points_added))
+    for (lv in new_lev) {
+        at <- fit_T$theta_grid[, "alpha"] == lv
+        expect_setequal(key(fit_T$theta_grid[at, , drop = FALSE]), rows)
+    }
 
     # Posterior alpha mean moves outward (FALSE truncated at alpha_max =
     # 0.6; TRUE lets mass past that ceiling toward alpha_true = 2.0).

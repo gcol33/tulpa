@@ -24,11 +24,13 @@
 #                         side data the kernel returned (e.g. the joint
 #                         driver's mode + Q_csc; hyper_grid passes NULL).
 #                         Refinement carries it through by concatenation.
-#   * `refining_axis`  -- character `[n_cells]`; per-cell tag identifying
-#                         which refinement pass produced the cell (`""` for
-#                         the initial Cartesian grid, `<axis>` for slice
-#                         cells refining that axis, `consistency_<axis>`
-#                         for var-of-means consistency slices).
+#   * `refining_axis`  -- character `[n_cells]`; per-cell tag, `""` for a
+#                         cell of the grid as declared, the axis name for a
+#                         cell a pass added. Both passes add LEVELS, laid in
+#                         every row of the other axes
+#                         (`.hyper_tensor_level_cells()`), so the grid stays a
+#                         tensor; the tag keeps the declared levels apart,
+#                         which fix the span and any prior read off the nodes.
 #
 # kernel_fn signature:
 #   function(new_cells, warm_start = NULL, store_extras = FALSE) -> list(
@@ -37,7 +39,7 @@
 #   )
 # `warm_start` is opaque to refinement: refinement passes whatever the
 # anchor cell's extras carry, and the kernel decides how to use it (e.g.
-# read $mode from joint extras to warm-start the slice kernel call).
+# read $mode from joint extras to warm-start the kernel call).
 
 # ============================================================================
 # Spec lookups -- the single point where axis metadata is read.
@@ -436,148 +438,47 @@
   (flat - run) * (x0^2 + x0 * b + b^2) / 3
 }
 
-# ============================================================================
-# Slice-cell builder. For each new axis value the helper produces ONE cell at
-# (axis = pt, other_axes = the modal cell at the anchor level). The cell is a
-# point evaluation like any other and is measured by the box it owns in its
-# row (`.hyper_refined_log_quad()`), so it carries no term standing in for the
-# rest of its level.
-#
-# The anchor is chosen among base-tensor cells and slice cells on the SAME axis,
-# never a slice cell placed on another one, so every slice cell sits on base
-# levels off its own axis and its row is a row of the base tensor. A caller that
-# chose the anchor cell itself (`.hyper_consistency_anchor()`) passes it as
-# `anchor`, and `anchor_lev` is then not read.
-# ============================================================================
-.hyper_new_mode_tracked_triples <- function(theta_grid, log_marginal, specs,
-                                             axis_name, new_pts, anchor_lev,
-                                             refining_axis = NULL,
-                                             anchor = NULL) {
-  if (length(new_pts) == 0L) return(NULL)
-  idx_global <- anchor %||% .hyper_slice_anchor(theta_grid, log_marginal,
-                                                axis_name, anchor_lev,
-                                                refining_axis)
-  if (is.na(idx_global)) return(NULL)
+# New levels `pts` on `axis` laid in every row of the grid that holds a solved
+# cell, so the grid stays a tensor: every row integrates the axis at the same
+# nodes, including the rows through levels an earlier pass added to another
+# axis. The warm start is the heaviest solved cell.
+.hyper_tensor_level_cells <- function(theta_grid, log_marginal, axis, pts) {
+  if (!length(pts)) return(NULL)
+  base <- is.finite(log_marginal)
+  if (!any(base)) return(NULL)
+  others <- setdiff(colnames(theta_grid), axis)
+  rows <- unique(theta_grid[base, others, drop = FALSE])
+  n_rows <- if (length(others)) nrow(rows) else 1L
+  cells <- matrix(NA_real_, n_rows * length(pts), ncol(theta_grid),
+                  dimnames = list(NULL, colnames(theta_grid)))
+  for (b in others) cells[, b] <- rep(rows[, b], each = length(pts))
+  cells[, axis] <- rep(as.numeric(pts), n_rows)
+  list(new_cells = cells, warm_start_idx = which(base)[which.max(log_marginal[base])])
+}
 
+# The cells of `new_cells` not already on the grid, at the precision the cells
+# are keyed with, or NULL when none is new.
+.hyper_new_cells_only <- function(new_cells, theta_grid) {
+  if (is.null(new_cells) || nrow(new_cells) == 0L) return(NULL)
   axis_names <- colnames(theta_grid)
-  n_new <- length(new_pts)
-  new_cells <- matrix(NA_real_, n_new, length(axis_names))
-  colnames(new_cells) <- axis_names
-  for (a in axis_names) {
-    new_cells[, a] <- if (a == axis_name) as.numeric(new_pts)
-                      else rep(as.numeric(theta_grid[idx_global, a]), n_new)
-  }
-  list(new_cells      = new_cells,
-       warm_start_idx = idx_global)
-}
-
-# The cell a slice on `axis_name` at `anchor_lev` is laid through: the heaviest
-# base-tensor or same-axis slice cell at that level, or NA when none carries a
-# finite log-marginal.
-.hyper_slice_anchor <- function(theta_grid, log_marginal, axis_name, anchor_lev,
-                                refining_axis = NULL) {
-  v <- as.numeric(theta_grid[, axis_name])
-  mask <- abs(v - anchor_lev) < 1e-12 * max(1, abs(anchor_lev)) &
-    .hyper_slice_anchor_ok(refining_axis, axis_name, length(v))
-  if (!any(mask) || !any(is.finite(log_marginal[mask]))) return(NA_integer_)
-  which(mask)[which.max(log_marginal[mask])]
-}
-
-# The cell a consistency slice on `axis_name` is laid through. Without a found
-# mode on any other axis it is the heaviest cell at the modal cell's level
-# (`.hyper_slice_anchor()`). With one it is the row through that mode: the base
-# or same-axis slice cell nearest the mode on the other axes, in each one's own
-# SDs, the heaviest among ties. The two part where an axis the placement could
-# not move sits far from its own mode and the others correlate with it: the
-# heaviest base cell is then the best of the others GIVEN that far level, not
-# at the joint mode. On the full 25 km Calluna fit the dispersion slice went
-# through the copy scale's conditional best at a dispersion node 36 SDs off,
-# 4 copy-scale SDs from the joint mode, and every summary was read in that
-# row. The row through the mode need not have been solved: a slice is a set of
-# new solves, and a screened-out anchor only loses its warm start. The anchor
-# carries its squared distance from the mode as `mode_dist2`.
-.hyper_consistency_anchor <- function(theta_grid, log_marginal, axis_name,
-                                      refining_axis = NULL, axis_modes = NULL) {
-  n <- nrow(theta_grid)
-  others <- intersect(setdiff(colnames(theta_grid), axis_name), names(axis_modes))
-  dist <- numeric(n)
-  for (b in others) {
-    m <- axis_modes[[b]]
-    u <- .joint_pareto_fwd(m$tag, as.numeric(theta_grid[, b]))
-    dist <- dist + ((u - m$mode_u) / m$sd_u)^2
-  }
-  dist[!.hyper_slice_anchor_ok(refining_axis, axis_name, n) | !is.finite(dist)] <- Inf
-  if (!length(others) || !any(is.finite(dist))) {
-    return(.hyper_slice_anchor(theta_grid, log_marginal, axis_name,
-                               as.numeric(theta_grid[which.max(log_marginal),
-                                                     axis_name]),
-                               refining_axis))
-  }
-  near <- which(dist <= min(dist) * (1 + 1e-9) + 1e-12)
-  lm <- log_marginal[near]
-  lm[!is.finite(lm)] <- -Inf
-  structure(near[which.max(lm)], mode_dist2 = min(dist))
-}
-
-# The cells a slice on `axis_name` through cell `anchor` re-tiles: the base and
-# same-axis slice cells sharing the anchor's coordinates off that axis.
-.hyper_slice_fibre <- function(theta_grid, axis_name, anchor,
-                               refining_axis = NULL) {
-  in_row <- .hyper_slice_anchor_ok(refining_axis, axis_name, nrow(theta_grid))
-  for (b in setdiff(colnames(theta_grid), axis_name)) {
-    in_row <- in_row & theta_grid[, b] == theta_grid[anchor, b]
-  }
-  in_row
-}
-
-# The order the consistency pass takes its axes in. A slice re-tiles the fibre
-# through the modal cell, and resolving an axis whose nodes sit far from its
-# mode moves the modal cell into another fibre, which leaves a slice laid on a
-# different axis before it in a fibre that no longer holds the posterior. Axes
-# with a found mode (`axis_modes`) therefore go first, the one whose nearest
-# node is most of the mode's own SDs away leading; the rest keep their order.
-.hyper_consistency_order <- function(axes, theta_grid, axis_modes) {
-  if (is.null(axis_modes) || length(axes) < 2L) return(axes)
-  gap <- vapply(axes, function(a) {
-    m <- axis_modes[[a]]
-    if (is.null(m)) return(-Inf)
-    u <- .joint_pareto_fwd(m$tag, unique(as.numeric(theta_grid[, a])))
-    u <- u[is.finite(u)]
-    if (!length(u)) return(-Inf)
-    min(abs(u - m$mode_u)) / m$sd_u
-  }, numeric(1))
-  axes[order(-gap, seq_along(axes))]
-}
-
-# Stitch slice cells from multiple (axis, side) packs into one matrix. Drops
-# rows whose cell already appears in `theta_grid` at numerical tolerance via a
-# stringified key.
-.hyper_concat_slice_triples <- function(triple_packs, theta_grid) {
-  if (length(triple_packs) == 0L) return(NULL)
-  axis_names <- colnames(theta_grid)
-  parts <- lapply(triple_packs, `[[`, "new_cells")
-  if (length(parts) == 0L) return(NULL)
-  new_cells <- do.call(rbind, parts)
-  if (nrow(new_cells) == 0L) return(NULL)
   fmt <- function(m) {
     cols <- lapply(axis_names, function(a) sprintf("%.10g", m[, a]))
     do.call(paste, c(cols, sep = ":"))
   }
   new_keys <- fmt(new_cells)
-  old_keys <- fmt(theta_grid)
-  keep <- !new_keys %in% old_keys & !duplicated(new_keys)
+  keep <- !new_keys %in% fmt(theta_grid) & !duplicated(new_keys)
   if (!any(keep)) return(NULL)
-  list(new_cells = new_cells[keep, , drop = FALSE])
+  new_cells[keep, , drop = FALSE]
 }
 
 # ============================================================================
 # Detect refinement triggers on one axis.
 # Boundary (peak-at-edge or tail-mass-at-edge) and interior (peak between
-# levels with wide spacing) checks. Returns NULL if no trigger fires.
+# levels with wide spacing) checks. Returns the new levels' cells
+# (`.hyper_tensor_level_cells()`), NULL if no trigger fires.
 # ============================================================================
 .hyper_detect_axis_refinement <- function(theta_grid, log_marginal, edge_info,
-                                          axis_name, spec, edge_thresh,
-                                          refining_axis = NULL) {
+                                          axis_name, spec, edge_thresh) {
   ei  <- edge_info
   lev <- ei$levels
   v   <- as.numeric(theta_grid[, axis_name])
@@ -611,57 +512,33 @@
   }
 
   if (!tr_min && !tr_max && !wide_left && !wide_right) return(NULL)
-  packs <- list()
-  if (tr_max) {
-    pts <- .hyper_propose_axis_extension(spec, lev, "max")
-    pk  <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
-                                            axis_name, pts,
-                                            anchor_lev = lev[n_lev],
-                                            refining_axis = refining_axis)
-    if (!is.null(pk)) packs[[length(packs) + 1L]] <- pk
-  }
-  if (tr_min) {
-    pts <- .hyper_propose_axis_extension(spec, lev, "min")
-    pk  <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
-                                            axis_name, pts,
-                                            anchor_lev = lev[1L],
-                                            refining_axis = refining_axis)
-    if (!is.null(pk)) packs[[length(packs) + 1L]] <- pk
-  }
-  if (wide_left || wide_right) {
-    pts <- .hyper_propose_interior_densification(spec, lev, mode_idx,
-                                                  wide_left, wide_right)
-    pk  <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
-                                            axis_name, pts,
-                                            anchor_lev = lev[mode_idx],
-                                            refining_axis = refining_axis)
-    if (!is.null(pk)) packs[[length(packs) + 1L]] <- pk
-  }
-  if (length(packs) == 0L) return(NULL)
-  packs
+  pts <- c(if (tr_max) .hyper_propose_axis_extension(spec, lev, "max"),
+           if (tr_min) .hyper_propose_axis_extension(spec, lev, "min"),
+           if (wide_left || wide_right)
+             .hyper_propose_interior_densification(spec, lev, mode_idx,
+                                                   wide_left, wide_right))
+  .hyper_tensor_level_cells(theta_grid, log_marginal, axis_name, pts)
 }
 
 # ============================================================================
-# Apply refinement for one axis: build the slice cells, call kernel_fn at
-# them with the anchor's warm-start material, merge into the existing grid
-# / log_marginal / extras / refining_axis.
+# Apply refinement for one axis: solve the new cells with kernel_fn from the
+# anchor's warm-start material and merge them into the existing grid /
+# log_marginal / extras / refining_axis, each tagged with the axis it refines.
 # ============================================================================
 .hyper_apply_axis_refinement <- function(theta_grid, log_marginal, extras,
-                                          refining_axis, triple_packs,
-                                          axis_name, specs, kernel_fn,
-                                          hp_fn = NULL,
-                                          consistency_tag = FALSE) {
-  merged <- .hyper_concat_slice_triples(triple_packs, theta_grid)
-  if (is.null(merged)) {
+                                          refining_axis, pack, axis_name,
+                                          specs, kernel_fn, hp_fn = NULL) {
+  new_cells <- .hyper_new_cells_only(pack$new_cells, theta_grid)
+  if (is.null(new_cells)) {
     return(list(theta_grid = theta_grid, log_marginal = log_marginal,
-                extras = extras, refining_axis = refining_axis, n_new = 0L))
+                extras = extras, refining_axis = refining_axis, n_new = 0L,
+                n_levels = 0L))
   }
-  new_cells <- merged$new_cells
   n_new <- nrow(new_cells)
 
   warm_start <- NULL
   if (!is.null(extras)) {
-    idx0 <- triple_packs[[1L]]$warm_start_idx
+    idx0 <- pack$warm_start_idx
     if (length(idx0) == 1L && idx0 >= 1L && idx0 <= length(extras)) {
       warm_start <- extras[[idx0]]
     }
@@ -676,18 +553,17 @@
       new_lm <- new_lm + hp_new
     }
   }
-  tag <- if (isTRUE(consistency_tag)) paste0("consistency_", axis_name)
-         else axis_name
 
   theta_grid_out   <- rbind(theta_grid, new_cells)
   log_marginal_out <- c(log_marginal, new_lm)
-  refining_out     <- c(refining_axis, rep(tag, n_new))
+  refining_out     <- c(refining_axis, rep(axis_name, n_new))
   extras_out       <- extras
   if (!is.null(extras_out)) {
     extras_out <- c(extras_out, fit_out$extras %||% vector("list", n_new))
   }
   list(theta_grid = theta_grid_out, log_marginal = log_marginal_out,
-       extras = extras_out, refining_axis = refining_out, n_new = n_new)
+       extras = extras_out, refining_axis = refining_out, n_new = n_new,
+       n_levels = length(unique(new_cells[, axis_name])))
 }
 
 # ============================================================================
@@ -715,12 +591,11 @@
       ei <- edge_info[[a]]
       if (is.null(ei)) next
       spec <- .hyper_spec_by_name(specs, a)
-      packs <- .hyper_detect_axis_refinement(theta_grid, log_marginal, ei, a,
-                                              spec, edge_thresh,
-                                              refining_axis = refining_axis)
-      if (is.null(packs)) next
+      pack <- .hyper_detect_axis_refinement(theta_grid, log_marginal, ei, a,
+                                             spec, edge_thresh)
+      if (is.null(pack)) next
       step <- .hyper_apply_axis_refinement(theta_grid, log_marginal, extras,
-                                            refining_axis, packs, a, specs,
+                                            refining_axis, pack, a, specs,
                                             kernel_fn, hp_fn = hp_fn)
       if (step$n_new == 0L) next
       theta_grid   <- step$theta_grid
@@ -728,7 +603,7 @@
       extras       <- step$extras
       refining_axis <- step$refining_axis
       triggered_this_pass <- c(triggered_this_pass, a)
-      info$n_points_added <- c(info$n_points_added, step$n_new)
+      info$n_points_added <- c(info$n_points_added, step$n_levels)
       any_triggered <- TRUE
     }
     if (!any_triggered) break
@@ -742,7 +617,7 @@
 
 # Repopulate an axis whose marginal has collapsed onto too few nodes to carry a
 # spread, by bisecting the gaps its mass sits across
-# (`.hyper_propose_mass_bisection()`) with slice points in the modal cell's row.
+# (`.hyper_propose_mass_bisection()`).
 #
 # The trigger is the axis's own quadrature effective sample size, read off the
 # weights the fit integrates with, over the axis's continuum: a declared point
@@ -755,7 +630,7 @@
 # many nodes the marginal spreads over.
 #
 # The pass re-reads the ESS after every round and bisects again until the axis
-# reaches `min_ess` or has taken `max_nodes` new nodes. A single round cannot
+# reaches `min_ess` or has taken `max_nodes` new levels. A single round cannot
 # certify what it produced: bisecting two heavy nodes can leave the mass on the
 # new midpoint and one of them, and a marginal is only resolved once the ESS it
 # ends on says so (gcol33/tulpa#858).
@@ -765,27 +640,32 @@
 # round lays its points AT the mode (`.hyper_propose_at_mode()`); each later
 # round first closes any gap the solved points still read across
 # (`.hyper_propose_edge_close()`), which runs until none is left even once the
-# ESS is met, and bisects as above while the ESS is short. The axes are taken
-# in `.hyper_consistency_order()`.
+# ESS is met, and bisects as above while the ESS is short. An axis whose at-mode
+# proposal comes back empty already has a node within half a mode SD of every
+# point of the ladder -- a placement laid it at 1.25 SDs -- so it resolves the
+# posterior it was laid from and is left as it is: its ESS (2.8 for a 5-node
+# ladder at 1.25 SDs) is under `min_ess` by construction, and bisecting it
+# would only spend cells.
 #
-# A round is a kernel call per node, and the nodes it lays re-tile one fibre.
-# Under the mode-find's Gaussian, a fibre whose coordinates off the axis sit
-# `D` of the mode's SDs from it holds at most `exp(-D^2 / 2)` of what the fibre
-# through the mode does, however its own axis is tiled. Past
-# `consistency_row_mass` of that the axis is held rather than refined, and listed
-# in `info$held`: the row the slice could be laid in is not where the posterior
-# is. Without a found mode on the other axes there is no such bound, and every
-# collapsed axis is refined.
+# A new point is a new LEVEL of the base tensor, laid in every row of the other
+# axes that holds a solved cell (`.hyper_tensor_level_cells()`), so the grid
+# stays a tensor and every row integrates the axis at the same nodes. Laying the
+# points in the modal row alone (a slice) resolved the axis's own marginal and
+# misread every other one: the modal row then integrates the axis finely and
+# the rest at the coarse levels, so the other axes' levels carry quadrature
+# errors that differ from row to row, and the slice cells are rows of one node
+# along every other axis. On the two-arm ICAR fixture of gcol33/tulpa#932 that
+# left the field SD's 95% interval 7% (16x16) and 8% (24x24) narrow against a
+# dense reference; laid as levels, mean |F_ref(q) - p| fell from 0.013 / 0.032 to
+# 0.004 / 0.001.
 .hyper_consistency_pass <- function(theta_grid, log_marginal, extras,
                                     refining_axis, specs, kernel_fn,
                                     min_ess = .nl_diag("axis_sd_ess"),
                                     max_nodes = .nl_diag("axis_refine_nodes"),
                                     hp_fn = NULL, axis_modes = NULL) {
-  refinable <- .hyper_consistency_order(.hyper_refinable_names(specs),
-                                        theta_grid, axis_modes)
+  refinable <- .hyper_refinable_names(specs)
   info <- list(axes = character(0), n_added = integer(0),
-               ess_before = numeric(0), ess_after = numeric(0),
-               held = character(0))
+               ess_before = numeric(0), ess_after = numeric(0))
   n_added_total <- 0L
   if (length(refinable) == 0L) {
     return(list(theta_grid = theta_grid, log_marginal = log_marginal,
@@ -812,35 +692,16 @@
     rd <- axis_ess(axis, spec)
     ess_before <- rd$ess
     if (!is.finite(ess_before) || ess_before >= min_ess) next
-    # Every round anchors in the same row (`.hyper_consistency_anchor()`), so
-    # the slice points of one axis re-tile one fibre rather than scattering
-    # across rows.
-    anchor <- .hyper_consistency_anchor(theta_grid, log_marginal, axis,
-                                        refining_axis, axis_modes)
-    if (is.na(anchor)) next
-    far <- attr(anchor, "mode_dist2")
-    if (!is.null(far) &&
-        far > 2 * log(1 / .nl_diag("consistency_row_mass"))) {
-      info$held <- c(info$held, axis)
-      next
-    }
-    added <- 0L
-    # The at-mode ladder is sized by the posterior it is laid from, so the
-    # node cap binds on the rounds after it.
-    ladder <- 0L
     at_mode <- axis_modes[[axis]]
+    added <- 0L
+    ladder <- 0L
     first <- TRUE
     while (added - ladder < max_nodes && is.finite(rd$ess)) {
       collapsed <- rd$ess < min_ess
-      # The first round lays the points at the mode; every later one closes
-      # what those points, solved, still read across a gap. Both read the row
-      # the points go in, whose gaps are the ones their boxes take.
-      row <- .nl_axis_marginal_logdensity(
-        as.numeric(theta_grid[, axis]), rd$lm_eff,
-        keep = .hyper_slice_fibre(theta_grid, axis, anchor, refining_axis))
-      new_pts <- if (first)
-        .hyper_propose_at_mode(spec, row$vals, at_mode)
-        else .hyper_propose_edge_close(spec, row, at_mode)
+      new_pts <- if (is.null(at_mode)) numeric(0)
+        else if (first) .hyper_propose_at_mode(spec, rd$marg$vals, at_mode)
+        else .hyper_propose_edge_close(spec, rd$marg, at_mode)
+      if (first && !is.null(at_mode) && !length(new_pts)) break
       is_ladder <- first && length(new_pts) > 0L
       first <- FALSE
       if (length(new_pts) == 0L && collapsed) {
@@ -849,22 +710,19 @@
       }
       if (length(new_pts) == 0L) break
       if (!is_ladder) new_pts <- utils::head(new_pts, max_nodes - (added - ladder))
-      pack <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
-                                               axis, new_pts, NULL,
-                                               refining_axis = refining_axis,
-                                               anchor = anchor)
+      pack <- .hyper_tensor_level_cells(theta_grid, log_marginal, axis,
+                                        new_pts)
       if (is.null(pack)) break
       step <- .hyper_apply_axis_refinement(theta_grid, log_marginal, extras,
-                                            refining_axis, list(pack), axis,
-                                            specs, kernel_fn, hp_fn = hp_fn,
-                                            consistency_tag = TRUE)
+                                            refining_axis, pack, axis,
+                                            specs, kernel_fn, hp_fn = hp_fn)
       if (step$n_new == 0L) break
       theta_grid    <- step$theta_grid
       log_marginal  <- step$log_marginal
       extras        <- step$extras
       refining_axis <- step$refining_axis
-      added <- added + step$n_new
-      if (is_ladder) ladder <- step$n_new
+      added <- added + step$n_levels
+      if (is_ladder) ladder <- step$n_levels
       rd <- axis_ess(axis, spec)
     }
     if (added == 0L) next
@@ -874,7 +732,7 @@
     info$ess_after  <- c(info$ess_after, rd$ess)
     n_added_total   <- n_added_total + added
   }
-  if (length(info$axes) == 0L && length(info$held) == 0L) info <- NULL
+  if (length(info$axes) == 0L) info <- NULL
   list(theta_grid = theta_grid, log_marginal = log_marginal,
        extras = extras, refining_axis = refining_axis, info = info,
        n_added = n_added_total)

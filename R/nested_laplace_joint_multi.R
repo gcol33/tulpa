@@ -1449,7 +1449,7 @@
                                   cila = NULL,
                                   inner_refresh = 1L,
                                   integration = "auto",
-                                  within_cell = .NL_WITHIN_CELL,
+                                  within_cell = NULL,
                                   local_ccd = NULL,
                                   adaptive_cutoff = 10,
                                   adaptive_stride = 2L,
@@ -1470,7 +1470,7 @@
     tm <- timer %||% .tulpa_timer()
     integration <- match.arg(integration, c("auto", "ccd", "grid",
                                              "grid_adaptive"))
-    within_cell <- match.arg(within_cell)
+    within_cell <- .nl_within_cell_mode(within_cell)
     n_arms <- length(responses)
     arms <- lapply(seq_along(responses), function(k) {
         a <- responses[[k]]
@@ -2431,9 +2431,9 @@
                                             joint_grid, cp,
                                             int_weights = NULL,
                                             support = .NL_SUPPORT_KINDS,
-                                            within = .NL_WITHIN_CELL) {
+                                            within = NULL) {
     support <- match.arg(support)
-    within  <- match.arg(within)
+    within  <- .nl_within_cell_mode(within)
     w <- res$weights
     # Joint moments across every column of joint_grid (including phi
     # columns appended for per-arm dispersion overrides).
@@ -2479,8 +2479,7 @@
     # `.nl_posterior_moments()` applies on every other nested path.
     res <- .nl_attach_axis_sd(res)
 
-    # Weighted-quantile median + 2.5/97.5 CI per axis. Generic helper
-    # filters foreign-axis slice cells per axis name. After the (sigma,
+    # Weighted-quantile median + 2.5/97.5 CI per axis. After the (sigma,
     # alpha) reparameterization, alpha is a column of joint_grid like
     # any other axis; this attaches the calibrated summary for every
     # axis, not just alpha.

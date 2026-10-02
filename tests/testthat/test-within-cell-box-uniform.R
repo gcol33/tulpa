@@ -9,7 +9,7 @@
 # same boxes with the knots moved half a cell, which is a whole order of
 # convergence (measured 1.04 against 2.00, `dev_notes/issue353/RESULTS.md` 2.3).
 #
-# What is pinned here: that the default did not move; that the construction is
+# What is pinned here: that one setting holds the default; that the construction is
 # selectable through `control` and reported back per axis; that its boxes tile
 # the axis in the axis's OWN coordinate so a bounded axis cannot leave its
 # support; that every decline is a recorded reason and a fall back to the chord
@@ -20,20 +20,24 @@ PROBS_WC <- c(0.005, 0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975, 0.995)
 
 # --------------------------------------------------------- the default is fixed
 
-test_that("the default construction is box-uniform, and one setting decides it", {
-  # RE-PINNED at 0.0.188 (gcol33/tulpa#357). This asserted that the default read
-  # was `chord`; the default moved on the measurement recorded in
-  # `R/settings.R`, so the assertion moves with it. What it has to keep saying is
-  # that there is ONE default and every place that names one agrees with it --
-  # `.NL_DIAG$within_cell`, the `match.arg` vocabulary and the kind's admitted
-  # set -- since three disagreeing defaults is what makes a read depend on which
-  # door it came through.
+test_that("the default construction is log-quadratic, and one setting decides it", {
+  # The default moved on the measurements recorded in `R/settings.R`: chord to
+  # box-uniform at 0.0.188 (gcol33/tulpa#357), box-uniform to log-quadratic at
+  # gcol33/tulpa#932. What this has to keep saying is that there is ONE default
+  # and every place that could name one defers to it -- the readers' `within`
+  # arguments default to NULL and resolve through `.nl_within_cell_mode()` --
+  # since disagreeing defaults are what make a read depend on which door it
+  # came through.
   v <- exp(seq(log(0.2), log(1.5), length.out = 5))
   w <- c(0.30, 0.25, 0.20, 0.15, 0.10)
   dflt <- .nl_diag("within_cell")
-  expect_identical(dflt, "box_uniform")
+  expect_identical(dflt, "log_quadratic")
   expect_identical(.nl_within_cell_mode(NULL), dflt)
-  expect_identical(.NL_WITHIN_CELL[1L], dflt)
+  for (fn in list(.nl_posterior_moments, .nl_summary_quantile,
+                  .nl_summary_quantile_read, .nl_read_sd, .nl_axis_quantiles,
+                  .nl_posterior_moments_multi, .joint_posterior_moments_multi)) {
+    expect_null(formals(fn)$within)
+  }
   expect_true(dflt %in% .NL_SUPPORT[["density"]]$within)
   for (sup in .NL_SUPPORT_KINDS) {
     for (dm in c("positive", NA_character_)) {
@@ -49,8 +53,10 @@ test_that("the default construction is box-uniform, and one setting decides it",
   r <- .nl_summary_quantile_read(v, w, PROBS_WC, "positive", "density")
   expect_identical(r$q, .nl_summary_quantile(v, w, PROBS_WC, "positive",
                                              "density"))
+  # A quantity read without its grid rows has none to reconstruct, so the
+  # log-quadratic read declines to the boxes and says why.
   expect_identical(r$within, "box_uniform")
-  expect_true(is.na(r$declined))
+  expect_identical(r$declined, "not_a_grid_axis")
   # The paired assertion the flip needs: the default moved the read on the ONE
   # kind that admits box-uniform and on nothing else, and `"chord"` is still
   # reachable and still different there.
@@ -363,8 +369,8 @@ test_that("the axis read says which construction produced each interval", {
   expect_false(isTRUE(all.equal(unname(qb$ci_lo), unname(qc$ci_lo))))
   # An unnamed read takes the engine default, whichever that is.
   q0 <- .nl_axis_quantiles(tg, lm)
-  expect_identical(unname(q0$within),
-                   rep(.nl_diag("within_cell"), 2L))
+  expect_identical(q0, .nl_axis_quantiles(tg, lm,
+                                          within = .nl_diag("within_cell")))
   # A single-node axis falls back on its OWN, without taking the fit with it.
   tg1 <- cbind(sigma = tg[, "sigma"], fixed = rep(2, nrow(tg)))
   q1 <- .nl_axis_quantiles(tg1, lm, within = "box_uniform")
@@ -427,21 +433,21 @@ test_that("a fit selects the construction, reports it, and stays byte-identical 
   f0 <- fit(NULL)
   fc <- fit("chord")
   fb <- fit("box_uniform")
+  fl <- fit("log_quadratic")
 
-  # Asking for the default explicitly changes nothing. RE-PINNED at 0.0.188:
-  # the default is `box_uniform` (gcol33/tulpa#357), so the arm `f0` matches is
-  # `fb`, and `fc` is the alternative that must still be reachable and still
-  # differ.
-  expect_identical(f0$theta_median, fb$theta_median)
-  expect_identical(f0$theta_ci_lo, fb$theta_ci_lo)
-  expect_identical(f0$theta_ci_hi, fb$theta_ci_hi)
-  expect_false(isTRUE(all.equal(unname(f0$theta_ci_lo),
+  # Asking for the default explicitly changes nothing. The default is
+  # `log_quadratic` (gcol33/tulpa#932), so the arm `f0` matches is `fl`; `fb`
+  # and `fc` are the alternatives that must still be reachable.
+  expect_identical(f0$theta_median, fl$theta_median)
+  expect_identical(f0$theta_ci_lo, fl$theta_ci_lo)
+  expect_identical(f0$theta_ci_hi, fl$theta_ci_hi)
+  expect_false(isTRUE(all.equal(unname(fb$theta_ci_lo),
                                 unname(fc$theta_ci_lo))))
   # The construction is reported, and every path stamps the node-set kind now,
   # not only the multi-block driver (gcol33/tulpa#357).
-  expect_identical(f0$within_cell_requested, "box_uniform")
+  expect_identical(f0$within_cell_requested, "log_quadratic")
   expect_identical(fc$within_cell_requested, "chord")
-  expect_identical(unname(f0$theta_within_cell), "box_uniform")
+  expect_identical(f0$theta_within_cell, fl$theta_within_cell)
   expect_identical(unname(fb$theta_within_cell), "box_uniform")
   expect_identical(unname(fc$theta_within_cell), "chord")
   expect_identical(f0$theta_interval_read, "density")
@@ -472,13 +478,12 @@ test_that("a fit selects the construction, reports it, and stays byte-identical 
                ref, tolerance = 1e-12)
 
   # `diagnostics()` reads the construction back and says what it means. The
-  # note fires on a read that is NOT the engine default, so at 0.0.188 it is the
-  # `chord` fit that carries one and the `box_uniform` fit that does not
-  # (gcol33/tulpa#357) -- naming the default as a literal in the note is what
-  # made it say "rather than the default 'chord'" on a fit read with the
-  # default.
-  d <- diagnostics(fb)
-  expect_identical(attr(d, "within_cell_requested"), "box_uniform")
+  # note fires on a read that is NOT the engine default, so it is the `chord`
+  # fit that carries one and the default fit that does not (gcol33/tulpa#357)
+  # -- naming the default as a literal in the note is what made it say "rather
+  # than the default 'chord'" on a fit read with the default.
+  d <- diagnostics(f0)
+  expect_identical(attr(d, "within_cell_requested"), "log_quadratic")
   expect_identical(attr(d, "interval_read"), "density")
   expect_false(any(grepl("within-cell", attr(d, "interval_read_note"))))
   dc <- diagnostics(fc)

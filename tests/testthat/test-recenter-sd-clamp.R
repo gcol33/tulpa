@@ -248,14 +248,18 @@ test_that("declining on the ceiling is visible as its own reason", {
     expect_identical(rescue$res$theta_grid, theta_grid)
 })
 
-test_that("the placement floor is the registry's outside a joint fit and the joint doors' inside one", {
+test_that("the placement floor is the registry's outside a joint fit and none inside one", {
     expect_identical(.nl_recenter_floor(), .nl_recenter("min_sd_u"))
+    fl <- .nl_recenter_axis_full("log", 0, .nl_recenter("min_sd_u") / 10)
+    expect_identical(fl$sd_clamp, "floor")
+    expect_equal(fl$sd_used, .nl_recenter("min_sd_u"))
     op <- options(tulpa.nl_door = "joint")
     on.exit(options(op), add = TRUE)
     expect_identical(.nl_recenter_floor(), .nl_recenter("min_sd_u_joint"))
-    expect_lt(.nl_recenter("min_sd_u_joint"), .nl_recenter("min_sd_u"))
-    # The node generator reads it where the caller does not pass one.
-    fl <- .nl_recenter_axis_full("log", 0, .nl_recenter("min_sd_u_joint") / 10)
-    expect_identical(fl$sd_clamp, "floor")
-    expect_equal(fl$sd_used, .nl_recenter("min_sd_u_joint"))
+    expect_identical(.nl_recenter("min_sd_u_joint"), 0)
+    # The joint doors lay an axis at the SD the mode-find measured, however
+    # sharp.
+    fl <- .nl_recenter_axis_full("log", 0, 1e-3)
+    expect_identical(fl$sd_clamp, "none")
+    expect_equal(fl$sd_used, 1e-3)
 })

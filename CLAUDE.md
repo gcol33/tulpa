@@ -230,24 +230,26 @@ movable axis is a new row, never a new chained rescue. The one fire predicate is
 level on its log axis) is a model, not an endpoint: it neither rails nor fires.
 A placement refit is handed the mode it was laid from
 (`tulpa.nl_outer_mode`) and reuses it unless the placed grid rails
-(`outer_mode_carried`); the var-of-means consistency pass lays a collapsed
-axis's points at that mode (`.hyper_propose_at_mode()`) before bisecting.
-A node's measure is the box to its neighbours' midpoints in its row, and the
-reported read spreads a node's mass over that box, so the points form a 1-SD
-ladder run out in the row they go in until the box beyond its last step adds
-under `at_mode_gap_var` to the axis's VARIANCE (`.hyper_at_mode_reach()`; a
-mass bound let 0.7% of the posterior quadruple a reported SD); later rounds
-close any gap a solved node still misreads against the log-linear run to its
-neighbour (`.hyper_propose_edge_close()`). A slice
-re-tiles one fibre, laid through the row nearest the outer mode
-(`.hyper_consistency_anchor()`), not through the heaviest base cell: where a
-pinned axis sits tens of SDs from its mode, that cell is the others' best GIVEN
-the far level. The pass takes the axis farthest from its mode first
-(`.hyper_consistency_order()`) and holds an axis whose row sits more than
-`sqrt(2 log(1 / consistency_row_mass))` mode-SDs from the mode (`info$held`). Where
-another axis's slice holds an axis's modal level, the three-point parabola
-declines (`cross_slice`, `.nl_axis_cross_slice()`) and the SD aligns with the
-within-cell read the interval comes from.
+(`outer_mode_carried`). The joint doors lay an axis at the SD the mode-find
+measured, with no floor (`min_sd_u_joint = 0`; the registry keeps 0.15).
+
+**Refinement adds LEVELS, never slices** (gcol33/tulpa#932). The var-of-means
+consistency pass and the opt-in adaptive pass lay each new point as a level of
+the tensor, in every row of the other axes that holds a solved cell
+(`.hyper_tensor_level_cells()`), so the product rule measures the refined grid
+and every row integrates an axis at the same nodes. A point laid in one row (a
+slice) resolved its own axis and misread every other one: the modal row
+integrated the axis finely and the rest coarsely, so the other axes' levels
+carried row-dependent quadrature errors. The `refining` tag now names the axis
+whose pass ADDED a cell (`""` = declared); the declared levels fix the outer
+cell edges (`.hyper_span_coord_bounds()` on the measure, `.nl_level_edges()` on
+the read) and any prior read off the nodes (specs rebuilt from declared cells
+only). The consistency pass lays a collapsed axis's points at the outer mode
+(`.hyper_propose_at_mode()`, a 1-SD ladder run out until the box beyond its last
+step adds under `at_mode_gap_var` to the axis's variance), closes gaps a solved
+node misreads (`.hyper_propose_edge_close()`), and bisects only without a mode.
+An axis whose at-mode proposal is empty -- a placement laid it at 1.25 SDs, ESS
+2.8 by construction -- is left as it is.
 
 The cheap-pass screen is ON by default for the joint and registry doors
 (`.NL_SCREEN$prune`, per door; the SPDE fitter stays opt-in because its CCD

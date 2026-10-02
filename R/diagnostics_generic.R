@@ -401,15 +401,15 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
     # gcol33/tulpa#906). Read it on that interval mapped to the unit one, whose
     # domain the partition does honour, and map back.
     lo <- amap$lo[j]; hi <- amap$hi[j]
-    rows_j <- .nl_axis_cell_rows(tg, j, object$refining_axis)
+    dcl_j  <- .nl_axis_declared_levels(tg, j, object$refining_axis)
     rid_j  <- .nl_axis_row_id(tg, j)
     qs <- if (is.finite(lo) && is.finite(hi) && hi > lo &&
               all(v > lo & v < hi)) {
       lo + (hi - lo) * .nl_summary_quantile((v - lo) / (hi - lo), w, probs,
                                             "unit", support, within, NA_real_,
-                                            rows_j, rid_j, lmd)
+                                            dcl_j, rid_j, lmd)
     } else {
-      .nl_summary_quantile(v, w, probs, dm, support, within, at, rows_j, rid_j,
+      .nl_summary_quantile(v, w, probs, dm, support, within, at, dcl_j, rid_j,
                            lmd)
     }
     out <- data.frame(mean = m, sd = s, stringsAsFactors = FALSE)

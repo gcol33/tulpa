@@ -63,7 +63,7 @@ test_that("each condition that withholds an axis SD names itself", {
 
 test_that("the reason survives the axis-resolution read, per axis", {
     d  <- .gres_two_axis()
-    rs <- .nl_axis_resolution(d$tg, d$lm, rep("", nrow(d$tg)), NULL)
+    rs <- .nl_axis_resolution(d$tg, d$lm, NULL)
 
     expect_true(is.finite(rs$h_over_sd[["A"]]))
     expect_true(is.na(rs$h_over_sd[["B"]]))
@@ -78,7 +78,7 @@ test_that("the reason survives the axis-resolution read, per axis", {
 
 test_that("a whole-grid verdict is withheld when an axis went unscored", {
     d  <- .gres_two_axis()
-    rs <- .nl_axis_resolution(d$tg, d$lm, rep("", nrow(d$tg)), NULL)
+    rs <- .nl_axis_resolution(d$tg, d$lm, NULL)
     r  <- .tulpa_grid_resolution(.gres_fit(rs))
 
     # A on its own is comfortably inside the resolved band, so reading the
@@ -96,7 +96,7 @@ test_that("a whole-grid verdict is withheld when an axis went unscored", {
 
 test_that("the note names the unscored axis before the coarsest scored one", {
     d  <- .gres_two_axis()
-    rs <- .nl_axis_resolution(d$tg, d$lm, rep("", nrow(d$tg)), NULL)
+    rs <- .nl_axis_resolution(d$tg, d$lm, NULL)
     n  <- .tulpa_grid_resolution_note(.tulpa_grid_resolution(
         .gres_fit(rs, railed = "B:upper")))
 
@@ -118,7 +118,7 @@ test_that("a fully resolved grid still reports nothing", {
     va <- seq(-1, 1, length.out = 9L)
     g  <- as.matrix(expand.grid(A = va, B = va))
     lm <- -0.5 * ((g[, "A"] / 0.6)^2 + (g[, "B"] / 0.6)^2)
-    rs <- .nl_axis_resolution(g, lm, rep("", nrow(g)), NULL)
+    rs <- .nl_axis_resolution(g, lm, NULL)
     r  <- .tulpa_grid_resolution(.gres_fit(rs))
 
     expect_true(all(is.finite(rs$h_over_sd)))
@@ -136,7 +136,7 @@ test_that("a grid where NOTHING scored says so instead of returning nothing", {
     va <- seq(0, 2, length.out = 9L)
     g  <- as.matrix(expand.grid(A = va, B = va))
     lm <- 3 * g[, "A"] + 3 * g[, "B"]
-    rs <- .nl_axis_resolution(g, lm, rep("", nrow(g)), NULL)
+    rs <- .nl_axis_resolution(g, lm, NULL)
     r  <- .tulpa_grid_resolution(.gres_fit(rs))
 
     expect_false(is.null(r))

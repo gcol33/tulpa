@@ -792,9 +792,7 @@ auto_grid_place <- function(x)
         lm <- lm + lq
         lm[is.na(lm)] <- -Inf
     }
-    m <- .nl_axis_marginal_logdensity(
-        as.numeric(tg[, j]), lm,
-        .nl_axis_read_cells(res$refining_axis, nrow(tg), measured = measured))
+    m <- .nl_axis_marginal_logdensity(as.numeric(tg[, j]), lm)
     if (length(m$vals) < 2L) return(NULL)
     top <- max(m$log_marg)
     if (!is.finite(top)) return(NULL)

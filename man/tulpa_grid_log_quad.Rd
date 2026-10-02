@@ -29,9 +29,9 @@ the grid's own edge rather than left open to infinity.}
 \item{folded_axes}{Optional names of axes folded onto \verb{[0, Inf)} (e.g. a
 correlation axis reflected at 0).}
 
-\item{refining}{Optional refinement-slice tag vector (see
+\item{refining}{Optional refinement tag vector (see
 \code{\link[=tulpa_hyper_slice_home]{tulpa_hyper_slice_home()}}); when supplied, specs are rebuilt from the
-grid's base (non-slice) cells only.}
+grid's declared cells only.}
 }
 \value{
 Numeric vector of per-cell log quadrature weights, length

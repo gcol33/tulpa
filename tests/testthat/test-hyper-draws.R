@@ -867,15 +867,13 @@ test_that("the resolution of an axis with a point mass is its continuum's", {
 })
 
 
-# ---- 6. A refined axis: each cell reads its own row's box -------------------
+# ---- 6. A refined axis: levels added in every row ---------------------------
 #
-# A refinement pass places slice points on one axis in ONE row of the others,
-# and the quadrature measures that row alone re-tiled (`.hyper_refined_log_quad()`)
-# while every other row keeps the declared levels' cells. The read and the draws
-# have to take the same boxes; a single partition over every distinct value
-# handed the unrefined rows' base cells the narrow box of a slice point's
-# neighbour while they still held their whole base box's mass
-# (gcol33/tulpa#858).
+# A refinement pass adds levels to one axis in every row of the others, so the
+# grid stays a tensor and every cell's box is its level's box in one partition
+# over the axis's levels. The declared levels fix that partition's outer edges,
+# so a level added beside an outer node does not cut the declared span. The
+# read and the draws take the same boxes.
 
 hd_refined <- function(within = "box_uniform", r = 0) {
   axes <- list(tau = exp(seq(log(0.2), log(3), length.out = 7)),
@@ -887,10 +885,10 @@ hd_refined <- function(within = "box_uniform", r = 0) {
   }
   base <- as.matrix(expand.grid(axes))
   tau <- axes$tau
-  pts <- sqrt(tau[3:5] * tau[4:6])
-  slice <- cbind(tau = pts, rho = axes$rho[3L])
-  tg <- rbind(base, slice)
-  refining <- c(rep("", nrow(base)), rep("consistency_tau", nrow(slice)))
+  pts <- c(sqrt(tau[3:4] * tau[4:5]), tau[7] * (tau[6] / tau[7])^0.25)
+  added <- as.matrix(expand.grid(tau = pts, rho = axes$rho))
+  tg <- rbind(base, added)
+  refining <- c(rep("", nrow(base)), rep("tau", nrow(added)))
   specs <- tulpa:::.joint_axis_specs_from_grid(base)
   lq <- tulpa:::.hyper_log_quad_weights(tg, specs, refining = refining)
   lm <- lmf(tg)
@@ -904,38 +902,27 @@ hd_refined <- function(within = "box_uniform", r = 0) {
   structure(res, class = c("tulpa_nested_laplace", "list", "tulpa_fit"))
 }
 
-test_that("an unrefined row keeps the declared levels' boxes", {
-  fit <- hd_refined()
+# Every cell's box along `tau` on the fixture: its level's box in the partition
+# over all levels, the outer edges the declared levels'.
+hd_refined_boxes <- function(fit) {
   tg <- fit$theta_grid
-  rows <- tulpa:::.nl_axis_cell_rows(tg, 1L, fit$refining_axis)
-  expect_identical(sort(unique(rows$row)), 0:1)
-  expect_true(all(rows$row[tg[, "rho"] != tg[36L, "rho"]] == 0L))
+  lev <- sort(unique(as.numeric(tg[, "tau"])))
+  dcl <- tulpa:::.nl_axis_declared_levels(tg, 1L, fit$refining_axis)
+  e <- tulpa:::.nl_level_edges(lev, "positive", dcl)$e
+  k <- match(tg[, "tau"], lev)
+  list(lo = e[k], hi = e[k + 1L], e = e, declared = dcl)
+}
 
-  bx <- tulpa:::.nl_cell_boxes(as.numeric(tg[, "tau"]), "positive", rows)
-  base_lev <- sort(unique(tg[rows$base, "tau"]))
-  eb <- tulpa:::.nl_box_edges(base_lev, "positive")
-  off <- rows$row == 0L
-  k <- match(tg[off, "tau"], base_lev)
-  expect_equal(bx$lo[off], eb[k])
-  expect_equal(bx$hi[off], eb[k + 1L])
-
-  # The re-tiled row tiles the declared span with its slice points joined in,
-  # its interior edges the quadrature fibre's.
-  on <- rows$row == 1L
-  o <- order(tg[on, "tau"])
-  lo <- bx$lo[on][o]
-  hi <- bx$hi[on][o]
-  expect_equal(lo[-1L], hi[-length(hi)])
-  expect_equal(c(lo[1L], hi[length(hi)]), c(eb[1L], eb[length(eb)]))
-  spec <- tulpa:::.hyper_spec_by_name(
-    tulpa:::.joint_axis_specs_from_grid(tg[rows$base, ]), "tau")
-  m <- tulpa:::.hyper_axis_measure(tg[rows$base, "tau"], spec,
-                                   tulpa:::.hyper_axis_atom_mass(spec))
-  m$spec <- spec
-  tl <- tulpa:::.hyper_fibre_tiling(m, tg[rows$row == 1L & !rows$base, "tau"],
-                                    close_domain = TRUE)
-  inner <- tl$edges[-c(1L, length(tl$edges))]
-  expect_equal(log(lo[-1L]), inner)
+test_that("a level added beside an outer node keeps the declared edge", {
+  fit <- hd_refined()
+  bx <- hd_refined_boxes(fit)
+  eb <- tulpa:::.nl_box_edges(bx$declared, "positive")
+  expect_equal(range(bx$e), range(eb))
+  lev <- sort(unique(as.numeric(fit$theta_grid[, "tau"])))
+  naive <- tulpa:::.nl_box_edges(lev, "positive")
+  expect_lt(max(naive), max(eb))
+  # The interior edges are the midpoints of the joined levels.
+  expect_equal(bx$e[-c(1L, length(bx$e))], naive[-c(1L, length(naive))])
 })
 
 test_that("draws on a refined axis reproduce the fit's own interval", {
@@ -952,38 +939,33 @@ test_that("draws on a refined axis reproduce the fit's own interval", {
   }
 })
 
-test_that("a refined-axis draw stays in the box its own row gives its cell", {
+test_that("a refined-axis draw stays in its cell's box", {
   fit <- hd_refined()
   tg <- fit$theta_grid
   set.seed(3)
   cells <- rep(seq_len(nrow(tg)), each = 40L)
   th <- tulpa_hyper_draws(fit, cells = cells)
-  rows <- tulpa:::.nl_axis_cell_rows(tg, 1L, fit$refining_axis)
-  bx <- tulpa:::.nl_cell_boxes(as.numeric(tg[, "tau"]), "positive", rows)
+  bx <- hd_refined_boxes(fit)
   expect_true(all(th[, "tau"] >= bx$lo[cells] & th[, "tau"] <= bx$hi[cells]))
-  # A base cell outside the re-tiled row fills its whole declared box, about
-  # exp(+-0.226) around its level, which the one-partition geometry cut to
-  # exp(+-0.113) between the slice points either side of it.
-  lev <- sort(unique(tg[rows$base, "tau"]))[4L]
-  i <- which(rows$row == 0L & tg[, "tau"] == lev)[1L]
-  d <- th[cells == i, "tau"]
-  expect_gt(max(d), lev * 1.15)
-  expect_lt(min(d), lev / 1.15)
+  # The outermost declared level fills its box out to the declared edge.
+  top <- max(tg[, "tau"])
+  i <- which(tg[, "tau"] == top)[1L]
+  # Past the added level's own half step, which is what the naive partition
+  # would have stopped at.
+  expect_gt(max(th[cells == i, "tau"]), top * (top / bx$declared[6L])^0.25)
 })
 
-test_that("a refined axis's coupled draws stay in their own row's boxes", {
-  # The copula reads each cell's within-cell moments off the same per-row
-  # geometry the draw inverts, so coupling moves no draw out of its box and no
-  # axis off the interval the fit reports.
+test_that("a refined axis's coupled draws stay in their cells' boxes", {
+  # The copula reads each cell's within-cell moments off the same geometry the
+  # draw inverts, so coupling moves no draw out of its box and no axis off the
+  # interval the fit reports.
   fit <- hd_refined(r = -0.8)
-  tg <- fit$theta_grid
   set.seed(8596)
   n <- if (cran_fixture()) 2e4L else 4e5L
   th <- tulpa_hyper_draws(fit, n = n)
   cells <- attr(th, "cells")
   expect_lt(attr(th, "within_cell_copula")[1L, 2L], -0.3)
-  rows <- tulpa:::.nl_axis_cell_rows(tg, 1L, fit$refining_axis)
-  bx <- tulpa:::.nl_cell_boxes(as.numeric(tg[, "tau"]), "positive", rows)
+  bx <- hd_refined_boxes(fit)
   expect_true(all(th[, "tau"] >= bx$lo[cells] & th[, "tau"] <= bx$hi[cells]))
   expect_lt(stats::cor(log(th[, "tau"]), stats::qlogis(th[, "rho"])), -0.6)
   for (ax in colnames(th)) {

@@ -177,9 +177,10 @@
 #'   * `var_of_means_consistency` (`FALSE`) -- run a post-integration
 #'     consistency pass: for refinable axes whose marginal has collapsed onto
 #'     too few nodes to carry a spread, bisect the gaps between adjacent nodes
-#'     that carry the axis's mass, with slice points in the modal cell's row,
-#'     and repeat until the axis reaches `var_of_means_min_ess` or has taken
-#'     `.nl_diag("axis_refine_nodes")` new nodes. One kernel call per round.
+#'     that carry the axis's mass, each new point a level laid in every row of
+#'     the other axes, and repeat until the axis reaches `var_of_means_min_ess`
+#'     or has taken `.nl_diag("axis_refine_nodes")` new levels. One kernel call
+#'     per round.
 #'   * `var_of_means_min_ess` (`.nl_diag("axis_sd_ess")`) -- the quadrature
 #'     effective sample size an axis marginal has to reach for the pass to
 #'     leave it alone. Read off the weights, so the trigger is not one SD
@@ -362,7 +363,7 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
       log_marginal  <- consistency$log_marginal
       extras_list   <- consistency$extras
       refining_axis <- consistency$refining_axis
-      # The consistency pass appends slice cells, so the per-cell log-prior
+      # The consistency pass appends cells, so the per-cell log-prior
       # vector is stale; recompute on the merged grid or ds$picks indexes past
       # its end -> NA into the returned $log_prior (as the refine pass does).
       log_prior_cell <- if (is.null(hp_fn)) rep(0, nrow(theta_grid))
@@ -388,8 +389,7 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   # for. Last, so it reads the final grid and the final measure.
   res_partial <- .nl_attach_axis_sd(
     list(theta_grid = theta_grid, log_marginal = log_marginal,
-         log_quad = log_quad, theta_sd = theta_sd),
-    refining = refining_axis)
+         log_quad = log_quad, theta_sd = theta_sd))
   theta_sd <- res_partial$theta_sd
 
   # Each axis's support as the caller DECLARED it, so the outer cell edges the

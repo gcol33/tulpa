@@ -376,6 +376,10 @@ test_that("the floor bounds the read's own discretisation error", {
   # own resolution, not the floor being wrong, so the tightness claim moves to
   # the aggregate -- the floor has to be within reach of the error SOMEWHERE, or
   # it would be a bound that never binds.
+  #
+  # The log-quadratic read (the default since gcol33/tulpa#932) is exact for a
+  # Gaussian log-marginal at any spacing, so under it the error is bounded with
+  # nothing to spare, and the aggregate tightness is asserted on the box read.
   exact <- stats::qnorm(c(0.025, 0.975))
   ratio <- numeric(0)
   for (m in c(9L, 15L, 21L, 41L, 81L)) {
@@ -383,6 +387,10 @@ test_that("the floor bounds the read's own discretisation error", {
     rb <- outer_grid_rebuild(d)
     err <- mean(abs(c(rb$ci_lo, rb$ci_hi) - exact))
     fl  <- outer_grid_noise_floor(d)$endpoints
+    expect_lt(err, fl)
+    d$within <- "box_uniform"
+    rb <- outer_grid_rebuild(d)
+    err <- mean(abs(c(rb$ci_lo, rb$ci_hi) - exact))
     expect_lt(err, fl)
     ratio <- c(ratio, err / fl)
   }

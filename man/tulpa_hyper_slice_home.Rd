@@ -2,7 +2,7 @@
 % Please edit documentation in R/hyper_quadrature.R
 \name{tulpa_hyper_slice_home}
 \alias{tulpa_hyper_slice_home}
-\title{Per-cell refinement-slice tag of an outer grid}
+\title{Per-cell refinement tag of an outer grid}
 \usage{
 tulpa_hyper_slice_home(refining, n)
 }
@@ -14,15 +14,17 @@ grid with no refinement).}
 length.}
 }
 \value{
-A character vector of length \code{n}: \code{""} for a base cell, the axis
-name for a refinement-slice cell.
+A character vector of length \code{n}: \code{""} for a declared cell, the
+axis name for a cell a refinement pass added.
 }
 \description{
-The axis each cell of a nested-Laplace outer grid was placed on by a
-refinement pass, \code{""} for a base (unrefined) tensor cell. Used to tell a
-base grid apart from its refinement slices wherever a reader needs to
-restrict to one or the other, e.g. rebuilding axis specs from a grid's
-declared nodes only (see \code{\link[=tulpa_joint_axis_specs_from_grid]{tulpa_joint_axis_specs_from_grid()}}).
+The axis whose refinement pass added each cell of a nested-Laplace outer
+grid, \code{""} for a cell of the grid as declared. A pass adds levels to an
+axis, laid in every row of the others, so the grid stays a tensor; the tag
+tells the declared levels apart wherever a reader needs them alone, e.g.
+rebuilding axis specs from a grid's declared nodes (see
+\code{\link[=tulpa_joint_axis_specs_from_grid]{tulpa_joint_axis_specs_from_grid()}}), whose prior must not move with the
+nodes a pass added.
 }
 \examples{
 tulpa_hyper_slice_home(NULL, 3)

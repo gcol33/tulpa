@@ -391,11 +391,9 @@
 #'     `adaptive_grid_max_passes` (`1L`) -- when `adaptive_grid = TRUE`, a
 #'     mode-tracked 1D refinement pass triggers on any axis whose marginal
 #'     boundary weight exceeds `adaptive_grid_edge_thresh`. New points are
-#'     appended on that axis (interior densification + outward log-spaced
-#'     extension) paired with the boundary cell's modal other-axis values, each
-#'     measured by the part of its row's base cells it takes over (a slice past
-#'     the outermost node adds that row's extension region) --
-#'     `O(n_new_points)` kernel solves, not the full cartesian product. The
+#'     added to that axis as levels (interior densification + outward
+#'     log-spaced extension), each laid in every row of the other axes, so the
+#'     grid stays a tensor -- `n_new_points * n_rows` kernel solves. The
 #'     edge score is `max(marginal_weight_at_boundary, exp(max_log_marginal_at
 #'     _boundary - max_log_marginal_overall))`, catching both boundary pile-up
 #'     and integrand truncation; `0.02` is ~4 log units of decay.
@@ -429,9 +427,10 @@
 #'     consistency pass over the refinable axes (a block's field SD, the copy
 #'     scale and the per-arm dispersions). An axis whose marginal has collapsed
 #'     onto too few nodes to carry a spread, such as a field SD narrower than
-#'     its placed cell, has nodes laid in its modal cell's row until its
-#'     marginal resolves, so the reported interval is read off the posterior and
-#'     not off a cell box. Attaches `var_of_means_consistency_info`.
+#'     its placed cell, has levels added in every row of the other axes until
+#'     its marginal resolves, so the reported interval is read off the
+#'     posterior and not off a cell box. Attaches
+#'     `var_of_means_consistency_info`.
 #'   * `inner_factorization` (`"auto"`) -- which factorization the dense inner
 #'     Newton applies to the Hessian it assembled: `"auto"` by the latent
 #'     dimension, `"sparse"` for CHOLMOD, `"dense"` for the dense Cholesky.
@@ -670,38 +669,30 @@
 #'     for both the single-block backends (icar/bym2/car_proper) and the
 #'     multi-block path (a per-group RE, a trend field, or an arm-specific
 #'     field block).
-#'   * `within_cell` (`"box_uniform"`) -- the WITHIN-CELL construction the
+#'   * `within_cell` (`"log_quadratic"`) -- the WITHIN-CELL construction the
 #'     reported per-axis hyperparameter intervals are read with. The outer
 #'     grid's weights say how much mass each cell holds; they do not say how it
-#'     is spread inside the cell, and a quantile needs both. `"box_uniform"`
-#'     puts the cumulative FULL mass at each cell EDGE and interpolates between
-#'     edges; `"chord"` puts the cumulative MID-mass at each cell coordinate
-#'     and interpolates between coordinates -- the same masses over the same
-#'     boxes with the knots moved half a cell, which measures as a whole order
-#'     of convergence (2.00 against 1.04 on a fixture with a closed-form
-#'     posterior). `"log_quadratic"` joins each row's node log densities by
-#'     overlapping quadratics, exact for a Gaussian at any spacing, and
-#'     continues the end quadratic past the outer node instead of stopping at
-#'     the box edge; it runs on the rows that resolve their own conditional
-#'     (`h / sd <= 2`) and reads every other row as boxes, declining to
-#'     `"box_uniform"` where no row qualifies. THE DEFAULT IS `"box_uniform"` since 0.0.188, decided on
-#'     FIXED-TRUTH coverage at the placement the engine ships, with
-#'     `auto_recenter = "resolve"` as the default. Summed
-#'     |coverage - nominal| over nominal 0.95 / 0.80 / 0.50, chord against
-#'     box-uniform: 0.2900 / 0.1233 on the pre-registered fixed-truth
-#'     instrument, 0.2004 / 0.0361 over 4680 truth-swept fits of the same
-#'     fixture, and 0.2467 / 0.1572 over nine (config, axis) rows spanning
-#'     seven families, at 0.69 to 1.08x the width. The conditional-coverage
-#'     swing that held the default back reads 0.110 at the shipped placement
-#'     against 0.415 on the coarse pinned grid it was measured on, and at
-#'     nominal 0.50 it is the same on both reads. `outer_grid_h_over_sd` is how
-#'     wide a cell is on each axis, and `theta_within_cell` is what each axis
-#'     was actually read with. Only a `"density"` support admits it -- a CCD
-#'     design, a locally refined grid and a posterior sample are not cell
-#'     partitions that tile -- and an axis it declines on reports `"chord"`
-#'     with a reason rather than erroring. Nothing else moves: point estimates,
-#'     moments, draws and weights are untouched, and `"chord"` restores the
-#'     previous report exactly.
+#'     is spread inside the cell, and a quantile needs both.
+#'     `"log_quadratic"` joins each row's node log densities by overlapping
+#'     quadratics, exact for a Gaussian at any spacing, and continues the end
+#'     quadratic past the outer node instead of stopping at the box edge; it
+#'     runs on the rows that resolve their own conditional (`h / sd <= 2`) and
+#'     reads every other row as boxes, declining to `"box_uniform"` where no
+#'     row qualifies. `"box_uniform"` puts the cumulative FULL mass at each
+#'     cell EDGE and interpolates between edges; `"chord"` puts the cumulative
+#'     MID-mass at each cell coordinate and interpolates between coordinates.
+#'     The default moved from `"box_uniform"` at gcol33/tulpa#932: a placed
+#'     axis sits at 1.25 posterior SDs per cell, where the box read is narrow
+#'     by construction, and against dense references of a two-arm ICAR
+#'     fixture the log-quadratic read's summed error is 0.038 against the box
+#'     read's 0.110 on the same grids. `outer_grid_h_over_sd` is how wide a
+#'     cell is on each axis, and `theta_within_cell` is what each axis was
+#'     actually read with. Only a `"density"` support admits the box and
+#'     log-quadratic reads -- a CCD design, a locally refined grid and a
+#'     posterior sample are not cell partitions that tile -- and an axis they
+#'     decline on reports the read that ran with a reason rather than erroring.
+#'     Nothing else moves: point estimates, moments, draws and weights are
+#'     untouched.
 #'   * `skew_correct` (`TRUE`) -- consume the inner-Laplace expansion instead of
 #'     only grading it: report
 #'     Cornish-Fisher marginal quantiles at each coefficient's own `gamma_3`,
@@ -1121,11 +1112,11 @@
 #'      `theta_within_cell_declined` -- the WITHIN-CELL construction the same
 #'      intervals were read with. The kind above says what the
 #'      integrator left; this says how each cell's mass was spread inside its own
-#'      box when the grid was read back. `"box_uniform"` is the default and puts
-#'      the cumulative full mass at each cell edge; `"chord"`
-#'      (`control$within_cell`) puts the cumulative mid-mass at each cell
-#'      coordinate, the same masses over the same boxes with the knots moved half
-#'      a cell; `"log_quadratic"` interpolates each row's node log densities. The
+#'      box when the grid was read back. `"log_quadratic"` is the default and
+#'      interpolates each row's node log densities; `"box_uniform"`
+#'      (`control$within_cell`) puts the cumulative full mass at each cell edge;
+#'      `"chord"` puts the cumulative mid-mass at each cell coordinate, the same
+#'      masses over the same boxes with the knots moved half a cell. The
 #'      construction is recorded per axis, and an axis whose cell partition could
 #'      not be built falls back to `"chord"` on its own with the reason in
 #'      `theta_within_cell_declined` (`"support_<kind>"`, `"single_node"`,
@@ -2229,7 +2220,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # field SD narrower than its placed cell) collapse joint weight onto a single
     # grid cell, so `sum(w*x^2) - mean^2` on that axis is a floor at zero rather
     # than a spread. The consistency pass bisects the gaps the axis's mass sits
-    # across, with slice points in the modal cell's row, until the axis marginal's
+    # across, as levels laid in every row of the other axes, until the axis marginal's
     # ESS reaches the floor, so the merged grid carries the support the spread is
     # read off. The outer mode a placement refit was laid from is carried in by
     # the front door (`.joint_place_axes()`), which the pass lays a collapsed

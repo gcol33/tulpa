@@ -166,40 +166,30 @@ outer diagnostic scores the hyperparameter-grid integration around a
 FIXED inner Laplace, this scores whether that inner Gaussian
 approximation is itself a good fit to the latent-field conditional
 posterior. See \code{\link[=diagnostics]{diagnostics()}} for the combined whole-fit verdict.
-\item \code{within_cell} (\code{"box_uniform"}) -- the WITHIN-CELL construction the
+\item \code{within_cell} (\code{"log_quadratic"}) -- the WITHIN-CELL construction the
 reported per-axis hyperparameter intervals are read with. The outer
 grid's weights say how much mass each cell holds; they do not say how it
-is spread inside the cell, and a quantile needs both. \code{"box_uniform"}
-puts the cumulative FULL mass at each cell EDGE and interpolates between
-edges; \code{"chord"} puts the cumulative MID-mass at each cell coordinate
-and interpolates between coordinates -- the same masses over the same
-boxes with the knots moved half a cell, which measures as a whole order
-of convergence (2.00 against 1.04 on a fixture with a closed-form
-posterior). \code{"log_quadratic"} joins each row's node log densities by
-overlapping quadratics, exact for a Gaussian at any spacing, and
-continues the end quadratic past the outer node instead of stopping at
-the box edge; it runs on the rows that resolve their own conditional
-(\code{h / sd <= 2}) and reads every other row as boxes, declining to
-\code{"box_uniform"} where no row qualifies. THE DEFAULT IS \code{"box_uniform"} since 0.0.188, decided on
-FIXED-TRUTH coverage at the placement the engine ships, with
-\code{auto_recenter = "resolve"} as the default. Summed
-|coverage - nominal| over nominal 0.95 / 0.80 / 0.50, chord against
-box-uniform: 0.2900 / 0.1233 on the pre-registered fixed-truth
-instrument, 0.2004 / 0.0361 over 4680 truth-swept fits of the same
-fixture, and 0.2467 / 0.1572 over nine (config, axis) rows spanning
-seven families, at 0.69 to 1.08x the width. The conditional-coverage
-swing that held the default back reads 0.110 at the shipped placement
-against 0.415 on the coarse pinned grid it was measured on, and at
-nominal 0.50 it is the same on both reads. \code{outer_grid_h_over_sd} is how
-wide a cell is on each axis (with \code{outer_grid_resolution_declined}
-naming why an axis carries no ratio, and \code{outer_grid_railed_axes} naming
-any axis whose nodes do not contain its own posterior mode), and
-\code{theta_within_cell} is what each axis was actually read with. Only a
-\code{"density"} support admits it -- a CCD design, a locally refined grid
-and a posterior sample are not cell partitions that tile -- and an axis
-it declines on reports \code{"chord"} with a reason rather than erroring.
+is spread inside the cell, and a quantile needs both.
+\code{"log_quadratic"} joins each row's node log densities by overlapping
+quadratics, exact for a Gaussian at any spacing, and continues the end
+quadratic past the outer node instead of stopping at the box edge; it
+runs on the rows that resolve their own conditional (\code{h / sd <= 2}) and
+reads every other row as boxes, declining to \code{"box_uniform"} where no
+row qualifies. \code{"box_uniform"} puts the cumulative FULL mass at each
+cell EDGE and interpolates between edges; \code{"chord"} puts the cumulative
+MID-mass at each cell coordinate and interpolates between coordinates.
+The default moved from \code{"box_uniform"} at gcol33/tulpa#932: a placed
+axis sits at 1.25 posterior SDs per cell, where the box read is narrow
+by construction, and against dense references of a two-arm ICAR
+fixture the log-quadratic read's summed error is 0.038 against the box
+read's 0.110 on the same grids. \code{outer_grid_h_over_sd} is how wide a
+cell is on each axis, and \code{theta_within_cell} is what each axis was
+actually read with. Only a \code{"density"} support admits the box and
+log-quadratic reads -- a CCD design, a locally refined grid and a
+posterior sample are not cell partitions that tile -- and an axis they
+decline on reports the read that ran with a reason rather than erroring.
 Nothing else moves: point estimates, moments, draws and weights are
-untouched, and \code{"chord"} restores the previous report exactly.
+untouched.
 \item \code{skew_correct} (\code{TRUE}) -- consume the inner-Laplace expansion instead of
 only grading it: report
 Cornish-Fisher marginal quantiles at each coefficient's own \code{gamma_3},
@@ -388,9 +378,9 @@ accepting it and ignoring it.
 \item \code{var_of_means_consistency} (\code{TRUE}) -- the consistency pass of
 \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}: a field SD (\code{tau} of an \code{icar}, \code{rw1} or
 \code{rw2} block, \code{sigma} of an \code{iid}, \code{bym2} or \code{spde} block) whose marginal
-has collapsed onto too few nodes to carry a spread has nodes laid in its
-modal cell's row until it resolves, and the refined cells are solved and
-carried like the rest (\code{refining_axis} tags them, \code{var_of_means_consistency_info}
+has collapsed onto too few nodes to carry a spread has levels added in
+every row of the other axes until it resolves, and the new cells are
+solved and carried like the rest (\code{var_of_means_consistency_info}
 records the pass). Other axes keep the nodes they were laid on.
 \item \code{adaptive_grid} (\code{FALSE}), \code{adaptive_grid_edge_thresh} (\code{0.02}),
 \code{adaptive_grid_max_passes} (\code{1L}) -- the opt-in boundary / interior pass,

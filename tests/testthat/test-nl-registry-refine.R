@@ -39,7 +39,7 @@ test_that("a field SD collapsed onto few nodes is refined on the registry door",
     expect_false(any(nzchar(held$refining_axis %||% "")))
     expect_gte(fit$theta_sd_ess[[1L]], min_ess)
     expect_gt(length(fit$log_marginal), length(held$log_marginal))
-    expect_true(any(fit$refining_axis == "consistency_tau"))
+    expect_true(any(fit$refining_axis == "tau"))
     expect_false(is.null(fit$var_of_means_consistency_info))
 
     # Every per-cell field has one entry per cell, and the base cells keep the

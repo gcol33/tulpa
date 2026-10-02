@@ -509,8 +509,10 @@ test_that("a refinement slice carries the log marginal a tensor cell does", {
 test_that("a field SD collapsed onto one node is resolved by the consistency pass", {
     # Informative data make the field SD's posterior narrower than the placed
     # grid's cell, so the whole axis sits on one node and its spread is a cell
-    # box. `axis_refine = "none"` is the grid as placed; the default lets the
-    # consistency pass lay nodes on the axis until its marginal is resolved.
+    # box. The nodes are stated, so no placement moves them (an engine-placed
+    # axis is laid at its measured SD instead). `axis_refine = "none"` is the
+    # grid as stated; the default lets the consistency pass lay levels on the
+    # axis until its marginal is resolved.
     skip_on_cran()
     set.seed(1)
     nr <- 12L
@@ -536,7 +538,7 @@ test_that("a field SD collapsed onto one node is resolved by the consistency pas
     prior <- list(type = "icar", n_spatial_units = n,
                   adj_row_ptr = c(0L, cumsum(nn)),
                   adj_col_idx = unlist(adj) - 1L, n_neighbors = nn,
-                  sigma_grid = auto_grid(c(0.5, 1, 2)))
+                  sigma_grid = c(1, 2, 4))
     fit <- function(control)
         suppressWarnings(tulpa_nested_laplace_joint(
             responses, prior, phi_grid = list(cover = c(0.05, 0.09, 0.15)),
@@ -638,12 +640,13 @@ test_that("a multi-block field SD collapsed onto one node is resolved by the con
     sim <- .axr_multi_sim()
     min_ess <- tulpa:::.nl_diag("axis_sd_ess")
 
-    held <- .axr_multi_fit(sim, auto_grid(c(0.5, 1, 2)),
+    # Stated nodes, which no placement moves.
+    held <- .axr_multi_fit(sim, c(1, 2, 4),
                            list(axis_refine = c(b1.sigma = "none")))
     expect_lt(held$theta_sd_ess[["b1.sigma"]], min_ess)
     expect_false(any(grepl("b1.sigma", held$refining_axis, fixed = TRUE)))
 
-    resolved <- .axr_multi_fit(sim, auto_grid(c(0.5, 1, 2)))
+    resolved <- .axr_multi_fit(sim, c(1, 2, 4))
     expect_gte(resolved$theta_sd_ess[["b1.sigma"]], min_ess)
     expect_gt(length(resolved$log_marginal), length(held$log_marginal))
     expect_true(any(grepl("b1.sigma", resolved$refining_axis, fixed = TRUE)))

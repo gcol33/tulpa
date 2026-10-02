@@ -414,13 +414,16 @@ outer_grid_read_diff <- function(a, b) {
   if (!any(is.finite(ws)) || sum(ws, na.rm = TRUE) <= 0) {
     return(rep(NA_real_, length(dump$probs)))
   }
-  # A refined axis's cells are not tiled by one partition over its values: a
-  # slice re-tiles only the row it was placed in. The engine reads that
-  # structure off the refinement tags, so the uncoarsened read does too; a
-  # coarsened one merges atoms across rows and has none.
-  rows <- if (stride == 1L)
-    tulpa:::.nl_cell_rows_subset(
-      tulpa:::.nl_axis_cell_rows(dump$joint_grid, j, dump$refining_axis), use)
+  # The uncoarsened read takes what the engine's does: the declared levels that
+  # fix the outer edges, each cell's row and its node density. A coarsened one
+  # merges atoms across rows and has none of them.
+  dcl <- rid <- lmd <- NULL
+  if (stride == 1L) {
+    dcl <- tulpa:::.nl_axis_declared_levels(dump$joint_grid, j,
+                                            dump$refining_axis)
+    rid <- tulpa:::.nl_axis_row_id(dump$joint_grid, j)[use]
+    lmd <- as.numeric(dump$log_marginal)[use]
+  }
   ws[!is.finite(ws)] <- 0
   ws <- ws / sum(ws)
   if (stride > 1L) {
@@ -439,7 +442,7 @@ outer_grid_read_diff <- function(a, b) {
   at <- if (length(dump$axis_atoms) < j) NA_real_ else dump$axis_atoms[[j]]
   tulpa:::.nl_summary_quantile(v, ws, dump$probs, dm, dump$support,
                                dump$within %||% tulpa:::.nl_within_cell_mode(NULL),
-                               at, rows)
+                               at, dcl, rid, lmd)
 }
 
 # Every axis at one coarsening, in the shape `outer_grid_rebuild()` returns.
@@ -560,7 +563,7 @@ ogd_fixture_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L,
 # rebuilds weight rules off every cell's log-marginal, and a screened cell has
 # none (gcol33/tulpa#925 turned the screen on by default).
 ogd_fixture_fit <- function(sim, levels, spread = 3,
-                            within_cell = "box_uniform",
+                            within_cell = "log_quadratic",
                             hyperprior = "proper") {
   prior <- lapply(seq_along(sim$grp), function(k) {
     s <- sim$sd_true[k]

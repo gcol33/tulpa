@@ -65,14 +65,23 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   exactly zero; off the mode the (beta, z) blocks agree with central
   differences to 1.2e-08 and 7.5e-09 on the periodic AR1 example
   (gcol33/tulpa#929).
-* `control$within_cell = "log_quadratic"` is a third within-cell read for the
-  hyperparameter intervals, opt-in: each row's node log densities joined by
-  overlapping quadratics and the end quadratic continued past the outer node,
-  on the rows that resolve their own conditional (`h / sd <= 2`), boxes
-  elsewhere. `tulpa_hyper_draws()` samples the same reconstruction. On the
-  16x16 two-arm ICAR fixture the 95% field-SD width is 0.967 of a dense
-  reference against the box read's 0.931; on the 24x24 one it is 0.916 against
-  0.986, so `"box_uniform"` stays the default (gcol33/tulpa#932).
+* The hyperparameter intervals of the nested-Laplace doors are read with
+  `within_cell = "log_quadratic"` by default: each row's node log densities
+  joined by overlapping quadratics and the end quadratic continued past the
+  outer node, on the rows that resolve their own conditional (`h / sd <= 2`),
+  boxes elsewhere. `tulpa_hyper_draws()` samples the same reconstruction, and
+  `"box_uniform"` / `"chord"` stay selectable (gcol33/tulpa#932).
+* The outer-grid refinement passes add LEVELS: each new point is laid in every
+  row of the other axes, so the grid stays a tensor, and an axis a placement
+  already laid at its mode is left alone. A point laid in one row resolved its
+  own axis and misread the others. The joint doors lay an axis at the SD the
+  mode-find measured (no 0.05 floor). On the two-arm ICAR fixture the summed
+  error of the reported intervals against dense references falls from 0.156 to
+  0.038, and fixed-truth 95% coverage of the 16x16 field SD goes from 0.922 to
+  0.936 (1000 seeds; a converged grid on the same seeds reads 0.935) and of
+  the 24x24 copy scale from 0.922 to 0.965 (600 seeds). Fits refine into more cells: 187 against 106 at 16x16. `refining_axis`
+  now names the axis whose pass added a cell, and the declared cells fix the
+  span and any prior read off the nodes (gcol33/tulpa#932).
 * The outer Pareto-k of `tulpa_re_cov_nested()` solves its importance draws in
   one compiled batch, each warm-started from the latent mode at the proposal
   centre, where it paid one `tulpa_laplace()` call per draw. The draws spread

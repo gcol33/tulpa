@@ -174,12 +174,8 @@ test_that("a transported mode leaves out an axis the mode-find did not resolve",
     sqrt(sum(w * x^2) - sum(w * x)^2)
 }
 
-test_that("the axis farthest from its mode is refined first, and a fibre it empties is held", {
+test_that("new points are levels of the tensor, so every row integrates them", {
     f <- .cp_calluna_like()
-    expect_identical(.hyper_consistency_order(c("alpha", "phi_pos"), f$tg, f$modes),
-                     c("phi_pos", "alpha"))
-    expect_identical(.hyper_consistency_order(c("alpha", "phi_pos"), f$tg, NULL),
-                     c("alpha", "phi_pos"))
     calls <- 0L
     kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
         calls <<- calls + 1L
@@ -187,17 +183,48 @@ test_that("the axis farthest from its mode is refined first, and a fibre it empt
     }
     out <- .hyper_consistency_pass(f$tg, f$lp(f$tg), NULL, rep("", nrow(f$tg)),
                                    f$specs, kernel_fn, axis_modes = f$modes)
-    # The dispersion slice moves the whole posterior into its own fibre, so a
-    # copy-scale slice in any base row would re-tile rows holding none of it.
-    expect_identical(calls, 1L)
-    expect_identical(out$info$axes, "phi_pos")
-    expect_identical(out$info$held, "alpha")
-    expect_false(any(out$refining_axis == "consistency_alpha"))
-    expect_gte(out$info$ess_after, .nl_diag("axis_sd_ess"))
+    # The copy scale sits at 4 of its SDs per node (the placement floor) and
+    # the dispersion 36 SDs off its declared nodes: both take a ladder.
+    expect_setequal(out$info$axes, c("alpha", "phi_pos"))
+    expect_true(all(out$refining_axis %in% c("", "alpha", "phi_pos")))
+    n_lev <- vapply(colnames(out$theta_grid), function(a)
+        length(unique(out$theta_grid[, a])), numeric(1))
+    expect_identical(nrow(out$theta_grid), as.integer(prod(n_lev)))
+    expect_true(all(out$info$ess_after >= .nl_diag("axis_sd_ess")))
     # The ladder keeps the read on the mode: five points alone left the
     # outermost owning half a 36-SD gap and the mean 1.2 SDs high.
     expect_lt(abs(.cp_log_mean(out, f$specs, "phi_pos") - log(f$p0)),
               0.1 * f$sp)
+    expect_lt(abs(.cp_log_mean(out, f$specs, "alpha") - log(f$a0)),
+              0.1 * f$modes$alpha$sd_u)
+    expect_lt(abs(.cp_log_sd(out, f$specs, "alpha") /
+                  f$modes$alpha$sd_u - 1), 0.1)
+})
+
+test_that("an axis a placement laid at the mode is left as it is", {
+    sd <- 0.04
+    grid <- exp(log(2) + c(-2, -1, 0, 1, 2) * 1.25 * sd)
+    spec <- hyper_axis_spec("sigma", grid = grid, log_scale = TRUE,
+                            refinable = TRUE, extend = TRUE)
+    tg <- matrix(grid, ncol = 1L, dimnames = list(NULL, "sigma"))
+    lm <- -0.5 * ((log(grid) - log(2)) / sd)^2
+    calls <- 0L
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
+        calls <<- calls + 1L
+        list(log_marginal = -0.5 * ((log(new_cells[, 1]) - log(2)) / sd)^2)
+    }
+    # Its ESS is 2.8, under the floor, by construction of a 1.25-SD ladder.
+    out <- .hyper_consistency_pass(tg, lm, NULL, rep("", 5L), list(spec),
+                                   kernel_fn,
+                                   axis_modes = list(sigma = list(
+                                       mode_u = log(2), sd_u = sd, tag = "log")))
+    expect_identical(calls, 0L)
+    expect_null(out$info)
+    # Without a mode the pass has nothing to read the ladder against and
+    # bisects it.
+    blind <- .hyper_consistency_pass(tg, lm, NULL, rep("", 5L), list(spec),
+                                     kernel_fn)
+    expect_gt(calls, 0L)
 })
 
 test_that("points laid from a mode off the peak are closed where they are read", {
@@ -212,14 +239,15 @@ test_that("points laid from a mode off the peak are closed where they are read",
     }
     out <- .hyper_consistency_pass(f$tg, f$lp(f$tg), NULL, rep("", nrow(f$tg)),
                                    f$specs, kernel_fn, axis_modes = f$modes)
-    # The ladder, then one round closing the side the density sits against.
-    expect_identical(calls, 2L)
+    # The dispersion's ladder, then one round closing the side the density
+    # sits against; the copy scale's ladder.
+    expect_identical(calls, 3L)
     expect_lt(abs(.cp_log_mean(out, f$specs, "phi_pos") - log(f$p0)),
               0.1 * f$sp)
     expect_lt(abs(.cp_log_sd(out, f$specs, "phi_pos") / f$sp - 1), 0.1)
 })
 
-test_that("a slice is laid through the row of the joint mode", {
+test_that("a correlated axis is laid at its mode in every row", {
     # The copy scale correlates with the pinned dispersion, so at the declared
     # dispersion node 36 SDs off its best level is one grid step from its joint
     # mode, and that is where the base grid's heaviest cell sits.
@@ -266,24 +294,4 @@ test_that("a collapsed axis with a known mode is resolved without bisecting to i
     blind <- run(NULL)
     expect_gt(calls, 1L)
     expect_lt(blind$info$ess_after, .nl_diag("axis_sd_ess"))
-})
-
-test_that("a modal level held by another axis's slice declines the parabola", {
-    # Two base sigma levels around the mode's; a dispersion slice laid at the
-    # middle one holds the posterior, while the base rows sit far off it.
-    tg <- rbind(cbind(sigma = c(2.5, 3, 3.6), phi = 3.9),
-                cbind(sigma = 3, phi = c(3.2, 3.25, 3.3)))
-    lm <- c(-650, -649, -651, -1, 0, -1)
-    home <- c("", "", "", "phi", "phi", "phi")
-    keep <- rep(TRUE, 6L)
-    marg <- .nl_axis_marginal_logdensity(tg[, "sigma"], lm)
-    expect_true(.nl_axis_cross_slice(tg, 1L, lm, keep, home, marg))
-    # The slice's own axis reads its own slice, which is comparable.
-    marg_phi <- .nl_axis_marginal_logdensity(tg[, "phi"], lm)
-    expect_false(.nl_axis_cross_slice(tg, 2L, lm, keep, home, marg_phi))
-    # Without slices nothing declines.
-    expect_false(.nl_axis_cross_slice(tg, 1L, lm, keep, rep("", 6L), marg))
-    ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg, stencil_ok = FALSE,
-                             stencil_declined = "cross_slice")
-    expect_identical(ch$declined, "cross_slice")
 })
