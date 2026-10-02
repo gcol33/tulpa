@@ -579,7 +579,10 @@
   }
   solve_merge <- function(cells) {
     n <- nrow(cells)
-    fit_out <- kernel_fn(cells, warm_start = warm_start,
+    fit_out <- kernel_fn(cells,
+                         warm_start = .hyper_row_warm_starts(
+                           cells, theta_grid, log_marginal, extras, axis_name,
+                           warm_start),
                          store_extras = !is.null(extras))
     new_lm <- fit_out$log_marginal
     if (!is.null(hp_fn)) {
@@ -606,6 +609,52 @@
   list(theta_grid = theta_grid, log_marginal = log_marginal,
        extras = extras, refining_axis = refining_axis, n_new = n_new,
        n_levels = length(levels))
+}
+
+# The warm start a round of new cells is solved from. `fallback` is the round's
+# single warm start (the heaviest solved cell); when the solved cells carry
+# their modes, each new cell additionally gets the mode of the solved cell in
+# its own row (the other axes' coordinates) nearest to it along `axis`, as the
+# `modes` matrix (one row per cell of `cells`) a kernel hands its driver as the
+# per-cell start. A new level sits one node spacing from a solved one in the
+# same row, where the start is a few nodes' worth of inner Newton steps closer
+# than the heaviest cell of the grid. A cell whose row holds no solved mode
+# starts from the fallback.
+.hyper_row_warm_starts <- function(cells, theta_grid, log_marginal, extras,
+                                   axis, fallback) {
+  if (is.null(extras) || !length(extras)) return(fallback)
+  base_mode <- fallback$mode
+  has_mode <- vapply(extras, function(e) is.numeric(e$mode) &&
+                       length(e$mode) > 0L, logical(1))
+  solved <- which(is.finite(log_marginal) & has_mode)
+  if (!length(solved)) return(fallback)
+  n_x <- length(extras[[solved[1L]]]$mode)
+  if (is.null(base_mode) || length(base_mode) != n_x) base_mode <- NULL
+  others <- setdiff(colnames(theta_grid), axis)
+  key <- function(m) if (!length(others)) rep("", nrow(m)) else
+    do.call(paste, c(lapply(others, function(b) sprintf("%.10g", m[, b])),
+                     sep = ":"))
+  by_row <- split(solved, key(theta_grid[solved, , drop = FALSE]))
+  axis_dist <- function(a, b) {
+    pos <- a > 0 & b > 0
+    ifelse(pos, abs(log(a) - log(b)), abs(a - b))
+  }
+  modes <- matrix(NA_real_, nrow(cells), n_x)
+  ck <- key(cells)
+  for (i in seq_len(nrow(cells))) {
+    cand <- by_row[[ck[i]]]
+    if (length(cand)) {
+      d <- axis_dist(theta_grid[cand, axis], cells[i, axis])
+      modes[i, ] <- extras[[cand[which.min(d)]]]$mode
+    } else if (!is.null(base_mode)) {
+      modes[i, ] <- base_mode
+    } else {
+      return(fallback)
+    }
+  }
+  if (is.null(fallback)) fallback <- list()
+  fallback$modes <- modes
+  fallback
 }
 
 # The cells that extend `levels` of `axis` into the neighbours of the rows

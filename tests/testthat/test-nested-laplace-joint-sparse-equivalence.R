@@ -223,7 +223,8 @@ test_that("the export survives the sum-to-zero rank-1 storage", {
     # With the augmentation's 1 1' left OFF the stored H and folded in at solve
     # time instead, the sparse loop's factorization is of a matrix whose
     # constant direction is unpinned -- the arrangement the export was taken
-    # from. TULPA_S2Z_DENSIFY_MAX = 0 forces it at any field size.
+    # from. TULPA_S2Z_DENSIFY_MAX = 0 forces it at any field size, and a large
+    # value stores the augmentation at any size.
     old <- Sys.getenv("TULPA_S2Z_DENSIFY_MAX", unset = NA)
     on.exit(if (is.na(old)) Sys.unsetenv("TULPA_S2Z_DENSIFY_MAX")
             else Sys.setenv(TULPA_S2Z_DENSIFY_MAX = old), add = TRUE)
@@ -231,6 +232,7 @@ test_that("the export survives the sum-to-zero rank-1 storage", {
     sim   <- .sim_joint_small(seed = 12L, alpha_true = 1.0)
     prior <- c(list(type = "icar", sigma_grid = c(0.5, 0.7)), sim$adj)
 
+    Sys.setenv(TULPA_S2Z_DENSIFY_MAX = "100000")
     dense_store <- .fit_joint_pair(prior, sim$responses)[[2]]
     Sys.setenv(TULPA_S2Z_DENSIFY_MAX = "0")
     fits <- .fit_joint_pair(prior, sim$responses)

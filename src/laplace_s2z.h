@@ -38,9 +38,16 @@
 
 namespace tulpa {
 
-// Field size at or below which the augmentation's 11' is stored exactly rather
-// than folded in at solve time.
-constexpr int S2Z_DENSIFY_MAX = 256;
+// Component size at or below which the augmentation's 11' is stored exactly
+// rather than folded in at solve time. Storing it makes the component's block
+// dense in the pattern, so every scatter writes n(n+1)/2 slots and the factor
+// carries a dense n-block (n^3 / 6 flops per factorization); folding it costs
+// one extra triangular solve per pinned component per Newton step. On a
+// lattice ICAR under the sparse joint driver the two cost the same per cell at
+// 36 nodes, storing is ahead by a fifth at 16 to 25, and folding is 9x cheaper
+// at 196 and 12x at 256. Many small islands are where storing wins: each one
+// folded is another solve per step, stored it is a few entries.
+constexpr int S2Z_DENSIFY_MAX = 32;
 
 inline int s2z_densify_max() {
     // Power-user / test override of the densify-vs-rank-1 cutoff. A value of 0

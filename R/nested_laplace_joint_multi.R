@@ -1236,7 +1236,9 @@
             store_Q = isTRUE(store_Q) && isTRUE(store_extras),
             fixed_block = isTRUE(store_extras),
             phi_grid_per_arm = .joint_multi_phi_per_arm(new_cells, arm_names),
-            x_init_per_cell = x_init_per_cell)
+            x_init_per_cell = .joint_warm_start_per_cell(warm_start,
+                                                         x_init_per_cell,
+                                                         nrow(new_cells)))
         list(log_marginal = res_x$log_marginal,
              extras = if (isTRUE(store_extras))
                           .joint_extras_from_res(res_x, nrow(new_cells)),

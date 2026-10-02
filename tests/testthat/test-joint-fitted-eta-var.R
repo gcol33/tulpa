@@ -10,9 +10,10 @@
 # The arbiter is the cell's own stored precision (`store_Q = TRUE`) inverted in
 # R against a loading matrix written from the model's layout, not read from the
 # engine. On the sparse driver a large intrinsic field's sum-to-zero pin is left
-# off the stored precision and folded in by Woodbury; TULPA_S2Z_DENSIFY_MAX = 0
-# forces that fold on a field the default would densify, so the two storages of
-# the same pin have to report the same variance.
+# off the stored precision and folded in by Woodbury; TULPA_S2Z_DENSIFY_MAX
+# selects the storage (0 forces the fold at any size, a large value stores the
+# pin at any size), so the two storages of the same pin have to report the same
+# variance.
 
 .jev_chain_adj <- function(n_s) {
   nbr <- lapply(seq_len(n_s),
@@ -93,7 +94,7 @@ test_that("a folded sum-to-zero pin gives the variance of the stored one", {
   fx <- .jev_st_icar(n_s = 60L, n_t = 10L, N = 400L, seed = 13L)
   args <- modifyList(fx$args, list(store_Q = TRUE, force_sparse = TRUE))
 
-  withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = NA)
+  withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "100000")
   stored <- do.call(cpp_nested_laplace_st_icar, args)
   # The intercept and the two intrinsic fields' levels are aliased in eta and
   # separated only by the fixed-effect ridge, so this precision's condition

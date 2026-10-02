@@ -1182,6 +1182,8 @@ tulpa_joint_axis_specs_from_grid <- function(
         new_grids <- .joint_grids_from_cells(new_cells, cp)
         slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
                         as.numeric(warm_start$mode) else x_init_default
+        x_init_per_cell <- .joint_warm_start_per_cell(warm_start, x_init_per_cell,
+                                                      nrow(new_cells))
         mi <- if (is.null(max_iter_override)) max_iter
               else as.integer(max_iter_override)
         # Per-call Shamanskii reuse override for the outer Pareto-k diagnostic
@@ -1253,6 +1255,15 @@ tulpa_joint_axis_specs_from_grid <- function(
              cila_declined = res_x$cila_declined,
              cila_fallback = res_x$cila_fallback)
     }
+}
+
+# The per-cell start matrix a kernel call hands its driver: the one it was
+# given, else the `modes` a refinement round laid in `warm_start`
+# (`.hyper_row_warm_starts()`) when it has a row per cell of the call.
+.joint_warm_start_per_cell <- function(warm_start, x_init_per_cell, n_cells) {
+    if (!is.null(x_init_per_cell)) return(x_init_per_cell)
+    m <- warm_start$modes
+    if (is.matrix(m) && nrow(m) == n_cells && all(is.finite(m))) m else NULL
 }
 
 # The per-cell side data a joint kernel result carries: one entry per cell of

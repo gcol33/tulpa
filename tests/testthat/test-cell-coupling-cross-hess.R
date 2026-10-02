@@ -462,7 +462,7 @@ test_that("coupled field private to one arm: rank-1 s2z pattern matches densify 
             control = list(max_iter = 200L, tol = 1e-9, diagnose_k = FALSE))
     }
     dns <- fit_at("100000")   # store the full 1 1' (dense densify path)
-    r1  <- fit_at("0")        # fold 1 1' in at solve time (the > 256-node path)
+    r1  <- fit_at("0")        # fold 1 1' in at solve time (the large-field path)
 
     expect_equal(r1$log_marginal, dns$log_marginal, tolerance = 1e-6)
     expect_equal(as.numeric(r1$modes), as.numeric(dns$modes), tolerance = 1e-6)

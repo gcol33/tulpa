@@ -175,6 +175,38 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   batch takes 0.38 s instead of 0.70 s at 600 groups and 0.040 s instead of
   0.080 s at 60 (gcol33/tulpa#934).
 
+* An intrinsic field's sum-to-zero augmentation is stored in the sparse
+  Hessian pattern only for components of up to 32 nodes (`S2Z_DENSIFY_MAX`,
+  was 256) and folded in at solve time above that. Storing it makes the
+  component's block dense: every scatter writes n(n+1)/2 slots and the factor
+  carries a dense n-block, so a 16x16 lattice ICAR under the sparse joint
+  driver cost 12 ms per outer cell against 1 ms folded, and a 24x24 one would
+  have cost 93 ms against 2 ms. Measured on the two-arm ICAR fixture the two
+  storages cost the same at 36 nodes and storing is ahead by a fifth at 16 to
+  25, where many small islands would otherwise each add a solve per Newton
+  step. The 16x16 fixture's fit takes 0.8 s instead of 4.9 s; its cells'
+  log-marginals move at most 2e-14 relative, the intervals 1e-12.
+  `TULPA_S2Z_DENSIFY_MAX` still overrides the cutoff.
+
+* On the folded path the final pass reads the Newton step and the
+  log-determinant off the one block-Schur factor of the pinned matrix, and no
+  longer runs the PD-enforced solve of the unpinned Hessian, whose ridge
+  escalation was the normal case there and whose step only reached the
+  reported decrement. One factorization fewer per cell (1304 -> 936 on the
+  24x24 fixture, inner time -7%); `pd_conditioned` no longer reports that
+  escalation on a cell whose pinned matrix factorized cleanly. A cell the
+  corrected integrated Laplace is requested on keeps the solve, since it reads
+  that factor.
+
+* A refinement round warm-starts each new cell from the solved cell in its own
+  row nearest along the refined axis (`.hyper_row_warm_starts()`), through the
+  kernels' per-cell start, instead of every cell from the heaviest cell of the
+  grid. On a round run across the outer team, where cells otherwise start from
+  one pilot mode, the refined cells take 10-15% fewer inner Newton steps on the
+  two-arm ICAR fixtures (3.6 -> 3.3 per cell at 16x16, 3.5 -> 3.0 at 24x24);
+  on a serial round the chained start already did most of this.
+  Log-marginals move at most 6e-14 relative.
+
 On that Calluna fit (LiSC, 32 threads) the engine defaults take 25.3 min and
 20 full solves in the final grid besides the 79-evaluation mode-find; the
 engine behind the 78 EVA fits took 198.85 min on a 22-cell grid for an

@@ -225,11 +225,21 @@ inline void joint_newton_finalize_sparse(
         (pd_mode == JointPDMode::LM) && !H_builder.s2z_rank1.empty();
     const double S2Z_NA = std::numeric_limits<double>::quiet_NaN();
     double s2z_log_det = S2Z_NA;
+    // The block-Schur factor of the pinned matrix yields the Newton step
+    // (H + sum_k coef_k 1_k 1_k')^-1 grad together with the log-determinant,
+    // so where it holds, the decrement below is read off it and the PD-enforced
+    // solve of the unpinned H -- whose constant direction the base ridge alone
+    // has to carry, so its escalation ladder is the normal case here -- is not
+    // run. The corrected integrated Laplace reads the live CHOLMOD factor of
+    // that solve, so a cell it is requested on keeps the solve.
+    bool s2z_step_ok = false;
     if (s2z_direct) {
         TULPA_PROFILE_PHASE(PHASE_LOG_DET);
-        s2z_log_det = s2z_log_det_block_schur(H_builder, H_builder.s2z_rank1,
-                                              /*fallback=*/S2Z_NA,
-                                              &scratch.s2z_block_schur_cache);
+        double ld = S2Z_NA;
+        s2z_step_ok = s2z_block_schur(H_builder, H_builder.s2z_rank1,
+                                      grad.data(), scratch.delta.data(), &ld,
+                                      &scratch.s2z_block_schur_cache);
+        s2z_log_det = ld;
         if (!std::isfinite(s2z_log_det))
             s2z_log_det = s2z_log_det_direct(H_builder, H_builder.s2z_rank1,
                                              /*fallback=*/S2Z_NA,
@@ -238,6 +248,7 @@ inline void joint_newton_finalize_sparse(
         // PD-enforced value below stands in for it.
         result.s2z_log_det_fallback = !std::isfinite(s2z_log_det);
     }
+    const bool run_pd_solve = !s2z_step_ok || (cila && cila->active());
     // The values as the scatter left them, plus the base ridge. joint_pd_step_solve
     // below loads the diagonal further on every failed factorization and never
     // takes the load back off, so the builder afterwards holds H + lambda I --
@@ -254,26 +265,27 @@ inline void joint_newton_finalize_sparse(
     if (store_Q || want_block || want_eta_var) H_values_at_mode = H_builder.values;
 
     bool pd_conditioned = false;
-    bool step_ok = false;
-    { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
-      step_ok = joint_pd_step_solve(H_builder, solver, n_x, pd_mode,
-                                    grad.data(), scratch.delta.data(),
-                                    &result.log_det_Q, &pd_conditioned); }
-    // The Newton decrement off the step that solve produced, with the
-    // sum-to-zero pins folded in the way the Newton loop folds them, so it is the
-    // step one more iteration would take.
-    if (step_ok) {
-        bool folded = true;
-        if (pd_mode == JointPDMode::LM && !H_builder.s2z_rank1.empty()) {
+    bool step_ok = s2z_step_ok;
+    bool folded = s2z_step_ok;
+    if (run_pd_solve) {
+        { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
+          step_ok = joint_pd_step_solve(H_builder, solver, n_x, pd_mode,
+                                        grad.data(), scratch.delta.data(),
+                                        &result.log_det_Q, &pd_conditioned); }
+        // The sum-to-zero pins folded into that solve's step the way the Newton
+        // loop folds them.
+        folded = step_ok;
+        if (step_ok && pd_mode == JointPDMode::LM && !H_builder.s2z_rank1.empty()) {
             folded = apply_s2z_rank1_correction(solver, n_x, H_builder.s2z_rank1,
                                                 scratch.delta.data(),
                                                 H_builder.s2z_coupling);
         }
-        if (folded) {
-            double dec = 0.0;
-            for (int j = 0; j < n_x; j++) dec += grad[j] * scratch.delta[j];
-            if (std::isfinite(dec)) result.newton_decrement = dec;
-        }
+    }
+    // The Newton decrement off the step one more iteration would take.
+    if (folded) {
+        double dec = 0.0;
+        for (int j = 0; j < n_x; j++) dec += grad[j] * scratch.delta[j];
+        if (std::isfinite(dec)) result.newton_decrement = dec;
     }
     // Prefer the cancellation-free direct factor; keep the PD-enforced value only
     // if the direct factor was non-PD (NaN fallback).
