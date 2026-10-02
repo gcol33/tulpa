@@ -184,7 +184,8 @@ test_that("a two-axis grid's evidence converges in its node count", {
   # This fixture's rho posterior piles against 1 (a third or more of the weight
   # above 0.9), and the outermost rho cell closes half way to that open
   # boundary, so part of the posterior sits outside every resolution. What the
-  # evidence has to do is converge as the node count closes that sliver.
+  # evidence has to do is converge as the node count closes that sliver. The
+  # grid is held as declared, so the node count is the only thing that moves.
   skip_on_cran()
   set.seed(5)
   S <- 20L
@@ -205,7 +206,7 @@ test_that("a two-axis grid's evidence converges in its node count", {
                    scale_factor = 1, sigma_grid = gr$sigma, rho_grid = gr$rho),
       family = "poisson",
       control = list(diagnose_k = FALSE, diagnose_skew = FALSE,
-                     auto_recenter = FALSE))
+                     auto_recenter = FALSE, axis_refine = "none"))
     expect_setequal(f$log_hyperprior_axes, c("sigma", "rho"))
     as.numeric(logLik(f))
   }, numeric(1))

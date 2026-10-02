@@ -392,8 +392,8 @@
 #'     mode-tracked 1D refinement pass triggers on any axis whose marginal
 #'     boundary weight exceeds `adaptive_grid_edge_thresh`. New points are
 #'     added to that axis as levels (interior densification + outward
-#'     log-spaced extension), each laid in every row of the other axes, so the
-#'     grid stays a tensor -- `n_new_points * n_rows` kernel solves. The
+#'     log-spaced extension), each laid in every row of the other axes that
+#'     holds the posterior -- at most `n_new_points * n_rows` kernel solves. The
 #'     edge score is `max(marginal_weight_at_boundary, exp(max_log_marginal_at
 #'     _boundary - max_log_marginal_overall))`, catching both boundary pile-up
 #'     and integrand truncation; `0.02` is ~4 log units of decay.
@@ -427,8 +427,8 @@
 #'     consistency pass over the refinable axes (a block's field SD, the copy
 #'     scale and the per-arm dispersions). An axis whose marginal has collapsed
 #'     onto too few nodes to carry a spread, such as a field SD narrower than
-#'     its placed cell, has levels added in every row of the other axes until
-#'     its marginal resolves, so the reported interval is read off the
+#'     its placed cell, has levels added in every row of the other axes that
+#'     holds the posterior until its marginal resolves, so the reported interval is read off the
 #'     posterior and not off a cell box. Attaches
 #'     `var_of_means_consistency_info`.
 #'   * `inner_factorization` (`"auto"`) -- which factorization the dense inner
@@ -1298,9 +1298,6 @@ tulpa_nested_laplace_joint <- function(responses,
         .nl_check_axis_fields(prior, "joint", auto = prov$auto,
                               copy = copy, responses = responses))
     on.exit(options(.op_axis), add = TRUE)
-    # The placement floor is the joint doors' own (`.nl_recenter_floor()`).
-    .op_door <- options(tulpa.nl_door = "joint")
-    on.exit(options(.op_door), add = TRUE)
     # `control$auto_recenter = FALSE` holds every grid exactly as given -- the
     # opt-out for a caller who wants the default axis integrated as-is. The
     # joint rescues trigger on the whole grid's `collapsed_edge` regime rather
@@ -2220,7 +2217,8 @@ tulpa_nested_laplace_joint <- function(responses,
     # field SD narrower than its placed cell) collapse joint weight onto a single
     # grid cell, so `sum(w*x^2) - mean^2` on that axis is a floor at zero rather
     # than a spread. The consistency pass bisects the gaps the axis's mass sits
-    # across, as levels laid in every row of the other axes, until the axis marginal's
+    # across, as levels laid in every row of the other axes that holds the
+    # posterior, until the axis marginal's
     # ESS reaches the floor, so the merged grid carries the support the spread is
     # read off. The outer mode a placement refit was laid from is carried in by
     # the front door (`.joint_place_axes()`), which the pass lays a collapsed

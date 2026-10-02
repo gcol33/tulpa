@@ -68,9 +68,9 @@
 #   h / sd_realized = 1.25 * sd_used / sd_realized,
 #
 # which is 1.25 only where the placement SD is the one the weights then realize.
-# Wherever `.nl_recenter_sd_clamp()` SUBSTITUTED a bound it is not: the floor
-# `min_sd_u` exists precisely to widen an axis whose measured curvature is
-# sharper than it, so a floor-clamped placement reports
+# Wherever `.nl_recenter_sd_clamp()` SUBSTITUTED a bound it is not: a floor
+# `min_sd_u` widens an axis whose measured curvature is sharper than it, so a
+# floor-clamped placement reports
 # `1.25 * min_sd_u / sd_raw` and is LARGER than 1.25 by exactly the factor the
 # floor widened by. Measured on a (sigma, alpha, phi) donor + copy fixture, 18
 # placed fits, the floor binding on all 18: `sd_raw` median 0.0543 against the
@@ -1172,11 +1172,9 @@ auto_grid_place <- function(x)
 # the curvature is not usable (non-finite / non-positive SD, an unguessable
 # tag) -- the caller then leaves the existing grid untouched rather than centre
 # on a meaningless spread.
-# `sd_u` is clamped to `[min_sd_u, max_sd_u]`: a floor so a razor-sharp local
-# curvature does not collapse the new grid to near-duplicate nodes (the
-# purpose of the retry is to bracket the mode with actual spread), and a
-# ceiling so a near-flat direction does not fling nodes to implausible
-# extremes.
+# `sd_u` is clamped to `[min_sd_u, max_sd_u]`: a ceiling so a near-flat
+# direction does not fling nodes to implausible extremes, and a floor (0 by
+# default, `R/settings.R`) a caller can set to widen the placed axis.
 #
 # A `logit01` axis maps back into the OPEN interval, and both endpoints are
 # singular for the families that carry one (a BYM2 `rho` of exactly 0 or 1 is a
@@ -1195,7 +1193,7 @@ auto_grid_place <- function(x)
 # by callers that have it; the `"relative"` ceiling caps the re-placed span by
 # it, and falls back to the absolute ceiling where a caller has none.
 .nl_recenter_sd_clamp <- function(sd_u,
-                                  min_sd_u   = .nl_recenter_floor(),
+                                  min_sd_u   = .nl_recenter("min_sd_u"),
                                   max_sd_u   = .nl_recenter("max_sd_u"),
                                   span       = .nl_recenter("span"),
                                   ref_span_u = NULL,
@@ -1233,7 +1231,7 @@ auto_grid_place <- function(x)
 .nl_recenter_axis_full <- function(tag, mode_u, sd_u,
                                    n_pts      = .nl_recenter("n_pts"),
                                    span       = .nl_recenter("span"),
-                                   min_sd_u   = .nl_recenter_floor(),
+                                   min_sd_u   = .nl_recenter("min_sd_u"),
                                    max_sd_u   = .nl_recenter("max_sd_u"),
                                    ref_span_u = NULL) {
     bad <- function(reason, clamp = NA_character_, raw = NA_real_) {
@@ -1265,7 +1263,7 @@ auto_grid_place <- function(x)
 .nl_recenter_axis <- function(tag, mode_u, sd_u,
                               n_pts    = .nl_recenter("n_pts"),
                               span     = .nl_recenter("span"),
-                              min_sd_u = .nl_recenter_floor(),
+                              min_sd_u = .nl_recenter("min_sd_u"),
                               max_sd_u = .nl_recenter("max_sd_u")) {
     .nl_recenter_axis_full(tag, mode_u, sd_u, n_pts = n_pts, span = span,
                            min_sd_u = min_sd_u, max_sd_u = max_sd_u)$nodes
@@ -1276,7 +1274,7 @@ auto_grid_place <- function(x)
 .nl_recenter_log_axis <- function(mode_u, sd_u,
                                    n_pts    = .nl_recenter("n_pts"),
                                    span     = .nl_recenter("span"),
-                                   min_sd_u = .nl_recenter_floor(),
+                                   min_sd_u = .nl_recenter("min_sd_u"),
                                    max_sd_u = .nl_recenter("max_sd_u")) {
     .nl_recenter_axis("log", mode_u, sd_u, n_pts = n_pts, span = span,
                       min_sd_u = min_sd_u, max_sd_u = max_sd_u)

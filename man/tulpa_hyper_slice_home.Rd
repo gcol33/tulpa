@@ -20,7 +20,7 @@ axis name for a cell a refinement pass added.
 \description{
 The axis whose refinement pass added each cell of a nested-Laplace outer
 grid, \code{""} for a cell of the grid as declared. A pass adds levels to an
-axis, laid in every row of the others, so the grid stays a tensor; the tag
+axis, laid in every row of the others that holds the posterior; the tag
 tells the declared levels apart wherever a reader needs them alone, e.g.
 rebuilding axis specs from a grid's declared nodes (see
 \code{\link[=tulpa_joint_axis_specs_from_grid]{tulpa_joint_axis_specs_from_grid()}}), whose prior must not move with the

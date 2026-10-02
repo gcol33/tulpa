@@ -230,17 +230,23 @@ movable axis is a new row, never a new chained rescue. The one fire predicate is
 level on its log axis) is a model, not an endpoint: it neither rails nor fires.
 A placement refit is handed the mode it was laid from
 (`tulpa.nl_outer_mode`) and reuses it unless the placed grid rails
-(`outer_mode_carried`). The joint doors lay an axis at the SD the mode-find
-measured, with no floor (`min_sd_u_joint = 0`; the registry keeps 0.15).
+(`outer_mode_carried`). Every door lays an axis at the SD the mode-find
+measured, with no floor (`min_sd_u = 0`).
 
 **Refinement adds LEVELS, never slices** (gcol33/tulpa#932). The var-of-means
 consistency pass and the opt-in adaptive pass lay each new point as a level of
-the tensor, in every row of the other axes that holds a solved cell
-(`.hyper_tensor_level_cells()`), so the product rule measures the refined grid
-and every row integrates an axis at the same nodes. A point laid in one row (a
-slice) resolved its own axis and misread every other one: the modal row
-integrated the axis finely and the rest coarsely, so the other axes' levels
-carried row-dependent quadrature errors. The `refining` tag now names the axis
+the tensor, in every row of the other axes that holds the posterior, so the
+product rule measures the refined grid and every row carrying mass integrates an
+axis at the same nodes. A point laid in one row (a slice) resolved its own axis
+and misread every other one: the modal row integrated the axis finely and the
+rest coarsely, so the other axes' levels carried row-dependent quadrature
+errors. "Holds the posterior" is two steps: `.hyper_tensor_level_cells()` takes
+the heaviest rows holding all but `level_row_tail` (1e-3) of the mass, and
+`.hyper_level_frontier()` grows the solved level into the neighbours of any row
+holding more than that share of it, since a correlated axis moves its mass to
+rows that were light at the old levels. Laid in every row instead, each pass's
+levels became rows of the next pass's axis and a four-axis grid grew 580 ->
+2352 cells. The `refining` tag now names the axis
 whose pass ADDED a cell (`""` = declared); the declared levels fix the outer
 cell edges (`.hyper_span_coord_bounds()` on the measure, `.nl_level_edges()` on
 the read) and any prior read off the nodes (specs rebuilt from declared cells
@@ -283,9 +289,7 @@ result by shape (`.nl_bind_cell_results()`), and anything that re-dispatches a
 settled fit (the debias, the corrected integrated Laplace) solves the fit's own
 cells (`.nl_refined_theta()`), not the declared grid. A test that reads a plain
 tensor or the declared cell count holds the grid with
-`control$axis_refine = "none"` on either door. The placement floor is per door
-(`min_sd_u_joint` on the joint doors, `min_sd_u` on the registry,
-`.nl_recenter_floor()`).
+`control$axis_refine = "none"` on either door.
 
 ## Restricted spatial regression is a MODIFIER, and it changes the estimand
 

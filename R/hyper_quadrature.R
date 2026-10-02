@@ -578,8 +578,9 @@ tulpa_hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
 #
 # `refining` is the per-cell tag the refinement passes leave: `""` for a cell
 # of the grid as declared, the axis name for a cell a pass added. A pass adds
-# LEVELS, each laid in every row of the other axes, so the grid stays a tensor
-# and the product rule measures it; the tags say which levels were declared,
+# LEVELS, each laid in every row of the other axes that holds the posterior, so
+# the product rule measures the grid and a row left out lacks only cells of
+# negligible mass; the tags say which levels were declared,
 # and the outer cells keep the span those levels were declared over
 # (`.hyper_span_coord_bounds()`).
 .hyper_log_quad_weights <- function(theta_grid, specs, close_domain = TRUE,
@@ -701,7 +702,7 @@ tulpa_hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
 #'
 #' The axis whose refinement pass added each cell of a nested-Laplace outer
 #' grid, `""` for a cell of the grid as declared. A pass adds levels to an
-#' axis, laid in every row of the others, so the grid stays a tensor; the tag
+#' axis, laid in every row of the others that holds the posterior; the tag
 #' tells the declared levels apart wherever a reader needs them alone, e.g.
 #' rebuilding axis specs from a grid's declared nodes (see
 #' [tulpa_joint_axis_specs_from_grid()]), whose prior must not move with the

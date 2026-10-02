@@ -311,7 +311,7 @@
 #'     [tulpa_nested_laplace_joint()]: a field SD (`tau` of an `icar`, `rw1` or
 #'     `rw2` block, `sigma` of an `iid`, `bym2` or `spde` block) whose marginal
 #'     has collapsed onto too few nodes to carry a spread has levels added in
-#'     every row of the other axes until it resolves, and the new cells are
+#'     every row of the other axes that holds the posterior until it resolves, and the new cells are
 #'     solved and carried like the rest (`var_of_means_consistency_info`
 #'     records the pass). Other axes keep the nodes they were laid on.
 #'   * `adaptive_grid` (`FALSE`), `adaptive_grid_edge_thresh` (`0.02`),

@@ -1241,6 +1241,46 @@ every moment (+13% variance at h = 1.25 SDs); merging slice cells into their
 anchor rows left the 24x24 field SD at width 0.921; the old prototype's mass
 over width as the node density has a false dip at a refined grid's modal cell.
 
+**Follow-ups after the close** (`dev_notes/issue932/floor/`,
+`dev_notes/issue932/fix/tail_probe.R`):
+
+- **Which rows a level goes into.** Laid in every row, each pass's levels
+  become rows of the next pass's axis, so the cells grow with the product of
+  everything every pass added. On tulpaObs's four-axis cover-hurdle fixture the
+  grid went from 580 cells (slices) to 2352, and the joint test files ran 3.8x
+  (`occu-cover-joint`, 107 -> 472 s) to 10x (`cover-hurdle-multi-block`,
+  15 -> 178 s) slower. A level now goes into the heaviest rows holding all but
+  `level_row_tail` = 1e-3 of the mass, and then grows from every row holding
+  more than that share of the SOLVED level into its neighbours along each other
+  axis (`.hyper_level_frontier()`). The growth is not optional: on a copy scale
+  correlated with a dispersion declared 36 SDs off its mode, the pre-solve
+  ranking reads the copy-scale rows at the declared dispersion node, where the
+  conditional mode sits away from the joint one, and the top cell left the
+  joint mode (0.287 against 0.274) until the level could grow. Cells of the
+  full tensor left out hold 2e-14 of its mass on all three Calluna-shaped
+  fixtures. Against the dense references the summed error is 0.03839 against
+  0.03840 in every row (1e-2 gives 0.04407), at 171 cells against 187 at
+  16x16; the cover-hurdle fixture takes 1310 cells, and the two test files 212
+  and 59 s. The fixed-truth coverage sweeps above ran on the every-row grid; the
+  dense-reference error is the check that the row tail leaves them standing.
+- **The registry floor.** `min_sd_u` was 0.15 (gcol33/tulpa#387, under the box
+  read). Re-run under the log-quadratic read on the six-configuration ladder,
+  200 seeds each, `phi` passed as the variance it is (`ext361_setup.R` passed
+  the SD, a residual variance 1.41 times the simulated one): floors 0, 0.05 and
+  0.15 give the same 95% interval on all 1400 paired trials, summed
+  |coverage - nominal| 0.0543 / 0.0543 / 0.0564, and 0.30 gives 0.0571 with
+  more cells. One floor, 0, now serves every door, and `min_sd_u_joint` and
+  the per-door switch are gone.
+- **The stated dispersion axis.** The 16x16 residual is not a reporting gap: a
+  fit whose upper stated node holds 0.64 of the mass records
+  `outer_grid_railed_axes` and `outer_grid_edge_mass_axes` as `phi_cover:upper`
+  and `outer_grid_axis_declined` as `axis_pinned`, and `diagnostics()` carries
+  both, without a warning, as a caller's own grid does.
+- **tulpaObs.** Its refined-grid weight test asserted the slice measure and was
+  rewritten for levels. Run against a matching build (tulpaObs compiled
+  against ABI 47), the remaining failures either predate this change
+  (gcol33/tulpaObs#392, #393) or read every level on a grid as declared.
+
 ### What the re_cov outer k-hat costs, and why it is still a multiple of the fit (gcol33/tulpa#934)
 
 `tulpa_re_cov_nested()`'s outer Pareto-k evaluated each importance draw with
@@ -1630,6 +1670,10 @@ selectable arm, not shipped. Under the #730 priors no fit on that ladder reaches
 the ceiling (0 of 2800 axis reads), so the three ceiling arms are identical there
 and the 0.1393 / 0.1464 / 0.1536 table is the only measurement that separates
 them.
+
+(The floor below is superseded: `min_sd_u` is 0 since gcol33/tulpa#932, where
+the ladder re-run on the log-quadratic read and a correctly specified fixture
+gives the same intervals at 0, 0.05 and 0.15.)
 
 **Both CONSTANTS are kept, and the ladder is why.** `min_sd_u = 0.15` is a
 minimum of its ladder in both directions (0.05 loses 304 trials and wins none;

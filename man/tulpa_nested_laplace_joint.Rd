@@ -403,8 +403,8 @@ not available the reason is recorded on \verb{$grid_fixed_declined}.
 mode-tracked 1D refinement pass triggers on any axis whose marginal
 boundary weight exceeds \code{adaptive_grid_edge_thresh}. New points are
 added to that axis as levels (interior densification + outward
-log-spaced extension), each laid in every row of the other axes, so the
-grid stays a tensor -- \code{n_new_points * n_rows} kernel solves. The
+log-spaced extension), each laid in every row of the other axes that
+holds the posterior -- at most \code{n_new_points * n_rows} kernel solves. The
 edge score is \verb{max(marginal_weight_at_boundary, exp(max_log_marginal_at _boundary - max_log_marginal_overall))}, catching both boundary pile-up
 and integrand truncation; \code{0.02} is ~4 log units of decay.
 \code{adaptive_grid_max_passes} caps the passes (one usually suffices). Fixes
@@ -437,8 +437,8 @@ no-op. Read only when \code{adaptive_grid = TRUE} or
 consistency pass over the refinable axes (a block's field SD, the copy
 scale and the per-arm dispersions). An axis whose marginal has collapsed
 onto too few nodes to carry a spread, such as a field SD narrower than
-its placed cell, has levels added in every row of the other axes until
-its marginal resolves, so the reported interval is read off the
+its placed cell, has levels added in every row of the other axes that
+holds the posterior until its marginal resolves, so the reported interval is read off the
 posterior and not off a cell box. Attaches
 \code{var_of_means_consistency_info}.
 \item \code{inner_factorization} (\code{"auto"}) -- which factorization the dense inner

@@ -174,7 +174,7 @@ test_that("a transported mode leaves out an axis the mode-find did not resolve",
     sqrt(sum(w * x^2) - sum(w * x)^2)
 }
 
-test_that("new points are levels of the tensor, so every row integrates them", {
+test_that("new points are levels of every row that holds the posterior", {
     f <- .cp_calluna_like()
     calls <- 0L
     kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
@@ -187,9 +187,20 @@ test_that("new points are levels of the tensor, so every row integrates them", {
     # the dispersion 36 SDs off its declared nodes: both take a ladder.
     expect_setequal(out$info$axes, c("alpha", "phi_pos"))
     expect_true(all(out$refining_axis %in% c("", "alpha", "phi_pos")))
-    n_lev <- vapply(colnames(out$theta_grid), function(a)
-        length(unique(out$theta_grid[, a])), numeric(1))
-    expect_identical(nrow(out$theta_grid), as.integer(prod(n_lev)))
+    # The cells of the full tensor over every level the grid holds that it
+    # left out carry none of the posterior worth a cell: under
+    # `level_row_tail` of the full tensor's mass.
+    full <- as.matrix(expand.grid(
+        alpha   = sort(unique(out$theta_grid[, "alpha"])),
+        phi_pos = sort(unique(out$theta_grid[, "phi_pos"]))))
+    key <- function(m) paste(sprintf("%.10g", m[, "alpha"]),
+                             sprintf("%.10g", m[, "phi_pos"]))
+    ref <- ifelse(key(full) %in% key(f$tg), "", "alpha")
+    lw <- f$lp(full) + .hyper_log_quad_weights(full, f$specs, refining = ref)
+    w <- exp(lw - max(lw)); w <- w / sum(w)
+    missing <- !key(full) %in% key(out$theta_grid)
+    expect_gt(sum(missing), 0L)
+    expect_lt(sum(w[missing]), .nl_diag("level_row_tail"))
     expect_true(all(out$info$ess_after >= .nl_diag("axis_sd_ess")))
     # The ladder keeps the read on the mode: five points alone left the
     # outermost owning half a 36-SD gap and the mean 1.2 SDs high.
@@ -240,8 +251,10 @@ test_that("points laid from a mode off the peak are closed where they are read",
     out <- .hyper_consistency_pass(f$tg, f$lp(f$tg), NULL, rep("", nrow(f$tg)),
                                    f$specs, kernel_fn, axis_modes = f$modes)
     # The dispersion's ladder, then one round closing the side the density
-    # sits against; the copy scale's ladder.
-    expect_identical(calls, 3L)
+    # sits against; the copy scale's ladder. Each is followed by the one call
+    # that lays its levels into the ring of rows around the ones it was laid
+    # in and finds that ring holding none of the mass.
+    expect_identical(calls, 6L)
     expect_lt(abs(.cp_log_mean(out, f$specs, "phi_pos") - log(f$p0)),
               0.1 * f$sp)
     expect_lt(abs(.cp_log_sd(out, f$specs, "phi_pos") / f$sp - 1), 0.1)

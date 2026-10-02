@@ -379,7 +379,7 @@ accepting it and ignoring it.
 \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}: a field SD (\code{tau} of an \code{icar}, \code{rw1} or
 \code{rw2} block, \code{sigma} of an \code{iid}, \code{bym2} or \code{spde} block) whose marginal
 has collapsed onto too few nodes to carry a spread has levels added in
-every row of the other axes until it resolves, and the new cells are
+every row of the other axes that holds the posterior until it resolves, and the new cells are
 solved and carried like the rest (\code{var_of_means_consistency_info}
 records the pass). Other axes keep the nodes they were laid on.
 \item \code{adaptive_grid} (\code{FALSE}), \code{adaptive_grid_edge_thresh} (\code{0.02}),

@@ -247,6 +247,39 @@ test_that("a new level is laid in every row of the grid", {
   expect_false(LEVEL_AXES$phi_pos[5] %in% pk3$new_cells[, "phi_pos"])
 })
 
+test_that("a new level skips only the rows holding the tail of the mass", {
+  lm <- rep(0, 25L)
+  row_mass <- c(0.5, 0.3, 0.1989, 1e-3, 1e-4)
+  phi <- LEVEL_TENSOR[, "phi_pos"]
+  lw <- log(row_mass[match(phi, LEVEL_AXES$phi_pos)] / 5)
+  pk <- .hyper_tensor_level_cells(LEVEL_TENSOR, lm, "sigma", 0.2,
+                                  log_weight = lw, row_tail = 5e-4)
+  # The three heaviest rows hold 0.9989 of the mass; the fourth closes it past
+  # 1 - 5e-4, and the lightest is left out.
+  expect_setequal(pk$new_cells[, "phi_pos"], LEVEL_AXES$phi_pos[1:4])
+  # No tail, or no weights, refines every row.
+  for (pk0 in list(.hyper_tensor_level_cells(LEVEL_TENSOR, lm, "sigma", 0.2,
+                                             log_weight = lw, row_tail = 0),
+                   .hyper_tensor_level_cells(LEVEL_TENSOR, lm, "sigma", 0.2))) {
+    expect_setequal(pk0$new_cells[, "phi_pos"], LEVEL_AXES$phi_pos)
+  }
+})
+
+test_that("a solved level grows into the rows next to the ones holding its mass", {
+  phi <- LEVEL_AXES$phi_pos
+  # sigma 0.2 laid in the first two phi rows; its mass sits in the second.
+  g <- rbind(LEVEL_TENSOR, cbind(sigma = 0.2, phi_pos = phi[1:2]))
+  ref <- c(rep("", 25L), "sigma", "sigma")
+  lm <- c(rep(-50, 25L), -50, 0)
+  grow <- .hyper_level_frontier(g, lm, FLAT_LEVEL_SPECS, ref, "sigma", 0.2)
+  expect_equal(unname(grow[, "phi_pos"]), phi[3])
+  expect_equal(unname(grow[, "sigma"]), 0.2)
+  # A row holding none of it passes nothing on, and a neighbour that already
+  # holds the level is not laid again.
+  lm[27L] <- -50; lm[26L] <- 0
+  expect_null(.hyper_level_frontier(g, lm, FLAT_LEVEL_SPECS, ref, "sigma", 0.2))
+})
+
 test_that("interior levels are measured by the product rule over all levels", {
   lp <- log(LEVEL_AXES$phi_pos)
   x <- add_levels(LEVEL_TENSOR, rep("", 25L), "phi_pos",

@@ -9,6 +9,7 @@
 # replaced.
 
 test_that("the clamp reports which bound it hit, and the SD it measured", {
+    withr::local_options(list(tulpa.recenter.min_sd_u = 0.15))
     mn <- .nl_recenter("min_sd_u")
     mx <- .nl_recenter("max_sd_u")
 
@@ -105,13 +106,15 @@ test_that("the ceiling DECLINES by default, and the floor still clamps", {
 
     # The floor carries its own policy, so declining the ceiling does not
     # silently start declining the floor as well.
+    withr::local_options(list(tulpa.recenter.min_sd_u = 0.15))
     fl <- .nl_recenter_axis_full("log", 0, .nl_recenter("min_sd_u") / 10)
     expect_identical(fl$sd_clamp, "floor")
     expect_null(fl$reason)
 })
 
 test_that("the relative ceiling caps by the incoming span, or falls back", {
-    withr::local_options(list(tulpa.recenter.sd_clamp_policy = "relative"))
+    withr::local_options(list(tulpa.recenter.sd_clamp_policy = "relative",
+                              tulpa.recenter.min_sd_u = 0.15))
     span <- .nl_recenter("span")
     huge <- .nl_recenter("max_sd_u") * 10
 
@@ -248,18 +251,13 @@ test_that("declining on the ceiling is visible as its own reason", {
     expect_identical(rescue$res$theta_grid, theta_grid)
 })
 
-test_that("the placement floor is the registry's outside a joint fit and none inside one", {
-    expect_identical(.nl_recenter_floor(), .nl_recenter("min_sd_u"))
-    fl <- .nl_recenter_axis_full("log", 0, .nl_recenter("min_sd_u") / 10)
-    expect_identical(fl$sd_clamp, "floor")
-    expect_equal(fl$sd_used, .nl_recenter("min_sd_u"))
-    op <- options(tulpa.nl_door = "joint")
-    on.exit(options(op), add = TRUE)
-    expect_identical(.nl_recenter_floor(), .nl_recenter("min_sd_u_joint"))
-    expect_identical(.nl_recenter("min_sd_u_joint"), 0)
-    # The joint doors lay an axis at the SD the mode-find measured, however
-    # sharp.
+test_that("every door lays an axis at the measured SD, and a caller-set floor still binds", {
+    expect_identical(.nl_recenter("min_sd_u"), 0)
     fl <- .nl_recenter_axis_full("log", 0, 1e-3)
     expect_identical(fl$sd_clamp, "none")
     expect_equal(fl$sd_used, 1e-3)
+    withr::local_options(list(tulpa.recenter.min_sd_u = 0.15))
+    fl <- .nl_recenter_axis_full("log", 0, 0.015)
+    expect_identical(fl$sd_clamp, "floor")
+    expect_equal(fl$sd_used, 0.15)
 })

@@ -27,9 +27,9 @@
 #   * `refining_axis`  -- character `[n_cells]`; per-cell tag, `""` for a
 #                         cell of the grid as declared, the axis name for a
 #                         cell a pass added. Both passes add LEVELS, laid in
-#                         every row of the other axes
-#                         (`.hyper_tensor_level_cells()`), so the grid stays a
-#                         tensor; the tag keeps the declared levels apart,
+#                         every row of the other axes that holds the
+#                         posterior (`.hyper_tensor_level_cells()`), so the
+#                         grid stays a tensor where it carries mass; the tag keeps the declared levels apart,
 #                         which fix the span and any prior read off the nodes.
 #
 # kernel_fn signature:
@@ -438,16 +438,43 @@
   (flat - run) * (x0^2 + x0 * b + b^2) / 3
 }
 
-# New levels `pts` on `axis` laid in every row of the grid that holds a solved
-# cell, so the grid stays a tensor: every row integrates the axis at the same
-# nodes, including the rows through levels an earlier pass added to another
-# axis. The warm start is the heaviest solved cell.
-.hyper_tensor_level_cells <- function(theta_grid, log_marginal, axis, pts) {
+# New levels `pts` on `axis` laid in the rows of the grid (the combinations of
+# the other axes) that hold a solved cell, so the grid stays a tensor: every
+# row that carries the posterior integrates the axis at the same nodes,
+# including the rows through levels an earlier pass added to another axis. The
+# warm start is the heaviest solved cell.
+#
+# `log_weight` is each cell's log posterior mass under the grid's measure
+# (log-marginal plus log quadrature weight). Given it, a level is laid only in
+# the fewest rows, heaviest first, that hold all but `row_tail` of the mass. A
+# row left out keeps the cells it has and lacks only the new level, which is a
+# cell no row's measure counts as present: what it can misplace is bounded by
+# its own mass. Without it every row is refined, and on a grid of four or more
+# axes each pass's levels become rows of the next pass's axis, so the cells grow
+# with the product of the levels every pass added.
+.hyper_tensor_level_cells <- function(theta_grid, log_marginal, axis, pts,
+                                      log_weight = NULL,
+                                      row_tail = .nl_diag("level_row_tail")) {
   if (!length(pts)) return(NULL)
   base <- is.finite(log_marginal)
   if (!any(base)) return(NULL)
   others <- setdiff(colnames(theta_grid), axis)
   rows <- unique(theta_grid[base, others, drop = FALSE])
+  if (length(others) && nrow(rows) > 1L && !is.null(log_weight) &&
+      length(log_weight) == nrow(theta_grid) && row_tail > 0) {
+    lw <- log_weight[base]
+    lw[!is.finite(lw)] <- -Inf
+    if (any(is.finite(lw))) {
+      key <- function(m) do.call(paste, c(lapply(seq_len(ncol(m)), function(k)
+        sprintf("%.10g", m[, k])), sep = ":"))
+      w <- exp(lw - max(lw))
+      mass <- as.numeric(rowsum(w, key(theta_grid[base, others, drop = FALSE]),
+                                reorder = FALSE)[key(rows), 1L])
+      ord <- order(mass, decreasing = TRUE)
+      cum <- cumsum(mass[ord]) / sum(mass)
+      rows <- rows[ord[seq_len(which(cum >= 1 - row_tail)[1L])], , drop = FALSE]
+    }
+  }
   n_rows <- if (length(others)) nrow(rows) else 1L
   cells <- matrix(NA_real_, n_rows * length(pts), ncol(theta_grid),
                   dimnames = list(NULL, colnames(theta_grid)))
@@ -478,7 +505,8 @@
 # (`.hyper_tensor_level_cells()`), NULL if no trigger fires.
 # ============================================================================
 .hyper_detect_axis_refinement <- function(theta_grid, log_marginal, edge_info,
-                                          axis_name, spec, edge_thresh) {
+                                          axis_name, spec, edge_thresh,
+                                          log_weight = NULL) {
   ei  <- edge_info
   lev <- ei$levels
   v   <- as.numeric(theta_grid[, axis_name])
@@ -517,13 +545,21 @@
            if (wide_left || wide_right)
              .hyper_propose_interior_densification(spec, lev, mode_idx,
                                                    wide_left, wide_right))
-  .hyper_tensor_level_cells(theta_grid, log_marginal, axis_name, pts)
+  .hyper_tensor_level_cells(theta_grid, log_marginal, axis_name, pts,
+                            log_weight = log_weight)
 }
 
 # ============================================================================
 # Apply refinement for one axis: solve the new cells with kernel_fn from the
 # anchor's warm-start material and merge them into the existing grid /
 # log_marginal / extras / refining_axis, each tagged with the axis it refines.
+#
+# The rows a new level was laid in were chosen by the mass the grid held BEFORE
+# the level was solved (`.hyper_tensor_level_cells()`). Where the refined axis
+# correlates with another, the solved level can carry its mass in rows that
+# were light at the old levels, so the level then grows into the neighbouring
+# rows of every row holding more than `row_tail` of its mass
+# (`.hyper_level_frontier()`), until no such row has an unrefined neighbour.
 # ============================================================================
 .hyper_apply_axis_refinement <- function(theta_grid, log_marginal, extras,
                                           refining_axis, pack, axis_name,
@@ -534,8 +570,6 @@
                 extras = extras, refining_axis = refining_axis, n_new = 0L,
                 n_levels = 0L))
   }
-  n_new <- nrow(new_cells)
-
   warm_start <- NULL
   if (!is.null(extras)) {
     idx0 <- pack$warm_start_idx
@@ -543,27 +577,82 @@
       warm_start <- extras[[idx0]]
     }
   }
+  solve_merge <- function(cells) {
+    n <- nrow(cells)
+    fit_out <- kernel_fn(cells, warm_start = warm_start,
+                         store_extras = !is.null(extras))
+    new_lm <- fit_out$log_marginal
+    if (!is.null(hp_fn)) {
+      hp_new <- hp_fn(cells)
+      if (!is.null(hp_new) && length(hp_new) == n) new_lm <- new_lm + hp_new
+    }
+    theta_grid    <<- rbind(theta_grid, cells)
+    log_marginal  <<- c(log_marginal, new_lm)
+    refining_axis <<- c(refining_axis, rep(axis_name, n))
+    if (!is.null(extras)) {
+      extras <<- c(extras, fit_out$extras %||% vector("list", n))
+    }
+    n
+  }
+  levels <- unique(new_cells[, axis_name])
+  n_new <- solve_merge(new_cells)
+  repeat {
+    grow <- .hyper_new_cells_only(
+      .hyper_level_frontier(theta_grid, log_marginal, specs, refining_axis,
+                            axis_name, levels), theta_grid)
+    if (is.null(grow)) break
+    n_new <- n_new + solve_merge(grow)
+  }
+  list(theta_grid = theta_grid, log_marginal = log_marginal,
+       extras = extras, refining_axis = refining_axis, n_new = n_new,
+       n_levels = length(levels))
+}
 
-  fit_out <- kernel_fn(new_cells, warm_start = warm_start,
-                        store_extras = !is.null(extras))
-  new_lm  <- fit_out$log_marginal
-  if (!is.null(hp_fn)) {
-    hp_new <- hp_fn(new_cells)
-    if (!is.null(hp_new) && length(hp_new) == n_new) {
-      new_lm <- new_lm + hp_new
+# The cells that extend `levels` of `axis` into the neighbours of the rows
+# holding them: every row (combination of the other axes) holding more than
+# `row_tail` of the levels' solved mass under the grid's measure passes them to
+# the rows one level away along each other axis that hold a solved cell and do
+# not hold the levels yet. NULL when no such row is left.
+.hyper_level_frontier <- function(theta_grid, log_marginal, specs, refining,
+                                  axis, levels,
+                                  row_tail = .nl_diag("level_row_tail")) {
+  others <- setdiff(colnames(theta_grid), axis)
+  if (!length(others) || row_tail <= 0) return(NULL)
+  lq <- .hyper_log_quad_weights(theta_grid, specs, refining = refining)
+  lw <- if (length(lq) == length(log_marginal)) log_marginal + lq else log_marginal
+  at <- is.finite(lw) & theta_grid[, axis] %in% levels
+  if (!any(at)) return(NULL)
+  key <- function(m) do.call(paste, c(lapply(seq_len(ncol(m)), function(k)
+    sprintf("%.10g", m[, k])), sep = ":"))
+  held <- theta_grid[at, others, drop = FALSE]
+  hk <- key(held)
+  mass <- tapply(exp(lw[at] - max(lw[at])), hk, sum)
+  hot <- names(mass)[mass / sum(mass) > row_tail]
+  rows <- unique(theta_grid[is.finite(log_marginal), others, drop = FALSE])
+  lev_of <- lapply(others, function(b) sort(unique(rows[, b])))
+  src <- held[match(hot, hk), , drop = FALSE]
+  nb <- list()
+  for (j in seq_along(others)) {
+    p <- match(src[, j], lev_of[[j]])
+    for (step in c(-1L, 1L)) {
+      q <- p + step
+      ok <- q >= 1L & q <= length(lev_of[[j]])
+      if (!any(ok)) next
+      m <- src[ok, , drop = FALSE]
+      m[, j] <- lev_of[[j]][q[ok]]
+      nb[[length(nb) + 1L]] <- m
     }
   }
-
-  theta_grid_out   <- rbind(theta_grid, new_cells)
-  log_marginal_out <- c(log_marginal, new_lm)
-  refining_out     <- c(refining_axis, rep(axis_name, n_new))
-  extras_out       <- extras
-  if (!is.null(extras_out)) {
-    extras_out <- c(extras_out, fit_out$extras %||% vector("list", n_new))
-  }
-  list(theta_grid = theta_grid_out, log_marginal = log_marginal_out,
-       extras = extras_out, refining_axis = refining_out, n_new = n_new,
-       n_levels = length(unique(new_cells[, axis_name])))
+  if (!length(nb)) return(NULL)
+  nb <- unique(do.call(rbind, nb))
+  nk <- key(nb)
+  nb <- nb[nk %in% key(rows) & !nk %in% hk, , drop = FALSE]
+  if (!nrow(nb)) return(NULL)
+  cells <- matrix(NA_real_, nrow(nb) * length(levels), ncol(theta_grid),
+                  dimnames = list(NULL, colnames(theta_grid)))
+  for (b in others) cells[, b] <- rep(nb[, b], each = length(levels))
+  cells[, axis] <- rep(as.numeric(levels), nrow(nb))
+  cells
 }
 
 # ============================================================================
@@ -591,8 +680,10 @@
       ei <- edge_info[[a]]
       if (is.null(ei)) next
       spec <- .hyper_spec_by_name(specs, a)
+      lw <- log_marginal + .hyper_log_quad_weights(theta_grid, specs,
+                                                   refining = refining_axis)
       pack <- .hyper_detect_axis_refinement(theta_grid, log_marginal, ei, a,
-                                             spec, edge_thresh)
+                                             spec, edge_thresh, log_weight = lw)
       if (is.null(pack)) next
       step <- .hyper_apply_axis_refinement(theta_grid, log_marginal, extras,
                                             refining_axis, pack, a, specs,
@@ -648,8 +739,9 @@
 # would only spend cells.
 #
 # A new point is a new LEVEL of the base tensor, laid in every row of the other
-# axes that holds a solved cell (`.hyper_tensor_level_cells()`), so the grid
-# stays a tensor and every row integrates the axis at the same nodes. Laying the
+# axes that holds the posterior (`.hyper_tensor_level_cells()`,
+# `.hyper_level_frontier()`), so every such row integrates the axis at the same
+# nodes. Laying the
 # points in the modal row alone (a slice) resolved the axis's own marginal and
 # misread every other one: the modal row then integrates the axis finely and
 # the rest at the coarse levels, so the other axes' levels carry quadrature
@@ -711,7 +803,7 @@
       if (length(new_pts) == 0L) break
       if (!is_ladder) new_pts <- utils::head(new_pts, max_nodes - (added - ladder))
       pack <- .hyper_tensor_level_cells(theta_grid, log_marginal, axis,
-                                        new_pts)
+                                        new_pts, log_weight = rd$lm_eff)
       if (is.null(pack)) break
       step <- .hyper_apply_axis_refinement(theta_grid, log_marginal, extras,
                                             refining_axis, pack, axis,

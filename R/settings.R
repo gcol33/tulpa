@@ -617,11 +617,10 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     n_pts     = 5L,
     span      = 2.5,
 
-    # The mode SD is clamped into [min_sd_u, max_sd_u] on the log axis: a floor
-    # so a razor-sharp local curvature does not collapse the new grid to
-    # near-duplicate nodes (the point of recentring is to BRACKET the mode with
-    # real spread), a ceiling so a near-flat direction does not fling nodes to
-    # implausible extremes.
+    # The mode SD is clamped into [min_sd_u, max_sd_u] on the log axis: a
+    # ceiling so a near-flat direction does not fling nodes to implausible
+    # extremes, and a floor, 0 by default, that a caller can set to widen a
+    # placed axis past its measured spread.
     #
     # Both values were swept and both are KEPT. The ceiling
     # is close to inert: over 268 axis reads it binds on 2, on neither of the
@@ -662,26 +661,32 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     # The earlier reading that the ceiling produces 95% widths in the hundreds
     # came from the one row that reaches it, `nngp_120`, whose fits are not
     # reproducible (72 of 120 differ between two passes of the
-    # same seeds in one process). The floor's own ladder is on
-    # `sd_floor_policy` below.
-    min_sd_u  = 0.15,
+    # same seeds in one process).
+    #
+    # The FLOOR is 0: every door lays an axis at the SD the mode-find measured,
+    # however sharp. A floor widens a placed axis past its posterior, which
+    # compensated the box read's narrowing at 1.25 SDs and which the
+    # log-quadratic read does not need: it is exact for a Gaussian at that
+    # spacing and continues the end quadratic past the outer node. Where a
+    # floor binds, the consistency pass lays the at-mode ladder between the
+    # floored nodes as new levels, so the grid ends resolved either way and the
+    # floor only costs cells (gcol33/tulpa#932). Measured on both doors:
+    #
+    #   * joint: on the two-arm ICAR fixture, where the field SD's log-SD is
+    #     0.037 and the copy scale's 0.024 at 24x24, a 0.05 floor bound on both
+    #     axes: 464 cells against 144 without it, at the same error against a
+    #     dense reference.
+    #   * registry: the six-configuration ladder at 200 fixed-truth seeds each
+    #     (`dev_notes/issue932/floor/floor932.R`), floors 0 / 0.05 / 0.15 /
+    #     0.30. Floors 0, 0.05 and 0.15 give the same 95% interval on all 1400
+    #     paired trials (none won or lost, width ratio 1.0000); summed
+    #     |coverage - nominal| over 95 / 80 / 50% is 0.0543 at 0 and 0.05,
+    #     0.0564 at 0.15 (binding on 21% of fits) and 0.0571 at 0.30, which
+    #     also adds cells.
+    #
+    # `sd_floor_policy` below says what a caller-set floor does when it binds.
+    min_sd_u  = 0,
     max_sd_u  = 3,
-
-    # The joint doors lay an axis at the SD the mode-find measured, with no
-    # floor (`min_sd_u_joint` is read where `tulpa.nl_door` is "joint",
-    # `.nl_recenter_floor()`). A floor widens a placed axis past its posterior,
-    # which compensated the box read's narrowing at 1.25 SDs (the ladder above
-    # was scored under it) and which the log-quadratic read does not need: it is
-    # exact for a Gaussian at that spacing and continues the end quadratic past
-    # the outer node. Where a floor binds, the consistency pass lays the at-mode
-    # ladder between the floored nodes as new levels, so the grid ends resolved
-    # either way and the floor only costs cells. On the two-arm ICAR fixture of
-    # gcol33/tulpa#932, where the field SD's log-SD is 0.037 and the copy
-    # scale's 0.024 at 24x24, the 0.05 floor of gcol33/tulpa#926 bound on both:
-    # 464 cells against 144 without it, at the same error against a dense
-    # reference. The registry door keeps 0.15 until its own ladder is re-run
-    # under the log-quadratic read.
-    min_sd_u_joint = 0,
 
     # What the pass DOES when that ceiling binds.
     #
@@ -724,9 +729,11 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     # identical there and the table above is the only one that separates them.
     sd_clamp_policy = "decline",
 
-    # The floor is the OPPOSITE answer. Seven rows x 200 seeds under the proper
-    # default hyperpriors, "resolve" placement, paired 95%-level win/loss against
-    # 0.15:
+    # What a FLOOR does when it binds. The default floor is 0 (above), so this
+    # applies to a caller-set `min_sd_u`. Measured at gcol33/tulpa#387 under the
+    # box read, with 0.15 the floor then shipped: seven rows x 200 seeds under
+    # the proper default hyperpriors, "resolve" placement, paired 95%-level
+    # win/loss against 0.15:
     #
     #   floor            summed dev   won   lost
     #   0.02 / 0.05          0.7107     0    304
@@ -738,10 +745,11 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     # A clamped floor WIDENS a too-narrow axis, which is the direction that
     # cannot rail, so substituting there is the right move: declining wins 10
     # trials against 3 at the 95% level and more than doubles the summed
-    # deviation, over-covering at 0.80 and 0.50. 0.15 is a minimum of the ladder
-    # in both directions -- dropping it to 0.05 loses 304 trials and wins none --
-    # and the floor is the bound that actually binds: it engages on 3 of 7 rows
-    # and on every fit of those rows.
+    # deviation, over-covering at 0.80 and 0.50. Under that read 0.15 was a
+    # minimum of the ladder in both directions. That ladder passed the gaussian
+    # `phi` as an SD where the engine reads a variance (1.41 times the simulated
+    # one) and read intervals with boxes; on the shipped read and a correctly
+    # specified fixture the floor is inert (`min_sd_u` above).
     sd_floor_policy = "clamp",
 
     # A recentred axis must survive the map back onto its own support with at
@@ -845,13 +853,6 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     .NL_RECENTER[[par]]
 }
 
-# The placement floor of the door the fit entered by. The joint front door
-# publishes `tulpa.nl_door` for the duration of its fit; every other path reads
-# the registry floor.
-.nl_recenter_floor <- function() {
-    .nl_recenter(if (identical(getOption("tulpa.nl_door"), "joint"))
-        "min_sd_u_joint" else "min_sd_u")
-}
 
 # --- spatiotemporal driver grid ----------------------------------------------
 #
@@ -1383,7 +1384,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 #
 # `axis_refine_nodes` caps the nodes the consistency pass
 # (`.hyper_consistency_pass()`) adds to one axis while bisecting it towards
-# `axis_sd_ess`. It counts levels, each laid in every row of the other axes: 8
+# `axis_sd_ess`. It counts levels, each laid in the rows of the other axes: 8
 # is one bisection of every gap of a declared 9-node slab, the resolution the
 # default outer axes are declared at.
 # `at_mode_gap_var` is the share of an axis's posterior variance, about the
@@ -1395,6 +1396,18 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # box quadrupled the Calluna fit's reported dispersion SD. It is 1%, the share
 # the cheap-pass screen may drop (`.NL_SCREEN$gate_mass`): both bound how much
 # of the posterior the outer grid may misplace.
+# `level_row_tail` is the share of the posterior mass a refinement pass may
+# leave out when it lays a new level (`.hyper_tensor_level_cells()`): the level
+# goes into the fewest rows of the other axes, heaviest first, that hold all but
+# this much, and a row left out keeps its cells without the level; once solved,
+# the level grows into the neighbours of every row holding more than this share
+# of it (`.hyper_level_frontier()`). Laid in every row, each pass's levels
+# become rows of the next pass's axis and the cells grow with their product: a
+# four-axis cover-hurdle fixture went from 580 cells to 2352, and tulpaObs's
+# joint tests ran 3.8 to 10 times slower than with one-row slices. Against the
+# dense references of gcol33/tulpa#932 (16 seeds per size), the summed
+# interval error is 0.03840 in every row and 0.03839 at 1e-3 (1e-2 without the
+# growth: 0.04407); 1e-3 takes that fixture to 1310 cells.
 # `edge_mass_lift` is how far above a FLAT marginal an outer axis's boundary
 # node has to sit before the axis is NAMED as holding boundary mass
 # (`.nl_axis_edge_mass()`, `$outer_grid_edge_mass_axes`). Same currency as the
@@ -1441,6 +1454,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     read_sd_nodes        = 512L,
     axis_refine_nodes    = 8L,
     at_mode_gap_var      = 0.01,
+    level_row_tail       = 1e-3,
     edge_mass_lift       = 1,
     k_usable             = 0.7,
     k_samples            = 500L,

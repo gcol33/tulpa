@@ -141,19 +141,21 @@ test_that("adaptive_grid = TRUE extends alpha when boundary carries mass", {
               max(fit_F$theta_grid[, "alpha"]) + 1e-6)
 
     # Each extension point is a new level of the tensor, laid in every row of
-    # the other axes the grid solved (gcol33/tulpa#932).
+    # the other axes that holds the posterior (gcol33/tulpa#932): every row
+    # carrying more than `level_row_tail` of the fit's weight holds it.
     others <- setdiff(colnames(fit_T$theta_grid), "alpha")
     key <- function(g) do.call(paste, lapply(others, function(a) g[, a]))
     old_lev <- unique(fit_F$theta_grid[, "alpha"])
-    declared <- fit_T$theta_grid[, "alpha"] %in% old_lev &
-        is.finite(fit_T$log_marginal)
-    rows <- unique(key(fit_T$theta_grid[declared, , drop = FALSE]))
     new_lev <- setdiff(unique(fit_T$theta_grid[, "alpha"]), old_lev)
     expect_gt(length(new_lev), 0L)
     expect_lte(length(new_lev), sum(fit_T$adaptive_grid_info$n_points_added))
+    w <- fit_T$weights; w[!is.finite(w)] <- 0
+    row_w <- tapply(w, key(fit_T$theta_grid), sum)
+    heavy <- names(row_w)[row_w > .nl_diag("level_row_tail")]
+    expect_gt(length(heavy), 0L)
     for (lv in new_lev) {
         at <- fit_T$theta_grid[, "alpha"] == lv
-        expect_setequal(key(fit_T$theta_grid[at, , drop = FALSE]), rows)
+        expect_true(all(heavy %in% key(fit_T$theta_grid[at, , drop = FALSE])))
     }
 
     # Posterior alpha mean moves outward (FALSE truncated at alpha_max =

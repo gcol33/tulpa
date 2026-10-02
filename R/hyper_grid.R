@@ -178,7 +178,7 @@
 #'     consistency pass: for refinable axes whose marginal has collapsed onto
 #'     too few nodes to carry a spread, bisect the gaps between adjacent nodes
 #'     that carry the axis's mass, each new point a level laid in every row of
-#'     the other axes, and repeat until the axis reaches `var_of_means_min_ess`
+#'     the other axes that holds the posterior, and repeat until the axis reaches `var_of_means_min_ess`
 #'     or has taken `.nl_diag("axis_refine_nodes")` new levels. One kernel call
 #'     per round.
 #'   * `var_of_means_min_ess` (`.nl_diag("axis_sd_ess")`) -- the quadrature
