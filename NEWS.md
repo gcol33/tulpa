@@ -91,6 +91,11 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   intervals to 1e-12 and 2 to 2.5 times faster on four threads. `refining_axis` now names
   the axis whose pass added a cell, and the declared cells fix the span and
   any prior read off the nodes (gcol33/tulpa#932).
+* `converged` on a refined joint fit has one entry per cell of the merged grid.
+  It covered only the declared cells, and a shorter vector reads as all
+  converged, so a refined cell whose inner Newton stopped at `max_iter` was
+  reported as converged (gcol33/tulpa#932). Such a cell still keeps its weight
+  (gcol33/tulpa#936).
 * The outer Pareto-k of `tulpa_re_cov_nested()` solves its importance draws in
   one compiled batch, each warm-started from the latent mode at the proposal
   centre, where it paid one `tulpa_laplace()` call per draw. The draws spread

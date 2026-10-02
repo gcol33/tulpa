@@ -1171,6 +1171,11 @@ tulpa_joint_axis_specs_from_grid <- function(
     list(res = "fitted_eta",        extra = "eta",       kind = "row"),
     list(res = "fitted_eta_var",    extra = "eta_var",   kind = "row"),
     list(res = "n_iter",            extra = "n_iter",    kind = "int"),
+    # Whether the cell's inner Newton reached a mode. A refined cell's flag rides
+    # here like every other per-cell field, so `converged` stays one entry per
+    # cell of the merged grid; a shorter vector reads as all converged
+    # (`.nested_converged_cells()`).
+    list(res = "converged",         extra = "converged", kind = "lgl"),
     list(res = "Q_csc_p_per_grid",  extra = "Q_csc_p",   kind = "elt"),
     list(res = "Q_csc_i_per_grid",  extra = "Q_csc_i",   kind = "elt"),
     list(res = "Q_csc_x_per_grid",  extra = "Q_csc_x",   kind = "elt"),

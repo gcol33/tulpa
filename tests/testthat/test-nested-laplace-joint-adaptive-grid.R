@@ -213,3 +213,21 @@ test_that("refinement rounds solve the same cells on the outer team as serially"
     expect_equal(f2$theta_ci_lo, f1$theta_ci_lo, tolerance = 1e-7)
     expect_equal(f2$theta_ci_hi, f1$theta_ci_hi, tolerance = 1e-7)
 })
+
+test_that("a refined cell's convergence is recorded with the cell", {
+    skip_on_cran()
+    sim <- .simulate_joint_icar_strong(seed = 6)
+    fit <- .fit_joint_icar(sim, alpha_grid = auto_grid(c(0.2, 0.4, 0.6)),
+                           adaptive_grid = TRUE,
+                           control = list(auto_recenter = FALSE))
+    expect_gt(sum(nzchar(fit$refining_axis)), 0L)
+    expect_length(fit$converged, nrow(fit$theta_grid))
+    # A cap the refined cells cannot meet is visible on them.
+    capped <- .fit_joint_icar(sim, alpha_grid = auto_grid(c(0.2, 0.4, 0.6)),
+                              adaptive_grid = TRUE,
+                              control = list(auto_recenter = FALSE,
+                                             max_iter = 1L))
+    added <- nzchar(capped$refining_axis)
+    expect_length(capped$converged, nrow(capped$theta_grid))
+    expect_false(any(capped$converged[added]))
+})

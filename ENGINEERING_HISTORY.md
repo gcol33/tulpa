@@ -1280,6 +1280,21 @@ over width as the node density has a false dip at a refined grid's modal cell.
   splits the grant between concurrent cells and their inner loops. On the 16x16
   fixture at four threads the refined cells and their log marginals agree with
   the serial run to 1e-10 and the intervals to 1e-12, in 0.4 to 0.5 of the time.
+- **The 25 km Calluna fit** (LiSC, 32 threads, the captured `occu_cover` call
+  of gcol33/tulpa#925, `validate925.R`). At e19c8991 the default arm takes 82.2
+  minutes for 826 cells (706 refinement) against 0.7.0's 25.3 for 134: the
+  dispersion sits 36 SDs off its declared nodes, so its 13-level ladder goes
+  into each of the ~19 (sigma, alpha) rows holding the posterior, and the
+  adaptive pass adds sigma and alpha levels. The summaries agree with 0.7.0 to
+  within 0.3% except the field SD's upper bound, 3.245 against 3.287; the dense
+  arm on the same commit reads [2.734, 3.248] against the default's [2.729,
+  3.245], so the narrower bound is the posterior's and 3.287 was the box read
+  at the floored placement. The dense arm's dispersion SD is 0.0194 against the
+  default's 0.0171 because of one refined cell whose inner Newton stopped at
+  300 iterations about 8 nats above its row's trend and kept weight 0.034
+  (gcol33/tulpa#936). `converged` did not even record that, since refined
+  cells' flags were never merged; the per-cell field table now carries them.
+  Serial refinement rounds on the same fit were still running after 3.4 hours.
 - **The registry floor.** `min_sd_u` was 0.15 (gcol33/tulpa#387, under the box
   read). Re-run under the log-quadratic read on the six-configuration ladder,
   200 seeds each, `phi` passed as the variance it is (`ext361_setup.R` passed
