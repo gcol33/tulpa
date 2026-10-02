@@ -1096,6 +1096,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     e_bfmi = NA,
     pareto_k = NA_real_,
     s2z_log_det_fallback_cells = 0L,
+    unconverged_cells = 0L,
     outer_regime = NA_character_,
     interval_read = NA_character_,
     interval_design_mass = NA_real_,
@@ -1359,6 +1360,14 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
             "log-determinant: their weights come from a determinant of",
             "H + lambda I rather than of the pinned sum-to-zero matrix."),
       s2z_fb$n, s2z_fb$n_grid))
+  }
+
+  # Outer-grid cells whose inner Newton stopped at the cap without a mode.
+  uc <- .tulpa_unconverged_cells(fit)
+  if (!is.null(uc)) {
+    result$unconverged_cells <- uc$n
+    status <- if (status == "FAIL") "FAIL" else "WARN"
+    recommendations <- c(recommendations, .tulpa_unconverged_cells_note(uc))
   }
 
   # Grid axes the resolved path could not read. Recorded on

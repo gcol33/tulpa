@@ -1512,6 +1512,51 @@
   list(n = as.integer(n), n_grid = length(v))
 }
 
+# Outer-grid cells whose inner Newton stopped at the iteration cap without
+# reaching a mode: the cells (`nonconverged_cells`, or the per-cell flag on a
+# fit that records only that), the share of the posterior they carry at the
+# values they stopped at (`nonconverged_mass`), and how many of the cells that
+# first stalled a re-solve from a neighbour recovered. NULL when every solved
+# cell converged, or when the fit carries no flag at all.
+.tulpa_unconverged_cells <- function(fit) {
+  jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+  lm <- jf$log_marginal
+  if (is.null(lm) || is.null(jf$converged)) return(NULL)
+  n <- length(lm)
+  cells <- jf$nonconverged_cells
+  if (is.null(cells)) {
+    pruned <- as.logical(jf$prune_mask %||% rep(FALSE, n))
+    pruned[is.na(pruned)] <- FALSE
+    cells <- which(is.finite(lm) & !pruned & !.nested_converged_cells(jf, n))
+  }
+  if (!length(cells)) return(NULL)
+  w <- jf$weights
+  mass <- jf$nonconverged_mass
+  if (is.null(mass) && length(w) == n) mass <- sum(w[cells], na.rm = TRUE)
+  rs <- jf$nonconverged_resolve
+  list(n = length(cells), n_grid = n, cells = as.integer(cells),
+       mass = as.numeric(mass %||% NA_real_),
+       n_stalled = as.integer(rs$n_stalled %||% NA_integer_),
+       n_resolved = as.integer(rs$n_resolved %||% NA_integer_))
+}
+
+# One-line reading of that record.
+.tulpa_unconverged_cells_note <- function(uc) {
+  if (is.null(uc)) return(NULL)
+  resolved <- if (is.finite(uc$n_resolved) && uc$n_resolved > 0L) {
+    sprintf(" (%d of the %d that first stalled converged when re-solved from a neighbour)",
+            uc$n_resolved, uc$n_stalled)
+  } else ""
+  share <- if (is.finite(uc$mass)) {
+    sprintf(" and carry %s of the posterior mass", format(signif(uc$mass, 3)))
+  } else ""
+  paste0(uc$n, " of ", uc$n_grid, " outer-grid cells stopped at control$max_iter ",
+         "without reaching a mode", resolved, share,
+         "; they are integrated at the values they stopped at, which are not ",
+         "Laplace approximations at a mode -- raise control$max_iter or loosen ",
+         "control$tol")
+}
+
 .tulpa_inner_skew_reliability <- function(fit) {
   jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
   s <- .tulpa_inner_skew_summary(jf$inner_skew, jf$inner_skew_dropped %||% 0L)
@@ -1822,6 +1867,12 @@
     attr(tab, "grid_resolved")       <- resolution$resolved
     attr(tab, "grid_resolution_note") <- .tulpa_grid_resolution_note(resolution)
   }
+  uc <- .tulpa_unconverged_cells(fit)
+  if (!is.null(uc)) {
+    attr(tab, "unconverged_cells")      <- uc$cells
+    attr(tab, "unconverged_mass")       <- uc$mass
+    attr(tab, "unconverged_cells_note") <- .tulpa_unconverged_cells_note(uc)
+  }
   if (!is.null(inner_k)) {
     attr(tab, "inner_pareto_k")        <- inner_k$max_pareto_k
     attr(tab, "inner_pareto_k_band")   <- inner_k$band
@@ -1979,6 +2030,7 @@ print.laplace_diagnostics <- function(x, ...) {
   if (!is.null(pnote)) cat("  note: ", pnote, "\n", sep = "")
   for (rnote in c(attr(x, "interval_read_note"),
                   attr(x, "grid_resolution_note"),
+                  attr(x, "unconverged_cells_note"),
                   attr(x, "inner_debias_note"))) {
     cat("  note: ", rnote, "\n", sep = "")
   }

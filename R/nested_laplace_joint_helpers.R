@@ -1028,6 +1028,115 @@ tulpa_joint_axis_specs_from_grid <- function(
          consistency_info = consistency_info, n_added = n_added)
 }
 
+# Which cells of a per-cell `extras` list are solved and converged, solved and
+# not, or never solved. A cell the screen dropped has no solve to judge; a cell
+# whose log marginal is not finite failed outright and is not a stalled solve.
+# `flagged` is FALSE when no cell carries a convergence flag, which is a kernel
+# that reports none, not a grid of stalled cells.
+.joint_cell_convergence <- function(log_marginal, extras) {
+    n <- length(log_marginal)
+    has <- vapply(extras, function(e) !is.null(e$converged), logical(1))
+    conv <- vapply(extras, function(e) isTRUE(e$converged), logical(1))
+    pruned <- vapply(extras, function(e) isTRUE(e$pruned), logical(1))
+    solved <- !pruned & is.finite(log_marginal)
+    list(flagged = length(extras) == n && any(has),
+         converged = solved & conv, stalled = solved & !conv)
+}
+
+# Re-solve the cells whose inner Newton stopped without reaching a mode, each
+# started from the mode of its nearest converged cell on the grid rather than
+# from the broadcast start it was first given. The refinement passes start every
+# cell of a level from the one heaviest base cell, which for a level laid across
+# many rows is the right row for one of them; a converged neighbour one node
+# away is where a linearly converging solve gains the most. A cell that still
+# has no mode afterwards keeps its stalled record and is reported by
+# `.nl_record_unconverged()`.
+#
+# `kernel_fn` is the drivers' refinement closure, which takes a per-cell start
+# matrix (`x_init_per_cell`). Returns the merged `log_marginal` and `extras`
+# and the count of cells re-solved and of those that converged.
+.joint_resolve_unconverged <- function(theta_grid, log_marginal, extras,
+                                       kernel_fn, hp_fn = NULL) {
+    info <- list(n_stalled = 0L, n_resolved = 0L)
+    out <- list(log_marginal = log_marginal, extras = extras, info = info)
+    if (is.null(extras)) return(out)
+    cc <- .joint_cell_convergence(log_marginal, extras)
+    if (!cc$flagged) return(out)
+    bad <- which(cc$stalled)
+    info$n_stalled <- length(bad)
+    out$info <- info
+    good <- which(cc$converged & vapply(extras, function(e)
+        !is.null(e$mode), logical(1)))
+    if (!length(bad) || !length(good)) return(out)
+    ref <- list(theta_grid = theta_grid[good, , drop = FALSE],
+                modes = do.call(rbind, lapply(extras[good], function(e)
+                    as.numeric(e$mode))))
+    cells <- theta_grid[bad, , drop = FALSE]
+    x0 <- .joint_nearest_grid_mode(cells, ref)
+    fit_out <- kernel_fn(cells, warm_start = NULL, store_extras = TRUE,
+                         x_init_per_cell = x0)
+    new_lm <- as.numeric(fit_out$log_marginal)
+    if (!is.null(hp_fn)) {
+        hp_new <- hp_fn(cells)
+        if (!is.null(hp_new) && length(hp_new) == length(bad)) {
+            new_lm <- new_lm + hp_new
+        }
+    }
+    new_ex <- fit_out$extras %||% vector("list", length(bad))
+    for (k in seq_along(bad)) {
+        e <- new_ex[[k]]
+        if (!isTRUE(e$converged) || !is.finite(new_lm[k])) next
+        log_marginal[bad[k]] <- new_lm[k]
+        extras[[bad[k]]] <- e
+        info$n_resolved <- info$n_resolved + 1L
+    }
+    list(log_marginal = log_marginal, extras = extras, info = info)
+}
+
+# Record the cells whose inner solve never reached a mode, once the grid and
+# its cell measure are final and before the weights are taken. A log marginal
+# read off an iterate that is not a mode is not a Laplace approximation at a
+# mode, and how far it is from one is not known to this layer: the kernel
+# reports no residual for the cell, and a node taken out of a row leaves the
+# row's quadratic join to bridge the gap, which moves the row's quantiles by
+# more than a nearly converged iterate does. So the cells stay in the measure
+# at the values they stopped at, and the
+# fit says so: `nonconverged_cells` (an integer vector, empty when every solved
+# cell converged, so a reader can tell "none" from "not recorded") and
+# `nonconverged_mass`, the share of the posterior those cells carry, read
+# against the same measure the weights use. Past the screen's mass gate the
+# fit warns, since that much of the posterior sits on cells without a mode.
+#
+# `fn` names the front door, for the warning.
+.nl_record_unconverged <- function(res, fn = "tulpa_nested_laplace_joint()",
+                                   gate_mass = .nl_screen("gate_mass")) {
+    lm <- as.numeric(res$log_marginal)
+    n <- length(lm)
+    res$nonconverged_cells <- integer(0)
+    res$nonconverged_mass  <- 0
+    conv <- res$converged
+    if (is.null(conv) || length(conv) != n) return(res)
+    pruned <- as.logical(res$prune_mask %||% rep(FALSE, n))
+    pruned[is.na(pruned)] <- FALSE
+    bad <- which(is.finite(lm) & !pruned & !(as.logical(conv) %in% TRUE))
+    if (!length(bad)) return(res)
+    w0 <- .nl_normalise_weights_safe(lm, "outer grid", log_quad = res$log_quad)
+    mass <- sum(w0[bad], na.rm = TRUE)
+    res$nonconverged_cells <- bad
+    res$nonconverged_mass  <- mass
+    if (is.finite(mass) && mass > gate_mass) {
+        warning(sprintf(paste0(
+            "%s: %d outer-grid cell%s whose inner Newton stopped at ",
+            "control$max_iter without reaching a mode carr%s %s of the ",
+            "posterior mass at the values they stopped at. Raise ",
+            "control$max_iter or loosen control$tol; see `nonconverged_cells`."),
+            fn, length(bad), if (length(bad) == 1L) "" else "s",
+            if (length(bad) == 1L) "ies" else "y",
+            format(signif(mass, 3))), call. = FALSE)
+    }
+    res
+}
+
 # Convert a generic `new_cells` matrix [n_new x n_axes] back to the joint
 # kernel's paired-vector `grids` representation. When `cp$has_copy = FALSE`
 # the alpha entry stays `numeric(0)` (the no-copy contract the backend expects).

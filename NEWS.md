@@ -94,7 +94,21 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
 * `converged` on a refined joint fit has one entry per cell of the merged grid.
   It covered only the declared cells, and a shorter vector reads as all
   converged, so a refined cell whose inner Newton stopped at `max_iter` was
-  reported as converged (gcol33/tulpa#932). Such a cell still keeps its weight
+  reported as converged (gcol33/tulpa#932).
+* A joint outer-grid cell whose inner Newton stops at `control$max_iter`
+  without reaching a mode is solved again from the mode of its nearest
+  converged cell on the grid, before the grid is read. The refinement passes
+  start every cell of a new level from the one heaviest base cell, which for a
+  level laid across many rows is the right row for one of them. A cell that
+  still has no mode stays in the measure at the value it stopped at and the
+  fit says so: `nonconverged_cells` lists it, `nonconverged_mass` is the
+  posterior mass such cells carry, `nonconverged_resolve` counts what the
+  re-solve recovered, `diagnostics()` and `diagnostic_summary()` name them,
+  and past the screen's 1% mass gate the fit warns. On a beta arm the inner
+  Newton weight is the Fisher information, so the solve converges linearly
+  (a measured contraction of 0.80 per iteration, 61 iterations to the default
+  tolerance, where a Newton step on the observed curvature would take a
+  handful); the joint door's default `max_iter = 50` can leave such cells
   (gcol33/tulpa#936).
 * The outer Pareto-k of `tulpa_re_cov_nested()` solves its importance draws in
   one compiled batch, each warm-started from the latent mode at the proposal

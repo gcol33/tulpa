@@ -1015,6 +1015,7 @@
                                                 refining = refining)
     res$axis_support <- .hyper_grid_supports(res$theta_grid, specs,
                                              refining = refining)
+    res <- .nl_record_unconverged(res)
     res$weights      <- .joint_integration_weights(res$log_marginal, dnode,
                                                    log_quad = res$log_quad)
     list(res = res, specs = specs)
@@ -1226,14 +1227,16 @@
 # neither the precision nor the fixed-effect block.
 .joint_multi_make_kernel_fn <- function(call_kernel, arm_names, x_init_default,
                                         store_Q = FALSE) {
-    function(new_cells, warm_start = NULL, store_extras = FALSE) {
+    function(new_cells, warm_start = NULL, store_extras = FALSE,
+             x_init_per_cell = NULL) {
         x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
                       as.numeric(warm_start$mode) else x_init_default
         res_x <- call_kernel(
             new_cells, x_init = x_init,
             store_Q = isTRUE(store_Q) && isTRUE(store_extras),
             fixed_block = isTRUE(store_extras),
-            phi_grid_per_arm = .joint_multi_phi_per_arm(new_cells, arm_names))
+            phi_grid_per_arm = .joint_multi_phi_per_arm(new_cells, arm_names),
+            x_init_per_cell = x_init_per_cell)
         list(log_marginal = res_x$log_marginal,
              extras = if (isTRUE(store_extras))
                           .joint_extras_from_res(res_x, nrow(new_cells)),
@@ -2053,20 +2056,23 @@
     refining_axis   <- NULL
     refine_on <- !use_ccd && !use_adaptive && is.null(local_ccd_info) &&
         (isTRUE(adaptive_grid) || isTRUE(var_of_means_consistency))
+    refine_kernel <- .joint_multi_make_kernel_fn(call_kernel, arm_names, x_init,
+                                                 store_Q)
+    refine_hp <- function(cells)
+        .joint_multi_hyperprior(
+            cells, fn_sigma, fn_alpha, fn_phi, blocks = prepared,
+            families = hp_families, copy_atom_mass = copy_atom_mass,
+            hyperprior = hyperprior, declared = hp_declared)$lp
+    grid_lm     <- res$log_marginal
+    grid_extras <- .joint_init_extras_from_res(res)
+    n_added <- 0L
     if (refine_on) {
         refine_specs <- .joint_multi_measure_specs(
             joint_grid, hp_base$axes, joint_grid, axis_offsets, B,
             fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass,
             logchol = hp_declared$logchol, axis_refine = axis_refine_modes)
-        refine_hp <- function(cells)
-            .joint_multi_hyperprior(
-                cells, fn_sigma, fn_alpha, fn_phi, blocks = prepared,
-                families = hp_families, copy_atom_mass = copy_atom_mass,
-                hyperprior = hyperprior, declared = hp_declared)$lp
         ref <- .joint_refine_outer_grid(
-            joint_grid, res$log_marginal, .joint_init_extras_from_res(res),
-            refine_specs,
-            .joint_multi_make_kernel_fn(call_kernel, arm_names, x_init, store_Q),
+            joint_grid, grid_lm, grid_extras, refine_specs, refine_kernel,
             refine_hp,
             adaptive_grid = adaptive_grid,
             edge_thresh   = adaptive_grid_edge_thresh,
@@ -2075,18 +2081,27 @@
             axis_modes    = .nl_outer_mode_axes(
                 getOption("tulpa.nl_outer_mode")))
         refining_axis <- ref$refining_axis
-        if (ref$n_added > 0L) {
-            joint_grid <- ref$theta_grid
-            res <- .joint_glue_extras_to_res(res, joint_grid, ref$log_marginal,
-                                              ref$extras, refining_axis)
-        }
-        res$refining_axis <- refining_axis
+        joint_grid    <- ref$theta_grid
+        grid_lm       <- ref$log_marginal
+        grid_extras   <- ref$extras
+        n_added       <- ref$n_added
         adaptive_info <- ref$adaptive_info
         if (isTRUE(var_of_means_consistency)) {
             res$var_of_means_consistency_info <- ref$consistency_info
         }
-        tm$mark("grid")
     }
+    # A cell whose inner Newton stopped short of a mode, on any node set this
+    # driver lays, is solved again from its nearest converged neighbour's mode
+    # before the grid is read.
+    rs <- .joint_resolve_unconverged(joint_grid, grid_lm, grid_extras,
+                                     refine_kernel, refine_hp)
+    if (n_added > 0L || rs$info$n_resolved > 0L) {
+        res <- .joint_glue_extras_to_res(res, joint_grid, rs$log_marginal,
+                                          rs$extras, refining_axis)
+    }
+    res$refining_axis <- refining_axis
+    res$nonconverged_resolve <- rs$info
+    tm$mark("grid")
 
     res$theta_grid   <- joint_grid
     res$theta_names  <- colnames(joint_grid)

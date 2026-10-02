@@ -1191,6 +1191,15 @@
 #'      request to the team the OpenMP environment hands out, so a fit launched
 #'      under `OMP_NUM_THREADS=1` with `n_threads_outer = 10` runs serial; the
 #'      pair is what a timing has to be recorded against.
+#'   * `converged`, `n_iter` -- per cell, whether the inner Newton reached a
+#'      mode within `control$max_iter` and the iterations it took. A cell that
+#'      stopped without a mode is solved again from the mode of its nearest
+#'      converged cell (`nonconverged_resolve` counts the cells that first
+#'      stalled and those the re-solve recovered); one that still has no mode
+#'      stays in the integration at the value it stopped at, is listed in
+#'      `nonconverged_cells` with the posterior mass such cells carry in
+#'      `nonconverged_mass`, and is named by [diagnostics()]. Past the screen's
+#'      mass gate the fit warns.
 #'
 #' @seealso [tulpa_nested_laplace()] for the single-arm engine.
 #' @references
@@ -2228,9 +2237,10 @@ tulpa_nested_laplace_joint <- function(responses,
     # kernel puts min(cells, width) of them in the team and gives each the
     # rest of the grant as inner threads, a three-cell round three cells of
     # ten threads on a 32-thread grant and a 78-cell round 32 cells of one.
-    refine_kernel <- function(new_cells, warm_start = NULL, store_extras = FALSE)
+    refine_kernel <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                              ...)
         kernel_fn(new_cells, warm_start = warm_start, store_extras = store_extras,
-                  n_threads_outer = n_threads_outer)
+                  n_threads_outer = n_threads_outer, ...)
     ref <- .joint_refine_outer_grid(
         theta_grid_M, log_marginal, extras_list, specs, refine_kernel, hp_fn,
         adaptive_grid = adaptive_grid,
@@ -2239,12 +2249,18 @@ tulpa_nested_laplace_joint <- function(responses,
         consistency   = var_of_means_consistency,
         axis_modes    = .nl_outer_mode_axes(getOption("tulpa.nl_outer_mode")))
     theta_grid_M  <- ref$theta_grid
-    log_marginal  <- ref$log_marginal
-    extras_list   <- ref$extras
     refining_axis <- ref$refining_axis
     refine_info   <- ref$adaptive_info
+    # A cell whose inner Newton stopped short of a mode, on the base grid or on
+    # a level a pass added, is solved again from its nearest converged
+    # neighbour's mode before the grid is read.
+    rs <- .joint_resolve_unconverged(theta_grid_M, ref$log_marginal, ref$extras,
+                                     refine_kernel, hp_fn)
+    log_marginal  <- rs$log_marginal
+    extras_list   <- rs$extras
     res <- .joint_glue_extras_to_res(res, theta_grid_M, log_marginal,
                                       extras_list, refining_axis)
+    res$nonconverged_resolve <- rs$info
     tm$mark("grid")                          # refinement inner solves
 
     res$theta_grid  <- theta_grid_M
@@ -2255,6 +2271,7 @@ tulpa_nested_laplace_joint <- function(responses,
                                              refining = refining_axis)
     res$axis_span    <- .joint_axis_span(theta_grid_init, res$theta_grid, specs,
                                          refining = refining_axis)
+    res <- .nl_record_unconverged(res)
     res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid",
                                                   log_quad = res$log_quad)
     res$log_hyperprior <- hp_fn(res$theta_grid)
