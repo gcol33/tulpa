@@ -302,9 +302,15 @@
     sigma_re    = sigma_re,
     family      = block$family,
     # Retain the per-grid fixed-effect Hessians so a grid-marginalized H_beta is
-    # available for the MI / Gibbs correction's SE pooling (see below).
-    control     = list(n_threads = as.integer(n_threads),
-                       keep_grid_hessians = TRUE)
+    # available for the MI / Gibbs correction's SE pooling (see below). An
+    # M-step fit is one iterate of the EM objective, so the outer Pareto-k
+    # diagnostic, which costs a batch of inner solves per cell and is read
+    # from the fit a caller reports, is off unless the block asks for it. A
+    # block's own `control` overrides these.
+    control     = utils::modifyList(
+      list(n_threads = as.integer(n_threads), keep_grid_hessians = TRUE,
+           diagnose_k = FALSE),
+      block$control %||% list())
   )
   if (!is.null(block$phi)) args$phi <- block$phi
   # Model-supplied likelihood (an external pointer to a tulpa::NestedLikelihood).
@@ -424,6 +430,11 @@
 #'     information. This is the channel a soft (fractional) latent label
 #'     travels on; see the section below.
 #'   * `re_list`, `spatial` (optional) -- forwarded as-is.
+#'   * `control` (list, optional) -- on a block with a `prior`, entries merged
+#'     over the driver's own [tulpa_nested_laplace()] control (`n_threads`,
+#'     `keep_grid_hessians = TRUE`, `diagnose_k = FALSE`); an M-step fit is one
+#'     iterate of the EM objective, so its outer Pareto-k diagnostic is off
+#'     unless the block sets `diagnose_k = TRUE`.
 #' @section Soft latent labels go in `weights`, not in `y`:
 #' The M-step maximizes the expected complete-data log-likelihood. For a
 #' Bernoulli latent `z_i` carrying E-step posterior weight `w_i` that is

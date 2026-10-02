@@ -2,6 +2,12 @@
 
 This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
 
+* An EM M-step block fitted by nested Laplace no longer runs the outer
+  Pareto-k diagnostic on every iteration: the fit is one iterate of the EM
+  objective, nothing on that path read its k-hat, and the diagnostic's batch
+  of inner solves was most of the fit. A block may carry its own `control`
+  (merged over the driver's; `diagnose_k = TRUE` restores it). Measured on an
+  areal occupancy fit of 25 EM iterations: 12.0 s to 1.4 s, results identical.
 * The nested-Laplace outer grid is screened by default on
   `tulpa_nested_laplace_joint()` and `tulpa_nested_laplace()`
   (`control$prune = FALSE` switches it off), held to a 1% bound on the

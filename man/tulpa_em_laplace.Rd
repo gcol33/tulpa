@@ -47,6 +47,11 @@ likelihood weight, scaling that row's log-density, score and Fisher
 information. This is the channel a soft (fractional) latent label
 travels on; see the section below.
 \item \code{re_list}, \code{spatial} (optional) -- forwarded as-is.
+\item \code{control} (list, optional) -- on a block with a \code{prior}, entries merged
+over the driver's own \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} control (\code{n_threads},
+\code{keep_grid_hessians = TRUE}, \code{diagnose_k = FALSE}); an M-step fit is one
+iterate of the EM objective, so its outer Pareto-k diagnostic is off
+unless the block sets \code{diagnose_k = TRUE}.
 }}
 
 \item{spatial, re_list}{Not consumed at the driver level -- latent structure
