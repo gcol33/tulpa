@@ -1263,6 +1263,16 @@ over width as the node density has a false dip at a refined grid's modal cell.
   16x16; the cover-hurdle fixture takes 1310 cells, and the two test files 212
   and 59 s. The fixed-truth coverage sweeps above ran on the every-row grid; the
   dense-reference error is the check that the row tail leaves them standing.
+- **Refinement rounds on the outer team.** A round's cells were solved one
+  after another, each on the whole thread grant (gcol33/tulpa#924), which suited
+  a slice of a few cells. A round of levels is dozens of independent cells: on
+  the 25 km Calluna fit at 32 threads a serial round ran 23-25 s per cell
+  against about 3.9 min per cell on one thread, so a 78-cell round took 32
+  minutes where three waves of the outer team take about 12. The single-block
+  driver now hands its rounds the fit's `n_threads_outer`, and the kernel
+  splits the grant between concurrent cells and their inner loops. On the 16x16
+  fixture at four threads the refined cells and their log marginals agree with
+  the serial run to 1e-10 and the intervals to 1e-12, in 0.4 to 0.5 of the time.
 - **The registry floor.** `min_sd_u` was 0.15 (gcol33/tulpa#387, under the box
   read). Re-run under the log-quadratic read on the six-configuration ladder,
   200 seeds each, `phi` passed as the variance it is (`ext361_setup.R` passed

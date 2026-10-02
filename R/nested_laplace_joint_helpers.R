@@ -1085,12 +1085,11 @@ tulpa_joint_axis_specs_from_grid <- function(
         # loosened to .K_DIAG_TOL since the Laplace log-marginal error is
         # O(tol^2). Never tighter than the fit's own tol.
         tl <- if (is.null(tol_override)) tol else max(as.numeric(tol_override), tol)
-        # The refinement / consistency passes call serially (n_threads_outer
-        # left at 1) and chain warm-starts cell-to-cell, each cell on the fit's
-        # whole thread grant (`n_threads`, gcol33/tulpa#924); the outer Pareto-k
-        # re-evaluation passes its whole importance batch in one call with
-        # n_threads_outer > 1 so the independent re-solves run concurrently,
-        # each warm-started from the broadcast modal mode. Tiling is left off:
+        # A call with n_threads_outer left at 1 solves its cells one after
+        # another, each on the fit's whole thread grant (`n_threads`,
+        # gcol33/tulpa#924); the refinement rounds and the outer Pareto-k
+        # re-evaluation pass the fit's outer width, so their independent cells
+        # run concurrently, each warm-started from the broadcast mode. Tiling is left off:
         # the IS batch is not a per-axis alpha lattice, so there is no tile
         # structure for the three-tier warm-start to exploit.
         # Both the precision and the per-cell fixed-effect block leave this

@@ -2223,8 +2223,16 @@ tulpa_nested_laplace_joint <- function(responses,
     # read off. The outer mode a placement refit was laid from is carried in by
     # the front door (`.joint_place_axes()`), which the pass lays a collapsed
     # axis's points at.
+    # A round's cells are levels laid across the rows that hold the posterior,
+    # independent of each other, so a round runs on the fit's outer width: the
+    # kernel puts min(cells, width) of them in the team and gives each the
+    # rest of the grant as inner threads, a three-cell round three cells of
+    # ten threads on a 32-thread grant and a 78-cell round 32 cells of one.
+    refine_kernel <- function(new_cells, warm_start = NULL, store_extras = FALSE)
+        kernel_fn(new_cells, warm_start = warm_start, store_extras = store_extras,
+                  n_threads_outer = n_threads_outer)
     ref <- .joint_refine_outer_grid(
-        theta_grid_M, log_marginal, extras_list, specs, kernel_fn, hp_fn,
+        theta_grid_M, log_marginal, extras_list, specs, refine_kernel, hp_fn,
         adaptive_grid = adaptive_grid,
         edge_thresh   = adaptive_grid_edge_thresh,
         max_passes    = adaptive_grid_max_passes,

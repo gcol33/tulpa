@@ -84,7 +84,10 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   the 16x16 field SD goes from 0.922 to 0.936 (1000 seeds; a converged grid on
   the same seeds reads 0.935) and of the 24x24 copy scale from 0.922 to 0.965
   (600 seeds). Fits refine into more cells: 171 against 106 at 16x16, 1310
-  against 580 on a four-axis cover-hurdle fixture. `refining_axis` now names
+  against 580 on a four-axis cover-hurdle fixture. A refinement round on
+  `tulpa_nested_laplace_joint()` solves its cells on the fit's outer width
+  (`n_threads_outer`) instead of one after another, with the same cells and
+  intervals to 1e-12 and 2 to 2.5 times faster on four threads. `refining_axis` now names
   the axis whose pass added a cell, and the declared cells fix the span and
   any prior read off the nodes (gcol33/tulpa#932).
 * The outer Pareto-k of `tulpa_re_cov_nested()` solves its importance draws in

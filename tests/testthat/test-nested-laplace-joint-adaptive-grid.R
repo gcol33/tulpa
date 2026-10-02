@@ -192,3 +192,24 @@ test_that("adaptive_grid = TRUE leaves grid alone when boundary is empty", {
     expect_equal(length(fit_T$log_marginal), length(fit_F$log_marginal))
     expect_equal(fit_T$theta_mean[["alpha"]], fit_F$theta_mean[["alpha"]])
 })
+
+test_that("refinement rounds solve the same cells on the outer team as serially", {
+    skip_on_cran()
+    # A round's cells are independent, so running them on the fit's outer
+    # width changes only the warm start each Newton solve begins from.
+    sim <- .simulate_joint_icar_strong(seed = 6)
+    ag <- auto_grid(c(0.2, 0.4, 0.6))
+    fit_w <- function(w) .fit_joint_icar(
+        sim, alpha_grid = ag, adaptive_grid = TRUE,
+        control = list(auto_recenter = FALSE, n_threads_outer = w))
+    f1 <- fit_w(1L)
+    f2 <- fit_w(2L)
+    expect_gt(sum(nzchar(f1$refining_axis)), 0L)
+    key <- function(f) apply(signif(f$theta_grid, 10), 1, paste, collapse = ":")
+    m <- match(key(f1), key(f2))
+    expect_false(anyNA(m))
+    expect_identical(nrow(f1$theta_grid), nrow(f2$theta_grid))
+    expect_equal(f2$log_marginal[m], f1$log_marginal, tolerance = 1e-7)
+    expect_equal(f2$theta_ci_lo, f1$theta_ci_lo, tolerance = 1e-7)
+    expect_equal(f2$theta_ci_hi, f1$theta_ci_hi, tolerance = 1e-7)
+})
