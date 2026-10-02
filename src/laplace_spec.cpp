@@ -50,6 +50,7 @@
 #include "lkj_chol_helpers.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -626,7 +627,12 @@ inline void scatter_spec(
     DenseVec& grad,
     Sink H,
     int /*n_threads*/,
-    const BetaPrior* beta_prior
+    const BetaPrior* beta_prior,
+    // Per-observation weights already evaluated at exactly this eta
+    // (SpecFusedWeights), N * np and N * np * np, or null to call
+    // spec.eta_weights_fn.
+    const double* cached_grad_eta = nullptr,
+    const double* cached_neg_hess_eta = nullptr
 ) {
     const int np = L.np;
     std::vector<double> grad_eta(np, 0.0);
@@ -664,14 +670,21 @@ inline void scatter_spec(
     std::vector<double> blk_basis_scratch;
 
     for (int i = 0; i < N; i++) {
-        std::fill(grad_eta.begin(), grad_eta.end(), 0.0);
-        std::fill(neg_hess_eta.begin(), neg_hess_eta.end(), 0.0);
+        if (cached_grad_eta) {
+            std::copy_n(cached_grad_eta + (std::ptrdiff_t)i * np, np,
+                        grad_eta.begin());
+            std::copy_n(cached_neg_hess_eta + (std::ptrdiff_t)i * np * np,
+                        (std::ptrdiff_t)np * np, neg_hess_eta.begin());
+        } else {
+            std::fill(grad_eta.begin(), grad_eta.end(), 0.0);
+            std::fill(neg_hess_eta.begin(), neg_hess_eta.end(), 0.0);
 
-        spec.eta_weights_fn(
-            i, &eta_flat[(std::ptrdiff_t)i * np], 0.0, 0.0,
-            params, data, layout, response_data,
-            grad_eta.data(), neg_hess_eta.data()
-        );
+            spec.eta_weights_fn(
+                i, &eta_flat[(std::ptrdiff_t)i * np], 0.0, 0.0,
+                params, data, layout, response_data,
+                grad_eta.data(), neg_hess_eta.data()
+            );
+        }
 
         // Resolve per-term groups + slope rows once.
         for (int t = 0; t < K; t++) {
@@ -1138,6 +1151,53 @@ inline double total_log_lik_spec(
     });
 }
 
+// The weights a fused log-likelihood pass (LikelihoodSpec::ll_eta_weights_fn)
+// produced, and the eta they belong to. The Newton loop's next scatter is at
+// the eta of its last objective evaluation, so it reads them here instead of
+// calling eta_weights_fn; the key is eta's bits, so a hit hands the scatter
+// exactly the weights the call would have returned.
+struct SpecFusedWeights {
+    std::vector<double> eta;        // the key, N * np
+    std::vector<double> grad;       // N * np
+    std::vector<double> neg_hess;   // N * np * np
+
+    bool matches(const std::vector<double>& eta_flat) const {
+        return !eta.empty() && eta.size() == eta_flat.size() &&
+               std::memcmp(eta.data(), eta_flat.data(),
+                           eta.size() * sizeof(double)) == 0;
+    }
+};
+
+// total_log_lik_spec through the fused callback, recording each observation's
+// weights in `fw`. Each value is ll_double's for the same arguments and the
+// reduction is the same, so the sum is total_log_lik_spec's bit for bit.
+inline double total_log_lik_spec_fused(
+    const std::vector<double>& params,
+    const std::vector<double>& eta_flat,
+    const ModelData& data,
+    const ParamLayout& layout,
+    const LikelihoodSpec& spec,
+    const void* response_data,
+    int N,
+    int n_threads,
+    SpecFusedWeights& fw
+) {
+    const int np = data.n_processes;
+    const std::size_t nn = (std::size_t)np * np;
+    fw.eta.clear();
+    fw.grad.assign((std::size_t)N * np, 0.0);
+    fw.neg_hess.assign((std::size_t)N * nn, 0.0);
+    const double ll = tulpa_parallel_sum(n_threads, N, [&](int i) {
+        return spec.ll_eta_weights_fn(
+            i, &eta_flat[(std::ptrdiff_t)i * np], 0.0, 0.0,
+            params, data, layout, response_data,
+            &fw.grad[(std::size_t)i * np], &fw.neg_hess[(std::size_t)i * nn]
+        );
+    });
+    fw.eta = eta_flat;
+    return ll;
+}
+
 inline double log_prior_latent(
     const std::vector<double>& params,
     const SpecLatentLayout& L,
@@ -1301,6 +1361,7 @@ LaplaceResult spec_inner_solve(
 
     std::vector<double> params_work = base_params;   // pinned hyperparams + warm start
     std::vector<double> eta_flat((size_t)n_eta, 0.0);
+    SpecFusedWeights fused_weights;
 
     auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta_out) {
         scatter_compacted_latent(L, x.begin(), params_work);
@@ -1316,9 +1377,12 @@ LaplaceResult spec_inner_solve(
         scatter_compacted_latent(L, x.begin(), params_work);
         for (int i = 0; i < n_eta; i++) eta_flat[i] = eta[i];
         // x is the compacted latent the block callbacks index -> pass &x as x_latent.
+        const bool cached = fused_weights.matches(eta_flat);
         scatter_spec(params_work, eta_flat, re_group_1based, L,
                      data, layout, spec, response_data, N, k_grid,
-                     &x, 1.0, grad, spec_sink(H), n_threads, beta_prior);
+                     &x, 1.0, grad, spec_sink(H), n_threads, beta_prior,
+                     cached ? fused_weights.grad.data() : nullptr,
+                     cached ? fused_weights.neg_hess.data() : nullptr);
     };
     auto center_effects_fn = [&](Rcpp::NumericVector& x) {
         for (int b = 0; b < L.n_blocks; b++) {
@@ -1348,6 +1412,11 @@ LaplaceResult spec_inner_solve(
     };
     auto log_lik_fn = [&](const Rcpp::NumericVector& eta) -> double {
         for (int i = 0; i < n_eta; i++) eta_flat[i] = eta[i];
+        if (spec.ll_eta_weights_fn) {
+            return total_log_lik_spec_fused(params_work, eta_flat, data, layout,
+                                            spec, response_data, N, n_threads,
+                                            fused_weights);
+        }
         return total_log_lik_spec(params_work, eta_flat, data, layout,
                                   spec, response_data, N, n_threads);
     };

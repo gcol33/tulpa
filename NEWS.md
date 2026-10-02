@@ -117,6 +117,27 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   takes 0.70 s instead of 0.92 s at 600 groups and 0.080 s instead of 0.130 s
   at 60 (gcol33/tulpa#934).
 
+* `LikelihoodSpec` gains an optional `ll_eta_weights_fn`: one call returning an
+  observation's log-likelihood and filling its eta-space score and negative
+  Hessian, with the values `ll_double` and `eta_weights_fn` would give. The
+  spec-driven Laplace solve evaluates it on every objective evaluation and
+  hands the weights at the next iterate to its scatter, which then calls
+  nothing; the built-in families fill it, sharing the binomial and Poisson
+  `exp`. Bit-identical. This changes the struct layout, so
+  `TULPA_ABI_VERSION` is 47 and packages building a `LikelihoodSpec`
+  (tulpaObs, tulpaRatio) rebuild against this version.
+
+* The binomial and Poisson likelihood kernels evaluate `exp` and `log` through
+  a port of the Arm Optimized Routines implementations (`src/fastmath.h`, the
+  routines glibc and musl ship; within 0.52 ulp of the true value). They agree
+  with the platform library to within one ulp (identical on 99.9% of inputs
+  against Windows' UCRT) and are the same code on every platform, so these
+  kernels no longer differ in the last bit between operating systems. Fits
+  move at rounding level: at most 2e-11 relative on any model quantity of the
+  reference fixtures. With the fused weights above, the 500-draw Pareto-k
+  batch takes 0.38 s instead of 0.70 s at 600 groups and 0.040 s instead of
+  0.080 s at 60 (gcol33/tulpa#934).
+
 On that Calluna fit (LiSC, 32 threads) the engine defaults take 25.3 min and
 20 full solves in the final grid besides the 79-evaluation mode-find; the
 engine behind the 78 EVA fits took 198.85 min on a 22-cell grid for an

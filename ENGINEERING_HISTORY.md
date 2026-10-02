@@ -1230,10 +1230,10 @@ because the draws spread 0.85 in log sigma, too far for the linear path, so it
 was not built.
 
 What remains is the solve count: 500 draws at about 4 steps against a fit of
-about 25 heavier solves. Serial, the diagnostic is 2.1x, 3.2x and 1.1x the
-fit at G = 60, 200 and 600 (after the Hessian and per-observation work below,
-which speeds up the fit too), because both scale with the inner solve; on four
-threads it is 0.6x, 0.9x and 0.3x. `k_threads` follows the
+about 25 heavier solves. Serial, the diagnostic is 1.0x, 1.9x and 0.6x the
+fit at G = 60, 200 and 600 (after the Hessian, per-observation and libm work
+below, which speeds up the fit too), because both scale with the inner solve;
+on four threads it is 0.4x, 0.6x and 0.1x. `k_threads` follows the
 fit's thread grant by default, as on the joint doors, so a serial fit keeps a
 serial diagnostic.
 
@@ -1325,6 +1325,30 @@ closure time: the weights' `exp` could be shared with the line search's
 evaluation at the same eta through a fused likelihood callback, which is an
 exported `LikelihoodSpec` slot and an ABI bump, and a faster `exp` / `log`
 would change every fit's values in the last bits.
+
+Both were taken. `LikelihoodSpec::ll_eta_weights_fn` (ABI 46 -> 47) returns
+`ll_double`'s value and fills `eta_weights_fn`'s weights from one evaluation;
+the built-in families compute them through `log_lik_grad_hess_for_family_core`
+on one `binomial_exp_neg_abs` / `poisson_mean_log`. The spec log-likelihood
+closure records each observation's weights with the eta they belong to
+(`SpecFusedWeights`), and the scatter, which runs at the eta of the loop's last
+objective evaluation, reads them on a bitwise key match: every scatter of the
+batch hits. Bit-identical; scatter 0.096 -> 0.039 ms per step at G = 600 and
+the batch 0.70 -> 0.54 s.
+
+`exp` and `log` in the binomial and Poisson kernels are now a port of Arm
+Optimized Routines (`src/fastmath.h`, tables in `src/fastmath_data.cpp`,
+resolved for 128-entry tables and no FMA; MIT, recorded in `inst/COPYRIGHTS`
+and Authors@R). Against UCRT over 4e5 points each, the largest gap is 0.995
+ulp for exp and 0.991 for log, with 99.9% of results identical;
+`test-fastmath.R` holds the two-ulp bound and the special values. The line
+search went 0.111 -> 0.043 ms per step, and the batch 0.54 -> 0.38 s at
+G = 600 and 0.070 -> 0.040 s at G = 60. On the reference fixtures every model
+quantity moves by at most 2e-11 relative; the largest relative figure,
+9e-7, is `score_max`, a 1e-14 residual moving by 9e-15. Only these two
+kernels use the port; the autodiff likelihoods and the other families keep
+the system library, so a binomial value and its arena gradient may now differ
+from each other in the last bit.
 
 ### The draw budget moves the outer k-hat, not just its interval (gcol33/tulpa#631)
 

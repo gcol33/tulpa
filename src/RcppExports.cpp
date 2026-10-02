@@ -3044,6 +3044,18 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_fastmath
+Rcpp::NumericVector cpp_test_fastmath(Rcpp::NumericVector x, std::string fn);
+RcppExport SEXP _tulpa_cpp_test_fastmath(SEXP xSEXP, SEXP fnSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type x(xSEXP);
+    Rcpp::traits::input_parameter< std::string >::type fn(fnSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_fastmath(x, fn));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_leapfrog
 List cpp_test_leapfrog(NumericVector q_init, NumericVector p_init, double epsilon, int L);
 RcppExport SEXP _tulpa_cpp_test_leapfrog(SEXP q_initSEXP, SEXP p_initSEXP, SEXP epsilonSEXP, SEXP LSEXP) {
@@ -5182,6 +5194,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_register_test_occupancy_mixture_coupling", (DL_FUNC) &_tulpa_cpp_register_test_occupancy_mixture_coupling, 0},
     {"_tulpa_cpp_register_test_weighted_gaussian_coupling", (DL_FUNC) &_tulpa_cpp_register_test_weighted_gaussian_coupling, 1},
     {"_tulpa_cpp_test_log_det_signal", (DL_FUNC) &_tulpa_cpp_test_log_det_signal, 3},
+    {"_tulpa_cpp_test_fastmath", (DL_FUNC) &_tulpa_cpp_test_fastmath, 2},
     {"_tulpa_cpp_test_leapfrog", (DL_FUNC) &_tulpa_cpp_test_leapfrog, 4},
     {"_tulpa_cpp_test_hamiltonian", (DL_FUNC) &_tulpa_cpp_test_hamiltonian, 2},
     {"_tulpa_cpp_test_log_sum_exp", (DL_FUNC) &_tulpa_cpp_test_log_sum_exp, 1},

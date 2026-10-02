@@ -264,6 +264,55 @@ inline void builtin_family_zi_eta_weights(
     }
 }
 
+// LlEtaWeightsFn for the built-in family: builtin_family_ll_double's value and
+// builtin_family_eta_weights' weights from one evaluation. A prepared plain
+// family reads log_lik_grad_hess_for_family_core, which shares the binomial /
+// Poisson exp; a bound-reading, grouped-beta or sampler-side ZI observation
+// composes the two callbacks, so every branch returns what they would.
+inline double builtin_family_ll_eta_weights(
+    int i, const double* eta, double logit_zi, double logit_oi,
+    const std::vector<double>& params, const ModelData& data,
+    const ParamLayout& layout, const void* model_data,
+    double* grad_eta, double* neg_hess_eta
+) {
+    const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
+    const bool plain =
+        r->prepared && data.zi_type == ZIType::NONE &&
+        !(r->trunc_upper && r->family == "truncated_gaussian") &&
+        !(r->lower && r->family == "interval_gaussian") &&
+        !(r->slog_y && r->family == "beta");
+    if (!plain) {
+        builtin_family_eta_weights(i, eta, logit_zi, logit_oi, params, data,
+                                   layout, model_data, grad_eta, neg_hess_eta);
+        return builtin_family_ll_double(i, eta, logit_zi, logit_oi, params,
+                                        data, layout, model_data);
+    }
+    const int nt = r->n_trials ? r->n_trials[i] : 1;
+    const double w = r->weights ? r->weights[i] : 1.0;
+    GradHess gh;
+    const double ll = log_lik_grad_hess_for_family_core(
+        r->y[i], nt, eta[0], r->fam.kind, &r->fam.fl,
+        r->fam.positive_eta_domain, r->phi, r->phi2,
+        r->ll_const[(size_t)i], gh);
+    grad_eta[0]     = w * gh.grad;
+    neg_hess_eta[0] = w * gh.neg_hess;
+    return w * ll;
+}
+
+// The zero-inflated mixture shares nothing between its value and weights
+// paths, so its fused form is the two callbacks.
+inline double builtin_family_zi_ll_eta_weights(
+    int i, const double* eta, double logit_zi, double logit_oi,
+    const std::vector<double>& params, const ModelData& data,
+    const ParamLayout& layout, const void* model_data,
+    double* grad_eta, double* neg_hess_eta
+) {
+    builtin_family_zi_eta_weights(i, eta, logit_zi, logit_oi, params, data,
+                                  layout, model_data, grad_eta, neg_hess_eta);
+    return builtin_family_zi_ll_double(i, eta, logit_zi, logit_oi, params,
+                                       data, layout, model_data);
+}
+
 // The two spec-name prefixes builtin_family_spec() writes. The constructor and
 // the predicates below are built from these, so the naming convention is
 // defined once and the two cannot drift apart.
@@ -297,6 +346,8 @@ inline LikelihoodSpec builtin_family_spec(const std::string& family,
                              : &builtin_family_ll_double;
     spec.eta_weights_fn = zi ? &builtin_family_zi_eta_weights
                              : &builtin_family_eta_weights;
+    spec.ll_eta_weights_fn = zi ? &builtin_family_zi_ll_eta_weights
+                                : &builtin_family_ll_eta_weights;
     spec.n_extra_params = 0;
     return spec;
 }

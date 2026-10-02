@@ -629,6 +629,10 @@ cpp_test_log_det_signal <- function(H_in, prefer_sparse = FALSE, add_ridge = FAL
     .Call(`_tulpa_cpp_test_log_det_signal`, H_in, prefer_sparse, add_ridge)
 }
 
+cpp_test_fastmath <- function(x, fn) {
+    .Call(`_tulpa_cpp_test_fastmath`, x, fn)
+}
+
 cpp_test_leapfrog <- function(q_init, p_init, epsilon, L) {
     .Call(`_tulpa_cpp_test_leapfrog`, q_init, p_init, epsilon, L)
 }

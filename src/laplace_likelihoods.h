@@ -4,7 +4,8 @@
 #ifndef TULPA_LAPLACE_LIKELIHOODS_H
 #define TULPA_LAPLACE_LIKELIHOODS_H
 
-#include "linalg_fast.h"   // tulpa_linalg::safe_exp
+#include "fastmath.h"      // fastmath::exp / log
+#include "linalg_fast.h"   // tulpa::math::clamp_exp_arg
 #include <cmath>
 
 namespace tulpa {
@@ -24,23 +25,34 @@ double neg_hess_log_lik_gaussian(double y, double eta, double phi);
 // a call into another translation unit cannot share the exp a score and its
 // weight both need (laplace_family_link.h's grad_hess_for_family_core reads
 // binomial_mean_logit once for both).
-inline double log_lik_binomial_kernel(int y, int n, double eta) {
+//
+// Every binomial quantity below reads e = exp(-|eta|), taken on the side that
+// keeps the argument non-positive; the `_e` forms take it precomputed, so a
+// caller wanting the density and its derivatives together pays one exp. The
+// binomial and Poisson kernels read fastmath::exp / log, which run the same
+// code on every platform.
+inline double binomial_exp_neg_abs(double eta) {
+  return (eta > 0) ? fastmath::exp(-eta) : fastmath::exp(eta);
+}
+inline double log_lik_binomial_kernel_e(int y, int n, double eta, double e) {
   if (eta > 0) {
-    return y * eta - n * eta - n * std::log(1.0 + std::exp(-eta));
+    return y * eta - n * eta - n * fastmath::log(1.0 + e);
   }
-  return y * eta - n * std::log(1.0 + std::exp(eta));
+  return y * eta - n * fastmath::log(1.0 + e);
+}
+inline double log_lik_binomial_kernel(int y, int n, double eta) {
+  return log_lik_binomial_kernel_e(y, n, eta, binomial_exp_neg_abs(eta));
 }
 double log_lik_binomial_const(int y, int n);
 double log_lik_binomial(int y, int n, double eta);
 
-// Inverse logit, evaluated on the side that keeps exp's argument non-positive.
+// Inverse logit from e = exp(-|eta|).
+inline double binomial_mean_logit_e(double eta, double e) {
+  if (eta > 0) return 1.0 / (1.0 + e);
+  return e / (1.0 + e);
+}
 inline double binomial_mean_logit(double eta) {
-  if (eta > 0) {
-    double exp_neg_eta = std::exp(-eta);
-    return 1.0 / (1.0 + exp_neg_eta);
-  }
-  double exp_eta = std::exp(eta);
-  return exp_eta / (1.0 + exp_eta);
+  return binomial_mean_logit_e(eta, binomial_exp_neg_abs(eta));
 }
 inline double grad_log_lik_binomial(int y, int n, double eta) {
   const double p = binomial_mean_logit(eta);
@@ -55,16 +67,20 @@ double log_lik_negbin(int y, double eta, double phi);
 double grad_log_lik_negbin(int y, double eta, double phi);
 double neg_hess_log_lik_negbin(int y, double eta, double phi);
 
+// The Poisson mean exp(eta), with eta clamped as tulpa_linalg::safe_exp clamps.
+inline double poisson_mean_log(double eta) {
+  return fastmath::exp(tulpa::math::clamp_exp_arg(eta));
+}
 inline double log_lik_poisson_kernel(int y, double eta) {
-  return y * eta - tulpa_linalg::safe_exp(eta);
+  return y * eta - poisson_mean_log(eta);
 }
 double log_lik_poisson_const(int y);
 double log_lik_poisson(int y, double eta);
 inline double grad_log_lik_poisson(int y, double eta) {
-  return y - tulpa_linalg::safe_exp(eta);
+  return y - poisson_mean_log(eta);
 }
 inline double neg_hess_log_lik_poisson(int /*y*/, double eta) {
-  return tulpa_linalg::safe_exp(eta);
+  return poisson_mean_log(eta);
 }
 
 } // namespace tulpa

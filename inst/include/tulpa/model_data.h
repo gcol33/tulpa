@@ -171,8 +171,13 @@ namespace tulpa {
 // `result_out`, and SMCShimResult gained the trailing `tempered_particles` /
 // `n_tempered` / `tempered_beta`, so a package calling `tulpa_smc_fit`
 // rebuilds.
+//
+// 46 -> 47: LikelihoodSpec gained the trailing `ll_eta_weights_fn`, the fused
+// per-observation log-likelihood + IRLS weights the spec-driven Laplace path
+// reads when a spec supplies it, so every package building a LikelihoodSpec
+// rebuilds.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 46;
+constexpr int TULPA_ABI_VERSION = 47;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

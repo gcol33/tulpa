@@ -746,7 +746,7 @@ inline GradHess grad_hess_for_family_core(
         return {(int)y - n_trials * p, n_trials * p * (1.0 - p)};
     }
     if (kind == FamilyKind::POISSON) {
-        const double mu = tulpa_linalg::safe_exp(eta);
+        const double mu = poisson_mean_log(eta);
         return {(int)y - mu, mu};
     }
     if (kind == FamilyKind::NEG_BINOMIAL_2) {
@@ -914,6 +914,31 @@ inline double log_lik_for_family_core(
     double mu = linkinv(eta, fl->link);
     mu = clamp_mu_for_family(mu, fl->family);
     return log_lik_mu(y, mu, phi, fl->family, n_trials);
+}
+
+// The log-density and its eta-space score / Fisher weight at one point, for a
+// resolved family: what log_lik_for_family_core and grad_hess_for_family_core
+// return, bit for bit. Binomial and Poisson read their exp once for all three;
+// every other kind composes the two calls.
+inline double log_lik_grad_hess_for_family_core(
+    double y, int n_trials, double eta, FamilyKind kind, const FamilyLink* fl,
+    bool pos_eta_domain, double phi, double phi2, double ll_const,
+    GradHess& gh
+) {
+    if (kind == FamilyKind::BINOMIAL) {
+        const double e = binomial_exp_neg_abs(eta);
+        const double p = binomial_mean_logit_e(eta, e);
+        gh = {(int)y - n_trials * p, n_trials * p * (1.0 - p)};
+        return log_lik_binomial_kernel_e((int)y, n_trials, eta, e) + ll_const;
+    }
+    if (kind == FamilyKind::POISSON) {
+        const double mu = poisson_mean_log(eta);
+        gh = {(int)y - mu, mu};
+        return ((int)y * eta - mu) + ll_const;
+    }
+    gh = grad_hess_for_family_core(y, n_trials, eta, kind, fl, phi, phi2);
+    return log_lik_for_family_core(y, n_trials, eta, kind, fl, pos_eta_domain,
+                                   phi, phi2, ll_const);
 }
 
 // The resolved entry: no string work, and the caller supplies the constant it

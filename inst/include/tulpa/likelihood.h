@@ -101,6 +101,32 @@ using EtaWeightsFn = void(*)(
 );
 
 // ============================================================================
+// LlEtaWeightsFn: the per-observation log-likelihood together with its
+// eta-space score and negative Hessian, in one call. Returns exactly what
+// ll_double returns and fills exactly what eta_weights_fn fills for the same
+// arguments; it exists so a likelihood whose value and derivatives share work
+// (an inverse link, an exp) pays for it once. The spec-driven Laplace path
+// evaluates it on each objective evaluation and hands the weights of the
+// evaluation at the next iterate to its scatter, which then makes no
+// eta_weights_fn call.
+//
+// Optional. If null, the Laplace path calls ll_double and eta_weights_fn
+// separately, with identical results.
+// ============================================================================
+using LlEtaWeightsFn = double(*)(
+    int i,
+    const double* eta,
+    double logit_zi,
+    double logit_oi,
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    const void* model_data,
+    double* grad_eta,                // [n_processes] out
+    double* neg_hess_eta             // [n_processes * n_processes] out
+);
+
+// ============================================================================
 // FullGradFn: fully hand-coded gradient + log-posterior for the entire
 // parameter vector. Optional override for the auto N→A→A_r→H progression
 // when a model package ships a tuned hand-coded gradient (e.g. ratio
@@ -199,6 +225,10 @@ struct LikelihoodSpec {
     arena::Var (*extra_prior_arena)(const std::vector<arena::Var>& params,
                                     const ParamLayout& layout,
                                     const void* model_data) = nullptr;
+
+    // Fused log-likelihood + IRLS weights (optional; see LlEtaWeightsFn).
+    // Covered by the 46 -> 47 bump.
+    LlEtaWeightsFn ll_eta_weights_fn = nullptr;
 };
 
 } // namespace tulpa
