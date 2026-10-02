@@ -558,8 +558,8 @@
 # the level was solved (`.hyper_tensor_level_cells()`). Where the refined axis
 # correlates with another, the solved level can carry its mass in rows that
 # were light at the old levels, so the level then grows into the neighbouring
-# rows of every row holding more than `row_tail` of its mass
-# (`.hyper_level_frontier()`), until no such row has an unrefined neighbour.
+# rows of every row it moved mass towards (`.hyper_level_frontier()`), until
+# no such row has an unrefined neighbour.
 # ============================================================================
 .hyper_apply_axis_refinement <- function(theta_grid, log_marginal, extras,
                                           refining_axis, pack, axis_name,
@@ -609,10 +609,15 @@
 }
 
 # The cells that extend `levels` of `axis` into the neighbours of the rows
-# holding them: every row (combination of the other axes) holding more than
-# `row_tail` of the levels' solved mass under the grid's measure passes them to
-# the rows one level away along each other axis that hold a solved cell and do
-# not hold the levels yet. NULL when no such row is left.
+# holding them. A row's share of the levels' solved mass, against its share of
+# the mass at the other levels of `axis`, says whether the levels moved the
+# posterior towards it. Every row holding more than `row_tail` of the levels'
+# mass whose share GREW passes them to the rows one level away along each other
+# axis that hold a solved cell and not the levels yet. On axes that do not
+# correlate the shares stay put and the rows `.hyper_tensor_level_cells()` left
+# out stay out; where the levels pull the mass towards the edge of the rows they
+# were laid in, the levels follow it until the edge rows hold none of it. NULL
+# when no such row is left.
 .hyper_level_frontier <- function(theta_grid, log_marginal, specs, refining,
                                   axis, levels,
                                   row_tail = .nl_diag("level_row_tail")) {
@@ -624,10 +629,23 @@
   if (!any(at)) return(NULL)
   key <- function(m) do.call(paste, c(lapply(seq_len(ncol(m)), function(k)
     sprintf("%.10g", m[, k])), sep = ":"))
+  share <- function(sel) {
+    k <- key(theta_grid[sel, others, drop = FALSE])
+    m <- tapply(exp(lw[sel] - max(lw[sel])), k, sum)
+    m / sum(m)
+  }
+  rest <- is.finite(lw) & !theta_grid[, axis] %in% levels
+  if (!any(rest)) return(NULL)
   held <- theta_grid[at, others, drop = FALSE]
   hk <- key(held)
-  mass <- tapply(exp(lw[at] - max(lw[at])), hk, sum)
-  hot <- names(mass)[mass / sum(mass) > row_tail]
+  s_new <- share(at)
+  # The old shares over the same rows, so a row's ratio compares like with
+  # like rather than growing by the mass of the rows the levels were not laid in.
+  s_old <- share(rest & key(theta_grid[, others, drop = FALSE]) %in% hk)
+  grew <- s_new / s_old[names(s_new)]
+  grew[is.na(grew)] <- Inf
+  hot <- names(s_new)[s_new > row_tail & grew > 1 + 1e-8]
+  if (!length(hot)) return(NULL)
   rows <- unique(theta_grid[is.finite(log_marginal), others, drop = FALSE])
   lev_of <- lapply(others, function(b) sort(unique(rows[, b])))
   src <- held[match(hot, hk), , drop = FALSE]

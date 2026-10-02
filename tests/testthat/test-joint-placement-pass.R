@@ -251,10 +251,8 @@ test_that("points laid from a mode off the peak are closed where they are read",
     out <- .hyper_consistency_pass(f$tg, f$lp(f$tg), NULL, rep("", nrow(f$tg)),
                                    f$specs, kernel_fn, axis_modes = f$modes)
     # The dispersion's ladder, then one round closing the side the density
-    # sits against; the copy scale's ladder. Each is followed by the one call
-    # that lays its levels into the ring of rows around the ones it was laid
-    # in and finds that ring holding none of the mass.
-    expect_identical(calls, 6L)
+    # sits against; the copy scale's ladder.
+    expect_identical(calls, 3L)
     expect_lt(abs(.cp_log_mean(out, f$specs, "phi_pos") - log(f$p0)),
               0.1 * f$sp)
     expect_lt(abs(.cp_log_sd(out, f$specs, "phi_pos") / f$sp - 1), 0.1)

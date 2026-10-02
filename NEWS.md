@@ -73,7 +73,8 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   `"box_uniform"` / `"chord"` stay selectable (gcol33/tulpa#932).
 * The outer-grid refinement passes add LEVELS: each new point is laid in every
   row of the other axes that holds the posterior (all but 1e-3 of its mass,
-  grown into the neighbouring rows wherever the solved level carries mass), and
+  grown into the neighbouring rows wherever the solved level moves its mass),
+  and
   an axis a placement already laid at its mode is left alone. A point laid in
   one row resolved its own axis and misread the others. Every door lays an axis
   at the SD the mode-find measured: the placement floor is 0 on the joint doors
@@ -83,7 +84,7 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   dense references falls from 0.156 to 0.038, and fixed-truth 95% coverage of
   the 16x16 field SD goes from 0.922 to 0.936 (1000 seeds; a converged grid on
   the same seeds reads 0.935) and of the 24x24 copy scale from 0.922 to 0.965
-  (600 seeds). Fits refine into more cells: 171 against 106 at 16x16, 1310
+  (600 seeds). Fits refine into more cells: 170 against 106 at 16x16, 1147
   against 580 on a four-axis cover-hurdle fixture. A refinement round on
   `tulpa_nested_laplace_joint()` solves its cells on the fit's outer width
   (`n_threads_outer`) instead of one after another, with the same cells and

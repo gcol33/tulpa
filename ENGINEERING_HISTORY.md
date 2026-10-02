@@ -1251,17 +1251,24 @@ over width as the node density has a false dip at a refined grid's modal cell.
   (`occu-cover-joint`, 107 -> 472 s) to 10x (`cover-hurdle-multi-block`,
   15 -> 178 s) slower. A level now goes into the heaviest rows holding all but
   `level_row_tail` = 1e-3 of the mass, and then grows from every row holding
-  more than that share of the SOLVED level into its neighbours along each other
-  axis (`.hyper_level_frontier()`). The growth is not optional: on a copy scale
-  correlated with a dispersion declared 36 SDs off its mode, the pre-solve
-  ranking reads the copy-scale rows at the declared dispersion node, where the
-  conditional mode sits away from the joint one, and the top cell left the
-  joint mode (0.287 against 0.274) until the level could grow. Cells of the
-  full tensor left out hold 2e-14 of its mass on all three Calluna-shaped
-  fixtures. Against the dense references the summed error is 0.03839 against
-  0.03840 in every row (1e-2 gives 0.04407), at 171 cells against 187 at
-  16x16; the cover-hurdle fixture takes 1310 cells, and the two test files 212
-  and 59 s. The fixed-truth coverage sweeps above ran on the every-row grid; the
+  more than that share of the SOLVED level, and a larger share of it than of
+  the axis's other levels (over the same rows), into its neighbours along each
+  other axis (`.hyper_level_frontier()`). The growth is not optional: on a copy
+  scale correlated with a dispersion declared 36 SDs off its mode, the
+  pre-solve ranking reads the copy-scale rows at the declared dispersion node,
+  where the conditional mode sits away from the joint one, and the top cell
+  left the joint mode (0.287 against 0.274) until the level could grow. Growing
+  from every row holding the level's mass instead (a ring around the rows it
+  was laid in) costs a third more cells and finds nothing on axes that do not
+  correlate; predicting a left-out row's mass as its old share times its
+  neighbour's ratio left 5.9e-2 of the correlated fixture's mass out, because
+  the old share falls faster than the shift grows. As shipped, the cells of the
+  full tensor left out hold 5.8e-4 of its mass on the two independent
+  Calluna-shaped fixtures (no growth) and 2.6e-14 on the correlated one.
+  Against the dense references the summed error is 0.03839 against 0.03840 in
+  every row (1e-2 without growth: 0.04407), at 170 cells against 187 at 16x16;
+  the cover-hurdle fixture takes 1147 cells, and the two test files 177 and
+  49 s. The fixed-truth coverage sweeps above ran on the every-row grid; the
   dense-reference error is the check that the row tail leaves them standing.
 - **Refinement rounds on the outer team.** A round's cells were solved one
   after another, each on the whole thread grant (gcol33/tulpa#924), which suited

@@ -1401,13 +1401,14 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # goes into the fewest rows of the other axes, heaviest first, that hold all but
 # this much, and a row left out keeps its cells without the level; once solved,
 # the level grows into the neighbours of every row holding more than this share
-# of it (`.hyper_level_frontier()`). Laid in every row, each pass's levels
+# of it whose share grew against the axis's other levels
+# (`.hyper_level_frontier()`). Laid in every row, each pass's levels
 # become rows of the next pass's axis and the cells grow with their product: a
 # four-axis cover-hurdle fixture went from 580 cells to 2352, and tulpaObs's
 # joint tests ran 3.8 to 10 times slower than with one-row slices. Against the
 # dense references of gcol33/tulpa#932 (16 seeds per size), the summed
 # interval error is 0.03840 in every row and 0.03839 at 1e-3 (1e-2 without the
-# growth: 0.04407); 1e-3 takes that fixture to 1310 cells.
+# growth: 0.04407); 1e-3 takes that fixture to 1147 cells.
 # `edge_mass_lift` is how far above a FLAT marginal an outer axis's boundary
 # node has to sit before the axis is NAMED as holding boundary mass
 # (`.nl_axis_edge_mass()`, `$outer_grid_edge_mass_axes`). Same currency as the

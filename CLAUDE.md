@@ -243,8 +243,9 @@ rest coarsely, so the other axes' levels carried row-dependent quadrature
 errors. "Holds the posterior" is two steps: `.hyper_tensor_level_cells()` takes
 the heaviest rows holding all but `level_row_tail` (1e-3) of the mass, and
 `.hyper_level_frontier()` grows the solved level into the neighbours of any row
-holding more than that share of it, since a correlated axis moves its mass to
-rows that were light at the old levels. Laid in every row instead, each pass's
+holding more than that share of it whose share GREW against the other levels
+of the axis, since a correlated axis moves its mass to rows that were light at
+the old levels; on axes that do not correlate nothing grows. Laid in every row instead, each pass's
 levels became rows of the next pass's axis and a four-axis grid grew 580 ->
 2352 cells. The `refining` tag now names the axis
 whose pass ADDED a cell (`""` = declared); the declared levels fix the outer
