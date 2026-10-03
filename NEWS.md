@@ -2,6 +2,34 @@
 
 This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
 
+* `tulpa_nested_laplace_joint()` gains `control$hessian = "auto"`, the new
+  default: each inner Newton step takes the observed Hessian where it
+  factors as it stands and the cell-coupled arms' complete-data expected
+  information where it does not, so an indefinite Hessian is no longer
+  conditioned by the escalating ridge (a factorization per rung, then a short
+  gradient step). `"lm"`, `"fisher"` and `"psd"` keep their meaning, and a fit
+  with no coupled arm runs `"auto"` as `"lm"`. On the full 25 km Calluna
+  `occu_cover` fit the expected-information step took a median of 48 inner
+  iterations per cell and left cells at `max_iter`; the observed one under
+  the ridge took 5, but its placement mode-find ran 20 evaluations at 79 s
+  each to the iteration cap from the pilot's warm starts. Under `"auto"`, with
+  the two screen fixes below, the fit takes 21 min against 67.6 (32 threads,
+  peak 18 GB against 14), no cell stops at `max_iter`, and the
+  hyperparameter summaries agree with the unscreened dense grid within 0.06
+  posterior SD.
+* The cheap screen no longer credits a truncated cell with more than its next
+  Newton step delivers. It estimated a cell's converged log marginal as its
+  value plus half the Newton decrement, a second-order prediction with no
+  bound away from the mode: on the same fit two cells were credited 8491 and
+  1007 nats where their converged solves gained 86 and 116, took the
+  screen's argmax, and pushed the outer mode's cell out of the grid. The
+  credit is now the smaller of that prediction and the gain the step actually
+  delivers, and never negative.
+* A refinement level grows into a row of the outer grid whose every cell the
+  cheap screen dropped (gcol33/tulpa#932). The screen ranks a row at the
+  axis's other levels, which on the same fit sat 680 nats below the phi
+  levels holding the posterior; the row through the outer mode was dropped,
+  no level was laid in it, and the grid carried no node at the mode.
 * A beta arm's inner Newton weight is the observed curvature
   `-l''(eta)`, where it was the expected (Fisher) information, so the Laplace
   log-determinant is the textbook one at the mode. **Beta-arm fits change**:
