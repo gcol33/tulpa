@@ -316,6 +316,11 @@ inline void joint_newton_finalize_sparse(
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior,
                                                   result.log_det_Q, n_x);
+    if (std::isfinite(result.newton_decrement)) {
+        result.newton_step_gain = newton_step_gain(
+            x, scratch.delta.data(), n_x, log_lik + log_prior, eval_objective,
+            scratch.x_try);
+    }
 
     // The three inner-layer probes read the live CHOLMOD factor directly, so
     // each condition below is a way for that factor to hold a different matrix

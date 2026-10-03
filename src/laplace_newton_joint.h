@@ -541,6 +541,7 @@ inline void joint_newton_finalize_dense(
     // factorizes on the first attempt is unchanged.
     result.hessian_pd_at_mode = hessian_pd_at_mode;
     result.pd_conditioned = !hessian_pd_at_mode;
+    std::vector<double> final_step;
     if (!hessian_pd_at_mode) {
         TULPA_PROFILE_PHASE(PHASE_LOG_DET);
         if (joint_pd_step_solve_dense_ridged(H, grad, scratch.delta,
@@ -549,12 +550,15 @@ inline void joint_newton_finalize_dense(
                                              &result.log_det_Q)) {
             double dec = 0.0;
             for (int j = 0; j < n_x; j++) dec += grad[j] * scratch.delta[j];
-            if (std::isfinite(dec)) result.newton_decrement = dec;
+            if (std::isfinite(dec)) {
+                result.newton_decrement = dec;
+                final_step.assign(scratch.delta.begin(), scratch.delta.begin() + n_x);
+            }
         }
     } else {
         result.newton_decrement = newton_decrement_live(
             grad.data(), n_x, use_sparse && sparse_solver.factored(),
-            sparse_solver, scratch.chol);
+            sparse_solver, scratch.chol, &final_step);
     }
 
     double log_lik, log_prior;
@@ -563,6 +567,11 @@ inline void joint_newton_finalize_dense(
       log_prior = compute_log_prior_joint(x, scratch.etas); }
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
+    if (std::isfinite(result.newton_decrement)) {
+        result.newton_step_gain = newton_step_gain(
+            x, final_step.data(), n_x, log_lik + log_prior, eval_objective,
+            scratch.x_try);
+    }
 
     // The Newton-converged iterate, before the cosmetic post-hoc centering
     // below. Every probe of the inner layer -- gamma_3, the importance curve,

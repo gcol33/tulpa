@@ -436,14 +436,22 @@ static const int CHEAP_SCREEN_MIN_KEEP = 5;
 static const double CHEAP_SCREEN_GATE_MASS = 0.01;
 
 // A screened cell's estimate of its converged log-marginal: the truncated
-// solve's value plus half the Newton decrement where it stopped, the gain of
-// the steps it did not take to second order. A solve that left no decrement
-// reads as it stands.
+// solve's value plus the gain of the steps it did not take, half the Newton
+// decrement where it stopped to second order, but never more than the next
+// step actually delivers (`newton_step_gain`) and never less than nothing. The
+// quadratic prediction is unbounded far from the mode, and an overestimated
+// cell is what corrupts the screen: it moves the argmax and, through the worst
+// kept-cell error, lifts every dropped cell's bound, while an underestimate is
+// what that bound already covers. A solve that left no decrement reads as it
+// stands.
 inline double screen_log_marginal(const LaplaceResult& r) {
     if (!std::isfinite(r.log_marginal)) return r.log_marginal;
     const double d = r.newton_decrement;
-    return (std::isfinite(d) && d > 0.0) ? r.log_marginal + 0.5 * d
-                                         : r.log_marginal;
+    if (!(std::isfinite(d) && d > 0.0)) return r.log_marginal;
+    const double g = r.newton_step_gain;
+    const double add = std::isfinite(g) ? std::min(0.5 * d, std::max(g, 0.0))
+                                        : 0.0;
+    return r.log_marginal + add;
 }
 
 // Pack per-cell inner-solve results into the outer-grid result list every

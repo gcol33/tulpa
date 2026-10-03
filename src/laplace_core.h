@@ -61,6 +61,12 @@ struct LaplaceResult {
   // (gcol33/tulpa#919). NaN where the final pass had no PD factor to solve with.
   double newton_decrement = std::numeric_limits<double>::quiet_NaN();
 
+  // The log-joint gain that step actually delivers (newton_step_gain). The
+  // screen credits a truncated solve with the smaller of this and half the
+  // decrement, since the quadratic prediction is unbounded away from the mode.
+  // NaN where no step was formed or its trial point is not finite.
+  double newton_step_gain = std::numeric_limits<double>::quiet_NaN();
+
   // Whether the Hessian at the returned point is the positive-definite matrix
   // the Laplace expansion needs. False where the final factorization had to
   // condition it -- a diagonal load or an eigenvalue clamp -- or could not

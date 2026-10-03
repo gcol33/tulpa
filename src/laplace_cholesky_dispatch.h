@@ -138,12 +138,16 @@ inline bool dispatch_factor_log_det_ridged(
 // g' H^-1 g off the factor a dispatch above left live: the CHOLMOD factor when
 // `sparse_live`, the dense lower factor in `dense_scratch` otherwise. It is the
 // Newton decrement at the point H and g were scattered at
-// (`LaplaceResult::newton_decrement`). NaN where the solve fails.
+// (`LaplaceResult::newton_decrement`). NaN where the solve fails. `step_out`,
+// when given, receives the step H^-1 g the decrement is read off.
 inline double newton_decrement_live(const double* grad, int n_x,
                                     bool sparse_live,
                                     SparseCholeskySolver& sparse_solver,
-                                    DenseCholeskyScratch& dense_scratch) {
-    std::vector<double> step(n_x, 0.0);
+                                    DenseCholeskyScratch& dense_scratch,
+                                    std::vector<double>* step_out = nullptr) {
+    std::vector<double> local;
+    std::vector<double>& step = step_out ? *step_out : local;
+    step.assign(n_x, 0.0);
     bool ok;
     if (sparse_live) {
         ok = sparse_solver.solve(grad, step.data(), n_x);

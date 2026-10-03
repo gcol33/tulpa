@@ -247,6 +247,23 @@ inline double newton_decrement(const std::vector<double>& grad,
     return d;
 }
 
+// The gain the Newton step `step` actually delivers from x: the objective at
+// x + step less `obj_at_x`, the objective at x itself, with `x_try` as
+// scratch. Half the decrement is that gain to second order, which holds near
+// the mode and has no bound away from it: two inner steps from a far warm
+// start on the full 25 km occu_cover fit left a decrement predicting 8491 nats
+// where the converged solve gained 86. NaN where the trial point's objective
+// is not finite.
+template <typename EvalObj>
+inline double newton_step_gain(const Rcpp::NumericVector& x, const double* step,
+                               int n_x, double obj_at_x, EvalObj eval_objective,
+                               Rcpp::NumericVector& x_try) {
+    for (int j = 0; j < n_x; j++) x_try[j] = x[j] + step[j];
+    const double obj = eval_objective(x_try);
+    const double gain = obj - obj_at_x;
+    return std::isfinite(gain) ? gain : std::numeric_limits<double>::quiet_NaN();
+}
+
 // Near-mode gate and patience for the stalled-step convergence path below.
 // The gate (predicted objective gain < 1e-6) marks "essentially at a mode"; the
 // patience is how many consecutive iterations without a new shortest step count

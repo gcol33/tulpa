@@ -379,10 +379,11 @@ LaplaceResult laplace_newton_solve_ll(
         const bool used_sparse_factor = store.sparse_live();
         result.sparse_factor_live = used_sparse_factor;
 
+        std::vector<double> final_step;
         if (result.hessian_pd_at_mode) {
             result.newton_decrement = newton_decrement_live(
                 scratch.grad.data(), n_x, used_sparse_factor, sparse_solver,
-                scratch.chol);
+                scratch.chol, &final_step);
         }
 
         if (inv_block_layout && !inv_block_layout->empty() &&
@@ -409,6 +410,11 @@ LaplaceResult laplace_newton_solve_ll(
           log_prior = compute_log_prior(x, scratch.eta); }
 
         result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
+        if (std::isfinite(result.newton_decrement)) {
+            result.newton_step_gain = newton_step_gain(
+                x, final_step.data(), n_x, log_lik + log_prior, eval_objective,
+                scratch.x_try);
+        }
 
         if (store_Q) {
             TULPA_PROFILE_PHASE(PHASE_HESSIAN_EXTRACT);
