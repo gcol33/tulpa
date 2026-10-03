@@ -100,6 +100,15 @@ struct LaplaceResult {
   // count is reportable instead of the substitution being silent.
   bool s2z_log_det_fallback = false;
 
+  // The block-Schur factor of the pinned matrix failed at the final pass and
+  // the log-determinant was read from a direct factor of B, whose sum-to-zero
+  // blocks are densified to their full lower triangle. The value is exact
+  // either way; the direct factor costs O(n_k^2) memory per block for the
+  // duration of the call, which on a field of a few thousand nodes is several
+  // hundred MB per thread. True where that happened, so the count is
+  // reportable.
+  bool s2z_direct_factor = false;
+
   // The solve never started: the penalized objective was non-finite at the
   // supplied latent start and the feasibility sweep (make_start_feasible) found
   // no interior point. This is distinct from converged = false, which means the

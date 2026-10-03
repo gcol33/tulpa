@@ -468,24 +468,6 @@ inline bool apply_s2z_rank1_correction(
     return true;
 }
 
-// Pattern-invariant cache for s2z_log_det_direct, reused across outer-grid cells
-// and (in the batched driver) across species sharing one design. Within a fit
-// the matrix B = A + sum_k coef_k 1_k 1_k' has a fixed sparsity pattern: A's
-// structural pattern (the same for every grid cell and every species) plus each
-// s2z block's full lower triangle. Only the numeric values change per call. The
-// cache holds the parts that depend on the pattern alone:
-//   * `B_builder` — B's CSC pattern + entry_map, built once;
-//   * `a_slots` — for each A nonzero p, the flat values[] slot in B_builder, so
-//     A's values scatter via `B.values[slot] += val` instead of a map lookup;
-//   * `block_slots` — for each dense lower-triangle entry of every coef_k 1_k
-//     1_k' block, the flat values[] slot, in block-then-(i,j) order;
-//   * `B_solver` — a persistent CHOLMOD solver whose analyze() runs once and
-//     whose factorize() re-runs per call (symbolic reuse via the analyzed()
-//     guard, mirroring the Newton solver).
-// Validity is keyed on n_x, A's nnz, and the s2z block node lists per k,
-// NOT on the builder identity, so a per-species builder with the same pattern
-// reuses one cache. A different problem (changed n_x / nnz / block layout)
-// triggers a rebuild.
 // Absolute node indices of a rank-1 block (contiguous [start, start+n) or the
 // component's arbitrary node set). Caches key on these so a changed partition
 // (or a different fit reusing the scratch) rebuilds rather than scatters into
@@ -511,31 +493,26 @@ inline bool s2z_layout_matches(
     return true;
 }
 
-struct S2ZLogDetCache {
-    bool built = false;
-    int  n_x   = -1;
-    int  a_nnz = -1;
-    std::vector<std::vector<int>> block_layout;   // absolute nodes per rank-1 k
-
-    SparseHessianBuilder B_builder;     // pattern + entry_map (once)
+// The pattern-dependent parts of s2z_log_det_direct. The matrix
+// B = A + sum_k coef_k 1_k 1_k' has A's structural pattern plus each s2z block's
+// full lower triangle:
+//   * `B_builder` — B's CSC pattern + entry_map;
+//   * `a_slots` — for each A nonzero p, the flat values[] slot in B_builder, so
+//     A's values scatter via `B.values[slot] += val` instead of a map lookup;
+//   * `block_slots` — for each dense lower-triangle entry of every coef_k 1_k
+//     1_k' block, the flat values[] slot, in block-then-(i,j) order;
+//   * `B_solver` — the CHOLMOD solver holding B's symbolic and numeric factor.
+// It is built per call and freed on return, not held across cells: each block
+// contributes n_k (n_k + 1) / 2 entries to the pattern, the entry_map and the
+// factor, several hundred MB per thread on a field of a few thousand nodes, and
+// the function is the fallback for a cell whose block-Schur factor failed, so
+// the build is paid only where that happened.
+struct S2ZDirectFactor {
+    SparseHessianBuilder B_builder;     // pattern + entry_map
     std::vector<int>     a_slots;       // flat slot per A nonzero
     std::vector<int>     block_slots;   // flat slot per dense block LT entry
     std::vector<int>     cross_slots;   // flat slot per (a>b) cross-block entry
-    SparseCholeskySolver B_solver;      // symbolic once, numeric per call
-
-    // A dense coupling adds the cross-block rectangles to B's pattern, so a
-    // cache built for one and reused for the other would scatter into the wrong
-    // slots. Keyed on presence, not on D's values, which are numeric per call.
-    bool coupled = false;
-
-    bool matches(const SparseHessianBuilder& A_builder,
-                 const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
-                 bool want_coupled) const {
-        if (!built || n_x != A_builder.n || a_nnz != A_builder.nnz) return false;
-        if (coupled != want_coupled) return false;
-        if (!s2z_layout_matches(block_layout, r1)) return false;
-        return true;
-    }
+    SparseCholeskySolver B_solver;      // B's symbolic + numeric factor
 };
 
 // Cross-block fill is quadratic in the total pinned length, so a dense coupling
@@ -544,14 +521,14 @@ struct S2ZLogDetCache {
 // the small-n reference and the non-PD fallback.
 constexpr long long S2Z_COUPLED_DIRECT_MAX_ENTRIES = 4000000LL;
 
-// (Re)build the pattern-invariant cache for B = A + sum_k coef_k 1_k 1_k': B's
-// CSC pattern + entry_map, the flat values[] slots for A's nonzeros and for each
-// dense block lower-triangle entry, and the persistent solver's symbolic factor.
-inline void build_s2z_log_det_cache(
+// Build the pattern-dependent parts for B = A + sum_k coef_k 1_k 1_k': B's CSC
+// pattern + entry_map, the flat values[] slots for A's nonzeros and for each
+// dense block lower-triangle entry, and the solver's symbolic factor.
+inline void build_s2z_direct_factor(
     const SparseHessianBuilder& A_builder,
     const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
     bool coupled,
-    S2ZLogDetCache& cache
+    S2ZDirectFactor& cache
 ) {
     const int n_x = A_builder.n;
     const int K   = static_cast<int>(r1.size());
@@ -606,21 +583,10 @@ inline void build_s2z_log_det_cache(
                         cache.cross_slots.push_back(
                             cache.B_builder.lookup(r1[a].node(i), r1[b].node(j)));
 
-    // Symbolic factor once; the numeric factorize re-runs per call against the
-    // same B pattern. The cholmod_sparse view aliases B_builder's arrays, so it
-    // stays valid as long as the cache (hence B_builder) lives.
-    cache.B_solver.reset();
+    // The cholmod_sparse view aliases B_builder's arrays, so it stays valid as
+    // long as `cache` (hence B_builder) lives.
     cholmod_sparse B_view = cache.B_builder.as_cholmod(&cache.B_solver.common());
     cache.B_solver.analyze(&B_view);
-
-    cache.n_x   = n_x;
-    cache.a_nnz = A_builder.nnz;
-    cache.block_layout.clear();
-    cache.block_layout.reserve(K);
-    for (int k = 0; k < K; ++k)
-        cache.block_layout.emplace_back(s2z_block_nodes(r1[k]));
-    cache.coupled = coupled;
-    cache.built = true;
 }
 
 // Cancellation-free log-determinant for the sum-to-zero rank-1 penalties.
@@ -642,11 +608,9 @@ inline void build_s2z_log_det_cache(
 // catastrophic subtraction occurs.
 //
 // B's pattern = A's pattern with each block k densified to its full lower
-// triangle (where coef_k 1_k 1_k' has support). The pattern is invariant across
-// grid cells and species within a fit; with a `cache` the CSC pattern, the flat
-// scatter slots, and the symbolic factor are built once and reused, leaving each
-// call to zero the values, scatter through the flat slots, numerically refactor,
-// and read log|B|. Without a cache the same work is done statelessly. Returns
+// triangle (where coef_k 1_k 1_k' has support). Each call builds the CSC
+// pattern, the flat scatter slots and the symbolic factor, scatters the values,
+// factors, reads log|B| and frees all of it (see S2ZDirectFactor). Returns
 // log|B| on success and `fallback` on any failure (allocation, non-PD), so
 // `fallback` has to be a value the caller can TEST for -- both drivers pass a
 // quiet NaN and keep their own PD-enforced log-determinant when it comes back.
@@ -698,8 +662,8 @@ struct SmallChol {
 };
 
 // Pattern-invariant cache for s2z_block_schur, reused across outer-grid cells and
-// (in the batched driver) across species sharing one design + s2z layout. Mirrors
-// S2ZLogDetCache: the field/scalar partition, the A_FF sparsity pattern and its
+// (in the batched driver) across species sharing one design + s2z layout. It
+// holds no densified block, so it stays sparse: the field/scalar partition, the A_FF sparsity pattern and its
 // symbolic CHOLMOD factor, and the per-A-nonzero scatter destinations are fixed
 // across a fit; only values change, so each call re-scatters + numerically
 // re-factorizes. Validity keyed on n_x, A's nnz, and the s2z block layout.
@@ -962,8 +926,7 @@ inline double s2z_log_det_block_schur(
 inline double s2z_log_det_direct(
     const SparseHessianBuilder& A_builder,
     const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
-    double fallback,
-    S2ZLogDetCache* cache = nullptr
+    double fallback
 ) {
     const int K = static_cast<int>(r1.size());
     if (K == 0) return fallback;
@@ -980,16 +943,14 @@ inline double s2z_log_det_direct(
         if (entries > S2Z_COUPLED_DIRECT_MAX_ENTRIES) return fallback;
     }
 
-    S2ZLogDetCache local_cache;
-    S2ZLogDetCache& cc = cache ? *cache : local_cache;
-    if (!cc.matches(A_builder, r1, coupled))
-        build_s2z_log_det_cache(A_builder, r1, coupled, cc);
+    S2ZDirectFactor cc;
+    build_s2z_direct_factor(A_builder, r1, coupled, cc);
 
     SparseHessianBuilder& B_builder = cc.B_builder;
 
     // Zero, then scatter A's stored values and the dense rank-1 blocks through
-    // the cached flat slots (same traversal order the cache resolved). zero()
-    // also clears any s2z rank-1 registered on B_builder, which this path never
+    // the flat slots (same traversal order the build resolved). zero() also
+    // clears any s2z rank-1 registered on B_builder, which this path never
     // sets, so B carries A + sum_k coef_k 1_k 1_k' exactly.
     B_builder.zero();
     double* __restrict__ Bv = B_builder.values.data();
@@ -1027,7 +988,6 @@ inline double s2z_log_det_direct(
     }
 
     cholmod_sparse B_cholmod = B_builder.as_cholmod(&cc.B_solver.common());
-    if (!cc.B_solver.analyzed()) cc.B_solver.analyze(&B_cholmod);
     if (!cc.B_solver.factorize(&B_cholmod)) return fallback;
     const double ld = cc.B_solver.log_determinant();
     return std::isfinite(ld) ? ld : fallback;

@@ -17,6 +17,16 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   peak 18 GB against 14), no cell stops at `max_iter`, and the
   hyperparameter summaries agree with the unscreened dense grid within 0.06
   posterior SD.
+* The joint sparse driver no longer keeps the sum-to-zero direct-factor
+  log-determinant's matrix in each thread's scratch. That reader is the
+  fallback for a cell whose block-Schur factor fails at the final pass; it
+  densifies every sum-to-zero block to its full lower triangle, several
+  hundred MB per thread on a field of a few thousand nodes, and the scratch
+  held it until the grid call ended. It is now built and freed per call. On
+  the 25 km Calluna fit under `"auto"` the peak falls from 18.3 to 14.1 GB
+  with the same grid, the same log marginal to 12 digits and no change in
+  wall time. The grid carries a per-cell `s2z_direct_factor` flag and
+  `diagnostic_summary()` reports `s2z_direct_factor_cells`.
 * The cheap screen no longer credits a truncated cell with more than its next
   Newton step delivers. It estimated a cell's converged log marginal as its
   value plus half the Newton decrement, a second-order prediction with no

@@ -1570,7 +1570,7 @@ List cpp_test_s2z_block_schur(
   const double ld_block_schur =
       tulpa::s2z_log_det_block_schur(H, H.s2z_rank1, NA_REAL);
   const double ld_direct =
-      tulpa::s2z_log_det_direct(H, H.s2z_rank1, NA_REAL, nullptr);
+      tulpa::s2z_log_det_direct(H, H.s2z_rank1, NA_REAL);
 
   std::vector<double> g(grad.begin(), grad.end());
   std::vector<double> delta_bs(n, 0.0);

@@ -59,11 +59,6 @@ struct NewtonScratchJointSparse {
     DenseVec  grad;              // size n_x, zeroed per iter
     std::vector<double> delta;   // size n_x, written by sparse solve
 
-    // Pattern-invariant cache for the final-pass s2z log-determinant, reused
-    // across all outer-grid cells this scratch solves. Built lazily on first
-    // use (no s2z field -> never touched). See S2ZLogDetCache.
-    S2ZLogDetCache s2z_log_det_cache;
-
     // Pattern-invariant cache for the block-Schur inner step + log-determinant on
     // the s2z large-field path (A_FF pattern + symbolic factor + scatter slots).
     S2ZBlockSchurCache s2z_block_schur_cache;
@@ -250,10 +245,11 @@ inline void joint_newton_finalize_sparse(
                                       grad.data(), scratch.delta.data(), &ld,
                                       &scratch.s2z_block_schur_cache);
         s2z_log_det = ld;
-        if (!std::isfinite(s2z_log_det))
+        if (!std::isfinite(s2z_log_det)) {
+            result.s2z_direct_factor = true;
             s2z_log_det = s2z_log_det_direct(H_builder, H_builder.s2z_rank1,
-                                             /*fallback=*/S2Z_NA,
-                                             &scratch.s2z_log_det_cache);
+                                             /*fallback=*/S2Z_NA);
+        }
         // Neither reader could form a factor of the pinned matrix, so the
         // PD-enforced value below stands in for it.
         result.s2z_log_det_fallback = !std::isfinite(s2z_log_det);

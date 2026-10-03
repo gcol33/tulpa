@@ -50,6 +50,7 @@ inline std::string ckpt_serialize(const LaplaceResult& r) {
     ckpt_put<std::uint8_t>(buf, r.pd_conditioned ? 1u : 0u);
     ckpt_put<std::uint8_t>(buf, r.start_infeasible ? 1u : 0u);
     ckpt_put<std::uint8_t>(buf, r.s2z_log_det_fallback ? 1u : 0u);
+    ckpt_put<std::uint8_t>(buf, r.s2z_direct_factor ? 1u : 0u);
     ckpt_put_span(buf, r.mode);
     ckpt_put<std::int32_t>(buf, r.Q_csc_n);
     ckpt_put_span(buf, r.Q_csc_p);
@@ -102,6 +103,7 @@ inline bool ckpt_deserialize(CkptReader& rd, LaplaceResult& r) {
     r.pd_conditioned     = (rd.get<std::uint8_t>() != 0);
     r.start_infeasible   = (rd.get<std::uint8_t>() != 0);
     r.s2z_log_det_fallback = (rd.get<std::uint8_t>() != 0);
+    r.s2z_direct_factor  = (rd.get<std::uint8_t>() != 0);
     r.mode               = rd.get_span<double>();
     r.Q_csc_n            = rd.get<std::int32_t>();
     r.Q_csc_p            = rd.get_span<int>();

@@ -120,20 +120,25 @@ test_that("a healthy joint grid reports no sum-to-zero log-determinant fallback"
     expect_false(is.null(fb))
     expect_length(fb, length(fit$log_marginal))
     expect_false(any(as.logical(fb)))
-    expect_null(tulpa:::.tulpa_s2z_fallback_cells(fit))
+    expect_null(tulpa:::.tulpa_s2z_flag_cells(fit, "s2z_log_det_fallback"))
+    dir <- fit$s2z_direct_factor
+    expect_false(is.null(dir))
+    expect_length(dir, length(fit$log_marginal))
 })
 
-test_that("the fallback count is what diagnostic_summary reports", {
+test_that("the per-cell sum-to-zero counts are what diagnostic_summary reports", {
     # The count reads off the per-cell vector, so it is testable without
     # forcing a non-PD pinned matrix: a fit carrying two flagged cells must
     # report two, and one carrying none must report nothing.
-    expect_null(tulpa:::.tulpa_s2z_fallback_cells(
-        list(s2z_log_det_fallback = c(FALSE, FALSE, FALSE))))
-    got <- tulpa:::.tulpa_s2z_fallback_cells(
-        list(s2z_log_det_fallback = c(TRUE, FALSE, TRUE, FALSE)))
-    expect_identical(got$n, 2L)
-    expect_identical(got$n_grid, 4L)
-    # A fit that predates the flag carries no vector and declines rather than
-    # reporting zero fallbacks as a fact.
-    expect_null(tulpa:::.tulpa_s2z_fallback_cells(list()))
+    for (flag in c("s2z_log_det_fallback", "s2z_direct_factor")) {
+        none <- stats::setNames(list(c(FALSE, FALSE, FALSE)), flag)
+        two  <- stats::setNames(list(c(TRUE, FALSE, TRUE, FALSE)), flag)
+        expect_null(tulpa:::.tulpa_s2z_flag_cells(none, flag))
+        got <- tulpa:::.tulpa_s2z_flag_cells(two, flag)
+        expect_identical(got$n, 2L)
+        expect_identical(got$n_grid, 4L)
+        # A fit that predates the flag carries no vector and declines rather
+        # than reporting zero cells as a fact.
+        expect_null(tulpa:::.tulpa_s2z_flag_cells(list(), flag))
+    }
 })
