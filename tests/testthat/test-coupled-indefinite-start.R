@@ -104,6 +104,37 @@ test_that("the dense and sparse joint loops agree from an indefinite start", {
 })
 
 
+test_that("every step curvature reaches the one mode from an indefinite start", {
+    skip_on_cran()
+    coupled_occ_register()
+
+    # The step curvature steers only the path to the mode: the stationary point
+    # and the final observed-Hessian pass are the same under each, so the mode
+    # and the log marginal agree across "auto", "lm", "fisher" and "psd", on
+    # both joint loops. "auto" takes the expected step where the observed
+    # Hessian does not factor and the Newton step where it does, so it needs
+    # no more iterations than Fisher scoring, which converges linearly.
+    d <- data_344(TRUE)
+    ref <- coupled_occ_ref_mode(coupled_occ_log_post(d, PREC_344))
+    for (sparse in c(FALSE, TRUE)) {
+        fits <- lapply(c(auto = "auto", lm = "lm", fisher = "fisher", psd = "psd"),
+                       function(h) fit_344(d, hessian = h, force_sparse = sparse))
+        for (h in names(fits)) {
+            f <- fits[[h]]
+            info <- paste(h, if (sparse) "sparse" else "dense")
+            expect_true(as.logical(f$converged)[1L], info = info)
+            expect_equal(as.numeric(f$modes[1L, 1:2]), ref, tolerance = 1e-5,
+                         info = info)
+            expect_equal(as.numeric(f$log_marginal)[1L],
+                         as.numeric(fits$lm$log_marginal)[1L],
+                         tolerance = 1e-8, info = info)
+        }
+        expect_lte(as.integer(fits$auto$n_iter)[1L],
+                   as.integer(fits$fisher$n_iter)[1L])
+    }
+})
+
+
 test_that("the positive-definite start takes the plain Newton step it always did", {
     skip_on_cran()
     coupled_occ_register()

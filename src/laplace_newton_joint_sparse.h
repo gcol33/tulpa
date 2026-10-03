@@ -110,7 +110,8 @@ inline bool joint_pd_step_solve(
     int n_x, JointPDMode pd_mode,
     const double* grad, double* delta,
     double* out_log_det = nullptr,
-    bool* out_modified = nullptr
+    bool* out_modified = nullptr,
+    int max_tries = JOINT_LM_MAX_TRIES
 ) {
     if (pd_mode == JointPDMode::PSD && n_x <= JOINT_PSD_MAX_DIM) {
         Eigen::MatrixXd Hd = Eigen::MatrixXd::Zero(n_x, n_x);
@@ -138,7 +139,7 @@ inline bool joint_pd_step_solve(
             return true;
         },
         [&](double bump) { H.add_uniform_ridge(bump); },
-        out_log_det, out_modified);
+        out_log_det, out_modified, max_tries);
 }
 
 // Inner Newton step for the sum-to-zero large-field path. Prefers the exact
@@ -153,20 +154,29 @@ inline bool joint_pd_step_solve(
 // re-apply the Woodbury correction (block-Schur already includes the rank-1
 // terms) and knows the CHOLMOD `solver` factor was NOT populated. Returns false
 // on a non-finite step.
+//
+// `guarded = false` asks whether H gives a Newton step as it stands
+// (inner_step_under_curvature): with rank-1 pins that is the block-Schur
+// factor alone, since the fallback factors the UNPINNED H, whose constant
+// direction only the ridge ladder carries even at a PD point; without pins it
+// is one factorization of H.
 inline bool s2z_newton_step(
     SparseHessianBuilder& H, SparseCholeskySolver& solver,
     int n_x, JointPDMode pd_mode,
     const double* grad, double* delta,
     bool& used_block_schur,
-    S2ZBlockSchurCache* bs_cache = nullptr
+    S2ZBlockSchurCache* bs_cache = nullptr,
+    bool guarded = true
 ) {
     used_block_schur = false;
-    if (pd_mode == JointPDMode::LM && !H.s2z_rank1.empty() &&
-        s2z_block_schur(H, H.s2z_rank1, grad, delta, nullptr, bs_cache)) {
+    const bool pinned = pd_mode == JointPDMode::LM && !H.s2z_rank1.empty();
+    if (pinned && s2z_block_schur(H, H.s2z_rank1, grad, delta, nullptr, bs_cache)) {
         used_block_schur = true;
         return true;
     }
-    bool ok = joint_pd_step_solve(H, solver, n_x, pd_mode, grad, delta, nullptr);
+    if (pinned && !guarded) return false;
+    bool ok = joint_pd_step_solve(H, solver, n_x, pd_mode, grad, delta, nullptr,
+                                  nullptr, guarded ? JOINT_LM_MAX_TRIES : 1);
     // The Woodbury fold applies the rank-1 terms through `solver`, and only the
     // LM branch of joint_pd_step_solve populates that factor: the PSD branch
     // eigen-solves a densified copy and leaves the CHOLMOD factor absent or
@@ -456,6 +466,9 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     SparseCholeskySolver* shared_solver,
     bool store_Q,
     JointPDMode pd_mode = JointPDMode::LM,
+    // Curvature each inner step is built from (joint_pd_step.h). The scatter
+    // receives the CurvatureMode to assemble at; the final pass is observed.
+    StepCurvature step_curvature = StepCurvature::Observed,
     int hessian_refresh = 1,
     // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
     // store_Q. Only computable on the plain-CHOLMOD final factor: the s2z
@@ -557,50 +570,63 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
             !reuse_enabled || !have_factor || (iter % refresh == 0) ||
             !H_builder.s2z_rank1.empty();   // s2z large-field path: block-Schur every iter, no reuse
 
-        scratch.zero_grad();
-        H_builder.zero();
-        { TULPA_PROFILE_PHASE(PHASE_SCATTER);
-          scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder,
-                               /*finalize=*/false, /*grad_only=*/!do_factor); }
+        // Zero, scatter at `cm` and load the uniform upstream base ridge (the
+        // numerical hygiene of an already-PD H).
+        auto assemble = [&](CurvatureMode cm, bool grad_only) {
+            scratch.zero_grad();
+            H_builder.zero();
+            { TULPA_PROFILE_PHASE(PHASE_SCATTER);
+              scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder,
+                                   cm, grad_only); }
+            H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
+        };
 
-        // Uniform upstream base ridge for numerical hygiene of an already-PD H.
-        H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
-
-        // PD-enforced factor + solve. LM escalates the ridge until CHOLMOD
-        // factorizes; PSD eigen-clamps the (small) dense Hessian. Either yields
-        // a usable ascent step where a plain factorize of the indefinite
-        // mixture Hessian would fail. On reuse iterations the cached factor is
-        // re-applied to the refreshed gradient instead (see `reuse_enabled`).
+        // PD-enforced factor + solve, at the curvature the policy picks. LM
+        // escalates the ridge until CHOLMOD factorizes; PSD eigen-clamps the
+        // (small) dense Hessian. Either yields a usable ascent step where a
+        // plain factorize of the indefinite mixture Hessian would fail. On
+        // reuse iterations the cached factor is re-applied to the refreshed
+        // gradient instead (see `reuse_enabled`), and the scatter builds the
+        // gradient only.
         bool solve_ok;
-        { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
-          if (do_factor) {
-              // Exact block-Schur step on the s2z large-field path (true Newton,
-              // quadratic), else LM ridge + Woodbury. s2z_newton_step folds the
-              // rank-1 correction itself. Block-Schur does NOT populate the
-              // CHOLMOD `solver` factor; reuse is forced off on the s2z path
-              // (see do_factor), so have_factor stays false there.
-              bool used_block_schur = false;
-              solve_ok = s2z_newton_step(H_builder, solver, n_x, pd_mode,
-                                         scratch.grad.data(), scratch.delta.data(),
-                                         used_block_schur, &scratch.s2z_block_schur_cache);
-              have_factor = solve_ok && !used_block_schur;
-          } else {
-              solve_ok = solver.solve(scratch.grad.data(),
-                                      scratch.delta.data(), n_x);
-              for (int j = 0; solve_ok && j < n_x; j++)
-                  if (!std::isfinite(scratch.delta[j])) { solve_ok = false; break; }
-              // A reuse step builds only the gradient, so H_builder lacks the
-              // likelihood curvature and must NOT be factorized here. On the
-              // rare failure (non-finite step from a non-finite gradient), fall
-              // through to the gradient-ascent guard and force a full
-              // re-factorization on the next iteration. Reuse runs only with no
-              // rank-1 registered, so the Woodbury fold below is a no-op there.
-              if (!solve_ok) have_factor = false;
-              else if (pd_mode == JointPDMode::LM)
-                  apply_s2z_rank1_correction(solver, n_x, H_builder.s2z_rank1,
-                                             scratch.delta.data(),
-                                             H_builder.s2z_coupling);
-          }
+        if (do_factor) {
+            // Exact block-Schur step on the s2z large-field path (true Newton,
+            // quadratic), else LM ridge + Woodbury. s2z_newton_step folds the
+            // rank-1 correction itself. Block-Schur does NOT populate the
+            // CHOLMOD `solver` factor; reuse is forced off on the s2z path
+            // (see do_factor), so have_factor stays false there.
+            bool used_block_schur = false;
+            solve_ok = inner_step_under_curvature(
+                step_curvature,
+                [&](CurvatureMode cm) { assemble(cm, /*grad_only=*/false); },
+                [&](bool guarded) {
+                    TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
+                    return s2z_newton_step(H_builder, solver, n_x, pd_mode,
+                                           scratch.grad.data(),
+                                           scratch.delta.data(),
+                                           used_block_schur,
+                                           &scratch.s2z_block_schur_cache,
+                                           guarded);
+                });
+            have_factor = solve_ok && !used_block_schur;
+        } else {
+            assemble(inner_step_plan(step_curvature).first, /*grad_only=*/true);
+            TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
+            solve_ok = solver.solve(scratch.grad.data(),
+                                    scratch.delta.data(), n_x);
+            for (int j = 0; solve_ok && j < n_x; j++)
+                if (!std::isfinite(scratch.delta[j])) { solve_ok = false; break; }
+            // A reuse step builds only the gradient, so H_builder lacks the
+            // likelihood curvature and must NOT be factorized here. On the
+            // rare failure (non-finite step from a non-finite gradient), fall
+            // through to the gradient-ascent guard and force a full
+            // re-factorization on the next iteration. Reuse runs only with no
+            // rank-1 registered, so the Woodbury fold below is a no-op there.
+            if (!solve_ok) have_factor = false;
+            else if (pd_mode == JointPDMode::LM)
+                apply_s2z_rank1_correction(solver, n_x, H_builder.s2z_rank1,
+                                           scratch.delta.data(),
+                                           H_builder.s2z_coupling);
         }
 
         if (!solve_ok) {
@@ -631,7 +657,7 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     H_builder.zero();
     { TULPA_PROFILE_PHASE(PHASE_SCATTER);
       scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder,
-                           /*finalize=*/true, /*grad_only=*/false); }
+                           CurvatureMode::Observed, /*grad_only=*/false); }
     joint_newton_finalize_sparse(
         result, n_x, scratch, H_builder, scratch.grad, solver,
         compute_eta_joint, center_effects_fn, compute_log_prior_joint,

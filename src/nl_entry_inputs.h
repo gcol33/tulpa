@@ -227,7 +227,7 @@ inline Rcpp::List nl_run_joint_sparse_entry(
         /*coupled_arms=*/std::vector<int>(),
         /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
         /*n_cells=*/0,
-        JointPDMode::LM, CurvatureMode::Observed,
+        JointPDMode::LM, StepCurvature::Observed,
         /*hessian_refresh=*/1, /*n_threads_outer=*/1,
         /*progress=*/nullptr, run.ckpt.get(),
         /*x_init_per_cell=*/std::vector<double>(),

@@ -1057,7 +1057,7 @@ inline Rcpp::List run_indexed_st_nested_laplace_joint(
         std::vector<int>(), std::vector<int>(), prune_tol,
         force_sparse,
         /*cell_coupling_spec=*/nullptr,
-        tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
+        tulpa::JointPDMode::LM, tulpa::StepCurvature::Observed,
         /*hessian_refresh=*/1, /*progress=*/nullptr, ckpt,
         /*x_init_per_cell=*/std::vector<double>(),
         compute_skew, skew_probe_idx,

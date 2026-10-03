@@ -473,7 +473,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     std::shared_ptr<CellCouplingSpec> spec,
     bool                             store_Q,
     JointPDMode                      pd_mode,
-    CurvatureMode                    step_curvature,
+    StepCurvature                    step_curvature,
     bool                             force_sparse,
     const JointFixedBlockRequest*    fixed_block,
     bool                             compute_fitted_var = true

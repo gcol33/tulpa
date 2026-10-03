@@ -8,8 +8,10 @@
 //
 // Callbacks operate on a vector of per-arm eta vectors:
 //   - compute_eta_joint(x, etas): caller fills etas[k] for each arm.
-//   - scatter_joint(x, etas, grad, H): caller scatters per-arm contributions
-//                                       and shared prior into the joint (g, H).
+//   - scatter_joint(x, etas, grad, H, cm): caller scatters per-arm
+//                                       contributions and shared prior into the
+//                                       joint (g, H), coupled cells at the
+//                                       curvature `cm` the loop asks for.
 //   - compute_log_prior_joint(x, etas): joint log p(x | theta).
 //   - center_effects_fn(x): post-step centering of structured blocks.
 //
@@ -404,7 +406,8 @@ inline bool joint_pd_step_solve_dense_ridged(
     SparseCholeskySolver& solver, bool prefer_sparse,
     DenseCholeskyScratch& dense_scratch, JointPDMode pd_mode,
     double* out_log_det = nullptr,
-    bool* out_modified = nullptr
+    bool* out_modified = nullptr,
+    int max_tries = JOINT_LM_MAX_TRIES
 ) {
     if (pd_mode == JointPDMode::PSD && n_x <= JOINT_PSD_MAX_DIM) {
         Eigen::MatrixXd Hd(n_x, n_x);
@@ -421,7 +424,7 @@ inline bool joint_pd_step_solve_dense_ridged(
                                                 log_det);
         },
         [&](double bump) { add_uniform_ridge_dense(H, n_x, bump); },
-        out_log_det, out_modified);
+        out_log_det, out_modified, max_tries);
 }
 
 // Per-iteration entry: `H` arrives UNRIDGED, exactly as the scatter left it, so
@@ -431,12 +434,14 @@ inline bool joint_pd_step_solve_dense(
     SparseCholeskySolver& solver, bool prefer_sparse,
     DenseCholeskyScratch& dense_scratch, JointPDMode pd_mode,
     double* out_log_det = nullptr,
-    bool* out_modified = nullptr
+    bool* out_modified = nullptr,
+    int max_tries = JOINT_LM_MAX_TRIES
 ) {
     add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
     return joint_pd_step_solve_dense_ridged(H, grad, delta, n_x, solver,
                                             prefer_sparse, dense_scratch,
-                                            pd_mode, out_log_det, out_modified);
+                                            pd_mode, out_log_det, out_modified,
+                                            max_tries);
 }
 
 // Per-thread scratch for the joint Newton solver. Same role as NewtonScratch
@@ -714,6 +719,9 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // LM (the default) reduces to the plain Newton step wherever H is already
     // PD.
     JointPDMode pd_mode = JointPDMode::LM,
+    // Curvature each inner step is built from (joint_pd_step.h). The scatter
+    // receives the CurvatureMode to assemble at; the final pass is observed.
+    StepCurvature step_curvature = StepCurvature::Observed,
     // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
     // store_Q. curvature3_fns carries one per-observation oracle per arm plus the
     // optional coupled-cell tensor contraction (build_joint_curvature3_fns +
@@ -785,27 +793,34 @@ LaplaceResult laplace_newton_solve_joint_ll(
         );
     };
 
-    auto cholesky_solve = [&]() -> bool {
-        return joint_pd_step_solve_dense(scratch.H, scratch.grad, scratch.delta,
-                                         n_x, sparse_solver, use_sparse,
-                                         scratch.chol, pd_mode);
+    // The step is taken while the gradient and Hessian are assembled, since
+    // under StepCurvature::Auto an observed Hessian that does not factor is
+    // replaced by the expected one before the step is taken; the shared
+    // newton_step then reads the outcome through `cholesky_solve`.
+    bool step_ok = false;
+    auto refresh_grad_hess = [&]() {
+        { TULPA_PROFILE_PHASE(PHASE_ETA);
+          compute_eta_joint(x, scratch.etas); }
+        step_ok = inner_step_under_curvature(
+            step_curvature,
+            [&](CurvatureMode cm) {
+                scratch.zero_for_iter();
+                TULPA_PROFILE_PHASE(PHASE_SCATTER);
+                scatter_joint(x, scratch.etas, scratch.grad, scratch.H, cm);
+            },
+            [&](bool guarded) {
+                TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
+                return joint_pd_step_solve_dense(
+                    scratch.H, scratch.grad, scratch.delta, n_x, sparse_solver,
+                    use_sparse, scratch.chol, pd_mode, nullptr, nullptr,
+                    guarded ? JOINT_LM_MAX_TRIES : 1);
+            });
     };
+    auto cholesky_solve = [&]() -> bool { return step_ok; };
 
     double obj_current = -1e300;
     bool obj_valid = false;
     NewtonConvState conv_state;
-
-    // Profiler scopes (tulpa_profile()): eta and scatter here, factorize and
-    // line_search inside the shared newton_step, the final pass in
-    // joint_newton_finalize_dense.
-    auto refresh_grad_hess = [&]() {
-        { TULPA_PROFILE_PHASE(PHASE_ETA);
-          compute_eta_joint(x, scratch.etas); }
-        scratch.zero_for_iter();
-        { TULPA_PROFILE_PHASE(PHASE_SCATTER);
-          scatter_joint(x, scratch.etas, scratch.grad, scratch.H,
-                        /*finalize=*/false); }
-    };
 
     for (int iter = 0; iter < max_iter; iter++) {
         if (newton_step(x, scratch, n_x, iter, tol, refresh_grad_hess,
@@ -830,7 +845,7 @@ LaplaceResult laplace_newton_solve_joint_ll(
     scratch.zero_for_iter();
     { TULPA_PROFILE_PHASE(PHASE_SCATTER);
       scatter_joint(x, scratch.etas, scratch.grad, scratch.H,
-                    /*finalize=*/true); }
+                    CurvatureMode::Observed); }
     joint_newton_finalize_dense(
         result, n_x, scratch, scratch.H, scratch.grad, sparse_solver, use_sparse,
         compute_eta_joint, center_effects_fn, compute_log_prior_joint,

@@ -117,7 +117,7 @@ Rcpp::List cpp_laplace_fit_gp(
         /*tile_pilot_cells=*/std::vector<int>(),
         /*prune_tol=*/0.0, /*force_sparse=*/false,
         /*cell_coupling_spec=*/nullptr,
-        tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
+        tulpa::JointPDMode::LM, tulpa::StepCurvature::Observed,
         /*hessian_refresh=*/1, /*progress=*/nullptr, /*checkpoint=*/nullptr,
         /*x_init_per_cell=*/std::vector<double>(),
         compute_skew, skew_idx_ptr);

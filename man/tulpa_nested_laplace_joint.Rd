@@ -537,6 +537,17 @@ machinery -- below it the builder declines BEFORE any inner solve (on a
 small tensor the coarse seed is already most of the grid, so there is no
 tail to skip). Ignored by the other integrators. The kept-cell / dense /
 solve counts are returned as \verb{$adaptive_grid_info}.
+\item \code{hessian} (\code{"auto"}) -- the curvature each inner Newton step is built
+from, where a cell-coupled arm makes the joint Hessian indefinite away
+from the mode. \code{"auto"} takes the observed Hessian wherever it factors as
+it stands, the Newton step, and the coupled cells' complete-data expected
+information (Fisher scoring, positive semi-definite) where it does not;
+\code{"lm"} always takes the observed Hessian, loading its diagonal until it
+factors; \code{"fisher"} always takes the expected information, which
+converges linearly; \code{"psd"} eigen-clamps the observed Hessian (small
+\code{n_x} only). The final mode-pass behind \code{log_det}, the log marginal and
+the SEs uses the observed Hessian under every choice, and a fit with no
+coupled arm runs \code{"auto"} and \code{"fisher"} as \code{"lm"}.
 \item \code{inner_refresh} (\code{1L}) -- inner-Newton Cholesky factor reuse interval
 (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
 beta cover arm) the latent Hessian changes every inner iteration, so the
@@ -547,8 +558,8 @@ early whenever a reused solve fails). The gradient is exact on every step
 and each step is line-search safeguarded, so the converged mode is
 unchanged and the final mode-pass Hessian (\code{log_det}, SEs) is always
 fresh; only the path to the mode uses a stale curvature, which may cost a
-few extra inner iterations. Applies to the sparse joint path with the
-default \code{control$hessian = "lm"} curvature; the dense small-\code{n_x} path
+few extra inner iterations. Applies to the sparse joint path with an
+LM-guarded step (\code{hessian} \code{"auto"}, \code{"lm"} or \code{"fisher"}); the dense small-\code{n_x} path
 re-factorizes a cheap Hessian and ignores it. \code{2L}-\code{4L} is a good range
 for a slow beta arm.
 \item \code{k_quality} (\code{"report"}) -- the reliability intent for the outer

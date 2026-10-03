@@ -24,6 +24,13 @@
 // Both policies are shared by the dense and the sparse joint Newton loops.
 // Only the factorization backend differs, and it enters as a callback, so the
 // escalation schedule and the eigen clamp have one definition each.
+//
+// A coupled cell can also supply its complete-data EXPECTED information
+// (CurvatureMode::Expected), which is PSD by construction, so a third way to an
+// ascent direction is to step on it (Fisher scoring) instead of loading the
+// observed Hessian's diagonal. `StepCurvature` selects which curvature an inner
+// step is built from; `inner_step_under_curvature()` is the one place the
+// choice is made, for every joint loop.
 
 #ifndef TULPA_JOINT_PD_STEP_H
 #define TULPA_JOINT_PD_STEP_H
@@ -31,10 +38,32 @@
 #include <RcppEigen.h>
 #include <cmath>
 
+#include "tulpa/cell_coupling.h"   // CurvatureMode
+
 namespace tulpa {
 
 // PD-enforcement mode for the inner Newton step.
 enum class JointPDMode { LM = 0, PSD = 1 };
+
+// Curvature an inner Newton step is built from.
+//   Observed  the observed Hessian under the PD guard.
+//   Expected  the coupled cells' expected information under the PD guard
+//             (Fisher scoring): PSD, so it factors, but the step contracts
+//             linearly towards the mode.
+//   Auto      the observed Hessian wherever it factors as it stands, which is
+//             the Newton step and converges quadratically; where it does not,
+//             the expected information. An indefinite observed Hessian is
+//             then never conditioned by the escalating ridge, whose step at a
+//             load comparable to the most negative eigenvalue is a short
+//             gradient step and costs a factorization per rung of the ladder.
+// Without a coupled cell nothing supplies an expected form, so Auto and
+// Expected both reduce to Observed (`effective_step_curvature()`).
+enum class StepCurvature { Observed = 0, Expected = 1, Auto = 2 };
+
+inline StepCurvature effective_step_curvature(StepCurvature requested,
+                                              bool any_coupling) {
+    return any_coupling ? requested : StepCurvature::Observed;
+}
 
 // Cap on n_x for the dense PSD eigen-clamp path. The sparse Newton supports
 // fields up to ~10^6; densifying those would be catastrophic, so above this
@@ -98,14 +127,18 @@ inline bool pd_eigen_clamp_solve(
 //   `add_ridge(double bump)` loads `bump` onto the Hessian diagonal.
 // `out_modified`, when non-null, records whether any load had to be added,
 // i.e. whether the factorization that succeeded is of the matrix handed in.
+// `max_tries = 1` factors the Hessian as handed in: the test of whether it is
+// PD as it stands (a failed test leaves one load on the diagonal, and the
+// caller reassembles before it steps).
 template <typename FactorSolve, typename AddRidge>
 inline bool pd_lm_escalate(
     FactorSolve factor_solve, AddRidge add_ridge,
     double* out_log_det = nullptr,
-    bool* out_modified = nullptr
+    bool* out_modified = nullptr,
+    int max_tries = JOINT_LM_MAX_TRIES
 ) {
     double added = 0.0;
-    for (int t = 0; t < JOINT_LM_MAX_TRIES; ++t) {
+    for (int t = 0; t < max_tries; ++t) {
         double log_det = 0.0;
         if (factor_solve(&log_det)) {
             if (out_log_det) *out_log_det = log_det;
@@ -119,6 +152,43 @@ inline bool pd_lm_escalate(
     }
     if (out_modified) *out_modified = true;
     return false;
+}
+
+// What one inner step under a curvature policy does: assemble at `first`,
+// factor it (`first_guarded` = under the PD guard, else one factorization of
+// the matrix as it stands), and, where that unguarded factorization fails,
+// assemble the expected information and take the guarded step on it. The
+// gradient is the same under either curvature. Every joint loop reads this
+// plan, so the rule has one definition whether a loop assembles one problem at
+// a time (inner_step_under_curvature) or a batch of species at once.
+struct InnerStepPlan {
+    CurvatureMode first;
+    bool          first_guarded;
+};
+
+inline InnerStepPlan inner_step_plan(StepCurvature policy) {
+    switch (policy) {
+    case StepCurvature::Expected: return {CurvatureMode::Expected, true};
+    case StepCurvature::Auto:     return {CurvatureMode::Observed, false};
+    default:                      return {CurvatureMode::Observed, true};
+    }
+}
+
+// One inner step under a curvature policy, for a loop that assembles one
+// problem at a time.
+//   `assemble(CurvatureMode)` zeroes the gradient and Hessian and scatters
+//       them at that curvature, priors and base ridge included, so the step
+//       sees the matrix it is to factor.
+//   `solve(bool guarded) -> bool` factors that Hessian and writes the step.
+template <typename Assemble, typename Solve>
+inline bool inner_step_under_curvature(StepCurvature policy, Assemble assemble,
+                                       Solve solve) {
+    const InnerStepPlan plan = inner_step_plan(policy);
+    assemble(plan.first);
+    if (solve(plan.first_guarded)) return true;
+    if (plan.first_guarded) return false;
+    assemble(CurvatureMode::Expected);
+    return solve(true);
 }
 
 } // namespace tulpa

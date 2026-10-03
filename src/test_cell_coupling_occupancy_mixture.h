@@ -42,6 +42,13 @@
 //   d2L/d eta_a d eta_v = -psi m P0 p_v / D^2
 //   d2L/d eta_v d eta_w =  psi m P0 p_v p_w / D^2       (v != w)
 //
+// Under CurvatureMode::Expected the branch writes the complete-data
+// information instead, the latent occupancy state z ~ Bern(psi) taken in
+// expectation under its posterior w = psi P0 / D: -d2/d eta_a^2 of
+// z log psi + (1 - z) log m is psi m whatever z is, the detection term
+// z log Bern(y_v | p_v) gives w p_v q_v, and no cross term survives. Diagonal
+// and positive, so PSD wherever the observed form is indefinite.
+//
 // `CellDerivs` takes the NEGATIVE second derivatives, so each of the six lines
 // above is written with its sign flipped. The (arm 0, arm 1) block and the
 // (arm 1, arm 1) off-diagonal block are both filled DENSELY -- the rank-1
@@ -157,7 +164,12 @@ public:
                 out.arm_grad[1][base_v + v] = -psi * P0 * p[v] / D;
             }
 
-            if (want_hess) {
+            if (want_hess && out.curvature == CurvatureMode::Expected) {
+                const double w = psi * P0 / D;
+                out.arm_neg_hess_diag[0][base_a] = psi * m;
+                for (int v = 0; v < J; v++)
+                    out.arm_neg_hess_diag[1][base_v + v] = w * p[v] * q[v];
+            } else if (want_hess) {
                 out.arm_neg_hess_diag[0][base_a] =
                     -((P0 - 1.0) * psi * m * (m - psi) / D - g_a * g_a);
                 for (int v = 0; v < J; v++) {

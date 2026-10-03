@@ -364,7 +364,7 @@
         pd_eigen_clamp = paste("this fit runs the PSD inner step, which",
                                "eigen-solves a densified Hessian and leaves no",
                                "sparse factor for the probe to solve against;",
-                               "control$hessian = \"lm\" restores it"),
+                               "the default control$hessian = \"auto\" restores it"),
         s2z_rank1_factor = paste("the field carries sum-to-zero rank-1 pins that",
                                  "the stored Hessian does not hold, so the live",
                                  "factor is of a different matrix than the solve",

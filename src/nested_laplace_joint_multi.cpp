@@ -96,6 +96,18 @@
 
 namespace {
 
+// control$hessian's step curvature as R codes it: 0 observed ("lm" / "psd"),
+// 1 expected ("fisher"), 2 auto.
+tulpa::StepCurvature step_curvature_from_code(int code) {
+    switch (code) {
+    case 0: return tulpa::StepCurvature::Observed;
+    case 1: return tulpa::StepCurvature::Expected;
+    case 2: return tulpa::StepCurvature::Auto;
+    default:
+        Rcpp::stop("step_curvature_mode must be 0, 1 or 2 (got %d).", code);
+    }
+}
+
 // The coupled-cell gamma_3 contraction for one joint solve.
 // Snapshots the coupled arms' response pointers, family tags and the dispersion
 // THIS solve runs at (`phi_override` when the caller holds a per-thread snapshot
@@ -1528,12 +1540,10 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     tulpa::JointPDMode pd_mode =
         (hessian_pd_mode == 1) ? tulpa::JointPDMode::PSD : tulpa::JointPDMode::LM;
 
-    // Inner Newton step curvature: Expected = complete-data Fisher (PSD by
-    // construction) when control$hessian = "fisher"; otherwise the observed
-    // mixture Hessian. The final mode-pass always uses Observed regardless.
-    tulpa::CurvatureMode step_curvature =
-        (step_curvature_mode == 1) ? tulpa::CurvatureMode::Expected
-                                   : tulpa::CurvatureMode::Observed;
+    // Inner Newton step curvature (control$hessian; joint_pd_step.h). The
+    // final mode-pass always uses Observed regardless.
+    const tulpa::StepCurvature step_curvature =
+        step_curvature_from_code(step_curvature_mode);
 
     // Build the reporter when either channel is wanted: the console line under
     // `progress` (the verbose/TTY channel), or the heartbeat file whenever
@@ -1787,8 +1797,7 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
         n_grid, n_batch, arms, parsed, blocks, n_x_after_re, buf,
         max_iter, tol, spec, store_Q,
         (hessian_pd_mode == 1) ? tulpa::JointPDMode::PSD : tulpa::JointPDMode::LM,
-        (step_curvature_mode == 1) ? tulpa::CurvatureMode::Expected
-                                   : tulpa::CurvatureMode::Observed,
+        step_curvature_from_code(step_curvature_mode),
         force_sparse,
         fixed_block_req.active() ? &fixed_block_req : nullptr,
         compute_fitted_var);
@@ -2105,7 +2114,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     bool                             force_sparse,
     std::shared_ptr<CellCouplingSpec> cell_coupling_spec,
     JointPDMode                      pd_mode,
-    CurvatureMode                    step_curvature,
+    StepCurvature                    step_curvature,
     int                              hessian_refresh,
     tulpa_progress::GridProgress*    progress,
     GridCheckpoint*                  checkpoint,
@@ -2353,13 +2362,12 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             }
         };
 
-        // `finalize` selects the coupled-cell curvature: the inner Newton step
-        // uses `step_curvature` (Expected = Fisher scoring when
-        // control$hessian = "fisher"); the final mode-pass uses the observed
-        // Hessian for log_det_Q and the SEs.
+        // `cm` is the coupled-cell curvature the Newton loop asks for: the
+        // inner step's under `step_curvature` (joint_pd_step.h), the observed
+        // Hessian on the final mode-pass for log_det_Q and the SEs.
         auto scatter_joint = [&](const Rcpp::NumericVector& x,
                                  const std::vector<Rcpp::NumericVector>& etas,
-                                 DenseVec& grad, DenseMat& H, bool finalize) {
+                                 DenseVec& grad, DenseMat& H, CurvatureMode cm) {
             for (int k_arm = 0; k_arm < n_arms; k_arm++) {
                 // Cell-coupled arms route through the per-cell branch
                 // below; skip their per-obs scatter.
@@ -2371,8 +2379,6 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                 );
             }
             if (any_coupling) {
-                const CurvatureMode cm =
-                    finalize ? CurvatureMode::Observed : step_curvature;
                 scatter_cell_coupling_dense_branch(
                     *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
                     arms, parsed, etas, blocks, k_grid, grad, H, cm
@@ -2447,6 +2453,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             compute_eta_joint, scatter_joint, center_joint, log_prior_joint,
             joint_ll, scratch, prev_mode, shared_solver,
             store_Q, pd_mode,
+            effective_step_curvature(step_curvature, any_coupling),
             compute_skew && !is_cheap, skew_probe_idx,
             (compute_skew && !is_cheap) ? &skew_curvature3_fns : nullptr,
             is_cheap ? nullptr : fixed_block,
@@ -2532,7 +2539,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     const std::vector<std::vector<std::vector<int>>>& cell_rows,
     int                              n_cells,
     JointPDMode                      pd_mode,
-    CurvatureMode                    step_curvature,
+    StepCurvature                    step_curvature,
     int                              hessian_refresh,
     int                              n_threads_outer,
     tulpa_progress::GridProgress*    progress,
@@ -2868,16 +2875,15 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         SparseHessianBuilder& H_use = H_builders[slot];
         const ScatterIndexCache* idx_cache_use = &idx_cache;
 
-        // `finalize` selects the curvature for the coupled-cell scatter: the
-        // inner Newton step uses `step_curvature` (Expected = Fisher scoring,
-        // PSD by construction, when control$hessian = "fisher"), while the
-        // final mode-pass always uses the observed Hessian so log_det_Q and the
-        // SEs are the true curvature at the mode.
+        // `cm` is the coupled-cell curvature the Newton loop asks for: the
+        // inner step's under `step_curvature` (joint_pd_step.h), the observed
+        // Hessian on the final mode-pass so log_det_Q and the SEs are the true
+        // curvature at the mode.
         auto scatter_joint_sparse = [&](const Rcpp::NumericVector& x,
                                          const std::vector<Rcpp::NumericVector>& etas,
                                          DenseVec& grad,
                                          SparseHessianBuilder& H,
-                                         bool finalize,
+                                         CurvatureMode cm,
                                          bool grad_only) {
             for (int k_arm = 0; k_arm < n_arms; k_arm++) {
                 if (arm_is_coupled[k_arm]) continue;
@@ -2897,8 +2903,6 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                 // as tasks inside the outer grid (idle grid threads take them)
                 // and on a team of n_inner outside it (the serial pilot and
                 // screen, which have the whole pool).
-                const CurvatureMode cm =
-                    finalize ? CurvatureMode::Observed : step_curvature;
                 scatter_cell_coupling_sparse_branch(
                     *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
                     arms, parsed, etas, blocks, k_grid, grad, H, coupled_plan,
@@ -2959,6 +2963,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
             compute_eta_joint, scatter_joint_sparse,
             center_joint, log_prior_joint,
             joint_ll, H_use, sc, prev_mode, shared_solver, store_Q, pd_mode,
+            effective_step_curvature(step_curvature, any_coupling),
             refresh_use,
             want_skew, skew_probe_idx,
             want_skew ? &skew_curvature3_fns_pool[slot] : nullptr,

@@ -52,7 +52,7 @@ static Rcpp::List spde_single_cell_fit(
         /*coupled_arms=*/std::vector<int>(),
         /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
         /*n_cells=*/0,
-        tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
+        tulpa::JointPDMode::LM, tulpa::StepCurvature::Observed,
         /*hessian_refresh=*/1, /*n_threads_outer=*/1,
         /*progress=*/nullptr, /*checkpoint=*/nullptr,
         /*x_init_per_cell=*/std::vector<double>(),

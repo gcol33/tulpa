@@ -528,6 +528,17 @@
 #'     small tensor the coarse seed is already most of the grid, so there is no
 #'     tail to skip). Ignored by the other integrators. The kept-cell / dense /
 #'     solve counts are returned as `$adaptive_grid_info`.
+#'   * `hessian` (`"auto"`) -- the curvature each inner Newton step is built
+#'     from, where a cell-coupled arm makes the joint Hessian indefinite away
+#'     from the mode. `"auto"` takes the observed Hessian wherever it factors as
+#'     it stands, the Newton step, and the coupled cells' complete-data expected
+#'     information (Fisher scoring, positive semi-definite) where it does not;
+#'     `"lm"` always takes the observed Hessian, loading its diagonal until it
+#'     factors; `"fisher"` always takes the expected information, which
+#'     converges linearly; `"psd"` eigen-clamps the observed Hessian (small
+#'     `n_x` only). The final mode-pass behind `log_det`, the log marginal and
+#'     the SEs uses the observed Hessian under every choice, and a fit with no
+#'     coupled arm runs `"auto"` and `"fisher"` as `"lm"`.
 #'   * `inner_refresh` (`1L`) -- inner-Newton Cholesky factor reuse interval
 #'     (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
 #'     beta cover arm) the latent Hessian changes every inner iteration, so the
@@ -538,8 +549,8 @@
 #'     and each step is line-search safeguarded, so the converged mode is
 #'     unchanged and the final mode-pass Hessian (`log_det`, SEs) is always
 #'     fresh; only the path to the mode uses a stale curvature, which may cost a
-#'     few extra inner iterations. Applies to the sparse joint path with the
-#'     default `control$hessian = "lm"` curvature; the dense small-`n_x` path
+#'     few extra inner iterations. Applies to the sparse joint path with an
+#'     LM-guarded step (`hessian` `"auto"`, `"lm"` or `"fisher"`); the dense small-`n_x` path
 #'     re-factorizes a cheap Hessian and ignores it. `2L`-`4L` is a good range
 #'     for a slow beta arm.
 #'   * `k_quality` (`"report"`) -- the reliability intent for the outer
@@ -1869,17 +1880,19 @@ tulpa_nested_laplace_joint <- function(responses,
     # byte-for-byte.
     within_cell               <- .nl_within_cell_mode(control$within_cell)
     # Inner-Newton curvature + PD enforcement for the (possibly indefinite)
-    # joint mixture Hessian. "lm" (default) escalates a diagonal ridge until
-    # CHOLMOD factorizes the observed Hessian; "psd" eigen-clamps the dense
-    # observed Hessian; "fisher" scatters the complete-data expected
-    # information (PSD by construction, factorizes first try) for the inner
-    # step while keeping the observed Hessian for the final mode-pass log_det
-    # and SEs. Two C++ axes: hessian_pd_mode (0 = LM, 1 = PSD) and
-    # step_curvature_mode (0 = observed, 1 = Fisher).
-    hessian                   <- match.arg(control$hessian %||% "lm",
-                                           c("lm", "psd", "fisher"))
+    # joint mixture Hessian. "auto" (default) steps on the observed Hessian
+    # wherever it factors as it stands and on the coupled cells' complete-data
+    # expected information where it does not; "lm" escalates a diagonal ridge
+    # until CHOLMOD factorizes the observed Hessian; "psd" eigen-clamps the
+    # dense observed Hessian; "fisher" steps on the expected information
+    # throughout. Every mode keeps the observed Hessian for the final
+    # mode-pass log_det and SEs, and without a coupled cell "auto" and
+    # "fisher" are "lm". Two C++ axes: hessian_pd_mode (0 = LM, 1 = PSD) and
+    # step_curvature_mode (0 = observed, 1 = expected, 2 = auto).
+    hessian                   <- match.arg(control$hessian %||% "auto",
+                                           c("auto", "lm", "psd", "fisher"))
     hessian_pd_mode           <- if (identical(hessian, "psd")) 1L else 0L
-    step_curvature_mode       <- if (identical(hessian, "fisher")) 1L else 0L
+    step_curvature_mode       <- switch(hessian, auto = 2L, fisher = 1L, 0L)
     # Inner-Newton Cholesky factor reuse (Shamanskii / chord method). For a
     # non-quadratic positive arm (e.g. beta cover) the latent Hessian changes
     # every inner iteration, so the plain Newton loop re-factorizes the sparse

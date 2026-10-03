@@ -196,7 +196,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     std::shared_ptr<CellCouplingSpec> spec,
     bool                             store_Q,
     JointPDMode                      pd_mode,
-    CurvatureMode                    step_curvature,
+    StepCurvature                    step_curvature,
     bool                             force_sparse,
     const JointFixedBlockRequest*    fixed_block,
     bool                             compute_fitted_var
@@ -357,6 +357,36 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
         };
         std::vector<SpeciesNewton> nt(B);
 
+        // The single-problem loops' rule (inner_step_plan): every species is
+        // assembled at the plan's first curvature in one fused scatter, and the
+        // species whose unguarded factorization fails take the guarded step on
+        // the expected information, assembled for all of them in one more.
+        const InnerStepPlan plan = inner_step_plan(step_curvature);
+        // Priors, base ridge and the factor + solve of species s's step, on the
+        // gradient and Hessian the last fused scatter left it.
+        auto species_step = [&](int s, bool guarded) -> bool {
+            SpeciesView v = species_view(st[s], use_sparse);
+            DenseVec& grad = grad_per_sp[s];
+            if (use_sparse) {
+                SparseHessianBuilder& H = H_sparse_per_sp[s];
+                add_species_priors_sparse(H, grad, v.x, blocks, parsed, kg);
+                H.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
+                bool used_block_schur = false;
+                return s2z_newton_step(H, st[s].solver, n_x, pd_mode, grad.data(),
+                                       v.delta.data(), used_block_schur,
+                                       &st[s].sparse.s2z_block_schur_cache,
+                                       guarded);
+            }
+            DenseMat& H = H_per_sp[s];
+            for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, v.x, kg);
+            add_per_arm_beta_re_priors(grad, H, v.x, parsed);
+            return joint_pd_step_solve_dense(H, grad, v.delta, n_x,
+                                             st[s].solver, dense_factor_sparse,
+                                             st[s].dense.chol, pd_mode, nullptr,
+                                             nullptr,
+                                             guarded ? JOINT_LM_MAX_TRIES : 1);
+        };
+
         for (int iter = 0; iter < max_iter; iter++) {
             for (int s = 0; s < B; s++) {
                 if (converged[s]) continue;
@@ -364,32 +394,17 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                 compute_eta_species(v.x, v.etas, arms, parsed, blocks, kg, d_fac_cache);
                 load_species_etas(s, v.etas);
             }
-            fused_scatter(kg, step_curvature);
-            for (int s = 0; s < B; s++) {
-                if (converged[s]) continue;
+            fused_scatter(kg, plan.first);
+            // A species whose step stands is finished before the expected
+            // scatter, which rewrites every species' gradient.
+            std::vector<int> deferred;
+            auto finish = [&](int s, bool ok) {
                 SpeciesView v = species_view(st[s], use_sparse);
                 DenseVec& grad = grad_per_sp[s];
-                bool ok;
-                if (use_sparse) {
-                    SparseHessianBuilder& H = H_sparse_per_sp[s];
-                    add_species_priors_sparse(H, grad, v.x, blocks, parsed, kg);
-                    H.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
-                    bool used_block_schur = false;
-                    ok = s2z_newton_step(H, st[s].solver, n_x, pd_mode, grad.data(),
-                                         v.delta.data(), used_block_schur,
-                                         &st[s].sparse.s2z_block_schur_cache);
-                } else {
-                    DenseMat& H = H_per_sp[s];
-                    for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, v.x, kg);
-                    add_per_arm_beta_re_priors(grad, H, v.x, parsed);
-                    ok = joint_pd_step_solve_dense(H, grad, v.delta, n_x,
-                                                   st[s].solver, dense_factor_sparse,
-                                                   st[s].dense.chol, pd_mode);
-                }
                 if (!ok) {
                     newton_damped_fallback(v.x, v.delta, n_x, nt[s].obj_valid);
                     res[s].n_iter = iter + 1;
-                    continue;
+                    return;
                 }
                 auto eval_obj = [&](const Rcpp::NumericVector& xv) -> double {
                     return eval_penalized_log_lik_joint_ll(
@@ -414,6 +429,16 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                                      eval_obj, nt[s].obj, nt[s].obj_valid,
                                      nt[s].conv_state, res[s].n_iter))
                     converged[s] = true;
+            };
+            for (int s = 0; s < B; s++) {
+                if (converged[s]) continue;
+                const bool ok = species_step(s, plan.first_guarded);
+                if (!ok && !plan.first_guarded) deferred.push_back(s);
+                else finish(s, ok);
+            }
+            if (!deferred.empty()) {
+                fused_scatter(kg, CurvatureMode::Expected);
+                for (int s : deferred) finish(s, species_step(s, /*guarded=*/true));
             }
             bool all_conv = true;
             for (int s = 0; s < B; s++) if (!converged[s]) { all_conv = false; break; }
