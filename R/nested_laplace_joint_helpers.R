@@ -1308,6 +1308,12 @@ tulpa_joint_axis_specs_from_grid <- function(
     # says whether the stopping rule fired; this says how far from stationary
     # a cell that stopped short is.
     list(res = "score_max",         extra = "score_max", kind = "num"),
+    # Where the final-pass sum-to-zero log-determinant was read: off the
+    # PD-enforced factor (`s2z_log_det_fallback`), or off the densified direct
+    # factor after the block-Schur one failed (`s2z_direct_factor`). Counted by
+    # `.tulpa_s2z_flag_cells()` over the merged grid.
+    list(res = "s2z_log_det_fallback", extra = "s2z_log_det_fallback", kind = "lgl"),
+    list(res = "s2z_direct_factor", extra = "s2z_direct_factor", kind = "lgl"),
     list(res = "Q_csc_p_per_grid",  extra = "Q_csc_p",   kind = "elt"),
     list(res = "Q_csc_i_per_grid",  extra = "Q_csc_i",   kind = "elt"),
     list(res = "Q_csc_x_per_grid",  extra = "Q_csc_x",   kind = "elt"),

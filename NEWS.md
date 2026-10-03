@@ -26,7 +26,10 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   the 25 km Calluna fit under `"auto"` the peak falls from 18.3 to 14.1 GB
   with the same grid, the same log marginal to 12 digits and no change in
   wall time. The grid carries a per-cell `s2z_direct_factor` flag and
-  `diagnostic_summary()` reports `s2z_direct_factor_cells`.
+  `diagnostic_summary()` reports `s2z_direct_factor_cells`. Both that flag
+  and `s2z_log_det_fallback` now ride the refinement passes, so they cover
+  every cell of a refined joint grid; the fallback flag had covered the
+  declared cells only, and a refined cell that fell back went unreported.
 * The cheap screen no longer credits a truncated cell with more than its next
   Newton step delivers. It estimated a cell's converged log marginal as its
   value plus half the Newton decrement, a second-order prediction with no
