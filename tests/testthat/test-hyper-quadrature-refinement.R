@@ -280,6 +280,19 @@ test_that("a solved level grows into the rows next to the ones holding its mass"
   expect_null(.hyper_level_frontier(g, lm, FLAT_LEVEL_SPECS, ref, "sigma", 0.2))
 })
 
+test_that("a solved level grows into a row the screen dropped", {
+  phi <- LEVEL_AXES$phi_pos
+  # As above, with every cell of the third phi row screened out: the row is a
+  # row of the tensor whose mass at the new level nothing has read, so the
+  # level still follows its mass there.
+  g <- rbind(LEVEL_TENSOR, cbind(sigma = 0.2, phi_pos = phi[1:2]))
+  ref <- c(rep("", 25L), "sigma", "sigma")
+  lm <- c(rep(-50, 25L), -50, 0)
+  lm[LEVEL_TENSOR[, "phi_pos"] == phi[3]] <- -Inf
+  grow <- .hyper_level_frontier(g, lm, FLAT_LEVEL_SPECS, ref, "sigma", 0.2)
+  expect_equal(unname(grow[, "phi_pos"]), phi[3])
+})
+
 test_that("interior levels are measured by the product rule over all levels", {
   lp <- log(LEVEL_AXES$phi_pos)
   x <- add_levels(LEVEL_TENSOR, rep("", 25L), "phi_pos",

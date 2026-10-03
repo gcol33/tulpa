@@ -662,7 +662,12 @@
 # the mass at the other levels of `axis`, says whether the levels moved the
 # posterior towards it. Every row holding more than `row_tail` of the levels'
 # mass whose share GREW passes them to the rows one level away along each other
-# axis that hold a solved cell and not the levels yet. On axes that do not
+# axis that are rows of the grid and do not hold the levels yet. A row whose
+# every cell the cheap screen dropped is one of them: the screen ranked it at
+# the other levels of `axis`, which on the full 25 km Calluna occu_cover fit
+# sat 680 nats below the levels that hold the posterior, so a dropped row is
+# one whose mass at the new levels nothing has read, and the row through the
+# outer mode was one. On axes that do not
 # correlate the shares stay put and the rows `.hyper_tensor_level_cells()` left
 # out stay out; where the levels pull the mass towards the edge of the rows they
 # were laid in, the levels follow it until the edge rows hold none of it. NULL
@@ -695,7 +700,7 @@
   grew[is.na(grew)] <- Inf
   hot <- names(s_new)[s_new > row_tail & grew > 1 + 1e-8]
   if (!length(hot)) return(NULL)
-  rows <- unique(theta_grid[is.finite(log_marginal), others, drop = FALSE])
+  rows <- unique(theta_grid[, others, drop = FALSE])
   lev_of <- lapply(others, function(b) sort(unique(rows[, b])))
   src <- held[match(hot, hk), , drop = FALSE]
   nb <- list()
