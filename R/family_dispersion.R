@@ -152,6 +152,19 @@
        f_a = f_a, f_ae = f_ae, f_aa = f_aa, f_a_ae = f_a_ae, f_aeae = f_aeae)
 }
 
+# d/dphi of the beta eta-score dmu g_mu, g_mu = phi (y* - mu*) with
+# y* = logit(y), mu* = psi(a) - psi(b): the term is read by the score's own
+# phi-derivative and, through the score term of the observed weight, by the
+# weight's.
+.beta_dscore_dphi <- function(eta, y, phi) {
+  mu <- .mean_beta(eta)
+  a <- mu * phi
+  b <- (1 - mu) * phi
+  dmu <- mu * (1 - mu)
+  dmu * ((log(y) - log1p(-y) - digamma(a) + digamma(b)) +
+           phi * (-trigamma(a) * mu + trigamma(b) * (1 - mu)))
+}
+
 #' @keywords internal
 .FAMILY_DPHI <- list(
 
@@ -312,9 +325,10 @@
 
   # phi = precision, a = mu phi and b = (1 - mu) phi, so da/dphi = mu and
   # db/dphi = 1 - mu carry every derivative. The weight differentiated is the
-  # Fisher form phi^2 (psi'(a) + psi'(b)) dmu^2 that H is built from; the
-  # observed curvature is a different function, and it reaches the mode motion
-  # through obs_curvature_delta_for_family rather than through this entry.
+  # OBSERVED curvature H is built from, `obs_weight` = the Fisher form
+  # phi^2 (psi'(a) + psi'(b)) dmu^2 minus the score term (1 - 2 mu) dmu g_mu;
+  # the score term's phi-derivative is (1 - 2 mu) times `dscore`, the registered
+  # phi-derivative of the eta-score dmu g_mu.
   beta = list(
     dloglik = function(eta, y, n_trials, phi, phi2 = NULL) {
       mu <- .mean_beta(eta)
@@ -324,12 +338,7 @@
         mu * log(y) + (1 - mu) * log1p(-y)
     },
     dscore = function(eta, y, n_trials, phi, phi2 = NULL) {
-      mu <- .mean_beta(eta)
-      a <- mu * phi
-      b <- (1 - mu) * phi
-      dmu <- mu * (1 - mu)
-      dmu * ((log(y) - log1p(-y) - digamma(a) + digamma(b)) +
-               phi * (-trigamma(a) * mu + trigamma(b) * (1 - mu)))
+      .beta_dscore_dphi(eta, y, phi)
     },
     dweight = function(eta, y, n_trials, phi, phi2 = NULL) {
       mu <- .mean_beta(eta)
@@ -337,7 +346,8 @@
       b <- (1 - mu) * phi
       dmu <- mu * (1 - mu)
       dmu^2 * (2 * phi * (trigamma(a) + trigamma(b)) +
-                 phi^2 * (psigamma(a, 2L) * mu + psigamma(b, 2L) * (1 - mu)))
+                 phi^2 * (psigamma(a, 2L) * mu + psigamma(b, 2L) * (1 - mu))) -
+        (1 - 2 * mu) * .beta_dscore_dphi(eta, y, phi)
     }
   ),
 

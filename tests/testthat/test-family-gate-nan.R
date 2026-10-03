@@ -26,9 +26,12 @@ test_that("the observed-curvature 2nd derivative declines with NaN, not a number
         ok <- tryCatch(tulpa:::cpp_family_has_obs_curvature_2nd_derivative(f),
                        error = function(e) NA)
         if (is.na(ok)) next
+        # A response inside the family's support, so a finite value is the
+        # admitted answer and not an artefact of evaluating outside it.
         v <- tryCatch(
             tulpa:::cpp_family_obs_curvature_deta2(
-                y = 2, n_trials = 10L, eta = 0.3, family = f, phi = 1.5,
+                y = if (f == "beta") 0.3 else 2, n_trials = 10L, eta = 0.3,
+                family = f, phi = 1.5,
                 phi2 = 4.0),
             error = function(e) NULL)
         if (is.null(v)) next

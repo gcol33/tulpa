@@ -500,12 +500,14 @@ dispatch_gibbs_temporal <- function(y, n_trials, X, re_group, n_re_groups,
 #' and for those the y-free expected form is a different function
 #' (gcol33/tulpa#824).
 #'
-#' `neg_binomial_2` is the one family where that bites: its compiled branch
-#' returns `(y + phi) phi mu / (mu + phi)^2` while the registry's y-free
-#' `weight` is the expected `mu phi / (mu + phi)`, which at a response away
-#' from the mean differ by tens of percent. Every other family either has no
-#' separate observed form or is one the compiled side answers with the expected
-#' weight, so `y` changes nothing and may be omitted.
+#' `neg_binomial_2` and `beta` are the families where that bites: the compiled
+#' neg_binomial_2 branch returns `(y + phi) phi mu / (mu + phi)^2` while the
+#' registry's y-free `weight` is the expected `mu phi / (mu + phi)`, which at a
+#' response away from the mean differ by tens of percent; the beta Newton
+#' weight carries the score term `(1 - 2 mu) dmu g_mu` the expected form does
+#' not. Every other family either has no separate observed form or is one the
+#' compiled side answers with the expected weight, so `y` changes nothing and
+#' may be omitted.
 #' @keywords internal
 glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL,
                          y = NULL) {

@@ -360,11 +360,26 @@
       dmu <- mu * (1 - mu)
       phi * (log(y) - log1p(-y) - digamma(a) + digamma(b)) * dmu
     },
+    # The expected (Fisher) weight phi^2 (psi'(a) + psi'(b)) dmu^2.
     weight = function(eta, n_trials, phi) {
       mu <- .mean_beta(eta)
       dmu <- mu * (1 - mu)
       tg <- trigamma(mu * phi) + trigamma((1 - mu) * phi)
       phi * phi * tg * dmu * dmu
+    },
+    # Observed curvature -d^2 loglik / d eta^2 at the realized y: the expected
+    # weight minus the score term (1 - 2 mu) dmu g_mu, with g_mu the mu-score.
+    # Averaging it over y returns `weight`. This is the weight the engine's
+    # Newton builds H from for this family, so it is what a Hessian rebuilt in
+    # R has to carry.
+    obs_weight = function(eta, y, n_trials, phi) {
+      mu <- .mean_beta(eta)
+      a <- mu * phi
+      b <- (1 - mu) * phi
+      dmu <- mu * (1 - mu)
+      g_mu <- phi * (log(y) - log1p(-y) - digamma(a) + digamma(b))
+      phi * phi * (trigamma(a) + trigamma(b)) * dmu * dmu -
+        (1 - 2 * mu) * dmu * g_mu
     },
     sample = function(eta, n_trials, phi) {
       mu <- .mean_beta(eta)
@@ -1325,8 +1340,9 @@ family_variance <- function(eta, family, n_trials = NULL, phi = 1.0,
 #' zero-inflation mixture in `R/family_zi.R` differentiated through the wrong
 #' one (gcol33/tulpa#824).
 #'
-#' The registry's three `obs_weight` closures stay as the R oracle the compiled
-#' dispatch is pinned against in `test-family-registry-compiled.R`.
+#' The registry's `obs_weight` closures (neg_binomial_2, neg_binomial_1,
+#' truncated_neg_binomial_2, beta) stay as the R oracle the compiled dispatch
+#' is pinned against in `test-family-registry-compiled.R`.
 #' @keywords internal
 .family_obs_weight <- function(eta, y, family, n_trials = NULL, phi = 1.0,
                                phi2 = NULL) {

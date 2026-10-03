@@ -20,7 +20,8 @@ zero-inflation mixture in \code{R/family_zi.R} differentiated through the wrong
 one (gcol33/tulpa#824).
 }
 \details{
-The registry's three \code{obs_weight} closures stay as the R oracle the compiled
-dispatch is pinned against in \code{test-family-registry-compiled.R}.
+The registry's \code{obs_weight} closures (neg_binomial_2, neg_binomial_1,
+truncated_neg_binomial_2, beta) stay as the R oracle the compiled dispatch
+is pinned against in \code{test-family-registry-compiled.R}.
 }
 \keyword{internal}

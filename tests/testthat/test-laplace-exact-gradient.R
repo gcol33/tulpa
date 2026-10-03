@@ -475,9 +475,15 @@ test_that("the exact mode-Jacobian gate tracks whether the observed curvature is
       y, 6L, eta, cs[[1]], cs[[2]])) < 1e-12), info = cs[[1]])
     expect_true(cpp_family_working_weight_is_observed(cs[[1]]), info = cs[[1]])
   }
+  # beta's Newton weight is the observed curvature under every link
+  # (gcol33/tulpa#936), so its delta is the zero function too; its response
+  # lives on (0, 1).
+  expect_true(all(abs(cpp_family_obs_curvature_delta_vec(
+    c(0.2, 0.55, 0.9), 1L, eta, "beta", 6)) < 1e-12))
+  expect_true(cpp_family_working_weight_is_observed("beta"))
   nonzero_delta <- list(
     list("truncated_neg_binomial_2", 2.5), list("neg_binomial_1", 2.5),
-    list("gamma", 3), list("beta", 6), list("inverse_gaussian", 0.6),
+    list("gamma", 3), list("inverse_gaussian", 0.6),
     list("beta_binomial", 6), list("binomial_probit", 1), list("gaussian_log", 1.4))
   for (cs in nonzero_delta) {
     expect_true(any(abs(cpp_family_obs_curvature_delta_vec(

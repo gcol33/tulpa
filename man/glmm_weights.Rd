@@ -17,11 +17,13 @@ and for those the y-free expected form is a different function
 (gcol33/tulpa#824).
 }
 \details{
-\code{neg_binomial_2} is the one family where that bites: its compiled branch
-returns \verb{(y + phi) phi mu / (mu + phi)^2} while the registry's y-free
-\code{weight} is the expected \verb{mu phi / (mu + phi)}, which at a response away
-from the mean differ by tens of percent. Every other family either has no
-separate observed form or is one the compiled side answers with the expected
-weight, so \code{y} changes nothing and may be omitted.
+\code{neg_binomial_2} and \code{beta} are the families where that bites: the compiled
+neg_binomial_2 branch returns \verb{(y + phi) phi mu / (mu + phi)^2} while the
+registry's y-free \code{weight} is the expected \verb{mu phi / (mu + phi)}, which at a
+response away from the mean differ by tens of percent; the beta Newton
+weight carries the score term \verb{(1 - 2 mu) dmu g_mu} the expected form does
+not. Every other family either has no separate observed form or is one the
+compiled side answers with the expected weight, so \code{y} changes nothing and
+may be omitted.
 }
 \keyword{internal}

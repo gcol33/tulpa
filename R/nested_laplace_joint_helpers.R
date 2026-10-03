@@ -1096,20 +1096,18 @@ tulpa_joint_axis_specs_from_grid <- function(
 # Record the cells whose inner solve never reached a mode, once the grid and
 # its cell measure are final and before the weights are taken. A log marginal
 # read off an iterate that is not a mode is not a Laplace approximation at a
-# mode, and how far it is from one is not known to this layer: the kernel
-# reports no residual for the cell, and a node taken out of a row leaves the
-# row's quadratic join to bridge the gap, which moves the row's quantiles by
-# more than a nearly converged iterate does. So the cells stay in the measure
-# at the values they stopped at, and the
+# mode; how far it is from one is the cell's `score_max`, and a node taken out
+# of a row leaves the row's quadratic join to bridge the gap, which moves the
+# row's quantiles by more than a nearly converged iterate does. So the cells
+# stay in the measure at the values they stopped at, and the
 # fit says so: `nonconverged_cells` (an integer vector, empty when every solved
 # cell converged, so a reader can tell "none" from "not recorded") and
 # `nonconverged_mass`, the share of the posterior those cells carry, read
-# against the same measure the weights use. Past the screen's mass gate the
-# fit warns, since that much of the posterior sits on cells without a mode.
-#
-# `fn` names the front door, for the warning.
-.nl_record_unconverged <- function(res, fn = "tulpa_nested_laplace_joint()",
-                                   gate_mass = .nl_screen("gate_mass")) {
+# against the same measure the weights use. The warning past the screen's mass
+# gate is `.nl_warn_unconverged()`, said by the front door on the fit it
+# returns: a placement refit replaces the grid this records, and a warning
+# about the replaced grid names cells the caller never receives.
+.nl_record_unconverged <- function(res) {
     lm <- as.numeric(res$log_marginal)
     n <- length(lm)
     res$nonconverged_cells <- integer(0)
@@ -1124,7 +1122,15 @@ tulpa_joint_axis_specs_from_grid <- function(
     mass <- sum(w0[bad], na.rm = TRUE)
     res$nonconverged_cells <- bad
     res$nonconverged_mass  <- mass
-    if (is.finite(mass) && mass > gate_mass) {
+    res
+}
+
+# Past the screen's mass gate, that much of the posterior sits on cells without
+# a mode, and the fit says so once. `fn` names the front door.
+.nl_warn_unconverged <- function(res, fn, gate_mass = .nl_screen("gate_mass")) {
+    bad  <- res$nonconverged_cells
+    mass <- res$nonconverged_mass
+    if (length(bad) && is.finite(mass %||% NA_real_) && mass > gate_mass) {
         warning(sprintf(paste0(
             "%s: %d outer-grid cell%s whose inner Newton stopped at ",
             "control$max_iter without reaching a mode carr%s %s of the ",
@@ -1134,7 +1140,7 @@ tulpa_joint_axis_specs_from_grid <- function(
             if (length(bad) == 1L) "ies" else "y",
             format(signif(mass, 3))), call. = FALSE)
     }
-    res
+    invisible(res)
 }
 
 # Convert a generic `new_cells` matrix [n_new x n_axes] back to the joint
@@ -1277,6 +1283,7 @@ tulpa_joint_axis_specs_from_grid <- function(
 # `kind` is how a cell is taken out of a result and put back:
 #   "row" -- an [n_grid x m] matrix; cell k is row k, a cell without one is NA
 #   "int" -- a length-n_grid integer vector
+#   "num" -- a length-n_grid numeric vector; a cell without one reads NA
 #   "lgl" -- a length-n_grid logical vector; a cell without one reads FALSE
 #   "elt" -- a length-n_grid list; cell k is element k
 .JOINT_CELL_FIELDS <- list(
@@ -1296,6 +1303,11 @@ tulpa_joint_axis_specs_from_grid <- function(
     # cell of the merged grid; a shorter vector reads as all converged
     # (`.nested_converged_cells()`).
     list(res = "converged",         extra = "converged", kind = "lgl"),
+    # The residual the inner Newton stopped at: the largest absolute component
+    # of the joint penalized score at the cell's reported mode. `converged`
+    # says whether the stopping rule fired; this says how far from stationary
+    # a cell that stopped short is.
+    list(res = "score_max",         extra = "score_max", kind = "num"),
     list(res = "Q_csc_p_per_grid",  extra = "Q_csc_p",   kind = "elt"),
     list(res = "Q_csc_i_per_grid",  extra = "Q_csc_i",   kind = "elt"),
     list(res = "Q_csc_x_per_grid",  extra = "Q_csc_x",   kind = "elt"),
@@ -1316,6 +1328,7 @@ tulpa_joint_axis_specs_from_grid <- function(
             e[[f$extra]] <- switch(f$kind,
                                    row = as.numeric(v[k, ]),
                                    int = as.integer(v[k]),
+                                   num = as.numeric(v[k]),
                                    lgl = as.logical(v[k]),
                                    elt = v[[k]])
         }
@@ -1378,6 +1391,10 @@ tulpa_joint_axis_specs_from_grid <- function(
                 v <- e[[f$extra]]
                 if (is.null(v)) NA_integer_ else as.integer(v)
             }, integer(1)),
+            num = vapply(extras, function(e) {
+                v <- e[[f$extra]]
+                if (is.null(v)) NA_real_ else as.numeric(v)
+            }, numeric(1)),
             lgl = vapply(extras, function(e) isTRUE(e[[f$extra]]), logical(1)),
             elt = lapply(extras, `[[`, f$extra))
     }

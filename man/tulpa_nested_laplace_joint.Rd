@@ -1199,8 +1199,10 @@ width asked for and the width the grid ran at. The driver clamps the
 request to the team the OpenMP environment hands out, so a fit launched
 under \code{OMP_NUM_THREADS=1} with \code{n_threads_outer = 10} runs serial; the
 pair is what a timing has to be recorded against.
-\item \code{converged}, \code{n_iter} -- per cell, whether the inner Newton reached a
-mode within \code{control$max_iter} and the iterations it took. A cell that
+\item \code{converged}, \code{n_iter}, \code{score_max} -- per cell, whether the inner Newton
+reached a mode within \code{control$max_iter}, the iterations it took, and
+the largest absolute component of the joint penalized score at the
+mode it reported (the residual a cell that stopped short stopped at). A cell that
 stopped without a mode is solved again from the mode of its nearest
 converged cell (\code{nonconverged_resolve} counts the cells that first
 stalled and those the re-solve recovered); one that still has no mode

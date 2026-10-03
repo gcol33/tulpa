@@ -10,11 +10,11 @@
 //     H = A' diag(w) A + P,     w_i = grad_hess_for_family(...).neg_hess
 //
 // Where working_weight_is_observed() holds -- poisson, binomial,
-// neg_binomial_2, truncated_poisson, and the canonical-link and
-// constant-curvature members of the generic route -- that w IS the true
-// observed -l''(eta), so dw/deta is the true -l'''(eta). Everywhere else
-// (neg_binomial_1, truncated_neg_binomial_2, beta_binomial, t, tweedie, and any
-// non-canonical link on the generic route) w is a working / expected weight
+// neg_binomial_2, truncated_poisson, beta under every link, and the
+// canonical-link and constant-curvature members of the generic route -- that w
+// IS the true observed -l''(eta), so dw/deta is the true -l'''(eta). Everywhere
+// else (neg_binomial_1, truncated_neg_binomial_2, beta_binomial, t, tweedie, and
+// any non-canonical link on the rest of the generic route) w is a working / expected weight
 // that is deliberately NOT the second derivative -- see the notes on each
 // branch of grad_hess_for_family. Differentiating the true log density there
 // would produce a gradient of an objective nobody optimizes.
@@ -49,6 +49,9 @@ inline double dvariance_dmu(double mu, double phi, const std::string& family,
     if (family == "gamma") return 2.0 * mu / phi;
     if (family == "inverse_gaussian") return 3.0 * phi * mu * mu;
     if (family == "beta") {
+        // The expected information's ladder, kept complete with variance_fn;
+        // the beta Newton weight is the observed curvature and reads the
+        // grad_mu ladder instead.
         // V = 1 / (phi^2 tg), tg = trigamma(mu phi) + trigamma((1-mu) phi).
         // d tg / d mu = phi (psi''(mu phi) - psi''((1-mu) phi)), psi'' = tetragamma.
         const double tg = tulpa::math::portable_trigamma(mu * phi) + tulpa::math::portable_trigamma((1.0 - mu) * phi);
@@ -184,13 +187,21 @@ inline double curvature_deta_for_family(
         return (2.0 - tw.p) * std::pow(tw.mu, 2.0 - tw.p) / phi;
     }
 
-    // Generic mu-space route: w = dmu^2 / V(mu), so
-    //   dw/deta = (2 dmu mu_eta2 V - dmu^3 V'(mu)) / V^2.
     FamilyLink fl = parse_family_link(family);
     double mu = linkinv(eta, fl.link);
     const double dmu  = mu_eta(eta, fl.link);
     const double d2mu = mu_eta2(eta, fl.link);
     mu = clamp_mu_for_family(mu, fl.family);
+    if (mu_route_weight_is_observed(fl.family)) {
+        // w = -l'', so dw/deta = -l''' from the grad_mu ladder.
+        const double g   = grad_mu(y, mu, phi, fl.family, n_trials);
+        const double gp  = dgrad_mu_dmu(y, mu, phi, fl.family, n_trials);
+        const double gpp = d2grad_mu_dmu2(y, mu, phi, fl.family, n_trials);
+        return obs_curvature_deta_mu_route(g, gp, gpp, dmu, d2mu,
+                                           mu_eta3(eta, fl.link));
+    }
+    // Generic mu-space route: w = dmu^2 / V(mu), so
+    //   dw/deta = (2 dmu mu_eta2 V - dmu^3 V'(mu)) / V^2.
     const double V  = variance_fn(mu, phi, fl.family, n_trials);
     const double dV = dvariance_dmu(mu, phi, fl.family, n_trials);
     return (2.0 * dmu * d2mu * V - dmu * dmu * dmu * dV) / (V * V);
@@ -267,16 +278,25 @@ inline double curvature_deta2_for_family(
         return a * a * std::pow(tw.mu, a) / phi;
     }
 
-    // Generic mu-space route: w = dmu^2 / V(mu). With u = mu_eta, u1 = mu_eta2,
-    // u2 = mu_eta3, Vm = dvariance_dmu, Vmm = d2variance_dmu2,
-    //   d2w/deta2 = 2(u1^2 + u u2)/V - (5 u^2 u1 Vm + u^4 Vmm)/V^2
-    //               + 2 u^4 Vm^2 / V^3.
     FamilyLink fl = parse_family_link(family);
     double mu = linkinv(eta, fl.link);
     const double u  = mu_eta(eta, fl.link);
     const double u1 = mu_eta2(eta, fl.link);
     const double u2 = mu_eta3(eta, fl.link);
     mu = clamp_mu_for_family(mu, fl.family);
+    if (mu_route_weight_is_observed(fl.family)) {
+        // w = -l'', so d2w/deta2 = -l'''' from the grad_mu ladder.
+        const double g    = grad_mu(y, mu, phi, fl.family, n_trials);
+        const double gp   = dgrad_mu_dmu(y, mu, phi, fl.family, n_trials);
+        const double gpp  = d2grad_mu_dmu2(y, mu, phi, fl.family, n_trials);
+        const double gppp = d3grad_mu_dmu3(y, mu, phi, fl.family, n_trials);
+        return obs_curvature_deta2_mu_route(g, gp, gpp, gppp, u, u1, u2,
+                                            mu_eta4(eta, fl.link));
+    }
+    // Generic mu-space route: w = dmu^2 / V(mu). With u = mu_eta, u1 = mu_eta2,
+    // u2 = mu_eta3, Vm = dvariance_dmu, Vmm = d2variance_dmu2,
+    //   d2w/deta2 = 2(u1^2 + u u2)/V - (5 u^2 u1 Vm + u^4 Vmm)/V^2
+    //               + 2 u^4 Vm^2 / V^3.
     const double V   = variance_fn(mu, phi, fl.family, n_trials);
     const double Vm  = dvariance_dmu(mu, phi, fl.family, n_trials);
     const double Vmm = d2variance_dmu2(mu, phi, fl.family, n_trials);
@@ -378,7 +398,7 @@ inline double obs_curvature_delta_deta_for_family(
         const double g   = grad_mu(y, mu, phi, fl.family, n_trials);
         const double gp  = dgrad_mu_dmu(y, mu, phi, fl.family, n_trials);
         const double gpp = d2grad_mu_dmu2(y, mu, phi, fl.family, n_trials);
-        return -(gpp * u * u * u + 3.0 * gp * u * u1 + g * u2)
+        return obs_curvature_deta_mu_route(g, gp, gpp, u, u1, u2)
              - curvature_deta_for_family(y, n_trials, eta, family, phi, phi2);
     }
     if (family == "beta_binomial") {

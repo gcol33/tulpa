@@ -1191,8 +1191,10 @@
 #'      request to the team the OpenMP environment hands out, so a fit launched
 #'      under `OMP_NUM_THREADS=1` with `n_threads_outer = 10` runs serial; the
 #'      pair is what a timing has to be recorded against.
-#'   * `converged`, `n_iter` -- per cell, whether the inner Newton reached a
-#'      mode within `control$max_iter` and the iterations it took. A cell that
+#'   * `converged`, `n_iter`, `score_max` -- per cell, whether the inner Newton
+#'      reached a mode within `control$max_iter`, the iterations it took, and
+#'      the largest absolute component of the joint penalized score at the
+#'      mode it reported (the residual a cell that stopped short stopped at). A cell that
 #'      stopped without a mode is solved again from the mode of its nearest
 #'      converged cell (`nonconverged_resolve` counts the cells that first
 #'      stalled and those the re-solve recovered); one that still has no mode
@@ -1640,6 +1642,7 @@ tulpa_nested_laplace_joint <- function(responses,
         res$k_quality_k_trace <- k_trace
     }
     .nl_warn_unplaced_rail(res, "tulpa_nested_laplace_joint()")
+    .nl_warn_unconverged(res, "tulpa_nested_laplace_joint()")
     .nl_attach_outer_threads(res, outer_threads)
 }
 

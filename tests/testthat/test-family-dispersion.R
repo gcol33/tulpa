@@ -107,21 +107,23 @@ test_that("dscore/dphi matches a finite difference of the registered score", {
 
 
 test_that("dweight/dphi differentiates the weight H is actually built from", {
-  # The target is NOT uniformly `.FAMILY_OPS$weight`. neg_binomial_2 is the one
-  # family whose compiled Newton weight is already the observed curvature
-  # (`obs_weight`); every other entry differentiates the registry's `weight`.
-  # The truncated pair go the OTHER way from neg_binomial_2: Newton builds H
-  # from the expected form Var(y | y > 0), chosen there because it is positive
-  # for every mu while the observed curvature carries y and can go negative.
-  # Same rule -- differentiate whatever H is built from -- landing on the
-  # opposite member of the pair.
+  # The target is NOT uniformly `.FAMILY_OPS$weight`. Where the compiled Newton
+  # weight is already the observed curvature and the registry carries that
+  # curvature as `obs_weight` (neg_binomial_2, beta), that is the weight H is
+  # built from; every other entry differentiates the registry's `weight`. The
+  # truncated pair go the OTHER way: Newton builds H from the expected form
+  # Var(y | y > 0), chosen there because it is positive for every mu while the
+  # observed curvature carries y and can go negative. Same rule -- differentiate
+  # whatever H is built from -- landing on the opposite member of the pair, and
+  # read off the compiled predicate rather than a list kept here.
   #
   # Differentiating the expected form for neg_binomial_2 is wrong by a few
   # percent: enough to move the maximizer, small enough that a recovery test
   # would still converge and look plausible. Naming the right target per family
   # is the whole content of this test.
   h_weight <- function(cs, fam, phi) {
-    if (fam == "neg_binomial_2")
+    if (is.function(cs$ops$obs_weight) &&
+        isTRUE(tulpa:::cpp_family_working_weight_is_observed(fam)))
       return(cs$ops$obs_weight(cs$eta, cs$y, cs$n_trials, phi))
     ops_call(cs$ops$weight, cs, cs$eta, cs$n_trials, phi = phi)
   }

@@ -160,12 +160,13 @@ test_that(".family_obs_weight recycles to the longest argument", {
                  tulpa:::.family_obs_weight(e, 2, "poisson"), numeric(1)))
 })
 
-test_that("neg_binomial_2 is the family whose Laplace weight needs the response", {
+test_that("neg_binomial_2 and beta are the families whose Laplace weight needs the response", {
   # Pins the characterisation rather than the family list: a family qualifies
   # when the compiled working weight IS the observed curvature AND the
   # registry carries a separate (y-carrying) observed form.
   needs <- Filter(tulpa:::.glmm_weight_needs_y, family_names())
-  expect_equal(needs, "neg_binomial_2")
+  expect_setequal(needs, c("neg_binomial_2", "beta"))
+  expect_error(tulpa:::glmm_weights(0.4, "beta", phi = 3), "pass `y`")
 
   # Without the response it refuses rather than returning the expected form,
   # which differs by tens of percent at a y away from the mean: at phi = 1.7,

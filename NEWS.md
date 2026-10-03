@@ -2,6 +2,22 @@
 
 This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
 
+* A beta arm's inner Newton weight is the observed curvature
+  `-l''(eta)`, where it was the expected (Fisher) information, so the Laplace
+  log-determinant is the textbook one at the mode. **Beta-arm fits change**:
+  the mode is the same stationary point, but each cell's log marginal moves
+  (-845.9 to -852.0 on a 16 x 16 ICAR cover fixture), and the outer weights,
+  hyperparameter summaries and fixed-effect intervals move with it. Against an
+  exact (60-node adaptive Gauss-Hermite) marginal on a separable beta-logit
+  fixture, the observed form's per-group error is about 0.6 of the Fisher
+  form's and varies less across the hyperparameter grid; neither is
+  uniformly closer on the hyperparameter posterior. On the Fisher weight the
+  Newton step contracted at 0.80 per iteration (61 steps to converge on a
+  pinned cover cell, against 6 now), and cells that hit `control$max_iter`
+  kept their full weight; on the four-seed joint fixture the mean inner
+  iteration count went from 9.3-16.4 to 3.6-4.0 and no cell stalls. A joint
+  fit records each cell's final score residual as `score_max`, and
+  `glmm_weights()` for beta now needs `y` (gcol33/tulpa#936).
 * An EM M-step block fitted by nested Laplace no longer runs the outer
   Pareto-k diagnostic on every iteration: the fit is one iterate of the EM
   objective, nothing on that path read its k-hat, and the diagnostic's batch

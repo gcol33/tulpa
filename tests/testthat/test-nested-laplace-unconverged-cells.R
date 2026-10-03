@@ -6,9 +6,10 @@
 
 # A binomial occurrence arm and a beta cover arm sharing an ICAR field on an
 # nr x nr lattice, the beta precision pinned to nodes away from its posterior
-# so the consistency pass lays a dispersion ladder. The beta arm's Newton
-# weight is the Fisher information, so its solve converges linearly and a low
-# iteration cap leaves cells without a mode.
+# so the consistency pass lays a dispersion ladder. From a cold start the inner
+# Newton needs four to six steps on this fixture, so a cap of three leaves
+# cells without a mode while a re-solve from a converged neighbour recovers
+# some of them.
 .uc_fit <- function(max_iter, nr = 8L, seed = 2L) {
     set.seed(seed)
     n <- nr * nr
@@ -47,7 +48,8 @@
 test_that("a cell without a mode is re-solved, then recorded with its mass and named", {
     skip_on_cran()
     skip_if_fast()
-    expect_warning(fit <- .uc_fit(max_iter = 4L), "without reaching a mode")
+    expect_warning(fit <- .uc_fit(max_iter = 3L, seed = 4L),
+                   "without reaching a mode")
     solved <- is.finite(fit$log_marginal) & !as.logical(fit$prune_mask)
     stalled <- which(solved & !fit$converged)
     expect_gt(length(stalled), 0L)
@@ -56,7 +58,8 @@ test_that("a cell without a mode is re-solved, then recorded with its mass and n
     expect_identical(fit$nonconverged_cells, stalled)
     expect_equal(fit$nonconverged_mass, sum(fit$weights[stalled]))
     expect_gt(fit$nonconverged_mass, .nl_screen("gate_mass"))
-    expect_true(all(fit$n_iter[stalled] == 4L))
+    expect_true(all(fit$n_iter[stalled] == 3L))
+    expect_gt(fit$nonconverged_resolve$n_resolved, 0L)
     # The re-solve ran over every cell that first stalled; what it recovered is
     # converged now and no longer listed.
     rs <- fit$nonconverged_resolve

@@ -507,7 +507,7 @@ Rcpp::NumericVector cpp_test_laplace_gaussian(double y, double eta, double phi) 
       Rcpp::_["neg_hess"] = tulpa::neg_hess_log_lik_gaussian(y, eta, phi));
 }
 
-// The link ladder itself, vectorized over eta. The mean and its first three
+// The link ladder itself, vectorized over eta. The mean and its first four
 // eta-derivatives all reach a gradient, and each is a place a difference of
 // two nearly-equal quantities can cancel: cloglog's mu is 1 - exp(-exp(eta)),
 // which loses a digit per decade of |eta| in the lower tail and rounds to
@@ -518,14 +518,15 @@ Rcpp::NumericVector cpp_test_laplace_gaussian(double y, double eta, double phi) 
 // [[Rcpp::export]]
 Rcpp::NumericMatrix cpp_link_ladder(Rcpp::NumericVector eta, std::string link) {
   const int n = eta.size();
-  Rcpp::NumericMatrix out(n, 4);
+  Rcpp::NumericMatrix out(n, 5);
   Rcpp::colnames(out) = Rcpp::CharacterVector::create(
-      "linkinv", "mu_eta", "mu_eta2", "mu_eta3");
+      "linkinv", "mu_eta", "mu_eta2", "mu_eta3", "mu_eta4");
   for (int i = 0; i < n; i++) {
     out(i, 0) = tulpa::linkinv(eta[i], link);
     out(i, 1) = tulpa::mu_eta(eta[i], link);
     out(i, 2) = tulpa::mu_eta2(eta[i], link);
     out(i, 3) = tulpa::mu_eta3(eta[i], link);
+    out(i, 4) = tulpa::mu_eta4(eta[i], link);
   }
   return out;
 }

@@ -42,7 +42,7 @@
 .ETA_FLOOR <- 1e-10
 .safe_pos_eta <- function(eta) pmax(eta, .ETA_FLOOR)
 
-# Each entry mirrors linkinv / mu_eta in src/laplace_family_link.h.
+# Each entry mirrors linkinv / mu_eta / mu_eta2 in src/laplace_family_link.h.
 # `positive_eta` marks the links carried on the open half-line eta > 0: inverse
 # and 1mu2 because mu is undefined otherwise, sqrt because mu = eta^2 makes eta
 # and -eta observationally identical, so admitting both branches would make the
@@ -52,54 +52,63 @@
     linkfun = function(mu) mu,
     linkinv = function(eta) eta,
     mu_eta  = function(eta) rep(1, length(eta)),
+    mu_eta2 = function(eta) rep(0, length(eta)),
     positive_eta = FALSE
   ),
   log = list(
     linkfun = function(mu) log(mu),
     linkinv = function(eta) .safe_exp(eta),
     mu_eta  = function(eta) .safe_exp(eta),
+    mu_eta2 = function(eta) .safe_exp(eta),
     positive_eta = FALSE
   ),
   inverse = list(
     linkfun = function(mu) 1 / mu,
     linkinv = function(eta) 1 / .safe_pos_eta(eta),
     mu_eta  = function(eta) -1 / .safe_pos_eta(eta)^2,
+    mu_eta2 = function(eta) 2 / .safe_pos_eta(eta)^3,
     positive_eta = TRUE
   ),
   logit = list(
     linkfun = function(mu) log(mu) - log1p(-mu),
     linkinv = function(eta) stats::plogis(eta),
     mu_eta  = function(eta) { p <- stats::plogis(eta); p * (1 - p) },
+    mu_eta2 = function(eta) { p <- stats::plogis(eta); p * (1 - p) * (1 - 2 * p) },
     positive_eta = FALSE
   ),
   probit = list(
     linkfun = function(mu) stats::qnorm(mu),
     linkinv = function(eta) stats::pnorm(eta),
     mu_eta  = function(eta) stats::dnorm(eta),
+    mu_eta2 = function(eta) -eta * stats::dnorm(eta),
     positive_eta = FALSE
   ),
   cauchit = list(
     linkfun = function(mu) stats::qcauchy(mu),
     linkinv = function(eta) stats::pcauchy(eta),
     mu_eta  = function(eta) 1 / (pi * (1 + eta^2)),
+    mu_eta2 = function(eta) -2 * eta / (pi * (1 + eta^2)^2),
     positive_eta = FALSE
   ),
   cloglog = list(
     linkfun = function(mu) log(-log1p(-mu)),
     linkinv = function(eta) -expm1(-exp(eta)),
     mu_eta  = function(eta) exp(eta - exp(eta)),
+    mu_eta2 = function(eta) exp(eta - exp(eta)) * (-expm1(eta)),
     positive_eta = FALSE
   ),
   sqrt = list(
     linkfun = function(mu) sqrt(mu),
     linkinv = function(eta) eta^2,
     mu_eta  = function(eta) 2 * eta,
+    mu_eta2 = function(eta) rep(2, length(eta)),
     positive_eta = TRUE
   ),
   `1mu2` = list(
     linkfun = function(mu) 1 / mu^2,
     linkinv = function(eta) 1 / sqrt(.safe_pos_eta(eta)),
     mu_eta  = function(eta) -0.5 / .safe_pos_eta(eta)^1.5,
+    mu_eta2 = function(eta) 0.75 / .safe_pos_eta(eta)^2.5,
     positive_eta = TRUE
   )
 )
@@ -272,13 +281,19 @@ link_names <- function() names(.LINKS)
 
   beta = list(
     # phi is the precision a + b. The working variance is the inverse Fisher
-    # information on mu (Ferrari & Cribari-Neto 2004), not Var(y).
+    # information on mu (Ferrari & Cribari-Neto 2004), not Var(y). The engine's
+    # Newton weight for this family is the OBSERVED curvature, which the
+    # composed `obs_weight` forms from `grad_mu` and its mu-derivative
+    # `dgrad_mu`; the expected weight is what the score term is weighed against.
     loglik_mu   = function(y, mu, phi, n) {
       a <- mu * phi; b <- (1 - mu) * phi
       lgamma(phi) - lgamma(a) - lgamma(b) + (a - 1) * log(y) + (b - 1) * log1p(-y)
     },
     grad_mu     = function(y, mu, phi, n) {
       phi * (log(y) - log1p(-y) - digamma(mu * phi) + digamma((1 - mu) * phi))
+    },
+    dgrad_mu    = function(y, mu, phi, n) {
+      -phi^2 * (trigamma(mu * phi) + trigamma((1 - mu) * phi))
     },
     working_var = function(mu, phi, n) {
       1 / (phi^2 * (trigamma(mu * phi) + trigamma((1 - mu) * phi)))
@@ -310,7 +325,20 @@ link_names <- function() names(.LINKS)
   # sides would disagree about where the model is defined.
   outside <- if (lk$positive_eta) function(eta) eta <= 0 else function(eta) rep(FALSE, length(eta))
 
-  list(
+  # A base carrying `dgrad_mu` has its Newton weight built from the observed
+  # curvature -(L'' u^2 + L' u1), the form the compiled generic route returns
+  # for it (mu_route_weight_is_observed); the composed set then carries an
+  # `obs_weight` so glmm_weights() rebuilds the Hessian the engine used.
+  obs_weight <- if (is.function(fm$dgrad_mu)) {
+    function(eta, y, n_trials, phi) {
+      n  <- n_or_1(n_trials, length(eta))
+      mu <- mu_of(eta)
+      u  <- lk$mu_eta(eta)
+      -(fm$dgrad_mu(y, mu, phi, n) * u^2 + fm$grad_mu(y, mu, phi, n) * lk$mu_eta2(eta))
+    }
+  } else NULL
+
+  ops <- list(
     mean = function(eta, phi = 1.0, ...) mu_of(eta),
 
     loglik = function(eta, y, n_trials, phi) {
@@ -345,6 +373,8 @@ link_names <- function() names(.LINKS)
       fm$resp_mean(mu_of(eta), phi, n)
     }
   )
+  ops$obs_weight <- obs_weight
+  ops
 }
 
 # Composed operation sets are built once per family code and reused. The closures
