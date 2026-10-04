@@ -2,6 +2,18 @@
 
 This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
 
+* The random-effect covariance outer fit (`tulpa_re_cov_nested()`, and so
+  `mode = "structured"` / `"laplace"` with a free random-effect scale) keeps
+  its exact gradient when an inner solve that did not settle sits at a
+  line-search trial the optimizer rejects. The settled-mode gate refuses the
+  gradient there, but the value is still the trial's log marginal, and the
+  refusal counts only where the optimizer reads the gradient. It used to
+  replace the value with the failure sentinel and send the whole fit to the
+  derivative-free optimizer. On a binomial `(1 | g)` fit (n 3000, 300 groups)
+  BFGS's third trial is sigma = 8.2e7, whose inner solve stops at
+  `max_iter`; the fit now finishes on BFGS in 17 inner solves where it took 46
+  through Brent, at the same estimate and without the warning.
+
 * `tulpa_nested_laplace_joint()` gains `control$hessian = "auto"`, the new
   default: each inner Newton step takes the observed Hessian where it
   factors as it stands and the cell-coupled arms' complete-data expected

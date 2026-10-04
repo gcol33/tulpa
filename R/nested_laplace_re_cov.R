@@ -1196,7 +1196,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     L_list <- .re_cov_theta_to_L_list(sp$re, layout)
     fit <- inner_fit_grad(L_list, sp$phi)
     val <- if (is.null(fit) || !is.finite(fit$log_marginal %||% NA_real_)) NULL else {
-      r <- .laplace_exact_re_grad(
+      # The settled-mode gate refuses the GRADIENT, not the value: an inner mode
+      # short of stationarity moves the log marginal only at second order. A
+      # line search evaluates the value alone at its trial points, so the refusal
+      # is kept with the evaluation and signalled where a gradient is read.
+      refused <- NULL
+      r <- withCallingHandlers(.laplace_exact_re_grad(
         fit = fit, y = y, X = X, n_trials = n_trials, offset = offset,
         weights = weights,
         re_list = .re_cov_build_re_list(L_list, layout),
@@ -1210,8 +1215,15 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
         # Appends the log-phi coordinate, so the returned gradient is stacked in
         # the same order as theta.
         want_phi = !is.na(phi_idx)
-      )
-      if (is.null(r)) NULL else {
+      ), tulpa_unsettled_mode = function(w) {
+        refused <<- w
+        invokeRestart("muffleWarning")
+      })
+      if (is.null(r)) {
+        if (is.null(refused)) NULL
+        else list(f = fit$log_marginal + log_prior_theta(sp$re), g = NULL,
+                  refused = refused)
+      } else {
         # The prior shifts the objective but not the mode, so it enters the
         # gradient and leaves J alone. H below is the Laplace marginal's exact
         # curvature over the covariance coordinates; the prior's own curvature is
@@ -1234,6 +1246,10 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   negg_gr <- function(theta) {
     r <- eval_grad_at(theta)
     if (is.null(r)) return(rep(0, length(theta)))
+    if (is.null(r$g)) {
+      warning(r$refused)
+      return(rep(0, length(theta)))
+    }
     -r$g
   }
 
@@ -1422,6 +1438,10 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
       r <- eval_grad_at(theta, want_jacobian = want_jacobian,
                         want_hessian = want_hessian)
       if (is.null(r)) return(NULL)
+      if (is.null(r$g)) {
+        warning(r$refused)
+        return(NULL)
+      }
       if (isTRUE(want_hessian)) {
         # The negative outer Hessian the marginal correction consumes:
         # -(d2 log_marginal + d2 log_prior). The marginal half is closed-form

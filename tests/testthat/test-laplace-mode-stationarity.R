@@ -280,3 +280,32 @@ test_that("the refusal count is readable while the wrapped expression runs", {
     "fell back to the derivative-free optimizer")
   expect_identical(seen, 1L)
 })
+
+
+test_that("a refused gradient at a rejected line-search trial keeps the gradient-driven fit", {
+  # BFGS evaluates only the value at its line-search trials. On this binomial
+  # random intercept its third trial is sigma = 8.2e7, where every group with a
+  # one-sided response has its mode out near 30 and the inner solve reaches its
+  # iteration cap; that trial's log marginal is 5000 nats below the incumbent,
+  # so the line search rejects it and its gradient is never read. Its refusal
+  # therefore must not count against the fit.
+  skip_on_cran()
+  set.seed(1)
+  n <- 3000; G <- 300
+  g <- sample.int(G, n, replace = TRUE)
+  x <- rnorm(n)
+  u <- rnorm(G, 0, 0.8)
+  y <- rbinom(n, 1, plogis(-0.5 + 0.7 * x + u[g]))
+  d <- data.frame(y = y, x = x, g = factor(g))
+
+  seen <- character()
+  fit <- withCallingHandlers(
+    tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "structured",
+          control = list(n_threads = 1L)),
+    warning = function(w) {
+      seen <<- c(seen, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+  expect_false(any(grepl("derivative-free", seen)))
+  expect_equal(fit$theta_hat, -0.228, tolerance = 0.01)
+})
