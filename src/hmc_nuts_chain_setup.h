@@ -15,7 +15,6 @@
   result.n_sample = n_sample;
   result.chain_id = chain_id;
   result.n_max_treedepth = 0;
-  result.n_softabs_rescued = 0;
 
   // Collapsed GP: allocate w* storage
   if (data.gp_collapsed && data.has_gp) {
@@ -230,37 +229,13 @@
   int nuts_probe_maxd = 0;  // Count of maxd hits in probe window
   bool nuts_probing = use_nuts && (L == 0);  // Only probe when using NUTS by default
 
-  // SoftAbs divergence retry: on a post-warmup divergence, re-run the
-  // trajectory under a frozen Hessian-based metric at up to three halved step
-  // sizes and keep the first non-divergent one.
-  //
-  // APPROXIMATE, and opt-in only for that reason (gcol33/tulpa#695). The
-  // transition kernel is chosen CONDITIONAL on the first trajectory's outcome
-  // and the retry repeats until it succeeds, with no delayed-rejection
-  // correction, so the resulting mixture is not invariant for the target. Every
-  // production entry passes riemannian = 0 and does not reach it; a caller who
-  // sets riemannian = 1 is asking for the rescue and gets a chain whose
-  // stationary distribution is not exactly the posterior.
-  //
-  // The `riemannian == -1` "auto for BYM2/ICAR + dense mass" branch is gone: no
-  // caller could select it, and an auto path into a non-invariant kernel is not
-  // something to leave one flag value away.
-  bool use_softabs_retry = (riemannian == 1);
-  // Disable if not using NUTS (SoftAbs retry only makes sense with NUTS)
-  if (!use_nuts) use_softabs_retry = false;
-  int softabs_retries = 0;
-  int softabs_successes = 0;
-  constexpr int SOFTABS_MAX_RETRIES = 3;  // Up to 3 retry attempts per divergence
-
-  // Persistent SoftAbs metric (improvement #2): once computed, reuse for
-  // all subsequent trajectories. Initialized at warmup?sampling transition
-  // (improvement #4) or on first divergence, whichever comes first.
-  bool softabs_metric_active = false;
-  DenseMassMatrix softabs_persistent_mass;
-  double softabs_persistent_eps = 0.0;
-  if (use_softabs_retry) {
-    softabs_persistent_mass.init(n_params, MassMatrixType::DENSE);
-  }
+  // WALNUTS in place of the NUTS trajectory (hmc_walnuts.h): an exact kernel
+  // whose per-macro-step subdivision handles varying curvature (a funnel neck)
+  // that a single global step size cannot.
+  const bool use_walnuts = (walnuts != nullptr) && use_nuts;
+  const WalnutsConfig walnuts_cfg = walnuts ? *walnuts : WalnutsConfig();
+  WalnutsWorkspace walnuts_ws;
+  if (use_walnuts) walnuts_ws.init(n_params, max_treedepth);
 
   int warmup_total_leapfrog = 0;  // leapfrog steps summed over warmup (verbose)
   // Warmup divergences are normal for DIAG models and resolve via dual

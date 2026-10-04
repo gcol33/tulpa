@@ -1,21 +1,14 @@
 // tulpa_test_funnel.cpp
-// Test-only entry point: fit Neal's funnel through the production NUTS engine
-// with the SoftAbs divergence-retry kernel toggled on or off.
+// Test-only entry point: fit Neal's funnel through the production chain driver
+// (run_hmc_chain_cpp) with either the NUTS or the WALNUTS transition.
 //
-// The post-warmup SoftAbs retry (hmc_nuts_chain_iter_nuts.h) is a
-// state-dependent kernel mixture: when the primary NUTS trajectory diverges it
-// re-runs a fresh trajectory under a frozen Hessian-based metric. Choosing the
-// transition kernel conditional on the first kernel's divergence can in
-// principle fail to leave the target invariant. Neal's funnel is the canonical
-// divergence-generating target with a known marginal (v ~ N(0, gamma^2)), so a
-// recovery / equivalence test on it is the arbiter of whether the retry
-// preserves the posterior.
+// Neal's funnel has a known marginal, v ~ N(0, gamma^2), and a neck whose
+// curvature no single step size resolves, so it measures whether a transition
+// samples the target: the v-marginal is compared against N(0, gamma^2) itself.
 //
 // The funnel is encoded as an extra-parameter-only model: one process with zero
 // fixed-effect columns (so the engine adds no N(0, sigma_beta) prior) and
 // (K + 1) extra parameters carrying the whole target through the likelihood.
-// This drives the exact production run_hmc_chain_cpp path, retry code included,
-// selected by the `riemannian` flag (1 = force retry on, 0 = off).
 
 #include <Rcpp.h>
 #include <string>
@@ -33,11 +26,14 @@ using tulpa_hmc::ParamLayout;
 
 // ----------------------------------------------------------------------------
 // Neal's funnel:  v ~ N(0, gamma^2),  x_i | v ~ N(0, exp(v/2)^2),  i = 1..K.
-// Model-specific response data: K and the v-prior precision 1/gamma^2.
+// With neck = false, x_i ~ N(0, 1) independently of v: a Gaussian target with
+// the same v-marginal and no varying curvature.
+// Model-specific response data: K, the v-prior precision 1/gamma^2, the neck.
 // ----------------------------------------------------------------------------
 struct FunnelData {
     int K = 0;
     double inv_gamma2 = 0.0;  // 1 / gamma^2 (v-prior precision)
+    bool neck = true;
 };
 
 // Per-"observation" funnel log-density (templated for the N/A/A_r AD modes).
@@ -63,8 +59,10 @@ static T funnel_likelihood(
 
     using std::exp;  // ADL picks arena::exp / fwd::exp for the AD types
     const T half = T(0.5);
-    // log N(x_i | 0, exp(v/2)) = -v/2 - 0.5 * x_i^2 * exp(-v)
-    T contrib = (T(0.0) - half * v) - half * xi * xi * exp(T(0.0) - v);
+    // log N(x_i | 0, exp(v/2)) = -v/2 - 0.5 * x_i^2 * exp(-v), or log N(x_i | 0, 1)
+    T contrib = fd->neck
+        ? (T(0.0) - half * v) - half * xi * xi * exp(T(0.0) - v)
+        : T(0.0) - half * xi * xi;
     if (i == 0) {
         // log N(v | 0, gamma) = -0.5 * v^2 / gamma^2
         contrib = contrib - half * v * v * T(fd->inv_gamma2);
@@ -77,6 +75,7 @@ static T funnel_likelihood(
 static void build_funnel_model(
     int K,
     double gamma,
+    bool neck,
     FunnelData& fd,
     tulpa::LikelihoodSpec& spec,
     ModelData& data,
@@ -84,6 +83,7 @@ static void build_funnel_model(
 ) {
     fd.K = K;
     fd.inv_gamma2 = 1.0 / (gamma * gamma);
+    fd.neck = neck;
 
     spec.name = "funnel";
     spec.n_processes = 1;
@@ -120,7 +120,7 @@ namespace tulpa_hmc {
         const ParamLayout& layout,
         int n_iter, int n_warmup, int L, int chain_id,
         unsigned int seed, bool verbose, int max_treedepth,
-        MassMatrixType metric_type, double adapt_delta, int riemannian,
+        MassMatrixType metric_type, double adapt_delta, const WalnutsConfig* walnuts,
         const std::vector<double>& inv_metric_init);
 }
 
@@ -133,7 +133,10 @@ Rcpp::List cpp_test_funnel_nuts(
     int max_treedepth = 10,
     double adapt_delta = 0.8,
     int seed = 1,
-    int riemannian = 0,   // 1 = force SoftAbs divergence retry on, 0 = off
+    bool walnuts = false,
+    int max_step_halvings = 10,
+    double max_error = 0.5,
+    bool neck = true,
     bool verbose = false
 ) {
     if (K < 1) Rcpp::stop("K must be >= 1");
@@ -143,23 +146,26 @@ Rcpp::List cpp_test_funnel_nuts(
     tulpa::LikelihoodSpec spec;
     ModelData data;
     ParamLayout layout;
-    build_funnel_model(K, gamma, fd, spec, data, layout);
+    build_funnel_model(K, gamma, neck, fd, spec, data, layout);
     const int n_params = layout.total_params;  // K + 1
 
     std::vector<double> init(n_params, 0.0);
     std::vector<double> inv_metric_vec;  // empty -> structural warm-start
+    tulpa_hmc::WalnutsConfig walnuts_cfg;
+    walnuts_cfg.max_step_halvings = max_step_halvings;
+    walnuts_cfg.max_error = max_error;
 
     tulpa_hmc::HMCResultCpp result = tulpa_hmc::run_hmc_chain_cpp(
         init, data, layout,
         n_iter, n_warmup,
-        0,            // L = 0 -> NUTS
+        0,            // L = 0 -> NUTS (or WALNUTS)
         1,            // chain_id
         static_cast<unsigned int>(seed),
         verbose,
         max_treedepth,
         tulpa::MassMatrixType::DIAG,
         adapt_delta,
-        riemannian,
+        walnuts ? &walnuts_cfg : nullptr,
         inv_metric_vec
     );
 
@@ -185,6 +191,9 @@ Rcpp::List cpp_test_funnel_nuts(
         Rcpp::Named("n_divergent") = n_div,
         Rcpp::Named("n_samples") = n_sample,
         Rcpp::Named("n_params") = n_params,
-        Rcpp::Named("riemannian") = riemannian
+        Rcpp::Named("n_leapfrog") = Rcpp::wrap(result.n_leapfrog),
+        Rcpp::Named("treedepth") = Rcpp::wrap(result.treedepth),
+        Rcpp::Named("epsilon") = result.epsilon,
+        Rcpp::Named("walnuts") = walnuts
     );
 }

@@ -38,7 +38,6 @@ struct StackedChains {
   // `treedepth` vector beside it covers the same iterations; this is the count
   // the chain itself keeps and checkpoints (gcol33/tulpa#703).
   int n_max_treedepth = 0;
-  int n_softabs_rescued = 0;
   int n_total = 0;
   int n_sample_per_chain = 0;  // -1 when the chains disagree
 };
@@ -112,7 +111,6 @@ inline StackedChains stack_hmc_chains(
     }
     out.epsilon[c] = ch.epsilon;
     out.n_max_treedepth += ch.n_max_treedepth;
-    out.n_softabs_rescued += ch.n_softabs_rescued;
     // A short vector defaults to the identity metric / the origin rather than
     // reading past the end.
     for (int j = 0; j < n_params; j++) {

@@ -416,7 +416,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
         std::vector<tulpa_hmc::HMCResultCpp> chains = tulpa_hmc::run_hmc_parallel_chains_cpp(
             q_init, inv_metric, in.data, n_iter, n_warmup, /*L=*/0, n_chains,
             (unsigned int)seed, verbose, max_treedepth,
-            metric, adapt_delta, /*riemannian=*/0, checkpoint_path);
+            metric, adapt_delta, /*walnuts=*/nullptr, checkpoint_path);
         tulpa_hmc::StackedChains st = tulpa_hmc::stack_hmc_chains(chains, n_chains, D);
         if (st.n_total > 0) Rcpp::colnames(st.draws) = cn;
         out = Rcpp::List::create(
@@ -434,7 +434,6 @@ Rcpp::List cpp_tulpa_sample_glmm(
             // Post-warmup saturations, summed over chains: written and
             // checkpointed but read by nothing until gcol33/tulpa#703.
             Rcpp::Named("n_max_treedepth") = st.n_max_treedepth,
-            Rcpp::Named("n_softabs_rescued") = st.n_softabs_rescued,
             Rcpp::Named("epsilon") = st.epsilon,
             Rcpp::Named("sampler") = "nuts");
         return out;

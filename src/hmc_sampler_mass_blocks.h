@@ -408,20 +408,6 @@ struct DenseMassMatrix {
     }
   }
 
-  // Set metric directly from precomputed G^{-1} and its Cholesky L.
-  // Used by SoftAbs per-trajectory metric retry. No shrinkage applied.
-  void set_from_metric(const std::vector<double>& g_inv,
-                       const std::vector<double>& l_g_inv) {
-    lowrank.clear();
-    inv_mass_dense = g_inv;
-    L_inv_mass = l_g_inv;
-    for (int i = 0; i < n; i++) {
-      inv_mass_diag[i] = g_inv[static_cast<size_t>(i) * n + i];
-      sqrt_mass_diag[i] = 1.0 / std::sqrt(std::max(inv_mass_diag[i], 1e-10));
-    }
-    adapted = true;
-  }
-
   // Set diagonal mass from WelfordStats output (same interface as before)
   // When type==DENSE, also populate the dense matrices as diagonal so that
   // the dense code paths (sample_momentum, kinetic_energy, inv_mass_times_p)

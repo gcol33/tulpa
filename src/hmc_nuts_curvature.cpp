@@ -1,20 +1,14 @@
-// hmc_nuts_softabs.cpp
-// SoftAbs per-trajectory metric (Riemannian-like divergence retry).
+// hmc_nuts_curvature.cpp
+// Local curvature: the finite-difference Hessian of the log posterior, and the
+// step-adapted integrator's operating band read off it.
 
 #include <algorithm>
 #include <cmath>
 #include <vector>
 
-#include <Eigen/Dense>
-#include <RcppEigen.h>
-
 #include "hmc_sampler.h"
 
 namespace tulpa_hmc {
-
-// =====================================================================
-// SoftAbs per-trajectory metric (Riemannian-like divergence retry)
-// =====================================================================
 
 void compute_hessian_finite_diff(
     const std::vector<double>& params,
@@ -118,58 +112,6 @@ double compute_adaptive_nu_max(
   if (!std::isfinite(nu_max) || nu_max < epsilon) nu_max = epsilon;
   if (nu_max > 3.0) nu_max = 3.0;
   return nu_max;
-}
-
-bool compute_softabs_metric(
-    const std::vector<double>& neg_hessian,
-    int p,
-    double alpha,
-    std::vector<double>& G_inv,
-    std::vector<double>& L_G_inv
-) {
-  // Map to Eigen (column-major)
-  Eigen::Map<const Eigen::MatrixXd> H_map(neg_hessian.data(), p, p);
-
-  // Eigendecomposition (symmetric)
-  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigen(H_map);
-  if (eigen.info() != Eigen::Success) return false;
-
-  const auto& lambdas = eigen.eigenvalues();
-  const auto& Q = eigen.eigenvectors();
-
-  // Apply SoftAbs: f(lambda) = lambda * coth(alpha * lambda)
-  // Properties: always positive, f(|lambda| >> 0) -> |lambda|, f(0) -> 1/alpha
-  Eigen::VectorXd softabs_inv_eig(p);
-  for (int i = 0; i < p; i++) {
-    double lam = lambdas(i);
-    double al = alpha * lam;
-    double f;
-    if (std::abs(al) > 20.0) {
-      f = std::abs(lam);
-    } else if (std::abs(al) < 1e-10) {
-      f = 1.0 / alpha;
-    } else {
-      f = lam * std::cosh(al) / std::sinh(al);
-    }
-    f = std::max(f, 1e-6);  // floor to ensure positive definiteness
-    softabs_inv_eig(i) = 1.0 / f;
-  }
-
-  // Reconstruct G^{-1} = Q diag(1/f(?)) Q^T
-  Eigen::MatrixXd G_inv_mat = Q * softabs_inv_eig.asDiagonal() * Q.transpose();
-
-  // Cholesky of G^{-1}
-  Eigen::LLT<Eigen::MatrixXd> llt(G_inv_mat);
-  if (llt.info() != Eigen::Success) return false;
-  Eigen::MatrixXd L_mat = llt.matrixL();
-
-  // Copy to output (column-major)
-  G_inv.resize(static_cast<size_t>(p) * p);
-  L_G_inv.resize(static_cast<size_t>(p) * p);
-  Eigen::Map<Eigen::MatrixXd>(G_inv.data(), p, p) = G_inv_mat;
-  Eigen::Map<Eigen::MatrixXd>(L_G_inv.data(), p, p) = L_mat;
-
-  return true;
 }
 
 }  // namespace tulpa_hmc

@@ -2,6 +2,22 @@
 
 This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
 
+* The SoftAbs divergence retry is gone, replaced by a WALNUTS transition
+  (Bou-Rabee et al. 2025, ported from walnutpie) in the chain driver
+  (gcol33/tulpa#937). The retry re-ran a diverged trajectory under a
+  Hessian-based metric and kept the first that did not diverge. Choosing the
+  kernel from the first trajectory's outcome left the chain off the target: on
+  Neal's funnel one Linux seed read a v-mean of -2.65 against 0. WALNUTS
+  integrates each macro step with the coarsest leapfrog subdivision that holds
+  the energy error, and keeps it only if the reversed step picks the same
+  subdivision. That keeps the kernel exact while the step follows the local
+  curvature. On the funnel (K = 9, gamma = 3, 20 seeds of 100k iterations) it
+  reads v mean 0.02 (se 0.03) and sd 2.98 against N(0, 3), where NUTS reads
+  0.73 and 2.37 at about half the gradients. No front door selects it yet:
+  every entry still runs NUTS. Sampler results lose `n_softabs_rescued`. The chain
+  record layout changed with it, and the layout tag is shared by every
+  checkpoint file, so a sampler or outer-grid checkpoint written before this
+  change is refused and needs a fresh path.
 * The random-effect covariance outer fit (`tulpa_re_cov_nested()`, and so
   `mode = "structured"` / `"laplace"` with a free random-effect scale) keeps
   its exact gradient when an inner solve that did not settle sits at a

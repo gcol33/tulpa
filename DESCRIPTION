@@ -9,7 +9,9 @@ Authors@R: c(
     person("Stephen", "Joe", role = c("ctb", "cph"),
            comment = "Sobol direction numbers in src/sobol_direction_numbers.h, BSD-3-clause"),
     person("Arm Limited", role = "cph",
-           comment = "exp and log routines in src/fastmath.h and src/fastmath_data.cpp, MIT"))
+           comment = "exp and log routines in src/fastmath.h and src/fastmath_data.cpp, MIT"),
+    person("The Walnutpie Developers", role = "cph",
+           comment = "WALNUTS transition in src/hmc_walnuts.cpp, ported from walnutpie, MIT"))
 Description: A general-purpose engine for fitting Bayesian hierarchical models
     with spatial fields, temporal effects, spatially varying coefficients, and
     multiple inference backends. Scalable spatial structure includes Hilbert

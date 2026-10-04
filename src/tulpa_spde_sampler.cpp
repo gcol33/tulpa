@@ -187,7 +187,7 @@ namespace tulpa_hmc {
         const ParamLayout& layout,
         int n_iter, int n_warmup, int L, int chain_id,
         unsigned int seed, bool verbose, int max_treedepth,
-        MassMatrixType metric_type, double adapt_delta, int riemannian,
+        MassMatrixType metric_type, double adapt_delta, const WalnutsConfig* walnuts,
         const std::vector<double>& inv_metric_init);
 }
 
@@ -508,7 +508,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         max_treedepth,
         metric,
         adapt_delta,
-        0,                                  // riemannian off
+        nullptr,                            // walnuts off
         std::vector<double>{}
     );
 

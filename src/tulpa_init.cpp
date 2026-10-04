@@ -113,7 +113,7 @@ static void tulpa_run_nuts_generic_impl(
         max_treedepth,
         tulpa::MassMatrixType::DIAG,
         adapt_delta,
-        0,                // riemannian=off
+        nullptr,          // walnuts off
         inv_metric_init
     );
 
@@ -167,7 +167,7 @@ static void tulpa_run_nuts_chains_impl(
         0,                // L=0 → NUTS
         n_chains, seed, verbose != 0, max_treedepth,
         tulpa::MassMatrixType::DIAG, adapt_delta,
-        0,                // riemannian=off
+        nullptr,          // walnuts off
         "",               // checkpoint_path
         layout            // honour the caller's layout
     );

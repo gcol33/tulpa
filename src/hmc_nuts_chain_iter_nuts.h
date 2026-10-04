@@ -12,6 +12,22 @@
     double iter_H0 = 0.0;
 
     if (use_nuts && !(use_lbfgs && !lbfgs_warmup_done)) {
+      if (use_walnuts) {
+      // -----------------------------------------------------------------
+      // WALNUTS: NUTS with a per-macro-step adapted subdivision
+      // (hmc_walnuts.h). `epsilon` is the macro step; dual averaging tunes it
+      // on the mean acceptance of each macro step's coarsest subdivision.
+      // -----------------------------------------------------------------
+        WalnutsTransitionResult w = walnuts_transition(
+          q, current_grad, log_prob_current, epsilon, max_treedepth,
+          walnuts_cfg, mass, nuts_ws.gradient_fn, data, layout,
+          walnuts_ws, rng);
+        alpha = w.mean_accept;
+        divergent = w.divergent;
+        iter_n_leapfrog = w.n_grad;
+        iter_treedepth = w.depth;
+        iter_H0 = w.H0;
+      } else {
       // -----------------------------------------------------------------
       // NUTS: No-U-Turn Sampler (optimized zero-allocation path)
       // -----------------------------------------------------------------
@@ -90,15 +106,10 @@
       std::memcpy(p_sharp_bck_beg.data(), p_sharp_init.data(), n_params * sizeof(double));
       std::memcpy(p_sharp_bck_end.data(), p_sharp_init.data(), n_params * sizeof(double));
 
-      // Build the NUTS trajectory (grow the tree until a U-turn or max depth),
-      // single-sourced for both the primary trajectory and the SoftAbs
-      // divergence-retry below. The two differ only in the step size, the mass
-      // metric, the initial Hamiltonian, and delta_max; everything else -- the
-      // half-relabel, multinomial acceptance, endpoint bookkeeping and the
-      // 3-juncture generalized-U-turn check -- is identical. Captures the
-      // per-iteration workspace by reference; `mass_metric` is templated so the
-      // diagonal/dense and SoftAbs metrics both bind. Sets `out_divergent` on
-      // any divergent subtree and writes the reached depth to `out_treedepth`.
+      // Build the NUTS trajectory: grow the tree until a U-turn or max depth,
+      // with the half-relabel, multinomial acceptance, endpoint bookkeeping and
+      // the 3-juncture generalized-U-turn check. Sets `out_divergent` on any
+      // divergent subtree and writes the reached depth to `out_treedepth`.
       auto run_trajectory = [&](double eps_local, auto& mass_metric,
                                 double H0_local, double delta_max_local,
                                 bool& out_divergent, int& out_treedepth) {
@@ -221,121 +232,16 @@
 
       run_trajectory(eps_iter, mass, H0, delta_max, divergent, iter_treedepth);
 
-      // SoftAbs divergence retry (improvements #1, #2): if trajectory diverged,
-      // compute local Hessian-based metric and retry up to SOFTABS_MAX_RETRIES
-      // times, halving step size each attempt. On first successful metric
-      // computation, persist it for all subsequent trajectories.
-      if (divergent && !is_warmup && use_softabs_retry) {
-        softabs_retries++;
-
-        // Freeze the SoftAbs metric: compute the Hessian-based metric and its
-        // step size ONCE (at the first post-warmup divergence) and reuse it for
-        // every later rescue. Recomputing a position-dependent metric and
-        // re-tuning epsilon at each divergent q made the rescue kernel depend on
-        // the current state in a non-reversible way, biasing exactly the hard
-        // region it targets. A single frozen metric is a fixed alternative
-        // proposal (Riemannian in spirit, state-independent in practice).
-        bool metric_ok = softabs_metric_active;
-        if (!softabs_metric_active) {
-          std::vector<double> hessian_buf;
-          compute_hessian_finite_diff(q, data, layout, hessian_buf);
-          for (auto& v : hessian_buf) v = -v;  // Negate: -H = curvature
-
-          std::vector<double> G_inv_buf, L_G_inv_buf;
-          metric_ok = compute_softabs_metric(
-            hessian_buf, n_params, 1.0, G_inv_buf, L_G_inv_buf
-          );
-          if (metric_ok) {
-            softabs_persistent_mass.set_from_metric(G_inv_buf, L_G_inv_buf);
-            softabs_persistent_eps = find_reasonable_epsilon_dense(
-              q, data, layout, rng, softabs_persistent_mass);
-            softabs_metric_active = true;
-          }
-        }
-
-        if (metric_ok) {
-          double eps_base = softabs_persistent_eps;
-
-          // Multiple retry attempts (improvement #1): try up to 3 times
-          // with halving step size each attempt
-          for (int retry_attempt = 0; retry_attempt < SOFTABS_MAX_RETRIES; retry_attempt++) {
-            double eps_retry = eps_base * std::pow(0.5, retry_attempt);
-
-            // Sample new momentum and re-run NUTS trajectory
-            softabs_persistent_mass.sample_momentum(p.data(), rng);
-            double H0_retry = nuts_compute_hamiltonian_fast(
-              log_prob_current, p.data(), softabs_persistent_mass, n_params
-            );
-
-            // Load current state into workspace
-            nuts_ws.load_node(NUTSWorkspace::NODE_LEFT_SLOT,
-                              q.data(), p.data(), current_grad.data(), log_prob_current);
-            nuts_ws.load_node(NUTSWorkspace::NODE_RIGHT_SLOT,
-                              q.data(), p.data(), current_grad.data(), log_prob_current);
-
-            std::memcpy(q_proposal_data.data(), q.data(), n_params * sizeof(double));
-            std::memcpy(grad_proposal_data.data(), current_grad.data(), n_params * sizeof(double));
-            log_prob_proposal = log_prob_current;
-            sum_log_weight = 0.0;
-            total_leapfrog = 0;
-            sum_accept_prob = 0.0;
-            bool retry_divergent = false;
-
-            // Full NUTS tree with SoftAbs metric + 3-juncture U-turn
-            std::memcpy(rho.data(), p.data(), n_params * sizeof(double));
-            std::fill(rho_bck.begin(), rho_bck.end(), 0.0);
-            std::fill(rho_fwd.begin(), rho_fwd.end(), 0.0);
-            softabs_persistent_mass.inv_mass_times_p(p.data(), p_sharp_init.data());
-            std::copy(p.begin(), p.end(), p_fwd_beg.begin());
-            std::copy(p.begin(), p.end(), p_fwd_end.begin());
-            std::copy(p.begin(), p.end(), p_bck_beg.begin());
-            std::copy(p.begin(), p.end(), p_bck_end.begin());
-            std::copy(p_sharp_init.begin(), p_sharp_init.end(), p_sharp_fwd_beg.begin());
-            std::copy(p_sharp_init.begin(), p_sharp_init.end(), p_sharp_fwd_end.begin());
-            std::copy(p_sharp_init.begin(), p_sharp_init.end(), p_sharp_bck_beg.begin());
-            std::copy(p_sharp_init.begin(), p_sharp_init.end(), p_sharp_bck_end.begin());
-
-            int retry_treedepth = 0;
-            run_trajectory(eps_retry, softabs_persistent_mass, H0_retry, 1000.0,
-                           retry_divergent, retry_treedepth);
-
-            // If retry succeeded (no divergence), accept and stop retrying.
-            //
-            // `divergent` STAYS TRUE: the trajectory this iteration was asked
-            // for did diverge, and clearing the flag took the event out of
-            // result.divergent[], out of n_divergent(fit) and out of
-            // diagnostic_summary() -- the rescue's only trace was a verbose
-            // print (gcol33/tulpa#695). The rescue is reported in its own
-            // counter beside it, so a reader can tell a divergence that was
-            // rescued from one that was not.
-            if (!retry_divergent) {
-              iter_treedepth = retry_treedepth;
-              iter_H0 = H0_retry;
-              softabs_successes++;
-              result.n_softabs_rescued++;
-              alpha = (total_leapfrog > 0) ? (sum_accept_prob / total_leapfrog) : 0.0;
-              iter_n_leapfrog = total_leapfrog;
-              break;  // Success -- stop retry loop
-            }
-            // Otherwise: try again with halved step size (next iteration)
-          }  // end retry_attempt loop
-
-          // Stats come from the last attempt either way.
-          alpha = (total_leapfrog > 0) ? (sum_accept_prob / total_leapfrog) : 0.0;
-          iter_n_leapfrog = total_leapfrog;
-        }
-        // else: metric computation failed, keep original divergent result
-      }
-
       // Accept proposal: copy from persistent proposal buffers (memcpy, no alloc)
       std::memcpy(q.data(), q_proposal_data.data(), n_params * sizeof(double));
       std::memcpy(current_grad.data(), grad_proposal_data.data(), n_params * sizeof(double));
       log_prob_current = log_prob_proposal;
-      n_accept++;
 
       // Average acceptance statistic for dual averaging
       alpha = (total_leapfrog > 0) ? (sum_accept_prob / total_leapfrog) : 0.0;
       iter_n_leapfrog = total_leapfrog;
+      }
+      n_accept++;
 
       if (divergent) n_divergent++;
       // Post-warmup only. Treedepth saturation while epsilon is still adapting
@@ -455,7 +361,8 @@
           // nested-approximation-informs-the-sampler synthesis. Warmup ran the
           // fixed placeholder (same stage count, so epsilon transfers); the
           // sampling phase walks the resolved per-chain scheme.
-          if (get_integrator_adaptive() != IntegratorAdaptive::NONE) {
+          if (!use_walnuts &&
+              get_integrator_adaptive() != IntegratorAdaptive::NONE) {
             double nu_max = compute_adaptive_nu_max(q, data, layout, mass, epsilon);
             if (get_integrator_adaptive() == IntegratorAdaptive::THREE_STAGE) {
               nuts_ws.scheme = simp::three_stage_adaptive(nu_max);
@@ -465,29 +372,6 @@
             if (verbose) {
               REprintf("  [INTEGRATOR] Step-adapted %s: nu_max=%.4f, epsilon=%.6f\n",
                        nuts_ws.scheme.name.c_str(), nu_max, epsilon);
-            }
-          }
-          // Proactive SoftAbs at warmup?sampling transition (improvement #4):
-          // Pre-compute SoftAbs metric so it's ready for retry attempts.
-          // Do NOT override main mass/epsilon -- warmup-adapted values are better
-          // for general sampling. SoftAbs is only used as rescue on divergences.
-          if (use_softabs_retry && !softabs_metric_active) {
-            std::vector<double> hessian_warmup_end;
-            compute_hessian_finite_diff(q, data, layout, hessian_warmup_end);
-            for (auto& v : hessian_warmup_end) v = -v;
-
-            std::vector<double> G_inv_init, L_G_inv_init;
-            if (compute_softabs_metric(hessian_warmup_end, n_params, 1.0,
-                                       G_inv_init, L_G_inv_init)) {
-              softabs_persistent_mass.set_from_metric(G_inv_init, L_G_inv_init);
-              softabs_persistent_eps = find_reasonable_epsilon_dense(
-                q, data, layout, rng, softabs_persistent_mass);
-              softabs_metric_active = true;
-              // Note: main mass and epsilon are NOT overridden
-              if (verbose) {
-                REprintf("  [SoftAbs] Proactive metric pre-computed at warmup end: retry_eps=%.6f\n",
-                         softabs_persistent_eps);
-              }
             }
           }
         }

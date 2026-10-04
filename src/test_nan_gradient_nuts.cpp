@@ -126,7 +126,7 @@ namespace tulpa_hmc {
         const ParamLayout& layout,
         int n_iter, int n_warmup, int L, int chain_id,
         unsigned int seed, bool verbose, int max_treedepth,
-        MassMatrixType metric_type, double adapt_delta, int riemannian,
+        MassMatrixType metric_type, double adapt_delta, const WalnutsConfig* walnuts,
         const std::vector<double>& inv_metric_init);
 }
 
@@ -161,7 +161,7 @@ Rcpp::List cpp_test_nan_gradient_nuts(bool plant_nan, int K = 3,
         init, data, layout, n_iter, n_warmup, /*L=*/0, /*chain_id=*/1,
         static_cast<unsigned int>(seed), /*verbose=*/false,
         /*max_treedepth=*/6, tulpa::MassMatrixType::DIAG,
-        /*adapt_delta=*/0.8, /*riemannian=*/0, inv_metric_vec);
+        /*adapt_delta=*/0.8, /*walnuts=*/nullptr, inv_metric_vec);
     g_plant_nan = false;
 
     const int n_sample = result.n_sample;
@@ -222,7 +222,7 @@ void cpp_test_nuts_gradient_throws(int throw_after = 30, int K = 3,
         init, data, layout, n_iter, n_warmup, /*L=*/0, /*chain_id=*/1,
         static_cast<unsigned int>(seed), /*verbose=*/false,
         /*max_treedepth=*/6, tulpa::MassMatrixType::DIAG,
-        /*adapt_delta=*/0.8, /*riemannian=*/0, inv_metric_vec);
+        /*adapt_delta=*/0.8, /*walnuts=*/nullptr, inv_metric_vec);
 }
 
 // Test-only: whether a NUTS progress reporter is registered process-wide right

@@ -2,7 +2,7 @@
 // Fragment of hmc_sampler.h. Self-contained: defines symbols inside
 // namespace tulpa_hmc.
 // Sampler function declarations (leapfrog, find_reasonable_epsilon,
-// run_hmc_*) and SoftAbs metric helpers.
+// run_hmc_*) and the finite-difference Hessian.
 #ifndef TULPA_HMC_SAMPLER_FUNCS_H
 #define TULPA_HMC_SAMPLER_FUNCS_H
 
@@ -13,6 +13,7 @@
 #include "hmc_sampler_decls.h"        // ModelData, ParamLayout
 #include "hmc_sampler_mass_blocks.h"  // DenseMassMatrix, MassMatrixType
 #include "hmc_sampler_nuts_infra.h"   // LeapfrogResult
+#include "hmc_walnuts_config.h"       // WalnutsConfig
 
 namespace tulpa_hmc {
 
@@ -89,8 +90,8 @@ double compute_adaptive_nu_max(
 );
 
 // Run single HMC chain (C++ version - safe for parallel)
-// riemannian: -1=auto (retry divergences with SoftAbs for BYM2/ICAR),
-//              1=force on, 0=force off
+// walnuts: when non-null, run the WALNUTS transition (hmc_walnuts.h) under
+//          this configuration in place of NUTS.
 // inv_metric_init: optional caller-supplied initial diagonal inv-mass
 //                  (length n_params). Empty -> default structural warm-start.
 HMCResultCpp run_hmc_chain_cpp(
@@ -106,7 +107,7 @@ HMCResultCpp run_hmc_chain_cpp(
     int max_treedepth = 10,
     MassMatrixType metric_type = MassMatrixType::DIAG,
     double adapt_delta = -1.0,
-    int riemannian = -1,
+    const WalnutsConfig* walnuts = nullptr,
     const std::vector<double>& inv_metric_init = std::vector<double>()
 );
 
@@ -124,7 +125,7 @@ HMCResult run_hmc_chain(
     int max_treedepth = 10,
     MassMatrixType metric_type = MassMatrixType::DIAG,
     double adapt_delta = -1.0,
-    int riemannian = -1,
+    const WalnutsConfig* walnuts = nullptr,
     const std::vector<double>& inv_metric_init = std::vector<double>()
 );
 
@@ -150,7 +151,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     int max_treedepth = 10,
     MassMatrixType metric_type = MassMatrixType::DIAG,
     double adapt_delta = -1.0,
-    int riemannian = -1,
+    const WalnutsConfig* walnuts = nullptr,
     const std::string& checkpoint_path = "",
     // Optional caller-supplied layout. When non-null it is used
     // verbatim instead of compute_param_layout(data), so a model fitting through
@@ -159,10 +160,6 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     // the passed layout; this brings the multi-chain runner in line.
     const ParamLayout* layout_override = nullptr
 );
-
-// =====================================================================
-// SoftAbs per-trajectory metric (Riemannian-like divergence retry)
-// =====================================================================
 
 // Compute full Hessian via finite differences of the H-mode gradient.
 // H[i,j] = (grad_j(q + h*e_i) - grad_j(q)) / h
@@ -173,17 +170,6 @@ void compute_hessian_finite_diff(
     const ParamLayout& layout,
     std::vector<double>& hessian,
     double h = 1e-5
-);
-
-// Compute SoftAbs metric from negative Hessian.
-// G = Q diag(f(λ_i)) Q^T where f(λ) = λ * coth(α * λ)
-// Returns G^{-1} and its Cholesky L. Returns false on failure.
-bool compute_softabs_metric(
-    const std::vector<double>& neg_hessian,
-    int p,
-    double alpha,
-    std::vector<double>& G_inv,
-    std::vector<double>& L_G_inv
 );
 
 }  // namespace tulpa_hmc

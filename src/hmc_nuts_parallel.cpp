@@ -199,7 +199,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     int max_treedepth,
     MassMatrixType metric_type,
     double adapt_delta,
-    int riemannian,
+    const WalnutsConfig* walnuts,
     const std::string& checkpoint_path,
     const ParamLayout* layout_override
 ) {
@@ -263,7 +263,13 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     int mt = static_cast<int>(metric_type);
     fp.fold_pod(mt);
     fp.fold_pod(adapt_delta);
-    fp.fold_pod(riemannian);
+    const int walnuts_on = walnuts ? 1 : 0;
+    fp.fold_pod(walnuts_on);
+    if (walnuts) {
+      fp.fold_pod(walnuts->max_step_halvings);
+      fp.fold_pod(walnuts->min_micro_steps);
+      fp.fold_pod(walnuts->max_error);
+    }
     fp.fold_pod(layout.total_params);
     fp.fold_pod(data.N);
     for (const auto& q : q_init_per_chain)   fp.fold_vec(q);
@@ -319,7 +325,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
         cpp_results[c] = run_hmc_chain_cpp(
           q_init_per_chain[c], data, layout,
           n_iter, n_warmup, L, c, seed, false, max_treedepth,
-          metric_type, adapt_delta, riemannian, metric_for(c)
+          metric_type, adapt_delta, walnuts, metric_for(c)
         );
         if (ckpt) ckpt->save(c, cpp_results[c]);
       } catch (const std::exception& e) {
@@ -342,7 +348,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
       cpp_results[c] = run_hmc_chain_cpp(
         q_init_per_chain[c], data, layout,
         n_iter, n_warmup, L, c, seed, verbose && n_chains == 1, max_treedepth,
-        metric_type, adapt_delta, riemannian, metric_for(c)
+        metric_type, adapt_delta, walnuts, metric_for(c)
       );
       if (ckpt) ckpt->save(c, cpp_results[c]);
     }
@@ -353,7 +359,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     cpp_results[c] = run_hmc_chain_cpp(
       q_init_per_chain[c], data, layout,
       n_iter, n_warmup, L, c, seed, verbose, max_treedepth,
-      metric_type, adapt_delta, riemannian, metric_for(c)
+      metric_type, adapt_delta, walnuts, metric_for(c)
     );
     if (ckpt) ckpt->save(c, cpp_results[c]);
   }

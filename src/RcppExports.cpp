@@ -5023,8 +5023,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_test_funnel_nuts
-Rcpp::List cpp_test_funnel_nuts(int K, double gamma, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, int riemannian, bool verbose);
-RcppExport SEXP _tulpa_cpp_test_funnel_nuts(SEXP KSEXP, SEXP gammaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP riemannianSEXP, SEXP verboseSEXP) {
+Rcpp::List cpp_test_funnel_nuts(int K, double gamma, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool walnuts, int max_step_halvings, double max_error, bool neck, bool verbose);
+RcppExport SEXP _tulpa_cpp_test_funnel_nuts(SEXP KSEXP, SEXP gammaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP walnutsSEXP, SEXP max_step_halvingsSEXP, SEXP max_errorSEXP, SEXP neckSEXP, SEXP verboseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -5035,9 +5035,12 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type max_treedepth(max_treedepthSEXP);
     Rcpp::traits::input_parameter< double >::type adapt_delta(adapt_deltaSEXP);
     Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
-    Rcpp::traits::input_parameter< int >::type riemannian(riemannianSEXP);
+    Rcpp::traits::input_parameter< bool >::type walnuts(walnutsSEXP);
+    Rcpp::traits::input_parameter< int >::type max_step_halvings(max_step_halvingsSEXP);
+    Rcpp::traits::input_parameter< double >::type max_error(max_errorSEXP);
+    Rcpp::traits::input_parameter< bool >::type neck(neckSEXP);
     Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_funnel_nuts(K, gamma, n_iter, n_warmup, max_treedepth, adapt_delta, seed, riemannian, verbose));
+    rcpp_result_gen = Rcpp::wrap(cpp_test_funnel_nuts(K, gamma, n_iter, n_warmup, max_treedepth, adapt_delta, seed, walnuts, max_step_halvings, max_error, neck, verbose));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -5342,7 +5345,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_spde_nc_apply_probe", (DL_FUNC) &_tulpa_cpp_spde_nc_apply_probe, 7},
     {"_tulpa_cpp_spde_hyper_prior_probe", (DL_FUNC) &_tulpa_cpp_spde_hyper_prior_probe, 8},
     {"_tulpa_cpp_tulpa_fit_spde_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_spde_nuts, 40},
-    {"_tulpa_cpp_test_funnel_nuts", (DL_FUNC) &_tulpa_cpp_test_funnel_nuts, 9},
+    {"_tulpa_cpp_test_funnel_nuts", (DL_FUNC) &_tulpa_cpp_test_funnel_nuts, 12},
     {"_tulpa_cpp_vi_convergence_replay", (DL_FUNC) &_tulpa_cpp_vi_convergence_replay, 5},
     {NULL, NULL, 0}
 };

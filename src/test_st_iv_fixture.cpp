@@ -281,7 +281,7 @@ Rcpp::List cpp_test_st_iv_nuts(
   tulpa_hmc::HMCResultCpp res = tulpa_hmc::run_hmc_chain_cpp(
       init, data, layout, n_iter, n_warmup,
       /*L=*/0, /*chain_id=*/0, (unsigned int)seed, verbose,
-      max_treedepth, metric, adapt_delta, /*riemannian=*/0,
+      max_treedepth, metric, adapt_delta, /*walnuts=*/nullptr,
       std::vector<double>());
 
   const int n_sample = res.n_sample;

@@ -131,7 +131,7 @@ namespace tulpa_hmc {
         const ParamLayout& layout,
         int n_iter, int n_warmup, int L, int chain_id,
         unsigned int seed, bool verbose, int max_treedepth,
-        MassMatrixType metric_type, double adapt_delta, int riemannian,
+        MassMatrixType metric_type, double adapt_delta, const WalnutsConfig* walnuts,
         const std::vector<double>& inv_metric_init);
 }
 
@@ -192,7 +192,7 @@ Rcpp::List cpp_tulpa_fit_generic(
         max_treedepth,
         tulpa::MassMatrixType::DIAG,
         adapt_delta,
-        0,            // riemannian=off
+        nullptr,      // walnuts off
         inv_metric_vec
     );
 
@@ -232,7 +232,6 @@ Rcpp::List cpp_tulpa_fit_generic(
         // Post-warmup saturation count. Written and checkpointed but read by
         // nothing until gcol33/tulpa#703.
         Rcpp::Named("n_max_treedepth") = result.n_max_treedepth,
-        Rcpp::Named("n_softabs_rescued") = result.n_softabs_rescued,
         Rcpp::Named("sampler") = result.sampler.empty() ? "nuts" : result.sampler,
         Rcpp::Named("epsilon") = result.epsilon,
         // Warm-start / resume outputs
@@ -315,7 +314,7 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
         0,                // L=0 means NUTS
         n_chains, static_cast<unsigned int>(seed), verbose,
         max_treedepth, tulpa::MassMatrixType::DIAG, adapt_delta,
-        0,                // riemannian=off
+        nullptr,          // walnuts off
         checkpoint_path
     );
 
