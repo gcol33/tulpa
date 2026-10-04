@@ -523,6 +523,16 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     stop("`prior` must be a list (single block) or list-of-lists (multi-block).",
          call. = FALSE)
   }
+  # This door's outer grid is spanned by the latent blocks' hyperparameters
+  # alone, so a prior with no block leaves nothing to integrate. The joint door
+  # integrates per-arm dispersion axes as well and does take an empty prior.
+  if (!length(prior)) {
+    stop("`prior` holds no latent block, so tulpa_nested_laplace() has no ",
+         "hyperparameter to integrate. Fit a fixed-effects model with ",
+         "tulpa(mode = \"laplace\"), or integrate a dispersion axis with ",
+         "tulpa_nested_laplace_joint(prior = list(), phi_grid = ).",
+         call. = FALSE)
+  }
   # Outer-axis provenance: record which grid axes the caller
   # declared as defaults with `auto_grid()` -- the registry rescue below reads
   # it -- and strip the markers so every downstream consumer sees plain grids.
@@ -1875,7 +1885,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # Cartesian product of per-block axes.
 
 .is_multi_block_prior <- function(p) {
-  is.list(p) && is.null(p$type) && length(p) > 0 &&
+  is.list(p) && is.null(p$type) &&
     all(vapply(p, function(x) is.list(x) && !is.null(x$type), logical(1)))
 }
 

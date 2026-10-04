@@ -112,6 +112,11 @@
 #'   (car_proper's `rho_car`); whichever way it declines,
 #'   `outer_grid_recenter_declined` says which (see below).
 #'
+#'   An empty `prior = list()` is a list of zero blocks: the model carries no
+#'   latent field, each arm's predictor is its fixed effects, and the outer
+#'   grid is spanned by the per-arm dispersion axes of `phi_grid` alone (one
+#'   cell when there are none).
+#'
 #' @param copy Multi-block copy specification (multi-block `prior` only). For a
 #' single-block fit there is no `copy` argument: declare the copy coefficient
 #' on the arm via `responses[[X]]$field_coef = list(name = "alpha", grid = G)`.
@@ -1952,7 +1957,7 @@ tulpa_nested_laplace_joint <- function(responses,
         stop("`responses` must be a non-empty list of arm specs.", call. = FALSE)
     }
     if (!is.list(prior)) {
-        stop("`prior` must be a list with a `type` field, or a list of block specs.",
+        stop("`prior` must be a list with a `type` field, or a list of block specs (empty for none).",
              call. = FALSE)
     }
     # Parse user-specified regularizing hyperpriors on (sigma, alpha) once,
@@ -2084,7 +2089,7 @@ tulpa_nested_laplace_joint <- function(responses,
              "each naming a distinct copy block.)", call. = FALSE)
     }
     if (is.null(prior$type)) {
-        stop("`prior` must be a list with a `type` field, or a list of block specs.",
+        stop("`prior` must be a list with a `type` field, or a list of block specs (empty for none).",
              call. = FALSE)
     }
     type <- tolower(prior$type)

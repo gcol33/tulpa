@@ -99,7 +99,12 @@ than one the user chose), or when its nodes are exactly
 the engine's own default axis. Declines gracefully (keeps the fixed-grid
 fit) when another axis in the same grid has unguessable support
 (car_proper's \code{rho_car}); whichever way it declines,
-\code{outer_grid_recenter_declined} says which (see below).}
+\code{outer_grid_recenter_declined} says which (see below).
+
+An empty \code{prior = list()} is a list of zero blocks: the model carries no
+latent field, each arm's predictor is its fixed effects, and the outer
+grid is spanned by the per-arm dispersion axes of \code{phi_grid} alone (one
+cell when there are none).}
 
 \item{copy}{Multi-block copy specification (multi-block \code{prior} only). For a
 single-block fit there is no \code{copy} argument: declare the copy coefficient

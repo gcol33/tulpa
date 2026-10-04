@@ -1809,8 +1809,12 @@
 
     if (!use_ccd && !use_adaptive) {
         # Cartesian product of per-block axis grids.
+        # The product over zero blocks is one cell with no latent axis, so a
+        # model whose only hyperparameters are dispersions is solved once per
+        # dispersion cell crossed on top.
         row_counts <- vapply(block_grids, nrow, integer(1))
-        idx <- do.call(expand.grid, lapply(row_counts, seq_len))
+        idx <- if (B > 0L) do.call(expand.grid, lapply(row_counts, seq_len))
+               else data.frame(row.names = 1L)
         # Every latent cell is solved once per dispersion cell crossed on top
         # below, so the count the timing warning reads is the crossed one: that
         # is the number of inner solves the fit pays.
@@ -1844,9 +1848,9 @@
                            grid_layout)
         .nl_dense_grid_warn(n_cells, grid_warn_remedy, grid_layout)
 
-        joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
-            block_grids[[b]][idx[[b]], , drop = FALSE]
-        }))
+        joint_grid <- if (B > 0L) do.call(cbind, lapply(seq_along(block_grids),
+            function(b) block_grids[[b]][idx[[b]], , drop = FALSE]))
+            else matrix(numeric(0), nrow = 1L, ncol = 0L)
         if (ncol(joint_grid) > 0L) colnames(joint_grid) <- axis_names
     }
 

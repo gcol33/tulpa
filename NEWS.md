@@ -2,6 +2,15 @@
 
 This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
 
+* `tulpa_nested_laplace_joint()` takes a model with no latent block
+  (gcol33/tulpa#939). `prior = list()` is a list of zero blocks: each arm's
+  predictor is its fixed effects, and the outer grid is the per-arm
+  dispersion axes of `phi_grid` alone, or one cell when there are none. It
+  used to be refused, so a fixed-effects ratio model had to carry a silent
+  `iid` block held at `sigma = 0`; the two give the same log marginals,
+  weights, coefficients and covariance. `tulpa_nested_laplace()`, whose outer
+  grid has no dispersion axis, refuses an empty `prior` and names the doors
+  that fit one.
 * The SoftAbs divergence retry is gone, replaced by a WALNUTS transition
   (Bou-Rabee et al. 2025, ported from walnutpie) in the chain driver
   (gcol33/tulpa#937). The retry re-ran a diverged trajectory under a
