@@ -48,7 +48,7 @@ src/fastmath.h, src/fastmath_data.cpp
   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
   DEALINGS IN THE SOFTWARE.
 
-src/hmc_walnuts.h, src/hmc_walnuts.cpp
+inst/include/tulpa/walnuts.h, inst/include/tulpa/walnuts_config.h
   The WALNUTS transition, ported from walnutpie
   (https://github.com/flatironinstitute/walnutpie, include/walnutpie/walnuts.hpp,
   commit 5710b0334ba69cf0caa35fc02a2338b61d756953), copyright (c) 2025-2026

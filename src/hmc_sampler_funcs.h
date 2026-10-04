@@ -13,7 +13,7 @@
 #include "hmc_sampler_decls.h"        // ModelData, ParamLayout
 #include "hmc_sampler_mass_blocks.h"  // DenseMassMatrix, MassMatrixType
 #include "hmc_sampler_nuts_infra.h"   // LeapfrogResult
-#include "hmc_walnuts_config.h"       // WalnutsConfig
+#include <tulpa/walnuts_config.h>       // tulpa::WalnutsConfig
 
 namespace tulpa_hmc {
 
@@ -107,7 +107,7 @@ HMCResultCpp run_hmc_chain_cpp(
     int max_treedepth = 10,
     MassMatrixType metric_type = MassMatrixType::DIAG,
     double adapt_delta = -1.0,
-    const WalnutsConfig* walnuts = nullptr,
+    const tulpa::WalnutsConfig* walnuts = nullptr,
     const std::vector<double>& inv_metric_init = std::vector<double>()
 );
 
@@ -125,7 +125,7 @@ HMCResult run_hmc_chain(
     int max_treedepth = 10,
     MassMatrixType metric_type = MassMatrixType::DIAG,
     double adapt_delta = -1.0,
-    const WalnutsConfig* walnuts = nullptr,
+    const tulpa::WalnutsConfig* walnuts = nullptr,
     const std::vector<double>& inv_metric_init = std::vector<double>()
 );
 
@@ -151,7 +151,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     int max_treedepth = 10,
     MassMatrixType metric_type = MassMatrixType::DIAG,
     double adapt_delta = -1.0,
-    const WalnutsConfig* walnuts = nullptr,
+    const tulpa::WalnutsConfig* walnuts = nullptr,
     const std::string& checkpoint_path = "",
     // Optional caller-supplied layout. When non-null it is used
     // verbatim instead of compute_param_layout(data), so a model fitting through

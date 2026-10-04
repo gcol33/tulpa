@@ -46,6 +46,13 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   door give the same log marginals and coefficients for a restricted icar,
   bym2 and car_proper field. A restricted continuous field stays binomial and
   Gibbs only, and the conditional `mode = "laplace"` refuses either.
+* The WALNUTS transition is exported to model packages as a header template,
+  `<tulpa/walnuts.h>` (with its tuning constants in
+  `<tulpa/walnuts_config.h>`), over a caller-supplied model: gradient, kinetic
+  energy, metric product, drift and momentum draw. The engine's chain driver
+  runs it through an adapter over `DenseMassMatrix`, and a package with its
+  own sampler (tulpaRatio) runs the same code. Seeded funnel chains are
+  bit-identical before and after the move.
 * The SoftAbs divergence retry is gone, replaced by a WALNUTS transition
   (Bou-Rabee et al. 2025, ported from walnutpie) in the chain driver
   (gcol33/tulpa#937). The retry re-ran a diverged trajectory under a

@@ -233,8 +233,8 @@
   // whose per-macro-step subdivision handles varying curvature (a funnel neck)
   // that a single global step size cannot.
   const bool use_walnuts = (walnuts != nullptr) && use_nuts;
-  const WalnutsConfig walnuts_cfg = walnuts ? *walnuts : WalnutsConfig();
-  WalnutsWorkspace walnuts_ws;
+  const tulpa::WalnutsConfig walnuts_cfg = walnuts ? *walnuts : tulpa::WalnutsConfig();
+  tulpa::WalnutsWorkspace walnuts_ws;
   if (use_walnuts) walnuts_ws.init(n_params, max_treedepth);
 
   int warmup_total_leapfrog = 0;  // leapfrog steps summed over warmup (verbose)

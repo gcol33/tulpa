@@ -18,7 +18,7 @@
       // (hmc_walnuts.h). `epsilon` is the macro step; dual averaging tunes it
       // on the mean acceptance of each macro step's coarsest subdivision.
       // -----------------------------------------------------------------
-        WalnutsTransitionResult w = walnuts_transition(
+        tulpa::WalnutsTransitionResult w = walnuts_transition(
           q, current_grad, log_prob_current, epsilon, max_treedepth,
           walnuts_cfg, mass, nuts_ws.gradient_fn, data, layout,
           walnuts_ws, rng);

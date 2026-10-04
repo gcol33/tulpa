@@ -120,7 +120,7 @@ namespace tulpa_hmc {
         const ParamLayout& layout,
         int n_iter, int n_warmup, int L, int chain_id,
         unsigned int seed, bool verbose, int max_treedepth,
-        MassMatrixType metric_type, double adapt_delta, const WalnutsConfig* walnuts,
+        MassMatrixType metric_type, double adapt_delta, const tulpa::WalnutsConfig* walnuts,
         const std::vector<double>& inv_metric_init);
 }
 
@@ -151,7 +151,7 @@ Rcpp::List cpp_test_funnel_nuts(
 
     std::vector<double> init(n_params, 0.0);
     std::vector<double> inv_metric_vec;  // empty -> structural warm-start
-    tulpa_hmc::WalnutsConfig walnuts_cfg;
+    tulpa::WalnutsConfig walnuts_cfg;
     walnuts_cfg.max_step_halvings = max_step_halvings;
     walnuts_cfg.max_error = max_error;
 

@@ -199,7 +199,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     int max_treedepth,
     MassMatrixType metric_type,
     double adapt_delta,
-    const WalnutsConfig* walnuts,
+    const tulpa::WalnutsConfig* walnuts,
     const std::string& checkpoint_path,
     const ParamLayout* layout_override
 ) {
