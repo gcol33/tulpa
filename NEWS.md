@@ -17,19 +17,25 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   peak 18 GB against 14), no cell stops at `max_iter`, and the
   hyperparameter summaries agree with the unscreened dense grid within 0.06
   posterior SD.
-* The joint sparse driver no longer keeps the sum-to-zero direct-factor
-  log-determinant's matrix in each thread's scratch. That reader is the
-  fallback for a cell whose block-Schur factor fails at the final pass; it
-  densifies every sum-to-zero block to its full lower triangle, several
-  hundred MB per thread on a field of a few thousand nodes, and the scratch
-  held it until the grid call ended. It is now built and freed per call. On
-  the 25 km Calluna fit under `"auto"` the peak falls from 18.3 to 14.1 GB
-  with the same grid, the same log marginal to 12 digits and no change in
-  wall time. The grid carries a per-cell `s2z_direct_factor` flag and
-  `diagnostic_summary()` reports `s2z_direct_factor_cells`. Both that flag
-  and `s2z_log_det_fallback` now ride the refinement passes, so they cover
-  every cell of a refined joint grid; the fallback flag had covered the
-  declared cells only, and a refined cell that fell back went unreported.
+* The joint sparse driver reads the sum-to-zero log-determinant from the
+  block-Schur factor alone, with no densified matrix. Where the field block
+  is not positive definite at the final pass (a screen's two-step solve, an
+  iteration cap) it is factored as LDL', and the pinned matrix is accepted
+  exactly when the field block and the K x K capacitance carry the same
+  number of negative pivots; the step and log-determinant follow from the
+  same identity with absolute values. That case used to fall through to a
+  factor of the pinned matrix with every sum-to-zero block densified to its
+  full lower triangle: about 1.5 GB and 8-22 s per call on a field of a few
+  thousand nodes, several at once in the screen's tile chains, and on the
+  25 km Calluna fit 48 of its 49 calls found the matrix indefinite anyway.
+  On that fit under `"auto"` the peak falls from 13.4 to 5.1 GB and the
+  wall time from 14.6 to 12.3 min, with the same 799 cells and every cell's
+  log marginal unchanged. The grid carries a per-cell `s2z_field_indefinite`
+  flag and `diagnostic_summary()` reports `s2z_field_indefinite_cells`. Both
+  that flag and `s2z_log_det_fallback` ride the refinement passes, so they
+  cover every cell of a refined joint grid; the fallback flag had covered
+  the declared cells only, and a refined cell that fell back went
+  unreported.
 * The cheap screen no longer credits a truncated cell with more than its next
   Newton step delivers. It estimated a cell's converged log marginal as its
   value plus half the Newton decrement, a second-order prediction with no

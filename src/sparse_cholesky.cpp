@@ -228,6 +228,29 @@ bool SparseCholeskySolver::factorize(cholmod_sparse* A) {
     return factored_;
 }
 
+void SparseCholeskySolver::use_simplicial_ldl() {
+    common_.supernodal = CHOLMOD_SIMPLICIAL;
+    common_.final_ll = 0;
+}
+
+bool SparseCholeskySolver::ldl_inertia(int& n_neg, double& log_abs_det) const {
+    n_neg = 0;
+    log_abs_det = 0.0;
+    if (!factored_ || !factor_ || factor_->is_ll || factor_->is_super) return false;
+    // Simplicial LDL': D_jj is the first entry of column j (the unit diagonal of
+    // L is not stored).
+    const int* Lp = static_cast<const int*>(factor_->p);
+    const double* Lx = static_cast<const double*>(factor_->x);
+    const int n = static_cast<int>(factor_->n);
+    for (int j = 0; j < n; ++j) {
+        const double d = Lx[Lp[j]];
+        if (!std::isfinite(d) || d == 0.0) return false;
+        if (d < 0.0) ++n_neg;
+        log_abs_det += std::log(std::fabs(d));
+    }
+    return true;
+}
+
 std::size_t SparseCholeskySolver::analyzed_factor_bytes() const {
     if (!factor_) return 0;
     const cholmod_factor* L = factor_;

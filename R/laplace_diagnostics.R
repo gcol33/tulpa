@@ -1501,9 +1501,9 @@
 # PD-enforced factor instead of the pinned sum-to-zero matrix. On that path the
 # escalated matrix is H + lambda I rather than B = H + sum_k coef_k 1_k 1_k', so
 # a cell that fell back is weighted against its neighbours on a different
-# quantity. `flag = "s2z_direct_factor"`: the block-Schur factor failed and the
-# exact value was read from a direct factor of B with its sum-to-zero blocks
-# densified, which holds O(n_k^2) memory per block while it runs. NULL where
+# quantity. `flag = "s2z_field_indefinite"`: the field block of B was not PD,
+# so the block-Schur factor read B through the inertia of an LDL' factor of
+# that block; the value is exact wherever B itself is PD. NULL where
 # the fit carries no such vector -- every tier that does not take the
 # sum-to-zero route, and every fit produced before the flag existed.
 .tulpa_s2z_flag_cells <- function(fit, flag) {

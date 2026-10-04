@@ -490,7 +490,7 @@ inline Rcpp::List nl_pack_grid_results(
     // cell for the same reason start_infeasible is: only the R side can report
     // it, and only if the grid says which cells it happened at.
     Rcpp::LogicalVector s2z_fallbacks(n_grid);
-    Rcpp::LogicalVector s2z_directs(n_grid);
+    Rcpp::LogicalVector s2z_field_indefs(n_grid);
     Rcpp::LogicalVector pd_conditioneds(n_grid);
     int mode_rows = store_modes ? n_grid : 0;
     Rcpp::NumericMatrix all_modes(mode_rows, store_modes ? n_x : 0);
@@ -546,7 +546,7 @@ inline Rcpp::List nl_pack_grid_results(
         convergeds[k] = res.converged;
         start_infeasibles[k] = res.start_infeasible;
         s2z_fallbacks[k] = res.s2z_log_det_fallback;
-        s2z_directs[k] = res.s2z_direct_factor;
+        s2z_field_indefs[k] = res.s2z_field_indefinite;
         pd_conditioneds[k] = res.pd_conditioned;
         if (store_modes) {
             int copy_n = std::min(n_x, static_cast<int>(res.mode.size()));
@@ -625,7 +625,7 @@ inline Rcpp::List nl_pack_grid_results(
     out["converged"] = convergeds;
     out["start_infeasible"] = start_infeasibles;
     out["s2z_log_det_fallback"] = s2z_fallbacks;
-    out["s2z_direct_factor"] = s2z_directs;
+    out["s2z_field_indefinite"] = s2z_field_indefs;
     out["pd_conditioned"] = pd_conditioneds;
     if (n_threads_outer_realised >= 0)
         out["n_threads_outer_realised"] = n_threads_outer_realised;

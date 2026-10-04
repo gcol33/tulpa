@@ -11,6 +11,7 @@
 #include "tulpa/autodiff_fwd.h"
 #include "autodiff_utils.h"
 #include "spde_nc_transform.h"
+#include "s2z_direct_reference.h"
 #include "spde_qbuilder.h"
 #include "laplace_core.h"
 #include "pg_binomial.h"
@@ -1490,7 +1491,11 @@ List cpp_test_spde_nc_transform_fwd(
 // for B = A + sum_k coef_k 1_k 1_k' on a caller-supplied symmetric PD `A` and a
 // set of rank-1 sum-to-zero pins, and returns three independent computations of
 // log|B| plus the step error against a dense reference:
-//   * ld_block_schur  -- s2z_log_det_block_schur (the path under test);
+//   * ld_block_schur  -- s2z_log_det_block_schur (the path under test, with a
+//                        PD field block);
+//   * ld_block_schur_step -- s2z_block_schur with the inertia route on, as the
+//                        joint driver's final pass runs it, together with the
+//                        step and `field_indefinite`;
 //   * ld_direct       -- s2z_log_det_direct (the CHOLMOD full-(A+11') reference);
 //   * ld_dense        -- an independent Eigen LLT factorization of dense B;
 //   * max_dstep       -- max|delta_block_schur - B^{-1} grad| (Eigen LLT solve).
@@ -1575,8 +1580,10 @@ List cpp_test_s2z_block_schur(
   std::vector<double> g(grad.begin(), grad.end());
   std::vector<double> delta_bs(n, 0.0);
   double ld_bs_step = NA_REAL;
+  bool field_indefinite = false;
   const bool ok =
-      tulpa::s2z_block_schur(H, H.s2z_rank1, g.data(), delta_bs.data(), &ld_bs_step);
+      tulpa::s2z_block_schur(H, H.s2z_rank1, g.data(), delta_bs.data(), &ld_bs_step,
+                             nullptr, /*field_inertia=*/true, &field_indefinite);
 
   // Independent dense reference: B = A + sum_k coef_k 1_k 1_k', Eigen LLT.
   Eigen::MatrixXd B(n, n);
@@ -1617,6 +1624,7 @@ List cpp_test_s2z_block_schur(
     _["ld_dense"]            = ld_dense,
     _["ld_block_schur_step"] = ld_bs_step,
     _["ok"]                  = ok,
+    _["field_indefinite"]    = field_indefinite,
     _["max_dstep"]           = max_dstep
   );
 }

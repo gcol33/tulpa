@@ -185,6 +185,103 @@ test_that("a non-contiguous pin is not the contiguous pin of the same count", {
   expect_gt(abs(nc$ld_block_schur - cg$ld_block_schur), 1e-6)
 })
 
+# --- An indefinite field block: the inertia route ----------------------------
+# Away from the mode the field block A_FF need not be PD while the pinned
+# matrix B still is: a negative curvature along a block's constant direction is
+# exactly what the pin covers. The final pass then reads B through an LDL'
+# factor of A_FF and the inertia count neg(B_FF) = neg(A_FF) - neg(cap). Each
+# field block here is a scaled chain Laplacian (null vector 1) shifted down by
+# `eps`, below its second eigenvalue, so A_FF carries one negative eigenvalue
+# per block, along that block's constant.
+
+.s2z_make_A_indef <- function(n, blocks, eps, seed, scale = 50, density = 0.15) {
+  set.seed(seed)
+  A <- matrix(0, n, n)
+  nf <- 0L
+  for (nb in blocks) {
+    idx <- nf + seq_len(nb)
+    for (i in idx[-nb]) {
+      A[i, i + 1L] <- A[i + 1L, i] <- -scale
+      A[i, i] <- A[i, i] + scale; A[i + 1L, i + 1L] <- A[i + 1L, i + 1L] + scale
+    }
+    nf <- nf + nb
+  }
+  diag(A)[seq_len(nf)] <- diag(A)[seq_len(nf)] - eps
+  sc <- (nf + 1L):n
+  for (i in sc) for (j in sc) if (j >= i) {
+    v <- stats::rnorm(1) * 0.3; A[i, j] <- A[j, i] <- v
+  }
+  for (i in seq_len(nf)) for (j in sc) if (stats::runif(1) < density) {
+    v <- stats::rnorm(1) * 0.05; A[i, j] <- A[j, i] <- v
+  }
+  diag(A)[sc] <- rowSums(abs(A[sc, , drop = FALSE])) + stats::runif(length(sc), 1, 2)
+  A
+}
+
+.s2z_run_indef <- function(A, pins, coupling = NULL) {
+  tulpa:::cpp_test_s2z_block_schur(
+    A            = A,
+    pin_start    = as.integer(vapply(pins, `[[`, integer(1), "start")),
+    pin_n        = as.integer(vapply(pins, `[[`, integer(1), "n")),
+    pin_coef     = as.numeric(vapply(pins, `[[`, numeric(1), "coef")),
+    grad         = stats::rnorm(nrow(A), sd = 0.7),
+    pin_coupling = coupling)
+}
+
+test_that("the inertia route reads a PD B over an indefinite field block (one pin)", {
+  for (seed in 51:54) {
+    A <- .s2z_make_A_indef(n = 70L, blocks = 40L, eps = 0.1, seed = seed)
+    expect_lt(min(eigen(A[1:40, 1:40], symmetric = TRUE)$values), 0)
+    r <- .s2z_run_indef(A, list(list(start = 0L, n = 40L, coef = 1.0)))
+    expect_true(r$field_indefinite)
+    expect_true(r$ok)
+    expect_true(is.finite(r$ld_dense))
+    # The PD-only reader declines this matrix; the inertia route reads it.
+    expect_true(is.na(r$ld_block_schur))
+    expect_lt(.rel(r$ld_block_schur_step, r$ld_dense),  1e-8)
+    expect_lt(.rel(r$ld_block_schur_step, r$ld_direct), 1e-9)
+    expect_lt(r$max_dstep, 1e-8)
+  }
+})
+
+test_that("the inertia route is exact for two pins and a coupled capacitance", {
+  Sinv <- matrix(c(2.0, 0.8, 0.8, 1.5), 2L, 2L)
+  for (seed in 61:63) {
+    A <- .s2z_make_A_indef(n = 110L, blocks = c(40L, 40L), eps = 0.1, seed = seed)
+    for (cpl in list(NULL, Sinv / 40)) {
+      r <- .s2z_run_indef(A, list(list(start = 0L,  n = 40L, coef = 1.0),
+                                  list(start = 40L, n = 40L, coef = 0.5)),
+                          coupling = cpl)
+      expect_true(r$field_indefinite)
+      expect_true(r$ok)
+      expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-8)
+      expect_lt(r$max_dstep, 1e-8)
+    }
+  }
+})
+
+test_that("the inertia route refuses B when B is indefinite", {
+  # A pin too weak to lift the negative constant direction: c n < eps.
+  A <- .s2z_make_A_indef(n = 70L, blocks = 40L, eps = 0.1, seed = 71L)
+  r <- .s2z_run_indef(A, list(list(start = 0L, n = 40L, coef = 1e-3)))
+  expect_true(r$field_indefinite)
+  expect_false(r$ok)
+  expect_true(is.na(r$ld_dense))
+  # A second negative direction off the constant, which one pin cannot cover.
+  A2 <- .s2z_make_A_indef(n = 70L, blocks = 40L, eps = 1.0, seed = 72L)
+  expect_gte(sum(eigen(A2[1:40, 1:40], symmetric = TRUE)$values < 0), 2L)
+  r2 <- .s2z_run_indef(A2, list(list(start = 0L, n = 40L, coef = 1.0)))
+  expect_true(r2$field_indefinite)
+  expect_false(r2$ok)
+  expect_true(is.na(r2$ld_dense))
+})
+
+test_that("a PD field block never reports the inertia route", {
+  r <- .s2z_run(n = 90L, nf = 60L, pins = list(list(start = 0L, n = 60L, coef = 1.0)),
+                seed = 1L)
+  expect_false(r$field_indefinite)
+  expect_equal(r$ld_block_schur_step, r$ld_block_schur, tolerance = 0)
+})
 
 test_that("an unparseable densify cutoff leaves the default in place", {
   # TULPA_S2Z_DENSIFY_MAX picks the storage, not the answer, so nothing else in

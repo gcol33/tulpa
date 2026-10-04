@@ -90,8 +90,8 @@ struct LaplaceResult {
   bool pd_conditioned = false;
 
   // The sum-to-zero log-determinant fell back. On that path the reported
-  // -0.5 log|B| is read from a direct factor of B = H + sum_k coef_k 1_k 1_k',
-  // the pinned matrix; where that factor cannot be formed both readers keep the
+  // -0.5 log|B| is read from the block-Schur factor of B = H + sum_k coef_k
+  // 1_k 1_k', the pinned matrix; where B is not PD both readers keep the
   // PD-enforced log-determinant instead, which is a real determinant of
   // H + lambda I after the LM escalation ladder and not of B. The escalation is
   // the normal case on this path rather than the exception, so the two are not
@@ -100,14 +100,12 @@ struct LaplaceResult {
   // count is reportable instead of the substitution being silent.
   bool s2z_log_det_fallback = false;
 
-  // The block-Schur factor of the pinned matrix failed at the final pass and
-  // the log-determinant was read from a direct factor of B, whose sum-to-zero
-  // blocks are densified to their full lower triangle. The value is exact
-  // either way; the direct factor costs O(n_k^2) memory per block for the
-  // duration of the call, which on a field of a few thousand nodes is several
-  // hundred MB per thread. True where that happened, so the count is
-  // reportable.
-  bool s2z_direct_factor = false;
+  // The field block of the pinned matrix was not PD at the final pass, so the
+  // block-Schur factor read B through an LDL' factor of that block and its
+  // inertia. Where B itself is PD the value is exact either way; where it is
+  // not, s2z_log_det_fallback is set too. True where that happened, so the
+  // count is reportable.
+  bool s2z_field_indefinite = false;
 
   // The solve never started: the penalized objective was non-finite at the
   // supplied latent start and the feasibility sweep (make_start_feasible) found

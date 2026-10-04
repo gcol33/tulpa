@@ -1096,7 +1096,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     e_bfmi = NA,
     pareto_k = NA_real_,
     s2z_log_det_fallback_cells = 0L,
-    s2z_direct_factor_cells = 0L,
+    s2z_field_indefinite_cells = 0L,
     unconverged_cells = 0L,
     outer_regime = NA_character_,
     interval_read = NA_character_,
@@ -1362,11 +1362,11 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
             "H + lambda I rather than of the pinned sum-to-zero matrix."),
       s2z_fb$n, s2z_fb$n_grid))
   }
-  # Cells whose exact log-determinant came from the densified direct factor
-  # because the block-Schur factor failed: a count of where that memory was
-  # spent, not a warning, since the value is the same either way.
-  s2z_dir <- .tulpa_s2z_flag_cells(fit, "s2z_direct_factor")
-  if (!is.null(s2z_dir)) result$s2z_direct_factor_cells <- s2z_dir$n
+  # Cells whose field block was indefinite at the final pass: a count, not a
+  # warning, since the inertia route reads the same value wherever the pinned
+  # matrix is PD, and the cells where it is not are counted above.
+  s2z_ind <- .tulpa_s2z_flag_cells(fit, "s2z_field_indefinite")
+  if (!is.null(s2z_ind)) result$s2z_field_indefinite_cells <- s2z_ind$n
 
   # Outer-grid cells whose inner Newton stopped at the cap without a mode.
   uc <- .tulpa_unconverged_cells(fit)

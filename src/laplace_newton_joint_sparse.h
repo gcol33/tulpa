@@ -185,8 +185,8 @@ inline bool s2z_newton_step(
 // The final pass of the sparse joint Newton solve, from the gradient and the
 // Hessian builder the likelihood + prior scatter filled at the returned iterate
 // `scratch.x` (etas already at that point, no base ridge loaded): the
-// conditioned log-determinant (the sum-to-zero direct factor where one is
-// registered), the log-marginal, the inner-layer probes, the centred mode, the
+// conditioned log-determinant (the block-Schur factor of the pinned matrix
+// where sum-to-zero pins are registered), the log-marginal, the inner-layer probes, the centred mode, the
 // precision snapshot at the mode and the fixed-effect block. `result` arrives
 // with the iteration's `converged` and `n_iter`. The one final pass behind the
 // single-species loop and each species of the batched driver.
@@ -216,15 +216,15 @@ inline void joint_newton_finalize_sparse(
     // at an indefinite point (the delta is discarded here; we only need the
     // conditioned log-determinant for the log-marginal).
     //
-    // Sum-to-zero rank-1 fields take the direct route: log|H + sum_k coef_k 1_k
+    // Sum-to-zero rank-1 fields take the pinned route: log|H + sum_k coef_k 1_k
     // 1_k'| is read from a factor of that well-conditioned matrix (the constant
     // direction is pinned by the rank-1 block, so it is PD on the base ridge and
     // never triggers LM ridge escalation). This must be computed from the
     // freshly-scattered base-ridge H, BEFORE joint_pd_step_solve mutates the
     // diagonal: with the rank-1 left off the stored H, the constant direction of
     // H is unpinned and joint_pd_step_solve escalates the ridge to factor it,
-    // which would inflate the determinant. Factoring H + 1 1' directly matches
-    // the dense full-1 1' path. LM only (the PSD path densifies the small
+    // which would inflate the determinant. Factoring H + 1 1' matches the dense
+    // full-1 1' path. LM only (the PSD path densifies the small
     // Hessian and registers no rank-1).
     const bool s2z_direct =
         (pd_mode == JointPDMode::LM) && !H_builder.s2z_rank1.empty();
@@ -241,17 +241,16 @@ inline void joint_newton_finalize_sparse(
     if (s2z_direct) {
         TULPA_PROFILE_PHASE(PHASE_LOG_DET);
         double ld = S2Z_NA;
+        // The field block need not be PD here (an unconverged iterate), so the
+        // inertia route reads the pinned matrix wherever it is PD.
         s2z_step_ok = s2z_block_schur(H_builder, H_builder.s2z_rank1,
                                       grad.data(), scratch.delta.data(), &ld,
-                                      &scratch.s2z_block_schur_cache);
+                                      &scratch.s2z_block_schur_cache,
+                                      /*field_inertia=*/true,
+                                      &result.s2z_field_indefinite);
         s2z_log_det = ld;
-        if (!std::isfinite(s2z_log_det)) {
-            result.s2z_direct_factor = true;
-            s2z_log_det = s2z_log_det_direct(H_builder, H_builder.s2z_rank1,
-                                             /*fallback=*/S2Z_NA);
-        }
-        // Neither reader could form a factor of the pinned matrix, so the
-        // PD-enforced value below stands in for it.
+        // No factor of the pinned matrix could be formed, so the PD-enforced
+        // value below stands in for it.
         result.s2z_log_det_fallback = !std::isfinite(s2z_log_det);
     }
     const bool run_pd_solve = !s2z_step_ok || (cila && cila->active());
@@ -293,14 +292,14 @@ inline void joint_newton_finalize_sparse(
         for (int j = 0; j < n_x; j++) dec += grad[j] * scratch.delta[j];
         if (std::isfinite(dec)) result.newton_decrement = dec;
     }
-    // Prefer the cancellation-free direct factor; keep the PD-enforced value only
-    // if the direct factor was non-PD (NaN fallback).
+    // Prefer the cancellation-free factor of the pinned matrix; keep the
+    // PD-enforced value only where that matrix is not PD (NaN fallback).
     if (s2z_direct && std::isfinite(s2z_log_det)) result.log_det_Q = s2z_log_det;
 
     // Whether the Hessian at the returned point is the PD matrix the expansion
     // needs. On the sum-to-zero path the escalation `pd_conditioned` reports is
     // an artefact of the rank-1 pins being left off the STORED H, so the reading
-    // there is the direct factor of the pinned matrix, which is the true one.
+    // there is the factor of the pinned matrix, which is the true one.
     result.pd_conditioned = pd_conditioned;
     result.hessian_pd_at_mode =
         s2z_direct ? std::isfinite(s2z_log_det) : !pd_conditioned;

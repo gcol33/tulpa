@@ -121,7 +121,7 @@ test_that("a healthy joint grid reports no sum-to-zero log-determinant fallback"
     expect_length(fb, length(fit$log_marginal))
     expect_false(any(as.logical(fb)))
     expect_null(tulpa:::.tulpa_s2z_flag_cells(fit, "s2z_log_det_fallback"))
-    dir <- fit$s2z_direct_factor
+    dir <- fit$s2z_field_indefinite
     expect_false(is.null(dir))
     expect_length(dir, length(fit$log_marginal))
 })
@@ -130,7 +130,7 @@ test_that("the per-cell sum-to-zero counts are what diagnostic_summary reports",
     # The count reads off the per-cell vector, so it is testable without
     # forcing a non-PD pinned matrix: a fit carrying two flagged cells must
     # report two, and one carrying none must report nothing.
-    for (flag in c("s2z_log_det_fallback", "s2z_direct_factor")) {
+    for (flag in c("s2z_log_det_fallback", "s2z_field_indefinite")) {
         none <- stats::setNames(list(c(FALSE, FALSE, FALSE)), flag)
         two  <- stats::setNames(list(c(TRUE, FALSE, TRUE, FALSE)), flag)
         expect_null(tulpa:::.tulpa_s2z_flag_cells(none, flag))

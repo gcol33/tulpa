@@ -80,6 +80,20 @@ public:
     // simplicial fallback, no dbound, no per-call ridge retry.
     bool factorize(cholmod_sparse* A);
 
+    // Switch the solver to a simplicial LDL' factorization, for a symmetric
+    // matrix that may be indefinite. Call before analyze(). CHOLMOD's LDL' does
+    // not pivot for stability and stops only on an exactly zero pivot, so
+    // factorize() succeeds on an indefinite matrix whose leading pivots under
+    // the fill-reducing ordering are nonzero; a caller relying on it has to
+    // bound the backward error itself.
+    void use_simplicial_ldl();
+
+    // Inertia and log|det| of a successful LDL' factorization: the number of
+    // negative pivots of D (Sylvester: the number of negative eigenvalues of A)
+    // and sum_j log|D_jj|. False when there is no factored LDL' factor or a
+    // pivot is zero or not finite.
+    bool ldl_inertia(int& n_neg, double& log_abs_det) const;
+
     // Solve Ax = b using the current factorization.
     // b and x are dense vectors of length n.
     //

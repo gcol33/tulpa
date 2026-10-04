@@ -223,7 +223,7 @@ test_that("a refined cell's convergence and log-determinant flags are recorded w
     expect_gt(sum(nzchar(fit$refining_axis)), 0L)
     expect_length(fit$converged, nrow(fit$theta_grid))
     expect_length(fit$s2z_log_det_fallback, nrow(fit$theta_grid))
-    expect_length(fit$s2z_direct_factor, nrow(fit$theta_grid))
+    expect_length(fit$s2z_field_indefinite, nrow(fit$theta_grid))
     # A cap the refined cells cannot meet is visible on them, and the fit says
     # how much of the posterior sits on cells without a mode.
     expect_warning(
