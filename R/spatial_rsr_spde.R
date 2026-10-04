@@ -127,8 +127,14 @@ validate_spatial <- function(spatial, data) {
 #' - Prediction is the main goal
 #' - Interval coverage matters more than the point estimate
 #'
-#' RSR fits are binomial, through `mode = "gibbs"` (which `mode = "auto"`
-#' selects for it).
+#' A restricted areal field is fitted by nested Laplace (`mode = "structured"`
+#' or `"nested_laplace"`, under any family that path takes, and alongside a
+#' temporal field, smoothers or `latent()` blocks), where the field reaches the
+#' linear predictor through the projector `S P_perp` (`S` the
+#' observation-to-unit incidence), or, for a binomial response, by the
+#' Polya-Gamma Gibbs sampler (`mode = "gibbs"`). `mode = "auto"` selects Gibbs
+#' for a binomial response and nested Laplace otherwise. A restricted
+#' continuous field is fitted by the binomial Gibbs sampler only.
 #'
 #' @examples
 #' # Create RSR spatial structure on an areal field
@@ -218,7 +224,9 @@ spatial_rsr <- function(spatial, restrict_to) {
 
   # Two kernels apply the projection: `cpp_pg_binomial_gibbs_rsr()` on an areal
   # neighbour list and `cpp_pg_binomial_gibbs_gp_rsr()` on an NNGP field
-  # (gcol33/tulpa#848). A field shape neither of them carries is refused here,
+  # (gcol33/tulpa#848); an areal one is also read by the nested-Laplace
+  # multi-block driver as a block projector. A field shape none of them carries
+  # is refused here,
   # where the argument that caused it is still in hand, rather than downstream
   # by a message about a backend the user never chose (gcol33/tulpa#815).
   sp_type <- tolower(spatial$type %||% "")

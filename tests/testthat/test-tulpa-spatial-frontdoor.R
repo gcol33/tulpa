@@ -176,8 +176,9 @@ test_that("spatial Gibbs is binomial-only and rejects random slopes", {
 
 # --- RSR front-door routing (Increment 5) --------------------------------
 # spatial_rsr() wraps an areal spec and flags $rsr; tulpa() routes it as its own
-# gibbs-only areal type (auto picks Gibbs for binomial), building the unit-level
-# projector from restrict_to so the field is orthogonal to the covariates.
+# areal type (auto picks Gibbs for binomial, nested Laplace otherwise), building
+# the unit-level projector from restrict_to so the field is orthogonal to the
+# covariates.
 
 test_that("tulpa() routes an RSR field to the binomial Gibbs sampler (auto)", {
   skip_on_cran()
@@ -199,15 +200,48 @@ test_that("tulpa() routes an RSR field to the binomial Gibbs sampler (auto)", {
   expect_lt(abs(beta_hat[2] - s$beta[2]), 0.30)
 })
 
-test_that("tulpa() rejects a non-binomial RSR field", {
+test_that("a non-binomial RSR field is fit by nested Laplace through A = S P", {
+  skip_on_cran()
   s <- sim_areal_binomial(reps = 2L)
   s$data$count <- rpois(nrow(s$data), 3)
+  sp <- spatial_rsr(spatial_car(s$W, level = "obs"), restrict_to = ~ x)
+  via <- tulpa(count ~ x + spatial(region), data = s$data, family = "poisson",
+               spatial = sp, mode = "auto")
+  expect_equal(via$backend, "nested_laplace")
+  # The same fit as the registry door handed the projector directly: row i of
+  # A is the unit-level projector's row for observation i's unit.
+  X <- model.matrix(count ~ x, s$data)
+  unit <- as.integer(s$data$region)
+  P <- compute_rsr_projection(rowsum(X, unit) / as.vector(table(unit)))
+  csr <- tulpa:::adjacency_to_csr_tulpa(s$W)
+  direct <- tulpa_nested_laplace(
+    y = s$data$count, n_trials = rep(1L, nrow(s$data)), X = X,
+    family = "poisson",
+    prior = list(type = "icar", projector = P[unit, ],
+                 n_spatial_units = s$n_units,
+                 adj_row_ptr = as.integer(csr$row_ptr),
+                 adj_col_idx = as.integer(csr$col_idx),
+                 n_neighbors = as.integer(csr$n_neighbors)))
+  expect_equal(via$log_marginal, direct$log_marginal, tolerance = 1e-8)
+  expect_equal(unname(coef(via)), unname(coef(direct)), tolerance = 1e-8)
+  # The conditional Laplace path reads the underlying icar field and would fit
+  # it unprojected, so it refuses.
   expect_error(
     tulpa(count ~ x + spatial(region), data = s$data, family = "poisson",
-          spatial = spatial_rsr(spatial_car(s$W, level = "obs"), restrict_to = ~ x),
-          mode = "auto", control = list(n_iter = 50L, warmup = 25L)),
-    "binomial"
-  )
+          spatial = sp, mode = "laplace"),
+    "would fit it unprojected")
+})
+
+test_that("a binomial RSR field on nested Laplace recovers the slope", {
+  skip_on_cran()
+  s <- sim_areal_binomial()
+  fit <- tulpa(
+    y ~ x + spatial(region), data = s$data, family = "binomial",
+    n_trials = s$data$ntrials,
+    spatial = spatial_rsr(spatial_car(s$W, level = "obs"), restrict_to = ~ x),
+    mode = "nested_laplace")
+  expect_equal(fit$backend, "nested_laplace")
+  expect_lt(abs(coef(fit)[["x"]] - s$beta[2]), 0.30)
 })
 
 # --- Nested-Laplace spatial routing (Increment 4) ------------------------

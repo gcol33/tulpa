@@ -51,6 +51,11 @@ struct CenterFold {
     double amount      = 0.0;
 };
 
+// Relative tolerance for accepting a design column as the weight a field's
+// centering constant folds into: tight enough to catch a wrong column, loose
+// enough for a design assembled in floating point.
+inline constexpr double kAliasColumnTol = 1e-9;
+
 // The common case: a block seen uniformly by its observations removes one
 // constant, which aliases with the arm intercept. Centres [start, start+length)
 // in place and reports the fold.

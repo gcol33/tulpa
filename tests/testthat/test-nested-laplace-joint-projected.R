@@ -1,6 +1,7 @@
-# A projected areal field on the multi-block joint driver (gcol33/tulpa#940):
+# A projected areal field on the two multi-block drivers (gcol33/tulpa#940):
 # an icar / bym2 / car_proper block carrying `projector` reaches arm k as
-# A_k z, with z on the block's own prior.
+# A_k z, with z on the block's own prior. The joint driver reads it per arm,
+# the single-arm one behind tulpa_nested_laplace() as one matrix.
 
 .proj_lattice <- function(nr = 5L, nc = 5L) {
   adj_list <- lapply(grid_neighbours(nr, nc), sort)
@@ -93,10 +94,6 @@ test_that("a projector is refused where it would be dropped", {
     tulpa_nested_laplace_joint(responses = resp, prior = blk),
     "does not read a block `projector`")
   expect_error(
-    tulpa_nested_laplace(y = d$y, n_trials = rep(1L, d$n), X = d$X,
-                         family = "poisson", prior = list(blk)),
-    "does not read a block `projector`")
-  expect_error(
     tulpa_nested_laplace_joint(
       responses = resp,
       prior = list(c(blk, list(spatial_idx = list(d$idx))))),
@@ -106,4 +103,70 @@ test_that("a projector is refused where it would be dropped", {
   expect_error(
     tulpa_nested_laplace_joint(responses = resp, prior = list(short)),
     "must be a 150 x 25 matrix")
+})
+
+test_that("the registry door reads a projector as the joint driver does", {
+  skip_on_cran()
+  d <- .proj_data()
+  ctl <- list(axis_refine = "none", prune = FALSE, diagnose_k = FALSE)
+  resp <- list(y = list(y = d$y, n_trials = rep(1L, d$n), X = d$X,
+                        family = "poisson"))
+  S <- .proj_incidence(d$idx, d$n_s)
+  A <- .proj_residual(d$X) %*% S
+  for (type in c("icar", "bym2", "car_proper")) {
+    blk <- c(list(type = type), d$graph)
+    gathered <- tulpa_nested_laplace(
+      y = d$y, n_trials = rep(1L, d$n), X = d$X, family = "poisson",
+      prior = list(c(blk, list(spatial_idx = d$idx))), control = ctl)
+    via_incidence <- tulpa_nested_laplace(
+      y = d$y, n_trials = rep(1L, d$n), X = d$X, family = "poisson",
+      prior = c(blk, list(projector = S)), control = ctl)
+    expect_equal(via_incidence$log_marginal, gathered$log_marginal,
+                 tolerance = 1e-6, info = type)
+    expect_equal(coef(via_incidence), coef(gathered), tolerance = 1e-6,
+                 info = type)
+    # The two doors lay their default grids differently, so the comparison
+    # runs on one declared grid.
+    g <- expand.grid(s = c(0.3, 0.7, 1.4), r = c(0.25, 0.6))
+    declared <- switch(type,
+      icar = list(tau_grid = c(0.5, 2, 8)),
+      bym2 = list(sigma_grid = g$s, rho_grid = g$r),
+      car_proper = list(tau_grid = 1 / g$s^2, rho_grid = g$r))
+    restricted <- tulpa_nested_laplace(
+      y = d$y, n_trials = rep(1L, d$n), X = d$X, family = "poisson",
+      prior = c(blk, declared, list(projector = A)), control = ctl)
+    joint <- tulpa_nested_laplace_joint(
+      responses = resp,
+      prior = list(c(blk, declared, list(projector = list(A)))),
+      control = ctl)
+    expect_equal(unname(as.matrix(restricted$theta_grid)),
+                 unname(as.matrix(joint$theta_grid)), info = type)
+    expect_equal(restricted$log_marginal, joint$log_marginal,
+                 tolerance = 1e-6, info = type)
+    expect_equal(unname(coef(restricted)), unname(coef(joint)),
+                 tolerance = 1e-6, info = type)
+  }
+  expect_error(
+    tulpa_nested_laplace(
+      y = d$y, n_trials = rep(1L, d$n), X = d$X, family = "poisson",
+      prior = c(list(type = "icar", projector = S, spatial_idx = d$idx),
+                d$graph)),
+    "either `projector` or `spatial_idx`")
+  expect_error(
+    tulpa_nested_laplace(
+      y = d$y, n_trials = rep(1L, d$n), X = d$X, family = "poisson",
+      prior = c(list(type = "icar", projector = S[-1, ]), d$graph)),
+    "must be a 150 x 25 matrix")
+})
+
+test_that("a restricted single-arm gaussian fit leaves the fixed effects at OLS", {
+  skip_on_cran()
+  d <- .proj_data(family = "gaussian")
+  A <- .proj_residual(d$X) %*% .proj_incidence(d$idx, d$n_s)
+  fit <- tulpa_nested_laplace(
+    y = d$y, n_trials = rep(1L, d$n), X = d$X, family = "gaussian",
+    phi = 0.49, prior = c(list(type = "icar", projector = A), d$graph),
+    control = list(axis_refine = "none", diagnose_k = FALSE))
+  ols <- stats::lm.fit(d$X, d$y)$coefficients
+  expect_equal(unname(coef(fit)), unname(ols), tolerance = 1e-3)
 })

@@ -297,10 +297,15 @@ tensor or the declared cell count holds the grid with
 `spatial_rsr()` flags `$rsr` on a field's own spec; the field keeps its `$type`
 so it still validates as the field it is (an areal one against its adjacency, a
 continuous one against its coordinates), and only the backend selector sees
-`"rsr"`. Two kernels apply it, `cpp_pg_binomial_gibbs_rsr` on an adjacency and
+`"rsr"` (areal) or `"gp_rsr"` (continuous), from `.rsr_spatial_type()`. Two
+Gibbs kernels apply it, `cpp_pg_binomial_gibbs_rsr` on an adjacency and
 `cpp_pg_binomial_gibbs_gp_rsr` on an NNGP field, and `.RSR_FIELDS` is the one
 list of shapes either can carry — an HSGP basis and an SPDE mesh are neither
-and are refused at construction (gcol33/tulpa#815, gcol33/tulpa#848).
+and are refused at construction (gcol33/tulpa#815, gcol33/tulpa#848). An areal
+restricted field also rides nested Laplace under any family: the block carries
+`projector = S P_perp` in place of `spatial_idx`, and both multi-block drivers
+read it through `block_projector.h` (`read_block_projector`,
+`apply_block_projector`, and `projected_level` for where the level goes).
 
 A projected field's full conditional is DENSE whatever its prior: the projector
 couples every pair of coordinates, so the sparse single-site sweep is not

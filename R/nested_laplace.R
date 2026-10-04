@@ -39,6 +39,15 @@
 #'   * ar1:   `temporal_idx`, `n_times`; optional `tau_grid`, `rho_grid`
 #'           (each `rho_grid` value strictly inside (-1, 1)).
 #'
+#'   An `icar`, `bym2` or `car_proper` block may carry `projector`, an
+#'   `N x n_spatial_units` matrix (dense or a \pkg{Matrix} sparse matrix), in
+#'   place of `spatial_idx`: observation `i` then receives `(A z)_i`, so
+#'   restricted spatial regression is `A = S P_perp` with `S` the
+#'   observation-to-unit incidence. The block is fitted by the multi-block
+#'   driver, alone or in a list of blocks. The field's level is placed from
+#'   `A 1`: removed with no fold where it is zero, folded into the intercept
+#'   where it is the intercept column, otherwise left to the augmentation.
+#'
 #'   Grids of a two-axis type (`bym2`, `car_proper`, `ar1`) are PAIRED when
 #'   both are supplied: the i-th entries of `tau_grid` / `sigma_grid` and
 #'   `rho_grid` form the i-th outer-grid cell, so the two must have equal
@@ -533,7 +542,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
          "tulpa_nested_laplace_joint(prior = list(), phi_grid = ).",
          call. = FALSE)
   }
-  .nl_refuse_projector(prior, "tulpa_nested_laplace()")
+  # A projected areal field is read by the multi-block driver alone, so a
+  # single projected block routes there as a length-1 block list.
+  if (.nl_block_is_projected(prior)) prior <- list(prior)
   # Outer-axis provenance: record which grid axes the caller
   # declared as defaults with `auto_grid()` -- the registry rescue below reads
   # it -- and strip the markers so every downstream consumer sees plain grids.
@@ -984,6 +995,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 #          extra fields .joint_call_kernel_via_multi() indexes on the
 #          single-block joint path, where the per-observation index lives on
 #          each arm rather than on the block.
+#   projected
+#          the fields a projected areal block carries on either multi-block
+#          path: its graph, with `projector` in place of `spatial_idx`.
 # A key absent from an entry means the type is not dispatchable on that path;
 # the path's own converter raises its "only supported inside ..." message.
 .NL_REQ_AREAL_GRAPH <- c("n_spatial_units", "adj_row_ptr", "adj_col_idx",
@@ -1063,7 +1077,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     cpp_fn = "cpp_nested_laplace_icar",
     required = list(single = .NL_REQ_AREAL, multi = .NL_REQ_AREAL,
                     joint = .NL_REQ_AREAL,
-                    joint_projected = .NL_REQ_AREAL_GRAPH,
+                    projected = .NL_REQ_AREAL_GRAPH,
                     joint_single = .NL_REQ_AREAL_GRAPH),
     defaults = function(p, a) .nl_fill_family_axes(p, "icar"),
     pack = function(p) c(.nl_adj_args(p), list(
@@ -1076,7 +1090,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     cpp_fn = "cpp_nested_laplace_bym2",
     required = list(single = .NL_REQ_AREAL, multi = .NL_REQ_AREAL,
                     joint = .NL_REQ_AREAL,
-                    joint_projected = .NL_REQ_AREAL_GRAPH,
+                    projected = .NL_REQ_AREAL_GRAPH,
                     joint_single = .NL_REQ_AREAL_GRAPH),
     defaults = function(p, a) .nl_fill_family_axes(p, "bym2"),
     pack = function(p) c(.nl_adj_args(p), list(
@@ -1095,7 +1109,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     cpp_fn = "cpp_nested_laplace_car_proper",
     required = list(single = .NL_REQ_AREAL, multi = .NL_REQ_AREAL,
                     joint = .NL_REQ_AREAL,
-                    joint_projected = .NL_REQ_AREAL_GRAPH,
+                    projected = .NL_REQ_AREAL_GRAPH,
                     joint_single = .NL_REQ_AREAL_GRAPH),
     defaults = function(p, a) {
       # `rho_car_grid` is the joint-API spelling of the correlation axis; accept
@@ -1888,9 +1902,20 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # outer-grid point all blocks share a Newton solve; the joint grid is the
 # Cartesian product of per-block axes.
 
-# A block `projector` (a projected areal field, restricted spatial regression)
-# is read by the multi-block joint driver alone. Every other door would gather
-# the field through `spatial_idx` and drop the projector, so it refuses it.
+# Areal block types whose field may reach the observations through a
+# projector: arm k's predictor receives A_k z in place of the unit gather
+# z[spatial_idx] (restricted spatial regression, A_k = P_k S_k).
+.NL_PROJECTABLE_TYPES <- c("icar", "bym2", "car_proper")
+
+.nl_block_is_projected <- function(p) {
+  is.list(p) && tolower(p$type %||% "") %in% .NL_PROJECTABLE_TYPES &&
+    !is.null(p$projector)
+}
+
+# A block `projector` is read by the two multi-block drivers, the single-arm
+# one behind tulpa_nested_laplace() and the joint one. The single-block joint
+# path would gather the field through `spatial_idx` and drop the projector, so
+# it refuses it.
 .nl_refuse_projector <- function(prior, door) {
   blocks <- if (is.list(prior) && !is.null(prior$type)) list(prior) else prior
   if (!is.list(blocks)) return(invisible(NULL))
@@ -1902,6 +1927,60 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
          "`prior = list(<block>)`.", call. = FALSE)
   }
   invisible(NULL)
+}
+
+# A projected areal block's per-arm projectors as the column-compressed triple
+# the C++ block builders read (0-based `A_i` / `A_p`, the SPDE projector's
+# layout). `p$projector` is a list of n_arms matrices, each N_k x n_units
+# (dense or a Matrix sparse matrix), or one matrix shared by every arm; a NULL
+# entry is an arm the field does not reach. The projector replaces the unit
+# gather, so a block carrying `spatial_idx` as well, or a per-row
+# `svc_weight` that belongs inside A_k, is refused.
+.nl_block_projector <- function(p, n_arms, block_index, arm_n_obs) {
+  type <- tolower(p$type)
+  lab <- paste0("Block ", block_index, " (type '", type, "')")
+  if (!is.null(p$spatial_idx)) {
+    stop(lab, ": pass either `projector` or `spatial_idx`, not both; a ",
+         "projector already maps the observations to the units.",
+         call. = FALSE)
+  }
+  if (!is.null(p$svc_weight)) {
+    stop(lab, ": `projector` and `svc_weight` cannot be combined; scale ",
+         "the projector's rows by the weight.", call. = FALSE)
+  }
+  if (is.null(arm_n_obs)) {
+    stop(lab, ": a projector needs the arms' observation counts.",
+         call. = FALSE)
+  }
+  n_units <- as.integer(p$n_spatial_units)
+  projector <- p$projector
+  if (!is.list(projector)) projector <- rep(list(projector), n_arms)
+  if (length(projector) != n_arms) {
+    stop(lab, ": `projector` must be a list of length n_arms (", n_arms,
+         "), or one matrix shared by every arm.", call. = FALSE)
+  }
+  csc <- lapply(seq_len(n_arms), function(k) {
+    A <- projector[[k]]
+    if (is.null(A)) {
+      return(list(x = numeric(0), i = integer(0), p = integer(n_units + 1L)))
+    }
+    if (!(is.matrix(A) || methods::is(A, "Matrix")) ||
+        nrow(A) != arm_n_obs[k] || ncol(A) != n_units) {
+      stop(lab, ": `projector[[", k, "]]` must be a ", arm_n_obs[k],
+           " x ", n_units, " matrix (arm ", k, "'s observations by the ",
+           "block's units).", call. = FALSE)
+    }
+    A <- methods::as(methods::as(Matrix::Matrix(A, sparse = TRUE),
+                                 "generalMatrix"), "CsparseMatrix")
+    if (!all(is.finite(A@x))) {
+      stop(lab, ": `projector[[", k, "]]` holds a non-finite entry.",
+           call. = FALSE)
+    }
+    list(x = as.numeric(A@x), i = as.integer(A@i), p = as.integer(A@p))
+  })
+  list(A_x = lapply(csc, `[[`, "x"),
+       A_i = lapply(csc, `[[`, "i"),
+       A_p = lapply(csc, `[[`, "p"))
 }
 
 .is_multi_block_prior <- function(p) {
@@ -1968,9 +2047,12 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # already realised from the Cartesian product. tgmrf needs it to precompute
 # Q(theta_k) at every joint-grid row; built-in types ignore the argument
 # because they read theta values directly from theta_grid in the C++ side.
-.nl_block_spec_for_cpp <- function(p, block_joint_grid = NULL) {
+.nl_block_spec_for_cpp <- function(p, block_joint_grid = NULL, n_obs = NULL,
+                                   block_index = NULL) {
   type <- tolower(p$type)
-  .nl_check_block_fields(p, c("axis", "multi"))
+  projected <- .nl_block_is_projected(p)
+  .nl_check_block_fields(p, c("axis", if (projected) "projected" else "multi"),
+                         block_index)
   # Optional per-observation design weight, attached after the type branch has
   # built the spec: it turns any block into a varying coefficient whose eta
   # contribution is svc_weight[i] * <the block's field at i>, and the C++ side
@@ -1981,15 +2063,18 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     out$svc_weight <- as.numeric(p$svc_weight)
     out
   }
-  if (type %in% c("icar", "bym2", "car_proper")) {
+  if (type %in% .NL_PROJECTABLE_TYPES) {
     out <- list(
       type            = type,
-      spatial_idx     = as.integer(p$spatial_idx),
+      spatial_idx     = if (!projected) as.integer(p$spatial_idx),
       n_spatial_units = as.integer(p$n_spatial_units),
       adj_row_ptr     = as.integer(p$adj_row_ptr),
       adj_col_idx     = as.integer(p$adj_col_idx),
       n_neighbors     = as.integer(p$n_neighbors)
     )
+    if (projected) {
+      out$projector <- .nl_block_projector(p, 1L, block_index %||% 1L, n_obs)
+    }
     if (type == "bym2") {
       out$scale_factor <- as.numeric(p$scale_factor %||% 1.0)
       if (!is.null(p$node_prec)) out$node_prec <- as.numeric(p$node_prec)
@@ -2384,7 +2469,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   blocks_spec <- lapply(seq_along(prepared), function(b) {
     cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
     block_joint <- joint_grid[, cols, drop = FALSE]
-    .nl_block_spec_for_cpp(prepared[[b]], block_joint)
+    .nl_block_spec_for_cpp(prepared[[b]], block_joint,
+                           n_obs = length(cargs$y), block_index = b)
   })
 
   # Every block's hyperprior over its own columns, folded on the override path

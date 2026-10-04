@@ -30,6 +30,7 @@
 // LatentBlocks into the vector (BYM2 is the only 2-block expansion).
 
 #include "areal_input_check.h"     // check_latent_obs_index
+#include "block_projector.h"       // projected areal fields (RSR)
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "laplace_re_priors.h"
 #include "laplace_spatial_priors.h"
@@ -55,6 +56,54 @@
 
 namespace {
 
+// The projector of an areal block spec, or null when it gathers its units
+// through `spatial_idx`. A projector replaces the gather, so a spec carrying
+// both is refused.
+std::shared_ptr<std::vector<tulpa::ARows>> read_single_arm_projector(
+    const Rcpp::List& bs, int n_obs, int size, int block_index,
+    const std::string& type
+) {
+    auto rows = tulpa::read_block_projector(
+        bs, Rcpp::IntegerVector::create(n_obs), size, block_index, type);
+    if (rows && bs.containsElementNamed("spatial_idx") &&
+        !Rf_isNull(bs["spatial_idx"])) {
+        Rcpp::stop("Block %d (type '%s'): pass either `projector` or "
+                   "`spatial_idx`, not both; a projector already maps the "
+                   "observations to the units.", block_index + 1, type.c_str());
+    }
+    return rows;
+}
+
+// Identification of a projected intrinsic field, placed where
+// tulpa::projected_level() reads its level: removed with no fold when the
+// projector annihilates the constant, folded into the intercept when the
+// constant reaches the predictor as the intercept column, otherwise left to
+// the precision augmentation. Either centring carries the level as the hard
+// constraint the gathered field's does.
+void centre_projected_intrinsic_level(tulpa::LatentBlock& blk,
+                                      const std::vector<tulpa::ARows>& rows,
+                                      const Rcpp::NumericMatrix& X) {
+    const tulpa::ProjectedLevel level = tulpa::projected_level(
+        rows, [&X](int /*k*/, int i, double& x0) {
+            if (X.ncol() == 0 || i >= X.nrow()) return false;
+            x0 = X(i, 0);
+            return true;
+        });
+    if (level == tulpa::ProjectedLevel::INTERCEPT) {
+        tulpa::centre_intrinsic_level(blk);
+    } else if (level == tulpa::ProjectedLevel::ABSENT) {
+        const int start = blk.start;
+        const int size  = blk.size;
+        blk.center = [start, size](Rcpp::NumericVector& x) {
+            std::vector<tulpa::CenterFold> folds =
+                tulpa::center_intercept(x, start, size);
+            for (auto& f : folds) f.beta_offset = -1;
+            return folds;
+        };
+        blk.intrinsic_level = true;
+    }
+}
+
 // Push the LatentBlock(s) for one block-spec entry. Returns the new
 // latent_offset after appending this block's sub-vector(s) to the joint
 // latent vector layout. Wrapped by build_blocks_from_spec below, which
@@ -67,6 +116,8 @@ int build_blocks_of_type(
     int axis_count,           // number of axes used by this block
     int latent_offset,
     int n_obs,                // rows every block.idx below is read for
+    const Rcpp::NumericMatrix& X,
+    int block_index,
     std::vector<tulpa::LatentBlock>& blocks
 ) {
     std::string type = Rcpp::as<std::string>(bs["type"]);
@@ -91,8 +142,13 @@ int build_blocks_of_type(
     if (type == "icar") {
         require_axes(1);
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
-        Rcpp::IntegerVector spatial_idx = bs["spatial_idx"];
-        check_idx(spatial_idx, size, "blocks_spec$spatial_idx");
+        const auto projector = read_single_arm_projector(bs, n_obs, size,
+                                                         block_index, type);
+        Rcpp::IntegerVector spatial_idx;
+        if (!projector) {
+            spatial_idx = bs["spatial_idx"];
+            check_idx(spatial_idx, size, "blocks_spec$spatial_idx");
+        }
         Rcpp::IntegerVector adj_rp      = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci      = bs["adj_col_idx"];
         Rcpp::IntegerVector n_nbr       = bs["n_neighbors"];
@@ -121,7 +177,12 @@ int build_blocks_of_type(
             return tulpa::log_prior_icar(x, start, size, tau,
                                           adj_rp, adj_ci, n_nbr, sp_part);
         };
-        tulpa::centre_intrinsic_level(block);
+        if (projector) {
+            tulpa::apply_block_projector(block, projector);
+            centre_projected_intrinsic_level(block, *projector, X);
+        } else {
+            tulpa::centre_intrinsic_level(block);
+        }
         blocks.push_back(block);
         return start + size;
     }
@@ -129,8 +190,13 @@ int build_blocks_of_type(
     if (type == "bym2") {
         require_axes(2);
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
-        Rcpp::IntegerVector spatial_idx = bs["spatial_idx"];
-        check_idx(spatial_idx, size, "blocks_spec$spatial_idx");
+        const auto projector = read_single_arm_projector(bs, n_obs, size,
+                                                         block_index, type);
+        Rcpp::IntegerVector spatial_idx;
+        if (!projector) {
+            spatial_idx = bs["spatial_idx"];
+            check_idx(spatial_idx, size, "blocks_spec$spatial_idx");
+        }
         Rcpp::IntegerVector adj_rp      = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci      = bs["adj_col_idx"];
         Rcpp::IntegerVector n_nbr       = bs["n_neighbors"];
@@ -180,7 +246,12 @@ int build_blocks_of_type(
                                                     adj_rp, adj_ci, n_nbr, sp_part,
                                                     tulpa::node_prec_ptr(node_prec));
         };
-        tulpa::centre_intrinsic_level(phi_block);
+        if (projector) {
+            tulpa::apply_block_projector(phi_block, projector);
+            centre_projected_intrinsic_level(phi_block, *projector, X);
+        } else {
+            tulpa::centre_intrinsic_level(phi_block);
+        }
         blocks.push_back(phi_block);
 
         tulpa::LatentBlock theta_block;
@@ -193,6 +264,7 @@ int build_blocks_of_type(
             return sigma_k * tulpa::bym2_sd_unstructured(rho_k);
         };
         tulpa::set_unit_precision_block_priors(theta_block, theta_start, size);
+        if (projector) tulpa::apply_block_projector(theta_block, projector);
         blocks.push_back(theta_block);
         return theta_start + size;
     }
@@ -200,8 +272,13 @@ int build_blocks_of_type(
     if (type == "car_proper") {
         require_axes(2);
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
-        Rcpp::IntegerVector spatial_idx = bs["spatial_idx"];
-        check_idx(spatial_idx, size, "blocks_spec$spatial_idx");
+        const auto projector = read_single_arm_projector(bs, n_obs, size,
+                                                         block_index, type);
+        Rcpp::IntegerVector spatial_idx;
+        if (!projector) {
+            spatial_idx = bs["spatial_idx"];
+            check_idx(spatial_idx, size, "blocks_spec$spatial_idx");
+        }
         Rcpp::IntegerVector adj_rp      = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci      = bs["adj_col_idx"];
         Rcpp::IntegerVector n_nbr       = bs["n_neighbors"];
@@ -249,6 +326,7 @@ int build_blocks_of_type(
         };
         // Full-rank prior: no null direction to identify, so the field is
         // reported at its own mode. See make_car_proper_latent_blocks.
+        if (projector) tulpa::apply_block_projector(block, projector);
         blocks.push_back(block);
         return start + size;
     }
@@ -447,12 +525,14 @@ int build_blocks_from_spec(
     int axis_count,
     int latent_offset,
     int N,
+    const Rcpp::NumericMatrix& X,
+    int block_index,
     std::vector<tulpa::LatentBlock>& blocks
 ) {
     const std::size_t first = blocks.size();
     const int next_offset = build_blocks_of_type(bs, theta_grid, axis0,
                                                  axis_count, latent_offset,
-                                                 N, blocks);
+                                                 N, X, block_index, blocks);
     if (!bs.containsElementNamed("svc_weight") ||
         Rf_isNull(bs["svc_weight"])) {
         return next_offset;
@@ -530,7 +610,7 @@ Rcpp::List cpp_nested_laplace_multi(
         int axis_count = axis_offsets[b + 1] - axis0;
         block_latent_offsets[b] = latent_offset;
         latent_offset = build_blocks_from_spec(
-            bs, theta_grid, axis0, axis_count, latent_offset, N, blocks
+            bs, theta_grid, axis0, axis_count, latent_offset, N, X, b, blocks
         );
     }
     block_latent_offsets[B] = latent_offset;

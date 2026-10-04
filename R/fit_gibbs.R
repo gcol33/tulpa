@@ -217,19 +217,14 @@ adjacency_to_list_tulpa <- function(adj) {
 }
 
 # The projection `spatial_rsr()` declares, attached to the spec at the field's
-# own resolution. One builder for both field shapes: the RSR modifier is
-# binomial-Gibbs-only whichever field it restricts, and `restrict_to` is the
-# design it orthogonalises against -- the spec's own formula, not the full model
-# design.
-.attach_rsr_projection <- function(spatial_spec, data, family,
-                                   obs_to_field, n_field) {
-  if (!identical(family, "binomial")) {
-    stop("An RSR spatial field is fit by the binomial Polya-Gamma Gibbs ",
-         "sampler; `family` must be 'binomial' (got '", family, "').",
-         call. = FALSE)
-  }
-  if (is.null(spatial_spec$rsr_formula)) return(spatial_spec)
-  X_rsr <- stats::model.matrix(spatial_spec$rsr_formula, data = data)
+# own resolution. One builder for both field shapes and every backend that
+# applies it: `restrict_to` is the design it orthogonalises against -- the
+# spec's own formula, not the full model design. A spec without one (a bare
+# `type = "rsr"` list) is restricted against `X_default`, the model design.
+.attach_rsr_projection <- function(spatial_spec, data, obs_to_field, n_field,
+                                   X_default) {
+  X_rsr <- if (is.null(spatial_spec$rsr_formula)) X_default
+           else stats::model.matrix(spatial_spec$rsr_formula, data = data)
   spatial_spec$rsr_projection <-
     .rsr_unit_projection(X_rsr, obs_to_field, n_field)
   spatial_spec

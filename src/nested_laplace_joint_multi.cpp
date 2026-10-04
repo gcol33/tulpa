@@ -294,11 +294,6 @@ make_field_center_fn(int start, int size, int beta_offset) {
     };
 }
 
-// Relative tolerance for accepting a design column as the weight the field's
-// centering constant folds into: tight enough to catch a wrong column, loose
-// enough for a design assembled in floating point.
-inline constexpr double kAliasColumnTol = 1e-9;
-
 // Defensive check that a block's alias column really carries the weight the
 // field is seen through, so a wrong beta_offset cannot silently shift eta.
 //
@@ -339,7 +334,7 @@ inline void check_alias_column(
         for (int i = 0; i < m; ++i) {
             const double wi  = weight_list ? w[i] : 1.0;
             const double xij = pa.X(i, beta_offset);
-            if (std::abs(xij - wi) > kAliasColumnTol * (1.0 + std::abs(wi))) {
+            if (std::abs(xij - wi) > tulpa::kAliasColumnTol * (1.0 + std::abs(wi))) {
                 Rcpp::stop("Block %d (%s): the centering constant folds into "
                            "coefficient %d, whose design column must carry the "
                            "field weight; arm %d obs %d has %g against %g. An "
@@ -354,79 +349,42 @@ inline void check_alias_column(
 }
 
 // The per-arm projector of an areal block (`projector` on its spec), or null
-// when the block reads its units through `spatial_idx`. Arm k's predictor then
-// receives A_k z, so the projector replaces the gather and any per-row weight
-// belongs inside A_k: a block carrying both is refused rather than weighted
-// twice.
-inline std::shared_ptr<std::vector<tulpa::ARows>> read_block_projector(
+// when the block reads its units through `spatial_idx`; arm k's row count is
+// its observation count.
+inline std::shared_ptr<std::vector<tulpa::ARows>> read_joint_block_projector(
     const Rcpp::List& bs, int n_arms, int size, int block_index,
     const std::string& type, const std::vector<tulpa::JointArm>* arms_ptr
 ) {
     if (!bs.containsElementNamed("projector") || Rf_isNull(bs["projector"]))
         return nullptr;
-    if (bs.containsElementNamed("svc_weight") && !Rf_isNull(bs["svc_weight"])) {
-        Rcpp::stop("Block %d (type '%s'): `projector` and `svc_weight` cannot "
-                   "be combined; scale the projector's rows by the weight.",
-                   block_index + 1, type.c_str());
-    }
     if (!arms_ptr || static_cast<int>(arms_ptr->size()) != n_arms) {
         Rcpp::stop("Block %d (type '%s'): a projector needs the arms' "
                    "observation counts.", block_index + 1, type.c_str());
     }
-    Rcpp::List pr = bs["projector"];
     Rcpp::IntegerVector n_obs(n_arms);
     for (int k = 0; k < n_arms; k++) n_obs[k] = (*arms_ptr)[k].N;
-    return tulpa::build_projector_rows_per_arm(
-        pr["A_x"], pr["A_i"], pr["A_p"], n_obs, n_arms, size, block_index,
-        type.c_str());
+    return tulpa::read_block_projector(bs, n_obs, size, block_index, type);
 }
 
-// Read a block through its projector instead of an index gather.
-inline void apply_block_projector(
-    tulpa::LatentBlock& block,
-    const std::shared_ptr<std::vector<tulpa::ARows>>& rows
-) {
-    block.idx          = std::function<int(int, int)>();
-    block.obs_indices  = tulpa::make_projector_obs_indices(rows);
-    block.contrib_kind = tulpa::BlockContribKind::INDEXED_MULTI;
-}
-
-// Centerer of a projected intrinsic field. A constant c added to the field
-// moves arm k's predictor by c * A_k 1, so where the field's level belongs is
-// read off the projector's row sums:
-//   * A_k 1 = 0 on every arm (a projector orthogonal to an intercept, as the
-//     restricted-spatial-regression one is): the level never reaches the
-//     predictor, so it is removed with no fold and eta is unchanged;
-//   * A_k 1 equal to the intercept column on every arm the field reaches: the
-//     level folds into the intercept, as for a gathered field;
-//   * otherwise no column carries it, and the precision augmentation
-//     identifies the level in the field.
-// `centre_uniform` is false where the gathered field installs no centerer (a
-// replicated L > 1 ICAR); the fold is then withheld the same way.
+// Centerer of a projected intrinsic field, placed where tulpa::projected_level()
+// reads the field's level. `centre_uniform` is false where the gathered field
+// installs no centerer (a replicated L > 1 ICAR); the fold is then withheld the
+// same way.
 inline void install_projected_field_center(
     tulpa::LatentBlock& block, int start, int size,
     const std::vector<tulpa::ParsedArm>& parsed,
     const std::vector<tulpa::ARows>& rows_per_arm, bool centre_uniform
 ) {
-    const auto sums = tulpa::projector_row_sums(rows_per_arm);
-    bool annihilated = true;
-    bool intercept   = true;
-    for (std::size_t k = 0; k < sums.size(); k++) {
-        const tulpa::ParsedArm& pa = parsed[k];
-        for (std::size_t i = 0; i < sums[k].size(); i++) {
-            double scale = 1.0;
-            for (const auto& ae : rows_per_arm[k][i]) scale += std::abs(ae.weight);
-            const double s = sums[k][i];
-            if (std::abs(s) > kAliasColumnTol * scale) annihilated = false;
-            const bool has_col = pa.p > 0 && static_cast<int>(i) < pa.X.nrow();
-            if (s != 0.0 && (!has_col ||
-                std::abs(pa.X(i, 0) - s) > kAliasColumnTol * (1.0 + std::abs(s))))
-                intercept = false;
-        }
-    }
-    if (annihilated) {
+    const tulpa::ProjectedLevel level = tulpa::projected_level(
+        rows_per_arm, [&parsed](int k, int i, double& x0) {
+            const tulpa::ParsedArm& pa = parsed[k];
+            if (pa.p == 0 || i >= pa.X.nrow()) return false;
+            x0 = pa.X(i, 0);
+            return true;
+        });
+    if (level == tulpa::ProjectedLevel::ABSENT) {
         block.center = make_field_center_fn(start, size, /*no fold=*/-1);
-    } else if (intercept && centre_uniform) {
+    } else if (level == tulpa::ProjectedLevel::INTERCEPT && centre_uniform) {
         block.center = make_field_center_fn(start, size, /*intercept=*/0);
     }
 }
@@ -589,8 +547,8 @@ int build_joint_blocks_from_spec(
             size, adj_rp.begin(), adj_ci.begin());
         int start = latent_offset;
 
-        const auto projector = read_block_projector(bs, n_arms, size,
-                                                    block_index, type, arms_ptr);
+        const auto projector = read_joint_block_projector(bs, n_arms, size,
+                                                          block_index, type, arms_ptr);
 
         tulpa::LatentBlock block;
         block.start = start;
@@ -663,7 +621,7 @@ int build_joint_blocks_from_spec(
             std::vector<std::pair<int,int>>& out) {
             tulpa::add_icar_pattern(out, start, size, adj_rp, adj_ci, sp_part);
         };
-        if (projector) apply_block_projector(block, projector);
+        if (projector) tulpa::apply_block_projector(block, projector);
         // Uniform ICAR: the global constant aliases with the arm intercept -- a
         // single connected component folds it into offset 0; a replicated L > 1
         // field leaves the L per-component means to the precision augmentation (a
@@ -768,8 +726,8 @@ int build_joint_blocks_from_spec(
                                                  : R_NilValue,
             size, "blocks_spec (bym2)");
 
-        const auto projector = read_block_projector(bs, n_arms, size,
-                                                    block_index, type, arms_ptr);
+        const auto projector = read_joint_block_projector(bs, n_arms, size,
+                                                          block_index, type, arms_ptr);
         std::function<int(int, int)> idx_fn;
         if (!projector)
             idx_fn = make_per_arm_idx_fn(bs["spatial_idx"], n_arms,
@@ -863,7 +821,7 @@ int build_joint_blocks_from_spec(
         // BYM2's structured component aliases like a plain ICAR (uniform: arm
         // intercept; weighted areal SVC: the covariate coefficient). The
         // unstructured theta component below stays uncentred (proper N(0, I)).
-        if (projector) apply_block_projector(phi_block, projector);
+        if (projector) tulpa::apply_block_projector(phi_block, projector);
         install_field_center(phi_block, bs, phi_start, size, parsed, block_index,
                              make_field_center_fn(phi_start, size, /*intercept=*/0),
                              projector.get());
@@ -882,7 +840,7 @@ int build_joint_blocks_from_spec(
         // No add_prior_pattern: prior is diagonal, builder adds it
         // unconditionally.
         // theta has no centering: prior is symmetric.
-        if (projector) apply_block_projector(theta_block, projector);
+        if (projector) tulpa::apply_block_projector(theta_block, projector);
         blocks.push_back(theta_block);
         return theta_start + size;
     }
@@ -894,8 +852,8 @@ int build_joint_blocks_from_spec(
         Rcpp::IntegerVector n_nbr  = bs["n_neighbors"];
         check_adjacency(adj_rp, adj_ci, n_nbr, size);
         int start = latent_offset;
-        const auto projector = read_block_projector(bs, n_arms, size,
-                                                    block_index, type, arms_ptr);
+        const auto projector = read_joint_block_projector(bs, n_arms, size,
+                                                          block_index, type, arms_ptr);
 
         tulpa::LatentBlock block;
         block.start = start;
@@ -942,7 +900,7 @@ int build_joint_blocks_from_spec(
         }
         block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
         block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
-        if (projector) apply_block_projector(block, projector);
+        if (projector) tulpa::apply_block_projector(block, projector);
         blocks.push_back(block);
         return start + size;
     }
@@ -1924,7 +1882,7 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
 // a Matrix::sparseMatrix from it and assert exact pattern equality against
 // hand-computed references.
 //
-// No Newton iteration, no scatter, no factorization — pure pattern. Use
+// No Newton iteration, no scatter, no factorization ? pure pattern. Use
 // theta_grid with a single dummy row when the block factory needs a
 // theta_grid (axis_offsets must still cover the schema for each block
 // type's prep callback to validate at parse time).

@@ -77,8 +77,14 @@ a posterior-predictive check (Hanks et al., 2015) where that is in doubt.
 \item Interval coverage matters more than the point estimate
 }
 
-RSR fits are binomial, through \code{mode = "gibbs"} (which \code{mode = "auto"}
-selects for it).
+A restricted areal field is fitted by nested Laplace (\code{mode = "structured"}
+or \code{"nested_laplace"}, under any family that path takes, and alongside a
+temporal field, smoothers or \code{latent()} blocks), where the field reaches the
+linear predictor through the projector \verb{S P_perp} (\code{S} the
+observation-to-unit incidence), or, for a binomial response, by the
+Polya-Gamma Gibbs sampler (\code{mode = "gibbs"}). \code{mode = "auto"} selects Gibbs
+for a binomial response and nested Laplace otherwise. A restricted
+continuous field is fitted by the binomial Gibbs sampler only.
 }
 \examples{
 # Create RSR spatial structure on an areal field

@@ -32,6 +32,20 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   against its own Gibbs run, so the offset comes from the Laplace
   approximation and not from the projector. The SPDE block reads its mesh
   projector through the same code.
+* `tulpa()` fits a restricted areal field (`spatial_rsr()` on an icar, bym2
+  or car_proper field) by nested Laplace, under any family that path takes.
+  The single-arm multi-block driver behind `tulpa_nested_laplace()` reads a
+  block `projector` as the joint one does, through the same reader and the
+  same rule for the field's level, and a single projected block routes there;
+  `tulpa()` hands it `A = S P_perp`, the unit-level projector the Gibbs
+  sampler applies, row by observation. `mode = "auto"` keeps the Polya-Gamma
+  Gibbs sampler for a binomial response and takes nested Laplace otherwise,
+  where a non-binomial restricted field used to be refused; the restricted
+  field can now also share the nested stack with a temporal field, smoothers
+  or `latent()` blocks. On a declared grid the registry door and the joint
+  door give the same log marginals and coefficients for a restricted icar,
+  bym2 and car_proper field. A restricted continuous field stays binomial and
+  Gibbs only, and the conditional `mode = "laplace"` refuses either.
 * The SoftAbs divergence retry is gone, replaced by a WALNUTS transition
   (Bou-Rabee et al. 2025, ported from walnutpie) in the chain driver
   (gcol33/tulpa#937). The retry re-ran a diverged trajectory under a

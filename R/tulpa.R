@@ -157,6 +157,19 @@
     if (backend == "car_proper" && !is.null(spatial$rho_bounds)) {
       prior$rho_bounds <- as.numeric(spatial$rho_bounds)
     }
+    if (isTRUE(spatial$rsr)) {
+      # Restricted spatial regression: observation i receives (P z)[unit_i],
+      # with P the unit-level projector orthogonal to the restrict_to design
+      # that the Gibbs kernel applies, so the block reads the field through
+      # A = S P (S the observation-to-unit incidence) in place of the gather.
+      P <- spatial$rsr_projection
+      if (is.null(P)) {
+        stop("Internal: a restricted areal spec reached the nested path ",
+             "without its projection.", call. = FALSE)
+      }
+      prior$projector   <- P[prior$spatial_idx, , drop = FALSE]
+      prior$spatial_idx <- NULL
+    }
     return(prior)
   }
 
@@ -2125,7 +2138,7 @@ tulpa <- function(formula, data,
         spatial_spec$type <- "icar"
         spatial_spec$rsr  <- TRUE
       }
-      spatial_type <- "rsr"
+      spatial_type <- .rsr_spatial_type(sp_lc)
     }
     if (sp_lc == "svc") {
       # Spatially-varying coefficients: coordinate-addressed (coords from the
@@ -2182,14 +2195,15 @@ tulpa <- function(formula, data,
         # locations the field is indexed by, which validate_gp() has just
         # resolved (gcol33/tulpa#848).
         spatial_spec <- .attach_rsr_projection(
-          spatial_spec, data, family,
+          spatial_spec, data,
           obs_to_field = as.integer(spatial_spec$obs_to_loc),
           n_field = as.integer(spatial_spec$n_spatial %||%
-                                 nrow(spatial_spec$unique_coords)))
+                                 nrow(spatial_spec$unique_coords)),
+          X_default = bundle$X)
       }
     } else if (sp_lc %in% c(.NL_FRONTDOOR_AREAL, "rsr")) {
       # Areal field: spatial(col) names the per-observation unit. RSR is areal
-      # too (it carries an adjacency), and gibbs-only.
+      # too (it carries an adjacency).
       if (is.null(parsed$spatial_var)) {
         stop("`spatial=` was supplied but the formula has no spatial(col) term ",
              "naming the per-observation spatial unit. Add e.g. `+ spatial(region)`.",
@@ -2213,11 +2227,12 @@ tulpa <- function(formula, data,
       if (isTRUE(spatial_spec$rsr)) {
         # The unit-level projector orthogonal to the restrict_to design -- the
         # whole point of the modifier. dispatch_gibbs_spatial() consumes the
-        # precomputed n_units x n_units projection.
+        # precomputed n_units x n_units projection, and the nested path reads
+        # it through the block's projector (.spatial_spec_to_nl_prior()).
         spatial_spec <- .attach_rsr_projection(
-          spatial_spec, data, family,
+          spatial_spec, data,
           obs_to_field = spatial_spec$spatial_idx,
-          n_field = n_units)
+          n_field = n_units, X_default = bundle$X)
       }
     } else {
       stop("Unknown spatial type '", spatial_type, "'. `spatial$type` must be one ",
@@ -2290,13 +2305,13 @@ tulpa <- function(formula, data,
            "per-group temporal layout). Fit the panel temporal field on its own.",
            call. = FALSE)
     }
-    if (has_spatial && !tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_AREAL) {
+    if (has_spatial && !tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_STACKABLE) {
       # gcol33/tulpa#812: the front-door gap named below.
       stop("A temporal field can accompany an areal (icar/car/bym2/car_proper) ",
            "spatial field through tulpa()'s joint nested-Laplace path; the '",
            spatial_type, "' field is fit by its own integrator through this ",
            "front door (continuous gp/nngp/hsgp and SPDE fields are each fit ",
-           "one at a time here; RSR is sampler-only) and cannot host a ",
+           "one at a time here) and cannot host a ",
            "temporal block through tulpa() yet. A continuous (hsgp/nngp) ",
            "spatial field plus a temporal field IS fitted, directly, by ",
            "fit_st_nested(spatial_type = 'hsgp' or 'nngp', ...) -- it is not ",
@@ -2321,7 +2336,7 @@ tulpa <- function(formula, data,
       stop("A grouped (panel) temporal field cannot be combined with s(...) ",
            "smoothers through tulpa() yet.", call. = FALSE)
     }
-    if (has_spatial && !tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_AREAL) {
+    if (has_spatial && !tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_STACKABLE) {
       stop("s(...) smoothers can accompany an areal (icar/car/bym2/car_proper) ",
            "spatial field through the joint nested-Laplace path; the '",
            spatial_type, "' field is fit by its own integrator and cannot ",
@@ -2385,26 +2400,6 @@ tulpa <- function(formula, data,
       "field. %s"),
       if (is_svc_fit) "Spatially-varying" else "Temporally-varying",
       sel$backend, mode, hint), call. = FALSE)
-  }
-
-  # spatial_rsr()'s projection is applied only inside the two binomial
-  # Polya-Gamma Gibbs kernels that read $rsr_projection
-  # (cpp_pg_binomial_gibbs_rsr() on an adjacency, cpp_pg_binomial_gibbs_gp_rsr()
-  # on an NNGP field): the spec keeps its underlying $type for every other
-  # consumer, so nested_laplace / laplace / hmc / the other backends would read
-  # that type and fit the PLAIN (unprojected) field while still reporting
-  # $spatial$rsr = TRUE -- silently dropping the projection rather than fitting
-  # it (gcol33/tulpa#792). Fail loudly instead; only an explicit or
-  # auto-selected gibbs backend carries the projection.
-  is_rsr_fit <- identical(tolower(spatial_type %||% ""), "rsr")
-  if (is_rsr_fit && !identical(sel$backend, "gibbs")) {
-    stop(sprintf(paste0(
-      "spatial_rsr() is fit only by the binomial Polya-Gamma Gibbs sampler: ",
-      "every other backend reads the underlying field's $type ('%s') and ",
-      "would fit the plain, unprojected field. The selected backend '%s' ",
-      "(mode = '%s') does not carry the RSR projection. Use mode = 'gibbs' ",
-      "or 'auto'."),
-      spatial_spec$type, sel$backend, mode), call. = FALSE)
   }
 
   # A continuous spatial field (gp / nngp / hsgp) plus a formula RE term turns
@@ -2739,6 +2734,35 @@ tulpa <- function(formula, data,
     return(.finalize_fit(fit, backend = "spde", draws_kind = "chain",
                          n_fixed = ncol(bundle$X),
                          fixed_names = colnames(bundle$X)))
+  }
+
+  # spatial_rsr()'s projection is applied by the binomial Polya-Gamma Gibbs
+  # kernels that read $rsr_projection (cpp_pg_binomial_gibbs_rsr() on an
+  # adjacency, cpp_pg_binomial_gibbs_gp_rsr() on an NNGP field) and, for an
+  # areal field, by the nested-Laplace multi-block driver, which reads it as the
+  # block's projector. The spec keeps its underlying $type for every other
+  # consumer, so the remaining backends would fit the PLAIN (unprojected) field
+  # while still reporting $spatial$rsr = TRUE (gcol33/tulpa#792). Checked after
+  # every redirect, on the backend that will run.
+  if (identical(spatial_type, "rsr") &&
+      !sel$backend %in% c("gibbs", "nested_laplace")) {
+    stop(sprintf(paste0(
+      "A restricted areal field (spatial_rsr()) is fit by nested Laplace or, ",
+      "for family 'binomial', the Polya-Gamma Gibbs sampler; the selected ",
+      "backend '%s' (mode = '%s') reads the underlying '%s' field and would ",
+      "fit it unprojected. Use mode = 'auto', 'structured' or ",
+      "'nested_laplace' (or 'gibbs' for a binomial response)."),
+      sel$backend, mode, spatial_spec$type), call. = FALSE)
+  }
+  if (identical(spatial_type, "gp_rsr") &&
+      (!identical(sel$backend, "gibbs") || !identical(family, "binomial"))) {
+    stop(sprintf(paste0(
+      "A restricted continuous field (spatial_rsr() on spatial_gp()) is fit ",
+      "only by the binomial Polya-Gamma Gibbs sampler: `family` must be ",
+      "'binomial' and the backend 'gibbs'; got family '%s' and backend '%s' ",
+      "(mode = '%s'). Every other backend reads the underlying '%s' field and ",
+      "would fit it unprojected."),
+      family, sel$backend, mode, spatial_spec$type), call. = FALSE)
   }
 
   # An explicit `mode` that the redirects above moved off is reported, never

@@ -14,7 +14,9 @@
 #include "latent_block.h"
 #include "spde_qbuilder.h"   // ARows, build_A_rows, spde_validate_projector
 #include <Rcpp.h>
+#include <cmath>
 #include <cstdio>
+#include <string>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -85,6 +87,81 @@ inline std::vector<std::vector<double>> projector_row_sums(
             for (const auto& ae : rows[i]) out[k][i] += ae.weight;
     }
     return out;
+}
+
+// The per-arm projector of an areal block spec (`projector`, the column-
+// compressed lists A_x / A_i / A_p, one entry per arm), or null when the block
+// reads its units through `spatial_idx`. A projector replaces the gather, so any
+// per-row weight belongs inside A_k: a spec carrying `svc_weight` as well is
+// refused rather than weighted twice.
+inline std::shared_ptr<std::vector<ARows>> read_block_projector(
+    const Rcpp::List&          bs,
+    const Rcpp::IntegerVector& n_obs_per_arm,
+    int                        n_cols,
+    int                        block_index,
+    const std::string&         type
+) {
+    if (!bs.containsElementNamed("projector") || Rf_isNull(bs["projector"]))
+        return nullptr;
+    if (bs.containsElementNamed("svc_weight") && !Rf_isNull(bs["svc_weight"])) {
+        Rcpp::stop("Block %d (type '%s'): `projector` and `svc_weight` cannot "
+                   "be combined; scale the projector's rows by the weight.",
+                   block_index + 1, type.c_str());
+    }
+    Rcpp::List pr = bs["projector"];
+    return build_projector_rows_per_arm(
+        pr["A_x"], pr["A_i"], pr["A_p"], n_obs_per_arm,
+        static_cast<int>(n_obs_per_arm.size()), n_cols, block_index,
+        type.c_str());
+}
+
+// Read a block through its projector instead of an index gather.
+inline void apply_block_projector(
+    LatentBlock& block, const std::shared_ptr<std::vector<ARows>>& rows
+) {
+    block.idx          = std::function<int(int, int)>();
+    block.obs_indices  = make_projector_obs_indices(rows);
+    block.contrib_kind = BlockContribKind::INDEXED_MULTI;
+}
+
+// Where a projected intrinsic field's level belongs. A constant c added to the
+// field moves arm k's predictor by c * A_k 1, so it is read off the row sums:
+//   * ABSENT    -- A_k 1 = 0 on every arm (a projector orthogonal to an
+//                  intercept, as the restricted-spatial-regression one is): the
+//                  level never reaches the predictor and is removed with no
+//                  fold;
+//   * INTERCEPT -- A_k 1 equals the intercept column on every arm the field
+//                  reaches: the level folds into the intercept, as for a
+//                  gathered field;
+//   * NONE      -- no column carries it, and the precision augmentation
+//                  identifies the level in the field.
+// `intercept_at(k, i, x0)` writes arm k's intercept-column entry at row i and
+// returns false when the arm has no such column.
+enum class ProjectedLevel { ABSENT, INTERCEPT, NONE };
+
+inline ProjectedLevel projected_level(
+    const std::vector<ARows>& rows_per_arm,
+    const std::function<bool(int, int, double&)>& intercept_at
+) {
+    const auto sums = projector_row_sums(rows_per_arm);
+    bool absent    = true;
+    bool intercept = true;
+    for (std::size_t k = 0; k < sums.size(); k++) {
+        for (std::size_t i = 0; i < sums[k].size(); i++) {
+            double scale = 1.0;
+            for (const auto& ae : rows_per_arm[k][i]) scale += std::abs(ae.weight);
+            const double s = sums[k][i];
+            if (std::abs(s) > kAliasColumnTol * scale) absent = false;
+            double x0 = 0.0;
+            if (s != 0.0 &&
+                (!intercept_at(static_cast<int>(k), static_cast<int>(i), x0) ||
+                 std::abs(x0 - s) > kAliasColumnTol * (1.0 + std::abs(s))))
+                intercept = false;
+        }
+    }
+    if (absent) return ProjectedLevel::ABSENT;
+    if (intercept) return ProjectedLevel::INTERCEPT;
+    return ProjectedLevel::NONE;
 }
 
 } // namespace tulpa

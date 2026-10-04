@@ -418,6 +418,14 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 # Of those, the ones whose projection is applied on the CONTINUOUS kernel.
 .RSR_CONTINUOUS <- c("gp", "nngp")
 
+# The `spatial_type` tulpa() hands the backend selector for a restricted field:
+# "rsr" for an areal one, which the nested-Laplace multi-block driver also
+# reads (the unit projector enters as the block's `projector`), and "gp_rsr"
+# for a continuous one, which only the binomial Gibbs kernel carries.
+.rsr_spatial_type <- function(field_type) {
+  if (field_type %in% .RSR_CONTINUOUS) "gp_rsr" else "rsr"
+}
+
 # SPDE is also coordinate-addressed (no spatial(col) term) and nested-integrated,
 # but it carries its OWN nested engine -- fit_spde() rebuilds the Matern precision
 # Q(range, sigma) per node via the FEM Q-builder and integrates (range, sigma)
@@ -445,7 +453,11 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 # converter .spatial_spec_to_nl_prior); SPDE is redirected to the `spde` backend.
 # Types outside this set stay on the conditional Laplace path under auto/structured.
 .NL_FRONTDOOR_NESTED <- c(.NL_FRONTDOOR_AREAL, .NL_FRONTDOOR_CONTINUOUS,
-                          .NL_FRONTDOOR_SPDE)
+                          .NL_FRONTDOOR_SPDE, "rsr")
+
+# Spatial types that can share the nested-Laplace multi-block stack with a
+# temporal field, smoothers or latent blocks: the areal ones, restricted or not.
+.NL_FRONTDOOR_STACKABLE <- c(.NL_FRONTDOOR_AREAL, "rsr")
 
 # The subset of .NL_FRONTDOOR_NESTED the exact ModelData NUTS sampler (`hmc`
 # and its siblings) also threads directly -- read off dispatch_glmm_modeldata()
@@ -1076,8 +1088,9 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   # preference order:
   #  * binomial areal (icar/bym2/rsr): exact component-wise Polya-Gamma Gibbs
   #    (Tier 1). The PG samplers update the field component-wise, avoiding
-  #    HMC's curse of dimensionality. RSR (an ICAR field projected orthogonal to
-  #    the covariates) has a gibbs-only tulpa() grammar arm, so auto can pick it.
+  #    HMC's curse of dimensionality. A restricted field (spatial_rsr()) goes
+  #    here too, areal or continuous; a continuous one has no other backend.
+  #    An areal one under another family reaches nested Laplace below.
   #    dispatch_gibbs_spatial() also handles gp / nngp / multiscale_gp, but auto
   #    deliberately routes those to the more general nested path below (their
   #    Gibbs samplers need one observation per location); they stay reachable via
@@ -1096,7 +1109,7 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     # from auto only when there is no temporal field. spatial_car()'s exported
     # "car" is the same intrinsic ICAR field dispatch_gibbs_spatial() dispatches
     # under "icar" (gcol33/tulpa#819).
-    if (.areal_gibbs_type(spatial_type) %in% c("icar", "bym2", "rsr") &&
+    if (.areal_gibbs_type(spatial_type) %in% c("icar", "bym2", "rsr", "gp_rsr") &&
         identical(fam_nm, "binomial") &&
         !has_temporal && .auto_backend_ok("gibbs", family, feat)) {
       return(list(
