@@ -421,6 +421,10 @@ cpp_test_nl_field_seed <- function(kind, tag, n_spatial_units, scale_factor, adj
     .Call(`_tulpa_cpp_test_nl_field_seed`, kind, tag, n_spatial_units, scale_factor, adj_row_ptr, adj_col_idx, n_spatial, nn, cov_type, coords, nn_idx, spatial_idx, M, phi_basis, lambda_eig, temporal_type, n_times, cyclic, temporal_idx, n_groups, with_groups)
 }
 
+cpp_nl_lq_group_cdf <- function(is_lq, u, lg, d1, d2, lt, lo_b, hi_b, lo, hi, x) {
+    .Call(`_tulpa_cpp_nl_lq_group_cdf`, is_lq, u, lg, d1, d2, lt, lo_b, hi_b, lo, hi, x)
+}
+
 cpp_test_gp_nngp_twins <- function(w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type) {
     .Call(`_tulpa_cpp_test_gp_nngp_twins`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type)
 }

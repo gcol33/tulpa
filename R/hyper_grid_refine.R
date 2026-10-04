@@ -465,8 +465,7 @@
     lw <- log_weight[base]
     lw[!is.finite(lw)] <- -Inf
     if (any(is.finite(lw))) {
-      key <- function(m) do.call(paste, c(lapply(seq_len(ncol(m)), function(k)
-        sprintf("%.10g", m[, k])), sep = ":"))
+      key <- .hyper_row_key
       w <- exp(lw - max(lw))
       mass <- as.numeric(rowsum(w, key(theta_grid[base, others, drop = FALSE]),
                                 reorder = FALSE)[key(rows), 1L])
@@ -483,17 +482,22 @@
   list(new_cells = cells, warm_start_idx = which(base)[which.max(log_marginal[base])])
 }
 
+# The key a grid cell is matched on across grids and passes: its coordinates on
+# `cols` at ten significant digits, joined by ":". With no columns every cell
+# shares the empty key.
+.hyper_row_key <- function(m, cols = seq_len(ncol(m))) {
+  if (!length(cols)) return(rep("", nrow(m)))
+  do.call(paste, c(lapply(cols, function(b) sprintf("%.10g", m[, b])), sep = ":"))
+}
+
 # The cells of `new_cells` not already on the grid, at the precision the cells
 # are keyed with, or NULL when none is new.
 .hyper_new_cells_only <- function(new_cells, theta_grid) {
   if (is.null(new_cells) || nrow(new_cells) == 0L) return(NULL)
   axis_names <- colnames(theta_grid)
-  fmt <- function(m) {
-    cols <- lapply(axis_names, function(a) sprintf("%.10g", m[, a]))
-    do.call(paste, c(cols, sep = ":"))
-  }
-  new_keys <- fmt(new_cells)
-  keep <- !new_keys %in% fmt(theta_grid) & !duplicated(new_keys)
+  new_keys <- .hyper_row_key(new_cells, axis_names)
+  keep <- !new_keys %in% .hyper_row_key(theta_grid, axis_names) &
+    !duplicated(new_keys)
   if (!any(keep)) return(NULL)
   new_cells[keep, , drop = FALSE]
 }
@@ -631,9 +635,7 @@
   n_x <- length(extras[[solved[1L]]]$mode)
   if (is.null(base_mode) || length(base_mode) != n_x) base_mode <- NULL
   others <- setdiff(colnames(theta_grid), axis)
-  key <- function(m) if (!length(others)) rep("", nrow(m)) else
-    do.call(paste, c(lapply(others, function(b) sprintf("%.10g", m[, b])),
-                     sep = ":"))
+  key <- function(m) .hyper_row_key(m, others)
   by_row <- split(solved, key(theta_grid[solved, , drop = FALSE]))
   axis_dist <- function(a, b) {
     pos <- a > 0 & b > 0
@@ -681,8 +683,7 @@
   lw <- if (length(lq) == length(log_marginal)) log_marginal + lq else log_marginal
   at <- is.finite(lw) & theta_grid[, axis] %in% levels
   if (!any(at)) return(NULL)
-  key <- function(m) do.call(paste, c(lapply(seq_len(ncol(m)), function(k)
-    sprintf("%.10g", m[, k])), sep = ":"))
+  key <- .hyper_row_key
   share <- function(sel) {
     k <- key(theta_grid[sel, others, drop = FALSE])
     m <- tapply(exp(lw[sel] - max(lw[sel])), k, sum)

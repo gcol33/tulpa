@@ -20,6 +20,11 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   the implicit-differentiation gradient and the ST GMRF mass matrix. On a
   two-arm ICAR joint fixture (106 latent coordinates, 251 cells) the
   inner-vcov pass takes 0.40 ms per cell against 4.34, with the same blocks.
+* The within-cell log-quadratic read tabulates each grid row's density and
+  CDF in C++ (`cpp_nl_lq_group_cdf()`); the rows' quadratics are still built
+  in R. On a single-block ICAR joint fit (16 x 16 and 24 x 24 lattices, field
+  coefficient and dispersion axes) the R time per fit falls from 0.41 to
+  0.20 s and from 0.35 to 0.16 s, and every fit field is bit-identical.
 
 * `tulpa_nested_laplace_joint()` gains `control$hessian = "auto"`, the new
   default: each inner Newton step takes the observed Hessian where it

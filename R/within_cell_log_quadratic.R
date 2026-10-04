@@ -119,13 +119,21 @@
   need <- ceiling((hi_x - lo_x) / (min_gap / 8)) + 1L
   m <- max(m, min(need, 8L * m + 1L))
   x <- seq(lo_x, hi_x, length.out = m)
-  dx <- x[2L] - x[1L]
 
+  # Each row's density on `x`, unnormalized and zero outside its extent: the
+  # interpolated log density plus the slab of the box `x` falls in. Past the
+  # outer boxes the outer cells' slabs carry the tails; a stretch between two of
+  # the row's boxes that no cell of the row covers is held by other rows and is
+  # zero here, as it is in the box read. Tabulated and integrated to the row's
+  # normalized CDF in C++ (src/nl_lq_density.cpp); NA where the row carries no
+  # mass on the grid.
   G <- vapply(pieces, function(p) {
-    f <- .nl_lq_group_density(p, x)
-    cf <- c(0, cumsum((f[-1L] + f[-m]) / 2) * dx)
-    if (!is.finite(cf[m]) || cf[m] <= 0) return(rep(NA_real_, m))
-    cf / cf[m]
+    is_lq <- identical(p$kind, "lq")
+    cpp_nl_lq_group_cdf(is_lq, p$u, p$lg,
+                        if (is_lq) p$d1 else numeric(0),
+                        if (is_lq) p$d2 else numeric(0),
+                        if (is_lq) p$lt else numeric(0),
+                        p$lo_b, p$hi_b, p$lo, p$hi, x)
   }, numeric(m))
   G <- matrix(G, m)
   bad <- is.na(G[m, ])
@@ -219,50 +227,6 @@
 
 .nl_lq_quad <- function(p, i, x) {
   p$lg[i] + p$d1[i] * (x - p$u[i]) + p$d2[i] * (x - p$u[i]) * (x - p$u[i + 1L])
-}
-
-# A row's density on `x`, unnormalized and zero outside its extent: the
-# interpolated log density plus the slab of the box `x` falls in. Past the outer
-# boxes the outer cells' slabs carry the tails; a stretch between two of the
-# row's boxes that no cell of the row covers is held by other rows and is zero
-# here, as it is in the box read.
-.nl_lq_group_density <- function(p, x) {
-  f <- numeric(length(x))
-  if (identical(p$kind, "box")) {
-    for (k in seq_along(p$u)) {
-      in_b <- x >= p$lo_b[k] & x < p$hi_b[k]
-      f[in_b] <- f[in_b] + exp(p$lg[k] - max(p$lg))
-    }
-    return(f)
-  }
-  n <- length(p$u)
-  lg <- rep(-Inf, length(x))
-  seg <- findInterval(x, p$u, rightmost.closed = TRUE)
-  inner <- seg >= 1L & seg <= n - 1L
-  if (any(inner)) {
-    s <- seg[inner]
-    xs <- x[inner]
-    left  <- ifelse(s >= 2L, s - 1L, s)
-    right <- ifelse(s <= n - 2L, s, s - 1L)
-    lg[inner] <- 0.5 * (.nl_lq_quad(p, left, xs) + .nl_lq_quad(p, right, xs))
-  }
-  below <- x < p$u[1L] & x >= p$lo
-  if (any(below)) {
-    lg[below] <- if (p$d2[1L] < 0) .nl_lq_quad(p, 1L, x[below]) else p$lg[1L]
-  }
-  above <- x > p$u[n] & x <= p$hi
-  if (any(above)) {
-    lg[above] <- if (p$d2[n - 2L] < 0) .nl_lq_quad(p, n - 2L, x[above]) else
-      p$lg[n]
-  }
-  kb <- findInterval(x, p$lo_b)
-  kb[kb < 1L] <- 1L
-  inside <- x < p$hi_b[kb] | (kb == n & x >= p$hi_b[n]) | x < p$lo_b[1L]
-  L <- lg + ifelse(inside, p$lt[kb], -Inf)
-  fin <- is.finite(L)
-  if (!any(fin)) return(f)
-  f[fin] <- exp(L[fin] - max(L[fin]))
-  f
 }
 
 # Quantiles of the reconstruction at `probs`, back on the axis's own scale.
