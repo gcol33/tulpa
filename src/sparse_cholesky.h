@@ -286,16 +286,16 @@ private:
 // (one pass over Lp / Li, cheap against the recursion itself) because these
 // are offered to callers holding a factor tulpa did not produce:
 //   - L[j,j] occupies the first slot of column j, i.e. Li[Lp[j]] == j;
-//   - row indices ascend strictly within a column, which the entry lookup
-//     relies on to stop early;
-//   - no duplicate row indices in a column.
+//   - row indices ascend strictly within a column;
+//   - no duplicate row indices in a column, which the scatter into row sums
+//     would count twice.
 // A factor violating any of them produces silently wrong output otherwise, so
 // the recursion refuses it instead: false is returned and the output is left
 // zeroed. A Matrix::Cholesky simplicial factor (dCHMsimpl) satisfies all three.
 //
-// Cost is sum_j |col_j| * (|col_j| + average scan length within the searched
-// column), not O(nnz(L)): the inner entry lookup is a linear scan over another
-// column.
+// Cost is sum_j sum_{k in struct(j)} |col_k|, not O(nnz(L)): column j reads
+// Z on struct(j) x struct(j) by walking each column k of struct(j) once. On a
+// dense factor that is n^3 / 6, the order of the factorization itself.
 // =====================================================================
 
 // Fill Zx_out (size = Lp[n]) with the Takahashi partial inverse on pattern(L).

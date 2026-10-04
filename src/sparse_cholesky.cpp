@@ -448,6 +448,17 @@ bool takahashi_partial_inverse_csc(
 
     if (!takahashi_valid_factor(n, Lp, Li)) return false;
 
+    // Column j needs Z on struct(j) x struct(j), struct(j) = {i > j : L[i,j]
+    // != 0}, and every such entry sits in a later column: Z[i,k] with
+    // j < k <= i is stored in column k at row i. Each column k of struct(j) is
+    // walked once and its entries at rows in struct(j) are scattered into the
+    // row sums. `col_val` holds L[i,j] by row over struct(j) (zero elsewhere,
+    // `in_struct` marking membership) and `row_sum[i]` accumulates
+    // sum_{k in struct(j)} L[k,j] Z[i,k]. An entry outside pattern(L)
+    // contributes zero, as the recursion requires.
+    std::vector<char> in_struct(n, 0);
+    std::vector<double> col_val(n, 0.0), row_sum(n, 0.0);
+
     for (int j = n - 1; j >= 0; j--) {
         int col_start = Lp[j];
         int col_end = Lp[j + 1];
@@ -464,32 +475,36 @@ bool takahashi_partial_inverse_csc(
         }
         double Ljj_inv = 1.0 / Ljj;
 
-        // Off-diagonal entries Z[i,j] for i > j (bottom-up within column j).
-        for (int idx_i = col_end - 1; idx_i > col_start; idx_i--) {
-            int i = Li[idx_i];
+        for (int idx_i = col_start + 1; idx_i < col_end; idx_i++) {
+            const int i = Li[idx_i];
+            in_struct[i] = 1;
+            col_val[i] = Lx[idx_i];
+            row_sum[i] = 0.0;
+        }
 
-            // Z[i,j] = -1/L[j,j] * Σ_{k>j, L[k,j]≠0} L[k,j] * Z[i,k].
-            // Z is stored in lower triangle: Z[hi, lo] in column lo at row hi.
-            double sum = 0.0;
-            for (int idx_k = col_start + 1; idx_k < col_end; idx_k++) {
-                int k = Li[idx_k];
-
-                int lo = std::min(i, k);
-                int hi = std::max(i, k);
-
-                double z_ik = 0.0;
-                if (lo == hi) {
-                    z_ik = Zx_out[Lp[lo]];  // diagonal
-                } else {
-                    for (int s = Lp[lo]; s < Lp[lo + 1]; s++) {
-                        if (Li[s] == hi) { z_ik = Zx_out[s]; break; }
-                        if (Li[s] > hi) break;
-                    }
-                }
-
-                sum += Lx[idx_k] * z_ik;
+        // Z[i,j] = -1/L[j,j] * sum_{k in struct(j)} L[k,j] * Z[i,k], i in
+        // struct(j). Column k's entry at row r >= k is Z[r,k]: it is row r's
+        // term k, and for r > k also row k's term r through Z[k,r] = Z[r,k].
+        for (int idx_k = col_start + 1; idx_k < col_end; idx_k++) {
+            const int k = Li[idx_k];
+            const double Lkj = Lx[idx_k];
+            const int k_start = Lp[k], k_end = Lp[k + 1];
+            if (k_start >= k_end) continue;
+            row_sum[k] += Lkj * Zx_out[k_start];
+            for (int s = k_start + 1; s < k_end; s++) {
+                const int r = Li[s];
+                if (!in_struct[r]) continue;
+                const double z = Zx_out[s];
+                row_sum[r] += Lkj * z;
+                row_sum[k] += col_val[r] * z;
             }
-            Zx_out[idx_i] = -Ljj_inv * sum;
+        }
+
+        for (int idx_i = col_start + 1; idx_i < col_end; idx_i++) {
+            const int i = Li[idx_i];
+            Zx_out[idx_i] = -Ljj_inv * row_sum[i];
+            in_struct[i] = 0;
+            col_val[i] = 0.0;
         }
 
         // Diagonal: Z[j,j] = 1/L[j,j] * (1/L[j,j] - Σ_{k>j} L[k,j] * Z[k,j]).

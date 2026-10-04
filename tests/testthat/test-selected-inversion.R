@@ -91,3 +91,28 @@ test_that("selected inversion rejects a CSC triple that does not match n", {
     "outside"
   )
 })
+
+test_that("selected inversion matches a dense solve on a dense and a filled pattern", {
+  # A dense factor makes every struct(j) the whole trailing block, and a 2-D
+  # lattice factor carries fill outside the matrix's own pattern; the diagonal
+  # of the partial inverse is built from every off-diagonal entry the recursion
+  # computes, so it checks the whole pass on both.
+  set.seed(3)
+  n <- 30
+  A <- matrix(rnorm(n * n), n, n)
+  Q_dense <- crossprod(A) + diag(n)
+  Q_lower <- Matrix::tril(as(Matrix::Matrix(Q_dense, sparse = TRUE), "CsparseMatrix"))
+  diag_inv <- cpp_selected_inversion_diagonal(
+    Q_x = Q_lower@x, Q_i = Q_lower@i, Q_p = Q_lower@p, n = n)
+  expect_equal(diag_inv, diag(solve(Q_dense)), tolerance = 1e-10)
+
+  m <- 12
+  T1 <- Matrix::bandSparse(m, k = c(0, 1), diag = list(rep(2.5, m), rep(-1, m - 1)),
+                           symmetric = TRUE)
+  Q_grid <- Matrix::kronecker(Matrix::Diagonal(m), T1) +
+    Matrix::kronecker(T1, Matrix::Diagonal(m))
+  Q_lower <- Matrix::tril(as(Q_grid, "CsparseMatrix"))
+  diag_inv <- cpp_selected_inversion_diagonal(
+    Q_x = Q_lower@x, Q_i = Q_lower@i, Q_p = Q_lower@p, n = m * m)
+  expect_equal(diag_inv, diag(solve(as.matrix(Q_grid))), tolerance = 1e-10)
+})

@@ -13,6 +13,13 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   BFGS's third trial is sigma = 8.2e7, whose inner solve stops at
   `max_iter`; the fit now finishes on BFGS in 17 inner solves where it took 46
   through Brent, at the same estimate and without the warning.
+* The Takahashi selected inversion walks each column of a factor column's
+  structure once and scatters it into per-row sums, where it used to search
+  a column for every pair of rows. It serves `tulpa_joint_inner_vcov_blocks()`
+  (the field marginal variances behind a joint fit's per-cell covariance),
+  the implicit-differentiation gradient and the ST GMRF mass matrix. On a
+  two-arm ICAR joint fixture (106 latent coordinates, 251 cells) the
+  inner-vcov pass takes 0.40 ms per cell against 4.34, with the same blocks.
 
 * `tulpa_nested_laplace_joint()` gains `control$hessian = "auto"`, the new
   default: each inner Newton step takes the observed Hessian where it
