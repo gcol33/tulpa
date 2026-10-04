@@ -21,6 +21,7 @@
 #include "pc_prior.h"
 #include "sparse_hessian.h"
 #include "sparse_cholesky.h"
+#include "laplace_newton_joint_sparse.h"
 #include "mcar_block_factory.h"
 #include "tgmrf_block_factory.h"
 #include "gpu_nngp_laplace.h"
@@ -1498,7 +1499,11 @@ List cpp_test_spde_nc_transform_fwd(
 //                        step and `field_indefinite`;
 //   * ld_direct       -- s2z_log_det_direct (the CHOLMOD full-(A+11') reference);
 //   * ld_dense        -- an independent Eigen LLT factorization of dense B;
-//   * max_dstep       -- max|delta_block_schur - B^{-1} grad| (Eigen LLT solve).
+//   * max_dstep       -- max|delta_block_schur - B^{-1} grad| (Eigen LLT solve);
+//   * newton_ok / newton_block_schur / max_dstep_newton -- the unguarded inner
+//                        Newton step (s2z_newton_step), whether it was taken,
+//                        whether through the block-Schur factor, and its error
+//                        against the same dense solve.
 // `A` is read as a full symmetric matrix; its lower-triangle nonzeros seed the
 // SparseHessianBuilder pattern. Field membership is the union of the pin ranges.
 //
@@ -1585,6 +1590,17 @@ List cpp_test_s2z_block_schur(
       tulpa::s2z_block_schur(H, H.s2z_rank1, g.data(), delta_bs.data(), &ld_bs_step,
                              nullptr, /*field_inertia=*/true, &field_indefinite);
 
+  // The inner Newton step on the same matrix, unguarded: the test the auto
+  // curvature rule runs of whether H gives a Newton step as it stands. Without
+  // the ridge ladder a pinned H leaves the builder untouched.
+  std::vector<double> delta_nt(n, 0.0);
+  bool nt_used_block_schur = false;
+  tulpa::SparseCholeskySolver nt_solver;
+  const bool nt_ok = tulpa::s2z_newton_step(H, nt_solver, n, tulpa::JointPDMode::LM,
+                                            g.data(), delta_nt.data(),
+                                            nt_used_block_schur, nullptr,
+                                            /*guarded=*/false);
+
   // Independent dense reference: B = A + sum_k coef_k 1_k 1_k', Eigen LLT.
   Eigen::MatrixXd B(n, n);
   for (int i = 0; i < n; ++i)
@@ -1604,6 +1620,7 @@ List cpp_test_s2z_block_schur(
   Eigen::LLT<Eigen::MatrixXd> llt(B);
   double ld_dense = NA_REAL;
   double max_dstep = NA_REAL;
+  double max_dstep_newton = NA_REAL;
   if (llt.info() == Eigen::Success) {
     const Eigen::MatrixXd& L = llt.matrixL();
     double ld = 0.0;
@@ -1616,6 +1633,12 @@ List cpp_test_s2z_block_schur(
     for (int i = 0; i < n; ++i)
       md = std::max(md, std::fabs(delta_bs[i] - dd[i]));
     max_dstep = md;
+    if (nt_ok) {
+      double mn = 0.0;
+      for (int i = 0; i < n; ++i)
+        mn = std::max(mn, std::fabs(delta_nt[i] - dd[i]));
+      max_dstep_newton = mn;
+    }
   }
 
   return List::create(
@@ -1625,7 +1648,10 @@ List cpp_test_s2z_block_schur(
     _["ld_block_schur_step"] = ld_bs_step,
     _["ok"]                  = ok,
     _["field_indefinite"]    = field_indefinite,
-    _["max_dstep"]           = max_dstep
+    _["max_dstep"]           = max_dstep,
+    _["newton_ok"]           = nt_ok,
+    _["newton_block_schur"]  = nt_used_block_schur,
+    _["max_dstep_newton"]    = max_dstep_newton
   );
 }
 

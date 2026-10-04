@@ -35,7 +35,11 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   that flag and `s2z_log_det_fallback` ride the refinement passes, so they
   cover every cell of a refined joint grid; the fallback flag had covered
   the declared cells only, and a refined cell that fell back went
-  unreported.
+  unreported. The inner Newton iterations read the pinned matrix the same
+  way, so `"auto"` steps on the observed Hessian wherever the pinned matrix
+  is positive definite, where it used to require the field block alone to
+  be. On the Calluna fit no iterate reaches such a point: run side by side on
+  one node, every cell's log marginal is identical and both fits take 592 s.
 * The cheap screen no longer credits a truncated cell with more than its next
   Newton step delivers. It estimated a cell's converged log marginal as its
   value plus half the Newton decrement, a second-order prediction with no

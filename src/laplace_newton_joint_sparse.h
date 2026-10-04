@@ -138,12 +138,14 @@ inline bool joint_pd_step_solve(
 }
 
 // Inner Newton step for the sum-to-zero large-field path. Prefers the exact
-// block-Schur step: factor the PD field block A_FF, then fold the rank-1 pins
+// block-Schur step: factor the field block A_FF, then fold the rank-1 pins
 // coef_k 1_k 1_k' and the field<->scalar coupling via a small dense Schur. That
 // is the TRUE Newton step (A + sum_k coef_k 1_k 1_k')^-1 grad with no perturbing
-// ridge, so the inner solve converges quadratically. Falls back to the LM
-// escalating-ridge step + Woodbury when A_FF or the Schur complement is not PD
-// (which can happen far from the mode, where the observed Hessian is indefinite).
+// ridge, so the inner solve converges quadratically. A_FF itself need not be PD:
+// the inertia route accepts it wherever the pinned matrix is, which is the
+// matrix the step solves against. Falls back to the LM escalating-ridge step +
+// Woodbury when the pinned matrix is not PD (which can happen far from the
+// mode, where the observed Hessian is indefinite).
 // With no rank-1 registered (small densified field, or no intrinsic field) it is
 // exactly joint_pd_step_solve. Sets `used_block_schur` so the caller does not
 // re-apply the Woodbury correction (block-Schur already includes the rank-1
@@ -165,7 +167,8 @@ inline bool s2z_newton_step(
 ) {
     used_block_schur = false;
     const bool pinned = pd_mode == JointPDMode::LM && !H.s2z_rank1.empty();
-    if (pinned && s2z_block_schur(H, H.s2z_rank1, grad, delta, nullptr, bs_cache)) {
+    if (pinned && s2z_block_schur(H, H.s2z_rank1, grad, delta, nullptr, bs_cache,
+                                  /*field_inertia=*/true)) {
         used_block_schur = true;
         return true;
     }

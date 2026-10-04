@@ -241,6 +241,11 @@ test_that("the inertia route reads a PD B over an indefinite field block (one pi
     expect_lt(.rel(r$ld_block_schur_step, r$ld_dense),  1e-8)
     expect_lt(.rel(r$ld_block_schur_step, r$ld_direct), 1e-9)
     expect_lt(r$max_dstep, 1e-8)
+    # The inner Newton step reads the same factor, so the auto curvature rule
+    # steps on the observed Hessian here, with no ridge.
+    expect_true(r$newton_ok)
+    expect_true(r$newton_block_schur)
+    expect_lt(r$max_dstep_newton, 1e-8)
   }
 })
 
@@ -256,6 +261,8 @@ test_that("the inertia route is exact for two pins and a coupled capacitance", {
       expect_true(r$ok)
       expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-8)
       expect_lt(r$max_dstep, 1e-8)
+      expect_true(r$newton_block_schur)
+      expect_lt(r$max_dstep_newton, 1e-8)
     }
   }
 })
@@ -267,6 +274,9 @@ test_that("the inertia route refuses B when B is indefinite", {
   expect_true(r$field_indefinite)
   expect_false(r$ok)
   expect_true(is.na(r$ld_dense))
+  # Unguarded, the Newton step declines it too, which hands the auto curvature
+  # rule to the expected information.
+  expect_false(r$newton_ok)
   # A second negative direction off the constant, which one pin cannot cover.
   A2 <- .s2z_make_A_indef(n = 70L, blocks = 40L, eps = 1.0, seed = 72L)
   expect_gte(sum(eigen(A2[1:40, 1:40], symmetric = TRUE)$values < 0), 2L)
@@ -274,6 +284,7 @@ test_that("the inertia route refuses B when B is indefinite", {
   expect_true(r2$field_indefinite)
   expect_false(r2$ok)
   expect_true(is.na(r2$ld_dense))
+  expect_false(r2$newton_ok)
 })
 
 test_that("a PD field block never reports the inertia route", {
