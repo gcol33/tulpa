@@ -1125,6 +1125,14 @@
 # every arm. A block with no per-arm index field loads on all arms. Returns a
 # length-n_arms logical.
 .joint_block_arms <- function(block, n_arms) {
+    # A projected field loads arm `a` iff arm a's projector holds a nonzero
+    # entry; one matrix shared by every arm loads them all.
+    pr <- block$projector
+    if (!is.null(pr)) {
+        if (!is.list(pr)) return(rep(TRUE, n_arms))
+        return(vapply(pr, function(A) !is.null(A) && any(A != 0),
+                      logical(1)))
+    }
     for (fld in c("spatial_idx", "temporal_idx", "obs_idx")) {
         idx <- block[[fld]]
         if (is.null(idx)) next

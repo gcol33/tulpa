@@ -51,6 +51,7 @@
 // offset.
 
 #include "areal_input_check.h"    // check_areal_adjacency
+#include "block_projector.h"       // projected areal fields (RSR)
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "cell_coupling_registry.h"
 #include "cell_curvature3.h"        // coupled-cell gamma_3 tensor contraction
@@ -352,6 +353,84 @@ inline void check_alias_column(
     }
 }
 
+// The per-arm projector of an areal block (`projector` on its spec), or null
+// when the block reads its units through `spatial_idx`. Arm k's predictor then
+// receives A_k z, so the projector replaces the gather and any per-row weight
+// belongs inside A_k: a block carrying both is refused rather than weighted
+// twice.
+inline std::shared_ptr<std::vector<tulpa::ARows>> read_block_projector(
+    const Rcpp::List& bs, int n_arms, int size, int block_index,
+    const std::string& type, const std::vector<tulpa::JointArm>* arms_ptr
+) {
+    if (!bs.containsElementNamed("projector") || Rf_isNull(bs["projector"]))
+        return nullptr;
+    if (bs.containsElementNamed("svc_weight") && !Rf_isNull(bs["svc_weight"])) {
+        Rcpp::stop("Block %d (type '%s'): `projector` and `svc_weight` cannot "
+                   "be combined; scale the projector's rows by the weight.",
+                   block_index + 1, type.c_str());
+    }
+    if (!arms_ptr || static_cast<int>(arms_ptr->size()) != n_arms) {
+        Rcpp::stop("Block %d (type '%s'): a projector needs the arms' "
+                   "observation counts.", block_index + 1, type.c_str());
+    }
+    Rcpp::List pr = bs["projector"];
+    Rcpp::IntegerVector n_obs(n_arms);
+    for (int k = 0; k < n_arms; k++) n_obs[k] = (*arms_ptr)[k].N;
+    return tulpa::build_projector_rows_per_arm(
+        pr["A_x"], pr["A_i"], pr["A_p"], n_obs, n_arms, size, block_index,
+        type.c_str());
+}
+
+// Read a block through its projector instead of an index gather.
+inline void apply_block_projector(
+    tulpa::LatentBlock& block,
+    const std::shared_ptr<std::vector<tulpa::ARows>>& rows
+) {
+    block.idx          = std::function<int(int, int)>();
+    block.obs_indices  = tulpa::make_projector_obs_indices(rows);
+    block.contrib_kind = tulpa::BlockContribKind::INDEXED_MULTI;
+}
+
+// Centerer of a projected intrinsic field. A constant c added to the field
+// moves arm k's predictor by c * A_k 1, so where the field's level belongs is
+// read off the projector's row sums:
+//   * A_k 1 = 0 on every arm (a projector orthogonal to an intercept, as the
+//     restricted-spatial-regression one is): the level never reaches the
+//     predictor, so it is removed with no fold and eta is unchanged;
+//   * A_k 1 equal to the intercept column on every arm the field reaches: the
+//     level folds into the intercept, as for a gathered field;
+//   * otherwise no column carries it, and the precision augmentation
+//     identifies the level in the field.
+// `centre_uniform` is false where the gathered field installs no centerer (a
+// replicated L > 1 ICAR); the fold is then withheld the same way.
+inline void install_projected_field_center(
+    tulpa::LatentBlock& block, int start, int size,
+    const std::vector<tulpa::ParsedArm>& parsed,
+    const std::vector<tulpa::ARows>& rows_per_arm, bool centre_uniform
+) {
+    const auto sums = tulpa::projector_row_sums(rows_per_arm);
+    bool annihilated = true;
+    bool intercept   = true;
+    for (std::size_t k = 0; k < sums.size(); k++) {
+        const tulpa::ParsedArm& pa = parsed[k];
+        for (std::size_t i = 0; i < sums[k].size(); i++) {
+            double scale = 1.0;
+            for (const auto& ae : rows_per_arm[k][i]) scale += std::abs(ae.weight);
+            const double s = sums[k][i];
+            if (std::abs(s) > kAliasColumnTol * scale) annihilated = false;
+            const bool has_col = pa.p > 0 && static_cast<int>(i) < pa.X.nrow();
+            if (s != 0.0 && (!has_col ||
+                std::abs(pa.X(i, 0) - s) > kAliasColumnTol * (1.0 + std::abs(s))))
+                intercept = false;
+        }
+    }
+    if (annihilated) {
+        block.center = make_field_center_fn(start, size, /*no fold=*/-1);
+    } else if (intercept && centre_uniform) {
+        block.center = make_field_center_fn(start, size, /*intercept=*/0);
+    }
+}
+
 // Install the identification centerer for a single-field intrinsic block,
 // honoring an optional areal (SVC) / temporal (TVC) design weight.
 // `uniform_center` is the block's no-weight behavior (an empty function means
@@ -371,8 +450,14 @@ inline void install_field_center(
     tulpa::LatentBlock& block, const Rcpp::List& bs, int start, int size,
     const std::vector<tulpa::ParsedArm>& parsed, int block_index,
     std::function<std::vector<tulpa::CenterFold>(Rcpp::NumericVector&)>
-        uniform_center
+        uniform_center,
+    const std::vector<tulpa::ARows>* projector = nullptr
 ) {
+    if (projector) {
+        install_projected_field_center(block, start, size, parsed, *projector,
+                                       static_cast<bool>(uniform_center));
+        return;
+    }
     const std::string what = bs.containsElementNamed("type")
                              ? Rcpp::as<std::string>(bs["type"])
                              : std::string("field");
@@ -491,7 +576,6 @@ int build_joint_blocks_from_spec(
 
     if (type == "icar") {
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
-        Rcpp::List spatial_idx_list = bs["spatial_idx"];
         Rcpp::IntegerVector adj_rp = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci = bs["adj_col_idx"];
         Rcpp::IntegerVector n_nbr  = bs["n_neighbors"];
@@ -505,10 +589,14 @@ int build_joint_blocks_from_spec(
             size, adj_rp.begin(), adj_ci.begin());
         int start = latent_offset;
 
+        const auto projector = read_block_projector(bs, n_arms, size,
+                                                    block_index, type, arms_ptr);
+
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
-        block.idx   = make_per_arm_idx_fn(spatial_idx_list, n_arms,
+        if (!projector)
+            block.idx = make_per_arm_idx_fn(bs["spatial_idx"], n_arms,
                                             "spatial_idx", block_index, arms_ptr);
         block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
 
@@ -575,6 +663,7 @@ int build_joint_blocks_from_spec(
             std::vector<std::pair<int,int>>& out) {
             tulpa::add_icar_pattern(out, start, size, adj_rp, adj_ci, sp_part);
         };
+        if (projector) apply_block_projector(block, projector);
         // Uniform ICAR: the global constant aliases with the arm intercept -- a
         // single connected component folds it into offset 0; a replicated L > 1
         // field leaves the L per-component means to the precision augmentation (a
@@ -587,7 +676,8 @@ int build_joint_blocks_from_spec(
             sp_part.n_components() > 1
                 ? std::function<std::vector<tulpa::CenterFold>(
                       Rcpp::NumericVector&)>()
-                : make_field_center_fn(start, size, /*intercept=*/0));
+                : make_field_center_fn(start, size, /*intercept=*/0),
+            projector.get());
         blocks.push_back(block);
         return start + size;
     }
@@ -662,7 +752,6 @@ int build_joint_blocks_from_spec(
 
     if (type == "bym2") {
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
-        Rcpp::List spatial_idx_list = bs["spatial_idx"];
         Rcpp::IntegerVector adj_rp = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci = bs["adj_col_idx"];
         Rcpp::IntegerVector n_nbr  = bs["n_neighbors"];
@@ -679,8 +768,12 @@ int build_joint_blocks_from_spec(
                                                  : R_NilValue,
             size, "blocks_spec (bym2)");
 
-        auto idx_fn = make_per_arm_idx_fn(spatial_idx_list, n_arms,
-                                           "spatial_idx", block_index, arms_ptr);
+        const auto projector = read_block_projector(bs, n_arms, size,
+                                                    block_index, type, arms_ptr);
+        std::function<int(int, int)> idx_fn;
+        if (!projector)
+            idx_fn = make_per_arm_idx_fn(bs["spatial_idx"], n_arms,
+                                         "spatial_idx", block_index, arms_ptr);
         auto row_weight_fn = make_per_arm_row_weight_fn(bs, n_arms,
                                                         block_index, arms_ptr);
 
@@ -770,8 +863,10 @@ int build_joint_blocks_from_spec(
         // BYM2's structured component aliases like a plain ICAR (uniform: arm
         // intercept; weighted areal SVC: the covariate coefficient). The
         // unstructured theta component below stays uncentred (proper N(0, I)).
+        if (projector) apply_block_projector(phi_block, projector);
         install_field_center(phi_block, bs, phi_start, size, parsed, block_index,
-                             make_field_center_fn(phi_start, size, /*intercept=*/0));
+                             make_field_center_fn(phi_start, size, /*intercept=*/0),
+                             projector.get());
         blocks.push_back(phi_block);
 
         tulpa::LatentBlock theta_block;
@@ -787,23 +882,26 @@ int build_joint_blocks_from_spec(
         // No add_prior_pattern: prior is diagonal, builder adds it
         // unconditionally.
         // theta has no centering: prior is symmetric.
+        if (projector) apply_block_projector(theta_block, projector);
         blocks.push_back(theta_block);
         return theta_start + size;
     }
 
     if (type == "car_proper") {
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
-        Rcpp::List spatial_idx_list = bs["spatial_idx"];
         Rcpp::IntegerVector adj_rp = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci = bs["adj_col_idx"];
         Rcpp::IntegerVector n_nbr  = bs["n_neighbors"];
         check_adjacency(adj_rp, adj_ci, n_nbr, size);
         int start = latent_offset;
+        const auto projector = read_block_projector(bs, n_arms, size,
+                                                    block_index, type, arms_ptr);
 
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
-        block.idx   = make_per_arm_idx_fn(spatial_idx_list, n_arms,
+        if (!projector)
+            block.idx = make_per_arm_idx_fn(bs["spatial_idx"], n_arms,
                                             "spatial_idx", block_index, arms_ptr);
         block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
         block.d_fac = [](int) -> double { return 1.0; };
@@ -844,6 +942,7 @@ int build_joint_blocks_from_spec(
         }
         block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
         block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
+        if (projector) apply_block_projector(block, projector);
         blocks.push_back(block);
         return start + size;
     }

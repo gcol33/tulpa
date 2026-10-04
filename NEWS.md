@@ -11,6 +11,21 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   weights, coefficients and covariance. `tulpa_nested_laplace()`, whose outer
   grid has no dispersion axis, refuses an empty `prior` and names the doors
   that fit one.
+* A projected areal field on the nested-Laplace joint driver
+  (gcol33/tulpa#940). On the list-of-blocks path an `icar`, `bym2` or
+  `car_proper` block may carry `projector`, one `N_k x n_units` matrix per
+  arm (dense or sparse), in place of `spatial_idx`; arm `k`'s predictor then
+  receives `A_k z` with `z` on the block's own prior. Restricted spatial
+  regression is `A_k = P_k S_k`, which used to be refused on the Laplace tier.
+  The field's level is placed from `A_k 1`: removed with no fold where it is
+  zero, folded into the intercept where it is the intercept column. A
+  projector equal to the unit incidence reproduces the gathered fit. On a
+  binomial 8 x 8 lattice (4 seeds) the restricted fit's fixed effects sit
+  within 0.31 posterior SDs of the exact Polya-Gamma Gibbs RSR sampler, with
+  SDs within 4%; the unrestricted ICAR shows the same offset (0.29-0.32 SDs)
+  against its own Gibbs run, so the offset comes from the Laplace
+  approximation and not from the projector. The SPDE block reads its mesh
+  projector through the same code.
 * The SoftAbs divergence retry is gone, replaced by a WALNUTS transition
   (Bou-Rabee et al. 2025, ported from walnutpie) in the chain driver
   (gcol33/tulpa#937). The retry re-ran a diverged trajectory under a

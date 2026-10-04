@@ -226,13 +226,36 @@
 # NULL only from contexts where no such block can appear.
 .joint_block_spec_for_cpp <- function(p, n_arms, block_index, arms = NULL) {
     type <- tolower(p$type)
-    .nl_check_block_fields(p, c("axis", "joint"), block_index)
+    projected <- type %in% .JOINT_PROJECTABLE_TYPES && !is.null(p$projector)
+    .nl_check_block_fields(
+        p, c("axis", if (projected) "joint_projected" else "joint"), block_index)
     arm_n_obs <- if (is.null(arms)) NULL
                  else vapply(arms, function(a) length(a$y), integer(1))
-    if (type %in% c("icar", "bym2", "car_proper")) {
-        spatial_idx <- .multi_block_per_arm_idx(p$spatial_idx, n_arms,
-                                                  block_index, "spatial_idx",
-                                                  arm_n_obs, p$n_spatial_units)
+    if (type %in% .JOINT_PROJECTABLE_TYPES) {
+        # A projected field reaches arm k as A_k z; the projector replaces the
+        # unit gather, so the block carries no `spatial_idx`.
+        if (projected) {
+            if (!is.null(p$spatial_idx)) {
+                stop("Block ", block_index, " (type '", type, "'): pass ",
+                     "either `projector` or `spatial_idx`, not both; a ",
+                     "projector already maps the observations to the units.",
+                     call. = FALSE)
+            }
+            if (!is.null(p$svc_weight)) {
+                stop("Block ", block_index, " (type '", type, "'): ",
+                     "`projector` and `svc_weight` cannot be combined; scale ",
+                     "the projector's rows by the weight.", call. = FALSE)
+            }
+            if (is.null(arm_n_obs)) {
+                stop("Block ", block_index, " (type '", type, "'): a ",
+                     "projector needs the arms' observation counts.",
+                     call. = FALSE)
+            }
+        }
+        spatial_idx <- if (!projected)
+            .multi_block_per_arm_idx(p$spatial_idx, n_arms, block_index,
+                                     "spatial_idx", arm_n_obs,
+                                     p$n_spatial_units)
         out <- list(
             type            = type,
             spatial_idx     = spatial_idx,
@@ -241,6 +264,11 @@
             adj_col_idx     = as.integer(p$adj_col_idx),
             n_neighbors     = as.integer(p$n_neighbors)
         )
+        if (projected) {
+            out$projector <- .joint_block_projector(
+                p$projector, n_arms, block_index, type, arm_n_obs,
+                as.integer(p$n_spatial_units))
+        }
         if (type == "bym2") {
             out$scale_factor <- as.numeric(p$scale_factor %||% 1.0)
             if (!is.null(p$node_prec)) out$node_prec <- as.numeric(p$node_prec)
@@ -549,6 +577,47 @@
         stop("Block type '", type, "' is not supported in multi-block joint priors.",
              call. = FALSE)
     }
+}
+
+# Areal block types whose field may reach the arms through a projector.
+.JOINT_PROJECTABLE_TYPES <- c("icar", "bym2", "car_proper")
+
+# A projected areal field's per-arm projectors as the column-compressed triple
+# the C++ factory reads (0-based `A_i` / `A_p`, the SPDE projector's layout).
+# `projector` is a list of n_arms matrices, each N_k x n_units (dense or a
+# Matrix sparse matrix), or one matrix shared by every arm. A NULL entry is an
+# arm the field does not reach.
+.joint_block_projector <- function(projector, n_arms, block_index, type,
+                                   arm_n_obs, n_units) {
+    lab <- paste0("Block ", block_index, " (type '", type, "')")
+    if (!is.list(projector)) projector <- rep(list(projector), n_arms)
+    if (length(projector) != n_arms) {
+        stop(lab, ": `projector` must be a list of length n_arms (", n_arms,
+             "), or one matrix shared by every arm.", call. = FALSE)
+    }
+    csc <- lapply(seq_len(n_arms), function(k) {
+        A <- projector[[k]]
+        if (is.null(A)) {
+            return(list(x = numeric(0), i = integer(0),
+                        p = integer(n_units + 1L)))
+        }
+        if (!(is.matrix(A) || methods::is(A, "Matrix")) ||
+            nrow(A) != arm_n_obs[k] || ncol(A) != n_units) {
+            stop(lab, ": `projector[[", k, "]]` must be a ", arm_n_obs[k],
+                 " x ", n_units, " matrix (arm ", k, "'s observations by the ",
+                 "block's units).", call. = FALSE)
+        }
+        A <- methods::as(methods::as(Matrix::Matrix(A, sparse = TRUE),
+                                     "generalMatrix"), "CsparseMatrix")
+        if (!all(is.finite(A@x))) {
+            stop(lab, ": `projector[[", k, "]]` holds a non-finite entry.",
+                 call. = FALSE)
+        }
+        list(x = as.numeric(A@x), i = as.integer(A@i), p = as.integer(A@p))
+    })
+    list(A_x = lapply(csc, `[[`, "x"),
+         A_i = lapply(csc, `[[`, "i"),
+         A_p = lapply(csc, `[[`, "p"))
 }
 
 # Coerce + validate the optional `svc_weight` for an areal block into a

@@ -43,6 +43,7 @@
 #ifndef TULPA_SPDE_BLOCK_FACTORY_H
 #define TULPA_SPDE_BLOCK_FACTORY_H
 
+#include "block_projector.h"             // projector rows + obs_indices
 #include "latent_block.h"
 #include "laplace_re_priors.h"           // center_effects
 #include "nl_cell_cache.h"
@@ -75,41 +76,6 @@ struct SpdeCellState {
     SpdeQLogDet  qld;
     double       half_ldQ = 0.0;
 };
-
-// Per-arm ARows, materialized once at factory time so per-obs lookups in the
-// eta/scatter loops are O(nnz_per_row).
-inline std::shared_ptr<std::vector<ARows>> spde_build_a_rows_per_arm(
-    const Rcpp::List&          A_x_per_arm,
-    const Rcpp::List&          A_i_per_arm,
-    const Rcpp::List&          A_p_per_arm,
-    const Rcpp::IntegerVector& n_obs_per_arm,
-    int                        n_arms,
-    int                        n_mesh,
-    int                        block_index
-) {
-    if (static_cast<int>(A_x_per_arm.size()) != n_arms ||
-        static_cast<int>(A_i_per_arm.size()) != n_arms ||
-        static_cast<int>(A_p_per_arm.size()) != n_arms ||
-        n_obs_per_arm.size() != n_arms) {
-        Rcpp::stop("Block %d (type 'spde'): A_x/A_i/A_p/n_obs_per_arm must "
-                   "each have length n_arms (%d).",
-                   block_index + 1, n_arms);
-    }
-    auto a_rows_per_arm = std::make_shared<std::vector<ARows>>(n_arms);
-    for (int k = 0; k < n_arms; k++) {
-        Rcpp::NumericVector A_x = A_x_per_arm[k];
-        Rcpp::IntegerVector A_i = A_i_per_arm[k];
-        Rcpp::IntegerVector A_p = A_p_per_arm[k];
-        char arm_label[64];
-        std::snprintf(arm_label, sizeof(arm_label),
-                      "Block %d (type 'spde'): A[[%d]]", block_index + 1, k + 1);
-        spde_validate_projector(n_mesh, n_obs_per_arm[k], A_x, A_i, A_p,
-                                arm_label);
-        (*a_rows_per_arm)[k] = build_A_rows(n_obs_per_arm[k], n_mesh,
-                                            A_x, A_i, A_p);
-    }
-    return a_rows_per_arm;
-}
 
 // Assemble the LatentBlock around a pattern-seeded template builder. Every
 // field below reads whatever CSC the per-cell builder holds, so the FEM entries
@@ -145,21 +111,7 @@ inline LatentBlock spde_assemble_block(
 
     // Per-obs (mesh_node_1based, weight) list. Pattern builder + sparse
     // scatter consume this for INDEXED_MULTI fill.
-    block.obs_indices = [a_rows_per_arm](
-        int i, int k_arm,
-        std::vector<std::pair<int,double>>& out
-    ) {
-        out.clear();
-        const ARows& rows = (*a_rows_per_arm)[k_arm];
-        if (i < 0 || i >= static_cast<int>(rows.size())) return;
-        const auto& row = rows[i];
-        out.reserve(row.size());
-        for (const auto& ae : row) {
-            // 1-based block-local index; pattern builder / scatter add
-            // `start` and subtract 1.
-            out.emplace_back(ae.mesh_idx + 1, ae.weight);
-        }
-    };
+    block.obs_indices = make_projector_obs_indices(a_rows_per_arm);
 
     // idx left empty — INDEXED_MULTI uses obs_indices, not idx.
 
@@ -294,9 +246,9 @@ inline LatentBlock make_spde_block(
     // Q_nnz does not enumerate the pattern a second time to get it.
     int*                           q_nnz_out = nullptr
 ) {
-    auto a_rows_per_arm = spde_build_a_rows_per_arm(
+    auto a_rows_per_arm = build_projector_rows_per_arm(
         A_x_per_arm, A_i_per_arm, A_p_per_arm, n_obs_per_arm,
-        n_arms, n_mesh, block_index);
+        n_arms, n_mesh, block_index, "spde");
 
     spde_validate_fem(n_mesh, C0_diag, G1_x, G1_i, G1_p);
 
@@ -368,9 +320,9 @@ inline LatentBlock make_spde_block_precomputed(
     const Rcpp::NumericVector&     Q_x,
     int*                           q_nnz_out = nullptr
 ) {
-    auto a_rows_per_arm = spde_build_a_rows_per_arm(
+    auto a_rows_per_arm = build_projector_rows_per_arm(
         A_x_per_arm, A_i_per_arm, A_p_per_arm, n_obs_per_arm,
-        n_arms, n_mesh, block_index);
+        n_arms, n_mesh, block_index, "spde");
 
     if (Q_p.size() != n_mesh + 1) {
         Rcpp::stop("Block %d (type 'spde', precomputed): length(Q_p) must be "

@@ -112,6 +112,19 @@
 #'   (car_proper's `rho_car`); whichever way it declines,
 #'   `outer_grid_recenter_declined` says which (see below).
 #'
+#'   On the list-of-blocks path an `icar`, `bym2` or `car_proper` block may
+#'   carry `projector` in place of `spatial_idx`: a list of `n_arms` matrices
+#'   (dense or a \pkg{Matrix} sparse matrix), arm `k`'s of size
+#'   `N_k x n_spatial_units`, or one matrix shared by every arm; a `NULL` entry
+#'   is an arm the field does not reach. Arm `k`'s predictor then receives
+#'   `A_k z` with `z` on the block's own prior, so restricted spatial
+#'   regression is `A_k = P_k S_k`, with `P_k = I - X_k (X_k' X_k)^-1 X_k'` and
+#'   `S_k` the observation-to-unit incidence. The field's level is placed
+#'   from `A_k 1`: where it is zero on every arm the level never reaches the
+#'   predictor and is removed with no fold; where it is the intercept column
+#'   it folds into the intercept. Restricting the field changes the estimand
+#'   to the marginal association (see [spatial_rsr()]).
+#'
 #'   An empty `prior = list()` is a list of zero blocks: the model carries no
 #'   latent field, each arm's predictor is its fixed effects, and the outer
 #'   grid is spanned by the per-arm dispersion axes of `phi_grid` alone (one
@@ -2092,6 +2105,7 @@ tulpa_nested_laplace_joint <- function(responses,
         stop("`prior` must be a list with a `type` field, or a list of block specs (empty for none).",
              call. = FALSE)
     }
+    .nl_refuse_projector(prior, "The single-block tulpa_nested_laplace_joint() path")
     type <- tolower(prior$type)
     backend <- .joint_backends[[type]]
     if (is.null(backend)) {

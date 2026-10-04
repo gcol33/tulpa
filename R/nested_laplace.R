@@ -533,6 +533,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
          "tulpa_nested_laplace_joint(prior = list(), phi_grid = ).",
          call. = FALSE)
   }
+  .nl_refuse_projector(prior, "tulpa_nested_laplace()")
   # Outer-axis provenance: record which grid axes the caller
   # declared as defaults with `auto_grid()` -- the registry rescue below reads
   # it -- and strip the markers so every downstream consumer sees plain grids.
@@ -1062,6 +1063,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     cpp_fn = "cpp_nested_laplace_icar",
     required = list(single = .NL_REQ_AREAL, multi = .NL_REQ_AREAL,
                     joint = .NL_REQ_AREAL,
+                    joint_projected = .NL_REQ_AREAL_GRAPH,
                     joint_single = .NL_REQ_AREAL_GRAPH),
     defaults = function(p, a) .nl_fill_family_axes(p, "icar"),
     pack = function(p) c(.nl_adj_args(p), list(
@@ -1074,6 +1076,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     cpp_fn = "cpp_nested_laplace_bym2",
     required = list(single = .NL_REQ_AREAL, multi = .NL_REQ_AREAL,
                     joint = .NL_REQ_AREAL,
+                    joint_projected = .NL_REQ_AREAL_GRAPH,
                     joint_single = .NL_REQ_AREAL_GRAPH),
     defaults = function(p, a) .nl_fill_family_axes(p, "bym2"),
     pack = function(p) c(.nl_adj_args(p), list(
@@ -1092,6 +1095,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     cpp_fn = "cpp_nested_laplace_car_proper",
     required = list(single = .NL_REQ_AREAL, multi = .NL_REQ_AREAL,
                     joint = .NL_REQ_AREAL,
+                    joint_projected = .NL_REQ_AREAL_GRAPH,
                     joint_single = .NL_REQ_AREAL_GRAPH),
     defaults = function(p, a) {
       # `rho_car_grid` is the joint-API spelling of the correlation axis; accept
@@ -1883,6 +1887,22 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # list with a `type` field (same shape as a single-block prior). At each
 # outer-grid point all blocks share a Newton solve; the joint grid is the
 # Cartesian product of per-block axes.
+
+# A block `projector` (a projected areal field, restricted spatial regression)
+# is read by the multi-block joint driver alone. Every other door would gather
+# the field through `spatial_idx` and drop the projector, so it refuses it.
+.nl_refuse_projector <- function(prior, door) {
+  blocks <- if (is.list(prior) && !is.null(prior$type)) list(prior) else prior
+  if (!is.list(blocks)) return(invisible(NULL))
+  has <- vapply(blocks, function(b) is.list(b) && !is.null(b$projector),
+                logical(1))
+  if (any(has)) {
+    stop(door, " does not read a block `projector`; a projected areal field ",
+         "is fitted by tulpa_nested_laplace_joint() with a list of blocks, ",
+         "`prior = list(<block>)`.", call. = FALSE)
+  }
+  invisible(NULL)
+}
 
 .is_multi_block_prior <- function(p) {
   is.list(p) && is.null(p$type) &&

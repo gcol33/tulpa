@@ -318,7 +318,7 @@ inline ARows build_A_rows(int N, int n_mesh,
             // observation count. Dropping it would silently fit a model with
             // fewer design rows than the caller supplied.
             if (i < 0 || i >= N) {
-                Rcpp::stop("SPDE projector A holds row index %d at column %d; "
+                Rcpp::stop("Projector A holds row index %d at column %d; "
                            "it must lie in [0, n_obs) with n_obs = %d.",
                            i, j + 1, N);
             }
