@@ -2,6 +2,12 @@
 
 This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
 
+* The binomial Polya-Gamma samplers store the predictor of the draw they save
+  (gcol33/tulpa#941). `store_eta = TRUE` wrote the predictor computed at the
+  top of the sweep, before beta, the random effects and the field moved, so
+  saved row `s` paired the parameters of draw `s` with the predictor of draw
+  `s - 1`. `PgGibbsCommon::save()` now rebuilds it from the saved state and
+  the same field contribution the recorded log density reads.
 * `tulpa_nested_laplace_joint()` takes a model with no latent block
   (gcol33/tulpa#939). `prior = list()` is a list of zero blocks: each arm's
   predictor is its fixed effects, and the outer grid is the per-arm

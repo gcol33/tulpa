@@ -140,7 +140,7 @@ List pg_binomial_gibbs_impl(
         prior_beta_sd, prior_sigma_scale, C.n_threads_team);
 
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      C.save(save_idx);
+      C.save(save_idx, nullptr);
       C.log_prob_draws[save_idx] = C.log_joint_common(
           y, n, nullptr, prior_beta_sd, prior_sigma_scale);
       save_idx++;
@@ -267,14 +267,14 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      C.save(save_idx);
+      for (int i = 0; i < N; i++) {
+        spatial_contrib[i] = phi[spatial_group[i] - 1];
+      }
+      C.save(save_idx, spatial_contrib.begin());
       for (int s = 0; s < n_spatial_units; s++) {
         spatial_draws(save_idx, s) = phi[s];
       }
       tau_draws[save_idx] = tau;
-      for (int i = 0; i < N; i++) {
-        spatial_contrib[i] = phi[spatial_group[i] - 1];
-      }
       C.log_prob_draws[save_idx] =
           C.log_joint_common(y, n, spatial_contrib.begin(), prior_beta_sd,
                              prior_sigma_re_scale) +

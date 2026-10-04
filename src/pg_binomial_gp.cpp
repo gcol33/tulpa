@@ -129,7 +129,7 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      C.save(save_idx);
+      C.save(save_idx, gp_contrib.begin());
       for (int s = 0; s < n_spatial; s++) {
         gp_draws(save_idx, s) = gp.w[s];
       }

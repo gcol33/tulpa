@@ -162,15 +162,15 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      C.save(save_idx);
+      for (int i = 0; i < N; i++) {
+        spatial_contrib[i] = phi_proj[spatial_group[i] - 1];
+      }
+      C.save(save_idx, spatial_contrib.begin());
       for (int s = 0; s < J; s++) {
         spatial_raw_draws(save_idx, s) = phi[s];
         spatial_proj_draws(save_idx, s) = phi_proj[s];
       }
       tau_draws[save_idx] = tau;
-      for (int i = 0; i < N; i++) {
-        spatial_contrib[i] = phi_proj[spatial_group[i] - 1];
-      }
       C.log_prob_draws[save_idx] =
           C.log_joint_common(y, n, spatial_contrib.begin(), prior_beta_sd,
                              prior_sigma_re_scale) +

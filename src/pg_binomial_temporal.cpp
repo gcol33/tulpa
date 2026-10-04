@@ -344,7 +344,15 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      C.save(save_idx);
+      for (int i = 0; i < N; i++) {
+        const int t = time_idx[i] - 1;
+        double temp_eff = 0.0;
+        if (n_trend > 0) temp_eff += trend[t];
+        if (n_seasonal > 0) temp_eff += seasonal[t % seasonal_period];
+        if (n_short > 0) temp_eff += short_term[t];
+        temp_contrib[i] = temp_eff;
+      }
+      C.save(save_idx, temp_contrib.begin());
       for (int t = 0; t < n_trend; t++) {
         trend_draws(save_idx, t) = trend[t];
       }
@@ -358,14 +366,6 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
       sigma_seasonal_draws[save_idx] = sigma_seasonal.sigma;
       sigma_short_draws[save_idx] = sigma_short.sigma;
       rho_short_draws[save_idx] = rho_short;
-      for (int i = 0; i < N; i++) {
-        const int t = time_idx[i] - 1;
-        double temp_eff = 0.0;
-        if (n_trend > 0) temp_eff += trend[t];
-        if (n_seasonal > 0) temp_eff += seasonal[t % seasonal_period];
-        if (n_short > 0) temp_eff += short_term[t];
-        temp_contrib[i] = temp_eff;
-      }
       double lp = C.log_joint_common(y, n, temp_contrib.begin(), prior_beta_sd,
                                      prior_sigma_re_scale);
       // Each arm at precision 1 / sigma^2 under its own half-Cauchy.

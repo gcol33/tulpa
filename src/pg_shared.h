@@ -1050,7 +1050,12 @@ struct PgGibbsCommon {
 
   // Save common per-iteration draws. Caller is responsible for invoking this
   // (and per-variant save logic) only when (iter >= n_warmup && (iter - n_warmup) % thin == 0).
-  void save(int save_idx) {
+  // `field_contrib` is the per-observation structured contribution at the
+  // state being saved (nullptr: none), the same one log_joint_common() reads.
+  // The stored eta is rebuilt from it: the working `eta` is filled at the top
+  // of pg_gibbs_core_step(), before beta, the random effects and the field
+  // move, so it belongs to the previous draw.
+  void save(int save_idx, const double* field_contrib) {
     if (save_idx < 0 || save_idx >= n_save) {
       Rcpp::stop("Draw index %d is outside the %d allocated row(s).",
                  save_idx, n_save);
@@ -1059,7 +1064,10 @@ struct PgGibbsCommon {
     for (int g = 0; g < n_re_groups; g++) re_draws(save_idx, g) = re[g];
     sigma_re_draws[save_idx] = sigma_re.sigma;
     if (store_eta) {
-      for (int i = 0; i < N; i++) eta_draws(save_idx, i) = eta[i];
+      for (int i = 0; i < N; i++) {
+        eta_draws(save_idx, i) = X_beta[i] + re_contrib[i] +
+                                 (field_contrib ? field_contrib[i] : 0.0);
+      }
     }
   }
 };

@@ -184,7 +184,10 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
 
     // Store draws after warmup
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      C.save(save_idx);
+      for (int i = 0; i < N; i++) {
+        combined_contrib[i] = local_contrib[i] + regional_contrib[i];
+      }
+      C.save(save_idx, combined_contrib.begin());
       for (int s = 0; s < n_spatial; s++) {
         w_local_draws(save_idx, s) = local.w[s];
         w_regional_draws(save_idx, s) = regional.w[s];
@@ -193,9 +196,6 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
       phi_local_draws[save_idx] = local.phi;
       sigma2_regional_draws[save_idx] = regional.sigma2;
       phi_regional_draws[save_idx] = regional.phi;
-      for (int i = 0; i < N; i++) {
-        combined_contrib[i] = local_contrib[i] + regional_contrib[i];
-      }
       C.log_prob_draws[save_idx] =
           C.log_joint_common(y, n, combined_contrib.begin(), prior_beta_sd,
                              prior_sigma_re_scale) +

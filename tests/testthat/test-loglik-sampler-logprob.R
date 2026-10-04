@@ -183,12 +183,13 @@ test_that("PG binomial iid route records its joint density", {
   d <- pg_areal()
   res <- cpp_pg_binomial_gibbs(d$y, d$ntr, d$X, d$grp, 4L, PG_ITER, PG_WARM, 1L,
                                prior_beta_sd = 3, prior_sigma_scale = 2,
-                               verbose = FALSE)
+                               store_eta = TRUE, verbose = FALSE)
   k <- nrow(res$beta)
   beta <- res$beta[k, ]; re <- res$re[k, ]
   eta <- as.numeric(d$X %*% beta) + re[d$grp]
   ref <- pg_common_ref(d$y, d$ntr, eta, beta, re, res$sigma_re[k], 3, 2)
   expect_lt(abs(res$log_prob[k] - ref), 1e-8)
+  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
 })
 
 test_that("PG binomial ICAR route records its joint density", {
@@ -196,7 +197,8 @@ test_that("PG binomial ICAR route records its joint density", {
   res <- cpp_pg_binomial_gibbs_spatial(
     d$y, d$ntr, d$X, d$grp, 4L, d$unit, d$J, d$al$adj_list, d$al$n_neighbors,
     PG_ITER, PG_WARM, 1L, prior_beta_sd = 3, prior_sigma_re_scale = 2,
-    prior_tau_shape = 1.5, prior_tau_rate = 0.2, verbose = FALSE)
+    prior_tau_shape = 1.5, prior_tau_rate = 0.2, store_eta = TRUE,
+    verbose = FALSE)
   k <- nrow(res$beta)
   beta <- res$beta[k, ]; re <- res$re[k, ]; phi <- res$spatial[k, ]
   tau <- res$tau[k]
@@ -205,6 +207,7 @@ test_that("PG binomial ICAR route records its joint density", {
   ref <- pg_common_ref(d$y, d$ntr, eta, beta, re, res$sigma_re[k], 3, 2) +
     ref_log_gmrf(quad, d$J - 1L, tau) + dgamma(tau, 1.5, 0.2, log = TRUE)
   expect_lt(abs(res$log_prob[k] - ref), 1e-8)
+  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
 })
 
 test_that("PG binomial BYM2 route records its joint density", {
@@ -214,7 +217,7 @@ test_that("PG binomial BYM2 route records its joint density", {
     d$y, d$ntr, d$X, d$grp, 4L, d$unit, d$J, d$al$adj_list, d$al$n_neighbors,
     sf, PG_ITER, PG_WARM, 1L, prior_beta_sd = 3, prior_sigma_re_scale = 2,
     prior_sigma_spatial_scale = 1.5, prior_rho_alpha = a, prior_rho_beta = b,
-    verbose = FALSE)
+    store_eta = TRUE, verbose = FALSE)
   k <- nrow(res$beta)
   beta <- res$beta[k, ]; re <- res$re[k, ]
   ph <- res$phi_scaled[k, ]; th <- res$theta[k, ]
@@ -232,6 +235,7 @@ test_that("PG binomial BYM2 route records its joint density", {
     log(2) + dnorm(s, 0, 1.5, log = TRUE) + log_mass
   expect_true(rho %in% nodes)
   expect_lt(abs(res$log_prob[k] - ref), 1e-8)
+  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
 })
 
 test_that("PG binomial RSR route records its joint density at the raw field", {
@@ -242,7 +246,7 @@ test_that("PG binomial RSR route records its joint density at the raw field", {
     d$y, d$ntr, d$X, rep(1L, d$N), 0L, d$unit, d$J, d$al$adj_list,
     d$al$n_neighbors, as.numeric(t(P)), d$J, PG_ITER, PG_WARM, 1L,
     prior_beta_sd = 3, prior_sigma_re_scale = 2, prior_tau_shape = 1.5,
-    prior_tau_rate = 0.2, verbose = FALSE)
+    prior_tau_rate = 0.2, store_eta = TRUE, verbose = FALSE)
   k <- nrow(res$beta)
   beta <- res$beta[k, ]; phi <- res$spatial_raw[k, ]; tau <- res$tau[k]
   eta <- as.numeric(d$X %*% beta) + as.numeric(P %*% phi)[d$unit]
@@ -251,6 +255,7 @@ test_that("PG binomial RSR route records its joint density at the raw field", {
     sum(dnorm(beta, 0, 3, log = TRUE)) +
     ref_log_gmrf(quad, d$J - 1L, tau) + dgamma(tau, 1.5, 0.2, log = TRUE)
   expect_lt(abs(res$log_prob[k] - ref), 1e-8)
+  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
 })
 
 test_that("PG binomial temporal route records its joint density", {
@@ -265,7 +270,7 @@ test_that("PG binomial temporal route records its joint density", {
     y, ntr, X, rep(1L, N), 0L, tt, n_times, period, 1L, 1L, PG_ITER, PG_WARM,
     1L, prior_beta_sd = 3, prior_sigma_re_scale = 2,
     prior_sigma_trend_scale = 0.7, prior_sigma_seasonal_scale = 0.9,
-    prior_sigma_short_scale = 1.1, verbose = FALSE)
+    prior_sigma_short_scale = 1.1, store_eta = TRUE, verbose = FALSE)
   k <- nrow(res$beta)
   beta <- res$beta[k, ]
   tr <- res$trend[k, ]; se <- res$seasonal[k, ]; sh <- res$short_term[k, ]
@@ -283,6 +288,7 @@ test_that("PG binomial temporal route records its joint density", {
     0.5 * n_times * (log(tau_s) - log(2 * pi)) + 0.5 * log(1 - rho^2) -
     0.5 * tau_s * q_ar1 - log(2 * 0.999) + ref_log_hc(sr, 1.1)
   expect_lt(abs(res$log_prob[k] - ref), 1e-8)
+  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
 })
 
 nb_r_log_prior <- function(r, a, b) {
@@ -394,13 +400,16 @@ test_that("PG NNGP route records its joint density, and logLik() reads it", {
     y, rep(5L, n), X, rep(1L, n), 0L, g$coords, g$nn_idx, g$nn_dist,
     as.integer(g$ord - 1L), n, 1L, 1.0, 0.5, 0L, PG_ITER, PG_WARM, 1L,
     prior_beta_sd = 3, prior_sigma_gp_U = 1.5, prior_sigma_gp_alpha = 0.05,
-    prior_phi_lower = 0.02, prior_phi_upper = 4, verbose = FALSE)
+    prior_phi_lower = 0.02, prior_phi_upper = 4, store_eta = TRUE,
+    verbose = FALSE)
   k <- nrow(res$beta)
   beta <- res$beta[k, ]; w <- res$gp[k, ]
-  ref <- sum(dbinom(y, 5L, plogis(as.numeric(X %*% beta) + w), log = TRUE)) +
+  eta <- as.numeric(X %*% beta) + w
+  ref <- sum(dbinom(y, 5L, plogis(eta), log = TRUE)) +
     sum(dnorm(beta, 0, 3, log = TRUE)) +
     ref_log_nngp_chain(w, res$sigma2_gp[k], res$phi_gp[k], g, 1.5, 0.05, 0.02, 4)
   expect_lt(abs(res$log_prob[k] - ref), 1e-8)
+  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
   expect_gt(max(abs(rowMeans(res$gp))), 1e-6)
 
   chain <- tulpa:::.pg_as_chain(res, "gp", X)
@@ -420,10 +429,12 @@ test_that("PG multiscale NNGP route records its joint density", {
     g$nn_idx, g$nn_dist, as.integer(g$ord - 1L), 1L,
     g$nn_idx, g$nn_dist, as.integer(g$ord - 1L), 1L,
     n, 0.5, 0.2, 0.8, 2.0, 0L, PG_ITER, PG_WARM, 1L,
-    prior_beta_sd = 3, verbose = FALSE)
+    prior_beta_sd = 3, store_eta = TRUE, verbose = FALSE)
   k <- nrow(res$beta)
   beta <- res$beta[k, ]; wl <- res$w_local[k, ]; wr <- res$w_regional[k, ]
-  ref <- sum(dbinom(y, 5L, plogis(as.numeric(X %*% beta) + wl + wr), log = TRUE)) +
+  eta <- as.numeric(X %*% beta) + wl + wr
+  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
+  ref <- sum(dbinom(y, 5L, plogis(eta), log = TRUE)) +
     sum(dnorm(beta, 0, 3, log = TRUE)) +
     ref_log_nngp_chain(wl, res$sigma2_local[k], res$phi_local[k], g,
                        1, 0.01, 0.01, 5) +

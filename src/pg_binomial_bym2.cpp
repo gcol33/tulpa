@@ -143,7 +143,7 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      C.save(save_idx);
+      C.save(save_idx, spatial_contrib.begin());
       for (int s = 0; s < n_spatial_units; s++) {
         phi_scaled_draws(save_idx, s) = phi_scaled[s];
         theta_draws(save_idx, s) = theta[s];

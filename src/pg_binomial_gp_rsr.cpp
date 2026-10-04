@@ -194,14 +194,14 @@ Rcpp::List cpp_pg_binomial_gibbs_gp_rsr(
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      C.save(save_idx);
+      for (int i = 0; i < N; i++) gp_contrib[i] = w_proj[i];
+      C.save(save_idx, gp_contrib.begin());
       for (int s = 0; s < J; s++) {
         gp_raw_draws(save_idx, s) = gp.w[s];
         gp_proj_draws(save_idx, s) = w_proj[s];
       }
       sigma2_gp_draws[save_idx] = gp.sigma2;
       phi_gp_draws[save_idx] = gp.phi;
-      for (int i = 0; i < N; i++) gp_contrib[i] = w_proj[i];
       C.log_prob_draws[save_idx] =
           C.log_joint_common(y, n, gp_contrib.begin(), prior_beta_sd,
                              prior_sigma_re_scale) +
