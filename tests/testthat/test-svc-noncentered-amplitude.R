@@ -48,7 +48,7 @@
 # statement, and the convergence cost itself is asserted rather than left
 # implicit -- as an ORDERING against the non-centered fit of the same data, not
 # as a level. On the pinned seed the centered Rhat read 1.53 to 1.81 across
-# builds and machines (non-centered 1.049 to 1.098), and the same seed gives a
+# builds and machines (non-centered 1.037 to 1.118), and the same seed gives a
 # different value on each machine, so no fixed bound says the same thing
 # everywhere (gcol33/tulpa#930).
 #
@@ -151,10 +151,26 @@ test_that("non-centered SVC NUTS recovers a weakly identified field's amplitude"
   # is at 0.00% at both this budget and 5x it, so unlike the centered gate
   # below it is not budget-tied.
   expect_lte(mean(fit$divergent), 0.05)
-  # And this arm DOES mix in the field's variance at this budget (1.049 to
-  # 1.098 across builds and machines), which is what makes its amplitude read
-  # a posterior summary.
-  expect_lt(svc_sigma2_rhat(fit), 1.1)
+})
+
+test_that("non-centered SVC NUTS mixes in the field's variance", {
+  skip_if_not_slow()
+  # What makes the amplitude read above a posterior summary is that this arm
+  # mixes in sigma2. At the shared 100 draws per chain sigma2's bulk ESS is
+  # 14 to 142 across sampler seeds 1-30, and Rhat is a statistic of that short
+  # chain: 1.013 to 1.241, past 1.1 on 2 of 30 seeds (gcol33/tulpa#938). A
+  # platform's floating-point path is one more such draw, which is how the
+  # pinned seed read 1.037 on Windows and 1.118 on Linux. At 5x the budget,
+  # seeds 1-20 read 1.001 to 1.014 at bulk ESS 402 to 747 and 0 divergences,
+  # so the level is asserted there. The centered test's ordering stays on the
+  # shared fits, since it compares the two parameterizations at one budget.
+  d <- sim_svc_bernoulli(n = 150L, seed = 1L)
+  fit <- tulpa(y ~ x, data = d, family = "binomial",
+               spatial = spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 10L),
+               mode = "exact",
+               control = list(n_iter = 2500L, n_warmup = 1500L, seed = 7L))
+  expect_equal(length(fit$divergent) / length(unique(fit$chain_id)), 1000L)
+  expect_lt(svc_sigma2_rhat(fit), 1.05)
 })
 
 test_that("centered SVC NUTS also recovers a weakly identified field's amplitude", {
