@@ -1761,6 +1761,61 @@ Rcpp::List run_multi_block_nested_laplace_joint(
     bool                             screen_only = false
 );
 
+// Per-cell linear predictor at each cell's mode, for a single-arm fit run
+// through the joint driver (nngp / hsgp / spde / the spatiotemporal entries,
+// and cpp_nested_laplace_joint_multi). The multi-block driver fills
+// `fitted_eta` itself; this one reads the same quantity through the joint
+// driver's own eta accumulator, so the arm's offset, every block kind and each
+// cell's block scaling are the ones the inner solve used.
+//
+// Two kinds of cell report NaN rows rather than a number: one whose block
+// preparation fails at its coordinate, and one the cheap screen pruned, which
+// was never solved. A pruned cell's `modes` row is not missing but ZERO -- the
+// grid runner allocates the matrix zeroed and a skipped cell never writes into
+// it -- so the predicate is the cell's own `log_marginal`, which the screen
+// leaves at -Inf, and not the mode row's contents. Both kinds carry zero outer
+// weight, so the mixture these rows feed never draws them; writing NaN keeps a
+// row that is not a linear predictor from reading as one.
+inline void nl_attach_fitted_eta_single_arm(
+    Rcpp::List& out,
+    const std::vector<JointArm>& arms,
+    const std::vector<ParsedArm>& parsed,
+    const std::vector<LatentBlock>& blocks
+) {
+    if (arms.size() != 1 || !out.containsElementNamed("modes")) return;
+    Rcpp::NumericMatrix modes = out["modes"];
+    const int ng = modes.nrow();
+    const int N  = arms[0].N;
+    const int B  = static_cast<int>(blocks.size());
+    Rcpp::NumericVector log_marginal =
+        out.containsElementNamed("log_marginal")
+        ? Rcpp::as<Rcpp::NumericVector>(out["log_marginal"])
+        : Rcpp::NumericVector();
+    const bool have_lm = (log_marginal.size() == ng);
+    Rcpp::NumericMatrix fitted_eta(ng, N);
+    std::vector<Rcpp::NumericVector> etas(1, Rcpp::NumericVector(N));
+    std::vector<std::vector<double>> d_eff(B, std::vector<double>(1, 0.0));
+    std::vector<double> basis_scratch;
+    std::vector<std::pair<int, double>> multi_scratch;
+    for (int k = 0; k < ng; k++) {
+        bool ok = !have_lm || R_finite(log_marginal[k]);
+        for (int b = 0; ok && b < B; b++) {
+            if (blocks[b].prep && !blocks[b].prep(k)) { ok = false; break; }
+            const double s = blocks[b].arm_scale ? blocks[b].arm_scale(0, k) : 1.0;
+            d_eff[b][0] = s * blocks[b].d_fac_at(k);
+        }
+        if (!ok) {
+            for (int i = 0; i < N; i++) fitted_eta(k, i) = NA_REAL;
+            continue;
+        }
+        Rcpp::NumericVector x = modes(k, Rcpp::_);
+        compute_eta_joint_sparse_dispatch(x, etas, arms, parsed, blocks, k,
+                                          d_eff, basis_scratch, multi_scratch);
+        for (int i = 0; i < N; i++) fitted_eta(k, i) = etas[0][i];
+    }
+    out["fitted_eta"] = fitted_eta;
+}
+
 } // namespace tulpa
 
 #endif // TULPA_NESTED_LAPLACE_JOINT_MULTI_H

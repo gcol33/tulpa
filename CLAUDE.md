@@ -311,15 +311,24 @@ gcol33/tulpa#943). On the joint door a `phi_` axis is a per-arm dispersion only
 when it carries no block prefix (`.joint_axis_is_dispersion()`): `b1.phi_gp`
 is an NNGP block's lengthscale.
 
-**The single-arm multi-block driver reaches a block's prior only through the
-dense `add_prior`.** With a latent block present `spec_inner_solve` assembles a
-dense Hessian (the structural sparse pattern is for `[beta | RE]` layouts only)
-and the sink calls `add_prior`, so a block with only `add_prior_sparse` would
-contribute NOTHING there. `make_nngp_block(..., dense_prior = true)` gives the
-NNGP block a dense twin that runs the same `apply_nngp_full_prior_sparse`
-through `DenseSymmetricAdd`; the joint drivers leave it off, so
-`blocks_require_sparse()` keeps them sparse. The cost is an `n_x x n_x` dense
-Hessian per scratch, which a restricted field needs anyway (`A' W A` is dense).
+**The single-arm multi-block driver hands a wide or sparse-only fit to the
+joint Newton** (gcol33/tulpa#944). Its own inner solve (`spec_inner_solve`)
+assembles a dense Hessian whenever a latent block is present (the structural
+sparse pattern covers `[beta | RE]` layouts only) and reaches a block's prior
+through `add_prior` alone. Past `SPARSE_THRESHOLD` latents, or with a block
+whose prior has only `add_prior_sparse` (`blocks_have_sparse_only_prior()`, an
+NNGP block), `run_multi_block_nested_laplace` returns
+`run_multi_block_single_arm_sparse()`: a one-arm fit on the joint driver forced
+sparse, with a model-supplied likelihood on the arm's spec and `fitted_eta` /
+`fitted_eta_var` / `constraint_cols` in the dense path's shape. The joint
+sparse Newton is the one that folds an intrinsic field's sum-to-zero pin at
+solve time and reads `add_prior_pattern`. Every areal and temporal block fills
+all four prior callbacks from one setter -- `set_icar_block_priors`,
+`set_temporal_block_priors` (`field_block_priors.h`) and
+`set_car_proper_block_priors` -- at all three drivers, so a block cannot carry
+a dense scatter without its sparse twin. `test-multi-block-sparse-route.R` pins
+dense == sparse below the threshold and the routed fit to the joint door above
+it.
 An `hsgp` block rides the same driver as `DENSE_BASIS`: its loadings are the
 basis row at the cell, so `nl_build_row_classes` keys rows per cell when
 `nl_loadings_cell_invariant()` is false, and the post-grid `fitted_eta` pass

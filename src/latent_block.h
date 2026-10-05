@@ -354,12 +354,18 @@ struct LatentBlock {
 //
 // Reading it off the blocks makes the requirement a property of the block
 // rather than something each caller has to remember to pass as force_sparse.
-inline bool blocks_require_sparse(const std::vector<LatentBlock>& blocks) {
+inline bool blocks_have_sparse_only_prior(const std::vector<LatentBlock>& blocks) {
     for (const auto& b : blocks) {
-        if (b.contrib_kind != BlockContribKind::INDEXED_SINGLE) return true;
         if (b.add_prior_sparse && !b.add_prior) return true;
     }
     return false;
+}
+
+inline bool blocks_require_sparse(const std::vector<LatentBlock>& blocks) {
+    for (const auto& b : blocks) {
+        if (b.contrib_kind != BlockContribKind::INDEXED_SINGLE) return true;
+    }
+    return blocks_have_sparse_only_prior(blocks);
 }
 
 // The block's per-row design weight at observation i on arm k_arm, 1 where the

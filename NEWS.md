@@ -58,6 +58,17 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   4 seeds) the restricted slope sits 0.17-0.69 posterior SDs from the Gibbs
   mean with SDs within 2%, where the unrestricted NNGP field sits 0.07-1.34
   SDs from its own Gibbs run (dev_notes/issue942).
+* `tulpa_nested_laplace()` solves an areal, temporal or NNGP field past 200
+  latents on the sparse joint Newton (gcol33/tulpa#944). The single-arm
+  multi-block driver assembled a dense `n_x x n_x` Hessian whenever a latent
+  block was present, so a 2000-region ICAR field factorized a 2000 x 2000
+  matrix per Newton step. Past the threshold, or with a block whose prior is
+  sparse-only, the fit now runs as a one-arm fit on the joint driver's sparse
+  path, a model-supplied likelihood included. The ICAR, BYM2, proper-CAR, RW1,
+  RW2 and AR1 blocks of all three drivers fill their dense and sparse prior
+  scatters from one setter each, and the NNGP block lost its dense twin. Below
+  the threshold the dense solve equals the joint door forced sparse; above it
+  the routed fit equals the joint door.
 * `tulpa_nested_laplace_joint()` takes an `nngp` block on the list-of-blocks
   path (gcol33/tulpa#943), gathered through a per-arm `spatial_idx` or read
   through a per-arm `projector`, so an NNGP field, restricted or not, can be

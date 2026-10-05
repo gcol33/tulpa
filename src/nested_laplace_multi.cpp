@@ -33,7 +33,9 @@
 
 #include "areal_input_check.h"     // check_latent_obs_index
 #include "block_projector.h"       // projected areal fields (RSR)
+#include "car_proper_block.h"      // set_car_proper_block_priors
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
+#include "field_block_priors.h"    // set_icar / set_temporal_block_priors
 #include "hsgp_block_factory.h"
 #include "laplace_re_priors.h"
 #include "laplace_spatial_priors.h"
@@ -168,19 +170,10 @@ int build_blocks_of_type(
         block.size  = size;
         block.idx   = [spatial_idx](int i, int /*k_arm*/) { return spatial_idx[i]; };
         block.d_fac = [](int) { return 1.0; };
-        block.add_prior = [start, size, axis0, theta_grid, adj_rp, adj_ci, n_nbr, sp_part](
-            tulpa::DenseVec& grad, tulpa::DenseMat& H,
-            const Rcpp::NumericVector& x, int k) {
-            double tau = theta_grid(k, axis0);
-            tulpa::add_icar_prior(grad, H, x, start, size, tau,
-                                   adj_rp, adj_ci, n_nbr, sp_part);
-        };
-        block.log_prior = [start, size, axis0, theta_grid, adj_rp, adj_ci, n_nbr, sp_part](
-            const Rcpp::NumericVector& x, int k) {
-            double tau = theta_grid(k, axis0);
-            return tulpa::log_prior_icar(x, start, size, tau,
-                                          adj_rp, adj_ci, n_nbr, sp_part);
-        };
+        tulpa::set_icar_block_priors(
+            block, start, size,
+            [theta_grid, axis0](int k) { return theta_grid(k, axis0); },
+            adj_rp, adj_ci, n_nbr, sp_part);
         if (projector) {
             tulpa::apply_block_projector(block, projector);
             centre_projected_intrinsic_level(block, *projector, X);
@@ -232,24 +225,9 @@ int build_blocks_of_type(
             double rho_k   = theta_grid(k, axis0 + 1);
             return sigma_k * tulpa::bym2_sd_structured(rho_k) * scale_factor;
         };
-        phi_block.add_prior = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part,
-                               node_prec](
-            tulpa::DenseVec& grad, tulpa::DenseMat& H,
-            const Rcpp::NumericVector& x, int) {
-            tulpa::add_icar_prior(grad, H, x, phi_start, size, 1.0,
-                                   adj_rp, adj_ci, n_nbr, sp_part,
-                                   tulpa::node_prec_ptr(node_prec));
-        };
-        phi_block.log_prior = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part,
-                               node_prec](
-            const Rcpp::NumericVector& x, int) {
-            // Structured ICAR component (tau = 1); shares the quadratic form and
-            // the sum-to-zero penalty with add_icar_prior so the objective stays
-            // consistent with the gradient, instead of re-deriving them inline.
-            return tulpa::log_prior_icar_structured(x, phi_start, size, /*tau=*/1.0,
-                                                    adj_rp, adj_ci, n_nbr, sp_part,
-                                                    tulpa::node_prec_ptr(node_prec));
-        };
+        tulpa::set_icar_block_priors(
+            phi_block, phi_start, size, [](int) { return 1.0; },
+            adj_rp, adj_ci, n_nbr, sp_part, node_prec, /*structured=*/true);
         if (projector) {
             tulpa::apply_block_projector(phi_block, projector);
             centre_projected_intrinsic_level(phi_block, *projector, X);
@@ -288,46 +266,16 @@ int build_blocks_of_type(
         Rcpp::IntegerVector n_nbr       = bs["n_neighbors"];
         int start = latent_offset;
 
-        // Cache CSR for the dense log-det helper. The rho-dependent log|Q| is
-        // cell-keyed (NlCellCache) so a parallel outer grid can never read one
-        // cell's prep() value into another cell's log_prior() -- matching the
-        // single-block CAR_proper path; cell-keyed state costs nothing.
-        auto adj_rp_v = std::make_shared<std::vector<int>>(adj_rp.begin(), adj_rp.end());
-        auto adj_ci_v = std::make_shared<std::vector<int>>(adj_ci.begin(), adj_ci.end());
-        auto n_nbr_v  = std::make_shared<std::vector<int>>(n_nbr.begin(),  n_nbr.end());
-        auto log_det_Q_rho = std::make_shared<tulpa::NlCellCache<double>>();
-
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
         block.idx   = [spatial_idx](int i, int /*k_arm*/) { return spatial_idx[i]; };
         block.d_fac = [](int) { return 1.0; };
-        block.prep  = [size, axis0, theta_grid, adj_rp_v, adj_ci_v, n_nbr_v,
-                       log_det_Q_rho](int k) -> bool {
-            double rho_k = theta_grid(k, axis0 + 1);
-            std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
-                size, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_k);
-            double ld_val = tulpa_car_proper::car_log_det(size, Qmat);
-            log_det_Q_rho->claim() = ld_val;
-            log_det_Q_rho->publish(k);
-            return std::isfinite(ld_val);
-        };
-        block.add_prior = [start, size, axis0, theta_grid, adj_rp, adj_ci, n_nbr](
-            tulpa::DenseVec& grad, tulpa::DenseMat& H,
-            const Rcpp::NumericVector& x, int k) {
-            double tau = theta_grid(k, axis0);
-            double rho = theta_grid(k, axis0 + 1);
-            tulpa::add_car_proper_prior(grad, H, x, start, size, tau, rho,
-                                         adj_rp, adj_ci, n_nbr);
-        };
-        block.log_prior = [start, size, axis0, theta_grid, adj_rp, adj_ci, n_nbr,
-                           log_det_Q_rho](const Rcpp::NumericVector& x, int k) {
-            double tau = theta_grid(k, axis0);
-            double rho = theta_grid(k, axis0 + 1);
-            return tulpa::log_prior_car_proper(x, start, size, tau, rho,
-                                                 log_det_Q_rho->find(k),
-                                                 adj_rp, adj_ci, n_nbr);
-        };
+        tulpa::set_car_proper_block_priors(
+            block, start, size,
+            [theta_grid, axis0](int k) { return theta_grid(k, axis0); },
+            [theta_grid, axis0](int k) { return theta_grid(k, axis0 + 1); },
+            adj_rp, adj_ci, n_nbr);
         // Full-rank prior: no null direction to identify, so the field is
         // reported at its own mode. See make_car_proper_latent_blocks.
         if (projector) tulpa::apply_block_projector(block, projector);
@@ -360,8 +308,7 @@ int build_blocks_of_type(
             Rcpp::as<Rcpp::IntegerMatrix>(bs["nn_idx"]),
             Rcpp::as<Rcpp::NumericMatrix>(bs["nn_dist"]),
             Rcpp::as<Rcpp::IntegerVector>(bs["nn_order"]),
-            /*axis_sigma2=*/axis0, /*axis_phi_gp=*/axis0 + 1, theta_grid,
-            /*dense_prior=*/true);
+            /*axis_sigma2=*/axis0, /*axis_phi_gp=*/axis0 + 1, theta_grid);
         // The NNGP prior is proper, so its level carries a prior of its own and
         // nothing is centred, projected or not: a projector annihilating the
         // constant leaves that direction to the prior alone.
@@ -453,31 +400,10 @@ int build_blocks_of_type(
         block.d_fac = [](int) { return 1.0; };
         // One walk (n_groups = 1); the field entry points carry the sum-to-zero
         // pin that identifies the level against the intercept.
-        if (type == "rw1") {
-            block.add_prior = [start, size, axis0, theta_grid, cyclic](
-                tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                const Rcpp::NumericVector& x, int k) {
-                double tau = theta_grid(k, axis0);
-                tulpa::add_rw1_field(grad, H, x, start, 1, size, tau, cyclic);
-            };
-            block.log_prior = [start, size, axis0, theta_grid, cyclic](
-                const Rcpp::NumericVector& x, int k) {
-                double tau = theta_grid(k, axis0);
-                return tulpa::log_prior_rw1_field(x, start, 1, size, tau, cyclic);
-            };
-        } else {
-            block.add_prior = [start, size, axis0, theta_grid, cyclic](
-                tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                const Rcpp::NumericVector& x, int k) {
-                double tau = theta_grid(k, axis0);
-                tulpa::add_rw2_field(grad, H, x, start, 1, size, tau, cyclic);
-            };
-            block.log_prior = [start, size, axis0, theta_grid, cyclic](
-                const Rcpp::NumericVector& x, int k) {
-                double tau = theta_grid(k, axis0);
-                return tulpa::log_prior_rw2_field(x, start, 1, size, tau, cyclic);
-            };
-        }
+        tulpa::set_temporal_block_priors(
+            block, type, start, /*n_groups=*/1, size,
+            [theta_grid, axis0](int k) { return theta_grid(k, axis0); },
+            [](int) { return 0.0; }, cyclic);
         tulpa::centre_intrinsic_level(block);
         blocks.push_back(block);
         return start + size;
@@ -495,19 +421,11 @@ int build_blocks_of_type(
         block.size  = size;
         block.idx   = [temporal_idx](int i, int /*k_arm*/) { return temporal_idx[i]; };
         block.d_fac = [](int) { return 1.0; };
-        block.add_prior = [start, size, axis0, theta_grid](
-            tulpa::DenseVec& grad, tulpa::DenseMat& H,
-            const Rcpp::NumericVector& x, int k) {
-            double tau = theta_grid(k, axis0);
-            double rho = theta_grid(k, axis0 + 1);
-            tulpa::add_ar1_precision(grad, H, x, start, size, tau, rho);
-        };
-        block.log_prior = [start, size, axis0, theta_grid](
-            const Rcpp::NumericVector& x, int k) {
-            double tau = theta_grid(k, axis0);
-            double rho = theta_grid(k, axis0 + 1);
-            return tulpa::log_prior_ar1(x, start, size, tau, rho);
-        };
+        tulpa::set_temporal_block_priors(
+            block, type, start, /*n_groups=*/1, size,
+            [theta_grid, axis0](int k) { return theta_grid(k, axis0); },
+            [theta_grid, axis0](int k) { return theta_grid(k, axis0 + 1); },
+            /*cyclic=*/false);
         // AR1 is proper at |rho| < 1: full rank, so no centering. Same rule as
         // proper CAR above and as the joint multi-arm driver.
         blocks.push_back(block);
@@ -518,9 +436,8 @@ int build_blocks_of_type(
         // User-defined GMRF block. The R side has precomputed Q(theta_k) at
         // every outer-grid row plus log|Q_k| and log p(theta_k); the shared
         // factory (also used by the joint multi-arm driver) reads them and
-        // assembles the callbacks. The single-block dense driver consumes only
-        // block.idx / add_prior / log_prior, so the factory's sparse / pattern
-        // / contrib-kind fields are inert here.
+        // assembles the callbacks, dense and sparse, for whichever Newton path
+        // the driver takes.
         int size = Rcpp::as<int>(bs["n_latent"]);
         Rcpp::IntegerVector obs_idx = bs["obs_idx"];
         int start = latent_offset;

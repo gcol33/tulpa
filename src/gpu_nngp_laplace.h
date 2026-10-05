@@ -321,9 +321,7 @@ inline void batch_nngp_scatter(
 // Hessian entries go through `H.add(row, col, value)`, one call per symmetric
 // entry. On a SparseHessianBuilder the sparsity pattern must include all
 // (focal, neighbor_k) and (neighbor_k, neighbor_kp) pairs for every row; see
-// make_nngp_prior_sparsity_pattern below. make_nngp_block's dense `add_prior`
-// (requested by the single-arm multi-block driver only) runs this same scatter
-// through DenseSymmetricAdd.
+// make_nngp_prior_sparsity_pattern below.
 //
 // Inputs:
 //   alpha    : length n_spatial * nn, flat row-major, indexed by NNGP-order
