@@ -306,9 +306,10 @@ restricted field also rides nested Laplace under any family: the block carries
 `projector = S P_perp` in place of `spatial_idx`, and the multi-block drivers
 read it through `block_projector.h` (`read_block_projector`,
 `apply_block_projector`, and `projected_level` for where an intrinsic field's
-level goes). Both drivers take an areal one; a restricted NNGP field rides the
-single-arm driver behind `tulpa_nested_laplace()` only, since the joint driver
-carries no `nngp` block (gcol33/tulpa#942).
+level goes). Both drivers take an areal or an `nngp` block (gcol33/tulpa#942,
+gcol33/tulpa#943). On the joint door a `phi_` axis is a per-arm dispersion only
+when it carries no block prefix (`.joint_axis_is_dispersion()`): `b1.phi_gp`
+is an NNGP block's lengthscale.
 
 **The single-arm multi-block driver reaches a block's prior only through the
 dense `add_prior`.** With a latent block present `spec_inner_solve` assembles a

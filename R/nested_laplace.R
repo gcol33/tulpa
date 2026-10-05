@@ -1206,6 +1206,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # so they are not required there; the multi-block path reads spatial_idx.
     required = list(single = .NL_REQ_NNGP_FIELD,
                     multi = c(.NL_REQ_NNGP_FIELD, "spatial_idx"),
+                    joint = c(.NL_REQ_NNGP_FIELD, "spatial_idx"),
                     projected = .NL_REQ_NNGP_FIELD),
     defaults = function(p, a) .nl_fill_family_axes(p, "nngp"),
     pack = function(p) {
@@ -1901,7 +1902,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # Block types whose field may reach the observations through a projector: arm
 # k's predictor receives A_k z in place of the unit gather z[spatial_idx]
 # (restricted spatial regression, A_k = P_k S_k). Both multi-block drivers read
-# one on an areal block; an NNGP block is carried by the single-arm driver only.
+# one; an areal block's level is placed from A_k 1, an NNGP block's prior
+# carries its own.
 .NL_PROJECTABLE_AREAL <- c("icar", "bym2", "car_proper")
 .NL_PROJECTABLE_TYPES <- c(.NL_PROJECTABLE_AREAL, "nngp")
 

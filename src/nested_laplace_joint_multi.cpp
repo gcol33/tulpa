@@ -73,6 +73,7 @@
 #include "nested_laplace_joint_batch.h"   // fused batched scatter
 #include "sparse_hessian.h"
 #include "hsgp_block_factory.h"
+#include "nngp_block_factory.h"
 #include "hsgp_mo_block_factory.h"
 #include "latent_factor_block_factory.h"
 #include "mcar_block_factory.h"
@@ -1184,6 +1185,63 @@ int build_joint_blocks_from_spec(
         );
         blocks.push_back(block);
         return latent_offset + size;
+    }
+
+    if (type == "nngp") {
+        if (is_copy_block) {
+            Rcpp::stop("Block %d: copy semantics for NNGP blocks are not "
+                       "supported (spatial copy only on icar / "
+                       "bym2 / car_proper).",
+                       block_index + 1);
+        }
+        require_axes(2);  // (sigma2, phi_gp)
+        tulpa::nl_grid_axis_positive("nngp sigma2 axis", theta_grid, axis0);
+        tulpa::nl_grid_axis_positive("nngp phi_gp axis", theta_grid,
+                                     axis0 + 1);
+        const int n_spatial = Rcpp::as<int>(bs["n_spatial"]);
+        const auto projector = read_joint_block_projector(
+            bs, n_arms, n_spatial, block_index, type, arms_ptr);
+
+        // Per-arm unit index and row count. A projected field reaches no unit
+        // through the gather: every row of every arm reads 0 ("no field on
+        // this row") until the projector replaces it.
+        Rcpp::List sidx_per_arm(n_arms);
+        Rcpp::IntegerVector n_obs_per_arm(n_arms);
+        if (projector) {
+            for (int k = 0; k < n_arms; k++) {
+                n_obs_per_arm[k] = (*arms_ptr)[k].N;
+                sidx_per_arm[k] = Rcpp::IntegerVector(n_obs_per_arm[k], 0);
+            }
+        } else {
+            Rcpp::List given = bs["spatial_idx"];
+            if (static_cast<int>(given.size()) != n_arms) {
+                Rcpp::stop("blocks_spec[[%d]]$spatial_idx must be a list of "
+                           "length n_arms (%d), got %d.", block_index + 1,
+                           n_arms, static_cast<int>(given.size()));
+            }
+            for (int k = 0; k < n_arms; k++) {
+                Rcpp::IntegerVector sidx = given[k];
+                n_obs_per_arm[k] = (arms_ptr && k < static_cast<int>(arms_ptr->size()))
+                                   ? (*arms_ptr)[k].N
+                                   : static_cast<int>(sidx.size());
+                sidx_per_arm[k] = sidx;
+            }
+        }
+        tulpa::LatentBlock block = tulpa::make_nngp_block(
+            latent_offset, n_spatial, sidx_per_arm, n_obs_per_arm, n_arms,
+            block_index, Rcpp::as<int>(bs["nn"]), Rcpp::as<int>(bs["cov_type"]),
+            Rcpp::as<Rcpp::NumericMatrix>(bs["coords"]),
+            Rcpp::as<Rcpp::IntegerMatrix>(bs["nn_idx"]),
+            Rcpp::as<Rcpp::NumericMatrix>(bs["nn_dist"]),
+            Rcpp::as<Rcpp::IntegerVector>(bs["nn_order"]),
+            /*axis_sigma2=*/axis0, /*axis_phi_gp=*/axis0 + 1, theta_grid);
+        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index,
+                                                      arms_ptr);
+        // The NNGP prior is proper and carries its own level, so nothing is
+        // centred, projected or not.
+        if (projector) tulpa::apply_block_projector(block, projector);
+        blocks.push_back(block);
+        return latent_offset + n_spatial;
     }
 
     if (type == "hsgp") {

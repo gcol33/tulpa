@@ -58,6 +58,14 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   4 seeds) the restricted slope sits 0.17-0.69 posterior SDs from the Gibbs
   mean with SDs within 2%, where the unrestricted NNGP field sits 0.07-1.34
   SDs from its own Gibbs run (dev_notes/issue942).
+* `tulpa_nested_laplace_joint()` takes an `nngp` block on the list-of-blocks
+  path (gcol33/tulpa#943), gathered through a per-arm `spatial_idx` or read
+  through a per-arm `projector`, so an NNGP field, restricted or not, can be
+  shared across arms. On one declared grid a one-arm joint fit equals the
+  registry door's, gathered and restricted, and an incidence projector equals
+  the gathered field. The joint hyperprior read the block's `b1.phi_gp`
+  lengthscale axis as a per-arm dispersion; a `phi_` axis is one only without
+  a block prefix (`.joint_axis_is_dispersion()`).
 * A continuous field, NNGP or HSGP, shares the nested stack with a `(1 | g)`
   term, a temporal field, smoothers and `latent()` blocks through `tulpa()`
   (gcol33/tulpa#794, gcol33/tulpa#945). `mode = "auto"` used to send a

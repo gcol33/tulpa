@@ -101,17 +101,18 @@ fit) when another axis in the same grid has unguessable support
 (car_proper's \code{rho_car}); whichever way it declines,
 \code{outer_grid_recenter_declined} says which (see below).
 
-On the list-of-blocks path an \code{icar}, \code{bym2} or \code{car_proper} block may
-carry \code{projector} in place of \code{spatial_idx}: a list of \code{n_arms} matrices
-(dense or a \pkg{Matrix} sparse matrix), arm \code{k}'s of size
-\verb{N_k x n_spatial_units}, or one matrix shared by every arm; a \code{NULL} entry
-is an arm the field does not reach. Arm \code{k}'s predictor then receives
+On the list-of-blocks path an \code{icar}, \code{bym2}, \code{car_proper} or \code{nngp}
+block may carry \code{projector} in place of \code{spatial_idx}: a list of \code{n_arms}
+matrices (dense or a \pkg{Matrix} sparse matrix), arm \code{k}'s of size
+\verb{N_k x n_spatial_units} (\verb{N_k x n_spatial} for \code{nngp}), or one matrix
+shared by every arm; a \code{NULL} entry is an arm the field does not reach. Arm \code{k}'s predictor then receives
 \verb{A_k z} with \code{z} on the block's own prior, so restricted spatial
 regression is \verb{A_k = P_k S_k}, with \verb{P_k = I - X_k (X_k' X_k)^-1 X_k'} and
-\code{S_k} the observation-to-unit incidence. The field's level is placed
-from \verb{A_k 1}: where it is zero on every arm the level never reaches the
-predictor and is removed with no fold; where it is the intercept column
-it folds into the intercept. Restricting the field changes the estimand
+\code{S_k} the observation-to-unit incidence. An areal field's level is
+placed from \verb{A_k 1}: where it is zero on every arm the level never
+reaches the predictor and is removed with no fold; where it is the
+intercept column it folds into the intercept. The \code{nngp} and
+\code{car_proper} priors are proper and carry their level themselves. Restricting the field changes the estimand
 to the marginal association (see \code{\link[=spatial_rsr]{spatial_rsr()}}).
 
 An empty \code{prior = list()} is a list of zero blocks: the model carries no

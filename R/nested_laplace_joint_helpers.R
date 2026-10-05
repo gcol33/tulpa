@@ -508,6 +508,12 @@
 # on a precision one, and the two are one axis under `tau = 1 / sigma^2`.
 .JOINT_REFINABLE_BLOCK_AXES <- c("sigma", "tau", "alpha")
 
+# Is `axis` a per-arm dispersion (`phi_<arm>`)? Only an unprefixed name is:
+# `b1.phi_gp` is a block's own NNGP lengthscale.
+.joint_axis_is_dispersion <- function(axis) {
+    !grepl("^b[0-9]+[.]", axis) & startsWith(axis, "phi_")
+}
+
 #
 # `dispersions = FALSE` is the registry door's single-block grid, whose axes are
 # bare but name no per-arm dispersion (`phi_gp` is the nngp lengthscale there).
@@ -516,7 +522,7 @@
         return(.hyper_axis_bare(axis) %in% .JOINT_REFINABLE_BLOCK_AXES)
     }
     axis %in% .JOINT_REFINABLE_BLOCK_AXES ||
-        (isTRUE(dispersions) && startsWith(axis, "phi_"))
+        (isTRUE(dispersions) && .joint_axis_is_dispersion(axis))
 }
 
 # One entry of the user-facing `phi_grid` argument, by arm name. The argument is

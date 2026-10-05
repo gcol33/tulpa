@@ -553,7 +553,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   .hp_collect(tg, function(col) {
     bare <- sub("^b[0-9]+[.]", "", col)
     bo   <- block_of(col)
-    role <- if (startsWith(bare, "phi_")) "phi"
+    role <- if (.joint_axis_is_dispersion(col)) "phi"
             else if (identical(bare, "alpha")) "alpha"
             else if (identical(bare, "sigma")) "sigma"
             else NA_character_

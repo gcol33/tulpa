@@ -409,6 +409,21 @@
             logdet_Q_per_grid          = as.numeric(p$logdet_Q_per_grid),
             log_prior_theta_per_grid   = as.numeric(p$log_prior_theta_per_grid)
         )
+    } else if (type == "nngp") {
+        spatial_idx <- if (!projected)
+            .multi_block_per_arm_idx(p$spatial_idx, n_arms, block_index,
+                                     "spatial_idx", arm_n_obs, p$n_spatial)
+        out <- c(list(type = "nngp", spatial_idx = spatial_idx),
+                 .nl_nngp_field_args(p))
+        if (projected) {
+            out$projector <- .nl_block_projector(p, n_arms, block_index,
+                                                 arm_n_obs)
+        }
+        if (!is.null(p$svc_weight)) {
+            out$svc_weight <- .multi_block_svc_weight(
+                p$svc_weight, spatial_idx, n_arms, block_index)
+        }
+        out
     } else if (type == "hsgp") {
         # HSGP block: shared eigenvalues + per-arm Phi basis matrices.
         # Axes are (sigma2, lengthscale).
