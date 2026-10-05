@@ -649,13 +649,11 @@ Rcpp::List cpp_nested_laplace_hsgp(
                     p, n_re_groups, sigma_re, y, n, family, phi, N,
                     offset_nullable);
 
-    // ---- theta_grid: (log_sigma2, log_lengthscale). The factory works in log
-    // space because PC priors on (sigma2, ell) are typically applied in log
-    // space upstream. ----
+    // ---- theta_grid: (sigma2, lengthscale), the scale the grid declares. ----
     Rcpp::NumericMatrix theta_grid(n_grid, 2);
     for (int k = 0; k < n_grid; k++) {
-        theta_grid(k, 0) = std::log(sigma2_grid[k]);
-        theta_grid(k, 1) = std::log(lengthscale_grid[k]);
+        theta_grid(k, 0) = sigma2_grid[k];
+        theta_grid(k, 1) = lengthscale_grid[k];
     }
 
     Rcpp::List phi_per_arm = Rcpp::List::create(phi_basis);
@@ -666,7 +664,7 @@ Rcpp::List cpp_nested_laplace_hsgp(
         /*start=*/beta_gp_start, /*m_total=*/M,
         phi_per_arm, n_obs_per_arm, /*n_arms=*/1, /*block_index=*/0,
         lambda_eig,
-        /*axis_log_sigma2=*/0, /*axis_log_ell=*/1, theta_grid
+        /*axis_sigma2=*/0, /*axis_ell=*/1, theta_grid
     ));
 
     return tulpa::nl_run_joint_sparse_entry(
@@ -714,19 +712,19 @@ Rcpp::List cpp_laplace_fit_hsgp(
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);
 
-    // One-row (log sigma2, log lengthscale) grid; make_hsgp_block reads the
-    // amplitude / lengthscale from theta_grid(k, axis) in block.prep, so the row
-    // must outlive the solve.
+    // One-row (sigma2, lengthscale) grid; make_hsgp_block reads the amplitude /
+    // lengthscale from theta_grid(k, axis) in block.prep, so the row must
+    // outlive the solve.
     Rcpp::NumericMatrix theta_grid(1, 2);
-    theta_grid(0, 0) = std::log(sigma2);
-    theta_grid(0, 1) = std::log(lengthscale);
+    theta_grid(0, 0) = sigma2;
+    theta_grid(0, 1) = lengthscale;
     Rcpp::List phi_per_arm = Rcpp::List::create(phi_basis);
     Rcpp::IntegerVector n_obs_per_arm = Rcpp::IntegerVector::create(N);
     std::vector<tulpa::LatentBlock> blocks;
     blocks.push_back(tulpa::make_hsgp_block(
         block_start, M, phi_per_arm, n_obs_per_arm, /*n_arms=*/1,
         /*block_index=*/0, lambda_eig,
-        /*axis_log_sigma2=*/0, /*axis_log_ell=*/1, theta_grid));
+        /*axis_sigma2=*/0, /*axis_ell=*/1, theta_grid));
 
     tulpa::SpecFamilyInputs in;
     tulpa::build_spec_family_inputs(
@@ -1443,12 +1441,12 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     if (lambda_eig.size() != M)
         Rcpp::stop("lambda_eig must have length ncol(phi_basis)");
     int s_start = p + n_re_groups;
-    // theta_grid for the HSGP block: (log_sigma2, log_lengthscale), matching the
-    // pure-spatial HSGP entry (PC priors applied in log space upstream).
+    // theta_grid for the HSGP block: (sigma2, lengthscale), matching the
+    // pure-spatial HSGP entry.
     Rcpp::NumericMatrix theta_grid(n_grid, 2);
     for (int k = 0; k < n_grid; k++) {
-        theta_grid(k, 0) = std::log(sigma2_spatial_grid[k]);
-        theta_grid(k, 1) = std::log(lengthscale_spatial_grid[k]);
+        theta_grid(k, 0) = sigma2_spatial_grid[k];
+        theta_grid(k, 1) = lengthscale_spatial_grid[k];
     }
     Rcpp::List phi_per_arm = Rcpp::List::create(phi_basis);
     Rcpp::IntegerVector n_obs_per_arm = Rcpp::IntegerVector::create(N);
@@ -1458,7 +1456,7 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
         /*start=*/s_start, /*m_total=*/M,
         phi_per_arm, n_obs_per_arm, /*n_arms=*/1, /*block_index=*/0,
         lambda_eig,
-        /*axis_log_sigma2=*/0, /*axis_log_ell=*/1, theta_grid));
+        /*axis_sigma2=*/0, /*axis_ell=*/1, theta_grid));
     // DENSE_BASIS HSGP block forces the joint sparse path regardless of n_x.
     Rcpp::IntegerVector spatial_idx_unused(N, 0);  // HSGP has no per-obs unit idx
 

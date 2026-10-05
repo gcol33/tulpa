@@ -2322,13 +2322,11 @@ tulpa <- function(formula, data,
     if (has_spatial && !tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_STACKABLE) {
       # gcol33/tulpa#812: the front-door gap named below.
       stop("A temporal field can accompany an areal (icar/car/bym2/car_proper) ",
-           "or NNGP (spatial_gp()) spatial field through tulpa()'s ",
-           "multi-block nested-Laplace path; the '", spatial_type, "' field ",
-           "is fit by its own integrator through this front door and cannot ",
-           "host a temporal block through tulpa() yet. An HSGP spatial field ",
-           "plus a temporal field IS fitted, directly, by ",
-           "fit_st_nested(spatial_type = 'hsgp', ...). Fit one field at a ",
-           "time here, or call fit_st_nested() directly.", call. = FALSE)
+           "or spatial_gp() field through tulpa()'s multi-block ",
+           "nested-Laplace path; the '", spatial_type, "' field is fit by ",
+           "its own integrator through this front door and cannot host a ",
+           "temporal block through tulpa() yet. Fit one field at a time ",
+           "here.", call. = FALSE)
     }
     # The multiscale validator is the superset: it resolves a
     # temporal_multiscale() spec and delegates every other spec to
@@ -2349,8 +2347,8 @@ tulpa <- function(formula, data,
     }
     if (has_spatial && !tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_STACKABLE) {
       stop("s(...) smoothers can accompany an areal (icar/car/bym2/car_proper) ",
-           "or NNGP (spatial_gp()) spatial field through the multi-block ",
-           "nested-Laplace path; the '",
+           "or spatial_gp() field through the multi-block nested-Laplace ",
+           "path; the '",
            spatial_type, "' field is fit by its own integrator and cannot ",
            "host smoother blocks through tulpa() yet.", call. = FALSE)
     }
@@ -2412,24 +2410,6 @@ tulpa <- function(formula, data,
       "field. %s"),
       if (is_svc_fit) "Spatially-varying" else "Temporally-varying",
       sel$backend, mode, hint), call. = FALSE)
-  }
-
-  # An HSGP field plus a formula RE term turns the nested fit into a
-  # multi-block prior, and the multi-block converter behind nested_laplace
-  # (.nl_block_spec_for_cpp(), R/nested_laplace.R) has no hsgp arm. `auto`
-  # already routes around this (feat$continuous_spatial_re in
-  # auto_select_mode()); an EXPLICIT mode = "nested_laplace" bypasses that
-  # selector entirely (it is itself a backend name), so it needs its own
-  # front-door refusal here rather than a deep C++ error (gcol33/tulpa#794).
-  # An NNGP field has an arm there and rides beside the RE term's iid block.
-  if (identical(sel$backend, "nested_laplace") && has_re &&
-      tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_NO_MULTI) {
-    stop(sprintf(paste0(
-      "spatial_gp() (%s) with a random-intercept term is not supported by ",
-      "mode = 'nested_laplace': its multi-block converter carries no %s ",
-      "arm. Use mode = 'laplace' (conditions the RE at `sigma_re`) or ",
-      "mode = 'exact' (samples the RE jointly via the ModelData NUTS ",
-      "sampler)."), spatial_type, spatial_type), call. = FALSE)
   }
 
   # Latent prior blocks are consumed only by the nested-Laplace path. If the

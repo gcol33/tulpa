@@ -411,7 +411,7 @@
         )
     } else if (type == "hsgp") {
         # HSGP block: shared eigenvalues + per-arm Phi basis matrices.
-        # Axes are (log_sigma2, log_lengthscale).
+        # Axes are (sigma2, lengthscale).
         #
         # Optional `svc_column`: 1-based index into each arm's `X`. When
         # set, the block becomes a spatially-varying coefficient:

@@ -94,10 +94,13 @@ test_that("a cyclic RW2 joint block differs from its acyclic counterpart", {
     cyclic = cyclic, tau_grid = c(1, 3, 11)
   ))
 
+  # The declared grid is held, so both fits carry the same three cells.
+  ctl <- list(axis_refine = "none")
   fit_cyc <- tulpa_nested_laplace_joint(
-    responses = list(a = arm), prior = mk_prior(TRUE))
+    responses = list(a = arm), prior = mk_prior(TRUE), control = ctl)
   fit_acyc <- tulpa_nested_laplace_joint(
-    responses = list(a = arm), prior = mk_prior(FALSE))
+    responses = list(a = arm), prior = mk_prior(FALSE), control = ctl)
+  expect_equal(length(fit_cyc$log_marginal), length(fit_acyc$log_marginal))
 
   # Before the fix the joint kernel discarded `cyclic` for rw2, so these were
   # bit-identical. The wrap-edge coupling + rank now make them differ.

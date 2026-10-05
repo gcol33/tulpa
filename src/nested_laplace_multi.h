@@ -51,14 +51,17 @@ namespace tulpa {
 // blocks] latent layout: for every latent index observation i touches, call
 // sink(latent_index, weight). One definition behind the per-row predictive
 // variance vector a_i and the per-row fitted eta, which differ only in what
-// they accumulate into.
+// they accumulate into. A DENSE_BASIS block's weights are its basis row at
+// cell `k_grid`, so its prep(k_grid) must have run.
 template <typename Sink>
 inline void nl_multi_obs_contribs(
     int i, int p, bool has_re, int n_re_groups,
     const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
     const std::vector<LatentBlock>& blocks,
     const std::vector<double>& d_fac,
+    int k_grid,
     std::vector<std::pair<int,double>>& scratch,
+    std::vector<double>& basis_scratch,
     Sink&& sink
 ) {
     for (int j = 0; j < p; j++) sink(j, X(i, j));
@@ -78,6 +81,14 @@ inline void nl_multi_obs_contribs(
                     sink(blocks[b].start + l - 1, d_b * nw.second);
                 }
             }
+        } else if (blocks[b].contrib_kind == BlockContribKind::DENSE_BASIS) {
+            const int m = blocks[b].size;
+            if (static_cast<int>(basis_scratch.size()) < m)
+                basis_scratch.resize(m);
+            blocks[b].basis_eval(i, /*k_arm=*/0, k_grid, basis_scratch.data());
+            for (int j = 0; j < m; j++) {
+                sink(blocks[b].start + j, d_b * basis_scratch[j]);
+            }
         } else {
             const int l = blocks[b].idx(i, /*k_arm=*/0);
             if (l > 0 && l <= blocks[b].size) {
@@ -87,14 +98,27 @@ inline void nl_multi_obs_contribs(
     }
 }
 
-// The design's rows grouped by loading vector (row_classes.h).
+// Whether every row's loading vector is the same at every cell up to the
+// per-block scalars d_fac_b(k). A DENSE_BASIS block's weights are its basis
+// row at the cell (HSGP folds sqrt(S_j(theta_k)) into weight j), which scales
+// each coefficient by its own factor, so rows are classed per cell there.
+inline bool nl_loadings_cell_invariant(const std::vector<LatentBlock>& blocks) {
+    for (const auto& b : blocks) {
+        if (b.contrib_kind == BlockContribKind::DENSE_BASIS) return false;
+    }
+    return true;
+}
+
+// The design's rows grouped by loading vector (row_classes.h), at cell
+// `k_grid`.
 //
 // nl_multi_obs_contribs builds row i's loading vector a_i out of the p values
-// of X(i, .), the RE group re_idx[i], and, per block, either the (index,
-// weight) list the block's obs_indices fills or the pair (idx(i, 0),
-// row_weight(i, 0)). None of those move with the outer-grid cell. The only
-// per-cell quantity in the walk is the block scalar d_fac_b(k), which
-// multiplies every entry block b contributes, uniformly across rows.
+// of X(i, .), the RE group re_idx[i], and, per block, the (index, weight) list
+// the block's obs_indices fills, the pair (idx(i, 0), row_weight(i, 0)), or the
+// basis row at the cell. When nl_loadings_cell_invariant() holds, none of those
+// move with the outer-grid cell: the only per-cell quantity in the walk is the
+// block scalar d_fac_b(k), which multiplies every entry block b contributes,
+// uniformly across rows, and the classes built at any cell serve every cell.
 //
 // The latent index ranges of beta, the RE block and each latent block are
 // disjoint, so a latent index identifies which d_fac scales it. Two rows whose
@@ -105,7 +129,7 @@ inline void nl_multi_obs_contribs(
 inline RowClasses nl_build_row_classes(
     int N, int p, bool has_re, int n_re_groups,
     const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
-    const std::vector<LatentBlock>& blocks
+    const std::vector<LatentBlock>& blocks, int k_grid
 ) {
     if (N <= 0) return RowClasses{};
     // The walk is driven at d_fac == 1 so the recorded weights carry no cell
@@ -121,9 +145,11 @@ inline RowClasses nl_build_row_classes(
     keys.w.reserve(key_guess);
     keys.off.reserve(static_cast<std::size_t>(N) + 1);
     std::vector<std::pair<int, double>> scratch;
+    std::vector<double> basis_scratch;
     for (int i = 0; i < N; i++) {
         nl_multi_obs_contribs(
-            i, p, has_re, n_re_groups, X, re_idx, blocks, unit_d_fac, scratch,
+            i, p, has_re, n_re_groups, X, re_idx, blocks, unit_d_fac, k_grid,
+            scratch, basis_scratch,
             [&](int idx, double w) { keys.push(idx, w); });
         keys.end_row();
     }
@@ -324,11 +350,14 @@ inline Rcpp::List run_multi_block_nested_laplace(
         want_fitted_var ? static_cast<std::size_t>(n_grid) * N : 0, 0.0);
 
     // Rows sharing a loading vector share the variance at every cell, so the
-    // grid solves one representative per class. Built once from the design,
-    // read-only inside the (possibly parallel) grid.
+    // grid solves one representative per class. Built once from the design
+    // when the classes are cell-invariant, read-only inside the (possibly
+    // parallel) grid; otherwise built per cell inside the solve.
+    const bool loadings_invariant = nl_loadings_cell_invariant(blocks);
     const RowClasses row_classes =
-        want_fitted_var
-            ? nl_build_row_classes(N, p, has_re, n_re_groups, X, re_idx, blocks)
+        (want_fitted_var && loadings_invariant)
+            ? nl_build_row_classes(N, p, has_re, n_re_groups, X, re_idx,
+                                   blocks, /*k_grid=*/0)
             : RowClasses{};
 
     // Inner implementation: takes max_iter as a parameter so the cheap-pass
@@ -412,21 +441,29 @@ inline Rcpp::List run_multi_block_nested_laplace(
             std::vector<double> a(n_x, 0.0), z(n_x, 0.0), zwork;
             if (!used_sparse_factor) zwork.assign(n_x, 0.0);
             std::vector<std::pair<int,double>> a_multi;
+            std::vector<double> a_basis;
             // CHOLMOD workspace for the back-solves, local to this cell: the
             // outer grid runs cells on separate threads, each against its own
             // solver, and a workspace holds handles owned by one solver's
             // cholmod_common.
             SparseCholeskySolver::SolveWorkspace ws;
-            const std::size_t n_class = row_classes.size();
+            RowClasses cell_classes;
+            if (!loadings_invariant) {
+                cell_classes = nl_build_row_classes(
+                    N, p, has_re, n_re_groups, X, re_idx, blocks, k);
+            }
+            const RowClasses& classes =
+                loadings_invariant ? row_classes : cell_classes;
+            const std::size_t n_class = classes.size();
             const double failed = std::numeric_limits<double>::quiet_NaN();
             std::vector<double> class_var(n_class, failed);
             const std::size_t base = static_cast<std::size_t>(k) * N;
             for (std::size_t c = 0; c < n_class; c++) {
-                const int i = row_classes.class_rep[c];
+                const int i = classes.class_rep[c];
                 std::fill(a.begin(), a.end(), 0.0);
                 nl_multi_obs_contribs(
                     i, p, has_re, n_re_groups, X, re_idx, blocks,
-                    d_fac_cache, a_multi,
+                    d_fac_cache, k, a_multi, a_basis,
                     [&](int idx, double w) { a[idx] += w; });
                 bool ok = true;
                 if (used_sparse_factor) {
@@ -452,8 +489,8 @@ inline Rcpp::List run_multi_block_nested_laplace(
             // have failed the same way.
             if (n_class < static_cast<std::size_t>(N)) {
                 for (int i = 0; i < N; i++) {
-                    const int c = row_classes.row_class[i];
-                    if (row_classes.class_rep[c] != i)
+                    const int c = classes.row_class[i];
+                    if (classes.class_rep[c] != i)
                         fitted_var_buf[base + i] = class_var[c];
                 }
             }
@@ -555,13 +592,28 @@ inline Rcpp::List run_multi_block_nested_laplace(
         Rcpp::NumericMatrix fitted_eta(ng, N);
         std::vector<double> dfac(blocks.size());
         std::vector<std::pair<int,double>> e_multi;
+        std::vector<double> e_basis;
         for (int k = 0; k < ng; k++) {
+            // A basis row is read off its block's per-cell state, which the
+            // grid's last prep has since replaced, so it is rebuilt for k.
+            bool cell_ok = true;
+            if (!loadings_invariant) {
+                for (const auto& b : blocks) {
+                    if (b.contrib_kind == BlockContribKind::DENSE_BASIS &&
+                        b.prep && !b.prep(k)) cell_ok = false;
+                }
+            }
+            if (!cell_ok) {
+                for (int i = 0; i < N; i++)
+                    fitted_eta(k, i) = std::numeric_limits<double>::quiet_NaN();
+                continue;
+            }
             for (size_t b = 0; b < blocks.size(); b++) dfac[b] = blocks[b].d_fac_at(k);
             for (int i = 0; i < N; i++) {
                 double e = 0.0;
                 nl_multi_obs_contribs(
                     i, p, has_re, n_re_groups, X, re_idx, blocks,
-                    dfac, e_multi,
+                    dfac, k, e_multi, e_basis,
                     [&](int idx, double w) { e += w * modes(k, idx); });
                 fitted_eta(k, i) = offset.empty() ? e : e + offset[i];
             }

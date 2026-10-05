@@ -26,6 +26,7 @@
 //   ar1        : 2 axes  = (tau, rho)
 //   iid        : 1 axis  = (sigma,)
 //   nngp       : 2 axes  = (sigma2, phi_gp)
+//   hsgp       : 2 axes  = (sigma2, lengthscale)
 //
 // One block-spec maps to ONE input-list element but may push 1 or 2
 // LatentBlocks into the vector (BYM2 is the only 2-block expansion).
@@ -33,6 +34,7 @@
 #include "areal_input_check.h"     // check_latent_obs_index
 #include "block_projector.h"       // projected areal fields (RSR)
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
+#include "hsgp_block_factory.h"
 #include "laplace_re_priors.h"
 #include "laplace_spatial_priors.h"
 #include "laplace_spec_fit.h"       // unwrap_skew_idx
@@ -366,6 +368,25 @@ int build_blocks_of_type(
         if (projector) tulpa::apply_block_projector(block, projector);
         blocks.push_back(block);
         return latent_offset + n_spatial;
+    }
+
+    if (type == "hsgp") {
+        require_axes(2);  // (sigma2, lengthscale)
+        tulpa::nl_grid_axis_positive("hsgp sigma2 axis", theta_grid, axis0);
+        tulpa::nl_grid_axis_positive("hsgp lengthscale axis", theta_grid,
+                                     axis0 + 1);
+        Rcpp::NumericMatrix phi_basis = bs["phi_basis"];
+        Rcpp::NumericVector lambda_eig = bs["lambda_eig"];
+        const int m_total = phi_basis.ncol();
+        // The same DENSE_BASIS block the single-block HSGP kernel and the
+        // joint driver build; the factory checks the basis against n_obs and
+        // the eigenvalues against its width.
+        blocks.push_back(tulpa::make_hsgp_block(
+            latent_offset, m_total, Rcpp::List::create(phi_basis),
+            Rcpp::IntegerVector::create(n_obs), /*n_arms=*/1, block_index,
+            lambda_eig, /*axis_sigma2=*/axis0, /*axis_ell=*/axis0 + 1,
+            theta_grid));
+        return latent_offset + m_total;
     }
 
     if (type == "spde") {

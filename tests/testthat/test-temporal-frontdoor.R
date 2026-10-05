@@ -216,18 +216,18 @@ test_that("unsupported temporal configurations error clearly", {
           temporal = temporal_rw1("time", group_var = "region")),
     "panel"
   )
-  # An HSGP field cannot host a temporal block through the front door yet (the
-  # multi-block converter has no hsgp arm).
+  # A multiscale field has no nested-Laplace kernel, so it cannot host a
+  # temporal block through the front door.
   d$df$lon <- rnorm(nrow(d$df)); d$df$lat <- rnorm(nrow(d$df))
   expect_error(
     tulpa(y ~ x, data = d$df, family = "binomial",
-          spatial = spatial_gp(~ lon + lat, approx = "hsgp"),
+          spatial = spatial_multiscale(~ lon + lat),
           temporal = temporal_rw1("time")),
     "areal"
   )
 })
 
-test_that("an NNGP field shares the nested stack with a temporal field, a smoother and a latent block", {
+test_that("a continuous field shares the nested stack with a temporal field, a smoother and a latent block", {
   skip_on_cran()
   set.seed(8)
   n <- 120L
@@ -269,4 +269,20 @@ test_that("an NNGP field shares the nested stack with a temporal field, a smooth
     control = ctl))
   expect_equal(fit_l$backend, "nested_laplace")
   expect_true(all(is.finite(coef(fit_l))))
+
+  # An HSGP field takes the same stack as a DENSE_BASIS block.
+  fit_h <- suppressWarnings(tulpa(
+    count ~ x, data = d, family = "poisson", mode = "nested_laplace",
+    spatial = spatial_gp(~ lon + lat, approx = "hsgp"),
+    temporal = temporal_rw1("time"), control = ctl))
+  sh <- tulpa:::validate_hsgp(spatial_gp(~ lon + lat, approx = "hsgp"), d)
+  direct_h <- suppressWarnings(tulpa_nested_laplace(
+    y = d$count, n_trials = rep(1L, n), X = stats::model.matrix(~ x, d),
+    family = "poisson",
+    prior = list(tulpa:::.spatial_spec_to_nl_prior(sh),
+                 tulpa:::.temporal_spec_to_nl_prior(tm)),
+    control = ctl))
+  expect_equal(fit_h$backend, "nested_laplace")
+  expect_equal(fit_h$log_marginal, direct_h$log_marginal, tolerance = 1e-8)
+  expect_equal(unname(coef(fit_h)), unname(coef(direct_h)), tolerance = 1e-8)
 })

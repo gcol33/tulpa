@@ -319,6 +319,11 @@ NNGP block a dense twin that runs the same `apply_nngp_full_prior_sparse`
 through `DenseSymmetricAdd`; the joint drivers leave it off, so
 `blocks_require_sparse()` keeps them sparse. The cost is an `n_x x n_x` dense
 Hessian per scratch, which a restricted field needs anyway (`A' W A` is dense).
+An `hsgp` block rides the same driver as `DENSE_BASIS`: its loadings are the
+basis row at the cell, so `nl_build_row_classes` keys rows per cell when
+`nl_loadings_cell_invariant()` is false, and the post-grid `fitted_eta` pass
+re-runs a basis block's `prep(k)`. `make_hsgp_block` reads `(sigma2,
+lengthscale)` on the declared (linear) scale at every door (gcol33/tulpa#946).
 
 A projected field's full conditional is DENSE whatever its prior: the projector
 couples every pair of coordinates, so the sparse single-site sweep is not

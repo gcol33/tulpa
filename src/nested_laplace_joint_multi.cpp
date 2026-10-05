@@ -1193,7 +1193,10 @@ int build_joint_blocks_from_spec(
                        "bym2 / car_proper).",
                        block_index + 1);
         }
-        require_axes(2);  // (log_sigma2, log_lengthscale)
+        require_axes(2);  // (sigma2, lengthscale)
+        tulpa::nl_grid_axis_positive("hsgp sigma2 axis", theta_grid, axis0);
+        tulpa::nl_grid_axis_positive("hsgp lengthscale axis", theta_grid,
+                                     axis0 + 1);
 
         int m_total = Rcpp::as<int>(bs["m_total"]);
         Rcpp::List phi_per_arm = bs["phi"];
@@ -1204,8 +1207,8 @@ int build_joint_blocks_from_spec(
             latent_offset, m_total,
             phi_per_arm, n_obs_per_arm, n_arms, block_index,
             eigenvalues,
-            /*axis_log_sigma2=*/axis0,
-            /*axis_log_ell=*/axis0 + 1,
+            /*axis_sigma2=*/axis0,
+            /*axis_ell=*/axis0 + 1,
             theta_grid
         );
         blocks.push_back(block);

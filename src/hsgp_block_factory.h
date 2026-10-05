@@ -21,7 +21,7 @@
 //                  basis evaluation at obs locations)
 //
 // Lifecycle:
-//   * `prep(k_grid)` reads (log_sigma2, log_ell) from theta_grid, computes
+//   * `prep(k_grid)` reads (sigma2, ell) from theta_grid, computes
 //     sqrt_S[j] for j in 0..m_total and publishes it in a per-cell slot
 //     (nl_cell_cache.h). basis_eval and the sparse scatter read their cell's
 //     slot, so concurrent outer-grid cells never see each other's state.
@@ -33,10 +33,11 @@
 // (1.4a) MUST route to the sparse path whenever any block has
 // contrib_kind != INDEXED_SINGLE.
 //
-// Axis schema: (log_sigma2, log_lengthscale). PC priors on sigma2 and
-// log-normal on lengthscale are applied OUTSIDE the inner Laplace, as
-// part of the outer-grid hyper-prior, not in the block's log_prior.
-// log_prior here is the N(0, I) on beta only.
+// Axis schema: (sigma2, lengthscale), on the scale the outer grid declares
+// and reports them; every caller hands the theta_grid columns through as
+// they are. PC priors on sigma2 and log-normal on lengthscale are applied
+// OUTSIDE the inner Laplace, as part of the outer-grid hyper-prior, not in
+// the block's log_prior. log_prior here is the N(0, I) on beta only.
 
 #ifndef TULPA_HSGP_BLOCK_FACTORY_H
 #define TULPA_HSGP_BLOCK_FACTORY_H
@@ -65,8 +66,8 @@ inline LatentBlock make_hsgp_block(
     int                            n_arms,
     int                            block_index,
     const Rcpp::NumericVector&     eigenvalues,
-    int                            axis_log_sigma2,
-    int                            axis_log_ell,
+    int                            axis_sigma2,
+    int                            axis_ell,
     const Rcpp::NumericMatrix&     theta_grid
 ) {
     if (eigenvalues.size() != m_total) {
@@ -124,12 +125,10 @@ inline LatentBlock make_hsgp_block(
     // idx / obs_indices left empty — DENSE_BASIS uses basis_eval.
 
     block.prep = [sqrt_S_cache, eig, m_total,
-                   axis_log_sigma2, axis_log_ell, theta_grid](
+                   axis_sigma2, axis_ell, theta_grid](
         int k_grid) -> bool {
-        double log_sigma2 = theta_grid(k_grid, axis_log_sigma2);
-        double log_ell    = theta_grid(k_grid, axis_log_ell);
-        double sigma2 = std::exp(log_sigma2);
-        double ell    = std::exp(log_ell);
+        const double sigma2 = theta_grid(k_grid, axis_sigma2);
+        const double ell    = theta_grid(k_grid, axis_ell);
         if (!(sigma2 > 0.0) || !(ell > 0.0)) return false;
         const double pref = sigma2 * (2.0 * M_PI) * ell * ell;
         const double e_coef = -0.5 * ell * ell;

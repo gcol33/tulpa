@@ -55,7 +55,7 @@ test_that("the unknown-mode message names every mode the registry defines", {
   }
 })
 
-test_that("an NNGP field + (1 | g) is integrated by nested Laplace; an HSGP one is refused up front (gcol33/tulpa#794)", {
+test_that("a continuous field + (1 | g) is integrated by nested Laplace (gcol33/tulpa#794, #945)", {
   skip_on_cran()
   set.seed(2)
   L <- cbind(lon = runif(60, 0, 10), lat = runif(60, 0, 10))
@@ -72,16 +72,15 @@ test_that("an NNGP field + (1 | g) is integrated by nested Laplace; an HSGP one 
     spatial = spatial_gp(~ lon + lat, nn = 6)))
   expect_equal(fN$log_marginal, fA$log_marginal)
 
-  # The multi-block converter has no HSGP arm: auto routes around it and an
-  # explicit nested_laplace refuses at the front door.
+  # An HSGP field rides the same driver as a DENSE_BASIS block.
   fH <- suppressWarnings(tulpa(
     y ~ x + (1 | g), data = g, family = "poisson",
     spatial = spatial_gp(~ lon + lat, approx = "hsgp")))
-  expect_identical(fH$backend, "hmc")
-  expect_error(
-    tulpa(y ~ x + (1 | g), data = g, family = "poisson", mode = "nested_laplace",
-          spatial = spatial_gp(~ lon + lat, approx = "hsgp")),
-    "nested_laplace")
+  expect_identical(fH$backend, "nested_laplace")
+  fHN <- suppressWarnings(tulpa(
+    y ~ x + (1 | g), data = g, family = "poisson", mode = "nested_laplace",
+    spatial = spatial_gp(~ lon + lat, approx = "hsgp")))
+  expect_equal(fHN$log_marginal, fH$log_marginal)
 
   # An areal field + RE is unaffected -- it stays single-block-prior handling.
   W <- adjacency(expand.grid(x = 1:4, y = 1:4), x_coord = "x", y_coord = "y",

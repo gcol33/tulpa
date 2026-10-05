@@ -58,12 +58,24 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   4 seeds) the restricted slope sits 0.17-0.69 posterior SDs from the Gibbs
   mean with SDs within 2%, where the unrestricted NNGP field sits 0.07-1.34
   SDs from its own Gibbs run (dev_notes/issue942).
-* An NNGP field shares the nested stack with a `(1 | g)` term, a temporal
-  field, smoothers and `latent()` blocks through `tulpa()`
-  (gcol33/tulpa#794). `mode = "auto"` used to send an NNGP field with a
-  random-intercept term to exact NUTS and `mode = "nested_laplace"` refused
-  it, as it still does for an HSGP field, whose multi-block arm does not
-  exist.
+* A continuous field, NNGP or HSGP, shares the nested stack with a `(1 | g)`
+  term, a temporal field, smoothers and `latent()` blocks through `tulpa()`
+  (gcol33/tulpa#794, gcol33/tulpa#945). `mode = "auto"` used to send a
+  continuous field with a random-intercept term to exact NUTS and
+  `mode = "nested_laplace"` refused it. The single-arm multi-block driver
+  takes an `hsgp` block, the same basis block the single-block kernel and the
+  joint driver build, and reads its per-row predictor and predictive variance
+  off the basis at each cell. An HSGP field alone on that driver gives the
+  single-block kernel's log marginals, coefficients, fitted predictor and its
+  variance.
+* The joint door evaluates an `hsgp` block at the `(sigma2, lengthscale)` it
+  declares (gcol33/tulpa#946). The block read its two grid columns as
+  logarithms, which `cpp_nested_laplace_hsgp` supplied and the joint driver
+  did not, so a joint cell labelled `(0.3, 0.2)` solved the field at
+  `(exp(0.3), exp(0.2))` while its hyperprior and every reported quantity
+  read `(0.3, 0.2)`: its inner modes equalled the registry door's at `exp()`
+  of the grid. The block now reads the grid on its declared scale at every
+  entry, and a one-arm joint fit equals the registry door's.
 * The WALNUTS transition is exported to model packages as a header template,
   `<tulpa/walnuts.h>` (with its tuning constants in
   `<tulpa/walnuts_config.h>`), over a caller-supplied model: gradient, kinetic

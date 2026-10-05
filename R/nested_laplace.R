@@ -1304,6 +1304,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # eigenvalues (lambda_eig); the joint one takes a per-arm list (phi) with
     # `eigenvalues` and the basis / row counts it needs to slice them.
     required = list(single = c("phi_basis", "lambda_eig"),
+                    multi = c("phi_basis", "lambda_eig"),
                     joint = .NL_REQ_HSGP_ARM),
     defaults = function(p, a) .nl_fill_family_axes(p, "hsgp"),
     pack = function(p) list(
@@ -2101,6 +2102,12 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
       out$projector <- .nl_block_projector(p, 1L, block_index %||% 1L, n_obs)
     }
     .with_svc(out)
+  } else if (type == "hsgp") {
+    .with_svc(list(
+      type       = "hsgp",
+      phi_basis  = as.matrix(p$phi_basis),
+      lambda_eig = as.numeric(p$lambda_eig)
+    ))
   } else if (type %in% c("rw1", "rw2", "ar1")) {
     out <- list(
       type         = type,
