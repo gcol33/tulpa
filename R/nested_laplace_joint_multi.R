@@ -231,7 +231,7 @@
         p, c("axis", if (projected) "projected" else "joint"), block_index)
     arm_n_obs <- if (is.null(arms)) NULL
                  else vapply(arms, function(a) length(a$y), integer(1))
-    if (type %in% .NL_PROJECTABLE_TYPES) {
+    if (type %in% .NL_PROJECTABLE_AREAL) {
         spatial_idx <- if (!projected)
             .multi_block_per_arm_idx(p$spatial_idx, n_arms, block_index,
                                      "spatial_idx", arm_n_obs,

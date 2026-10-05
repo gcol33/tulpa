@@ -318,12 +318,12 @@ inline void batch_nngp_scatter(
 // indexed by obs idx, i.e., x[gp_start + obs_idx]); grad and H are
 // indexed by the global latent layout starting at gp_start.
 //
-// Hessian entries go through SparseHessianBuilder::add(). The sparsity
-// pattern must include all (focal, neighbor_k) and (neighbor_k, neighbor_kp)
-// pairs for every row; see make_nngp_prior_sparsity_pattern below. This is
-// the only container the NNGP prior scatters into: make_nngp_block declares
-// no dense `add_prior`, so blocks_require_sparse() pins every NNGP fit to the
-// sparse Newton path regardless of n_x.
+// Hessian entries go through `H.add(row, col, value)`, one call per symmetric
+// entry. On a SparseHessianBuilder the sparsity pattern must include all
+// (focal, neighbor_k) and (neighbor_k, neighbor_kp) pairs for every row; see
+// make_nngp_prior_sparsity_pattern below. make_nngp_block's dense `add_prior`
+// (requested by the single-arm multi-block driver only) runs this same scatter
+// through DenseSymmetricAdd.
 //
 // Inputs:
 //   alpha    : length n_spatial * nn, flat row-major, indexed by NNGP-order

@@ -52,14 +52,16 @@ SPDE one). Absent, the field enters unweighted.
 (each \code{rho_grid} value strictly inside (-1, 1)).
 }
 
-An \code{icar}, \code{bym2} or \code{car_proper} block may carry \code{projector}, an
-\verb{N x n_spatial_units} matrix (dense or a \pkg{Matrix} sparse matrix), in
-place of \code{spatial_idx}: observation \code{i} then receives \verb{(A z)_i}, so
-restricted spatial regression is \verb{A = S P_perp} with \code{S} the
-observation-to-unit incidence. The block is fitted by the multi-block
-driver, alone or in a list of blocks. The field's level is placed from
-\verb{A 1}: removed with no fold where it is zero, folded into the intercept
-where it is the intercept column, otherwise left to the augmentation.
+An \code{icar}, \code{bym2}, \code{car_proper} or \code{nngp} block may carry \code{projector}, an
+\verb{N x n_spatial_units} (\verb{N x n_spatial} for \code{nngp}) matrix (dense or a
+\pkg{Matrix} sparse matrix), in place of \code{spatial_idx}: observation \code{i}
+then receives \verb{(A z)_i}, so restricted spatial regression is
+\verb{A = S P_perp} with \code{S} the observation-to-unit incidence. The block is
+fitted by the multi-block driver, alone or in a list of blocks. An
+intrinsic field's level is placed from \verb{A 1}: removed with no fold where
+it is zero, folded into the intercept where it is the intercept column,
+otherwise left to the augmentation. The \code{nngp} and \code{car_proper} priors are
+proper and carry their level themselves.
 
 Grids of a two-axis type (\code{bym2}, \code{car_proper}, \code{ar1}) are PAIRED when
 both are supplied: the i-th entries of \code{tau_grid} / \code{sigma_grid} and

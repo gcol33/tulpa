@@ -296,12 +296,11 @@ BACKEND_REGISTRY <- list(
              "tulpa_nested_laplace_nngp", "tulpa_nested_laplace_hsgp"),
     hyperprior = TRUE,
     # The multi-block converter behind cpp_nested_laplace_multi
-    # (.nl_block_spec_for_cpp(), R/nested_laplace.R) has no gp / nngp / hsgp
-    # arm -- only icar / bym2 / car_proper / rw1 / rw2 / ar1 / iid / spde /
-    # tgmrf -- so a continuous field's own (1 | g) turning the fit into a
-    # multi-block prior reaches a refusal deep in that dispatch rather than at
-    # the front door (gcol33/tulpa#794). A continuous field with no RE term
-    # stays single-block and is unaffected.
+    # (.nl_block_spec_for_cpp(), R/nested_laplace.R) has no hsgp arm, so an
+    # HSGP field's own (1 | g) turning the fit into a multi-block prior would
+    # reach a refusal deep in that dispatch rather than at the front door
+    # (gcol33/tulpa#794). An NNGP field has an arm and is unaffected, as is
+    # an HSGP field with no RE term, which stays single-block.
     carries_continuous_spatial_re = FALSE,
     note = "Single-arm nested Laplace; integrates latent-block hyperparameters"
   ),
@@ -407,6 +406,12 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 # Laplacian basis built by cpp_hsgp_basis_2d).
 .NL_FRONTDOOR_CONTINUOUS <- c("gp", "nngp", "hsgp")
 
+# Of those, the field the single-response multi-block converter
+# (.nl_block_spec_for_cpp(), R/nested_laplace.R) has no arm for, so it cannot
+# share the nested stack with a random-effect, temporal, smoother or latent
+# block (gcol33/tulpa#794).
+.NL_FRONTDOOR_NO_MULTI <- "hsgp"
+
 # Field shapes a restricted-spatial-regression projection can be applied to:
 # the ones a Polya-Gamma Gibbs kernel carries the field's own prior precision
 # for. Areal goes to `cpp_pg_binomial_gibbs_rsr()` (an adjacency), the NNGP
@@ -419,9 +424,9 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 .RSR_CONTINUOUS <- c("gp", "nngp")
 
 # The `spatial_type` tulpa() hands the backend selector for a restricted field:
-# "rsr" for an areal one, which the nested-Laplace multi-block driver also
-# reads (the unit projector enters as the block's `projector`), and "gp_rsr"
-# for a continuous one, which only the binomial Gibbs kernel carries.
+# "rsr" for an areal one and "gp_rsr" for a continuous one. Both also ride the
+# nested-Laplace multi-block driver, which reads the unit projector as the
+# block's `projector`.
 .rsr_spatial_type <- function(field_type) {
   if (field_type %in% .RSR_CONTINUOUS) "gp_rsr" else "rsr"
 }
@@ -453,11 +458,13 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 # converter .spatial_spec_to_nl_prior); SPDE is redirected to the `spde` backend.
 # Types outside this set stay on the conditional Laplace path under auto/structured.
 .NL_FRONTDOOR_NESTED <- c(.NL_FRONTDOOR_AREAL, .NL_FRONTDOOR_CONTINUOUS,
-                          .NL_FRONTDOOR_SPDE, "rsr")
+                          .NL_FRONTDOOR_SPDE, "rsr", "gp_rsr")
 
 # Spatial types that can share the nested-Laplace multi-block stack with a
-# temporal field, smoothers or latent blocks: the areal ones, restricted or not.
-.NL_FRONTDOOR_STACKABLE <- c(.NL_FRONTDOOR_AREAL, "rsr")
+# temporal field, smoothers or latent blocks: the areal ones and the NNGP field,
+# restricted or not.
+.NL_FRONTDOOR_STACKABLE <- c(.NL_FRONTDOOR_AREAL, "rsr", "gp", "nngp",
+                             "gp_rsr")
 
 # The subset of .NL_FRONTDOOR_NESTED the exact ModelData NUTS sampler (`hmc`
 # and its siblings) also threads directly -- read off dispatch_glmm_modeldata()
@@ -990,11 +997,11 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   # .auto_backend_ok(). The `spatial` flag is set from has_spatial so a caller
   # cannot pass the two inconsistently.
   feat$spatial <- isTRUE(has_spatial)
-  # A continuous spatial field (gp / nngp / hsgp) plus a formula RE term is a
-  # feature nested_laplace's multi-block converter cannot carry (gcol33/tulpa#794);
-  # an areal field + RE stays single-block prior handling and is unaffected.
+  # An HSGP field plus a formula RE term is a feature nested_laplace's
+  # multi-block converter cannot carry (gcol33/tulpa#794); an areal or NNGP
+  # field + RE rides that converter and is unaffected.
   feat$continuous_spatial_re <- isTRUE(has_re) && isTRUE(has_spatial) &&
-    tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_CONTINUOUS
+    tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_NO_MULTI
 
   # Latent prior blocks (`latent(tgmrf(...))`) integrate their hyperparameters
   # via nested Laplace -- the designed Tier 2 hot path for latent Gaussian

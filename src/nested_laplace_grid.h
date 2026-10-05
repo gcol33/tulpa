@@ -204,20 +204,29 @@ inline void nl_check_positive(const char* name, double v) {
     }
 }
 
+inline void nl_grid_cell_positive(const char* name, double v, int k) {
+    if (!(v > 0.0) || !R_finite(v)) {
+        Rcpp::stop("`%s[%d]` is %g; a scale or precision axis must be "
+                   "finite and strictly positive at every grid cell.",
+                   name, k + 1, v);
+    }
+}
+
 inline void nl_grid_axes_positive(
     std::initializer_list<std::pair<const char*, const Rcpp::NumericVector*>> axes
 ) {
     for (const auto& axis : axes) {
         const Rcpp::NumericVector& v = *axis.second;
         const int n = static_cast<int>(v.size());
-        for (int k = 0; k < n; k++) {
-            if (!(v[k] > 0.0) || !R_finite(v[k])) {
-                Rcpp::stop("`%s[%d]` is %g; a scale or precision axis must be "
-                           "finite and strictly positive at every grid cell.",
-                           axis.first, k + 1, v[k]);
-            }
-        }
+        for (int k = 0; k < n; k++) nl_grid_cell_positive(axis.first, v[k], k);
     }
+}
+
+// The same axis carried as a column of the multi-block `theta_grid`.
+inline void nl_grid_axis_positive(const char* name,
+                                  const Rcpp::NumericMatrix& grid, int col) {
+    const int n = grid.nrow();
+    for (int k = 0; k < n; k++) nl_grid_cell_positive(name, grid(k, col), k);
 }
 
 // A mixing-weight axis (the BYM2 rho) is a proportion. Outside [0, 1] both

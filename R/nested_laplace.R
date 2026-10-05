@@ -39,14 +39,16 @@
 #'   * ar1:   `temporal_idx`, `n_times`; optional `tau_grid`, `rho_grid`
 #'           (each `rho_grid` value strictly inside (-1, 1)).
 #'
-#'   An `icar`, `bym2` or `car_proper` block may carry `projector`, an
-#'   `N x n_spatial_units` matrix (dense or a \pkg{Matrix} sparse matrix), in
-#'   place of `spatial_idx`: observation `i` then receives `(A z)_i`, so
-#'   restricted spatial regression is `A = S P_perp` with `S` the
-#'   observation-to-unit incidence. The block is fitted by the multi-block
-#'   driver, alone or in a list of blocks. The field's level is placed from
-#'   `A 1`: removed with no fold where it is zero, folded into the intercept
-#'   where it is the intercept column, otherwise left to the augmentation.
+#'   An `icar`, `bym2`, `car_proper` or `nngp` block may carry `projector`, an
+#'   `N x n_spatial_units` (`N x n_spatial` for `nngp`) matrix (dense or a
+#'   \pkg{Matrix} sparse matrix), in place of `spatial_idx`: observation `i`
+#'   then receives `(A z)_i`, so restricted spatial regression is
+#'   `A = S P_perp` with `S` the observation-to-unit incidence. The block is
+#'   fitted by the multi-block driver, alone or in a list of blocks. An
+#'   intrinsic field's level is placed from `A 1`: removed with no fold where
+#'   it is zero, folded into the intercept where it is the intercept column,
+#'   otherwise left to the augmentation. The `nngp` and `car_proper` priors are
+#'   proper and carry their level themselves.
 #'
 #'   Grids of a two-axis type (`bym2`, `car_proper`, `ar1`) are PAIRED when
 #'   both are supplied: the i-th entries of `tau_grid` / `sigma_grid` and
@@ -996,14 +998,16 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 #          single-block joint path, where the per-observation index lives on
 #          each arm rather than on the block.
 #   projected
-#          the fields a projected areal block carries on either multi-block
-#          path: its graph, with `projector` in place of `spatial_idx`.
+#          the fields a projected block carries on a multi-block path: an areal
+#          block's graph or an NNGP block's neighbour structure, with
+#          `projector` in place of `spatial_idx`.
 # A key absent from an entry means the type is not dispatchable on that path;
 # the path's own converter raises its "only supported inside ..." message.
 .NL_REQ_AREAL_GRAPH <- c("n_spatial_units", "adj_row_ptr", "adj_col_idx",
                          "n_neighbors")
 .NL_REQ_AREAL <- c("spatial_idx", .NL_REQ_AREAL_GRAPH)
 .NL_REQ_TEMPORAL <- c("temporal_idx", "n_times")
+.NL_REQ_NNGP_FIELD <- c("coords", "nn_idx", "nn_dist", "n_spatial", "nn")
 .NL_REQ_HSGP_ARM <- c("m_total", "phi", "n_obs_per_arm", "eigenvalues")
 .NL_REQ_SPDE_MESH <- c("n_mesh", "A_x", "A_i", "A_p",
                        "C0_diag", "G1_x", "G1_i", "G1_p", "nu")
@@ -1198,33 +1202,24 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   nngp = list(
     cpp_fn = "cpp_nested_laplace_nngp",
-    # spatial_idx / nn_order / cov_type are defaulted below, so they are not
-    # required.
-    required = list(single = c("coords", "nn_idx", "nn_dist", "n_spatial", "nn")),
+    # spatial_idx / nn_order / cov_type are defaulted on the single-block path,
+    # so they are not required there; the multi-block path reads spatial_idx.
+    required = list(single = .NL_REQ_NNGP_FIELD,
+                    multi = c(.NL_REQ_NNGP_FIELD, "spatial_idx"),
+                    projected = .NL_REQ_NNGP_FIELD),
     defaults = function(p, a) .nl_fill_family_axes(p, "nngp"),
     pack = function(p) {
-      # nn_order in cpp_nested_laplace_nngp expects 0-based indices, matching
-      # the convention in cpp_laplace_fit_gp (see R/fit_laplace.R:433).
-      n_spatial <- as.integer(p$n_spatial)
       # spatial_idx (1-based, length N) maps obs -> spatial unit. Default to
       # 1..n_spatial when N == n_spatial (the legacy one-obs-per-location case).
       spatial_idx <- if (!is.null(p$spatial_idx)) {
         as.integer(p$spatial_idx)
       } else {
-        seq_len(n_spatial)
+        seq_len(as.integer(p$n_spatial))
       }
-      list(
-        spatial_idx = spatial_idx,
-        coords      = as.matrix(p$coords),
-        nn_idx      = as.matrix(p$nn_idx),
-        nn_dist     = as.matrix(p$nn_dist),
-        nn_order    = as.integer((p$nn_order %||% seq_len(n_spatial)) - 1L),
-        n_spatial   = n_spatial,
-        nn          = as.integer(p$nn),
-        sigma2_grid = as.numeric(p$sigma2_grid),
-        phi_gp_grid = as.numeric(p$phi_gp_grid),
-        cov_type    = as.integer(p$cov_type %||% 2L)  # default Matern-5/2
-      )
+      c(list(spatial_idx = spatial_idx),
+        .nl_nngp_field_args(p),
+        list(sigma2_grid = as.numeric(p$sigma2_grid),
+             phi_gp_grid = as.numeric(p$phi_gp_grid)))
     },
     theta = function(p) list(
       grid  = cbind(sigma2 = p$sigma2_grid, phi_gp = p$phi_gp_grid),
@@ -1902,10 +1897,12 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # outer-grid point all blocks share a Newton solve; the joint grid is the
 # Cartesian product of per-block axes.
 
-# Areal block types whose field may reach the observations through a
-# projector: arm k's predictor receives A_k z in place of the unit gather
-# z[spatial_idx] (restricted spatial regression, A_k = P_k S_k).
-.NL_PROJECTABLE_TYPES <- c("icar", "bym2", "car_proper")
+# Block types whose field may reach the observations through a projector: arm
+# k's predictor receives A_k z in place of the unit gather z[spatial_idx]
+# (restricted spatial regression, A_k = P_k S_k). Both multi-block drivers read
+# one on an areal block; an NNGP block is carried by the single-arm driver only.
+.NL_PROJECTABLE_AREAL <- c("icar", "bym2", "car_proper")
+.NL_PROJECTABLE_TYPES <- c(.NL_PROJECTABLE_AREAL, "nngp")
 
 .nl_block_is_projected <- function(p) {
   is.list(p) && tolower(p$type %||% "") %in% .NL_PROJECTABLE_TYPES &&
@@ -1929,7 +1926,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   invisible(NULL)
 }
 
-# A projected areal block's per-arm projectors as the column-compressed triple
+# A projected block's per-arm projectors as the column-compressed triple
 # the C++ block builders read (0-based `A_i` / `A_p`, the SPDE projector's
 # layout). `p$projector` is a list of n_arms matrices, each N_k x n_units
 # (dense or a Matrix sparse matrix), or one matrix shared by every arm; a NULL
@@ -1952,7 +1949,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     stop(lab, ": a projector needs the arms' observation counts.",
          call. = FALSE)
   }
-  n_units <- as.integer(p$n_spatial_units)
+  n_units <- as.integer(p$n_spatial_units %||% p$n_spatial)
   projector <- p$projector
   if (!is.list(projector)) projector <- rep(list(projector), n_arms)
   if (length(projector) != n_arms) {
@@ -1981,6 +1978,22 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   list(A_x = lapply(csc, `[[`, "x"),
        A_i = lapply(csc, `[[`, "i"),
        A_p = lapply(csc, `[[`, "p"))
+}
+
+# An NNGP block's neighbour structure as the C++ block builders read it, on
+# either the single-block kernel or the multi-block driver. nn_order is passed
+# 0-based, the convention cpp_laplace_fit_gp also uses.
+.nl_nngp_field_args <- function(p) {
+  n_spatial <- as.integer(p$n_spatial)
+  list(
+    coords    = as.matrix(p$coords),
+    nn_idx    = as.matrix(p$nn_idx),
+    nn_dist   = as.matrix(p$nn_dist),
+    nn_order  = as.integer((p$nn_order %||% seq_len(n_spatial)) - 1L),
+    n_spatial = n_spatial,
+    nn        = as.integer(p$nn),
+    cov_type  = as.integer(p$cov_type %||% 2L)  # default Matern-5/2
+  )
 }
 
 .is_multi_block_prior <- function(p) {
@@ -2063,7 +2076,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     out$svc_weight <- as.numeric(p$svc_weight)
     out
   }
-  if (type %in% .NL_PROJECTABLE_TYPES) {
+  if (type %in% .NL_PROJECTABLE_AREAL) {
     out <- list(
       type            = type,
       spatial_idx     = if (!projected) as.integer(p$spatial_idx),
@@ -2078,6 +2091,14 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     if (type == "bym2") {
       out$scale_factor <- as.numeric(p$scale_factor %||% 1.0)
       if (!is.null(p$node_prec)) out$node_prec <- as.numeric(p$node_prec)
+    }
+    .with_svc(out)
+  } else if (type == "nngp") {
+    out <- c(list(type        = "nngp",
+                  spatial_idx = if (!projected) as.integer(p$spatial_idx)),
+             .nl_nngp_field_args(p))
+    if (projected) {
+      out$projector <- .nl_block_projector(p, 1L, block_index %||% 1L, n_obs)
     }
     .with_svc(out)
   } else if (type %in% c("rw1", "rw2", "ar1")) {

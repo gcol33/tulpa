@@ -301,11 +301,24 @@ continuous one against its coordinates), and only the backend selector sees
 Gibbs kernels apply it, `cpp_pg_binomial_gibbs_rsr` on an adjacency and
 `cpp_pg_binomial_gibbs_gp_rsr` on an NNGP field, and `.RSR_FIELDS` is the one
 list of shapes either can carry — an HSGP basis and an SPDE mesh are neither
-and are refused at construction (gcol33/tulpa#815, gcol33/tulpa#848). An areal
+and are refused at construction (gcol33/tulpa#815, gcol33/tulpa#848). A
 restricted field also rides nested Laplace under any family: the block carries
-`projector = S P_perp` in place of `spatial_idx`, and both multi-block drivers
+`projector = S P_perp` in place of `spatial_idx`, and the multi-block drivers
 read it through `block_projector.h` (`read_block_projector`,
-`apply_block_projector`, and `projected_level` for where the level goes).
+`apply_block_projector`, and `projected_level` for where an intrinsic field's
+level goes). Both drivers take an areal one; a restricted NNGP field rides the
+single-arm driver behind `tulpa_nested_laplace()` only, since the joint driver
+carries no `nngp` block (gcol33/tulpa#942).
+
+**The single-arm multi-block driver reaches a block's prior only through the
+dense `add_prior`.** With a latent block present `spec_inner_solve` assembles a
+dense Hessian (the structural sparse pattern is for `[beta | RE]` layouts only)
+and the sink calls `add_prior`, so a block with only `add_prior_sparse` would
+contribute NOTHING there. `make_nngp_block(..., dense_prior = true)` gives the
+NNGP block a dense twin that runs the same `apply_nngp_full_prior_sparse`
+through `DenseSymmetricAdd`; the joint drivers leave it off, so
+`blocks_require_sparse()` keeps them sparse. The cost is an `n_x x n_x` dense
+Hessian per scratch, which a restricted field needs anyway (`A' W A` is dense).
 
 A projected field's full conditional is DENSE whatever its prior: the projector
 couples every pair of coordinates, so the sparse single-site sweep is not

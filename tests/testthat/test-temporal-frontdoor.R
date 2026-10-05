@@ -216,13 +216,57 @@ test_that("unsupported temporal configurations error clearly", {
           temporal = temporal_rw1("time", group_var = "region")),
     "panel"
   )
-  # A continuous spatial field cannot host a temporal block through the front
-  # door yet (only areal space-time is wired).
+  # An HSGP field cannot host a temporal block through the front door yet (the
+  # multi-block converter has no hsgp arm).
   d$df$lon <- rnorm(nrow(d$df)); d$df$lat <- rnorm(nrow(d$df))
   expect_error(
     tulpa(y ~ x, data = d$df, family = "binomial",
-          spatial = spatial_gp(~ lon + lat),
+          spatial = spatial_gp(~ lon + lat, approx = "hsgp"),
           temporal = temporal_rw1("time")),
     "areal"
   )
+})
+
+test_that("an NNGP field shares the nested stack with a temporal field, a smoother and a latent block", {
+  skip_on_cran()
+  set.seed(8)
+  n <- 120L
+  d <- data.frame(lon = runif(n), lat = runif(n), time = rep(1:12, 10),
+                  x = rnorm(n), z = runif(n))
+  d$count <- rpois(n, exp(0.2 + 0.4 * d$x + 0.3 * sin(d$time / 2) +
+                            0.4 * sin(3 * d$lon)))
+  ctl <- list(axis_refine = "none")
+  fit_t <- suppressWarnings(tulpa(
+    count ~ x, data = d, family = "poisson", mode = "nested_laplace",
+    spatial = spatial_gp(~ lon + lat, nn = 6), temporal = temporal_rw1("time"),
+    control = ctl))
+  # The same two blocks handed to the registry door directly.
+  sp <- tulpa:::validate_gp(spatial_gp(~ lon + lat, nn = 6), d)
+  tm <- tulpa:::validate_temporal(temporal_rw1("time"), d)
+  direct <- suppressWarnings(tulpa_nested_laplace(
+    y = d$count, n_trials = rep(1L, n), X = stats::model.matrix(~ x, d),
+    family = "poisson",
+    prior = list(tulpa:::.spatial_spec_to_nl_prior(sp),
+                 tulpa:::.temporal_spec_to_nl_prior(tm)),
+    control = ctl))
+  expect_equal(fit_t$backend, "nested_laplace")
+  expect_equal(fit_t$log_marginal, direct$log_marginal, tolerance = 1e-8)
+  expect_equal(unname(coef(fit_t)), unname(coef(direct)), tolerance = 1e-8)
+
+  fit_s <- suppressWarnings(tulpa(
+    count ~ x + s(z), data = d, family = "poisson", mode = "nested_laplace",
+    spatial = spatial_gp(~ lon + lat, nn = 6), control = ctl))
+  expect_equal(fit_s$backend, "nested_laplace")
+  expect_true(all(is.finite(coef(fit_s))))
+
+  blk <- tgmrf(
+    Q = function(theta) Matrix::Diagonal(n, exp(-2 * theta[1])),
+    prior = function(theta) 0, init = c(log_sigma = 0),
+    bounds = list(lower = log(0.2), upper = log(2)), name = "iid")
+  fit_l <- suppressWarnings(tulpa(
+    count ~ x + latent(blk), data = d, family = "poisson",
+    mode = "nested_laplace", spatial = spatial_gp(~ lon + lat, nn = 6),
+    control = ctl))
+  expect_equal(fit_l$backend, "nested_laplace")
+  expect_true(all(is.finite(coef(fit_l))))
 })

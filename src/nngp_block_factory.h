@@ -11,7 +11,8 @@
 // (sigma2, phi_gp) using batch_nngp_scatter from gpu_nngp_laplace.h.
 //
 // NNGP uses INDEXED_SINGLE semantics: each obs maps to a single spatial
-// unit via the per-arm spatial_idx vector. The data scatter adds the
+// unit via the per-arm spatial_idx vector; a caller reading the field through a
+// projector replaces that gather (block_projector.h). The data scatter adds the
 // usual β/spatial cross + spatial/spatial diagonal (handled by the
 // shared scatter_arm_obs_joint_multi_sparse). The prior scatter
 // (apply_nngp_full_prior_sparse) adds the off-diagonal coupling
@@ -49,6 +50,16 @@
 
 namespace tulpa {
 
+// The SparseHessianBuilder::add interface over a dense Hessian: one call is one
+// symmetric entry, so an off-diagonal value lands in both triangles.
+struct DenseSymmetricAdd {
+    DenseMat& H;
+    void add(int r, int c, double v) {
+        H[r][c] += v;
+        if (r != c) H[c][r] += v;
+    }
+};
+
 inline LatentBlock make_nngp_block(
     int                            start,
     int                            n_spatial,
@@ -64,7 +75,8 @@ inline LatentBlock make_nngp_block(
     const Rcpp::IntegerVector&     nn_order,
     int                            axis_sigma2,
     int                            axis_phi_gp,
-    const Rcpp::NumericMatrix&     theta_grid
+    const Rcpp::NumericMatrix&     theta_grid,
+    bool                           dense_prior = false
 ) {
     if (static_cast<int>(spatial_idx_per_arm.size()) != n_arms ||
         n_obs_per_arm.size() != n_arms) {
@@ -192,11 +204,28 @@ inline LatentBlock make_nngp_block(
                                       nn_idx, nn_order, n_spatial, nn, start);
     };
 
-    // No dense `add_prior`: the NNGP prior is scattered through the sparse
-    // builder only, and blocks_require_sparse() reads that off the block rather
-    // than every caller remembering to pass force_sparse. One scatter is the
-    // whole of the prior: a dense twin would be a second implementation of the
-    // same Lambda with nothing exercising it.
+    // The joint drivers leave `dense_prior` unset: the prior then scatters
+    // through the sparse builder only, and blocks_require_sparse() keeps every
+    // fit they run on the sparse Newton path. The single-arm multi-block driver
+    // assembles a dense Hessian whenever a latent block is present and reaches
+    // a block's prior only through `add_prior`, so it asks for one. Both run
+    // the same apply_nngp_full_prior_sparse, the dense one through a sink that
+    // writes each symmetric entry to both triangles, so Lambda has one
+    // implementation.
+    if (dense_prior) {
+        block.add_prior = [cell_cache, start, n_spatial, nn, nn_idx, nn_order](
+            DenseVec& grad, DenseMat& H,
+            const Rcpp::NumericVector& x, int k_grid
+        ) {
+            const auto& st = cell_cache->find(k_grid);
+            std::vector<double> w(n_spatial);
+            for (int s = 0; s < n_spatial; s++) w[s] = x[start + s];
+            DenseSymmetricAdd sink{H};
+            apply_nngp_full_prior_sparse(grad, sink, w, st.alpha, st.cv,
+                                          nn_idx, nn_order, n_spatial, nn,
+                                          start);
+        };
+    }
 
     block.log_prior = [cell_cache, start, n_spatial, nn, nn_idx, nn_order](
         const Rcpp::NumericVector& x, int k_grid

@@ -74,9 +74,9 @@ validate_spatial <- function(spatial, data) {
 #'
 #' @param spatial An areal specification -- `spatial_car()`, `spatial_icar()`,
 #'   `spatial_bym2()` or a proper-CAR spec -- or an NNGP one, `spatial_gp()`.
-#'   The projection is applied by the binomial Polya-Gamma Gibbs sampler, which
-#'   carries the field's own prior precision as an adjacency or as Vecchia
-#'   factors; an HSGP basis (`spatial_gp(approx = "hsgp")`) and an SPDE mesh
+#'   The projection is applied by the binomial Polya-Gamma Gibbs sampler and
+#'   by nested Laplace, both of which carry the field's own prior precision as
+#'   an adjacency or as Vecchia factors; an HSGP basis (`spatial_gp(approx = "hsgp")`) and an SPDE mesh
 #'   (`spatial_spde()`) are neither, and are refused at construction rather
 #'   than accepted and then unfittable.
 #' @param restrict_to Formula specifying which covariates to orthogonalize
@@ -127,14 +127,14 @@ validate_spatial <- function(spatial, data) {
 #' - Prediction is the main goal
 #' - Interval coverage matters more than the point estimate
 #'
-#' A restricted areal field is fitted by nested Laplace (`mode = "structured"`
-#' or `"nested_laplace"`, under any family that path takes, and alongside a
-#' temporal field, smoothers or `latent()` blocks), where the field reaches the
-#' linear predictor through the projector `S P_perp` (`S` the
-#' observation-to-unit incidence), or, for a binomial response, by the
-#' Polya-Gamma Gibbs sampler (`mode = "gibbs"`). `mode = "auto"` selects Gibbs
-#' for a binomial response and nested Laplace otherwise. A restricted
-#' continuous field is fitted by the binomial Gibbs sampler only.
+#' A restricted field is fitted by nested Laplace (`mode = "structured"` or
+#' `"nested_laplace"`, under any family that path takes, and alongside a
+#' random-effect term, a temporal field, smoothers or `latent()` blocks), where
+#' the field reaches the linear predictor through the projector `S P_perp`
+#' (`S` the observation-to-unit or observation-to-location incidence), or, for
+#' a binomial response, by the Polya-Gamma Gibbs sampler (`mode = "gibbs"`).
+#' `mode = "auto"` selects Gibbs for a binomial response and nested Laplace
+#' otherwise. Areal and NNGP fields take both routes.
 #'
 #' @examples
 #' # Create RSR spatial structure on an areal field
@@ -224,7 +224,7 @@ spatial_rsr <- function(spatial, restrict_to) {
 
   # Two kernels apply the projection: `cpp_pg_binomial_gibbs_rsr()` on an areal
   # neighbour list and `cpp_pg_binomial_gibbs_gp_rsr()` on an NNGP field
-  # (gcol33/tulpa#848); an areal one is also read by the nested-Laplace
+  # (gcol33/tulpa#848); either field is also read by the nested-Laplace
   # multi-block driver as a block projector. A field shape none of them carries
   # is refused here,
   # where the argument that caused it is still in hand, rather than downstream
@@ -233,8 +233,9 @@ spatial_rsr <- function(spatial, restrict_to) {
   if (!sp_type %in% .RSR_FIELDS) {
     stop(sprintf(paste0(
       "spatial_rsr() restricts an areal or NNGP field (%s); got '%s'.\n",
-      "The projection is applied by the binomial Polya-Gamma Gibbs sampler, ",
-      "which carries an areal neighbour list or an NNGP field and neither an ",
+      "The projection is applied by the binomial Polya-Gamma Gibbs sampler ",
+      "and by nested Laplace, which carry an areal neighbour list or an NNGP ",
+      "field and neither an ",
       "HSGP basis nor an SPDE mesh. Build the RSR field on spatial_car() / ",
       "spatial_icar() / spatial_bym2() / spatial_gp(), or drop spatial_rsr() ",
       "and fit the field directly."),

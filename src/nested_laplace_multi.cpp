@@ -25,6 +25,7 @@
 //   rw2        : 1 axis  = (tau,)
 //   ar1        : 2 axes  = (tau, rho)
 //   iid        : 1 axis  = (sigma,)
+//   nngp       : 2 axes  = (sigma2, phi_gp)
 //
 // One block-spec maps to ONE input-list element but may push 1 or 2
 // LatentBlocks into the vector (BYM2 is the only 2-block expansion).
@@ -39,6 +40,7 @@
 #include "latent_block.h"
 #include "nl_cell_cache.h"
 #include "nested_laplace_multi.h"
+#include "nngp_block_factory.h"
 #include "spde_block_factory.h"
 #include "tgmrf_block_factory.h"
 #include "unit_precision_block.h"
@@ -329,6 +331,41 @@ int build_blocks_of_type(
         if (projector) tulpa::apply_block_projector(block, projector);
         blocks.push_back(block);
         return start + size;
+    }
+
+    if (type == "nngp") {
+        require_axes(2);  // (sigma2, phi_gp)
+        const int n_spatial = Rcpp::as<int>(bs["n_spatial"]);
+        const int nn        = Rcpp::as<int>(bs["nn"]);
+        const int cov_type  = Rcpp::as<int>(bs["cov_type"]);
+        tulpa::nl_grid_axis_positive("nngp sigma2 axis", theta_grid, axis0);
+        tulpa::nl_grid_axis_positive("nngp phi_gp axis", theta_grid, axis0 + 1);
+        const auto projector = read_single_arm_projector(bs, n_obs, n_spatial,
+                                                         block_index, type);
+        // A projected field reaches no unit through the gather: every row
+        // reads 0 ("no field on this row") until the projector replaces it.
+        Rcpp::IntegerVector spatial_idx(n_obs, 0);
+        if (!projector) {
+            spatial_idx = bs["spatial_idx"];
+            check_idx(spatial_idx, n_spatial, "blocks_spec$spatial_idx");
+        }
+        tulpa::LatentBlock block = tulpa::make_nngp_block(
+            /*start=*/latent_offset, n_spatial,
+            Rcpp::List::create(spatial_idx),
+            Rcpp::IntegerVector::create(n_obs),
+            /*n_arms=*/1, block_index, nn, cov_type,
+            Rcpp::as<Rcpp::NumericMatrix>(bs["coords"]),
+            Rcpp::as<Rcpp::IntegerMatrix>(bs["nn_idx"]),
+            Rcpp::as<Rcpp::NumericMatrix>(bs["nn_dist"]),
+            Rcpp::as<Rcpp::IntegerVector>(bs["nn_order"]),
+            /*axis_sigma2=*/axis0, /*axis_phi_gp=*/axis0 + 1, theta_grid,
+            /*dense_prior=*/true);
+        // The NNGP prior is proper, so its level carries a prior of its own and
+        // nothing is centred, projected or not: a projector annihilating the
+        // constant leaves that direction to the prior alone.
+        if (projector) tulpa::apply_block_projector(block, projector);
+        blocks.push_back(block);
+        return latent_offset + n_spatial;
     }
 
     if (type == "spde") {

@@ -106,24 +106,130 @@ test_that("a restricted continuous fit reports an orthogonal field", {
 })
 
 
-test_that("every other backend refuses a restricted continuous field", {
+test_that("a backend without the projection refuses a restricted continuous field", {
   skip_on_cran()
-  # The projection lives in two Polya-Gamma kernels; every other backend reads
-  # the underlying $type and would fit the plain field while still reporting
-  # $spatial$rsr = TRUE (gcol33/tulpa#792).
+  # The projection lives in the Polya-Gamma kernel and the nested-Laplace
+  # multi-block driver; every other backend reads the underlying $type and
+  # would fit the plain field while still reporting $spatial$rsr = TRUE
+  # (gcol33/tulpa#792).
   sim <- .rsrc_sim(1L, n = 40L)
   expect_error(
     tulpa(y ~ x, data = sim$d, family = "binomial",
           n_trials = rep(25L, sim$n),
           spatial = spatial_rsr(spatial_gp(~ lon + lat), restrict_to = ~ x),
-          mode = "nested_laplace"),
-    "Polya-Gamma Gibbs sampler")
-  # And a non-binomial family is refused where the argument is still in hand.
-  expect_error(
-    tulpa(y ~ x, data = sim$d, family = "poisson",
-          spatial = spatial_rsr(spatial_gp(~ lon + lat), restrict_to = ~ x),
-          mode = "gibbs"),
-    "must be 'binomial'")
+          mode = "laplace"),
+    "would fit it unprojected")
+})
+
+
+# Several observations per location, so the observation -> location incidence
+# is not the identity and a projector differs from the gather it replaces.
+.rsrc_nngp_data <- function(seed = 3L, n_loc = 40L, reps = 2L) {
+  set.seed(seed)
+  loc <- data.frame(lon = stats::runif(n_loc), lat = stats::runif(n_loc))
+  d <- loc[rep(seq_len(n_loc), each = reps), ]
+  rownames(d) <- NULL
+  d$x <- stats::rnorm(nrow(d))
+  d$count <- stats::rpois(nrow(d), exp(0.3 + 0.5 * d$x + 0.5 * sin(4 * d$lon)))
+  d
+}
+
+.rsrc_nngp_block <- function(d, nn = 6L) {
+  tulpa:::.spatial_spec_to_nl_prior(
+    tulpa:::validate_gp(spatial_gp(~ lon + lat, nn = nn), d))
+}
+
+
+test_that("an NNGP block read through its incidence fits the gathered model", {
+  skip_on_cran()
+  # Three routes to one model: the single-block NNGP kernel, the multi-block
+  # driver gathering the field through spatial_idx, and the same driver reading
+  # it through the incidence S as a projector.
+  d <- .rsrc_nngp_data()
+  N <- nrow(d)
+  X <- stats::model.matrix(~ x, d)
+  blk <- .rsrc_nngp_block(d)
+  g <- expand.grid(s = c(0.2, 0.6), p = c(0.1, 0.3, 0.8))
+  blk$sigma2_grid <- g$s
+  blk$phi_gp_grid <- g$p
+  ctl <- list(axis_refine = "none", prune = FALSE, diagnose_k = FALSE)
+  fit_with <- function(prior) {
+    tulpa_nested_laplace(y = d$count, n_trials = rep(1L, N), X = X,
+                         family = "poisson", prior = prior, control = ctl)
+  }
+  S <- matrix(0, N, blk$n_spatial)
+  S[cbind(seq_len(N), blk$spatial_idx)] <- 1
+  via_S <- blk
+  via_S$spatial_idx <- NULL
+  via_S$projector <- S
+
+  single   <- fit_with(blk)
+  gathered <- fit_with(list(blk))
+  incident <- fit_with(via_S)
+  for (fit in list(gathered, incident)) {
+    expect_equal(fit$log_marginal, single$log_marginal, tolerance = 1e-6)
+    expect_equal(unname(coef(fit)), unname(coef(single)), tolerance = 1e-6)
+  }
+  expect_error(fit_with(c(via_S, list(spatial_idx = blk$spatial_idx))),
+               "either `projector` or `spatial_idx`")
+})
+
+
+test_that("a non-binomial restricted NNGP field is fit by nested Laplace through A = S P", {
+  skip_on_cran()
+  d <- .rsrc_nngp_data()
+  sp <- spatial_rsr(spatial_gp(~ lon + lat, nn = 6), restrict_to = ~ x)
+  via <- tulpa(count ~ x, data = d, family = "poisson", spatial = sp,
+               mode = "auto")
+  expect_equal(via$backend, "nested_laplace")
+  # The same fit as the registry door handed the projector directly: row i of
+  # A is the location-level projector's row for observation i's location.
+  X <- stats::model.matrix(~ x, d)
+  blk <- .rsrc_nngp_block(d)
+  P <- tulpa:::.rsr_unit_projection(X, blk$spatial_idx, blk$n_spatial)
+  blk$projector <- P[blk$spatial_idx, , drop = FALSE]
+  blk$spatial_idx <- NULL
+  direct <- tulpa_nested_laplace(y = d$count, n_trials = rep(1L, nrow(d)),
+                                 X = X, family = "poisson", prior = blk)
+  expect_equal(via$log_marginal, direct$log_marginal, tolerance = 1e-8)
+  expect_equal(unname(coef(via)), unname(coef(direct)), tolerance = 1e-8)
+})
+
+
+test_that("a restricted NNGP field shares the nested stack with a (1 | g) term", {
+  skip_on_cran()
+  d <- .rsrc_nngp_data()
+  d$g <- rep(1:5, length.out = nrow(d))
+  fit <- tulpa(count ~ x + (1 | g), data = d, family = "poisson",
+               spatial = spatial_rsr(spatial_gp(~ lon + lat, nn = 6),
+                                     restrict_to = ~ x),
+               mode = "nested_laplace")
+  expect_equal(fit$backend, "nested_laplace")
+  expect_true(all(is.finite(coef(fit))))
+})
+
+
+test_that("a binomial restricted NNGP field on nested Laplace agrees with the Gibbs kernel", {
+  skip_on_cran()
+  sim <- .rsrc_sim(1L)
+  sp <- spatial_rsr(spatial_gp(~ lon + lat), restrict_to = ~ x)
+  nested <- tulpa(y ~ x, data = sim$d, family = "binomial",
+                  n_trials = rep(25L, sim$n), spatial = sp,
+                  mode = "nested_laplace")
+  gibbs <- .rsrc_fit(sim, sp, n_iter = 4000L)
+  expect_equal(nested$backend, "nested_laplace")
+  # Measured over seeds 1-4 at 8000 Gibbs iterations, the slope's offset in
+  # Gibbs posterior SDs: -0.69 / -0.28 / -0.23 / -0.17 restricted, against
+  # -1.34 / -0.50 / 0.07 / -0.34 for the unrestricted NNGP field against its
+  # own Gibbs run, with the restricted SDs within 2%
+  # (dev_notes/issue942/gibbs_vs_nested.R). Seed 1 reads 0.72 here.
+  b_gibbs <- fixed_draws(gibbs)[, "x"]
+  z <- (coef(nested)[["x"]] - mean(b_gibbs)) / stats::sd(b_gibbs)
+  expect_lt(abs(z), 1)
+  ci <- confint(nested)["x", ]
+  expect_equal(unname(diff(ci)) / (2 * 1.96), stats::sd(b_gibbs),
+               tolerance = 0.1)
+  expect_lt(abs(coef(nested)[["x"]] - sim$beta_m), 0.2)
 })
 
 

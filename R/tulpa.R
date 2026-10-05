@@ -205,7 +205,7 @@
            call. = FALSE)
     }
     n_spatial <- spatial$n_spatial %||% nrow(spatial$unique_coords)
-    return(list(
+    prior <- list(
       type        = "nngp",
       coords      = as.matrix(spatial$unique_coords),
       nn_idx      = as.matrix(ni$nn_idx),
@@ -215,7 +215,21 @@
       nn          = as.integer(spatial$nn %||% ncol(ni$nn_idx)),
       cov_type    = gp_cov_type(spatial),
       spatial_idx = as.integer(spatial$obs_to_loc %||% seq_len(n_spatial))
-    ))
+    )
+    if (isTRUE(spatial$rsr)) {
+      # Restricted continuous field: observation i receives (P w)[loc_i], with
+      # P the location-level projector the Gibbs kernel applies, so the block
+      # reads the field through A = S P (S the observation-to-location
+      # incidence) in place of the gather.
+      P <- spatial$rsr_projection
+      if (is.null(P)) {
+        stop("Internal: a restricted continuous spec reached the nested path ",
+             "without its projection.", call. = FALSE)
+      }
+      prior$projector   <- P[prior$spatial_idx, , drop = FALSE]
+      prior$spatial_idx <- NULL
+    }
+    return(prior)
   }
 
   if (type == "spde") {
@@ -2308,16 +2322,13 @@ tulpa <- function(formula, data,
     if (has_spatial && !tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_STACKABLE) {
       # gcol33/tulpa#812: the front-door gap named below.
       stop("A temporal field can accompany an areal (icar/car/bym2/car_proper) ",
-           "spatial field through tulpa()'s joint nested-Laplace path; the '",
-           spatial_type, "' field is fit by its own integrator through this ",
-           "front door (continuous gp/nngp/hsgp and SPDE fields are each fit ",
-           "one at a time here) and cannot host a ",
-           "temporal block through tulpa() yet. A continuous (hsgp/nngp) ",
-           "spatial field plus a temporal field IS fitted, directly, by ",
-           "fit_st_nested(spatial_type = 'hsgp' or 'nngp', ...) -- it is not ",
-           "yet routed through this formula front door. ",
-           "Fit one field at a time here, use an areal field for space-time ",
-           "through tulpa(), or call fit_st_nested() directly.", call. = FALSE)
+           "or NNGP (spatial_gp()) spatial field through tulpa()'s ",
+           "multi-block nested-Laplace path; the '", spatial_type, "' field ",
+           "is fit by its own integrator through this front door and cannot ",
+           "host a temporal block through tulpa() yet. An HSGP spatial field ",
+           "plus a temporal field IS fitted, directly, by ",
+           "fit_st_nested(spatial_type = 'hsgp', ...). Fit one field at a ",
+           "time here, or call fit_st_nested() directly.", call. = FALSE)
     }
     # The multiscale validator is the superset: it resolves a
     # temporal_multiscale() spec and delegates every other spec to
@@ -2338,7 +2349,8 @@ tulpa <- function(formula, data,
     }
     if (has_spatial && !tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_STACKABLE) {
       stop("s(...) smoothers can accompany an areal (icar/car/bym2/car_proper) ",
-           "spatial field through the joint nested-Laplace path; the '",
+           "or NNGP (spatial_gp()) spatial field through the multi-block ",
+           "nested-Laplace path; the '",
            spatial_type, "' field is fit by its own integrator and cannot ",
            "host smoother blocks through tulpa() yet.", call. = FALSE)
     }
@@ -2402,17 +2414,16 @@ tulpa <- function(formula, data,
       sel$backend, mode, hint), call. = FALSE)
   }
 
-  # A continuous spatial field (gp / nngp / hsgp) plus a formula RE term turns
-  # the nested fit into a multi-block prior, and the multi-block converter
-  # behind nested_laplace (.nl_block_spec_for_cpp(), R/nested_laplace.R) has no
-  # gp / nngp / hsgp arm -- only icar / bym2 / car_proper / rw1 / rw2 / ar1 /
-  # iid / spde / tgmrf. `auto` already routes around this (feat$continuous_spatial_re
-  # in auto_select_mode()); an EXPLICIT mode = "nested_laplace" bypasses that
+  # An HSGP field plus a formula RE term turns the nested fit into a
+  # multi-block prior, and the multi-block converter behind nested_laplace
+  # (.nl_block_spec_for_cpp(), R/nested_laplace.R) has no hsgp arm. `auto`
+  # already routes around this (feat$continuous_spatial_re in
+  # auto_select_mode()); an EXPLICIT mode = "nested_laplace" bypasses that
   # selector entirely (it is itself a backend name), so it needs its own
-  # front-door refusal here rather than the deep, post-125-cell-grid C++ error
-  # this used to reach (gcol33/tulpa#794).
+  # front-door refusal here rather than a deep C++ error (gcol33/tulpa#794).
+  # An NNGP field has an arm there and rides beside the RE term's iid block.
   if (identical(sel$backend, "nested_laplace") && has_re &&
-      tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_CONTINUOUS) {
+      tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_NO_MULTI) {
     stop(sprintf(paste0(
       "spatial_gp() (%s) with a random-intercept term is not supported by ",
       "mode = 'nested_laplace': its multi-block converter carries no %s ",
@@ -2738,31 +2749,22 @@ tulpa <- function(formula, data,
 
   # spatial_rsr()'s projection is applied by the binomial Polya-Gamma Gibbs
   # kernels that read $rsr_projection (cpp_pg_binomial_gibbs_rsr() on an
-  # adjacency, cpp_pg_binomial_gibbs_gp_rsr() on an NNGP field) and, for an
-  # areal field, by the nested-Laplace multi-block driver, which reads it as the
-  # block's projector. The spec keeps its underlying $type for every other
+  # adjacency, cpp_pg_binomial_gibbs_gp_rsr() on an NNGP field) and by the
+  # nested-Laplace multi-block driver, which reads it as the block's
+  # projector. The spec keeps its underlying $type for every other
   # consumer, so the remaining backends would fit the PLAIN (unprojected) field
   # while still reporting $spatial$rsr = TRUE (gcol33/tulpa#792). Checked after
   # every redirect, on the backend that will run.
-  if (identical(spatial_type, "rsr") &&
+  if (isTRUE(spatial_type %in% c("rsr", "gp_rsr")) &&
       !sel$backend %in% c("gibbs", "nested_laplace")) {
     stop(sprintf(paste0(
-      "A restricted areal field (spatial_rsr()) is fit by nested Laplace or, ",
+      "A restricted %s field (spatial_rsr()) is fit by nested Laplace or, ",
       "for family 'binomial', the Polya-Gamma Gibbs sampler; the selected ",
       "backend '%s' (mode = '%s') reads the underlying '%s' field and would ",
       "fit it unprojected. Use mode = 'auto', 'structured' or ",
       "'nested_laplace' (or 'gibbs' for a binomial response)."),
+      if (identical(spatial_type, "rsr")) "areal" else "continuous",
       sel$backend, mode, spatial_spec$type), call. = FALSE)
-  }
-  if (identical(spatial_type, "gp_rsr") &&
-      (!identical(sel$backend, "gibbs") || !identical(family, "binomial"))) {
-    stop(sprintf(paste0(
-      "A restricted continuous field (spatial_rsr() on spatial_gp()) is fit ",
-      "only by the binomial Polya-Gamma Gibbs sampler: `family` must be ",
-      "'binomial' and the backend 'gibbs'; got family '%s' and backend '%s' ",
-      "(mode = '%s'). Every other backend reads the underlying '%s' field and ",
-      "would fit it unprojected."),
-      family, sel$backend, mode, spatial_spec$type), call. = FALSE)
   }
 
   # An explicit `mode` that the redirects above moved off is reported, never

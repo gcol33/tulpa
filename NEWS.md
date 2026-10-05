@@ -44,8 +44,26 @@ This release collects 0.6.11 and 0.6.12; their entries below carry the detail.
   field can now also share the nested stack with a temporal field, smoothers
   or `latent()` blocks. On a declared grid the registry door and the joint
   door give the same log marginals and coefficients for a restricted icar,
-  bym2 and car_proper field. A restricted continuous field stays binomial and
-  Gibbs only, and the conditional `mode = "laplace"` refuses either.
+  bym2 and car_proper field. The conditional `mode = "laplace"` refuses a
+  restricted field.
+* A restricted NNGP field (`spatial_rsr()` on `spatial_gp()`) is fitted by
+  nested Laplace through `tulpa()` under any family (gcol33/tulpa#942); it
+  used to be binomial and Gibbs only. The single-arm multi-block driver takes
+  an `nngp` block, gathered through `spatial_idx` or read through a
+  `projector`, and `tulpa()` hands it `A = S P_perp` at the field's unique
+  locations. `mode = "auto"` keeps Gibbs for a binomial response. An NNGP
+  field held by its incidence projector, gathered on the multi-block driver
+  and fitted alone by the single-block kernel give the same log marginals and
+  coefficients. Against the Polya-Gamma Gibbs RSR sampler (binomial, n = 150,
+  4 seeds) the restricted slope sits 0.17-0.69 posterior SDs from the Gibbs
+  mean with SDs within 2%, where the unrestricted NNGP field sits 0.07-1.34
+  SDs from its own Gibbs run (dev_notes/issue942).
+* An NNGP field shares the nested stack with a `(1 | g)` term, a temporal
+  field, smoothers and `latent()` blocks through `tulpa()`
+  (gcol33/tulpa#794). `mode = "auto"` used to send an NNGP field with a
+  random-intercept term to exact NUTS and `mode = "nested_laplace"` refused
+  it, as it still does for an HSGP field, whose multi-block arm does not
+  exist.
 * The WALNUTS transition is exported to model packages as a header template,
   `<tulpa/walnuts.h>` (with its tuning constants in
   `<tulpa/walnuts_config.h>`), over a caller-supplied model: gradient, kinetic

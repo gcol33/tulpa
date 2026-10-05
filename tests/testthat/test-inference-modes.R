@@ -55,21 +55,32 @@ test_that("the unknown-mode message names every mode the registry defines", {
   }
 })
 
-test_that("auto routes a continuous spatial field + (1 | g) to hmc, and explicit nested_laplace refuses it up front (gcol33/tulpa#794)", {
+test_that("an NNGP field + (1 | g) is integrated by nested Laplace; an HSGP one is refused up front (gcol33/tulpa#794)", {
   skip_on_cran()
   set.seed(2)
   L <- cbind(lon = runif(60, 0, 10), lat = runif(60, 0, 10))
   g <- data.frame(L, x = rnorm(60), g = rep(1:5, 12))
   g$y <- rpois(60, exp(0.3 + 0.5 * g$x))
 
+  # The NNGP field and the RE term's iid block share the multi-block driver.
   fA <- suppressWarnings(tulpa(
     y ~ x + (1 | g), data = g, family = "poisson",
     spatial = spatial_gp(~ lon + lat, nn = 6)))
-  expect_identical(fA$backend, "hmc")
+  expect_identical(fA$backend, "nested_laplace")
+  fN <- suppressWarnings(tulpa(
+    y ~ x + (1 | g), data = g, family = "poisson", mode = "nested_laplace",
+    spatial = spatial_gp(~ lon + lat, nn = 6)))
+  expect_equal(fN$log_marginal, fA$log_marginal)
 
+  # The multi-block converter has no HSGP arm: auto routes around it and an
+  # explicit nested_laplace refuses at the front door.
+  fH <- suppressWarnings(tulpa(
+    y ~ x + (1 | g), data = g, family = "poisson",
+    spatial = spatial_gp(~ lon + lat, approx = "hsgp")))
+  expect_identical(fH$backend, "hmc")
   expect_error(
     tulpa(y ~ x + (1 | g), data = g, family = "poisson", mode = "nested_laplace",
-          spatial = spatial_gp(~ lon + lat, nn = 6)),
+          spatial = spatial_gp(~ lon + lat, approx = "hsgp")),
     "nested_laplace")
 
   # An areal field + RE is unaffected -- it stays single-block-prior handling.
