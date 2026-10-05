@@ -318,9 +318,12 @@ sparse pattern covers `[beta | RE]` layouts only) and reaches a block's prior
 through `add_prior` alone. Past `SPARSE_THRESHOLD` latents, or with a block
 whose prior has only `add_prior_sparse` (`blocks_have_sparse_only_prior()`, an
 NNGP block), `run_multi_block_nested_laplace` returns
-`run_multi_block_single_arm_sparse()`: a one-arm fit on the joint driver forced
-sparse, with a model-supplied likelihood on the arm's spec and `fitted_eta` /
-`fitted_eta_var` / `constraint_cols` in the dense path's shape. The joint
+`run_single_arm_block_joint(force_sparse = true)`: a one-arm fit on the joint
+driver, with a model-supplied likelihood on the arm's spec and `fitted_eta` /
+`fitted_eta_var` / `constraint_cols` in the dense path's shape. The
+spatio-temporal entries (`run_st_spatial_entry`) are the same one-arm fit
+through the same helper, passing R's `force_sparse` (a dense == sparse test
+knob; the driver's own rule still routes a wide or sparse-only fit). The joint
 sparse Newton is the one that folds an intrinsic field's sum-to-zero pin at
 solve time and reads `add_prior_pattern`. Every areal and temporal block fills
 all four prior callbacks from one setter -- `set_icar_block_priors`,

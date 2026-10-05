@@ -158,14 +158,17 @@ inline RowClasses nl_build_row_classes(
     return row_classes_from_loadings(keys);
 }
 
-// The single-arm block fit as a one-arm joint fit on the joint driver's sparse
-// Newton. That path assembles the latent blocks on their structural pattern,
-// folds an intrinsic field's sum-to-zero pin at solve time and reaches a
-// block's prior through add_prior_sparse, so a field too wide for a dense
-// n_x x n_x Hessian, or one whose prior has no dense scatter, is solved where
-// it fits. A model-supplied likelihood rides the arm's spec; the per-row
-// predictor and its variance come back in the shape the dense path reports.
-inline Rcpp::List run_multi_block_single_arm_sparse(
+// A single-response block fit as a one-arm fit on the joint driver. The latent
+// blocks own their observation maps, so the arm carries only the response, the
+// fixed-effect design and the RE block. `force_sparse` selects the joint sparse
+// Newton outright; otherwise the joint driver applies its own rule (the latent
+// dimension against SPARSE_THRESHOLD, and blocks_require_sparse). The sparse
+// Newton assembles the latent blocks on their structural pattern, folds an
+// intrinsic field's sum-to-zero pin at solve time and reaches a block's prior
+// through add_prior_sparse. A model-supplied likelihood rides the arm's spec;
+// the per-row predictor and its variance come back in the shape the dense
+// multi-block path reports.
+inline Rcpp::List run_single_arm_block_joint(
     int n_grid,
     const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
     const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
@@ -174,25 +177,26 @@ inline Rcpp::List run_multi_block_single_arm_sparse(
     const std::string& family, double phi,
     int max_iter, double tol, int n_threads,
     bool store_modes, const Rcpp::NumericVector& x_init, bool store_Q,
+    bool force_sparse,
     int n_threads_outer, double prune_tol,
     const LikelihoodSpec* ext_spec, void* ext_response,
     tulpa_progress::GridProgress* progress, GridCheckpoint* ckpt,
     bool compute_skew, const std::vector<int>* skew_probe_idx,
     const SubspaceDebiasOptions* debias, const CilaOptions* cila,
     int screen_iters, bool compute_fitted_var,
-    const std::vector<double>& offset,
+    Rcpp::Nullable<Rcpp::NumericVector> offset,
     const std::vector<double>& screen_log_offset
 ) {
     std::vector<ParsedArm> parsed;
     std::vector<JointArm> arms;
+    // With no RE block the caller may pass an empty re_idx; the arm reads one
+    // entry per row, so it gets zeros.
     const Rcpp::NumericVector arm_re_idx =
-        (static_cast<int>(re_idx.size()) == N) ? re_idx
-                                               : Rcpp::NumericVector(N, 0.0);
-    Rcpp::Nullable<Rcpp::NumericVector> arm_offset = R_NilValue;
-    if (!offset.empty()) arm_offset = Rcpp::wrap(offset);
+        (n_re_groups == 0 && static_cast<int>(re_idx.size()) != N)
+            ? Rcpp::NumericVector(N, 0.0) : re_idx;
     make_single_arm(parsed, arms, X, arm_re_idx, Rcpp::IntegerVector(N, 0),
                     p, n_re_groups, sigma_re, y, n_trials, family, phi, N,
-                    arm_offset);
+                    offset);
     if (ext_spec) {
         arms[0].spec          = ext_spec;
         arms[0].response_data = ext_response;
@@ -204,7 +208,7 @@ inline Rcpp::List run_multi_block_single_arm_sparse(
         /*prep_at_grid=*/nullptr, n_threads_outer,
         /*tile_ids=*/std::vector<int>(),
         /*tile_pilot_cells=*/std::vector<int>(), prune_tol,
-        /*force_sparse=*/true,
+        force_sparse,
         /*cell_coupling_spec=*/nullptr,
         JointPDMode::LM, StepCurvature::Observed,
         /*hessian_refresh=*/1, progress, ckpt,
@@ -323,13 +327,15 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // runs on the sparse joint Newton instead -- the threshold and the rule
     // the joint driver applies to its own fits.
     if (n_x >= SPARSE_THRESHOLD || blocks_have_sparse_only_prior(blocks)) {
-        return run_multi_block_single_arm_sparse(
+        Rcpp::Nullable<Rcpp::NumericVector> arm_offset = R_NilValue;
+        if (!offset.empty()) arm_offset = Rcpp::wrap(offset);
+        return run_single_arm_block_joint(
             n_grid, y, n_trials, X, re_idx, N, p, n_re_groups, sigma_re,
             blocks, family, phi, max_iter, tol, n_threads, store_modes,
-            x_init, store_Q, n_threads_outer, prune_tol, ext_spec,
-            ext_response, progress, ckpt, compute_skew, skew_probe_idx,
-            debias, cila, screen_iters, compute_fitted_var, offset,
-            screen_log_offset);
+            x_init, store_Q, /*force_sparse=*/true, n_threads_outer,
+            prune_tol, ext_spec, ext_response, progress, ckpt, compute_skew,
+            skew_probe_idx, debias, cila, screen_iters, compute_fitted_var,
+            arm_offset, screen_log_offset);
     }
 
     ProcessData proc;
