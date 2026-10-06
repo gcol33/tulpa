@@ -101,6 +101,23 @@ test_that("two smoothers fit through the joint multi-block path", {
   expect_gt(stats::cor(s2$estimate, f2(s2$x)), 0.9)
 })
 
+test_that("a smoother shares the nested stack with a spatial_gp() field", {
+  skip_on_cran()
+  set.seed(81)
+  n <- 300L
+  d <- data.frame(x = runif(n, -2, 2), lon = runif(n), lat = runif(n))
+  f <- function(x) sin(2 * x)
+  d$y <- rpois(n, exp(0.3 + f(d$x) + 0.5 * sin(3 * d$lon)))
+
+  fit <- suppressWarnings(
+    tulpa(y ~ s(x, k = 15), data = d, family = "poisson",
+          spatial = spatial_gp(~ lon + lat)))
+  expect_equal(fit$backend, "nested_laplace")
+
+  sm <- smooth_effects(fit)
+  expect_gt(stats::cor(sm$estimate, f(sm$x)), 0.9)
+})
+
 test_that("unsupported smoother combinations error clearly", {
   d <- data.frame(x = runif(60), time = rep(1:10, 6),
                   lon = rnorm(60), lat = rnorm(60))
@@ -110,11 +127,11 @@ test_that("unsupported smoother combinations error clearly", {
   expect_error(
     tulpa(y ~ s(x), data = d, family = "binomial", mode = "vi"),
     "ModelData")
-  # Continuous spatial fields run their own integrator.
+  # An SPDE field runs its own integrator.
   expect_error(
     tulpa(y ~ s(x), data = d, family = "binomial",
-          spatial = spatial_gp(~ lon + lat)),
-    "areal")
+          spatial = spatial_spde(~ lon + lat, data = d)),
+    "'spde' field")
 
   # smooth_effects on a smooth-free fit.
   plain <- structure(list(family = "poisson"), class = "tulpa_fit")
