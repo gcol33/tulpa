@@ -20,3 +20,5 @@ _*.R
 claude/
 .pkgdown-stash/
 *.done
+tests/testthat/testthat-problems.rds
+tests/testthat/_problems/
