@@ -210,3 +210,102 @@ test_that("a repeated latent index in a constraint group is read as an indicator
   expect_identical(duped, clean)
   expect_equal(clean, .ref_inner_block(jd$Q, idx, list(fidx)), tolerance = 1e-9)
 })
+
+# tulpa_joint_inner_vcov_mixture(): the law-of-total-covariance mixture over the
+# grid, accumulated in the engine without one p x p block per cell
+# (gcol33/tulpa#947). Reference: the same sum built in R from the per-cell
+# blocks cpp_joint_inner_vcov_blocks() returns.
+.mixture_fixture <- function(n_cell = 4L, seed = 101) {
+  jds  <- lapply(seq_len(n_cell), function(k)
+    .make_joint_Q(p_d = 3L, field_sizes = 18L, seed = seed + k))
+  fidx <- jds[[1L]]$field_idx[[1L]]
+  idx  <- c(seq_len(jds[[1L]]$p_d), fidx)
+  cscs <- lapply(jds, function(jd) .csc_lower(jd$Q))
+  set.seed(seed)
+  list(
+    Qp = lapply(cscs, `[[`, "p"), Qi = lapply(cscs, `[[`, "i"),
+    Qx = lapply(cscs, `[[`, "x"), n_x = jds[[1L]]$n_x, idx = idx,
+    p_d = jds[[1L]]$p_d, A = list(as.integer(fidx)),
+    modes = matrix(stats::rnorm(n_cell * length(idx)), n_cell, length(idx)),
+    w = stats::runif(n_cell))
+}
+
+.mixture_reference <- function(fx, field_marginal = TRUE, n_dense = fx$p_d) {
+  blocks <- cpp_joint_inner_vcov_blocks(
+    fx$Qp, fx$Qi, fx$Qx, fx$n_x, as.integer(fx$idx), n_dense, fx$A,
+    field_marginal = field_marginal, n_threads = 1L)
+  w <- fx$w / sum(fx$w)
+  mbar <- as.numeric(crossprod(w, fx$modes))
+  V <- 0
+  for (k in seq_along(w)) {
+    if (w[k] == 0) next
+    Ck <- if (is.null(blocks[[k]])) 0 else blocks[[k]]
+    V <- V + w[k] * (Ck + tcrossprod(fx$modes[k, ] - mbar))
+  }
+  list(V = V, mbar = mbar, blocks = blocks)
+}
+
+test_that("the engine mixture equals the law of total covariance over the blocks", {
+  fx  <- .mixture_fixture()
+  ref <- .mixture_reference(fx)
+  got <- tulpa_joint_inner_vcov_mixture(
+    fx$Qp, fx$Qi, fx$Qx, fx$n_x, fx$idx, fx$p_d, fx$A,
+    weights = fx$w, modes = fx$modes)
+  expect_equal(got$vcov, ref$V, tolerance = 1e-12)
+  expect_equal(got$mean, ref$mbar, tolerance = 1e-14)
+  expect_identical(got$failed, integer(0))
+  pd <- seq_len(fx$p_d)
+  for (k in seq_along(fx$w))
+    expect_equal(got$dense_blocks[[k]], ref$blocks[[k]][pd, pd], tolerance = 1e-14)
+
+  full <- tulpa_joint_inner_vcov_mixture(
+    fx$Qp, fx$Qi, fx$Qx, fx$n_x, fx$idx, length(fx$idx), fx$A,
+    weights = fx$w, modes = fx$modes, field_marginal = FALSE)
+  ref_full <- .mixture_reference(fx, field_marginal = FALSE,
+                                 n_dense = length(fx$idx))
+  expect_equal(full$vcov, ref_full$V, tolerance = 1e-12)
+
+  within <- tulpa_joint_inner_vcov_mixture(
+    fx$Qp, fx$Qi, fx$Qx, fx$n_x, fx$idx, fx$p_d, fx$A, weights = fx$w)
+  expect_null(within$mean)
+  expect_equal(within$vcov + crossprod(sqrt(fx$w / sum(fx$w)) *
+                 sweep(fx$modes, 2L, ref$mbar)), ref$V, tolerance = 1e-12)
+})
+
+test_that("the engine mixture does not depend on the thread count", {
+  fx <- .mixture_fixture(n_cell = 7L, seed = 202)
+  one <- function(nt) tulpa_joint_inner_vcov_mixture(
+    fx$Qp, fx$Qi, fx$Qx, fx$n_x, fx$idx, fx$p_d, fx$A,
+    weights = fx$w, modes = fx$modes, n_threads = nt)
+  expect_identical(one(3L), one(1L))
+})
+
+test_that("a zero-weight cell is skipped and a missing cell keeps its between term", {
+  fx <- .mixture_fixture(n_cell = 4L, seed = 303)
+  fx$w[2L] <- 0
+  fx$Qp[3L] <- list(NULL)
+  ref <- .mixture_reference(fx)
+  got <- tulpa_joint_inner_vcov_mixture(
+    fx$Qp, fx$Qi, fx$Qx, fx$n_x, fx$idx, fx$p_d, fx$A,
+    weights = fx$w, modes = fx$modes)
+  expect_equal(got$vcov, ref$V, tolerance = 1e-12)
+  expect_null(got$dense_blocks[[2L]])
+  expect_null(got$dense_blocks[[3L]])
+  expect_identical(got$failed, 3L)
+})
+
+test_that("the engine mixture refuses weights and modes that do not fit the grid", {
+  fx <- .mixture_fixture(n_cell = 3L, seed = 404)
+  call_with <- function(w = fx$w, modes = fx$modes)
+    tulpa_joint_inner_vcov_mixture(
+      fx$Qp, fx$Qi, fx$Qx, fx$n_x, fx$idx, fx$p_d, fx$A,
+      weights = w, modes = modes)
+  expect_error(call_with(w = fx$w[-1L]), "weights")
+  expect_error(call_with(w = c(-1, 1, 1)), "weights")
+  expect_error(call_with(w = c(NA, 1, 1)), "weights")
+  expect_error(call_with(w = c(0, 0, 0)), "mass")
+  expect_error(call_with(modes = fx$modes[, -1L]), "modes")
+  expect_error(call_with(modes = replace(fx$modes, 1L, NA)), "modes")
+  expect_silent(call_with(modes = replace(fx$modes, 1L, NA) * c(1, 1, 1),
+                          w = c(0, 1, 1)))
+})

@@ -31,6 +31,7 @@
 
 #include "row_classes.h"
 #include "sparse_cholesky.h"
+#include <algorithm>
 #include <functional>
 #include <vector>
 
@@ -59,6 +60,33 @@ bool extract_inner_vcov_block_cell(
     bool field_marginal,
     SparseCholeskySolver& solver,
     std::vector<double>& out_block
+);
+
+// The same cell's block in the shape it is actually computed in, for callers
+// that accumulate it rather than hold it: the first `s` columns as a p x s
+// column-major strip (lower triangle, rows a >= b; the rows above the diagonal
+// stay 0), and the diagonal of the remaining p - s columns, whose off-diagonal
+// is never formed. `s` is n_dense under field_marginal and p otherwise, so a
+// field-marginal cell costs O(p n_dense) rather than O(p^2).
+struct InnerVcovStrip {
+    int p = 0;
+    int s = 0;
+    std::vector<double> strip;  // p x s, column-major
+    std::vector<double> diag;   // length p - s
+};
+
+inline int inner_vcov_strip_width(int p, int n_dense, bool field_marginal) {
+    if (!field_marginal) return p;
+    return std::max(0, std::min(n_dense, p));
+}
+
+bool extract_inner_vcov_strip_cell(
+    const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
+    const std::vector<int>& idx0, int n_dense,
+    const std::vector<std::vector<int>>& A_cols,
+    bool field_marginal,
+    SparseCholeskySolver& solver,
+    InnerVcovStrip& out
 );
 
 // The joint tier's per-cell fixed-effect retention, asked for

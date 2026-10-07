@@ -908,6 +908,27 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_joint_inner_vcov_mixture
+Rcpp::List cpp_joint_inner_vcov_mixture(Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid, int n_x, Rcpp::IntegerVector idx, int n_dense, Rcpp::List A_cols_list, Rcpp::NumericVector weights, Rcpp::Nullable<Rcpp::NumericMatrix> modes, bool field_marginal, int n_threads);
+RcppExport SEXP _tulpa_cpp_joint_inner_vcov_mixture(SEXP Q_p_per_gridSEXP, SEXP Q_i_per_gridSEXP, SEXP Q_x_per_gridSEXP, SEXP n_xSEXP, SEXP idxSEXP, SEXP n_denseSEXP, SEXP A_cols_listSEXP, SEXP weightsSEXP, SEXP modesSEXP, SEXP field_marginalSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type Q_p_per_grid(Q_p_per_gridSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type Q_i_per_grid(Q_i_per_gridSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type Q_x_per_grid(Q_x_per_gridSEXP);
+    Rcpp::traits::input_parameter< int >::type n_x(n_xSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type idx(idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_dense(n_denseSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type A_cols_list(A_cols_listSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type weights(weightsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type modes(modesSEXP);
+    Rcpp::traits::input_parameter< bool >::type field_marginal(field_marginalSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_joint_inner_vcov_mixture(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, weights, modes, field_marginal, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_laplace_fit_multi_re
 Rcpp::List cpp_laplace_fit_multi_re(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::List re_idx_list, Rcpp::IntegerVector re_ngroups, Rcpp::List re_sigma_list, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::List> re_Z_list, Rcpp::Nullable<Rcpp::IntegerVector> re_ncoefs, Rcpp::Nullable<Rcpp::NumericVector> weights, Rcpp::Nullable<Rcpp::NumericVector> offset, Rcpp::Nullable<Rcpp::NumericVector> x_init, Rcpp::Nullable<Rcpp::NumericVector> beta_prior_mean, Rcpp::Nullable<Rcpp::NumericVector> beta_prior_sd, bool return_re_cov, double phi2, Rcpp::Nullable<Rcpp::NumericMatrix> X_zi, double zi_prior_sd, bool return_joint_hessian, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias);
 RcppExport SEXP _tulpa_cpp_laplace_fit_multi_re(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idx_listSEXP, SEXP re_ngroupsSEXP, SEXP re_sigma_listSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP re_Z_listSEXP, SEXP re_ncoefsSEXP, SEXP weightsSEXP, SEXP offsetSEXP, SEXP x_initSEXP, SEXP beta_prior_meanSEXP, SEXP beta_prior_sdSEXP, SEXP return_re_covSEXP, SEXP phi2SEXP, SEXP X_ziSEXP, SEXP zi_prior_sdSEXP, SEXP return_joint_hessianSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP) {
@@ -5125,6 +5146,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_spde_laplace_gradient", (DL_FUNC) &_tulpa_cpp_spde_laplace_gradient, 21},
     {"_tulpa_cpp_interval_gaussian_terms", (DL_FUNC) &_tulpa_cpp_interval_gaussian_terms, 4},
     {"_tulpa_cpp_joint_inner_vcov_blocks", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_blocks, 9},
+    {"_tulpa_cpp_joint_inner_vcov_mixture", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_mixture, 11},
     {"_tulpa_cpp_laplace_fit_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_fit_multi_re, 26},
     {"_tulpa_cpp_laplace_log_marginal_multi_re_batch", (DL_FUNC) &_tulpa_cpp_laplace_log_marginal_multi_re_batch, 21},
     {"_tulpa_cpp_laplace_fit_gp", (DL_FUNC) &_tulpa_cpp_laplace_fit_gp, 25},

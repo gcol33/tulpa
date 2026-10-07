@@ -1475,6 +1475,47 @@ tulpa_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_gr
   )
 }
 
+#' Outer-grid posterior covariance of a joint fit's latent coordinates
+#'
+#' The law-of-total-covariance mixture over the outer grid,
+#' \deqn{V = \sum_k w_k [C_k + (m_k - \bar m)(m_k - \bar m)^T],}
+#' with `C_k` the same per-cell constrained block
+#' [tulpa_joint_inner_vcov_blocks()] returns, accumulated inside the engine
+#' without holding one block per cell. Memory is one `length(idx)` square
+#' result whatever the grid size, so this is the door for an `idx` that
+#' carries a field.
+#'
+#' @inheritParams tulpa_joint_inner_vcov_blocks
+#' @param weights Numeric, one non-negative weight per outer-grid cell
+#'   (normalized here). A cell of zero weight is never extracted.
+#' @param modes Optional `n_grid x length(idx)` matrix of the cell modes on
+#'   `idx`. `NULL` returns the within-cell term alone.
+#'
+#' @return A list: `vcov`, the mixture covariance; `mean`, the weighted mean
+#'   of `modes` (`NULL` without them); `dense_blocks`, one
+#'   `n_dense x n_dense` block per cell (`NULL` where the cell was not
+#'   extracted); `failed`, the cells of positive weight whose block is
+#'   missing (no stored precision, or its Cholesky failed). Such a cell keeps
+#'   its weight and contributes its between-cell term only. With
+#'   `field_marginal = TRUE` the field x field part of the within term is its
+#'   diagonal.
+#' @export
+tulpa_joint_inner_vcov_mixture <- function(Q_p_per_grid, Q_i_per_grid,
+                                           Q_x_per_grid, n_x, idx, n_dense,
+                                           A_cols_list, weights, modes = NULL,
+                                           field_marginal = TRUE,
+                                           n_threads = 1L) {
+  if (!is.null(modes)) modes <- as.matrix(modes) + 0
+  cpp_joint_inner_vcov_mixture(
+    Q_p_per_grid = Q_p_per_grid, Q_i_per_grid = Q_i_per_grid,
+    Q_x_per_grid = Q_x_per_grid,
+    n_x = as.integer(n_x), idx = as.integer(idx), n_dense = as.integer(n_dense),
+    A_cols_list = lapply(A_cols_list, as.integer),
+    weights = as.numeric(weights), modes = modes,
+    field_marginal = isTRUE(field_marginal), n_threads = as.integer(n_threads)
+  )
+}
+
 # ----------------------------------------------------------------------------
 # Per-cell fixed-effect mode + precision for a joint fit.
 #

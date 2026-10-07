@@ -1,3 +1,19 @@
+# tulpa 0.7.1
+
+* `tulpa_joint_inner_vcov_mixture()` returns the outer grid's posterior
+  covariance of a joint fit's latent coordinates by the law of total
+  covariance, accumulated in the engine without one `length(idx)` square block
+  per grid cell (gcol33/tulpa#947). `tulpa_joint_inner_vcov_blocks()` holds
+  every cell's block, so with a field in `idx` its memory is the grid size
+  times the latent dimension squared: 878 cells at 4479 latents is about
+  141 GB, and the process died with `std::bad_alloc` inside the OpenMP region.
+  The mixture door keeps one result plus a batch of per-cell strips (the
+  fixed-effect columns and the field diagonal, which is all the
+  field-marginal recipe forms), skips cells of zero weight, adds the cells in
+  grid order so the result does not depend on `n_threads`, and returns each
+  cell's fixed-effect block for a mixture draw. Both doors read one per-cell
+  assembly.
+
 # tulpa 0.7.0
 
 This release collects 0.6.11 and 0.6.12; their entries below carry the detail.

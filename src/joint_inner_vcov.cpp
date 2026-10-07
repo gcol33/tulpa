@@ -7,6 +7,7 @@
 #include "inv_block_extract.h"  // InvBlockConstraint, extract_inv_diag_blocks
 #include "sparse_cholesky.h"
 #include "omp_threads.h"
+#include <Eigen/Core>
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
@@ -82,18 +83,21 @@ bool factorize_cell(
     return ok;
 }
 
-} // namespace
-
-bool extract_inner_vcov_block_cell(
+// Visit every entry of one cell's constrained block the extraction computes,
+// as emit(a, b, value) with a >= b (positions into idx0). That is the whole
+// lower triangle, less the field x field off-diagonal under field_marginal,
+// which is never formed. Writing the block out and accumulating a grid mixture
+// are two sinks on this one assembly.
+template <class Emit>
+bool visit_inner_vcov_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const std::vector<int>& idx0, int n_dense,
     const std::vector<std::vector<int>>& A_cols,
     bool field_marginal,
     SparseCholeskySolver& solver,
-    std::vector<double>& out_block
+    Emit&& emit
 ) {
     const int p = static_cast<int>(idx0.size());
-    out_block.assign(static_cast<std::size_t>(p) * p, 0.0);
     if (p == 0) return true;
     if (n_dense < 0) n_dense = 0;
     if (n_dense > p) n_dense = p;
@@ -159,12 +163,54 @@ bool extract_inner_vcov_block_cell(
             }
             const double corr =
                 have_corr ? constr.correction(idx0[a], yvec[b]) : 0.0;
-            const double val = cval - corr;
-            out_block[static_cast<std::size_t>(a) + static_cast<std::size_t>(b) * p] = val;
-            out_block[static_cast<std::size_t>(b) + static_cast<std::size_t>(a) * p] = val;
+            emit(a, b, cval - corr);
         }
     }
     return true;
+}
+
+} // namespace
+
+bool extract_inner_vcov_block_cell(
+    const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
+    const std::vector<int>& idx0, int n_dense,
+    const std::vector<std::vector<int>>& A_cols,
+    bool field_marginal,
+    SparseCholeskySolver& solver,
+    std::vector<double>& out_block
+) {
+    const std::size_t p = idx0.size();
+    out_block.assign(p * p, 0.0);
+    return visit_inner_vcov_cell(
+        Qp, Qi, Qx, n_x, nnz, idx0, n_dense, A_cols, field_marginal, solver,
+        [&](int a, int b, double val) {
+            out_block[static_cast<std::size_t>(a) + static_cast<std::size_t>(b) * p] = val;
+            out_block[static_cast<std::size_t>(b) + static_cast<std::size_t>(a) * p] = val;
+        });
+}
+
+bool extract_inner_vcov_strip_cell(
+    const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
+    const std::vector<int>& idx0, int n_dense,
+    const std::vector<std::vector<int>>& A_cols,
+    bool field_marginal,
+    SparseCholeskySolver& solver,
+    InnerVcovStrip& out
+) {
+    const int p = static_cast<int>(idx0.size());
+    const int s = inner_vcov_strip_width(p, n_dense, field_marginal);
+    out.p = p;
+    out.s = s;
+    out.strip.assign(static_cast<std::size_t>(p) * s, 0.0);
+    out.diag.assign(static_cast<std::size_t>(p - s), 0.0);
+    return visit_inner_vcov_cell(
+        Qp, Qi, Qx, n_x, nnz, idx0, n_dense, A_cols, field_marginal, solver,
+        [&](int a, int b, double val) {
+            if (b < s)
+                out.strip[static_cast<std::size_t>(a) + static_cast<std::size_t>(b) * p] = val;
+            else
+                out.diag[static_cast<std::size_t>(a - s)] = val;
+        });
 }
 
 bool extract_joint_fixed_block(
@@ -250,9 +296,118 @@ bool extract_joint_eta_var(
 
 } // namespace tulpa
 
+namespace {
+
+// The R-supplied inputs both grid entries read, checked and copied to POD
+// before any parallel region opens (the R API is not thread-safe).
+struct VcovGridInputs {
+    int n_grid = 0;
+    int p = 0;
+    std::vector<int> idx0;
+    std::vector<std::vector<int>> A_cols;
+    std::vector<std::vector<int>> Qp, Qi;
+    std::vector<std::vector<double>> Qx;
+    std::vector<char> has_cell;
+    int nnz(int k) const { return static_cast<int>(Qx[k].size()); }
+};
+
+// Every R-supplied index is checked here: an index outside [1, n_x] is an
+// out-of-bounds WRITE into an n_x-sized solve buffer, and inside an OpenMP team
+// that corrupts a sibling thread's arena rather than faulting. A NULL, empty or
+// malformed cell is marked absent rather than refused: CHOLMOD and the ridge
+// fallback both index Qi / Qx off the pointer array, so a malformed cell would
+// read outside the extraction rather than fail to factor.
+VcovGridInputs read_vcov_grid_inputs(
+    Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid,
+    int n_x, Rcpp::IntegerVector idx, Rcpp::List A_cols_list
+) {
+    VcovGridInputs in;
+    in.n_grid = Q_p_per_grid.size();
+    in.p = idx.size();
+    const int n_grid = in.n_grid, p = in.p;
+
+    if (n_x <= 0)
+        Rcpp::stop("n_x (%d) must be positive.", n_x);
+    if (Q_i_per_grid.size() != (R_xlen_t)n_grid ||
+        Q_x_per_grid.size() != (R_xlen_t)n_grid)
+        Rcpp::stop("Q_p_per_grid, Q_i_per_grid and Q_x_per_grid must have the "
+                   "same length.");
+    if (p > n_x)
+        Rcpp::stop("idx holds %d indices, more than the %d latent coordinates.",
+                   p, n_x);
+
+    in.idx0.resize(p);
+    for (int t = 0; t < p; t++) {
+        const int v = idx[t];
+        if (v == NA_INTEGER || v < 1 || v > n_x)
+            Rcpp::stop("idx[%d] is not a latent index in [1, %d].", t + 1, n_x);
+        in.idx0[t] = v - 1;
+    }
+    const int kc = A_cols_list.size();
+    in.A_cols.resize(kc);
+    for (int g = 0; g < kc; g++) {
+        Rcpp::IntegerVector col = A_cols_list[g];
+        in.A_cols[g].reserve(col.size());
+        for (int e = 0; e < col.size(); e++) {
+            const int v = col[e];
+            if (v == NA_INTEGER || v < 1 || v > n_x)
+                Rcpp::stop("A_cols_list[[%d]][%d] is not a latent index in "
+                           "[1, %d].", g + 1, e + 1, n_x);
+            in.A_cols[g].push_back(v - 1);
+        }
+    }
+
+    in.Qp.resize(n_grid);
+    in.Qi.resize(n_grid);
+    in.Qx.resize(n_grid);
+    in.has_cell.assign(n_grid, 0);
+    for (int k = 0; k < n_grid; k++) {
+        if (Rf_isNull(Q_p_per_grid[k]) || Rf_isNull(Q_x_per_grid[k])) continue;
+        if (Rf_isNull(Q_i_per_grid[k])) continue;
+        Rcpp::IntegerVector Qp = Q_p_per_grid[k];
+        Rcpp::IntegerVector Qi = Q_i_per_grid[k];
+        Rcpp::NumericVector Qx = Q_x_per_grid[k];
+        const int nnz = Qx.size();
+        if (nnz == 0) continue;
+        if (Qp.size() != (R_xlen_t)n_x + 1 || Qi.size() != (R_xlen_t)nnz) continue;
+        if (Qp[0] != 0 || Qp[n_x] != nnz) continue;
+        bool well_formed = true;
+        for (int j = 0; j < n_x && well_formed; j++)
+            if (Qp[j] == NA_INTEGER || Qp[j + 1] == NA_INTEGER ||
+                Qp[j] > Qp[j + 1]) well_formed = false;
+        for (int e = 0; e < nnz && well_formed; e++)
+            if (Qi[e] == NA_INTEGER || Qi[e] < 0 || Qi[e] >= n_x)
+                well_formed = false;
+        if (!well_formed) continue;
+        in.Qp[k].assign(Qp.begin(), Qp.end());
+        in.Qi[k].assign(Qi.begin(), Qi.end());
+        in.Qx[k].assign(Qx.begin(), Qx.end());
+        in.has_cell[k] = 1;
+    }
+    return in;
+}
+
+// One CHOLMOD context per thread (common workspace is not thread-safe).
+std::vector<std::unique_ptr<tulpa::SparseCholeskySolver>> solver_pool(int nthr) {
+    std::vector<std::unique_ptr<tulpa::SparseCholeskySolver>> pool(nthr);
+    for (int t = 0; t < nthr; t++)
+        pool[t] = std::make_unique<tulpa::SparseCholeskySolver>();
+    return pool;
+}
+
+inline int omp_tid() {
+#ifdef _OPENMP
+    return omp_get_thread_num();
+#else
+    return 0;
+#endif
+}
+
+} // namespace
+
 // Rcpp entry: per-cell constrained inner-covariance blocks over the outer grid,
-// parallel across cells. Single source for the joint post-grid SD/summary path
-// (selected inversion + parallelization).
+// parallel across cells. Holds one p x p block per cell, so it is the door for a
+// small idx; cpp_joint_inner_vcov_mixture() is the grid's mixture without them.
 //
 // Q_*_per_grid : per-cell lower-triangle CSC of Qk (Q_i 0-based rows), as the
 //                joint kernel stores them; a NULL, empty or malformed cell
@@ -273,85 +428,14 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
     int n_x, Rcpp::IntegerVector idx, int n_dense,
     Rcpp::List A_cols_list, bool field_marginal = true, int n_threads = 1
 ) {
-    const int n_grid = Q_p_per_grid.size();
-    const int p = idx.size();
-
-    // Every R-supplied index is checked here, before the parallel region opens:
-    // an index outside [1, n_x] is an out-of-bounds WRITE into an n_x-sized
-    // solve buffer, and inside an OpenMP team that corrupts a sibling thread's
-    // arena rather than faulting.
-    if (n_x <= 0)
-        Rcpp::stop("n_x (%d) must be positive.", n_x);
-    if (Q_i_per_grid.size() != (R_xlen_t)n_grid ||
-        Q_x_per_grid.size() != (R_xlen_t)n_grid)
-        Rcpp::stop("Q_p_per_grid, Q_i_per_grid and Q_x_per_grid must have the "
-                   "same length.");
-    if (p > n_x)
-        Rcpp::stop("idx holds %d indices, more than the %d latent coordinates.",
-                   p, n_x);
-
-    // 1-based R indices -> 0-based POD (outside any parallel region).
-    std::vector<int> idx0(p);
-    for (int t = 0; t < p; t++) {
-        const int v = idx[t];
-        if (v == NA_INTEGER || v < 1 || v > n_x)
-            Rcpp::stop("idx[%d] is not a latent index in [1, %d].", t + 1, n_x);
-        idx0[t] = v - 1;
-    }
-    const int kc = A_cols_list.size();
-    std::vector<std::vector<int>> A_cols(kc);
-    for (int g = 0; g < kc; g++) {
-        Rcpp::IntegerVector col = A_cols_list[g];
-        A_cols[g].reserve(col.size());
-        for (int e = 0; e < col.size(); e++) {
-            const int v = col[e];
-            if (v == NA_INTEGER || v < 1 || v > n_x)
-                Rcpp::stop("A_cols_list[[%d]][%d] is not a latent index in "
-                           "[1, %d].", g + 1, e + 1, n_x);
-            A_cols[g].push_back(v - 1);
-        }
-    }
-
-    // Pre-extract every cell's CSC into POD (R API is not thread-safe). Empty /
-    // NULL cells are marked so the parallel loop skips them, and so is a cell
-    // whose CSC triple is not a well-formed n_x x n_x lower triangle: CHOLMOD
-    // and the ridge fallback both index Qi / Qx off the pointer array, so a
-    // malformed cell reads outside the extraction rather than failing to factor.
-    std::vector<std::vector<int>>    Qp_all(n_grid), Qi_all(n_grid);
-    std::vector<std::vector<double>> Qx_all(n_grid);
-    std::vector<char> has_cell(n_grid, 0);
-    for (int k = 0; k < n_grid; k++) {
-        if (Rf_isNull(Q_p_per_grid[k]) || Rf_isNull(Q_x_per_grid[k])) continue;
-        if (Rf_isNull(Q_i_per_grid[k])) continue;
-        Rcpp::IntegerVector Qp = Q_p_per_grid[k];
-        Rcpp::IntegerVector Qi = Q_i_per_grid[k];
-        Rcpp::NumericVector Qx = Q_x_per_grid[k];
-        const int nnz = Qx.size();
-        if (nnz == 0) continue;
-        if (Qp.size() != (R_xlen_t)n_x + 1 || Qi.size() != (R_xlen_t)nnz) continue;
-        if (Qp[0] != 0 || Qp[n_x] != nnz) continue;
-        bool well_formed = true;
-        for (int j = 0; j < n_x && well_formed; j++)
-            if (Qp[j] == NA_INTEGER || Qp[j + 1] == NA_INTEGER ||
-                Qp[j] > Qp[j + 1]) well_formed = false;
-        for (int e = 0; e < nnz && well_formed; e++)
-            if (Qi[e] == NA_INTEGER || Qi[e] < 0 || Qi[e] >= n_x)
-                well_formed = false;
-        if (!well_formed) continue;
-        Qp_all[k].assign(Qp.begin(), Qp.end());
-        Qi_all[k].assign(Qi.begin(), Qi.end());
-        Qx_all[k].assign(Qx.begin(), Qx.end());
-        has_cell[k] = 1;
-    }
+    const VcovGridInputs in = read_vcov_grid_inputs(
+        Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, A_cols_list);
+    const int n_grid = in.n_grid, p = in.p;
 
     // Shared resolver: the requested count clamped by OMP_THREAD_LIMIT, the
     // environment's max threads, the check-farm core cap and the work count.
     const int nthr = tulpa_omp_team_size_req(n_threads, n_grid);
-
-    // One CHOLMOD context per thread (common workspace is not thread-safe).
-    std::vector<std::unique_ptr<tulpa::SparseCholeskySolver>> pool(nthr);
-    for (int t = 0; t < nthr; t++)
-        pool[t] = std::make_unique<tulpa::SparseCholeskySolver>();
+    auto pool = solver_pool(nthr);
 
     std::vector<std::vector<double>> results(n_grid);
     std::vector<char> ok(n_grid, 0);
@@ -360,17 +444,11 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
     #pragma omp parallel for schedule(dynamic, 1) num_threads(nthr)
 #endif
     for (int k = 0; k < n_grid; k++) {
-        if (!has_cell[k]) continue;
-#ifdef _OPENMP
-        int tid = omp_get_thread_num();
-#else
-        int tid = 0;
-#endif
-        const int nnz = static_cast<int>(Qx_all[k].size());
+        if (!in.has_cell[k]) continue;
         bool good = tulpa::extract_inner_vcov_block_cell(
-            Qp_all[k].data(), Qi_all[k].data(), Qx_all[k].data(), n_x, nnz,
-            idx0, n_dense, A_cols, field_marginal,
-            *pool[tid], results[k]);
+            in.Qp[k].data(), in.Qi[k].data(), in.Qx[k].data(), n_x, in.nnz(k),
+            in.idx0, n_dense, in.A_cols, field_marginal,
+            *pool[omp_tid()], results[k]);
         ok[k] = good ? 1 : 0;
     }
 
@@ -383,4 +461,167 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
         out[k] = Mk;
     }
     return out;
+}
+
+// Rcpp entry: the outer grid's posterior covariance of idx by the law of total
+// covariance,
+//   V = sum_k w_k [ C_k + (m_k - mbar)(m_k - mbar)' ],  mbar = sum_k w_k m_k,
+// with C_k the cell's constrained block as cpp_joint_inner_vcov_blocks() forms
+// it, accumulated without ever holding one: each cell is extracted in its
+// strip shape (InnerVcovStrip, O(p n_dense) under field_marginal), a batch of
+// cells at a time across threads, and added in cell order, so the result does
+// not depend on the thread count. Memory is one p x p result plus a batch of
+// strips, whatever the grid size.
+//
+// weights : length n_grid, finite, >= 0, not all 0; normalized here. A cell of
+//           zero weight is never extracted.
+// modes   : n_grid x p matrix of cell modes on idx (rows aligned with the Q
+//           lists), or NULL for the within term alone.
+// A positive-weight cell whose block is missing (no stored Q, or its Cholesky
+// failed) keeps its weight and contributes its between term only; such cells are
+// listed in `failed` (1-based).
+//
+// Returns list(vcov = p x p, mean = mbar (NULL without modes),
+//              dense_blocks = list of n_grid n_dense x n_dense blocks (NULL where
+//              not extracted), failed = integer).
+//
+// [[Rcpp::export]]
+Rcpp::List cpp_joint_inner_vcov_mixture(
+    Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid,
+    int n_x, Rcpp::IntegerVector idx, int n_dense,
+    Rcpp::List A_cols_list, Rcpp::NumericVector weights,
+    Rcpp::Nullable<Rcpp::NumericMatrix> modes = R_NilValue,
+    bool field_marginal = true, int n_threads = 1
+) {
+    const VcovGridInputs in = read_vcov_grid_inputs(
+        Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, A_cols_list);
+    const int n_grid = in.n_grid, p = in.p;
+    const int nd = std::max(0, std::min(n_dense, p));
+    const int s = tulpa::inner_vcov_strip_width(p, n_dense, field_marginal);
+
+    if (weights.size() != (R_xlen_t)n_grid)
+        Rcpp::stop("weights has length %d, the grid has %d cells.",
+                   (int)weights.size(), n_grid);
+    double w_sum = 0.0;
+    for (int k = 0; k < n_grid; k++) {
+        const double wk = weights[k];
+        if (!std::isfinite(wk) || wk < 0.0)
+            Rcpp::stop("weights[%d] is not a finite non-negative number.", k + 1);
+        w_sum += wk;
+    }
+    if (!(w_sum > 0.0))
+        Rcpp::stop("weights carry no mass.");
+    std::vector<double> w(n_grid);
+    for (int k = 0; k < n_grid; k++) w[k] = weights[k] / w_sum;
+
+    std::vector<int> cells;
+    for (int k = 0; k < n_grid; k++) if (w[k] > 0.0) cells.push_back(k);
+    const int m = static_cast<int>(cells.size());
+
+    const bool have_modes = modes.isNotNull();
+    Rcpp::NumericMatrix M;
+    if (have_modes) {
+        M = Rcpp::NumericMatrix(modes);
+        if (M.nrow() != n_grid || M.ncol() != p)
+            Rcpp::stop("modes is %d x %d; expected %d x %d (grid cells x idx).",
+                       M.nrow(), M.ncol(), n_grid, p);
+        for (int k : cells)
+            for (int a = 0; a < p; a++)
+                if (!std::isfinite(M(k, a)))
+                    Rcpp::stop("modes[%d, %d] is not finite on a cell carrying "
+                               "weight.", k + 1, a + 1);
+    }
+
+    const int nthr = tulpa_omp_team_size_req(n_threads, std::max(m, 1));
+    auto pool = solver_pool(nthr);
+
+    // Within term: the strip and field diagonal accumulated in cell order.
+    std::vector<double> acc_strip(static_cast<std::size_t>(p) * s, 0.0);
+    std::vector<double> acc_diag(static_cast<std::size_t>(p - s), 0.0);
+    std::vector<std::vector<double>> dense(n_grid);
+    std::vector<char> ok(n_grid, 0);
+
+    std::vector<tulpa::InnerVcovStrip> slot(nthr);
+    std::vector<char> slot_ok(nthr, 0);
+    for (int start = 0; start < m; start += nthr) {
+        const int nb = std::min(nthr, m - start);
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(dynamic, 1) num_threads(nthr)
+#endif
+        for (int j = 0; j < nb; j++) {
+            const int k = cells[start + j];
+            slot_ok[j] = 0;
+            if (!in.has_cell[k]) continue;
+            slot_ok[j] = tulpa::extract_inner_vcov_strip_cell(
+                in.Qp[k].data(), in.Qi[k].data(), in.Qx[k].data(), n_x,
+                in.nnz(k), in.idx0, n_dense, in.A_cols, field_marginal,
+                *pool[omp_tid()], slot[j]) ? 1 : 0;
+        }
+        for (int j = 0; j < nb; j++) {
+            if (!slot_ok[j]) continue;
+            const int k = cells[start + j];
+            const double wk = w[k];
+            const tulpa::InnerVcovStrip& c = slot[j];
+            for (int b = 0; b < s; b++) {
+                const std::size_t col = static_cast<std::size_t>(b) * p;
+                for (int a = b; a < p; a++)
+                    acc_strip[col + a] += wk * c.strip[col + a];
+            }
+            for (int i = 0; i < p - s; i++) acc_diag[i] += wk * c.diag[i];
+            std::vector<double>& D = dense[k];
+            D.assign(static_cast<std::size_t>(nd) * nd, 0.0);
+            for (int b = 0; b < nd; b++)
+                for (int a = b; a < nd; a++) {
+                    const double v = c.strip[static_cast<std::size_t>(a) +
+                                             static_cast<std::size_t>(b) * p];
+                    D[static_cast<std::size_t>(a) + static_cast<std::size_t>(b) * nd] = v;
+                    D[static_cast<std::size_t>(b) + static_cast<std::size_t>(a) * nd] = v;
+                }
+            ok[k] = 1;
+        }
+    }
+
+    Rcpp::NumericMatrix V(p, p);
+    Eigen::Map<Eigen::MatrixXd> Vm(V.begin(), p, p);
+    Rcpp::RObject mean_out = R_NilValue;
+    if (have_modes) {
+        Rcpp::NumericVector mbar(p);
+        for (int k : cells)
+            for (int a = 0; a < p; a++) mbar[a] += w[k] * M(k, a);
+        // Between term as one symmetric rank-m update of the weighted
+        // deviations, lower triangle.
+        Eigen::MatrixXd Dev(p, m);
+        for (int j = 0; j < m; j++) {
+            const int k = cells[j];
+            const double sw = std::sqrt(w[k]);
+            for (int a = 0; a < p; a++) Dev(a, j) = sw * (M(k, a) - mbar[a]);
+        }
+        Vm.selfadjointView<Eigen::Lower>().rankUpdate(Dev);
+        mean_out = mbar;
+    }
+    for (int b = 0; b < s; b++)
+        for (int a = b; a < p; a++)
+            Vm(a, b) += acc_strip[static_cast<std::size_t>(a) +
+                                  static_cast<std::size_t>(b) * p];
+    for (int i = s; i < p; i++) Vm(i, i) += acc_diag[i - s];
+    for (int b = 0; b < p; b++)
+        for (int a = b + 1; a < p; a++) Vm(b, a) = Vm(a, b);
+
+    Rcpp::List dense_out(n_grid);
+    std::vector<int> failed;
+    for (int k = 0; k < n_grid; k++) {
+        if (!ok[k]) {
+            dense_out[k] = R_NilValue;
+            if (w[k] > 0.0) failed.push_back(k + 1);
+            continue;
+        }
+        Rcpp::NumericMatrix Dk(nd, nd);
+        std::copy(dense[k].begin(), dense[k].end(), Dk.begin());
+        dense_out[k] = Dk;
+    }
+    return Rcpp::List::create(
+        Rcpp::Named("vcov") = V,
+        Rcpp::Named("mean") = mean_out,
+        Rcpp::Named("dense_blocks") = dense_out,
+        Rcpp::Named("failed") = Rcpp::wrap(failed));
 }

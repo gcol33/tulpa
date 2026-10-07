@@ -257,6 +257,10 @@ cpp_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid
     .Call(`_tulpa_cpp_joint_inner_vcov_blocks`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads)
 }
 
+cpp_joint_inner_vcov_mixture <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, weights, modes = NULL, field_marginal = TRUE, n_threads = 1L) {
+    .Call(`_tulpa_cpp_joint_inner_vcov_mixture`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, weights, modes, field_marginal, n_threads)
+}
+
 cpp_laplace_fit_multi_re <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, re_Z_list = NULL, re_ncoefs = NULL, weights = NULL, offset = NULL, x_init = NULL, beta_prior_mean = NULL, beta_prior_sd = NULL, return_re_cov = FALSE, phi2 = NA_real_, X_zi = NULL, zi_prior_sd = 2.5, return_joint_hessian = FALSE, compute_skew = FALSE, skew_idx = NULL, debias = NULL) {
     .Call(`_tulpa_cpp_laplace_fit_multi_re`, y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads, re_Z_list, re_ncoefs, weights, offset, x_init, beta_prior_mean, beta_prior_sd, return_re_cov, phi2, X_zi, zi_prior_sd, return_joint_hessian, compute_skew, skew_idx, debias)
 }
