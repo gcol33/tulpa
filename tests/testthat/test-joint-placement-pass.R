@@ -177,7 +177,8 @@ test_that("a transported mode leaves out an axis the mode-find did not resolve",
 test_that("new points are levels of every row that holds the posterior", {
     f <- .cp_calluna_like()
     calls <- 0L
-    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                          screen = NULL) {
         calls <<- calls + 1L
         list(log_marginal = f$lp(new_cells))
     }
@@ -220,7 +221,8 @@ test_that("an axis a placement laid at the mode is left as it is", {
     tg <- matrix(grid, ncol = 1L, dimnames = list(NULL, "sigma"))
     lm <- -0.5 * ((log(grid) - log(2)) / sd)^2
     calls <- 0L
-    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                          screen = NULL) {
         calls <<- calls + 1L
         list(log_marginal = -0.5 * ((log(new_cells[, 1]) - log(2)) / sd)^2)
     }
@@ -244,7 +246,8 @@ test_that("points laid from a mode off the peak are closed where they are read",
     # centred on the mode, held a quarter of the axis.
     f <- .cp_calluna_like(offset = 1.1)
     calls <- 0L
-    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                          screen = NULL) {
         calls <<- calls + 1L
         list(log_marginal = f$lp(new_cells))
     }
@@ -265,7 +268,8 @@ test_that("a correlated axis is laid at its mode in every row", {
     f <- .cp_calluna_like(beta = (1.25 * 0.15) / log(3.91 / 3.25))
     base_best <- f$tg[which.max(f$lp(f$tg)), "alpha"]
     expect_gt(abs(log(base_best / f$a0)), 0.15)
-    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE)
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                          screen = NULL)
         list(log_marginal = f$lp(new_cells))
     out <- .hyper_consistency_pass(f$tg, f$lp(f$tg), NULL, rep("", nrow(f$tg)),
                                    f$specs, kernel_fn, axis_modes = f$modes)
@@ -281,7 +285,8 @@ test_that("a collapsed axis with a known mode is resolved without bisecting to i
                             refinable = TRUE, extend = FALSE)
     lp <- function(v) -0.5 * ((log(v) - log(4.2)) / 0.05)^2
     calls <- 0L
-    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                          screen = NULL) {
         calls <<- calls + 1L
         list(log_marginal = lp(new_cells[, "phi_pos"]))
     }

@@ -14,6 +14,19 @@
   cell's fixed-effect block for a mixture draw. Both doors read one per-cell
   assembly.
 
+* The cells a refinement pass adds to the outer grid go through the cheap-pass
+  screen the declared grid goes through, at the fit's own `prune_tol`, on the
+  joint, multi-block and registry doors (gcol33/tulpa#948). A round's cells
+  are ranked against the mass of the grid they join, not against each other,
+  so a level laid across rows that hold no posterior, or an axis extended off
+  the mode, costs a truncated solve per cell instead of a full inner Newton.
+  The dropped-mass bound is read over the merged grid under its final measure.
+  On the 25 km Calluna occu_cover fit 605 of 878 solved cells carried weight
+  under 1e-6; on the test fixture the screen leaves 67 of 204 cells for a
+  full solve (208 of 208 unscreened), with the hyperparameter means within
+  0.01 posterior SD. A refinement kernel now takes
+  `kernel_fn(new_cells, warm_start, store_extras, screen)`.
+
 # tulpa 0.7.0
 
 This release collects 0.6.11 and 0.6.12; their entries below carry the detail.

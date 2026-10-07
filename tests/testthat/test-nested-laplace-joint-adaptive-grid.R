@@ -235,5 +235,9 @@ test_that("a refined cell's convergence and log-determinant flags are recorded w
     added <- nzchar(capped$refining_axis)
     expect_length(capped$converged, nrow(capped$theta_grid))
     expect_false(any(capped$converged[added]))
-    expect_true(all(which(added) %in% capped$nonconverged_cells))
+    # A cell the screen dropped was never solved, so it is not counted as one
+    # that stopped short of its mode.
+    solved <- added & !capped$prune_mask
+    expect_true(any(solved))
+    expect_true(all(which(solved) %in% capped$nonconverged_cells))
 })

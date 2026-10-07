@@ -1248,11 +1248,13 @@
 # side data leaves only inside `extras`, so a call that asks for none requests
 # neither the precision nor the fixed-effect block.
 .joint_multi_make_kernel_fn <- function(call_kernel, arm_names, x_init_default,
-                                        store_Q = FALSE) {
+                                        store_Q = FALSE, screen_tol = 0,
+                                        screen_hp = NULL) {
     function(new_cells, warm_start = NULL, store_extras = FALSE,
-             x_init_per_cell = NULL) {
+             x_init_per_cell = NULL, screen = NULL) {
         x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
                       as.numeric(warm_start$mode) else x_init_default
+        scr <- .nl_refine_screen_offset(new_cells, screen, screen_tol, screen_hp)
         res_x <- call_kernel(
             new_cells, x_init = x_init,
             store_Q = isTRUE(store_Q) && isTRUE(store_extras),
@@ -1260,7 +1262,9 @@
             phi_grid_per_arm = .joint_multi_phi_per_arm(new_cells, arm_names),
             x_init_per_cell = .joint_warm_start_per_cell(warm_start,
                                                          x_init_per_cell,
-                                                         nrow(new_cells)))
+                                                         nrow(new_cells)),
+            prune_tol = if (is.null(scr)) 0 else screen_tol,
+            screen_log_offset = scr)
         list(log_marginal = res_x$log_marginal,
              extras = if (isTRUE(store_extras))
                           .joint_extras_from_res(res_x, nrow(new_cells)),
@@ -2084,13 +2088,16 @@
     refining_axis   <- NULL
     refine_on <- !use_ccd && !use_adaptive && is.null(local_ccd_info) &&
         (isTRUE(adaptive_grid) || isTRUE(var_of_means_consistency))
-    refine_kernel <- .joint_multi_make_kernel_fn(call_kernel, arm_names, x_init,
-                                                 store_Q)
-    refine_hp <- function(cells)
+    refine_hp_record <- function(cells)
         .joint_multi_hyperprior(
             cells, fn_sigma, fn_alpha, fn_phi, blocks = prepared,
             families = hp_families, copy_atom_mass = copy_atom_mass,
-            hyperprior = hyperprior, declared = hp_declared)$lp
+            hyperprior = hyperprior, declared = hp_declared)
+    refine_hp <- function(cells) refine_hp_record(cells)$lp
+    refine_kernel <- .joint_multi_make_kernel_fn(call_kernel, arm_names, x_init,
+                                                 store_Q,
+                                                 screen_tol = as.numeric(prune_tol),
+                                                 screen_hp = refine_hp_record)
     grid_lm     <- res$log_marginal
     grid_extras <- .joint_init_extras_from_res(res)
     n_added <- 0L
@@ -2161,7 +2168,7 @@
         hyperprior = hyperprior, hp_declared = hp_declared,
         refining = refining_axis,
         axis_refine = if (refine_on) axis_refine_modes)
-    res         <- integ$res
+    res         <- .nl_prune_merged_record(integ$res)
     multi_specs <- integ$specs
     if (refine_on) {
         res$axis_span <- .joint_axis_span(joint_grid_init, res$theta_grid,

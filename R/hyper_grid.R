@@ -22,7 +22,10 @@
   store_beta <- combine != "none"
   store_cov  <- combine == "law_of_total_cov"
 
-  function(new_cells, warm_start = NULL, store_extras = store_beta) {
+  # A caller's `inner_fit` has no cheap pass, so every cell is solved and
+  # `screen` is not read.
+  function(new_cells, warm_start = NULL, store_extras = store_beta,
+           screen = NULL) {
     n_new <- nrow(new_cells)
     log_marg <- rep(-Inf, n_new)
     extras   <- if (isTRUE(store_extras)) vector("list", n_new) else NULL

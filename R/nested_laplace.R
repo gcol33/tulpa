@@ -640,9 +640,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
           likelihood = likelihood, progress = .nl_progress_args(control),
           within_cell = within_cell))
       refined <- .nl_refine_registry(
-        out, function(theta_mat) .nl_dispatch_multi(
-          cargs_no_ckpt, prior_i, likelihood = likelihood,
-          theta_grid_override = theta_mat),
+        out, function(theta_mat, screen = NULL) .nl_dispatch_multi(
+          .nl_refine_cargs(cargs_no_ckpt, screen, prune_tol_eff), prior_i,
+          likelihood = likelihood, theta_grid_override = theta_mat),
         prior_i, TRUE, .prov$auto,
         consistency = var_of_means_consistency,
         adaptive_grid = adaptive_grid,
@@ -740,10 +740,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       function() .nl_dispatch(type, utils::modifyList(cargs, list(prune_tol = 0)),
                               prior_i, prior_i))
     .nl_refine_registry(
-      out, function(theta_mat) {
+      out, function(theta_mat, screen = NULL) {
         blk2 <- .nl_registry_write_theta(
           list(prior_i), theta_mat, colnames(theta_mat))[[1L]]
-        .nl_dispatch(type, cargs_no_ckpt, blk2, prior_i)
+        .nl_dispatch(type, .nl_refine_cargs(cargs_no_ckpt, screen, prune_tol_eff),
+                     blk2, prior_i)
       },
       prior_i, FALSE, .prov$auto,
       consistency = var_of_means_consistency,
@@ -1495,6 +1496,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   if (!is.null(spec$cpp_fn)) .nl_check_block_fields(p, c("axis", "single"))
   hyperprior <- .hp_choice(a$hyperprior)
   a$hyperprior <- NULL
+  # A refinement round's screen record (`.hyper_refine_screen()`): the cells
+  # are a batch joining a solved grid. Read here, never handed to a kernel.
+  screen <- a$screen_refine
+  a$screen_refine <- NULL
   p   <- spec$defaults(p, a)
   th  <- spec$theta(p)
   tg  <- .nl_theta_matrix(list(theta_grid = th$grid, theta_names = th$names))
@@ -1510,7 +1515,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # the grid solve, the placement refit and its stencil, the k-hat refit. A
   # screened solve ranks its cells with it too.
   hp  <- list(.nl_block_log_hyperprior(p, tg, hyperprior, declared = hp_declared))
-  if ((a$prune_tol %||% 0) > 0) a$screen_log_offset <- .nl_screen_log_offset(tg, hp)
+  if ((a$prune_tol %||% 0) > 0) {
+    a$screen_log_offset <- .nl_screen_log_offset(tg, hp, screen = screen)
+  }
   out <- do.call(spec$cpp_fn, c(spec$pack(p), a))
   out$theta_grid  <- th$grid
   out$theta_names <- th$names
@@ -1523,7 +1530,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # order. Both are fixed by the grid before any cell is solved, and together with
 # the kernel's log-marginal they are the posterior weight a cell ends up with,
 # so the screen and the full pass rank the same quantity.
-.nl_screen_log_offset <- function(tg, hp_parts, specs = NULL) {
+#
+# `screen` is the record a refinement round hands its kernel
+# (`.hyper_refine_screen()`): the cells are a batch joining a solved grid, so
+# their measure is read on the merged grid (`log_measure`) rather than on the
+# batch, and the grid's own mass (`log_ref`) travels as the offset's `log_ref`
+# attribute, which the kernel's screen normalises against.
+.nl_screen_log_offset <- function(tg, hp_parts, specs = NULL, screen = NULL) {
   tg <- as.matrix(tg)
   n  <- nrow(tg)
   lp <- numeric(n)
@@ -1532,12 +1545,21 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     lp <- lp + hp$lp
     axes <- union(axes, hp$axes)
   }
-  if (is.null(specs) && !is.null(colnames(tg))) {
-    specs <- .joint_axis_specs_from_grid(tg, folded_axes = axes)
+  lq <- if (!is.null(screen)) {
+    if (length(screen$log_measure) != n) {
+      stop("A refinement screen measures ", length(screen$log_measure),
+           " cells; the kernel call holds ", n, ".", call. = FALSE)
+    }
+    screen$log_measure
+  } else {
+    if (is.null(specs) && !is.null(colnames(tg))) {
+      specs <- .joint_axis_specs_from_grid(tg, folded_axes = axes)
+    }
+    .hyper_log_quad_weights(tg, specs)
   }
-  lq <- .hyper_log_quad_weights(tg, specs)
   off <- lp + (if (length(lq) == n) lq else 0)
   off[is.na(off)] <- -Inf
+  if (!is.null(screen)) attr(off, "log_ref") <- as.numeric(screen$log_ref)
   off
 }
 
@@ -1558,6 +1580,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res$axis_support <- .hyper_grid_supports(tg, specs, refining = refining)
   res$weights      <- .nl_normalise_weights_safe(res$log_marginal, what,
                                                  log_quad = res$log_quad)
+  res <- .nl_prune_merged_record(res)
   .nl_attach_evidence(res, tg, specs)
 }
 
@@ -2555,7 +2578,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     cila              = cila,
     offset_nullable   = cargs$offset_nullable,
     screen_log_offset = if (prune_tol > 0)
-                          .nl_screen_log_offset(joint_grid, hp_parts)
+                          .nl_screen_log_offset(joint_grid, hp_parts,
+                                                screen = cargs$screen_refine)
   )
   if (!is.null(grid_warn_remedy)) {
     .nl_multi_grid_warn(proc.time()[["elapsed"]] - grid_solve_start,

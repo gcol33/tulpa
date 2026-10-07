@@ -2250,7 +2250,9 @@ tulpa_nested_laplace_joint <- function(responses,
                                         cell_coupling = cell_coupling,
                                         hessian_pd_mode = hessian_pd_mode,
                                         step_curvature_mode = step_curvature_mode,
-                                        inner_refresh = inner_refresh)
+                                        inner_refresh = inner_refresh,
+                                        screen_tol = prune_tol_eff,
+                                        screen_hp = hp_record)
     # `theta_grid_init` is the grid as it was declared, kept so the fit can
     # report the span it was given apart from the span refinement left it with.
     theta_grid_M  <- theta_grid_init
@@ -2311,6 +2313,7 @@ tulpa_nested_laplace_joint <- function(responses,
     res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid",
                                                   log_quad = res$log_quad)
     res$log_hyperprior <- hp_fn(res$theta_grid)
+    res             <- .nl_prune_merged_record(res)
     res             <- .nl_attach_evidence(res, res$theta_grid, specs)
     res             <- .nl_posterior_moments(res, paste0("joint_", type),
                                              within = within_cell)

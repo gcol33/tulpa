@@ -185,7 +185,7 @@ inline Rcpp::List run_single_arm_block_joint(
     const SubspaceDebiasOptions* debias, const CilaOptions* cila,
     int screen_iters, bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> offset,
-    const std::vector<double>& screen_log_offset
+    const ScreenOffset& screen_log_offset
 ) {
     std::vector<ParsedArm> parsed;
     std::vector<JointArm> arms;
@@ -286,7 +286,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
     const std::vector<double>& offset = std::vector<double>(),
     // Per-cell log hyperprior + log cell measure the cheap screen ranks with
     // (run_nested_laplace_grid); empty ranks on the log-marginal alone.
-    const std::vector<double>& screen_log_offset = std::vector<double>()
+    const ScreenOffset& screen_log_offset = ScreenOffset()
 ) {
     int n_x = p + n_re_groups;
     for (const auto& b : blocks) {

@@ -49,6 +49,53 @@
   gap_tol
 }
 
+# The screen offset a refinement round's kernel call carries
+# (`.hyper_refine_screen()`), or NULL when the call is not screened: the door
+# screens nothing (`tol` 0), the round brought no screen record, or the call
+# holds a single cell, which the driver never screens. `hp` maps the cells to
+# the door's hyperprior record (`$lp`), NULL where the dispatcher folds its own.
+.nl_refine_screen_offset <- function(cells, screen, tol, hp = NULL) {
+  if (is.null(screen) || !(tol > 0) || nrow(cells) < 2L) return(NULL)
+  .nl_screen_log_offset(cells, if (is.null(hp)) list() else list(hp(cells)),
+                        screen = screen)
+}
+
+# The dispatcher arguments a registry refinement call runs under: unscreened
+# (`cargs` as given, which carries `prune_tol = 0`) unless the round brought a
+# screen record and the fit screens, in which case the fit's tolerance and the
+# record the dispatcher builds the offset from (`screen_refine`).
+.nl_refine_cargs <- function(cargs, screen, tol) {
+  if (is.null(screen) || !(tol > 0)) return(cargs)
+  cargs$prune_tol <- tol
+  cargs$screen_refine <- screen
+  cargs
+}
+
+# The cheap-pass record of a grid whose cells were screened in more than one
+# call -- the declared grid, then each refinement round against the grid it
+# joined -- read over the merged grid: the count dropped, the offset every cell
+# is ranked with under the grid's final measure (`log_hyperprior` plus
+# `log_quad`), and the share of the posterior the dropped cells may carry
+# (`.nl_prune_dropped_mass()`). Each call bounded its own dropped mass against
+# the grid it joined; this is the bound on the fit the caller receives.
+.nl_prune_merged_record <- function(res) {
+  if (!any(nzchar(res$refining_axis %||% ""))) return(res)
+  mask <- res$prune_mask
+  n <- length(res$log_marginal)
+  if (is.null(mask) || length(mask) != n) return(res)
+  hp <- .nl_log_hyperprior_folded(res, n)
+  lq <- res$log_quad
+  if (is.null(hp) || length(lq) != n) return(res)
+  mask <- as.logical(mask)
+  mask[is.na(mask)] <- FALSE
+  res$prune_mask <- mask
+  res$prune_n_pruned <- sum(mask)
+  res$prune_screen_log_offset <- hp + lq
+  res$prune_screen_log_ref <- NULL
+  res$prune_dropped_mass_bound <- .nl_prune_dropped_mass(res)
+  res
+}
+
 # The screen took the placement pass down with it: the fit was screened, the
 # outer axis was never re-placed, and the reason is that no curvature could be
 # read. On a full grid that reason is a posterior the finite-difference stencil

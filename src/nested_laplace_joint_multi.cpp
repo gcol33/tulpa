@@ -1653,8 +1653,7 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         inner_sparse_override,
         screen_iters,
         want_eta_var,
-        screen_log_offset.isNull() ? std::vector<double>()
-            : Rcpp::as<std::vector<double>>(screen_log_offset),
+        tulpa::read_screen_offset(screen_log_offset),
         screen_only
     );
     // Per-cell eta at each cell's own mode. The driver leaves `modes` behind
@@ -2116,7 +2115,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     int                              inner_sparse_override,
     int                              screen_iters,
     bool                             compute_eta_var,
-    const std::vector<double>&       screen_log_offset,
+    const ScreenOffset&              screen_log_offset,
     bool                             screen_only) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
@@ -2538,7 +2537,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     const CilaOptions*               cila,
     int                              screen_iters,
     bool                             compute_eta_var,
-    const std::vector<double>&       screen_log_offset,
+    const ScreenOffset&              screen_log_offset,
     bool                             screen_only
 ) {
     const int n_arms = static_cast<int>(arms.size());

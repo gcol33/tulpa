@@ -33,13 +33,18 @@
 #                         which fix the span and any prior read off the nodes.
 #
 # kernel_fn signature:
-#   function(new_cells, warm_start = NULL, store_extras = FALSE) -> list(
+#   function(new_cells, warm_start = NULL, store_extras = FALSE,
+#            screen = NULL) -> list(
 #     log_marginal = numeric[nrow(new_cells)],
 #     extras       = list[nrow(new_cells)] or NULL
 #   )
 # `warm_start` is opaque to refinement: refinement passes whatever the
 # anchor cell's extras carry, and the kernel decides how to use it (e.g.
 # read $mode from joint extras to warm-start the kernel call).
+# `screen` (`.hyper_refine_screen()`) is what a kernel that screens needs to
+# drop new cells against the grid they join; a kernel that does not screen
+# ignores it. A dropped cell reads `log_marginal = -Inf`, as a screened base
+# cell does.
 
 # ============================================================================
 # Spec lookups -- the single point where axis metadata is read.
@@ -587,7 +592,10 @@
                          warm_start = .hyper_row_warm_starts(
                            cells, theta_grid, log_marginal, extras, axis_name,
                            warm_start),
-                         store_extras = !is.null(extras))
+                         store_extras = !is.null(extras),
+                         screen = .hyper_refine_screen(
+                           theta_grid, log_marginal, refining_axis, cells,
+                           axis_name, specs))
     new_lm <- fit_out$log_marginal
     if (!is.null(hp_fn)) {
       hp_new <- hp_fn(cells)
@@ -613,6 +621,29 @@
   list(theta_grid = theta_grid, log_marginal = log_marginal,
        extras = extras, refining_axis = refining_axis, n_new = n_new,
        n_levels = length(levels))
+}
+
+# What a round's kernel needs to screen the cells it is handed against the grid
+# they join (gcol33/tulpa#948): each new cell's log measure on the merged grid,
+# and the log posterior mass of the solved grid under that same measure. A door
+# that screens adds its hyperprior to the measure (`.nl_screen_log_offset()`)
+# and drops a cell whose screened share of the merged grid's mass is below its
+# tolerance, so a level laid across rows that hold none of the posterior costs
+# the cheap pass rather than a full inner solve per cell. NULL when the grid
+# holds no solved mass to measure against, or the measure cannot be read.
+.hyper_refine_screen <- function(theta_grid, log_marginal, refining, cells,
+                                 axis, specs) {
+  n0 <- nrow(theta_grid)
+  merged <- rbind(theta_grid, cells)
+  lq <- .hyper_log_quad_weights(merged, specs,
+                                refining = c(refining, rep(axis, nrow(cells))))
+  if (length(lq) != nrow(merged)) return(NULL)
+  lw <- log_marginal + lq[seq_len(n0)]
+  lw <- lw[is.finite(lw)]
+  if (!length(lw)) return(NULL)
+  top <- max(lw)
+  list(log_measure = lq[n0 + seq_len(nrow(cells))],
+       log_ref = top + log(sum(exp(lw - top))))
 }
 
 # The warm start a round of new cells is solved from. `fallback` is the round's

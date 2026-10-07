@@ -79,9 +79,8 @@ struct NlEntryInputs {
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue;
 
     int N() const { return static_cast<int>(y.size()); }
-    std::vector<double> screen_offset() const {
-        if (screen_log_offset.isNull()) return std::vector<double>();
-        return Rcpp::as<std::vector<double>>(screen_log_offset);
+    ScreenOffset screen_offset() const {
+        return read_screen_offset(screen_log_offset);
     }
     int p() const { return X.ncol(); }
 };

@@ -139,7 +139,8 @@ test_that("the consistency pass fires on the ESS, not on an SD comparison", {
   tg <- matrix(lev, ncol = 1L, dimnames = list(NULL, "sigma"))
   lm <- -0.5 * ((log(lev) - log(1)) / 0.05)^2
   called <- 0L
-  kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
+  kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                          screen = NULL) {
     called <<- called + 1L
     list(log_marginal = -0.5 * ((log(new_cells[, "sigma"]) - log(1)) / 0.05)^2,
          extras = NULL)

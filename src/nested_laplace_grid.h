@@ -444,6 +444,38 @@ static const int CHEAP_SCREEN_MIN_KEEP = 5;
 // reads and which a test pins to this value.
 static const double CHEAP_SCREEN_GATE_MASS = 0.01;
 
+// What the screen ranks a call's cells with, beyond the kernel's own
+// log-marginal: each cell's log hyperprior plus its log cell measure (`off`),
+// and the log posterior mass of the grid the call's cells JOIN (`log_ref`).
+// A call that is the whole grid carries no reference, and its cells are
+// normalised against each other. A refinement round's call is a batch of cells
+// added to a grid already solved, so a cell's weight is its screened mass over
+// the batch's plus the grid's: without the reference every batch keeps its own
+// best cells, however far below the grid's posterior the whole batch sits.
+// `log_ref` reaches the kernel as the `log_ref` attribute of the offset vector,
+// so every entry that takes the offset takes it.
+struct ScreenOffset {
+    std::vector<double> off;
+    double log_ref = -std::numeric_limits<double>::infinity();
+    bool empty() const { return off.empty(); }
+    std::size_t size() const { return off.size(); }
+    double operator[](std::size_t k) const { return off[k]; }
+    bool has_ref() const { return std::isfinite(log_ref); }
+};
+
+inline ScreenOffset read_screen_offset(
+    const Rcpp::Nullable<Rcpp::NumericVector>& x) {
+    ScreenOffset s;
+    if (x.isNull()) return s;
+    Rcpp::NumericVector v(x);
+    s.off.assign(v.begin(), v.end());
+    if (v.hasAttribute("log_ref")) {
+        Rcpp::NumericVector r = v.attr("log_ref");
+        if (r.size() == 1 && std::isfinite(r[0])) s.log_ref = r[0];
+    }
+    return s;
+}
+
 // A screened cell's estimate of its converged log-marginal: the truncated
 // solve's value plus the gain of the steps it did not take, half the Newton
 // decrement where it stopped to second order, but never more than the next
@@ -729,9 +761,10 @@ inline Rcpp::List run_nested_laplace_grid(
     // NoResumeRefill; the default is a no-op, so a caller keeping nothing
     // outside `LaplaceResult` is unaffected.
     ResumeRefill resume_refill = ResumeRefill{},
-    // Per-cell log hyperprior + log cell measure the screen ranks with; empty
-    // ranks on the kernel's log-marginal alone.
-    const std::vector<double>& screen_log_offset = std::vector<double>(),
+    // Per-cell log hyperprior + log cell measure the screen ranks with, and the
+    // mass of the grid the cells join (ScreenOffset); empty ranks on the
+    // kernel's log-marginal alone.
+    const ScreenOffset& screen_log_offset = ScreenOffset(),
     // Return the screened surface instead of solving the kept cells in full:
     // every cell but the pilot carries its cheap log-marginal and the pilot's
     // mode. For a grid read only to DETECT where the posterior sits (a
@@ -921,6 +954,7 @@ inline Rcpp::List run_nested_laplace_grid(
     int n_cells_pruned = 0;
     // Cells the kept-set floor put back after the tolerance dropped them.
     int n_floor_restored = 0;
+    int n_min_keep = std::min(n_grid, CHEAP_SCREEN_MIN_KEEP);
     // The screen's realised cut, in nats below the best cheap cell, and the
     // spread of the whole screened surface. Both reported, so a caller reads
     // what the tolerance meant on THIS grid instead of inferring it.
@@ -1122,11 +1156,19 @@ inline Rcpp::List run_nested_laplace_grid(
                     cheap_argmax = k;
                 }
             }
+            // A call joining a solved grid normalises against that grid's mass
+            // as well (ScreenOffset::log_ref), so the cut is a share of the
+            // posterior the cells join rather than of the call alone.
+            const bool has_ref = screen_log_offset.has_ref();
+            if (has_ref && screen_log_offset.log_ref > m) {
+                m = screen_log_offset.log_ref;
+            }
             double Z = 0.0;
             if (std::isfinite(m)) {
                 for (double v : screen_lm) {
                     if (std::isfinite(v)) Z += std::exp(v - m);
                 }
+                if (has_ref) Z += std::exp(screen_log_offset.log_ref - m);
             }
             // The tolerance is a normalised weight, so the gap in nats it
             // actually cuts at is `-(log(prune_tol) + log(Z))`: a cell is
@@ -1185,7 +1227,11 @@ inline Rcpp::List run_nested_laplace_grid(
             // infeasible cell has no mode to solve at and would come back
             // -Inf, so a grid holding too few feasible cells stays below the
             // floor and reports how many it could restore.
-            const int min_keep = std::min(n_grid, CHEAP_SCREEN_MIN_KEEP);
+            // A call joining a solved grid adds to a surface the placement has
+            // already read, so it carries no floor.
+            const int min_keep = has_ref ? 0
+                                 : std::min(n_grid, CHEAP_SCREEN_MIN_KEEP);
+            n_min_keep = min_keep;
             int n_kept_cells = n_grid - n_cells_pruned;
             if (n_kept_cells < min_keep) {
                 std::vector<int> restorable;
@@ -1505,7 +1551,11 @@ inline Rcpp::List run_nested_laplace_grid(
                 }
             }
             if (!std::isfinite(top) || !std::isfinite(e_max)) break;
-            double den = 0.0;
+            // The grid the call's cells join is kept mass too.
+            const double log_ref = screen_log_offset.log_ref;
+            if (screen_log_offset.has_ref() && log_ref > top) top = log_ref;
+            double den = screen_log_offset.has_ref() ? std::exp(log_ref - top)
+                                                     : 0.0;
             for (int k = 0; k < n_grid; k++) {
                 if (!pruned[k] && std::isfinite(cell_results[k].log_marginal)) {
                     den += std::exp(kept_rank(k) - top);
@@ -1604,7 +1654,10 @@ inline Rcpp::List run_nested_laplace_grid(
         out["prune_tol"]                = prune_tol;
         out["prune_screen_iters"]       = screen_steps;
         if (!screen_log_offset.empty()) {
-            out["prune_screen_log_offset"] = Rcpp::wrap(screen_log_offset);
+            out["prune_screen_log_offset"] = Rcpp::wrap(screen_log_offset.off);
+        }
+        if (screen_log_offset.has_ref()) {
+            out["prune_screen_log_ref"] = screen_log_offset.log_ref;
         }
         // What the tolerance cut at (nats below the best cheap cell), what the
         // screened surface spans, the floor that was applied and how many cells
@@ -1612,8 +1665,7 @@ inline Rcpp::List run_nested_laplace_grid(
         // the tolerance had any resolution on this grid at all.
         out["prune_log_gap_cut"]        = prune_log_gap_cut;
         out["prune_cheap_lm_spread"]    = prune_cheap_spread;
-        out["prune_min_keep"]           = std::min(n_grid,
-                                                   CHEAP_SCREEN_MIN_KEEP);
+        out["prune_min_keep"]           = n_min_keep;
         out["prune_n_floor_restored"]   = n_floor_restored;
         out["prune_screen_only"]        = screen_read;
         // The dropped-mass bound the kept set closed at, how many dropped cells

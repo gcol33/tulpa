@@ -46,21 +46,26 @@
         eligible = function(a) a %in% refinable)
 }
 
-# One `kernel_fn(new_cells, warm_start, store_extras)` for the passes, over
-# `solve(theta_mat)`: the dispatcher's result for those rows. Each call's whole
+# One `kernel_fn(new_cells, warm_start, store_extras, screen)` for the passes,
+# over `solve(theta_mat, screen)`: the dispatcher's result for those rows,
+# screened against the grid they join when `screen` is given. Each call's whole
 # result is kept in `chunks`, in the order the passes append their cells. A call
 # is split where its size equals the base grid's, so that a field's length can
 # tell a per-cell field from one that only happens to have as many entries as
-# the grid has cells.
+# the grid has cells; each part takes its own cells' share of the screen.
 .nl_chunked_kernel <- function(solve, n_base) {
     chunks <- list()
-    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                          screen = NULL) {
         n <- nrow(new_cells)
         parts <- if (n == n_base && n > 1L) list(seq_len(n - 1L), n)
                  else list(seq_len(n))
         lm <- numeric(0)
         for (ix in parts) {
-            r <- solve(new_cells[ix, , drop = FALSE])
+            scr <- if (!is.null(screen) && length(ix) > 1L)
+                list(log_measure = screen$log_measure[ix],
+                     log_ref = screen$log_ref)
+            r <- solve(new_cells[ix, , drop = FALSE], scr)
             chunks[[length(chunks) + 1L]] <<- list(res = r, n = length(ix))
             lm <- c(lm, as.numeric(r$log_marginal))
         }

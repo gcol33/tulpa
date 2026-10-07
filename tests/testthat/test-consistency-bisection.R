@@ -48,7 +48,8 @@ test_that("a marginal peaking on an outermost level is not bisected", {
     target <- function(a) -8 * log(a)
     tg <- matrix(lev, ncol = 1L, dimnames = list(NULL, "alpha"))
     called <- 0L
-    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                          screen = NULL) {
         called <<- called + 1L
         list(log_marginal = target(new_cells[, "alpha"]), extras = NULL)
     }
@@ -75,7 +76,8 @@ test_that("the pass re-reads the ESS and bisects until the axis is resolved", {
     specs <- list(log_axis_spec(lev))
     tg <- matrix(lev, ncol = 1L, dimnames = list(NULL, "alpha"))
     rounds <- 0L
-    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                          screen = NULL) {
         rounds <<- rounds + 1L
         list(log_marginal = target(new_cells[, "alpha"]), extras = NULL)
     }
@@ -98,7 +100,8 @@ test_that("the node budget stops a marginal no bisection can resolve", {
     target <- function(a) -0.5 * ((log(a) - log(0.8)) / 0.002)^2
     specs <- list(log_axis_spec(lev))
     tg <- matrix(lev, ncol = 1L, dimnames = list(NULL, "alpha"))
-    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE) {
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                          screen = NULL) {
         list(log_marginal = target(new_cells[, "alpha"]), extras = NULL)
     }
     out <- tulpa:::.hyper_consistency_pass(

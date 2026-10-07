@@ -127,7 +127,7 @@ test_that("per-cell fields are bound by shape, constants left alone", {
 
 test_that("a call as large as the base grid is split so shapes stay unambiguous", {
     seen <- integer(0)
-    ck <- tulpa:::.nl_chunked_kernel(function(theta) {
+    ck <- tulpa:::.nl_chunked_kernel(function(theta, screen = NULL) {
         seen <<- c(seen, nrow(theta))
         list(log_marginal = seq_len(nrow(theta)))
     }, 4L)

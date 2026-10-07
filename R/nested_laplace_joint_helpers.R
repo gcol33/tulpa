@@ -1172,7 +1172,8 @@ tulpa_joint_axis_specs_from_grid <- function(
                                   step_curvature_mode = 0L,
                                   inner_refresh = 1L,
                                   fixed_block_p = 0L,
-                                  fixed_block_constraints = NULL) {
+                                  fixed_block_constraints = NULL,
+                                  screen_tol = 0, screen_hp = NULL) {
     function(new_cells, warm_start = NULL, store_extras = FALSE,
              max_iter_override = NULL, n_threads_outer = 1L,
              inner_refresh_override = NULL, tol_override = NULL,
@@ -1190,8 +1191,12 @@ tulpa_joint_axis_specs_from_grid <- function(
              debias = NULL,
              # Corrected integrated Laplace: the
              # kernel-facing request list, off by default for the same reason.
-             cila = NULL) {
+             cila = NULL,
+             # A refinement round's cells screened against the grid they join
+             # (`.hyper_refine_screen()`), at the fit's own tolerance.
+             screen = NULL) {
         new_grids <- .joint_grids_from_cells(new_cells, cp)
+        scr <- .nl_refine_screen_offset(new_cells, screen, screen_tol, screen_hp)
         slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
                         as.numeric(warm_start$mode) else x_init_default
         x_init_per_cell <- .joint_warm_start_per_cell(warm_start, x_init_per_cell,
@@ -1238,7 +1243,9 @@ tulpa_joint_axis_specs_from_grid <- function(
                                       compute_skew = compute_skew,
                                       skew_idx = skew_idx,
                                       debias = debias,
-                                      cila = cila)
+                                      cila = cila,
+                                      prune_tol = if (is.null(scr)) 0 else screen_tol,
+                                      screen_log_offset = scr)
         extras <- NULL
         if (isTRUE(store_extras)) {
             extras <- .joint_extras_from_res(res_x, nrow(new_cells))
@@ -1293,9 +1300,13 @@ tulpa_joint_axis_specs_from_grid <- function(
 #   "lgl" -- a length-n_grid logical vector; a cell without one reads FALSE
 #   "elt" -- a length-n_grid list; cell k is element k
 .JOINT_CELL_FIELDS <- list(
-    # The cells the cheap-pass screen dropped unsolved. Every cell a refinement
-    # or consistency pass adds is solved in full, so it reads FALSE.
+    # The cells the cheap-pass screen dropped unsolved, and each screened
+    # cell's cheap log-marginal on the kernel's own scale. A refinement round
+    # is screened against the grid its cells join (gcol33/tulpa#948); a cell
+    # no screen saw reads FALSE / NA.
     list(res = "prune_mask",        extra = "pruned",    kind = "lgl"),
+    list(res = "prune_cheap_log_marginal", extra = "cheap_lm", kind = "num"),
+    list(res = "prune_screen_decrement", extra = "cheap_dec", kind = "num"),
     list(res = "modes",             extra = "mode",      kind = "row"),
     # The per-cell linear predictor and its within-cell variance: the pair a
     # grid-mixture predictive read draws a replicate from

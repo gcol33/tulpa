@@ -377,20 +377,25 @@
 # The share of the posterior a screened grid's dropped cells may carry. With c
 # a cell's screened and f its full log-posterior -- the kernel's log-marginal
 # plus the hyperprior and cell measure the screen ranked with -- and
-# e_max = max over kept cells of (f - c), the worst error measured,
+# e_max = max over kept cells the screen saw of (f - c), the worst error
+# measured,
 #
-#   B = sum_{j dropped} exp(c_j + e_max) / sum_{k kept} exp(f_k).
+#   B = sum_{j dropped} exp(c_j + e_max) / (R + sum_{k kept} exp(f_k)).
 #
 # A constant error cancels (B is then the screened share of the dropped cells,
 # which the tolerance already bounds); an error that varies across the kept
-# cells lifts every dropped cell by the worst of it. `Inf` when nothing was
-# kept, `NA` when the result carries no screen to read.
+# cells lifts every dropped cell by the worst of it. A kept cell no screen saw
+# (a single-cell refinement call) is mass in the denominator with no error to
+# read. R is the mass of the grid a refinement call's cells joined
+# (`prune_screen_log_ref`), 0 for a call that is the whole grid. `Inf` when
+# nothing was kept, `NA` when the result carries no screen to read.
 .nl_prune_dropped_mass <- function(res) {
     mask  <- as.logical(res$prune_mask)
     lm    <- as.numeric(res$log_marginal)
     cheap <- as.numeric(res$prune_cheap_log_marginal)
     n <- length(lm)
     if (length(mask) != n || length(cheap) != n) return(NA_real_)
+    mask[is.na(mask)] <- FALSE
     folded <- .nl_log_hyperprior_folded(res, n)
     if (!is.null(folded)) lm <- lm - folded
     off <- res$prune_screen_log_offset
@@ -398,11 +403,14 @@
         lm    <- lm + off
         cheap <- cheap + off
     }
-    kept <- !mask & is.finite(lm) & is.finite(cheap)
+    kept <- !mask & is.finite(lm)
+    seen <- kept & is.finite(cheap)
     drop <- mask & is.finite(cheap)
-    if (!any(kept)) return(Inf)
+    ref  <- as.numeric(res$prune_screen_log_ref %||% -Inf)
+    if (!any(seen)) return(Inf)
     if (!any(drop)) return(0)
-    e_max <- max(lm[kept] - cheap[kept])
-    top   <- max(lm[kept])
-    sum(exp(cheap[drop] + e_max - top)) / sum(exp(lm[kept] - top))
+    e_max <- max(lm[seen] - cheap[seen])
+    top   <- max(c(lm[kept], ref))
+    sum(exp(cheap[drop] + e_max - top)) /
+        (exp(ref - top) + sum(exp(lm[kept] - top)))
 }

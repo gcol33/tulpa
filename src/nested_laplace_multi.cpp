@@ -677,8 +677,7 @@ Rcpp::List cpp_nested_laplace_multi(
         tulpa::CilaRequest(cila).ptr,
         tulpa::CHEAP_SCREEN_ITERS, /*compute_fitted_var=*/true,
         tulpa::as_offset_vec(offset_nullable, N),
-        screen_log_offset.isNull() ? std::vector<double>()
-            : Rcpp::as<std::vector<double>>(screen_log_offset)
+        tulpa::read_screen_offset(screen_log_offset)
     );
     out["theta_grid"]     = theta_grid;
     out["axis_offsets"]   = axis_offsets;

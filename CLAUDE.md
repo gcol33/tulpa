@@ -266,7 +266,12 @@ a kept cell, and repairs past `CHEAP_SCREEN_GATE_MASS` (mirrors
 `.NL_SCREEN$gate_mass`) by solving the dropped cells that carry the bound. The
 R gate reads the same bound. Do not reintroduce a gate on the screen's argmax:
 on a placed grid neighbouring cells are within a few nats, and the ranking says
-nothing about the dropped mass (gcol33/tulpa#925).
+nothing about the dropped mass (gcol33/tulpa#925). A refinement round's
+cells are screened too, against the grid they join: `.hyper_refine_screen()`
+hands the kernel each new cell's measure on the merged grid and the grid's own
+mass, which reaches the driver as the `log_ref` attribute of the screen offset
+(`ScreenOffset`, `nested_laplace_grid.h`), and `.nl_prune_merged_record()`
+re-reads the bound over the merged grid (gcol33/tulpa#948).
 
 **Both joint doors refine through one runner.** `.joint_refine_outer_grid()`
 (`R/nested_laplace_joint_helpers.R`) runs the opt-in boundary / interior pass
