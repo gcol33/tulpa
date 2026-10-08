@@ -162,6 +162,12 @@ tulpa_posterior_draws.tulpa_nested_laplace <- function(fit, idx = NULL,
     # remain, and `retained_mass` below 1 is how a reader tells that apart from a
     # complete grid.
     attr(out, "retained_mass") <- mom$mass
+    # The mixture the rows were drawn from, so a summary of them can report its
+    # exact moments rather than their Monte-Carlo estimate
+    # (`.grid_mixture_moments()`).
+    attr(out, "grid_mixture") <- list(
+        weights = mom$w, modes = mu,
+        vars = mom$var[, idx, drop = FALSE])
     .nl_attach_hyper_draws(out, fit)
 }
 

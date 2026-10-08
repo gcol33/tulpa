@@ -181,7 +181,8 @@ test_that("diagnostics() returns one finite row per parameter on a small joint f
   expect_equal(nrow(rel), 4L)
   # i.i.d. draws carry no chain, so the table withholds rhat / ESS and reports
   # the Monte-Carlo error of the mean instead (gcol33/tulpa#713).
-  expect_setequal(names(rel), c("parameter", "mean", "sd", "n_draws", "mcse_mean"))
+  expect_setequal(names(rel), c("parameter", "mean", "sd", "n_draws", "mcse_mean",
+                               "moment_source"))
   expect_true(all(is.finite(rel$mean)))
   expect_true(all(is.finite(rel$sd)))
   expect_equal(rel$mcse_mean, rel$sd / sqrt(rel$n_draws))

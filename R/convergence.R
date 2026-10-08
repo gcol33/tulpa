@@ -424,6 +424,81 @@ posterior_sample <- function(fit) {
   draws
 }
 
+# Exact first two moments of a Gaussian mixture a draw matrix was sampled from.
+#
+# A sampler that draws i.i.d. from a known outer-grid mixture stamps it on its
+# output as `attr(draws, "grid_mixture")`: `weights` (one per cell), `modes`
+# (cells x p, the leading p columns of the draws) and the within-cell spread as
+# either `vars` (cells x p marginal variances) or `covs` (a list of p x p
+# covariances; a NULL or non-finite entry is a cell drawn at its mode). The
+# moments follow from the law of total variance,
+#   mean = sum_k w_k m_k,   var = sum_k w_k (v_k + m_k^2) - mean^2,
+# so a summary can report them instead of the Monte-Carlo estimate the draws
+# give. A draw matrix carries the attribute only while it IS that mixture's
+# sample: draws the subspace debias corrected are a different posterior and are
+# not stamped. NULL when there is no mixture.
+#' @keywords internal
+.grid_mixture_moments <- function(draws) {
+  gm <- attr(draws, "grid_mixture")
+  if (is.null(gm) || is.null(gm$modes) || is.null(gm$weights)) return(NULL)
+  modes <- as.matrix(gm$modes)
+  w <- as.numeric(gm$weights)
+  if (length(w) != nrow(modes)) return(NULL)
+  w[!is.finite(w) | w < 0] <- 0
+  if (!any(w > 0)) return(NULL)
+  w <- w / sum(w)
+  p <- ncol(modes)
+  vars <- if (!is.null(gm$vars)) {
+    as.matrix(gm$vars)
+  } else if (!is.null(gm$covs) && length(gm$covs) == nrow(modes)) {
+    t(vapply(gm$covs, function(C) {
+      d <- if (is.null(C)) rep(0, p) else diag(as.matrix(C))[seq_len(p)]
+      if (all(is.finite(d))) d else rep(0, p)
+    }, numeric(p)))
+  } else return(NULL)
+  if (!identical(dim(vars), dim(modes))) return(NULL)
+  on <- w > 0
+  wk <- w[on]
+  mk <- modes[on, , drop = FALSE]
+  m  <- colSums(wk * mk)
+  v  <- colSums(wk * (vars[on, , drop = FALSE] + mk^2)) - m^2
+  list(mean = m, sd = sqrt(pmax(v, 0)))
+}
+
+# Per-column posterior moments a fit carries EXACTLY for its draw matrix, as
+# `mean` / `sd` vectors over the draw columns, NA where only the draws describe
+# that column. The leading columns come from the stamped mixture
+# (`.grid_mixture_moments()`); columns past it -- a model package's
+# hyperparameter tail, drawn from its Gaussian conditional given the mixture
+# block -- come from the fit's own `$means` / `$sds`, joined by parameter name.
+# Both are read only on a stamped draw matrix, since that stamp is what says
+# the draws were sampled from the moments the fit reports. NULL when nothing is
+# exact.
+#' @keywords internal
+.tulpa_exact_moments <- function(draws, nm, fit = NULL) {
+  mom <- .grid_mixture_moments(draws)
+  if (is.null(mom)) return(NULL)
+  n_col <- length(nm)
+  mean <- rep(NA_real_, n_col)
+  sd   <- rep(NA_real_, n_col)
+  lead <- seq_len(min(length(mom$mean), n_col))
+  mean[lead] <- mom$mean[lead]
+  sd[lead]   <- mom$sd[lead]
+  tail <- setdiff(seq_len(n_col), lead)
+  fm <- if (is.list(fit)) fit[["means"]] else NULL
+  fs <- if (is.list(fit)) fit[["sds"]] else NULL
+  if (length(tail) && !is.null(names(fm)) && !is.null(names(fs))) {
+    hit <- tail[nm[tail] %in% names(fm) & nm[tail] %in% names(fs)]
+    mean[hit] <- as.numeric(fm[nm[hit]])
+    sd[hit]   <- as.numeric(fs[nm[hit]])
+  }
+  ok <- is.finite(mean) & is.finite(sd)
+  mean[!ok] <- NA_real_
+  sd[!ok]   <- NA_real_
+  if (!any(ok)) return(NULL)
+  list(mean = mean, sd = sd)
+}
+
 #' MCMC chain draws from a fit
 #'
 #' Returns a fit's posterior draws only when they form a genuine MCMC chain

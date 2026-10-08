@@ -212,7 +212,7 @@ test_that("diagnostics() reports the band on a fit with no draws", {
   # non-chain fit, and this table is where it dispatches instead
   # (gcol33/tulpa#713).
   expect_identical(names(d), c("parameter", "mean", "sd", "n_draws",
-                               "mcse_mean"))
+                               "mcse_mean", "moment_source"))
 
   # The headline the guard used to withhold: a k-hat past the escalation
   # threshold is reported, banded, and folded into the verdict.
@@ -317,4 +317,55 @@ test_that("a fitted single-block nested-Laplace posterior samples its own grid",
   d <- diagnostics(fit)
   expect_s3_class(d, "laplace_diagnostics")
   expect_true(is.finite(attr(d, "ess_grid")))
+})
+
+test_that("diagnostics() reports the mixture's exact moments, not the draws' (#949)", {
+  fit <- nl_fixture()
+  mom <- tulpa:::.nested_fixed_moments(fit)
+
+  set.seed(3)
+  fit$draws <- tulpa_posterior_draws(fit, n = 500L)
+  d1 <- diagnostics(fit)
+  set.seed(4)
+  fit$draws <- tulpa_posterior_draws(fit, n = 500L)
+  d2 <- diagnostics(fit)
+
+  expect_equal(d1$mean, mom$mean, tolerance = 1e-12)
+  expect_equal(d1$sd, sqrt(diag(mom$cov)), tolerance = 1e-12)
+  expect_identical(d1$moment_source, c("mixture_moments", "mixture_moments"))
+  expect_equal(d1$mcse_mean, c(0, 0))
+  # The same fit read twice reports the same table whatever the RNG state.
+  expect_identical(d1[, c("mean", "sd")], d2[, c("mean", "sd")])
+
+  # summary()'s estimate and SE make the same read of the same draws.
+  tab <- tulpa:::.fit_fixed_table(fit)
+  expect_equal(unname(tab$estimate), mom$mean, tolerance = 1e-12)
+  expect_equal(unname(tab$std.error), sqrt(diag(mom$cov)), tolerance = 1e-12)
+})
+
+test_that("draws without a mixture stamp keep the draw moments (#949)", {
+  fit <- nl_fixture()
+  set.seed(5)
+  dr <- tulpa_posterior_draws(fit, n = 300L)
+  attr(dr, "grid_mixture") <- NULL
+  fit$draws <- dr
+  d <- diagnostics(fit)
+  expect_identical(d$moment_source, c("draws", "draws"))
+  expect_equal(d$mean, unname(colMeans(dr)), tolerance = 1e-12)
+  expect_equal(d$mcse_mean, d$sd / sqrt(300), tolerance = 1e-12)
+})
+
+test_that("a mixture stamp covers its leading columns; the tail joins $means / $sds by name (#949)", {
+  set.seed(6)
+  dr <- cbind(a = rnorm(200), b = rnorm(200), h = rnorm(200, 2, 0.5))
+  attr(dr, "grid_mixture") <- list(
+    weights = c(1, 3), modes = rbind(c(0, 1), c(2, 1)),
+    covs = list(diag(c(1, 4)), NULL))
+  fit <- list(means = c(a = 9, h = 2), sds = c(a = 9, h = 0.5))
+  ex <- tulpa:::.tulpa_exact_moments(dr, colnames(dr), fit)
+  # Cell 2 is drawn at its mode: within variance 0.
+  w <- c(0.25, 0.75)
+  m_a <- sum(w * c(0, 2)); v_a <- sum(w * (c(1, 0) + c(0, 2)^2)) - m_a^2
+  expect_equal(ex$mean, c(m_a, 1, 2))
+  expect_equal(ex$sd, c(sqrt(v_a), sqrt(0.25 * 4), 0.5))
 })

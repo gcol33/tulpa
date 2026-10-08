@@ -532,6 +532,14 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
       out[d, ] <- beta_nodes[k, ] + as.numeric(Lb[[k]] %*% stats::rnorm(p))
     }
     colnames(out) <- beta_names %||% paste0("beta", seq_len(p))
+    # The plain path samples exactly this node mixture, so its moments travel
+    # with the draws (`.grid_mixture_moments()`); the debiased path below is a
+    # different posterior and is not stamped.
+    vars <- matrix(0, nrow(beta_nodes), p)
+    for (k in which(ok)) vars[k, ] <- diag(beta_cov_nodes[[k]])
+    modes <- beta_nodes
+    modes[!ok, ] <- 0
+    attr(out, "grid_mixture") <- list(weights = w2, modes = modes, vars = vars)
     return(list(draws = out, picks = picks))
   }
 
@@ -2034,7 +2042,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     ok <- is.finite(rowSums(beta_nodes)) & w > 0
     if (any(ok)) colSums(w[ok] / sum(w[ok]) * beta_nodes[ok, , drop = FALSE])
     else rep(NA_real_, p_fix)
-  } else colMeans(draws)
+  } else (.grid_mixture_moments(draws)$mean %||% colMeans(draws))
   names(beta_mean) <- beta_names
 
   # --- outer Pareto-k-hat: is the Gaussian grid proposal correctable? --------

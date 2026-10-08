@@ -251,9 +251,16 @@
 #'
 #' @section Approximation-reliability table columns:
 #' The table has one row per parameter -- `parameter`, `mean`, `sd`, `n_draws`,
-#' `mcse_mean` -- carrying attributes. There is deliberately no `rhat` /
-#' `ess_*` column: those are what the draws-provenance gate withholds on a
-#' non-chain fit, and this table is where it dispatches instead.
+#' `mcse_mean`, `moment_source` -- carrying attributes. There is deliberately
+#' no `rhat` / `ess_*` column: those are what the draws-provenance gate
+#' withholds on a non-chain fit, and this table is where it dispatches instead.
+#' Where the draws were sampled from an outer-grid mixture the fit carries
+#' (`attr(draws, "grid_mixture")`, stamped by [tulpa_posterior_draws()] on a
+#' single-block fit, by [tulpa_re_cov_nested()] and by model packages),
+#' `mean` / `sd` are that mixture's exact moments, `mcse_mean` is 0 and
+#' `moment_source` is `"mixture_moments"`; otherwise they are the draw
+#' moments, `mcse_mean` is `sd / sqrt(n_draws)` and `moment_source` is
+#' `"draws"`.
 #' \describe{
 #'   \item{`pareto_k`}{the outer PSIS reliability k-hat (`NA` if not computed).}
 #'   \item{`pareto_k_band`}{`"good"` / `"ok"` / `"unreliable"` / `NA`.}

@@ -1591,18 +1591,34 @@
 # `mcse_mean` is the quantity the vacuous columns were standing in for: on
 # independent draws the Monte-Carlo error of the reported mean is sd/sqrt(n),
 # which says directly whether a summary is draw-limited.
+#
+# Where the draws were sampled i.i.d. from a mixture the fit carries exactly
+# (`.tulpa_exact_moments()`), `mean` / `sd` are that mixture's moments and
+# `mcse_mean` is 0: the reported number carries no Monte-Carlo error, and it is
+# the same on every run of the same fit (gcol33/tulpa#949). `moment_source`
+# names the read per row, `"mixture_moments"` or `"draws"`.
 .tulpa_iid_param_table <- function(draws, pars = NULL, fit = NULL) {
+  nm <- .tulpa_draw_names(colnames(draws), fit, NCOL(draws))
+  exact <- .tulpa_exact_moments(draws, nm, fit)
   draws <- as.matrix(draws)
-  nm <- .tulpa_draw_names(colnames(draws), fit, ncol(draws))
   keep <- if (is.null(pars)) seq_along(nm) else which(nm %in% pars)
   if (length(keep) == 0L) return(NULL)
   n <- nrow(draws)
   out <- data.frame(parameter = nm[keep],
                     mean = NA_real_, sd = NA_real_,
                     n_draws = n, mcse_mean = NA_real_,
+                    moment_source = "draws",
                     stringsAsFactors = FALSE, row.names = NULL)
   for (i in seq_along(keep)) {
-    x <- draws[, keep[i]]
+    j <- keep[i]
+    if (!is.null(exact) && is.finite(exact$mean[j])) {
+      out$mean[i] <- exact$mean[j]
+      out$sd[i]   <- exact$sd[j]
+      out$mcse_mean[i] <- 0
+      out$moment_source[i] <- "mixture_moments"
+      next
+    }
+    x <- draws[, j]
     out$mean[i] <- mean(x)
     out$sd[i]   <- stats::sd(x)
     if (n >= 2L && is.finite(out$sd[i])) {
@@ -2091,7 +2107,12 @@ print.laplace_diagnostics <- function(x, ...) {
   cat(sprintf("  %d parameters, %d draws; mcse_mean below is the i.i.d.\n",
               nrow(x), if (is.null(s)) NA_integer_ else s$n_draws))
   cat("  Monte-Carlo error of each reported mean (not chain mixing:\n")
-  cat("  Rhat and ESS are not defined for these draws).\n\n")
+  cat("  Rhat and ESS are not defined for these draws).\n")
+  if (any(x$moment_source == "mixture_moments")) {
+    cat("  Rows with moment_source \"mixture_moments\" report the exact moments\n")
+    cat("  of the outer-grid mixture the draws were sampled from (mcse_mean 0).\n")
+  }
+  cat("\n")
   print(as.data.frame(x), ...)
   invisible(x)
 }

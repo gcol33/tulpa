@@ -439,10 +439,25 @@
     idx <- seq_len(ncol(fd))
     nm  <- (object$fixed_names %||% object$param_names %||%
               colnames(fd) %||% paste0("param", idx))[idx]
+    est <- colMeans(fd)
+    se  <- apply(fd, 2, stats::sd)
+    # Draws sampled from a mixture the fit carries report its exact moments,
+    # the read diagnostics() makes of the same draws (gcol33/tulpa#949).
+    raw <- object[["draws"]]
+    if (is.matrix(raw) && nrow(raw) >= 1L) {
+      ex <- .tulpa_exact_moments(
+        raw, .tulpa_draw_names(colnames(raw), object, ncol(raw)), object)
+      cols <- .fixed_draw_cols(object)
+      if (!is.null(ex) && length(cols) == ncol(fd)) {
+        hit <- which(is.finite(ex$mean[cols]))
+        est[hit] <- ex$mean[cols][hit]
+        se[hit]  <- ex$sd[cols][hit]
+      }
+    }
     return(data.frame(
       term      = nm,
-      estimate  = colMeans(fd),
-      std.error = apply(fd, 2, stats::sd),
+      estimate  = est,
+      std.error = se,
       conf.low  = apply(fd, 2, stats::quantile, a),
       conf.high = apply(fd, 2, stats::quantile, 1 - a),
       row.names = NULL, stringsAsFactors = FALSE

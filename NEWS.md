@@ -1,5 +1,22 @@
 # tulpa 0.7.1
 
+* `diagnostics()` reports the exact moments of the outer-grid mixture a
+  fit's draws were sampled from, in place of the Monte-Carlo mean and SD of
+  those draws (gcol33/tulpa#949). A sampler that draws i.i.d. from a known
+  mixture stamps it on the draws as `attr(., "grid_mixture")` (weights,
+  per-cell modes, per-cell variances or covariances);
+  `tulpa_posterior_draws()` on a single-block fit and the node mixture of
+  `tulpa_re_cov_nested()` now do, as tulpaObs's grid-mixture draws already
+  did. Those rows carry `mcse_mean = 0` and `moment_source =
+  "mixture_moments"`, columns past the stamped block join the fit's
+  `$means` / `$sds` by name, and every other row keeps the draw moments with
+  `moment_source = "draws"`. Draws the subspace debias corrected are a
+  different posterior and are not stamped. On a 25 km Calluna `occu_cover`
+  fit the 1,000-draw table differed from the exact means by an rms of 0.032
+  posterior SD and from the exact SDs by a ratio of 0.935 to 1.066, and
+  changed with the RNG state; the estimate and SE `summary()` reads off the
+  same draws now come from the same exact moments.
+
 * `tulpa_joint_inner_vcov_mixture()` returns the outer grid's posterior
   covariance of a joint fit's latent coordinates by the law of total
   covariance, accumulated in the engine without one `length(idx)` square block

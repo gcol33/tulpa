@@ -225,9 +225,16 @@ full latent field is not scored by default on a large spatial field.
 \section{Approximation-reliability table columns}{
 
 The table has one row per parameter -- \code{parameter}, \code{mean}, \code{sd}, \code{n_draws},
-\code{mcse_mean} -- carrying attributes. There is deliberately no \code{rhat} /
-\verb{ess_*} column: those are what the draws-provenance gate withholds on a
-non-chain fit, and this table is where it dispatches instead.
+\code{mcse_mean}, \code{moment_source} -- carrying attributes. There is deliberately
+no \code{rhat} / \verb{ess_*} column: those are what the draws-provenance gate
+withholds on a non-chain fit, and this table is where it dispatches instead.
+Where the draws were sampled from an outer-grid mixture the fit carries
+(\code{attr(draws, "grid_mixture")}, stamped by \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}} on a
+single-block fit, by \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} and by model packages),
+\code{mean} / \code{sd} are that mixture's exact moments, \code{mcse_mean} is 0 and
+\code{moment_source} is \code{"mixture_moments"}; otherwise they are the draw
+moments, \code{mcse_mean} is \code{sd / sqrt(n_draws)} and \code{moment_source} is
+\code{"draws"}.
 \describe{
 \item{\code{pareto_k}}{the outer PSIS reliability k-hat (\code{NA} if not computed).}
 \item{\code{pareto_k_band}}{\code{"good"} / \code{"ok"} / \code{"unreliable"} / \code{NA}.}
