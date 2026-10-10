@@ -1,3 +1,26 @@
+# tulpa 0.7.3
+
+* The joint driver's outer-grid placement now places every scale axis of a
+  multi-block prior, not only a copied field's SD: an iid random effect's SD
+  and an arm-specific field's precision are laid at the outer mode like the
+  copied field's, and both fire on an unresolved posterior as well as on a
+  rail (gcol33/tulpa#951). The placement mode-find searches each axis over the
+  nodes it was declared on, so an axis that the adaptive lattice, a pilot or
+  the prune screen kept at one node is no longer frozen out of it, and its
+  trust region shortens the Newton step as a whole, which keeps it uphill on a
+  correlated outer posterior. On the full 25 km occu_cover fits these axes had
+  been integrated at a single grid node with posterior SD 0. An axis still
+  holding 0.99 of its marginal on one node is recorded
+  (`outer_grid_single_node_axes`) and warned about when the engine was free
+  to place it.
+
+* A cell whose inner Hessian is not positive definite at the point the inner
+  Newton returned is re-solved from a converged neighbour and, if it stays
+  indefinite, left out of the integration and recorded (`indefinite_cells`,
+  `indefinite_mass`) with a warning (gcol33/tulpa#952). Under a flat outer
+  hyperprior such a cell had carried weight and made every posterior draw
+  fail its Cholesky.
+
 # tulpa 0.7.2
 
 * The per-observation log densities of the gaussian, lognormal and beta
