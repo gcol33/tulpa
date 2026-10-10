@@ -35,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.1</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -92,8 +92,29 @@
 
     
     
+<div class="section level2">
+<h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
+</h2>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Current release, built for Windows and macOS</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"tulpa"</span>,</span>
+<span>                 repos <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"https://gcol33.r-universe.dev"</span>,</span>
+<span>                           <span class="st">"https://cloud.r-project.org"</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Development version from GitHub</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"pak"</span><span class="op">)</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Pin a release</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.6.0"</span><span class="op">)</span></span></code></pre></div>
+<p><code>pak</code> resolves the dependency tree, including
+<code>tulpaMesh</code> (on CRAN, used for SPDE mesh construction).
+<code>tulpa</code> compiles its C++ backend on first install, so a C++17
+toolchain is required: Rtools on Windows, Xcode CLI tools on macOS,
+<code>r-base-dev</code> on Linux.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/gcol33/tulpa" class="external-link">tulpa</a></span><span class="op">)</span></span></code></pre></div>
+</div>
 <div class="section level2">
 <h2 id="why-a-temporal-field">Why a temporal field<a class="anchor" aria-label="anchor" href="#why-a-temporal-field"></a>
 </h2>
@@ -184,7 +205,7 @@ trend does not jump, and beyond that it can take whatever shape the data
 support, quadratic or sinusoidal or neither.</p>
 <p>A first-order random walk says that consecutive time points should be
 close. Formally, the increments are independent and Gaussian,</p>
-<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ϕ</mi><mi>t</mi></msub><mo>−</mo><msub><mi>ϕ</mi><mrow><mi>t</mi><mo>−</mo><mn>1</mn></mrow></msub><mspace width="0.278em"></mspace><mo>∼</mo><mspace width="0.278em"></mspace><mi mathvariant="script">𝒩</mi><mspace width="-0.167em"></mspace><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mspace width="0.278em"></mspace><msup><mi>τ</mi><mrow><mi>−</mi><mn>1</mn></mrow></msup><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo><mspace width="2.0em"></mspace><mi>t</mi><mo>=</mo><mn>2</mn><mo>,</mo><mi>…</mi><mo>,</mo><mi>T</mi><mo>,</mo></mrow><annotation encoding="application/x-tex">
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ϕ</mi><mi>t</mi></msub><mo>−</mo><msub><mi>ϕ</mi><mrow><mi>t</mi><mo>−</mo><mn>1</mn></mrow></msub><mspace width="0.278em"></mspace><mo>∼</mo><mspace width="0.278em"></mspace><mi>𝒩</mi><mspace width="-0.167em"></mspace><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mspace width="0.278em"></mspace><msup><mi>τ</mi><mrow><mi>−</mi><mn>1</mn></mrow></msup><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo><mspace width="2.0em"></mspace><mi>t</mi><mo>=</mo><mn>2</mn><mo>,</mo><mi>…</mi><mo>,</mo><mi>T</mi><mo>,</mo></mrow><annotation encoding="application/x-tex">
 \phi_t - \phi_{t-1} \;\sim\; \mathcal{N}\!\left(0,\; \tau^{-1}\right),
 \qquad t = 2, \dots, T,
 </annotation></semantics></math></p>
@@ -230,7 +251,7 @@ it.</p>
 <p>The conditional form of the prior makes the smoothing concrete.
 Conditional on its neighbours, an interior time point has mean equal to
 the average of the two adjacent points,</p>
-<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="double-struck">𝔼</mi><mspace width="-0.167em"></mspace><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>ϕ</mi><mi>t</mi></msub><mo>∣</mo><msub><mi>ϕ</mi><mrow><mi>−</mi><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">]</mo></mrow><mo>=</mo><mstyle displaystyle="false"><mfrac><mn>1</mn><mn>2</mn></mfrac></mstyle><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>ϕ</mi><mrow><mi>t</mi><mo>−</mo><mn>1</mn></mrow></msub><mo>+</mo><msub><mi>ϕ</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo><mspace width="2.0em"></mspace><mrow><mi mathvariant="normal">V</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">r</mi></mrow><mspace width="-0.167em"></mspace><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>ϕ</mi><mi>t</mi></msub><mo>∣</mo><msub><mi>ϕ</mi><mrow><mi>−</mi><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">]</mo></mrow><mo>=</mo><mstyle displaystyle="false"><mfrac><mn>1</mn><mn>2</mn></mfrac></mstyle><mspace width="0.167em"></mspace><msup><mi>τ</mi><mrow><mi>−</mi><mn>1</mn></mrow></msup><mi>.</mi></mrow><annotation encoding="application/x-tex">
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>𝔼</mi><mspace width="-0.167em"></mspace><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>ϕ</mi><mi>t</mi></msub><mo>∣</mo><msub><mi>ϕ</mi><mrow><mi>−</mi><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">]</mo></mrow><mo>=</mo><mstyle displaystyle="false"><mfrac><mn>1</mn><mn>2</mn></mfrac></mstyle><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>ϕ</mi><mrow><mi>t</mi><mo>−</mo><mn>1</mn></mrow></msub><mo>+</mo><msub><mi>ϕ</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo><mspace width="2.0em"></mspace><mrow><mi mathvariant="normal">V</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">r</mi></mrow><mspace width="-0.167em"></mspace><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>ϕ</mi><mi>t</mi></msub><mo>∣</mo><msub><mi>ϕ</mi><mrow><mi>−</mi><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">]</mo></mrow><mo>=</mo><mstyle displaystyle="false"><mfrac><mn>1</mn><mn>2</mn></mfrac></mstyle><mspace width="0.167em"></mspace><msup><mi>τ</mi><mrow><mi>−</mi><mn>1</mn></mrow></msup><mi>.</mi></mrow><annotation encoding="application/x-tex">
 \mathbb{E}\!\left[\phi_t \mid \phi_{-t}\right]
 = \tfrac{1}{2}\left(\phi_{t-1} + \phi_{t+1}\right),
 \qquad
@@ -302,7 +323,7 @@ you choose. Lay down
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mo>=</mo><mn>30</mn></mrow><annotation encoding="application/x-tex">T = 30</annotation></semantics></math>
 time points and a smooth seasonal-looking trend, a single sine wave
 centred at zero so it does not fight the intercept.</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">T_pts</span> <span class="op">&lt;-</span> <span class="fl">30L</span></span>
 <span><span class="va">trend</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/scale.html" class="external-link">scale</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">sin</a></span><span class="op">(</span><span class="fl">2</span> <span class="op">*</span> <span class="va">pi</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">T_pts</span><span class="op">)</span> <span class="op">/</span> <span class="va">T_pts</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 <p>Scaling to mean zero and unit variance keeps the trend on a
@@ -316,7 +337,7 @@ and build a binary response. The true intercept is
 the true slope is
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.9</mn><annotation encoding="application/x-tex">0.9</annotation></semantics></math>,
 and each observation picks up the trend value at its time point.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">42</span><span class="op">)</span></span>
 <span><span class="va">n</span>     <span class="op">&lt;-</span> <span class="fl">900L</span></span>
 <span><span class="va">time</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">T_pts</span><span class="op">)</span>, <span class="va">n</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
@@ -363,18 +384,23 @@ naming the time column, and pass the spec through
 <code>temporal=</code>. The spec carries the time variable itself, the
 same way a continuous spatial spec carries its coordinates, so there is
 no <code>temporal(col)</code> term in the formula.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">tspec</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/temporal_rw1.html">temporal_rw1</a></span><span class="op">(</span><span class="st">"time"</span><span class="op">)</span></span>
 <span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>             temporal <span class="op">=</span> <span class="va">tspec</span>, mode <span class="op">=</span> <span class="st">"auto"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;  -0.2134068   0.8887866</span></span></code></pre></div>
 <p>The slope lands near the true
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.9</mn><annotation encoding="application/x-tex">0.9</annotation></semantics></math>.
 The intercept reads near zero with a very wide interval, the sum-to-zero
 constraint at work, covered below. How was the fit routed?</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>backend <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">backend</span>, tier <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">inference_tier</span><span class="op">)</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">selection_reason</span></span></code></pre></div>
+<span><span class="co">#&gt;          backend             tier </span></span>
+<span><span class="co">#&gt; "nested_laplace"              "2"</span></span>
+<span><span class="va">fit</span><span class="op">$</span><span class="va">selection_reason</span></span>
+<span><span class="co">#&gt; [1] "temporal rw1 field; nested-Laplace integration"</span></span></code></pre></div>
 <p><code>mode = "auto"</code> recognised the temporal field, turned the
 RW1 into its chain ICAR block, and sent it to the nested-Laplace backend
 (Tier 2). That backend puts a grid over the smoothing precision
@@ -399,11 +425,26 @@ fit that is genuinely unsure how smooth the trend should be will say so
 through a wider slope interval rather than a falsely confident one.
 <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> gives the fixed-effect table with marginalized
 standard errors and credible bounds.</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
-<p><code><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint()</a></code> returns the same bounds as a matrix.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt;               estimate  std.error      2.5 %      97.5 %</span></span>
+<span><span class="co">#&gt; (Intercept) -0.2134068 0.07858009 -0.3674611 -0.05942505</span></span>
+<span><span class="co">#&gt; x            0.8887866 0.08884503  0.7147387  1.06300797</span></span></code></pre></div>
+<p><code><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint()</a></code> returns the same bounds as a matrix.</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt;                  2.5 %      97.5 %</span></span>
+<span><span class="co">#&gt; (Intercept) -0.3674611 -0.05942505</span></span>
+<span><span class="co">#&gt; x            0.7147387  1.06300797</span></span>
+<span><span class="co">#&gt; attr(,"skew_applied")</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;       FALSE       FALSE </span></span>
+<span><span class="co">#&gt; attr(,"interval_source")</span></span>
+<span><span class="co">#&gt; [1] "mixture_cdf"</span></span>
+<span><span class="co">#&gt; attr(,"interval_declined")</span></span>
+<span><span class="co">#&gt; [1] NA</span></span>
+<span><span class="co">#&gt; attr(,"retained_mass")</span></span>
+<span><span class="co">#&gt; [1] 1</span></span></code></pre></div>
 <div class="section level3">
 <h3 id="extracting-the-temporal-trend">Extracting the temporal trend<a class="anchor" aria-label="anchor" href="#extracting-the-temporal-trend"></a>
 </h3>
@@ -418,13 +459,14 @@ point and one column per latent coordinate, ordered as
 <code>$weights</code>. The grid-marginalized value of the field at time
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>u</mi><annotation encoding="application/x-tex">u</annotation></semantics></math>
 is the weight-averaged mode in the column for that time point.</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">w</span>     <span class="op">&lt;-</span> <span class="va">fit</span><span class="op">$</span><span class="va">weights</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">weights</span><span class="op">)</span></span>
 <span><span class="va">nf</span>    <span class="op">&lt;-</span> <span class="va">fit</span><span class="op">$</span><span class="va">n_fixed</span></span>
 <span><span class="va">phi_hat</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">T_pts</span><span class="op">)</span>,</span>
 <span>                  <span class="kw">function</span><span class="op">(</span><span class="va">u</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">w</span> <span class="op">*</span> <span class="va">fit</span><span class="op">$</span><span class="va">modes</span><span class="op">[</span>, <span class="va">nf</span> <span class="op">+</span> <span class="va">u</span><span class="op">]</span><span class="op">)</span>,</span>
 <span>                  <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">numeric</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">phi_hat</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">phi_hat</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 0.238 0.603 0.823 0.977 1.265 1.380</span></span></code></pre></div>
 <p>The offset <code>nf + u</code> skips the <code>nf</code> fixed-effect
 columns and lands on the field column for time
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>u</mi><annotation encoding="application/x-tex">u</annotation></semantics></math>.
@@ -453,27 +495,31 @@ runs.</p>
 <p>A recovery check plots the estimated trend against the truth. Because
 the random walk is identified only up to an additive constant, centre
 both before comparing.</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">T_pts</span><span class="op">)</span>, <span class="va">trend</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">trend</span><span class="op">)</span>, type <span class="op">=</span> <span class="st">"l"</span>, lwd <span class="op">=</span> <span class="fl">2</span>,</span>
 <span>     xlab <span class="op">=</span> <span class="st">"time point"</span>, ylab <span class="op">=</span> <span class="st">"centred temporal effect"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/lines.html" class="external-link">lines</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">T_pts</span><span class="op">)</span>, <span class="va">phi_hat</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">phi_hat</span><span class="op">)</span>, col <span class="op">=</span> <span class="st">"darkorange"</span>, lwd <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/legend.html" class="external-link">legend</a></span><span class="op">(</span><span class="st">"topright"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"truth"</span>, <span class="st">"estimate"</span><span class="op">)</span>,</span>
 <span>       col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"black"</span>, <span class="st">"darkorange"</span><span class="op">)</span>, lwd <span class="op">=</span> <span class="fl">2</span>, bty <span class="op">=</span> <span class="st">"n"</span><span class="op">)</span></span></code></pre></div>
+<p><img src="temporal-models_files/figure-html/trend-plot-1.png" class="r-plt" alt="Estimated RW1 trend across time points overlaid on the true simulated trend" width="576"></p>
 <p>The estimate tracks the sine wave it was built from, smoothed a touch
 where the prior pulls neighbours together. The correlation between the
 two confirms it.</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">phi_hat</span>, <span class="va">trend</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">phi_hat</span>, <span class="va">trend</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 0.971</span></span></code></pre></div>
 <p>The smoothing precision
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>τ</mi><annotation encoding="application/x-tex">\tau</annotation></semantics></math>
 controls how tightly the walk hugs a straight line, and the fit reports
 its posterior summary directly. <code>$theta_mean</code> is the
 posterior mean of the field’s hyperparameter, with
 <code>$theta_ci_lo</code> and <code>$theta_ci_hi</code> bounding it.</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>mean <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">theta_mean</span>,</span>
 <span>  lower <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">theta_ci_lo</span>,</span>
-<span>  upper <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">theta_ci_hi</span><span class="op">)</span></span></code></pre></div>
+<span>  upper <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">theta_ci_hi</span><span class="op">)</span></span>
+<span><span class="co">#&gt;        mean lower.value upper.value </span></span>
+<span><span class="co">#&gt;    8.254556    2.929169   18.787115</span></span></code></pre></div>
 <p>A larger
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>τ</mi><annotation encoding="application/x-tex">\tau</annotation></semantics></math>
 means a stiffer walk. Here the interval excludes the very large values
@@ -527,8 +573,10 @@ trend is not separately identified from
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>β</mi><mn>0</mn></msub><annotation encoding="application/x-tex">\beta_0</annotation></semantics></math>,
 so the sum-to-zero constraint hands the intercept a near-flat posterior
 and its standard error sits at roughly the prior width.</p>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">[</span><span class="st">"(Intercept)"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"estimate"</span>, <span class="st">"std.error"</span><span class="op">)</span><span class="op">]</span></span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">[</span><span class="st">"(Intercept)"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"estimate"</span>, <span class="st">"std.error"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;               estimate  std.error</span></span>
+<span><span class="co">#&gt; (Intercept) -0.2134068 0.07858009</span></span></code></pre></div>
 <p>That large standard error is a feature of the parameterisation, not a
 sign the fit failed. Interpret slopes, which are identified and
 marginalized; do not read the intercept as an estimate of the overall
@@ -561,17 +609,20 @@ covariate values, with the field held at its population average. On the
 link scale the intercept’s wide posterior flows straight into the
 standard error, so a raw link-scale band is dominated by that
 unidentified level rather than by covariate uncertainty.</p>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">nd</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="op">-</span><span class="fl">2</span>, <span class="fl">2</span>, length.out <span class="op">=</span> <span class="fl">50</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">pr</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, newdata <span class="op">=</span> <span class="va">nd</span>, type <span class="op">=</span> <span class="st">"link"</span>, se.fit <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">pr</span>, <span class="fl">2</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">pr</span>, <span class="fl">2</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      fit se.fit  lower  upper</span></span>
+<span><span class="co">#&gt; 1 -1.991  0.198 -2.380 -1.602</span></span>
+<span><span class="co">#&gt; 2 -1.918  0.192 -2.294 -1.543</span></span></code></pre></div>
 <p>The informative quantity is how the prediction <em>changes</em> with
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">x</annotation></semantics></math>,
 which is the slope and its tight interval, not the absolute height of
 the line. To show the covariate effect cleanly, plot the link-scale
 prediction centred at its own mean, so the intercept’s free level drops
 out and the slope’s uncertainty is what remains.</p>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">ctr</span> <span class="op">&lt;-</span> <span class="va">pr</span><span class="op">$</span><span class="va">fit</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">pr</span><span class="op">$</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">nd</span><span class="op">$</span><span class="va">x</span>, <span class="va">ctr</span>, type <span class="op">=</span> <span class="st">"l"</span>, lwd <span class="op">=</span> <span class="fl">2</span>,</span>
 <span>     xlab <span class="op">=</span> <span class="st">"x"</span>, ylab <span class="op">=</span> <span class="st">"centred linear predictor"</span><span class="op">)</span></span>
@@ -580,6 +631,7 @@ out and the slope’s uncertainty is what remains.</p>
 <span>        <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">ctr</span> <span class="op">-</span> <span class="va">band</span>, <span class="fu"><a href="https://rdrr.io/r/base/rev.html" class="external-link">rev</a></span><span class="op">(</span><span class="va">ctr</span> <span class="op">+</span> <span class="va">band</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>        col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/grDevices/adjustcolor.html" class="external-link">adjustcolor</a></span><span class="op">(</span><span class="st">"steelblue"</span>, <span class="fl">0.25</span><span class="op">)</span>, border <span class="op">=</span> <span class="cn">NA</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/lines.html" class="external-link">lines</a></span><span class="op">(</span><span class="va">nd</span><span class="op">$</span><span class="va">x</span>, <span class="va">ctr</span>, lwd <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span></code></pre></div>
+<p><img src="temporal-models_files/figure-html/predict-plot-1.png" class="r-plt" alt="Centred link-scale prediction across x with the covariate slope and its credible band" width="576"></p>
 <p>The band is narrow because the slope is well identified, even though
 the line’s absolute position is not. Centring is the right move
 precisely because the quantity of interest is a contrast: the difference
@@ -606,9 +658,10 @@ covariate relationship rather than a time-specific one.</p>
 and compare evidence. On a Laplace-tier fit <code><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik()</a></code>
 returns the approximate log marginal likelihood, and with no
 hyperparameter left to integrate that is already the model evidence.</p>
-<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">m_nt</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"binomial"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik</a></span><span class="op">(</span><span class="va">m_nt</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik</a></span><span class="op">(</span><span class="va">m_nt</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] -569.1084</span></span></code></pre></div>
 <p>A nested fit integrates over a grid of
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>τ</mi><annotation encoding="application/x-tex">\tau</annotation></semantics></math>,
 so its <code>$log_marginal</code> is a vector with one entry per grid
@@ -618,8 +671,11 @@ evidence is the log of the mass-weighted sum over the cells rather than
 of the plain sum. <code><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik()</a></code> returns it, and since both fits
 now report a log evidence, <code><a href="../reference/compare_models.html">compare_models()</a></code> ranks them on
 it directly.</p>
-<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/compare_models.html">compare_models</a></span><span class="op">(</span>no_temporal <span class="op">=</span> <span class="va">m_nt</span>, temporal <span class="op">=</span> <span class="va">fit</span>, criterion <span class="op">=</span> <span class="st">"loglik"</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/compare_models.html">compare_models</a></span><span class="op">(</span>no_temporal <span class="op">=</span> <span class="va">m_nt</span>, temporal <span class="op">=</span> <span class="va">fit</span>, criterion <span class="op">=</span> <span class="st">"loglik"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;         model n_params    logLik     quantity conditioned_on</span></span>
+<span><span class="co">#&gt; 1 no_temporal        2 -569.1084 log_evidence               </span></span>
+<span><span class="co">#&gt; 2    temporal        2 -517.2204 log_evidence</span></span></code></pre></div>
 <p>The temporal model carries substantially higher evidence, matching
 the fact that a trend really was in the data.</p>
 <p>A word on what this comparison settles. The marginal likelihood
@@ -636,8 +692,14 @@ WAIC and LOO answer a related but separate question about out-of-sample
 accuracy. The engine computes them from each fit’s pointwise
 log-likelihood, read off its linear predictor with the temporal field
 included:</p>
-<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/compare_models.html">compare_models</a></span><span class="op">(</span>no_temporal <span class="op">=</span> <span class="va">m_nt</span>, temporal <span class="op">=</span> <span class="va">fit</span>, criterion <span class="op">=</span> <span class="st">"waic"</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/compare_models.html">compare_models</a></span><span class="op">(</span>no_temporal <span class="op">=</span> <span class="va">m_nt</span>, temporal <span class="op">=</span> <span class="va">fit</span>, criterion <span class="op">=</span> <span class="st">"waic"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;         model      elpd  se_elpd     p_eff        ic     delta  se_diff</span></span>
+<span><span class="co">#&gt; 2    temporal -497.5813 13.89653 13.404176  995.1627   0.00000       NA</span></span>
+<span><span class="co">#&gt; 1 no_temporal -564.0802 10.14962  1.968577 1128.1605 -66.49891 10.80986</span></span>
+<span><span class="co">#&gt;         weight</span></span>
+<span><span class="co">#&gt; 2 1.000000e+00</span></span>
+<span><span class="co">#&gt; 1 1.317919e-29</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="a-second-family">A second family<a class="anchor" aria-label="anchor" href="#a-second-family"></a>
@@ -645,13 +707,15 @@ included:</p>
 <p>The same call shape works for a Gaussian response; only
 <code>family</code> and the dispersion <code>phi</code> change. Reuse
 the trend and slope, swap the binary draw for a Gaussian one.</p>
-<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">7</span><span class="op">)</span></span>
 <span><span class="va">yg</span>  <span class="op">&lt;-</span> <span class="op">-</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.9</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">trend</span><span class="op">[</span><span class="va">time</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, sd <span class="op">=</span> <span class="fl">0.5</span><span class="op">)</span></span>
 <span><span class="va">dfg</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">yg</span>, x <span class="op">=</span> <span class="va">x</span>, time <span class="op">=</span> <span class="va">time</span><span class="op">)</span></span>
 <span><span class="va">fitg</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">dfg</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
 <span>              temporal <span class="op">=</span> <span class="va">tspec</span>, mode <span class="op">=</span> <span class="st">"auto"</span>, phi <span class="op">=</span> <span class="fl">0.5</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fitg</span><span class="op">)</span><span class="op">[</span><span class="st">"x"</span><span class="op">]</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fitg</span><span class="op">)</span><span class="op">[</span><span class="st">"x"</span><span class="op">]</span></span>
+<span><span class="co">#&gt;         x </span></span>
+<span><span class="co">#&gt; 0.9227501</span></span></code></pre></div>
 <p>The slope again recovers near
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.9</mn><annotation encoding="application/x-tex">0.9</annotation></semantics></math>,
 and the same field-extraction recipe lifts the trend out of
@@ -711,10 +775,12 @@ place.</p></li>
 <p>The front door through <code><a href="../reference/tulpa.html">tulpa()</a></code> carries all three
 temporal priors. <code><a href="../reference/temporal_rw2.html">temporal_rw2()</a></code> penalizes second
 differences for a smoother trend than RW1:</p>
-<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_rw2</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>                 temporal <span class="op">=</span> <span class="fu"><a href="../reference/temporal_rw2.html">temporal_rw2</a></span><span class="op">(</span><span class="st">"time"</span><span class="op">)</span>, mode <span class="op">=</span> <span class="st">"auto"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_rw2</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_rw2</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;  -0.2128406   0.8967348</span></span></code></pre></div>
 <p><code><a href="../reference/temporal_ar1.html">temporal_ar1()</a></code> is a stationary, full-rank alternative
 with an estimated correlation parameter rather than an intrinsic walk.
 Panel trends through <code>group_var=</code> fit a separate walk per
@@ -723,7 +789,7 @@ group sharing one hyperparameter, and a temporal field combined with an
 (<code>icar</code>/<code>car</code>/<code>bym2</code>/<code>car_proper</code>)
 spatial field forms an additive space-time joint prior over the
 <code>[spatial, temporal]</code> block stack:</p>
-<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb21"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># AR1 temporal trend</span></span>
 <span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>      temporal <span class="op">=</span> <span class="fu"><a href="../reference/temporal_ar1.html">temporal_ar1</a></span><span class="op">(</span><span class="st">"time"</span><span class="op">)</span>, mode <span class="op">=</span> <span class="st">"auto"</span><span class="op">)</span></span>

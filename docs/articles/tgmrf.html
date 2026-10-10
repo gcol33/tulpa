@@ -35,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.1</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -92,9 +92,30 @@
 
     
     
+<div class="section level2">
+<h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
+</h2>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Current release, built for Windows and macOS</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"tulpa"</span>,</span>
+<span>                 repos <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"https://gcol33.r-universe.dev"</span>,</span>
+<span>                           <span class="st">"https://cloud.r-project.org"</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Development version from GitHub</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"pak"</span><span class="op">)</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Pin a release</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.6.0"</span><span class="op">)</span></span></code></pre></div>
+<p><code>pak</code> resolves the dependency tree, including
+<code>tulpaMesh</code> (on CRAN, used for SPDE mesh construction).
+<code>tulpa</code> compiles its C++ backend on first install, so a C++17
+toolchain is required: Rtools on Windows, Xcode CLI tools on macOS,
+<code>r-base-dev</code> on Linux.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/gcol33/tulpa" class="external-link">tulpa</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://codeberg.org/jaganmn/Matrix" class="external-link">Matrix</a></span><span class="op">)</span></span></code></pre></div>
+</div>
 <div class="section level2">
 <h2 id="what-tgmrf-is">What <code>tgmrf()</code> is<a class="anchor" aria-label="anchor" href="#what-tgmrf-is"></a>
 </h2>
@@ -105,11 +126,11 @@ dual of <code>LikelihoodSpec</code>: that interface lets a downstream
 package own the observation model; <code><a href="../reference/tgmrf.html">tgmrf()</a></code> lets a single R
 script own one latent block.</p>
 <p>The contract is two closures and an init vector:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>my_block <span class="ot">&lt;-</span> <span class="fu">tgmrf</span>(</span>
-<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>  <span class="at">Q     =</span> <span class="cf">function</span>(theta) { ... returns dgCMatrix ... },</span>
-<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>  <span class="at">prior =</span> <span class="cf">function</span>(theta) { ... returns scalar log<span class="sc">-</span>density ... },</span>
-<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>  <span class="at">init  =</span> <span class="fu">c</span>(...)</span>
-<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>my_block <span class="ot">&lt;-</span> <span class="fu">tgmrf</span>(</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="at">Q     =</span> <span class="cf">function</span>(theta) { ... returns dgCMatrix ... },</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="at">prior =</span> <span class="cf">function</span>(theta) { ... returns scalar log<span class="sc">-</span>density ... },</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="at">init  =</span> <span class="fu">c</span>(...)</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>)</span></code></pre></div>
 <p>The closures are called numerically: no autodiff, no DSL, no codegen.
 For a Gaussian latent block</p>
 <p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mi mathvariant="normal">log</mi><mo>⁡</mo></mrow><mi>p</mi><mo stretchy="false" form="prefix">(</mo><mi>z</mi><mo>∣</mo><mi>θ</mi><mo stretchy="false" form="postfix">)</mo><mspace width="0.278em"></mspace><mo>=</mo><mspace width="0.278em"></mspace><mstyle displaystyle="false"><mfrac><mn>1</mn><mn>2</mn></mfrac></mstyle><mspace width="0.167em"></mspace><mrow><mi mathvariant="normal">log</mi><mo>⁡</mo></mrow><mrow><mi mathvariant="normal">det</mi><mo>⁡</mo></mrow><mi>Q</mi><mo stretchy="false" form="prefix">(</mo><mi>θ</mi><mo stretchy="false" form="postfix">)</mo><mo>−</mo><mstyle displaystyle="false"><mfrac><mn>1</mn><mn>2</mn></mfrac></mstyle><mo stretchy="false" form="prefix">(</mo><mi>z</mi><mo>−</mo><mi>μ</mi><msup><mo stretchy="false" form="postfix">)</mo><mi>⊤</mi></msup><mi>Q</mi><mo stretchy="false" form="prefix">(</mo><mi>θ</mi><mo stretchy="false" form="postfix">)</mo><mo stretchy="false" form="prefix">(</mo><mi>z</mi><mo>−</mo><mi>μ</mi><mo stretchy="false" form="postfix">)</mo><mo>+</mo><mtext mathvariant="normal">const</mtext></mrow><annotation encoding="application/x-tex">
@@ -234,7 +255,7 @@ Q_{ij} \;=\; -\,\tfrac{\rho}{\sigma^2}\;\text{ for } |i-j| = 1 \;(\mathrm{mod}\,
 </annotation></semantics></math></p>
 <p>Reparameterise to unconstrained
 <code>theta = (log_sigma, atanh_rho)</code>:</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">periodic_ar1</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">n</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="fu"><a href="../reference/tgmrf.html">tgmrf</a></span><span class="op">(</span></span>
 <span>    Q <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">theta</span><span class="op">)</span> <span class="op">{</span></span>
@@ -278,7 +299,7 @@ propagate through every fit as the reported parameter names.</p>
 <div class="section level3">
 <h3 id="simulate-from-the-block">Simulate from the block<a class="anchor" aria-label="anchor" href="#simulate-from-the-block"></a>
 </h3>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">40L</span></span>
 <span><span class="va">theta_true</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.8</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/Hyperbolic.html" class="external-link">atanh</a></span><span class="op">(</span><span class="fl">0.6</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">blk</span>        <span class="op">&lt;-</span> <span class="fu">periodic_ar1</span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span>
@@ -296,13 +317,17 @@ propagate through every fit as the reported parameter names.</p>
 <div class="section level3">
 <h3 id="tier-2-structured-nested-laplace">Tier 2 (structured): nested Laplace<a class="anchor" aria-label="anchor" href="#tier-2-structured-nested-laplace"></a>
 </h3>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_lap</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_nested_laplace.html">tulpa_nested_laplace</a></span><span class="op">(</span></span>
 <span>  y <span class="op">=</span> <span class="va">y</span>, n_trials <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, X <span class="op">=</span> <span class="va">X</span>,</span>
 <span>  prior  <span class="op">=</span> <span class="va">blk</span>,</span>
 <span>  family <span class="op">=</span> <span class="st">"poisson"</span></span>
 <span><span class="op">)</span></span>
-<span><span class="va">fit_lap</span><span class="op">$</span><span class="va">theta_mean</span>    <span class="co"># posterior mean over the outer grid</span></span></code></pre></div>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 13/13 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
+<span><span class="va">fit_lap</span><span class="op">$</span><span class="va">theta_mean</span>    <span class="co"># posterior mean over the outer grid</span></span>
+<span><span class="co">#&gt; b1.log_sigma b1.atanh_rho </span></span>
+<span><span class="co">#&gt;   -0.2274788    0.7023186</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="tier-2-structured-pathfinder-vi">Tier 2 (structured): Pathfinder VI<a class="anchor" aria-label="anchor" href="#tier-2-structured-pathfinder-vi"></a>
@@ -311,14 +336,17 @@ propagate through every fit as the reported parameter names.</p>
 <code>log_marginal(theta)</code> and fits a Gaussian at the optimum.
 Same tier as the nested-Laplace posterior but gives you a full
 covariance matrix rather than a discrete grid.</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_vi</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_tgmrf.html">tulpa_tgmrf</a></span><span class="op">(</span></span>
 <span>  y <span class="op">=</span> <span class="va">y</span>, n_trials <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, X <span class="op">=</span> <span class="va">X</span>, block <span class="op">=</span> <span class="va">blk</span>,</span>
 <span>  family  <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"vi"</span>,</span>
 <span>  n_draws <span class="op">=</span> <span class="fl">800L</span></span>
 <span><span class="op">)</span></span>
 <span><span class="va">fit_vi</span><span class="op">$</span><span class="va">mode_theta</span></span>
-<span><span class="va">fit_vi</span><span class="op">$</span><span class="va">elbo</span></span></code></pre></div>
+<span><span class="co">#&gt;  log_sigma  atanh_rho </span></span>
+<span><span class="co">#&gt; -0.2388442  0.5969964</span></span>
+<span><span class="va">fit_vi</span><span class="op">$</span><span class="va">elbo</span></span>
+<span><span class="co">#&gt; [1] -84.02656</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="tier-1-exact-imh-laplace">Tier 1 (exact): IMH-Laplace<a class="anchor" aria-label="anchor" href="#tier-1-exact-imh-laplace"></a>
@@ -326,14 +354,17 @@ covariance matrix rather than a discrete grid.</p>
 <p>The Tier-1 upgrade composes the Laplace body with an independence-MH
 bias correction. The VI fit makes a near-optimal proposal: high
 acceptance, low MC error.</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_imh</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_tgmrf.html">tulpa_tgmrf</a></span><span class="op">(</span></span>
 <span>  y <span class="op">=</span> <span class="va">y</span>, n_trials <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, X <span class="op">=</span> <span class="va">X</span>, block <span class="op">=</span> <span class="va">blk</span>,</span>
 <span>  family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"imh"</span>,</span>
 <span>  n_iter <span class="op">=</span> <span class="fl">1200L</span>, warmup <span class="op">=</span> <span class="fl">400L</span></span>
 <span><span class="op">)</span></span>
 <span><span class="va">fit_imh</span><span class="op">$</span><span class="va">means</span></span>
-<span><span class="va">fit_imh</span><span class="op">$</span><span class="va">mean_accept</span></span></code></pre></div>
+<span><span class="co">#&gt;  log_sigma  atanh_rho </span></span>
+<span><span class="co">#&gt; -0.2153406  0.7003226</span></span>
+<span><span class="va">fit_imh</span><span class="op">$</span><span class="va">mean_accept</span></span>
+<span><span class="co">#&gt; [1] 0.56125</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="tier-1-exact-nuts-over-theta">Tier 1 (exact): NUTS over <code>theta</code><a class="anchor" aria-label="anchor" href="#tier-1-exact-nuts-over-theta"></a>
@@ -342,7 +373,7 @@ acceptance, low MC error.</p>
 <code>tulpa_tgmrf_nuts()</code> mixes better than independence-MH. For
 <code>theta_dim = 2</code> IMH is generally faster; NUTS is the right
 call when the posterior is multi-modal or strongly non-Gaussian.</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_nuts</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_tgmrf.html">tulpa_tgmrf</a></span><span class="op">(</span></span>
 <span>  y <span class="op">=</span> <span class="va">y</span>, n_trials <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, X <span class="op">=</span> <span class="va">X</span>, block <span class="op">=</span> <span class="va">blk</span>,</span>
 <span>  family    <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"nuts"</span>,</span>
@@ -357,14 +388,17 @@ call when the posterior is multi-modal or strongly non-Gaussian.</p>
 </h2>
 <p>The three estimators target the same posterior
 <code>p(theta | y)</code>:</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
 <span>  parameter <span class="op">=</span> <span class="va">blk</span><span class="op">$</span><span class="va">theta_names</span>,</span>
 <span>  true      <span class="op">=</span> <span class="va">theta_true</span>,</span>
 <span>  laplace   <span class="op">=</span> <span class="va">fit_lap</span><span class="op">$</span><span class="va">theta_mean</span>,</span>
 <span>  vi_mode   <span class="op">=</span> <span class="va">fit_vi</span><span class="op">$</span><span class="va">mode_theta</span>,</span>
 <span>  imh_mean  <span class="op">=</span> <span class="va">fit_imh</span><span class="op">$</span><span class="va">means</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span></span>
+<span><span class="co">#&gt;              parameter       true    laplace    vi_mode   imh_mean</span></span>
+<span><span class="co">#&gt; b1.log_sigma log_sigma -0.2231436 -0.2274788 -0.2388442 -0.2153406</span></span>
+<span><span class="co">#&gt; b1.atanh_rho atanh_rho  0.6931472  0.7023186  0.5969964  0.7003226</span></span></code></pre></div>
 <p>Laplace and VI agree to within grid resolution / Gaussian-fit
 curvature; IMH lifts the structured-tier bias at the cost of
 <code>n_iter</code> inner Laplace solves.</p>
@@ -380,9 +414,9 @@ fixed-effects design matrix
 of dimension
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>×</mo><mi>p</mi></mrow><annotation encoding="application/x-tex">N \times p</annotation></semantics></math>
 carries coefficients
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>∈</mo><msup><mi mathvariant="double-struck">ℝ</mi><mi>p</mi></msup></mrow><annotation encoding="application/x-tex">\beta \in \mathbb{R}^p</annotation></semantics></math>.
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>∈</mo><msup><mi>ℝ</mi><mi>p</mi></msup></mrow><annotation encoding="application/x-tex">\beta \in \mathbb{R}^p</annotation></semantics></math>.
 The latent block contributes a vector
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>∈</mo><msup><mi mathvariant="double-struck">ℝ</mi><msub><mi>n</mi><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">t</mi></mrow></msub></msup></mrow><annotation encoding="application/x-tex">z \in \mathbb{R}^{n_{\mathrm{lat}}}</annotation></semantics></math>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>∈</mo><msup><mi>ℝ</mi><msub><mi>n</mi><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">t</mi></mrow></msub></msup></mrow><annotation encoding="application/x-tex">z \in \mathbb{R}^{n_{\mathrm{lat}}}</annotation></semantics></math>
 where
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>n</mi><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">t</mi></mrow></msub><annotation encoding="application/x-tex">n_{\mathrm{lat}}</annotation></semantics></math>
 is <code>n_latent</code>. An index vector <code>obs_idx</code> maps each
@@ -399,7 +433,7 @@ is
 for the family’s link
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>g</mi><annotation encoding="application/x-tex">g</annotation></semantics></math>.
 The hyperparameter vector is
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mo>∈</mo><msup><mi mathvariant="double-struck">ℝ</mi><mi>d</mi></msup></mrow><annotation encoding="application/x-tex">\theta \in \mathbb{R}^d</annotation></semantics></math>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mo>∈</mo><msup><mi>ℝ</mi><mi>d</mi></msup></mrow><annotation encoding="application/x-tex">\theta \in \mathbb{R}^d</annotation></semantics></math>
 with
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>d</mi><annotation encoding="application/x-tex">d</annotation></semantics></math>
 equal to <code>theta_dim</code>, living on the unconstrained scale your

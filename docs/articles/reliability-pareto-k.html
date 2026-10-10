@@ -35,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.1</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -92,8 +92,29 @@
 
     
     
+<div class="section level2">
+<h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
+</h2>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Current release, built for Windows and macOS</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"tulpa"</span>,</span>
+<span>                 repos <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"https://gcol33.r-universe.dev"</span>,</span>
+<span>                           <span class="st">"https://cloud.r-project.org"</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Development version from GitHub</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"pak"</span><span class="op">)</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Pin a release</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.6.0"</span><span class="op">)</span></span></code></pre></div>
+<p><code>pak</code> resolves the dependency tree, including
+<code>tulpaMesh</code> (on CRAN, used for SPDE mesh construction).
+<code>tulpa</code> compiles its C++ backend on first install, so a C++17
+toolchain is required: Rtools on Windows, Xcode CLI tools on macOS,
+<code>r-base-dev</code> on Linux.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/gcol33/tulpa" class="external-link">tulpa</a></span><span class="op">)</span></span></code></pre></div>
+</div>
 <div class="section level2">
 <h2 id="what-the-diagnostic-is-for">What the diagnostic is for<a class="anchor" aria-label="anchor" href="#what-the-diagnostic-is-for"></a>
 </h2>
@@ -134,7 +155,7 @@ hyperparameter posterior between them. Build a two-arm example: a
 presence arm with a binomial likelihood and a positive-value arm with a
 Gaussian one, both loading on a shared smooth field over a chain of
 spatial units.</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">S</span>     <span class="op">&lt;-</span> <span class="fl">25L</span></span>
 <span><span class="va">nb</span>    <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">s</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">s</span> <span class="op">-</span> <span class="fl">1L</span>, <span class="va">s</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0L</span>, <span class="va">S</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">nn</span>    <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lengths.html" class="external-link">lengths</a></span><span class="op">(</span><span class="va">nb</span><span class="op">)</span></span>
@@ -156,17 +177,24 @@ spatial units.</p>
 <span>              n_neighbors <span class="op">=</span> <span class="va">nn</span>, sigma_grid <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fl">0.2</span>, <span class="fl">1.6</span>, length.out <span class="op">=</span> <span class="fl">7</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 <p>Fit the two arms together. The diagnostic runs by default, so the
 k-hat comes back on the fitted object with no extra request.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">resp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>occ <span class="op">=</span> <span class="fu">mk_arm</span><span class="op">(</span><span class="fl">200L</span>, <span class="st">"binomial"</span><span class="op">)</span>,</span>
 <span>             pos <span class="op">=</span> <span class="fu">mk_arm</span><span class="op">(</span><span class="fl">200L</span>, <span class="st">"gaussian"</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_nested_laplace_joint.html">tulpa_nested_laplace_joint</a></span><span class="op">(</span></span>
 <span>  responses <span class="op">=</span> <span class="va">resp</span>,</span>
 <span>  prior     <span class="op">=</span> <span class="va">prior</span>,</span>
 <span>  control   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>k_samples <span class="op">=</span> <span class="fl">400L</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [nested-laplace-joint] 1/7 cells (14%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace-joint] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace-joint] 1/3 cells (33%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace-joint] 3/3 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>pareto_k <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  is_ess   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_is_ess</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_scope</span></span></code></pre></div>
+<span><span class="co">#&gt; pareto_k   is_ess </span></span>
+<span><span class="co">#&gt;    -1.07   337.40</span></span>
+<span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_scope</span></span>
+<span><span class="co">#&gt; [1] "outer (hyperparameter) Gaussian proposal"</span></span></code></pre></div>
 <p>The scope string names what was scored: the Gaussian proposal the
 integrator placed over the joint hyperparameter posterior. The k-hat
 reads below the boundaries discussed next, so the integration over the
@@ -203,10 +231,12 @@ the sum.</li>
 <code>control$k_conf_bands</code>, defaulting to
 <code>c(0.5, 0.7)</code>, and the band the point estimate falls in is
 the first thing to read.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">band</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cut.html" class="external-link">cut</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="cn">Inf</span>, <span class="fl">0.5</span>, <span class="fl">0.7</span>, <span class="cn">Inf</span><span class="op">)</span>,</span>
 <span>            labels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"good"</span>, <span class="st">"ok"</span>, <span class="st">"unreliable"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">band</span></span></code></pre></div>
+<span><span class="va">band</span></span>
+<span><span class="co">#&gt; [1] good</span></span>
+<span><span class="co">#&gt; Levels: good ok unreliable</span></span></code></pre></div>
 <p>A negative k-hat, as in this fit, sits in the good band with room to
 spare: the weights have an even lighter tail than finite variance
 requires, which is the easy case a well-resolved grid over a
@@ -227,10 +257,17 @@ the number of importance draws (Vehtari, Simpson, Gelman, Yao and Gabry,
 independent and drawn from a single Gaussian proposal, so the nominal
 draw count is the right <code>S</code> and the rule applies
 directly.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">k_usable</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">S</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">pmin</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">-</span> <span class="fl">1</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log10</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span>, <span class="fl">0.7</span><span class="op">)</span></span>
 <span><span class="va">S_grid</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">100</span>, <span class="fl">200</span>, <span class="fl">400</span>, <span class="fl">1000</span>, <span class="fl">2154</span>, <span class="fl">4000</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>draws <span class="op">=</span> <span class="va">S_grid</span>, usable_boundary <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu">k_usable</span><span class="op">(</span><span class="va">S_grid</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>draws <span class="op">=</span> <span class="va">S_grid</span>, usable_boundary <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu">k_usable</span><span class="op">(</span><span class="va">S_grid</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   draws usable_boundary</span></span>
+<span><span class="co">#&gt; 1   100           0.500</span></span>
+<span><span class="co">#&gt; 2   200           0.565</span></span>
+<span><span class="co">#&gt; 3   400           0.616</span></span>
+<span><span class="co">#&gt; 4  1000           0.667</span></span>
+<span><span class="co">#&gt; 5  2154           0.700</span></span>
+<span><span class="co">#&gt; 6  4000           0.700</span></span></code></pre></div>
 <p>A few hundred draws place the boundary nearer <code>0.6</code> than
 <code>0.7</code>, and it reaches the familiar <code>0.7</code> only past
 roughly two thousand draws. The engine applies this by default:
@@ -260,11 +297,14 @@ estimate happens to land is reading noise.</p>
 bootstraps the diagnostic’s own importance ratios and returns a
 confidence interval for the k-hat together with a flag for whether that
 interval stays inside a single reliability band.</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>k       <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  ci_low  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_ci_low</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  ci_high <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_ci_high</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_band_confident</span></span></code></pre></div>
+<span><span class="co">#&gt;       k  ci_low ci_high </span></span>
+<span><span class="co">#&gt;  -1.070  -1.437  -0.809</span></span>
+<span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_band_confident</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <p><code>pareto_k_band_confident</code> is the number to act on, not the
 point estimate. It is <code>TRUE</code> only when the whole interval
 sits in one band, so it answers the question you actually have: not
@@ -286,16 +326,22 @@ the fix is more tail information. The precision knob is
 more of them give the generalized-Pareto fit more tail ratios, a tighter
 k-hat, and a narrower bootstrap interval. Refit the same model with more
 draws and read the interval again.</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_hi</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_nested_laplace_joint.html">tulpa_nested_laplace_joint</a></span><span class="op">(</span></span>
 <span>  responses <span class="op">=</span> <span class="va">resp</span>,</span>
 <span>  prior     <span class="op">=</span> <span class="va">prior</span>,</span>
 <span>  control   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>k_samples <span class="op">=</span> <span class="fl">1500L</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [nested-laplace-joint] 1/7 cells (14%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace-joint] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace-joint] 1/3 cells (33%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace-joint] 3/3 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>k              <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit_hi</span><span class="op">$</span><span class="va">pareto_k</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  ci_low         <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit_hi</span><span class="op">$</span><span class="va">pareto_k_ci_low</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  ci_high        <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit_hi</span><span class="op">$</span><span class="va">pareto_k_ci_high</span>, <span class="fl">3</span><span class="op">)</span>,</span>
-<span>  band_confident <span class="op">=</span> <span class="va">fit_hi</span><span class="op">$</span><span class="va">pareto_k_band_confident</span><span class="op">)</span></span></code></pre></div>
+<span>  band_confident <span class="op">=</span> <span class="va">fit_hi</span><span class="op">$</span><span class="va">pareto_k_band_confident</span><span class="op">)</span></span>
+<span><span class="co">#&gt;              k         ci_low        ci_high band_confident </span></span>
+<span><span class="co">#&gt;         -1.627         -1.889         -1.443          1.000</span></span></code></pre></div>
 <p>Raising <code>k_samples</code> is the lever for both halves of the
 reading at once. It tightens the interval around the estimate, and
 because the usable boundary itself relaxes toward <code>0.7</code> as
@@ -354,17 +400,24 @@ rung by hand. <code>control$k_quality</code> collapses the
 report-and-judge step into a single statement of intent: you name the
 reliability you require, the engine sets the draw budget for it, and the
 fit carries an honest verdict.</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_q</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_nested_laplace_joint.html">tulpa_nested_laplace_joint</a></span><span class="op">(</span></span>
 <span>  responses <span class="op">=</span> <span class="va">resp</span>,</span>
 <span>  prior     <span class="op">=</span> <span class="va">prior</span>,</span>
 <span>  control   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>k_quality <span class="op">=</span> <span class="st">"good"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [nested-laplace-joint] 1/7 cells (14%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace-joint] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace-joint] 1/3 cells (33%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace-joint] 3/3 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>requested <span class="op">=</span> <span class="va">fit_q</span><span class="op">$</span><span class="va">k_quality_requested</span>,</span>
 <span>  reached   <span class="op">=</span> <span class="va">fit_q</span><span class="op">$</span><span class="va">k_quality_reached</span>,</span>
 <span>  best      <span class="op">=</span> <span class="va">fit_q</span><span class="op">$</span><span class="va">k_quality_best</span>,</span>
 <span>  draws     <span class="op">=</span> <span class="va">fit_q</span><span class="op">$</span><span class="va">diagnose_draws</span><span class="op">)</span></span>
-<span><span class="va">fit_q</span><span class="op">$</span><span class="va">k_quality_reason</span></span></code></pre></div>
+<span><span class="co">#&gt; requested   reached      best     draws </span></span>
+<span><span class="co">#&gt;    "good"    "TRUE"    "good"    "2000"</span></span>
+<span><span class="va">fit_q</span><span class="op">$</span><span class="va">k_quality_reason</span></span>
+<span><span class="co">#&gt; [1] "requested band reached"</span></span></code></pre></div>
 <p><code>k_quality = "good"</code> requires the k-hat interval to sit
 confidently in the good band and raises the default
 <code>k_samples</code> so the bootstrap CI can resolve it;
@@ -409,9 +462,11 @@ inner Gaussian (Rue, Martino &amp; Chopin 2009, the same cubic
 correction their simplified-Laplace method adds). It runs by default
 alongside the outer diagnostic, scored at the fitted MAP grid cell for
 each arm’s fixed-effects coefficients.</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit</span><span class="op">$</span><span class="va">inner_skew</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">inner_skew_idx</span></span></code></pre></div>
+<span><span class="co">#&gt; [1]  1.845792e-02  1.038059e-01  1.135022e-05 -1.489145e-05</span></span>
+<span><span class="va">fit</span><span class="op">$</span><span class="va">inner_skew_idx</span></span>
+<span><span class="co">#&gt; [1] 1 2 3 4</span></span></code></pre></div>
 <p>The two occupancy-arm coefficients (indices 1-2, binomial) carry a
 small non-zero skew; the two positive-value coefficients (indices 3-4,
 gaussian) read exactly zero. That is not a numerical accident: a
@@ -420,9 +475,11 @@ its inner Laplace is exact and has nothing to be skewed. A binomial or
 Poisson coefficient with thin data is the case where this number moves,
 and it grows toward the same “good / ok / unreliable” bands the outer
 k-hat uses:</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/cut.html" class="external-link">cut</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">inner_skew</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="cn">Inf</span>, <span class="fl">0.5</span>, <span class="fl">1.0</span>, <span class="cn">Inf</span><span class="op">)</span>,</span>
-<span>    labels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"good"</span>, <span class="st">"ok"</span>, <span class="st">"unreliable"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span>    labels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"good"</span>, <span class="st">"ok"</span>, <span class="st">"unreliable"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] good good good good</span></span>
+<span><span class="co">#&gt; Levels: good ok unreliable</span></span></code></pre></div>
 <p>Reading the two numbers together is the point. An outer k-hat past
 its boundary with a healthy inner skew says the hyperparameter grid
 needs work, not the fit’s point estimates – follow the ladder above. A

@@ -35,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.1</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -92,8 +92,29 @@
 
     
     
+<div class="section level2">
+<h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
+</h2>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Current release, built for Windows and macOS</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"tulpa"</span>,</span>
+<span>                 repos <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"https://gcol33.r-universe.dev"</span>,</span>
+<span>                           <span class="st">"https://cloud.r-project.org"</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Development version from GitHub</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"pak"</span><span class="op">)</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Pin a release</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.6.0"</span><span class="op">)</span></span></code></pre></div>
+<p><code>pak</code> resolves the dependency tree, including
+<code>tulpaMesh</code> (on CRAN, used for SPDE mesh construction).
+<code>tulpa</code> compiles its C++ backend on first install, so a C++17
+toolchain is required: Rtools on Windows, Xcode CLI tools on macOS,
+<code>r-base-dev</code> on Linux.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/gcol33/tulpa" class="external-link">tulpa</a></span><span class="op">)</span></span></code></pre></div>
+</div>
 <div class="section level2">
 <h2 id="why-the-inference-choice-matters">Why the inference choice matters<a class="anchor" aria-label="anchor" href="#why-the-inference-choice-matters"></a>
 </h2>
@@ -134,8 +155,63 @@ move up a tier.</p>
 is not a speed label. The tier states how correct the uncertainty a
 backend reports actually is. <code><a href="../reference/inference_mode_info.html">inference_mode_info()</a></code> prints
 the full map, tier by tier, with the guarantee attached to each.</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/inference_mode_info.html">inference_mode_info</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/inference_mode_info.html">inference_mode_info</a></span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="co">#&gt; tulpa Inference Modes</span></span>
+<span><span class="co">#&gt; ========================</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Modes encode EPISTEMIC GUARANTEES, not just runtime characteristics.</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; TIER 1: EXACT</span></span>
+<span><span class="co">#&gt;   Asymptotically correct posterior inference</span></span>
+<span><span class="co">#&gt;   Guarantee: Credible intervals interpretable as posterior uncertainty</span></span>
+<span><span class="co">#&gt;   Backends: hmc, ess, gibbs, re_cov_gibbs, smc, imh_laplace, mala</span></span>
+<span><span class="co">#&gt;   Note: Reference standard</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; TIER 2: STRUCTURED</span></span>
+<span><span class="co">#&gt;   Accurate inference conditional on structural assumptions</span></span>
+<span><span class="co">#&gt;   Guarantee: Correct if model meets structural assumptions</span></span>
+<span><span class="co">#&gt;   Backends: laplace, re_cov_nested, pathfinder, agq, ep, eb, nested_laplace, nested_laplace_joint, spde</span></span>
+<span><span class="co">#&gt;   Note: Controlled approximation, not heuristics</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; TIER 3: OPTIMIZED</span></span>
+<span><span class="co">#&gt;   Optimization-based approximate inference</span></span>
+<span><span class="co">#&gt;   Guarantee: No general correctness guarantee</span></span>
+<span><span class="co">#&gt;   Backends: sghmc, sgld, mclmc, vi</span></span>
+<span><span class="co">#&gt;   Note: Uncertainty often underestimated; requires explicit opt-in</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; AUTO MODE</span></span>
+<span><span class="co">#&gt;   Selects between Tier 1 and Tier 2 only.</span></span>
+<span><span class="co">#&gt;   NEVER silently chooses Tier 3 (Optimized).</span></span>
+<span><span class="co">#&gt;   Contract: 'Use the most reliable method expected to finish.'</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Usage (by tier):</span></span>
+<span><span class="co">#&gt;   tulpa(..., mode = 'auto')       # Tier 1 or 2 (default)</span></span>
+<span><span class="co">#&gt;   tulpa(..., mode = 'exact')      # Tier 1</span></span>
+<span><span class="co">#&gt;   tulpa(..., mode = 'structured') # Tier 2</span></span>
+<span><span class="co">#&gt;   tulpa(..., mode = 'optimized')  # Tier 3 (explicit opt-in)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Backends ([R] = tulpa(mode =) dispatch, [direct] = has an R fitter but tulpa(mode =) refuses it -- call the fitter itself, [C-ABI] = model-package kernel only):</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'hmc'               # Tier 1 (Exact)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'ess'               # Tier 1 (Exact)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'gibbs'             # Tier 1 (Exact)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 're_cov_gibbs'      # Tier 1 (Exact)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'smc'               # Tier 1 (Exact)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'imh_laplace'       # Tier 1 (Exact)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'mala'              # Tier 1 (Exact)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'laplace'           # Tier 2 (Structured)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 're_cov_nested'     # Tier 2 (Structured)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'pathfinder'        # Tier 2 (Structured)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'agq'               # Tier 2 (Structured)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'ep'                # Tier 2 (Structured)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'eb'                # Tier 2 (Structured)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'nested_laplace'    # Tier 2 (Structured)</span></span>
+<span><span class="co">#&gt;   [direct] tulpa_nested_laplace_joint() # Tier 2 (Structured)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'spde'              # Tier 2 (Structured)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'sghmc'             # Tier 3 (Optimized)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'sgld'              # Tier 3 (Optimized)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'mclmc'             # Tier 3 (Optimized)</span></span>
+<span><span class="co">#&gt;   [R]     mode = 'vi'                # Tier 3 (Optimized)</span></span></code></pre></div>
 <p>The output names three tiers. Read them as a ladder of promises.</p>
 <p><strong>Tier 1, Exact.</strong> A Tier 1 backend draws from the
 posterior and its credible intervals are interpretable as posterior
@@ -212,7 +288,7 @@ is a short string explaining the branch that was taken, and
 Take a binomial areal model: twenty regions on a ring, each adjacent to
 its two neighbours, with a latent field that varies smoothly around the
 loop.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">400L</span>; <span class="va">K</span> <span class="op">&lt;-</span> <span class="fl">20L</span></span>
 <span><span class="va">W</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">0</span>, <span class="va">K</span>, <span class="va">K</span><span class="op">)</span></span>
 <span><span class="kw">for</span> <span class="op">(</span><span class="va">i</span> <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="va">K</span><span class="op">)</span> <span class="op">{</span> <span class="va">j</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="va">i</span> <span class="op">&lt;</span> <span class="va">K</span><span class="op">)</span> <span class="va">i</span> <span class="op">+</span> <span class="fl">1L</span> <span class="kw">else</span> <span class="fl">1L</span>; <span class="va">W</span><span class="op">[</span><span class="va">i</span>, <span class="va">j</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="va">W</span><span class="op">[</span><span class="va">j</span>, <span class="va">i</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span> <span class="op">}</span></span>
@@ -224,11 +300,14 @@ loop.</p>
 <p>Fitting with <code>mode = "auto"</code> lets the rule pick. For a
 binomial ICAR field it selects the exact Polya-Gamma Gibbs sampler, a
 Tier 1 backend, and says so.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_auto</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">region</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">ds</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>                  spatial <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>type <span class="op">=</span> <span class="st">"icar"</span>, adjacency <span class="op">=</span> <span class="va">W</span><span class="op">)</span>, mode <span class="op">=</span> <span class="st">"auto"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>backend <span class="op">=</span> <span class="va">fit_auto</span><span class="op">$</span><span class="va">backend</span>, tier <span class="op">=</span> <span class="va">fit_auto</span><span class="op">$</span><span class="va">inference_tier</span><span class="op">)</span></span>
-<span><span class="va">fit_auto</span><span class="op">$</span><span class="va">selection_reason</span></span></code></pre></div>
+<span><span class="co">#&gt; backend    tier </span></span>
+<span><span class="co">#&gt; "gibbs"     "1"</span></span>
+<span><span class="va">fit_auto</span><span class="op">$</span><span class="va">selection_reason</span></span>
+<span><span class="co">#&gt; [1] "icar spatial model (binomial Polya-Gamma Gibbs)"</span></span></code></pre></div>
 <p>Auto reached for the most reliable method, Tier 1, because for this
 model class an exact sampler is both available and fast. A binomial
 likelihood with an areal field admits the Polya-Gamma data augmentation,
@@ -239,21 +318,26 @@ of this size, so the exact route is also the practical one. The rule saw
 a case where the strongest guarantee was affordable and took it. Now
 change the situation to a large, plain Gaussian model where a full
 sampler would be slow.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">nL</span> <span class="op">&lt;-</span> <span class="fl">60000L</span></span>
 <span><span class="va">xL</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">nL</span><span class="op">)</span></span>
 <span><span class="va">dL</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="fl">0.5</span> <span class="op">+</span> <span class="fl">1.2</span> <span class="op">*</span> <span class="va">xL</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">nL</span>, sd <span class="op">=</span> <span class="fl">0.8</span><span class="op">)</span>, x <span class="op">=</span> <span class="va">xL</span><span class="op">)</span></span>
 <span><span class="va">fit_big</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">dL</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, mode <span class="op">=</span> <span class="st">"auto"</span>,</span>
 <span>                 phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>backend <span class="op">=</span> <span class="va">fit_big</span><span class="op">$</span><span class="va">backend</span>, tier <span class="op">=</span> <span class="va">fit_big</span><span class="op">$</span><span class="va">inference_tier</span><span class="op">)</span></span>
-<span><span class="va">fit_big</span><span class="op">$</span><span class="va">selection_reason</span></span></code></pre></div>
+<span><span class="co">#&gt;   backend      tier </span></span>
+<span><span class="co">#&gt; "laplace"       "2"</span></span>
+<span><span class="va">fit_big</span><span class="op">$</span><span class="va">selection_reason</span></span>
+<span><span class="co">#&gt; [1] "large dataset (n=60,000)"</span></span></code></pre></div>
 <p>Here auto stepped down to the Laplace path. The reason names the
 dataset size: at sixty thousand rows the rule judges a full sampler too
 slow to be the sensible default and takes the Tier 2 route instead,
 which for a Gaussian likelihood is exact anyway. The estimates land on
 the truth.</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_big</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_big</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;   0.5077508   1.2038241</span></span></code></pre></div>
 <p>Two models, two different branches, each recorded. The same rule that
 picked an exact sampler for the small spatial model picked the
 structured approximation for the large plain one, and in both cases the
@@ -286,7 +370,7 @@ with that curvature as its precision. For a Gaussian likelihood this is
 exact and returns immediately. For other families it is the Gaussian
 approximation to the posterior, accurate when the posterior is close to
 Gaussian.</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">101</span><span class="op">)</span></span>
 <span><span class="va">g</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">12</span>, <span class="va">n</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">u</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">12</span>, sd <span class="op">=</span> <span class="fl">0.6</span><span class="op">)</span></span>
@@ -294,7 +378,9 @@ Gaussian.</p>
 <span>                 x <span class="op">=</span> <span class="va">x</span>, g <span class="op">=</span> <span class="va">g</span><span class="op">)</span></span>
 <span><span class="va">fit_lap</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>                 mode <span class="op">=</span> <span class="st">"laplace"</span>, sigma_re <span class="op">=</span> <span class="fl">0.6</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_lap</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_lap</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;  -0.2562997   0.7999603</span></span></code></pre></div>
 <p>The Laplace fit is deterministic, carries no Monte Carlo error, and
 its <code><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik()</a></code> is the approximate log marginal likelihood,
 the model evidence that <code><a href="../reference/compare_models.html">compare_models()</a></code> uses. This is the
@@ -312,12 +398,15 @@ approximation, not exact samples. What it adds over a plain Laplace fit
 is a set of draws and a diagnostic. The draws make it a drop-in where
 downstream code expects samples, and the ELBO gauges how well the
 Gaussian fits.</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_pf</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>                mode <span class="op">=</span> <span class="st">"pathfinder"</span>, sigma_re <span class="op">=</span> <span class="fl">0.6</span>,</span>
 <span>                control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_draws <span class="op">=</span> <span class="fl">450</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_pf</span><span class="op">)</span></span>
-<span><span class="va">fit_pf</span><span class="op">$</span><span class="va">elbo</span></span></code></pre></div>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;  -0.2313448   0.7959445</span></span>
+<span><span class="va">fit_pf</span><span class="op">$</span><span class="va">elbo</span></span>
+<span><span class="co">#&gt; [1] -252.4946</span></span></code></pre></div>
 <p>Pathfinder fits three situations well: you want draws but not the
 cost of full MCMC, you need a warm start for a sampler, or you want a
 quick check on whether the Laplace Gaussian is reasonable.</p>
@@ -333,12 +422,19 @@ Hamiltonian Monte Carlo because no leapfrog trajectory needs
 integrating, and mixing beats a random walk because the drift term
 nudges proposals toward higher density. The step size adapts during
 warmup toward an acceptance rate near 0.574.</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_mala</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>                  mode <span class="op">=</span> <span class="st">"mala"</span>, sigma_re <span class="op">=</span> <span class="fl">0.6</span>,</span>
 <span>                  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">450</span>, warmup <span class="op">=</span> <span class="fl">150</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Warning: tulpa(): the 'mala' chain has not converged -- x: Rhat 1.02, bulk-ESS</span></span>
+<span><span class="co">#&gt; 72; (Intercept): Rhat 1.00, bulk-ESS 82. Its estimates and intervals are not</span></span>
+<span><span class="co">#&gt; yet the posterior. Run longer (control$n_iter / control$warmup), or use mode =</span></span>
+<span><span class="co">#&gt; 'hmc'; see check_diagnostics().</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_mala</span><span class="op">)</span></span>
-<span><span class="va">fit_mala</span><span class="op">$</span><span class="va">mean_accept</span></span></code></pre></div>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;  -0.2706339   0.8233584</span></span>
+<span><span class="va">fit_mala</span><span class="op">$</span><span class="va">mean_accept</span></span>
+<span><span class="co">#&gt; [1] 0.7</span></span></code></pre></div>
 <p>MALA earns its keep when you want exact posterior moments at moderate
 dimension and the posterior is not so badly scaled that a single step
 size struggles across all directions. The acceptance rate is the
@@ -356,12 +452,15 @@ current state, so the iterations are nearly free and the acceptance rate
 doubles as a verdict on the Laplace approximation: high acceptance means
 the posterior is close to the Gaussian, low acceptance means it is far
 and Laplace was biased.</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_imh</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>                 mode <span class="op">=</span> <span class="st">"imh_laplace"</span>, sigma_re <span class="op">=</span> <span class="fl">0.6</span>,</span>
 <span>                 control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">450</span>, warmup <span class="op">=</span> <span class="fl">150</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_imh</span><span class="op">)</span></span>
-<span><span class="va">fit_imh</span><span class="op">$</span><span class="va">mean_accept</span></span></code></pre></div>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;  -0.2746751   0.8342437</span></span>
+<span><span class="va">fit_imh</span><span class="op">$</span><span class="va">mean_accept</span></span>
+<span><span class="co">#&gt; [1] 0.8833333</span></span></code></pre></div>
 <p>The acceptance here is high, which says the Laplace fit was already
 close. Two jobs suit <code>imh_laplace</code>: debiasing a Laplace fit
 at low parameter dimension, and repeated-fit workflows such as
@@ -378,10 +477,15 @@ random-effect standard deviation rather than conditioning on a fixed
 Gibbs backend. It returns posterior draws, so the fixed effects come
 through <code><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef()</a></code> and the field and its precision are columns
 of the same draws matrix, named in <code>param_names</code>.</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_auto</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;      -0.165       0.616</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">tail</a></span><span class="op">(</span><span class="va">fit_auto</span><span class="op">$</span><span class="va">param_names</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit_auto</span><span class="op">$</span><span class="va">means</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"log_tau_spatial"</span>, <span class="st">"phi_spatial[1]"</span><span class="op">)</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] "phi_spatial[18]" "phi_spatial[19]" "phi_spatial[20]"</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit_auto</span><span class="op">$</span><span class="va">means</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"log_tau_spatial"</span>, <span class="st">"phi_spatial[1]"</span><span class="op">)</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt; log_tau_spatial  phi_spatial[1] </span></span>
+<span><span class="co">#&gt;           1.265           0.421</span></span></code></pre></div>
 <p>Gibbs is the right call when the family is conjugate-friendly under
 the Polya-Gamma scheme and you want an exact fit that samples the
 variance rather than fixing it. For a binomial areal field, auto takes
@@ -399,7 +503,7 @@ the Laplace path redirects to this backend automatically and integrates
 the covariance with a CCD design and a PC or LKJ prior. You reach it not
 by name but by writing a slope term and fitting at
 <code>mode = "laplace"</code>.</p>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">20260531</span><span class="op">)</span></span>
 <span><span class="va">ng</span> <span class="op">&lt;-</span> <span class="fl">60</span>; <span class="va">ni</span> <span class="op">&lt;-</span> <span class="fl">15</span></span>
 <span><span class="va">g</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">ng</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">ni</span><span class="op">)</span></span>
@@ -413,19 +517,24 @@ by name but by writing a slope term and fitting at
 <span></span>
 <span><span class="va">fit_rc</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">dsl</span>,</span>
 <span>                family <span class="op">=</span> <span class="st">"binomial"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
-<span><span class="va">fit_rc</span><span class="op">$</span><span class="va">backend</span></span></code></pre></div>
+<span><span class="va">fit_rc</span><span class="op">$</span><span class="va">backend</span></span>
+<span><span class="co">#&gt; [1] "re_cov_nested"</span></span></code></pre></div>
 <p>The slope term routed the fit to <code>re_cov_nested</code> without
 being named. What comes back is the integrated covariance, not a point
 estimate of one: a 2x2 matrix carrying the intercept and slope variances
 on its diagonal and their covariance off it.</p>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit_rc</span><span class="op">$</span><span class="va">Sigma_mean</span>, <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit_rc</span><span class="op">$</span><span class="va">Sigma_mean</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt;       [,1]  [,2]</span></span>
+<span><span class="co">#&gt; [1,] 0.994 0.249</span></span>
+<span><span class="co">#&gt; [2,] 0.249 0.553</span></span></code></pre></div>
 <p>Integrating the covariance through a Gaussian grid over the
 hyperparameters means the fit carries a Pareto-k-hat accuracy
 diagnostic, the nested-approximation counterpart to the Rhat a sampler
 reports.</p>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit_rc</span><span class="op">$</span><span class="va">pareto_k</span>, <span class="fl">2</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit_rc</span><span class="op">$</span><span class="va">pareto_k</span>, <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 0.48</span></span></code></pre></div>
 <p>Here k-hat sits below the 0.7 threshold, so the Gaussian grid fits
 the covariance posterior well and the integrated matrix can be trusted.
 With smaller groups or sparser binary data that posterior turns skewed
@@ -448,7 +557,7 @@ exact when the likelihood is Gaussian and is typically more accurate
 than Laplace on a skewed GLM likelihood. EP fits fixed effects only (no
 random-effect, spatial, or latent structure); reach it with
 <code>mode = "ep"</code> or call <code><a href="../reference/tulpa_ep.html">tulpa_ep()</a></code> directly.</p>
-<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_ep</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"binomial"</span>, mode <span class="op">=</span> <span class="st">"ep"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_ep</span><span class="op">)</span></span></code></pre></div>
 <p>The R-callable backends span both exact tiers and the structured
@@ -463,7 +572,7 @@ between cost and guarantee is visible in numbers.</p>
 ways and lay the results side by side. Take the binomial
 random-intercept model from above and fit it at Laplace, MALA, and
 Pathfinder, timing each with <code><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time()</a></code>.</p>
-<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">t_lap</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span></span>
 <span>  <span class="va">f_lap</span>  <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>                  mode <span class="op">=</span> <span class="st">"laplace"</span>, sigma_re <span class="op">=</span> <span class="fl">0.6</span><span class="op">)</span><span class="op">)</span><span class="op">[[</span><span class="st">"elapsed"</span><span class="op">]</span><span class="op">]</span></span>
@@ -471,13 +580,17 @@ Pathfinder, timing each with <code><a href="https://rdrr.io/r/base/system.time.h
 <span>  <span class="va">f_mala</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>                  mode <span class="op">=</span> <span class="st">"mala"</span>, sigma_re <span class="op">=</span> <span class="fl">0.6</span>,</span>
 <span>                  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">450</span>, warmup <span class="op">=</span> <span class="fl">150</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">[[</span><span class="st">"elapsed"</span><span class="op">]</span><span class="op">]</span></span>
+<span><span class="co">#&gt; Warning: tulpa(): the 'mala' chain has not converged -- x: Rhat 1.02, bulk-ESS</span></span>
+<span><span class="co">#&gt; 47; (Intercept): Rhat 1.00, bulk-ESS 66. Its estimates and intervals are not</span></span>
+<span><span class="co">#&gt; yet the posterior. Run longer (control$n_iter / control$warmup), or use mode =</span></span>
+<span><span class="co">#&gt; 'hmc'; see check_diagnostics().</span></span>
 <span><span class="va">t_pf</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span></span>
 <span>  <span class="va">f_pf</span>   <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>                  mode <span class="op">=</span> <span class="st">"pathfinder"</span>, sigma_re <span class="op">=</span> <span class="fl">0.6</span>,</span>
 <span>                  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_draws <span class="op">=</span> <span class="fl">450</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">[[</span><span class="st">"elapsed"</span><span class="op">]</span><span class="op">]</span></span></code></pre></div>
 <p>Collect the slope estimate, its standard error, the tier, and the
 elapsed time into one table.</p>
-<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">slope_se</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">f</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">f</span><span class="op">)</span><span class="op">[</span><span class="st">"x"</span>, <span class="st">"std.error"</span><span class="op">]</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
 <span>  backend  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">f_lap</span><span class="op">$</span><span class="va">backend</span>, <span class="va">f_mala</span><span class="op">$</span><span class="va">backend</span>, <span class="va">f_pf</span><span class="op">$</span><span class="va">backend</span><span class="op">)</span>,</span>
@@ -488,7 +601,11 @@ elapsed time into one table.</p>
 <span>  slope_se <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu">slope_se</span><span class="op">(</span><span class="va">f_lap</span><span class="op">)</span>, <span class="fu">slope_se</span><span class="op">(</span><span class="va">f_mala</span><span class="op">)</span>,</span>
 <span>                     <span class="fu">slope_se</span><span class="op">(</span><span class="va">f_pf</span><span class="op">)</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  seconds  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">t_lap</span>, <span class="va">t_mala</span>, <span class="va">t_pf</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span></span>
+<span><span class="co">#&gt;      backend tier slope slope_se seconds</span></span>
+<span><span class="co">#&gt; 1    laplace    2 0.800    0.128    0.02</span></span>
+<span><span class="co">#&gt; 2       mala    1 0.863    0.140    0.14</span></span>
+<span><span class="co">#&gt; 3 pathfinder    2 0.802    0.130    0.05</span></span></code></pre></div>
 <p>Three patterns sit in this table. The slope estimates agree across
 all three backends to within their standard errors. That is expected:
 the posterior mean is the easy quantity, and every method finds it. The
@@ -519,8 +636,10 @@ quantities on different scales.</p>
 <p>The <code><a href="https://generics.r-lib.org/reference/glance.html" class="external-link">glance()</a></code> accessor surfaces the per-fit diagnostics
 that matter for the sampler tiers: the number of post-warmup draws, the
 acceptance rate, and the divergence count.</p>
-<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://generics.r-lib.org/reference/glance.html" class="external-link">glance</a></span><span class="op">(</span><span class="va">f_mala</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"n_samples"</span>, <span class="st">"mean_accept"</span>, <span class="st">"n_divergent"</span><span class="op">)</span><span class="op">]</span></span></code></pre></div>
+<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://generics.r-lib.org/reference/glance.html" class="external-link">glance</a></span><span class="op">(</span><span class="va">f_mala</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"n_samples"</span>, <span class="st">"mean_accept"</span>, <span class="st">"n_divergent"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;   n_samples mean_accept n_divergent</span></span>
+<span><span class="co">#&gt; 1       300        0.73          NA</span></span></code></pre></div>
 <p>An acceptance rate inside the healthy band and no divergences say the
 MALA chain mixed well, which is the prerequisite for trusting its
 intervals. Without that check, a Tier 1 fit is only nominally exact: a

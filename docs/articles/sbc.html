@@ -35,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.1</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -92,8 +92,29 @@
 
     
     
+<div class="section level2">
+<h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
+</h2>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Current release, built for Windows and macOS</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"tulpa"</span>,</span>
+<span>                 repos <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"https://gcol33.r-universe.dev"</span>,</span>
+<span>                           <span class="st">"https://cloud.r-project.org"</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Development version from GitHub</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"pak"</span><span class="op">)</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Pin a release</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.6.0"</span><span class="op">)</span></span></code></pre></div>
+<p><code>pak</code> resolves the dependency tree, including
+<code>tulpaMesh</code> (on CRAN, used for SPDE mesh construction).
+<code>tulpa</code> compiles its C++ backend on first install, so a C++17
+toolchain is required: Rtools on Windows, Xcode CLI tools on macOS,
+<code>r-base-dev</code> on Linux.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/gcol33/tulpa" class="external-link">tulpa</a></span><span class="op">)</span></span></code></pre></div>
+</div>
 <div class="section level2">
 <h2 id="what-the-instrument-reads">What the instrument reads<a class="anchor" aria-label="anchor" href="#what-the-instrument-reads"></a>
 </h2>
@@ -133,7 +154,7 @@ seven-point grid.</p>
 spreads across four or five of the seven grid cells, which is the regime
 where the outer-grid mixture posterior for a fixed effect is farthest
 from the Gaussian matching its first two moments.</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">GRID</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.2</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">1.5</span><span class="op">)</span>, length.out <span class="op">=</span> <span class="fl">7</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">PHI</span>  <span class="op">&lt;-</span> <span class="fl">0.7</span></span>
 <span><span class="va">BETA</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.2</span>, <span class="fl">0.7</span><span class="op">)</span></span>
@@ -187,7 +208,7 @@ first two moments, so building an <code><a href="../reference/sbc_predictive.htm
 the collapsed read of the identical posterior. For the hyperparameter
 the grid defines a distribution on a finite support, which is
 <code><a href="../reference/sbc_predictive.html">sbc_discrete()</a></code>.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">arms</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">d</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">fit_one</span><span class="op">(</span><span class="va">d</span><span class="op">)</span></span>
 <span>  <span class="va">m</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
@@ -217,13 +238,36 @@ band.</p>
 <div class="section level2">
 <h2 id="the-prior-predictive-experiment">The prior-predictive experiment<a class="anchor" aria-label="anchor" href="#the-prior-predictive-experiment"></a>
 </h2>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">res</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/sbc.html">sbc</a></span><span class="op">(</span><span class="st">"prior_predictive"</span>,</span>
 <span>           simulator  <span class="op">=</span> <span class="va">simulate_one</span>,</span>
 <span>           fitter     <span class="op">=</span> <span class="va">arms</span>,</span>
 <span>           n_sim      <span class="op">=</span> <span class="fl">200L</span>,</span>
 <span>           flat_prior <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"beta1"</span>, <span class="st">"beta2"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">res</span></span></code></pre></div>
+<span><span class="va">res</span></span>
+<span><span class="co">#&gt; Simulation-based calibration -- prior_predictive, 200 simulations</span></span>
+<span><span class="co">#&gt;   band: 0.95 simultaneous (equal local levels, exact crossing probability)</span></span>
+<span><span class="co">#&gt;   CRPS: proper posterior score</span></span>
+<span><span class="co">#&gt;   proper prior: verified over 10 probed simulations; flat prior asserted for beta1, beta2</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;        arm quantity   n     ks inside p_unif inside_folded p_folded     crps</span></span>
+<span><span class="co">#&gt;    mixture    beta1 200 0.0429   TRUE  0.703          TRUE   0.4280 0.173850</span></span>
+<span><span class="co">#&gt;    mixture    beta2 200 0.0718   TRUE  0.197         FALSE   0.0495 0.095906</span></span>
+<span><span class="co">#&gt;    mixture    sigma 200 0.0541   TRUE  0.759          TRUE   0.3580 0.106130</span></span>
+<span><span class="co">#&gt;  collapsed    beta1 200 0.0577   TRUE  0.640          TRUE   0.0810 0.173780</span></span>
+<span><span class="co">#&gt;  collapsed    beta2 200 0.0754   TRUE  0.322         FALSE   0.0461 0.095823</span></span>
+<span><span class="co">#&gt;     narrow    beta1 200 0.0667   TRUE  0.367          TRUE   0.2650 0.174120</span></span>
+<span><span class="co">#&gt;     narrow    beta2 200 0.0546   TRUE  0.521          TRUE   0.5740 0.095336</span></span>
+<span><span class="co">#&gt;  crps_se</span></span>
+<span><span class="co">#&gt;  0.01040</span></span>
+<span><span class="co">#&gt;  0.00443</span></span>
+<span><span class="co">#&gt;  0.00683</span></span>
+<span><span class="co">#&gt;  0.01020</span></span>
+<span><span class="co">#&gt;  0.00440</span></span>
+<span><span class="co">#&gt;  0.01120</span></span>
+<span><span class="co">#&gt;  0.00497</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; 7 of 7 (arm, quantity) reads inside the band; outside the band: mixture/beta2, collapsed/beta2.</span></span></code></pre></div>
 <p><code>flat_prior</code> is a guard doing its job. Ordinary SBC draws
 the truth from the prior, so an improper prior has nothing to draw from,
 and the nested-Laplace door puts no prior on the fixed effects.
@@ -264,8 +308,36 @@ here.</p>
 </h2>
 <p><code>summary(baseline = )</code> pairs the CRPS seed by seed against
 one arm.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">res</span>, baseline <span class="op">=</span> <span class="st">"mixture"</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">res</span>, baseline <span class="op">=</span> <span class="st">"mixture"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Simulation-based calibration -- prior_predictive, 200 simulations</span></span>
+<span><span class="co">#&gt;   CRPS: proper posterior score</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;        arm quantity   n     ks inside p_unif inside_folded p_folded     crps</span></span>
+<span><span class="co">#&gt;    mixture    beta1 200 0.0429   TRUE  0.703          TRUE   0.4280 0.173850</span></span>
+<span><span class="co">#&gt;    mixture    beta2 200 0.0718   TRUE  0.197         FALSE   0.0495 0.095906</span></span>
+<span><span class="co">#&gt;    mixture    sigma 200 0.0541   TRUE  0.759          TRUE   0.3580 0.106130</span></span>
+<span><span class="co">#&gt;  collapsed    beta1 200 0.0577   TRUE  0.640          TRUE   0.0810 0.173780</span></span>
+<span><span class="co">#&gt;  collapsed    beta2 200 0.0754   TRUE  0.322         FALSE   0.0461 0.095823</span></span>
+<span><span class="co">#&gt;     narrow    beta1 200 0.0667   TRUE  0.367          TRUE   0.2650 0.174120</span></span>
+<span><span class="co">#&gt;     narrow    beta2 200 0.0546   TRUE  0.521          TRUE   0.5740 0.095336</span></span>
+<span><span class="co">#&gt;  crps_se</span></span>
+<span><span class="co">#&gt;  0.01040</span></span>
+<span><span class="co">#&gt;  0.00443</span></span>
+<span><span class="co">#&gt;  0.00683</span></span>
+<span><span class="co">#&gt;  0.01020</span></span>
+<span><span class="co">#&gt;  0.00440</span></span>
+<span><span class="co">#&gt;  0.01120</span></span>
+<span><span class="co">#&gt;  0.00497</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Paired CRPS against arm 'mixture' (negative delta = better)</span></span>
+<span><span class="co">#&gt;  quantity       arm   n      delta     t worse_frac   p_sign</span></span>
+<span><span class="co">#&gt;     beta1 collapsed 200 -7.409e-05 -0.15      0.600 5.69e-03</span></span>
+<span><span class="co">#&gt;     beta1    narrow 200  2.618e-04  0.28      0.375 4.99e-04</span></span>
+<span><span class="co">#&gt;     beta2 collapsed 200 -8.275e-05 -0.42      0.520 6.21e-01</span></span>
+<span><span class="co">#&gt;     beta2    narrow 200 -5.698e-04 -0.91      0.360 9.13e-05</span></span>
+<span><span class="co">#&gt;   delta with its t is the proper-score verdict; p_sign is a more</span></span>
+<span><span class="co">#&gt;   powerful detector of a difference but is not itself proper.</span></span></code></pre></div>
 <p><code>delta</code> with its <code>t</code> is the proper-score
 verdict; a negative <code>delta</code> is the arm scoring better.
 <code>p_sign</code> is more powerful at detecting that two arms differ
@@ -286,10 +358,12 @@ sweep is not offered as an experiment, and
 <div class="section level2">
 <h2 id="the-picture">The picture<a class="anchor" aria-label="anchor" href="#the-picture"></a>
 </h2>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">res</span>, arm <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mixture"</span>, <span class="st">"narrow"</span><span class="op">)</span>, quantity <span class="op">=</span> <span class="st">"beta2"</span><span class="op">)</span></span></code></pre></div>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">res</span>, arm <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mixture"</span>, <span class="st">"narrow"</span><span class="op">)</span>, quantity <span class="op">=</span> <span class="st">"beta2"</span><span class="op">)</span></span></code></pre></div>
+<p><img src="sbc_files/figure-html/plot-raw-1.png" class="r-plt" alt="PIT ECDF difference from uniform against the simultaneous band" width="672"></p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">res</span>, arm <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mixture"</span>, <span class="st">"narrow"</span><span class="op">)</span>, quantity <span class="op">=</span> <span class="st">"beta2"</span>, folded <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
+<p><img src="sbc_files/figure-html/plot-folded-1.png" class="r-plt" alt="Folded PIT ECDF difference from uniform against the simultaneous band" width="672"></p>
 <p>The plot draws the ECDF <strong>difference</strong> from uniform, so
 a calibrated read is a flat line at zero inside the band. The
 under-dispersed arm bows away from it, and the bow is larger folded than
@@ -312,7 +386,7 @@ That is ordinary SBC with <code>pi(theta | y_obs)</code> in the role of
 the prior, so the same band, the same folded read and the same proper
 score all carry over, and it needs no proper prior at all.</p>
 <p>It takes six callbacks.</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">d_obs</span> <span class="op">&lt;-</span> <span class="fu">simulate_one</span><span class="op">(</span><span class="fl">99L</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">model</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
@@ -359,9 +433,28 @@ score all carry over, and it needs no proper prior at all.</p>
 <span>  <span class="op">}</span>,</span>
 <span></span>
 <span>  group_ids <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">data</span><span class="op">)</span> <span class="va">data</span><span class="op">$</span><span class="va">region</span><span class="op">)</span></span></code></pre></div>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">pres</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/sbc.html">sbc</a></span><span class="op">(</span><span class="st">"posterior"</span>, model <span class="op">=</span> <span class="va">model</span>, n_sim <span class="op">=</span> <span class="fl">200L</span><span class="op">)</span></span>
-<span><span class="va">pres</span></span></code></pre></div>
+<span><span class="va">pres</span></span>
+<span><span class="co">#&gt; Simulation-based calibration -- posterior, 200 simulations</span></span>
+<span><span class="co">#&gt;   band: 0.95 simultaneous (equal local levels, exact crossing probability)</span></span>
+<span><span class="co">#&gt;   CRPS: proper posterior score (updating prior = posterior at y_obs)</span></span>
+<span><span class="co">#&gt;   pooling: verified; fresh groups: verified (disjoint group labels)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;      arm quantity   n     ks inside  p_unif inside_folded p_folded     crps</span></span>
+<span><span class="co">#&gt;  mixture    beta1 200 0.0440   TRUE 0.77100          TRUE 0.721000 0.092846</span></span>
+<span><span class="co">#&gt;  mixture    beta2 200 0.0451   TRUE 0.31700          TRUE 0.741000 0.069473</span></span>
+<span><span class="co">#&gt;  mixture    sigma 200 0.0822   TRUE 0.19700          TRUE 0.322000 0.065106</span></span>
+<span><span class="co">#&gt;   narrow    beta1 200 0.0577  FALSE 0.02970         FALSE 0.000968 0.093038</span></span>
+<span><span class="co">#&gt;   narrow    beta2 200 0.0661  FALSE 0.00552         FALSE 0.000596 0.069730</span></span>
+<span><span class="co">#&gt;  crps_se</span></span>
+<span><span class="co">#&gt;  0.00508</span></span>
+<span><span class="co">#&gt;  0.00348</span></span>
+<span><span class="co">#&gt;  0.00392</span></span>
+<span><span class="co">#&gt;  0.00554</span></span>
+<span><span class="co">#&gt;  0.00387</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; 3 of 5 (arm, quantity) reads inside the band; outside the band: narrow/beta1, narrow/beta2.</span></span></code></pre></div>
 <p>The driver hands <code>draw_theta</code> and <code>simulate</code>
 different seeds, so <code>set.seed(seed)</code> at the top of each is
 the correct fixture. Giving both the same seed makes the replicate’s
@@ -375,8 +468,11 @@ under test.</p>
 <p>Each premise silently turns the construction into something that is
 not SBC, so each has a guard, and each guard’s conclusion travels on the
 result.</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="va">pres</span><span class="op">$</span><span class="va">premises</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="va">pres</span><span class="op">$</span><span class="va">premises</span><span class="op">)</span></span>
+<span><span class="co">#&gt; List of 2</span></span>
+<span><span class="co">#&gt;  $ pooling     : chr "verified"</span></span>
+<span><span class="co">#&gt;  $ fresh_groups: chr "verified (disjoint group labels)"</span></span></code></pre></div>
 <p><strong>The augmented posterior conditions on both data
 sets.</strong> Fitting the replicate alone is ordinary SBC under a
 hand-made prior. <code><a href="../reference/sbc.html">sbc()</a></code> refuses a <code>pool()</code>
@@ -429,9 +525,27 @@ false-positive rate is 0.0117 against a nominal 0.05, and power reaches
 makes a pass the weaker one.</p>
 <p><code><a href="../reference/diagnostics.html">diagnostics()</a></code> reads both at once when you hand it the
 calibration result.</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">fit_one</span><span class="op">(</span><span class="va">d_obs</span>, diagnose <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span>, sbc <span class="op">=</span> <span class="va">res</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span>, sbc <span class="op">=</span> <span class="va">res</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Nested-Laplace WHOLE-FIT reliability (i.i.d. draws)</span></span>
+<span><span class="co">#&gt;   two layers: the outer hyperparameter-grid integration, and the inner</span></span>
+<span><span class="co">#&gt;     Gaussian Laplace on the latent field</span></span>
+<span><span class="co">#&gt;   outer PSIS pareto_k = 0.657 (ok); IS-ESS = 252.2</span></span>
+<span><span class="co">#&gt;     proposal: moment_matched; as the backend placed it, 0.712 (unreliable)</span></span>
+<span><span class="co">#&gt;   outer grid quadrature ESS = 4.66 of 7 cells (max weight 0.262)</span></span>
+<span><span class="co">#&gt;   hyperparameter integration contributes 0.2-5.2% of the fixed-effect marginal variance</span></span>
+<span><span class="co">#&gt;   note: outer grid holds material weight on a boundary node of b1.sigma (lower): that axis truncates its own marginal there, whether or not its mode sits on the node -- widen it and refit to see what is outside</span></span>
+<span><span class="co">#&gt;   note: outer grid axis holding weight on its own boundary node on b1.sigma:lower: that axis truncates its marginal there even though its mode is inside the span -- widen it and refit to see what is outside</span></span>
+<span><span class="co">#&gt;   inner Laplace max |gamma_3| = 0.000 (good), scored 2/2 latents</span></span>
+<span><span class="co">#&gt;   inner Laplace importance pareto_k = 0.274 (good), min IS efficiency 1.0000, scored 2/2 latents</span></span>
+<span><span class="co">#&gt;     the importance weights are uniform on every probed index: the inner</span></span>
+<span><span class="co">#&gt;     Gaussian reproduces the conditional posterior over the sampled region,</span></span>
+<span><span class="co">#&gt;     so the shape above describes no correction and is not banded</span></span>
+<span><span class="co">#&gt;   whole-fit verdict: scoped: outer integration borderline</span></span>
+<span><span class="co">#&gt;   calibration (SBC, prior_predictive): outside the band: mixture/beta2, collapsed/beta2</span></span>
+<span><span class="co">#&gt;   per-parameter columns: none.</span></span>
+<span><span class="co">#&gt;     the fit carries no posterior draws, so the per-parameter mean / sd / per-parameter columns are empty; tulpa_posterior_draws(fit) samples the retained outer-grid mixture if a sample is wanted</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a>

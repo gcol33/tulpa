@@ -35,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.1</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -92,8 +92,29 @@
 
     
     
+<div class="section level2">
+<h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
+</h2>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Current release, built for Windows and macOS</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"tulpa"</span>,</span>
+<span>                 repos <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"https://gcol33.r-universe.dev"</span>,</span>
+<span>                           <span class="st">"https://cloud.r-project.org"</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Development version from GitHub</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"pak"</span><span class="op">)</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Pin a release</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.6.0"</span><span class="op">)</span></span></code></pre></div>
+<p><code>pak</code> resolves the dependency tree, including
+<code>tulpaMesh</code> (on CRAN, used for SPDE mesh construction).
+<code>tulpa</code> compiles its C++ backend on first install, so a C++17
+toolchain is required: Rtools on Windows, Xcode CLI tools on macOS,
+<code>r-base-dev</code> on Linux.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/gcol33/tulpa" class="external-link">tulpa</a></span><span class="op">)</span></span></code></pre></div>
+</div>
 <div class="section level2">
 <h2 id="what-the-driver-is-for">What the driver is for<a class="anchor" aria-label="anchor" href="#what-the-driver-is-for"></a>
 </h2>
@@ -113,7 +134,7 @@ top of it. The callbacks below are the whole contract.</p>
 </h2>
 <p><code>e_step(fits, ...)</code> receives the current per-submodel fits
 and returns the latent-variable posterior as weights:</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">e_step</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">fits</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="co"># Use the current fits to compute the responsibility of each observation</span></span>
 <span>  <span class="co"># (e.g. the posterior probability that a zero is a Poisson zero, not a</span></span>
@@ -125,7 +146,7 @@ or more weighted GLM submodels. Each block is a
 <code>list(y, n_trials, X, family, offset)</code>; the driver fits each
 with <code><a href="../reference/tulpa_laplace.html">tulpa_laplace()</a></code> and threads the per-block
 <code>family</code> and <code>offset</code> through automatically:</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">m_step_encode</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">weights</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
 <span>    lambda <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">counts</span>, n_trials <span class="op">=</span> <span class="fl">1L</span>, X <span class="op">=</span> <span class="va">X_abund</span>,</span>
@@ -138,7 +159,7 @@ with <code><a href="../reference/tulpa_laplace.html">tulpa_laplace()</a></code> 
 <div class="section level2">
 <h2 id="running-it-and-the-bias-correction">Running it, and the bias correction<a class="anchor" aria-label="anchor" href="#running-it-and-the-bias-correction"></a>
 </h2>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_em_laplace.html">tulpa_em_laplace</a></span><span class="op">(</span></span>
 <span>  e_step        <span class="op">=</span> <span class="va">e_step</span>,</span>
 <span>  m_step_encode <span class="op">=</span> <span class="va">m_step_encode</span>,</span>
@@ -151,7 +172,7 @@ with <code><a href="../reference/tulpa_laplace.html">tulpa_laplace()</a></code> 
 <p>The EM point estimate is fast but its standard errors ignore the
 uncertainty in the imputed latent variable. Two post-EM corrections
 restore it, pooled by Rubin’s rules:</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Multiple imputation: refit on several latent draws and pool.</span></span>
 <span><span class="va">fit_mi</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_em_laplace.html">tulpa_em_laplace</a></span><span class="op">(</span><span class="va">e_step</span>, <span class="va">m_step_encode</span>, correction <span class="op">=</span> <span class="st">"mi"</span><span class="op">)</span></span>
 <span></span>
