@@ -1483,6 +1483,61 @@ auto_grid_place <- function(x)
     invisible(res)
 }
 
+# Every axis declared on two or more nodes whose posterior marginal holds at
+# least `.nl_diag("single_node_mass")` on one node: the grid integrated it at
+# that node. A copy scale whose heavy node is its "no coupling" point mass is
+# not among them, since that mass is the model the atom states.
+.nl_single_node_axes <- function(res, mass = .nl_diag("single_node_mass")) {
+    tg <- res$theta_grid
+    w  <- res$weights
+    if (is.null(tg) || !is.matrix(tg) || is.null(w) || length(w) != nrow(tg)) {
+        return(character(0))
+    }
+    w[!is.finite(w)] <- 0
+    if (sum(w) <= 0) return(character(0))
+    w <- w / sum(w)
+    out <- character(0)
+    for (a in colnames(tg) %||% character(0)) {
+        v <- as.numeric(tg[, a])
+        declared <- unique(c(v, as.numeric(res$outer_axis_nodes[[a]])))
+        if (length(declared) < 2L) next
+        m <- tapply(w, v, sum)
+        top <- which.max(m)
+        if (m[[top]] < mass) next
+        if (isTRUE(.hyper_axis_scale(sub("^b[0-9]+[.]", "", a))) &&
+            as.numeric(names(m)[top]) <= 0) next
+        out <- c(out, a)
+    }
+    out
+}
+
+# Said once per fit for every such axis the placement pass lays: a positive
+# scale (a field or random-effect SD or precision, a copy scale, a dispersion)
+# the engine was free to move. An axis the caller pinned, declared as written,
+# or held by switching the pass off is the caller's own statement and stays on
+# the fit without a warning, as a rail on one does (`.nl_warn_unplaced_rail()`);
+# so does a bounded axis (a BYM2 or proper-CAR mixing weight), which no
+# placement moves.
+.nl_warn_single_node_axes <- function(res, fn) {
+    ax <- res$outer_grid_single_node_axes
+    dec <- res$outer_grid_axis_declined %||% character(0)
+    placeable <- vapply(ax, function(a)
+        isTRUE(.hyper_axis_scale(sub("^b[0-9]+[.]", "", a))) ||
+            startsWith(a, "phi_"), logical(1))
+    ax <- ax[placeable & !(dec[ax] %in% .NL_RAIL_CALLER_HOLDS)]
+    if (!length(ax)) return(invisible(res))
+    why <- vapply(ax, function(a) {
+        r <- dec[a]
+        if (length(r) && !is.na(r)) paste0(" (", r, ")") else ""
+    }, character(1))
+    warning(sprintf(paste0(
+        "%s: the outer posterior of %s sits on a single grid node, so the ",
+        "reported value is that node and its spread is not integrated. See ",
+        "`outer_grid_single_node_axes` and `outer_grid_axis_declined`."),
+        fn, paste0("`", ax, "`", why, collapse = ", ")), call. = FALSE)
+    invisible(res)
+}
+
 # PER-AXIS decline record, beside the whole-fit `outer_grid_recenter_declined`.
 # The whole-fit slot holds the reason from the ONE rescue that could have run
 # and is written only while the fit is unplaced, so on a fit where the field SD

@@ -566,8 +566,17 @@
         }
         # Trust-region clamp: bound each coordinate's step so a near-singular
         # Hessian cannot send a candidate to an extreme hyperparameter where the
-        # inner Newton needs many iterations.
-        step <- pmax(pmin(step, trust), -trust)
+        # inner Newton needs many iterations. The whole step is shortened by the
+        # one factor that brings its worst coordinate inside its radius, which
+        # keeps its direction: against a negative-definite curvature that
+        # direction is uphill (`grad . step = -grad' H^-1 grad > 0`), so some
+        # halving of it improves. Clipping coordinates one at a time does not
+        # keep it, and on a correlated outer posterior (a field SD against its
+        # copy scale) the clipped step can point downhill, so that every
+        # halving the line search tries is worse and the search stops away
+        # from the mode as if it had converged.
+        over <- max(abs(step) / trust)
+        if (is.finite(over) && over > 1) step <- step / over
         # Backtracking line search over `max_halve` halvings, all evaluated in ONE
         # batched call so the candidates fan out across the outer-grid threads:
         # a serial probe per halving does not parallelise, and on an expensive

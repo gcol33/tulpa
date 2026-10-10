@@ -1444,6 +1444,14 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # widths a node's own spacing gives it and drops only the domain closure of the
 # outermost cell, which is not a width the sweep could have seen
 # (gcol33/tulpa#660).
+#
+# `single_node_mass` is the share of an axis's marginal one node has to hold
+# before the axis is NAMED as integrated at a single node
+# (`.nl_single_node_axes()`, `$outer_grid_single_node_axes`) and the fit warns.
+# A Gaussian marginal read on nodes spaced `h` apart puts 0.99 on one node once
+# its SD falls under about `h / 5`, a fifth of the spacing the placement pass
+# lays (1.25 SDs), so an axis past it carries no spread across nodes for the
+# grid to report: its value is that node.
 .NL_DIAG <- list(
     within_cell          = "log_quadratic",
     lq_max_h_over_sd     = 2,
@@ -1457,6 +1465,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     at_mode_gap_var      = 0.01,
     level_row_tail       = 1e-3,
     edge_mass_lift       = 1,
+    single_node_mass     = 0.99,
     k_usable             = 0.7,
     k_samples            = 500L,
     k_samples_ok         = 800L,

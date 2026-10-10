@@ -55,13 +55,22 @@
 # returns them; `set_warm(mode)` advances the inner warm start to an accepted
 # point's mode.
 #
+# `axis_nodes`, named by column, is each axis's DECLARED node set: the lattice
+# the fit was laid on before an adaptive flood, a pilot thinning or a prune
+# screen kept a subset of its cells. An axis is searched over the union of its
+# declared nodes and the nodes its kept cells carry. Read off the kept cells
+# alone, an axis whose posterior is sharp against its node spacing is left with
+# one node, so it would be held fixed at that node, receive no curvature, and
+# stay integrated at that one node with posterior SD 0 whatever the data say.
+#
 # Returns `list(mode_u, cov_u, tags, names, status, rounds, evals, value)`, the
 # mode and covariance over every axis in the placement coordinate (an axis held
 # fixed has zero rows and columns), or `list(declined = <reason>)`. `status` is
 # `"ok"`, `"not_converged"` (the round cap was reached first), or `"boundary"`
 # (the mode ran to the search box, which is past the axis's own range by 1.5
 # spans: a mode the data do not bound).
-.nl_placement_mode <- function(tg, w, tags, eval_logpost, set_warm = NULL) {
+.nl_placement_mode <- function(tg, w, tags, eval_logpost, set_warm = NULL,
+                               axis_nodes = NULL) {
     if (is.null(tg) || !is.matrix(tg) || is.null(w) || length(w) != nrow(tg) ||
         length(tags) != ncol(tg) || anyNA(tags) ||
         !any(is.finite(w) & w > 0)) {
@@ -74,7 +83,9 @@
     ptag <- .joint_ccd_coord_tags(cn, tags)
 
     cont <- lapply(seq_len(d), function(j) {
-        v <- sort(unique(as.numeric(tg[, j])))
+        v <- c(as.numeric(tg[, j]),
+               if (!is.null(cn)) as.numeric(axis_nodes[[cn[j]]]))
+        v <- sort(unique(v[is.finite(v)]))
         if (identical(ptag[j], "log")) v[v > 0] else v
     })
     on_cont <- vapply(seq_len(d), function(j)
@@ -149,7 +160,7 @@
     tags <- .joint_pareto_axis_tags(res)
     if (.k_is_decline(tags)) return(list(declined = .k_decline_label(tags)))
     .nl_placement_mode(res$theta_grid, res$weights, tags, eval_logpost,
-                       set_warm = set_warm)
+                       set_warm = set_warm, axis_nodes = res$outer_axis_nodes)
 }
 
 # The outer mode a placement mode-find reached, per axis, in the shape the

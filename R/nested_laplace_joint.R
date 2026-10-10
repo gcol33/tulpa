@@ -1378,7 +1378,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # railing; empty when every one is held, which is the gate that keeps such a
     # fit paying nothing for a pass that could not run.
     placement_axes <- if (!auto_recenter) character(0) else
-        .joint_movable_extra_axes(state, phi_prov$auto)
+        .joint_movable_extra_axes(state, phi_prov$auto, prov$auto)
 
     # Grid-cell checkpoint. `resume = FALSE` starts THIS FIT over, so any prior
     # file is removed once, here, before the first solve. An outer-grid
@@ -1671,7 +1671,9 @@ tulpa_nested_laplace_joint <- function(responses,
         }
         res$k_quality_k_trace <- k_trace
     }
+    res$outer_grid_single_node_axes <- .nl_single_node_axes(res)
     .nl_warn_unplaced_rail(res, "tulpa_nested_laplace_joint()")
+    .nl_warn_single_node_axes(res, "tulpa_nested_laplace_joint()")
     .nl_warn_unconverged(res, "tulpa_nested_laplace_joint()")
     .nl_attach_outer_threads(res, outer_threads)
 }
@@ -2339,6 +2341,12 @@ tulpa_nested_laplace_joint <- function(responses,
     res$copy        <- copy
     res$cell_coupling      <- cell_coupling
     res$adaptive_grid_info <- refine_info
+    # Every axis's declared nodes, whatever subset of the tensor a pilot
+    # thinning or the prune screen kept: the placement mode-find searches an
+    # axis over these (`.nl_placement_mode()`).
+    res$outer_axis_nodes <- lapply(
+        stats::setNames(nm = colnames(theta_grid_init)),
+        function(a) sort(unique(as.numeric(theta_grid_init[, a]))))
     tm$mark("postproc")
     # Outer Pareto-k-hat: re-evaluate the inner joint marginal at hyperparameters
     # drawn from the integrator's Gaussian proposal (reusing the generic

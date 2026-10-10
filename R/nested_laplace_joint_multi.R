@@ -2265,6 +2265,16 @@
     res$cell_coupling <- cell_coupling
     res$local_ccd_info <- local_ccd_info
     res$adaptive_grid_info <- adaptive_info
+    # Every axis's declared nodes, whatever subset of the lattice the adaptive
+    # flood, a pilot thinning or the prune screen kept: the placement mode-find
+    # searches an axis over these (`.nl_placement_mode()`).
+    phi_declared <- if (has_phi)
+        phi_axes[vapply(phi_axes, length, integer(1)) > 0L] else list()
+    res$outer_axis_nodes <- stats::setNames(
+        c(latent_axis_values,
+          lapply(phi_declared, function(v) sort(unique(as.numeric(v))))),
+        c(axis_names, if (length(phi_declared))
+            paste0("phi_", names(phi_declared))))
     tm$mark("postproc")
     # Outer Pareto-k-hat: re-evaluate the inner joint marginal at sampled
     # hyperparameters via the shared cpp-grid / phi / hyperprior helpers and

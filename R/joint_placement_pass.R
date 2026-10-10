@@ -78,11 +78,23 @@
             hold = function(s, st)
                 .nl_axis_hold(st$prior[[s$block]], "sigma_grid",
                               .nl_auto_fields_at(auto, s$block), type = ".copy"),
-            fires = function(res, s) .nl_axis_railed(res, "sigma", s$block),
+            fires = function(res, s) .nl_axis_placement_fires(res, s$label, "log"),
             write = function(st, s, nodes) {
                 st$prior[[s$block]]$sigma_grid <- nodes
                 st
             }),
+        block_scale = list(
+            slots = function(res, st) .joint_block_scale_slots(res, st),
+            hold = function(s, st)
+                .nl_axis_hold(st$prior[[s$block]], s$field,
+                              .nl_auto_fields_at(auto, s$block),
+                              type = tolower(st$prior[[s$block]]$type %||% "")),
+            fires = function(res, s) .nl_axis_placement_fires(res, s$label, "log"),
+            write = function(st, s, nodes) {
+                st$prior[[s$block]][[s$field]] <- nodes
+                st
+            },
+            together = FALSE, escalate = FALSE, idle = "grid_resolves_posterior"),
         phi = list(
             slots = function(res, st)
                 lapply(.nl_phi_axis_slots(res, st$phi_grid), function(p) list(
@@ -104,6 +116,44 @@
             write = function(st, s, nodes) .joint_alpha_write(st, s, nodes),
             together = FALSE, escalate = FALSE, idle = "grid_resolves_posterior")
     )
+}
+
+# --- a non-copy block's own scale --------------------------------------------
+#
+# A multi-block prior block that carries no copy integrates its own scale on the
+# axis its registry path reads: an iid random effect's SD (`b<k>.sigma`), an
+# areal field's precision (`b<k>.tau`, an arm-specific field the copy does not
+# reach), a temporal block's precision. Each is laid from the same outer mode as
+# the copied field's SD, in its own log coordinate, and written back onto the
+# block's own grid field. A block that is copied is the `copy_sigma` family's.
+.JOINT_BLOCK_SCALE_AXES <- c(sigma = "sigma_grid", tau = "tau_grid")
+
+.joint_block_scale_slots <- function(res, st) {
+    if (!.is_multi_block_prior(st$prior)) return(list())
+    cn <- colnames(res$theta_grid) %||% character(0)
+    copied <- if (!is.null(st$cp) && isTRUE(st$cp$has_copy))
+        as.integer(st$cp$copy_blocks_zero) + 1L else integer(0)
+    out <- list()
+    for (b in setdiff(seq_along(st$prior), copied)) {
+        for (a in names(.JOINT_BLOCK_SCALE_AXES)) {
+            lbl <- paste0("b", b, ".", a)
+            if (!lbl %in% cn) next
+            out[[length(out) + 1L]] <- list(
+                label = lbl, axis = a, block = b,
+                field = .JOINT_BLOCK_SCALE_AXES[[a]],
+                ref = .joint_declared_axis_ref(lbl))
+        }
+    }
+    out
+}
+
+# An axis's incoming nodes on a fit: the ones its kept cells carry together
+# with the ones it was declared on, so an axis whose kept cells hold a single
+# node still reports the span it was laid over.
+.joint_declared_axis_ref <- function(label) {
+    force(label)
+    function(r) sort(unique(c(.nl_rescue_axis_nodes(r, label),
+                              as.numeric(r$outer_axis_nodes[[label]]))))
 }
 
 # --- the copy scale ----------------------------------------------------------
@@ -193,32 +243,49 @@
     st
 }
 
-# The dispersion and copy-scale axes the pass may move, named as the grid
-# names them, read off the call arguments before any fit: the mode-find's own
-# trigger (`.joint_attach_placement()`) is handed them, so it runs on a grid
-# that concentrated without railing. The field SD needs no entry here, since
-# its trigger is a rail the mode-find already reads.
-.joint_movable_extra_axes <- function(st, phi_auto) {
+# The axes beyond the single-block field SD the pass may move, named as the
+# grid names them, read off the call arguments before any fit: the mode-find's
+# own trigger (`.joint_attach_placement()`) is handed them, so it runs on a grid
+# that concentrated without railing. They are the dispersions, the copy scales,
+# and on a multi-block prior every block's own scale -- a copied field's SD as
+# much as a non-copy block's SD or precision -- since each of those fires on an
+# unresolved posterior as well as on a rail.
+.joint_movable_extra_axes <- function(st, phi_auto, auto = logical(0)) {
     phi <- paste0("phi_", intersect(names(which(phi_auto)),
                                     names(st$phi_grid) %||% character(0)))
     movable <- function(s) is.null(.nl_axis_hold(
         list(alpha_grid = .joint_alpha_declared(st, s)), "alpha_grid",
         type = ".copy"))
     alpha <- character(0)
+    scale <- character(0)
     if (.is_multi_block_prior(st$prior)) {
+        copied <- integer(0)
         if (isTRUE(st$cp$has_copy)) {
-            for (b in st$cp$copy_blocks_zero + 1L) {
+            copied <- as.integer(st$cp$copy_blocks_zero) + 1L
+            for (b in copied) {
                 if (movable(list(block = b))) {
                     alpha <- c(alpha, .nl_axis_alias("alpha", b,
                                                      length(st$prior))[1L])
                 }
             }
         }
+        for (b in seq_along(st$prior)) {
+            blk <- st$prior[[b]]
+            fields <- if (b %in% copied) c(sigma = "sigma_grid")
+                      else .JOINT_BLOCK_SCALE_AXES
+            for (a in names(fields)) {
+                hold <- .nl_axis_hold(
+                    blk, fields[[a]], .nl_auto_fields_at(auto, b),
+                    type = if (b %in% copied) ".copy"
+                           else tolower(blk$type %||% ""))
+                if (is.null(hold)) scale <- c(scale, paste0("b", b, ".", a))
+            }
+        }
     } else {
         k <- .joint_copy_arm_index(st$responses)
         if (!is.na(k) && movable(list(block = NULL, arm = k))) alpha <- "alpha"
     }
-    c(phi, alpha)
+    c(phi, alpha, scale)
 }
 
 # --- the pass ----------------------------------------------------------------
