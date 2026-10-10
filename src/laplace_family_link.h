@@ -15,6 +15,7 @@
 #include "linalg_fast.h"
 #include "omp_threads.h"          // tulpa_parallel_sum (serial route at one thread)
 #include "tulpa/portable_math.h"   // thread-safe digamma / trigamma
+#include "tulpa/family_density.h"  // mu clamp and per-family log densities
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
@@ -253,11 +254,7 @@ inline double linkinv(double eta, const std::string& link) {
     if (link == "identity") return eta;
     if (link == "log") return tulpa_linalg::safe_exp(eta);
     if (link == "inverse") return 1.0 / safe_pos_eta(eta);
-    if (link == "logit") {
-        if (eta > 0) return 1.0 / (1.0 + std::exp(-eta));
-        double e = std::exp(eta);
-        return e / (1.0 + e);
-    }
+    if (link == "logit") return inv_logit_link(eta);
     if (link == "probit") return tulpa::math::portable_pnorm(eta);
     // atan(x) + atan(1/x) = pi/2 for x > 0, so each tail has a form that
     // builds it directly instead of recovering it from 0.5. The two branches
@@ -396,20 +393,6 @@ inline double mu_eta4(double eta, const std::string& link) {
                fn, family.c_str());
 }
 
-// The one floor on mu, applied identically by the density, the score, the
-// Newton working weight and both curvature ladders.
-//
-// A unit-interval family is held inside (0, 1); every other family with
-// positive support is held above the same epsilon; gaussian and lognormal have
-// unbounded support and are not clamped at all.
-//
-// One value, because the ladders differentiate the density: grad_mu is
-// proportional to 1 / mu for the binomial and the count families, so a wider
-// floor on the score than on the density scales the score by mu / floor while
-// the objective the line search reads is still evaluated at the true mu. The
-// two are then derivatives of different functions, and the Newton loop stops
-// where the clamped score vanishes rather than where the reported objective is
-// stationary.
 // The families the mu-space ladders below implement. Every one of variance_fn,
 // grad_mu, dgrad_mu_dmu, d2grad_mu_dmu2 and log_lik_mu carries exactly these
 // branches and calls unknown_family_stop on anything else, so the list lives
@@ -418,18 +401,6 @@ inline bool mu_space_family_supported(const std::string& base) {
     return base == "gaussian" || base == "lognormal" || base == "binomial" ||
            base == "poisson" || base == "neg_binomial_2" || base == "gamma" ||
            base == "inverse_gaussian" || base == "beta";
-}
-
-constexpr double kMuFloor = 1e-15;
-
-inline double clamp_mu_unit(double mu) {
-    return std::max(std::min(mu, 1.0 - kMuFloor), kMuFloor);
-}
-
-inline double clamp_mu_for_family(double mu, const std::string& family) {
-    if (family == "binomial" || family == "beta") return clamp_mu_unit(mu);
-    if (family == "gaussian" || family == "lognormal") return mu;
-    return std::max(mu, kMuFloor);
 }
 
 // The WORKING variance: the V for which dmu^2 / V is the Fisher information per
@@ -648,16 +619,8 @@ inline double obs_curvature_deta2_mu_route(double g, double gp, double gpp,
 }
 
 inline double log_lik_mu(double y, double mu, double phi, const std::string& family, int n_trials) {
-    if (family == "gaussian") {
-        double r = y - mu;
-        return -0.5 * std::log(2.0 * M_PI * phi * phi) - r * r / (2.0 * phi * phi);
-    }
-    if (family == "lognormal") {
-        double ly = std::log(std::max(y, 1e-300));
-        double r  = ly - mu;
-        return -ly - 0.5 * std::log(2.0 * M_PI * phi * phi)
-               - r * r / (2.0 * phi * phi);
-    }
+    if (family == "gaussian") return log_lik_gaussian(y, mu, phi);
+    if (family == "lognormal") return log_lik_lognormal(y, mu, phi);
     if (family == "binomial") {
         double p = clamp_mu_unit(mu);
         // lchoose keeps this a true log-density, matching the poisson arm below
@@ -684,12 +647,7 @@ inline double log_lik_mu(double y, double mu, double phi, const std::string& fam
         return -0.5 * std::log(2.0 * M_PI * phi * y * y * y)
                - r * r / (2.0 * phi * mu * mu * y);
     }
-    if (family == "beta") {
-        double a = mu * phi;
-        double b = (1.0 - mu) * phi;
-        return tulpa::math::portable_lgamma(phi) - tulpa::math::portable_lgamma(a) - tulpa::math::portable_lgamma(b)
-               + (a - 1.0) * std::log(y) + (b - 1.0) * std::log(1.0 - y);
-    }
+    if (family == "beta") return log_lik_beta(y, mu, phi);
     unknown_family_stop("log_lik_mu", family);
 }
 

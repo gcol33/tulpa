@@ -1,3 +1,13 @@
+# tulpa 0.7.2
+
+* The per-observation log densities of the gaussian, lognormal and beta
+  families, and the `mu` clamp the fit applies before evaluating them, are
+  exported as `inst/include/tulpa/family_density.h` (gcol33/tulpa#950). The
+  Laplace kernels read them from there, and a package linking to tulpa can
+  score a fit's pointwise log-likelihood (WAIC, PSIS-LOO, CPO) with the
+  density the fit maximised instead of a restatement of it. Fitted values are
+  unchanged.
+
 # tulpa 0.7.1
 
 * `diagnostics()` reports the exact moments of the outer-grid mixture a

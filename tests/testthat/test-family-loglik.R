@@ -184,3 +184,12 @@ test_that("family_mean applies the documented clamps", {
                     family_mean(c(-50, 50), "binomial") < 1))
   expect_true(all(family_mean(c(-50, 50), "poisson") >= 1e-8))
 })
+
+test_that("the Laplace kernel scores gaussian, lognormal and beta with the clamped density", {
+  terms <- function(y, eta, fam, phi) cpp_family_terms(y, 1L, eta, fam, phi)[["log_lik"]]
+  expect_equal(terms(1.3, 0.4, "gaussian", 0.7), dnorm(1.3, 0.4, 0.7, log = TRUE))
+  expect_equal(terms(2.1, 0.4, "lognormal", 0.7), dlnorm(2.1, 0.4, 0.7, log = TRUE))
+  expect_equal(terms(0.3, 0.8, "beta", 5), dbeta(0.3, plogis(0.8) * 5, (1 - plogis(0.8)) * 5, log = TRUE))
+  mu <- 1 - 1e-15
+  expect_equal(terms(0.3, 40, "beta", 5), dbeta(0.3, mu * 5, (1 - mu) * 5, log = TRUE))
+})
