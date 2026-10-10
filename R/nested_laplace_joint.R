@@ -1675,6 +1675,7 @@ tulpa_nested_laplace_joint <- function(responses,
     .nl_warn_unplaced_rail(res, "tulpa_nested_laplace_joint()")
     .nl_warn_single_node_axes(res, "tulpa_nested_laplace_joint()")
     .nl_warn_unconverged(res, "tulpa_nested_laplace_joint()")
+    .nl_warn_indefinite(res, "tulpa_nested_laplace_joint()")
     .nl_attach_outer_threads(res, outer_threads)
 }
 

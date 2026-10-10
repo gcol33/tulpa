@@ -1039,10 +1039,15 @@ tulpa_joint_axis_specs_from_grid <- function(
 # whose log marginal is not finite failed outright and is not a stalled solve.
 # `flagged` is FALSE when no cell carries a convergence flag, which is a kernel
 # that reports none, not a grid of stalled cells.
+#
+# A cell whose Hessian at the returned point is not positive definite stopped
+# at a point that is no mode, whatever its stopping rule said, so it is
+# counted as stalled with the cells that never met the rule.
 .joint_cell_convergence <- function(log_marginal, extras) {
     n <- length(log_marginal)
     has <- vapply(extras, function(e) !is.null(e$converged), logical(1))
-    conv <- vapply(extras, function(e) isTRUE(e$converged), logical(1))
+    conv <- vapply(extras, function(e) isTRUE(e$converged) &&
+                       !isTRUE(e$hessian_indefinite), logical(1))
     pruned <- vapply(extras, function(e) isTRUE(e$pruned), logical(1))
     solved <- !pruned & is.finite(log_marginal)
     list(flagged = length(extras) == n && any(has),
@@ -1091,7 +1096,8 @@ tulpa_joint_axis_specs_from_grid <- function(
     new_ex <- fit_out$extras %||% vector("list", length(bad))
     for (k in seq_along(bad)) {
         e <- new_ex[[k]]
-        if (!isTRUE(e$converged) || !is.finite(new_lm[k])) next
+        if (!isTRUE(e$converged) || isTRUE(e$hessian_indefinite) ||
+            !is.finite(new_lm[k])) next
         log_marginal[bad[k]] <- new_lm[k]
         extras[[bad[k]]] <- e
         info$n_resolved <- info$n_resolved + 1L
@@ -1113,15 +1119,44 @@ tulpa_joint_axis_specs_from_grid <- function(
 # gate is `.nl_warn_unconverged()`, said by the front door on the fit it
 # returns: a placement refit replaces the grid this records, and a warning
 # about the replaced grid names cells the caller never receives.
+#
+# A cell whose Hessian at the returned point is still not positive definite
+# after that re-solve is a different case and is taken OUT of the measure. Its
+# log marginal was formed from the determinant of a PD-enforced factor at a
+# point that is no mode, so it is not a Laplace approximation of anything, and
+# its stored precision cannot be factored, so every posterior draw that lands
+# in it fails. Keeping its weight would make the reported moments integrate a
+# cell the draws cannot. Recorded as `indefinite_cells` and `indefinite_mass`
+# (the share it would have carried) and said by `.nl_warn_indefinite()`. When
+# every solved cell is indefinite there is nothing to integrate instead, and
+# the cells stay in the measure with the record saying so.
 .nl_record_unconverged <- function(res) {
     lm <- as.numeric(res$log_marginal)
     n <- length(lm)
     res$nonconverged_cells <- integer(0)
     res$nonconverged_mass  <- 0
-    conv <- res$converged
-    if (is.null(conv) || length(conv) != n) return(res)
+    res$indefinite_cells   <- integer(0)
+    res$indefinite_mass    <- 0
     pruned <- as.logical(res$prune_mask %||% rep(FALSE, n))
     pruned[is.na(pruned)] <- FALSE
+    indef <- as.logical(res$hessian_indefinite %||% logical(0))
+    if (length(indef) == n) {
+        ind <- which(is.finite(lm) & !pruned & indef %in% TRUE)
+        if (length(ind)) {
+            w0 <- .nl_normalise_weights_safe(lm, "outer grid",
+                                             log_quad = res$log_quad)
+            res$indefinite_cells <- ind
+            res$indefinite_mass  <- sum(w0[ind], na.rm = TRUE)
+            if (length(ind) < sum(is.finite(lm) & !pruned)) {
+                lm[ind] <- -Inf
+                res$log_marginal <- lm
+            } else {
+                res$indefinite_kept <- TRUE
+            }
+        }
+    }
+    conv <- res$converged
+    if (is.null(conv) || length(conv) != n) return(res)
     bad <- which(is.finite(lm) & !pruned & !(as.logical(conv) %in% TRUE))
     if (!length(bad)) return(res)
     w0 <- .nl_normalise_weights_safe(lm, "outer grid", log_quad = res$log_quad)
@@ -1146,6 +1181,29 @@ tulpa_joint_axis_specs_from_grid <- function(
             if (length(bad) == 1L) "ies" else "y",
             format(signif(mass, 3))), call. = FALSE)
     }
+    invisible(res)
+}
+
+# Cells left out of the integration because their Hessian stayed indefinite,
+# said once by the front door on the fit it returns. Any such cell is said, not
+# only one past a mass gate: a cell removed from the measure changes the
+# posterior by the mass it carried, and the record is how a reader sees how
+# much.
+.nl_warn_indefinite <- function(res, fn) {
+    bad  <- res$indefinite_cells
+    if (!length(bad)) return(invisible(res))
+    mass <- res$indefinite_mass
+    warning(sprintf(paste0(
+        "%s: %d outer-grid cell%s whose inner Hessian was not positive ",
+        "definite at the point the inner Newton returned, even after a ",
+        "re-solve from a converged neighbour, %s; %s %s of the posterior mass. ",
+        "See `indefinite_cells` and `indefinite_mass`."),
+        fn, length(bad), if (length(bad) == 1L) "" else "s",
+        if (isTRUE(res$indefinite_kept))
+            "were kept because no other cell was solved"
+        else "were left out of the integration",
+        if (length(bad) == 1L) "it carried" else "they carried",
+        format(signif(mass, 3))), call. = FALSE)
     invisible(res)
 }
 
@@ -1331,6 +1389,11 @@ tulpa_joint_axis_specs_from_grid <- function(
     # `.tulpa_s2z_flag_cells()` over the merged grid.
     list(res = "s2z_log_det_fallback", extra = "s2z_log_det_fallback", kind = "lgl"),
     list(res = "s2z_field_indefinite", extra = "s2z_field_indefinite", kind = "lgl"),
+    # Whether the Hessian at the cell's returned point was not positive
+    # definite, so the point is no mode and its precision cannot be factored.
+    # Re-solved by `.joint_resolve_unconverged()`; a cell that stays indefinite
+    # is left out of the integration by `.nl_record_unconverged()`.
+    list(res = "hessian_indefinite", extra = "hessian_indefinite", kind = "lgl"),
     list(res = "Q_csc_p_per_grid",  extra = "Q_csc_p",   kind = "elt"),
     list(res = "Q_csc_i_per_grid",  extra = "Q_csc_i",   kind = "elt"),
     list(res = "Q_csc_x_per_grid",  extra = "Q_csc_x",   kind = "elt"),

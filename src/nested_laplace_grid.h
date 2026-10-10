@@ -533,6 +533,11 @@ inline Rcpp::List nl_pack_grid_results(
     Rcpp::LogicalVector s2z_fallbacks(n_grid);
     Rcpp::LogicalVector s2z_field_indefs(n_grid);
     Rcpp::LogicalVector pd_conditioneds(n_grid);
+    // The Hessian at the cell's returned point was not positive definite: the
+    // point is no mode, its log-determinant was read off a PD-enforced factor,
+    // and its stored precision cannot be factored. The R side re-solves such a
+    // cell and leaves it out of the integration when it stays indefinite.
+    Rcpp::LogicalVector hessian_indefinites(n_grid);
     int mode_rows = store_modes ? n_grid : 0;
     Rcpp::NumericMatrix all_modes(mode_rows, store_modes ? n_x : 0);
 
@@ -589,6 +594,7 @@ inline Rcpp::List nl_pack_grid_results(
         s2z_fallbacks[k] = res.s2z_log_det_fallback;
         s2z_field_indefs[k] = res.s2z_field_indefinite;
         pd_conditioneds[k] = res.pd_conditioned;
+        hessian_indefinites[k] = !res.hessian_pd_at_mode;
         if (store_modes) {
             int copy_n = std::min(n_x, static_cast<int>(res.mode.size()));
             for (int j = 0; j < copy_n; j++) all_modes(k, j) = res.mode[j];
@@ -668,6 +674,7 @@ inline Rcpp::List nl_pack_grid_results(
     out["s2z_log_det_fallback"] = s2z_fallbacks;
     out["s2z_field_indefinite"] = s2z_field_indefs;
     out["pd_conditioned"] = pd_conditioneds;
+    out["hessian_indefinite"] = hessian_indefinites;
     if (n_threads_outer_realised >= 0)
         out["n_threads_outer_realised"] = n_threads_outer_realised;
     if (store_modes) out["modes"] = all_modes;
