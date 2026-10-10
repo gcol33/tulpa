@@ -12,6 +12,26 @@
 
 Two established tools sit at opposite ends. INLA fits these models with fast deterministic approximations and applies no exact correction. Stan runs exact MCMC and pays the full sampling price on every block, including the many a deterministic approximation handles exactly. `tulpa` nests the approximation over the Gaussian-latent structure, then debiases only the directions where it is wrong. The deterministic body carries most of the posterior; the MCMC correction runs over the residual directions alone, a low-dimensional remainder — so the cost stays near a deterministic approximation instead of scaling like full MCMC over the whole model, while the calibration matches exact MCMC where it counts.
 
+## Installation
+
+```r
+# Current release, built for Windows and macOS
+install.packages("tulpa",
+                 repos = c("https://gcol33.r-universe.dev",
+                           "https://cloud.r-project.org"))
+
+# Development version from GitHub
+install.packages("pak")
+pak::pak("gcol33/tulpa")
+
+# Pin a release
+pak::pak("gcol33/tulpa@v0.6.0")
+```
+
+`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used for SPDE mesh construction). `tulpa` compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, `r-base-dev` on Linux.
+
+## Quick start
+
 ```r
 library(tulpa)
 
@@ -216,24 +236,6 @@ User-supplied templated C++ snippets compile against `tulpa`'s autodiff types (`
 | Stan             | full DSL with parser + codegen         | yes                |
 | TMB              | templated C++ snippet (CppAD)          | yes (closest analog) |
 | **tulpa**        | templated C++ snippet, shared AD types | yes — all tiers    |
-
-## Installation
-
-```r
-# Current release, built for Windows and macOS
-install.packages("tulpa",
-                 repos = c("https://gcol33.r-universe.dev",
-                           "https://cloud.r-project.org"))
-
-# Development version from GitHub
-install.packages("pak")
-pak::pak("gcol33/tulpa")
-
-# Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
-```
-
-`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used for SPDE mesh construction). `tulpa` compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, `r-base-dev` on Linux.
 
 ## Documentation
 
