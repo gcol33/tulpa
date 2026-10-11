@@ -116,9 +116,12 @@ test_that("a smoother shares the nested stack with a spatial_gp() field", {
   f <- function(x) sin(2 * x)
   d$y <- rpois(n, exp(0.3 + f(d$x) + 0.5 * sin(3 * d$lon)))
 
+  # The NNGP neighbour count sets how closely the field approximates a full GP;
+  # the shared-stack routing and the covariate smooth read off this fit hold at
+  # six neighbours as at the default.
   fit <- suppressWarnings(
     tulpa(y ~ s(x, k = 15), data = d, family = "poisson",
-          spatial = spatial_gp(~ lon + lat), control = .sm_ctl))
+          spatial = spatial_gp(~ lon + lat, nn = 6), control = .sm_ctl))
   expect_equal(fit$backend, "nested_laplace")
 
   sm <- smooth_effects(fit)
