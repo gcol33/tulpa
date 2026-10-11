@@ -43,6 +43,8 @@
          Xpos = Xpos, y_pos = y_pos, spi_pos = as.integer(spi_pos))
 }
 
+# The prune fields and the moments compared below are all set before the outer
+# Pareto-k diagnostic runs, so these fits leave it off.
 .fit_joint_prune <- function(sim, prune, prune_tol = 1e-3,
                               n_threads_outer = 1L, screen_iters = NULL) {
     adj <- .chain_adj(sim$n_s)
@@ -69,17 +71,29 @@
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
         control = c(list(n_threads = 1L, n_threads_outer = n_threads_outer,
-                         prune = prune, prune_tol = prune_tol,
+                         prune = prune, prune_tol = prune_tol, diagnose_k = FALSE,
                          adaptive_grid = FALSE, var_of_means_consistency = FALSE),
                     if (!is.null(screen_iters)) list(screen_iters = screen_iters))
     )
+}
+
+# One fit per seed and setting, shared by every block that reads it.
+.prune_cache <- new.env(parent = emptyenv())
+.prune_fit <- function(seed, ...) {
+    key <- paste(deparse(list(seed, ...)), collapse = "")
+    if (is.null(.prune_cache[[key]])) {
+        .prune_cache[[key]] <- .fit_joint_prune(.sim_joint_bym2(seed), ...)
+    }
+    .prune_cache[[key]]
 }
 
 test_that("a per-cell warm-started batch solves the same cells in parallel", {
     # gcol33/tulpa#920: the outer Pareto-k batch hands every draw its own warm
     # start, so the parallel driver fans it out with no serial pilot cell. Each
     # cell is solved from its own row either way, so the diagnostic is the
-    # same at one outer thread and at two.
+    # same at one outer thread and at two. The point k-hat is read off the
+    # batch's importance ratios; the bootstrap around it adds no solve, so it
+    # is left off.
     skip_on_cran()
     sim <- .sim_joint_bym2(8101L)
     fit_k <- function(kt) {
@@ -95,8 +109,8 @@ test_that("a per-cell warm-started batch solves the same cells in parallel", {
                          n_neighbors = adj$n_neighbors,
                          sigma_grid = c(0.3, 0.6, 1.0, 1.6)),
             control = list(n_threads = 1L, diagnose_k = TRUE, k_samples = 200L,
-                           k_threads = kt, auto_recenter = FALSE,
-                           progress = FALSE))
+                           k_bootstrap = 0L, k_threads = kt,
+                           auto_recenter = FALSE, progress = FALSE))
     }
     one <- fit_k(1L)
     two <- fit_k(2L)
@@ -113,9 +127,7 @@ test_that("the screen ranks a cell by its second-order converged estimate", {
     # decrement where it stopped; on the cells solved in full it sits nearer
     # the converged log-marginal than the truncated value it corrects.
     skip_on_cran()
-    sim <- .sim_joint_bym2(8101L)
-    fit <- .fit_joint_prune(sim, prune = TRUE, prune_tol = 1e-12,
-                            screen_iters = 1L)
+    fit <- .prune_fit(8101L, prune = TRUE, prune_tol = 1e-12, screen_iters = 1L)
     dec <- fit$prune_screen_decrement
     expect_length(dec, length(fit$log_marginal))
     kept <- !fit$prune_mask & is.finite(dec)
@@ -135,8 +147,7 @@ test_that("the screen ranks a cell by its second-order converged estimate", {
 
 test_that("prune = FALSE leaves no prune fields in the result", {
     skip_on_cran()
-    sim <- .sim_joint_bym2(8101L)
-    fit <- .fit_joint_prune(sim, prune = FALSE)
+    fit <- .prune_fit(8101L, prune = FALSE)
     expect_null(fit$prune_mask)
     expect_null(fit$prune_cheap_log_marginal)
     expect_null(fit$prune_n_pruned)
@@ -145,9 +156,8 @@ test_that("prune = FALSE leaves no prune fields in the result", {
 
 test_that("prune = TRUE populates prune fields and marks pruned cells", {
     skip_on_cran()
-    sim <- .sim_joint_bym2(8101L)
     # Aggressive tol to force at least one prune on this 45-cell grid.
-    fit <- .fit_joint_prune(sim, prune = TRUE, prune_tol = 0.05)
+    fit <- .prune_fit(8101L, prune = TRUE, prune_tol = 0.05)
 
     expect_type(fit$prune_mask, "logical")
     expect_length(fit$prune_mask, length(fit$log_marginal))
@@ -177,9 +187,8 @@ test_that("prune = TRUE populates prune fields and marks pruned cells", {
 
 test_that("prune_tol = 0 with prune = TRUE is the no-prune path", {
     skip_on_cran()
-    sim <- .sim_joint_bym2(8101L)
-    fit_off <- .fit_joint_prune(sim, prune = FALSE)
-    fit_zero <- .fit_joint_prune(sim, prune = TRUE, prune_tol = 0.0)
+    fit_off <- .prune_fit(8101L, prune = FALSE)
+    fit_zero <- .prune_fit(8101L, prune = TRUE, prune_tol = 0.0)
 
     # prune_tol = 0 short-circuits the cheap pass entirely — no point
     # screening when nothing can be pruned. The kernel emits no prune
@@ -214,9 +223,8 @@ test_that("prune posterior matches no-prune across seeds (conservative tol)", {
     skip_on_cran()
     seeds <- 8200L + seq_len(5L)
     for (seed in seeds) {
-        sim <- .sim_joint_bym2(seed)
-        fit_off <- .fit_joint_prune(sim, prune = FALSE)
-        fit_on  <- .fit_joint_prune(sim, prune = TRUE, prune_tol = 1e-3)
+        fit_off <- .prune_fit(seed, prune = FALSE)
+        fit_on  <- .prune_fit(seed, prune = TRUE, prune_tol = 1e-3)
 
         # Absolute tolerances: 5e-3 on means (sigma, rho, alpha all in
         # ~[0.1, 2]), 1e-2 on SDs (typically ~[0.02, 0.3]).
@@ -251,13 +259,12 @@ test_that("prune composes with outer-grid parallelism", {
                 "needs multi-core to exercise the parallel path")
     n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))
 
-    sim <- .sim_joint_bym2(8301L)
-    fit_s <- .fit_joint_prune(sim, prune = TRUE, prune_tol = 1e-3,
-                              n_threads_outer = 1L)
-    fit_p <- .fit_joint_prune(sim, prune = TRUE, prune_tol = 1e-3,
-                              n_threads_outer = n_outer)
+    fit_s <- .prune_fit(8201L, prune = TRUE, prune_tol = 1e-3)
+    fit_p <- .prune_fit(8201L, prune = TRUE, prune_tol = 1e-3,
+                        n_threads_outer = n_outer)
 
-    # Same mask, same pruned-cell count.
+    # Same mask, same pruned-cell count, on a seed where the screen drops cells.
+    expect_gt(fit_s$prune_n_pruned, 0L)
     expect_identical(fit_p$prune_mask, fit_s$prune_mask)
     expect_identical(fit_p$prune_n_pruned, fit_s$prune_n_pruned)
 
