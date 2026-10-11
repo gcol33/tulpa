@@ -84,3 +84,64 @@ tier_gated_files <- function(gate = c("any", "cran", "slow")) {
 tier_uncovered <- function() {
   setdiff(tier_gated_files("any"), union(tier_files(2), tier_files(3)))
 }
+
+# Coverage runs every test file -- the suite devtools::test() runs, tiers 1 and
+# 2 -- against an instrumented build, which is several times slower than the
+# build the tiers above run. It is split into shards, each a job of its own, and
+# files are packed onto shards by their measured seconds under coverage
+# (.github/coverage-seconds.csv, refreshed from the timings.csv every shard
+# publishes). A file with no measurement is costed at the median of those with
+# one, so a new test file lands on some shard without editing the table.
+
+COVERAGE_SECONDS_CSV <- file.path(".github", "coverage-seconds.csv")
+
+# With no file measured there is nothing to size the shard count from; this is
+# the count the measuring run spreads the suite over.
+COVERAGE_SHARDS_UNMEASURED <- 12L
+
+coverage_cost <- function(files) {
+  known <- if (file.exists(COVERAGE_SECONDS_CSV)) {
+    tab <- utils::read.csv(COVERAGE_SECONDS_CSV, stringsAsFactors = FALSE)
+    stats::setNames(tab$seconds, trimws(tab$file))
+  } else {
+    numeric()
+  }
+  fill <- if (length(known)) stats::median(known) else 1
+  cost <- unname(known[files])
+  cost[is.na(cost)] <- fill
+  stats::setNames(cost, files)
+}
+
+# Longest-processing-time packing: each file, longest first, onto the shard
+# carrying the fewest seconds so far. `n` unset sizes the shard count from
+# `budget`, the seconds of tests one shard should carry.
+coverage_shards <- function(n = NULL, budget = 3600, files = test_files_on_disk()) {
+  cost <- coverage_cost(files)
+  if (is.null(n) || is.na(n)) {
+    n <- if (file.exists(COVERAGE_SECONDS_CSV)) {
+      ceiling(sum(cost) / budget)
+    } else {
+      COVERAGE_SHARDS_UNMEASURED
+    }
+  }
+  n <- max(1L, min(as.integer(n), length(files)))
+  load <- numeric(n)
+  shards <- vector("list", n)
+  for (f in names(cost)[order(-cost, names(cost))]) {
+    s <- which.min(load)
+    shards[[s]] <- c(shards[[s]], f)
+    load[s] <- load[s] + cost[[f]]
+  }
+  data.frame(
+    shard = sprintf("%02d", seq_len(n)),
+    files = vapply(shards, function(x) paste(sort(x), collapse = ","), ""),
+    seconds = round(load),
+    stringsAsFactors = FALSE)
+}
+
+coverage_shards_json <- function(...) {
+  plan <- coverage_shards(...)
+  paste0("[", paste0(
+    "{\"shard\":\"", plan$shard, "\",\"files\":\"", plan$files,
+    "\",\"seconds\":", plan$seconds, "}", collapse = ","), "]")
+}

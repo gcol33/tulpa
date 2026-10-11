@@ -18,6 +18,10 @@
 #                     measurement run the curated list is chosen from.
 #   TULPA_TEST_OUT    directory for the machine-readable results. Unset writes
 #                     nothing.
+#   TULPA_DEFER_FAILURE  "true" lists failing tests and exits 0, leaving the
+#                     verdict to the caller, which reads it from summary.csv.
+#                     The coverage job sets it: covr discards the whole report
+#                     when the process it ran exits non-zero.
 #
 # The gates themselves read NOT_CRAN and TULPA_SLOW_TESTS, which the workflow
 # sets; this script only selects which files run.
@@ -33,6 +37,12 @@ tier <- Sys.getenv("TULPA_TIER", "2")
 explicit <- Sys.getenv("TULPA_TEST_FILES", "")
 scope <- Sys.getenv("TULPA_TEST_SCOPE", "curated")
 out_dir <- Sys.getenv("TULPA_TEST_OUT", "")
+defer_failure <- identical(tolower(Sys.getenv("TULPA_DEFER_FAILURE")), "true")
+if (defer_failure && !nzchar(out_dir)) {
+  cat("TULPA_DEFER_FAILURE needs TULPA_TEST_OUT: the deferred verdict is read",
+      "from summary.csv\n")
+  quit(status = 1L)
+}
 
 assigned <- if (nzchar(explicit)) {
   sort(trimws(strsplit(explicit, ",", fixed = TRUE)[[1]]))
@@ -169,7 +179,7 @@ for (i in seq_len(min(10L, nrow(by_file)))) {
 if (length(failures)) {
   cat("\nFailing tests:\n")
   cat(paste(unlist(failures), collapse = "\n"), "\n")
-  quit(status = 1L)
+  if (!defer_failure) quit(status = 1L)
+} else {
+  cat("\nTier green.\n")
 }
-
-cat("\nTier green.\n")

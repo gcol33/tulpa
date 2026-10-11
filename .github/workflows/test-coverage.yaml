@@ -1,57 +1,181 @@
+name: test-coverage
+
+# Line coverage of the suite devtools::test() runs: every test file at
+# NOT_CRAN=true, so tiers 1 and 2, with the slow tier closed. Under covr that
+# suite is far longer than one job can hold, so it runs in shards, one job
+# each, and a final job merges the shard reports into the one upload Codecov
+# receives. A shard whose tests fail still reports its coverage; the job then
+# fails on the failing tests.
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      opt:
+        description: Optimisation level of the instrumented build.
+        type: choice
+        default: '-O1'
+        options: ['-O0', '-Og', '-O1', '-O2']
+      shards:
+        description: Shard count. Empty sizes it from the measured seconds.
+        type: string
+        default: ''
+      files:
+        description: >
+          Comma-separated test files to run instead of the whole suite. A run
+          over a subset measures; it does not upload.
+        type: string
+        default: ''
 
-name: test-coverage
+# A push to main does not cancel the coverage run in flight: the run is longer
+# than the gap between pushes, so cancelling on every push left main with no
+# report at all. The newest push waits, and a later one replaces it in the
+# queue. A pull request's run is superseded by its next commit, and a dispatched
+# run is its own group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: read-all
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  TULPA_COV_OPT: ${{ inputs.opt || '-O1' }}
 
 jobs:
-  test-coverage:
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 10
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - id: plan
+        env:
+          SHARDS: ${{ inputs.shards }}
+          FILES: ${{ inputs.files }}
+        run: |
+          source(".github/scripts/tier-files.R")
+          n <- if (nzchar(Sys.getenv("SHARDS"))) as.integer(Sys.getenv("SHARDS")) else NULL
+          files <- trimws(strsplit(Sys.getenv("FILES"), ",", fixed = TRUE)[[1]])
+          if (!length(files)) files <- test_files_on_disk()
+          plan <- coverage_shards(n = n, files = files)
+          print(plan[, c("shard", "seconds")], row.names = FALSE)
+          out <- Sys.getenv("GITHUB_OUTPUT")
+          cat("shards=", coverage_shards_json(n = nrow(plan), files = files), "\n",
+              sep = "", file = out, append = TRUE)
+          cat("count=", nrow(plan), "\n", sep = "", file = out, append = TRUE)
+        shell: Rscript {0}
+
+  coverage:
+    needs: plan
+    name: shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.shards) }}
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
-      NOT_CRAN: true
+      NOT_CRAN: 'true'
+      TULPA_TIER: '2'
+      TULPA_TEST_FILES: ${{ matrix.files }}
+      TULPA_TEST_OUT: cov-out
+      OMP_NUM_THREADS: '2'
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/build-env
         with:
-          cache-key: coverage
+          cache-key: coverage${{ env.TULPA_COV_OPT }}
           fp-contract: 'off'
           extra-packages: |
             any::covr
             any::xml2
 
-      - name: Test coverage
+      # covr runs the tests in an R CMD BATCH process whose output goes to a
+      # file; following it puts per-file progress in the job log while the
+      # shard runs rather than only after it ends.
+      - name: Coverage shard
         run: |
-          cov <- covr::package_coverage(
-            quiet = FALSE,
-            clean = FALSE,
-            install_path = file.path(normalizePath(Sys.getenv("RUNNER_TEMP"), winslash = "/"), "package")
-          )
-          print(cov)
-          covr::to_cobertura(cov)
+          ccache --zero-stats
+          rout="$RUNNER_TEMP/package/tulpa-commands.Rout.fail"
+          tail -n +1 -F "$rout" 2>/dev/null &
+          follower=$!
+          status=0
+          Rscript .github/scripts/coverage.R shard || status=$?
+          kill "$follower" 2>/dev/null || true
+          ccache --show-stats
+          exit "$status"
+        shell: bash
+
+      - name: Upload shard report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: cov-out
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Test results
+        run: |
+          s <- utils::read.csv(file.path("cov-out", "summary.csv"))
+          print(s, row.names = FALSE)
+          if (s$failed + s$errors > 0) quit(status = 1L)
         shell: Rscript {0}
 
+  merge:
+    needs: [plan, coverage]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TULPA_COV_SHARDS: ${{ needs.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::covr
+            any::xml2
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-shard-*
+          path: shards
+
+      - name: Merge shard reports
+        run: Rscript .github/scripts/coverage.R merge shards
+
+      - name: Upload merged report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-merged
+          path: cobertura.xml
+          retention-days: 30
+
       - uses: codecov/codecov-action@v5
+        if: ${{ !inputs.files }}
         with:
           fail_ci_if_error: ${{ github.event_name != 'pull_request' || secrets.CODECOV_TOKEN != '' }}
           files: ./cobertura.xml
           plugins: noop
           disable_search: true
           token: ${{ secrets.CODECOV_TOKEN }}
-
-      - name: Show testthat output
-        if: always()
-        run: |
-          find '${{ runner.temp }}/package' -name 'testthat.Rout*' -exec cat '{}' \; || true
-        shell: bash
