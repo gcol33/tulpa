@@ -40,8 +40,12 @@ test_that("the mode-find varies an axis its kept cells hold at one node", {
 # Two arms sharing a copied ICAR field (block 1), an arm-specific ICAR field on
 # the positive arm alone (block 2, precision axis) and an iid random intercept
 # on the positive arm (block 3, SD axis). The positive part is gaussian with a
-# small residual SD, so both arm-specific scales are sharply identified.
-.bs_fixture <- function(seed = 951L, N = 4000L, n_s = 40L, n_g = 12L) {
+# small residual SD, so both arm-specific scales are sharply identified. Their
+# posterior width is set by the 40 units and 12 groups that carry them; N only
+# has to determine each unit's and each group's effect, and at N = 2000 the
+# positive arm holds on average 23 observations per unit and 78 per group at
+# residual SD 0.3.
+.bs_fixture <- function(seed = 951L, N = 2000L, n_s = 40L, n_g = 12L) {
     set.seed(seed)
     sp <- sample.int(n_s, N, replace = TRUE)
     w_s  <- 0.9 * as.numeric(scale(cumsum(rnorm(n_s, sd = 0.6))))

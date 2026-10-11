@@ -28,6 +28,26 @@ ws_layout <- function(d, zi = NULL) {
     zi_spec = zi)
 }
 
+# The EB source fit of the default data set and the sampler layout it is
+# placed into. Every block that builds a warm start from it reads the same fit,
+# so it is fitted once, on first use.
+ws_source <- local({
+  src <- NULL
+  function() {
+    if (is.null(src)) {
+      d <- ws_data()
+      re_terms <- list(list(idx = as.integer(d$g), n_groups = nlevels(d$g),
+                            n_coefs = 1L))
+      src <<- list(
+        lay = ws_layout(d), re_terms = re_terms,
+        fit = tulpa_eb(y = d$y, n_trials = NULL,
+                       X = stats::model.matrix(~ x, d), re_terms = re_terms,
+                       family = "poisson"))
+    }
+    src
+  }
+})
+
 
 test_that("the layout probe reports the sampler's own parameter vector", {
   d <- ws_data()
@@ -55,14 +75,10 @@ test_that("the layout probe reports the sampler's own parameter vector", {
 
 test_that("the warm start places the source fit's estimates in the right slots", {
   skip_on_cran()
-  d <- ws_data()
-  lay <- ws_layout(d)
-  re_terms <- list(list(idx = as.integer(d$g), n_groups = nlevels(d$g),
-                        n_coefs = 1L))
-  X <- stats::model.matrix(~ x, d)
-
-  src <- tulpa_eb(y = d$y, n_trials = NULL, X = X, re_terms = re_terms,
-                  family = "poisson")
+  s <- ws_source()
+  lay <- s$lay
+  re_terms <- s$re_terms
+  src <- s$fit
 
   ws <- .build_warm_start(src, lay, re_terms = re_terms, n_chains = 1L,
                           jitter = 0)
@@ -88,13 +104,10 @@ test_that("the warm start places the source fit's estimates in the right slots",
 
 test_that("the inverse-mass diagonal is withheld unless asked for", {
   skip_on_cran()
-  d <- ws_data()
-  lay <- ws_layout(d)
-  re_terms <- list(list(idx = as.integer(d$g), n_groups = nlevels(d$g),
-                        n_coefs = 1L))
-  X <- stats::model.matrix(~ x, d)
-  src <- tulpa_eb(y = d$y, n_trials = NULL, X = X, re_terms = re_terms,
-                  family = "poisson")
+  s <- ws_source()
+  lay <- s$lay
+  re_terms <- s$re_terms
+  src <- s$fit
 
   # Default: position only. A metric that is right for the fixed effects and
   # wrong for the random effects and variance components is worse than none,
@@ -113,13 +126,10 @@ test_that("the inverse-mass diagonal is withheld unless asked for", {
 
 
 test_that("chains are dispersed rather than stacked on the mode", {
-  d <- ws_data()
-  lay <- ws_layout(d)
-  re_terms <- list(list(idx = as.integer(d$g), n_groups = nlevels(d$g),
-                        n_coefs = 1L))
-  X <- stats::model.matrix(~ x, d)
-  src <- tulpa_eb(y = d$y, n_trials = NULL, X = X, re_terms = re_terms,
-                  family = "poisson")
+  s <- ws_source()
+  lay <- s$lay
+  re_terms <- s$re_terms
+  src <- s$fit
 
   set.seed(4)
   ws <- .build_warm_start(src, lay, re_terms = re_terms, n_chains = 4L)
@@ -205,13 +215,10 @@ test_that("a fit from a backend with no mode is refused as a warm-start source",
 
 test_that("a source fit for a different model is refused", {
   skip_on_cran()
-  d <- ws_data()
-  lay <- ws_layout(d)
-  X <- stats::model.matrix(~ x, d)
-  re_terms <- list(list(idx = as.integer(d$g), n_groups = nlevels(d$g),
-                        n_coefs = 1L))
-  src <- tulpa_eb(y = d$y, n_trials = NULL, X = X, re_terms = re_terms,
-                  family = "poisson")
+  s <- ws_source()
+  lay <- s$lay
+  re_terms <- s$re_terms
+  src <- s$fit
 
   # Two RE terms claimed against a one-term layout: the counts disagree, and
   # silently filling one term would seed the sampler from the wrong model.
@@ -246,13 +253,10 @@ test_that("the warm start carries zero-inflation coefficients across", {
 
 
 test_that("a source fit with the wrong number of SDs per term is refused", {
-  d <- ws_data()
-  lay <- ws_layout(d)
-  X <- stats::model.matrix(~ x, d)
-  re_terms <- list(list(idx = as.integer(d$g), n_groups = nlevels(d$g),
-                        n_coefs = 1L))
-  src <- tulpa_eb(y = d$y, n_trials = NULL, X = X, re_terms = re_terms,
-                  family = "poisson")
+  s <- ws_source()
+  lay <- s$lay
+  re_terms <- s$re_terms
+  src <- s$fit
 
   # Three SDs against a term the sampler lays out with one coefficient. The
   # term COUNT agrees, so the check upstream passes and this is the first place

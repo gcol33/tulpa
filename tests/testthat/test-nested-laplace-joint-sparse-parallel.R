@@ -10,6 +10,10 @@
 #     cell, so the per-thread specs + atomic phi snapshot are what keep concurrent
 #     cells from clobbering each other's residual SD. This is the cover-hurdle's
 #     actual shape and is NOT covered by the dense parallel test.
+#
+# The parity read is the grid solve's own output. The outer Pareto-k diagnostic
+# runs after it and writes neither the log-marginal nor the modes, so every fit
+# here runs with `diagnose_k = FALSE`.
 
 skip_on_cran()
 
@@ -59,7 +63,7 @@ skip_on_cran()
         prior = prior, phi_grid = phi_grid,
         control = list(n_threads = 1L, n_threads_outer = n_threads_outer,
                        force_sparse = TRUE, adaptive_grid = FALSE,
-                       var_of_means_consistency = FALSE))
+                       var_of_means_consistency = FALSE, diagnose_k = FALSE))
 }
 
 .spar_expect_equiv <- function(fit_s, fit_p) {
@@ -133,7 +137,7 @@ test_that("inner parallel scatter matches serial on a single outer cell", {
             responses = list(occ = arm_occ, pos = arm_pos),
             prior = prior,
             control = list(n_threads = nt, force_sparse = TRUE,
-                           adaptive_grid = FALSE))
+                           adaptive_grid = FALSE, diagnose_k = FALSE))
     }
     .spar_expect_equiv(fit_inner(1L), fit_inner(8L))
 })

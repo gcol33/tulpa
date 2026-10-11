@@ -7,6 +7,10 @@
 #
 #   arm1 (gaussian): eta1 = X1 b1 + sigma1 * f1[s] + sigma2 * f2[s]
 #   arm2 (gaussian): eta2 = X2 b2 + alpha1*sigma1*f1[s] + alpha2*sigma2*f2[s]
+#
+# Every fit below reads the outer grid's weights, block moments and per-cell
+# modes. The outer Pareto-k diagnostic is attached after those and changes none
+# of them, so the fits run with `diagnose_k = FALSE`.
 
 .chain_adj_copy <- function(n_s) {
     nbr <- lapply(seq_len(n_s),
@@ -80,7 +84,7 @@ test_that("joint multi-block recovers TWO coupled ICAR fields (list-of-specs cop
                 list(arm = "pos", block = 1L, alpha_grid = alpha_grid1),
                 list(arm = "pos", block = 2L, alpha_grid = alpha_grid2)
             ),
-            control = list(max_iter = 50L, tol = 1e-6)
+            control = list(max_iter = 50L, tol = 1e-6, diagnose_k = FALSE)
         )
     )
 
@@ -195,7 +199,7 @@ test_that("joint multi-block recovers a copied TEMPORAL (rw1) field", {
             prior = list(rw1_block),
             copy = list(arm = "pos", block = 1L,
                         alpha_grid = c(1.0, 1.3, 1.6, 1.9)),
-            control = list(max_iter = 50L, tol = 1e-6)
+            control = list(max_iter = 50L, tol = 1e-6, diagnose_k = FALSE)
         )
     )
 
@@ -261,7 +265,7 @@ test_that("joint multi-block recovers a copied TEMPORAL (ar1) field", {
             prior = list(ar1_block),
             copy = list(arm = "pos", block = 1L,
                         alpha_grid = c(0.9, 1.2, 1.5, 1.8)),
-            control = list(max_iter = 50L, tol = 1e-6)
+            control = list(max_iter = 50L, tol = 1e-6, diagnose_k = FALSE)
         )
     )
 
@@ -322,7 +326,7 @@ test_that("joint multi-block recovers a copied IID field", {
             prior = list(iid_block),
             copy = list(arm = "pos", block = 1L,
                         alpha_grid = c(0.3, 0.6, 0.9, 1.2)),
-            control = list(max_iter = 50L, tol = 1e-6)
+            control = list(max_iter = 50L, tol = 1e-6, diagnose_k = FALSE)
         )
     )
 
@@ -419,7 +423,7 @@ test_that("joint multi-block recovers a COPIED correlated MCAR block (Sigma + al
         phi_grid = list(a = exp(seq(log(0.2), log(0.8), length.out = 4))^2,
                         b = exp(seq(log(0.2), log(0.8), length.out = 4))^2),
         control = list(max_iter = 60L, tol = 1e-6, integration = "ccd",
-                       store_Q = TRUE, progress = FALSE)))
+                       diagnose_k = FALSE, store_Q = TRUE, progress = FALSE)))
 
     expect_identical(fit$integration, "ccd")
     expect_true("b1.alpha" %in% colnames(fit$theta_grid))

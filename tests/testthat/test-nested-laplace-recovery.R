@@ -125,14 +125,14 @@ beta_post <- function(fit, z = 1.96) {
 # The two fitters the sweep runs. Both describe the SAME model -- one region
 # IID block over the outer RE-SD grid, the same design and response -- so their
 # fixed-effect estimates and intervals are each other's reference.
-recov_fit_single <- function(d, sg, family, cfg) {
+recov_fit_single <- function(d, sg, family, cfg, control = list()) {
   suppressWarnings(tulpa_nested_laplace(
     y = d$y, n_trials = rep(cfg$ntr, d$N), X = d$X,
     prior = list(list(type = "iid", obs_idx = d$region,
                       n_units = d$nr, sigma_grid = sg)),
     family = family, phi = cfg$phi,
-    control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
-                   keep_grid_hessians = TRUE, skew_correct = TRUE)))
+    control = c(list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
+                     keep_grid_hessians = TRUE, skew_correct = TRUE), control)))
 }
 
 recov_fit_joint <- function(d, sg, family, cfg, control = list()) {
@@ -550,7 +550,9 @@ test_that("a one-arm joint fit reproduces the single-block fixed-effect posterio
     cfg <- CFG[[fam]]
     d  <- sim_re(4100L, fam, cfg$nr, cfg$spr, cfg$ntr, cfg$beta, cfg$su, cfg$phi)
     sg <- exp(seq(log(0.2), log(1.5), length.out = 7))
-    fs <- recov_fit_single(d, sg, fam, cfg)
+    # Both doors run without the outer Pareto-k diagnostic, which is attached
+    # after the fixed-effect moments and leaves them as they are.
+    fs <- recov_fit_single(d, sg, fam, cfg, control = list(diagnose_k = FALSE))
     fj <- recov_fit_joint(d, sg, fam, cfg)
 
     expect_true(is.na(fj$grid_fixed_declined))
@@ -630,15 +632,31 @@ LCCD_CFG <- list(nr = 40L, spr = 30L, ntr = 1L, beta = c(-0.2, 0.7), su = 0.7,
                  phi = RESID_VAR)
 LCCD_SIM <- sim_re_crossed(c(0.5, 0.35, 0.25))
 
+# One seed of that fixture, the first of the sweep's, fit once on the coarse
+# base grid with the refinement on and once with it off. The two default-tier
+# blocks below read the same pair of fits; it is built on first use, behind
+# their gates.
+lccd_pair <- local({
+  pair <- NULL
+  function() {
+    if (is.null(pair)) {
+      d  <- LCCD_SIM(8101L, "gaussian", LCCD_CFG$nr, LCCD_CFG$spr,
+                     LCCD_CFG$ntr, LCCD_CFG$beta, LCCD_CFG$su, LCCD_CFG$phi)
+      sg <- exp(seq(log(0.2), log(1.5), length.out = 7))
+      pair <<- list(
+        refined = recov_fit_joint_local_ccd(d, sg, "gaussian", LCCD_CFG),
+        coarse  = recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG))
+    }
+    pair
+  }
+})
+
 test_that("local-CCD refinement engages on the four-axis joint recovery fixture", {
   skip_on_cran()
   # The engage gate has several conditions and every one of them declines
   # silently, so the settings are not evidence that the refinement ran. What it
   # left on the fit is.
-  d  <- LCCD_SIM(8100L, "gaussian", LCCD_CFG$nr, LCCD_CFG$spr, LCCD_CFG$ntr,
-                 LCCD_CFG$beta, LCCD_CFG$su, LCCD_CFG$phi)
-  sg <- exp(seq(log(0.2), log(1.5), length.out = 7))
-  f  <- recov_fit_joint_local_ccd(d, sg, "gaussian", LCCD_CFG)
+  f  <- lccd_pair()$refined
 
   expect_false(is.null(f$local_ccd_info))
   expect_gt(f$local_ccd_info$n_design_nodes, 0L)
@@ -653,7 +671,7 @@ test_that("local-CCD refinement engages on the four-axis joint recovery fixture"
   expect_true(all(is.finite(confint(f))))
 
   # The unrefined twin differs in `local_ccd` alone and leaves nothing.
-  f0 <- recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG)
+  f0 <- lccd_pair()$coarse
   expect_null(f0$local_ccd_info)
   expect_true(all(f0$weight_kind == "mass"))
 })
@@ -979,10 +997,7 @@ lccd_arm_sweep <- function(levels, n_seed, seed_off = 8100L,
 
 test_that("a weight rule and a placement rule reach different halves of the read", {
   skip_on_cran()
-  d  <- LCCD_SIM(8101L, "gaussian", LCCD_CFG$nr, LCCD_CFG$spr, LCCD_CFG$ntr,
-                 LCCD_CFG$beta, LCCD_CFG$su, LCCD_CFG$phi)
-  sg <- exp(seq(log(0.2), log(1.5), length.out = 7))
-  dm <- outer_grid_dump(recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG))
+  dm <- outer_grid_dump(lccd_pair()$coarse)
   A  <- lccd_arms(dm)
   R  <- lapply(A, function(a) lccd_arm_read(dm, a))
 
@@ -1024,8 +1039,7 @@ test_that("a weight rule and a placement rule reach different halves of the read
   # so only the base grid's own interior cells keep a centred stencil. That is
   # why the arms are scored on the tensor base rather than on top of #320's
   # refinement.
-  fr <- recov_fit_joint_local_ccd(d, sg, "gaussian", LCCD_CFG)
-  dr <- outer_grid_dump(fr)
+  dr <- outer_grid_dump(lccd_pair()$refined)
   br <- .joint_local_ccd_box_mass(dr$joint_grid, dr$log_marginal,
                                   dr$axis_names, dr$axis_tags)
   expect_gt(nrow(dr$joint_grid), nrow(dm$joint_grid))
@@ -1246,7 +1260,8 @@ test_that("both nested doors read a gaussian phi as the residual variance", {
   cfg <- list(ntr = 1L, phi = NA_real_)
   for (phi in c(0.25, 0.5, 1.0)) {
     cfg$phi <- phi
-    for (f in list(recov_fit_single(d, sgt, "gaussian", cfg),
+    for (f in list(recov_fit_single(d, sgt, "gaussian", cfg,
+                                    control = list(diagnose_k = FALSE)),
                    recov_fit_joint(d, sgt, "gaussian", cfg))) {
       se <- sqrt(diag(solve(f$grid_hessians[[1L]])))
       expect_equal(se[[2L]], sqrt(phi / Sxx), tolerance = 1e-3)
