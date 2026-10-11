@@ -121,11 +121,15 @@
   })
   ds$w <- d$weights[ds$cell]
   cells <- cbind(ds, do.call(rbind, rows)[, -1L, drop = FALSE])
+  # Each whole-grid candidate is read once and scored on every part.
+  e <- list(
+    mass = outer_grid_read_diff(ref, outer_grid_rebuild(d, cand$weights, NULL)),
+    loc  = outer_grid_read_diff(ref, outer_grid_rebuild(d, NULL, cand$joint_grid)),
+    both = outer_grid_read_diff(ref, outer_grid_rebuild(d, cand$weights,
+                                                        cand$joint_grid)))
   whole <- lapply(names(OGD_PARTS), function(p) {
-    e <- function(w, g) outer_grid_read_diff(ref, outer_grid_rebuild(d, w, g))[[p]]
     data.frame(part = p, shipped = L0[[p]], floor = fl[[p]],
-               mass = e(cand$weights, NULL), loc = e(NULL, cand$joint_grid),
-               both = e(cand$weights, cand$joint_grid))
+               mass = e$mass[[p]], loc = e$loc[[p]], both = e$both[[p]])
   })
   list(cells = cells, whole = do.call(rbind, whole))
 }
@@ -213,8 +217,18 @@
   key <- paste(max(seeds), paste(spreads, collapse = "_"), family, hyperprior)
   if (!is.null(.dp_cache[[key]])) return(.dp_cache[[key]])
   grid <- expand.grid(seed = seeds, spread = spreads)
+  pf <- tempfile()
+  utils::Rprof(pf, interval = 0.01)
+  t0 <- proc.time()[["elapsed"]]
   units <- lapply(seq_len(nrow(grid)), function(i)
     .dp_sweep_unit(grid$seed[i], grid$spread[i], family, hyperprior))
+  utils::Rprof(NULL)
+  sm <- utils::summaryRprof(pf)
+  message("DPPROF elapsed ", proc.time()[["elapsed"]] - t0)
+  message(paste(utils::capture.output(print(utils::head(sm$by.total, 60))), collapse = "
+"))
+  message(paste(utils::capture.output(print(utils::head(sm$by.self, 30))), collapse = "
+"))
   out <- .dp_combine(units, 3L * nrow(grid))
   .dp_cache[[key]] <- out
   out
