@@ -795,7 +795,7 @@ test_that("the 2-D quadrature reproduces the scalar exact-skew reference on a pr
 
 # The coupled reference the three blocks below read: one data set, its exact log
 # posterior, the posterior mode, and the converged quadrature of that posterior.
-.isk_coupled_ref <- cached_fixture(function() {
+.isk_coupled_ref <- fixture_once(function() {
   beta_prec <- 0.25
   d <- coupled_occ_data(seed = 311, n_cells = 100L, n_visits = 4L,
                         b_occ = 0.2, b_det = -0.5)

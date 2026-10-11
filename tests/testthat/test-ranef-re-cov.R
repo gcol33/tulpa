@@ -68,11 +68,11 @@ expect_ranef_recovers <- function(r, sim) {
 # The single-term fits on the default data that several blocks below read. The
 # Gibbs fit runs at the chain length the cross-backend agreement needs, which
 # is also long enough for the per-backend recovery assertions.
-.rrc_nested_fit <- cached_fixture(function() {
+.rrc_nested_fit <- fixture_once(function() {
   tulpa(y ~ x + (1 + x | site), data = make_ranef_re_data()$d,
         family = "poisson", mode = "re_cov_nested", control = .rrc_nested_ctl)
 })
-.rrc_gibbs_fit <- cached_fixture(function() {
+.rrc_gibbs_fit <- fixture_once(function() {
   tulpa(y ~ x + (1 + x | site), data = make_ranef_re_data()$d,
         family = "poisson", mode = "re_cov_gibbs",
         control = list(seed = 4L, n_iter = 1000L, warmup = 500L))

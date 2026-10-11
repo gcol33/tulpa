@@ -2,7 +2,10 @@
 #
 # `fixture_once(build)` returns an accessor: the first call with a given set of
 # arguments runs `build(...)` and stores the result, and later calls with the
-# same arguments return the stored value. A build that errors stores nothing,
+# same arguments return the stored value. The build runs inside whichever
+# test_that() block asks first, after that block's tier gate, so a fixture
+# behind skip_on_cran() is never built where the gate is closed. A build that
+# errors stores nothing,
 # so the next block that asks runs it again and reports the error under its own
 # name. The store belongs to the accessor, which a test file creates at its top
 # level, so a stored fit lives as long as that file's run and is never shared

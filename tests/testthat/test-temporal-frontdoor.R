@@ -19,7 +19,7 @@ make_temporal_data <- function(seed, Tt = 24L, m = 25L, b1 = 0.9) {
 # One binomial RW1 fit through the auto door. Routing, fixed-slope recovery, the
 # marginalized SE / interval / prediction and the integrated logLik are separate
 # properties of the same fit, so the blocks below read them off this one.
-.tfd_rw1_binomial <- cached_fixture(function() {
+.tfd_rw1_binomial <- fixture_once(function() {
   d <- make_temporal_data(11)
   d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
   list(d = d, fit = tulpa(y ~ x, data = d$df, family = "binomial",

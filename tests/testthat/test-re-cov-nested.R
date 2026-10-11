@@ -28,7 +28,7 @@ sim_corr_recov <- function(seed, G = 60L, npg = 12L, beta = c(-0.3, 0.7),
 # doubles as the fit whose structure the next block reads, since every shape
 # property there holds on any data set.
 .rcn_cover_seeds <- 100L + seq_len(5L)
-.rcn_cover_fits <- cached_fixture(function() {
+.rcn_cover_fits <- fixture_once(function() {
   lapply(.rcn_cover_seeds, function(s) {
     d <- sim_corr_recov(s)
     re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
