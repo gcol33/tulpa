@@ -180,23 +180,36 @@ test_that("local CCD declines on NULL tags, the engage gate, and a monotone fiel
        alpha_true = c(1.3, 0.7))
 }
 
+# The two fits of `.lccd_sim_joint()` most blocks read, each solved once: the
+# unrefined tensor fit, and the same fit with local CCD on and its engagement
+# gate opened (`skew_max = Inf`), which refines this fixture's candidate cell.
+.lccd_ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
+                   var_of_means_consistency = FALSE, integration = "grid",
+                   prune = FALSE)
+.lccd_cache <- new.env(parent = emptyenv())
+.lccd_fit <- function(refined) {
+  key <- if (refined) "refined" else "base"
+  if (is.null(.lccd_cache[[key]])) {
+    sim <- .lccd_sim_joint()
+    ctrl <- if (refined) {
+      c(.lccd_ctrl, list(local_ccd = list(max_cells = 4L, skew_max = Inf)))
+    } else .lccd_ctrl
+    .lccd_cache[[key]] <- suppressWarnings(tulpa_nested_laplace_joint(
+      sim$responses, sim$prior, copy = sim$copy, control = ctrl))
+  }
+  .lccd_cache[[key]]
+}
+
 test_that("local CCD engages on a 4-axis multi-block fit and conserves the integral", {
   skip_on_cran()
   sim  <- .lccd_sim_joint()
-  ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
-               var_of_means_consistency = FALSE, integration = "grid",
-               prune = FALSE)
-
-  fit  <- suppressWarnings(tulpa_nested_laplace_joint(
-    sim$responses, sim$prior, copy = sim$copy, control = ctrl))
+  fit  <- .lccd_fit(refined = FALSE)
   # This fixture's own candidate cell scores 0.7458 on the local-quadratic
   # misfit, so the engagement gate declines it at the default `skew_max`
   # (gcol33/tulpa#318, and the test below that pins that). The splice, the weight
   # conservation and the recovery this block checks are the machinery underneath
   # the gate, so it is opened here rather than fitting a different model.
-  fitl <- suppressWarnings(tulpa_nested_laplace_joint(
-    sim$responses, sim$prior, copy = sim$copy,
-    control = c(ctrl, list(local_ccd = list(max_cells = 4L, skew_max = Inf)))))
+  fitl <- .lccd_fit(refined = TRUE)
 
   # The unrefined tensor fit reports no refinement; the local-CCD fit engages.
   expect_null(fit$local_ccd_info)
@@ -268,15 +281,11 @@ test_that("local CCD carries inner modes through the splice", {
 
 test_that("local CCD keeps the fixed-effect retention aligned with the refined grid", {
   skip_on_cran()
-  sim  <- .lccd_sim_joint()
-  ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
-               var_of_means_consistency = FALSE, integration = "grid",
-               prune = FALSE)
-  fitl <- suppressWarnings(tulpa_nested_laplace_joint(
-    sim$responses, sim$prior, copy = sim$copy,
-    control = c(ctrl, list(local_ccd = list(max_cells = 4L)))))
+  # The gate opened, so the grid read here is one a cell was refined into.
+  fitl <- .lccd_fit(refined = TRUE)
 
   expect_false(is.null(fitl$local_ccd_info))
+  expect_gte(fitl$local_ccd_info$n_cells_refined, 1L)
   # The node solves carry their own block, so the refined grid reports instead
   # of declining "local_ccd_refined" (gcol33/tulpa#307).
   expect_true(is.na(fitl$grid_fixed_declined))
@@ -437,12 +446,7 @@ test_that("a fit reports the base share separately from the design mass", {
   # the posterior the refined region holds. `design_mass` is the share after,
   # `cell_share` the share before, and the regime gcol33/tulpa#316 describes is
   # the one where either approaches 1.
-  sim  <- .lccd_sim_joint()
-  fitl <- suppressWarnings(tulpa_nested_laplace_joint(
-    sim$responses, sim$prior, copy = sim$copy,
-    control = list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
-                   var_of_means_consistency = FALSE, integration = "grid",
-                   local_ccd = list(max_cells = 4L, skew_max = Inf))))
+  fitl <- .lccd_fit(refined = TRUE)
   info <- fitl$local_ccd_info
   expect_false(is.null(info))
   expect_length(info$cell_share, info$n_cells_refined)
@@ -484,15 +488,8 @@ test_that("the refined grid labels which cells carry a design weight", {
 
 test_that("a fit reports its weight kind per cell and the design mass share", {
   skip_on_cran()
-  sim  <- .lccd_sim_joint()
-  ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
-               var_of_means_consistency = FALSE, integration = "grid",
-               prune = FALSE)
-  fit  <- suppressWarnings(tulpa_nested_laplace_joint(
-    sim$responses, sim$prior, copy = sim$copy, control = ctrl))
-  fitl <- suppressWarnings(tulpa_nested_laplace_joint(
-    sim$responses, sim$prior, copy = sim$copy,
-    control = c(ctrl, list(local_ccd = list(max_cells = 4L, skew_max = Inf)))))
+  fit  <- .lccd_fit(refined = FALSE)
+  fitl <- .lccd_fit(refined = TRUE)
 
   # An unrefined tensor grid is mass-weighted throughout; the refined one is the
   # case that carries both, which is what `integration` alone cannot say.
@@ -553,26 +550,20 @@ test_that("this fixture's CCD decline is on the fit, not only in a message", {
   sim <- .lccd_sim_joint()
   ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
                var_of_means_consistency = FALSE)
-  fit <- suppressWarnings(tulpa_nested_laplace_joint(
-    sim$responses, sim$prior, copy = sim$copy,
-    control = c(ctrl, list(integration = "ccd"))))
+  # The verbose channel reports the same reason the field records, read off
+  # the one fit, so the field and the message cannot drift apart.
+  expect_message(
+    fit <- suppressWarnings(tulpa_nested_laplace_joint(
+      sim$responses, sim$prior, copy = sim$copy,
+      control = c(ctrl, list(integration = "ccd", verbose = TRUE)))),
+    "flat / ridged")
   expect_identical(fit$integration_requested, "ccd")
   expect_false(identical(fit$integration, "ccd"))
   expect_identical(fit$integration_declined, "modefind_ridge")
 
-  # The same reason the verbose channel reports, so the field and the message
-  # cannot drift apart.
-  expect_message(
-    suppressWarnings(tulpa_nested_laplace_joint(
-      sim$responses, sim$prior, copy = sim$copy,
-      control = c(ctrl, list(integration = "ccd", verbose = TRUE)))),
-    "flat / ridged")
-
-  # The same fit under integration = "grid" asked for nothing and declined
+  # The same model under integration = "grid" asked for nothing and declined
   # nothing, which is the state the reason field has to be distinguishable from.
-  fit_g <- suppressWarnings(tulpa_nested_laplace_joint(
-    sim$responses, sim$prior, copy = sim$copy,
-    control = c(ctrl, list(integration = "grid"))))
+  fit_g <- .lccd_fit(refined = FALSE)
   expect_identical(fit_g$integration, fit$integration)
   expect_true(is.na(fit_g$integration_declined))
 })
@@ -645,15 +636,8 @@ test_that("naming the support mixed leaves the reported interval unchanged", {
 
 test_that("a locally refined fit says what its interval was read off", {
   skip_on_cran()
-  sim  <- .lccd_sim_joint()
-  ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
-               var_of_means_consistency = FALSE, integration = "grid",
-               prune = FALSE)
-  fit  <- suppressWarnings(tulpa_nested_laplace_joint(
-    sim$responses, sim$prior, copy = sim$copy, control = ctrl))
-  fitl <- suppressWarnings(tulpa_nested_laplace_joint(
-    sim$responses, sim$prior, copy = sim$copy,
-    control = c(ctrl, list(local_ccd = list(max_cells = 4L, skew_max = Inf)))))
+  fit  <- .lccd_fit(refined = FALSE)
+  fitl <- .lccd_fit(refined = TRUE)
 
   expect_identical(fit$theta_interval_read, "density")
   expect_equal(fit$theta_interval_design_mass, 0)
@@ -1023,9 +1007,7 @@ test_that("the gate leaves a quadratic outer target's refinement untouched", {
 test_that("the gate declines this fixture's own cell, and the read moves toward truth", {
   skip_on_cran()
   sim  <- .lccd_sim_joint()
-  ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
-               var_of_means_consistency = FALSE, integration = "grid",
-               prune = FALSE)
+  ctrl <- .lccd_ctrl
   # Pinned to the chord within-cell read, because the reference below WAS one:
   # at a converged m = 13 the chord read reproduces `ref_w` to five decimals on
   # the two axes whose 95% bound lies inside the node set, and the shipped
