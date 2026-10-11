@@ -99,6 +99,8 @@
          truth = list(alpha = alpha_true, sigma = sigma_b))
 }
 
+# The medians and means read below are set before the outer Pareto-k
+# diagnostic runs, and it restores the RNG, so these fits leave it off.
 .fit_pp <- function(sim, adj, prior_alpha = NULL) {
     arm_occ <- list(
         y = as.numeric(sim$occur), n_trials = rep(1L, sim$N),
@@ -129,7 +131,7 @@
         ),
         prior     = prior,
         prior_alpha   = prior_alpha,
-        control = list(adaptive_grid = FALSE)
+        control = list(adaptive_grid = FALSE, diagnose_k = FALSE)
     )
 }
 
@@ -262,7 +264,7 @@ test_that("alpha = 0 grid cell is not zeroed by the prior", {
         ),
         prior     = prior,
         prior_alpha     = list("pc.prec", c(1.0, 0.01)),
-        control = list(adaptive_grid = FALSE)
+        control = list(adaptive_grid = FALSE, diagnose_k = FALSE)
     )
     # With alpha_truth = 0, the alpha posterior median should be small
     # (well below 0.2). Pre-fix the median jumped to ~0.5 because the
