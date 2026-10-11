@@ -39,7 +39,10 @@
          Xpos = Xpos, y_pos = y_pos, spi_pos = as.integer(spi_pos))
 }
 
-.fit_joint <- function(sim, n_threads_outer) {
+# `tile_warm = TRUE` is the driver's own default. The equivalences below read
+# only the grid's own outputs (log-marginal, weights, moments, modes), all set
+# before the outer Pareto-k diagnostic runs, so the fit leaves it off.
+.fit_joint <- function(sim, n_threads_outer, tile_warm = TRUE) {
     adj <- .chain_adj(sim$n_s)
     arm_occ <- list(
         y = as.numeric(sim$occur), n_trials = rep(1L, sim$N),
@@ -64,39 +67,24 @@
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
         control = list(n_threads = 1L, n_threads_outer = n_threads_outer,
+                       tile_warm = tile_warm, diagnose_k = FALSE,
                        adaptive_grid = FALSE, var_of_means_consistency = FALSE)
     )
 }
 
-.fit_joint_tile <- function(sim, n_threads_outer, tile_warm) {
-    adj <- .chain_adj(sim$n_s)
-    arm_occ <- list(
-        y = as.numeric(sim$occur), n_trials = rep(1L, sim$N),
-        X = sim$Xocc, spatial_idx = sim$spatial_idx,
-        re_idx = rep(0, sim$N), n_re_groups = 0L, sigma_re = 1.0,
-        family = "binomial", phi = 1.0
-    )
-    arm_pos <- list(
-        y = sim$y_pos, n_trials = rep(1L, length(sim$y_pos)),
-        X = sim$Xpos, spatial_idx = sim$spi_pos,
-        re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L, sigma_re = 1.0,
-        family = "gaussian", phi = 0.25
-    )
-    prior <- list(
-        type = "bym2", n_spatial_units = adj$n_spatial_units,
-        adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-        n_neighbors = adj$n_neighbors, scale_factor = 1.0,
-        sigma_grid = c(0.3, 0.6, 1.0), rho_grid = c(0.3, 0.7, 0.9)
-    )
-    arm_pos$field_coef <- list(name = "alpha", grid = c(0.3, 0.6, 1.0, 1.4, 1.8))
-    tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos),
-        prior = prior,
-        control = list(n_threads = 1L, n_threads_outer = n_threads_outer,
-                       tile_warm = tile_warm,
-                       adaptive_grid = FALSE, var_of_means_consistency = FALSE)
-    )
+# One fit per (seed, outer width, tile_warm), shared by every block that reads
+# it: the serial fit, the parallel tiled fit and the parallel untiled fit of a
+# seed are each solved once and compared pairwise below.
+.par_cache <- new.env(parent = emptyenv())
+.par_fit <- function(seed, n_threads_outer, tile_warm = TRUE) {
+    key <- paste(seed, n_threads_outer, tile_warm)
+    if (is.null(.par_cache[[key]])) {
+        .par_cache[[key]] <- .fit_joint(.sim_joint_bym2(seed), n_threads_outer,
+                                        tile_warm)
+    }
+    .par_cache[[key]]
 }
+.par_seeds <- 7200L + seq_len(5L)
 
 # Multi-block joint with two full-rank blocks (RW1 temporal + IID), fit through
 # the SPARSE driver (force_sparse) so the outer grid runs through
@@ -169,11 +157,9 @@ test_that("joint BYM2 parallel path matches serial across seeds", {
                 "needs multi-core to exercise the parallel path")
     n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))
 
-    seeds <- 7100L + seq_len(5L)
-    for (seed in seeds) {
-        sim <- .sim_joint_bym2(seed)
-        fit_s <- .fit_joint(sim, n_threads_outer = 1L)
-        fit_p <- .fit_joint(sim, n_threads_outer = n_outer)
+    for (seed in .par_seeds) {
+        fit_s <- .par_fit(seed, n_threads_outer = 1L)
+        fit_p <- .par_fit(seed, n_threads_outer = n_outer)
 
         # Log-marginal per cell should match to numerical precision. The two
         # paths warm-start differently so Newton iter counts may differ but
@@ -212,13 +198,11 @@ test_that("joint BYM2 tile_warm path matches no-tile path across seeds", {
                 "needs multi-core to exercise tile_warm")
     n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))
 
-    seeds <- 7200L + seq_len(5L)
     iters_off_total <- 0L
     iters_on_total  <- 0L
-    for (seed in seeds) {
-        sim <- .sim_joint_bym2(seed)
-        fit_off <- .fit_joint_tile(sim, n_outer, tile_warm = FALSE)
-        fit_on  <- .fit_joint_tile(sim, n_outer, tile_warm = TRUE)
+    for (seed in .par_seeds) {
+        fit_off <- .par_fit(seed, n_outer, tile_warm = FALSE)
+        fit_on  <- .par_fit(seed, n_outer, tile_warm = TRUE)
 
         # Posterior equivalence: log-marginal per cell must match (warm-
         # start choice only affects iter count, not the converged mode at
@@ -252,9 +236,8 @@ test_that("tile_warm is a no-op when n_threads_outer == 1", {
     # Serial path: tile metadata is ignored by run_nested_laplace_grid, so
     # tile_warm = TRUE vs FALSE must produce identical results. Guards
     # against accidental tile-path activation outside the parallel branch.
-    sim <- .sim_joint_bym2(7301L)
-    fit_off <- .fit_joint_tile(sim, n_threads_outer = 1L, tile_warm = FALSE)
-    fit_on  <- .fit_joint_tile(sim, n_threads_outer = 1L, tile_warm = TRUE)
+    fit_off <- .par_fit(.par_seeds[1L], n_threads_outer = 1L, tile_warm = FALSE)
+    fit_on  <- .par_fit(.par_seeds[1L], n_threads_outer = 1L, tile_warm = TRUE)
     expect_identical(fit_on$log_marginal, fit_off$log_marginal)
     expect_identical(fit_on$n_iter, fit_off$n_iter)
 })
