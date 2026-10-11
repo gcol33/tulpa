@@ -21,9 +21,15 @@ on:
         type: choice
         default: curated
         options: [curated, all-gated]
+      files:
+        description: Comma-separated test files to run instead of the scope.
+        type: string
+        default: ''
 
+# A dispatched run is a measurement and keeps its own group, so a push or a
+# second dispatch does not cancel it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'push' }}
   cancel-in-progress: true
 
 permissions:
@@ -48,6 +54,7 @@ jobs:
       # seconds for each, which is the measurement the curated list is drawn
       # from. Push runs stay on the curated list.
       TULPA_TEST_SCOPE: ${{ inputs.scope || 'curated' }}
+      TULPA_TEST_FILES: ${{ inputs.files || '' }}
       # An intra-chain OpenMP team wider than the runner oversubscribes the
       # cores the test process is already using.
       OMP_NUM_THREADS: '2'
