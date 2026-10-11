@@ -31,6 +31,26 @@ helper_make_spde_for_ccd <- function(n_obs, range_true, sigma_true, seed = 1L,
   list(coords = coords, spec = spec, eta = eta, w_true = w_true)
 }
 
+# The Poisson plumbing fixture the CCD blocks below share: one data set, fit
+# once per control setting. `diagnose_k = FALSE` is the fit the blocks that do
+# not read k-hat use; the diagnostic runs after the integration from its own
+# preserved seed, so it does not move the moments those blocks compare.
+.ccd_poisson_data <- fixture_once(function() {
+  d <- helper_make_spde_for_ccd(n_obs = 250, range_true = 0.3,
+                                sigma_true = 0.6, seed = 11L,
+                                prior_sigma = c(0.6, 0.05))
+  y <- rpois(length(d$eta), lambda = exp(2.0 + d$eta))
+  list(y = y, X = matrix(1, nrow = length(y), ncol = 1), spec = d$spec)
+})
+
+.ccd_poisson_fit <- fixture_once(function(...) {
+  d <- .ccd_poisson_data()
+  suppressWarnings(
+    fit_spde(d$y, d$X, d$spec, family = "poisson",
+             control = list(method = "ccd", ...))
+  )
+})
+
 test_that("fit_spde(method='ccd') returns a usable nested-Laplace result", {
   skip_if_not_installed("fmesher")
   skip_on_cran()
@@ -39,15 +59,7 @@ test_that("fit_spde(method='ccd') returns a usable nested-Laplace result", {
   # joint posterior over (range, sigma) well-defined. The CCD path
   # converges to an interior mode when the Hessian is well-conditioned;
   # otherwise it falls back to the rectangular grid (correct behaviour).
-  d <- helper_make_spde_for_ccd(n_obs = 250, range_true = 0.3,
-                                 sigma_true = 0.6, seed = 11L,
-                                 prior_sigma = c(0.6, 0.05))
-  y <- rpois(length(d$eta), lambda = exp(2.0 + d$eta))
-  X <- matrix(1, nrow = length(y), ncol = 1)
-
-  fit <- suppressWarnings(
-    fit_spde(y, X, d$spec, family = "poisson", control = list(method = "ccd"))
-  )
+  fit <- .ccd_poisson_fit(k_samples = 150L)
 
   expect_true(fit$nested$method %in% c("ccd", "grid"))
   expect_true(all(is.finite(fit$nested$weights)))
@@ -99,10 +111,12 @@ test_that("fit_spde(method='ccd') matches grid integration on shared mode", {
   X <- matrix(1, nrow = length(y), ncol = 1)
 
   fit_c <- suppressWarnings(
-    fit_spde(y, X, d$spec, family = "poisson", control = list(method = "ccd"))
+    fit_spde(y, X, d$spec, family = "poisson",
+             control = list(method = "ccd", diagnose_k = FALSE))
   )
   fit_g <- fit_spde(y, X, d$spec, family = "poisson",
-                    control = list(method = "grid", n_grid = 7L))
+                    control = list(method = "grid", n_grid = 7L,
+                                   diagnose_k = FALSE))
 
   expect_identical(fit_g$nested$method, "grid")
   expect_true(all(is.finite(c(fit_c$nested$range_mean,
@@ -128,14 +142,7 @@ test_that("fit_spde(method='ccd') matches grid integration on shared mode", {
 test_that("fit_spde reports an outer Pareto-k-hat over (range, sigma)", {
   skip_if_not_installed("fmesher")
   skip_on_cran()
-  d <- helper_make_spde_for_ccd(n_obs = 250, range_true = 0.3, sigma_true = 0.6,
-                                seed = 11L, prior_sigma = c(0.6, 0.05))
-  y <- rpois(length(d$eta), lambda = exp(2.0 + d$eta))
-  X <- matrix(1, nrow = length(y), ncol = 1)
-
-  fit <- suppressWarnings(
-    fit_spde(y, X, d$spec, family = "poisson",
-             control = list(method = "ccd", k_samples = 150L)))
+  fit <- .ccd_poisson_fit(k_samples = 150L)
   # Both hyperparameters are positive (log transform), so k-hat is well-defined;
   # value is data-dependent -- assert plumbing + ESS range.
   expect_true(is.finite(fit$pareto_k))
@@ -143,9 +150,7 @@ test_that("fit_spde reports an outer Pareto-k-hat over (range, sigma)", {
   expect_gt(fit$pareto_k_is_ess, 0)
   expect_equal(fit$pareto_k_scope, "outer (range, sigma) Gaussian proposal")
 
-  off <- suppressWarnings(
-    fit_spde(y, X, d$spec, family = "poisson",
-             control = list(method = "ccd", diagnose_k = FALSE)))
+  off <- .ccd_poisson_fit(diagnose_k = FALSE)
   expect_true(is.na(off$pareto_k))                  # gated off
 })
 
@@ -300,21 +305,16 @@ test_that("the analytic SPDE mode-find gradient reproduces the FD fallback's mod
   skip_if_not_installed("fmesher")
   skip_on_cran()
 
-  d <- helper_make_spde_for_ccd(n_obs = 250, range_true = 0.3,
-                                 sigma_true = 0.6, seed = 11L,
-                                 prior_sigma = c(0.6, 0.05))
-  y <- rpois(length(d$eta), lambda = exp(2.0 + d$eta))
-  X <- matrix(1, nrow = length(y), ncol = 1)
-
-  fit_analytic <- suppressWarnings(
-    fit_spde(y, X, d$spec, family = "poisson", control = list(method = "ccd"))
-  )
+  # The analytic fit is read before the gradient is mocked out.
+  d <- .ccd_poisson_data()
+  fit_analytic <- .ccd_poisson_fit(diagnose_k = FALSE)
 
   testthat::local_mocked_bindings(
     cpp_spde_laplace_gradient = function(...) stop("forced FD fallback"),
     .package = "tulpa")
   fit_fd <- suppressWarnings(
-    fit_spde(y, X, d$spec, family = "poisson", control = list(method = "ccd"))
+    fit_spde(d$y, d$X, d$spec, family = "poisson",
+             control = list(method = "ccd", diagnose_k = FALSE))
   )
 
   expect_equal(fit_analytic$nested$range_mean, fit_fd$nested$range_mean,
@@ -342,6 +342,6 @@ test_that("the analytic gradient is not offered outside its scope", {
     .package = "tulpa")
   expect_no_error(suppressWarnings(
     fit_spde(y, X, d$spec, family = "poisson", offset = rep(0, length(y)),
-            control = list(method = "ccd"))
+            control = list(method = "ccd", diagnose_k = FALSE))
   ))
 })

@@ -30,11 +30,30 @@ fit_spde_re <- function(d, ...) {
                          control = list(verbose = FALSE), ...))
 }
 
+# The routing blocks read which driver a fit lands on and the shape of its
+# outer grid, not what it estimates, so they share one 80-site data set (an
+# 89-node mesh, ten observations per group).
+.re_int_data <- fixture_once(function() make_spde_re_data(2, n = 80L))
+
+# One fit per mode, with the warnings it raised. "auto" is the default mode, so
+# its fit is also the one the axis block reads.
+.re_int_fit <- fixture_once(function(mode) {
+  d <- .re_int_data()$d
+  warns <- character(0)
+  fit <- withCallingHandlers(
+    tulpa(y ~ x + (1 | g), data = d, family = "poisson", mode = mode,
+          spatial = spatial_spde(~ lon + lat, data = d),
+          control = list(verbose = FALSE)),
+    warning = function(w) {
+      warns <<- c(warns, conditionMessage(w)); invokeRestart("muffleWarning")
+    })
+  list(fit = fit, warns = warns)
+})
+
 test_that("an SPDE field with an RE term carries the RE SD as an outer axis", {
   skip_if_not_installed("fmesher")
   skip_on_cran()
-  D <- make_spde_re_data(2)
-  fit <- fit_spde_re(D$d)
+  fit <- .re_int_fit("auto")$fit
 
   expect_identical(fit$backend, "nested_laplace")
   # Three axes: the field's (range, sigma) and the RE block's own sigma. Two
@@ -50,27 +69,18 @@ test_that("an SPDE field with an RE term carries the RE SD as an outer axis", {
 test_that("no mode conditions the RE SD on the SPDE path any more", {
   skip_if_not_installed("fmesher")
   skip_on_cran()
-  D <- make_spde_re_data(2)
   for (m in c("auto", "nested_laplace", "structured")) {
-    warns <- character(0)
-    fit <- withCallingHandlers(
-      tulpa(y ~ x + (1 | g), data = D$d, family = "poisson", mode = m,
-            spatial = spatial_spde(~ lon + lat, data = D$d),
-            control = list(verbose = FALSE)),
-      warning = function(w) {
-        warns <<- c(warns, conditionMessage(w)); invokeRestart("muffleWarning")
-      })
-    expect_identical(fit$backend, "nested_laplace", info = m)
-    expect_equal(ncol(fit$theta_grid), 3L, info = m)
-    expect_false(any(grepl("sigma_re", warns)), info = m)
+    res <- .re_int_fit(m)
+    expect_identical(res$fit$backend, "nested_laplace", info = m)
+    expect_equal(ncol(res$fit$theta_grid), 3L, info = m)
+    expect_false(any(grepl("sigma_re", res$warns)), info = m)
   }
 })
 
 test_that("a supplied sigma_re still conditions, as the degenerate axis", {
   skip_if_not_installed("fmesher")
   skip_on_cran()
-  D <- make_spde_re_data(2)
-  fit <- fit_spde_re(D$d, sigma_re = 0.5)
+  fit <- fit_spde_re(.re_int_data()$d, sigma_re = 0.5)
   # Same path, same axis, one node on it -- conditioning is the degenerate case
   # of integrating, not a second route.
   expect_true("b2.sigma" %in% colnames(fit$theta_grid))
@@ -82,21 +92,23 @@ test_that("an SPDE field with no RE term still reaches fit_spde()", {
   skip_on_cran()
   # The redirect is narrowed, not removed: without an RE term there is nothing
   # to integrate beside the field and the dedicated integrator still owns it.
-  D <- make_spde_re_data(2)
-  fit <- suppressWarnings(tulpa(y ~ x, data = D$d, family = "poisson",
-                                spatial = spatial_spde(~ lon + lat, data = D$d),
-                                control = list(verbose = FALSE)))
+  # Only the backend is read, so the k-hat diagnostic is not requested.
+  d <- .re_int_data()$d
+  fit <- suppressWarnings(tulpa(y ~ x, data = d, family = "poisson",
+                                spatial = spatial_spde(~ lon + lat, data = d),
+                                control = list(verbose = FALSE,
+                                               diagnose_k = FALSE)))
   expect_identical(fit$backend, "spde")
 })
 
 test_that("fractional nu with an RE term still refuses", {
   skip_if_not_installed("fmesher")
   skip_on_cran()
-  D <- make_spde_re_data(2)
+  d <- .re_int_data()$d
   expect_error(
-    tulpa(y ~ x + (1 | g), data = D$d, family = "poisson",
+    tulpa(y ~ x + (1 | g), data = d, family = "poisson",
           mode = "nested_laplace",
-          spatial = spatial_spde(~ lon + lat, data = D$d, nu = 1.5)),
+          spatial = spatial_spde(~ lon + lat, data = d, nu = 1.5)),
     "fractional-nu SPDE")
 })
 

@@ -28,6 +28,32 @@
   list(u = u - mean(u), s = s - mean(s))
 }
 
+# The p = 2 recovery fixture: a 10 x 10 lattice with Sigma = (1, 0.8; rho 0.6)
+# and 20 Gaussian observations per cell. rho is read off the 100 cells' fields,
+# whose SDs are 0.5-0.8 on these seeds, and 20 observations at noise SD 0.4 put
+# each cell's (u, s) at a standard error of about 0.09, so the cell count is
+# what limits the cross-correlation and it is kept.
+.mcar_recovery_rho <- 0.6
+.mcar_recovery_fit <- fixture_once(function(seed) {
+  adj <- .mcar_grid_adj(10L, 10L)
+  sig1 <- 1.0; sig2 <- 0.8; rho <- .mcar_recovery_rho
+  Sigma <- matrix(c(sig1^2, rho * sig1 * sig2,
+                    rho * sig1 * sig2, sig2^2), 2, 2)
+  set.seed(seed)
+  fld <- .mcar_sim(adj, Sigma)
+  cell <- rep(seq_len(nrow(adj)), each = 20L)
+  N <- length(cell)
+  x <- rnorm(N)
+  eta <- 0.3 + fld$u[cell] + x * fld$s[cell]
+  y <- rnorm(N, eta, 0.4)
+  fit <- suppressWarnings(tulpa(
+    y ~ spatial(graph = adj, formula = ~ 1 + x | cell),
+    data = data.frame(y = y, x = x, cell = cell),
+    family = "gaussian", mode = "laplace",
+    control = list(n_draws = 200L)))
+  list(fit = fit, fld = fld)
+})
+
 test_that("spatial(~ ... | cell) builds one coupled MCAR block", {
   adj <- .mcar_grid_adj(4L, 4L)
   f <- spatial(graph = adj, formula = ~ 1 + x | cell)
@@ -48,30 +74,13 @@ test_that("spatial(~ ... | cell) builds one coupled MCAR block", {
 test_that("MCAR recovers the correlated fields and Sigma vs simulated truth", {
   skip_on_cran()
 
-  nx <- ny <- 10L
-  adj <- .mcar_grid_adj(nx, ny)
-  n_s <- nx * ny
-  sig1 <- 1.0; sig2 <- 0.8; rho_true <- 0.6
-  Sigma <- matrix(c(sig1^2, rho_true * sig1 * sig2,
-                    rho_true * sig1 * sig2, sig2^2), 2, 2)
-
+  rho_true <- .mcar_recovery_rho
   cor_u <- cor_s <- rho_med <- numeric(0)
   rho_cover <- logical(0)
   for (seed in 1:3) {
-    set.seed(seed)
-    fld <- .mcar_sim(adj, Sigma)
-    n_per <- 40L
-    cell <- rep(seq_len(n_s), each = n_per)
-    N <- length(cell)
-    x <- rnorm(N)
-    eta <- 0.3 + fld$u[cell] + x * fld$s[cell]
-    y <- rnorm(N, eta, 0.4)
-    d <- data.frame(y = y, x = x, cell = cell)
-
-    fit <- suppressWarnings(tulpa(
-      y ~ spatial(graph = adj, formula = ~ 1 + x | cell),
-      data = d, family = "gaussian", mode = "laplace",
-      control = list(n_draws = 200L)))
+    rec <- .mcar_recovery_fit(seed)
+    fit <- rec$fit
+    fld <- rec$fld
 
     expect_s3_class(fit, "tulpa_spatial_field_fit")
     expect_true(isTRUE(fit$correlated))
@@ -149,18 +158,8 @@ test_that("MCAR mode-centred CCD scales to p = 3 (general p > 2)", {
 
 test_that("MCAR fit print reports the Sigma cross-covariance (rho)", {
   skip_on_cran()
-  set.seed(11)
-  adj <- .mcar_grid_adj(8L, 8L)
-  n_s <- 64L
-  Sigma <- matrix(c(1, 0.5, 0.5, 0.7), 2, 2)
-  fld <- .mcar_sim(adj, Sigma)
-  cell <- rep(seq_len(n_s), each = 25L)
-  x <- rnorm(length(cell))
-  y <- rnorm(length(cell), 0.2 + fld$u[cell] + x * fld$s[cell], 0.4)
-  fit <- suppressWarnings(tulpa(
-    y ~ spatial(graph = adj, formula = ~ 1 + x | cell),
-    data = data.frame(y = y, x = x, cell = cell), family = "gaussian",
-    mode = "laplace", control = list(n_draws = 200L)))
+  # Any p = 2 MCAR fit carries the Sigma summary the print reads.
+  fit <- .mcar_recovery_fit(1L)$fit
   expect_false(is.null(fit$mcar_summary[["rho_12"]]))
   out <- paste(capture.output(print(fit)), collapse = "\n")
   expect_match(out, "MCAR")

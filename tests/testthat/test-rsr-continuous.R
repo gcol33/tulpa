@@ -42,6 +42,16 @@
                    verbose = FALSE)))
 }
 
+# The restricted field on seed 1, fit by the Polya-Gamma Gibbs kernel. The
+# comparison against nested Laplace needs 4000 iterations for the posterior
+# mean and SD of the slope; orthogonality holds draw by draw, so the
+# orthogonality block reads the same chain.
+.rsrc_rsr_gibbs <- fixture_once(function() {
+  .rsrc_fit(.rsrc_sim(1L),
+            spatial_rsr(spatial_gp(~ lon + lat), restrict_to = ~ x),
+            n_iter = 4000L)
+})
+
 # max |w' X| relative to the field's own scale, over the retained draws.
 .rsrc_orthogonality <- function(fit, data) {
   W <- fit$draws[, grep("^gp_w\\[", colnames(fit$draws)), drop = FALSE]
@@ -94,9 +104,10 @@ test_that("one projector builder over the observation -> field map", {
 test_that("a restricted continuous fit reports an orthogonal field", {
   skip_on_cran()
   sim <- .rsrc_sim(1L)
-  f_rsr   <- .rsrc_fit(sim, spatial_rsr(spatial_gp(~ lon + lat),
-                                        restrict_to = ~ x))
-  f_plain <- .rsrc_fit(sim, spatial_gp(~ lon + lat))
+  f_rsr   <- .rsrc_rsr_gibbs()
+  # The unrestricted field is far from orthogonal on every draw, so a short
+  # chain shows the separation.
+  f_plain <- .rsrc_fit(sim, spatial_gp(~ lon + lat), n_iter = 200L)
 
   expect_identical(f_rsr$backend, "gibbs")
   # Measured: 6.2e-15 restricted against 14.3 unrestricted. The gate is the
@@ -216,7 +227,7 @@ test_that("a binomial restricted NNGP field on nested Laplace agrees with the Gi
   nested <- tulpa(y ~ x, data = sim$d, family = "binomial",
                   n_trials = rep(25L, sim$n), spatial = sp,
                   mode = "nested_laplace")
-  gibbs <- .rsrc_fit(sim, sp, n_iter = 4000L)
+  gibbs <- .rsrc_rsr_gibbs()
   expect_equal(nested$backend, "nested_laplace")
   # Measured over seeds 1-4 at 8000 Gibbs iterations, the slope's offset in
   # Gibbs posterior SDs: -0.69 / -0.28 / -0.23 / -0.17 restricted, against

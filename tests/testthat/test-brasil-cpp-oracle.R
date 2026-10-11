@@ -13,28 +13,41 @@
 # invariances the consumers already have (the barycentric weights up to scale,
 # the roots up to order), so the comparison sorts the roots.
 
+# The comparison runs over a pairwise covering design of (order, beta,
+# spectrum_ratio): every order meets every beta, and the ratio cycles so that
+# every (order, ratio) and every (beta, ratio) pair also occurs. Across the
+# full 4 x 5 x 4 product the search takes the same branches the design
+# reaches: phase 1 relocates an interior node (not an end node) only at ratios
+# <= 0.1, order 4 at ratio 0.4 is the one setting where the search runs to its
+# iteration cap without converging, so the port is held to the oracle through
+# all 1100 iterations there, and every cell returns as many roots as its
+# order. The R reference dominates the cost, which grows with the product.
 test_that("the compiled rational roots match the R oracle", {
   skip_on_cran()
-  for (order in 1:4) {
-    for (beta in c(0.375, 0.625, 0.875, 1.25, 1.75)) {
-      for (s in c(0.4, 0.1, 0.01, 1e-3)) {
-        cpp <- tulpa:::.spde_rational_roots(order, beta, s)
-        ref <- tulpa:::.spde_rational_roots_r(order, beta, s)
-        info <- sprintf("order = %d, beta = %g, spectrum_ratio = %g",
-                        order, beta, s)
-        expect_equal(length(cpp$rb), length(ref$rb), info = info)
-        expect_equal(length(cpp$rc), length(ref$rc), info = info)
-        expect_equal(sort(cpp$rb), sort(ref$rb), tolerance = 1e-6, info = info)
-        expect_equal(sort(cpp$rc), sort(ref$rc), tolerance = 1e-6, info = info)
-        expect_equal(cpp$scale,    ref$scale,    tolerance = 1e-6, info = info)
-        expect_equal(cpp$m_beta,   ref$m_beta,                     info = info)
-        expect_equal(cpp$beta_rem, ref$beta_rem, tolerance = 1e-12, info = info)
-        # The minimax error is the quantity the approximation is chosen to
-        # minimise, so agreeing on it is the statement that the two searches
-        # landed on the same rational, not merely on nearby roots.
-        expect_equal(cpp$error, ref$error, tolerance = 1e-6, info = info)
-      }
-    }
+  betas  <- c(0.375, 0.625, 0.875, 1.25, 1.75)
+  ratios <- c(0.4, 0.1, 0.01, 1e-3)
+  design <- expand.grid(order = 1:4, b = seq_along(betas))
+  design$beta <- betas[design$b]
+  design$s    <- ratios[(design$order + design$b) %% 4L + 1L]
+  expect_true(any(design$order == 4L & design$s == 0.4))
+
+  for (i in seq_len(nrow(design))) {
+    order <- design$order[i]; beta <- design$beta[i]; s <- design$s[i]
+    cpp <- tulpa:::.spde_rational_roots(order, beta, s)
+    ref <- tulpa:::.spde_rational_roots_r(order, beta, s)
+    info <- sprintf("order = %d, beta = %g, spectrum_ratio = %g",
+                    order, beta, s)
+    expect_equal(length(cpp$rb), length(ref$rb), info = info)
+    expect_equal(length(cpp$rc), length(ref$rc), info = info)
+    expect_equal(sort(cpp$rb), sort(ref$rb), tolerance = 1e-6, info = info)
+    expect_equal(sort(cpp$rc), sort(ref$rc), tolerance = 1e-6, info = info)
+    expect_equal(cpp$scale,    ref$scale,    tolerance = 1e-6, info = info)
+    expect_equal(cpp$m_beta,   ref$m_beta,                     info = info)
+    expect_equal(cpp$beta_rem, ref$beta_rem, tolerance = 1e-12, info = info)
+    # The minimax error is the quantity the approximation is chosen to
+    # minimise, so agreeing on it is the statement that the two searches
+    # landed on the same rational, not merely on nearby roots.
+    expect_equal(cpp$error, ref$error, tolerance = 1e-6, info = info)
   }
 })
 

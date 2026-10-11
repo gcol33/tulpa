@@ -4,11 +4,14 @@
 # unsupported (kernel has no fixed-effect-prior arg), and random slopes / a
 # fractional field with an RE term are rejected.
 
+# The mesh (about 95 nodes, interior plus an outer extension) only carries the
+# simulated field: the blocks below read the routing and the fixed-effect
+# slope, and neither depends on the mesh resolution.
 make_spde_re <- function(n = 250L, G = 12L, seed = 7L) {
   set.seed(seed)
   coords <- cbind(runif(n), runif(n))
-  mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.15, 0.4),
-                              cutoff = 0.05)
+  mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.25, 0.5),
+                              cutoff = 0.1)
   fem  <- fmesher::fm_fem(mesh)
   A    <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
   spec <- spatial_spde_custom(C = fem$c0, G = fem$g1, A = A, nu = 1,
@@ -30,7 +33,7 @@ test_that("fit_spde() accepts a single random intercept and recovers beta", {
   fit <- suppressWarnings(fit_spde(
     d$y, d$X, d$spec, family = "poisson",
     re_idx = d$grp, n_re_groups = d$G, sigma_re = 0.7,
-    control = list(method = "ccd")))
+    control = list(method = "ccd", diagnose_k = FALSE)))
   expect_false(is.null(fit$nested))
   expect_true(all(is.finite(fit$beta)))
   # Slope near the truth 0.8 (a real recovery bound, not a sanity check).
