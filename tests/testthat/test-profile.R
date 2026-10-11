@@ -114,12 +114,18 @@ test_that("the sparse joint solver records scatter and factorize separately", {
   calls <- function(nm) r$calls[[which(r$names == nm)]]
 
   # The instrumented sparse path ran: both the assembly scatter and the
-  # numeric factorize accumulated time and fired the same number of times
-  # (one scatter + one factor per inner Newton iter, plus the final pass).
+  # numeric factorize accumulated time. Each inner Newton iteration is one
+  # scatter, one factorize and one line search. The final pass scatters once
+  # more, and on this fixture's ICAR field (250 nodes, past the sum-to-zero
+  # fold threshold) it reads the step and the log-determinant off one
+  # block-Schur factor of the pinned matrix, timed as log_det, once per
+  # finalize.
   expect_gt(named("scatter"), 0)
   expect_gt(named("factorize"), 0)
   expect_gt(calls("scatter"), 0L)
-  expect_equal(calls("factorize"), calls("scatter"))
+  expect_equal(calls("factorize"), calls("line_search"))
+  expect_equal(calls("log_det"), calls("inner_diagnostics"))
+  expect_equal(calls("scatter"), calls("factorize") + calls("log_det"))
 })
 
 test_that("tulpa_profile returns the phase split and carries the fit", {

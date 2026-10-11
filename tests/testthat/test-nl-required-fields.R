@@ -76,6 +76,30 @@ test_that("the joint converter names the missing field too", {
 # (`is.null(p$f)`, `p$f %||% default`, `isTRUE(p$f)`); what remains is indexed
 # unconditionally and must be declared, or a future field lands back in the
 # segfault path the declaration exists to close.
+# Under covr every statement and condition arrives as
+# `if (TRUE) { covr:::count(key); expr }`; unwrap that back to `expr` so the
+# branch walk reads the converter as written.
+.nlreq_is_covr_count <- function(e) {
+  is.call(e) && is.call(e[[1L]]) &&
+    identical(e[[1L]][[1L]], as.name(":::")) &&
+    identical(e[[1L]][[2L]], as.name("covr")) &&
+    identical(e[[1L]][[3L]], as.name("count"))
+}
+
+.nlreq_uninstrument <- function(e) {
+  if (!is.call(e)) return(e)
+  if (identical(e[[1L]], as.name("if")) && length(e) == 3L &&
+      isTRUE(e[[2L]]) && is.call(e[[3L]]) &&
+      identical(e[[3L]][[1L]], as.name("{")) && length(e[[3L]]) == 3L &&
+      .nlreq_is_covr_count(e[[3L]][[2L]])) {
+    return(.nlreq_uninstrument(e[[3L]][[3L]]))
+  }
+  for (i in seq_along(e)) {
+    if (is.call(e[[i]])) e[[i]] <- .nlreq_uninstrument(e[[i]])
+  }
+  e
+}
+
 .nlreq_branch_sources <- function(fn, types) {
   out <- list()
   walk <- function(e) {
@@ -101,7 +125,7 @@ test_that("the joint converter names the missing field too", {
     }
     invisible(NULL)
   }
-  walk(body(fn))
+  walk(.nlreq_uninstrument(body(fn)))
   out
 }
 
