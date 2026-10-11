@@ -217,18 +217,8 @@
   key <- paste(max(seeds), paste(spreads, collapse = "_"), family, hyperprior)
   if (!is.null(.dp_cache[[key]])) return(.dp_cache[[key]])
   grid <- expand.grid(seed = seeds, spread = spreads)
-  pf <- tempfile()
-  utils::Rprof(pf, interval = 0.01)
-  t0 <- proc.time()[["elapsed"]]
   units <- lapply(seq_len(nrow(grid)), function(i)
     .dp_sweep_unit(grid$seed[i], grid$spread[i], family, hyperprior))
-  utils::Rprof(NULL)
-  sm <- utils::summaryRprof(pf)
-  message("DPPROF elapsed ", proc.time()[["elapsed"]] - t0)
-  message(paste(utils::capture.output(print(utils::head(sm$by.total, 60))), collapse = "
-"))
-  message(paste(utils::capture.output(print(utils::head(sm$by.self, 30))), collapse = "
-"))
   out <- .dp_combine(units, 3L * nrow(grid))
   .dp_cache[[key]] <- out
   out
