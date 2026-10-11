@@ -29,10 +29,10 @@
 }
 
 # The p = 2 recovery fixture: a 10 x 10 lattice with Sigma = (1, 0.8; rho 0.6)
-# and 20 Gaussian observations per cell. rho is read off the 100 cells' fields,
-# whose SDs are 0.5-0.8 on these seeds, and 20 observations at noise SD 0.4 put
-# each cell's (u, s) at a standard error of about 0.09, so the cell count is
-# what limits the cross-correlation and it is kept.
+# and 10 Gaussian observations per cell. rho is read off the 100 cells' fields,
+# whose SDs are 0.5-0.8 on these seeds, and 10 observations at noise SD 0.4 put
+# each cell's (u, s) at a standard error of about 0.13, so the cell count is
+# what limits the cross-correlation, and it is the lattice that is kept.
 .mcar_recovery_rho <- 0.6
 .mcar_recovery_fit <- fixture_once(function(seed) {
   adj <- .mcar_grid_adj(10L, 10L)
@@ -41,7 +41,7 @@
                     rho * sig1 * sig2, sig2^2), 2, 2)
   set.seed(seed)
   fld <- .mcar_sim(adj, Sigma)
-  cell <- rep(seq_len(nrow(adj)), each = 20L)
+  cell <- rep(seq_len(nrow(adj)), each = 10L)
   N <- length(cell)
   x <- rnorm(N)
   eta <- 0.3 + fld$u[cell] + x * fld$s[cell]
