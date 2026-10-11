@@ -10,12 +10,27 @@ make_temporal_data <- function(seed, Tt = 24L, m = 25L, b1 = 0.9) {
   list(df = data.frame(x = x, time = time), time = time, ftrue = ftrue, b1 = b1)
 }
 
-test_that("temporal_rw1 routes through tulpa() and recovers the fixed slope", {
-  skip_on_cran()
+# No block in this file reads the outer Pareto-k diagnostic. It runs after the
+# grid integration with the RNG state restored, so turning it off leaves the
+# fit's coefficients, intervals and evidence unchanged and drops its
+# importance-sample inner solves.
+.tfd_ctl <- list(diagnose_k = FALSE)
+
+# One binomial RW1 fit through the auto door. Routing, fixed-slope recovery, the
+# marginalized SE / interval / prediction and the integrated logLik are separate
+# properties of the same fit, so the blocks below read them off this one.
+.tfd_rw1_binomial <- cached_fixture(function() {
   d <- make_temporal_data(11)
   d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
-  fit <- tulpa(y ~ x, data = d$df, family = "binomial",
-               temporal = temporal_rw1("time"), mode = "auto")
+  list(d = d, fit = tulpa(y ~ x, data = d$df, family = "binomial",
+                          temporal = temporal_rw1("time"), mode = "auto",
+                          control = .tfd_ctl))
+})
+
+test_that("temporal_rw1 routes through tulpa() and recovers the fixed slope", {
+  skip_on_cran()
+  fx <- .tfd_rw1_binomial()
+  d <- fx$d; fit <- fx$fit
 
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(fit$backend, "nested_laplace")
@@ -31,16 +46,15 @@ test_that("temporal_rw1 works for a gaussian response", {
   d <- make_temporal_data(12)
   d$df$y <- -0.2 + d$b1 * d$df$x + d$ftrue[d$time] + rnorm(nrow(d$df), 0, 0.7)
   fit <- tulpa(y ~ x, data = d$df, family = "gaussian",
-               temporal = temporal_rw1("time"), mode = "auto", phi = 0.7)
+               temporal = temporal_rw1("time"), mode = "auto", phi = 0.7,
+               control = .tfd_ctl)
   expect_lt(abs(coef(fit)[["x"]] - d$b1), 0.15)
 })
 
 test_that("nested temporal fit reports a marginalized fixed-effect SE", {
   skip_on_cran()
-  d <- make_temporal_data(14)
-  d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
-  fit <- tulpa(y ~ x, data = d$df, family = "binomial",
-               temporal = temporal_rw1("time"), mode = "auto")
+  fx <- .tfd_rw1_binomial()
+  d <- fx$d; fit <- fx$fit
 
   sm <- summary(fit)
   expect_true(is.finite(sm["x", "std.error"]))   # slope SE from grid marginalization
@@ -60,7 +74,8 @@ test_that("nested-fit slope CI covers the truth at roughly nominal rate", {
     d <- make_temporal_data(200 + i)
     d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
     fit <- tulpa(y ~ x, data = d$df, family = "binomial",
-                 temporal = temporal_rw1("time"), mode = "auto")
+                 temporal = temporal_rw1("time"), mode = "auto",
+                 control = .tfd_ctl)
     ci <- confint(fit)["x", ]
     if (ci[1] <= d$b1 && d$b1 <= ci[2]) hits <- hits + 1L
   }
@@ -69,10 +84,7 @@ test_that("nested-fit slope CI covers the truth at roughly nominal rate", {
 
 test_that("logLik and compare_models return one scalar row per nested fit", {
   skip_on_cran()
-  d <- make_temporal_data(15)
-  d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
-  f_t <- tulpa(y ~ x, data = d$df, family = "binomial",
-               temporal = temporal_rw1("time"), mode = "auto")
+  f_t <- .tfd_rw1_binomial()$fit
 
   expect_length(as.numeric(logLik(f_t)), 1L)   # integrated, not per-grid
   expect_true(is.finite(as.numeric(logLik(f_t))))
@@ -89,7 +101,8 @@ test_that("temporal_rw2 routes through tulpa() and recovers the fixed slope", {
   d <- make_temporal_data(21)
   d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
   fit <- tulpa(y ~ x, data = d$df, family = "binomial",
-               temporal = temporal_rw2("time"), mode = "auto")
+               temporal = temporal_rw2("time"), mode = "auto",
+               control = .tfd_ctl)
   expect_equal(fit$backend, "nested_laplace")
   expect_match(fit$selection_reason, "rw2")
   expect_lt(abs(coef(fit)[["x"]] - d$b1), 0.15)
@@ -100,7 +113,8 @@ test_that("temporal_ar1 routes through tulpa() and recovers the fixed slope", {
   d <- make_temporal_data(31)
   d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
   fit <- tulpa(y ~ x, data = d$df, family = "binomial",
-               temporal = temporal_ar1("time"), mode = "auto")
+               temporal = temporal_ar1("time"), mode = "auto",
+               control = .tfd_ctl)
   expect_equal(fit$backend, "nested_laplace")
   expect_match(fit$selection_reason, "ar1")
   expect_lt(abs(coef(fit)[["x"]] - d$b1), 0.15)
@@ -151,7 +165,8 @@ test_that("grouped (panel) temporal routes through tulpa()", {
                    plogis(-0.1 + 0.8 * grid$x +
                           shapes[cbind(grid$time, as.integer(grid$grp))]))
   fit <- tulpa(y ~ x, data = grid, family = "binomial",
-               temporal = temporal_rw1("time", group_var = "grp"), mode = "auto")
+               temporal = temporal_rw1("time", group_var = "grp"), mode = "auto",
+               control = .tfd_ctl)
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(fit$backend, "nested_laplace")
   expect_lt(abs(coef(fit)[["x"]] - 0.8), 0.2)
@@ -172,7 +187,8 @@ test_that("panel-fit slope CI covers the truth at roughly nominal rate", {
                      plogis(-0.1 + b1 * grid$x +
                             shapes[cbind(grid$time, as.integer(grid$grp))]))
     fit <- tulpa(y ~ x, data = grid, family = "binomial",
-                 temporal = temporal_rw1("time", group_var = "grp"), mode = "auto")
+                 temporal = temporal_rw1("time", group_var = "grp"), mode = "auto",
+                 control = .tfd_ctl)
     ci <- confint(fit)["x", ]
     if (ci[1] <= b1 && b1 <= ci[2]) hits <- hits + 1L
   }
@@ -191,10 +207,11 @@ test_that("grouped temporal with one group is identical to the ungrouped fit", {
   df$x <- rnorm(nrow(df))
   df$y <- rbinom(nrow(df), 1, plogis(-0.2 + 0.9 * df$x + ftrue[df$time]))
   f_plain   <- tulpa(y ~ x, data = df, family = "binomial",
-                     temporal = temporal_rw1("time"), mode = "auto")
+                     temporal = temporal_rw1("time"), mode = "auto",
+                     control = .tfd_ctl)
   f_grouped <- tulpa(y ~ x, data = df, family = "binomial",
                      temporal = temporal_rw1("time", group_var = "grp"),
-                     mode = "auto")
+                     mode = "auto", control = .tfd_ctl)
   expect_equal(as.numeric(logLik(f_grouped)), as.numeric(logLik(f_plain)),
                tolerance = 1e-10)
   expect_equal(unname(coef(f_grouped)), unname(coef(f_plain)), tolerance = 1e-8)

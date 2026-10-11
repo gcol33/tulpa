@@ -18,25 +18,44 @@ sim_corr_recov <- function(seed, G = 60L, npg = 12L, beta = c(-0.3, 0.7),
   list(y = y, X = X, Z = Z, grp = grp, G = G, N = N, Sigma = Sigma)
 }
 
+# None of the blocks below reads the outer Pareto-k diagnostic. It runs after
+# the posterior and draw synthesis with the RNG state restored, so turning it
+# off leaves every reported quantity bit-for-bit unchanged and drops its
+# importance-sample inner solves from each fit.
+.rcn_ctl <- function(...) c(list(diagnose_k = FALSE), list(...))
+
+# The default-CCD fits of the five interval-coverage data sets. The first one
+# doubles as the fit whose structure the next block reads, since every shape
+# property there holds on any data set.
+.rcn_cover_seeds <- 100L + seq_len(5L)
+.rcn_cover_fits <- cached_fixture(function() {
+  lapply(.rcn_cover_seeds, function(s) {
+    d <- sim_corr_recov(s)
+    re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
+    list(d = d, re_term = re_term,
+         res = tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
+                                   family = "binomial", control = .rcn_ctl()))
+  })
+})
+
 
 test_that("tulpa_re_cov_nested returns a well-formed marginalized posterior", {
   skip_on_cran()
-  d <- sim_corr_recov(1L)
-  re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
-  res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
-                             family = "binomial")
+  fx <- .rcn_cover_fits()[[1L]]
+  d <- fx$d; re_term <- fx$re_term; res <- fx$res
 
   # default CCD layout: k = c(c+1)/2 = 3 -> 1 centre + 2k axial + 2^k factorial
   expect_equal(res$n_grid, 1L + 2L * 3L + 2L^3L)  # = 15
   expect_equal(sum(res$weights), 1, tolerance = 1e-10)
   expect_true(all(res$weights >= 0))
 
-  # tensor grid is opt-in via integration = "grid": n_per_axis^k cells
+  # tensor grid is opt-in via integration = "grid": n_per_axis^k cells. Three
+  # points per axis already make the count distinguishable from the CCD's 15.
   res_grid <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
                                   family = "binomial",
-                                  control = list(integration = "grid",
-                                                 n_per_axis = 5L, span = 3))
-  expect_equal(res_grid$n_grid, 5L^3L)
+                                  control = .rcn_ctl(integration = "grid",
+                                                     n_per_axis = 3L, span = 3))
+  expect_equal(res_grid$n_grid, 3L^3L)
   expect_equal(sum(res_grid$weights), 1, tolerance = 1e-10)
 
   # posterior table shape: sigma_1, sigma_2, rho_12, Sigma_11/12/22
@@ -74,12 +93,8 @@ test_that("marginalized 95% intervals cover the true Sigma parameters", {
   # here we check the *interval*, which is what the Bias-2 fix delivers.)
   truth <- c(sigma_1 = 0.8, sigma_2 = 0.6, rho_12 = 0.5)
   covered <- c(sigma_1 = 0L, sigma_2 = 0L, rho_12 = 0L)
-  n_seed <- 5L
-  for (s in seq_len(n_seed)) {
-    d <- sim_corr_recov(100L + s)
-    re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
-    res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
-                               family = "binomial")   # default CCD integration
+  for (fx in .rcn_cover_fits()) {
+    res <- fx$res                                       # default CCD integration
     for (nm in names(truth)) {
       row <- res$posterior[res$posterior$parameter == nm, ]
       if (truth[[nm]] >= row$ci_lo && truth[[nm]] <= row$ci_hi)
@@ -101,7 +116,8 @@ test_that("the median is a more central summary than the mode under skew", {
   d <- sim_corr_recov(7L, G = 25L, npg = 12L)
   re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
   res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
-                             family = "binomial")   # default CCD integration
+                             family = "binomial",
+                             control = .rcn_ctl())   # default CCD integration
   s1 <- res$posterior[res$posterior$parameter == "Sigma_11", ]
   # right-skewed: mean >= median, and both finite/positive
   expect_gte(s1$mean, s1$median - 1e-6)
@@ -129,7 +145,8 @@ test_that("tulpa_re_cov_nested integrates a diagonal (uncorrelated) block", {
   d <- sim_diag_recov(11L)
   rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z,
              correlated = FALSE)
-  res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial")
+  res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
+                             control = .rcn_ctl())
 
   # diagonal block: k = c = 2 -> CCD 1 + 2k + 2^k = 9 nodes
   expect_equal(res$n_grid, 1L + 2L * 2L + 2L^2L)
@@ -169,7 +186,7 @@ test_that("tulpa_re_cov_nested integrates several terms as separate blocks", {
     list(idx = h, n_groups = H, n_coefs = 1L, correlated = FALSE, label = "h")
   )
   res <- tulpa_re_cov_nested(y, rep(1L, N), X, re_terms, family = "binomial",
-                             control = list(seed = 3L, n_draws = 300L))
+                             control = .rcn_ctl(seed = 3L, n_draws = 300L))
 
   expect_equal(res$n_blocks, 2L)
   expect_equal(unname(res$n_coefs), c(2L, 1L))
@@ -221,7 +238,7 @@ test_that("n_quad > 1 (AGHQ inner solve) recovers Sigma on a single factor", {
     d <- sim_corr_recov(300L + s)
     rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
     res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
-                               n_quad = 5L)
+                               n_quad = 5L, control = .rcn_ctl())
     expect_setequal(res$posterior$parameter,
                     c("sigma_1", "sigma_2", "rho_12",
                       "Sigma_11", "Sigma_12", "Sigma_22"))
@@ -390,8 +407,7 @@ test_that("a CCD fit reports a scale interval that is not the node extent", {
   # The design this reads is the one the marginal likelihood alone places, so
   # the prior is stated flat.
   res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
-                             hyperprior = "flat",
-                             control = list(diagnose_k = FALSE))
+                             hyperprior = "flat", control = .rcn_ctl())
   # theta axis 1 is log(L_11) = log(sigma_1), so the design's extent on sigma_1
   # is exp(range(theta_grid[, 1])). The reported interval covers strictly more.
   # Measured on log(sigma_1): nodes [-0.32935, 0.26114], interval [-0.33464,

@@ -2,6 +2,11 @@
 # covariate, integrated by the nested-Laplace temporal kernels. Recovery anchor:
 # the fitted smooth must track a known nonlinear function at the nodes.
 
+# No block in this file reads the outer Pareto-k diagnostic. It runs after the
+# grid integration with the RNG state restored, so turning it off leaves the
+# fitted smooth unchanged and drops its importance-sample inner solves.
+.sm_ctl <- list(diagnose_k = FALSE)
+
 test_that("the parser strips s() from the fixed formula and records the call", {
   p <- tulpa_parse_formula(y ~ x1 + s(elev) + s(prec, k = 15) + (1 | g))
   expect_equal(p$n_smooth_terms, 2L)
@@ -50,7 +55,7 @@ test_that("s(x) routes through nested Laplace and recovers a sin curve", {
   f <- function(x) sin(2 * x)
   d$y <- rpois(n, exp(0.4 + f(d$x)))
 
-  fit <- tulpa(y ~ s(x, k = 25), data = d, family = "poisson")
+  fit <- tulpa(y ~ s(x, k = 25), data = d, family = "poisson", control = .sm_ctl)
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(fit$backend, "nested_laplace")
   expect_match(fit$selection_reason, "smoother")
@@ -75,7 +80,8 @@ test_that("s(x) works alongside fixed effects for a gaussian response", {
   d <- data.frame(x = runif(n, 0, 1), z = rnorm(n))
   d$y <- 0.5 + 0.8 * d$z + cos(2 * pi * d$x) + rnorm(n, 0, 0.5)
 
-  fit <- tulpa(y ~ z + s(x, k = 20), data = d, family = "gaussian", phi = 0.25)
+  fit <- tulpa(y ~ z + s(x, k = 20), data = d, family = "gaussian", phi = 0.25,
+               control = .sm_ctl)
   cf <- coef(fit)
   expect_lt(abs(cf[["z"]] - 0.8), 0.1)
 
@@ -92,7 +98,8 @@ test_that("two smoothers fit through the joint multi-block path", {
   f1 <- function(x) sin(2 * x); f2 <- function(x) 0.5 * x^2 - 0.7
   d$y <- rpois(n, exp(0.3 + f1(d$x1) + f2(d$x2)))
 
-  fit <- tulpa(y ~ s(x1, k = 15) + s(x2, k = 15), data = d, family = "poisson")
+  fit <- tulpa(y ~ s(x1, k = 15) + s(x2, k = 15), data = d, family = "poisson",
+               control = .sm_ctl)
   expect_equal(fit$backend, "nested_laplace")
 
   s1 <- smooth_effects(fit, 1L)
@@ -111,7 +118,7 @@ test_that("a smoother shares the nested stack with a spatial_gp() field", {
 
   fit <- suppressWarnings(
     tulpa(y ~ s(x, k = 15), data = d, family = "poisson",
-          spatial = spatial_gp(~ lon + lat)))
+          spatial = spatial_gp(~ lon + lat), control = .sm_ctl))
   expect_equal(fit$backend, "nested_laplace")
 
   sm <- smooth_effects(fit)

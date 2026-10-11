@@ -231,12 +231,17 @@ test_that("gamma_3 scores a zero-inflated (multi-process) fit and tracks its exa
   # The exact log posterior of this intercept-only ZI Poisson, with the priors
   # the kernel applies: N(0, 100^2) on the count block (tau = 1e-4) and
   # N(0, zi_prior_sd^2) with the default zi_prior_sd = 2.5 on the ZI block.
+  # The data enter only through their sufficient statistics, so the density is
+  # elementwise in (a, b) and the quadrature below evaluates it on the whole
+  # grid in one call.
+  ypos <- y[y > 0]
+  n_zero <- sum(y == 0); n_pos <- length(ypos); s_pos <- sum(ypos)
+  lg_pos <- sum(lgamma(ypos + 1))
   zi_lp <- function(a, b) {
     mu <- exp(a); p <- plogis(b)
-    ypos <- y[y > 0]
-    sum(y == 0) * log(p + (1 - p) * exp(-mu)) +
-      length(ypos) * log1p(-p) + sum(ypos) * a - length(ypos) * mu -
-      sum(lgamma(ypos + 1)) - 0.5 * 1e-4 * a^2 - 0.5 * (1 / 2.5^2) * b^2
+    n_zero * log(p + (1 - p) * exp(-mu)) +
+      n_pos * log1p(-p) + s_pos * a - n_pos * mu -
+      lg_pos - 0.5 * 1e-4 * a^2 - 0.5 * (1 / 2.5^2) * b^2
   }
   f2 <- function(p) zi_lp(p[1], p[2])
   ctr <- stats::optim(c(0, 0), function(v) -f2(v), method = "BFGS",
@@ -249,7 +254,7 @@ test_that("gamma_3 scores a zero-inflated (multi-process) fit and tracks its exa
 
   # (b) and that term tracks the exact posterior: same sign, undershooting the
   #     exact marginal skewness as the leading-order expansion is documented to.
-  q <- coupled_occ_quadrature(Vectorize(zi_lp), ctr, half = 10, n_grid = 1601L)
+  q <- coupled_occ_quadrature(zi_lp, ctr, half = 10, n_grid = 1601L)
   exact <- c(q$a[["skew"]], q$b[["skew"]])
   expect_true(all(sign(fit_zi$inner_skew) == sign(exact)))
   expect_true(all(abs(fit_zi$inner_skew) < abs(exact)))
@@ -788,16 +793,27 @@ test_that("the 2-D quadrature reproduces the scalar exact-skew reference on a pr
   expect_equal(q$b[["skew"]], .exact_intercept_skew(200, 60), tolerance = 1e-4)
 })
 
+# The coupled reference the three blocks below read: one data set, its exact log
+# posterior, the posterior mode, and the converged quadrature of that posterior.
+.isk_coupled_ref <- cached_fixture(function() {
+  beta_prec <- 0.25
+  d <- coupled_occ_data(seed = 311, n_cells = 100L, n_visits = 4L,
+                        b_occ = 0.2, b_det = -0.5)
+  lp <- coupled_occ_log_post(d, beta_prec)
+  ctr <- stats::optim(c(0, 0), function(v) -lp(v[1L], v[2L]),
+                      method = "BFGS", control = list(reltol = 1e-14))$par
+  list(beta_prec = beta_prec, d = d, lp = lp, ctr = ctr,
+       fine = coupled_occ_quadrature(lp, ctr, half = 16, n_grid = 1601L))
+})
+
 test_that("the reference density is the density the compiled coupled spec evaluates", {
   skip_on_cran()
   # A quadrature of the wrong model is not a reference for anything. The R log
   # posterior is held against the compiled spec cell by cell, so what follows
   # integrates exactly what the inner Newton sees.
   coupled_occ_register()
-  beta_prec <- 0.25
-  d <- coupled_occ_data(seed = 311, n_cells = 100L, n_visits = 4L,
-                        b_occ = 0.2, b_det = -0.5)
-  lp <- coupled_occ_log_post(d, beta_prec)
+  ref <- .isk_coupled_ref()
+  beta_prec <- ref$beta_prec; d <- ref$d; lp <- ref$lp
   for (ab in list(c(0.0, 0.0), c(0.7, -1.1), c(-1.3, 0.4))) {
     cell_sum <- sum(vapply(seq_len(d$n_cells), function(cc) {
       rows <- ((cc - 1L) * d$n_visits + 1L):(cc * d$n_visits)
@@ -815,15 +831,11 @@ test_that("the reference density is the density the compiled coupled spec evalua
 test_that("the coupled fixture has a converged, materially skewed exact posterior", {
   skip_on_cran()
   coupled_occ_register()
-  beta_prec <- 0.25
-  d <- coupled_occ_data(seed = 311, n_cells = 100L, n_visits = 4L,
-                        b_occ = 0.2, b_det = -0.5)
-  lp <- coupled_occ_log_post(d, beta_prec)
-  ctr <- stats::optim(c(0, 0), function(v) -lp(v[1L], v[2L]),
-                      method = "BFGS", control = list(reltol = 1e-14))$par
+  ref <- .isk_coupled_ref()
+  lp <- ref$lp; ctr <- ref$ctr
 
   coarse <- coupled_occ_quadrature(lp, ctr, half = 8,  n_grid = 901L)
-  fine   <- coupled_occ_quadrature(lp, ctr, half = 16, n_grid = 1601L)
+  fine   <- ref$fine
   # Widening the grid and halving the spacing does not move the answer: the
   # tails are inside the box and the peak is resolved.
   expect_equal(coarse$a, fine$a, tolerance = 1e-4)
@@ -858,16 +870,12 @@ test_that("the coupled cubic term reproduces the formula and tracks the exact sk
   #      magnitude, and close agreement on the coordinate whose skewness is
   #      small enough for the expansion to be valid.
   coupled_occ_register()
-  beta_prec <- 0.25
-  d <- coupled_occ_data(seed = 311, n_cells = 100L, n_visits = 4L,
-                        b_occ = 0.2, b_det = -0.5)
-  lp <- coupled_occ_log_post(d, beta_prec)
+  ref <- .isk_coupled_ref()
+  d <- ref$d; lp <- ref$lp; ctr <- ref$ctr
   f2 <- function(p) lp(p[1], p[2])
-  ctr <- stats::optim(c(0, 0), function(v) -f2(v), method = "BFGS",
-                      control = list(reltol = 1e-14))$par
 
   fit <- tulpa_nested_laplace_joint(
-    responses = coupled_occ_arms(d, beta_prec = 0.25),
+    responses = coupled_occ_arms(d, beta_prec = ref$beta_prec),
     prior = coupled_occ_flat_prior(d),
     cell_coupling = "test_occupancy_mixture",
     control = list(max_iter = 300L, tol = 1e-12, diagnose_k = FALSE))
@@ -881,7 +889,7 @@ test_that("the coupled cubic term reproduces the formula and tracks the exact sk
                tolerance = 5e-3)
 
   # (b)
-  q <- coupled_occ_quadrature(lp, ctr, half = 16, n_grid = 1601L)
+  q <- ref$fine
   exact <- c(q$a[["skew"]], q$b[["skew"]])
   expect_true(all(sign(fit$inner_skew) == sign(exact)))
   expect_true(all(abs(fit$inner_skew) < abs(exact)))
@@ -1049,15 +1057,21 @@ test_that("the corrected centre lands on the exact marginal mean", {
   skip_on_cran()
   # Two coefficients, so the exact marginal mean is a two-dimensional
   # quadrature of the same log posterior the reference above writes.
-  lpost <- function(X, y, b) {
-    e <- as.numeric(X %*% b)
-    sum(y * e - log1p(exp(e))) - 0.5 * sum(b^2) / .g1_SB^2
+  # The log posterior over the tensor grid g1 x g2, one g1 row at a time: the
+  # linear predictors at (a, g2) form an n x length(g2) matrix, and the
+  # log-likelihood is its column sums.
+  lpost_grid <- function(X, y, g1, g2) {
+    ll <- vapply(g1, function(a) {
+      e <- X[, 1L] * a + outer(X[, 2L], g2)
+      colSums(y * e - log1p(exp(e)))
+    }, numeric(length(g2)))
+    t(ll) - 0.5 * outer(g1^2, g2^2, "+") / .g1_SB^2
   }
   exact_mean <- function(X, y, i, mode, ng = 601L) {
     S <- solve(.g1_H(X, mode))
     g1 <- seq(mode[1] - 9 * sqrt(S[1, 1]), mode[1] + 9 * sqrt(S[1, 1]), length.out = ng)
     g2 <- seq(mode[2] - 9 * sqrt(S[2, 2]), mode[2] + 9 * sqrt(S[2, 2]), length.out = ng)
-    lv <- outer(g1, g2, Vectorize(function(a, b) lpost(X, y, c(a, b))))
+    lv <- lpost_grid(X, y, g1, g2)
     w <- exp(lv - max(lv)); w <- w / sum(w)
     mw <- if (i == 1L) rowSums(w) else colSums(w)
     sum(mw * (if (i == 1L) g1 else g2))
