@@ -66,10 +66,19 @@ jobs:
           fp-contract: ${{ matrix.fp }}
           extra-packages: |
             any::rcmdcheck
+            ${{ matrix.manual == '1' && 'any::V8' || '' }}
 
       - name: TinyTeX
         if: matrix.manual == '1'
         uses: r-lib/actions/setup-tinytex@v2
+
+      # "checking HTML version of manual" validates the rendered help pages
+      # with HTML Tidy and the KaTeX math with V8; without either it skips both
+      # and reports the skip as a NOTE.
+      - name: HTML Tidy
+        if: matrix.manual == '1'
+        shell: bash
+        run: sudo apt-get update -qq && sudo apt-get install -y tidy
 
       # The DESCRIPTION spell check inside the incoming-feasibility check runs
       # only where aspell finds a program to call; with none installed it is
