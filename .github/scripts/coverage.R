@@ -12,9 +12,14 @@
 #
 # Environment:
 #   TULPA_COV_OPT     optimisation level of the instrumented build, in place of
-#                     covr's -O0. Eigen's expression templates are written for
-#                     an optimiser that inlines them; at -O0 every coefficient
-#                     access is a call.
+#                     covr's -O0; unset or empty is -Og. Eigen's expression
+#                     templates are written for an optimiser that inlines them,
+#                     and at -O0 every coefficient access is a call: on the
+#                     same nine test files the instrumented run took 31.4 min
+#                     at -O0, 10.4 at -Og, 11.9 at -O1 and 8.3 at -O2, against
+#                     4.2 uninstrumented. -Og is the level GCC keeps the
+#                     line mapping for, and it reported 21287 of 68692 lines
+#                     covered where -O0 reported 21043 of 68403.
 #   TULPA_COV_SHARDS  merge: how many shards were planned. A merge that finds
 #                     fewer reports stops, so a lost shard cannot reach Codecov
 #                     as the coverage of the whole suite.
@@ -31,7 +36,8 @@ shard <- function() {
   out_dir <- normalizePath(out_dir, winslash = "/")
   Sys.setenv(TULPA_TEST_OUT = out_dir, TULPA_DEFER_FAILURE = "true")
 
-  opt <- Sys.getenv("TULPA_COV_OPT", "-O0")
+  opt <- Sys.getenv("TULPA_COV_OPT", "")
+  if (!nzchar(opt)) opt <- "-Og"
   flags <- getOption("covr.flags")
   flags <- sub("-O0", opt, flags, fixed = TRUE)
   options(covr.flags = flags)
@@ -59,11 +65,21 @@ shard <- function() {
   cat(sprintf("\nshard line coverage: %.2f%%\n", covr::percent_coverage(cov)))
 }
 
-# Every shard instruments the same build of the same commit, so every report
-# lists the same lines in the same order and the merge is a sum of counts. The
-# order is asserted rather than assumed: a report that lists different lines is
-# a different build, and adding its counts by position would credit one line's
-# hits to another.
+# A report is one entry per traced R expression and one per line of each gcov
+# file, and gcov writes a header once for every translation unit including it,
+# so the same line is several entries. covr sums entries that share a source
+# file, a source span and a function before it tallies lines, and the merge
+# applies that same sum across shards. The entries are not the same list in
+# every shard: gcov leaves out a line reached only on an exception path until
+# something executes it, so which lines a shard lists depends on what it ran.
+entry_keys <- function(cov) {
+  vapply(unclass(cov), function(e) {
+    paste(attr(e$srcref, "srcfile")$filename,
+          paste(as.integer(e$srcref), collapse = ":"),
+          e$functions[1L], sep = "|")
+  }, character(1), USE.NAMES = FALSE)
+}
+
 merge <- function(dir) {
   files <- sort(list.files(dir, pattern = "^coverage\\.rds$", recursive = TRUE,
                            full.names = TRUE))
@@ -75,25 +91,28 @@ merge <- function(dir) {
   }
 
   covs <- lapply(files, readRDS)
-  keys <- names(covs[[1]])
-  for (i in seq_along(covs)[-1]) {
-    if (!identical(names(covs[[i]]), keys)) {
-      stop(files[[i]], " lists different lines from ", files[[1]], call. = FALSE)
-    }
-  }
-
-  counts <- Reduce(`+`, lapply(covs, function(cv) {
-    vapply(cv, function(e) as.numeric(e$value), numeric(1))
-  }))
-  merged <- covs[[1]]
-  for (i in seq_along(merged)) {
-    merged[[i]]$value <- counts[[i]]
-  }
-
   for (i in seq_along(covs)) {
     cat(sprintf("  %-40s %6.2f%%\n", basename(dirname(files[[i]])),
                 covr::percent_coverage(covs[[i]])))
   }
+
+  keys <- unlist(lapply(covs, entry_keys))
+  values <- unlist(lapply(covs, function(cv) {
+    vapply(unclass(cv), function(e) as.numeric(e$value), numeric(1),
+           USE.NAMES = FALSE)
+  }))
+  entries <- do.call(c, lapply(covs, unclass))
+  first <- !duplicated(keys)
+  totals <- tapply(values, factor(keys, levels = unique(keys)), sum)
+
+  merged <- entries[first]
+  for (i in seq_along(merged)) {
+    merged[[i]]$value <- totals[[i]]
+  }
+  attrs <- attributes(covs[[1]])
+  attrs$names <- names(merged)
+  attributes(merged) <- attrs
+
   cat(sprintf("merged line coverage: %.2f%%\n", covr::percent_coverage(merged)))
   covr::to_cobertura(merged)
 }

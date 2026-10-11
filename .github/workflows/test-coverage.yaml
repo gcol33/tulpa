@@ -15,10 +15,11 @@ on:
   workflow_dispatch:
     inputs:
       opt:
-        description: Optimisation level of the instrumented build.
-        type: choice
-        default: '-O1'
-        options: ['-O0', '-Og', '-O1', '-O2']
+        description: >
+          Optimisation level of the instrumented build (-O0, -Og, -O1, -O2).
+          Empty takes the default in coverage.R.
+        type: string
+        default: ''
       shards:
         description: Shard count. Empty sizes it from the measured seconds.
         type: string
@@ -42,7 +43,7 @@ concurrency:
 permissions: read-all
 
 env:
-  TULPA_COV_OPT: ${{ inputs.opt || '-O1' }}
+  TULPA_COV_OPT: ${{ inputs.opt }}
 
 jobs:
   plan:
@@ -80,7 +81,7 @@ jobs:
     needs: plan
     name: shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:

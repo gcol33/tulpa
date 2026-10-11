@@ -115,7 +115,7 @@ coverage_cost <- function(files) {
 # Longest-processing-time packing: each file, longest first, onto the shard
 # carrying the fewest seconds so far. `n` unset sizes the shard count from
 # `budget`, the seconds of tests one shard should carry.
-coverage_shards <- function(n = NULL, budget = 3600, files = test_files_on_disk()) {
+coverage_shards <- function(n = NULL, budget = 2400, files = test_files_on_disk()) {
   cost <- coverage_cost(files)
   if (is.null(n) || is.na(n)) {
     n <- if (file.exists(COVERAGE_SECONDS_CSV)) {
