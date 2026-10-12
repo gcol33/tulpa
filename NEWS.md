@@ -1,3 +1,10 @@
+# tulpa 0.7.5
+
+* `energy_bfmi()` is exported: E-BFMI from a vector of per-iteration
+  Hamiltonian energies and their chain ids, diffed within each chain and
+  reported for the worst chain, so a model package's energy diagnostic uses
+  the same computation as tulpa's.
+
 # tulpa 0.7.4
 
 * `latent_factors()` is a generic and `spatiotemporal_effects()` dispatches to

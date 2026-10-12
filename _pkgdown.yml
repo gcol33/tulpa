@@ -167,6 +167,7 @@ reference:
   - diagnostics
   - check_diagnostics
   - diagnostic_summary
+  - energy_bfmi
   - select_main_params
   - n_divergent
   - geweke_test

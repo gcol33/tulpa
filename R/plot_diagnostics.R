@@ -580,34 +580,65 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
 }
 
 
-# Per-chain E-BFMI (Betancourt): the variance of the within-chain energy
-# TRANSITION over the variance of the marginal energy, read off the
-# top-level `$energy` vector every HMC/NUTS sampler writes (gcol33/tulpa#783).
-# Diffing across a chain boundary would compare unrelated trajectories, so
-# each chain's energy is diffed separately (`$chain_id`, defaulting to one
-# chain when absent) and the WORST chain is reported -- one badly-exploring
-# chain is enough to distrust the fit. Returns a list(value=, energy_diff=)
-# with `value = NA_real_` when there is nothing to compute (fewer than two
-# samples in every chain), `energy_diff` the pooled within-chain transitions
-# (for plotting).
-.tulpa_energy_bfmi <- function(fit) {
-  energy <- fit$energy
-  if (is.null(energy) || length(energy) < 10) {
-    return(list(value = NA_real_, energy_diff = numeric(0)))
+#' Energy Bayesian Fraction of Missing Information (E-BFMI)
+#'
+#' Computes E-BFMI (Betancourt 2016) from the per-iteration Hamiltonian
+#' energies an HMC or NUTS sampler records: the variance of the energy
+#' transition between successive iterations over the variance of the marginal
+#' energy. Each chain is diffed separately, since a transition across a chain
+#' boundary compares unrelated trajectories, and the lowest chain value is
+#' reported: one badly exploring chain is enough to distrust a fit. Values
+#' below 0.3 indicate that momentum resampling moves the sampler too little
+#' between energy level sets.
+#'
+#' @param energy Numeric vector of per-iteration energies.
+#' @param chain Chain index of each entry of `energy`. `NULL` (default), or a
+#'   vector of the wrong length, treats `energy` as one chain.
+#'
+#' @return A list with `value` (the lowest per-chain E-BFMI, `NA` when no
+#'   chain has two finite, non-constant energies), `per_chain`,
+#'   `energy_centred` (energies centred within each chain) and `energy_diff`
+#'   (within-chain transitions), the last two pooled across chains for
+#'   plotting.
+#'
+#' @examples
+#' set.seed(1)
+#' energy <- c(cumsum(rnorm(200, sd = 0.3)), rnorm(200, sd = 1))
+#' energy_bfmi(energy, chain = rep(1:2, each = 200))$per_chain
+#'
+#' @export
+energy_bfmi <- function(energy, chain = NULL) {
+  energy <- as.numeric(energy)
+  if (is.null(chain) || length(chain) != length(energy)) {
+    chain <- rep(1L, length(energy))
   }
-  cid <- fit$chain_id
-  if (is.null(cid) || length(cid) != length(energy)) cid <- rep(1L, length(energy))
-  by_chain <- split(energy, cid)
+  by_chain <- split(energy, chain)
   diffs <- lapply(by_chain, function(e) if (length(e) > 1L) diff(e) else numeric(0))
-  bfmi_per_chain <- vapply(seq_along(by_chain), function(i) {
+  per_chain <- vapply(seq_along(by_chain), function(i) {
     e <- by_chain[[i]]; ed <- diffs[[i]]
     if (length(ed) < 1L || !is.finite(stats::var(e)) || stats::var(e) == 0) {
       return(NA_real_)
     }
     stats::var(ed) / stats::var(e)
   }, numeric(1))
-  bfmi_val <- if (all(is.na(bfmi_per_chain))) NA_real_ else min(bfmi_per_chain, na.rm = TRUE)
-  list(value = bfmi_val, energy_diff = unlist(diffs, use.names = FALSE))
+  names(per_chain) <- names(by_chain)
+  list(
+    value = if (all(is.na(per_chain))) NA_real_ else min(per_chain, na.rm = TRUE),
+    per_chain = per_chain,
+    energy_centred = unlist(lapply(by_chain, function(e) e - mean(e)),
+                            use.names = FALSE),
+    energy_diff = unlist(diffs, use.names = FALSE)
+  )
+}
+
+# E-BFMI of a tulpa fit, read off the top-level `$energy` vector every HMC/NUTS
+# sampler writes and its `$chain_id` (gcol33/tulpa#783).
+.tulpa_energy_bfmi <- function(fit) {
+  energy <- fit$energy
+  if (is.null(energy) || length(energy) < 10) {
+    return(list(value = NA_real_, energy_diff = numeric(0)))
+  }
+  energy_bfmi(energy, fit$chain_id)
 }
 
 
