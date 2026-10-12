@@ -187,7 +187,10 @@ test_that("mode = 'hmc' fits a BYM2 field with an island (#902)", {
     control = list(n_chains = 2, n_iter = 1000, warmup = 500, seed = 1)))
   cf <- coef(f)
   expect_true(all(is.finite(cf)))
-  expect_equal(unname(cf[2]), 0.5, tolerance = 0.3)
+  # 64 observations put this draw's slope MLE at 0.64 against a generating
+  # 0.5, so the sampler is held to the data's own estimate.
+  mle <- unname(coef(stats::glm(y ~ x, family = poisson, data = dd$d))[2])
+  expect_equal(unname(cf[2]), mle, tolerance = 0.3)
   # The island's structured draw is N(0, 1 / node_prec) a priori; the data
   # barely inform it, so its spread is the prior's and not a frozen chain.
   ph <- f$draws[, "phi_spatial[16]"]
