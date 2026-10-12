@@ -327,10 +327,14 @@ initialize_latent_params <- function(latent_info, seed = NULL) {
 
 #' Extract latent factor posteriors from fit
 #'
-#' @param fit A tulpa_fit object
+#' @param fit A fit sampled with latent factors: its draw matrix (`$draws` or
+#'   `$samples`) holds columns named `factor[observation,factor]` and
+#'   `$.internal$latent_info` records the layout. The default method reads any
+#'   fit, of any class, that stores them this way.
 #' @param summary Logical; if TRUE, return summary statistics. If FALSE,
 #'   return full posterior draws.
 #' @param probs Quantiles for summary. Default is c(0.025, 0.5, 0.975).
+#' @param ... Passed to methods.
 #'
 #' @return If `summary = TRUE`, a data frame with columns for observation,
 #'   factor, and summary statistics. If `summary = FALSE`, a matrix of
@@ -355,14 +359,17 @@ initialize_latent_params <- function(latent_info, seed = NULL) {
 #' dim(latent_factors(fit, summary = FALSE))
 #'
 #' @export
-latent_factors <- function(fit, summary = TRUE, probs = c(0.025, 0.5, 0.975)) {
+latent_factors <- function(fit, ...) {
+  UseMethod("latent_factors")
+}
 
-  if (!inherits(fit, "tulpa_fit")) {
-    stop("`fit` must be a tulpa_fit object", call. = FALSE)
-  }
+#' @rdname latent_factors
+#' @export
+latent_factors.default <- function(fit, summary = TRUE,
+                                   probs = c(0.025, 0.5, 0.975), ...) {
 
   # Check if model has latent factors
-  if (is.null(fit$.internal$latent_info) ||
+  if (!is.list(fit) || is.null(fit$.internal$latent_info) ||
       fit$.internal$latent_info$type == "none") {
     stop("Model was not fit with latent factors", call. = FALSE)
   }

@@ -113,6 +113,27 @@ test_that("spatiotemporal summary aligns s/t labels with the array when S != T (
   }
 })
 
+test_that("ST and latent-factor accessors read a model package's own fit class", {
+  S <- 2L; n_t <- 3L; nd <- 5L
+  st_draws <- matrix(rep(seq_len(S * n_t), each = nd), nrow = nd)
+  cols <- sprintf("factor[%d,%d]", rep(1:2, 2), rep(1:2, each = 2))
+  fit <- structure(
+    list(draws = matrix(rnorm(nd * 4), nd, 4, dimnames = list(NULL, cols)),
+         spatiotemporal = list(n_spatial = S, n_times = n_t),
+         .internal = list(spatiotemporal_draws = st_draws,
+                          latent_info = list(type = "latent", n_factors = 2L,
+                                             n_obs = 2L))),
+    class = "other_pkg_fit")
+  summ <- spatiotemporal_effects(fit, format = "summary")
+  expect_s3_class(summ, "tulpa_st_summary")
+  expect_equal(summ$mean[summ$s == 2 & summ$t == 3], 6)
+  lf <- latent_factors(fit)
+  expect_equal(nrow(lf), 4L)
+  expect_identical(dim(latent_factors(fit, summary = FALSE)), c(nd, 4L))
+  expect_error(latent_factors(1:3), "latent factors")
+  expect_error(spatiotemporal_effects(1:3), "spatiotemporal")
+})
+
 test_that("plot.tulpa_st_summary hard-errors on an unknown type (#156g)", {
   st <- structure(
     data.frame(s = rep(1:3, each = 2), t = rep(1:2, 3), mean = rnorm(6)),

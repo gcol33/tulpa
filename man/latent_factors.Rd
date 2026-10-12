@@ -2,12 +2,20 @@
 % Please edit documentation in R/latent.R
 \name{latent_factors}
 \alias{latent_factors}
+\alias{latent_factors.default}
 \title{Extract latent factor posteriors from fit}
 \usage{
-latent_factors(fit, summary = TRUE, probs = c(0.025, 0.5, 0.975))
+latent_factors(fit, ...)
+
+\method{latent_factors}{default}(fit, summary = TRUE, probs = c(0.025, 0.5, 0.975), ...)
 }
 \arguments{
-\item{fit}{A tulpa_fit object}
+\item{fit}{A fit sampled with latent factors: its draw matrix (\verb{$draws} or
+\verb{$samples}) holds columns named \code{factor[observation,factor]} and
+\verb{$.internal$latent_info} records the layout. The default method reads any
+fit, of any class, that stores them this way.}
+
+\item{...}{Passed to methods.}
 
 \item{summary}{Logical; if TRUE, return summary statistics. If FALSE,
 return full posterior draws.}

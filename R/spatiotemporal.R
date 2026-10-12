@@ -138,10 +138,12 @@ spatiotemporal <- function(spatial,
 #' Extract posterior distributions of spatiotemporal interaction effects
 #' from a fitted tulpa model.
 #'
-#' @param object A `tulpa_fit` object carrying a `$spatiotemporal` Knorr-Held
-#'   interaction block. `tulpa()` itself has no `spatiotemporal =` argument;
-#'   such a block comes from a model package's own fitter (see
-#'   [spatiotemporal()] for what the engine itself fits).
+#' @param object A fit carrying a `$spatiotemporal` Knorr-Held interaction
+#'   block (`n_spatial`, `n_times`) and its draws in
+#'   `$.internal$spatiotemporal_draws`. `tulpa()` itself has no
+#'   `spatiotemporal =` argument; such a block comes from a model package's
+#'   own fitter (see [spatiotemporal()] for what the engine itself fits), and
+#'   the default method reads any fit, of any class, that stores it this way.
 #' @param format Output format: `"array"` (default, S x T x draws), `"long"`
 #'   (data frame with s, t, draw, value columns), or `"summary"` (posterior summaries).
 #' @param probs Quantiles to compute if `format = "summary"`.
@@ -184,15 +186,15 @@ spatiotemporal_effects <- function(object,
 
 #' @rdname spatiotemporal_effects
 #' @export
-spatiotemporal_effects.tulpa_fit <- function(object,
-                                              format = c("array", "long", "summary"),
-                                              probs = c(0.025, 0.5, 0.975),
-                                              ...) {
+spatiotemporal_effects.default <- function(object,
+                                           format = c("array", "long", "summary"),
+                                           probs = c(0.025, 0.5, 0.975),
+                                           ...) {
 
   format <- match.arg(format)
 
   # Check if model has spatiotemporal effects
-  if (is.null(object$spatiotemporal)) {
+  if (!is.list(object) || is.null(object$spatiotemporal)) {
     stop("Model carries no $spatiotemporal Knorr-Held interaction block. ",
          "tulpa() has no `spatiotemporal =` argument (see ?spatiotemporal); ",
          "such a block is attached by a model package's own interaction ",

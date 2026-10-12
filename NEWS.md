@@ -1,3 +1,11 @@
+# tulpa 0.7.4
+
+* `latent_factors()` is a generic and `spatiotemporal_effects()` dispatches to
+  a default method: both read the fields a fit stores (the `factor[i,k]` draw
+  columns and `$.internal$latent_info`; the `$spatiotemporal` block and its
+  draws) on a fit of any class, so a model package re-exports them instead of
+  defining its own copies that mask tulpa's on attach (gcol33/tulpaRatio#100).
+
 # tulpa 0.7.3
 
 * `summary()` on a `tulpa_fit` returns a `summary.tulpa_fit` object: the call,

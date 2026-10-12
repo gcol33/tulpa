@@ -2,7 +2,7 @@
 % Please edit documentation in R/spatiotemporal.R
 \name{spatiotemporal_effects}
 \alias{spatiotemporal_effects}
-\alias{spatiotemporal_effects.tulpa_fit}
+\alias{spatiotemporal_effects.default}
 \alias{print.tulpa_st_summary}
 \title{Extract spatiotemporal effects from fitted model}
 \usage{
@@ -13,7 +13,7 @@ spatiotemporal_effects(
   ...
 )
 
-\method{spatiotemporal_effects}{tulpa_fit}(
+\method{spatiotemporal_effects}{default}(
   object,
   format = c("array", "long", "summary"),
   probs = c(0.025, 0.5, 0.975),
@@ -23,10 +23,12 @@ spatiotemporal_effects(
 \method{print}{tulpa_st_summary}(x, ...)
 }
 \arguments{
-\item{object}{A \code{tulpa_fit} object carrying a \verb{$spatiotemporal} Knorr-Held
-interaction block. \code{tulpa()} itself has no \verb{spatiotemporal =} argument;
-such a block comes from a model package's own fitter (see
-\code{\link[=spatiotemporal]{spatiotemporal()}} for what the engine itself fits).}
+\item{object}{A fit carrying a \verb{$spatiotemporal} Knorr-Held interaction
+block (\code{n_spatial}, \code{n_times}) and its draws in
+\verb{$.internal$spatiotemporal_draws}. \code{tulpa()} itself has no
+\verb{spatiotemporal =} argument; such a block comes from a model package's
+own fitter (see \code{\link[=spatiotemporal]{spatiotemporal()}} for what the engine itself fits), and
+the default method reads any fit, of any class, that stores it this way.}
 
 \item{format}{Output format: \code{"array"} (default, S x T x draws), \code{"long"}
 (data frame with s, t, draw, value columns), or \code{"summary"} (posterior summaries).}
