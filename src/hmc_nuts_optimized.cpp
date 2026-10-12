@@ -160,7 +160,6 @@ TreeStats build_tree_fast(
     double H_new = nuts_compute_hamiltonian_fast(
       lf.log_prob, ws.p_at(input_slot), mass, n
     );
-    double delta_H = H_new - H0;
 
     // Both endpoints are the same slot (single node)
     stats.left_slot = input_slot;
@@ -178,9 +177,7 @@ TreeStats build_tree_fast(
     stats.sum_log_weight = stats.divergent ? -INFINITY : (H0 - H_new);
 
     // Acceptance statistic
-    double accept_stat = std::min(1.0, std::exp(-delta_H));
-    if (!std::isfinite(accept_stat)) accept_stat = 0.0;
-    stats.sum_accept_prob = accept_stat;
+    stats.sum_accept_prob = metropolis_accept_prob(H0, H_new);
     stats.n_leapfrog = 1;
 
     // Generalized U-turn: track rho, p_sharp, p at this leaf

@@ -47,6 +47,17 @@ inline bool hamiltonian_divergent(double H0, double H_new,
   return !std::isfinite(H_new) || !(H_new - H0 <= delta_max);
 }
 
+// Metropolis acceptance probability min(1, exp(H0 - H_new)). A non-finite
+// energy is a rejection with probability 0. Written out because
+// `std::min(1.0, std::exp(NaN))` is 1.0 (the comparison `NaN < 1.0` is false),
+// which would read a NaN step as a perfect one and drive dual averaging to a
+// step size at which every step diverges.
+inline double metropolis_accept_prob(double H0, double H_new) {
+  const double d = H0 - H_new;
+  if (!std::isfinite(H0) || !std::isfinite(H_new) || std::isnan(d)) return 0.0;
+  return d >= 0.0 ? 1.0 : std::exp(d);
+}
+
 // =====================================================================
 // HMC/NUTS sampler structures
 // =====================================================================

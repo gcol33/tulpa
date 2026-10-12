@@ -202,3 +202,25 @@ test_that("mode = 'hmc' fits a BYM2 field with an island (#902)", {
     spatial = sp, control = list(n_threads = 1L)))
   expect_lt(max(abs(coef(f) - coef(fn))), 0.15)
 })
+
+test_that("a non-finite NUTS step does not count as accepted in warmup (#959)", {
+  skip_on_cran()
+  # Seeds 4 and 5 each had a chain whose warmup met a non-finite energy. Read
+  # as acceptance 1, it pushed dual averaging to a step size of 7.4 (the other
+  # chain: 0.23), at which every post-warmup step diverged and the chain stood
+  # still: 500 / 500 divergent, Rhat 2.2, slope mean 0.82 against 0.64.
+  dd <- .island_data()
+  sp <- suppressWarnings(spatial_bym2(dd$A, group_var = "region"))
+  for (s in c(4L, 5L)) {
+    f <- suppressWarnings(tulpa(
+      y ~ x + spatial(region), dd$d, family = "poisson", mode = "hmc",
+      spatial = sp,
+      control = list(n_chains = 2, n_iter = 1000, warmup = 500, seed = s)))
+    expect_lt(max(f$epsilon), 1)
+    expect_lt(sum(f$divergent), 25)
+    for (k in 1:2) {
+      expect_gt(stats::sd(f$draws[f$chain_id == k, "x"]), 0.05)
+    }
+    expect_lt(abs(mean(f$draws[, "x"]) - 0.638), 0.05)
+  }
+})

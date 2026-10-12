@@ -1,5 +1,16 @@
 # tulpa 0.7.3
 
+* A NUTS or fixed-trajectory HMC step that reaches a non-finite energy now
+  counts as acceptance 0 in step-size adaptation. `std::min(1.0, exp(NaN))`
+  is 1, so such a step read as a perfect one, dual averaging raised the step
+  size until every step diverged, and the chain stood still for the whole
+  sampling phase. On a 16-node BYM2 field with an island, 2 of 9 seeds had a
+  chain adapted to a step size of 7.4 (the other chain 0.23), 500 of 500
+  post-warmup draws divergent, Rhat 2.2 and a slope mean of 0.82 or 0.53
+  against 0.64; across 20 seeds the slope mean now ranges 0.628 to 0.651 with
+  Rhat at most 1.01 (gcol33/tulpa#959). One helper,
+  `metropolis_accept_prob()`, carries the acceptance for both samplers.
+
 * The joint driver's outer-grid placement now places every scale axis of a
   multi-block prior, not only a copied field's SD: an iid random effect's SD
   and an arm-specific field's precision are laid at the outer mode like the

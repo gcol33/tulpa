@@ -94,8 +94,7 @@
       double H_prop = -log_prob_prop + kinetic_prop;
 
       // Metropolis accept/reject
-      alpha = std::min(1.0, std::exp(H_current - H_prop));
-      if (!std::isfinite(alpha)) alpha = 0.0;
+      alpha = metropolis_accept_prob(H_current, H_prop);
 
       std::uniform_real_distribution<double> unif01(0.0, 1.0);
       bool accepted = (unif01(rng) < alpha) && !divergent;
