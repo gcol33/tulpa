@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_loglik.R
 \name{.family_ops}
 \alias{.family_ops}
-\title{Look up a family's operation set, with a clear error for unknown families.}
+\title{Look up a family's operation set, with a clear error for unknown families}
 \usage{
 .family_ops(family)
 }
 \description{
-Look up a family's operation set, with a clear error for unknown families.
+Look up a family's operation set, with a clear error for unknown families
 }
 \keyword{internal}

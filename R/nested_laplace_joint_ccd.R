@@ -639,8 +639,9 @@
 #   "modefind_boundary"   the outer mode pinned to the (wide) axis box.
 #   "modefind_degenerate" the outer Hessian is degenerate at the mode.
 #   "modefind_failed"     the mode-find did not converge.
-#   "hessian_singular"    the outer Hessian would not invert.
-#   "hessian_not_pd"      its inverse has no Cholesky factor.
+#   "hessian_not_pd"      the negated outer Hessian has no Cholesky factor.
+#   "hessian_singular"    its inverse has none either: the factor exists but
+#                         is numerically singular.
 #   "copy_atom_components" more copy atoms than the component cap: the mixture
 #                         below expands into 2^n designs, and past the cap the
 #                         tensor rule is the cheaper one.
@@ -829,10 +830,10 @@
     u_hat <- got$u_hat
     H     <- got$H
     neg_H <- -0.5 * (H + t(H))
-    post_cov <- tryCatch(solve(neg_H), error = function(e) NULL)
-    if (is.null(post_cov)) return(declined("hessian_singular"))
+    post_cov <- tryCatch(.spd_inverse(neg_H), error = function(e) NULL)
+    if (is.null(post_cov)) return(declined("hessian_not_pd"))
     L_scale <- tryCatch(t(chol(post_cov)), error = function(e) NULL)
-    if (is.null(L_scale)) return(declined("hessian_not_pd"))
+    if (is.null(L_scale)) return(declined("hessian_singular"))
 
     # CCD design: factorial corners at +/- 1.1 per whitened axis (INLA's f0),
     # with the matching corrected design weights (single source of truth with

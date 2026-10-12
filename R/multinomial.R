@@ -34,7 +34,7 @@
 #'
 #' @return A `tulpa_fit` (subclass `tulpa_multinomial`) with `means` (the
 #'   posterior mode, named `class:term`) and `cov` of the Laplace Gaussian, which
-#'   is the posterior [coef()], [vcov()], [summary()] and [confint()] report;
+#'   is the posterior [coef()], [vcov()], [summary.tulpa_fit()] and [confint()] report;
 #'   `draws` sampled from that Gaussian; `log_marginal`, `classes`, `baseline`,
 #'   and the standard generic-method support.
 #'
@@ -154,6 +154,9 @@ tulpa_multinomial <- function(formula, data,
   P / rowSums(P)
 }
 
+#' @rdname tulpa_multinomial
+#' @param x A `tulpa_multinomial` fit.
+#' @param ... Ignored.
 #' @export
 print.tulpa_multinomial <- function(x, ...) {
   cat(sprintf("Multinomial logit (%d classes, baseline '%s'), Laplace fit\n",

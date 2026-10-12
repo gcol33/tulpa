@@ -95,14 +95,9 @@ temporal_multiscale <- function(time_var,
 }
 
 
-#' Print method for tulpa_temporal_multiscale
-#'
-#' @param x A tulpa_temporal_multiscale object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the multi-scale temporal specification to the console.
-#'
+#' @rdname temporal_multiscale
+#' @param x A `tulpa_temporal_multiscale` specification.
+#' @param ... Ignored.
 #' @export
 print.tulpa_temporal_multiscale <- function(x, ...) {
   cat("tulpa Multi-Scale temporal specification\n")
@@ -302,7 +297,7 @@ validate_temporal_multiscale <- function(temporal, data) {
   invisible(NULL)
 }
 
-#' Gaussian Process temporal structure
+#' Gaussian process temporal structure
 #'
 #' @description
 #' Specify a Gaussian Process (GP) temporal random effect for irregularly-spaced
@@ -454,14 +449,9 @@ temporal_gp <- function(time_var,
 }
 
 
-#' Print method for tulpa_temporal_gp
-#'
-#' @param x A tulpa_temporal_gp object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the Gaussian-process temporal specification to the console.
-#'
+#' @rdname temporal_gp
+#' @param x A `tulpa_temporal_gp` specification.
+#' @param ... Ignored.
 #' @export
 print.tulpa_temporal_gp <- function(x, ...) {
   cat("tulpa Gaussian Process temporal specification\n")

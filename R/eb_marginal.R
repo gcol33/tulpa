@@ -289,10 +289,10 @@
                     error = function(e) NULL)
   if (is.null(evals) || any(!is.finite(evals)) || min(evals) <= 0) return(NULL)
 
-  H_inv <- tryCatch(solve(base$H), error = function(e) NULL)
+  H_inv <- tryCatch(.spd_inverse(base$H), error = function(e) NULL)
   if (is.null(H_inv)) return(NULL)
 
-  cov_cond <- tryCatch(solve(H_beta), error = function(e) NULL)
+  cov_cond <- tryCatch(.spd_inverse(H_beta), error = function(e) NULL)
   if (is.null(cov_cond)) return(NULL)
   p <- min(as.integer(p_fix), nrow(cov_cond), nrow(base$J))
   if (p < 1L) return(NULL)

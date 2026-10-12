@@ -89,6 +89,8 @@
 #' @return A data frame with columns `x` (node location) and `estimate` (the
 #'   posterior-mean smooth at that node), with the covariate name as an
 #'   attribute `"var"`.
+#' @seealso [field_effects()] for a spatial field, [ranef()] for random
+#'   effects.
 #' @examples
 #' \donttest{
 #' set.seed(1)
@@ -146,7 +148,7 @@ smooth_effects <- function(object, term = 1L) {
 
 # The smoother half of a fit's display, read from the metadata `tulpa()` attaches
 # for smooth_effects(). Silent on a fit with no s(...) terms, so
-# `print.tulpa_fit()` can call it unconditionally and any fit carrying smoothers
+# `print.summary.tulpa_fit()` can call it unconditionally and any fit carrying smoothers
 # lists them.
 #' @keywords internal
 .print_smooth_section <- function(x) {

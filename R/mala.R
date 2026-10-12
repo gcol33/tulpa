@@ -1,4 +1,4 @@
-#' Metropolis-Adjusted Langevin Algorithm (MALA)
+#' Metropolis-adjusted Langevin algorithm (MALA)
 #'
 #' @description
 #' Sample from a posterior using MALA: a Langevin proposal driven by
@@ -255,5 +255,5 @@ mala <- function(log_posterior,
     inference_tier = 1L,
     backend = "mala"
   )
-  .finalize_fit(fit, param_names = names(init), extra_class = "tulpa_mala_fit")
+  .finalize_fit(fit, param_names = names(init))
 }

@@ -2,6 +2,7 @@
 % Please edit documentation in R/multinomial.R
 \name{tulpa_multinomial}
 \alias{tulpa_multinomial}
+\alias{print.tulpa_multinomial}
 \title{Multinomial (nominal K-class) logistic regression via Laplace}
 \usage{
 tulpa_multinomial(
@@ -10,6 +11,8 @@ tulpa_multinomial(
   beta_prior = .tulpa_default_beta_prior("multinomial"),
   control = list()
 )
+
+\method{print}{tulpa_multinomial}(x, ...)
 }
 \arguments{
 \item{formula}{Model formula; the response must be a factor (or coercible to
@@ -24,11 +27,15 @@ under separation.}
 
 \item{control}{List of numerical knobs: \code{max_iter} (default 100), \code{tol}
 (default 1e-8), \code{n_draws} (posterior draws, default 2000), \code{seed}.}
+
+\item{x}{A \code{tulpa_multinomial} fit.}
+
+\item{...}{Ignored.}
 }
 \value{
 A \code{tulpa_fit} (subclass \code{tulpa_multinomial}) with \code{means} (the
 posterior mode, named \code{class:term}) and \code{cov} of the Laplace Gaussian, which
-is the posterior \code{\link[=coef]{coef()}}, \code{\link[=vcov]{vcov()}}, \code{\link[=summary]{summary()}} and \code{\link[=confint]{confint()}} report;
+is the posterior \code{\link[=coef]{coef()}}, \code{\link[=vcov]{vcov()}}, \code{\link[=summary.tulpa_fit]{summary.tulpa_fit()}} and \code{\link[=confint]{confint()}} report;
 \code{draws} sampled from that Gaussian; \code{log_marginal}, \code{classes}, \code{baseline},
 and the standard generic-method support.
 }

@@ -2,11 +2,11 @@
 % Please edit documentation in R/inference_modes.R
 \name{ALL_BACKENDS}
 \alias{ALL_BACKENDS}
-\title{All registered backends across every tier (derived from the registry).}
+\title{All registered backends across every tier (derived from the registry)}
 \usage{
 ALL_BACKENDS
 }
 \description{
-All registered backends across every tier (derived from the registry).
+All registered backends across every tier (derived from the registry)
 }
 \keyword{internal}

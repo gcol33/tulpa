@@ -145,7 +145,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
   }
 }
 
-#' Build NNGP precision Lambda = (I - A)' D^-1 (I - A) at given hyperparameters.
+#' Build NNGP precision Lambda = (I - A)' D^-1 (I - A) at given hyperparameters
 #'
 #' Mirrors the algorithm in `src/gpu_nngp_laplace.h::batch_nngp_scatter` plus
 #' `apply_nngp_full_prior_dense` -- for each Vecchia row i (in NNGP order):
@@ -232,7 +232,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 
 # --- Schur complement for NNGP marginal H_beta ----------------------------
 
-#' Build a length-n_obs -> length-n_units indicator design matrix Z.
+#' Build a length-n_obs -> length-n_units indicator design matrix Z
 #'
 #' The latent field lives on units -- unique coordinates for an NNGP field,
 #' adjacency units for an areal one -- and each observation belongs to exactly
@@ -272,7 +272,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 }
 
 
-#' n_obs x n_re_groups indicator design for an iid RE block.
+#' n_obs x n_re_groups indicator design for an iid RE block
 #'
 #' `re_idx` is the 1-based per-observation group index. Observations whose
 #' group falls outside `1:n_re_groups` contribute no RE column, matching the
@@ -291,7 +291,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 }
 
 
-#' Schur complement of the latent block out of the joint Hessian.
+#' Schur complement of the latent block out of the joint Hessian
 #'
 #' Given the fixed-effect design `X`, the combined latent design `D` (the iid
 #' RE indicator block stacked with the spatial-field design), the latent prior
@@ -452,7 +452,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 
 # --- Proper-CAR precision + marginal H_beta -------------------------------
 
-#' Proper-CAR precision Q = tau * (D - rho W) at fixed (tau, rho).
+#' Proper-CAR precision Q = tau * (D - rho W) at fixed (tau, rho)
 #'
 #' D is the diagonal degree matrix (neighbour counts) and W the adjacency, so
 #' Q has the same nonzero structure as the ICAR precision with rho scaling the
@@ -487,7 +487,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 
 # --- Intrinsic areal (ICAR / CAR / BYM2) precision + marginal H_beta -------
 
-#' Connected components of an adjacency graph, as a list of node-index vectors.
+#' Connected components of an adjacency graph, as a list of node-index vectors
 #'
 #' Breadth-first over the sparse structure of W + W' (`.adj_component_labels`,
 #' shared with the adjacency validator), so an edge stored in one triangle only
@@ -505,14 +505,14 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
   unname(split(seq_along(lab), factor(lab, levels = seq_len(max(lab)))))
 }
 
-#' Number of connected components of an adjacency graph.
+#' Number of connected components of an adjacency graph
 #'
 #' The count of `.graph_components`, single-sourcing the DFS.
 #'
 #' @keywords internal
 .graph_n_components <- function(adjacency) length(.graph_components(adjacency))
 
-#' Intrinsic ICAR field precision, augmented to full rank.
+#' Intrinsic ICAR field precision, augmented to full rank
 #'
 #' `L = D - W` (degree minus adjacency) plus the sum-to-zero augmentation
 #' `sum_c 1_c 1_c' / J_c` that identifies each component's constant null
@@ -578,13 +578,14 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 }
 
 
-#' Marginal H_beta for a BYM2 field. The latent is the two-block
-#' `[phi (structured), theta (unstructured)]` convolution; each enters the
-#' linear predictor through the field indicator scaled by its `d_fac`
-#' (`sigma * sqrt(rho) * scale_factor` for phi, `sigma * sqrt(1 - rho)` for
-#' theta), with `phi` carrying the augmented ICAR precision `.icar_precision_Q`
-#' and `theta ~ N(0, I)`. The conditional
-#' Laplace kernel hardcodes `sigma = 1`, `rho = 0.5`.
+#' Marginal `H_beta` for a BYM2 field
+#'
+#' The latent is the two-block `[phi (structured), theta (unstructured)]`
+#' convolution; each enters the linear predictor through the field indicator
+#' scaled by its `d_fac` (`sigma * sqrt(rho) * scale_factor` for phi,
+#' `sigma * sqrt(1 - rho)` for theta), with `phi` carrying the augmented ICAR precision
+#' `.icar_precision_Q` and `theta ~ N(0, I)`. The conditional Laplace kernel
+#' hardcodes `sigma = 1`, `rho = 0.5`.
 #'
 #' @keywords internal
 .marginal_H_beta_bym2 <- function(mode, X, spatial, family, phi,

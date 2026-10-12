@@ -113,7 +113,7 @@
   )
 )
 
-#' Links available as a `<family>_<link>` suffix.
+#' Links available as a `<family>_<link>` suffix
 #' @keywords internal
 link_names <- function() names(.LINKS)
 
@@ -402,7 +402,7 @@ link_names <- function() names(.LINKS)
   ops
 }
 
-#' Family codes the link layer accepts beyond the bare registry names.
+#' Family codes the link layer accepts beyond the bare registry names
 #'
 #' The cross product of the link-capable base families and the links, minus each
 #' family's own canonical form (which is already a registry name).

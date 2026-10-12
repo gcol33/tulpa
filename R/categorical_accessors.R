@@ -117,7 +117,7 @@
 #' Observation-level accessors for categorical fits
 #'
 #' @description
-#' [fitted()], [residuals()], [predict()] and [posterior_predict()] for a
+#' [stats::fitted()], [stats::residuals()], [stats::predict()] and [posterior_predict()] for a
 #' categorical response: a [tulpa_multinomial()] fit (`family = "multinomial"`)
 #' or a [tulpa_ordinal()] fit (`family = "ordinal"`). The response is one of K
 #' classes, so the response-scale quantities are N x K matrices with one column

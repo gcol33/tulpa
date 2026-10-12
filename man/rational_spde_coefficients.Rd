@@ -2,7 +2,7 @@
 % Please edit documentation in R/rational_spde.R
 \name{rational_spde_coefficients}
 \alias{rational_spde_coefficients}
-\title{Rational Approximation Coefficients for a Fractional SPDE}
+\title{Rational approximation coefficients for a fractional SPDE}
 \usage{
 rational_spde_coefficients(nu, m = 4L, lambda_range = c(1e-04, 10000))
 }

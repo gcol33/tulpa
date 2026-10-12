@@ -68,3 +68,26 @@ without holding one block per cell. Memory is one \code{length(idx)} square
 result whatever the grid size, so this is the door for an \code{idx} that
 carries a field.
 }
+\examples{
+# Two outer-grid cells of a latent precision over two fixed effects and a
+# ten-node random-walk field (sum-to-zero), each stored as the lower-triangle
+# CSC a joint fit keeps per cell, with the cells' modes and weights.
+make_Q <- function(tau) {
+  Q <- matrix(0, 12, 12)
+  Q[1:2, 1:2] <- diag(2, 2) + 0.1
+  Q[3:12, 3:12] <- tau * crossprod(diff(diag(10))) + diag(0.3, 10)
+  Q[1, 3:12] <- Q[3:12, 1] <- 0.1
+  L <- Matrix::tril(methods::as(methods::as(Q, "generalMatrix"),
+                                "CsparseMatrix"))
+  list(p = L@p, i = L@i, x = L@x)
+}
+cells <- list(make_Q(1), make_Q(4))
+set.seed(1)
+modes <- matrix(rnorm(2 * 12, sd = 0.2), 2, 12)
+mix <- tulpa_joint_inner_vcov_mixture(
+  lapply(cells, `[[`, "p"), lapply(cells, `[[`, "i"), lapply(cells, `[[`, "x"),
+  n_x = 12L, idx = 1:12, n_dense = 2L, A_cols_list = list(3:12),
+  weights = c(0.7, 0.3), modes = modes)
+mix$mean[1:2]
+mix$vcov[1:2, 1:2]
+}

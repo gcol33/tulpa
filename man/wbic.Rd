@@ -4,6 +4,7 @@
 \alias{wbic}
 \alias{wbic.default}
 \alias{wbic.tulpa_fit}
+\alias{print.tulpa_wbic}
 \title{Widely applicable Bayesian information criterion (WBIC)}
 \usage{
 wbic(object, ...)
@@ -11,6 +12,8 @@ wbic(object, ...)
 \method{wbic}{default}(object, ...)
 
 \method{wbic}{tulpa_fit}(object, ...)
+
+\method{print}{tulpa_wbic}(x, digits = 2, ...)
 }
 \arguments{
 \item{object}{A \code{tulpa_fit} fitted with \code{mode = "smc"} and
@@ -19,6 +22,10 @@ log-likelihood matrix (or \code{\link[=tulpa_loglik]{tulpa_loglik()}}) at draws 
 tempered at \code{1 / log(n_obs)}.}
 
 \item{...}{Unused.}
+
+\item{x}{A \code{tulpa_wbic} result.}
+
+\item{digits}{Decimal places printed.}
 }
 \value{
 A \code{tulpa_wbic} object: a list with \code{wbic}, the inverse temperature

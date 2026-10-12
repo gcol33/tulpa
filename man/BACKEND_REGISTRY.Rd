@@ -2,7 +2,7 @@
 % Please edit documentation in R/inference_modes.R
 \name{BACKEND_REGISTRY}
 \alias{BACKEND_REGISTRY}
-\title{Backend registry -- single source of truth for the inference backends.}
+\title{Backend registry -- single source of truth for the inference backends}
 \usage{
 BACKEND_REGISTRY
 }

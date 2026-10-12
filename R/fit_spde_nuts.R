@@ -80,10 +80,22 @@
 #'   path over (range, sigma).
 #'
 #' @examples
-#' \dontrun{
-#' # SPDE-field NUTS. `spatial` is an SPDE spec built from a mesh, e.g.
-#' # spatial_spde(~ x + y, df). See fit_spde() for the Laplace analogue.
-#' fit <- tulpa_nuts_spde(y, X, spatial = spatial_spde(~ x + y, df))
+#' \donttest{
+#' # Gaussian response with a smooth spatial trend, sampled at fixed
+#' # (range, sigma) on a coarse mesh.
+#' set.seed(1)
+#' n <- 60L
+#' coords <- cbind(runif(n), runif(n))
+#' x <- runif(n, -1, 1)
+#' y <- 0.5 - 0.8 * x + 0.4 * sin(3 * coords[, 1]) + rnorm(n, 0, 0.3)
+#' spec <- spatial_spde(coords, max_edge = c(0.3, 0.6), cutoff = 0.1,
+#'                      prior_range = c(0.5, 0.5), prior_sigma = c(1, 0.5))
+#' fit <- tulpa_nuts_spde(y, cbind(1, x), spatial = spec, family = "gaussian",
+#'                        range = 0.4, sigma = 0.5, log_phi_init = log(0.3),
+#'                        control = list(n_iter = 300L, n_warmup = 150L,
+#'                                       seed = 1L))
+#' colMeans(fit$draws[, c("beta[1]", "beta[2]")])
+#' fit$phi_summary
 #' }
 #' @export
 tulpa_nuts_spde <- function(y, X, spatial,

@@ -46,7 +46,7 @@ test_that("mode='agq' routes a (1 | g) model to agq_fit and matches a direct cal
   expect_length(coef(fit), 2L)
   expect_equal(dim(vcov(fit)), c(2L, 2L))
   expect_equal(nrow(confint(fit)), 2L)
-  expect_true(all(is.finite(summary(fit)$std.error)))
+  expect_true(all(is.finite(coef(summary(fit))$std.error)))
 })
 
 

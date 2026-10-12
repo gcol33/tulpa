@@ -58,3 +58,7 @@ fit <- tulpa(y ~ x + (1 | g), data = df, family = "poisson")
 ranef(fit)
 }
 }
+\seealso{
+\code{\link[=field_effects]{field_effects()}} for a spatial field, \code{\link[=smooth_effects]{smooth_effects()}} for an
+\code{s(x)} term.
+}

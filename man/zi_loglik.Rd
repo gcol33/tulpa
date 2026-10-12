@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_zi.R
 \name{zi_loglik}
 \alias{zi_loglik}
-\title{Elementwise log-likelihood of the zero-inflated mixture.}
+\title{Elementwise log-likelihood of the zero-inflated mixture}
 \usage{
 zi_loglik(eta, logit_zi, y, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
-Elementwise log-likelihood of the zero-inflated mixture.
+Elementwise log-likelihood of the zero-inflated mixture
 }
 \keyword{internal}

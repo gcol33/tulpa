@@ -495,6 +495,7 @@ compute_bym2_scale <- function(adjacency) {
 #' @return The input `x`, returned invisibly. Called for the side effect of
 #'   printing the spatial specification to the console.
 #'
+#' @keywords internal
 #' @export
 print.tulpa_spatial <- function(x, ...) {
   # SPDE specs carry a different field set (Matern mesh) and print separately.

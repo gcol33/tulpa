@@ -2,6 +2,7 @@
 % Please edit documentation in R/temporal_gp.R
 \name{temporal_multiscale}
 \alias{temporal_multiscale}
+\alias{print.tulpa_temporal_multiscale}
 \title{Multi-scale temporal structure}
 \usage{
 temporal_multiscale(
@@ -12,6 +13,8 @@ temporal_multiscale(
   group_var = NULL,
   shared = NULL
 )
+
+\method{print}{tulpa_temporal_multiscale}(x, ...)
 }
 \arguments{
 \item{time_var}{Single character string naming the time variable in the data.}
@@ -32,6 +35,10 @@ group-specific temporal effects.}
 \item{shared}{Whether the effect is shared across processes in a
 multi-process model. \code{NULL} (default) shares it; \code{FALSE} fits
 process-specific effects and emits a warning.}
+
+\item{x}{A \code{tulpa_temporal_multiscale} specification.}
+
+\item{...}{Ignored.}
 }
 \value{
 A \code{tulpa_temporal_multiscale} object.

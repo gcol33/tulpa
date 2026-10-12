@@ -174,6 +174,7 @@
 }
 
 
+#' @rdname temporal
 #' @export
 print.tulpa_temporal_field_fit <- function(x, ...) {
   cat("tulpa fit: inline temporal() varying-coefficient field(s)\n")
@@ -199,6 +200,9 @@ print.tulpa_temporal_field_fit <- function(x, ...) {
 }
 
 
+#' @rdname temporal
+#' @param x A `temporal()` field specification, the fit `tulpa()` returns for
+#'   one, a `tulpa_temporal_posterior` or a `tulpa_temporal_summary`.
 #' @export
 print.tulpa_temporal_field <- function(x, ...) {
   cat("tulpa temporal varying-coefficient field\n")

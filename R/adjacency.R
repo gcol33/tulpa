@@ -676,6 +676,7 @@ check_adjacency <- function(adjacency, ids = NULL) {
 
 # ---- print methods -------------------------------------------------------
 
+#' @rdname adjacency
 #' @export
 print.tulpa_adjacency <- function(x, ...) {
   cat("<tulpa_adjacency>\n")
@@ -697,6 +698,9 @@ print.tulpa_adjacency <- function(x, ...) {
   invisible(x)
 }
 
+#' @rdname check_adjacency
+#' @param x A `tulpa_adjacency_check` report.
+#' @param ... Ignored.
 #' @export
 print.tulpa_adjacency_check <- function(x, ...) {
   cat("<adjacency check>\n")

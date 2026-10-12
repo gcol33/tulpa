@@ -1,5 +1,57 @@
 # tulpa 0.7.3
 
+* `summary()` on a `tulpa_fit` returns a `summary.tulpa_fit` object: the call,
+  how the fit was produced (`$inference`: backend, tier, mode, selection
+  reason), the fixed-effect table with intervals, variance components,
+  integrated hyperparameters, smoothers, dropped axes, the fixed-effect prior
+  and a reliability headline read through `diagnostics()`. `print()` renders
+  it; `coef(summary(fit))` is the fixed-effect table `summary()` returned
+  before. `print(fit)` is now the short view: backend, call, observation count,
+  coefficient estimates and a pointer to `summary()` (gcol33/tulpa#953).
+  `tulpa_fit_summary(object, coefficients)` is the constructor `summary()`
+  returns through, so a model package whose fit stores its coefficients in
+  its own layout returns the same object.
+* `tulpa_outer_grid()` returns a nested-Laplace fit's outer hyperparameter
+  grid: nodes, normalized weights, log marginals, the integrated support and
+  the per-cell latent modes. `diagnostics()` now also carries the outer
+  k-hat's bootstrap interval and band verdict, the outcome of a
+  `control$k_quality` request and the per-index inner skewness, so the
+  vignettes read none of these off the fit with `$` (gcol33/tulpa#958).
+* Every class an exported function returns has a method `methods(class = )`
+  lists: the nested-Laplace results (`tulpa_nested_laplace_joint`,
+  `_joint_multi`, `tulpa_st_nested`) print their own header, and
+  `tulpa_family`, `tulpa_hyper_axis_spec`, `tulpa_temporal_latent_block`, the
+  SVC / TVC / temporal / space-time summaries and `tulpa_variogram` print. The
+  subclass tags that carried no behaviour are gone: `tulpa_agq_fit`,
+  `tulpa_imh_fit`, `tulpa_mala_fit`, `tulpa_pathfinder_fit`,
+  `tulpa_sample_fit`, `tulpa_ep`, `tulpa_tgmrf` and `tulpa_hyper_grid` fits are
+  plain `tulpa_fit`s (the backend is on the fit and in its header), and
+  `spatiotemporal_effects()` returns a plain array or data frame
+  (gcol33/tulpa#954).
+* Help index: every title is sentence case without a trailing period, and the
+  print / summary / format methods are documented on their class's page
+  rather than on pages of their own (gcol33/tulpa#955). The examples that sat
+  in `\dontrun{}` now run on a small simulated fixture
+  (`latent_factors()`, `spatiotemporal_effects()`, `tgmrf_cpp()`,
+  `tulpa_em_mc()`, `tulpa_nuts_spde()`, `tulpa_joint_inner_vcov_blocks()`,
+  `tulpa_joint_inner_vcov_mixture()`; `tulpa_cache_clear()` runs
+  interactively only) (gcol33/tulpa#956).
+* A covariance read off a precision or a negative Hessian goes through one
+  Cholesky-based inverse, `.spd_inverse()`, in place of `solve(A)` at 26
+  sites. An indefinite matrix now takes each site's existing fallback (an NA
+  covariance with a warning, a declined cell, a NULL) instead of returning a
+  "covariance" with negative variances; the joint CCD mode-find declines such
+  a Hessian as `hessian_not_pd` (gcol33/tulpa#957).
+* `field_effects()` returns a spatial field's posterior per unit (an areal
+  region or an SPDE mesh node): estimate, SD, 95% bounds and the `source` of
+  each row, as `ranef()` reports a group. It reads ICAR, BYM2 and proper-CAR
+  fields off sampler draws (through the engine's own linear-predictor
+  assembly), Polya-Gamma Gibbs draws, a nested-Laplace grid's per-cell
+  Gaussian mixture and a conditional-Laplace mode, and an SPDE field's
+  mesh-node draws or mode. The field is located from the fit's recorded block
+  sizes; `posterior_predict()` reads the Laplace and Gibbs fields through the
+  same helpers (gcol33/tulpa#960).
+
 * A NUTS or fixed-trajectory HMC step that reaches a non-finite energy now
   counts as acceptance 0 in step-size adaptation. `std::min(1.0, exp(NaN))`
   is 1, so such a step read as a perfect one, dual averaging raised the step

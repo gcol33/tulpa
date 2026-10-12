@@ -2,9 +2,15 @@
 % Please edit documentation in R/posterior_draws.R
 \name{tulpa_posterior_draws}
 \alias{tulpa_posterior_draws}
+\alias{tulpa_posterior_draws.default}
+\alias{tulpa_posterior_draws.tulpa_nested_laplace}
 \title{Posterior draws from a nested-Laplace fit}
 \usage{
 tulpa_posterior_draws(fit, idx = NULL, n = 1000, ...)
+
+\method{tulpa_posterior_draws}{default}(fit, idx = NULL, n = 1000, ...)
+
+\method{tulpa_posterior_draws}{tulpa_nested_laplace}(fit, idx = NULL, n = 1000, ...)
 }
 \arguments{
 \item{fit}{A nested-Laplace fit (\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} or

@@ -171,7 +171,7 @@ test_that("the conditioned sigma_re is read off the fit, not the call (#868)", {
   expect_equal(VarCorr(fit)$sd, 0.3, tolerance = 1e-8)
   s <- 5
   expect_equal(VarCorr(fit)$sd, 0.3, tolerance = 1e-8)
-  expect_true(any(grepl("0.3", capture.output(print(fit)), fixed = TRUE)))
+  expect_true(any(grepl("0.3", capture.output(print(summary(fit))), fixed = TRUE)))
 
   # The default it conditioned on is labelled as such.
   fit1 <- suppressWarnings(tulpa(y ~ x + (1 | g), data = d, family = "poisson",

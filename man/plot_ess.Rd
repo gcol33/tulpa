@@ -2,7 +2,7 @@
 % Please edit documentation in R/plot_diagnostics.R
 \name{plot_ess}
 \alias{plot_ess}
-\title{Plot Effective Sample Size Diagnostic}
+\title{Plot effective sample size diagnostic}
 \usage{
 plot_ess(fit, type = c("bulk", "tail"), threshold = 400, pars = NULL)
 }

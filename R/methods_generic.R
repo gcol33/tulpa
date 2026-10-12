@@ -313,7 +313,7 @@
 # components are kept rather than only the moments.
 #
 # mu_g / V_g are the per-grid fixed-effect mode / covariance retained under
-# keep_grid_hessians (V_g = solve(grid_hessians[[g]])); w_g are the normalized
+# keep_grid_hessians (V_g = grid_hessians[[g]]^-1); w_g are the normalized
 # grid weights. NULL when the per-grid pieces were not retained.
 #
 # One marginalizer for every nested tier: `tulpa_nested_laplace()` fills the
@@ -423,7 +423,7 @@
 # needs the full matrix rather than its diagonal.
 #' @keywords internal
 .nested_cell_fixed_cov <- function(Hg, p) {
-  tryCatch(solve(Hg), error = function(e) matrix(NA_real_, p, p))
+  tryCatch(.spd_inverse(Hg), error = function(e) matrix(NA_real_, p, p))
 }
 
 
@@ -532,8 +532,9 @@
     # the correction exists to replace.
     V   <- if (.is_usable_cov(object$cov_marginal, p)) {
       object$cov_marginal
-    } else tryCatch(solve(object$H_beta), error = function(e) {
-      warning("H_beta is singular; standard errors set to NA.", call. = FALSE)
+    } else tryCatch(.spd_inverse(object$H_beta), error = function(e) {
+      warning("H_beta is not positive definite; standard errors set to NA.",
+              call. = FALSE)
       matrix(NA_real_, p, p)
     })
     se <- sqrt(pmax(diag(V)[idx], 0))
@@ -598,54 +599,63 @@ coef.tulpa_fit <- function(object, ...) {
   stats::setNames(tab$estimate, tab$term)
 }
 
-# Compact fit display, robust across posterior shapes: reads only fields the
-# accessors above normalize, so sampler-, Laplace-, and nested-tier fits all
-# print without NA/NULL noise.
+#' @rdname summary.tulpa_fit
 #' @export
 print.tulpa_fit <- function(x, ...) {
-  header <- "tulpa fit"
-  if (!is.null(x$backend)) header <- paste0(header, "  (", x$backend, ")")
-  cat(header, "\n")
+  cat(.fit_header(x), "\n")
   .print_fit_body(x)
   invisible(x)
 }
 
 
-# What every fit reports below its header. Split from the header so a subclass
-# that prints its own (the nested-Laplace tier) composes this rather than
-# restating it, and so each section is reached by every fit that has the
-# structure it describes -- the random-effect covariance and the smoother terms
-# are read off the fit, not off which function was called to produce it.
+# "tulpa fit  (<backend>, tier <k>)": the one line naming how a fit was
+# produced, shared by the fit's display and its summary's.
+#' @keywords internal
+.fit_header <- function(x) {
+  how <- c(if (!is.null(x$backend)) as.character(x$backend)[1L],
+           if (!is.null(x$inference_tier))
+             paste("tier", as.character(x$inference_tier)[1L]))
+  if (!length(how)) return("tulpa fit")
+  paste0("tulpa fit  (", paste(how, collapse = ", "), ")")
+}
+
+
+# The call a fit was produced by, as one deparsed line; prints nothing when
+# the fit records none.
+#' @keywords internal
+.print_fit_call <- function(call) {
+  if (is.null(call)) return(invisible(NULL))
+  cat("Call: ", paste(deparse(call, width.cutoff = 500L), collapse = " "),
+      "\n", sep = "")
+  invisible(NULL)
+}
+
+
+# What every fit reports below its header: the call, the observation count,
+# the fixed-effect point estimates, a one-line convergence warning on a chain
+# that did not converge, and where the full report is. Split from the header
+# so a subclass that prints its own (the nested-Laplace tier) composes this
+# rather than restating it.
 #' @keywords internal
 .print_fit_body <- function(x) {
+  .print_fit_call(x$call)
   n_obs <- x$N %||% x$n_obs
   if (!is.null(n_obs)) cat("  n_obs:", n_obs, "\n")
-  fd <- .fixed_draws_mat(x)
-  if (!is.null(fd)) cat("  posterior draws:", nrow(fd), "\n")
   tab <- tryCatch(.fit_fixed_table(x), error = function(e) NULL)
   if (!is.null(tab) && nrow(tab)) {
-    cat("\nFixed effects:\n")
-    print(data.frame(estimate  = round(tab$estimate, 4),
-                     std.error = round(tab$std.error, 4),
-                     row.names = tab$term))
+    cat("\nCoefficients:\n")
+    print(round(stats::setNames(tab$estimate, tab$term), 4))
   } else if (!is.null(x$means)) {
     cat("\nPosterior means:\n")
     print(round(x$means, 4))
   }
-  if (is.numeric(x$sigma) && length(x$sigma) == 1L) {
-    cat("\nsigma:", round(x$sigma, 4), "\n")
-  }
-  .print_re_section(x)
-  .print_smooth_section(x)
-  adl <- .tulpa_axis_dropped_line(.tulpa_axis_dropped(x))
-  if (!is.null(adl)) cat("\n", adl, "\n", sep = "")
   cv <- x$convergence
   if (is.list(cv) && identical(cv$ok, FALSE)) {
-    cat(sprintf(paste0(
-      "\nWARNING: chain not converged (max Rhat %.2f, min bulk-ESS %.0f on %s);",
-      "\n  these estimates are not yet the posterior. See check_diagnostics().\n"),
-      cv$rhat_max, cv$ess_bulk_min, paste(cv$parameters, collapse = ", ")))
+    cat("\nWARNING: chain not converged; these estimates are not yet the",
+        "posterior.\n")
   }
+  cat("\nUse summary() for intervals, variance components, hyperparameters",
+      "and reliability.\n")
   invisible(x)
 }
 
@@ -659,75 +669,381 @@ print.tulpa_fit <- function(x, ...) {
         "%")
 }
 
-#' Posterior summary of the fixed effects
+#' Summarize and print a tulpa fit
+#'
+#' @description
+#' `print()` shows a fit in a few lines: how it was produced (backend and
+#' inference tier), the call, the observation count and the fixed-effect point
+#' estimates. `summary()` returns the full report as a `summary.tulpa_fit`
+#' object, which prints as a sectioned display and whose parts are read by
+#' name; [coef()] on it returns the fixed-effect table.
+#'
+#' @details
+#' The fixed-effect table reads the same posterior [coef()], [confint()] and
+#' [vcov()] read. Sampler tiers report empirical quantiles; the Laplace tier
+#' reports the Gaussian approximation, and so does any fit whose reported
+#' posterior is a closed-form Gaussian (expectation propagation, the
+#' multinomial Laplace fit), whose draws are then samples from that Gaussian
+#' and are not what the summary reads.
+#'
+#' On a nested-Laplace fit the estimate and standard error are the
+#' hyperparameter-grid-marginalized moments, and the bounds invert the Gaussian
+#' mixture `sum_k w_k N(mu_kj, V_kjj)` that grid defines, rather than reading
+#' `mu +/- z sigma` off the single Gaussian matching those moments. The table's
+#' `interval_source` attribute records which read produced them
+#' (`"mixture_cdf"`, `"gaussian_moment"`, `"skew_map_cell"`, or
+#' `"skew_map_cell/mixture_cdf"` when the two are in play on different
+#' coefficients) and `interval_declined` says why, whenever the mixture read
+#' did not run. Its `retained_mass` attribute gives the share of the grid
+#' weight whose cells retained a fixed-effect block: 1 on a complete grid, and
+#' below 1 on one that dropped a positive-weight cell, whose report is then the
+#' posterior conditional on the cells that remain.
+#'
+#' Where no per-cell block was retained the estimate falls back to the
+#' grid-weighted average of the per-cell modes, restricted to the cells whose
+#' inner solve reached a mode. A fit where none did reports `NA` with
+#' `interval_declined = "not_converged"`, rather than the vector its Newton
+#' started from as an estimate.
+#'
+#' With `control$skew_correct = TRUE` a coefficient whose inner-Laplace
+#' `gamma_3` is in the band it is valid on reports Cornish-Fisher quantiles
+#' instead, and the table's `skew_applied` attribute names which coefficients
+#' took the correction. That correction is measured at the MAP cell, so it is
+#' reported on its own and is not composed with the mixture read; a coefficient
+#' it declines keeps the mixture read rather than falling back further.
+#'
+#' The reliability headline is read from [diagnostics()], so it answers the
+#' question that applies to how the draws were produced: Rhat and effective
+#' sample size for a chain, the approximation-reliability band (outer
+#' Pareto-k, grid quadrature, inner Laplace, combined verdict) for i.i.d.
+#' draws from a deterministic approximation, and nothing for a point summary.
 #'
 #' @param object A `tulpa_fit` object.
-#' @param level Credible-interval level (default 0.95).
+#' @param x A `tulpa_fit` object (`print.tulpa_fit()`) or a `summary.tulpa_fit`
+#'   object (`print.summary.tulpa_fit()`).
+#' @param level Credible-interval level of the fixed-effect table, a single
+#'   number in `(0, 1)` (default 0.95).
+#' @param digits Significant digits in the printed tables.
 #' @param ... Ignored.
-#' @return Data frame: estimate, std.error, and lower/upper credible bounds, one
-#'   row per fixed effect, the bound columns labelled as [confint.tulpa_fit()]
-#'   labels them. Sampler tiers report empirical quantiles; the Laplace
-#'   tier reports the Gaussian approximation, and so does any fit whose reported
-#'   posterior is a closed-form Gaussian (expectation propagation, the
-#'   multinomial Laplace fit), whose draws are then samples from that Gaussian
-#'   and are not what the summary reads.
+#' @return `print.tulpa_fit()` and `print.summary.tulpa_fit()` return their
+#'   input invisibly.
 #'
-#'   On a nested-Laplace fit the estimate and standard error are the
-#'   hyperparameter-grid-marginalized moments, and the bounds invert the Gaussian
-#'   mixture `sum_k w_k N(mu_kj, V_kjj)` that grid defines, rather than reading
-#'   `mu +/- z sigma` off the single Gaussian matching those moments. An
-#'   `interval_source` attribute records which read produced them
-#'   (`"mixture_cdf"`, `"gaussian_moment"`, `"skew_map_cell"`, or
-#'   `"skew_map_cell/mixture_cdf"` when the two are in play on different
-#'   coefficients) and `interval_declined` says why, whenever the mixture read
-#'   did not run. A
-#'   `retained_mass` attribute gives the share of the grid weight whose cells
-#'   retained a fixed-effect block: 1 on a complete grid, and below 1 on one
-#'   that dropped a positive-weight cell, whose report is then the posterior
-#'   conditional on the cells that remain.
+#'   `summary.tulpa_fit()` returns a list of class `summary.tulpa_fit`:
+#'   \describe{
+#'     \item{`call`, `formula`, `family`}{as the fit records them, `NULL` where
+#'       it records none.}
+#'     \item{`inference`}{how the fit was produced: a list of `backend`,
+#'       `inference_tier`, `inference_mode` and `selection_reason` (why
+#'       `mode = "auto"` chose that backend).}
+#'     \item{`n_obs`, `n_draws`}{the observation count and the number of
+#'       posterior draws the fixed-effect summaries read (`NULL` without
+#'       draws).}
+#'     \item{`level`}{the interval level of `coefficients`.}
+#'     \item{`coefficients`}{data frame, one row per fixed effect named by the
+#'       term: `estimate`, `std.error` and the lower / upper credible bounds,
+#'       labelled as [confint.tulpa_fit()] labels them. Carries the
+#'       `interval_source`, `interval_declined`, `retained_mass` and
+#'       `skew_applied` attributes described in Details. Also returned by
+#'       `coef()` on the summary.}
+#'     \item{`random`}{the random-effect standard deviations as [VarCorr()]
+#'       reports them, with their estimated / sampled / conditioned label;
+#'       `NULL` on a fit with no random-effect terms.}
+#'     \item{`hyperparameters`}{data frame of the integrated hyperparameters,
+#'       one row each: `parameter`, `mean`, `sd`, `median` and the 2.5% /
+#'       97.5% bounds `ci_lo` / `ci_hi`. On a nested-Laplace fit these are the
+#'       outer-grid axes; on the random-effect covariance integrators the
+#'       derived standard deviations and correlations. `NULL` where the fit
+#'       integrated none.}
+#'     \item{`sigma`}{the residual / dispersion scale a fit reports as one
+#'       number, else `NULL`.}
+#'     \item{`smooth_terms`}{the fit's `s(...)` term metadata, `NULL` without
+#'       smoothers; [smooth_effects()] returns the fitted curves.}
+#'     \item{`reliability`}{a list: `kind` (`"chain"`, `"iid"` or `"point"`,
+#'       the draws provenance [diagnostics()] routes on); on a chain
+#'       `rhat_max`, `ess_bulk_min` and `ess_tail_min` over the parameters;
+#'       on i.i.d. draws `band`, the one-row headline [diagnostics()] attaches
+#'       as its `summary` attribute (outer `pareto_k` and its band, grid
+#'       quadrature ESS, inner-Laplace scores, `reliability`), and
+#'       `moment_source`, which read the per-parameter moments came from;
+#'       `verdict`, the whole-fit reading (`"converged"` / `"not converged"`
+#'       on a chain that records its convergence check, the combined
+#'       `reliability` verdict on i.i.d. draws, `NA` otherwise);
+#'       `convergence`, the fit's own convergence record; and the
+#'       backend-specific quality numbers `mean_accept` (Metropolis acceptance
+#'       rate), `n_divergent` (divergent transitions) and `elbo` (the
+#'       variational objective), each `NULL` where the backend has none.}
+#'     \item{`axis_fields_dropped`}{the grid axes the fit's own resolved path
+#'       could not read, one row per dropped field (block, type, field, path,
+#'       integrates, reason); `NULL` whenever every supplied axis was used.
+#'       [diagnostic_summary()] reads the same record in sentences.}
+#'     \item{`prior`}{a list whose `beta` is the Gaussian fixed-effect prior the
+#'       fit ran under, as `list(mean, sd)`: the engine default
+#'       `prior_normal(0, 2.5)` whenever the caller supplied none, and `NULL`
+#'       on the paths that express no Gaussian prior on the fixed effects.}
+#'   }
 #'
-#'   Where no per-cell block was retained the estimate falls back to the
-#'   grid-weighted average of the per-cell modes, restricted to the cells whose
-#'   inner solve reached a mode. A fit where none did reports `NA` with
-#'   `interval_declined = "not_converged"`, rather than the vector its Newton
-#'   started from as an estimate.
-#'
-#'   With `control$skew_correct = TRUE` a coefficient whose inner-Laplace
-#'   `gamma_3` is in the band it is valid on reports Cornish-Fisher quantiles
-#'   instead, and a `skew_applied` attribute names which coefficients took the
-#'   correction. That correction is measured at the MAP cell, so it is reported
-#'   on its own and is not composed with the mixture read; a coefficient it
-#'   declines keeps the mixture read rather than falling back further.
-#'
-#'   An `axis_fields_dropped` attribute carries the grid axes the fit's own
-#'   resolved path could not read, one row per dropped field (block, type,
-#'   field, path, integrates, reason). It is `NULL` whenever every supplied axis
-#'   was used, which is the ordinary case; [diagnostic_summary()] reads the same
-#'   record in sentences.
-#'
-#'   A `beta_prior` attribute carries the Gaussian fixed-effect prior the fit
-#'   ran under, as `list(mean, sd)`. It is the engine default,
-#'   `prior_normal(0, 2.5)`, whenever the caller supplied none, and `NULL` on
-#'   the paths that express no Gaussian prior on the fixed effects.
+#'   `coef.summary.tulpa_fit()` returns the `coefficients` data frame.
+#' @seealso [coef.tulpa_fit()], [confint.tulpa_fit()], [VarCorr()],
+#'   [diagnostics()], [tulpa_outer_grid()]
+#' @examples
+#' set.seed(1)
+#' df <- data.frame(x = rnorm(60))
+#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "laplace")
+#' fit
+#' s <- summary(fit)
+#' s
+#' coef(s)
+#' s$inference$backend
 #' @export
 summary.tulpa_fit <- function(object, level = 0.95, ...) {
   .check_unit_interval(level, "level")
   tab <- .fit_fixed_table(object, level = level)
-  out <- data.frame(
+  coefs <- data.frame(
     estimate  = tab$estimate,
     std.error = tab$std.error,
-    `conf.low`  = tab$conf.low,
-    `conf.high` = tab$conf.high,
+    conf.low  = tab$conf.low,
+    conf.high = tab$conf.high,
     row.names = tab$term, check.names = FALSE
   )
-  names(out)[3:4] <- .interval_colnames(level)
-  attr(out, "skew_applied")      <- attr(tab, "skew_applied")
-  attr(out, "interval_source")   <- attr(tab, "interval_source")
-  attr(out, "interval_declined") <- attr(tab, "interval_declined")
-  attr(out, "retained_mass")     <- attr(tab, "retained_mass")
-  attr(out, "axis_fields_dropped") <- .tulpa_axis_dropped(object)
-  attr(out, "beta_prior")        <- object$beta_prior
+  names(coefs)[3:4] <- .interval_colnames(level)
+  for (a in c("skew_applied", "interval_source", "interval_declined",
+              "retained_mass")) {
+    attr(coefs, a) <- attr(tab, a)
+  }
+  tulpa_fit_summary(object, coefs, level = level)
+}
+
+#' Build the summary of a tulpa fit around a coefficient table
+#'
+#' @description
+#' The constructor [summary.tulpa_fit()] returns through: everything but the
+#' fixed-effect table is read off the fit the same way for every model. A
+#' model package whose fit stores its coefficients in its own layout (several
+#' arms, no draws) computes that table and hands it here, so its `summary()`
+#' is the same object, printed and read the same way.
+#'
+#' @param object A `tulpa_fit`.
+#' @param coefficients Data frame, one row per coefficient (row names are the
+#'   coefficient names), with columns `estimate`, `std.error` and the two
+#'   interval bounds, in that order.
+#' @param level Coverage of the interval columns.
+#' @return A `summary.tulpa_fit` object, as described on [summary.tulpa_fit()].
+#' @seealso [summary.tulpa_fit()]
+#' @examples
+#' set.seed(1)
+#' df <- data.frame(x = rnorm(60))
+#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "laplace")
+#' tab <- coef(summary(fit))
+#' identical(coef(tulpa_fit_summary(fit, tab)), tab)
+#' @export
+tulpa_fit_summary <- function(object, coefficients, level = 0.95) {
+  .check_unit_interval(level, "level")
+  if (!is.data.frame(coefficients) || ncol(coefficients) < 4L) {
+    stop("tulpa_fit_summary(): `coefficients` must be a data frame with ",
+         "columns estimate, std.error and the two interval bounds.",
+         call. = FALSE)
+  }
+  coefs <- coefficients
+  vc <- tryCatch(VarCorr(object), error = function(e) NULL)
+  fd <- .fixed_draws_mat(object)
+  sig <- object$sigma
+
+  structure(list(
+    call      = object$call,
+    formula   = object$formula,
+    family    = object$family,
+    inference = list(backend          = object$backend,
+                     inference_tier   = object$inference_tier,
+                     inference_mode   = object$inference_mode,
+                     selection_reason = object$selection_reason),
+    n_obs     = object$N %||% object$n_obs,
+    n_draws   = if (is.null(fd)) NULL else nrow(fd),
+    level     = level,
+    coefficients    = coefs,
+    random          = if (is.data.frame(vc) && nrow(vc)) vc else NULL,
+    hyperparameters = .fit_hyper_table(object),
+    sigma     = if (is.numeric(sig) && length(sig) == 1L) sig else NULL,
+    smooth_terms    = if (length(object$smooth_terms)) object$smooth_terms,
+    reliability     = .fit_reliability(object),
+    axis_fields_dropped = .tulpa_axis_dropped(object),
+    prior     = list(beta = object$beta_prior)
+  ), class = "summary.tulpa_fit")
+}
+
+
+#' @rdname summary.tulpa_fit
+#' @method coef summary.tulpa_fit
+#' @export
+coef.summary.tulpa_fit <- function(object, ...) object$coefficients
+
+
+# The integrated hyperparameters as one table, whichever integrator produced
+# them: the random-effect covariance integrators summarize their derived SDs
+# and correlations in `$posterior`, the nested-Laplace tier its outer-grid
+# axes in the `theta_*` moments. Both are read into the columns
+# `.re_cov_derived_summary()` writes. NULL on a fit that integrated none.
+#' @keywords internal
+.fit_hyper_table <- function(object) {
+  cols <- c("parameter", "mean", "sd", "median", "ci_lo", "ci_hi")
+  post <- object$posterior
+  if (is.data.frame(post) && all(c("parameter", "mean") %in% names(post))) {
+    out <- post[, intersect(cols, names(post)), drop = FALSE]
+    rownames(out) <- NULL
+    return(out)
+  }
+  tm <- object$theta_mean
+  if (!is.numeric(tm) || !length(tm)) return(NULL)
+  k  <- length(tm)
+  nm <- object$theta_names %||% names(tm)
+  if (length(nm) != k) nm <- paste0("theta", seq_len(k))
+  axis <- function(v) {
+    v <- as.numeric(v)
+    if (length(v) == k) v else rep(NA_real_, k)
+  }
+  data.frame(parameter = nm, mean = as.numeric(tm),
+             sd = axis(object$theta_sd), median = axis(object$theta_median),
+             ci_lo = axis(object$theta_ci_lo), ci_hi = axis(object$theta_ci_hi),
+             row.names = NULL, stringsAsFactors = FALSE)
+}
+
+
+# The reliability headline of a fit, read through `diagnostics()` so the
+# question asked is the one its draws provenance answers. A fit diagnostics()
+# cannot read reports its kind and the backend's own quality numbers only.
+#' @keywords internal
+.fit_reliability <- function(object) {
+  kind <- .tulpa_draws_kind(object)
+  if (is.na(kind)) kind <- "chain"
+  d <- tryCatch(suppressMessages(diagnostics(object)),
+                error = function(e) NULL)
+  num_or_null <- function(v) if (is.numeric(v) && length(v)) v
+  extreme <- function(v, f) {
+    v <- v[is.finite(v)]
+    if (length(v)) f(v) else NA_real_
+  }
+  cv <- if (is.list(object$convergence)) object$convergence
+  out <- list(kind = kind, verdict = NA_character_)
+
+  if (kind == "chain" && is.data.frame(d) && nrow(d)) {
+    out$rhat_max     <- extreme(d$rhat, max)
+    out$ess_bulk_min <- extreme(d$ess_bulk, min)
+    out$ess_tail_min <- extreme(d$ess_tail, min)
+  }
+  if (kind == "iid" && is.data.frame(attr(d, "summary"))) {
+    out$band <- attr(d, "summary")
+    out$verdict <- as.character(out$band$reliability)
+    if ("moment_source" %in% names(d) && nrow(d)) {
+      out$moment_source <- unique(d$moment_source)
+    }
+  }
+  if (!is.null(cv$ok) && !is.na(cv$ok)) {
+    out$verdict <- if (isTRUE(cv$ok)) "converged" else "not converged"
+  }
+  out$convergence <- cv
+  out$mean_accept <- num_or_null(object$mean_accept) %||%
+    (if (is.numeric(object$accept_prob)) mean(object$accept_prob))
+  out$n_divergent <- if (!is.null(object$divergent)) sum(object$divergent)
+  out$elbo        <- num_or_null(object$elbo)
   out
+}
+
+
+#' @rdname summary.tulpa_fit
+#' @method print summary.tulpa_fit
+#' @export
+print.summary.tulpa_fit <- function(x, digits = max(3L, getOption("digits") - 3L),
+                                    ...) {
+  inf <- x$inference
+  cat(.fit_header(inf), "\n")
+  .print_fit_call(x$call)
+  if (!is.null(inf$inference_mode)) {
+    cat("  inference mode:", inf$inference_mode, "\n")
+  }
+  if (!is.null(inf$selection_reason)) {
+    cat("  selected because:", inf$selection_reason, "\n")
+  }
+  if (!is.null(x$family)) cat("  family:", as.character(x$family)[1L], "\n")
+  if (!is.null(x$n_obs)) cat("  n_obs:", x$n_obs, "\n")
+  if (!is.null(x$n_draws)) cat("  posterior draws:", x$n_draws, "\n")
+
+  cat("\nFixed effects:\n")
+  print(as.data.frame(x$coefficients), digits = digits)
+  src <- attr(x$coefficients, "interval_source")
+  if (!is.null(src)) cat("  interval read:", src, "\n")
+  dec <- attr(x$coefficients, "interval_declined")
+  if (!is.null(dec)) cat("  interval declined:", dec, "\n")
+
+  if (!is.null(x$sigma)) cat("\nsigma:", format(x$sigma, digits = digits), "\n")
+
+  if (!is.null(x$random)) {
+    cat("\nRandom effects:\n")
+    print(data.frame(term = x$random$term, coef = x$random$coef,
+                     sd = x$random$sd, source = x$random$source,
+                     row.names = NULL), digits = digits)
+  }
+
+  if (!is.null(x$hyperparameters)) {
+    cat("\nHyperparameters:\n")
+    print(x$hyperparameters, digits = digits, row.names = FALSE)
+  }
+
+  .print_smooth_section(x)
+
+  bp <- x$prior$beta
+  if (is.list(bp) && length(bp$mean) && length(bp$sd)) {
+    show <- function(v) paste(format(unique(v), digits = digits), collapse = "/")
+    cat("\nFixed-effect prior: normal(", show(bp$mean), ", ", show(bp$sd), ")\n",
+        sep = "")
+  }
+
+  .print_reliability(x$reliability, digits)
+
+  adl <- .tulpa_axis_dropped_line(x$axis_fields_dropped)
+  if (!is.null(adl)) cat("\n", adl, "\n", sep = "")
+  invisible(x)
+}
+
+
+# The reliability section of a printed summary: the headline that applies to
+# the fit's draws provenance, then the backend's own quality numbers.
+#' @keywords internal
+.print_reliability <- function(r, digits) {
+  if (is.null(r)) return(invisible(NULL))
+  fmt <- function(v) format(v, digits = digits)
+  cat("\nReliability (", r$kind, " draws):\n", sep = "")
+  if (identical(r$kind, "chain") && !is.null(r$rhat_max)) {
+    cat("  max Rhat ", fmt(r$rhat_max), ", min bulk-ESS ", fmt(r$ess_bulk_min),
+        ", min tail-ESS ", fmt(r$ess_tail_min), "\n", sep = "")
+  }
+  b <- r$band
+  if (is.data.frame(b) && nrow(b)) {
+    cat("  outer pareto_k ", fmt(b$pareto_k), " (", b$pareto_k_band, ")",
+        "; grid ESS ", fmt(b$ess_grid), " of ", b$n_grid, " cells",
+        "; inner skew ", fmt(b$inner_skew_max), " (", b$inner_skew_band, ")",
+        "\n", sep = "")
+  }
+  if (length(r$moment_source)) {
+    cat("  moments read from:", paste(r$moment_source, collapse = ", "), "\n")
+  }
+  if (identical(r$kind, "point")) {
+    cat("  point summary: no posterior sample to diagnose\n")
+  }
+  if (!is.null(r$mean_accept)) {
+    cat("  mean acceptance:", fmt(mean(r$mean_accept)), "\n")
+  }
+  if (!is.null(r$n_divergent)) cat("  divergent transitions:", r$n_divergent, "\n")
+  if (length(r$elbo) == 1L) cat("  ELBO:", fmt(r$elbo), "\n")
+  if (!is.na(r$verdict)) cat("  verdict:", r$verdict, "\n")
+  if (identical(r$verdict, "not converged") && is.list(r$convergence)) {
+    cv <- r$convergence
+    cat(sprintf(paste0(
+      "\nWARNING: chain not converged (max Rhat %.2f, min bulk-ESS %.0f on %s);",
+      "\n  these estimates are not yet the posterior. See check_diagnostics().\n"),
+      cv$rhat_max, cv$ess_bulk_min, paste(cv$parameters, collapse = ", ")))
+  }
+  invisible(NULL)
 }
 
 # The rows of a confint() matrix `ci` (the fixed effects) that `parm` asks
@@ -832,7 +1148,7 @@ vcov.tulpa_fit <- function(object, ...) {
     V <- object$cov_marginal[seq_len(p), seq_len(p), drop = FALSE]
   } else if (!is.null(object$H_beta)) {
     p <- object$n_fixed %||% nrow(object$H_beta)
-    V <- solve(object$H_beta)[seq_len(p), seq_len(p), drop = FALSE]
+    V <- .spd_inverse(object$H_beta)[seq_len(p), seq_len(p), drop = FALSE]
   } else if (is.matrix(object$cov) && !anyNA(object$cov)) {
     p <- object$n_fixed %||% nrow(object$cov)
     V <- object$cov[seq_len(p), seq_len(p), drop = FALSE]
@@ -1163,6 +1479,8 @@ glance.tulpa_fit <- function(x, ...) {
 #'   the 2.5% / 97.5% bounds `conf.low` / `conf.high`, and `source` (which
 #'   construction the row came from). `sd` and the bounds are `NA` on a backend
 #'   that reports a point per group (see Details).
+#' @seealso [field_effects()] for a spatial field, [smooth_effects()] for an
+#'   `s(x)` term.
 #' @examples
 #' \donttest{
 #' set.seed(1)

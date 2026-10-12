@@ -86,7 +86,7 @@ estimator compared against the other.
 }}
 }
 \value{
-A list of class \code{c("tulpa_hyper_grid", "tulpa_fit", "list")} with:
+A list of class \code{c("tulpa_fit", "list")} with:
 \itemize{
 \item \code{theta_grid} -- numeric matrix \verb{[n_cells x n_axes]} of outer-grid
 hyperparameter values; columns named after the axes.
@@ -157,7 +157,7 @@ n <- 40L; X <- cbind(1, rnorm(n)); y <- as.numeric(X \%*\% c(0.5, -1) + rnorm(n)
 XtX <- crossprod(X); Xty <- crossprod(X, y)
 inner_fit <- function(hypers) {
   sigma <- as.numeric(hypers["sigma"])
-  V <- solve(XtX / sigma^2 + diag(1e-4, 2))
+  V <- chol2inv(chol(XtX / sigma^2 + diag(1e-4, 2)))
   mu <- as.numeric(V \%*\% (Xty / sigma^2))
   list(log_marginal = -n * log(sigma) - 0.5 * sum((y - X \%*\% mu)^2) / sigma^2 +
          0.5 * as.numeric(determinant(V)$modulus),

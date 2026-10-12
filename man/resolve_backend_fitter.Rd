@@ -2,7 +2,7 @@
 % Please edit documentation in R/inference_modes.R
 \name{resolve_backend_fitter}
 \alias{resolve_backend_fitter}
-\title{Resolve the R fitter function for a backend (errors if unreachable).}
+\title{Resolve the R fitter function for a backend (errors if unreachable)}
 \usage{
 resolve_backend_fitter(backend)
 }

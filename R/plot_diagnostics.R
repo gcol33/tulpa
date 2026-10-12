@@ -1,4 +1,4 @@
-#' Diagnostic Plotting Functions for tulpa Models
+#' Diagnostic plotting functions for tulpa models
 #'
 #' @description
 #' Visual diagnostic tools for MCMC convergence assessment. All functions
@@ -27,7 +27,7 @@ theme_tulpa <- function() {
 }
 
 
-#' Plot Rhat Convergence Diagnostic
+#' Plot Rhat convergence diagnostic
 #'
 #' @description
 #' Creates a visual display of Rhat values for all parameters, with color-coding
@@ -158,7 +158,7 @@ plot_rhat_base <- function(diag, threshold) {
 }
 
 
-#' Plot Effective Sample Size Diagnostic
+#' Plot effective sample size diagnostic
 #'
 #' @description
 #' Creates a visual display of effective sample size (ESS) for all parameters,
@@ -286,7 +286,7 @@ plot_ess_base <- function(diag, threshold, type) {
 }
 
 
-#' Plot Autocorrelation Functions
+#' Plot autocorrelation functions
 #'
 #' @description
 #' Creates autocorrelation function (ACF) plots for selected parameters.
@@ -416,7 +416,7 @@ plot_acf_base <- function(draws, pars, lags) {
 }
 
 
-#' Plot Bivariate Parameter Posteriors (Pairs Plot)
+#' Plot bivariate parameter posteriors (pairs plot)
 #'
 #' @description
 #' Creates a pairs plot showing bivariate relationships between parameters.
@@ -677,7 +677,7 @@ plot_pairs_base <- function(draws_df, pars, has_divergent, alpha) {
 }
 
 
-#' Plot Divergent Transitions
+#' Plot divergent transitions
 #'
 #' @description
 #' Creates visualizations to investigate divergent transitions. Parallel
@@ -894,7 +894,7 @@ plot_divergences_scatter <- function(draws_df, pars) {
 }
 
 
-#' Plot Energy Diagnostic (E-BFMI)
+#' Plot energy diagnostic (E-BFMI)
 #'
 #' @description
 #' Creates overlaid histograms of marginal energy and energy transition,
@@ -1019,7 +1019,7 @@ plot_energy_base <- function(energy, energy_diff, e_bfmi, status) {
 }
 
 
-#' Comprehensive Diagnostic Summary
+#' Comprehensive diagnostic summary
 #'
 #' @description
 #' Provides a comprehensive diagnostic report for a tulpa model, combining
@@ -1412,14 +1412,9 @@ if (!quiet) {
 }
 
 
-#' Print method for diagnostic summary
-#'
-#' @param x A tulpa_diagnostic_summary object.
+#' @rdname diagnostic_summary
+#' @param x A `tulpa_diagnostic_summary` object.
 #' @param ... Ignored.
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the diagnostic summary to the console.
-#'
 #' @export
 print.tulpa_diagnostic_summary <- function(x, ...) {
   # Status color (ANSI codes)
@@ -1616,7 +1611,7 @@ plot_diagnostics <- function(fit, pars = NULL) {
 }
 
 
-#' Geweke Convergence Test
+#' Geweke convergence test
 #'
 #' @description
 #' Performs Geweke's convergence diagnostic, comparing the mean of the first
@@ -1755,14 +1750,9 @@ spectrum0_ar <- function(x) {
 }
 
 
-#' Print method for Geweke test
-#'
-#' @param x A tulpa_geweke object.
+#' @rdname geweke_test
+#' @param x A `tulpa_geweke` result.
 #' @param ... Ignored.
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the Geweke convergence diagnostic to the console.
-#'
 #' @export
 print.tulpa_geweke <- function(x, ...) {
   cat("Geweke Convergence Diagnostic\n")

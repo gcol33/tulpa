@@ -2,9 +2,12 @@
 % Please edit documentation in R/spatial_rsr_spde.R
 \name{spatial_rsr}
 \alias{spatial_rsr}
-\title{Restricted Spatial Regression (RSR)}
+\alias{print.tulpa_rsr}
+\title{Restricted spatial regression (RSR)}
 \usage{
 spatial_rsr(spatial, restrict_to)
+
+\method{print}{tulpa_rsr}(x, ...)
 }
 \arguments{
 \item{spatial}{An areal specification -- \code{spatial_car()}, \code{spatial_icar()},
@@ -18,6 +21,10 @@ than accepted and then unfittable.}
 \item{restrict_to}{Formula specifying which covariates to orthogonalize
 against (e.g., \code{~ depth + temp}). The spatial effect will be constrained
 to be orthogonal to the column space of these covariates.}
+
+\item{x}{A \code{tulpa_rsr} specification.}
+
+\item{...}{Passed to the print method of the restricted field.}
 }
 \value{
 A modified spatial specification with RSR enabled

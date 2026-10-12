@@ -40,7 +40,6 @@ test_that("tulpa_tgmrf_imh produces finite draws + healthy acceptance", {
     n_iter = 400L, warmup = 200L,
     pilot_axis_points = 5L
   )
-  expect_s3_class(fit, "tulpa_tgmrf")
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(ncol(fit$draws), 2L)
   expect_equal(colnames(fit$draws), c("log_tau", "atanh_rho"))

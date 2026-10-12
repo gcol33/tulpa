@@ -516,7 +516,7 @@
   # H^-1 in full. The alternative is one back-solve per observation for s and
   # per group for V; at n_x below a few thousand the explicit inverse is the
   # same order and serves every downstream piece from one factorization.
-  Hinv <- tryCatch(as.matrix(Matrix::solve(H)), error = function(e) NULL)
+  Hinv <- tryCatch(.spd_inverse(H), error = function(e) NULL)
   if (is.null(Hinv) || any(!is.finite(Hinv))) return(NULL)
 
   # Mode-Jacobian inverse. dx_hat/dtheta = -(A' diag(W_obs) A + P)^-1 (dP) x_hat
@@ -543,7 +543,7 @@
     if (max(abs(delta)) > 1e-12) {
       working_is_observed <- FALSE
       H_true <- H + Matrix::crossprod(A, Matrix::Diagonal(x = delta) %*% A)
-      Hinv_mode <- tryCatch(as.matrix(Matrix::solve(H_true)), error = function(e) NULL)
+      Hinv_mode <- tryCatch(.spd_inverse(H_true), error = function(e) NULL)
       if (is.null(Hinv_mode) || any(!is.finite(Hinv_mode))) {
         exact_jac <- FALSE; Hinv_mode <- Hinv
       }

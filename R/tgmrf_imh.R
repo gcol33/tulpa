@@ -32,7 +32,7 @@
 #' @param ... Individual `control` knobs may also be passed directly by name;
 #' they are merged into `control` (a named argument here wins over the same
 #' name inside `control`).
-#' @return A `tulpa_tgmrf` / `tulpa_fit` object; `$backend` and `$mode` record
+#' @return A `tulpa_fit` object; `$backend` and `$mode` record
 #' the engine used.
 #' @seealso [tgmrf()] for the block, [tgmrf_cpp()] for the compiled-block form.
 #' @examples
@@ -260,7 +260,7 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
     inference_tier = 1L,
     backend        = "tgmrf_imh"
   )
-  .finalize_fit(fit, draws_kind = "chain", extra_class = "tulpa_tgmrf",
+  .finalize_fit(fit, draws_kind = "chain",
                data = list(y = y, n_trials = n_trials, model_matrix = X,
                           family = family, phi = phi))
 }

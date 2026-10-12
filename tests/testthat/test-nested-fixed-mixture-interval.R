@@ -103,7 +103,7 @@ test_that("the estimate, standard error and vcov are the same moments as before"
   mom <- tulpa:::.nested_fixed_moments(fit)
 
   expect_equal(unname(coef(fit)), mom$mean, tolerance = 1e-14)
-  expect_equal(summary(fit)$std.error, sqrt(diag(mom$cov)), tolerance = 1e-14)
+  expect_equal(coef(summary(fit))$std.error, sqrt(diag(mom$cov)), tolerance = 1e-14)
   expect_equal(unname(vcov(fit)), unname(mom$cov), tolerance = 1e-14)
 
   # The two moments are the law of total variance by hand, so the marginalizer
@@ -294,7 +294,7 @@ test_that("a repaired grid reads as the posterior over the cells that remain", {
   expect_equal(attr(ci, "retained_mass"), sum(mx_w[c(1, 3)]) / sum(mx_w),
                tolerance = 1e-14)
   expect_equal(attr(ck, "retained_mass"), 1, tolerance = 1e-14)
-  expect_equal(attr(summary(fit), "retained_mass"),
+  expect_equal(attr(coef(summary(fit)), "retained_mass"),
                attr(ci, "retained_mass"), tolerance = 1e-14)
   expect_equal(tulpa:::.nested_fixed_moments(fit)$mass,
                sum(mx_w[c(1, 3)]) / sum(mx_w), tolerance = 1e-14)

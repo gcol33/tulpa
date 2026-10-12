@@ -147,13 +147,13 @@ arms <- function(d) {
   m   <- coef(fit)
   se  <- sqrt(diag(vcov(fit)))
   D   <- tulpa_posterior_draws(fit, n = 2000)
-  w   <- fit$weights / sum(fit$weights)
+  g   <- tulpa_outer_grid(fit)
 
   list(
     mixture = list(
       beta1 = sbc_draws(D[, 1]),
       beta2 = sbc_draws(D[, 2]),
-      sigma = sbc_discrete(as.numeric(fit$theta_grid), w)),
+      sigma = sbc_discrete(as.numeric(g$nodes), g$weights)),
     collapsed = list(
       beta1 = sbc_normal(m[1], se[1]),
       beta2 = sbc_normal(m[2], se[2])),
@@ -279,7 +279,7 @@ model <- list(
     b <- tulpa_posterior_draws(fit, n = 1L)
     k <- attr(b, "cells")[1]
     c(beta1 = unname(b[1, 1]), beta2 = unname(b[1, 2]),
-      sigma = as.numeric(fit$theta_grid)[k])
+      sigma = as.numeric(tulpa_outer_grid(fit)$nodes)[k])
   },
 
   simulate = function(theta, seed) {
@@ -305,8 +305,8 @@ model <- list(
       mixture = list(
         beta1 = sbc_draws(D[, 1]),
         beta2 = sbc_draws(D[, 2]),
-        sigma = sbc_discrete(as.numeric(fit$theta_grid),
-                             fit$weights / sum(fit$weights))),
+        sigma = sbc_discrete(as.numeric(tulpa_outer_grid(fit)$nodes),
+                             tulpa_outer_grid(fit)$weights)),
       narrow = list(
         beta1 = sbc_normal(m[1], se[1] / 1.25),
         beta2 = sbc_normal(m[2], se[2] / 1.25)))

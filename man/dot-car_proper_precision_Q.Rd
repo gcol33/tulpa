@@ -2,7 +2,7 @@
 % Please edit documentation in R/marginal_se_spatial.R
 \name{.car_proper_precision_Q}
 \alias{.car_proper_precision_Q}
-\title{Proper-CAR precision Q = tau * (D - rho W) at fixed (tau, rho).}
+\title{Proper-CAR precision Q = tau * (D - rho W) at fixed (tau, rho)}
 \usage{
 .car_proper_precision_Q(spatial, tau, rho)
 }

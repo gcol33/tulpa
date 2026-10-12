@@ -3,11 +3,20 @@
 \name{svc}
 \alias{svc}
 \alias{svc.tulpa_fit}
+\alias{summary.tulpa_svc_posterior}
+\alias{print.tulpa_svc_posterior}
+\alias{print.tulpa_svc_summary}
 \title{Extract spatially-varying coefficients from a fitted model}
 \usage{
 svc(object, terms = NULL, summary = FALSE, probs = c(0.025, 0.5, 0.975), ...)
 
 \method{svc}{tulpa_fit}(object, terms = NULL, summary = FALSE, probs = c(0.025, 0.5, 0.975), ...)
+
+\method{summary}{tulpa_svc_posterior}(object, probs = c(0.025, 0.5, 0.975), ...)
+
+\method{print}{tulpa_svc_posterior}(x, ...)
+
+\method{print}{tulpa_svc_summary}(x, ...)
 }
 \arguments{
 \item{object}{A \code{tulpa_fit} object fitted with \code{svc} argument}
@@ -20,6 +29,8 @@ full posterior draws.}
 \item{probs}{Quantiles to compute if \code{summary = TRUE}.}
 
 \item{...}{Ignored}
+
+\item{x}{A \code{tulpa_svc_posterior} or \code{tulpa_svc_summary} object.}
 }
 \value{
 A \code{tulpa_svc_posterior} object containing:
@@ -28,6 +39,11 @@ A \code{tulpa_svc_posterior} object containing:
 \item \code{coords}: Coordinate matrix
 \item \code{term_names}: Names of SVC terms
 }
+
+\code{summary()} on a \code{tulpa_svc_posterior} returns a \code{tulpa_svc_summary}
+data frame with one row per location and term, holding the observation
+index, term name, coordinates, and the posterior mean, SD and requested
+quantiles of each spatially varying coefficient.
 }
 \description{
 Extract posterior distributions of spatially-varying coefficients (SVCs)

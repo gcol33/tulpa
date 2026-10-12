@@ -2,7 +2,7 @@
 % Please edit documentation in R/inference_modes.R
 \name{TIER_META}
 \alias{TIER_META}
-\title{Tier metadata: the epistemic guarantee attached to each tier.}
+\title{Tier metadata: the epistemic guarantee attached to each tier}
 \usage{
 TIER_META
 }

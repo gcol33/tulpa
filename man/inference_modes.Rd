@@ -2,7 +2,7 @@
 % Please edit documentation in R/inference_modes.R
 \name{inference_modes}
 \alias{inference_modes}
-\title{Inference Mode System}
+\title{Inference mode system}
 \description{
 tulpa uses an explicit tier system for inference that encodes
 \strong{epistemic guarantees}, not just runtime characteristics.

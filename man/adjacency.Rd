@@ -7,6 +7,7 @@
 \alias{adjacency.sf}
 \alias{adjacency.SpatRaster}
 \alias{adjacency.stars}
+\alias{print.tulpa_adjacency}
 \title{Construct a spatial adjacency graph for areal models}
 \usage{
 adjacency(x, ...)
@@ -46,6 +47,8 @@ adjacency(x, ...)
   na_rm = TRUE,
   ...
 )
+
+\method{print}{tulpa_adjacency}(x, ...)
 }
 \arguments{
 \item{x}{The spatial layout: a \code{data.frame} of centroids, an \code{sf} polygon

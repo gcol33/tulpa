@@ -328,6 +328,9 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   beta <- pilot$mode[seq_len(p)]
   re_vals <- pilot$mode[-seq_len(p)]
 
+  # An indefinite pilot Hessian still inverts here: `.re_chol_spd()` floors the
+  # negative eigenvalues of the inverse, so only those directions shrink to the
+  # floor and the rest of the block keeps the pilot's curvature.
   L_beta <- if (!is.null(pilot$H_beta)) {
     .re_chol_spd(tryCatch(solve(pilot$H_beta), error = function(e) {
       warning("tulpa_re_cov_gibbs(): pilot fixed-effect Hessian not ",

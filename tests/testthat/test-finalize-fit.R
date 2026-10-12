@@ -29,10 +29,10 @@ test_that(".finalize_fit attaches class, layout, and provenance", {
 
   # extra_class is prepended; idempotent re-finalize does not duplicate it.
   k <- .finalize_fit(list(), backend = "tgmrf_vi", draws_kind = "iid",
-                     extra_class = "tulpa_tgmrf")
-  expect_identical(class(k), c("tulpa_tgmrf", "tulpa_fit"))
-  k2 <- .finalize_fit(k, backend = "tgmrf_vi", extra_class = "tulpa_tgmrf")
-  expect_identical(class(k2), c("tulpa_tgmrf", "tulpa_fit"))
+                     extra_class = "tulpa_nested_laplace")
+  expect_identical(class(k), c("tulpa_nested_laplace", "tulpa_fit"))
+  k2 <- .finalize_fit(k, backend = "tgmrf_vi", extra_class = "tulpa_nested_laplace")
+  expect_identical(class(k2), c("tulpa_nested_laplace", "tulpa_fit"))
 
   # A non-list is returned unchanged.
   expect_identical(.finalize_fit(42), 42)

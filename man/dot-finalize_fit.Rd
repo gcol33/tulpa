@@ -2,7 +2,7 @@
 % Please edit documentation in R/inference_modes.R
 \name{.finalize_fit}
 \alias{.finalize_fit}
-\title{Attach the standard \code{tulpa_fit} contract to a fitter's result.}
+\title{Attach the standard \code{tulpa_fit} contract to a fitter's result}
 \usage{
 .finalize_fit(
   fit,

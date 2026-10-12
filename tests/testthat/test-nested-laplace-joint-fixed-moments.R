@@ -386,7 +386,7 @@ test_that("the in-loop block is the stored-precision block, entry for entry", {
   expect_length(V, length(fq$weights))
 
   for (k in seq_along(V)) {
-    expect_identical(fq$grid_hessians[[k]], solve(V[[k]]))
+    expect_identical(fq$grid_hessians[[k]], tulpa:::.spd_inverse(V[[k]]))
   }
 
   # The probe is live: the same routine WITHOUT the field sum-to-zero groups
@@ -427,7 +427,7 @@ test_that("a coupled multi-block joint fit extracts the same block in the loop",
     control = list(max_iter = 100L, tol = 1e-10, diagnose_k = FALSE,
                    store_Q = TRUE))
   V <- .j307_reference_blocks(fq)
-  for (k in seq_along(V)) expect_identical(fq$grid_hessians[[k]], solve(V[[k]]))
+  for (k in seq_along(V)) expect_identical(fq$grid_hessians[[k]], tulpa:::.spd_inverse(V[[k]]))
 })
 
 test_that("the retention no longer needs the precision materialised at all", {
@@ -460,7 +460,7 @@ test_that("the sparse joint loop extracts the same block as the dense one", {
   expect_equal(unname(vcov(dense)), unname(vcov(sparse)), tolerance = 1e-8)
   for (k in seq_along(sparse$weights)) {
     expect_identical(sparse$grid_hessians[[k]],
-                     solve(.j307_reference_blocks(sparse)[[k]]))
+                     tulpa:::.spd_inverse(.j307_reference_blocks(sparse)[[k]]))
   }
 })
 
@@ -503,7 +503,7 @@ test_that("a real multi-cell fit reports mixture-CDF bounds beside its moments",
 
   # The moments are untouched, so the two reads differ only in the quantile
   # step -- and on a grid this spread they do differ.
-  est <- coef(fit); se <- summary(fit)$std.error
+  est <- coef(fit); se <- coef(summary(fit))$std.error
   gauss <- cbind(est + stats::qnorm(0.025) * se, est + stats::qnorm(0.975) * se)
   expect_gt(max(abs(matrix(as.numeric(ci), p, 2L) - gauss)), 1e-6)
 })
@@ -525,7 +525,7 @@ test_that("the mixture bounds are the ones the fit's own posterior draws carry",
   expect_equal(ci, unname(emp), tolerance = 0.02)
 
   # And the collapsed Gaussian read is the one that misses them.
-  est <- coef(fit); se <- summary(fit)$std.error
+  est <- coef(fit); se <- coef(summary(fit))$std.error
   gauss <- cbind(est + stats::qnorm(0.025) * se, est + stats::qnorm(0.975) * se)
   expect_gt(max(abs(gauss - emp)), max(abs(ci - emp)))
 })

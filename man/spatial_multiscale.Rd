@@ -2,7 +2,8 @@
 % Please edit documentation in R/spatial_gp.R
 \name{spatial_multiscale}
 \alias{spatial_multiscale}
-\title{Multi-Scale Gaussian Process spatial structure}
+\alias{print.tulpa_multiscale}
+\title{Multi-scale Gaussian process spatial structure}
 \usage{
 spatial_multiscale(
   coords,
@@ -20,6 +21,8 @@ spatial_multiscale(
   scale_coords = TRUE,
   sampler = c("auto", "noncentered", "centered", "interweaved")
 )
+
+\method{print}{tulpa_multiscale}(x, ...)
 }
 \arguments{
 \item{coords}{A one-sided formula specifying coordinate columns (e.g.,
@@ -68,6 +71,10 @@ reconstruct each field as \code{w = f(z, sigma2, phi)}, avoiding the
 field/hyperparameter funnel; \code{"centered"} places the NNGP density on each
 field directly. \code{"interweaved"} alternates between parameterizations and
 is not implemented on the exact-NUTS path.}
+
+\item{x}{A \code{tulpa_multiscale} specification.}
+
+\item{...}{Ignored.}
 }
 \value{
 A \code{tulpa_multiscale} object

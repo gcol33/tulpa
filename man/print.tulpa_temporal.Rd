@@ -18,3 +18,4 @@ printing the temporal specification to the console.
 \description{
 Print method for tulpa_temporal
 }
+\keyword{internal}

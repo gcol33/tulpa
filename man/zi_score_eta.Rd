@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_zi.R
 \name{zi_score_eta}
 \alias{zi_score_eta}
-\title{Score of the zero-inflated mixture in the two-process eta ordering.}
+\title{Score of the zero-inflated mixture in the two-process eta ordering}
 \usage{
 zi_score_eta(eta, logit_zi, y, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }

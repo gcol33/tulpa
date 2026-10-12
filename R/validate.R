@@ -210,12 +210,8 @@ prior_predict <- function(formula, family, data,
 }
 
 
-#' Print method for tulpa_prior_predict
-#'
-#' @param x A tulpa_prior_predict object
-#' @param ... Ignored
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing a summary of the prior predictive draws to the console.
+#' @rdname prior_predict
+#' @param x A `tulpa_prior_predict` object.
 #' @export
 print.tulpa_prior_predict <- function(x, ...) {
   .print_draws_summary(x, "tulpa prior predictive draws", "Draws:     ", x$n_draws)

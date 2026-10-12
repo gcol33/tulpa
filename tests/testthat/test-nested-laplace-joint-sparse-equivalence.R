@@ -172,8 +172,8 @@ test_that("sparse path matches dense on joint CAR_proper", {
 # had to do anything.
 
 .expect_equiv_fixed <- function(fit_dense, fit_sparse, tol = 1e-7) {
-    sd_ <- summary(fit_dense)
-    ss_ <- summary(fit_sparse)
+    sd_ <- coef(summary(fit_dense))
+    ss_ <- coef(summary(fit_sparse))
     expect_equal(as.numeric(ss_$estimate), as.numeric(sd_$estimate),
                  tolerance = tol, info = "fixed-effect estimates")
     expect_equal(as.numeric(ss_$std.error), as.numeric(sd_$std.error),
@@ -240,8 +240,8 @@ test_that("the export survives the sum-to-zero rank-1 storage", {
 
     # ... and the rank-1 storage gives the same standard errors as storing the
     # augmentation exactly, so the fold is not silently shrinking them.
-    expect_equal(as.numeric(summary(fits[[2]])$std.error),
-                 as.numeric(summary(dense_store)$std.error),
+    expect_equal(as.numeric(coef(summary(fits[[2]]))$std.error),
+                 as.numeric(coef(summary(dense_store))$std.error),
                  tolerance = 1e-6)
 })
 

@@ -2,7 +2,7 @@
 % Please edit documentation in R/inference_modes.R
 \name{assert_backend_reachable}
 \alias{assert_backend_reachable}
-\title{Error if a selected backend has no R-level fitter.}
+\title{Error if a selected backend has no R-level fitter}
 \usage{
 assert_backend_reachable(backend)
 }

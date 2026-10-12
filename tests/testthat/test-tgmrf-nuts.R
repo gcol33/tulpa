@@ -49,7 +49,6 @@ test_that("tulpa_tgmrf_nuts runs end-to-end and returns sensible posterior momen
     max_depth = 4L
   )
 
-  expect_s3_class(fit, "tulpa_tgmrf")
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(ncol(fit$draws), 2L)
   expect_equal(colnames(fit$draws), c("log_tau", "atanh_rho"))

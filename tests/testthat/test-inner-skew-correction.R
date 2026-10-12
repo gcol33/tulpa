@@ -366,7 +366,7 @@ test_that("tulpa_nested_laplace() records the correction and confint() applies i
   expect_identical(unname(applied), c(FALSE, TRUE))
   expect_identical(names(applied), rownames(ci))
   # summary() reads the same table and carries the same record.
-  expect_identical(unname(attr(summary(f), "skew_applied")), c(FALSE, TRUE))
+  expect_identical(unname(attr(coef(summary(f)), "skew_applied")), c(FALSE, TRUE))
 
   # The bounds are the Cornish-Fisher ones at this fit's own gamma_3 and its
   # own reported centre and standard error -- not merely "different" -- on the

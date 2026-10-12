@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_loglik.R
 \name{family_names}
 \alias{family_names}
-\title{Supported R-level family names.}
+\title{Supported R-level family names}
 \usage{
 family_names()
 }

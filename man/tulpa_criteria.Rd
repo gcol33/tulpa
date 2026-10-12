@@ -2,6 +2,7 @@
 % Please edit documentation in R/criteria.R
 \name{tulpa_criteria}
 \alias{tulpa_criteria}
+\alias{print.tulpa_criteria}
 \title{Model criteria from a pointwise log-likelihood}
 \usage{
 tulpa_criteria(
@@ -12,6 +13,8 @@ tulpa_criteria(
   chunk_size = NULL,
   pointwise = FALSE
 )
+
+\method{print}{tulpa_criteria}(x, digits = 1, ...)
 }
 \arguments{
 \item{log_lik}{An \verb{[n_draws x n_obs]} numeric matrix of pointwise
@@ -46,6 +49,12 @@ block sized to a few million entries.}
 \item{pointwise}{If \code{TRUE}, also return the per-observation vectors
 (\code{elpd_waic}, \code{p_waic}, \code{elpd_loo}, \code{pareto_k}, \code{cpo}) for plotting /
 stacking.}
+
+\item{x}{A \code{tulpa_criteria} result.}
+
+\item{digits}{Decimal places printed.}
+
+\item{...}{Ignored.}
 }
 \value{
 A \code{tulpa_criteria} object: a list with the requested scalar scores

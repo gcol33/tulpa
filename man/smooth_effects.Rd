@@ -33,3 +33,7 @@ sm <- smooth_effects(fit)
 plot(sm$x, sm$estimate, type = "l")
 }
 }
+\seealso{
+\code{\link[=field_effects]{field_effects()}} for a spatial field, \code{\link[=ranef]{ranef()}} for random
+effects.
+}

@@ -24,7 +24,7 @@
 #' Fixed-effect / GLMM fits only: subsetting the observations breaks a spatial or
 #' temporal field, so those fits are rejected (use PSIS-LOO via
 #' [tulpa_criteria()]). Held-out random-effect groups contribute at their prior
-#' mean (population-level held-out prediction), matching [predict()].
+#' mean (population-level held-out prediction), matching [stats::predict()].
 #'
 #' @param object A `tulpa_fit` fitted through [tulpa()] (must carry `$call`).
 #' @param data The data frame the model was fit to.

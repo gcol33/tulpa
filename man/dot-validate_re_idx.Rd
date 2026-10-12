@@ -2,7 +2,7 @@
 % Please edit documentation in R/fit_laplace.R
 \name{.validate_re_idx}
 \alias{.validate_re_idx}
-\title{Validate a 0-based/1-based random-effect index against its group count.}
+\title{Validate a 0-based/1-based random-effect index against its group count}
 \usage{
 .validate_re_idx(re_idx, n_re_groups, N, where)
 }

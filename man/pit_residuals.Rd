@@ -3,7 +3,7 @@
 \name{pit_residuals}
 \alias{pit_residuals}
 \alias{pit_residuals.default}
-\title{PIT (Probability Integral Transform) residuals}
+\title{PIT (probability integral transform) residuals}
 \usage{
 pit_residuals(object, ...)
 

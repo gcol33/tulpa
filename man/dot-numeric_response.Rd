@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_loglik.R
 \name{.numeric_response}
 \alias{.numeric_response}
-\title{The response as the numeric vector the kernels read.}
+\title{The response as the numeric vector the kernels read}
 \usage{
 .numeric_response(family, y)
 }

@@ -3,12 +3,12 @@
 \name{.negate_term}
 \alias{.negate_term}
 \title{Negate an additive term (numeric literal -> its negative; anything else ->
-a unary-minus call), for flattening binary \code{-} in a bar LHS.}
+a unary-minus call), for flattening binary \code{-} in a bar LHS}
 \usage{
 .negate_term(t)
 }
 \description{
 Negate an additive term (numeric literal -> its negative; anything else ->
-a unary-minus call), for flattening binary \code{-} in a bar LHS.
+a unary-minus call), for flattening binary \code{-} in a bar LHS
 }
 \keyword{internal}

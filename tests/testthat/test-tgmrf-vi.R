@@ -44,7 +44,6 @@ test_that("tulpa_tgmrf_vi returns Gaussian draws with sensible moments", {
     n_draws = 500L
   )
 
-  expect_s3_class(fit, "tulpa_tgmrf")
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(ncol(fit$draws), 2L)
   expect_equal(colnames(fit$draws), c("log_tau", "atanh_rho"))

@@ -2,7 +2,7 @@
 % Please edit documentation in R/glmm_logpost.R
 \name{build_glmm_logpost}
 \alias{build_glmm_logpost}
-\title{Build a GLMM log-posterior (and gradient) from a model-data bundle.}
+\title{Build a GLMM log-posterior (and gradient) from a model-data bundle}
 \usage{
 build_glmm_logpost(
   bundle,
@@ -58,6 +58,6 @@ A list with:
 }
 }
 \description{
-Build a GLMM log-posterior (and gradient) from a model-data bundle.
+Build a GLMM log-posterior (and gradient) from a model-data bundle
 }
 \keyword{internal}

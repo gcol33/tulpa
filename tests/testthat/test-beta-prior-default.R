@@ -89,7 +89,7 @@ test_that("a fit records the fixed-effect prior it ran under", {
 
   fit <- tulpa(y ~ x, data = d, family = "binomial", mode = "ep")
   expect_equal(fit$beta_prior$sd, tulpa:::.TULPA_PRIOR$beta_sd)
-  expect_equal(attr(summary(fit), "beta_prior")$sd,
+  expect_equal(summary(fit)$prior$beta$sd,
                tulpa:::.TULPA_PRIOR$beta_sd)
 
   supplied <- tulpa(y ~ x, data = d, family = "binomial", mode = "ep",
@@ -133,7 +133,7 @@ test_that("laplace, eb and re_cov_nested fit under the default prior too (#869)"
   f <- tulpa(y ~ x, d, family = "poisson", mode = "laplace")
   expect_equal(f$beta_prior$sd, tulpa:::.TULPA_PRIOR$beta_sd)
   expect_equal(unname(coef(f)), mode_25, tolerance = 1e-4)
-  expect_equal(attr(summary(f), "beta_prior")$sd,
+  expect_equal(summary(f)$prior$beta$sd,
                tulpa:::.TULPA_PRIOR$beta_sd)
 
   # Separation: the default prior is what keeps the slope finite.

@@ -180,8 +180,8 @@ test_that("MCAR fixed-effect SEs match the uncorrelated (||) fit, not the singul
   f_mcar  <- suppressWarnings(tulpa(fm_mcar, data = d, family = "poisson"))
   f_iid   <- suppressWarnings(tulpa(fm_iid, data = d, family = "poisson"))
 
-  se_mcar <- summary(f_mcar)$std.error
-  se_iid  <- summary(f_iid)$std.error
+  se_mcar <- coef(summary(f_mcar))$std.error
+  se_iid  <- coef(summary(f_iid))$std.error
   # A one-group-over-both-fields constraint left ~75; the correct per-field
   # constraint should read within a small multiple of the uncorrelated fit's SE.
   expect_true(all(se_mcar < 5 * se_iid))

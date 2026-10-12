@@ -140,14 +140,9 @@ temporal_tvc <- function(time_var,
 }
 
 
-#' Print method for tulpa_tvc
-#'
-#' @param x A tulpa_tvc object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the temporally-varying-coefficient specification to the console.
-#'
+#' @rdname temporal_tvc
+#' @param x A `tulpa_tvc` specification.
+#' @param ... Ignored.
 #' @export
 print.tulpa_tvc <- function(x, ...) {
   cat("tulpa temporally-varying coefficients\n")
@@ -424,15 +419,8 @@ tvc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
 }
 
 
-#' Print method for tulpa_tvc_posterior
-#'
-#' @param x A tulpa_tvc_posterior object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing a summary of the temporally-varying-coefficient posterior to the
-#'   console.
-#'
+#' @rdname tvc
+#' @param x A `tulpa_tvc_posterior` or `tulpa_tvc_summary` object.
 #' @export
 print.tulpa_tvc_posterior <- function(x, ...) {
   .print_varying_coef(
@@ -443,17 +431,18 @@ print.tulpa_tvc_posterior <- function(x, ...) {
   )
 }
 
+#' @rdname tvc
+#' @export
+print.tulpa_tvc_summary <- function(x, ...) {
+  .print_effect_table(x, "Temporally varying coefficient posterior summary",
+                      ...)
+}
 
-#' Summary method for tulpa_tvc_posterior
-#'
-#' @param object A tulpa_tvc_posterior object
-#' @param probs Quantiles to compute
-#' @param ... Ignored
-#'
-#' @return A `tulpa_tvc_summary` data frame with one row per time point and
-#'   term, holding the posterior mean, SD, and requested quantiles of each
-#'   temporally-varying coefficient.
-#'
+
+#' @rdname tvc
+#' @return `summary()` on a `tulpa_tvc_posterior` returns a `tulpa_tvc_summary`
+#'   data frame with one row per time point and term, holding the posterior
+#'   mean, SD and requested quantiles of each temporally varying coefficient.
 #' @export
 summary.tulpa_tvc_posterior <- function(object, probs = c(0.025, 0.5, 0.975), ...) {
   .summary_varying_coef(

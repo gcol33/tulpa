@@ -286,7 +286,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
                                 k_tail_points = k_tail_points,
                                 hyperprior = hyperprior))
   }
-  sigma_post <- tryCatch(solve(prec), error = function(e) NULL)
+  sigma_post <- tryCatch(.spd_inverse(prec), error = function(e) NULL)
   if (is.null(sigma_post)) {
     warning("nested-Laplace Hessian inverse failed; ",
             "falling back to the rectangular grid.")

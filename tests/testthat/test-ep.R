@@ -91,7 +91,7 @@ test_that("EP is reachable as a registered backend via tulpa(mode = 'ep')", {
   d <- data.frame(y = y, x = x)
 
   fit <- tulpa(y ~ x, data = d, family = "binomial", mode = "ep")
-  expect_s3_class(fit, "tulpa_ep")
+  expect_s3_class(fit, "tulpa_fit")
   expect_identical(fit$backend, "ep")
   expect_equal(fit$inference_tier, 2L)
   # Matches the direct fitter.

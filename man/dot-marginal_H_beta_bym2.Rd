@@ -2,13 +2,7 @@
 % Please edit documentation in R/marginal_se_spatial.R
 \name{.marginal_H_beta_bym2}
 \alias{.marginal_H_beta_bym2}
-\title{Marginal H_beta for a BYM2 field. The latent is the two-block
-\verb{[phi (structured), theta (unstructured)]} convolution; each enters the
-linear predictor through the field indicator scaled by its \code{d_fac}
-(\code{sigma * sqrt(rho) * scale_factor} for phi, \code{sigma * sqrt(1 - rho)} for
-theta), with \code{phi} carrying the augmented ICAR precision \code{.icar_precision_Q}
-and \code{theta ~ N(0, I)}. The conditional
-Laplace kernel hardcodes \code{sigma = 1}, \code{rho = 0.5}.}
+\title{Marginal \code{H_beta} for a BYM2 field}
 \usage{
 .marginal_H_beta_bym2(
   mode,
@@ -28,12 +22,11 @@ Laplace kernel hardcodes \code{sigma = 1}, \code{rho = 0.5}.}
 )
 }
 \description{
-Marginal H_beta for a BYM2 field. The latent is the two-block
-\verb{[phi (structured), theta (unstructured)]} convolution; each enters the
-linear predictor through the field indicator scaled by its \code{d_fac}
-(\code{sigma * sqrt(rho) * scale_factor} for phi, \code{sigma * sqrt(1 - rho)} for
-theta), with \code{phi} carrying the augmented ICAR precision \code{.icar_precision_Q}
-and \code{theta ~ N(0, I)}. The conditional
-Laplace kernel hardcodes \code{sigma = 1}, \code{rho = 0.5}.
+The latent is the two-block \verb{[phi (structured), theta (unstructured)]}
+convolution; each enters the linear predictor through the field indicator
+scaled by its \code{d_fac} (\code{sigma * sqrt(rho) * scale_factor} for phi,
+\code{sigma * sqrt(1 - rho)} for theta), with \code{phi} carrying the augmented ICAR precision
+\code{.icar_precision_Q} and \code{theta ~ N(0, I)}. The conditional Laplace kernel
+hardcodes \code{sigma = 1}, \code{rho = 0.5}.
 }
 \keyword{internal}

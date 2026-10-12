@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_loglik.R
 \name{family_score_eta}
 \alias{family_score_eta}
-\title{Score (d log-likelihood / d eta), elementwise.}
+\title{Score (d log-likelihood / d eta), elementwise}
 \usage{
 family_score_eta(eta, y, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
-Score (d log-likelihood / d eta), elementwise.
+Score (d log-likelihood / d eta), elementwise
 }
 \keyword{internal}

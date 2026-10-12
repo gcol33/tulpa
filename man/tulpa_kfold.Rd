@@ -41,7 +41,7 @@ unreliable.
 Fixed-effect / GLMM fits only: subsetting the observations breaks a spatial or
 temporal field, so those fits are rejected (use PSIS-LOO via
 \code{\link[=tulpa_criteria]{tulpa_criteria()}}). Held-out random-effect groups contribute at their prior
-mean (population-level held-out prediction), matching \code{\link[=predict]{predict()}}.
+mean (population-level held-out prediction), matching \code{\link[stats:predict]{stats::predict()}}.
 }
 \examples{
 \donttest{

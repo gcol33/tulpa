@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_loglik.R
 \name{family_variance}
 \alias{family_variance}
-\title{Response variance Var(y | eta) for a family, elementwise.}
+\title{Response variance Var(y | eta) for a family, elementwise}
 \usage{
 family_variance(eta, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
-Response variance Var(y | eta) for a family, elementwise.
+Response variance Var(y | eta) for a family, elementwise
 }
 \keyword{internal}

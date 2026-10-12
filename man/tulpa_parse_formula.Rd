@@ -2,12 +2,19 @@
 % Please edit documentation in R/formula.R
 \name{tulpa_parse_formula}
 \alias{tulpa_parse_formula}
+\alias{print.tulpa_parsed_formula}
 \title{Parse a mixed-model formula}
 \usage{
 tulpa_parse_formula(formula)
+
+\method{print}{tulpa_parsed_formula}(x, ...)
 }
 \arguments{
 \item{formula}{A formula object (e.g., \code{y ~ x + (1 | group)})}
+
+\item{x}{A \code{tulpa_parsed_formula} object.}
+
+\item{...}{Ignored.}
 }
 \value{
 A list with:

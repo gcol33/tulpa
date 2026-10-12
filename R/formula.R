@@ -477,7 +477,7 @@ collect_additive_terms <- function(expr) {
 }
 
 #' Negate an additive term (numeric literal -> its negative; anything else ->
-#' a unary-minus call), for flattening binary `-` in a bar LHS.
+#' a unary-minus call), for flattening binary `-` in a bar LHS
 #' @keywords internal
 .negate_term <- function(t) {
   if (is.numeric(t)) return(-t)
@@ -714,7 +714,7 @@ tulpa_parse_formula <- function(formula) {
   invisible(NULL)
 }
 
-#' Build the zero-inflation design matrix from `ziformula`.
+#' Build the zero-inflation design matrix from `ziformula`
 #'
 #' A one-sided formula giving the fixed effects of the structural-zero logit.
 #' `~ 1` is the constant-probability model. Random effects in the ZI predictor
@@ -993,6 +993,9 @@ resolve_group_factor <- function(re_spec, data, env) {
   as.factor(data[[gvars]])
 }
 
+#' @rdname tulpa_parse_formula
+#' @param x A `tulpa_parsed_formula` object.
+#' @param ... Ignored.
 #' @export
 print.tulpa_parsed_formula <- function(x, ...) {
   cat("tulpa parsed formula\n")

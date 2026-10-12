@@ -31,7 +31,7 @@
 }
 
 
-#' Build a GLMM log-posterior (and gradient) from a model-data bundle.
+#' Build a GLMM log-posterior (and gradient) from a model-data bundle
 #'
 #' @param bundle Output of [tulpa_build_model_data()] (needs `y`, `X`,
 #'   `offset`, `re_terms`, `n_obs`, `n_fixed`).

@@ -2,7 +2,7 @@
 % Please edit documentation in R/inference_modes.R
 \name{tulpa_dispatch}
 \alias{tulpa_dispatch}
-\title{Dispatch a fit to the backend chosen by the mode/tier system.}
+\title{Dispatch a fit to the backend chosen by the mode/tier system}
 \usage{
 tulpa_dispatch(
   mode,

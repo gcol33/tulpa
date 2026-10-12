@@ -2,6 +2,8 @@
 % Please edit documentation in R/diagnostics_sim.R
 \name{tulpa_variogram}
 \alias{tulpa_variogram}
+\alias{plot.tulpa_variogram}
+\alias{print.tulpa_variogram}
 \title{Empirical semivariogram of residuals}
 \usage{
 tulpa_variogram(
@@ -11,6 +13,10 @@ tulpa_variogram(
   max_dist = NULL,
   resid_type = "pearson"
 )
+
+\method{plot}{tulpa_variogram}(x, ...)
+
+\method{print}{tulpa_variogram}(x, ...)
 }
 \arguments{
 \item{object}{A fitted model, or a numeric vector of residuals}
@@ -22,9 +28,17 @@ tulpa_variogram(
 \item{max_dist}{Maximum distance (default: half the maximum pairwise distance)}
 
 \item{resid_type}{Residual type if extracting from model (default \code{"pearson"})}
+
+\item{x}{A \code{tulpa_variogram} table.}
+
+\item{...}{Passed to \code{\link[graphics:plot]{graphics::plot()}} by \code{plot()} and to \code{print()} by
+\code{print()}.}
 }
 \value{
 A \code{tulpa_variogram} data.frame with columns \code{dist}, \code{gamma}, \code{n_pairs}
+
+\code{plot()} draws the semivariance against distance, point size scaled
+by the pair count, and returns \code{x} invisibly.
 }
 \description{
 Computes the empirical semivariogram in distance bins for visual

@@ -2,7 +2,7 @@
 % Please edit documentation in R/marginal_se_spatial.R
 \name{.re_design}
 \alias{.re_design}
-\title{n_obs x n_re_groups indicator design for an iid RE block.}
+\title{n_obs x n_re_groups indicator design for an iid RE block}
 \usage{
 .re_design(re_idx, n_re_groups, n_obs)
 }

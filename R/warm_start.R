@@ -222,7 +222,7 @@
   # mass matrix, and warmup adapts from there.
   H_beta <- fit$H_beta
   if (!is.null(H_beta) && !is.null(beta_span)) {
-    v <- tryCatch(diag(solve(H_beta)), error = function(e) NULL)
+    v <- tryCatch(diag(.spd_inverse(H_beta)), error = function(e) NULL)
     if (!is.null(v) && all(is.finite(v)) && all(v > 0)) {
       n_beta <- length(blocks$beta)
       init_span <- seq.int(beta_span[1], beta_span[2])
@@ -234,7 +234,7 @@
   # ---- Zero-inflation coefficients ---------------------------------------
   init <- place(init, layout$beta_zi, blocks$beta_zi, "zero-inflation")
   if (!is.null(layout$beta_zi) && !is.null(H_beta)) {
-    v <- tryCatch(diag(solve(H_beta)), error = function(e) NULL)
+    v <- tryCatch(diag(.spd_inverse(H_beta)), error = function(e) NULL)
     n_beta <- length(blocks$beta)
     if (!is.null(v) && length(v) >= n_beta + length(blocks$beta_zi)) {
       zi_idx <- seq.int(layout$beta_zi[1], layout$beta_zi[2])

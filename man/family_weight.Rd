@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_loglik.R
 \name{family_weight}
 \alias{family_weight}
-\title{Laplace/IRLS working weight (-d^2 log-lik / d eta^2), elementwise.}
+\title{Laplace/IRLS working weight (-d^2 log-lik / d eta^2), elementwise}
 \usage{
 family_weight(eta, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
-Laplace/IRLS working weight (-d^2 log-lik / d eta^2), elementwise.
+Laplace/IRLS working weight (-d^2 log-lik / d eta^2), elementwise
 }
 \keyword{internal}

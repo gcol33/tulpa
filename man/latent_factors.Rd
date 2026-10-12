@@ -23,17 +23,21 @@ posterior draws.
 Extract latent factor posteriors from fit
 }
 \examples{
-\dontrun{
-# `fit` is a ratio / multi-arm model fitted with latent factors by a consumer
-# package (tulpaRatio owns the two-arm formula and the negbin/negbin ratio
-# family and reads the latent_factor() spec):
+# A fit sampled with latent factors comes from a model package (tulpaRatio
+# reads the latent_factor() spec). The accessor reads two things off it:
+# draw columns named factor[observation,factor] and the latent layout. Here
+# both are simulated for three observations on two factors.
+set.seed(1)
+cols <- sprintf("factor[\%d,\%d]", rep(1:3, 2), rep(1:2, each = 3))
+draws <- matrix(rnorm(200 * 6, mean = rep(c(-1, 0, 1), 2), sd = 0.3),
+                200, 6, byrow = TRUE, dimnames = list(NULL, cols))
+fit <- structure(
+  list(draws = draws,
+       .internal = list(latent_info = list(type = "latent", n_factors = 2L,
+                                           n_obs = 3L))),
+  class = "tulpa_fit")
 
-# Get summary
-factors <- latent_factors(fit)
-head(factors)
-
-# Get full posterior draws
-factor_draws <- latent_factors(fit, summary = FALSE)
-}
+latent_factors(fit)
+dim(latent_factors(fit, summary = FALSE))
 
 }

@@ -1,4 +1,4 @@
-#' Simulation-Based Diagnostics for tulpa Models
+#' Simulation-based diagnostics for tulpa models
 #'
 #' @description
 #' Model-checking tools based on posterior predictive simulation.
@@ -51,7 +51,7 @@ NULL
 # PIT Residuals
 # ==============================================================================
 
-#' PIT (Probability Integral Transform) residuals
+#' PIT (probability integral transform) residuals
 #'
 #' For each observation, computes the quantile of the observed value within
 #' the posterior predictive distribution. If the model is correct, PIT
@@ -628,6 +628,12 @@ tulpa_variogram <- function(object, coords, n_bins = 15L, max_dist = NULL,
 }
 
 
+#' @rdname tulpa_variogram
+#' @param x A `tulpa_variogram` table.
+#' @param ... Passed to [graphics::plot()] by `plot()` and to `print()` by
+#'   `print()`.
+#' @return `plot()` draws the semivariance against distance, point size scaled
+#'   by the pair count, and returns `x` invisibly.
 #' @export
 plot.tulpa_variogram <- function(x, ...) {
   plot(x$dist, x$gamma,
@@ -636,6 +642,13 @@ plot.tulpa_variogram <- function(x, ...) {
        pch = 19, cex = sqrt(x$n_pairs / max(x$n_pairs)) * 2, ...)
   lines(x$dist, x$gamma, lty = 2, col = "grey50")
   invisible(x)
+}
+
+#' @rdname tulpa_variogram
+#' @export
+print.tulpa_variogram <- function(x, ...) {
+  .print_effect_table(x, sprintf("Empirical semivariogram: %d distance bins",
+                                 nrow(x)), ...)
 }
 
 

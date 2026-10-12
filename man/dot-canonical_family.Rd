@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_loglik.R
 \name{.canonical_family}
 \alias{.canonical_family}
-\title{Resolve a family spelling to its canonical registry name.}
+\title{Resolve a family spelling to its canonical registry name}
 \usage{
 .canonical_family(family)
 }

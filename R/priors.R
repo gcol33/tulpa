@@ -304,14 +304,10 @@ prior_pc <- function(U = 1, alpha = 0.01) {
 }
 
 
-#' Print method for tulpa_priors
-#'
-#' @param x A tulpa_priors object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the full prior specification to the console.
-#'
+#' @rdname tulpa_priors
+#' @param x A `tulpa_priors` specification, or a single prior built by a
+#'   `prior_*()` constructor.
+#' @param ... Ignored.
 #' @export
 print.tulpa_priors <- function(x, ...) {
   cat("tulpa prior specification\n")
@@ -340,14 +336,7 @@ print.tulpa_priors <- function(x, ...) {
 }
 
 
-#' Print method for tulpa_prior
-#'
-#' @param x A tulpa_prior object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the prior specification to the console.
-#'
+#' @rdname tulpa_priors
 #' @export
 print.tulpa_prior <- function(x, ...) {
   print_prior(x, indent = "")
@@ -370,39 +359,48 @@ print_prior <- function(prior, indent = "") {
   cat(format(prior, indent = indent), "\n", sep = "")
 }
 
+#' @rdname tulpa_priors
+#' @param indent String prefixed to each formatted line.
+#' @return `format()` returns the prior as a character string.
 #' @export
 format.tulpa_prior_normal <- function(x, indent = "", ...) {
   sprintf("%sNormal(%.2f, %.2f)", indent, x$mean, x$sd)
 }
 
+#' @rdname tulpa_priors
 #' @export
 format.tulpa_prior_half_normal <- function(x, indent = "", ...) {
   sprintf("%sHalf-Normal(%.2f)", indent, x$sd)
 }
 
+#' @rdname tulpa_priors
 #' @export
 format.tulpa_prior_half_cauchy <- function(x, indent = "", ...) {
   sprintf("%sHalf-Cauchy(%.2f)", indent, x$scale)
 }
 
+#' @rdname tulpa_priors
 #' @export
 format.tulpa_prior_gamma <- function(x, indent = "", ...) {
   sprintf("%sGamma(%.2f, %.2f)  [mean = %.2f]",
           indent, x$shape, x$rate, x$shape / x$rate)
 }
 
+#' @rdname tulpa_priors
 #' @export
 format.tulpa_prior_exponential <- function(x, indent = "", ...) {
   sprintf("%sExponential(%.2f)  [mean = %.2f]",
           indent, x$rate, 1 / x$rate)
 }
 
+#' @rdname tulpa_priors
 #' @export
 format.tulpa_prior_beta <- function(x, indent = "", ...) {
   sprintf("%sBeta(%.2f, %.2f)  [mean = %.2f]",
           indent, x$alpha, x$beta, x$alpha / (x$alpha + x$beta))
 }
 
+#' @rdname tulpa_priors
 #' @export
 format.tulpa_prior_pc <- function(x, indent = "", ...) {
   paste0(
@@ -412,6 +410,7 @@ format.tulpa_prior_pc <- function(x, indent = "", ...) {
   )
 }
 
+#' @rdname tulpa_priors
 #' @export
 format.tulpa_prior <- function(x, indent = "", ...) {
   sprintf("%s%s", indent, x$distribution %||% "<unknown>")

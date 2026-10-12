@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_zi.R
 \name{.validate_family_zi}
 \alias{.validate_family_zi}
-\title{Reject a ZI request against a family with no atom at zero.}
+\title{Reject a ZI request against a family with no atom at zero}
 \usage{
 .validate_family_zi(family)
 }
 \description{
-Reject a ZI request against a family with no atom at zero.
+Reject a ZI request against a family with no atom at zero
 }
 \keyword{internal}

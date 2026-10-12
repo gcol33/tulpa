@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_zi.R
 \name{zi_response_mean}
 \alias{zi_response_mean}
-\title{Response-scale mean of the zero-inflated mixture.}
+\title{Response-scale mean of the zero-inflated mixture}
 \usage{
 zi_response_mean(eta, logit_zi, family, n_trials = NULL, phi = 1)
 }
 \description{
-Response-scale mean of the zero-inflated mixture.
+Response-scale mean of the zero-inflated mixture
 }
 \keyword{internal}

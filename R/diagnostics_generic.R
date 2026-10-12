@@ -866,6 +866,9 @@ post_hoc_lm <- function(formula, data, weights = NULL,
   out
 }
 
+#' @rdname post_hoc_lm
+#' @param x A `post_hoc_lm` result.
+#' @param ... Ignored.
 #' @export
 print.post_hoc_lm <- function(x, ...) {
   cat("Post-hoc linear model\n")

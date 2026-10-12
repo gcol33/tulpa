@@ -266,6 +266,9 @@ latent <- function(block) {
 }
 
 
+#' @rdname tgmrf
+#' @param x A `tgmrf` block.
+#' @param ... Passed from `summary()` to `print()`.
 #' @export
 print.tgmrf <- function(x, ...) {
   label <- x$name %||% "tgmrf"
@@ -292,6 +295,10 @@ print.tgmrf <- function(x, ...) {
 }
 
 
+#' @rdname tgmrf
+#' @param object A `tgmrf` block.
+#' @return `summary()` prints the block, its log prior at `init` and its bounds,
+#'   and returns `object` invisibly.
 #' @export
 summary.tgmrf <- function(object, ...) {
   print(object, ...)

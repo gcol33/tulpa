@@ -1421,7 +1421,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
       Hs <- (Hn + t(Hn)) / 2
       ev <- eigen(Hs, symmetric = TRUE, only.values = TRUE)$values
       if (min(ev) <= 1e-8) stop("non-PD Hessian")
-      solve(Hs)
+      .spd_inverse(Hs)
     }, error = function(e) {
       warning(caller, "(): outer theta-Hessian not usable (",
               conditionMessage(e), "); falling back to a diagonal proposal ",
@@ -1951,7 +1951,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     beta_nodes[i, ]    <- fit_i$mode[seq_len(p_fix)]
     beta_cov_nodes[[i]] <-
       if (is.null(fit_i$H_beta)) NULL
-      else tryCatch(solve(fit_i$H_beta), error = function(e) NULL)
+      else tryCatch(.spd_inverse(fit_i$H_beta), error = function(e) NULL)
     if (!is.null(debias_arg)) {
       debias_nodes[[i]]  <- fit_i$debias_draws
       debias_accept[i]   <- fit_i$debias_accept %||% NA_real_

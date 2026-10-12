@@ -2,7 +2,7 @@
 % Please edit documentation in R/plot_diagnostics.R
 \name{plot_rhat}
 \alias{plot_rhat}
-\title{Plot Rhat Convergence Diagnostic}
+\title{Plot Rhat convergence diagnostic}
 \usage{
 plot_rhat(fit, threshold = 1.01, pars = NULL)
 }

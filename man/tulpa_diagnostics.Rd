@@ -2,7 +2,7 @@
 % Please edit documentation in R/diagnostics_sim.R
 \name{tulpa_diagnostics}
 \alias{tulpa_diagnostics}
-\title{Simulation-Based Diagnostics for tulpa Models}
+\title{Simulation-based diagnostics for tulpa models}
 \value{
 The diagnostic functions documented in this family return their
 individual results (a test-statistic object, a data frame of residuals, or

@@ -92,12 +92,37 @@
 #'   [rubins_pool()] for the pooling rule.
 #'
 #' @examples
-#' \dontrun{
-#' # Monte-Carlo EM from two callbacks: e_step_sample() draws the latent
-#' # variables and m_step_encode() encodes the complete-data design for the inner
-#' # Laplace M-step (model packages such as tulpaObs supply these). See
-#' # ?tulpa_em_laplace for the deterministic-E-step analogue.
-#' fit <- tulpa_em_mc(e_step_sample, m_step_encode)
+#' \donttest{
+#' # Two-component Gaussian mixture with unit variances: the latent class z is
+#' # sampled in the E-step, and each class mean is an intercept-only Gaussian
+#' # block in the M-step.
+#' set.seed(1)
+#' z <- rbinom(100, 1, 0.4)
+#' y <- ifelse(z == 0, rnorm(100, -1), rnorm(100, 2))
+#'
+#' e_step_sample <- function(fits, n_mc, ...) {
+#'   p1 <- if (length(fits) == 0L) {
+#'     ifelse(y > median(y), 0.8, 0.2)
+#'   } else {
+#'     mu0 <- fits[[1]]$comp0$mode[1]
+#'     mu1 <- fits[[1]]$comp1$mode[1]
+#'     l0 <- dnorm(y, mu0, log = TRUE) + log(0.6)
+#'     l1 <- dnorm(y, mu1, log = TRUE) + log(0.4)
+#'     1 / (1 + exp(l0 - l1))
+#'   }
+#'   lapply(seq_len(n_mc), function(s) rbinom(length(y), 1, p1))
+#' }
+#' m_step_encode <- function(weights, ...) {
+#'   list(comp0 = list(y = y[weights == 0], X = matrix(1, sum(weights == 0), 1),
+#'                     family = "gaussian"),
+#'        comp1 = list(y = y[weights == 1], X = matrix(1, sum(weights == 1), 1),
+#'                     family = "gaussian"))
+#' }
+#'
+#' fit <- tulpa_em_mc(e_step_sample, m_step_encode, n_mc = 5L, max_iter = 5L,
+#'                    tol = 5e-3, verbose = FALSE)
+#' sapply(fit$pooled, function(p) p$mean)
+#' fit$history
 #' }
 #' @export
 tulpa_em_mc <- function(e_step_sample, m_step_encode,

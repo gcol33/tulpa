@@ -88,7 +88,6 @@ test_that("tulpa_tgmrf_nuts_joint runs end-to-end on a periodic-AR1 sim", {
     seed = 42L
   )
 
-  expect_s3_class(fit, "tulpa_tgmrf")
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(ncol(fit$draws_theta), 2L)
   expect_equal(colnames(fit$draws_theta), c("log_sigma", "atanh_rho"))

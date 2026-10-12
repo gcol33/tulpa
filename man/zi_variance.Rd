@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_zi.R
 \name{zi_variance}
 \alias{zi_variance}
-\title{Response variance of the zero-inflated mixture.}
+\title{Response variance of the zero-inflated mixture}
 \usage{
 zi_variance(eta, logit_zi, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }

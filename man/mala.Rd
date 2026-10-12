@@ -2,7 +2,7 @@
 % Please edit documentation in R/mala.R
 \name{mala}
 \alias{mala}
-\title{Metropolis-Adjusted Langevin Algorithm (MALA)}
+\title{Metropolis-adjusted Langevin algorithm (MALA)}
 \usage{
 mala(
   log_posterior,

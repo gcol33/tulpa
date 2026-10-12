@@ -147,7 +147,7 @@ values you put in.
 
 A point estimate alone is half a fit. `summary()` adds the posterior
 standard error and the 2.5% and 97.5% credible bounds for each fixed effect,
-which is what turns "the slope is about 1.2" into "the slope is 1.2 with a
+alongside how the fit was produced and how reliable it is, which is what turns "the slope is about 1.2" into "the slope is 1.2 with a
 95% credible interval that excludes zero by a wide margin". Read the standard
 error as the posterior spread of the coefficient and the bounds as the
 interval the coefficient falls in with 95% posterior probability.
@@ -447,13 +447,13 @@ data.frame(
 ```
 
 The agreement here is itself a signal that Laplace was safe for this model.
-Every fit records which backend ran and at which tier, through the `backend`
-and `inference_tier` fields, and `selection_reason` records why `mode =
-"auto"` chose what it did, so you are never left guessing which engine
-produced a number.
+Every fit records which backend ran and at which tier, and why `mode =
+"auto"` chose what it did. `print()` names the backend and tier in its first
+line, and `summary()` carries all three in its `inference` part, so you are
+never left guessing which engine produced a number.
 
 ```{r tier-fields}
-c(backend = fit_mala$backend, tier = fit_mala$inference_tier)
+unlist(summary(fit_mala)$inference[c("backend", "inference_tier")])
 ```
 
 The tiers encode an epistemic guarantee that goes beyond the speed
@@ -533,13 +533,14 @@ coef(fit_sp)
 
 The slope recovers near its true 0.7 while the ICAR field absorbs the
 regional structure. Plot the per-region field effect around the ring to see
-the wave the fit pulled out of binary data: the mode at each region's latent
-column traces the smooth signal the covariate could not explain.
+the wave the fit pulled out of binary data: `field_effects()` returns the
+field at each region, here its posterior mode, and traces the smooth signal
+the covariate could not explain.
 
 ```{r spatial-plot, eval = has_ggplot && EVAL_FITS, fig.alt = "Estimated spatial field effect per region around the ring"}
 library(ggplot2)
-fe <- tail(fit_sp$mode, K)
-ggplot(data.frame(region = seq_len(K), effect = fe), aes(region, effect)) +
+fe <- field_effects(fit_sp)
+ggplot(data.frame(region = fe$unit, effect = fe$estimate), aes(region, effect)) +
   geom_line(linewidth = 1, colour = "steelblue") +
   geom_point() +
   labs(x = "region", y = "field effect") +
@@ -595,17 +596,15 @@ coef(fit_t)
 
 The slope lands near its true 0.5 with the trend absorbed into the field
 rather than the coefficient. `mode = "auto"` routes the temporal field to the
-nested-Laplace backend, which carries the per-grid latent modes in `$modes`
-(one row per grid point, columns ordered `[fixed effects, field]`) and the
-grid `$weights`. Weight-average the field column for each time point to
-integrate over the smoothing precision, then plot the recovered walk against
-the truth.
+nested-Laplace backend, and `tulpa_outer_grid()` returns its grid: the
+per-grid latent modes in `modes` (one row per grid point, columns ordered
+`[fixed effects, field]`) and the grid `weights`. Weight-average the field
+column for each time point to integrate over the smoothing precision, then
+plot the recovered walk against the truth.
 
 ```{r temporal-plot, fig.alt = "Estimated temporal random-walk trend against the simulated truth"}
-w  <- fit_t$weights / sum(fit_t$weights)
-nf <- fit_t$n_fixed
-te <- vapply(seq_len(Tt),
-             function(u) sum(w * fit_t$modes[, nf + u]), numeric(1))
+g  <- tulpa_outer_grid(fit_t)
+te <- colSums(g$weights * g$modes)[g$n_fixed + seq_len(Tt)]
 ggplot(data.frame(time = seq_len(Tt),
                   est = te - mean(te),
                   truth = trend - mean(trend)),
@@ -733,12 +732,14 @@ base R or broom is the intended workflow.
 | Accessor | Returns |
 |---|---|
 | `coef()` | named fixed-effect estimates |
-| `summary()` | fixed effects: estimate, SE, credible bounds |
+| `summary()` | the full report: backend and tier, fixed effects with SE and credible bounds, variance components, hyperparameters, reliability; `coef(summary(fit))` is the fixed-effect table |
 | `confint()` | credible intervals (matrix) |
 | `vcov()` | fixed-effect covariance |
 | `ranef()` | group-level random effects |
 | `tidy()` | one-row-per-term data frame (broom style) |
 | `glance()` | one-row model summary |
+| `diagnostics()` | convergence or approximation reliability, per parameter |
+| `tulpa_outer_grid()` | a nested-Laplace fit's hyperparameter grid: nodes, weights, per-cell modes |
 | `predict()`, `fitted()` | fixed-effect prediction / in-sample mean |
 | `logLik()` | log marginal likelihood (Laplace) or mean log-density |
 | `plot()` | fixed-effect densities (or trace for sampler fits) |

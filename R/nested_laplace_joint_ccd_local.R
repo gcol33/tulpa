@@ -613,8 +613,7 @@
     # Positive definiteness is what makes the inverse a covariance; a wide
     # finite-difference window can leave the estimate indefinite even when every
     # diagonal entry is concave.
-    if (is.null(tryCatch(chol(negH), error = function(e) NULL))) return(NULL)
-    S <- tryCatch(solve(negH), error = function(e) NULL)
+    S <- tryCatch(.spd_inverse(negH), error = function(e) NULL)
     if (is.null(S)) return(NULL)
     s <- sqrt(diag(S))
     if (!all(is.finite(s)) || any(s <= 0)) return(NULL)

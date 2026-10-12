@@ -135,11 +135,8 @@ tulpa_simulate <- function(formula, family, data,
   invisible(x)
 }
 
-#' Print method for tulpa_simulate
-#' @param x A tulpa_simulate object
-#' @param ... Ignored
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing a summary of the simulated datasets to the console.
+#' @rdname tulpa_simulate
+#' @param x A `tulpa_simulate` object.
 #' @export
 print.tulpa_simulate <- function(x, ...) {
   .print_draws_summary(x, "tulpa simulated datasets", "Sims:      ", x$n_sims)
@@ -240,6 +237,23 @@ tulpa_family <- function(name,
     ),
     class = "tulpa_family"
   )
+}
+
+#' @rdname tulpa_family
+#' @param x A `tulpa_family`.
+#' @param ... Ignored.
+#' @export
+print.tulpa_family <- function(x, ...) {
+  cat("tulpa family '", x$name, "'\n", sep = "")
+  cat("  processes: ", paste(x$process_names, collapse = ", "), "\n", sep = "")
+  for (nm in names(x$extra_params)) {
+    cat("  ", nm, " ~ ", format(x$extra_params[[nm]]), "\n", sep = "")
+  }
+  if (length(x$link_inv)) {
+    cat("  inverse links: ", paste(names(x$link_inv), collapse = ", "), "\n",
+        sep = "")
+  }
+  invisible(x)
 }
 
 

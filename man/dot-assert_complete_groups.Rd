@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_loglik.R
 \name{.assert_complete_groups}
 \alias{.assert_complete_groups}
-\title{Reject an incomplete random-effect design.}
+\title{Reject an incomplete random-effect design}
 \usage{
 .assert_complete_groups(re_terms, where = NULL)
 }

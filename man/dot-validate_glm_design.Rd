@@ -2,7 +2,7 @@
 % Please edit documentation in R/fit_laplace.R
 \name{.validate_glm_design}
 \alias{.validate_glm_design}
-\title{Validate a GLM design bundle (\code{y}, \code{X}, \code{n_trials}) at a fitter's front door.}
+\title{Validate a GLM design bundle (\code{y}, \code{X}, \code{n_trials}) at a fitter's front door}
 \usage{
 .validate_glm_design(y, X, n_trials, where)
 }

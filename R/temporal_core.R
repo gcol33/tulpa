@@ -1,4 +1,4 @@
-#' RW1 temporal structure (First-order Random Walk)
+#' RW1 temporal structure (first-order random walk)
 #'
 #' @description
 #' Specify a first-order random walk temporal random effect. RW1 penalizes
@@ -62,7 +62,7 @@ temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
 }
 
 
-#' RW2 temporal structure (Second-order Random Walk)
+#' RW2 temporal structure (second-order random walk)
 #'
 #' @description
 #' Specify a second-order random walk temporal random effect.
@@ -134,7 +134,7 @@ temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
 }
 
 
-#' AR1 temporal structure (First-order Autoregressive)
+#' AR1 temporal structure (first-order autoregressive)
 #'
 #' @description
 #' Specify a first-order autoregressive temporal random effect.
@@ -236,6 +236,7 @@ temporal_ar1 <- function(time_var, group_var = NULL, shared = NULL,
 #' @return The input `x`, returned invisibly. Called for the side effect of
 #'   printing the temporal specification to the console.
 #'
+#' @keywords internal
 #' @export
 print.tulpa_temporal <- function(x, ...) {
  cat("tulpa temporal specification\n")

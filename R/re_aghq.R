@@ -421,7 +421,7 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     return(NULL)
   }
 
-  V <- tryCatch(solve(opt$hessian), error = function(e) NULL)
+  V <- tryCatch(.spd_inverse(opt$hessian), error = function(e) NULL)
   if (is.null(V) || any(!is.finite(opt$par))) {
     warning("tulpa_re_aghq: the joint optimum is singular or non-finite ",
             "(no usable exact-marginal Hessian); returning NULL.",

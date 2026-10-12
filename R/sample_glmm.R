@@ -351,6 +351,5 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
   # had diagnostics() computing Rhat and ESS on SMC particles and VI draws
   # (gcol33/tulpa#693) -- the quantities the gate exists to withhold.
   .finalize_fit(res, backend = backend,
-                param_names = nm,
-                extra_class = "tulpa_sample_fit")
+                param_names = nm)
 }

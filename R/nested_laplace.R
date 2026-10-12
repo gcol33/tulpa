@@ -1888,7 +1888,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
       S  <- S - Wr %*% solve((AW + t(AW)) / 2, t(Wr))
     }
     Sigma_bb <- S[seq_len(p_fixed), seq_len(p_fixed), drop = FALSE]
-    grid_hessians[[k]] <- solve((Sigma_bb + t(Sigma_bb)) / 2)
+    grid_hessians[[k]] <- .spd_inverse(Sigma_bb)
     if (n_var) {
       fi <- p_fixed + seq_len(n_var)
       field_var[k, ] <- diag(S)[fi]

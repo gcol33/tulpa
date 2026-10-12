@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_loglik.R
 \name{.family_obs_weight}
 \alias{.family_obs_weight}
-\title{Observed curvature (-d^2 log-lik / d eta^2 at the realized \code{y}), elementwise.}
+\title{Observed curvature (-d^2 log-lik / d eta^2 at the realized \code{y}), elementwise}
 \usage{
 .family_obs_weight(eta, y, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }

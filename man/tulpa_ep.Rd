@@ -54,9 +54,9 @@ observation's linear predictor before the likelihood is evaluated, and is
 not itself part of the fitted posterior.}
 }
 \value{
-A \code{tulpa_fit} (subclass \code{tulpa_ep}) with \code{means} (posterior mean) and
+A \code{tulpa_fit} with \code{means} (posterior mean) and
 \code{cov} (posterior covariance) of the EP Gaussian, which is the posterior
-\code{\link[=coef]{coef()}}, \code{\link[=vcov]{vcov()}}, \code{\link[=summary]{summary()}} and \code{\link[=confint]{confint()}} report; \code{draws} sampled
+\code{\link[=coef]{coef()}}, \code{\link[=vcov]{vcov()}}, \code{\link[=summary.tulpa_fit]{summary.tulpa_fit()}} and \code{\link[=confint]{confint()}} report; \code{draws} sampled
 from that Gaussian; \code{log_marginal} (the EP approximation); \code{converged}
 (the sweep tolerance was met AND every site's adaptive quadrature mode
 search converged AND no site's tilted variance floored -- a site that is

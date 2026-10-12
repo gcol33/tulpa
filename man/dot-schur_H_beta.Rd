@@ -2,7 +2,7 @@
 % Please edit documentation in R/marginal_se_spatial.R
 \name{.schur_H_beta}
 \alias{.schur_H_beta}
-\title{Schur complement of the latent block out of the joint Hessian.}
+\title{Schur complement of the latent block out of the joint Hessian}
 \usage{
 .schur_H_beta(X, D, Q_latent, W, constr = NULL)
 }

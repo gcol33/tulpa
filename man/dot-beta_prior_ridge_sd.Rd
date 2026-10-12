@@ -2,7 +2,7 @@
 % Please edit documentation in R/fit_laplace.R
 \name{.beta_prior_ridge_sd}
 \alias{.beta_prior_ridge_sd}
-\title{Resolve a \code{beta_prior = list(mean, sd)} to a single ridge SD.}
+\title{Resolve a \code{beta_prior = list(mean, sd)} to a single ridge SD}
 \usage{
 .beta_prior_ridge_sd(beta_prior, default_sd = .tulpa_prior_sd("ridge"))
 }

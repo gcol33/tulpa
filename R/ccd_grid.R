@@ -1,4 +1,4 @@
-#' Central Composite Design (CCD) grid for nested-Laplace integration
+#' Central composite design (CCD) grid for nested-Laplace integration
 #'
 #' @description
 #' Produces a structured set of standardised hyperparameter points

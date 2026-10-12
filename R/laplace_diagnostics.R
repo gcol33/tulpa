@@ -1006,7 +1006,28 @@
        pareto_k_scope = jf$pareto_k_scope %||% NA_character_,
        pareto_k_proposal_source = jf$pareto_k_proposal_source %||% NA_character_,
        pareto_k_first_pass = jf$pareto_k_first_pass %||% NA_real_,
-       pareto_k_declined = declined)
+       pareto_k_declined = declined,
+       extra = .tulpa_fit_fields(jf, .PSIS_EXTRA_FIELDS))
+}
+
+# Outer k-hat fields a fit records only when it ran the matching pass: the
+# bootstrap interval and its band verdict (`diagnose_k`), and the outcome of a
+# `control$k_quality` request. Carried onto the diagnostics table as they are.
+.PSIS_EXTRA_FIELDS <- c(
+  "pareto_k_ci_low", "pareto_k_ci_high", "pareto_k_se_boot",
+  "pareto_k_band_confident", "diagnose_draws",
+  "k_quality_requested", "k_quality_reached", "k_quality_best",
+  "k_quality_reason", "k_quality_rounds")
+
+# Per-index inner-Laplace skewness, as the fit stores it.
+.INNER_SKEW_FIELDS <- c("inner_skew", "inner_skew_idx")
+
+# The named fields of `x` that are present, read with `[[` so that no name is
+# partially matched against a longer one.
+.tulpa_fit_fields <- function(x, names) {
+  out <- lapply(names, function(nm) x[[nm]])
+  names(out) <- names
+  Filter(Negate(is.null), out)
 }
 
 # Outer-integration REGIME of a nested-Laplace fit, read
@@ -1820,6 +1841,9 @@
   # table, so a rescued fit read as unconditionally clean (gcol33/tulpa#715).
   attr(tab, "pareto_k_proposal_source") <- psis$pareto_k_proposal_source
   attr(tab, "pareto_k_first_pass")      <- psis$pareto_k_first_pass
+  jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+  extra <- c(psis$extra, .tulpa_fit_fields(jf, .INNER_SKEW_FIELDS))
+  for (nm in names(extra)) attr(tab, nm) <- extra[[nm]]
   if (!is.na(psis$pareto_k_declined)) {
     attr(tab, "pareto_k_declined")      <- psis$pareto_k_declined
     attr(tab, "pareto_k_declined_note") <- .k_decline_note(psis$pareto_k_declined)
@@ -1963,6 +1987,8 @@
   tab
 }
 
+#' @rdname diagnostics
+#' @param x A `laplace_diagnostics` table returned by `diagnostics()`.
 #' @export
 print.laplace_diagnostics <- function(x, ...) {
   s <- attr(x, "summary")

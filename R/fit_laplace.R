@@ -659,7 +659,7 @@ tulpa_laplace <- function(y, n_trials, X,
 }
 
 
-#' Resolve a `beta_prior = list(mean, sd)` to a single ridge SD.
+#' Resolve a `beta_prior = list(mean, sd)` to a single ridge SD
 #'
 #' For the fitters whose fixed-effect prior is a mean-zero Gaussian ridge with a
 #' scalar SD (EP, multinomial, ordinal): validates the unified `beta_prior`
@@ -691,7 +691,7 @@ tulpa_laplace <- function(y, n_trials, X,
 }
 
 
-#' Validate a GLM design bundle (`y`, `X`, `n_trials`) at a fitter's front door.
+#' Validate a GLM design bundle (`y`, `X`, `n_trials`) at a fitter's front door
 #'
 #' Shared by the flagship drivers (`tulpa_nested_laplace()`, `tulpa_gibbs()`, the
 #' `re_cov` fitters) so `nrow(X) == length(y)` and `length(n_trials) ==
@@ -736,7 +736,7 @@ tulpa_laplace <- function(y, n_trials, X,
 }
 
 
-#' Validate a 0-based/1-based random-effect index against its group count.
+#' Validate a 0-based/1-based random-effect index against its group count
 #'
 #' `re_idx` addresses one grouping factor: `0` marks "no random effect" and
 #' `1..n_re_groups` a group. An out-of-range id would index out of bounds in the

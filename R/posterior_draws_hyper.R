@@ -325,7 +325,7 @@
   P <- -H / outer(sc, sc)      # precision on t
   eP <- eigen(P, symmetric = TRUE, only.values = TRUE)$values
   if (min(eP) <= 0) return(R)
-  Sig <- solve(P)
+  Sig <- .spd_inverse(P)
   rho_star <- stats::cov2cor(Sig)
 
   mt <- M[use, , drop = FALSE]
@@ -354,13 +354,13 @@
   # to hold: with three axes a pair's marginal within-cell coupling can
   # legitimately oppose the target's (-0.6, -0.6, -0.2 couples the last pair at
   # +0.94), and it is its partial correlation that agrees.
-  Qu <- solve(Ru)
+  Qu <- .spd_inverse(Ru)
   flip <- Qu * P < 0
   diag(flip) <- FALSE
   if (any(flip)) {
     Qu[flip] <- 0
     Qu <- .nl_nearest_correlation(Qu, cor = FALSE)
-    Ru <- .nl_nearest_correlation(stats::cov2cor(solve(Qu)))
+    Ru <- .nl_nearest_correlation(stats::cov2cor(.spd_inverse(Qu)))
   }
   R[act, act] <- Ru
   R

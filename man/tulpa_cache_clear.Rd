@@ -19,10 +19,11 @@ build artefacts only -- a removed entry is rebuilt by the next \code{\link[=tgmr
 call on the same source -- so it can be emptied at any time.
 }
 \examples{
-\dontrun{
-# Deletes the caller's own cached builds, so it is not run on check.
-tulpa_cache_clear()              # empty the cache
-tulpa_cache_clear(older_than = 30)  # keep the last 30 days
+# Deletes the caller's own cached builds, so it runs only in an
+# interactive session.
+if (interactive()) {
+  tulpa_cache_clear(older_than = 30)  # keep the last 30 days
+  tulpa_cache_clear()                 # empty the cache
 }
 
 }

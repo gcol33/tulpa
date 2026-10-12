@@ -2,6 +2,7 @@
 % Please edit documentation in R/simulate.R
 \name{tulpa_family}
 \alias{tulpa_family}
+\alias{print.tulpa_family}
 \title{Construct a minimal tulpa_family for simulation}
 \usage{
 tulpa_family(
@@ -11,6 +12,8 @@ tulpa_family(
   extra_params = list(),
   link_inv = NULL
 )
+
+\method{print}{tulpa_family}(x, ...)
 }
 \arguments{
 \item{name}{Family name (character, length 1).}
@@ -31,6 +34,10 @@ identity for every process. tulpa passes the raw linear predictor to
 \code{simulate_fn}, so most families implement the link inside \code{simulate_fn}
 (e.g., \code{mu = exp(eta)} for Poisson). The \code{link_inv} slot exists for
 families that prefer to keep the inverse-link separate.}
+
+\item{x}{A \code{tulpa_family}.}
+
+\item{...}{Ignored.}
 }
 \value{
 A \code{tulpa_family} object.

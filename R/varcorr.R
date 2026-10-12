@@ -118,10 +118,7 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 # The point-estimated RE SD a marginal-likelihood fit carries. A backend that
 # maximizes the marginal likelihood (agq_fit) holds sigma_re as an estimate and
 # no draws of it at all, so every draws-based source above returns NULL and the
-# 0-row matrix they were handed produced NaN, then diag(NaN, 1), then an error
-# out of `all(sd_m > 0)` that .print_re_section's tryCatch swallowed -- printing
-# the fit with no Random-effects section while the estimate sat on it
-# (gcol33/tulpa#710). Scalar terms only: a point estimate of a single SD is the
+# estimate is read here instead (gcol33/tulpa#710). Scalar terms only: a point estimate of a single SD is the
 # whole covariance of a `(1 | g)` term, and there is nothing to say about a
 # slope block's correlations from one number.
 #' @keywords internal
@@ -291,20 +288,4 @@ VarCorr.tulpa_fit <- function(x, sigma = 1, ...) {
   out <- do.call(rbind, c(rows, list(.varcorr_residual(x))))
   attr(out, "cov") <- covs
   out
-}
-
-
-# The random-effect half of a fit's display, with VarCorr's own estimated /
-# sampled / conditioned label carried through: a conditioned `sigma_re` is an
-# input echoed back, not a result, and the display must not present it as one.
-# Silent on a fit with no random-effect terms, so `print.tulpa_fit()` can call it
-# unconditionally and any fit carrying a covariance reports it.
-#' @keywords internal
-.print_re_section <- function(x) {
-  vc <- tryCatch(VarCorr(x), error = function(e) NULL)
-  if (is.null(vc) || !nrow(vc)) return(invisible(NULL))
-  cat("\nRandom effects:\n")
-  print(data.frame(term = vc$term, coef = vc$coef, sd = round(vc$sd, 4),
-                   source = vc$source, row.names = NULL))
-  invisible(NULL)
 }

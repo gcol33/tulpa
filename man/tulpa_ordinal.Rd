@@ -2,6 +2,8 @@
 % Please edit documentation in R/ordinal.R
 \name{tulpa_ordinal}
 \alias{tulpa_ordinal}
+\alias{coef.tulpa_ordinal}
+\alias{print.tulpa_ordinal}
 \title{Ordinal (ordered K-class) cumulative-logit regression via Laplace}
 \usage{
 tulpa_ordinal(
@@ -12,6 +14,10 @@ tulpa_ordinal(
   cut_prior_sd = 10,
   control = list()
 )
+
+\method{coef}{tulpa_ordinal}(object, ...)
+
+\method{print}{tulpa_ordinal}(x, ...)
 }
 \arguments{
 \item{formula}{Model formula; the response must be an ordered (or coercible)
@@ -33,13 +39,22 @@ parameters (default 10).}
 
 \item{control}{List of numerical knobs: \code{max_iter} (default 200), \code{n_draws}
 (default 2000), \code{seed}.}
+
+\item{object}{A \code{tulpa_ordinal} fit.}
+
+\item{...}{Ignored.}
+
+\item{x}{A \code{tulpa_ordinal} fit.}
 }
 \value{
 A \code{tulpa_fit} (subclass \code{tulpa_ordinal}) with \code{coefficients}
 (covariate effects) and \code{cutpoints} at the posterior mode, \code{draws} (the
 Laplace Gaussian mapped to ordered cutpoints), \code{log_marginal}, \code{levels}.
-The draws are the posterior \code{\link[=coef]{coef()}}, \code{\link[=vcov]{vcov()}}, \code{\link[=summary]{summary()}} and
+The draws are the posterior \code{\link[=coef]{coef()}}, \code{\link[=vcov]{vcov()}}, \code{\link[=summary.tulpa_fit]{summary.tulpa_fit()}} and
 \code{\link[=confint]{confint()}} report; \code{\link[=coef]{coef()}} omits the cutpoints, as \code{MASS::polr} does.
+
+\code{coef()} returns the covariate effects without the cutpoints, as
+\code{MASS::polr()} omits its \code{zeta}; \code{vcov()} and \code{summary()} keep them.
 }
 \description{
 Fits a proportional-odds cumulative-logit model for an ordered factor

@@ -2,7 +2,7 @@
 % Please edit documentation in R/marginal_se_spatial.R
 \name{.graph_components}
 \alias{.graph_components}
-\title{Connected components of an adjacency graph, as a list of node-index vectors.}
+\title{Connected components of an adjacency graph, as a list of node-index vectors}
 \usage{
 .graph_components(adjacency)
 }

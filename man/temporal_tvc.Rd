@@ -2,6 +2,7 @@
 % Please edit documentation in R/temporal_tvc.R
 \name{temporal_tvc}
 \alias{temporal_tvc}
+\alias{print.tulpa_tvc}
 \title{Time-varying coefficient structure}
 \usage{
 temporal_tvc(
@@ -17,6 +18,8 @@ temporal_tvc(
   sigma_prior_alpha = 0.01,
   scale_coords = TRUE
 )
+
+\method{print}{tulpa_tvc}(x, ...)
 }
 \arguments{
 \item{time_var}{Single character string naming the time variable in the data.
@@ -57,6 +60,10 @@ the same anchor pair whether the field samples a log-precision (\code{rw1} /
 values before fitting (default \code{TRUE}), which puts the lengthscale on the
 same universal support \code{\link[=temporal_gp]{temporal_gp()}} uses. \code{period} is stated in the raw
 time units and makes the same trip.}
+
+\item{x}{A \code{tulpa_tvc} specification.}
+
+\item{...}{Ignored.}
 }
 \value{
 A \code{tulpa_tvc} object.

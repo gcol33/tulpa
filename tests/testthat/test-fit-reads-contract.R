@@ -18,10 +18,10 @@ test_that("confint() and summary() carry those labels on a fit", {
   d$y <- rpois(120, exp(0.3 + 0.4 * d$x))
   fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
   expect_identical(colnames(confint(fit)), c("2.5 %", "97.5 %"))
-  expect_identical(names(summary(fit))[3:4], c("2.5 %", "97.5 %"))
+  expect_identical(names(coef(summary(fit)))[3:4], c("2.5 %", "97.5 %"))
   expect_identical(colnames(confint(fit, level = 0.9)), c("5 %", "95 %"))
-  expect_identical(names(summary(fit, level = 0.9))[3:4], c("5 %", "95 %"))
-  expect_equal(unname(as.matrix(summary(fit)[, 3:4])), unname(confint(fit)),
+  expect_identical(names(coef(summary(fit, level = 0.9)))[3:4], c("5 %", "95 %"))
+  expect_equal(unname(as.matrix(coef(summary(fit))[, 3:4])), unname(confint(fit)),
                tolerance = 0)
 })
 
@@ -35,7 +35,7 @@ expect_gaussian_read <- function(fit, level = 0.9) {
   expect_identical(fit$reported_posterior, "gaussian")
   expect_equal(coef(fit), m, tolerance = 0)
   expect_equal(vcov(fit), V, tolerance = 0)
-  s <- summary(fit, level = level)
+  s <- coef(summary(fit, level = level))
   expect_equal(s$estimate, unname(m), tolerance = 0)
   expect_equal(s$std.error, unname(se), tolerance = 1e-12)
   ci <- confint(fit, level = level)
@@ -83,7 +83,7 @@ test_that("an ordinal fit reads its draws once: coef() is summary() less the cut
                       integer(1)))
   fit <- tulpa_ordinal(y ~ x, data = data.frame(y = y, x = x),
                        control = list(seed = 1L))
-  s <- summary(fit)
+  s <- coef(summary(fit))
   expect_identical(names(coef(fit)), "x")
   expect_equal(unname(coef(fit)), s["x", "estimate"], tolerance = 0)
   expect_identical(rownames(vcov(fit)), rownames(s))
@@ -176,7 +176,7 @@ test_that("a sampler fit with random effects and zero inflation reads beta_zi wh
                unname(colMeans(fit$draws[, ct_cols, drop = FALSE])), tolerance = 0)
   fd <- fit$draws[, c(ct_cols, zi_cols), drop = FALSE]
   expect_equal(unname(vcov(fit)), unname(stats::cov(fd)), tolerance = 1e-12)
-  expect_equal(summary(fit)$std.error, unname(apply(fd, 2, stats::sd)),
+  expect_equal(coef(summary(fit))$std.error, unname(apply(fd, 2, stats::sd)),
                tolerance = 1e-12)
   expect_equal(tidy(fit)$estimate, unname(colMeans(fd)), tolerance = 0)
 

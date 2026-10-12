@@ -557,7 +557,7 @@ test_that("a one-arm joint fit reproduces the single-block fixed-effect posterio
 
     expect_true(is.na(fj$grid_fixed_declined))
     # The joint tier reports real uncertainty at all -- the #305 defect.
-    expect_true(all(is.finite(summary(fj)$std.error)))
+    expect_true(all(is.finite(coef(summary(fj))$std.error)))
     expect_true(all(is.finite(confint(fj))))
 
     # Unnamed: the joint tier prefixes each coefficient with its arm name, the
@@ -565,7 +565,7 @@ test_that("a one-arm joint fit reproduces the single-block fixed-effect posterio
     # numbers are what the two tiers owe each other.
     expect_equal(unname(coef(fj)), unname(coef(fs)), tolerance = 1e-5,
                  label = sprintf("%s joint vs single coef", fam))
-    expect_equal(unname(summary(fj)$std.error), unname(summary(fs)$std.error),
+    expect_equal(unname(coef(summary(fj))$std.error), unname(coef(summary(fs))$std.error),
                  tolerance = 1e-5,
                  label = sprintf("%s joint vs single SE", fam))
     expect_equal(unname(vcov(fj)), unname(vcov(fs)), tolerance = 1e-5,

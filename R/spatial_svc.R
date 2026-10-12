@@ -124,14 +124,9 @@ spatial_svc <- function(coords,
 }
 
 
-#' Print method for tulpa_svc
-#'
-#' @param x A tulpa_svc object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the spatially-varying-coefficient specification to the console.
-#'
+#' @rdname spatial_svc
+#' @param x A `tulpa_svc` specification.
+#' @param ... Ignored.
 #' @export
 print.tulpa_svc <- function(x, ...) {
   cat("tulpa spatially-varying coefficients\n")
@@ -466,16 +461,11 @@ svc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
 }
 
 
-#' Summary method for tulpa_svc_posterior
-#'
-#' @param object A tulpa_svc_posterior object
-#' @param probs Quantiles to compute
-#' @param ... Ignored
-#'
-#' @return A `tulpa_svc_summary` data frame with one row per location and term,
-#'   holding the observation index, term name, coordinates, and the posterior
-#'   mean, SD, and requested quantiles of each spatially-varying coefficient.
-#'
+#' @rdname svc
+#' @return `summary()` on a `tulpa_svc_posterior` returns a `tulpa_svc_summary`
+#'   data frame with one row per location and term, holding the observation
+#'   index, term name, coordinates, and the posterior mean, SD and requested
+#'   quantiles of each spatially varying coefficient.
 #' @export
 summary.tulpa_svc_posterior <- function(object, probs = c(0.025, 0.5, 0.975), ...) {
   .summary_varying_coef(
@@ -492,15 +482,8 @@ summary.tulpa_svc_posterior <- function(object, probs = c(0.025, 0.5, 0.975), ..
 }
 
 
-#' Print method for tulpa_svc_posterior
-#'
-#' @param x A tulpa_svc_posterior object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing a summary of the spatially-varying-coefficient posterior to the
-#'   console.
-#'
+#' @rdname svc
+#' @param x A `tulpa_svc_posterior` or `tulpa_svc_summary` object.
 #' @export
 print.tulpa_svc_posterior <- function(x, ...) {
   .print_varying_coef(
@@ -509,6 +492,13 @@ print.tulpa_svc_posterior <- function(x, ...) {
     meta_label = "Covariance function", meta_value = x$cov,
     viz = "spatial"
   )
+}
+
+#' @rdname svc
+#' @export
+print.tulpa_svc_summary <- function(x, ...) {
+  .print_effect_table(x, "Spatially varying coefficient posterior summary",
+                      ...)
 }
 
 

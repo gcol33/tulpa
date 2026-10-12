@@ -1531,12 +1531,24 @@ tulpa_joint_axis_specs_from_grid <- function(
 #'   field x field covariance.
 #' @export
 #' @examples
-#' \dontrun{
-#' tulpa_joint_inner_vcov_blocks(
-#'   fit$Q_csc_p_per_grid, fit$Q_csc_i_per_grid, fit$Q_csc_x_per_grid,
-#'   n_x = fit$Q_csc_n, idx = 1:2, n_dense = 2L, A_cols_list = list()
-#' )
+#' # Two outer-grid cells of a latent precision over two fixed effects and a
+#' # ten-node random-walk field (sum-to-zero), each stored as the lower-triangle
+#' # CSC a joint fit keeps per cell.
+#' make_Q <- function(tau) {
+#'   Q <- matrix(0, 12, 12)
+#'   Q[1:2, 1:2] <- diag(2, 2) + 0.1
+#'   Q[3:12, 3:12] <- tau * crossprod(diff(diag(10))) + diag(0.3, 10)
+#'   Q[1, 3:12] <- Q[3:12, 1] <- 0.1
+#'   L <- Matrix::tril(methods::as(methods::as(Q, "generalMatrix"),
+#'                                 "CsparseMatrix"))
+#'   list(p = L@p, i = L@i, x = L@x)
 #' }
+#' cells <- list(make_Q(1), make_Q(4))
+#' blocks <- tulpa_joint_inner_vcov_blocks(
+#'   lapply(cells, `[[`, "p"), lapply(cells, `[[`, "i"), lapply(cells, `[[`, "x"),
+#'   n_x = 12L, idx = 1:12, n_dense = 2L, A_cols_list = list(3:12))
+#' blocks[[1]][1:2, 1:2]        # fixed-effect covariance in the first cell
+#' diag(blocks[[2]])[3:12]      # field marginal variances in the second
 tulpa_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid,
                                           n_x, idx, n_dense, A_cols_list,
                                           field_marginal = TRUE, n_threads = 1L) {
@@ -1574,6 +1586,28 @@ tulpa_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_gr
 #'   `field_marginal = TRUE` the field x field part of the within term is its
 #'   diagonal.
 #' @export
+#' @examples
+#' # Two outer-grid cells of a latent precision over two fixed effects and a
+#' # ten-node random-walk field (sum-to-zero), each stored as the lower-triangle
+#' # CSC a joint fit keeps per cell, with the cells' modes and weights.
+#' make_Q <- function(tau) {
+#'   Q <- matrix(0, 12, 12)
+#'   Q[1:2, 1:2] <- diag(2, 2) + 0.1
+#'   Q[3:12, 3:12] <- tau * crossprod(diff(diag(10))) + diag(0.3, 10)
+#'   Q[1, 3:12] <- Q[3:12, 1] <- 0.1
+#'   L <- Matrix::tril(methods::as(methods::as(Q, "generalMatrix"),
+#'                                 "CsparseMatrix"))
+#'   list(p = L@p, i = L@i, x = L@x)
+#' }
+#' cells <- list(make_Q(1), make_Q(4))
+#' set.seed(1)
+#' modes <- matrix(rnorm(2 * 12, sd = 0.2), 2, 12)
+#' mix <- tulpa_joint_inner_vcov_mixture(
+#'   lapply(cells, `[[`, "p"), lapply(cells, `[[`, "i"), lapply(cells, `[[`, "x"),
+#'   n_x = 12L, idx = 1:12, n_dense = 2L, A_cols_list = list(3:12),
+#'   weights = c(0.7, 0.3), modes = modes)
+#' mix$mean[1:2]
+#' mix$vcov[1:2, 1:2]
 tulpa_joint_inner_vcov_mixture <- function(Q_p_per_grid, Q_i_per_grid,
                                            Q_x_per_grid, n_x, idx, n_dense,
                                            A_cols_list, weights, modes = NULL,
@@ -1652,7 +1686,7 @@ tulpa_joint_inner_vcov_mixture <- function(Q_p_per_grid, Q_i_per_grid,
     for (k in seq_len(n_grid)) {
         Vk <- V[[k]]
         ok <- is.matrix(Vk) && nrow(Vk) == p && ncol(Vk) == p
-        Hk <- if (!ok) NULL else tryCatch(solve(Vk), error = function(e) NULL)
+        Hk <- if (!ok) NULL else tryCatch(.spd_inverse(Vk), error = function(e) NULL)
         # A cell carrying no usable block is fatal only if it carries weight;
         # a zero-weight cell contributes nothing and its slot is left empty for
         # `.nested_fixed_moments()` to skip. The slot is SKIPPED rather than

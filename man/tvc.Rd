@@ -3,11 +3,20 @@
 \name{tvc}
 \alias{tvc}
 \alias{tvc.tulpa_fit}
+\alias{print.tulpa_tvc_posterior}
+\alias{print.tulpa_tvc_summary}
+\alias{summary.tulpa_tvc_posterior}
 \title{Extract temporally-varying coefficients from a fitted model}
 \usage{
 tvc(object, terms = NULL, summary = FALSE, probs = c(0.025, 0.5, 0.975), ...)
 
 \method{tvc}{tulpa_fit}(object, terms = NULL, summary = FALSE, probs = c(0.025, 0.5, 0.975), ...)
+
+\method{print}{tulpa_tvc_posterior}(x, ...)
+
+\method{print}{tulpa_tvc_summary}(x, ...)
+
+\method{summary}{tulpa_tvc_posterior}(object, probs = c(0.025, 0.5, 0.975), ...)
 }
 \arguments{
 \item{object}{A \code{tulpa_fit} object fitted with \code{tvc} argument}
@@ -20,6 +29,8 @@ full posterior draws.}
 \item{probs}{Quantiles to compute if \code{summary = TRUE}.}
 
 \item{...}{Ignored}
+
+\item{x}{A \code{tulpa_tvc_posterior} or \code{tulpa_tvc_summary} object.}
 }
 \value{
 A \code{tulpa_tvc_posterior} object containing:
@@ -28,6 +39,10 @@ A \code{tulpa_tvc_posterior} object containing:
 \item \code{time_levels}: Time point labels
 \item \code{term_names}: Names of TVC terms
 }
+
+\code{summary()} on a \code{tulpa_tvc_posterior} returns a \code{tulpa_tvc_summary}
+data frame with one row per time point and term, holding the posterior
+mean, SD and requested quantiles of each temporally varying coefficient.
 }
 \description{
 Extract posterior distributions of temporally-varying coefficients (TVCs)

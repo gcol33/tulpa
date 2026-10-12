@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_loglik.R
 \name{.validate_family_support}
 \alias{.validate_family_support}
-\title{Validate the response against a family's support.}
+\title{Validate the response against a family's support}
 \usage{
 .validate_family_support(family, y, n_trials = NULL, zi = FALSE)
 }

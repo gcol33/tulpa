@@ -2,6 +2,7 @@
 % Please edit documentation in R/validate.R
 \name{prior_predict}
 \alias{prior_predict}
+\alias{print.tulpa_prior_predict}
 \title{Prior predictive simulation}
 \usage{
 prior_predict(
@@ -13,6 +14,8 @@ prior_predict(
   seed = NULL,
   ...
 )
+
+\method{print}{tulpa_prior_predict}(x, ...)
 }
 \arguments{
 \item{formula}{A model formula (e.g., \code{y ~ x + (1 | g)}). For multi-process
@@ -32,6 +35,8 @@ dimensions and design matrices; the response column may be absent or NA.}
 \item{seed}{Optional integer seed for reproducibility.}
 
 \item{...}{Passed to \code{family$simulate_fn}.}
+
+\item{x}{A \code{tulpa_prior_predict} object.}
 }
 \value{
 A \code{tulpa_prior_predict} object: a list with

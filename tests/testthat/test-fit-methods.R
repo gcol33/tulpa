@@ -27,7 +27,7 @@ test_that("Laplace fit supports the full S3 method contract", {
   expect_named(cf, c("(Intercept)", "x"))
   expect_length(cf, 2L)
 
-  sm <- summary(fit)
+  sm <- coef(summary(fit))
   expect_equal(nrow(sm), 2L)
   expect_true(all(is.finite(sm$std.error)))
   expect_equal(rownames(sm), c("(Intercept)", "x"))
@@ -146,8 +146,8 @@ test_that("Gibbs fit (one chain in $draws) supports the contract", {
   cf <- coef(fit)
   expect_named(cf, c("(Intercept)", "x"))
   expect_length(cf, 2L)
-  expect_equal(nrow(summary(fit)), 2L)
-  expect_true(all(is.finite(summary(fit)$std.error)))
+  expect_equal(nrow(coef(summary(fit))), 2L)
+  expect_true(all(is.finite(coef(summary(fit))$std.error)))
   expect_equal(dim(vcov(fit)), c(2L, 2L))
   expect_gt(nrow(ranef(fit)), 0L)
   # predict reuses coef()/vcov(), so it must work here too
@@ -167,7 +167,7 @@ test_that("sampler fit reports named fixed effects and separate random effects",
   expect_named(cf, c("(Intercept)", "x"))
   expect_length(cf, 2L)             # fixed effects only
 
-  expect_equal(nrow(summary(fit)), 2L)
+  expect_equal(nrow(coef(summary(fit))), 2L)
   expect_equal(nrow(ranef(fit)), d$n_groups)
   expect_setequal(names(tidy(fit)),
                   c("term", "estimate", "std.error", "conf.low", "conf.high"))

@@ -209,6 +209,33 @@ hyper_axis_spec <- function(name, grid, log_prior = NULL,
   out
 }
 
+#' @rdname hyper_axis_spec
+#' @param x A `tulpa_hyper_axis_spec`.
+#' @param ... Ignored.
+#' @export
+print.tulpa_hyper_axis_spec <- function(x, ...) {
+  g <- x$grid
+  cat("Hyperparameter axis '", x$name, "': ", length(g),
+      if (length(g) == 1L) " level" else " levels", sep = "")
+  if (length(g)) {
+    cat(" in [", format(min(g), digits = 4), ", ", format(max(g), digits = 4),
+        "]", sep = "")
+  }
+  cat(if (isTRUE(x$log_scale)) ", log scale\n" else ", linear scale\n")
+  if (!is.null(x$atom_mass)) {
+    cat("  point mass at 0: ", format(x$atom_mass, digits = 3), "\n", sep = "")
+  }
+  if (!is.null(x$bounds)) {
+    cat("  support: (", format(x$bounds[1L], digits = 4), ", ",
+        format(x$bounds[2L], digits = 4), ")\n", sep = "")
+  }
+  cat("  prior: ", if (is.null(x$log_prior)) "flat" else
+    paste0("supplied, density on the ", x$log_prior_coord, " coordinate"),
+    "\n", sep = "")
+  if (isTRUE(x$refinable)) cat("  refinable\n")
+  invisible(x)
+}
+
 # Normalise a list of axis specs to a list-of-tulpa_hyper_axis_spec.
 # Accepts: a single spec, a list of specs, or a list of plain `list(name=...,
 # grid=...)` entries (auto-wrapped via hyper_axis_spec()).

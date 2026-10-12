@@ -207,9 +207,10 @@ agq_fit <- function(y, X, group,
 
   sigma_hat <- exp(opt$par[p + 1L])
 
-  cov_par <- tryCatch(solve(opt$hessian),
+  cov_par <- tryCatch(.spd_inverse(opt$hessian),
                       error = function(e) {
-                        warning("AGQ Hessian singular; covariance set to NA.",
+                        warning("AGQ Hessian not positive definite; ",
+                                "covariance set to NA.",
                                 call. = FALSE)
                         matrix(NA_real_, p + 1L, p + 1L)
                       })
@@ -254,7 +255,7 @@ agq_fit <- function(y, X, group,
       "effects. Use mode = 're_cov_gibbs' or 're_cov_nested' for ranef()."),
     n_fixed = p
   )
-  .finalize_fit(fit, extra_class = "tulpa_agq_fit",
+  .finalize_fit(fit,
                data = list(y = y, n_trials = n_trials, model_matrix = X,
                           family = family, offset = offset,
                           phi = if (identical(family, "gaussian")) sigma_eps^2 else NULL))

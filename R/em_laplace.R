@@ -346,7 +346,7 @@
   # vcov() use on a nested fit.
   fm <- .nested_fixed_moments(fit)
   if (!is.null(fm)) {
-    Hb <- tryCatch(solve(fm$cov), error = function(e) NULL)
+    Hb <- tryCatch(.spd_inverse(fm$cov), error = function(e) NULL)
     if (!is.null(Hb)) fit$H_beta <- Hb
   }
 

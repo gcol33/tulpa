@@ -58,7 +58,7 @@ shape. \code{posterior_predict()}: an \verb{ndraws x N} integer matrix of class
 indices with attributes \code{levels} and \code{ordered}.
 }
 \description{
-\code{\link[=fitted]{fitted()}}, \code{\link[=residuals]{residuals()}}, \code{\link[=predict]{predict()}} and \code{\link[=posterior_predict]{posterior_predict()}} for a
+\code{\link[stats:fitted]{stats::fitted()}}, \code{\link[stats:residuals]{stats::residuals()}}, \code{\link[stats:predict]{stats::predict()}} and \code{\link[=posterior_predict]{posterior_predict()}} for a
 categorical response: a \code{\link[=tulpa_multinomial]{tulpa_multinomial()}} fit (\code{family = "multinomial"})
 or a \code{\link[=tulpa_ordinal]{tulpa_ordinal()}} fit (\code{family = "ordinal"}). The response is one of K
 classes, so the response-scale quantities are N x K matrices with one column

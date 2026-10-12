@@ -98,12 +98,12 @@ test_that("a dropped axis surfaces through diagnostic_summary, print and summary
     # And the printed summary carries it, not just the returned list.
     expect_output(print(ds), "sigma_grid")
 
-    out <- paste(utils::capture.output(print(fit)), collapse = "\n")
+    out <- paste(utils::capture.output(print(summary(fit))), collapse = "\n")
     expect_match(out, "unused axis fields", fixed = TRUE)
     expect_match(out, "sigma_grid", fixed = TRUE)
     expect_match(out, "diagnostic_summary", fixed = TRUE)
 
-    expect_identical(attr(summary(fit), "axis_fields_dropped"), rec)
+    expect_identical(summary(fit)$axis_fields_dropped, rec)
 })
 
 test_that("an auto_grid()-marked drop surfaces the same way", {
@@ -129,8 +129,8 @@ test_that("a fit with nothing dropped says nothing anywhere", {
     expect_null(ds$axis_fields_dropped)
     expect_false(any(grepl("was not used", ds$recommendations, fixed = TRUE)))
 
-    out <- paste(utils::capture.output(print(fit)), collapse = "\n")
+    out <- paste(utils::capture.output(print(summary(fit))), collapse = "\n")
     expect_false(grepl("unused axis fields", out, fixed = TRUE))
 
-    expect_null(attr(summary(fit), "axis_fields_dropped"))
+    expect_null(summary(fit)$axis_fields_dropped)
 })

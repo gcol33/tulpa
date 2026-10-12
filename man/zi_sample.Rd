@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_zi.R
 \name{zi_sample}
 \alias{zi_sample}
-\title{One draw per element from the zero-inflated mixture.}
+\title{One draw per element from the zero-inflated mixture}
 \usage{
 zi_sample(eta, logit_zi, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
-One draw per element from the zero-inflated mixture.
+One draw per element from the zero-inflated mixture
 }
 \keyword{internal}

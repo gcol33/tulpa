@@ -2,7 +2,7 @@
 % Please edit documentation in R/temporal_core.R
 \name{temporal_rw2}
 \alias{temporal_rw2}
-\title{RW2 temporal structure (Second-order Random Walk)}
+\title{RW2 temporal structure (second-order random walk)}
 \usage{
 temporal_rw2(time_var, group_var = NULL, cyclic = FALSE, shared = NULL)
 }

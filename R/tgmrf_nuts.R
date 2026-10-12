@@ -320,7 +320,7 @@
     inference_tier = 1L,
     backend        = "tgmrf_nuts"
   )
-  .finalize_fit(fit, draws_kind = "chain", extra_class = "tulpa_tgmrf",
+  .finalize_fit(fit, draws_kind = "chain",
                data = list(y = y, n_trials = n_trials, model_matrix = X,
                           family = family, phi = phi))
 }

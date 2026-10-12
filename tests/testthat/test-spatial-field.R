@@ -188,7 +188,8 @@ test_that("spatial() recovers the intercept and slope CAR fields", {
 
   # Generic methods work on the wrapped fit.
   sm <- summary(fit)
-  expect_true(is.data.frame(sm) || is.matrix(sm))
+  expect_s3_class(sm, "summary.tulpa_fit")
+  expect_s3_class(coef(sm), "data.frame")
 })
 
 test_that("inline spatial() fit's $y is the response vector, not the joint driver's per-arm list, so diagnostics run (gcol33/tulpa#796)", {

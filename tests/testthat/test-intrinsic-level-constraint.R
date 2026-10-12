@@ -97,7 +97,7 @@ test_that("laplace and nested_laplace intercept SEs match the exact ICAR posteri
   fl <- suppressWarnings(tulpa(y ~ x + spatial(region), data = d, phi = 0.16,
                                mode = "laplace", spatial = sp))
   ex1 <- .icar_exact_se(A, d, sigma = 1, s2 = 0.16)
-  expect_equal(unname(summary(fl)[1:2, 2]), ex1, tolerance = 0.02)
+  expect_equal(unname(coef(summary(fl))[1:2, 2]), ex1, tolerance = 0.02)
 
   # nested_laplace integrates tau. The exact intercept SD barely moves with the
   # field scale here (0.0327 at the generating sigma = 0.7; the issue measured
@@ -107,8 +107,8 @@ test_that("laplace and nested_laplace intercept SEs match the exact ICAR posteri
                                mode = "nested_laplace", spatial = sp,
                                control = list(n_threads = 1L)))
   ex07 <- .icar_exact_se(A, d, sigma = 0.7, s2 = 0.16)
-  expect_equal(summary(fn)[1, 2], ex07[1], tolerance = 0.1)
-  expect_equal(summary(fn)[2, 2], ex07[2], tolerance = 0.1)
+  expect_equal(coef(summary(fn))[1, 2], ex07[1], tolerance = 0.1)
+  expect_equal(coef(summary(fn))[2, 2], ex07[2], tolerance = 0.1)
 })
 
 test_that("a BYM2 laplace fit conditions only the structured component", {
@@ -130,7 +130,7 @@ test_that("a BYM2 laplace fit conditions only the structured component", {
   P <- diag(c(1e-4, 1e-4, rep(0, n - 1), rep(1, n)))
   P[2 + seq_len(n - 1), 2 + seq_len(n - 1)] <- t(B) %*% R %*% B
   ex <- unname(sqrt(diag(solve(crossprod(W) / 0.16 + P))[1:2]))
-  expect_equal(unname(summary(f)[1:2, 2]), ex, tolerance = 0.02)
+  expect_equal(unname(coef(summary(f))[1:2, 2]), ex, tolerance = 0.02)
 })
 
 test_that("the RW1 intercept SE is conditioned the same way", {
@@ -150,5 +150,5 @@ test_that("the RW1 intercept SE is conditioned the same way", {
   # Unconditioned, the level's augmentation variance 1 / (tau T) sat in the
   # intercept; conditioned, the intercept SE is the data's: close to
   # sqrt(0.09 / n) for a balanced design.
-  expect_lt(summary(fit)[1, 2], 1.5 * sqrt(0.09 / nrow(d)))
+  expect_lt(coef(summary(fit))[1, 2], 1.5 * sqrt(0.09 / nrow(d)))
 })

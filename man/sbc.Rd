@@ -4,7 +4,9 @@
 \alias{sbc}
 \alias{sbc.default}
 \alias{sbc.character}
+\alias{print.sbc}
 \alias{summary.sbc}
+\alias{print.sbc_summary}
 \alias{plot.sbc}
 \title{Simulation-based calibration}
 \usage{
@@ -27,7 +29,11 @@ sbc(object, ...)
   ...
 )
 
+\method{print}{sbc}(x, ...)
+
 \method{summary}{sbc}(object, baseline = NULL, ...)
+
+\method{print}{sbc_summary}(x, ...)
 
 \method{plot}{sbc}(x, arm = NULL, quantity = NULL, folded = FALSE, ...)
 }
@@ -65,12 +71,12 @@ the pinned stream the within-atom randomizing uniforms come from (default
 the driver's own, so a result is reproducible and the fits are not
 perturbed by asking for the diagnostic).}
 
+\item{x}{An \code{sbc} result.}
+
 \item{baseline}{Optional arm name. When given, the summary also carries the
 PAIRED CRPS differences of every other arm against it, seed by seed. A
 negative \code{delta} is the arm scoring better. This is refused on an
 experiment where the CRPS is not a proper posterior score.}
-
-\item{x}{An \code{sbc} result.}
 
 \item{arm, quantity}{Optional character vectors selecting which panels to
 draw. Default draws every (arm, quantity).}

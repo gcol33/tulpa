@@ -51,7 +51,7 @@
   }
   h_dim <- if (is.null(fit$H_beta)) 0L else nrow(fit$H_beta)
   se <- if (length(beta) == n_fixed && n_fixed > 0L && h_dim >= n_fixed) {
-    tryCatch(sqrt(diag(solve(fit$H_beta))[seq_len(n_fixed)]),
+    tryCatch(sqrt(diag(.spd_inverse(fit$H_beta))[seq_len(n_fixed)]),
              error = function(e) rep(NA_real_, n_fixed))
   } else {
     if (length(beta) == n_fixed && n_fixed > 0L && h_dim > 0L && h_dim < n_fixed) {

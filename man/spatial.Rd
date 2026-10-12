@@ -2,9 +2,15 @@
 % Please edit documentation in R/spatial_field.R
 \name{spatial}
 \alias{spatial}
+\alias{print.tulpa_spatial_field_fit}
+\alias{print.tulpa_spatial_field}
 \title{Areal spatially varying coefficient field}
 \usage{
 spatial(graph, formula, proper = FALSE, shared = NULL, by = NULL)
+
+\method{print}{tulpa_spatial_field_fit}(x, ...)
+
+\method{print}{tulpa_spatial_field}(x, ...)
 }
 \arguments{
 \item{graph}{Symmetric adjacency matrix of the spatial graph
@@ -45,6 +51,11 @@ among the coefficient columns within a field, while \code{by} sets how many
 independent replicates of the whole field exist. Default \code{NULL} (one
 field). Correlated proper CAR (\code{|} with \code{proper = TRUE}) stays out of scope
 with or without \code{by}.}
+
+\item{x}{A \code{spatial()} field specification, or the fit \code{tulpa()} returns for
+one.}
+
+\item{...}{Ignored.}
 }
 \value{
 A \code{tulpa_spatial_field} object describing the field(s). It is

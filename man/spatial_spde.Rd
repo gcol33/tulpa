@@ -2,7 +2,7 @@
 % Please edit documentation in R/spatial_rsr_spde.R
 \name{spatial_spde}
 \alias{spatial_spde}
-\title{SPDE Spatial Field (Matern via Triangular Mesh)}
+\title{SPDE spatial field (Matern via triangular mesh)}
 \usage{
 spatial_spde(
   coords,

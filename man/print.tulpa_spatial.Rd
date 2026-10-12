@@ -18,3 +18,4 @@ printing the spatial specification to the console.
 \description{
 Print method for tulpa_spatial
 }
+\keyword{internal}

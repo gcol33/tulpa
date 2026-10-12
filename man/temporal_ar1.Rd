@@ -2,7 +2,7 @@
 % Please edit documentation in R/temporal_core.R
 \name{temporal_ar1}
 \alias{temporal_ar1}
-\title{AR1 temporal structure (First-order Autoregressive)}
+\title{AR1 temporal structure (first-order autoregressive)}
 \usage{
 temporal_ar1(time_var, group_var = NULL, shared = NULL, rho_prior = NULL)
 }

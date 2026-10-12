@@ -2,6 +2,7 @@
 % Please edit documentation in R/simulate.R
 \name{tulpa_simulate}
 \alias{tulpa_simulate}
+\alias{print.tulpa_simulate}
 \title{Simulate data from a tulpa model}
 \usage{
 tulpa_simulate(
@@ -14,6 +15,8 @@ tulpa_simulate(
   seed = NULL,
   ...
 )
+
+\method{print}{tulpa_simulate}(x, ...)
 }
 \arguments{
 \item{formula}{A model formula, or list of formulas keyed by process name.}
@@ -49,6 +52,8 @@ subsampled (or recycled) to \code{n_sims}. Default 1.}
 \item{seed}{Optional integer seed.}
 
 \item{...}{Passed to \code{family$simulate_fn}.}
+
+\item{x}{A \code{tulpa_simulate} object.}
 }
 \value{
 A \code{tulpa_simulate} object: list with \code{y} (length-\code{n_sims} list of

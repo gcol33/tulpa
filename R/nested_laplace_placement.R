@@ -130,7 +130,7 @@
         any(!is.finite(mf$hess))) {
         return(list(declined = "no_usable_curvature"))
     }
-    cov_v <- tryCatch(solve(-.joint_ccd_neg_def(mf$hess)),
+    cov_v <- tryCatch(.spd_inverse(-.joint_ccd_neg_def(mf$hess)),
                       error = function(e) NULL)
     if (is.null(cov_v) || any(!is.finite(cov_v))) {
         return(list(declined = "no_usable_curvature"))
@@ -142,7 +142,7 @@
         .joint_pareto_fwd(out_tag[j], x0[j]), numeric(1))
     mode_u[vary] <- mf$par
     cov_u <- matrix(0, d, d)
-    cov_u[vary, vary] <- (cov_v + t(cov_v)) / 2
+    cov_u[vary, vary] <- cov_v
 
     eps <- 1e-3 * pmax(box$upper - box$lower, 1)
     at_box <- abs(mf$par - box$lower) < eps | abs(mf$par - box$upper) < eps

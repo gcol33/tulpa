@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_loglik.R
 \name{family_response_mean}
 \alias{family_response_mean}
-\title{Response-scale mean of y given eta for a family (trial-scaled where relevant).}
+\title{Response-scale mean of y given eta for a family (trial-scaled where relevant)}
 \usage{
 family_response_mean(eta, family, n_trials = NULL, phi = 1)
 }
 \description{
-Response-scale mean of y given eta for a family (trial-scaled where relevant).
+Response-scale mean of y given eta for a family (trial-scaled where relevant)
 }
 \keyword{internal}

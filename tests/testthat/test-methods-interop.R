@@ -189,8 +189,8 @@ test_that("`$` still returns fields that are actually present", {
 
 test_that("`$` exactness reaches subclasses and does not break assignment", {
   fit <- sampler_fit()
+  class(fit) <- c("tulpa_test_subclass", class(fit))
   expect_true(inherits(fit, "tulpa_fit"))
-  expect_gt(length(class(fit)), 1L)   # a subclass, inheriting the method
 
   fit$brand_new_field <- 42
   expect_identical(fit$brand_new_field, 42)
@@ -214,7 +214,7 @@ test_that("print() does not relabel a random-effect sd as the dispersion", {
 
   expect_null(fit$sigma)
   expect_false(is.null(fit$sigma_re))
-  expect_false(any(grepl("^sigma:", utils::capture.output(print(fit)))))
+  expect_false(any(grepl("^sigma:", utils::capture.output(print(summary(fit))))))
 })
 
 

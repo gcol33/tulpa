@@ -2,7 +2,7 @@
 % Please edit documentation in R/formula.R
 \name{.zi_design}
 \alias{.zi_design}
-\title{Build the zero-inflation design matrix from \code{ziformula}.}
+\title{Build the zero-inflation design matrix from \code{ziformula}}
 \usage{
 .zi_design(ziformula, data, n_obs)
 }

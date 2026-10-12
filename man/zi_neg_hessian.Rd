@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_zi.R
 \name{zi_neg_hessian}
 \alias{zi_neg_hessian}
-\title{Negative Hessian of the zero-inflated mixture in eta space.}
+\title{Negative Hessian of the zero-inflated mixture in eta space}
 \usage{
 zi_neg_hessian(eta, logit_zi, y, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }

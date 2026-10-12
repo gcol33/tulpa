@@ -2,15 +2,13 @@
 % Please edit documentation in R/inference_modes.R
 \name{INFERENCE_TIERS}
 \alias{INFERENCE_TIERS}
-\title{Inference tiers with their properties (derived from \code{TIER_META} +
-\code{BACKEND_REGISTRY}). Preserves the \verb{INFERENCE_TIERS$<tier>$backends}
-interface relied on by downstream code and tests.}
+\title{Inference tiers with their properties}
 \usage{
 INFERENCE_TIERS
 }
 \description{
-Inference tiers with their properties (derived from \code{TIER_META} +
-\code{BACKEND_REGISTRY}). Preserves the \verb{INFERENCE_TIERS$<tier>$backends}
-interface relied on by downstream code and tests.
+Derived from \code{TIER_META} and \code{BACKEND_REGISTRY}.
+Preserves the \verb{INFERENCE_TIERS$<tier>$backends} interface relied on by
+downstream code and tests.
 }
 \keyword{internal}

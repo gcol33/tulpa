@@ -253,7 +253,7 @@
         return(.nl_decline_recenter(out, "no_usable_curvature"))
     }
     H     <- (opt$hessian + t(opt$hessian)) / 2
-    cov_u <- tryCatch(solve(H), error = function(e) NULL)
+    cov_u <- tryCatch(.spd_inverse(H), error = function(e) NULL)
     if (is.null(cov_u) || any(!is.finite(cov_u)) || any(diag(cov_u) <= 0)) {
         return(.nl_decline_recenter(out, "no_usable_curvature"))
     }

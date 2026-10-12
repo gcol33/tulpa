@@ -1,4 +1,4 @@
-#' Inference Mode System
+#' Inference mode system
 #'
 #' @description
 #' tulpa uses an explicit tier system for inference that encodes
@@ -58,7 +58,7 @@ NULL
 # Tier metadata + backend registry (single source of truth)
 # ==============================================================================
 
-#' Tier metadata: the epistemic guarantee attached to each tier.
+#' Tier metadata: the epistemic guarantee attached to each tier
 #'
 #' Tier *membership* (which backends live in a tier) is not stored here -- it
 #' is derived from `BACKEND_REGISTRY`. This table holds only the per-tier
@@ -90,7 +90,7 @@ TIER_META <- list(
 )
 
 
-#' Backend registry -- single source of truth for the inference backends.
+#' Backend registry -- single source of truth for the inference backends
 #'
 #' @description
 #' One entry per backend. Adding a backend is a single entry here; tier
@@ -340,7 +340,7 @@ BACKEND_REGISTRY <- list(
 )
 
 
-#' Backend names belonging to a tier (derived from the registry).
+#' Backend names belonging to a tier (derived from the registry)
 #' @keywords internal
 .tier_backends <- function(tier_key) {
   names(Filter(function(e) e$tier == tier_key, BACKEND_REGISTRY))
@@ -352,9 +352,11 @@ BACKEND_REGISTRY <- list(
 }
 
 
-#' Inference tiers with their properties (derived from `TIER_META` +
-#' `BACKEND_REGISTRY`). Preserves the `INFERENCE_TIERS$<tier>$backends`
-#' interface relied on by downstream code and tests.
+#' Inference tiers with their properties
+#'
+#' Derived from `TIER_META` and `BACKEND_REGISTRY`.
+#' Preserves the `INFERENCE_TIERS$<tier>$backends` interface relied on by
+#' downstream code and tests.
 #' @keywords internal
 INFERENCE_TIERS <- local({
   out <- vector("list", length(TIER_META))
@@ -366,7 +368,7 @@ INFERENCE_TIERS <- local({
 })
 
 
-#' Backend -> supported families, derived from the registry.
+#' Backend -> supported families, derived from the registry
 #' @keywords internal
 BACKEND_FAMILY_SUPPORT <- local({
   out <- list()
@@ -378,7 +380,7 @@ BACKEND_FAMILY_SUPPORT <- local({
 })
 
 
-#' All registered backends across every tier (derived from the registry).
+#' All registered backends across every tier (derived from the registry)
 #' @keywords internal
 ALL_BACKENDS <- names(BACKEND_REGISTRY)
 
@@ -465,7 +467,7 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
                                .NL_FRONTDOOR_CONTINUOUS)
 
 
-#' Test whether a backend supports the given family.
+#' Test whether a backend supports the given family
 #' @keywords internal
 backend_supports_family <- function(backend, family) {
   supported <- BACKEND_REGISTRY[[backend]]$families
@@ -478,7 +480,7 @@ backend_supports_family <- function(backend, family) {
 
 
 #' Redirect a backend selection: swap the backend and restamp mode / tier /
-#' tier name from the registry, recording the reason shown on the fit.
+#' tier name from the registry, recording the reason shown on the fit
 #'
 #' A redirect off an EXPLICIT request (anything but `mode = "auto"`) is an
 #' override, not a resolution: the fit does what the model structure requires
@@ -565,7 +567,7 @@ backend_is_reachable <- function(backend) {
 }
 
 
-#' Error if a selected backend has no R-level fitter.
+#' Error if a selected backend has no R-level fitter
 #'
 #' @description
 #' Enforces the registry honesty contract: a backend may ship a C++ kernel
@@ -595,7 +597,7 @@ assert_backend_reachable <- function(backend) {
 }
 
 
-#' Resolve the R fitter function for a backend (errors if unreachable).
+#' Resolve the R fitter function for a backend (errors if unreachable)
 #'
 #' Looks up the fitter *name* string in the registry and resolves it lazily,
 #' so the registry stays independent of source-file load order.
@@ -606,7 +608,7 @@ resolve_backend_fitter <- function(backend) {
 }
 
 
-#' Dispatch a fit to the backend chosen by the mode/tier system.
+#' Dispatch a fit to the backend chosen by the mode/tier system
 #'
 #' @description
 #' The routing spine. Resolves `mode` to a concrete backend via
@@ -655,7 +657,7 @@ tulpa_dispatch <- function(mode,
 }
 
 
-#' Attach the standard `tulpa_fit` contract to a fitter's result.
+#' Attach the standard `tulpa_fit` contract to a fitter's result
 #'
 #' The dispatch layer and the fitters that return generic-accessor-facing
 #' objects route their return value through this helper (some special-purpose

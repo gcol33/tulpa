@@ -2,7 +2,7 @@
 % Please edit documentation in R/marginal_se_spatial.R
 \name{.field_design_Z}
 \alias{.field_design_Z}
-\title{Build a length-n_obs -> length-n_units indicator design matrix Z.}
+\title{Build a length-n_obs -> length-n_units indicator design matrix Z}
 \usage{
 .field_design_Z(obs_to_unit, n_units, n_obs)
 }

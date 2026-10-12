@@ -46,22 +46,22 @@ d    <- data.frame(y, x, site = factor(site))
 
 fit <- tulpa(y ~ x + (1 + x | site), data = d, family = "poisson")
 
-fit$selection_reason
+summary(fit)$inference$selection_reason
 #> "random-slope term(s) present; RE covariance(s) integrated via re_cov_gibbs (1 block(s))"
 
-summary(fit)
+coef(summary(fit))
 #>             estimate  std.error    2.5%   97.5%
 #> (Intercept)    0.214      0.103  -0.003   0.401
 #> x              0.488      0.087   0.322   0.658
 
-fit$posterior          # the random-effect covariance, marginalized to sigma / rho
+summary(fit)$hyperparameters   # the random-effect covariance, marginalized to sigma / rho
 #>   parameter    mean     sd   median   ci_lo   ci_hi
 #>     sigma_1   0.688  0.102    0.678   0.516   0.918   # intercept SD (truth 0.7)
 #>     sigma_2   0.469  0.074    0.461   0.345   0.636   # slope SD     (truth 0.4)
 #>      rho_12  -0.145  0.206   -0.156  -0.523   0.254   # correlation  (truth 0)
 ```
 
-`mode = "auto"` picks a backend and records the reason on the fit. The random-effect covariance is not a plug-in point estimate: `sigma_1`, `sigma_2`, and `rho_12` are read off the joint posterior with full credible intervals. The result is a `tulpa_fit` with the usual accessors (`coef`, `confint`, `vcov`, `summary`, `tidy`, `glance`, `ranef`) and a full diagnostics surface (`diagnostics`, `check_model`, `pp_check`).
+`mode = "auto"` picks a backend and records the reason on the fit, which `summary()` reports. The random-effect covariance is not a plug-in point estimate: `sigma_1`, `sigma_2`, and `rho_12` are read off the joint posterior with full credible intervals. The result is a `tulpa_fit` with the usual accessors (`coef`, `confint`, `vcov`, `summary`, `tidy`, `glance`, `ranef`) and a full diagnostics surface (`diagnostics`, `check_model`, `pp_check`).
 
 ## One front door, every backend
 
@@ -70,13 +70,13 @@ fit$posterior          # the random-effect covariance, marginalized to sigma / r
 ```r
 # Default: auto routes and records why on the fit
 fit <- tulpa(y ~ x + (1 + x | site), data = d, family = "poisson")
-fit$selection_reason
+summary(fit)$inference$selection_reason
 #> "random-slope term(s) present; RE covariance(s) integrated via re_cov_gibbs (1 block(s))"
 
 # Same model, cheaper deterministic covariance integration (nested Laplace + CCD)
 fit <- tulpa(y ~ x + (1 + x | site), data = d, family = "poisson",
              control = list(re_cov = "nested"))
-fit$selection_reason
+summary(fit)$inference$selection_reason
 #> "random-slope term(s) present; RE covariance(s) integrated via re_cov_nested (1 block(s))"
 
 # Drop the correlation: an uncorrelated (diagonal) covariance block
@@ -98,7 +98,7 @@ VarCorr(fit)
 #> 2 site           x 0.4628957 estimated
 ```
 
-`source` says where each number came from: `estimated` for a covariance the fit determined, `sampled` for a posterior mean over draws, `conditioned` for one supplied through `sigma_re`. These are the lme4-shaped summary of the mean covariance; the marginalized SDs with credible intervals are the `sigma_i` rows of `fit$posterior` above. Families cover the counts (Poisson, both negative-binomial parameterizations, their truncated forms, and zero-inflated or hurdle mixtures through `ziformula`), binomial and beta-binomial, gaussian, lognormal, gamma, inverse gaussian, beta, Student-t, and Tweedie. `mode = "eb"` estimates the covariance by empirical Bayes and `estimate_phi = TRUE` frees the family's dispersion.
+`source` says where each number came from: `estimated` for a covariance the fit determined, `sampled` for a posterior mean over draws, `conditioned` for one supplied through `sigma_re`. These are the lme4-shaped summary of the mean covariance; the marginalized SDs with credible intervals are the `sigma_i` rows of `summary(fit)$hyperparameters` above. Families cover the counts (Poisson, both negative-binomial parameterizations, their truncated forms, and zero-inflated or hurdle mixtures through `ziformula`), binomial and beta-binomial, gaussian, lognormal, gamma, inverse gaussian, beta, Student-t, and Tweedie. `mode = "eb"` estimates the covariance by empirical Bayes and `estimate_phi = TRUE` frees the family's dispersion.
 
 ```r
 # GAM: an RW2 smoother over a binned covariate, 20 nodes

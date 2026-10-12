@@ -77,29 +77,43 @@
   sprintf("fit in %s%s", total, grid)
 }
 
-#' Print method for nested-Laplace fits
-#'
-#' Compact one-screen summary of a [tulpa_nested_laplace()] or
-#' [tulpa_nested_laplace_joint()] fit: the hyperparameters integrated over, the
-#' outer-grid size, the outer Pareto-\eqn{\hat{k}} accuracy diagnostic when
-#' present, and the wall-clock timing line (`"fit in 5h 25m (grid 2h 09m)"`)
-#' when `fit$timing` is attached. Inherited by the single-block joint and
-#' multi-block joint subclasses.
-#'
-#' @param x A `tulpa_nested_laplace` fit (or a joint subclass).
+#' @rdname tulpa_nested_laplace
+#' @param x A nested-Laplace fit.
 #' @param ... Ignored.
-#' @return `x`, invisibly.
+#' @details `print()` shows the integrated hyperparameters, the outer-grid
+#'   size, the outer Pareto-\eqn{\hat{k}} diagnostic when present and the
+#'   wall-clock timing line (`"fit in 5h 25m (grid 2h 09m)"`) when
+#'   `fit$timing` is attached, then the fixed effects.
 #' @export
 print.tulpa_nested_laplace <- function(x, ...) {
-  is_joint <- inherits(x, "tulpa_nested_laplace_joint")
-  is_multi <- inherits(x, "tulpa_nested_laplace_joint_multi")
-  header <- if (is_multi) {
-    "tulpa joint nested-Laplace fit (multi-block)"
-  } else if (is_joint) {
-    "tulpa joint nested-Laplace fit"
-  } else {
-    "tulpa nested-Laplace fit"
-  }
+  .print_nested_laplace(x, "tulpa nested-Laplace fit")
+}
+
+#' @rdname tulpa_nested_laplace_joint
+#' @param x A joint nested-Laplace fit.
+#' @param ... Ignored.
+#' @export
+print.tulpa_nested_laplace_joint <- function(x, ...) {
+  .print_nested_laplace(x, "tulpa joint nested-Laplace fit")
+}
+
+#' @rdname tulpa_nested_laplace_joint
+#' @export
+print.tulpa_nested_laplace_joint_multi <- function(x, ...) {
+  .print_nested_laplace(x, "tulpa joint nested-Laplace fit (multi-block)")
+}
+
+#' @rdname fit_st_nested
+#' @param x A `fit_st_nested()` fit.
+#' @param ... Ignored.
+#' @export
+print.tulpa_st_nested <- function(x, ...) {
+  .print_nested_laplace(x, "tulpa space-time nested-Laplace fit")
+}
+
+# The header naming the nested-Laplace variant, then the tier's own report,
+# then the generic fit body.
+.print_nested_laplace <- function(x, header) {
   cat(header, "\n")
   .print_nested_laplace_body(x)
   .print_fit_body(x)

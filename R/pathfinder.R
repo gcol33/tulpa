@@ -116,15 +116,15 @@ pathfinder <- function(log_posterior,
   H <- opt$hessian
   H <- 0.5 * (H + t(H))   # symmetrise
 
-  prop_cov <- tryCatch(solve(H),
+  prop_cov <- tryCatch(.spd_inverse(H),
                        error = function(e) {
-                         stop("Hessian is singular at the mode; cannot ",
-                              "form Gaussian fit. ",
+                         stop("Hessian is singular or not positive-definite ",
+                              "at the mode; cannot form Gaussian fit. ",
+                              "L-BFGS may not be at a local maximum. ",
                               "Try a different `init`, regularise the ",
                               "log-posterior, or check identifiability.",
                               call. = FALSE)
                        })
-  prop_cov <- 0.5 * (prop_cov + t(prop_cov))
   R <- tryCatch(chol(prop_cov),
                 error = function(e) {
                   stop("Inverse Hessian is not positive-definite. ",
@@ -172,6 +172,5 @@ pathfinder <- function(log_posterior,
     inference_tier = 2L,
     backend = "pathfinder"
   )
-  .finalize_fit(fit, param_names = names(init),
-                extra_class = "tulpa_pathfinder_fit")
+  .finalize_fit(fit, param_names = names(init))
 }

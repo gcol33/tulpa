@@ -2,11 +2,11 @@
 % Please edit documentation in R/inference_modes.R
 \name{backend_supports_family}
 \alias{backend_supports_family}
-\title{Test whether a backend supports the given family.}
+\title{Test whether a backend supports the given family}
 \usage{
 backend_supports_family(backend, family)
 }
 \description{
-Test whether a backend supports the given family.
+Test whether a backend supports the given family
 }
 \keyword{internal}

@@ -2,7 +2,7 @@
 % Please edit documentation in R/marginal_se_spatial.R
 \name{.icar_precision_Q}
 \alias{.icar_precision_Q}
-\title{Intrinsic ICAR field precision, augmented to full rank.}
+\title{Intrinsic ICAR field precision, augmented to full rank}
 \usage{
 .icar_precision_Q(spatial, node_prec = NULL)
 }

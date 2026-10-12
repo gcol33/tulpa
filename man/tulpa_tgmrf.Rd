@@ -43,7 +43,7 @@ they are merged into \code{control} (a named argument here wins over the same
 name inside \code{control}).}
 }
 \value{
-A \code{tulpa_tgmrf} / \code{tulpa_fit} object; \verb{$backend} and \verb{$mode} record
+A \code{tulpa_fit} object; \verb{$backend} and \verb{$mode} record
 the engine used.
 }
 \description{

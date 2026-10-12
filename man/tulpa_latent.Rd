@@ -2,7 +2,7 @@
 % Please edit documentation in R/latent.R
 \name{tulpa_latent}
 \alias{tulpa_latent}
-\title{Latent Factor Specification for Unmeasured Confounders}
+\title{Latent factor specification for unmeasured confounders}
 \value{
 The constructor documented in this family (\code{\link[=latent_factor]{latent_factor()}})
 returns a \code{tulpa_latent} specification object consumed by ratio /

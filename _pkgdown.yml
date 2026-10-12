@@ -143,17 +143,21 @@ reference:
     in whatever representation the backend produced, and the extracted latent
     effects.
   contents:
+  - summary.tulpa_fit
+  - tulpa_fit_summary
   - fixef
   - ranef
   - VarCorr
   - posterior_sample
   - mcmc_draws
   - tulpa_posterior_draws
+  - tulpa_outer_grid
   - tulpa_draws_array
   - as_draws
   - temporal
   - spatiotemporal_effects
   - smooth_effects
+  - field_effects
   - latent_factors
 - title: Diagnostics
   desc: >

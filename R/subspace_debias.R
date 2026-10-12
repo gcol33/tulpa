@@ -227,7 +227,7 @@
   rest <- setdiff(seq_len(p), pos)
   if (!length(rest)) return(out)
   Vss <- V[pos, pos, drop = FALSE]
-  A <- tryCatch(V[rest, pos, drop = FALSE] %*% solve(Vss), error = function(e) NULL)
+  A <- tryCatch(t(solve(Vss, V[pos, rest, drop = FALSE])), error = function(e) NULL)
   if (is.null(A)) return(NULL)
   Vc <- V[rest, rest, drop = FALSE] - A %*% V[pos, rest, drop = FALSE]
   Lc <- tryCatch(t(chol((Vc + t(Vc)) / 2)), error = function(e) NULL)
@@ -297,7 +297,7 @@
   for (k in ok) {
     mu <- M[[k]]
     if (length(mu) != p) next
-    V <- tryCatch(solve(H[[k]]), error = function(e) NULL)
+    V <- tryCatch(.spd_inverse(H[[k]]), error = function(e) NULL)
     if (is.null(V) || any(dim(V) != p)) next
     beta_nodes[k, ] <- mu
     cov_nodes[[k]]  <- V

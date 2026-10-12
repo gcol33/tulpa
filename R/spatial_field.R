@@ -837,6 +837,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 }
 
 
+#' @rdname spatial
 #' @export
 print.tulpa_spatial_field_fit <- function(x, ...) {
   cat("tulpa fit: inline spatial() varying-coefficient field(s)\n")
@@ -873,6 +874,10 @@ print.tulpa_spatial_field_fit <- function(x, ...) {
 }
 
 
+#' @rdname spatial
+#' @param x A `spatial()` field specification, or the fit `tulpa()` returns for
+#'   one.
+#' @param ... Ignored.
 #' @export
 print.tulpa_spatial_field <- function(x, ...) {
   cat("tulpa areal varying-coefficient field\n")

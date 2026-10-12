@@ -2,6 +2,7 @@
 % Please edit documentation in R/latent.R
 \name{latent_factor}
 \alias{latent_factor}
+\alias{print.tulpa_latent}
 \title{Create a latent factor specification}
 \usage{
 latent_factor(
@@ -11,6 +12,8 @@ latent_factor(
   constraint = c("sum_to_zero", "first_zero"),
   scale = TRUE
 )
+
+\method{print}{tulpa_latent}(x, ...)
 }
 \arguments{
 \item{n_factors}{Integer; number of latent factors. Default is 1.
@@ -32,6 +35,10 @@ factors only affect the first process.}
 
 \item{scale}{Logical; if TRUE (default), factor loadings are standardized
 to have unit variance before applying sigma.}
+
+\item{x}{A \code{tulpa_latent} specification.}
+
+\item{...}{Ignored.}
 }
 \value{
 A \code{tulpa_latent} object consumed by ratio / multi-arm model

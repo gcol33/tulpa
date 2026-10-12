@@ -2,6 +2,16 @@
 % Please edit documentation in R/priors.R
 \name{tulpa_priors}
 \alias{tulpa_priors}
+\alias{print.tulpa_priors}
+\alias{print.tulpa_prior}
+\alias{format.tulpa_prior_normal}
+\alias{format.tulpa_prior_half_normal}
+\alias{format.tulpa_prior_half_cauchy}
+\alias{format.tulpa_prior_gamma}
+\alias{format.tulpa_prior_exponential}
+\alias{format.tulpa_prior_beta}
+\alias{format.tulpa_prior_pc}
+\alias{format.tulpa_prior}
 \title{Prior specification for tulpa models}
 \usage{
 tulpa_priors(
@@ -11,6 +21,26 @@ tulpa_priors(
   rho_temporal = NULL,
   rho_spatial = NULL
 )
+
+\method{print}{tulpa_priors}(x, ...)
+
+\method{print}{tulpa_prior}(x, ...)
+
+\method{format}{tulpa_prior_normal}(x, indent = "", ...)
+
+\method{format}{tulpa_prior_half_normal}(x, indent = "", ...)
+
+\method{format}{tulpa_prior_half_cauchy}(x, indent = "", ...)
+
+\method{format}{tulpa_prior_gamma}(x, indent = "", ...)
+
+\method{format}{tulpa_prior_exponential}(x, indent = "", ...)
+
+\method{format}{tulpa_prior_beta}(x, indent = "", ...)
+
+\method{format}{tulpa_prior_pc}(x, indent = "", ...)
+
+\method{format}{tulpa_prior}(x, indent = "", ...)
 }
 \arguments{
 \item{beta}{Prior for fixed effects. Default: \code{prior_normal(0, 2.5)}.}
@@ -26,9 +56,18 @@ P(phi > 10) = 0.01.}
 
 \item{rho_spatial}{Prior for spatial proportion (BYM2). Default:
 \code{prior_beta(1, 1)} (uniform).}
+
+\item{x}{A \code{tulpa_priors} specification, or a single prior built by a
+\verb{prior_*()} constructor.}
+
+\item{...}{Ignored.}
+
+\item{indent}{String prefixed to each formatted line.}
 }
 \value{
 A \code{tulpa_priors} object
+
+\code{format()} returns the prior as a character string.
 }
 \description{
 Specify priors for model parameters. Supports both PC (penalized complexity)

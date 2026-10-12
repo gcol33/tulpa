@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_loglik.R
 \name{.validate_family_phi}
 \alias{.validate_family_phi}
-\title{Validate the dispersion parameter \code{phi} for a family.}
+\title{Validate the dispersion parameter \code{phi} for a family}
 \usage{
 .validate_family_phi(family, phi)
 }

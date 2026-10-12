@@ -189,7 +189,7 @@
 #'     leave it alone. Read off the weights, so the trigger is not one SD
 #'     estimator compared against the other.
 #'
-#' @return A list of class `c("tulpa_hyper_grid", "tulpa_fit", "list")` with:
+#' @return A list of class `c("tulpa_fit", "list")` with:
 #'   * `theta_grid` -- numeric matrix `[n_cells x n_axes]` of outer-grid
 #'     hyperparameter values; columns named after the axes.
 #'   * `theta_names` -- character vector of axis names.
@@ -242,7 +242,7 @@
 #' XtX <- crossprod(X); Xty <- crossprod(X, y)
 #' inner_fit <- function(hypers) {
 #'   sigma <- as.numeric(hypers["sigma"])
-#'   V <- solve(XtX / sigma^2 + diag(1e-4, 2))
+#'   V <- chol2inv(chol(XtX / sigma^2 + diag(1e-4, 2)))
 #'   mu <- as.numeric(V %*% (Xty / sigma^2))
 #'   list(log_marginal = -n * log(sigma) - 0.5 * sum((y - X %*% mu)^2) / sigma^2 +
 #'          0.5 * as.numeric(determinant(V)$modulus),
@@ -520,6 +520,6 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     adaptive_grid_info            = adaptive_info,
     var_of_means_consistency_info = consistency_info
   )
-  class(out) <- c("tulpa_hyper_grid", "tulpa_fit", "list")
+  class(out) <- c("tulpa_fit", "list")
   out
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/ccd_grid.R
 \name{ccd_grid}
 \alias{ccd_grid}
-\title{Central Composite Design (CCD) grid for nested-Laplace integration}
+\title{Central composite design (CCD) grid for nested-Laplace integration}
 \usage{
 ccd_grid(k, f_0 = sqrt(k))
 }

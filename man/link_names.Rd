@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_link.R
 \name{link_names}
 \alias{link_names}
-\title{Links available as a \verb{<family>_<link>} suffix.}
+\title{Links available as a \verb{<family>_<link>} suffix}
 \usage{
 link_names()
 }
 \description{
-Links available as a \verb{<family>_<link>} suffix.
+Links available as a \verb{<family>_<link>} suffix
 }
 \keyword{internal}

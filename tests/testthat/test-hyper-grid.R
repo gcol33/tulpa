@@ -64,7 +64,6 @@ test_that("tulpa_hyper_grid wires axes / weights / posterior fields", {
                                       beta_cov  = matrix(1, 1, 1))
   res <- tulpa_hyper_grid(specs, inner_fit, n_draws = 0L)
 
-  expect_s3_class(res, "tulpa_hyper_grid")
   expect_s3_class(res, "tulpa_fit")
   expect_equal(res$n_grid, 9L)
   expect_equal(dim(res$theta_grid), c(9L, 2L))

@@ -2,7 +2,7 @@
 % Please edit documentation in R/spatial_rsr_spde.R
 \name{spatial_spde_custom}
 \alias{spatial_spde_custom}
-\title{SPDE Spatial Field from Custom Matrices}
+\title{SPDE spatial field from custom matrices}
 \usage{
 spatial_spde_custom(
   C,

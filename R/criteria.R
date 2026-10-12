@@ -303,6 +303,10 @@ tulpa_criteria <- function(log_lik,
   out
 }
 
+#' @rdname tulpa_criteria
+#' @param x A `tulpa_criteria` result.
+#' @param digits Decimal places printed.
+#' @param ... Ignored.
 #' @export
 print.tulpa_criteria <- function(x, digits = 1, ...) {
   if (is.null(x$n_groups)) {
@@ -694,6 +698,9 @@ wbic.tulpa_fit <- function(object, ...) {
   wbic.default(ll)
 }
 
+#' @rdname wbic
+#' @param x A `tulpa_wbic` result.
+#' @param digits Decimal places printed.
 #' @export
 print.tulpa_wbic <- function(x, digits = 2, ...) {
   cat(sprintf("WBIC  %.*f  (beta = 1 / log(%d) = %.4f, %d draws)\n",

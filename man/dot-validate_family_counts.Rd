@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_loglik.R
 \name{.validate_family_counts}
 \alias{.validate_family_counts}
-\title{Validate the response \code{y} for a count family.}
+\title{Validate the response \code{y} for a count family}
 \usage{
 .validate_family_counts(family, y, zi = FALSE)
 }

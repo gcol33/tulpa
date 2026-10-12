@@ -2,7 +2,7 @@
 % Please edit documentation in R/marginal_se_spatial.R
 \name{.graph_n_components}
 \alias{.graph_n_components}
-\title{Number of connected components of an adjacency graph.}
+\title{Number of connected components of an adjacency graph}
 \usage{
 .graph_n_components(adjacency)
 }

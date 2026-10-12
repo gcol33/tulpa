@@ -2,7 +2,7 @@
 % Please edit documentation in R/plot_diagnostics.R
 \name{plot_acf}
 \alias{plot_acf}
-\title{Plot Autocorrelation Functions}
+\title{Plot autocorrelation functions}
 \usage{
 plot_acf(fit, pars = NULL, lags = 25, n_pars = 6)
 }

@@ -647,7 +647,7 @@
 .STUDENT_T_DF <- 4
 
 
-#' Supported R-level family names.
+#' Supported R-level family names
 #'
 #' The response families `family = ` accepts on the engine's front doors, in
 #' their canonical (default-link) spelling. A family's `*_<link>` variants
@@ -727,7 +727,7 @@ family_names <- function() names(.FAMILY_OPS)
 # to the registry alone fails loudly rather than fitting the wrong likelihood.
 .R_ONLY_FAMILIES <- character(0)
 
-#' Reject families the compiled kernels do not implement.
+#' Reject families the compiled kernels do not implement
 #'
 #' @keywords internal
 .validate_family_compiled <- function(family) {
@@ -800,7 +800,7 @@ family_names <- function() names(.FAMILY_OPS)
   n_trials
 }
 
-#' Validate the dispersion parameter `phi` for a family.
+#' Validate the dispersion parameter `phi` for a family
 #'
 #' Errors when `family` carries a dispersion / precision parameter and `phi` is
 #' not a positive finite scalar. A no-op for families without dispersion
@@ -817,7 +817,7 @@ family_names <- function() names(.FAMILY_OPS)
   invisible(TRUE)
 }
 
-#' Validate the response `y` for a count family.
+#' Validate the response `y` for a count family
 #'
 #' Errors when `family` is a count family and `y` carries negative or
 #' non-integer values, which the integer-casting kernels would silently floor
@@ -850,7 +850,7 @@ family_names <- function() names(.FAMILY_OPS)
 }
 
 
-#' Validate the response against a family's support.
+#' Validate the response against a family's support
 #'
 #' The one support rule set, shared by the [tulpa()] front door and by the
 #' engine fitters ([tulpa_laplace()], [tulpa_laplace_beta()],
@@ -930,7 +930,7 @@ family_names <- function() names(.FAMILY_OPS)
 }
 
 
-#' Reject non-finite fitting inputs.
+#' Reject non-finite fitting inputs
 #'
 #' The design is built with `na.action = na.pass`, so a missing predictor or
 #' response survives into `X` / `y`. No fitter drops incomplete cases, so an
@@ -989,7 +989,7 @@ family_names <- function() names(.FAMILY_OPS)
   invisible(TRUE)
 }
 
-#' The response as the numeric vector the kernels read.
+#' The response as the numeric vector the kernels read
 #'
 #' A logical response is the binary idiom `glm()` accepts for a binomial
 #' family, `TRUE` a success; it is read as 0/1 there. Anywhere else, and for
@@ -1020,7 +1020,7 @@ family_names <- function() names(.FAMILY_OPS)
                family, hint), call. = FALSE)
 }
 
-#' Reject an incomplete random-effect design.
+#' Reject an incomplete random-effect design
 #'
 #' The formula's grouping factors and random-slope covariates are built with
 #' `na.action = na.pass` as the fixed design is, so an NA group or slope value
@@ -1066,7 +1066,7 @@ family_names <- function() names(.FAMILY_OPS)
 }
 
 
-#' Look up a family's operation set, with a clear error for unknown families.
+#' Look up a family's operation set, with a clear error for unknown families
 #' @keywords internal
 .family_ops <- function(family) {
   ops <- .FAMILY_OPS[[family]]
@@ -1141,7 +1141,7 @@ family_names <- function() names(.FAMILY_OPS)
   else paste0(base, "_", link)
 }
 
-#' Resolve a family spelling to its canonical registry name.
+#' Resolve a family spelling to its canonical registry name
 #'
 #' A no-op for a canonical name, for a `<family>_<link>` code, and for anything
 #' unrecognized, which reaches `.family_or_stop()` and errors there against the
@@ -1250,15 +1250,17 @@ family_names <- function() names(.FAMILY_OPS)
 }
 
 
-#' Inverse-link mean for a family. `phi` reaches entries whose response mean
-#' depends on the dispersion (lognormal); the others ignore it via `...`.
+#' Inverse-link mean for a family
+#'
+#' `phi` reaches entries whose response mean depends on the dispersion
+#' (lognormal); the others ignore it via `...`.
 #' @keywords internal
 family_mean <- function(eta, family, phi = 1.0) {
   .family_ops(family)$mean(eta, phi)
 }
 
 
-#' Elementwise log-likelihood for a family.
+#' Elementwise log-likelihood for a family
 #' @keywords internal
 family_loglik <- function(eta, y, family, n_trials = NULL, phi = 1.0,
                           phi2 = NULL) {
@@ -1270,7 +1272,7 @@ family_loglik <- function(eta, y, family, n_trials = NULL, phi = 1.0,
 }
 
 
-#' Score (d log-likelihood / d eta), elementwise.
+#' Score (d log-likelihood / d eta), elementwise
 #' @keywords internal
 family_score_eta <- function(eta, y, family, n_trials = NULL, phi = 1.0,
                              phi2 = NULL) {
@@ -1282,7 +1284,7 @@ family_score_eta <- function(eta, y, family, n_trials = NULL, phi = 1.0,
 }
 
 
-#' Laplace/IRLS working weight (-d^2 log-lik / d eta^2), elementwise.
+#' Laplace/IRLS working weight (-d^2 log-lik / d eta^2), elementwise
 #' @keywords internal
 family_weight <- function(eta, family, n_trials = NULL, phi = 1.0,
                           phi2 = NULL) {
@@ -1294,7 +1296,7 @@ family_weight <- function(eta, family, n_trials = NULL, phi = 1.0,
 }
 
 
-#' One response draw per element of `eta` (posterior predictive), elementwise.
+#' One response draw per element of `eta` (posterior predictive), elementwise
 #' @keywords internal
 family_sample <- function(eta, family, n_trials = NULL, phi = 1.0,
                           phi2 = NULL) {
@@ -1310,7 +1312,7 @@ family_sample <- function(eta, family, n_trials = NULL, phi = 1.0,
 }
 
 
-#' Response variance Var(y | eta) for a family, elementwise.
+#' Response variance Var(y | eta) for a family, elementwise
 #' @keywords internal
 family_variance <- function(eta, family, n_trials = NULL, phi = 1.0,
                             phi2 = NULL) {
@@ -1326,7 +1328,7 @@ family_variance <- function(eta, family, n_trials = NULL, phi = 1.0,
 }
 
 
-#' Observed curvature (-d^2 log-lik / d eta^2 at the realized `y`), elementwise.
+#' Observed curvature (-d^2 log-lik / d eta^2 at the realized `y`), elementwise
 #'
 #' One path, the compiled dispatch (`obs_grad_hess_for_family`), for every
 #' family. It used to answer from the registry's `obs_weight` closure where a
@@ -1358,7 +1360,7 @@ family_variance <- function(eta, family, n_trials = NULL, phi = 1.0,
 }
 
 
-#' Response-scale mean of y given eta for a family (trial-scaled where relevant).
+#' Response-scale mean of y given eta for a family (trial-scaled where relevant)
 #' @keywords internal
 family_response_mean <- function(eta, family, n_trials = NULL, phi = 1.0) {
   ops <- .family_ops(family)

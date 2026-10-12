@@ -3,6 +3,7 @@
 \name{spatiotemporal_effects}
 \alias{spatiotemporal_effects}
 \alias{spatiotemporal_effects.tulpa_fit}
+\alias{print.tulpa_st_summary}
 \title{Extract spatiotemporal effects from fitted model}
 \usage{
 spatiotemporal_effects(
@@ -18,6 +19,8 @@ spatiotemporal_effects(
   probs = c(0.025, 0.5, 0.975),
   ...
 )
+
+\method{print}{tulpa_st_summary}(x, ...)
 }
 \arguments{
 \item{object}{A \code{tulpa_fit} object carrying a \verb{$spatiotemporal} Knorr-Held
@@ -31,21 +34,38 @@ such a block comes from a model package's own fitter (see
 \item{probs}{Quantiles to compute if \code{format = "summary"}.}
 
 \item{...}{Ignored}
+
+\item{x}{A \code{tulpa_st_summary} table.}
 }
 \value{
-Spatiotemporal effects in requested format
+For \code{format = "array"}, an S x T x draws numeric array carrying
+\code{n_spatial}, \code{n_times} and \code{n_draws} attributes; for \code{"long"}, a data
+frame with columns \code{s}, \code{t}, \code{draw} and \code{value}; for \code{"summary"}, a
+\code{tulpa_st_summary} data frame with columns \code{s}, \code{t}, \code{mean}, one column
+per entry of \code{probs} and \code{sd}, which has \code{print()} and \code{plot()} methods.
 }
 \description{
 Extract posterior distributions of spatiotemporal interaction effects
 from a fitted tulpa model.
 }
 \examples{
-\dontrun{
-# `fit` carries a Knorr-Held interaction block, which no tulpa backend
-# fits: the spec comes from a model package that configures the
-# interaction itself (see spatiotemporal() for what the engine does fit).
+# A Knorr-Held interaction block is attached by a model package's own
+# fitter (see spatiotemporal() for what the engine fits). The accessor reads
+# its layout and an n_draws x (S * T) draw matrix stored s-fastest: column
+# (t - 1) * S + s holds region s at time t. Here both are simulated for
+# S = 3 regions over T = 4 times.
+set.seed(1)
+S <- 3L; n_t <- 4L
+st_mean <- outer(c(-0.5, 0, 0.5), seq(-0.3, 0.3, length.out = n_t))
+draws <- matrix(rnorm(100 * S * n_t, mean = rep(c(st_mean), each = 100),
+                      sd = 0.1), nrow = 100)
+fit <- structure(
+  list(spatiotemporal = list(n_spatial = S, n_times = n_t),
+       .internal = list(spatiotemporal_draws = draws)),
+  class = "tulpa_fit")
+
 st_effects <- spatiotemporal_effects(fit, format = "summary")
 head(st_effects)
-}
+dim(spatiotemporal_effects(fit, format = "array"))
 
 }

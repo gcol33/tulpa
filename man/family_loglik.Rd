@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_loglik.R
 \name{family_loglik}
 \alias{family_loglik}
-\title{Elementwise log-likelihood for a family.}
+\title{Elementwise log-likelihood for a family}
 \usage{
 family_loglik(eta, y, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
-Elementwise log-likelihood for a family.
+Elementwise log-likelihood for a family
 }
 \keyword{internal}

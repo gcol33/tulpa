@@ -751,11 +751,11 @@
     if (is.null(st) || any(!is.finite(st$hess))) return(NULL)
     if (!.joint_ccd_outer_hess_ok(st$hess)) return(NULL)
     neg_H <- -0.5 * (st$hess + t(st$hess))                # precision at the mode
-    cov_v <- tryCatch(solve(neg_H), error = function(e) NULL)
+    cov_v <- tryCatch(.spd_inverse(neg_H), error = function(e) NULL)
     if (is.null(cov_v) || any(!is.finite(cov_v))) return(NULL)
 
     cov <- matrix(0, d, d)
-    cov[vary, vary] <- (cov_v + t(cov_v)) / 2             # pinned rows/cols zero
+    cov[vary, vary] <- cov_v                              # pinned rows/cols zero
     cov
 }
 

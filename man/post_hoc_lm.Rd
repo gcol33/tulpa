@@ -2,6 +2,7 @@
 % Please edit documentation in R/diagnostics_generic.R
 \name{post_hoc_lm}
 \alias{post_hoc_lm}
+\alias{print.post_hoc_lm}
 \title{Fit a post-hoc linear model on estimated parameters}
 \usage{
 post_hoc_lm(
@@ -11,6 +12,8 @@ post_hoc_lm(
   n_boot = 1000L,
   probs = c(0.025, 0.975)
 )
+
+\method{print}{post_hoc_lm}(x, ...)
 }
 \arguments{
 \item{formula}{Model formula (e.g., \code{psi_hat ~ trait1 + trait2}).}
@@ -22,6 +25,10 @@ post_hoc_lm(
 \item{n_boot}{Number of bootstrap replicates for CI (default 1000, 0 to skip).}
 
 \item{probs}{Quantile probabilities for bootstrap CI (default 0.025, 0.975).}
+
+\item{x}{A \code{post_hoc_lm} result.}
+
+\item{...}{Ignored.}
 }
 \value{
 A list of class \code{"post_hoc_lm"} with:

@@ -2,7 +2,7 @@
 % Please edit documentation in R/plot_diagnostics.R
 \name{plot_pairs}
 \alias{plot_pairs}
-\title{Plot Bivariate Parameter Posteriors (Pairs Plot)}
+\title{Plot bivariate parameter posteriors (pairs plot)}
 \usage{
 plot_pairs(
   fit,

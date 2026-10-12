@@ -88,6 +88,7 @@ tulpa_posterior_draws <- function(fit, idx = NULL, n = 1000, ...) {
     UseMethod("tulpa_posterior_draws")
 }
 
+#' @rdname tulpa_posterior_draws
 #' @export
 tulpa_posterior_draws.default <- function(fit, idx = NULL, n = 1000, ...) {
     stop("tulpa_posterior_draws() is implemented for nested-Laplace fits ",
@@ -95,6 +96,7 @@ tulpa_posterior_draws.default <- function(fit, idx = NULL, n = 1000, ...) {
          "Got: ", paste(class(fit), collapse = ", "), ".", call. = FALSE)
 }
 
+#' @rdname tulpa_posterior_draws
 #' @export
 tulpa_posterior_draws.tulpa_nested_laplace <- function(fit, idx = NULL,
                                                        n = 1000, ...) {

@@ -186,7 +186,7 @@ test_that("a dump rebuilt with its own weights returns the fixed-effect read the
     # the same cells, so the tolerance is floating slack, not an allowance.
     expect_equal(fx$mean, coef(fit), tolerance = 1e-12)
     expect_equal(fx$cov, vcov(fit), tolerance = 1e-12)
-    expect_equal(unname(fx$se), summary(fit)$std.error, tolerance = 1e-12)
+    expect_equal(unname(fx$se), coef(summary(fit))$std.error, tolerance = 1e-12)
     expect_identical(names(fx$mean), fit$fixed_names)
     expect_length(fx$mean, fit$n_fixed)
   }

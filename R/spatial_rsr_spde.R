@@ -61,7 +61,7 @@ validate_spatial <- function(spatial, data) {
 # Spatial Confounding Mitigation
 # =============================================================================
 
-#' Restricted Spatial Regression (RSR)
+#' Restricted spatial regression (RSR)
 #'
 #' @description
 #' Apply Restricted Spatial Regression to mitigate spatial confounding.
@@ -254,15 +254,9 @@ spatial_rsr <- function(spatial, restrict_to) {
 }
 
 
-#' Print method for tulpa_rsr
-#'
-#' @param x A tulpa_rsr object
-#' @param ... Passed to underlying print method
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the spatial specification and its restricted-spatial-regression
-#'   modifier to the console.
-#'
+#' @rdname spatial_rsr
+#' @param x A `tulpa_rsr` specification.
+#' @param ... Passed to the print method of the restricted field.
 #' @export
 print.tulpa_rsr <- function(x, ...) {
   # Print underlying spatial type
@@ -346,7 +340,7 @@ apply_rsr_projection <- function(w, P_perp) {
 # SPDE spatial field (Matern via FEM on triangular mesh)
 # =====================================================================
 
-#' SPDE Spatial Field (Matern via Triangular Mesh)
+#' SPDE spatial field (Matern via triangular mesh)
 #'
 #' Specify a continuous Matern spatial field using the SPDE approach
 #' (Lindgren, Rue & Lindstrom 2011). Builds a triangular mesh from
@@ -466,7 +460,7 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
   )
 }
 
-#' SPDE Spatial Field from Custom Matrices
+#' SPDE spatial field from custom matrices
 #'
 #' Specify a continuous Matern spatial field using externally-provided FEM
 #' matrices. Use this with meshes from fmesher, rSPDE, or any other source.

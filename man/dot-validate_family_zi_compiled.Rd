@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_zi.R
 \name{.validate_family_zi_compiled}
 \alias{.validate_family_zi_compiled}
-\title{Reject a ZI request the compiled kernels cannot fit.}
+\title{Reject a ZI request the compiled kernels cannot fit}
 \usage{
 .validate_family_zi_compiled(family)
 }
 \description{
-Reject a ZI request the compiled kernels cannot fit.
+Reject a ZI request the compiled kernels cannot fit
 }
 \keyword{internal}

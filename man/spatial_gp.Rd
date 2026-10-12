@@ -2,6 +2,8 @@
 % Please edit documentation in R/spatial_gp.R
 \name{spatial_gp}
 \alias{spatial_gp}
+\alias{print.tulpa_gp}
+\alias{print.tulpa_hsgp}
 \title{Gaussian process spatial structure (NNGP)}
 \usage{
 spatial_gp(
@@ -18,6 +20,10 @@ spatial_gp(
   scale_coords = TRUE,
   parameterization = c("noncentered", "centered", "collapsed")
 )
+
+\method{print}{tulpa_gp}(x, ...)
+
+\method{print}{tulpa_hsgp}(x, ...)
 }
 \arguments{
 \item{coords}{A formula (\code{~ lon + lat}) or character vector naming the
@@ -65,6 +71,10 @@ One of \code{"noncentered"} (default; samples \code{z ~ N(0, I)} and reconstruct
 field as \code{w = f(z, sigma2, phi)}, avoiding the field/hyperparameter funnel),
 \code{"centered"} (places the NNGP density on the field directly), or
 \code{"collapsed"} (deprecated).}
+
+\item{x}{A \code{tulpa_gp} or \code{tulpa_hsgp} specification.}
+
+\item{...}{Ignored.}
 }
 \value{
 A \code{tulpa_gp} object (also of class \code{tulpa_spatial}).

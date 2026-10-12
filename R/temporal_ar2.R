@@ -73,9 +73,8 @@
                  p), call. = FALSE)
   }
   Sigma <- stats::toeplitz(g)
-  Q <- solve(Sigma)
+  Q <- .spd_inverse(Sigma)
   Q[abs(row(Q) - col(Q)) > p] <- 0        # width-p band (order-p Markov)
-  Q <- 0.5 * (Q + t(Q))                    # symmetrize float round-off
   methods::as(methods::as(Q, "generalMatrix"), "CsparseMatrix")
 }
 
@@ -225,4 +224,14 @@ temporal_ar <- function(time_idx, p = 2L, n_times = NULL,
   class(blk) <- c("tulpa_temporal_latent_block", class(blk))
   blk$n_times <- n_times
   blk
+}
+
+#' @rdname temporal_ar
+#' @param x A temporal AR(p) block.
+#' @param ... Passed to the `tgmrf` print method.
+#' @export
+print.tulpa_temporal_latent_block <- function(x, ...) {
+  cat("Temporal AR(", x$theta_dim - 1L, ") latent block over ", x$n_times,
+      " time points\n", sep = "")
+  NextMethod()
 }

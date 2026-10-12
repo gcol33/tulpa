@@ -177,3 +177,14 @@
     class = c(summary_class, "data.frame")
   )
 }
+
+# Shared print for the classed tables the posterior accessors and diagnostics
+# return (svc / tvc / temporal / spatiotemporal summaries, the empirical
+# variogram): one line naming the table and its draw count, then the rows.
+.print_effect_table <- function(x, header, ...) {
+  nd <- attr(x, "n_draws")
+  if (!is.null(nd)) header <- paste0(header, ", ", nd, " posterior draws")
+  cat(header, "\n", sep = "")
+  print.data.frame(x, ...)
+  invisible(x)
+}

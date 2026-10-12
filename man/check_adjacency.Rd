@@ -2,15 +2,22 @@
 % Please edit documentation in R/adjacency.R
 \name{check_adjacency}
 \alias{check_adjacency}
+\alias{print.tulpa_adjacency_check}
 \title{Validate a spatial adjacency matrix}
 \usage{
 check_adjacency(adjacency, ids = NULL)
+
+\method{print}{tulpa_adjacency_check}(x, ...)
 }
 \arguments{
 \item{adjacency}{A matrix (dense or sparse \code{Matrix}).}
 
 \item{ids}{Optional cell identifiers; if supplied, their length must match
 \code{nrow(adjacency)} and they must be unique.}
+
+\item{x}{A \code{tulpa_adjacency_check} report.}
+
+\item{...}{Ignored.}
 }
 \value{
 Invisibly, a \code{tulpa_adjacency_check} list with the per-check results

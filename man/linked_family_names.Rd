@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_link.R
 \name{linked_family_names}
 \alias{linked_family_names}
-\title{Family codes the link layer accepts beyond the bare registry names.}
+\title{Family codes the link layer accepts beyond the bare registry names}
 \usage{
 linked_family_names()
 }

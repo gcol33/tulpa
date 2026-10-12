@@ -2,11 +2,11 @@
 % Please edit documentation in R/family_loglik.R
 \name{.validate_family_compiled}
 \alias{.validate_family_compiled}
-\title{Reject families the compiled kernels do not implement.}
+\title{Reject families the compiled kernels do not implement}
 \usage{
 .validate_family_compiled(family)
 }
 \description{
-Reject families the compiled kernels do not implement.
+Reject families the compiled kernels do not implement
 }
 \keyword{internal}

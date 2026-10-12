@@ -2,7 +2,7 @@
 % Please edit documentation in R/marginal_se_spatial.R
 \name{.nngp_precision_Q}
 \alias{.nngp_precision_Q}
-\title{Build NNGP precision Lambda = (I - A)' D^-1 (I - A) at given hyperparameters.}
+\title{Build NNGP precision Lambda = (I - A)' D^-1 (I - A) at given hyperparameters}
 \usage{
 .nngp_precision_Q(spatial, sigma2_gp, phi_gp)
 }

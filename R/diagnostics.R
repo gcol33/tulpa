@@ -272,6 +272,17 @@
 #'     `"internal_inconsistency"` (an engine bug worth reporting), plus a
 #'     one-line reading of it.}
 #'   \item{`pareto_k_is_ess`}{importance-sampling ESS on the smoothed weights.}
+#'   \item{`pareto_k_ci_low`, `pareto_k_ci_high`, `pareto_k_se_boot`,
+#'     `pareto_k_band_confident`, `diagnose_draws`}{the bootstrap interval of
+#'     the outer k-hat, its standard error, whether the interval sits inside
+#'     one band, and the draw count it used; present when the fit ran the
+#'     bootstrap.}
+#'   \item{`k_quality_requested`, `k_quality_reached`, `k_quality_best`,
+#'     `k_quality_reason`, `k_quality_rounds`}{the outcome of a
+#'     `control$k_quality` request; present when one was made.}
+#'   \item{`inner_skew`, `inner_skew_idx`}{the per-index inner-Laplace
+#'     skewness `gamma_3` and the latent indices it was probed at; present
+#'     when the probe ran.}
 #'   \item{`ess_grid`, `n_grid`, `rel_ess_grid`, `max_weight`}{grid quadrature
 #'     reliability. `n_grid` counts the cells SOLVED, so a posterior sharp
 #'     enough to underflow all but one of them reads `ess_grid = 1.00 of 124

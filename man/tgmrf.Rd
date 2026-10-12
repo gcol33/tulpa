@@ -2,6 +2,8 @@
 % Please edit documentation in R/tgmrf.R
 \name{tgmrf}
 \alias{tgmrf}
+\alias{print.tgmrf}
+\alias{summary.tgmrf}
 \title{User-defined GMRF latent block}
 \usage{
 tgmrf(
@@ -14,6 +16,10 @@ tgmrf(
   obs_idx = NULL,
   name = NULL
 )
+
+\method{print}{tgmrf}(x, ...)
+
+\method{summary}{tgmrf}(object, ...)
 }
 \arguments{
 \item{Q}{A function \verb{function(theta)} returning a sparse precision matrix
@@ -45,6 +51,12 @@ observation per latent slot, in row order.}
 
 \item{name}{Optional character; cosmetic label used by \code{print()} /
 \code{summary()}.}
+
+\item{x}{A \code{tgmrf} block.}
+
+\item{...}{Passed from \code{summary()} to \code{print()}.}
+
+\item{object}{A \code{tgmrf} block.}
 }
 \value{
 An object of class \code{c("tgmrf", "tulpa_latent_block")} with
@@ -57,6 +69,9 @@ components:
 \item \code{graph} -- user-supplied pattern, validated against \code{pattern} if given.
 \item \code{bounds}, \code{name} -- passed through.
 }
+
+\code{summary()} prints the block, its log prior at \code{init} and its bounds,
+and returns \code{object} invisibly.
 }
 \description{
 \code{tgmrf()} lets a user define a Gaussian Markov random field as a latent

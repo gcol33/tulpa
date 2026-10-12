@@ -265,7 +265,8 @@ test_that("an EB fit carries the shape the generic accessors read", {
   expect_equal(dim(vcov(fit)), c(2L, 2L))
   expect_equal(dim(confint(fit)), c(2L, 2L))
   expect_true(is.finite(fit$log_marginal))
-  expect_s3_class(summary(fit), "data.frame")
+  expect_s3_class(summary(fit), "summary.tulpa_fit")
+  expect_s3_class(coef(summary(fit)), "data.frame")
   expect_output(print(fit), "eb")
 })
 

@@ -2,9 +2,12 @@
 % Please edit documentation in R/plot_diagnostics.R
 \name{geweke_test}
 \alias{geweke_test}
-\title{Geweke Convergence Test}
+\alias{print.tulpa_geweke}
+\title{Geweke convergence test}
 \usage{
 geweke_test(fit, frac1 = 0.1, frac2 = 0.5, pars = NULL)
+
+\method{print}{tulpa_geweke}(x, ...)
 }
 \arguments{
 \item{fit}{A \code{tulpa_fit} object.}
@@ -16,6 +19,10 @@ Both lie in \verb{(0, 1)} and the windows may not overlap:
 \code{frac1 + frac2 <= 1}.}
 
 \item{pars}{Character vector of parameter names (default: all main params).}
+
+\item{x}{A \code{tulpa_geweke} result.}
+
+\item{...}{Ignored.}
 }
 \value{
 A data frame of class \code{tulpa_geweke} with columns \code{chain},

@@ -2,14 +2,21 @@
 % Please edit documentation in R/plot_diagnostics.R
 \name{diagnostic_summary}
 \alias{diagnostic_summary}
-\title{Comprehensive Diagnostic Summary}
+\alias{print.tulpa_diagnostic_summary}
+\title{Comprehensive diagnostic summary}
 \usage{
 diagnostic_summary(fit, quiet = FALSE)
+
+\method{print}{tulpa_diagnostic_summary}(x, ...)
 }
 \arguments{
 \item{fit}{A \code{tulpa_fit} object.}
 
 \item{quiet}{Logical; if TRUE, suppress printed output (default: FALSE).}
+
+\item{x}{A \code{tulpa_diagnostic_summary} object.}
+
+\item{...}{Ignored.}
 }
 \value{
 A list with class \code{tulpa_diagnostic_summary} containing:

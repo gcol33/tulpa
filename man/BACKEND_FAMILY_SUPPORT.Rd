@@ -2,11 +2,11 @@
 % Please edit documentation in R/inference_modes.R
 \name{BACKEND_FAMILY_SUPPORT}
 \alias{BACKEND_FAMILY_SUPPORT}
-\title{Backend -> supported families, derived from the registry.}
+\title{Backend -> supported families, derived from the registry}
 \usage{
 BACKEND_FAMILY_SUPPORT
 }
 \description{
-Backend -> supported families, derived from the registry.
+Backend -> supported families, derived from the registry
 }
 \keyword{internal}

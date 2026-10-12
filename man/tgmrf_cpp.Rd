@@ -60,10 +60,20 @@ The user \code{.cpp} file must include \verb{<tulpa/tgmrf.h>} and call the
 \code{inst/examples/tgmrf_periodic_ar1.cpp} for a worked example.
 }
 \examples{
-\dontrun{
-# Compile a user latent block against tulpa's AD types; see
-# inst/examples/tgmrf_periodic_ar1.cpp for a complete block.
-blk <- tgmrf_cpp("my_block.cpp", id = "ar1", init = c(0, 0), graph = my_graph)
+\donttest{
+# Compile the periodic AR(1) block shipped with the package (80 nodes,
+# theta = (log sigma, atanh rho)) into a temporary cache, then evaluate
+# its registered precision kernel at the initial theta.
+cpp_file <- system.file("examples", "tgmrf_periodic_ar1.cpp",
+                        package = "tulpa")
+blk <- tgmrf_cpp(cpp_file, id = "tgmrf_periodic_ar1",
+                 init = c(log_sigma = 0, atanh_rho = atanh(0.5)),
+                 name = "periodic_ar1",
+                 cache_dir = file.path(tempdir(), "tulpa-cache"))
+blk$n_latent
+Q <- blk$Q(c(0, atanh(0.5)))
+dim(Q)
+Q[1:3, 1:3]
 }
 }
 \seealso{

@@ -2,6 +2,7 @@
 % Please edit documentation in R/temporal_ar2.R
 \name{temporal_ar}
 \alias{temporal_ar}
+\alias{print.tulpa_temporal_latent_block}
 \title{AR(p) temporal latent field (general-order autoregressive)}
 \usage{
 temporal_ar(
@@ -12,6 +13,8 @@ temporal_ar(
   prior_psi_sd = 1.5,
   name = NULL
 )
+
+\method{print}{tulpa_temporal_latent_block}(x, ...)
 }
 \arguments{
 \item{time_idx}{Integer vector (1-based) of the time point for each
@@ -25,6 +28,10 @@ observation.}
 \code{atanh_psi} hyperparameters (weakly-informative Gaussian). Defaults 2 / 1.5.}
 
 \item{name}{Optional block label (default \verb{ar<p>}).}
+
+\item{x}{A temporal AR(p) block.}
+
+\item{...}{Passed to the \code{tgmrf} print method.}
 }
 \value{
 A \code{tgmrf} / \code{tulpa_latent_block} object.

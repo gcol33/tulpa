@@ -170,14 +170,9 @@ spatial_gp <- function(coords,
 }
 
 
-#' Print method for tulpa_gp
-#'
-#' @param x A tulpa_gp object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the Gaussian-process spatial specification to the console.
-#'
+#' @rdname spatial_gp
+#' @param x A `tulpa_gp` or `tulpa_hsgp` specification.
+#' @param ... Ignored.
 #' @export
 print.tulpa_gp <- function(x, ...) {
   cat("tulpa Gaussian Process spatial specification\n")
@@ -203,14 +198,7 @@ print.tulpa_gp <- function(x, ...) {
 
 
 
-#' Print method for tulpa_hsgp
-#'
-#' @param x A tulpa_hsgp object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the Hilbert-space GP spatial specification to the console.
-#'
+#' @rdname spatial_gp
 #' @export
 print.tulpa_hsgp <- function(x, ...) {
   cat("tulpa Hilbert Space GP (HSGP) spatial specification\n")
@@ -256,7 +244,7 @@ validate_hsgp_multiscale <- function(spatial, data) {
 }
 
 
-#' Multi-Scale Gaussian Process spatial structure
+#' Multi-scale Gaussian process spatial structure
 #'
 #' @description
 #' Specify a multi-scale spatial random effect that decomposes spatial
@@ -457,14 +445,9 @@ spatial_multiscale <- function(coords,
 }
 
 
-#' Print method for tulpa_multiscale
-#'
-#' @param x A tulpa_multiscale object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the multi-scale spatial specification to the console.
-#'
+#' @rdname spatial_multiscale
+#' @param x A `tulpa_multiscale` specification.
+#' @param ... Ignored.
 #' @export
 print.tulpa_multiscale <- function(x, ...) {
   cat("tulpa Multi-Scale spatial specification\n")

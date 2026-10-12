@@ -149,9 +149,9 @@
 #' observation's linear predictor before the likelihood is evaluated, and is
 #' not itself part of the fitted posterior.
 #'
-#' @return A `tulpa_fit` (subclass `tulpa_ep`) with `means` (posterior mean) and
+#' @return A `tulpa_fit` with `means` (posterior mean) and
 #'   `cov` (posterior covariance) of the EP Gaussian, which is the posterior
-#'   [coef()], [vcov()], [summary()] and [confint()] report; `draws` sampled
+#'   [coef()], [vcov()], [summary.tulpa_fit()] and [confint()] report; `draws` sampled
 #'   from that Gaussian; `log_marginal` (the EP approximation); `converged`
 #'   (the sweep tolerance was met AND every site's adaptive quadrature mode
 #'   search converged AND no site's tilted variance floored -- a site that is
@@ -348,6 +348,6 @@ ep_fit <- function(y, X, family = "binomial", phi = 1.0, phi2 = NULL,
     backend = "ep", inference_tier = 2L, inference_mode = "structured",
     draws_kind = "iid"
   )
-  class(fit) <- c("tulpa_ep", "tulpa_fit")
+  class(fit) <- "tulpa_fit"
   fit
 }

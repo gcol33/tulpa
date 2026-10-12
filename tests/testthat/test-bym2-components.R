@@ -113,7 +113,7 @@ test_that("nested_laplace fits a BYM2 field with an island (#902)", {
   # Was NA NA, with "did not return Q. This is a tulpa bug".
   expect_true(all(is.finite(cf)))
   expect_equal(unname(cf[2]), 0.5, tolerance = 0.3)
-  expect_true(all(is.finite(summary(f)[, 2])))
+  expect_true(all(is.finite(coef(summary(f))[, 2])))
 })
 
 test_that("the Polya-Gamma Gibbs BYM2 gives the island its unit prior", {
@@ -125,7 +125,7 @@ test_that("the Polya-Gamma Gibbs BYM2 gives the island its unit prior", {
   f <- tulpa(yb ~ x + spatial(region), dd$d, family = "binomial",
              mode = "gibbs", spatial = sp,
              control = list(n_iter = 400, warmup = 200, seed = 1))
-  expect_true(all(is.finite(summary(f)[, 2])))
+  expect_true(all(is.finite(coef(summary(f))[, 2])))
   # The island's structured draw is N(0, 1 / node_prec) a priori, where the
   # unweighted kernel's near-flat PG_ICAR_ISOLATED_PREC let it wander.
   ph <- f$draws[, "phi_spatial[16]"]

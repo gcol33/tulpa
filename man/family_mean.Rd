@@ -2,13 +2,12 @@
 % Please edit documentation in R/family_loglik.R
 \name{family_mean}
 \alias{family_mean}
-\title{Inverse-link mean for a family. \code{phi} reaches entries whose response mean
-depends on the dispersion (lognormal); the others ignore it via \code{...}.}
+\title{Inverse-link mean for a family}
 \usage{
 family_mean(eta, family, phi = 1)
 }
 \description{
-Inverse-link mean for a family. \code{phi} reaches entries whose response mean
-depends on the dispersion (lognormal); the others ignore it via \code{...}.
+\code{phi} reaches entries whose response mean depends on the dispersion
+(lognormal); the others ignore it via \code{...}.
 }
 \keyword{internal}

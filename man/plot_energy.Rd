@@ -2,7 +2,7 @@
 % Please edit documentation in R/plot_diagnostics.R
 \name{plot_energy}
 \alias{plot_energy}
-\title{Plot Energy Diagnostic (E-BFMI)}
+\title{Plot energy diagnostic (E-BFMI)}
 \usage{
 plot_energy(fit)
 }

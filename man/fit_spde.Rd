@@ -2,7 +2,7 @@
 % Please edit documentation in R/fit_spde.R
 \name{fit_spde}
 \alias{fit_spde}
-\title{Fit a Spatial Model using SPDE Laplace Approximation}
+\title{Fit a spatial model using SPDE Laplace approximation}
 \usage{
 fit_spde(
   y,

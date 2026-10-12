@@ -1268,6 +1268,7 @@ sbc.character <- function(object = c("prior_predictive", "posterior"),
              stringsAsFactors = FALSE)
 }
 
+#' @rdname sbc
 #' @export
 print.sbc <- function(x, ...) {
   cat(sprintf("Simulation-based calibration -- %s, %d simulations\n",
@@ -1327,6 +1328,7 @@ summary.sbc <- function(object, baseline = NULL, ...) {
   structure(out, class = "sbc_summary")
 }
 
+#' @rdname sbc
 #' @export
 print.sbc_summary <- function(x, ...) {
   cat(sprintf("Simulation-based calibration -- %s, %d simulations\n",

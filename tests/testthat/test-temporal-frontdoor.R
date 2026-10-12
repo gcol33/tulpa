@@ -56,7 +56,7 @@ test_that("nested temporal fit reports a marginalized fixed-effect SE", {
   fx <- .tfd_rw1_binomial()
   d <- fx$d; fit <- fx$fit
 
-  sm <- summary(fit)
+  sm <- coef(summary(fit))
   expect_true(is.finite(sm["x", "std.error"]))   # slope SE from grid marginalization
   ci <- confint(fit)["x", ]
   expect_lt(ci[1], d$b1)

@@ -3,7 +3,7 @@
 \name{.sel_redirect}
 \alias{.sel_redirect}
 \title{Redirect a backend selection: swap the backend and restamp mode / tier /
-tier name from the registry, recording the reason shown on the fit.}
+tier name from the registry, recording the reason shown on the fit}
 \usage{
 .sel_redirect(sel, backend, reason, notify = TRUE)
 }

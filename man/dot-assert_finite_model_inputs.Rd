@@ -2,7 +2,7 @@
 % Please edit documentation in R/family_loglik.R
 \name{.assert_finite_model_inputs}
 \alias{.assert_finite_model_inputs}
-\title{Reject non-finite fitting inputs.}
+\title{Reject non-finite fitting inputs}
 \usage{
 .assert_finite_model_inputs(X, y, n_trials = NULL, offset = NULL, where = NULL)
 }

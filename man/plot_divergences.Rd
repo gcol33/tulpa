@@ -2,7 +2,7 @@
 % Please edit documentation in R/plot_diagnostics.R
 \name{plot_divergences}
 \alias{plot_divergences}
-\title{Plot Divergent Transitions}
+\title{Plot divergent transitions}
 \usage{
 plot_divergences(fit, pars = NULL, type = c("parcoord", "scatter"))
 }
