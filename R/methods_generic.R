@@ -1007,35 +1007,44 @@ print.summary.tulpa_fit <- function(x, digits = max(3L, getOption("digits") - 3L
 
 
 # The reliability section of a printed summary: the headline that applies to
-# the fit's draws provenance, then the backend's own quality numbers.
+# the fit's draws provenance, then the backend's own quality numbers. A record
+# with none of these prints no section at all.
 #' @keywords internal
 .print_reliability <- function(r, digits) {
   if (is.null(r)) return(invisible(NULL))
   fmt <- function(v) format(v, digits = digits)
-  cat("\nReliability (", r$kind, " draws):\n", sep = "")
+  body <- character()
   if (identical(r$kind, "chain") && !is.null(r$rhat_max)) {
-    cat("  max Rhat ", fmt(r$rhat_max), ", min bulk-ESS ", fmt(r$ess_bulk_min),
-        ", min tail-ESS ", fmt(r$ess_tail_min), "\n", sep = "")
+    body <- c(body, paste0("max Rhat ", fmt(r$rhat_max),
+                           ", min bulk-ESS ", fmt(r$ess_bulk_min),
+                           ", min tail-ESS ", fmt(r$ess_tail_min)))
   }
   b <- r$band
   if (is.data.frame(b) && nrow(b)) {
-    cat("  outer pareto_k ", fmt(b$pareto_k), " (", b$pareto_k_band, ")",
-        "; grid ESS ", fmt(b$ess_grid), " of ", b$n_grid, " cells",
-        "; inner skew ", fmt(b$inner_skew_max), " (", b$inner_skew_band, ")",
-        "\n", sep = "")
+    body <- c(body, paste0(
+      "outer pareto_k ", fmt(b$pareto_k), " (", b$pareto_k_band, ")",
+      "; grid ESS ", fmt(b$ess_grid), " of ", b$n_grid, " cells",
+      "; inner skew ", fmt(b$inner_skew_max), " (", b$inner_skew_band, ")"))
   }
   if (length(r$moment_source)) {
-    cat("  moments read from:", paste(r$moment_source, collapse = ", "), "\n")
+    body <- c(body, paste("moments read from:",
+                          paste(r$moment_source, collapse = ", ")))
   }
   if (identical(r$kind, "point")) {
-    cat("  point summary: no posterior sample to diagnose\n")
+    body <- c(body, "point summary: no posterior sample to diagnose")
   }
   if (!is.null(r$mean_accept)) {
-    cat("  mean acceptance:", fmt(mean(r$mean_accept)), "\n")
+    body <- c(body, paste("mean acceptance:", fmt(mean(r$mean_accept))))
   }
-  if (!is.null(r$n_divergent)) cat("  divergent transitions:", r$n_divergent, "\n")
-  if (length(r$elbo) == 1L) cat("  ELBO:", fmt(r$elbo), "\n")
-  if (!is.na(r$verdict)) cat("  verdict:", r$verdict, "\n")
+  if (!is.null(r$n_divergent)) {
+    body <- c(body, paste("divergent transitions:", r$n_divergent))
+  }
+  if (length(r$elbo) == 1L) body <- c(body, paste("ELBO:", fmt(r$elbo)))
+  if (!is.na(r$verdict)) body <- c(body, paste("verdict:", r$verdict))
+  if (length(body)) {
+    cat("\nReliability (", r$kind, " draws):\n", sep = "")
+    cat(paste0("  ", body, "\n"), sep = "")
+  }
   if (identical(r$verdict, "not converged") && is.list(r$convergence)) {
     cv <- r$convergence
     cat(sprintf(paste0(

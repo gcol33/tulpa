@@ -5,6 +5,10 @@
   reported for the worst chain, so a model package's energy diagnostic uses
   the same computation as tulpa's.
 
+* `print(summary(fit))` leaves out the `Reliability` section when the fit's
+  record has nothing to report under it, as on a plain Laplace fit, instead of
+  ending on a bare header (#961).
+
 # tulpa 0.7.4
 
 * `latent_factors()` is a generic and `spatiotemporal_effects()` dispatches to

@@ -74,13 +74,24 @@ test_that("print(summary()) renders every section the fit carries", {
   expect_true(any(grepl("Fixed effects:", out, fixed = TRUE)))
   expect_true(any(grepl("Hyperparameters:", out, fixed = TRUE)))
   expect_true(any(grepl("tau", out, fixed = TRUE)))
-  expect_true(any(grepl("Reliability", out, fixed = TRUE)))
 
   out_l <- utils::capture.output(print(summary(.sm_laplace_shaped())))
   expect_true(any(grepl("selected because: requested", out_l, fixed = TRUE)))
   expect_true(any(grepl("Fixed-effect prior: normal(0, 2.5)", out_l,
                         fixed = TRUE)))
+  expect_true(any(grepl("Reliability (point draws):", out_l, fixed = TRUE)))
   expect_true(any(grepl("point summary", out_l, fixed = TRUE)))
+})
+
+test_that("a reliability record with nothing to report prints no header", {
+  bare <- list(kind = "iid", verdict = NA_character_,
+               convergence = list(ok = NA, rhat_max = NA, ess_bulk_min = NA))
+  expect_identical(utils::capture.output(.print_reliability(bare, 4L)),
+                   character())
+
+  out <- utils::capture.output(
+    .print_reliability(utils::modifyList(bare, list(elbo = -12.5)), 4L))
+  expect_identical(out, c("", "Reliability (iid draws):", "  ELBO: -12.5"))
 })
 
 test_that("the hyperparameter table reads the outer-grid moments", {
