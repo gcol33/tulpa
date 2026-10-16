@@ -1,6 +1,6 @@
-# tulpa
+# tulpa <img src="man/figures/logo.svg" align="right" height="139" alt="tulpa logo" />
 
-*hierarchical Bayesian models, approximated then corrected*
+*templated unified latent process approximations*
 
 [![Lifecycle: experimental](https://lifecycle.r-lib.org/articles/figures/lifecycle-experimental.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -8,9 +8,16 @@
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&logoColor=white)](https://en.cppreference.com/cpp/17)
 [![Codecov test coverage](https://codecov.io/gh/gcol33/tulpa/graph/badge.svg)](https://app.codecov.io/gh/gcol33/tulpa)
 
-**A Bayesian hierarchical modelling engine that splits the posterior: a deterministic approximation (Laplace, EP, VI, Pathfinder) handles the well-behaved Gaussian-latent blocks, and exact MCMC corrects only the directions where that approximation is biased.** Autodiff, the samplers, and the spatial / temporal / covariance machinery are templated C++.
+**Fit Bayesian hierarchical models with nested Laplace approximation and Markov chain Monte Carlo (MCMC), backed by templated C++.** Combine random effects, smoothers, spatial fields, and temporal processes in one formula. Each fit carries posterior summaries and diagnostics for its inference method.
 
-Two established tools sit at opposite ends. INLA fits these models with fast deterministic approximations and applies no exact correction. Stan runs exact MCMC and pays the full sampling price on every block, including the many a deterministic approximation handles exactly. `tulpa` nests the approximation over the Gaussian-latent structure, then debiases only the directions where it is wrong. The deterministic body carries most of the posterior; the MCMC correction runs over the residual directions alone, a low-dimensional remainder — so the cost stays near a deterministic approximation instead of scaling like full MCMC over the whole model, while the calibration matches exact MCMC where it counts.
+```r
+library(tulpa)
+
+fit <- tulpa(extra ~ group + (1 | ID), data = sleep)
+summary(fit)
+```
+
+The built-in `sleep` data contain two measurements per participant. This model estimates the group effect with a participant-level random intercept and the default residual standard deviation of 1. Use `coef()`, `confint()`, and `ranef()` to extract coefficient estimates, credible intervals, and random effects. The [quickstart](https://gillescolling.com/tulpa/articles/quickstart.html) introduces model specification and inference choices.
 
 ## Installation
 

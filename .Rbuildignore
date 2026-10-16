@@ -20,6 +20,7 @@
 ^\.lintr$
 ^dev_notes$
 ^dev_scripts$
+^data-raw$
 ^experimental$
 ^.*\.tar\.gz$
 ^.*\.Rcheck$
