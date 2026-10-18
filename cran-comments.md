@@ -6,6 +6,18 @@ This is an update of tulpa 0.6.0, published on 2026-09-24. It follows closely
 because 0.6.0 returns wrong numbers without an error on several paths. The main
 items:
 
+* The Polya-Gamma Gibbs areal kernels (binomial ICAR, BYM2 and restricted
+  ICAR, negative-binomial ICAR) gave each connected component's level a flat
+  prior and an isolated area a near-flat N(0, 1000) one. On a graph with an
+  island the island's effect read 14.5 against 0.32 under the package's
+  Hamiltonian Monte Carlo sampler, and pulled the intercept with it; it now
+  reads 0.30 (gcol33/tulpa#963). `field_effects()` and `posterior_predict()`
+  on a Gibbs BYM2 fit summed the two unit-scale components instead of the
+  scaled field that enters the linear predictor (gcol33/tulpa#964).
+
+* The binomial Polya-Gamma samplers saved, with each draw, the linear
+  predictor of the previous draw (gcol33/tulpa#941).
+
 * `mode = "ess"` did not mix on hierarchical models: each sweep left the
   intercept, the covariates and the random-effect scales where they started
   (gcol33/tulpa#877). It now draws them every sweep.

@@ -11,7 +11,7 @@ Authors@R: c(
     person("Arm Limited", role = "cph",
            comment = "exp and log routines in src/fastmath.h and src/fastmath_data.cpp, MIT"),
     person("The Walnutpie Developers", role = "cph",
-           comment = "WALNUTS transition in src/hmc_walnuts.cpp, ported from walnutpie, MIT"))
+           comment = "WALNUTS transition in inst/include/tulpa/walnuts.h, ported from walnutpie, MIT"))
 Description: A general-purpose engine for fitting Bayesian hierarchical models
     with spatial fields, temporal effects, spatially varying coefficients, and
     multiple inference backends. Scalable spatial structure includes Hilbert
