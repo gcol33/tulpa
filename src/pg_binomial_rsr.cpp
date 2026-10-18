@@ -23,7 +23,8 @@ using namespace Rcpp;
 //
 // Model: eta_i = X_i beta + re_i + (P phi)_{s(i)} with phi ~ ICAR(tau).
 // Conditional on the Polya-Gamma weights the field's full conditional is
-// Gaussian with precision P W P + tau Q and linear term P (kappa - W offset)
+// Gaussian with precision P W P + tau Qt (PgIcarPrior; Q on a connected graph)
+// and linear term P (kappa - W offset)
 // aggregated to spatial units, where W = diag(sum_omega). That is a dense
 // J x J solve per sweep (O(J^3)), not a single-site sweep: the projector
 // couples every pair of units.
@@ -31,7 +32,7 @@ using namespace Rcpp;
 // phi enters the likelihood only through P phi, so its component along the
 // constant vector is unidentified. The precision is augmented by 11'/J on
 // that direction and the draw is centred afterwards, which is the exact
-// constrained draw and leaves both eta and phi'Q phi untouched.
+// constrained draw and leaves both eta and phi'Qt phi untouched (Qt 1 = 0).
 // ---------------------------------------------------------------------
 
 // [[Rcpp::export]]
@@ -73,7 +74,7 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
   tulpa::pg_check_rsr_projector(rsr_projection, J, /*require_constant=*/true);
   const tulpa::PgAdjacency adj =
       tulpa::pg_build_adjacency(adj_list, n_neighbors, J);
-  tulpa::pg_check_components_observed(adj, spatial_group);
+  const tulpa::PgIcarPrior icar(adj);
 
   // Per-variant storage
   Rcpp::NumericMatrix spatial_raw_draws(n_save, J);
@@ -132,13 +133,8 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
         M[ra + b] = v;
         M[rb + a] = v;
       }
-      M[ra + a] += tau * adj.degree(a);
     }
-    for (int a = 0; a < J; a++) {
-      for (int e = adj.row_ptr[a]; e < adj.row_ptr[a + 1]; e++) {
-        M[static_cast<size_t>(a) * J + adj.col_idx[e]] -= tau;
-      }
-    }
+    icar.add_dense(M.data(), tau);
 
     tulpa::pg_draw_gaussian_precision(M.data(), J, lin.data(), phi.begin(),
                                       "RSR spatial field");
@@ -158,7 +154,7 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
     }
 
     // 9. Update tau (the ICAR precision of the raw field)
-    tau = tulpa::update_tau_icar(phi, adj, prior_tau_shape, prior_tau_rate);
+    tau = tulpa::update_tau_icar(phi, icar, prior_tau_shape, prior_tau_rate);
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
@@ -174,7 +170,7 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
       C.log_prob_draws[save_idx] =
           C.log_joint_common(y, n, spatial_contrib.begin(), prior_beta_sd,
                              prior_sigma_re_scale) +
-          tulpa::pg_log_icar(phi.begin(), adj, tau, 0.0) +
+          tulpa::pg_log_icar(phi.begin(), icar, tau) +
           tulpa::pg_log_gamma(tau, prior_tau_shape, prior_tau_rate);
       save_idx++;
     }

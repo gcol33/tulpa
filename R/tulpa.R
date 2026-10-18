@@ -2135,7 +2135,8 @@ tulpa <- function(formula, data,
     # built by spatial_icar() / spatial_car() is not re-reported.
     if (!is.null(spatial_spec$adjacency)) {
       spatial_spec$adjacency <-
-        .validate_adjacency_arg(spatial_spec$adjacency, "spatial$adjacency")
+        .validate_adjacency_arg(spatial_spec$adjacency, "spatial$adjacency",
+                                field = .isolated_node_field(spatial_type))
     }
     sp_lc <- spatial_type
     # RSR is a MODIFIER on a field, not a field type: the spec keeps its own

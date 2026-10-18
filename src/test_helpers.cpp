@@ -17,6 +17,7 @@
 #include "pg_binomial.h"
 #include "pg_shared.h"
 #include "pg_spatial.h"
+#include "laplace_spatial_priors.h"  // read_node_prec / node_prec_ptr
 #include "hmc_gp.h"
 #include "pc_prior.h"
 #include "sparse_hessian.h"
@@ -2231,15 +2232,60 @@ Rcpp::List cpp_test_update_spatial_icar(
   }
   Rcpp::NumericVector phi_out = Rcpp::clone(phi);
   double removed_mean = 0.0;
-  tulpa::update_spatial_icar(kappa, omega, offset, group, adj, tau, beta0,
+  const tulpa::PgIcarPrior icar(adj);
+  tulpa::update_spatial_icar(kappa, omega, offset, group, icar, tau, beta0,
                              prior_beta_sd, phi_out, removed_mean);
   return Rcpp::List::create(
     Rcpp::_["phi"]          = phi_out,
     Rcpp::_["removed_mean"] = removed_mean,
     Rcpp::_["n_components"] = adj.n_components,
     Rcpp::_["component"]    = Rcpp::IntegerVector(adj.component.begin(),
-                                                  adj.component.end()),
-    Rcpp::_["isolated_prec"] = tulpa::PG_ICAR_ISOLATED_PREC
+                                                  adj.component.end())
+  );
+}
+
+// The Polya-Gamma kernels' intrinsic prior Qt (PgIcarPrior) at an optional
+// per-node multiplier: its dense form, its quadratic form at `x`, its rank,
+// and the single-site conditional terms a sweep reads at `x` (scale 1), so a
+// test can check all four against the Schur complement built in R.
+// [[Rcpp::export]]
+Rcpp::List cpp_test_pg_icar_prior(
+    Rcpp::List adj_list,
+    Rcpp::IntegerVector n_neighbors,
+    int n_units,
+    Rcpp::NumericVector x,
+    Rcpp::Nullable<Rcpp::NumericVector> node_prec = R_NilValue
+) {
+  const tulpa::PgAdjacency adj =
+      tulpa::pg_build_adjacency(adj_list, n_neighbors, n_units);
+  const std::vector<double> w = tulpa::read_node_prec(
+      node_prec, n_units, "cpp_test_pg_icar_prior");
+  const tulpa::PgIcarPrior icar(adj, tulpa::node_prec_ptr(w));
+  if (x.size() != n_units) {
+    Rcpp::stop("`x` has length %d; must be n_units (%d).",
+               static_cast<int>(x.size()), n_units);
+  }
+  std::vector<double> M(static_cast<size_t>(n_units) * n_units, 0.0);
+  icar.add_dense(M.data(), 1.0);
+  Rcpp::NumericMatrix Qt(n_units, n_units);
+  for (int a = 0; a < n_units; a++)
+    for (int b = 0; b < n_units; b++)
+      Qt(a, b) = M[static_cast<size_t>(a) * n_units + b];
+
+  const tulpa::PgIcarSweep sweep(icar, x.begin());
+  Rcpp::NumericVector site_prec(n_units), site_num(n_units);
+  for (int j = 0; j < n_units; j++) {
+    double nb = 0.0;
+    for (int e = adj.row_ptr[j]; e < adj.row_ptr[j + 1]; e++)
+      nb += x[adj.col_idx[e]];
+    sweep.site(j, x[j], nb, 1.0, site_prec[j], site_num[j]);
+  }
+  return Rcpp::List::create(
+    Rcpp::_["Qt"]        = Qt,
+    Rcpp::_["quad"]      = icar.quad(x.begin()),
+    Rcpp::_["rank"]      = icar.rank(),
+    Rcpp::_["site_prec"] = site_prec,
+    Rcpp::_["site_num"]  = site_num
   );
 }
 

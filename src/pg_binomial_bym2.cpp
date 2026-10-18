@@ -61,6 +61,7 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
   // Per-component BYM2 scaling beyond scale_factor (#902); empty: none.
   const std::vector<double> node_prec = tulpa::read_node_prec(
       node_prec_nullable, n_spatial_units, "cpp_pg_binomial_gibbs_bym2");
+  const tulpa::PgIcarPrior icar(adj, tulpa::node_prec_ptr(node_prec));
 
   // Per-variant storage
   Rcpp::NumericMatrix phi_scaled_draws(n_save, n_spatial_units);
@@ -96,10 +97,10 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
       C.offset[i] = C.X_beta[i] + C.re_contrib[i];
     });
     double bym2_removed = 0.0;
-    tulpa::update_spatial_bym2(C.kappa, C.omega, C.offset, spatial_group, adj,
+    tulpa::update_spatial_bym2(C.kappa, C.omega, C.offset, spatial_group, icar,
                                phi_scaled, theta, sigma_spatial, rho,
                                scale_factor, C.beta[0], prior_beta_sd, u,
-                               bym2_removed, tulpa::node_prec_ptr(node_prec));
+                               bym2_removed);
     // Absorb the field level removed by centering phi into the intercept so eta
     // is unchanged (posterior-invariant), and refresh the cached X_beta /
     // offset that the sigma and rho conditionals below read.
@@ -154,8 +155,7 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
       C.log_prob_draws[save_idx] =
           C.log_joint_common(y, n, spatial_contrib.begin(), prior_beta_sd,
                              prior_sigma_re_scale) +
-          tulpa::pg_log_icar(phi_scaled.begin(), adj, 1.0,
-                             tulpa::PG_ICAR_ISOLATED_PREC) +
+          tulpa::pg_log_icar(phi_scaled.begin(), icar, 1.0) +
           tulpa::pg_log_normal_iid(theta.begin(), n_spatial_units, 1.0) +
           (prior_sigma_spatial_scale > 0.0
                ? tulpa::pg_log_halfnormal(sigma_spatial, prior_sigma_spatial_scale)

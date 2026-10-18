@@ -22,13 +22,14 @@ void update_spatial_icar(
     const NumericVector& omega,
     const NumericVector& offset,
     const IntegerVector& group,
-    const PgAdjacency& adj,
+    const PgIcarPrior& prior,
     double tau,
     double beta0,
     double prior_beta_sd,
     NumericVector& phi,
     double& removed_mean
 ) {
+  const PgAdjacency& adj = prior.adj;
   const int N = kappa.size();
   const int J = adj.n;
 
@@ -36,75 +37,64 @@ void update_spatial_icar(
   pg_accumulate_stats(N, group.begin(), J, omega.begin(), kappa.begin(),
                       offset.begin(), sum_omega.data(), sum_resid.data());
   PgInterceptLevel level(beta0, 0.0, prior_beta_sd, 1.0, phi.begin(), J);
+  PgIcarSweep sweep(prior, phi.begin());
 
   // Single-site sweep. Each neighbour sum reads the current phi, so a
   // neighbour the sweep has already reached contributes its new value and one
   // it has not contributes the previous sweep's.
   for (int j = 0; j < J; j++) {
-    const int n_j = adj.degree(j);
-
     double neighbor_sum = 0.0;
     for (int e = adj.row_ptr[j]; e < adj.row_ptr[j + 1]; e++) {
       neighbor_sum += phi[adj.col_idx[e]];
     }
 
-    double prec = tau * n_j + sum_omega[j];
-    double mean_num = tau * neighbor_sum + sum_resid[j];
-
-    if (n_j == 0) {
-      if (sum_omega[j] > 0) {
-        prec = sum_omega[j] + PG_ICAR_ISOLATED_PREC;
-        mean_num = sum_resid[j];
-      } else {
-        level.moved(phi[j], 0.0);
-        phi[j] = 0.0;
-        continue;
-      }
-    }
+    double prior_prec = 0.0, prior_num = 0.0;
+    sweep.site(j, phi[j], neighbor_sum, tau, prior_prec, prior_num);
+    double prec = prior_prec + sum_omega[j];
+    double mean_num = prior_num + sum_resid[j];
     level.add(phi[j], prec, mean_num);
 
     const double x_new = R::rnorm(mean_num / prec, std::sqrt(1.0 / prec));
     level.moved(phi[j], x_new);
+    sweep.moved(j, phi[j], x_new);
     phi[j] = x_new;
   }
 
-  // Component-level block update. Shifting every unit of one graph component
-  // by a constant leaves the ICAR prior unchanged, so the level's conditional
-  // comes from the likelihood alone: delta_c ~ N((B_c - C_c)/A_c, 1/A_c) with
-  // A_c = sum_omega, B_c = sum_resid and C_c = sum_omega * phi over the
-  // component. Drawn jointly under sum_c n_c delta_c = 0, which holds the
-  // overall field level fixed -- that direction is confounded with the
-  // intercept and is handled by the centring below. Without this the k - 1
-  // component contrasts move only through the single-site sweep and mix at the
-  // rate of a random walk across the components.
+  // Component-level block update: delta_c shifts every unit of component c.
+  // Q is invariant to it, so the conditional is the likelihood's,
+  // N((B_c - C_c)/A_c, 1/A_c) with A_c = sum_omega, B_c = sum_resid and
+  // C_c = sum_omega * phi over the component, times the augmentation's factor:
+  // under sum_c n_c delta_c = 0 the weighted total does not move, and
+  // (S_c + n_c delta_c)^2 / n_c adds precision tau n_c and -tau S_c to the
+  // precision-weighted mean. The constraint holds the overall field level
+  // fixed -- that direction is confounded with the intercept and is handled by
+  // the centring below. Without this the k - 1 component contrasts move only
+  // through the single-site sweep and mix at the rate of a random walk across
+  // the components.
   const int k = adj.n_components;
   if (k > 1) {
-    std::vector<double> A(k, 0.0), Bnum(k, 0.0), d(k, 0.0);
-    std::vector<int> n_c(k, 0);
+    std::vector<double> A(k, 0.0), Bnum(k, 0.0), S(k, 0.0), d(k, 0.0);
+    const std::vector<int>& n_c = prior.comp_size;
     for (int j = 0; j < J; j++) {
       const int c = adj.component[j];
       A[c] += sum_omega[j];
       Bnum[c] += sum_resid[j] - sum_omega[j] * phi[j];
-      n_c[c]++;
+      S[c] += phi[j];
     }
-    bool ok = true;
-    for (int c = 0; c < k; c++) if (!(A[c] > 0.0)) ok = false;
-    if (ok) {
-      for (int c = 0; c < k; c++) {
-        d[c] = R::rnorm(Bnum[c] / A[c], std::sqrt(1.0 / A[c]));
-      }
-      // Condition on sum_c n_c delta_c = 0 (kriging correction against the
-      // independent N(m_c, 1/A_c) draws).
-      double aSa = 0.0, ad = 0.0;
-      for (int c = 0; c < k; c++) {
-        aSa += static_cast<double>(n_c[c]) * n_c[c] / A[c];
-        ad += n_c[c] * d[c];
-      }
-      if (aSa > 0.0) {
-        for (int c = 0; c < k; c++) d[c] -= (n_c[c] / A[c]) * ad / aSa;
-      }
-      for (int j = 0; j < J; j++) phi[j] += d[adj.component[j]];
+    for (int c = 0; c < k; c++) {
+      A[c] += tau * n_c[c];
+      Bnum[c] -= tau * S[c];
+      d[c] = R::rnorm(Bnum[c] / A[c], std::sqrt(1.0 / A[c]));
     }
+    // Condition on sum_c n_c delta_c = 0 (kriging correction against the
+    // independent N(m_c, 1/A_c) draws).
+    double aSa = 0.0, ad = 0.0;
+    for (int c = 0; c < k; c++) {
+      aSa += static_cast<double>(n_c[c]) * n_c[c] / A[c];
+      ad += n_c[c] * d[c];
+    }
+    for (int c = 0; c < k; c++) d[c] -= (n_c[c] / A[c]) * ad / aSa;
+    for (int j = 0; j < J; j++) phi[j] += d[adj.component[j]];
   }
 
   // Centre the spatial effects (sum-to-zero) and report the removed mean so the
@@ -121,14 +111,13 @@ void update_spatial_icar(
 
 double update_tau_icar(
     const NumericVector& phi,
-    const PgAdjacency& adj,
+    const PgIcarPrior& prior,
     double prior_shape,
     double prior_rate
 ) {
-  const int J = adj.n;
-  const double quad_form = pg_icar_quad_form(phi.begin(), adj);
+  const double quad_form = prior.quad(phi.begin());
 
-  const double post_shape = prior_shape + (J - adj.n_components) / 2.0;
+  const double post_shape = prior_shape + prior.rank() / 2.0;
   const double post_rate = prior_rate + quad_form / 2.0;
 
   return R::rgamma(post_shape, 1.0 / post_rate);
@@ -152,7 +141,7 @@ void update_spatial_bym2(
     const NumericVector& omega,
     const NumericVector& offset,
     const IntegerVector& group,
-    const PgAdjacency& adj,
+    const PgIcarPrior& prior,
     NumericVector& phi_scaled,
     NumericVector& theta,
     double sigma_spatial,
@@ -161,9 +150,9 @@ void update_spatial_bym2(
     double beta0,
     double prior_beta_sd,
     NumericVector& u,
-    double& removed_mean,
-    const double* node_prec
+    double& removed_mean
 ) {
+  const PgAdjacency& adj = prior.adj;
   const int N = kappa.size();
   const int J = adj.n;
 
@@ -188,30 +177,28 @@ void update_spatial_bym2(
   const double coef = sigma_spatial * sqrt_rho * scale_factor;
   PgInterceptLevel level(beta0, 0.0, prior_beta_sd, coef,
                          phi_scaled.begin(), J);
+  PgIcarSweep sweep(prior, phi_scaled.begin());
   for (int j = 0; j < J; j++) {
-    const int n_j = adj.degree(j);
-
     double neighbor_sum = 0.0;
     for (int e = adj.row_ptr[j]; e < adj.row_ptr[j + 1]; e++) {
       neighbor_sum += phi_scaled[adj.col_idx[e]];
     }
 
-    // Unweighted, an island keeps the near-flat PG_ICAR_ISOLATED_PREC. With
-    // per-component scaling its multiplier IS its prior precision -- the unit
-    // structured variance the scaling gives an island -- and a connected
-    // node's row of the ICAR precision is scaled by its component's.
-    const double w_j = node_prec ? node_prec[j] : 1.0;
-    const double prior_prec = (n_j > 0) ? w_j * n_j
-                            : (node_prec ? w_j : PG_ICAR_ISOLATED_PREC);
+    // A node's row of the ICAR precision carries its component's multiplier,
+    // and an island's augmented row is the unit structured variance the
+    // per-component scaling gives it (PgIcarPrior).
+    double prior_prec = 0.0, prior_num = 0.0;
+    sweep.site(j, phi_scaled[j], neighbor_sum, 1.0, prior_prec, prior_num);
     const double data_prec = sum_omega[j] * coef * coef;
 
     double post_prec = prior_prec + data_prec;
-    double post_mean_num = w_j * neighbor_sum + sum_resid[j] * coef;
+    double post_mean_num = prior_num + sum_resid[j] * coef;
     level.add(phi_scaled[j], post_prec, post_mean_num);
 
     const double x_new =
         R::rnorm(post_mean_num / post_prec, std::sqrt(1.0 / post_prec));
     level.moved(phi_scaled[j], x_new);
+    sweep.moved(j, phi_scaled[j], x_new);
     phi_scaled[j] = x_new;
   }
 

@@ -68,7 +68,12 @@ debias, or outer integration), not as standalone alternatives.
    `test-nl-entry-forwarding.R` asserts every shared argument is observable in
    the fit at all eleven entries; and `check_arg_length` (`laplace_spec_fit.h`)
    is the one place an entry refuses an R argument whose length does not match
-   the one it will be indexed by.
+   the one it will be indexed by; and every Polya-Gamma areal kernel (binomial
+   ICAR / BYM2 / restricted ICAR, negative-binomial ICAR) reads its intrinsic
+   prior from one `PgIcarPrior` (`src/pg_shared.h`), the shift-invariant
+   `diag(w) Q_aug - w w' / W` whose sum-to-zero restriction is the engine's
+   `Q_aug`, so an island and a component level carry the field's precision on
+   the Gibbs path as on every other (gcol33/tulpa#963).
 6. **Statistical args vs `control` knobs**: front-door fitters (`tulpa()`, `tulpa_nested_laplace()`, `tulpa_nested_laplace_joint()`) carry only statistical arguments in their signature; all perf / numerical / tuning knobs live in a single `control = list()` (e.g. `control$re_cov`, `n_threads`, `max_iter`, `tol`, `adaptive_grid`, `prune`, `integration`, ...). Pre-release: no deprecation shims -- moved knobs hard-error.
 
 ## C++ Interface

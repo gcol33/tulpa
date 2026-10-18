@@ -9,6 +9,27 @@
   record has nothing to report under it, as on a plain Laplace fit, instead of
   ending on a bare header (#961).
 
+* The Polya-Gamma Gibbs areal kernels (binomial ICAR, BYM2 and restricted
+  ICAR, negative-binomial ICAR) sample the ICAR prior the other backends
+  sample on a disconnected graph. Each component's level, an island's whole
+  value, now carries the field's own precision, where the kernels gave it a
+  flat prior and an island a near-flat N(0, 1000) one. On a chain with a
+  separated island the Gibbs island read 14.5 against the sampler's 0.32 and
+  pulled the mainland and the intercept with it; it now reads 0.30. A
+  component with no observation is drawn from its prior instead of refused.
+  On a connected graph nothing changes (#963).
+
+* `field_effects()` and `posterior_predict()` on a Gibbs BYM2 fit use the
+  combined field `sigma * (sqrt(rho) * s * phi + sqrt(1 - rho) * theta)`
+  that enters the linear predictor, where they summed the two unit-scale
+  components (#964).
+
+* An isolated node is reported with what the field does with it: an ICAR
+  field gives it its own N(0, 1 / tau) level and a BYM2 field unit variance on
+  its structured part, both as a message; a proper CAR field leaves it without
+  a prior and warns. The constructors had warned that every field is improper
+  there (#962).
+
 # tulpa 0.7.4
 
 * `latent_factors()` is a generic and `spatiotemporal_effects()` dispatches to

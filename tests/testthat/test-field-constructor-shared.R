@@ -80,10 +80,36 @@ test_that("the spatial constructors surface the same structural issues as check_
   weighted <- chain_W(5); weighted[1, 2] <- 2.5; weighted[2, 1] <- 2.5
 
   for (nm in names(ctors)) {
-    expect_warning(ctors[[nm]](isolated), "isolated node", info = nm)
     expect_warning(ctors[[nm]](selfloop), "self-loops", info = nm)
     expect_warning(ctors[[nm]](weighted), "other than 0/1", info = nm)
   }
+})
+
+test_that("an isolated node is reported with what the field does with it (#962)", {
+  isolated <- chain_W(5); isolated[4, 5] <- 0; isolated[5, 4] <- 0
+  # ICAR and BYM2 give the island a proper prior, so they say which one; the
+  # old text called every field improper there.
+  expect_message(car(isolated), "isolated node.*ICAR field.*N\\(0, 1 / tau\\)")
+  expect_message(fld(isolated), "isolated node.*ICAR field")
+  expect_message(bym2(isolated), "isolated node.*BYM2 field.*unit variance")
+  for (f in list(car, fld, bym2)) {
+    expect_no_warning(suppressMessages(f(isolated)))
+    expect_no_message(f(isolated), message = "improper")
+  }
+  # A proper CAR field leaves the island without a prior, which does warrant
+  # a warning.
+  expect_warning(car(isolated, proper = TRUE),
+                 "isolated node.*proper CAR field puts no prior")
+  expect_warning(spatial(isolated, ~ 1 || g, proper = TRUE),
+                 "isolated node.*proper CAR field puts no prior")
+  # check_adjacency() is field-agnostic, so it states every field's handling.
+  expect_warning(check_adjacency(isolated),
+                 "ICAR field.*BYM2 field.*proper CAR field")
+  # A spec reaching the front door as a bare list is reported once, for its
+  # own field.
+  sp <- suppressMessages(car(isolated))
+  expect_silent(tulpa:::.validate_adjacency_arg(sp$adjacency, "x",
+                                                field = "icar"))
 })
 
 test_that("a validated tulpa_adjacency passes the constructors without re-warning", {

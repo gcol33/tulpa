@@ -32,7 +32,8 @@ spatial_car <- function(adjacency, level = c("group", "obs"),
   level <- match.arg(level)
   parameterization <- match.arg(parameterization)
 
-  adjacency <- .validate_adjacency_arg(adjacency, "adjacency")
+  adjacency <- .validate_adjacency_arg(
+    adjacency, "adjacency", field = if (proper) "car_proper" else "icar")
 
   # Check for group_var if level = "group"
   if (level == "group" && is.null(group_var)) {
@@ -255,11 +256,10 @@ compute_car_rho_bounds <- function(adjacency) {
   n <- nrow(adj)
   n_neighbors <- rowSums(adj)
 
-  # Check for isolated nodes (no neighbors)
+  # An isolated node's row of D^-1 W is undefined; the bounds come from the
+  # rest. The constructor's graph check reports the node
+  # (.report_isolated_nodes).
   if (any(n_neighbors == 0)) {
-    warning("Adjacency matrix contains isolated nodes (no neighbors).\n",
-            "These will be treated as independent.", call. = FALSE)
-    # Remove isolated nodes for eigenvalue computation
     keep <- n_neighbors > 0
     adj_sub <- adj[keep, keep]
     n_neighbors_sub <- n_neighbors[keep]
@@ -373,7 +373,7 @@ spatial_bym2 <- function(adjacency, level = c("group", "obs"),
   level <- match.arg(level)
   parameterization <- match.arg(parameterization)
 
-  adjacency <- .validate_adjacency_arg(adjacency, "adjacency")
+  adjacency <- .validate_adjacency_arg(adjacency, "adjacency", field = "bym2")
 
   if (level == "group" && is.null(group_var)) {
     stop("`group_var` is required when level = 'group'", call. = FALSE)

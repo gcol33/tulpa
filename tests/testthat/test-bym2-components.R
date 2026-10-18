@@ -126,8 +126,8 @@ test_that("the Polya-Gamma Gibbs BYM2 gives the island its unit prior", {
              mode = "gibbs", spatial = sp,
              control = list(n_iter = 400, warmup = 200, seed = 1))
   expect_true(all(is.finite(coef(summary(f))[, 2])))
-  # The island's structured draw is N(0, 1 / node_prec) a priori, where the
-  # unweighted kernel's near-flat PG_ICAR_ISOLATED_PREC let it wander.
+  # The island's structured draw is N(0, 1 / node_prec) a priori, the
+  # augmented row of the kernels' ICAR prior (PgIcarPrior).
   ph <- f$draws[, "phi_spatial[16]"]
   expect_lt(stats::sd(ph), 5 / sqrt(sp$node_prec[16]))
 })

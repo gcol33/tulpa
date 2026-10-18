@@ -7,6 +7,7 @@
 
 #include "pg_negbin.h"
 #include "pg_shared.h"
+#include "pg_spatial.h"  // update_spatial_icar / update_tau_icar
 #include "pg_rng.h"
 #include "linalg_fast.h"
 #include <Rcpp.h>
@@ -608,6 +609,7 @@ List pg_negbin_gibbs_spatial(
   // pg_build_adjacency validates once here instead.
   const tulpa::PgAdjacency adj =
       tulpa::pg_build_adjacency(adj_list, n_neighbors, n_spatial_units);
+  const tulpa::PgIcarPrior icar(adj);
   pg_require_intercept(X, "negative-binomial ICAR spatial");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
   // The X * beta recomputations are the same independent per-row work the
@@ -636,13 +638,6 @@ List pg_negbin_gibbs_spatial(
   double sigma_aux = 2.0 * prior_sigma_re_scale * prior_sigma_re_scale;
   double tau = 1.0;  // Spatial precision
   double r = r_init;
-
-  // The ICAR pseudo-density is tau^{(S - k)/2} exp(-tau Q / 2) with k = number
-  // of graph components, so the tau posterior shape uses (S - k)/2; a
-  // disconnected adjacency (spatial(by=) replication makes this routine) with
-  // (S - 1)/2 biases tau upward. pg_build_adjacency counts the components on
-  // the CSR form it just built.
-  const int n_components = adj.n_components;
 
   NumericVector omega(N, 1.0);
   NumericVector kappa(N);
@@ -729,55 +724,13 @@ List pg_negbin_gibbs_spatial(
       offset_spatial[i] = X_beta[i] + re_contrib[i];
     }
 
-    // Aggregate by spatial unit
-    NumericVector sum_omega_s(n_spatial_units);
-    NumericVector sum_resid_s(n_spatial_units);
-
-    pg_accumulate_stats(N, spatial_group.begin(), n_spatial_units,
-                        omega.begin(), kappa.begin(), offset_spatial.begin(),
-                        sum_omega_s.begin(), sum_resid_s.begin());
-
-    // Sample spatial effects with ICAR prior. The field's level is the
-    // intercept's, so each site carries that prior through the field mean.
-    PgInterceptLevel level(beta[0], 0.0, prior_beta_sd, 1.0, spatial.begin(),
-                           n_spatial_units);
-    for (int s = 0; s < n_spatial_units; s++) {
-      // ICAR: phi_s | phi_{-s} ~ N(mean of neighbors, 1/(tau * n_neighbors))
-      const int e0 = adj.row_ptr[s];
-      const int e1 = adj.row_ptr[s + 1];
-      const int n_neigh = e1 - e0;
-
-      double neighbor_mean = 0.0;
-      if (n_neigh > 0) {
-        for (int e = e0; e < e1; e++) {
-          neighbor_mean += spatial[adj.col_idx[e]];
-        }
-        neighbor_mean /= n_neigh;
-      }
-
-      // Combine ICAR prior with data likelihood
-      double prior_prec_s = tau * n_neigh;
-      double post_prec = sum_omega_s[s] + prior_prec_s;
-      double post_mean_num = sum_resid_s[s] + prior_prec_s * neighbor_mean;
-      level.add(spatial[s], post_prec, post_mean_num);
-
-      const double x_new =
-          R::rnorm(post_mean_num / post_prec, 1.0 / std::sqrt(post_prec));
-      level.moved(spatial[s], x_new);
-      spatial[s] = x_new;
-    }
-
-    // Center spatial effects along the ICAR's improper direction, absorbing
-    // the mean into the intercept so eta is unchanged. The iid block beside it
-    // is proper and is not centred.
+    // Sample the ICAR field, centred along its improper direction with the
+    // mean absorbed into the intercept so eta is unchanged. The iid block
+    // beside it is proper and is not centred.
     double spatial_mean = 0.0;
-    for (int s = 0; s < n_spatial_units; s++) {
-      spatial_mean += spatial[s];
-    }
-    spatial_mean /= n_spatial_units;
-    for (int s = 0; s < n_spatial_units; s++) {
-      spatial[s] -= spatial_mean;
-    }
+    tulpa::update_spatial_icar(kappa, omega, offset_spatial, spatial_group,
+                               icar, tau, beta[0], prior_beta_sd, spatial,
+                               spatial_mean);
     beta[0] += spatial_mean;
     tulpa_parallel_for(team, N, [&](int i) {
       X_beta[i] = 0.0;
@@ -786,25 +739,8 @@ List pg_negbin_gibbs_spatial(
       }
     });
 
-    // Update tau (spatial precision)
-    // Prior: tau ~ Gamma(shape, rate)
-    // Posterior: tau ~ Gamma(shape + (S - k)/2, rate + Q/2), k = number of
-    // adjacency components; Q = sum over edges (phi_i - phi_j)^2
-    double Q = 0.0;
-    for (int s = 0; s < n_spatial_units; s++) {
-      for (int e = adj.row_ptr[s]; e < adj.row_ptr[s + 1]; e++) {
-        const int t = adj.col_idx[e];
-        if (t > s) {  // Count each edge once
-          double diff = spatial[s] - spatial[t];
-          Q += diff * diff;
-        }
-      }
-    }
-
-    double tau_shape = prior_tau_shape
-        + (n_spatial_units - static_cast<double>(n_components)) / 2.0;
-    double tau_rate = prior_tau_rate + Q / 2.0;
-    tau = R::rgamma(tau_shape, 1.0 / tau_rate);
+    tau = tulpa::update_tau_icar(spatial, icar, prior_tau_shape,
+                                 prior_tau_rate);
 
     // Update spatial_contrib
     for (int i = 0; i < N; i++) {
@@ -836,7 +772,7 @@ List pg_negbin_gibbs_spatial(
                ? pg_log_normal_iid(re.begin(), n_re_groups, sigma_re) +
                  pg_log_halfcauchy(sigma_re, prior_sigma_re_scale)
                : 0.0) +
-          pg_log_icar(spatial.begin(), adj, tau, 0.0) +
+          pg_log_icar(spatial.begin(), icar, tau) +
           pg_log_gamma(tau, prior_tau_shape, prior_tau_rate) +
           negbin_log_prior_r(r, prior_r_shape, prior_r_rate);
 

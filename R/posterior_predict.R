@@ -183,11 +183,14 @@
 }
 
 # Per-unit draws (S x n_units) of a Polya-Gamma Gibbs field, read off the
-# `phi_spatial[k]` (icar / car) or `phi_spatial[k]` + `theta_spatial[k]`
-# (bym2) columns `.pg_as_chain()` (`R/fit_gibbs.R`) already stores in
-# `$draws` alongside the fixed effects -- the kernel's own scaled field
-# state, so no `d_fac` is reapplied and each row is the field value every
-# observation of that unit receives. `keep` subsets rows. NULL for any
+# columns `.pg_as_chain()` (`R/fit_gibbs.R`) stores in `$draws` alongside the
+# fixed effects, so each row is the field value every observation of that unit
+# receives. An icar / car field is `phi_spatial[k]` itself. A bym2 field's
+# `phi_spatial[k]` / `theta_spatial[k]` are the kernel's unit-scale components,
+# combined per draw into `sigma * (sqrt(rho) * scale_factor * phi +
+# sqrt(1 - rho) * theta)` at that draw's `log_sigma_spatial` /
+# `logit_rho_bym2`, as the kernel builds its eta (gcol33/tulpa#964). `keep`
+# subsets rows. NULL for any
 # spatial type the Gibbs sampler does not carry a field column for (gp /
 # multiscale_gp are sampled but not covered here), and on a ModelData sampler
 # fit, whose `phi_spatial[k]` columns are the raw coordinates its density
@@ -206,8 +209,15 @@
 
   if (type == "bym2") {
     th_cols <- grep("^theta_spatial\\[", dn)
-    if (length(th_cols) != length(phi_cols)) return(NULL)
-    U <- U + object$draws[keep, th_cols, drop = FALSE]
+    if (length(th_cols) != length(phi_cols) ||
+        !all(c("log_sigma_spatial", "logit_rho_bym2") %in% dn)) {
+      return(NULL)
+    }
+    sigma <- exp(object$draws[keep, "log_sigma_spatial"])
+    rho <- stats::plogis(object$draws[keep, "logit_rho_bym2"])
+    scale_factor <- spatial$scale_factor %||% 1.0
+    U <- U * (sigma * sqrt(rho) * scale_factor) +
+      object$draws[keep, th_cols, drop = FALSE] * (sigma * sqrt(1 - rho))
   }
   U
 }

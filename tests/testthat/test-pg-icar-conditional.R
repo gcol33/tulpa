@@ -35,11 +35,31 @@
   list(component = comp, n_components = k)
 }
 
+# The intrinsic prior the Polya-Gamma kernels sample, built densely:
+# Qt = diag(w) Q_aug - w w' / W with Q_aug = Q + sum_c 1_c 1_c' / J_c, the
+# marginal of the centred field under the engine's diag(w) Q_aug
+# (gcol33/tulpa#963). On a connected unweighted graph it is Q.
+.icar_Qt <- function(adj_list, J, w = rep(1, J)) {
+  Q <- matrix(0, J, J)
+  for (j in seq_len(J)) {
+    Q[j, j] <- length(adj_list[[j]])
+    Q[j, adj_list[[j]]] <- -1
+  }
+  cc <- .icar_components(adj_list, J)
+  if (cc$n_components == 1L) return(w[1] * Q)
+  A <- Q
+  for (c1 in unique(cc$component)) {
+    m <- cc$component == c1
+    A[m, m] <- A[m, m] + 1 / sum(m)
+  }
+  diag(w) %*% A - tcrossprod(w) / sum(w)
+}
+
 # `zero_field = TRUE` is the pre-fix behaviour: build the output from zeros and
 # read neighbours off it.
 # `beta0` / `beta_sd`: the intercept prior every site sees through the field
 # mean (gcol33/tulpa#763).
-.icar_replica <- function(fx, tau, phi_in, isolated_prec, zero_field = FALSE,
+.icar_replica <- function(fx, tau, phi_in, zero_field = FALSE,
                           beta0 = ICAR_BETA0, beta_sd = ICAR_BETA_SD) {
   J <- fx$J
   sum_omega <- numeric(J); sum_resid <- numeric(J)
@@ -48,22 +68,12 @@
     sum_omega[g] <- sum_omega[g] + fx$omega[i]
     sum_resid[g] <- sum_resid[g] + fx$kappa[i] - fx$omega[i] * fx$offset[i]
   }
+  Qt <- .icar_Qt(fx$adj_list, J)
 
   phi <- if (zero_field) numeric(J) else as.numeric(phi_in)
   for (j in seq_len(J)) {
-    nb  <- fx$adj_list[[j]]
-    n_j <- fx$n_neighbors[j]
-    prec     <- tau * n_j + sum_omega[j]
-    mean_num <- tau * (if (n_j > 0) sum(phi[nb]) else 0) + sum_resid[j]
-    if (n_j == 0) {
-      if (sum_omega[j] > 0) {
-        prec <- sum_omega[j] + isolated_prec
-        mean_num <- sum_resid[j]
-      } else {
-        phi[j] <- 0
-        next
-      }
-    }
+    prec     <- tau * Qt[j, j] + sum_omega[j]
+    mean_num <- -tau * sum(Qt[j, -j] * phi[-j]) + sum_resid[j]
     g <- 1 / J
     base <- beta0 + g * (sum(phi) - phi[j])
     prec <- prec + g^2 / beta_sd^2
@@ -74,21 +84,22 @@
   cc <- .icar_components(fx$adj_list, J)
   k <- cc$n_components
   if (k > 1L) {
-    A <- numeric(k); Bnum <- numeric(k); n_c <- integer(k)
+    A <- numeric(k); Bnum <- numeric(k); n_c <- integer(k); S <- numeric(k)
     for (j in seq_len(J)) {
       c1 <- cc$component[j] + 1L
       A[c1]    <- A[c1] + sum_omega[j]
       Bnum[c1] <- Bnum[c1] + sum_resid[j] - sum_omega[j] * phi[j]
       n_c[c1]  <- n_c[c1] + 1L
+      S[c1]    <- S[c1] + phi[j]
     }
-    if (all(A > 0)) {
-      d <- vapply(seq_len(k), function(c1) rnorm(1, Bnum[c1] / A[c1],
-                                                 sqrt(1 / A[c1])), numeric(1))
-      aSa <- sum(n_c * n_c / A)
-      ad  <- sum(n_c * d)
-      if (aSa > 0) d <- d - (n_c / A) * ad / aSa
-      phi <- phi + d[cc$component + 1L]
-    }
+    A <- A + tau * n_c
+    Bnum <- Bnum - tau * S
+    d <- vapply(seq_len(k), function(c1) rnorm(1, Bnum[c1] / A[c1],
+                                               sqrt(1 / A[c1])), numeric(1))
+    aSa <- sum(n_c * n_c / A)
+    ad  <- sum(n_c * d)
+    d <- d - (n_c / A) * ad / aSa
+    phi <- phi + d[cc$component + 1L]
   }
 
   mean_phi <- mean(phi)
@@ -133,15 +144,30 @@ ICAR_BETA_SD <- 0.6
   fx
 }
 
+# A chain of five and an island, unit 6, which carries no observation: its
+# value is drawn from the prior alone.
+.icar_island <- function(seed = 34L) {
+  fx <- .icar_chain(J = 6L, per_unit = 5L, seed = seed)
+  fx$adj_list <- lapply(list(2L, c(1L, 3L), c(2L, 4L), c(3L, 5L), 4L,
+                             integer(0)), as.integer)
+  fx$n_neighbors <- as.integer(vapply(fx$adj_list, length, integer(1)))
+  keep <- fx$group != 6L
+  fx$group <- fx$group[keep]; fx$kappa <- fx$kappa[keep]
+  fx$omega <- fx$omega[keep]; fx$offset <- fx$offset[keep]
+  fx
+}
+
 test_that("the sweep reproduces the ICAR conditional drawn in R", {
-  for (nm in c("chain", "two_components")) {
-    fx <- if (nm == "chain") .icar_chain() else .icar_two_components()
+  for (nm in c("chain", "two_components", "island")) {
+    fx <- switch(nm, chain = .icar_chain(),
+                 two_components = .icar_two_components(),
+                 island = .icar_island())
     phi_in <- seq(-1.5, 1.5, length.out = fx$J)
     for (tau in c(0.5, 4, 40)) {
       set.seed(909)
       got <- .icar_sweep(fx, tau, phi_in)
       set.seed(909)
-      want <- .icar_replica(fx, tau, phi_in, got$isolated_prec)
+      want <- .icar_replica(fx, tau, phi_in)
       expect_equal(got$phi, want$phi, tolerance = 1e-12,
                    info = paste(nm, tau))
       expect_equal(got$removed_mean, want$removed_mean, tolerance = 1e-12,
@@ -165,8 +191,77 @@ test_that("a sweep that zeroes the field does not reproduce the kernel", {
   set.seed(909)
   got <- .icar_sweep(fx, 40, phi_in)
   set.seed(909)
-  bugged <- .icar_replica(fx, 40, phi_in, got$isolated_prec, zero_field = TRUE)
+  bugged <- .icar_replica(fx, 40, phi_in, zero_field = TRUE)
   expect_gt(max(abs(got$phi - bugged$phi)), 0.1)
+})
+
+test_that("the kernels' ICAR prior is the marginal of the centred Q_aug field (#963)", {
+  # Integrating the constant direction out of x' diag(w) Q_aug x leaves the
+  # Schur complement diag(w) Q_aug - w w' / W, so Qt is checked against that
+  # construction, and its quadratic form against the integral it stands for.
+  fx_two <- .icar_two_components()
+  fx_isl <- .icar_island()
+  cases <- list(
+    connected = list(fx = .icar_chain(), w = NULL),
+    two       = list(fx = fx_two, w = NULL),
+    island    = list(fx = fx_isl, w = NULL),
+    weighted  = list(fx = fx_isl, w = c(rep(0.7, 5), 2.3))
+  )
+  set.seed(5)
+  for (nm in names(cases)) {
+    fx <- cases[[nm]]$fx
+    J <- fx$J
+    w <- cases[[nm]]$w %||% rep(1, J)
+    x <- rnorm(J)
+    got <- tulpa:::cpp_test_pg_icar_prior(fx$adj_list, fx$n_neighbors, J, x,
+                                          node_prec = cases[[nm]]$w)
+    want <- .icar_Qt(fx$adj_list, J, w)
+    expect_equal(got$Qt, want, tolerance = 1e-12, info = nm)
+    expect_equal(as.numeric(got$Qt %*% rep(1, J)), rep(0, J),
+                 tolerance = 1e-12, info = nm)
+    expect_equal(got$rank, J - 1L, info = nm)
+    expect_equal(qr(got$Qt)$rank, J - 1L, info = nm)
+    expect_equal(got$quad, sum(x * (want %*% x)), tolerance = 1e-12,
+                 info = nm)
+    expect_equal(got$site_prec, diag(want), tolerance = 1e-12, info = nm)
+    off <- vapply(seq_len(J), function(j) -sum(want[j, -j] * x[-j]),
+                  numeric(1))
+    expect_equal(got$site_num, off, tolerance = 1e-12, info = nm)
+
+    # The marginal: min over the level m of (x + m 1)' diag(w) Q_aug (x + m 1)
+    # is x' Qt x, since the integral over m of a Gaussian is its minimum up to
+    # a constant in x.
+    cc <- .icar_components(fx$adj_list, J)
+    if (cc$n_components > 1L) {
+      Qa <- want + tcrossprod(w) / sum(w)
+      m_hat <- -sum(Qa %*% x) / sum(Qa)
+      expect_equal(got$quad, sum((x + m_hat) * (Qa %*% (x + m_hat))),
+                   tolerance = 1e-10, info = nm)
+    }
+  }
+  # Connected and unweighted, Qt is the plain ICAR precision.
+  fx <- .icar_chain()
+  got <- tulpa:::cpp_test_pg_icar_prior(fx$adj_list, fx$n_neighbors, fx$J,
+                                        rnorm(fx$J))
+  Q <- -outer(seq_len(fx$J), seq_len(fx$J),
+              function(a, b) as.numeric(abs(a - b) == 1))
+  diag(Q) <- fx$n_neighbors
+  expect_equal(got$Qt, Q)
+})
+
+test_that("an island with no observation is drawn from its N(0, 1 / tau) prior (#963)", {
+  # Was pinned to 0 (no data) or N(0, 1000) (with data). Over many sweeps from
+  # one incoming field the island's centred value has the conditional variance
+  # 1 / (tau Qt_66 + intercept term): order 1 / tau.
+  fx <- .icar_island()
+  tau <- 4
+  set.seed(11)
+  isl <- vapply(seq_len(3000L), function(r) {
+    s <- .icar_sweep(fx, tau, rep(0, fx$J))
+    s$phi[6] + s$removed_mean
+  }, numeric(1))
+  expect_gt(sd(isl), 0.2)
+  expect_lt(sd(isl), 1)
 })
 
 test_that("the leading unit's draw matches its closed-form conditional", {

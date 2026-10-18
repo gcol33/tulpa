@@ -30,8 +30,10 @@
 #'     observation falls in contributes nothing to the linear predictor and is
 #'     reported as `NA`.
 #'   \item A Polya-Gamma Gibbs fit (`mode = "gibbs"`) stores the field it
-#'     samples (`phi_spatial[k]`, plus `theta_spatial[k]` for BYM2, summed);
-#'     the rows summarize those draws.
+#'     samples (`phi_spatial[k]`); for BYM2 each draw's two unit-scale
+#'     components are combined into the same
+#'     `sigma * (sqrt(rho) * s * phi + sqrt(1 - rho) * theta)` the sampler
+#'     path reports. The rows summarize those draws.
 #'   \item A nested-Laplace fit with an ICAR or proper-CAR field: each outer
 #'     cell contributes its conditional mode, and its marginal variance where
 #'     the fit retained one, weighted by the cell's posterior weight. With the

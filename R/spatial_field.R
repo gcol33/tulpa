@@ -104,7 +104,8 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
     stop("`graph` must be an adjacency matrix (the spatial graph).",
          call. = FALSE)
   }
-  graph <- .validate_adjacency_arg(graph, "graph")
+  graph <- .validate_adjacency_arg(
+    graph, "graph", field = if (isTRUE(proper)) "car_proper" else "icar")
   if (isFALSE(shared)) .warn_nonshared("spatial effects")
 
   if (missing(formula) || !inherits(formula, "formula")) {

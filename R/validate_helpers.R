@@ -279,6 +279,47 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
   )
 }
 
+# What each areal field does at a node with no neighbours, so the constructors,
+# adjacency() and check_adjacency() report an island the same way
+# (gcol33/tulpa#962). An intrinsic field's island is a one-node component, and
+# the per-component augmentation (tulpa/sum_to_zero.h) gives its value the
+# field's own precision; the default BYM2 scaling gives it unit structured
+# variance (.bym2_component_scaling); D - rho W is zero on its row, so a proper
+# CAR field leaves it without a prior.
+.ISOLATED_NODE_HANDLING <- c(
+  icar       = "an ICAR field gives each one its own N(0, 1 / tau) level",
+  bym2       = paste("a BYM2 field gives each one unit variance on its",
+                     "structured part"),
+  car_proper = paste("a proper CAR field puts no prior on it (D - rho W is",
+                     "zero there)")
+)
+
+# The handling key of a field type, NULL for a type that takes no adjacency.
+.isolated_node_field <- function(type) {
+  switch(tolower(type),
+         icar = , car = , besag = , rsr = "icar",
+         bym2 = "bym2",
+         car_proper = "car_proper",
+         NULL)
+}
+
+.isolated_node_text <- function(n_isolated,
+                                fields = names(.ISOLATED_NODE_HANDLING)) {
+  paste0(n_isolated, " isolated node(s) with no neighbours; ",
+         paste(.ISOLATED_NODE_HANDLING[fields], collapse = "; "), ".")
+}
+
+# A field that gives an island a proper prior reports it as a message; a
+# proper CAR field leaves it without one and warns.
+.report_isolated_nodes <- function(n_isolated, field) {
+  if (n_isolated == 0L) return(invisible())
+  if (is.null(field)) field <- names(.ISOLATED_NODE_HANDLING)
+  text <- .isolated_node_text(n_isolated, field)
+  if ("car_proper" %in% field) warning(text, call. = FALSE)
+  else message(text)
+  invisible()
+}
+
 #' Validate an adjacency argument passed to a field constructor.
 #'
 #' `spatial_car()`, `spatial_bym2()` and `spatial()` each carried their own
@@ -297,10 +338,13 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
 #' @param x The adjacency argument: a matrix, a `Matrix`, or a
 #'   `tulpa_adjacency`.
 #' @param arg Name of the argument, used in the messages.
+#' @param field The field the graph is for (`"icar"`, `"bym2"`,
+#'   `"car_proper"`; see `.isolated_node_field()`), which sets how an isolated
+#'   node is reported. `NULL` reports every field's handling.
 #' @return The bare adjacency matrix.
 #' @keywords internal
 #' @noRd
-.validate_adjacency_arg <- function(x, arg = "adjacency") {
+.validate_adjacency_arg <- function(x, arg = "adjacency", field = NULL) {
   if (inherits(x, "tulpa_adjacency")) return(x$adjacency)
   # The gate is idempotent: a spec built by a spatial_*() constructor carries a
   # graph this has already passed, and the front door re-runs it on whatever
@@ -346,11 +390,7 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
     warning("`", arg, "` has entries other than 0/1 (weighted graph).",
             call. = FALSE)
   }
-  if (report$n_isolated > 0L) {
-    warning(report$n_isolated, " isolated node(s) with no neighbours; an ",
-            "ICAR/CAR field is improper on disconnected nodes.",
-            call. = FALSE)
-  }
+  .report_isolated_nodes(report$n_isolated, field)
   attr(x, "tulpa_adjacency_checked") <- TRUE
   x
 }

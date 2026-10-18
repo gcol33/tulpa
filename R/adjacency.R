@@ -414,10 +414,10 @@ adjacency.stars <- function(x, type = c("queen", "rook"),
          call. = FALSE)
   }
   if (report$n_isolated > 0L) {
-    message(sprintf(
-      "adjacency(): %d isolated node(s) with no neighbours (e.g. %s). An ICAR/CAR field is improper on disconnected nodes.",
-      report$n_isolated,
-      paste(utils::head(ids[report$isolated], 3L), collapse = ", ")))
+    message("adjacency(): ", .isolated_node_text(report$n_isolated),
+            " Isolated: ",
+            paste(utils::head(ids[report$isolated], 3L), collapse = ", "),
+            if (report$n_isolated > 3L) ", ...", ".")
   }
   structure(
     list(adjacency = W,
@@ -535,9 +535,7 @@ check_adjacency <- function(adjacency, ids = NULL) {
               call. = FALSE)
     }
     if (report$n_isolated > 0L) {
-      warning(report$n_isolated, " isolated node(s) with no neighbours; an ",
-              "ICAR/CAR field is improper on disconnected nodes.",
-              call. = FALSE)
+      warning(.isolated_node_text(report$n_isolated), call. = FALSE)
     }
     # Isolated nodes are reported above; this names a split into several
     # multi-node pieces, which is otherwise silent (gcol33/tulpa#902).

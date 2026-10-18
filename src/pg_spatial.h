@@ -17,25 +17,20 @@ namespace tulpa {
 // ICAR (Intrinsic Conditional Autoregressive) prior
 // ---------------------------------------------------------------------
 
-// Exchangeable prior precision standing in for the ICAR prior on a unit with
-// no neighbours. Such a unit is its own graph component: the ICAR prior says
-// nothing about its level, so this is the weak proper prior that keeps its
-// full conditional finite when the data alone would leave it flat.
-constexpr double PG_ICAR_ISOLATED_PREC = 1e-3;
-
 // Update spatial effects with an ICAR prior by a single-site sweep.
 //
-// Full conditional for phi_j:
+// Full conditional for phi_j on a connected graph:
 //   phi_j | rest ~ N(m_j, v_j)
 //   v_j = 1 / (tau * n_j + sum_omega_j)
 //   m_j = v_j * (tau * sum_{k ~ j} phi_k + sum_resid_j)
-// so `phi` carries the previous sweep's field in and the new one out; the
-// neighbour sum must read the current value of every neighbour, including
-// those the sweep has not reached yet.
+// and on a disconnected one the same with the augmented row of tau Qt
+// (PgIcarPrior), which gives each component's level -- an island's value --
+// the field's own precision. `phi` carries the previous sweep's field in and
+// the new one out; the neighbour sum must read the current value of every
+// neighbour, including those the sweep has not reached yet.
 //
 // After the sweep the k component levels are drawn jointly from their
-// likelihood conditional (the ICAR prior is invariant to a level shift within
-// a component) under the constraint that the overall field level does not
+// conditional under the constraint that the overall field level does not
 // move, and the field is centred sum-to-zero. `removed_mean` reports the level
 // removed by the centring so the caller can absorb it into the intercept,
 // which leaves eta unchanged.
@@ -44,7 +39,7 @@ constexpr double PG_ICAR_ISOLATED_PREC = 1e-3;
 // @param omega PG draws
 // @param offset X*beta + RE contribution (everything except spatial)
 // @param group 1-based spatial unit of each observation
-// @param adj Validated adjacency (CSR + component labels)
+// @param prior The unweighted ICAR prior over the validated adjacency
 // @param tau Spatial precision parameter
 // @param beta0,prior_beta_sd The intercept and its prior SD: the field's level
 //   is the intercept's, so each site conditional carries that prior through the
@@ -54,7 +49,7 @@ void update_spatial_icar(
     const Rcpp::NumericVector& omega,
     const Rcpp::NumericVector& offset,
     const Rcpp::IntegerVector& group,
-    const PgAdjacency& adj,
+    const PgIcarPrior& prior,
     double tau,
     double beta0,
     double prior_beta_sd,
@@ -62,13 +57,12 @@ void update_spatial_icar(
     double& removed_mean
 );
 
-// Update spatial precision tau with a gamma prior.
-// The ICAR pseudo-density is tau^((J - k)/2) exp(-tau phi'Q phi / 2) for k
-// graph components (one constant null direction each), so
-//   tau | phi ~ Gamma(shape + (J - k)/2, rate + phi'Q phi / 2).
+// Update spatial precision tau with a gamma prior. The centred field's density
+// is tau^((J - 1)/2) exp(-tau phi'Qt phi / 2) (PgIcarPrior), so
+//   tau | phi ~ Gamma(shape + (J - 1)/2, rate + phi'Qt phi / 2).
 double update_tau_icar(
     const Rcpp::NumericVector& phi,
-    const PgAdjacency& adj,
+    const PgIcarPrior& prior,
     double prior_shape,
     double prior_rate
 );
@@ -89,7 +83,10 @@ void update_spatial_bym2(
     const Rcpp::NumericVector& omega,
     const Rcpp::NumericVector& offset,
     const Rcpp::IntegerVector& group,
-    const PgAdjacency& adj,
+    // The structured component's ICAR prior, carrying the per-node precision
+    // multipliers of the per-component BYM2 scaling beyond `scale_factor`
+    // (gcol33/tulpa#902).
+    const PgIcarPrior& prior,
     Rcpp::NumericVector& phi_scaled,  // Input/output: structured component
     Rcpp::NumericVector& theta,       // Input/output: unstructured component
     double sigma_spatial,             // Total spatial SD
@@ -98,11 +95,7 @@ void update_spatial_bym2(
     double beta0,                     // intercept the structured level shares
     double prior_beta_sd,             // its prior SD (PgInterceptLevel)
     Rcpp::NumericVector& u,           // out: combined spatial effect
-    double& removed_mean,             // out: field level removed by centering phi
-    // Per-node precision multipliers of phi's ICAR prior: the per-component
-    // BYM2 scaling beyond `scale_factor`, which also gives an island its unit
-    // structured variance (gcol33/tulpa#902). nullptr: unweighted.
-    const double* node_prec = nullptr
+    double& removed_mean              // out: field level removed by centering phi
 );
 
 // The BYM2 mixing weight is drawn on a fixed grid of cell midpoints over

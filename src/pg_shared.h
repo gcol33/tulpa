@@ -72,8 +72,8 @@ inline int pg_n_save(int n_iter, int n_warmup, int thin) {
 //
 // Flat CSR form of the 1-based R neighbour list the areal kernels take, built
 // and validated once per fit: entry ranges, the `n_neighbors` / `adj_list`
-// agreement, and the connected-component labelling the ICAR rank correction
-// and the component-level block update both read.
+// agreement, and the connected-component labelling the augmented ICAR prior
+// (PgIcarPrior) and the component-level block update both read.
 // ============================================================================
 struct PgAdjacency {
   int n = 0;
@@ -166,27 +166,6 @@ inline PgAdjacency pg_build_adjacency(const Rcpp::List& adj_list,
     adj.n_components++;
   }
   return adj;
-}
-
-// An ICAR field is improper along one constant direction per graph component.
-// The overall level is confounded with the intercept and absorbed there; the
-// remaining component contrasts are identified by the data alone, so a
-// component carrying no observation leaves the posterior improper.
-inline void pg_check_components_observed(const PgAdjacency& adj,
-                                         const Rcpp::IntegerVector& group) {
-  if (adj.n_components <= 1) return;
-  std::vector<int> seen(adj.n_components, 0);
-  for (int i = 0; i < group.size(); i++) {
-    seen[adj.component[group[i] - 1]] = 1;
-  }
-  for (int c = 0; c < adj.n_components; c++) {
-    if (!seen[c]) {
-      Rcpp::stop("The adjacency graph has %d connected components and "
-                 "component %d carries no observation, so its field level is "
-                 "unidentified and the posterior is improper. Drop the "
-                 "unobserved units or connect them.", adj.n_components, c + 1);
-    }
-  }
 }
 
 // ============================================================================
@@ -655,19 +634,156 @@ inline double pg_icar_quad_form(const double* phi, const PgAdjacency& adj) {
   return quad_form;
 }
 
-// ICAR(tau) at rank J - k, plus the exchangeable N(0, 1 / isolated_prec) prior a
-// kernel places on a unit with no neighbours (isolated_prec = 0: none).
-inline double pg_log_icar(const double* phi, const PgAdjacency& adj, double tau,
-                          double isolated_prec) {
-  double lp = pg_log_gmrf(pg_icar_quad_form(phi, adj),
-                          adj.n - adj.n_components, tau);
-  if (isolated_prec > 0.0) {
-    const double sd = 1.0 / std::sqrt(isolated_prec);
+// ============================================================================
+// The intrinsic areal prior every Polya-Gamma kernel samples
+//
+// The engine's ICAR / BYM2 structured prior is s diag(w) Q_aug with
+// Q_aug = Q + sum_c 1_c 1_c' / J_c (tulpa/sum_to_zero.h), the field centred on
+// its way into eta: each component's constant direction -- an island's whole
+// value -- carries the field's own precision. These kernels centre the field
+// and absorb its mean into the intercept instead, which is a map onto a
+// representative only while the prior is invariant to a shift of the whole
+// field (PgInterceptLevel). The marginal of the centred field under
+// s diag(w) Q_aug is that invariant form,
+//
+//   Qt = diag(w) Q_aug - w w' / W,   W = sum_i w_i,
+//
+// the Schur complement of the constant direction, since diag(w) Q_aug 1 = w.
+// Qt 1 = 0, Qt equals diag(w) Q_aug on the sum-to-zero subspace, and its rank
+// is J - 1. On a connected unweighted graph it is Q itself and the
+// augmentation terms below are skipped (gcol33/tulpa#963).
+//
+// `w` is the per-node precision multiplier, constant within a component (the
+// BYM2 per-component scaling, gcol33/tulpa#902); nullptr is w = 1.
+// ============================================================================
+struct PgIcarPrior {
+  const PgAdjacency& adj;
+  const double* w;
+  bool augmented;              // more than one component
+  double W;                    // sum_i w_i
+  std::vector<int> comp_size;  // nodes per component
+
+  explicit PgIcarPrior(const PgAdjacency& a, const double* node_prec = nullptr)
+    : adj(a), w(node_prec), augmented(a.n_components > 1), W(0.0),
+      comp_size(a.n_components, 0) {
     for (int j = 0; j < adj.n; j++) {
-      if (adj.degree(j) == 0) lp += pg_log_normal_iid(&phi[j], 1, sd);
+      comp_size[adj.component[j]]++;
+      W += weight(j);
     }
   }
-  return lp;
+
+  double weight(int j) const { return w ? w[j] : 1.0; }
+
+  int rank() const { return adj.n > 0 ? adj.n - 1 : 0; }
+
+  // Per-component sums S_c and the weighted total sum_i w_i x_i.
+  void sums(const double* x, std::vector<double>& comp_sum,
+            double& wsum) const {
+    comp_sum.assign(adj.n_components, 0.0);
+    wsum = 0.0;
+    for (int j = 0; j < adj.n; j++) {
+      comp_sum[adj.component[j]] += x[j];
+      wsum += weight(j) * x[j];
+    }
+  }
+
+  // x' Qt x.
+  double quad(const double* x) const {
+    double q = 0.0;
+    if (!w) {
+      q = pg_icar_quad_form(x, adj);
+    } else {
+      for (int i = 0; i < adj.n; i++) {
+        double qi = adj.degree(i) * x[i] * x[i];
+        for (int e = adj.row_ptr[i]; e < adj.row_ptr[i + 1]; e++) {
+          const int j = adj.col_idx[e];
+          if (j > i) qi -= 2.0 * x[i] * x[j];
+        }
+        q += w[i] * qi;
+      }
+    }
+    if (augmented) {
+      std::vector<double> comp_sum;
+      double wsum = 0.0;
+      sums(x, comp_sum, wsum);
+      std::vector<double> wc(adj.n_components, 1.0);
+      for (int j = 0; j < adj.n; j++) wc[adj.component[j]] = weight(j);
+      for (int c = 0; c < adj.n_components; c++) {
+        q += wc[c] * comp_sum[c] * comp_sum[c] / comp_size[c];
+      }
+      q -= wsum * wsum / W;
+    }
+    return q;
+  }
+
+  // Adds s Qt to the row-major J x J matrix M.
+  void add_dense(double* M, double s) const {
+    const int J = adj.n;
+    for (int a = 0; a < J; a++) {
+      const size_t ra = static_cast<size_t>(a) * J;
+      M[ra + a] += s * (weight(a) * adj.degree(a));
+      for (int e = adj.row_ptr[a]; e < adj.row_ptr[a + 1]; e++) {
+        M[ra + adj.col_idx[e]] -= s * weight(a);
+      }
+    }
+    if (!augmented) return;
+    for (int a = 0; a < J; a++) {
+      const size_t ra = static_cast<size_t>(a) * J;
+      const int ca = adj.component[a];
+      for (int b = 0; b < J; b++) {
+        double v = -weight(a) * weight(b) / W;
+        if (adj.component[b] == ca) v += weight(a) / comp_size[ca];
+        M[ra + b] += s * v;
+      }
+    }
+  }
+};
+
+// The running sums a single-site sweep over Qt reads: site j's conditional
+// couples it to its component and to the whole field through the augmentation,
+// so the sweep carries S_c and sum_i w_i x_i rather than re-summing per site.
+struct PgIcarSweep {
+  const PgIcarPrior& P;
+  std::vector<double> comp_sum;
+  double wsum;
+
+  PgIcarSweep(const PgIcarPrior& prior, const double* x)
+    : P(prior), wsum(0.0) {
+    if (P.augmented) P.sums(x, comp_sum, wsum);
+  }
+
+  // Site j's prior factor at scale s: precision s Qt_jj and the
+  // precision-weighted mean -s sum_{i != j} Qt_ji x_i, given its neighbour sum
+  // and its current value.
+  void site(int j, double x_old, double nb_sum, double s, double& prec,
+            double& num) const {
+    const double wj = P.weight(j);
+    const int n_j = P.adj.degree(j);
+    if (!P.augmented) {
+      prec = s * (wj * n_j);
+      num = s * (wj * nb_sum);
+      return;
+    }
+    const int c = P.adj.component[j];
+    const double inv_jc = 1.0 / P.comp_size[c];
+    prec = s * (wj * n_j + wj * inv_jc - wj * wj / P.W);
+    num = s * (wj * nb_sum - wj * inv_jc * (comp_sum[c] - x_old) +
+               wj / P.W * (wsum - wj * x_old));
+  }
+
+  void moved(int j, double x_old, double x_new) {
+    if (!P.augmented) return;
+    comp_sum[P.adj.component[j]] += x_new - x_old;
+    wsum += P.weight(j) * (x_new - x_old);
+  }
+};
+
+// The intrinsic areal field's log density at scale s, rank J - 1. The
+// 0.5 sum_i log w_i of a weighted prior is constant in every sampled
+// parameter and is left out, as the ModelData sampler leaves it out.
+inline double pg_log_icar(const double* phi, const PgIcarPrior& prior,
+                          double s) {
+  return pg_log_gmrf(prior.quad(phi), prior.rank(), s);
 }
 
 // The NNGP joint density of a scale's field at its (sigma2, phi), the PC prior
