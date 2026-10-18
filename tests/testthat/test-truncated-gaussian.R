@@ -16,6 +16,7 @@
 }
 
 test_that("analytic grad / neg_hess match central differences", {
+    skip_on_cran()
     h <- 1e-5
     ax <- list(
         y     = c(-3.0, -1.2, -0.2, -0.02),  # response = log-cover scale, y <= u
@@ -43,6 +44,7 @@ test_that("analytic grad / neg_hess match central differences", {
 })
 
 test_that("u = +Inf reduces exactly to the gaussian arm", {
+    skip_on_cran()
     for (y in c(-3.0, -1.2, -0.2)) for (eta in c(-1.0, -0.2)) for (sg in c(0.4, 0.7)) {
         out <- tulpa:::cpp_truncated_gaussian_terms(y, Inf, eta, sg)
         expect_equal(out[["ll"]],  stats::dnorm(y, eta, sg, log = TRUE), tolerance = 1e-12)
@@ -61,6 +63,7 @@ test_that("deep truncation (predicted mean far above the bound) stays finite", {
 })
 
 test_that("truncated-normal moment identities hold (MLE target)", {
+    skip_on_cran()
     eta <- -0.5; sg <- 0.8; u <- 0
     a <- (u - eta) / sg
     lambda <- stats::dnorm(a) / stats::pnorm(a)

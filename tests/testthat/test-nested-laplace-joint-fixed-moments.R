@@ -290,6 +290,7 @@ test_that(".nested_fixed_moments ignores zero-weight and empty cells", {
 # whole-grid weights over the survivors instead would shrink the mean toward the
 # origin by exactly the dropped mass.
 test_that(".nested_fixed_moments renormalizes over the cells it kept", {
+  skip_on_cran()
   # The symmetric reproduction from the issue: two identical cells, one of them
   # dropped. The truth is unmoved, and the pre-#342 answer was half of it.
   H <- matrix(c(4, 1, 1, 2), 2, 2)

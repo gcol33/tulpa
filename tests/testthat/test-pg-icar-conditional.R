@@ -158,6 +158,7 @@ ICAR_BETA_SD <- 0.6
 }
 
 test_that("the sweep reproduces the ICAR conditional drawn in R", {
+  skip_on_cran()
   for (nm in c("chain", "two_components", "island")) {
     fx <- switch(nm, chain = .icar_chain(),
                  two_components = .icar_two_components(),
@@ -196,6 +197,7 @@ test_that("a sweep that zeroes the field does not reproduce the kernel", {
 })
 
 test_that("the kernels' ICAR prior is the marginal of the centred Q_aug field (#963)", {
+  skip_on_cran()
   # Integrating the constant direction out of x' diag(w) Q_aug x leaves the
   # Schur complement diag(w) Q_aug - w w' / W, so Qt is checked against that
   # construction, and its quadratic form against the integral it stands for.

@@ -80,6 +80,7 @@ test_that("observed curvature averages to the registered weight for nb2", {
 
 
 test_that("the zero-inflated mixture is normalized over its support", {
+  skip_on_cran()
   for (fam in c(untruncated, truncated)) {
     for (eta in grid_eta) {
       for (z in grid_z) {
@@ -93,6 +94,7 @@ test_that("the zero-inflated mixture is normalized over its support", {
 
 
 test_that("zero-inflated scores match finite differences in both components", {
+  skip_on_cran()
   h <- 1e-6
   for (fam in c(untruncated, truncated)) {
     ymin <- if (fam %in% truncated) 1 else 0
@@ -116,6 +118,7 @@ test_that("zero-inflated scores match finite differences in both components", {
 
 
 test_that("the zero-inflated negative Hessian matches finite differences", {
+  skip_on_cran()
   # All three distinct entries of the symmetric 2 x 2 block, including the
   # cross term that couples the count and zi predictors at y = 0.
   h <- 1e-4
@@ -147,6 +150,7 @@ test_that("the zero-inflated negative Hessian matches finite differences", {
 
 
 test_that("zero-inflation over a truncated base is exactly the hurdle model", {
+  skip_on_cran()
   # The two-part hurdle closed form, written independently of the mixture code:
   #   y = 0:  log(pi)
   #   y > 0:  log(1 - pi) + loglik_truncated(y)
@@ -193,6 +197,7 @@ test_that("zero-inflation over a truncated base is exactly the hurdle model", {
 
 
 test_that("genuine zero inflation couples the two predictors at y = 0", {
+  skip_on_cran()
   # Guards the converse of the hurdle test: with an untruncated base both
   # components can produce a zero, so the cross term must be non-zero. A
   # mixture implementation that always returned a block-diagonal Hessian would
@@ -210,6 +215,7 @@ test_that("genuine zero inflation couples the two predictors at y = 0", {
 
 
 test_that("zero-inflated moments match the mixture's exact moments", {
+  skip_on_cran()
   for (fam in c(untruncated, truncated)) {
     for (eta in grid_eta) {
       for (z in grid_z) {

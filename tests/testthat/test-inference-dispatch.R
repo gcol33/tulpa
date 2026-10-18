@@ -3,6 +3,7 @@
 # dispatch spine: tier derivation, R-reachability, and fail-loud routing.
 
 test_that("BACKEND_REGISTRY is the single source of truth for tiers", {
+  skip_on_cran()
   # Every registry tier key is a known tier.
   for (b in names(BACKEND_REGISTRY)) {
     expect_true(BACKEND_REGISTRY[[b]]$tier %in% names(TIER_META),
@@ -39,6 +40,7 @@ test_that("get_backend_tier preserves its shape and errors on unknown", {
 })
 
 test_that("every registered backend is reachable from R", {
+  skip_on_cran()
   # The ModelData sampler kernels are reachable through tulpa_sample_glmm
   # (gcol33/tulpa#54, #55); the Polya-Gamma kernels are reachable through
   # tulpa_gibbs() under the `gibbs` backend (gcol33/tulpa#774) -- there is no

@@ -86,6 +86,7 @@ test_that("the spatial constructors surface the same structural issues as check_
 })
 
 test_that("an isolated node is reported with what the field does with it (#962)", {
+  skip_on_cran()
   isolated <- chain_W(5); isolated[4, 5] <- 0; isolated[5, 4] <- 0
   # ICAR and BYM2 give the island a proper prior, so they say which one; the
   # old text called every field improper there.

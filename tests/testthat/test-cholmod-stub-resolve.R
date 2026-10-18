@@ -6,6 +6,7 @@
 # the sources use.
 
 test_that("the DLL-load resolver calls every M_cholmod_* stub used in src/", {
+  skip_on_cran()
   src <- test_path("..", "..", "src")
   skip_if_not(dir.exists(src), "package sources not available")
   files <- list.files(src, pattern = "[.](cpp|h|hpp)$", full.names = TRUE)

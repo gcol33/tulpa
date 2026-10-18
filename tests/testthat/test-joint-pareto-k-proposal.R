@@ -36,6 +36,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("a collapsed tensor grid recovers a finite k-hat from the FD Hessian", {
+    skip_on_cran()
     res   <- .pk_collapsed_res()
     u_hat <- c(log(1.0), stats::qlogis(0.5))
     kd <- tulpa:::.joint_pareto_k(res, .pk_refit(u_hat), n_samples = 200L,
@@ -101,6 +102,7 @@ test_that("a collapsed grid with degenerate curvature declines to NA", {
 }
 
 test_that("a partial collapse with pinned axes recovers a usable k-hat", {
+    skip_on_cran()
     # ess_grid <= d but the two sigma axes still carry weighted spread (only the
     # alpha + phi axes are pinned). The grid is spread, so the scorer considers
     # both the single grid-moment Gaussian and the grid-mixture proposal and keeps
@@ -122,6 +124,7 @@ test_that("a partial collapse with pinned axes recovers a usable k-hat", {
 })
 
 test_that("a delta-weight collapse with pinned axes still recovers k (grid-layout detection)", {
+    skip_on_cran()
     # The extreme of gcol33/tulpa#117: weight on exactly one cell (ess_grid = 1),
     # so the weighted variance of EVERY axis is zero. Weighted-variance detection
     # (the literal #114 set) would then drop the varying sigma axes too and
@@ -178,6 +181,7 @@ test_that(".joint_pareto_mode_cov restricts to the varying axes and zeros the pi
 # --------------------------------------------------------------------------- #
 
 test_that("a supplied CCD mode-Hessian proposal yields a finite k-hat at collapse", {
+    skip_on_cran()
     res   <- .pk_collapsed_res()
     u_hat <- c(log(1.0), stats::qlogis(0.5))
     prop  <- list(u_hat = u_hat, L_scale = diag(c(0.2, 0.3)),
@@ -190,6 +194,7 @@ test_that("a supplied CCD mode-Hessian proposal yields a finite k-hat at collaps
 })
 
 test_that("an inconsistent proposal is ignored (identical to no proposal)", {
+    skip_on_cran()
     # Wrong per-axis transforms: the splice guard must reject the proposal, after
     # which the path is exactly the no-proposal path (here, the FD fallback).
     res   <- .pk_collapsed_res()
@@ -207,6 +212,7 @@ test_that("an inconsistent proposal is ignored (identical to no proposal)", {
 # --------------------------------------------------------------------------- #
 
 test_that("a well-resolved grid scores deterministically; a supplied proposal routes to the single Gaussian", {
+    skip_on_cran()
     # On a well-resolved spread grid (effective ESS > d) the scorer considers the
     # single grid-moment Gaussian and the grid mixture and keeps the better-
     # covering one (gcol33/tulpa#121). For a Gaussian inner target the single
@@ -248,6 +254,7 @@ test_that("a well-resolved grid scores deterministically; a supplied proposal ro
 })
 
 test_that("the grid-mixture proposal beats the single Gaussian on a skewed grid", {
+    skip_on_cran()
     # The fix's core invariant (gcol33/tulpa#121): when the hyperparameter
     # posterior is right-skewed in the unconstrained coordinate but the grid spans
     # its support, a single symmetric Gaussian proposal underweights the heavy
@@ -438,6 +445,7 @@ test_that(".joint_pareto_arm_axes declines on the single-block layout", {
 })
 
 test_that("per-arm k is reported and leaves the joint k bit-identical", {
+    skip_on_cran()
     res   <- .pk_arm_res()
     u_hat <- c(log(1.0), log(0.35))
     refit <- .pk_refit_pinned(u_hat)

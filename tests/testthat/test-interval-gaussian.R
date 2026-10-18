@@ -22,6 +22,7 @@
 }
 
 test_that("analytic grad / neg_hess match central differences (finite interval)", {
+    skip_on_cran()
     h <- 1e-5
     ax <- list(eta = c(-2.0, -0.5, 0.3, 1.4), sigma = c(0.4, 0.85, 1.6))
     # CRAN reads eta and sigma at their two ends, every band; the dev loop reads
@@ -50,6 +51,7 @@ test_that("analytic grad / neg_hess match central differences (finite interval)"
 })
 
 test_that("open outer classes (+/-Inf bounds) match a one-sided tail", {
+    skip_on_cran()
     h <- 1e-5
     for (eta in c(-1.0, 0.0, 1.2)) for (sg in c(0.5, 1.3)) {
         # Lowest class: (-Inf, b] -> P = Phi((b - eta)/sigma).

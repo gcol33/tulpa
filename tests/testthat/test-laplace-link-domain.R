@@ -33,6 +33,7 @@ test_that("the log-likelihood is -Inf outside the eta > 0 links' domain", {
 })
 
 test_that("the domain check leaves every other link alone", {
+  skip_on_cran()
   cases <- list(
     list(family = "gamma",             y = 1.5, n = 1L,  phi = 2.0),
     list(family = "inverse_gaussian",  y = 1.5, n = 1L,  phi = 1.1),

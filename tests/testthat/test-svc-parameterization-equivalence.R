@@ -57,6 +57,7 @@ svc_eq_g <- function(d, z, sigma2, phi, cov_type) {
 }
 
 test_that("the non-centered SVC transform inverts the centered density exactly", {
+  skip_on_cran()
   d <- svc_eq_inputs()
   zs <- lapply(1:6, function(r) { set.seed(200L + r); rnorm(d$N) })
 
@@ -79,6 +80,7 @@ test_that("the non-centered SVC transform inverts the centered density exactly",
 })
 
 test_that("the SVC transform's Jacobian closes the change of variables", {
+  skip_on_cran()
   d <- svc_eq_inputs()
   set.seed(77)
   z <- rnorm(d$N)

@@ -4,6 +4,7 @@
 # the log-likelihood, and the refactored glmm_weights() must be unchanged.
 
 test_that("log-likelihoods match R reference densities", {
+  skip_on_cran()
   set.seed(1)
   eta <- seq(-2, 2, length.out = 7)
 

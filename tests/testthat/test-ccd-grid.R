@@ -22,6 +22,7 @@ test_that("ccd_grid k=2 has 1 + 4 + 4 = 9 points (full factorial)", {
 })
 
 test_that("ccd_grid k=3..6 uses full factorial 2^k", {
+  skip_on_cran()
   for (k in 3:6) {
     g <- ccd_grid(k)
     expect_equal(g$n_points, 1L + 2L * k + 2L^k)

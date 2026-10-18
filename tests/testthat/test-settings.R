@@ -16,6 +16,7 @@
 # Runs at every tier: no fit, pure table and source inspection.
 
 test_that("every grid axis materialises to a usable vector", {
+    skip_on_cran()
     for (key in names(tulpa:::.NL_GRID)) {
         spec <- tulpa:::.NL_GRID[[key]]
         if (isTRUE(spec$data_dependent)) {
@@ -61,6 +62,7 @@ test_that("every family binding resolves to a declared axis", {
 })
 
 test_that("the default axes are exactly these values", {
+    skip_on_cran()
     # Pinned deliberately: these numbers ARE the engine's behaviour on every
     # fit that does not name its own grid.
     expect_equal(tulpa:::.nl_grid_axis("field_sd"),
@@ -152,6 +154,7 @@ test_that("the default axes are exactly these values", {
 })
 
 test_that("registry defaults() fill exactly the bound fields, crossed", {
+    skip_on_cran()
     fill <- function(type, p = list()) {
         tulpa:::.NL_REGISTRY[[type]]$defaults(p, list())
     }
@@ -209,6 +212,7 @@ test_that("registry defaults() fill exactly the bound fields, crossed", {
 })
 
 test_that("provenance narrows to the family that laid the axis", {
+    skip_on_cran()
     pinned <- tulpa:::.nl_axis_is_pinned
 
     # Each family's OWN default is recognised on its own field.
@@ -264,6 +268,7 @@ test_that("provenance narrows to the family that laid the axis", {
 })
 
 test_that("default grid axes are not written inline outside the settings file", {
+    skip_on_cran()
     # The regression this file exists to prevent. A geometric axis over LITERAL
     # bounds is a default written where it is consumed; parameterised bounds
     # (`log(lo)`, `log(mode * span)`) are a caller building a data-dependent
@@ -413,6 +418,7 @@ test_that("no user-facing text tells the caller to set a knob that hard-errors",
 })
 
 test_that("every outer-k entry point defaults to the registry's draw budget", {
+    skip_on_cran()
     # The source lint above catches a budget written as a literal. It cannot
     # catch a SECOND registry-shaped default that reads a different key, and it
     # says nothing about what the defaults evaluate to -- which is the half that

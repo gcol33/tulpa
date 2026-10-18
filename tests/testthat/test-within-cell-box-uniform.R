@@ -21,6 +21,7 @@ PROBS_WC <- c(0.005, 0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975, 0.995)
 # --------------------------------------------------------- the default is fixed
 
 test_that("the default construction is log-quadratic, and one setting decides it", {
+  skip_on_cran()
   # The default moved on the measurements recorded in `R/settings.R`: chord to
   # box-uniform at 0.0.188 (gcol33/tulpa#357), box-uniform to log-quadratic at
   # gcol33/tulpa#932. What this has to keep saying is that there is ONE default
@@ -71,6 +72,7 @@ test_that("the default construction is log-quadratic, and one setting decides it
 })
 
 test_that("`.nl_cell_edges()` is unchanged by the partition extraction", {
+  skip_on_cran()
   # `.nl_cell_partition()` is what the box read needs: the coordinate the outer
   # edges were mirrored in is not recoverable from the edges, because the guard
   # falls back when a mapped edge leaves the support. `.nl_cell_edges()` is now
@@ -261,6 +263,7 @@ test_that("the interior bisector is byte-identical to the sum form it replaced",
 # ------------------------------------------------------ declines, never errors
 
 test_that("every decline records a reason and falls back to the chord read", {
+  skip_on_cran()
   v <- exp(seq(log(0.2), log(1.5), length.out = 5))
   w <- c(0.30, 0.25, 0.20, 0.15, 0.10)
   # A support whose node set is not a tiling partition declines by NAME, so a

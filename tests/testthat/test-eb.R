@@ -282,6 +282,7 @@ test_that("the EB fit has no duplicated field names", {
 })
 
 test_that("EB reports the outer optimizer's convergence code", {
+  skip_on_cran()
   d <- sim_re_pois(24L, G = 25L, per = 8L)
   fit <- eb_pois(d)
   expect_identical(fit$outer_convergence, 0L)

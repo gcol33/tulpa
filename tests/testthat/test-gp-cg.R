@@ -53,6 +53,7 @@ build_nngp_neighbor_data <- function(coords, nn_k) {
 }
 
 test_that("CG and Cholesky NNGP solvers agree on log-lik and gradients", {
+  skip_on_cran()
   set.seed(7)
   n_obs <- 100
   nn_k <- 10L

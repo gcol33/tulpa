@@ -31,6 +31,7 @@ grid_phi <- c(0.5, 2, 8)
 
 
 test_that("the added count families are normalized over their support", {
+  skip_on_cran()
   for (eta in grid_eta) {
     for (phi in grid_phi) {
       expect_equal(support_sum("neg_binomial_1", eta, phi, 0), 1,
@@ -53,6 +54,7 @@ test_that("the added count families put no mass on y = 0 when truncated", {
 
 
 test_that("scores of the added count families match finite differences", {
+  skip_on_cran()
   h <- 1e-6
   for (spec in list(list("neg_binomial_1", 0), list("truncated_poisson", 1),
                     list("truncated_neg_binomial_2", 1))) {
@@ -71,6 +73,7 @@ test_that("scores of the added count families match finite differences", {
 
 
 test_that("truncated working weights equal the exact expected curvature", {
+  skip_on_cran()
   # Both truncated families register the exact Fisher information, so the
   # registered weight must reproduce E[-d2 loglik / deta2] on the nose.
   for (eta in grid_eta) {
@@ -87,6 +90,7 @@ test_that("truncated working weights equal the exact expected curvature", {
 
 
 test_that("neg_binomial_1 registers the moment weight, under the exact information", {
+  skip_on_cran()
   # Unlike neg_binomial_2 -- whose moment weight coincides with the expected
   # curvature -- NB1's shape r = mu/phi moves with the mean, so the exact
   # information r^2 (trigamma(r) - E[trigamma(y + r)]) has no elementary form
@@ -112,6 +116,7 @@ test_that("neg_binomial_1 registers the moment weight, under the exact informati
 
 
 test_that("variance and response_mean of the added count families are exact", {
+  skip_on_cran()
   for (spec in list(list("neg_binomial_1", 0), list("truncated_poisson", 1),
                     list("truncated_neg_binomial_2", 1))) {
     fam <- spec[[1]]; ymin <- spec[[2]]

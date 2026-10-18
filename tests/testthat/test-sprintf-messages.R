@@ -39,6 +39,7 @@ test_that("print.tulpa_criteria reports high Pareto-k observations", {
 # sprintf() / gettextf() call may take a string literal as its second
 # positional argument, which is always a split format string.
 test_that("no sprintf() call splits its format across two literals", {
+  skip_on_cran()
   ns <- asNamespace("tulpa")
   bad <- character(0)
   walk <- function(e, where) {

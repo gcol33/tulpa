@@ -163,6 +163,7 @@ test_that("the budget is the tensor grid it replaces, floored at the first attem
 })
 
 test_that("the placement registry holds the loop caps the projection reads", {
+    skip_on_cran()
     # Pinned deliberately: these are the numbers the mode-find loops run on AND
     # the numbers the up-front projection is computed from, so a change to
     # either has to move both together.

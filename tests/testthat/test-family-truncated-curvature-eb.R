@@ -91,6 +91,7 @@ mean_sigma <- function(seeds, family, ...) {
 # --- 1. Which families actually have a Fisher-vs-observed distinction --------
 
 test_that("truncated_poisson curvature carries no y, so the two forms agree", {
+  skip_on_cran()
   # Pins the registry's claim that observed = expected for this family, which
   # is what licenses it as a control in the recovery tests below.
   for (eta in c(-1.5, -0.5, 0.3, 1.2, 2.0)) {

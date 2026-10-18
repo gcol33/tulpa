@@ -1,6 +1,7 @@
 # Tests for sn_match / sn_cdf / sn_quantile.
 
 test_that("sn_match reproduces forward moments", {
+  skip_on_cran()
   # Forward: (xi, omega, alpha) -> (mu, sigma, gamma); then sn_match
   # should round-trip back to the same skew-normal parameters.
   for (alpha in c(-5, -1.5, -0.3, 0.3, 1.5, 5)) {

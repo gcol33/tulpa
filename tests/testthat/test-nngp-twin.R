@@ -31,6 +31,7 @@ nngp_inputs <- function(N = 25L, nn = 5L, seed = 3L) {
 }
 
 test_that("the GP NNGP autodiff kernel agrees with its double twin", {
+  skip_on_cran()
   d <- nngp_inputs()
   for (cov_type in 0:1) {            # exponential, matern 3/2
     for (sigma2 in c(0.4, 1.0, 2.5)) {
@@ -50,6 +51,7 @@ test_that("the GP NNGP autodiff kernel agrees with its double twin", {
 })
 
 test_that("the SVC NNGP autodiff kernel agrees with its double twin", {
+  skip_on_cran()
   # #109 consolidated the double SVC kernel to jitter/var_floor = 1e-6 via a
   # double-only core the autodiff twin could not use, so the twin kept 1e-4 and
   # the two described different models. Both now read tulpa_svc::kSvcJitter /

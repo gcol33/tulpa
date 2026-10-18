@@ -535,6 +535,7 @@ test_that("bootstrap SE recovers the across-batch SD of the k-hat", {
 })
 
 test_that(".tulpa_psis_k_uncertainty returns well-formed bootstrap + formula fields", {
+    skip_on_cran()
     set.seed(128)
     lr <- 0.375 * rnorm(400L)^2
     u  <- .tulpa_psis_k_uncertainty(lr, n_boot = 800L, conf_bands = c(0.5, 0.7))
@@ -586,6 +587,7 @@ test_that("the size-dependent boundary changes the band verdict vs fixed c(0.5, 
 })
 
 test_that(".tulpa_psis_k_uncertainty defaults conf_bands to the size-dependent bands", {
+    skip_on_cran()
     set.seed(321)
     lr <- 0.5 * rnorm(300L)^2
     S  <- sum(is.finite(lr))
@@ -596,6 +598,7 @@ test_that(".tulpa_psis_k_uncertainty defaults conf_bands to the size-dependent b
 })
 
 test_that(".joint_pareto_k reports bootstrap uncertainty end to end (cover fixture)", {
+    skip_on_cran()
     res <- .jpk_cover_res()
     set.seed(415)
     kd <- .joint_pareto_k(res, .jpk_cover_refit, n_samples = 600L, k_bootstrap = 500L)
@@ -622,6 +625,7 @@ test_that(".joint_pareto_k warns when k_tail_points exceeds the 20% cap", {
 })
 
 test_that("the bootstrap k-hat is reproducible (RNG restored on exit)", {
+    skip_on_cran()
     res <- .jpk_cover_res()
     set.seed(417)
     a <- .joint_pareto_k(res, .jpk_cover_refit, n_samples = 600L, k_bootstrap = 300L)

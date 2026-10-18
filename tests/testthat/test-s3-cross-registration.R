@@ -4,6 +4,7 @@
 # either direction.
 
 test_that("every borrowed generic carries a registered tulpa_fit method", {
+  skip_on_cran()
   borrowed <- list(
     c("lme4", "fixef"), c("lme4", "ranef"), c("lme4", "VarCorr"),
     c("nlme", "ranef"), c("nlme", "VarCorr"),

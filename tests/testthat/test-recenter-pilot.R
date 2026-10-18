@@ -18,6 +18,7 @@
 # --- 1. the axis thinner -----------------------------------------------------
 
 test_that("a thinned axis keeps both endpoints and is a subset of its input", {
+    skip_on_cran()
     ax <- exp(seq(log(0.1), log(3), length.out = 9))
     for (n in 2:8) {
         th <- .nl_pilot_axis(ax, n)

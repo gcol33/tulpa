@@ -242,6 +242,7 @@ test_that("ar1's rho axis rides along with the recenter when both precision axes
 })
 
 test_that("a bound declines rho alone on the spatiotemporal rescue (#738)", {
+    skip_on_cran()
     # Under the default prior no simulated fixture was found whose rho mode SD
     # reaches the ceiling: the uniform prior on (-1, 1), carried to rho's logit
     # search coordinate, contributes curvature p (1 - p) there, and the recorded

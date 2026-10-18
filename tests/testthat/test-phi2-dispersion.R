@@ -140,6 +140,7 @@ test_that("lognormal fits through the front door", {
 })
 
 test_that("the variance/SD convention follows the base family, not the spelling", {
+  skip_on_cran()
   # gcol33/tulpa#256: the conversion tested the family name for exact equality,
   # so every `<family>_<link>` spelling of a normal family reached the kernel
   # with the variance where the SD belongs.

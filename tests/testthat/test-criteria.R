@@ -175,6 +175,7 @@ test_that("tulpa_pit(log_lik =) needs the log-lik and cdf shapes to agree", {
 })
 
 test_that("compare_models computes native WAIC / LOO from a fit's pointwise log-lik", {
+  skip_on_cran()
   skip_if_not_installed("loo")
   d1 <- make_loglik(seed = 1L)
   d2 <- make_loglik(seed = 2L)
@@ -198,6 +199,7 @@ test_that("compare_models computes native WAIC / LOO from a fit's pointwise log-
 })
 
 test_that("model_average stacking weights reproduce loo::stacking_weights", {
+  skip_on_cran()
   skip_if_not_installed("loo")
   d1 <- make_loglik(seed = 1L); d2 <- make_loglik(seed = 2L)
   fit1 <- structure(list(draws = list(log_lik = d1$ll), fitted = rep(0, d1$N)),
@@ -218,6 +220,7 @@ test_that("model_average stacking weights reproduce loo::stacking_weights", {
 })
 
 test_that("model_average pseudo-BMA weights reproduce loo::pseudobma_weights", {
+  skip_on_cran()
   skip_if_not_installed("loo")
   d1 <- make_loglik(seed = 1L); d2 <- make_loglik(seed = 2L)
   fit1 <- structure(list(draws = list(log_lik = d1$ll), fitted = rep(0, d1$N)),

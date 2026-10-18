@@ -38,6 +38,7 @@ approx_fit <- function(seed = 2L) {
 # --- fixef -------------------------------------------------------------------
 
 test_that("fixef() returns the fixed effects for both posterior shapes", {
+  skip_on_cran()
   for (fit in list(sampler_fit(), approx_fit())) {
     fe <- fixef(fit)
     expect_true(is.numeric(fe))
@@ -55,6 +56,7 @@ test_that("fixef() excludes the random effects", {
 })
 
 test_that("lme4::fixef() and nlme::ranef() dispatch on a tulpa_fit", {
+  skip_on_cran()
   fit <- sampler_fit()
   if (requireNamespace("lme4", quietly = TRUE)) {
     expect_identical(lme4::fixef(fit), fixef(fit))

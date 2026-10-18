@@ -72,6 +72,7 @@ test_that("plot_divergences() reads draws through .fit_draws() past its hmc gate
 })
 
 test_that("the divergence count and the divergent rows come from one record", {
+  skip_on_cran()
   # plot_divergences() asks for the count and then for the indices. Reading
   # them off different fields let it believe divergences exist while reporting
   # their indices unavailable (gcol33/tulpa#840), so both go through

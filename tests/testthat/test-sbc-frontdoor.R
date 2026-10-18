@@ -64,6 +64,7 @@ fd_model <- function(n_obs = 20L, group_ids = NULL, pool = NULL) {
 # ---------------------------------------------------------------------------
 
 test_that("the scorer is the package's, not a private copy in the helper", {
+  skip_on_cran()
   ns <- asNamespace("tulpa")
   for (f in c("sbc_mixture", "sbc_normal", "sbc_discrete", "sbc_rank",
               "sbc_draws", "sbc_pit", "sbc_fold", "sbc_crps",
@@ -134,6 +135,7 @@ test_that("the exact arm calibrates and the known-bad control does not", {
 })
 
 test_that("n_ref reaches the fitter and quantities restrict the scoring", {
+  skip_on_cran()
   fitter <- function(d, n_ref = 50L)
     list(a = list(mu = sbc_normal(mean(d$y), 0.3),
                   r = sbc_rank(sum(stats::runif(n_ref) < 0.5), n_ref)))
@@ -153,6 +155,7 @@ test_that("n_ref reaches the fitter and quantities restrict the scoring", {
 # ---------------------------------------------------------------------------
 
 test_that("a truth held fixed across simulations is refused, naming the way out", {
+  skip_on_cran()
   fixed <- function(seed) {
     set.seed(seed)
     list(y = stats::rnorm(10L, 0.3, 1), theta = c(mu = 0.3))
@@ -199,6 +202,7 @@ test_that("a rank quantity needs no truth and is exempt from the guard", {
 # ---------------------------------------------------------------------------
 
 test_that("the posterior door runs and records what it verified", {
+  skip_on_cran()
   m <- fd_model(group_ids = function(data) data$g)
   res <- sbc("posterior", model = m, n_sim = 25L)
   expect_identical(res$experiment, "posterior")
@@ -274,6 +278,7 @@ test_that("CRPS is refused as a ranking where it is not a proper posterior score
 # ---------------------------------------------------------------------------
 
 test_that("print, summary, plot and diagnostics read the result", {
+  skip_on_cran()
   res <- sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
              n_sim = 40L, seed = 3L)
   out <- utils::capture.output(print(res))

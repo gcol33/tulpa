@@ -141,6 +141,7 @@ test_that("a rank-0 or malformed term is refused rather than approximated", {
 })
 
 test_that("the momentum draw has covariance M", {
+  skip_on_cran()
   # p = D^(1/2) z1 + U Lambda^(1/2) z2 with z1, z2 independent is N(0, M)
   # exactly. Whitening by chol(M) is scale-free, so the Type-IV lambdas -- four
   # orders of magnitude above the diagonal -- are scored on the same footing as

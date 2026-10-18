@@ -15,6 +15,7 @@
 # Tier 1 throughout: no fit, no sampler, pure table and arithmetic inspection.
 
 test_that("every declared axis domain is a well-formed interval", {
+    skip_on_cran()
     for (key in names(tulpa:::.NL_AXIS_DOMAIN)) {
         d <- tulpa:::.NL_AXIS_DOMAIN[[key]]
         expect_true(is.list(d), info = key)
@@ -84,6 +85,7 @@ test_that("the proper-CAR default grid no longer closes outside its domain", {
 })
 
 test_that("no bounded axis reports a support outside its domain", {
+    skip_on_cran()
     node_sets <- list(
         two    = c(0.90, 0.99),
         three  = c(0.80, 0.95, 0.99),

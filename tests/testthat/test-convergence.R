@@ -30,6 +30,7 @@ pool_chain_major <- function(arr) {
 
 
 test_that("diagnostics() reproduces posterior rhat / ess / mcse", {
+  skip_on_cran()
   skip_if_not_installed("posterior")
   arr <- make_draws_array()
   fit <- structure(list(draws = arr), class = "tulpa_fit")
@@ -162,6 +163,7 @@ test_that("select_main_params drops bracketed-index entries", {
 
 
 test_that("plotting and summary layer runs end-to-end on a multi-chain fit", {
+  skip_on_cran()
   arr <- make_draws_array(niter = 400L, nchain = 4L, npar = 3L)
   pooled <- pool_chain_major(arr)
   n_total <- nrow(pooled)

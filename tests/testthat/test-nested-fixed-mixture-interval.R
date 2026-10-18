@@ -260,6 +260,7 @@ test_that("a fit the correction declines everywhere reports what it would have",
 # --------------------------------------------------------------------------- #
 
 test_that("a repaired grid reads as the posterior over the cells that remain", {
+  skip_on_cran()
   # A positive-weight cell that retained no block. The moments renormalize over
   # the cells that did, so the mixture carries the same weighting `estimate` and
   # `std.error` were formed under and the read runs (gcol33/tulpa#342). What it

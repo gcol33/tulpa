@@ -129,6 +129,7 @@ test_that("dimension 1 is the bit-reversed Gray code, and a van der Corput permu
 })
 
 test_that("each one-dimensional projection is an elementary-interval net", {
+  skip_on_cran()
   # X_0 .. X_(2^m - 1) put exactly one point in every interval
   # [j / 2^m, (j + 1) / 2^m). The origin is not emitted, so the returned
   # 2^m - 1 points fill intervals 1 .. 2^m - 1 once each and leave interval 0

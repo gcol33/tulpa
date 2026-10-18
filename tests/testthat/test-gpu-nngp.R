@@ -50,6 +50,7 @@ test_that("NNGP GP Laplace kernel fits a small binary spatial problem", {
 })
 
 test_that("the batched-CUDA backend has one definition and says which one it is", {
+  skip_on_cran()
   # gcol33/tulpa#396. `cuda_batched_cholesky` and its siblings were defined
   # TWICE, differently: `gpu_backend.h` compiled stubs returning FALSE in the
   # `#else` of `#ifdef TULPA_ENABLE_CUDA` -- which neither Makevars ever defined

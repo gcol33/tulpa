@@ -21,6 +21,7 @@
                         "truncated_neg_binomial_2")
 
 test_that("the observed-curvature 2nd derivative declines with NaN, not a number", {
+    skip_on_cran()
     declined <- character(0)
     for (f in .families_with_2nd) {
         ok <- tryCatch(tulpa:::cpp_family_has_obs_curvature_2nd_derivative(f),

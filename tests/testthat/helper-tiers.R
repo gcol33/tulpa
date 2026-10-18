@@ -2,7 +2,7 @@
 #
 #   Tier 1  structural   (no gate)           shape / class / dispatch / formula /
 #                                             closed-form / finite-difference-gradient
-#                                             checks; sub-second; runs everywhere
+#                                             checks; under 0.1 s; runs everywhere
 #                                             including CRAN.
 #   Tier 2  recovery      skip_on_cran()      one (or a few) fits to convergence,
 #                                             parameter recovery vs a single simulated
@@ -47,7 +47,12 @@
 # behind skip_on_cran() / skip_if_not_slow() is collapsed by TULPA_FAST=1 with no
 # extra wiring.
 #
-# A tier-1 block is sub-second, and a structural identity swept over a large
+# The 0.1 s bound is what keeps the CRAN check inside its time budget: tier 1 is
+# some 1700 blocks over 480 files, and the check farm runs it 1.3x slower than a
+# desktop on top of a fixed per-file cost. A block that measures above it under
+# the CRAN profile takes skip_on_cran() as its first line.
+#
+# A tier-1 block is under 0.1 s, and a structural identity swept over a large
 # parameter grid is not. That is a fixture size rather than a tier: size the grid
 # through cran_fixture() (below) instead of gating the block, so CRAN keeps
 # reading the identity on a small grid and the dev loop keeps sweeping the whole

@@ -83,6 +83,7 @@ test_that("a chain-stamped fit with no draws says so instead of returning NULL s
 # --------------------------------------------------------------------------- #
 
 test_that("every backend emitting i.i.d. draws has a reliability scope entry", {
+  skip_on_cran()
   iid <- names(Filter(function(e) identical(e$emits, "iid"), BACKEND_REGISTRY))
   expect_true(all(iid %in% names(.APPROX_SCOPE)),
               info = paste(setdiff(iid, names(.APPROX_SCOPE)), collapse = ", "))

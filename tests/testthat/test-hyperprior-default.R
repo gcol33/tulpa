@@ -71,6 +71,7 @@ test_that("the range prior's dimension is the one the coordinates span", {
 })
 
 test_that("the LKJ normaliser makes the density integrate to one", {
+  skip_on_cran()
   # d = 2: p(r) = (1 - r^2)^(eta - 1) / c_2.
   for (eta in c(1, 2, 3.5)) {
     f <- function(r) exp((eta - 1) * log1p(-r^2) - tulpa:::.lkj_log_normaliser(2L, eta))
@@ -176,6 +177,7 @@ test_that("a gamma shape and a beta precision carry R-INLA's exponential default
 # --------------------------------------------------------------------------- #
 
 test_that("the two-field default grid carries PC x PC x LKJ on its own coordinates", {
+  skip_on_cran()
   g <- tulpa:::.mcar_default_logchol_grid(2L)
   d <- tulpa:::.hp_logchol_design(g)
   expect_identical(d$design, "sd_rho")

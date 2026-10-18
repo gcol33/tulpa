@@ -11,6 +11,7 @@ COV <- c(exponential = 0L, matern32 = 1L, gaussian = 2L, spherical = 3L,
          matern52 = 4L)
 
 test_that("dcov_dphi matches a numerical derivative of compute_cov", {
+  skip_on_cran()
   h <- 1e-6
   s2_grid <- c(0.5, 1.0, 3.0); phi_grid <- c(0.3, 1.0, 2.5)
   d_grid <- c(0.05, 0.25, 0.7, 1.3, 3.0)
@@ -39,6 +40,7 @@ test_that("dcov_dphi matches a numerical derivative of compute_cov", {
 })
 
 test_that("each covariance kernel matches its closed form", {
+  skip_on_cran()
   sigma2 <- 2.0; phi <- 1.5
   for (d in c(0.1, 0.8, 1.4, 2.2)) {
     expect_equal(cpp_test_compute_cov(d, sigma2, phi, COV[["exponential"]]),

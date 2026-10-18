@@ -110,6 +110,7 @@ test_that("the RW normalizer carries the 2*pi term at every rank", {
 }
 
 test_that("AR1 log-prior equals the dense multivariate normal it factorizes", {
+  skip_on_cran()
   set.seed(13)
   phi <- rnorm(9)
   for (tau in c(0.4, 1.7, 12)) {
@@ -125,6 +126,7 @@ test_that("AR1 log-prior equals the dense multivariate normal it factorizes", {
 })
 
 test_that("AR1 log-prior stays finite at and past the stationarity boundary", {
+  skip_on_cran()
   # An unregularized stationary variance sigma^2 / (1 - rho^2) diverges here and
   # took the log-prior to -Inf just inside the boundary.
   set.seed(14)

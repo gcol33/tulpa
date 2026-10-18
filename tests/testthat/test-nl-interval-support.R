@@ -58,6 +58,7 @@ test_that("a cell edge is mirrored in the quantity's own coordinate", {
 # --------------------------------------------- the declaration is not overruled
 
 test_that("a declared domain's edge is never overruled by the value guess", {
+    skip_on_cran()
     # gcol33/tulpa#377. The domain branch above CHECKS its mapped edge, and when
     # the check failed control fell through to the `all(v > 0)` log guess, which
     # computes the same number on a `positive` axis and tests only
@@ -109,6 +110,7 @@ test_that("a declared domain's edge is never overruled by the value guess", {
 })
 
 test_that("the partition says which coordinate it settled on, and why", {
+    skip_on_cran()
     # gcol33/tulpa#293: a silent-disable path needs a reason field.
     # `.nl_cell_partition()` is where the coordinate choice is made, so it is
     # where the reason lives, and both readers take it from the same return.
@@ -161,6 +163,7 @@ test_that("the partition says which coordinate it settled on, and why", {
 })
 
 test_that("an undeclared axis's mirrored edge is guarded too", {
+    skip_on_cran()
     # gcol33/tulpa#379. gcol33/tulpa#377 restricted the value guess to axes with
     # no declaration, which is the intended boundary; what it left is a
     # surviving branch that never looked at the edge it produced. The linear

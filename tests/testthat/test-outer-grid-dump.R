@@ -470,6 +470,7 @@ test_that("a candidate weight rule is reported against the floor, not on its own
 })
 
 test_that("every part the read is compared in carries a verdict", {
+  skip_on_cran()
   # The verdict set is derived from `OGD_PARTS`, so it covers exactly the parts
   # the difference and the floor carry. What is asserted is the agreement with a
   # hand comparison of the corresponding pair, part by part: a part that gains a

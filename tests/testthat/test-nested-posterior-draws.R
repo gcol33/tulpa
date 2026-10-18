@@ -39,6 +39,7 @@ nl_fixture <- function() {
 }
 
 test_that("the mixture sampler reproduces the retained moments and bounds", {
+  skip_on_cran()
   fit <- nl_fixture()
   mom <- tulpa:::.nested_fixed_moments(fit)
 

@@ -73,6 +73,7 @@ report_omp_reduction <- function(got, ref, nt, bound) {
 }
 
 test_that("a parallel dot-product reduction is independent of the thread count", {
+  skip_on_cran()
   set.seed(5)
   X <- matrix(rnorm(200 * 8), 200, 8)
   b <- rnorm(8)

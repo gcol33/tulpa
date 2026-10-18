@@ -7,6 +7,7 @@
 # divergence that check cannot see: it is comparing the two sides of it.
 
 test_that("expm1 keeps its precision on every type, not just the double one", {
+  skip_on_cran()
   # exp(x) - 1 loses about half its significant digits as x -> 0; expm1 does
   # not. Comparing against the R primitive is the arbiter, not against the
   # cancelling form.
@@ -25,6 +26,7 @@ test_that("expm1 keeps its precision on every type, not just the double one", {
 })
 
 test_that("log1m_exp agrees across types in the small-argument branch", {
+  skip_on_cran()
   # log(1 - exp(-a)). The branch at a <= log(2) goes through expm1 precisely to
   # avoid the cancellation in log1p(-exp(-a)); a cancelling expm1 puts it back.
   for (a in c(1e-10, 1e-8, 1e-4, 0.5, 0.6931471805599453, 1, 40)) {

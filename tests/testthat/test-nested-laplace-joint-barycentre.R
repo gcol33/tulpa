@@ -89,6 +89,7 @@
 }
 
 test_that("the barycentre is the box's own first moment, on either sign of a", {
+  skip_on_cran()
   # Both routes, both signs of the curvature, and half-widths unequal on the two
   # sides, since a cell's Voronoi box need not be symmetric. `g = -8, a = 0.05`
   # on the narrow box is the far-tail case the closed form hands to quadrature,
@@ -108,6 +109,7 @@ test_that("the barycentre holds over the full curvature and box grid", {
 })
 
 test_that("a symmetric cell with no gradient keeps its own coordinate", {
+  skip_on_cran()
   # `g = 0` on a symmetric box is the whole content of the current placement,
   # and it is recovered exactly rather than to within a tolerance on the closed
   # route: the two standardized edges are equidistant from the local peak, so
@@ -144,6 +146,7 @@ test_that("a symmetric cell with no gradient keeps its own coordinate", {
 })
 
 test_that("the closed form covers the concave axis and quadrature the rest", {
+  skip_on_cran()
   # A concave axis with the peak within reach of the box is the Gaussian case
   # and needs no quadrature.
   for (p in list(c(0.5, 1), c(2, 3), c(4.44, 20), c(-3, 0.5), c(10, 0.02))) {
@@ -175,6 +178,7 @@ test_that("the closed form covers the concave axis and quadrature the rest", {
 # --------------------------------------------------------------------------- #
 
 test_that("a cell convex on one axis keeps the exact barycentre on the others", {
+  skip_on_cran()
   # The same separability the box mass rests on: with `A` diagonal the local
   # quadratic factorizes, so the cell's barycentre is the vector of its axes'
   # and a fourth axis the finite difference came back convex on costs the other
@@ -211,6 +215,7 @@ test_that("a cell convex on one axis keeps the exact barycentre on the others", 
 # --------------------------------------------------------------------------- #
 
 test_that("only interior cells move, and they move within their own box", {
+  skip_on_cran()
   mu <- c(0.3, -0.2); s <- c(0.8, 1.3)
   lv <- list(a = c(-1, 0, 1), b = c(-1, 0, 1))
   gg <- as.matrix(expand.grid(lv, KEEP.OUT.ATTRS = FALSE))

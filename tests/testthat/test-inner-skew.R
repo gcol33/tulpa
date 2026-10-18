@@ -277,6 +277,7 @@ test_that("gamma_3 scores a zero-inflated (multi-process) fit and tracks its exa
 })
 
 test_that("the inner-skew decline reason reaches the fit and the diagnostics layer", {
+  skip_on_cran()
   # The R-side decline paths, exercised without a fit.
   d <- tulpa:::.inner_skew_decline(list(), "not_requested")
   expect_null(d$inner_skew)

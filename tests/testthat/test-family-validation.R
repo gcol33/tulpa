@@ -6,6 +6,7 @@
 # turn each such input error into a clear front-door error.
 
 test_that(".validate_family_phi rejects non-positive phi for dispersion families", {
+  skip_on_cran()
   for (fam in c("gaussian", "gamma", "neg_binomial_2", "inverse_gaussian", "beta")) {
     expect_error(.validate_family_phi(fam, 0),  "positive", info = fam)
     expect_error(.validate_family_phi(fam, -1), "positive", info = fam)

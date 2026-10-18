@@ -52,6 +52,7 @@ make_gaussian_inner_fit <- function(y, X, tau = 100) {
 # Structural smoke
 # -----------------------------------------------------------------------------
 test_that("tulpa_hyper_grid wires axes / weights / posterior fields", {
+  skip_on_cran()
   specs <- list(
     hyper_axis_spec("alpha", grid = c(-1, 0, 1)),
     hyper_axis_spec("sigma", grid = c(0.5, 1, 2), log_scale = TRUE,

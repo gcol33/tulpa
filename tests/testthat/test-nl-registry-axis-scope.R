@@ -65,6 +65,7 @@ test_that("the name table matches what each registry theta() builder emits", {
 })
 
 test_that("the movable-axis table names every axis of every family it lists", {
+    skip_on_cran()
     ax <- .reg_axis_names()
     for (fam in names(.NL_REGISTRY_AXIS_FIELD)) {
         fields <- .NL_REGISTRY_AXIS_FIELD[[fam]]

@@ -62,6 +62,7 @@ test_that("nu <= 0 is refused with the reason (gcol33/tulpa#281)", {
 # --- #279: nu enters both kappa and tau --------------------------------------
 
 test_that("the C++ (range, sigma) -> (kappa, tau) map matches the R one at every nu", {
+  skip_on_cran()
   spec <- .nu_fixture()
   for (nu in c(0.5, 1, 1.5, 2, 3)) {
     for (range in c(0.2, 0.8)) for (sigma in c(0.4, 1.7)) {
@@ -248,6 +249,7 @@ test_that("joint NUTS refuses an integer alpha it cannot differentiate (gcol33/t
 # --- #437: the joint-NUTS hyper prior reads the same map ---------------------
 
 test_that("the PC hyper prior maps (log_kappa, log_tau) to sigma at every nu", {
+  skip_on_cran()
   # compute_spde_hyper_prior is the only prior on (log_kappa, log_tau) in
   # joint-NUTS mode, and it has to reach sigma through the same map the sampler
   # reports sigma_draws with. The nu = 1 special case

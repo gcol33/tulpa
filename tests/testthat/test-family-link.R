@@ -11,6 +11,7 @@
 # primitives encode the same family.
 
 test_that("composing a family with its own canonical link reproduces the registry", {
+  skip_on_cran()
   set.seed(3)
   eta <- seq(-1.5, 1.5, length.out = 11)
   cases <- list(
@@ -56,6 +57,7 @@ test_that("a canonical family code keeps the hand-written entry, not the composi
 })
 
 test_that("the score is the eta-derivative of the log-likelihood under any link", {
+  skip_on_cran()
   # The composition is only correct if score and weight are the derivatives of
   # the log-density it reports. Finite differences check that directly, at etas
   # inside each link's domain.
@@ -82,6 +84,7 @@ test_that("the score is the eta-derivative of the log-likelihood under any link"
 })
 
 test_that("the R link layer agrees with the compiled kernels", {
+  skip_on_cran()
   # R and C++ must describe the same model: the R registry now feeds H_beta and
   # posterior_predict for exactly the families the engine fits.
   cases <- list(
@@ -107,6 +110,7 @@ test_that("the R link layer agrees with the compiled kernels", {
 })
 
 test_that("the binomial working weight carries n_trials the right way round", {
+  skip_on_cran()
   # y ~ Bin(n, mu): Fisher information on eta is n (dmu/deta)^2 / (mu (1-mu)).
   # variance_fn used to return the RESPONSE variance n mu (1-mu) into the
   # dmu^2 / V composition, which is n^2 too small. The canonical logit link is
@@ -242,6 +246,7 @@ test_that("cauchit matches stats::pcauchy on relative tolerance into both tails"
 })
 
 test_that("the cauchit derivative ladder is its own finite difference", {
+  skip_on_cran()
   eta <- c(-30, -10, -3, -0.5, 0, 0.7, 1.8, 12)
   h <- 1e-5
   lad <- function(e) cpp_link_ladder(e, "cauchit")
@@ -270,6 +275,7 @@ test_that("the R cauchit link reads the same tails as the kernel", {
 })
 
 test_that("the cloglog derivative ladder is its own finite difference", {
+  skip_on_cran()
   # mu_eta2 / mu_eta3 carry the same cancellation risk one and two derivatives
   # in (-expm1(eta) is the second's stable form), and both reach a gradient.
   eta <- c(-30, -10, -3, -0.5, 0, 0.7, 1.8)

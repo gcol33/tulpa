@@ -6,7 +6,7 @@ The single source of truth for the gates is `helper-tiers.R`.
 
 | Tier | Gate | Runs on | What lives here |
 |------|------|---------|-----------------|
-| 1 structural | *(none)* | everywhere, incl. CRAN | shape / class / dispatch / formula / closed-form / finite-difference-gradient checks; sub-second |
+| 1 structural | *(none)* | everywhere, incl. CRAN | shape / class / dispatch / formula / closed-form / finite-difference-gradient checks; under 0.1 s (a block above that takes `skip_on_cran()`) |
 | 2 recovery | `skip_on_cran()` | default local + CI | one (or a few) fits to convergence; parameter recovery vs a single simulated truth; equivalence (dense == sparse, serial == parallel, cpp == R) |
 | 3 full | `skip_if_not_slow()` | opt-in only | MCMC / HMC sampler chains, multi-seed coverage aggregates, multi-recovery loops |
 

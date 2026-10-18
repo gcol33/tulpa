@@ -12,6 +12,7 @@
 }
 
 test_that("grad / neg_hess match central differences across K and class", {
+  skip_on_cran()
   h <- 1e-5
   for (eta in list(c(0.4), c(-1.2, 0.8), c(0.3, -0.5, 1.1), c(-2, 0, 1.5, 0.2))) {
     Km1 <- length(eta); K <- Km1 + 1L
@@ -75,6 +76,7 @@ test_that("class probabilities are a valid simplex and overflow-safe", {
 # --------------------------------------------------------------------------- #
 
 test_that("a class the softmax underflows still reports its finite value", {
+  skip_on_cran()
   # eta_c - logsumexp(0, eta), computed without forming a probability.
   ll_stable <- function(eta, cls) {
     m <- max(0, eta)

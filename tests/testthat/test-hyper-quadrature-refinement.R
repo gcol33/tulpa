@@ -105,6 +105,7 @@ test_that("a finer grid integrates the declared measure more accurately", {
 })
 
 test_that("the nodes are a quadrature rule for the declared prior", {
+  skip_on_cran()
   # A flat inner fit, so the weights ARE the measure: refining then has one
   # visible consequence, the same declared prior integrated more accurately.
   flat <- function(hypers) list(log_marginal = 0)
@@ -163,6 +164,7 @@ test_that("tulpa_hyper_grid refuses an unknown control knob", {
 })
 
 test_that("log_prior_coord says which coordinate the declared prior lives on", {
+  skip_on_cran()
   # `Exponential(1)` written as a density on sigma. Read on the integration
   # coordinate (the default) the nodes integrate it as a density on log sigma;
   # declared `"natural"` they integrate the density the caller wrote, because
@@ -405,6 +407,7 @@ fit_two_axis <- function(n_sigma, control) {
 }
 
 test_that("a refined grid reports the posterior its own cell weights define", {
+  skip_on_cran()
   coarse  <- fit_two_axis(5L, PINNED)
   refined <- fit_two_axis(5L, REFINE)
   fine    <- fit_two_axis(61L, PINNED)

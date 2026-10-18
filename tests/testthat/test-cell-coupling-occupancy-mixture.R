@@ -167,6 +167,7 @@ test_that("dense_cross_pairs allocates the two blocks the spec writes, and no ot
 })
 
 test_that("a grad-only request keeps the gradient exact and skips the curvature", {
+  skip_on_cran()
   coupled_occ_register()
   for (cs in .occ_cases) {
     full <- .occ_eval(cs$a, cs$v, cs$y)

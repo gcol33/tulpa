@@ -22,6 +22,7 @@ nngp_grad_inputs <- function(N = 25L, nn = 8L, seed = 3L) {
 }
 
 test_that("nngp_nc_backward matches finite differences (z, log_sigma2, log_phi)", {
+  skip_on_cran()
   d <- nngp_grad_inputs()
   for (cov_type in 0:1) {                       # exponential, matern 3/2
     for (ls2 in c(log(0.4), log(1.44))) {
@@ -52,6 +53,7 @@ test_that("nngp_nc_backward matches finite differences (z, log_sigma2, log_phi)"
 # -- SVCData does not cache neighbour-pair distances (see hmc_svc.h). This is
 # the other branch cpp_test_nngp_nc_grad above never exercises.
 test_that("SVC nngp_nc_backward matches finite differences (coords-fallback pair_dist)", {
+  skip_on_cran()
   d <- nngp_grad_inputs()
   for (cov_type in 0:1) {
     for (ls2 in c(log(0.4), log(1.44))) {
@@ -82,6 +84,7 @@ test_that("SVC nngp_nc_backward matches finite differences (coords-fallback pair
 # checks the field construction / index plumbing per scale, not a new branch
 # of pair_dist().
 test_that("multiscale-GP nngp_nc_backward matches finite differences (both scales)", {
+  skip_on_cran()
   d <- nngp_grad_inputs()
   for (scale in c("local", "regional")) {
     for (ls2 in c(log(0.4), log(1.44))) {

@@ -17,6 +17,7 @@ grad_num <- function(f, w, h = 1e-6) {
 }
 
 test_that("the sigma2 wrappers equal the canonical tau kernels", {
+  skip_on_cran()
   # The export converts with the exact tau = 1 / sigma2, so the two sides are
   # two parameterizations of one kernel rather than a wrapper compared against
   # its own internal arithmetic. A conversion that reproduced whatever the

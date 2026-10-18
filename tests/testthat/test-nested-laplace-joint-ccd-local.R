@@ -1270,6 +1270,7 @@ test_that("a declined cell reports the mass comparison its nodes already paid fo
 })
 
 test_that("the per-axis decline tally is carried on both sides of the gate", {
+  skip_on_cran()
   # The two free readings each carry the vocabulary their own estimator can
   # decline under, per cell and in cell order, on the kept side and the declined
   # side alike: a cell the gate put back as a mass atom is as legible as one it

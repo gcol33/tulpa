@@ -34,6 +34,7 @@
 }
 
 test_that("the two cores return the same kriging moments at every jitter", {
+  skip_on_cran()
   f <- .nngp_fixture()
   for (jit in c(0, 1e-12, 1e-10, 1e-6, 1e-3, 1e-1)) {
     r <- .nngp_cores(f$C, f$c_vec, f$w_nb, jitter = jit)

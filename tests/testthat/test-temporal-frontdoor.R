@@ -218,6 +218,7 @@ test_that("grouped temporal with one group is identical to the ungrouped fit", {
 })
 
 test_that("unsupported temporal configurations error clearly", {
+  skip_on_cran()
   d <- make_temporal_data(13)
   d$df$y <- rbinom(nrow(d$df), 1, 0.5)
 

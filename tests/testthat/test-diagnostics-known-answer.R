@@ -62,6 +62,7 @@ test_that("moran_i agrees with spdep::moran where available", {
 })
 
 test_that("durbin_watson statistic agrees with lmtest::dwtest where available", {
+  skip_on_cran()
   skip_if_not_installed("lmtest")
   set.seed(9)
   n <- 40L

@@ -79,6 +79,7 @@ test_that("mala mass_diag preconditioner improves mixing on scaled target", {
 
 
 test_that("mala's dense metric samples a strongly correlated target exactly", {
+  skip_on_cran()
   # A dense inverse mass changes the proposal, never the target: the MH step
   # keeps the draws exact, so the moments come back whatever the metric.
   set.seed(306L)

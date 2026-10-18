@@ -38,6 +38,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("the concave axis factor is the box integral, to machine precision", {
+  skip_on_cran()
   gr <- expand.grid(g = c(0, 0.25, 1, 2, 4.44, -3), a = c(0.05, 0.5, 1, 3, 20),
                     h = c(0.25, 1, 2))
   err_int <- numeric(nrow(gr))
@@ -107,6 +108,7 @@ test_that("the factor is the issue's pnorm form where that form can be evaluated
 # --------------------------------------------------------------------------- #
 
 test_that("a convex axis is integrated rather than declined", {
+  skip_on_cran()
   gr <- expand.grid(g = c(0, 0.5, 2, -2), a = c(0, -0.05, -0.5, -2),
                     h = c(0.5, 1, 2))
   err <- numeric(nrow(gr))

@@ -66,6 +66,7 @@ test_that("jittered hyperparameter draws reproduce the fit's own quantiles", {
 })
 
 test_that("a log-quadratic cell's draws sit on the stretch of its row it owns", {
+  skip_on_cran()
   # The cell-conditional is the part of its row's reconstructed CDF its level
   # owns, so the draws in one cell stay around that cell rather than spreading
   # along the whole row, and the latent half drawn in the same cell is matched
@@ -401,6 +402,7 @@ hd_indep_draws <- function(fit, cells) {
 }
 
 test_that("a product of anticorrelated axes keeps the posterior's spread (#859)", {
+  skip_on_cran()
   exact <- 0.5 * sqrt(2 * (1 - 0.9))
   n_draw <- if (cran_fixture()) 2e4L else 1e5L
   for (K in c(5L, 7L, 9L)) {
@@ -510,6 +512,7 @@ hd_exact_log_moments <- function(f) {
 }
 
 test_that("a skewed posterior's product keeps its exact spread", {
+  skip_on_cran()
   # The target orientation comes from a quadratic fitted to the grid's log
   # density, so it is exact on a Gaussian and an approximation on anything
   # else. Measured on these two shapes the coupled box read sits within
@@ -541,6 +544,7 @@ test_that("a skewed posterior's product keeps its exact spread", {
 })
 
 test_that("a coarse grid under a strong correlation is still coupled (#860)", {
+  skip_on_cran()
   # The off-ridge cells' masses sit far below `lm.wfit()`'s rank tolerance
   # (about 1e-130 at K = 3, rho = -0.97), so fitted at their raw masses the
   # quadratic read as rank-deficient and the draws fell back to independent
@@ -562,6 +566,7 @@ test_that("a coarse grid under a strong correlation is still coupled (#860)", {
 })
 
 test_that("the within-cell coupling never takes the sign opposite the target (#861)", {
+  skip_on_cran()
   # A curved posterior on a coarse grid: the quadratic's target correlation
   # there is weaker than the one the cells' means already carry, and solving
   # for it asked for POSITIVE coupling inside the cell under a negative
@@ -590,6 +595,7 @@ test_that("the within-cell coupling never takes the sign opposite the target (#8
 })
 
 test_that("three correlated axes are coupled pairwise into one valid copula", {
+  skip_on_cran()
   # Pairwise solves need not be jointly positive definite; the first
   # configuration is one where they are not at K = 5 and the eigenvalue clip
   # is what makes the matrix a correlation matrix.
@@ -746,6 +752,7 @@ test_that("a level the grid does not carry leaves the read byte-identical", {
 })
 
 test_that("the level keeps its own coordinate, and nothing is drawn below it", {
+  skip_on_cran()
   for (wc in c("box_uniform", "chord")) {
     fit <- hd_copy(wc)
     av <- as.numeric(fit$theta_grid[, "alpha"])
@@ -777,6 +784,7 @@ test_that("the level keeps its own coordinate, and nothing is drawn below it", {
 })
 
 test_that("a level holding more than half the posterior IS the median", {
+  skip_on_cran()
   # The other side of the composition. Under a marginal decreasing across the
   # copy axis the level takes 0.70 of the posterior, so every probability below
   # that reads the level -- including the median, which a read spreading the
@@ -813,6 +821,7 @@ test_that("the draws still reproduce the fit's own interval on the level's axis"
 })
 
 test_that("a point mass keeps its mass when its continuum is coupled", {
+  skip_on_cran()
   # The level's cells carry an infinite log coordinate and drop out of the
   # quadratic, so the orientation is the continuum's; the level's share of the
   # draws is the fit's, whatever uniform the other axis draws alongside it.

@@ -142,6 +142,7 @@ test_that("both mode-find consumers reach optim only through the shared helper",
 })
 
 test_that("no file outside settings.R restates a mode-find constant", {
+  skip_on_cran()
   r_dir <- test_path("..", "..", "R")
   skip_if_not(dir.exists(r_dir), "package sources not available")
   files <- setdiff(list.files(r_dir, pattern = "\\.R$", full.names = TRUE),

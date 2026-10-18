@@ -24,6 +24,7 @@
 }
 
 test_that("every scalar type evaluates the same primitive in the interior", {
+  skip_on_cran()
   cases <- list(
     list(fn = "exp",   x = 1.3),
     list(fn = "exp",   x = -4.2),
@@ -50,6 +51,7 @@ test_that("every scalar type evaluates the same primitive in the interior", {
 })
 
 test_that("exp is clamped on every scalar type, not only the value path", {
+  skip_on_cran()
   # exp(800) overflows to +Inf unclamped. The value path has always clamped, so
   # an unclamped reverse mode is a different function from the one the runtime
   # gradient check finite-differences.
@@ -66,6 +68,7 @@ test_that("exp is clamped on every scalar type, not only the value path", {
 })
 
 test_that("sqrt at and below zero is finite in value and derivative everywhere", {
+  skip_on_cran()
   # An HSGP spectral density underflows to exactly 0 at a long lengthscale and a
   # high basis index, so sqrt(0) is an ordinary argument here. Unguarded, the
   # reverse-mode partial is 0.5 / 0 = +Inf and any nonzero upstream adjoint

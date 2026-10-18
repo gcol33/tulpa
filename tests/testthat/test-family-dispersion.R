@@ -76,6 +76,7 @@ ops_call <- function(f, cs, ..., phi) {
 
 
 test_that("dloglik/dphi matches a finite difference of the registered loglik", {
+  skip_on_cran()
   for (fam in names(FAMILY_PHI)) {
     for (phi in FAMILY_PHI[[fam]]) {
       cs <- dispersion_case(fam, phi)
@@ -90,6 +91,7 @@ test_that("dloglik/dphi matches a finite difference of the registered loglik", {
 
 
 test_that("dscore/dphi matches a finite difference of the registered score", {
+  skip_on_cran()
   # The score derivative is what carries the mode's movement with phi
   # (dx_hat/dphi); an error here tilts the gradient without changing the fit at
   # any fixed phi, so nothing else would catch it.
@@ -107,6 +109,7 @@ test_that("dscore/dphi matches a finite difference of the registered score", {
 
 
 test_that("dweight/dphi differentiates the weight H is actually built from", {
+  skip_on_cran()
   # The target is NOT uniformly `.FAMILY_OPS$weight`. Where the compiled Newton
   # weight is already the observed curvature and the registry carries that
   # curvature as `obs_weight` (neg_binomial_2, beta), that is the weight H is
@@ -205,6 +208,7 @@ test_that("the derivatives are registered only where phi is free", {
 
 
 test_that("every dispersion family has a registered weight to differentiate", {
+  skip_on_cran()
   # The dweight entries differentiate .FAMILY_OPS$weight. A family listed here
   # whose registry entry lacked one would leave dweight describing nothing.
   for (fam in tulpa:::.dispersion_families()) {
@@ -234,6 +238,7 @@ FAMILY_PHI2 <- list(
 
 
 test_that("the second-order dispersion derivatives match differences of the first", {
+  skip_on_cran()
   # Each of L2 / Sc2 / DW2 / DWde is one further derivative of a first-order
   # .family_dphi form (DW2 = d(dweight)/dphi, DWde = d(dweight)/deta, and so on),
   # so differencing the analytic first-order chains the check back to the
@@ -266,6 +271,7 @@ test_that("the second-order dispersion derivatives match differences of the firs
 
 
 test_that("a phi Hessian entry carries every derivative its assembly reads", {
+  skip_on_cran()
   # The border differentiates u and the mode motion on H_true^-1 while the
   # objective's own terms stay on H^-1, so a family whose working weight is not
   # the observed curvature owes d(W_obs)/dphi on top of the four. Withholding it

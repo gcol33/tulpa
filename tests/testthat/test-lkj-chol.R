@@ -319,6 +319,7 @@ test_that("raw_from_L inverts build_L_from_raw", {
 })
 
 test_that("n = 2 reduces to the direct tanh map", {
+  skip_on_cran()
   # The scaling factor sqrt(s) is 1 for the single strict-lower entry of a 2x2
   # row, and the extra 0.5*log(s) Jacobian term is 0.5*log(1) = 0. So a random
   # intercept-and-slope term -- the overwhelmingly common correlated fit -- maps

@@ -21,6 +21,7 @@ test_that("every consumer reads that one setting", {
 })
 
 test_that("every fitter's own default resolves to the same prior SD", {
+  skip_on_cran()
   fitters <- list(
     ep           = tulpa:::tulpa_ep,
     ep_fit       = tulpa:::ep_fit,

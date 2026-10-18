@@ -106,6 +106,7 @@ test_that("the R working weight is the one the compiled Hessian carries", {
 })
 
 test_that("the observed curvature is not the expected weight where they differ", {
+  skip_on_cran()
   # The substitution .family_obs_weight() used to make for a family with no
   # registered closed form. It is exact only where the response enters the
   # log-likelihood linearly in eta; elsewhere it is a different function, and

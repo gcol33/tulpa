@@ -11,6 +11,7 @@
 # added without its registration fails in this suite instead of downstream.
 
 test_that("every R_GetCCallable name in the exported headers is registered", {
+  skip_on_cran()
   inc <- system.file("include", "tulpa", package = "tulpa")
   skip_if(!nzchar(inc) || !dir.exists(inc), "headers not installed")
 

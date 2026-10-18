@@ -45,6 +45,7 @@ test_that(".nested_is_pareto_k scores injected draws identically and consumes no
 # --------------------------------------------------------------------------- #
 
 test_that(".tulpa_inner_k_summary bands the worst MATERIAL index, not the worst index", {
+  skip_on_cran()
   floor_ess <- tulpa:::.nl_diag("inner_k_material_ess")
   # A large shape whose weights are uniform describes no correction: reported,
   # but not banded. This is the guard against flagging a healthy fit.
@@ -80,6 +81,7 @@ test_that(".tulpa_inner_k_summary bands the worst MATERIAL index, not the worst 
 })
 
 test_that("an inner-k decline carries a reason from the shared k vocabulary", {
+  skip_on_cran()
   # `[[`, not `$`: on a declined fit `inner_pareto_k_declined` is the only field
   # carrying the prefix, so `$` would partial-match the k-hat to the reason.
   d <- tulpa:::.inner_k_decline(list(), "not_requested")

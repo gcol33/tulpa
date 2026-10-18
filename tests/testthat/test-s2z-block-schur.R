@@ -45,6 +45,7 @@
 .rel <- function(a, b) abs(a - b) / max(1, abs(b))
 
 test_that("block-Schur log|B| matches the direct and dense references (single pin)", {
+  skip_on_cran()
   for (seed in 1:5) {
     r <- .s2z_run(n = 90L, nf = 60L, pins = list(list(start = 0L, n = 60L, coef = 1.0)),
                   seed = seed)
@@ -95,6 +96,7 @@ test_that("an explicit diagonal coupling reproduces the diag(coef) path", {
 })
 
 test_that("a cross-block coupling matches the dense U D U' reference", {
+  skip_on_cran()
   Sinv <- matrix(c(2.0, 0.8, 0.8, 1.5), 2L, 2L)   # SPD, genuine off-diagonal
   D    <- Sinv / 40                                # J_c = 40
   for (seed in 31:34) {
@@ -124,6 +126,7 @@ test_that("the off-diagonal of D actually moves the answer", {
 })
 
 test_that("block-Schur is exact at the large-field / large-coef sum-to-zero regime", {
+  skip_on_cran()
   # n_x past the densify boundary, with the strong sum-to-zero pin the intrinsic
   # field actually registers -- the regime where the older matrix-determinant
   # Woodbury log-det cancelled.
@@ -229,6 +232,7 @@ test_that("a non-contiguous pin is not the contiguous pin of the same count", {
 }
 
 test_that("the inertia route reads a PD B over an indefinite field block (one pin)", {
+  skip_on_cran()
   for (seed in 51:54) {
     A <- .s2z_make_A_indef(n = 70L, blocks = 40L, eps = 0.1, seed = seed)
     expect_lt(min(eigen(A[1:40, 1:40], symmetric = TRUE)$values), 0)
@@ -250,6 +254,7 @@ test_that("the inertia route reads a PD B over an indefinite field block (one pi
 })
 
 test_that("the inertia route is exact for two pins and a coupled capacitance", {
+  skip_on_cran()
   Sinv <- matrix(c(2.0, 0.8, 0.8, 1.5), 2L, 2L)
   for (seed in 61:63) {
     A <- .s2z_make_A_indef(n = 110L, blocks = c(40L, 40L), eps = 0.1, seed = seed)

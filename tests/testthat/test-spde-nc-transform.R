@@ -162,6 +162,7 @@ test_that("SPDE NC transform: rational adjoint matches finite differences", {
 # compute_log_post_generic for joint-NUTS SPDE). For each input axis a unit
 # tangent is seeded; we check dw_fwd ≈ dw_fd column-by-column.
 test_that("SPDE NC transform: forward-mode tangent matches finite differences", {
+  skip_on_cran()
   fem <- helper_make_small_spde_fem(n_obs = 80, max_edge = c(0.30, 0.60),
                                     cutoff = 0.10, seed = 42L)
   n   <- fem$n_mesh

@@ -33,6 +33,7 @@ test_that("the shared check refuses warmup >= n_iter where n_iter counts it", {
 })
 
 test_that("tulpa() refuses warmup >= n_iter on every total-count sampler", {
+  skip_on_cran()
   d <- run_length_data()
   for (m in c("hmc", "ess", "sghmc", "sgld")) {
     expect_error(

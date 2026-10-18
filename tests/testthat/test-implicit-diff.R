@@ -2,6 +2,7 @@
 # Tests for implicit differentiation of SPDE Laplace log-marginal
 
 test_that("cpp_spde_laplace_gradient returns finite gradients", {
+  skip_on_cran()
   skip_if_not_installed("fmesher")
 
   set.seed(42)
@@ -36,6 +37,7 @@ test_that("cpp_spde_laplace_gradient returns finite gradients", {
 })
 
 test_that("gradient points in correct direction (finite difference check)", {
+  skip_on_cran()
   skip_if_not_installed("fmesher")
 
   set.seed(42)
@@ -154,6 +156,7 @@ test_that("the implicit-diff marginal is the same number the nested SPDE grid re
 })
 
 test_that("the normalizer it carries is 0.5 log|Q| of the R-assembled precision", {
+  skip_on_cran()
   skip_if_not_installed("fmesher")
   # .spde_precision_Q is the R mirror of the FEM assembly, so this reads the
   # term off a matrix built outside the C++ operator chain.
@@ -172,6 +175,7 @@ test_that("the normalizer it carries is 0.5 log|Q| of the R-assembled precision"
 })
 
 test_that("the dropped term is large and moves with the hyperparameters", {
+  skip_on_cran()
   skip_if_not_installed("fmesher")
   # Without this the two tests above would be vacuous. Over the grid they run
   # on, 0.5 log|Q| spans more than 200 nats and is not constant along either

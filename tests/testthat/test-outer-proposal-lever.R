@@ -75,6 +75,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("a skewed but light-tailed hyperparameter posterior reads good", {
+    skip_on_cran()
     # shape 12 is essentially a half-normal: true skewness 0.967, true excess
     # kurtosis 0.837. The whitened skewness the rescue gate reads is large, and
     # the single-Gaussian k-hat is nonetheless deep in the good band -- the
@@ -88,6 +89,7 @@ test_that("a skewed but light-tailed hyperparameter posterior reads good", {
 })
 
 test_that("the skew-normal rescue cannot absorb a heavy tail", {
+    skip_on_cran()
     # The regime that DOES defeat a Gaussian proposal. The skew-normal has
     # Gaussian tails on both sides, so it scores WORSE than the Gaussian it is
     # asked to rescue -- the property .k_score_skew's own comment
@@ -103,6 +105,7 @@ test_that("the skew-normal rescue cannot absorb a heavy tail", {
 # --------------------------------------------------------------------------- #
 
 test_that("widening a heavy-tailed grid lowers the k-hat; densifying does not", {
+    skip_on_cran()
     lg <- .lv_heavy(0.4, 2)
     narrow_coarse <- .lv_score(lg, n_nodes =  5L, half_width = 3)
     narrow_dense  <- .lv_score(lg, n_nodes = 41L, half_width = 3)
@@ -124,6 +127,7 @@ test_that("widening a heavy-tailed grid lowers the k-hat; densifying does not", 
 # --------------------------------------------------------------------------- #
 
 test_that("the joint dispatch reads a strictly better k than its first pass", {
+    skip_on_cran()
     # .nested_grid_pareto_k / .spde_pareto_k / .nested_outer_pareto_k each call
     # .nested_is_pareto_k ONCE, so what they report is the raw grid-moment
     # Gaussian -- `k_gm` here. The joint path adds moment matching and the two

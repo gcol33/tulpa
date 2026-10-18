@@ -5,6 +5,7 @@
 # series log-density. Cross-checked against tweedie::dtweedie when installed.
 
 test_that("tweedie log-density normalizes and matches its moments", {
+  skip_on_cran()
   phi <- 1.2; p <- 1.5; eta <- 0.7
   mu  <- exp(eta)
 

@@ -9,6 +9,7 @@
 # replaced.
 
 test_that("the clamp reports which bound it hit, and the SD it measured", {
+    skip_on_cran()
     withr::local_options(list(tulpa.recenter.min_sd_u = 0.15))
     mn <- .nl_recenter("min_sd_u")
     mx <- .nl_recenter("max_sd_u")

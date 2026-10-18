@@ -18,6 +18,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("the skew-normal proposal round-trips the moments it is built from", {
+  skip_on_cran()
   set.seed(1)
   for (g in c(-0.8, -0.3, 0, 0.4, 0.9)) {
     dp <- .sn_prop_from_moments(mu = 0.5, sd = 2, skew = g)
@@ -31,6 +32,7 @@ test_that("the skew-normal proposal round-trips the moments it is built from", {
 })
 
 test_that("the proposal log-density is a proper density and matches its sampler", {
+  skip_on_cran()
   dp <- .sn_prop_from_moments(mu = 0.5, sd = 2, skew = 0.7)
   # Integrates to 1: the density is normalized, not merely proportional.
   I <- stats::integrate(

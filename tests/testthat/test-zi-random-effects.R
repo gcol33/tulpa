@@ -506,6 +506,7 @@ test_that("the closed Hessian carries a hurdle whose Newton weight is not observ
 
 
 test_that("the mixture's fourth-order fields agree along every route to them", {
+  skip_on_cran()
   # The curvature block is -Hess(log D), so each of its nine second partials is
   # one of five FOURTH derivatives of a single scalar. That identification is
   # what makes five fields sufficient, and it is over-determined: most fields
@@ -652,6 +653,7 @@ test_that("neg_binomial_1's mixture curvature derivatives are exact", {
 # P(Y = 0) and couples it to both predictors.
 
 test_that("the mixture dispersion table matches independently written anchors", {
+  skip_on_cran()
   # zi_loglik / zi_score_eta / zi_neg_hessian in R/family_zi.R and the mixture
   # curvature engines are all written independently of the phi engine, so
   # differencing them tests the new code rather than itself. Every field is

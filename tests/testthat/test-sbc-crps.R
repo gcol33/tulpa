@@ -32,6 +32,7 @@ CRPS_CASES <- list(
 )
 
 test_that("the mixture CRPS closed form integrates the definition", {
+  skip_on_cran()
   for (nm in names(CRPS_CASES)) {
     cs <- CRPS_CASES[[nm]]
     dist <- sbc_mixture(cs$mu, cs$var, cs$w)
@@ -41,6 +42,7 @@ test_that("the mixture CRPS closed form integrates the definition", {
 })
 
 test_that("a one-component mixture reproduces the Gaussian CRPS", {
+  skip_on_cran()
   # sigma [ z (2 Phi(z) - 1) + 2 phi(z) - 1/sqrt(pi) ], z = (y - mu)/sigma.
   for (mu in c(-1, 0, 2)) for (sg in c(0.3, 1, 4)) for (y in c(-2, 0, 1.5)) {
     z <- (y - mu) / sg
@@ -50,6 +52,7 @@ test_that("a one-component mixture reproduces the Gaussian CRPS", {
 })
 
 test_that("the discrete CRPS closed form integrates the definition", {
+  skip_on_cran()
   # Splitting the panels at every atom makes the numerical integral exact here,
   # so this is a machine-precision identity rather than a tolerance.
   d <- sbc_discrete(c(0.2, 0.5, 1.1, 3.0), c(0.4, 0.3, 0.2, 0.1))
@@ -131,6 +134,7 @@ test_that("randomizing the rank is what makes the reference uniform", {
 # ---------------------------------------------------------------------------
 
 test_that("the crossing probability reproduces the cases with a closed form", {
+  skip_on_cran()
   # A one-sided band at a constant level collapses to an event with an
   # elementary probability: h_i = t for every i is "every draw is at most t",
   # and g_i = t for every i is "every draw is at least t".
@@ -180,6 +184,7 @@ test_that("the Kolmogorov-Smirnov band reproduces the published critical value",
 })
 
 test_that("a pointwise band is not a simultaneous band", {
+  skip_on_cran()
   # The whole reason the calibration exists: holding each order statistic at 95%
   # holds all of them together at well under half that, and the calibrated band
   # is at nominal by construction.

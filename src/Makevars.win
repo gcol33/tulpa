@@ -17,6 +17,15 @@ PKG_CPPFLAGS = -I../inst/include
 # rule compiles with, so it reads the flags actually in use.
 comma := ,
 BIGOBJ_FLAG = $(if $(filter -O2 -O3 -Os -Ofast,$(CXXFLAGS)),,-Wa$(comma)-mbig-obj)
-PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS) $(BIGOBJ_FLAG)
+
+# gcc reports every RcppEigen SSE packet type it instantiates under
+# -Wignored-attributes, about 30000 warnings over the 109 translation units, and
+# prints each with its source line, a caret line and the full template
+# instantiation chain. That is a 56 MB install log, and R CMD check scans the log
+# line by line for warnings. Dropping the caret and keeping one instantiation
+# context leaves every warning and its location in the log at 17 MB. The flags
+# are gcc spellings, so a clang toolchain (Rtools on aarch64) does not get them.
+DIAG_FLAGS = $(if $(findstring clang,$(CXX)),,-fno-diagnostics-show-caret -ftemplate-backtrace-limit=1)
+PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS) $(BIGOBJ_FLAG) $(DIAG_FLAGS)
 
 PKG_LIBS = $(SHLIB_OPENMP_CXXFLAGS) $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)

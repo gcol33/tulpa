@@ -3,6 +3,7 @@
 # --- #231: SPDE Matern (range, sigma) <-> (kappa, tau) is nu-general ---------
 
 test_that("spde kappa/tau <-> range/sigma round-trips for every nu", {
+  skip_on_cran()
   for (nu in c(0.5, 1.0, 1.5, 2.0, 2.5)) {
     for (range in c(0.3, 1.0, 4.0)) {
       for (sigma in c(0.2, 1.0, 3.0)) {

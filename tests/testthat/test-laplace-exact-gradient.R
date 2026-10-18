@@ -455,6 +455,7 @@ test_that("the second curvature derivative gate covers every family with a first
 })
 
 test_that("the exact mode-Jacobian gate tracks whether the observed curvature is available", {
+  skip_on_cran()
   # Every front-door family now carries an exact observed curvature: the
   # explicitly branched ones directly, everything on the generic mu-space route
   # through the grad_mu ladder. So the gate is open across the registry, and

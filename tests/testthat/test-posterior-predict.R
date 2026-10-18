@@ -5,6 +5,7 @@
 # must fall back to generated replicates when no y_rep is stored.
 
 test_that("family_sample draws match the family mean and variance", {
+  skip_on_cran()
   set.seed(42)
   n <- 20000L
   eta <- rep(0.4, n)
