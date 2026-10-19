@@ -204,9 +204,9 @@ default path -- `pkgbuild::compile_dll(debug = TRUE)` is what
 `devtools::load_all()` goes through, and it replaces R's flags with
 `-UNDEBUG -Wall -pedantic -g -O0`. The flag selects the bigobj variant and the
 ceiling stops binding. Do not drop it and do not read it as a property of one
-file: six further translation units sit between 21000 and 31000 sections at
-those flags, while at R's own `-O2` the largest of all 109 is 2221, 6.8% of the
-ceiling. The flag is therefore CONDITIONAL on a non-optimizing build: it is
+file: six further sources sit between 21000 and 31000 sections on their own at
+those flags, while at R's own `-O2` the largest of the 11 unity objects is 2721,
+8.3% of the ceiling. The flag is therefore CONDITIONAL on a non-optimizing build: it is
 added only when `CXXFLAGS` carries none of `-O2` / `-O3` / `-Os` / `-Ofast`,
 tested inside a recursive variable so it expands when a compile rule runs,
 after `Makeconf` and the user Makevars are read (`R CMD SHLIB` sets `CXXFLAGS`
@@ -215,6 +215,19 @@ win-builder NOTE: "checking compilation flags used" reads the compile
 COMMANDS, not the Makevars text, so living only in `Makevars.win` does not
 hide it -- the claim that it did was never measured, and tulpa 0.4.0's first
 win-builder r-devel run is what refuted it.
+
+**`src/` is a unity build** (gcol33/tulpa#966). Each `src/unity_<group>.cpp`
+includes the sources of one subsystem, `OBJECTS` in both Makevars names only
+those 11 files, and each carries its members as make prerequisites. A shared
+Eigen / Rcpp instantiation then compiles, and reports its
+`-Wignored-attributes` warnings, once per group: 30020 warnings and a 17 MB
+install log over 122 separate units, 7358 and 5.4 MB over the 11 groups. A new
+`.cpp` goes into the unity file of its group, then `Rscript tools/unity.R`
+rewrites the Makevars block (`--check` only verifies it); a source in no group
+is not compiled at all, and the script refuses one. Grouping also merges file
+scopes, so two members of a group cannot both define the same internal name,
+and RcppEigen.h is included first in every unity file because it has to
+precede Rcpp.h.
 
 The repo's `.Rprofile` also sets `options(pkg.build_extra_flags = FALSE)`, which
 keeps `load_all()` on R's own `-O2` -- the same flags `R CMD INSTALL` uses, and

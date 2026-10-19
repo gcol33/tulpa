@@ -5,11 +5,11 @@ PKG_CPPFLAGS = -I../inst/include
 # by 2^31 instead of the 32767 a plain COFF object holds. Windows is the only
 # platform with that ceiling, and the inference kernels reach it: gcc emits one
 # comdat section per template instantiation and merges none of them at -O0, so
-# nested_laplace_joint_multi.cpp assembles 50241 sections and aghq_re.cpp 36959,
-# and the assembler stops with "file too big". Any build that does not optimize
-# hits this -- pkgbuild::compile_dll(debug = TRUE) is the default and is what
-# devtools::load_all() goes through. At R's own -O2 the largest of the 109
-# translation units is 2221 sections, 6.8% of the ceiling, so an optimizing
+# nested_laplace_joint_multi.cpp alone assembles 50241 sections and aghq_re.cpp
+# 36959, and the assembler stops with "file too big". Any build that does not
+# optimize hits this -- pkgbuild::compile_dll(debug = TRUE) is the default and is
+# what devtools::load_all() goes through. At R's own -O2 the largest of the 11
+# unity objects is 2721 sections, 8.3% of the ceiling, so an optimizing
 # build does not need the flag and does not get it: R CMD check reports
 # -Wa,-mbig-obj as a non-portable flag whenever a compile command carries it.
 # The test is expanded when a compile rule runs, after Makeconf and any user
@@ -19,13 +19,180 @@ comma := ,
 BIGOBJ_FLAG = $(if $(filter -O2 -O3 -Os -Ofast,$(CXXFLAGS)),,-Wa$(comma)-mbig-obj)
 
 # gcc reports every RcppEigen SSE packet type it instantiates under
-# -Wignored-attributes, about 30000 warnings over the 109 translation units, and
-# prints each with its source line, a caret line and the full template
-# instantiation chain. That is a 56 MB install log, and R CMD check scans the log
-# line by line for warnings. Dropping the caret and keeping one instantiation
-# context leaves every warning and its location in the log at 17 MB. The flags
+# -Wignored-attributes, about 7400 warnings over the 11 unity objects, and prints
+# each with its source line, a caret line and the full template instantiation
+# chain, and R CMD check scans the install log line by line for warnings.
+# Dropping the caret and keeping one instantiation context leaves every warning
+# and its location in the log, at 5.4 MB. The flags
 # are gcc spellings, so a clang toolchain (Rtools on aarch64) does not get them.
 DIAG_FLAGS = $(if $(findstring clang,$(CXX)),,-fno-diagnostics-show-caret -ftemplate-backtrace-limit=1)
 PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS) $(BIGOBJ_FLAG) $(DIAG_FLAGS)
 
 PKG_LIBS = $(SHLIB_OPENMP_CXXFLAGS) $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
+
+# The package compiles as a unity build: each src/unity_<group>.cpp includes
+# the sources of one group, so a template the group shares is instantiated once
+# and gcc reports each of its -Wignored-attributes warnings once per group
+# rather than once per source file, in the install log R CMD check scans line by
+# line. OBJECTS names only the unity files, and each
+# one lists its members as prerequisites so editing a member rebuilds its group.
+# tools/unity.R writes the block below from the unity files' member lists.
+# unity-build: begin (written by tools/unity.R)
+OBJECTS = \
+  unity_core.o \
+  unity_exports.o \
+  unity_glmm.o \
+  unity_hmc.o \
+  unity_laplace.o \
+  unity_nl.o \
+  unity_nl_joint.o \
+  unity_pg.o \
+  unity_samplers.o \
+  unity_spatial.o \
+  unity_tests.o
+all: $(SHLIB)
+unity_core.o: \
+  unity_core.cpp \
+  array_utils.cpp \
+  autodiff.cpp \
+  cholmod_stub_resolve.cpp \
+  cornish_fisher.cpp \
+  cov_kernel_equiv_export.cpp \
+  cov_kernel_export.cpp \
+  crt_rng.cpp \
+  family_terms_export.cpp \
+  fastmath_data.cpp \
+  gpu_backend.cpp \
+  hyperprior_density_export.cpp \
+  interval_gaussian_export.cpp \
+  linalg_tri_layout_export.cpp \
+  multinomial_logit_export.cpp \
+  pc_prior_equiv_export.cpp \
+  portable_math_export.cpp \
+  sobol_export.cpp \
+  sysmem.cpp \
+  temporal_grad_equiv_export.cpp \
+  tgmrf_nuts.cpp \
+  tgmrf_registry.cpp \
+  truncated_gaussian_export.cpp \
+  tulpa_init.cpp
+unity_exports.o: \
+  unity_exports.cpp \
+  RcppExports.cpp \
+  tulpa_shims.cpp
+unity_glmm.o: \
+  unity_glmm.cpp \
+  aghq_re.cpp \
+  re_cov_gibbs.cpp \
+  re_cov_grad_export.cpp \
+  tulpa_glmm_eta_draws.cpp \
+  tulpa_glmm_layout_probe.cpp \
+  tulpa_sample_glmm.cpp
+unity_hmc.o: \
+  unity_hmc.cpp \
+  ess_sampler.cpp \
+  hmc_gradient_dispatch.cpp \
+  hmc_gradient_fallback.cpp \
+  hmc_gradients.cpp \
+  hmc_mass_matrix.cpp \
+  hmc_mass_st_gmrf.cpp \
+  hmc_nuts_chain.cpp \
+  hmc_nuts_curvature.cpp \
+  hmc_nuts_dual_avg.cpp \
+  hmc_nuts_find_epsilon.cpp \
+  hmc_nuts_helpers.cpp \
+  hmc_nuts_leapfrog.cpp \
+  hmc_nuts_mass_init.cpp \
+  hmc_nuts_optimized.cpp \
+  hmc_nuts_parallel.cpp \
+  hmc_param_layout.cpp \
+  hmc_rcpp_utils.cpp \
+  hmc_sampler.cpp \
+  hmc_walnuts.cpp \
+  mclmc.cpp
+unity_laplace.o: \
+  unity_laplace.cpp \
+  implicit_diff.cpp \
+  laplace_core.cpp \
+  laplace_core_gp.cpp \
+  laplace_core_spatial.cpp \
+  laplace_likelihoods.cpp \
+  laplace_profile.cpp \
+  laplace_s2z_probe.cpp \
+  laplace_spatial_priors.cpp \
+  laplace_spec.cpp \
+  laplace_temporal_priors.cpp \
+  log_post_generic_impl.cpp \
+  sparse_cholesky.cpp \
+  stochastic_logdet.cpp
+unity_nl.o: \
+  unity_nl.cpp \
+  nested_laplace.cpp \
+  nested_laplace_multi.cpp \
+  nested_laplace_test_occupancy.cpp \
+  nl_field_identity_export.cpp \
+  nl_lq_density.cpp
+unity_nl_joint.o: \
+  unity_nl_joint.cpp \
+  cell_coupling_probe.cpp \
+  cell_coupling_registry.cpp \
+  joint_inner_vcov.cpp \
+  nested_laplace_joint_batch.cpp \
+  nested_laplace_joint_multi.cpp \
+  test_cell_coupling_register.cpp
+unity_pg.o: \
+  unity_pg.cpp \
+  pg_binomial.cpp \
+  pg_binomial_bym2.cpp \
+  pg_binomial_gp.cpp \
+  pg_binomial_gp_rsr.cpp \
+  pg_binomial_multiscale_gp.cpp \
+  pg_binomial_rsr.cpp \
+  pg_binomial_temporal.cpp \
+  pg_negbin.cpp \
+  pg_rng.cpp \
+  pg_spatial.cpp
+unity_samplers.o: \
+  unity_samplers.cpp \
+  psis_kernel.cpp \
+  simp_integrator.cpp \
+  smc_sampler.cpp \
+  tulpa_beta_sampler.cpp \
+  tulpa_generic_sampler.cpp \
+  tulpa_test_funnel.cpp \
+  vi_convergence_probe.cpp \
+  vi_sampler.cpp
+unity_spatial.o: \
+  unity_spatial.cpp \
+  brasil_export.cpp \
+  gp_nc_apply.cpp \
+  gp_predict.cpp \
+  hsgp_basis.cpp \
+  msgp_nc_apply.cpp \
+  nngp_nc_term_apply.cpp \
+  nngp_twin_export.cpp \
+  spde_field_se.cpp \
+  spde_fractional_marginal.cpp \
+  spde_laplace.cpp \
+  spde_nc_apply.cpp \
+  spde_nc_transform.cpp \
+  svc_nc_apply.cpp \
+  tulpa_spde_layout_probe.cpp \
+  tulpa_spde_sampler.cpp
+unity_tests.o: \
+  unity_tests.cpp \
+  test_ccallable_registry.cpp \
+  test_cholesky_log_det_signal.cpp \
+  test_fastmath_fixture.cpp \
+  test_helpers.cpp \
+  test_hsgp_warm_start.cpp \
+  test_laplace_sample_fixture.cpp \
+  test_lkj_chol.cpp \
+  test_mass_lowrank.cpp \
+  test_nan_gradient_nuts.cpp \
+  test_pg_nngp_conditional.cpp \
+  test_smc_cabi.cpp \
+  test_st_hsgp_prior.cpp \
+  test_st_iv_fixture.cpp \
+  test_temporal_gp_fixture.cpp
+# unity-build: end

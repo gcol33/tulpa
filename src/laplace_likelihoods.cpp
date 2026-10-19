@@ -12,11 +12,6 @@
 
 namespace tulpa {
 
-double log_lik_gaussian(double y, double eta, double phi) {
-  double resid = y - eta;
-  return -0.5 * std::log(2.0 * M_PI * phi * phi) - resid * resid / (2.0 * phi * phi);
-}
-
 double grad_log_lik_gaussian(double y, double eta, double phi) {
   return (y - eta) / (phi * phi);
 }

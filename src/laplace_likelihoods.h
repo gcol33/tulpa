@@ -6,11 +6,11 @@
 
 #include "fastmath.h"      // fastmath::exp / log
 #include "linalg_fast.h"   // tulpa::math::clamp_exp_arg
+#include "tulpa/family_density.h"  // log_lik_gaussian
 #include <cmath>
 
 namespace tulpa {
 
-double log_lik_gaussian(double y, double eta, double phi);
 double grad_log_lik_gaussian(double y, double eta, double phi);
 double neg_hess_log_lik_gaussian(double y, double eta, double phi);
 
