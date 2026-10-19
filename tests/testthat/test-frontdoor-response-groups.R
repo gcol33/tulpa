@@ -71,21 +71,6 @@ test_that("an aliased fixed-effect column is dropped with a warning (#881)", {
   expect_identical(.drop_aliased_fixed(X[, -3]), X[, -3])
 })
 
-test_that("a rank-deficient formula fits the identified columns (#881)", {
-  skip_on_cran()
-  set.seed(1)
-  n <- 200L
-  d <- data.frame(g = factor(sample(1:12, n, TRUE)), x = rnorm(n),
-                  z = rnorm(n))
-  d$y <- rpois(n, exp(0.5 + 0.3 * d$x))
-  expect_warning(
-    fit <- tulpa(y ~ x + z + poly(x, 2) + (1 | g), d, family = "poisson",
-                 mode = "laplace", sigma_re = 0.5),
-    "dropping 1 aliased column\\(s\\): poly\\(x, 2\\)1")
-  expect_equal(names(coef(fit)), c("(Intercept)", "x", "z", "poly(x, 2)2"))
-  expect_true(all(is.finite(sqrt(diag(vcov(fit))))))
-})
-
 test_that("VarCorr labels a sampled Sigma_mean 'sampled' (#881)", {
   base <- list(re_layout = list(list(group_var = "g", n_coefs = 1L,
                                      coef_labels = "(Intercept)")),
@@ -125,6 +110,23 @@ test_that("re_prior keys the resolved backend does not read are refused (#893)",
   expect_error(tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "mala",
                      re_prior = list(sigma_re_scale = 0.01)),
                "not read by backend 'mala'")
+})
+
+skip_on_cran()
+
+test_that("a rank-deficient formula fits the identified columns (#881)", {
+  skip_on_cran()
+  set.seed(1)
+  n <- 200L
+  d <- data.frame(g = factor(sample(1:12, n, TRUE)), x = rnorm(n),
+                  z = rnorm(n))
+  d$y <- rpois(n, exp(0.5 + 0.3 * d$x))
+  expect_warning(
+    fit <- tulpa(y ~ x + z + poly(x, 2) + (1 | g), d, family = "poisson",
+                 mode = "laplace", sigma_re = 0.5),
+    "dropping 1 aliased column\\(s\\): poly\\(x, 2\\)1")
+  expect_equal(names(coef(fit)), c("(Intercept)", "x", "z", "poly(x, 2)2"))
+  expect_true(all(is.finite(sqrt(diag(vcov(fit))))))
 })
 
 test_that("a logical binomial response is read as 0/1 on every door (#880)", {

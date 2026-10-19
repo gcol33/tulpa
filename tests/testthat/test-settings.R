@@ -1,3 +1,29 @@
+
+test_that("the cheap-screen depth is one value across the R and C++ defaults", {
+    # The screening depth exists at three points -- the registry the front door
+    # reads, the literal the cpp entry declares (an Rcpp attribute default has
+    # to be a literal, so it cannot read the engine constant), and the engine
+    # constant the grid driver falls back to. A fit's cost and its cheap ranking
+    # both move with it, so two live values would mean the same grid screened at
+    # two depths depending on which layer supplied the number.
+    ref <- as.integer(tulpa:::.nl_screen("iters"))
+
+    # The cpp entry's own default, as the generated R wrapper carries it.
+    entry <- formals(tulpa:::cpp_nested_laplace_joint_multi)$screen_iters
+    expect_false(is.null(entry))
+    expect_identical(as.integer(eval(entry)), ref)
+
+    # And the engine constant behind it.
+    src <- test_path("..", "..", "src", "nested_laplace_grid.h")
+    skip_if_not(file.exists(src), "package sources not available")
+    line <- grep("static const int CHEAP_SCREEN_ITERS",
+                 readLines(src, warn = FALSE), value = TRUE)
+    expect_length(line, 1L)
+    expect_identical(
+        as.integer(sub(".*=\\s*([0-9]+).*", "\\1", line)), ref)
+})
+
+skip_on_cran()
 # Engine settings (R/settings.R): the single source of truth for every default
 # the nested-Laplace machinery lays down on its own.
 #
@@ -452,28 +478,4 @@ test_that("every outer-k entry point defaults to the registry's draw budget", {
     # band LOWER the budget that has to resolve it.
     expect_gt(tulpa:::.nl_diag("k_samples_ok"),   ref)
     expect_gt(tulpa:::.nl_diag("k_samples_good"), tulpa:::.nl_diag("k_samples_ok"))
-})
-
-test_that("the cheap-screen depth is one value across the R and C++ defaults", {
-    # The screening depth exists at three points -- the registry the front door
-    # reads, the literal the cpp entry declares (an Rcpp attribute default has
-    # to be a literal, so it cannot read the engine constant), and the engine
-    # constant the grid driver falls back to. A fit's cost and its cheap ranking
-    # both move with it, so two live values would mean the same grid screened at
-    # two depths depending on which layer supplied the number.
-    ref <- as.integer(tulpa:::.nl_screen("iters"))
-
-    # The cpp entry's own default, as the generated R wrapper carries it.
-    entry <- formals(tulpa:::cpp_nested_laplace_joint_multi)$screen_iters
-    expect_false(is.null(entry))
-    expect_identical(as.integer(eval(entry)), ref)
-
-    # And the engine constant behind it.
-    src <- test_path("..", "..", "src", "nested_laplace_grid.h")
-    skip_if_not(file.exists(src), "package sources not available")
-    line <- grep("static const int CHEAP_SCREEN_ITERS",
-                 readLines(src, warn = FALSE), value = TRUE)
-    expect_length(line, 1L)
-    expect_identical(
-        as.integer(sub(".*=\\s*([0-9]+).*", "\\1", line)), ref)
 })

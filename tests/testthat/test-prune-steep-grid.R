@@ -270,6 +270,8 @@ test_that("a screened fit whose placement lost its curvature falls back", {
       ctrl))
 }
 
+skip_on_cran()
+
 test_that("the screen leaves the placement pass something to read", {
   skip_on_cran()
   f <- .psg_fixture()

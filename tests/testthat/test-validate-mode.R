@@ -34,6 +34,8 @@ test_that("validate_mode accepts a set of modes and refuses unknown names", {
   expect_error(validate_mode(f, 1), "non-empty character vector")
 })
 
+skip_on_cran()
+
 test_that("validate_mode accepts the mode a tulpa() fit was run with", {
   skip_on_cran()
   set.seed(1)

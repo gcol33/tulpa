@@ -55,6 +55,8 @@ test_that("the unknown-mode message names every mode the registry defines", {
   }
 })
 
+skip_on_cran()
+
 test_that("a continuous field + (1 | g) is integrated by nested Laplace (gcol33/tulpa#794, #945)", {
   skip_on_cran()
   set.seed(2)

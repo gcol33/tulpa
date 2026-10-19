@@ -148,6 +148,30 @@ test_that("repeated scoring passes leave the aperture untouched", {
     expect_identical(kc$state$n, 0L)
 })
 
+test_that("a declining joint fit publishes nothing rather than stale ratios", {
+    # An unguessable axis is a permanent decline: with no reported k-hat there
+    # are no ratios to publish, and an empty aperture is the honest state.
+    res <- list(theta_grid = matrix(c(0.5, 1.0, 0.8, 0.9), ncol = 2,
+                                    dimnames = list(NULL, c("sigma", "rho_car"))),
+                weights = c(0.5, 0.5), prior = list(type = "car_proper"))
+    k <- .kcap_run(function()
+        tulpa:::.joint_pareto_k(res, function(tm) rep(0, nrow(tm)), n_samples = 200L))
+    expect_true(is.na(k$value$pareto_k))
+    expect_identical(k$n_writes, 0L)
+    expect_null(k$lr)
+})
+
+# --- cross-check against the reference implementation -----------------------
+
+.kcap_loo_k <- function(lr) suppressWarnings(
+    loo::psis(matrix(lr, ncol = 1), r_eff = NA)$diagnostics$pareto_k)
+
+.kcap_t_refit <- function(tm) {
+    u <- log(tm[, "sigma"]); stats::dt(u, df = 2, log = TRUE) - u
+}
+
+skip_on_cran()
+
 # --- joint backend ----------------------------------------------------------
 
 test_that("the joint driver publishes the SELECTED proposal's ratios", {
@@ -186,19 +210,6 @@ test_that("the joint driver publishes a moment-matched proposal's ratios", {
     expect_identical(k$value$proposal_source, "moment_matched")
     expect_identical(k$n_writes, 1L)                 # was 3
     .kcap_expect_reproduces(k, k$value$pareto_k)
-})
-
-test_that("a declining joint fit publishes nothing rather than stale ratios", {
-    # An unguessable axis is a permanent decline: with no reported k-hat there
-    # are no ratios to publish, and an empty aperture is the honest state.
-    res <- list(theta_grid = matrix(c(0.5, 1.0, 0.8, 0.9), ncol = 2,
-                                    dimnames = list(NULL, c("sigma", "rho_car"))),
-                weights = c(0.5, 0.5), prior = list(type = "car_proper"))
-    k <- .kcap_run(function()
-        tulpa:::.joint_pareto_k(res, function(tm) rep(0, nrow(tm)), n_samples = 200L))
-    expect_true(is.na(k$value$pareto_k))
-    expect_identical(k$n_writes, 0L)
-    expect_null(k$lr)
 })
 
 test_that("per-arm scoring does not overwrite the joint fit's own ratios", {
@@ -315,15 +326,6 @@ test_that("fit_spde: aperture reproduces the reported k-hat", {
     expect_identical(k$n_writes, 1L)
     .kcap_expect_reproduces(k, k$value$pareto_k)
 })
-
-# --- cross-check against the reference implementation -----------------------
-
-.kcap_loo_k <- function(lr) suppressWarnings(
-    loo::psis(matrix(lr, ncol = 1), r_eff = NA)$diagnostics$pareto_k)
-
-.kcap_t_refit <- function(tm) {
-    u <- log(tm[, "sigma"]); stats::dt(u, df = 2, log = TRUE) - u
-}
 
 test_that("loo::psis on the published ratios lands on the reported k-hat", {
     skip_on_cran()

@@ -54,12 +54,18 @@
 #
 # A skipped block is not free: test_that() sets up its test context (a temporary
 # directory, the locale, the reproducible-output options) before the gate in the
-# body runs, about 10 ms a block, and the CRAN tier skips some 1700 of them. A
+# body runs, about 10 ms a block, and the suite gates over a thousand of them. A
 # file none of whose blocks is tier 1 therefore also carries skip_on_cran() at
 # top level, before its first expression, which skips the file in one step and
 # reports it as one skip. The block gates stay, so moving a block to another
 # file keeps it gated. A tier-1 block added to such a file goes in another file,
 # or the file gate comes off.
+#
+# A file that holds tier-1 blocks as well puts them, and every top-level
+# statement, first; a top-level skip_on_cran() follows, and the gated blocks
+# come after it. CRAN then runs the tier-1 part in the order it is written and
+# skips the rest in one step. A new gated block goes below that line, a new
+# tier-1 block or fixture above it.
 #
 # A tier-1 block is under 0.1 s, and a structural identity swept over a large
 # parameter grid is not. That is a fixture size rather than a tier: size the grid

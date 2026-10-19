@@ -63,6 +63,308 @@ test_that(".tulpa_combined_reliability reports which layer degrades, not a singl
 })
 
 # --------------------------------------------------------------------------- #
+# (3) Recovery: fires where the Laplace approximation is known-poor, and      #
+#     TRACKS the exact posterior skewness (not just "some large number")     #
+# --------------------------------------------------------------------------- #
+
+# Exact posterior skewness of an intercept-only binomial-logit model via
+# direct numerical quadrature (no Laplace approximation at all) -- the
+# independent ground truth gamma_3 is checked against. log-lik is
+# S*eta - N*log1p(exp(eta)) for S successes out of N (all sharing one eta);
+# the prior is the same weakly-informative N(0, sigma_beta^2) the C++ kernel
+# uses (sigma_beta = 100, negligible curvature next to the likelihood here).
+.exact_intercept_skew <- function(N, S, sigma_beta = 100) {
+  log_post <- function(eta) S * eta - N * log1p(exp(eta)) - 0.5 * (eta / sigma_beta)^2
+  mode <- stats::optimize(log_post, interval = c(-30, 30), maximum = TRUE)$maximum
+  grid <- seq(mode - 15, mode + 15, length.out = 200000)
+  dz <- grid[2] - grid[1]
+  lp <- log_post(grid); lp <- lp - max(lp)
+  w <- exp(lp); w <- w / (sum(w) * dz)
+  mu  <- sum(grid * w) * dz
+  sd  <- sqrt(sum((grid - mu)^2 * w) * dz)
+  mu3 <- sum((grid - mu)^3 * w) * dz
+  mu3 / sd^3
+}
+
+# --------------------------------------------------------------------------- #
+# (4) A multi-process likelihood is SCORED by the per-observation tensor       #
+#     contraction (gcol33/tulpa#301), not declined                            #
+# --------------------------------------------------------------------------- #
+
+# gamma_3 as the derivation defines it, computed independently in R: the third
+# derivative of a log posterior along x(t) = mode + t * Sigma e_i, divided by
+# sigma_i^3. Nothing here touches the engine, so agreement pins the C++
+# contraction against the formula rather than against itself.
+.isk_num_hess <- function(f, p, h = 1e-4) {
+  k <- length(p); H <- matrix(0, k, k)
+  for (i in seq_len(k)) for (j in seq_len(k)) {
+    ei <- rep(0, k); ei[i] <- h; ej <- rep(0, k); ej[j] <- h
+    H[i, j] <- (f(p + ei + ej) - f(p + ei - ej) -
+                f(p - ei + ej) + f(p - ei - ej)) / (4 * h^2)
+  }
+  (H + t(H)) / 2
+}
+.isk_along_curve_gamma3 <- function(f2, ctr) {
+  S <- solve(-.isk_num_hess(f2, ctr))
+  vapply(seq_along(ctr), function(i) {
+    v <- S[, i]; s2 <- v[i]; s <- sqrt(s2)
+    g <- function(t) f2(ctr + t * v)
+    hh <- 0.15 * s / s2                 # an x_i displacement of 0.15 sigma
+    (g(2 * hh) - 2 * g(hh) + 2 * g(-hh) - g(-2 * hh)) / (2 * hh^3) / s^3
+  }, numeric(1))
+}
+
+test_that("an unscorable inner layer is not reported as a disabled knob", {
+  # The #296 motivating case: a fully coupled model printed as
+  # `control$diagnose_skew = FALSE`, sending readers after a knob they had left
+  # at its default TRUE. The verdict now says the layer is unscorable instead.
+  structural <- tulpa:::.tulpa_combined_reliability(
+    "unreliable", NA_character_, inner_declined = "coupled_arm")
+  expect_match(structural, "not assessed")             # the #274 contract
+  expect_match(structural, "unscorable for this model class", fixed = TRUE)
+
+  off <- tulpa:::.tulpa_combined_reliability(
+    "unreliable", NA_character_, inner_declined = "not_requested")
+  expect_match(off, "not assessed")
+  expect_false(grepl("unscorable", off))
+
+  # And symmetrically for a family whose OUTER axis can never be scored.
+  perm <- tulpa:::.tulpa_combined_reliability(
+    NA_character_, "good", outer_declined = "unguessable_axis: rho_car")
+  expect_match(perm, "unscorable for this family", fixed = TRUE)
+})
+
+# --------------------------------------------------------------------------- #
+# (5) Front-door wiring: tulpa_nested_laplace() populates inner_skew for both #
+#     single- and multi-block dispatch, and diagnostics() reports the         #
+#     combined verdict                                                       #
+# --------------------------------------------------------------------------- #
+
+.isk_chain_adj <- function(n_s) {
+  nbr <- lapply(seq_len(n_s), function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
+  nn <- vapply(nbr, length, integer(1))
+  list(adj_row_ptr = as.integer(c(0L, cumsum(nn))),
+       adj_col_idx = as.integer(unlist(nbr)) - 1L,
+       n_neighbors = as.integer(nn), n_spatial_units = n_s)
+}
+
+# --------------------------------------------------------------------------- #
+# (6) Joint front door: tulpa_nested_laplace_joint() single-block backends    #
+#     (icar/bym2/car_proper), separable AND genuinely coupled arms           #
+# --------------------------------------------------------------------------- #
+
+.isk_biv_data <- function(seed = 11L, n_s = 10L) {
+  set.seed(seed)
+  adj <- .isk_chain_adj(n_s)
+  spatial_idx <- seq_len(n_s)
+  z_true <- rnorm(n_s, 0, 0.5)
+  y0 <- 0.2 + z_true + rnorm(n_s, 0, 0.4)
+  y1 <- -0.1 + 0.8 * z_true + rnorm(n_s, 0, 0.4)
+  list(n_s = n_s, adj = adj, spatial_idx = spatial_idx, y0 = y0, y1 = y1)
+}
+
+.isk_biv_arm <- function(d, y_vec, coupled) {
+  arm <- list(y = y_vec, n_trials = rep(1L, d$n_s),
+             X = matrix(1, nrow = d$n_s, ncol = 1),
+             spatial_idx = d$spatial_idx, family = "gaussian", phi = 1)
+  if (coupled) {
+    arm$coupled <- TRUE
+    arm$cell_obs_map <- seq_len(d$n_s)
+  }
+  arm
+}
+
+.isk_biv_prior <- function(d) {
+  list(type = "icar", n_spatial_units = d$adj$n_spatial_units,
+       adj_row_ptr = d$adj$adj_row_ptr, adj_col_idx = d$adj$adj_col_idx,
+       n_neighbors = d$adj$n_neighbors, sigma_grid = c(0.4, 0.8, 1.5))
+}
+
+# --------------------------------------------------------------------------- #
+# (8) Fixed-hyperparameter GP / SPDE single fits (gcol33/tulpa#273 item 3).
+#     cpp_laplace_fit_gp, cpp_laplace_fit_spde and
+#     cpp_laplace_fit_spde_precomputed are one-cell runs of the shared
+#     joint-multi driver over their nested integrator's own LatentBlock
+#     (gcol33/tulpa#277, #282), so they inherit the same gamma_3 pass the nested
+#     entries take. The gaussian exact-zero invariant below is what pins that:
+#     it holds regardless of latent structure or field size, because the third
+#     log-lik derivative is family-only. Fixtures sit on both sides of
+#     SPARSE_THRESHOLD (200) because n_x used to select the Newton container;
+#     blocks_require_sparse() now decides it from the block, and both field
+#     sizes stay covered.
+# --------------------------------------------------------------------------- #
+
+.isk_nngp_fixture <- function(n_spatial, nn_k = 10L, seed = 1) {
+  set.seed(seed)
+  coords <- cbind(runif(n_spatial), runif(n_spatial))
+  order_idx <- order(coords[, 1], coords[, 2])
+  coords_ord <- coords[order_idx, ]
+  nn_idx <- matrix(0L, nrow = n_spatial, ncol = nn_k)
+  nn_dist <- matrix(0, nrow = n_spatial, ncol = nn_k)
+  for (i in 2:n_spatial) {
+    dists <- sqrt((coords_ord[seq_len(i - 1), 1] - coords_ord[i, 1])^2 +
+                  (coords_ord[seq_len(i - 1), 2] - coords_ord[i, 2])^2)
+    n_cand <- min(length(dists), nn_k)
+    ord <- order(dists)[seq_len(n_cand)]
+    nn_idx[i, seq_len(n_cand)] <- ord
+    nn_dist[i, seq_len(n_cand)] <- dists[ord]
+  }
+  list(coords = coords_ord, nn_idx = nn_idx, nn_dist = nn_dist,
+       nn_order = as.integer(order_idx - 1L))
+}
+
+test_that("gamma_3 is exactly zero for a gaussian SPDE fit (small mesh)", {
+  skip_if_not_installed("fmesher")
+  skip_on_cran()
+  set.seed(23)
+  n_obs <- 40L
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.4, 0.9), cutoff = 0.15)
+  n_mesh <- mesh$n
+  expect_lt(1L + n_mesh, 200L)   # below SPARSE_THRESHOLD
+
+  fem <- fmesher::fm_fem(mesh)
+  A <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
+  G1 <- as(fem$g1, "CsparseMatrix")
+  C0_diag <- Matrix::diag(fem$c0)
+
+  w_true <- rnorm(n_mesh, 0, 0.3)
+  y <- 1 + as.numeric(A %*% w_true) + rnorm(n_obs, 0, 1)
+
+  range_true <- 0.3; sigma_true <- 0.4
+  kappa <- sqrt(8) / range_true
+  tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma_true)
+
+  fit <- tulpa:::cpp_laplace_fit_spde(
+    y = as.numeric(y), n_trials = rep(1L, n_obs), X = matrix(1, n_obs, 1),
+    re_idx = rep(0, n_obs), n_re_groups = 0L, sigma_re = 1.0,
+    A_x = A@x, A_i = A@i, A_p = A@p,
+    n_obs = n_obs, n_mesh = n_mesh, C0_diag = C0_diag,
+    G1_x = G1@x, G1_i = G1@i, G1_p = G1@p,
+    kappa = kappa, tau_spde = tau_spde,
+    family = "gaussian",
+    compute_skew = TRUE, skew_idx = as.integer(c(1, 2))
+  )
+  expect_true(fit$n_iter > 0)
+  expect_equal(fit$inner_skew, c(0, 0))
+})
+
+test_that("gamma_3 is exactly zero for a gaussian SPDE fit (large mesh)", {
+  skip_if_not_installed("fmesher")
+  skip_on_cran()
+  set.seed(24)
+  n_obs <- 150L
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.13, 0.3), cutoff = 0.05)
+  n_mesh <- mesh$n
+  expect_gte(1L + n_mesh, 200L)  # above SPARSE_THRESHOLD
+
+  fem <- fmesher::fm_fem(mesh)
+  A <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
+  G1 <- as(fem$g1, "CsparseMatrix")
+  C0_diag <- Matrix::diag(fem$c0)
+
+  w_true <- rnorm(n_mesh, 0, 0.2)
+  y <- 1 + as.numeric(A %*% w_true) + rnorm(n_obs, 0, 1)
+
+  range_true <- 0.2; sigma_true <- 0.3
+  kappa <- sqrt(8) / range_true
+  tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma_true)
+
+  fit <- tulpa:::cpp_laplace_fit_spde(
+    y = as.numeric(y), n_trials = rep(1L, n_obs), X = matrix(1, n_obs, 1),
+    re_idx = rep(0, n_obs), n_re_groups = 0L, sigma_re = 1.0,
+    A_x = A@x, A_i = A@i, A_p = A@p,
+    n_obs = n_obs, n_mesh = n_mesh, C0_diag = C0_diag,
+    G1_x = G1@x, G1_i = G1@i, G1_p = G1@p,
+    kappa = kappa, tau_spde = tau_spde,
+    family = "gaussian",
+    compute_skew = TRUE, skew_idx = as.integer(c(1, 2))
+  )
+  expect_true(fit$n_iter > 0)
+  expect_equal(fit$inner_skew, c(0, 0))
+})
+
+# The coupled reference the three blocks below read: one data set, its exact log
+# posterior, the posterior mode, and the converged quadrature of that posterior.
+.isk_coupled_ref <- fixture_once(function() {
+  beta_prec <- 0.25
+  d <- coupled_occ_data(seed = 311, n_cells = 100L, n_visits = 4L,
+                        b_occ = 0.2, b_det = -0.5)
+  lp <- coupled_occ_log_post(d, beta_prec)
+  ctr <- stats::optim(c(0, 0), function(v) -lp(v[1L], v[2L]),
+                      method = "BFGS", control = list(reltol = 1e-14))$par
+  list(beta_prec = beta_prec, d = d, lp = lp, ctr = ctr,
+       fine = coupled_occ_quadrature(lp, ctr, half = 16, n_grid = 1601L))
+})
+
+
+# --------------------------------------------------------------------------- #
+# (10) The LOCATION term gamma_1 (gcol33/tulpa#354)                            #
+# --------------------------------------------------------------------------- #
+#
+# gamma_3 is the cubic coefficient of eq. (12)'s NUMERATOR along the Gaussian
+# conditional-mean curve; gamma_1 is the first-order coefficient of its
+# DENOMINATOR, -(1/2) log|H_{-i,-i}(x_i)|, along the same curve. Three arbiters,
+# none of them the shipped formula:
+#
+#   (a) the definition, differenced: the engine's value against a central
+#       difference of that log-determinant computed in R from an independently
+#       written model;
+#   (b) the paper, at A = I: Rue, Martino & Chopin (2009) eq. (21) line 1
+#       written out in their own symbols, over a GMRF prior so the nodes are
+#       genuinely coupled (a diagonal prior makes every a_ij zero and both
+#       sides trivially zero);
+#   (c) exact quadrature: does the centre mu_i + sigma_i (gamma_1 + gamma_3 / 2)
+#       land nearer the exact marginal mean than the Laplace mode, and than
+#       either term alone.
+
+.g1_SB <- 3
+
+.g1_l3 <- function(e) { p <- stats::plogis(e); -p * (1 - p) * (1 - 2 * p) }
+.g1_H  <- function(X, b) {
+  p <- stats::plogis(as.numeric(X %*% b))
+  t(X) %*% (X * (p * (1 - p))) + diag(ncol(X)) / .g1_SB^2
+}
+.g1_mode <- function(X, y) {
+  b <- rep(0, ncol(X))
+  for (it in seq_len(300L)) {
+    e <- as.numeric(X %*% b)
+    st <- solve(.g1_H(X, b),
+                as.numeric(t(X) %*% (y - stats::plogis(e))) - b / .g1_SB^2)
+    b <- b + st
+    if (max(abs(st)) < 1e-13) break
+  }
+  b
+}
+
+# The general-representation formula, written from the derivation.
+.g1_ref <- function(X, y, i) {
+  b <- .g1_mode(X, y); S <- solve(.g1_H(X, b))
+  d3 <- .g1_l3(as.numeric(X %*% b))
+  sig <- sqrt(S[i, i])
+  u <- as.numeric(X %*% S[, i])          # cov(eta_j, x_i)
+  s <- rowSums((X %*% S) * X)            # var(eta_j)
+  list(sigma = sig, mode = b,
+       gamma3 = sum(d3 * u^3) / sig^3,
+       gamma1 = 0.5 * sum(d3 * (s - u^2 / S[i, i]) * u) / sig)
+}
+
+# The definition: d/ds of -(1/2) log|H_{-i,-i}| along the conditional-mean curve.
+.g1_fd <- function(X, y, i, h = 1e-4) {
+  b <- .g1_mode(X, y); S <- solve(.g1_H(X, b))
+  sig <- sqrt(S[i, i]); v <- S[, i]
+  D <- function(t) {
+    HH <- .g1_H(X, b + (t / sig) * v)
+    -0.5 * as.numeric(determinant(HH[-i, -i, drop = FALSE],
+                                  logarithm = TRUE)$modulus)
+  }
+  (D(h) - D(-h)) / (2 * h)
+}
+
+skip_on_cran()
+
+# --------------------------------------------------------------------------- #
 # (2) Recovery: quiet where the Laplace approximation is analytically exact   #
 # --------------------------------------------------------------------------- #
 
@@ -111,30 +413,6 @@ test_that("gamma_3 stays near zero for a large-count poisson fit (CLT regime)", 
   expect_equal(.tulpa_gamma3_band(max(abs(fit$inner_skew))), "good")
 })
 
-# --------------------------------------------------------------------------- #
-# (3) Recovery: fires where the Laplace approximation is known-poor, and      #
-#     TRACKS the exact posterior skewness (not just "some large number")     #
-# --------------------------------------------------------------------------- #
-
-# Exact posterior skewness of an intercept-only binomial-logit model via
-# direct numerical quadrature (no Laplace approximation at all) -- the
-# independent ground truth gamma_3 is checked against. log-lik is
-# S*eta - N*log1p(exp(eta)) for S successes out of N (all sharing one eta);
-# the prior is the same weakly-informative N(0, sigma_beta^2) the C++ kernel
-# uses (sigma_beta = 100, negligible curvature next to the likelihood here).
-.exact_intercept_skew <- function(N, S, sigma_beta = 100) {
-  log_post <- function(eta) S * eta - N * log1p(exp(eta)) - 0.5 * (eta / sigma_beta)^2
-  mode <- stats::optimize(log_post, interval = c(-30, 30), maximum = TRUE)$maximum
-  grid <- seq(mode - 15, mode + 15, length.out = 200000)
-  dz <- grid[2] - grid[1]
-  lp <- log_post(grid); lp <- lp - max(lp)
-  w <- exp(lp); w <- w / (sum(w) * dz)
-  mu  <- sum(grid * w) * dz
-  sd  <- sqrt(sum((grid - mu)^2 * w) * dz)
-  mu3 <- sum((grid - mu)^3 * w) * dz
-  mu3 / sd^3
-}
-
 test_that("gamma_3 tracks the exact posterior skewness of a rare-event binomial intercept", {
   skip_on_cran()
   # Leading-order Edgeworth estimates systematically UNDER-estimate genuinely
@@ -182,34 +460,6 @@ test_that("gamma_3 tracks the exact posterior skewness of a rare-event binomial 
   )
   expect_equal(.tulpa_gamma3_band(fit_bal$inner_skew[1]), "good")
 })
-
-# --------------------------------------------------------------------------- #
-# (4) A multi-process likelihood is SCORED by the per-observation tensor       #
-#     contraction (gcol33/tulpa#301), not declined                            #
-# --------------------------------------------------------------------------- #
-
-# gamma_3 as the derivation defines it, computed independently in R: the third
-# derivative of a log posterior along x(t) = mode + t * Sigma e_i, divided by
-# sigma_i^3. Nothing here touches the engine, so agreement pins the C++
-# contraction against the formula rather than against itself.
-.isk_num_hess <- function(f, p, h = 1e-4) {
-  k <- length(p); H <- matrix(0, k, k)
-  for (i in seq_len(k)) for (j in seq_len(k)) {
-    ei <- rep(0, k); ei[i] <- h; ej <- rep(0, k); ej[j] <- h
-    H[i, j] <- (f(p + ei + ej) - f(p + ei - ej) -
-                f(p - ei + ej) + f(p - ei - ej)) / (4 * h^2)
-  }
-  (H + t(H)) / 2
-}
-.isk_along_curve_gamma3 <- function(f2, ctr) {
-  S <- solve(-.isk_num_hess(f2, ctr))
-  vapply(seq_along(ctr), function(i) {
-    v <- S[, i]; s2 <- v[i]; s <- sqrt(s2)
-    g <- function(t) f2(ctr + t * v)
-    hh <- 0.15 * s / s2                 # an x_i displacement of 0.15 sigma
-    (g(2 * hh) - 2 * g(hh) + 2 * g(-hh) - g(-2 * hh)) / (2 * hh^3) / s^3
-  }, numeric(1))
-}
 
 test_that("gamma_3 scores a zero-inflated (multi-process) fit and tracks its exact skewness", {
   skip_on_cran()
@@ -313,40 +563,6 @@ test_that("the inner-skew decline reason reaches the fit and the diagnostics lay
                "arms 1, 2", fixed = TRUE)
 })
 
-test_that("an unscorable inner layer is not reported as a disabled knob", {
-  # The #296 motivating case: a fully coupled model printed as
-  # `control$diagnose_skew = FALSE`, sending readers after a knob they had left
-  # at its default TRUE. The verdict now says the layer is unscorable instead.
-  structural <- tulpa:::.tulpa_combined_reliability(
-    "unreliable", NA_character_, inner_declined = "coupled_arm")
-  expect_match(structural, "not assessed")             # the #274 contract
-  expect_match(structural, "unscorable for this model class", fixed = TRUE)
-
-  off <- tulpa:::.tulpa_combined_reliability(
-    "unreliable", NA_character_, inner_declined = "not_requested")
-  expect_match(off, "not assessed")
-  expect_false(grepl("unscorable", off))
-
-  # And symmetrically for a family whose OUTER axis can never be scored.
-  perm <- tulpa:::.tulpa_combined_reliability(
-    NA_character_, "good", outer_declined = "unguessable_axis: rho_car")
-  expect_match(perm, "unscorable for this family", fixed = TRUE)
-})
-
-# --------------------------------------------------------------------------- #
-# (5) Front-door wiring: tulpa_nested_laplace() populates inner_skew for both #
-#     single- and multi-block dispatch, and diagnostics() reports the         #
-#     combined verdict                                                       #
-# --------------------------------------------------------------------------- #
-
-.isk_chain_adj <- function(n_s) {
-  nbr <- lapply(seq_len(n_s), function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
-  nn <- vapply(nbr, length, integer(1))
-  list(adj_row_ptr = as.integer(c(0L, cumsum(nn))),
-       adj_col_idx = as.integer(unlist(nbr)) - 1L,
-       n_neighbors = as.integer(nn), n_spatial_units = n_s)
-}
-
 test_that("tulpa_nested_laplace() populates inner_skew by default (single- and multi-block)", {
   skip_on_cran()
   set.seed(14)
@@ -409,38 +625,6 @@ test_that("diagnostics() reports the combined whole-fit verdict when inner_skew 
   expect_output(print(tab), "WHOLE-FIT")
   expect_output(print(tab), "whole-fit verdict")
 })
-
-# --------------------------------------------------------------------------- #
-# (6) Joint front door: tulpa_nested_laplace_joint() single-block backends    #
-#     (icar/bym2/car_proper), separable AND genuinely coupled arms           #
-# --------------------------------------------------------------------------- #
-
-.isk_biv_data <- function(seed = 11L, n_s = 10L) {
-  set.seed(seed)
-  adj <- .isk_chain_adj(n_s)
-  spatial_idx <- seq_len(n_s)
-  z_true <- rnorm(n_s, 0, 0.5)
-  y0 <- 0.2 + z_true + rnorm(n_s, 0, 0.4)
-  y1 <- -0.1 + 0.8 * z_true + rnorm(n_s, 0, 0.4)
-  list(n_s = n_s, adj = adj, spatial_idx = spatial_idx, y0 = y0, y1 = y1)
-}
-
-.isk_biv_arm <- function(d, y_vec, coupled) {
-  arm <- list(y = y_vec, n_trials = rep(1L, d$n_s),
-             X = matrix(1, nrow = d$n_s, ncol = 1),
-             spatial_idx = d$spatial_idx, family = "gaussian", phi = 1)
-  if (coupled) {
-    arm$coupled <- TRUE
-    arm$cell_obs_map <- seq_len(d$n_s)
-  }
-  arm
-}
-
-.isk_biv_prior <- function(d) {
-  list(type = "icar", n_spatial_units = d$adj$n_spatial_units,
-       adj_row_ptr = d$adj$adj_row_ptr, adj_col_idx = d$adj$adj_col_idx,
-       n_neighbors = d$adj$n_neighbors, sigma_grid = c(0.4, 0.8, 1.5))
-}
 
 test_that("tulpa_nested_laplace_joint() scores real gamma_3 for a separable 2-arm fit", {
   skip_on_cran()
@@ -571,39 +755,6 @@ test_that("tulpa_nested_laplace_joint() wires gamma_3 through the multi-block di
   expect_null(fit_off$inner_skew)
 })
 
-# --------------------------------------------------------------------------- #
-# (8) Fixed-hyperparameter GP / SPDE single fits (gcol33/tulpa#273 item 3).
-#     cpp_laplace_fit_gp, cpp_laplace_fit_spde and
-#     cpp_laplace_fit_spde_precomputed are one-cell runs of the shared
-#     joint-multi driver over their nested integrator's own LatentBlock
-#     (gcol33/tulpa#277, #282), so they inherit the same gamma_3 pass the nested
-#     entries take. The gaussian exact-zero invariant below is what pins that:
-#     it holds regardless of latent structure or field size, because the third
-#     log-lik derivative is family-only. Fixtures sit on both sides of
-#     SPARSE_THRESHOLD (200) because n_x used to select the Newton container;
-#     blocks_require_sparse() now decides it from the block, and both field
-#     sizes stay covered.
-# --------------------------------------------------------------------------- #
-
-.isk_nngp_fixture <- function(n_spatial, nn_k = 10L, seed = 1) {
-  set.seed(seed)
-  coords <- cbind(runif(n_spatial), runif(n_spatial))
-  order_idx <- order(coords[, 1], coords[, 2])
-  coords_ord <- coords[order_idx, ]
-  nn_idx <- matrix(0L, nrow = n_spatial, ncol = nn_k)
-  nn_dist <- matrix(0, nrow = n_spatial, ncol = nn_k)
-  for (i in 2:n_spatial) {
-    dists <- sqrt((coords_ord[seq_len(i - 1), 1] - coords_ord[i, 1])^2 +
-                  (coords_ord[seq_len(i - 1), 2] - coords_ord[i, 2])^2)
-    n_cand <- min(length(dists), nn_k)
-    ord <- order(dists)[seq_len(n_cand)]
-    nn_idx[i, seq_len(n_cand)] <- ord
-    nn_dist[i, seq_len(n_cand)] <- dists[ord]
-  }
-  list(coords = coords_ord, nn_idx = nn_idx, nn_dist = nn_dist,
-       nn_order = as.integer(order_idx - 1L))
-}
-
 test_that("gamma_3 is exactly zero for a gaussian NNGP fit (small field)", {
   skip_on_cran()
   n_s <- 30L
@@ -643,78 +794,6 @@ test_that("gamma_3 is exactly zero for a gaussian NNGP fit (large field)", {
   )
   expect_true(fit$n_iter > 0)
   expect_gte(1L + n_s, 200L)  # above SPARSE_THRESHOLD
-  expect_equal(fit$inner_skew, c(0, 0))
-})
-
-test_that("gamma_3 is exactly zero for a gaussian SPDE fit (small mesh)", {
-  skip_if_not_installed("fmesher")
-  skip_on_cran()
-  set.seed(23)
-  n_obs <- 40L
-  coords <- cbind(runif(n_obs), runif(n_obs))
-  mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.4, 0.9), cutoff = 0.15)
-  n_mesh <- mesh$n
-  expect_lt(1L + n_mesh, 200L)   # below SPARSE_THRESHOLD
-
-  fem <- fmesher::fm_fem(mesh)
-  A <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
-  G1 <- as(fem$g1, "CsparseMatrix")
-  C0_diag <- Matrix::diag(fem$c0)
-
-  w_true <- rnorm(n_mesh, 0, 0.3)
-  y <- 1 + as.numeric(A %*% w_true) + rnorm(n_obs, 0, 1)
-
-  range_true <- 0.3; sigma_true <- 0.4
-  kappa <- sqrt(8) / range_true
-  tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma_true)
-
-  fit <- tulpa:::cpp_laplace_fit_spde(
-    y = as.numeric(y), n_trials = rep(1L, n_obs), X = matrix(1, n_obs, 1),
-    re_idx = rep(0, n_obs), n_re_groups = 0L, sigma_re = 1.0,
-    A_x = A@x, A_i = A@i, A_p = A@p,
-    n_obs = n_obs, n_mesh = n_mesh, C0_diag = C0_diag,
-    G1_x = G1@x, G1_i = G1@i, G1_p = G1@p,
-    kappa = kappa, tau_spde = tau_spde,
-    family = "gaussian",
-    compute_skew = TRUE, skew_idx = as.integer(c(1, 2))
-  )
-  expect_true(fit$n_iter > 0)
-  expect_equal(fit$inner_skew, c(0, 0))
-})
-
-test_that("gamma_3 is exactly zero for a gaussian SPDE fit (large mesh)", {
-  skip_if_not_installed("fmesher")
-  skip_on_cran()
-  set.seed(24)
-  n_obs <- 150L
-  coords <- cbind(runif(n_obs), runif(n_obs))
-  mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.13, 0.3), cutoff = 0.05)
-  n_mesh <- mesh$n
-  expect_gte(1L + n_mesh, 200L)  # above SPARSE_THRESHOLD
-
-  fem <- fmesher::fm_fem(mesh)
-  A <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
-  G1 <- as(fem$g1, "CsparseMatrix")
-  C0_diag <- Matrix::diag(fem$c0)
-
-  w_true <- rnorm(n_mesh, 0, 0.2)
-  y <- 1 + as.numeric(A %*% w_true) + rnorm(n_obs, 0, 1)
-
-  range_true <- 0.2; sigma_true <- 0.3
-  kappa <- sqrt(8) / range_true
-  tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma_true)
-
-  fit <- tulpa:::cpp_laplace_fit_spde(
-    y = as.numeric(y), n_trials = rep(1L, n_obs), X = matrix(1, n_obs, 1),
-    re_idx = rep(0, n_obs), n_re_groups = 0L, sigma_re = 1.0,
-    A_x = A@x, A_i = A@i, A_p = A@p,
-    n_obs = n_obs, n_mesh = n_mesh, C0_diag = C0_diag,
-    G1_x = G1@x, G1_i = G1@i, G1_p = G1@p,
-    kappa = kappa, tau_spde = tau_spde,
-    family = "gaussian",
-    compute_skew = TRUE, skew_idx = as.integer(c(1, 2))
-  )
-  expect_true(fit$n_iter > 0)
   expect_equal(fit$inner_skew, c(0, 0))
 })
 
@@ -792,19 +871,6 @@ test_that("the 2-D quadrature reproduces the scalar exact-skew reference on a pr
                               half = 15, n_grid = 1501L)
   expect_equal(q$a[["skew"]], .exact_intercept_skew(100, 3), tolerance = 1e-4)
   expect_equal(q$b[["skew"]], .exact_intercept_skew(200, 60), tolerance = 1e-4)
-})
-
-# The coupled reference the three blocks below read: one data set, its exact log
-# posterior, the posterior mode, and the converged quadrature of that posterior.
-.isk_coupled_ref <- fixture_once(function() {
-  beta_prec <- 0.25
-  d <- coupled_occ_data(seed = 311, n_cells = 100L, n_visits = 4L,
-                        b_occ = 0.2, b_det = -0.5)
-  lp <- coupled_occ_log_post(d, beta_prec)
-  ctr <- stats::optim(c(0, 0), function(v) -lp(v[1L], v[2L]),
-                      method = "BFGS", control = list(reltol = 1e-14))$par
-  list(beta_prec = beta_prec, d = d, lp = lp, ctr = ctr,
-       fine = coupled_occ_quadrature(lp, ctr, half = 16, n_grid = 1601L))
 })
 
 test_that("the reference density is the density the compiled coupled spec evaluates", {
@@ -908,70 +974,6 @@ test_that("the coupled cubic term reproduces the formula and tracks the exact sk
   expect_identical(.tulpa_gamma3_band(exact[1]), "ok")
   expect_identical(.tulpa_gamma3_band(fit$inner_skew[1]), "good")
 })
-
-
-# --------------------------------------------------------------------------- #
-# (10) The LOCATION term gamma_1 (gcol33/tulpa#354)                            #
-# --------------------------------------------------------------------------- #
-#
-# gamma_3 is the cubic coefficient of eq. (12)'s NUMERATOR along the Gaussian
-# conditional-mean curve; gamma_1 is the first-order coefficient of its
-# DENOMINATOR, -(1/2) log|H_{-i,-i}(x_i)|, along the same curve. Three arbiters,
-# none of them the shipped formula:
-#
-#   (a) the definition, differenced: the engine's value against a central
-#       difference of that log-determinant computed in R from an independently
-#       written model;
-#   (b) the paper, at A = I: Rue, Martino & Chopin (2009) eq. (21) line 1
-#       written out in their own symbols, over a GMRF prior so the nodes are
-#       genuinely coupled (a diagonal prior makes every a_ij zero and both
-#       sides trivially zero);
-#   (c) exact quadrature: does the centre mu_i + sigma_i (gamma_1 + gamma_3 / 2)
-#       land nearer the exact marginal mean than the Laplace mode, and than
-#       either term alone.
-
-.g1_SB <- 3
-
-.g1_l3 <- function(e) { p <- stats::plogis(e); -p * (1 - p) * (1 - 2 * p) }
-.g1_H  <- function(X, b) {
-  p <- stats::plogis(as.numeric(X %*% b))
-  t(X) %*% (X * (p * (1 - p))) + diag(ncol(X)) / .g1_SB^2
-}
-.g1_mode <- function(X, y) {
-  b <- rep(0, ncol(X))
-  for (it in seq_len(300L)) {
-    e <- as.numeric(X %*% b)
-    st <- solve(.g1_H(X, b),
-                as.numeric(t(X) %*% (y - stats::plogis(e))) - b / .g1_SB^2)
-    b <- b + st
-    if (max(abs(st)) < 1e-13) break
-  }
-  b
-}
-
-# The general-representation formula, written from the derivation.
-.g1_ref <- function(X, y, i) {
-  b <- .g1_mode(X, y); S <- solve(.g1_H(X, b))
-  d3 <- .g1_l3(as.numeric(X %*% b))
-  sig <- sqrt(S[i, i])
-  u <- as.numeric(X %*% S[, i])          # cov(eta_j, x_i)
-  s <- rowSums((X %*% S) * X)            # var(eta_j)
-  list(sigma = sig, mode = b,
-       gamma3 = sum(d3 * u^3) / sig^3,
-       gamma1 = 0.5 * sum(d3 * (s - u^2 / S[i, i]) * u) / sig)
-}
-
-# The definition: d/ds of -(1/2) log|H_{-i,-i}| along the conditional-mean curve.
-.g1_fd <- function(X, y, i, h = 1e-4) {
-  b <- .g1_mode(X, y); S <- solve(.g1_H(X, b))
-  sig <- sqrt(S[i, i]); v <- S[, i]
-  D <- function(t) {
-    HH <- .g1_H(X, b + (t / sig) * v)
-    -0.5 * as.numeric(determinant(HH[-i, -i, drop = FALSE],
-                                  logarithm = TRUE)$modulus)
-  }
-  (D(h) - D(-h)) / (2 * h)
-}
 
 test_that("gamma_1 is the first-order denominator coefficient it is defined to be", {
   skip_on_cran()

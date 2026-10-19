@@ -19,6 +19,16 @@ test_that("an empty prior is a list of zero blocks", {
   expect_false(.is_multi_block_prior(list(type = "icar")))
 })
 
+test_that("the registry door names the doors that take a model with no block", {
+  expect_error(
+    tulpa_nested_laplace(y = rpois(10, 2), n_trials = rep(1L, 10),
+                         X = matrix(1, 10, 1), family = "poisson",
+                         prior = list()),
+    "no latent block")
+})
+
+skip_on_cran()
+
 test_that("an empty prior fits the arms on the dispersion axes alone", {
   skip_on_cran()
   resp <- .no_latent_arms()
@@ -52,12 +62,4 @@ test_that("an empty prior with no dispersion axis is one cell at the GLM mode", 
   expect_equal(ncol(fit$theta_grid), 0L)
   ref <- stats::glm(resp$num$y ~ resp$num$X[, "x"], family = poisson)
   expect_equal(unname(coef(fit)), unname(coef(ref)), tolerance = 1e-4)
-})
-
-test_that("the registry door names the doors that take a model with no block", {
-  expect_error(
-    tulpa_nested_laplace(y = rpois(10, 2), n_trials = rep(1L, 10),
-                         X = matrix(1, 10, 1), family = "poisson",
-                         prior = list()),
-    "no latent block")
 })

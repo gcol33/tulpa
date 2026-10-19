@@ -80,38 +80,6 @@ test_that("the fixed-effect precision is the Schur complement of the joint curva
   expect_equal(unname(as.matrix(fit$H_beta)), unname(schur), tolerance = 1e-8)
 })
 
-test_that("H_joint is the observed curvature of the two-process log posterior", {
-  # The Schur above is only the right precision if what it complements is the
-  # true negative-log-posterior curvature. Differenced directly, with the
-  # kernel's own beta ridge and ZI prior in the penalty.
-  skip_on_cran()
-  d <- zi_re_sim(3L, "poisson", G = 18L, per = 10L)
-  sigma_re <- 0.8
-  re <- list(list(idx = d$g, n_groups = d$G, n_coefs = 1L, sigma = sigma_re))
-  fit <- tulpa_laplace(d$y, NULL, d$X, re, family = "poisson", X_zi = d$X_zi,
-                       return_hessian = FALSE, return_joint_hessian = TRUE,
-                       max_iter = 300L, tol = 1e-12)
-
-  tau_beta <- tulpa:::.LAPLACE_DEFAULT_TAU_BETA
-  nlp <- function(par) {
-    beta <- par[1:2]; bzi <- par[3:4]; u <- par[-(1:4)]
-    eta <- as.numeric(d$X %*% beta) + u[d$g]
-    zz  <- as.numeric(d$X_zi %*% bzi)
-    lpi <- -log1p(exp(-zz)); l1mp <- -log1p(exp(zz))
-    p0  <- stats::dpois(0, exp(eta), log = TRUE)
-    ll  <- ifelse(d$y == 0,
-                  pmax(lpi, l1mp + p0) +
-                    log(exp(lpi - pmax(lpi, l1mp + p0)) +
-                        exp(l1mp + p0 - pmax(lpi, l1mp + p0))),
-                  l1mp + stats::dpois(d$y, exp(eta), log = TRUE))
-    -(sum(ll) - 0.5 * tau_beta * sum(beta^2) - 0.5 * sum(bzi^2) / 2.5^2 -
-        0.5 * sum(u^2) / sigma_re^2)
-  }
-  H_fd <- stats::optimHess(fit$mode, nlp)
-  expect_equal(max(abs(H_fd - as.matrix(fit$H_joint))) / max(abs(H_fd)),
-               0, tolerance = 1e-5)
-})
-
 
 # --- 2. the mixture's curvature derivatives ----------------------------------
 
@@ -164,6 +132,185 @@ test_that("the mixture curvature derivative is gated on the family", {
     expect_false(cpp_family_has_zi_curvature_derivative(fam), info = fam)
     expect_false(tulpa:::.laplace_exact_supports_zi(fam), info = fam)
   }
+})
+
+
+# --- 6. refusals -------------------------------------------------------------
+
+test_that("zero inflation is refused where the backend cannot carry it", {
+  d <- zi_re_sim(41L, "poisson", G = 20L, per = 10L)
+  expect_error(
+    suppressMessages(tulpa(y ~ x + (1 | g), data = d$data, family = "poisson",
+                           ziformula = ~ z, mode = "re_cov_gibbs")),
+    "not carried by backend 're_cov_gibbs'")
+  expect_error(
+    tulpa_eb(d$y, NULL, d$X, d$re, family = "poisson", X_zi = d$X_zi,
+             n_quad = 5L),
+    "does not carry a zero-inflation process")
+  # `estimate_phi` alongside zero inflation is no longer one of these: both
+  # mixture kinds are carried now. What is still refused, and why, is in
+  # "estimate_phi is still refused where the mixture branch is unregistered".
+})
+
+
+test_that("the closed outer Hessian carries a hurdle", {
+  # Against a difference of the exact GRADIENT rather than a second difference
+  # of the objective: the gradient is already pinned above, so this isolates the
+  # Hessian assembly instead of folding the gradient's own error back in.
+  d <- zi_re_sim(52L, "truncated_poisson", G = 30L, per = 14L)
+  layout <- tulpa:::.re_cov_block_layout(d$re, d$n)
+  nt <- rep(1L, d$n)
+
+  grad_at <- function(th, want_h = FALSE) {
+    L <- tulpa:::.re_cov_theta_to_L_list(th, layout)
+    rl <- tulpa:::.re_cov_build_re_list(L, layout)
+    fit <- tulpa_laplace(d$y, NULL, d$X, rl, family = "truncated_poisson",
+                         phi = 1, return_hessian = FALSE,
+                         return_joint_hessian = TRUE, X_zi = d$X_zi,
+                         max_iter = 300L, tol = 1e-12)
+    tulpa:::.laplace_exact_re_grad(
+      fit = fit, y = d$y, X = d$X, n_trials = nt, offset = NULL,
+      weights = NULL, re_list = rl, layout = layout, L_list = L,
+      family = "truncated_poisson", phi = 1, phi2 = NA_real_, X_zi = d$X_zi,
+      want_hessian = want_h, want_jacobian = want_h)
+  }
+
+  at <- log(0.7)
+  r <- grad_at(at, want_h = TRUE)
+  expect_false(is.null(r$H))
+
+  h <- 1e-4
+  fd <- (grad_at(at + h) - grad_at(at - h)) / (2 * h)
+  expect_equal(as.numeric(r$H), as.numeric(fd), tolerance = 1e-5)
+})
+
+
+test_that("the mixture curvature gate tracks the observed derivative, not a family list", {
+  # What the untruncated y = 0 branch actually needs is the OBSERVED curvature's
+  # eta-derivative: the registered working-weight one plus the
+  # observed-minus-working correction. neg_binomial_1 is the family that
+  # separates those -- it used to be excluded by name for want of a tetragamma,
+  # and qualifies now that the correction is closed-form.
+  expect_true(
+    tulpa:::cpp_family_has_obs_curvature_delta_derivative("neg_binomial_1"))
+  expect_true(
+    tulpa:::cpp_family_has_zi_curvature_derivative("neg_binomial_1"))
+  expect_true(
+    tulpa:::cpp_family_has_obs_curvature_delta_derivative("truncated_neg_binomial_2"))
+  for (f in c("poisson", "binomial", "neg_binomial_2", "neg_binomial_1",
+              "truncated_poisson", "truncated_neg_binomial_2")) {
+    expect_true(tulpa:::cpp_family_has_zi_curvature_2nd_derivative(f), info = f)
+  }
+  # Still refused where the base has no atom at zero, so the gate is a property
+  # of the family rather than a list that grew.
+  for (f in c("t", "tweedie", "gamma", "beta")) {
+    expect_false(tulpa:::cpp_family_has_zi_curvature_derivative(f), info = f)
+  }
+  # beta_binomial is admitted at first order and refused at second: its
+  # observed-minus-working difference is registered, its next eta-derivative is
+  # not, so the mixture's fourth-derivative branch declines to the stencil.
+  expect_true(tulpa:::cpp_family_has_zi_curvature_derivative("beta_binomial"))
+  expect_false(tulpa:::cpp_family_has_zi_curvature_2nd_derivative("beta_binomial"))
+})
+
+
+test_that("neg_binomial_1's mixture curvature derivatives are exact", {
+  # The coupled y = 0 branch reads the observed curvature's first and second
+  # eta-derivatives, which for this family are the working ones plus a
+  # tetragamma and a pentagamma correction. Checked against differences of the
+  # mixture weight the kernel builds H from, at y = 0 (coupled) and y > 0
+  # (separable).
+  n <- 16L
+  e <- seq(-0.8, 1.0, length.out = n)
+  z <- seq(-1.1, 1.0, length.out = n)
+  nt <- rep(1L, n); h <- 1e-5
+  for (phi in c(0.7, 2.0)) for (yv in c(0, 2)) {
+    y <- rep(yv, n)
+    W <- function(e, z) tulpa:::cpp_zi_mixture_curvature(
+      y, nt, e, z, "neg_binomial_1", phi, NA_real_)
+    d3 <- tulpa:::cpp_zi_mixture_curvature_deriv(
+      y, nt, e, z, "neg_binomial_1", phi, NA_real_)
+    expect_equal(d3[, "dWee_deta"],
+                 (W(e + h, z)[, "W_ee"] - W(e - h, z)[, "W_ee"]) / (2 * h),
+                 tolerance = 1e-6, info = paste(phi, yv))
+    expect_equal(d3[, "dWzz_dz"],
+                 (W(e, z + h)[, "W_zz"] - W(e, z - h)[, "W_zz"]) / (2 * h),
+                 tolerance = 1e-6, info = paste(phi, yv))
+    D3 <- function(e, z) tulpa:::cpp_zi_mixture_curvature_deriv(
+      y, nt, e, z, "neg_binomial_1", phi, NA_real_)
+    d4 <- tulpa:::cpp_zi_mixture_curvature_deriv2(
+      y, nt, e, z, "neg_binomial_1", phi, NA_real_)
+    # d4_e4 at y = 0 is where the pentagamma enters.
+    expect_equal(d4[, "d4_e4"],
+                 (D3(e + h, z)[, "dWee_deta"] - D3(e - h, z)[, "dWee_deta"]) / (2 * h),
+                 tolerance = 1e-6, info = paste(phi, yv))
+  }
+})
+
+
+test_that("the engine contributes nothing where the base registry already applies", {
+  # The two sources are summed over disjoint rows, so overlap would double-count
+  # silently. Asserted as exact zeros rather than "small".
+  n <- 12L
+  e <- seq(-0.8, 1.0, length.out = n); z <- seq(-1.1, 1.0, length.out = n)
+  nt <- rep(1L, n)
+  # every y != 0 row of any mixture
+  expect_true(all(tulpa:::cpp_zi_mixture_phi_deriv(
+    rep(3, n), nt, e, z, "neg_binomial_2", 2.5, NA_real_) == 0))
+  # a hurdle's y = 0 rows: its zero branch is log(pi), phi-free
+  expect_true(all(tulpa:::cpp_zi_mixture_phi_deriv(
+    rep(0, n), nt, e, z, "truncated_neg_binomial_2", 2.5, NA_real_) == 0))
+  # a family with no free dispersion at all
+  expect_true(all(tulpa:::cpp_zi_mixture_phi_deriv(
+    rep(0, n), nt, e, z, "poisson", 1, NA_real_) == 0))
+})
+
+
+test_that("estimate_phi is still refused where the mixture branch is unregistered", {
+  # neg_binomial_1 has no dispersion registry at all, so it stays refused --
+  # a different gap from the one closed here, and the message has to say so
+  # rather than silently maximizing along the base family's derivative.
+  expect_false(tulpa:::cpp_family_has_zi_phi_deriv("neg_binomial_1"))
+  expect_true(tulpa:::cpp_family_has_zi_phi_deriv("neg_binomial_2"))
+  d <- zi_re_sim(5L, "neg_binomial_2", G = 12L, per = 8L)
+  expect_error(
+    tulpa_eb(d$y, NULL, d$X, d$re, family = "neg_binomial_1",
+             phi = 1.5, estimate_phi = TRUE, X_zi = d$X_zi),
+    "estimate_phi|dispersion")
+})
+
+skip_on_cran()
+
+test_that("H_joint is the observed curvature of the two-process log posterior", {
+  # The Schur above is only the right precision if what it complements is the
+  # true negative-log-posterior curvature. Differenced directly, with the
+  # kernel's own beta ridge and ZI prior in the penalty.
+  skip_on_cran()
+  d <- zi_re_sim(3L, "poisson", G = 18L, per = 10L)
+  sigma_re <- 0.8
+  re <- list(list(idx = d$g, n_groups = d$G, n_coefs = 1L, sigma = sigma_re))
+  fit <- tulpa_laplace(d$y, NULL, d$X, re, family = "poisson", X_zi = d$X_zi,
+                       return_hessian = FALSE, return_joint_hessian = TRUE,
+                       max_iter = 300L, tol = 1e-12)
+
+  tau_beta <- tulpa:::.LAPLACE_DEFAULT_TAU_BETA
+  nlp <- function(par) {
+    beta <- par[1:2]; bzi <- par[3:4]; u <- par[-(1:4)]
+    eta <- as.numeric(d$X %*% beta) + u[d$g]
+    zz  <- as.numeric(d$X_zi %*% bzi)
+    lpi <- -log1p(exp(-zz)); l1mp <- -log1p(exp(zz))
+    p0  <- stats::dpois(0, exp(eta), log = TRUE)
+    ll  <- ifelse(d$y == 0,
+                  pmax(lpi, l1mp + p0) +
+                    log(exp(lpi - pmax(lpi, l1mp + p0)) +
+                        exp(l1mp + p0 - pmax(lpi, l1mp + p0))),
+                  l1mp + stats::dpois(d$y, exp(eta), log = TRUE))
+    -(sum(ll) - 0.5 * tau_beta * sum(beta^2) - 0.5 * sum(bzi^2) / 2.5^2 -
+        0.5 * sum(u^2) / sigma_re^2)
+  }
+  H_fd <- stats::optimHess(fit$mode, nlp)
+  expect_equal(max(abs(H_fd - as.matrix(fit$H_joint))) / max(abs(H_fd)),
+               0, tolerance = 1e-5)
 })
 
 
@@ -340,24 +487,6 @@ test_that("hurdle poisson with a random intercept reproduces glmmTMB", {
   expect_lt(abs(fit$map$sigma - ref_sd) / ref_sd, 0.05)
 })
 
-
-# --- 6. refusals -------------------------------------------------------------
-
-test_that("zero inflation is refused where the backend cannot carry it", {
-  d <- zi_re_sim(41L, "poisson", G = 20L, per = 10L)
-  expect_error(
-    suppressMessages(tulpa(y ~ x + (1 | g), data = d$data, family = "poisson",
-                           ziformula = ~ z, mode = "re_cov_gibbs")),
-    "not carried by backend 're_cov_gibbs'")
-  expect_error(
-    tulpa_eb(d$y, NULL, d$X, d$re, family = "poisson", X_zi = d$X_zi,
-             n_quad = 5L),
-    "does not carry a zero-inflation process")
-  # `estimate_phi` alongside zero inflation is no longer one of these: both
-  # mixture kinds are carried now. What is still refused, and why, is in
-  # "estimate_phi is still refused where the mixture branch is unregistered".
-})
-
 test_that("`marginal` reaches EB through the front door but not through control", {
   skip_on_cran()
   d <- zi_re_sim(42L, "poisson", G = 20L, per = 10L)
@@ -430,38 +559,6 @@ test_that("the hurdle's phi gradient matches a difference of the log-marginal", 
     expect_equal(g[[length(g)]], fd, tolerance = 1e-6,
                  info = sprintf("phi = %g", phi))
   }
-})
-
-
-test_that("the closed outer Hessian carries a hurdle", {
-  # Against a difference of the exact GRADIENT rather than a second difference
-  # of the objective: the gradient is already pinned above, so this isolates the
-  # Hessian assembly instead of folding the gradient's own error back in.
-  d <- zi_re_sim(52L, "truncated_poisson", G = 30L, per = 14L)
-  layout <- tulpa:::.re_cov_block_layout(d$re, d$n)
-  nt <- rep(1L, d$n)
-
-  grad_at <- function(th, want_h = FALSE) {
-    L <- tulpa:::.re_cov_theta_to_L_list(th, layout)
-    rl <- tulpa:::.re_cov_build_re_list(L, layout)
-    fit <- tulpa_laplace(d$y, NULL, d$X, rl, family = "truncated_poisson",
-                         phi = 1, return_hessian = FALSE,
-                         return_joint_hessian = TRUE, X_zi = d$X_zi,
-                         max_iter = 300L, tol = 1e-12)
-    tulpa:::.laplace_exact_re_grad(
-      fit = fit, y = d$y, X = d$X, n_trials = nt, offset = NULL,
-      weights = NULL, re_list = rl, layout = layout, L_list = L,
-      family = "truncated_poisson", phi = 1, phi2 = NA_real_, X_zi = d$X_zi,
-      want_hessian = want_h, want_jacobian = want_h)
-  }
-
-  at <- log(0.7)
-  r <- grad_at(at, want_h = TRUE)
-  expect_false(is.null(r$H))
-
-  h <- 1e-4
-  fd <- (grad_at(at + h) - grad_at(at - h)) / (2 * h)
-  expect_equal(as.numeric(r$H), as.numeric(fd), tolerance = 1e-5)
 })
 
 
@@ -582,69 +679,6 @@ test_that("the closed Hessian carries genuine zero inflation", {
 })
 
 
-test_that("the mixture curvature gate tracks the observed derivative, not a family list", {
-  # What the untruncated y = 0 branch actually needs is the OBSERVED curvature's
-  # eta-derivative: the registered working-weight one plus the
-  # observed-minus-working correction. neg_binomial_1 is the family that
-  # separates those -- it used to be excluded by name for want of a tetragamma,
-  # and qualifies now that the correction is closed-form.
-  expect_true(
-    tulpa:::cpp_family_has_obs_curvature_delta_derivative("neg_binomial_1"))
-  expect_true(
-    tulpa:::cpp_family_has_zi_curvature_derivative("neg_binomial_1"))
-  expect_true(
-    tulpa:::cpp_family_has_obs_curvature_delta_derivative("truncated_neg_binomial_2"))
-  for (f in c("poisson", "binomial", "neg_binomial_2", "neg_binomial_1",
-              "truncated_poisson", "truncated_neg_binomial_2")) {
-    expect_true(tulpa:::cpp_family_has_zi_curvature_2nd_derivative(f), info = f)
-  }
-  # Still refused where the base has no atom at zero, so the gate is a property
-  # of the family rather than a list that grew.
-  for (f in c("t", "tweedie", "gamma", "beta")) {
-    expect_false(tulpa:::cpp_family_has_zi_curvature_derivative(f), info = f)
-  }
-  # beta_binomial is admitted at first order and refused at second: its
-  # observed-minus-working difference is registered, its next eta-derivative is
-  # not, so the mixture's fourth-derivative branch declines to the stencil.
-  expect_true(tulpa:::cpp_family_has_zi_curvature_derivative("beta_binomial"))
-  expect_false(tulpa:::cpp_family_has_zi_curvature_2nd_derivative("beta_binomial"))
-})
-
-
-test_that("neg_binomial_1's mixture curvature derivatives are exact", {
-  # The coupled y = 0 branch reads the observed curvature's first and second
-  # eta-derivatives, which for this family are the working ones plus a
-  # tetragamma and a pentagamma correction. Checked against differences of the
-  # mixture weight the kernel builds H from, at y = 0 (coupled) and y > 0
-  # (separable).
-  n <- 16L
-  e <- seq(-0.8, 1.0, length.out = n)
-  z <- seq(-1.1, 1.0, length.out = n)
-  nt <- rep(1L, n); h <- 1e-5
-  for (phi in c(0.7, 2.0)) for (yv in c(0, 2)) {
-    y <- rep(yv, n)
-    W <- function(e, z) tulpa:::cpp_zi_mixture_curvature(
-      y, nt, e, z, "neg_binomial_1", phi, NA_real_)
-    d3 <- tulpa:::cpp_zi_mixture_curvature_deriv(
-      y, nt, e, z, "neg_binomial_1", phi, NA_real_)
-    expect_equal(d3[, "dWee_deta"],
-                 (W(e + h, z)[, "W_ee"] - W(e - h, z)[, "W_ee"]) / (2 * h),
-                 tolerance = 1e-6, info = paste(phi, yv))
-    expect_equal(d3[, "dWzz_dz"],
-                 (W(e, z + h)[, "W_zz"] - W(e, z - h)[, "W_zz"]) / (2 * h),
-                 tolerance = 1e-6, info = paste(phi, yv))
-    D3 <- function(e, z) tulpa:::cpp_zi_mixture_curvature_deriv(
-      y, nt, e, z, "neg_binomial_1", phi, NA_real_)
-    d4 <- tulpa:::cpp_zi_mixture_curvature_deriv2(
-      y, nt, e, z, "neg_binomial_1", phi, NA_real_)
-    # d4_e4 at y = 0 is where the pentagamma enters.
-    expect_equal(d4[, "d4_e4"],
-                 (D3(e + h, z)[, "dWee_deta"] - D3(e - h, z)[, "dWee_deta"]) / (2 * h),
-                 tolerance = 1e-6, info = paste(phi, yv))
-  }
-})
-
-
 # --- 8. the dispersion coordinate under GENUINE zero inflation ---------------
 #
 # A hurdle's zero branch is log(pi) and carries no dispersion, which is what let
@@ -705,24 +739,6 @@ test_that("the mixture dispersion table matches independently written anchors", 
 })
 
 
-test_that("the engine contributes nothing where the base registry already applies", {
-  # The two sources are summed over disjoint rows, so overlap would double-count
-  # silently. Asserted as exact zeros rather than "small".
-  n <- 12L
-  e <- seq(-0.8, 1.0, length.out = n); z <- seq(-1.1, 1.0, length.out = n)
-  nt <- rep(1L, n)
-  # every y != 0 row of any mixture
-  expect_true(all(tulpa:::cpp_zi_mixture_phi_deriv(
-    rep(3, n), nt, e, z, "neg_binomial_2", 2.5, NA_real_) == 0))
-  # a hurdle's y = 0 rows: its zero branch is log(pi), phi-free
-  expect_true(all(tulpa:::cpp_zi_mixture_phi_deriv(
-    rep(0, n), nt, e, z, "truncated_neg_binomial_2", 2.5, NA_real_) == 0))
-  # a family with no free dispersion at all
-  expect_true(all(tulpa:::cpp_zi_mixture_phi_deriv(
-    rep(0, n), nt, e, z, "poisson", 1, NA_real_) == 0))
-})
-
-
 test_that("the phi gradient and closed Hessian are exact under genuine ZI", {
   skip_on_cran()
   d <- zi_re_sim(4L, "neg_binomial_2", G = 30L, per = 14L, sigma = 0.8, phi = 2.5)
@@ -779,20 +795,6 @@ test_that("estimate_phi under genuine zero inflation recovers the dispersion", {
   expect_gt(fit$phi, 2.0)
   expect_lt(fit$phi, 4.5)
   expect_lt(abs(sqrt(as.numeric(fit$Sigma[[1L]])) - d$sigma), 0.25)
-})
-
-
-test_that("estimate_phi is still refused where the mixture branch is unregistered", {
-  # neg_binomial_1 has no dispersion registry at all, so it stays refused --
-  # a different gap from the one closed here, and the message has to say so
-  # rather than silently maximizing along the base family's derivative.
-  expect_false(tulpa:::cpp_family_has_zi_phi_deriv("neg_binomial_1"))
-  expect_true(tulpa:::cpp_family_has_zi_phi_deriv("neg_binomial_2"))
-  d <- zi_re_sim(5L, "neg_binomial_2", G = 12L, per = 8L)
-  expect_error(
-    tulpa_eb(d$y, NULL, d$X, d$re, family = "neg_binomial_1",
-             phi = 1.5, estimate_phi = TRUE, X_zi = d$X_zi),
-    "estimate_phi|dispersion")
 })
 
 

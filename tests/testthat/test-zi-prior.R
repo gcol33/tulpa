@@ -102,27 +102,6 @@ test_that("the ZI prior identifies a level that contributes no zeros", {
 })
 
 
-test_that("the Laplace and sampler paths carry the same ZI prior default", {
-  skip_on_cran()
-  # Same `ziformula`, same prior: the two backends build the beta_zi penalty
-  # through different code (BetaPrior tail vs ModelData::zi_prior_sd), so this
-  # pins them to one number. Compared at the mode, which the sampler recovers
-  # up to MC error.
-  d <- zi_pois_data(seed = 11L, n = 600L)
-
-  fit_lap <- tulpa(y ~ x, data = d, family = "poisson",
-                   ziformula = ~1, mode = "laplace")
-  fit_mcmc <- tulpa(y ~ x, data = d, family = "poisson",
-                    ziformula = ~1, mode = "hmc",
-                    control = list(n_iter = 1500L, n_warmup = 750L, seed = 3L))
-
-  zi_lap <- zi_coef(fit_lap)
-  zi_mcmc <- mean(as.matrix(fit_mcmc$draws)[, "beta_zi[1]"])
-
-  expect_equal(unname(zi_lap), unname(zi_mcmc), tolerance = 0.15)
-})
-
-
 test_that("zi_prior rejects malformed input", {
   d <- zi_pois_data(n = 200L)
   zi_fit <- function(...) {
@@ -152,4 +131,27 @@ test_that("zi_prior = list(sd = Inf) removes the penalty", {
   # tau = 1/sd^2 is 0 at Inf and 1e-12 at 1e6; on a well-identified logit both
   # are effectively unpenalized and must agree.
   expect_equal(zi_coef(fit_inf), zi_coef(fit_wide), tolerance = 1e-6)
+})
+
+skip_on_cran()
+
+
+test_that("the Laplace and sampler paths carry the same ZI prior default", {
+  skip_on_cran()
+  # Same `ziformula`, same prior: the two backends build the beta_zi penalty
+  # through different code (BetaPrior tail vs ModelData::zi_prior_sd), so this
+  # pins them to one number. Compared at the mode, which the sampler recovers
+  # up to MC error.
+  d <- zi_pois_data(seed = 11L, n = 600L)
+
+  fit_lap <- tulpa(y ~ x, data = d, family = "poisson",
+                   ziformula = ~1, mode = "laplace")
+  fit_mcmc <- tulpa(y ~ x, data = d, family = "poisson",
+                    ziformula = ~1, mode = "hmc",
+                    control = list(n_iter = 1500L, n_warmup = 750L, seed = 3L))
+
+  zi_lap <- zi_coef(fit_lap)
+  zi_mcmc <- mean(as.matrix(fit_mcmc$draws)[, "beta_zi[1]"])
+
+  expect_equal(unname(zi_lap), unname(zi_mcmc), tolerance = 0.15)
 })

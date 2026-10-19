@@ -47,6 +47,28 @@ test_that(".smooth_block_from_call bins and validates", {
     "rw")
 })
 
+test_that("unsupported smoother combinations error clearly", {
+  d <- data.frame(x = runif(60), time = rep(1:10, 6),
+                  lon = rnorm(60), lat = rnorm(60))
+  d$y <- rbinom(60, 1, 0.5)
+
+  # ModelData sampler backends do not thread smoother blocks.
+  expect_error(
+    tulpa(y ~ s(x), data = d, family = "binomial", mode = "vi"),
+    "ModelData")
+  # An SPDE field runs its own integrator.
+  expect_error(
+    tulpa(y ~ s(x), data = d, family = "binomial",
+          spatial = spatial_spde(~ lon + lat, data = d)),
+    "'spde' field")
+
+  # smooth_effects on a smooth-free fit.
+  plain <- structure(list(family = "poisson"), class = "tulpa_fit")
+  expect_error(smooth_effects(plain), "no s\\(")
+})
+
+skip_on_cran()
+
 test_that("s(x) routes through nested Laplace and recovers a sin curve", {
   skip_on_cran()
   set.seed(71)
@@ -126,24 +148,4 @@ test_that("a smoother shares the nested stack with a spatial_gp() field", {
 
   sm <- smooth_effects(fit)
   expect_gt(stats::cor(sm$estimate, f(sm$x)), 0.9)
-})
-
-test_that("unsupported smoother combinations error clearly", {
-  d <- data.frame(x = runif(60), time = rep(1:10, 6),
-                  lon = rnorm(60), lat = rnorm(60))
-  d$y <- rbinom(60, 1, 0.5)
-
-  # ModelData sampler backends do not thread smoother blocks.
-  expect_error(
-    tulpa(y ~ s(x), data = d, family = "binomial", mode = "vi"),
-    "ModelData")
-  # An SPDE field runs its own integrator.
-  expect_error(
-    tulpa(y ~ s(x), data = d, family = "binomial",
-          spatial = spatial_spde(~ lon + lat, data = d)),
-    "'spde' field")
-
-  # smooth_effects on a smooth-free fit.
-  plain <- structure(list(family = "poisson"), class = "tulpa_fit")
-  expect_error(smooth_effects(plain), "no s\\(")
 })

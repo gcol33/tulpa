@@ -29,46 +29,6 @@ pool_chain_major <- function(arr) {
 }
 
 
-test_that("diagnostics() reproduces posterior rhat / ess / mcse", {
-  skip_on_cran()
-  skip_if_not_installed("posterior")
-  arr <- make_draws_array()
-  fit <- structure(list(draws = arr), class = "tulpa_fit")
-
-  probs <- c(0.05, 0.5, 0.95)
-  diag <- diagnostics(
-    fit,
-    measures = c("rhat", "ess_bulk", "ess_tail", "ess_mean", "ess_sd",
-                 "mcse_mean", "mcse_sd", "ess_quantile", "mcse_quantile"),
-    probs = probs
-  )
-
-  expect_equal(nrow(diag), dim(arr)[3L])
-  expect_true(all(c("rhat", "ess_bulk", "ess_tail", "ess_mean", "ess_sd",
-                    "mcse_mean", "mcse_sd",
-                    "ess_q5", "ess_q50", "ess_q95",
-                    "mcse_q5", "mcse_q50", "mcse_q95") %in% names(diag)))
-
-  for (p in seq_len(dim(arr)[3L])) {
-    x <- arr[, , p]
-    nm <- dimnames(arr)[[3L]][p]
-    row <- diag[diag$parameter == nm, ]
-
-    expect_equal(row$rhat,      posterior::rhat(x),      tolerance = 1e-12)
-    expect_equal(row$ess_bulk,  posterior::ess_bulk(x),  tolerance = 1e-12)
-    expect_equal(row$ess_tail,  posterior::ess_tail(x),  tolerance = 1e-12)
-    expect_equal(row$ess_mean,  posterior::ess_mean(x),  tolerance = 1e-12)
-    expect_equal(row$ess_sd,    posterior::ess_sd(x),    tolerance = 1e-12)
-    expect_equal(row$mcse_mean, posterior::mcse_mean(x), tolerance = 1e-12)
-    expect_equal(row$mcse_sd,   posterior::mcse_sd(x),   tolerance = 1e-12)
-    expect_equal(row$ess_q5,   posterior::ess_quantile(x, 0.05, names = FALSE),  tolerance = 1e-12)
-    expect_equal(row$ess_q95,  posterior::ess_quantile(x, 0.95, names = FALSE),  tolerance = 1e-12)
-    expect_equal(row$mcse_q5,  posterior::mcse_quantile(x, 0.05, names = FALSE), tolerance = 1e-12)
-    expect_equal(row$mcse_q95, posterior::mcse_quantile(x, 0.95, names = FALSE), tolerance = 1e-12)
-  }
-})
-
-
 test_that("rhat takes the max of bulk and folded split-Rhat", {
   skip_if_not_installed("posterior")
   arr <- make_draws_array()
@@ -161,68 +121,6 @@ test_that("select_main_params drops bracketed-index entries", {
   expect_identical(select_main_params(c("u[1]", "u[2]")), c("u[1]", "u[2]"))
 })
 
-
-test_that("plotting and summary layer runs end-to-end on a multi-chain fit", {
-  skip_on_cran()
-  arr <- make_draws_array(niter = 400L, nchain = 4L, npar = 3L)
-  pooled <- pool_chain_major(arr)
-  n_total <- nrow(pooled)
-  # Divergence / energy are read off the top-level fields every sampler
-  # writes (row-aligned with `draws` / `chain_id`), not a synthesized
-  # `$diagnostics$*` -- nothing in the engine has ever populated that
-  # (gcol33/tulpa#783). idx 5 and 120 land in chain 1 under 400-iter chains.
-  divergent <- integer(n_total)
-  divergent[c(5L, 120L)] <- 1L
-  fit <- structure(
-    list(
-      draws = pooled,
-      n_chains = 4L,
-      chain_id = rep(seq_len(4L), each = 400L),
-      backend = "hmc",
-      divergent = divergent,
-      energy = rnorm(n_total, mean = 100, sd = 5)
-    ),
-    class = "tulpa_fit"
-  )
-
-  # divergence count is read from the populated field
-  expect_equal(n_divergent(fit), 2L)
-
-  # parameter resolution helper
-  expect_identical(grep_params("theta1", colnames(pooled)), "theta1")
-  expect_setequal(grep_params("^theta", colnames(pooled)),
-                  c("theta1", "theta2", "theta3"))
-
-  # diagnostic_summary produces a classed result and recommendations
-  ds <- diagnostic_summary(fit, quiet = TRUE)
-  expect_s3_class(ds, "tulpa_diagnostic_summary")
-  expect_equal(ds$backend, "hmc")
-  expect_equal(ds$n_divergent, 2L)
-  expect_true(is.finite(ds$e_bfmi))
-
-  # quick check returns an invisible logical
-  ok <- check_diagnostics(fit, quiet = TRUE)
-  expect_type(ok, "logical")
-  expect_length(ok, 1L)
-
-  # divergent transitions map onto the (chain, iteration) grid for bayesplot
-  npdf <- .tulpa_divergent_np(fit, 400L, 4L)
-  expect_equal(sum(npdf$Value), 2L)                    # the two divergent draws
-  flagged <- npdf[npdf$Value == 1, ]
-  expect_equal(flagged$Chain,     c(1L, 1L))           # idx 5, 120 -> chain 1
-  expect_equal(flagged$Iteration, c(5L, 120L))
-
-  # ggplot-dependent layer (Suggests)
-  skip_if_not_installed("ggplot2")
-  expect_s3_class(plot_rhat(fit), "ggplot")
-  expect_s3_class(plot_ess(fit), "ggplot")
-  expect_s3_class(plot_ess(fit, type = "tail"), "ggplot")
-
-  # bayesplot-dependent pairs plot must not crash on the divergence path
-  skip_if_not_installed("bayesplot")
-  expect_no_error(plot_pairs(fit, pars = c("theta1", "theta2")))
-})
-
 # gcol33/tulpa#875 / #878: a chain with bulk-ESS in single digits printed clean
 # intervals, and only an opt-in diagnostic said otherwise. The front door now
 # checks every chain fit against a floor and warns, and print() repeats it.
@@ -301,4 +199,108 @@ test_that("chain diagnostics are withheld on a non-chain (approximation) fit", {
   expect_false(is.null(posterior_sample(iid)))
   expect_null(mcmc_draws(iid))
   expect_false(is.null(mcmc_draws(chain)))
+})
+
+skip_on_cran()
+
+
+test_that("diagnostics() reproduces posterior rhat / ess / mcse", {
+  skip_on_cran()
+  skip_if_not_installed("posterior")
+  arr <- make_draws_array()
+  fit <- structure(list(draws = arr), class = "tulpa_fit")
+
+  probs <- c(0.05, 0.5, 0.95)
+  diag <- diagnostics(
+    fit,
+    measures = c("rhat", "ess_bulk", "ess_tail", "ess_mean", "ess_sd",
+                 "mcse_mean", "mcse_sd", "ess_quantile", "mcse_quantile"),
+    probs = probs
+  )
+
+  expect_equal(nrow(diag), dim(arr)[3L])
+  expect_true(all(c("rhat", "ess_bulk", "ess_tail", "ess_mean", "ess_sd",
+                    "mcse_mean", "mcse_sd",
+                    "ess_q5", "ess_q50", "ess_q95",
+                    "mcse_q5", "mcse_q50", "mcse_q95") %in% names(diag)))
+
+  for (p in seq_len(dim(arr)[3L])) {
+    x <- arr[, , p]
+    nm <- dimnames(arr)[[3L]][p]
+    row <- diag[diag$parameter == nm, ]
+
+    expect_equal(row$rhat,      posterior::rhat(x),      tolerance = 1e-12)
+    expect_equal(row$ess_bulk,  posterior::ess_bulk(x),  tolerance = 1e-12)
+    expect_equal(row$ess_tail,  posterior::ess_tail(x),  tolerance = 1e-12)
+    expect_equal(row$ess_mean,  posterior::ess_mean(x),  tolerance = 1e-12)
+    expect_equal(row$ess_sd,    posterior::ess_sd(x),    tolerance = 1e-12)
+    expect_equal(row$mcse_mean, posterior::mcse_mean(x), tolerance = 1e-12)
+    expect_equal(row$mcse_sd,   posterior::mcse_sd(x),   tolerance = 1e-12)
+    expect_equal(row$ess_q5,   posterior::ess_quantile(x, 0.05, names = FALSE),  tolerance = 1e-12)
+    expect_equal(row$ess_q95,  posterior::ess_quantile(x, 0.95, names = FALSE),  tolerance = 1e-12)
+    expect_equal(row$mcse_q5,  posterior::mcse_quantile(x, 0.05, names = FALSE), tolerance = 1e-12)
+    expect_equal(row$mcse_q95, posterior::mcse_quantile(x, 0.95, names = FALSE), tolerance = 1e-12)
+  }
+})
+
+
+test_that("plotting and summary layer runs end-to-end on a multi-chain fit", {
+  skip_on_cran()
+  arr <- make_draws_array(niter = 400L, nchain = 4L, npar = 3L)
+  pooled <- pool_chain_major(arr)
+  n_total <- nrow(pooled)
+  # Divergence / energy are read off the top-level fields every sampler
+  # writes (row-aligned with `draws` / `chain_id`), not a synthesized
+  # `$diagnostics$*` -- nothing in the engine has ever populated that
+  # (gcol33/tulpa#783). idx 5 and 120 land in chain 1 under 400-iter chains.
+  divergent <- integer(n_total)
+  divergent[c(5L, 120L)] <- 1L
+  fit <- structure(
+    list(
+      draws = pooled,
+      n_chains = 4L,
+      chain_id = rep(seq_len(4L), each = 400L),
+      backend = "hmc",
+      divergent = divergent,
+      energy = rnorm(n_total, mean = 100, sd = 5)
+    ),
+    class = "tulpa_fit"
+  )
+
+  # divergence count is read from the populated field
+  expect_equal(n_divergent(fit), 2L)
+
+  # parameter resolution helper
+  expect_identical(grep_params("theta1", colnames(pooled)), "theta1")
+  expect_setequal(grep_params("^theta", colnames(pooled)),
+                  c("theta1", "theta2", "theta3"))
+
+  # diagnostic_summary produces a classed result and recommendations
+  ds <- diagnostic_summary(fit, quiet = TRUE)
+  expect_s3_class(ds, "tulpa_diagnostic_summary")
+  expect_equal(ds$backend, "hmc")
+  expect_equal(ds$n_divergent, 2L)
+  expect_true(is.finite(ds$e_bfmi))
+
+  # quick check returns an invisible logical
+  ok <- check_diagnostics(fit, quiet = TRUE)
+  expect_type(ok, "logical")
+  expect_length(ok, 1L)
+
+  # divergent transitions map onto the (chain, iteration) grid for bayesplot
+  npdf <- .tulpa_divergent_np(fit, 400L, 4L)
+  expect_equal(sum(npdf$Value), 2L)                    # the two divergent draws
+  flagged <- npdf[npdf$Value == 1, ]
+  expect_equal(flagged$Chain,     c(1L, 1L))           # idx 5, 120 -> chain 1
+  expect_equal(flagged$Iteration, c(5L, 120L))
+
+  # ggplot-dependent layer (Suggests)
+  skip_if_not_installed("ggplot2")
+  expect_s3_class(plot_rhat(fit), "ggplot")
+  expect_s3_class(plot_ess(fit), "ggplot")
+  expect_s3_class(plot_ess(fit, type = "tail"), "ggplot")
+
+  # bayesplot-dependent pairs plot must not crash on the divergence path
+  skip_if_not_installed("bayesplot")
+  expect_no_error(plot_pairs(fit, pars = c("theta1", "theta2")))
 })

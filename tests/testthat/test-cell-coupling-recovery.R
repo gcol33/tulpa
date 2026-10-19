@@ -60,6 +60,35 @@ prior_spec <- function(d) {
          sigma_grid      = c(0.4, 0.8, 1.5))
 }
 
+test_that("kernel rejects coupled = TRUE with the separable default spec", {
+    d <- setup_test_data(seed = 3L, N = 20L)
+    expect_error(
+        tulpa_nested_laplace_joint(
+            responses = list(occ = build_arm(d, coupled = TRUE)),
+            prior     = prior_spec(d),
+            cell_coupling = "separable",
+            control   = list(max_iter = 5L)
+        ),
+        regexp = "coupled = TRUE"
+    )
+})
+
+test_that("kernel rejects spec arm_ids() that disagree with arms' coupled flags", {
+    cpp_register_test_separable_bernoulli_coupling()
+    d <- setup_test_data(seed = 4L, N = 20L)
+    expect_error(
+        tulpa_nested_laplace_joint(
+            responses     = list(occ = build_arm(d, coupled = FALSE)),
+            prior         = prior_spec(d),
+            cell_coupling = "test_separable_bernoulli",
+            control       = list(max_iter = 5L)
+        ),
+        regexp = "spec lists arm 1"
+    )
+})
+
+skip_on_cran()
+
 test_that("per-cell branch matches per-obs path: mode and log-marginal", {
     skip_if_not_slow()
     cpp_register_test_separable_bernoulli_coupling()
@@ -124,19 +153,6 @@ test_that("fisher step-curvature reproduces the observed-Hessian fit (Bernoulli 
     expect_equal(res_fisher$theta_sd,     res_observed$theta_sd,     tolerance = 1e-8)
 })
 
-test_that("kernel rejects coupled = TRUE with the separable default spec", {
-    d <- setup_test_data(seed = 3L, N = 20L)
-    expect_error(
-        tulpa_nested_laplace_joint(
-            responses = list(occ = build_arm(d, coupled = TRUE)),
-            prior     = prior_spec(d),
-            cell_coupling = "separable",
-            control   = list(max_iter = 5L)
-        ),
-        regexp = "coupled = TRUE"
-    )
-})
-
 test_that("sparse per-cell branch matches dense per-obs baseline (B.2)", {
     skip_if_not_slow()
     cpp_register_test_separable_bernoulli_coupling()
@@ -192,20 +208,6 @@ test_that("sparse separable default stays byte-identical under cell_coupling", {
     expect_equal(res_sparse$theta_mean,
                  res_dense$theta_mean,
                  tolerance = 1e-8)
-})
-
-test_that("kernel rejects spec arm_ids() that disagree with arms' coupled flags", {
-    cpp_register_test_separable_bernoulli_coupling()
-    d <- setup_test_data(seed = 4L, N = 20L)
-    expect_error(
-        tulpa_nested_laplace_joint(
-            responses     = list(occ = build_arm(d, coupled = FALSE)),
-            prior         = prior_spec(d),
-            cell_coupling = "test_separable_bernoulli",
-            control       = list(max_iter = 5L)
-        ),
-        regexp = "spec lists arm 1"
-    )
 })
 
 test_that("rank-1 (Woodbury) sum-to-zero matches the dense full-11' path", {

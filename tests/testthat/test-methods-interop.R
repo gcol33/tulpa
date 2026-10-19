@@ -34,35 +34,12 @@ approx_fit <- function(seed = 2L) {
   })
 }
 
-
-# --- fixef -------------------------------------------------------------------
-
-test_that("fixef() returns the fixed effects for both posterior shapes", {
-  skip_on_cran()
-  for (fit in list(sampler_fit(), approx_fit())) {
-    fe <- fixef(fit)
-    expect_true(is.numeric(fe))
-    expect_identical(fe, coef(fit))
-    expect_identical(names(fe), fit$fixed_names)
-  }
-})
-
 test_that("fixef() excludes the random effects", {
   fit <- approx_fit()
   # coef()/fixef() are the fixed block only; the RE block is ranef()'s. A fit
   # whose fixef() length tracked the mode vector would silently return RE values.
   expect_length(fixef(fit), fit$n_fixed)
   expect_lt(length(fixef(fit)), length(fit$mode))
-})
-
-test_that("lme4::fixef() and nlme::ranef() dispatch on a tulpa_fit", {
-  skip_on_cran()
-  fit <- sampler_fit()
-  if (requireNamespace("lme4", quietly = TRUE)) {
-    expect_identical(lme4::fixef(fit), fixef(fit))
-  } else {
-    skip("lme4 not installed")
-  }
 })
 
 test_that("nlme::fixef() dispatches on a tulpa_fit", {
@@ -249,4 +226,29 @@ test_that("diagnostics() reports the absence of draws on an approximation fit", 
   fit <- approx_fit()
   expect_message(res <- diagnostics(fit), "no posterior draws")
   expect_null(res)
+})
+
+skip_on_cran()
+
+
+# --- fixef -------------------------------------------------------------------
+
+test_that("fixef() returns the fixed effects for both posterior shapes", {
+  skip_on_cran()
+  for (fit in list(sampler_fit(), approx_fit())) {
+    fe <- fixef(fit)
+    expect_true(is.numeric(fe))
+    expect_identical(fe, coef(fit))
+    expect_identical(names(fe), fit$fixed_names)
+  }
+})
+
+test_that("lme4::fixef() and nlme::ranef() dispatch on a tulpa_fit", {
+  skip_on_cran()
+  fit <- sampler_fit()
+  if (requireNamespace("lme4", quietly = TRUE)) {
+    expect_identical(lme4::fixef(fit), fixef(fit))
+  } else {
+    skip("lme4 not installed")
+  }
 })

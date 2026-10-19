@@ -33,18 +33,6 @@
        w_nb = stats::rnorm(n))
 }
 
-test_that("the two cores return the same kriging moments at every jitter", {
-  skip_on_cran()
-  f <- .nngp_fixture()
-  for (jit in c(0, 1e-12, 1e-10, 1e-6, 1e-3, 1e-1)) {
-    r <- .nngp_cores(f$C, f$c_vec, f$w_nb, jitter = jit)
-    expect_true(r$templated_ok)
-    expect_identical(r$templated_ok, r$plain_ok)
-    expect_equal(r$templated_mean, r$plain_mean, tolerance = 0)
-    expect_equal(r$templated_var,  r$plain_var,  tolerance = 0)
-  }
-})
-
 test_that("jitter is a nugget in both cores, not a pivot floor", {
   # A pivot floor is INERT on a well-conditioned input: C is far from singular
   # here, so its pivots all sit above 1e-3 and a floor at that value would
@@ -81,4 +69,18 @@ test_that("both cores decline a neighbour covariance that is not PD", {
   expect_true(r2$templated_ok)
   expect_true(r2$plain_ok)
   expect_equal(r2$templated_mean, r2$plain_mean, tolerance = 0)
+})
+
+skip_on_cran()
+
+test_that("the two cores return the same kriging moments at every jitter", {
+  skip_on_cran()
+  f <- .nngp_fixture()
+  for (jit in c(0, 1e-12, 1e-10, 1e-6, 1e-3, 1e-1)) {
+    r <- .nngp_cores(f$C, f$c_vec, f$w_nb, jitter = jit)
+    expect_true(r$templated_ok)
+    expect_identical(r$templated_ok, r$plain_ok)
+    expect_equal(r$templated_mean, r$plain_mean, tolerance = 0)
+    expect_equal(r$templated_var,  r$plain_var,  tolerance = 0)
+  }
 })

@@ -30,18 +30,6 @@ test_that("the TVC structure predicate is the one the sampler entry asks", {
   expect_match(err, "multiscale", fixed = TRUE)
 })
 
-test_that("a Laplace-family mode does not recommend a mode that also refuses", {
-  skip_on_cran()
-  set.seed(3)
-  d <- data.frame(tidx = rep(1:20, each = 4), x = stats::rnorm(80))
-  d$y <- stats::rpois(80, exp(0.3 + 0.5 * d$x))
-  # A structure `exact` DOES take: the recommendation stands.
-  expect_error(
-    tulpa(y ~ x, data = d, family = "poisson", mode = "laplace",
-          temporal = temporal_tvc("tidx", structure = "rw1")),
-    "Use mode = 'exact'", fixed = TRUE)
-})
-
 test_that("spatial_rsr() refuses a field its kernels cannot project", {
   # The projection lives in two Polya-Gamma kernels, one carrying an areal
   # neighbour list and one an NNGP field (gcol33/tulpa#848). A spec that is
@@ -68,6 +56,20 @@ test_that("spatial_rsr() still takes every areal field", {
   expect_s3_class(rsr, "tulpa_rsr")
   expect_true(isTRUE(rsr$rsr))
   expect_true(tolower(rsr$type) %in% .NL_FRONTDOOR_AREAL)
+})
+
+skip_on_cran()
+
+test_that("a Laplace-family mode does not recommend a mode that also refuses", {
+  skip_on_cran()
+  set.seed(3)
+  d <- data.frame(tidx = rep(1:20, each = 4), x = stats::rnorm(80))
+  d$y <- stats::rpois(80, exp(0.3 + 0.5 * d$x))
+  # A structure `exact` DOES take: the recommendation stands.
+  expect_error(
+    tulpa(y ~ x, data = d, family = "poisson", mode = "laplace",
+          temporal = temporal_tvc("tidx", structure = "rw1")),
+    "Use mode = 'exact'", fixed = TRUE)
 })
 
 test_that("an areal RSR fit still runs and still projects", {

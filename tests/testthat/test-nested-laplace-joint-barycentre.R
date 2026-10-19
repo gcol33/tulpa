@@ -88,6 +88,141 @@
   invisible(gr)
 }
 
+# --------------------------------------------------------------------------- #
+# What a declined axis declined at (gcol33/tulpa#334)                         #
+# --------------------------------------------------------------------------- #
+
+test_that("a declined barycentre axis names the gate it fell at", {
+  # `cancellation`: the local peak sits 5e11 nats above a box it is half a
+  # million widths away from, so the closed form's `mu + corr` is refused before
+  # it is formed (`.LCCD_BAR_CANCEL`) and the quadrature that takes over is
+  # handed a needle 1e-6 wide in a box of width 2 and returns nothing either.
+  expect_gt(0.5 * 1e6^2 / 1 * max(1, 1e6 / 2), tulpa:::.LCCD_BAR_CANCEL)
+  f <- tulpa:::.joint_local_ccd_axis_bary(1e6, 1, 1, 1)
+  expect_null(f$u_bar)
+  expect_identical(f$reason, "cancellation")
+
+  # `out_of_box`: 700 nats of gradient across a box 1e-6 wide, whose whole
+  # integral is then of order 1e-9. `stats::integrate()` defaults its absolute
+  # tolerance to its relative one, so on integrals that small the absolute
+  # criterion is met long before the needle at the lower edge is resolved, and
+  # the two quadratures the ratio is formed from stop in different places. The
+  # first moment of a positive density over a box is a convex combination of
+  # points in the box and cannot leave it, so a value outside is the arithmetic
+  # failing and the axis keeps the cell's own coordinate rather than shipping an
+  # atom into the neighbouring cell's territory.
+  f <- tulpa:::.joint_local_ccd_axis_bary(-7e8, 0, 1e-6, 1e-8)
+  expect_null(f$u_bar)
+  expect_identical(f$reason, "out_of_box")
+  # Exactly the same shape of cell one decade wider is answered, and answered
+  # correctly: the refusal is a property of the quadrature's own scale, not of
+  # the cell's geometry.
+  ok <- tulpa:::.joint_local_ccd_axis_bary(-7e3, 0, 1e-1, 1e-3)
+  expect_identical(ok$route, "numeric")
+  expect_true(is.na(ok$reason))
+  expect_equal(ok$u_bar, .bar_simpson(-7e3, 0, 1e-1, 1e-3), tolerance = 1e-9)
+})
+
+test_that("a cell's decline tally is per axis, alongside the count", {
+  # Four axes: one concave and answered in closed form, one whose closed form is
+  # refused for conditioning and whose quadrature returns nothing, one with no
+  # extent at all, and one whose quadrature puts the atom outside its own box.
+  # Three declines, three different remedies, one count.
+  st <- list(g = c(1.0, 1e6, 0.3, -7e8), d2 = c(-2, -1, 0, 0),
+             half_lo = c(0.5, 1, 0, 1e-6), half_hi = c(0.5, 1, 0, 1e-8))
+  bc <- tulpa:::.joint_local_ccd_cell_bary(st)
+  expect_identical(bc$n_axes_declined, 3L)
+  expect_identical(bc$declined_reasons,
+                   c(boundary = 0L, no_factor = 1L, cancellation = 1L,
+                     out_of_box = 1L))
+  expect_identical(names(bc$declined_reasons), tulpa:::.LCCD_BARY_REASONS)
+
+  # A declined axis keeps the cell's own coordinate, and the one axis that was
+  # read still moves: the decline is per axis, so three unreadable axes do not
+  # cost the fourth its barycentre.
+  expect_identical(bc$n_axes_closed, 1L)
+  expect_identical(bc$n_axes_numeric, 0L)
+  expect_equal(bc$u_bar,
+               c(.bar_simpson(1.0, 2, 0.5, 0.5), 0, 0, 0), tolerance = 1e-11)
+})
+
+test_that("the moved coordinate is the u-space barycentre through the axis map", {
+  # The grid stores physical theta while the quadratic is fitted in
+  # `u = log theta`, so the shipped coordinate is `exp` of the u-space
+  # barycentre: a mean in `u` mapped through the axis's own monotone transform,
+  # which is what the quantile read wants (a representative point of the cell)
+  # and is NOT what the moment read would want.
+  lv <- exp(seq(log(0.2), log(2), length.out = 5L))
+  gg <- as.matrix(expand.grid(a = lv, b = lv, KEEP.OUT.ATTRS = FALSE))
+  U <- log(gg)
+  lm <- -0.5 * ((U[, 1L] - 0.15)^2 / 0.4^2 + (U[, 2L] + 0.3)^2 / 0.6^2)
+  bc <- tulpa:::.joint_local_ccd_barycentre(gg, lm, colnames(gg),
+                                            c(a = "log", b = "log"))
+  expect_gt(sum(bc$computed), 0L)
+  expect_equal(bc$joint_grid, gg * exp(bc$u_offset), tolerance = 1e-14)
+  # And the moved atom is still inside its own cell on the physical axis, which
+  # `exp` being monotone is what guarantees: it sits strictly between the
+  # midpoints to its two neighbours.
+  for (j in 1:2) {
+    for (c in which(bc$computed)) {
+      lo <- max(lv[lv < gg[c, j]]); hi <- min(lv[lv > gg[c, j]])
+      expect_gte(bc$joint_grid[c, j], sqrt(lo * gg[c, j]))
+      expect_lte(bc$joint_grid[c, j], sqrt(hi * gg[c, j]))
+    }
+  }
+})
+
+test_that("a refined cell records its barycentre shift beside its box mass", {
+  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
+  lv <- list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2))
+  gg <- as.matrix(expand.grid(lv, KEEP.OUT.ATTRS = FALSE))
+  colnames(gg) <- names(lv)
+  lmf <- function(th) -0.5 * rowSums(sweep(sweep(th, 2L, mu, "-")^2, 2L, s^2, "/"))
+  out <- tulpa:::.joint_local_ccd_refine(
+    gg, lmf(gg), NULL, NULL, colnames(gg), c(a = "identity", b = "identity"),
+    eval_nodes = function(theta_mat, warm)
+      list(log_marginal = lmf(theta_mat), modes = NULL),
+    max_cells = 4L)
+  nc <- out$info$n_cells_refined
+  expect_gt(nc, 0L)
+  expect_length(out$info$bary_shift, nc)
+  expect_true(all(is.finite(out$info$bary_shift)))
+  expect_true(all(out$info$bary_shift >= 0 & out$info$bary_shift <= 1))
+
+  # It is the grid-wide rule's reading of the same cells, so the two entry
+  # points cannot drift apart.
+  bc <- tulpa:::.joint_local_ccd_barycentre(gg, lmf(gg), colnames(gg),
+                                            c("identity", "identity"))
+  expect_equal(out$info$bary_shift, bc$bary_shift[out$info$cells],
+               tolerance = 1e-12)
+})
+
+# --------------------------------------------------------------------------- #
+# The measurement (gcol33/tulpa#322's harness, no fitting minutes)            #
+# --------------------------------------------------------------------------- #
+
+# The two candidates, each entering the harness the way that kind of rule does:
+# the mass multiplier as a per-cell design weight, the barycentre as a perturbed
+# coordinate matrix. Their combination is the pair.
+.bar_mass_w <- function(d) {
+  bm <- tulpa:::.joint_local_ccd_box_mass(d$joint_grid, d$log_marginal,
+                                          d$axis_names, d$axis_tags)
+  base <- if (is.null(d$dnode)) rep(1, nrow(d$joint_grid)) else d$dnode
+  outer_grid_weights(d, dnode = base * exp(bm$log_box_ratio))
+}
+
+# The rules correct how a coarse grid integrates the marginal likelihood, so the
+# measurements state a flat outer prior. `dev_notes/issue327/bary327.R` measures
+# every figure below under a stated prior and within-cell read; where a figure is
+# quoted under both priors it is written flat / proper.
+.BAR_HYPERPRIOR <- "flat"
+
+.bar_place_g <- function(d)
+  tulpa:::.joint_local_ccd_barycentre(d$joint_grid, d$log_marginal,
+                                      d$axis_names, d$axis_tags)
+
+skip_on_cran()
+
 test_that("the barycentre is the box's own first moment, on either sign of a", {
   skip_on_cran()
   # Both routes, both signs of the curvature, and half-widths unequal on the two
@@ -261,139 +396,6 @@ test_that("only interior cells move, and they move within their own box", {
   expect_true(all(none$declined_reasons == 0L))
   expect_identical(names(none$declined_reasons), tulpa:::.LCCD_BARY_REASONS)
 })
-
-# --------------------------------------------------------------------------- #
-# What a declined axis declined at (gcol33/tulpa#334)                         #
-# --------------------------------------------------------------------------- #
-
-test_that("a declined barycentre axis names the gate it fell at", {
-  # `cancellation`: the local peak sits 5e11 nats above a box it is half a
-  # million widths away from, so the closed form's `mu + corr` is refused before
-  # it is formed (`.LCCD_BAR_CANCEL`) and the quadrature that takes over is
-  # handed a needle 1e-6 wide in a box of width 2 and returns nothing either.
-  expect_gt(0.5 * 1e6^2 / 1 * max(1, 1e6 / 2), tulpa:::.LCCD_BAR_CANCEL)
-  f <- tulpa:::.joint_local_ccd_axis_bary(1e6, 1, 1, 1)
-  expect_null(f$u_bar)
-  expect_identical(f$reason, "cancellation")
-
-  # `out_of_box`: 700 nats of gradient across a box 1e-6 wide, whose whole
-  # integral is then of order 1e-9. `stats::integrate()` defaults its absolute
-  # tolerance to its relative one, so on integrals that small the absolute
-  # criterion is met long before the needle at the lower edge is resolved, and
-  # the two quadratures the ratio is formed from stop in different places. The
-  # first moment of a positive density over a box is a convex combination of
-  # points in the box and cannot leave it, so a value outside is the arithmetic
-  # failing and the axis keeps the cell's own coordinate rather than shipping an
-  # atom into the neighbouring cell's territory.
-  f <- tulpa:::.joint_local_ccd_axis_bary(-7e8, 0, 1e-6, 1e-8)
-  expect_null(f$u_bar)
-  expect_identical(f$reason, "out_of_box")
-  # Exactly the same shape of cell one decade wider is answered, and answered
-  # correctly: the refusal is a property of the quadrature's own scale, not of
-  # the cell's geometry.
-  ok <- tulpa:::.joint_local_ccd_axis_bary(-7e3, 0, 1e-1, 1e-3)
-  expect_identical(ok$route, "numeric")
-  expect_true(is.na(ok$reason))
-  expect_equal(ok$u_bar, .bar_simpson(-7e3, 0, 1e-1, 1e-3), tolerance = 1e-9)
-})
-
-test_that("a cell's decline tally is per axis, alongside the count", {
-  # Four axes: one concave and answered in closed form, one whose closed form is
-  # refused for conditioning and whose quadrature returns nothing, one with no
-  # extent at all, and one whose quadrature puts the atom outside its own box.
-  # Three declines, three different remedies, one count.
-  st <- list(g = c(1.0, 1e6, 0.3, -7e8), d2 = c(-2, -1, 0, 0),
-             half_lo = c(0.5, 1, 0, 1e-6), half_hi = c(0.5, 1, 0, 1e-8))
-  bc <- tulpa:::.joint_local_ccd_cell_bary(st)
-  expect_identical(bc$n_axes_declined, 3L)
-  expect_identical(bc$declined_reasons,
-                   c(boundary = 0L, no_factor = 1L, cancellation = 1L,
-                     out_of_box = 1L))
-  expect_identical(names(bc$declined_reasons), tulpa:::.LCCD_BARY_REASONS)
-
-  # A declined axis keeps the cell's own coordinate, and the one axis that was
-  # read still moves: the decline is per axis, so three unreadable axes do not
-  # cost the fourth its barycentre.
-  expect_identical(bc$n_axes_closed, 1L)
-  expect_identical(bc$n_axes_numeric, 0L)
-  expect_equal(bc$u_bar,
-               c(.bar_simpson(1.0, 2, 0.5, 0.5), 0, 0, 0), tolerance = 1e-11)
-})
-
-test_that("the moved coordinate is the u-space barycentre through the axis map", {
-  # The grid stores physical theta while the quadratic is fitted in
-  # `u = log theta`, so the shipped coordinate is `exp` of the u-space
-  # barycentre: a mean in `u` mapped through the axis's own monotone transform,
-  # which is what the quantile read wants (a representative point of the cell)
-  # and is NOT what the moment read would want.
-  lv <- exp(seq(log(0.2), log(2), length.out = 5L))
-  gg <- as.matrix(expand.grid(a = lv, b = lv, KEEP.OUT.ATTRS = FALSE))
-  U <- log(gg)
-  lm <- -0.5 * ((U[, 1L] - 0.15)^2 / 0.4^2 + (U[, 2L] + 0.3)^2 / 0.6^2)
-  bc <- tulpa:::.joint_local_ccd_barycentre(gg, lm, colnames(gg),
-                                            c(a = "log", b = "log"))
-  expect_gt(sum(bc$computed), 0L)
-  expect_equal(bc$joint_grid, gg * exp(bc$u_offset), tolerance = 1e-14)
-  # And the moved atom is still inside its own cell on the physical axis, which
-  # `exp` being monotone is what guarantees: it sits strictly between the
-  # midpoints to its two neighbours.
-  for (j in 1:2) {
-    for (c in which(bc$computed)) {
-      lo <- max(lv[lv < gg[c, j]]); hi <- min(lv[lv > gg[c, j]])
-      expect_gte(bc$joint_grid[c, j], sqrt(lo * gg[c, j]))
-      expect_lte(bc$joint_grid[c, j], sqrt(hi * gg[c, j]))
-    }
-  }
-})
-
-test_that("a refined cell records its barycentre shift beside its box mass", {
-  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
-  lv <- list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2))
-  gg <- as.matrix(expand.grid(lv, KEEP.OUT.ATTRS = FALSE))
-  colnames(gg) <- names(lv)
-  lmf <- function(th) -0.5 * rowSums(sweep(sweep(th, 2L, mu, "-")^2, 2L, s^2, "/"))
-  out <- tulpa:::.joint_local_ccd_refine(
-    gg, lmf(gg), NULL, NULL, colnames(gg), c(a = "identity", b = "identity"),
-    eval_nodes = function(theta_mat, warm)
-      list(log_marginal = lmf(theta_mat), modes = NULL),
-    max_cells = 4L)
-  nc <- out$info$n_cells_refined
-  expect_gt(nc, 0L)
-  expect_length(out$info$bary_shift, nc)
-  expect_true(all(is.finite(out$info$bary_shift)))
-  expect_true(all(out$info$bary_shift >= 0 & out$info$bary_shift <= 1))
-
-  # It is the grid-wide rule's reading of the same cells, so the two entry
-  # points cannot drift apart.
-  bc <- tulpa:::.joint_local_ccd_barycentre(gg, lmf(gg), colnames(gg),
-                                            c("identity", "identity"))
-  expect_equal(out$info$bary_shift, bc$bary_shift[out$info$cells],
-               tolerance = 1e-12)
-})
-
-# --------------------------------------------------------------------------- #
-# The measurement (gcol33/tulpa#322's harness, no fitting minutes)            #
-# --------------------------------------------------------------------------- #
-
-# The two candidates, each entering the harness the way that kind of rule does:
-# the mass multiplier as a per-cell design weight, the barycentre as a perturbed
-# coordinate matrix. Their combination is the pair.
-.bar_mass_w <- function(d) {
-  bm <- tulpa:::.joint_local_ccd_box_mass(d$joint_grid, d$log_marginal,
-                                          d$axis_names, d$axis_tags)
-  base <- if (is.null(d$dnode)) rep(1, nrow(d$joint_grid)) else d$dnode
-  outer_grid_weights(d, dnode = base * exp(bm$log_box_ratio))
-}
-
-# The rules correct how a coarse grid integrates the marginal likelihood, so the
-# measurements state a flat outer prior. `dev_notes/issue327/bary327.R` measures
-# every figure below under a stated prior and within-cell read; where a figure is
-# quoted under both priors it is written flat / proper.
-.BAR_HYPERPRIOR <- "flat"
-
-.bar_place_g <- function(d)
-  tulpa:::.joint_local_ccd_barycentre(d$joint_grid, d$log_marginal,
-                                      d$axis_names, d$axis_tags)
 
 test_that("a rebuild at its own coordinates returns the read the fit shipped", {
   skip_on_cran()

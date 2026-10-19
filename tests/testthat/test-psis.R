@@ -328,6 +328,8 @@ test_that(".nested_is_pareto_k declines without solving when radius_cap is too t
   expect_identical(hit, 0L)                               # no inner solve paid
 })
 
+skip_on_cran()
+
 test_that("tulpa_re_cov_nested reports a Pareto-k-hat without disturbing draws", {
   skip_on_cran()
   sim <- function(seed, G = 50L, npg = 10L) {

@@ -21,64 +21,6 @@
     log(max(P, 1e-300))
 }
 
-test_that("analytic grad / neg_hess match central differences (finite interval)", {
-    skip_on_cran()
-    h <- 1e-5
-    ax <- list(eta = c(-2.0, -0.5, 0.3, 1.4), sigma = c(0.4, 0.85, 1.6))
-    # CRAN reads eta and sigma at their two ends, every band; the dev loop reads
-    # the whole grid.
-    if (cran_fixture()) ax <- lapply(ax, range)
-    grid <- expand.grid(eta = ax$eta, sigma = ax$sigma,
-                        band = c("low", "mid", "high"))
-    bounds <- list(low = c(-1.5, -0.7), mid = c(-0.2, 0.6), high = c(0.9, 2.1))
-    for (r in seq_len(nrow(grid))) {
-        b   <- bounds[[as.character(grid$band[r])]]
-        eta <- grid$eta[r]; sg <- grid$sigma[r]
-        out <- tulpa:::cpp_interval_gaussian_terms(b[1], b[2], eta, sg)
-
-        expect_equal(out[["ll"]], .ig_ll_R(b[1], b[2], eta, sg), tolerance = 1e-10)
-
-        g_fd <- (.ig_ll_R(b[1], b[2], eta + h, sg) -
-                 .ig_ll_R(b[1], b[2], eta - h, sg)) / (2 * h)
-        expect_equal(out[["grad"]], g_fd, tolerance = 1e-5)
-
-        nh_fd <- -(.ig_ll_R(b[1], b[2], eta + h, sg) -
-                   2 * .ig_ll_R(b[1], b[2], eta, sg) +
-                   .ig_ll_R(b[1], b[2], eta - h, sg)) / h^2
-        expect_equal(out[["neg_hess"]], nh_fd, tolerance = 1e-3)
-        expect_gte(out[["neg_hess"]], 0)   # log-concave in eta
-    }
-})
-
-test_that("open outer classes (+/-Inf bounds) match a one-sided tail", {
-    skip_on_cran()
-    h <- 1e-5
-    for (eta in c(-1.0, 0.0, 1.2)) for (sg in c(0.5, 1.3)) {
-        # Lowest class: (-Inf, b] -> P = Phi((b - eta)/sigma).
-        b   <- 0.4
-        lo  <- tulpa:::cpp_interval_gaussian_terms(-Inf, b, eta, sg)
-        expect_equal(lo[["ll"]], stats::pnorm((b - eta) / sg, log.p = TRUE),
-                     tolerance = 1e-10)
-        g_fd <- (stats::pnorm((b - eta - h) / sg, log.p = TRUE) -
-                 stats::pnorm((b - eta + h) / sg, log.p = TRUE)) / (2 * h)
-        expect_equal(lo[["grad"]], g_fd, tolerance = 1e-5)
-        expect_gte(lo[["neg_hess"]], 0)
-
-        # Highest class: (a, +Inf) -> P = 1 - Phi((a - eta)/sigma).
-        a  <- -0.3
-        hi <- tulpa:::cpp_interval_gaussian_terms(a, Inf, eta, sg)
-        expect_equal(hi[["ll"]],
-                     stats::pnorm((a - eta) / sg, lower.tail = FALSE, log.p = TRUE),
-                     tolerance = 1e-10)
-        expect_gte(hi[["neg_hess"]], 0)
-    }
-
-    # Fully open (-Inf, +Inf) is the whole line: P = 1, flat in eta.
-    full <- tulpa:::cpp_interval_gaussian_terms(-Inf, Inf, 0.7, 0.9)
-    expect_equal(full[["ll"]], 0)
-    expect_equal(full[["grad"]], 0)
-})
-
 test_that("a finite bound far from eta stays finite (no Inf * 0 = NaN)", {
     # zl/zu overflow while the density underflows: the z * phi(z) product must
     # take its analytic 0 limit rather than NaN.
@@ -142,4 +84,64 @@ test_that("an empty interval is refused rather than floored", {
     out <- tulpa:::cpp_interval_gaussian_terms(1.0, 1.0, 0.0, 1.0)
     expect_equal(out[["ll"]], -Inf)
     expect_equal(out[["grad"]], 0)
+})
+
+skip_on_cran()
+
+test_that("analytic grad / neg_hess match central differences (finite interval)", {
+    skip_on_cran()
+    h <- 1e-5
+    ax <- list(eta = c(-2.0, -0.5, 0.3, 1.4), sigma = c(0.4, 0.85, 1.6))
+    # CRAN reads eta and sigma at their two ends, every band; the dev loop reads
+    # the whole grid.
+    if (cran_fixture()) ax <- lapply(ax, range)
+    grid <- expand.grid(eta = ax$eta, sigma = ax$sigma,
+                        band = c("low", "mid", "high"))
+    bounds <- list(low = c(-1.5, -0.7), mid = c(-0.2, 0.6), high = c(0.9, 2.1))
+    for (r in seq_len(nrow(grid))) {
+        b   <- bounds[[as.character(grid$band[r])]]
+        eta <- grid$eta[r]; sg <- grid$sigma[r]
+        out <- tulpa:::cpp_interval_gaussian_terms(b[1], b[2], eta, sg)
+
+        expect_equal(out[["ll"]], .ig_ll_R(b[1], b[2], eta, sg), tolerance = 1e-10)
+
+        g_fd <- (.ig_ll_R(b[1], b[2], eta + h, sg) -
+                 .ig_ll_R(b[1], b[2], eta - h, sg)) / (2 * h)
+        expect_equal(out[["grad"]], g_fd, tolerance = 1e-5)
+
+        nh_fd <- -(.ig_ll_R(b[1], b[2], eta + h, sg) -
+                   2 * .ig_ll_R(b[1], b[2], eta, sg) +
+                   .ig_ll_R(b[1], b[2], eta - h, sg)) / h^2
+        expect_equal(out[["neg_hess"]], nh_fd, tolerance = 1e-3)
+        expect_gte(out[["neg_hess"]], 0)   # log-concave in eta
+    }
+})
+
+test_that("open outer classes (+/-Inf bounds) match a one-sided tail", {
+    skip_on_cran()
+    h <- 1e-5
+    for (eta in c(-1.0, 0.0, 1.2)) for (sg in c(0.5, 1.3)) {
+        # Lowest class: (-Inf, b] -> P = Phi((b - eta)/sigma).
+        b   <- 0.4
+        lo  <- tulpa:::cpp_interval_gaussian_terms(-Inf, b, eta, sg)
+        expect_equal(lo[["ll"]], stats::pnorm((b - eta) / sg, log.p = TRUE),
+                     tolerance = 1e-10)
+        g_fd <- (stats::pnorm((b - eta - h) / sg, log.p = TRUE) -
+                 stats::pnorm((b - eta + h) / sg, log.p = TRUE)) / (2 * h)
+        expect_equal(lo[["grad"]], g_fd, tolerance = 1e-5)
+        expect_gte(lo[["neg_hess"]], 0)
+
+        # Highest class: (a, +Inf) -> P = 1 - Phi((a - eta)/sigma).
+        a  <- -0.3
+        hi <- tulpa:::cpp_interval_gaussian_terms(a, Inf, eta, sg)
+        expect_equal(hi[["ll"]],
+                     stats::pnorm((a - eta) / sg, lower.tail = FALSE, log.p = TRUE),
+                     tolerance = 1e-10)
+        expect_gte(hi[["neg_hess"]], 0)
+    }
+
+    # Fully open (-Inf, +Inf) is the whole line: P = 1, flat in eta.
+    full <- tulpa:::cpp_interval_gaussian_terms(-Inf, Inf, 0.7, 0.9)
+    expect_equal(full[["ll"]], 0)
+    expect_equal(full[["grad"]], 0)
 })

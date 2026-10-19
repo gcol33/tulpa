@@ -101,6 +101,26 @@ test_that("one projector builder over the observation -> field map", {
 })
 
 
+# Several observations per location, so the observation -> location incidence
+# is not the identity and a projector differs from the gather it replaces.
+.rsrc_nngp_data <- function(seed = 3L, n_loc = 40L, reps = 2L) {
+  set.seed(seed)
+  loc <- data.frame(lon = stats::runif(n_loc), lat = stats::runif(n_loc))
+  d <- loc[rep(seq_len(n_loc), each = reps), ]
+  rownames(d) <- NULL
+  d$x <- stats::rnorm(nrow(d))
+  d$count <- stats::rpois(nrow(d), exp(0.3 + 0.5 * d$x + 0.5 * sin(4 * d$lon)))
+  d
+}
+
+.rsrc_nngp_block <- function(d, nn = 6L) {
+  tulpa:::.spatial_spec_to_nl_prior(
+    tulpa:::validate_gp(spatial_gp(~ lon + lat, nn = nn), d))
+}
+
+skip_on_cran()
+
+
 test_that("a restricted continuous fit reports an orthogonal field", {
   skip_on_cran()
   sim <- .rsrc_sim(1L)
@@ -131,24 +151,6 @@ test_that("a backend without the projection refuses a restricted continuous fiel
           mode = "laplace"),
     "would fit it unprojected")
 })
-
-
-# Several observations per location, so the observation -> location incidence
-# is not the identity and a projector differs from the gather it replaces.
-.rsrc_nngp_data <- function(seed = 3L, n_loc = 40L, reps = 2L) {
-  set.seed(seed)
-  loc <- data.frame(lon = stats::runif(n_loc), lat = stats::runif(n_loc))
-  d <- loc[rep(seq_len(n_loc), each = reps), ]
-  rownames(d) <- NULL
-  d$x <- stats::rnorm(nrow(d))
-  d$count <- stats::rpois(nrow(d), exp(0.3 + 0.5 * d$x + 0.5 * sin(4 * d$lon)))
-  d
-}
-
-.rsrc_nngp_block <- function(d, nn = 6L) {
-  tulpa:::.spatial_spec_to_nl_prior(
-    tulpa:::validate_gp(spatial_gp(~ lon + lat, nn = nn), d))
-}
 
 
 test_that("an NNGP block read through its incidence fits the gathered model", {

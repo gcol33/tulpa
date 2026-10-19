@@ -29,6 +29,20 @@ make_vi_ar1_block <- function(n) {
   )
 }
 
+test_that("tulpa_tgmrf_vi rejects non-tgmrf block argument", {
+  expect_error(
+    tulpa_tgmrf(
+      y = 1:5, n_trials = rep(1L, 5L),
+      X = matrix(1, 5L, 1L),
+      block = list(),
+      family = "poisson", mode = "vi"
+    ),
+    "tgmrf"
+  )
+})
+
+skip_on_cran()
+
 test_that("tulpa_tgmrf_vi returns Gaussian draws with sensible moments", {
   skip_on_cran()
   set.seed(101)
@@ -88,16 +102,4 @@ test_that("VI mode and IMH posterior mean agree up to the structured-tier gap", 
   # bias.
   expect_lt(abs(fit_imh$means[1] - fit_vi$mode_theta[1]), 0.8)
   expect_lt(abs(fit_imh$means[2] - fit_vi$mode_theta[2]), 1.8)
-})
-
-test_that("tulpa_tgmrf_vi rejects non-tgmrf block argument", {
-  expect_error(
-    tulpa_tgmrf(
-      y = 1:5, n_trials = rep(1L, 5L),
-      X = matrix(1, 5L, 1L),
-      block = list(),
-      family = "poisson", mode = "vi"
-    ),
-    "tgmrf"
-  )
 })

@@ -32,6 +32,25 @@ test_that("the shared check refuses warmup >= n_iter where n_iter counts it", {
   expect_error(chk(0, 10, "f", counts = "post"), "n_iter >= 1")
 })
 
+test_that("the direct sampler fitters refuse it too", {
+  set.seed(1)
+  y <- stats::rbinom(100, 1, 0.5)
+  X <- cbind(1, stats::rnorm(100))
+  expect_error(tulpa_gibbs(y, rep(1L, 100), X, rep(1:10, 10), 10L,
+                           control = list(n_iter = 500, warmup = 500)),
+               "Need 0 <= warmup < n_iter")
+  # A bare n_iter below the 1000-iteration default warmup is the same mistake.
+  expect_error(tulpa_gibbs(y, rep(1L, 100), X, rep(1:10, 10), 10L,
+                           control = list(n_iter = 500)),
+               "Need 0 <= warmup < n_iter")
+  yb <- stats::rbeta(100, 2, 3)
+  expect_error(tulpa_nuts_beta(yb, X, control = list(n_iter = 200,
+                                                     n_warmup = 200, seed = 1)),
+               "Need 0 <= n_warmup < n_iter")
+})
+
+skip_on_cran()
+
 test_that("tulpa() refuses warmup >= n_iter on every total-count sampler", {
   skip_on_cran()
   d <- run_length_data()
@@ -62,21 +81,4 @@ test_that("tulpa() refuses warmup >= n_iter on every total-count sampler", {
                            sigma_re = 1,
                            control = list(n_iter = 300, warmup = 300))),
     "Need 0 <= warmup < n_iter")
-})
-
-test_that("the direct sampler fitters refuse it too", {
-  set.seed(1)
-  y <- stats::rbinom(100, 1, 0.5)
-  X <- cbind(1, stats::rnorm(100))
-  expect_error(tulpa_gibbs(y, rep(1L, 100), X, rep(1:10, 10), 10L,
-                           control = list(n_iter = 500, warmup = 500)),
-               "Need 0 <= warmup < n_iter")
-  # A bare n_iter below the 1000-iteration default warmup is the same mistake.
-  expect_error(tulpa_gibbs(y, rep(1L, 100), X, rep(1:10, 10), 10L,
-                           control = list(n_iter = 500)),
-               "Need 0 <= warmup < n_iter")
-  yb <- stats::rbeta(100, 2, 3)
-  expect_error(tulpa_nuts_beta(yb, X, control = list(n_iter = 200,
-                                                     n_warmup = 200, seed = 1)),
-               "Need 0 <= n_warmup < n_iter")
 })

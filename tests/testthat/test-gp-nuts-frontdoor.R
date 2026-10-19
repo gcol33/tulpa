@@ -28,6 +28,8 @@ test_that("gp/nngp exact NUTS allocates the field columns (structural)", {
   expect_equal(ncol(fit$draws), 4L + spv$n_unique)
 })
 
+skip_on_cran()
+
 test_that("gp/nngp exact NUTS recovers the latent field and matches Laplace", {
   skip_if_not_slow()
   sim <- make_gp_pois(n = 80L)

@@ -47,6 +47,24 @@ test_that("phi2 is rejected for families without a second dispersion", {
     "phi2")
 })
 
+test_that("lognormal is registered with the variance convention", {
+  set.seed(85)
+  eta <- c(0.2, 1.0); y <- c(1.5, 4.0); v <- 0.36
+
+  expect_equal(tulpa:::family_loglik(eta, y, "lognormal", phi = v),
+               stats::dlnorm(y, meanlog = eta, sdlog = sqrt(v), log = TRUE),
+               tolerance = 1e-12)
+  expect_equal(tulpa:::family_mean(eta, "lognormal", phi = v),
+               exp(eta + v / 2))
+  # Sample moments.
+  ys <- tulpa:::family_sample(rep(0.5, 40000), "lognormal", phi = 0.25)
+  expect_equal(mean(ys), exp(0.5 + 0.125), tolerance = 0.03)
+  expect_equal(stats::var(ys),
+               (exp(0.25) - 1) * exp(1 + 0.25), tolerance = 0.1)
+})
+
+skip_on_cran()
+
 test_that("Laplace t fit with phi2 matches an optim reference and differs from df 4", {
   skip_on_cran()
   set.seed(81)
@@ -102,22 +120,6 @@ test_that("gaussian phi means the residual variance on every backend", {
                                n_chains = 2L, seed = 1L))
   expect_equal(unname(apply(.fixed_draws_mat(fit3), 2, sd)), sd_ref,
                tolerance = 0.15)
-})
-
-test_that("lognormal is registered with the variance convention", {
-  set.seed(85)
-  eta <- c(0.2, 1.0); y <- c(1.5, 4.0); v <- 0.36
-
-  expect_equal(tulpa:::family_loglik(eta, y, "lognormal", phi = v),
-               stats::dlnorm(y, meanlog = eta, sdlog = sqrt(v), log = TRUE),
-               tolerance = 1e-12)
-  expect_equal(tulpa:::family_mean(eta, "lognormal", phi = v),
-               exp(eta + v / 2))
-  # Sample moments.
-  ys <- tulpa:::family_sample(rep(0.5, 40000), "lognormal", phi = 0.25)
-  expect_equal(mean(ys), exp(0.5 + 0.125), tolerance = 0.03)
-  expect_equal(stats::var(ys),
-               (exp(0.25) - 1) * exp(1 + 0.25), tolerance = 0.1)
 })
 
 test_that("lognormal fits through the front door", {

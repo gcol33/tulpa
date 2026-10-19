@@ -30,6 +30,30 @@ grid_eta <- c(-1, 0, 1.5)
 grid_phi <- c(0.5, 2, 8)
 
 
+test_that("the added count families put no mass on y = 0 when truncated", {
+  for (fam in c("truncated_poisson", "truncated_neg_binomial_2")) {
+    expect_true(all(is.infinite(family_loglik(grid_eta, 0, fam, phi = 2)) &
+                      family_loglik(grid_eta, 0, fam, phi = 2) < 0))
+  }
+})
+
+
+test_that("zero-truncated families reject a zero response", {
+  for (fam in c("truncated_poisson", "truncated_neg_binomial_2")) {
+    expect_error(.validate_family_counts(fam, c(0, 1, 2)), "zero-truncated")
+    expect_silent(.validate_family_counts(fam, c(1, 2, 3)))
+    # ...unless a zero component is being fitted alongside, which is the
+    # hurdle model: there the zeros belong to that component, not to the
+    # truncated density.
+    expect_silent(.validate_family_counts(fam, c(0, 1, 2), zi = TRUE))
+  }
+  # The untruncated sibling still admits zeros.
+  expect_silent(.validate_family_counts("neg_binomial_1", c(0, 1, 2)))
+})
+
+skip_on_cran()
+
+
 test_that("the added count families are normalized over their support", {
   skip_on_cran()
   for (eta in grid_eta) {
@@ -41,14 +65,6 @@ test_that("the added count families are normalized over their support", {
     }
     expect_equal(support_sum("truncated_poisson", eta, 1, 1), 1,
                  tolerance = 1e-9)
-  }
-})
-
-
-test_that("the added count families put no mass on y = 0 when truncated", {
-  for (fam in c("truncated_poisson", "truncated_neg_binomial_2")) {
-    expect_true(all(is.infinite(family_loglik(grid_eta, 0, fam, phi = 2)) &
-                      family_loglik(grid_eta, 0, fam, phi = 2) < 0))
   }
 })
 
@@ -146,18 +162,4 @@ test_that("samplers of the added count families respect support and moments", {
     expect_equal(mean(draws), ref$mean, tolerance = 0.02)
     expect_equal(stats::var(draws), ref$var, tolerance = 0.05)
   }
-})
-
-
-test_that("zero-truncated families reject a zero response", {
-  for (fam in c("truncated_poisson", "truncated_neg_binomial_2")) {
-    expect_error(.validate_family_counts(fam, c(0, 1, 2)), "zero-truncated")
-    expect_silent(.validate_family_counts(fam, c(1, 2, 3)))
-    # ...unless a zero component is being fitted alongside, which is the
-    # hurdle model: there the zeros belong to that component, not to the
-    # truncated density.
-    expect_silent(.validate_family_counts(fam, c(0, 1, 2), zi = TRUE))
-  }
-  # The untruncated sibling still admits zeros.
-  expect_silent(.validate_family_counts("neg_binomial_1", c(0, 1, 2)))
 })

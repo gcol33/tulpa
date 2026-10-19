@@ -1,3 +1,10 @@
+
+test_that(".poly_from_roots builds prod(x - r) in ascending powers", {
+  # (x - 1)(x + 2) = x^2 + x - 2  ->  c(-2, 1, 1)
+  expect_equal(tulpa:::.poly_from_roots(c(1, -2)), c(-2, 1, 1))
+})
+
+skip_on_cran()
 # BRASIL best-rational-approximation engine (Hofreither 2021), the coefficient
 # source for the fractional-SPDE rational approximation (gcol33/tulpa#71).
 # These exercise the algorithm directly; it is not yet wired into any fitter.
@@ -48,9 +55,4 @@ test_that("BRASIL zeros and poles are real, negative, and reconstruct the ration
   xs <- seq(iv[1], iv[2], length.out = 2000)
   rpz <- vapply(xs, function(x) scale * prod(x - z) / prod(x - p), numeric(1))
   expect_lt(max(abs(rpz - tulpa:::.bary_eval(res$br, xs))), 1e-8)
-})
-
-test_that(".poly_from_roots builds prod(x - r) in ascending powers", {
-  # (x - 1)(x + 2) = x^2 + x - 2  ->  c(-2, 1, 1)
-  expect_equal(tulpa:::.poly_from_roots(c(1, -2)), c(-2, 1, 1))
 })

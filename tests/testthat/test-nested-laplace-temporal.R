@@ -16,6 +16,67 @@ simulate_temporal_binomial <- function(T = 30L, n_per_t = 5L,
        time = as.integer(time), T = T, u_true = u)
 }
 
+test_that("AR1 keeps a lone supplied axis and refuses a bad or unpaired rho_grid (#884)", {
+  d <- simulate_temporal_binomial(T = 20L, n_per_t = 3L)
+  base <- list(type = "ar1", temporal_idx = d$time, n_times = d$T)
+  # Refused before any fit: an out-of-range correlation, and paired axes of
+  # unequal length (recycled with a warning before the kernel refused them).
+  expect_error(tulpa_nested_laplace(d$y, d$n_trials, d$X,
+                                    prior = c(base, list(rho_grid = c(0.5, 1.2))),
+                                    family = "binomial"),
+               "`rho_grid\\[2\\]` is 1.2; an AR1 correlation must lie strictly inside \\(-1, 1\\)")
+  expect_error(tulpa_nested_laplace(d$y, d$n_trials, d$X,
+                                    prior = c(base, list(tau_grid = c(1, 2, 4),
+                                                         rho_grid = c(0.5, 0.7))),
+                                    family = "binomial"),
+               "PAIRED outer-grid cells")
+
+  skip_on_cran()
+  res <- tulpa_nested_laplace(d$y, d$n_trials, d$X,
+                              prior = c(base, list(tau_grid = c(1, 2, 4, 8))),
+                              family = "binomial")
+  expect_equal(sort(unique(res$theta_grid[, "tau"])), c(1, 2, 4, 8))
+  expect_equal(nrow(res$theta_grid),
+               4L * length(tulpa:::.nl_grid_axis("ar1_rho")))
+})
+
+test_that("nested_laplace rejects spec + prior together", {
+  d <- simulate_temporal_binomial(T = 10L, n_per_t = 2L)
+  expect_error(
+    tulpa_nested_laplace(
+      d$y, d$n_trials, d$X,
+      spec = temporal_rw1("year"),
+      prior = list(type = "rw1", temporal_idx = d$time, n_times = d$T),
+      data = data.frame(year = d$time)
+    ),
+    "Pass either"
+  )
+})
+
+# =====================================================================
+# Intercept recovery (regression guard for the RW1/RW2 level-deletion bug)
+# =====================================================================
+# The intrinsic RW1/RW2 field has an unpenalized constant null space. If the
+# post-Newton centering discards the field mean instead of folding it into the
+# intercept, the whole level is deleted from the linear predictor and the
+# reported intercept collapses to ~0. This recovers the true intercept, so it
+# would have caught that bug (which the moments-only tests above did not).
+
+recover_intercept <- function(tspec, beta0, seed) {
+  set.seed(seed)
+  Tt <- 30L; reps <- 6L
+  f <- cumsum(rnorm(Tt, 0, 0.25)); f <- f - mean(f)
+  year <- rep(seq_len(Tt), each = reps)
+  y <- rpois(length(year), exp(beta0 + f[year]))
+  df <- data.frame(year = year, y = y)
+  fit <- tulpa(y ~ 1, data = df, family = "poisson",
+               temporal = tspec, mode = "laplace")
+  co <- coef(fit)
+  unname(co[grep("Interc|\\(Int", names(co))][1] %||% co[1])
+}
+
+skip_on_cran()
+
 # =====================================================================
 # RW1
 # =====================================================================
@@ -117,30 +178,6 @@ test_that("nested_laplace AR1 recovers high autocorrelation in the simulation", 
   expect_gt(res$theta_mean[["rho"]], 0.5)
 })
 
-test_that("AR1 keeps a lone supplied axis and refuses a bad or unpaired rho_grid (#884)", {
-  d <- simulate_temporal_binomial(T = 20L, n_per_t = 3L)
-  base <- list(type = "ar1", temporal_idx = d$time, n_times = d$T)
-  # Refused before any fit: an out-of-range correlation, and paired axes of
-  # unequal length (recycled with a warning before the kernel refused them).
-  expect_error(tulpa_nested_laplace(d$y, d$n_trials, d$X,
-                                    prior = c(base, list(rho_grid = c(0.5, 1.2))),
-                                    family = "binomial"),
-               "`rho_grid\\[2\\]` is 1.2; an AR1 correlation must lie strictly inside \\(-1, 1\\)")
-  expect_error(tulpa_nested_laplace(d$y, d$n_trials, d$X,
-                                    prior = c(base, list(tau_grid = c(1, 2, 4),
-                                                         rho_grid = c(0.5, 0.7))),
-                                    family = "binomial"),
-               "PAIRED outer-grid cells")
-
-  skip_on_cran()
-  res <- tulpa_nested_laplace(d$y, d$n_trials, d$X,
-                              prior = c(base, list(tau_grid = c(1, 2, 4, 8))),
-                              family = "binomial")
-  expect_equal(sort(unique(res$theta_grid[, "tau"])), c(1, 2, 4, 8))
-  expect_equal(nrow(res$theta_grid),
-               4L * length(tulpa:::.nl_grid_axis("ar1_rho")))
-})
-
 test_that("nested_laplace accepts tulpa_temporal spec via spec= + data=", {
   skip_on_cran()
   d <- simulate_temporal_binomial(T = 25L, ar1_rho = 0.7)
@@ -168,19 +205,6 @@ test_that("nested_laplace accepts tulpa_temporal spec via spec= + data=", {
                tolerance = 1e-10)
 })
 
-test_that("nested_laplace rejects spec + prior together", {
-  d <- simulate_temporal_binomial(T = 10L, n_per_t = 2L)
-  expect_error(
-    tulpa_nested_laplace(
-      d$y, d$n_trials, d$X,
-      spec = temporal_rw1("year"),
-      prior = list(type = "rw1", temporal_idx = d$time, n_times = d$T),
-      data = data.frame(year = d$time)
-    ),
-    "Pass either"
-  )
-})
-
 test_that("nested_laplace AR1 fills default grid when missing", {
   skip_on_cran()
   d <- simulate_temporal_binomial(T = 20L, n_per_t = 4L)
@@ -193,28 +217,6 @@ test_that("nested_laplace AR1 fills default grid when missing", {
   expect_cells_solved(res)
   expect_true(length(res$log_marginal) > 5L)
 })
-
-# =====================================================================
-# Intercept recovery (regression guard for the RW1/RW2 level-deletion bug)
-# =====================================================================
-# The intrinsic RW1/RW2 field has an unpenalized constant null space. If the
-# post-Newton centering discards the field mean instead of folding it into the
-# intercept, the whole level is deleted from the linear predictor and the
-# reported intercept collapses to ~0. This recovers the true intercept, so it
-# would have caught that bug (which the moments-only tests above did not).
-
-recover_intercept <- function(tspec, beta0, seed) {
-  set.seed(seed)
-  Tt <- 30L; reps <- 6L
-  f <- cumsum(rnorm(Tt, 0, 0.25)); f <- f - mean(f)
-  year <- rep(seq_len(Tt), each = reps)
-  y <- rpois(length(year), exp(beta0 + f[year]))
-  df <- data.frame(year = year, y = y)
-  fit <- tulpa(y ~ 1, data = df, family = "poisson",
-               temporal = tspec, mode = "laplace")
-  co <- coef(fit)
-  unname(co[grep("Interc|\\(Int", names(co))][1] %||% co[1])
-}
 
 test_that("RW1 temporal Laplace recovers the intercept (level not deleted)", {
   skip_on_cran()

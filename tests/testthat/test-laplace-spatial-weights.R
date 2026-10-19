@@ -95,6 +95,18 @@
 }
 
 
+test_that("a spatial fit rejects a weights vector of the wrong length", {
+  a <- .areal_fixture(702L, N = 60L)
+  expect_error(
+    tulpa_laplace(a$y, a$ntr, a$X, family = "binomial", spatial = a$spatial,
+                  weights = rep(1, a$N - 1L)),
+    regexp = "length"
+  )
+})
+
+skip_on_cran()
+
+
 test_that("an all-ones weight vector is exactly a no-op on every spatial kernel", {
   skip_on_cran()
   # This is the gate that protects every existing spatial fit: nothing may move
@@ -239,14 +251,4 @@ test_that("the spatial mode and its H_beta describe the same weighted model", {
 
   expect_lt(max(abs(fit$H_beta - schur)) / max(abs(schur)), 1e-6)
   expect_lt(max(abs(ref$score(fit$mode))), 1e-4)
-})
-
-
-test_that("a spatial fit rejects a weights vector of the wrong length", {
-  a <- .areal_fixture(702L, N = 60L)
-  expect_error(
-    tulpa_laplace(a$y, a$ntr, a$X, family = "binomial", spatial = a$spatial,
-                  weights = rep(1, a$N - 1L)),
-    regexp = "length"
-  )
 })

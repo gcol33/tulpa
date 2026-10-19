@@ -1,3 +1,23 @@
+
+test_that("SPDE spec declines with a fit_spde() redirect", {
+  sp <- list(type = "spde")
+  class(sp) <- c("tulpa_spatial", "list")
+  expect_error(
+    tulpa_nested_laplace(y = rbinom(5, 1, 0.5), n_trials = rep(1L, 5),
+                         X = matrix(1, 5, 1), spec = sp,
+                         data = data.frame(i = 1:5), family = "binomial"),
+    "fit_spde"
+  )
+})
+
+test_that("unknown spatial type errors clearly", {
+  sp <- list(type = "wobble", adjacency = diag(3))
+  class(sp) <- c("tulpa_spatial", "list")
+  expect_error(.prior_from_spatial_spec(sp, data.frame(i = 1:3)),
+               "Unknown spatial type")
+})
+
+skip_on_cran()
 # tulpa_nested_laplace(spec = ) front door: a single tulpa_spatial / tulpa_gp /
 # tulpa_hsgp spec routes to the matching nested kernel through the shared
 # spec -> prior converter (.spatial_spec_to_nl_prior). Areal was already
@@ -51,22 +71,4 @@ test_that("continuous hsgp spec routes through tulpa_nested_laplace()", {
   expect_s3_class(fit, "tulpa_nested_laplace")
   expect_setequal(names(fit$theta_mean), c("sigma2", "lengthscale"))
   expect_true(all(is.finite(fit$theta_mean)))
-})
-
-test_that("SPDE spec declines with a fit_spde() redirect", {
-  sp <- list(type = "spde")
-  class(sp) <- c("tulpa_spatial", "list")
-  expect_error(
-    tulpa_nested_laplace(y = rbinom(5, 1, 0.5), n_trials = rep(1L, 5),
-                         X = matrix(1, 5, 1), spec = sp,
-                         data = data.frame(i = 1:5), family = "binomial"),
-    "fit_spde"
-  )
-})
-
-test_that("unknown spatial type errors clearly", {
-  sp <- list(type = "wobble", adjacency = diag(3))
-  class(sp) <- c("tulpa_spatial", "list")
-  expect_error(.prior_from_spatial_spec(sp, data.frame(i = 1:3)),
-               "Unknown spatial type")
 })

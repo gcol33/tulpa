@@ -29,6 +29,8 @@ test_that("family_variance matches the family's known response variance", {
   expect_equal(tulpa:::family_response_mean(eta, "poisson"), mu)
 })
 
+skip_on_cran()
+
 test_that("bayes_R2 recovers the population R^2 of a gaussian regression", {
   skip_on_cran()
   set.seed(31)

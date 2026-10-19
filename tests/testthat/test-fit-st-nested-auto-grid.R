@@ -32,6 +32,41 @@
     v - mean(v)
 }
 
+# One railed fixture, reused by every provenance case below.
+.st_railed_fixture <- function() {
+    set.seed(7)
+    n_s <- 14L; n_t <- 8L; n_per <- 60L
+    adj <- .chain_adj_st(n_s)
+    spatial_idx <- rep(seq_len(n_s), each = n_per)
+    tidx <- sample(n_t, length(spatial_idx), TRUE)
+    us <- .rw1_path_st(n_s, tau = 60)
+    vt <- .rw1_path_st(n_t, tau = 2)
+    x  <- rnorm(length(spatial_idx), 0, 0.3)
+    eta <- 0.1 + 0.3 * x + us[spatial_idx] + vt[tidx]
+    list(y = rbinom(length(eta), 1, plogis(eta)), X = cbind(1, x),
+         spatial_idx = spatial_idx, adj = adj, tidx = tidx, n_t = n_t)
+}
+
+.st_fit_railed <- function(control = list()) {
+    f <- .st_railed_fixture()
+    fit_st_nested(f$y, f$X, f$spatial_idx, f$adj, f$tidx, f$n_t,
+                  family = "binomial", temporal_type = "rw1", control = control)
+}
+
+test_that(".st_pinned_axes reads value, mark and axis mapping", {
+    pinned <- tulpa:::.st_pinned_axes
+    # No knobs, engine defaults, and marked knobs are all defaults.
+    expect_identical(pinned(list()), character(0))
+    expect_identical(pinned(list(tau_lower = 0.25, n_grid_rho = 3L)), character(0))
+    expect_identical(pinned(list(n_grid_spatial = auto_grid(9L))), character(0))
+    # The shared precision bounds pin BOTH precision axes; the rho knobs only rho.
+    expect_setequal(pinned(list(tau_upper = 40)), c("tau_spatial", "tau_temporal"))
+    expect_identical(pinned(list(rho_lower = -0.5)), "rho")
+    expect_identical(pinned(list(n_grid_spatial = 7L)), "tau_spatial")
+})
+
+skip_on_cran()
+
 test_that("a true tau_spatial above the default ceiling (16) recenters the grid", {
     skip_on_cran()
     set.seed(7)
@@ -82,27 +117,6 @@ test_that("a true tau_temporal below the default floor (0.25) recenters the grid
     expect_gt(max(fit$theta_grid[, "tau_temporal"]), 0.03)
     expect_cells_solved(fit)
 })
-
-# One railed fixture, reused by every provenance case below.
-.st_railed_fixture <- function() {
-    set.seed(7)
-    n_s <- 14L; n_t <- 8L; n_per <- 60L
-    adj <- .chain_adj_st(n_s)
-    spatial_idx <- rep(seq_len(n_s), each = n_per)
-    tidx <- sample(n_t, length(spatial_idx), TRUE)
-    us <- .rw1_path_st(n_s, tau = 60)
-    vt <- .rw1_path_st(n_t, tau = 2)
-    x  <- rnorm(length(spatial_idx), 0, 0.3)
-    eta <- 0.1 + 0.3 * x + us[spatial_idx] + vt[tidx]
-    list(y = rbinom(length(eta), 1, plogis(eta)), X = cbind(1, x),
-         spatial_idx = spatial_idx, adj = adj, tidx = tidx, n_t = n_t)
-}
-
-.st_fit_railed <- function(control = list()) {
-    f <- .st_railed_fixture()
-    fit_st_nested(f$y, f$X, f$spatial_idx, f$adj, f$tidx, f$n_t,
-                  family = "binomial", temporal_type = "rw1", control = control)
-}
 
 test_that("a genuinely non-default tau bound pins BOTH precision axes and stays fixed", {
     skip_on_cran()
@@ -165,18 +179,6 @@ test_that("a pin is PER AXIS: pinning rho leaves both precision axes free", {
                  seq(0.2, 0.9, length.out = 3L))
     # ... while the free precision axes are recentred past the retired ceiling.
     expect_gt(max(fit$theta_grid[, "tau_spatial"]), 16)
-})
-
-test_that(".st_pinned_axes reads value, mark and axis mapping", {
-    pinned <- tulpa:::.st_pinned_axes
-    # No knobs, engine defaults, and marked knobs are all defaults.
-    expect_identical(pinned(list()), character(0))
-    expect_identical(pinned(list(tau_lower = 0.25, n_grid_rho = 3L)), character(0))
-    expect_identical(pinned(list(n_grid_spatial = auto_grid(9L))), character(0))
-    # The shared precision bounds pin BOTH precision axes; the rho knobs only rho.
-    expect_setequal(pinned(list(tau_upper = 40)), c("tau_spatial", "tau_temporal"))
-    expect_identical(pinned(list(rho_lower = -0.5)), "rho")
-    expect_identical(pinned(list(n_grid_spatial = 7L)), "tau_spatial")
 })
 
 test_that("a well-identified fit (mode inside the default span) is byte-stable across repeated calls", {

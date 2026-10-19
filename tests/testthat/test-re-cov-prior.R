@@ -151,6 +151,8 @@ test_that("the joint multi-block prior sums independent per-block priors", {
                tolerance = 1e-12)
 })
 
+skip_on_cran()
+
 
 test_that("supplied prior_sigma / eta change the integrated posterior under hyperprior = 'proper'", {
   skip_on_cran()

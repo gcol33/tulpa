@@ -61,6 +61,32 @@ test_that("the sparse-detection fixture reaches the indefinite-start regime", {
 })
 
 
+test_that("the convergence predicates read the cells the weights put mass on", {
+    ok <- tulpa:::.nested_converged_cells(
+        list(converged = c(TRUE, FALSE, NA)), 3L)
+    expect_identical(ok, c(TRUE, FALSE, FALSE))
+
+    # No flag at all is a backend that does not report one, not a stalled solve.
+    expect_identical(tulpa:::.nested_converged_cells(list(), 2L),
+                     c(TRUE, TRUE))
+    expect_true(tulpa:::.nested_any_weighted_converged(list()))
+
+    # A converged cell carrying no weight does not rescue the fit.
+    expect_false(tulpa:::.nested_any_weighted_converged(
+        list(converged = c(TRUE, FALSE), weights = c(0, 1))))
+    expect_true(tulpa:::.nested_any_weighted_converged(
+        list(converged = c(TRUE, FALSE), weights = c(1, 0))))
+
+    # Weights that name no cell leave every cell readable rather than none.
+    expect_true(tulpa:::.nested_any_weighted_converged(
+        list(converged = c(TRUE, FALSE), weights = c(NA, NA))))
+    expect_false(tulpa:::.nested_any_weighted_converged(
+        list(converged = c(FALSE, FALSE), weights = c(NA, NA))))
+})
+
+skip_on_cran()
+
+
 test_that("the coupled joint Newton steps from an indefinite start Hessian", {
     skip_on_cran()
     coupled_occ_register()
@@ -194,28 +220,4 @@ test_that("a non-converged fit reports no coefficient read off its start vector"
     ci <- confint(f)
     expect_true(all(is.na(ci)))
     expect_identical(attr(ci, "interval_declined"), "not_converged")
-})
-
-
-test_that("the convergence predicates read the cells the weights put mass on", {
-    ok <- tulpa:::.nested_converged_cells(
-        list(converged = c(TRUE, FALSE, NA)), 3L)
-    expect_identical(ok, c(TRUE, FALSE, FALSE))
-
-    # No flag at all is a backend that does not report one, not a stalled solve.
-    expect_identical(tulpa:::.nested_converged_cells(list(), 2L),
-                     c(TRUE, TRUE))
-    expect_true(tulpa:::.nested_any_weighted_converged(list()))
-
-    # A converged cell carrying no weight does not rescue the fit.
-    expect_false(tulpa:::.nested_any_weighted_converged(
-        list(converged = c(TRUE, FALSE), weights = c(0, 1))))
-    expect_true(tulpa:::.nested_any_weighted_converged(
-        list(converged = c(TRUE, FALSE), weights = c(1, 0))))
-
-    # Weights that name no cell leave every cell readable rather than none.
-    expect_true(tulpa:::.nested_any_weighted_converged(
-        list(converged = c(TRUE, FALSE), weights = c(NA, NA))))
-    expect_false(tulpa:::.nested_any_weighted_converged(
-        list(converged = c(FALSE, FALSE), weights = c(NA, NA))))
 })

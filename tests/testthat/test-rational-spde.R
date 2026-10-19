@@ -10,26 +10,6 @@ test_that("rational_spde_coefficients returns integer flag for integer nu", {
   expect_true(rat2$is_integer)
 })
 
-test_that("rational_spde_coefficients returns BRASIL roots for fractional nu", {
-  skip_on_cran()
-  # gcol33/tulpa#71: the documented method. Fractional nu returns the rSPDE
-  # rational roots from the BRASIL best-rational approximation, not the old
-  # self-derived two-pole approximation.
-  rat <- rational_spde_coefficients(0.5, m = 4L)
-  expect_false(rat$is_integer)
-  expect_length(rat$rb, 4L)            # m denominator factors (-> Pl)
-  expect_length(rat$rc, 4L)            # m numerator factors   (-> Pr)
-  expect_true(all(is.finite(rat$rb)) && all(is.finite(rat$rc)))
-  expect_true(is.finite(rat$scale))
-  expect_equal(rat$alpha, 1.5)         # nu + 1 in 2D
-  expect_equal(rat$beta, 0.75)
-
-  # Higher order lowers the rational approximation error of the spectral density.
-  e3 <- rational_spde_coefficients(0.5, m = 3L)$error
-  e5 <- rational_spde_coefficients(0.5, m = 5L)$error
-  expect_lt(e5, e3)
-})
-
 test_that("spatial_spde accepts fractional nu (gcol33/tulpa#71)", {
   coords <- cbind(runif(20), runif(20))
   expect_s3_class(spatial_spde(coords, nu = 0.5), "tulpa_spatial")
@@ -49,6 +29,45 @@ test_that("nu = 0 is rejected at construction (gcol33/tulpa#281)", {
     C = Matrix::Diagonal(3), G = Matrix::Diagonal(3),
     A = Matrix::Diagonal(3), nu = 0), "degenerate at nu = 0")
   expect_error(rational_spde_coefficients(0), "degenerate at nu = 0")
+})
+
+# Helper: a 1D circulant FEM wrapped as a custom SPDE spec, where the operator
+# spectrum is known and dense checks are cheap.
+.frac_1d_spec <- function(n = 150L, nu = 0.5, order = 2L,
+                          range_true = 0.15, sigma_true = 1.0) {
+  h <- 1 / n
+  Cd <- Matrix::Diagonal(n, rep(h, n))
+  G <- Matrix::bandSparse(n, n, c(-1, 0, 1),
+                          list(rep(-1 / h, n - 1), rep(2 / h, n), rep(-1 / h, n - 1)))
+  G <- as(G, "CsparseMatrix"); G[1, n] <- -1 / h; G[n, 1] <- -1 / h
+  A <- as(Matrix::Diagonal(n), "CsparseMatrix")
+  spec <- spatial_spde_custom(C = Cd, G = G, A = A, nu = nu,
+                              prior_range = c(range_true, 0.5),
+                              prior_sigma = c(sigma_true, 0.5))
+  spec$rational_order <- order
+  spec
+}
+
+skip_on_cran()
+
+test_that("rational_spde_coefficients returns BRASIL roots for fractional nu", {
+  skip_on_cran()
+  # gcol33/tulpa#71: the documented method. Fractional nu returns the rSPDE
+  # rational roots from the BRASIL best-rational approximation, not the old
+  # self-derived two-pole approximation.
+  rat <- rational_spde_coefficients(0.5, m = 4L)
+  expect_false(rat$is_integer)
+  expect_length(rat$rb, 4L)            # m denominator factors (-> Pl)
+  expect_length(rat$rc, 4L)            # m numerator factors   (-> Pr)
+  expect_true(all(is.finite(rat$rb)) && all(is.finite(rat$rc)))
+  expect_true(is.finite(rat$scale))
+  expect_equal(rat$alpha, 1.5)         # nu + 1 in 2D
+  expect_equal(rat$beta, 0.75)
+
+  # Higher order lowers the rational approximation error of the spectral density.
+  e3 <- rational_spde_coefficients(0.5, m = 3L)$error
+  e5 <- rational_spde_coefficients(0.5, m = 5L)$error
+  expect_lt(e5, e3)
 })
 
 test_that("fit_spde with nu = 1 over the nu = 0 fixture fits (gcol33/tulpa#281)", {
@@ -78,23 +97,6 @@ test_that("fit_spde works with nu = 1 (alpha = 2, standard)", {
   expect_true(result$converged)
   expect_true(is.finite(result$log_marginal))
 })
-
-# Helper: a 1D circulant FEM wrapped as a custom SPDE spec, where the operator
-# spectrum is known and dense checks are cheap.
-.frac_1d_spec <- function(n = 150L, nu = 0.5, order = 2L,
-                          range_true = 0.15, sigma_true = 1.0) {
-  h <- 1 / n
-  Cd <- Matrix::Diagonal(n, rep(h, n))
-  G <- Matrix::bandSparse(n, n, c(-1, 0, 1),
-                          list(rep(-1 / h, n - 1), rep(2 / h, n), rep(-1 / h, n - 1)))
-  G <- as(G, "CsparseMatrix"); G[1, n] <- -1 / h; G[n, 1] <- -1 / h
-  A <- as(Matrix::Diagonal(n), "CsparseMatrix")
-  spec <- spatial_spde_custom(C = Cd, G = G, A = A, nu = nu,
-                              prior_range = c(range_true, 0.5),
-                              prior_sigma = c(sigma_true, 0.5))
-  spec$rational_order <- order
-  spec
-}
 
 test_that("fractional single-point Laplace recovers the field", {
   skip_on_cran()

@@ -46,6 +46,35 @@ plain_fixture <- function(n = 40L, seed = 2L) {
 }
 
 
+test_that("a grouped TVC field is refused rather than collapsed to group 1", {
+  # `tulpa_tvc_posterior` has no group axis, and the flat layout is
+  # group-major, so reshaping a grouped field into it would report the first
+  # group as the whole field.
+  info <- structure(
+    list(type = "tvc", group_var = "site", n_groups = 3L, n_times = 4L,
+         n_tvc = 1L, tvc_names = "x", time_levels = as.character(1:4),
+         structure = "rw1"),
+    class = c("tulpa_tvc", "tulpa_temporal", "list")
+  )
+  draws <- matrix(0, nrow = 5L, ncol = 12L,
+                  dimnames = list(NULL, paste0("tvc_w[", 1:12, "]")))
+  fake <- structure(list(temporal = info, draws = draws), class = "tulpa_fit")
+  expect_error(tvc(fake), "no group dimension")
+})
+
+
+test_that(".draws_by_prefix orders by index, not by column position", {
+  m <- matrix(seq_len(3L * 4L), nrow = 3L,
+              dimnames = list(NULL, c("w[10]", "w[2]", "w[1]", "other")))
+  got <- tulpa:::.draws_by_prefix(m, "w")
+  expect_identical(colnames(got), c("w[1]", "w[2]", "w[10]"))
+  expect_null(tulpa:::.draws_by_prefix(m, "nope"))
+  expect_null(tulpa:::.draws_by_prefix(NULL, "w"))
+})
+
+skip_on_cran()
+
+
 test_that("tulpa() attaches the validated temporal spec to the fit (#608)", {
   skip_on_cran()
   fit <- tvc_fixture()
@@ -228,31 +257,4 @@ test_that("the accessors refuse a fit that carries no such field", {
   # A TVC spec occupies the same `temporal =` slot a field would, so temporal()
   # now reaches it. It names tvc() rather than failing on the absent field.
   expect_error(temporal(tvc_fixture()), "Use tvc\\(\\) to read them")
-})
-
-
-test_that("a grouped TVC field is refused rather than collapsed to group 1", {
-  # `tulpa_tvc_posterior` has no group axis, and the flat layout is
-  # group-major, so reshaping a grouped field into it would report the first
-  # group as the whole field.
-  info <- structure(
-    list(type = "tvc", group_var = "site", n_groups = 3L, n_times = 4L,
-         n_tvc = 1L, tvc_names = "x", time_levels = as.character(1:4),
-         structure = "rw1"),
-    class = c("tulpa_tvc", "tulpa_temporal", "list")
-  )
-  draws <- matrix(0, nrow = 5L, ncol = 12L,
-                  dimnames = list(NULL, paste0("tvc_w[", 1:12, "]")))
-  fake <- structure(list(temporal = info, draws = draws), class = "tulpa_fit")
-  expect_error(tvc(fake), "no group dimension")
-})
-
-
-test_that(".draws_by_prefix orders by index, not by column position", {
-  m <- matrix(seq_len(3L * 4L), nrow = 3L,
-              dimnames = list(NULL, c("w[10]", "w[2]", "w[1]", "other")))
-  got <- tulpa:::.draws_by_prefix(m, "w")
-  expect_identical(colnames(got), c("w[1]", "w[2]", "w[10]"))
-  expect_null(tulpa:::.draws_by_prefix(m, "nope"))
-  expect_null(tulpa:::.draws_by_prefix(NULL, "w"))
 })

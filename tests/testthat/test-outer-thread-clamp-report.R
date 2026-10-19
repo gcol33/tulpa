@@ -107,6 +107,8 @@ test_that("the grid driver stamps the width it ran at", {
                         fixed = TRUE)))
 })
 
+skip_on_cran()
+
 test_that("a joint fit records the outer width it ran at", {
   skip_on_cran()
   set.seed(651L)

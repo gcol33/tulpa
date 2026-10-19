@@ -113,6 +113,8 @@ test_that("tulpa_laplace() rejects a weights vector it would read past", {
   )
 })
 
+skip_on_cran()
+
 
 # ---------------------------------------------------------------------------
 # Tier 2: the M-step objective, against a reference outside the engine.

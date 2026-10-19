@@ -98,68 +98,6 @@ test_that("BYM2 Laplace works with sparse Cholesky (225 sites)", {
 
 
 # =====================================================================
-# Test: Dense vs sparse numerical agreement
-# =====================================================================
-# Run the same ICAR problem at two sizes: one below threshold (dense)
-# and one above (sparse). Both should produce consistent results
-# (not bitwise identical due to different algorithms, but same structure).
-
-test_that("sparse and dense paths produce consistent ICAR results", {
-  skip_on_cran()
-  # Small problem (dense path, n_x = 1 + 25 = 26)
-  adj_small <- make_grid_adjacency(5, 5)
-  dat_small <- simulate_spatial_data(
-    n_sites = 25, n_obs_per_site = 10,
-    beta0 = -1.0, tau_spatial = 2.0, adj = adj_small
-  )
-
-  res_small <- cpp_laplace_fit_spatial(
-    y = dat_small$y, n = dat_small$n_trials, X = dat_small$X,
-    re_idx = rep(0, length(dat_small$y)), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = dat_small$spatial_idx, n_spatial_units = 25L,
-    adj_row_ptr = adj_small$adj_row_ptr, adj_col_idx = adj_small$adj_col_idx,
-    n_neighbors = adj_small$n_neighbors, tau_spatial = 2.0,
-    family = "binomial", phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L
-  )
-
-  # Large problem (sparse path, n_x = 1 + 400 = 401)
-  adj_large <- make_grid_adjacency(20, 20)
-  dat_large <- simulate_spatial_data(
-    n_sites = 400, n_obs_per_site = 10,
-    beta0 = -1.0, tau_spatial = 2.0, adj = adj_large
-  )
-
-  res_large <- cpp_laplace_fit_spatial(
-    y = dat_large$y, n = dat_large$n_trials, X = dat_large$X,
-    re_idx = rep(0, length(dat_large$y)), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = dat_large$spatial_idx, n_spatial_units = 400L,
-    adj_row_ptr = adj_large$adj_row_ptr, adj_col_idx = adj_large$adj_col_idx,
-    n_neighbors = adj_large$n_neighbors, tau_spatial = 2.0,
-    family = "binomial", phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L
-  )
-
-  # Both should converge
-
-  expect_true(res_small$converged)
-  expect_true(res_large$converged)
-
-  # Both should have finite, negative log-marginals
-  expect_true(is.finite(res_small$log_marginal))
-  expect_true(is.finite(res_large$log_marginal))
-  expect_true(res_small$log_marginal < 0)
-  expect_true(res_large$log_marginal < 0)
-
-  # Log-det should be positive (positive definite Hessian)
-  expect_true(res_small$log_det_Q > 0)
-  expect_true(res_large$log_det_Q > 0)
-
-  # Intercept estimates should be in the right ballpark
-  expect_true(abs(res_small$mode[1] - (-1.0)) < 1.5)
-  expect_true(abs(res_large$mode[1] - (-1.0)) < 1.5)
-})
-
-
-# =====================================================================
 # Test: Poisson ICAR at large scale
 # =====================================================================
 
@@ -228,6 +166,70 @@ test_that("ICAR single-response: dense and sparse agree byte-level on identical 
   expect_equal(sparse$log_marginal, dense$log_marginal, tolerance = 1e-8)
   expect_equal(sparse$log_det_Q,    dense$log_det_Q,    tolerance = 1e-8)
   expect_equal(sparse$mode,         dense$mode,         tolerance = 1e-7)
+})
+
+skip_on_cran()
+
+
+# =====================================================================
+# Test: Dense vs sparse numerical agreement
+# =====================================================================
+# Run the same ICAR problem at two sizes: one below threshold (dense)
+# and one above (sparse). Both should produce consistent results
+# (not bitwise identical due to different algorithms, but same structure).
+
+test_that("sparse and dense paths produce consistent ICAR results", {
+  skip_on_cran()
+  # Small problem (dense path, n_x = 1 + 25 = 26)
+  adj_small <- make_grid_adjacency(5, 5)
+  dat_small <- simulate_spatial_data(
+    n_sites = 25, n_obs_per_site = 10,
+    beta0 = -1.0, tau_spatial = 2.0, adj = adj_small
+  )
+
+  res_small <- cpp_laplace_fit_spatial(
+    y = dat_small$y, n = dat_small$n_trials, X = dat_small$X,
+    re_idx = rep(0, length(dat_small$y)), n_re_groups = 0L, sigma_re = 1.0,
+    spatial_idx = dat_small$spatial_idx, n_spatial_units = 25L,
+    adj_row_ptr = adj_small$adj_row_ptr, adj_col_idx = adj_small$adj_col_idx,
+    n_neighbors = adj_small$n_neighbors, tau_spatial = 2.0,
+    family = "binomial", phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L
+  )
+
+  # Large problem (sparse path, n_x = 1 + 400 = 401)
+  adj_large <- make_grid_adjacency(20, 20)
+  dat_large <- simulate_spatial_data(
+    n_sites = 400, n_obs_per_site = 10,
+    beta0 = -1.0, tau_spatial = 2.0, adj = adj_large
+  )
+
+  res_large <- cpp_laplace_fit_spatial(
+    y = dat_large$y, n = dat_large$n_trials, X = dat_large$X,
+    re_idx = rep(0, length(dat_large$y)), n_re_groups = 0L, sigma_re = 1.0,
+    spatial_idx = dat_large$spatial_idx, n_spatial_units = 400L,
+    adj_row_ptr = adj_large$adj_row_ptr, adj_col_idx = adj_large$adj_col_idx,
+    n_neighbors = adj_large$n_neighbors, tau_spatial = 2.0,
+    family = "binomial", phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L
+  )
+
+  # Both should converge
+
+  expect_true(res_small$converged)
+  expect_true(res_large$converged)
+
+  # Both should have finite, negative log-marginals
+  expect_true(is.finite(res_small$log_marginal))
+  expect_true(is.finite(res_large$log_marginal))
+  expect_true(res_small$log_marginal < 0)
+  expect_true(res_large$log_marginal < 0)
+
+  # Log-det should be positive (positive definite Hessian)
+  expect_true(res_small$log_det_Q > 0)
+  expect_true(res_large$log_det_Q > 0)
+
+  # Intercept estimates should be in the right ballpark
+  expect_true(abs(res_small$mode[1] - (-1.0)) < 1.5)
+  expect_true(abs(res_large$mode[1] - (-1.0)) < 1.5)
 })
 
 test_that("BYM2 single-response: dense and sparse agree byte-level on identical data", {

@@ -1,3 +1,20 @@
+
+test_that("tulpa_kfold rejects spatial / temporal-field fits and callless fits", {
+  spatial_fit <- structure(
+    list(spatial = list(type = "icar"), call = quote(tulpa()),
+         formula = y ~ x, family = "poisson"),
+    class = "tulpa_fit")
+  expect_error(tulpa_kfold(spatial_fit, data = data.frame(y = 1, x = 1)),
+               "not supported")
+
+  callless <- structure(
+    list(formula = y ~ x, family = "poisson"),
+    class = "tulpa_fit")
+  expect_error(tulpa_kfold(callless, data = data.frame(y = 1, x = 1)),
+               "no `\\$call`")
+})
+
+skip_on_cran()
 # Refit-based K-fold CV (gcol33/tulpa C5). The machinery is validated
 # end-to-end: refit-CV must award a higher held-out predictive density to the
 # correctly-specified model than to a null model, be deterministic given the
@@ -77,19 +94,4 @@ test_that("a refit injects n_trials only where the family reads one", {
   cvb <- tulpa_kfold(fitb, data = db, folds = rep(seq_len(4L), length.out = n))
   expect_true(is.finite(cvb$elpd_kfold))
   expect_false(anyNA(cvb$pointwise))
-})
-
-test_that("tulpa_kfold rejects spatial / temporal-field fits and callless fits", {
-  spatial_fit <- structure(
-    list(spatial = list(type = "icar"), call = quote(tulpa()),
-         formula = y ~ x, family = "poisson"),
-    class = "tulpa_fit")
-  expect_error(tulpa_kfold(spatial_fit, data = data.frame(y = 1, x = 1)),
-               "not supported")
-
-  callless <- structure(
-    list(formula = y ~ x, family = "poisson"),
-    class = "tulpa_fit")
-  expect_error(tulpa_kfold(callless, data = data.frame(y = 1, x = 1)),
-               "no `\\$call`")
 })

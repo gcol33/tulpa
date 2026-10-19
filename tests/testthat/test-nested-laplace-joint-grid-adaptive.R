@@ -72,6 +72,39 @@
                  var_of_means_consistency = FALSE), extra))
 }
 
+test_that("the adaptive builder names why it declined (gcol33/tulpa#915)", {
+    grid_fn <- tulpa:::.joint_adaptive_grid
+    ax <- list(seq(-3, 3, length.out = 10), seq(-3, 3, length.out = 10))
+    cn <- c("a", "b")
+    lm_of <- function(scale) function(theta)
+        list(log_marginal = -0.5 * rowSums(theta^2) / scale^2, modes = NULL)
+
+    # A peaked surface engages: no reason, a strict subset of the lattice.
+    ok <- grid_fn(ax, cn, lm_of(0.3), cutoff = 10)
+    expect_null(ok$declined)
+    expect_lt(nrow(ok$grid), 100L)
+
+    expect_identical(grid_fn(ax, cn, lm_of(0.3), min_dense = 101)$declined,
+                     "adaptive_small_grid")
+    expect_identical(grid_fn(ax, cn, lm_of(100))$declined,
+                     "adaptive_diffuse_seed")
+    expect_identical(
+        grid_fn(ax, cn, function(theta)
+            list(log_marginal = rep(NaN, nrow(theta)), modes = NULL))$declined,
+        "adaptive_seed_failed")
+    expect_identical(grid_fn(list(), character(0), lm_of(1))$declined,
+                     "adaptive_degenerate_lattice")
+
+    # An error inside the flood is warned about with its message and recorded,
+    # never folded into a quiet decline.
+    expect_warning(
+        err <- grid_fn(ax, cn, function(theta) stop("inner solve blew up")),
+        "adaptive outer lattice failed (inner solve blew up)", fixed = TRUE)
+    expect_identical(err$declined, "adaptive_error")
+})
+
+skip_on_cran()
+
 test_that("grid_adaptive engages, keeps fewer cells, and normalises", {
     skip_on_cran()
     sim <- .sim_joint_ga(2024L, N = 1500L, n_s = 50L)
@@ -250,35 +283,4 @@ test_that("grid_adaptive declines to the dense tensor on a small outer grid", {
     fit_grid <- .fit_ga(sim, "grid", c(0.5, 1.5), c(0.4, 0.8), c(0.6, 1.2))
     expect_equal(sort(fit$log_marginal), sort(fit_grid$log_marginal),
                  tolerance = 1e-10)
-})
-
-test_that("the adaptive builder names why it declined (gcol33/tulpa#915)", {
-    grid_fn <- tulpa:::.joint_adaptive_grid
-    ax <- list(seq(-3, 3, length.out = 10), seq(-3, 3, length.out = 10))
-    cn <- c("a", "b")
-    lm_of <- function(scale) function(theta)
-        list(log_marginal = -0.5 * rowSums(theta^2) / scale^2, modes = NULL)
-
-    # A peaked surface engages: no reason, a strict subset of the lattice.
-    ok <- grid_fn(ax, cn, lm_of(0.3), cutoff = 10)
-    expect_null(ok$declined)
-    expect_lt(nrow(ok$grid), 100L)
-
-    expect_identical(grid_fn(ax, cn, lm_of(0.3), min_dense = 101)$declined,
-                     "adaptive_small_grid")
-    expect_identical(grid_fn(ax, cn, lm_of(100))$declined,
-                     "adaptive_diffuse_seed")
-    expect_identical(
-        grid_fn(ax, cn, function(theta)
-            list(log_marginal = rep(NaN, nrow(theta)), modes = NULL))$declined,
-        "adaptive_seed_failed")
-    expect_identical(grid_fn(list(), character(0), lm_of(1))$declined,
-                     "adaptive_degenerate_lattice")
-
-    # An error inside the flood is warned about with its message and recorded,
-    # never folded into a quiet decline.
-    expect_warning(
-        err <- grid_fn(ax, cn, function(theta) stop("inner solve blew up")),
-        "adaptive outer lattice failed (inner solve blew up)", fixed = TRUE)
-    expect_identical(err$declined, "adaptive_error")
 })

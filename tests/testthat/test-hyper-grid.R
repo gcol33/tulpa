@@ -48,47 +48,6 @@ make_gaussian_inner_fit <- function(y, X, tau = 100) {
   }
 }
 
-# -----------------------------------------------------------------------------
-# Structural smoke
-# -----------------------------------------------------------------------------
-test_that("tulpa_hyper_grid wires axes / weights / posterior fields", {
-  skip_on_cran()
-  specs <- list(
-    hyper_axis_spec("alpha", grid = c(-1, 0, 1)),
-    hyper_axis_spec("sigma", grid = c(0.5, 1, 2), log_scale = TRUE,
-                    bounds = c(0, Inf))
-  )
-  # Flat inner: every cell has the same log marginal. Posterior over
-  # hyperparameters should be uniform over the grid.
-  inner_fit <- function(hypers) list(log_marginal = 0,
-                                      beta_mean = c(b1 = 0),
-                                      beta_cov  = matrix(1, 1, 1))
-  res <- tulpa_hyper_grid(specs, inner_fit, n_draws = 0L)
-
-  expect_s3_class(res, "tulpa_fit")
-  expect_equal(res$n_grid, 9L)
-  expect_equal(dim(res$theta_grid), c(9L, 2L))
-  expect_equal(colnames(res$theta_grid), c("alpha", "sigma"))
-  expect_equal(res$theta_names, c("alpha", "sigma"))
-  expect_equal(sum(res$weights), 1, tolerance = 1e-12)
-  expect_true(all(abs(res$weights - 1 / 9) < 1e-10))
-
-  # Hyper moments: uniform over a symmetric grid -> mean at centre.
-  expect_equal(unname(res$theta_mean[["alpha"]]), 0, tolerance = 1e-10)
-  expect_true(res$theta_sd[["alpha"]] > 0)
-  expect_true(res$theta_sd[["sigma"]] > 0)
-  expect_named(res$theta_median, c("alpha", "sigma"))
-  expect_named(res$theta_ci_lo,  c("alpha", "sigma"))
-  expect_named(res$theta_ci_hi,  c("alpha", "sigma"))
-
-  # Combine = law_of_total_cov: weighted mean / cov returned even at n_draws=0.
-  expect_equal(unname(res$beta), 0, tolerance = 1e-12)
-  expect_equal(unname(res$beta_cov[1, 1]), 1, tolerance = 1e-12)
-  expect_null(res$draws)
-  expect_equal(res$param_names, "b1")
-  expect_equal(res$n_failed, 0L)
-})
-
 test_that("log_prior tracks the refined grid, not the initial one (#198)", {
   set.seed(1)
   n <- 40L; X <- cbind(1, rnorm(n)); y <- as.numeric(X %*% c(0.5, -1) + rnorm(n))
@@ -128,42 +87,6 @@ test_that("auto-wrapping accepts plain list specs", {
   res <- tulpa_hyper_grid(specs, inner_fit, combine = "none")
   expect_equal(res$theta_names, c("sigma", "rho"))
   expect_s3_class(res$hyper_specs[[1L]], "tulpa_hyper_axis_spec")
-})
-
-# -----------------------------------------------------------------------------
-# Hyperparameter recovery: Gaussian likelihood, sigma grid covers the truth.
-# Posterior should concentrate around the simulated sigma; the marginal
-# weighted-mean / median should be close to the truth.
-# -----------------------------------------------------------------------------
-test_that("hyperparameter recovery on Gaussian likelihood", {
-  skip_on_cran()
-  set.seed(7L)
-  n <- 400L; p <- 3L
-  X <- cbind(1, matrix(rnorm(n * (p - 1L)), n, p - 1L))
-  beta_true <- c(0.5, -1.2, 0.7)
-  sigma_true <- 0.8
-  y <- as.numeric(X %*% beta_true) + rnorm(n, 0, sigma_true)
-
-  specs <- list(
-    hyper_axis_spec("sigma",
-                    grid = exp(seq(log(0.3), log(2), length.out = 25L)),
-                    log_scale = TRUE, bounds = c(0, Inf))
-  )
-  res <- tulpa_hyper_grid(specs, make_gaussian_inner_fit(y, X), n_draws = 0L)
-
-  expect_true(abs(res$theta_median[["sigma"]] - sigma_true) < 0.05)
-  expect_true(abs(res$theta_mean[["sigma"]]   - sigma_true) < 0.05)
-  expect_true(res$theta_ci_lo[["sigma"]] <
-              res$theta_median[["sigma"]])
-  expect_true(res$theta_ci_hi[["sigma"]] >
-              res$theta_median[["sigma"]])
-
-  # Beta recovery via law-of-total-cov.
-  expect_equal(unname(res$beta), beta_true, tolerance = 0.1)
-  # Diagonal SEs are sane (positive, on the right order of magnitude).
-  ses <- sqrt(diag(res$beta_cov))
-  expect_true(all(ses > 0))
-  expect_true(all(ses < 1))
 })
 
 # -----------------------------------------------------------------------------
@@ -339,4 +262,83 @@ test_that("duplicate axis names are rejected", {
     ), function(hypers) list(log_marginal = 0)),
     "Duplicate axis names"
   )
+})
+
+skip_on_cran()
+
+# -----------------------------------------------------------------------------
+# Structural smoke
+# -----------------------------------------------------------------------------
+test_that("tulpa_hyper_grid wires axes / weights / posterior fields", {
+  skip_on_cran()
+  specs <- list(
+    hyper_axis_spec("alpha", grid = c(-1, 0, 1)),
+    hyper_axis_spec("sigma", grid = c(0.5, 1, 2), log_scale = TRUE,
+                    bounds = c(0, Inf))
+  )
+  # Flat inner: every cell has the same log marginal. Posterior over
+  # hyperparameters should be uniform over the grid.
+  inner_fit <- function(hypers) list(log_marginal = 0,
+                                      beta_mean = c(b1 = 0),
+                                      beta_cov  = matrix(1, 1, 1))
+  res <- tulpa_hyper_grid(specs, inner_fit, n_draws = 0L)
+
+  expect_s3_class(res, "tulpa_fit")
+  expect_equal(res$n_grid, 9L)
+  expect_equal(dim(res$theta_grid), c(9L, 2L))
+  expect_equal(colnames(res$theta_grid), c("alpha", "sigma"))
+  expect_equal(res$theta_names, c("alpha", "sigma"))
+  expect_equal(sum(res$weights), 1, tolerance = 1e-12)
+  expect_true(all(abs(res$weights - 1 / 9) < 1e-10))
+
+  # Hyper moments: uniform over a symmetric grid -> mean at centre.
+  expect_equal(unname(res$theta_mean[["alpha"]]), 0, tolerance = 1e-10)
+  expect_true(res$theta_sd[["alpha"]] > 0)
+  expect_true(res$theta_sd[["sigma"]] > 0)
+  expect_named(res$theta_median, c("alpha", "sigma"))
+  expect_named(res$theta_ci_lo,  c("alpha", "sigma"))
+  expect_named(res$theta_ci_hi,  c("alpha", "sigma"))
+
+  # Combine = law_of_total_cov: weighted mean / cov returned even at n_draws=0.
+  expect_equal(unname(res$beta), 0, tolerance = 1e-12)
+  expect_equal(unname(res$beta_cov[1, 1]), 1, tolerance = 1e-12)
+  expect_null(res$draws)
+  expect_equal(res$param_names, "b1")
+  expect_equal(res$n_failed, 0L)
+})
+
+# -----------------------------------------------------------------------------
+# Hyperparameter recovery: Gaussian likelihood, sigma grid covers the truth.
+# Posterior should concentrate around the simulated sigma; the marginal
+# weighted-mean / median should be close to the truth.
+# -----------------------------------------------------------------------------
+test_that("hyperparameter recovery on Gaussian likelihood", {
+  skip_on_cran()
+  set.seed(7L)
+  n <- 400L; p <- 3L
+  X <- cbind(1, matrix(rnorm(n * (p - 1L)), n, p - 1L))
+  beta_true <- c(0.5, -1.2, 0.7)
+  sigma_true <- 0.8
+  y <- as.numeric(X %*% beta_true) + rnorm(n, 0, sigma_true)
+
+  specs <- list(
+    hyper_axis_spec("sigma",
+                    grid = exp(seq(log(0.3), log(2), length.out = 25L)),
+                    log_scale = TRUE, bounds = c(0, Inf))
+  )
+  res <- tulpa_hyper_grid(specs, make_gaussian_inner_fit(y, X), n_draws = 0L)
+
+  expect_true(abs(res$theta_median[["sigma"]] - sigma_true) < 0.05)
+  expect_true(abs(res$theta_mean[["sigma"]]   - sigma_true) < 0.05)
+  expect_true(res$theta_ci_lo[["sigma"]] <
+              res$theta_median[["sigma"]])
+  expect_true(res$theta_ci_hi[["sigma"]] >
+              res$theta_median[["sigma"]])
+
+  # Beta recovery via law-of-total-cov.
+  expect_equal(unname(res$beta), beta_true, tolerance = 0.1)
+  # Diagonal SEs are sane (positive, on the right order of magnitude).
+  ses <- sqrt(diag(res$beta_cov))
+  expect_true(all(ses > 0))
+  expect_true(all(ses < 1))
 })

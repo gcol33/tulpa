@@ -21,20 +21,6 @@ test_that("ccd_grid k=2 has 1 + 4 + 4 = 9 points (full factorial)", {
                tolerance = 1e-12)
 })
 
-test_that("ccd_grid k=3..6 uses full factorial 2^k", {
-  skip_on_cran()
-  for (k in 3:6) {
-    g <- ccd_grid(k)
-    expect_equal(g$n_points, 1L + 2L * k + 2L^k)
-    expect_equal(sum(g$kind == "axial"), 2L * k)
-    expect_equal(sum(g$kind == "factorial"), 2L^k)
-    norms <- sqrt(rowSums(g$z^2))
-    expect_equal(norms[g$kind != "center"],
-                 rep(g$f_0, g$n_points - 1L),
-                 tolerance = 1e-12)
-  }
-})
-
 test_that("ccd_grid k=7 falls back to Resolution-V half-fraction", {
   g <- ccd_grid(7L)
   # 1 centre + 14 axial + 2^6 = 64 factorial = 79
@@ -133,5 +119,21 @@ test_that("ccd_weights reproduce N(0, I) moments (the integration check)", {
     expect_equal(mean_hat, rep(0, m), tolerance = 1e-8)
     expect_equal(var_hat, rep(1, m), tolerance = 1e-8)
     expect_equal(cov_hat, 0, tolerance = 1e-8)
+  }
+})
+
+skip_on_cran()
+
+test_that("ccd_grid k=3..6 uses full factorial 2^k", {
+  skip_on_cran()
+  for (k in 3:6) {
+    g <- ccd_grid(k)
+    expect_equal(g$n_points, 1L + 2L * k + 2L^k)
+    expect_equal(sum(g$kind == "axial"), 2L * k)
+    expect_equal(sum(g$kind == "factorial"), 2L^k)
+    norms <- sqrt(rowSums(g$z^2))
+    expect_equal(norms[g$kind != "center"],
+                 rep(g$f_0, g$n_points - 1L),
+                 tolerance = 1e-12)
   }
 })

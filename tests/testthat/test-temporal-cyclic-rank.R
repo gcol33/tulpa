@@ -109,6 +109,31 @@ test_that("the RW normalizer carries the 2*pi term at every rank", {
   -0.5 * T * .LOG_2PI - sum(log(diag(ch))) - 0.5 * sum(z^2)
 }
 
+test_that("the AR1 floor engages on rho alone, not on the stationary precision", {
+  # A floor on tau * (1 - rho^2) would engage at 1 - rho^2 = 1e-12 when
+  # tau = 100 and at 1e-8 when tau = 0.01, so the same rho would be regularized
+  # in one fit and not in another. Holding phi and rho fixed, the difference
+  # between two taus must be exactly the normalizer's, with no floor term left
+  # over.
+  set.seed(15)
+  phi <- rnorm(7)
+  # 1 - rho^2 is about 1e-9 here: above the correlation floor at either tau, and
+  # below a precision floor at tau = 0.01 but not at tau = 100.
+  rho <- 1 - 5e-10
+  lp <- function(tau) {
+    tulpa:::cpp_test_temporal_log_prior(phi, "ar1", tau = tau, rho = rho,
+                                        cyclic = FALSE)
+  }
+  omr2 <- 1 - rho * rho
+  expect_gt(omr2, .AR1_FLOOR)
+  q <- omr2 * phi[1]^2 + sum((phi[-1] - rho * phi[-length(phi)])^2)
+  expect_equal(lp(100) - lp(0.01),
+               0.5 * length(phi) * log(100 / 0.01) - 0.5 * (100 - 0.01) * q,
+               tolerance = 1e-9)
+})
+
+skip_on_cran()
+
 test_that("AR1 log-prior equals the dense multivariate normal it factorizes", {
   skip_on_cran()
   set.seed(13)
@@ -140,27 +165,4 @@ test_that("AR1 log-prior stays finite at and past the stationarity boundary", {
                    info = paste("tau =", tau, "rho =", rho))
     }
   }
-})
-
-test_that("the AR1 floor engages on rho alone, not on the stationary precision", {
-  # A floor on tau * (1 - rho^2) would engage at 1 - rho^2 = 1e-12 when
-  # tau = 100 and at 1e-8 when tau = 0.01, so the same rho would be regularized
-  # in one fit and not in another. Holding phi and rho fixed, the difference
-  # between two taus must be exactly the normalizer's, with no floor term left
-  # over.
-  set.seed(15)
-  phi <- rnorm(7)
-  # 1 - rho^2 is about 1e-9 here: above the correlation floor at either tau, and
-  # below a precision floor at tau = 0.01 but not at tau = 100.
-  rho <- 1 - 5e-10
-  lp <- function(tau) {
-    tulpa:::cpp_test_temporal_log_prior(phi, "ar1", tau = tau, rho = rho,
-                                        cyclic = FALSE)
-  }
-  omr2 <- 1 - rho * rho
-  expect_gt(omr2, .AR1_FLOOR)
-  q <- omr2 * phi[1]^2 + sum((phi[-1] - rho * phi[-length(phi)])^2)
-  expect_equal(lp(100) - lp(0.01),
-               0.5 * length(phi) * log(100 / 0.01) - 0.5 * (100 - 0.01) * q,
-               tolerance = 1e-9)
 })

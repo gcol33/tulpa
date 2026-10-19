@@ -77,6 +77,8 @@ test_that("VarCorr() reports the sampled L_re correlation, not an identity", {
   expect_equal(S_g[1, 2], mean(tanh(raw)) * prod(vc$sd))
 })
 
+skip_on_cran()
+
 test_that("ranef() on an hmc fit reports b, the effects eta is built from", {
   skip_on_cran()
   set.seed(1)

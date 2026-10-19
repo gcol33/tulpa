@@ -1,3 +1,23 @@
+
+test_that("the compiled search equioscillates to its tolerance", {
+  # `converged` means the local error maxima agree to `tol` -- the
+  # equioscillation property that defines the minimax rational. A search that
+  # silently ran out of iterations would return a worse approximation with no
+  # signal, so the flag is asserted rather than assumed.
+  for (s in c(0.4, 0.05)) {
+    rr <- tulpa:::.spde_rational_roots(2L, 1.25, s)
+    expect_true(rr$converged, info = sprintf("spectrum_ratio = %g", s))
+    expect_lte(rr$deviation, 1e-7)
+  }
+})
+
+test_that("the compiled entry refuses an out-of-domain request", {
+  expect_error(tulpa:::.spde_rational_roots(0L, 1.25, 0.1), "order must be")
+  expect_error(tulpa:::.spde_rational_roots(2L, 1.25, 0), "spectrum_ratio")
+  expect_error(tulpa:::.spde_rational_roots(2L, 1.25, 1), "spectrum_ratio")
+})
+
+skip_on_cran()
 # The compiled BRASIL search (src/brasil.h) against the R reference
 # implementation it was ported from (.spde_rational_roots_r, R/brasil.R).
 #
@@ -51,18 +71,6 @@ test_that("the compiled rational roots match the R oracle", {
   }
 })
 
-test_that("the compiled search equioscillates to its tolerance", {
-  # `converged` means the local error maxima agree to `tol` -- the
-  # equioscillation property that defines the minimax rational. A search that
-  # silently ran out of iterations would return a worse approximation with no
-  # signal, so the flag is asserted rather than assumed.
-  for (s in c(0.4, 0.05)) {
-    rr <- tulpa:::.spde_rational_roots(2L, 1.25, s)
-    expect_true(rr$converged, info = sprintf("spectrum_ratio = %g", s))
-    expect_lte(rr$deviation, 1e-7)
-  }
-})
-
 test_that("the approximation the port defines is the R oracle's function", {
   skip_on_cran()
   # Roots and weights carry invariances; the approximating FUNCTION does not.
@@ -76,10 +84,4 @@ test_that("the approximation the port defines is the R oracle's function", {
     # ... and both approximate the function they were asked for.
     expect_lt(max(abs(as.numeric(cpp) - x^(-0.75))) / max(x^(-0.75)), 0.05)
   }
-})
-
-test_that("the compiled entry refuses an out-of-domain request", {
-  expect_error(tulpa:::.spde_rational_roots(0L, 1.25, 0.1), "order must be")
-  expect_error(tulpa:::.spde_rational_roots(2L, 1.25, 0), "spectrum_ratio")
-  expect_error(tulpa:::.spde_rational_roots(2L, 1.25, 1), "spectrum_ratio")
 })

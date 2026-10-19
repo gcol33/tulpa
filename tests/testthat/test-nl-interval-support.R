@@ -55,6 +55,173 @@ test_that("a cell edge is mirrored in the quantity's own coordinate", {
                      .nl_cell_edges(c(0.5, 1.5, 2.5)))
 })
 
+test_that("the read note says which side of the vocabulary an axis is on", {
+    # The four reasons split in two, and the two say opposite things about the
+    # bound: `.NL_EDGE_FALLBACK` means the edges ARE the extreme coordinates, so
+    # the bound is conservative, while the other pair means a declaration was
+    # set aside and the GUESS's mirror stood, so the bound is a guessed edge.
+    # Reporting the second pair as running to the extreme coordinate says the
+    # opposite of what happened.
+    expect_true(all(.NL_EDGE_FALLBACK %in% .NL_EDGE_DECLINED))
+    expect_identical(sort(setdiff(.NL_EDGE_DECLINED, .NL_EDGE_FALLBACK)),
+                     c("nodes_outside_declared_domain", "unknown_domain"))
+
+    note <- function(ed) {
+        .tulpa_interval_read_note(list(
+            read = "density", design_mass = NA_real_,
+            within_cell_axes = paste0("ax", seq_along(ed)),
+            edge_declined = ed, within_cell_requested = NA_character_,
+            within_cell = rep(NA_character_, length(ed))))
+    }
+    fb <- note("mirrored_edge_not_representable")
+    expect_length(fb, 1L)
+    expect_match(fb, "could not be mirrored usably")
+    expect_match(fb, "extreme grid coordinate")
+    expect_match(fb, "mirrored_edge_not_representable")
+
+    gs <- note("nodes_outside_declared_domain")
+    expect_length(gs, 1L)
+    expect_match(gs, "support declared for")
+    expect_match(gs, "guessed from the values")
+    expect_false(grepl("extreme grid coordinate", gs))
+
+    both <- note(c("mirrored_edge_outside_domain", "unknown_domain"))
+    expect_length(both, 2L)
+    expect_match(both[1L], "ax1")
+    expect_match(both[2L], "ax2")
+
+    expect_null(note(NA_character_))
+})
+
+test_that("the domain reaches the CDF read, not only the moment rule", {
+    v <- c(0.2, 0.5, 0.8, 0.95)
+    w <- c(0.001, 0.02, 0.35, 0.629)
+    probs <- c(0.025, 0.5, 0.975)
+
+    # Both within-cell reads (gcol33/tulpa#357): the domain bounds the outer
+    # half-cell whichever set of knots the CDF is read between, which is the
+    # property this test exists for.
+    for (wc in .NL_WITHIN_CELL) {
+      q_dom <- .nl_summary_quantile(v, w, probs, "unit", "density", wc)
+      q_na  <- .nl_summary_quantile(v, w, probs, NA_character_, "density", wc)
+      expect_lt(q_dom[3L], 1)
+      expect_gt(q_na[3L], 1)
+    }
+    # Only the outer half-cells move, so under the CHORD read a quantile between
+    # interior COORDINATES cannot see the domain, and the median here is one.
+    expect_equal(.nl_summary_quantile(v, w, probs, "unit", "density",
+                                      "chord")[2L],
+                 .nl_summary_quantile(v, w, probs, NA_character_, "density",
+                                      "chord")[2L], tolerance = 1e-12)
+    # The box read's knots ARE the edges, both of them mirrored, so a domain
+    # that moves either edge moves every knot the CDF is interpolated between
+    # and the whole interval with it. Asserting the chord read's invariance for
+    # both would be asserting that the two reads have the same knots.
+    qb_dom <- .nl_summary_quantile(v, w, probs, "unit", "density",
+                                   "box_uniform")
+    qb_na  <- .nl_summary_quantile(v, w, probs, NA_character_, "density",
+                                   "box_uniform")
+    expect_lt(qb_dom[3L], 1)
+    expect_gt(qb_na[3L], 1)
+    expect_false(isTRUE(all.equal(qb_dom[2L], qb_na[2L])))
+    # and the declared support is what keeps the whole interval inside it.
+    expect_true(all(qb_dom > 0 & qb_dom < 1))
+
+    # A `sample` support forms no edge at all, so the domain cannot change it.
+    expect_identical(.nl_summary_quantile(v, w, probs, "unit", "sample"),
+                     .nl_summary_quantile(v, w, probs, NA_character_, "sample"))
+})
+
+test_that("the domain reaches a box-uniform read's INTERIOR edges too", {
+    # "Only the outer half-cells move" above is a property of the CHORD
+    # construction, whose interior knots are the coordinates themselves and so
+    # carry no coordinate choice. Box-uniform's knots are the cell EDGES, every
+    # one of which is bisected in the domain's own coordinate, so the domain
+    # reaches the whole read and not just its ends (gcol33/tulpa#357, #369).
+    v <- c(0.2, 0.5, 0.8, 0.95)
+    w <- c(0.001, 0.02, 0.35, 0.629)
+    probs <- c(0.025, 0.5, 0.975)
+
+    q_dom <- .nl_summary_quantile(v, w, probs, "unit", "density", "box_uniform")
+    q_na  <- .nl_summary_quantile(v, w, probs, NA_character_, "density",
+                                  "box_uniform")
+    expect_lt(q_dom[3L], 1)
+    expect_gt(q_na[3L], 1)
+    expect_false(isTRUE(all.equal(q_dom[2L], q_na[2L])))
+    # A logit-bisected interior edge is the one an inverse-logit-uniform cell
+    # would have; the log guess places it elsewhere, which is the difference.
+    e_dom <- .nl_box_edges(v, "unit")
+    e_na  <- .nl_box_edges(v, NA_character_)
+    expect_equal(e_dom[3L], stats::plogis(mean(stats::qlogis(v[2:3]))))
+    expect_equal(e_na[3L], exp(mean(log(v[2:3]))))
+    expect_true(all(e_dom > 0 & e_dom < 1))
+})
+
+test_that("declared bounds name the domain on the generic hyper-grid door", {
+    expect_identical(.nl_domain_of_bounds(c(0, 1)), "unit")
+    expect_identical(.nl_domain_of_bounds(c(-1, 1)), "correlation")
+    expect_identical(.nl_domain_of_bounds(c(0, Inf)), "positive")
+    expect_identical(.nl_domain_of_bounds(NULL, log_scale = TRUE), "positive")
+    # An arbitrary finite interval is not one of the four domains, and inventing
+    # a transform for it would be worse than the edge rule's own guess.
+    expect_true(is.na(.nl_domain_of_bounds(c(0.3, 30))))
+    expect_true(is.na(.nl_domain_of_bounds(NULL)))
+})
+
+test_that("a reported bound that left the node range says so", {
+  # gcol33/tulpa#390. An endpoint past the outermost NODE is produced by the
+  # `outside` rule -- `extend` mirrors a half-cell beyond the outer coordinate
+  # -- so it is an extrapolation rather than a bound the design supports. On a
+  # diffuse axis that is the common case, not the exception, and it used to be
+  # indistinguishable on the fit from a bound the nodes carry.
+  #
+  # Measured over 48 (cap, span, node-count, policy) rungs on two fixtures at
+  # 200 seeds: the 95% bound sits outside the nodes on 56% to 90% of fits at
+  # EVERY setting, while the 50% bound never does. That is why the gcol33/tulpa
+  # #387 ceiling ladder could not discriminate -- it was scored at 95%, where
+  # what moves across the ladder is where the extrapolation LANDS.
+  #
+  # The three cases below are measured, not assumed: whether a given read
+  # leaves the nodes depends on where the WEIGHTS put the mass, not on the
+  # nominal level alone.
+  tg <- matrix(c(0.5, 1, 2, 4, 8), ncol = 1L, dimnames = list(NULL, "sigma"))
+  rd <- function(lm, p) .nl_axis_quantiles(tg, lm, probs = p,
+                                           domains = list("log"))
+
+  # Mass concentrated on the middle node: every level stays inside, even 99%.
+  peaked <- c(-6, -2, 0, -2, -6)
+  for (p in list(c(0.25, 0.5, 0.75), c(0.025, 0.5, 0.975), c(0.005, 0.5, 0.995))) {
+    q <- rd(peaked, p)
+    expect_true(is.na(q$outside_nodes[["sigma"]]))
+    expect_gte(q$ci_lo[["sigma"]], min(tg[, 1]))
+    expect_lte(q$ci_hi[["sigma"]], max(tg[, 1]))
+  }
+
+  # Uniform mass: the 50% read is still inside, the 95% read leaves on BOTH
+  # sides. Same grid, same rule -- the level is what changed.
+  flat <- rep(0, 5)
+  expect_true(is.na(rd(flat, c(0.25, 0.5, 0.75))$outside_nodes[["sigma"]]))
+  q <- rd(flat, c(0.025, 0.5, 0.975))
+  expect_identical(unname(q$outside_nodes[["sigma"]]), "both")
+  expect_lt(q$ci_lo[["sigma"]], min(tg[, 1]))
+  expect_gt(q$ci_hi[["sigma"]], max(tg[, 1]))
+
+  # Mass on the outer cells: one-sided is reported as the side it is, which is
+  # what makes the field more than a flag.
+  outer <- c(0, -3, -6, -3, 0)
+  q1 <- rd(outer, c(0.25, 0.5, 0.75))
+  expect_identical(unname(q1$outside_nodes[["sigma"]]), "upper")
+  expect_gt(q1$ci_hi[["sigma"]], max(tg[, 1]))
+  expect_gte(q1$ci_lo[["sigma"]], min(tg[, 1]))
+
+  # Named per axis and always present, so a reader never has to tell an absent
+  # field from an in-range one.
+  expect_identical(names(q$outside_nodes), "sigma")
+  expect_type(q$outside_nodes, "character")
+})
+
+skip_on_cran()
+
 # --------------------------------------------- the declaration is not overruled
 
 test_that("a declared domain's edge is never overruled by the value guess", {
@@ -256,119 +423,6 @@ test_that("an undeclared axis's mirrored edge is guarded too", {
     expect_true(is.na(pu$declined))
 })
 
-test_that("the read note says which side of the vocabulary an axis is on", {
-    # The four reasons split in two, and the two say opposite things about the
-    # bound: `.NL_EDGE_FALLBACK` means the edges ARE the extreme coordinates, so
-    # the bound is conservative, while the other pair means a declaration was
-    # set aside and the GUESS's mirror stood, so the bound is a guessed edge.
-    # Reporting the second pair as running to the extreme coordinate says the
-    # opposite of what happened.
-    expect_true(all(.NL_EDGE_FALLBACK %in% .NL_EDGE_DECLINED))
-    expect_identical(sort(setdiff(.NL_EDGE_DECLINED, .NL_EDGE_FALLBACK)),
-                     c("nodes_outside_declared_domain", "unknown_domain"))
-
-    note <- function(ed) {
-        .tulpa_interval_read_note(list(
-            read = "density", design_mass = NA_real_,
-            within_cell_axes = paste0("ax", seq_along(ed)),
-            edge_declined = ed, within_cell_requested = NA_character_,
-            within_cell = rep(NA_character_, length(ed))))
-    }
-    fb <- note("mirrored_edge_not_representable")
-    expect_length(fb, 1L)
-    expect_match(fb, "could not be mirrored usably")
-    expect_match(fb, "extreme grid coordinate")
-    expect_match(fb, "mirrored_edge_not_representable")
-
-    gs <- note("nodes_outside_declared_domain")
-    expect_length(gs, 1L)
-    expect_match(gs, "support declared for")
-    expect_match(gs, "guessed from the values")
-    expect_false(grepl("extreme grid coordinate", gs))
-
-    both <- note(c("mirrored_edge_outside_domain", "unknown_domain"))
-    expect_length(both, 2L)
-    expect_match(both[1L], "ax1")
-    expect_match(both[2L], "ax2")
-
-    expect_null(note(NA_character_))
-})
-
-test_that("the domain reaches the CDF read, not only the moment rule", {
-    v <- c(0.2, 0.5, 0.8, 0.95)
-    w <- c(0.001, 0.02, 0.35, 0.629)
-    probs <- c(0.025, 0.5, 0.975)
-
-    # Both within-cell reads (gcol33/tulpa#357): the domain bounds the outer
-    # half-cell whichever set of knots the CDF is read between, which is the
-    # property this test exists for.
-    for (wc in .NL_WITHIN_CELL) {
-      q_dom <- .nl_summary_quantile(v, w, probs, "unit", "density", wc)
-      q_na  <- .nl_summary_quantile(v, w, probs, NA_character_, "density", wc)
-      expect_lt(q_dom[3L], 1)
-      expect_gt(q_na[3L], 1)
-    }
-    # Only the outer half-cells move, so under the CHORD read a quantile between
-    # interior COORDINATES cannot see the domain, and the median here is one.
-    expect_equal(.nl_summary_quantile(v, w, probs, "unit", "density",
-                                      "chord")[2L],
-                 .nl_summary_quantile(v, w, probs, NA_character_, "density",
-                                      "chord")[2L], tolerance = 1e-12)
-    # The box read's knots ARE the edges, both of them mirrored, so a domain
-    # that moves either edge moves every knot the CDF is interpolated between
-    # and the whole interval with it. Asserting the chord read's invariance for
-    # both would be asserting that the two reads have the same knots.
-    qb_dom <- .nl_summary_quantile(v, w, probs, "unit", "density",
-                                   "box_uniform")
-    qb_na  <- .nl_summary_quantile(v, w, probs, NA_character_, "density",
-                                   "box_uniform")
-    expect_lt(qb_dom[3L], 1)
-    expect_gt(qb_na[3L], 1)
-    expect_false(isTRUE(all.equal(qb_dom[2L], qb_na[2L])))
-    # and the declared support is what keeps the whole interval inside it.
-    expect_true(all(qb_dom > 0 & qb_dom < 1))
-
-    # A `sample` support forms no edge at all, so the domain cannot change it.
-    expect_identical(.nl_summary_quantile(v, w, probs, "unit", "sample"),
-                     .nl_summary_quantile(v, w, probs, NA_character_, "sample"))
-})
-
-test_that("the domain reaches a box-uniform read's INTERIOR edges too", {
-    # "Only the outer half-cells move" above is a property of the CHORD
-    # construction, whose interior knots are the coordinates themselves and so
-    # carry no coordinate choice. Box-uniform's knots are the cell EDGES, every
-    # one of which is bisected in the domain's own coordinate, so the domain
-    # reaches the whole read and not just its ends (gcol33/tulpa#357, #369).
-    v <- c(0.2, 0.5, 0.8, 0.95)
-    w <- c(0.001, 0.02, 0.35, 0.629)
-    probs <- c(0.025, 0.5, 0.975)
-
-    q_dom <- .nl_summary_quantile(v, w, probs, "unit", "density", "box_uniform")
-    q_na  <- .nl_summary_quantile(v, w, probs, NA_character_, "density",
-                                  "box_uniform")
-    expect_lt(q_dom[3L], 1)
-    expect_gt(q_na[3L], 1)
-    expect_false(isTRUE(all.equal(q_dom[2L], q_na[2L])))
-    # A logit-bisected interior edge is the one an inverse-logit-uniform cell
-    # would have; the log guess places it elsewhere, which is the difference.
-    e_dom <- .nl_box_edges(v, "unit")
-    e_na  <- .nl_box_edges(v, NA_character_)
-    expect_equal(e_dom[3L], stats::plogis(mean(stats::qlogis(v[2:3]))))
-    expect_equal(e_na[3L], exp(mean(log(v[2:3]))))
-    expect_true(all(e_dom > 0 & e_dom < 1))
-})
-
-test_that("declared bounds name the domain on the generic hyper-grid door", {
-    expect_identical(.nl_domain_of_bounds(c(0, 1)), "unit")
-    expect_identical(.nl_domain_of_bounds(c(-1, 1)), "correlation")
-    expect_identical(.nl_domain_of_bounds(c(0, Inf)), "positive")
-    expect_identical(.nl_domain_of_bounds(NULL, log_scale = TRUE), "positive")
-    # An arbitrary finite interval is not one of the four domains, and inventing
-    # a transform for it would be worse than the edge rule's own guess.
-    expect_true(is.na(.nl_domain_of_bounds(c(0.3, 30))))
-    expect_true(is.na(.nl_domain_of_bounds(NULL)))
-})
-
 test_that("a BYM2 fit reports a mixing weight inside (0, 1)", {
     skip_on_cran()
     S <- 100L
@@ -462,58 +516,6 @@ test_that("the placement record is read back, not merely stored", {
                                         outer_grid_railed_axes = character(0)))
     expect_null(.tulpa_grid_placement_note(quiet))
     expect_null(.tulpa_grid_placement(list()))
-})
-
-test_that("a reported bound that left the node range says so", {
-  # gcol33/tulpa#390. An endpoint past the outermost NODE is produced by the
-  # `outside` rule -- `extend` mirrors a half-cell beyond the outer coordinate
-  # -- so it is an extrapolation rather than a bound the design supports. On a
-  # diffuse axis that is the common case, not the exception, and it used to be
-  # indistinguishable on the fit from a bound the nodes carry.
-  #
-  # Measured over 48 (cap, span, node-count, policy) rungs on two fixtures at
-  # 200 seeds: the 95% bound sits outside the nodes on 56% to 90% of fits at
-  # EVERY setting, while the 50% bound never does. That is why the gcol33/tulpa
-  # #387 ceiling ladder could not discriminate -- it was scored at 95%, where
-  # what moves across the ladder is where the extrapolation LANDS.
-  #
-  # The three cases below are measured, not assumed: whether a given read
-  # leaves the nodes depends on where the WEIGHTS put the mass, not on the
-  # nominal level alone.
-  tg <- matrix(c(0.5, 1, 2, 4, 8), ncol = 1L, dimnames = list(NULL, "sigma"))
-  rd <- function(lm, p) .nl_axis_quantiles(tg, lm, probs = p,
-                                           domains = list("log"))
-
-  # Mass concentrated on the middle node: every level stays inside, even 99%.
-  peaked <- c(-6, -2, 0, -2, -6)
-  for (p in list(c(0.25, 0.5, 0.75), c(0.025, 0.5, 0.975), c(0.005, 0.5, 0.995))) {
-    q <- rd(peaked, p)
-    expect_true(is.na(q$outside_nodes[["sigma"]]))
-    expect_gte(q$ci_lo[["sigma"]], min(tg[, 1]))
-    expect_lte(q$ci_hi[["sigma"]], max(tg[, 1]))
-  }
-
-  # Uniform mass: the 50% read is still inside, the 95% read leaves on BOTH
-  # sides. Same grid, same rule -- the level is what changed.
-  flat <- rep(0, 5)
-  expect_true(is.na(rd(flat, c(0.25, 0.5, 0.75))$outside_nodes[["sigma"]]))
-  q <- rd(flat, c(0.025, 0.5, 0.975))
-  expect_identical(unname(q$outside_nodes[["sigma"]]), "both")
-  expect_lt(q$ci_lo[["sigma"]], min(tg[, 1]))
-  expect_gt(q$ci_hi[["sigma"]], max(tg[, 1]))
-
-  # Mass on the outer cells: one-sided is reported as the side it is, which is
-  # what makes the field more than a flag.
-  outer <- c(0, -3, -6, -3, 0)
-  q1 <- rd(outer, c(0.25, 0.5, 0.75))
-  expect_identical(unname(q1$outside_nodes[["sigma"]]), "upper")
-  expect_gt(q1$ci_hi[["sigma"]], max(tg[, 1]))
-  expect_gte(q1$ci_lo[["sigma"]], min(tg[, 1]))
-
-  # Named per axis and always present, so a reader never has to tell an absent
-  # field from an in-range one.
-  expect_identical(names(q$outside_nodes), "sigma")
-  expect_type(q$outside_nodes, "character")
 })
 
 test_that("the outside-nodes record travels on a fitted object", {

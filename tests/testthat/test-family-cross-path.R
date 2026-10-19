@@ -1,3 +1,15 @@
+
+test_that("gaussian: passing phi on the wrong scale is detectable", {
+  # Guards the guard: if the two conventions were accidentally the same, the
+  # test above would pass even after a convention flip. At sd != 1 the wrong
+  # scale must give a different answer.
+  sd <- 2.0
+  right <- cpp_glmm_elt_terms("gaussian", 0.5, 1.0, 1, sd^2)   # variance: correct
+  wrong <- cpp_glmm_elt_terms("gaussian", 0.5, 1.0, 1, sd)     # SD: the 0.0.73 bug
+  expect_false(isTRUE(all.equal(unname(right), unname(wrong))))
+})
+
+skip_on_cran()
 # Cross-path equality for the per-family (loglik, grad, curvature) triplets
 # (gcol33/tulpa#142 A9).
 #
@@ -41,16 +53,6 @@ test_that("gaussian: the SD and VARIANCE phi conventions line up exactly", {
       }
     }
   }
-})
-
-test_that("gaussian: passing phi on the wrong scale is detectable", {
-  # Guards the guard: if the two conventions were accidentally the same, the
-  # test above would pass even after a convention flip. At sd != 1 the wrong
-  # scale must give a different answer.
-  sd <- 2.0
-  right <- cpp_glmm_elt_terms("gaussian", 0.5, 1.0, 1, sd^2)   # variance: correct
-  wrong <- cpp_glmm_elt_terms("gaussian", 0.5, 1.0, 1, sd)     # SD: the 0.0.73 bug
-  expect_false(isTRUE(all.equal(unname(right), unname(wrong))))
 })
 
 test_that("poisson: every kernel agrees at a shared eta", {

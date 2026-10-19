@@ -222,6 +222,8 @@ test_that("a pinned rho axis rails without being moved, and says which", {
     expect_identical(sort(unique(both$prior$rho_grid)), sort(unique(gr$rho)))
 })
 
+skip_on_cran()
+
 test_that("a BYM2 fit whose mixing weight rails is moved off its ceiling", {
     skip_on_cran()
     # gcol33/tulpa#357's census configuration: 100 chain-adjacent regions, whose

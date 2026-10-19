@@ -1,3 +1,70 @@
+
+# --- gcol33/tulpa#435: the value and the gradient are the Laplace marginal ----
+#
+# The finite-difference test above compares this entry's gradient against a
+# finite difference of this entry's own value, so it certifies internal
+# consistency and nothing more: with the GMRF prior normalizer 0.5 log|Q(theta)|
+# dropped from BOTH, it passes while neither quantity is the Laplace
+# log-marginal. The tests below bind each of them to something outside the
+# function.
+
+.impl_fixture <- function(seed = 42L, n_obs = 100L) {
+  set.seed(seed)
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.2, 0.5), cutoff = 0.05)
+  fem  <- fmesher::fm_fem(mesh)
+  A    <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
+  G1   <- as(fem$g1, "CsparseMatrix")
+  w    <- rnorm(mesh$n, 0, 0.3); w <- w - mean(w)
+  list(n_obs = n_obs, n_mesh = mesh$n, A = A, G1 = G1,
+       C0_diag = Matrix::diag(fem$c0),
+       y = rbinom(n_obs, 1, plogis(-0.5 + as.numeric(A %*% w))),
+       X = matrix(1, nrow = n_obs, ncol = 1))
+}
+
+.impl_grad <- function(f, log_range, log_sigma) {
+  cpp_spde_laplace_gradient(
+    y = as.integer(f$y), n_trials = as.integer(rep(1L, f$n_obs)), X = f$X,
+    A_x = f$A@x, A_i = f$A@i, A_p = f$A@p,
+    n_obs = f$n_obs, n_mesh = f$n_mesh, C0_diag = f$C0_diag,
+    G1_x = f$G1@x, G1_i = f$G1@i, G1_p = f$G1@p,
+    log_range = log_range, log_sigma = log_sigma, nu = 1.0, family = "binomial")
+}
+
+.IMPL_CELLS <- list(c(log(0.2), log(0.5)), c(log(0.2), log(1.1)),
+                    c(log(0.3), log(0.5)), c(log(0.3), log(1.1)),
+                    c(log(0.6), log(0.5)), c(log(0.6), log(1.1)))
+
+test_that("value and gradient still agree under a tighter finite difference", {
+  skip_if_not_installed("fmesher")
+  # Kept as before: this certifies that the value and the gradient are of ONE
+  # function. It is the tests above that say WHICH function.
+  f <- .impl_fixture()
+  lr <- log(0.3); ls <- log(0.5); eps <- 2e-3
+  res <- .impl_grad(f, lr, ls)
+  fd_r <- (.impl_grad(f, lr + eps, ls)$log_marginal -
+           .impl_grad(f, lr - eps, ls)$log_marginal) / (2 * eps)
+  fd_s <- (.impl_grad(f, lr, ls + eps)$log_marginal -
+           .impl_grad(f, lr, ls - eps)$log_marginal) / (2 * eps)
+  expect_equal(res$grad_log_range, fd_r, tolerance = 1e-3)
+  expect_equal(res$grad_log_sigma, fd_s, tolerance = 1e-3)
+})
+
+test_that("the entry refuses a nu its analytic dQ/dtheta is not written for", {
+  skip_if_not_installed("fmesher")
+  f <- .impl_fixture()
+  expect_error(
+    cpp_spde_laplace_gradient(
+      y = as.integer(f$y), n_trials = as.integer(rep(1L, f$n_obs)), X = f$X,
+      A_x = f$A@x, A_i = f$A@i, A_p = f$A@p,
+      n_obs = f$n_obs, n_mesh = f$n_mesh, C0_diag = f$C0_diag,
+      G1_x = f$G1@x, G1_i = f$G1@i, G1_p = f$G1@p,
+      log_range = log(0.3), log_sigma = log(0.5), nu = 2.0,
+      family = "binomial"),
+    "nu = 1", fixed = TRUE)
+})
+
+skip_on_cran()
 # test-implicit-diff.R
 # Tests for implicit differentiation of SPDE Laplace log-marginal
 
@@ -99,42 +166,6 @@ test_that("gradient points in correct direction (finite difference check)", {
   expect_equal(res0$grad_log_sigma, fd_sigma, tolerance = 0.05)
 })
 
-# --- gcol33/tulpa#435: the value and the gradient are the Laplace marginal ----
-#
-# The finite-difference test above compares this entry's gradient against a
-# finite difference of this entry's own value, so it certifies internal
-# consistency and nothing more: with the GMRF prior normalizer 0.5 log|Q(theta)|
-# dropped from BOTH, it passes while neither quantity is the Laplace
-# log-marginal. The tests below bind each of them to something outside the
-# function.
-
-.impl_fixture <- function(seed = 42L, n_obs = 100L) {
-  set.seed(seed)
-  coords <- cbind(runif(n_obs), runif(n_obs))
-  mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.2, 0.5), cutoff = 0.05)
-  fem  <- fmesher::fm_fem(mesh)
-  A    <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
-  G1   <- as(fem$g1, "CsparseMatrix")
-  w    <- rnorm(mesh$n, 0, 0.3); w <- w - mean(w)
-  list(n_obs = n_obs, n_mesh = mesh$n, A = A, G1 = G1,
-       C0_diag = Matrix::diag(fem$c0),
-       y = rbinom(n_obs, 1, plogis(-0.5 + as.numeric(A %*% w))),
-       X = matrix(1, nrow = n_obs, ncol = 1))
-}
-
-.impl_grad <- function(f, log_range, log_sigma) {
-  cpp_spde_laplace_gradient(
-    y = as.integer(f$y), n_trials = as.integer(rep(1L, f$n_obs)), X = f$X,
-    A_x = f$A@x, A_i = f$A@i, A_p = f$A@p,
-    n_obs = f$n_obs, n_mesh = f$n_mesh, C0_diag = f$C0_diag,
-    G1_x = f$G1@x, G1_i = f$G1@i, G1_p = f$G1@p,
-    log_range = log_range, log_sigma = log_sigma, nu = 1.0, family = "binomial")
-}
-
-.IMPL_CELLS <- list(c(log(0.2), log(0.5)), c(log(0.2), log(1.1)),
-                    c(log(0.3), log(0.5)), c(log(0.3), log(1.1)),
-                    c(log(0.6), log(0.5)), c(log(0.6), log(1.1)))
-
 test_that("the implicit-diff marginal is the same number the nested SPDE grid reports", {
   skip_on_cran()
   skip_if_not_installed("fmesher")
@@ -197,33 +228,4 @@ test_that("the dropped term is large and moves with the hyperparameters", {
     expect_equal((b - a) / (log(1.1) - log(0.5)), -f$n_mesh,
                  tolerance = 1e-9, info = sprintf("log_range = %g", lr))
   }
-})
-
-test_that("value and gradient still agree under a tighter finite difference", {
-  skip_if_not_installed("fmesher")
-  # Kept as before: this certifies that the value and the gradient are of ONE
-  # function. It is the tests above that say WHICH function.
-  f <- .impl_fixture()
-  lr <- log(0.3); ls <- log(0.5); eps <- 2e-3
-  res <- .impl_grad(f, lr, ls)
-  fd_r <- (.impl_grad(f, lr + eps, ls)$log_marginal -
-           .impl_grad(f, lr - eps, ls)$log_marginal) / (2 * eps)
-  fd_s <- (.impl_grad(f, lr, ls + eps)$log_marginal -
-           .impl_grad(f, lr, ls - eps)$log_marginal) / (2 * eps)
-  expect_equal(res$grad_log_range, fd_r, tolerance = 1e-3)
-  expect_equal(res$grad_log_sigma, fd_s, tolerance = 1e-3)
-})
-
-test_that("the entry refuses a nu its analytic dQ/dtheta is not written for", {
-  skip_if_not_installed("fmesher")
-  f <- .impl_fixture()
-  expect_error(
-    cpp_spde_laplace_gradient(
-      y = as.integer(f$y), n_trials = as.integer(rep(1L, f$n_obs)), X = f$X,
-      A_x = f$A@x, A_i = f$A@i, A_p = f$A@p,
-      n_obs = f$n_obs, n_mesh = f$n_mesh, C0_diag = f$C0_diag,
-      G1_x = f$G1@x, G1_i = f$G1@i, G1_p = f$G1@p,
-      log_range = log(0.3), log_sigma = log(0.5), nu = 2.0,
-      family = "binomial"),
-    "nu = 1", fixed = TRUE)
 })

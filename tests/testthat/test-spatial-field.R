@@ -146,6 +146,8 @@ test_that("the bare spatial(col) areal-naming path still parses", {
   expect_identical(p$n_spatial_field_blocks, 0L)
 })
 
+skip_on_cran()
+
 # --------------------------------------------------------------------------- #
 # (4) Parameter recovery end to end                                           #
 # --------------------------------------------------------------------------- #

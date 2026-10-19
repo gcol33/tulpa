@@ -67,6 +67,27 @@ test_that("the multi-block copy resolver reads alpha_n", {
     expect_identical(got[1L], 0)
 })
 
+test_that("a named field_coef is not read as a resolution request", {
+    # `$` PARTIAL-matches on a list, so `fc$n` resolves to `fc$name` on every
+    # spec that names its coefficient -- which fed a character into the integer
+    # check and errored every existing `field_coef = list(name = , grid = )`
+    # fixture. The reads are `[[`.
+    a <- list(field_coef = list(name = "alpha", grid = c(0, 0.5, 1)))
+    got <- tulpa:::.normalise_arm_field_coef(a, 1L)
+    expect_identical(got$field_coef_axis$name, "alpha")
+    expect_identical(got$field_coef_axis$grid, c(0, 0.5, 1))
+    expect_null(got$field_coef_axis$alpha_n)
+
+    # and a genuine resolution request still lands
+    b <- list(field_coef = list(name = "alpha", n = 9L))
+    expect_identical(tulpa:::.normalise_arm_field_coef(b, 1L)$field_coef_axis$alpha_n,
+                     9L)
+    expect_error(tulpa:::.normalise_arm_field_coef(
+        list(field_coef = list(name = "alpha", n = 0L)), 1L), "integer >= 1")
+})
+
+skip_on_cran()
+
 test_that("alpha_n reaches the fitted grid and raises its resolution", {
     skip_on_cran()
     # End to end: the axis the fit actually integrates over carries the
@@ -106,23 +127,4 @@ test_that("alpha_n reaches the fitted grid and raises its resolution", {
     expect_true(0 %in% fit_of(11L)$theta_grid[, "b1.alpha"])
     # and it is a resolution, so it only adds cells
     expect_gt(nrow(fit_of(11L)$theta_grid), nrow(fit_of(NULL)$theta_grid))
-})
-
-test_that("a named field_coef is not read as a resolution request", {
-    # `$` PARTIAL-matches on a list, so `fc$n` resolves to `fc$name` on every
-    # spec that names its coefficient -- which fed a character into the integer
-    # check and errored every existing `field_coef = list(name = , grid = )`
-    # fixture. The reads are `[[`.
-    a <- list(field_coef = list(name = "alpha", grid = c(0, 0.5, 1)))
-    got <- tulpa:::.normalise_arm_field_coef(a, 1L)
-    expect_identical(got$field_coef_axis$name, "alpha")
-    expect_identical(got$field_coef_axis$grid, c(0, 0.5, 1))
-    expect_null(got$field_coef_axis$alpha_n)
-
-    # and a genuine resolution request still lands
-    b <- list(field_coef = list(name = "alpha", n = 9L))
-    expect_identical(tulpa:::.normalise_arm_field_coef(b, 1L)$field_coef_axis$alpha_n,
-                     9L)
-    expect_error(tulpa:::.normalise_arm_field_coef(
-        list(field_coef = list(name = "alpha", n = 0L)), 1L), "integer >= 1")
 })

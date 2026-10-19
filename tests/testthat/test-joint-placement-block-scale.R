@@ -89,6 +89,29 @@ test_that("the mode-find varies an axis its kept cells hold at one node", {
     max(tapply(fit$weights, fit$theta_grid[, axis], sum))
 }
 
+test_that("an axis left on one node is recorded and, when unheld, warned", {
+    res <- list(
+        theta_grid = cbind(b1.sigma = c(0.5, 0.5, 0.5), b2.tau = c(1, 2, 4)),
+        weights = c(0.2, 0.5, 0.3),
+        outer_axis_nodes = list(b1.sigma = c(0.25, 0.5, 1), b2.tau = c(1, 2, 4)))
+    expect_identical(tulpa:::.nl_single_node_axes(res), "b1.sigma")
+    res$outer_grid_single_node_axes <- "b1.sigma"
+    expect_warning(tulpa:::.nl_warn_single_node_axes(res, "f()"),
+                   "`b1.sigma`.*single grid node")
+    res$outer_grid_axis_declined <- c(b1.sigma = "axis_pinned")
+    expect_silent(tulpa:::.nl_warn_single_node_axes(res, "f()"))
+    # A declared one-node axis is a pin of a value, not a collapse.
+    res1 <- res
+    res1$outer_axis_nodes$b1.sigma <- 0.5
+    expect_length(tulpa:::.nl_single_node_axes(res1), 0L)
+    # The copy scale's "no coupling" point mass is a model, not a collapse.
+    res_a <- list(theta_grid = cbind(b1.alpha = c(0, 0.5, 1)),
+                  weights = c(0.995, 0.004, 0.001))
+    expect_length(tulpa:::.nl_single_node_axes(res_a), 0L)
+})
+
+skip_on_cran()
+
 test_that("a non-copy block's own scale axes are placed and integrated", {
     skip_on_cran()
     fx <- .bs_fixture()
@@ -116,25 +139,4 @@ test_that("a pilot-screened fit places the same axes", {
     for (a in c("b2.tau", "b3.sigma")) {
         expect_lt(.bs_node_mass(fit, a), 0.9)
     }
-})
-
-test_that("an axis left on one node is recorded and, when unheld, warned", {
-    res <- list(
-        theta_grid = cbind(b1.sigma = c(0.5, 0.5, 0.5), b2.tau = c(1, 2, 4)),
-        weights = c(0.2, 0.5, 0.3),
-        outer_axis_nodes = list(b1.sigma = c(0.25, 0.5, 1), b2.tau = c(1, 2, 4)))
-    expect_identical(tulpa:::.nl_single_node_axes(res), "b1.sigma")
-    res$outer_grid_single_node_axes <- "b1.sigma"
-    expect_warning(tulpa:::.nl_warn_single_node_axes(res, "f()"),
-                   "`b1.sigma`.*single grid node")
-    res$outer_grid_axis_declined <- c(b1.sigma = "axis_pinned")
-    expect_silent(tulpa:::.nl_warn_single_node_axes(res, "f()"))
-    # A declared one-node axis is a pin of a value, not a collapse.
-    res1 <- res
-    res1$outer_axis_nodes$b1.sigma <- 0.5
-    expect_length(tulpa:::.nl_single_node_axes(res1), 0L)
-    # The copy scale's "no coupling" point mass is a model, not a collapse.
-    res_a <- list(theta_grid = cbind(b1.alpha = c(0, 0.5, 1)),
-                  weights = c(0.995, 0.004, 0.001))
-    expect_length(tulpa:::.nl_single_node_axes(res_a), 0L)
 })

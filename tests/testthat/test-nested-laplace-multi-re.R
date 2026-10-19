@@ -37,6 +37,18 @@ make_block <- function(seed = 11) {
   )
 }
 
+test_that("random slopes on a nested block still decline", {
+  s <- make_block()
+  b <- s$block
+  b$re_list[[2]]$n_coefs <- 2L   # a slope term
+  expect_error(
+    tulpa:::.fit_block_via_nested_laplace(b, n_threads = 1L),
+    "Random slopes"
+  )
+})
+
+skip_on_cran()
+
 test_that("a two-term re_list on a nested block fits and recovers all effects", {
   skip_on_cran()
   s <- make_block()
@@ -66,14 +78,4 @@ test_that("single-term re_list is byte-identical to the built-in-only path", {
   w <- direct$weights %||% rep(1 / nrow(direct$modes), nrow(direct$modes))
   direct_mode <- as.numeric(crossprod(direct$modes, w))
   expect_equal(fit_via_block$mode, direct_mode, tolerance = 1e-10)
-})
-
-test_that("random slopes on a nested block still decline", {
-  s <- make_block()
-  b <- s$block
-  b$re_list[[2]]$n_coefs <- 2L   # a slope term
-  expect_error(
-    tulpa:::.fit_block_via_nested_laplace(b, n_threads = 1L),
-    "Random slopes"
-  )
 })

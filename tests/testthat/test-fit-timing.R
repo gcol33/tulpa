@@ -57,6 +57,8 @@ test_that(".timing_summary_line matches the issue's one-line format", {
   )
 }
 
+skip_on_cran()
+
 test_that("tulpa_nested_laplace attaches a wall-clock timing breakdown", {
   skip_on_cran()
   set.seed(11)

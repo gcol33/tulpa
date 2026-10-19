@@ -21,6 +21,8 @@ test_that("tulpa_nuts_beta rejects bad prior SDs", {
                "log_phi_prior_sd")
 })
 
+skip_on_cran()
+
 test_that("tulpa_nuts_beta recovers parameters on simulated data", {
   skip_if_not_slow()
   set.seed(2026)

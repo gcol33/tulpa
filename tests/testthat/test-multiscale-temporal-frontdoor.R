@@ -44,6 +44,8 @@ test_that("an unsupported multiscale component is refused by name", {
                "At least one temporal component")
 })
 
+skip_on_cran()
+
 test_that("multiscale temporal allocates and names its arms (structural)", {
   skip_if_not_slow()
   s <- make_ms_binom(n_t = 12L, reps = 4L)

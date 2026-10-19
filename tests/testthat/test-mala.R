@@ -1,3 +1,24 @@
+
+
+test_that("mala registers in Tier 1 (Exact)", {
+  expect_true("mala" %in% INFERENCE_TIERS$exact$backends)
+  ti <- get_backend_tier("mala")
+  expect_equal(ti$tier, 1L)
+})
+
+
+test_that("mala errors on non-finite init", {
+  log_post <- function(t) {
+    if (t[1] > 100) -Inf else sum(dnorm(t, log = TRUE))
+  }
+  grad <- function(t) -t
+  expect_error(
+    mala(log_post, grad, init = c(200), n_iter = 100L),
+    "not finite"
+  )
+})
+
+skip_on_cran()
 # MALA: Metropolis-Adjusted Langevin Algorithm.
 
 test_that("mala recovers standard normal", {
@@ -48,13 +69,6 @@ test_that("mala recovers shifted Gaussian", {
   grad <- function(t) -(t - mu_true)
   fit <- mala(log_post, grad, init = c(0, 0, 0), n_iter = 4000L)
   expect_true(all(abs(fit$means - mu_true) < 0.15))
-})
-
-
-test_that("mala registers in Tier 1 (Exact)", {
-  expect_true("mala" %in% INFERENCE_TIERS$exact$backends)
-  ti <- get_backend_tier("mala")
-  expect_equal(ti$tier, 1L)
 })
 
 
@@ -120,18 +134,6 @@ test_that("front-door MALA mixes on a poisson random intercept at default length
     expect_gt(f$convergence$ess_bulk_min, 100)
     expect_equal(coef(f), coef(lap), tolerance = 0.15)
   }
-})
-
-
-test_that("mala errors on non-finite init", {
-  log_post <- function(t) {
-    if (t[1] > 100) -Inf else sum(dnorm(t, log = TRUE))
-  }
-  grad <- function(t) -t
-  expect_error(
-    mala(log_post, grad, init = c(200), n_iter = 100L),
-    "not finite"
-  )
 })
 
 

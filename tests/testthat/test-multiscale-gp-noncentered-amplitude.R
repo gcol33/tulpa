@@ -45,22 +45,6 @@ test_that("auto mode routes a multiscale field to the exact ModelData backend", 
   expect_equal(tulpa:::BACKEND_REGISTRY[[sel$backend]]$input, "modeldata")
 })
 
-test_that("multiscale GP fits under exact NUTS and allocates both scales", {
-  skip_if_not_slow()
-  d <- sim_msgp(n = 40L, seed = 2L)
-  fit <- tulpa(
-    y ~ 1, data = d, family = "poisson",
-    spatial = spatial_multiscale(~ lon + lat, nn_local = 8L, nn_regional = 8L,
-                                 range_local = c(0.01, 1), range_regional = c(1, 10)),
-    mode = "exact",
-    control = list(n_iter = 120L, n_warmup = 60L, seed = 1L))
-  pn <- colnames(fit$draws)
-  expect_true(all(c("log_sigma2_gp_local", "log_phi_gp_local",
-                    "log_sigma2_gp_regional", "log_phi_gp_regional") %in% pn))
-  expect_equal(sum(grepl("^gp_local\\[", pn)), 40L)
-  expect_equal(sum(grepl("^gp_regional\\[", pn)), 40L)
-})
-
 test_that("non-centered multiscale GP NUTS recovers both scales' amplitude", {
   skip("blocked on gcol33/tulpa#244 (multiscale range prior)")
   # The per-scale non-centered transform itself is verified directly by
@@ -109,6 +93,24 @@ test_that("non-centered multiscale GP NUTS recovers both scales' amplitude", {
   expect_lt(ratio_local, 2.0)
   expect_gt(ratio_regional, 0.3)
   expect_lt(ratio_regional, 2.0)
+})
+
+skip_on_cran()
+
+test_that("multiscale GP fits under exact NUTS and allocates both scales", {
+  skip_if_not_slow()
+  d <- sim_msgp(n = 40L, seed = 2L)
+  fit <- tulpa(
+    y ~ 1, data = d, family = "poisson",
+    spatial = spatial_multiscale(~ lon + lat, nn_local = 8L, nn_regional = 8L,
+                                 range_local = c(0.01, 1), range_regional = c(1, 10)),
+    mode = "exact",
+    control = list(n_iter = 120L, n_warmup = 60L, seed = 1L))
+  pn <- colnames(fit$draws)
+  expect_true(all(c("log_sigma2_gp_local", "log_phi_gp_local",
+                    "log_sigma2_gp_regional", "log_phi_gp_regional") %in% pn))
+  expect_equal(sum(grepl("^gp_local\\[", pn)), 40L)
+  expect_equal(sum(grepl("^gp_regional\\[", pn)), 40L)
 })
 
 test_that("a multiscale range starts from its bounds and the chain moves", {

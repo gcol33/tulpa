@@ -22,6 +22,20 @@
        n_neighbors = as.integer(nn))
 }
 
+test_that("fit_spde accepts the screening knobs its entry can now reach", {
+  keys <- tulpa:::.CONTROL_KEYS$spde
+  for (k in c("prune", "prune_tol", "prune_log_gap", "screen_iters",
+              "fitted_var", "subspace_debias", "cila")) {
+    expect_true(k %in% keys, info = k)
+  }
+  # And they are resolved the way tulpa_nested_laplace() resolves them, not
+  # re-invented: an out-of-range tolerance is refused at the door.
+  expect_error(tulpa:::.nl_check_prune_tol(1.5))
+  expect_error(tulpa:::.nl_check_screen_iters(0L))
+})
+
+skip_on_cran()
+
 test_that("the spec and joint entry families agree on log_marginal", {
   skip_on_cran()
   set.seed(11)
@@ -87,16 +101,4 @@ test_that("every nested-Laplace grid entry takes the shared control knobs", {
       expect_true(k %in% fm, info = paste(e, "is missing", k))
     }
   }
-})
-
-test_that("fit_spde accepts the screening knobs its entry can now reach", {
-  keys <- tulpa:::.CONTROL_KEYS$spde
-  for (k in c("prune", "prune_tol", "prune_log_gap", "screen_iters",
-              "fitted_var", "subspace_debias", "cila")) {
-    expect_true(k %in% keys, info = k)
-  }
-  # And they are resolved the way tulpa_nested_laplace() resolves them, not
-  # re-invented: an out-of-range tolerance is refused at the door.
-  expect_error(tulpa:::.nl_check_prune_tol(1.5))
-  expect_error(tulpa:::.nl_check_screen_iters(0L))
 })

@@ -28,6 +28,49 @@
         control = c(list(progress = FALSE, diagnose_k = FALSE), control)))
 }
 
+test_that("only a field SD the dispatcher can write a cell onto is refinable", {
+    ref <- tulpa:::.nl_refinable_registry_axes
+    expect_identical(ref(list(type = "icar"), FALSE), "tau")
+    expect_identical(ref(list(type = "bym2"), FALSE), "sigma")
+    expect_identical(ref(list(list(type = "icar"), list(type = "iid")), TRUE),
+                     c("b1.tau", "b2.sigma"))
+    # The GP variance and lengthscale are not field SDs, and a bare `phi_gp` is
+    # not a dispersion here.
+    expect_length(ref(list(type = "nngp"), FALSE), 0L)
+    expect_length(ref(list(type = "hsgp"), FALSE), 0L)
+})
+
+test_that("per-cell fields are bound by shape, constants left alone", {
+    base <- list(a = c(1, 2, 3), m = matrix(1:6, 3), l = list(1, 2, 3),
+                 flag = c(TRUE, FALSE, FALSE), const = c(9, 9, 9), k = 5)
+    chunk <- function(n) list(res = list(a = rep(10, n), m = matrix(0L, n, 2L),
+                                         l = as.list(seq_len(n)),
+                                         const = c(9, 9, 9), k = 5), n = n)
+    out <- tulpa:::.nl_bind_cell_results(base, list(chunk(2L), chunk(1L)), 3L)
+    expect_equal(out$a, c(1, 2, 3, 10, 10, 10))
+    expect_equal(dim(out$m), c(6L, 2L))
+    expect_length(out$l, 6L)
+    # A per-cell field the chunks do not return is filled.
+    expect_identical(out$flag, c(TRUE, FALSE, FALSE, FALSE, FALSE, FALSE))
+    # A constant keeps its value and length whatever the chunk sizes.
+    expect_identical(out$const, c(9, 9, 9))
+    expect_identical(out$k, 5)
+})
+
+test_that("a call as large as the base grid is split so shapes stay unambiguous", {
+    seen <- integer(0)
+    ck <- tulpa:::.nl_chunked_kernel(function(theta, screen = NULL) {
+        seen <<- c(seen, nrow(theta))
+        list(log_marginal = seq_len(nrow(theta)))
+    }, 4L)
+    out <- ck$kernel_fn(matrix(1:8, 4, dimnames = list(NULL, c("a", "b"))))
+    expect_identical(seen, c(3L, 1L))
+    expect_length(out$log_marginal, 4L)
+    expect_length(ck$chunks(), 2L)
+})
+
+skip_on_cran()
+
 test_that("a field SD collapsed onto few nodes is refined on the registry door", {
     skip_on_cran()
     sim <- .nrr_sim()
@@ -94,45 +137,4 @@ test_that("control$axis_refine names axes the registry fit has", {
                  "does not have")
     expect_error(.nrr_fit(sim, sim$prior, list(axis_refine = c(tau = "widen"))),
                  "unknown mode")
-})
-
-test_that("only a field SD the dispatcher can write a cell onto is refinable", {
-    ref <- tulpa:::.nl_refinable_registry_axes
-    expect_identical(ref(list(type = "icar"), FALSE), "tau")
-    expect_identical(ref(list(type = "bym2"), FALSE), "sigma")
-    expect_identical(ref(list(list(type = "icar"), list(type = "iid")), TRUE),
-                     c("b1.tau", "b2.sigma"))
-    # The GP variance and lengthscale are not field SDs, and a bare `phi_gp` is
-    # not a dispersion here.
-    expect_length(ref(list(type = "nngp"), FALSE), 0L)
-    expect_length(ref(list(type = "hsgp"), FALSE), 0L)
-})
-
-test_that("per-cell fields are bound by shape, constants left alone", {
-    base <- list(a = c(1, 2, 3), m = matrix(1:6, 3), l = list(1, 2, 3),
-                 flag = c(TRUE, FALSE, FALSE), const = c(9, 9, 9), k = 5)
-    chunk <- function(n) list(res = list(a = rep(10, n), m = matrix(0L, n, 2L),
-                                         l = as.list(seq_len(n)),
-                                         const = c(9, 9, 9), k = 5), n = n)
-    out <- tulpa:::.nl_bind_cell_results(base, list(chunk(2L), chunk(1L)), 3L)
-    expect_equal(out$a, c(1, 2, 3, 10, 10, 10))
-    expect_equal(dim(out$m), c(6L, 2L))
-    expect_length(out$l, 6L)
-    # A per-cell field the chunks do not return is filled.
-    expect_identical(out$flag, c(TRUE, FALSE, FALSE, FALSE, FALSE, FALSE))
-    # A constant keeps its value and length whatever the chunk sizes.
-    expect_identical(out$const, c(9, 9, 9))
-    expect_identical(out$k, 5)
-})
-
-test_that("a call as large as the base grid is split so shapes stay unambiguous", {
-    seen <- integer(0)
-    ck <- tulpa:::.nl_chunked_kernel(function(theta, screen = NULL) {
-        seen <<- c(seen, nrow(theta))
-        list(log_marginal = seq_len(nrow(theta)))
-    }, 4L)
-    out <- ck$kernel_fn(matrix(1:8, 4, dimnames = list(NULL, c("a", "b"))))
-    expect_identical(seen, c(3L, 1L))
-    expect_length(out$log_marginal, 4L)
-    expect_length(ck$chunks(), 2L)
 })

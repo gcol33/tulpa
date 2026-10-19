@@ -1,3 +1,20 @@
+
+test_that("reloo rejects spatial fits and callless fits", {
+  spatial_fit <- structure(
+    list(spatial = list(type = "icar"), call = quote(tulpa()),
+         formula = y ~ x, family = "poisson"),
+    class = "tulpa_fit")
+  expect_error(tulpa_reloo(spatial_fit, data = data.frame(y = 1, x = 1)),
+               "not supported")
+
+  callless <- structure(
+    list(formula = y ~ x, family = "poisson"),
+    class = "tulpa_fit")
+  expect_error(tulpa_reloo(callless, data = data.frame(y = 1, x = 1)),
+               "no `\\$call`")
+})
+
+skip_on_cran()
 # tulpa_reloo() (gcol33/tulpa C5): PSIS-LOO with exact refits at flagged
 # observations. Consistency anchor: with every observation flagged, reloo is
 # exact LOO-CV and must match tulpa_kfold with K = n (same held-out density,
@@ -75,19 +92,4 @@ test_that("kfold threads a stored n_trials argument through each refit", {
   # reloo picks the stored trials up too.
   rl <- tulpa_reloo(fit, data = d, k_threshold = Inf)
   expect_true(is.finite(rl$elpd_loo))
-})
-
-test_that("reloo rejects spatial fits and callless fits", {
-  spatial_fit <- structure(
-    list(spatial = list(type = "icar"), call = quote(tulpa()),
-         formula = y ~ x, family = "poisson"),
-    class = "tulpa_fit")
-  expect_error(tulpa_reloo(spatial_fit, data = data.frame(y = 1, x = 1)),
-               "not supported")
-
-  callless <- structure(
-    list(formula = y ~ x, family = "poisson"),
-    class = "tulpa_fit")
-  expect_error(tulpa_reloo(callless, data = data.frame(y = 1, x = 1)),
-               "no `\\$call`")
 })

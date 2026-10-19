@@ -85,6 +85,32 @@ test_that("the spatial constructors surface the same structural issues as check_
   }
 })
 
+test_that("a validated tulpa_adjacency passes the constructors without re-warning", {
+  # .validate_adjacency_arg() short-circuits on a tulpa_adjacency, so an object
+  # adjacency() already vetted must not be re-checked or re-warned about.
+  adj <- chain_adjacency(5)
+  expect_s3_class(adj, "tulpa_adjacency")
+  expect_equal(unname(as.matrix(adj$adjacency)), chain_W(5))
+  expect_silent(car(adj))
+  expect_silent(bym2(adj))
+  expect_silent(fld(adj))
+})
+
+test_that("a float-rounded symmetric graph is accepted, matching check_adjacency", {
+  # The inline checks demanded exact symmetry via isSymmetric(), so a graph
+  # check_adjacency() accepts was rejected by the constructors. 1e-14 is inside
+  # the 1e-8 tolerance the validator uses, so the graph must be accepted rather
+  # than rejected on symmetry -- reaching the warning at all is the assertion.
+  # The same perturbation puts one entry off exactly 1, which check_adjacency()
+  # reports as a weighted graph as well, so the 0/1 warning is the two agreeing.
+  W <- chain_W(5)
+  W[1, 2] <- W[1, 2] + 1e-14
+  expect_warning(car(W), "other than 0/1")
+  expect_warning(fld(W), "other than 0/1")
+})
+
+skip_on_cran()
+
 test_that("an isolated node is reported with what the field does with it (#962)", {
   skip_on_cran()
   isolated <- chain_W(5); isolated[4, 5] <- 0; isolated[5, 4] <- 0
@@ -111,28 +137,4 @@ test_that("an isolated node is reported with what the field does with it (#962)"
   sp <- suppressMessages(car(isolated))
   expect_silent(tulpa:::.validate_adjacency_arg(sp$adjacency, "x",
                                                 field = "icar"))
-})
-
-test_that("a validated tulpa_adjacency passes the constructors without re-warning", {
-  # .validate_adjacency_arg() short-circuits on a tulpa_adjacency, so an object
-  # adjacency() already vetted must not be re-checked or re-warned about.
-  adj <- chain_adjacency(5)
-  expect_s3_class(adj, "tulpa_adjacency")
-  expect_equal(unname(as.matrix(adj$adjacency)), chain_W(5))
-  expect_silent(car(adj))
-  expect_silent(bym2(adj))
-  expect_silent(fld(adj))
-})
-
-test_that("a float-rounded symmetric graph is accepted, matching check_adjacency", {
-  # The inline checks demanded exact symmetry via isSymmetric(), so a graph
-  # check_adjacency() accepts was rejected by the constructors. 1e-14 is inside
-  # the 1e-8 tolerance the validator uses, so the graph must be accepted rather
-  # than rejected on symmetry -- reaching the warning at all is the assertion.
-  # The same perturbation puts one entry off exactly 1, which check_adjacency()
-  # reports as a weighted graph as well, so the 0/1 warning is the two agreeing.
-  W <- chain_W(5)
-  W[1, 2] <- W[1, 2] + 1e-14
-  expect_warning(car(W), "other than 0/1")
-  expect_warning(fld(W), "other than 0/1")
 })

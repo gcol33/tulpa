@@ -157,6 +157,74 @@ ICAR_BETA_SD <- 0.6
   fx
 }
 
+test_that("the two-component fixture really exercises the block update", {
+  fx <- .icar_two_components()
+  got <- .icar_sweep(fx, 2, seq(-1.5, 1.5, length.out = fx$J))
+  expect_equal(got$n_components, 2L)
+  expect_equal(got$component, c(0L, 0L, 0L, 1L, 1L, 1L))
+})
+
+test_that("a sweep that zeroes the field does not reproduce the kernel", {
+  # The negative control: without it the equivalence above could pass on a
+  # replica that shares the defect.
+  fx <- .icar_chain()
+  phi_in <- seq(-1.5, 1.5, length.out = fx$J)
+  set.seed(909)
+  got <- .icar_sweep(fx, 40, phi_in)
+  set.seed(909)
+  bugged <- .icar_replica(fx, 40, phi_in, zero_field = TRUE)
+  expect_gt(max(abs(got$phi - bugged$phi)), 0.1)
+})
+
+test_that("an island with no observation is drawn from its N(0, 1 / tau) prior (#963)", {
+  # Was pinned to 0 (no data) or N(0, 1000) (with data). Over many sweeps from
+  # one incoming field the island's centred value has the conditional variance
+  # 1 / (tau Qt_66 + intercept term): order 1 / tau.
+  fx <- .icar_island()
+  tau <- 4
+  set.seed(11)
+  isl <- vapply(seq_len(3000L), function(r) {
+    s <- .icar_sweep(fx, tau, rep(0, fx$J))
+    s$phi[6] + s$removed_mean
+  }, numeric(1))
+  expect_gt(sd(isl), 0.2)
+  expect_lt(sd(isl), 1)
+})
+
+test_that("the leading unit's draw matches its closed-form conditional", {
+  # Unit 1's only neighbour is unit 2, which the sweep has not reached, so its
+  # conditional is a fixed Gaussian in the incoming field -- and it is exactly
+  # the term the zeroing sweep dropped. On a connected graph the component
+  # block update is skipped, so phi[1] + removed_mean is the raw draw.
+  fx <- .icar_chain(seed = 33L)
+  phi_in <- c(2.0, -1.25, 0.4, 0.9, -0.6, 1.1)
+  tau <- 3.0
+
+  sum_omega <- tapply(fx$omega, fx$group, sum)
+  sum_resid <- tapply(fx$kappa - fx$omega * fx$offset, fx$group, sum)
+  # The intercept prior the unit sees through the field mean (gcol33/tulpa#763).
+  g <- 1 / fx$J
+  base <- ICAR_BETA0 + g * sum(phi_in[-1])
+  prec <- tau * fx$n_neighbors[1] + sum_omega[[1]] + g^2 / ICAR_BETA_SD^2
+  mu   <- (tau * phi_in[2] + sum_resid[[1]] - g * base / ICAR_BETA_SD^2) / prec
+  sdev <- sqrt(1 / prec)
+
+  set.seed(77)
+  raw <- vapply(seq_len(4000L), function(r) {
+    s <- .icar_sweep(fx, tau, phi_in)
+    s$phi[1] + s$removed_mean
+  }, numeric(1))
+
+  # 4000 draws: the mean's standard error is sdev / 63.
+  expect_lt(abs(mean(raw) - mu), 4 * sdev / sqrt(4000))
+  expect_lt(abs(sd(raw) / sdev - 1), 0.06)
+  # The mean the zeroed field would have produced is well outside that band.
+  mu_zeroed <- sum_resid[[1]] / prec
+  expect_gt(abs(mu - mu_zeroed), 10 * sdev / sqrt(4000))
+})
+
+skip_on_cran()
+
 test_that("the sweep reproduces the ICAR conditional drawn in R", {
   skip_on_cran()
   for (nm in c("chain", "two_components", "island")) {
@@ -175,25 +243,6 @@ test_that("the sweep reproduces the ICAR conditional drawn in R", {
                    info = paste(nm, tau))
     }
   }
-})
-
-test_that("the two-component fixture really exercises the block update", {
-  fx <- .icar_two_components()
-  got <- .icar_sweep(fx, 2, seq(-1.5, 1.5, length.out = fx$J))
-  expect_equal(got$n_components, 2L)
-  expect_equal(got$component, c(0L, 0L, 0L, 1L, 1L, 1L))
-})
-
-test_that("a sweep that zeroes the field does not reproduce the kernel", {
-  # The negative control: without it the equivalence above could pass on a
-  # replica that shares the defect.
-  fx <- .icar_chain()
-  phi_in <- seq(-1.5, 1.5, length.out = fx$J)
-  set.seed(909)
-  got <- .icar_sweep(fx, 40, phi_in)
-  set.seed(909)
-  bugged <- .icar_replica(fx, 40, phi_in, zero_field = TRUE)
-  expect_gt(max(abs(got$phi - bugged$phi)), 0.1)
 })
 
 test_that("the kernels' ICAR prior is the marginal of the centred Q_aug field (#963)", {
@@ -249,51 +298,4 @@ test_that("the kernels' ICAR prior is the marginal of the centred Q_aug field (#
               function(a, b) as.numeric(abs(a - b) == 1))
   diag(Q) <- fx$n_neighbors
   expect_equal(got$Qt, Q)
-})
-
-test_that("an island with no observation is drawn from its N(0, 1 / tau) prior (#963)", {
-  # Was pinned to 0 (no data) or N(0, 1000) (with data). Over many sweeps from
-  # one incoming field the island's centred value has the conditional variance
-  # 1 / (tau Qt_66 + intercept term): order 1 / tau.
-  fx <- .icar_island()
-  tau <- 4
-  set.seed(11)
-  isl <- vapply(seq_len(3000L), function(r) {
-    s <- .icar_sweep(fx, tau, rep(0, fx$J))
-    s$phi[6] + s$removed_mean
-  }, numeric(1))
-  expect_gt(sd(isl), 0.2)
-  expect_lt(sd(isl), 1)
-})
-
-test_that("the leading unit's draw matches its closed-form conditional", {
-  # Unit 1's only neighbour is unit 2, which the sweep has not reached, so its
-  # conditional is a fixed Gaussian in the incoming field -- and it is exactly
-  # the term the zeroing sweep dropped. On a connected graph the component
-  # block update is skipped, so phi[1] + removed_mean is the raw draw.
-  fx <- .icar_chain(seed = 33L)
-  phi_in <- c(2.0, -1.25, 0.4, 0.9, -0.6, 1.1)
-  tau <- 3.0
-
-  sum_omega <- tapply(fx$omega, fx$group, sum)
-  sum_resid <- tapply(fx$kappa - fx$omega * fx$offset, fx$group, sum)
-  # The intercept prior the unit sees through the field mean (gcol33/tulpa#763).
-  g <- 1 / fx$J
-  base <- ICAR_BETA0 + g * sum(phi_in[-1])
-  prec <- tau * fx$n_neighbors[1] + sum_omega[[1]] + g^2 / ICAR_BETA_SD^2
-  mu   <- (tau * phi_in[2] + sum_resid[[1]] - g * base / ICAR_BETA_SD^2) / prec
-  sdev <- sqrt(1 / prec)
-
-  set.seed(77)
-  raw <- vapply(seq_len(4000L), function(r) {
-    s <- .icar_sweep(fx, tau, phi_in)
-    s$phi[1] + s$removed_mean
-  }, numeric(1))
-
-  # 4000 draws: the mean's standard error is sdev / 63.
-  expect_lt(abs(mean(raw) - mu), 4 * sdev / sqrt(4000))
-  expect_lt(abs(sd(raw) / sdev - 1), 0.06)
-  # The mean the zeroed field would have produced is well outside that band.
-  mu_zeroed <- sum_resid[[1]] / prec
-  expect_gt(abs(mu - mu_zeroed), 10 * sdev / sqrt(4000))
 })

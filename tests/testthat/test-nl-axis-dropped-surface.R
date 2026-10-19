@@ -79,6 +79,8 @@ test_that("the reader unwraps a model package's nested fit", {
     expect_null(tulpa:::.tulpa_axis_dropped(empty))
 })
 
+skip_on_cran()
+
 # --------------------------------------------------------------------------- #
 # The three readers, on a fit that actually dropped an axis                    #
 # --------------------------------------------------------------------------- #

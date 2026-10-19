@@ -174,6 +174,8 @@ test_that("tulpa_pit(log_lik =) needs the log-lik and cdf shapes to agree", {
                "draws \\(rows\\)")
 })
 
+skip_on_cran()
+
 test_that("compare_models computes native WAIC / LOO from a fit's pointwise log-lik", {
   skip_on_cran()
   skip_if_not_installed("loo")

@@ -59,6 +59,106 @@ fd_model <- function(n_obs = 20L, group_ids = NULL, pool = NULL) {
   m
 }
 
+test_that("the five predictive shapes are exported and the verb is the only one", {
+  ex <- getNamespaceExports("tulpa")
+  expect_true(all(c("sbc", "sbc_mixture", "sbc_normal", "sbc_discrete",
+                    "sbc_rank", "sbc_draws") %in% ex))
+  # The drivers, the report and the band stay internal: `sbc()` is the verb.
+  expect_false(any(c("recov_sbc", "recov_posterior_sbc", "sbc_report",
+                     "sbc_crps_compare", "sbc_ecdf_band", "sbc_pit") %in% ex))
+})
+
+test_that("the declaration is checked in both directions", {
+  # A quantity that DID move contradicts the declaration.
+  expect_error(sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
+                   n_sim = 20L, flat_prior = "mu"),
+               "but the truth moved")
+  # A declaration naming something the fitter does not score.
+  expect_error(sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
+                   n_sim = 20L, flat_prior = "sigma"),
+               "does not score")
+})
+
+test_that("a rank quantity needs no truth and is exempt from the guard", {
+  # Every arm reports it as a rank, so there is no prior to be proper.
+  fitter <- function(d)
+    list(a = list(r = sbc_rank(sum(stats::runif(40L) < 0.5), 40L)))
+  res <- sbc("prior_predictive", simulator = fd_sim, fitter = fitter,
+             n_sim = 20L)
+  expect_identical(unique(res$report$quantity), "r")
+  expect_true(all(is.na(res$pit$crps)))
+})
+
+test_that("a pool that drops the observed data is refused", {
+  # The documented collapse: fitting the replicate ALONE is ordinary SBC under
+  # a hand-made prior, and the sequential-updating identity does not hold.
+  m <- fd_model(pool = function(obs, rep) rep)
+  expect_error(sbc("posterior", model = m, n_sim = 5L),
+               "AUGMENTED posterior")
+  # And one that drops the replicate: nothing is being calibrated.
+  m2 <- fd_model(pool = function(obs, rep) obs)
+  expect_error(sbc("posterior", model = m2, n_sim = 5L),
+               "not conditioned on")
+  # A pool that merely WRAPS both is not refused: containment holds.
+  m3 <- fd_model(pool = function(obs, rep)
+    list(y = c(obs$y, rep$y), g = c(obs$g, rep$g + length(obs$g)),
+         parts = list(obs = obs, rep = rep)))
+  expect_s3_class(sbc("posterior", model = m3, n_sim = 5L), "sbc")
+})
+
+test_that("a replicate re-observing the same groups is refused", {
+  m <- fd_model(group_ids = function(data) data$g,
+                pool = function(obs, rep)
+                  list(y = c(obs$y, rep$y), g = c(obs$g, rep$g)))
+  expect_error(sbc("posterior", model = m, n_sim = 5L), "FRESH groups")
+})
+
+test_that("the two experiments do not accept each other's arguments", {
+  m <- fd_model()
+  expect_error(sbc("posterior", model = m, n_sim = 5L, flat_prior = "mu"),
+               "prior-predictive experiment")
+  expect_error(sbc("posterior", simulator = fd_sim, n_sim = 5L),
+               "belong to the prior-predictive")
+  expect_error(sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
+                   model = m, n_sim = 5L),
+               "posterior experiment's callback list")
+  expect_error(sbc("prior_predictive", n_sim = 5L), "needs simulator")
+  expect_error(sbc("posterior", n_sim = 5L), "needs model")
+})
+
+# ---------------------------------------------------------------------------
+# 5. The CRPS scoping refusal survives the promotion
+# ---------------------------------------------------------------------------
+
+test_that("CRPS is refused as a ranking where it is not a proper posterior score", {
+  # The door offers only the two experiments in which the score IS proper, so a
+  # fixed-truth result cannot come out of it -- and the refusal underneath is
+  # still enforced.
+  expect_error(sbc("fixed", simulator = fd_sim, fitter = fd_fitter),
+               "should be one of")
+  fx <- recov_sbc(fd_sim, fd_fitter, n_seed = 4L, truth = "fixed")
+  expect_error(sbc_crps_compare(fx, "exact"), "prior-predictive")
+
+  res <- sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
+             n_sim = 20L)
+  expect_error(summary(res, baseline = "nosucharm"), "is not one of")
+})
+
+test_that("proper_prior is not 'verified' on a run that probed nothing", {
+  # gcol33/tulpa#716: .sbc_check_proper_prior() returns early with n_probe = 0
+  # when every scored quantity is of the "rank" kind, having probed no truth at
+  # all, and the premise was hardcoded "verified". The 0 does disclose it to a
+  # careful reader; the word that survives into a summary is "verified".
+  expect_identical(
+    tulpa:::.sbc_premise_proper_prior(list(n_probe = 3L)), "verified")
+  expect_false(
+    grepl("verified", tulpa:::.sbc_premise_proper_prior(list(n_probe = 0L))))
+  expect_match(tulpa:::.sbc_premise_proper_prior(list(n_probe = 0L)),
+               "not applicable")
+})
+
+skip_on_cran()
+
 # ---------------------------------------------------------------------------
 # 1. One implementation of the scorer
 # ---------------------------------------------------------------------------
@@ -89,15 +189,6 @@ test_that("the scorer is the package's, not a private copy in the helper", {
                             "sbc_ecdf_test", "recov_sbc",
                             "recov_posterior_sbc", "sbc_report",
                             "sbc_crps_compare")), 0L)
-})
-
-test_that("the five predictive shapes are exported and the verb is the only one", {
-  ex <- getNamespaceExports("tulpa")
-  expect_true(all(c("sbc", "sbc_mixture", "sbc_normal", "sbc_discrete",
-                    "sbc_rank", "sbc_draws") %in% ex))
-  # The drivers, the report and the band stay internal: `sbc()` is the verb.
-  expect_false(any(c("recov_sbc", "recov_posterior_sbc", "sbc_report",
-                     "sbc_crps_compare", "sbc_ecdf_band", "sbc_pit") %in% ex))
 })
 
 # ---------------------------------------------------------------------------
@@ -176,27 +267,6 @@ test_that("a truth held fixed across simulations is refused, naming the way out"
   expect_identical(ok$premises$n_probed, 10L)
 })
 
-test_that("the declaration is checked in both directions", {
-  # A quantity that DID move contradicts the declaration.
-  expect_error(sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
-                   n_sim = 20L, flat_prior = "mu"),
-               "but the truth moved")
-  # A declaration naming something the fitter does not score.
-  expect_error(sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
-                   n_sim = 20L, flat_prior = "sigma"),
-               "does not score")
-})
-
-test_that("a rank quantity needs no truth and is exempt from the guard", {
-  # Every arm reports it as a rank, so there is no prior to be proper.
-  fitter <- function(d)
-    list(a = list(r = sbc_rank(sum(stats::runif(40L) < 0.5), 40L)))
-  res <- sbc("prior_predictive", simulator = fd_sim, fitter = fitter,
-             n_sim = 20L)
-  expect_identical(unique(res$report$quantity), "r")
-  expect_true(all(is.na(res$pit$crps)))
-})
-
 # ---------------------------------------------------------------------------
 # 4. The posterior experiment's two premises
 # ---------------------------------------------------------------------------
@@ -216,61 +286,6 @@ test_that("the posterior door runs and records what it verified", {
   res2 <- sbc("posterior", model = fd_model(), n_sim = 25L)
   expect_identical(res2$premises$fresh_groups, "undeclared")
   expect_identical(res2$pit, res$pit)
-})
-
-test_that("a pool that drops the observed data is refused", {
-  # The documented collapse: fitting the replicate ALONE is ordinary SBC under
-  # a hand-made prior, and the sequential-updating identity does not hold.
-  m <- fd_model(pool = function(obs, rep) rep)
-  expect_error(sbc("posterior", model = m, n_sim = 5L),
-               "AUGMENTED posterior")
-  # And one that drops the replicate: nothing is being calibrated.
-  m2 <- fd_model(pool = function(obs, rep) obs)
-  expect_error(sbc("posterior", model = m2, n_sim = 5L),
-               "not conditioned on")
-  # A pool that merely WRAPS both is not refused: containment holds.
-  m3 <- fd_model(pool = function(obs, rep)
-    list(y = c(obs$y, rep$y), g = c(obs$g, rep$g + length(obs$g)),
-         parts = list(obs = obs, rep = rep)))
-  expect_s3_class(sbc("posterior", model = m3, n_sim = 5L), "sbc")
-})
-
-test_that("a replicate re-observing the same groups is refused", {
-  m <- fd_model(group_ids = function(data) data$g,
-                pool = function(obs, rep)
-                  list(y = c(obs$y, rep$y), g = c(obs$g, rep$g)))
-  expect_error(sbc("posterior", model = m, n_sim = 5L), "FRESH groups")
-})
-
-test_that("the two experiments do not accept each other's arguments", {
-  m <- fd_model()
-  expect_error(sbc("posterior", model = m, n_sim = 5L, flat_prior = "mu"),
-               "prior-predictive experiment")
-  expect_error(sbc("posterior", simulator = fd_sim, n_sim = 5L),
-               "belong to the prior-predictive")
-  expect_error(sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
-                   model = m, n_sim = 5L),
-               "posterior experiment's callback list")
-  expect_error(sbc("prior_predictive", n_sim = 5L), "needs simulator")
-  expect_error(sbc("posterior", n_sim = 5L), "needs model")
-})
-
-# ---------------------------------------------------------------------------
-# 5. The CRPS scoping refusal survives the promotion
-# ---------------------------------------------------------------------------
-
-test_that("CRPS is refused as a ranking where it is not a proper posterior score", {
-  # The door offers only the two experiments in which the score IS proper, so a
-  # fixed-truth result cannot come out of it -- and the refusal underneath is
-  # still enforced.
-  expect_error(sbc("fixed", simulator = fd_sim, fitter = fd_fitter),
-               "should be one of")
-  fx <- recov_sbc(fd_sim, fd_fitter, n_seed = 4L, truth = "fixed")
-  expect_error(sbc_crps_compare(fx, "exact"), "prior-predictive")
-
-  res <- sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
-             n_sim = 20L)
-  expect_error(summary(res, baseline = "nosucharm"), "is not one of")
 })
 
 # ---------------------------------------------------------------------------
@@ -347,17 +362,4 @@ test_that("a fit's reliability table carries the calibration verdict alongside",
   out <- utils::capture.output(print(both))
   expect_true(any(grepl("calibration \\(SBC", out)))
   expect_error(diagnostics(fit, sbc = "not an sbc result"), "takes an `sbc`")
-})
-
-test_that("proper_prior is not 'verified' on a run that probed nothing", {
-  # gcol33/tulpa#716: .sbc_check_proper_prior() returns early with n_probe = 0
-  # when every scored quantity is of the "rank" kind, having probed no truth at
-  # all, and the premise was hardcoded "verified". The 0 does disclose it to a
-  # careful reader; the word that survives into a summary is "verified".
-  expect_identical(
-    tulpa:::.sbc_premise_proper_prior(list(n_probe = 3L)), "verified")
-  expect_false(
-    grepl("verified", tulpa:::.sbc_premise_proper_prior(list(n_probe = 0L))))
-  expect_match(tulpa:::.sbc_premise_proper_prior(list(n_probe = 0L)),
-               "not applicable")
 })

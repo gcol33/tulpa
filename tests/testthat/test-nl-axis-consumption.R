@@ -45,36 +45,6 @@
          n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0)
 }
 
-# --------------------------------------------------------------------------- #
-# (1) The table                                                                #
-# --------------------------------------------------------------------------- #
-
-test_that("every path binding resolves to real fields of real families", {
-    skip_on_cran()
-    known <- tulpa:::.nl_known_axis_fields()
-    for (path in names(tulpa:::.NL_PATH_AXES)) {
-        expect_true(path %in% names(tulpa:::.NL_AXIS_PATH_LABEL), info = path)
-        entries <- tulpa:::.NL_PATH_AXES[[path]]
-        for (fam in names(entries)) {
-            expect_true(fam %in% names(tulpa:::.NL_REGISTRY),
-                        info = paste(path, fam))
-            for (tok in entries[[fam]]) {
-                if (startsWith(tok, ".")) {
-                    expect_true(identical(tok, ".registry") ||
-                                    tok %in% names(tulpa:::.NL_FAMILY_AXES),
-                                info = paste(path, fam, tok))
-                } else {
-                    expect_true(tok %in% known, info = paste(path, fam, tok))
-                }
-            }
-            # The expansion is non-empty and made of known field names.
-            got <- tulpa:::.nl_path_axis_fields(fam, path)
-            expect_gt(length(got), 0L)
-            expect_true(all(got %in% known), info = paste(path, fam))
-        }
-    }
-})
-
 test_that("a family with no path entry reads exactly its registry binding", {
     # nngp's drivers agree, so it needs no entry and must not acquire one by
     # accident.
@@ -105,6 +75,178 @@ test_that("every declared conversion is mutual and lands in the other axis", {
                                            tulpa:::.nl_path_axis_fields(fam, p)))
                 expect_true(to %in% reads, info = paste(fam, to))
             }
+        }
+    }
+})
+
+# --------------------------------------------------------------------------- #
+# (3) The refusal                                                              #
+# --------------------------------------------------------------------------- #
+
+test_that("a pinned axis the multi-block path cannot read is refused", {
+    sim <- .axc_sim(seed = 22L)
+    arm <- .axc_arm(sim)
+    expect_error(
+        tulpa_nested_laplace_joint(
+            responses = list(occ = arm),
+            prior = list(.axc_icar_block(sim, sigma_grid = c(0.4, 0.9),
+                                         spatial_idx = list(sim$sidx)))),
+        "sigma_grid.*is not an axis.*registry path.*integrates `tau_grid`")
+    # The message carries the conversion, the block index, and the family.
+    msg <- tryCatch(
+        tulpa_nested_laplace_joint(
+            responses = list(occ = arm),
+            prior = list(.axc_icar_block(sim, spatial_idx = list(sim$sidx)),
+                         .axc_icar_block(sim, sigma_grid = c(0.4, 0.9),
+                                         spatial_idx = list(sim$sidx)))),
+        error = conditionMessage)
+    expect_match(msg, "prior block 2 'icar'", fixed = TRUE)
+    expect_match(msg, "tau_grid = 1 / sigma_grid^2", fixed = TRUE)
+})
+
+test_that("the registry front door refuses the same axis", {
+    sim <- .axc_sim(seed = 23L)
+    expect_error(
+        tulpa_nested_laplace(
+            y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
+            prior = .axc_icar_block(sim, spatial_idx = sim$sidx,
+                                    sigma_grid = c(0.4, 0.9)),
+            family = "binomial"),
+        "`sigma_grid` is not an axis", fixed = TRUE)
+})
+
+test_that("the refusal is symmetric: a precision axis on the joint areal path", {
+    sim <- .axc_sim(seed = 24L)
+    expect_error(
+        tulpa_nested_laplace_joint(
+            responses = list(occ = .axc_arm(sim)),
+            prior = .axc_icar_block(sim, tau_grid = c(1, 4, 9))),
+        "tau_grid.*single-block joint areal backend.*sigma_grid = 1 / sqrt")
+})
+
+test_that("an axis the path DOES read passes untouched", {
+    sim <- .axc_sim(seed = 25L)
+    expect_null(tulpa:::.nl_check_axis_fields(
+        .axc_icar_block(sim, tau_grid = c(1, 4)), "registry"))
+    expect_null(tulpa:::.nl_check_axis_fields(
+        .axc_icar_block(sim, sigma_grid = c(0.4, 0.9)), "joint"))
+    # A copy block leads with (sigma, alpha), so sigma is read there.
+    expect_length(tulpa:::.nl_check_block_axis_fields(
+        .axc_icar_block(sim, sigma_grid = c(0.4, 0.9)), "copy", 1L), 0L)
+})
+
+test_that("a field no binding names is not this check's business", {
+    sim <- .axc_sim(seed = 26L)
+    blk <- .axc_icar_block(sim, tau_grid = c(1, 4))
+    blk$some_other_grid <- c(1, 2, 3)
+    expect_null(tulpa:::.nl_check_axis_fields(blk, "registry"))
+})
+
+# --------------------------------------------------------------------------- #
+# (5) The copy spec                                                            #
+# --------------------------------------------------------------------------- #
+#
+# The block check above walks the PRIOR. The copy spec is the other object the
+# multi-block joint driver resolves a grid off, and it was walked by nothing:
+# `.resolve_one_copy_spec()` reads `arm`, `block` and `alpha_grid`, and any
+# other grid on that spec fell through in silence (gcol33/tulpaObs#192).
+
+.axc_two_arm <- function(sim) {
+    a <- .axc_arm(sim)
+    a$spatial_idx <- NULL
+    list(occ = a, pos = a)
+}
+
+.axc_copy_block <- function(sim) {
+    .axc_icar_block(sim, spatial_idx = list(sim$sidx, sim$sidx),
+                    sigma_grid = c(0.4, 0.9))
+}
+
+test_that("the read-field set is the set the copy resolver actually reads", {
+    # BOTH spellings of a spec read count. `$` PARTIAL-matches on a list, so
+    # gcol33/tulpa#633 moved the axis reads to `[[` -- and a rule keyed to `$`
+    # alone then saw a resolver reading nothing but `arm` and `block`, which is
+    # the stale-lint shape gcol33/tulpa#632 recorded on `k_samples`: a rule keyed
+    # to one spelling stops seeing the site the moment the code changes spelling.
+    # Keyed to the READ, not to one operator.
+    src  <- paste(deparse(body(tulpa:::.resolve_one_copy_spec)), collapse = "\n")
+    pats <- c("spec[$]([A-Za-z_][A-Za-z0-9_]*)",
+              "spec\\[\\[\"([A-Za-z_][A-Za-z0-9_]*)\"\\]\\]")
+    read <- unique(unlist(lapply(pats, function(p) {
+        m <- regmatches(src, gregexpr(p, src))[[1L]]
+        if (!length(m)) return(character(0))
+        sub(p, "\\1", m)
+    }), use.names = FALSE))
+    expect_setequal(read, tulpa:::.NL_COPY_SPEC_FIELDS)
+})
+
+test_that("a pinned field the copy spec resolver cannot read is refused", {
+    sim <- .axc_sim(seed = 31L)
+    msg <- tryCatch(
+        tulpa_nested_laplace_joint(
+            responses = .axc_two_arm(sim),
+            prior = list(.axc_copy_block(sim)),
+            copy = list(arm = "pos", block = 1L,
+                        sigma_pos_grid = c(0.4, 0.8, 1.2))),
+        error = conditionMessage)
+    expect_match(msg, "`sigma_pos_grid` is not a field the copy resolver reads",
+                 fixed = TRUE)
+    expect_match(msg, "alpha * sigma", fixed = TRUE)
+    expect_match(msg, "(block icar)", fixed = TRUE)
+})
+
+test_that("a list of copy specs names the offending spec", {
+    sim <- .axc_sim(seed = 32L)
+    msg <- tryCatch(
+        tulpa_nested_laplace_joint(
+            responses = .axc_two_arm(sim),
+            prior = list(.axc_copy_block(sim), .axc_copy_block(sim)),
+            copy = list(
+                list(arm = "pos", block = 1L, alpha_grid = c(0.5, 1)),
+                list(arm = "pos", block = 2L, sigma_pos_grid = c(0.4, 0.8)))),
+        error = conditionMessage)
+    expect_match(msg, "copy spec 2 ", fixed = TRUE)
+})
+
+test_that("the fields the resolver DOES read pass untouched", {
+    sim <- .axc_sim(seed = 33L)
+    expect_length(tulpa:::.nl_check_copy_specs(
+        list(arm = "pos", block = 1L, alpha_grid = c(0.5, 1)),
+        list(.axc_copy_block(sim))), 0L)
+    # A non-numeric extra is a caller's own bookkeeping, not a grid.
+    expect_length(tulpa:::.nl_check_copy_specs(
+        list(arm = "pos", block = 1L, alpha_grid = c(0.5, 1), label = "trend"),
+        list(.axc_copy_block(sim))), 0L)
+})
+
+skip_on_cran()
+
+# --------------------------------------------------------------------------- #
+# (1) The table                                                                #
+# --------------------------------------------------------------------------- #
+
+test_that("every path binding resolves to real fields of real families", {
+    skip_on_cran()
+    known <- tulpa:::.nl_known_axis_fields()
+    for (path in names(tulpa:::.NL_PATH_AXES)) {
+        expect_true(path %in% names(tulpa:::.NL_AXIS_PATH_LABEL), info = path)
+        entries <- tulpa:::.NL_PATH_AXES[[path]]
+        for (fam in names(entries)) {
+            expect_true(fam %in% names(tulpa:::.NL_REGISTRY),
+                        info = paste(path, fam))
+            for (tok in entries[[fam]]) {
+                if (startsWith(tok, ".")) {
+                    expect_true(identical(tok, ".registry") ||
+                                    tok %in% names(tulpa:::.NL_FAMILY_AXES),
+                                info = paste(path, fam, tok))
+                } else {
+                    expect_true(tok %in% known, info = paste(path, fam, tok))
+                }
+            }
+            # The expansion is non-empty and made of known field names.
+            got <- tulpa:::.nl_path_axis_fields(fam, path)
+            expect_gt(length(got), 0L)
+            expect_true(all(got %in% known), info = paste(path, fam))
         }
     }
 })
@@ -203,69 +345,6 @@ test_that("the default hyperprior is one belief recorded on two coordinates", {
 })
 
 # --------------------------------------------------------------------------- #
-# (3) The refusal                                                              #
-# --------------------------------------------------------------------------- #
-
-test_that("a pinned axis the multi-block path cannot read is refused", {
-    sim <- .axc_sim(seed = 22L)
-    arm <- .axc_arm(sim)
-    expect_error(
-        tulpa_nested_laplace_joint(
-            responses = list(occ = arm),
-            prior = list(.axc_icar_block(sim, sigma_grid = c(0.4, 0.9),
-                                         spatial_idx = list(sim$sidx)))),
-        "sigma_grid.*is not an axis.*registry path.*integrates `tau_grid`")
-    # The message carries the conversion, the block index, and the family.
-    msg <- tryCatch(
-        tulpa_nested_laplace_joint(
-            responses = list(occ = arm),
-            prior = list(.axc_icar_block(sim, spatial_idx = list(sim$sidx)),
-                         .axc_icar_block(sim, sigma_grid = c(0.4, 0.9),
-                                         spatial_idx = list(sim$sidx)))),
-        error = conditionMessage)
-    expect_match(msg, "prior block 2 'icar'", fixed = TRUE)
-    expect_match(msg, "tau_grid = 1 / sigma_grid^2", fixed = TRUE)
-})
-
-test_that("the registry front door refuses the same axis", {
-    sim <- .axc_sim(seed = 23L)
-    expect_error(
-        tulpa_nested_laplace(
-            y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
-            prior = .axc_icar_block(sim, spatial_idx = sim$sidx,
-                                    sigma_grid = c(0.4, 0.9)),
-            family = "binomial"),
-        "`sigma_grid` is not an axis", fixed = TRUE)
-})
-
-test_that("the refusal is symmetric: a precision axis on the joint areal path", {
-    sim <- .axc_sim(seed = 24L)
-    expect_error(
-        tulpa_nested_laplace_joint(
-            responses = list(occ = .axc_arm(sim)),
-            prior = .axc_icar_block(sim, tau_grid = c(1, 4, 9))),
-        "tau_grid.*single-block joint areal backend.*sigma_grid = 1 / sqrt")
-})
-
-test_that("an axis the path DOES read passes untouched", {
-    sim <- .axc_sim(seed = 25L)
-    expect_null(tulpa:::.nl_check_axis_fields(
-        .axc_icar_block(sim, tau_grid = c(1, 4)), "registry"))
-    expect_null(tulpa:::.nl_check_axis_fields(
-        .axc_icar_block(sim, sigma_grid = c(0.4, 0.9)), "joint"))
-    # A copy block leads with (sigma, alpha), so sigma is read there.
-    expect_length(tulpa:::.nl_check_block_axis_fields(
-        .axc_icar_block(sim, sigma_grid = c(0.4, 0.9)), "copy", 1L), 0L)
-})
-
-test_that("a field no binding names is not this check's business", {
-    sim <- .axc_sim(seed = 26L)
-    blk <- .axc_icar_block(sim, tau_grid = c(1, 4))
-    blk$some_other_grid <- c(1, 2, 3)
-    expect_null(tulpa:::.nl_check_axis_fields(blk, "registry"))
-})
-
-# --------------------------------------------------------------------------- #
 # (4) The record                                                               #
 # --------------------------------------------------------------------------- #
 
@@ -311,83 +390,6 @@ test_that("a fit with nothing dropped carries no record", {
     expect_null(fit$axis_fields_dropped)
     # And the record does not leak past the fit that produced it.
     expect_null(getOption("tulpa.nl_axis_dropped"))
-})
-
-# --------------------------------------------------------------------------- #
-# (5) The copy spec                                                            #
-# --------------------------------------------------------------------------- #
-#
-# The block check above walks the PRIOR. The copy spec is the other object the
-# multi-block joint driver resolves a grid off, and it was walked by nothing:
-# `.resolve_one_copy_spec()` reads `arm`, `block` and `alpha_grid`, and any
-# other grid on that spec fell through in silence (gcol33/tulpaObs#192).
-
-.axc_two_arm <- function(sim) {
-    a <- .axc_arm(sim)
-    a$spatial_idx <- NULL
-    list(occ = a, pos = a)
-}
-
-.axc_copy_block <- function(sim) {
-    .axc_icar_block(sim, spatial_idx = list(sim$sidx, sim$sidx),
-                    sigma_grid = c(0.4, 0.9))
-}
-
-test_that("the read-field set is the set the copy resolver actually reads", {
-    # BOTH spellings of a spec read count. `$` PARTIAL-matches on a list, so
-    # gcol33/tulpa#633 moved the axis reads to `[[` -- and a rule keyed to `$`
-    # alone then saw a resolver reading nothing but `arm` and `block`, which is
-    # the stale-lint shape gcol33/tulpa#632 recorded on `k_samples`: a rule keyed
-    # to one spelling stops seeing the site the moment the code changes spelling.
-    # Keyed to the READ, not to one operator.
-    src  <- paste(deparse(body(tulpa:::.resolve_one_copy_spec)), collapse = "\n")
-    pats <- c("spec[$]([A-Za-z_][A-Za-z0-9_]*)",
-              "spec\\[\\[\"([A-Za-z_][A-Za-z0-9_]*)\"\\]\\]")
-    read <- unique(unlist(lapply(pats, function(p) {
-        m <- regmatches(src, gregexpr(p, src))[[1L]]
-        if (!length(m)) return(character(0))
-        sub(p, "\\1", m)
-    }), use.names = FALSE))
-    expect_setequal(read, tulpa:::.NL_COPY_SPEC_FIELDS)
-})
-
-test_that("a pinned field the copy spec resolver cannot read is refused", {
-    sim <- .axc_sim(seed = 31L)
-    msg <- tryCatch(
-        tulpa_nested_laplace_joint(
-            responses = .axc_two_arm(sim),
-            prior = list(.axc_copy_block(sim)),
-            copy = list(arm = "pos", block = 1L,
-                        sigma_pos_grid = c(0.4, 0.8, 1.2))),
-        error = conditionMessage)
-    expect_match(msg, "`sigma_pos_grid` is not a field the copy resolver reads",
-                 fixed = TRUE)
-    expect_match(msg, "alpha * sigma", fixed = TRUE)
-    expect_match(msg, "(block icar)", fixed = TRUE)
-})
-
-test_that("a list of copy specs names the offending spec", {
-    sim <- .axc_sim(seed = 32L)
-    msg <- tryCatch(
-        tulpa_nested_laplace_joint(
-            responses = .axc_two_arm(sim),
-            prior = list(.axc_copy_block(sim), .axc_copy_block(sim)),
-            copy = list(
-                list(arm = "pos", block = 1L, alpha_grid = c(0.5, 1)),
-                list(arm = "pos", block = 2L, sigma_pos_grid = c(0.4, 0.8)))),
-        error = conditionMessage)
-    expect_match(msg, "copy spec 2 ", fixed = TRUE)
-})
-
-test_that("the fields the resolver DOES read pass untouched", {
-    sim <- .axc_sim(seed = 33L)
-    expect_length(tulpa:::.nl_check_copy_specs(
-        list(arm = "pos", block = 1L, alpha_grid = c(0.5, 1)),
-        list(.axc_copy_block(sim))), 0L)
-    # A non-numeric extra is a caller's own bookkeeping, not a grid.
-    expect_length(tulpa:::.nl_check_copy_specs(
-        list(arm = "pos", block = 1L, alpha_grid = c(0.5, 1), label = "trend"),
-        list(.axc_copy_block(sim))), 0L)
 })
 
 test_that("an auto_grid()-marked unread copy field is recorded, not refused", {

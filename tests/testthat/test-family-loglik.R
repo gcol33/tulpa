@@ -1,70 +1,3 @@
-# test-family-loglik.R
-# Correctness of the family-ops single source of truth: log-likelihoods must
-# agree with R's reference densities, scores must match finite differences of
-# the log-likelihood, and the refactored glmm_weights() must be unchanged.
-
-test_that("log-likelihoods match R reference densities", {
-  skip_on_cran()
-  set.seed(1)
-  eta <- seq(-2, 2, length.out = 7)
-
-  # binomial
-  n <- rep(10L, length(eta)); y <- rbinom(length(eta), n, plogis(eta))
-  mu <- plogis(eta)
-  expect_equal(family_loglik(eta, y, "binomial", n_trials = n),
-               dbinom(y, n, mu, log = TRUE), tolerance = 1e-10)
-
-  # poisson
-  yp <- rpois(length(eta), exp(eta))
-  expect_equal(family_loglik(eta, yp, "poisson"),
-               dpois(yp, exp(eta), log = TRUE), tolerance = 1e-10)
-
-  # neg_binomial_2 (phi = size)
-  phi <- 2.5; ynb <- rnbinom(length(eta), size = phi, mu = exp(eta))
-  expect_equal(family_loglik(eta, ynb, "neg_binomial_2", phi = phi),
-               dnbinom(ynb, size = phi, mu = exp(eta), log = TRUE),
-               tolerance = 1e-10)
-
-  # gaussian (phi = residual variance)
-  s2 <- 0.7; yg <- rnorm(length(eta), eta, sqrt(s2))
-  expect_equal(family_loglik(eta, yg, "gaussian", phi = s2),
-               dnorm(yg, eta, sqrt(s2), log = TRUE), tolerance = 1e-10)
-
-  # beta (phi = precision)
-  prec <- 8; mub <- plogis(eta); yb <- rbeta(length(eta), mub * prec, (1 - mub) * prec)
-  expect_equal(family_loglik(eta, yb, "beta", phi = prec),
-               dbeta(yb, mub * prec, (1 - mub) * prec, log = TRUE),
-               tolerance = 1e-10)
-
-  # gamma (phi = shape), log link
-  sh <- 3.0; mug <- exp(eta); yga <- rgamma(length(eta), shape = sh, rate = sh / mug)
-  expect_equal(family_loglik(eta, yga, "gamma", phi = sh),
-               dgamma(yga, shape = sh, rate = sh / mug, log = TRUE),
-               tolerance = 1e-10)
-
-  # inverse_gaussian (phi = dispersion), log link
-  if (requireNamespace("statmod", quietly = TRUE)) {
-    disp <- 0.5; mui <- exp(eta)
-    yig <- statmod::rinvgauss(length(eta), mean = mui, dispersion = disp)
-    expect_equal(family_loglik(eta, yig, "inverse_gaussian", phi = disp),
-                 statmod::dinvgauss(yig, mean = mui, dispersion = disp, log = TRUE),
-                 tolerance = 1e-10)
-  }
-
-  # beta_binomial (phi = precision, n = trials): as phi -> Inf the intra-class
-  # correlation vanishes and it collapses to the binomial -- a non-circular check.
-  nn <- rep(15L, length(eta)); pb <- plogis(eta)
-  ybb <- rbinom(length(eta), nn, pb)
-  expect_equal(family_loglik(eta, ybb, "beta_binomial", n_trials = nn, phi = 1e7),
-               dbinom(ybb, nn, pb, log = TRUE), tolerance = 1e-2)
-
-  # Student-t location-scale (phi = scale, df fixed): matches base dt scaled by
-  # 1/phi (change of variable), a non-circular reference.
-  nu <- 4; sc <- 0.7; yt <- eta + sc * rt(length(eta), df = nu)
-  expect_equal(family_loglik(eta, yt, "t", phi = sc),
-               dt((yt - eta) / sc, df = nu, log = TRUE) - log(sc),
-               tolerance = 1e-10)
-})
 
 test_that("score equals the finite-difference gradient of the log-likelihood", {
   h <- 1e-6
@@ -193,4 +126,73 @@ test_that("the Laplace kernel scores gaussian, lognormal and beta with the clamp
   expect_equal(terms(0.3, 0.8, "beta", 5), dbeta(0.3, plogis(0.8) * 5, (1 - plogis(0.8)) * 5, log = TRUE))
   mu <- 1 - 1e-15
   expect_equal(terms(0.3, 40, "beta", 5), dbeta(0.3, mu * 5, (1 - mu) * 5, log = TRUE))
+})
+
+skip_on_cran()
+# test-family-loglik.R
+# Correctness of the family-ops single source of truth: log-likelihoods must
+# agree with R's reference densities, scores must match finite differences of
+# the log-likelihood, and the refactored glmm_weights() must be unchanged.
+
+test_that("log-likelihoods match R reference densities", {
+  skip_on_cran()
+  set.seed(1)
+  eta <- seq(-2, 2, length.out = 7)
+
+  # binomial
+  n <- rep(10L, length(eta)); y <- rbinom(length(eta), n, plogis(eta))
+  mu <- plogis(eta)
+  expect_equal(family_loglik(eta, y, "binomial", n_trials = n),
+               dbinom(y, n, mu, log = TRUE), tolerance = 1e-10)
+
+  # poisson
+  yp <- rpois(length(eta), exp(eta))
+  expect_equal(family_loglik(eta, yp, "poisson"),
+               dpois(yp, exp(eta), log = TRUE), tolerance = 1e-10)
+
+  # neg_binomial_2 (phi = size)
+  phi <- 2.5; ynb <- rnbinom(length(eta), size = phi, mu = exp(eta))
+  expect_equal(family_loglik(eta, ynb, "neg_binomial_2", phi = phi),
+               dnbinom(ynb, size = phi, mu = exp(eta), log = TRUE),
+               tolerance = 1e-10)
+
+  # gaussian (phi = residual variance)
+  s2 <- 0.7; yg <- rnorm(length(eta), eta, sqrt(s2))
+  expect_equal(family_loglik(eta, yg, "gaussian", phi = s2),
+               dnorm(yg, eta, sqrt(s2), log = TRUE), tolerance = 1e-10)
+
+  # beta (phi = precision)
+  prec <- 8; mub <- plogis(eta); yb <- rbeta(length(eta), mub * prec, (1 - mub) * prec)
+  expect_equal(family_loglik(eta, yb, "beta", phi = prec),
+               dbeta(yb, mub * prec, (1 - mub) * prec, log = TRUE),
+               tolerance = 1e-10)
+
+  # gamma (phi = shape), log link
+  sh <- 3.0; mug <- exp(eta); yga <- rgamma(length(eta), shape = sh, rate = sh / mug)
+  expect_equal(family_loglik(eta, yga, "gamma", phi = sh),
+               dgamma(yga, shape = sh, rate = sh / mug, log = TRUE),
+               tolerance = 1e-10)
+
+  # inverse_gaussian (phi = dispersion), log link
+  if (requireNamespace("statmod", quietly = TRUE)) {
+    disp <- 0.5; mui <- exp(eta)
+    yig <- statmod::rinvgauss(length(eta), mean = mui, dispersion = disp)
+    expect_equal(family_loglik(eta, yig, "inverse_gaussian", phi = disp),
+                 statmod::dinvgauss(yig, mean = mui, dispersion = disp, log = TRUE),
+                 tolerance = 1e-10)
+  }
+
+  # beta_binomial (phi = precision, n = trials): as phi -> Inf the intra-class
+  # correlation vanishes and it collapses to the binomial -- a non-circular check.
+  nn <- rep(15L, length(eta)); pb <- plogis(eta)
+  ybb <- rbinom(length(eta), nn, pb)
+  expect_equal(family_loglik(eta, ybb, "beta_binomial", n_trials = nn, phi = 1e7),
+               dbinom(ybb, nn, pb, log = TRUE), tolerance = 1e-2)
+
+  # Student-t location-scale (phi = scale, df fixed): matches base dt scaled by
+  # 1/phi (change of variable), a non-circular reference.
+  nu <- 4; sc <- 0.7; yt <- eta + sc * rt(length(eta), df = nu)
+  expect_equal(family_loglik(eta, yt, "t", phi = sc),
+               dt((yt - eta) / sc, df = nu, log = TRUE) - log(sc),
+               tolerance = 1e-10)
 })

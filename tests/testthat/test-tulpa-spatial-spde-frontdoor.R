@@ -31,32 +31,6 @@ make_spde_panel <- function(n_obs = 250L, range_true = 0.3, sigma_true = 0.6,
   list(data = data.frame(y = y, x = x), spec = spec, beta = beta)
 }
 
-test_that("mode = nested_laplace integrates an SPDE field through tulpa()", {
-  skip_on_cran()
-  skip_if_not_installed("fmesher")
-  s <- make_spde_panel()
-  fit <- suppressWarnings(suppressMessages(tulpa(
-    y ~ x, data = s$data, family = "poisson",
-    spatial = s$spec, mode = "nested_laplace"
-  )))
-  # Redirected from the generic nested_laplace backend to the SPDE engine.
-  expect_equal(fit$backend, "spde")
-  expect_equal(fit$inference_tier, 2L)
-  expect_s3_class(fit, "tulpa_fit")
-  # (range, sigma) were integrated, not conditioned on.
-  expect_true(fit$nested$method %in% c("ccd", "grid"))
-  expect_equal(sum(fit$nested$weights), 1, tolerance = 1e-8)
-  expect_true(is.finite(fit$nested$range_mean) && fit$nested$range_mean > 0)
-  expect_true(is.finite(fit$nested$sigma_mean) && fit$nested$sigma_mean > 0)
-  # Recovery (when CCD found an interior mode): beta at the joint posterior mode.
-  # On a degenerate Hessian CCD falls back to the grid and drops `beta`, which
-  # is correct behaviour -- only assert recovery when the mode is usable.
-  if (identical(fit$nested$method, "ccd")) {
-    expect_lt(abs(fit$beta[1] - s$beta[1]), 0.5)   # intercept
-    expect_lt(abs(fit$beta[2] - s$beta[2]), 0.3)   # slope
-  }
-})
-
 test_that("mode = laplace fits an SPDE field alongside a (1 | g) RE term (issue #74)", {
   skip_if_not_installed("fmesher")
   skip_on_cran()
@@ -73,20 +47,6 @@ test_that("mode = laplace fits an SPDE field alongside a (1 | g) RE term (issue 
   # Latent mode is [beta (2), re (8 groups), w_mesh (n_mesh)].
   expect_length(fit$mode, 2L + 8L + s$spec$n_mesh)
   expect_lt(abs(fit$mode[2] - s$beta[2]), 0.35)   # slope recovers under the RE block
-})
-
-test_that("structured and auto route an SPDE field to the spde backend", {
-  skip_on_cran()
-  skip_if_not_installed("fmesher")
-  s <- make_spde_panel(n_obs = 150L, seed = 3L)
-  for (m in c("structured", "auto")) {
-    fit <- suppressWarnings(suppressMessages(tulpa(
-      y ~ x, data = s$data, family = "poisson", spatial = s$spec, mode = m
-    )))
-    expect_equal(fit$backend, "spde", info = m)
-    expect_equal(fit$inference_mode, "structured", info = m)
-    expect_equal(fit$inference_tier, 2L, info = m)
-  }
 })
 
 test_that("the SPDE front-door route is numerically identical to a direct fit_spde()", {
@@ -222,4 +182,46 @@ test_that("generic accessors work on an auto-mode SPDE fit (coef/vcov/confint/su
   expect_true(all(ci[, 1] < ci[, 2]))
 
   expect_no_error(summary(fit))
+})
+
+skip_on_cran()
+
+test_that("mode = nested_laplace integrates an SPDE field through tulpa()", {
+  skip_on_cran()
+  skip_if_not_installed("fmesher")
+  s <- make_spde_panel()
+  fit <- suppressWarnings(suppressMessages(tulpa(
+    y ~ x, data = s$data, family = "poisson",
+    spatial = s$spec, mode = "nested_laplace"
+  )))
+  # Redirected from the generic nested_laplace backend to the SPDE engine.
+  expect_equal(fit$backend, "spde")
+  expect_equal(fit$inference_tier, 2L)
+  expect_s3_class(fit, "tulpa_fit")
+  # (range, sigma) were integrated, not conditioned on.
+  expect_true(fit$nested$method %in% c("ccd", "grid"))
+  expect_equal(sum(fit$nested$weights), 1, tolerance = 1e-8)
+  expect_true(is.finite(fit$nested$range_mean) && fit$nested$range_mean > 0)
+  expect_true(is.finite(fit$nested$sigma_mean) && fit$nested$sigma_mean > 0)
+  # Recovery (when CCD found an interior mode): beta at the joint posterior mode.
+  # On a degenerate Hessian CCD falls back to the grid and drops `beta`, which
+  # is correct behaviour -- only assert recovery when the mode is usable.
+  if (identical(fit$nested$method, "ccd")) {
+    expect_lt(abs(fit$beta[1] - s$beta[1]), 0.5)   # intercept
+    expect_lt(abs(fit$beta[2] - s$beta[2]), 0.3)   # slope
+  }
+})
+
+test_that("structured and auto route an SPDE field to the spde backend", {
+  skip_on_cran()
+  skip_if_not_installed("fmesher")
+  s <- make_spde_panel(n_obs = 150L, seed = 3L)
+  for (m in c("structured", "auto")) {
+    fit <- suppressWarnings(suppressMessages(tulpa(
+      y ~ x, data = s$data, family = "poisson", spatial = s$spec, mode = m
+    )))
+    expect_equal(fit$backend, "spde", info = m)
+    expect_equal(fit$inference_mode, "structured", info = m)
+    expect_equal(fit$inference_tier, 2L, info = m)
+  }
 })

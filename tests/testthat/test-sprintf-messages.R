@@ -35,6 +35,8 @@ test_that("print.tulpa_criteria reports high Pareto-k observations", {
   expect_output(print(cr), sprintf("  %d obs with Pareto k >= ", cr$n_high_k))
 })
 
+skip_on_cran()
+
 # The lint the issue asked for, run over the package's own functions: no
 # sprintf() / gettextf() call may take a string literal as its second
 # positional argument, which is always a split format string.

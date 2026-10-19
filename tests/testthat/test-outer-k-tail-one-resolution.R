@@ -45,6 +45,8 @@ test_that("the 20% cap warns once, from a shared helper", {
   expect_silent(tulpa:::.k_tail_cap_warn(NULL, 500L))
 })
 
+skip_on_cran()
+
 test_that("every outer-k backend reports the tail it fitted on", {
   skip_on_cran()
   # A one-axis synthetic target, driven through the shared report path the

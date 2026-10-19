@@ -51,6 +51,8 @@ test_that("the thread grant is every thread the fit was handed", {
     expect_identical(tulpa:::.tulpa_thread_grant(cap + 64L, 1L), cap)
 })
 
+skip_on_cran()
+
 test_that("every joint kernel call runs its lone solves on the fit's grant", {
     skip_on_cran()
     grant <- tulpa:::.tulpa_inner_threads(tulpa:::.tulpa_thread_grant(2L, 1L))

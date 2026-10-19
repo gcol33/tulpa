@@ -42,6 +42,55 @@ test_that("layout probing reports the interaction block", {
   expect_error(st_iv_gmrf(f, rep(0, probe$n_params - 1L)), "q has")
 })
 
+test_that("a spec with no IRLS callback declines, and says so", {
+  f <- st_iv_fixture()
+  probe <- st_iv_layout(f)
+  q <- rep(0, probe$n_params)
+  res <- st_iv_gmrf(f, q, with_eta_weights = FALSE)
+  expect_false(res$ok)
+  expect_identical(res$reason, "no_eta_weights_fn")
+  expect_length(res$inv_mass, 0L)
+})
+
+test_that("mass_matrix names resolve, and an unknown one is refused", {
+  f <- st_iv_fixture()
+  # Reaching the sampler at all proves "gmrf" parses; a two-iteration run is
+  # the cheapest way to ask.
+  fit <- cpp_test_st_iv_nuts(
+    f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
+    mass_matrix = "gmrf", n_iter = 4, n_warmup = 2, seed = 1)
+  expect_identical(ncol(fit$draws), fit$n_params)
+  expect_error(
+    cpp_test_st_iv_nuts(
+      f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
+      mass_matrix = "sparse_gmrf", n_iter = 4, n_warmup = 2, seed = 1),
+    "mass_matrix must be one of")
+})
+
+
+test_that("the cyclic flag reaches the interaction's quadratic form", {
+  # SpatiotemporalData::temporal_cyclic used to reach the rank in the
+  # normalizer and not the quadratic form beside it (gcol33/tulpa#596), so a
+  # cyclic RW2 interaction put rank_space * (T - 1) powers of tau in the
+  # target against an operator of rank rank_space * (T - 2). The wrap edges
+  # change the density at any position, so a flag that stops short of the
+  # quadratic form shows here as two identical log-posteriors.
+  f_acyc <- st_iv_fixture(family = "poisson", temporal = "rw2")
+  f_cyc  <- st_iv_fixture(family = "poisson", temporal = "rw2",
+                          temporal_cyclic = TRUE)
+  probe <- st_iv_layout(f_acyc)
+  set.seed(21)
+  q <- stats::rnorm(probe$n_params, sd = 0.3)
+  expect_false(isTRUE(all.equal(st_iv_lp(f_acyc, q), st_iv_lp(f_cyc, q))))
+
+  f1_acyc <- st_iv_fixture(family = "poisson", temporal = "rw1")
+  f1_cyc  <- st_iv_fixture(family = "poisson", temporal = "rw1",
+                           temporal_cyclic = TRUE)
+  expect_false(isTRUE(all.equal(st_iv_lp(f1_acyc, q), st_iv_lp(f1_cyc, q))))
+})
+
+skip_on_cran()
+
 test_that("diag(Q^-1) reproduces the log-posterior Hessian: poisson RW1", {
   skip_on_cran()
   expect_gmrf_matches_hessian(st_iv_fixture(family = "poisson", temporal = "rw1"))
@@ -78,31 +127,6 @@ test_that("a disconnected spatial graph is handled at its true rank", {
   expect_identical(res$n_block, as.integer(f$S * f$T))
 })
 
-test_that("a spec with no IRLS callback declines, and says so", {
-  f <- st_iv_fixture()
-  probe <- st_iv_layout(f)
-  q <- rep(0, probe$n_params)
-  res <- st_iv_gmrf(f, q, with_eta_weights = FALSE)
-  expect_false(res$ok)
-  expect_identical(res$reason, "no_eta_weights_fn")
-  expect_length(res$inv_mass, 0L)
-})
-
-test_that("mass_matrix names resolve, and an unknown one is refused", {
-  f <- st_iv_fixture()
-  # Reaching the sampler at all proves "gmrf" parses; a two-iteration run is
-  # the cheapest way to ask.
-  fit <- cpp_test_st_iv_nuts(
-    f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
-    mass_matrix = "gmrf", n_iter = 4, n_warmup = 2, seed = 1)
-  expect_identical(ncol(fit$draws), fit$n_params)
-  expect_error(
-    cpp_test_st_iv_nuts(
-      f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
-      mass_matrix = "sparse_gmrf", n_iter = 4, n_warmup = 2, seed = 1),
-    "mass_matrix must be one of")
-})
-
 test_that("a Type-IV NUTS fit under mass_matrix = 'gmrf' installs the override", {
   skip_if_not_slow()
   f <- st_iv_fixture(S1 = 4, S2 = 4, T = 6, family = "poisson")
@@ -125,28 +149,6 @@ test_that("a Type-IV NUTS fit under mass_matrix = 'gmrf' installs the override",
     f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
     mass_matrix = "diag", n_iter = 400, n_warmup = 200, seed = 3)
   expect_false(fit_diag$st_gmrf_applied)
-})
-
-
-test_that("the cyclic flag reaches the interaction's quadratic form", {
-  # SpatiotemporalData::temporal_cyclic used to reach the rank in the
-  # normalizer and not the quadratic form beside it (gcol33/tulpa#596), so a
-  # cyclic RW2 interaction put rank_space * (T - 1) powers of tau in the
-  # target against an operator of rank rank_space * (T - 2). The wrap edges
-  # change the density at any position, so a flag that stops short of the
-  # quadratic form shows here as two identical log-posteriors.
-  f_acyc <- st_iv_fixture(family = "poisson", temporal = "rw2")
-  f_cyc  <- st_iv_fixture(family = "poisson", temporal = "rw2",
-                          temporal_cyclic = TRUE)
-  probe <- st_iv_layout(f_acyc)
-  set.seed(21)
-  q <- stats::rnorm(probe$n_params, sd = 0.3)
-  expect_false(isTRUE(all.equal(st_iv_lp(f_acyc, q), st_iv_lp(f_cyc, q))))
-
-  f1_acyc <- st_iv_fixture(family = "poisson", temporal = "rw1")
-  f1_cyc  <- st_iv_fixture(family = "poisson", temporal = "rw1",
-                           temporal_cyclic = TRUE)
-  expect_false(isTRUE(all.equal(st_iv_lp(f1_acyc, q), st_iv_lp(f1_cyc, q))))
 })
 
 test_that("diag(Q^-1) reproduces the log-posterior Hessian: cyclic RW1 and RW2", {

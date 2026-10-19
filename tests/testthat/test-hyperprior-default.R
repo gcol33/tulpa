@@ -70,27 +70,6 @@ test_that("the range prior's dimension is the one the coordinates span", {
   expect_identical(ex(cbind(x, runif(40), 3.5))$dim, 2L)
 })
 
-test_that("the LKJ normaliser makes the density integrate to one", {
-  skip_on_cran()
-  # d = 2: p(r) = (1 - r^2)^(eta - 1) / c_2.
-  for (eta in c(1, 2, 3.5)) {
-    f <- function(r) exp((eta - 1) * log1p(-r^2) - tulpa:::.lkj_log_normaliser(2L, eta))
-    expect_equal(stats::integrate(f, -1, 1, rel.tol = 1e-10)$value, 1,
-                 tolerance = 1e-6, info = eta)
-  }
-  # d = 3: midpoint rule over (r12, r13, r23), zero outside the positive
-  # definite region. The integrand is continuous and vanishes on that boundary
-  # at eta = 2, so the rule converges at the resolution taken here.
-  n <- 160L
-  g <- -1 + (seq_len(n) - 0.5) * 2 / n
-  gr <- expand.grid(a = g, b = g, c = g)
-  det3 <- 1 - gr$a^2 - gr$b^2 - gr$c^2 + 2 * gr$a * gr$b * gr$c
-  eta <- 2
-  mass <- sum(pmax(det3, 0)^(eta - 1)) * (2 / n)^3
-  expect_equal(mass * exp(-tulpa:::.lkj_log_normaliser(3L, eta)), 1,
-               tolerance = 5e-3)
-})
-
 test_that("each engine axis resolves to its density or a named decline", {
   hp <- tulpa:::.hp_axis_default
   expect_identical(hp("phi_arm", family = "inverse_gaussian")$reason,
@@ -170,42 +149,6 @@ test_that("a gamma shape and a beta precision carry R-INLA's exponential default
     expect_equal(stats::integrate(f, -40, 12, rel.tol = 1e-10)$value, 1,
                  tolerance = 1e-6, info = fam)
   }
-})
-
-# --------------------------------------------------------------------------- #
-# Free-covariance blocks: one prior and one measure per block (#735)          #
-# --------------------------------------------------------------------------- #
-
-test_that("the two-field default grid carries PC x PC x LKJ on its own coordinates", {
-  skip_on_cran()
-  g <- tulpa:::.mcar_default_logchol_grid(2L)
-  d <- tulpa:::.hp_logchol_design(g)
-  expect_identical(d$design, "sd_rho")
-  lp <- tulpa:::.hp_logchol_log_density(g, d)$lp
-  # The same PC + LKJ prior re_cov_pc_lkj_prior() puts on the log-Cholesky
-  # coordinates, carried to (log sigma_1, log sigma_2, rho) by the Jacobian of
-  # L11 = log s1, L21 = rho s2, L22 = log s2 + log(1 - rho^2) / 2, whose
-  # determinant is s2 / (1 - rho^2).
-  f <- tulpa:::.re_cov_block_logprior(2L, TRUE, tulpa:::.nl_scale_anchor(),
-                                      tulpa:::.nl_hyperprior("lkj_eta"))
-  C <- tulpa:::.hp_logchol_coords(g, d)
-  s2 <- exp(C[, 2L]); rho <- C[, 3L]
-  expect_equal(lp, apply(g, 1L, f) + log(s2 / (1 - rho^2)), tolerance = 1e-12)
-
-  # A proper prior: on a tensor wide enough to hold it, the density times the
-  # absolute cell measure sums to one. The resolution only sets the quadrature
-  # error, measured at 5.0e-4 on 70 x 70 x 81 and 6.1e-4 on the 50 x 50 x 61 CRAN
-  # reads, both inside the 2e-3 the identity is held to.
-  n_ls <- if (cran_fixture()) 50L else 70L
-  n_r  <- if (cran_fixture()) 61L else 81L
-  ls <- seq(-9, 3, length.out = n_ls); r <- seq(-0.995, 0.995, length.out = n_r)
-  gg <- expand.grid(a = ls, b = ls, rho = r)
-  M <- cbind(L11 = gg$a, L21 = gg$rho * exp(gg$b),
-             L22 = gg$b + 0.5 * log1p(-gg$rho^2))
-  dM <- tulpa:::.hp_logchol_design(M)
-  mass <- sum(exp(tulpa:::.hp_logchol_log_density(M, dM)$lp +
-                  tulpa:::.hyper_logchol_log_measure(M, dM, absolute = TRUE)))
-  expect_equal(mass, 1, tolerance = 2e-3)
 })
 
 test_that("a log-Cholesky tensor is measured by its own column widths", {
@@ -379,6 +322,96 @@ test_that("a batch of cells reads the prior on the fit's axes, not on its own sp
   expect_true(all(whole$lp[slice] != 0))
 })
 
+# --------------------------------------------------------------------------- #
+# The `hyperprior` choice at the two nested-Laplace front doors               #
+# --------------------------------------------------------------------------- #
+
+test_that("hyperprior = \"flat\" keeps only a density the call states", {
+  flat <- function(bare, block = list(), family = NULL)
+    tulpa:::.hp_axis_prior(bare, block, family, "flat")
+  for (a in c("sigma", "sigma2", "tau", "range")) {
+    expect_identical(flat(a)$reason, "flat_hyperprior", info = a)
+  }
+  expect_identical(flat("phi_pos", family = "gaussian")$reason, "flat_hyperprior")
+  expect_identical(flat("rho", list(type = "bym2"))$reason, "flat_hyperprior")
+  expect_identical(flat("rho", list(type = "ar1"))$reason, "flat_hyperprior")
+  expect_identical(flat("L21", list(type = "mcar"))$reason, "flat_hyperprior")
+  # The copy scale's slab is declared on its axis spec under either choice.
+  expect_true(isTRUE(flat("alpha")$spec))
+  # A block that states a density keeps it.
+  x <- c(0.3, 0.9, 2.5)
+  ar1 <- list(type = "ar1", rho_prior = list(alpha = 2, beta = 3))
+  expect_identical(flat("rho", ar1)$fn(x - 1),
+                   tulpa:::.hp_axis_default("rho", ar1)$fn(x - 1))
+  spde <- list(type = "spde", prior_range = c(0.5, 0.1), prior_sigma = c(2, 0.05))
+  for (a in c("range", "sigma")) {
+    expect_identical(flat(a, spde)$fn(x), tulpa:::.hp_axis_default(a, spde)$fn(x),
+                     info = a)
+  }
+  expect_identical(tulpa:::.hp_axis_prior("sigma", hyperprior = "proper")$fn(x),
+                   tulpa:::.hp_axis_default("sigma")$fn(x))
+  expect_error(tulpa:::.hp_choice("pc_lkj"), "hyperprior")
+})
+
+skip_on_cran()
+
+test_that("the LKJ normaliser makes the density integrate to one", {
+  skip_on_cran()
+  # d = 2: p(r) = (1 - r^2)^(eta - 1) / c_2.
+  for (eta in c(1, 2, 3.5)) {
+    f <- function(r) exp((eta - 1) * log1p(-r^2) - tulpa:::.lkj_log_normaliser(2L, eta))
+    expect_equal(stats::integrate(f, -1, 1, rel.tol = 1e-10)$value, 1,
+                 tolerance = 1e-6, info = eta)
+  }
+  # d = 3: midpoint rule over (r12, r13, r23), zero outside the positive
+  # definite region. The integrand is continuous and vanishes on that boundary
+  # at eta = 2, so the rule converges at the resolution taken here.
+  n <- 160L
+  g <- -1 + (seq_len(n) - 0.5) * 2 / n
+  gr <- expand.grid(a = g, b = g, c = g)
+  det3 <- 1 - gr$a^2 - gr$b^2 - gr$c^2 + 2 * gr$a * gr$b * gr$c
+  eta <- 2
+  mass <- sum(pmax(det3, 0)^(eta - 1)) * (2 / n)^3
+  expect_equal(mass * exp(-tulpa:::.lkj_log_normaliser(3L, eta)), 1,
+               tolerance = 5e-3)
+})
+
+# --------------------------------------------------------------------------- #
+# Free-covariance blocks: one prior and one measure per block (#735)          #
+# --------------------------------------------------------------------------- #
+
+test_that("the two-field default grid carries PC x PC x LKJ on its own coordinates", {
+  skip_on_cran()
+  g <- tulpa:::.mcar_default_logchol_grid(2L)
+  d <- tulpa:::.hp_logchol_design(g)
+  expect_identical(d$design, "sd_rho")
+  lp <- tulpa:::.hp_logchol_log_density(g, d)$lp
+  # The same PC + LKJ prior re_cov_pc_lkj_prior() puts on the log-Cholesky
+  # coordinates, carried to (log sigma_1, log sigma_2, rho) by the Jacobian of
+  # L11 = log s1, L21 = rho s2, L22 = log s2 + log(1 - rho^2) / 2, whose
+  # determinant is s2 / (1 - rho^2).
+  f <- tulpa:::.re_cov_block_logprior(2L, TRUE, tulpa:::.nl_scale_anchor(),
+                                      tulpa:::.nl_hyperprior("lkj_eta"))
+  C <- tulpa:::.hp_logchol_coords(g, d)
+  s2 <- exp(C[, 2L]); rho <- C[, 3L]
+  expect_equal(lp, apply(g, 1L, f) + log(s2 / (1 - rho^2)), tolerance = 1e-12)
+
+  # A proper prior: on a tensor wide enough to hold it, the density times the
+  # absolute cell measure sums to one. The resolution only sets the quadrature
+  # error, measured at 5.0e-4 on 70 x 70 x 81 and 6.1e-4 on the 50 x 50 x 61 CRAN
+  # reads, both inside the 2e-3 the identity is held to.
+  n_ls <- if (cran_fixture()) 50L else 70L
+  n_r  <- if (cran_fixture()) 61L else 81L
+  ls <- seq(-9, 3, length.out = n_ls); r <- seq(-0.995, 0.995, length.out = n_r)
+  gg <- expand.grid(a = ls, b = ls, rho = r)
+  M <- cbind(L11 = gg$a, L21 = gg$rho * exp(gg$b),
+             L22 = gg$b + 0.5 * log1p(-gg$rho^2))
+  dM <- tulpa:::.hp_logchol_design(M)
+  mass <- sum(exp(tulpa:::.hp_logchol_log_density(M, dM)$lp +
+                  tulpa:::.hyper_logchol_log_measure(M, dM, absolute = TRUE)))
+  expect_equal(mass, 1, tolerance = 2e-3)
+})
+
 test_that("a stencil or a probe row on a registry block reads the prior of its grid", {
   skip_on_cran()
   # The placement stencil writes its rows onto a block's grid fields, and the
@@ -439,37 +472,6 @@ test_that("a stencil or a probe row on a registry block reads the prior of its g
   ov <- cbind(0.8 * exp(c(0, 0.1, -0.1)), rep(rg[m], 3L))
   st <- tulpa:::.nl_dispatch_multi(a, list(held_sigma), theta_grid_override = ov)
   expect_equal(st$log_marginal[1L], multi$log_marginal[m], tolerance = 1e-8)
-})
-
-# --------------------------------------------------------------------------- #
-# The `hyperprior` choice at the two nested-Laplace front doors               #
-# --------------------------------------------------------------------------- #
-
-test_that("hyperprior = \"flat\" keeps only a density the call states", {
-  flat <- function(bare, block = list(), family = NULL)
-    tulpa:::.hp_axis_prior(bare, block, family, "flat")
-  for (a in c("sigma", "sigma2", "tau", "range")) {
-    expect_identical(flat(a)$reason, "flat_hyperprior", info = a)
-  }
-  expect_identical(flat("phi_pos", family = "gaussian")$reason, "flat_hyperprior")
-  expect_identical(flat("rho", list(type = "bym2"))$reason, "flat_hyperprior")
-  expect_identical(flat("rho", list(type = "ar1"))$reason, "flat_hyperprior")
-  expect_identical(flat("L21", list(type = "mcar"))$reason, "flat_hyperprior")
-  # The copy scale's slab is declared on its axis spec under either choice.
-  expect_true(isTRUE(flat("alpha")$spec))
-  # A block that states a density keeps it.
-  x <- c(0.3, 0.9, 2.5)
-  ar1 <- list(type = "ar1", rho_prior = list(alpha = 2, beta = 3))
-  expect_identical(flat("rho", ar1)$fn(x - 1),
-                   tulpa:::.hp_axis_default("rho", ar1)$fn(x - 1))
-  spde <- list(type = "spde", prior_range = c(0.5, 0.1), prior_sigma = c(2, 0.05))
-  for (a in c("range", "sigma")) {
-    expect_identical(flat(a, spde)$fn(x), tulpa:::.hp_axis_default(a, spde)$fn(x),
-                     info = a)
-  }
-  expect_identical(tulpa:::.hp_axis_prior("sigma", hyperprior = "proper")$fn(x),
-                   tulpa:::.hp_axis_default("sigma")$fn(x))
-  expect_error(tulpa:::.hp_choice("pc_lkj"), "hyperprior")
 })
 
 test_that("a flat joint fit is the proper fit with the default density taken out", {

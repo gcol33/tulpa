@@ -58,23 +58,6 @@ REFINE <- list(adaptive_grid = TRUE, adaptive_grid_edge_thresh = 1e-6,
                var_of_means_consistency = TRUE)
 PINNED <- list(adaptive_grid = FALSE, var_of_means_consistency = FALSE)
 
-test_that("refinement moves the answer towards the measure, not away from it", {
-  skip_on_cran()
-  set.seed(620)
-  y <- stats::rnorm(60, 0, 1.3)
-  ref <- reference_moments(y)
-
-  for (m in c(7L, 13L)) {
-    pinned  <- fit_sigma(y, slab_grid(m), PINNED)
-    refined <- fit_sigma(y, slab_grid(m), REFINE)
-    # The arms differ in their node sets, which is the premise of the test.
-    expect_gt(nrow(refined$theta_grid), nrow(pinned$theta_grid))
-    err <- function(f) abs(f$theta_mean[["sigma"]] - ref[["mean"]])
-    expect_lt(err(refined), err(pinned), label = sprintf("m = %d", m))
-    expect_lt(err(refined) / ref[["mean"]], 0.03)
-  }
-})
-
 test_that("two grids that resolve the measure agree on the posterior", {
   # The invariance the issue asks for: a coarse grid refined after seeing the
   # data and a fine grid pinned before it integrate ONE measure, so they report
@@ -89,42 +72,6 @@ test_that("two grids that resolve the measure agree on the posterior", {
                unname(fine$theta_mean[["sigma"]]), tolerance = 0.02)
   expect_equal(unname(refined$theta_sd[["sigma"]]),
                unname(fine$theta_sd[["sigma"]]), tolerance = 0.15)
-})
-
-test_that("a finer grid integrates the declared measure more accurately", {
-  skip_on_cran()
-  set.seed(6201)
-  y <- stats::rnorm(40, 0, 0.8)
-  ref <- reference_moments(y)
-  err <- function(m) abs(fit_sigma(y, slab_grid(m), PINNED)$theta_mean[["sigma"]] -
-                         ref[["mean"]])
-  e <- vapply(c(5L, 13L, 41L), err, numeric(1))
-  expect_lt(e[3L], e[2L])
-  expect_lt(e[2L], e[1L])
-  expect_lt(e[3L] / ref[["mean"]], 0.01)
-})
-
-test_that("the nodes are a quadrature rule for the declared prior", {
-  skip_on_cran()
-  # A flat inner fit, so the weights ARE the measure: refining then has one
-  # visible consequence, the same declared prior integrated more accurately.
-  flat <- function(hypers) list(log_marginal = 0)
-  u <- seq(log(SLAB[1L]), log(SLAB[2L]), length.out = 400001L)
-  w <- exp(LOG_PRIOR(exp(u))); w <- w / sum(w)
-  ref_mean <- sum(w * exp(u))
-
-  got <- vapply(c(5L, 11L, 41L), function(m) {
-    sp <- list(hyper_axis_spec("sigma", grid = slab_grid(m), log_scale = TRUE,
-                               bounds = c(0, Inf), log_prior = LOG_PRIOR,
-                               slab_bounds = SLAB))
-    tulpa_hyper_grid(sp, flat, combine = "none",
-                     n_draws = 0L)$theta_mean[["sigma"]]
-  }, numeric(1))
-
-  err <- abs(got - ref_mean)
-  expect_lt(err[3L], err[2L])
-  expect_lt(err[2L], err[1L])
-  expect_lt(err[3L] / ref_mean, 0.002)
 })
 
 test_that("nodes outside the declared support are not proposed", {
@@ -161,49 +108,6 @@ test_that("tulpa_hyper_grid refuses an unknown control knob", {
                      function(hypers) list(log_marginal = 0),
                      control = list(var_of_means_tolerance = 0.7)),
     "Unknown control knob")
-})
-
-test_that("log_prior_coord says which coordinate the declared prior lives on", {
-  skip_on_cran()
-  # `Exponential(1)` written as a density on sigma. Read on the integration
-  # coordinate (the default) the nodes integrate it as a density on log sigma;
-  # declared `"natural"` they integrate the density the caller wrote, because
-  # the change of variables is carried across the way `slab_log_density`'s is.
-  flat <- function(hypers) list(log_marginal = 0)
-  ref <- function(coord) {
-    u <- seq(log(SLAB[1L]), log(SLAB[2L]), length.out = 400001L)
-    s <- exp(u)
-    lw <- LOG_PRIOR(s) + if (coord == "natural") u else 0
-    w <- exp(lw - max(lw)); w <- w / sum(w)
-    sum(w * s)
-  }
-  got <- function(coord) {
-    sp <- list(hyper_axis_spec("sigma", grid = slab_grid(41L), log_scale = TRUE,
-                               bounds = c(0, Inf), log_prior = LOG_PRIOR,
-                               slab_bounds = SLAB, log_prior_coord = coord))
-    tulpa_hyper_grid(sp, flat, combine = "none",
-                     n_draws = 0L)$theta_mean[["sigma"]]
-  }
-  for (coord in c("integration", "natural")) {
-    expect_lt(abs(got(coord) - ref(coord)) / ref(coord), 0.01, label = coord)
-  }
-  # The two readings are different measures, so the test is not vacuous.
-  expect_gt(got("natural"), 1.15 * got("integration"))
-
-  # The default is the reading every existing fit was taken under.
-  expect_identical(hyper_axis_spec("s", grid = c(1, 2))$log_prior_coord,
-                   "integration")
-  expect_error(hyper_axis_spec("s", grid = c(1, 2), log_prior_coord = "log"),
-               "should be one of")
-  # Inert on a linear axis, where the two coordinates coincide.
-  lin <- function(coord) {
-    sp <- list(hyper_axis_spec("m", grid = seq(-2, 2, length.out = 9L),
-                               log_prior = function(x) stats::dnorm(x, 0, 1,
-                                                                    log = TRUE),
-                               log_prior_coord = coord))
-    tulpa_hyper_grid(sp, flat, combine = "none", n_draws = 0L)$theta_sd[["m"]]
-  }
-  expect_identical(lin("natural"), lin("integration"))
 })
 
 # --------------------------------------------------------------------------- #
@@ -406,6 +310,104 @@ fit_two_axis <- function(n_sigma, control) {
                    control = control)
 }
 
+skip_on_cran()
+
+test_that("refinement moves the answer towards the measure, not away from it", {
+  skip_on_cran()
+  set.seed(620)
+  y <- stats::rnorm(60, 0, 1.3)
+  ref <- reference_moments(y)
+
+  for (m in c(7L, 13L)) {
+    pinned  <- fit_sigma(y, slab_grid(m), PINNED)
+    refined <- fit_sigma(y, slab_grid(m), REFINE)
+    # The arms differ in their node sets, which is the premise of the test.
+    expect_gt(nrow(refined$theta_grid), nrow(pinned$theta_grid))
+    err <- function(f) abs(f$theta_mean[["sigma"]] - ref[["mean"]])
+    expect_lt(err(refined), err(pinned), label = sprintf("m = %d", m))
+    expect_lt(err(refined) / ref[["mean"]], 0.03)
+  }
+})
+
+test_that("a finer grid integrates the declared measure more accurately", {
+  skip_on_cran()
+  set.seed(6201)
+  y <- stats::rnorm(40, 0, 0.8)
+  ref <- reference_moments(y)
+  err <- function(m) abs(fit_sigma(y, slab_grid(m), PINNED)$theta_mean[["sigma"]] -
+                         ref[["mean"]])
+  e <- vapply(c(5L, 13L, 41L), err, numeric(1))
+  expect_lt(e[3L], e[2L])
+  expect_lt(e[2L], e[1L])
+  expect_lt(e[3L] / ref[["mean"]], 0.01)
+})
+
+test_that("the nodes are a quadrature rule for the declared prior", {
+  skip_on_cran()
+  # A flat inner fit, so the weights ARE the measure: refining then has one
+  # visible consequence, the same declared prior integrated more accurately.
+  flat <- function(hypers) list(log_marginal = 0)
+  u <- seq(log(SLAB[1L]), log(SLAB[2L]), length.out = 400001L)
+  w <- exp(LOG_PRIOR(exp(u))); w <- w / sum(w)
+  ref_mean <- sum(w * exp(u))
+
+  got <- vapply(c(5L, 11L, 41L), function(m) {
+    sp <- list(hyper_axis_spec("sigma", grid = slab_grid(m), log_scale = TRUE,
+                               bounds = c(0, Inf), log_prior = LOG_PRIOR,
+                               slab_bounds = SLAB))
+    tulpa_hyper_grid(sp, flat, combine = "none",
+                     n_draws = 0L)$theta_mean[["sigma"]]
+  }, numeric(1))
+
+  err <- abs(got - ref_mean)
+  expect_lt(err[3L], err[2L])
+  expect_lt(err[2L], err[1L])
+  expect_lt(err[3L] / ref_mean, 0.002)
+})
+
+test_that("log_prior_coord says which coordinate the declared prior lives on", {
+  skip_on_cran()
+  # `Exponential(1)` written as a density on sigma. Read on the integration
+  # coordinate (the default) the nodes integrate it as a density on log sigma;
+  # declared `"natural"` they integrate the density the caller wrote, because
+  # the change of variables is carried across the way `slab_log_density`'s is.
+  flat <- function(hypers) list(log_marginal = 0)
+  ref <- function(coord) {
+    u <- seq(log(SLAB[1L]), log(SLAB[2L]), length.out = 400001L)
+    s <- exp(u)
+    lw <- LOG_PRIOR(s) + if (coord == "natural") u else 0
+    w <- exp(lw - max(lw)); w <- w / sum(w)
+    sum(w * s)
+  }
+  got <- function(coord) {
+    sp <- list(hyper_axis_spec("sigma", grid = slab_grid(41L), log_scale = TRUE,
+                               bounds = c(0, Inf), log_prior = LOG_PRIOR,
+                               slab_bounds = SLAB, log_prior_coord = coord))
+    tulpa_hyper_grid(sp, flat, combine = "none",
+                     n_draws = 0L)$theta_mean[["sigma"]]
+  }
+  for (coord in c("integration", "natural")) {
+    expect_lt(abs(got(coord) - ref(coord)) / ref(coord), 0.01, label = coord)
+  }
+  # The two readings are different measures, so the test is not vacuous.
+  expect_gt(got("natural"), 1.15 * got("integration"))
+
+  # The default is the reading every existing fit was taken under.
+  expect_identical(hyper_axis_spec("s", grid = c(1, 2))$log_prior_coord,
+                   "integration")
+  expect_error(hyper_axis_spec("s", grid = c(1, 2), log_prior_coord = "log"),
+               "should be one of")
+  # Inert on a linear axis, where the two coordinates coincide.
+  lin <- function(coord) {
+    sp <- list(hyper_axis_spec("m", grid = seq(-2, 2, length.out = 9L),
+                               log_prior = function(x) stats::dnorm(x, 0, 1,
+                                                                    log = TRUE),
+                               log_prior_coord = coord))
+    tulpa_hyper_grid(sp, flat, combine = "none", n_draws = 0L)$theta_sd[["m"]]
+  }
+  expect_identical(lin("natural"), lin("integration"))
+})
+
 test_that("a refined grid reports the posterior its own cell weights define", {
   skip_on_cran()
   coarse  <- fit_two_axis(5L, PINNED)
@@ -433,4 +435,3 @@ test_that("a refined grid reports the posterior its own cell weights define", {
   expect_true(all(closer("theta_sd")))
   expect_true(closer("theta_ci_hi")[["sigma"]])
 })
-

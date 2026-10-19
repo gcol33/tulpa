@@ -21,6 +21,47 @@ make_binom_site <- function(X, y, nt) {
   }
 }
 
+test_that(".aghq_sigma_penalty: value matches the PC log-prior, grad matches FD", {
+  # Two blocks: one scalar (targeted), one 2x2 (untargeted). n_theta = 3 fixed.
+  re_terms <- list(list(n_groups = 12L, n_coefs = 1L, correlated = FALSE),
+                   list(n_groups = 12L, n_coefs = 2L, correlated = TRUE))
+  layout   <- .re_cov_block_layout(.as_re_terms_list(re_terms), NULL)
+  n_theta  <- 3L
+  # off -> NULL (the byte-identical path).
+  expect_null(.aghq_sigma_penalty(NULL, layout, n_theta))
+  # PC prior on block 1 only.
+  U <- 1; alpha <- 0.05
+  pen <- .aghq_sigma_penalty(list(blocks = 1L, prior_sigma = c(U, alpha)),
+                             layout, n_theta)
+  # A par vector: 3 theta, then re_par = [log sigma1 | logChol of the 2x2].
+  set.seed(7)
+  par <- c(rnorm(3), log(0.4), 0.1, -0.2, 0.3)
+  # value == the scalar-block PC log-prior at log sigma1 (independent formula:
+  # log(lambda) - lambda*sigma + log(sigma), lambda = -log(alpha)/U).
+  lam  <- -log(alpha) / U; ls <- par[n_theta + 1L]; sig <- exp(ls)
+  expect_equal(pen$val(par), log(lam) - lam * sig + ls, tolerance = 1e-10)
+  # only the targeted block moves the value: perturbing an untargeted coord is a
+  # no-op.
+  par2 <- par; par2[n_theta + 3L] <- par2[n_theta + 3L] + 1
+  expect_equal(pen$val(par2), pen$val(par), tolerance = 1e-10)
+  # gradient matches a central finite difference of val, and is zero off the
+  # targeted coordinate.
+  g <- pen$grad(par); h <- 1e-6
+  fd <- vapply(seq_along(par), function(j) {
+    pp <- par; pp[j] <- pp[j] + h; pm <- par; pm[j] <- pm[j] - h
+    (pen$val(pp) - pen$val(pm)) / (2 * h)
+  }, numeric(1))
+  expect_equal(g, fd, tolerance = 1e-5)
+  expect_equal(g[-(n_theta + 1L)], rep(0, length(par) - 1L))
+  # bad specs error.
+  expect_error(.aghq_sigma_penalty(list(prior_sigma = 1), layout, n_theta),
+               "c\\(U, alpha\\)")
+  expect_error(.aghq_sigma_penalty(list(blocks = 5L, prior_sigma = c(1, .05)),
+                                   layout, n_theta), "index the RE blocks")
+})
+
+skip_on_cran()
+
 test_that("intercept-only AGHQ recovers sigma and beats Laplace (n_quad=1)", {
   skip_on_cran()
   truth <- 0.9
@@ -104,45 +145,6 @@ test_that("LKJ penalty pulls a weakly-identified correlation off the boundary", 
   # The regularized correlation is no larger in magnitude (pulled toward 0).
   expect_lte(abs(rho_reg), abs(rho_ml) + 1e-6)
   expect_lt(abs(rho_reg), 0.99)
-})
-
-test_that(".aghq_sigma_penalty: value matches the PC log-prior, grad matches FD", {
-  # Two blocks: one scalar (targeted), one 2x2 (untargeted). n_theta = 3 fixed.
-  re_terms <- list(list(n_groups = 12L, n_coefs = 1L, correlated = FALSE),
-                   list(n_groups = 12L, n_coefs = 2L, correlated = TRUE))
-  layout   <- .re_cov_block_layout(.as_re_terms_list(re_terms), NULL)
-  n_theta  <- 3L
-  # off -> NULL (the byte-identical path).
-  expect_null(.aghq_sigma_penalty(NULL, layout, n_theta))
-  # PC prior on block 1 only.
-  U <- 1; alpha <- 0.05
-  pen <- .aghq_sigma_penalty(list(blocks = 1L, prior_sigma = c(U, alpha)),
-                             layout, n_theta)
-  # A par vector: 3 theta, then re_par = [log sigma1 | logChol of the 2x2].
-  set.seed(7)
-  par <- c(rnorm(3), log(0.4), 0.1, -0.2, 0.3)
-  # value == the scalar-block PC log-prior at log sigma1 (independent formula:
-  # log(lambda) - lambda*sigma + log(sigma), lambda = -log(alpha)/U).
-  lam  <- -log(alpha) / U; ls <- par[n_theta + 1L]; sig <- exp(ls)
-  expect_equal(pen$val(par), log(lam) - lam * sig + ls, tolerance = 1e-10)
-  # only the targeted block moves the value: perturbing an untargeted coord is a
-  # no-op.
-  par2 <- par; par2[n_theta + 3L] <- par2[n_theta + 3L] + 1
-  expect_equal(pen$val(par2), pen$val(par), tolerance = 1e-10)
-  # gradient matches a central finite difference of val, and is zero off the
-  # targeted coordinate.
-  g <- pen$grad(par); h <- 1e-6
-  fd <- vapply(seq_along(par), function(j) {
-    pp <- par; pp[j] <- pp[j] + h; pm <- par; pm[j] <- pm[j] - h
-    (pen$val(pp) - pen$val(pm)) / (2 * h)
-  }, numeric(1))
-  expect_equal(g, fd, tolerance = 1e-5)
-  expect_equal(g[-(n_theta + 1L)], rep(0, length(par) - 1L))
-  # bad specs error.
-  expect_error(.aghq_sigma_penalty(list(prior_sigma = 1), layout, n_theta),
-               "c\\(U, alpha\\)")
-  expect_error(.aghq_sigma_penalty(list(blocks = 5L, prior_sigma = c(1, .05)),
-                                   layout, n_theta), "index the RE blocks")
 })
 
 test_that("sigma_prior pulls a collapsing scalar RE SD off the 0 boundary, unbiased when identified", {

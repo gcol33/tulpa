@@ -33,6 +33,42 @@ fit_tgp <- function(d, cov = "exponential", nu = NULL, period = NULL,
                        seed = seed, verbose = FALSE))
 }
 
+test_that("a Matern smoothness with no closed form is rejected", {
+  for (nu in c(0.5, 1.5, 2.5)) {
+    expect_s3_class(temporal_gp("t", cov = "matern", nu = nu),
+                    "tulpa_temporal_gp")
+  }
+  for (nu in c(0.75, 1.0, 2.0, 3.0)) {
+    expect_error(temporal_gp("t", cov = "matern", nu = nu),
+                 "0.5, 1.5 or 2.5")
+  }
+  # nu is still required to be positive first
+  expect_error(temporal_gp("t", cov = "matern", nu = -1), "positive number")
+})
+
+test_that("the periodic kernel requires a period", {
+  expect_error(temporal_gp("t", cov = "periodic"), "period")
+  expect_error(temporal_gp("t", cov = "periodic", period = 0), "period")
+  expect_s3_class(temporal_gp("t", cov = "periodic", period = 12),
+                  "tulpa_temporal_gp")
+})
+
+test_that("a temporal GP cannot yet ride alongside another field", {
+  d <- sim_tgp(N = 60L, n_t = 8L)
+  d$df$g <- rep(1:4, length.out = nrow(d$df))
+  adj <- matrix(0L, 4, 4)
+  for (i in 1:3) adj[i, i + 1] <- adj[i + 1, i] <- 1L
+  expect_error(
+    tulpa(y ~ x + spatial(g), data = d$df, family = "binomial",
+          temporal = temporal_gp("tvar"), mode = "hmc",
+          spatial = spatial_car(adj, group_var = "g"),
+          control = list(n_iter = 40, warmup = 20, n_chains = 1)),
+    "temporal GP"
+  )
+})
+
+skip_on_cran()
+
 test_that("temporal_gp() fits through tulpa() and names its hyperparameters", {
   skip_on_cran()
   d <- sim_tgp()
@@ -105,38 +141,4 @@ test_that("the periodic kernel tracks its period", {
   fa <- unname(a$means[grep("^phi_temporal\\[", names(a$means))])
   fb <- unname(b$means[grep("^phi_temporal\\[", names(b$means))])
   expect_false(isTRUE(all.equal(fa, fb)))
-})
-
-test_that("a Matern smoothness with no closed form is rejected", {
-  for (nu in c(0.5, 1.5, 2.5)) {
-    expect_s3_class(temporal_gp("t", cov = "matern", nu = nu),
-                    "tulpa_temporal_gp")
-  }
-  for (nu in c(0.75, 1.0, 2.0, 3.0)) {
-    expect_error(temporal_gp("t", cov = "matern", nu = nu),
-                 "0.5, 1.5 or 2.5")
-  }
-  # nu is still required to be positive first
-  expect_error(temporal_gp("t", cov = "matern", nu = -1), "positive number")
-})
-
-test_that("the periodic kernel requires a period", {
-  expect_error(temporal_gp("t", cov = "periodic"), "period")
-  expect_error(temporal_gp("t", cov = "periodic", period = 0), "period")
-  expect_s3_class(temporal_gp("t", cov = "periodic", period = 12),
-                  "tulpa_temporal_gp")
-})
-
-test_that("a temporal GP cannot yet ride alongside another field", {
-  d <- sim_tgp(N = 60L, n_t = 8L)
-  d$df$g <- rep(1:4, length.out = nrow(d$df))
-  adj <- matrix(0L, 4, 4)
-  for (i in 1:3) adj[i, i + 1] <- adj[i + 1, i] <- 1L
-  expect_error(
-    tulpa(y ~ x + spatial(g), data = d$df, family = "binomial",
-          temporal = temporal_gp("tvar"), mode = "hmc",
-          spatial = spatial_car(adj, group_var = "g"),
-          control = list(n_iter = 40, warmup = 20, n_chains = 1)),
-    "temporal GP"
-  )
 })

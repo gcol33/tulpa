@@ -29,6 +29,8 @@ test_that("the nested-Laplace AR1 rho axis carries the normalised Beta prior", {
                9 * log(u) - lbeta(10, 1) + log(0.5), tolerance = 1e-12)
 })
 
+skip_on_cran()
+
 test_that("informative AR1 rho prior shifts the nested posterior toward the prior", {
   skip_on_cran()
   skip_if_not(nzchar(Sys.getenv("TULPA_SLOW_TESTS")), "slow recovery test")

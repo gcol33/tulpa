@@ -58,41 +58,6 @@ test_that("sigma_re warns wherever the fit determines the scale itself", {
     "ignored for mode = 'agq'")
 })
 
-test_that("n_trials is read the same way on every door", {
-  # gcol33/tulpa#677: a scalar errored at the C++ boundary on `laplace` and was
-  # recycled on `mala` / `imh_laplace`, and n_trials with a non-binomial family
-  # was read by nothing -- no signal for a user who meant a binomial.
-  skip_on_cran()
-  f1 <- tulpa(yb ~ x, data = d, family = "binomial", n_trials = 1L,
-              mode = "laplace")
-  expect_s3_class(f1, "tulpa_fit")
-
-  expect_error(
-    tulpa(yp ~ x, data = d, family = "poisson", n_trials = rep(5L, n),
-          mode = "laplace"),
-    "not read by family")
-  expect_error(
-    tulpa(yb ~ x, data = d, family = "binomial", n_trials = rep(1L, 5L),
-          mode = "laplace"),
-    "length 1 .recycled. or nrow")
-})
-
-test_that("front-door misuse names the argument, not an R internal", {
-  # gcol33/tulpa#679
-  skip_on_cran()
-  expect_error(tulpa(yb ~ x, data = d, family = stats::binomial(),
-                     mode = "laplace"), NA)
-  expect_error(tulpa(yp ~ x, data = d, family = "poisson", mode = NULL),
-               "`mode` must be a single string")
-  expect_error(tulpa(~ x, data = d, family = "poisson", mode = "laplace"),
-               "`formula` must be two-sided")
-  expect_error(tulpa(yb ~ x, data = d[0, ], family = "binomial",
-                     mode = "laplace"),
-               "`data` has no rows")
-  expect_error(tulpa(yb ~ x, data = d, family = c("a", "b"), mode = "laplace"),
-               "`family` must be a single family name")
-})
-
 test_that("a family object maps to the engine's own family name", {
   expect_identical(tulpa:::.family_object_to_name(stats::binomial()), "binomial")
   expect_identical(tulpa:::.family_object_to_name(stats::poisson()), "poisson")
@@ -124,18 +89,6 @@ test_that("a family object's link is never replaced by the engine's default", {
   # A link the base does not admit is refused naming the object, not fitted.
   expect_error(f(stats::poisson("identity")), NA)
   expect_error(f(stats::binomial("identity")), "not available for binomial")
-})
-
-test_that("family = Gamma() fits the inverse link glm() fits", {
-  skip_on_cran()
-  set.seed(9)
-  n <- 300; x <- stats::runif(n)
-  d <- data.frame(y = stats::rgamma(n, 5, 5 * (0.5 + x)), x = x)
-  ref <- stats::coef(stats::glm(y ~ x, stats::Gamma(), d))
-  fit <- suppressWarnings(tulpa(y ~ x, d, family = stats::Gamma(),
-                                mode = "laplace", phi = 5))
-  expect_identical(fit$family, "gamma_inverse")
-  expect_equal(unname(coef(fit)), unname(ref), tolerance = 0.05)
 })
 
 test_that("the ziformula RE guard walks the AST", {
@@ -179,4 +132,53 @@ test_that("an NNGP spec carries the amplitude anchors the door accepts", {
   d0 <- spatial_gp(~ lon + lat)
   expect_equal(d0$sigma2_prior_U, 1)
   expect_equal(d0$sigma2_prior_alpha, 0.01)
+})
+
+skip_on_cran()
+
+test_that("n_trials is read the same way on every door", {
+  # gcol33/tulpa#677: a scalar errored at the C++ boundary on `laplace` and was
+  # recycled on `mala` / `imh_laplace`, and n_trials with a non-binomial family
+  # was read by nothing -- no signal for a user who meant a binomial.
+  skip_on_cran()
+  f1 <- tulpa(yb ~ x, data = d, family = "binomial", n_trials = 1L,
+              mode = "laplace")
+  expect_s3_class(f1, "tulpa_fit")
+
+  expect_error(
+    tulpa(yp ~ x, data = d, family = "poisson", n_trials = rep(5L, n),
+          mode = "laplace"),
+    "not read by family")
+  expect_error(
+    tulpa(yb ~ x, data = d, family = "binomial", n_trials = rep(1L, 5L),
+          mode = "laplace"),
+    "length 1 .recycled. or nrow")
+})
+
+test_that("front-door misuse names the argument, not an R internal", {
+  # gcol33/tulpa#679
+  skip_on_cran()
+  expect_error(tulpa(yb ~ x, data = d, family = stats::binomial(),
+                     mode = "laplace"), NA)
+  expect_error(tulpa(yp ~ x, data = d, family = "poisson", mode = NULL),
+               "`mode` must be a single string")
+  expect_error(tulpa(~ x, data = d, family = "poisson", mode = "laplace"),
+               "`formula` must be two-sided")
+  expect_error(tulpa(yb ~ x, data = d[0, ], family = "binomial",
+                     mode = "laplace"),
+               "`data` has no rows")
+  expect_error(tulpa(yb ~ x, data = d, family = c("a", "b"), mode = "laplace"),
+               "`family` must be a single family name")
+})
+
+test_that("family = Gamma() fits the inverse link glm() fits", {
+  skip_on_cran()
+  set.seed(9)
+  n <- 300; x <- stats::runif(n)
+  d <- data.frame(y = stats::rgamma(n, 5, 5 * (0.5 + x)), x = x)
+  ref <- stats::coef(stats::glm(y ~ x, stats::Gamma(), d))
+  fit <- suppressWarnings(tulpa(y ~ x, d, family = stats::Gamma(),
+                                mode = "laplace", phi = 5))
+  expect_identical(fit$family, "gamma_inverse")
+  expect_equal(unname(coef(fit)), unname(ref), tolerance = 0.05)
 })

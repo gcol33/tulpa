@@ -52,6 +52,24 @@ test_that("tulpa_batched_pareto_k(#831) matches .nested_is_pareto_k", {
   expect_identical(got, ref)
 })
 
+test_that("tulpa_hyper_copy_slab_density / tulpa_hyper_check_copy_slab (#833) match the internals", {
+  f1 <- tulpa_hyper_copy_slab_density(3)
+  f2 <- tulpa:::.hyper_copy_slab_density(3)
+  expect_equal(f1(c(0, 1, 2)), f2(c(0, 1, 2)))
+  expect_null(tulpa_hyper_copy_slab_density(-1))
+
+  expect_identical(tulpa_hyper_check_copy_slab(NULL), "exponential")
+  expect_identical(tulpa_hyper_check_copy_slab("flat"), "flat")
+  expect_error(tulpa_hyper_check_copy_slab("bogus"), "copy_slab")
+})
+
+test_that("tulpa_joint_grid_batch(#834) is exported and validates its argument", {
+  expect_error(tulpa_joint_grid_batch(list()), "non-empty list")
+  expect_error(tulpa_joint_grid_batch(list(1)), "non-empty list")
+})
+
+skip_on_cran()
+
 test_that("tulpa_theta_matrix / tulpa_grid_log_quad / tulpa_normalise_weights_safe (#832) reconstruct a fit's own weights", {
   skip_on_cran()
   set.seed(3)
@@ -100,20 +118,4 @@ test_that("tulpa_joint_axis_specs_from_grid / tulpa_hyper_slice_home / tulpa_hyp
   sup1 <- tulpa_hyper_grid_supports(M, specs1, refining = fit$refining)
   sup2 <- tulpa:::.hyper_grid_supports(M, specs2, refining = fit$refining)
   expect_identical(sup1, sup2)
-})
-
-test_that("tulpa_hyper_copy_slab_density / tulpa_hyper_check_copy_slab (#833) match the internals", {
-  f1 <- tulpa_hyper_copy_slab_density(3)
-  f2 <- tulpa:::.hyper_copy_slab_density(3)
-  expect_equal(f1(c(0, 1, 2)), f2(c(0, 1, 2)))
-  expect_null(tulpa_hyper_copy_slab_density(-1))
-
-  expect_identical(tulpa_hyper_check_copy_slab(NULL), "exponential")
-  expect_identical(tulpa_hyper_check_copy_slab("flat"), "flat")
-  expect_error(tulpa_hyper_check_copy_slab("bogus"), "copy_slab")
-})
-
-test_that("tulpa_joint_grid_batch(#834) is exported and validates its argument", {
-  expect_error(tulpa_joint_grid_batch(list()), "non-empty list")
-  expect_error(tulpa_joint_grid_batch(list(1)), "non-empty list")
 })

@@ -33,29 +33,6 @@
        tail_len = tail_len, tail_smoothed = smoothed_tail)
 }
 
-test_that("cpp_tulpa_psis reproduces the R PSIS core (k, is_ess, log-weights)", {
-  skip_on_cran()
-  set.seed(61)
-  wk <- wi <- ww <- 0
-  for (rep in 1:150) {
-    S  <- sample(c(6, 25, 60, 200, 800), 1)
-    lr <- switch(sample(1:3, 1),
-                 rnorm(S), rexp(S) - 1, c(rnorm(S - 3), 20, 25, 40))
-    tp <- if (runif(1) < 0.3) sample(5:max(6, floor(0.2 * S)), 1) else NULL
-    R  <- .psis_R_oracle(lr, tp)
-    C  <- tulpa_psis(lr, tp)
-    expect_equal(C$tail_len, R$tail_len)
-    dk <- if (is.na(R$pareto_k) && is.na(C$pareto_k)) 0
-          else abs(R$pareto_k - C$pareto_k)
-    wk <- max(wk, dk); wi <- max(wi, abs(R$is_ess - C$is_ess))
-    if (length(R$log_weights) == length(C$log_weights))
-      ww <- max(ww, max(abs(R$log_weights - C$log_weights)))
-  }
-  expect_lt(wk, 1e-9)
-  expect_lt(wi, 1e-9)
-  expect_lt(ww, 1e-9)
-})
-
 # A flat region in the log ratios -- an observation whose removal barely moves
 # the posterior -- makes exp(lw) - exp(cutoff) exactly 0 for every tail draw
 # tied with the cutoff. With a quarter of the exceedances at 0 the Zhang-Stephens
@@ -117,4 +94,29 @@ test_that("cpp_psis_loo_pit rejects a tail_len at or past the draw count", {
   expect_error(cpp_psis_loo_pit(ll, Fl, Fu, S + 1L, 1L), "tail_len")
   expect_error(cpp_psis_loo_pit(ll, Fl, Fu, 0L, 1L), "tail_len")
   expect_true(all(is.finite(cpp_psis_loo_pit(ll, Fl, Fu, 8L, 1L))))
+})
+
+skip_on_cran()
+
+test_that("cpp_tulpa_psis reproduces the R PSIS core (k, is_ess, log-weights)", {
+  skip_on_cran()
+  set.seed(61)
+  wk <- wi <- ww <- 0
+  for (rep in 1:150) {
+    S  <- sample(c(6, 25, 60, 200, 800), 1)
+    lr <- switch(sample(1:3, 1),
+                 rnorm(S), rexp(S) - 1, c(rnorm(S - 3), 20, 25, 40))
+    tp <- if (runif(1) < 0.3) sample(5:max(6, floor(0.2 * S)), 1) else NULL
+    R  <- .psis_R_oracle(lr, tp)
+    C  <- tulpa_psis(lr, tp)
+    expect_equal(C$tail_len, R$tail_len)
+    dk <- if (is.na(R$pareto_k) && is.na(C$pareto_k)) 0
+          else abs(R$pareto_k - C$pareto_k)
+    wk <- max(wk, dk); wi <- max(wi, abs(R$is_ess - C$is_ess))
+    if (length(R$log_weights) == length(C$log_weights))
+      ww <- max(ww, max(abs(R$log_weights - C$log_weights)))
+  }
+  expect_lt(wk, 1e-9)
+  expect_lt(wi, 1e-9)
+  expect_lt(ww, 1e-9)
 })

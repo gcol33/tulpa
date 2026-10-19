@@ -20,26 +20,6 @@ test_that("every consumer reads that one setting", {
                "Unknown fixed-effect prior consumer")
 })
 
-test_that("every fitter's own default resolves to the same prior SD", {
-  skip_on_cran()
-  fitters <- list(
-    ep           = tulpa:::tulpa_ep,
-    ep_fit       = tulpa:::ep_fit,
-    gaussian     = tulpa:::tulpa_gaussian,
-    gibbs        = tulpa:::tulpa_gibbs,
-    multinomial  = tulpa:::tulpa_multinomial,
-    ordinal      = tulpa:::tulpa_ordinal,
-    re_cov_gibbs = tulpa:::tulpa_re_cov_gibbs,
-    glmm_logpost = tulpa:::build_glmm_logpost
-  )
-  for (nm in names(fitters)) {
-    bp <- eval(formals(fitters[[nm]])$beta_prior,
-               envir = asNamespace("tulpa"))
-    expect_equal(bp$sd, tulpa:::.TULPA_PRIOR$beta_sd, info = nm)
-    expect_equal(bp$mean, 0, info = nm)
-  }
-})
-
 test_that("the scalar-ridge resolver takes the same default", {
   expect_equal(tulpa:::.beta_prior_ridge_sd(NULL), tulpa:::.TULPA_PRIOR$beta_sd)
   expect_equal(tulpa:::.beta_prior_ridge_sd(list(mean = 0, sd = 7)), 7)
@@ -77,6 +57,28 @@ test_that("the two prior resolvers accept and reject the same inputs", {
 test_that("prior_normal() with no sd is still accepted through its own default", {
   expect_equal(tulpa:::.beta_prior_fields(prior_normal())$sd, 2.5)
   expect_equal(tulpa:::.beta_prior_fields(list(sd = 4)), list(mean = 0, sd = 4))
+})
+
+skip_on_cran()
+
+test_that("every fitter's own default resolves to the same prior SD", {
+  skip_on_cran()
+  fitters <- list(
+    ep           = tulpa:::tulpa_ep,
+    ep_fit       = tulpa:::ep_fit,
+    gaussian     = tulpa:::tulpa_gaussian,
+    gibbs        = tulpa:::tulpa_gibbs,
+    multinomial  = tulpa:::tulpa_multinomial,
+    ordinal      = tulpa:::tulpa_ordinal,
+    re_cov_gibbs = tulpa:::tulpa_re_cov_gibbs,
+    glmm_logpost = tulpa:::build_glmm_logpost
+  )
+  for (nm in names(fitters)) {
+    bp <- eval(formals(fitters[[nm]])$beta_prior,
+               envir = asNamespace("tulpa"))
+    expect_equal(bp$sd, tulpa:::.TULPA_PRIOR$beta_sd, info = nm)
+    expect_equal(bp$mean, 0, info = nm)
+  }
 })
 
 # --- what the fit reports ----------------------------------------------------

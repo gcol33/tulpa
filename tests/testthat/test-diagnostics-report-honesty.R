@@ -11,6 +11,18 @@ u  <- rnorm(20, 0, 0.6)
 yp <- rpois(n, exp(0.3 + 0.4 * x + u[g]))
 dd <- data.frame(x = x, yp = yp, g = factor(g), s = factor(g))
 
+test_that("the resolver prefers real names and falls back positionally", {
+  fit <- list(param_names = c("a", "b", "c"))
+  expect_identical(tulpa:::.tulpa_draw_names(c("x", "y", "z"), fit, 3L),
+                   c("x", "y", "z"))
+  expect_identical(tulpa:::.tulpa_draw_names(NULL, fit, 3L), c("a", "b", "c"))
+  expect_identical(tulpa:::.tulpa_draw_names(character(0), fit, 2L), c("a", "b"))
+  expect_identical(tulpa:::.tulpa_draw_names(NULL, list(), 2L),
+                   c("param1", "param2"))
+})
+
+skip_on_cran()
+
 test_that("an uncomputed Pareto k-hat is a decline, not a clean pass", {
   # gcol33/tulpa#709: the VI kernel initialises psis_k to a -1 "not computed"
   # sentinel, which is FINITE, so the decline branch written for exactly this
@@ -62,16 +74,6 @@ test_that("chain diagnostics name the parameters the fit names", {
   # and the 3-D accessor names the same axis
   expect_identical(dimnames(tulpa_draws_array(fm))[[3L]],
                    fm$param_names[seq_len(ncol(fm$draws))])
-})
-
-test_that("the resolver prefers real names and falls back positionally", {
-  fit <- list(param_names = c("a", "b", "c"))
-  expect_identical(tulpa:::.tulpa_draw_names(c("x", "y", "z"), fit, 3L),
-                   c("x", "y", "z"))
-  expect_identical(tulpa:::.tulpa_draw_names(NULL, fit, 3L), c("a", "b", "c"))
-  expect_identical(tulpa:::.tulpa_draw_names(character(0), fit, 2L), c("a", "b"))
-  expect_identical(tulpa:::.tulpa_draw_names(NULL, list(), 2L),
-                   c("param1", "param2"))
 })
 
 test_that("glance() is one row whatever the tier", {

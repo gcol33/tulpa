@@ -79,6 +79,8 @@ test_that("an unresolved cached slot counts only a nonzero contribution", {
   expect_equal(live_write$dropped, 1)
 })
 
+skip_on_cran()
+
 test_that("real fits scatter entirely inside their registered pattern", {
   # The acceptance condition for #249: with the check armed, the kernels that
   # broke this invariant before (#241 areal components, #242 weighted entries)

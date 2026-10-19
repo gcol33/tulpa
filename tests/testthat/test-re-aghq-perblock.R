@@ -39,6 +39,23 @@ two_block_terms <- function(d) {
        list(idx = d$group, n_groups = d$ng, n_coefs = 1L, Z = matrix(d$x, d$N, 1)))
 }
 
+test_that("n_quad of a wrong length is rejected", {
+  d <- sim_two_block(1, ng = 5L, n_per = 4L, sd_int = 0.5, sd_slp = 0.5)
+  re_terms <- two_block_terms(d)
+  Sigma0 <- list(matrix(0.25, 1, 1), matrix(0.25, 1, 1))
+  site <- make_binom_site(d$X, d$y, d$nt)
+  expect_error(
+    tulpa_re_aghq(c(0, 0), re_terms, Sigma0, make_site = site,
+                  n_obs = d$N, n_quad = c(3L, 3L, 3L)),
+    "one per RE block")
+  expect_error(
+    tulpa_re_aghq(c(0, 0), re_terms, Sigma0, make_site = site,
+                  n_obs = d$N, n_quad = c(3L, 0L)),
+    "positive integers")
+})
+
+skip_on_cran()
+
 test_that("scalar n_quad equals a uniform per-block vector byte-for-byte", {
   skip_on_cran()
   d <- sim_two_block(101, ng = 30L, n_per = 8L, sd_int = 0.8, sd_slp = 0.5)
@@ -84,19 +101,4 @@ test_that("a per-block grid (fewer nodes on the slope block) recovers truth", {
   expect_lt(abs(sd_int_hat - sqrt(fit_u$Sigma_list[[1]][1, 1])), 0.03)
   expect_lt(abs(sd_slp_hat - sqrt(fit_u$Sigma_list[[2]][1, 1])), 0.03)
   expect_true(all(is.finite(fit_pb$theta_se)))
-})
-
-test_that("n_quad of a wrong length is rejected", {
-  d <- sim_two_block(1, ng = 5L, n_per = 4L, sd_int = 0.5, sd_slp = 0.5)
-  re_terms <- two_block_terms(d)
-  Sigma0 <- list(matrix(0.25, 1, 1), matrix(0.25, 1, 1))
-  site <- make_binom_site(d$X, d$y, d$nt)
-  expect_error(
-    tulpa_re_aghq(c(0, 0), re_terms, Sigma0, make_site = site,
-                  n_obs = d$N, n_quad = c(3L, 3L, 3L)),
-    "one per RE block")
-  expect_error(
-    tulpa_re_aghq(c(0, 0), re_terms, Sigma0, make_site = site,
-                  n_obs = d$N, n_quad = c(3L, 0L)),
-    "positive integers")
 })

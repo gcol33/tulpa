@@ -128,27 +128,6 @@ test_that("dimension 1 is the bit-reversed Gray code, and a van der Corput permu
                tolerance = 0)
 })
 
-test_that("each one-dimensional projection is an elementary-interval net", {
-  skip_on_cran()
-  # X_0 .. X_(2^m - 1) put exactly one point in every interval
-  # [j / 2^m, (j + 1) / 2^m). The origin is not emitted, so the returned
-  # 2^m - 1 points fill intervals 1 .. 2^m - 1 once each and leave interval 0
-  # empty. Any error in the direction numbers or in the Gray-code index breaks
-  # this immediately.
-  # CRAN reads the lowest and highest m -- the first and the last direction
-  # number bits a net of that size depends on; the dev loop reads every m.
-  ms <- if (cran_fixture()) c(4L, 12L) else c(4L, 6L, 8L, 10L, 12L)
-  for (m in ms) {
-    n <- 2L^m - 1L
-    P <- sob(n, 32L)
-    cell <- floor(P * 2^m)
-    for (j in seq_len(ncol(P))) {
-      expect_identical(sort(cell[, j]), as.numeric(seq_len(2L^m - 1L)),
-                       info = sprintf("m = %d, dimension %d", m, j))
-    }
-  }
-})
-
 test_that("the sequence is a prefix sequence and is deterministic", {
   long <- sob(1000L, 7L)
   expect_equal(sob(37L, 7L), long[1:37, , drop = FALSE], tolerance = 0)
@@ -213,4 +192,27 @@ test_that("dimensions outside the table are refused", {
   expect_error(sob(-1L, 4L), "n must be positive")
   # The last tabulated dimension is reachable.
   expect_equal(dim(sob(8L, sob_max_dim)), c(8L, sob_max_dim))
+})
+
+skip_on_cran()
+
+test_that("each one-dimensional projection is an elementary-interval net", {
+  skip_on_cran()
+  # X_0 .. X_(2^m - 1) put exactly one point in every interval
+  # [j / 2^m, (j + 1) / 2^m). The origin is not emitted, so the returned
+  # 2^m - 1 points fill intervals 1 .. 2^m - 1 once each and leave interval 0
+  # empty. Any error in the direction numbers or in the Gray-code index breaks
+  # this immediately.
+  # CRAN reads the lowest and highest m -- the first and the last direction
+  # number bits a net of that size depends on; the dev loop reads every m.
+  ms <- if (cran_fixture()) c(4L, 12L) else c(4L, 6L, 8L, 10L, 12L)
+  for (m in ms) {
+    n <- 2L^m - 1L
+    P <- sob(n, 32L)
+    cell <- floor(P * 2^m)
+    for (j in seq_len(ncol(P))) {
+      expect_identical(sort(cell[, j]), as.numeric(seq_len(2L^m - 1L)),
+                       info = sprintf("m = %d, dimension %d", m, j))
+    }
+  }
 })

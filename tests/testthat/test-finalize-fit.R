@@ -38,6 +38,8 @@ test_that(".finalize_fit attaches class, layout, and provenance", {
   expect_identical(.finalize_fit(42), 42)
 })
 
+skip_on_cran()
+
 test_that("directly-called tulpa_laplace() is classed and provenance-tagged", {
   skip_on_cran()
   set.seed(11)

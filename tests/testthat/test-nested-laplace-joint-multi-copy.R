@@ -22,6 +22,72 @@
          n_spatial_units = n_s)
 }
 
+test_that("duplicate copy block targets error", {
+    set.seed(7)
+    n_s <- 10L
+    adj <- .chain_adj_copy(n_s)
+    N <- 40L
+    s <- sample.int(n_s, N, replace = TRUE)
+    X <- cbind(1, rnorm(N))
+    arm <- list(y = rnorm(N), n_trials = rep(1L, N), X = X,
+                re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
+                family = "gaussian", phi = 1.0)
+    icar_block <- list(type = "icar",
+                       n_spatial_units = adj$n_spatial_units,
+                       adj_row_ptr = adj$adj_row_ptr,
+                       adj_col_idx = adj$adj_col_idx,
+                       n_neighbors = adj$n_neighbors,
+                       sigma_grid = c(0.5, 1.0),
+                       spatial_idx = list(s, s))
+    expect_error(
+        tulpa_nested_laplace_joint(
+            responses = list(a = arm, b = arm),
+            prior = list(icar_block, icar_block),
+            copy = list(
+                list(arm = "b", block = 1L, alpha_grid = c(0.5, 1.0)),
+                list(arm = "b", block = 1L, alpha_grid = c(0.5, 1.0))
+            )
+        ),
+        "distinct block"
+    )
+})
+
+test_that("copy on an unsupported block type (lf) errors", {
+    set.seed(17)
+    n_s <- 10L
+    adj <- .chain_adj_copy(n_s)
+    N <- 40L
+    s <- sample.int(n_s, N, replace = TRUE)
+    X <- cbind(1, rnorm(N))
+    arm <- list(y = rnorm(N), n_trials = rep(1L, N), X = X,
+                re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
+                family = "gaussian", phi = 1.0)
+    lf_block <- list(type = "lf", n_latent = n_s, obs_idx = list(s, s))
+    expect_error(
+        tulpa_nested_laplace_joint(
+            responses = list(a = arm, b = arm),
+            prior = list(lf_block),
+            copy = list(arm = "b", block = 1L, alpha_grid = c(0.5, 1.0))
+        ),
+        "supported on types"
+    )
+})
+
+# Correlated separable-MCAR block copied across arms (gcol33/tulpaObs#64). The
+# (intercept, slope) pair shares a free 2x2 Sigma; the WHOLE correlated field is
+# copied onto arm 2 with one amplitude alpha. Recovers Sigma (both SDs + the
+# cross-correlation) and the copy alpha.
+.mcar_grid_adj_copy <- function(nx, ny) {
+    n <- nx * ny; W <- matrix(0L, n, n); id <- function(i, j) (j - 1L) * nx + i
+    for (i in seq_len(nx)) for (j in seq_len(ny)) {
+        if (i < nx) { a <- id(i, j); b <- id(i + 1L, j); W[a, b] <- W[b, a] <- 1L }
+        if (j < ny) { a <- id(i, j); b <- id(i, j + 1L); W[a, b] <- W[b, a] <- 1L }
+    }
+    W
+}
+
+skip_on_cran()
+
 test_that("joint multi-block recovers TWO coupled ICAR fields (list-of-specs copy)", {
     skip_on_cran()
     set.seed(1)
@@ -125,36 +191,6 @@ test_that("joint multi-block recovers TWO coupled ICAR fields (list-of-specs cop
     # the other field's truth.
     expect_gt(abs(cor(f1_hat, f1)), abs(cor(f1_hat, f2)))
     expect_gt(abs(cor(f2_hat, f2)), abs(cor(f2_hat, f1)))
-})
-
-test_that("duplicate copy block targets error", {
-    set.seed(7)
-    n_s <- 10L
-    adj <- .chain_adj_copy(n_s)
-    N <- 40L
-    s <- sample.int(n_s, N, replace = TRUE)
-    X <- cbind(1, rnorm(N))
-    arm <- list(y = rnorm(N), n_trials = rep(1L, N), X = X,
-                re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
-                family = "gaussian", phi = 1.0)
-    icar_block <- list(type = "icar",
-                       n_spatial_units = adj$n_spatial_units,
-                       adj_row_ptr = adj$adj_row_ptr,
-                       adj_col_idx = adj$adj_col_idx,
-                       n_neighbors = adj$n_neighbors,
-                       sigma_grid = c(0.5, 1.0),
-                       spatial_idx = list(s, s))
-    expect_error(
-        tulpa_nested_laplace_joint(
-            responses = list(a = arm, b = arm),
-            prior = list(icar_block, icar_block),
-            copy = list(
-                list(arm = "b", block = 1L, alpha_grid = c(0.5, 1.0)),
-                list(arm = "b", block = 1L, alpha_grid = c(0.5, 1.0))
-            )
-        ),
-        "distinct block"
-    )
 })
 
 test_that("joint multi-block recovers a copied TEMPORAL (rw1) field", {
@@ -343,40 +379,6 @@ test_that("joint multi-block recovers a copied IID field", {
     u_hat <- as.numeric(crossprod(w, fit$modes[, cols, drop = FALSE]))
     expect_gt(abs(cor(u_hat, u)), 0.7)
 })
-
-test_that("copy on an unsupported block type (lf) errors", {
-    set.seed(17)
-    n_s <- 10L
-    adj <- .chain_adj_copy(n_s)
-    N <- 40L
-    s <- sample.int(n_s, N, replace = TRUE)
-    X <- cbind(1, rnorm(N))
-    arm <- list(y = rnorm(N), n_trials = rep(1L, N), X = X,
-                re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
-                family = "gaussian", phi = 1.0)
-    lf_block <- list(type = "lf", n_latent = n_s, obs_idx = list(s, s))
-    expect_error(
-        tulpa_nested_laplace_joint(
-            responses = list(a = arm, b = arm),
-            prior = list(lf_block),
-            copy = list(arm = "b", block = 1L, alpha_grid = c(0.5, 1.0))
-        ),
-        "supported on types"
-    )
-})
-
-# Correlated separable-MCAR block copied across arms (gcol33/tulpaObs#64). The
-# (intercept, slope) pair shares a free 2x2 Sigma; the WHOLE correlated field is
-# copied onto arm 2 with one amplitude alpha. Recovers Sigma (both SDs + the
-# cross-correlation) and the copy alpha.
-.mcar_grid_adj_copy <- function(nx, ny) {
-    n <- nx * ny; W <- matrix(0L, n, n); id <- function(i, j) (j - 1L) * nx + i
-    for (i in seq_len(nx)) for (j in seq_len(ny)) {
-        if (i < nx) { a <- id(i, j); b <- id(i + 1L, j); W[a, b] <- W[b, a] <- 1L }
-        if (j < ny) { a <- id(i, j); b <- id(i, j + 1L); W[a, b] <- W[b, a] <- 1L }
-    }
-    W
-}
 
 test_that("joint multi-block recovers a COPIED correlated MCAR block (Sigma + alpha)", {
     skip_on_cran()

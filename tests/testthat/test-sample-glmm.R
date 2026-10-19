@@ -1,3 +1,77 @@
+
+# VI is validated at mean level above; this quantifies its SPREAD. The band
+# makes the variational marginal SDs a measured property instead of an
+# unchecked one: within [0.4, 1.8] of the asymptotic (glm) SE, so a broken
+# ELBO (collapsed or exploded variances) fails.
+#
+# The variant is named explicitly rather than left to `vi_variant = 3`
+# (VIVariant::AUTO), which selects full-rank below D = 200 and low-rank in
+# [200, 2000) -- at D = 2 the default is full-rank, so leaving it implicit gives
+# the mean-field path no coverage at all. The gradients themselves are
+# finite-difference checked per variant in test-vi-gradient.R; these two fits
+# are the recovery arm.
+for (.vi_variant in list(list(code = 2L, name = "full-rank"),
+                         list(code = 1L, name = "low-rank"),
+                         list(code = 0L, name = "mean-field"))) {
+  local({
+    code <- .vi_variant$code
+    name <- .vi_variant$name
+    test_that(sprintf(
+      "%s VI posterior SDs sit in a quantified band around the asymptotic SE",
+      name), {
+      skip_if_not_slow()
+      set.seed(303)
+      n <- 600L
+      x <- rnorm(n)
+      X <- cbind(1, x)
+      y <- rpois(n, exp(0.4 + 0.6 * x))
+      fit <- tulpa_sample_glmm(
+        y = as.numeric(y), n_trials = rep(1L, n), X = X,
+        family = "poisson", backend = "vi",
+        control = list(vi_variant = code, vi_max_iter = 8000L,
+                       n_draws = 4000L, seed = 17L))
+      ref <- glm(y ~ x, family = poisson)
+      se_ref <- unname(sqrt(diag(vcov(ref))))
+      expect_lt(max(abs(unname(fit$means) - unname(coef(ref)))), 0.15)
+      sd_fit <- apply(tulpa:::.fixed_draws_mat(fit), 2, stats::sd)[seq_along(se_ref)]
+      ratio  <- unname(sd_fit) / se_ref
+      expect_true(all(ratio > 0.4 & ratio < 1.8),
+                  label = paste(name, "VI sd / asymptotic se:",
+                                paste(round(ratio, 3), collapse = ", ")))
+    })
+  })
+}
+
+# A control knob that no longer reaches any kernel is rejected, not accepted and
+# dropped. Structural: the control check runs before any model is built.
+test_that("the withdrawn ESS cholesky knob is rejected", {
+  expect_error(
+    tulpa_sample_glmm(y = c(0, 1), n_trials = c(1L, 1L),
+                      X = cbind(1, c(-1, 1)), family = "binomial",
+                      backend = "ess",
+                      control = list(ess_use_cholesky = TRUE)),
+    "ess_use_cholesky")
+})
+
+# The draw matrix is sized by the number of times the store condition fires,
+# and a warmup at least as long as the run stored nothing (gcol33/tulpa#473).
+# Such a run is now refused before it reaches the store, by the one
+# run-length check every sampler resolves its defaults through
+# (gcol33/tulpa#872).
+test_that("sampler backends refuse warmup >= n_iter (gcol33/tulpa#473, #872)", {
+  set.seed(31)
+  n <- 60L
+  x <- rnorm(n); X <- cbind(1, x)
+  y <- as.numeric(rbinom(n, 1L, plogis(0.1 + 0.4 * x)))
+  for (backend in c("sghmc", "sgld", "ess")) {
+    expect_error(tulpa_sample_glmm(
+      y, rep(1L, n), X, "binomial", backend,
+      control = list(n_iter = 40L, warmup = 60L, seed = 3L)),
+      "warmup", info = backend)
+  }
+})
+
+skip_on_cran()
 # Generic ModelData sampler front door (tulpa_sample_glmm): NUTS (gcol33/tulpa#55)
 # and ESS / SGHMC / SGLD / MCLMC / SMC / VI (gcol33/tulpa#54). One C++ entry
 # (cpp_tulpa_sample_glmm) builds the ModelData via the built-in-family scaffold
@@ -165,49 +239,6 @@ test_that("offset = 0 reproduces the no-offset sampler draws exactly (gcol33/tul
   expect_equal(b$draws, a$draws, tolerance = 1e-10)
 })
 
-# VI is validated at mean level above; this quantifies its SPREAD. The band
-# makes the variational marginal SDs a measured property instead of an
-# unchecked one: within [0.4, 1.8] of the asymptotic (glm) SE, so a broken
-# ELBO (collapsed or exploded variances) fails.
-#
-# The variant is named explicitly rather than left to `vi_variant = 3`
-# (VIVariant::AUTO), which selects full-rank below D = 200 and low-rank in
-# [200, 2000) -- at D = 2 the default is full-rank, so leaving it implicit gives
-# the mean-field path no coverage at all. The gradients themselves are
-# finite-difference checked per variant in test-vi-gradient.R; these two fits
-# are the recovery arm.
-for (.vi_variant in list(list(code = 2L, name = "full-rank"),
-                         list(code = 1L, name = "low-rank"),
-                         list(code = 0L, name = "mean-field"))) {
-  local({
-    code <- .vi_variant$code
-    name <- .vi_variant$name
-    test_that(sprintf(
-      "%s VI posterior SDs sit in a quantified band around the asymptotic SE",
-      name), {
-      skip_if_not_slow()
-      set.seed(303)
-      n <- 600L
-      x <- rnorm(n)
-      X <- cbind(1, x)
-      y <- rpois(n, exp(0.4 + 0.6 * x))
-      fit <- tulpa_sample_glmm(
-        y = as.numeric(y), n_trials = rep(1L, n), X = X,
-        family = "poisson", backend = "vi",
-        control = list(vi_variant = code, vi_max_iter = 8000L,
-                       n_draws = 4000L, seed = 17L))
-      ref <- glm(y ~ x, family = poisson)
-      se_ref <- unname(sqrt(diag(vcov(ref))))
-      expect_lt(max(abs(unname(fit$means) - unname(coef(ref)))), 0.15)
-      sd_fit <- apply(tulpa:::.fixed_draws_mat(fit), 2, stats::sd)[seq_along(se_ref)]
-      ratio  <- unname(sd_fit) / se_ref
-      expect_true(all(ratio > 0.4 & ratio < 1.8),
-                  label = paste(name, "VI sd / asymptotic se:",
-                                paste(round(ratio, 3), collapse = ", ")))
-    })
-  })
-}
-
 # --- stochastic / auxiliary sampler kernels -----------------------------------
 
 # The elliptical-slice kernel draws from R's own RNG, so set.seed() is what
@@ -257,35 +288,6 @@ test_that("ess_adapt_interval reaches the kernel (gcol33/tulpa#571)", {
                      ess_adapt_interval = interval))))$draws
   }
   expect_false(isTRUE(all.equal(run(5L), run(200L))))
-})
-
-# A control knob that no longer reaches any kernel is rejected, not accepted and
-# dropped. Structural: the control check runs before any model is built.
-test_that("the withdrawn ESS cholesky knob is rejected", {
-  expect_error(
-    tulpa_sample_glmm(y = c(0, 1), n_trials = c(1L, 1L),
-                      X = cbind(1, c(-1, 1)), family = "binomial",
-                      backend = "ess",
-                      control = list(ess_use_cholesky = TRUE)),
-    "ess_use_cholesky")
-})
-
-# The draw matrix is sized by the number of times the store condition fires,
-# and a warmup at least as long as the run stored nothing (gcol33/tulpa#473).
-# Such a run is now refused before it reaches the store, by the one
-# run-length check every sampler resolves its defaults through
-# (gcol33/tulpa#872).
-test_that("sampler backends refuse warmup >= n_iter (gcol33/tulpa#473, #872)", {
-  set.seed(31)
-  n <- 60L
-  x <- rnorm(n); X <- cbind(1, x)
-  y <- as.numeric(rbinom(n, 1L, plogis(0.1 + 0.4 * x)))
-  for (backend in c("sghmc", "sgld", "ess")) {
-    expect_error(tulpa_sample_glmm(
-      y, rep(1L, n), X, "binomial", backend,
-      control = list(n_iter = 40L, warmup = 60L, seed = 3L)),
-      "warmup", info = backend)
-  }
 })
 
 # SGHMC's injected momentum noise sets the sampled temperature. At

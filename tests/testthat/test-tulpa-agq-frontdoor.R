@@ -22,6 +22,34 @@ test_that("agq is registered, reachable, and a valid front-door backend", {
 })
 
 
+test_that("mode='agq' rejects random slopes, multiple terms, and bad families", {
+  d <- make_agq_re_data(G = 20L, npg = 6L)
+  d$g2 <- factor(rep(seq_len(5L), length.out = nrow(d)))
+
+  expect_error(
+    tulpa(y ~ x + (1 + x | g), data = d, family = "binomial", mode = "agq"),
+    "exactly one random-intercept")
+  expect_error(
+    tulpa(y ~ x + (1 | g) + (1 | g2), data = d, family = "binomial",
+          mode = "agq"),
+    "exactly one random-intercept")
+  expect_error(
+    tulpa(y ~ x + (1 | g), data = d, family = "neg_binomial_2", mode = "agq"),
+    "AGQ supports family")
+})
+
+
+test_that("mode='agq' rejects a fixed-effect prior (marginal-likelihood fit)", {
+  d <- make_agq_re_data(G = 20L, npg = 6L)
+  expect_error(
+    tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "agq",
+          beta_prior = list(mean = 0, sd = 2.5)),
+    "not supported on the AGQ path")
+})
+
+skip_on_cran()
+
+
 test_that("mode='agq' routes a (1 | g) model to agq_fit and matches a direct call", {
   skip_on_cran()
   d <- make_agq_re_data()
@@ -82,30 +110,4 @@ test_that("gaussian agq maps phi to the residual sd (sigma_eps = sqrt(phi))", {
 
   expect_equal(fit$backend, "agq")
   expect_equal(unname(fit$means), unname(direct$means), tolerance = 1e-8)
-})
-
-
-test_that("mode='agq' rejects random slopes, multiple terms, and bad families", {
-  d <- make_agq_re_data(G = 20L, npg = 6L)
-  d$g2 <- factor(rep(seq_len(5L), length.out = nrow(d)))
-
-  expect_error(
-    tulpa(y ~ x + (1 + x | g), data = d, family = "binomial", mode = "agq"),
-    "exactly one random-intercept")
-  expect_error(
-    tulpa(y ~ x + (1 | g) + (1 | g2), data = d, family = "binomial",
-          mode = "agq"),
-    "exactly one random-intercept")
-  expect_error(
-    tulpa(y ~ x + (1 | g), data = d, family = "neg_binomial_2", mode = "agq"),
-    "AGQ supports family")
-})
-
-
-test_that("mode='agq' rejects a fixed-effect prior (marginal-likelihood fit)", {
-  d <- make_agq_re_data(G = 20L, npg = 6L)
-  expect_error(
-    tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "agq",
-          beta_prior = list(mean = 0, sd = 2.5)),
-    "not supported on the AGQ path")
 })

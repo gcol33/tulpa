@@ -1,3 +1,32 @@
+
+
+test_that("bridge_sampling errors on too-few draws", {
+  expect_error(
+    bridge_sampling(matrix(rnorm(6), ncol = 2L), function(t) sum(t)),
+    "at least 4 posterior draws"
+  )
+})
+
+
+test_that("bridge_sampling errors on non-function log_posterior", {
+  expect_error(
+    bridge_sampling(matrix(rnorm(20), ncol = 1L), 42),
+    "must be a function"
+  )
+})
+
+
+test_that("logmeanexp / logsumexp_pair are numerically stable", {
+  # Internal helpers — overflow safety check.
+  expect_equal(tulpa:::logmeanexp(c(1000, 1001, 1002)),
+               1001 + log(mean(exp(c(-1, 0, 1)))),
+               tolerance = 1e-12)
+  expect_equal(tulpa:::logsumexp_pair(1000, 1001),
+               1001 + log(1 + exp(-1)),
+               tolerance = 1e-12)
+})
+
+skip_on_cran()
 # Bridge sampling: marginal likelihood estimator.
 #
 # Test against closed-form marginal likelihood for the conjugate
@@ -65,22 +94,6 @@ test_that("bridge_sampling handles 2-D conjugate Gaussian", {
 })
 
 
-test_that("bridge_sampling errors on too-few draws", {
-  expect_error(
-    bridge_sampling(matrix(rnorm(6), ncol = 2L), function(t) sum(t)),
-    "at least 4 posterior draws"
-  )
-})
-
-
-test_that("bridge_sampling errors on non-function log_posterior", {
-  expect_error(
-    bridge_sampling(matrix(rnorm(20), ncol = 1L), 42),
-    "must be a function"
-  )
-})
-
-
 test_that("bridge_sampling tolerates non-finite log-posterior on some draws", {
   skip_on_cran()
   set.seed(44L)
@@ -97,15 +110,4 @@ test_that("bridge_sampling tolerates non-finite log-posterior on some draws", {
   expect_true(bs$converged)
   log_marg_true <- dnorm(y, 0, sqrt(11), log = TRUE)
   expect_lt(abs(bs$log_marginal - log_marg_true), 0.05)
-})
-
-
-test_that("logmeanexp / logsumexp_pair are numerically stable", {
-  # Internal helpers — overflow safety check.
-  expect_equal(tulpa:::logmeanexp(c(1000, 1001, 1002)),
-               1001 + log(mean(exp(c(-1, 0, 1)))),
-               tolerance = 1e-12)
-  expect_equal(tulpa:::logsumexp_pair(1000, 1001),
-               1001 + log(1 + exp(-1)),
-               tolerance = 1e-12)
 })

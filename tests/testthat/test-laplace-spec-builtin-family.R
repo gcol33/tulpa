@@ -31,6 +31,44 @@ expect_glm_match <- function(family, glm_family, y, n_trials, X, phi,
                info = paste0(family, ": MAP == glm MLE"))
 }
 
+# ref_laplace_fit_single() is itself a thin wrapper over cpp_laplace_fit_multi_re
+# (see helper-laplace-fit-single.R), so a same-vs-same equivalence check no
+# longer says anything; the two-marshalling-paths agreement it used to assert
+# (single-RE builder vs the multi-term one, both into the one spec solver) is
+# recorded in the helper's own header comment instead.
+test_that("ref_laplace_fit_single with one RE term matches cpp_laplace_fit_multi_re directly", {
+  set.seed(7L)
+  N <- 300L
+  n_re_groups <- 12L
+  sigma_re <- 0.5
+  X <- cbind(1, rnorm(N))
+  beta <- c(0.3, -0.4)
+  re_idx <- sample.int(n_re_groups, N, replace = TRUE)
+  u <- rnorm(n_re_groups, sd = sigma_re)
+  eta <- as.numeric(X %*% beta) + u[re_idx]
+
+  for (fam in c("poisson", "binomial")) {
+    nt <- if (fam == "binomial") rep(8L, N) else rep(1L, N)
+    y  <- if (fam == "binomial") rbinom(N, 8L, plogis(eta)) else rpois(N, exp(eta))
+    single <- ref_laplace_fit_single(
+      y = y, n = nt, X = X, re_idx = as.numeric(re_idx),
+      n_re_groups = n_re_groups, sigma_re = sigma_re, family = fam, phi = 1.0,
+      max_iter = 300L, tol = 1e-11, n_threads = 1L
+    )
+    multi <- tulpa:::cpp_laplace_fit_multi_re(
+      y = y, n = nt, X = X,
+      re_idx_list = list(as.integer(re_idx)),
+      re_ngroups = n_re_groups,
+      re_sigma_list = list(sigma_re),
+      family = fam, phi = 1.0, max_iter = 300L, tol = 1e-11, n_threads = 1L
+    )
+    expect_identical(single$mode, multi$mode,
+                     info = paste0(fam, ": single-term wrapper vs direct multi_re call"))
+  }
+})
+
+skip_on_cran()
+
 test_that("ref_laplace_fit_single MAP matches the glm MLE for GLM-native families", {
   skip_on_cran()
   set.seed(2026L)
@@ -82,41 +120,5 @@ test_that("ref_laplace_fit_single converges to a finite mode for every built-in 
     expect_true(fit$converged, info = paste0(cs$f, ": converged"))
     expect_true(all(is.finite(fit$mode)), info = paste0(cs$f, ": finite mode"))
     expect_equal(length(fit$mode), p, info = paste0(cs$f, ": mode length"))
-  }
-})
-
-# ref_laplace_fit_single() is itself a thin wrapper over cpp_laplace_fit_multi_re
-# (see helper-laplace-fit-single.R), so a same-vs-same equivalence check no
-# longer says anything; the two-marshalling-paths agreement it used to assert
-# (single-RE builder vs the multi-term one, both into the one spec solver) is
-# recorded in the helper's own header comment instead.
-test_that("ref_laplace_fit_single with one RE term matches cpp_laplace_fit_multi_re directly", {
-  set.seed(7L)
-  N <- 300L
-  n_re_groups <- 12L
-  sigma_re <- 0.5
-  X <- cbind(1, rnorm(N))
-  beta <- c(0.3, -0.4)
-  re_idx <- sample.int(n_re_groups, N, replace = TRUE)
-  u <- rnorm(n_re_groups, sd = sigma_re)
-  eta <- as.numeric(X %*% beta) + u[re_idx]
-
-  for (fam in c("poisson", "binomial")) {
-    nt <- if (fam == "binomial") rep(8L, N) else rep(1L, N)
-    y  <- if (fam == "binomial") rbinom(N, 8L, plogis(eta)) else rpois(N, exp(eta))
-    single <- ref_laplace_fit_single(
-      y = y, n = nt, X = X, re_idx = as.numeric(re_idx),
-      n_re_groups = n_re_groups, sigma_re = sigma_re, family = fam, phi = 1.0,
-      max_iter = 300L, tol = 1e-11, n_threads = 1L
-    )
-    multi <- tulpa:::cpp_laplace_fit_multi_re(
-      y = y, n = nt, X = X,
-      re_idx_list = list(as.integer(re_idx)),
-      re_ngroups = n_re_groups,
-      re_sigma_list = list(sigma_re),
-      family = fam, phi = 1.0, max_iter = 300L, tol = 1e-11, n_threads = 1L
-    )
-    expect_identical(single$mode, multi$mode,
-                     info = paste0(fam, ": single-term wrapper vs direct multi_re call"))
   }
 })

@@ -409,6 +409,90 @@ test_that("axis_span separates the half-node-step term from refinement", {
         control = ctrl)
 }
 
+
+# --------------------------------------------------------------------------- #
+# 7. The multi-block driver runs the same passes                               #
+# --------------------------------------------------------------------------- #
+
+test_that("a multi-block axis is eligible by its bare name, a dispersion by its prefix", {
+    elig <- tulpa:::.joint_axis_refine_eligible
+    expect_true(all(vapply(c("b1.sigma", "b2.tau", "b2.alpha", "sigma", "tau",
+                             "alpha", "phi_y"), elig, logical(1))))
+    # `phi_gp` is a block's own lengthscale; only a bare `phi_<arm>` is a
+    # dispersion.
+    expect_false(elig("b1.phi_gp"))
+    expect_false(any(vapply(c("b1.rho", "b2.rho_car", "rho"), elig, logical(1))))
+})
+
+test_that("a multi-block axis's refinement mode follows who wrote its nodes", {
+    stated <- tulpa:::.joint_multi_axis_is_stated
+    icar <- function(...) list(type = "icar", ...)
+    copy <- list(arm = "y", block = 2L, alpha_grid = c(0.2, 0.5, 0.9))
+
+    # A non-copy block lays its field SD on the registry's precision axis.
+    expect_true(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
+                       list(logical(0))))
+    expect_false(stated("b1.tau", list(icar()), list(logical(0))))
+    expect_false(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
+                        list(c(tau_grid = TRUE))))
+    # `place = FALSE` asks for the nodes as written.
+    expect_true(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
+                       list(c(tau_grid = FALSE))))
+
+    # A copy block's field SD and copy scale follow the copy convention.
+    blocks <- list(icar(), icar(sigma_grid = c(0.3, 0.9, 2.7)))
+    expect_true(stated("b2.sigma", blocks, list(logical(0), logical(0)), copy,
+                       copy_blocks = 2L))
+    expect_false(stated("b2.sigma", blocks, list(logical(0), c(sigma_grid = TRUE)),
+                        copy, copy_blocks = 2L))
+    expect_true(stated("b2.alpha", blocks, list(), copy, copy_blocks = 2L))
+    copy$alpha_grid <- auto_grid(copy$alpha_grid)
+    expect_false(stated("b2.alpha", blocks, list(), copy, copy_blocks = 2L))
+    expect_false(stated("b2.alpha", blocks, list(), list(arm = "y", block = 2L),
+                        copy_blocks = 2L))
+
+    # A dispersion reads the front door's record, as it does single-block.
+    expect_true(stated("phi_y", blocks, list(), phi_grid = list(y = c(0.1, 0.2))))
+    expect_false(stated("phi_y", blocks, list(), phi_grid = list(y = 0.1)))
+})
+
+.axr_multi_sim <- function(seed = 1L, nr = 12L) {
+    set.seed(seed)
+    n  <- nr * nr
+    adj <- lapply(grid_neighbours(nr, nr), sort)
+    nn  <- vapply(adj, length, integer(1))
+    W <- matrix(0, n, n)
+    for (i in seq_len(n)) W[i, adj[[i]]] <- 1
+    ev <- eigen(diag(nn) - W, symmetric = TRUE)
+    k  <- seq_len(n - 1L)
+    u  <- as.numeric(ev$vectors[, k] %*% (rnorm(n - 1L) / sqrt(ev$values[k])))
+    X1 <- cbind(1, rnorm(n))
+    X2 <- cbind(1, rnorm(n))
+    list(
+        responses = list(
+            occ = list(y = rbinom(n, 20L, plogis(as.numeric(X1 %*% c(0.2, 0.5)) +
+                                                     2 * u)),
+                       n_trials = rep(20L, n), X = X1, family = "binomial"),
+            cover = list(y = rnorm(n, as.numeric(X2 %*% c(-0.3, 0.8)) + 2 * u, 0.3),
+                         n_trials = rep(1L, n), X = X2, family = "gaussian")),
+        block = list(type = "icar", n_spatial_units = n,
+                     adj_row_ptr = c(0L, cumsum(nn)),
+                     adj_col_idx = unlist(adj) - 1L, n_neighbors = nn,
+                     spatial_idx = list(seq_len(n), seq_len(n))),
+        copy = list(arm = "cover", block = 1L,
+                    alpha_grid = seq(0.3, 1.7, length.out = 7)))
+}
+
+.axr_multi_fit <- function(sim, sigma_grid, control = list()) {
+    prior <- list(c(sim$block, list(sigma_grid = sigma_grid)))
+    suppressWarnings(tulpa_nested_laplace_joint(
+        sim$responses, prior, copy = sim$copy,
+        phi_grid = list(cover = c(0.05, 0.09, 0.15)),
+        control = c(list(diagnose_k = FALSE), control)))
+}
+
+skip_on_cran()
+
 test_that("a stated copy axis is densified, never extended, under adaptive_grid", {
     skip_on_cran()
     sim <- .axr_sim()
@@ -552,88 +636,6 @@ test_that("a field SD collapsed onto one node is resolved by the consistency pas
     expect_gte(resolved$theta_sd_ess[["sigma"]], min_ess)
     expect_gt(length(resolved$log_marginal), length(held$log_marginal))
 })
-
-
-# --------------------------------------------------------------------------- #
-# 7. The multi-block driver runs the same passes                               #
-# --------------------------------------------------------------------------- #
-
-test_that("a multi-block axis is eligible by its bare name, a dispersion by its prefix", {
-    elig <- tulpa:::.joint_axis_refine_eligible
-    expect_true(all(vapply(c("b1.sigma", "b2.tau", "b2.alpha", "sigma", "tau",
-                             "alpha", "phi_y"), elig, logical(1))))
-    # `phi_gp` is a block's own lengthscale; only a bare `phi_<arm>` is a
-    # dispersion.
-    expect_false(elig("b1.phi_gp"))
-    expect_false(any(vapply(c("b1.rho", "b2.rho_car", "rho"), elig, logical(1))))
-})
-
-test_that("a multi-block axis's refinement mode follows who wrote its nodes", {
-    stated <- tulpa:::.joint_multi_axis_is_stated
-    icar <- function(...) list(type = "icar", ...)
-    copy <- list(arm = "y", block = 2L, alpha_grid = c(0.2, 0.5, 0.9))
-
-    # A non-copy block lays its field SD on the registry's precision axis.
-    expect_true(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
-                       list(logical(0))))
-    expect_false(stated("b1.tau", list(icar()), list(logical(0))))
-    expect_false(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
-                        list(c(tau_grid = TRUE))))
-    # `place = FALSE` asks for the nodes as written.
-    expect_true(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
-                       list(c(tau_grid = FALSE))))
-
-    # A copy block's field SD and copy scale follow the copy convention.
-    blocks <- list(icar(), icar(sigma_grid = c(0.3, 0.9, 2.7)))
-    expect_true(stated("b2.sigma", blocks, list(logical(0), logical(0)), copy,
-                       copy_blocks = 2L))
-    expect_false(stated("b2.sigma", blocks, list(logical(0), c(sigma_grid = TRUE)),
-                        copy, copy_blocks = 2L))
-    expect_true(stated("b2.alpha", blocks, list(), copy, copy_blocks = 2L))
-    copy$alpha_grid <- auto_grid(copy$alpha_grid)
-    expect_false(stated("b2.alpha", blocks, list(), copy, copy_blocks = 2L))
-    expect_false(stated("b2.alpha", blocks, list(), list(arm = "y", block = 2L),
-                        copy_blocks = 2L))
-
-    # A dispersion reads the front door's record, as it does single-block.
-    expect_true(stated("phi_y", blocks, list(), phi_grid = list(y = c(0.1, 0.2))))
-    expect_false(stated("phi_y", blocks, list(), phi_grid = list(y = 0.1)))
-})
-
-.axr_multi_sim <- function(seed = 1L, nr = 12L) {
-    set.seed(seed)
-    n  <- nr * nr
-    adj <- lapply(grid_neighbours(nr, nr), sort)
-    nn  <- vapply(adj, length, integer(1))
-    W <- matrix(0, n, n)
-    for (i in seq_len(n)) W[i, adj[[i]]] <- 1
-    ev <- eigen(diag(nn) - W, symmetric = TRUE)
-    k  <- seq_len(n - 1L)
-    u  <- as.numeric(ev$vectors[, k] %*% (rnorm(n - 1L) / sqrt(ev$values[k])))
-    X1 <- cbind(1, rnorm(n))
-    X2 <- cbind(1, rnorm(n))
-    list(
-        responses = list(
-            occ = list(y = rbinom(n, 20L, plogis(as.numeric(X1 %*% c(0.2, 0.5)) +
-                                                     2 * u)),
-                       n_trials = rep(20L, n), X = X1, family = "binomial"),
-            cover = list(y = rnorm(n, as.numeric(X2 %*% c(-0.3, 0.8)) + 2 * u, 0.3),
-                         n_trials = rep(1L, n), X = X2, family = "gaussian")),
-        block = list(type = "icar", n_spatial_units = n,
-                     adj_row_ptr = c(0L, cumsum(nn)),
-                     adj_col_idx = unlist(adj) - 1L, n_neighbors = nn,
-                     spatial_idx = list(seq_len(n), seq_len(n))),
-        copy = list(arm = "cover", block = 1L,
-                    alpha_grid = seq(0.3, 1.7, length.out = 7)))
-}
-
-.axr_multi_fit <- function(sim, sigma_grid, control = list()) {
-    prior <- list(c(sim$block, list(sigma_grid = sigma_grid)))
-    suppressWarnings(tulpa_nested_laplace_joint(
-        sim$responses, prior, copy = sim$copy,
-        phi_grid = list(cover = c(0.05, 0.09, 0.15)),
-        control = c(list(diagnose_k = FALSE), control)))
-}
 
 test_that("a multi-block field SD collapsed onto one node is resolved by the consistency pass", {
     skip_on_cran()

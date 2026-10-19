@@ -22,25 +22,6 @@ sd_laplace <- function(d, ...) {
 }
 
 
-test_that("the band table resolves gamma_3 and the inner k-hat per probed index", {
-  skip_on_cran()
-  d <- sd_fixture()
-  f <- sd_laplace(d, compute_skew = TRUE, skew_idx = 1:2)
-  b <- tulpa:::.subspace_bands(f)
-
-  expect_identical(b$idx, 1:2)
-  expect_true(all(is.finite(b$gamma3)))
-  # The band is the WORSE of the two inner scores, so it can never be better
-  # than what gamma_3 alone says.
-  g_band <- vapply(b$gamma3, tulpa:::.tulpa_gamma3_band, character(1))
-  expect_true(all(tulpa:::.subspace_band_rank(b$band) >=
-                    tulpa:::.subspace_band_rank(g_band)))
-  # This fixture is the known-skewed one, so the intercept is flagged.
-  expect_gt(abs(b$gamma3[1]), tulpa:::.nl_diag("gamma3_ok"))
-  expect_identical(b$band[1], "unreliable")
-})
-
-
 test_that("an index whose cubic term declines is banded by its inner k-hat", {
   # The #303 dependency the selector is built on: a coordinate gamma_3 cannot
   # score (a coupled likelihood ships no per-observation third derivative) must
@@ -75,32 +56,6 @@ test_that("a fit with no inner-layer material bands nothing", {
 })
 
 
-test_that("the sampler reproduces the exact conditional when the target IS Gaussian", {
-  skip_on_cran()
-  # A gaussian response makes the joint log density exactly quadratic in the
-  # latent field, so the Gaussian-conditional-mean surface carries exactly
-  # N(0, Sigma_SS) and the Metropolis draws must reproduce it. This is the
-  # sharpest available check that the surface, its scaling and the recorded
-  # coordinates are the ones the header claims.
-  set.seed(3)
-  d <- sd_fixture()
-  eta <- as.numeric(d$X %*% c(-0.4, 0.8))
-  d$y <- eta + rnorm(length(eta), 0, 1)
-  set.seed(7)
-  f <- tulpa_laplace(d$y, d$n_trials, d$X, re_list = d$re, family = "gaussian",
-                     phi = 1, debias = list(idx = 1:2, n_iter = 40000L,
-                                            warmup = 3000L))
-  expect_identical(as.integer(f$debias_idx), 1:2)
-  expect_true(f$debias_accept > 0.1 && f$debias_accept < 0.6)
-  emp <- stats::cov(f$debias_draws)
-  # 40k correlated draws: a few percent of Monte-Carlo error on the scale, and
-  # the mean sits at the mode.
-  expect_equal(sqrt(diag(emp)), sqrt(diag(f$debias_sigma_ss)), tolerance = 0.06)
-  expect_lt(max(abs(colMeans(f$debias_draws))),
-            0.1 * min(sqrt(diag(f$debias_sigma_ss))))
-})
-
-
 test_that("sigma_ss is the inner Laplace's own marginal covariance of x_S", {
   d <- sd_fixture()
   f <- sd_laplace(d, return_joint_hessian = TRUE,
@@ -122,34 +77,6 @@ test_that("an empty or absent index set leaves the solve bit-for-bit unchanged",
   set.seed(1); invisible(sd_laplace(d, debias = list(idx = integer(0))))
   rb <- stats::rnorm(3)
   expect_identical(ra, rb)
-})
-
-
-test_that("the front door records S and leaves an empty S bit-for-bit identical", {
-  skip_on_cran()
-  d <- sd_fixture()
-  f0 <- tulpa_re_cov_nested(d$y, d$n_trials, d$X, d$rt, family = "binomial",
-                            control = list(seed = 1L))
-  f1 <- tulpa_re_cov_nested(d$y, d$n_trials, d$X, d$rt, family = "binomial",
-                            control = list(seed = 1L,
-                                           subspace_debias = list(idx = integer(0))))
-  expect_identical(f0$draws, f1$draws)
-  expect_identical(f0$posterior, f1$posterior)
-  expect_length(f1$subspace_debias$idx, 0L)
-
-  f2 <- tulpa_re_cov_nested(d$y, d$n_trials, d$X, d$rt, family = "binomial",
-                            control = list(seed = 1L, subspace_debias = TRUE))
-  sd2 <- f2$subspace_debias
-  expect_true(length(sd2$idx) > 0L)
-  expect_identical(sd2$selected_by, "band")
-  expect_identical(sd2$band_floor, tulpa:::.nl_diag("debias_select_band"))
-  expect_true(all(sd2$idx %in% sd2$bands$idx))
-  # Every selected index was banded at or above the floor it was selected at.
-  fl <- tulpa:::.SUBSPACE_BAND_RANK[[sd2$band_floor]]
-  rk <- tulpa:::.subspace_band_rank(sd2$bands$band[match(sd2$idx, sd2$bands$idx)])
-  expect_true(all(rk >= fl))
-  # The corrected coefficient's interval moved; the fit is not silently inert.
-  expect_false(isTRUE(all.equal(confint(f0), confint(f2))))
 })
 
 
@@ -210,4 +137,79 @@ test_that("the spatial Laplace path refuses the correction rather than ignoring 
     tulpa_laplace(d$y, d$n_trials, d$X, re_list = d$re, family = "binomial",
                   spatial = list(type = "gp"), compute_skew = TRUE),
     "non-spatial")
+})
+
+skip_on_cran()
+
+
+test_that("the band table resolves gamma_3 and the inner k-hat per probed index", {
+  skip_on_cran()
+  d <- sd_fixture()
+  f <- sd_laplace(d, compute_skew = TRUE, skew_idx = 1:2)
+  b <- tulpa:::.subspace_bands(f)
+
+  expect_identical(b$idx, 1:2)
+  expect_true(all(is.finite(b$gamma3)))
+  # The band is the WORSE of the two inner scores, so it can never be better
+  # than what gamma_3 alone says.
+  g_band <- vapply(b$gamma3, tulpa:::.tulpa_gamma3_band, character(1))
+  expect_true(all(tulpa:::.subspace_band_rank(b$band) >=
+                    tulpa:::.subspace_band_rank(g_band)))
+  # This fixture is the known-skewed one, so the intercept is flagged.
+  expect_gt(abs(b$gamma3[1]), tulpa:::.nl_diag("gamma3_ok"))
+  expect_identical(b$band[1], "unreliable")
+})
+
+
+test_that("the sampler reproduces the exact conditional when the target IS Gaussian", {
+  skip_on_cran()
+  # A gaussian response makes the joint log density exactly quadratic in the
+  # latent field, so the Gaussian-conditional-mean surface carries exactly
+  # N(0, Sigma_SS) and the Metropolis draws must reproduce it. This is the
+  # sharpest available check that the surface, its scaling and the recorded
+  # coordinates are the ones the header claims.
+  set.seed(3)
+  d <- sd_fixture()
+  eta <- as.numeric(d$X %*% c(-0.4, 0.8))
+  d$y <- eta + rnorm(length(eta), 0, 1)
+  set.seed(7)
+  f <- tulpa_laplace(d$y, d$n_trials, d$X, re_list = d$re, family = "gaussian",
+                     phi = 1, debias = list(idx = 1:2, n_iter = 40000L,
+                                            warmup = 3000L))
+  expect_identical(as.integer(f$debias_idx), 1:2)
+  expect_true(f$debias_accept > 0.1 && f$debias_accept < 0.6)
+  emp <- stats::cov(f$debias_draws)
+  # 40k correlated draws: a few percent of Monte-Carlo error on the scale, and
+  # the mean sits at the mode.
+  expect_equal(sqrt(diag(emp)), sqrt(diag(f$debias_sigma_ss)), tolerance = 0.06)
+  expect_lt(max(abs(colMeans(f$debias_draws))),
+            0.1 * min(sqrt(diag(f$debias_sigma_ss))))
+})
+
+
+test_that("the front door records S and leaves an empty S bit-for-bit identical", {
+  skip_on_cran()
+  d <- sd_fixture()
+  f0 <- tulpa_re_cov_nested(d$y, d$n_trials, d$X, d$rt, family = "binomial",
+                            control = list(seed = 1L))
+  f1 <- tulpa_re_cov_nested(d$y, d$n_trials, d$X, d$rt, family = "binomial",
+                            control = list(seed = 1L,
+                                           subspace_debias = list(idx = integer(0))))
+  expect_identical(f0$draws, f1$draws)
+  expect_identical(f0$posterior, f1$posterior)
+  expect_length(f1$subspace_debias$idx, 0L)
+
+  f2 <- tulpa_re_cov_nested(d$y, d$n_trials, d$X, d$rt, family = "binomial",
+                            control = list(seed = 1L, subspace_debias = TRUE))
+  sd2 <- f2$subspace_debias
+  expect_true(length(sd2$idx) > 0L)
+  expect_identical(sd2$selected_by, "band")
+  expect_identical(sd2$band_floor, tulpa:::.nl_diag("debias_select_band"))
+  expect_true(all(sd2$idx %in% sd2$bands$idx))
+  # Every selected index was banded at or above the floor it was selected at.
+  fl <- tulpa:::.SUBSPACE_BAND_RANK[[sd2$band_floor]]
+  rk <- tulpa:::.subspace_band_rank(sd2$bands$band[match(sd2$idx, sd2$bands$idx)])
+  expect_true(all(rk >= fl))
+  # The corrected coefficient's interval moved; the fit is not silently inert.
+  expect_false(isTRUE(all.equal(confint(f0), confint(f2))))
 })

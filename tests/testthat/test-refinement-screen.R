@@ -41,33 +41,6 @@
                        diagnose_k = FALSE)))
 }
 
-test_that("refinement cells are screened against the grid they join", {
-    skip_on_cran()
-    sim <- .rs_sim()
-    off <- .rs_fit(sim, prune = FALSE)
-    on  <- .rs_fit(sim, prune = TRUE)
-    n <- length(on$log_marginal)
-
-    added <- nzchar(on$refining_axis)
-    expect_true(any(added))
-    expect_length(on$prune_mask, n)
-    expect_length(on$prune_cheap_log_marginal, n)
-    expect_identical(on$prune_n_pruned, sum(on$prune_mask))
-    expect_true(any(on$prune_mask[added]))
-    expect_true(all(!is.finite(on$log_marginal[on$prune_mask])))
-    expect_true(all(is.finite(on$prune_cheap_log_marginal[added & on$prune_mask])))
-
-    # The bound is read over the merged grid under its final measure.
-    expect_true(is.finite(on$prune_dropped_mass_bound))
-    expect_lte(on$prune_dropped_mass_bound, tulpa:::.nl_screen("gate_mass"))
-
-    # Fewer full solves, the same posterior.
-    expect_lt(sum(is.finite(on$log_marginal)), sum(is.finite(off$log_marginal)))
-    sd_ref <- pmax(off$theta_sd, 1e-8)
-    expect_true(all(abs(on$theta_mean - off$theta_mean) / sd_ref < 0.1))
-    expect_equal(coef(on), coef(off), tolerance = 1e-2)
-})
-
 test_that("the dropped-mass bound counts every kept cell and the joined grid", {
     res <- list(log_marginal = c(0, -1, -Inf, -2),
                 prune_mask = c(FALSE, FALSE, TRUE, FALSE),
@@ -99,4 +72,33 @@ test_that("a round's screen record measures the cells on the merged grid", {
     expect_error(tulpa:::.nl_screen_log_offset(cells[1, , drop = FALSE],
                                                list(), screen = scr),
                  "refinement screen")
+})
+
+skip_on_cran()
+
+test_that("refinement cells are screened against the grid they join", {
+    skip_on_cran()
+    sim <- .rs_sim()
+    off <- .rs_fit(sim, prune = FALSE)
+    on  <- .rs_fit(sim, prune = TRUE)
+    n <- length(on$log_marginal)
+
+    added <- nzchar(on$refining_axis)
+    expect_true(any(added))
+    expect_length(on$prune_mask, n)
+    expect_length(on$prune_cheap_log_marginal, n)
+    expect_identical(on$prune_n_pruned, sum(on$prune_mask))
+    expect_true(any(on$prune_mask[added]))
+    expect_true(all(!is.finite(on$log_marginal[on$prune_mask])))
+    expect_true(all(is.finite(on$prune_cheap_log_marginal[added & on$prune_mask])))
+
+    # The bound is read over the merged grid under its final measure.
+    expect_true(is.finite(on$prune_dropped_mass_bound))
+    expect_lte(on$prune_dropped_mass_bound, tulpa:::.nl_screen("gate_mass"))
+
+    # Fewer full solves, the same posterior.
+    expect_lt(sum(is.finite(on$log_marginal)), sum(is.finite(off$log_marginal)))
+    sd_ref <- pmax(off$theta_sd, 1e-8)
+    expect_true(all(abs(on$theta_mean - off$theta_mean) / sd_ref < 0.1))
+    expect_equal(coef(on), coef(off), tolerance = 1e-2)
 })

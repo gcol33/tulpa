@@ -16,6 +16,58 @@ vc_data <- function(seed = 1L, G = 30L, per = 12L, sigma = 0.8) {
 }
 
 
+test_that("a conditioning fit is labelled conditioned, not estimated", {
+  d <- vc_data()
+  fit <- tulpa(y ~ x + (1 | g), data = d, family = "poisson",
+               mode = "laplace", sigma_re = 0.5)
+  vc <- VarCorr(fit)
+
+  expect_equal(vc$source, "conditioned")
+  # The value is the input echoed back. That is exactly why it carries a label:
+  # without one it is indistinguishable from a fitted 0.5.
+  expect_equal(vc$sd, 0.5, tolerance = 1e-8)
+})
+
+
+test_that("a fit with no random effects returns an empty table", {
+  set.seed(2)
+  d <- data.frame(y = rpois(80, 2), x = rnorm(80))
+  fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+  vc <- VarCorr(fit)
+
+  expect_s3_class(vc, "data.frame")
+  expect_equal(nrow(vc), 0L)
+  # Empty but well-formed, so downstream code can bind it without special-casing.
+  expect_named(vc, c("term", "coef", "sd", "source"))
+})
+
+
+test_that("the conditioned sigma_re is read off the fit, not the call (#868)", {
+  d <- vc_data()
+  # Passed through a variable local to a function: re-evaluating the call
+  # outside that frame fell back to 1, or read an unrelated global `s`.
+  fitit <- function(dd) {
+    s <- 0.3
+    tulpa(y ~ x + (1 | g), data = dd, family = "poisson",
+          mode = "laplace", sigma_re = s)
+  }
+  fit <- fitit(d)
+  expect_equal(fit$sigma_re_conditioned, 0.3)
+  expect_equal(VarCorr(fit)$sd, 0.3, tolerance = 1e-8)
+  s <- 5
+  expect_equal(VarCorr(fit)$sd, 0.3, tolerance = 1e-8)
+  expect_true(any(grepl("0.3", capture.output(print(summary(fit))), fixed = TRUE)))
+
+  # The default it conditioned on is labelled as such.
+  fit1 <- suppressWarnings(tulpa(y ~ x + (1 | g), data = d, family = "poisson",
+                                 mode = "laplace"))
+  expect_equal(VarCorr(fit1)$sd, 1)
+  expect_equal(VarCorr(fit1)$source, "conditioned")
+})
+
+skip_on_cran()
+
+
 test_that("an empirical-Bayes fit reports its estimate as estimated", {
   skip_on_cran()
   d <- vc_data()
@@ -32,19 +84,6 @@ test_that("an empirical-Bayes fit reports its estimate as estimated", {
   # And it is in the right neighbourhood of truth, so the wiring is not simply
   # self-consistent about a wrong number.
   expect_lt(abs(vc$sd - 0.8), 0.25)
-})
-
-
-test_that("a conditioning fit is labelled conditioned, not estimated", {
-  d <- vc_data()
-  fit <- tulpa(y ~ x + (1 | g), data = d, family = "poisson",
-               mode = "laplace", sigma_re = 0.5)
-  vc <- VarCorr(fit)
-
-  expect_equal(vc$source, "conditioned")
-  # The value is the input echoed back. That is exactly why it carries a label:
-  # without one it is indistinguishable from a fitted 0.5.
-  expect_equal(vc$sd, 0.5, tolerance = 1e-8)
 })
 
 
@@ -141,41 +180,4 @@ test_that("an integrated covariance is reported, not the conditioning fallback",
     expect_lt(abs(vc$sd[1] - 0.7), 0.25)
     expect_lt(abs(vc$sd[2] - 0.4), 0.25)
   }
-})
-
-
-test_that("a fit with no random effects returns an empty table", {
-  set.seed(2)
-  d <- data.frame(y = rpois(80, 2), x = rnorm(80))
-  fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
-  vc <- VarCorr(fit)
-
-  expect_s3_class(vc, "data.frame")
-  expect_equal(nrow(vc), 0L)
-  # Empty but well-formed, so downstream code can bind it without special-casing.
-  expect_named(vc, c("term", "coef", "sd", "source"))
-})
-
-
-test_that("the conditioned sigma_re is read off the fit, not the call (#868)", {
-  d <- vc_data()
-  # Passed through a variable local to a function: re-evaluating the call
-  # outside that frame fell back to 1, or read an unrelated global `s`.
-  fitit <- function(dd) {
-    s <- 0.3
-    tulpa(y ~ x + (1 | g), data = dd, family = "poisson",
-          mode = "laplace", sigma_re = s)
-  }
-  fit <- fitit(d)
-  expect_equal(fit$sigma_re_conditioned, 0.3)
-  expect_equal(VarCorr(fit)$sd, 0.3, tolerance = 1e-8)
-  s <- 5
-  expect_equal(VarCorr(fit)$sd, 0.3, tolerance = 1e-8)
-  expect_true(any(grepl("0.3", capture.output(print(summary(fit))), fixed = TRUE)))
-
-  # The default it conditioned on is labelled as such.
-  fit1 <- suppressWarnings(tulpa(y ~ x + (1 | g), data = d, family = "poisson",
-                                 mode = "laplace"))
-  expect_equal(VarCorr(fit1)$sd, 1)
-  expect_equal(VarCorr(fit1)$source, "conditioned")
 })

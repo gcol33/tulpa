@@ -36,6 +36,42 @@ test_that("a single-block field is the tail of the latent vector", {
                    c("temporal", "other"))
 })
 
+test_that("mixture draws carry each cell's cross-time covariance", {
+  # Two cells, three time points each, strongly correlated within a cell and
+  # one of them singular (an intrinsic field's constrained covariance).
+  S1 <- 0.5 * outer(1:3, 1:3, function(i, j) 0.9^abs(i - j))
+  a <- c(1, -1, 0) / sqrt(2)
+  S2 <- diag(3) - tcrossprod(c(1, 1, 1) / sqrt(3))
+  mix <- list(mu = rbind(c(0, 0, 0), c(1, 2, 3)),
+              var = rbind(diag(S1), diag(S2)),
+              cov = list(S1, S2), w = c(0.3, 0.7))
+  set.seed(7)
+  dr <- tulpa:::.nl_field_mixture_draws(mix)
+  m <- colSums(mix$w * mix$mu)
+  exact <- 0.3 * (S1 + tcrossprod(mix$mu[1, ])) +
+    0.7 * (S2 + tcrossprod(mix$mu[2, ])) - tcrossprod(m)
+  expect_equal(cov(dr), exact, tolerance = 0.12)
+  # The sum-to-zero direction of the singular cell stays at zero spread.
+  from2 <- abs(rowMeans(dr) - 2) < 1e-8
+  expect_gt(mean(from2), 0.6)
+  # Without the covariance the coordinates are independent within a cell.
+  mix$cov <- NULL
+  dr0 <- tulpa:::.nl_field_mixture_draws(mix)
+  exact0 <- 0.3 * (diag(diag(S1)) + tcrossprod(mix$mu[1, ])) +
+    0.7 * (diag(diag(S2)) + tcrossprod(mix$mu[2, ])) - tcrossprod(m)
+  expect_equal(cov(dr0), exact0, tolerance = 0.12)
+  expect_gt(abs(var(drop(dr %*% a)) - var(drop(dr0 %*% a))), 0.05)
+})
+
+test_that("a temporal GP's summary is labelled by its own time values", {
+  set.seed(1); tt <- sort(round(runif(12, 0, 100), 1))
+  d <- data.frame(t = rep(tt, each = 2))
+  spec <- validate_temporal_gp(temporal_gp("t"), d)
+  expect_equal(spec$time_levels, tt)
+})
+
+skip_on_cran()
+
 test_that("temporal() reads the temporal block behind a spatial one", {
   skip_on_cran()
   A <- lattice_adj_rb(6L); S <- nrow(A)
@@ -82,33 +118,6 @@ test_that("nested temporal() intervals carry the within-cell variance", {
   between <- sqrt(colSums(w * mu^2) - m^2)
   expect_true(all(tp$sd > 2 * between))
   expect_gte(mean(f >= tp$q2.5 & f <= tp$q97.5), 0.8)
-})
-
-test_that("mixture draws carry each cell's cross-time covariance", {
-  # Two cells, three time points each, strongly correlated within a cell and
-  # one of them singular (an intrinsic field's constrained covariance).
-  S1 <- 0.5 * outer(1:3, 1:3, function(i, j) 0.9^abs(i - j))
-  a <- c(1, -1, 0) / sqrt(2)
-  S2 <- diag(3) - tcrossprod(c(1, 1, 1) / sqrt(3))
-  mix <- list(mu = rbind(c(0, 0, 0), c(1, 2, 3)),
-              var = rbind(diag(S1), diag(S2)),
-              cov = list(S1, S2), w = c(0.3, 0.7))
-  set.seed(7)
-  dr <- tulpa:::.nl_field_mixture_draws(mix)
-  m <- colSums(mix$w * mix$mu)
-  exact <- 0.3 * (S1 + tcrossprod(mix$mu[1, ])) +
-    0.7 * (S2 + tcrossprod(mix$mu[2, ])) - tcrossprod(m)
-  expect_equal(cov(dr), exact, tolerance = 0.12)
-  # The sum-to-zero direction of the singular cell stays at zero spread.
-  from2 <- abs(rowMeans(dr) - 2) < 1e-8
-  expect_gt(mean(from2), 0.6)
-  # Without the covariance the coordinates are independent within a cell.
-  mix$cov <- NULL
-  dr0 <- tulpa:::.nl_field_mixture_draws(mix)
-  exact0 <- 0.3 * (diag(diag(S1)) + tcrossprod(mix$mu[1, ])) +
-    0.7 * (diag(diag(S2)) + tcrossprod(mix$mu[2, ])) - tcrossprod(m)
-  expect_equal(cov(dr0), exact0, tolerance = 0.12)
-  expect_gt(abs(var(drop(dr %*% a)) - var(drop(dr0 %*% a))), 0.05)
 })
 
 test_that("nested temporal() draws reproduce the within-cell correlation", {
@@ -158,13 +167,6 @@ test_that("nested temporal() intervals cover at the nominal rate", {
     mean(f >= tp$q2.5 & f <= tp$q97.5)
   }, numeric(1))
   expect_gt(mean(cover), 0.88)
-})
-
-test_that("a temporal GP's summary is labelled by its own time values", {
-  set.seed(1); tt <- sort(round(runif(12, 0, 100), 1))
-  d <- data.frame(t = rep(tt, each = 2))
-  spec <- validate_temporal_gp(temporal_gp("t"), d)
-  expect_equal(spec$time_levels, tt)
 })
 
 test_that("temporal() on a non-centered temporal GP returns the field", {

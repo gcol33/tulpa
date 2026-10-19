@@ -12,6 +12,56 @@
        beta = beta)
 }
 
+test_that("the new EB control knobs validate", {
+  expect_silent(tulpa_check_control(
+    list(marginal_step = 1e-4, marginal_richardson = TRUE),
+    tulpa:::.CONTROL_KEYS$eb, "tulpa_eb"))
+  expect_error(tulpa_check_control(list(marginal_stp = 1e-4),
+                             tulpa:::.CONTROL_KEYS$eb, "tulpa_eb"),
+               "Unknown control knob")
+  d <- .em_sim(1L)
+  expect_error(
+    tulpa_eb(d$y, NULL, d$X, d$re, family = "poisson", marginal = TRUE,
+             control = list(marginal_step = -1)),
+    "must be a single positive number")
+  expect_error(
+    tulpa_eb(d$y, NULL, d$X, d$re, family = "poisson", marginal = NA),
+    "must be TRUE or FALSE")
+})
+
+test_that("force_sparse resolves TRUE / FALSE / auto", {
+  expect_true(.resolve_force_sparse(TRUE, function() 1L))
+  expect_false(.resolve_force_sparse(FALSE, function() 1e6))
+  expect_false(.resolve_force_sparse("auto", function() 500L))
+  expect_true(.resolve_force_sparse("auto", function() 2000L))
+  # At the threshold exactly, dense: the rule is strictly greater.
+  expect_false(.resolve_force_sparse("auto", function() 1000L))
+  # An undeterminable size must not opt into the specialized path.
+  expect_false(.resolve_force_sparse("auto", function() stop("no layout")))
+  expect_false(.resolve_force_sparse("auto", function() NULL))
+  expect_error(.resolve_force_sparse("sparse", function() 1L),
+               "must be TRUE, FALSE")
+})
+
+
+# Negative-binomial random-intercept design with a genuinely uncertain size,
+# for the estimated-dispersion path (chi = [log sigma, log phi]).
+.em_sim_nb <- function(seed, G = 12L, per = 9L, beta = c(0.3, 0.5),
+                       sigma = 0.7, phi = 2.5) {
+  set.seed(seed)
+  n   <- G * per
+  grp <- rep(seq_len(G), each = per)
+  x   <- rnorm(n)
+  b   <- rnorm(G, 0, sigma)
+  eta <- beta[1] + beta[2] * x + b[grp]
+  list(y  = rnbinom(n, size = phi, mu = exp(eta)),
+       X  = cbind(1, x),
+       re = list(idx = grp, n_groups = G, n_coefs = 1L),
+       beta = beta, phi = phi)
+}
+
+skip_on_cran()
+
 test_that("marginal = FALSE leaves the fit unchanged", {
   skip_on_cran()
   d <- .em_sim(1L)
@@ -132,37 +182,6 @@ test_that("vcov and summary report the marginal covariance when present", {
                tolerance = 1e-10)
 })
 
-test_that("the new EB control knobs validate", {
-  expect_silent(tulpa_check_control(
-    list(marginal_step = 1e-4, marginal_richardson = TRUE),
-    tulpa:::.CONTROL_KEYS$eb, "tulpa_eb"))
-  expect_error(tulpa_check_control(list(marginal_stp = 1e-4),
-                             tulpa:::.CONTROL_KEYS$eb, "tulpa_eb"),
-               "Unknown control knob")
-  d <- .em_sim(1L)
-  expect_error(
-    tulpa_eb(d$y, NULL, d$X, d$re, family = "poisson", marginal = TRUE,
-             control = list(marginal_step = -1)),
-    "must be a single positive number")
-  expect_error(
-    tulpa_eb(d$y, NULL, d$X, d$re, family = "poisson", marginal = NA),
-    "must be TRUE or FALSE")
-})
-
-test_that("force_sparse resolves TRUE / FALSE / auto", {
-  expect_true(.resolve_force_sparse(TRUE, function() 1L))
-  expect_false(.resolve_force_sparse(FALSE, function() 1e6))
-  expect_false(.resolve_force_sparse("auto", function() 500L))
-  expect_true(.resolve_force_sparse("auto", function() 2000L))
-  # At the threshold exactly, dense: the rule is strictly greater.
-  expect_false(.resolve_force_sparse("auto", function() 1000L))
-  # An undeterminable size must not opt into the specialized path.
-  expect_false(.resolve_force_sparse("auto", function() stop("no layout")))
-  expect_false(.resolve_force_sparse("auto", function() NULL))
-  expect_error(.resolve_force_sparse("sparse", function() 1L),
-               "must be TRUE, FALSE")
-})
-
 test_that("warm-start hyperparameter mass reads theta_cov by block", {
   skip_on_cran()
   d       <- .em_sim(1L)
@@ -263,23 +282,6 @@ test_that("Richardson extrapolation runs and stays close to the plain stencil", 
   # Both estimate the same Hessian; they differ only by truncation error.
   expect_equal(as.numeric(f1$H_theta), as.numeric(f2$H_theta), tolerance = 1e-3)
 })
-
-
-# Negative-binomial random-intercept design with a genuinely uncertain size,
-# for the estimated-dispersion path (chi = [log sigma, log phi]).
-.em_sim_nb <- function(seed, G = 12L, per = 9L, beta = c(0.3, 0.5),
-                       sigma = 0.7, phi = 2.5) {
-  set.seed(seed)
-  n   <- G * per
-  grp <- rep(seq_len(G), each = per)
-  x   <- rnorm(n)
-  b   <- rnorm(G, 0, sigma)
-  eta <- beta[1] + beta[2] * x + b[grp]
-  list(y  = rnbinom(n, size = phi, mu = exp(eta)),
-       X  = cbind(1, x),
-       re = list(idx = grp, n_groups = G, n_coefs = 1L),
-       beta = beta, phi = phi)
-}
 
 test_that("an estimated dispersion rides through the correction as log phi", {
   skip_on_cran()

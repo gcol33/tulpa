@@ -101,6 +101,8 @@ test_that("a redirect that lands on the same backend is not an override", {
   expect_null(out$overridden)
 })
 
+skip_on_cran()
+
 
 # --- tier 2: the front door ---------------------------------------------------
 

@@ -56,6 +56,8 @@ test_that("proper-CAR field spec prints its structure", {
   expect_match(out, "proper CAR")
 })
 
+skip_on_cran()
+
 # --------------------------------------------------------------------------- #
 # (2) Recovery: the field and rho_car vs simulated truth                      #
 # --------------------------------------------------------------------------- #

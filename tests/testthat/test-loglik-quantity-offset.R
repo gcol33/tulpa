@@ -1,3 +1,34 @@
+
+test_that("AIC and BIC refuse anything but a maximised log-likelihood", {
+  fit <- structure(
+    list(log_prob = rep(-100, 5L), means = stats::setNames(rnorm(6L), letters[1:6]),
+         N = 50L),
+    class = "tulpa_fit")
+  expect_error(stats::AIC(fit), "maximised log-likelihood")
+  expect_error(stats::BIC(fit), "log posterior mean")
+
+  ml <- structure(list(log_marginal = -120, n_params = 3L, n_fixed = 2L,
+                       N = 80L, backend = "agq"),
+                  class = "tulpa_fit")
+  l <- logLik(ml)
+  expect_identical(attr(l, "quantity"), "log_likelihood")
+  expect_identical(attr(l, "df"), 3L)
+  expect_equal(stats::AIC(ml), 2 * 120 + 2 * 3)
+  expect_equal(stats::BIC(ml), 2 * 120 + log(80) * 3)
+  expect_error(stats::AIC(ml, fit), "maximised log-likelihood")
+})
+
+test_that("a nested evidence records why it declined on a CCD design", {
+  fit <- structure(list(log_marginal = c(-10, -11), log_evidence = NA_real_,
+                        log_evidence_declined = "moment_rule_design",
+                        n_fixed = 2L, N = 50L),
+                   class = "tulpa_fit")
+  l <- logLik(fit)
+  expect_true(is.na(as.numeric(l)))
+  expect_identical(attr(l, "declined"), "moment_rule_design")
+})
+
+skip_on_cran()
 # Which quantity logLik() reports and when AIC / BIC apply (gcol33/tulpa#723),
 # and the offset on the nested-Laplace route (gcol33/tulpa#726).
 
@@ -35,35 +66,6 @@ test_that("the quantity follows what the fit estimated, not the vector length", 
   expect_identical(nrow(cmp), 2L)
   expect_error(compare_models(glm = glm_fit, eb = eb_fit, criterion = "loglik"),
                "conditional on re_covariance")
-})
-
-test_that("AIC and BIC refuse anything but a maximised log-likelihood", {
-  fit <- structure(
-    list(log_prob = rep(-100, 5L), means = stats::setNames(rnorm(6L), letters[1:6]),
-         N = 50L),
-    class = "tulpa_fit")
-  expect_error(stats::AIC(fit), "maximised log-likelihood")
-  expect_error(stats::BIC(fit), "log posterior mean")
-
-  ml <- structure(list(log_marginal = -120, n_params = 3L, n_fixed = 2L,
-                       N = 80L, backend = "agq"),
-                  class = "tulpa_fit")
-  l <- logLik(ml)
-  expect_identical(attr(l, "quantity"), "log_likelihood")
-  expect_identical(attr(l, "df"), 3L)
-  expect_equal(stats::AIC(ml), 2 * 120 + 2 * 3)
-  expect_equal(stats::BIC(ml), 2 * 120 + log(80) * 3)
-  expect_error(stats::AIC(ml, fit), "maximised log-likelihood")
-})
-
-test_that("a nested evidence records why it declined on a CCD design", {
-  fit <- structure(list(log_marginal = c(-10, -11), log_evidence = NA_real_,
-                        log_evidence_declined = "moment_rule_design",
-                        n_fixed = 2L, N = 50L),
-                   class = "tulpa_fit")
-  l <- logLik(fit)
-  expect_true(is.na(as.numeric(l)))
-  expect_identical(attr(l, "declined"), "moment_rule_design")
 })
 
 test_that("an offset() reaches the nested-Laplace inner solve", {

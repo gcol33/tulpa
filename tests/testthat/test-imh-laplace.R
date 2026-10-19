@@ -1,3 +1,36 @@
+
+
+test_that("imh_laplace registers in Tier 1 (Exact)", {
+  expect_true("imh_laplace" %in% INFERENCE_TIERS$exact$backends)
+  ti <- get_backend_tier("imh_laplace")
+  expect_equal(ti$tier, 1L)
+  expect_equal(ti$name, "Exact")
+})
+
+
+test_that("imh_laplace errors on non-PD Hessian", {
+  log_post <- function(theta) sum(dnorm(theta, log = TRUE))
+  expect_error(
+    imh_laplace(log_post, mode = c(0, 0),
+                hessian = matrix(c(1, 2, 2, 1), 2L, 2L),
+                n_iter = 100L),
+    "positive-definite|singular"
+  )
+})
+
+
+test_that("imh_laplace errors on non-finite init", {
+  log_post <- function(theta) {
+    if (any(theta > 0)) -Inf else sum(dnorm(theta, log = TRUE))
+  }
+  expect_error(
+    imh_laplace(log_post, mode = c(0), hessian = matrix(1, 1L, 1L),
+                init = c(5), n_iter = 100L),
+    "not finite"
+  )
+})
+
+skip_on_cran()
 # Independence Metropolis-Hastings with Laplace proposal.
 # Test coverage:
 #   1. Recovers posterior mean / sd on conjugate normal (1-D and 2-D)
@@ -59,14 +92,6 @@ test_that("imh_laplace recovers 2-D conjugate posterior", {
 })
 
 
-test_that("imh_laplace registers in Tier 1 (Exact)", {
-  expect_true("imh_laplace" %in% INFERENCE_TIERS$exact$backends)
-  ti <- get_backend_tier("imh_laplace")
-  expect_equal(ti$tier, 1L)
-  expect_equal(ti$name, "Exact")
-})
-
-
 test_that("imh_laplace fit works with generic S3 methods", {
   skip_on_cran()
   set.seed(103L)
@@ -85,29 +110,6 @@ test_that("imh_laplace fit works with generic S3 methods", {
   expect_no_error(glance(fit))
   ll <- logLik(fit)
   expect_s3_class(ll, "logLik")
-})
-
-
-test_that("imh_laplace errors on non-PD Hessian", {
-  log_post <- function(theta) sum(dnorm(theta, log = TRUE))
-  expect_error(
-    imh_laplace(log_post, mode = c(0, 0),
-                hessian = matrix(c(1, 2, 2, 1), 2L, 2L),
-                n_iter = 100L),
-    "positive-definite|singular"
-  )
-})
-
-
-test_that("imh_laplace errors on non-finite init", {
-  log_post <- function(theta) {
-    if (any(theta > 0)) -Inf else sum(dnorm(theta, log = TRUE))
-  }
-  expect_error(
-    imh_laplace(log_post, mode = c(0), hessian = matrix(1, 1L, 1L),
-                init = c(5), n_iter = 100L),
-    "not finite"
-  )
 })
 
 

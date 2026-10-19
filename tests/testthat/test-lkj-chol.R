@@ -318,6 +318,21 @@ test_that("raw_from_L inverts build_L_from_raw", {
   }
 })
 
+test_that("a saturating row at n = 3 gives a correlation matrix, not a clamped one", {
+  # (atanh(0.8), atanh(0.8)) on row 3 has a squared sum of 1.28 under the direct
+  # map, so its diagonal was clamped at sqrt(1e-12) and R = L L' came back with
+  # a diagonal entry of 1.28 rather than 1.
+  raw <- c(0.3, atanh(0.8), atanh(0.8))
+  res <- cpp_test_lkj_build_L(raw, 3L)
+  R <- cpp_test_correlation_from_L(res$L)
+  expect_equal(unname(diag(R)), rep(1, 3), tolerance = 1e-12)
+  expect_true(all(abs(R[lower.tri(R)]) < 1))
+  expect_true(all(eigen(R, symmetric = TRUE, only.values = TRUE)$values > 1e-8))
+  expect_true(is.finite(res$log_jac))
+})
+
+skip_on_cran()
+
 test_that("n = 2 reduces to the direct tanh map", {
   skip_on_cran()
   # The scaling factor sqrt(s) is 1 for the single strict-lower entry of a 2x2
@@ -342,17 +357,4 @@ test_that("n = 2 reduces to the direct tanh map", {
     expect_equal(res$L[2, 2], sqrt(1 - z^2), tolerance = 1e-12)
     expect_equal(res$log_jac, log(1 - z^2), tolerance = 1e-12)
   }
-})
-
-test_that("a saturating row at n = 3 gives a correlation matrix, not a clamped one", {
-  # (atanh(0.8), atanh(0.8)) on row 3 has a squared sum of 1.28 under the direct
-  # map, so its diagonal was clamped at sqrt(1e-12) and R = L L' came back with
-  # a diagonal entry of 1.28 rather than 1.
-  raw <- c(0.3, atanh(0.8), atanh(0.8))
-  res <- cpp_test_lkj_build_L(raw, 3L)
-  R <- cpp_test_correlation_from_L(res$L)
-  expect_equal(unname(diag(R)), rep(1, 3), tolerance = 1e-12)
-  expect_true(all(abs(R[lower.tri(R)]) < 1))
-  expect_true(all(eigen(R, symmetric = TRUE, only.values = TRUE)$values > 1e-8))
-  expect_true(is.finite(res$log_jac))
 })

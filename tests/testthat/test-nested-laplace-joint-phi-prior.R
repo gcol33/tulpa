@@ -57,6 +57,17 @@
                        prune = prune))
 }
 
+test_that("prior_phi validates malformed specs", {
+    expect_error(
+        .joint_parse_sigma_prior(list("pc.prec", c(-1, 0.5)), "prior_phi"),
+        "prior_phi")
+    expect_error(
+        .joint_parse_sigma_prior(list("nope", 1), "prior_phi"),
+        "Unknown hyperprior")
+})
+
+skip_on_cran()
+
 test_that("prior_phi replaces the default density with the PC one on the axis's own coordinate", {
     skip_on_cran()
     sim <- .simulate_joint_pp(N = 400, n_s = 30, sd_pos = 0.3, seed = 919)
@@ -138,13 +149,4 @@ test_that("prior_phi is a no-op when no phi_grid is declared", {
     }
     expect_equal(mk(list("pc.prec", c(1.0, 0.01)))$log_marginal,
                  mk(NULL)$log_marginal, tolerance = 1e-12)
-})
-
-test_that("prior_phi validates malformed specs", {
-    expect_error(
-        .joint_parse_sigma_prior(list("pc.prec", c(-1, 0.5)), "prior_phi"),
-        "prior_phi")
-    expect_error(
-        .joint_parse_sigma_prior(list("nope", 1), "prior_phi"),
-        "Unknown hyperprior")
 })

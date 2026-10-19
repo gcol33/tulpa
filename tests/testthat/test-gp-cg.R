@@ -52,6 +52,20 @@ build_nngp_neighbor_data <- function(coords, nn_k) {
   )
 }
 
+test_that("gp() offers no solver argument", {
+  # It was accepted, validated, stored and printed, and never reached
+  # GPData::solver_config, so every fit ran the Cholesky path whatever was
+  # asked for (gcol33/tulpa#542).
+  expect_false(any(c("solver", "cg_tol", "cg_maxiter") %in%
+                     names(formals(spatial_gp))))
+  spec <- spatial_gp(~ x + y)
+  expect_null(spec$solver)
+  expect_null(spec$cg_tol)
+  expect_null(spec$cg_maxiter)
+})
+
+skip_on_cran()
+
 test_that("CG and Cholesky NNGP solvers agree on log-lik and gradients", {
   skip_on_cran()
   set.seed(7)
@@ -114,16 +128,4 @@ test_that("CG and Cholesky NNGP solvers agree on log-lik and gradients", {
   expect_equal(pcg$grad_log_sigma2, ref$grad_log_sigma2, tolerance = 1e-5)
   expect_equal(cg$grad_log_phi,  ref$grad_log_phi, tolerance = 1e-5)
   expect_equal(pcg$grad_log_phi, ref$grad_log_phi, tolerance = 1e-5)
-})
-
-test_that("gp() offers no solver argument", {
-  # It was accepted, validated, stored and printed, and never reached
-  # GPData::solver_config, so every fit ran the Cholesky path whatever was
-  # asked for (gcol33/tulpa#542).
-  expect_false(any(c("solver", "cg_tol", "cg_maxiter") %in%
-                     names(formals(spatial_gp))))
-  spec <- spatial_gp(~ x + y)
-  expect_null(spec$solver)
-  expect_null(spec$cg_tol)
-  expect_null(spec$cg_maxiter)
 })

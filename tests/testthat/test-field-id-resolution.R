@@ -53,6 +53,8 @@ test_that("labelled time ids are put in time order", {
   expect_identical(spec$time_index, 1:25)
 })
 
+skip_on_cran()
+
 test_that("tulpa() attaches labelled observations to the named nodes", {
   skip_on_cran()
   set.seed(1)

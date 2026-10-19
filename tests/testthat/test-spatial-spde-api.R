@@ -48,26 +48,6 @@ test_that("print.tulpa_spatial works for SPDE", {
   expect_output(print(spec), "Mesh nodes")
 })
 
-test_that("fit_spde works with fixed hyperparameters", {
-  skip_on_cran()
-  set.seed(42)
-  n_obs <- 100
-  coords <- cbind(runif(n_obs), runif(n_obs))
-  spec <- spatial_spde(coords)
-
-  y <- rbinom(n_obs, 1, 0.4)
-  X <- matrix(1, nrow = n_obs, ncol = 1)
-
-  result <- fit_spde(y, X, spec,
-                     family = "binomial", n_trials = rep(1L, n_obs),
-                     range = 0.3, sigma = 0.5)
-
-  expect_true(result$converged)
-  expect_true(is.finite(result$log_marginal))
-  expect_equal(length(result$beta), 1)
-  expect_equal(length(result$spatial_effects), spec$n_mesh)
-})
-
 test_that("ParamLayout: legacy fixed-hyper mode leaves hyper slots at -1", {
   layout <- tulpa:::cpp_spde_layout_probe(
     n_mesh = 50, p = 2, joint_hypers = FALSE, n_extra_params = 1L
@@ -399,6 +379,28 @@ test_that("ParamLayout: hyper slot ordering is mesh-size invariant", {
     expect_equal(layout$log_tau_spde_idx,   layout$log_kappa_spde_idx + 1,
                  info = paste("n_mesh =", n_mesh))
   }
+})
+
+skip_on_cran()
+
+test_that("fit_spde works with fixed hyperparameters", {
+  skip_on_cran()
+  set.seed(42)
+  n_obs <- 100
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  spec <- spatial_spde(coords)
+
+  y <- rbinom(n_obs, 1, 0.4)
+  X <- matrix(1, nrow = n_obs, ncol = 1)
+
+  result <- fit_spde(y, X, spec,
+                     family = "binomial", n_trials = rep(1L, n_obs),
+                     range = 0.3, sigma = 0.5)
+
+  expect_true(result$converged)
+  expect_true(is.finite(result$log_marginal))
+  expect_equal(length(result$beta), 1)
+  expect_equal(length(result$spatial_effects), spec$n_mesh)
 })
 
 test_that("fit_spde works with nested Laplace", {

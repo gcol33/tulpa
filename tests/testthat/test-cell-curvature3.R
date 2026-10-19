@@ -41,6 +41,15 @@
     per_arm_step = per_arm_step)
 }
 
+test_that("the tensor builder refuses an unregistered spec by name", {
+  expect_error(
+    cpp_cell_coupling_curvature3("no_such_spec", eta = list(0), u = list(0),
+                                 y = list(0), family = "binomial", phi = 1),
+    "not registered")
+})
+
+skip_on_cran()
+
 test_that("the contraction reproduces a direct third derivative of the cell log-density", {
   skip_on_cran()
   .c3_register()
@@ -110,13 +119,6 @@ test_that("the per-arm step is at least as accurate as one global step", {
   err_global  <- abs(.c3_tensor(a2, v2, u_a2, u_v2, y, FALSE) - b) / abs(b)
   expect_lt(err_per_arm, err_global)
   expect_lt(err_per_arm, 1e-5)
-})
-
-test_that("the tensor builder refuses an unregistered spec by name", {
-  expect_error(
-    cpp_cell_coupling_curvature3("no_such_spec", eta = list(0), u = list(0),
-                                 y = list(0), family = "binomial", phi = 1),
-    "not registered")
 })
 
 # --------------------------------------------------------------------------- #

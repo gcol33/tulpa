@@ -161,6 +161,8 @@ test_that("the derived-summary read is unchanged at the reported probabilities",
                tolerance = 1e-8)
 })
 
+skip_on_cran()
+
 # -------------------------------------------------------- on a real fit
 
 test_that("a grid-integrated fit still reads its interval as a density", {

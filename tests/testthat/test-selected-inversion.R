@@ -34,41 +34,6 @@ test_that("selected inversion matches dense solve for small matrix", {
   expect_equal(diag_inv, Q_inv_diag_true, tolerance = 1e-8)
 })
 
-test_that("selected inversion works for ICAR-like precision", {
-  skip_on_cran()
-  # Build ICAR precision on a 5x5 grid
-  adj <- make_grid_adjacency(5, 5)
-  n <- 25
-
-  # Build Q = tau * (D - W) + epsilon * I (regularized for pos-def)
-  tau <- 2.0
-  Q_dense <- matrix(0, n, n)
-  for (i in seq_len(n)) {
-    Q_dense[i, i] <- tau * adj$n_neighbors[i] + 0.01  # regularize
-    start <- adj$adj_row_ptr[i] + 1L
-    end <- adj$adj_row_ptr[i + 1]
-    if (end >= start) {
-      for (idx in start:end) {
-        j <- adj$adj_col_idx[idx] + 1L
-        Q_dense[i, j] <- -tau
-      }
-    }
-  }
-
-  Q_inv_diag_true <- diag(solve(Q_dense))
-
-  Q_sparse <- as(Matrix::Matrix(Q_dense, sparse = TRUE), "CsparseMatrix")
-  Q_lower <- Matrix::tril(Q_sparse)
-
-  diag_inv <- cpp_selected_inversion_diagonal(
-    Q_x = Q_lower@x, Q_i = Q_lower@i, Q_p = Q_lower@p, n = n
-  )
-
-  expect_true(all(is.finite(diag_inv)))
-  expect_true(all(diag_inv > 0))
-  expect_equal(diag_inv, Q_inv_diag_true, tolerance = 1e-6)
-})
-
 test_that("selected inversion rejects a CSC triple that does not match n", {
   n <- 6
   Q <- Matrix::Diagonal(n, x = 2)
@@ -115,4 +80,41 @@ test_that("selected inversion matches a dense solve on a dense and a filled patt
   diag_inv <- cpp_selected_inversion_diagonal(
     Q_x = Q_lower@x, Q_i = Q_lower@i, Q_p = Q_lower@p, n = m * m)
   expect_equal(diag_inv, diag(solve(as.matrix(Q_grid))), tolerance = 1e-10)
+})
+
+skip_on_cran()
+
+test_that("selected inversion works for ICAR-like precision", {
+  skip_on_cran()
+  # Build ICAR precision on a 5x5 grid
+  adj <- make_grid_adjacency(5, 5)
+  n <- 25
+
+  # Build Q = tau * (D - W) + epsilon * I (regularized for pos-def)
+  tau <- 2.0
+  Q_dense <- matrix(0, n, n)
+  for (i in seq_len(n)) {
+    Q_dense[i, i] <- tau * adj$n_neighbors[i] + 0.01  # regularize
+    start <- adj$adj_row_ptr[i] + 1L
+    end <- adj$adj_row_ptr[i + 1]
+    if (end >= start) {
+      for (idx in start:end) {
+        j <- adj$adj_col_idx[idx] + 1L
+        Q_dense[i, j] <- -tau
+      }
+    }
+  }
+
+  Q_inv_diag_true <- diag(solve(Q_dense))
+
+  Q_sparse <- as(Matrix::Matrix(Q_dense, sparse = TRUE), "CsparseMatrix")
+  Q_lower <- Matrix::tril(Q_sparse)
+
+  diag_inv <- cpp_selected_inversion_diagonal(
+    Q_x = Q_lower@x, Q_i = Q_lower@i, Q_p = Q_lower@p, n = n
+  )
+
+  expect_true(all(is.finite(diag_inv)))
+  expect_true(all(diag_inv > 0))
+  expect_equal(diag_inv, Q_inv_diag_true, tolerance = 1e-6)
 })

@@ -180,6 +180,31 @@ test_that("the AGHQ node-count request is validated before it is broadcast", {
     make_site = fx$site, n_obs = fx$n, n_quad = 3L)
 }
 
+# ---------------------------------------------------------------------------
+# The failure sentinel is not an objective value (gcol33/tulpa#606).
+# cpp_aghq_objective() reports a large finite penalty where a group's solve
+# failed, so that stats::optim rejects the point. A fit built ON that value
+# reports the sentinel as a log-likelihood, derives its covariance from the
+# finite-difference curvature of the penalty, and -- since `reltol` is relative
+# to |f| = 1e10 -- can declare convergence after one hair of a step.
+# ---------------------------------------------------------------------------
+
+test_that("the sentinel R tests against is the one the objective reports", {
+  # No literal on the R side: the value is the compiled producer's.
+  orc <- .aghq_flat_oracle(4L, 1L, function(g) if (g == 2L) -10 else 1)
+  expect_identical(cpp_aghq_objective(c(0, 0), orc, 1L, FALSE, 5L, 1.0),
+                   cpp_aghq_fail_penalty())
+  expect_identical(cpp_aghq_objective_grad(c(0, 0), orc, 1L, FALSE, 5L, 1.0)$f,
+                   cpp_aghq_fail_penalty())
+  # And a solvable configuration is on the other side of the predicate.
+  expect_true(.aghq_is_fail(cpp_aghq_fail_penalty()))
+  expect_true(.aghq_is_fail(NaN))
+  expect_false(.aghq_is_fail(cpp_aghq_objective(c(0, 0), .aghq_flat_oracle(3L),
+                                                1L, FALSE, 5L, 1.0)))
+})
+
+skip_on_cran()
+
 test_that("tulpa_re_aghq reports group_ok on a fit whose every group solved", {
   skip_on_cran()
   fx  <- .aghq_group_ok_fixture()
@@ -244,29 +269,6 @@ test_that("a failed group is a field on the fit, not only a warning", {
   expect_true(all(is.na(fit$blup_var[[1L]][bad, ])))
   expect_true(all(is.na(fit$blup_cov_g[[bad]])))
   expect_false(any(vapply(fit$blup_cov_g[-bad], anyNA, logical(1))))
-})
-
-# ---------------------------------------------------------------------------
-# The failure sentinel is not an objective value (gcol33/tulpa#606).
-# cpp_aghq_objective() reports a large finite penalty where a group's solve
-# failed, so that stats::optim rejects the point. A fit built ON that value
-# reports the sentinel as a log-likelihood, derives its covariance from the
-# finite-difference curvature of the penalty, and -- since `reltol` is relative
-# to |f| = 1e10 -- can declare convergence after one hair of a step.
-# ---------------------------------------------------------------------------
-
-test_that("the sentinel R tests against is the one the objective reports", {
-  # No literal on the R side: the value is the compiled producer's.
-  orc <- .aghq_flat_oracle(4L, 1L, function(g) if (g == 2L) -10 else 1)
-  expect_identical(cpp_aghq_objective(c(0, 0), orc, 1L, FALSE, 5L, 1.0),
-                   cpp_aghq_fail_penalty())
-  expect_identical(cpp_aghq_objective_grad(c(0, 0), orc, 1L, FALSE, 5L, 1.0)$f,
-                   cpp_aghq_fail_penalty())
-  # And a solvable configuration is on the other side of the predicate.
-  expect_true(.aghq_is_fail(cpp_aghq_fail_penalty()))
-  expect_true(.aghq_is_fail(NaN))
-  expect_false(.aghq_is_fail(cpp_aghq_objective(c(0, 0), .aghq_flat_oracle(3L),
-                                                1L, FALSE, 5L, 1.0)))
 })
 
 test_that("tulpa_re_aghq refuses a start point the objective is undefined at", {

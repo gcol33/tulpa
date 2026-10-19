@@ -35,6 +35,29 @@
   list(graph = g, idx = idx, X = X, y = y, n = n, n_s = n_s)
 }
 
+test_that("a projector is refused where it would be dropped", {
+  d <- .proj_data()
+  resp <- list(y = list(y = d$y, n_trials = rep(1L, d$n), X = d$X,
+                        family = "poisson"))
+  S <- .proj_incidence(d$idx, d$n_s)
+  blk <- c(list(type = "icar", projector = list(S)), d$graph)
+  expect_error(
+    tulpa_nested_laplace_joint(responses = resp, prior = blk),
+    "does not read a block `projector`")
+  expect_error(
+    tulpa_nested_laplace_joint(
+      responses = resp,
+      prior = list(c(blk, list(spatial_idx = list(d$idx))))),
+    "either `projector` or `spatial_idx`")
+  short <- blk
+  short$projector <- list(S[-1, ])
+  expect_error(
+    tulpa_nested_laplace_joint(responses = resp, prior = list(short)),
+    "must be a 150 x 25 matrix")
+})
+
+skip_on_cran()
+
 test_that("a projector equal to the unit incidence fits the gathered model", {
   skip_on_cran()
   d <- .proj_data()
@@ -82,27 +105,6 @@ test_that("a restricted field leaves the gaussian fixed effects at OLS", {
     prior = list(c(blk, list(projector = Matrix::Matrix(A, sparse = TRUE)))),
     control = ctl)
   expect_equal(sparse_fit$log_marginal, fit$log_marginal, tolerance = 1e-8)
-})
-
-test_that("a projector is refused where it would be dropped", {
-  d <- .proj_data()
-  resp <- list(y = list(y = d$y, n_trials = rep(1L, d$n), X = d$X,
-                        family = "poisson"))
-  S <- .proj_incidence(d$idx, d$n_s)
-  blk <- c(list(type = "icar", projector = list(S)), d$graph)
-  expect_error(
-    tulpa_nested_laplace_joint(responses = resp, prior = blk),
-    "does not read a block `projector`")
-  expect_error(
-    tulpa_nested_laplace_joint(
-      responses = resp,
-      prior = list(c(blk, list(spatial_idx = list(d$idx))))),
-    "either `projector` or `spatial_idx`")
-  short <- blk
-  short$projector <- list(S[-1, ])
-  expect_error(
-    tulpa_nested_laplace_joint(responses = resp, prior = list(short)),
-    "must be a 150 x 25 matrix")
 })
 
 test_that("the registry door reads a projector as the joint driver does", {

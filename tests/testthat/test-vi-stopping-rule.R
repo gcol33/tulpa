@@ -113,6 +113,21 @@ test_that("a small gradient norm stops the run whatever the ELBO does", {
   expect_equal(res$iteration, 1L)
 })
 
+test_that("the control layer rejects a stopping rule it cannot run", {
+  d <- data.frame(x = rnorm(30), y = rpois(30, 2))
+  expect_error(tulpa(y ~ x, data = d, family = "poisson", mode = "vi",
+                     control = list(vi_patience = 1L)),
+               "vi_patience")
+  expect_error(tulpa(y ~ x, data = d, family = "poisson", mode = "vi",
+                     control = list(vi_tol_rel_elbo = -1)),
+               "vi_tol_rel_elbo")
+  expect_error(tulpa(y ~ x, data = d, family = "poisson", mode = "vi",
+                     control = list(vi_tol_grad = -1)),
+               "vi_tol_grad")
+})
+
+skip_on_cran()
+
 test_that("a VI fit reports the iteration it stopped at and the rule", {
   skip_on_cran()
   set.seed(4)
@@ -139,17 +154,4 @@ test_that("the stopping-rule knobs reach the optimizer", {
   short <- run(vi_patience = 10L)
   long  <- run(vi_patience = 300L, vi_tol_rel_elbo = 0)
   expect_lt(short$vi_iterations, long$vi_iterations)
-})
-
-test_that("the control layer rejects a stopping rule it cannot run", {
-  d <- data.frame(x = rnorm(30), y = rpois(30, 2))
-  expect_error(tulpa(y ~ x, data = d, family = "poisson", mode = "vi",
-                     control = list(vi_patience = 1L)),
-               "vi_patience")
-  expect_error(tulpa(y ~ x, data = d, family = "poisson", mode = "vi",
-                     control = list(vi_tol_rel_elbo = -1)),
-               "vi_tol_rel_elbo")
-  expect_error(tulpa(y ~ x, data = d, family = "poisson", mode = "vi",
-                     control = list(vi_tol_grad = -1)),
-               "vi_tol_grad")
 })

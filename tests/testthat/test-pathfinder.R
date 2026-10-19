@@ -1,3 +1,24 @@
+
+
+test_that("pathfinder registers in Tier 2 (Structured)", {
+  expect_true("pathfinder" %in% INFERENCE_TIERS$structured$backends)
+  ti <- get_backend_tier("pathfinder")
+  expect_equal(ti$tier, 2L)
+  expect_equal(ti$name, "Structured")
+})
+
+
+test_that("pathfinder errors on non-finite init", {
+  log_post <- function(theta) {
+    if (theta[1] > 100) -Inf else sum(dnorm(theta, log = TRUE))
+  }
+  expect_error(
+    pathfinder(log_post, init = c(200), n_draws = 100L),
+    "not finite"
+  )
+})
+
+skip_on_cran()
 # Pathfinder (single-path): L-BFGS + Gaussian fit + ELBO scoring.
 
 test_that("pathfinder recovers conjugate-normal mode and covariance", {
@@ -49,25 +70,6 @@ test_that("pathfinder accepts user-supplied gradient", {
                    n_draws = 500L)
   expect_true(pf$converged)
   expect_true(all(abs(pf$mode) < 0.01))
-})
-
-
-test_that("pathfinder registers in Tier 2 (Structured)", {
-  expect_true("pathfinder" %in% INFERENCE_TIERS$structured$backends)
-  ti <- get_backend_tier("pathfinder")
-  expect_equal(ti$tier, 2L)
-  expect_equal(ti$name, "Structured")
-})
-
-
-test_that("pathfinder errors on non-finite init", {
-  log_post <- function(theta) {
-    if (theta[1] > 100) -Inf else sum(dnorm(theta, log = TRUE))
-  }
-  expect_error(
-    pathfinder(log_post, init = c(200), n_draws = 100L),
-    "not finite"
-  )
 })
 
 

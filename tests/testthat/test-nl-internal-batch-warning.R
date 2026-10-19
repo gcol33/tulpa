@@ -53,31 +53,6 @@ test_that(".nl_internal_batch() is off by default and restores (#614)", {
   expect_false(.nl_internal_batch())
 })
 
-test_that("the Pareto-k re-evaluation does not warn about the caller's grid (#614)", {
-  skip_on_cran()
-  set.seed(1)
-  N <- 24L
-  region <- rep(seq_len(6L), each = 4L)
-  X <- cbind(1, rnorm(N))
-  y <- rnorm(N) + 0.5 * X[, 2L]
-  fit_with <- function(n_nodes, ...) {
-    tulpa_nested_laplace(
-      y = y, n_trials = rep(1L, N), X = X,
-      prior = list(list(type = "iid", obs_idx = region, n_units = 6L,
-                        sigma_grid = exp(seq(log(0.2), log(1.5),
-                                             length.out = n_nodes)))),
-      family = "gaussian", phi = 0.49,
-      control = utils::modifyList(list(progress = FALSE), list(...)))
-  }
-
-  # The issue's repro: 7 caller-chosen nodes, a 200-draw diagnostic batch.
-  w <- grid_warnings(fit <- fit_with(7L, diagnose_k = TRUE, k_samples = 200L))
-  expect_identical(w, character(0))
-  # The diagnostic really ran -- otherwise the silence proves nothing.
-  expect_true(is.finite(fit$pareto_k) || !is.na(fit$pareto_k_declined))
-  expect_length(fit$weights, 7L)
-})
-
 test_that(".nl_multi_grid_warn() fires on measured elapsed time, gated by .nl_internal_batch() (gcol33/tulpa#820, #614)", {
   over <- tulpa:::.NL_MULTI_GRID_WARN_SECONDS + 1
 
@@ -102,4 +77,31 @@ test_that(".nl_multi_grid_warn() fires on measured elapsed time, gated by .nl_in
     tulpa:::.nl_with_internal_batch(
       tulpa:::.nl_multi_grid_warn(elapsed = over, n_cells = 200L, remedy = "x")))
   expect_identical(w2, character(0))
+})
+
+skip_on_cran()
+
+test_that("the Pareto-k re-evaluation does not warn about the caller's grid (#614)", {
+  skip_on_cran()
+  set.seed(1)
+  N <- 24L
+  region <- rep(seq_len(6L), each = 4L)
+  X <- cbind(1, rnorm(N))
+  y <- rnorm(N) + 0.5 * X[, 2L]
+  fit_with <- function(n_nodes, ...) {
+    tulpa_nested_laplace(
+      y = y, n_trials = rep(1L, N), X = X,
+      prior = list(list(type = "iid", obs_idx = region, n_units = 6L,
+                        sigma_grid = exp(seq(log(0.2), log(1.5),
+                                             length.out = n_nodes)))),
+      family = "gaussian", phi = 0.49,
+      control = utils::modifyList(list(progress = FALSE), list(...)))
+  }
+
+  # The issue's repro: 7 caller-chosen nodes, a 200-draw diagnostic batch.
+  w <- grid_warnings(fit <- fit_with(7L, diagnose_k = TRUE, k_samples = 200L))
+  expect_identical(w, character(0))
+  # The diagnostic really ran -- otherwise the silence proves nothing.
+  expect_true(is.finite(fit$pareto_k) || !is.na(fit$pareto_k_declined))
+  expect_length(fit$weights, 7L)
 })

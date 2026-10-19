@@ -18,6 +18,40 @@ sim_corr_gibbs <- function(seed, G = 50L, npg = 15L, beta = c(-0.3, 0.7),
   list(y = y, X = X, Z = Z, grp = grp, G = G, N = N, Sigma = Sigma)
 }
 
+# A fixed-effect-only model has no covariance block for the sweep to update:
+# tulpa_re_cov_gibbs() used to build an empty `layout` and reach the C++ sweep
+# with it, failing with the internal message "`blocks` must hold at least one
+# block" instead of the plain refusal tulpa_re_cov_nested() already gives
+# (gcol33/tulpa#771). Fast (no pilot solve reached), so no skip_if_not_slow().
+test_that("tulpa_re_cov_gibbs() refuses a model with no random-effect term", {
+  set.seed(13); n <- 60
+  d <- data.frame(x = rnorm(n)); d$y <- rbinom(n, 1, plogis(0.2 + 0.5 * d$x))
+  expect_error(
+    tulpa_re_cov_gibbs(d$y, rep(1L, n), cbind(1, d$x), list(),
+                       family = "binomial"),
+    "no random-effect terms")
+  expect_error(
+    tulpa(y ~ x, data = d, family = "binomial", mode = "re_cov_gibbs"),
+    "no random-effect terms")
+})
+
+# gcol33/tulpa#875: where a block's design column repeats a fixed-effect column,
+# beta_j + d, b_{g,c} - d leaves eta unchanged, and the one-block random walks
+# crossed that ridge at the narrow conditional step: intercept bulk-ESS 1 to 11
+# of 2000 on a gaussian (1 + x | g), estimates 0.42 to 0.92 across seeds
+# against lmer's 0.82. The sweep now draws the translation exactly.
+test_that("the fixed-effect alias of each RE design column is found exactly", {
+  X <- cbind(1, x = c(0.5, -1, 2, 0.3), z = c(1, 1, 2, 2))
+  expect_identical(.re_gibbs_fixed_alias(cbind(1, X[, "x"]), X), c(0L, 1L))
+  # a slope with no matching fixed column, and an intercept-free term
+  expect_identical(.re_gibbs_fixed_alias(cbind(c(3, 1, 4, 1)), X), -1L)
+  expect_identical(.re_gibbs_fixed_alias(cbind(X[, "z"]), X), 2L)
+  # correlated with a fixed column is not a repeat of it
+  expect_identical(.re_gibbs_fixed_alias(cbind(X[, "x"] + 1e-3), X), -1L)
+})
+
+skip_on_cran()
+
 
 test_that(".rinvwishart reproduces the inverse-Wishart mean", {
   skip_if_not_slow()
@@ -193,38 +227,6 @@ test_that("Gibbs lifts the under-dispersed nested sigma toward truth (small bina
   # ... on aggregate, and lands closer to the true sigma than the nested body.
   expect_gt(mean(gb_sig), mean(nl_sig))
   expect_lt(abs(mean(gb_sig) - sigma_true), abs(mean(nl_sig) - sigma_true))
-})
-
-# A fixed-effect-only model has no covariance block for the sweep to update:
-# tulpa_re_cov_gibbs() used to build an empty `layout` and reach the C++ sweep
-# with it, failing with the internal message "`blocks` must hold at least one
-# block" instead of the plain refusal tulpa_re_cov_nested() already gives
-# (gcol33/tulpa#771). Fast (no pilot solve reached), so no skip_if_not_slow().
-test_that("tulpa_re_cov_gibbs() refuses a model with no random-effect term", {
-  set.seed(13); n <- 60
-  d <- data.frame(x = rnorm(n)); d$y <- rbinom(n, 1, plogis(0.2 + 0.5 * d$x))
-  expect_error(
-    tulpa_re_cov_gibbs(d$y, rep(1L, n), cbind(1, d$x), list(),
-                       family = "binomial"),
-    "no random-effect terms")
-  expect_error(
-    tulpa(y ~ x, data = d, family = "binomial", mode = "re_cov_gibbs"),
-    "no random-effect terms")
-})
-
-# gcol33/tulpa#875: where a block's design column repeats a fixed-effect column,
-# beta_j + d, b_{g,c} - d leaves eta unchanged, and the one-block random walks
-# crossed that ridge at the narrow conditional step: intercept bulk-ESS 1 to 11
-# of 2000 on a gaussian (1 + x | g), estimates 0.42 to 0.92 across seeds
-# against lmer's 0.82. The sweep now draws the translation exactly.
-test_that("the fixed-effect alias of each RE design column is found exactly", {
-  X <- cbind(1, x = c(0.5, -1, 2, 0.3), z = c(1, 1, 2, 2))
-  expect_identical(.re_gibbs_fixed_alias(cbind(1, X[, "x"]), X), c(0L, 1L))
-  # a slope with no matching fixed column, and an intercept-free term
-  expect_identical(.re_gibbs_fixed_alias(cbind(c(3, 1, 4, 1)), X), -1L)
-  expect_identical(.re_gibbs_fixed_alias(cbind(X[, "z"]), X), 2L)
-  # correlated with a fixed column is not a repeat of it
-  expect_identical(.re_gibbs_fixed_alias(cbind(X[, "x"] + 1e-3), X), -1L)
 })
 
 test_that("re_cov_gibbs mixes the fixed effects of a gaussian (1 + x | g)", {

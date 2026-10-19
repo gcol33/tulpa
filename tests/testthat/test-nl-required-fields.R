@@ -1,35 +1,3 @@
-test_that("every registry entry accepts a complete block and names each missing field", {
-  skip_on_cran()
-  reg <- tulpa:::.NL_REGISTRY
-  checked <- 0L
-  for (nm in names(reg)) {
-    req_spec <- reg[[nm]]$required
-    if (is.null(req_spec)) next
-    for (path in names(req_spec)) {
-      req <- unique(unlist(req_spec[c("axis", path)], use.names = FALSE))
-      full <- c(list(type = nm), stats::setNames(as.list(rep(1L, length(req))), req))
-      expect_silent(tulpa:::.nl_check_block_fields(full, c("axis", path)))
-      for (f in req) {
-        dropped <- full[setdiff(names(full), f)]
-        expect_error(
-          tulpa:::.nl_check_block_fields(dropped, c("axis", path)),
-          f, fixed = TRUE,
-          info = paste0(nm, " / ", path, " / ", f)
-        )
-        # A field present but empty is what the kernel indexes out of bounds,
-        # so it counts as missing too.
-        empty <- full; empty[[f]] <- integer(0)
-        expect_error(
-          tulpa:::.nl_check_block_fields(empty, c("axis", path)),
-          f, fixed = TRUE,
-          info = paste0(nm, " / ", path, " / ", f, " (empty)")
-        )
-        checked <- checked + 1L
-      }
-    }
-  }
-  expect_gt(checked, 0L)
-})
 
 test_that("a block missing every required field errors instead of crashing (gcol33/tulpa#299)", {
   set.seed(4)
@@ -141,6 +109,40 @@ test_that("the joint converter names the missing field too", {
                sprintf("isTRUE(p$%s)", f)),
              function(pat) grepl(pat, src, fixed = TRUE), logical(1)))
 }
+
+skip_on_cran()
+test_that("every registry entry accepts a complete block and names each missing field", {
+  skip_on_cran()
+  reg <- tulpa:::.NL_REGISTRY
+  checked <- 0L
+  for (nm in names(reg)) {
+    req_spec <- reg[[nm]]$required
+    if (is.null(req_spec)) next
+    for (path in names(req_spec)) {
+      req <- unique(unlist(req_spec[c("axis", path)], use.names = FALSE))
+      full <- c(list(type = nm), stats::setNames(as.list(rep(1L, length(req))), req))
+      expect_silent(tulpa:::.nl_check_block_fields(full, c("axis", path)))
+      for (f in req) {
+        dropped <- full[setdiff(names(full), f)]
+        expect_error(
+          tulpa:::.nl_check_block_fields(dropped, c("axis", path)),
+          f, fixed = TRUE,
+          info = paste0(nm, " / ", path, " / ", f)
+        )
+        # A field present but empty is what the kernel indexes out of bounds,
+        # so it counts as missing too.
+        empty <- full; empty[[f]] <- integer(0)
+        expect_error(
+          tulpa:::.nl_check_block_fields(empty, c("axis", path)),
+          f, fixed = TRUE,
+          info = paste0(nm, " / ", path, " / ", f, " (empty)")
+        )
+        checked <- checked + 1L
+      }
+    }
+  }
+  expect_gt(checked, 0L)
+})
 
 test_that("each converter branch reads only declared or defensively-read fields", {
   skip_on_cran()

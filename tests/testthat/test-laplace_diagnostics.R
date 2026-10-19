@@ -79,6 +79,63 @@
 }
 
 # --------------------------------------------------------------------------- #
+# (4) diagnostics() routing: chain behaviour preserved, i.i.d. routed here.    #
+# --------------------------------------------------------------------------- #
+
+test_that("diagnostics routes an i.i.d. fit to the reliability table", {
+  set.seed(5)
+  draws <- matrix(rnorm(1000 * 3), 1000, 3,
+                  dimnames = list(NULL, c("a", "b", "c")))
+  w   <- c(0.5, 0.3, 0.2)
+  fit <- .rel_iid_shell(draws, weights = w, pareto_k = 0.42, is_ess = 850)
+
+  md <- diagnostics(fit)
+  expect_s3_class(md, "laplace_diagnostics")
+  expect_equal(nrow(md), 3L)
+  expect_equal(attr(md, "pareto_k"), 0.42)
+  expect_equal(attr(md, "pareto_k_band"), "good")
+  expect_equal(attr(md, "ess_grid"), 1 / sum(w^2))
+  expect_true(all(is.finite(md$rhat)))
+})
+
+test_that("diagnostics keeps chain behaviour for an MCMC fit", {
+  set.seed(6)
+  draws <- matrix(rnorm(400 * 2), 400, 2, dimnames = list(NULL, c("a", "b")))
+  fit <- structure(list(draws = draws, draws_kind = "chain"),
+                   class = "tulpa_fit")
+  md <- diagnostics(fit)
+  expect_false(inherits(md, "laplace_diagnostics"))
+  expect_true("rhat" %in% names(md))
+  expect_equal(nrow(md), 2L)
+})
+
+test_that("diagnostics honours pars and reads a cached k-hat on an i.i.d. fit", {
+  set.seed(8)
+  draws <- matrix(rnorm(600 * 4), 600, 4,
+                  dimnames = list(NULL, c("a", "b", "c", "d")))
+  fit <- .rel_iid_shell(draws, weights = rep(0.25, 4),
+                        pareto_k = 0.8, is_ess = 120)
+
+  rel <- diagnostics(fit, pars = c("a", "c"))
+  expect_equal(rel$parameter, c("a", "c"))
+  expect_equal(attr(rel, "pareto_k"), 0.8)
+  expect_equal(attr(rel, "pareto_k_band"), "unreliable")
+  expect_equal(attr(rel, "ess_grid"), 4)                # uniform grid: ESS = K
+})
+
+test_that("the k-hat interpretation bands match the Vehtari et al. (2024) thresholds", {
+  expect_equal(.tulpa_khat_band(0.3),  "good")
+  expect_equal(.tulpa_khat_band(0.49), "good")
+  expect_equal(.tulpa_khat_band(0.5),  "ok")
+  expect_equal(.tulpa_khat_band(0.69), "ok")
+  expect_equal(.tulpa_khat_band(0.7),  "unreliable")
+  expect_equal(.tulpa_khat_band(1.2),  "unreliable")
+  expect_true(is.na(.tulpa_khat_band(NA_real_)))
+})
+
+skip_on_cran()
+
+# --------------------------------------------------------------------------- #
 # (1) Recovery: the reliability k-hat is small when the Laplace proposal is     #
 #     near-exact, large when the target is heavier than the proposal.          #
 # --------------------------------------------------------------------------- #
@@ -193,59 +250,4 @@ test_that("diagnostics() returns one finite row per parameter on a small joint f
   expect_true(attr(rel, "pareto_k_band") %in% c("good", "ok", "unreliable"))
   expect_true(is.finite(attr(rel, "ess_grid")))
   expect_gte(attr(rel, "max_weight"), 0)
-})
-
-# --------------------------------------------------------------------------- #
-# (4) diagnostics() routing: chain behaviour preserved, i.i.d. routed here.    #
-# --------------------------------------------------------------------------- #
-
-test_that("diagnostics routes an i.i.d. fit to the reliability table", {
-  set.seed(5)
-  draws <- matrix(rnorm(1000 * 3), 1000, 3,
-                  dimnames = list(NULL, c("a", "b", "c")))
-  w   <- c(0.5, 0.3, 0.2)
-  fit <- .rel_iid_shell(draws, weights = w, pareto_k = 0.42, is_ess = 850)
-
-  md <- diagnostics(fit)
-  expect_s3_class(md, "laplace_diagnostics")
-  expect_equal(nrow(md), 3L)
-  expect_equal(attr(md, "pareto_k"), 0.42)
-  expect_equal(attr(md, "pareto_k_band"), "good")
-  expect_equal(attr(md, "ess_grid"), 1 / sum(w^2))
-  expect_true(all(is.finite(md$rhat)))
-})
-
-test_that("diagnostics keeps chain behaviour for an MCMC fit", {
-  set.seed(6)
-  draws <- matrix(rnorm(400 * 2), 400, 2, dimnames = list(NULL, c("a", "b")))
-  fit <- structure(list(draws = draws, draws_kind = "chain"),
-                   class = "tulpa_fit")
-  md <- diagnostics(fit)
-  expect_false(inherits(md, "laplace_diagnostics"))
-  expect_true("rhat" %in% names(md))
-  expect_equal(nrow(md), 2L)
-})
-
-test_that("diagnostics honours pars and reads a cached k-hat on an i.i.d. fit", {
-  set.seed(8)
-  draws <- matrix(rnorm(600 * 4), 600, 4,
-                  dimnames = list(NULL, c("a", "b", "c", "d")))
-  fit <- .rel_iid_shell(draws, weights = rep(0.25, 4),
-                        pareto_k = 0.8, is_ess = 120)
-
-  rel <- diagnostics(fit, pars = c("a", "c"))
-  expect_equal(rel$parameter, c("a", "c"))
-  expect_equal(attr(rel, "pareto_k"), 0.8)
-  expect_equal(attr(rel, "pareto_k_band"), "unreliable")
-  expect_equal(attr(rel, "ess_grid"), 4)                # uniform grid: ESS = K
-})
-
-test_that("the k-hat interpretation bands match the Vehtari et al. (2024) thresholds", {
-  expect_equal(.tulpa_khat_band(0.3),  "good")
-  expect_equal(.tulpa_khat_band(0.49), "good")
-  expect_equal(.tulpa_khat_band(0.5),  "ok")
-  expect_equal(.tulpa_khat_band(0.69), "ok")
-  expect_equal(.tulpa_khat_band(0.7),  "unreliable")
-  expect_equal(.tulpa_khat_band(1.2),  "unreliable")
-  expect_true(is.na(.tulpa_khat_band(NA_real_)))
 })

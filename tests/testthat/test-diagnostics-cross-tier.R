@@ -30,24 +30,6 @@ nested_areal_fit <- function(type) {
   fit
 }
 
-test_that("nested spatial_range reports interpretable sigma / rho, marginalized (#199)", {
-  skip_on_cran()
-  # icar: single tau axis -> sigma = 1/sqrt(tau).
-  f1 <- nested_areal_fit("icar")
-  s1 <- spatial_range(f1)
-  expect_identical(rownames(s1), "sigma")               # not the raw "tau"
-  w1 <- f1$weights / sum(f1$weights); tau1 <- as.numeric(f1$theta_grid)
-  expect_equal(s1["sigma", "mean"], sum(w1 * (1 / sqrt(tau1))))
-
-  # car_proper: (tau, rho) -> (sigma, rho); rho passes through, sigma = 1/sqrt(tau).
-  f2 <- nested_areal_fit("car_proper")
-  s2 <- spatial_range(f2)
-  expect_setequal(rownames(s2), c("sigma", "rho"))
-  w2 <- f2$weights / sum(f2$weights)
-  expect_equal(s2["sigma", "mean"], sum(w2 * (1 / sqrt(f2$theta_grid[, 1]))))
-  expect_equal(s2["rho", "mean"],   sum(w2 * f2$theta_grid[, 2]))
-})
-
 test_that("the nested transform maps mirror the sampler's interpretable formulas (#199)", {
   sm <- tulpa:::.SPATIAL_HYPER_TRANSFORM
   expect_equal(sm$tau$fn(4), 0.5)         # 1/sqrt(4)  -> sigma
@@ -71,6 +53,26 @@ test_that("nested temporal_corr maps its grid axes to the sampler labels (#199)"
   tc <- temporal_corr(ft)
   expect_identical(rownames(tc), "precision")
   expect_equal(tc["precision", "mean"], sum(c(0.2, 0.5, 0.3) * c(0.5, 1, 2)))
+})
+
+skip_on_cran()
+
+test_that("nested spatial_range reports interpretable sigma / rho, marginalized (#199)", {
+  skip_on_cran()
+  # icar: single tau axis -> sigma = 1/sqrt(tau).
+  f1 <- nested_areal_fit("icar")
+  s1 <- spatial_range(f1)
+  expect_identical(rownames(s1), "sigma")               # not the raw "tau"
+  w1 <- f1$weights / sum(f1$weights); tau1 <- as.numeric(f1$theta_grid)
+  expect_equal(s1["sigma", "mean"], sum(w1 * (1 / sqrt(tau1))))
+
+  # car_proper: (tau, rho) -> (sigma, rho); rho passes through, sigma = 1/sqrt(tau).
+  f2 <- nested_areal_fit("car_proper")
+  s2 <- spatial_range(f2)
+  expect_setequal(rownames(s2), c("sigma", "rho"))
+  w2 <- f2$weights / sum(f2$weights)
+  expect_equal(s2["sigma", "mean"], sum(w2 * (1 / sqrt(f2$theta_grid[, 1]))))
+  expect_equal(s2["rho", "mean"],   sum(w2 * f2$theta_grid[, 2]))
 })
 
 # gcol33/tulpa#800: spatial_range() / temporal_corr() matched only a fixed

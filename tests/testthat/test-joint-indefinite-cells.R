@@ -50,6 +50,8 @@ test_that("a fit with no indefinite cell records none and is silent", {
     expect_silent(tulpa:::.nl_warn_indefinite(out, "f()"))
 })
 
+skip_on_cran()
+
 test_that("the grid kernel reports a per-cell indefinite flag", {
     skip_on_cran()
     set.seed(3)

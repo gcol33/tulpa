@@ -60,6 +60,61 @@ make_m_step_encode <- function(fx, family = "poisson") {
   }
 }
 
+test_that("m_step_extra rejects bad shapes with clear errors", {
+  fx <- make_fixture()
+  fake_laplace <- make_fake_laplace()
+
+  e_step <- function(fits, ...) list(weights = rep(0.5, fx$n), delta = 1e-8)
+  m_step_encode <- make_m_step_encode(fx)
+
+  testthat::local_mocked_bindings(tulpa_laplace = fake_laplace, .package = "tulpa")
+
+  # Wrong length.
+  bad_len <- function(fits, weights, ...) fits[1]
+  expect_error(
+    tulpa_em_laplace(
+      e_step = e_step, m_step_encode = m_step_encode,
+      m_step_extra = bad_len, max_iter = 1L, correction = "none", verbose = FALSE
+    ),
+    "expected 2"
+  )
+
+  # Wrong names.
+  bad_names <- function(fits, weights, ...) {
+    out <- fits
+    names(out) <- c("x", "y")
+    out
+  }
+  expect_error(
+    tulpa_em_laplace(
+      e_step = e_step, m_step_encode = m_step_encode,
+      m_step_extra = bad_names, max_iter = 1L, correction = "none", verbose = FALSE
+    ),
+    "preserve submodel names"
+  )
+
+  # Non-list return.
+  bad_type <- function(fits, weights, ...) "oops"
+  expect_error(
+    tulpa_em_laplace(
+      e_step = e_step, m_step_encode = m_step_encode,
+      m_step_extra = bad_type, max_iter = 1L, correction = "none", verbose = FALSE
+    ),
+    "must return a list"
+  )
+
+  # Non-function value.
+  expect_error(
+    tulpa_em_laplace(
+      e_step = e_step, m_step_encode = m_step_encode,
+      m_step_extra = 42, max_iter = 1L, correction = "none", verbose = FALSE
+    ),
+    "must be NULL or a function"
+  )
+})
+
+skip_on_cran()
+
 test_that("m_step_extra fires once per iteration and mutations persist", {
   skip_on_cran()
   fx <- make_fixture()
@@ -143,57 +198,4 @@ test_that("m_step_extra = NULL is identical to omitting the argument", {
   expect_equal(res_default$weights, res_null$weights)
   expect_equal(res_default$n_iter, res_null$n_iter)
   expect_equal(res_default$converged, res_null$converged)
-})
-
-test_that("m_step_extra rejects bad shapes with clear errors", {
-  fx <- make_fixture()
-  fake_laplace <- make_fake_laplace()
-
-  e_step <- function(fits, ...) list(weights = rep(0.5, fx$n), delta = 1e-8)
-  m_step_encode <- make_m_step_encode(fx)
-
-  testthat::local_mocked_bindings(tulpa_laplace = fake_laplace, .package = "tulpa")
-
-  # Wrong length.
-  bad_len <- function(fits, weights, ...) fits[1]
-  expect_error(
-    tulpa_em_laplace(
-      e_step = e_step, m_step_encode = m_step_encode,
-      m_step_extra = bad_len, max_iter = 1L, correction = "none", verbose = FALSE
-    ),
-    "expected 2"
-  )
-
-  # Wrong names.
-  bad_names <- function(fits, weights, ...) {
-    out <- fits
-    names(out) <- c("x", "y")
-    out
-  }
-  expect_error(
-    tulpa_em_laplace(
-      e_step = e_step, m_step_encode = m_step_encode,
-      m_step_extra = bad_names, max_iter = 1L, correction = "none", verbose = FALSE
-    ),
-    "preserve submodel names"
-  )
-
-  # Non-list return.
-  bad_type <- function(fits, weights, ...) "oops"
-  expect_error(
-    tulpa_em_laplace(
-      e_step = e_step, m_step_encode = m_step_encode,
-      m_step_extra = bad_type, max_iter = 1L, correction = "none", verbose = FALSE
-    ),
-    "must return a list"
-  )
-
-  # Non-function value.
-  expect_error(
-    tulpa_em_laplace(
-      e_step = e_step, m_step_encode = m_step_encode,
-      m_step_extra = 42, max_iter = 1L, correction = "none", verbose = FALSE
-    ),
-    "must be NULL or a function"
-  )
 })

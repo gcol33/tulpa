@@ -44,6 +44,21 @@ st_iv_cond_at <- function(f, log_tau) {
   max(e) / min(e)
 }
 
+test_that("mass_matrix = 'gmrf_margin' parses and is distinct from 'gmrf'", {
+  f <- st_iv_fixture()
+  fit <- cpp_test_st_iv_nuts(
+    f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
+    mass_matrix = "gmrf_margin", n_iter = 4, n_warmup = 2, seed = 1)
+  expect_identical(ncol(fit$draws), fit$n_params)
+  expect_error(
+    cpp_test_st_iv_nuts(
+      f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
+      mass_matrix = "gmrf_margins", n_iter = 4, n_warmup = 2, seed = 1),
+    "mass_matrix must be one of")
+})
+
+skip_on_cran()
+
 test_that("the engine reports the margins at the parameterization's scaling", {
   skip_on_cran()
   f <- st_iv_fixture()
@@ -200,19 +215,6 @@ test_that("the installed metric inverts the Type-IV precision-plus-margins", {
   expect_equal(res2$inv_mass_times_p,
                as.numeric(solve(st_iv_dense_mass(r2, S, T), p)),
                tolerance = 1e-8)
-})
-
-test_that("mass_matrix = 'gmrf_margin' parses and is distinct from 'gmrf'", {
-  f <- st_iv_fixture()
-  fit <- cpp_test_st_iv_nuts(
-    f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
-    mass_matrix = "gmrf_margin", n_iter = 4, n_warmup = 2, seed = 1)
-  expect_identical(ncol(fit$draws), fit$n_params)
-  expect_error(
-    cpp_test_st_iv_nuts(
-      f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
-      mass_matrix = "gmrf_margins", n_iter = 4, n_warmup = 2, seed = 1),
-    "mass_matrix must be one of")
 })
 
 test_that("a Type-IV NUTS fit under 'gmrf_margin' installs the margin term", {

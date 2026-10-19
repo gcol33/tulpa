@@ -44,21 +44,6 @@
 
 .rel <- function(a, b) abs(a - b) / max(1, abs(b))
 
-test_that("block-Schur log|B| matches the direct and dense references (single pin)", {
-  skip_on_cran()
-  for (seed in 1:5) {
-    r <- .s2z_run(n = 90L, nf = 60L, pins = list(list(start = 0L, n = 60L, coef = 1.0)),
-                  seed = seed)
-    expect_true(r$ok)
-    expect_true(is.finite(r$ld_block_schur))
-    expect_lt(.rel(r$ld_block_schur, r$ld_dense),  1e-8)
-    expect_lt(.rel(r$ld_direct,      r$ld_dense),  1e-8)
-    expect_lt(.rel(r$ld_block_schur, r$ld_direct), 1e-9)
-    expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-8)
-    expect_lt(r$max_dstep, 1e-8)
-  }
-})
-
 test_that("block-Schur is exact for two pins (two intrinsic fields)", {
   for (seed in 11:14) {
     r <- .s2z_run(n = 130L, nf = 80L,
@@ -95,23 +80,6 @@ test_that("an explicit diagonal coupling reproduces the diag(coef) path", {
   expect_equal(cpl$max_dstep,      base$max_dstep,      tolerance = 1e-12)
 })
 
-test_that("a cross-block coupling matches the dense U D U' reference", {
-  skip_on_cran()
-  Sinv <- matrix(c(2.0, 0.8, 0.8, 1.5), 2L, 2L)   # SPD, genuine off-diagonal
-  D    <- Sinv / 40                                # J_c = 40
-  for (seed in 31:34) {
-    r <- .s2z_run(n = 130L, nf = 80L, pins = .s2z_two_field_pins, seed = seed,
-                  coupling = D)
-    expect_true(r$ok)
-    expect_true(is.finite(r$ld_block_schur))
-    expect_lt(.rel(r$ld_block_schur, r$ld_dense),  1e-8)
-    expect_lt(.rel(r$ld_direct,      r$ld_dense),  1e-8)
-    expect_lt(.rel(r$ld_block_schur, r$ld_direct), 1e-9)
-    expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-8)
-    expect_lt(r$max_dstep, 1e-8)
-  }
-})
-
 test_that("the off-diagonal of D actually moves the answer", {
   # Guards the two tests above against passing vacuously: if the cross-block
   # term were dropped anywhere, a full D and its diagonal would agree.
@@ -123,22 +91,6 @@ test_that("the off-diagonal of D actually moves the answer", {
                        seed = 31L, coupling = diag(diag(D)))
   expect_gt(abs(full$ld_dense - diagonly$ld_dense), 1e-6)
   expect_gt(abs(full$ld_block_schur - diagonly$ld_block_schur), 1e-6)
-})
-
-test_that("block-Schur is exact at the large-field / large-coef sum-to-zero regime", {
-  skip_on_cran()
-  # n_x past the densify boundary, with the strong sum-to-zero pin the intrinsic
-  # field actually registers -- the regime where the older matrix-determinant
-  # Woodbury log-det cancelled.
-  for (coef in c(1.0, 1e3, 1e5)) {
-    r <- .s2z_run(n = 320L, nf = 280L,
-                  pins = list(list(start = 0L, n = 280L, coef = coef)),
-                  seed = 7L)
-    expect_true(r$ok)
-    expect_lt(.rel(r$ld_block_schur, r$ld_dense),  1e-7)
-    expect_lt(.rel(r$ld_block_schur, r$ld_direct), 1e-8)
-    expect_lt(r$max_dstep, 1e-7)
-  }
 })
 
 # --- Non-contiguous pins: a disconnected map's component node sets -----------
@@ -231,47 +183,6 @@ test_that("a non-contiguous pin is not the contiguous pin of the same count", {
     pin_coupling = coupling)
 }
 
-test_that("the inertia route reads a PD B over an indefinite field block (one pin)", {
-  skip_on_cran()
-  for (seed in 51:54) {
-    A <- .s2z_make_A_indef(n = 70L, blocks = 40L, eps = 0.1, seed = seed)
-    expect_lt(min(eigen(A[1:40, 1:40], symmetric = TRUE)$values), 0)
-    r <- .s2z_run_indef(A, list(list(start = 0L, n = 40L, coef = 1.0)))
-    expect_true(r$field_indefinite)
-    expect_true(r$ok)
-    expect_true(is.finite(r$ld_dense))
-    # The PD-only reader declines this matrix; the inertia route reads it.
-    expect_true(is.na(r$ld_block_schur))
-    expect_lt(.rel(r$ld_block_schur_step, r$ld_dense),  1e-8)
-    expect_lt(.rel(r$ld_block_schur_step, r$ld_direct), 1e-9)
-    expect_lt(r$max_dstep, 1e-8)
-    # The inner Newton step reads the same factor, so the auto curvature rule
-    # steps on the observed Hessian here, with no ridge.
-    expect_true(r$newton_ok)
-    expect_true(r$newton_block_schur)
-    expect_lt(r$max_dstep_newton, 1e-8)
-  }
-})
-
-test_that("the inertia route is exact for two pins and a coupled capacitance", {
-  skip_on_cran()
-  Sinv <- matrix(c(2.0, 0.8, 0.8, 1.5), 2L, 2L)
-  for (seed in 61:63) {
-    A <- .s2z_make_A_indef(n = 110L, blocks = c(40L, 40L), eps = 0.1, seed = seed)
-    for (cpl in list(NULL, Sinv / 40)) {
-      r <- .s2z_run_indef(A, list(list(start = 0L,  n = 40L, coef = 1.0),
-                                  list(start = 40L, n = 40L, coef = 0.5)),
-                          coupling = cpl)
-      expect_true(r$field_indefinite)
-      expect_true(r$ok)
-      expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-8)
-      expect_lt(r$max_dstep, 1e-8)
-      expect_true(r$newton_block_schur)
-      expect_lt(r$max_dstep_newton, 1e-8)
-    }
-  }
-})
-
 test_that("the inertia route refuses B when B is indefinite", {
   # A pin too weak to lift the negative constant direction: c n < eps.
   A <- .s2z_make_A_indef(n = 70L, blocks = 40L, eps = 0.1, seed = 71L)
@@ -320,5 +231,96 @@ test_that("an unparseable densify cutoff leaves the default in place", {
   for (bad in c("ture", "256a", "1e3", " ", "-1", "99999999999999999999")) {
     Sys.setenv(TULPA_S2Z_DENSIFY_MAX = bad)
     expect_identical(tulpa:::cpp_s2z_densify_max(), default, info = bad)
+  }
+})
+
+skip_on_cran()
+
+test_that("block-Schur log|B| matches the direct and dense references (single pin)", {
+  skip_on_cran()
+  for (seed in 1:5) {
+    r <- .s2z_run(n = 90L, nf = 60L, pins = list(list(start = 0L, n = 60L, coef = 1.0)),
+                  seed = seed)
+    expect_true(r$ok)
+    expect_true(is.finite(r$ld_block_schur))
+    expect_lt(.rel(r$ld_block_schur, r$ld_dense),  1e-8)
+    expect_lt(.rel(r$ld_direct,      r$ld_dense),  1e-8)
+    expect_lt(.rel(r$ld_block_schur, r$ld_direct), 1e-9)
+    expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-8)
+    expect_lt(r$max_dstep, 1e-8)
+  }
+})
+
+test_that("a cross-block coupling matches the dense U D U' reference", {
+  skip_on_cran()
+  Sinv <- matrix(c(2.0, 0.8, 0.8, 1.5), 2L, 2L)   # SPD, genuine off-diagonal
+  D    <- Sinv / 40                                # J_c = 40
+  for (seed in 31:34) {
+    r <- .s2z_run(n = 130L, nf = 80L, pins = .s2z_two_field_pins, seed = seed,
+                  coupling = D)
+    expect_true(r$ok)
+    expect_true(is.finite(r$ld_block_schur))
+    expect_lt(.rel(r$ld_block_schur, r$ld_dense),  1e-8)
+    expect_lt(.rel(r$ld_direct,      r$ld_dense),  1e-8)
+    expect_lt(.rel(r$ld_block_schur, r$ld_direct), 1e-9)
+    expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-8)
+    expect_lt(r$max_dstep, 1e-8)
+  }
+})
+
+test_that("block-Schur is exact at the large-field / large-coef sum-to-zero regime", {
+  skip_on_cran()
+  # n_x past the densify boundary, with the strong sum-to-zero pin the intrinsic
+  # field actually registers -- the regime where the older matrix-determinant
+  # Woodbury log-det cancelled.
+  for (coef in c(1.0, 1e3, 1e5)) {
+    r <- .s2z_run(n = 320L, nf = 280L,
+                  pins = list(list(start = 0L, n = 280L, coef = coef)),
+                  seed = 7L)
+    expect_true(r$ok)
+    expect_lt(.rel(r$ld_block_schur, r$ld_dense),  1e-7)
+    expect_lt(.rel(r$ld_block_schur, r$ld_direct), 1e-8)
+    expect_lt(r$max_dstep, 1e-7)
+  }
+})
+
+test_that("the inertia route reads a PD B over an indefinite field block (one pin)", {
+  skip_on_cran()
+  for (seed in 51:54) {
+    A <- .s2z_make_A_indef(n = 70L, blocks = 40L, eps = 0.1, seed = seed)
+    expect_lt(min(eigen(A[1:40, 1:40], symmetric = TRUE)$values), 0)
+    r <- .s2z_run_indef(A, list(list(start = 0L, n = 40L, coef = 1.0)))
+    expect_true(r$field_indefinite)
+    expect_true(r$ok)
+    expect_true(is.finite(r$ld_dense))
+    # The PD-only reader declines this matrix; the inertia route reads it.
+    expect_true(is.na(r$ld_block_schur))
+    expect_lt(.rel(r$ld_block_schur_step, r$ld_dense),  1e-8)
+    expect_lt(.rel(r$ld_block_schur_step, r$ld_direct), 1e-9)
+    expect_lt(r$max_dstep, 1e-8)
+    # The inner Newton step reads the same factor, so the auto curvature rule
+    # steps on the observed Hessian here, with no ridge.
+    expect_true(r$newton_ok)
+    expect_true(r$newton_block_schur)
+    expect_lt(r$max_dstep_newton, 1e-8)
+  }
+})
+
+test_that("the inertia route is exact for two pins and a coupled capacitance", {
+  skip_on_cran()
+  Sinv <- matrix(c(2.0, 0.8, 0.8, 1.5), 2L, 2L)
+  for (seed in 61:63) {
+    A <- .s2z_make_A_indef(n = 110L, blocks = c(40L, 40L), eps = 0.1, seed = seed)
+    for (cpl in list(NULL, Sinv / 40)) {
+      r <- .s2z_run_indef(A, list(list(start = 0L,  n = 40L, coef = 1.0),
+                                  list(start = 40L, n = 40L, coef = 0.5)),
+                          coupling = cpl)
+      expect_true(r$field_indefinite)
+      expect_true(r$ok)
+      expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-8)
+      expect_lt(r$max_dstep, 1e-8)
+      expect_true(r$newton_block_schur)
+      expect_lt(r$max_dstep_newton, 1e-8)
+    }
   }
 })

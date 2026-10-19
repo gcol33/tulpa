@@ -1,29 +1,3 @@
-# tulpa declares generics other packages own, so that they work with nothing
-# else attached. Registering the tulpa_fit methods on the other packages'
-# generics as well is what keeps dispatch from depending on attach order in
-# either direction.
-
-test_that("every borrowed generic carries a registered tulpa_fit method", {
-  skip_on_cran()
-  borrowed <- list(
-    c("lme4", "fixef"), c("lme4", "ranef"), c("lme4", "VarCorr"),
-    c("nlme", "ranef"), c("nlme", "VarCorr"),
-    c("posterior", "as_draws"), c("posterior", "as_draws_array"),
-    c("posterior", "as_draws_matrix"), c("posterior", "as_draws_df"),
-    c("posterior", "as_draws_rvars"),
-    c("bayesplot", "pp_check"),
-    c("rstantools", "bayes_R2"), c("rstantools", "posterior_predict")
-  )
-  for (g in borrowed) {
-    pkg <- g[1]; gen <- g[2]
-    if (!requireNamespace(pkg, quietly = TRUE)) next
-    ns <- asNamespace(pkg)
-    if (!exists(gen, envir = ns, inherits = FALSE)) next
-    tbl <- get(".__S3MethodsTable__.", envir = ns)
-    expect_true(exists(paste0(gen, ".tulpa_fit"), envir = tbl, inherits = FALSE),
-                info = paste0(pkg, "::", gen))
-  }
-})
 
 test_that("bayesplot's own pp_check still reaches its default method", {
   skip_if_not_installed("bayesplot")
@@ -60,6 +34,34 @@ test_that("rstantools' generics keep their default behaviour under tulpa", {
                 info = gen)
     expect_identical(get(paste0(gen, ".default"), envir = tbl),
                      get(paste0(gen, ".default"), envir = owner), info = gen)
+  }
+})
+
+skip_on_cran()
+# tulpa declares generics other packages own, so that they work with nothing
+# else attached. Registering the tulpa_fit methods on the other packages'
+# generics as well is what keeps dispatch from depending on attach order in
+# either direction.
+
+test_that("every borrowed generic carries a registered tulpa_fit method", {
+  skip_on_cran()
+  borrowed <- list(
+    c("lme4", "fixef"), c("lme4", "ranef"), c("lme4", "VarCorr"),
+    c("nlme", "ranef"), c("nlme", "VarCorr"),
+    c("posterior", "as_draws"), c("posterior", "as_draws_array"),
+    c("posterior", "as_draws_matrix"), c("posterior", "as_draws_df"),
+    c("posterior", "as_draws_rvars"),
+    c("bayesplot", "pp_check"),
+    c("rstantools", "bayes_R2"), c("rstantools", "posterior_predict")
+  )
+  for (g in borrowed) {
+    pkg <- g[1]; gen <- g[2]
+    if (!requireNamespace(pkg, quietly = TRUE)) next
+    ns <- asNamespace(pkg)
+    if (!exists(gen, envir = ns, inherits = FALSE)) next
+    tbl <- get(".__S3MethodsTable__.", envir = ns)
+    expect_true(exists(paste0(gen, ".tulpa_fit"), envir = tbl, inherits = FALSE),
+                info = paste0(pkg, "::", gen))
   }
 })
 

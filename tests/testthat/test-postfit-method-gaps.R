@@ -64,6 +64,8 @@ test_that("durbin_watson() takes a fit and a time order (#899)", {
   expect_equal(durbin_watson(fit)$statistic, durbin_watson(e)$statistic)
 })
 
+skip_on_cran()
+
 test_that("VarCorr() carries a residual row for a gaussian fit (#899)", {
   skip_on_cran()
   set.seed(1)

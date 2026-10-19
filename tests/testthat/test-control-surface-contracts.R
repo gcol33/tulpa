@@ -31,19 +31,6 @@ test_that("the proper-CAR mixing default has one home", {
   expect_match(src, 'nl_st_default("rho_spatial")', fixed = TRUE)
 })
 
-test_that("control$sigma_eps is refused by name", {
-  skip_on_cran()
-  set.seed(5)
-  n <- 80L
-  d <- data.frame(x = rnorm(n), g = gl(8, 10))
-  d$y <- rnorm(n)
-  expect_error(
-    tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "agq",
-          control = list(sigma_eps = 0.5)),
-    "second spelling")
-  expect_false("sigma_eps" %in% tulpa:::.CONTROL_KEYS$tulpa)
-})
-
 test_that("the dispatch omits a knob the caller did not set", {
   # .drop_null() is what lets a backend's own formal supply the default, so the
   # number lives in one file.
@@ -60,6 +47,21 @@ test_that("the dispatch omits a knob the caller did not set", {
   src <- paste(deparse(tulpa:::.tulpa_fitter_args), collapse = " ")
   expect_false(grepl("control$n_iter %||% 2000L", src, fixed = TRUE))
   expect_false(grepl("control$n_draws %||% 1000L", src, fixed = TRUE))
+})
+
+skip_on_cran()
+
+test_that("control$sigma_eps is refused by name", {
+  skip_on_cran()
+  set.seed(5)
+  n <- 80L
+  d <- data.frame(x = rnorm(n), g = gl(8, 10))
+  d$y <- rnorm(n)
+  expect_error(
+    tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "agq",
+          control = list(sigma_eps = 0.5)),
+    "second spelling")
+  expect_false("sigma_eps" %in% tulpa:::.CONTROL_KEYS$tulpa)
 })
 
 test_that("a fit still honours a knob the caller does set", {

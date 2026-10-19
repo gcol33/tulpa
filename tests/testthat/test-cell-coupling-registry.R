@@ -15,42 +15,6 @@ test_that("registry lookup returns FALSE on an unregistered name", {
         "this_name_should_never_be_registered_xyzzy"))
 })
 
-test_that("tulpa_nested_laplace_joint() accepts cell_coupling = \"separable\" silently", {
-    skip_on_cran()
-    # 2-arm cover-hurdle on a tiny synthetic ICAR (smoke test the
-    # cell_coupling default; cover hurdle stays on the per-obs path because
-    # the separable sentinel has arm_ids().empty()).
-    set.seed(1L)
-    n_s <- 6L
-    adj_row_ptr <- c(0L, 1L, 3L, 4L, 6L, 8L, 9L)
-    adj_col_idx <- c(2L, 1L, 3L, 2L, 1L, 5L, 4L, 6L, 5L) - 1L
-    n_neighbors <- c(1L, 2L, 1L, 2L, 2L, 1L)
-    N <- 30L
-    spatial_idx <- as.integer(rep(seq_len(n_s), length.out = N))
-    X <- matrix(1, nrow = N, ncol = 1)
-    arm1 <- list(
-        y = rbinom(N, 1, 0.4), n_trials = rep(1L, N),
-        X = X, spatial_idx = spatial_idx, family = "binomial", phi = 1
-    )
-    arm2 <- list(
-        y = rnorm(N), n_trials = rep(1L, N),
-        X = X, spatial_idx = spatial_idx, family = "gaussian", phi = 1
-    )
-
-    res <- tulpa_nested_laplace_joint(
-        responses = list(occ = arm1, pos = arm2),
-        prior = list(type = "icar", n_spatial_units = n_s,
-                     adj_row_ptr = adj_row_ptr, adj_col_idx = adj_col_idx,
-                     n_neighbors = n_neighbors,
-                     sigma_grid = c(0.5, 1.0)),
-        cell_coupling = "separable",
-        control = list(max_iter = 10L)
-    )
-
-    expect_s3_class(res, "tulpa_nested_laplace_joint")
-    expect_identical(res$cell_coupling, "separable")
-})
-
 test_that("tulpa_nested_laplace_joint() rejects an unknown cell_coupling name", {
     arm <- list(
         y = c(0, 1), n_trials = c(1L, 1L),
@@ -85,4 +49,42 @@ test_that("tulpa_nested_laplace_joint() rejects non-character cell_coupling", {
         ),
         regexp = "single non-empty character"
     )
+})
+
+skip_on_cran()
+
+test_that("tulpa_nested_laplace_joint() accepts cell_coupling = \"separable\" silently", {
+    skip_on_cran()
+    # 2-arm cover-hurdle on a tiny synthetic ICAR (smoke test the
+    # cell_coupling default; cover hurdle stays on the per-obs path because
+    # the separable sentinel has arm_ids().empty()).
+    set.seed(1L)
+    n_s <- 6L
+    adj_row_ptr <- c(0L, 1L, 3L, 4L, 6L, 8L, 9L)
+    adj_col_idx <- c(2L, 1L, 3L, 2L, 1L, 5L, 4L, 6L, 5L) - 1L
+    n_neighbors <- c(1L, 2L, 1L, 2L, 2L, 1L)
+    N <- 30L
+    spatial_idx <- as.integer(rep(seq_len(n_s), length.out = N))
+    X <- matrix(1, nrow = N, ncol = 1)
+    arm1 <- list(
+        y = rbinom(N, 1, 0.4), n_trials = rep(1L, N),
+        X = X, spatial_idx = spatial_idx, family = "binomial", phi = 1
+    )
+    arm2 <- list(
+        y = rnorm(N), n_trials = rep(1L, N),
+        X = X, spatial_idx = spatial_idx, family = "gaussian", phi = 1
+    )
+
+    res <- tulpa_nested_laplace_joint(
+        responses = list(occ = arm1, pos = arm2),
+        prior = list(type = "icar", n_spatial_units = n_s,
+                     adj_row_ptr = adj_row_ptr, adj_col_idx = adj_col_idx,
+                     n_neighbors = n_neighbors,
+                     sigma_grid = c(0.5, 1.0)),
+        cell_coupling = "separable",
+        control = list(max_iter = 10L)
+    )
+
+    expect_s3_class(res, "tulpa_nested_laplace_joint")
+    expect_identical(res$cell_coupling, "separable")
 })

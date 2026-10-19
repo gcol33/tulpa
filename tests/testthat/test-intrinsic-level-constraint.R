@@ -75,6 +75,8 @@ test_that("the constrained Schur complement is the sum-zero subspace's", {
   expect_gt(solve(H_u)[1, 1], solve(H_c)[1, 1])
 })
 
+skip_on_cran()
+
 test_that("an intrinsic block's driver names its constraint group", {
   skip_on_cran()
   A <- .lattice_icar(3L, 4L)

@@ -40,6 +40,55 @@ test_that(".nested_is_pareto_k scores injected draws identically and consumes no
   expect_identical(bad$declined, "internal_inconsistency")
 })
 
+test_that("the inner k-hat gives a coupled fit an inner verdict instead of 'not assessed'", {
+  # The #303 acceptance: gamma_3 declines structurally, the k-hat does not, so
+  # the combined verdict names an assessed inner layer.
+  before <- tulpa:::.tulpa_combined_reliability(
+    "good", NA_character_, inner_declined = "coupled_arm")
+  expect_match(before, "not assessed")
+
+  after <- tulpa:::.tulpa_combined_reliability(
+    "good", NA_character_, inner_declined = "coupled_arm",
+    inner_k_band = "good")
+  expect_match(after, "^reliable")
+  expect_false(grepl("not assessed", after))
+
+  flagged <- tulpa:::.tulpa_combined_reliability(
+    "good", NA_character_, inner_declined = "coupled_arm",
+    inner_k_band = "unreliable")
+  expect_match(flagged, "^scoped: inner")
+
+  # Where both scores exist the WORSE one governs, in both directions.
+  expect_match(tulpa:::.tulpa_combined_reliability("good", "good",
+                                                   inner_k_band = "unreliable"),
+               "^scoped: inner")
+  expect_match(tulpa:::.tulpa_combined_reliability("good", "unreliable",
+                                                   inner_k_band = "good"),
+               "^scoped: inner")
+  expect_match(tulpa:::.tulpa_combined_reliability("good", "good",
+                                                   inner_k_band = "good"),
+               "^reliable")
+  # Neither score: the cubic term's reason is what survives, unchanged.
+  expect_match(tulpa:::.tulpa_combined_reliability("good", NA_character_,
+                                                   inner_declined = "not_requested"),
+               "not assessed")
+})
+
+# --------------------------------------------------------------------------- #
+# (6) Front-door wiring, and the RNG contract                                  #
+# --------------------------------------------------------------------------- #
+
+.ikk_chain_prior <- function(n_s, idx) {
+  nbr <- lapply(seq_len(n_s), function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
+  nn <- vapply(nbr, length, integer(1))
+  list(type = "icar", n_spatial_units = n_s, spatial_idx = idx,
+       adj_row_ptr = as.integer(c(0L, cumsum(nn))),
+       adj_col_idx = as.integer(unlist(nbr)) - 1L,
+       n_neighbors = as.integer(nn), tau_grid = c(0.5, 1, 2, 4, 8))
+}
+
+skip_on_cran()
+
 # --------------------------------------------------------------------------- #
 # (2) Structural: summary, materiality gate, decline vocabulary, verdict        #
 # --------------------------------------------------------------------------- #
@@ -113,40 +162,6 @@ test_that("an inner-k decline carries a reason from the shared k vocabulary", {
     expect_true(is.character(tulpa:::.inner_k_decline_note(r)))
   }
   expect_null(tulpa:::.inner_k_decline_note(NA_character_))
-})
-
-test_that("the inner k-hat gives a coupled fit an inner verdict instead of 'not assessed'", {
-  # The #303 acceptance: gamma_3 declines structurally, the k-hat does not, so
-  # the combined verdict names an assessed inner layer.
-  before <- tulpa:::.tulpa_combined_reliability(
-    "good", NA_character_, inner_declined = "coupled_arm")
-  expect_match(before, "not assessed")
-
-  after <- tulpa:::.tulpa_combined_reliability(
-    "good", NA_character_, inner_declined = "coupled_arm",
-    inner_k_band = "good")
-  expect_match(after, "^reliable")
-  expect_false(grepl("not assessed", after))
-
-  flagged <- tulpa:::.tulpa_combined_reliability(
-    "good", NA_character_, inner_declined = "coupled_arm",
-    inner_k_band = "unreliable")
-  expect_match(flagged, "^scoped: inner")
-
-  # Where both scores exist the WORSE one governs, in both directions.
-  expect_match(tulpa:::.tulpa_combined_reliability("good", "good",
-                                                   inner_k_band = "unreliable"),
-               "^scoped: inner")
-  expect_match(tulpa:::.tulpa_combined_reliability("good", "unreliable",
-                                                   inner_k_band = "good"),
-               "^scoped: inner")
-  expect_match(tulpa:::.tulpa_combined_reliability("good", "good",
-                                                   inner_k_band = "good"),
-               "^reliable")
-  # Neither score: the cubic term's reason is what survives, unchanged.
-  expect_match(tulpa:::.tulpa_combined_reliability("good", NA_character_,
-                                                   inner_declined = "not_requested"),
-               "not assessed")
 })
 
 # --------------------------------------------------------------------------- #
@@ -300,19 +315,6 @@ test_that("the inner k-hat scores the coupled fixture alongside gamma_3", {
     inner_k_band = ikk$band, inner_k_declined = ikk$declined)
   expect_false(grepl("not assessed", verdict))
 })
-
-# --------------------------------------------------------------------------- #
-# (6) Front-door wiring, and the RNG contract                                  #
-# --------------------------------------------------------------------------- #
-
-.ikk_chain_prior <- function(n_s, idx) {
-  nbr <- lapply(seq_len(n_s), function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
-  nn <- vapply(nbr, length, integer(1))
-  list(type = "icar", n_spatial_units = n_s, spatial_idx = idx,
-       adj_row_ptr = as.integer(c(0L, cumsum(nn))),
-       adj_col_idx = as.integer(unlist(nbr)) - 1L,
-       n_neighbors = as.integer(nn), tau_grid = c(0.5, 1, 2, 4, 8))
-}
 
 test_that("tulpa_nested_laplace() reports the inner k-hat and leaves the draws untouched", {
   skip_on_cran()

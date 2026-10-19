@@ -30,6 +30,31 @@ nngp_inputs <- function(N = 25L, nn = 5L, seed = 3L) {
        nbd = nbd, order0 = order0, inv = inv, N = N, nn = nn)
 }
 
+test_that("the twins agree on a near-degenerate configuration", {
+  # Duplicate coordinates drive the neighbour covariance toward singular, which
+  # is where the jitter and the variance floor actually bite -- and where the
+  # two copies' policies differed most.
+  set.seed(9)
+  N <- 12L; nn <- 4L
+  coords <- cbind(rep(c(0.2, 0.5, 0.8), each = 4), rep(c(0.2, 0.5, 0.8), each = 4))
+  coords <- coords + 1e-9 * matrix(rnorm(N * 2), N, 2)   # near-duplicates
+  ni <- compute_nngp_neighbors(coords, nn)
+  order0 <- if (!is.null(ni$nn_order)) as.integer(ni$nn_order - 1L) else seq_len(N) - 1L
+  inv <- integer(N); inv[order0 + 1L] <- seq_len(N) - 1L
+  nbd <- as.numeric(aperm(ni$nn_neighbor_dist, c(3, 2, 1)))
+  w <- rnorm(N)
+
+  gp <- cpp_test_gp_nngp_twins(w, 1.0, 0.5, coords, ni$nn_idx, ni$nn_dist,
+                               nbd, order0, inv, 0L)
+  expect_equal(unname(gp[["ad"]]), unname(gp[["dbl"]]), tolerance = 1e-8)
+
+  svc <- cpp_test_svc_nngp_twins(w, 1.0, 0.5, coords, ni$nn_idx, ni$nn_dist,
+                                 order0, 0L)
+  expect_equal(unname(svc[["ad"]]), unname(svc[["dbl"]]), tolerance = 1e-8)
+})
+
+skip_on_cran()
+
 test_that("the GP NNGP autodiff kernel agrees with its double twin", {
   skip_on_cran()
   d <- nngp_inputs()
@@ -71,27 +96,4 @@ test_that("the SVC NNGP autodiff kernel agrees with its double twin", {
       }
     }
   }
-})
-
-test_that("the twins agree on a near-degenerate configuration", {
-  # Duplicate coordinates drive the neighbour covariance toward singular, which
-  # is where the jitter and the variance floor actually bite -- and where the
-  # two copies' policies differed most.
-  set.seed(9)
-  N <- 12L; nn <- 4L
-  coords <- cbind(rep(c(0.2, 0.5, 0.8), each = 4), rep(c(0.2, 0.5, 0.8), each = 4))
-  coords <- coords + 1e-9 * matrix(rnorm(N * 2), N, 2)   # near-duplicates
-  ni <- compute_nngp_neighbors(coords, nn)
-  order0 <- if (!is.null(ni$nn_order)) as.integer(ni$nn_order - 1L) else seq_len(N) - 1L
-  inv <- integer(N); inv[order0 + 1L] <- seq_len(N) - 1L
-  nbd <- as.numeric(aperm(ni$nn_neighbor_dist, c(3, 2, 1)))
-  w <- rnorm(N)
-
-  gp <- cpp_test_gp_nngp_twins(w, 1.0, 0.5, coords, ni$nn_idx, ni$nn_dist,
-                               nbd, order0, inv, 0L)
-  expect_equal(unname(gp[["ad"]]), unname(gp[["dbl"]]), tolerance = 1e-8)
-
-  svc <- cpp_test_svc_nngp_twins(w, 1.0, 0.5, coords, ni$nn_idx, ni$nn_dist,
-                                 order0, 0L)
-  expect_equal(unname(svc[["ad"]]), unname(svc[["dbl"]]), tolerance = 1e-8)
 })

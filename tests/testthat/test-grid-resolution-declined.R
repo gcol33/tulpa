@@ -180,6 +180,8 @@ test_that("the provenance attach stamps the rail report unconditionally", {
     expect_identical(kept$outer_grid_railed_axes, character(0))
 })
 
+skip_on_cran()
+
 test_that("a real caller-pinned fit carries both fields", {
     skip_on_cran()
     set.seed(4L)

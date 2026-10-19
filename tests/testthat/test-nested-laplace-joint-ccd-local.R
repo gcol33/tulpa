@@ -200,36 +200,6 @@ test_that("local CCD declines on NULL tags, the engage gate, and a monotone fiel
   .lccd_cache[[key]]
 }
 
-test_that("local CCD engages on a 4-axis multi-block fit and conserves the integral", {
-  skip_on_cran()
-  sim  <- .lccd_sim_joint()
-  fit  <- .lccd_fit(refined = FALSE)
-  # This fixture's own candidate cell scores 0.7458 on the local-quadratic
-  # misfit, so the engagement gate declines it at the default `skew_max`
-  # (gcol33/tulpa#318, and the test below that pins that). The splice, the weight
-  # conservation and the recovery this block checks are the machinery underneath
-  # the gate, so it is opened here rather than fitting a different model.
-  fitl <- .lccd_fit(refined = TRUE)
-
-  # The unrefined tensor fit reports no refinement; the local-CCD fit engages.
-  expect_null(fit$local_ccd_info)
-  expect_false(is.null(fitl$local_ccd_info))
-  expect_gte(fitl$local_ccd_info$n_cells_refined, 1L)
-  expect_gt(fitl$local_ccd_info$n_nodes_added, 0L)
-  expect_gt(length(fitl$log_marginal), length(fit$log_marginal))   # nodes appended
-
-  # Integration weight is conserved and the posterior stays well-formed.
-  expect_true(abs(sum(fitl$weights) - 1) < 1e-8)
-  expect_true(all(is.finite(fitl$theta_mean)))
-
-  # Refinement does not degrade recovery: both copy scales stay near truth and
-  # near the unrefined fit (refinement re-estimates mass, it does not move it).
-  a_base <- vapply(fit$block_moments,  function(b) b$mean[["alpha"]], numeric(1))
-  a_ref  <- vapply(fitl$block_moments, function(b) b$mean[["alpha"]], numeric(1))
-  expect_lt(max(abs(a_ref - sim$alpha_true)), 0.5)
-  expect_lt(max(abs(a_ref - a_base)), 0.15)
-})
-
 test_that("k_refine validates and accepts the ccd rung", {
   expect_error(
     tulpa_nested_laplace_joint(list(), list(), control = list(k_refine = "bogus")),
@@ -238,26 +208,6 @@ test_that("k_refine validates and accepts the ccd rung", {
     tulpa_nested_laplace_joint(list(), list(),
                                control = list(local_ccd = "yes")),
     "local_ccd")
-})
-
-test_that("k_refine='ccd' escalation drives local CCD and reports an honest verdict", {
-  skip_on_cran()
-  sim  <- .lccd_sim_joint()
-  fit <- suppressWarnings(tulpa_nested_laplace_joint(
-    sim$responses, sim$prior, copy = sim$copy,
-    control = list(max_iter = 60L, tol = 1e-6, integration = "grid",
-                   var_of_means_consistency = FALSE,
-                   k_quality = "ok", k_refine = "ccd",
-                   k_samples = 200L, k_max_rounds = 1L)))
-
-  expect_identical(fit$k_quality_requested, "ok")
-  expect_true(is.logical(fit$k_quality_reached))         # never NA for an "ok" target
-  expect_true(fit$k_quality_rounds >= 0L && fit$k_quality_rounds <= 1L)
-  # A round only runs when local CCD actually refined; the verdict never silently
-  # downgrades, and the integral stays well-formed throughout.
-  if (fit$k_quality_rounds > 0L) expect_false(is.null(fit$local_ccd_info))
-  expect_true(abs(sum(fit$weights) - 1) < 1e-8)
-  expect_true(all(is.finite(fit$theta_mean)))
 })
 
 test_that("local CCD carries inner modes through the splice", {
@@ -277,26 +227,6 @@ test_that("local CCD carries inner modes through the splice", {
   expect_equal(nrow(out$modes), nrow(out$joint_grid))
   expect_equal(ncol(out$modes), n_x)
   expect_false(anyNA(out$modes))
-})
-
-test_that("local CCD keeps the fixed-effect retention aligned with the refined grid", {
-  skip_on_cran()
-  # The gate opened, so the grid read here is one a cell was refined into.
-  fitl <- .lccd_fit(refined = TRUE)
-
-  expect_false(is.null(fitl$local_ccd_info))
-  expect_gte(fitl$local_ccd_info$n_cells_refined, 1L)
-  # The node solves carry their own block, so the refined grid reports instead
-  # of declining "local_ccd_refined" (gcol33/tulpa#307).
-  expect_true(is.na(fitl$grid_fixed_declined))
-  expect_length(fitl$grid_hessians, length(fitl$weights))
-  expect_length(fitl$grid_modes,    length(fitl$weights))
-  for (k in seq_along(fitl$weights)) {
-    expect_identical(dim(fitl$grid_hessians[[k]]),
-                     c(fitl$n_fixed, fitl$n_fixed))
-  }
-  expect_true(all(is.finite(vcov(fitl))))
-  expect_true(all(is.finite(confint(fitl))))
 })
 
 test_that("local CCD splices per-cell covariance blocks alongside the modes", {
@@ -439,24 +369,6 @@ test_that("each refined cell reports the base-grid share it held", {
   expect_equal(out$info$cell_share, w0[out$info$cells], tolerance = 1e-12)
 })
 
-test_that("a fit reports the base share separately from the design mass", {
-  skip_on_cran()
-  # The two are different numbers: the replacement nodes sit nearer the peak
-  # than the cell's own coordinate did, so refining a cell RAISES the share of
-  # the posterior the refined region holds. `design_mass` is the share after,
-  # `cell_share` the share before, and the regime gcol33/tulpa#316 describes is
-  # the one where either approaches 1.
-  fitl <- .lccd_fit(refined = TRUE)
-  info <- fitl$local_ccd_info
-  expect_false(is.null(info))
-  expect_length(info$cell_share, info$n_cells_refined)
-  expect_true(all(info$cell_share > 0 & info$cell_share < 1))
-  expect_lte(sum(info$cell_share), 1 + 1e-8)
-  # The refinement concentrates: the design-weighted share after exceeds the
-  # cells' own share before.
-  expect_gt(info$design_mass, sum(info$cell_share))
-})
-
 # --------------------------------------------------------------------------- #
 # Per-cell weight kind (gcol33/tulpa#311)                                      #
 # --------------------------------------------------------------------------- #
@@ -484,88 +396,6 @@ test_that("the refined grid labels which cells carry a design weight", {
   keep <- setdiff(seq_len(nrow(gd$grid)), out$info$cells)
   expect_equal(out$joint_grid[out$weight_kind == "mass", , drop = FALSE],
                gd$grid[keep, , drop = FALSE])
-})
-
-test_that("a fit reports its weight kind per cell and the design mass share", {
-  skip_on_cran()
-  fit  <- .lccd_fit(refined = FALSE)
-  fitl <- .lccd_fit(refined = TRUE)
-
-  # An unrefined tensor grid is mass-weighted throughout; the refined one is the
-  # case that carries both, which is what `integration` alone cannot say.
-  expect_identical(unique(fit$weight_kind), "mass")
-  expect_length(fit$weight_kind, length(fit$weights))
-  expect_length(fitl$weight_kind, length(fitl$weights))
-  expect_setequal(unique(fitl$weight_kind), c("mass", "design"))
-  expect_identical(sum(fitl$weight_kind == "design"),
-                   fitl$local_ccd_info$n_design_nodes)
-
-  # `design_mass` is the share of the posterior sitting on those cells: the part
-  # of the support whose cumulative weight is not a CDF.
-  expect_equal(fitl$local_ccd_info$design_mass,
-               sum(fitl$weights[fitl$weight_kind == "design"]))
-  expect_gt(fitl$local_ccd_info$design_mass, 0)
-  expect_lt(fitl$local_ccd_info$design_mass, 1)
-
-  expect_identical(tulpa:::.nl_node_support(fit$integration), "density")
-})
-
-test_that("a globally CCD-integrated fit is design-weighted throughout", {
-  skip_on_cran()
-  # Where the support IS homogeneous the tag and `.nl_node_support(integration)`
-  # agree. This needs a fit the CCD integrator actually engages on: the local-CCD
-  # fixture above has a ridged outer log-posterior, on which the mode-find
-  # declines back to the tensor grid. Crossed iid blocks give it curvature.
-  set.seed(4242)
-  G <- 30L; N <- 600L
-  grp <- lapply(1:3, function(k) sample.int(G, N, replace = TRUE))
-  X <- cbind(1, rnorm(N))
-  eta <- as.numeric(X %*% c(0.2, 0.6))
-  for (k in 1:3) eta <- eta + rnorm(G, 0, c(0.8, 0.5, 0.3)[k])[grp[[k]]]
-  y <- eta + rnorm(N, 0, 0.5)
-  sg <- exp(seq(log(0.1), log(2), length.out = 7))
-  fitc <- suppressWarnings(tulpa_nested_laplace_joint(
-    responses = list(a = list(y = y, n_trials = rep(1L, N), X = X,
-                              family = "gaussian", phi = 0.25)),
-    prior = lapply(grp, function(g)
-      list(type = "iid", obs_idx = list(g), n_units = G, sigma_grid = sg)),
-    control = list(integration = "ccd", n_threads = 1L, diagnose_k = FALSE,
-                   max_iter = 100L, tol = 1e-8)))
-  # Asserted first: on a declined CCD the tag check below would pass vacuously
-  # for the wrong reason.
-  expect_identical(fitc$integration, "ccd")
-  expect_identical(unique(fitc$weight_kind), "design")
-  expect_length(fitc$weight_kind, length(fitc$weights))
-  expect_identical(tulpa:::.nl_node_support(fitc$integration), "moment_rule")
-  # Nothing was declined here, which is what makes the tag check above the
-  # engaged case rather than the fallback (gcol33/tulpa#315).
-  expect_true(is.na(fitc$integration_declined))
-})
-
-test_that("this fixture's CCD decline is on the fit, not only in a message", {
-  skip_on_cran()
-  # The fixture's own outer log-posterior is ridged, so a requested CCD falls
-  # back here. Asserted in that order: the fallback has to have happened before
-  # the reason means anything.
-  sim <- .lccd_sim_joint()
-  ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
-               var_of_means_consistency = FALSE)
-  # The verbose channel reports the same reason the field records, read off
-  # the one fit, so the field and the message cannot drift apart.
-  expect_message(
-    fit <- suppressWarnings(tulpa_nested_laplace_joint(
-      sim$responses, sim$prior, copy = sim$copy,
-      control = c(ctrl, list(integration = "ccd", verbose = TRUE)))),
-    "flat / ridged")
-  expect_identical(fit$integration_requested, "ccd")
-  expect_false(identical(fit$integration, "ccd"))
-  expect_identical(fit$integration_declined, "modefind_ridge")
-
-  # The same model under integration = "grid" asked for nothing and declined
-  # nothing, which is the state the reason field has to be distinguishable from.
-  fit_g <- .lccd_fit(refined = FALSE)
-  expect_identical(fit_g$integration, fit$integration)
-  expect_true(is.na(fit_g$integration_declined))
 })
 
 # --------------------------------------------------------------------------- #
@@ -632,41 +462,6 @@ test_that("naming the support mixed leaves the reported interval unchanged", {
   expect_false(isTRUE(all.equal(
     tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
     tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "moment_rule"))))
-})
-
-test_that("a locally refined fit says what its interval was read off", {
-  skip_on_cran()
-  fit  <- .lccd_fit(refined = FALSE)
-  fitl <- .lccd_fit(refined = TRUE)
-
-  expect_identical(fit$theta_interval_read, "density")
-  expect_equal(fit$theta_interval_design_mass, 0)
-  expect_identical(fitl$theta_interval_read, "mixed")
-  expect_equal(fitl$theta_interval_design_mass,
-               fitl$local_ccd_info$design_mass)
-  expect_gt(fitl$theta_interval_design_mass, 0)
-  expect_lt(fitl$theta_interval_design_mass, 1)
-
-  # The intervals themselves are what the density read gives at the SAME
-  # within-cell construction, to the last bit: the mixed tag records the
-  # support, it does not switch the `outside` policy. It does switch the
-  # within-cell one -- a refined grid's replacement clouds sit inside a base
-  # cell, so mixed declines the box-uniform default and reads chord
-  # (gcol33/tulpa#357) -- so the reference is built at chord to isolate the
-  # invariant this test is about.
-  qs <- tulpa:::.nl_axis_quantiles(fitl$theta_grid, fitl$log_marginal,
-                                   fitl$refining_axis, weights = fitl$weights,
-                                   support = "density", within = "chord")
-  expect_equal(fitl$theta_ci_lo, qs$ci_lo)
-  expect_equal(fitl$theta_ci_hi, qs$ci_hi)
-  expect_equal(fitl$theta_median, qs$median)
-
-  # And the diagnostic layer surfaces the pair rather than leaving it on the fit.
-  ir <- tulpa:::.tulpa_interval_read(fitl)
-  expect_identical(ir$read, "mixed")
-  expect_equal(ir$design_mass, fitl$local_ccd_info$design_mass)
-  expect_match(tulpa:::.tulpa_interval_read_note(ir), "MIXED support")
-  expect_null(tulpa:::.tulpa_interval_read_note(tulpa:::.tulpa_interval_read(fit)))
 })
 
 # --------------------------------------------------------------------------- #
@@ -789,51 +584,6 @@ test_that("a locally refined fit says what its interval was read off", {
   }
   do.call(rbind, acc)
 }
-
-test_that("the mixed read beats the alternatives on both sides of design_mass", {
-  skip_if_not_slow()
-  s <- .lccd_gate_sweep()
-  hi <- s[s$design_mass >= 0.5, ]
-  lo <- s[s$design_mass <  0.5, ]
-  # The regime is asserted before the errors, so neither half can pass by being
-  # empty.
-  expect_gte(nrow(hi), 15L)
-  expect_gte(nrow(lo), 15L)
-
-  # Summed absolute endpoint error against the exact quantiles. Measured:
-  # design_mass >= 0.5 (19 configurations) mixed 3.46157, collapsed 16.29057,
-  # unrefined 18.05801; design_mass < 0.5 (17) mixed 3.14443, collapsed 4.79910,
-  # unrefined 4.48729.
-  #
-  # The mixed totals rose from 3.18024 / 2.69889 when the mixed support moved to
-  # `outside = "extend"` alongside the density one, and the comparator totals
-  # from 15.72792 / 17.80607 / 3.92249 / 3.83155 when they were aligned onto the
-  # same dispatch. The ordering below holds under either policy applied to all
-  # three arms; it is the margin, not the verdict, that moves.
-  for (part in list(hi, lo)) {
-    tot <- colSums(part[, c("mixed", "moment", "collapsed", "base")])
-    expect_lt(tot[["mixed"]], tot[["collapsed"]])
-    expect_lt(tot[["mixed"]], tot[["base"]])
-  }
-  expect_lt(sum(hi$mixed), 3.8)
-  expect_lt(sum(lo$mixed), 3.5)
-
-  # The moment read wins on THIS target because a Gaussian moment match is its
-  # exact family here, which is why the win does not carry (see below).
-  expect_lt(sum(s$moment), sum(s$mixed))
-})
-
-test_that("the moment read's advantage is the family, not the support", {
-  skip_if_not_slow()
-  # Same correlation, same refinement, skewed marginals. Measured over 27
-  # configurations: mixed 28.52885 against moment 39.85826. The mixed total is
-  # off the GATED refinement (gcol33/tulpa#318); unconditional refinement on this
-  # target gives 26.24674.
-  s <- .lccd_gate_sweep(gamma_shape = 2, reaches = c(1.5, 2, 3))
-  expect_gte(nrow(s), 20L)
-  expect_lt(sum(s$mixed), sum(s$moment))
-  expect_lt(sum(s$mixed), 29)
-})
 
 # --------------------------------------------------------------------------- #
 # The engagement gate: refine only where the design's quadratic holds (#318)   #
@@ -1003,95 +753,6 @@ test_that("the gate leaves a quadratic outer target's refinement untouched", {
   }
   do.call(rbind, acc)
 }
-
-test_that("the gate declines this fixture's own cell, and the read moves toward truth", {
-  skip_on_cran()
-  sim  <- .lccd_sim_joint()
-  ctrl <- .lccd_ctrl
-  # Pinned to the chord within-cell read, because the reference below WAS one:
-  # at a converged m = 13 the chord read reproduces `ref_w` to five decimals on
-  # the two axes whose 95% bound lies inside the node set, and the shipped
-  # box-uniform default does not (gcol33/tulpa#399). Scoring the REFINEMENT GATE
-  # against it therefore has to be done in the read that produced it, or the
-  # within-cell construction -- an orthogonal choice (gcol33/tulpa#357) -- enters
-  # the number. At the default: wid(on) = 0.4706, wid(off) = 0.7146. The ordering
-  # this test asserts holds either way.
-  #
-  # That gap is NOT the box partition being mis-sized on a three-level axis.
-  # Measured on the reference's own axes with only the resolution moving, the
-  # error against the converged limit falls 0.2867 / 0.1490 / 0.0894 / 0.0509 /
-  # 0.0258 at m = 3 / 5 / 7 / 9 / 11 for box-uniform, against 0.8541 / 0.2000 /
-  # 0.1267 / 0.1237 / 0.0451 for chord -- monotone, and closer at every rung
-  # (`dev_notes/issue399/RESULTS399.md`). What this fixture's own pinned axes
-  # differ in is their EXTENT, not their resolution.
-  lc <- function(sm) suppressWarnings(tulpa_nested_laplace_joint(
-    sim$responses, sim$prior, copy = sim$copy,
-    control = c(ctrl, list(local_ccd = list(max_cells = 4L, skew_max = sm),
-                           within_cell = "chord"))))
-  off <- lc(Inf)
-  on  <- lc(tulpa:::.nl_diag("gamma3_ok"))
-
-  # The regime first: this fixture's candidate cell holds essentially none of the
-  # base grid's weight and scores 0.719 on the misfit, so the gate declines it
-  # and the fit falls back to the plain tensor read. The misfit is scored on the
-  # outer posterior at the design's nodes, which carries the default hyperprior
-  # since gcol33/tulpa#730; on the prior-less marginal it read 0.7458.
-  expect_equal(off$local_ccd_info$n_cells_refined, 1L)
-  expect_equal(off$local_ccd_info$misfit, 0.719, tolerance = 1e-3)
-  expect_lt(off$local_ccd_info$cell_share, 1e-3)
-  expect_equal(on$local_ccd_info$n_cells_refined, 0L)
-  expect_equal(on$local_ccd_info$n_cells_declined, 1L)
-  expect_identical(on$theta_interval_read, "density")
-  expect_equal(on$theta_interval_design_mass, 0)
-
-  # And it is a correction, not only a decline. The converged m = 13 reference of
-  # the SAME simulation (dev_notes/issue_316, 28561 cells, refinement off) has
-  # per-axis 95% widths 0.81646 / 1.49922 / 0.81826 / 1.22962. Measured mean
-  # absolute width error against it: 0.7146 with the cloud, 0.2500 without. (The
-  # two grids do not share axis RANGES with the reference, so a clamped endpoint
-  # is not on the same support; the widths are the comparable part.)
-  ref_w <- c(0.81646, 1.49922, 0.81826, 1.22962)
-  wid <- function(f) mean(abs((f$theta_ci_hi - f$theta_ci_lo) - ref_w))
-  expect_lt(wid(on), wid(off))
-  expect_lt(wid(on), 0.4)
-  expect_gt(wid(off), 0.7)
-})
-
-test_that("the refinement gate holds on both sides of the regime it keys on", {
-  skip_if_not_slow()
-  # The Gaussian side FIRST: the gate must not spend the win it is protecting.
-  # The score is identically zero on a quadratic target, so no cell is declined
-  # and the two arms are bit-identical. Measured over 36 configurations:
-  # 5.87914 either way, against 21.63762 for not refining at all.
-  gs <- .lccd_skew_gate_sweep(reaches = c(2, 3, 4, 6))
-  expect_gte(nrow(gs), 30L)
-  expect_equal(sum(gs$declined), 0L)
-  expect_gt(sum(gs$kept), 0L)
-  expect_equal(sum(gs$gated), sum(gs$unconditional), tolerance = 0)
-  expect_lt(sum(gs$gated), 6.5)
-
-  # The skewed side: a Gaussian copula with Gamma(2) marginals, same
-  # correlation, same refinement. Measured over 27 configurations: gated
-  # 24.59641 against unconditional 26.24674. The gate reduces the harm on this
-  # target, it does not remove it -- not refining at all scores 23.18738 here,
-  # and the threshold that would recover that much regresses on the two least
-  # skewed families of the ladder it was measured on (see `.NL_DIAG`).
-  ss <- .lccd_skew_gate_sweep(gamma_shape = 2, reaches = c(1.5, 2, 3))
-  expect_gte(nrow(ss), 20L)
-  expect_gt(sum(ss$declined), 0L)
-  expect_lt(sum(ss$gated), sum(ss$unconditional))
-  expect_lt(sum(ss$gated), 25.5)
-
-  # And at the far end of the skewness ladder, where the marginal is nearly
-  # Gaussian again, the gate must not cost anything either. Gamma(32) has
-  # marginal skewness 0.354. Measured over 27 configurations: gated 35.99392,
-  # unconditional 36.93487, unrefined 42.59338 -- refining is a win here and the
-  # gate keeps it.
-  ws <- .lccd_skew_gate_sweep(gamma_shape = 32, reaches = c(1.5, 2, 3))
-  expect_gte(nrow(ws), 20L)
-  expect_lte(sum(ws$gated), sum(ws$unconditional))
-  expect_lt(sum(ws$gated), 37)
-})
 
 # --------------------------------------------------------------------------- #
 # The centring score in the cell's own curvature units (gcol33/tulpa#324)      #
@@ -1269,6 +930,375 @@ test_that("a declined cell reports the mass comparison its nodes already paid fo
   expect_length(on$info$mode_gain, 0L)
 })
 
+test_that("the mass ratio is stable where one node dominates the cell", {
+  # A node sitting several nats above the cell's own coordinate is the regime the
+  # ratio is read in, and the one a naive sum of exponentials loses.
+  delta <- c(0.1, 0.3, 0.6)
+  lm_all <- c(0, 4.44, -900)
+  m <- tulpa:::.joint_local_ccd_mass(delta, lm_all, 2)
+  expect_equal(m$log_mass_ratio,
+               log(0.1 + 0.3 * exp(4.44) + 0.6 * exp(-900)), tolerance = 1e-12)
+  expect_equal(m$log_mass_coarse, log(2) + 0, tolerance = 1e-12)
+  expect_equal(m$log_mass_refined - m$log_mass_coarse, m$log_mass_ratio,
+               tolerance = 1e-12)
+  expect_equal(m$max_node_weight,
+               0.3 * exp(4.44) / (0.1 + 0.3 * exp(4.44) + 0.6 * exp(-900)),
+               tolerance = 1e-12)
+
+  # Shifting every log-marginal by a constant leaves the ratio and the share
+  # untouched and moves both masses by that constant, which is what makes the
+  # pair readable on a common scale.
+  m2 <- tulpa:::.joint_local_ccd_mass(delta, lm_all + 1200, 2)
+  expect_equal(m2$log_mass_ratio, m$log_mass_ratio, tolerance = 1e-12)
+  expect_equal(m2$max_node_weight, m$max_node_weight, tolerance = 1e-12)
+  expect_equal(m2$log_mass_refined - m$log_mass_refined, 1200, tolerance = 1e-9)
+
+  # A non-finite node declines the whole reading rather than reporting part of it.
+  bad <- tulpa:::.joint_local_ccd_mass(delta, c(0, NA_real_, 1), 2)
+  expect_true(all(vapply(bad, is.na, logical(1))))
+})
+
+skip_on_cran()
+
+test_that("local CCD engages on a 4-axis multi-block fit and conserves the integral", {
+  skip_on_cran()
+  sim  <- .lccd_sim_joint()
+  fit  <- .lccd_fit(refined = FALSE)
+  # This fixture's own candidate cell scores 0.7458 on the local-quadratic
+  # misfit, so the engagement gate declines it at the default `skew_max`
+  # (gcol33/tulpa#318, and the test below that pins that). The splice, the weight
+  # conservation and the recovery this block checks are the machinery underneath
+  # the gate, so it is opened here rather than fitting a different model.
+  fitl <- .lccd_fit(refined = TRUE)
+
+  # The unrefined tensor fit reports no refinement; the local-CCD fit engages.
+  expect_null(fit$local_ccd_info)
+  expect_false(is.null(fitl$local_ccd_info))
+  expect_gte(fitl$local_ccd_info$n_cells_refined, 1L)
+  expect_gt(fitl$local_ccd_info$n_nodes_added, 0L)
+  expect_gt(length(fitl$log_marginal), length(fit$log_marginal))   # nodes appended
+
+  # Integration weight is conserved and the posterior stays well-formed.
+  expect_true(abs(sum(fitl$weights) - 1) < 1e-8)
+  expect_true(all(is.finite(fitl$theta_mean)))
+
+  # Refinement does not degrade recovery: both copy scales stay near truth and
+  # near the unrefined fit (refinement re-estimates mass, it does not move it).
+  a_base <- vapply(fit$block_moments,  function(b) b$mean[["alpha"]], numeric(1))
+  a_ref  <- vapply(fitl$block_moments, function(b) b$mean[["alpha"]], numeric(1))
+  expect_lt(max(abs(a_ref - sim$alpha_true)), 0.5)
+  expect_lt(max(abs(a_ref - a_base)), 0.15)
+})
+
+test_that("k_refine='ccd' escalation drives local CCD and reports an honest verdict", {
+  skip_on_cran()
+  sim  <- .lccd_sim_joint()
+  fit <- suppressWarnings(tulpa_nested_laplace_joint(
+    sim$responses, sim$prior, copy = sim$copy,
+    control = list(max_iter = 60L, tol = 1e-6, integration = "grid",
+                   var_of_means_consistency = FALSE,
+                   k_quality = "ok", k_refine = "ccd",
+                   k_samples = 200L, k_max_rounds = 1L)))
+
+  expect_identical(fit$k_quality_requested, "ok")
+  expect_true(is.logical(fit$k_quality_reached))         # never NA for an "ok" target
+  expect_true(fit$k_quality_rounds >= 0L && fit$k_quality_rounds <= 1L)
+  # A round only runs when local CCD actually refined; the verdict never silently
+  # downgrades, and the integral stays well-formed throughout.
+  if (fit$k_quality_rounds > 0L) expect_false(is.null(fit$local_ccd_info))
+  expect_true(abs(sum(fit$weights) - 1) < 1e-8)
+  expect_true(all(is.finite(fit$theta_mean)))
+})
+
+test_that("local CCD keeps the fixed-effect retention aligned with the refined grid", {
+  skip_on_cran()
+  # The gate opened, so the grid read here is one a cell was refined into.
+  fitl <- .lccd_fit(refined = TRUE)
+
+  expect_false(is.null(fitl$local_ccd_info))
+  expect_gte(fitl$local_ccd_info$n_cells_refined, 1L)
+  # The node solves carry their own block, so the refined grid reports instead
+  # of declining "local_ccd_refined" (gcol33/tulpa#307).
+  expect_true(is.na(fitl$grid_fixed_declined))
+  expect_length(fitl$grid_hessians, length(fitl$weights))
+  expect_length(fitl$grid_modes,    length(fitl$weights))
+  for (k in seq_along(fitl$weights)) {
+    expect_identical(dim(fitl$grid_hessians[[k]]),
+                     c(fitl$n_fixed, fitl$n_fixed))
+  }
+  expect_true(all(is.finite(vcov(fitl))))
+  expect_true(all(is.finite(confint(fitl))))
+})
+
+test_that("a fit reports the base share separately from the design mass", {
+  skip_on_cran()
+  # The two are different numbers: the replacement nodes sit nearer the peak
+  # than the cell's own coordinate did, so refining a cell RAISES the share of
+  # the posterior the refined region holds. `design_mass` is the share after,
+  # `cell_share` the share before, and the regime gcol33/tulpa#316 describes is
+  # the one where either approaches 1.
+  fitl <- .lccd_fit(refined = TRUE)
+  info <- fitl$local_ccd_info
+  expect_false(is.null(info))
+  expect_length(info$cell_share, info$n_cells_refined)
+  expect_true(all(info$cell_share > 0 & info$cell_share < 1))
+  expect_lte(sum(info$cell_share), 1 + 1e-8)
+  # The refinement concentrates: the design-weighted share after exceeds the
+  # cells' own share before.
+  expect_gt(info$design_mass, sum(info$cell_share))
+})
+
+test_that("a fit reports its weight kind per cell and the design mass share", {
+  skip_on_cran()
+  fit  <- .lccd_fit(refined = FALSE)
+  fitl <- .lccd_fit(refined = TRUE)
+
+  # An unrefined tensor grid is mass-weighted throughout; the refined one is the
+  # case that carries both, which is what `integration` alone cannot say.
+  expect_identical(unique(fit$weight_kind), "mass")
+  expect_length(fit$weight_kind, length(fit$weights))
+  expect_length(fitl$weight_kind, length(fitl$weights))
+  expect_setequal(unique(fitl$weight_kind), c("mass", "design"))
+  expect_identical(sum(fitl$weight_kind == "design"),
+                   fitl$local_ccd_info$n_design_nodes)
+
+  # `design_mass` is the share of the posterior sitting on those cells: the part
+  # of the support whose cumulative weight is not a CDF.
+  expect_equal(fitl$local_ccd_info$design_mass,
+               sum(fitl$weights[fitl$weight_kind == "design"]))
+  expect_gt(fitl$local_ccd_info$design_mass, 0)
+  expect_lt(fitl$local_ccd_info$design_mass, 1)
+
+  expect_identical(tulpa:::.nl_node_support(fit$integration), "density")
+})
+
+test_that("a globally CCD-integrated fit is design-weighted throughout", {
+  skip_on_cran()
+  # Where the support IS homogeneous the tag and `.nl_node_support(integration)`
+  # agree. This needs a fit the CCD integrator actually engages on: the local-CCD
+  # fixture above has a ridged outer log-posterior, on which the mode-find
+  # declines back to the tensor grid. Crossed iid blocks give it curvature.
+  set.seed(4242)
+  G <- 30L; N <- 600L
+  grp <- lapply(1:3, function(k) sample.int(G, N, replace = TRUE))
+  X <- cbind(1, rnorm(N))
+  eta <- as.numeric(X %*% c(0.2, 0.6))
+  for (k in 1:3) eta <- eta + rnorm(G, 0, c(0.8, 0.5, 0.3)[k])[grp[[k]]]
+  y <- eta + rnorm(N, 0, 0.5)
+  sg <- exp(seq(log(0.1), log(2), length.out = 7))
+  fitc <- suppressWarnings(tulpa_nested_laplace_joint(
+    responses = list(a = list(y = y, n_trials = rep(1L, N), X = X,
+                              family = "gaussian", phi = 0.25)),
+    prior = lapply(grp, function(g)
+      list(type = "iid", obs_idx = list(g), n_units = G, sigma_grid = sg)),
+    control = list(integration = "ccd", n_threads = 1L, diagnose_k = FALSE,
+                   max_iter = 100L, tol = 1e-8)))
+  # Asserted first: on a declined CCD the tag check below would pass vacuously
+  # for the wrong reason.
+  expect_identical(fitc$integration, "ccd")
+  expect_identical(unique(fitc$weight_kind), "design")
+  expect_length(fitc$weight_kind, length(fitc$weights))
+  expect_identical(tulpa:::.nl_node_support(fitc$integration), "moment_rule")
+  # Nothing was declined here, which is what makes the tag check above the
+  # engaged case rather than the fallback (gcol33/tulpa#315).
+  expect_true(is.na(fitc$integration_declined))
+})
+
+test_that("this fixture's CCD decline is on the fit, not only in a message", {
+  skip_on_cran()
+  # The fixture's own outer log-posterior is ridged, so a requested CCD falls
+  # back here. Asserted in that order: the fallback has to have happened before
+  # the reason means anything.
+  sim <- .lccd_sim_joint()
+  ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
+               var_of_means_consistency = FALSE)
+  # The verbose channel reports the same reason the field records, read off
+  # the one fit, so the field and the message cannot drift apart.
+  expect_message(
+    fit <- suppressWarnings(tulpa_nested_laplace_joint(
+      sim$responses, sim$prior, copy = sim$copy,
+      control = c(ctrl, list(integration = "ccd", verbose = TRUE)))),
+    "flat / ridged")
+  expect_identical(fit$integration_requested, "ccd")
+  expect_false(identical(fit$integration, "ccd"))
+  expect_identical(fit$integration_declined, "modefind_ridge")
+
+  # The same model under integration = "grid" asked for nothing and declined
+  # nothing, which is the state the reason field has to be distinguishable from.
+  fit_g <- .lccd_fit(refined = FALSE)
+  expect_identical(fit_g$integration, fit$integration)
+  expect_true(is.na(fit_g$integration_declined))
+})
+
+test_that("a locally refined fit says what its interval was read off", {
+  skip_on_cran()
+  fit  <- .lccd_fit(refined = FALSE)
+  fitl <- .lccd_fit(refined = TRUE)
+
+  expect_identical(fit$theta_interval_read, "density")
+  expect_equal(fit$theta_interval_design_mass, 0)
+  expect_identical(fitl$theta_interval_read, "mixed")
+  expect_equal(fitl$theta_interval_design_mass,
+               fitl$local_ccd_info$design_mass)
+  expect_gt(fitl$theta_interval_design_mass, 0)
+  expect_lt(fitl$theta_interval_design_mass, 1)
+
+  # The intervals themselves are what the density read gives at the SAME
+  # within-cell construction, to the last bit: the mixed tag records the
+  # support, it does not switch the `outside` policy. It does switch the
+  # within-cell one -- a refined grid's replacement clouds sit inside a base
+  # cell, so mixed declines the box-uniform default and reads chord
+  # (gcol33/tulpa#357) -- so the reference is built at chord to isolate the
+  # invariant this test is about.
+  qs <- tulpa:::.nl_axis_quantiles(fitl$theta_grid, fitl$log_marginal,
+                                   fitl$refining_axis, weights = fitl$weights,
+                                   support = "density", within = "chord")
+  expect_equal(fitl$theta_ci_lo, qs$ci_lo)
+  expect_equal(fitl$theta_ci_hi, qs$ci_hi)
+  expect_equal(fitl$theta_median, qs$median)
+
+  # And the diagnostic layer surfaces the pair rather than leaving it on the fit.
+  ir <- tulpa:::.tulpa_interval_read(fitl)
+  expect_identical(ir$read, "mixed")
+  expect_equal(ir$design_mass, fitl$local_ccd_info$design_mass)
+  expect_match(tulpa:::.tulpa_interval_read_note(ir), "MIXED support")
+  expect_null(tulpa:::.tulpa_interval_read_note(tulpa:::.tulpa_interval_read(fit)))
+})
+
+test_that("the mixed read beats the alternatives on both sides of design_mass", {
+  skip_if_not_slow()
+  s <- .lccd_gate_sweep()
+  hi <- s[s$design_mass >= 0.5, ]
+  lo <- s[s$design_mass <  0.5, ]
+  # The regime is asserted before the errors, so neither half can pass by being
+  # empty.
+  expect_gte(nrow(hi), 15L)
+  expect_gte(nrow(lo), 15L)
+
+  # Summed absolute endpoint error against the exact quantiles. Measured:
+  # design_mass >= 0.5 (19 configurations) mixed 3.46157, collapsed 16.29057,
+  # unrefined 18.05801; design_mass < 0.5 (17) mixed 3.14443, collapsed 4.79910,
+  # unrefined 4.48729.
+  #
+  # The mixed totals rose from 3.18024 / 2.69889 when the mixed support moved to
+  # `outside = "extend"` alongside the density one, and the comparator totals
+  # from 15.72792 / 17.80607 / 3.92249 / 3.83155 when they were aligned onto the
+  # same dispatch. The ordering below holds under either policy applied to all
+  # three arms; it is the margin, not the verdict, that moves.
+  for (part in list(hi, lo)) {
+    tot <- colSums(part[, c("mixed", "moment", "collapsed", "base")])
+    expect_lt(tot[["mixed"]], tot[["collapsed"]])
+    expect_lt(tot[["mixed"]], tot[["base"]])
+  }
+  expect_lt(sum(hi$mixed), 3.8)
+  expect_lt(sum(lo$mixed), 3.5)
+
+  # The moment read wins on THIS target because a Gaussian moment match is its
+  # exact family here, which is why the win does not carry (see below).
+  expect_lt(sum(s$moment), sum(s$mixed))
+})
+
+test_that("the moment read's advantage is the family, not the support", {
+  skip_if_not_slow()
+  # Same correlation, same refinement, skewed marginals. Measured over 27
+  # configurations: mixed 28.52885 against moment 39.85826. The mixed total is
+  # off the GATED refinement (gcol33/tulpa#318); unconditional refinement on this
+  # target gives 26.24674.
+  s <- .lccd_gate_sweep(gamma_shape = 2, reaches = c(1.5, 2, 3))
+  expect_gte(nrow(s), 20L)
+  expect_lt(sum(s$mixed), sum(s$moment))
+  expect_lt(sum(s$mixed), 29)
+})
+
+test_that("the gate declines this fixture's own cell, and the read moves toward truth", {
+  skip_on_cran()
+  sim  <- .lccd_sim_joint()
+  ctrl <- .lccd_ctrl
+  # Pinned to the chord within-cell read, because the reference below WAS one:
+  # at a converged m = 13 the chord read reproduces `ref_w` to five decimals on
+  # the two axes whose 95% bound lies inside the node set, and the shipped
+  # box-uniform default does not (gcol33/tulpa#399). Scoring the REFINEMENT GATE
+  # against it therefore has to be done in the read that produced it, or the
+  # within-cell construction -- an orthogonal choice (gcol33/tulpa#357) -- enters
+  # the number. At the default: wid(on) = 0.4706, wid(off) = 0.7146. The ordering
+  # this test asserts holds either way.
+  #
+  # That gap is NOT the box partition being mis-sized on a three-level axis.
+  # Measured on the reference's own axes with only the resolution moving, the
+  # error against the converged limit falls 0.2867 / 0.1490 / 0.0894 / 0.0509 /
+  # 0.0258 at m = 3 / 5 / 7 / 9 / 11 for box-uniform, against 0.8541 / 0.2000 /
+  # 0.1267 / 0.1237 / 0.0451 for chord -- monotone, and closer at every rung
+  # (`dev_notes/issue399/RESULTS399.md`). What this fixture's own pinned axes
+  # differ in is their EXTENT, not their resolution.
+  lc <- function(sm) suppressWarnings(tulpa_nested_laplace_joint(
+    sim$responses, sim$prior, copy = sim$copy,
+    control = c(ctrl, list(local_ccd = list(max_cells = 4L, skew_max = sm),
+                           within_cell = "chord"))))
+  off <- lc(Inf)
+  on  <- lc(tulpa:::.nl_diag("gamma3_ok"))
+
+  # The regime first: this fixture's candidate cell holds essentially none of the
+  # base grid's weight and scores 0.719 on the misfit, so the gate declines it
+  # and the fit falls back to the plain tensor read. The misfit is scored on the
+  # outer posterior at the design's nodes, which carries the default hyperprior
+  # since gcol33/tulpa#730; on the prior-less marginal it read 0.7458.
+  expect_equal(off$local_ccd_info$n_cells_refined, 1L)
+  expect_equal(off$local_ccd_info$misfit, 0.719, tolerance = 1e-3)
+  expect_lt(off$local_ccd_info$cell_share, 1e-3)
+  expect_equal(on$local_ccd_info$n_cells_refined, 0L)
+  expect_equal(on$local_ccd_info$n_cells_declined, 1L)
+  expect_identical(on$theta_interval_read, "density")
+  expect_equal(on$theta_interval_design_mass, 0)
+
+  # And it is a correction, not only a decline. The converged m = 13 reference of
+  # the SAME simulation (dev_notes/issue_316, 28561 cells, refinement off) has
+  # per-axis 95% widths 0.81646 / 1.49922 / 0.81826 / 1.22962. Measured mean
+  # absolute width error against it: 0.7146 with the cloud, 0.2500 without. (The
+  # two grids do not share axis RANGES with the reference, so a clamped endpoint
+  # is not on the same support; the widths are the comparable part.)
+  ref_w <- c(0.81646, 1.49922, 0.81826, 1.22962)
+  wid <- function(f) mean(abs((f$theta_ci_hi - f$theta_ci_lo) - ref_w))
+  expect_lt(wid(on), wid(off))
+  expect_lt(wid(on), 0.4)
+  expect_gt(wid(off), 0.7)
+})
+
+test_that("the refinement gate holds on both sides of the regime it keys on", {
+  skip_if_not_slow()
+  # The Gaussian side FIRST: the gate must not spend the win it is protecting.
+  # The score is identically zero on a quadratic target, so no cell is declined
+  # and the two arms are bit-identical. Measured over 36 configurations:
+  # 5.87914 either way, against 21.63762 for not refining at all.
+  gs <- .lccd_skew_gate_sweep(reaches = c(2, 3, 4, 6))
+  expect_gte(nrow(gs), 30L)
+  expect_equal(sum(gs$declined), 0L)
+  expect_gt(sum(gs$kept), 0L)
+  expect_equal(sum(gs$gated), sum(gs$unconditional), tolerance = 0)
+  expect_lt(sum(gs$gated), 6.5)
+
+  # The skewed side: a Gaussian copula with Gamma(2) marginals, same
+  # correlation, same refinement. Measured over 27 configurations: gated
+  # 24.59641 against unconditional 26.24674. The gate reduces the harm on this
+  # target, it does not remove it -- not refining at all scores 23.18738 here,
+  # and the threshold that would recover that much regresses on the two least
+  # skewed families of the ladder it was measured on (see `.NL_DIAG`).
+  ss <- .lccd_skew_gate_sweep(gamma_shape = 2, reaches = c(1.5, 2, 3))
+  expect_gte(nrow(ss), 20L)
+  expect_gt(sum(ss$declined), 0L)
+  expect_lt(sum(ss$gated), sum(ss$unconditional))
+  expect_lt(sum(ss$gated), 25.5)
+
+  # And at the far end of the skewness ladder, where the marginal is nearly
+  # Gaussian again, the gate must not cost anything either. Gamma(32) has
+  # marginal skewness 0.354. Measured over 27 configurations: gated 35.99392,
+  # unconditional 36.93487, unrefined 42.59338 -- refining is a win here and the
+  # gate keeps it.
+  ws <- .lccd_skew_gate_sweep(gamma_shape = 32, reaches = c(1.5, 2, 3))
+  expect_gte(nrow(ws), 20L)
+  expect_lte(sum(ws$gated), sum(ws$unconditional))
+  expect_lt(sum(ws$gated), 37)
+})
+
 test_that("the per-axis decline tally is carried on both sides of the gate", {
   skip_on_cran()
   # The two free readings each carry the vocabulary their own estimator can
@@ -1316,32 +1346,4 @@ test_that("the per-axis decline tally is carried on both sides of the gate", {
                    length(on$info$log_box_ratio_declined))
   expect_identical(nrow(off$info$bary_axis_reasons),
                    length(off$info$bary_shift))
-})
-
-test_that("the mass ratio is stable where one node dominates the cell", {
-  # A node sitting several nats above the cell's own coordinate is the regime the
-  # ratio is read in, and the one a naive sum of exponentials loses.
-  delta <- c(0.1, 0.3, 0.6)
-  lm_all <- c(0, 4.44, -900)
-  m <- tulpa:::.joint_local_ccd_mass(delta, lm_all, 2)
-  expect_equal(m$log_mass_ratio,
-               log(0.1 + 0.3 * exp(4.44) + 0.6 * exp(-900)), tolerance = 1e-12)
-  expect_equal(m$log_mass_coarse, log(2) + 0, tolerance = 1e-12)
-  expect_equal(m$log_mass_refined - m$log_mass_coarse, m$log_mass_ratio,
-               tolerance = 1e-12)
-  expect_equal(m$max_node_weight,
-               0.3 * exp(4.44) / (0.1 + 0.3 * exp(4.44) + 0.6 * exp(-900)),
-               tolerance = 1e-12)
-
-  # Shifting every log-marginal by a constant leaves the ratio and the share
-  # untouched and moves both masses by that constant, which is what makes the
-  # pair readable on a common scale.
-  m2 <- tulpa:::.joint_local_ccd_mass(delta, lm_all + 1200, 2)
-  expect_equal(m2$log_mass_ratio, m$log_mass_ratio, tolerance = 1e-12)
-  expect_equal(m2$max_node_weight, m$max_node_weight, tolerance = 1e-12)
-  expect_equal(m2$log_mass_refined - m$log_mass_refined, 1200, tolerance = 1e-9)
-
-  # A non-finite node declines the whole reading rather than reporting part of it.
-  bad <- tulpa:::.joint_local_ccd_mass(delta, c(0, NA_real_, 1), 2)
-  expect_true(all(vapply(bad, is.na, logical(1))))
 })

@@ -44,19 +44,6 @@ expect_log_posterior_mean <- function(fit) {
   expect_equal(as.numeric(ll), mean(fit$log_prob))
 }
 
-# ---------------------------------------------------------------------------
-# ModelData samplers
-# ---------------------------------------------------------------------------
-
-test_that("the per-draw helper reproduces the log_prob NUTS records", {
-  skip_on_cran()
-  d <- lp_poisson_fixture()
-  fit <- lp_sample(d, "hmc", list(n_iter = 200L, warmup = 100L, n_chains = 1L,
-                                  seed = 3L))
-  expect_log_posterior_mean(fit)
-  expect_lt(max(abs(lp_helper_at(fit) - fit$log_prob)), 1e-10)
-})
-
 backend_controls <- list(
   ess   = list(n_iter = 200L, warmup = 100L, seed = 5L),
   sghmc = list(n_iter = 200L, warmup = 100L, seed = 5L),
@@ -105,43 +92,6 @@ ref_log_mvn0 <- function(B, S) {
     -0.5 * nc * log(2 * pi) - sum(log(diag(L))) - 0.5 * sum(w^2)
   }))
 }
-
-test_that("re_cov_gibbs records its joint density at each retained sweep", {
-  skip_on_cran()
-  set.seed(11)
-  G <- 15L; npg <- 6L; N <- G * npg
-  g <- rep(seq_len(G), each = npg)
-  x <- rnorm(N)
-  X <- cbind(1, x)
-  Z <- cbind(1, x)
-  u <- cbind(rnorm(G, 0, 0.5), rnorm(G, 0, 0.3))
-  y <- rpois(N, exp(0.2 + 0.4 * x + rowSums(Z * u[g, ])))
-
-  for (corr in c(TRUE, FALSE)) {
-    rt <- list(idx = g, n_groups = G, n_coefs = 2L, Z = Z, correlated = corr)
-    fit <- tulpa_re_cov_gibbs(y, NULL, X, rt, family = "poisson",
-                              control = list(n_iter = 60L, warmup = 40L,
-                                             seed = 2L))
-    expect_log_posterior_mean(fit)
-
-    k <- 37L
-    beta <- fit$beta_draws[k, ]
-    B <- matrix(fit$re[k, ], ncol = 2L, byrow = TRUE)
-    S <- fit$Sigma_draws[[k]]
-    pr <- fit$prior[[1L]]
-    bp <- tulpa:::.normalize_beta_prior(
-      tulpa:::.tulpa_default_beta_prior("re_cov_gibbs"), 2L)
-    eta <- as.numeric(X %*% beta) + rowSums(Z * B[g, ])
-    ref <- sum(dpois(y, exp(eta), log = TRUE)) +
-      sum(dnorm(beta, bp$mean, bp$sd, log = TRUE)) +
-      ref_log_mvn0(B, S) +
-      if (pr$full) ref_log_iw(S, pr$nu0, pr$Lambda0) else
-        sum(vapply(1:2, function(i)
-          ref_log_iw(S[i, i, drop = FALSE], pr$nu0,
-                     matrix(pr$lambda0[i])), 0))
-    expect_lt(abs(fit$log_prob[k] - ref), 1e-8)
-  }
-})
 
 # ---------------------------------------------------------------------------
 # Polya-Gamma Gibbs routes
@@ -295,70 +245,6 @@ nb_r_log_prior <- function(r, a, b) {
   dgamma(r, a, b, log = TRUE) - log(pgamma(500, a, b) - pgamma(0.1, a, b))
 }
 
-test_that("PG negative-binomial ICAR route records its joint density", {
-  skip_on_cran()
-  d <- pg_areal()
-  set.seed(9)
-  yc <- as.integer(rnbinom(d$N, size = 4, mu = exp(0.5 + 0.3 * d$X[, 2])))
-  res <- cpp_pg_negbin_gibbs_spatial(
-    yc, d$X, d$grp, 4L, d$unit, d$J, d$al$adj_list, d$al$n_neighbors,
-    PG_ITER, PG_WARM, 1L, 3, 2, 1.5, 0.2, 1.2, 0.3, 5, FALSE, FALSE, 1L)
-  k <- nrow(res$beta)
-  r <- res$r[k]
-  beta_nb2 <- res$beta[k, ]
-  beta_zhou <- beta_nb2 - c(log(r), 0)
-  re <- res$re[k, ]; phi <- res$spatial[k, ]; tau <- res$tau[k]
-  eta_nb2 <- as.numeric(d$X %*% beta_nb2) + re[d$grp] + phi[d$unit]
-  quad <- drop(crossprod(phi, ref_icar_Q(d$W) %*% phi))
-  ref <- sum(dnbinom(yc, size = r, mu = exp(eta_nb2), log = TRUE)) +
-    sum(dnorm(beta_zhou, 0, 3, log = TRUE)) +
-    sum(dnorm(re, 0, res$sigma_re[k], log = TRUE)) +
-    ref_log_hc(res$sigma_re[k], 2) +
-    ref_log_gmrf(quad, d$J - 1L, tau) + dgamma(tau, 1.5, 0.2, log = TRUE) +
-    nb_r_log_prior(r, 1.2, 0.3)
-  expect_lt(abs(res$log_prob[k] - ref), 1e-8)
-})
-
-test_that("PG negative-binomial route records its joint density, with and without an iid block", {
-  skip_on_cran()
-  d <- pg_areal()
-  set.seed(10)
-  yc <- as.integer(rnbinom(d$N, size = 4, mu = exp(0.5 + 0.3 * d$X[, 2])))
-  res0 <- cpp_pg_negbin_gibbs(yc, d$X, rep(1L, d$N), 0L, PG_ITER, PG_WARM, 1L,
-                              prior_beta_sd = 3, prior_sigma_scale = 2,
-                              prior_r_shape = 1.2, prior_r_rate = 0.3,
-                              r_init = 5, store_eta = FALSE, verbose = FALSE,
-                              n_threads = 1L)
-  k <- nrow(res0$beta)
-  r <- res0$r[k]
-  beta_nb2 <- res0$beta[k, ]
-  ref <- sum(dnbinom(yc, size = r, mu = exp(as.numeric(d$X %*% beta_nb2)),
-                     log = TRUE)) +
-    sum(dnorm(beta_nb2 - c(log(r), 0), 0, 3, log = TRUE)) +
-    nb_r_log_prior(r, 1.2, 0.3)
-  expect_lt(abs(res0$log_prob[k] - ref), 1e-8)
-
-  # The iid block's level is drawn rather than removed (gcol33/tulpa#761), so
-  # the chain has a stated target and records it.
-  res1 <- cpp_pg_negbin_gibbs(yc, d$X, d$grp, 4L, PG_ITER, PG_WARM, 1L,
-                              prior_beta_sd = 3, prior_sigma_scale = 2,
-                              prior_r_shape = 1.2, prior_r_rate = 0.3,
-                              r_init = 5, store_eta = FALSE, verbose = FALSE,
-                              n_threads = 1L)
-  k <- nrow(res1$beta)
-  r <- res1$r[k]
-  beta_nb2 <- res1$beta[k, ]; re <- res1$re[k, ]; s_re <- res1$sigma_re[k]
-  ref <- sum(dnbinom(yc, size = r,
-                     mu = exp(as.numeric(d$X %*% beta_nb2) + re[d$grp]),
-                     log = TRUE)) +
-    sum(dnorm(beta_nb2 - c(log(r), 0), 0, 3, log = TRUE)) +
-    sum(dnorm(re, 0, s_re, log = TRUE)) + ref_log_hc(s_re, 2) +
-    nb_r_log_prior(r, 1.2, 0.3)
-  expect_lt(abs(res1$log_prob[k] - ref), 1e-8)
-  # The block is no longer forced to mean zero.
-  expect_gt(max(abs(rowMeans(res1$re))), 1e-6)
-})
-
 # A one-neighbour sequential NNGP over a 1-D ordering: position i's parent is
 # position i - 1, which is what the kernel's `nn_idx` encodes 1-based.
 pg_nngp_chain <- function(seed, n) {
@@ -449,4 +335,120 @@ test_that("a Polya-Gamma fit carries log_prob through the chain assembly", {
                      control = list(n_iter = PG_ITER, warmup = PG_WARM,
                                     seed = 1L))
   expect_log_posterior_mean(fit)
+})
+
+skip_on_cran()
+
+# ---------------------------------------------------------------------------
+# ModelData samplers
+# ---------------------------------------------------------------------------
+
+test_that("the per-draw helper reproduces the log_prob NUTS records", {
+  skip_on_cran()
+  d <- lp_poisson_fixture()
+  fit <- lp_sample(d, "hmc", list(n_iter = 200L, warmup = 100L, n_chains = 1L,
+                                  seed = 3L))
+  expect_log_posterior_mean(fit)
+  expect_lt(max(abs(lp_helper_at(fit) - fit$log_prob)), 1e-10)
+})
+
+test_that("re_cov_gibbs records its joint density at each retained sweep", {
+  skip_on_cran()
+  set.seed(11)
+  G <- 15L; npg <- 6L; N <- G * npg
+  g <- rep(seq_len(G), each = npg)
+  x <- rnorm(N)
+  X <- cbind(1, x)
+  Z <- cbind(1, x)
+  u <- cbind(rnorm(G, 0, 0.5), rnorm(G, 0, 0.3))
+  y <- rpois(N, exp(0.2 + 0.4 * x + rowSums(Z * u[g, ])))
+
+  for (corr in c(TRUE, FALSE)) {
+    rt <- list(idx = g, n_groups = G, n_coefs = 2L, Z = Z, correlated = corr)
+    fit <- tulpa_re_cov_gibbs(y, NULL, X, rt, family = "poisson",
+                              control = list(n_iter = 60L, warmup = 40L,
+                                             seed = 2L))
+    expect_log_posterior_mean(fit)
+
+    k <- 37L
+    beta <- fit$beta_draws[k, ]
+    B <- matrix(fit$re[k, ], ncol = 2L, byrow = TRUE)
+    S <- fit$Sigma_draws[[k]]
+    pr <- fit$prior[[1L]]
+    bp <- tulpa:::.normalize_beta_prior(
+      tulpa:::.tulpa_default_beta_prior("re_cov_gibbs"), 2L)
+    eta <- as.numeric(X %*% beta) + rowSums(Z * B[g, ])
+    ref <- sum(dpois(y, exp(eta), log = TRUE)) +
+      sum(dnorm(beta, bp$mean, bp$sd, log = TRUE)) +
+      ref_log_mvn0(B, S) +
+      if (pr$full) ref_log_iw(S, pr$nu0, pr$Lambda0) else
+        sum(vapply(1:2, function(i)
+          ref_log_iw(S[i, i, drop = FALSE], pr$nu0,
+                     matrix(pr$lambda0[i])), 0))
+    expect_lt(abs(fit$log_prob[k] - ref), 1e-8)
+  }
+})
+
+test_that("PG negative-binomial ICAR route records its joint density", {
+  skip_on_cran()
+  d <- pg_areal()
+  set.seed(9)
+  yc <- as.integer(rnbinom(d$N, size = 4, mu = exp(0.5 + 0.3 * d$X[, 2])))
+  res <- cpp_pg_negbin_gibbs_spatial(
+    yc, d$X, d$grp, 4L, d$unit, d$J, d$al$adj_list, d$al$n_neighbors,
+    PG_ITER, PG_WARM, 1L, 3, 2, 1.5, 0.2, 1.2, 0.3, 5, FALSE, FALSE, 1L)
+  k <- nrow(res$beta)
+  r <- res$r[k]
+  beta_nb2 <- res$beta[k, ]
+  beta_zhou <- beta_nb2 - c(log(r), 0)
+  re <- res$re[k, ]; phi <- res$spatial[k, ]; tau <- res$tau[k]
+  eta_nb2 <- as.numeric(d$X %*% beta_nb2) + re[d$grp] + phi[d$unit]
+  quad <- drop(crossprod(phi, ref_icar_Q(d$W) %*% phi))
+  ref <- sum(dnbinom(yc, size = r, mu = exp(eta_nb2), log = TRUE)) +
+    sum(dnorm(beta_zhou, 0, 3, log = TRUE)) +
+    sum(dnorm(re, 0, res$sigma_re[k], log = TRUE)) +
+    ref_log_hc(res$sigma_re[k], 2) +
+    ref_log_gmrf(quad, d$J - 1L, tau) + dgamma(tau, 1.5, 0.2, log = TRUE) +
+    nb_r_log_prior(r, 1.2, 0.3)
+  expect_lt(abs(res$log_prob[k] - ref), 1e-8)
+})
+
+test_that("PG negative-binomial route records its joint density, with and without an iid block", {
+  skip_on_cran()
+  d <- pg_areal()
+  set.seed(10)
+  yc <- as.integer(rnbinom(d$N, size = 4, mu = exp(0.5 + 0.3 * d$X[, 2])))
+  res0 <- cpp_pg_negbin_gibbs(yc, d$X, rep(1L, d$N), 0L, PG_ITER, PG_WARM, 1L,
+                              prior_beta_sd = 3, prior_sigma_scale = 2,
+                              prior_r_shape = 1.2, prior_r_rate = 0.3,
+                              r_init = 5, store_eta = FALSE, verbose = FALSE,
+                              n_threads = 1L)
+  k <- nrow(res0$beta)
+  r <- res0$r[k]
+  beta_nb2 <- res0$beta[k, ]
+  ref <- sum(dnbinom(yc, size = r, mu = exp(as.numeric(d$X %*% beta_nb2)),
+                     log = TRUE)) +
+    sum(dnorm(beta_nb2 - c(log(r), 0), 0, 3, log = TRUE)) +
+    nb_r_log_prior(r, 1.2, 0.3)
+  expect_lt(abs(res0$log_prob[k] - ref), 1e-8)
+
+  # The iid block's level is drawn rather than removed (gcol33/tulpa#761), so
+  # the chain has a stated target and records it.
+  res1 <- cpp_pg_negbin_gibbs(yc, d$X, d$grp, 4L, PG_ITER, PG_WARM, 1L,
+                              prior_beta_sd = 3, prior_sigma_scale = 2,
+                              prior_r_shape = 1.2, prior_r_rate = 0.3,
+                              r_init = 5, store_eta = FALSE, verbose = FALSE,
+                              n_threads = 1L)
+  k <- nrow(res1$beta)
+  r <- res1$r[k]
+  beta_nb2 <- res1$beta[k, ]; re <- res1$re[k, ]; s_re <- res1$sigma_re[k]
+  ref <- sum(dnbinom(yc, size = r,
+                     mu = exp(as.numeric(d$X %*% beta_nb2) + re[d$grp]),
+                     log = TRUE)) +
+    sum(dnorm(beta_nb2 - c(log(r), 0), 0, 3, log = TRUE)) +
+    sum(dnorm(re, 0, s_re, log = TRUE)) + ref_log_hc(s_re, 2) +
+    nb_r_log_prior(r, 1.2, 0.3)
+  expect_lt(abs(res1$log_prob[k] - ref), 1e-8)
+  # The block is no longer forced to mean zero.
+  expect_gt(max(abs(rowMeans(res1$re))), 1e-6)
 })

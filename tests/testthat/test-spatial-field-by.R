@@ -218,6 +218,8 @@ test_that("a by column missing from the data errors at fit time", {
   expect_error(tulpa:::.spatial_field_blocks(f, d), "not found in the data")
 })
 
+skip_on_cran()
+
 # --------------------------------------------------------------------------- #
 # (4) Parameter recovery                                                      #
 # --------------------------------------------------------------------------- #

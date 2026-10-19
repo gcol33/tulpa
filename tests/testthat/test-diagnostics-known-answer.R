@@ -44,6 +44,8 @@ test_that("moran_i sign tracks the spatial pattern", {
   expect_lt(as.numeric(moran_i(checker, coords, weights = "knn", k = 4L)$statistic), 0)
 })
 
+skip_on_cran()
+
 test_that("moran_i agrees with spdep::moran where available", {
   skip_on_cran()
   skip_if_not_installed("spdep")

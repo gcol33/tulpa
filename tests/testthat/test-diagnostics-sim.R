@@ -86,6 +86,8 @@ test_that("pit_residuals() reads an n_obs x nsim simulation matrix", {
   expect_true(h$p.value >= 0 && h$p.value <= 1)
 })
 
+skip_on_cran()
+
 test_that("test_outliers() refuses a fit with no extractable response, like its siblings", {
   skip_on_cran()
   set.seed(6)

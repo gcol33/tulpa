@@ -71,6 +71,8 @@ test_that("spatial(~ ... | cell) builds one coupled MCAR block", {
                "not in scope")
 })
 
+skip_on_cran()
+
 test_that("MCAR recovers the correlated fields and Sigma vs simulated truth", {
   skip_on_cran()
 

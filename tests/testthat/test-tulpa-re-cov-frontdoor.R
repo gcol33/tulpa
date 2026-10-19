@@ -24,6 +24,24 @@ test_that("re_cov backends are registered, reachable, and forceable", {
 })
 
 
+# --- multi-term: (1 + x | g) + (1 | h), correlated block + scalar block ------
+make_multi_re_data <- function(seed = 7L, G = 40L, H = 25L, npg = 12L) {
+  set.seed(seed)
+  N <- G * npg
+  g <- factor(rep(seq_len(G), each = npg))
+  h <- factor(sample.int(H, N, replace = TRUE))
+  x <- rnorm(N)
+  Sg <- matrix(c(0.8^2, 0.3 * 0.8 * 0.5, 0.3 * 0.8 * 0.5, 0.5^2), 2)
+  ug <- t(t(chol(Sg)) %*% matrix(rnorm(2 * G), 2))
+  uh <- rnorm(H, 0, 0.6)
+  eta <- -0.2 + 0.6 * x + ug[as.integer(g), 1] + ug[as.integer(g), 2] * x +
+    uh[as.integer(h)]
+  data.frame(y = rbinom(N, 1L, plogis(eta)), x = x, g = g, h = h)
+}
+
+skip_on_cran()
+
+
 test_that("correlated (1 + x | g) routes to re_cov_nested under mode='laplace'", {
   skip_on_cran()
   d <- make_corr_re_data()
@@ -96,22 +114,6 @@ test_that("uncorrelated (1 + x || g) routes to a diagonal-Sigma integration", {
   expect_length(coef(fit), 2L)
   expect_equal(dim(vcov(fit)), c(2L, 2L))
 })
-
-
-# --- multi-term: (1 + x | g) + (1 | h), correlated block + scalar block ------
-make_multi_re_data <- function(seed = 7L, G = 40L, H = 25L, npg = 12L) {
-  set.seed(seed)
-  N <- G * npg
-  g <- factor(rep(seq_len(G), each = npg))
-  h <- factor(sample.int(H, N, replace = TRUE))
-  x <- rnorm(N)
-  Sg <- matrix(c(0.8^2, 0.3 * 0.8 * 0.5, 0.3 * 0.8 * 0.5, 0.5^2), 2)
-  ug <- t(t(chol(Sg)) %*% matrix(rnorm(2 * G), 2))
-  uh <- rnorm(H, 0, 0.6)
-  eta <- -0.2 + 0.6 * x + ug[as.integer(g), 1] + ug[as.integer(g), 2] * x +
-    uh[as.integer(h)]
-  data.frame(y = rbinom(N, 1L, plogis(eta)), x = x, g = g, h = h)
-}
 
 
 test_that("multi-term (1 + x | g) + (1 | h) integrates one block per term", {

@@ -1,21 +1,3 @@
-# test-inference-dispatch.R
-# Contract for the backend registry (single source of truth) and the
-# dispatch spine: tier derivation, R-reachability, and fail-loud routing.
-
-test_that("BACKEND_REGISTRY is the single source of truth for tiers", {
-  skip_on_cran()
-  # Every registry tier key is a known tier.
-  for (b in names(BACKEND_REGISTRY)) {
-    expect_true(BACKEND_REGISTRY[[b]]$tier %in% names(TIER_META),
-                info = b)
-  }
-  # INFERENCE_TIERS membership is derived from the registry.
-  for (tk in names(TIER_META)) {
-    expect_setequal(INFERENCE_TIERS[[tk]]$backends, .tier_backends(tk))
-  }
-  # ALL_BACKENDS is exactly the registry keys.
-  expect_setequal(ALL_BACKENDS, names(BACKEND_REGISTRY))
-})
 
 test_that("smc is Tier 1 (exact); sgld/sghmc/mclmc are Tier 3 (approximate)", {
   # SMC (properly resampled) targets the exact posterior. SGLD/SGHMC carry
@@ -39,18 +21,6 @@ test_that("get_backend_tier preserves its shape and errors on unknown", {
   expect_error(get_backend_tier("nope"), "Unknown backend")
 })
 
-test_that("every registered backend is reachable from R", {
-  skip_on_cran()
-  # The ModelData sampler kernels are reachable through tulpa_sample_glmm
-  # (gcol33/tulpa#54, #55); the Polya-Gamma kernels are reachable through
-  # tulpa_gibbs() under the `gibbs` backend (gcol33/tulpa#774) -- there is no
-  # longer a registry entry with a NULL fitter. assert_backend_reachable()'s
-  # no-fitter branch stays in place for a future C-ABI-only kernel.
-  for (b in names(BACKEND_REGISTRY)) {
-    expect_true(backend_is_reachable(b), info = b)
-  }
-})
-
 test_that("the gibbs backend's C-ABI symbols name the Polya-Gamma kernels", {
   cabi <- BACKEND_REGISTRY$gibbs$cabi
   expect_true(all(c("tulpa_pg_binomial_gibbs", "tulpa_pg_negbin_gibbs",
@@ -62,6 +32,47 @@ test_that("resolve_backend_fitter returns the real function for reachable backen
   expect_identical(resolve_backend_fitter("laplace"), tulpa_laplace)
   expect_identical(resolve_backend_fitter("mala"), mala)
   expect_identical(resolve_backend_fitter("pathfinder"), pathfinder)
+})
+
+test_that("family support is derived from the registry", {
+  binom <- list(name = "binomial", distribution = "binomial")
+  gauss <- list(name = "gaussian", distribution = "gaussian")
+  expect_true(backend_supports_family("gibbs", binom))
+  expect_false(backend_supports_family("gibbs", gauss))
+  # unrestricted backend accepts anything
+  expect_true(backend_supports_family("laplace", gauss))
+})
+
+skip_on_cran()
+# test-inference-dispatch.R
+# Contract for the backend registry (single source of truth) and the
+# dispatch spine: tier derivation, R-reachability, and fail-loud routing.
+
+test_that("BACKEND_REGISTRY is the single source of truth for tiers", {
+  skip_on_cran()
+  # Every registry tier key is a known tier.
+  for (b in names(BACKEND_REGISTRY)) {
+    expect_true(BACKEND_REGISTRY[[b]]$tier %in% names(TIER_META),
+                info = b)
+  }
+  # INFERENCE_TIERS membership is derived from the registry.
+  for (tk in names(TIER_META)) {
+    expect_setequal(INFERENCE_TIERS[[tk]]$backends, .tier_backends(tk))
+  }
+  # ALL_BACKENDS is exactly the registry keys.
+  expect_setequal(ALL_BACKENDS, names(BACKEND_REGISTRY))
+})
+
+test_that("every registered backend is reachable from R", {
+  skip_on_cran()
+  # The ModelData sampler kernels are reachable through tulpa_sample_glmm
+  # (gcol33/tulpa#54, #55); the Polya-Gamma kernels are reachable through
+  # tulpa_gibbs() under the `gibbs` backend (gcol33/tulpa#774) -- there is no
+  # longer a registry entry with a NULL fitter. assert_backend_reachable()'s
+  # no-fitter branch stays in place for a future C-ABI-only kernel.
+  for (b in names(BACKEND_REGISTRY)) {
+    expect_true(backend_is_reachable(b), info = b)
+  }
 })
 
 test_that("tulpa_dispatch routes to the chosen backend and stamps the contract", {
@@ -81,13 +92,4 @@ test_that("tulpa_dispatch routes to the chosen backend and stamps the contract",
   expect_equal(fit$inference_tier, 1L)
   expect_equal(fit$inference_mode, "exact")
   expect_true(nzchar(fit$selection_reason))
-})
-
-test_that("family support is derived from the registry", {
-  binom <- list(name = "binomial", distribution = "binomial")
-  gauss <- list(name = "gaussian", distribution = "gaussian")
-  expect_true(backend_supports_family("gibbs", binom))
-  expect_false(backend_supports_family("gibbs", gauss))
-  # unrestricted backend accepts anything
-  expect_true(backend_supports_family("laplace", gauss))
 })

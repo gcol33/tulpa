@@ -32,27 +32,6 @@ test_that("the log-likelihood is -Inf outside the eta > 0 links' domain", {
   }
 })
 
-test_that("the domain check leaves every other link alone", {
-  skip_on_cran()
-  cases <- list(
-    list(family = "gamma",             y = 1.5, n = 1L,  phi = 2.0),
-    list(family = "inverse_gaussian",  y = 1.5, n = 1L,  phi = 1.1),
-    list(family = "poisson",           y = 4,   n = 1L,  phi = 1.0),
-    list(family = "binomial",          y = 3,   n = 10L, phi = 1.0),
-    list(family = "binomial_probit",   y = 3,   n = 10L, phi = 1.0),
-    list(family = "gaussian",          y = 1.2, n = 1L,  phi = 1.5),
-    list(family = "gaussian_log",      y = 1.2, n = 1L,  phi = 1.5)
-  )
-  for (cs in cases) {
-    for (eta in c(-3, 0, 0.9)) {
-      expect_true(
-        is.finite(cpp_family_terms(cs$y, cs$n, eta, cs$family, cs$phi)[["log_lik"]]),
-        info = paste(cs$family, "at eta =", eta)
-      )
-    }
-  }
-})
-
 # H_beta is assembled in R, through the family registry, so a fit with
 # return_hessian = TRUE exercises the engine and the R link layer together. That
 # is the end-to-end path: before the link layer existed the mode-finding
@@ -136,37 +115,6 @@ test_that("inverse gaussian with the 1/mu^2 link reproduces the glm MLE", {
   expect_true(all(as.vector(X %*% as.numeric(fit$mode)[1:2]) > 0))
 })
 
-test_that("the inverse-link estimator is unbiased across seeds", {
-  skip_on_cran()
-  # Reference agreement on one dataset says the solver finds the MLE. This says
-  # the MLE it finds is centred on the truth, which is the claim a single fit
-  # cannot support.
-  beta_true <- c(0.8, 0.25)
-  shape <- 6
-  n <- 300
-  n_seed <- 20
-
-  est <- t(vapply(seq_len(n_seed), function(s) {
-    set.seed(1000 + s)
-    x <- runif(n, -1, 1)
-    X <- cbind(1, x)
-    mu <- 1 / as.vector(X %*% beta_true)
-    y <- rgamma(n, shape = shape, rate = shape / mu)
-    fit <- tulpa_laplace(y, rep(1L, n), X, family = "gamma_inverse",
-                         phi = shape, beta_prior = list(sd = Inf),
-                       return_hessian = FALSE)
-    expect_true(fit$converged)
-    as.numeric(fit$mode)[1:2]
-  }, numeric(2)))
-
-  # Monte Carlo SE of the mean over n_seed replicates; the bias has to sit
-  # inside a few of those, not merely "look close".
-  for (j in 1:2) {
-    mc_se <- stats::sd(est[, j]) / sqrt(n_seed)
-    expect_lt(abs(mean(est[, j]) - beta_true[j]), 3 * mc_se + 1e-8)
-  }
-})
-
 test_that("a start outside the domain is moved inside, not clamped", {
   # x = 0 gives eta = 0 for every observation, which is the boundary. The
   # feasibility sweep has to find an interior start; if it silently clamped
@@ -206,4 +154,58 @@ test_that("the log link is unaffected by the feasibility sweep", {
   expect_true(fit$converged)
   expect_equal(as.numeric(fit$mode)[1:2], unname(stats::coef(ref)),
                tolerance = 1e-5)
+})
+
+skip_on_cran()
+
+test_that("the domain check leaves every other link alone", {
+  skip_on_cran()
+  cases <- list(
+    list(family = "gamma",             y = 1.5, n = 1L,  phi = 2.0),
+    list(family = "inverse_gaussian",  y = 1.5, n = 1L,  phi = 1.1),
+    list(family = "poisson",           y = 4,   n = 1L,  phi = 1.0),
+    list(family = "binomial",          y = 3,   n = 10L, phi = 1.0),
+    list(family = "binomial_probit",   y = 3,   n = 10L, phi = 1.0),
+    list(family = "gaussian",          y = 1.2, n = 1L,  phi = 1.5),
+    list(family = "gaussian_log",      y = 1.2, n = 1L,  phi = 1.5)
+  )
+  for (cs in cases) {
+    for (eta in c(-3, 0, 0.9)) {
+      expect_true(
+        is.finite(cpp_family_terms(cs$y, cs$n, eta, cs$family, cs$phi)[["log_lik"]]),
+        info = paste(cs$family, "at eta =", eta)
+      )
+    }
+  }
+})
+
+test_that("the inverse-link estimator is unbiased across seeds", {
+  skip_on_cran()
+  # Reference agreement on one dataset says the solver finds the MLE. This says
+  # the MLE it finds is centred on the truth, which is the claim a single fit
+  # cannot support.
+  beta_true <- c(0.8, 0.25)
+  shape <- 6
+  n <- 300
+  n_seed <- 20
+
+  est <- t(vapply(seq_len(n_seed), function(s) {
+    set.seed(1000 + s)
+    x <- runif(n, -1, 1)
+    X <- cbind(1, x)
+    mu <- 1 / as.vector(X %*% beta_true)
+    y <- rgamma(n, shape = shape, rate = shape / mu)
+    fit <- tulpa_laplace(y, rep(1L, n), X, family = "gamma_inverse",
+                         phi = shape, beta_prior = list(sd = Inf),
+                       return_hessian = FALSE)
+    expect_true(fit$converged)
+    as.numeric(fit$mode)[1:2]
+  }, numeric(2)))
+
+  # Monte Carlo SE of the mean over n_seed replicates; the bias has to sit
+  # inside a few of those, not merely "look close".
+  for (j in 1:2) {
+    mc_se <- stats::sd(est[, j]) / sqrt(n_seed)
+    expect_lt(abs(mean(est[, j]) - beta_true[j]), 3 * mc_se + 1e-8)
+  }
 })

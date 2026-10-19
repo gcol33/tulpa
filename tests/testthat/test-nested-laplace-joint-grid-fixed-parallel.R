@@ -212,6 +212,8 @@ test_that("every decline reason a retained-pair-less result can carry is stated"
                    var_of_means_consistency = FALSE))
 }
 
+skip_on_cran()
+
 test_that("a refined joint grid keeps its weights and retained pair parallel", {
   skip_on_cran()
   fit <- .j345_refining_fit()

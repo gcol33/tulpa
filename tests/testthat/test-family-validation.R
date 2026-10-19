@@ -1,21 +1,3 @@
-# Front-door likelihood-input validation (gcol33/tulpa#104).
-#
-# The public tulpa() entry accepts dispersion-carrying and count families, so a
-# non-positive `phi` or a non-integer `y` would otherwise flow into the kernel
-# and produce a NaN / silently-floored (biased) log-likelihood. These checks
-# turn each such input error into a clear front-door error.
-
-test_that(".validate_family_phi rejects non-positive phi for dispersion families", {
-  skip_on_cran()
-  for (fam in c("gaussian", "gamma", "neg_binomial_2", "inverse_gaussian", "beta")) {
-    expect_error(.validate_family_phi(fam, 0),  "positive", info = fam)
-    expect_error(.validate_family_phi(fam, -1), "positive", info = fam)
-    expect_error(.validate_family_phi(fam, NA_real_), "positive", info = fam)
-    expect_silent(.validate_family_phi(fam, 1.5))
-  }
-  # `<family>_<link>` codes share the base family's dispersion rule.
-  expect_error(.validate_family_phi("gamma_inverse", -2), "positive")
-})
 
 test_that(".validate_family_phi is a no-op for families without dispersion", {
   expect_silent(.validate_family_phi("binomial", -1))   # phi unused
@@ -33,6 +15,47 @@ test_that(".validate_family_counts rejects non-integer / negative counts", {
   expect_silent(.validate_family_counts("poisson", c(1, NA, 3)))
   # Continuous families do not constrain y to integers.
   expect_silent(.validate_family_counts("gaussian", c(0.5, 1.7, -2.3)))
+})
+
+# NOTE: the integer-count check lives at the tulpa() front door, NOT in
+# tulpa_laplace(). tulpa_laplace() is the engine the EM driver calls per block,
+# and the documented EM M-step encodes E-step weights as a CONTINUOUS
+# pseudo-binomial response (y in [0, 1]); a count check there would reject that
+# legitimate internal usage. So the rule is enforced only where the response is
+# user-supplied count data (tulpa()).
+
+# `family = "Gamma"` (the stats::Gamma() spelling) reaching the registry as an
+# unresolved string, rather than the "gamma" it means (gcol33/tulpa#806).
+test_that(".canonical_family resolves case only as a last resort", {
+  expect_equal(.canonical_family("Gamma"), "gamma")
+  expect_equal(.canonical_family("GAMMA"), "gamma")
+  expect_equal(.canonical_family("Gamma_log"), "gamma_log")
+  # An exact registry hit, or an existing alias, is never re-cased.
+  expect_equal(.canonical_family("gamma"), "gamma")
+  expect_equal(.canonical_family("binomial"), "binomial")
+  expect_equal(.canonical_family("negbin"), "neg_binomial_2")
+  # Unrecognized at any case: passed through unchanged, still refused downstream.
+  expect_equal(.canonical_family("NotAFamily"), "NotAFamily")
+})
+
+skip_on_cran()
+# Front-door likelihood-input validation (gcol33/tulpa#104).
+#
+# The public tulpa() entry accepts dispersion-carrying and count families, so a
+# non-positive `phi` or a non-integer `y` would otherwise flow into the kernel
+# and produce a NaN / silently-floored (biased) log-likelihood. These checks
+# turn each such input error into a clear front-door error.
+
+test_that(".validate_family_phi rejects non-positive phi for dispersion families", {
+  skip_on_cran()
+  for (fam in c("gaussian", "gamma", "neg_binomial_2", "inverse_gaussian", "beta")) {
+    expect_error(.validate_family_phi(fam, 0),  "positive", info = fam)
+    expect_error(.validate_family_phi(fam, -1), "positive", info = fam)
+    expect_error(.validate_family_phi(fam, NA_real_), "positive", info = fam)
+    expect_silent(.validate_family_phi(fam, 1.5))
+  }
+  # `<family>_<link>` codes share the base family's dispersion rule.
+  expect_error(.validate_family_phi("gamma_inverse", -2), "positive")
 })
 
 test_that("tulpa() rejects phi <= 0 for a gaussian fit", {
@@ -57,27 +80,6 @@ test_that("tulpa() rejects non-integer y for a poisson fit", {
   d_good <- data.frame(y = rpois(40, 3), x = rnorm(40))
   fit <- tulpa(y ~ x, data = d_good, family = "poisson", mode = "laplace")
   expect_s3_class(fit, "tulpa_fit")
-})
-
-# NOTE: the integer-count check lives at the tulpa() front door, NOT in
-# tulpa_laplace(). tulpa_laplace() is the engine the EM driver calls per block,
-# and the documented EM M-step encodes E-step weights as a CONTINUOUS
-# pseudo-binomial response (y in [0, 1]); a count check there would reject that
-# legitimate internal usage. So the rule is enforced only where the response is
-# user-supplied count data (tulpa()).
-
-# `family = "Gamma"` (the stats::Gamma() spelling) reaching the registry as an
-# unresolved string, rather than the "gamma" it means (gcol33/tulpa#806).
-test_that(".canonical_family resolves case only as a last resort", {
-  expect_equal(.canonical_family("Gamma"), "gamma")
-  expect_equal(.canonical_family("GAMMA"), "gamma")
-  expect_equal(.canonical_family("Gamma_log"), "gamma_log")
-  # An exact registry hit, or an existing alias, is never re-cased.
-  expect_equal(.canonical_family("gamma"), "gamma")
-  expect_equal(.canonical_family("binomial"), "binomial")
-  expect_equal(.canonical_family("negbin"), "neg_binomial_2")
-  # Unrecognized at any case: passed through unchanged, still refused downstream.
-  expect_equal(.canonical_family("NotAFamily"), "NotAFamily")
 })
 
 test_that("family = 'Gamma' and family = Gamma(link = 'log') fit identically", {

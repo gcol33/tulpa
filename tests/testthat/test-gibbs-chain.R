@@ -40,6 +40,19 @@ test_that("the kernel blocks become sampler-named draw columns", {
                "no 'trend' block")
 })
 
+test_that("the as_draws refusal describes what the fit carries", {
+  fit <- structure(list(backend = "laplace", draws_kind = "iid", mode = c(0, 1),
+                        H_beta = diag(2)),
+                   class = "tulpa_fit")
+  skip_if_not_installed("posterior")
+  expect_error(as_draws_df(fit), "Laplace mode and its precision")
+  chain <- structure(list(backend = "gibbs", draws_kind = "chain"),
+                     class = "tulpa_fit")
+  expect_error(as_draws_df(chain), "stamped as an MCMC chain")
+})
+
+skip_on_cran()
+
 test_that("mode = 'gibbs' carries its chain to the chain accessors", {
   skip_on_cran()
   set.seed(1); N <- 300
@@ -71,15 +84,4 @@ test_that("mode = 'gibbs' carries its chain to the chain accessors", {
   df <- posterior::as_draws_df(fg)
   expect_equal(posterior::ndraws(df), 150L)
   expect_true("log_sigma_re" %in% posterior::variables(df))
-})
-
-test_that("the as_draws refusal describes what the fit carries", {
-  fit <- structure(list(backend = "laplace", draws_kind = "iid", mode = c(0, 1),
-                        H_beta = diag(2)),
-                   class = "tulpa_fit")
-  skip_if_not_installed("posterior")
-  expect_error(as_draws_df(fit), "Laplace mode and its precision")
-  chain <- structure(list(backend = "gibbs", draws_kind = "chain"),
-                     class = "tulpa_fit")
-  expect_error(as_draws_df(chain), "stamped as an MCMC chain")
 })

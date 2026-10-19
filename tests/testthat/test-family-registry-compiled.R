@@ -43,6 +43,56 @@ test_that("every registered family has a case in the cross-check", {
   expect_setequal(family_names(), names(.registry_cases))
 })
 
+test_that("the second dispersion crosses to the compiled dispatch intact", {
+  # tweedie has no default power, so a missing phi2 must still refuse rather
+  # than reach the kernel as NA; `t` has one on both sides, and the two
+  # defaults have to BE the same number or the compiled route quietly fits a
+  # different df from the registry.
+  expect_error(tulpa:::.family_obs_weight(0.3, 1.7, "tweedie"), "phi2")
+  expect_error(family_weight(0.3, "tweedie"), "phi2")
+  for (e in c(-0.4, 0.3, 1.1)) {
+    for (y in c(-1.1, 0.5, 2.3)) {
+      expect_equal(
+        tulpa:::.family_obs_weight(e, y, "t", phi = 1.2),
+        unname(cpp_family_obs_terms(y, 1L, e, "t", 1.2,
+                                    tulpa:::.STUDENT_T_DF)[["neg_hess"]]),
+        tolerance = 1e-12,
+        info = sprintf("t default df at y = %g, eta = %g", y, e))
+    }
+  }
+})
+
+test_that(".family_obs_weight recycles to the longest argument", {
+  eta <- c(-0.4, 0.3, 1.1)
+  expect_length(tulpa:::.family_obs_weight(eta, 2, "poisson"), 3L)
+  expect_length(tulpa:::.family_obs_weight(0.3, c(1, 2, 5), "poisson"), 3L)
+  expect_equal(tulpa:::.family_obs_weight(eta, 2, "poisson"),
+               vapply(eta, function(e)
+                 tulpa:::.family_obs_weight(e, 2, "poisson"), numeric(1)))
+})
+
+test_that("neg_binomial_2 and beta are the families whose Laplace weight needs the response", {
+  # Pins the characterisation rather than the family list: a family qualifies
+  # when the compiled working weight IS the observed curvature AND the
+  # registry carries a separate (y-carrying) observed form.
+  needs <- Filter(tulpa:::.glmm_weight_needs_y, family_names())
+  expect_setequal(needs, c("neg_binomial_2", "beta"))
+  expect_error(tulpa:::glmm_weights(0.4, "beta", phi = 3), "pass `y`")
+
+  # Without the response it refuses rather than returning the expected form,
+  # which differs by tens of percent at a y away from the mean: at phi = 1.7,
+  # eta = 1.3, y = 9 the expected weight is 1.162 and the observed 2.315.
+  expect_error(tulpa:::glmm_weights(1.3, "neg_binomial_2", phi = 1.7),
+               "pass `y`")
+  mu <- exp(1.3)
+  expect_equal(tulpa:::glmm_weights(1.3, "neg_binomial_2", phi = 1.7, y = 9),
+               (9 + 1.7) * 1.7 * mu / (mu + 1.7)^2, tolerance = 1e-10)
+  expect_equal(family_weight(1.3, "neg_binomial_2", phi = 1.7),
+               mu * 1.7 / (mu + 1.7), tolerance = 1e-10)
+})
+
+skip_on_cran()
+
 test_that("the R family registry agrees with the compiled kernels", {
   skip_on_cran()
   for (fam in family_names()) {
@@ -131,52 +181,4 @@ test_that("the observed curvature is not the expected weight where they differ",
                    info = sprintf("%s at y = %g, eta = %g", fam, y, e))
     }
   }
-})
-
-test_that("the second dispersion crosses to the compiled dispatch intact", {
-  # tweedie has no default power, so a missing phi2 must still refuse rather
-  # than reach the kernel as NA; `t` has one on both sides, and the two
-  # defaults have to BE the same number or the compiled route quietly fits a
-  # different df from the registry.
-  expect_error(tulpa:::.family_obs_weight(0.3, 1.7, "tweedie"), "phi2")
-  expect_error(family_weight(0.3, "tweedie"), "phi2")
-  for (e in c(-0.4, 0.3, 1.1)) {
-    for (y in c(-1.1, 0.5, 2.3)) {
-      expect_equal(
-        tulpa:::.family_obs_weight(e, y, "t", phi = 1.2),
-        unname(cpp_family_obs_terms(y, 1L, e, "t", 1.2,
-                                    tulpa:::.STUDENT_T_DF)[["neg_hess"]]),
-        tolerance = 1e-12,
-        info = sprintf("t default df at y = %g, eta = %g", y, e))
-    }
-  }
-})
-
-test_that(".family_obs_weight recycles to the longest argument", {
-  eta <- c(-0.4, 0.3, 1.1)
-  expect_length(tulpa:::.family_obs_weight(eta, 2, "poisson"), 3L)
-  expect_length(tulpa:::.family_obs_weight(0.3, c(1, 2, 5), "poisson"), 3L)
-  expect_equal(tulpa:::.family_obs_weight(eta, 2, "poisson"),
-               vapply(eta, function(e)
-                 tulpa:::.family_obs_weight(e, 2, "poisson"), numeric(1)))
-})
-
-test_that("neg_binomial_2 and beta are the families whose Laplace weight needs the response", {
-  # Pins the characterisation rather than the family list: a family qualifies
-  # when the compiled working weight IS the observed curvature AND the
-  # registry carries a separate (y-carrying) observed form.
-  needs <- Filter(tulpa:::.glmm_weight_needs_y, family_names())
-  expect_setequal(needs, c("neg_binomial_2", "beta"))
-  expect_error(tulpa:::glmm_weights(0.4, "beta", phi = 3), "pass `y`")
-
-  # Without the response it refuses rather than returning the expected form,
-  # which differs by tens of percent at a y away from the mean: at phi = 1.7,
-  # eta = 1.3, y = 9 the expected weight is 1.162 and the observed 2.315.
-  expect_error(tulpa:::glmm_weights(1.3, "neg_binomial_2", phi = 1.7),
-               "pass `y`")
-  mu <- exp(1.3)
-  expect_equal(tulpa:::glmm_weights(1.3, "neg_binomial_2", phi = 1.7, y = 9),
-               (9 + 1.7) * 1.7 * mu / (mu + 1.7)^2, tolerance = 1e-10)
-  expect_equal(family_weight(1.3, "neg_binomial_2", phi = 1.7),
-               mu * 1.7 / (mu + 1.7), tolerance = 1e-10)
 })

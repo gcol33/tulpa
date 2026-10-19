@@ -63,6 +63,8 @@ test_that(".nested_grid_pareto_k target carries no change-of-variables Jacobian"
   expect_false(isTRUE(all.equal(ref_nojac, ref_withjac, tolerance = 1e-6)))
 })
 
+skip_on_cran()
+
 test_that("joint outer Pareto-k target carries no log-axis Jacobian (#221)", {
   skip_on_cran()
   # Same fix on the joint path (.joint_pareto_inv). Ground truth is

@@ -71,6 +71,59 @@
 }
 
 # --------------------------------------------------------------------------- #
+# 4. The no-grid spec: a mode-Hessian proposal with no integration nodes       #
+# --------------------------------------------------------------------------- #
+
+test_that("a spec carrying no grid withholds the mixture and keeps the rest", {
+    # The shape `tulpa_re_cov_nested()` and `fit_spde(method = "ccd")` build:
+    # the proposal is the mode-find's own Gaussian, so there is no node set. The
+    # mixture's bump width is a grid RESOLUTION, which a mode-Hessian proposal
+    # does not have, so that candidate must DECLINE rather than invent one --
+    # while moment matching and the skew-normal rescue, which need only the
+    # proposal and its own draws, stay available.
+    lg <- .lv_heavy(0.4, 8)
+    lt <- function(U) lg(U[, 1])
+    spec <- tulpa:::.k_cand_spec(lt = lt, u_hat = 0, Su = matrix(0.02, 1, 1),
+                                 proposal_source = "mode_hessian")
+    expect_null(spec$u_grid)
+    expect_null(spec$w)
+    expect_null(tulpa:::.k_score_mixture(spec, 500L))
+
+    set.seed(3)
+    g <- tulpa:::.k_score_gaussian(spec, 500L)
+    expect_true(is.finite(g$pareto_k))
+    # No node set means no coverage envelope, so every draw is evaluated.
+    expect_identical(nrow(g$U), 500L)
+
+    set.seed(3)
+    out <- tulpa:::.k_dispatch(spec, 500L)
+    expect_false(tulpa:::.k_is_decline(out))
+    expect_true(out$source %in% c("mode_hessian", "moment_matched",
+                                  "skew_normal"))
+    # The first pass travels with the choice: the proposal AS PLACED, before any
+    # candidate refined it, which is what says whether the placement was good.
+    expect_true(is.finite(out$first_pass_k))
+    expect_lte(out$best$pareto_k, out$first_pass_k + 1e-8)
+})
+
+test_that("the dispatch declines below the PSIS floor without touching the target", {
+    # A sub-floor budget can never reach a GPD fit, so no candidate may pay an
+    # (expensive) target evaluation to discover that. The mixture is the one
+    # that would: it samples its components before scoring.
+    hit <- 0L
+    lt  <- function(U) { hit <<- hit + nrow(U); rep(0, nrow(U)) }
+    spec <- tulpa:::.k_cand_spec(
+        lt = lt, u_hat = 0, Su = matrix(1, 1, 1),
+        u_grid = matrix(seq(-2, 2, length.out = 9L), ncol = 1L),
+        w = rep(1 / 9, 9L))
+    out <- tulpa:::.k_dispatch(spec, 20L)
+    expect_true(tulpa:::.k_is_decline(out))
+    expect_identical(hit, 0L)
+})
+
+skip_on_cran()
+
+# --------------------------------------------------------------------------- #
 # 1. Skewness alone does not produce a bad outer k-hat                         #
 # --------------------------------------------------------------------------- #
 
@@ -138,55 +191,4 @@ test_that("the joint dispatch reads a strictly better k than its first pass", {
     expect_lte(sc[["k_full"]],  sc[["k_gauss"]] + 1e-8)
     expect_gt(sc[["k_gm"]],   tulpa:::.nl_diag("k_usable"))   # unreliable
     expect_lt(sc[["k_full"]], tulpa:::.nl_diag("k_usable"))   # usable
-})
-
-# --------------------------------------------------------------------------- #
-# 4. The no-grid spec: a mode-Hessian proposal with no integration nodes       #
-# --------------------------------------------------------------------------- #
-
-test_that("a spec carrying no grid withholds the mixture and keeps the rest", {
-    # The shape `tulpa_re_cov_nested()` and `fit_spde(method = "ccd")` build:
-    # the proposal is the mode-find's own Gaussian, so there is no node set. The
-    # mixture's bump width is a grid RESOLUTION, which a mode-Hessian proposal
-    # does not have, so that candidate must DECLINE rather than invent one --
-    # while moment matching and the skew-normal rescue, which need only the
-    # proposal and its own draws, stay available.
-    lg <- .lv_heavy(0.4, 8)
-    lt <- function(U) lg(U[, 1])
-    spec <- tulpa:::.k_cand_spec(lt = lt, u_hat = 0, Su = matrix(0.02, 1, 1),
-                                 proposal_source = "mode_hessian")
-    expect_null(spec$u_grid)
-    expect_null(spec$w)
-    expect_null(tulpa:::.k_score_mixture(spec, 500L))
-
-    set.seed(3)
-    g <- tulpa:::.k_score_gaussian(spec, 500L)
-    expect_true(is.finite(g$pareto_k))
-    # No node set means no coverage envelope, so every draw is evaluated.
-    expect_identical(nrow(g$U), 500L)
-
-    set.seed(3)
-    out <- tulpa:::.k_dispatch(spec, 500L)
-    expect_false(tulpa:::.k_is_decline(out))
-    expect_true(out$source %in% c("mode_hessian", "moment_matched",
-                                  "skew_normal"))
-    # The first pass travels with the choice: the proposal AS PLACED, before any
-    # candidate refined it, which is what says whether the placement was good.
-    expect_true(is.finite(out$first_pass_k))
-    expect_lte(out$best$pareto_k, out$first_pass_k + 1e-8)
-})
-
-test_that("the dispatch declines below the PSIS floor without touching the target", {
-    # A sub-floor budget can never reach a GPD fit, so no candidate may pay an
-    # (expensive) target evaluation to discover that. The mixture is the one
-    # that would: it samples its components before scoring.
-    hit <- 0L
-    lt  <- function(U) { hit <<- hit + nrow(U); rep(0, nrow(U)) }
-    spec <- tulpa:::.k_cand_spec(
-        lt = lt, u_hat = 0, Su = matrix(1, 1, 1),
-        u_grid = matrix(seq(-2, 2, length.out = 9L), ncol = 1L),
-        w = rep(1 / 9, 9L))
-    out <- tulpa:::.k_dispatch(spec, 20L)
-    expect_true(tulpa:::.k_is_decline(out))
-    expect_identical(hit, 0L)
 })

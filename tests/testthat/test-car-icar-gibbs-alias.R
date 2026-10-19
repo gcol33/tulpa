@@ -37,6 +37,8 @@ test_that("auto routes a spatial_car() binomial model to Gibbs, matching a bare 
   expect_equal(sel_car_proper$backend, "nested_laplace")
 })
 
+skip_on_cran()
+
 test_that("mode = 'gibbs' accepts spatial_car() and reproduces the bare-list icar fit", {
   skip_if_not_slow()
   set.seed(4)

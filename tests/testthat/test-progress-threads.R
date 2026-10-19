@@ -108,6 +108,8 @@ test_that("tulpa_iter_progress omits the threads field when serial", {
   list(out = out, fit = fit)
 }
 
+skip_on_cran()
+
 test_that("nested-laplace-joint progress line shows the outer-thread count", {
   skip_on_cran()
   # The count is the REALISED outer width, which is what this file's own header

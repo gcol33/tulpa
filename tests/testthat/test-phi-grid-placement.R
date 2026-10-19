@@ -301,6 +301,8 @@ test_that("the coarsest axis reports the lever it actually has", {
         list(coarsest = "phi_pos", axis_declined = character(0))))
 })
 
+skip_on_cran()
+
 # --------------------------------------------------------------------------- #
 # End to end: a coarse dispersion axis, placed and not placed                 #
 # --------------------------------------------------------------------------- #

@@ -15,6 +15,17 @@
     -0.5 * log(2 * pi * sigma^2) - 0.5 * z^2 - logPhi
 }
 
+test_that("deep truncation (predicted mean far above the bound) stays finite", {
+    # eta well above u: nearly all mass is truncated; lambda ~ -a is large but the
+    # log-space inverse-Mills keeps ll / grad / neg_hess finite, neg_hess floored.
+    out <- tulpa:::cpp_truncated_gaussian_terms(-4.6, 0.0, 5.0, 0.3)
+    expect_true(is.finite(out[["ll"]]))
+    expect_true(is.finite(out[["grad"]]))
+    expect_true(is.finite(out[["neg_hess"]]) && out[["neg_hess"]] >= 0)
+})
+
+skip_on_cran()
+
 test_that("analytic grad / neg_hess match central differences", {
     skip_on_cran()
     h <- 1e-5
@@ -51,15 +62,6 @@ test_that("u = +Inf reduces exactly to the gaussian arm", {
         expect_equal(out[["grad"]], (y - eta) / sg^2, tolerance = 1e-12)
         expect_equal(out[["neg_hess"]], 1 / sg^2, tolerance = 1e-12)
     }
-})
-
-test_that("deep truncation (predicted mean far above the bound) stays finite", {
-    # eta well above u: nearly all mass is truncated; lambda ~ -a is large but the
-    # log-space inverse-Mills keeps ll / grad / neg_hess finite, neg_hess floored.
-    out <- tulpa:::cpp_truncated_gaussian_terms(-4.6, 0.0, 5.0, 0.3)
-    expect_true(is.finite(out[["ll"]]))
-    expect_true(is.finite(out[["grad"]]))
-    expect_true(is.finite(out[["neg_hess"]]) && out[["neg_hess"]] >= 0)
 })
 
 test_that("truncated-normal moment identities hold (MLE target)", {

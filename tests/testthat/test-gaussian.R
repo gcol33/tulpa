@@ -1,3 +1,13 @@
+
+test_that("tulpa_gaussian refuses the retired fixed-step knobs", {
+  d <- data.frame(x = 1:5, y = c(1.2, 1.9, 3.1, 4.2, 4.8))
+  expect_error(tulpa_gaussian(y ~ x, d, control = list(step_size = 0.05)),
+               "Unknown control knob")
+  expect_error(tulpa_gaussian(y ~ x, d, control = list(adapt_delta = 1.2)),
+               "adapt_delta")
+})
+
+skip_on_cran()
 test_that("tulpa_gaussian fits a simple linear model", {
   skip_on_cran()
   set.seed(123)
@@ -74,12 +84,4 @@ test_that("tulpa_gaussian runs the AD-gradient NUTS path and reports its accepta
   expect_equal(unname(fit$means[1:2]), unname(stats::coef(ref)),
                tolerance = 0.05)
   expect_equal(unname(fit$sigma), summary(ref)$sigma, tolerance = 0.1)
-})
-
-test_that("tulpa_gaussian refuses the retired fixed-step knobs", {
-  d <- data.frame(x = 1:5, y = c(1.2, 1.9, 3.1, 4.2, 4.8))
-  expect_error(tulpa_gaussian(y ~ x, d, control = list(step_size = 0.05)),
-               "Unknown control knob")
-  expect_error(tulpa_gaussian(y ~ x, d, control = list(adapt_delta = 1.2)),
-               "adapt_delta")
 })

@@ -85,15 +85,6 @@ test_that("ordinal / multinomial refuse NA rows and empty response levels", {
                "response level\\(s\\) '9' have no observations")
 })
 
-test_that("tulpa_ordinal fits the cutpoints-only model y ~ 1", {
-  skip_on_cran()
-  d <- .sv_ordinal()
-  f <- tulpa_ordinal(y ~ 1, d)
-  emp <- stats::qlogis(cumsum(table(d$y)) / nrow(d))[1:3]
-  expect_equal(unname(f$cutpoints), unname(emp), tolerance = 0.01)
-  expect_length(coef(f), 0L)
-})
-
 test_that("mala() refuses a gradient of the wrong length", {
   lp <- function(t) -0.5 * sum(t^2)
   expect_error(mala(lp, function(t) -t[1], init = c(0, 0), n_iter = 10,
@@ -102,4 +93,15 @@ test_that("mala() refuses a gradient of the wrong length", {
   expect_error(mala(lp, function(t) c(NA, 0), init = c(0, 0), n_iter = 10,
                     warmup = 5),
                "`grad_log_posterior\\(init\\)` is not finite")
+})
+
+skip_on_cran()
+
+test_that("tulpa_ordinal fits the cutpoints-only model y ~ 1", {
+  skip_on_cran()
+  d <- .sv_ordinal()
+  f <- tulpa_ordinal(y ~ 1, d)
+  emp <- stats::qlogis(cumsum(table(d$y)) / nrow(d))[1:3]
+  expect_equal(unname(f$cutpoints), unname(emp), tolerance = 0.01)
+  expect_length(coef(f), 0L)
 })

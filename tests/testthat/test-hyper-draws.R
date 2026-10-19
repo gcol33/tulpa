@@ -39,50 +39,6 @@ hd_two_axis <- function(within = "box_uniform") {
     within = within)
 }
 
-
-# ---- 1. The draws ARE the reported marginal -------------------------------
-
-test_that("jittered hyperparameter draws reproduce the fit's own quantiles", {
-  skip_on_cran()
-  for (wc in c("box_uniform", "log_quadratic", "chord")) {
-    fit <- hd_two_axis(wc)
-    set.seed(823)
-    th <- tulpa_hyper_draws(fit, n = 4e5L)
-
-    expect_equal(dim(th), c(4e5L, 2L))
-    expect_identical(colnames(th), c("tau", "rho"))
-    expect_identical(unname(attr(th, "within_cell")), rep(wc, 2L))
-    expect_true(all(is.na(attr(th, "within_cell_declined"))))
-
-    for (ax in colnames(th)) {
-      q <- unname(stats::quantile(th[, ax], c(0.025, 0.5, 0.975)))
-      rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
-                 fit$theta_ci_hi[[ax]])
-      # The read inverts a CDF; the draws sample it. At 4e5 draws the Monte
-      # Carlo error on a quantile of an axis whose support is ~1 wide is ~1e-3.
-      expect_lt(max(abs(q - rep_q)), 5e-3)
-    }
-  }
-})
-
-test_that("a log-quadratic cell's draws sit on the stretch of its row it owns", {
-  skip_on_cran()
-  # The cell-conditional is the part of its row's reconstructed CDF its level
-  # owns, so the draws in one cell stay around that cell rather than spreading
-  # along the whole row, and the latent half drawn in the same cell is matched
-  # with a hyperparameter near it.
-  fit <- hd_two_axis("log_quadratic")
-  set.seed(9321)
-  th <- tulpa_hyper_draws(fit, n = 4e4L)
-  cells <- attr(th, "cells")
-  tg <- fit$theta_grid
-  modal <- which.max(fit$weights)
-  d <- log(th[cells == modal, "tau"])
-  lev <- sort(unique(log(tg[, "tau"])))
-  h <- diff(lev)[1L]
-  expect_lt(max(abs(d - log(tg[modal, "tau"]))), 1.5 * h)
-})
-
 test_that("the atom is gone: draws take more values than the grid has nodes", {
   fit <- hd_two_axis()
   set.seed(1)
@@ -273,33 +229,6 @@ hd_sbc <- function(n_obs, prior_sd, n_nodes, n_sim, n_draw = 1500L,
   out
 }
 
-test_that("the node atom pins the PIT exactly where the truth leaves the grid", {
-  skip_on_cran()
-  r <- hd_sbc(n_obs = 20L, prior_sd = 0.5, n_nodes = 5L, n_sim = 150L)
-  at_end <- function(p) mean(p <= 1e-3 | p >= 1 - 1e-3)
-  # The identity, not an inequality: under the atom read a truth outside the
-  # node range has NO draw on its far side, so its PIT is exactly 0 or 1.
-  expect_equal(at_end(r$atom), mean(r$outside))
-  # The box read's outer half-cell reaches past the outermost node, so it pins
-  # no more of the PIT than the exact posterior does.
-  expect_lte(at_end(r$box), at_end(r$exact) + 1e-12)
-})
-
-test_that("the continuized PIT is uniform where the node atom's is not", {
-  skip_if_not_slow()
-  r <- hd_sbc(n_obs = 20L, prior_sd = 0.5, n_nodes = 5L, n_sim = 400L)
-  ks <- function(p) suppressWarnings(stats::ks.test(p, "punif")$p.value)
-  # The atom read is a discrete distribution on the node CDF's steps: 400
-  # replicates take ~185 distinct PIT values against 400 for the exact
-  # posterior, and its uniformity test is rejected outright.
-  expect_lt(length(unique(round(r$atom, 6))), 0.6 * length(r$atom))
-  expect_lt(ks(r$atom), 1e-4)
-  # The fix restores it, on the same replicates and the same cells.
-  expect_gt(length(unique(round(r$box, 6))), 0.8 * length(r$box))
-  expect_gt(ks(r$box), 0.05)
-  expect_gt(ks(r$exact), 0.05)
-})
-
 
 # ---- 5. Coupling across axes, and what does move a grid-route read ----------
 
@@ -401,50 +330,6 @@ hd_indep_draws <- function(fit, cells) {
   })
 }
 
-test_that("a product of anticorrelated axes keeps the posterior's spread (#859)", {
-  skip_on_cran()
-  exact <- 0.5 * sqrt(2 * (1 - 0.9))
-  n_draw <- if (cran_fixture()) 2e4L else 1e5L
-  for (K in c(5L, 7L, 9L)) {
-    for (wc in c("box_uniform", "chord")) {
-      fit <- hd_ridge(-0.9, K, wc)
-      set.seed(859)
-      th <- tulpa_hyper_draws(fit, n = n_draw)
-      lsum <- log(th[, "sigma"]) + log(th[, "tau"])
-      ind <- hd_indep_draws(fit, attr(th, "cells"))
-      lsum_ind <- log(ind[, 1L]) + log(ind[, 2L])
-      # The coupled draws carry the posterior's own correlation between the
-      # log axes, where the independent jitter dilutes it towards zero.
-      expect_lt(abs(stats::cor(log(th))[1L, 2L] + 0.9), 0.02)
-      # And the product's spread with it: exactly what the draws' own
-      # marginals give at the posterior's correlation. What separates that from
-      # the exact 0.224 is each axis's within-cell read widening its marginal
-      # (the chord at K = 5 by 29%), which no coupling reaches; measured, the
-      # coupled product sits at 0.227-0.285 against 0.268-0.611 independent.
-      sd1 <- stats::sd(log(th[, "sigma"]))
-      sd2 <- stats::sd(log(th[, "tau"]))
-      implied <- sqrt(sd1^2 + sd2^2 - 2 * 0.9 * sd1 * sd2)
-      expect_lt(abs(stats::sd(lsum) / implied - 1), 0.05)
-      expect_lt(abs(stats::sd(lsum) - exact),
-                abs(stats::sd(lsum_ind) - exact))
-    }
-  }
-})
-
-test_that("the copula leaves every marginal where the fit reports it", {
-  skip_on_cran()
-  fit <- hd_ridge(-0.9, 7L)
-  set.seed(8591)
-  th <- tulpa_hyper_draws(fit, n = 4e5L)
-  expect_lt(attr(th, "within_cell_copula")[1L, 2L], -0.3)
-  for (ax in colnames(th)) {
-    q <- unname(stats::quantile(th[, ax], c(0.025, 0.5, 0.975)))
-    rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
-               fit$theta_ci_hi[[ax]])
-    expect_lt(max(abs(q - rep_q) / diff(range(fit$theta_grid[, ax]))), 5e-3)
-  }
-})
-
 test_that("an uncorrelated grid, and an axis that does not spread, stay uncoupled", {
   cop <- attr(tulpa_hyper_draws(hd_ridge(0, 7L), n = 50L), "within_cell_copula")
   expect_lt(abs(cop[1L, 2L]), 0.02)
@@ -510,6 +395,291 @@ hd_exact_log_moments <- function(f) {
        sd = sqrt(c(sum(p * (x$x1 - m[1L])^2), sum(p * (x$x2 - m[2L])^2))),
        sd_sum = sqrt(sum(p * (x$x1 + x$x2 - sum(m))^2)))
 }
+
+
+# ---- 7. An axis carrying a declared point mass (gcol33/tulpa#854) -----------
+#
+# The copy scale is not a continuum. It is the declared "no coupling" model at
+# `alpha = 0`, carrying `.TULPA_COPY_ATOM_MASS` whatever the node count, plus a
+# log continuum on (0, Inf) -- and three readers already split it there on the
+# one rule `.hyper_axis_scale()` states: the measure that integrates the axis
+# (`.hyper_axis_measure()`), the support it reports (`.hyper_axis_support()`)
+# and the prior that weighs the level (`.hyper_is_atom_level()`). The reporting
+# partition was the fourth reader and the only one that did not, because it
+# took the axis's support from the outer Pareto-k PROPOSAL's tag (`identity`,
+# which a proposal needs in order to reach zero at all).
+#
+# So the level got a cell, half a node spacing wide, reaching BELOW the axis's
+# own support -- and the two failures the issue measured follow from one
+# geometry: the level's posterior mass is reproduced by no draw, and draws leave
+# the support. The arbiter here is the same one section 1 uses, the read and the
+# draws being one construction, applied to the axis where they were two.
+
+hd_copy <- function(within = "box_uniform", lp_alpha = NULL) {
+  lp_alpha <- lp_alpha %||% function(a) -0.5 * (a - 0.5)^2 / 0.3^2
+  hd_fit(
+    list(alpha = c(0, 0.25, 0.5, 1.0),
+         sigma = exp(seq(log(0.4), log(1.5), length.out = 4))),
+    function(tg) -0.5 * (log(tg[, "sigma"]) - log(0.9))^2 / 0.4^2 +
+                  lp_alpha(tg[, "alpha"]),
+    within = within)
+}
+
+test_that("a declared point mass is named as one, and its continuum is positive", {
+  fit <- hd_copy()
+  geo <- tulpa:::.nl_axis_geometry(fit)
+  nms <- colnames(tulpa:::.nl_theta_matrix(fit))
+  # Both axes are log-scale, so both declare the level; only `alpha` carries a
+  # grid node on it. The copy axis's PROPOSAL coordinate stays `identity` --
+  # that tag has to reach zero -- and is a separate statement from its support.
+  expect_identical(geo$domain, rep("positive", length(nms)))
+  expect_identical(geo$atom, rep(0, length(nms)))
+  expect_identical(
+    unname(tulpa:::.joint_axis_tags_raw(list(theta_grid = fit$theta_grid,
+                                             prior = list(type = "bym2")))),
+    c("identity", "log"))
+})
+
+test_that("a level the grid does not carry leaves the read byte-identical", {
+  # The no-op half: `sigma` declares the same level and has no node on it, so
+  # every read has to return exactly what it returned with nothing declared.
+  fit <- hd_copy()
+  v <- as.numeric(fit$theta_grid[, "sigma"])
+  w <- fit$weights / sum(fit$weights)
+  p <- c(0.025, 0.5, 0.975)
+  for (wc in c("box_uniform", "chord")) {
+    expect_identical(
+      tulpa:::.nl_summary_quantile(v, w, p, "positive", "density", wc, 0),
+      tulpa:::.nl_summary_quantile(v, w, p, "positive", "density", wc,
+                                   NA_real_))
+  }
+})
+
+test_that("the resolution of an axis with a point mass is its continuum's", {
+  # `h` is a cell width and the level owns no cell, so the ratio is read off
+  # the continuum alone -- in log, the coordinate the continuum is laid out and
+  # integrated in (`.hyper_axis_measure()`). Keeping the level in measured the
+  # spacing of a partition the axis is not integrated on.
+  fit <- hd_copy()
+  h <- fit$outer_grid_cell_width[["alpha"]]
+  pos <- sort(unique(as.numeric(fit$theta_grid[, "alpha"])))
+  pos <- pos[pos > 0]
+  expect_equal(h, stats::median(diff(log(pos))))
+  expect_true(is.na(fit$outer_grid_resolution_declined[["alpha"]]))
+})
+
+
+# ---- 6. A refined axis: levels added in every row ---------------------------
+#
+# A refinement pass adds levels to one axis in every row of the others, so the
+# grid stays a tensor and every cell's box is its level's box in one partition
+# over the axis's levels. The declared levels fix that partition's outer edges,
+# so a level added beside an outer node does not cut the declared span. The
+# read and the draws take the same boxes.
+
+hd_refined <- function(within = "box_uniform", r = 0) {
+  axes <- list(tau = exp(seq(log(0.2), log(3), length.out = 7)),
+               rho = seq(0.1, 0.9, length.out = 5))
+  lmf <- function(tg) {
+    z1 <- (log(tg[, "tau"]) - log(0.8)) / 0.3
+    z2 <- (tg[, "rho"] - 0.55) / 0.2
+    -0.5 * (z1^2 + z2^2 - 2 * r * z1 * z2) / (1 - r^2)
+  }
+  base <- as.matrix(expand.grid(axes))
+  tau <- axes$tau
+  pts <- c(sqrt(tau[3:4] * tau[4:5]), tau[7] * (tau[6] / tau[7])^0.25)
+  added <- as.matrix(expand.grid(tau = pts, rho = axes$rho))
+  tg <- rbind(base, added)
+  refining <- c(rep("", nrow(base)), rep("tau", nrow(added)))
+  specs <- tulpa:::.joint_axis_specs_from_grid(base)
+  lq <- tulpa:::.hyper_log_quad_weights(tg, specs, refining = refining)
+  lm <- lmf(tg)
+  res <- list(theta_grid = tg, log_marginal = lm, log_quad = lq,
+              refining_axis = refining, integration = "grid",
+              prior = list(type = "bym2"), blocks = NULL, axis_offsets = NULL)
+  res$weights <- tulpa:::.nl_normalise_weights_safe(lm, "outer grid",
+                                                    log_quad = lq)
+  res <- tulpa:::.nl_posterior_moments(res, "bym2", within = within)
+  res$within_cell_requested <- within
+  structure(res, class = c("tulpa_nested_laplace", "list", "tulpa_fit"))
+}
+
+# Every cell's box along `tau` on the fixture: its level's box in the partition
+# over all levels, the outer edges the declared levels'.
+hd_refined_boxes <- function(fit) {
+  tg <- fit$theta_grid
+  lev <- sort(unique(as.numeric(tg[, "tau"])))
+  dcl <- tulpa:::.nl_axis_declared_levels(tg, 1L, fit$refining_axis)
+  e <- tulpa:::.nl_level_edges(lev, "positive", dcl)$e
+  k <- match(tg[, "tau"], lev)
+  list(lo = e[k], hi = e[k + 1L], e = e, declared = dcl)
+}
+
+test_that("a level added beside an outer node keeps the declared edge", {
+  fit <- hd_refined()
+  bx <- hd_refined_boxes(fit)
+  eb <- tulpa:::.nl_box_edges(bx$declared, "positive")
+  expect_equal(range(bx$e), range(eb))
+  lev <- sort(unique(as.numeric(fit$theta_grid[, "tau"])))
+  naive <- tulpa:::.nl_box_edges(lev, "positive")
+  expect_lt(max(naive), max(eb))
+  # The interior edges are the midpoints of the joined levels.
+  expect_equal(bx$e[-c(1L, length(bx$e))], naive[-c(1L, length(naive))])
+})
+
+test_that("a refined-axis draw stays in its cell's box", {
+  fit <- hd_refined()
+  tg <- fit$theta_grid
+  set.seed(3)
+  cells <- rep(seq_len(nrow(tg)), each = 40L)
+  th <- tulpa_hyper_draws(fit, cells = cells)
+  bx <- hd_refined_boxes(fit)
+  expect_true(all(th[, "tau"] >= bx$lo[cells] & th[, "tau"] <= bx$hi[cells]))
+  # The outermost declared level fills its box out to the declared edge.
+  top <- max(tg[, "tau"])
+  i <- which(tg[, "tau"] == top)[1L]
+  # Past the added level's own half step, which is what the naive partition
+  # would have stopped at.
+  expect_gt(max(th[cells == i, "tau"]), top * (top / bx$declared[6L])^0.25)
+})
+
+test_that("a refined axis's coupled draws stay in their cells' boxes", {
+  # The copula reads each cell's within-cell moments off the same geometry the
+  # draw inverts, so coupling moves no draw out of its box and no axis off the
+  # interval the fit reports.
+  fit <- hd_refined(r = -0.8)
+  set.seed(8596)
+  n <- if (cran_fixture()) 2e4L else 4e5L
+  th <- tulpa_hyper_draws(fit, n = n)
+  cells <- attr(th, "cells")
+  expect_lt(attr(th, "within_cell_copula")[1L, 2L], -0.3)
+  bx <- hd_refined_boxes(fit)
+  expect_true(all(th[, "tau"] >= bx$lo[cells] & th[, "tau"] <= bx$hi[cells]))
+  expect_lt(stats::cor(log(th[, "tau"]), stats::qlogis(th[, "rho"])), -0.6)
+  for (ax in colnames(th)) {
+    q <- unname(stats::quantile(th[, ax], c(0.025, 0.5, 0.975)))
+    rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
+               fit$theta_ci_hi[[ax]])
+    expect_lt(max(abs(q - rep_q)), 1e-2)
+  }
+})
+
+skip_on_cran()
+
+
+# ---- 1. The draws ARE the reported marginal -------------------------------
+
+test_that("jittered hyperparameter draws reproduce the fit's own quantiles", {
+  skip_on_cran()
+  for (wc in c("box_uniform", "log_quadratic", "chord")) {
+    fit <- hd_two_axis(wc)
+    set.seed(823)
+    th <- tulpa_hyper_draws(fit, n = 4e5L)
+
+    expect_equal(dim(th), c(4e5L, 2L))
+    expect_identical(colnames(th), c("tau", "rho"))
+    expect_identical(unname(attr(th, "within_cell")), rep(wc, 2L))
+    expect_true(all(is.na(attr(th, "within_cell_declined"))))
+
+    for (ax in colnames(th)) {
+      q <- unname(stats::quantile(th[, ax], c(0.025, 0.5, 0.975)))
+      rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
+                 fit$theta_ci_hi[[ax]])
+      # The read inverts a CDF; the draws sample it. At 4e5 draws the Monte
+      # Carlo error on a quantile of an axis whose support is ~1 wide is ~1e-3.
+      expect_lt(max(abs(q - rep_q)), 5e-3)
+    }
+  }
+})
+
+test_that("a log-quadratic cell's draws sit on the stretch of its row it owns", {
+  skip_on_cran()
+  # The cell-conditional is the part of its row's reconstructed CDF its level
+  # owns, so the draws in one cell stay around that cell rather than spreading
+  # along the whole row, and the latent half drawn in the same cell is matched
+  # with a hyperparameter near it.
+  fit <- hd_two_axis("log_quadratic")
+  set.seed(9321)
+  th <- tulpa_hyper_draws(fit, n = 4e4L)
+  cells <- attr(th, "cells")
+  tg <- fit$theta_grid
+  modal <- which.max(fit$weights)
+  d <- log(th[cells == modal, "tau"])
+  lev <- sort(unique(log(tg[, "tau"])))
+  h <- diff(lev)[1L]
+  expect_lt(max(abs(d - log(tg[modal, "tau"]))), 1.5 * h)
+})
+
+test_that("the node atom pins the PIT exactly where the truth leaves the grid", {
+  skip_on_cran()
+  r <- hd_sbc(n_obs = 20L, prior_sd = 0.5, n_nodes = 5L, n_sim = 150L)
+  at_end <- function(p) mean(p <= 1e-3 | p >= 1 - 1e-3)
+  # The identity, not an inequality: under the atom read a truth outside the
+  # node range has NO draw on its far side, so its PIT is exactly 0 or 1.
+  expect_equal(at_end(r$atom), mean(r$outside))
+  # The box read's outer half-cell reaches past the outermost node, so it pins
+  # no more of the PIT than the exact posterior does.
+  expect_lte(at_end(r$box), at_end(r$exact) + 1e-12)
+})
+
+test_that("the continuized PIT is uniform where the node atom's is not", {
+  skip_if_not_slow()
+  r <- hd_sbc(n_obs = 20L, prior_sd = 0.5, n_nodes = 5L, n_sim = 400L)
+  ks <- function(p) suppressWarnings(stats::ks.test(p, "punif")$p.value)
+  # The atom read is a discrete distribution on the node CDF's steps: 400
+  # replicates take ~185 distinct PIT values against 400 for the exact
+  # posterior, and its uniformity test is rejected outright.
+  expect_lt(length(unique(round(r$atom, 6))), 0.6 * length(r$atom))
+  expect_lt(ks(r$atom), 1e-4)
+  # The fix restores it, on the same replicates and the same cells.
+  expect_gt(length(unique(round(r$box, 6))), 0.8 * length(r$box))
+  expect_gt(ks(r$box), 0.05)
+  expect_gt(ks(r$exact), 0.05)
+})
+
+test_that("a product of anticorrelated axes keeps the posterior's spread (#859)", {
+  skip_on_cran()
+  exact <- 0.5 * sqrt(2 * (1 - 0.9))
+  n_draw <- if (cran_fixture()) 2e4L else 1e5L
+  for (K in c(5L, 7L, 9L)) {
+    for (wc in c("box_uniform", "chord")) {
+      fit <- hd_ridge(-0.9, K, wc)
+      set.seed(859)
+      th <- tulpa_hyper_draws(fit, n = n_draw)
+      lsum <- log(th[, "sigma"]) + log(th[, "tau"])
+      ind <- hd_indep_draws(fit, attr(th, "cells"))
+      lsum_ind <- log(ind[, 1L]) + log(ind[, 2L])
+      # The coupled draws carry the posterior's own correlation between the
+      # log axes, where the independent jitter dilutes it towards zero.
+      expect_lt(abs(stats::cor(log(th))[1L, 2L] + 0.9), 0.02)
+      # And the product's spread with it: exactly what the draws' own
+      # marginals give at the posterior's correlation. What separates that from
+      # the exact 0.224 is each axis's within-cell read widening its marginal
+      # (the chord at K = 5 by 29%), which no coupling reaches; measured, the
+      # coupled product sits at 0.227-0.285 against 0.268-0.611 independent.
+      sd1 <- stats::sd(log(th[, "sigma"]))
+      sd2 <- stats::sd(log(th[, "tau"]))
+      implied <- sqrt(sd1^2 + sd2^2 - 2 * 0.9 * sd1 * sd2)
+      expect_lt(abs(stats::sd(lsum) / implied - 1), 0.05)
+      expect_lt(abs(stats::sd(lsum) - exact),
+                abs(stats::sd(lsum_ind) - exact))
+    }
+  }
+})
+
+test_that("the copula leaves every marginal where the fit reports it", {
+  skip_on_cran()
+  fit <- hd_ridge(-0.9, 7L)
+  set.seed(8591)
+  th <- tulpa_hyper_draws(fit, n = 4e5L)
+  expect_lt(attr(th, "within_cell_copula")[1L, 2L], -0.3)
+  for (ax in colnames(th)) {
+    q <- unname(stats::quantile(th[, ax], c(0.025, 0.5, 0.975)))
+    rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
+               fit$theta_ci_hi[[ax]])
+    expect_lt(max(abs(q - rep_q) / diff(range(fit$theta_grid[, ax]))), 5e-3)
+  }
+})
 
 test_that("a skewed posterior's product keeps its exact spread", {
   skip_on_cran()
@@ -692,65 +862,6 @@ test_that("a joint fit's draws carry a continuized sigma and alpha", {
   }
 })
 
-
-# ---- 7. An axis carrying a declared point mass (gcol33/tulpa#854) -----------
-#
-# The copy scale is not a continuum. It is the declared "no coupling" model at
-# `alpha = 0`, carrying `.TULPA_COPY_ATOM_MASS` whatever the node count, plus a
-# log continuum on (0, Inf) -- and three readers already split it there on the
-# one rule `.hyper_axis_scale()` states: the measure that integrates the axis
-# (`.hyper_axis_measure()`), the support it reports (`.hyper_axis_support()`)
-# and the prior that weighs the level (`.hyper_is_atom_level()`). The reporting
-# partition was the fourth reader and the only one that did not, because it
-# took the axis's support from the outer Pareto-k PROPOSAL's tag (`identity`,
-# which a proposal needs in order to reach zero at all).
-#
-# So the level got a cell, half a node spacing wide, reaching BELOW the axis's
-# own support -- and the two failures the issue measured follow from one
-# geometry: the level's posterior mass is reproduced by no draw, and draws leave
-# the support. The arbiter here is the same one section 1 uses, the read and the
-# draws being one construction, applied to the axis where they were two.
-
-hd_copy <- function(within = "box_uniform", lp_alpha = NULL) {
-  lp_alpha <- lp_alpha %||% function(a) -0.5 * (a - 0.5)^2 / 0.3^2
-  hd_fit(
-    list(alpha = c(0, 0.25, 0.5, 1.0),
-         sigma = exp(seq(log(0.4), log(1.5), length.out = 4))),
-    function(tg) -0.5 * (log(tg[, "sigma"]) - log(0.9))^2 / 0.4^2 +
-                  lp_alpha(tg[, "alpha"]),
-    within = within)
-}
-
-test_that("a declared point mass is named as one, and its continuum is positive", {
-  fit <- hd_copy()
-  geo <- tulpa:::.nl_axis_geometry(fit)
-  nms <- colnames(tulpa:::.nl_theta_matrix(fit))
-  # Both axes are log-scale, so both declare the level; only `alpha` carries a
-  # grid node on it. The copy axis's PROPOSAL coordinate stays `identity` --
-  # that tag has to reach zero -- and is a separate statement from its support.
-  expect_identical(geo$domain, rep("positive", length(nms)))
-  expect_identical(geo$atom, rep(0, length(nms)))
-  expect_identical(
-    unname(tulpa:::.joint_axis_tags_raw(list(theta_grid = fit$theta_grid,
-                                             prior = list(type = "bym2")))),
-    c("identity", "log"))
-})
-
-test_that("a level the grid does not carry leaves the read byte-identical", {
-  # The no-op half: `sigma` declares the same level and has no node on it, so
-  # every read has to return exactly what it returned with nothing declared.
-  fit <- hd_copy()
-  v <- as.numeric(fit$theta_grid[, "sigma"])
-  w <- fit$weights / sum(fit$weights)
-  p <- c(0.025, 0.5, 0.975)
-  for (wc in c("box_uniform", "chord")) {
-    expect_identical(
-      tulpa:::.nl_summary_quantile(v, w, p, "positive", "density", wc, 0),
-      tulpa:::.nl_summary_quantile(v, w, p, "positive", "density", wc,
-                                   NA_real_))
-  }
-})
-
 test_that("the level keeps its own coordinate, and nothing is drawn below it", {
   skip_on_cran()
   for (wc in c("box_uniform", "chord")) {
@@ -862,78 +973,6 @@ test_that("a point mass keeps its mass when its continuum is coupled", {
   }
 })
 
-test_that("the resolution of an axis with a point mass is its continuum's", {
-  # `h` is a cell width and the level owns no cell, so the ratio is read off
-  # the continuum alone -- in log, the coordinate the continuum is laid out and
-  # integrated in (`.hyper_axis_measure()`). Keeping the level in measured the
-  # spacing of a partition the axis is not integrated on.
-  fit <- hd_copy()
-  h <- fit$outer_grid_cell_width[["alpha"]]
-  pos <- sort(unique(as.numeric(fit$theta_grid[, "alpha"])))
-  pos <- pos[pos > 0]
-  expect_equal(h, stats::median(diff(log(pos))))
-  expect_true(is.na(fit$outer_grid_resolution_declined[["alpha"]]))
-})
-
-
-# ---- 6. A refined axis: levels added in every row ---------------------------
-#
-# A refinement pass adds levels to one axis in every row of the others, so the
-# grid stays a tensor and every cell's box is its level's box in one partition
-# over the axis's levels. The declared levels fix that partition's outer edges,
-# so a level added beside an outer node does not cut the declared span. The
-# read and the draws take the same boxes.
-
-hd_refined <- function(within = "box_uniform", r = 0) {
-  axes <- list(tau = exp(seq(log(0.2), log(3), length.out = 7)),
-               rho = seq(0.1, 0.9, length.out = 5))
-  lmf <- function(tg) {
-    z1 <- (log(tg[, "tau"]) - log(0.8)) / 0.3
-    z2 <- (tg[, "rho"] - 0.55) / 0.2
-    -0.5 * (z1^2 + z2^2 - 2 * r * z1 * z2) / (1 - r^2)
-  }
-  base <- as.matrix(expand.grid(axes))
-  tau <- axes$tau
-  pts <- c(sqrt(tau[3:4] * tau[4:5]), tau[7] * (tau[6] / tau[7])^0.25)
-  added <- as.matrix(expand.grid(tau = pts, rho = axes$rho))
-  tg <- rbind(base, added)
-  refining <- c(rep("", nrow(base)), rep("tau", nrow(added)))
-  specs <- tulpa:::.joint_axis_specs_from_grid(base)
-  lq <- tulpa:::.hyper_log_quad_weights(tg, specs, refining = refining)
-  lm <- lmf(tg)
-  res <- list(theta_grid = tg, log_marginal = lm, log_quad = lq,
-              refining_axis = refining, integration = "grid",
-              prior = list(type = "bym2"), blocks = NULL, axis_offsets = NULL)
-  res$weights <- tulpa:::.nl_normalise_weights_safe(lm, "outer grid",
-                                                    log_quad = lq)
-  res <- tulpa:::.nl_posterior_moments(res, "bym2", within = within)
-  res$within_cell_requested <- within
-  structure(res, class = c("tulpa_nested_laplace", "list", "tulpa_fit"))
-}
-
-# Every cell's box along `tau` on the fixture: its level's box in the partition
-# over all levels, the outer edges the declared levels'.
-hd_refined_boxes <- function(fit) {
-  tg <- fit$theta_grid
-  lev <- sort(unique(as.numeric(tg[, "tau"])))
-  dcl <- tulpa:::.nl_axis_declared_levels(tg, 1L, fit$refining_axis)
-  e <- tulpa:::.nl_level_edges(lev, "positive", dcl)$e
-  k <- match(tg[, "tau"], lev)
-  list(lo = e[k], hi = e[k + 1L], e = e, declared = dcl)
-}
-
-test_that("a level added beside an outer node keeps the declared edge", {
-  fit <- hd_refined()
-  bx <- hd_refined_boxes(fit)
-  eb <- tulpa:::.nl_box_edges(bx$declared, "positive")
-  expect_equal(range(bx$e), range(eb))
-  lev <- sort(unique(as.numeric(fit$theta_grid[, "tau"])))
-  naive <- tulpa:::.nl_box_edges(lev, "positive")
-  expect_lt(max(naive), max(eb))
-  # The interior edges are the midpoints of the joined levels.
-  expect_equal(bx$e[-c(1L, length(bx$e))], naive[-c(1L, length(naive))])
-})
-
 test_that("draws on a refined axis reproduce the fit's own interval", {
   skip_on_cran()
   fit <- hd_refined()
@@ -945,42 +984,5 @@ test_that("draws on a refined axis reproduce the fit's own interval", {
     rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
                fit$theta_ci_hi[[ax]])
     expect_lt(max(abs(q - rep_q)), 5e-3)
-  }
-})
-
-test_that("a refined-axis draw stays in its cell's box", {
-  fit <- hd_refined()
-  tg <- fit$theta_grid
-  set.seed(3)
-  cells <- rep(seq_len(nrow(tg)), each = 40L)
-  th <- tulpa_hyper_draws(fit, cells = cells)
-  bx <- hd_refined_boxes(fit)
-  expect_true(all(th[, "tau"] >= bx$lo[cells] & th[, "tau"] <= bx$hi[cells]))
-  # The outermost declared level fills its box out to the declared edge.
-  top <- max(tg[, "tau"])
-  i <- which(tg[, "tau"] == top)[1L]
-  # Past the added level's own half step, which is what the naive partition
-  # would have stopped at.
-  expect_gt(max(th[cells == i, "tau"]), top * (top / bx$declared[6L])^0.25)
-})
-
-test_that("a refined axis's coupled draws stay in their cells' boxes", {
-  # The copula reads each cell's within-cell moments off the same geometry the
-  # draw inverts, so coupling moves no draw out of its box and no axis off the
-  # interval the fit reports.
-  fit <- hd_refined(r = -0.8)
-  set.seed(8596)
-  n <- if (cran_fixture()) 2e4L else 4e5L
-  th <- tulpa_hyper_draws(fit, n = n)
-  cells <- attr(th, "cells")
-  expect_lt(attr(th, "within_cell_copula")[1L, 2L], -0.3)
-  bx <- hd_refined_boxes(fit)
-  expect_true(all(th[, "tau"] >= bx$lo[cells] & th[, "tau"] <= bx$hi[cells]))
-  expect_lt(stats::cor(log(th[, "tau"]), stats::qlogis(th[, "rho"])), -0.6)
-  for (ax in colnames(th)) {
-    q <- unname(stats::quantile(th[, ax], c(0.025, 0.5, 0.975)))
-    rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
-               fit$theta_ci_hi[[ax]])
-    expect_lt(max(abs(q - rep_q)), 1e-2)
   }
 })

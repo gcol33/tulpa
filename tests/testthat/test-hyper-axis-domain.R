@@ -1,58 +1,3 @@
-# The declared domain of a bounded outer axis, and the support rule that is
-# closed inside it (gcol33/tulpa#657).
-#
-# An outer axis's cells are closed at their outermost node by an extrapolation
-# half a node step further out. That step is a property of the node SPACING, so
-# on a grid graded toward a boundary it steps past the boundary: the default
-# proper-CAR nodes c(0.5, 0.8, 0.95, 0.99) closed at rho = 1.01, which is not a
-# correlation, and `.hyper_axis_support()` is what a sampler asked to target the
-# same measure takes as the flat prior's support.
-#
-# What is asserted here is the CONTRACT rather than the one arithmetic case: a
-# bounded axis never reports a support outside its declared domain, for every
-# entry of the domain registry and for node sets of 2, 3, 4 and many nodes.
-#
-# Tier 1 throughout: no fit, no sampler, pure table and arithmetic inspection.
-
-test_that("every declared axis domain is a well-formed interval", {
-    skip_on_cran()
-    for (key in names(tulpa:::.NL_AXIS_DOMAIN)) {
-        d <- tulpa:::.NL_AXIS_DOMAIN[[key]]
-        expect_true(is.list(d), info = key)
-        expect_identical(sort(names(d)), c("bounds", "open"), info = key)
-        expect_true(is.numeric(d$bounds), info = key)
-        expect_identical(length(d$bounds), 2L, info = key)
-        expect_false(anyNA(d$bounds), info = key)
-        expect_lt(d$bounds[1L], d$bounds[2L])
-        expect_true(is.logical(d$open), info = key)
-        expect_identical(length(d$open), 2L, info = key)
-        expect_false(anyNA(d$open), info = key)
-        # Every endpoint the engine declares today is the value at which the
-        # parameterisation degenerates, so none of them is a member.
-        expect_true(all(d$open), info = key)
-    }
-    expect_error(tulpa:::.nl_axis_domain_entry("no_such_axis"),
-                 "Unknown axis domain")
-
-    # The values, pinned. `rho` names four different parameters across the
-    # families and 1 is an open upper bound of all four, while their lower ends
-    # disagree, so only the upper end is claimed by the name; a block that
-    # knows which one it holds declares the tighter interval on its own spec.
-    expect_equal(tulpa:::.nl_axis_domain_entry("rho")$bounds, c(-Inf, 1))
-    expect_equal(tulpa:::.nl_axis_domain_entry("rho_car")$bounds, c(-Inf, 1))
-    expect_equal(tulpa:::.nl_axis_domain_entry(".positive")$bounds, c(0, Inf))
-
-    # The positive family is read off the coordinate declaration rather than
-    # from a second list of names.
-    for (a in c("sigma", "sigma2", "tau", "range", "lengthscale", "phi_occ",
-                "alpha")) {
-        expect_true(isTRUE(tulpa:::.hyper_axis_scale(a)), info = a)
-        dom <- tulpa:::.hyper_axis_domain(list(name = a))
-        expect_equal(dom$bounds, c(0, Inf), info = a)
-    }
-    # And an axis nobody classifies carries no domain at all.
-    expect_null(tulpa:::.hyper_axis_domain(list(name = "mcar_logchol_off")))
-})
 
 test_that("a domain is keyed on the axis name without its block prefix", {
     expect_identical(tulpa:::.hyper_axis_bare("b1.rho_car"), "rho_car")
@@ -82,35 +27,6 @@ test_that("the proper-CAR default grid no longer closes outside its domain", {
     expect_lt(sup[2L], 1)
     expect_lt(sup[2L], 1.01)
     expect_gt(sup[2L], max(g))
-})
-
-test_that("no bounded axis reports a support outside its domain", {
-    skip_on_cran()
-    node_sets <- list(
-        two    = c(0.90, 0.99),
-        three  = c(0.80, 0.95, 0.99),
-        four   = c(0.50, 0.80, 0.95, 0.99),
-        many   = seq(0.10, 0.99, length.out = 20),
-        signed = c(-0.9, -0.4, 0, 0.4, 0.9),
-        bym2   = c(0.2, 0.5, 0.8, 0.95, 0.99, 0.999)
-    )
-    axes <- c("rho", "rho_car", "b1.rho", "b3.rho_car")
-    for (axis in axes) {
-        dom <- tulpa:::.nl_axis_domain_entry(tulpa:::.hyper_axis_bare(axis))
-        for (nm in names(node_sets)) {
-            g <- node_sets[[nm]]
-            lab <- paste(axis, nm)
-            sup <- tulpa:::.hyper_axis_support(g, hyper_axis_spec(axis, g))
-            expect_false(is.null(sup), info = lab)
-            expect_identical(length(sup), 2L, info = lab)
-            expect_true(all(is.finite(sup)), info = lab)
-            expect_lt(sup[1L], sup[2L])
-            # Inside the domain, and still bracketing every node it closes.
-            expect_lt(sup[2L], dom$bounds[2L])
-            expect_true(sup[1L] <= min(g), info = lab)
-            expect_true(sup[2L] >= max(g), info = lab)
-        }
-    }
 })
 
 test_that("a node set well inside the domain keeps the edges it had", {
@@ -274,4 +190,90 @@ test_that("the stored per-axis support is inside every axis's domain", {
 
 test_that("an axis with fewer than two continuum levels reports no support", {
     expect_null(tulpa:::.hyper_axis_support(0.9, hyper_axis_spec("rho", 0.9)))
+})
+
+skip_on_cran()
+# The declared domain of a bounded outer axis, and the support rule that is
+# closed inside it (gcol33/tulpa#657).
+#
+# An outer axis's cells are closed at their outermost node by an extrapolation
+# half a node step further out. That step is a property of the node SPACING, so
+# on a grid graded toward a boundary it steps past the boundary: the default
+# proper-CAR nodes c(0.5, 0.8, 0.95, 0.99) closed at rho = 1.01, which is not a
+# correlation, and `.hyper_axis_support()` is what a sampler asked to target the
+# same measure takes as the flat prior's support.
+#
+# What is asserted here is the CONTRACT rather than the one arithmetic case: a
+# bounded axis never reports a support outside its declared domain, for every
+# entry of the domain registry and for node sets of 2, 3, 4 and many nodes.
+#
+# Tier 1 throughout: no fit, no sampler, pure table and arithmetic inspection.
+
+test_that("every declared axis domain is a well-formed interval", {
+    skip_on_cran()
+    for (key in names(tulpa:::.NL_AXIS_DOMAIN)) {
+        d <- tulpa:::.NL_AXIS_DOMAIN[[key]]
+        expect_true(is.list(d), info = key)
+        expect_identical(sort(names(d)), c("bounds", "open"), info = key)
+        expect_true(is.numeric(d$bounds), info = key)
+        expect_identical(length(d$bounds), 2L, info = key)
+        expect_false(anyNA(d$bounds), info = key)
+        expect_lt(d$bounds[1L], d$bounds[2L])
+        expect_true(is.logical(d$open), info = key)
+        expect_identical(length(d$open), 2L, info = key)
+        expect_false(anyNA(d$open), info = key)
+        # Every endpoint the engine declares today is the value at which the
+        # parameterisation degenerates, so none of them is a member.
+        expect_true(all(d$open), info = key)
+    }
+    expect_error(tulpa:::.nl_axis_domain_entry("no_such_axis"),
+                 "Unknown axis domain")
+
+    # The values, pinned. `rho` names four different parameters across the
+    # families and 1 is an open upper bound of all four, while their lower ends
+    # disagree, so only the upper end is claimed by the name; a block that
+    # knows which one it holds declares the tighter interval on its own spec.
+    expect_equal(tulpa:::.nl_axis_domain_entry("rho")$bounds, c(-Inf, 1))
+    expect_equal(tulpa:::.nl_axis_domain_entry("rho_car")$bounds, c(-Inf, 1))
+    expect_equal(tulpa:::.nl_axis_domain_entry(".positive")$bounds, c(0, Inf))
+
+    # The positive family is read off the coordinate declaration rather than
+    # from a second list of names.
+    for (a in c("sigma", "sigma2", "tau", "range", "lengthscale", "phi_occ",
+                "alpha")) {
+        expect_true(isTRUE(tulpa:::.hyper_axis_scale(a)), info = a)
+        dom <- tulpa:::.hyper_axis_domain(list(name = a))
+        expect_equal(dom$bounds, c(0, Inf), info = a)
+    }
+    # And an axis nobody classifies carries no domain at all.
+    expect_null(tulpa:::.hyper_axis_domain(list(name = "mcar_logchol_off")))
+})
+
+test_that("no bounded axis reports a support outside its domain", {
+    skip_on_cran()
+    node_sets <- list(
+        two    = c(0.90, 0.99),
+        three  = c(0.80, 0.95, 0.99),
+        four   = c(0.50, 0.80, 0.95, 0.99),
+        many   = seq(0.10, 0.99, length.out = 20),
+        signed = c(-0.9, -0.4, 0, 0.4, 0.9),
+        bym2   = c(0.2, 0.5, 0.8, 0.95, 0.99, 0.999)
+    )
+    axes <- c("rho", "rho_car", "b1.rho", "b3.rho_car")
+    for (axis in axes) {
+        dom <- tulpa:::.nl_axis_domain_entry(tulpa:::.hyper_axis_bare(axis))
+        for (nm in names(node_sets)) {
+            g <- node_sets[[nm]]
+            lab <- paste(axis, nm)
+            sup <- tulpa:::.hyper_axis_support(g, hyper_axis_spec(axis, g))
+            expect_false(is.null(sup), info = lab)
+            expect_identical(length(sup), 2L, info = lab)
+            expect_true(all(is.finite(sup)), info = lab)
+            expect_lt(sup[1L], sup[2L])
+            # Inside the domain, and still bracketing every node it closes.
+            expect_lt(sup[2L], dom$bounds[2L])
+            expect_true(sup[1L] <= min(g), info = lab)
+            expect_true(sup[2L] >= max(g), info = lab)
+        }
+    }
 })

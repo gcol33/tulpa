@@ -108,6 +108,108 @@
   max(abs(c(a$median - b$median, a$ci_lo - b$ci_lo, a$ci_hi - b$ci_hi)))
 }
 
+test_that("a fit with no outer grid is refused, not silently dumped", {
+  expect_error(outer_grid_dump(list()), "no outer hyperparameter grid")
+  expect_error(outer_grid_dump("not a fit"), "must be a tulpa fit")
+  tg <- matrix(1:6, 3L, 2L, dimnames = list(NULL, c("a", "b")))
+  expect_error(outer_grid_dump(list(theta_grid = tg)), "log_marginal")
+  expect_error(
+    outer_grid_dump(list(theta_grid = tg, log_marginal = c(1, 2, 3))),
+    "weights")
+  expect_error(
+    outer_grid_dump(list(theta_grid = matrix(numeric(0), 0L, 0L))),
+    "no outer hyperparameter grid")
+})
+
+# --------------------------------------------------------------------------- #
+# The noise floor                                                             #
+# --------------------------------------------------------------------------- #
+
+# A one-axis dump with a known Gaussian outer log-marginal on `m` levels, built
+# directly rather than fitted: the floor estimator's own behaviour is a property
+# of the grid, so it is checked where the grid can be varied at no cost.
+.ogd_fake_dump <- function(m, reach = 4) {
+  v  <- seq(-reach, reach, length.out = m)
+  lm <- -0.5 * v^2
+  w  <- exp(lm - max(lm)); w <- w / sum(w)
+  structure(list(
+    joint_grid = matrix(v, ncol = 1L, dimnames = list(NULL, "a")),
+    log_marginal = lm, dnode = NULL, weight_kind = rep("mass", m),
+    weights = w, refining_axis = rep("", m), axis_names = "a",
+    axis_tags = c(a = "identity"), axis_domains = NULL,
+    support = "density", probs = OGD_PROBS),
+    class = c("tulpa_outer_grid_dump", "list"))
+}
+
+test_that("the floor is the grid's own resolution, and falls as the grid resolves", {
+  coarse <- outer_grid_noise_floor(.ogd_fake_dump(9L))
+  fine   <- outer_grid_noise_floor(.ogd_fake_dump(81L))
+  expect_gt(coarse$endpoints, 0)
+  expect_gt(coarse$widths, 0)
+  # Coarsening a grid that already resolves the read moves it far less than
+  # coarsening one that does not, which is what makes the number a floor rather
+  # than a constant.
+  expect_lt(fine$endpoints, coarse$endpoints)
+  expect_lt(fine$widths, coarse$widths)
+  # Every stride / offset combination is scored, not just one arbitrary pairing.
+  expect_identical(coarse$n_perturbations, 5L)
+})
+
+test_that("the floor bounds the read's own discretisation error", {
+  # This grid's exact answer is known: the outer log-marginal is a standard
+  # Gaussian, so the axis's 95% endpoints are qnorm(0.025) / qnorm(0.975) and the
+  # read's distance from them is the discretisation error the floor is standing
+  # in for.
+  #
+  # RE-MEASURED at 0.0.188, when the reported read became `box_uniform`
+  # (gcol33/tulpa#357). Under the chord read the error at 9 / 15 / 21 / 41 / 81
+  # levels was 0.2646 / 0.1263 / 0.0300 / 0.0113 / 0.0035 against a floor of
+  # 0.5246 / 0.2814 / 0.1959 / 0.0562 / 0.0135; under the default read it is
+  # 0.1616 / 0.0004 / 0.0248 / 0.0047 / 0.0004 against 0.2207 / 0.1681 / 0.0370
+  # / 0.0134 / 0.0059.
+  #
+  # BOUNDED at every resolution on both, which is what the floor is for and what
+  # this test keeps asserting. What does NOT survive the flip is the pointwise
+  # "and not by orders of magnitude": the box read is second-order accurate, so
+  # at 15 and 81 levels it lands essentially on the exact endpoints and the floor
+  # is 400x and 14x its error. That is the read being better than the floor's
+  # own resolution, not the floor being wrong, so the tightness claim moves to
+  # the aggregate -- the floor has to be within reach of the error SOMEWHERE, or
+  # it would be a bound that never binds.
+  #
+  # The log-quadratic read (the default since gcol33/tulpa#932) is exact for a
+  # Gaussian log-marginal at any spacing, so under it the error is bounded with
+  # nothing to spare, and the aggregate tightness is asserted on the box read.
+  exact <- stats::qnorm(c(0.025, 0.975))
+  ratio <- numeric(0)
+  for (m in c(9L, 15L, 21L, 41L, 81L)) {
+    d  <- .ogd_fake_dump(m)
+    rb <- outer_grid_rebuild(d)
+    err <- mean(abs(c(rb$ci_lo, rb$ci_hi) - exact))
+    fl  <- outer_grid_noise_floor(d)$endpoints
+    expect_lt(err, fl)
+    d$within <- "box_uniform"
+    rb <- outer_grid_rebuild(d)
+    err <- mean(abs(c(rb$ci_lo, rb$ci_hi) - exact))
+    expect_lt(err, fl)
+    ratio <- c(ratio, err / fl)
+  }
+  expect_gt(max(ratio), 0.5)
+  # And the chord read, which the floor was calibrated on, keeps the pointwise
+  # statement.
+  for (m in c(9L, 15L, 21L, 41L, 81L)) {
+    d <- .ogd_fake_dump(m)
+    d$within <- "chord"
+    rb <- outer_grid_rebuild(d)
+    err <- mean(abs(c(rb$ci_lo, rb$ci_hi) - exact))
+    fl  <- outer_grid_noise_floor(d)$endpoints
+    expect_lt(err, fl)
+    expect_gt(err / fl, 0.1)
+  }
+})
+
+skip_on_cran()
+
 # --------------------------------------------------------------------------- #
 # The round trip                                                              #
 # --------------------------------------------------------------------------- #
@@ -302,110 +404,10 @@ test_that("the dump carries the grid state each node set actually left", {
   expect_equal(l$theta_interval_design_mass, l$local_ccd_info$design_mass)
 })
 
-test_that("a fit with no outer grid is refused, not silently dumped", {
-  expect_error(outer_grid_dump(list()), "no outer hyperparameter grid")
-  expect_error(outer_grid_dump("not a fit"), "must be a tulpa fit")
-  tg <- matrix(1:6, 3L, 2L, dimnames = list(NULL, c("a", "b")))
-  expect_error(outer_grid_dump(list(theta_grid = tg)), "log_marginal")
-  expect_error(
-    outer_grid_dump(list(theta_grid = tg, log_marginal = c(1, 2, 3))),
-    "weights")
-  expect_error(
-    outer_grid_dump(list(theta_grid = matrix(numeric(0), 0L, 0L))),
-    "no outer hyperparameter grid")
-})
-
 test_that("a rebuild refuses a weight vector of the wrong length", {
   skip_on_cran()
   d <- outer_grid_dump(.ogd_fit_grid())
   expect_error(outer_grid_rebuild(d, weights = c(1, 2, 3)), "cell")
-})
-
-# --------------------------------------------------------------------------- #
-# The noise floor                                                             #
-# --------------------------------------------------------------------------- #
-
-# A one-axis dump with a known Gaussian outer log-marginal on `m` levels, built
-# directly rather than fitted: the floor estimator's own behaviour is a property
-# of the grid, so it is checked where the grid can be varied at no cost.
-.ogd_fake_dump <- function(m, reach = 4) {
-  v  <- seq(-reach, reach, length.out = m)
-  lm <- -0.5 * v^2
-  w  <- exp(lm - max(lm)); w <- w / sum(w)
-  structure(list(
-    joint_grid = matrix(v, ncol = 1L, dimnames = list(NULL, "a")),
-    log_marginal = lm, dnode = NULL, weight_kind = rep("mass", m),
-    weights = w, refining_axis = rep("", m), axis_names = "a",
-    axis_tags = c(a = "identity"), axis_domains = NULL,
-    support = "density", probs = OGD_PROBS),
-    class = c("tulpa_outer_grid_dump", "list"))
-}
-
-test_that("the floor is the grid's own resolution, and falls as the grid resolves", {
-  coarse <- outer_grid_noise_floor(.ogd_fake_dump(9L))
-  fine   <- outer_grid_noise_floor(.ogd_fake_dump(81L))
-  expect_gt(coarse$endpoints, 0)
-  expect_gt(coarse$widths, 0)
-  # Coarsening a grid that already resolves the read moves it far less than
-  # coarsening one that does not, which is what makes the number a floor rather
-  # than a constant.
-  expect_lt(fine$endpoints, coarse$endpoints)
-  expect_lt(fine$widths, coarse$widths)
-  # Every stride / offset combination is scored, not just one arbitrary pairing.
-  expect_identical(coarse$n_perturbations, 5L)
-})
-
-test_that("the floor bounds the read's own discretisation error", {
-  # This grid's exact answer is known: the outer log-marginal is a standard
-  # Gaussian, so the axis's 95% endpoints are qnorm(0.025) / qnorm(0.975) and the
-  # read's distance from them is the discretisation error the floor is standing
-  # in for.
-  #
-  # RE-MEASURED at 0.0.188, when the reported read became `box_uniform`
-  # (gcol33/tulpa#357). Under the chord read the error at 9 / 15 / 21 / 41 / 81
-  # levels was 0.2646 / 0.1263 / 0.0300 / 0.0113 / 0.0035 against a floor of
-  # 0.5246 / 0.2814 / 0.1959 / 0.0562 / 0.0135; under the default read it is
-  # 0.1616 / 0.0004 / 0.0248 / 0.0047 / 0.0004 against 0.2207 / 0.1681 / 0.0370
-  # / 0.0134 / 0.0059.
-  #
-  # BOUNDED at every resolution on both, which is what the floor is for and what
-  # this test keeps asserting. What does NOT survive the flip is the pointwise
-  # "and not by orders of magnitude": the box read is second-order accurate, so
-  # at 15 and 81 levels it lands essentially on the exact endpoints and the floor
-  # is 400x and 14x its error. That is the read being better than the floor's
-  # own resolution, not the floor being wrong, so the tightness claim moves to
-  # the aggregate -- the floor has to be within reach of the error SOMEWHERE, or
-  # it would be a bound that never binds.
-  #
-  # The log-quadratic read (the default since gcol33/tulpa#932) is exact for a
-  # Gaussian log-marginal at any spacing, so under it the error is bounded with
-  # nothing to spare, and the aggregate tightness is asserted on the box read.
-  exact <- stats::qnorm(c(0.025, 0.975))
-  ratio <- numeric(0)
-  for (m in c(9L, 15L, 21L, 41L, 81L)) {
-    d  <- .ogd_fake_dump(m)
-    rb <- outer_grid_rebuild(d)
-    err <- mean(abs(c(rb$ci_lo, rb$ci_hi) - exact))
-    fl  <- outer_grid_noise_floor(d)$endpoints
-    expect_lt(err, fl)
-    d$within <- "box_uniform"
-    rb <- outer_grid_rebuild(d)
-    err <- mean(abs(c(rb$ci_lo, rb$ci_hi) - exact))
-    expect_lt(err, fl)
-    ratio <- c(ratio, err / fl)
-  }
-  expect_gt(max(ratio), 0.5)
-  # And the chord read, which the floor was calibrated on, keeps the pointwise
-  # statement.
-  for (m in c(9L, 15L, 21L, 41L, 81L)) {
-    d <- .ogd_fake_dump(m)
-    d$within <- "chord"
-    rb <- outer_grid_rebuild(d)
-    err <- mean(abs(c(rb$ci_lo, rb$ci_hi) - exact))
-    fl  <- outer_grid_noise_floor(d)$endpoints
-    expect_lt(err, fl)
-    expect_gt(err / fl, 0.1)
-  }
 })
 
 test_that("a perturbation that should not matter sits below the floor", {

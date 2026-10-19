@@ -188,6 +188,15 @@ test_that("spatial() and spatial_car() accept a tulpa_adjacency object", {
   expect_s3_class(car, "tulpa_spatial")
 })
 
+test_that("print methods run without error", {
+  grid <- expand.grid(x = 1:3, y = 1:3)
+  g <- adjacency(grid, type = "queen")
+  expect_output(print(g), "tulpa_adjacency")
+  expect_output(print(check_adjacency(g$adjacency)), "adjacency check")
+})
+
+skip_on_cran()
+
 test_that("adjacency.sf builds polygon contiguity", {
   skip_on_cran()
   skip_if_not_installed("sf")
@@ -250,11 +259,4 @@ test_that("adjacency.stars builds lattice contiguity over a raster", {
   sna <- stars::st_as_stars(matrix(c(1:4, NA, 6:9), nrow = 3, ncol = 3))
   gn <- adjacency(sna, type = "rook")
   expect_equal(gn$n, 8L)
-})
-
-test_that("print methods run without error", {
-  grid <- expand.grid(x = 1:3, y = 1:3)
-  g <- adjacency(grid, type = "queen")
-  expect_output(print(g), "tulpa_adjacency")
-  expect_output(print(check_adjacency(g$adjacency)), "adjacency check")
 })

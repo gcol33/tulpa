@@ -31,6 +31,71 @@ CRPS_CASES <- list(
   equal_means   = list(y =  0.0, mu = c(0, 0),       var = c(0.01, 9),        w = c(0.9, 0.1))
 )
 
+test_that("the draws CRPS uses the sorted identity for the pairwise term", {
+  set.seed(4L)
+  x <- stats::rnorm(200)
+  y <- 0.4
+  ref <- mean(abs(x - y)) - 0.5 * mean(abs(outer(x, x, "-")))
+  expect_equal(sbc_crps(sbc_draws(x), y), ref, tolerance = 1e-12)
+})
+
+# ---------------------------------------------------------------------------
+# 2. PIT
+# ---------------------------------------------------------------------------
+
+test_that("the mixture PIT is the mixture CDF and the fold preserves uniformity", {
+  dist <- sbc_mixture(c(-1, 2), c(0.25, 4), c(0.7, 0.3))
+  for (y in c(-3, -0.4, 0, 5)) {
+    expect_equal(sbc_pit(dist, y),
+                 0.7 * stats::pnorm(y, -1, 0.5) + 0.3 * stats::pnorm(y, 2, 2),
+                 tolerance = 1e-12)
+  }
+  u <- seq(0.001, 0.999, length.out = 999)
+  # 2|u - 1/2| maps Uniform(0,1) onto Uniform(0,1), so its ECDF against the
+  # identity is the identity up to the grid spacing.
+  expect_lt(max(abs(sort(sbc_fold(u)) - seq_along(u) / length(u))), 2 / length(u))
+})
+
+test_that("a discrete PIT randomizes within its atom", {
+  d <- sbc_discrete(c(1, 2, 3), c(0.5, 0.3, 0.2))
+  expect_equal(sbc_pit(d, 1, u = 0), 0)
+  expect_equal(sbc_pit(d, 1, u = 1), 0.5)
+  expect_equal(sbc_pit(d, 2, u = 0.5), 0.65)
+  expect_equal(sbc_pit(d, 3, u = 1), 1)
+  # A rank r out of n_ref is the same construction: (r + V) / (n_ref + 1).
+  expect_equal(sbc_pit(sbc_rank(7L, 20L), NA_real_, u = 0.25), (7 + 0.25) / 21)
+})
+
+# ---------------------------------------------------------------------------
+# 4. The driver
+# ---------------------------------------------------------------------------
+
+test_that("CRPS is refused as a posterior ranking on a fixed-truth experiment", {
+  sim <- function(seed) list(theta = c(mu = 0.5))
+  fit <- function(d) list(a = list(mu = sbc_normal(0.5, 1)),
+                          b = list(mu = sbc_normal(0.5, 2)))
+  fx <- recov_sbc(sim, fit, n_seed = 3L, truth = "fixed")
+  expect_identical(attr(fx, "crps_role"), "descriptive loss (fixed truth)")
+  expect_error(sbc_crps_compare(fx, "a"), "prior-predictive")
+  pr <- recov_sbc(sim, fit, n_seed = 3L, truth = "prior_draw")
+  expect_identical(attr(pr, "crps_role"), "proper posterior score")
+  cmp <- sbc_crps_compare(pr, "a")
+  expect_s3_class(cmp, "data.frame")
+  expect_identical(cmp$arm, "b")
+})
+
+test_that("asking for the diagnostic leaves the ambient RNG stream where it was", {
+  sim <- function(seed) { set.seed(seed); list(theta = c(mu = stats::rnorm(1))) }
+  fit <- function(d) list(a = list(mu = sbc_normal(0, 1)))
+  set.seed(77L)
+  before <- get(".Random.seed", envir = globalenv())
+  invisible(recov_sbc(sim, fit, n_seed = 4L))
+  set.seed(77L)
+  expect_identical(get(".Random.seed", envir = globalenv()), before)
+})
+
+skip_on_cran()
+
 test_that("the mixture CRPS closed form integrates the definition", {
   skip_on_cran()
   for (nm in names(CRPS_CASES)) {
@@ -62,14 +127,6 @@ test_that("the discrete CRPS closed form integrates the definition", {
   }
 })
 
-test_that("the draws CRPS uses the sorted identity for the pairwise term", {
-  set.seed(4L)
-  x <- stats::rnorm(200)
-  y <- 0.4
-  ref <- mean(abs(x - y)) - 0.5 * mean(abs(outer(x, x, "-")))
-  expect_equal(sbc_crps(sbc_draws(x), y), ref, tolerance = 1e-12)
-})
-
 test_that("the mixture CRPS matches the Monte-Carlo kernel estimator", {
   skip_on_cran()
   set.seed(99L)
@@ -83,33 +140,6 @@ test_that("the mixture CRPS matches the Monte-Carlo kernel estimator", {
     expect_lt(abs(cf - mc) / max(1, abs(cf)), 5e-3,
               label = sprintf("%s closed form vs MC", nm))
   }
-})
-
-# ---------------------------------------------------------------------------
-# 2. PIT
-# ---------------------------------------------------------------------------
-
-test_that("the mixture PIT is the mixture CDF and the fold preserves uniformity", {
-  dist <- sbc_mixture(c(-1, 2), c(0.25, 4), c(0.7, 0.3))
-  for (y in c(-3, -0.4, 0, 5)) {
-    expect_equal(sbc_pit(dist, y),
-                 0.7 * stats::pnorm(y, -1, 0.5) + 0.3 * stats::pnorm(y, 2, 2),
-                 tolerance = 1e-12)
-  }
-  u <- seq(0.001, 0.999, length.out = 999)
-  # 2|u - 1/2| maps Uniform(0,1) onto Uniform(0,1), so its ECDF against the
-  # identity is the identity up to the grid spacing.
-  expect_lt(max(abs(sort(sbc_fold(u)) - seq_along(u) / length(u))), 2 / length(u))
-})
-
-test_that("a discrete PIT randomizes within its atom", {
-  d <- sbc_discrete(c(1, 2, 3), c(0.5, 0.3, 0.2))
-  expect_equal(sbc_pit(d, 1, u = 0), 0)
-  expect_equal(sbc_pit(d, 1, u = 1), 0.5)
-  expect_equal(sbc_pit(d, 2, u = 0.5), 0.65)
-  expect_equal(sbc_pit(d, 3, u = 1), 1)
-  # A rank r out of n_ref is the same construction: (r + V) / (n_ref + 1).
-  expect_equal(sbc_pit(sbc_rank(7L, 20L), NA_real_, u = 0.25), (7 + 0.25) / 21)
 })
 
 test_that("randomizing the rank is what makes the reference uniform", {
@@ -216,34 +246,6 @@ test_that("the bands' realized simultaneous coverage is nominal", {
   p <- apply(U[seq_len(400L), , drop = FALSE], 1L,
              function(u) sbc_ecdf_test(u)$p_value)
   expect_lt(abs(mean(p < 0.05) - 0.05), 4 * sqrt(0.05 * 0.95 / 400))
-})
-
-# ---------------------------------------------------------------------------
-# 4. The driver
-# ---------------------------------------------------------------------------
-
-test_that("CRPS is refused as a posterior ranking on a fixed-truth experiment", {
-  sim <- function(seed) list(theta = c(mu = 0.5))
-  fit <- function(d) list(a = list(mu = sbc_normal(0.5, 1)),
-                          b = list(mu = sbc_normal(0.5, 2)))
-  fx <- recov_sbc(sim, fit, n_seed = 3L, truth = "fixed")
-  expect_identical(attr(fx, "crps_role"), "descriptive loss (fixed truth)")
-  expect_error(sbc_crps_compare(fx, "a"), "prior-predictive")
-  pr <- recov_sbc(sim, fit, n_seed = 3L, truth = "prior_draw")
-  expect_identical(attr(pr, "crps_role"), "proper posterior score")
-  cmp <- sbc_crps_compare(pr, "a")
-  expect_s3_class(cmp, "data.frame")
-  expect_identical(cmp$arm, "b")
-})
-
-test_that("asking for the diagnostic leaves the ambient RNG stream where it was", {
-  sim <- function(seed) { set.seed(seed); list(theta = c(mu = stats::rnorm(1))) }
-  fit <- function(d) list(a = list(mu = sbc_normal(0, 1)))
-  set.seed(77L)
-  before <- get(".Random.seed", envir = globalenv())
-  invisible(recov_sbc(sim, fit, n_seed = 4L))
-  set.seed(77L)
-  expect_identical(get(".Random.seed", envir = globalenv()), before)
 })
 
 test_that("the driver recovers uniformity on a conjugate model it can solve exactly", {

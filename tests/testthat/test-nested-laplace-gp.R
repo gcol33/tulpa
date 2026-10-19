@@ -73,6 +73,69 @@ make_nngp_dataset <- function(n_spatial = 60L, beta0 = -0.3,
        coords = coords, n_spatial = n_spatial, w_true = w_true)
 }
 
+# =====================================================================
+# HSGP
+# =====================================================================
+
+# Build a 2D HSGP basis (m functions per dimension) and the matching
+# Laplacian eigenvalues. Mirrors setup_hsgp_2d in src/hmc_hsgp.h.
+make_hsgp_basis_2d <- function(coords, m_per_dim = 5L, c = 1.5) {
+  x <- coords[, 1]; y <- coords[, 2]
+  L1 <- max(c * (max(x) - min(x)) / 2, 0.1)
+  L2 <- max(c * (max(y) - min(y)) / 2, 0.1)
+  xs <- x - (max(x) + min(x)) / 2
+  ys <- y - (max(y) + min(y)) / 2
+
+  M <- m_per_dim * m_per_dim
+  N <- nrow(coords)
+  phi_basis <- matrix(0, N, M)
+  lambda_eig <- numeric(M)
+  for (j1 in seq_len(m_per_dim)) {
+    lam_j1 <- (pi * j1 / (2 * L1))^2
+    for (j2 in seq_len(m_per_dim)) {
+      lam_j2 <- (pi * j2 / (2 * L2))^2
+      idx <- (j1 - 1) * m_per_dim + j2
+      lambda_eig[idx] <- lam_j1 + lam_j2
+      phi1 <- (1 / sqrt(L1)) * sin(pi * j1 * (xs + L1) / (2 * L1))
+      phi2 <- (1 / sqrt(L2)) * sin(pi * j2 * (ys + L2) / (2 * L2))
+      phi_basis[, idx] <- phi1 * phi2
+    }
+  }
+  list(phi_basis = phi_basis, lambda_eig = lambda_eig,
+       L1 = L1, L2 = L2, m = m_per_dim, M = M)
+}
+
+test_that("HSGP rejects mismatched basis dimensions", {
+  set.seed(3)
+  N <- 25
+  y <- rbinom(N, 1L, 0.5)
+  expect_error(
+    cpp_nested_laplace_hsgp(
+      y = as.integer(y), n = rep(1L, N), X = matrix(1, N, 1),
+      re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
+      phi_basis = matrix(0, N - 1L, 4L),  # wrong N
+      lambda_eig = c(1, 2, 3, 4),
+      sigma2_grid = c(1), lengthscale_grid = c(1),
+      family = "binomial"
+    ),
+    "phi_basis must have N rows"
+  )
+
+  expect_error(
+    cpp_nested_laplace_hsgp(
+      y = as.integer(y), n = rep(1L, N), X = matrix(1, N, 1),
+      re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
+      phi_basis = matrix(0, N, 4L),
+      lambda_eig = c(1, 2, 3),  # wrong M
+      sigma2_grid = c(1), lengthscale_grid = c(1),
+      family = "binomial"
+    ),
+    "lambda_eig must have length"
+  )
+})
+
+skip_on_cran()
+
 test_that("nested_laplace NNGP runs on a 2D (sigma2, phi_gp) grid", {
   skip_on_cran()
   d <- make_nngp_dataset(n_spatial = 60L, sigma2 = 0.6, phi_gp = 0.3)
@@ -126,38 +189,6 @@ test_that("tulpa_nested_laplace() routes a nngp prior through the dispatch", {
   expect_equal(sum(res$weights), 1.0, tolerance = 1e-6)
 })
 
-# =====================================================================
-# HSGP
-# =====================================================================
-
-# Build a 2D HSGP basis (m functions per dimension) and the matching
-# Laplacian eigenvalues. Mirrors setup_hsgp_2d in src/hmc_hsgp.h.
-make_hsgp_basis_2d <- function(coords, m_per_dim = 5L, c = 1.5) {
-  x <- coords[, 1]; y <- coords[, 2]
-  L1 <- max(c * (max(x) - min(x)) / 2, 0.1)
-  L2 <- max(c * (max(y) - min(y)) / 2, 0.1)
-  xs <- x - (max(x) + min(x)) / 2
-  ys <- y - (max(y) + min(y)) / 2
-
-  M <- m_per_dim * m_per_dim
-  N <- nrow(coords)
-  phi_basis <- matrix(0, N, M)
-  lambda_eig <- numeric(M)
-  for (j1 in seq_len(m_per_dim)) {
-    lam_j1 <- (pi * j1 / (2 * L1))^2
-    for (j2 in seq_len(m_per_dim)) {
-      lam_j2 <- (pi * j2 / (2 * L2))^2
-      idx <- (j1 - 1) * m_per_dim + j2
-      lambda_eig[idx] <- lam_j1 + lam_j2
-      phi1 <- (1 / sqrt(L1)) * sin(pi * j1 * (xs + L1) / (2 * L1))
-      phi2 <- (1 / sqrt(L2)) * sin(pi * j2 * (ys + L2) / (2 * L2))
-      phi_basis[, idx] <- phi1 * phi2
-    }
-  }
-  list(phi_basis = phi_basis, lambda_eig = lambda_eig,
-       L1 = L1, L2 = L2, m = m_per_dim, M = M)
-}
-
 test_that("nested_laplace HSGP runs on a 2D (sigma2, lengthscale) grid", {
   skip_on_cran()
   set.seed(7)
@@ -208,33 +239,4 @@ test_that("tulpa_nested_laplace() routes a hsgp prior through the dispatch", {
   expect_s3_class(res, "tulpa_nested_laplace")
   expect_named(res$theta_mean, c("sigma2", "lengthscale"))
   expect_equal(sum(res$weights), 1.0, tolerance = 1e-6)
-})
-
-test_that("HSGP rejects mismatched basis dimensions", {
-  set.seed(3)
-  N <- 25
-  y <- rbinom(N, 1L, 0.5)
-  expect_error(
-    cpp_nested_laplace_hsgp(
-      y = as.integer(y), n = rep(1L, N), X = matrix(1, N, 1),
-      re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
-      phi_basis = matrix(0, N - 1L, 4L),  # wrong N
-      lambda_eig = c(1, 2, 3, 4),
-      sigma2_grid = c(1), lengthscale_grid = c(1),
-      family = "binomial"
-    ),
-    "phi_basis must have N rows"
-  )
-
-  expect_error(
-    cpp_nested_laplace_hsgp(
-      y = as.integer(y), n = rep(1L, N), X = matrix(1, N, 1),
-      re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
-      phi_basis = matrix(0, N, 4L),
-      lambda_eig = c(1, 2, 3),  # wrong M
-      sigma2_grid = c(1), lengthscale_grid = c(1),
-      family = "binomial"
-    ),
-    "lambda_eig must have length"
-  )
 })

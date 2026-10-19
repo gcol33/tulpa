@@ -128,25 +128,6 @@ test_that("the observed curvature the ZI mixture reads is positive", {
 })
 
 
-test_that("the compiled path recovers each family's generating parameters", {
-  skip_on_cran()
-  specs <- list(
-    list(fam = "neg_binomial_1",           beta = c(1.4, 0.5), phi = 2),
-    list(fam = "truncated_poisson",        beta = c(0.7, 0.4), phi = 1),
-    list(fam = "truncated_neg_binomial_2", beta = c(1.0, 0.5), phi = 4))
-
-  for (s in specs) {
-    est <- t(vapply(1:8, function(k) {
-      d <- sim_count(s$fam, 4000, s$beta, s$phi, 300 + k)
-      coef(tulpa(y ~ x, data = d, family = s$fam, phi = s$phi,
-                 mode = "laplace"))
-    }, numeric(2)))
-    expect_equal(mean(est[, 1]), s$beta[1], tolerance = 0.04, info = s$fam)
-    expect_equal(mean(est[, 2]), s$beta[2], tolerance = 0.04, info = s$fam)
-  }
-})
-
-
 test_that("a truncated fit is not the untruncated fit", {
   # Zero-truncated data has no zeros, so a Poisson fit to it overestimates the
   # mean: the truncation term is exactly what corrects for that. Without this
@@ -217,6 +198,38 @@ test_that("a hurdle model factorizes into its two independent fits", {
 })
 
 
+test_that("an unregistered family errors rather than fitting a Poisson", {
+  # The dispatch used to fall through to the Poisson branch, so a family known
+  # to R but not to C++ fitted silently and wrongly. .R_ONLY_FAMILIES is now
+  # empty because every shipped family is wired; this pins the backstop that
+  # made emptying it safe.
+  expect_length(.R_ONLY_FAMILIES, 0L)
+  expect_error(cpp_family_terms(1, 1L, 0.5, "not_a_real_family", 1),
+               "no compiled implementation")
+})
+
+skip_on_cran()
+
+
+test_that("the compiled path recovers each family's generating parameters", {
+  skip_on_cran()
+  specs <- list(
+    list(fam = "neg_binomial_1",           beta = c(1.4, 0.5), phi = 2),
+    list(fam = "truncated_poisson",        beta = c(0.7, 0.4), phi = 1),
+    list(fam = "truncated_neg_binomial_2", beta = c(1.0, 0.5), phi = 4))
+
+  for (s in specs) {
+    est <- t(vapply(1:8, function(k) {
+      d <- sim_count(s$fam, 4000, s$beta, s$phi, 300 + k)
+      coef(tulpa(y ~ x, data = d, family = s$fam, phi = s$phi,
+                 mode = "laplace"))
+    }, numeric(2)))
+    expect_equal(mean(est[, 1]), s$beta[1], tolerance = 0.04, info = s$fam)
+    expect_equal(mean(est[, 2]), s$beta[2], tolerance = 0.04, info = s$fam)
+  }
+})
+
+
 test_that("the hurdle factorization is exact under any matched ZI prior", {
   skip_on_cran()
   # The companion to the test above: the identity is a property of the
@@ -283,15 +296,4 @@ test_that("the sampler path carries the new families through its AD density", {
   expect_equal(unname(smp[["(Intercept)"]]), unname(lap[["(Intercept)"]]),
                tolerance = 0.06)
   expect_equal(unname(smp[["x"]]), unname(lap[["x"]]), tolerance = 0.06)
-})
-
-
-test_that("an unregistered family errors rather than fitting a Poisson", {
-  # The dispatch used to fall through to the Poisson branch, so a family known
-  # to R but not to C++ fitted silently and wrongly. .R_ONLY_FAMILIES is now
-  # empty because every shipped family is wired; this pins the backstop that
-  # made emptying it safe.
-  expect_length(.R_ONLY_FAMILIES, 0L)
-  expect_error(cpp_family_terms(1, 1L, 0.5, "not_a_real_family", 1),
-               "no compiled implementation")
 })

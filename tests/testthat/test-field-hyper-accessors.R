@@ -71,6 +71,8 @@ test_that("a temporal GP's lengthscale support sits on the spread of its times",
   expect_equal(tulpa:::.gp_phi_from_logit(0, raw), (0.01 + 9.99 / 2) * sd(d$t))
 })
 
+skip_on_cran()
+
 test_that("a GP range is reported in data units whether or not coords are scaled", {
   skip_on_cran()
   set.seed(31); n <- 150; lon <- runif(n); lat <- runif(n)

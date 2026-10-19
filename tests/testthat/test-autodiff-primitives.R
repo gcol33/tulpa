@@ -23,68 +23,6 @@
   )
 }
 
-test_that("every scalar type evaluates the same primitive in the interior", {
-  skip_on_cran()
-  cases <- list(
-    list(fn = "exp",   x = 1.3),
-    list(fn = "exp",   x = -4.2),
-    list(fn = "log",   x = 2.7),
-    list(fn = "sqrt",  x = 9.0),
-    list(fn = "pow",   x = 1.7, p = 2.5),
-    list(fn = "logit", x = 0.32)
-  )
-  for (cs in cases) {
-    p <- cs$p %||% 2
-    r <- cpp_test_scalar_guard(cs$fn, cs$x, p)
-    ref <- .prim_ref(cs$fn, cs$x, p)
-    lbl <- sprintf("%s(%g)", cs$fn, cs$x)
-    expect_equal(r$value_double, ref$v, tolerance = 1e-12, info = lbl)
-    expect_equal(r$value_tape,   ref$v, tolerance = 1e-12, info = lbl)
-    expect_equal(r$value_arena,  ref$v, tolerance = 1e-12, info = lbl)
-    expect_equal(r$grad_tape,    ref$g, tolerance = 1e-10, info = lbl)
-    expect_equal(r$grad_arena,   ref$g, tolerance = 1e-10, info = lbl)
-    if (!is.na(r$grad_dual)) {
-      expect_equal(r$value_dual, ref$v, tolerance = 1e-12, info = lbl)
-      expect_equal(r$grad_dual,  ref$g, tolerance = 1e-10, info = lbl)
-    }
-  }
-})
-
-test_that("exp is clamped on every scalar type, not only the value path", {
-  skip_on_cran()
-  # exp(800) overflows to +Inf unclamped. The value path has always clamped, so
-  # an unclamped reverse mode is a different function from the one the runtime
-  # gradient check finite-differences.
-  for (x in c(800, 1e4, -800, -1e4)) {
-    r <- cpp_test_scalar_guard("exp", x)
-    expect_true(is.finite(r$value_double))
-    expect_true(is.finite(r$value_tape),  info = paste("tape at", x))
-    expect_true(is.finite(r$value_arena), info = paste("arena at", x))
-    expect_true(is.finite(r$grad_tape))
-    expect_true(is.finite(r$grad_arena))
-    expect_equal(r$value_arena, r$value_double, tolerance = 1e-12)
-    expect_equal(r$value_tape,  r$value_double, tolerance = 1e-12)
-  }
-})
-
-test_that("sqrt at and below zero is finite in value and derivative everywhere", {
-  skip_on_cran()
-  # An HSGP spectral density underflows to exactly 0 at a long lengthscale and a
-  # high basis index, so sqrt(0) is an ordinary argument here. Unguarded, the
-  # reverse-mode partial is 0.5 / 0 = +Inf and any nonzero upstream adjoint
-  # makes the reported gradient Inf or NaN while the value path stays finite.
-  for (x in c(0, -1e-12, -3.5)) {
-    r <- cpp_test_scalar_guard("sqrt", x)
-    expect_equal(r$value_double, 0)
-    expect_equal(r$value_tape,   0)
-    expect_equal(r$value_arena,  0)
-    expect_equal(r$grad_tape,    0)
-    expect_equal(r$grad_arena,   0)
-    expect_equal(r$grad_dual,    0)
-    expect_equal(r$value_dual,   0)
-  }
-})
-
 test_that("log at and below zero returns the finite sentinel on every type", {
   for (x in c(0, -2)) {
     r <- cpp_test_scalar_guard("log", x)
@@ -169,4 +107,68 @@ test_that("tape gradients of a multivariate objective are exact", {
   expect_equal(ll$value, sum(y * eta - exp(eta)))
   expect_equal(ll$gradient, ll$expected_gradient, tolerance = 1e-10)
   expect_equal(ll$gradient, y - exp(eta), tolerance = 1e-10)
+})
+
+skip_on_cran()
+
+test_that("every scalar type evaluates the same primitive in the interior", {
+  skip_on_cran()
+  cases <- list(
+    list(fn = "exp",   x = 1.3),
+    list(fn = "exp",   x = -4.2),
+    list(fn = "log",   x = 2.7),
+    list(fn = "sqrt",  x = 9.0),
+    list(fn = "pow",   x = 1.7, p = 2.5),
+    list(fn = "logit", x = 0.32)
+  )
+  for (cs in cases) {
+    p <- cs$p %||% 2
+    r <- cpp_test_scalar_guard(cs$fn, cs$x, p)
+    ref <- .prim_ref(cs$fn, cs$x, p)
+    lbl <- sprintf("%s(%g)", cs$fn, cs$x)
+    expect_equal(r$value_double, ref$v, tolerance = 1e-12, info = lbl)
+    expect_equal(r$value_tape,   ref$v, tolerance = 1e-12, info = lbl)
+    expect_equal(r$value_arena,  ref$v, tolerance = 1e-12, info = lbl)
+    expect_equal(r$grad_tape,    ref$g, tolerance = 1e-10, info = lbl)
+    expect_equal(r$grad_arena,   ref$g, tolerance = 1e-10, info = lbl)
+    if (!is.na(r$grad_dual)) {
+      expect_equal(r$value_dual, ref$v, tolerance = 1e-12, info = lbl)
+      expect_equal(r$grad_dual,  ref$g, tolerance = 1e-10, info = lbl)
+    }
+  }
+})
+
+test_that("exp is clamped on every scalar type, not only the value path", {
+  skip_on_cran()
+  # exp(800) overflows to +Inf unclamped. The value path has always clamped, so
+  # an unclamped reverse mode is a different function from the one the runtime
+  # gradient check finite-differences.
+  for (x in c(800, 1e4, -800, -1e4)) {
+    r <- cpp_test_scalar_guard("exp", x)
+    expect_true(is.finite(r$value_double))
+    expect_true(is.finite(r$value_tape),  info = paste("tape at", x))
+    expect_true(is.finite(r$value_arena), info = paste("arena at", x))
+    expect_true(is.finite(r$grad_tape))
+    expect_true(is.finite(r$grad_arena))
+    expect_equal(r$value_arena, r$value_double, tolerance = 1e-12)
+    expect_equal(r$value_tape,  r$value_double, tolerance = 1e-12)
+  }
+})
+
+test_that("sqrt at and below zero is finite in value and derivative everywhere", {
+  skip_on_cran()
+  # An HSGP spectral density underflows to exactly 0 at a long lengthscale and a
+  # high basis index, so sqrt(0) is an ordinary argument here. Unguarded, the
+  # reverse-mode partial is 0.5 / 0 = +Inf and any nonzero upstream adjoint
+  # makes the reported gradient Inf or NaN while the value path stays finite.
+  for (x in c(0, -1e-12, -3.5)) {
+    r <- cpp_test_scalar_guard("sqrt", x)
+    expect_equal(r$value_double, 0)
+    expect_equal(r$value_tape,   0)
+    expect_equal(r$value_arena,  0)
+    expect_equal(r$grad_tape,    0)
+    expect_equal(r$grad_arena,   0)
+    expect_equal(r$grad_dual,    0)
+    expect_equal(r$value_dual,   0)
+  }
 })

@@ -96,6 +96,8 @@ test_that("a GP coefficient needs a time variable with spacing", {
     "needs a numeric time variable")
 })
 
+skip_on_cran()
+
 
 test_that("the field samples an amplitude and a lengthscale per coefficient", {
   skip_on_cran()

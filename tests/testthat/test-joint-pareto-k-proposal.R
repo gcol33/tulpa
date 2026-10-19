@@ -31,24 +31,6 @@
     }
 }
 
-# --------------------------------------------------------------------------- #
-# Tensor-path finite-difference Hessian fallback                              #
-# --------------------------------------------------------------------------- #
-
-test_that("a collapsed tensor grid recovers a finite k-hat from the FD Hessian", {
-    skip_on_cran()
-    res   <- .pk_collapsed_res()
-    u_hat <- c(log(1.0), stats::qlogis(0.5))
-    kd <- tulpa:::.joint_pareto_k(res, .pk_refit(u_hat), n_samples = 200L,
-                                  proposal = NULL)
-    expect_false(is.na(kd$pareto_k))
-    # FD mode-Hessian proposal, raw or moment-match-refined (post-#221 the
-    # corrected target lets the refinement engage); both source from the Hessian.
-    expect_true(kd$proposal_source %in% c("mode_hessian", "moment_matched"))
-    expect_true(is.finite(kd$is_ess) && kd$is_ess > 0)
-    expect_lt(kd$pareto_k, 0.7)             # Gaussian target under Gaussian proposal
-})
-
 test_that("a collapsed grid with degenerate curvature declines to NA", {
     # A flat outer target gives a non-PD Hessian: the FD fallback declines, and
     # with all weight on one cell the grid covariance is exactly zero, so the
@@ -101,6 +83,147 @@ test_that("a collapsed grid with degenerate curvature declines to NA", {
     }
 }
 
+test_that(".joint_pareto_grid_vary_axes reads the grid layout, not the weights", {
+    # Single-valued columns are pinned; multi-valued ones vary, independent of any
+    # weight concentration (gcol33/tulpa#117).
+    tg <- as.matrix(expand.grid(`b1.sigma` = c(0.8, 1.0, 1.2), `b1.alpha` = 0,
+                                `b2.sigma` = c(0.25, 0.35), `phi_pos` = 1.0))
+    expect_equal(unname(tulpa:::.joint_pareto_grid_vary_axes(tg)), c(1L, 3L))
+})
+
+test_that(".joint_pareto_mode_cov restricts to the varying axes and zeros the pinned ones", {
+    # Direct unit on the helper: a 3-axis target Gaussian in axes 1 & 3, axis 2
+    # pinned. The returned covariance is the inverse curvature on {1, 3} embedded
+    # block-diagonally, zero on the pinned row/col.
+    cn   <- c("b1.sigma", "b1.alpha", "b2.sigma")
+    tags <- c("log", "identity", "log")
+    s    <- c(0.20, 0.30)
+    refit <- function(theta_mat) {
+        u1 <- log(theta_mat[, 1]); u3 <- log(theta_mat[, 3])
+        -0.5 * ((u1 - log(1.0))^2 / s[1]^2 + (u3 - log(0.4))^2 / s[2]^2)
+    }
+    u_center <- c(log(1.0), 0, log(0.4))
+    cov <- tulpa:::.joint_pareto_mode_cov(u_center, tags, cn, refit, d = 3L,
+                                          vary = c(1L, 3L))
+    expect_false(is.null(cov))
+    expect_equal(dim(cov), c(3L, 3L))
+    expect_equal(cov[2, ], rep(0, 3))                    # pinned row zero
+    expect_equal(cov[, 2], rep(0, 3))                    # pinned col zero
+    expect_equal(diag(cov)[c(1, 3)], s^2, tolerance = 1e-2)   # recovers curvature
+    # Full-d stencil (no vary) is singular on the pinned axis -> NULL, the
+    # pre-#117 behaviour the fix routes around.
+    expect_null(tulpa:::.joint_pareto_mode_cov(u_center, tags, cn, refit, d = 3L))
+})
+
+# --------------------------------------------------------------------------- #
+# End-to-end: CCD engages, and a forced tensor grid collapses                 #
+# --------------------------------------------------------------------------- #
+
+.pkp_adj <- function(n_s) {
+    nbr <- lapply(seq_len(n_s),
+                  function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
+    nn  <- vapply(nbr, length, integer(1))
+    list(adj_row_ptr = as.integer(c(0L, cumsum(nn))),
+         adj_col_idx = as.integer(unlist(nbr)) - 1L,
+         n_neighbors = as.integer(nn), n_spatial_units = n_s)
+}
+
+# Two ICAR blocks (40 and 30 units) behind a binomial donor arm and a gaussian
+# copy arm that reads both fields; `alpha_a` / `alpha_b` are the two copy scales'
+# grids. A grid that carries 0 declares the copy scale's "no coupling" level,
+# which the CCD design splits at (`atom_split`), so the grids decide whether the
+# design has a single mode-Hessian Gaussian to carry.
+.pkp_two_block_fixture <- function(alpha_a = c(0, 0.6, 1.2, 1.8),
+                                   alpha_b = c(0, 0.5, 1.0, 1.5)) {
+    set.seed(31)
+    N <- 800L; nA <- 40L; nB <- 30L
+    iA <- sample.int(nA, N, TRUE); iB <- sample.int(nB, N, TRUE)
+    pA <- { r <- cumsum(rnorm(nA, 0, 1.1 / sqrt(nA))); r - mean(r) }
+    pB <- { r <- cumsum(rnorm(nB, 0, 0.9 / sqrt(nB))); r - mean(r) }
+    x <- rnorm(N); Xo <- cbind(1, x)
+    oc <- rbinom(N, 1, plogis(as.numeric(Xo %*% c(-0.3, 0.5)) + pA[iA] + pB[iB]))
+    ip <- oc == 1L; Xp <- Xo[ip, , drop = FALSE]; iAp <- iA[ip]; iBp <- iB[ip]
+    yp <- rnorm(sum(ip),
+                as.numeric(Xp %*% c(0.2, -0.4)) + 1.2 * pA[iAp] + 0.8 * pB[iBp], 0.5)
+    aA <- .pkp_adj(nA); aB <- .pkp_adj(nB)
+    arms <- list(
+        occ = list(y = as.numeric(oc), n_trials = rep(1L, N), X = Xo,
+                   spatial_idx = as.integer(iA), re_idx = rep(0, N),
+                   n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0),
+        pos = list(y = yp, n_trials = rep(1L, length(yp)), X = Xp,
+                   spatial_idx = as.integer(iAp), re_idx = rep(0, length(yp)),
+                   n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.25))
+    prior <- list(
+        list(type = "icar", n_spatial_units = nA, adj_row_ptr = aA$adj_row_ptr,
+             adj_col_idx = aA$adj_col_idx, n_neighbors = aA$n_neighbors,
+             sigma_grid = c(0.4, 0.8, 1.2, 1.6),
+             spatial_idx = list(as.integer(iA), as.integer(iAp))),
+        list(type = "icar", n_spatial_units = nB, adj_row_ptr = aB$adj_row_ptr,
+             adj_col_idx = aB$adj_col_idx, n_neighbors = aB$n_neighbors,
+             sigma_grid = c(0.3, 0.7, 1.1),
+             spatial_idx = list(as.integer(iB), as.integer(iBp))))
+    cp <- list(list(block = 1, arm = "pos", alpha_grid = alpha_a),
+               list(block = 2, arm = "pos", alpha_grid = alpha_b))
+    list(arms = arms, prior = prior, copy = cp)
+}
+
+# --------------------------------------------------------------------------- #
+# Opt-in per-arm outer Pareto-k (gcol33/tulpa#120)                            #
+# --------------------------------------------------------------------------- #
+
+# A separable two-block, two-arm result: block 1 (b1.sigma, b1.alpha) loads the
+# occ arm, block 2 (b2.sigma, b2.alpha) loads the pos arm, and a trailing
+# phi_pos dispersion axis belongs to pos. No copy (alpha pinned at 0), so each
+# block's axes are attributed to the single arm it loads.
+.pk_arm_res <- function() {
+    res <- .pk_pinned_res()
+    res$responses  <- list(occ = list(), pos = list())
+    res$arm_layout <- list(n_arms = 2L)
+    res$blocks <- list(
+        list(type = "icar", spatial_idx = list(1:5, integer(0))),   # occ only
+        list(type = "icar", spatial_idx = list(integer(0), 1:5)))    # pos only
+    res$copy <- NULL
+    res$prior <- res$blocks
+    res
+}
+
+test_that(".joint_pareto_arm_axes maps block + phi columns to arms", {
+    res <- .pk_arm_res()
+    ax  <- tulpa:::.joint_pareto_arm_axes(res)
+    expect_named(ax, c("occ", "pos"))
+    expect_equal(ax$occ, c(1L, 2L))            # b1.sigma, b1.alpha
+    expect_equal(ax$pos, c(3L, 4L, 5L))        # b2.sigma, b2.alpha, phi_pos
+})
+
+test_that(".joint_pareto_arm_axes declines on the single-block layout", {
+    # No axis_offsets / blocks -> one shared field across arms -> decline rather
+    # than mis-attribute (the single-block joint path).
+    res <- list(theta_grid = matrix(1, 1, 2,
+                                    dimnames = list(NULL, c("sigma", "alpha"))),
+                weights = 1, responses = list(occ = list(), pos = list()))
+    expect_null(tulpa:::.joint_pareto_arm_axes(res))
+})
+
+skip_on_cran()
+
+# --------------------------------------------------------------------------- #
+# Tensor-path finite-difference Hessian fallback                              #
+# --------------------------------------------------------------------------- #
+
+test_that("a collapsed tensor grid recovers a finite k-hat from the FD Hessian", {
+    skip_on_cran()
+    res   <- .pk_collapsed_res()
+    u_hat <- c(log(1.0), stats::qlogis(0.5))
+    kd <- tulpa:::.joint_pareto_k(res, .pk_refit(u_hat), n_samples = 200L,
+                                  proposal = NULL)
+    expect_false(is.na(kd$pareto_k))
+    # FD mode-Hessian proposal, raw or moment-match-refined (post-#221 the
+    # corrected target lets the refinement engage); both source from the Hessian.
+    expect_true(kd$proposal_source %in% c("mode_hessian", "moment_matched"))
+    expect_true(is.finite(kd$is_ess) && kd$is_ess > 0)
+    expect_lt(kd$pareto_k, 0.7)             # Gaussian target under Gaussian proposal
+})
+
 test_that("a partial collapse with pinned axes recovers a usable k-hat", {
     skip_on_cran()
     # ess_grid <= d but the two sigma axes still carry weighted spread (only the
@@ -142,38 +265,6 @@ test_that("a delta-weight collapse with pinned axes still recovers k (grid-layou
     expect_false(is.na(kd$pareto_k))
     expect_identical(kd$proposal_source, "mode_hessian")
     expect_lt(kd$pareto_k, 0.7)
-})
-
-test_that(".joint_pareto_grid_vary_axes reads the grid layout, not the weights", {
-    # Single-valued columns are pinned; multi-valued ones vary, independent of any
-    # weight concentration (gcol33/tulpa#117).
-    tg <- as.matrix(expand.grid(`b1.sigma` = c(0.8, 1.0, 1.2), `b1.alpha` = 0,
-                                `b2.sigma` = c(0.25, 0.35), `phi_pos` = 1.0))
-    expect_equal(unname(tulpa:::.joint_pareto_grid_vary_axes(tg)), c(1L, 3L))
-})
-
-test_that(".joint_pareto_mode_cov restricts to the varying axes and zeros the pinned ones", {
-    # Direct unit on the helper: a 3-axis target Gaussian in axes 1 & 3, axis 2
-    # pinned. The returned covariance is the inverse curvature on {1, 3} embedded
-    # block-diagonally, zero on the pinned row/col.
-    cn   <- c("b1.sigma", "b1.alpha", "b2.sigma")
-    tags <- c("log", "identity", "log")
-    s    <- c(0.20, 0.30)
-    refit <- function(theta_mat) {
-        u1 <- log(theta_mat[, 1]); u3 <- log(theta_mat[, 3])
-        -0.5 * ((u1 - log(1.0))^2 / s[1]^2 + (u3 - log(0.4))^2 / s[2]^2)
-    }
-    u_center <- c(log(1.0), 0, log(0.4))
-    cov <- tulpa:::.joint_pareto_mode_cov(u_center, tags, cn, refit, d = 3L,
-                                          vary = c(1L, 3L))
-    expect_false(is.null(cov))
-    expect_equal(dim(cov), c(3L, 3L))
-    expect_equal(cov[2, ], rep(0, 3))                    # pinned row zero
-    expect_equal(cov[, 2], rep(0, 3))                    # pinned col zero
-    expect_equal(diag(cov)[c(1, 3)], s^2, tolerance = 1e-2)   # recovers curvature
-    # Full-d stencil (no vary) is singular on the pinned axis -> NULL, the
-    # pre-#117 behaviour the fix routes around.
-    expect_null(tulpa:::.joint_pareto_mode_cov(u_center, tags, cn, refit, d = 3L))
 })
 
 # --------------------------------------------------------------------------- #
@@ -353,95 +444,6 @@ test_that("a grid-width deficiency stays unreliable: the reported k is never the
     expect_false(identical(kd$proposal_source, "moment_matched"))
     expect_gte(kd$pareto_k, 0.7)
     expect_identical(tulpa:::.tulpa_khat_band(kd$pareto_k), "unreliable")
-})
-
-# --------------------------------------------------------------------------- #
-# End-to-end: CCD engages, and a forced tensor grid collapses                 #
-# --------------------------------------------------------------------------- #
-
-.pkp_adj <- function(n_s) {
-    nbr <- lapply(seq_len(n_s),
-                  function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
-    nn  <- vapply(nbr, length, integer(1))
-    list(adj_row_ptr = as.integer(c(0L, cumsum(nn))),
-         adj_col_idx = as.integer(unlist(nbr)) - 1L,
-         n_neighbors = as.integer(nn), n_spatial_units = n_s)
-}
-
-# Two ICAR blocks (40 and 30 units) behind a binomial donor arm and a gaussian
-# copy arm that reads both fields; `alpha_a` / `alpha_b` are the two copy scales'
-# grids. A grid that carries 0 declares the copy scale's "no coupling" level,
-# which the CCD design splits at (`atom_split`), so the grids decide whether the
-# design has a single mode-Hessian Gaussian to carry.
-.pkp_two_block_fixture <- function(alpha_a = c(0, 0.6, 1.2, 1.8),
-                                   alpha_b = c(0, 0.5, 1.0, 1.5)) {
-    set.seed(31)
-    N <- 800L; nA <- 40L; nB <- 30L
-    iA <- sample.int(nA, N, TRUE); iB <- sample.int(nB, N, TRUE)
-    pA <- { r <- cumsum(rnorm(nA, 0, 1.1 / sqrt(nA))); r - mean(r) }
-    pB <- { r <- cumsum(rnorm(nB, 0, 0.9 / sqrt(nB))); r - mean(r) }
-    x <- rnorm(N); Xo <- cbind(1, x)
-    oc <- rbinom(N, 1, plogis(as.numeric(Xo %*% c(-0.3, 0.5)) + pA[iA] + pB[iB]))
-    ip <- oc == 1L; Xp <- Xo[ip, , drop = FALSE]; iAp <- iA[ip]; iBp <- iB[ip]
-    yp <- rnorm(sum(ip),
-                as.numeric(Xp %*% c(0.2, -0.4)) + 1.2 * pA[iAp] + 0.8 * pB[iBp], 0.5)
-    aA <- .pkp_adj(nA); aB <- .pkp_adj(nB)
-    arms <- list(
-        occ = list(y = as.numeric(oc), n_trials = rep(1L, N), X = Xo,
-                   spatial_idx = as.integer(iA), re_idx = rep(0, N),
-                   n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0),
-        pos = list(y = yp, n_trials = rep(1L, length(yp)), X = Xp,
-                   spatial_idx = as.integer(iAp), re_idx = rep(0, length(yp)),
-                   n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.25))
-    prior <- list(
-        list(type = "icar", n_spatial_units = nA, adj_row_ptr = aA$adj_row_ptr,
-             adj_col_idx = aA$adj_col_idx, n_neighbors = aA$n_neighbors,
-             sigma_grid = c(0.4, 0.8, 1.2, 1.6),
-             spatial_idx = list(as.integer(iA), as.integer(iAp))),
-        list(type = "icar", n_spatial_units = nB, adj_row_ptr = aB$adj_row_ptr,
-             adj_col_idx = aB$adj_col_idx, n_neighbors = aB$n_neighbors,
-             sigma_grid = c(0.3, 0.7, 1.1),
-             spatial_idx = list(as.integer(iB), as.integer(iBp))))
-    cp <- list(list(block = 1, arm = "pos", alpha_grid = alpha_a),
-               list(block = 2, arm = "pos", alpha_grid = alpha_b))
-    list(arms = arms, prior = prior, copy = cp)
-}
-
-# --------------------------------------------------------------------------- #
-# Opt-in per-arm outer Pareto-k (gcol33/tulpa#120)                            #
-# --------------------------------------------------------------------------- #
-
-# A separable two-block, two-arm result: block 1 (b1.sigma, b1.alpha) loads the
-# occ arm, block 2 (b2.sigma, b2.alpha) loads the pos arm, and a trailing
-# phi_pos dispersion axis belongs to pos. No copy (alpha pinned at 0), so each
-# block's axes are attributed to the single arm it loads.
-.pk_arm_res <- function() {
-    res <- .pk_pinned_res()
-    res$responses  <- list(occ = list(), pos = list())
-    res$arm_layout <- list(n_arms = 2L)
-    res$blocks <- list(
-        list(type = "icar", spatial_idx = list(1:5, integer(0))),   # occ only
-        list(type = "icar", spatial_idx = list(integer(0), 1:5)))    # pos only
-    res$copy <- NULL
-    res$prior <- res$blocks
-    res
-}
-
-test_that(".joint_pareto_arm_axes maps block + phi columns to arms", {
-    res <- .pk_arm_res()
-    ax  <- tulpa:::.joint_pareto_arm_axes(res)
-    expect_named(ax, c("occ", "pos"))
-    expect_equal(ax$occ, c(1L, 2L))            # b1.sigma, b1.alpha
-    expect_equal(ax$pos, c(3L, 4L, 5L))        # b2.sigma, b2.alpha, phi_pos
-})
-
-test_that(".joint_pareto_arm_axes declines on the single-block layout", {
-    # No axis_offsets / blocks -> one shared field across arms -> decline rather
-    # than mis-attribute (the single-block joint path).
-    res <- list(theta_grid = matrix(1, 1, 2,
-                                    dimnames = list(NULL, c("sigma", "alpha"))),
-                weights = 1, responses = list(occ = list(), pos = list()))
-    expect_null(tulpa:::.joint_pareto_arm_axes(res))
 })
 
 test_that("per-arm k is reported and leaves the joint k bit-identical", {

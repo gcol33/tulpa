@@ -1,24 +1,3 @@
-# Tests for sn_match / sn_cdf / sn_quantile.
-
-test_that("sn_match reproduces forward moments", {
-  skip_on_cran()
-  # Forward: (xi, omega, alpha) -> (mu, sigma, gamma); then sn_match
-  # should round-trip back to the same skew-normal parameters.
-  for (alpha in c(-5, -1.5, -0.3, 0.3, 1.5, 5)) {
-    xi    <- 0.4
-    omega <- 1.3
-    delta <- alpha / sqrt(1 + alpha^2)
-    b     <- sqrt(2 / pi)
-    mu    <- xi + omega * delta * b
-    sigma <- omega * sqrt(1 - 2 * delta^2 / pi)
-    gamma <- ((4 - pi) / 2) * (delta * b)^3 / (1 - 2 * delta^2 / pi)^(3 / 2)
-
-    sn <- sn_match(mu, sigma, gamma)
-    expect_equal(sn$xi,    xi,    tolerance = 1e-10)
-    expect_equal(sn$omega, omega, tolerance = 1e-10)
-    expect_equal(sn$alpha, alpha, tolerance = 1e-10)
-  }
-})
 
 test_that("sn_match reduces to normal at gamma = 0", {
   sn <- sn_match(2, 0.5, 0)
@@ -66,4 +45,27 @@ test_that("sn_quantile works across negative-skew range", {
   p  <- c(0.025, 0.5, 0.975)
   q  <- sn_quantile(p, sn)
   expect_equal(sn_cdf(q, sn), p, tolerance = 1e-8)
+})
+
+skip_on_cran()
+# Tests for sn_match / sn_cdf / sn_quantile.
+
+test_that("sn_match reproduces forward moments", {
+  skip_on_cran()
+  # Forward: (xi, omega, alpha) -> (mu, sigma, gamma); then sn_match
+  # should round-trip back to the same skew-normal parameters.
+  for (alpha in c(-5, -1.5, -0.3, 0.3, 1.5, 5)) {
+    xi    <- 0.4
+    omega <- 1.3
+    delta <- alpha / sqrt(1 + alpha^2)
+    b     <- sqrt(2 / pi)
+    mu    <- xi + omega * delta * b
+    sigma <- omega * sqrt(1 - 2 * delta^2 / pi)
+    gamma <- ((4 - pi) / 2) * (delta * b)^3 / (1 - 2 * delta^2 / pi)^(3 / 2)
+
+    sn <- sn_match(mu, sigma, gamma)
+    expect_equal(sn$xi,    xi,    tolerance = 1e-10)
+    expect_equal(sn$omega, omega, tolerance = 1e-10)
+    expect_equal(sn$alpha, alpha, tolerance = 1e-10)
+  }
 })

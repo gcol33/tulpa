@@ -166,6 +166,34 @@ test_that("dense_cross_pairs allocates the two blocks the spec writes, and no ot
   expect_equal(r$rank1_coef, c(0, 0))
 })
 
+.occ_chain_adj <- function(n_s) {
+  nbr <- lapply(seq_len(n_s),
+                function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
+  nn <- vapply(nbr, length, integer(1))
+  list(adj_row_ptr = as.integer(c(0L, cumsum(nn))),
+       adj_col_idx = as.integer(unlist(nbr)) - 1L,
+       n_neighbors = as.integer(nn), n_spatial_units = n_s)
+}
+
+# An occupancy field over cells, entering the occupancy arm only -- the shape a
+# real single-season occupancy model has, and the one that forces the cross-arm
+# curvature to reach the field's latent dofs through the coupled scatter.
+.occ_spatial_fit <- function(d, adj, force_sparse = FALSE) {
+  n_v <- d$n_cells * d$n_visits
+  prior <- list(type = "icar", n_spatial_units = d$n_cells,
+                adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                n_neighbors = adj$n_neighbors,
+                sigma_grid = c(0.3, 0.5, 0.8, 1.2),
+                spatial_idx = list(seq_len(d$n_cells), rep(0L, n_v)))
+  tulpa_nested_laplace_joint(
+    responses = coupled_occ_arms(d, spatial_idx = TRUE),
+    prior = prior, cell_coupling = "test_occupancy_mixture",
+    control = list(max_iter = 200L, tol = 1e-10, diagnose_k = FALSE,
+                   force_sparse = force_sparse))
+}
+
+skip_on_cran()
+
 test_that("a grad-only request keeps the gradient exact and skips the curvature", {
   skip_on_cran()
   coupled_occ_register()
@@ -214,32 +242,6 @@ test_that("a coupled fit lands on the exact mode of the posterior it claims to s
   expect_lt(abs(md[1L] - d$b_occ), 3 * q$a[["sd"]])
   expect_lt(abs(md[2L] - d$b_det), 3 * q$b[["sd"]])
 })
-
-.occ_chain_adj <- function(n_s) {
-  nbr <- lapply(seq_len(n_s),
-                function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
-  nn <- vapply(nbr, length, integer(1))
-  list(adj_row_ptr = as.integer(c(0L, cumsum(nn))),
-       adj_col_idx = as.integer(unlist(nbr)) - 1L,
-       n_neighbors = as.integer(nn), n_spatial_units = n_s)
-}
-
-# An occupancy field over cells, entering the occupancy arm only -- the shape a
-# real single-season occupancy model has, and the one that forces the cross-arm
-# curvature to reach the field's latent dofs through the coupled scatter.
-.occ_spatial_fit <- function(d, adj, force_sparse = FALSE) {
-  n_v <- d$n_cells * d$n_visits
-  prior <- list(type = "icar", n_spatial_units = d$n_cells,
-                adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-                n_neighbors = adj$n_neighbors,
-                sigma_grid = c(0.3, 0.5, 0.8, 1.2),
-                spatial_idx = list(seq_len(d$n_cells), rep(0L, n_v)))
-  tulpa_nested_laplace_joint(
-    responses = coupled_occ_arms(d, spatial_idx = TRUE),
-    prior = prior, cell_coupling = "test_occupancy_mixture",
-    control = list(max_iter = 200L, tol = 1e-10, diagnose_k = FALSE,
-                   force_sparse = force_sparse))
-}
 
 test_that("a coupled occupancy fit recovers both intercepts and stays non-separable at its mode", {
   skip_on_cran()

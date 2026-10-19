@@ -48,6 +48,8 @@ test_that("field_effects() refuses a fit with no spatial field", {
                "svc\\(\\)")
 })
 
+skip_on_cran()
+
 test_that("field_effects() errors on a fitted model without a field", {
   skip_on_cran()
   set.seed(2)

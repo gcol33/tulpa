@@ -1,88 +1,3 @@
-# The mode-SD clamp on a recentred outer axis (gcol33/tulpa#387).
-#
-# The clamp substitutes a number for a curvature the FD stencil could not read.
-# Before #387 it was an anonymous `min(max(...))` inside the node generator, so
-# a fit laid from a substituted spread and one laid from a measured spread were
-# indistinguishable afterwards -- the gcol33/tulpa#293 rule, one layer down.
-# These pin (a) that the clamp is ONE function, (b) that what it did is on the
-# fit, and (c) that the shipped default is byte-identical to the formula it
-# replaced.
-
-test_that("the clamp reports which bound it hit, and the SD it measured", {
-    skip_on_cran()
-    withr::local_options(list(tulpa.recenter.min_sd_u = 0.15))
-    mn <- .nl_recenter("min_sd_u")
-    mx <- .nl_recenter("max_sd_u")
-
-    inside <- .nl_recenter_sd_clamp((mn + mx) / 2)
-    expect_identical(inside$clamp, "none")
-    expect_identical(inside$sd, (mn + mx) / 2)
-    expect_identical(inside$sd_raw, inside$sd)
-    expect_null(inside$reason)
-
-    # The ceiling declines by default, so there is no SD to lay an axis from --
-    # but the MEASURED spread is reported either way, since it is the reading
-    # that says whether declining was the right call.
-    hi <- .nl_recenter_sd_clamp(mx * 20)
-    expect_identical(hi$clamp, "ceiling")
-    expect_identical(hi$reason, "sd_ceiling_unresolved")
-    expect_true(is.na(hi$sd))
-    expect_identical(hi$sd_raw, mx * 20)
-
-    hic <- .nl_recenter_sd_clamp(mx * 20, ceiling = "clamp")
-    expect_identical(hic$clamp, "ceiling")
-    expect_identical(hic$sd, mx)
-    expect_identical(hic$sd_raw, mx * 20)
-    expect_null(hic$reason)
-
-    lo <- .nl_recenter_sd_clamp(mn / 20)
-    expect_identical(lo$clamp, "floor")
-    expect_identical(lo$sd, mn)
-    expect_identical(lo$sd_raw, mn / 20)
-
-    # A curvature that is not a curvature at all is not a clamp -- it declines.
-    for (bad in list(0, -1, NA_real_, Inf, numeric(0))) {
-        z <- .nl_recenter_sd_clamp(bad)
-        expect_identical(z$reason, "no_usable_curvature")
-        expect_true(is.na(z$clamp))
-    }
-})
-
-test_that("the clamp policy lays exactly the axis the pre-#387 formula did", {
-  skip_on_cran()
-    # `"clamp"` IS `min(max(sd, lo), hi)`, so the arm the measurement compared
-    # against is the pre-#387 engine exactly. (It is no longer the DEFAULT --
-    # see the ceiling block below -- but it remains what a fit gets on the
-    # coordinates the ceiling does not reach, which is 266 of 268 axis reads.)
-    # Written out independently rather than calling the engine's own helper, so
-    # this compares against the formula and not against itself.
-    withr::local_options(list(tulpa.recenter.sd_clamp_policy = "clamp"))
-    ref <- function(tag, mode_u, sd_u, n_pts = .nl_recenter("n_pts"),
-                    span = .nl_recenter("span"),
-                    min_sd_u = .nl_recenter("min_sd_u"),
-                    max_sd_u = .nl_recenter("max_sd_u")) {
-        if (length(tag) != 1L || is.na(tag) ||
-            !tag %in% c("log", "logit01", "identity")) return(NULL)
-        if (!is.finite(mode_u) || !is.finite(sd_u) || sd_u <= 0) return(NULL)
-        sd_u  <- min(max(sd_u, min_sd_u), max_sd_u)
-        u_seq <- seq(mode_u - span * sd_u, mode_u + span * sd_u,
-                     length.out = as.integer(n_pts))
-        nodes <- .joint_pareto_inv(tag, u_seq)$theta
-        keep  <- is.finite(nodes)
-        if (identical(tag, "logit01")) keep <- keep & nodes > 0 & nodes < 1
-        nodes <- sort(unique(nodes[keep]))
-        if (length(nodes) < .nl_recenter("min_nodes")) return(NULL)
-        nodes
-    }
-    set.seed(387)
-    for (tag in c("log", "logit01", "identity")) {
-        for (i in 1:200) {
-            m <- stats::rnorm(1, 0, 3)
-            s <- stats::rgamma(1, shape = 1, rate = 1) * 4
-            expect_identical(.nl_recenter_axis(tag, m, s), ref(tag, m, s))
-        }
-    }
-})
 
 test_that("the ceiling DECLINES by default, and the floor still clamps", {
     # The measured defaults (gcol33/tulpa#387): a clamped ceiling means the
@@ -261,4 +176,91 @@ test_that("every door lays an axis at the measured SD, and a caller-set floor st
     fl <- .nl_recenter_axis_full("log", 0, 0.015)
     expect_identical(fl$sd_clamp, "floor")
     expect_equal(fl$sd_used, 0.15)
+})
+
+skip_on_cran()
+# The mode-SD clamp on a recentred outer axis (gcol33/tulpa#387).
+#
+# The clamp substitutes a number for a curvature the FD stencil could not read.
+# Before #387 it was an anonymous `min(max(...))` inside the node generator, so
+# a fit laid from a substituted spread and one laid from a measured spread were
+# indistinguishable afterwards -- the gcol33/tulpa#293 rule, one layer down.
+# These pin (a) that the clamp is ONE function, (b) that what it did is on the
+# fit, and (c) that the shipped default is byte-identical to the formula it
+# replaced.
+
+test_that("the clamp reports which bound it hit, and the SD it measured", {
+    skip_on_cran()
+    withr::local_options(list(tulpa.recenter.min_sd_u = 0.15))
+    mn <- .nl_recenter("min_sd_u")
+    mx <- .nl_recenter("max_sd_u")
+
+    inside <- .nl_recenter_sd_clamp((mn + mx) / 2)
+    expect_identical(inside$clamp, "none")
+    expect_identical(inside$sd, (mn + mx) / 2)
+    expect_identical(inside$sd_raw, inside$sd)
+    expect_null(inside$reason)
+
+    # The ceiling declines by default, so there is no SD to lay an axis from --
+    # but the MEASURED spread is reported either way, since it is the reading
+    # that says whether declining was the right call.
+    hi <- .nl_recenter_sd_clamp(mx * 20)
+    expect_identical(hi$clamp, "ceiling")
+    expect_identical(hi$reason, "sd_ceiling_unresolved")
+    expect_true(is.na(hi$sd))
+    expect_identical(hi$sd_raw, mx * 20)
+
+    hic <- .nl_recenter_sd_clamp(mx * 20, ceiling = "clamp")
+    expect_identical(hic$clamp, "ceiling")
+    expect_identical(hic$sd, mx)
+    expect_identical(hic$sd_raw, mx * 20)
+    expect_null(hic$reason)
+
+    lo <- .nl_recenter_sd_clamp(mn / 20)
+    expect_identical(lo$clamp, "floor")
+    expect_identical(lo$sd, mn)
+    expect_identical(lo$sd_raw, mn / 20)
+
+    # A curvature that is not a curvature at all is not a clamp -- it declines.
+    for (bad in list(0, -1, NA_real_, Inf, numeric(0))) {
+        z <- .nl_recenter_sd_clamp(bad)
+        expect_identical(z$reason, "no_usable_curvature")
+        expect_true(is.na(z$clamp))
+    }
+})
+
+test_that("the clamp policy lays exactly the axis the pre-#387 formula did", {
+  skip_on_cran()
+    # `"clamp"` IS `min(max(sd, lo), hi)`, so the arm the measurement compared
+    # against is the pre-#387 engine exactly. (It is no longer the DEFAULT --
+    # see the ceiling block below -- but it remains what a fit gets on the
+    # coordinates the ceiling does not reach, which is 266 of 268 axis reads.)
+    # Written out independently rather than calling the engine's own helper, so
+    # this compares against the formula and not against itself.
+    withr::local_options(list(tulpa.recenter.sd_clamp_policy = "clamp"))
+    ref <- function(tag, mode_u, sd_u, n_pts = .nl_recenter("n_pts"),
+                    span = .nl_recenter("span"),
+                    min_sd_u = .nl_recenter("min_sd_u"),
+                    max_sd_u = .nl_recenter("max_sd_u")) {
+        if (length(tag) != 1L || is.na(tag) ||
+            !tag %in% c("log", "logit01", "identity")) return(NULL)
+        if (!is.finite(mode_u) || !is.finite(sd_u) || sd_u <= 0) return(NULL)
+        sd_u  <- min(max(sd_u, min_sd_u), max_sd_u)
+        u_seq <- seq(mode_u - span * sd_u, mode_u + span * sd_u,
+                     length.out = as.integer(n_pts))
+        nodes <- .joint_pareto_inv(tag, u_seq)$theta
+        keep  <- is.finite(nodes)
+        if (identical(tag, "logit01")) keep <- keep & nodes > 0 & nodes < 1
+        nodes <- sort(unique(nodes[keep]))
+        if (length(nodes) < .nl_recenter("min_nodes")) return(NULL)
+        nodes
+    }
+    set.seed(387)
+    for (tag in c("log", "logit01", "identity")) {
+        for (i in 1:200) {
+            m <- stats::rnorm(1, 0, 3)
+            s <- stats::rgamma(1, shape = 1, rate = 1) * 4
+            expect_identical(.nl_recenter_axis(tag, m, s), ref(tag, m, s))
+        }
+    }
 })

@@ -141,6 +141,8 @@ test_that("both mode-find consumers reach optim only through the shared helper",
   expect_true(".nl_lbfgsb_mode_find" %in% all.names(body(tulpa:::.st_auto_grid_rescue)))
 })
 
+skip_on_cran()
+
 test_that("no file outside settings.R restates a mode-find constant", {
   skip_on_cran()
   r_dir <- test_path("..", "..", "R")

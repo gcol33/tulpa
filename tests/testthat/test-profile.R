@@ -86,6 +86,21 @@ test_that("cpp_profile_reset zeroes every phase", {
   expect_true(all(r$calls == 0L))
 })
 
+test_that("tulpa_profile warns when nothing instrumented ran (#887)", {
+  # An all-zero table is not a measurement: the expression never reached a
+  # timed solver.
+  expect_warning(p <- tulpa_profile(1 + 1), "no instrumented phase")
+  expect_true(all(p$calls == 0L))
+  expect_identical(attr(p, "value"), 2)
+})
+
+# The phases a Laplace inner solve records: the Newton loop's eta / scatter /
+# factorize / line_search and the final pass's log_det / log_lik_prior.
+.profile_newton_phases <- c("eta", "scatter", "factorize", "line_search",
+                            "log_det", "log_lik_prior")
+
+skip_on_cran()
+
 test_that("timing is off outside tulpa_profile() and restored after it", {
   skip_on_cran()
   set.seed(1)
@@ -176,19 +191,6 @@ test_that("tulpa_profile resets between runs (no carry-over)", {
   # Deterministic inputs -> same number of scatter calls, not double.
   expect_equal(s2, s1)
 })
-
-test_that("tulpa_profile warns when nothing instrumented ran (#887)", {
-  # An all-zero table is not a measurement: the expression never reached a
-  # timed solver.
-  expect_warning(p <- tulpa_profile(1 + 1), "no instrumented phase")
-  expect_true(all(p$calls == 0L))
-  expect_identical(attr(p, "value"), 2)
-})
-
-# The phases a Laplace inner solve records: the Newton loop's eta / scatter /
-# factorize / line_search and the final pass's log_det / log_lik_prior.
-.profile_newton_phases <- c("eta", "scatter", "factorize", "line_search",
-                            "log_det", "log_lik_prior")
 
 test_that("the single-response Laplace is timed by phase (#887)", {
   skip_on_cran()

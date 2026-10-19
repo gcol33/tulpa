@@ -120,42 +120,12 @@
   list(analytic = r$H, fd = (Hf + t(Hf)) / 2)
 }
 
-
-test_that("the exact gradient matches a difference of tulpa's own marginal", {
-  skip_on_cran()
-  for (cs in list(list(fam = "poisson",  th = log(0.7)),
-                  list(fam = "binomial", th = log(0.7)),
-                  list(fam = "poisson",  th = log(1.6)))) {
-    d <- .exg_sim(fam = cs$fam, G = if (cs$fam == "binomial") 14L else 10L,
-                  per = if (cs$fam == "binomial") 10L else 7L)
-    r <- .exg_compare(d, cs$th)
-    skip_if(is.null(r), "gradient unavailable")
-    expect_equal(r$analytic, r$fd, tolerance = 1e-6,
-                 info = paste(cs$fam, "at theta =", signif(cs$th, 4)))
-  }
-})
-
 test_that("the exact gradient matches for a correlated block", {
   d <- .exg_sim(seed = 5L, G = 12L, per = 8L, nc = 2L)
   r <- .exg_compare(d, c(log(0.7), 0.2, log(0.6)), full = TRUE)
   skip_if(is.null(r), "gradient unavailable")
   expect_equal(r$analytic, r$fd, tolerance = 1e-6)
   expect_length(r$analytic, 3L)
-})
-
-test_that("the closed-form Hessian matches a difference of the analytic gradient", {
-  skip_on_cran()
-  for (cs in list(list(fam = "poisson",  th = log(0.7)),
-                  list(fam = "binomial", th = log(0.7)),
-                  list(fam = "poisson",  th = log(1.6)))) {
-    d <- .exg_sim(fam = cs$fam, G = if (cs$fam == "binomial") 14L else 10L,
-                  per = if (cs$fam == "binomial") 10L else 7L)
-    r <- .exg_hess_compare(d, cs$th)
-    skip_if(is.null(r), "hessian unavailable")
-    expect_equal(dim(r$analytic), c(1L, 1L))
-    expect_equal(r$analytic, r$fd, tolerance = 1e-5,
-                 info = paste(cs$fam, "at theta =", signif(cs$th, 4)))
-  }
 })
 
 test_that("the closed-form Hessian matches for a correlated block", {
@@ -236,74 +206,6 @@ test_that("the observed-curvature correction is exact at both derivative rungs",
     ref <- -s + 3 * r^2 * (trigamma(r) - trigamma(y + r)) +
       r^3 * (psigamma(r, 2L) - psigamma(y + r, 2L)) - mu / (1 + phi)
     expect_equal(got, ref, tolerance = 1e-7)
-  }
-})
-
-test_that("H_theta from the gradient stencil agrees with the objective's curvature", {
-  skip_on_cran()
-  # The stencil is what any family without a closed second-derivative route
-  # falls back to, so it has to be right on its own terms. Checked on the two
-  # families whose working weight is NOT the observed curvature -- the case that
-  # separates the two inverses, and the one where an error would hide -- against
-  # a second difference of the objective itself.
-  for (cs in list(list(fam = "neg_binomial_1",          phi = 2.5),
-                  list(fam = "truncated_neg_binomial_2", phi = 2.5))) {
-    d <- .exg_sim(fam = cs$fam, G = 24L, per = 10L, phi = cs$phi)
-    layout <- .exg_layout(d, FALSE)
-    obj <- function(th) {
-      L <- .exg_theta_to_L(th, d$nc, FALSE)
-      tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
-                    re_list = .re_cov_build_re_list(list(L), layout),
-                    family = d$fam, phi = cs$phi, return_hessian = FALSE,
-                    max_iter = 300L, tol = 1e-12)$log_marginal
-    }
-    grad <- function(th) {
-      L <- .exg_theta_to_L(th, d$nc, FALSE)
-      fit <- tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
-                           re_list = .re_cov_build_re_list(list(L), layout),
-                           family = d$fam, phi = cs$phi, return_hessian = FALSE,
-                           return_joint_hessian = TRUE, max_iter = 300L,
-                           tol = 1e-12)
-      .laplace_exact_re_grad(
-        fit = fit, y = d$y, X = d$X, n_trials = d$n_trials, offset = NULL,
-        weights = NULL, re_list = .re_cov_build_re_list(list(L), layout),
-        layout = layout, L_list = list(L), family = d$fam, phi = cs$phi)
-    }
-    th <- log(0.7); h <- 1e-4
-    stencil <- (grad(th + h) - grad(th - h)) / (2 * h)
-    second  <- (obj(th + h) - 2 * obj(th) + obj(th - h)) / (h * h)
-    expect_equal(stencil, second, tolerance = 2e-3, info = cs$fam)
-  }
-})
-
-test_that("the analytic mode Jacobian equals the differenced true inner mode", {
-  skip_on_cran()
-  # J = dx_hat/dtheta from true score stationarity carries the observed
-  # curvature; the check differences tulpa's own inner mode, catching a
-  # working-weight Jacobian directly rather than only through the Hessian.
-  for (cs in list(list(fam = "neg_binomial_2",          phi = 2.5),
-                  list(fam = "neg_binomial_1",          phi = 2.5),
-                  list(fam = "truncated_neg_binomial_2", phi = 2.5))) {
-    d <- .exg_sim(fam = cs$fam, G = 24L, per = 10L, phi = cs$phi)
-    layout <- .exg_layout(d, FALSE)
-    fit_at <- function(th) {
-      L <- .exg_theta_to_L(th, 1L, FALSE)
-      tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
-                    re_list = .re_cov_build_re_list(list(L), layout),
-                    family = d$fam, phi = cs$phi, return_hessian = TRUE,
-                    return_joint_hessian = TRUE, max_iter = 300L, tol = 1e-12)
-    }
-    L0 <- .exg_theta_to_L(log(0.7), 1L, FALSE)
-    r <- .laplace_exact_re_grad(
-      fit = fit_at(log(0.7)), y = d$y, X = d$X, n_trials = d$n_trials,
-      offset = NULL, weights = NULL,
-      re_list = .re_cov_build_re_list(list(L0), layout),
-      layout = layout, L_list = list(L0), family = d$fam, phi = cs$phi,
-      want_jacobian = TRUE)
-    skip_if(is.null(r) || is.null(r$J), "jacobian unavailable")
-    h <- 1e-5
-    Jtrue <- (fit_at(log(0.7) + h)$mode - fit_at(log(0.7) - h)$mode) / (2 * h)
-    expect_equal(as.numeric(r$J), Jtrue, tolerance = 1e-5, info = cs$fam)
   }
 })
 
@@ -454,45 +356,6 @@ test_that("the second curvature derivative gate covers every family with a first
   }
 })
 
-test_that("the exact mode-Jacobian gate tracks whether the observed curvature is available", {
-  skip_on_cran()
-  # Every front-door family now carries an exact observed curvature: the
-  # explicitly branched ones directly, everything on the generic mu-space route
-  # through the grad_mu ladder. So the gate is open across the registry, and
-  # what varies is whether the observed form DIFFERS from the working weight.
-  for (f in c(family_names(), "gaussian_log", "binomial_probit"))
-    expect_true(cpp_family_has_exact_mode_jacobian(f), info = f)
-
-  # The observed-minus-working delta is identically zero exactly where the
-  # Newton weight already is the observed curvature -- a canonical link or a
-  # curvature carrying no y -- and nonzero everywhere else. A non-canonical link
-  # breaks the coincidence even for a family that has it canonically.
-  eta <- c(-0.5, 0.3, 1.1); y <- c(2, 3, 1)
-  zero_delta <- list(
-    list("poisson", 1), list("binomial", 1), list("neg_binomial_2", 2.5),
-    list("truncated_poisson", 1), list("gaussian", 1.4))
-  for (cs in zero_delta) {
-    expect_true(all(abs(cpp_family_obs_curvature_delta_vec(
-      y, 6L, eta, cs[[1]], cs[[2]])) < 1e-12), info = cs[[1]])
-    expect_true(cpp_family_working_weight_is_observed(cs[[1]]), info = cs[[1]])
-  }
-  # beta's Newton weight is the observed curvature under every link
-  # (gcol33/tulpa#936), so its delta is the zero function too; its response
-  # lives on (0, 1).
-  expect_true(all(abs(cpp_family_obs_curvature_delta_vec(
-    c(0.2, 0.55, 0.9), 1L, eta, "beta", 6)) < 1e-12))
-  expect_true(cpp_family_working_weight_is_observed("beta"))
-  nonzero_delta <- list(
-    list("truncated_neg_binomial_2", 2.5), list("neg_binomial_1", 2.5),
-    list("gamma", 3), list("inverse_gaussian", 0.6),
-    list("beta_binomial", 6), list("binomial_probit", 1), list("gaussian_log", 1.4))
-  for (cs in nonzero_delta) {
-    expect_true(any(abs(cpp_family_obs_curvature_delta_vec(
-      y, 6L, eta, cs[[1]], cs[[2]])) > 1e-8), info = cs[[1]])
-    expect_false(cpp_family_working_weight_is_observed(cs[[1]]), info = cs[[1]])
-  }
-})
-
 
 test_that("the compiled zero-inflation gate needs a discrete base, not just a curvature", {
   # has_observed_curvature() alone used to decide this, and was right only while
@@ -571,6 +434,145 @@ test_that("the gradient-driven outer fit lands where the derivative-free one doe
   expect_equal(unname(coef(a)), unname(coef(b)), tolerance = 1e-4)
   expect_equal(unname(sqrt(diag(vcov(a)))), unname(sqrt(diag(vcov(b)))),
                tolerance = 1e-4)
+})
+
+skip_on_cran()
+
+
+test_that("the exact gradient matches a difference of tulpa's own marginal", {
+  skip_on_cran()
+  for (cs in list(list(fam = "poisson",  th = log(0.7)),
+                  list(fam = "binomial", th = log(0.7)),
+                  list(fam = "poisson",  th = log(1.6)))) {
+    d <- .exg_sim(fam = cs$fam, G = if (cs$fam == "binomial") 14L else 10L,
+                  per = if (cs$fam == "binomial") 10L else 7L)
+    r <- .exg_compare(d, cs$th)
+    skip_if(is.null(r), "gradient unavailable")
+    expect_equal(r$analytic, r$fd, tolerance = 1e-6,
+                 info = paste(cs$fam, "at theta =", signif(cs$th, 4)))
+  }
+})
+
+test_that("the closed-form Hessian matches a difference of the analytic gradient", {
+  skip_on_cran()
+  for (cs in list(list(fam = "poisson",  th = log(0.7)),
+                  list(fam = "binomial", th = log(0.7)),
+                  list(fam = "poisson",  th = log(1.6)))) {
+    d <- .exg_sim(fam = cs$fam, G = if (cs$fam == "binomial") 14L else 10L,
+                  per = if (cs$fam == "binomial") 10L else 7L)
+    r <- .exg_hess_compare(d, cs$th)
+    skip_if(is.null(r), "hessian unavailable")
+    expect_equal(dim(r$analytic), c(1L, 1L))
+    expect_equal(r$analytic, r$fd, tolerance = 1e-5,
+                 info = paste(cs$fam, "at theta =", signif(cs$th, 4)))
+  }
+})
+
+test_that("H_theta from the gradient stencil agrees with the objective's curvature", {
+  skip_on_cran()
+  # The stencil is what any family without a closed second-derivative route
+  # falls back to, so it has to be right on its own terms. Checked on the two
+  # families whose working weight is NOT the observed curvature -- the case that
+  # separates the two inverses, and the one where an error would hide -- against
+  # a second difference of the objective itself.
+  for (cs in list(list(fam = "neg_binomial_1",          phi = 2.5),
+                  list(fam = "truncated_neg_binomial_2", phi = 2.5))) {
+    d <- .exg_sim(fam = cs$fam, G = 24L, per = 10L, phi = cs$phi)
+    layout <- .exg_layout(d, FALSE)
+    obj <- function(th) {
+      L <- .exg_theta_to_L(th, d$nc, FALSE)
+      tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
+                    re_list = .re_cov_build_re_list(list(L), layout),
+                    family = d$fam, phi = cs$phi, return_hessian = FALSE,
+                    max_iter = 300L, tol = 1e-12)$log_marginal
+    }
+    grad <- function(th) {
+      L <- .exg_theta_to_L(th, d$nc, FALSE)
+      fit <- tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
+                           re_list = .re_cov_build_re_list(list(L), layout),
+                           family = d$fam, phi = cs$phi, return_hessian = FALSE,
+                           return_joint_hessian = TRUE, max_iter = 300L,
+                           tol = 1e-12)
+      .laplace_exact_re_grad(
+        fit = fit, y = d$y, X = d$X, n_trials = d$n_trials, offset = NULL,
+        weights = NULL, re_list = .re_cov_build_re_list(list(L), layout),
+        layout = layout, L_list = list(L), family = d$fam, phi = cs$phi)
+    }
+    th <- log(0.7); h <- 1e-4
+    stencil <- (grad(th + h) - grad(th - h)) / (2 * h)
+    second  <- (obj(th + h) - 2 * obj(th) + obj(th - h)) / (h * h)
+    expect_equal(stencil, second, tolerance = 2e-3, info = cs$fam)
+  }
+})
+
+test_that("the analytic mode Jacobian equals the differenced true inner mode", {
+  skip_on_cran()
+  # J = dx_hat/dtheta from true score stationarity carries the observed
+  # curvature; the check differences tulpa's own inner mode, catching a
+  # working-weight Jacobian directly rather than only through the Hessian.
+  for (cs in list(list(fam = "neg_binomial_2",          phi = 2.5),
+                  list(fam = "neg_binomial_1",          phi = 2.5),
+                  list(fam = "truncated_neg_binomial_2", phi = 2.5))) {
+    d <- .exg_sim(fam = cs$fam, G = 24L, per = 10L, phi = cs$phi)
+    layout <- .exg_layout(d, FALSE)
+    fit_at <- function(th) {
+      L <- .exg_theta_to_L(th, 1L, FALSE)
+      tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
+                    re_list = .re_cov_build_re_list(list(L), layout),
+                    family = d$fam, phi = cs$phi, return_hessian = TRUE,
+                    return_joint_hessian = TRUE, max_iter = 300L, tol = 1e-12)
+    }
+    L0 <- .exg_theta_to_L(log(0.7), 1L, FALSE)
+    r <- .laplace_exact_re_grad(
+      fit = fit_at(log(0.7)), y = d$y, X = d$X, n_trials = d$n_trials,
+      offset = NULL, weights = NULL,
+      re_list = .re_cov_build_re_list(list(L0), layout),
+      layout = layout, L_list = list(L0), family = d$fam, phi = cs$phi,
+      want_jacobian = TRUE)
+    skip_if(is.null(r) || is.null(r$J), "jacobian unavailable")
+    h <- 1e-5
+    Jtrue <- (fit_at(log(0.7) + h)$mode - fit_at(log(0.7) - h)$mode) / (2 * h)
+    expect_equal(as.numeric(r$J), Jtrue, tolerance = 1e-5, info = cs$fam)
+  }
+})
+
+test_that("the exact mode-Jacobian gate tracks whether the observed curvature is available", {
+  skip_on_cran()
+  # Every front-door family now carries an exact observed curvature: the
+  # explicitly branched ones directly, everything on the generic mu-space route
+  # through the grad_mu ladder. So the gate is open across the registry, and
+  # what varies is whether the observed form DIFFERS from the working weight.
+  for (f in c(family_names(), "gaussian_log", "binomial_probit"))
+    expect_true(cpp_family_has_exact_mode_jacobian(f), info = f)
+
+  # The observed-minus-working delta is identically zero exactly where the
+  # Newton weight already is the observed curvature -- a canonical link or a
+  # curvature carrying no y -- and nonzero everywhere else. A non-canonical link
+  # breaks the coincidence even for a family that has it canonically.
+  eta <- c(-0.5, 0.3, 1.1); y <- c(2, 3, 1)
+  zero_delta <- list(
+    list("poisson", 1), list("binomial", 1), list("neg_binomial_2", 2.5),
+    list("truncated_poisson", 1), list("gaussian", 1.4))
+  for (cs in zero_delta) {
+    expect_true(all(abs(cpp_family_obs_curvature_delta_vec(
+      y, 6L, eta, cs[[1]], cs[[2]])) < 1e-12), info = cs[[1]])
+    expect_true(cpp_family_working_weight_is_observed(cs[[1]]), info = cs[[1]])
+  }
+  # beta's Newton weight is the observed curvature under every link
+  # (gcol33/tulpa#936), so its delta is the zero function too; its response
+  # lives on (0, 1).
+  expect_true(all(abs(cpp_family_obs_curvature_delta_vec(
+    c(0.2, 0.55, 0.9), 1L, eta, "beta", 6)) < 1e-12))
+  expect_true(cpp_family_working_weight_is_observed("beta"))
+  nonzero_delta <- list(
+    list("truncated_neg_binomial_2", 2.5), list("neg_binomial_1", 2.5),
+    list("gamma", 3), list("inverse_gaussian", 0.6),
+    list("beta_binomial", 6), list("binomial_probit", 1), list("gaussian_log", 1.4))
+  for (cs in nonzero_delta) {
+    expect_true(any(abs(cpp_family_obs_curvature_delta_vec(
+      y, 6L, eta, cs[[1]], cs[[2]])) > 1e-8), info = cs[[1]])
+    expect_false(cpp_family_working_weight_is_observed(cs[[1]]), info = cs[[1]])
+  }
 })
 
 test_that("the closed, exact-stencil and finite-difference corrections agree", {

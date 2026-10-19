@@ -118,39 +118,6 @@ test_that("a slowly converging inner solve is run to stationarity, not stopped a
 })
 
 
-test_that("the inner solve reaches stationarity at a large random-effect scale", {
-  # Where the Newton weight is NOT the observed curvature the working weight can
-  # understate the true curvature by more than a factor of two, and the undamped
-  # iteration is then locally divergent: the iterate walks away from the mode
-  # geometrically while every step is accepted, because each one loses only a few
-  # parts in 1e9 of objective. These solves returned a joint score of 1e-04 with
-  # converged = TRUE. neg_binomial_1 carries the quasi-likelihood weight
-  # mu / (1 + phi) and inverse_gaussian the Fisher weight 1 / (phi mu); both are
-  # covered, so this is not one family's quirk.
-  skip_on_cran()
-  cfg <- list(
-    list("neg_binomial_1",   6,    6L,  5),
-    list("neg_binomial_1",   6,   25L,  5),
-    list("inverse_gaussian", 2,    6L,  5),
-    list("neg_binomial_1",   6,    6L,  NULL),
-    list("neg_binomial_1",   6,   25L,  NULL),
-    list("neg_binomial_1",   0.5, 25L,  5)     # damping must not disturb this one
-  )
-  for (cc in cfg) {
-    lbl <- sprintf("%s phi=%g G=%d", cc[[1]], cc[[2]], cc[[3]])
-    d <- .stn_sim(cc[[1]], cc[[2]], G = cc[[3]], theta = log(5),
-                  sd_true = cc[[4]])
-    f <- .stn_fit(d, cc[[2]], max_iter = 5000L)
-    expect_true(f$converged, info = lbl)
-    expect_lt(f$score_max, 1e-8)
-    # The residual is the solve's, not the fixture's: the mode agrees with the
-    # observed-curvature stationary point to near machine precision.
-    xs <- .stn_true_mode(d, f$mode, cc[[2]])
-    expect_lt(max(abs(xs - f$mode)) / max(1, max(abs(xs))), 1e-9)
-  }
-})
-
-
 test_that("the near-mode trust factor damps only a decrement that grew", {
   # Away from the mode the scale is 1, so those solves take the trial sequence
   # they always did; the gate is a decrement of 1e-6.
@@ -183,21 +150,6 @@ test_that("the near-mode trust factor damps only a decrement that grew", {
   probe <- tulpa:::cpp_newton_trust_probe(1e-30 * 1.1^(0:24))
   expect_equal(probe[25], 2^-20)
   expect_true(all(diff(probe[-1]) <= 0))
-})
-
-
-test_that("the exact dispersion gradient holds at a large neg_binomial_1 phi", {
-  skip_on_cran()
-  # The regression the issue reports: at phi = 4 the assembled dm/dlog_phi was
-  # 1.0e-04 away from a central difference of tulpa's own log_marginal, against
-  # 1e-10 at phi <= 3. Nothing was wrong with the derivative; the mode it was
-  # evaluated at had not settled.
-  d <- .stn_sim("neg_binomial_1", 0.5)
-  for (phi in c(0.5, 1.5, 4, 6)) {
-    r <- .stn_grad_vs_fd(d, phi)
-    expect_false(is.null(r))
-    expect_lt(r$rel, 1e-6)
-  }
 })
 
 
@@ -279,6 +231,56 @@ test_that("the refusal count is readable while the wrapped expression runs", {
     }, "caller_fn", st),
     "fell back to the derivative-free optimizer")
   expect_identical(seen, 1L)
+})
+
+skip_on_cran()
+
+
+test_that("the inner solve reaches stationarity at a large random-effect scale", {
+  # Where the Newton weight is NOT the observed curvature the working weight can
+  # understate the true curvature by more than a factor of two, and the undamped
+  # iteration is then locally divergent: the iterate walks away from the mode
+  # geometrically while every step is accepted, because each one loses only a few
+  # parts in 1e9 of objective. These solves returned a joint score of 1e-04 with
+  # converged = TRUE. neg_binomial_1 carries the quasi-likelihood weight
+  # mu / (1 + phi) and inverse_gaussian the Fisher weight 1 / (phi mu); both are
+  # covered, so this is not one family's quirk.
+  skip_on_cran()
+  cfg <- list(
+    list("neg_binomial_1",   6,    6L,  5),
+    list("neg_binomial_1",   6,   25L,  5),
+    list("inverse_gaussian", 2,    6L,  5),
+    list("neg_binomial_1",   6,    6L,  NULL),
+    list("neg_binomial_1",   6,   25L,  NULL),
+    list("neg_binomial_1",   0.5, 25L,  5)     # damping must not disturb this one
+  )
+  for (cc in cfg) {
+    lbl <- sprintf("%s phi=%g G=%d", cc[[1]], cc[[2]], cc[[3]])
+    d <- .stn_sim(cc[[1]], cc[[2]], G = cc[[3]], theta = log(5),
+                  sd_true = cc[[4]])
+    f <- .stn_fit(d, cc[[2]], max_iter = 5000L)
+    expect_true(f$converged, info = lbl)
+    expect_lt(f$score_max, 1e-8)
+    # The residual is the solve's, not the fixture's: the mode agrees with the
+    # observed-curvature stationary point to near machine precision.
+    xs <- .stn_true_mode(d, f$mode, cc[[2]])
+    expect_lt(max(abs(xs - f$mode)) / max(1, max(abs(xs))), 1e-9)
+  }
+})
+
+
+test_that("the exact dispersion gradient holds at a large neg_binomial_1 phi", {
+  skip_on_cran()
+  # The regression the issue reports: at phi = 4 the assembled dm/dlog_phi was
+  # 1.0e-04 away from a central difference of tulpa's own log_marginal, against
+  # 1e-10 at phi <= 3. Nothing was wrong with the derivative; the mode it was
+  # evaluated at had not settled.
+  d <- .stn_sim("neg_binomial_1", 0.5)
+  for (phi in c(0.5, 1.5, 4, 6)) {
+    r <- .stn_grad_vs_fd(d, phi)
+    expect_false(is.null(r))
+    expect_lt(r$rel, 1e-6)
+  }
 })
 
 

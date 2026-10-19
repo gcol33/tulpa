@@ -38,37 +38,6 @@ nl_fixture <- function() {
   )
 }
 
-test_that("the mixture sampler reproduces the retained moments and bounds", {
-  skip_on_cran()
-  fit <- nl_fixture()
-  mom <- tulpa:::.nested_fixed_moments(fit)
-
-  set.seed(11)
-  dr <- tulpa_posterior_draws(fit, n = 400000L)
-
-  expect_equal(dim(dr), c(400000L, 2L))
-  expect_identical(attr(dr, "draws_kind"), "iid")
-  expect_identical(attr(dr, "scope"), "fixed")
-  expect_equal(attr(dr, "retained_mass"), 1)
-  expect_identical(colnames(dr), c("b1", "b2"))
-
-  # Moments: the Monte-Carlo standard error of a mean is sd / sqrt(n), so a
-  # tolerance of 0.02 marginal SDs is ~12 MC standard errors at n = 4e5.
-  sd_m <- sqrt(diag(mom$cov))
-  expect_lt(max(abs(colMeans(dr) - mom$mean) / sd_m), 0.02)
-  expect_lt(max(abs(stats::cov(dr) - mom$cov) / tcrossprod(sd_m)), 0.02)
-
-  # Bounds: the sampled quantiles must reproduce the mixture-CDF inversion the
-  # fit reports, at more than one level.
-  for (lev in c(0.95, 0.80)) {
-    a <- (1 - lev) / 2
-    ci <- confint(fit, level = lev)
-    sq <- t(apply(dr, 2L, stats::quantile, c(a, 1 - a)))
-    expect_lt(max(abs(sq - ci) / sd_m), 0.02)
-  }
-  expect_identical(attr(confint(fit), "interval_source"), "mixture_cdf")
-})
-
 test_that("a single-component grid samples that component's Gaussian", {
   fit <- nl_mixture_fit(mu = rbind(c(2, -1)),
                         V = list(matrix(c(0.4, 0.1, 0.1, 0.25), 2, 2)),
@@ -276,50 +245,6 @@ test_that("a bad `pars` selector on a fit WITH draws is still an empty answer", 
   expect_null(diagnostics(fit, pars = "not_a_parameter"))
 })
 
-# --- tier 2: the same gate on a real fit ------------------------------------
-
-test_that("a fitted single-block nested-Laplace posterior samples its own grid", {
-  skip_on_cran()
-
-  set.seed(1)
-  G <- 25L; m <- 8L; N <- G * m
-  g <- rep(seq_len(G), each = m)
-  u <- stats::rnorm(G, 0, 0.8)
-  x <- stats::rnorm(N)
-  y <- stats::rbinom(N, 1L, stats::plogis(-0.3 + 0.7 * x + u[g]))
-
-  fit <- tulpa_nested_laplace(
-    y = y, n_trials = rep(1L, N), X = cbind(int = 1, x = x),
-    prior = list(list(type = "iid", obs_idx = g - 1L, n_units = G,
-                      sigma_grid = exp(seq(log(0.2), log(2.5),
-                                           length.out = 9)))),
-    family = "binomial", phi = 1,
-    control = list(keep_grid_hessians = TRUE, diagnose_k = FALSE,
-                   diagnose_skew = FALSE))
-
-  expect_null(fit[["draws"]])
-  mom <- tulpa:::.nested_fixed_moments(fit)
-
-  set.seed(17)
-  dr <- tulpa_posterior_draws(fit, n = 200000L)
-  expect_identical(colnames(dr), c("int", "x"))
-  expect_identical(attr(dr, "scope"), "fixed")
-
-  sd_m <- sqrt(diag(mom$cov))
-  expect_lt(max(abs(colMeans(dr) - mom$mean) / sd_m), 0.02)
-  expect_lt(max(abs(stats::cov(dr) - mom$cov) / tcrossprod(sd_m)), 0.03)
-
-  ci <- confint(fit)
-  sq <- t(apply(dr, 2L, stats::quantile, c(0.025, 0.975)))
-  expect_lt(max(abs(sq - ci) / sd_m), 0.03)
-
-  # And the accessors that had nothing to say about this fit now do.
-  expect_message(posterior_sample(fit), "nested_laplace")
-  d <- diagnostics(fit)
-  expect_s3_class(d, "laplace_diagnostics")
-  expect_true(is.finite(attr(d, "ess_grid")))
-})
-
 test_that("diagnostics() reports the mixture's exact moments, not the draws' (#949)", {
   fit <- nl_fixture()
   mom <- tulpa:::.nested_fixed_moments(fit)
@@ -369,4 +294,81 @@ test_that("a mixture stamp covers its leading columns; the tail joins $means / $
   m_a <- sum(w * c(0, 2)); v_a <- sum(w * (c(1, 0) + c(0, 2)^2)) - m_a^2
   expect_equal(ex$mean, c(m_a, 1, 2))
   expect_equal(ex$sd, c(sqrt(v_a), sqrt(0.25 * 4), 0.5))
+})
+
+skip_on_cran()
+
+test_that("the mixture sampler reproduces the retained moments and bounds", {
+  skip_on_cran()
+  fit <- nl_fixture()
+  mom <- tulpa:::.nested_fixed_moments(fit)
+
+  set.seed(11)
+  dr <- tulpa_posterior_draws(fit, n = 400000L)
+
+  expect_equal(dim(dr), c(400000L, 2L))
+  expect_identical(attr(dr, "draws_kind"), "iid")
+  expect_identical(attr(dr, "scope"), "fixed")
+  expect_equal(attr(dr, "retained_mass"), 1)
+  expect_identical(colnames(dr), c("b1", "b2"))
+
+  # Moments: the Monte-Carlo standard error of a mean is sd / sqrt(n), so a
+  # tolerance of 0.02 marginal SDs is ~12 MC standard errors at n = 4e5.
+  sd_m <- sqrt(diag(mom$cov))
+  expect_lt(max(abs(colMeans(dr) - mom$mean) / sd_m), 0.02)
+  expect_lt(max(abs(stats::cov(dr) - mom$cov) / tcrossprod(sd_m)), 0.02)
+
+  # Bounds: the sampled quantiles must reproduce the mixture-CDF inversion the
+  # fit reports, at more than one level.
+  for (lev in c(0.95, 0.80)) {
+    a <- (1 - lev) / 2
+    ci <- confint(fit, level = lev)
+    sq <- t(apply(dr, 2L, stats::quantile, c(a, 1 - a)))
+    expect_lt(max(abs(sq - ci) / sd_m), 0.02)
+  }
+  expect_identical(attr(confint(fit), "interval_source"), "mixture_cdf")
+})
+
+# --- tier 2: the same gate on a real fit ------------------------------------
+
+test_that("a fitted single-block nested-Laplace posterior samples its own grid", {
+  skip_on_cran()
+
+  set.seed(1)
+  G <- 25L; m <- 8L; N <- G * m
+  g <- rep(seq_len(G), each = m)
+  u <- stats::rnorm(G, 0, 0.8)
+  x <- stats::rnorm(N)
+  y <- stats::rbinom(N, 1L, stats::plogis(-0.3 + 0.7 * x + u[g]))
+
+  fit <- tulpa_nested_laplace(
+    y = y, n_trials = rep(1L, N), X = cbind(int = 1, x = x),
+    prior = list(list(type = "iid", obs_idx = g - 1L, n_units = G,
+                      sigma_grid = exp(seq(log(0.2), log(2.5),
+                                           length.out = 9)))),
+    family = "binomial", phi = 1,
+    control = list(keep_grid_hessians = TRUE, diagnose_k = FALSE,
+                   diagnose_skew = FALSE))
+
+  expect_null(fit[["draws"]])
+  mom <- tulpa:::.nested_fixed_moments(fit)
+
+  set.seed(17)
+  dr <- tulpa_posterior_draws(fit, n = 200000L)
+  expect_identical(colnames(dr), c("int", "x"))
+  expect_identical(attr(dr, "scope"), "fixed")
+
+  sd_m <- sqrt(diag(mom$cov))
+  expect_lt(max(abs(colMeans(dr) - mom$mean) / sd_m), 0.02)
+  expect_lt(max(abs(stats::cov(dr) - mom$cov) / tcrossprod(sd_m)), 0.03)
+
+  ci <- confint(fit)
+  sq <- t(apply(dr, 2L, stats::quantile, c(0.025, 0.975)))
+  expect_lt(max(abs(sq - ci) / sd_m), 0.03)
+
+  # And the accessors that had nothing to say about this fit now do.
+  expect_message(posterior_sample(fit), "nested_laplace")
+  d <- diagnostics(fit)
+  expect_s3_class(d, "laplace_diagnostics")
+  expect_true(is.finite(attr(d, "ess_grid")))
 })

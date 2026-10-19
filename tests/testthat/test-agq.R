@@ -14,6 +14,26 @@ test_that("gauss_hermite_prob nodes and weights are correct (n=3, 5)", {
 })
 
 
+test_that("agq registers in Tier 2 (Structured)", {
+  expect_true("agq" %in% INFERENCE_TIERS$structured$backends)
+  ti <- get_backend_tier("agq")
+  expect_equal(ti$tier, 2L)
+})
+
+
+test_that("agq_fit errors on bad inputs", {
+  expect_error(agq_fit(1:5, matrix(1, 5, 1), c(1, 1, 2, 2, 2),
+                       family = "binomial", n_quad = 0L),
+               "n_quad")
+  # Mismatched lengths
+  expect_error(agq_fit(1:5, matrix(1, 4, 1), c(1, 1, 2, 2, 2),
+                       family = "binomial"),
+               "nrow")
+})
+
+skip_on_cran()
+
+
 test_that("agq_fit recovers fixed-effect estimates on Bernoulli GLMM", {
   skip_on_cran()
   set.seed(401L)
@@ -110,13 +130,6 @@ test_that("agq_fit handles Gaussian GLMM", {
 })
 
 
-test_that("agq registers in Tier 2 (Structured)", {
-  expect_true("agq" %in% INFERENCE_TIERS$structured$backends)
-  ti <- get_backend_tier("agq")
-  expect_equal(ti$tier, 2L)
-})
-
-
 test_that("agq_fit fixed-effect CIs achieve near-nominal coverage", {
   skip_on_cran()
   # Coverage gate on the shared marginal-Hessian SE path (the same path
@@ -138,15 +151,4 @@ test_that("agq_fit fixed-effect CIs achieve near-nominal coverage", {
   cov <- rowMeans(vapply(1:30, covered, logical(2)))
   expect_gt(cov[1], 0.85)
   expect_gt(cov[2], 0.85)
-})
-
-
-test_that("agq_fit errors on bad inputs", {
-  expect_error(agq_fit(1:5, matrix(1, 5, 1), c(1, 1, 2, 2, 2),
-                       family = "binomial", n_quad = 0L),
-               "n_quad")
-  # Mismatched lengths
-  expect_error(agq_fit(1:5, matrix(1, 4, 1), c(1, 1, 2, 2, 2),
-                       family = "binomial"),
-               "nrow")
 })

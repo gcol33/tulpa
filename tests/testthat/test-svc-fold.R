@@ -42,6 +42,26 @@
   as.numeric(crossprod(w, fit$modes[, cols, drop = FALSE]))
 }
 
+test_that("areal SVC: a declared column that does not match the weight errors", {
+  set.seed(2)
+  n_s <- 20L
+  adj <- .chain_adj_svc(n_s)
+  N <- 200L
+  s <- sample.int(n_s, N, replace = TRUE)
+  x <- rnorm(N)
+  y <- rnorm(N, 0.2 + x, 0.4)
+  arm <- list(y = y, n_trials = rep(1L, N), X = cbind(1, x),
+              re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
+              family = "gaussian", phi = 1.0)
+  # The field rides on x, but declare the INTERCEPT column (0, all-ones) as its
+  # alias -- a mismatch that would silently shift eta. It must error, not fit.
+  expect_error(
+    .svc_fit(arm, .svc_icar_block(adj, s, x, 1 / c(0.8, 1.2)^2, beta_offset = 0L)),
+    "must carry the field weight")
+})
+
+skip_on_cran()
+
 test_that("areal SVC: the constant folds into the covariate coefficient, preserving eta", {
   skip_on_cran()
   set.seed(1)
@@ -98,22 +118,4 @@ test_that("areal SVC: the constant folds into the covariate coefficient, preserv
   # invariant): the fold changes only where the level is reported, not the fit.
   expect_gt(abs(cor(f_fold, f)), 0.7)
   expect_gt(abs(cor(f_none, f)), 0.7)
-})
-
-test_that("areal SVC: a declared column that does not match the weight errors", {
-  set.seed(2)
-  n_s <- 20L
-  adj <- .chain_adj_svc(n_s)
-  N <- 200L
-  s <- sample.int(n_s, N, replace = TRUE)
-  x <- rnorm(N)
-  y <- rnorm(N, 0.2 + x, 0.4)
-  arm <- list(y = y, n_trials = rep(1L, N), X = cbind(1, x),
-              re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
-              family = "gaussian", phi = 1.0)
-  # The field rides on x, but declare the INTERCEPT column (0, all-ones) as its
-  # alias -- a mismatch that would silently shift eta. It must error, not fit.
-  expect_error(
-    .svc_fit(arm, .svc_icar_block(adj, s, x, 1 / c(0.8, 1.2)^2, beta_offset = 0L)),
-    "must carry the field weight")
 })

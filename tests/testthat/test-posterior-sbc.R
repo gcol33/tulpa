@@ -41,40 +41,6 @@ test_that("the driver hands the replicate its own seed", {
   expect_length(intersect(got$draw, got$rep), 0L)
 })
 
-test_that("a fixture's replicate does not re-consume the truth draw's stream", {
-  skip_on_cran()
-  # The property the split exists for: with the seeds the driver derives, the
-  # replicate's design, group effects and residuals do not come from the
-  # uniforms that produced theta'. Drawing both from one stream would make the
-  # truth determine the noise -- not p(y | theta'), and a non-uniform PIT with
-  # nothing wrong in the inference.
-  d_obs <- sbc_sim_gaussian(101L)
-  cfg <- list(nr = 12L, spr = 4L, ntr = 1L, beta = c(-2.5, 0.8), su = 0.7,
-              phi = 1.0, grid = SBC_RE_GRID)
-  th <- c(beta1 = 0.4, beta2 = -1.1, sigma = 0.5)
-  for (m in list(sbc_psbc_gaussian(d_obs),
-                 sbc_psbc_re(sbc_sim_re(4242L, "binomial", cfg)))) {
-    r <- m$simulate(th, .sbc_rep_seed(17L))
-    # The head of the truth seed's stream is what `draw_theta` consumes. Nothing
-    # in the replicate may equal it.
-    set.seed(17L)
-    head_of_stream <- stats::rnorm(1)
-    expect_false(isTRUE(all.equal(r$X[1, 2], head_of_stream)))
-  }
-
-  # And the noise is a function of the seed alone, not of the parameter: at one
-  # seed, two truths differing only in beta give replicates whose difference is
-  # exactly the design term.
-  m <- sbc_psbc_gaussian(d_obs)
-  b1 <- c(beta1 = 0, beta2 = 0, sigma = 0.5)
-  b2 <- c(beta1 = 3, beta2 = -2, sigma = 0.5)
-  s <- .sbc_rep_seed(23L)
-  r1 <- m$simulate(b1, s); r2 <- m$simulate(b2, s)
-  expect_equal(r1$X, r2$X)
-  expect_equal(r1$y - as.numeric(r1$X %*% c(0, 0)),
-               r2$y - as.numeric(r2$X %*% c(3, -2)))
-})
-
 test_that("recov_posterior_sbc declares the experiment it ran", {
   m <- list(
     data_obs = list(), fit = function(data) list(),
@@ -108,6 +74,79 @@ test_that("recov_posterior_sbc requires every callback", {
     expect_error(recov_posterior_sbc(full[setdiff(names(full), nm)], n_seed = 1L),
                  nm, fixed = TRUE)
   }
+})
+
+# ---------------------------------------------------------------------------
+# 2. The construction
+#
+# On the gaussian random-intercept fixture the augmented posterior is available
+# in closed form, so the whole construction can be run with the EXACT posterior
+# at both stages. Its PIT must then be uniform, and any departure is a defect in
+# the construction -- the pooling, the seeding, the conditional independence of
+# the replicate -- rather than in the engine.
+#
+# MEASURED, 1000 replicates around `sbc_sim_gaussian(101)`, `ks` the
+# Kolmogorov-Smirnov departure from uniform and `p` the exact simultaneous
+# p-value in the equal-local-levels family (raw read; the folded one agrees):
+#
+#   truth from the exact posterior      beta1 .0190 p .988   beta2 .0265 p .289
+#                                       sigma .0212 p .773   loglik .0262 p .851
+#   truth from the engine posterior     the same to four decimals -- a gaussian
+#                                       log-likelihood is quadratic in eta, so
+#                                       the inner Laplace IS the conditional
+#                                       posterior and there is nothing to score
+#   mis-scaled by 25% (wide / narrow)   ks .048 to .078, p <= 6.2e-08
+#   replicate fit ALONE, not pooled     sigma .1037 p 2.7e-10, beta1 .0376
+#                                       p 3.2e-04, loglik .0560 p .011
+#   replicate re-observes y_obs's       beta1 .0946 p 0, sigma .1172 p 0,
+#     regions, sharing their effects    loglik .1686 p 2.7e-14
+#
+# Both broken premises fail, and the SECOND one fails with the signature the
+# theory predicts: sharing the group effects hits the intercept, the
+# hyperparameter and the joint log-likelihood, while the slope -- which reads
+# within-region contrasts that a shared per-region effect cancels out of --
+# survives at p = .27. Dropping `y_obs` is the blunter failure of the two, worst
+# on sigma (the quantity `y_obs` was most informative about) but not confined to
+# it; the assertions below therefore pin sigma, which is the reliable signal,
+# and do not claim the others are clean.
+# ---------------------------------------------------------------------------
+
+psbc_gauss_obs <- function() sbc_sim_gaussian(101L)
+
+skip_on_cran()
+
+test_that("a fixture's replicate does not re-consume the truth draw's stream", {
+  skip_on_cran()
+  # The property the split exists for: with the seeds the driver derives, the
+  # replicate's design, group effects and residuals do not come from the
+  # uniforms that produced theta'. Drawing both from one stream would make the
+  # truth determine the noise -- not p(y | theta'), and a non-uniform PIT with
+  # nothing wrong in the inference.
+  d_obs <- sbc_sim_gaussian(101L)
+  cfg <- list(nr = 12L, spr = 4L, ntr = 1L, beta = c(-2.5, 0.8), su = 0.7,
+              phi = 1.0, grid = SBC_RE_GRID)
+  th <- c(beta1 = 0.4, beta2 = -1.1, sigma = 0.5)
+  for (m in list(sbc_psbc_gaussian(d_obs),
+                 sbc_psbc_re(sbc_sim_re(4242L, "binomial", cfg)))) {
+    r <- m$simulate(th, .sbc_rep_seed(17L))
+    # The head of the truth seed's stream is what `draw_theta` consumes. Nothing
+    # in the replicate may equal it.
+    set.seed(17L)
+    head_of_stream <- stats::rnorm(1)
+    expect_false(isTRUE(all.equal(r$X[1, 2], head_of_stream)))
+  }
+
+  # And the noise is a function of the seed alone, not of the parameter: at one
+  # seed, two truths differing only in beta give replicates whose difference is
+  # exactly the design term.
+  m <- sbc_psbc_gaussian(d_obs)
+  b1 <- c(beta1 = 0, beta2 = 0, sigma = 0.5)
+  b2 <- c(beta1 = 3, beta2 = -2, sigma = 0.5)
+  s <- .sbc_rep_seed(23L)
+  r1 <- m$simulate(b1, s); r2 <- m$simulate(b2, s)
+  expect_equal(r1$X, r2$X)
+  expect_equal(r1$y - as.numeric(r1$X %*% c(0, 0)),
+               r2$y - as.numeric(r2$X %*% c(3, -2)))
 })
 
 test_that("the adaptive quadrature is EXACT on the gaussian closed form", {
@@ -208,43 +247,6 @@ test_that("the reliability row reads the band off a fit with no draws", {
   # The composition is the one the shipped reader performs, not a parallel rule.
   expect_identical(row$pareto_k_band, .tulpa_khat_band(row$pareto_k))
 })
-
-# ---------------------------------------------------------------------------
-# 2. The construction
-#
-# On the gaussian random-intercept fixture the augmented posterior is available
-# in closed form, so the whole construction can be run with the EXACT posterior
-# at both stages. Its PIT must then be uniform, and any departure is a defect in
-# the construction -- the pooling, the seeding, the conditional independence of
-# the replicate -- rather than in the engine.
-#
-# MEASURED, 1000 replicates around `sbc_sim_gaussian(101)`, `ks` the
-# Kolmogorov-Smirnov departure from uniform and `p` the exact simultaneous
-# p-value in the equal-local-levels family (raw read; the folded one agrees):
-#
-#   truth from the exact posterior      beta1 .0190 p .988   beta2 .0265 p .289
-#                                       sigma .0212 p .773   loglik .0262 p .851
-#   truth from the engine posterior     the same to four decimals -- a gaussian
-#                                       log-likelihood is quadratic in eta, so
-#                                       the inner Laplace IS the conditional
-#                                       posterior and there is nothing to score
-#   mis-scaled by 25% (wide / narrow)   ks .048 to .078, p <= 6.2e-08
-#   replicate fit ALONE, not pooled     sigma .1037 p 2.7e-10, beta1 .0376
-#                                       p 3.2e-04, loglik .0560 p .011
-#   replicate re-observes y_obs's       beta1 .0946 p 0, sigma .1172 p 0,
-#     regions, sharing their effects    loglik .1686 p 2.7e-14
-#
-# Both broken premises fail, and the SECOND one fails with the signature the
-# theory predicts: sharing the group effects hits the intercept, the
-# hyperparameter and the joint log-likelihood, while the slope -- which reads
-# within-region contrasts that a shared per-region effect cancels out of --
-# survives at p = .27. Dropping `y_obs` is the blunter failure of the two, worst
-# on sigma (the quantity `y_obs` was most informative about) but not confined to
-# it; the assertions below therefore pin sigma, which is the reliable signal,
-# and do not claim the others are clean.
-# ---------------------------------------------------------------------------
-
-psbc_gauss_obs <- function() sbc_sim_gaussian(101L)
 
 test_that("the exact posterior calibrates under the posterior-SBC construction", {
   skip_if_not_slow()

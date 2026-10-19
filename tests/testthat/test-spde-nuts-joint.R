@@ -194,6 +194,89 @@ assert_recovery <- function(reps,
                              paste(diverg_sum, collapse = ", ")))
 }
 
+test_that("joint NUTS round-trip: output structure matches contract", {
+  skip_if_not_installed("fmesher")
+  skip_if_not_slow()
+  set.seed(42)
+  n_obs  <- 80
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  spec   <- helper_make_spde_spec(
+    coords, max_edge = c(0.3, 0.7), cutoff = 0.15,
+    prior_range = c(0.1, 0.05), prior_sigma = c(3.0, 0.05)
+  )
+  x_cov <- runif(n_obs, -1, 1)
+  X     <- cbind(1, x_cov)
+  y     <- x_cov + rnorm(n_obs, 0, 0.3)
+
+  fit <- tulpa_nuts_spde(
+    y = y, X = X, spatial = spec,
+    family = "gaussian",
+    joint  = TRUE,
+    control = list(n_iter = 100L, n_warmup = 50L, seed = 1L)
+  )
+
+  expect_true(fit$joint_hypers)
+  expect_true(fit$joint)
+  expect_true("log_kappa" %in% colnames(fit$draws))
+  expect_true("log_tau"   %in% colnames(fit$draws))
+  expect_true(any(grepl("^z\\[", colnames(fit$draws))))
+  expect_false(any(grepl("^w\\[", colnames(fit$draws))))
+  expect_true(is.matrix(fit$w_draws))
+  expect_equal(ncol(fit$w_draws), spec$n_mesh)
+  expect_equal(nrow(fit$w_draws), nrow(fit$draws))
+  expect_true(is.numeric(fit$range_draws))
+  expect_true(is.numeric(fit$sigma_draws))
+  expect_length(fit$range_draws, nrow(fit$draws))
+  expect_length(fit$sigma_draws, nrow(fit$draws))
+  expect_true(all(fit$range_draws > 0))
+  expect_true(all(fit$sigma_draws > 0))
+  expect_named(fit$range_summary, c("mean", "median", "q05", "q95"))
+  expect_named(fit$sigma_summary, c("mean", "median", "q05", "q95"))
+})
+
+# ---------------------------------------------------------------------------
+# Fractional alpha (fractional nu) builds a valid spec now that the operator-
+# based rational SPDE is wired through fit_spde() (gcol33/tulpa#71). The NUTS
+# sampler stays integer-only, so the rejection lives at the fit call.
+# ---------------------------------------------------------------------------
+test_that("fractional nu is rejected for the joint-NUTS SPDE path (gcol33/tulpa#71)", {
+  skip_if_not_installed("fmesher")
+  set.seed(2026)
+  coords <- cbind(runif(40), runif(40))
+  spec <- helper_make_spde_spec(coords, max_edge = c(0.30, 0.7), cutoff = 0.15,
+                                nu = 0.5)
+  y <- rnorm(40)
+  X <- matrix(1.0, nrow = 40, ncol = 1)
+  expect_error(
+    tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "gaussian",
+                    joint = TRUE, control = list(n_iter = 50L, n_warmup = 25L)),
+    "fractional"
+  )
+})
+
+test_that("joint NUTS rejects PC anchors out of range", {
+  skip_if_not_installed("fmesher")
+  set.seed(2)
+  coords <- cbind(runif(20), runif(20))
+  spec   <- helper_make_spde_spec(coords, max_edge = c(0.3, 0.6), cutoff = 0.15)
+  y <- rnorm(20)
+  X <- matrix(1.0, nrow = 20, ncol = 1)
+  expect_error(
+    tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "gaussian",
+                    joint = TRUE, prior_range = c(-0.1, 0.05),
+                    control = list(n_iter = 50L, n_warmup = 25L)),
+    "prior_range"
+  )
+  expect_error(
+    tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "gaussian",
+                    joint = TRUE, prior_sigma = c(1.0, 1.5),
+                    control = list(n_iter = 50L, n_warmup = 25L)),
+    "prior_sigma"
+  )
+})
+
+skip_on_cran()
+
 # ---------------------------------------------------------------------------
 # Slim recovery: cheap calibration check, runs under devtools::test().
 # Coarse mesh (~60 nodes) keeps per-iter cost ~0.4s; 3 seeds * 500 iter
@@ -308,86 +391,5 @@ test_that("joint NUTS recovers (range, sigma, beta) -- full tier", {
     accept_min      = 0.40,
     divergent_frac  = 0.10,
     tier_tag        = "full"
-  )
-})
-
-test_that("joint NUTS round-trip: output structure matches contract", {
-  skip_if_not_installed("fmesher")
-  skip_if_not_slow()
-  set.seed(42)
-  n_obs  <- 80
-  coords <- cbind(runif(n_obs), runif(n_obs))
-  spec   <- helper_make_spde_spec(
-    coords, max_edge = c(0.3, 0.7), cutoff = 0.15,
-    prior_range = c(0.1, 0.05), prior_sigma = c(3.0, 0.05)
-  )
-  x_cov <- runif(n_obs, -1, 1)
-  X     <- cbind(1, x_cov)
-  y     <- x_cov + rnorm(n_obs, 0, 0.3)
-
-  fit <- tulpa_nuts_spde(
-    y = y, X = X, spatial = spec,
-    family = "gaussian",
-    joint  = TRUE,
-    control = list(n_iter = 100L, n_warmup = 50L, seed = 1L)
-  )
-
-  expect_true(fit$joint_hypers)
-  expect_true(fit$joint)
-  expect_true("log_kappa" %in% colnames(fit$draws))
-  expect_true("log_tau"   %in% colnames(fit$draws))
-  expect_true(any(grepl("^z\\[", colnames(fit$draws))))
-  expect_false(any(grepl("^w\\[", colnames(fit$draws))))
-  expect_true(is.matrix(fit$w_draws))
-  expect_equal(ncol(fit$w_draws), spec$n_mesh)
-  expect_equal(nrow(fit$w_draws), nrow(fit$draws))
-  expect_true(is.numeric(fit$range_draws))
-  expect_true(is.numeric(fit$sigma_draws))
-  expect_length(fit$range_draws, nrow(fit$draws))
-  expect_length(fit$sigma_draws, nrow(fit$draws))
-  expect_true(all(fit$range_draws > 0))
-  expect_true(all(fit$sigma_draws > 0))
-  expect_named(fit$range_summary, c("mean", "median", "q05", "q95"))
-  expect_named(fit$sigma_summary, c("mean", "median", "q05", "q95"))
-})
-
-# ---------------------------------------------------------------------------
-# Fractional alpha (fractional nu) builds a valid spec now that the operator-
-# based rational SPDE is wired through fit_spde() (gcol33/tulpa#71). The NUTS
-# sampler stays integer-only, so the rejection lives at the fit call.
-# ---------------------------------------------------------------------------
-test_that("fractional nu is rejected for the joint-NUTS SPDE path (gcol33/tulpa#71)", {
-  skip_if_not_installed("fmesher")
-  set.seed(2026)
-  coords <- cbind(runif(40), runif(40))
-  spec <- helper_make_spde_spec(coords, max_edge = c(0.30, 0.7), cutoff = 0.15,
-                                nu = 0.5)
-  y <- rnorm(40)
-  X <- matrix(1.0, nrow = 40, ncol = 1)
-  expect_error(
-    tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "gaussian",
-                    joint = TRUE, control = list(n_iter = 50L, n_warmup = 25L)),
-    "fractional"
-  )
-})
-
-test_that("joint NUTS rejects PC anchors out of range", {
-  skip_if_not_installed("fmesher")
-  set.seed(2)
-  coords <- cbind(runif(20), runif(20))
-  spec   <- helper_make_spde_spec(coords, max_edge = c(0.3, 0.6), cutoff = 0.15)
-  y <- rnorm(20)
-  X <- matrix(1.0, nrow = 20, ncol = 1)
-  expect_error(
-    tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "gaussian",
-                    joint = TRUE, prior_range = c(-0.1, 0.05),
-                    control = list(n_iter = 50L, n_warmup = 25L)),
-    "prior_range"
-  )
-  expect_error(
-    tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "gaussian",
-                    joint = TRUE, prior_sigma = c(1.0, 1.5),
-                    control = list(n_iter = 50L, n_warmup = 25L)),
-    "prior_sigma"
   )
 })

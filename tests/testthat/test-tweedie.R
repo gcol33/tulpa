@@ -1,3 +1,28 @@
+
+test_that("tweedie matches the reference tweedie package density", {
+  skip_if_not_installed("tweedie")
+  for (p in c(1.2, 1.5, 1.8)) {
+    eta <- c(-0.5, 0.3, 1.2); phi <- 0.9
+    y   <- c(0, 0.7, 3.1)
+    ours <- tulpa:::family_loglik(eta, y, "tweedie", phi = phi, phi2 = p)
+    ref  <- log(tweedie::dtweedie(y, mu = exp(eta), phi = phi, power = p))
+    expect_equal(ours, ref, tolerance = 1e-8)
+  }
+})
+
+test_that("tweedie validation fires", {
+  expect_error(tulpa:::.tweedie_power(NULL), "requires")
+  expect_error(tulpa:::.tweedie_power(2.5), "strictly in \\(1, 2\\)")
+  d <- data.frame(x = rnorm(20), y = rgamma(20, 2))
+  expect_error(
+    tulpa(y ~ x, data = d, family = "tweedie", mode = "laplace", phi = 1),
+    "requires")
+  # y < 0 is outside the support.
+  expect_identical(
+    tulpa:::family_loglik(0, -1, "tweedie", phi = 1, phi2 = 1.5), -Inf)
+})
+
+skip_on_cran()
 # Tweedie compound Poisson-gamma family (gcol33/tulpa C11), on the phi2
 # channel (power p). Density correctness is anchored self-contained: the zero
 # mass plus the integral of the positive density must be 1, the sampler's
@@ -44,17 +69,6 @@ test_that("tweedie log-density normalizes and matches its moments", {
                num, tolerance = 1e-5)
 })
 
-test_that("tweedie matches the reference tweedie package density", {
-  skip_if_not_installed("tweedie")
-  for (p in c(1.2, 1.5, 1.8)) {
-    eta <- c(-0.5, 0.3, 1.2); phi <- 0.9
-    y   <- c(0, 0.7, 3.1)
-    ours <- tulpa:::family_loglik(eta, y, "tweedie", phi = phi, phi2 = p)
-    ref  <- log(tweedie::dtweedie(y, mu = exp(eta), phi = phi, power = p))
-    expect_equal(ours, ref, tolerance = 1e-8)
-  }
-})
-
 test_that("C++ tweedie kernel matches the R registry", {
   # The Laplace kernel's series lives in laplace_family_link.h; pin it against
   # the R implementation through a laplace fit vs an optim reference.
@@ -81,18 +95,6 @@ test_that("C++ tweedie kernel matches the R registry", {
   ref <- stats::optim(c(0, 0), nlp, method = "BFGS")$par
   expect_equal(unname(coef(fit)), ref, tolerance = 1e-3)
   expect_lt(max(abs(ref - c(0.5, 0.6))), 0.15)
-})
-
-test_that("tweedie validation fires", {
-  expect_error(tulpa:::.tweedie_power(NULL), "requires")
-  expect_error(tulpa:::.tweedie_power(2.5), "strictly in \\(1, 2\\)")
-  d <- data.frame(x = rnorm(20), y = rgamma(20, 2))
-  expect_error(
-    tulpa(y ~ x, data = d, family = "tweedie", mode = "laplace", phi = 1),
-    "requires")
-  # y < 0 is outside the support.
-  expect_identical(
-    tulpa:::family_loglik(0, -1, "tweedie", phi = 1, phi2 = 1.5), -Inf)
 })
 
 test_that("family = 'tweedie' is reachable on the sampler backends", {

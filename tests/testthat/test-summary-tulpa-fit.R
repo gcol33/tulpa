@@ -123,6 +123,23 @@ test_that("tulpa_outer_grid() refuses a fit with no outer grid", {
                "no outer hyperparameter grid")
 })
 
+test_that("tulpa_fit_summary() wraps a model package's own coefficient table", {
+  fit <- .sm_laplace_shaped()
+  tab <- data.frame(estimate = c(1, 2), std.error = c(0.1, 0.2),
+                    `2.5 %` = c(0.8, 1.6), `97.5 %` = c(1.2, 2.4),
+                    row.names = c("a_x", "b_x"), check.names = FALSE)
+  s <- tulpa_fit_summary(fit, tab)
+  expect_s3_class(s, "summary.tulpa_fit")
+  expect_identical(coef(s), tab)
+  expect_identical(s$inference, summary(fit)$inference)
+  expect_identical(
+    unclass(s)[setdiff(names(s), "coefficients")],
+    unclass(summary(fit))[setdiff(names(s), "coefficients")])
+  expect_error(tulpa_fit_summary(fit, as.matrix(tab)), "data frame")
+})
+
+skip_on_cran()
+
 test_that("a real Laplace fit summarizes and prints end to end", {
   skip_on_cran()
   set.seed(1)
@@ -160,19 +177,4 @@ test_that("a real nested-Laplace fit reads its grid through tulpa_outer_grid()",
   h <- summary(fit)$hyperparameters
   expect_identical(h$parameter, colnames(g$nodes))
   expect_equal(h$mean, unname(as.numeric(fit$theta_mean)))
-})
-
-test_that("tulpa_fit_summary() wraps a model package's own coefficient table", {
-  fit <- .sm_laplace_shaped()
-  tab <- data.frame(estimate = c(1, 2), std.error = c(0.1, 0.2),
-                    `2.5 %` = c(0.8, 1.6), `97.5 %` = c(1.2, 2.4),
-                    row.names = c("a_x", "b_x"), check.names = FALSE)
-  s <- tulpa_fit_summary(fit, tab)
-  expect_s3_class(s, "summary.tulpa_fit")
-  expect_identical(coef(s), tab)
-  expect_identical(s$inference, summary(fit)$inference)
-  expect_identical(
-    unclass(s)[setdiff(names(s), "coefficients")],
-    unclass(summary(fit))[setdiff(names(s), "coefficients")])
-  expect_error(tulpa_fit_summary(fit, as.matrix(tab)), "data frame")
 })

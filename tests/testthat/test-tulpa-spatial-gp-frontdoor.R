@@ -34,6 +34,123 @@ sim_gp_binomial <- function(n_loc = 60L, reps = 3L, sigma2 = 0.7, phi_gp = 0.25,
   )
 }
 
+test_that("mode = laplace fits a GP field alongside a (1 | g) RE term (issue #74)", {
+  s <- sim_gp_binomial(n_loc = 50L, reps = 3L)
+  d <- s$data
+  d$g <- factor(rep_len(seq_len(6L), nrow(d)))
+
+  fit <- suppressMessages(tulpa(
+    y ~ x + (1 | g), data = d, family = "binomial", n_trials = d$ntrials,
+    spatial = spatial_gp(~ lon + lat, nn = 8L), mode = "laplace"
+  ))
+
+  expect_s3_class(fit, "tulpa_fit")
+  # Latent mode is [beta (2), re (6 groups), w_gp (n_loc)]; the RE block is
+  # present, so the fixed-effect slope still recovers.
+  expect_length(fit$mode, 2L + 6L + s$n_loc)
+  beta <- fit$mode[seq_len(2L)]
+  expect_lt(abs(beta[2] - s$beta[2]), 0.35)        # slope
+})
+
+test_that("a continuous field rejects a spatial(col) term", {
+  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
+  s$data$site <- factor(seq_len(nrow(s$data)))
+  expect_error(
+    suppressMessages(tulpa(
+      y ~ x + spatial(site), data = s$data, family = "binomial",
+      n_trials = s$data$ntrials, spatial = spatial_gp(~ lon + lat),
+      mode = "nested_laplace")),
+    "coordinate columns"
+  )
+})
+
+# SPDE is now routed through tulpa() (its own `spde` backend; see
+# test-tulpa-spatial-spde-frontdoor.R), and so is multiscale (exact NUTS; see
+# test-multiscale-gp-noncentered-amplitude.R). A type the grammar does not know
+# at all must still error with guidance rather than fall through.
+test_that("an unrouted spatial type errors with guidance", {
+  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
+  expect_error(
+    suppressMessages(tulpa(
+      y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
+      spatial = list(type = "not_a_field_type"), mode = "nested_laplace")),
+    "Unknown spatial type"
+  )
+})
+
+test_that("a bare list multiscale spec is rejected with guidance", {
+  # "multiscale" now routes to validate_gp(), so a bare list must be caught by
+  # the spec-class check rather than the unknown-type arm above.
+  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
+  expect_error(
+    suppressMessages(tulpa(
+      y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
+      spatial = list(type = "multiscale"), mode = "exact")),
+    "spatial_multiscale"
+  )
+})
+
+test_that("a bare list continuous spec is rejected with guidance", {
+  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
+  expect_error(
+    suppressMessages(tulpa(
+      y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
+      spatial = list(type = "gp"), mode = "nested_laplace")),
+    "spatial_gp"
+  )
+})
+
+test_that("an HSGP spec rejects a spatial(col) term and a bare list", {
+  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
+  s$data$site <- factor(seq_len(nrow(s$data)))
+  # Continuous field + a spatial(col) term is contradictory.
+  expect_error(
+    suppressMessages(tulpa(
+      y ~ x + spatial(site), data = s$data, family = "binomial",
+      n_trials = s$data$ntrials, spatial = spatial_gp(approx = "hsgp", ~ lon + lat),
+      mode = "nested_laplace")),
+    "coordinate columns"
+  )
+  # A bare list (type = "hsgp") is not a spatial_gp(approx = "hsgp", ) spec.
+  expect_error(
+    suppressMessages(tulpa(
+      y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
+      spatial = list(type = "hsgp"), mode = "nested_laplace")),
+    "spatial_gp"
+  )
+})
+
+test_that("cpp_hsgp_basis_2d matches the make_hsgp_basis_2d oracle", {
+  # Independent check that the exported basis builder agrees with the
+  # hand-written 2D HSGP basis used in test-nested-laplace-gp.R. Mirrors
+  # setup_hsgp_2d: L = c * range / 2 (floored at 0.1), centred coords,
+  # phi_j(x) = (1/sqrt(L)) sin(pi j (x + L)/(2L)), lambda = (pi j / 2L)^2.
+  oracle <- function(coords, m, cc) {
+    x <- coords[, 1]; y <- coords[, 2]
+    L1 <- max(cc * (max(x) - min(x)) / 2, 0.1)
+    L2 <- max(cc * (max(y) - min(y)) / 2, 0.1)
+    xs <- x - (max(x) + min(x)) / 2
+    ys <- y - (max(y) + min(y)) / 2
+    M <- m * m
+    phi <- matrix(0, nrow(coords), M); lam <- numeric(M)
+    for (j1 in seq_len(m)) for (j2 in seq_len(m)) {
+      idx <- (j1 - 1) * m + j2
+      lam[idx] <- (pi * j1 / (2 * L1))^2 + (pi * j2 / (2 * L2))^2
+      phi[, idx] <- ((1 / sqrt(L1)) * sin(pi * j1 * (xs + L1) / (2 * L1))) *
+                    ((1 / sqrt(L2)) * sin(pi * j2 * (ys + L2) / (2 * L2)))
+    }
+    list(phi = phi, lam = lam)
+  }
+  set.seed(3)
+  coords <- cbind(runif(30), runif(30))
+  got <- tulpa:::cpp_hsgp_basis_2d(coords, 5L, 1.5)
+  want <- oracle(coords, 5L, 1.5)
+  expect_equal(unname(got$lambda_eig), want$lam, tolerance = 1e-10)
+  expect_equal(unname(got$phi_basis), unname(want$phi), tolerance = 1e-10)
+})
+
+skip_on_cran()
+
 test_that("mode = nested_laplace integrates an NNGP field through tulpa()", {
   skip_on_cran()
   s <- sim_gp_binomial()
@@ -72,24 +189,6 @@ test_that("mode = nested_laplace integrates an NNGP field through tulpa()", {
                      rowMeans(fit$modes[keep, -(1:2), drop = FALSE]))
   expect_lt(abs((beta_hat[1] + field_level) - s$beta[1]), 0.25)  # identified level
   expect_lt(abs(beta_hat[2] - s$beta[2]), 0.3)                   # slope
-})
-
-test_that("mode = laplace fits a GP field alongside a (1 | g) RE term (issue #74)", {
-  s <- sim_gp_binomial(n_loc = 50L, reps = 3L)
-  d <- s$data
-  d$g <- factor(rep_len(seq_len(6L), nrow(d)))
-
-  fit <- suppressMessages(tulpa(
-    y ~ x + (1 | g), data = d, family = "binomial", n_trials = d$ntrials,
-    spatial = spatial_gp(~ lon + lat, nn = 8L), mode = "laplace"
-  ))
-
-  expect_s3_class(fit, "tulpa_fit")
-  # Latent mode is [beta (2), re (6 groups), w_gp (n_loc)]; the RE block is
-  # present, so the fixed-effect slope still recovers.
-  expect_length(fit$mode, 2L + 6L + s$n_loc)
-  beta <- fit$mode[seq_len(2L)]
-  expect_lt(abs(beta[2] - s$beta[2]), 0.35)        # slope
 })
 
 test_that("the NNGP marginal H_beta is built when locations carry replicates", {
@@ -153,54 +252,6 @@ test_that("the NNGP front-door route is numerically identical to a direct call",
   expect_equal(via$theta_grid,   direct$theta_grid)
   expect_equal(via$log_marginal, direct$log_marginal)
   expect_equal(via$theta_mean,   direct$theta_mean)
-})
-
-test_that("a continuous field rejects a spatial(col) term", {
-  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
-  s$data$site <- factor(seq_len(nrow(s$data)))
-  expect_error(
-    suppressMessages(tulpa(
-      y ~ x + spatial(site), data = s$data, family = "binomial",
-      n_trials = s$data$ntrials, spatial = spatial_gp(~ lon + lat),
-      mode = "nested_laplace")),
-    "coordinate columns"
-  )
-})
-
-# SPDE is now routed through tulpa() (its own `spde` backend; see
-# test-tulpa-spatial-spde-frontdoor.R), and so is multiscale (exact NUTS; see
-# test-multiscale-gp-noncentered-amplitude.R). A type the grammar does not know
-# at all must still error with guidance rather than fall through.
-test_that("an unrouted spatial type errors with guidance", {
-  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
-  expect_error(
-    suppressMessages(tulpa(
-      y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
-      spatial = list(type = "not_a_field_type"), mode = "nested_laplace")),
-    "Unknown spatial type"
-  )
-})
-
-test_that("a bare list multiscale spec is rejected with guidance", {
-  # "multiscale" now routes to validate_gp(), so a bare list must be caught by
-  # the spec-class check rather than the unknown-type arm above.
-  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
-  expect_error(
-    suppressMessages(tulpa(
-      y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
-      spatial = list(type = "multiscale"), mode = "exact")),
-    "spatial_multiscale"
-  )
-})
-
-test_that("a bare list continuous spec is rejected with guidance", {
-  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
-  expect_error(
-    suppressMessages(tulpa(
-      y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
-      spatial = list(type = "gp"), mode = "nested_laplace")),
-    "spatial_gp"
-  )
 })
 
 # --- HSGP (Hilbert-space GP) nested routing -----------------------------
@@ -272,53 +323,4 @@ test_that("the HSGP front-door route is numerically identical to a direct call",
   expect_equal(via$theta_grid,   direct$theta_grid)
   expect_equal(via$log_marginal, direct$log_marginal)
   expect_equal(via$theta_mean,   direct$theta_mean)
-})
-
-test_that("an HSGP spec rejects a spatial(col) term and a bare list", {
-  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
-  s$data$site <- factor(seq_len(nrow(s$data)))
-  # Continuous field + a spatial(col) term is contradictory.
-  expect_error(
-    suppressMessages(tulpa(
-      y ~ x + spatial(site), data = s$data, family = "binomial",
-      n_trials = s$data$ntrials, spatial = spatial_gp(approx = "hsgp", ~ lon + lat),
-      mode = "nested_laplace")),
-    "coordinate columns"
-  )
-  # A bare list (type = "hsgp") is not a spatial_gp(approx = "hsgp", ) spec.
-  expect_error(
-    suppressMessages(tulpa(
-      y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
-      spatial = list(type = "hsgp"), mode = "nested_laplace")),
-    "spatial_gp"
-  )
-})
-
-test_that("cpp_hsgp_basis_2d matches the make_hsgp_basis_2d oracle", {
-  # Independent check that the exported basis builder agrees with the
-  # hand-written 2D HSGP basis used in test-nested-laplace-gp.R. Mirrors
-  # setup_hsgp_2d: L = c * range / 2 (floored at 0.1), centred coords,
-  # phi_j(x) = (1/sqrt(L)) sin(pi j (x + L)/(2L)), lambda = (pi j / 2L)^2.
-  oracle <- function(coords, m, cc) {
-    x <- coords[, 1]; y <- coords[, 2]
-    L1 <- max(cc * (max(x) - min(x)) / 2, 0.1)
-    L2 <- max(cc * (max(y) - min(y)) / 2, 0.1)
-    xs <- x - (max(x) + min(x)) / 2
-    ys <- y - (max(y) + min(y)) / 2
-    M <- m * m
-    phi <- matrix(0, nrow(coords), M); lam <- numeric(M)
-    for (j1 in seq_len(m)) for (j2 in seq_len(m)) {
-      idx <- (j1 - 1) * m + j2
-      lam[idx] <- (pi * j1 / (2 * L1))^2 + (pi * j2 / (2 * L2))^2
-      phi[, idx] <- ((1 / sqrt(L1)) * sin(pi * j1 * (xs + L1) / (2 * L1))) *
-                    ((1 / sqrt(L2)) * sin(pi * j2 * (ys + L2) / (2 * L2)))
-    }
-    list(phi = phi, lam = lam)
-  }
-  set.seed(3)
-  coords <- cbind(runif(30), runif(30))
-  got <- tulpa:::cpp_hsgp_basis_2d(coords, 5L, 1.5)
-  want <- oracle(coords, 5L, 1.5)
-  expect_equal(unname(got$lambda_eig), want$lam, tolerance = 1e-10)
-  expect_equal(unname(got$phi_basis), unname(want$phi), tolerance = 1e-10)
 })

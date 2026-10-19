@@ -78,23 +78,6 @@ test_that("a chain-stamped fit with no draws says so instead of returning NULL s
   expect_null(res)
 })
 
-# --------------------------------------------------------------------------- #
-# What the reliability table says it describes                                 #
-# --------------------------------------------------------------------------- #
-
-test_that("every backend emitting i.i.d. draws has a reliability scope entry", {
-  skip_on_cran()
-  iid <- names(Filter(function(e) identical(e$emits, "iid"), BACKEND_REGISTRY))
-  expect_true(all(iid %in% names(.APPROX_SCOPE)),
-              info = paste(setdiff(iid, names(.APPROX_SCOPE)), collapse = ", "))
-  for (nm in names(.APPROX_SCOPE)) {
-    e <- .APPROX_SCOPE[[nm]]
-    expect_true(is.character(e$title) && nzchar(e$title), info = nm)
-    expect_true(is.character(e$scope) && nzchar(e$scope), info = nm)
-    expect_true(all(e$layers %in% c("outer", "inner")), info = nm)
-  }
-})
-
 test_that("the header and scope follow the backend, not a nested-Laplace default", {
   set.seed(14)
   draws <- matrix(rnorm(400), ncol = 2, dimnames = list(NULL, c("b0", "b1")))
@@ -151,4 +134,23 @@ test_that("pars restricts both routes", {
   expect_equal(diagnostics(.diag_chain_fit(p = 3L), pars = "b")$parameter, "b")
   expect_equal(diagnostics(.diag_iid_fit(), pars = c("a", "c"))$parameter,
                c("a", "c"))
+})
+
+skip_on_cran()
+
+# --------------------------------------------------------------------------- #
+# What the reliability table says it describes                                 #
+# --------------------------------------------------------------------------- #
+
+test_that("every backend emitting i.i.d. draws has a reliability scope entry", {
+  skip_on_cran()
+  iid <- names(Filter(function(e) identical(e$emits, "iid"), BACKEND_REGISTRY))
+  expect_true(all(iid %in% names(.APPROX_SCOPE)),
+              info = paste(setdiff(iid, names(.APPROX_SCOPE)), collapse = ", "))
+  for (nm in names(.APPROX_SCOPE)) {
+    e <- .APPROX_SCOPE[[nm]]
+    expect_true(is.character(e$title) && nzchar(e$title), info = nm)
+    expect_true(is.character(e$scope) && nzchar(e$scope), info = nm)
+    expect_true(all(e$layers %in% c("outer", "inner")), info = nm)
+  }
 })

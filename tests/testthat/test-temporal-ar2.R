@@ -93,6 +93,8 @@ test_that("temporal_ar() builds valid blocks and pins the p = 2 equivalence", {
   expect_error(temporal_ar(rep(1:3, 4), p = 3), "at least 4")
 })
 
+skip_on_cran()
+
 test_that("temporal_ar(p = 3) recovers the AR field through nested Laplace", {
   skip_on_cran()
   set.seed(5)

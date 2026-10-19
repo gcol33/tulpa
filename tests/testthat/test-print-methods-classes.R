@@ -105,6 +105,8 @@ test_that("each nested-Laplace class prints its own header", {
   }
 })
 
+skip_on_cran()
+
 test_that("an EP fit is classed tulpa_fit alone", {
   skip_on_cran()
   set.seed(2)

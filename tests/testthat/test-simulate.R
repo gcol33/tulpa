@@ -180,6 +180,8 @@ test_that("tulpa_simulate(theta = fit) uses the fit's random effects (#891)", {
                "carries no random-effect draws or point values")
 })
 
+skip_on_cran()
+
 test_that("tulpa_simulate(theta = fit) reproduces the fitted group means (#891)", {
   skip_on_cran()
   set.seed(1)

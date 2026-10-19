@@ -54,6 +54,43 @@ make_m_step_encode <- function(y) {
 }
 
 
+test_that("tulpa_em_mc errors on bad e_step_sample return", {
+  bad_sampler <- function(fits, n_mc, ...) "not a list"
+  encoder <- function(w, ...) list(a = list(y = 1, X = matrix(1, 1, 1),
+                                            family = "gaussian"))
+  expect_error(
+    tulpa_em_mc(bad_sampler, encoder, n_mc = 3L, max_iter = 1L,
+                verbose = FALSE),
+    "list of length"
+  )
+})
+
+
+test_that("tulpa_em_mc errors on non-function callbacks", {
+  expect_error(tulpa_em_mc(NULL, function(w, ...) list()),
+               "must be a function")
+  expect_error(tulpa_em_mc(function(f, n, ...) list(), 42),
+               "must be a function")
+})
+
+
+test_that("tulpa_em_mc errors on bad n_mc / n_mc_growth", {
+  e <- function(f, n, ...) replicate(n, list(), simplify = FALSE)
+  m <- function(w, ...) list(a = list(y = 1, X = matrix(1, 1, 1),
+                                      family = "gaussian"))
+  expect_error(tulpa_em_mc(e, m, n_mc = 0L, verbose = FALSE),
+               "n_mc")
+  expect_error(tulpa_em_mc(e, m, n_mc = 5L, n_mc_growth = 0.5,
+                           verbose = FALSE),
+               "n_mc_growth")
+  expect_error(tulpa_em_mc(e, m, n_mc = 10L, n_mc_max = 5L,
+                           verbose = FALSE),
+               "n_mc_max")
+})
+
+skip_on_cran()
+
+
 test_that("tulpa_em_mc recovers mixture means on toy", {
   skip_on_cran()
   set.seed(501L)
@@ -94,39 +131,4 @@ test_that("tulpa_em_mc respects n_mc_growth", {
   # n_mc should grow over iterations.
   expect_true(all(diff(res$history$n_mc) >= 0L))
   expect_gt(res$n_mc_final, 5L)
-})
-
-
-test_that("tulpa_em_mc errors on bad e_step_sample return", {
-  bad_sampler <- function(fits, n_mc, ...) "not a list"
-  encoder <- function(w, ...) list(a = list(y = 1, X = matrix(1, 1, 1),
-                                            family = "gaussian"))
-  expect_error(
-    tulpa_em_mc(bad_sampler, encoder, n_mc = 3L, max_iter = 1L,
-                verbose = FALSE),
-    "list of length"
-  )
-})
-
-
-test_that("tulpa_em_mc errors on non-function callbacks", {
-  expect_error(tulpa_em_mc(NULL, function(w, ...) list()),
-               "must be a function")
-  expect_error(tulpa_em_mc(function(f, n, ...) list(), 42),
-               "must be a function")
-})
-
-
-test_that("tulpa_em_mc errors on bad n_mc / n_mc_growth", {
-  e <- function(f, n, ...) replicate(n, list(), simplify = FALSE)
-  m <- function(w, ...) list(a = list(y = 1, X = matrix(1, 1, 1),
-                                      family = "gaussian"))
-  expect_error(tulpa_em_mc(e, m, n_mc = 0L, verbose = FALSE),
-               "n_mc")
-  expect_error(tulpa_em_mc(e, m, n_mc = 5L, n_mc_growth = 0.5,
-                           verbose = FALSE),
-               "n_mc_growth")
-  expect_error(tulpa_em_mc(e, m, n_mc = 10L, n_mc_max = 5L,
-                           verbose = FALSE),
-               "n_mc_max")
 })

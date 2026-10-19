@@ -114,6 +114,87 @@ test_that("the kernel request is NULL where there is nothing to retain", {
   expect_equal(req$variant, 0L)
 })
 
+test_that("a declined correction leaves the Laplace read in place, and says so", {
+  cfg <- .cila_config(TRUE)
+  res <- .nl_cila_attach(list(log_marginal = c(-1, -2), weights = c(0.6, 0.4)),
+                         cfg, function(req) stop("boom"), p_fixed = 2L)
+  expect_equal(res$weights_source, "laplace_grid")
+  expect_equal(res$weights, c(0.6, 0.4))
+  expect_false(res$cila$weights_adopted)
+  expect_equal(res$cila$declined, "redispatch_failed")
+})
+
+# ---------------------------------------------------------------------------
+# 5b. The non-joint fitter carries the same correction (gcol33/tulpa#368)
+# ---------------------------------------------------------------------------
+
+# A gaussian arm on an RW1 field, through tulpa_nested_laplace() rather than the
+# joint driver. Same exactness arbiter: the inner Laplace is the conditional
+# posterior, so the corrected cell marginal must reproduce the uncorrected one,
+# and at the joint file's own 1e-9 (gcol33/tulpa#371).
+#
+# It read 3.4e-07 while this loop reported its log-marginal at the post-centring
+# point rather than at the Newton mode, and 1e-05 on a proper AR1 field, which
+# is the same defect at the scale of how far the field's prior is from
+# shift-invariant. `score_max` is the independent arbiter for that reading: it
+# measured 1.6e-05 on this fixture and 5.7e-02 on the AR1 one, and both are
+# ~1e-14 now.
+cila_nonjoint_fit <- function(cila = NULL, seed = 3L, n_time = 10L,
+                              per_time = 3L) {
+  set.seed(seed)
+  tidx <- rep(seq_len(n_time), each = per_time)
+  xv <- stats::rnorm(n_time * per_time)
+  X <- cbind(1, xv)
+  fld <- cumsum(stats::rnorm(n_time, 0, 0.4))
+  y <- as.numeric(X %*% c(0.3, -0.6)) + fld[tidx] +
+    stats::rnorm(n_time * per_time, 0, 0.5)
+  ctl <- list(max_iter = 300L, tol = 1e-11, n_threads = 1L,
+              keep_grid_hessians = TRUE, diagnose_k = FALSE,
+              diagnose_skew = FALSE, auto_recenter = FALSE)
+  if (!is.null(cila)) ctl$cila <- cila
+  suppressWarnings(tulpa_nested_laplace(
+    y = y, n_trials = rep(1L, length(y)), X = X,
+    prior = list(type = "rw1", temporal_idx = as.integer(tidx),
+                 n_times = n_time,
+                 tau_grid = exp(seq(log(0.5), log(12), length.out = 4))),
+    family = "gaussian", phi = 0.25, control = ctl))
+}
+
+test_that("tulpa_nested_laplace() accepts the correction", {
+  expect_silent(tulpa_check_control(list(cila = TRUE),
+                                    .CONTROL_KEYS$nested_laplace,
+                                    "tulpa_nested_laplace"))
+})
+
+# ---------------------------------------------------------------------------
+# 6. Declines say why
+# ---------------------------------------------------------------------------
+
+test_that("a fit with no fixed effects to retain declines with a reason", {
+  cfg <- .cila_config(TRUE)
+  res <- .nl_cila_attach(list(), cfg, function(req) NULL, p_fixed = 0L)
+  expect_equal(res$cila$declined, "no_fixed_effects")
+
+  res <- .nl_cila_attach(list(log_marginal = 1:3), cfg,
+                         function(req) NULL, p_fixed = 2L)
+  expect_equal(res$cila$declined, "no_grid_weights")
+
+  res <- .nl_cila_attach(list(log_marginal = c(-1, -2), weights = c(0.6, 0.4)),
+                         cfg, function(req) stop("boom"), p_fixed = 2L)
+  expect_equal(res$cila$declined, "redispatch_failed")
+
+  res <- .nl_cila_attach(
+    list(log_marginal = c(-1, -2), weights = c(0.6, 0.4)), cfg,
+    function(req) list(cila_log_w_per_grid = list(NULL, NULL),
+                       cila_fixed_per_grid = list(NULL, NULL),
+                       cila_declined = c("degenerate_proposal", NA)),
+    p_fixed = 2L)
+  expect_equal(res$cila$declined, "degenerate_proposal")
+  expect_equal(res$cila$n_cells_declined, 2L)
+})
+
+skip_on_cran()
+
 # ---------------------------------------------------------------------------
 # 2. A fit that did not ask for the correction is untouched
 # ---------------------------------------------------------------------------
@@ -165,16 +246,6 @@ test_that("the hyperparameter summary is recomputed from the adopted read", {
   expect_equal(as.numeric(f$theta_mean),
                as.numeric(crossprod(f$weights, f$theta_grid)),
                tolerance = 1e-12, ignore_attr = TRUE)
-})
-
-test_that("a declined correction leaves the Laplace read in place, and says so", {
-  cfg <- .cila_config(TRUE)
-  res <- .nl_cila_attach(list(log_marginal = c(-1, -2), weights = c(0.6, 0.4)),
-                         cfg, function(req) stop("boom"), p_fixed = 2L)
-  expect_equal(res$weights_source, "laplace_grid")
-  expect_equal(res$weights, c(0.6, 0.4))
-  expect_false(res$cila$weights_adopted)
-  expect_equal(res$cila$declined, "redispatch_failed")
 })
 
 # ---------------------------------------------------------------------------
@@ -317,48 +388,6 @@ test_that("a different seed is a different realization of the same estimator", {
   expect_lt(max(abs(a$cila$cell_log_marginal - b$cila$cell_log_marginal)), 0.05)
 })
 
-# ---------------------------------------------------------------------------
-# 5b. The non-joint fitter carries the same correction (gcol33/tulpa#368)
-# ---------------------------------------------------------------------------
-
-# A gaussian arm on an RW1 field, through tulpa_nested_laplace() rather than the
-# joint driver. Same exactness arbiter: the inner Laplace is the conditional
-# posterior, so the corrected cell marginal must reproduce the uncorrected one,
-# and at the joint file's own 1e-9 (gcol33/tulpa#371).
-#
-# It read 3.4e-07 while this loop reported its log-marginal at the post-centring
-# point rather than at the Newton mode, and 1e-05 on a proper AR1 field, which
-# is the same defect at the scale of how far the field's prior is from
-# shift-invariant. `score_max` is the independent arbiter for that reading: it
-# measured 1.6e-05 on this fixture and 5.7e-02 on the AR1 one, and both are
-# ~1e-14 now.
-cila_nonjoint_fit <- function(cila = NULL, seed = 3L, n_time = 10L,
-                              per_time = 3L) {
-  set.seed(seed)
-  tidx <- rep(seq_len(n_time), each = per_time)
-  xv <- stats::rnorm(n_time * per_time)
-  X <- cbind(1, xv)
-  fld <- cumsum(stats::rnorm(n_time, 0, 0.4))
-  y <- as.numeric(X %*% c(0.3, -0.6)) + fld[tidx] +
-    stats::rnorm(n_time * per_time, 0, 0.5)
-  ctl <- list(max_iter = 300L, tol = 1e-11, n_threads = 1L,
-              keep_grid_hessians = TRUE, diagnose_k = FALSE,
-              diagnose_skew = FALSE, auto_recenter = FALSE)
-  if (!is.null(cila)) ctl$cila <- cila
-  suppressWarnings(tulpa_nested_laplace(
-    y = y, n_trials = rep(1L, length(y)), X = X,
-    prior = list(type = "rw1", temporal_idx = as.integer(tidx),
-                 n_times = n_time,
-                 tau_grid = exp(seq(log(0.5), log(12), length.out = 4))),
-    family = "gaussian", phi = 0.25, control = ctl))
-}
-
-test_that("tulpa_nested_laplace() accepts the correction", {
-  expect_silent(tulpa_check_control(list(cila = TRUE),
-                                    .CONTROL_KEYS$nested_laplace,
-                                    "tulpa_nested_laplace"))
-})
-
 test_that("on the non-joint fitter a gaussian arm reproduces the Laplace grid", {
   skip_on_cran()
   f0 <- cila_nonjoint_fit()
@@ -404,31 +433,4 @@ test_that("a sparse cell is corrected, and agrees with the dense route", {
   # ... and they are not the SAME numbers, which is what says the sparse route
   # ran at all: a fit that silently took the dense one would be byte-identical.
   expect_false(identical(fs$cila$cell_log_marginal, fd$cila$cell_log_marginal))
-})
-
-# ---------------------------------------------------------------------------
-# 6. Declines say why
-# ---------------------------------------------------------------------------
-
-test_that("a fit with no fixed effects to retain declines with a reason", {
-  cfg <- .cila_config(TRUE)
-  res <- .nl_cila_attach(list(), cfg, function(req) NULL, p_fixed = 0L)
-  expect_equal(res$cila$declined, "no_fixed_effects")
-
-  res <- .nl_cila_attach(list(log_marginal = 1:3), cfg,
-                         function(req) NULL, p_fixed = 2L)
-  expect_equal(res$cila$declined, "no_grid_weights")
-
-  res <- .nl_cila_attach(list(log_marginal = c(-1, -2), weights = c(0.6, 0.4)),
-                         cfg, function(req) stop("boom"), p_fixed = 2L)
-  expect_equal(res$cila$declined, "redispatch_failed")
-
-  res <- .nl_cila_attach(
-    list(log_marginal = c(-1, -2), weights = c(0.6, 0.4)), cfg,
-    function(req) list(cila_log_w_per_grid = list(NULL, NULL),
-                       cila_fixed_per_grid = list(NULL, NULL),
-                       cila_declined = c("degenerate_proposal", NA)),
-    p_fixed = 2L)
-  expect_equal(res$cila$declined, "degenerate_proposal")
-  expect_equal(res$cila$n_cells_declined, 2L)
 })

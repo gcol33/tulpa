@@ -158,6 +158,8 @@ test_that("a stated ranef_unavailable reason is reported instead of an empty tab
   expect_error(ranef(fit), "no per-group random effects")
 })
 
+skip_on_cran()
+
 
 # --- tier 2: the backends themselves -----------------------------------------
 

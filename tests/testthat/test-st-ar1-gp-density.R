@@ -267,6 +267,8 @@ test_that("an HSGP-ST AR1 margin reads rho in its normalizer and its form", {
                tolerance = 1e-8)
 })
 
+skip_on_cran()
+
 # ---------------------------------------------------------------------------
 # The matrix form behind the precision-informed mass reads the same margin
 # ---------------------------------------------------------------------------

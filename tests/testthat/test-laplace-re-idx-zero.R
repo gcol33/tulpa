@@ -16,6 +16,8 @@ test_that(".re_design_matrix gives an idx = 0 row no RE column", {
   expect_equal(as.matrix(Z2)[3, ], c(0, 0, 1, 2))
 })
 
+skip_on_cran()
+
 test_that("tulpa_laplace fits idx = 0 rows with return_hessian = TRUE", {
   skip_on_cran()
   set.seed(1)

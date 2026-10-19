@@ -462,6 +462,8 @@ test_that("dispatch_laplace_spatial routes SPDE specs (no longer errors)", {
   if (is.na(msg)) expect_true(is.list(res))
 })
 
+skip_on_cran()
+
 test_that("SPDE Laplace threads an additional iid RE block (issue #74)", {
   skip_on_cran()
   ss <- make_synthetic_spde_spec()

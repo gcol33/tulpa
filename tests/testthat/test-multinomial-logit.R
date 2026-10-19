@@ -11,6 +11,42 @@
   log(p[cls])
 }
 
+test_that("negative Hessian is the multinomial covariance (PSD, data-independent)", {
+  for (eta in list(c(-1.2, 0.8), c(0.3, -0.5, 1.1))) {
+    Km1 <- length(eta)
+    denom <- 1 + sum(exp(eta)); p <- exp(eta) / denom
+    expect_equal(as.matrix(tulpa:::cpp_multinomial_logit_terms(eta, 1)$neg_hess),
+                 diag(p, Km1) - outer(p, p), tolerance = 1e-12)
+    # same Hessian regardless of observed class (multinomial logit info is data-free)
+    for (cls in 2:(Km1 + 1L))
+      expect_equal(as.matrix(tulpa:::cpp_multinomial_logit_terms(eta, cls)$neg_hess),
+                   diag(p, Km1) - outer(p, p), tolerance = 1e-12)
+    expect_gte(min(eigen(diag(p, Km1) - outer(p, p), only.values = TRUE)$values), -1e-12)
+  }
+})
+
+test_that("class probabilities are a valid simplex and overflow-safe", {
+  big <- c(800, -800, 200)          # would overflow a naive exp()
+  out <- tulpa:::cpp_multinomial_logit_terms(big, 1)
+  expect_true(is.finite(out$ll))
+  # ll of the dominant class approx 0 (prob approx 1)
+  expect_lt(abs(out$ll), 1e-6)
+})
+
+test_that("cls outside 1..K is refused rather than read as the baseline", {
+  # cls <= 0 indexed p[cls - 1], before the start of the buffer; cls > K
+  # silently returned log(p_K), scoring an observation of the baseline that
+  # was never made.
+  for (bad in c(-1L, 0L, 5L, 100L)) {
+    expect_error(tulpa:::cpp_multinomial_logit_terms(c(0.3, -0.5, 1.1), bad),
+                 "1[.][.]4")
+  }
+  expect_error(tulpa:::cpp_multinomial_logit_terms(numeric(0), 1L),
+               "at least one entry")
+})
+
+skip_on_cran()
+
 test_that("grad / neg_hess match central differences across K and class", {
   skip_on_cran()
   h <- 1e-5
@@ -38,28 +74,6 @@ test_that("grad / neg_hess match central differences across K and class", {
       expect_equal(as.matrix(out$neg_hess), -H_fd, tolerance = 1e-3)
     }
   }
-})
-
-test_that("negative Hessian is the multinomial covariance (PSD, data-independent)", {
-  for (eta in list(c(-1.2, 0.8), c(0.3, -0.5, 1.1))) {
-    Km1 <- length(eta)
-    denom <- 1 + sum(exp(eta)); p <- exp(eta) / denom
-    expect_equal(as.matrix(tulpa:::cpp_multinomial_logit_terms(eta, 1)$neg_hess),
-                 diag(p, Km1) - outer(p, p), tolerance = 1e-12)
-    # same Hessian regardless of observed class (multinomial logit info is data-free)
-    for (cls in 2:(Km1 + 1L))
-      expect_equal(as.matrix(tulpa:::cpp_multinomial_logit_terms(eta, cls)$neg_hess),
-                   diag(p, Km1) - outer(p, p), tolerance = 1e-12)
-    expect_gte(min(eigen(diag(p, Km1) - outer(p, p), only.values = TRUE)$values), -1e-12)
-  }
-})
-
-test_that("class probabilities are a valid simplex and overflow-safe", {
-  big <- c(800, -800, 200)          # would overflow a naive exp()
-  out <- tulpa:::cpp_multinomial_logit_terms(big, 1)
-  expect_true(is.finite(out$ll))
-  # ll of the dominant class approx 0 (prob approx 1)
-  expect_lt(abs(out$ll), 1e-6)
 })
 
 # --------------------------------------------------------------------------- #
@@ -94,16 +108,4 @@ test_that("a class the softmax underflows still reports its finite value", {
   # The separated class itself: log p is about -gap, not -Inf.
   expect_equal(tulpa:::cpp_multinomial_logit_terms(c(-800, 0.4, -0.7), 1)$ll,
                ll_stable(c(-800, 0.4, -0.7), 1), tolerance = 1e-12)
-})
-
-test_that("cls outside 1..K is refused rather than read as the baseline", {
-  # cls <= 0 indexed p[cls - 1], before the start of the buffer; cls > K
-  # silently returned log(p_K), scoring an observation of the baseline that
-  # was never made.
-  for (bad in c(-1L, 0L, 5L, 100L)) {
-    expect_error(tulpa:::cpp_multinomial_logit_terms(c(0.3, -0.5, 1.1), bad),
-                 "1[.][.]4")
-  }
-  expect_error(tulpa:::cpp_multinomial_logit_terms(numeric(0), 1L),
-               "at least one entry")
 })

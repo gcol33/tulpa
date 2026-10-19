@@ -162,39 +162,6 @@ test_that("the budget is the tensor grid it replaces, floored at the first attem
                                      .ccd_bud_cfg(budget_floor = FALSE)), 0)
 })
 
-test_that("the placement registry holds the loop caps the projection reads", {
-    skip_on_cran()
-    # Pinned deliberately: these are the numbers the mode-find loops run on AND
-    # the numbers the up-front projection is computed from, so a change to
-    # either has to move both together.
-    expect_identical(tulpa:::.ccd_placement("first_rounds"), 8L)
-    expect_identical(tulpa:::.ccd_placement("max_rounds"), 30L)
-    expect_identical(tulpa:::.ccd_placement("calibrate_rounds"), 4L)
-    expect_identical(tulpa:::.ccd_placement("seed_max_pts"), 256L)
-    expect_identical(tulpa:::.ccd_placement("max_halve"), 6L)
-    expect_equal(tulpa:::.ccd_placement("evals_per_cell"), 1)
-    expect_true(tulpa:::.ccd_placement("budget_floor"))
-    # The curvature-reuse path shipped in 0.2.14 opt-in, was measured against a
-    # full stencil every round, and was removed in 0.2.15: it spent no fewer
-    # inner solves and centred the design somewhere worse (gcol33/tulpa#662).
-    # The knob is gone from the registry AND refused at the door, so a caller
-    # still passing it is told rather than silently ignored.
-    expect_false("stencil_reuse" %in% names(tulpa:::.CCD_PLACEMENT))
-    expect_false("refresh_every" %in% names(tulpa:::.CCD_PLACEMENT))
-    expect_error(tulpa:::.ccd_placement("stencil_reuse"),
-                 "Unknown CCD placement")
-    expect_error(tulpa:::.ccd_placement("no_such_knob"), "Unknown CCD placement")
-    # The loop defaults ARE the registry, not a second copy beside it.
-    expect_identical(formals(tulpa:::.joint_ccd_modefind)$max_rounds,
-                     quote(.ccd_placement("max_rounds")))
-    expect_identical(formals(tulpa:::.joint_ccd_modefind)$max_halve,
-                     quote(.ccd_placement("max_halve")))
-    expect_identical(formals(tulpa:::.joint_ccd_grid_seed)$max_pts,
-                     quote(.ccd_placement("seed_max_pts")))
-    expect_identical(formals(tulpa:::.joint_ccd_calibrate_step)$rounds,
-                     quote(.ccd_placement("calibrate_rounds")))
-})
-
 test_that("control knobs resolve onto the registry, and bad ones are refused", {
     expect_identical(tulpa:::.ccd_placement_args(list()),
                      as.list(tulpa:::.CCD_PLACEMENT))
@@ -614,6 +581,41 @@ test_that("the full stencil reads an exact quadratic's own gradient and Hessian"
                         n_re_groups = 0L, sigma_re = 1.0,
                         family = "gaussian", phi = 0.25)))
 }
+
+skip_on_cran()
+
+test_that("the placement registry holds the loop caps the projection reads", {
+    skip_on_cran()
+    # Pinned deliberately: these are the numbers the mode-find loops run on AND
+    # the numbers the up-front projection is computed from, so a change to
+    # either has to move both together.
+    expect_identical(tulpa:::.ccd_placement("first_rounds"), 8L)
+    expect_identical(tulpa:::.ccd_placement("max_rounds"), 30L)
+    expect_identical(tulpa:::.ccd_placement("calibrate_rounds"), 4L)
+    expect_identical(tulpa:::.ccd_placement("seed_max_pts"), 256L)
+    expect_identical(tulpa:::.ccd_placement("max_halve"), 6L)
+    expect_equal(tulpa:::.ccd_placement("evals_per_cell"), 1)
+    expect_true(tulpa:::.ccd_placement("budget_floor"))
+    # The curvature-reuse path shipped in 0.2.14 opt-in, was measured against a
+    # full stencil every round, and was removed in 0.2.15: it spent no fewer
+    # inner solves and centred the design somewhere worse (gcol33/tulpa#662).
+    # The knob is gone from the registry AND refused at the door, so a caller
+    # still passing it is told rather than silently ignored.
+    expect_false("stencil_reuse" %in% names(tulpa:::.CCD_PLACEMENT))
+    expect_false("refresh_every" %in% names(tulpa:::.CCD_PLACEMENT))
+    expect_error(tulpa:::.ccd_placement("stencil_reuse"),
+                 "Unknown CCD placement")
+    expect_error(tulpa:::.ccd_placement("no_such_knob"), "Unknown CCD placement")
+    # The loop defaults ARE the registry, not a second copy beside it.
+    expect_identical(formals(tulpa:::.joint_ccd_modefind)$max_rounds,
+                     quote(.ccd_placement("max_rounds")))
+    expect_identical(formals(tulpa:::.joint_ccd_modefind)$max_halve,
+                     quote(.ccd_placement("max_halve")))
+    expect_identical(formals(tulpa:::.joint_ccd_grid_seed)$max_pts,
+                     quote(.ccd_placement("seed_max_pts")))
+    expect_identical(formals(tulpa:::.joint_ccd_calibrate_step)$rounds,
+                     quote(.ccd_placement("calibrate_rounds")))
+})
 
 test_that("a fit reports the placement it declined on cost", {
     skip_on_cran()

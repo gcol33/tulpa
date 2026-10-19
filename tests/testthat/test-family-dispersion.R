@@ -75,75 +75,6 @@ ops_call <- function(f, cs, ..., phi) {
 }
 
 
-test_that("dloglik/dphi matches a finite difference of the registered loglik", {
-  skip_on_cran()
-  for (fam in names(FAMILY_PHI)) {
-    for (phi in FAMILY_PHI[[fam]]) {
-      cs <- dispersion_case(fam, phi)
-      analytic <- cs$d$dloglik(cs$eta, cs$y, cs$n_trials, phi, cs$phi2)
-      numeric <- fd_dphi(function(p)
-        ops_call(cs$ops$loglik, cs, cs$eta, cs$y, cs$n_trials, phi = p), phi)
-      expect_equal(analytic, numeric, tolerance = 1e-5,
-                   info = sprintf("%s, phi = %g", fam, phi))
-    }
-  }
-})
-
-
-test_that("dscore/dphi matches a finite difference of the registered score", {
-  skip_on_cran()
-  # The score derivative is what carries the mode's movement with phi
-  # (dx_hat/dphi); an error here tilts the gradient without changing the fit at
-  # any fixed phi, so nothing else would catch it.
-  for (fam in names(FAMILY_PHI)) {
-    for (phi in FAMILY_PHI[[fam]]) {
-      cs <- dispersion_case(fam, phi)
-      analytic <- cs$d$dscore(cs$eta, cs$y, cs$n_trials, phi, cs$phi2)
-      numeric <- fd_dphi(function(p)
-        ops_call(cs$ops$score, cs, cs$eta, cs$y, cs$n_trials, phi = p), phi)
-      expect_equal(analytic, numeric, tolerance = 1e-5,
-                   info = sprintf("%s, phi = %g", fam, phi))
-    }
-  }
-})
-
-
-test_that("dweight/dphi differentiates the weight H is actually built from", {
-  skip_on_cran()
-  # The target is NOT uniformly `.FAMILY_OPS$weight`. Where the compiled Newton
-  # weight is already the observed curvature and the registry carries that
-  # curvature as `obs_weight` (neg_binomial_2, beta), that is the weight H is
-  # built from; every other entry differentiates the registry's `weight`. The
-  # truncated pair go the OTHER way: Newton builds H from the expected form
-  # Var(y | y > 0), chosen there because it is positive for every mu while the
-  # observed curvature carries y and can go negative. Same rule -- differentiate
-  # whatever H is built from -- landing on the opposite member of the pair, and
-  # read off the compiled predicate rather than a list kept here.
-  #
-  # Differentiating the expected form for neg_binomial_2 is wrong by a few
-  # percent: enough to move the maximizer, small enough that a recovery test
-  # would still converge and look plausible. Naming the right target per family
-  # is the whole content of this test.
-  h_weight <- function(cs, fam, phi) {
-    if (is.function(cs$ops$obs_weight) &&
-        isTRUE(tulpa:::cpp_family_working_weight_is_observed(fam)))
-      return(cs$ops$obs_weight(cs$eta, cs$y, cs$n_trials, phi))
-    ops_call(cs$ops$weight, cs, cs$eta, cs$n_trials, phi = phi)
-  }
-  for (fam in names(FAMILY_PHI)) {
-    for (phi in FAMILY_PHI[[fam]]) {
-      cs <- dispersion_case(fam, phi)
-      analytic <- rep_len(cs$d$dweight(cs$eta, cs$y, cs$n_trials, phi, cs$phi2),
-                          length(cs$eta))
-      numeric <- fd_dphi(function(p) rep_len(h_weight(cs, fam, p),
-                                             length(cs$eta)), phi)
-      expect_equal(analytic, numeric, tolerance = 1e-5,
-                   info = sprintf("%s, phi = %g", fam, phi))
-    }
-  }
-})
-
-
 test_that("every registered family can carry its dispersion gradient exactly", {
   # Three correct per-observation derivatives are not enough on their own. The
   # ASSEMBLED dm/dphi reaches the mode only through q_eta = (dW/deta) s, so the
@@ -207,19 +138,6 @@ test_that("the derivatives are registered only where phi is free", {
 })
 
 
-test_that("every dispersion family has a registered weight to differentiate", {
-  skip_on_cran()
-  # The dweight entries differentiate .FAMILY_OPS$weight. A family listed here
-  # whose registry entry lacked one would leave dweight describing nothing.
-  for (fam in tulpa:::.dispersion_families()) {
-    ops <- tulpa:::.FAMILY_OPS[[fam]]
-    expect_true(is.function(ops$weight), info = fam)
-    expect_true(is.function(ops$score), info = fam)
-    expect_true(is.function(ops$loglik), info = fam)
-  }
-})
-
-
 # --- second-order dispersion derivatives (the phi Hessian's family half) -----
 
 # Central difference in eta, for the mixed eta-phi weight curvature.
@@ -235,73 +153,6 @@ FAMILY_PHI2 <- list(
   gamma                    = c(0.7, 3.0, 12.0),
   t                        = c(0.4, 1.0, 3.0)
 )
-
-
-test_that("the second-order dispersion derivatives match differences of the first", {
-  skip_on_cran()
-  # Each of L2 / Sc2 / DW2 / DWde is one further derivative of a first-order
-  # .family_dphi form (DW2 = d(dweight)/dphi, DWde = d(dweight)/deta, and so on),
-  # so differencing the analytic first-order chains the check back to the
-  # registry those were themselves finite-differenced against. A wrong second
-  # derivative tilts only the phi Hessian, which shifts interval widths without
-  # moving any point estimate, so nothing else would surface it.
-  for (fam in names(FAMILY_PHI2)) {
-    d  <- tulpa:::.family_dphi(fam)
-    d2 <- tulpa:::.family_dphi2(fam)
-    for (phi in FAMILY_PHI2[[fam]]) {
-      cs <- dispersion_case(fam, phi)
-      eta <- cs$eta; y <- cs$y; nt <- cs$n_trials; p2 <- cs$phi2
-      n <- length(eta)
-      wide <- function(v) rep_len(v, n)
-      expect_equal(d2$dloglik2(eta, y, nt, phi, p2),
-                   fd_dphi(function(p) d$dloglik(eta, y, nt, p, p2), phi),
-                   tolerance = 1e-5, info = sprintf("L2 %s phi=%g", fam, phi))
-      expect_equal(d2$dscore2(eta, y, nt, phi, p2),
-                   fd_dphi(function(p) d$dscore(eta, y, nt, p, p2), phi),
-                   tolerance = 1e-5, info = sprintf("Sc2 %s phi=%g", fam, phi))
-      expect_equal(wide(d2$dweight2(eta, y, nt, phi, p2)),
-                   fd_dphi(function(p) wide(d$dweight(eta, y, nt, p, p2)), phi),
-                   tolerance = 1e-5, info = sprintf("DW2 %s phi=%g", fam, phi))
-      expect_equal(wide(d2$dweight_deta(eta, y, nt, phi, p2)),
-                   fd_deta(function(e) wide(d$dweight(e, y, nt, phi, p2)), eta),
-                   tolerance = 1e-5, info = sprintf("DWde %s phi=%g", fam, phi))
-    }
-  }
-})
-
-
-test_that("a phi Hessian entry carries every derivative its assembly reads", {
-  skip_on_cran()
-  # The border differentiates u and the mode motion on H_true^-1 while the
-  # objective's own terms stay on H^-1, so a family whose working weight is not
-  # the observed curvature owes d(W_obs)/dphi on top of the four. Withholding it
-  # must take the whole entry down rather than leave the assembly pairing two
-  # different inverses.
-  expect_null(tulpa:::.family_dphi2("neg_binomial_1"))
-  expect_null(tulpa:::.family_dphi2("beta"))
-  expect_null(tulpa:::.family_dphi2("poisson"))
-  for (fam in names(FAMILY_PHI2)) {
-    d2 <- tulpa:::.family_dphi2(fam)
-    expect_true(is.list(d2), info = fam)
-    core <- c("dloglik2", "dscore2", "dweight2", "dweight_deta")
-    want <- if (tulpa:::.family_dphi2_needs_obs(fam)) c(core, "dobs_weight")
-            else core
-    expect_true(setequal(names(d2), want), info = fam)
-  }
-  # The predicate agrees with the delta it describes: zero exactly where the
-  # working weight already is the observed curvature.
-  eta <- c(-0.4, 0.2, 0.9)
-  for (fam in names(FAMILY_PHI2)) {
-    fx <- DISPERSION_FIXTURE[[fam]]
-    nt <- rep(if (is.null(fx$nt)) 1L else fx$nt, length(eta))
-    phi <- FAMILY_PHI2[[fam]][2L]
-    y <- dispersion_case(fam, phi, n = length(eta))$y
-    del <- tulpa:::cpp_family_obs_curvature_delta_vec(
-      y, nt, eta, fam, phi, if (is.null(fx$phi2)) NA_real_ else fx$phi2)
-    expect_equal(max(abs(del)) > 1e-12, tulpa:::.family_dphi2_needs_obs(fam),
-                 info = fam)
-  }
-})
 
 
 test_that("d(W_obs)/dphi matches a difference of the registered observed weight", {
@@ -374,6 +225,157 @@ assembled_logmarg <- function(d, family, phi, theta = log(0.7)) {
                 return_hessian = TRUE, max_iter = 300L,
                 tol = 1e-12)$log_marginal
 }
+
+skip_on_cran()
+
+
+test_that("dloglik/dphi matches a finite difference of the registered loglik", {
+  skip_on_cran()
+  for (fam in names(FAMILY_PHI)) {
+    for (phi in FAMILY_PHI[[fam]]) {
+      cs <- dispersion_case(fam, phi)
+      analytic <- cs$d$dloglik(cs$eta, cs$y, cs$n_trials, phi, cs$phi2)
+      numeric <- fd_dphi(function(p)
+        ops_call(cs$ops$loglik, cs, cs$eta, cs$y, cs$n_trials, phi = p), phi)
+      expect_equal(analytic, numeric, tolerance = 1e-5,
+                   info = sprintf("%s, phi = %g", fam, phi))
+    }
+  }
+})
+
+
+test_that("dscore/dphi matches a finite difference of the registered score", {
+  skip_on_cran()
+  # The score derivative is what carries the mode's movement with phi
+  # (dx_hat/dphi); an error here tilts the gradient without changing the fit at
+  # any fixed phi, so nothing else would catch it.
+  for (fam in names(FAMILY_PHI)) {
+    for (phi in FAMILY_PHI[[fam]]) {
+      cs <- dispersion_case(fam, phi)
+      analytic <- cs$d$dscore(cs$eta, cs$y, cs$n_trials, phi, cs$phi2)
+      numeric <- fd_dphi(function(p)
+        ops_call(cs$ops$score, cs, cs$eta, cs$y, cs$n_trials, phi = p), phi)
+      expect_equal(analytic, numeric, tolerance = 1e-5,
+                   info = sprintf("%s, phi = %g", fam, phi))
+    }
+  }
+})
+
+
+test_that("dweight/dphi differentiates the weight H is actually built from", {
+  skip_on_cran()
+  # The target is NOT uniformly `.FAMILY_OPS$weight`. Where the compiled Newton
+  # weight is already the observed curvature and the registry carries that
+  # curvature as `obs_weight` (neg_binomial_2, beta), that is the weight H is
+  # built from; every other entry differentiates the registry's `weight`. The
+  # truncated pair go the OTHER way: Newton builds H from the expected form
+  # Var(y | y > 0), chosen there because it is positive for every mu while the
+  # observed curvature carries y and can go negative. Same rule -- differentiate
+  # whatever H is built from -- landing on the opposite member of the pair, and
+  # read off the compiled predicate rather than a list kept here.
+  #
+  # Differentiating the expected form for neg_binomial_2 is wrong by a few
+  # percent: enough to move the maximizer, small enough that a recovery test
+  # would still converge and look plausible. Naming the right target per family
+  # is the whole content of this test.
+  h_weight <- function(cs, fam, phi) {
+    if (is.function(cs$ops$obs_weight) &&
+        isTRUE(tulpa:::cpp_family_working_weight_is_observed(fam)))
+      return(cs$ops$obs_weight(cs$eta, cs$y, cs$n_trials, phi))
+    ops_call(cs$ops$weight, cs, cs$eta, cs$n_trials, phi = phi)
+  }
+  for (fam in names(FAMILY_PHI)) {
+    for (phi in FAMILY_PHI[[fam]]) {
+      cs <- dispersion_case(fam, phi)
+      analytic <- rep_len(cs$d$dweight(cs$eta, cs$y, cs$n_trials, phi, cs$phi2),
+                          length(cs$eta))
+      numeric <- fd_dphi(function(p) rep_len(h_weight(cs, fam, p),
+                                             length(cs$eta)), phi)
+      expect_equal(analytic, numeric, tolerance = 1e-5,
+                   info = sprintf("%s, phi = %g", fam, phi))
+    }
+  }
+})
+
+
+test_that("every dispersion family has a registered weight to differentiate", {
+  skip_on_cran()
+  # The dweight entries differentiate .FAMILY_OPS$weight. A family listed here
+  # whose registry entry lacked one would leave dweight describing nothing.
+  for (fam in tulpa:::.dispersion_families()) {
+    ops <- tulpa:::.FAMILY_OPS[[fam]]
+    expect_true(is.function(ops$weight), info = fam)
+    expect_true(is.function(ops$score), info = fam)
+    expect_true(is.function(ops$loglik), info = fam)
+  }
+})
+
+
+test_that("the second-order dispersion derivatives match differences of the first", {
+  skip_on_cran()
+  # Each of L2 / Sc2 / DW2 / DWde is one further derivative of a first-order
+  # .family_dphi form (DW2 = d(dweight)/dphi, DWde = d(dweight)/deta, and so on),
+  # so differencing the analytic first-order chains the check back to the
+  # registry those were themselves finite-differenced against. A wrong second
+  # derivative tilts only the phi Hessian, which shifts interval widths without
+  # moving any point estimate, so nothing else would surface it.
+  for (fam in names(FAMILY_PHI2)) {
+    d  <- tulpa:::.family_dphi(fam)
+    d2 <- tulpa:::.family_dphi2(fam)
+    for (phi in FAMILY_PHI2[[fam]]) {
+      cs <- dispersion_case(fam, phi)
+      eta <- cs$eta; y <- cs$y; nt <- cs$n_trials; p2 <- cs$phi2
+      n <- length(eta)
+      wide <- function(v) rep_len(v, n)
+      expect_equal(d2$dloglik2(eta, y, nt, phi, p2),
+                   fd_dphi(function(p) d$dloglik(eta, y, nt, p, p2), phi),
+                   tolerance = 1e-5, info = sprintf("L2 %s phi=%g", fam, phi))
+      expect_equal(d2$dscore2(eta, y, nt, phi, p2),
+                   fd_dphi(function(p) d$dscore(eta, y, nt, p, p2), phi),
+                   tolerance = 1e-5, info = sprintf("Sc2 %s phi=%g", fam, phi))
+      expect_equal(wide(d2$dweight2(eta, y, nt, phi, p2)),
+                   fd_dphi(function(p) wide(d$dweight(eta, y, nt, p, p2)), phi),
+                   tolerance = 1e-5, info = sprintf("DW2 %s phi=%g", fam, phi))
+      expect_equal(wide(d2$dweight_deta(eta, y, nt, phi, p2)),
+                   fd_deta(function(e) wide(d$dweight(e, y, nt, phi, p2)), eta),
+                   tolerance = 1e-5, info = sprintf("DWde %s phi=%g", fam, phi))
+    }
+  }
+})
+
+
+test_that("a phi Hessian entry carries every derivative its assembly reads", {
+  skip_on_cran()
+  # The border differentiates u and the mode motion on H_true^-1 while the
+  # objective's own terms stay on H^-1, so a family whose working weight is not
+  # the observed curvature owes d(W_obs)/dphi on top of the four. Withholding it
+  # must take the whole entry down rather than leave the assembly pairing two
+  # different inverses.
+  expect_null(tulpa:::.family_dphi2("neg_binomial_1"))
+  expect_null(tulpa:::.family_dphi2("beta"))
+  expect_null(tulpa:::.family_dphi2("poisson"))
+  for (fam in names(FAMILY_PHI2)) {
+    d2 <- tulpa:::.family_dphi2(fam)
+    expect_true(is.list(d2), info = fam)
+    core <- c("dloglik2", "dscore2", "dweight2", "dweight_deta")
+    want <- if (tulpa:::.family_dphi2_needs_obs(fam)) c(core, "dobs_weight")
+            else core
+    expect_true(setequal(names(d2), want), info = fam)
+  }
+  # The predicate agrees with the delta it describes: zero exactly where the
+  # working weight already is the observed curvature.
+  eta <- c(-0.4, 0.2, 0.9)
+  for (fam in names(FAMILY_PHI2)) {
+    fx <- DISPERSION_FIXTURE[[fam]]
+    nt <- rep(if (is.null(fx$nt)) 1L else fx$nt, length(eta))
+    phi <- FAMILY_PHI2[[fam]][2L]
+    y <- dispersion_case(fam, phi, n = length(eta))$y
+    del <- tulpa:::cpp_family_obs_curvature_delta_vec(
+      y, nt, eta, fam, phi, if (is.null(fx$phi2)) NA_real_ else fx$phi2)
+    expect_equal(max(abs(del)) > 1e-12, tulpa:::.family_dphi2_needs_obs(fam),
+                 info = fam)
+  }
+})
 
 
 test_that("the assembled dispersion gradient differentiates the log-marginal", {

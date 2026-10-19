@@ -1,52 +1,3 @@
-# Outer Pareto-k on a collapsed grid: the skew-normal proposal rescue and the
-# grid-regime classifier (gcol33/tulpa#276).
-#
-# The failure this closes: on a sharp hyperparameter posterior the outer grid
-# collapses onto ~1 cell, the grid-mixture rescue cannot help (its few bumps
-# cover worse than the Gaussian), and the k-hat is then scored against a
-# SYMMETRIC Gaussian on a right-skewed variance-component marginal. The k tracks
-# the collapse and the marginal's asymmetry rather than the fit, so a downstream
-# bare-k threshold mis-bins healthy fits as unreliable.
-#
-# The safety property the rescue rests on is structural: a skew-normal has
-# GAUSSIAN tails on both sides, so it can absorb ASYMMETRY but never a heavy
-# TAIL. The tests below assert both directions -- a skewed marginal is repaired,
-# and a heavy-tailed one is evaluated and REJECTED rather than laundered.
-
-# --------------------------------------------------------------------------- #
-# (1) The skew-normal proposal family                                          #
-# --------------------------------------------------------------------------- #
-
-test_that("the skew-normal proposal round-trips the moments it is built from", {
-  skip_on_cran()
-  set.seed(1)
-  for (g in c(-0.8, -0.3, 0, 0.4, 0.9)) {
-    dp <- .sn_prop_from_moments(mu = 0.5, sd = 2, skew = g)
-    expect_false(is.null(dp))
-    x <- .sn_prop_rand(2e5, dp)[, 1]
-    m <- mean(x); s <- stats::sd(x)
-    expect_equal(m, 0.5, tolerance = 0.05)
-    expect_equal(s, 2,   tolerance = 0.05)
-    expect_equal(mean(((x - m) / s)^3), g, tolerance = 0.06)
-  }
-})
-
-test_that("the proposal log-density is a proper density and matches its sampler", {
-  skip_on_cran()
-  dp <- .sn_prop_from_moments(mu = 0.5, sd = 2, skew = 0.7)
-  # Integrates to 1: the density is normalized, not merely proportional.
-  I <- stats::integrate(
-    function(z) exp(.sn_prop_logpdf(matrix(z, ncol = 1), dp)), -Inf, Inf)$value
-  expect_equal(I, 1, tolerance = 1e-6)
-
-  # Sampler and density are consistent: importance sampling a KNOWN target
-  # through this proposal must recover that target's mean.
-  set.seed(2)
-  U  <- .sn_prop_rand(2e5, dp)
-  lw <- stats::dnorm(U[, 1], 1.5, 0.8, log = TRUE) - .sn_prop_logpdf(U, dp)
-  w  <- exp(lw - max(lw)); w <- w / sum(w)
-  expect_equal(sum(w * U[, 1]), 1.5, tolerance = 0.02)
-})
 
 test_that("the multi-axis proposal is an independent product with per-axis skew", {
   set.seed(3)
@@ -100,6 +51,138 @@ test_that("skewness beyond the skew-normal ceiling is clamped, not refused", {
   set.seed(seed); d <- .k_dispatch(spec, n)
   list(gauss = g$pareto_k, k = d$best$pareto_k, src = d$source, skew = d$outer_skew)
 }
+
+test_that(".skew_se is the normal-theory standard error of a sample skewness", {
+  # sqrt(6n(n-1) / ((n-2)(n+1)(n+3))), approaching sqrt(6/n).
+  expect_equal(.skew_se(200), sqrt(6 * 200 * 199 / (198 * 201 * 203)))
+  expect_equal(.skew_se(1e6), sqrt(6 / 1e6), tolerance = 1e-4)
+  expect_identical(.skew_se(3), Inf)            # too few draws to screen
+  expect_identical(.skew_se(NA_real_), Inf)
+})
+
+test_that("weighted moments are read in the proposal's whitened coordinate", {
+  # Draws from N(mu, s^2) whitened by that same proposal must come back with
+  # whitened mean ~0, sd ~1 and skew ~0 at equal weights -- so a reported
+  # skewness is a statement about the TARGET, not about the parameterization.
+  set.seed(7)
+  u_c <- 2.5; L <- matrix(0.4, 1, 1)
+  U <- matrix(stats::rnorm(4e4, u_c, 0.4), ncol = 1)
+  m <- .k_wtd_moments(U, rep(0, nrow(U)), u_c, L)
+  expect_equal(m$mu[1],   0, tolerance = 0.02)
+  expect_equal(m$sd[1],   1, tolerance = 0.02)
+  expect_equal(m$skew[1], 0, tolerance = 0.05)
+  expect_equal(m$n_eff, nrow(U), tolerance = 1e-8)   # equal weights
+})
+
+# --------------------------------------------------------------------------- #
+# (3) The grid-regime classifier                                              #
+# --------------------------------------------------------------------------- #
+
+test_that("the grid regime separates a spread grid from a collapsed one", {
+  gr <- cbind(sigma = c(0.25, 0.5, 1.5, 3, 5))
+  mk <- function(w) list(theta_grid = gr, weights = w)
+
+  expect_identical(.joint_pareto_grid_regime(mk(rep(0.2, 5)))$regime, "spread")
+
+  r <- .joint_pareto_grid_regime(mk(c(0, 0, 1, 0, 0)))
+  expect_identical(r$regime, "collapsed_interior")
+  expect_length(r$edge_axes, 0L)
+  expect_equal(r$ess_grid, 1)
+})
+
+test_that("a collapsed mode against a grid boundary is named with its side", {
+  gr <- cbind(sigma = c(0.25, 0.5, 1.5, 3, 5))
+  mk <- function(w) list(theta_grid = gr, weights = w)
+
+  hi <- .joint_pareto_grid_regime(mk(c(0, 0, 0, 0, 1)))
+  expect_identical(hi$regime, "collapsed_edge")
+  expect_identical(hi$edge_axes, "sigma")
+  expect_identical(hi$edge_sides, "upper")
+
+  lo <- .joint_pareto_grid_regime(mk(c(1, 0, 0, 0, 0)))
+  expect_identical(lo$regime, "collapsed_edge")
+  expect_identical(lo$edge_sides, "lower")
+})
+
+test_that("a pinned axis is not mistaken for a grid boundary", {
+  # A copy `alpha` fixed at 0 (or a one-point dispersion axis) has a single grid
+  # value: it is PINNED, not "against the edge", and must not raise the
+  # widen-the-grid recommendation.
+  gr <- cbind(sigma = c(0.25, 0.5, 1.5), alpha = c(0, 0, 0))
+  r <- .joint_pareto_grid_regime(list(theta_grid = gr, weights = c(0, 1, 0)))
+  expect_identical(r$regime, "collapsed_interior")
+  expect_length(r$edge_axes, 0L)
+})
+
+test_that("the regime declines rather than guessing on an unusable grid", {
+  expect_null(.joint_pareto_grid_regime(list(theta_grid = NULL, weights = 1)))
+  expect_null(.joint_pareto_grid_regime(
+    list(theta_grid = cbind(a = 1:3), weights = c(0, 0, 0))))
+})
+
+test_that("the regime note explains a collapse and is silent on a spread grid", {
+  expect_null(.tulpa_outer_regime_note(
+    list(regime = "spread", edge_axes = character(0), edge_sides = character(0))))
+  n1 <- .tulpa_outer_regime_note(
+    list(regime = "collapsed_interior", edge_axes = character(0),
+         edge_sides = character(0)))
+  expect_match(n1, "not integrated")
+  n2 <- .tulpa_outer_regime_note(
+    list(regime = "collapsed_edge", edge_axes = "sigma", edge_sides = "upper"))
+  expect_match(n2, "sigma \\(upper\\)")
+  expect_match(n2, "widen")
+})
+
+skip_on_cran()
+# Outer Pareto-k on a collapsed grid: the skew-normal proposal rescue and the
+# grid-regime classifier (gcol33/tulpa#276).
+#
+# The failure this closes: on a sharp hyperparameter posterior the outer grid
+# collapses onto ~1 cell, the grid-mixture rescue cannot help (its few bumps
+# cover worse than the Gaussian), and the k-hat is then scored against a
+# SYMMETRIC Gaussian on a right-skewed variance-component marginal. The k tracks
+# the collapse and the marginal's asymmetry rather than the fit, so a downstream
+# bare-k threshold mis-bins healthy fits as unreliable.
+#
+# The safety property the rescue rests on is structural: a skew-normal has
+# GAUSSIAN tails on both sides, so it can absorb ASYMMETRY but never a heavy
+# TAIL. The tests below assert both directions -- a skewed marginal is repaired,
+# and a heavy-tailed one is evaluated and REJECTED rather than laundered.
+
+# --------------------------------------------------------------------------- #
+# (1) The skew-normal proposal family                                          #
+# --------------------------------------------------------------------------- #
+
+test_that("the skew-normal proposal round-trips the moments it is built from", {
+  skip_on_cran()
+  set.seed(1)
+  for (g in c(-0.8, -0.3, 0, 0.4, 0.9)) {
+    dp <- .sn_prop_from_moments(mu = 0.5, sd = 2, skew = g)
+    expect_false(is.null(dp))
+    x <- .sn_prop_rand(2e5, dp)[, 1]
+    m <- mean(x); s <- stats::sd(x)
+    expect_equal(m, 0.5, tolerance = 0.05)
+    expect_equal(s, 2,   tolerance = 0.05)
+    expect_equal(mean(((x - m) / s)^3), g, tolerance = 0.06)
+  }
+})
+
+test_that("the proposal log-density is a proper density and matches its sampler", {
+  skip_on_cran()
+  dp <- .sn_prop_from_moments(mu = 0.5, sd = 2, skew = 0.7)
+  # Integrates to 1: the density is normalized, not merely proportional.
+  I <- stats::integrate(
+    function(z) exp(.sn_prop_logpdf(matrix(z, ncol = 1), dp)), -Inf, Inf)$value
+  expect_equal(I, 1, tolerance = 1e-6)
+
+  # Sampler and density are consistent: importance sampling a KNOWN target
+  # through this proposal must recover that target's mean.
+  set.seed(2)
+  U  <- .sn_prop_rand(2e5, dp)
+  lw <- stats::dnorm(U[, 1], 1.5, 0.8, log = TRUE) - .sn_prop_logpdf(U, dp)
+  w  <- exp(lw - max(lw)); w <- w / sum(w)
+  expect_equal(sum(w * U[, 1]), 1.5, tolerance = 0.02)
+})
 
 test_that("a skewed marginal needs no rescue, at any budget", {
   skip_on_cran()
@@ -181,85 +264,4 @@ test_that("the significance screen keeps a gaussian target off the skew proposal
   }, character(1))
   expect_true(any(!is.na(src)))                 # the pass really ran
   expect_false(any(stats::na.omit(src) == "skew_normal"))
-})
-
-test_that(".skew_se is the normal-theory standard error of a sample skewness", {
-  # sqrt(6n(n-1) / ((n-2)(n+1)(n+3))), approaching sqrt(6/n).
-  expect_equal(.skew_se(200), sqrt(6 * 200 * 199 / (198 * 201 * 203)))
-  expect_equal(.skew_se(1e6), sqrt(6 / 1e6), tolerance = 1e-4)
-  expect_identical(.skew_se(3), Inf)            # too few draws to screen
-  expect_identical(.skew_se(NA_real_), Inf)
-})
-
-test_that("weighted moments are read in the proposal's whitened coordinate", {
-  # Draws from N(mu, s^2) whitened by that same proposal must come back with
-  # whitened mean ~0, sd ~1 and skew ~0 at equal weights -- so a reported
-  # skewness is a statement about the TARGET, not about the parameterization.
-  set.seed(7)
-  u_c <- 2.5; L <- matrix(0.4, 1, 1)
-  U <- matrix(stats::rnorm(4e4, u_c, 0.4), ncol = 1)
-  m <- .k_wtd_moments(U, rep(0, nrow(U)), u_c, L)
-  expect_equal(m$mu[1],   0, tolerance = 0.02)
-  expect_equal(m$sd[1],   1, tolerance = 0.02)
-  expect_equal(m$skew[1], 0, tolerance = 0.05)
-  expect_equal(m$n_eff, nrow(U), tolerance = 1e-8)   # equal weights
-})
-
-# --------------------------------------------------------------------------- #
-# (3) The grid-regime classifier                                              #
-# --------------------------------------------------------------------------- #
-
-test_that("the grid regime separates a spread grid from a collapsed one", {
-  gr <- cbind(sigma = c(0.25, 0.5, 1.5, 3, 5))
-  mk <- function(w) list(theta_grid = gr, weights = w)
-
-  expect_identical(.joint_pareto_grid_regime(mk(rep(0.2, 5)))$regime, "spread")
-
-  r <- .joint_pareto_grid_regime(mk(c(0, 0, 1, 0, 0)))
-  expect_identical(r$regime, "collapsed_interior")
-  expect_length(r$edge_axes, 0L)
-  expect_equal(r$ess_grid, 1)
-})
-
-test_that("a collapsed mode against a grid boundary is named with its side", {
-  gr <- cbind(sigma = c(0.25, 0.5, 1.5, 3, 5))
-  mk <- function(w) list(theta_grid = gr, weights = w)
-
-  hi <- .joint_pareto_grid_regime(mk(c(0, 0, 0, 0, 1)))
-  expect_identical(hi$regime, "collapsed_edge")
-  expect_identical(hi$edge_axes, "sigma")
-  expect_identical(hi$edge_sides, "upper")
-
-  lo <- .joint_pareto_grid_regime(mk(c(1, 0, 0, 0, 0)))
-  expect_identical(lo$regime, "collapsed_edge")
-  expect_identical(lo$edge_sides, "lower")
-})
-
-test_that("a pinned axis is not mistaken for a grid boundary", {
-  # A copy `alpha` fixed at 0 (or a one-point dispersion axis) has a single grid
-  # value: it is PINNED, not "against the edge", and must not raise the
-  # widen-the-grid recommendation.
-  gr <- cbind(sigma = c(0.25, 0.5, 1.5), alpha = c(0, 0, 0))
-  r <- .joint_pareto_grid_regime(list(theta_grid = gr, weights = c(0, 1, 0)))
-  expect_identical(r$regime, "collapsed_interior")
-  expect_length(r$edge_axes, 0L)
-})
-
-test_that("the regime declines rather than guessing on an unusable grid", {
-  expect_null(.joint_pareto_grid_regime(list(theta_grid = NULL, weights = 1)))
-  expect_null(.joint_pareto_grid_regime(
-    list(theta_grid = cbind(a = 1:3), weights = c(0, 0, 0))))
-})
-
-test_that("the regime note explains a collapse and is silent on a spread grid", {
-  expect_null(.tulpa_outer_regime_note(
-    list(regime = "spread", edge_axes = character(0), edge_sides = character(0))))
-  n1 <- .tulpa_outer_regime_note(
-    list(regime = "collapsed_interior", edge_axes = character(0),
-         edge_sides = character(0)))
-  expect_match(n1, "not integrated")
-  n2 <- .tulpa_outer_regime_note(
-    list(regime = "collapsed_edge", edge_axes = "sigma", edge_sides = "upper"))
-  expect_match(n2, "sigma \\(upper\\)")
-  expect_match(n2, "widen")
 })

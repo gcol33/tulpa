@@ -16,28 +16,6 @@ grad_num <- function(f, w, h = 1e-6) {
   }, numeric(1))
 }
 
-test_that("the sigma2 wrappers equal the canonical tau kernels", {
-  skip_on_cran()
-  # The export converts with the exact tau = 1 / sigma2, so the two sides are
-  # two parameterizations of one kernel rather than a wrapper compared against
-  # its own internal arithmetic. A conversion that reproduced whatever the
-  # wrapper does internally would make this pass for any wrapper.
-  set.seed(21)
-  for (n in c(3L, 5L, 12L)) {
-    for (sigma2 in c(0.25, 1.0, 4.0)) {
-      for (rho in c(-0.6, 0.0, 0.85)) {
-        w <- rnorm(n)
-        g <- cpp_test_temporal_grad_equiv(w, sigma2, rho)
-        info <- paste("n:", n, "sigma2:", sigma2, "rho:", rho)
-        expect_equal(g$rw1_sig, g$rw1_tau, tolerance = 1e-11, info = info)
-        expect_equal(g$rw2_sig, g$rw2_tau, tolerance = 1e-11, info = info)
-        expect_equal(g$ar1_sig, g$ar1_tau, tolerance = 1e-11, info = info)
-        expect_equal(g$rho_sig, g$rho_tau, tolerance = 1e-11, info = info)
-      }
-    }
-  }
-})
-
 test_that("the temporal gradients match numerical derivatives of their priors", {
   set.seed(22)
   n <- 8L; sigma2 <- 1.7; rho <- 0.6
@@ -102,46 +80,6 @@ test_that("the AR1 rho gradient stays finite at the stationarity boundary", {
   ar1  = list(val = "ar1_val",  gphi = "ar1_sig",  gls2 = "ar1_dls2"),
   iid  = list(val = "iid_val",  gphi = "iid_sig",  gls2 = "iid_dls2")
 )
-
-# `augment` is run in BOTH states (gcol33/tulpa#588). The production
-# log-posterior, multiscale_temporal_log_lik, evaluates every intrinsic arm
-# sum-to-zero augmented, so augment = TRUE is the pairing that has to hold for
-# the analytic kernels to be wirable at all; the flag drives the value and the
-# gradient together here, and a gradient that dropped the augmentation's
-# constant, or normalized at the unaugmented rank, fails on that arm alone.
-test_that("each multiscale value function is differentiated by its own gradient", {
-  skip_on_cran()
-  set.seed(23)
-  rho <- 0.6
-  val <- function(field, w, sigma2, aug) {
-    cpp_test_temporal_grad_equiv(w, sigma2, rho, aug)[[field]]
-  }
-  for (aug in c(FALSE, TRUE)) {
-  for (n in c(5L, 12L)) {
-    w <- rnorm(n)
-    for (sigma2 in c(1e-6, 1e-2, 1.0, 4.0)) {
-      g <- cpp_test_temporal_grad_equiv(w, sigma2, rho, aug)
-      for (nm in names(.tg_arms)) {
-        a <- .tg_arms[[nm]]
-        info <- paste(nm, "n:", n, "sigma2:", sigma2, "augment:", aug)
-
-        h <- 1e-5
-        fd_ls2 <- (val(a$val, w, sigma2 * exp(h), aug) -
-                     val(a$val, w, sigma2 * exp(-h), aug)) / (2 * h)
-        expect_equal(g[[a$gls2]], fd_ls2, tolerance = 1e-6, info = info)
-
-        fd_phi <- vapply(seq_len(n), function(i) {
-          hw <- 1e-6 * max(1, abs(w[i]))
-          wp <- w; wm <- w
-          wp[i] <- wp[i] + hw; wm[i] <- wm[i] - hw
-          (val(a$val, wp, sigma2, aug) - val(a$val, wm, sigma2, aug)) / (2 * hw)
-        }, numeric(1))
-        expect_equal(g[[a$gphi]], fd_phi, tolerance = 1e-5, info = info)
-      }
-    }
-  }
-  }
-})
 
 test_that("augmenting moves the intrinsic arms and leaves the stationary ones", {
   # The guard on the loop above: if `augment` were inert the paired check would
@@ -225,5 +163,69 @@ test_that("the stationary-factor slope is the exact derivative on both sides", {
   # Past the floor the value is constant, so the slope is exactly zero.
   for (rho in c(sqrt(1 - 1e-11), -sqrt(1 - 1e-11), 1, -1)) {
     expect_identical(cpp_test_ar1_omr2_slope(rho), 0)
+  }
+})
+
+skip_on_cran()
+
+test_that("the sigma2 wrappers equal the canonical tau kernels", {
+  skip_on_cran()
+  # The export converts with the exact tau = 1 / sigma2, so the two sides are
+  # two parameterizations of one kernel rather than a wrapper compared against
+  # its own internal arithmetic. A conversion that reproduced whatever the
+  # wrapper does internally would make this pass for any wrapper.
+  set.seed(21)
+  for (n in c(3L, 5L, 12L)) {
+    for (sigma2 in c(0.25, 1.0, 4.0)) {
+      for (rho in c(-0.6, 0.0, 0.85)) {
+        w <- rnorm(n)
+        g <- cpp_test_temporal_grad_equiv(w, sigma2, rho)
+        info <- paste("n:", n, "sigma2:", sigma2, "rho:", rho)
+        expect_equal(g$rw1_sig, g$rw1_tau, tolerance = 1e-11, info = info)
+        expect_equal(g$rw2_sig, g$rw2_tau, tolerance = 1e-11, info = info)
+        expect_equal(g$ar1_sig, g$ar1_tau, tolerance = 1e-11, info = info)
+        expect_equal(g$rho_sig, g$rho_tau, tolerance = 1e-11, info = info)
+      }
+    }
+  }
+})
+
+# `augment` is run in BOTH states (gcol33/tulpa#588). The production
+# log-posterior, multiscale_temporal_log_lik, evaluates every intrinsic arm
+# sum-to-zero augmented, so augment = TRUE is the pairing that has to hold for
+# the analytic kernels to be wirable at all; the flag drives the value and the
+# gradient together here, and a gradient that dropped the augmentation's
+# constant, or normalized at the unaugmented rank, fails on that arm alone.
+test_that("each multiscale value function is differentiated by its own gradient", {
+  skip_on_cran()
+  set.seed(23)
+  rho <- 0.6
+  val <- function(field, w, sigma2, aug) {
+    cpp_test_temporal_grad_equiv(w, sigma2, rho, aug)[[field]]
+  }
+  for (aug in c(FALSE, TRUE)) {
+  for (n in c(5L, 12L)) {
+    w <- rnorm(n)
+    for (sigma2 in c(1e-6, 1e-2, 1.0, 4.0)) {
+      g <- cpp_test_temporal_grad_equiv(w, sigma2, rho, aug)
+      for (nm in names(.tg_arms)) {
+        a <- .tg_arms[[nm]]
+        info <- paste(nm, "n:", n, "sigma2:", sigma2, "augment:", aug)
+
+        h <- 1e-5
+        fd_ls2 <- (val(a$val, w, sigma2 * exp(h), aug) -
+                     val(a$val, w, sigma2 * exp(-h), aug)) / (2 * h)
+        expect_equal(g[[a$gls2]], fd_ls2, tolerance = 1e-6, info = info)
+
+        fd_phi <- vapply(seq_len(n), function(i) {
+          hw <- 1e-6 * max(1, abs(w[i]))
+          wp <- w; wm <- w
+          wp[i] <- wp[i] + hw; wm[i] <- wm[i] - hw
+          (val(a$val, wp, sigma2, aug) - val(a$val, wm, sigma2, aug)) / (2 * hw)
+        }, numeric(1))
+        expect_equal(g[[a$gphi]], fd_phi, tolerance = 1e-5, info = info)
+      }
+    }
+  }
   }
 })

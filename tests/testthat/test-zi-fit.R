@@ -33,6 +33,49 @@ test_that("ziformula reaches the kernel and is labelled in the fit", {
 })
 
 
+test_that("ignoring zero inflation biases the count intercept downward", {
+  # The check that a silently-dropped mixture cannot pass: fitting the same
+  # data without ziformula must show the structural zeros pulling the count
+  # intercept below the truth, while the ZI fit stays on it.
+  d <- sim_zip(4000, c(1.2, 0.5), c(0.2, 0.0), seed = 7)
+  plain <- coef(tulpa(y ~ x, data = d, family = "poisson", mode = "laplace"))
+  zi    <- coef(tulpa(y ~ x, data = d, family = "poisson", ziformula = ~ 1,
+                      mode = "laplace"))
+
+  expect_lt(plain[["(Intercept)"]], 1.2 - 0.2)
+  expect_equal(unname(zi[["(Intercept)"]]), 1.2, tolerance = 0.06)
+})
+
+
+test_that("the front door refuses zero inflation it cannot fit", {
+  d <- data.frame(y = c(0, 1, 2, 3), x = c(1, 2, 3, 4), z = c(1, 0, 1, 0))
+  # Continuous family: no atom at zero.
+  expect_error(tulpa(y ~ x, data = d, family = "gaussian", ziformula = ~ 1),
+               "no probability atom at zero")
+  # Continuous family carrying a dispersion, so the refusal is about the atom
+  # and not about a missing curvature.
+  expect_error(tulpa(y ~ x, data = d, family = "gamma", ziformula = ~ 1),
+               "no probability atom at zero")
+  # The compiled-kernel guard sits behind that one and is reached only by a
+  # family the atom check admits. Every count family now carries an observed
+  # curvature, so it is exercised directly rather than through the front door.
+  expect_error(tulpa:::.validate_family_zi_compiled("beta"),
+               "no compiled kernel")
+  for (f in tulpa:::.ZI_FAMILIES)
+    expect_true(tulpa:::.validate_family_zi_compiled(f), info = f)
+  # Random effects in the zi predictor are not carried.
+  expect_error(tulpa(y ~ x, data = d, family = "poisson",
+                     ziformula = ~ (1 | z)),
+               "fixed effects only")
+  # A backend that would ignore the mixture entirely.
+  expect_error(tulpa(y ~ x, data = d, family = "poisson", ziformula = ~ 1,
+                     mode = "gibbs"),
+               "not carried by backend")
+})
+
+skip_on_cran()
+
+
 test_that("a zero-inflated Poisson recovers its generating parameters", {
   skip_on_cran()
   beta <- c(1.2, 0.5); gamma <- c(-0.4, 0.8)
@@ -46,20 +89,6 @@ test_that("a zero-inflated Poisson recovers its generating parameters", {
   for (j in 1:4) {
     expect_equal(mean(est[, j]), truth[j], tolerance = 0.06)
   }
-})
-
-
-test_that("ignoring zero inflation biases the count intercept downward", {
-  # The check that a silently-dropped mixture cannot pass: fitting the same
-  # data without ziformula must show the structural zeros pulling the count
-  # intercept below the truth, while the ZI fit stays on it.
-  d <- sim_zip(4000, c(1.2, 0.5), c(0.2, 0.0), seed = 7)
-  plain <- coef(tulpa(y ~ x, data = d, family = "poisson", mode = "laplace"))
-  zi    <- coef(tulpa(y ~ x, data = d, family = "poisson", ziformula = ~ 1,
-                      mode = "laplace"))
-
-  expect_lt(plain[["(Intercept)"]], 1.2 - 0.2)
-  expect_equal(unname(zi[["(Intercept)"]]), 1.2, tolerance = 0.06)
 })
 
 
@@ -139,31 +168,4 @@ test_that("the sampler path carries zero inflation through logit_zi", {
   plain <- coef(tulpa(y ~ x, data = d, family = "poisson", mode = "laplace"))
   expect_gt(abs(unname(cs[["(Intercept)"]]) - unname(plain[["(Intercept)"]])),
             0.1)
-})
-
-
-test_that("the front door refuses zero inflation it cannot fit", {
-  d <- data.frame(y = c(0, 1, 2, 3), x = c(1, 2, 3, 4), z = c(1, 0, 1, 0))
-  # Continuous family: no atom at zero.
-  expect_error(tulpa(y ~ x, data = d, family = "gaussian", ziformula = ~ 1),
-               "no probability atom at zero")
-  # Continuous family carrying a dispersion, so the refusal is about the atom
-  # and not about a missing curvature.
-  expect_error(tulpa(y ~ x, data = d, family = "gamma", ziformula = ~ 1),
-               "no probability atom at zero")
-  # The compiled-kernel guard sits behind that one and is reached only by a
-  # family the atom check admits. Every count family now carries an observed
-  # curvature, so it is exercised directly rather than through the front door.
-  expect_error(tulpa:::.validate_family_zi_compiled("beta"),
-               "no compiled kernel")
-  for (f in tulpa:::.ZI_FAMILIES)
-    expect_true(tulpa:::.validate_family_zi_compiled(f), info = f)
-  # Random effects in the zi predictor are not carried.
-  expect_error(tulpa(y ~ x, data = d, family = "poisson",
-                     ziformula = ~ (1 | z)),
-               "fixed effects only")
-  # A backend that would ignore the mixture entirely.
-  expect_error(tulpa(y ~ x, data = d, family = "poisson", ziformula = ~ 1,
-                     mode = "gibbs"),
-               "not carried by backend")
 })

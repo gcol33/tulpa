@@ -53,6 +53,33 @@
          sigma_grid = sigma_grid, rho_grid = rho_grid)
 }
 
+test_that("every recorded decline reason is one of the named ones", {
+    expect_true(all(c("axis_count", "unguessable_axis", "degenerate_axis",
+                      "modefind_ridge", "modefind_boundary",
+                      "modefind_degenerate", "modefind_failed",
+                      "hessian_singular", "hessian_not_pd",
+                      "copy_atom_components", "copy_atom_mass") %in%
+                    tulpa:::.CCD_DECLINE_REASONS))
+})
+
+test_that("the CCD designs a copy scale on its declared log coordinate", {
+    expect_identical(
+        tulpa:::.joint_ccd_coord_tags(c("b1.sigma", "b1.alpha", "phi_pos"),
+                                      c("log", "identity", "log")),
+        c("log", "log", "log"))
+    # Only a copy scale whose levels carry the "no coupling" node splits the
+    # design; one bracketing the continuum alone stays a single component.
+    expect_identical(
+        tulpa:::.joint_ccd_atom_axes(c("b1.sigma", "b1.alpha", "b2.alpha"),
+                                     list(c(0.5, 1), c(0, 0.5), c(0.5, 1))),
+        2L)
+    expect_identical(
+        tulpa:::.joint_ccd_atom_axes(c("sigma", "rho"), list(c(0.5, 1), c(0, 1))),
+        integer(0))
+})
+
+skip_on_cran()
+
 test_that("CCD engages for a 3-axis BYM2 copy block and counts nodes", {
     skip_on_cran()
     sim <- .sim_joint_ccd(2024L, N = 800L, n_s = 40L)
@@ -345,31 +372,6 @@ test_that("a CCD below its axis threshold records the axis count", {
     expect_identical(fit$integration_requested, "ccd")
     expect_false(identical(fit$integration, "ccd"))
     expect_identical(fit$integration_declined, "axis_count")
-})
-
-test_that("every recorded decline reason is one of the named ones", {
-    expect_true(all(c("axis_count", "unguessable_axis", "degenerate_axis",
-                      "modefind_ridge", "modefind_boundary",
-                      "modefind_degenerate", "modefind_failed",
-                      "hessian_singular", "hessian_not_pd",
-                      "copy_atom_components", "copy_atom_mass") %in%
-                    tulpa:::.CCD_DECLINE_REASONS))
-})
-
-test_that("the CCD designs a copy scale on its declared log coordinate", {
-    expect_identical(
-        tulpa:::.joint_ccd_coord_tags(c("b1.sigma", "b1.alpha", "phi_pos"),
-                                      c("log", "identity", "log")),
-        c("log", "log", "log"))
-    # Only a copy scale whose levels carry the "no coupling" node splits the
-    # design; one bracketing the continuum alone stays a single component.
-    expect_identical(
-        tulpa:::.joint_ccd_atom_axes(c("b1.sigma", "b1.alpha", "b2.alpha"),
-                                     list(c(0.5, 1), c(0, 0.5), c(0.5, 1))),
-        2L)
-    expect_identical(
-        tulpa:::.joint_ccd_atom_axes(c("sigma", "rho"), list(c(0.5, 1), c(0, 1))),
-        integer(0))
 })
 
 test_that("a copy atom splits the CCD into one design per coupling configuration", {

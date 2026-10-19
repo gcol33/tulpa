@@ -77,6 +77,8 @@ test_that("the identity holds over several independent groups", {
   expect_equal(p$nc$log_post - p$centered$log_post, shift, tolerance = 1e-10)
 })
 
+skip_on_cran()
+
 
 test_that("the lengthscale starts below the data's own spread, on both doors", {
   skip_on_cran()

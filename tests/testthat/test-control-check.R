@@ -1,19 +1,3 @@
-# Typo protection on the control surface: every front door validates its
-# `control` names against the canonical whitelist (.CONTROL_KEYS), and
-# tulpa()'s reserved `...` errors instead of swallowing misspelled arguments.
-
-test_that("tulpa() errors on stray ... arguments instead of ignoring them", {
-  skip_on_cran()
-  d <- data.frame(y = rpois(40, 3), x = rnorm(40))
-  expect_error(
-    tulpa(y ~ x, data = d, familly = "poisson"),
-    "unknown argument.*familly"
-  )
-  expect_error(
-    tulpa(y ~ x, data = d, family = "poisson", n_iter = 500L),
-    "control = list()"
-  )
-})
 
 test_that("front doors reject misspelled control knobs", {
   d <- data.frame(y = rpois(40, 3), x = rnorm(40))
@@ -56,29 +40,6 @@ test_that("valid control knobs still pass validation", {
   expect_s3_class(fit, "tulpa_fit")
 })
 
-# mode = "laplace" built its tulpa_laplace() argument list with no `control`
-# field, so the numerical knobs passed tulpa()'s union check and were dropped,
-# and every knob another backend reads was accepted in silence
-# (gcol33/tulpa#870).
-test_that("mode = 'laplace' forwards max_iter / tol / n_threads to tulpa_laplace()", {
-  skip_on_cran()
-  set.seed(1)
-  d <- data.frame(x = rnorm(30))
-  d$y <- rpois(30, exp(1 + d$x))
-  f1 <- tulpa(y ~ x, d, family = "poisson", mode = "laplace",
-              control = list(max_iter = 1L))
-  # The front door applies its default fixed-effect prior; the reference
-  # solve takes the same one so the comparison is of max_iter alone.
-  ref <- tulpa_laplace(d$y, NULL, cbind(1, d$x), family = "poisson",
-                       max_iter = 1L, beta_prior = f1$beta_prior)
-  expect_false(isTRUE(as.logical(f1$converged)))
-  expect_equal(unname(coef(f1)), unname(ref$mode[1:2]), tolerance = 1e-8)
-
-  f_def <- tulpa(y ~ x, d, family = "poisson", mode = "laplace")
-  expect_true(isTRUE(as.logical(f_def$converged)))
-  expect_false(isTRUE(all.equal(unname(coef(f1)), unname(coef(f_def)))))
-})
-
 test_that("mode = 'laplace' refuses control knobs tulpa_laplace() does not read", {
   set.seed(1)
   d <- data.frame(x = rnorm(30))
@@ -113,6 +74,47 @@ test_that("mode = 'auto' drops n_threads when it resolves to a sampler", {
     tulpa:::.auto_drop_unread_threads(
       ctl, list(backend = "nested_laplace", explicit = FALSE)),
     ctl)
+})
+
+skip_on_cran()
+# Typo protection on the control surface: every front door validates its
+# `control` names against the canonical whitelist (.CONTROL_KEYS), and
+# tulpa()'s reserved `...` errors instead of swallowing misspelled arguments.
+
+test_that("tulpa() errors on stray ... arguments instead of ignoring them", {
+  skip_on_cran()
+  d <- data.frame(y = rpois(40, 3), x = rnorm(40))
+  expect_error(
+    tulpa(y ~ x, data = d, familly = "poisson"),
+    "unknown argument.*familly"
+  )
+  expect_error(
+    tulpa(y ~ x, data = d, family = "poisson", n_iter = 500L),
+    "control = list()"
+  )
+})
+
+# mode = "laplace" built its tulpa_laplace() argument list with no `control`
+# field, so the numerical knobs passed tulpa()'s union check and were dropped,
+# and every knob another backend reads was accepted in silence
+# (gcol33/tulpa#870).
+test_that("mode = 'laplace' forwards max_iter / tol / n_threads to tulpa_laplace()", {
+  skip_on_cran()
+  set.seed(1)
+  d <- data.frame(x = rnorm(30))
+  d$y <- rpois(30, exp(1 + d$x))
+  f1 <- tulpa(y ~ x, d, family = "poisson", mode = "laplace",
+              control = list(max_iter = 1L))
+  # The front door applies its default fixed-effect prior; the reference
+  # solve takes the same one so the comparison is of max_iter alone.
+  ref <- tulpa_laplace(d$y, NULL, cbind(1, d$x), family = "poisson",
+                       max_iter = 1L, beta_prior = f1$beta_prior)
+  expect_false(isTRUE(as.logical(f1$converged)))
+  expect_equal(unname(coef(f1)), unname(ref$mode[1:2]), tolerance = 1e-8)
+
+  f_def <- tulpa(y ~ x, d, family = "poisson", mode = "laplace")
+  expect_true(isTRUE(as.logical(f_def$converged)))
+  expect_false(isTRUE(all.equal(unname(coef(f1)), unname(coef(f_def)))))
 })
 
 test_that("auto + n_threads fits a sampler-only field; hmc + n_threads refuses", {

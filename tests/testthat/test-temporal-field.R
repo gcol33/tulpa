@@ -64,6 +64,8 @@ test_that("the bare temporal(col) naming path still parses (accessor unaffected)
   expect_identical(deparse(p$fixed_formula), "y ~ x")
 })
 
+skip_on_cran()
+
 # --------------------------------------------------------------------------- #
 # (3) Parameter recovery: temporal level + temporally varying slope            #
 # --------------------------------------------------------------------------- #

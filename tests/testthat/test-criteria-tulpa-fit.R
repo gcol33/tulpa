@@ -42,6 +42,8 @@ test_that("a stored log_lik is read directly; DIC then reports dbar only", {
   expect_true(is.na(d$dic))
 })
 
+skip_on_cran()
+
 test_that("iid fit: cpo / dic shapes, waic / loo equal loo on the matrix", {
   skip_on_cran()
   d <- criteria_fit_data()

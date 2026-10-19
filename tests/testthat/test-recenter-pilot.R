@@ -1,35 +1,3 @@
-# The outer-grid placement pilot (gcol33/tulpa#636).
-#
-# Placement reads an argmax cell and an FD curvature stencil off `log_marginal`,
-# and reads neither off the integration the detecting pass paid for -- so a
-# placement that fires discards every inner Newton solve of the grid it detected
-# on. `control$recenter_pilot` detects on a THINNED grid over the same spans and
-# solves the full grid once, at the placed axes.
-#
-# Three properties carry the feature, and each is asserted below rather than
-# argued for:
-#   1. a thinned axis is a coarser read of the SAME span -- both endpoints kept,
-#      which is what makes the rail test transport;
-#   2. a path that stores its axes PRE-PAIRED is never thinned per axis, since
-#      that would re-pair the grid rather than thin it;
-#   3. a fit whose placement declines is BIT-IDENTICAL to the same fit with the
-#      knob off -- the pilot is a pre-screen, so it can only add a placement.
-
-# --- 1. the axis thinner -----------------------------------------------------
-
-test_that("a thinned axis keeps both endpoints and is a subset of its input", {
-    skip_on_cran()
-    ax <- exp(seq(log(0.1), log(3), length.out = 9))
-    for (n in 2:8) {
-        th <- .nl_pilot_axis(ax, n)
-        expect_true(length(th) <= n)
-        expect_true(length(th) >= 2L)
-        expect_equal(th[1L], ax[1L])
-        expect_equal(th[length(th)], ax[length(ax)])
-        expect_true(all(th %in% ax))
-        expect_false(is.unsorted(th))
-    }
-})
 
 test_that("an axis already at or below the pilot resolution is left alone", {
     expect_null(.nl_pilot_axis(c(1, 2, 3), 3))
@@ -189,6 +157,53 @@ test_that("a pilot with nothing left to thin is not a pilot", {
            n_neighbors = sim$adj$n_neighbors), list(...))
 }
 
+test_that("the grid ESS helper is the one statistic behind every read of it", {
+    w <- c(0.25, 0.25, 0.25, 0.25)
+    expect_equal(.nl_grid_ess(w), 4)
+    expect_equal(.nl_grid_ess(c(1, 0, 0, 0)), 1)
+    # Unnormalised input is the same read, and a cell the grid gave no mass is
+    # not a cell the integration averaged over.
+    expect_equal(.nl_grid_ess(c(2, 2, 2, 2)), 4)
+    expect_equal(.nl_grid_ess(c(1, 1, NA, -1, 0)), 2)
+    expect_true(is.na(.nl_grid_ess(numeric(0))))
+    expect_true(is.na(.nl_grid_ess(c(0, 0))))
+    expect_true(is.na(.nl_grid_ess(NULL)))
+})
+
+skip_on_cran()
+# The outer-grid placement pilot (gcol33/tulpa#636).
+#
+# Placement reads an argmax cell and an FD curvature stencil off `log_marginal`,
+# and reads neither off the integration the detecting pass paid for -- so a
+# placement that fires discards every inner Newton solve of the grid it detected
+# on. `control$recenter_pilot` detects on a THINNED grid over the same spans and
+# solves the full grid once, at the placed axes.
+#
+# Three properties carry the feature, and each is asserted below rather than
+# argued for:
+#   1. a thinned axis is a coarser read of the SAME span -- both endpoints kept,
+#      which is what makes the rail test transport;
+#   2. a path that stores its axes PRE-PAIRED is never thinned per axis, since
+#      that would re-pair the grid rather than thin it;
+#   3. a fit whose placement declines is BIT-IDENTICAL to the same fit with the
+#      knob off -- the pilot is a pre-screen, so it can only add a placement.
+
+# --- 1. the axis thinner -----------------------------------------------------
+
+test_that("a thinned axis keeps both endpoints and is a subset of its input", {
+    skip_on_cran()
+    ax <- exp(seq(log(0.1), log(3), length.out = 9))
+    for (n in 2:8) {
+        th <- .nl_pilot_axis(ax, n)
+        expect_true(length(th) <= n)
+        expect_true(length(th) >= 2L)
+        expect_equal(th[1L], ax[1L])
+        expect_equal(th[length(th)], ax[length(ax)])
+        expect_true(all(th %in% ax))
+        expect_false(is.unsorted(th))
+    }
+})
+
 test_that("a fit whose placement declines is bit-identical with the pilot on", {
     skip_on_cran()
     sim <- .pilot_sim()
@@ -331,17 +346,4 @@ test_that("a recentred axis's h/sd is 1.25 * sd_used / sd_realized, not 1.25", {
         expect_gt(sd_used, unname(fit$outer_grid_recenter_sd_raw[["sigma"]]))
         expect_gt(hs, spacing_sd)
     }
-})
-
-test_that("the grid ESS helper is the one statistic behind every read of it", {
-    w <- c(0.25, 0.25, 0.25, 0.25)
-    expect_equal(.nl_grid_ess(w), 4)
-    expect_equal(.nl_grid_ess(c(1, 0, 0, 0)), 1)
-    # Unnormalised input is the same read, and a cell the grid gave no mass is
-    # not a cell the integration averaged over.
-    expect_equal(.nl_grid_ess(c(2, 2, 2, 2)), 4)
-    expect_equal(.nl_grid_ess(c(1, 1, NA, -1, 0)), 2)
-    expect_true(is.na(.nl_grid_ess(numeric(0))))
-    expect_true(is.na(.nl_grid_ess(c(0, 0))))
-    expect_true(is.na(.nl_grid_ess(NULL)))
 })

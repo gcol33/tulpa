@@ -27,17 +27,6 @@ test_that("RAM queries return sane byte counts", {
   }
 })
 
-test_that("RAM queries resolve on this platform", {
-  skip_on_cran()
-  # Windows / Linux / macOS all implement both queries; a 0 here means the
-  # platform query failed, which we want to catch in development rather than
-  # silently fall back to the fixed 2 GB cap.
-  total <- tulpa:::cpp_total_ram_bytes()
-  avail <- tulpa:::cpp_available_ram_bytes()
-  expect_gt(total, 1024^3)  # > 1 GB installed
-  expect_gt(avail, 0)
-})
-
 test_that("outer-thread budget is sized against available RAM, not total", {
   gb <- 1024^3
 
@@ -79,27 +68,6 @@ test_that("the factor size is measured from a real symbolic analysis", {
   expect_gt(fs$factor_bytes, 0)
 })
 
-test_that("measured factor captures 2D fill-in the flat 2x-nnz guess misses", {
-  skip_on_cran()
-  # 2D-mesh Cholesky fill-in is superlinear, so on a reasonably fine lattice the
-  # measured factor exceeds the old flat 2x-nnz(Q) guess -- exactly the
-  # under-count that let the clamp over-provision threads. Assert both that the
-  # measurement beats the guess and that the gap WIDENS with resolution.
-  coarse <- tulpa:::cpp_test_grid_factor_bytes(24L)
-  fine   <- tulpa:::cpp_test_grid_factor_bytes(64L)
-
-  # Factor grows with the mesh; measurement stays positive.
-  expect_gt(fine$factor_bytes, coarse$factor_bytes)
-
-  # On the fine mesh the true factor is larger than the flat guess assumed.
-  expect_gt(fine$factor_bytes, fine$old_guess)
-
-  # The under-count worsens as the field gets finer: factor/guess ratio grows.
-  ratio_coarse <- coarse$factor_bytes / coarse$old_guess
-  ratio_fine   <- fine$factor_bytes   / fine$old_guess
-  expect_gt(ratio_fine, ratio_coarse)
-})
-
 test_that("outer-thread cap fits the budget, floors at one, and is monotone", {
   gb <- 1024^3
   budget <- 24 * gb
@@ -119,4 +87,38 @@ test_that("outer-thread cap fits the budget, floors at one, and is monotone", {
 
   # Degenerate per-thread footprint of 0 -> 1 (never divide by zero).
   expect_equal(tulpa:::cpp_test_outer_thread_cap(budget, 0), 1L)
+})
+
+skip_on_cran()
+
+test_that("RAM queries resolve on this platform", {
+  skip_on_cran()
+  # Windows / Linux / macOS all implement both queries; a 0 here means the
+  # platform query failed, which we want to catch in development rather than
+  # silently fall back to the fixed 2 GB cap.
+  total <- tulpa:::cpp_total_ram_bytes()
+  avail <- tulpa:::cpp_available_ram_bytes()
+  expect_gt(total, 1024^3)  # > 1 GB installed
+  expect_gt(avail, 0)
+})
+
+test_that("measured factor captures 2D fill-in the flat 2x-nnz guess misses", {
+  skip_on_cran()
+  # 2D-mesh Cholesky fill-in is superlinear, so on a reasonably fine lattice the
+  # measured factor exceeds the old flat 2x-nnz(Q) guess -- exactly the
+  # under-count that let the clamp over-provision threads. Assert both that the
+  # measurement beats the guess and that the gap WIDENS with resolution.
+  coarse <- tulpa:::cpp_test_grid_factor_bytes(24L)
+  fine   <- tulpa:::cpp_test_grid_factor_bytes(64L)
+
+  # Factor grows with the mesh; measurement stays positive.
+  expect_gt(fine$factor_bytes, coarse$factor_bytes)
+
+  # On the fine mesh the true factor is larger than the flat guess assumed.
+  expect_gt(fine$factor_bytes, fine$old_guess)
+
+  # The under-count worsens as the field gets finer: factor/guess ratio grows.
+  ratio_coarse <- coarse$factor_bytes / coarse$old_guess
+  ratio_fine   <- fine$factor_bytes   / fine$old_guess
+  expect_gt(ratio_fine, ratio_coarse)
 })

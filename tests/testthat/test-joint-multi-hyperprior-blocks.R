@@ -403,6 +403,8 @@ hpb_two_copy_fixture <- function(seed = 1L) {
                      list(arm = "pos", block = 2L, alpha_grid = c(0.4, 0.8))))
 }
 
+skip_on_cran()
+
 test_that("one prior_alpha reaches both copy blocks of a fitted grid", {
     skip_on_cran()
     fx <- hpb_two_copy_fixture()

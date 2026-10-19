@@ -1,22 +1,3 @@
-# Regression tests for the 0.0.91 audit-fix batch (#228-239).
-
-# --- #231: SPDE Matern (range, sigma) <-> (kappa, tau) is nu-general ---------
-
-test_that("spde kappa/tau <-> range/sigma round-trips for every nu", {
-  skip_on_cran()
-  for (nu in c(0.5, 1.0, 1.5, 2.0, 2.5)) {
-    for (range in c(0.3, 1.0, 4.0)) {
-      for (sigma in c(0.2, 1.0, 3.0)) {
-        kt <- tulpa:::.spde_kappa_tau(range, sigma, nu)
-        rs <- tulpa:::.spde_range_sigma(kt$kappa, kt$tau_spde, nu)
-        expect_equal(rs$range, range, tolerance = 1e-10,
-                     info = sprintf("nu=%g range=%g", nu, range))
-        expect_equal(rs$sigma, sigma, tolerance = 1e-10,
-                     info = sprintf("nu=%g sigma=%g", nu, sigma))
-      }
-    }
-  }
-})
 
 test_that("the nu=1 conversion is byte-identical to the old hardcoded formula", {
   # Guards against a regression on the default GP/SPDE path: at nu = 1 the
@@ -71,6 +52,27 @@ test_that("spatial_gp / spatial_svc validate cov and nu at construction", {
   # supported specs still construct
   expect_s3_class(spatial_gp(~ x + y, cov = "exponential"), "tulpa_gp")
   expect_s3_class(spatial_gp(~ x + y, cov = "matern", nu = 2.5), "tulpa_gp")
+})
+
+skip_on_cran()
+# Regression tests for the 0.0.91 audit-fix batch (#228-239).
+
+# --- #231: SPDE Matern (range, sigma) <-> (kappa, tau) is nu-general ---------
+
+test_that("spde kappa/tau <-> range/sigma round-trips for every nu", {
+  skip_on_cran()
+  for (nu in c(0.5, 1.0, 1.5, 2.0, 2.5)) {
+    for (range in c(0.3, 1.0, 4.0)) {
+      for (sigma in c(0.2, 1.0, 3.0)) {
+        kt <- tulpa:::.spde_kappa_tau(range, sigma, nu)
+        rs <- tulpa:::.spde_range_sigma(kt$kappa, kt$tau_spde, nu)
+        expect_equal(rs$range, range, tolerance = 1e-10,
+                     info = sprintf("nu=%g range=%g", nu, range))
+        expect_equal(rs$sigma, sigma, tolerance = 1e-10,
+                     info = sprintf("nu=%g sigma=%g", nu, sigma))
+      }
+    }
+  }
 })
 
 # --- #229: cyclic RW2 is honored on the joint multi-block kernel -------------

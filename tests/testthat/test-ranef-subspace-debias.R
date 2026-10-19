@@ -106,6 +106,8 @@ rsd_data <- function(seed = 21L, G = 14L, per = 4L, b0 = -2.5, sd_re = 0.7) {
              x = x, g = factor(grp))
 }
 
+skip_on_cran()
+
 
 test_that("ranef() reports a sampled random effect empirically and says so per row", {
   skip_on_cran()

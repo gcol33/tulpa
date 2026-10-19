@@ -1,3 +1,44 @@
+
+test_that("dispatch_gibbs_temporal rejects rw2, non-binomial, and spatial+temporal", {
+  spec_rw2 <- validate_temporal_multiscale(
+    temporal_multiscale("t", trend = "rw2"),
+    data = data.frame(t = rep(1:5, 2))
+  )
+  n <- 10L
+  expect_error(
+    tulpa_gibbs(y = rbinom(n, 5L, 0.5), n_trials = rep(5L, n),
+                X = cbind(1, rnorm(n)), group = rep(1L, n), n_groups = 0L,
+                family = "binomial", temporal = spec_rw2,
+                control = list(n_iter = 50L, warmup = 25L)),
+    "rw2"
+  )
+
+  spec_rw1 <- validate_temporal_multiscale(
+    temporal_multiscale("t", trend = "rw1"),
+    data = data.frame(t = rep(1:5, 2))
+  )
+  expect_error(
+    tulpa_gibbs(y = rpois(n, 2), n_trials = rep(1L, n),
+                X = cbind(1, rnorm(n)), group = rep(1L, n), n_groups = 0L,
+                family = "poisson", temporal = spec_rw1,
+                control = list(n_iter = 50L, warmup = 25L)),
+    "binomial"
+  )
+
+  W <- rook_adj(2L, 5L)
+  expect_error(
+    tulpa_gibbs(y = rbinom(n, 5L, 0.5), n_trials = rep(5L, n),
+                X = cbind(1, rnorm(n)), group = rep(1L, n), n_groups = 0L,
+                family = "binomial",
+                spatial = list(type = "icar", adjacency = W,
+                               spatial_idx = seq_len(n)),
+                temporal = spec_rw1,
+                control = list(n_iter = 50L, warmup = 25L)),
+    "Combined spatial \\+ temporal"
+  )
+})
+
+skip_on_cran()
 # Wiring + recovery for the multiscale temporal Polya-Gamma Gibbs sampler reached
 # through tulpa_gibbs(temporal = ...) -> dispatch_gibbs_temporal(). Increment 5
 # of the gibbs-spatial front-door work (dev_notes/plan_gibbs_spatial_frontdoor.md).
@@ -50,43 +91,4 @@ test_that("tulpa_gibbs(temporal = rw1 trend) recovers the slope on simulated dat
   beta_hat <- colMeans(fixed_draws(fit))
   expect_lt(abs(beta_hat[2] - beta_true[2]), 0.25)
   expect_lt(abs(beta_hat[1] - beta_true[1]), 0.2)
-})
-
-test_that("dispatch_gibbs_temporal rejects rw2, non-binomial, and spatial+temporal", {
-  spec_rw2 <- validate_temporal_multiscale(
-    temporal_multiscale("t", trend = "rw2"),
-    data = data.frame(t = rep(1:5, 2))
-  )
-  n <- 10L
-  expect_error(
-    tulpa_gibbs(y = rbinom(n, 5L, 0.5), n_trials = rep(5L, n),
-                X = cbind(1, rnorm(n)), group = rep(1L, n), n_groups = 0L,
-                family = "binomial", temporal = spec_rw2,
-                control = list(n_iter = 50L, warmup = 25L)),
-    "rw2"
-  )
-
-  spec_rw1 <- validate_temporal_multiscale(
-    temporal_multiscale("t", trend = "rw1"),
-    data = data.frame(t = rep(1:5, 2))
-  )
-  expect_error(
-    tulpa_gibbs(y = rpois(n, 2), n_trials = rep(1L, n),
-                X = cbind(1, rnorm(n)), group = rep(1L, n), n_groups = 0L,
-                family = "poisson", temporal = spec_rw1,
-                control = list(n_iter = 50L, warmup = 25L)),
-    "binomial"
-  )
-
-  W <- rook_adj(2L, 5L)
-  expect_error(
-    tulpa_gibbs(y = rbinom(n, 5L, 0.5), n_trials = rep(5L, n),
-                X = cbind(1, rnorm(n)), group = rep(1L, n), n_groups = 0L,
-                family = "binomial",
-                spatial = list(type = "icar", adjacency = W,
-                               spatial_idx = seq_len(n)),
-                temporal = spec_rw1,
-                control = list(n_iter = 50L, warmup = 25L)),
-    "Combined spatial \\+ temporal"
-  )
 })

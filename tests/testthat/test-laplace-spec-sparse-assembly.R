@@ -106,6 +106,8 @@ test_that("two processes sharing a random effect assemble identically", {
   }
 })
 
+skip_on_cran()
+
 test_that("a crossed, correlated batch at a sparse size writes inside its pattern", {
   skip_on_cran()
   set.seed(14L)

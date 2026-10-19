@@ -29,6 +29,71 @@ sim_areal_binomial <- function(nr = 7L, nc = 7L, reps = 4L, seed = 7L) {
   )
 }
 
+test_that("front door rejects malformed spatial specifications", {
+  s <- sim_areal_binomial(reps = 1L)
+
+  # spatial = supplied but no spatial(col) term in the formula.
+  expect_error(
+    tulpa(y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
+          spatial = list(type = "icar", adjacency = s$W), mode = "gibbs"),
+    "no spatial\\(col\\) term"
+  )
+  # spatial(col) term but no spatial = spec.
+  expect_error(
+    tulpa(y ~ x + spatial(region), data = s$data, family = "binomial",
+          n_trials = s$data$ntrials, mode = "gibbs"),
+    "was not supplied"
+  )
+  # spec missing $type.
+  expect_error(
+    tulpa(y ~ x + spatial(region), data = s$data, family = "binomial",
+          n_trials = s$data$ntrials, spatial = list(adjacency = s$W),
+          mode = "gibbs"),
+    "spatial\\$type"
+  )
+  # a temporal() formula term is rejected in favour of the `temporal=` argument.
+  expect_error(
+    tulpa(y ~ x + temporal(region), data = s$data, family = "binomial",
+          n_trials = s$data$ntrials, mode = "gibbs"),
+    "drop the temporal"
+  )
+})
+
+test_that("spatial Gibbs is binomial-only and rejects random slopes", {
+  s <- sim_areal_binomial(reps = 1L)
+
+  # Non-binomial under spatial Gibbs.
+  expect_error(
+    tulpa(y ~ x + spatial(region), data = s$data, family = "poisson",
+          spatial = list(type = "icar", adjacency = s$W), mode = "gibbs"),
+    "binomial"
+  )
+  # Random slope alongside a spatial field.
+  s$data$g <- factor(rep_len(seq_len(5L), nrow(s$data)))
+  expect_error(
+    tulpa(y ~ x + spatial(region) + (1 + x | g), data = s$data,
+          family = "binomial", n_trials = s$data$ntrials,
+          spatial = list(type = "icar", adjacency = s$W), mode = "gibbs"),
+    "Random-slope"
+  )
+})
+
+test_that("a continuous type given with an areal spatial(col) term is rejected", {
+  # A continuous field is addressed by coordinates, not a unit column, so a
+  # spatial(col) term alongside a continuous type is contradictory. (Genuinely
+  # continuous routing -- gp/nngp via spatial_gp() -- lives in
+  # test-tulpa-spatial-gp-frontdoor.R; hsgp/spde "not yet routed" too.)
+  s <- sim_areal_binomial(reps = 1L)
+  expect_error(
+    tulpa(y ~ x + spatial(region), data = s$data, family = "binomial",
+          n_trials = s$data$ntrials, spatial = list(type = "gp"),
+          mode = "nested_laplace"),
+    "coordinate columns"
+  )
+})
+
+skip_on_cran()
+
 test_that("tulpa(spatial = icar, mode = gibbs) recovers beta end-to-end", {
   skip_on_cran()
   s <- sim_areal_binomial()
@@ -123,55 +188,6 @@ test_that("mode = laplace threads offset() through a spatial field (gcol33/tulpa
   # and centered field are unchanged to the weak intercept-prior tolerance.
   expect_equal(con$mode[1], base$mode[1] - cc, tolerance = 1e-2)
   expect_equal(con$mode[2], base$mode[2], tolerance = 1e-2)
-})
-
-test_that("front door rejects malformed spatial specifications", {
-  s <- sim_areal_binomial(reps = 1L)
-
-  # spatial = supplied but no spatial(col) term in the formula.
-  expect_error(
-    tulpa(y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
-          spatial = list(type = "icar", adjacency = s$W), mode = "gibbs"),
-    "no spatial\\(col\\) term"
-  )
-  # spatial(col) term but no spatial = spec.
-  expect_error(
-    tulpa(y ~ x + spatial(region), data = s$data, family = "binomial",
-          n_trials = s$data$ntrials, mode = "gibbs"),
-    "was not supplied"
-  )
-  # spec missing $type.
-  expect_error(
-    tulpa(y ~ x + spatial(region), data = s$data, family = "binomial",
-          n_trials = s$data$ntrials, spatial = list(adjacency = s$W),
-          mode = "gibbs"),
-    "spatial\\$type"
-  )
-  # a temporal() formula term is rejected in favour of the `temporal=` argument.
-  expect_error(
-    tulpa(y ~ x + temporal(region), data = s$data, family = "binomial",
-          n_trials = s$data$ntrials, mode = "gibbs"),
-    "drop the temporal"
-  )
-})
-
-test_that("spatial Gibbs is binomial-only and rejects random slopes", {
-  s <- sim_areal_binomial(reps = 1L)
-
-  # Non-binomial under spatial Gibbs.
-  expect_error(
-    tulpa(y ~ x + spatial(region), data = s$data, family = "poisson",
-          spatial = list(type = "icar", adjacency = s$W), mode = "gibbs"),
-    "binomial"
-  )
-  # Random slope alongside a spatial field.
-  s$data$g <- factor(rep_len(seq_len(5L), nrow(s$data)))
-  expect_error(
-    tulpa(y ~ x + spatial(region) + (1 + x | g), data = s$data,
-          family = "binomial", n_trials = s$data$ntrials,
-          spatial = list(type = "icar", adjacency = s$W), mode = "gibbs"),
-    "Random-slope"
-  )
 })
 
 # --- RSR front-door routing (Increment 5) --------------------------------
@@ -344,18 +360,4 @@ test_that("nested_laplace bym2 packs the scale factor and wires through", {
   # BYM2 integrates a 2D (sigma, rho) grid.
   expect_equal(ncol(fit$theta_grid), 2L)
   expect_true(all(is.finite(fit$theta_mean)))
-})
-
-test_that("a continuous type given with an areal spatial(col) term is rejected", {
-  # A continuous field is addressed by coordinates, not a unit column, so a
-  # spatial(col) term alongside a continuous type is contradictory. (Genuinely
-  # continuous routing -- gp/nngp via spatial_gp() -- lives in
-  # test-tulpa-spatial-gp-frontdoor.R; hsgp/spde "not yet routed" too.)
-  s <- sim_areal_binomial(reps = 1L)
-  expect_error(
-    tulpa(y ~ x + spatial(region), data = s$data, family = "binomial",
-          n_trials = s$data$ntrials, spatial = list(type = "gp"),
-          mode = "nested_laplace"),
-    "coordinate columns"
-  )
 })

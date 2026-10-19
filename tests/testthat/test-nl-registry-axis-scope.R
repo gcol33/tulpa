@@ -64,26 +64,6 @@ test_that("the name table matches what each registry theta() builder emits", {
         ax$tgmrf)
 })
 
-test_that("the movable-axis table names every axis of every family it lists", {
-    skip_on_cran()
-    ax <- .reg_axis_names()
-    for (fam in names(.NL_REGISTRY_AXIS_FIELD)) {
-        fields <- .NL_REGISTRY_AXIS_FIELD[[fam]]
-        # Every axis of the family is listed, and nothing else: a passenger
-        # axis re-crossed unchanged is what #361 was filed about.
-        expect_setequal(unname(fields), ax[[fam]])
-        # Every field is one `.NL_FAMILY_AXES` binds for that family, so the
-        # provenance layer recognises the engine's own default coming back in
-        # through a caller's prior (gcol33/tulpa#293).
-        expect_true(all(names(fields) %in% names(.NL_FAMILY_AXES[[fam]])),
-                    info = paste(fam, "lists a field the family never defaults"))
-        # And the transform registry names a coordinate for each, which is what
-        # makes the axis placeable at all.
-        expect_false(anyNA(.joint_pareto_block_tags(fam, ax[[fam]])),
-                     info = paste(fam, "has an unguessable axis"))
-    }
-})
-
 test_that("every family absent from the table is absent for a stated reason", {
     ax <- .reg_axis_names()
     absent <- setdiff(names(.NL_REGISTRY), names(.NL_REGISTRY_AXIS_FIELD))
@@ -134,6 +114,28 @@ test_that(".nl_registry_write_theta writes each family's fields by column", {
     bl3 <- .nl_registry_write_theta(list(list(type = "car_proper")), tm3,
                                     colnames(tm3))[[1L]]
     expect_null(bl3$tau_grid)
+})
+
+skip_on_cran()
+
+test_that("the movable-axis table names every axis of every family it lists", {
+    skip_on_cran()
+    ax <- .reg_axis_names()
+    for (fam in names(.NL_REGISTRY_AXIS_FIELD)) {
+        fields <- .NL_REGISTRY_AXIS_FIELD[[fam]]
+        # Every axis of the family is listed, and nothing else: a passenger
+        # axis re-crossed unchanged is what #361 was filed about.
+        expect_setequal(unname(fields), ax[[fam]])
+        # Every field is one `.NL_FAMILY_AXES` binds for that family, so the
+        # provenance layer recognises the engine's own default coming back in
+        # through a caller's prior (gcol33/tulpa#293).
+        expect_true(all(names(fields) %in% names(.NL_FAMILY_AXES[[fam]])),
+                    info = paste(fam, "lists a field the family never defaults"))
+        # And the transform registry names a coordinate for each, which is what
+        # makes the axis placeable at all.
+        expect_false(anyNA(.joint_pareto_block_tags(fam, ax[[fam]])),
+                     info = paste(fam, "has an unguessable axis"))
+    }
 })
 
 test_that("a newly-covered family recentres end to end and honours a pin", {

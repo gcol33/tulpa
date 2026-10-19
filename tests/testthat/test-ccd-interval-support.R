@@ -133,6 +133,8 @@ test_that(".joint_pareto_axis_tags still declines a fit carrying an unguessable 
   expect_true(.k_is_decline(tags))
 })
 
+skip_on_cran()
+
 # ------------------------------------------- the joint multi-block front door
 
 test_that("a CCD-integrated joint fit reports an interval off the design's extent", {

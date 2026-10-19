@@ -133,19 +133,6 @@ test_that("a set ceiling reaches the multi-block dispatch", {
   expect_match(msg, "It crosses b1 (3 rows: ", fixed = TRUE)
 })
 
-test_that("the multi-block dispatch integrates a 2116-cell grid end to end", {
-  skip_on_cran()
-  d <- .cap_iid_data()
-  prior <- .cap_iid_prior(d, seq(0.05, 2, length.out = 46L),
-                             seq(0.05, 2, length.out = 46L))       # 2116 cells
-  fit <- suppressWarnings(tulpa_nested_laplace(
-    y = d$y, n_trials = d$n, X = d$X, prior = prior, family = "binomial",
-    control = list(max_iter = 30L, tol = 1e-6, progress = FALSE)))
-  expect_equal(length(fit$weights), 2116L)
-  expect_equal(sum(fit$weights), 1)
-  expect_true(all(is.finite(fit$theta_mean)))
-})
-
 .cap_chain_adj <- function(n) {
   nb <- lapply(seq_len(n), function(s) setdiff(c(s - 1L, s + 1L), c(0L, n + 1L)))
   list(adj_row_ptr = as.integer(c(0L, cumsum(lengths(nb)))),
@@ -213,6 +200,21 @@ test_that("a set ceiling on the joint dispatch counts the phi cells", {
   expect_match(msg, "12 cells, past control$max_grid_cells = 4.", fixed = TRUE)
   expect_match(msg, " x phi_b 3.", fixed = TRUE)
   expect_match(msg, "Reduce per-block or phi grid sizes", fixed = TRUE)
+})
+
+skip_on_cran()
+
+test_that("the multi-block dispatch integrates a 2116-cell grid end to end", {
+  skip_on_cran()
+  d <- .cap_iid_data()
+  prior <- .cap_iid_prior(d, seq(0.05, 2, length.out = 46L),
+                             seq(0.05, 2, length.out = 46L))       # 2116 cells
+  fit <- suppressWarnings(tulpa_nested_laplace(
+    y = d$y, n_trials = d$n, X = d$X, prior = prior, family = "binomial",
+    control = list(max_iter = 30L, tol = 1e-6, progress = FALSE)))
+  expect_equal(length(fit$weights), 2116L)
+  expect_equal(sum(fit$weights), 1)
+  expect_true(all(is.finite(fit$theta_mean)))
 })
 
 test_that("the joint dispatch solves every latent x phi cell of the dense tensor", {

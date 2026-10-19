@@ -1,3 +1,36 @@
+
+test_that("negbin spatial Gibbs is wired for the areal ICAR field only", {
+  W <- rook_adj(3L, 3L)
+  expect_error(
+    tulpa_gibbs(y = rnbinom(9, size = 5, mu = 2), n_trials = NULL,
+                X = cbind(1, rnorm(9)), group = rep(1L, 9), n_groups = 1L,
+                family = "neg_binomial_2",
+                spatial = list(type = "bym2", adjacency = W,
+                               spatial_idx = seq_len(9))),
+    "areal ICAR field"
+  )
+})
+
+test_that("dispatch_gibbs_spatial rejects non-binomial and unwired types", {
+  W <- rook_adj(3L, 3L)
+  expect_error(
+    tulpa_gibbs(y = rpois(9, 2), n_trials = rep(1L, 9), X = cbind(1, rnorm(9)),
+                group = rep(1L, 9), n_groups = 1L, family = "poisson",
+                spatial = list(type = "icar", adjacency = W,
+                               spatial_idx = seq_len(9))),
+    "binomial"
+  )
+  expect_error(
+    tulpa_gibbs(y = rbinom(9, 1, 0.5), n_trials = rep(1L, 9),
+                X = cbind(1, rnorm(9)), group = rep(1L, 9), n_groups = 1L,
+                family = "binomial",
+                spatial = list(type = "car_proper", adjacency = W,
+                               spatial_idx = seq_len(9))),
+    "not wired"
+  )
+})
+
+skip_on_cran()
 # Wiring + recovery for the spatial Polya-Gamma Gibbs samplers reached through
 # tulpa_gibbs(spatial = ...) -> dispatch_gibbs_spatial(). Increment 1 of the
 # gibbs-spatial front-door work (dev_notes/plan_gibbs_spatial_frontdoor.md):
@@ -104,18 +137,6 @@ test_that("tulpa_gibbs(spatial = icar, neg_binomial_2) recovers fixed effects", 
   field_hat <- colMeans(draws_block(fit, "phi_spatial"))
   expect_gt(stats::cor(field_hat, phi_true - mean(phi_true)), 0.5)
   expect_lt(abs(mean(exp(draws_block(fit, "log_phi"))) - r_true) / r_true, 0.6)
-})
-
-test_that("negbin spatial Gibbs is wired for the areal ICAR field only", {
-  W <- rook_adj(3L, 3L)
-  expect_error(
-    tulpa_gibbs(y = rnbinom(9, size = 5, mu = 2), n_trials = NULL,
-                X = cbind(1, rnorm(9)), group = rep(1L, 9), n_groups = 1L,
-                family = "neg_binomial_2",
-                spatial = list(type = "bym2", adjacency = W,
-                               spatial_idx = seq_len(9))),
-    "areal ICAR field"
-  )
 })
 
 test_that("tulpa_gibbs(spatial = rsr) recovers fixed effects on simulated data", {
@@ -240,25 +261,6 @@ test_that("tulpa_gibbs(spatial = multiscale_gp) recovers fixed effects", {
                 mean(colMeans(draws_block(fit, "gp_regional")))
   level_true <- beta_true[1] + mean(w_true)
   expect_lt(abs(level_hat - level_true), 0.50)
-})
-
-test_that("dispatch_gibbs_spatial rejects non-binomial and unwired types", {
-  W <- rook_adj(3L, 3L)
-  expect_error(
-    tulpa_gibbs(y = rpois(9, 2), n_trials = rep(1L, 9), X = cbind(1, rnorm(9)),
-                group = rep(1L, 9), n_groups = 1L, family = "poisson",
-                spatial = list(type = "icar", adjacency = W,
-                               spatial_idx = seq_len(9))),
-    "binomial"
-  )
-  expect_error(
-    tulpa_gibbs(y = rbinom(9, 1, 0.5), n_trials = rep(1L, 9),
-                X = cbind(1, rnorm(9)), group = rep(1L, 9), n_groups = 1L,
-                family = "binomial",
-                spatial = list(type = "car_proper", adjacency = W,
-                               spatial_idx = seq_len(9))),
-    "not wired"
-  )
 })
 
 test_that("continuous Gibbs samplers reject repeated-location designs", {

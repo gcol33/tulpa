@@ -50,6 +50,22 @@
 }
 
 
+test_that("a multi-arm fit is refused by name, not by a missing family", {
+  fake <- structure(
+    list(backend = "nested_laplace",
+         responses = list(a = list(family = "gaussian", phi = 1),
+                          b = list(family = "poisson", phi = 1))),
+    class = c("tulpa_nested_laplace_joint", "tulpa_fit"))
+  expect_error(posterior_predict(fake), "2 arms")
+  expect_error(posterior_predict(fake), "its own family and dispersion")
+
+  bare <- structure(list(backend = "laplace"), class = "tulpa_fit")
+  expect_error(posterior_predict(bare), "a single built-in family")
+})
+
+skip_on_cran()
+
+
 test_that("a phi_<arm> grid column is the residual VARIANCE", {
   skip_on_cran()
   sim <- .ppa_sim()
@@ -196,18 +212,4 @@ test_that("a fit with no dispersion axis is scored at its own scalar", {
   expect_identical(a, b)
   expect_true(all(is.finite(bayes_R2(fit)$estimate)))
   expect_true(all(is.finite(tulpa:::.tulpa_pointwise_loglik(fit))))
-})
-
-
-test_that("a multi-arm fit is refused by name, not by a missing family", {
-  fake <- structure(
-    list(backend = "nested_laplace",
-         responses = list(a = list(family = "gaussian", phi = 1),
-                          b = list(family = "poisson", phi = 1))),
-    class = c("tulpa_nested_laplace_joint", "tulpa_fit"))
-  expect_error(posterior_predict(fake), "2 arms")
-  expect_error(posterior_predict(fake), "its own family and dispersion")
-
-  bare <- structure(list(backend = "laplace"), class = "tulpa_fit")
-  expect_error(posterior_predict(bare), "a single built-in family")
 })

@@ -28,6 +28,115 @@ eb_pois <- function(d, ...) {
 }
 
 
+# --- 3. Offsets --------------------------------------------------------------
+
+sim_offset <- function(seed = 9L, G = 30L, per = 10L) {
+  set.seed(seed)
+  n <- G * per
+  grp <- rep(seq_len(G), each = per)
+  E <- runif(n, 1, 50)                       # exposure spanning 50x
+  x <- rnorm(n)
+  b <- rnorm(G, 0, 0.6)
+  y <- rpois(n, E * exp(-1.5 + 0.6 * x + b[grp]))
+  list(y = y, X = cbind(1, x), grp = grp, G = G, off = log(E),
+       data = data.frame(y = y, x = x, g = factor(grp), E = E))
+}
+
+test_that("the EB fit has no duplicated field names", {
+  d <- sim_re_pois(23L, G = 25L, per = 8L)
+  fit <- eb_pois(d)
+  # The fit is built by c()-ing the inner Laplace result onto EB's own fields.
+  # c() concatenates, so any shared name lands twice and `fit$name` silently
+  # answers with whichever came first.
+  expect_false(any(duplicated(names(fit))))
+  expect_length(fit$log_marginal, 1L)
+  expect_true(is.finite(fit$log_marginal))
+})
+
+test_that("EB reports no posterior draws rather than a bogus array", {
+  d <- sim_re_pois(22L, G = 25L, per = 8L)
+  fit <- eb_pois(d)
+  expect_null(posterior_sample(fit))
+  expect_null(tulpa_draws_array(fit))
+  expect_null(mcmc_draws(fit))
+})
+
+test_that("eb is registered but never selected by auto or by tier", {
+  expect_true("eb" %in% ALL_BACKENDS)
+  expect_identical(BACKEND_REGISTRY$eb$tier, "structured")
+  expect_identical(BACKEND_REGISTRY$eb$fitter, "tulpa_eb")
+
+  # Opt-in by name only: the plug-in understates hyperparameter uncertainty, so
+  # nothing may route to it implicitly.
+  fam <- list(name = "poisson", distribution = "poisson")
+  for (n_obs in c(50, 5000, 100000)) {
+    expect_false(identical(
+      auto_select_mode(fam, n_obs, FALSE, FALSE, FALSE)$backend, "eb"))
+  }
+  expect_false(identical(
+    select_backend_for_mode("structured", fam, 500, FALSE, FALSE), "eb"))
+  expect_false(identical(
+    select_backend_for_mode("exact", fam, 500, FALSE, FALSE), "eb"))
+})
+
+test_that("EB warns that a supplied sigma_re is estimated, not conditioned", {
+  d <- sim_re_pois(32L, G = 25L, per = 8L)
+  expect_warning(
+    tulpa(y ~ x + (1 | g), data = d$data, family = "poisson", mode = "eb",
+          sigma_re = 0.5),
+    "estimated, not conditioned")
+})
+
+test_that("EB rejects a model with no random effects", {
+  d <- sim_re_pois(33L, G = 25L, per = 8L)
+  expect_error(
+    tulpa_eb(d$y, NULL, d$X, list(), family = "poisson"),
+    "no random-effect terms")
+})
+
+test_that("EB rejects control keys belonging to the nested integrator", {
+  d <- sim_re_pois(34L, G = 25L, per = 8L)
+  expect_error(
+    tulpa_eb(d$y, NULL, d$X, scalar_term(d), family = "poisson",
+             control = list(integration = "ccd")),
+    "integration")
+})
+
+
+# --- estimate_phi on the front door ------------------------------------------
+
+sim_re_gauss <- function(seed, G = 15L, per = 12L, sigma_re = 0.7,
+                         sigma_y = 0.5) {
+  set.seed(seed)
+  n <- G * per
+  g <- rep(seq_len(G), each = per)
+  x <- rnorm(n)
+  u <- rnorm(G, 0, sigma_re)
+  data.frame(y = 1 + 0.5 * x + u[g] + rnorm(n, 0, sigma_y),
+             x = x, g = factor(g))
+}
+
+test_that("estimate_phi is refused where the dispersion is conditioned on", {
+  d <- sim_re_gauss(52L)
+
+  expect_error(
+    suppressMessages(
+      tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "laplace",
+            sigma_re = 0.7, estimate_phi = TRUE)),
+    "available under mode = 'eb'")
+  expect_error(
+    tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "eb",
+          estimate_phi = NA),
+    "must be TRUE or FALSE")
+  expect_error(
+    tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "eb",
+          estimate_phi = "yes"),
+    "must be TRUE or FALSE")
+})
+
+skip_on_cran()
+
+
 # --- 1. EB and the nested integrator share one objective ---------------------
 
 test_that("tulpa_eb() and tulpa_re_cov_nested() find the same theta_hat", {
@@ -183,21 +292,6 @@ test_that("a flat hyperprior gives the unpenalized ML-II estimate", {
   expect_identical(eb_pois(d, hyperprior = "flat")$theta_hat, flat$theta_hat)
 })
 
-
-# --- 3. Offsets --------------------------------------------------------------
-
-sim_offset <- function(seed = 9L, G = 30L, per = 10L) {
-  set.seed(seed)
-  n <- G * per
-  grp <- rep(seq_len(G), each = per)
-  E <- runif(n, 1, 50)                       # exposure spanning 50x
-  x <- rnorm(n)
-  b <- rnorm(G, 0, 0.6)
-  y <- rpois(n, E * exp(-1.5 + 0.6 * x + b[grp]))
-  list(y = y, X = cbind(1, x), grp = grp, G = G, off = log(E),
-       data = data.frame(y = y, x = x, g = factor(grp), E = E))
-}
-
 test_that("EB honours an offset instead of silently dropping it", {
   skip_on_cran()
   d <- sim_offset()
@@ -268,17 +362,6 @@ test_that("an EB fit carries the shape the generic accessors read", {
   expect_s3_class(summary(fit), "summary.tulpa_fit")
   expect_s3_class(coef(summary(fit)), "data.frame")
   expect_output(print(fit), "eb")
-})
-
-test_that("the EB fit has no duplicated field names", {
-  d <- sim_re_pois(23L, G = 25L, per = 8L)
-  fit <- eb_pois(d)
-  # The fit is built by c()-ing the inner Laplace result onto EB's own fields.
-  # c() concatenates, so any shared name lands twice and `fit$name` silently
-  # answers with whichever came first.
-  expect_false(any(duplicated(names(fit))))
-  expect_length(fit$log_marginal, 1L)
-  expect_true(is.finite(fit$log_marginal))
 })
 
 test_that("EB reports the outer optimizer's convergence code", {
@@ -358,14 +441,6 @@ test_that("outer_maxit reaches the nested integrator too", {
     "did not converge")
 })
 
-test_that("EB reports no posterior draws rather than a bogus array", {
-  d <- sim_re_pois(22L, G = 25L, per = 8L)
-  fit <- eb_pois(d)
-  expect_null(posterior_sample(fit))
-  expect_null(tulpa_draws_array(fit))
-  expect_null(mcmc_draws(fit))
-})
-
 
 # --- 5. Front-door wiring ----------------------------------------------------
 
@@ -377,61 +452,6 @@ test_that("mode = 'eb' reaches the EB backend through tulpa()", {
   expect_identical(fit$inference_tier, 2L)
   expect_true(is.finite(fit$map$sigma))
 })
-
-test_that("eb is registered but never selected by auto or by tier", {
-  expect_true("eb" %in% ALL_BACKENDS)
-  expect_identical(BACKEND_REGISTRY$eb$tier, "structured")
-  expect_identical(BACKEND_REGISTRY$eb$fitter, "tulpa_eb")
-
-  # Opt-in by name only: the plug-in understates hyperparameter uncertainty, so
-  # nothing may route to it implicitly.
-  fam <- list(name = "poisson", distribution = "poisson")
-  for (n_obs in c(50, 5000, 100000)) {
-    expect_false(identical(
-      auto_select_mode(fam, n_obs, FALSE, FALSE, FALSE)$backend, "eb"))
-  }
-  expect_false(identical(
-    select_backend_for_mode("structured", fam, 500, FALSE, FALSE), "eb"))
-  expect_false(identical(
-    select_backend_for_mode("exact", fam, 500, FALSE, FALSE), "eb"))
-})
-
-test_that("EB warns that a supplied sigma_re is estimated, not conditioned", {
-  d <- sim_re_pois(32L, G = 25L, per = 8L)
-  expect_warning(
-    tulpa(y ~ x + (1 | g), data = d$data, family = "poisson", mode = "eb",
-          sigma_re = 0.5),
-    "estimated, not conditioned")
-})
-
-test_that("EB rejects a model with no random effects", {
-  d <- sim_re_pois(33L, G = 25L, per = 8L)
-  expect_error(
-    tulpa_eb(d$y, NULL, d$X, list(), family = "poisson"),
-    "no random-effect terms")
-})
-
-test_that("EB rejects control keys belonging to the nested integrator", {
-  d <- sim_re_pois(34L, G = 25L, per = 8L)
-  expect_error(
-    tulpa_eb(d$y, NULL, d$X, scalar_term(d), family = "poisson",
-             control = list(integration = "ccd")),
-    "integration")
-})
-
-
-# --- estimate_phi on the front door ------------------------------------------
-
-sim_re_gauss <- function(seed, G = 15L, per = 12L, sigma_re = 0.7,
-                         sigma_y = 0.5) {
-  set.seed(seed)
-  n <- G * per
-  g <- rep(seq_len(G), each = per)
-  x <- rnorm(n)
-  u <- rnorm(G, 0, sigma_re)
-  data.frame(y = 1 + 0.5 * x + u[g] + rnorm(n, 0, sigma_y),
-             x = x, g = factor(g))
-}
 
 test_that("estimate_phi frees the dispersion and reports it as estimated", {
   skip_on_cran()
@@ -450,24 +470,6 @@ test_that("estimate_phi frees the dispersion and reports it as estimated", {
   # The residual SD is 0.5 by construction, so a freed dispersion has to move
   # well away from the default it started at.
   expect_lt(abs(sqrt(free$phi) - 0.5), 0.1)
-})
-
-test_that("estimate_phi is refused where the dispersion is conditioned on", {
-  d <- sim_re_gauss(52L)
-
-  expect_error(
-    suppressMessages(
-      tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "laplace",
-            sigma_re = 0.7, estimate_phi = TRUE)),
-    "available under mode = 'eb'")
-  expect_error(
-    tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "eb",
-          estimate_phi = NA),
-    "must be TRUE or FALSE")
-  expect_error(
-    tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "eb",
-          estimate_phi = "yes"),
-    "must be TRUE or FALSE")
 })
 
 test_that("flat EB is the restricted (REML) estimate, not ML (#889)", {

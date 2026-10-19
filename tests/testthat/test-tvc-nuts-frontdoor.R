@@ -27,6 +27,8 @@ test_that("tvc requires an exact mode", {
   )
 })
 
+skip_on_cran()
+
 test_that("tvc exact NUTS allocates the per-time field (structural)", {
   skip_if_not_slow()
   s <- make_tvc_pois(n_t = 8L, reps = 4L)

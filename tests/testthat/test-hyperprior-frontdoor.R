@@ -31,6 +31,8 @@ test_that("a backend that does not read hyperprior refuses \"flat\"", {
                "not read by backend 're_cov_gibbs'")
 })
 
+skip_on_cran()
+
 test_that("the nested route folds the choice into the fit", {
   skip_on_cran()
   fp <- tulpa(yb ~ x, data = d, family = "binomial",

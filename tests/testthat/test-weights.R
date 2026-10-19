@@ -1,3 +1,73 @@
+
+test_that("weighted log-posterior equals the duplicated-row log-posterior", {
+  set.seed(57)
+  n <- 60L
+  d <- data.frame(x = rnorm(n), g = factor(rep(1:5, length.out = n)))
+  d$y <- rbinom(n, 1, plogis(0.2 + 0.7 * d$x))
+
+  parsed <- tulpa:::tulpa_parse_formula(y ~ x + (1 | g))
+  b_w    <- tulpa:::tulpa_build_model_data(parsed, d)
+  d_dup  <- rbind(d[1:5, ], d)
+  b_d    <- tulpa:::tulpa_build_model_data(parsed, d_dup)
+
+  w <- rep(1, n); w[1:5] <- 2
+  m_w <- tulpa:::build_glmm_logpost(b_w, "binomial", sigma_re = 1, weights = w)
+  m_d <- tulpa:::build_glmm_logpost(b_d, "binomial", sigma_re = 1)
+
+  expect_equal(m_w$dim, m_d$dim)
+  for (i in 1:3) {
+    theta <- rnorm(m_w$dim, sd = 0.5)
+    expect_equal(m_w$log_posterior(theta), m_d$log_posterior(theta),
+                 tolerance = 1e-12)
+    expect_equal(m_w$grad_log_posterior(theta), m_d$grad_log_posterior(theta),
+                 tolerance = 1e-12)
+  }
+})
+
+test_that("weights are validated and unsupported backends refuse", {
+  d <- data.frame(x = rnorm(40), g = factor(rep(1:4, 10)))
+  d$y <- rbinom(40, 1, 0.5)
+
+  expect_error(
+    tulpa(y ~ x, data = d, family = "binomial", mode = "laplace",
+          weights = rep(-1, 40)),
+    "non-negative")
+  expect_error(
+    tulpa(y ~ x, data = d, family = "binomial", mode = "laplace",
+          weights = c(1, 2)),
+    "length")
+  expect_error(
+    tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "gibbs",
+          weights = rep(1, 40)),
+    "not supported by backend 'gibbs'")
+})
+
+# gcol33/tulpa#874: the tier modes integrate an unsupplied RE scale
+# (gcol33/tulpa#787). Supplying weights used to route them to a conditional
+# backend -- 'laplace' under structured, 'mala' under auto -- that fixed
+# sigma_re at 1, a different estimand, flagged only by the generic
+# "not supplied" warning. re_cov_nested's inner solve is the weighted Laplace
+# kernel, so it carries the weights and the scale stays integrated.
+test_that("weights reach the scale-integrating backend, not a conditional one", {
+  fam <- list(name = "poisson", distribution = "poisson")
+  expect_true(tulpa:::.backend_carries_weights("re_cov_nested"))
+  expect_true(tulpa:::.backend_carries_weights("laplace"))
+  expect_false(tulpa:::.backend_carries_weights("laplace", spatial = TRUE))
+  expect_true(tulpa:::.backend_carries_weights("mala"))
+  expect_false(tulpa:::.backend_carries_weights("hmc"))
+  expect_false(tulpa:::.backend_carries_weights("re_cov_gibbs"))
+
+  feat <- list(weights = TRUE, n_re_terms = 1L)
+  for (m in c("auto", "structured")) {
+    sel <- tulpa:::select_inference_mode(m, family = fam, n_obs = 200L,
+                                         has_spatial = FALSE,
+                                         has_temporal = FALSE, has_re = TRUE,
+                                         feat = feat)
+    expect_identical(sel$backend, "re_cov_nested", info = m)
+  }
+})
+
+skip_on_cran()
 # Observation weights through the tulpa() front door (gcol33/tulpa C1).
 # Equivalence anchor: a weight of 2 must reproduce the fit with that row
 # duplicated, on both supported paths (non-spatial Laplace kernel and the R
@@ -61,31 +131,6 @@ test_that("weighted gaussian Laplace MAP equals analytic penalized WLS", {
   expect_equal(unname(coef(fit)), beta_exact, tolerance = 1e-5)
 })
 
-test_that("weighted log-posterior equals the duplicated-row log-posterior", {
-  set.seed(57)
-  n <- 60L
-  d <- data.frame(x = rnorm(n), g = factor(rep(1:5, length.out = n)))
-  d$y <- rbinom(n, 1, plogis(0.2 + 0.7 * d$x))
-
-  parsed <- tulpa:::tulpa_parse_formula(y ~ x + (1 | g))
-  b_w    <- tulpa:::tulpa_build_model_data(parsed, d)
-  d_dup  <- rbind(d[1:5, ], d)
-  b_d    <- tulpa:::tulpa_build_model_data(parsed, d_dup)
-
-  w <- rep(1, n); w[1:5] <- 2
-  m_w <- tulpa:::build_glmm_logpost(b_w, "binomial", sigma_re = 1, weights = w)
-  m_d <- tulpa:::build_glmm_logpost(b_d, "binomial", sigma_re = 1)
-
-  expect_equal(m_w$dim, m_d$dim)
-  for (i in 1:3) {
-    theta <- rnorm(m_w$dim, sd = 0.5)
-    expect_equal(m_w$log_posterior(theta), m_d$log_posterior(theta),
-                 tolerance = 1e-12)
-    expect_equal(m_w$grad_log_posterior(theta), m_d$grad_log_posterior(theta),
-                 tolerance = 1e-12)
-  }
-})
-
 test_that("all-ones weights equal an unweighted fit", {
   skip_on_cran()
   set.seed(59)
@@ -96,24 +141,6 @@ test_that("all-ones weights equal an unweighted fit", {
                  weights = rep(1, 90))
   fit_0 <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
   expect_equal(coef(fit_1), coef(fit_0), tolerance = 1e-10)
-})
-
-test_that("weights are validated and unsupported backends refuse", {
-  d <- data.frame(x = rnorm(40), g = factor(rep(1:4, 10)))
-  d$y <- rbinom(40, 1, 0.5)
-
-  expect_error(
-    tulpa(y ~ x, data = d, family = "binomial", mode = "laplace",
-          weights = rep(-1, 40)),
-    "non-negative")
-  expect_error(
-    tulpa(y ~ x, data = d, family = "binomial", mode = "laplace",
-          weights = c(1, 2)),
-    "length")
-  expect_error(
-    tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "gibbs",
-          weights = rep(1, 40)),
-    "not supported by backend 'gibbs'")
 })
 
 test_that("weighted MALA shifts toward the up-weighted observations", {
@@ -132,31 +159,6 @@ test_that("weighted MALA shifts toward the up-weighted observations", {
 
   expect_equal(coef(fit_4), coef(fit_1), tolerance = 0.1)
   expect_lt(mean(diag(vcov(fit_4))), mean(diag(vcov(fit_1))))
-})
-
-# gcol33/tulpa#874: the tier modes integrate an unsupplied RE scale
-# (gcol33/tulpa#787). Supplying weights used to route them to a conditional
-# backend -- 'laplace' under structured, 'mala' under auto -- that fixed
-# sigma_re at 1, a different estimand, flagged only by the generic
-# "not supplied" warning. re_cov_nested's inner solve is the weighted Laplace
-# kernel, so it carries the weights and the scale stays integrated.
-test_that("weights reach the scale-integrating backend, not a conditional one", {
-  fam <- list(name = "poisson", distribution = "poisson")
-  expect_true(tulpa:::.backend_carries_weights("re_cov_nested"))
-  expect_true(tulpa:::.backend_carries_weights("laplace"))
-  expect_false(tulpa:::.backend_carries_weights("laplace", spatial = TRUE))
-  expect_true(tulpa:::.backend_carries_weights("mala"))
-  expect_false(tulpa:::.backend_carries_weights("hmc"))
-  expect_false(tulpa:::.backend_carries_weights("re_cov_gibbs"))
-
-  feat <- list(weights = TRUE, n_re_terms = 1L)
-  for (m in c("auto", "structured")) {
-    sel <- tulpa:::select_inference_mode(m, family = fam, n_obs = 200L,
-                                         has_spatial = FALSE,
-                                         has_temporal = FALSE, has_re = TRUE,
-                                         feat = feat)
-    expect_identical(sel$backend, "re_cov_nested", info = m)
-  }
 })
 
 test_that("a weighted (1 | g) fit under structured / auto integrates the scale", {

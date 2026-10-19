@@ -177,27 +177,6 @@ test_that("a symmetric mixture stays symmetric and is free to differ in width", 
 })
 
 # --------------------------------------------------------------------------- #
-# (5) Against draws from the same mixture                                      #
-# --------------------------------------------------------------------------- #
-
-test_that("the analytic quantiles are the ones draws from the same mixture carry", {
-  skip_on_cran()
-  fit <- mx_fit(mx_mu, mx_vr, mx_w)
-  set.seed(7L)
-  n  <- 400000L
-  k  <- sample.int(nrow(mx_mu), n, replace = TRUE, prob = mx_w)
-  dr <- cbind(stats::rnorm(n, mx_mu[k, 1], sqrt(mx_vr[k, 1])),
-              stats::rnorm(n, mx_mu[k, 2], sqrt(mx_vr[k, 2])))
-  emp <- t(apply(dr, 2L, stats::quantile, c(0.025, 0.975)))
-  expect_equal(mx_q(fit), unname(emp), tolerance = 0.02)
-
-  # The collapsed read is the one that misses, so this is a discriminating
-  # check rather than a tolerance wide enough to pass either way.
-  expect_gt(max(abs(mx_gauss_ci(fit) - emp)),
-            5 * max(abs(mx_q(fit) - emp)))
-})
-
-# --------------------------------------------------------------------------- #
 # (6) The #302 correction keeps its own read, and says why                     #
 # --------------------------------------------------------------------------- #
 
@@ -255,6 +234,41 @@ test_that("a fit the correction declines everywhere reports what it would have",
   expect_identical(mx_q(non), mx_q(off))
 })
 
+test_that("a fit with no retained components declines with its own reason", {
+  fit <- mx_fit(mx_mu, mx_vr, mx_w)
+  mom <- tulpa:::.nested_fixed_moments(fit)
+  bare <- mom; bare$mu <- NULL; bare$var <- NULL
+  iv <- tulpa:::.nl_fixed_interval(
+    bare, 1:2, mom$mean, sqrt(diag(mom$cov)), c(0.025, 0.975),
+    list(enabled = FALSE, gamma3 = rep(NA_real_, 2)))
+  expect_identical(iv$source, "gaussian_moment")
+  expect_match(iv$declined, "no retained mixture components")
+  expect_equal(iv$q, unname(mx_gauss_ci(fit)), tolerance = 1e-14)
+})
+
+skip_on_cran()
+
+# --------------------------------------------------------------------------- #
+# (5) Against draws from the same mixture                                      #
+# --------------------------------------------------------------------------- #
+
+test_that("the analytic quantiles are the ones draws from the same mixture carry", {
+  skip_on_cran()
+  fit <- mx_fit(mx_mu, mx_vr, mx_w)
+  set.seed(7L)
+  n  <- 400000L
+  k  <- sample.int(nrow(mx_mu), n, replace = TRUE, prob = mx_w)
+  dr <- cbind(stats::rnorm(n, mx_mu[k, 1], sqrt(mx_vr[k, 1])),
+              stats::rnorm(n, mx_mu[k, 2], sqrt(mx_vr[k, 2])))
+  emp <- t(apply(dr, 2L, stats::quantile, c(0.025, 0.975)))
+  expect_equal(mx_q(fit), unname(emp), tolerance = 0.02)
+
+  # The collapsed read is the one that misses, so this is a discriminating
+  # check rather than a tolerance wide enough to pass either way.
+  expect_gt(max(abs(mx_gauss_ci(fit) - emp)),
+            5 * max(abs(mx_q(fit) - emp)))
+})
+
 # --------------------------------------------------------------------------- #
 # (7) An incomplete grid, and declines that name the gate they fell at         #
 # --------------------------------------------------------------------------- #
@@ -299,16 +313,4 @@ test_that("a repaired grid reads as the posterior over the cells that remain", {
                attr(ci, "retained_mass"), tolerance = 1e-14)
   expect_equal(tulpa:::.nested_fixed_moments(fit)$mass,
                sum(mx_w[c(1, 3)]) / sum(mx_w), tolerance = 1e-14)
-})
-
-test_that("a fit with no retained components declines with its own reason", {
-  fit <- mx_fit(mx_mu, mx_vr, mx_w)
-  mom <- tulpa:::.nested_fixed_moments(fit)
-  bare <- mom; bare$mu <- NULL; bare$var <- NULL
-  iv <- tulpa:::.nl_fixed_interval(
-    bare, 1:2, mom$mean, sqrt(diag(mom$cov)), c(0.025, 0.975),
-    list(enabled = FALSE, gamma3 = rep(NA_real_, 2)))
-  expect_identical(iv$source, "gaussian_moment")
-  expect_match(iv$declined, "no retained mixture components")
-  expect_equal(iv$q, unname(mx_gauss_ci(fit)), tolerance = 1e-14)
 })

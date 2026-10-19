@@ -17,6 +17,8 @@ test_that("the smooth view is offered on every fit and refuses one with no smoot
   expect_error(plot(bare, type = "smooth"), "no s\\(\\.\\.\\.\\) smoother terms")
 })
 
+skip_on_cran()
+
 test_that("a random-intercept fit reports its covariance through summary()", {
   skip_on_cran()
   set.seed(4)

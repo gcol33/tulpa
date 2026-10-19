@@ -38,39 +38,6 @@
        spatial_idx = as.integer(rep_len(1:4, n)))
 }
 
-test_that("thin = 3 over 50 post-warmup iterations saves 17 rows, not 16", {
-  skip_on_cran()
-  expect_equal(.thin_expected(100L, 50L, 3L), 17L)
-
-  fx <- .thin_fixture()
-  ctl <- list(n_iter = 100L, warmup = 50L, thin = 3L, seed = 5L)
-
-  routes <- list(
-    binomial = function() tulpa_gibbs(
-      fx$y_binom, fx$n_trials, fx$X, fx$grp, fx$n_groups,
-      family = "binomial", control = ctl),
-    neg_binomial_2 = function() tulpa_gibbs(
-      fx$y_count, fx$n_trials, fx$X, fx$grp, fx$n_groups,
-      family = "neg_binomial_2", control = ctl),
-    binomial_icar = function() tulpa_gibbs(
-      fx$y_binom, fx$n_trials, fx$X, fx$grp, fx$n_groups,
-      family = "binomial", spatial = .thin_spatial(fx$n), control = ctl),
-    negbin_icar = function() tulpa_gibbs(
-      fx$y_count, fx$n_trials, fx$X, fx$grp, fx$n_groups,
-      family = "neg_binomial_2", spatial = .thin_spatial(fx$n), control = ctl)
-  )
-
-  for (nm in names(routes)) {
-    fit <- suppressWarnings(routes[[nm]]())
-    expect_equal(nrow(fit$draws), 17L, info = nm)
-    # The overflowing write used to land on row 0 of the next column, so the
-    # first saved draw of every column but the first was replaced by the last
-    # saved draw of its predecessor.
-    expect_true(all(is.finite(fixed_draws(fit))), info = nm)
-    expect_equal(anyDuplicated(round(fixed_draws(fit), 12)), 0L, info = nm)
-  }
-})
-
 test_that("a thin that does divide the run is unaffected", {
   fx <- .thin_fixture(seed = 22L)
   fit <- tulpa_gibbs(fx$y_binom, fx$n_trials, fx$X, fx$grp, fx$n_groups,
@@ -104,4 +71,39 @@ test_that("a thin below 1 is refused rather than reaching the modulus", {
                 control = list(n_iter = 100L, warmup = 50L, thin = 0L)),
     "thin"
   )
+})
+
+skip_on_cran()
+
+test_that("thin = 3 over 50 post-warmup iterations saves 17 rows, not 16", {
+  skip_on_cran()
+  expect_equal(.thin_expected(100L, 50L, 3L), 17L)
+
+  fx <- .thin_fixture()
+  ctl <- list(n_iter = 100L, warmup = 50L, thin = 3L, seed = 5L)
+
+  routes <- list(
+    binomial = function() tulpa_gibbs(
+      fx$y_binom, fx$n_trials, fx$X, fx$grp, fx$n_groups,
+      family = "binomial", control = ctl),
+    neg_binomial_2 = function() tulpa_gibbs(
+      fx$y_count, fx$n_trials, fx$X, fx$grp, fx$n_groups,
+      family = "neg_binomial_2", control = ctl),
+    binomial_icar = function() tulpa_gibbs(
+      fx$y_binom, fx$n_trials, fx$X, fx$grp, fx$n_groups,
+      family = "binomial", spatial = .thin_spatial(fx$n), control = ctl),
+    negbin_icar = function() tulpa_gibbs(
+      fx$y_count, fx$n_trials, fx$X, fx$grp, fx$n_groups,
+      family = "neg_binomial_2", spatial = .thin_spatial(fx$n), control = ctl)
+  )
+
+  for (nm in names(routes)) {
+    fit <- suppressWarnings(routes[[nm]]())
+    expect_equal(nrow(fit$draws), 17L, info = nm)
+    # The overflowing write used to land on row 0 of the next column, so the
+    # first saved draw of every column but the first was replaced by the last
+    # saved draw of its predecessor.
+    expect_true(all(is.finite(fixed_draws(fit))), info = nm)
+    expect_equal(anyDuplicated(round(fixed_draws(fit), 12)), 0L, info = nm)
+  }
 })
