@@ -49,7 +49,8 @@ names the axes that produced its cell count (gcol33/tulpa#913).
 
 ## R CMD check results
 
-0 errors | 0 warnings | 0 notes locally.
+0 errors | 0 warnings | 0 notes on win-builder (R-devel r90707: check time
+531 s; R-release 4.6.1: 499 s).
 
 The expected NOTE on the incoming check is "Days since last update", explained
 above.
@@ -71,7 +72,9 @@ above.
 * Long-running model fits in examples are wrapped in \donttest{}; each
   retains a small runnable form where feasible. Recovery and sampler tests
   are gated by testthat's skip_on_cran() and by the package's own tier
-  variables (NOT_CRAN, TULPA_SLOW_TESTS).
+  variables (NOT_CRAN, TULPA_SLOW_TESTS). To keep the check time down, CRAN
+  runs the structural tests of one file per subsystem; every file runs on
+  GitHub Actions on four platforms.
 
 * Nine examples are in \dontrun{}. Seven reference symbols the user supplies
   (a fit produced by a consumer model package, a per-model E-step / M-step
