@@ -44,3 +44,4 @@
 ^Rplots\.pdf$
 ^tests/testthat/Rplots\.pdf$
 ^CITATION\.cff$
+^vignettes/articles$

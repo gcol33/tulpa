@@ -23,9 +23,11 @@ Sys.setenv(TULPA_SLOW_TESTS = "true"); devtools::test()   # tiers 1 + 2 + 3  (fu
 skips (reported as skips, never silently dropped), leaving only the structural
 checks, so the whole suite runs in seconds for plumbing / dispatch iteration.
 
-`R CMD check` / CRAN run **tier 1 only**, less the blocks over the CRAN budget
-(`NOT_CRAN` unset trips `skip_on_cran()` and `skip_on_cran_budget()`,
-`TULPA_SLOW_TESTS` unset trips `skip_if_not_slow()`).
+`R CMD check` / CRAN run **tier 1 of the smoke files only**
+(`CRAN_SMOKE_FILES` in `helper-tiers.R`, one file per subsystem), less the
+blocks over the CRAN budget (`NOT_CRAN` unset trips `skip_on_cran()` and
+`skip_on_cran_budget()`, `TULPA_SLOW_TESTS` unset trips `skip_if_not_slow()`).
+The CI check matrix sets `TULPA_CRAN_BUDGET=off` and runs tier 1 of every file.
 
 Keep tests file-independent (use `tempfile()` for any on-disk artefact), so a
 file runs the same alone as in the suite.

@@ -701,36 +701,6 @@ theta_from_fit <- function(fit, sim_index, built, family, fit_source = NULL) {
 }
 
 
-#' Generate random effects for simulation
-#'
-#' @param n_groups Number of groups
-#' @param sigma Standard deviation
-#' @param type Type of random effects: "iid" (default), "car", "ar1"
-#'
-#' @return Numeric vector of random effects
-#' @noRd
-sim_random_effects <- function(n_groups, sigma = 0.5, type = "iid") {
-
-  if (type == "iid") {
-    return(rnorm(n_groups, 0, sigma))
-  }
-
-  if (type == "ar1") {
-    # Generate AR(1) process
-    re <- numeric(n_groups)
-    rho <- 0.7
-    re[1] <- rnorm(1, 0, sigma / sqrt(1 - rho^2))
-    for (i in 2:n_groups) {
-      re[i] <- rho * re[i - 1] + rnorm(1, 0, sigma)
-    }
-    return(re)
-  }
-
-  # Default: IID
-  rnorm(n_groups, 0, sigma)
-}
-
-
 #' Generate spatial random effects for simulation
 #'
 #' @param adjacency Adjacency matrix

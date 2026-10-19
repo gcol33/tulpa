@@ -190,46 +190,6 @@ print.tulpa_latent <- function(x, ...) {
 }
 
 
-#' Validate latent factor specification against data
-#'
-#' @param latent A tulpa_latent object
-#' @param N Number of observations
-#'
-#' @return Validated latent specification with additional computed fields
-#' @noRd
-validate_latent <- function(latent, N) {
-
-  if (is.null(latent)) {
-    return(NULL)
-  }
-
-  if (!inherits(latent, "tulpa_latent")) {
-    stop("`latent` must be a tulpa_latent object from latent_factor()",
-         call. = FALSE)
-  }
-
-  # Check n_factors is reasonable for data size
-  if (latent$n_factors >= N) {
-    stop("Number of latent factors (", latent$n_factors,
-         ") must be less than number of observations (", N, ")",
-         call. = FALSE)
-  }
-
-  # Warn if many factors relative to data
-  if (latent$n_factors > sqrt(N)) {
-    warning("Number of latent factors (", latent$n_factors,
-            ") is large relative to data size. Consider using fewer factors.",
-            call. = FALSE)
-  }
-
-  # Add computed fields
-  latent$n_obs <- N
-  latent$n_params <- N * latent$n_factors + latent$n_factors  # factors + sigmas
-
-  latent
-}
-
-
 #' Extract latent factor posteriors from fit
 #'
 #' @param fit A fit sampled with latent factors: its draw matrix (`$draws` or

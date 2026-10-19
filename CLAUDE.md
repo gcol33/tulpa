@@ -178,7 +178,7 @@ in `tests/testthat/README.md`): `devtools::test()` runs tiers 1 + 2 (structural 
 single-fit recovery); `Sys.setenv(TULPA_FAST = "1")` collapses to tier 1 only
 (every fit / sampler skips, whole suite in seconds, for plumbing iteration);
 `Sys.setenv(TULPA_SLOW_TESTS = "true")` adds tier 3 (samplers, multi-seed
-coverage). CRAN runs tier 1 only.
+coverage). CRAN runs tier 1 of the smoke files only (`CRAN_SMOKE_FILES`).
 
 **Release caveats** (the routine `check()` above does not catch these):
 

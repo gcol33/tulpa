@@ -1,5 +1,11 @@
 # tulpa 0.7.5
 
+* Three vignettes ship with the package (quickstart, inference modes, spatial
+  models). The other ten (priors, temporal models, model comparison,
+  calibration, reliability, data formatting, random slopes, EM + Laplace,
+  checkpointing, custom latent processes) are articles on the package website,
+  https://gillescolling.com/tulpa/articles/.
+
 * `energy_bfmi()` is exported: E-BFMI from a vector of per-iteration
   Hamiltonian energies and their chain ids, diffed within each chain and
   reported for the worst chain, so a model package's energy diagnostic uses

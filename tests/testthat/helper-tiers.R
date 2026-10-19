@@ -25,7 +25,7 @@
 #   devtools::test()                                   # tiers 1 + 2  (default dev loop)
 #   Sys.setenv(TULPA_FAST = "1"); test()               # tier 1 only  (fast smoke)
 #   Sys.setenv(TULPA_SLOW_TESTS = "true"); test()      # tiers 1 + 2 + 3  (full validation)
-#   R CMD check / CRAN                                 # tier 1 only
+#   R CMD check / CRAN                                 # tier 1 of the smoke files
 #
 # RELEASE GATE. Tier 3 holds the recovery / coverage / sampler-calibration
 # evidence and is opt-in, so a routine test() or R CMD check runs plumbing only
@@ -60,6 +60,14 @@
 # alone, so the dev loop and TULPA_FAST=1 both run it. Such blocks sit between
 # the CRAN-run part of a file and its skip_on_cran() section, behind a top-level
 # skip_on_cran_budget(), and each carries that gate as its first line as well.
+#
+# CRAN also runs only the smoke files, one per subsystem (CRAN_SMOKE_FILES
+# below): tests/testthat.R hands cran_smoke_filter() to test_check(), so no other
+# file is sourced there. Sourcing a file costs more than its tier-1 blocks do --
+# the 245 files CRAN ran held 4 s of block time and took 43 s on win-builder --
+# so the file count is what the budget reads. A smoke file is one whose tier-1
+# part covers its subsystem's constructors and closed forms cheaply; the CI check
+# matrix (TULPA_CRAN_BUDGET=off) and every other profile run all files.
 #
 # A skipped block is not free: test_that() sets up its test context (a temporary
 # directory, the locale, the reproducible-output options) before the gate in the
@@ -118,10 +126,35 @@ skip_on_cran <- function() {
 # TULPA_CRAN_BUDGET=off opens it under the CRAN profile too, which is how the CI
 # check matrix runs the whole of tier 1 on every platform.
 skip_on_cran_budget <- function() {
-  if (identical(tolower(Sys.getenv("TULPA_CRAN_BUDGET")), "off")) {
+  if (!cran_budget_applies()) {
     return(invisible())
   }
   testthat::skip_on_cran()
+}
+
+# TRUE under the CRAN profile, unless TULPA_CRAN_BUDGET=off opens the budget.
+cran_budget_applies <- function() {
+  !identical(Sys.getenv("NOT_CRAN"), "true") &&
+    !identical(tolower(Sys.getenv("TULPA_CRAN_BUDGET")), "off")
+}
+
+# The CRAN smoke set: one file per subsystem, named without "test-" and ".R".
+CRAN_SMOKE_FILES <- c(
+  "adjacency", "formula", "family-count-extensions", "prior-predict",
+  "spatial-spde-api", "temporal", "nested-laplace-joint-multi", "beta-nuts",
+  "methods-interop", "diagnostics", "posterior-sbc", "psis", "tgmrf",
+  "control-check", "simulate", "autodiff-primitives", "re-cov-prior",
+  "nested-posterior-draws", "criteria-tulpa-fit", "em-laplace",
+  "pg-index-validation", "pg-nngp-conditional", "st-hsgp-prior", "mcar-prior",
+  "ccd-modefind-budget", "auto-grid-provenance"
+)
+
+# test_check()'s file filter: the smoke set under the CRAN budget, else every file.
+cran_smoke_filter <- function() {
+  if (!cran_budget_applies()) {
+    return(NULL)
+  }
+  paste0("^(", paste(CRAN_SMOKE_FILES, collapse = "|"), ")$")
 }
 
 # Tier-1 fixture size. A structural identity read over a grid of parameter
@@ -146,7 +179,7 @@ cran_fixture <- function() {
 # attached testthat package, whereas a helper-scoped binding is not. Mirrors the
 # namespace-aliasing in helper-internal.R.
 for (.nm in c("skip_if_fast", "skip_if_not_slow", "skip_on_cran", "skip_on_cran_budget",
-              "cran_fixture")) {
+              "cran_budget_applies", "cran_fixture")) {
   assign(.nm, get(.nm), envir = globalenv())
 }
 rm(.nm)

@@ -630,9 +630,9 @@ the areal nested integration.
 
 ## See also
 
-- `vignettes/quickstart.Rmd` for the engine basics: families, tiers,
+- `vignette("quickstart", package = "tulpa")` for the engine basics: families, tiers,
   random effects, prediction.
-- `vignettes/tgmrf.Rmd` for user-defined GMRF latent blocks, the
+- The [custom-process article](https://gillescolling.com/tulpa/articles/tgmrf.html) for user-defined GMRF latent blocks, the
   general form behind the built-in fields.
 - `?spatial_car`, `?spatial_bym2`, `?spatial_gp` for the spec
   constructors and their references.

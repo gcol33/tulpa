@@ -24,9 +24,10 @@ env <- c(
   TULPA_FAST = "",
   TULPA_SLOW_TESTS = "",
   TULPA_FULL_RECOVERY = "",
-  # Tier 1 whole: CRAN skips the tier-1 blocks over its time budget
-  # (skip_on_cran_budget(), tests/testthat/helper-tiers.R), and this matrix is
-  # where they run on every platform.
+  # Tier 1 whole: CRAN runs only the smoke files and skips the tier-1 blocks
+  # over its time budget (cran_smoke_filter(), skip_on_cran_budget(),
+  # tests/testthat/helper-tiers.R), and this matrix is where every file and
+  # block of tier 1 runs on every platform.
   TULPA_CRAN_BUDGET = "off",
   # The remote-URL leg of the incoming checks reaches every URL in the
   # DESCRIPTION and the Rd files, and answers for a server that is slow today.
@@ -38,7 +39,7 @@ env <- c(
 )
 
 cat("check args:", paste(check_args, collapse = " "), "\n")
-cat("NOT_CRAN  : false (CRAN tier, with the tier-1 blocks over the CRAN budget)\n\n")
+cat("NOT_CRAN  : false (CRAN tier, every file, with the tier-1 blocks over the CRAN budget)\n\n")
 
 rcmdcheck::rcmdcheck(
   args = check_args,

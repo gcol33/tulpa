@@ -392,7 +392,7 @@ diagnostics(fit, sbc = res)
   the report is.
 - `?sbc_predictive` for the predictive shapes, and which one a backend should
   report.
-- `vignette("reliability-pareto-k")` for the single-fit reliability band this
+- The [reliability article](reliability-pareto-k.html) for the single-fit reliability band this
   screens against: the outer Pareto-k-hat, `gamma_3`, and the combined
   verdict.
 - `?tulpa_posterior_draws` for the mixture sampler the fixed-effect arms are
