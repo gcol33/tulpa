@@ -1855,12 +1855,6 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
   tulpaMesh::fem_matrices(sp$mesh, obs_coords = coords)$A
 }
 
-# Project a fitted SPDE mesh-node field to arbitrary coordinates (kriging):
-# A_new %*% w_hat with w_hat the posterior-mean node field.
-#' @keywords internal
-.spde_field_at <- function(object, newdata) {
-  as.numeric(.spde_A_at(object, newdata) %*% object$spatial_effects)
-}
 
 # Krige a fitted HSGP field to coordinates (predict()). The field is
 # grid-marginalised in C++ (cpp_hsgp_field_predict): for each hyperparameter

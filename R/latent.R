@@ -196,7 +196,7 @@ print.tulpa_latent <- function(x, ...) {
 #' @param N Number of observations
 #'
 #' @return Validated latent specification with additional computed fields
-#' @keywords internal
+#' @noRd
 validate_latent <- function(latent, N) {
 
   if (is.null(latent)) {
@@ -227,101 +227,6 @@ validate_latent <- function(latent, N) {
   latent$n_params <- N * latent$n_factors + latent$n_factors  # factors + sigmas
 
   latent
-}
-
-
-#' Prepare latent factor data for HMC
-#'
-#' @param latent A validated tulpa_latent object (or NULL)
-#' @param N Number of observations
-#'
-#' @return List with latent factor data for C++
-#' @keywords internal
-prepare_latent_for_hmc <- function(latent, N) {
-
-  if (is.null(latent)) {
-    return(list(
-      type = "none",
-      n_factors = 0L,
-      n_obs = as.integer(N),
-      shared = FALSE,
-      constraint = "sum_to_zero",
-      scale = TRUE,
-      sigma_prior_rate = 0.0  # Not used when type = "none"
-    ))
-  }
-
-  # Validate
-  latent <- validate_latent(latent, N)
-
-  # Extract prior rate for PC prior (exponential prior on sigma)
-  sigma_prior_rate <- if (latent$prior$distribution == "pc") {
-    latent$prior$rate
-  } else if (latent$prior$distribution == "exponential") {
-    latent$prior$rate
-  } else if (latent$prior$distribution == "half_normal") {
-    # Convert half-normal to approximate exponential rate
-    # E[X] = sd * sqrt(2/pi), so rate ~= sqrt(pi/2) / sd
-    sqrt(pi / 2) / latent$prior$sd
-  } else if (latent$prior$distribution == "half_cauchy") {
-    # Use scale as rough guide
-    1.0 / latent$prior$scale
-  } else {
-    # Default
-    -log(0.01) / 1.0  # PC prior default
-  }
-
-  list(
-    type = "latent",
-    n_factors = as.integer(latent$n_factors),
-    n_obs = as.integer(N),
-    shared = latent$shared,
-    constraint = latent$constraint,
-    scale = latent$scale,
-    sigma_prior_rate = sigma_prior_rate
-  )
-}
-
-
-#' Initialize latent factor parameters
-#'
-#' @param latent_info Latent factor info from prepare_latent_for_hmc
-#' @param seed Optional random seed
-#'
-#' @return Numeric vector of initial parameter values
-#' @keywords internal
-initialize_latent_params <- function(latent_info, seed = NULL) {
-
-  if (latent_info$type == "none" || latent_info$n_factors == 0) {
-    return(numeric(0))
-  }
-
-  .seed_scoped(seed)
-
-  n_factors <- latent_info$n_factors
-  n_obs <- latent_info$n_obs
-
-  # Initialize log_sigma_factor (log scale, small positive values)
-  log_sigma_init <- rep(-1.0, n_factors)  # sigma ~ 0.37
-
-  # Initialize factor scores (standardized, sum-to-zero enforced)
-  factor_init <- matrix(rnorm(n_obs * n_factors, 0, 0.1), nrow = n_obs)
-
-  # Apply constraint
-  if (latent_info$constraint == "sum_to_zero") {
-    for (k in seq_len(n_factors)) {
-      factor_init[, k] <- factor_init[, k] - mean(factor_init[, k])
-    }
-  } else if (latent_info$constraint == "first_zero") {
-    for (k in seq_len(n_factors)) {
-      factor_init[, k] <- factor_init[, k] - factor_init[1, k]
-    }
-  }
-
-  # Flatten: [log_sigma_1, ..., log_sigma_K, f_1, ..., f_N*K]
-  # But exclude one observation per factor for identifiability
-  # Simpler: just return all and let C++ handle constraint
-  c(log_sigma_init, as.vector(t(factor_init)))
 }
 
 

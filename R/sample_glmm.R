@@ -152,7 +152,7 @@
 #' @return A `tulpa_fit` with `draws`, `means`, `param_names`, the kernel's
 #'   diagnostics, and (for `"hmc"`) `chain_id` / `n_chains` so chain diagnostics
 #'   apply.
-#' @keywords internal
+#' @noRd
 tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
                               phi2 = NULL,
                               offset = NULL, fixed_names = NULL,

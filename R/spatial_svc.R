@@ -168,7 +168,7 @@ print.tulpa_svc <- function(x, ...) {
 #' @param X Design matrix (to resolve term names)
 #'
 #' @return Updated tulpa_svc object with computed neighbor structure
-#' @keywords internal
+#' @noRd
 validate_svc <- function(svc, data, X) {
   if (is.null(svc)) return(NULL)
   if (!inherits(svc, "tulpa_svc")) return(svc)  # Other spatial types

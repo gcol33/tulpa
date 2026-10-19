@@ -50,7 +50,7 @@
 #'    Adding a backend never introduces a new epistemic promise.
 #'
 #' @name inference_modes
-#' @keywords internal
+#' @noRd
 NULL
 
 
@@ -64,7 +64,7 @@ NULL
 #' is derived from `BACKEND_REGISTRY`. This table holds only the per-tier
 #' description/guarantee so the two never drift.
 #'
-#' @keywords internal
+#' @noRd
 TIER_META <- list(
   exact = list(
     tier = 1L,
@@ -143,7 +143,7 @@ TIER_META <- list(
 #' `family$distribution`, and `family$numerator$distribution` (tulpaRatio-style
 #' ratio families nest a per-process distribution).
 #'
-#' @keywords internal
+#' @noRd
 BACKEND_REGISTRY <- list(
   # ---- Tier 1: Exact ----
   hmc = list(
@@ -341,7 +341,7 @@ BACKEND_REGISTRY <- list(
 
 
 #' Backend names belonging to a tier (derived from the registry)
-#' @keywords internal
+#' @noRd
 .tier_backends <- function(tier_key) {
   names(Filter(function(e) e$tier == tier_key, BACKEND_REGISTRY))
 }
@@ -357,7 +357,7 @@ BACKEND_REGISTRY <- list(
 #' Derived from `TIER_META` and `BACKEND_REGISTRY`.
 #' Preserves the `INFERENCE_TIERS$<tier>$backends` interface relied on by
 #' downstream code and tests.
-#' @keywords internal
+#' @noRd
 INFERENCE_TIERS <- local({
   out <- vector("list", length(TIER_META))
   names(out) <- names(TIER_META)
@@ -369,7 +369,7 @@ INFERENCE_TIERS <- local({
 
 
 #' Backend -> supported families, derived from the registry
-#' @keywords internal
+#' @noRd
 BACKEND_FAMILY_SUPPORT <- local({
   out <- list()
   for (b in names(BACKEND_REGISTRY)) {
@@ -381,7 +381,7 @@ BACKEND_FAMILY_SUPPORT <- local({
 
 
 #' All registered backends across every tier (derived from the registry)
-#' @keywords internal
+#' @noRd
 ALL_BACKENDS <- names(BACKEND_REGISTRY)
 
 
@@ -468,7 +468,7 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 
 
 #' Test whether a backend supports the given family
-#' @keywords internal
+#' @noRd
 backend_supports_family <- function(backend, family) {
   supported <- BACKEND_REGISTRY[[backend]]$families
   if (is.null(supported)) return(TRUE)  # unrestricted backend
@@ -501,7 +501,7 @@ backend_supports_family <- function(backend, family) {
 #' redirected from `nested_laplace` to `spde` is the same mode and tier reaching
 #' its own integrator. Those are recorded, not warned about, so a documented route
 #' does not warn on every fit.
-#' @keywords internal
+#' @noRd
 .sel_redirect <- function(sel, backend, reason, notify = TRUE) {
   if (isTRUE(sel$explicit) && is.null(sel$overridden) &&
       !identical(sel$backend, backend)) {
@@ -537,7 +537,7 @@ backend_supports_family <- function(backend, family) {
 #' Get tier for a backend
 #' @param backend Character string naming the backend
 #' @return List with tier information
-#' @keywords internal
+#' @noRd
 get_backend_tier <- function(backend) {
   entry <- BACKEND_REGISTRY[[backend]]
   if (is.null(entry)) {
@@ -560,7 +560,7 @@ get_backend_tier <- function(backend) {
 # ==============================================================================
 
 #' Is a backend reachable from R (does it have an R-level fitter)?
-#' @keywords internal
+#' @noRd
 backend_is_reachable <- function(backend) {
   entry <- BACKEND_REGISTRY[[backend]]
   !is.null(entry) && !is.null(entry$fitter)
@@ -576,7 +576,7 @@ backend_is_reachable <- function(backend) {
 #' selecting it errors with a precise message naming the C-ABI symbol, rather
 #' than pretending to dispatch.
 #'
-#' @keywords internal
+#' @noRd
 assert_backend_reachable <- function(backend) {
   entry <- BACKEND_REGISTRY[[backend]]
   if (is.null(entry)) {
@@ -601,7 +601,7 @@ assert_backend_reachable <- function(backend) {
 #'
 #' Looks up the fitter *name* string in the registry and resolves it lazily,
 #' so the registry stays independent of source-file load order.
-#' @keywords internal
+#' @noRd
 resolve_backend_fitter <- function(backend) {
   assert_backend_reachable(backend)
   match.fun(BACKEND_REGISTRY[[backend]]$fitter)
@@ -627,7 +627,7 @@ resolve_backend_fitter <- function(backend) {
 #'   Model characteristics forwarded to [select_inference_mode()].
 #' @return The fitter's result, with `inference_mode`, `inference_tier`,
 #'   `backend`, and `selection_reason` ensured.
-#' @keywords internal
+#' @noRd
 tulpa_dispatch <- function(mode,
                            fitter_args = list(),
                            family = NULL,
@@ -696,7 +696,7 @@ tulpa_dispatch <- function(mode,
 #'   full design bundle `tulpa()` attaches post-dispatch) wins.
 #' @param extra_class Subclass(es) to prepend before `tulpa_fit`.
 #' @return The enriched fit, classed `c(extra_class, ..., "tulpa_fit")`.
-#' @keywords internal
+#' @noRd
 .finalize_fit <- function(fit, backend = NULL, draws_kind = NULL,
                           n_fixed = NULL, fixed_names = NULL,
                           param_names = NULL, extra_class = NULL,
@@ -850,7 +850,7 @@ tulpa_dispatch <- function(mode,
 #' Map mode to valid backends
 #' @param mode Character: "auto", "exact", "structured", or "optimized"
 #' @return Character vector of valid backends for this mode
-#' @keywords internal
+#' @noRd
 get_mode_backends <- function(mode) {
   mode <- tolower(mode)
 
@@ -900,7 +900,7 @@ get_mode_backends <- function(mode) {
 #'   - tier_name: The tier name
 #'   - reason: Explanation for the selection
 #'
-#' @keywords internal
+#' @noRd
 select_inference_mode <- function(mode,
                                   family,
                                   n_obs,
@@ -978,7 +978,7 @@ select_inference_mode <- function(mode,
 #'
 #' **Critical rule**: Auto never selects Tier 3 (Optimized).
 #'
-#' @keywords internal
+#' @noRd
 auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_latent, temporal = NULL,
                              spatial_type = NULL, has_re = FALSE,
                              feat = list()) {
@@ -1283,7 +1283,7 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
 
 
 #' Select best backend within a mode
-#' @keywords internal
+#' @noRd
 select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_temporal,
                                     has_latent = FALSE, spatial_type = NULL,
                                     has_re = FALSE, feat = list()) {
@@ -1491,36 +1491,3 @@ inference_mode_info <- function() {
 }
 
 
-#' Format tier information for display
-#'
-#' @param tier_info List from get_backend_tier()
-#' @param verbose Include full description
-#' @return Character string
-#' @keywords internal
-format_tier_info <- function(tier_info, verbose = FALSE) {
-  if (verbose) {
-    sprintf(
-      "Tier %d (%s): %s",
-      tier_info$tier,
-      tier_info$name,
-      tier_info$description
-    )
-  } else {
-    sprintf("Tier %d (%s)", tier_info$tier, tier_info$name)
-  }
-}
-
-
-#' Format mode selection message
-#'
-#' @param selection List from select_inference_mode()
-#' @return Character string for display
-#' @keywords internal
-format_mode_selection <- function(selection) {
-  lines <- c(
-    sprintf("Mode: %s", selection$tier_name),
-    sprintf("Backend: %s", selection$backend),
-    sprintf("Reason: %s", selection$reason)
-  )
-  paste(lines, collapse = "\n")
-}

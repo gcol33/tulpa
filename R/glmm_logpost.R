@@ -53,7 +53,7 @@
 #'   * `init` -- a zero starting vector of length `dim`.
 #'   * `unpack(theta)` -- list(`beta`, `u` = list of n_groups x n_coefs matrices).
 #'   * `param_names` -- character labels aligned with `theta`.
-#' @keywords internal
+#' @noRd
 build_glmm_logpost <- function(bundle, family, sigma_re = NULL,
                                n_trials = NULL, phi = 1.0,
                                beta_prior = .tulpa_default_beta_prior("glmm_logpost"),

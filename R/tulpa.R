@@ -98,21 +98,6 @@
 }
 
 
-# Build the `prior` argument for tulpa_nested_laplace() from the formula's
-# parsed latent blocks. Every `latent(...)` term resolves to a
-# tulpa_latent_block (a tgmrf), which is itself a valid nested-Laplace prior
-# block (it carries `type = "tgmrf"`). One block or many, the list is exactly
-# the multi-block prior the driver consumes -- a length-1 list routes through
-# the same multi-block path.
-.latent_blocks_to_prior <- function(latent_blocks) {
-  if (length(latent_blocks) == 0L) {
-    stop("Internal error: .latent_blocks_to_prior() called with no blocks.",
-         call. = FALSE)
-  }
-  latent_blocks
-}
-
-
 # Convert the front-door spatial spec into the `prior` block that
 # tulpa_nested_laplace() integrates over. Three families:
 #  * Areal (icar/car/bym2/car_proper): built from type + adjacency + a 1-based

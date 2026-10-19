@@ -140,7 +140,7 @@ nobars <- function(term) {
 #'
 #' @param term A language object (formula term)
 #' @return A list of language objects, each a `latent(...)` call
-#' @keywords internal
+#' @noRd
 find_latent_terms <- function(term) {
   if (is.name(term) || !is.language(term)) return(NULL)
 
@@ -171,7 +171,7 @@ find_latent_terms <- function(term) {
 #' @param term A language object (formula term)
 #' @return A language object with all `latent(...)` calls removed, or NULL
 #'   if nothing remains.
-#' @keywords internal
+#' @noRd
 no_latent_terms <- function(term) {
   .strip_rhs(term, function(x) {
     is.call(x) && identical(x[[1]], as.name("latent")) && length(x) == 2L
@@ -347,7 +347,7 @@ tulpa_is_spatial_bar <- function(x) {
 #'   - `has_intercept`: logical
 #'   - `correlated`: logical (TRUE for `|`, FALSE for `||`)
 #'   - `original`: the original bar language object
-#' @keywords internal
+#' @noRd
 parse_bar_term <- function(bar_term) {
   stopifnot(is.call(bar_term))
 
@@ -386,7 +386,7 @@ parse_bar_term <- function(bar_term) {
 #'
 #' @param rhs A language object (RHS of `|` or `||`).
 #' @return List of group specs.
-#' @keywords internal
+#' @noRd
 resolve_group_rhs <- function(rhs) {
   # Nested grouping a/b
   if (is.call(rhs) && identical(rhs[[1]], as.name("/")) && is.name(rhs[[2]]) && is.name(rhs[[3]])) {
@@ -433,7 +433,7 @@ resolve_group_rhs <- function(rhs) {
 #'
 #' @param lhs A language object (LHS of a bar term)
 #' @return A list with `has_intercept` (logical) and `slope_terms` (list of language objects)
-#' @keywords internal
+#' @noRd
 decompose_bar_lhs <- function(lhs) {
   terms <- collect_additive_terms(lhs)
   has_intercept <- TRUE
@@ -461,7 +461,7 @@ decompose_bar_lhs <- function(lhs) {
 #'
 #' @param expr A language object
 #' @return A list of language objects (individual terms)
-#' @keywords internal
+#' @noRd
 collect_additive_terms <- function(expr) {
   if (is.call(expr) && identical(expr[[1]], as.name("+"))) {
     c(collect_additive_terms(expr[[2]]), collect_additive_terms(expr[[3]]))
@@ -478,7 +478,7 @@ collect_additive_terms <- function(expr) {
 
 #' Negate an additive term (numeric literal -> its negative; anything else ->
 #' a unary-minus call), for flattening binary `-` in a bar LHS
-#' @keywords internal
+#' @noRd
 .negate_term <- function(t) {
   if (is.numeric(t)) return(-t)
   call("-", t)
@@ -489,7 +489,7 @@ collect_additive_terms <- function(expr) {
 #' Used by the print method. Derives the textual form on demand from
 #' the stored language objects so we never store deparsed slope text.
 #'
-#' @keywords internal
+#' @noRd
 format_re_lhs <- function(re) {
   pieces <- character(0)
   if (re$has_intercept) pieces <- c(pieces, "1") else pieces <- c(pieces, "0")
@@ -721,7 +721,7 @@ tulpa_parse_formula <- function(formula) {
 #' are not supported: the compiled kernels share the random-effect block into
 #' the count process only, so a bar here would be silently dropped.
 #'
-#' @keywords internal
+#' @noRd
 .zi_design <- function(ziformula, data, n_obs) {
   if (is.null(ziformula)) return(NULL)
   if (!inherits(ziformula, "formula") || length(ziformula) != 2L) {
@@ -972,7 +972,7 @@ tulpa_build_model_data <- function(parsed, data) {
 #'   - multiple column names (nested `a/b`): `interaction(data[names])`.
 #'   - language expression: evaluate against `data` (e.g., `factor(g)`).
 #'
-#' @keywords internal
+#' @noRd
 resolve_group_factor <- function(re_spec, data, env) {
   if (!is.null(re_spec$group_expr)) {
     val <- eval(re_spec$group_expr, envir = data, enclos = env)

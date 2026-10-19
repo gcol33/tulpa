@@ -201,7 +201,7 @@ print.tulpa_tvc <- function(x, ...) {
 #' @param X Design matrix (to resolve term names)
 #'
 #' @return Updated tulpa_tvc object with computed structure
-#' @keywords internal
+#' @noRd
 validate_tvc <- function(tvc, data, X) {
   if (is.null(tvc)) return(NULL)
   if (!inherits(tvc, "tulpa_tvc")) return(tvc)

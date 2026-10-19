@@ -64,7 +64,7 @@ stability.
 
 Bridge sampling is a \emph{post-hoc} marginal-likelihood estimator, not
 a sampling backend, so it does not appear in the
-\link{INFERENCE_TIERS} registry. It operates on draws from any Tier-1
+\code{INFERENCE_TIERS} registry. It operates on draws from any Tier-1
 (Exact) backend.
 }
 

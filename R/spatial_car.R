@@ -248,7 +248,7 @@ spatial_car_proper <- function(adjacency,
 #' @param adjacency Adjacency matrix
 #'
 #' @return Named vector with `lower` and `upper` bounds for rho
-#' @keywords internal
+#' @noRd
 compute_car_rho_bounds <- function(adjacency) {
   adj <- as.matrix(adjacency)
   diag(adj) <- 0
@@ -435,7 +435,7 @@ spatial_bym2 <- function(adjacency, level = c("group", "obs"),
 #' @param adjacency Adjacency matrix
 #'
 #' @return Scaling factor (scalar)
-#' @keywords internal
+#' @noRd
 compute_bym2_scale <- function(adjacency) {
   .bym2_component_scaling(adjacency)$scale_factor
 }
@@ -495,7 +495,7 @@ compute_bym2_scale <- function(adjacency) {
 #' @return The input `x`, returned invisibly. Called for the side effect of
 #'   printing the spatial specification to the console.
 #'
-#' @keywords internal
+#' @noRd
 #' @export
 print.tulpa_spatial <- function(x, ...) {
   # SPDE specs carry a different field set (Matern mesh) and print separately.
@@ -566,7 +566,7 @@ print.tulpa_spatial <- function(x, ...) {
 #' @param adjacency Adjacency matrix
 #'
 #' @return Logical; TRUE if connected
-#' @keywords internal
+#' @noRd
 is_connected <- function(adjacency) {
   n <- nrow(adjacency)
   if (n == 0) return(TRUE)

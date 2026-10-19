@@ -135,7 +135,7 @@ plot_rhat <- function(fit, threshold = 1.01, pars = NULL) {
 
 
 #' Base R Rhat plot
-#' @keywords internal
+#' @noRd
 plot_rhat_base <- function(diag, threshold) {
   n_pars <- nrow(diag)
   old_par <- graphics::par(mar = c(4, 8, 3, 1))
@@ -264,7 +264,7 @@ plot_ess <- function(fit, type = c("bulk", "tail"), threshold = 400, pars = NULL
 
 
 #' Base R ESS plot
-#' @keywords internal
+#' @noRd
 plot_ess_base <- function(diag, threshold, type) {
   n_pars <- nrow(diag)
   old_par <- graphics::par(mar = c(4, 8, 3, 1))
@@ -400,7 +400,7 @@ plot_acf <- function(fit, pars = NULL, lags = 25, n_pars = 6) {
 
 
 #' Base R ACF plot
-#' @keywords internal
+#' @noRd
 plot_acf_base <- function(draws, pars, lags) {
   n_pars <- length(pars)
   n_col <- min(3, n_pars)
@@ -675,7 +675,7 @@ energy_bfmi <- function(energy, chain = NULL) {
 
 
 #' Base R pairs plot
-#' @keywords internal
+#' @noRd
 plot_pairs_base <- function(draws_df, pars, has_divergent, alpha) {
   # Subset to just the parameters
   plot_data <- draws_df[, pars, drop = FALSE]
@@ -804,7 +804,7 @@ plot_divergences <- function(fit, pars = NULL, type = c("parcoord", "scatter")) 
 
 
 #' Parallel coordinates plot for divergences
-#' @keywords internal
+#' @noRd
 plot_divergences_parcoord <- function(draws_df, pars) {
   # Scale parameters to [0, 1] for comparison
   scaled <- draws_df[, pars, drop = FALSE]
@@ -860,7 +860,7 @@ plot_divergences_parcoord <- function(draws_df, pars) {
 
 
 #' Base R parallel coordinates
-#' @keywords internal
+#' @noRd
 plot_divergences_parcoord_base <- function(scaled, pars, divergent) {
   n_pars <- length(pars)
   n_samples <- nrow(scaled)
@@ -894,7 +894,7 @@ plot_divergences_parcoord_base <- function(scaled, pars, divergent) {
 
 
 #' Scatter plot matrix for divergences
-#' @keywords internal
+#' @noRd
 plot_divergences_scatter <- function(draws_df, pars) {
   # Use first 2-4 parameters for scatter matrix
   pars <- head(pars, 4)
@@ -1016,7 +1016,7 @@ plot_energy <- function(fit) {
 
 
 #' Base R energy plot
-#' @keywords internal
+#' @noRd
 plot_energy_base <- function(energy, energy_diff, e_bfmi, status) {
   old_par <- graphics::par(mar = c(4, 4, 4, 2))
   on.exit(graphics::par(old_par))
@@ -1760,7 +1760,7 @@ geweke_test <- function(fit, frac1 = 0.1, frac2 = 0.5, pars = NULL) {
 
 
 #' Spectrum at frequency zero (AR fit)
-#' @keywords internal
+#' @noRd
 spectrum0_ar <- function(x) {
   # Fit AR model to estimate spectral density at frequency 0
   n <- length(x)

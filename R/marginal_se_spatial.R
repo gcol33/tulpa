@@ -19,7 +19,7 @@
 #' internally -- Q construction here is a 1:1 port of `spde_qbuilder.h`
 #' (orphan ridge included).
 #'
-#' @keywords internal
+#' @noRd
 #' @name marginal_se_spatial
 NULL
 
@@ -158,7 +158,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 #' Identifiers follow the C++ side: `nn_idx[i, k]` is a 1-based NNGP-order
 #' index, `nn_order[j]` maps NNGP-order j (1-based) to obs idx (1-based).
 #'
-#' @keywords internal
+#' @noRd
 .nngp_precision_Q <- function(spatial, sigma2_gp, phi_gp) {
   ni        <- spatial$neighbor_info
   n_spatial <- spatial$n_spatial %||% nrow(spatial$unique_coords)
@@ -247,7 +247,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 #'
 #' @param obs_to_unit Per-observation unit index, or empty for one observation
 #'   per unit.
-#' @keywords internal
+#' @noRd
 .field_design_Z <- function(obs_to_unit, n_units, n_obs) {
   n_units <- as.integer(n_units)
   if (length(obs_to_unit) == 0L) {
@@ -278,7 +278,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 #' group falls outside `1:n_re_groups` contribute no RE column, matching the
 #' `g >= 0 && g < n_re_groups` guard in the C++ kernels.
 #'
-#' @keywords internal
+#' @noRd
 .re_design <- function(re_idx, n_re_groups, n_obs) {
   if (n_re_groups <= 0L) {
     return(Matrix::sparseMatrix(i = integer(0), j = integer(0), x = numeric(0),
@@ -309,7 +309,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 #' intercept aliases, lands in the intercept's standard error
 #' (gcol33/tulpa#901).
 #'
-#' @keywords internal
+#' @noRd
 .schur_H_beta <- function(X, D, Q_latent, W, constr = NULL) {
   D    <- as(D, "CsparseMatrix")
   WX   <- W * X
@@ -459,7 +459,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 #' off-diagonals. Matches `tulpa::add_car_proper_prior` / the nested CAR_proper
 #' precision builder.
 #'
-#' @keywords internal
+#' @noRd
 .car_proper_precision_Q <- function(spatial, tau, rho) {
   W   <- as(Matrix::Matrix(as.matrix(spatial$adjacency), sparse = TRUE),
             "CsparseMatrix")
@@ -498,7 +498,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 #' component's real nodes rather than an equal-size contiguous split.
 #' Components are ordered by their lowest node, members increasing.
 #'
-#' @keywords internal
+#' @noRd
 .graph_components <- function(adjacency) {
   lab <- .adj_component_labels(adjacency)
   if (length(lab) == 0L) return(list())
@@ -509,7 +509,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 #'
 #' The count of `.graph_components`, single-sourcing the DFS.
 #'
-#' @keywords internal
+#' @noRd
 .graph_n_components <- function(adjacency) length(.graph_components(adjacency))
 
 #' Intrinsic ICAR field precision, augmented to full rank
@@ -534,7 +534,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 #' per-component BYM2 scaling the kernels apply to the structured prior
 #' (`.bym2_component_scaling()`, gcol33/tulpa#902).
 #'
-#' @keywords internal
+#' @noRd
 .icar_precision_Q <- function(spatial, node_prec = NULL) {
   W   <- as(Matrix::Matrix(as.matrix(spatial$adjacency), sparse = TRUE),
             "CsparseMatrix")
@@ -587,7 +587,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 #' `.icar_precision_Q` and `theta ~ N(0, I)`. The conditional Laplace kernel
 #' hardcodes `sigma = 1`, `rho = 0.5`.
 #'
-#' @keywords internal
+#' @noRd
 .marginal_H_beta_bym2 <- function(mode, X, spatial, family, phi,
                                   n_trials, weights = NULL, offset = NULL,
                                   sigma_spatial = 1.0, rho = 0.5,

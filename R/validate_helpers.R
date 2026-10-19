@@ -6,7 +6,7 @@
 #' column-existence checks and coordinate preparation blocks.
 #'
 #' @name validate_helpers
-#' @keywords internal
+#' @noRd
 NULL
 
 #' Assert that named columns exist in `data`.
@@ -151,8 +151,7 @@ assert_columns_exist <- function(vars, data, role = "Required") {
 
 #' Extract a coordinate matrix, check for missing values, optionally scale.
 #'
-#' Wraps the coord-validation pattern shared by `validate_hsgp()` and
-#' `validate_hsgp_multiscale()`.
+#' The coord-validation step of `validate_hsgp()`.
 #'
 #' @param coord_vars Character vector of coordinate column names.
 #' @param data Data frame.

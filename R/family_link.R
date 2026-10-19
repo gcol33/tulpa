@@ -114,7 +114,7 @@
 )
 
 #' Links available as a `<family>_<link>` suffix
-#' @keywords internal
+#' @noRd
 link_names <- function() names(.LINKS)
 
 # Canonical link per base family; a family absent here takes no link suffix.
@@ -402,16 +402,3 @@ link_names <- function() names(.LINKS)
   ops
 }
 
-#' Family codes the link layer accepts beyond the bare registry names
-#'
-#' The cross product of the link-capable base families and the links, minus each
-#' family's own canonical form (which is already a registry name).
-#' @keywords internal
-linked_family_names <- function() {
-  out <- unlist(lapply(names(.OK_LINKS), function(base) {
-    links <- setdiff(.OK_LINKS[[base]], .LINK_DEFAULTS[[base]])
-    if (!length(links)) return(character(0))
-    paste0(base, "_", links)
-  }), use.names = FALSE)
-  sort(out)
-}

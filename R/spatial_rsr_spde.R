@@ -4,7 +4,7 @@
 #' @param data Data frame
 #'
 #' @return NULL (invisibly); errors if validation fails
-#' @keywords internal
+#' @noRd
 validate_spatial <- function(spatial, data) {
   if (is.null(spatial)) return(invisible(NULL))
 
@@ -279,60 +279,9 @@ print.tulpa_rsr <- function(x, ...) {
 #' @param X Design matrix of covariates to orthogonalize against
 #'
 #' @return Projection matrix (n x n)
-#' @keywords internal
+#' @noRd
 compute_rsr_projection <- function(X) {
   .orthogonal_complement_projection(X, "RSR")
-}
-
-
-#' Validate RSR specification
-#'
-#' @param spatial tulpa_rsr object
-#' @param data Data frame
-#' @param formula Model formula (to extract design matrix)
-#'
-#' @return Updated spatial object with projection matrix
-#' @keywords internal
-validate_rsr <- function(spatial, data, formula) {
-  if (is.null(spatial) || !inherits(spatial, "tulpa_rsr")) {
-    return(spatial)
-  }
-
-  # Build design matrix for RSR covariates
-  rsr_formula <- spatial$rsr_formula
-
-  # Check if terms exist in data
-  rsr_vars <- all.vars(rsr_formula)
-  missing_vars <- setdiff(rsr_vars, names(data))
-  if (length(missing_vars) > 0) {
-    stop(sprintf("RSR variables not found in data: %s",
-                 paste(missing_vars, collapse = ", ")), call. = FALSE)
-  }
-
-  # Build design matrix
-  X_rsr <- model.matrix(rsr_formula, data = data)
-
-  # Compute projection matrix
-  spatial$rsr_projection <- compute_rsr_projection(X_rsr)
-  spatial$rsr_vars <- rsr_vars
-
-  spatial
-}
-
-
-#' Apply RSR projection to spatial effect
-#'
-#' @description
-#' Project spatial effect into the space orthogonal to covariates.
-#' Called during posterior computation.
-#'
-#' @param w Spatial effect vector (length n)
-#' @param P_perp Projection matrix from compute_rsr_projection
-#'
-#' @return Projected spatial effect (length n)
-#' @keywords internal
-apply_rsr_projection <- function(w, P_perp) {
-  as.vector(P_perp %*% w)
 }
 
 

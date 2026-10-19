@@ -552,7 +552,7 @@ tulpa_laplace <- function(y, n_trials, X,
 #' @param beta_prior A list (or `tulpa_prior` object) carrying `sd` and
 #'   optionally `mean`.
 #' @return `list(mean, sd)`, unrecycled.
-#' @keywords internal
+#' @noRd
 .beta_prior_fields <- function(beta_prior) {
   if (!is.list(beta_prior)) {
     stop("`beta_prior` must be NULL or a list with `sd` (and optional `mean`); ",
@@ -586,7 +586,7 @@ tulpa_laplace <- function(y, n_trials, X,
 #'
 #' @param beta_prior `NULL`, or a list with `sd` (required) and optional `mean`.
 #' @param p Number of fixed effects (`ncol(X)`).
-#' @keywords internal
+#' @noRd
 .normalize_beta_prior <- function(beta_prior, p) {
   if (is.null(beta_prior)) return(NULL)
   fields <- .beta_prior_fields(beta_prior)
@@ -627,7 +627,7 @@ tulpa_laplace <- function(y, n_trials, X,
 #'
 #' @param zi_prior `NULL`, or a list with a scalar `sd`.
 #' @return A scalar prior SD; the engine default when `zi_prior` is `NULL`.
-#' @keywords internal
+#' @noRd
 .normalize_zi_prior <- function(zi_prior) {
   if (is.null(zi_prior)) return(.ZI_PRIOR_SD_DEFAULT)
   if (!is.list(zi_prior)) {
@@ -673,7 +673,7 @@ tulpa_laplace <- function(y, n_trials, X,
 #'   `NULL` takes the engine default.
 #' @param default_sd SD used when `beta_prior` is `NULL`. A supplied prior is
 #'   resolved through [.beta_prior_fields()] and never falls back to this.
-#' @keywords internal
+#' @noRd
 .beta_prior_ridge_sd <- function(beta_prior,
                                  default_sd = .tulpa_prior_sd("ridge")) {
   fields <- .beta_prior_fields(beta_prior %||% list(mean = 0, sd = default_sd))
@@ -712,7 +712,7 @@ tulpa_laplace <- function(y, n_trials, X,
 #' @param where Caller name for the error message.
 #' @return List `list(N, n_trials)` with `n_trials` coerced to a length-`N`
 #'   integer vector.
-#' @keywords internal
+#' @noRd
 .validate_glm_design <- function(y, X, n_trials, where) {
   N <- length(y)
   if (N == 0L) stop(where, ": `y` is empty.", call. = FALSE)
@@ -747,7 +747,7 @@ tulpa_laplace <- function(y, n_trials, X,
 #' @param N Expected length.
 #' @param where Caller name for the error message.
 #' @return `re_idx` coerced to an integer vector.
-#' @keywords internal
+#' @noRd
 .validate_re_idx <- function(re_idx, n_re_groups, N, where) {
   if (length(re_idx) != N) {
     stop(sprintf("%s: length(re_idx) (%d) must equal length(y) (%d).",
@@ -778,7 +778,7 @@ tulpa_laplace <- function(y, n_trials, X,
 #'
 #' @param r One element of a `re_list` (see [tulpa_laplace()]).
 #' @return The packed numeric vector.
-#' @keywords internal
+#' @noRd
 .re_cov_pack <- function(r) {
   nc <- r$n_coefs %||% 1L
 
@@ -807,7 +807,7 @@ tulpa_laplace <- function(y, n_trials, X,
 #' scales each row's log-density, score and Fisher curvature by the same `w_i`,
 #' so the mode these kernels return and the marginal precision
 #' `.marginal_H_beta_*()` builds at it describe one model.
-#' @keywords internal
+#' @noRd
 dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
                                      sigma_re, spatial, family, phi,
                                      max_iter, tol, n_threads, offset = NULL,
@@ -937,7 +937,7 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
 #' @return The raw `cpp_laplace_fit_spde` result list (mode, log_det_Q,
 #'   log_marginal, n_iter, converged), augmented with `range`, `sigma`,
 #'   and the spatial spec for downstream prediction.
-#' @keywords internal
+#' @noRd
 laplace_spde_at <- function(y, n_trials, X, spatial,
                              family = "binomial", phi = 1.0,
                              range = NULL, sigma = NULL,
@@ -1020,7 +1020,7 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
 #' read a `nu` beside it to know which kernel it is evaluating. Anything else is
 #' rejected here rather than silently fitted as a different covariance.
 #'
-#' @keywords internal
+#' @noRd
 gp_cov_type <- function(spatial) {
   cov <- spatial$cov %||% "exponential"
   if (cov == "exponential") return(0L)
@@ -1060,7 +1060,7 @@ gp_cov_type <- function(spatial) {
 #'   `length(y)`), scaling each row's log-density, score and Fisher curvature.
 #' @return The raw `cpp_laplace_fit_gp` result list, augmented with
 #'   `sigma2_gp`, `phi_gp`, and the spatial spec.
-#' @keywords internal
+#' @noRd
 laplace_gp_at <- function(y, n_trials, X, spatial,
                            family = "binomial", phi = 1.0,
                            sigma2_gp = NULL, phi_gp = NULL,
@@ -1133,7 +1133,7 @@ laplace_gp_at <- function(y, n_trials, X, spatial,
 #' kernel at that one grid cell. `tau` / `rho` default to the spec's fields (or
 #' `tau = 1`, `rho` = midpoint of the eigenvalue-derived `rho_bounds`) and are
 #' recorded on the result.
-#' @keywords internal
+#' @noRd
 laplace_car_proper_at <- function(y, n_trials, X, spatial,
                                   family = "binomial", phi = 1.0,
                                   tau = NULL, rho = NULL,
@@ -1178,7 +1178,7 @@ laplace_car_proper_at <- function(y, n_trials, X, spatial,
 #' (DENSE_BASIS scatter) via `cpp_laplace_fit_hsgp`, so the mode equals the
 #' nested kernel at that one grid cell. `sigma2` / `lengthscale` default to the
 #' spec's fields (or `1`) and are recorded on the result.
-#' @keywords internal
+#' @noRd
 laplace_hsgp_at <- function(y, n_trials, X, spatial,
                             family = "binomial", phi = 1.0,
                             sigma2 = NULL, lengthscale = NULL,
@@ -1219,7 +1219,7 @@ laplace_hsgp_at <- function(y, n_trials, X, spatial,
 
 
 #' Convert adjacency matrix to CSR for tulpa C++
-#' @keywords internal
+#' @noRd
 adjacency_to_csr_tulpa <- function(adj) {
   if (inherits(adj, "sparseMatrix")) adj <- as.matrix(adj)
   n <- nrow(adj)

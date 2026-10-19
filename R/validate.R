@@ -88,7 +88,7 @@ pp_check.tulpa_fit <- function(object, type = c("dens_overlay", "scatter", "inte
 
 #' Single component pp_check
 #'
-#' @keywords internal
+#' @noRd
 pp_check_single <- function(y, yrep, type, stat, ndraws, title_suffix, ...) {
 
   # Subsample draws for visualization

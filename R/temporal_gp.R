@@ -152,7 +152,7 @@ print.tulpa_temporal_multiscale <- function(x, ...) {
 #' when fitting through a design-matrix door.
 #'
 #' @param temporal A [temporal_multiscale()] object (or a single-component
-#'   temporal spec, dispatched to [validate_temporal()]).
+#'   temporal spec, dispatched to `validate_temporal()`).
 #' @param data Data frame containing the time column named in `temporal`.
 #'
 #' @return Updated object with indices computed.
@@ -486,7 +486,7 @@ print.tulpa_temporal_gp <- function(x, ...) {
 #' @param data Data frame
 #'
 #' @return Updated object with computed time structure
-#' @keywords internal
+#' @noRd
 validate_temporal_gp <- function(temporal, data) {
   if (is.null(temporal)) return(NULL)
   if (!inherits(temporal, "tulpa_temporal_gp")) return(temporal)

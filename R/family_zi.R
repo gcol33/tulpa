@@ -79,7 +79,7 @@
 
 #' Reject a ZI request the compiled kernels cannot fit
 #'
-#' @keywords internal
+#' @noRd
 .validate_family_zi_compiled <- function(family) {
   # The canonical spelling, not the base: a `<family>_<link>` code is supported
   # or not on its own terms, since the observed curvature the mixture needs is
@@ -98,7 +98,7 @@
 
 #' Reject a ZI request against a family with no atom at zero
 #'
-#' @keywords internal
+#' @noRd
 .validate_family_zi <- function(family) {
   if (.family_base(family) %in% .ZI_FAMILIES) return(invisible(TRUE))
   stop(sprintf(paste0(
@@ -143,7 +143,7 @@
 
 #' Elementwise log-likelihood of the zero-inflated mixture
 #'
-#' @keywords internal
+#' @noRd
 zi_loglik <- function(eta, logit_zi, y, family, n_trials = NULL, phi = 1.0,
                       phi2 = NULL) {
   .validate_family_zi(family)
@@ -160,7 +160,7 @@ zi_loglik <- function(eta, logit_zi, y, family, n_trials = NULL, phi = 1.0,
 #' Returns an `n x 2` matrix with columns `count` (d loglik / d eta_count) and
 #' `zi` (d loglik / d logit_zi).
 #'
-#' @keywords internal
+#' @noRd
 zi_score_eta <- function(eta, logit_zi, y, family, n_trials = NULL, phi = 1.0,
                          phi2 = NULL) {
   .validate_family_zi(family)
@@ -190,7 +190,7 @@ zi_score_eta <- function(eta, logit_zi, y, family, n_trials = NULL, phi = 1.0,
 #' the coupling lives entirely in the y = 0 branch, where both components can
 #' explain the zero.
 #'
-#' @keywords internal
+#' @noRd
 zi_neg_hessian <- function(eta, logit_zi, y, family, n_trials = NULL,
                            phi = 1.0, phi2 = NULL) {
   .validate_family_zi(family)
@@ -222,7 +222,7 @@ zi_neg_hessian <- function(eta, logit_zi, y, family, n_trials = NULL,
 
 #' Response-scale mean of the zero-inflated mixture
 #'
-#' @keywords internal
+#' @noRd
 zi_response_mean <- function(eta, logit_zi, family, n_trials = NULL,
                              phi = 1.0) {
   .validate_family_zi(family)
@@ -237,7 +237,7 @@ zi_response_mean <- function(eta, logit_zi, family, n_trials = NULL,
 #' Law of total variance over the mixture indicator: with probability `pi` the
 #' response is a structural zero, otherwise it is a base-family draw.
 #'
-#' @keywords internal
+#' @noRd
 zi_variance <- function(eta, logit_zi, family, n_trials = NULL, phi = 1.0,
                         phi2 = NULL) {
   .validate_family_zi(family)
@@ -252,7 +252,7 @@ zi_variance <- function(eta, logit_zi, family, n_trials = NULL, phi = 1.0,
 
 #' One draw per element from the zero-inflated mixture
 #'
-#' @keywords internal
+#' @noRd
 zi_sample <- function(eta, logit_zi, family, n_trials = NULL, phi = 1.0,
                       phi2 = NULL) {
   .validate_family_zi(family)

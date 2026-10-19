@@ -1,7 +1,7 @@
 #' Sample an SPDE GLM via NUTS, optionally jointly over Matern hypers
 #'
 #' @description
-#' Bayesian counterpart to [fit_spde()] / [laplace_spde_at()]. Routes the
+#' Bayesian counterpart to [fit_spde()] / `laplace_spde_at()`. Routes the
 #' SPDE-augmented GLM through tulpa's full NUTS backend via the generic
 #' `LikelihoodSpec` interface. Two modes:
 #'

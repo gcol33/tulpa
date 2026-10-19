@@ -49,7 +49,7 @@
 #' Hofreither, C. (2021). An algorithm for best rational approximation based on
 #' barycentric rational interpolation. Numerical Algorithms, 88, 365-388.
 #'
-#' @keywords internal
+#' @noRd
 rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) {
   .validate_spde_nu(nu)
 
@@ -87,7 +87,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #'
 #' @param nu Candidate smoothness parameter.
 #' @return Invisibly `TRUE`; raises an error on an invalid `nu`.
-#' @keywords internal
+#' @noRd
 .validate_spde_nu <- function(nu) {
   if (!is.numeric(nu) || length(nu) != 1L || !is.finite(nu)) {
     stop("SPDE `nu` must be a single finite number.", call. = FALSE)
@@ -110,7 +110,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #'
 #' @param nu Matern smoothness; `alpha = nu + 1` in 2D.
 #' @return `TRUE` when `alpha` is non-integer (the rational SPDE path).
-#' @keywords internal
+#' @noRd
 .spde_nu_is_fractional <- function(nu) {
   alpha <- nu + 1
   abs(alpha - round(alpha)) > 1e-10
@@ -121,7 +121,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' Prefers the stored `Matrix` objects (`spatial$G`, `spatial$A`); falls back to
 #' rebuilding them from the pre-extracted CSC slots so a spec carrying only the
 #' slots still assembles.
-#' @keywords internal
+#' @noRd
 .spde_fem_matrices <- function(spatial) {
   n_mesh <- spatial$n_mesh
   G <- spatial$G
@@ -175,7 +175,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' domain of extent 13.8, and every warning came from the MODE SEARCH at its
 #' own box corner, `range = 100 * range_init ~ 275.6`. The CCD grid the fit
 #' then integrates topped out at range 1.53 and carried no weight above 100.
-#' @keywords internal
+#' @noRd
 .spde_mean_marginal_var <- function(Q, Pr, C0, n_probe = .SPDE_VARNORM_NPROBE) {
   n <- length(C0)
   Z <- .with_preserved_seed({
@@ -225,7 +225,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' @return A list with `Q`, `Pr`, `A_eff`, `Pl` (all CSC, sized to the non-orphan
 #'   submesh), `keep` (1-based indices of the retained mesh nodes), `n_mesh_full`
 #'   (the full mesh size), `kappa`, `var_scale`, `l_max`, and `logdet_Q`.
-#' @keywords internal
+#' @noRd
 .spde_assemble_at <- function(spatial, range, sigma, order = 2L) {
   nu    <- spatial$nu
   kappa <- sqrt(8 * nu) / range
@@ -291,7 +291,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' Gaussian residual variance) and is converted at the kernel calls below.
 #'
 #' @return A list with `log_marginal`, `n_iter`, `converged`, and the assembly.
-#' @keywords internal
+#' @noRd
 .spde_nested_logmarginal_at <- function(spatial, range, sigma, y, X, family, phi,
                                         n_trials, order, max_iter, tol, n_threads,
                                         offset, tau_beta = 1e-4) {
@@ -367,7 +367,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' the `(range, sigma)` grid); a fit with an iid RE block keeps the precomputed
 #' precision-space marginal.
 #'
-#' @keywords internal
+#' @noRd
 .spde_laplace_fractional_at <- function(y, n_trials, X, spatial,
                                         family, phi, range, sigma,
                                         re_idx, n_re_groups, sigma_re,

@@ -39,7 +39,7 @@ so a non-zero \code{mean} errors.}
 \item{prior_sigma_scale}{Prior scale for RE sigma (statistical; default 2.5).}
 
 \item{spatial}{Optional spatial spec. When supplied the fit routes to the
-matching spatial Polya-Gamma Gibbs sampler via \code{\link[=dispatch_gibbs_spatial]{dispatch_gibbs_spatial()}};
+matching spatial Polya-Gamma Gibbs sampler via \code{dispatch_gibbs_spatial()};
 \code{group}/\code{n_groups} are the iid random-effect block carried alongside the
 field. The full areal + continuous family is available for
 \code{family = "binomial"}; \code{family = "neg_binomial_2"} is backed by the areal
@@ -58,7 +58,7 @@ observation per unique location in coordinate order.
 
 \item{temporal}{Optional temporal spec: a validated \code{\link[=temporal_multiscale]{temporal_multiscale()}}
 object. Routes to the multiscale temporal Polya-Gamma sampler via
-\code{\link[=dispatch_gibbs_temporal]{dispatch_gibbs_temporal()}} (binomial only; RW1 trend + cyclic seasonal +
+\code{dispatch_gibbs_temporal()} (binomial only; RW1 trend + cyclic seasonal +
 AR1/IID short-term). Cannot be combined with \code{spatial}.}
 
 \item{control}{A named list of numerical / tuning knobs (statistical

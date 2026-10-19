@@ -16,7 +16,7 @@
 #' @section Tier:
 #' Bridge sampling is a *post-hoc* marginal-likelihood estimator, not
 #' a sampling backend, so it does not appear in the
-#' [INFERENCE_TIERS] registry. It operates on draws from any Tier-1
+#' `INFERENCE_TIERS` registry. It operates on draws from any Tier-1
 #' (Exact) backend.
 #'
 #' @param draws Numeric matrix of posterior draws, one parameter per
@@ -201,7 +201,7 @@ bridge_sampling <- function(draws,
 
 
 #' Numerically stable log(mean(exp(x)))
-#' @keywords internal
+#' @noRd
 logmeanexp <- function(x) {
   m <- max(x)
   m + log(mean(exp(x - m)))
@@ -209,7 +209,7 @@ logmeanexp <- function(x) {
 
 
 #' Numerically stable log(exp(a) + exp(b)) elementwise (vectors / scalars)
-#' @keywords internal
+#' @noRd
 logsumexp_pair <- function(a, b) {
   m <- pmax(a, b)
   m + log(exp(a - m) + exp(b - m))

@@ -164,7 +164,7 @@ plot_map <- function(x,
 
 #' Prepare map data from tulpa_fit object
 #'
-#' @keywords internal
+#' @noRd
 prepare_map_data_from_fit <- function(fit, what, summary, newdata, coords = NULL) {
 
   # Response-scale prediction with credible bounds from the generic engine:
@@ -207,7 +207,7 @@ prepare_map_data_from_fit <- function(fit, what, summary, newdata, coords = NULL
 
 #' Prepare map data from data frame
 #'
-#' @keywords internal
+#' @noRd
 prepare_map_data_from_df <- function(x, coords, what, summary) {
 
   coords_df <- extract_coords(coords)
@@ -259,7 +259,7 @@ prepare_map_data_from_df <- function(x, coords, what, summary) {
 
 #' Extract coordinates from various formats
 #'
-#' @keywords internal
+#' @noRd
 extract_coords <- function(x) {
 
   if (is.matrix(x)) {
@@ -288,7 +288,7 @@ extract_coords <- function(x) {
 
 #' Extract coordinates from tulpa_fit object
 #'
-#' @keywords internal
+#' @noRd
 extract_coords_from_fit <- function(fit) {
 
   # Check various locations where coords might be stored
@@ -332,7 +332,7 @@ extract_coords_from_fit <- function(fit) {
 
 #' Create the ggplot2 map
 #'
-#' @keywords internal
+#' @noRd
 create_map <- function(plot_data, obs_coords, title, palette,
                        point_color, point_size, na_color, crs,
                        legend_title, ...) {
@@ -374,7 +374,7 @@ create_map <- function(plot_data, obs_coords, title, palette,
 
 #' Check if data is gridded (can use stars)
 #'
-#' @keywords internal
+#' @noRd
 can_use_stars <- function(plot_data) {
   # Check if coordinates form a regular grid
   x_vals <- unique(plot_data$x)
@@ -392,7 +392,7 @@ can_use_stars <- function(plot_data) {
 
 #' Create raster-style map using stars
 #'
-#' @keywords internal
+#' @noRd
 create_raster_map <- function(plot_data, crs, palette, na_color, legend_title) {
 
   # Convert to stars
@@ -414,7 +414,7 @@ create_raster_map <- function(plot_data, crs, palette, na_color, legend_title) {
 
 #' Create point-based map
 #'
-#' @keywords internal
+#' @noRd
 create_point_map <- function(plot_data, palette, na_color, legend_title) {
 
   scale_fill <- get_palette_scale(palette, na_color, legend_title, geom = "point")
@@ -428,7 +428,7 @@ create_point_map <- function(plot_data, palette, na_color, legend_title) {
 
 #' Get appropriate color scale
 #'
-#' @keywords internal
+#' @noRd
 get_palette_scale <- function(palette, na_color, legend_title, geom = "fill") {
 
   viridis_palettes <- c("viridis", "magma", "plasma", "inferno",

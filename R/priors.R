@@ -104,7 +104,7 @@ tulpa_priors <- function(
 #'
 #' @param prior A prior object
 #' @param name Parameter name for error messages
-#' @keywords internal
+#' @noRd
 validate_prior <- function(prior, name) {
   if (!inherits(prior, "tulpa_prior")) {
     stop(sprintf("'%s' must be a prior object (use prior_*() functions)", name),
@@ -354,7 +354,7 @@ print.tulpa_prior <- function(x, ...) {
 #'
 #' @param prior A tulpa_prior object
 #' @param indent Indentation string
-#' @keywords internal
+#' @noRd
 print_prior <- function(prior, indent = "") {
   cat(format(prior, indent = indent), "\n", sep = "")
 }

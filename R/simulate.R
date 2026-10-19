@@ -260,7 +260,7 @@ print.tulpa_family <- function(x, ...) {
 #' Validate a tulpa_family
 #'
 #' @param family Object to validate
-#' @keywords internal
+#' @noRd
 validate_family <- function(family) {
   if (!inherits(family, "tulpa_family")) {
     stop("`family` must be a tulpa_family object (see ?tulpa_family)",
@@ -708,7 +708,7 @@ theta_from_fit <- function(fit, sim_index, built, family, fit_source = NULL) {
 #' @param type Type of random effects: "iid" (default), "car", "ar1"
 #'
 #' @return Numeric vector of random effects
-#' @keywords internal
+#' @noRd
 sim_random_effects <- function(n_groups, sigma = 0.5, type = "iid") {
 
   if (type == "iid") {
@@ -738,7 +738,7 @@ sim_random_effects <- function(n_groups, sigma = 0.5, type = "iid") {
 #' @param type Spatial type: "icar" (default), "bym2"
 #'
 #' @return Numeric vector of spatial effects
-#' @keywords internal
+#' @noRd
 sim_spatial_effects <- function(adjacency, sigma = 0.5, type = "icar") {
   n <- nrow(adjacency)
 
@@ -765,42 +765,3 @@ sim_spatial_effects <- function(adjacency, sigma = 0.5, type = "icar") {
   rnorm(n, 0, sigma)
 }
 
-
-#' Generate temporal random effects for simulation
-#'
-#' @param n_times Number of time points
-#' @param sigma Standard deviation
-#' @param type Temporal type: "rw1", "rw2", "ar1"
-#' @param rho Autocorrelation for AR(1). Default 0.7.
-#'
-#' @return Numeric vector of temporal effects
-#' @keywords internal
-sim_temporal_effects <- function(n_times, sigma = 0.5, type = "rw1",
-                                  rho = 0.7) {
-
-  if (type == "rw1") {
-    # First-order random walk
-    phi <- cumsum(rnorm(n_times, 0, sigma))
-    phi <- phi - mean(phi)  # Center
-    return(phi)
-  }
-
-  if (type == "rw2") {
-    # Second-order random walk (smoother)
-    phi <- numeric(n_times)
-    phi[1] <- rnorm(1, 0, sigma)
-    if (n_times >= 2) phi[2] <- phi[1] + rnorm(1, 0, sigma)
-    for (t in 3:n_times) {
-      phi[t] <- 2 * phi[t - 1] - phi[t - 2] + rnorm(1, 0, sigma)
-    }
-    phi <- phi - mean(phi)
-    return(phi)
-  }
-
-  if (type == "ar1") {
-    return(sim_random_effects(n_times, sigma = sigma, type = "ar1"))
-  }
-
-  # Default: IID
-  rnorm(n_times, 0, sigma)
-}

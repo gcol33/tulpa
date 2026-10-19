@@ -236,7 +236,7 @@ temporal_ar1 <- function(time_var, group_var = NULL, shared = NULL,
 #' @return The input `x`, returned invisibly. Called for the side effect of
 #'   printing the temporal specification to the console.
 #'
-#' @keywords internal
+#' @noRd
 #' @export
 print.tulpa_temporal <- function(x, ...) {
  cat("tulpa temporal specification\n")
@@ -313,7 +313,7 @@ print.tulpa_temporal <- function(x, ...) {
 #' @param data Data frame
 #'
 #' @return Updated tulpa_temporal object with indices computed
-#' @keywords internal
+#' @noRd
 validate_temporal <- function(temporal, data) {
  if (is.null(temporal)) return(NULL)
 

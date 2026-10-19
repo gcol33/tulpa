@@ -196,8 +196,6 @@ print.tulpa_gp <- function(x, ...) {
 }
 
 
-
-
 #' @rdname spatial_gp
 #' @export
 print.tulpa_hsgp <- function(x, ...) {
@@ -224,23 +222,12 @@ print.tulpa_hsgp <- function(x, ...) {
 #'
 #' @return A validated tulpa_hsgp object with coords_matrix filled in
 #'
-#' @keywords internal
+#' @noRd
 validate_hsgp <- function(spatial, data) {
   coords <- prepare_coords(spatial$coord_vars, data, spatial$scale_coords)
   spatial$n_obs <- nrow(coords)
   spatial$coords_matrix <- coords
   spatial
-}
-
-
-#' Validate HSGP-MSGP (multi-scale GP with HSGP approximation)
-#' @noRd
-validate_hsgp_multiscale <- function(spatial, data) {
-  coords <- prepare_coords(spatial$coord_vars, data, spatial$scale_coords)
-  list(
-    coords_matrix = coords,
-    n_obs = nrow(coords)
-  )
 }
 
 

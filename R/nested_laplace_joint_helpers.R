@@ -375,52 +375,6 @@
          "character name, or `list(name = , grid = )`.", call. = FALSE)
 }
 
-# Resolve the per-arm field_coef structure on a normalised arms list into
-# the kernel-facing pieces used by the joint dispatcher:
-#   * has_axis        logical -- is there any hyperparam axis declared?
-#   * axis_arm_zero   0-based arm index of the axis-carrying arm, -1 if none
-#   * axis_name       character (default "alpha")
-#   * axis_grid       numeric grid (NULL if the axis was named-only and
-#                     the user must supply it via another mechanism)
-#   * field_coef_const numeric [n_arms] -- per-arm constant multiplier
-#   * any_nontrivial logical -- any arm has field_coef_const != 1?
-#
-# First-ship validation: at most ONE arm may declare a hyperparam axis
-# (multi-arm shared axes are deferred to v5; the cover hurdle / occu_cover
-# only need one).
-.resolve_arm_field_coefs <- function(arms) {
-    n_arms <- length(arms)
-    consts <- vapply(arms, function(a) a$field_coef_const %||% 1.0,
-                     numeric(1))
-    axes <- lapply(arms, function(a) a$field_coef_axis)
-    has_axis_per_arm <- !vapply(axes, is.null, logical(1))
-    if (sum(has_axis_per_arm) > 1L) {
-        stop("At most one arm may declare a hyperparam `field_coef` axis. Got ",
-             sum(has_axis_per_arm),
-             ". Multi-arm shared axes are not supported.", call. = FALSE)
-    }
-    if (any(has_axis_per_arm)) {
-        k_axis  <- which(has_axis_per_arm)
-        spec    <- axes[[k_axis]]
-        list(
-            has_axis        = TRUE,
-            axis_arm_zero   = as.integer(k_axis - 1L),
-            axis_name       = spec$name %||% "alpha",
-            axis_grid       = spec$grid,
-            field_coef_const = consts,
-            any_nontrivial  = any(abs(consts - 1.0) > 0)
-        )
-    } else {
-        list(
-            has_axis        = FALSE,
-            axis_arm_zero   = -1L,
-            axis_name       = NA_character_,
-            axis_grid       = NULL,
-            field_coef_const = consts,
-            any_nontrivial  = any(abs(consts - 1.0) > 0)
-        )
-    }
-}
 
 # Decide which arm (if any) is the copy arm and what the alpha grid is.
 # Single-block path: the copy coefficient's outer-grid axis lives on the arm

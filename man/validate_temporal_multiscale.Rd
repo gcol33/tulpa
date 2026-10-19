@@ -8,7 +8,7 @@ validate_temporal_multiscale(temporal, data)
 }
 \arguments{
 \item{temporal}{A \code{\link[=temporal_multiscale]{temporal_multiscale()}} object (or a single-component
-temporal spec, dispatched to \code{\link[=validate_temporal]{validate_temporal()}}).}
+temporal spec, dispatched to \code{validate_temporal()}).}
 
 \item{data}{Data frame containing the time column named in \code{temporal}.}
 }

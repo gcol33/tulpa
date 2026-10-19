@@ -165,7 +165,7 @@
            phi * (-trigamma(a) * mu + trigamma(b) * (1 - mu)))
 }
 
-#' @keywords internal
+#' @noRd
 .FAMILY_DPHI <- list(
 
   # phi = size. mu = exp(eta); Var(y) = mu + mu^2 / phi.
@@ -431,7 +431,7 @@
 #' @return A list with `dloglik`, `dscore` and `dweight`, or `NULL` when the
 #'   family has no free dispersion or none has been derived. `NULL` is a refusal
 #'   to estimate, never a signal to fall back to a fixed value silently.
-#' @keywords internal
+#' @noRd
 .family_dphi <- function(family) {
   nm <- .family_base(family)
   # The leading-dot entries are parked derivations, not registered families;
@@ -471,7 +471,7 @@
 # differencing stencil rather than reporting an inexact closed form.
 # ============================================================================
 
-#' @keywords internal
+#' @noRd
 .FAMILY_DPHI2 <- list(
 
   # phi = size. Differentiates .FAMILY_DPHI$neg_binomial_2 once more in phi;
@@ -619,7 +619,7 @@
 #'   `NULL` when the family's phi Hessian has not been derived. `NULL` is a
 #'   refusal, not a fixed-value fallback: it hands the phi Hessian to the
 #'   differencing stencil rather than reporting an inexact closed form.
-#' @keywords internal
+#' @noRd
 .family_dphi2 <- function(family) {
   nm <- .family_base(family)
   if (startsWith(nm, ".")) return(NULL)
@@ -642,7 +642,7 @@
 #' inverses multiply a zero channel and the answer would come out the same
 #' either way, but the entry is required regardless rather than resting on that
 #' second coincidence.
-#' @keywords internal
+#' @noRd
 .family_dphi2_needs_obs <- function(family) {
   nm <- .family_base(family)
   !isTRUE(tryCatch(cpp_family_working_weight_is_observed(nm),
@@ -651,7 +651,7 @@
 
 
 #' Families whose dispersion can be estimated
-#' @keywords internal
+#' @noRd
 .dispersion_families <- function() {
   nms <- names(.FAMILY_DPHI)
   nms[!startsWith(nms, ".")]

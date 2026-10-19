@@ -79,7 +79,7 @@
 #'   `re_layout` is attached by the front door, so a source fit built directly
 #'   by `tulpa_eb()` does not carry one, and the model being sampled is the
 #'   authority on the block shapes in any case.
-#' @keywords internal
+#' @noRd
 .warm_start_blocks <- function(fit, re_terms) {
   mode_vec <- as.numeric(fit$mode)
   n_fixed <- as.integer(fit$n_fixed %||% 0L)
@@ -131,7 +131,7 @@
 #' @param fit A fitted `tulpa_fit`.
 #' @param sigma_re Fallback SDs, used when the fit did not estimate them.
 #' @param n_terms Number of random-effect terms.
-#' @keywords internal
+#' @noRd
 .warm_start_sigmas <- function(fit, sigma_re, n_terms) {
   if (n_terms == 0L) return(list())
 
@@ -174,7 +174,7 @@
 #'   note at the end of this function.
 #' @return `list(init = <n_chains x D matrix>, inv_metric_diag = <D vector or
 #'   NULL>)`.
-#' @keywords internal
+#' @noRd
 .build_warm_start <- function(fit, layout, re_terms, n_chains, sigma_re = NULL,
                               jitter = 1.0, metric = FALSE) {
   D <- as.integer(layout$total_params)
@@ -347,7 +347,7 @@
 #' @param sigma_re Random-effect SDs to condition on, for the Laplace source.
 #' @param beta_prior Optional fixed-effect prior, threaded into the source fit.
 #' @param n_chains Number of chains the sampler will run.
-#' @keywords internal
+#' @noRd
 .resolve_warm_start <- function(warm_start, args, re_terms, sigma_re,
                                 beta_prior, n_chains) {
   if (is.null(warm_start)) return(NULL)

@@ -270,7 +270,7 @@ agq_fit <- function(y, X, group,
 #'
 #' @param n Number of quadrature nodes.
 #' @return List with `nodes` and `weights` (each length `n`).
-#' @keywords internal
+#' @noRd
 gauss_hermite_prob <- function(n) {
   n <- as.integer(n)
   if (n < 1L) stop("n must be >= 1.", call. = FALSE)

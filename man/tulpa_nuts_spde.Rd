@@ -104,7 +104,7 @@ spec. In \code{joint = TRUE} mode additionally:
 \code{sigma_summary} (mean/median/5\%/95\% quantiles).
 }
 \description{
-Bayesian counterpart to \code{\link[=fit_spde]{fit_spde()}} / \code{\link[=laplace_spde_at]{laplace_spde_at()}}. Routes the
+Bayesian counterpart to \code{\link[=fit_spde]{fit_spde()}} / \code{laplace_spde_at()}. Routes the
 SPDE-augmented GLM through tulpa's full NUTS backend via the generic
 \code{LikelihoodSpec} interface. Two modes:
 \itemize{
