@@ -29,7 +29,10 @@ grid_warnings <- function(expr) {
   w
 }
 
+skip_on_cran_budget()
+
 test_that(".nl_internal_batch() is off by default and restores (#614)", {
+  skip_on_cran_budget()
   expect_false(.nl_internal_batch())
   inner <- .nl_with_internal_batch({
     expect_true(.nl_internal_batch())
@@ -54,6 +57,7 @@ test_that(".nl_internal_batch() is off by default and restores (#614)", {
 })
 
 test_that(".nl_multi_grid_warn() fires on measured elapsed time, gated by .nl_internal_batch() (gcol33/tulpa#820, #614)", {
+  skip_on_cran_budget()
   over <- tulpa:::.NL_MULTI_GRID_WARN_SECONDS + 1
 
   # A grid the caller DID choose still warns once it crosses the measured

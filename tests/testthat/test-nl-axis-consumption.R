@@ -45,40 +45,6 @@
          n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0)
 }
 
-test_that("a family with no path entry reads exactly its registry binding", {
-    # nngp's drivers agree, so it needs no entry and must not acquire one by
-    # accident.
-    for (path in names(tulpa:::.NL_PATH_AXES)) {
-        expect_identical(tulpa:::.nl_path_axis_fields("nngp", path),
-                         names(tulpa:::.NL_FAMILY_AXES$nngp), info = path)
-    }
-    # And the deviating families deviate in the documented direction.
-    expect_identical(tulpa:::.nl_path_axis_fields("icar", "registry"), "tau_grid")
-    expect_identical(tulpa:::.nl_path_axis_fields("icar", "joint_single"),
-                     "sigma_grid")
-    expect_setequal(tulpa:::.nl_path_axis_fields("icar", "copy"),
-                    c("sigma_grid", "alpha_grid"))
-})
-
-test_that("every declared conversion is mutual and lands in the other axis", {
-    for (fam in names(tulpa:::.NL_AXIS_EQUIV)) {
-        eq <- tulpa:::.NL_AXIS_EQUIV[[fam]]
-        for (from in names(eq)) {
-            for (to in names(eq[[from]])) {
-                # The pair is named the other way round too, so a caller
-                # arriving from either path gets the sentence.
-                expect_true(from %in% names(eq[[to]]),
-                            info = paste(fam, from, to))
-                # And the target IS a field some path of that family reads.
-                reads <- unlist(lapply(names(tulpa:::.NL_AXIS_PATH_LABEL),
-                                       function(p)
-                                           tulpa:::.nl_path_axis_fields(fam, p)))
-                expect_true(to %in% reads, info = paste(fam, to))
-            }
-        }
-    }
-})
-
 # --------------------------------------------------------------------------- #
 # (3) The refusal                                                              #
 # --------------------------------------------------------------------------- #
@@ -104,17 +70,6 @@ test_that("a pinned axis the multi-block path cannot read is refused", {
     expect_match(msg, "tau_grid = 1 / sigma_grid^2", fixed = TRUE)
 })
 
-test_that("the registry front door refuses the same axis", {
-    sim <- .axc_sim(seed = 23L)
-    expect_error(
-        tulpa_nested_laplace(
-            y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
-            prior = .axc_icar_block(sim, spatial_idx = sim$sidx,
-                                    sigma_grid = c(0.4, 0.9)),
-            family = "binomial"),
-        "`sigma_grid` is not an axis", fixed = TRUE)
-})
-
 test_that("the refusal is symmetric: a precision axis on the joint areal path", {
     sim <- .axc_sim(seed = 24L)
     expect_error(
@@ -122,17 +77,6 @@ test_that("the refusal is symmetric: a precision axis on the joint areal path", 
             responses = list(occ = .axc_arm(sim)),
             prior = .axc_icar_block(sim, tau_grid = c(1, 4, 9))),
         "tau_grid.*single-block joint areal backend.*sigma_grid = 1 / sqrt")
-})
-
-test_that("an axis the path DOES read passes untouched", {
-    sim <- .axc_sim(seed = 25L)
-    expect_null(tulpa:::.nl_check_axis_fields(
-        .axc_icar_block(sim, tau_grid = c(1, 4)), "registry"))
-    expect_null(tulpa:::.nl_check_axis_fields(
-        .axc_icar_block(sim, sigma_grid = c(0.4, 0.9)), "joint"))
-    # A copy block leads with (sigma, alpha), so sigma is read there.
-    expect_length(tulpa:::.nl_check_block_axis_fields(
-        .axc_icar_block(sim, sigma_grid = c(0.4, 0.9)), "copy", 1L), 0L)
 })
 
 test_that("a field no binding names is not this check's business", {
@@ -217,6 +161,68 @@ test_that("the fields the resolver DOES read pass untouched", {
     expect_length(tulpa:::.nl_check_copy_specs(
         list(arm = "pos", block = 1L, alpha_grid = c(0.5, 1), label = "trend"),
         list(.axc_copy_block(sim))), 0L)
+})
+
+skip_on_cran_budget()
+
+test_that("a family with no path entry reads exactly its registry binding", {
+    skip_on_cran_budget()
+    # nngp's drivers agree, so it needs no entry and must not acquire one by
+    # accident.
+    for (path in names(tulpa:::.NL_PATH_AXES)) {
+        expect_identical(tulpa:::.nl_path_axis_fields("nngp", path),
+                         names(tulpa:::.NL_FAMILY_AXES$nngp), info = path)
+    }
+    # And the deviating families deviate in the documented direction.
+    expect_identical(tulpa:::.nl_path_axis_fields("icar", "registry"), "tau_grid")
+    expect_identical(tulpa:::.nl_path_axis_fields("icar", "joint_single"),
+                     "sigma_grid")
+    expect_setequal(tulpa:::.nl_path_axis_fields("icar", "copy"),
+                    c("sigma_grid", "alpha_grid"))
+})
+
+test_that("every declared conversion is mutual and lands in the other axis", {
+    skip_on_cran_budget()
+    for (fam in names(tulpa:::.NL_AXIS_EQUIV)) {
+        eq <- tulpa:::.NL_AXIS_EQUIV[[fam]]
+        for (from in names(eq)) {
+            for (to in names(eq[[from]])) {
+                # The pair is named the other way round too, so a caller
+                # arriving from either path gets the sentence.
+                expect_true(from %in% names(eq[[to]]),
+                            info = paste(fam, from, to))
+                # And the target IS a field some path of that family reads.
+                reads <- unlist(lapply(names(tulpa:::.NL_AXIS_PATH_LABEL),
+                                       function(p)
+                                           tulpa:::.nl_path_axis_fields(fam, p)))
+                expect_true(to %in% reads, info = paste(fam, to))
+            }
+        }
+    }
+})
+
+test_that("the registry front door refuses the same axis", {
+    skip_on_cran_budget()
+    sim <- .axc_sim(seed = 23L)
+    expect_error(
+        tulpa_nested_laplace(
+            y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
+            prior = .axc_icar_block(sim, spatial_idx = sim$sidx,
+                                    sigma_grid = c(0.4, 0.9)),
+            family = "binomial"),
+        "`sigma_grid` is not an axis", fixed = TRUE)
+})
+
+test_that("an axis the path DOES read passes untouched", {
+    skip_on_cran_budget()
+    sim <- .axc_sim(seed = 25L)
+    expect_null(tulpa:::.nl_check_axis_fields(
+        .axc_icar_block(sim, tau_grid = c(1, 4)), "registry"))
+    expect_null(tulpa:::.nl_check_axis_fields(
+        .axc_icar_block(sim, sigma_grid = c(0.4, 0.9)), "joint"))
+    # A copy block leads with (sigma, alpha), so sigma is read there.
+    expect_length(tulpa:::.nl_check_block_axis_fields(
+        .axc_icar_block(sim, sigma_grid = c(0.4, 0.9)), "copy", 1L), 0L)
 })
 
 skip_on_cran()

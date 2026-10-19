@@ -154,32 +154,6 @@ test_that("fit_spde reports an outer Pareto-k-hat over (range, sigma)", {
   expect_true(is.na(off$pareto_k))                  # gated off
 })
 
-test_that("fit_spde_nested_ccd builds the CCD design at a clean interior mode", {
-  # A textbook-concave log-marginal in (log range, log sigma) with an interior
-  # maximum; combined with the PC prior, obj has a clean interior minimum, so
-  # the precision optimHess(obj) is PD and the CCD design must engage rather
-  # than fall back to the rectangular grid. Drives the integrator directly so
-  # the branch is exercised without depending on a particular mesh/data
-  # realisation landing interior.
-  r0 <- 0.3; s0 <- 0.6
-  spde_log_marginal <- function(r, s) {
-    lm <- -0.5 * ((log(r) - log(r0))^2 / 0.25 + (log(s) - log(s0))^2 / 0.25)
-    list(log_marginal = lm, n_iter = rep(5L, length(r)))
-  }
-  fit_spde_single <- function(range, sigma)
-    list(mode = NULL, beta = NULL, spatial_effects = NULL, log_det_Q = NA_real_)
-  sp <- list(prior_range = c(0.3, 0.5), prior_sigma = c(0.6, 0.05))
-
-  res <- fit_spde_nested_ccd(spde_log_marginal, fit_spde_single, sp,
-                             spatial = list(), diagnose_k = FALSE)
-
-  expect_identical(res$nested$method, "ccd")
-  expect_equal(res$nested$n_points, 9L)
-  expect_equal(sum(res$nested$weights), 1, tolerance = 1e-8)
-  expect_true(is.finite(res$range) && res$range > 0)
-  expect_true(is.finite(res$sigma) && res$sigma > 0)
-})
-
 # --------------------------------------------------------------------------- #
 # (range, sigma) recovery against truth, cross-checked vs the NUTS-joint       #
 # integrator (gcol33/tulpa#98).                                                #
@@ -277,6 +251,35 @@ test_that("the analytic gradient is not offered outside its scope", {
     fit_spde(y, X, d$spec, family = "poisson", offset = rep(0, length(y)),
             control = list(method = "ccd", diagnose_k = FALSE))
   ))
+})
+
+skip_on_cran_budget()
+
+test_that("fit_spde_nested_ccd builds the CCD design at a clean interior mode", {
+  skip_on_cran_budget()
+  # A textbook-concave log-marginal in (log range, log sigma) with an interior
+  # maximum; combined with the PC prior, obj has a clean interior minimum, so
+  # the precision optimHess(obj) is PD and the CCD design must engage rather
+  # than fall back to the rectangular grid. Drives the integrator directly so
+  # the branch is exercised without depending on a particular mesh/data
+  # realisation landing interior.
+  r0 <- 0.3; s0 <- 0.6
+  spde_log_marginal <- function(r, s) {
+    lm <- -0.5 * ((log(r) - log(r0))^2 / 0.25 + (log(s) - log(s0))^2 / 0.25)
+    list(log_marginal = lm, n_iter = rep(5L, length(r)))
+  }
+  fit_spde_single <- function(range, sigma)
+    list(mode = NULL, beta = NULL, spatial_effects = NULL, log_det_Q = NA_real_)
+  sp <- list(prior_range = c(0.3, 0.5), prior_sigma = c(0.6, 0.05))
+
+  res <- fit_spde_nested_ccd(spde_log_marginal, fit_spde_single, sp,
+                             spatial = list(), diagnose_k = FALSE)
+
+  expect_identical(res$nested$method, "ccd")
+  expect_equal(res$nested$n_points, 9L)
+  expect_equal(sum(res$nested$weights), 1, tolerance = 1e-8)
+  expect_true(is.finite(res$range) && res$range > 0)
+  expect_true(is.finite(res$sigma) && res$sigma > 0)
 })
 
 skip_on_cran()

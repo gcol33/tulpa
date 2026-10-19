@@ -89,105 +89,6 @@
 .CCD_BUD_STENCIL <- 1 + 2 * 4 + 4 * choose(4, 2)     # 33
 .CCD_BUD_HALVE   <- tulpa:::.ccd_placement("max_halve") + 1
 
-
-# --- 1. the cost arithmetic --------------------------------------------------
-
-test_that("the stencil / round / attempt projections are the issue's arithmetic", {
-    cfg <- .ccd_bud_cfg()
-    # One stencil: centre + 2d axials + 4 C(d, 2) mixed corners. 33 at d = 4 is
-    # the number gcol33/tulpa#653 is written around.
-    expect_equal(tulpa:::.ccd_stencil_evals(4), 33)
-    expect_equal(tulpa:::.ccd_stencil_evals(3), 19)
-    expect_equal(tulpa:::.ccd_stencil_evals(2), 9)
-    expect_equal(tulpa:::.ccd_stencil_evals(1), 3)
-    # One round: the stencil plus the batched line search, which always
-    # evaluates all `max_halve + 1` candidates in one call.
-    expect_equal(tulpa:::.ccd_round_evals(4, cfg), 33 + cfg$max_halve + 1)
-    # The cheapest placement that can still produce a design: opening centre
-    # evaluation, one round, closing stencil.
-    expect_equal(tulpa:::.ccd_min_evals(4, cfg), 1 + 2 * 33 + (cfg$max_halve + 1))
-    # The designed first attempt, and the escalation behind it.
-    expect_equal(tulpa:::.ccd_first_evals(4, cfg),
-                 1 + cfg$first_rounds * (33 + cfg$max_halve + 1) + 33)
-    expect_equal(tulpa:::.ccd_rescue_evals(4, 256, cfg),
-                 256 + cfg$calibrate_rounds * 33 +
-                     1 + cfg$max_rounds * (33 + cfg$max_halve + 1) + 33)
-    # A component with no free axis is one node at the origin of the copy
-    # coordinates and costs nothing to place.
-    expect_equal(tulpa:::.ccd_min_evals(0L, cfg), 0)
-    expect_equal(tulpa:::.ccd_first_evals(0L, cfg), 0)
-    expect_equal(tulpa:::.ccd_design_nodes(0L), 1)
-    # The design node count is read off the design builder, not restated.
-    expect_equal(tulpa:::.ccd_design_nodes(4L), ccd_grid(4L)$n_points)
-    expect_equal(tulpa:::.ccd_design_nodes(4L), 25)
-})
-
-test_that("the seed projection follows the seed pass's own dispatch", {
-    cfg <- .ccd_bud_cfg()
-    # Under the cap the joint grid is evaluated in one batch.
-    expect_equal(tulpa:::.ccd_seed_evals(c(3L, 3L, 3L), cfg), 27)
-    # Above it the pass falls back to the coordinate sweep, one call per axis
-    # carrying at least two levels.
-    big <- rep(8L, 4L)                                   # 4096 > 256
-    expect_equal(tulpa:::.ccd_seed_evals(big, cfg), 32)
-    # A pinned axis contributes no sweep call: 9 * 1 * 9 * 9 = 729 is past the
-    # cap, so the sweep visits the three axes carrying levels.
-    expect_equal(tulpa:::.ccd_seed_evals(c(9L, 1L, 9L, 9L), cfg), 27)
-})
-
-test_that("the budget is the tensor grid it replaces, floored at the first attempt", {
-    cfg <- .ccd_bud_cfg()
-    # 81 tensor cells, a 25-node design: at evals_per_cell = 1 the cost-neutral
-    # ceiling is 56, but the designed first attempt (354) is exempt, so the
-    # ceiling bounds the ESCALATION and not the path the CCD was built for.
-    expect_equal(tulpa:::.ccd_budget(81, 25, 4L, cfg),
-                 tulpa:::.ccd_first_evals(4L, cfg))
-    # With the floor off the multiple is a hard cap on the whole placement.
-    expect_equal(tulpa:::.ccd_budget(81, 25, 4L, .ccd_bud_cfg(budget_floor = FALSE)),
-                 56)
-    expect_equal(
-        tulpa:::.ccd_budget(81, 25, 4L,
-                            .ccd_bud_cfg(budget_floor = FALSE,
-                                         evals_per_cell = 2)),
-        112)
-    # A grid large enough that the cost argument, not the floor, governs.
-    expect_equal(tulpa:::.ccd_budget(5000, 25, 4L, cfg), 4975)
-    # Inf switches the ceiling off outright.
-    expect_identical(tulpa:::.ccd_budget(81, 25, 4L,
-                                         .ccd_bud_cfg(evals_per_cell = Inf)),
-                     Inf)
-    # A design that is not smaller than the grid it replaces has nothing to
-    # spend once the floor is off.
-    expect_equal(tulpa:::.ccd_budget(10, 25, 4L,
-                                     .ccd_bud_cfg(budget_floor = FALSE)), 0)
-})
-
-test_that("control knobs resolve onto the registry, and bad ones are refused", {
-    expect_identical(tulpa:::.ccd_placement_args(list()),
-                     as.list(tulpa:::.CCD_PLACEMENT))
-    cfg <- tulpa:::.ccd_placement_args(
-        list(ccd_budget = 0.5, ccd_budget_floor = FALSE))
-    expect_equal(cfg$evals_per_cell, 0.5)
-    expect_false(cfg$budget_floor)
-    # The removed knobs resolve onto nothing, and the front door refuses them.
-    expect_null(tulpa:::.ccd_placement_args(
-        list(ccd_stencil_reuse = TRUE))$stencil_reuse)
-    expect_error(
-        tulpa_check_control(list(ccd_stencil_reuse = TRUE),
-                            tulpa:::.CONTROL_KEYS$nested_laplace_joint,
-                            "tulpa_nested_laplace_joint"),
-        "ccd_stencil_reuse")
-    # Everything the caller did not name keeps the registry's value.
-    expect_identical(cfg$max_rounds, tulpa:::.ccd_placement("max_rounds"))
-    expect_error(tulpa:::.ccd_placement_args(list(ccd_budget = -1)),
-                 "ccd_budget")
-    expect_error(tulpa:::.ccd_placement_args(list(ccd_budget = c(1, 2))),
-                 "ccd_budget")
-    # Inf is the documented way to place without a ceiling.
-    expect_identical(
-        tulpa:::.ccd_placement_args(list(ccd_budget = Inf))$evals_per_cell, Inf)
-})
-
 test_that("placement_budget is a named decline reason", {
     expect_true("placement_budget" %in% tulpa:::.CCD_DECLINE_REASONS)
     # And it is the only one about whether a definable design is WORTH placing;
@@ -201,25 +102,6 @@ test_that("placement_budget is a named decline reason", {
                     tulpa:::.CCD_DECLINE_REASONS))
 })
 
-
-# --- 2. the running meter ----------------------------------------------------
-
-test_that("the meter charges before the batch and refuses one that would cross", {
-    m <- tulpa:::.ccd_meter_new(10, list(on = FALSE, file = ""))
-    tulpa:::.ccd_meter_spend(m, 4)
-    tulpa:::.ccd_meter_spend(m, 6)
-    expect_equal(m$evals, 10)
-    # The batch that would cross is never paid for: the spend stays where it
-    # was, so a declined placement reports what it actually cost.
-    expect_error(tulpa:::.ccd_meter_spend(m, 1), class = "tulpa_ccd_budget")
-    expect_equal(m$evals, 10)
-    # No meter and no ceiling are both no-ops.
-    expect_silent(tulpa:::.ccd_meter_spend(NULL, 1e6))
-    inf <- tulpa:::.ccd_meter_new(Inf, list(on = FALSE, file = ""))
-    tulpa:::.ccd_meter_spend(inf, 1e6)
-    expect_equal(inf$evals, 1e6)
-})
-
 test_that("a budget signal is re-raised through the stencil error handlers", {
     # The mode-find absorbs a failed stencil, which must not swallow the budget:
     # the signal has to unwind to .joint_ccd_grid() so the fit declines under
@@ -228,129 +110,6 @@ test_that("a budget signal is re-raised through the stencil error handlers", {
                      list(message = "ceiling", call = NULL))
     expect_error(tulpa:::.ccd_rethrow_budget(bud), class = "tulpa_ccd_budget")
     expect_null(tulpa:::.ccd_rethrow_budget(simpleError("a numerical failure")))
-})
-
-
-# --- 3. the reported cost matches the stencil arithmetic ---------------------
-
-test_that("a placement reports the inner solves it spent, to the eval", {
-    fx  <- .ccd_bud_fixture()
-    rec <- .ccd_bud_rec()
-    # The fixture's objective is quadratic in the coordinate the design is laid
-    # on, which is what makes the round count -- and so the eval count -- exact.
-    expect_identical(unname(fx$tags), c("log", "logit01", "log", "log"))
-    res <- tulpa:::.joint_ccd_grid(
-        fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
-        .ccd_bud_eval(fx$tags, fx$mode, fx$prec, rec))
-
-    # The design was placed: the default ceiling did not fire.
-    expect_null(res$declined)
-    expect_true(is.matrix(res$grid))
-    expect_identical(nrow(res$grid), ccd_grid(4L)$n_points)
-
-    # Two Newton rounds on an exact quadratic: the first steps to the mode, the
-    # second's stencil finds a zero Newton decrement there and stops before its
-    # line search (gcol33/tulpa#922). That stencil was taken at the final point,
-    # so it is the design's curvature and no closing stencil follows. The
-    # placement is the opening centre evaluation, one round of (stencil + line
-    # search) and one stencil.
-    expect_identical(res$modefind_rounds, 2L)
-    expect_equal(res$modefind_evals,
-                 1 + 2 * .CCD_BUD_STENCIL + .CCD_BUD_HALVE)
-    expect_equal(res$modefind_evals, 74)
-    # The counter is the number of rows the objective was actually handed, not
-    # a projection of it.
-    expect_equal(res$modefind_evals, rec$rows)
-    # Reported against the ceiling it was spent under, so the two are readable
-    # together, and with a wall-clock reading of the phase.
-    expect_equal(res$modefind_budget,
-                 tulpa:::.ccd_budget(81, 25, 4L, .ccd_bud_cfg()))
-    expect_true(is.numeric(res$modefind_seconds) &&
-                res$modefind_seconds >= 0)
-    # Every stencil went out as ONE batched call, which is what lets the probes
-    # fan out across the outer-grid threads.
-    expect_true(.CCD_BUD_STENCIL %in% rec$sizes)
-})
-
-
-# --- 4. the ceiling declines, up front and mid-placement ---------------------
-
-test_that("a hopeless ceiling declines before a single inner solve is paid", {
-    fx  <- .ccd_bud_fixture()
-    rec <- .ccd_bud_rec()
-    # 81 tensor cells against a 25-node design leaves 56 solves at the
-    # cost-neutral multiple, and the cheapest placement that could still produce
-    # a design over four axes needs 74. Nothing to buy, so nothing is spent.
-    cfg <- .ccd_bud_cfg(budget_floor = FALSE)
-    expect_gt(tulpa:::.ccd_min_evals(4L, cfg), tulpa:::.ccd_budget(81, 25, 4L, cfg))
-    res <- tulpa:::.joint_ccd_grid(
-        fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
-        .ccd_bud_eval(fx$tags, fx$mode, fx$prec, rec), cfg = cfg)
-    expect_identical(res$declined, "placement_budget")
-    expect_identical(rec$calls, 0L)
-    expect_equal(res$modefind_evals, 0)
-    expect_equal(res$modefind_budget, 56)
-})
-
-test_that("a ceiling reached mid-placement declines with the spend recorded", {
-    fx  <- .ccd_bud_fixture()
-    rec <- .ccd_bud_rec()
-    # With the Newton-decrement stop off, the second round runs its line search
-    # too: 81 evals. A ceiling of 77 is above the 74 the up-front projection
-    # tests and below that; the abort lands on the second line search, whose 7
-    # rows would cross, so the spend stops at the second stencil.
-    cfg <- .ccd_bud_cfg(budget_floor = FALSE, evals_per_cell = 1.375,
-                        stop_sd = 0)
-    res <- tulpa:::.joint_ccd_grid(
-        fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
-        .ccd_bud_eval(fx$tags, fx$mode, fx$prec, rec), cfg = cfg)
-    expect_identical(res$declined, "placement_budget")
-    expect_null(res$grid)
-    expect_equal(res$modefind_budget, 77)
-    expect_equal(res$modefind_evals, 1 + 2 * .CCD_BUD_STENCIL + .CCD_BUD_HALVE)
-    expect_equal(res$modefind_evals, 74)
-    # Never more than the ceiling: the crossing batch is refused, not paid.
-    expect_lte(res$modefind_evals, res$modefind_budget)
-    expect_equal(res$modefind_evals, rec$rows)
-})
-
-test_that("the ceiling is inert where it does not fire", {
-    fx <- .ccd_bud_fixture()
-    r1 <- .ccd_bud_rec(); r2 <- .ccd_bud_rec()
-    # The shipped default against no ceiling at all: same design, same centre,
-    # same scale, same cost. A fit inside its budget is the fit it was before.
-    a <- tulpa:::.joint_ccd_grid(
-        fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
-        .ccd_bud_eval(fx$tags, fx$mode, fx$prec, r1))
-    b <- tulpa:::.joint_ccd_grid(
-        fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
-        .ccd_bud_eval(fx$tags, fx$mode, fx$prec, r2),
-        cfg = .ccd_bud_cfg(evals_per_cell = Inf))
-    expect_equal(a$grid, b$grid)
-    expect_equal(a$u_hat, b$u_hat)
-    expect_equal(a$L_scale, b$L_scale)
-    expect_equal(a$dnode, b$dnode)
-    expect_equal(r1$rows, r2$rows)
-    expect_identical(b$modefind_budget, Inf)
-})
-
-test_that("metering does not move the mode-find's numbers", {
-    fx    <- .ccd_bud_fixture()
-    eval1 <- function(U) {
-        U <- matrix(U, ncol = 4L)
-        apply(U, 1L, function(u) -0.5 * sum(fx$prec * (u - fx$mode)^2))
-    }
-    args <- list(u0 = rep(0, 4L), eval1 = eval1, lower = rep(-5, 4L),
-                 upper = rep(5, 4L), h = rep(0.1, 4L), trust = rep(2, 4L))
-    bare  <- do.call(tulpa:::.joint_ccd_modefind, args)
-    metered <- do.call(tulpa:::.joint_ccd_modefind,
-                       c(args, list(meter = tulpa:::.ccd_meter_new(
-                           Inf, list(on = FALSE, file = "")))))
-    expect_identical(bare$status, "ok")
-    expect_identical(bare$par, metered$par)
-    expect_identical(bare$hess, metered$hess)
-    expect_identical(bare$value, metered$value)
-    expect_identical(bare$converged, metered$converged)
 })
 
 
@@ -371,116 +130,12 @@ test_that("metering does not move the mode-find's numbers", {
         h = rep(0.1, length(m)), trust = rep(2, length(m)), meter = meter)
 }
 
-test_that("the mode-find emits one heartbeat line per round", {
-    meter <- tulpa:::.ccd_meter_new(500, list(on = TRUE, file = ""))
-    out <- capture.output(mf <- .ccd_bud_run_modefind(meter))
-    expect_identical(mf$status, "ok")
-    rounds <- grep("^\\[ccd mode-find\\] round [0-9]+/", out)
-    expect_identical(length(rounds), as.integer(meter$rounds))
-    expect_gte(meter$rounds, 1L)
-    # The line carries what distinguishes converging from crawling from stuck:
-    # which round of how many, the spend against the ceiling, the step size, the
-    # log-posterior, and enough timing to project the phase.
-    first <- out[rounds[1L]]
-    expect_match(first, "round 1/")
-    expect_match(first, "[0-9]+/500 evals")
-    expect_match(first, "\\|step\\|")
-    expect_match(first, "logpost")
-    expect_match(first, "elapsed")
-    expect_match(first, "/eval")
-    # And the phase says when it is over, so a silent gap afterwards is the
-    # grid loop rather than the mode-find.
-    expect_true(any(grepl("^\\[ccd mode-find\\] mode-find done", out)))
-})
-
 test_that("the heartbeat is silent when progress is off", {
     meter <- tulpa:::.ccd_meter_new(500, list(on = FALSE, file = ""))
     expect_output(.ccd_bud_run_modefind(meter), NA)
     # The rounds are still counted: the count is the report, the line is the
     # narration, and switching the narration off does not stop the reporting.
     expect_gte(meter$rounds, 1L)
-})
-
-test_that("the step calibration and the seed pass narrate their own probes", {
-    # Both run probes before the rescue mode-find starts, and both were silent;
-    # #652 asks for them on the same heartbeat. Each is handed an EVALUATOR, so
-    # driving them with a bare objective tests what the `meter` argument buys
-    # here: the heartbeat. The spend those probes add is charged one level down,
-    # at the single point every probe passes through, and is asserted on the
-    # production path in the test below.
-    m     <- c(0.4, -0.3, 0.2)
-    prec  <- c(2, 3, 1.5)
-    meter <- tulpa:::.ccd_meter_new(2000, list(on = TRUE, file = ""))
-    out <- capture.output(
-        h <- tulpa:::.joint_ccd_calibrate_step(
-            rep(0, 3L), .ccd_bud_quad_eval(m, prec), span = rep(1, 3L),
-            meter = meter))
-    expect_length(h, 3L)
-    expect_true(any(grepl("^\\[ccd mode-find\\] step calibration [0-9]+/",
-                          out)))
-
-    u_vals <- list(c(-1, 0, 1), c(-1, 0, 1), c(-1, 0, 1))
-    meter2 <- tulpa:::.ccd_meter_new(2000, list(on = TRUE, file = ""))
-    out2 <- capture.output(
-        u <- tulpa:::.joint_ccd_grid_seed(rep(0, 3L), u_vals,
-                                          .ccd_bud_quad_eval(m, prec),
-                                          meter = meter2))
-    expect_length(u, 3L)
-    expect_true(any(grepl("^\\[ccd mode-find\\] grid seed \\(27 points\\)",
-                          out2)))
-})
-
-test_that("the escalation's probes are charged to the same placement budget", {
-    # The first attempt rails to the box edge, so the placement escalates: joint
-    # grid seed, step calibration, then the rescue mode-find. Every probe of
-    # those passes is a full inner solve on a real fit, so all of them have to
-    # be in the placement's spend -- a budget counting only the mode-find rounds
-    # would under-count the escalation, which is exactly where gcol33/tulpa#653's
-    # unbounded cost lives.
-    fx  <- .ccd_bud_fixture()
-    rec <- .ccd_bud_rec()
-    op  <- options(tulpa.nl_progress = list(progress = TRUE,
-                                            progress_file = ""))
-    on.exit(options(op), add = TRUE)
-    out <- capture.output(
-        res <- tulpa:::.joint_ccd_grid(
-            fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
-            # A mode far outside the axis box: the mode-find runs to the edge
-            # and is declined as boundary-supported, from either seed.
-            .ccd_bud_eval(fx$tags, rep(40, 4L), fx$prec, rec),
-            cfg = .ccd_bud_cfg(evals_per_cell = Inf)))
-    # The escalation ran, and both of its passes reached the one heartbeat.
-    expect_true(any(grepl("^\\[ccd mode-find\\] grid seed \\(81 points\\)", out)))
-    expect_true(any(grepl("^\\[ccd mode-find\\] step calibration [0-9]+/", out)))
-    # It declined for what it is -- a boundary-supported hyperparameter -- and
-    # not for cost, so nothing here is an artefact of the ceiling.
-    expect_identical(res$declined, "modefind_boundary")
-    # The seed pass evaluates the whole 3^4 latent grid in one batch, and that
-    # batch is in the charged total.
-    expect_true(81 %in% rec$sizes)
-    # The spend is every row the objective was handed -- seed and calibration
-    # included, not the mode-find rounds alone.
-    expect_equal(res$modefind_evals, rec$rows)
-    expect_gt(res$modefind_evals,
-              tulpa:::.ccd_first_evals(4L, .ccd_bud_cfg()))
-})
-
-test_that("a configured heartbeat file carries the grid reporter's wire format", {
-    f <- tempfile(fileext = ".hb")
-    on.exit(unlink(f), add = TRUE)
-    meter <- tulpa:::.ccd_meter_new(500, list(on = TRUE, file = f))
-    invisible(capture.output(.ccd_bud_run_modefind(meter)))
-    expect_true(file.exists(f))
-    # "<done> <total> <elapsed_s> <eta_s>", the four numbers the outer-grid
-    # heartbeat file already holds, so a detached reader parsing that file sees
-    # liveness through the placement phase.
-    txt <- readLines(f, warn = FALSE)
-    expect_length(txt, 1L)
-    nums <- suppressWarnings(as.numeric(strsplit(trimws(txt), "[[:space:]]+")[[1L]]))
-    expect_length(nums, 4L)
-    expect_false(anyNA(nums))
-    expect_equal(nums[2L], 500)
-    expect_equal(nums[1L], meter$evals)
 })
 
 test_that("the heartbeat rides the fit's own progress record", {
@@ -581,6 +236,367 @@ test_that("the full stencil reads an exact quadratic's own gradient and Hessian"
                         n_re_groups = 0L, sigma_re = 1.0,
                         family = "gaussian", phi = 0.25)))
 }
+
+skip_on_cran_budget()
+
+
+# --- 1. the cost arithmetic --------------------------------------------------
+
+test_that("the stencil / round / attempt projections are the issue's arithmetic", {
+    skip_on_cran_budget()
+    cfg <- .ccd_bud_cfg()
+    # One stencil: centre + 2d axials + 4 C(d, 2) mixed corners. 33 at d = 4 is
+    # the number gcol33/tulpa#653 is written around.
+    expect_equal(tulpa:::.ccd_stencil_evals(4), 33)
+    expect_equal(tulpa:::.ccd_stencil_evals(3), 19)
+    expect_equal(tulpa:::.ccd_stencil_evals(2), 9)
+    expect_equal(tulpa:::.ccd_stencil_evals(1), 3)
+    # One round: the stencil plus the batched line search, which always
+    # evaluates all `max_halve + 1` candidates in one call.
+    expect_equal(tulpa:::.ccd_round_evals(4, cfg), 33 + cfg$max_halve + 1)
+    # The cheapest placement that can still produce a design: opening centre
+    # evaluation, one round, closing stencil.
+    expect_equal(tulpa:::.ccd_min_evals(4, cfg), 1 + 2 * 33 + (cfg$max_halve + 1))
+    # The designed first attempt, and the escalation behind it.
+    expect_equal(tulpa:::.ccd_first_evals(4, cfg),
+                 1 + cfg$first_rounds * (33 + cfg$max_halve + 1) + 33)
+    expect_equal(tulpa:::.ccd_rescue_evals(4, 256, cfg),
+                 256 + cfg$calibrate_rounds * 33 +
+                     1 + cfg$max_rounds * (33 + cfg$max_halve + 1) + 33)
+    # A component with no free axis is one node at the origin of the copy
+    # coordinates and costs nothing to place.
+    expect_equal(tulpa:::.ccd_min_evals(0L, cfg), 0)
+    expect_equal(tulpa:::.ccd_first_evals(0L, cfg), 0)
+    expect_equal(tulpa:::.ccd_design_nodes(0L), 1)
+    # The design node count is read off the design builder, not restated.
+    expect_equal(tulpa:::.ccd_design_nodes(4L), ccd_grid(4L)$n_points)
+    expect_equal(tulpa:::.ccd_design_nodes(4L), 25)
+})
+
+test_that("the seed projection follows the seed pass's own dispatch", {
+    skip_on_cran_budget()
+    cfg <- .ccd_bud_cfg()
+    # Under the cap the joint grid is evaluated in one batch.
+    expect_equal(tulpa:::.ccd_seed_evals(c(3L, 3L, 3L), cfg), 27)
+    # Above it the pass falls back to the coordinate sweep, one call per axis
+    # carrying at least two levels.
+    big <- rep(8L, 4L)                                   # 4096 > 256
+    expect_equal(tulpa:::.ccd_seed_evals(big, cfg), 32)
+    # A pinned axis contributes no sweep call: 9 * 1 * 9 * 9 = 729 is past the
+    # cap, so the sweep visits the three axes carrying levels.
+    expect_equal(tulpa:::.ccd_seed_evals(c(9L, 1L, 9L, 9L), cfg), 27)
+})
+
+test_that("the budget is the tensor grid it replaces, floored at the first attempt", {
+    skip_on_cran_budget()
+    cfg <- .ccd_bud_cfg()
+    # 81 tensor cells, a 25-node design: at evals_per_cell = 1 the cost-neutral
+    # ceiling is 56, but the designed first attempt (354) is exempt, so the
+    # ceiling bounds the ESCALATION and not the path the CCD was built for.
+    expect_equal(tulpa:::.ccd_budget(81, 25, 4L, cfg),
+                 tulpa:::.ccd_first_evals(4L, cfg))
+    # With the floor off the multiple is a hard cap on the whole placement.
+    expect_equal(tulpa:::.ccd_budget(81, 25, 4L, .ccd_bud_cfg(budget_floor = FALSE)),
+                 56)
+    expect_equal(
+        tulpa:::.ccd_budget(81, 25, 4L,
+                            .ccd_bud_cfg(budget_floor = FALSE,
+                                         evals_per_cell = 2)),
+        112)
+    # A grid large enough that the cost argument, not the floor, governs.
+    expect_equal(tulpa:::.ccd_budget(5000, 25, 4L, cfg), 4975)
+    # Inf switches the ceiling off outright.
+    expect_identical(tulpa:::.ccd_budget(81, 25, 4L,
+                                         .ccd_bud_cfg(evals_per_cell = Inf)),
+                     Inf)
+    # A design that is not smaller than the grid it replaces has nothing to
+    # spend once the floor is off.
+    expect_equal(tulpa:::.ccd_budget(10, 25, 4L,
+                                     .ccd_bud_cfg(budget_floor = FALSE)), 0)
+})
+
+test_that("control knobs resolve onto the registry, and bad ones are refused", {
+    skip_on_cran_budget()
+    expect_identical(tulpa:::.ccd_placement_args(list()),
+                     as.list(tulpa:::.CCD_PLACEMENT))
+    cfg <- tulpa:::.ccd_placement_args(
+        list(ccd_budget = 0.5, ccd_budget_floor = FALSE))
+    expect_equal(cfg$evals_per_cell, 0.5)
+    expect_false(cfg$budget_floor)
+    # The removed knobs resolve onto nothing, and the front door refuses them.
+    expect_null(tulpa:::.ccd_placement_args(
+        list(ccd_stencil_reuse = TRUE))$stencil_reuse)
+    expect_error(
+        tulpa_check_control(list(ccd_stencil_reuse = TRUE),
+                            tulpa:::.CONTROL_KEYS$nested_laplace_joint,
+                            "tulpa_nested_laplace_joint"),
+        "ccd_stencil_reuse")
+    # Everything the caller did not name keeps the registry's value.
+    expect_identical(cfg$max_rounds, tulpa:::.ccd_placement("max_rounds"))
+    expect_error(tulpa:::.ccd_placement_args(list(ccd_budget = -1)),
+                 "ccd_budget")
+    expect_error(tulpa:::.ccd_placement_args(list(ccd_budget = c(1, 2))),
+                 "ccd_budget")
+    # Inf is the documented way to place without a ceiling.
+    expect_identical(
+        tulpa:::.ccd_placement_args(list(ccd_budget = Inf))$evals_per_cell, Inf)
+})
+
+
+# --- 2. the running meter ----------------------------------------------------
+
+test_that("the meter charges before the batch and refuses one that would cross", {
+    skip_on_cran_budget()
+    m <- tulpa:::.ccd_meter_new(10, list(on = FALSE, file = ""))
+    tulpa:::.ccd_meter_spend(m, 4)
+    tulpa:::.ccd_meter_spend(m, 6)
+    expect_equal(m$evals, 10)
+    # The batch that would cross is never paid for: the spend stays where it
+    # was, so a declined placement reports what it actually cost.
+    expect_error(tulpa:::.ccd_meter_spend(m, 1), class = "tulpa_ccd_budget")
+    expect_equal(m$evals, 10)
+    # No meter and no ceiling are both no-ops.
+    expect_silent(tulpa:::.ccd_meter_spend(NULL, 1e6))
+    inf <- tulpa:::.ccd_meter_new(Inf, list(on = FALSE, file = ""))
+    tulpa:::.ccd_meter_spend(inf, 1e6)
+    expect_equal(inf$evals, 1e6)
+})
+
+
+# --- 3. the reported cost matches the stencil arithmetic ---------------------
+
+test_that("a placement reports the inner solves it spent, to the eval", {
+    skip_on_cran_budget()
+    fx  <- .ccd_bud_fixture()
+    rec <- .ccd_bud_rec()
+    # The fixture's objective is quadratic in the coordinate the design is laid
+    # on, which is what makes the round count -- and so the eval count -- exact.
+    expect_identical(unname(fx$tags), c("log", "logit01", "log", "log"))
+    res <- tulpa:::.joint_ccd_grid(
+        fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
+        .ccd_bud_eval(fx$tags, fx$mode, fx$prec, rec))
+
+    # The design was placed: the default ceiling did not fire.
+    expect_null(res$declined)
+    expect_true(is.matrix(res$grid))
+    expect_identical(nrow(res$grid), ccd_grid(4L)$n_points)
+
+    # Two Newton rounds on an exact quadratic: the first steps to the mode, the
+    # second's stencil finds a zero Newton decrement there and stops before its
+    # line search (gcol33/tulpa#922). That stencil was taken at the final point,
+    # so it is the design's curvature and no closing stencil follows. The
+    # placement is the opening centre evaluation, one round of (stencil + line
+    # search) and one stencil.
+    expect_identical(res$modefind_rounds, 2L)
+    expect_equal(res$modefind_evals,
+                 1 + 2 * .CCD_BUD_STENCIL + .CCD_BUD_HALVE)
+    expect_equal(res$modefind_evals, 74)
+    # The counter is the number of rows the objective was actually handed, not
+    # a projection of it.
+    expect_equal(res$modefind_evals, rec$rows)
+    # Reported against the ceiling it was spent under, so the two are readable
+    # together, and with a wall-clock reading of the phase.
+    expect_equal(res$modefind_budget,
+                 tulpa:::.ccd_budget(81, 25, 4L, .ccd_bud_cfg()))
+    expect_true(is.numeric(res$modefind_seconds) &&
+                res$modefind_seconds >= 0)
+    # Every stencil went out as ONE batched call, which is what lets the probes
+    # fan out across the outer-grid threads.
+    expect_true(.CCD_BUD_STENCIL %in% rec$sizes)
+})
+
+
+# --- 4. the ceiling declines, up front and mid-placement ---------------------
+
+test_that("a hopeless ceiling declines before a single inner solve is paid", {
+    skip_on_cran_budget()
+    fx  <- .ccd_bud_fixture()
+    rec <- .ccd_bud_rec()
+    # 81 tensor cells against a 25-node design leaves 56 solves at the
+    # cost-neutral multiple, and the cheapest placement that could still produce
+    # a design over four axes needs 74. Nothing to buy, so nothing is spent.
+    cfg <- .ccd_bud_cfg(budget_floor = FALSE)
+    expect_gt(tulpa:::.ccd_min_evals(4L, cfg), tulpa:::.ccd_budget(81, 25, 4L, cfg))
+    res <- tulpa:::.joint_ccd_grid(
+        fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
+        .ccd_bud_eval(fx$tags, fx$mode, fx$prec, rec), cfg = cfg)
+    expect_identical(res$declined, "placement_budget")
+    expect_identical(rec$calls, 0L)
+    expect_equal(res$modefind_evals, 0)
+    expect_equal(res$modefind_budget, 56)
+})
+
+test_that("a ceiling reached mid-placement declines with the spend recorded", {
+    skip_on_cran_budget()
+    fx  <- .ccd_bud_fixture()
+    rec <- .ccd_bud_rec()
+    # With the Newton-decrement stop off, the second round runs its line search
+    # too: 81 evals. A ceiling of 77 is above the 74 the up-front projection
+    # tests and below that; the abort lands on the second line search, whose 7
+    # rows would cross, so the spend stops at the second stencil.
+    cfg <- .ccd_bud_cfg(budget_floor = FALSE, evals_per_cell = 1.375,
+                        stop_sd = 0)
+    res <- tulpa:::.joint_ccd_grid(
+        fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
+        .ccd_bud_eval(fx$tags, fx$mode, fx$prec, rec), cfg = cfg)
+    expect_identical(res$declined, "placement_budget")
+    expect_null(res$grid)
+    expect_equal(res$modefind_budget, 77)
+    expect_equal(res$modefind_evals, 1 + 2 * .CCD_BUD_STENCIL + .CCD_BUD_HALVE)
+    expect_equal(res$modefind_evals, 74)
+    # Never more than the ceiling: the crossing batch is refused, not paid.
+    expect_lte(res$modefind_evals, res$modefind_budget)
+    expect_equal(res$modefind_evals, rec$rows)
+})
+
+test_that("the ceiling is inert where it does not fire", {
+    skip_on_cran_budget()
+    fx <- .ccd_bud_fixture()
+    r1 <- .ccd_bud_rec(); r2 <- .ccd_bud_rec()
+    # The shipped default against no ceiling at all: same design, same centre,
+    # same scale, same cost. A fit inside its budget is the fit it was before.
+    a <- tulpa:::.joint_ccd_grid(
+        fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
+        .ccd_bud_eval(fx$tags, fx$mode, fx$prec, r1))
+    b <- tulpa:::.joint_ccd_grid(
+        fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
+        .ccd_bud_eval(fx$tags, fx$mode, fx$prec, r2),
+        cfg = .ccd_bud_cfg(evals_per_cell = Inf))
+    expect_equal(a$grid, b$grid)
+    expect_equal(a$u_hat, b$u_hat)
+    expect_equal(a$L_scale, b$L_scale)
+    expect_equal(a$dnode, b$dnode)
+    expect_equal(r1$rows, r2$rows)
+    expect_identical(b$modefind_budget, Inf)
+})
+
+test_that("metering does not move the mode-find's numbers", {
+    skip_on_cran_budget()
+    fx    <- .ccd_bud_fixture()
+    eval1 <- function(U) {
+        U <- matrix(U, ncol = 4L)
+        apply(U, 1L, function(u) -0.5 * sum(fx$prec * (u - fx$mode)^2))
+    }
+    args <- list(u0 = rep(0, 4L), eval1 = eval1, lower = rep(-5, 4L),
+                 upper = rep(5, 4L), h = rep(0.1, 4L), trust = rep(2, 4L))
+    bare  <- do.call(tulpa:::.joint_ccd_modefind, args)
+    metered <- do.call(tulpa:::.joint_ccd_modefind,
+                       c(args, list(meter = tulpa:::.ccd_meter_new(
+                           Inf, list(on = FALSE, file = "")))))
+    expect_identical(bare$status, "ok")
+    expect_identical(bare$par, metered$par)
+    expect_identical(bare$hess, metered$hess)
+    expect_identical(bare$value, metered$value)
+    expect_identical(bare$converged, metered$converged)
+})
+
+test_that("the mode-find emits one heartbeat line per round", {
+    skip_on_cran_budget()
+    meter <- tulpa:::.ccd_meter_new(500, list(on = TRUE, file = ""))
+    out <- capture.output(mf <- .ccd_bud_run_modefind(meter))
+    expect_identical(mf$status, "ok")
+    rounds <- grep("^\\[ccd mode-find\\] round [0-9]+/", out)
+    expect_identical(length(rounds), as.integer(meter$rounds))
+    expect_gte(meter$rounds, 1L)
+    # The line carries what distinguishes converging from crawling from stuck:
+    # which round of how many, the spend against the ceiling, the step size, the
+    # log-posterior, and enough timing to project the phase.
+    first <- out[rounds[1L]]
+    expect_match(first, "round 1/")
+    expect_match(first, "[0-9]+/500 evals")
+    expect_match(first, "\\|step\\|")
+    expect_match(first, "logpost")
+    expect_match(first, "elapsed")
+    expect_match(first, "/eval")
+    # And the phase says when it is over, so a silent gap afterwards is the
+    # grid loop rather than the mode-find.
+    expect_true(any(grepl("^\\[ccd mode-find\\] mode-find done", out)))
+})
+
+test_that("the step calibration and the seed pass narrate their own probes", {
+    skip_on_cran_budget()
+    # Both run probes before the rescue mode-find starts, and both were silent;
+    # #652 asks for them on the same heartbeat. Each is handed an EVALUATOR, so
+    # driving them with a bare objective tests what the `meter` argument buys
+    # here: the heartbeat. The spend those probes add is charged one level down,
+    # at the single point every probe passes through, and is asserted on the
+    # production path in the test below.
+    m     <- c(0.4, -0.3, 0.2)
+    prec  <- c(2, 3, 1.5)
+    meter <- tulpa:::.ccd_meter_new(2000, list(on = TRUE, file = ""))
+    out <- capture.output(
+        h <- tulpa:::.joint_ccd_calibrate_step(
+            rep(0, 3L), .ccd_bud_quad_eval(m, prec), span = rep(1, 3L),
+            meter = meter))
+    expect_length(h, 3L)
+    expect_true(any(grepl("^\\[ccd mode-find\\] step calibration [0-9]+/",
+                          out)))
+
+    u_vals <- list(c(-1, 0, 1), c(-1, 0, 1), c(-1, 0, 1))
+    meter2 <- tulpa:::.ccd_meter_new(2000, list(on = TRUE, file = ""))
+    out2 <- capture.output(
+        u <- tulpa:::.joint_ccd_grid_seed(rep(0, 3L), u_vals,
+                                          .ccd_bud_quad_eval(m, prec),
+                                          meter = meter2))
+    expect_length(u, 3L)
+    expect_true(any(grepl("^\\[ccd mode-find\\] grid seed \\(27 points\\)",
+                          out2)))
+})
+
+test_that("the escalation's probes are charged to the same placement budget", {
+    skip_on_cran_budget()
+    # The first attempt rails to the box edge, so the placement escalates: joint
+    # grid seed, step calibration, then the rescue mode-find. Every probe of
+    # those passes is a full inner solve on a real fit, so all of them have to
+    # be in the placement's spend -- a budget counting only the mode-find rounds
+    # would under-count the escalation, which is exactly where gcol33/tulpa#653's
+    # unbounded cost lives.
+    fx  <- .ccd_bud_fixture()
+    rec <- .ccd_bud_rec()
+    op  <- options(tulpa.nl_progress = list(progress = TRUE,
+                                            progress_file = ""))
+    on.exit(options(op), add = TRUE)
+    out <- capture.output(
+        res <- tulpa:::.joint_ccd_grid(
+            fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
+            # A mode far outside the axis box: the mode-find runs to the edge
+            # and is declined as boundary-supported, from either seed.
+            .ccd_bud_eval(fx$tags, rep(40, 4L), fx$prec, rec),
+            cfg = .ccd_bud_cfg(evals_per_cell = Inf)))
+    # The escalation ran, and both of its passes reached the one heartbeat.
+    expect_true(any(grepl("^\\[ccd mode-find\\] grid seed \\(81 points\\)", out)))
+    expect_true(any(grepl("^\\[ccd mode-find\\] step calibration [0-9]+/", out)))
+    # It declined for what it is -- a boundary-supported hyperparameter -- and
+    # not for cost, so nothing here is an artefact of the ceiling.
+    expect_identical(res$declined, "modefind_boundary")
+    # The seed pass evaluates the whole 3^4 latent grid in one batch, and that
+    # batch is in the charged total.
+    expect_true(81 %in% rec$sizes)
+    # The spend is every row the objective was handed -- seed and calibration
+    # included, not the mode-find rounds alone.
+    expect_equal(res$modefind_evals, rec$rows)
+    expect_gt(res$modefind_evals,
+              tulpa:::.ccd_first_evals(4L, .ccd_bud_cfg()))
+})
+
+test_that("a configured heartbeat file carries the grid reporter's wire format", {
+    skip_on_cran_budget()
+    f <- tempfile(fileext = ".hb")
+    on.exit(unlink(f), add = TRUE)
+    meter <- tulpa:::.ccd_meter_new(500, list(on = TRUE, file = f))
+    invisible(capture.output(.ccd_bud_run_modefind(meter)))
+    expect_true(file.exists(f))
+    # "<done> <total> <elapsed_s> <eta_s>", the four numbers the outer-grid
+    # heartbeat file already holds, so a detached reader parsing that file sees
+    # liveness through the placement phase.
+    txt <- readLines(f, warn = FALSE)
+    expect_length(txt, 1L)
+    nums <- suppressWarnings(as.numeric(strsplit(trimws(txt), "[[:space:]]+")[[1L]]))
+    expect_length(nums, 4L)
+    expect_false(anyNA(nums))
+    expect_equal(nums[2L], 500)
+    expect_equal(nums[1L], meter$evals)
+})
 
 skip_on_cran()
 

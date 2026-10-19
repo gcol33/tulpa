@@ -1,21 +1,3 @@
-# A ModelData sampler fit stores its random effects NON-CENTERED: the `re[...]`
-# columns are the standardized `z`, and the effects are `b = sigma * L z`
-# (`re_term_group_effect()`, inst/include/tulpa/re_term_prior.h). ranef() read
-# `z` as `b` (gcol33/tulpa#866) and VarCorr() dropped the sampled `L_re`
-# correlation (gcol33/tulpa#867).
-
-test_that(".re_chol_from_raw is build_L_from_raw: tanh stick-breaking rows", {
-  raw <- rbind(c(0.3, -1.1, 0.7), c(-2, 0.1, 1.5))
-  L <- .re_chol_from_raw(raw, 3L)
-  for (s in 1:2) {
-    Ls <- L[s, , ]
-    expect_equal(Ls[upper.tri(Ls)], rep(0, 3))
-    expect_equal(rowSums(Ls^2), rep(1, 3))          # unit-norm rows: a correlation
-    expect_equal(Ls[2, 1], tanh(raw[s, 1]))         # the 2x2 correlation itself
-    expect_equal(Ls[3, 1], tanh(raw[s, 2]))
-    expect_equal(Ls[3, 2], tanh(raw[s, 3]) * sqrt(1 - tanh(raw[s, 2])^2))
-  }
-})
 
 test_that("a scalar term's z is scaled by its own sigma, per draw", {
   tail <- cbind(`re[1]` = c(1, -2), `re[2]` = c(0.5, 3),
@@ -31,7 +13,33 @@ test_that("several scalar terms each read their own sigma", {
   expect_equal(as.numeric(.re_noncentered_effects(tail)), c(3, 6, 5))
 })
 
+test_that("a missing scale column refuses rather than returning z", {
+  expect_null(.re_noncentered_effects(cbind(`re[1]` = 1, `re[2]` = 2)))
+})
+
+skip_on_cran_budget()
+# A ModelData sampler fit stores its random effects NON-CENTERED: the `re[...]`
+# columns are the standardized `z`, and the effects are `b = sigma * L z`
+# (`re_term_group_effect()`, inst/include/tulpa/re_term_prior.h). ranef() read
+# `z` as `b` (gcol33/tulpa#866) and VarCorr() dropped the sampled `L_re`
+# correlation (gcol33/tulpa#867).
+
+test_that(".re_chol_from_raw is build_L_from_raw: tanh stick-breaking rows", {
+  skip_on_cran_budget()
+  raw <- rbind(c(0.3, -1.1, 0.7), c(-2, 0.1, 1.5))
+  L <- .re_chol_from_raw(raw, 3L)
+  for (s in 1:2) {
+    Ls <- L[s, , ]
+    expect_equal(Ls[upper.tri(Ls)], rep(0, 3))
+    expect_equal(rowSums(Ls^2), rep(1, 3))          # unit-norm rows: a correlation
+    expect_equal(Ls[2, 1], tanh(raw[s, 1]))         # the 2x2 correlation itself
+    expect_equal(Ls[3, 1], tanh(raw[s, 2]))
+    expect_equal(Ls[3, 2], tanh(raw[s, 3]) * sqrt(1 - tanh(raw[s, 2])^2))
+  }
+})
+
 test_that("a correlated term mixes z through L before scaling", {
+  skip_on_cran_budget()
   set.seed(1)
   S <- 4L
   z <- matrix(rnorm(S * 4), S)              # g1.c1, g1.c2, g2.c1, g2.c2
@@ -51,11 +59,8 @@ test_that("a correlated term mixes z through L before scaling", {
   }
 })
 
-test_that("a missing scale column refuses rather than returning z", {
-  expect_null(.re_noncentered_effects(cbind(`re[1]` = 1, `re[2]` = 2)))
-})
-
 test_that("VarCorr() reports the sampled L_re correlation, not an identity", {
+  skip_on_cran_budget()
   set.seed(2)
   S <- 500L
   raw <- rnorm(S, -0.6, 0.2)

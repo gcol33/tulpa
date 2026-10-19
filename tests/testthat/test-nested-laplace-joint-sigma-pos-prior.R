@@ -135,7 +135,10 @@
     )
 }
 
+skip_on_cran_budget()
+
 test_that("PC / half_normal log-density is finite at the 0 boundary", {
+    skip_on_cran_budget()
     # Regression for the `ok <- s > 0` -> `ok <- s >= 0` fix. The PC
     # prior density at 0 is the finite limit `lambda`, not zero;
     # half-normal at 0 is `2 / (scale * sqrt(2 * pi))`. Earlier impl

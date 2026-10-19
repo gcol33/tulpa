@@ -35,12 +35,15 @@ test_that("tulpa_re_cov_gibbs() refuses a model with no random-effect term", {
     "no random-effect terms")
 })
 
+skip_on_cran_budget()
+
 # gcol33/tulpa#875: where a block's design column repeats a fixed-effect column,
 # beta_j + d, b_{g,c} - d leaves eta unchanged, and the one-block random walks
 # crossed that ridge at the narrow conditional step: intercept bulk-ESS 1 to 11
 # of 2000 on a gaussian (1 + x | g), estimates 0.42 to 0.92 across seeds
 # against lmer's 0.82. The sweep now draws the translation exactly.
 test_that("the fixed-effect alias of each RE design column is found exactly", {
+  skip_on_cran_budget()
   X <- cbind(1, x = c(0.5, -1, 2, 0.3), z = c(1, 1, 2, 2))
   expect_identical(.re_gibbs_fixed_alias(cbind(1, X[, "x"]), X), c(0L, 1L))
   # a slope with no matching fixed column, and an intercept-free term

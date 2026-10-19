@@ -14,8 +14,11 @@ make_agq_re_data <- function(seed = 401L, G = 40L, npg = 8L,
   data.frame(y = rbinom(N, 1L, plogis(eta)), x = x, g = g)
 }
 
+skip_on_cran_budget()
+
 
 test_that("agq is registered, reachable, and a valid front-door backend", {
+  skip_on_cran_budget()
   expect_true("agq" %in% ALL_BACKENDS)
   expect_true(backend_is_reachable("agq"))
   expect_equal(get_backend_tier("agq")$tier, 2L)
@@ -23,6 +26,7 @@ test_that("agq is registered, reachable, and a valid front-door backend", {
 
 
 test_that("mode='agq' rejects random slopes, multiple terms, and bad families", {
+  skip_on_cran_budget()
   d <- make_agq_re_data(G = 20L, npg = 6L)
   d$g2 <- factor(rep(seq_len(5L), length.out = nrow(d)))
 
@@ -40,6 +44,7 @@ test_that("mode='agq' rejects random slopes, multiple terms, and bad families", 
 
 
 test_that("mode='agq' rejects a fixed-effect prior (marginal-likelihood fit)", {
+  skip_on_cran_budget()
   d <- make_agq_re_data(G = 20L, npg = 6L)
   expect_error(
     tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "agq",

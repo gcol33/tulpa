@@ -44,24 +44,6 @@ test_that("BYM2 rejects a rho grid that does not pair with the sigma grid", {
   )
 })
 
-test_that("BYM2 rejects a mixing weight outside [0, 1]", {
-  fx <- .axis_fixture()
-  for (bad in c(-1e-6, 1.0000001, 2, NA_real_, NaN, Inf)) {
-    expect_error(.fit_bym2(fx, 0.7, bad), "must lie in [[]0, 1[]]",
-                 info = paste("rho =", bad))
-  }
-  # The offending cell is named, not just the axis.
-  expect_error(.fit_bym2(fx, c(0.7, 0.7, 0.7), c(0.2, 1.5, 0.5)),
-               "rho_grid[[]2[]]")
-})
-
-test_that("both mixing-weight endpoints stay in domain and finite", {
-  fx <- .axis_fixture()
-  res <- .fit_bym2(fx, c(0.7, 0.7), c(0, 1))
-  expect_equal(res$n_grid, 2L)
-  expect_cells_solved(res)
-})
-
 test_that("the paired-length rule is one rule across the grid kernels", {
   fx <- .axis_fixture()
   # Same message shape from a sibling entry, which is what says the check is
@@ -79,4 +61,26 @@ test_that("the paired-length rule is one rule across the grid kernels", {
     ),
     "rho_grid.*length 1.*tau_grid.*length 3"
   )
+})
+
+skip_on_cran_budget()
+
+test_that("BYM2 rejects a mixing weight outside [0, 1]", {
+  skip_on_cran_budget()
+  fx <- .axis_fixture()
+  for (bad in c(-1e-6, 1.0000001, 2, NA_real_, NaN, Inf)) {
+    expect_error(.fit_bym2(fx, 0.7, bad), "must lie in [[]0, 1[]]",
+                 info = paste("rho =", bad))
+  }
+  # The offending cell is named, not just the axis.
+  expect_error(.fit_bym2(fx, c(0.7, 0.7, 0.7), c(0.2, 1.5, 0.5)),
+               "rho_grid[[]2[]]")
+})
+
+test_that("both mixing-weight endpoints stay in domain and finite", {
+  skip_on_cran_budget()
+  fx <- .axis_fixture()
+  res <- .fit_bym2(fx, c(0.7, 0.7), c(0, 1))
+  expect_equal(res$n_grid, 2L)
+  expect_cells_solved(res)
 })

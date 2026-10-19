@@ -18,7 +18,10 @@ sim_ar1_rb <- function(Tn, rho, sig, seed) {
   f
 }
 
+skip_on_cran_budget()
+
 test_that("a single-block field is the tail of the latent vector", {
+  skip_on_cran_budget()
   blk <- list(type = "ar1", n_times = 10L, n_groups = 1L, role = "temporal")
   expect_identical(tulpa:::.nl_role_cols(blk, NULL, 13L, "temporal"), 4:13)
   expect_null(tulpa:::.nl_role_cols(blk, NULL, 13L, "spatial"))
@@ -37,6 +40,7 @@ test_that("a single-block field is the tail of the latent vector", {
 })
 
 test_that("mixture draws carry each cell's cross-time covariance", {
+  skip_on_cran_budget()
   # Two cells, three time points each, strongly correlated within a cell and
   # one of them singular (an intrinsic field's constrained covariance).
   S1 <- 0.5 * outer(1:3, 1:3, function(i, j) 0.9^abs(i - j))
@@ -64,6 +68,7 @@ test_that("mixture draws carry each cell's cross-time covariance", {
 })
 
 test_that("a temporal GP's summary is labelled by its own time values", {
+  skip_on_cran_budget()
   set.seed(1); tt <- sort(round(runif(12, 0, 100), 1))
   d <- data.frame(t = rep(tt, each = 2))
   spec <- validate_temporal_gp(temporal_gp("t"), d)

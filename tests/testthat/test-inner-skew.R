@@ -1,52 +1,3 @@
-# Inner-Laplace skewness diagnostic (gamma_3, gcol33/tulpa#272): whether the
-# Gaussian (inner) Laplace approximation to the latent-field conditional
-# posterior pi(x_i | theta, y) is itself a good fit -- the layer the outer
-# Pareto-k-hat diagnostic (test-laplace_diagnostics.R) does NOT cover.
-#
-# These are recovery tests, not shape tests: a case where the Laplace
-# approximation is analytically EXACT (gaussian family: the log-likelihood is
-# exactly quadratic in eta, so the third derivative is identically zero) must
-# read gamma_3 == 0; a case with a KNOWN, independently-computed exact
-# posterior skewness (a numerically-integrated intercept-only rare-event
-# binomial posterior) must have gamma_3 track that exact value, not just be
-# "some large number". A likelihood the diagnostic cannot score (a coupled
-# multi-process spec, e.g. zero-inflation) must read NaN, never a silently
-# wrong 0 ("perfectly Gaussian").
-
-# --------------------------------------------------------------------------- #
-# (1) Structural: band / summary / combined-verdict helpers                   #
-# --------------------------------------------------------------------------- #
-
-test_that(".tulpa_gamma3_band bands |gamma_3| the same way for +/- signs", {
-  expect_equal(.tulpa_gamma3_band(0), "good")
-  expect_equal(.tulpa_gamma3_band(0.3), "good")
-  expect_equal(.tulpa_gamma3_band(-0.3), "good")
-  expect_equal(.tulpa_gamma3_band(0.7), "ok")
-  expect_equal(.tulpa_gamma3_band(-0.7), "ok")
-  expect_equal(.tulpa_gamma3_band(1.5), "unreliable")
-  expect_equal(.tulpa_gamma3_band(-1.5), "unreliable")
-  expect_true(is.na(.tulpa_gamma3_band(NA_real_)))
-  expect_true(is.na(.tulpa_gamma3_band(NaN)))
-})
-
-test_that(".tulpa_inner_skew_summary aggregates finite values and counts NaN separately", {
-  s <- .tulpa_inner_skew_summary(c(0.1, -0.2, NaN, 1.4), n_dropped = 3L)
-  expect_equal(s$n_probed, 4L)
-  expect_equal(s$n_scored, 3L)
-  expect_equal(s$max_abs_gamma3, 1.4)
-  expect_equal(s$band, "unreliable")
-  expect_equal(s$n_dropped, 3L)
-  expect_equal(s$share_unreliable, 1 / 3)
-
-  # All-NaN: nothing scored, band is NA (not "good") -- "not computable" must
-  # never collapse to a reliability verdict.
-  s2 <- .tulpa_inner_skew_summary(c(NaN, NaN))
-  expect_equal(s2$n_scored, 0L)
-  expect_true(is.na(s2$band))
-
-  expect_null(.tulpa_inner_skew_summary(NULL))
-  expect_null(.tulpa_inner_skew_summary(numeric(0)))
-})
 
 test_that(".tulpa_combined_reliability reports which layer degrades, not a single conflated flag", {
   expect_match(.tulpa_combined_reliability("good", "good"), "^reliable")
@@ -361,6 +312,59 @@ test_that("gamma_3 is exactly zero for a gaussian SPDE fit (large mesh)", {
   }
   (D(h) - D(-h)) / (2 * h)
 }
+
+skip_on_cran_budget()
+# Inner-Laplace skewness diagnostic (gamma_3, gcol33/tulpa#272): whether the
+# Gaussian (inner) Laplace approximation to the latent-field conditional
+# posterior pi(x_i | theta, y) is itself a good fit -- the layer the outer
+# Pareto-k-hat diagnostic (test-laplace_diagnostics.R) does NOT cover.
+#
+# These are recovery tests, not shape tests: a case where the Laplace
+# approximation is analytically EXACT (gaussian family: the log-likelihood is
+# exactly quadratic in eta, so the third derivative is identically zero) must
+# read gamma_3 == 0; a case with a KNOWN, independently-computed exact
+# posterior skewness (a numerically-integrated intercept-only rare-event
+# binomial posterior) must have gamma_3 track that exact value, not just be
+# "some large number". A likelihood the diagnostic cannot score (a coupled
+# multi-process spec, e.g. zero-inflation) must read NaN, never a silently
+# wrong 0 ("perfectly Gaussian").
+
+# --------------------------------------------------------------------------- #
+# (1) Structural: band / summary / combined-verdict helpers                   #
+# --------------------------------------------------------------------------- #
+
+test_that(".tulpa_gamma3_band bands |gamma_3| the same way for +/- signs", {
+  skip_on_cran_budget()
+  expect_equal(.tulpa_gamma3_band(0), "good")
+  expect_equal(.tulpa_gamma3_band(0.3), "good")
+  expect_equal(.tulpa_gamma3_band(-0.3), "good")
+  expect_equal(.tulpa_gamma3_band(0.7), "ok")
+  expect_equal(.tulpa_gamma3_band(-0.7), "ok")
+  expect_equal(.tulpa_gamma3_band(1.5), "unreliable")
+  expect_equal(.tulpa_gamma3_band(-1.5), "unreliable")
+  expect_true(is.na(.tulpa_gamma3_band(NA_real_)))
+  expect_true(is.na(.tulpa_gamma3_band(NaN)))
+})
+
+test_that(".tulpa_inner_skew_summary aggregates finite values and counts NaN separately", {
+  skip_on_cran_budget()
+  s <- .tulpa_inner_skew_summary(c(0.1, -0.2, NaN, 1.4), n_dropped = 3L)
+  expect_equal(s$n_probed, 4L)
+  expect_equal(s$n_scored, 3L)
+  expect_equal(s$max_abs_gamma3, 1.4)
+  expect_equal(s$band, "unreliable")
+  expect_equal(s$n_dropped, 3L)
+  expect_equal(s$share_unreliable, 1 / 3)
+
+  # All-NaN: nothing scored, band is NA (not "good") -- "not computable" must
+  # never collapse to a reliability verdict.
+  s2 <- .tulpa_inner_skew_summary(c(NaN, NaN))
+  expect_equal(s2$n_scored, 0L)
+  expect_true(is.na(s2$band))
+
+  expect_null(.tulpa_inner_skew_summary(NULL))
+  expect_null(.tulpa_inner_skew_summary(numeric(0)))
+})
 
 skip_on_cran()
 

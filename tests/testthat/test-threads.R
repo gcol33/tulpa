@@ -26,19 +26,23 @@ test_that("inner threads default-cap at the performance-core count", {
     }
 })
 
+test_that("requests at or below the cap pass through unchanged", {
+    expect_equal(tulpa:::.tulpa_inner_threads(1L), 1L)
+    expect_equal(tulpa:::.tulpa_inner_threads(1L, 8L), 1L)
+})
+
+skip_on_cran_budget()
+
 test_that("n_threads_scatter overrides the default cap", {
+    skip_on_cran_budget()
     # Explicit cap below the request wins regardless of topology.
     expect_equal(tulpa:::.tulpa_inner_threads(16L, 4L), 4L)
     # Explicit cap above the request is a no-op (it is a cap, not a floor).
     expect_equal(tulpa:::.tulpa_inner_threads(4L, 16L), 4L)
 })
 
-test_that("requests at or below the cap pass through unchanged", {
-    expect_equal(tulpa:::.tulpa_inner_threads(1L), 1L)
-    expect_equal(tulpa:::.tulpa_inner_threads(1L, 8L), 1L)
-})
-
 test_that("the thread grant is every thread the fit was handed", {
+    skip_on_cran_budget()
     width <- function(n) tulpa:::.nl_outer_width(n)
     cap <- width(0L)
     expect_gte(cap, 1L)

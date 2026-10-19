@@ -1,15 +1,4 @@
 
-test_that("the multi-axis proposal is an independent product with per-axis skew", {
-  set.seed(3)
-  dp <- .sn_prop_from_moments(mu = c(0, 1), sd = c(1, 0.5), skew = c(0.9, -0.5))
-  X <- .sn_prop_rand(2e5, dp)
-  sk <- function(v) mean(((v - mean(v)) / stats::sd(v))^3)
-  expect_equal(sk(X[, 1]),  0.9, tolerance = 0.06)
-  expect_equal(sk(X[, 2]), -0.5, tolerance = 0.06)
-  expect_equal(mean(X[, 2]), 1, tolerance = 0.02)
-  expect_equal(stats::cor(X[, 1], X[, 2]), 0, tolerance = 0.02)
-})
-
 test_that("skewness beyond the skew-normal ceiling is clamped, not refused", {
   # sn_match() returns NULL past the ~0.995 ceiling; the PROPOSAL path clamps
   # inside it instead, because a proposal only has to COVER the target.
@@ -52,7 +41,38 @@ test_that("skewness beyond the skew-normal ceiling is clamped, not refused", {
   list(gauss = g$pareto_k, k = d$best$pareto_k, src = d$source, skew = d$outer_skew)
 }
 
+test_that("a pinned axis is not mistaken for a grid boundary", {
+  # A copy `alpha` fixed at 0 (or a one-point dispersion axis) has a single grid
+  # value: it is PINNED, not "against the edge", and must not raise the
+  # widen-the-grid recommendation.
+  gr <- cbind(sigma = c(0.25, 0.5, 1.5), alpha = c(0, 0, 0))
+  r <- .joint_pareto_grid_regime(list(theta_grid = gr, weights = c(0, 1, 0)))
+  expect_identical(r$regime, "collapsed_interior")
+  expect_length(r$edge_axes, 0L)
+})
+
+test_that("the regime declines rather than guessing on an unusable grid", {
+  expect_null(.joint_pareto_grid_regime(list(theta_grid = NULL, weights = 1)))
+  expect_null(.joint_pareto_grid_regime(
+    list(theta_grid = cbind(a = 1:3), weights = c(0, 0, 0))))
+})
+
+skip_on_cran_budget()
+
+test_that("the multi-axis proposal is an independent product with per-axis skew", {
+  skip_on_cran_budget()
+  set.seed(3)
+  dp <- .sn_prop_from_moments(mu = c(0, 1), sd = c(1, 0.5), skew = c(0.9, -0.5))
+  X <- .sn_prop_rand(2e5, dp)
+  sk <- function(v) mean(((v - mean(v)) / stats::sd(v))^3)
+  expect_equal(sk(X[, 1]),  0.9, tolerance = 0.06)
+  expect_equal(sk(X[, 2]), -0.5, tolerance = 0.06)
+  expect_equal(mean(X[, 2]), 1, tolerance = 0.02)
+  expect_equal(stats::cor(X[, 1], X[, 2]), 0, tolerance = 0.02)
+})
+
 test_that(".skew_se is the normal-theory standard error of a sample skewness", {
+  skip_on_cran_budget()
   # sqrt(6n(n-1) / ((n-2)(n+1)(n+3))), approaching sqrt(6/n).
   expect_equal(.skew_se(200), sqrt(6 * 200 * 199 / (198 * 201 * 203)))
   expect_equal(.skew_se(1e6), sqrt(6 / 1e6), tolerance = 1e-4)
@@ -61,6 +81,7 @@ test_that(".skew_se is the normal-theory standard error of a sample skewness", {
 })
 
 test_that("weighted moments are read in the proposal's whitened coordinate", {
+  skip_on_cran_budget()
   # Draws from N(mu, s^2) whitened by that same proposal must come back with
   # whitened mean ~0, sd ~1 and skew ~0 at equal weights -- so a reported
   # skewness is a statement about the TARGET, not about the parameterization.
@@ -79,6 +100,7 @@ test_that("weighted moments are read in the proposal's whitened coordinate", {
 # --------------------------------------------------------------------------- #
 
 test_that("the grid regime separates a spread grid from a collapsed one", {
+  skip_on_cran_budget()
   gr <- cbind(sigma = c(0.25, 0.5, 1.5, 3, 5))
   mk <- function(w) list(theta_grid = gr, weights = w)
 
@@ -91,6 +113,7 @@ test_that("the grid regime separates a spread grid from a collapsed one", {
 })
 
 test_that("a collapsed mode against a grid boundary is named with its side", {
+  skip_on_cran_budget()
   gr <- cbind(sigma = c(0.25, 0.5, 1.5, 3, 5))
   mk <- function(w) list(theta_grid = gr, weights = w)
 
@@ -104,23 +127,8 @@ test_that("a collapsed mode against a grid boundary is named with its side", {
   expect_identical(lo$edge_sides, "lower")
 })
 
-test_that("a pinned axis is not mistaken for a grid boundary", {
-  # A copy `alpha` fixed at 0 (or a one-point dispersion axis) has a single grid
-  # value: it is PINNED, not "against the edge", and must not raise the
-  # widen-the-grid recommendation.
-  gr <- cbind(sigma = c(0.25, 0.5, 1.5), alpha = c(0, 0, 0))
-  r <- .joint_pareto_grid_regime(list(theta_grid = gr, weights = c(0, 1, 0)))
-  expect_identical(r$regime, "collapsed_interior")
-  expect_length(r$edge_axes, 0L)
-})
-
-test_that("the regime declines rather than guessing on an unusable grid", {
-  expect_null(.joint_pareto_grid_regime(list(theta_grid = NULL, weights = 1)))
-  expect_null(.joint_pareto_grid_regime(
-    list(theta_grid = cbind(a = 1:3), weights = c(0, 0, 0))))
-})
-
 test_that("the regime note explains a collapse and is silent on a spread grid", {
+  skip_on_cran_budget()
   expect_null(.tulpa_outer_regime_note(
     list(regime = "spread", edge_axes = character(0), edge_sides = character(0))))
   n1 <- .tulpa_outer_regime_note(

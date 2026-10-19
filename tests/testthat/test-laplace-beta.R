@@ -1,21 +1,3 @@
-test_that("tulpa_laplace(family='beta') rejects y outside (0, 1)", {
-  X <- cbind(1, runif(5))
-  expect_error(
-    tulpa_laplace(y = c(0, 0.2, 0.4, 0.6, 0.8), n_trials = NULL, X = X,
-                  family = "beta", phi = 10),
-    "strictly in"
-  )
-  expect_error(
-    tulpa_laplace(y = c(0.1, 0.3, 0.5, 0.7, 1), n_trials = NULL, X = X,
-                  family = "beta", phi = 10),
-    "strictly in"
-  )
-  expect_error(
-    tulpa_laplace(y = c(0.1, 0.3, 0.5, 0.7, 0.9), n_trials = NULL, X = X,
-                  family = "beta", phi = -1),
-    "phi"
-  )
-})
 
 test_that("tulpa_laplace_beta matches betareg to high precision", {
   skip_if_not_installed("betareg")
@@ -36,6 +18,27 @@ test_that("tulpa_laplace_beta matches betareg to high precision", {
   expect_lt(abs(fit_t$mode[1] - br[["(Intercept)"]]), 0.005)
   expect_lt(abs(fit_t$mode[2] - br[["x"]]),           0.005)
   expect_lt(abs(fit_t$phi     - br[["(phi)"]]) / br[["(phi)"]], 0.02)
+})
+
+skip_on_cran_budget()
+test_that("tulpa_laplace(family='beta') rejects y outside (0, 1)", {
+  skip_on_cran_budget()
+  X <- cbind(1, runif(5))
+  expect_error(
+    tulpa_laplace(y = c(0, 0.2, 0.4, 0.6, 0.8), n_trials = NULL, X = X,
+                  family = "beta", phi = 10),
+    "strictly in"
+  )
+  expect_error(
+    tulpa_laplace(y = c(0.1, 0.3, 0.5, 0.7, 1), n_trials = NULL, X = X,
+                  family = "beta", phi = 10),
+    "strictly in"
+  )
+  expect_error(
+    tulpa_laplace(y = c(0.1, 0.3, 0.5, 0.7, 0.9), n_trials = NULL, X = X,
+                  family = "beta", phi = -1),
+    "phi"
+  )
 })
 
 skip_on_cran()

@@ -21,8 +21,11 @@ sd_laplace <- function(d, ...) {
   tulpa_laplace(d$y, d$n_trials, d$X, re_list = d$re, family = "binomial", ...)
 }
 
+skip_on_cran_budget()
+
 
 test_that("an index whose cubic term declines is banded by its inner k-hat", {
+  skip_on_cran_budget()
   # The #303 dependency the selector is built on: a coordinate gamma_3 cannot
   # score (a coupled likelihood ships no per-observation third derivative) must
   # still be banded, from the importance curve, rather than skipped -- otherwise
@@ -47,6 +50,7 @@ test_that("an index whose cubic term declines is banded by its inner k-hat", {
 
 
 test_that("a fit with no inner-layer material bands nothing", {
+  skip_on_cran_budget()
   d <- sd_fixture()
   f <- sd_laplace(d)                      # compute_skew not requested
   b <- tulpa:::.subspace_bands(f)
@@ -57,6 +61,7 @@ test_that("a fit with no inner-layer material bands nothing", {
 
 
 test_that("sigma_ss is the inner Laplace's own marginal covariance of x_S", {
+  skip_on_cran_budget()
   d <- sd_fixture()
   f <- sd_laplace(d, return_joint_hessian = TRUE,
                   debias = list(idx = c(1L, 3L), n_iter = 200L, warmup = 100L))
@@ -67,6 +72,7 @@ test_that("sigma_ss is the inner Laplace's own marginal covariance of x_S", {
 
 
 test_that("an empty or absent index set leaves the solve bit-for-bit unchanged", {
+  skip_on_cran_budget()
   d <- sd_fixture()
   set.seed(1); a <- sd_laplace(d)
   set.seed(1); b <- sd_laplace(d, debias = list(idx = integer(0)))
@@ -81,6 +87,7 @@ test_that("an empty or absent index set leaves the solve bit-for-bit unchanged",
 
 
 test_that("the closure grows S by coupling strength and never duplicates a member", {
+  skip_on_cran_budget()
   d <- sd_fixture()
   f <- sd_laplace(d, return_joint_hessian = TRUE)
   H <- as.matrix(f$H_joint)
@@ -109,6 +116,7 @@ test_that("the closure grows S by coupling strength and never duplicates a membe
 
 
 test_that("the control knob validates its settings", {
+  skip_on_cran_budget()
   expect_null(tulpa:::.subspace_debias_config(NULL))
   expect_null(tulpa:::.subspace_debias_config(FALSE))
   expect_identical(tulpa:::.subspace_debias_config(TRUE)$band,
@@ -128,6 +136,7 @@ test_that("the control knob validates its settings", {
 
 
 test_that("the spatial Laplace path refuses the correction rather than ignoring it", {
+  skip_on_cran_budget()
   d <- sd_fixture()
   expect_error(
     tulpa_laplace(d$y, d$n_trials, d$X, re_list = d$re, family = "binomial",

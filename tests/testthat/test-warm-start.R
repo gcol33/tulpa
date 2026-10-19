@@ -49,7 +49,30 @@ ws_source <- local({
 })
 
 
+test_that("a fit from a backend with no mode is refused as a warm-start source", {
+  d <- ws_data()
+  lay <- ws_layout(d)
+  re_terms <- list(list(idx = as.integer(d$g), n_groups = nlevels(d$g),
+                        n_coefs = 1L))
+
+  fake <- structure(list(backend = "smc", mode = c(0, 0), n_fixed = 2L,
+                         fixed_names = c("(Intercept)", "x")),
+                    class = c("tulpa_fit", "list"))
+  # `args = list()` is deliberately empty: the source fit must be rejected on
+  # its own terms, before anything is built for it. Reaching the engine with
+  # empty arguments would report this as a C++ error about a model the caller
+  # never described.
+  expect_error(
+    .resolve_warm_start(fake, args = list(), re_terms = re_terms,
+                        sigma_re = NULL, beta_prior = NULL, n_chains = 1L),
+    "carries no mode and curvature")
+})
+
+skip_on_cran_budget()
+
+
 test_that("the layout probe reports the sampler's own parameter vector", {
+  skip_on_cran_budget()
   d <- ws_data()
   lay <- ws_layout(d)
 
@@ -74,6 +97,7 @@ test_that("the layout probe reports the sampler's own parameter vector", {
 
 
 test_that("chains are dispersed rather than stacked on the mode", {
+  skip_on_cran_budget()
   s <- ws_source()
   lay <- s$lay
   re_terms <- s$re_terms
@@ -96,27 +120,8 @@ test_that("chains are dispersed rather than stacked on the mode", {
 })
 
 
-test_that("a fit from a backend with no mode is refused as a warm-start source", {
-  d <- ws_data()
-  lay <- ws_layout(d)
-  re_terms <- list(list(idx = as.integer(d$g), n_groups = nlevels(d$g),
-                        n_coefs = 1L))
-
-  fake <- structure(list(backend = "smc", mode = c(0, 0), n_fixed = 2L,
-                         fixed_names = c("(Intercept)", "x")),
-                    class = c("tulpa_fit", "list"))
-  # `args = list()` is deliberately empty: the source fit must be rejected on
-  # its own terms, before anything is built for it. Reaching the engine with
-  # empty arguments would report this as a C++ error about a model the caller
-  # never described.
-  expect_error(
-    .resolve_warm_start(fake, args = list(), re_terms = re_terms,
-                        sigma_re = NULL, beta_prior = NULL, n_chains = 1L),
-    "carries no mode and curvature")
-})
-
-
 test_that("a source fit with the wrong number of SDs per term is refused", {
+  skip_on_cran_budget()
   s <- ws_source()
   lay <- s$lay
   re_terms <- s$re_terms

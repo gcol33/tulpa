@@ -39,59 +39,6 @@
   t(diag(N) - A) %*% diag(1 / (r$sigma2 * r$F), N) %*% (diag(N) - A)
 }
 
-test_that("the field conditional is a row of the NNGP joint precision", {
-  for (cov_type in 0:2) {
-    r     <- .pgnngp_probe(cov_type = as.integer(cov_type))
-    Lam   <- .pgnngp_lambda(r)
-    w_ord <- r$w[r$orig + 1L]
-
-    expect_equal(r$prec, diag(Lam), tolerance = 1e-12,
-                 info = paste("precision, cov_type", cov_type))
-    expect_equal(r$mean_num,
-                 vapply(seq_len(r$N),
-                        function(i) -sum(Lam[i, -i] * w_ord[-i]), numeric(1)),
-                 tolerance = 1e-10,
-                 info = paste("mean numerator, cov_type", cov_type))
-  }
-})
-
-test_that("the engine's assembled precision is that same matrix", {
-  # A field whose contribution to eta is PROJECTED has no sparse conditional --
-  # the projector couples every pair of locations -- so the restricted NNGP
-  # Gibbs kernel assembles the prior precision whole instead of reading one row
-  # of it (`pg_nngp_precision_dense`, gcol33/tulpa#848). The arbiter is the same
-  # definition the rows are checked against above, not a second traversal.
-  #
-  # The engine indexes by ORIGINAL location and the probe's B / F by ordered
-  # position, so the comparison permutes.
-  for (cov_type in 0:2) {
-    r   <- .pgnngp_probe(cov_type = as.integer(cov_type))
-    Lam <- .pgnngp_lambda(r)               # ordered coordinates
-    loc <- r$orig + 1L
-    Lam_loc <- matrix(0, r$N, r$N)
-    Lam_loc[loc, loc] <- Lam               # original-location coordinates
-    expect_equal(r$Lambda, Lam_loc, tolerance = 1e-10,
-                 info = paste("dense precision, cov_type", cov_type))
-  }
-  # And it scales with sigma2 the way the factorization says, like the rows.
-  a <- .pgnngp_probe(sigma2 = 0.7)
-  b <- .pgnngp_probe(sigma2 = 2.8)
-  expect_equal(b$Lambda * 4, a$Lambda, tolerance = 1e-10)
-})
-
-test_that("the child terms are most of the field, not an edge case", {
-  # The negative control: without them the precision is the own factor alone.
-  # Under a nearest-neighbour ordering nearly every location is somebody's
-  # parent, so the omission was the rule rather than the exception.
-  r <- .pgnngp_probe()
-  parent_only <- 1 / (r$sigma2 * r$F)
-  expect_gte(sum(r$prec > parent_only + 1e-10), 0.8 * r$N)
-  expect_gt(mean(abs(r$prec - parent_only)), 0.5)
-  # Every child term is a positive contribution to the precision, so the
-  # parent-only reading can only ever be too small.
-  expect_true(all(r$prec >= parent_only - 1e-12))
-})
-
 test_that("the assembled precision is the symmetric PD matrix the identity needs", {
   # If Lambda were not symmetric the row read and the column read would differ
   # and the comparison above would not be well posed.
@@ -116,4 +63,62 @@ test_that("a location with no parents and no children keeps its marginal", {
   r <- .pgnngp_probe(nn = 0L)
   expect_equal(r$prec, rep(1 / r$sigma2, r$N), tolerance = 1e-12)
   expect_equal(r$mean_num, rep(0, r$N), tolerance = 1e-12)
+})
+
+skip_on_cran_budget()
+
+test_that("the field conditional is a row of the NNGP joint precision", {
+  skip_on_cran_budget()
+  for (cov_type in 0:2) {
+    r     <- .pgnngp_probe(cov_type = as.integer(cov_type))
+    Lam   <- .pgnngp_lambda(r)
+    w_ord <- r$w[r$orig + 1L]
+
+    expect_equal(r$prec, diag(Lam), tolerance = 1e-12,
+                 info = paste("precision, cov_type", cov_type))
+    expect_equal(r$mean_num,
+                 vapply(seq_len(r$N),
+                        function(i) -sum(Lam[i, -i] * w_ord[-i]), numeric(1)),
+                 tolerance = 1e-10,
+                 info = paste("mean numerator, cov_type", cov_type))
+  }
+})
+
+test_that("the engine's assembled precision is that same matrix", {
+  skip_on_cran_budget()
+  # A field whose contribution to eta is PROJECTED has no sparse conditional --
+  # the projector couples every pair of locations -- so the restricted NNGP
+  # Gibbs kernel assembles the prior precision whole instead of reading one row
+  # of it (`pg_nngp_precision_dense`, gcol33/tulpa#848). The arbiter is the same
+  # definition the rows are checked against above, not a second traversal.
+  #
+  # The engine indexes by ORIGINAL location and the probe's B / F by ordered
+  # position, so the comparison permutes.
+  for (cov_type in 0:2) {
+    r   <- .pgnngp_probe(cov_type = as.integer(cov_type))
+    Lam <- .pgnngp_lambda(r)               # ordered coordinates
+    loc <- r$orig + 1L
+    Lam_loc <- matrix(0, r$N, r$N)
+    Lam_loc[loc, loc] <- Lam               # original-location coordinates
+    expect_equal(r$Lambda, Lam_loc, tolerance = 1e-10,
+                 info = paste("dense precision, cov_type", cov_type))
+  }
+  # And it scales with sigma2 the way the factorization says, like the rows.
+  a <- .pgnngp_probe(sigma2 = 0.7)
+  b <- .pgnngp_probe(sigma2 = 2.8)
+  expect_equal(b$Lambda * 4, a$Lambda, tolerance = 1e-10)
+})
+
+test_that("the child terms are most of the field, not an edge case", {
+  skip_on_cran_budget()
+  # The negative control: without them the precision is the own factor alone.
+  # Under a nearest-neighbour ordering nearly every location is somebody's
+  # parent, so the omission was the rule rather than the exception.
+  r <- .pgnngp_probe()
+  parent_only <- 1 / (r$sigma2 * r$F)
+  expect_gte(sum(r$prec > parent_only + 1e-10), 0.8 * r$N)
+  expect_gt(mean(abs(r$prec - parent_only)), 0.5)
+  # Every child term is a positive contribution to the precision, so the
+  # parent-only reading can only ever be too small.
+  expect_true(all(r$prec >= parent_only - 1e-12))
 })

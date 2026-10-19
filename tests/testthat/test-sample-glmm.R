@@ -42,17 +42,6 @@ for (.vi_variant in list(list(code = 2L, name = "full-rank"),
   })
 }
 
-# A control knob that no longer reaches any kernel is rejected, not accepted and
-# dropped. Structural: the control check runs before any model is built.
-test_that("the withdrawn ESS cholesky knob is rejected", {
-  expect_error(
-    tulpa_sample_glmm(y = c(0, 1), n_trials = c(1L, 1L),
-                      X = cbind(1, c(-1, 1)), family = "binomial",
-                      backend = "ess",
-                      control = list(ess_use_cholesky = TRUE)),
-    "ess_use_cholesky")
-})
-
 # The draw matrix is sized by the number of times the store condition fires,
 # and a warmup at least as long as the run stored nothing (gcol33/tulpa#473).
 # Such a run is now refused before it reaches the store, by the one
@@ -69,6 +58,20 @@ test_that("sampler backends refuse warmup >= n_iter (gcol33/tulpa#473, #872)", {
       control = list(n_iter = 40L, warmup = 60L, seed = 3L)),
       "warmup", info = backend)
   }
+})
+
+skip_on_cran_budget()
+
+# A control knob that no longer reaches any kernel is rejected, not accepted and
+# dropped. Structural: the control check runs before any model is built.
+test_that("the withdrawn ESS cholesky knob is rejected", {
+  skip_on_cran_budget()
+  expect_error(
+    tulpa_sample_glmm(y = c(0, 1), n_trials = c(1L, 1L),
+                      X = cbind(1, c(-1, 1)), family = "binomial",
+                      backend = "ess",
+                      control = list(ess_use_cholesky = TRUE)),
+    "ess_use_cholesky")
 })
 
 skip_on_cran()

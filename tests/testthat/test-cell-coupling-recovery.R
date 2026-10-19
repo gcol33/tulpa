@@ -60,19 +60,6 @@ prior_spec <- function(d) {
          sigma_grid      = c(0.4, 0.8, 1.5))
 }
 
-test_that("kernel rejects coupled = TRUE with the separable default spec", {
-    d <- setup_test_data(seed = 3L, N = 20L)
-    expect_error(
-        tulpa_nested_laplace_joint(
-            responses = list(occ = build_arm(d, coupled = TRUE)),
-            prior     = prior_spec(d),
-            cell_coupling = "separable",
-            control   = list(max_iter = 5L)
-        ),
-        regexp = "coupled = TRUE"
-    )
-})
-
 test_that("kernel rejects spec arm_ids() that disagree with arms' coupled flags", {
     cpp_register_test_separable_bernoulli_coupling()
     d <- setup_test_data(seed = 4L, N = 20L)
@@ -84,6 +71,22 @@ test_that("kernel rejects spec arm_ids() that disagree with arms' coupled flags"
             control       = list(max_iter = 5L)
         ),
         regexp = "spec lists arm 1"
+    )
+})
+
+skip_on_cran_budget()
+
+test_that("kernel rejects coupled = TRUE with the separable default spec", {
+    skip_on_cran_budget()
+    d <- setup_test_data(seed = 3L, N = 20L)
+    expect_error(
+        tulpa_nested_laplace_joint(
+            responses = list(occ = build_arm(d, coupled = TRUE)),
+            prior     = prior_spec(d),
+            cell_coupling = "separable",
+            control   = list(max_iter = 5L)
+        ),
+        regexp = "coupled = TRUE"
     )
 })
 

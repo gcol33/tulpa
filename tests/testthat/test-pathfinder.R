@@ -1,13 +1,5 @@
 
 
-test_that("pathfinder registers in Tier 2 (Structured)", {
-  expect_true("pathfinder" %in% INFERENCE_TIERS$structured$backends)
-  ti <- get_backend_tier("pathfinder")
-  expect_equal(ti$tier, 2L)
-  expect_equal(ti$name, "Structured")
-})
-
-
 test_that("pathfinder errors on non-finite init", {
   log_post <- function(theta) {
     if (theta[1] > 100) -Inf else sum(dnorm(theta, log = TRUE))
@@ -16,6 +8,17 @@ test_that("pathfinder errors on non-finite init", {
     pathfinder(log_post, init = c(200), n_draws = 100L),
     "not finite"
   )
+})
+
+skip_on_cran_budget()
+
+
+test_that("pathfinder registers in Tier 2 (Structured)", {
+  skip_on_cran_budget()
+  expect_true("pathfinder" %in% INFERENCE_TIERS$structured$backends)
+  ti <- get_backend_tier("pathfinder")
+  expect_equal(ti$tier, 2L)
+  expect_equal(ti$name, "Structured")
 })
 
 skip_on_cran()

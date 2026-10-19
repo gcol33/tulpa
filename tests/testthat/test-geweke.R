@@ -17,7 +17,10 @@
             class = "tulpa_fit")
 }
 
+skip_on_cran_budget()
+
 test_that("geweke_test() reports each chain, never the concatenation (#895)", {
+  skip_on_cran_budget()
   fit <- .geweke_fixture()
   g <- geweke_test(fit, pars = c("a", "b"))
   expect_s3_class(g, "tulpa_geweke")
@@ -41,6 +44,7 @@ test_that("geweke_test() reports each chain, never the concatenation (#895)", {
 })
 
 test_that("geweke_test() per-chain z agrees with coda::geweke.diag (#895)", {
+  skip_on_cran_budget()
   skip_if_not_installed("coda")
   fit <- .geweke_fixture()
   g <- geweke_test(fit, pars = "a")
@@ -52,6 +56,7 @@ test_that("geweke_test() per-chain z agrees with coda::geweke.diag (#895)", {
 })
 
 test_that("geweke_test() validates its windows (#895)", {
+  skip_on_cran_budget()
   fit <- .geweke_fixture()
   expect_error(geweke_test(fit, frac1 = 0), "`frac1`")
   expect_error(geweke_test(fit, frac2 = 1), "`frac2`")
@@ -62,6 +67,7 @@ test_that("geweke_test() validates its windows (#895)", {
 })
 
 test_that("print() tolerates an undefined z-score (#895)", {
+  skip_on_cran_budget()
   fit <- .geweke_fixture()
   fit$draws[, 1L, "b"] <- 1                  # constant within chain 1
   g <- geweke_test(fit, pars = "b")

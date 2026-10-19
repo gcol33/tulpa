@@ -41,6 +41,23 @@ test_that("the automatic PSIS tail rule fits a shrinking fraction of the draws",
     expect_true(all(fr <= 0.2 + 1e-12))                  # never past the cap
 })
 
+test_that("every outer backend resolves the same tail size", {
+    # gcol33/tulpa#630 made `.k_dispatch()` the one candidate loop behind all
+    # four backends, so resolving there is what gives all four the same rule.
+    # Scored on one spec at two budgets: the k-hat moves less than a band.
+    set.seed(11)
+    lt <- function(U) stats::dt(U[, 1L] / 0.4, df = 8, log = TRUE)
+    spec <- tulpa:::.k_cand_spec(lt = lt, u_hat = 0, Su = matrix(0.4^2, 1, 1),
+                                 proposal_source = "mode_hessian")
+    k <- vapply(c(500L, 5000L), function(n) {
+        set.seed(4); tulpa:::.k_dispatch(spec, n)$best$pareto_k
+    }, numeric(1))
+    expect_true(all(is.finite(k)))
+    expect_lt(abs(k[2] - k[1]), 0.35)
+})
+
+skip_on_cran_budget()
+
 # --- the resolved rule the outer paths actually use --------------------------
 #
 # The two blocks above establish the PROPERTY (the automatic rule moves the
@@ -49,6 +66,7 @@ test_that("the automatic PSIS tail rule fits a shrinking fraction of the draws",
 # default): `.k_outer_tail_points()`.
 
 test_that("the default budget is the published rule, exactly", {
+    skip_on_cran_budget()
     # The whole safety of the change: at the shipped budget the helper returns
     # NULL, so `tulpa_psis()` takes its own default and a default fit is
     # unchanged to the bit. The explicit-request path -- and its 20% cap -- is
@@ -67,6 +85,7 @@ test_that("the default budget is the published rule, exactly", {
 })
 
 test_that("away from the default the tail FRACTION is held, not the rule", {
+    skip_on_cran_budget()
     ref  <- tulpa:::.nl_diag("k_samples")
     frac <- tulpa:::.psis_tail_len(ref) / ref
 
@@ -83,22 +102,8 @@ test_that("away from the default the tail FRACTION is held, not the rule", {
     expect_lt(tulpa:::.psis_tail_len(50000L) / 50000, frac / 2)
 })
 
-test_that("every outer backend resolves the same tail size", {
-    # gcol33/tulpa#630 made `.k_dispatch()` the one candidate loop behind all
-    # four backends, so resolving there is what gives all four the same rule.
-    # Scored on one spec at two budgets: the k-hat moves less than a band.
-    set.seed(11)
-    lt <- function(U) stats::dt(U[, 1L] / 0.4, df = 8, log = TRUE)
-    spec <- tulpa:::.k_cand_spec(lt = lt, u_hat = 0, Su = matrix(0.4^2, 1, 1),
-                                 proposal_source = "mode_hessian")
-    k <- vapply(c(500L, 5000L), function(n) {
-        set.seed(4); tulpa:::.k_dispatch(spec, n)$best$pareto_k
-    }, numeric(1))
-    expect_true(all(is.finite(k)))
-    expect_lt(abs(k[2] - k[1]), 0.35)
-})
-
 test_that("the held fraction is a floor, so no budget gets a noisier fit", {
+    skip_on_cran_budget()
     # Taking the held fraction as a REPLACEMENT for the published rule buys a
     # stable estimand by making cheap diagnostics noisier: below the reference
     # budget the published rule is in its `S/5` regime and is the more generous

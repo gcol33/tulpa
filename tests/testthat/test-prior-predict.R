@@ -54,49 +54,11 @@ test_that("prior_predict returns a tulpa_prior_predict with correct shapes", {
 })
 
 
-test_that("prior_predict is reproducible with seed", {
-  fam <- make_gaussian_family()
-  pp1 <- prior_predict(y ~ x, fam, df, n_draws = 5, seed = 123)
-  pp2 <- prior_predict(y ~ x, fam, df, n_draws = 5, seed = 123)
-  expect_identical(pp1$y, pp2$y)
-  expect_identical(pp1$theta, pp2$theta)
-})
-
-
 test_that("prior_predict draws differ across seeds", {
   fam <- make_gaussian_family()
   pp1 <- prior_predict(y ~ x, fam, df, n_draws = 5, seed = 1)
   pp2 <- prior_predict(y ~ x, fam, df, n_draws = 5, seed = 2)
   expect_false(identical(pp1$y, pp2$y))
-})
-
-
-test_that("prior_predict handles random effect terms", {
-  fam <- make_gaussian_family()
-  pp <- prior_predict(y ~ x + (1 | g), fam, df, n_draws = 5, seed = 7)
-
-  expect_length(pp$theta[[1]]$u[[1]], 1L)  # one RE term -> one u block per process
-  re_block <- pp$theta[[1]]$u[[1]][[1]]
-  expect_equal(nrow(re_block), 5)  # 5 levels of g
-  expect_equal(ncol(re_block), 1)  # intercept-only
-})
-
-
-test_that("prior_predict samples extra_params from family priors", {
-  fam <- make_gaussian_family()
-  pp <- prior_predict(y ~ x, fam, df, n_draws = 50, seed = 4)
-
-  sig <- vapply(pp$theta, function(t) t$extras$sigma_y, numeric(1))
-  expect_true(all(sig > 0))               # half-normal positivity
-  expect_true(length(unique(sig)) > 1L)   # they vary across draws
-})
-
-
-test_that("prior_predict works without extra_params", {
-  fam <- make_poisson_family()
-  pp <- prior_predict(y ~ x, fam, df, n_draws = 5, seed = 9)
-  expect_length(pp$y, 5)
-  expect_true(all(vapply(pp$y, is.numeric, logical(1))))
 })
 
 
@@ -151,4 +113,48 @@ test_that("print method runs", {
   fam <- make_gaussian_family()
   pp <- prior_predict(y ~ x, fam, df, n_draws = 3, seed = 0)
   expect_output(print(pp), "tulpa prior predictive draws")
+})
+
+skip_on_cran_budget()
+
+
+test_that("prior_predict is reproducible with seed", {
+  skip_on_cran_budget()
+  fam <- make_gaussian_family()
+  pp1 <- prior_predict(y ~ x, fam, df, n_draws = 5, seed = 123)
+  pp2 <- prior_predict(y ~ x, fam, df, n_draws = 5, seed = 123)
+  expect_identical(pp1$y, pp2$y)
+  expect_identical(pp1$theta, pp2$theta)
+})
+
+
+test_that("prior_predict handles random effect terms", {
+  skip_on_cran_budget()
+  fam <- make_gaussian_family()
+  pp <- prior_predict(y ~ x + (1 | g), fam, df, n_draws = 5, seed = 7)
+
+  expect_length(pp$theta[[1]]$u[[1]], 1L)  # one RE term -> one u block per process
+  re_block <- pp$theta[[1]]$u[[1]][[1]]
+  expect_equal(nrow(re_block), 5)  # 5 levels of g
+  expect_equal(ncol(re_block), 1)  # intercept-only
+})
+
+
+test_that("prior_predict samples extra_params from family priors", {
+  skip_on_cran_budget()
+  fam <- make_gaussian_family()
+  pp <- prior_predict(y ~ x, fam, df, n_draws = 50, seed = 4)
+
+  sig <- vapply(pp$theta, function(t) t$extras$sigma_y, numeric(1))
+  expect_true(all(sig > 0))               # half-normal positivity
+  expect_true(length(unique(sig)) > 1L)   # they vary across draws
+})
+
+
+test_that("prior_predict works without extra_params", {
+  skip_on_cran_budget()
+  fam <- make_poisson_family()
+  pp <- prior_predict(y ~ x, fam, df, n_draws = 5, seed = 9)
+  expect_length(pp$y, 5)
+  expect_true(all(vapply(pp$y, is.numeric, logical(1))))
 })

@@ -99,27 +99,6 @@ test_that("print method runs", {
 })
 
 
-# gcol33/tulpa#891: a vector `u`, or one with too few groups, reached build_eta
-# as "incorrect number of dimensions" / "subscript out of bounds".
-test_that("tulpa_simulate validates the shape of theta$u", {
-  fam <- make_gaussian_family()
-  th <- list(beta = c(0, 1), u = c(-1, 0, 1), extras = list(sigma_y = 1))
-  expect_error(tulpa_simulate(y ~ x + (1 | g), fam, df, theta = th),
-               "theta\\$u\\$y\\[\\[1\\]\\] must be a 5 x 1 numeric matrix")
-  th$u <- list(y = list(matrix(0, 5, 2)))
-  expect_error(tulpa_simulate(y ~ x + (1 | g), fam, df, theta = th),
-               "got a 5 x 2 matrix")
-  th$u <- list(y = list())
-  expect_error(tulpa_simulate(y ~ x + (1 | g), fam, df, theta = th),
-               "got nothing")
-  # A length-n_groups vector is a single-coefficient block.
-  th$u <- c(-2, -1, 0, 1, 2)
-  th$extras$sigma_y <- 1e-6
-  s <- tulpa_simulate(y ~ x + (1 | g), fam, df, theta = th, seed = 1)
-  expect_equal(s$y[[1]], df$x + th$u[as.integer(df$g)], tolerance = 1e-4)
-})
-
-
 # A hand-built fit standing in for the two shapes #891 read as zero: an
 # unnamed draws tail (mala) and a separate `$re` matrix (re_cov_gibbs), with a
 # correlated slope term so the group-major layout is exercised.
@@ -144,7 +123,32 @@ test_that("tulpa_simulate validates the shape of theta$u", {
   structure(fit, class = "tulpa_fit")
 }
 
+skip_on_cran_budget()
+
+
+# gcol33/tulpa#891: a vector `u`, or one with too few groups, reached build_eta
+# as "incorrect number of dimensions" / "subscript out of bounds".
+test_that("tulpa_simulate validates the shape of theta$u", {
+  skip_on_cran_budget()
+  fam <- make_gaussian_family()
+  th <- list(beta = c(0, 1), u = c(-1, 0, 1), extras = list(sigma_y = 1))
+  expect_error(tulpa_simulate(y ~ x + (1 | g), fam, df, theta = th),
+               "theta\\$u\\$y\\[\\[1\\]\\] must be a 5 x 1 numeric matrix")
+  th$u <- list(y = list(matrix(0, 5, 2)))
+  expect_error(tulpa_simulate(y ~ x + (1 | g), fam, df, theta = th),
+               "got a 5 x 2 matrix")
+  th$u <- list(y = list())
+  expect_error(tulpa_simulate(y ~ x + (1 | g), fam, df, theta = th),
+               "got nothing")
+  # A length-n_groups vector is a single-coefficient block.
+  th$u <- c(-2, -1, 0, 1, 2)
+  th$extras$sigma_y <- 1e-6
+  s <- tulpa_simulate(y ~ x + (1 | g), fam, df, theta = th, seed = 1)
+  expect_equal(s$y[[1]], df$x + th$u[as.integer(df$g)], tolerance = 1e-4)
+})
+
 test_that("tulpa_simulate(theta = fit) uses the fit's random effects (#891)", {
+  skip_on_cran_budget()
   fam <- make_gaussian_family()
   for (shape in c("tail", "re")) {
     fit <- .sim_fake_fit(shape)

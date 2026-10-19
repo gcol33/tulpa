@@ -1,6 +1,16 @@
+
+
+test_that("agq registers in Tier 2 (Structured)", {
+  expect_true("agq" %in% INFERENCE_TIERS$structured$backends)
+  ti <- get_backend_tier("agq")
+  expect_equal(ti$tier, 2L)
+})
+
+skip_on_cran_budget()
 # Adaptive Gauss-Hermite quadrature for one-RE GLMMs.
 
 test_that("gauss_hermite_prob nodes and weights are correct (n=3, 5)", {
+  skip_on_cran_budget()
   # E[Z^2] = 1, E[Z^4] = 3 for Z ~ N(0,1). Quadrature should reproduce.
   for (n in c(3L, 5L, 7L)) {
     gh <- tulpa:::gauss_hermite_prob(n)
@@ -14,14 +24,8 @@ test_that("gauss_hermite_prob nodes and weights are correct (n=3, 5)", {
 })
 
 
-test_that("agq registers in Tier 2 (Structured)", {
-  expect_true("agq" %in% INFERENCE_TIERS$structured$backends)
-  ti <- get_backend_tier("agq")
-  expect_equal(ti$tier, 2L)
-})
-
-
 test_that("agq_fit errors on bad inputs", {
+  skip_on_cran_budget()
   expect_error(agq_fit(1:5, matrix(1, 5, 1), c(1, 1, 2, 2, 2),
                        family = "binomial", n_quad = 0L),
                "n_quad")

@@ -36,7 +36,142 @@ make_recording_stub <- function(env) {
 }
 
 
+test_that("missing `family` field raises a clear error", {
+  e_step <- function(fits, ...) list(weights = rep(0.5, 5))
+
+  m_step_encode <- function(weights, ...) {
+    bad <- list(
+      y        = c(0, 1, 1, 0, 1),
+      n_trials = NULL,
+      X        = matrix(rnorm(10), nrow = 5, ncol = 2),
+      offset   = NULL
+      # `family` deliberately omitted
+    )
+    list(only = bad)
+  }
+
+  # No need to mock tulpa_laplace -- validation should fire before any call.
+  expect_error(
+    tulpa_em_laplace(
+      e_step        = e_step,
+      m_step_encode = m_step_encode,
+      max_iter      = 1L,
+      verbose       = FALSE
+    ),
+    regexp = "missing required field.*family"
+  )
+})
+
+
+test_that("offset length mismatch raises a clear error", {
+  e_step <- function(fits, ...) list(weights = rep(0.5, 5))
+  m_step_encode <- function(weights, ...) {
+    blk <- make_block("poisson", n = 5L, offset = rep(0.0, 7))
+    list(only = blk)
+  }
+
+  expect_error(
+    tulpa_em_laplace(
+      e_step        = e_step,
+      m_step_encode = m_step_encode,
+      max_iter      = 1L,
+      verbose       = FALSE
+    ),
+    regexp = "length\\(offset\\)"
+  )
+})
+
+
+test_that("draw_z = NULL with non-numeric weights gives a clear error", {
+  stub <- make_recording_stub(new.env())
+
+  e_step <- function(fits, ...) list(weights = matrix(0.5, 4, 2))
+  m_step_encode <- function(weights, ...) {
+    list(only = make_block("binomial", n = 4L, p = 2L))
+  }
+
+  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
+
+  expect_error(
+    tulpa_em_laplace(
+      e_step        = e_step,
+      m_step_encode = m_step_encode,
+      correction    = "mi",
+      n_imputations = 2L,
+      max_iter      = 1L,
+      verbose       = FALSE
+    ),
+    regexp = "numeric vector of Bernoulli"
+  )
+})
+
+
+test_that("rubins_pool() errors on K < 2", {
+  one_draw <- list(only = list(beta = c(0.1, 0.2), se = c(0.5, 0.5)))
+  expect_error(rubins_pool(list(one_draw)),
+               regexp = "at least 2 draws")
+  expect_identical(rubins_pool(list()), list())
+})
+
+
+# ---------------------------------------------------------------------------
+# beta_prior threading (gcol33/tulpa#27): the EM-level default reaches every
+# block's tulpa_laplace() call, per-block fields override it, spatial blocks
+# skip the default, and the MI / Gibbs refits inherit the same prior.
+# ---------------------------------------------------------------------------
+
+test_that("EM-level beta_prior reaches every block's tulpa_laplace call", {
+  capture_env <- new.env()
+  stub <- make_recording_stub(capture_env)
+
+  e_step <- function(fits, ...) list(weights = rep(0.5, 10))
+  m_step_encode <- function(weights, ...) {
+    list(
+      psi = make_block("binomial", n = 10L, p = 2L),
+      p   = make_block("binomial", n = 10L, p = 3L)
+    )
+  }
+
+  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
+
+  prior <- list(mean = 0, sd = 2.5)
+  res <- tulpa_em_laplace(
+    e_step, m_step_encode,
+    beta_prior = prior, max_iter = 1L, verbose = FALSE
+  )
+
+  expect_equal(length(capture_env$calls), 2L)
+  for (call in capture_env$calls) {
+    expect_equal(call$beta_prior, prior)
+  }
+})
+
+
+test_that("EM-level beta_prior default is not applied to spatial blocks", {
+  capture_env <- new.env()
+  stub <- make_recording_stub(capture_env)
+
+  e_step <- function(fits, ...) list(weights = rep(0.5, 10))
+  m_step_encode <- function(weights, ...) {
+    blk <- make_block("binomial", n = 10L, p = 2L)
+    blk$spatial <- list(type = "icar")  # spatial solvers carry their own prior
+    list(only = blk)
+  }
+
+  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
+
+  tulpa_em_laplace(e_step, m_step_encode,
+                   beta_prior = list(mean = 0, sd = 2.5),
+                   max_iter = 1L, verbose = FALSE)
+
+  expect_null(capture_env$calls[[1]]$beta_prior)
+})
+
+skip_on_cran_budget()
+
+
 test_that("smoke: two homogeneous binomial submodels converge in one step", {
+  skip_on_cran_budget()
   skip_if_not_installed("testthat", "3.0.0")
 
   capture_env <- new.env()
@@ -76,6 +211,7 @@ test_that("smoke: two homogeneous binomial submodels converge in one step", {
 
 
 test_that("heterogeneous-family: binomial + poisson are forwarded per block", {
+  skip_on_cran_budget()
   capture_env <- new.env()
   stub <- make_recording_stub(capture_env)
 
@@ -119,34 +255,8 @@ test_that("heterogeneous-family: binomial + poisson are forwarded per block", {
 })
 
 
-test_that("missing `family` field raises a clear error", {
-  e_step <- function(fits, ...) list(weights = rep(0.5, 5))
-
-  m_step_encode <- function(weights, ...) {
-    bad <- list(
-      y        = c(0, 1, 1, 0, 1),
-      n_trials = NULL,
-      X        = matrix(rnorm(10), nrow = 5, ncol = 2),
-      offset   = NULL
-      # `family` deliberately omitted
-    )
-    list(only = bad)
-  }
-
-  # No need to mock tulpa_laplace -- validation should fire before any call.
-  expect_error(
-    tulpa_em_laplace(
-      e_step        = e_step,
-      m_step_encode = m_step_encode,
-      max_iter      = 1L,
-      verbose       = FALSE
-    ),
-    regexp = "missing required field.*family"
-  )
-})
-
-
 test_that("bad family string raises a clear error", {
+  skip_on_cran_budget()
   e_step <- function(fits, ...) list(weights = rep(0.5, 5))
   m_step_encode <- function(weights, ...) {
     blk <- make_block("binomial", n = 5L)
@@ -166,26 +276,8 @@ test_that("bad family string raises a clear error", {
 })
 
 
-test_that("offset length mismatch raises a clear error", {
-  e_step <- function(fits, ...) list(weights = rep(0.5, 5))
-  m_step_encode <- function(weights, ...) {
-    blk <- make_block("poisson", n = 5L, offset = rep(0.0, 7))
-    list(only = blk)
-  }
-
-  expect_error(
-    tulpa_em_laplace(
-      e_step        = e_step,
-      m_step_encode = m_step_encode,
-      max_iter      = 1L,
-      verbose       = FALSE
-    ),
-    regexp = "length\\(offset\\)"
-  )
-})
-
-
 test_that("correction = 'mi' runs n_imputations draws and pools via Rubin", {
+  skip_on_cran_budget()
   capture_env <- new.env()
   stub <- make_recording_stub(capture_env)
 
@@ -226,6 +318,7 @@ test_that("correction = 'mi' runs n_imputations draws and pools via Rubin", {
 
 
 test_that("correction = 'gibbs' runs n_gibbs steps and pools via Rubin", {
+  skip_on_cran_budget()
   capture_env <- new.env()
   stub <- make_recording_stub(capture_env)
 
@@ -256,6 +349,7 @@ test_that("correction = 'gibbs' runs n_gibbs steps and pools via Rubin", {
 
 
 test_that("correction = 'mi' invokes a user-supplied draw_z", {
+  skip_on_cran_budget()
   capture_env <- new.env()
   stub <- make_recording_stub(capture_env)
   draw_calls <- 0L
@@ -295,31 +389,8 @@ test_that("correction = 'mi' invokes a user-supplied draw_z", {
 })
 
 
-test_that("draw_z = NULL with non-numeric weights gives a clear error", {
-  stub <- make_recording_stub(new.env())
-
-  e_step <- function(fits, ...) list(weights = matrix(0.5, 4, 2))
-  m_step_encode <- function(weights, ...) {
-    list(only = make_block("binomial", n = 4L, p = 2L))
-  }
-
-  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
-
-  expect_error(
-    tulpa_em_laplace(
-      e_step        = e_step,
-      m_step_encode = m_step_encode,
-      correction    = "mi",
-      n_imputations = 2L,
-      max_iter      = 1L,
-      verbose       = FALSE
-    ),
-    regexp = "numeric vector of Bernoulli"
-  )
-})
-
-
 test_that("bad n_imputations / n_gibbs / draw_z raise clear errors", {
+  skip_on_cran_budget()
   noop_e <- function(fits, ...) list(weights = rep(0.5, 4))
   noop_m <- function(weights, ...) {
     list(only = make_block("binomial", n = 4L, p = 2L))
@@ -353,15 +424,8 @@ test_that("bad n_imputations / n_gibbs / draw_z raise clear errors", {
 })
 
 
-test_that("rubins_pool() errors on K < 2", {
-  one_draw <- list(only = list(beta = c(0.1, 0.2), se = c(0.5, 0.5)))
-  expect_error(rubins_pool(list(one_draw)),
-               regexp = "at least 2 draws")
-  expect_identical(rubins_pool(list()), list())
-})
-
-
 test_that("MI applies m_step_extra per draw with continuous weights", {
+  skip_on_cran_budget()
   capture_env <- new.env()
   stub <- make_recording_stub(capture_env)
 
@@ -400,6 +464,7 @@ test_that("MI applies m_step_extra per draw with continuous weights", {
 
 
 test_that("Gibbs passes continuous E-step weights to m_step_extra (not hard z)", {
+  skip_on_cran_budget()
   capture_env <- new.env()
   stub <- make_recording_stub(capture_env)
 
@@ -437,40 +502,8 @@ test_that("Gibbs passes continuous E-step weights to m_step_extra (not hard z)",
 })
 
 
-# ---------------------------------------------------------------------------
-# beta_prior threading (gcol33/tulpa#27): the EM-level default reaches every
-# block's tulpa_laplace() call, per-block fields override it, spatial blocks
-# skip the default, and the MI / Gibbs refits inherit the same prior.
-# ---------------------------------------------------------------------------
-
-test_that("EM-level beta_prior reaches every block's tulpa_laplace call", {
-  capture_env <- new.env()
-  stub <- make_recording_stub(capture_env)
-
-  e_step <- function(fits, ...) list(weights = rep(0.5, 10))
-  m_step_encode <- function(weights, ...) {
-    list(
-      psi = make_block("binomial", n = 10L, p = 2L),
-      p   = make_block("binomial", n = 10L, p = 3L)
-    )
-  }
-
-  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
-
-  prior <- list(mean = 0, sd = 2.5)
-  res <- tulpa_em_laplace(
-    e_step, m_step_encode,
-    beta_prior = prior, max_iter = 1L, verbose = FALSE
-  )
-
-  expect_equal(length(capture_env$calls), 2L)
-  for (call in capture_env$calls) {
-    expect_equal(call$beta_prior, prior)
-  }
-})
-
-
 test_that("per-block beta_prior overrides the EM-level default", {
+  skip_on_cran_budget()
   capture_env <- new.env()
   stub <- make_recording_stub(capture_env)
 
@@ -494,28 +527,8 @@ test_that("per-block beta_prior overrides the EM-level default", {
 })
 
 
-test_that("EM-level beta_prior default is not applied to spatial blocks", {
-  capture_env <- new.env()
-  stub <- make_recording_stub(capture_env)
-
-  e_step <- function(fits, ...) list(weights = rep(0.5, 10))
-  m_step_encode <- function(weights, ...) {
-    blk <- make_block("binomial", n = 10L, p = 2L)
-    blk$spatial <- list(type = "icar")  # spatial solvers carry their own prior
-    list(only = blk)
-  }
-
-  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
-
-  tulpa_em_laplace(e_step, m_step_encode,
-                   beta_prior = list(mean = 0, sd = 2.5),
-                   max_iter = 1L, verbose = FALSE)
-
-  expect_null(capture_env$calls[[1]]$beta_prior)
-})
-
-
 test_that("MI correction refits inherit the EM-level beta_prior", {
+  skip_on_cran_budget()
   capture_env <- new.env()
   stub <- make_recording_stub(capture_env)
 
@@ -541,6 +554,7 @@ test_that("MI correction refits inherit the EM-level beta_prior", {
 
 
 test_that("Gibbs correction refits inherit the EM-level beta_prior", {
+  skip_on_cran_budget()
   capture_env <- new.env()
   stub <- make_recording_stub(capture_env)
 
@@ -565,6 +579,7 @@ test_that("Gibbs correction refits inherit the EM-level beta_prior", {
 
 
 test_that(".attach_beta_se warns when H_beta is smaller than n_fixed", {
+  skip_on_cran_budget()
   fit <- list(mode = c(0.1, 0.2, 0.3), H_beta = diag(1))
   expect_warning(
     out <- tulpa:::.attach_beta_se(fit, n_fixed = 3L),

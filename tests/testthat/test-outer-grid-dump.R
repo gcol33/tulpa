@@ -108,19 +108,6 @@
   max(abs(c(a$median - b$median, a$ci_lo - b$ci_lo, a$ci_hi - b$ci_hi)))
 }
 
-test_that("a fit with no outer grid is refused, not silently dumped", {
-  expect_error(outer_grid_dump(list()), "no outer hyperparameter grid")
-  expect_error(outer_grid_dump("not a fit"), "must be a tulpa fit")
-  tg <- matrix(1:6, 3L, 2L, dimnames = list(NULL, c("a", "b")))
-  expect_error(outer_grid_dump(list(theta_grid = tg)), "log_marginal")
-  expect_error(
-    outer_grid_dump(list(theta_grid = tg, log_marginal = c(1, 2, 3))),
-    "weights")
-  expect_error(
-    outer_grid_dump(list(theta_grid = matrix(numeric(0), 0L, 0L))),
-    "no outer hyperparameter grid")
-})
-
 # --------------------------------------------------------------------------- #
 # The noise floor                                                             #
 # --------------------------------------------------------------------------- #
@@ -141,7 +128,24 @@ test_that("a fit with no outer grid is refused, not silently dumped", {
     class = c("tulpa_outer_grid_dump", "list"))
 }
 
+skip_on_cran_budget()
+
+test_that("a fit with no outer grid is refused, not silently dumped", {
+  skip_on_cran_budget()
+  expect_error(outer_grid_dump(list()), "no outer hyperparameter grid")
+  expect_error(outer_grid_dump("not a fit"), "must be a tulpa fit")
+  tg <- matrix(1:6, 3L, 2L, dimnames = list(NULL, c("a", "b")))
+  expect_error(outer_grid_dump(list(theta_grid = tg)), "log_marginal")
+  expect_error(
+    outer_grid_dump(list(theta_grid = tg, log_marginal = c(1, 2, 3))),
+    "weights")
+  expect_error(
+    outer_grid_dump(list(theta_grid = matrix(numeric(0), 0L, 0L))),
+    "no outer hyperparameter grid")
+})
+
 test_that("the floor is the grid's own resolution, and falls as the grid resolves", {
+  skip_on_cran_budget()
   coarse <- outer_grid_noise_floor(.ogd_fake_dump(9L))
   fine   <- outer_grid_noise_floor(.ogd_fake_dump(81L))
   expect_gt(coarse$endpoints, 0)
@@ -156,6 +160,7 @@ test_that("the floor is the grid's own resolution, and falls as the grid resolve
 })
 
 test_that("the floor bounds the read's own discretisation error", {
+  skip_on_cran_budget()
   # This grid's exact answer is known: the outer log-marginal is a standard
   # Gaussian, so the axis's 95% endpoints are qnorm(0.025) / qnorm(0.975) and the
   # read's distance from them is the discretisation error the floor is standing

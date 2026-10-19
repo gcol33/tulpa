@@ -45,7 +45,10 @@ sim_car_proper_field <- function(adj, tau = 1.0, rho = 0.7, seed = 42) {
   backsolve(L, z)
 }
 
+skip_on_cran_budget()
+
 test_that("spatial_car_proper() returns a tulpa_spatial with type='car_proper'", {
+  skip_on_cran_budget()
   adj <- chain_adj(5)
   spec <- spatial_car_proper(adj, level = "group", group_var = "site")
   expect_s3_class(spec, "tulpa_spatial")
@@ -57,6 +60,7 @@ test_that("spatial_car_proper() returns a tulpa_spatial with type='car_proper'",
 })
 
 test_that("spatial_car(adj, proper = TRUE) is equivalent to spatial_car_proper", {
+  skip_on_cran_budget()
   adj <- chain_adj(6)
   a <- spatial_car_proper(adj, level = "group", group_var = "x")
   b <- spatial_car(adj, level = "group", group_var = "x", proper = TRUE)

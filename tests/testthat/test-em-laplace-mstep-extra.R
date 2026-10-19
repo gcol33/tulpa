@@ -60,7 +60,10 @@ make_m_step_encode <- function(fx, family = "poisson") {
   }
 }
 
+skip_on_cran_budget()
+
 test_that("m_step_extra rejects bad shapes with clear errors", {
+  skip_on_cran_budget()
   fx <- make_fixture()
   fake_laplace <- make_fake_laplace()
 

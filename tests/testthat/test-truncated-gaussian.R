@@ -15,7 +15,10 @@
     -0.5 * log(2 * pi * sigma^2) - 0.5 * z^2 - logPhi
 }
 
+skip_on_cran_budget()
+
 test_that("deep truncation (predicted mean far above the bound) stays finite", {
+    skip_on_cran_budget()
     # eta well above u: nearly all mass is truncated; lambda ~ -a is large but the
     # log-space inverse-Mills keeps ll / grad / neg_hess finite, neg_hess floored.
     out <- tulpa:::cpp_truncated_gaussian_terms(-4.6, 0.0, 5.0, 0.3)

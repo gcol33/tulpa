@@ -24,31 +24,6 @@ W_34       <- c(0.005, 0.010, 0.020, 0.030, 0.050, 0.070, 0.130, 0.345, 0.340)
 W_MODE     <- c(0.005, 0.010, 0.020, 0.030, 0.050, 0.070, 0.130, 0.245, 0.440)
 W_COLLAPSE <- c(0.001, 0.002, 0.004, 0.008, 0.015, 0.020, 0.030, 0.720, 0.200)
 
-test_that("a boundary node carrying mass is named without being the mode", {
-  # A third of the marginal on the last node, mode one node in: the rail is
-  # silent by construction (it reads the argmax) and the mass label fires.
-  f <- fake_fit(W_34)
-  expect_null(.nl_axis_rail(f, "sigma"))
-  expect_identical(.nl_railed_axes(f), character(0))
-  expect_identical(.nl_edge_mass_axes(f), "sigma:upper")
-
-  em <- .nl_axis_edge_mass(f, "sigma")
-  expect_length(em, 1L)
-  expect_identical(em[[1L]]$side, "upper")
-  expect_equal(em[[1L]]$mass, 0.34 / sum(W_34), tolerance = 1e-12)
-  # The currency is the rail's: the boundary weight against what a flat
-  # marginal puts there, so the threshold means the same at any node count.
-  expect_equal(em[[1L]]$lift, 9 * 0.34 / sum(W_34), tolerance = 1e-12)
-  expect_identical(em[[1L]]$node, NODES[9L])
-})
-
-test_that("a rail is also boundary mass, and keeps its own stronger label", {
-  f <- fake_fit(W_MODE)
-  expect_identical(.nl_axis_rail(f, "sigma")$side, "upper")
-  expect_identical(.nl_railed_axes(f), "sigma:upper")
-  expect_identical(.nl_edge_mass_axes(f), "sigma:upper")
-})
-
 test_that("a marginal that decayed by its boundary is not named", {
   # Resolved and centred: the outer nodes carry a thousandth of the marginal.
   f <- fake_fit(exp(-0.5 * ((seq_len(9) - 5) / 1.2)^2))
@@ -60,15 +35,6 @@ test_that("a marginal that decayed by its boundary is not named", {
   expect_identical(.nl_edge_mass_axes(fake_fit(W_OBSERVED)), character(0))
 })
 
-test_that("both ends are tested", {
-  w <- rev(W_34)
-  expect_identical(.nl_edge_mass_axes(fake_fit(w)), "sigma:lower")
-  # A marginal pressing on both ends names both.
-  u <- c(0.30, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.30)
-  expect_identical(.nl_edge_mass_axes(fake_fit(u)),
-                   c("sigma:lower", "sigma:upper"))
-})
-
 test_that("the threshold is a lift, so it means the same at any node count", {
   # One marginal read at 5 and at 15 nodes, the same shape either way: a fixed
   # SHARE would make the longer axis the weaker detector, the lift does not.
@@ -78,25 +44,6 @@ test_that("the threshold is a lift, so it means the same at any node count", {
     expect_identical(.nl_edge_mass_axes(f), "sigma:upper",
                      info = sprintf("m = %d", m))
   }
-})
-
-test_that("the grid regime reads boundary mass in every regime", {
-  # Spread: `ess_grid >= 2` used to return before any axis was inspected.
-  rg <- .joint_pareto_grid_regime(fake_fit(W_34))
-  expect_identical(rg$regime, "spread")
-  expect_gte(rg$ess_grid, 2)
-  expect_identical(rg$edge_mass_axes, "sigma")
-  expect_identical(rg$edge_mass_sides, "upper")
-  # The collapse label keeps its own meaning: the dominant CELL is interior.
-  rg2 <- .joint_pareto_grid_regime(fake_fit(W_COLLAPSE))
-  expect_identical(rg2$regime, "collapsed_interior")
-  expect_identical(rg2$edge_axes, character(0))
-  expect_identical(rg2$edge_mass_axes, "sigma")
-
-  # A clean grid names nothing, so the label is not vacuous.
-  rg3 <- .joint_pareto_grid_regime(fake_fit(exp(-0.5 * ((seq_len(9) - 5) / 1.2)^2)))
-  expect_identical(rg3$edge_mass_axes, character(0))
-  expect_identical(rg3$edge_mass_sides, character(0))
 })
 
 test_that("a fit reports its boundary mass beside its railed axes", {
@@ -122,42 +69,6 @@ test_that("the regime note says what a boundary-mass axis means", {
     list(regime = "spread", edge_axes = character(0), edge_sides = character(0),
          edge_mass_axes = character(0), edge_mass_sides = character(0),
          outer_skew_max = NA_real_)))
-})
-
-test_that("a flat marginal is boundary mass on both ends", {
-  # Every node carries exactly what a flat marginal puts there, so the lift is 1
-  # on each end: the data say nothing about the axis and the span truncates a
-  # density that has not decayed anywhere. Named, not exempt.
-  f <- fake_fit(rep(1, 9))
-  expect_identical(.nl_edge_mass_axes(f), c("sigma:lower", "sigma:upper"))
-})
-
-test_that("the axis marginal the labels read carries the grid's own measure", {
-  # Four tight nodes and one far one: the outer node owns a log cell an order
-  # of magnitude wider, so it holds prior mass a node count does not see. The
-  # label reads the measure the fit integrates with.
-  nodes <- c(0.15, 0.2, 0.25, 0.3, 2.0)
-  f <- list(theta_grid = matrix(nodes, ncol = 1L,
-                                dimnames = list(NULL, "sigma")),
-            log_marginal = c(-2, -1, 0, -1, -1.6))
-  # Read off the node counts alone, no end carries what a flat marginal would.
-  expect_identical(.nl_edge_mass_axes(f), character(0))
-
-  f$log_quad <- .nl_grid_log_quad(f$theta_grid)
-  expect_identical(.nl_edge_mass_axes(f), "sigma:upper")
-})
-
-test_that("a fit whose axes all contain their mode still reports boundary mass", {
-  # The placement read, which is the one a single-block nested fit takes: no
-  # axis is railed, so the note used to be silent about a span that truncates.
-  pl <- list(placement = NA_character_, railed = character(0),
-             edge_mass = "sigma:upper", moved = character(0),
-             clamped = character(0), declined = NA_character_)
-  note <- .tulpa_grid_placement_note(pl)
-  expect_true(grepl("boundary node", note))
-  expect_true(grepl("sigma:upper", note))
-  pl$edge_mass <- character(0)
-  expect_null(.tulpa_grid_placement_note(pl))
 })
 
 # --- which measure the label reads (gcol33/tulpa#660) -------------------------
@@ -192,7 +103,106 @@ test_that("the boundary label does not weaken where the axis's support closes", 
   expect_identical(.nl_edge_mass_axes(f), "rho:upper")
 })
 
+skip_on_cran_budget()
+
+test_that("a boundary node carrying mass is named without being the mode", {
+  skip_on_cran_budget()
+  # A third of the marginal on the last node, mode one node in: the rail is
+  # silent by construction (it reads the argmax) and the mass label fires.
+  f <- fake_fit(W_34)
+  expect_null(.nl_axis_rail(f, "sigma"))
+  expect_identical(.nl_railed_axes(f), character(0))
+  expect_identical(.nl_edge_mass_axes(f), "sigma:upper")
+
+  em <- .nl_axis_edge_mass(f, "sigma")
+  expect_length(em, 1L)
+  expect_identical(em[[1L]]$side, "upper")
+  expect_equal(em[[1L]]$mass, 0.34 / sum(W_34), tolerance = 1e-12)
+  # The currency is the rail's: the boundary weight against what a flat
+  # marginal puts there, so the threshold means the same at any node count.
+  expect_equal(em[[1L]]$lift, 9 * 0.34 / sum(W_34), tolerance = 1e-12)
+  expect_identical(em[[1L]]$node, NODES[9L])
+})
+
+test_that("a rail is also boundary mass, and keeps its own stronger label", {
+  skip_on_cran_budget()
+  f <- fake_fit(W_MODE)
+  expect_identical(.nl_axis_rail(f, "sigma")$side, "upper")
+  expect_identical(.nl_railed_axes(f), "sigma:upper")
+  expect_identical(.nl_edge_mass_axes(f), "sigma:upper")
+})
+
+test_that("both ends are tested", {
+  skip_on_cran_budget()
+  w <- rev(W_34)
+  expect_identical(.nl_edge_mass_axes(fake_fit(w)), "sigma:lower")
+  # A marginal pressing on both ends names both.
+  u <- c(0.30, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.30)
+  expect_identical(.nl_edge_mass_axes(fake_fit(u)),
+                   c("sigma:lower", "sigma:upper"))
+})
+
+test_that("the grid regime reads boundary mass in every regime", {
+  skip_on_cran_budget()
+  # Spread: `ess_grid >= 2` used to return before any axis was inspected.
+  rg <- .joint_pareto_grid_regime(fake_fit(W_34))
+  expect_identical(rg$regime, "spread")
+  expect_gte(rg$ess_grid, 2)
+  expect_identical(rg$edge_mass_axes, "sigma")
+  expect_identical(rg$edge_mass_sides, "upper")
+  # The collapse label keeps its own meaning: the dominant CELL is interior.
+  rg2 <- .joint_pareto_grid_regime(fake_fit(W_COLLAPSE))
+  expect_identical(rg2$regime, "collapsed_interior")
+  expect_identical(rg2$edge_axes, character(0))
+  expect_identical(rg2$edge_mass_axes, "sigma")
+
+  # A clean grid names nothing, so the label is not vacuous.
+  rg3 <- .joint_pareto_grid_regime(fake_fit(exp(-0.5 * ((seq_len(9) - 5) / 1.2)^2)))
+  expect_identical(rg3$edge_mass_axes, character(0))
+  expect_identical(rg3$edge_mass_sides, character(0))
+})
+
+test_that("a flat marginal is boundary mass on both ends", {
+  skip_on_cran_budget()
+  # Every node carries exactly what a flat marginal puts there, so the lift is 1
+  # on each end: the data say nothing about the axis and the span truncates a
+  # density that has not decayed anywhere. Named, not exempt.
+  f <- fake_fit(rep(1, 9))
+  expect_identical(.nl_edge_mass_axes(f), c("sigma:lower", "sigma:upper"))
+})
+
+test_that("the axis marginal the labels read carries the grid's own measure", {
+  skip_on_cran_budget()
+  # Four tight nodes and one far one: the outer node owns a log cell an order
+  # of magnitude wider, so it holds prior mass a node count does not see. The
+  # label reads the measure the fit integrates with.
+  nodes <- c(0.15, 0.2, 0.25, 0.3, 2.0)
+  f <- list(theta_grid = matrix(nodes, ncol = 1L,
+                                dimnames = list(NULL, "sigma")),
+            log_marginal = c(-2, -1, 0, -1, -1.6))
+  # Read off the node counts alone, no end carries what a flat marginal would.
+  expect_identical(.nl_edge_mass_axes(f), character(0))
+
+  f$log_quad <- .nl_grid_log_quad(f$theta_grid)
+  expect_identical(.nl_edge_mass_axes(f), "sigma:upper")
+})
+
+test_that("a fit whose axes all contain their mode still reports boundary mass", {
+  skip_on_cran_budget()
+  # The placement read, which is the one a single-block nested fit takes: no
+  # axis is railed, so the note used to be silent about a span that truncates.
+  pl <- list(placement = NA_character_, railed = character(0),
+             edge_mass = "sigma:upper", moved = character(0),
+             clamped = character(0), declined = NA_character_)
+  note <- .tulpa_grid_placement_note(pl)
+  expect_true(grepl("boundary node", note))
+  expect_true(grepl("sigma:upper", note))
+  pl$edge_mass <- character(0)
+  expect_null(.tulpa_grid_placement_note(pl))
+})
+
 test_that("the span measure drops the closure and nothing else", {
+  skip_on_cran_budget()
   f <- .em_rho_fit(log(c(0.15, 0.20, 0.32, 0.33)))
   expect_equal(.nl_axis_measure_quad(f, "span"),
                .nl_grid_log_quad(f$theta_grid, close_domain = FALSE))
@@ -216,6 +226,7 @@ test_that("the span measure drops the closure and nothing else", {
 })
 
 test_that("the three measures are the three questions", {
+  skip_on_cran_budget()
   f <- .em_rho_fit(log(c(0.15, 0.20, 0.32, 0.33)))
   # A fit carrying no measure reads the same under all three.
   bare <- f; bare$log_quad <- NULL

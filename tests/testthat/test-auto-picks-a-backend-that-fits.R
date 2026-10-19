@@ -81,7 +81,25 @@ test_that("auto's default arm routes ziformula off MALA instead of erroring", {
   expect_identical(sel2$backend, "mala")
 })
 
+test_that("auto adds a temporal arm that sees ziformula before picking a backend", {
+  fam <- list(name = "poisson", distribution = "poisson")
+  sel <- tulpa:::select_inference_mode(
+    "auto", family = fam, n_obs = n, has_temporal = TRUE,
+    temporal = list(type = "rw1"), feat = list(ziformula = TRUE))
+  expect_identical(sel$backend, "hmc")
+
+  # Unaffected: no zi, still nested Laplace (matches the pre-existing
+  # downstream-redirect outcome, reached one step earlier now).
+  sel2 <- tulpa:::select_inference_mode(
+    "auto", family = fam, n_obs = n, has_temporal = TRUE,
+    temporal = list(type = "rw1"))
+  expect_identical(sel2$backend, "nested_laplace")
+})
+
+skip_on_cran_budget()
+
 test_that("auto's spatial-nested arm falls back to hmc when nested_laplace refuses the call", {
+  skip_on_cran_budget()
   fam <- list(name = "poisson", distribution = "poisson")
   sel <- tulpa:::select_inference_mode(
     "auto", family = fam, n_obs = n, has_spatial = TRUE, spatial_type = "icar",
@@ -100,21 +118,6 @@ test_that("auto's spatial-nested arm falls back to hmc when nested_laplace refus
   sel3 <- tulpa:::select_inference_mode(
     "auto", family = fam, n_obs = n, has_spatial = TRUE, spatial_type = "icar")
   expect_identical(sel3$backend, "nested_laplace")
-})
-
-test_that("auto adds a temporal arm that sees ziformula before picking a backend", {
-  fam <- list(name = "poisson", distribution = "poisson")
-  sel <- tulpa:::select_inference_mode(
-    "auto", family = fam, n_obs = n, has_temporal = TRUE,
-    temporal = list(type = "rw1"), feat = list(ziformula = TRUE))
-  expect_identical(sel$backend, "hmc")
-
-  # Unaffected: no zi, still nested Laplace (matches the pre-existing
-  # downstream-redirect outcome, reached one step earlier now).
-  sel2 <- tulpa:::select_inference_mode(
-    "auto", family = fam, n_obs = n, has_temporal = TRUE,
-    temporal = list(type = "rw1"))
-  expect_identical(sel2$backend, "nested_laplace")
 })
 
 skip_on_cran()

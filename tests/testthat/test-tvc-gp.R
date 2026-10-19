@@ -57,7 +57,23 @@
 }
 
 
+test_that("a GP coefficient needs a time variable with spacing", {
+  sim <- .tvcgp_sim(n_t = 6L, reps = 4L)
+  d <- sim$d
+  d$day <- factor(d$day)
+  expect_error(
+    tulpa(y ~ x, data = d, family = "poisson",
+          temporal = temporal_tvc("day", terms = ~ x - 1, structure = "gp"),
+          mode = "exact",
+          control = list(n_iter = 4L, n_warmup = 2L, seed = 1L)),
+    "needs a numeric time variable")
+})
+
+skip_on_cran_budget()
+
+
 test_that("the constructor takes a kernel and refuses what has no closed form", {
+  skip_on_cran_budget()
   s <- temporal_tvc("day", terms = ~ x - 1, structure = "gp")
   expect_equal(s$structure, "gp")
   expect_equal(s$cov, "exponential")
@@ -81,19 +97,6 @@ test_that("the constructor takes a kernel and refuses what has no closed form", 
 
   # `rw1` / `rw2` / `ar1` carry no kernel and ignore the arguments.
   expect_null(temporal_tvc("day", structure = "rw1", cov = "matern")$cov)
-})
-
-
-test_that("a GP coefficient needs a time variable with spacing", {
-  sim <- .tvcgp_sim(n_t = 6L, reps = 4L)
-  d <- sim$d
-  d$day <- factor(d$day)
-  expect_error(
-    tulpa(y ~ x, data = d, family = "poisson",
-          temporal = temporal_tvc("day", terms = ~ x - 1, structure = "gp"),
-          mode = "exact",
-          control = list(n_iter = 4L, n_warmup = 2L, seed = 1L)),
-    "needs a numeric time variable")
 })
 
 skip_on_cran()

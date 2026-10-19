@@ -1,93 +1,7 @@
-# The compiled numeric kernels the samplers and the Laplace path are built on,
-# each against an independent R computation of the same quantity. The wrappers
-# exist so these can be reached from R; unreached, the harness reads from the
-# outside as coverage that is not there.
-
-test_that("scalar math kernels match their R closed forms", {
-  v <- c(-3.2, 0.4, 7.1, 2.0)
-  expect_equal(cpp_test_log_sum_exp(v), log(sum(exp(v))))
-  expect_equal(cpp_test_softmax(v), exp(v) / sum(exp(v)))
-  expect_equal(cpp_test_inv_logit(c(-4, 0, 2.5)), plogis(c(-4, 0, 2.5)))
-  for (a in c(0.5, 3, 12.25)) expect_equal(cpp_test_lgamma(a), lgamma(a))
-})
-
-test_that("log_sum_exp does not overflow on a large shift", {
-  big <- c(800, 799)
-  expect_equal(cpp_test_log_sum_exp(big), 800 + log(1 + exp(-1)))
-  expect_true(all(is.finite(cpp_test_softmax(big))))
-  expect_equal(sum(cpp_test_softmax(big)), 1)
-})
-
-test_that("empty and mismatched inputs are answered, not dereferenced", {
-  # max_element on an empty range dereferences end(); log_sum_exp already
-  # answers the empty case and softmax reads the same way.
-  expect_equal(cpp_test_log_sum_exp(numeric(0)), -Inf)
-  expect_equal(cpp_test_softmax(numeric(0)), numeric(0))
-
-  # Each of these loops to length(y) / nrow(A) and indexes the other argument.
-  expect_error(cpp_test_poisson_loglik(c(0L, 1L), 1.0), "lambda")
-  expect_error(cpp_test_binomial_loglik(c(0L, 1L), 2L, c(0.5, 0.5)), "length")
-  expect_error(cpp_test_negbin_loglik(c(0L, 1L), 1.0, 2.5), "mu")
-  expect_error(cpp_test_normal_loglik(c(0, 1), 1.0, 1.0), "mu")
-  expect_error(cpp_test_cholesky(matrix(1, 2, 3)), "square")
-  expect_error(cpp_test_matvec(matrix(1, 2, 3), c(1, 2)), "ncol")
-})
-
-test_that("family log-likelihood kernels match the R densities", {
-  y   <- c(0L, 2L, 5L, 1L)
-  lam <- c(0.4, 2.1, 4.4, 1.0)
-  expect_equal(cpp_test_poisson_loglik(y, lam),
-               sum(dpois(y, lam, log = TRUE)))
-
-  n <- c(3L, 4L, 8L, 2L)
-  p <- c(0.2, 0.55, 0.71, 0.4)
-  expect_equal(cpp_test_binomial_loglik(y, n, p),
-               sum(dbinom(y, n, p, log = TRUE)))
-
-  mu <- c(0.7, 2.0, 3.9, 1.1)
-  expect_equal(cpp_test_negbin_loglik(y, mu, 2.5),
-               sum(dnbinom(y, size = 2.5, mu = mu, log = TRUE)))
-
-  ynum <- c(-0.4, 1.2, 0.3, 2.2)
-  expect_equal(cpp_test_normal_loglik(ynum, mu, 1.3),
-               sum(dnorm(ynum, mu, 1.3, log = TRUE)))
-})
 
 test_that("the negbin kernel answers the mu = 0 boundary rather than 0 * -Inf", {
   expect_equal(cpp_test_negbin_loglik(0L, 0.0, 2.5), 0)
   expect_equal(cpp_test_negbin_loglik(2L, 0.0, 2.5), -Inf)
-})
-
-test_that("dense linear algebra kernels match base R", {
-  set.seed(11)
-  A <- crossprod(matrix(rnorm(16), 4, 4)) + diag(4)
-  x <- rnorm(4)
-
-  L <- matrix(cpp_test_cholesky(A), 4, 4)
-  expect_equal(L %*% t(L), A, tolerance = 1e-10, ignore_attr = TRUE)
-
-  M <- matrix(rnorm(12), 4, 3)
-  b <- rnorm(3)
-  expect_equal(cpp_test_matvec(M, b), as.numeric(M %*% b), tolerance = 1e-12)
-  expect_equal(cpp_test_linalg_matvec(M, b), as.numeric(M %*% b),
-               tolerance = 1e-12)
-  expect_equal(cpp_test_linalg_matvec_add(M, b, x), as.numeric(M %*% b) + x,
-               tolerance = 1e-12)
-  expect_equal(cpp_test_linalg_matvec_transpose(M, x),
-               as.numeric(crossprod(M, x)), tolerance = 1e-12)
-})
-
-test_that("vector kernels match base R", {
-  x <- c(1.5, -2, 0.25, 4)
-  y <- c(0.5, 3, -1, 2)
-  expect_equal(cpp_test_dot_product(x, y), sum(x * y))
-  expect_equal(cpp_test_norm_squared(x), sum(x^2))
-  expect_equal(cpp_test_vector_sum(x), sum(x))
-  expect_equal(cpp_test_axpy(2.5, x, y), 2.5 * x + y)
-  expect_equal(cpp_test_scale(-3, x), -3 * x)
-  expect_equal(cpp_test_linalg_log_sum_exp(1.2, -0.4), log(exp(1.2) + exp(-0.4)))
-  expect_equal(cpp_test_linalg_log_sum_exp_vec(x), log(sum(exp(x))))
-  expect_equal(cpp_test_softmax_inplace(x), exp(x) / sum(exp(x)))
 })
 
 test_that("the sparse Laplacian quadratic form matches the dense x L x", {
@@ -114,7 +28,128 @@ test_that("the two-process linear predictors match X beta on each arm", {
   expect_equal(r$eta_denom, as.numeric(Xd %*% bd), tolerance = 1e-12)
 })
 
+test_that("the leapfrog integrator is time-reversible", {
+  q0 <- c(1.0, -0.5); p0 <- c(0.2, 0.9)
+  fwd <- cpp_test_leapfrog(q0, p0, 0.1, 12L)
+  back <- cpp_test_leapfrog(fwd$q, -fwd$p, 0.1, 12L)
+  expect_equal(back$q, q0, tolerance = 1e-10)
+  expect_equal(-back$p, p0, tolerance = 1e-10)
+})
+
+test_that("the row-major 3-D flattener matches an explicit R reshape", {
+  d1 <- 2L; d2 <- 3L; d3 <- 4L
+  arr <- array(seq_len(d1 * d2 * d3), dim = c(d1, d2, d3))
+  flat <- cpp_flatten_3d_rowmajor(arr, d1, d2, d3)
+  expect_length(flat, d1 * d2 * d3)
+  ref <- numeric(d1 * d2 * d3)
+  for (i in seq_len(d1)) for (j in seq_len(d2)) for (k in seq_len(d3)) {
+    ref[(i - 1) * d2 * d3 + (j - 1) * d3 + k] <- arr[i, j, k]
+  }
+  expect_equal(flat, ref)
+})
+
+test_that("the tgmrf registry reports a non-negative size", {
+  n <- cpp_tgmrf_registry_size()
+  expect_length(n, 1L)
+  expect_true(is.numeric(n) && n >= 0)
+})
+
+skip_on_cran_budget()
+# The compiled numeric kernels the samplers and the Laplace path are built on,
+# each against an independent R computation of the same quantity. The wrappers
+# exist so these can be reached from R; unreached, the harness reads from the
+# outside as coverage that is not there.
+
+test_that("scalar math kernels match their R closed forms", {
+  skip_on_cran_budget()
+  v <- c(-3.2, 0.4, 7.1, 2.0)
+  expect_equal(cpp_test_log_sum_exp(v), log(sum(exp(v))))
+  expect_equal(cpp_test_softmax(v), exp(v) / sum(exp(v)))
+  expect_equal(cpp_test_inv_logit(c(-4, 0, 2.5)), plogis(c(-4, 0, 2.5)))
+  for (a in c(0.5, 3, 12.25)) expect_equal(cpp_test_lgamma(a), lgamma(a))
+})
+
+test_that("log_sum_exp does not overflow on a large shift", {
+  skip_on_cran_budget()
+  big <- c(800, 799)
+  expect_equal(cpp_test_log_sum_exp(big), 800 + log(1 + exp(-1)))
+  expect_true(all(is.finite(cpp_test_softmax(big))))
+  expect_equal(sum(cpp_test_softmax(big)), 1)
+})
+
+test_that("empty and mismatched inputs are answered, not dereferenced", {
+  skip_on_cran_budget()
+  # max_element on an empty range dereferences end(); log_sum_exp already
+  # answers the empty case and softmax reads the same way.
+  expect_equal(cpp_test_log_sum_exp(numeric(0)), -Inf)
+  expect_equal(cpp_test_softmax(numeric(0)), numeric(0))
+
+  # Each of these loops to length(y) / nrow(A) and indexes the other argument.
+  expect_error(cpp_test_poisson_loglik(c(0L, 1L), 1.0), "lambda")
+  expect_error(cpp_test_binomial_loglik(c(0L, 1L), 2L, c(0.5, 0.5)), "length")
+  expect_error(cpp_test_negbin_loglik(c(0L, 1L), 1.0, 2.5), "mu")
+  expect_error(cpp_test_normal_loglik(c(0, 1), 1.0, 1.0), "mu")
+  expect_error(cpp_test_cholesky(matrix(1, 2, 3)), "square")
+  expect_error(cpp_test_matvec(matrix(1, 2, 3), c(1, 2)), "ncol")
+})
+
+test_that("family log-likelihood kernels match the R densities", {
+  skip_on_cran_budget()
+  y   <- c(0L, 2L, 5L, 1L)
+  lam <- c(0.4, 2.1, 4.4, 1.0)
+  expect_equal(cpp_test_poisson_loglik(y, lam),
+               sum(dpois(y, lam, log = TRUE)))
+
+  n <- c(3L, 4L, 8L, 2L)
+  p <- c(0.2, 0.55, 0.71, 0.4)
+  expect_equal(cpp_test_binomial_loglik(y, n, p),
+               sum(dbinom(y, n, p, log = TRUE)))
+
+  mu <- c(0.7, 2.0, 3.9, 1.1)
+  expect_equal(cpp_test_negbin_loglik(y, mu, 2.5),
+               sum(dnbinom(y, size = 2.5, mu = mu, log = TRUE)))
+
+  ynum <- c(-0.4, 1.2, 0.3, 2.2)
+  expect_equal(cpp_test_normal_loglik(ynum, mu, 1.3),
+               sum(dnorm(ynum, mu, 1.3, log = TRUE)))
+})
+
+test_that("dense linear algebra kernels match base R", {
+  skip_on_cran_budget()
+  set.seed(11)
+  A <- crossprod(matrix(rnorm(16), 4, 4)) + diag(4)
+  x <- rnorm(4)
+
+  L <- matrix(cpp_test_cholesky(A), 4, 4)
+  expect_equal(L %*% t(L), A, tolerance = 1e-10, ignore_attr = TRUE)
+
+  M <- matrix(rnorm(12), 4, 3)
+  b <- rnorm(3)
+  expect_equal(cpp_test_matvec(M, b), as.numeric(M %*% b), tolerance = 1e-12)
+  expect_equal(cpp_test_linalg_matvec(M, b), as.numeric(M %*% b),
+               tolerance = 1e-12)
+  expect_equal(cpp_test_linalg_matvec_add(M, b, x), as.numeric(M %*% b) + x,
+               tolerance = 1e-12)
+  expect_equal(cpp_test_linalg_matvec_transpose(M, x),
+               as.numeric(crossprod(M, x)), tolerance = 1e-12)
+})
+
+test_that("vector kernels match base R", {
+  skip_on_cran_budget()
+  x <- c(1.5, -2, 0.25, 4)
+  y <- c(0.5, 3, -1, 2)
+  expect_equal(cpp_test_dot_product(x, y), sum(x * y))
+  expect_equal(cpp_test_norm_squared(x), sum(x^2))
+  expect_equal(cpp_test_vector_sum(x), sum(x))
+  expect_equal(cpp_test_axpy(2.5, x, y), 2.5 * x + y)
+  expect_equal(cpp_test_scale(-3, x), -3 * x)
+  expect_equal(cpp_test_linalg_log_sum_exp(1.2, -0.4), log(exp(1.2) + exp(-0.4)))
+  expect_equal(cpp_test_linalg_log_sum_exp_vec(x), log(sum(exp(x))))
+  expect_equal(cpp_test_softmax_inplace(x), exp(x) / sum(exp(x)))
+})
+
 test_that("temporal quadratic forms and the AR1 density match their definitions", {
+  skip_on_cran_budget()
   phi <- c(0.4, -0.2, 1.1, 0.7, -0.5)
   T_n <- length(phi)
   expect_equal(cpp_test_rw1_quadratic_form(phi, FALSE), sum(diff(phi)^2))
@@ -139,6 +174,7 @@ test_that("temporal quadratic forms and the AR1 density match their definitions"
 })
 
 test_that("the leapfrog integrator conserves the Hamiltonian to second order", {
+  skip_on_cran_budget()
   # U(q) = 0.5 q'q, K(p) = 0.5 p'p: a harmonic oscillator, where a symplectic
   # integrator has bounded rather than growing energy error.
   q0 <- c(1.0, -0.5); p0 <- c(0.2, 0.9)
@@ -153,15 +189,8 @@ test_that("the leapfrog integrator conserves the Hamiltonian to second order", {
   expect_lt(errs[3], errs[2] / 3)
 })
 
-test_that("the leapfrog integrator is time-reversible", {
-  q0 <- c(1.0, -0.5); p0 <- c(0.2, 0.9)
-  fwd <- cpp_test_leapfrog(q0, p0, 0.1, 12L)
-  back <- cpp_test_leapfrog(fwd$q, -fwd$p, 0.1, 12L)
-  expect_equal(back$q, q0, tolerance = 1e-10)
-  expect_equal(-back$p, p0, tolerance = 1e-10)
-})
-
 test_that("the Polya-Gamma conditional updates are the posteriors they claim", {
+  skip_on_cran_budget()
   set.seed(7)
   N <- 40L; p <- 2L
   X <- cbind(1, rnorm(N))
@@ -192,19 +221,8 @@ test_that("the Polya-Gamma conditional updates are the posteriors they claim", {
   expect_true(s > 0 && is.finite(s))
 })
 
-test_that("the row-major 3-D flattener matches an explicit R reshape", {
-  d1 <- 2L; d2 <- 3L; d3 <- 4L
-  arr <- array(seq_len(d1 * d2 * d3), dim = c(d1, d2, d3))
-  flat <- cpp_flatten_3d_rowmajor(arr, d1, d2, d3)
-  expect_length(flat, d1 * d2 * d3)
-  ref <- numeric(d1 * d2 * d3)
-  for (i in seq_len(d1)) for (j in seq_len(d2)) for (k in seq_len(d3)) {
-    ref[(i - 1) * d2 * d3 + (j - 1) * d3 + k] <- arr[i, j, k]
-  }
-  expect_equal(flat, ref)
-})
-
 test_that("the Chinese-restaurant-table sampler has the mean it advertises", {
+  skip_on_cran_budget()
   # The augmentation the negative binomial dispersion update draws its Gibbs
   # count from: the expected table count is sum_k r / (r + k) over k < y.
   y <- 12L; r <- 3.0
@@ -224,6 +242,7 @@ test_that("the Chinese-restaurant-table sampler has the mean it advertises", {
 })
 
 test_that("the Laplace sampler draws from the Gaussian its Hessian defines", {
+  skip_on_cran_budget()
   set.seed(23)
   H <- matrix(c(4, 1, 1, 2), 2, 2)
   mode <- c(-1, 3)
@@ -231,10 +250,4 @@ test_that("the Laplace sampler draws from the Gaussian its Hessian defines", {
   expect_equal(dim(d), c(20000L, 2L))
   expect_equal(colMeans(d), mode, tolerance = 0.05)
   expect_equal(cov(d), solve(H), tolerance = 0.05, ignore_attr = TRUE)
-})
-
-test_that("the tgmrf registry reports a non-negative size", {
-  n <- cpp_tgmrf_registry_size()
-  expect_length(n, 1L)
-  expect_true(is.numeric(n) && n >= 0)
 })

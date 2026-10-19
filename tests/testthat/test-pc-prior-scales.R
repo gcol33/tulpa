@@ -47,7 +47,10 @@ pc_range_of <- list(
   log_tau    = c(-50, 50)
 )
 
+skip_on_cran_budget()
+
 test_that("each PC-prior scale integrates to one (a proper density)", {
+  skip_on_cran_budget()
   # A wrong Jacobian (the tvc/hsgp bugs) breaks normalization: the tvc form was
   # improper as tau -> Inf. Integrating on each coordinate catches that.
   U <- 1.0; alpha <- 0.01

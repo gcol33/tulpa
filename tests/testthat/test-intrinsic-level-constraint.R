@@ -50,7 +50,10 @@
   sqrt(diag(solve(crossprod(W) / s2 + P))[1:2])
 }
 
+skip_on_cran_budget()
+
 test_that("the constrained Schur complement is the sum-zero subspace's", {
+  skip_on_cran_budget()
   # .schur_H_beta(constr =) against the brute-force integral of the latent over
   # the constrained subspace, on a small dense problem.
   set.seed(4)

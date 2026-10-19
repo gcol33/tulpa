@@ -14,7 +14,10 @@ run_length_data <- function() {
              yb = stats::rbinom(n, 1, 0.5))
 }
 
+skip_on_cran_budget()
+
 test_that("the shared check refuses warmup >= n_iter where n_iter counts it", {
+  skip_on_cran_budget()
   chk <- tulpa:::.check_run_length
   expect_silent(chk(400, 300, "f"))
   expect_error(chk(300, 300, "f"), "Need 0 <= warmup < n_iter")
@@ -33,6 +36,7 @@ test_that("the shared check refuses warmup >= n_iter where n_iter counts it", {
 })
 
 test_that("the direct sampler fitters refuse it too", {
+  skip_on_cran_budget()
   set.seed(1)
   y <- stats::rbinom(100, 1, 0.5)
   X <- cbind(1, stats::rnorm(100))

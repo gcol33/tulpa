@@ -99,73 +99,6 @@ test_that("the coupled occupancy fixture registers under its own name", {
   expect_equal(r$arm_ids, c(0L, 1L))
 })
 
-test_that("evaluate_cell reproduces the mixture density on both branches", {
-  coupled_occ_register()
-  for (cs in .occ_cases) {
-    r <- .occ_eval(cs$a, cs$v, cs$y)
-    expect_equal(r$value, .occ_ref_value(cs$a, cs$v, cs$y), tolerance = 1e-12)
-  }
-})
-
-test_that("the analytic gradient differences the cell log-density", {
-  coupled_occ_register()
-  for (cs in .occ_cases) {
-    r <- .occ_eval(cs$a, cs$v, cs$y)
-    g <- c(r$grad[[1]], r$grad[[2]])
-    expect_equal(g, .occ_fd_grad(cs$a, cs$v, cs$y), tolerance = 1e-7)
-  }
-})
-
-test_that("the full cross-arm Hessian differences the analytic gradient", {
-  coupled_occ_register()
-  for (cs in .occ_cases) {
-    r <- .occ_eval(cs$a, cs$v, cs$y)
-    H <- .occ_neg_hess(r, length(cs$v))
-    expect_equal(H, .occ_fd_neg_hess(cs$a, cs$v, cs$y), tolerance = 1e-6)
-    # Symmetric, as a Hessian must be -- the (det, det) block is written on
-    # both sides of its diagonal so a direct probe sees the whole matrix.
-    expect_equal(H, t(H), tolerance = 1e-14)
-  }
-})
-
-test_that("an undetected cell couples the arms and a detected cell does not", {
-  coupled_occ_register()
-  for (cs in .occ_cases) {
-    r <- .occ_eval(cs$a, cs$v, cs$y)
-    cross_od <- r$cross_hess[[1]][[2]]
-    cross_dd <- r$cross_hess[[2]][[2]]
-    J <- length(cs$v)
-    if (cs$coupled) {
-      # Every visit couples to the occupancy state, and (for J > 1) to every
-      # other visit: the mixture puts them all inside one logarithm.
-      expect_true(all(abs(as.numeric(cross_od)) > 1e-6))
-      if (J > 1L) {
-        off <- cross_dd[upper.tri(cross_dd)]
-        expect_true(all(abs(off) > 1e-8))
-      }
-    } else {
-      # A detected cell factorises exactly: log psi plus a per-visit sum.
-      expect_equal(as.numeric(cross_od), rep(0, J))
-      expect_equal(as.numeric(cross_dd), rep(0, J * J))
-    }
-  }
-})
-
-test_that("dense_cross_pairs allocates the two blocks the spec writes, and no others", {
-  coupled_occ_register()
-  r <- .occ_eval(0.3, c(0.2, -0.1, 0.4), c(0, 0, 0))
-  # The occupancy arm holds one row per cell, so its self block has no
-  # off-diagonal entry and is not allocated. Both blocks the spec fills are.
-  expect_null(r$cross_hess[[1]][[1]])
-  expect_false(is.null(r$cross_hess[[1]][[2]]))
-  expect_false(is.null(r$cross_hess[[2]][[2]]))
-  expect_equal(dim(r$cross_hess[[1]][[2]]), c(1L, 3L))
-  expect_equal(dim(r$cross_hess[[2]][[2]]), c(3L, 3L))
-  # The dense path is taken, not the rank-1 self-cross shortcut: the explicit
-  # (det, det) block is what a third-derivative tensor differences.
-  expect_equal(r$rank1_coef, c(0, 0))
-})
-
 .occ_chain_adj <- function(n_s) {
   nbr <- lapply(seq_len(n_s),
                 function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
@@ -191,6 +124,80 @@ test_that("dense_cross_pairs allocates the two blocks the spec writes, and no ot
     control = list(max_iter = 200L, tol = 1e-10, diagnose_k = FALSE,
                    force_sparse = force_sparse))
 }
+
+skip_on_cran_budget()
+
+test_that("evaluate_cell reproduces the mixture density on both branches", {
+  skip_on_cran_budget()
+  coupled_occ_register()
+  for (cs in .occ_cases) {
+    r <- .occ_eval(cs$a, cs$v, cs$y)
+    expect_equal(r$value, .occ_ref_value(cs$a, cs$v, cs$y), tolerance = 1e-12)
+  }
+})
+
+test_that("the analytic gradient differences the cell log-density", {
+  skip_on_cran_budget()
+  coupled_occ_register()
+  for (cs in .occ_cases) {
+    r <- .occ_eval(cs$a, cs$v, cs$y)
+    g <- c(r$grad[[1]], r$grad[[2]])
+    expect_equal(g, .occ_fd_grad(cs$a, cs$v, cs$y), tolerance = 1e-7)
+  }
+})
+
+test_that("the full cross-arm Hessian differences the analytic gradient", {
+  skip_on_cran_budget()
+  coupled_occ_register()
+  for (cs in .occ_cases) {
+    r <- .occ_eval(cs$a, cs$v, cs$y)
+    H <- .occ_neg_hess(r, length(cs$v))
+    expect_equal(H, .occ_fd_neg_hess(cs$a, cs$v, cs$y), tolerance = 1e-6)
+    # Symmetric, as a Hessian must be -- the (det, det) block is written on
+    # both sides of its diagonal so a direct probe sees the whole matrix.
+    expect_equal(H, t(H), tolerance = 1e-14)
+  }
+})
+
+test_that("an undetected cell couples the arms and a detected cell does not", {
+  skip_on_cran_budget()
+  coupled_occ_register()
+  for (cs in .occ_cases) {
+    r <- .occ_eval(cs$a, cs$v, cs$y)
+    cross_od <- r$cross_hess[[1]][[2]]
+    cross_dd <- r$cross_hess[[2]][[2]]
+    J <- length(cs$v)
+    if (cs$coupled) {
+      # Every visit couples to the occupancy state, and (for J > 1) to every
+      # other visit: the mixture puts them all inside one logarithm.
+      expect_true(all(abs(as.numeric(cross_od)) > 1e-6))
+      if (J > 1L) {
+        off <- cross_dd[upper.tri(cross_dd)]
+        expect_true(all(abs(off) > 1e-8))
+      }
+    } else {
+      # A detected cell factorises exactly: log psi plus a per-visit sum.
+      expect_equal(as.numeric(cross_od), rep(0, J))
+      expect_equal(as.numeric(cross_dd), rep(0, J * J))
+    }
+  }
+})
+
+test_that("dense_cross_pairs allocates the two blocks the spec writes, and no others", {
+  skip_on_cran_budget()
+  coupled_occ_register()
+  r <- .occ_eval(0.3, c(0.2, -0.1, 0.4), c(0, 0, 0))
+  # The occupancy arm holds one row per cell, so its self block has no
+  # off-diagonal entry and is not allocated. Both blocks the spec fills are.
+  expect_null(r$cross_hess[[1]][[1]])
+  expect_false(is.null(r$cross_hess[[1]][[2]]))
+  expect_false(is.null(r$cross_hess[[2]][[2]]))
+  expect_equal(dim(r$cross_hess[[1]][[2]]), c(1L, 3L))
+  expect_equal(dim(r$cross_hess[[2]][[2]]), c(3L, 3L))
+  # The dense path is taken, not the rank-1 self-cross shortcut: the explicit
+  # (det, det) block is what a third-derivative tensor differences.
+  expect_equal(r$rank1_coef, c(0, 0))
+})
 
 skip_on_cran()
 

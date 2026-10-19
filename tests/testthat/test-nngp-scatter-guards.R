@@ -37,7 +37,32 @@
   do.call(tulpa:::cpp_test_nngp_prior_scatter, args)
 }
 
+test_that("a one-column coordinate matrix is still a valid NNGP domain", {
+  # The guards are about the neighbour tables; the coordinate arity is
+  # gcol33/tulpa#389's rule, and coords_dist sums over whatever columns arrive.
+  fx <- .guard_fixture()
+  fx1 <- fx
+  fx1$coords <- fx$coords[, 1L, drop = FALSE]
+  d1 <- as.matrix(dist(fx1$coords))
+  for (i in seq_len(fx$ng)) {
+    for (k in seq_len(fx$nn)) {
+      j <- fx$nn_idx[i, k]
+      fx1$nn_dist[i, k] <- if (j > 0L) d1[i, j] else 0
+    }
+  }
+  r1 <- .guard_call(fx1)
+  # A constant extra column cancels in every squared coordinate difference.
+  fx2 <- fx1
+  fx2$coords <- cbind(fx1$coords, 1e6)
+  r2 <- .guard_call(fx2)
+  expect_equal(r1$cv, r2$cv)
+  expect_equal(r1$alpha, r2$alpha)
+})
+
+skip_on_cran_budget()
+
 test_that("a malformed nn_order is refused rather than written through", {
+  skip_on_cran_budget()
   fx <- .guard_fixture()
   expect_error(.guard_call(fx, nn_order = fx$nn_order[-1L]),
                "length[(]nn_order[)]")
@@ -48,6 +73,7 @@ test_that("a malformed nn_order is refused rather than written through", {
 })
 
 test_that("the neighbour tables and coordinates are checked against n_spatial", {
+  skip_on_cran_budget()
   fx <- .guard_fixture()
   expect_error(.guard_call(fx, nn_idx = fx$nn_idx[-1L, , drop = FALSE]),
                "nn_idx is")
@@ -60,6 +86,7 @@ test_that("the neighbour tables and coordinates are checked against n_spatial", 
 })
 
 test_that("an out-of-range nn_idx entry ends the run instead of being indexed", {
+  skip_on_cran_budget()
   # `nn_idx` is padded, so an entry outside [1, n_spatial] terminates a row's
   # neighbour run exactly as a zero does -- what matters is that it is never
   # used as an offset into nn_order. Both readings agree with the row cleared
@@ -77,6 +104,7 @@ test_that("an out-of-range nn_idx entry ends the run instead of being indexed", 
 })
 
 test_that("a row's neighbours are the leading run, not every positive entry", {
+  skip_on_cran_budget()
   # Row 6 keeps a positive entry in column 2 with column 1 blanked. Counting
   # positives would make n_nb = 1 or 2 and then read column 1, whose value is 0,
   # so nn_order[-1] would index coords. The left-packed scan stops at the blank,
@@ -99,32 +127,11 @@ test_that("a row's neighbours are the leading run, not every positive entry", {
 })
 
 test_that("a well-formed call is unaffected by the guards", {
+  skip_on_cran_budget()
   fx <- .guard_fixture()
   r <- .guard_call(fx)
   expect_length(r$cv, fx$ng)
   expect_true(all(is.finite(r$cv)) && all(r$cv > 0))
   expect_equal(dim(r$alpha), c(fx$ng, fx$nn))
   expect_equal(r$dropped, 0)
-})
-
-test_that("a one-column coordinate matrix is still a valid NNGP domain", {
-  # The guards are about the neighbour tables; the coordinate arity is
-  # gcol33/tulpa#389's rule, and coords_dist sums over whatever columns arrive.
-  fx <- .guard_fixture()
-  fx1 <- fx
-  fx1$coords <- fx$coords[, 1L, drop = FALSE]
-  d1 <- as.matrix(dist(fx1$coords))
-  for (i in seq_len(fx$ng)) {
-    for (k in seq_len(fx$nn)) {
-      j <- fx$nn_idx[i, k]
-      fx1$nn_dist[i, k] <- if (j > 0L) d1[i, j] else 0
-    }
-  }
-  r1 <- .guard_call(fx1)
-  # A constant extra column cancels in every squared coordinate difference.
-  fx2 <- fx1
-  fx2$coords <- cbind(fx1$coords, 1e6)
-  r2 <- .guard_call(fx2)
-  expect_equal(r1$cv, r2$cv)
-  expect_equal(r1$alpha, r2$alpha)
 })

@@ -1,5 +1,14 @@
 
+test_that("the compiled entry refuses an out-of-domain request", {
+  expect_error(tulpa:::.spde_rational_roots(0L, 1.25, 0.1), "order must be")
+  expect_error(tulpa:::.spde_rational_roots(2L, 1.25, 0), "spectrum_ratio")
+  expect_error(tulpa:::.spde_rational_roots(2L, 1.25, 1), "spectrum_ratio")
+})
+
+skip_on_cran_budget()
+
 test_that("the compiled search equioscillates to its tolerance", {
+  skip_on_cran_budget()
   # `converged` means the local error maxima agree to `tol` -- the
   # equioscillation property that defines the minimax rational. A search that
   # silently ran out of iterations would return a worse approximation with no
@@ -9,12 +18,6 @@ test_that("the compiled search equioscillates to its tolerance", {
     expect_true(rr$converged, info = sprintf("spectrum_ratio = %g", s))
     expect_lte(rr$deviation, 1e-7)
   }
-})
-
-test_that("the compiled entry refuses an out-of-domain request", {
-  expect_error(tulpa:::.spde_rational_roots(0L, 1.25, 0.1), "order must be")
-  expect_error(tulpa:::.spde_rational_roots(2L, 1.25, 0), "spectrum_ratio")
-  expect_error(tulpa:::.spde_rational_roots(2L, 1.25, 1), "spectrum_ratio")
 })
 
 skip_on_cran()

@@ -1,5 +1,8 @@
 
+skip_on_cran_budget()
+
 test_that("safe_log reports one derivative in the clamped region", {
+  skip_on_cran_budget()
   # At or below zero every overload returns the same constant value, so the
   # implemented function is locally flat and its derivative is 0. A reverse
   # partial of 1/1e-15 there is a 1e15 multiplier on a region the double
@@ -23,6 +26,7 @@ test_that("safe_log reports one derivative in the clamped region", {
 })
 
 test_that("log_sum_exp returns -Inf, not NaN, when both components underflow", {
+  skip_on_cran_budget()
   g <- cpp_test_lse_guard(-Inf, -Inf)
   expect_equal(g$value_double, -Inf)
   expect_equal(g$value_dual,   -Inf)
@@ -37,6 +41,7 @@ test_that("log_sum_exp returns -Inf, not NaN, when both components underflow", {
 })
 
 test_that("log_sum_exp agrees across types on ordinary arguments", {
+  skip_on_cran_budget()
   for (ab in list(c(0, 0), c(-3, 2), c(700, 699), c(-800, -801))) {
     a <- ab[1]; b <- ab[2]
     ref <- max(a, b) + log(exp(a - max(a, b)) + exp(b - max(a, b)))

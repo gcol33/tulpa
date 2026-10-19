@@ -1,5 +1,8 @@
 
+skip_on_cran_budget()
+
 test_that("a non-converged (NaN log_marginal) cell does not poison the weights", {
+    skip_on_cran_budget()
     # A non-converged inner Newton returns NaN log_marginal. The dense-tensor
     # integration weights are read directly by tulpa_posterior_draws() and
     # theta_mean; an unguarded max(log_marginal) would propagate the NaN to

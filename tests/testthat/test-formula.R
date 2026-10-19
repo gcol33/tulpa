@@ -1,9 +1,3 @@
-test_that("findbars finds bar terms in formula AST", {
-  f <- y ~ x + (1 | group)
-  bars <- findbars(f[[3]])
-  expect_length(bars, 1)
-  expect_equal(deparse(bars[[1]][[1]]), "|")
-})
 
 test_that("findbars handles multiple RE terms", {
   f <- y ~ x + (1 | group) + (x || site)
@@ -30,29 +24,6 @@ test_that("nobars handles formula with only RE terms", {
   expect_null(clean)
 })
 
-test_that("tulpa_parse_formula separates fixed and random", {
-  pf <- tulpa_parse_formula(y ~ x1 + x2 + (1 | group))
-  expect_s3_class(pf, "tulpa_parsed_formula")
-  expect_equal(pf$response, "y")
-  expect_equal(pf$n_re_terms, 1)
-  expect_equal(pf$random_effects[[1]]$group_var, "group")
-  expect_true(pf$random_effects[[1]]$has_intercept)
-  expect_true(pf$random_effects[[1]]$correlated)
-})
-
-test_that("|| keeps (1 + x || group) as one term with correlated=FALSE (lme4 parity)", {
-  # gcol33/tulpa#1: (x || g) is one logical RE term with diagonal covariance,
-  # not two separate single-coefficient bars. Downstream packages branch on
-  # `correlated` to choose between Cholesky (TRUE) and independent-sigma
-  # (FALSE) parameterizations, so the flag must reflect user intent.
-  pf <- tulpa_parse_formula(y ~ x + (1 + x || group))
-  expect_equal(pf$n_re_terms, 1)
-  expect_equal(pf$random_effects[[1]]$group_var, "group")
-  expect_true(pf$random_effects[[1]]$has_intercept)
-  expect_length(pf$random_effects[[1]]$slope_terms, 1)
-  expect_false(pf$random_effects[[1]]$correlated)
-})
-
 test_that("|| keeps (x || g) as one term with intercept + slope, correlated=FALSE", {
   pf <- tulpa_parse_formula(y ~ (x || g))
   expect_equal(pf$n_re_terms, 1)
@@ -61,117 +32,11 @@ test_that("|| keeps (x || g) as one term with intercept + slope, correlated=FALS
   expect_false(pf$random_effects[[1]]$correlated)
 })
 
-test_that("|| with no intercept keeps slopes together in one uncorrelated term", {
-  pf <- tulpa_parse_formula(y ~ (0 + x1 + x2 || g))
-  expect_equal(pf$n_re_terms, 1)
-  expect_false(pf$random_effects[[1]]$has_intercept)
-  expect_length(pf$random_effects[[1]]$slope_terms, 2)
-  expect_false(pf$random_effects[[1]]$correlated)
-})
-
-test_that("|| with nested grouping (1 + x || a/b) yields one spec per level, correlated=FALSE", {
-  pf <- tulpa_parse_formula(y ~ (1 + x || a/b))
-  expect_equal(pf$n_re_terms, 2)
-  expect_equal(pf$random_effects[[1]]$group_var, "a")
-  expect_equal(pf$random_effects[[2]]$group_var, "a:b")
-  for (re in pf$random_effects) {
-    expect_true(re$has_intercept)
-    expect_length(re$slope_terms, 1)
-    expect_false(re$correlated)
-  }
-})
-
-test_that("crossed (1 + x || g1) + (1 + z | g2) preserves per-bar correlated flag", {
-  pf <- tulpa_parse_formula(y ~ (1 + x || g1) + (1 + z | g2))
-  expect_equal(pf$n_re_terms, 2)
-  expect_equal(pf$random_effects[[1]]$group_var, "g1")
-  expect_false(pf$random_effects[[1]]$correlated)
-  expect_length(pf$random_effects[[1]]$slope_terms, 1)
-  expect_equal(pf$random_effects[[2]]$group_var, "g2")
-  expect_true(pf$random_effects[[2]]$correlated)
-  expect_length(pf$random_effects[[2]]$slope_terms, 1)
-})
-
 test_that("tulpa_parse_formula handles crossed RE", {
   pf <- tulpa_parse_formula(y ~ x + (1 | site) + (1 | year))
   expect_equal(pf$n_re_terms, 2)
   expect_equal(pf$random_effects[[1]]$group_var, "site")
   expect_equal(pf$random_effects[[2]]$group_var, "year")
-})
-
-test_that("tulpa_parse_formula handles nested RE (a/b)", {
-  pf <- tulpa_parse_formula(y ~ x + (1 | region/site))
-  # Should expand to (1|region) + (1|region:site)
-  expect_equal(pf$n_re_terms, 2)
-  expect_equal(pf$random_effects[[1]]$group_var, "region")
-  expect_equal(pf$random_effects[[2]]$group_var, "region:site")
-})
-
-test_that("tulpa_parse_formula handles random slope without intercept", {
-  pf <- tulpa_parse_formula(y ~ x + (0 + x | group))
-  expect_equal(pf$n_re_terms, 1)
-  expect_false(pf$random_effects[[1]]$has_intercept)
-})
-
-test_that("tulpa_build_model_data constructs matrices", {
-  set.seed(1)
-  df <- data.frame(
-    y = rnorm(100),
-    x = rnorm(100),
-    group = rep(1:10, each = 10)
-  )
-  pf <- tulpa_parse_formula(y ~ x + (1 | group))
-  md <- tulpa_build_model_data(pf, df)
-
-  expect_equal(md$n_obs, 100)
-  expect_equal(md$n_fixed, 2)  # intercept + x
-  expect_equal(md$n_re_terms, 1)
-  expect_equal(md$re_terms[[1]]$n_groups, 10)
-  expect_equal(length(md$re_terms[[1]]$group_idx), 100)
-  expect_equal(length(md$y), 100)
-})
-
-test_that("tulpa_build_model_data handles random slopes", {
-  set.seed(2)
-  df <- data.frame(
-    y = rnorm(60),
-    x = rnorm(60),
-    group = rep(letters[1:6], each = 10)
-  )
-  pf <- tulpa_parse_formula(y ~ x + (1 + x | group))
-  md <- tulpa_build_model_data(pf, df)
-
-  expect_equal(md$re_terms[[1]]$n_coefs, 2)  # intercept + slope
-  expect_equal(md$re_terms[[1]]$n_groups, 6)
-  expect_false(is.null(md$re_terms[[1]]$slope_matrix))
-  expect_equal(ncol(md$re_terms[[1]]$slope_matrix), 1)
-})
-
-test_that("print.tulpa_parsed_formula works", {
-  pf <- tulpa_parse_formula(y ~ x + (1 | g) + (1 + x | site))
-  expect_output(print(pf), "tulpa parsed formula")
-  expect_output(print(pf), "Random effects: 2")
-})
-
-# ============================================================================
-# P1.1: Edge cases that would break deparse+regex
-# ============================================================================
-
-test_that("formula parser handles poly(x, 2) in slopes", {
-  set.seed(42)
-  df <- data.frame(
-    y = rnorm(50),
-    x = rnorm(50),
-    group = rep(1:5, each = 10)
-  )
-  pf <- tulpa_parse_formula(y ~ poly(x, 2) + (1 + poly(x, 2) | group))
-  expect_equal(pf$n_re_terms, 1)
-  expect_true(pf$random_effects[[1]]$has_intercept)
-  expect_length(pf$random_effects[[1]]$slope_terms, 1)
-
-  md <- tulpa_build_model_data(pf, df)
-  # poly(x, 2) produces 2 columns
-  expect_equal(md$re_terms[[1]]$n_coefs, 3)  # intercept + 2 poly columns
 })
 
 test_that("formula parser handles backtick-quoted names", {
@@ -204,7 +69,227 @@ test_that("formula parser handles I(x^2) in slopes", {
   expect_equal(md$re_terms[[1]]$n_coefs, 2)  # intercept + I(x^2)
 })
 
+test_that("formula parser handles multiple slopes correctly", {
+  set.seed(7)
+  df <- data.frame(
+    y = rnorm(50),
+    x1 = rnorm(50),
+    x2 = rnorm(50),
+    group = rep(1:5, each = 10)
+  )
+  pf <- tulpa_parse_formula(y ~ x1 + x2 + (1 + x1 + x2 | group))
+  md <- tulpa_build_model_data(pf, df)
+  expect_equal(md$re_terms[[1]]$n_coefs, 3)  # intercept + x1 + x2
+  expect_equal(ncol(md$re_terms[[1]]$slope_matrix), 2)
+})
+
+test_that("backtick-quoted response is evaluated correctly", {
+  df <- data.frame(check.names = FALSE,
+                   `weird name` = rnorm(20),
+                   x = rnorm(20),
+                   g = rep(1:2, each = 10))
+  pf <- tulpa_parse_formula(`weird name` ~ x + (1 | g))
+  md <- tulpa_build_model_data(pf, df)
+  expect_equal(length(md$y), 20L)
+})
+
+test_that("missing nested-group columns produce a clear error", {
+  df <- data.frame(y = 1:6, a = rep(letters[1:3], 2))
+  pf <- tulpa_parse_formula(y ~ (1 | a/b))
+  expect_error(tulpa_build_model_data(pf, df), "not found in data")
+})
+
+test_that("absent offset() returns NULL, not zeros", {
+  df <- data.frame(y = 1:5, x = 1:5)
+  pf <- tulpa_parse_formula(y ~ x)
+  md <- tulpa_build_model_data(pf, df)
+  expect_null(md$offset)
+})
+
+# ============================================================================
+# Slope formula carries the original formula's environment
+# ============================================================================
+
+test_that("slope construction can find user-scope helpers via formula env", {
+  # Define a helper in the calling scope; reference it from a slope.
+  custom_scale <- function(z) (z - mean(z)) / sd(z)
+  set.seed(19)
+  df <- data.frame(y = rnorm(30), x = rnorm(30), g = rep(1:3, each = 10))
+  f <- y ~ custom_scale(x) + (1 + custom_scale(x) | g)
+  pf <- tulpa_parse_formula(f)
+  # Slope build must not bail out looking for `custom_scale`
+  md <- tulpa_build_model_data(pf, df)
+  expect_equal(md$re_terms[[1]]$n_coefs, 2L)
+})
+
+test_that("the strippers still remove what they own, transform beside it", {
+  expect_equal(nobars(quote(y ~ x + (1 | g) + poly(z, 3, raw = TRUE))),
+               quote(y ~ x + poly(z, 3, raw = TRUE)))
+  expect_equal(nobars(quote(y ~ x + (1 | g) + (z || h))), quote(y ~ x))
+  expect_equal(no_latent_terms(quote(y ~ x + latent(b) + cut(z, breaks = 3))),
+               quote(y ~ x + cut(z, breaks = 3)))
+  expect_equal(no_special_terms(quote(y ~ x + spatial(s) + log(z, base = 2)),
+                                "spatial"),
+               quote(y ~ x + log(z, base = 2)))
+})
+
+test_that("tulpa_parse_formula handles a zero-argument call on the RHS (#816)", {
+  parsed <- tulpa_parse_formula(y ~ x + I(Sys.Date() > 0))
+  expect_s3_class(parsed$fixed_formula, "formula")
+  expect_equal(parsed$fixed_formula, y ~ x + I(Sys.Date() > 0))
+})
+
+skip_on_cran_budget()
+test_that("findbars finds bar terms in formula AST", {
+  skip_on_cran_budget()
+  f <- y ~ x + (1 | group)
+  bars <- findbars(f[[3]])
+  expect_length(bars, 1)
+  expect_equal(deparse(bars[[1]][[1]]), "|")
+})
+
+test_that("tulpa_parse_formula separates fixed and random", {
+  skip_on_cran_budget()
+  pf <- tulpa_parse_formula(y ~ x1 + x2 + (1 | group))
+  expect_s3_class(pf, "tulpa_parsed_formula")
+  expect_equal(pf$response, "y")
+  expect_equal(pf$n_re_terms, 1)
+  expect_equal(pf$random_effects[[1]]$group_var, "group")
+  expect_true(pf$random_effects[[1]]$has_intercept)
+  expect_true(pf$random_effects[[1]]$correlated)
+})
+
+test_that("|| keeps (1 + x || group) as one term with correlated=FALSE (lme4 parity)", {
+  skip_on_cran_budget()
+  # gcol33/tulpa#1: (x || g) is one logical RE term with diagonal covariance,
+  # not two separate single-coefficient bars. Downstream packages branch on
+  # `correlated` to choose between Cholesky (TRUE) and independent-sigma
+  # (FALSE) parameterizations, so the flag must reflect user intent.
+  pf <- tulpa_parse_formula(y ~ x + (1 + x || group))
+  expect_equal(pf$n_re_terms, 1)
+  expect_equal(pf$random_effects[[1]]$group_var, "group")
+  expect_true(pf$random_effects[[1]]$has_intercept)
+  expect_length(pf$random_effects[[1]]$slope_terms, 1)
+  expect_false(pf$random_effects[[1]]$correlated)
+})
+
+test_that("|| with no intercept keeps slopes together in one uncorrelated term", {
+  skip_on_cran_budget()
+  pf <- tulpa_parse_formula(y ~ (0 + x1 + x2 || g))
+  expect_equal(pf$n_re_terms, 1)
+  expect_false(pf$random_effects[[1]]$has_intercept)
+  expect_length(pf$random_effects[[1]]$slope_terms, 2)
+  expect_false(pf$random_effects[[1]]$correlated)
+})
+
+test_that("|| with nested grouping (1 + x || a/b) yields one spec per level, correlated=FALSE", {
+  skip_on_cran_budget()
+  pf <- tulpa_parse_formula(y ~ (1 + x || a/b))
+  expect_equal(pf$n_re_terms, 2)
+  expect_equal(pf$random_effects[[1]]$group_var, "a")
+  expect_equal(pf$random_effects[[2]]$group_var, "a:b")
+  for (re in pf$random_effects) {
+    expect_true(re$has_intercept)
+    expect_length(re$slope_terms, 1)
+    expect_false(re$correlated)
+  }
+})
+
+test_that("crossed (1 + x || g1) + (1 + z | g2) preserves per-bar correlated flag", {
+  skip_on_cran_budget()
+  pf <- tulpa_parse_formula(y ~ (1 + x || g1) + (1 + z | g2))
+  expect_equal(pf$n_re_terms, 2)
+  expect_equal(pf$random_effects[[1]]$group_var, "g1")
+  expect_false(pf$random_effects[[1]]$correlated)
+  expect_length(pf$random_effects[[1]]$slope_terms, 1)
+  expect_equal(pf$random_effects[[2]]$group_var, "g2")
+  expect_true(pf$random_effects[[2]]$correlated)
+  expect_length(pf$random_effects[[2]]$slope_terms, 1)
+})
+
+test_that("tulpa_parse_formula handles nested RE (a/b)", {
+  skip_on_cran_budget()
+  pf <- tulpa_parse_formula(y ~ x + (1 | region/site))
+  # Should expand to (1|region) + (1|region:site)
+  expect_equal(pf$n_re_terms, 2)
+  expect_equal(pf$random_effects[[1]]$group_var, "region")
+  expect_equal(pf$random_effects[[2]]$group_var, "region:site")
+})
+
+test_that("tulpa_parse_formula handles random slope without intercept", {
+  skip_on_cran_budget()
+  pf <- tulpa_parse_formula(y ~ x + (0 + x | group))
+  expect_equal(pf$n_re_terms, 1)
+  expect_false(pf$random_effects[[1]]$has_intercept)
+})
+
+test_that("tulpa_build_model_data constructs matrices", {
+  skip_on_cran_budget()
+  set.seed(1)
+  df <- data.frame(
+    y = rnorm(100),
+    x = rnorm(100),
+    group = rep(1:10, each = 10)
+  )
+  pf <- tulpa_parse_formula(y ~ x + (1 | group))
+  md <- tulpa_build_model_data(pf, df)
+
+  expect_equal(md$n_obs, 100)
+  expect_equal(md$n_fixed, 2)  # intercept + x
+  expect_equal(md$n_re_terms, 1)
+  expect_equal(md$re_terms[[1]]$n_groups, 10)
+  expect_equal(length(md$re_terms[[1]]$group_idx), 100)
+  expect_equal(length(md$y), 100)
+})
+
+test_that("tulpa_build_model_data handles random slopes", {
+  skip_on_cran_budget()
+  set.seed(2)
+  df <- data.frame(
+    y = rnorm(60),
+    x = rnorm(60),
+    group = rep(letters[1:6], each = 10)
+  )
+  pf <- tulpa_parse_formula(y ~ x + (1 + x | group))
+  md <- tulpa_build_model_data(pf, df)
+
+  expect_equal(md$re_terms[[1]]$n_coefs, 2)  # intercept + slope
+  expect_equal(md$re_terms[[1]]$n_groups, 6)
+  expect_false(is.null(md$re_terms[[1]]$slope_matrix))
+  expect_equal(ncol(md$re_terms[[1]]$slope_matrix), 1)
+})
+
+test_that("print.tulpa_parsed_formula works", {
+  skip_on_cran_budget()
+  pf <- tulpa_parse_formula(y ~ x + (1 | g) + (1 + x | site))
+  expect_output(print(pf), "tulpa parsed formula")
+  expect_output(print(pf), "Random effects: 2")
+})
+
+# ============================================================================
+# P1.1: Edge cases that would break deparse+regex
+# ============================================================================
+
+test_that("formula parser handles poly(x, 2) in slopes", {
+  skip_on_cran_budget()
+  set.seed(42)
+  df <- data.frame(
+    y = rnorm(50),
+    x = rnorm(50),
+    group = rep(1:5, each = 10)
+  )
+  pf <- tulpa_parse_formula(y ~ poly(x, 2) + (1 + poly(x, 2) | group))
+  expect_equal(pf$n_re_terms, 1)
+  expect_true(pf$random_effects[[1]]$has_intercept)
+  expect_length(pf$random_effects[[1]]$slope_terms, 1)
+
+  md <- tulpa_build_model_data(pf, df)
+  # poly(x, 2) produces 2 columns
+  expect_equal(md$re_terms[[1]]$n_coefs, 3)  # intercept + 2 poly columns
+})
+
 test_that("decompose_bar_lhs extracts slope language objects", {
+  skip_on_cran_budget()
   d <- decompose_bar_lhs(quote(1 + x + z))
   expect_true(d$has_intercept)
   expect_length(d$slope_terms, 2)
@@ -220,25 +305,12 @@ test_that("decompose_bar_lhs extracts slope language objects", {
   expect_length(d3$slope_terms, 0)
 })
 
-test_that("formula parser handles multiple slopes correctly", {
-  set.seed(7)
-  df <- data.frame(
-    y = rnorm(50),
-    x1 = rnorm(50),
-    x2 = rnorm(50),
-    group = rep(1:5, each = 10)
-  )
-  pf <- tulpa_parse_formula(y ~ x1 + x2 + (1 + x1 + x2 | group))
-  md <- tulpa_build_model_data(pf, df)
-  expect_equal(md$re_terms[[1]]$n_coefs, 3)  # intercept + x1 + x2
-  expect_equal(ncol(md$re_terms[[1]]$slope_matrix), 2)
-})
-
 # ============================================================================
 # Response handling: language objects, no deparse/reparse round-trip
 # ============================================================================
 
 test_that("parsed$response_expr is a language object, not deparsed text", {
+  skip_on_cran_budget()
   pf <- tulpa_parse_formula(y ~ x)
   expect_true(is.language(pf$response_expr))
   expect_identical(pf$response_expr, quote(y))
@@ -246,6 +318,7 @@ test_that("parsed$response_expr is a language object, not deparsed text", {
 })
 
 test_that("cbind(succ, fail) resolves to successes plus denominators", {
+  skip_on_cran_budget()
   set.seed(11)
   df <- data.frame(
     succ  = sample.int(10, 30, replace = TRUE),
@@ -267,6 +340,7 @@ test_that("cbind(succ, fail) resolves to successes plus denominators", {
 })
 
 test_that("a single-column matrix response drops to a vector", {
+  skip_on_cran_budget()
   df <- data.frame(y = rnorm(20), x = rnorm(20), g = rep(1:2, each = 10))
   pf <- tulpa_parse_formula(cbind(y) ~ x + (1 | g))
   md <- tulpa_build_model_data(pf, df)
@@ -276,25 +350,17 @@ test_that("a single-column matrix response drops to a vector", {
 })
 
 test_that("a wider matrix response is rejected", {
+  skip_on_cran_budget()
   df <- data.frame(a = 1:20, b = 1:20, c = 1:20, x = rnorm(20))
   pf <- tulpa_parse_formula(cbind(a, b, c) ~ x)
   expect_error(tulpa_build_model_data(pf, df), "must have 2 columns")
 })
 
 test_that("a negative entry in a cbind response is rejected", {
+  skip_on_cran_budget()
   df <- data.frame(succ = c(3, -1, 5), fail = c(1, 2, 0), x = rnorm(3))
   pf <- tulpa_parse_formula(cbind(succ, fail) ~ x)
   expect_error(tulpa_build_model_data(pf, df), "non-negative")
-})
-
-test_that("backtick-quoted response is evaluated correctly", {
-  df <- data.frame(check.names = FALSE,
-                   `weird name` = rnorm(20),
-                   x = rnorm(20),
-                   g = rep(1:2, each = 10))
-  pf <- tulpa_parse_formula(`weird name` ~ x + (1 | g))
-  md <- tulpa_build_model_data(pf, df)
-  expect_equal(length(md$y), 20L)
 })
 
 # ============================================================================
@@ -302,6 +368,7 @@ test_that("backtick-quoted response is evaluated correctly", {
 # ============================================================================
 
 test_that("nested grouping carries structured group_vars vector", {
+  skip_on_cran_budget()
   pf <- tulpa_parse_formula(y ~ (1 | a/b))
   expect_equal(pf$n_re_terms, 2L)
   expect_equal(pf$random_effects[[1]]$group_vars, "a")
@@ -311,6 +378,7 @@ test_that("nested grouping carries structured group_vars vector", {
 })
 
 test_that("nested grouping builds an interaction factor on the right columns", {
+  skip_on_cran_budget()
   set.seed(13)
   df <- data.frame(
     y = rnorm(60),
@@ -324,17 +392,12 @@ test_that("nested grouping builds an interaction factor on the right columns", {
   expect_equal(md$re_terms[[2]]$group_vars, c("a", "b"))
 })
 
-test_that("missing nested-group columns produce a clear error", {
-  df <- data.frame(y = 1:6, a = rep(letters[1:3], 2))
-  pf <- tulpa_parse_formula(y ~ (1 | a/b))
-  expect_error(tulpa_build_model_data(pf, df), "not found in data")
-})
-
 # ============================================================================
 # Offset extraction
 # ============================================================================
 
 test_that("offset(log(area)) is extracted from fixed-effect RHS", {
+  skip_on_cran_budget()
   set.seed(17)
   df <- data.frame(
     y    = rpois(40, 1),
@@ -352,39 +415,17 @@ test_that("offset(log(area)) is extracted from fixed-effect RHS", {
   expect_equal(colnames(md$X), c("(Intercept)", "x"))
 })
 
-test_that("absent offset() returns NULL, not zeros", {
-  df <- data.frame(y = 1:5, x = 1:5)
-  pf <- tulpa_parse_formula(y ~ x)
-  md <- tulpa_build_model_data(pf, df)
-  expect_null(md$offset)
-})
-
 # ============================================================================
 # Vestigial fields: terms = deparse(lhs) is gone
 # ============================================================================
 
 test_that("RE specs no longer carry a deparsed `terms` field", {
+  skip_on_cran_budget()
   pf <- tulpa_parse_formula(y ~ x + (1 + x | g))
   expect_null(pf$random_effects[[1]]$terms)
   # slope_terms (language objects) is the source of truth
   expect_length(pf$random_effects[[1]]$slope_terms, 1)
   expect_equal(pf$random_effects[[1]]$slope_terms[[1]], quote(x))
-})
-
-# ============================================================================
-# Slope formula carries the original formula's environment
-# ============================================================================
-
-test_that("slope construction can find user-scope helpers via formula env", {
-  # Define a helper in the calling scope; reference it from a slope.
-  custom_scale <- function(z) (z - mean(z)) / sd(z)
-  set.seed(19)
-  df <- data.frame(y = rnorm(30), x = rnorm(30), g = rep(1:3, each = 10))
-  f <- y ~ custom_scale(x) + (1 + custom_scale(x) | g)
-  pf <- tulpa_parse_formula(f)
-  # Slope build must not bail out looking for `custom_scale`
-  md <- tulpa_build_model_data(pf, df)
-  expect_equal(md$re_terms[[1]]$n_coefs, 2L)
 })
 
 # ============================================================================
@@ -395,6 +436,7 @@ test_that("slope construction can find user-scope helpers via formula env", {
 # ============================================================================
 
 test_that("a covariate transform passes through the strippers unchanged", {
+  skip_on_cran_budget()
   keep <- list(
     quote(y ~ poly(x, 2, raw = TRUE)),
     quote(y ~ splines::ns(x, knots = 0.5)),
@@ -410,18 +452,8 @@ test_that("a covariate transform passes through the strippers unchanged", {
   }
 })
 
-test_that("the strippers still remove what they own, transform beside it", {
-  expect_equal(nobars(quote(y ~ x + (1 | g) + poly(z, 3, raw = TRUE))),
-               quote(y ~ x + poly(z, 3, raw = TRUE)))
-  expect_equal(nobars(quote(y ~ x + (1 | g) + (z || h))), quote(y ~ x))
-  expect_equal(no_latent_terms(quote(y ~ x + latent(b) + cut(z, breaks = 3))),
-               quote(y ~ x + cut(z, breaks = 3)))
-  expect_equal(no_special_terms(quote(y ~ x + spatial(s) + log(z, base = 2)),
-                                "spatial"),
-               quote(y ~ x + log(z, base = 2)))
-})
-
 test_that("finders treat a zero-argument call as a leaf instead of erroring (#816)", {
+  skip_on_cran_budget()
   expect_null(find_special_terms(quote(x + f()), "spatial"))
   expect_null(findbars(quote(x + f())))
   expect_null(find_latent_terms(quote(x + g(f()))))
@@ -433,13 +465,8 @@ test_that("finders treat a zero-argument call as a leaf instead of erroring (#81
                list(quote(spatial(s))))
 })
 
-test_that("tulpa_parse_formula handles a zero-argument call on the RHS (#816)", {
-  parsed <- tulpa_parse_formula(y ~ x + I(Sys.Date() > 0))
-  expect_s3_class(parsed$fixed_formula, "formula")
-  expect_equal(parsed$fixed_formula, y ~ x + I(Sys.Date() > 0))
-})
-
 test_that("a raw polynomial is fitted raw, not orthogonal", {
+  skip_on_cran_budget()
   set.seed(1L)
   n <- 200L
   d <- data.frame(x = rnorm(n))

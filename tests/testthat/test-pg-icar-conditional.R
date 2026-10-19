@@ -157,13 +157,6 @@ ICAR_BETA_SD <- 0.6
   fx
 }
 
-test_that("the two-component fixture really exercises the block update", {
-  fx <- .icar_two_components()
-  got <- .icar_sweep(fx, 2, seq(-1.5, 1.5, length.out = fx$J))
-  expect_equal(got$n_components, 2L)
-  expect_equal(got$component, c(0L, 0L, 0L, 1L, 1L, 1L))
-})
-
 test_that("a sweep that zeroes the field does not reproduce the kernel", {
   # The negative control: without it the equivalence above could pass on a
   # replica that shares the defect.
@@ -176,7 +169,18 @@ test_that("a sweep that zeroes the field does not reproduce the kernel", {
   expect_gt(max(abs(got$phi - bugged$phi)), 0.1)
 })
 
+skip_on_cran_budget()
+
+test_that("the two-component fixture really exercises the block update", {
+  skip_on_cran_budget()
+  fx <- .icar_two_components()
+  got <- .icar_sweep(fx, 2, seq(-1.5, 1.5, length.out = fx$J))
+  expect_equal(got$n_components, 2L)
+  expect_equal(got$component, c(0L, 0L, 0L, 1L, 1L, 1L))
+})
+
 test_that("an island with no observation is drawn from its N(0, 1 / tau) prior (#963)", {
+  skip_on_cran_budget()
   # Was pinned to 0 (no data) or N(0, 1000) (with data). Over many sweeps from
   # one incoming field the island's centred value has the conditional variance
   # 1 / (tau Qt_66 + intercept term): order 1 / tau.
@@ -192,6 +196,7 @@ test_that("an island with no observation is drawn from its N(0, 1 / tau) prior (
 })
 
 test_that("the leading unit's draw matches its closed-form conditional", {
+  skip_on_cran_budget()
   # Unit 1's only neighbour is unit 2, which the sweep has not reached, so its
   # conditional is a fixed Gaussian in the incoming field -- and it is exactly
   # the term the zeroing sweep dropped. On a connected graph the component

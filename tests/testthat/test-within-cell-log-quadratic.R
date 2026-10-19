@@ -9,7 +9,27 @@ lq_gauss_nodes <- function(mu, s, r, span = 2.5, offset = 0) {
   u[abs(u - mu) <= span * s + 1e-12]
 }
 
+test_that("an unresolved axis declines to the box read and says why", {
+  mu <- log(2); s <- 0.15
+  u <- lq_gauss_nodes(mu, s, 3, span = 6, offset = 0.3)
+  w <- stats::dnorm(u, mu, s); w <- w / sum(w)
+  probs <- c(0.025, 0.5, 0.975)
+  rd <- .nl_summary_quantile_read(exp(u), w, probs, "positive", "density",
+                                  "log_quadratic", row_id = rep(1L, length(u)),
+                                  log_density = log(w))
+  expect_identical(rd$within, "box_uniform")
+  expect_identical(rd$declined, "unresolved")
+  expect_equal(rd$q, .nl_summary_quantile(exp(u), w, probs, "positive",
+                                          "density", "box_uniform"))
+  rc <- .nl_lq_reconstruct(exp(u), w, "positive", NULL, rep(1L, length(u)),
+                           log(w))
+  expect_gt(rc$h_over_sd, .nl_diag("lq_max_h_over_sd"))
+})
+
+skip_on_cran_budget()
+
 test_that("a Gaussian marginal is read exactly at a spacing the box read misses", {
+  skip_on_cran_budget()
   mu <- log(2); s <- 0.15
   probs <- c(0.025, 0.5, 0.975)
   truth <- exp(stats::qnorm(probs, mu, s))
@@ -32,24 +52,8 @@ test_that("a Gaussian marginal is read exactly at a spacing the box read misses"
   }
 })
 
-test_that("an unresolved axis declines to the box read and says why", {
-  mu <- log(2); s <- 0.15
-  u <- lq_gauss_nodes(mu, s, 3, span = 6, offset = 0.3)
-  w <- stats::dnorm(u, mu, s); w <- w / sum(w)
-  probs <- c(0.025, 0.5, 0.975)
-  rd <- .nl_summary_quantile_read(exp(u), w, probs, "positive", "density",
-                                  "log_quadratic", row_id = rep(1L, length(u)),
-                                  log_density = log(w))
-  expect_identical(rd$within, "box_uniform")
-  expect_identical(rd$declined, "unresolved")
-  expect_equal(rd$q, .nl_summary_quantile(exp(u), w, probs, "positive",
-                                          "density", "box_uniform"))
-  rc <- .nl_lq_reconstruct(exp(u), w, "positive", NULL, rep(1L, length(u)),
-                           log(w))
-  expect_gt(rc$h_over_sd, .nl_diag("lq_max_h_over_sd"))
-})
-
 test_that("a quantity with no rows or no node density declines to the box read", {
+  skip_on_cran_budget()
   u <- lq_gauss_nodes(0, 1, 1)
   w <- stats::dnorm(u); w <- w / sum(w)
   rd <- .nl_summary_quantile_read(u, w, c(0.025, 0.975), "unbounded", "density",
@@ -64,6 +68,7 @@ test_that("a quantity with no rows or no node density declines to the box read",
 })
 
 test_that("each row is read on its own conditional, mass kept per row", {
+  skip_on_cran_budget()
   # A correlated Gaussian on a tensor grid: every row's conditional along the
   # first axis is exactly Gaussian, so the read is the mixture of those
   # conditionals at the rows' masses, which is computable in closed form.
@@ -91,6 +96,7 @@ test_that("each row is read on its own conditional, mass kept per row", {
 })
 
 test_that("a row's density is its log marginal times each cell's slab", {
+  skip_on_cran_budget()
   # On a refined grid the cell the slices pass through has its other-axis box
   # cut by them: it holds 1/30 of its row-mates' slab, and the slice row that
   # crosses it holds the rest of its box. The read has to interpolate the row's
@@ -120,6 +126,7 @@ test_that("a row's density is its log marginal times each cell's slab", {
 })
 
 test_that("a declared point mass is split off before the continuum is read", {
+  skip_on_cran_budget()
   mu <- log(0.5); s <- 0.3
   u <- lq_gauss_nodes(mu, s, 1)
   wc <- stats::dnorm(u, mu, s); wc <- 0.7 * wc / sum(wc)

@@ -129,65 +129,6 @@ pg_common_ref <- function(y, ntr, eta, beta, re, sigma_re, beta_sd, re_scale) {
     sum(dnorm(re, 0, sigma_re, log = TRUE)) + ref_log_hc(sigma_re, re_scale)
 }
 
-test_that("PG binomial iid route records its joint density", {
-  d <- pg_areal()
-  res <- cpp_pg_binomial_gibbs(d$y, d$ntr, d$X, d$grp, 4L, PG_ITER, PG_WARM, 1L,
-                               prior_beta_sd = 3, prior_sigma_scale = 2,
-                               store_eta = TRUE, verbose = FALSE)
-  k <- nrow(res$beta)
-  beta <- res$beta[k, ]; re <- res$re[k, ]
-  eta <- as.numeric(d$X %*% beta) + re[d$grp]
-  ref <- pg_common_ref(d$y, d$ntr, eta, beta, re, res$sigma_re[k], 3, 2)
-  expect_lt(abs(res$log_prob[k] - ref), 1e-8)
-  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
-})
-
-test_that("PG binomial ICAR route records its joint density", {
-  d <- pg_areal()
-  res <- cpp_pg_binomial_gibbs_spatial(
-    d$y, d$ntr, d$X, d$grp, 4L, d$unit, d$J, d$al$adj_list, d$al$n_neighbors,
-    PG_ITER, PG_WARM, 1L, prior_beta_sd = 3, prior_sigma_re_scale = 2,
-    prior_tau_shape = 1.5, prior_tau_rate = 0.2, store_eta = TRUE,
-    verbose = FALSE)
-  k <- nrow(res$beta)
-  beta <- res$beta[k, ]; re <- res$re[k, ]; phi <- res$spatial[k, ]
-  tau <- res$tau[k]
-  eta <- as.numeric(d$X %*% beta) + re[d$grp] + phi[d$unit]
-  quad <- drop(crossprod(phi, ref_icar_Q(d$W) %*% phi))
-  ref <- pg_common_ref(d$y, d$ntr, eta, beta, re, res$sigma_re[k], 3, 2) +
-    ref_log_gmrf(quad, d$J - 1L, tau) + dgamma(tau, 1.5, 0.2, log = TRUE)
-  expect_lt(abs(res$log_prob[k] - ref), 1e-8)
-  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
-})
-
-test_that("PG binomial BYM2 route records its joint density", {
-  d <- pg_areal()
-  sf <- 0.7; a <- 0.8; b <- 1.3
-  res <- cpp_pg_binomial_gibbs_bym2(
-    d$y, d$ntr, d$X, d$grp, 4L, d$unit, d$J, d$al$adj_list, d$al$n_neighbors,
-    sf, PG_ITER, PG_WARM, 1L, prior_beta_sd = 3, prior_sigma_re_scale = 2,
-    prior_sigma_spatial_scale = 1.5, prior_rho_alpha = a, prior_rho_beta = b,
-    store_eta = TRUE, verbose = FALSE)
-  k <- nrow(res$beta)
-  beta <- res$beta[k, ]; re <- res$re[k, ]
-  ph <- res$phi_scaled[k, ]; th <- res$theta[k, ]
-  s <- res$sigma_spatial[k]; rho <- res$rho[k]
-  eps <- 1e-10
-  u <- s * (sqrt(rho + eps) * ph * sf + sqrt(1 - rho + eps) * th)
-  eta <- as.numeric(d$X %*% beta) + re[d$grp] + u[d$unit]
-  kern <- function(r) (a - 1) * log(r + eps) + (b - 1) * log(1 - r + eps)
-  nodes <- (seq_len(20L) - 0.5) / 20
-  kv <- kern(nodes)
-  log_mass <- kern(rho) - (max(kv) + log(sum(exp(kv - max(kv)))))
-  quad <- drop(crossprod(ph, ref_icar_Q(d$W) %*% ph))
-  ref <- pg_common_ref(d$y, d$ntr, eta, beta, re, res$sigma_re[k], 3, 2) +
-    ref_log_gmrf(quad, d$J - 1L, 1) + sum(dnorm(th, log = TRUE)) +
-    log(2) + dnorm(s, 0, 1.5, log = TRUE) + log_mass
-  expect_true(rho %in% nodes)
-  expect_lt(abs(res$log_prob[k] - ref), 1e-8)
-  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
-})
-
 test_that("PG binomial RSR route records its joint density at the raw field", {
   d <- pg_areal(reps = 1L)
   Xu <- d$X
@@ -204,39 +145,6 @@ test_that("PG binomial RSR route records its joint density at the raw field", {
   ref <- sum(dbinom(d$y, d$ntr, plogis(eta), log = TRUE)) +
     sum(dnorm(beta, 0, 3, log = TRUE)) +
     ref_log_gmrf(quad, d$J - 1L, tau) + dgamma(tau, 1.5, 0.2, log = TRUE)
-  expect_lt(abs(res$log_prob[k] - ref), 1e-8)
-  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
-})
-
-test_that("PG binomial temporal route records its joint density", {
-  set.seed(8)
-  n_times <- 12L; period <- 4L
-  tt <- rep(seq_len(n_times), each = 4L)
-  N <- length(tt)
-  X <- cbind(1, rnorm(N))
-  ntr <- rep(5L, N)
-  y <- as.integer(rbinom(N, ntr, plogis(0.1 + 0.4 * X[, 2] + sin(tt))))
-  res <- cpp_pg_binomial_gibbs_temporal(
-    y, ntr, X, rep(1L, N), 0L, tt, n_times, period, 1L, 1L, PG_ITER, PG_WARM,
-    1L, prior_beta_sd = 3, prior_sigma_re_scale = 2,
-    prior_sigma_trend_scale = 0.7, prior_sigma_seasonal_scale = 0.9,
-    prior_sigma_short_scale = 1.1, store_eta = TRUE, verbose = FALSE)
-  k <- nrow(res$beta)
-  beta <- res$beta[k, ]
-  tr <- res$trend[k, ]; se <- res$seasonal[k, ]; sh <- res$short_term[k, ]
-  st <- res$sigma_trend[k]; ss <- res$sigma_seasonal[k]; sr <- res$sigma_short[k]
-  rho <- res$rho_short[k]
-  eta <- as.numeric(X %*% beta) + tr[tt] + se[((tt - 1L) %% period) + 1L] + sh[tt]
-  q_trend <- sum(diff(tr)^2)
-  q_seas <- sum(diff(c(se, se[1]))^2)
-  q_ar1 <- (1 - rho^2) * sh[1]^2 + sum((sh[-1] - rho * sh[-n_times])^2)
-  tau_s <- 1 / sr^2
-  ref <- sum(dbinom(y, ntr, plogis(eta), log = TRUE)) +
-    sum(dnorm(beta, 0, 3, log = TRUE)) +
-    ref_log_gmrf(q_trend, n_times - 1L, 1 / st^2) + ref_log_hc(st, 0.7) +
-    ref_log_gmrf(q_seas, period - 1L, 1 / ss^2) + ref_log_hc(ss, 0.9) +
-    0.5 * n_times * (log(tau_s) - log(2 * pi)) + 0.5 * log(1 - rho^2) -
-    0.5 * tau_s * q_ar1 - log(2 * 0.999) + ref_log_hc(sr, 1.1)
   expect_lt(abs(res$log_prob[k] - ref), 1e-8)
   expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
 })
@@ -275,7 +183,106 @@ ref_log_nngp_chain <- function(w, s2, phi, g, U, alpha, lo, hi) {
   lp + log(lam) - lam * s - log(2 * s) - log(hi - lo)
 }
 
+skip_on_cran_budget()
+
+test_that("PG binomial iid route records its joint density", {
+  skip_on_cran_budget()
+  d <- pg_areal()
+  res <- cpp_pg_binomial_gibbs(d$y, d$ntr, d$X, d$grp, 4L, PG_ITER, PG_WARM, 1L,
+                               prior_beta_sd = 3, prior_sigma_scale = 2,
+                               store_eta = TRUE, verbose = FALSE)
+  k <- nrow(res$beta)
+  beta <- res$beta[k, ]; re <- res$re[k, ]
+  eta <- as.numeric(d$X %*% beta) + re[d$grp]
+  ref <- pg_common_ref(d$y, d$ntr, eta, beta, re, res$sigma_re[k], 3, 2)
+  expect_lt(abs(res$log_prob[k] - ref), 1e-8)
+  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
+})
+
+test_that("PG binomial ICAR route records its joint density", {
+  skip_on_cran_budget()
+  d <- pg_areal()
+  res <- cpp_pg_binomial_gibbs_spatial(
+    d$y, d$ntr, d$X, d$grp, 4L, d$unit, d$J, d$al$adj_list, d$al$n_neighbors,
+    PG_ITER, PG_WARM, 1L, prior_beta_sd = 3, prior_sigma_re_scale = 2,
+    prior_tau_shape = 1.5, prior_tau_rate = 0.2, store_eta = TRUE,
+    verbose = FALSE)
+  k <- nrow(res$beta)
+  beta <- res$beta[k, ]; re <- res$re[k, ]; phi <- res$spatial[k, ]
+  tau <- res$tau[k]
+  eta <- as.numeric(d$X %*% beta) + re[d$grp] + phi[d$unit]
+  quad <- drop(crossprod(phi, ref_icar_Q(d$W) %*% phi))
+  ref <- pg_common_ref(d$y, d$ntr, eta, beta, re, res$sigma_re[k], 3, 2) +
+    ref_log_gmrf(quad, d$J - 1L, tau) + dgamma(tau, 1.5, 0.2, log = TRUE)
+  expect_lt(abs(res$log_prob[k] - ref), 1e-8)
+  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
+})
+
+test_that("PG binomial BYM2 route records its joint density", {
+  skip_on_cran_budget()
+  d <- pg_areal()
+  sf <- 0.7; a <- 0.8; b <- 1.3
+  res <- cpp_pg_binomial_gibbs_bym2(
+    d$y, d$ntr, d$X, d$grp, 4L, d$unit, d$J, d$al$adj_list, d$al$n_neighbors,
+    sf, PG_ITER, PG_WARM, 1L, prior_beta_sd = 3, prior_sigma_re_scale = 2,
+    prior_sigma_spatial_scale = 1.5, prior_rho_alpha = a, prior_rho_beta = b,
+    store_eta = TRUE, verbose = FALSE)
+  k <- nrow(res$beta)
+  beta <- res$beta[k, ]; re <- res$re[k, ]
+  ph <- res$phi_scaled[k, ]; th <- res$theta[k, ]
+  s <- res$sigma_spatial[k]; rho <- res$rho[k]
+  eps <- 1e-10
+  u <- s * (sqrt(rho + eps) * ph * sf + sqrt(1 - rho + eps) * th)
+  eta <- as.numeric(d$X %*% beta) + re[d$grp] + u[d$unit]
+  kern <- function(r) (a - 1) * log(r + eps) + (b - 1) * log(1 - r + eps)
+  nodes <- (seq_len(20L) - 0.5) / 20
+  kv <- kern(nodes)
+  log_mass <- kern(rho) - (max(kv) + log(sum(exp(kv - max(kv)))))
+  quad <- drop(crossprod(ph, ref_icar_Q(d$W) %*% ph))
+  ref <- pg_common_ref(d$y, d$ntr, eta, beta, re, res$sigma_re[k], 3, 2) +
+    ref_log_gmrf(quad, d$J - 1L, 1) + sum(dnorm(th, log = TRUE)) +
+    log(2) + dnorm(s, 0, 1.5, log = TRUE) + log_mass
+  expect_true(rho %in% nodes)
+  expect_lt(abs(res$log_prob[k] - ref), 1e-8)
+  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
+})
+
+test_that("PG binomial temporal route records its joint density", {
+  skip_on_cran_budget()
+  set.seed(8)
+  n_times <- 12L; period <- 4L
+  tt <- rep(seq_len(n_times), each = 4L)
+  N <- length(tt)
+  X <- cbind(1, rnorm(N))
+  ntr <- rep(5L, N)
+  y <- as.integer(rbinom(N, ntr, plogis(0.1 + 0.4 * X[, 2] + sin(tt))))
+  res <- cpp_pg_binomial_gibbs_temporal(
+    y, ntr, X, rep(1L, N), 0L, tt, n_times, period, 1L, 1L, PG_ITER, PG_WARM,
+    1L, prior_beta_sd = 3, prior_sigma_re_scale = 2,
+    prior_sigma_trend_scale = 0.7, prior_sigma_seasonal_scale = 0.9,
+    prior_sigma_short_scale = 1.1, store_eta = TRUE, verbose = FALSE)
+  k <- nrow(res$beta)
+  beta <- res$beta[k, ]
+  tr <- res$trend[k, ]; se <- res$seasonal[k, ]; sh <- res$short_term[k, ]
+  st <- res$sigma_trend[k]; ss <- res$sigma_seasonal[k]; sr <- res$sigma_short[k]
+  rho <- res$rho_short[k]
+  eta <- as.numeric(X %*% beta) + tr[tt] + se[((tt - 1L) %% period) + 1L] + sh[tt]
+  q_trend <- sum(diff(tr)^2)
+  q_seas <- sum(diff(c(se, se[1]))^2)
+  q_ar1 <- (1 - rho^2) * sh[1]^2 + sum((sh[-1] - rho * sh[-n_times])^2)
+  tau_s <- 1 / sr^2
+  ref <- sum(dbinom(y, ntr, plogis(eta), log = TRUE)) +
+    sum(dnorm(beta, 0, 3, log = TRUE)) +
+    ref_log_gmrf(q_trend, n_times - 1L, 1 / st^2) + ref_log_hc(st, 0.7) +
+    ref_log_gmrf(q_seas, period - 1L, 1 / ss^2) + ref_log_hc(ss, 0.9) +
+    0.5 * n_times * (log(tau_s) - log(2 * pi)) + 0.5 * log(1 - rho^2) -
+    0.5 * tau_s * q_ar1 - log(2 * 0.999) + ref_log_hc(sr, 1.1)
+  expect_lt(abs(res$log_prob[k] - ref), 1e-8)
+  expect_lt(max(abs(res$eta[k, ] - eta)), 1e-8)
+})
+
 test_that("PG NNGP route records its joint density, and logLik() reads it", {
+  skip_on_cran_budget()
   # gcol33/tulpa#761: the field's level is drawn from its conditional rather
   # than removed into the intercept, so the chain's target is the model's.
   n <- 20L
@@ -306,6 +313,7 @@ test_that("PG NNGP route records its joint density, and logLik() reads it", {
 })
 
 test_that("PG multiscale NNGP route records its joint density", {
+  skip_on_cran_budget()
   n <- 20L
   g <- pg_nngp_chain(13L, n)
   X <- cbind(1, rnorm(n))
@@ -330,6 +338,7 @@ test_that("PG multiscale NNGP route records its joint density", {
 })
 
 test_that("a Polya-Gamma fit carries log_prob through the chain assembly", {
+  skip_on_cran_budget()
   d <- pg_areal()
   fit <- tulpa_gibbs(d$y, d$ntr, d$X, d$grp, 4L, family = "binomial",
                      control = list(n_iter = PG_ITER, warmup = PG_WARM,

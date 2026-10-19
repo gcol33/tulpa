@@ -44,19 +44,6 @@
 
 .rel <- function(a, b) abs(a - b) / max(1, abs(b))
 
-test_that("block-Schur is exact for two pins (two intrinsic fields)", {
-  for (seed in 11:14) {
-    r <- .s2z_run(n = 130L, nf = 80L,
-                  pins = list(list(start = 0L,  n = 40L, coef = 0.5),
-                              list(start = 40L, n = 40L, coef = 2.0)),
-                  seed = seed)
-    expect_true(r$ok)
-    expect_lt(.rel(r$ld_block_schur, r$ld_dense),  1e-8)
-    expect_lt(.rel(r$ld_block_schur, r$ld_direct), 1e-9)
-    expect_lt(r$max_dstep, 1e-8)
-  }
-})
-
 # --- Dense coupling D: the fold is the rank-K `U D U'` -----------------------
 # A Kronecker-structured field (multivariate CAR, precision Sigma^-1 (x) Q) has
 # the sum-to-zero augmentation Sigma^-1 (x) 11'/J, which couples FIELDS:
@@ -65,80 +52,6 @@ test_that("block-Schur is exact for two pins (two intrinsic fields)", {
 
 .s2z_two_field_pins <- list(list(start = 0L,  n = 40L, coef = 1.0),
                             list(start = 40L, n = 40L, coef = 1.0))
-
-test_that("an explicit diagonal coupling reproduces the diag(coef) path", {
-  # D = diag(coef) is the pre-existing behaviour, so supplying it explicitly has
-  # to land on the same numbers -- the generalization is a strict superset.
-  pins <- list(list(start = 0L,  n = 40L, coef = 1.3),
-               list(start = 40L, n = 40L, coef = 0.7))
-  base <- .s2z_run(n = 130L, nf = 80L, pins = pins, seed = 21L)
-  cpl  <- .s2z_run(n = 130L, nf = 80L, pins = pins, seed = 21L,
-                   coupling = diag(c(1.3, 0.7)))
-  expect_equal(cpl$ld_block_schur, base$ld_block_schur, tolerance = 1e-12)
-  expect_equal(cpl$ld_direct,      base$ld_direct,      tolerance = 1e-12)
-  expect_equal(cpl$ld_dense,       base$ld_dense,       tolerance = 1e-12)
-  expect_equal(cpl$max_dstep,      base$max_dstep,      tolerance = 1e-12)
-})
-
-test_that("the off-diagonal of D actually moves the answer", {
-  # Guards the two tests above against passing vacuously: if the cross-block
-  # term were dropped anywhere, a full D and its diagonal would agree.
-  Sinv <- matrix(c(2.0, 0.8, 0.8, 1.5), 2L, 2L)
-  D    <- Sinv / 40
-  full <- .s2z_run(n = 130L, nf = 80L, pins = .s2z_two_field_pins, seed = 31L,
-                   coupling = D)
-  diagonly <- .s2z_run(n = 130L, nf = 80L, pins = .s2z_two_field_pins,
-                       seed = 31L, coupling = diag(diag(D)))
-  expect_gt(abs(full$ld_dense - diagonly$ld_dense), 1e-6)
-  expect_gt(abs(full$ld_block_schur - diagonly$ld_block_schur), 1e-6)
-})
-
-# --- Non-contiguous pins: a disconnected map's component node sets -----------
-# A genuine disconnected map's connected components need not be contiguous in
-# the node ordering (islands sorted among the mainland). The rank-1 fold then
-# carries an arbitrary node list rather than a [start, start+n) range; it must
-# fold through the SAME Woodbury / block-Schur code, exact against the dense
-# Eigen reference over the same node sets.
-
-test_that("block-Schur is exact for non-contiguous (interleaved) pins", {
-  for (seed in 41:44) {
-    n <- 130L; nf <- 80L
-    A <- .s2z_make_A(n, nf, seed)
-    g <- stats::rnorm(n, sd = 0.7)
-    fld  <- 0:(nf - 1L)
-    idx1 <- fld[fld %% 2L == 0L]         # even field indices (non-contiguous)
-    idx2 <- fld[fld %% 2L == 1L]         # odd  field indices (non-contiguous)
-    r <- tulpa:::cpp_test_s2z_block_schur(
-      A = A, pin_start = c(0L, 0L), pin_n = c(0L, 0L),
-      pin_coef = c(0.5, 2.0), grad = g,
-      pin_idx = list(as.integer(idx1), as.integer(idx2)))
-    expect_true(r$ok)
-    expect_lt(.rel(r$ld_block_schur, r$ld_dense),  1e-8)
-    expect_lt(.rel(r$ld_direct,      r$ld_dense),  1e-8)
-    expect_lt(.rel(r$ld_block_schur, r$ld_direct), 1e-9)
-    expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-8)
-    expect_lt(r$max_dstep, 1e-8)
-  }
-})
-
-test_that("a non-contiguous pin is not the contiguous pin of the same count", {
-  # Guards the test above against the idx path silently collapsing to a
-  # contiguous [0, n) fold: the same coef and count over interleaved vs
-  # contiguous nodes must give a different B (hence a different log|B|).
-  n <- 130L; nf <- 80L
-  A <- .s2z_make_A(n, nf, 41L)
-  g <- stats::rnorm(n, sd = 0.7)
-  fld  <- 0:(nf - 1L)
-  idx1 <- fld[fld %% 2L == 0L]; idx2 <- fld[fld %% 2L == 1L]
-  nc <- tulpa:::cpp_test_s2z_block_schur(
-    A = A, pin_start = c(0L, 0L), pin_n = c(0L, 0L), pin_coef = c(0.5, 2.0),
-    grad = g, pin_idx = list(as.integer(idx1), as.integer(idx2)))
-  cg <- tulpa:::cpp_test_s2z_block_schur(
-    A = A, pin_start = c(0L, 40L), pin_n = c(40L, 40L), pin_coef = c(0.5, 2.0),
-    grad = g)
-  expect_gt(abs(nc$ld_dense - cg$ld_dense), 1e-6)
-  expect_gt(abs(nc$ld_block_schur - cg$ld_block_schur), 1e-6)
-})
 
 # --- An indefinite field block: the inertia route ----------------------------
 # Away from the mode the field block A_FF need not be PD while the pinned
@@ -183,7 +96,102 @@ test_that("a non-contiguous pin is not the contiguous pin of the same count", {
     pin_coupling = coupling)
 }
 
+skip_on_cran_budget()
+
+test_that("block-Schur is exact for two pins (two intrinsic fields)", {
+  skip_on_cran_budget()
+  for (seed in 11:14) {
+    r <- .s2z_run(n = 130L, nf = 80L,
+                  pins = list(list(start = 0L,  n = 40L, coef = 0.5),
+                              list(start = 40L, n = 40L, coef = 2.0)),
+                  seed = seed)
+    expect_true(r$ok)
+    expect_lt(.rel(r$ld_block_schur, r$ld_dense),  1e-8)
+    expect_lt(.rel(r$ld_block_schur, r$ld_direct), 1e-9)
+    expect_lt(r$max_dstep, 1e-8)
+  }
+})
+
+test_that("an explicit diagonal coupling reproduces the diag(coef) path", {
+  skip_on_cran_budget()
+  # D = diag(coef) is the pre-existing behaviour, so supplying it explicitly has
+  # to land on the same numbers -- the generalization is a strict superset.
+  pins <- list(list(start = 0L,  n = 40L, coef = 1.3),
+               list(start = 40L, n = 40L, coef = 0.7))
+  base <- .s2z_run(n = 130L, nf = 80L, pins = pins, seed = 21L)
+  cpl  <- .s2z_run(n = 130L, nf = 80L, pins = pins, seed = 21L,
+                   coupling = diag(c(1.3, 0.7)))
+  expect_equal(cpl$ld_block_schur, base$ld_block_schur, tolerance = 1e-12)
+  expect_equal(cpl$ld_direct,      base$ld_direct,      tolerance = 1e-12)
+  expect_equal(cpl$ld_dense,       base$ld_dense,       tolerance = 1e-12)
+  expect_equal(cpl$max_dstep,      base$max_dstep,      tolerance = 1e-12)
+})
+
+test_that("the off-diagonal of D actually moves the answer", {
+  skip_on_cran_budget()
+  # Guards the two tests above against passing vacuously: if the cross-block
+  # term were dropped anywhere, a full D and its diagonal would agree.
+  Sinv <- matrix(c(2.0, 0.8, 0.8, 1.5), 2L, 2L)
+  D    <- Sinv / 40
+  full <- .s2z_run(n = 130L, nf = 80L, pins = .s2z_two_field_pins, seed = 31L,
+                   coupling = D)
+  diagonly <- .s2z_run(n = 130L, nf = 80L, pins = .s2z_two_field_pins,
+                       seed = 31L, coupling = diag(diag(D)))
+  expect_gt(abs(full$ld_dense - diagonly$ld_dense), 1e-6)
+  expect_gt(abs(full$ld_block_schur - diagonly$ld_block_schur), 1e-6)
+})
+
+# --- Non-contiguous pins: a disconnected map's component node sets -----------
+# A genuine disconnected map's connected components need not be contiguous in
+# the node ordering (islands sorted among the mainland). The rank-1 fold then
+# carries an arbitrary node list rather than a [start, start+n) range; it must
+# fold through the SAME Woodbury / block-Schur code, exact against the dense
+# Eigen reference over the same node sets.
+
+test_that("block-Schur is exact for non-contiguous (interleaved) pins", {
+  skip_on_cran_budget()
+  for (seed in 41:44) {
+    n <- 130L; nf <- 80L
+    A <- .s2z_make_A(n, nf, seed)
+    g <- stats::rnorm(n, sd = 0.7)
+    fld  <- 0:(nf - 1L)
+    idx1 <- fld[fld %% 2L == 0L]         # even field indices (non-contiguous)
+    idx2 <- fld[fld %% 2L == 1L]         # odd  field indices (non-contiguous)
+    r <- tulpa:::cpp_test_s2z_block_schur(
+      A = A, pin_start = c(0L, 0L), pin_n = c(0L, 0L),
+      pin_coef = c(0.5, 2.0), grad = g,
+      pin_idx = list(as.integer(idx1), as.integer(idx2)))
+    expect_true(r$ok)
+    expect_lt(.rel(r$ld_block_schur, r$ld_dense),  1e-8)
+    expect_lt(.rel(r$ld_direct,      r$ld_dense),  1e-8)
+    expect_lt(.rel(r$ld_block_schur, r$ld_direct), 1e-9)
+    expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-8)
+    expect_lt(r$max_dstep, 1e-8)
+  }
+})
+
+test_that("a non-contiguous pin is not the contiguous pin of the same count", {
+  skip_on_cran_budget()
+  # Guards the test above against the idx path silently collapsing to a
+  # contiguous [0, n) fold: the same coef and count over interleaved vs
+  # contiguous nodes must give a different B (hence a different log|B|).
+  n <- 130L; nf <- 80L
+  A <- .s2z_make_A(n, nf, 41L)
+  g <- stats::rnorm(n, sd = 0.7)
+  fld  <- 0:(nf - 1L)
+  idx1 <- fld[fld %% 2L == 0L]; idx2 <- fld[fld %% 2L == 1L]
+  nc <- tulpa:::cpp_test_s2z_block_schur(
+    A = A, pin_start = c(0L, 0L), pin_n = c(0L, 0L), pin_coef = c(0.5, 2.0),
+    grad = g, pin_idx = list(as.integer(idx1), as.integer(idx2)))
+  cg <- tulpa:::cpp_test_s2z_block_schur(
+    A = A, pin_start = c(0L, 40L), pin_n = c(40L, 40L), pin_coef = c(0.5, 2.0),
+    grad = g)
+  expect_gt(abs(nc$ld_dense - cg$ld_dense), 1e-6)
+  expect_gt(abs(nc$ld_block_schur - cg$ld_block_schur), 1e-6)
+})
+
 test_that("the inertia route refuses B when B is indefinite", {
+  skip_on_cran_budget()
   # A pin too weak to lift the negative constant direction: c n < eps.
   A <- .s2z_make_A_indef(n = 70L, blocks = 40L, eps = 0.1, seed = 71L)
   r <- .s2z_run_indef(A, list(list(start = 0L, n = 40L, coef = 1e-3)))
@@ -204,6 +212,7 @@ test_that("the inertia route refuses B when B is indefinite", {
 })
 
 test_that("a PD field block never reports the inertia route", {
+  skip_on_cran_budget()
   r <- .s2z_run(n = 90L, nf = 60L, pins = list(list(start = 0L, n = 60L, coef = 1.0)),
                 seed = 1L)
   expect_false(r$field_indefinite)
@@ -211,6 +220,7 @@ test_that("a PD field block never reports the inertia route", {
 })
 
 test_that("an unparseable densify cutoff leaves the default in place", {
+  skip_on_cran_budget()
   # TULPA_S2Z_DENSIFY_MAX picks the storage, not the answer, so nothing else in
   # the suite can see which one a setting selected. 0 is a MEANINGFUL setting
   # here (always fold to the rank-1 path), which is what makes an atoi()-style

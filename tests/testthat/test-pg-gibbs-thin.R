@@ -38,7 +38,20 @@
        spatial_idx = as.integer(rep_len(1:4, n)))
 }
 
+test_that("a thin below 1 is refused rather than reaching the modulus", {
+  fx <- .thin_fixture(seed = 24L)
+  expect_error(
+    tulpa_gibbs(fx$y_binom, fx$n_trials, fx$X, fx$grp, fx$n_groups,
+                family = "binomial",
+                control = list(n_iter = 100L, warmup = 50L, thin = 0L)),
+    "thin"
+  )
+})
+
+skip_on_cran_budget()
+
 test_that("a thin that does divide the run is unaffected", {
+  skip_on_cran_budget()
   fx <- .thin_fixture(seed = 22L)
   fit <- tulpa_gibbs(fx$y_binom, fx$n_trials, fx$X, fx$grp, fx$n_groups,
                      family = "binomial",
@@ -49,6 +62,7 @@ test_that("a thin that does divide the run is unaffected", {
 })
 
 test_that("thin reaches the spatial route rather than being dropped", {
+  skip_on_cran_budget()
   fx <- .thin_fixture(seed = 23L)
   base <- list(n_iter = 100L, warmup = 50L, seed = 5L)
   f1 <- suppressWarnings(tulpa_gibbs(
@@ -61,16 +75,6 @@ test_that("thin reaches the spatial route rather than being dropped", {
   expect_equal(nrow(f5$draws), 10L)
   # Same chain, same seed: the thinned run is the every-fifth subsequence.
   expect_equal(f5$draws, f1$draws[seq(1L, 50L, by = 5L), , drop = FALSE])
-})
-
-test_that("a thin below 1 is refused rather than reaching the modulus", {
-  fx <- .thin_fixture(seed = 24L)
-  expect_error(
-    tulpa_gibbs(fx$y_binom, fx$n_trials, fx$X, fx$grp, fx$n_groups,
-                family = "binomial",
-                control = list(n_iter = 100L, warmup = 50L, thin = 0L)),
-    "thin"
-  )
 })
 
 skip_on_cran()

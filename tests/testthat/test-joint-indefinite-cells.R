@@ -15,7 +15,10 @@ test_that("an indefinite cell counts as stalled for the re-solve", {
     expect_identical(cc$stalled,   c(FALSE, TRUE, TRUE))
 })
 
+skip_on_cran_budget()
+
 test_that("a cell that stays indefinite leaves the measure, recorded", {
+    skip_on_cran_budget()
     res <- list(log_marginal = c(0, -0.5, -1, -Inf),
                 converged = rep(TRUE, 4),
                 hessian_indefinite = c(FALSE, TRUE, FALSE, FALSE),
@@ -32,6 +35,7 @@ test_that("a cell that stays indefinite leaves the measure, recorded", {
 })
 
 test_that("indefinite cells stay when nothing else was solved", {
+    skip_on_cran_budget()
     res <- list(log_marginal = c(-1, -2), converged = c(TRUE, TRUE),
                 hessian_indefinite = c(TRUE, TRUE))
     out <- tulpa:::.nl_record_unconverged(res)
@@ -42,6 +46,7 @@ test_that("indefinite cells stay when nothing else was solved", {
 })
 
 test_that("a fit with no indefinite cell records none and is silent", {
+    skip_on_cran_budget()
     res <- list(log_marginal = c(0, -1), converged = c(TRUE, TRUE),
                 hessian_indefinite = c(FALSE, FALSE))
     out <- tulpa:::.nl_record_unconverged(res)

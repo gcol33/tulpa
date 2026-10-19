@@ -102,7 +102,19 @@ test_that("an SPDE block's svc_weight reaches eta and the mode", {
     expect_gt(max(abs(as.numeric(wtd$modes) - as.numeric(plain$modes))), 1e-6)
 })
 
+test_that("svc_weight of the wrong length is refused", {
+    f <- .rw_fixture(seed = 4633L)
+    expect_error(
+        .rw_fit(.rw_spde_block(f$A, f$fem, f$m, f$N, rep(1, f$N - 1L)),
+                f$y, f$X, f$theta_grid),
+        "svc_weight has length"
+    )
+})
+
+skip_on_cran_budget()
+
 test_that("a weighted SPDE block matches the field scaled by hand", {
+    skip_on_cran_budget()
     # eta_i = X_i beta + w_i (A u)_i is the same model as one whose projector
     # rows are pre-scaled by w, so the two fits agree to the bit: this pins
     # WHERE the weight enters, not merely that it does.
@@ -118,13 +130,4 @@ test_that("a weighted SPDE block matches the field scaled by hand", {
                  tolerance = 1e-10)
     expect_equal(as.numeric(wtd$modes), as.numeric(pre$modes),
                  tolerance = 1e-8)
-})
-
-test_that("svc_weight of the wrong length is refused", {
-    f <- .rw_fixture(seed = 4633L)
-    expect_error(
-        .rw_fit(.rw_spde_block(f$A, f$fem, f$m, f$N, rep(1, f$N - 1L)),
-                f$y, f$X, f$theta_grid),
-        "svc_weight has length"
-    )
 })

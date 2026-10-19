@@ -87,8 +87,11 @@
     .prune_cache[[key]]
 }
 
+skip_on_cran_budget()
+
 
 test_that("a refined grid's per-cell lists track it when the first cell was pruned", {
+  skip_on_cran_budget()
   # A pruned cell is never solved, so it carries no precision and no covariance
   # block. Deciding from cell 1 whether the fit holds them at all reads a
   # pruned cell whenever the screen dropped the grid's first corner: the

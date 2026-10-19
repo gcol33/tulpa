@@ -1,44 +1,3 @@
-# Inner-Laplace importance k-hat (gcol33/tulpa#303): the second score on the
-# inner layer, and the one that needs no likelihood derivative -- so it answers
-# for a fully coupled model where the cubic term gamma_3 declines permanently.
-#
-# The inner Gaussian at a fixed theta IS an importance proposal for the exact
-# conditional posterior, so PSIS on that ratio scores the inner layer directly.
-# It runs on the probed subspace, one dimension per probed index, along the
-# same Gaussian-conditional-mean curve gamma_3 expands (src/inner_laplace_is.h).
-#
-# These are recovery tests, not shape tests. The two inner scores read the same
-# misfit off the same curve, so on a fixture where BOTH are computable they must
-# MOVE TOGETHER, and where only the k-hat is computable it is held against the
-# exact quadrature the coupled fixture provides (helper-coupled-fixture.R).
-
-# --------------------------------------------------------------------------- #
-# (1) The shared IS-PSIS core accepts injected draws, exactly and without RNG   #
-# --------------------------------------------------------------------------- #
-
-test_that(".nested_is_pareto_k scores injected draws identically and consumes no RNG", {
-  # A gaussian target narrower than the proposal: a well-behaved, finite k-hat.
-  target <- function(U) -0.65 * rowSums(U^2)
-  set.seed(7)
-  drawn <- tulpa:::.nested_is_pareto_k(0, matrix(1, 1L, 1L), target,
-                                       n_samples = 200L)
-  set.seed(7)
-  Z <- matrix(stats::rnorm(200L), ncol = 1L)
-  before <- .Random.seed
-  injected <- tulpa:::.nested_is_pareto_k(0, matrix(1, 1L, 1L), target,
-                                          n_samples = 200L, Z = Z)
-  # The injected path draws nothing: the fit's own stream is untouched.
-  expect_identical(.Random.seed, before)
-  expect_identical(injected$pareto_k, drawn$pareto_k)
-  expect_identical(injected$is_ess, drawn$is_ess)
-
-  # A mis-sized draw matrix is a bookkeeping fault, never a quiet resample.
-  bad <- tulpa:::.nested_is_pareto_k(0, matrix(1, 1L, 1L), target,
-                                     n_samples = 200L,
-                                     Z = matrix(stats::rnorm(50L), ncol = 1L))
-  expect_true(is.na(bad$pareto_k))
-  expect_identical(bad$declined, "internal_inconsistency")
-})
 
 test_that("the inner k-hat gives a coupled fit an inner verdict instead of 'not assessed'", {
   # The #303 acceptance: gamma_3 declines structurally, the k-hat does not, so
@@ -86,6 +45,50 @@ test_that("the inner k-hat gives a coupled fit an inner verdict instead of 'not 
        adj_col_idx = as.integer(unlist(nbr)) - 1L,
        n_neighbors = as.integer(nn), tau_grid = c(0.5, 1, 2, 4, 8))
 }
+
+skip_on_cran_budget()
+# Inner-Laplace importance k-hat (gcol33/tulpa#303): the second score on the
+# inner layer, and the one that needs no likelihood derivative -- so it answers
+# for a fully coupled model where the cubic term gamma_3 declines permanently.
+#
+# The inner Gaussian at a fixed theta IS an importance proposal for the exact
+# conditional posterior, so PSIS on that ratio scores the inner layer directly.
+# It runs on the probed subspace, one dimension per probed index, along the
+# same Gaussian-conditional-mean curve gamma_3 expands (src/inner_laplace_is.h).
+#
+# These are recovery tests, not shape tests. The two inner scores read the same
+# misfit off the same curve, so on a fixture where BOTH are computable they must
+# MOVE TOGETHER, and where only the k-hat is computable it is held against the
+# exact quadrature the coupled fixture provides (helper-coupled-fixture.R).
+
+# --------------------------------------------------------------------------- #
+# (1) The shared IS-PSIS core accepts injected draws, exactly and without RNG   #
+# --------------------------------------------------------------------------- #
+
+test_that(".nested_is_pareto_k scores injected draws identically and consumes no RNG", {
+  skip_on_cran_budget()
+  # A gaussian target narrower than the proposal: a well-behaved, finite k-hat.
+  target <- function(U) -0.65 * rowSums(U^2)
+  set.seed(7)
+  drawn <- tulpa:::.nested_is_pareto_k(0, matrix(1, 1L, 1L), target,
+                                       n_samples = 200L)
+  set.seed(7)
+  Z <- matrix(stats::rnorm(200L), ncol = 1L)
+  before <- .Random.seed
+  injected <- tulpa:::.nested_is_pareto_k(0, matrix(1, 1L, 1L), target,
+                                          n_samples = 200L, Z = Z)
+  # The injected path draws nothing: the fit's own stream is untouched.
+  expect_identical(.Random.seed, before)
+  expect_identical(injected$pareto_k, drawn$pareto_k)
+  expect_identical(injected$is_ess, drawn$is_ess)
+
+  # A mis-sized draw matrix is a bookkeeping fault, never a quiet resample.
+  bad <- tulpa:::.nested_is_pareto_k(0, matrix(1, 1L, 1L), target,
+                                     n_samples = 200L,
+                                     Z = matrix(stats::rnorm(50L), ncol = 1L))
+  expect_true(is.na(bad$pareto_k))
+  expect_identical(bad$declined, "internal_inconsistency")
+})
 
 skip_on_cran()
 

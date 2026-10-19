@@ -1,25 +1,3 @@
-# Known-answer coverage for the generic DHARMa/spdep-equivalent diagnostics
-# (#224). These exported statistics previously shipped with no test at all; a
-# sign or coefficient slip in the hand-transcribed Moran randomization variance
-# or the Durbin-Watson statistic would have returned wrong p-values with every
-# plumbing test still green. The closed-form checks below need no reference
-# package (they hand-compute the statistic); the reference cross-checks run only
-# where spdep / lmtest are installed.
-
-test_that("durbin_watson matches its closed form on a hand-computed vector", {
-  x <- c(1, 2, 1, 2, 1)                    # strongly alternating -> DW near 4
-  e <- x - mean(x)                         # centred residuals
-  dw_expected <- sum(diff(e)^2) / sum(e^2) # = 4 / 1.2 = 10/3
-  r1_expected <- 1 - dw_expected / 2       # = -2/3
-
-  res <- durbin_watson(x)
-  expect_equal(as.numeric(res$statistic), 10 / 3, tolerance = 1e-12)
-  expect_equal(as.numeric(res$parameter), -2 / 3, tolerance = 1e-12)
-
-  # Alternating residuals are negative autocorrelation: the one-sided "greater"
-  # (positive autocorrelation) alternative should return a large p-value.
-  expect_gt(durbin_watson(x, alternative = "greater")$p.value, 0.9)
-})
 
 test_that("moran_i matches its closed form on a 3-point line", {
   # coords 0,1,2 on a line; residuals (1, 0, -1) (already mean-zero). With
@@ -42,6 +20,31 @@ test_that("moran_i sign tracks the spatial pattern", {
   # Checkerboard -> negative autocorrelation under nearest-neighbour weights.
   checker <- ifelse((coords[, 1] + coords[, 2]) %% 2 == 0, 1, -1)
   expect_lt(as.numeric(moran_i(checker, coords, weights = "knn", k = 4L)$statistic), 0)
+})
+
+skip_on_cran_budget()
+# Known-answer coverage for the generic DHARMa/spdep-equivalent diagnostics
+# (#224). These exported statistics previously shipped with no test at all; a
+# sign or coefficient slip in the hand-transcribed Moran randomization variance
+# or the Durbin-Watson statistic would have returned wrong p-values with every
+# plumbing test still green. The closed-form checks below need no reference
+# package (they hand-compute the statistic); the reference cross-checks run only
+# where spdep / lmtest are installed.
+
+test_that("durbin_watson matches its closed form on a hand-computed vector", {
+  skip_on_cran_budget()
+  x <- c(1, 2, 1, 2, 1)                    # strongly alternating -> DW near 4
+  e <- x - mean(x)                         # centred residuals
+  dw_expected <- sum(diff(e)^2) / sum(e^2) # = 4 / 1.2 = 10/3
+  r1_expected <- 1 - dw_expected / 2       # = -2/3
+
+  res <- durbin_watson(x)
+  expect_equal(as.numeric(res$statistic), 10 / 3, tolerance = 1e-12)
+  expect_equal(as.numeric(res$parameter), -2 / 3, tolerance = 1e-12)
+
+  # Alternating residuals are negative autocorrelation: the one-sided "greater"
+  # (positive autocorrelation) alternative should return a large p-value.
+  expect_gt(durbin_watson(x, alternative = "greater")$p.value, 0.9)
 })
 
 skip_on_cran()

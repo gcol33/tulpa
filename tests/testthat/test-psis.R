@@ -1,89 +1,3 @@
-# Pareto-smoothed importance sampling: the native PSIS core, its agreement with
-# loo, and the outer Pareto-k-hat diagnostic for the nested-Laplace path.
-
-test_that("tulpa_psis reproduces loo::psis pareto_k", {
-  skip_if_not_installed("loo")
-  set.seed(42)
-
-  cases <- list(
-    light = rnorm(3000),                 # lognormal weights: all moments finite
-    heavy = log(1 / runif(3000)),        # Pareto(1) weights: k-hat ~ 1
-    mixed = rnorm(2000) + rexp(2000)     # moderately heavy
-  )
-  for (nm in names(cases)) {
-    lr  <- cases[[nm]]
-    ours <- tulpa_psis(lr)$pareto_k
-    ref  <- suppressWarnings(
-      loo::psis(matrix(lr, ncol = 1), r_eff = NA)$diagnostics$pareto_k)
-    expect_equal(ours, ref, tolerance = 0.02,
-                 info = sprintf("case '%s': ours=%.4f loo=%.4f", nm, ours, ref))
-  }
-})
-
-test_that("a tail tied at the cutoff is left unsmoothed, as loo::psis leaves it", {
-  skip_if_not_installed("loo")
-  # A quarter of the exceedances exactly 0 takes the Zhang-Stephens scale anchor
-  # to 0 and the fit to k = Inf with a NaN scale. loo answers the same k and
-  # keeps the tail at its raw log ratios; the engine must not write NaN there.
-  lr <- c(rep(0, 175), seq(0.5, 5, length.out = 25))
-  ours <- tulpa_psis(lr)
-  ref  <- suppressWarnings(
-    loo::psis(matrix(lr, ncol = 1), r_eff = NA))
-
-  expect_equal(ours$pareto_k,
-               ref$diagnostics$pareto_k, tolerance = 1e-12)
-  expect_false(ours$tail_smoothed)
-  expect_false(any(is.nan(ours$log_weights)))
-  expect_equal(ours$log_weights,
-               as.numeric(loo::weights.importance_sampling(ref, log = TRUE)),
-               tolerance = 1e-12)
-})
-
-test_that("tulpa_psis keeps one weight per draw on non-finite ratios (#892)", {
-  set.seed(1)
-  lr <- rnorm(100)
-
-  # +Inf is the worst ratio there is: an infinite shape, all the weight on it,
-  # never a healthy k read off the draws left after dropping it.
-  r <- tulpa_psis(c(lr, Inf))
-  expect_identical(r$pareto_k, Inf)
-  expect_length(r$log_weights, 101L)
-  expect_equal(exp(r$log_weights), c(rep(0, 100), 1))
-  expect_equal(r$is_ess, 1)
-
-  # -Inf is a zero-weight draw that keeps its place.
-  r <- tulpa_psis(c(lr[1:50], -Inf, lr[51:100]))
-  expect_length(r$log_weights, 101L)
-  expect_identical(r$log_weights[51], -Inf)
-  expect_equal(sum(exp(r$log_weights)), 1)
-  expect_true(is.finite(r$pareto_k))
-
-  expect_error(tulpa_psis(c(1, 2, NA, 4)), "`log_ratios`")
-  expect_error(tulpa_psis(c(lr, NaN)), "`log_ratios`")
-  expect_error(tulpa_psis("a"), "`log_ratios`")
-  expect_error(tulpa_psis(rep(-Inf, 10)), "all -Inf")
-
-  # Too few draws for a tail fit: still one normalized weight per draw.
-  r <- tulpa_psis(c(0, 1, 2))
-  expect_true(is.na(r$pareto_k))
-  expect_equal(r$log_weights, c(0, 1, 2) - log(sum(exp(0:2))))
-})
-
-test_that("a -Inf ratio is the limit of a vanishing finite one (#892)", {
-  # A zero-weight draw is still a draw from the proposal: it sits below the
-  # tail, counts towards S, and weighs exactly what a ratio far enough down
-  # that its exponential underflows weighs.
-  set.seed(2)
-  lr <- c(rnorm(300) + rexp(300), rep(-Inf, 20))[sample(320)]
-  lr_fin <- lr
-  lr_fin[!is.finite(lr)] <- min(lr[is.finite(lr)]) - 1e4
-  ours <- tulpa_psis(lr)
-  ref  <- tulpa_psis(lr_fin)
-  expect_equal(ours$pareto_k, ref$pareto_k, tolerance = 1e-12)
-  expect_equal(ours$tail_len, ref$tail_len)
-  expect_equal(exp(ours$log_weights), exp(ref$log_weights), tolerance = 1e-12)
-  expect_true(all(ours$log_weights[!is.finite(lr)] == -Inf))
-})
 
 # --------------------------------------------------------------------------- #
 # Fast outer Pareto-k diagnostic helpers (gcol33/tulpa#118): near-neighbour     #
@@ -117,7 +31,131 @@ test_that(".joint_is_solve_reordered restores the caller's row order", {
   expect_length(bad, 0L)
 })
 
+test_that(".nested_grid_radius_cap is the scaled max whitened grid radius", {
+  # gcol33/tulpa#94: the cap is .K_DIAG_SUPPORT_RADIUS_MULT times the largest
+  # whitened distance || L^{-1} (node - u_hat) || over the grid nodes.
+  set.seed(101)
+  d <- 3L
+  u_hat <- c(0.5, -1, 2)
+  A  <- matrix(rnorm(d * d), d)
+  Su <- crossprod(A) + diag(d)                          # SPD
+  L  <- t(chol(Su))
+  # Place nodes at KNOWN whitened radii: node_k = u_hat + L %*% z_k.
+  Zn <- rbind(c(1, 0, 0), c(0, 2, 0), c(0, 0, 1.5), c(1, 1, 1))
+  u_grid <- t(apply(Zn, 1, function(z) u_hat + as.numeric(L %*% z)))
+  cap <- .nested_grid_radius_cap(u_grid, u_hat, L)
+  expect_equal(cap, max(sqrt(rowSums(Zn^2))) * .K_DIAG_SUPPORT_RADIUS_MULT,
+               tolerance = 1e-10)
+})
+
+test_that(".nested_is_pareto_k declines without solving when radius_cap is too tight", {
+  # When fewer than .PSIS_MIN_EVAL draws fall within support, the core returns
+  # NA WITHOUT paying any inner solve (the floor check precedes log_target).
+  d <- 2L; u_hat <- c(0, 0); L_scale <- diag(d)
+  hit <- 0L
+  tgt <- function(U) { hit <<- hit + nrow(U); rep(0, nrow(U)) }
+  set.seed(404)
+  kd <- .nested_is_pareto_k(u_hat, L_scale, tgt, n_samples = 1000L,
+                            radius_cap = 0.01)            # ~0 draws survive
+  expect_true(is.na(kd$pareto_k))
+  expect_lt(kd$n_eval, .PSIS_MIN_EVAL)
+  expect_identical(hit, 0L)                               # no inner solve paid
+})
+
+skip_on_cran_budget()
+# Pareto-smoothed importance sampling: the native PSIS core, its agreement with
+# loo, and the outer Pareto-k-hat diagnostic for the nested-Laplace path.
+
+test_that("tulpa_psis reproduces loo::psis pareto_k", {
+  skip_on_cran_budget()
+  skip_if_not_installed("loo")
+  set.seed(42)
+
+  cases <- list(
+    light = rnorm(3000),                 # lognormal weights: all moments finite
+    heavy = log(1 / runif(3000)),        # Pareto(1) weights: k-hat ~ 1
+    mixed = rnorm(2000) + rexp(2000)     # moderately heavy
+  )
+  for (nm in names(cases)) {
+    lr  <- cases[[nm]]
+    ours <- tulpa_psis(lr)$pareto_k
+    ref  <- suppressWarnings(
+      loo::psis(matrix(lr, ncol = 1), r_eff = NA)$diagnostics$pareto_k)
+    expect_equal(ours, ref, tolerance = 0.02,
+                 info = sprintf("case '%s': ours=%.4f loo=%.4f", nm, ours, ref))
+  }
+})
+
+test_that("a tail tied at the cutoff is left unsmoothed, as loo::psis leaves it", {
+  skip_on_cran_budget()
+  skip_if_not_installed("loo")
+  # A quarter of the exceedances exactly 0 takes the Zhang-Stephens scale anchor
+  # to 0 and the fit to k = Inf with a NaN scale. loo answers the same k and
+  # keeps the tail at its raw log ratios; the engine must not write NaN there.
+  lr <- c(rep(0, 175), seq(0.5, 5, length.out = 25))
+  ours <- tulpa_psis(lr)
+  ref  <- suppressWarnings(
+    loo::psis(matrix(lr, ncol = 1), r_eff = NA))
+
+  expect_equal(ours$pareto_k,
+               ref$diagnostics$pareto_k, tolerance = 1e-12)
+  expect_false(ours$tail_smoothed)
+  expect_false(any(is.nan(ours$log_weights)))
+  expect_equal(ours$log_weights,
+               as.numeric(loo::weights.importance_sampling(ref, log = TRUE)),
+               tolerance = 1e-12)
+})
+
+test_that("tulpa_psis keeps one weight per draw on non-finite ratios (#892)", {
+  skip_on_cran_budget()
+  set.seed(1)
+  lr <- rnorm(100)
+
+  # +Inf is the worst ratio there is: an infinite shape, all the weight on it,
+  # never a healthy k read off the draws left after dropping it.
+  r <- tulpa_psis(c(lr, Inf))
+  expect_identical(r$pareto_k, Inf)
+  expect_length(r$log_weights, 101L)
+  expect_equal(exp(r$log_weights), c(rep(0, 100), 1))
+  expect_equal(r$is_ess, 1)
+
+  # -Inf is a zero-weight draw that keeps its place.
+  r <- tulpa_psis(c(lr[1:50], -Inf, lr[51:100]))
+  expect_length(r$log_weights, 101L)
+  expect_identical(r$log_weights[51], -Inf)
+  expect_equal(sum(exp(r$log_weights)), 1)
+  expect_true(is.finite(r$pareto_k))
+
+  expect_error(tulpa_psis(c(1, 2, NA, 4)), "`log_ratios`")
+  expect_error(tulpa_psis(c(lr, NaN)), "`log_ratios`")
+  expect_error(tulpa_psis("a"), "`log_ratios`")
+  expect_error(tulpa_psis(rep(-Inf, 10)), "all -Inf")
+
+  # Too few draws for a tail fit: still one normalized weight per draw.
+  r <- tulpa_psis(c(0, 1, 2))
+  expect_true(is.na(r$pareto_k))
+  expect_equal(r$log_weights, c(0, 1, 2) - log(sum(exp(0:2))))
+})
+
+test_that("a -Inf ratio is the limit of a vanishing finite one (#892)", {
+  skip_on_cran_budget()
+  # A zero-weight draw is still a draw from the proposal: it sits below the
+  # tail, counts towards S, and weighs exactly what a ratio far enough down
+  # that its exponential underflows weighs.
+  set.seed(2)
+  lr <- c(rnorm(300) + rexp(300), rep(-Inf, 20))[sample(320)]
+  lr_fin <- lr
+  lr_fin[!is.finite(lr)] <- min(lr[is.finite(lr)]) - 1e4
+  ours <- tulpa_psis(lr)
+  ref  <- tulpa_psis(lr_fin)
+  expect_equal(ours$pareto_k, ref$pareto_k, tolerance = 1e-12)
+  expect_equal(ours$tail_len, ref$tail_len)
+  expect_equal(exp(ours$log_weights), exp(ref$log_weights), tolerance = 1e-12)
+  expect_true(all(ours$log_weights[!is.finite(lr)] == -Inf))
+})
+
 test_that(".kdiag_knobs defaults to the fast path and honours overrides", {
+  skip_on_cran_budget()
   d <- tulpa:::.kdiag_knobs()
   expect_identical(d$refresh, tulpa:::.K_DIAG_REFRESH)
   expect_identical(d$tol,     tulpa:::.K_DIAG_TOL)
@@ -133,6 +171,7 @@ test_that(".kdiag_knobs defaults to the fast path and honours overrides", {
 })
 
 test_that(".joint_nearest_grid_mode picks each draw's nearest grid cell mode", {
+  skip_on_cran_budget()
   # 3 grid cells at theta = 1, 5, 9 (1-D), with modes a fixed function of the
   # cell so the picked row is identifiable.
   res <- list(theta_grid = matrix(c(1, 5, 9), ncol = 1),
@@ -148,6 +187,7 @@ test_that(".joint_nearest_grid_mode picks each draw's nearest grid cell mode", {
 })
 
 test_that(".joint_make_diag_refit selects per-cell warm when modes are present", {
+  skip_on_cran_budget()
   res <- list(theta_grid = matrix(c(1, 5, 9), ncol = 1),
               modes = rbind(c(10, 10), c(50, 50), c(90, 90)))
   seen <- NULL
@@ -169,6 +209,7 @@ test_that(".joint_make_diag_refit selects per-cell warm when modes are present",
 })
 
 test_that("pareto_k separates light from heavy tails; is_ess is bounded", {
+  skip_on_cran_budget()
   set.seed(1)
   light <- tulpa_psis(rnorm(3000))
   heavy <- tulpa_psis(log(1 / runif(3000)))
@@ -181,6 +222,7 @@ test_that("pareto_k separates light from heavy tails; is_ess is bounded", {
 })
 
 test_that(".nested_outer_pareto_k is low when the proposal covers the target", {
+  skip_on_cran_budget()
   set.seed(7)
   # Gaussian target N(mu, Sigma); proposal slightly wider (1.5 * Sigma) so the
   # importance weights are bounded -> small / negative k-hat, high IS-ESS.
@@ -202,6 +244,7 @@ test_that(".nested_outer_pareto_k is low when the proposal covers the target", {
 })
 
 test_that(".nested_outer_pareto_k rises when the target is heavier than the proposal", {
+  skip_on_cran_budget()
   set.seed(9)
   mu <- c(0, 0)
   # Student-t(df = 2) target (infinite variance) against a unit-Gaussian
@@ -215,6 +258,7 @@ test_that(".nested_outer_pareto_k rises when the target is heavier than the prop
 })
 
 test_that("the IS cores decline before evaluating the target below the floor", {
+  skip_on_cran_budget()
   # gcol33/tulpa#51: a sub-floor n_samples can never reach .PSIS_MIN_EVAL finite
   # evaluations, so both cores must return NA WITHOUT touching the (expensive)
   # target -- not evaluate the whole budget and then discard it.
@@ -237,24 +281,8 @@ test_that("the IS cores decline before evaluating the target below the floor", {
   expect_identical(hit_b, 0L)
 })
 
-test_that(".nested_grid_radius_cap is the scaled max whitened grid radius", {
-  # gcol33/tulpa#94: the cap is .K_DIAG_SUPPORT_RADIUS_MULT times the largest
-  # whitened distance || L^{-1} (node - u_hat) || over the grid nodes.
-  set.seed(101)
-  d <- 3L
-  u_hat <- c(0.5, -1, 2)
-  A  <- matrix(rnorm(d * d), d)
-  Su <- crossprod(A) + diag(d)                          # SPD
-  L  <- t(chol(Su))
-  # Place nodes at KNOWN whitened radii: node_k = u_hat + L %*% z_k.
-  Zn <- rbind(c(1, 0, 0), c(0, 2, 0), c(0, 0, 1.5), c(1, 1, 1))
-  u_grid <- t(apply(Zn, 1, function(z) u_hat + as.numeric(L %*% z)))
-  cap <- .nested_grid_radius_cap(u_grid, u_hat, L)
-  expect_equal(cap, max(sqrt(rowSums(Zn^2))) * .K_DIAG_SUPPORT_RADIUS_MULT,
-               tolerance = 1e-10)
-})
-
 test_that(".nested_is_pareto_k skips draws beyond radius_cap (cost bound, light tail)", {
+  skip_on_cran_budget()
   # gcol33/tulpa#94: for a target NO heavier than the Gaussian proposal a finite
   # radius_cap excludes deep-extrapolation draws WITHOUT an inner solve, bounding
   # the diagnostic cost; radius_cap = Inf reproduces the unrestricted path. The
@@ -281,6 +309,7 @@ test_that(".nested_is_pareto_k skips draws beyond radius_cap (cost bound, light 
 })
 
 test_that(".nested_is_pareto_k folds the clipped tail back in for a heavy target (#100)", {
+  skip_on_cran_budget()
   # gcol33/tulpa#100: the radius cap must NOT bias k-hat downward when the target
   # is genuinely heavier-tailed than the Gaussian proposal -- the regime a high
   # k-hat exists to flag. There the far-radius draws carry the LARGEST importance
@@ -312,20 +341,6 @@ test_that(".nested_is_pareto_k folds the clipped tail back in for a heavy target
   k_light <- .nested_is_pareto_k(u_hat, L_scale, light, n_samples = 6000L,
                                  radius_cap = 2.2)$pareto_k
   expect_true(is.na(k_light) || k_light < 0.7)
-})
-
-test_that(".nested_is_pareto_k declines without solving when radius_cap is too tight", {
-  # When fewer than .PSIS_MIN_EVAL draws fall within support, the core returns
-  # NA WITHOUT paying any inner solve (the floor check precedes log_target).
-  d <- 2L; u_hat <- c(0, 0); L_scale <- diag(d)
-  hit <- 0L
-  tgt <- function(U) { hit <<- hit + nrow(U); rep(0, nrow(U)) }
-  set.seed(404)
-  kd <- .nested_is_pareto_k(u_hat, L_scale, tgt, n_samples = 1000L,
-                            radius_cap = 0.01)            # ~0 draws survive
-  expect_true(is.na(kd$pareto_k))
-  expect_lt(kd$n_eval, .PSIS_MIN_EVAL)
-  expect_identical(hit, 0L)                               # no inner solve paid
 })
 
 skip_on_cran()

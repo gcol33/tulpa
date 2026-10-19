@@ -31,26 +31,6 @@ prior_weights <- function(spec) {
                              log_quad = .hyper_log_quad_weights(tg, list(spec)))
 }
 
-test_that("a declared point mass survives a natural-coordinate density", {
-  # log(0) = -Inf is the change of variables of the continuum. The atom is not
-  # a point of that continuum, so the term does not apply to it and the cell
-  # keeps its declared mass rather than being given zero weight (#624).
-  spec <- atom_spec("natural")
-  w <- prior_weights(spec)
-  expect_true(all(is.finite(w)))
-  expect_equal(unname(w[1L]), 0.5)
-})
-
-test_that("a declared point mass is the split, whichever coordinate is used", {
-  # Same axis, same declared split, two readings of the same density (#626).
-  for (coord in c("integration", "natural")) {
-    expect_equal(unname(prior_weights(atom_spec(coord))[1L]), 0.5)
-  }
-  for (a in c(0.1, 0.5, 0.9)) {
-    expect_equal(unname(prior_weights(atom_spec("natural", atom = a))[1L]), a)
-  }
-})
-
 test_that("the atom's share does not move with the density on the continuum", {
   # The density shapes the continuum; it does not decide how much of the axis
   # the continuum holds. Three densities disagreeing sharply at zero and in the
@@ -68,27 +48,6 @@ test_that("the atom's share does not move with the density on the continuum", {
   w <- prior_weights(atom_spec("natural", fns[[3L]]))
   expect_true(all(w[-1L] > 0))
   expect_gt(w[4L], w[2L])
-})
-
-test_that("an axis with no point mass is untouched by the atom rule", {
-  # Nothing to split against, so the density is read at every node and the
-  # weights are the declared prior over the span, unchanged.
-  x <- c(0.25, 0.5, 1, 2)
-  spec <- hyper_axis_spec("sigma", grid = x, log_scale = TRUE,
-                          bounds = c(0, Inf),
-                          log_prior = function(v) stats::dexp(v, 1, log = TRUE),
-                          log_prior_coord = "natural")
-  w <- prior_weights(spec)
-  expect_equal(sum(w), 1)
-  # Log-spaced nodes, so the cell widths are equal and the shape is the density
-  # carried to the log coordinate: p(x) x, peaking at x = 1.
-  expect_equal(unname(w), unname((x * stats::dexp(x, 1)) /
-                                 sum(x * stats::dexp(x, 1))))
-
-  # The coordinate is a statement, not a formality: read as a density on log x
-  # the same function weights the same nodes differently.
-  spec$log_prior_coord <- "integration"
-  expect_false(isTRUE(all.equal(unname(w), unname(prior_weights(spec)))))
 })
 
 test_that("the joint driver integrates the prior it documents (#625)", {
@@ -138,4 +97,50 @@ test_that("the joint copy scale keeps its declared atom mass under a prior", {
     log_quad = .hyper_log_quad_weights(tg, specs))
   expect_equal(unname(w[1L]), .TULPA_COPY_ATOM_MASS)
   expect_true(all(is.finite(w)))
+})
+
+skip_on_cran_budget()
+
+test_that("a declared point mass survives a natural-coordinate density", {
+  skip_on_cran_budget()
+  # log(0) = -Inf is the change of variables of the continuum. The atom is not
+  # a point of that continuum, so the term does not apply to it and the cell
+  # keeps its declared mass rather than being given zero weight (#624).
+  spec <- atom_spec("natural")
+  w <- prior_weights(spec)
+  expect_true(all(is.finite(w)))
+  expect_equal(unname(w[1L]), 0.5)
+})
+
+test_that("a declared point mass is the split, whichever coordinate is used", {
+  skip_on_cran_budget()
+  # Same axis, same declared split, two readings of the same density (#626).
+  for (coord in c("integration", "natural")) {
+    expect_equal(unname(prior_weights(atom_spec(coord))[1L]), 0.5)
+  }
+  for (a in c(0.1, 0.5, 0.9)) {
+    expect_equal(unname(prior_weights(atom_spec("natural", atom = a))[1L]), a)
+  }
+})
+
+test_that("an axis with no point mass is untouched by the atom rule", {
+  skip_on_cran_budget()
+  # Nothing to split against, so the density is read at every node and the
+  # weights are the declared prior over the span, unchanged.
+  x <- c(0.25, 0.5, 1, 2)
+  spec <- hyper_axis_spec("sigma", grid = x, log_scale = TRUE,
+                          bounds = c(0, Inf),
+                          log_prior = function(v) stats::dexp(v, 1, log = TRUE),
+                          log_prior_coord = "natural")
+  w <- prior_weights(spec)
+  expect_equal(sum(w), 1)
+  # Log-spaced nodes, so the cell widths are equal and the shape is the density
+  # carried to the log coordinate: p(x) x, peaking at x = 1.
+  expect_equal(unname(w), unname((x * stats::dexp(x, 1)) /
+                                 sum(x * stats::dexp(x, 1))))
+
+  # The coordinate is a statement, not a formality: read as a density on log x
+  # the same function weights the same nodes differently.
+  spec$log_prior_coord <- "integration"
+  expect_false(isTRUE(all.equal(unname(w), unname(prior_weights(spec)))))
 })

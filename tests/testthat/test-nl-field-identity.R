@@ -47,7 +47,35 @@ KINDS <- list(
   list(kind = "nngp+temporal",         tag = "st_nngp")
 )
 
+test_that("the eleven field models do not collide", {
+  seeds <- vapply(KINDS, function(k) do.call(seed_pair, k)[["builder"]], "")
+  expect_length(unique(seeds), length(KINDS))
+})
+
+test_that("the BYM2 mixing scale is part of the identity", {
+  a <- seed_pair("areal_scaled", "bym2", scale_factor = 0.7)[["builder"]]
+  b <- seed_pair("areal_scaled", "bym2", scale_factor = 0.9)[["builder"]]
+  expect_false(identical(a, b))
+
+  # and a scaled areal field is not the same identity as an unscaled one with
+  # the same adjacency -- the slot the scale occupies is what separates them
+  unscaled <- seed_pair("areal", "bym2")[["builder"]]
+  expect_false(identical(a, unscaled))
+})
+
+test_that("the HSGP basis and its eigenvalues are part of the identity", {
+  base <- seed_pair("hsgp", "hsgp")[["builder"]]
+  expect_false(identical(seed_pair("hsgp", "hsgp", M = 7L)[["builder"]], base))
+  expect_false(identical(
+    seed_pair("hsgp", "hsgp",
+              lambda_eig = seq(0.5, 3.5, length.out = 6))[["builder"]],
+    base))
+})
+
+skip_on_cran_budget()
+
 test_that("every field model's builder seed matches the hand-folded reference", {
+  skip_on_cran_budget()
   for (k in KINDS) {
     got <- do.call(seed_pair, k)
     expect_identical(unname(got[["builder"]]), unname(got[["reference"]]),
@@ -55,12 +83,8 @@ test_that("every field model's builder seed matches the hand-folded reference", 
   }
 })
 
-test_that("the eleven field models do not collide", {
-  seeds <- vapply(KINDS, function(k) do.call(seed_pair, k)[["builder"]], "")
-  expect_length(unique(seeds), length(KINDS))
-})
-
 test_that("changing any structural input moves the seed", {
+  skip_on_cran_budget()
   base <- seed_pair("areal+temporal", "st_icar")[["builder"]]
 
   # unit count
@@ -88,18 +112,8 @@ test_that("changing any structural input moves the seed", {
     base))
 })
 
-test_that("the BYM2 mixing scale is part of the identity", {
-  a <- seed_pair("areal_scaled", "bym2", scale_factor = 0.7)[["builder"]]
-  b <- seed_pair("areal_scaled", "bym2", scale_factor = 0.9)[["builder"]]
-  expect_false(identical(a, b))
-
-  # and a scaled areal field is not the same identity as an unscaled one with
-  # the same adjacency -- the slot the scale occupies is what separates them
-  unscaled <- seed_pair("areal", "bym2")[["builder"]]
-  expect_false(identical(a, unscaled))
-})
-
 test_that("the NNGP neighbour graph and its kernel are part of the identity", {
+  skip_on_cran_budget()
   base <- seed_pair("nngp", "nngp")[["builder"]]
   expect_false(identical(
     seed_pair("nngp", "nngp", cov_type = 2L)[["builder"]], base))
@@ -112,16 +126,8 @@ test_that("the NNGP neighbour graph and its kernel are part of the identity", {
     base))
 })
 
-test_that("the HSGP basis and its eigenvalues are part of the identity", {
-  base <- seed_pair("hsgp", "hsgp")[["builder"]]
-  expect_false(identical(seed_pair("hsgp", "hsgp", M = 7L)[["builder"]], base))
-  expect_false(identical(
-    seed_pair("hsgp", "hsgp",
-              lambda_eig = seq(0.5, 3.5, length.out = 6))[["builder"]],
-    base))
-})
-
 test_that("the temporal group count occupies its own slot", {
+  skip_on_cran_budget()
   # The standalone temporal field folds n_groups between n_times and cyclic; the
   # spatiotemporal ones fold no group count at all. Folding it in the wrong slot
   # would still separate the two, so check the with-groups form differs from the

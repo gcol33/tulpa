@@ -1,9 +1,12 @@
+
+skip_on_cran_budget()
 # Expectation Propagation for a GLM (gcol33/tulpa C6). The definitive correctness
 # anchor is that EP is EXACT for a Gaussian likelihood: the EP posterior must
 # equal the closed-form Gaussian posterior. Also checked: Gauss-Hermite accuracy
 # and logistic-GLM coefficient recovery.
 
 test_that("Gauss-Hermite quadrature is accurate", {
+  skip_on_cran_budget()
   gh <- tulpa:::.gauss_hermite(20L)
   expect_equal(sum(gh$w), sqrt(pi), tolerance = 1e-10)
   # integral x^2 exp(-x^2) / integral exp(-x^2) = 1/2
@@ -16,6 +19,7 @@ test_that("Gauss-Hermite quadrature is accurate", {
 # y against n_trials = 1, and y > n_trials was fitted with converged = TRUE.
 # gcol33/tulpa#886: an incomplete row was dropped by model.frame() in silence.
 test_that("EP refuses y > n_trials, a doubled denominator and NA rows", {
+  skip_on_cran_budget()
   set.seed(1)
   n <- 40L
   x <- rnorm(n)

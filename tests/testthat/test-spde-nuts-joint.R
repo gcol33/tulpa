@@ -234,12 +234,15 @@ test_that("joint NUTS round-trip: output structure matches contract", {
   expect_named(fit$sigma_summary, c("mean", "median", "q05", "q95"))
 })
 
+skip_on_cran_budget()
+
 # ---------------------------------------------------------------------------
 # Fractional alpha (fractional nu) builds a valid spec now that the operator-
 # based rational SPDE is wired through fit_spde() (gcol33/tulpa#71). The NUTS
 # sampler stays integer-only, so the rejection lives at the fit call.
 # ---------------------------------------------------------------------------
 test_that("fractional nu is rejected for the joint-NUTS SPDE path (gcol33/tulpa#71)", {
+  skip_on_cran_budget()
   skip_if_not_installed("fmesher")
   set.seed(2026)
   coords <- cbind(runif(40), runif(40))
@@ -255,6 +258,7 @@ test_that("fractional nu is rejected for the joint-NUTS SPDE path (gcol33/tulpa#
 })
 
 test_that("joint NUTS rejects PC anchors out of range", {
+  skip_on_cran_budget()
   skip_if_not_installed("fmesher")
   set.seed(2)
   coords <- cbind(runif(20), runif(20))

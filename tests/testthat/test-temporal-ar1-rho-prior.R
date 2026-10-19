@@ -8,12 +8,16 @@ test_that("temporal_ar1 validates rho_prior is a Beta prior", {
   expect_error(temporal_ar1("t", rho_prior = 0.5), "Beta prior")
 })
 
+skip_on_cran_budget()
+
 test_that(".ar1_rho_beta_ab maps the prior to (a, b) shape params", {
+  skip_on_cran_budget()
   expect_identical(.ar1_rho_beta_ab(NULL), c(1, 1))           # default = Uniform
   expect_identical(.ar1_rho_beta_ab(prior_beta(5, 2)), c(5, 2))
 })
 
 test_that("the nested-Laplace AR1 rho axis carries the normalised Beta prior", {
+  skip_on_cran_budget()
   rho <- c(0.0, 0.5, 0.9)
   dens <- function(p) .hp_axis_default("rho", list(type = "ar1", rho_prior = p))$fn
 

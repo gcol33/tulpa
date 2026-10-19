@@ -33,19 +33,6 @@ fit_tgp <- function(d, cov = "exponential", nu = NULL, period = NULL,
                        seed = seed, verbose = FALSE))
 }
 
-test_that("a Matern smoothness with no closed form is rejected", {
-  for (nu in c(0.5, 1.5, 2.5)) {
-    expect_s3_class(temporal_gp("t", cov = "matern", nu = nu),
-                    "tulpa_temporal_gp")
-  }
-  for (nu in c(0.75, 1.0, 2.0, 3.0)) {
-    expect_error(temporal_gp("t", cov = "matern", nu = nu),
-                 "0.5, 1.5 or 2.5")
-  }
-  # nu is still required to be positive first
-  expect_error(temporal_gp("t", cov = "matern", nu = -1), "positive number")
-})
-
 test_that("the periodic kernel requires a period", {
   expect_error(temporal_gp("t", cov = "periodic"), "period")
   expect_error(temporal_gp("t", cov = "periodic", period = 0), "period")
@@ -65,6 +52,22 @@ test_that("a temporal GP cannot yet ride alongside another field", {
           control = list(n_iter = 40, warmup = 20, n_chains = 1)),
     "temporal GP"
   )
+})
+
+skip_on_cran_budget()
+
+test_that("a Matern smoothness with no closed form is rejected", {
+  skip_on_cran_budget()
+  for (nu in c(0.5, 1.5, 2.5)) {
+    expect_s3_class(temporal_gp("t", cov = "matern", nu = nu),
+                    "tulpa_temporal_gp")
+  }
+  for (nu in c(0.75, 1.0, 2.0, 3.0)) {
+    expect_error(temporal_gp("t", cov = "matern", nu = nu),
+                 "0.5, 1.5 or 2.5")
+  }
+  # nu is still required to be positive first
+  expect_error(temporal_gp("t", cov = "matern", nu = -1), "positive number")
 })
 
 skip_on_cran()

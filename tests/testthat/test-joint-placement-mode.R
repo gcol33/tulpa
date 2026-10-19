@@ -44,7 +44,25 @@
   diag(s) %*% R %*% diag(s)
 })
 
+test_that("a default axis left railed after placement is named in a warning", {
+  res <- list(outer_grid_railed_axes = "sigma:upper",
+              outer_grid_axis_declined = c(sigma = "attempts_exhausted"))
+  expect_warning(.nl_warn_unplaced_rail(res, "f()"),
+                 "`sigma` \\(upper edge: attempts_exhausted\\)")
+
+  # The caller's own pin is the caller's statement: recorded, not warned.
+  for (why in .NL_RAIL_CALLER_HOLDS) {
+    res$outer_grid_axis_declined <- c(sigma = why)
+    expect_silent(.nl_warn_unplaced_rail(res, "f()"))
+  }
+  expect_silent(.nl_warn_unplaced_rail(
+    list(outer_grid_railed_axes = character(0)), "f()"))
+})
+
+skip_on_cran_budget()
+
 test_that("placement finds an outer mode past the grid's own ceiling", {
+  skip_on_cran_budget()
   lp  <- .pm_quadratic(.pm_mode, .pm_cov)
   res <- .pm_fit(lp)
   # The grid rails: its heaviest cell sits on the top field-SD node.
@@ -67,6 +85,7 @@ test_that("placement finds an outer mode past the grid's own ceiling", {
 })
 
 test_that("a collapsed field SD is placed when another axis still spreads", {
+  skip_on_cran_budget()
   # The dense arm of #919: the weight sits on one field-SD node while the
   # Beta-precision axis carries spread across two of its nodes. The weighted
   # covariance then had zero variance on sigma alone, and the placement
@@ -87,6 +106,7 @@ test_that("a collapsed field SD is placed when another axis still spreads", {
 })
 
 test_that("a copy scale whose heaviest cell is its atom is held there", {
+  skip_on_cran_budget()
   # All the weight on alpha = 0: the "no coupling" model. The Newton step runs
   # over the continuum axes only.
   lp  <- .pm_quadratic(c(log(0.5), log(0.234), log(3.9)), .pm_cov,
@@ -104,6 +124,7 @@ test_that("a copy scale whose heaviest cell is its atom is held there", {
 })
 
 test_that("a grid no rescue would place carries no placement mode", {
+  skip_on_cran_budget()
   lp  <- .pm_quadratic(c(log(0.5), log(0.234), log(3.9)), .pm_cov)
   res <- .pm_fit(lp)
   res$pareto_k_regime <- "spread"
@@ -114,19 +135,4 @@ test_that("a grid no rescue would place carries no placement mode", {
   })
   expect_identical(calls, 0L)
   expect_null(out$outer_mode_u)
-})
-
-test_that("a default axis left railed after placement is named in a warning", {
-  res <- list(outer_grid_railed_axes = "sigma:upper",
-              outer_grid_axis_declined = c(sigma = "attempts_exhausted"))
-  expect_warning(.nl_warn_unplaced_rail(res, "f()"),
-                 "`sigma` \\(upper edge: attempts_exhausted\\)")
-
-  # The caller's own pin is the caller's statement: recorded, not warned.
-  for (why in .NL_RAIL_CALLER_HOLDS) {
-    res$outer_grid_axis_declined <- c(sigma = why)
-    expect_silent(.nl_warn_unplaced_rail(res, "f()"))
-  }
-  expect_silent(.nl_warn_unplaced_rail(
-    list(outer_grid_railed_axes = character(0)), "f()"))
 })

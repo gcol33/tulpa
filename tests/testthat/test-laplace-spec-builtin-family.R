@@ -31,12 +31,15 @@ expect_glm_match <- function(family, glm_family, y, n_trials, X, phi,
                info = paste0(family, ": MAP == glm MLE"))
 }
 
+skip_on_cran_budget()
+
 # ref_laplace_fit_single() is itself a thin wrapper over cpp_laplace_fit_multi_re
 # (see helper-laplace-fit-single.R), so a same-vs-same equivalence check no
 # longer says anything; the two-marshalling-paths agreement it used to assert
 # (single-RE builder vs the multi-term one, both into the one spec solver) is
 # recorded in the helper's own header comment instead.
 test_that("ref_laplace_fit_single with one RE term matches cpp_laplace_fit_multi_re directly", {
+  skip_on_cran_budget()
   set.seed(7L)
   N <- 300L
   n_re_groups <- 12L

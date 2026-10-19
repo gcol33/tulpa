@@ -11,7 +11,18 @@
   log(p[cls])
 }
 
+test_that("class probabilities are a valid simplex and overflow-safe", {
+  big <- c(800, -800, 200)          # would overflow a naive exp()
+  out <- tulpa:::cpp_multinomial_logit_terms(big, 1)
+  expect_true(is.finite(out$ll))
+  # ll of the dominant class approx 0 (prob approx 1)
+  expect_lt(abs(out$ll), 1e-6)
+})
+
+skip_on_cran_budget()
+
 test_that("negative Hessian is the multinomial covariance (PSD, data-independent)", {
+  skip_on_cran_budget()
   for (eta in list(c(-1.2, 0.8), c(0.3, -0.5, 1.1))) {
     Km1 <- length(eta)
     denom <- 1 + sum(exp(eta)); p <- exp(eta) / denom
@@ -25,15 +36,8 @@ test_that("negative Hessian is the multinomial covariance (PSD, data-independent
   }
 })
 
-test_that("class probabilities are a valid simplex and overflow-safe", {
-  big <- c(800, -800, 200)          # would overflow a naive exp()
-  out <- tulpa:::cpp_multinomial_logit_terms(big, 1)
-  expect_true(is.finite(out$ll))
-  # ll of the dominant class approx 0 (prob approx 1)
-  expect_lt(abs(out$ll), 1e-6)
-})
-
 test_that("cls outside 1..K is refused rather than read as the baseline", {
+  skip_on_cran_budget()
   # cls <= 0 indexed p[cls - 1], before the start of the buffer; cls > K
   # silently returned log(p_K), scoring an observation of the baseline that
   # was never made.

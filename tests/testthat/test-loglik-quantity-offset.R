@@ -1,5 +1,8 @@
 
+skip_on_cran_budget()
+
 test_that("AIC and BIC refuse anything but a maximised log-likelihood", {
+  skip_on_cran_budget()
   fit <- structure(
     list(log_prob = rep(-100, 5L), means = stats::setNames(rnorm(6L), letters[1:6]),
          N = 50L),
@@ -19,6 +22,7 @@ test_that("AIC and BIC refuse anything but a maximised log-likelihood", {
 })
 
 test_that("a nested evidence records why it declined on a CCD design", {
+  skip_on_cran_budget()
   fit <- structure(list(log_marginal = c(-10, -11), log_evidence = NA_real_,
                         log_evidence_declined = "moment_rule_design",
                         n_fixed = 2L, N = 50L),

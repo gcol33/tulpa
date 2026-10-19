@@ -1,5 +1,8 @@
 
+skip_on_cran_budget()
+
 test_that("negbin spatial Gibbs is wired for the areal ICAR field only", {
+  skip_on_cran_budget()
   W <- rook_adj(3L, 3L)
   expect_error(
     tulpa_gibbs(y = rnbinom(9, size = 5, mu = 2), n_trials = NULL,
@@ -12,6 +15,7 @@ test_that("negbin spatial Gibbs is wired for the areal ICAR field only", {
 })
 
 test_that("dispatch_gibbs_spatial rejects non-binomial and unwired types", {
+  skip_on_cran_budget()
   W <- rook_adj(3L, 3L)
   expect_error(
     tulpa_gibbs(y = rpois(9, 2), n_trials = rep(1L, 9), X = cbind(1, rnorm(9)),

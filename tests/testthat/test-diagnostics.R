@@ -25,36 +25,11 @@
   ), class = "tulpa_fit")
 }
 
-# --------------------------------------------------------------------------- #
-# Routing                                                                      #
-# --------------------------------------------------------------------------- #
-
-test_that("a chain fit gets chain diagnostics, an i.i.d. fit gets reliability", {
-  ch <- diagnostics(.diag_chain_fit())
-  expect_false(inherits(ch, "laplace_diagnostics"))
-  expect_setequal(names(ch), c("parameter", "rhat", "ess_bulk", "ess_tail"))
-
-  ap <- diagnostics(.diag_iid_fit())
-  expect_s3_class(ap, "laplace_diagnostics")
-  expect_equal(attr(ap, "pareto_k"), 0.31)
-  # the reliability headline, not a convergence verdict
-  expect_true("pareto_k" %in% names(attributes(ap)))
-})
-
 test_that("a point fit returns NULL with a message naming the backend", {
   fit <- structure(list(draws_kind = "point", backend = "laplace"),
                    class = "tulpa_fit")
   expect_message(res <- diagnostics(fit), "point summary")
   expect_null(res)
-})
-
-test_that("an untagged fit is treated as a chain rather than refused", {
-  set.seed(13)
-  draws <- matrix(rnorm(400 * 2), 400, 2, dimnames = list(NULL, c("a", "b")))
-  fit <- structure(list(draws = draws), class = "tulpa_fit")   # no draws_kind
-  res <- diagnostics(fit)
-  expect_true("rhat" %in% names(res))
-  expect_equal(nrow(res), 2L)
 })
 
 test_that("provenance is read from the backend registry when untagged", {
@@ -78,7 +53,59 @@ test_that("a chain-stamped fit with no draws says so instead of returning NULL s
   expect_null(res)
 })
 
+test_that("a zero-row draws matrix is read as no draws", {
+  fit <- structure(list(draws = matrix(numeric(0), 0L, 2L,
+                                       dimnames = list(NULL, c("a", "b"))),
+                        draws_kind = "iid", backend = "agq",
+                        means = c(a = 0, b = 1)),
+                   class = "tulpa_fit")
+  expect_message(res <- diagnostics(fit), "carries no posterior draws")
+  expect_null(res)
+})
+
+# --------------------------------------------------------------------------- #
+# Argument pass-through                                                        #
+# --------------------------------------------------------------------------- #
+
+test_that("measures and probs select columns on the chain route", {
+  res <- diagnostics(.diag_chain_fit(),
+                     measures = c("rhat_bulk", "mcse_mean", "ess_quantile"),
+                     probs = c(0.1, 0.9))
+  expect_setequal(names(res),
+                  c("parameter", "rhat_bulk", "mcse_mean", "ess_q10", "ess_q90"))
+})
+
+skip_on_cran_budget()
+
+# --------------------------------------------------------------------------- #
+# Routing                                                                      #
+# --------------------------------------------------------------------------- #
+
+test_that("a chain fit gets chain diagnostics, an i.i.d. fit gets reliability", {
+  skip_on_cran_budget()
+  ch <- diagnostics(.diag_chain_fit())
+  expect_false(inherits(ch, "laplace_diagnostics"))
+  expect_setequal(names(ch), c("parameter", "rhat", "ess_bulk", "ess_tail"))
+
+  ap <- diagnostics(.diag_iid_fit())
+  expect_s3_class(ap, "laplace_diagnostics")
+  expect_equal(attr(ap, "pareto_k"), 0.31)
+  # the reliability headline, not a convergence verdict
+  expect_true("pareto_k" %in% names(attributes(ap)))
+})
+
+test_that("an untagged fit is treated as a chain rather than refused", {
+  skip_on_cran_budget()
+  set.seed(13)
+  draws <- matrix(rnorm(400 * 2), 400, 2, dimnames = list(NULL, c("a", "b")))
+  fit <- structure(list(draws = draws), class = "tulpa_fit")   # no draws_kind
+  res <- diagnostics(fit)
+  expect_true("rhat" %in% names(res))
+  expect_equal(nrow(res), 2L)
+})
+
 test_that("the header and scope follow the backend, not a nested-Laplace default", {
+  skip_on_cran_budget()
   set.seed(14)
   draws <- matrix(rnorm(400), ncol = 2, dimnames = list(NULL, c("b0", "b1")))
   shell <- function(backend, ...) {
@@ -108,29 +135,8 @@ test_that("the header and scope follow the backend, not a nested-Laplace default
   expect_output(print(diagnostics(.diag_iid_fit())), "Nested-Laplace OUTER")
 })
 
-test_that("a zero-row draws matrix is read as no draws", {
-  fit <- structure(list(draws = matrix(numeric(0), 0L, 2L,
-                                       dimnames = list(NULL, c("a", "b"))),
-                        draws_kind = "iid", backend = "agq",
-                        means = c(a = 0, b = 1)),
-                   class = "tulpa_fit")
-  expect_message(res <- diagnostics(fit), "carries no posterior draws")
-  expect_null(res)
-})
-
-# --------------------------------------------------------------------------- #
-# Argument pass-through                                                        #
-# --------------------------------------------------------------------------- #
-
-test_that("measures and probs select columns on the chain route", {
-  res <- diagnostics(.diag_chain_fit(),
-                     measures = c("rhat_bulk", "mcse_mean", "ess_quantile"),
-                     probs = c(0.1, 0.9))
-  expect_setequal(names(res),
-                  c("parameter", "rhat_bulk", "mcse_mean", "ess_q10", "ess_q90"))
-})
-
 test_that("pars restricts both routes", {
+  skip_on_cran_budget()
   expect_equal(diagnostics(.diag_chain_fit(p = 3L), pars = "b")$parameter, "b")
   expect_equal(diagnostics(.diag_iid_fit(), pars = c("a", "c"))$parameter,
                c("a", "c"))

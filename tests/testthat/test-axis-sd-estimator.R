@@ -61,39 +61,6 @@ test_that("a collapsed axis whose parabola cannot be formed says so", {
   expect_identical(ch$declined, "mode_at_edge")
 })
 
-test_that("the reported SD holds across grids on a skewed axis", {
-  # #621's own comparison: one density, two grids. The weighted read agrees
-  # between them; the parabola does not, which is why it is not the report.
-  coarse  <- seq(0.2, 12, length.out = 15L)
-  fine    <- seq(0.2, 12, length.out = 45L)
-  shifted <- coarse + 0.5 * diff(coarse[1:2])
-
-  sd_of <- function(v) .nl_axis_sd_choice(v, skew_marginal(v),
-                                          log_axis = FALSE)$sd
-  sten_of <- function(v) as.numeric(.nl_laplace_at_mode_sd_axis(
-    v, skew_marginal(v), log_axis = FALSE))
-
-  for (v in list(coarse, fine, shifted)) {
-    expect_identical(.nl_axis_sd_choice(v, skew_marginal(v),
-                                        log_axis = FALSE)$source, "weighted")
-  }
-  # Quadrature tolerance between grids of one density, and near the density's
-  # own SD on all three.
-  expect_equal(sd_of(coarse), sd_of(fine), tolerance = 0.03)
-  expect_equal(sd_of(coarse), sd_of(shifted), tolerance = 0.03)
-  expect_lt(abs(sd_of(fine) - SKEW_SD) / SKEW_SD, 0.10)
-
-  # The parabola targets a different number on this axis -- half the spread --
-  # and moves across the same grids by more than the weighted read does, which
-  # is #621's factor of two on one data set.
-  sten <- vapply(list(coarse, fine, shifted), sten_of, numeric(1))
-  wtd  <- vapply(list(coarse, fine, shifted), sd_of, numeric(1))
-  expect_lt(max(sten), min(wtd))
-  expect_lt(sten[1L], 0.6 * wtd[1L])
-  expect_gt(max(sten) / min(sten), 1.5)
-  expect_lt(max(wtd) / min(wtd), 1.05)
-})
-
 test_that("a fit records which estimator produced each axis SD", {
   tg <- as.matrix(expand.grid(a = seq(-4, 4, length.out = 9L),
                               b = seq(-4, 4, length.out = 9L)))
@@ -186,32 +153,6 @@ test_that("a design-weighted grid keeps the weighted read at any ESS", {
   expect_lt(design$theta_sd[["a"]], mass$theta_sd[["a"]])
 })
 
-test_that("an axis collapsed onto its boundary node reports the SD its interval is read off", {
-  # gcol33/tulpa#919: `sd = 0` beside a 95% interval spanning the top node's
-  # cell. The parabola declines at an edge node, so the SD comes from the read
-  # the interval does: the top cell's mass spread uniformly over the cell, of
-  # which the 95% interval is 0.95.
-  v  <- exp(seq(log(0.1), log(3), length.out = 5L))
-  lm <- -1e4 * (log(v) - log(3))^2
-  w  <- exp(lm - max(lm))
-  res <- .nl_posterior_moments(
-    list(theta_grid = v, log_marginal = lm, weights = w / sum(w)), "icar")
-  expect_identical(res$theta_sd_stencil_declined, "mode_at_edge")
-  expect_identical(res$theta_sd_source, "within_cell")
-  expect_gt(res$theta_ci_hi[[1L]], 3)
-  expect_equal(res$theta_sd,
-               (res$theta_ci_hi[[1L]] - res$theta_ci_lo[[1L]]) /
-                 (0.95 * sqrt(12)), tolerance = 1e-5)
-
-  # An axis the grid resolves keeps the weighted read, and the record is
-  # untouched.
-  lm2 <- -0.5 * ((log(v) - log(0.6)) / 1.5)^2
-  w2  <- exp(lm2 - max(lm2))
-  res2 <- .nl_posterior_moments(
-    list(theta_grid = v, log_marginal = lm2, weights = w2 / sum(w2)), "icar")
-  expect_identical(res2$theta_sd_source, "weighted")
-})
-
 test_that("the read SD is the SD of the distribution the interval is read off", {
   v <- c(1, 2, 4)
   w <- c(0.2, 0.5, 0.3)
@@ -224,19 +165,6 @@ test_that("the read SD is the SD of the distribution the interval is read off", 
   expect_equal(.nl_read_sd(c(1, 2), c(1, 0), NA_character_, "density",
                            "box_uniform"),
                (e[2L] - e[1L]) / sqrt(12), tolerance = 1e-5)
-})
-
-test_that("every nested path reports the estimator it used", {
-  # The choice is made inside `.nl_posterior_moments()`, which every nested
-  # driver goes through, rather than at each driver.
-  res <- .nl_posterior_moments(
-    list(theta_grid = seq(0.2, 4, length.out = 9L),
-         log_marginal = -0.5 * ((seq(0.2, 4, length.out = 9L) - 2) / 0.6)^2,
-         weights = rep(1 / 9, 9L)),
-    "icar")
-  expect_true(res$theta_sd_source %in% .NL_AXIS_SD_SOURCE)
-  expect_true(is.finite(res$theta_sd_ess))
-  expect_true(is.finite(res$theta_sd))
 })
 
 # A two-axis grid refined on axis `a`: declared levels -2..2 on `a` and three
@@ -271,4 +199,81 @@ test_that("refining an axis does not shrink its reported SD (gcol33/tulpa#746)",
   unrefined <- attach(base, dens(base_e[k], base_e[k + 1L]), rep("", 15L))
   expect_equal(refined, unrefined, tolerance = 0.15)
   expect_gt(refined, 0.8 * sd_true)
+})
+
+skip_on_cran_budget()
+
+test_that("the reported SD holds across grids on a skewed axis", {
+  skip_on_cran_budget()
+  # #621's own comparison: one density, two grids. The weighted read agrees
+  # between them; the parabola does not, which is why it is not the report.
+  coarse  <- seq(0.2, 12, length.out = 15L)
+  fine    <- seq(0.2, 12, length.out = 45L)
+  shifted <- coarse + 0.5 * diff(coarse[1:2])
+
+  sd_of <- function(v) .nl_axis_sd_choice(v, skew_marginal(v),
+                                          log_axis = FALSE)$sd
+  sten_of <- function(v) as.numeric(.nl_laplace_at_mode_sd_axis(
+    v, skew_marginal(v), log_axis = FALSE))
+
+  for (v in list(coarse, fine, shifted)) {
+    expect_identical(.nl_axis_sd_choice(v, skew_marginal(v),
+                                        log_axis = FALSE)$source, "weighted")
+  }
+  # Quadrature tolerance between grids of one density, and near the density's
+  # own SD on all three.
+  expect_equal(sd_of(coarse), sd_of(fine), tolerance = 0.03)
+  expect_equal(sd_of(coarse), sd_of(shifted), tolerance = 0.03)
+  expect_lt(abs(sd_of(fine) - SKEW_SD) / SKEW_SD, 0.10)
+
+  # The parabola targets a different number on this axis -- half the spread --
+  # and moves across the same grids by more than the weighted read does, which
+  # is #621's factor of two on one data set.
+  sten <- vapply(list(coarse, fine, shifted), sten_of, numeric(1))
+  wtd  <- vapply(list(coarse, fine, shifted), sd_of, numeric(1))
+  expect_lt(max(sten), min(wtd))
+  expect_lt(sten[1L], 0.6 * wtd[1L])
+  expect_gt(max(sten) / min(sten), 1.5)
+  expect_lt(max(wtd) / min(wtd), 1.05)
+})
+
+test_that("an axis collapsed onto its boundary node reports the SD its interval is read off", {
+  skip_on_cran_budget()
+  # gcol33/tulpa#919: `sd = 0` beside a 95% interval spanning the top node's
+  # cell. The parabola declines at an edge node, so the SD comes from the read
+  # the interval does: the top cell's mass spread uniformly over the cell, of
+  # which the 95% interval is 0.95.
+  v  <- exp(seq(log(0.1), log(3), length.out = 5L))
+  lm <- -1e4 * (log(v) - log(3))^2
+  w  <- exp(lm - max(lm))
+  res <- .nl_posterior_moments(
+    list(theta_grid = v, log_marginal = lm, weights = w / sum(w)), "icar")
+  expect_identical(res$theta_sd_stencil_declined, "mode_at_edge")
+  expect_identical(res$theta_sd_source, "within_cell")
+  expect_gt(res$theta_ci_hi[[1L]], 3)
+  expect_equal(res$theta_sd,
+               (res$theta_ci_hi[[1L]] - res$theta_ci_lo[[1L]]) /
+                 (0.95 * sqrt(12)), tolerance = 1e-5)
+
+  # An axis the grid resolves keeps the weighted read, and the record is
+  # untouched.
+  lm2 <- -0.5 * ((log(v) - log(0.6)) / 1.5)^2
+  w2  <- exp(lm2 - max(lm2))
+  res2 <- .nl_posterior_moments(
+    list(theta_grid = v, log_marginal = lm2, weights = w2 / sum(w2)), "icar")
+  expect_identical(res2$theta_sd_source, "weighted")
+})
+
+test_that("every nested path reports the estimator it used", {
+  skip_on_cran_budget()
+  # The choice is made inside `.nl_posterior_moments()`, which every nested
+  # driver goes through, rather than at each driver.
+  res <- .nl_posterior_moments(
+    list(theta_grid = seq(0.2, 4, length.out = 9L),
+         log_marginal = -0.5 * ((seq(0.2, 4, length.out = 9L) - 2) / 0.6)^2,
+         weights = rep(1 / 9, 9L)),
+    "icar")
+  expect_true(res$theta_sd_source %in% .NL_AXIS_SD_SOURCE)
+  expect_true(is.finite(res$theta_sd_ess))
+  expect_true(is.finite(res$theta_sd))
 })

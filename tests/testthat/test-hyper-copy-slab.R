@@ -16,7 +16,10 @@ alpha_axis <- function(specs) {
 GEO_ALPHA <- c(0, exp(seq(log(0.1), log(3), length.out = 5)))
 CP <- list(has_copy = TRUE)
 
+skip_on_cran_budget()
+
 test_that("copy_slab = 'flat' is flat in log alpha over the declared span", {
+  skip_on_cran_budget()
   specs <- .joint_axis_specs(list(alpha = GEO_ALPHA), CP, copy_slab = "flat")
   ax <- alpha_axis(specs)
 
@@ -36,6 +39,7 @@ test_that("copy_slab = 'flat' is flat in log alpha over the declared span", {
 })
 
 test_that("a flat copy slab splits weight on refinement instead of adding it", {
+  skip_on_cran_budget()
   specs <- .joint_axis_specs(list(alpha = GEO_ALPHA), CP, copy_slab = "flat")
   ax <- alpha_axis(specs)
   w0 <- .hyper_axis_level_weights(GEO_ALPHA, ax, 0)
@@ -54,6 +58,7 @@ test_that("a flat copy slab splits weight on refinement instead of adding it", {
 })
 
 test_that("copy_slab = 'exponential' is the default and is unchanged by it", {
+  skip_on_cran_budget()
   base <- .joint_axis_specs(list(alpha = GEO_ALPHA), CP)
   named <- .joint_axis_specs(list(alpha = GEO_ALPHA), CP,
                              copy_slab = "exponential")
@@ -84,6 +89,7 @@ test_that("copy_slab = 'exponential' is the default and is unchanged by it", {
 })
 
 test_that("the declared atom mass is the split, whatever the nodes reach", {
+  skip_on_cran_budget()
   # The exponential slab has support (0, Inf), so no node set reaches all of it.
   # Where the outermost node stops is a resolution choice; the prior probability
   # of "no coupling" is a modelling one, declared as `atom_mass`. Extending the
@@ -100,6 +106,7 @@ test_that("the declared atom mass is the split, whatever the nodes reach", {
 })
 
 test_that("copy_atom_mass = 0 removes the point mass under either slab", {
+  skip_on_cran_budget()
   for (slab in c("exponential", "flat")) {
     specs <- .joint_axis_specs(list(alpha = GEO_ALPHA), CP, copy_atom_mass = 0,
                                copy_slab = slab)
@@ -118,6 +125,7 @@ test_that("copy_atom_mass = 0 removes the point mass under either slab", {
 })
 
 test_that("copy_slab leaves the other log-scale axes alone", {
+  skip_on_cran_budget()
   grids <- list(sigma = c(0.5, 1, 2), alpha = GEO_ALPHA,
                 phi_pos = c(0.2, 0.5, 0.9))
   for (slab in c("exponential", "flat")) {
@@ -132,6 +140,7 @@ test_that("copy_slab leaves the other log-scale axes alone", {
 })
 
 test_that("an unrecognised copy_slab is rejected", {
+  skip_on_cran_budget()
   expect_error(.joint_axis_specs(list(alpha = GEO_ALPHA), CP, copy_slab = "pc"),
                "`copy_slab` must be one of")
   expect_error(.joint_axis_specs(list(alpha = GEO_ALPHA), CP, copy_slab = 1),
@@ -145,6 +154,7 @@ test_that("an unrecognised copy_slab is rejected", {
 })
 
 test_that("a grid-derived spec list keeps the exponential default", {
+  skip_on_cran_budget()
   tg <- as.matrix(expand.grid(sigma = c(0.5, 1, 2), alpha = GEO_ALPHA))
   specs <- .joint_axis_specs_from_grid(tg)
   ax <- alpha_axis(specs)
@@ -154,6 +164,7 @@ test_that("a grid-derived spec list keeps the exponential default", {
 })
 
 test_that("a column fixed across every cell is not an axis of the grid", {
+  skip_on_cran_budget()
   tau <- exp(seq(log(0.1), log(5), length.out = 4L))
   bare  <- cbind(tau = tau)
   # A Poisson count grid pins the negative-binomial size at `Inf` so the kernel
@@ -173,6 +184,7 @@ test_that("a column fixed across every cell is not an axis of the grid", {
 })
 
 test_that("control_check admits copy_slab on the joint method", {
+  skip_on_cran_budget()
   allowed <- .CONTROL_KEYS$nested_laplace_joint
   expect_true("copy_slab" %in% allowed)
   expect_silent(tulpa_check_control(list(copy_slab = "flat"), allowed,

@@ -41,7 +41,10 @@ test_that("continuous PIT is Uniform(0,1) under a correct model, non-uniform und
   expect_lt(abs(mean(pit_ok) - 0.5), 0.02)
 })
 
+skip_on_cran_budget()
+
 test_that("interval-randomized PIT (cdf_lower) is Uniform(0,1) under a correct Poisson model", {
+  skip_on_cran_budget()
   set.seed(202)
   N <- 5000L; S <- 1L
   lambda <- runif(N, 1, 8)

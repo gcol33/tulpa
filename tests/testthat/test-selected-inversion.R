@@ -1,38 +1,3 @@
-# test-selected-inversion.R
-# Tests for Takahashi selected inversion (diagonal of Q^{-1})
-
-test_that("selected inversion matches dense solve for small matrix", {
-  # Build a small positive-definite sparse matrix (tridiagonal + diagonal)
-  n <- 20
-  Q <- Matrix::bandSparse(n, k = c(0, 1), diag = list(
-    rep(4, n),
-    rep(-1, n - 1)
-  ), symmetric = TRUE)
-
-  # Ground truth: diagonal of Q^{-1} via dense inversion
-  Q_dense <- as.matrix(Q)
-  Q_inv_diag_true <- diag(solve(Q_dense))
-
-  # Selected inversion via CHOLMOD
-  Q_csc <- as(Q, "CsparseMatrix")
-
-  # Extract lower triangle for CHOLMOD (stype = -1)
-  Q_lower <- Matrix::tril(Q_csc)
-
-  diag_inv <- cpp_selected_inversion_diagonal(
-    Q_x = Q_lower@x,
-    Q_i = Q_lower@i,
-    Q_p = Q_lower@p,
-    n = n
-  )
-
-  expect_equal(length(diag_inv), n)
-  expect_true(all(is.finite(diag_inv)))
-  expect_true(all(diag_inv > 0))  # variances must be positive
-
-  # Should match dense solve to high precision
-  expect_equal(diag_inv, Q_inv_diag_true, tolerance = 1e-8)
-})
 
 test_that("selected inversion rejects a CSC triple that does not match n", {
   n <- 6
@@ -80,6 +45,44 @@ test_that("selected inversion matches a dense solve on a dense and a filled patt
   diag_inv <- cpp_selected_inversion_diagonal(
     Q_x = Q_lower@x, Q_i = Q_lower@i, Q_p = Q_lower@p, n = m * m)
   expect_equal(diag_inv, diag(solve(as.matrix(Q_grid))), tolerance = 1e-10)
+})
+
+skip_on_cran_budget()
+# test-selected-inversion.R
+# Tests for Takahashi selected inversion (diagonal of Q^{-1})
+
+test_that("selected inversion matches dense solve for small matrix", {
+  skip_on_cran_budget()
+  # Build a small positive-definite sparse matrix (tridiagonal + diagonal)
+  n <- 20
+  Q <- Matrix::bandSparse(n, k = c(0, 1), diag = list(
+    rep(4, n),
+    rep(-1, n - 1)
+  ), symmetric = TRUE)
+
+  # Ground truth: diagonal of Q^{-1} via dense inversion
+  Q_dense <- as.matrix(Q)
+  Q_inv_diag_true <- diag(solve(Q_dense))
+
+  # Selected inversion via CHOLMOD
+  Q_csc <- as(Q, "CsparseMatrix")
+
+  # Extract lower triangle for CHOLMOD (stype = -1)
+  Q_lower <- Matrix::tril(Q_csc)
+
+  diag_inv <- cpp_selected_inversion_diagonal(
+    Q_x = Q_lower@x,
+    Q_i = Q_lower@i,
+    Q_p = Q_lower@p,
+    n = n
+  )
+
+  expect_equal(length(diag_inv), n)
+  expect_true(all(is.finite(diag_inv)))
+  expect_true(all(diag_inv > 0))  # variances must be positive
+
+  # Should match dense solve to high precision
+  expect_equal(diag_inv, Q_inv_diag_true, tolerance = 1e-8)
 })
 
 skip_on_cran()

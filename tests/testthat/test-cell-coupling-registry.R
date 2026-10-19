@@ -15,24 +15,6 @@ test_that("registry lookup returns FALSE on an unregistered name", {
         "this_name_should_never_be_registered_xyzzy"))
 })
 
-test_that("tulpa_nested_laplace_joint() rejects an unknown cell_coupling name", {
-    arm <- list(
-        y = c(0, 1), n_trials = c(1L, 1L),
-        X = matrix(1, 2, 1), spatial_idx = c(1L, 2L),
-        family = "binomial", phi = 1
-    )
-    expect_error(
-        tulpa_nested_laplace_joint(
-            responses = list(occ = arm),
-            prior = list(type = "icar", n_spatial_units = 2L,
-                         adj_row_ptr = c(0L, 1L, 2L),
-                         adj_col_idx = c(1L, 0L), n_neighbors = c(1L, 1L)),
-            cell_coupling = "no_such_spec"
-        ),
-        regexp = "not registered"
-    )
-})
-
 test_that("tulpa_nested_laplace_joint() rejects non-character cell_coupling", {
     arm <- list(
         y = c(0, 1), n_trials = c(1L, 1L),
@@ -48,6 +30,27 @@ test_that("tulpa_nested_laplace_joint() rejects non-character cell_coupling", {
             cell_coupling = NA_character_
         ),
         regexp = "single non-empty character"
+    )
+})
+
+skip_on_cran_budget()
+
+test_that("tulpa_nested_laplace_joint() rejects an unknown cell_coupling name", {
+    skip_on_cran_budget()
+    arm <- list(
+        y = c(0, 1), n_trials = c(1L, 1L),
+        X = matrix(1, 2, 1), spatial_idx = c(1L, 2L),
+        family = "binomial", phi = 1
+    )
+    expect_error(
+        tulpa_nested_laplace_joint(
+            responses = list(occ = arm),
+            prior = list(type = "icar", n_spatial_units = 2L,
+                         adj_row_ptr = c(0L, 1L, 2L),
+                         adj_col_idx = c(1L, 0L), n_neighbors = c(1L, 1L)),
+            cell_coupling = "no_such_spec"
+        ),
+        regexp = "not registered"
     )
 })
 

@@ -111,42 +111,6 @@ test_that("the SPDE front door routes a gaussian (geostatistical) response to fi
   expect_equal(via$beta, direct$beta)
 })
 
-test_that("an SPDE spec rejects a spatial(col) term, a bad dimension, RE, and a bad family", {
-  skip_if_not_installed("fmesher")
-  s <- make_spde_panel(n_obs = 100L, seed = 13L)
-  d <- s$data
-  d$region <- rep(seq_len(10L), length.out = nrow(d))
-
-  # A coordinate-addressed field must not carry a spatial(col) term.
-  expect_error(
-    suppressMessages(tulpa(y ~ x + spatial(region), data = d, family = "poisson",
-                           spatial = s$spec, mode = "nested_laplace")),
-    "coordinate columns"
-  )
-  # Dimension mismatch: spec built on 100 obs, fit on 50 rows.
-  expect_error(
-    suppressMessages(tulpa(y ~ x, data = d[seq_len(50L), ], family = "poisson",
-                           spatial = s$spec, mode = "nested_laplace")),
-    "projector matrix A"
-  )
-  # A single random-intercept `(1 | g)` alongside the SPDE field IS supported
-  # (see test-spde-re.R); a random SLOPE is not.
-  d$g <- factor(rep(seq_len(5L), length.out = nrow(d)))
-  expect_error(
-    suppressMessages(tulpa(y ~ x + (1 + x | g), data = d, family = "poisson",
-                           spatial = s$spec, mode = "nested_laplace")),
-    "slope|random-intercept"
-  )
-  # The SPDE kernel supports binomial / poisson / neg_binomial_2 / gaussian; a
-  # valid family outside that set (beta, on a (0,1) response) is rejected.
-  d$p <- runif(nrow(d), 0.1, 0.9)
-  expect_error(
-    suppressMessages(tulpa(p ~ x, data = d, family = "beta",
-                           spatial = s$spec, mode = "nested_laplace")),
-    "SPDE supports family"
-  )
-})
-
 test_that("a named sampler with no SPDE implementation is refused, not run as NUTS (#912)", {
   # mode = 'gibbs' under an SPDE field used to run the SPDE NUTS engine under a
   # warning, so a script that suppressed warnings got a different algorithm.
@@ -182,6 +146,45 @@ test_that("generic accessors work on an auto-mode SPDE fit (coef/vcov/confint/su
   expect_true(all(ci[, 1] < ci[, 2]))
 
   expect_no_error(summary(fit))
+})
+
+skip_on_cran_budget()
+
+test_that("an SPDE spec rejects a spatial(col) term, a bad dimension, RE, and a bad family", {
+  skip_on_cran_budget()
+  skip_if_not_installed("fmesher")
+  s <- make_spde_panel(n_obs = 100L, seed = 13L)
+  d <- s$data
+  d$region <- rep(seq_len(10L), length.out = nrow(d))
+
+  # A coordinate-addressed field must not carry a spatial(col) term.
+  expect_error(
+    suppressMessages(tulpa(y ~ x + spatial(region), data = d, family = "poisson",
+                           spatial = s$spec, mode = "nested_laplace")),
+    "coordinate columns"
+  )
+  # Dimension mismatch: spec built on 100 obs, fit on 50 rows.
+  expect_error(
+    suppressMessages(tulpa(y ~ x, data = d[seq_len(50L), ], family = "poisson",
+                           spatial = s$spec, mode = "nested_laplace")),
+    "projector matrix A"
+  )
+  # A single random-intercept `(1 | g)` alongside the SPDE field IS supported
+  # (see test-spde-re.R); a random SLOPE is not.
+  d$g <- factor(rep(seq_len(5L), length.out = nrow(d)))
+  expect_error(
+    suppressMessages(tulpa(y ~ x + (1 + x | g), data = d, family = "poisson",
+                           spatial = s$spec, mode = "nested_laplace")),
+    "slope|random-intercept"
+  )
+  # The SPDE kernel supports binomial / poisson / neg_binomial_2 / gaussian; a
+  # valid family outside that set (beta, on a (0,1) response) is rejected.
+  d$p <- runif(nrow(d), 0.1, 0.9)
+  expect_error(
+    suppressMessages(tulpa(p ~ x, data = d, family = "beta",
+                           spatial = s$spec, mode = "nested_laplace")),
+    "SPDE supports family"
+  )
 })
 
 skip_on_cran()

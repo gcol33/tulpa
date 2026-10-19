@@ -1,3 +1,11 @@
+
+test_that("the outer evidence drops a non-finite cell instead of returning NaN", {
+  ev <- tulpa:::.nl_outer_log_evidence(c(-10, -11, -12, Inf), rep(0, 4))
+  expect_true(is.finite(ev))
+  expect_equal(ev, tulpa:::.nl_outer_log_evidence(c(-10, -11, -12), rep(0, 3)))
+})
+
+skip_on_cran_budget()
 # test-nl-weight-guard.R
 # Regression tests for the finite-guarded outer-grid weight normaliser
 # (gcol33/tulpa#65). A nested-Laplace outer grid can contain non-finite
@@ -7,6 +15,7 @@
 # finite, precision-carrying cells to sample.
 
 test_that(".nl_normalise_weights_safe drops +Inf / NaN cells and renormalises", {
+  skip_on_cran_budget()
   expected <- {
     w <- exp(c(-1, -2, -3) - max(c(-1, -2, -3)))
     w / sum(w)
@@ -27,16 +36,11 @@ test_that(".nl_normalise_weights_safe drops +Inf / NaN cells and renormalises", 
 })
 
 test_that(".nl_normalise_weights_safe returns all-NA (not NaN) when no cell is finite", {
+  skip_on_cran_budget()
   expect_warning(
     w <- tulpa:::.nl_normalise_weights_safe(c(Inf, NaN, -Inf), "x"),
     "non-finite"
   )
   expect_true(all(is.na(w)))
   expect_false(any(is.nan(w[!is.na(w)])))
-})
-
-test_that("the outer evidence drops a non-finite cell instead of returning NaN", {
-  ev <- tulpa:::.nl_outer_log_evidence(c(-10, -11, -12, Inf), rep(0, 4))
-  expect_true(is.finite(ev))
-  expect_equal(ev, tulpa:::.nl_outer_log_evidence(c(-10, -11, -12), rep(0, 3)))
 })

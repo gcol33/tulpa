@@ -24,7 +24,10 @@ test_that("an unrecognised metric name is rejected rather than defaulted", {
     "should be one of")
 })
 
+skip_on_cran_budget()
+
 test_that("mass_matrix is a declared control key", {
+  skip_on_cran_budget()
   expect_true("mass_matrix" %in% .CONTROL_KEYS$sample_glmm)
   d <- .mm_binom(40L)
   expect_error(

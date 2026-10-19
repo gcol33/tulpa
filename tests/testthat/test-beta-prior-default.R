@@ -11,15 +11,6 @@ test_that("there is one default fixed-effect prior, at the documented scale", {
   expect_equal(tulpa:::.TULPA_PRIOR$beta_sd, prior_normal()$sd)
 })
 
-test_that("every consumer reads that one setting", {
-  for (nm in names(tulpa:::.PRIOR_CONSUMERS)) {
-    expect_equal(tulpa:::.tulpa_prior_sd(nm), tulpa:::.TULPA_PRIOR$beta_sd,
-                 info = nm)
-  }
-  expect_error(tulpa:::.tulpa_prior_sd("not_a_backend"),
-               "Unknown fixed-effect prior consumer")
-})
-
 test_that("the scalar-ridge resolver takes the same default", {
   expect_equal(tulpa:::.beta_prior_ridge_sd(NULL), tulpa:::.TULPA_PRIOR$beta_sd)
   expect_equal(tulpa:::.beta_prior_ridge_sd(list(mean = 0, sd = 7)), 7)
@@ -41,7 +32,25 @@ test_that("a beta_prior with no sd errors instead of taking the default", {
   expect_error(tulpa:::.beta_prior_ridge_sd(2.5), "must be NULL or a list")
 })
 
+test_that("prior_normal() with no sd is still accepted through its own default", {
+  expect_equal(tulpa:::.beta_prior_fields(prior_normal())$sd, 2.5)
+  expect_equal(tulpa:::.beta_prior_fields(list(sd = 4)), list(mean = 0, sd = 4))
+})
+
+skip_on_cran_budget()
+
+test_that("every consumer reads that one setting", {
+  skip_on_cran_budget()
+  for (nm in names(tulpa:::.PRIOR_CONSUMERS)) {
+    expect_equal(tulpa:::.tulpa_prior_sd(nm), tulpa:::.TULPA_PRIOR$beta_sd,
+                 info = nm)
+  }
+  expect_error(tulpa:::.tulpa_prior_sd("not_a_backend"),
+               "Unknown fixed-effect prior consumer")
+})
+
 test_that("the two prior resolvers accept and reject the same inputs", {
+  skip_on_cran_budget()
   ok   <- list(list(mean = 0, sd = 1), prior_normal(0, 1), list(sd = 3))
   bad  <- list(prior_half_cauchy(2.5), prior_pc(1, 0.01), list(sigma = 1))
   for (bp in ok) {
@@ -52,11 +61,6 @@ test_that("the two prior resolvers accept and reject the same inputs", {
     expect_error(tulpa:::.normalize_beta_prior(bp, 2))
     expect_error(tulpa:::.beta_prior_ridge_sd(bp))
   }
-})
-
-test_that("prior_normal() with no sd is still accepted through its own default", {
-  expect_equal(tulpa:::.beta_prior_fields(prior_normal())$sd, 2.5)
-  expect_equal(tulpa:::.beta_prior_fields(list(sd = 4)), list(mean = 0, sd = 4))
 })
 
 skip_on_cran()

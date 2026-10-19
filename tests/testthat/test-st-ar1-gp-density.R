@@ -154,42 +154,11 @@ expect_prior_matches_dense <- function(f) {
   invisible(c(engine = d_engine, ref = d_ref))
 }
 
-# ---------------------------------------------------------------------------
-# Layout
-# ---------------------------------------------------------------------------
-
-test_that("a correlation is laid out exactly where the density reads a time margin", {
-  expect_gte(st_d_layout(st_d_fixture("ar1", "iv"))$logit_rho_st_idx, 0L)
-  expect_gte(st_d_layout(st_d_fixture("ar1", "ii"))$logit_rho_st_idx, 0L)
-  expect_identical(st_d_layout(st_d_fixture("ar1", "i"))$logit_rho_st_idx, -1L)
-  expect_identical(st_d_layout(st_d_fixture("ar1", "iii"))$logit_rho_st_idx, -1L)
-  expect_identical(st_d_layout(st_d_fixture("rw1", "iv"))$logit_rho_st_idx, -1L)
-})
-
-test_that("the GP interaction types are refused rather than laid out", {
-  expect_error(st_d_layout(st_d_fixture("rw1", "separable")),
-               "SEPARABLE spatiotemporal interaction has no density")
-  expect_error(st_d_layout(st_d_fixture("rw1", "nonsep_gp")),
-               "NONSEP_GP spatiotemporal interaction has no density")
-})
-
 test_that("a time margin with no density is refused where it would be read", {
   expect_error(st_d_layout(st_d_fixture("iid", "iv")), "temporal margin")
   expect_error(st_d_layout(st_d_fixture("iid", "ii")), "temporal margin")
   # Type III reads no temporal margin, so its temporal type is not consulted.
   expect_silent(st_d_layout(st_d_fixture("iid", "iii")))
-})
-
-# ---------------------------------------------------------------------------
-# Density against the dense reference
-# ---------------------------------------------------------------------------
-
-test_that("Type IV with an AR1 margin is the Gaussian of Q_s (x) R(rho)", {
-  expect_prior_matches_dense(st_d_fixture("ar1", "iv"))
-})
-
-test_that("Type II with an AR1 margin is the Gaussian of I_S (x) R(rho)", {
-  expect_prior_matches_dense(st_d_fixture("ar1", "ii"))
 })
 
 test_that("non-centred Type IV with an AR1 margin carries the same prior on z", {
@@ -212,7 +181,45 @@ test_that("the reference reproduces the RW margins the engine already had", {
   expect_abs_equal(st_d_prior(f, q2) - st_d_prior(f, q1), at(q2) - at(q1), 1e-8)
 })
 
+skip_on_cran_budget()
+
+# ---------------------------------------------------------------------------
+# Layout
+# ---------------------------------------------------------------------------
+
+test_that("a correlation is laid out exactly where the density reads a time margin", {
+  skip_on_cran_budget()
+  expect_gte(st_d_layout(st_d_fixture("ar1", "iv"))$logit_rho_st_idx, 0L)
+  expect_gte(st_d_layout(st_d_fixture("ar1", "ii"))$logit_rho_st_idx, 0L)
+  expect_identical(st_d_layout(st_d_fixture("ar1", "i"))$logit_rho_st_idx, -1L)
+  expect_identical(st_d_layout(st_d_fixture("ar1", "iii"))$logit_rho_st_idx, -1L)
+  expect_identical(st_d_layout(st_d_fixture("rw1", "iv"))$logit_rho_st_idx, -1L)
+})
+
+test_that("the GP interaction types are refused rather than laid out", {
+  skip_on_cran_budget()
+  expect_error(st_d_layout(st_d_fixture("rw1", "separable")),
+               "SEPARABLE spatiotemporal interaction has no density")
+  expect_error(st_d_layout(st_d_fixture("rw1", "nonsep_gp")),
+               "NONSEP_GP spatiotemporal interaction has no density")
+})
+
+# ---------------------------------------------------------------------------
+# Density against the dense reference
+# ---------------------------------------------------------------------------
+
+test_that("Type IV with an AR1 margin is the Gaussian of Q_s (x) R(rho)", {
+  skip_on_cran_budget()
+  expect_prior_matches_dense(st_d_fixture("ar1", "iv"))
+})
+
+test_that("Type II with an AR1 margin is the Gaussian of I_S (x) R(rho)", {
+  skip_on_cran_budget()
+  expect_prior_matches_dense(st_d_fixture("ar1", "ii"))
+})
+
 test_that("the log-posterior moves with logit_rho_st by the prior's own change", {
+  skip_on_cran_budget()
   for (nc in c(0, 1)) {
     f <- st_d_fixture("ar1", "iv", st_parameterization = nc)
     pts <- st_d_points(f)
@@ -234,6 +241,7 @@ test_that("the log-posterior moves with logit_rho_st by the prior's own change",
 })
 
 test_that("an HSGP-ST AR1 margin reads rho in its normalizer and its form", {
+  skip_on_cran_budget()
   EIG <- c(0.4, 1.1, 2.7)
   M <- length(EIG)
   T_st <- 6L

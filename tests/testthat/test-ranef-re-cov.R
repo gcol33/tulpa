@@ -79,9 +79,26 @@ expect_ranef_recovers <- function(r, sim) {
 })
 
 
+test_that("mixture summary drops zero-weight and non-finite nodes", {
+  set.seed(13)
+  mu <- matrix(rnorm(15), 5L, 3L)
+  va <- matrix(runif(15, 0.1, 1), 5L, 3L)
+  w  <- c(0.3, 0, 0.3, 0.2, 0.2)
+  mu[4L, 1L] <- NA_real_                            # kills the whole node row
+  s <- tulpa:::.nl_gauss_mixture_summary(mu, va, w)
+  keep <- c(1L, 3L, 5L)
+  wk <- w[keep] / sum(w[keep])
+  expect_equal(s$mean, as.numeric(crossprod(wk, mu[keep, , drop = FALSE])))
+  expect_null(tulpa:::.nl_gauss_mixture_summary(mu, va, rep(0, 5L)))
+})
+
+skip_on_cran_budget()
+
+
 # --- tier 1: the Gaussian-mixture summary the nested path reports through -----
 
 test_that("a one-node mixture is exactly that Gaussian", {
+  skip_on_cran_budget()
   s <- tulpa:::.nl_gauss_mixture_summary(
     matrix(c(1.5, -2), 1L, 2L), matrix(c(0.25, 4), 1L, 2L), 1,
     probs = c(0.025, 0.5, 0.975))
@@ -93,6 +110,7 @@ test_that("a one-node mixture is exactly that Gaussian", {
 
 
 test_that("mixture quantiles invert the mixture CDF and moments obey total variance", {
+  skip_on_cran_budget()
   set.seed(11)
   ng <- 7L; np <- 3L
   mu <- matrix(rnorm(ng * np, 0, 1.5), ng, np)
@@ -118,6 +136,7 @@ test_that("mixture quantiles invert the mixture CDF and moments obey total varia
 
 
 test_that("mixture summary withholds spread when the variances are unusable", {
+  skip_on_cran_budget()
   set.seed(12)
   mu <- matrix(rnorm(12), 4L, 3L)
   va <- matrix(runif(12, 0.1, 1), 4L, 3L)
@@ -133,21 +152,8 @@ test_that("mixture summary withholds spread when the variances are unusable", {
 })
 
 
-test_that("mixture summary drops zero-weight and non-finite nodes", {
-  set.seed(13)
-  mu <- matrix(rnorm(15), 5L, 3L)
-  va <- matrix(runif(15, 0.1, 1), 5L, 3L)
-  w  <- c(0.3, 0, 0.3, 0.2, 0.2)
-  mu[4L, 1L] <- NA_real_                            # kills the whole node row
-  s <- tulpa:::.nl_gauss_mixture_summary(mu, va, w)
-  keep <- c(1L, 3L, 5L)
-  wk <- w[keep] / sum(w[keep])
-  expect_equal(s$mean, as.numeric(crossprod(wk, mu[keep, , drop = FALSE])))
-  expect_null(tulpa:::.nl_gauss_mixture_summary(mu, va, rep(0, 5L)))
-})
-
-
 test_that("a stated ranef_unavailable reason is reported instead of an empty table", {
+  skip_on_cran_budget()
   fit <- structure(list(
     re_layout = list(list(group_var = "g", levels = c("1", "2"),
                           coef_labels = "(Intercept)")),

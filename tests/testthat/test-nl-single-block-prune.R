@@ -51,7 +51,18 @@
       ctrl))
 }
 
+test_that("a multi-block prior refuses the knobs its entry does not declare", {
+  f <- .nlp_fixture()
+  multi <- f
+  multi$prior <- list(f$prior)
+  expect_error(.nlp_fit(multi, list(screen_iters = 3L)), "single-block")
+  expect_error(.nlp_fit(multi, list(fitted_var = FALSE)), "single-block")
+})
+
+skip_on_cran_budget()
+
 test_that("the screening knobs are validated where the caller set them", {
+  skip_on_cran_budget()
   f <- .nlp_fixture()
 
   for (bad in list(1, 1.5, -0.1, NA_real_, Inf, c(0.1, 0.2), "x")) {
@@ -72,6 +83,7 @@ test_that("the screening knobs are validated where the caller set them", {
 # screening error measured on a kept cell. Here the kept cells' screens are off
 # by 0.1, and the dropped cell screened at -3.5 against a best kept cell at -3.
 test_that(".nl_prune_gate replaces a screen it distrusts with the full grid", {
+  skip_on_cran_budget()
   screened <- list(log_marginal = c(-Inf, -3, -4),
                    prune_cheap_log_marginal = c(-3.5, -3.1, -4.1),
                    prune_mask = c(TRUE, FALSE, FALSE),
@@ -108,6 +120,7 @@ test_that(".nl_prune_gate replaces a screen it distrusts with the full grid", {
 })
 
 test_that(".nl_prune_gate keeps a screen it trusts", {
+  skip_on_cran_budget()
   screened <- list(log_marginal = c(-Inf, -3, -4),
                    prune_cheap_log_marginal = c(-20, -3.1, -4.1),
                    prune_mask = c(TRUE, FALSE, FALSE),
@@ -116,14 +129,6 @@ test_that(".nl_prune_gate keeps a screen it trusts", {
                                 function() stop("the full grid must not be solved"))
   expect_identical(out[names(screened)], screened)
   expect_lte(out$prune_dropped_mass_bound, tulpa:::.nl_screen("gate_mass"))
-})
-
-test_that("a multi-block prior refuses the knobs its entry does not declare", {
-  f <- .nlp_fixture()
-  multi <- f
-  multi$prior <- list(f$prior)
-  expect_error(.nlp_fit(multi, list(screen_iters = 3L)), "single-block")
-  expect_error(.nlp_fit(multi, list(fitted_var = FALSE)), "single-block")
 })
 
 skip_on_cran()

@@ -20,7 +20,10 @@ test_that("spatial_multiscale sampler rejects undocumented modes (#205)", {
                   c("auto", "noncentered", "centered", "interweaved"))
 })
 
+skip_on_cran_budget()
+
 test_that("ACF / Geweke handle a 3-D [iter, chain, param] chain fit (#205)", {
+  skip_on_cran_budget()
   set.seed(1)
   arr <- array(rnorm(100 * 2 * 3), dim = c(100, 2, 3),
                dimnames = list(NULL, NULL, c("a", "b", "c")))
@@ -33,6 +36,7 @@ test_that("ACF / Geweke handle a 3-D [iter, chain, param] chain fit (#205)", {
 })
 
 test_that("ranef does not emit a field/hyperparameter tail as random effects (#205)", {
+  skip_on_cran_budget()
   fit <- structure(list(
     re_layout = list(list(group_var = "g", levels = c("1", "2"),
                           coef_labels = "(Intercept)")),

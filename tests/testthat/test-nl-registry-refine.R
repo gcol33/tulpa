@@ -28,7 +28,10 @@
         control = c(list(progress = FALSE, diagnose_k = FALSE), control)))
 }
 
+skip_on_cran_budget()
+
 test_that("only a field SD the dispatcher can write a cell onto is refinable", {
+    skip_on_cran_budget()
     ref <- tulpa:::.nl_refinable_registry_axes
     expect_identical(ref(list(type = "icar"), FALSE), "tau")
     expect_identical(ref(list(type = "bym2"), FALSE), "sigma")
@@ -41,6 +44,7 @@ test_that("only a field SD the dispatcher can write a cell onto is refinable", {
 })
 
 test_that("per-cell fields are bound by shape, constants left alone", {
+    skip_on_cran_budget()
     base <- list(a = c(1, 2, 3), m = matrix(1:6, 3), l = list(1, 2, 3),
                  flag = c(TRUE, FALSE, FALSE), const = c(9, 9, 9), k = 5)
     chunk <- function(n) list(res = list(a = rep(10, n), m = matrix(0L, n, 2L),
@@ -58,6 +62,7 @@ test_that("per-cell fields are bound by shape, constants left alone", {
 })
 
 test_that("a call as large as the base grid is split so shapes stay unambiguous", {
+    skip_on_cran_budget()
     seen <- integer(0)
     ck <- tulpa:::.nl_chunked_kernel(function(theta, screen = NULL) {
         seen <<- c(seen, nrow(theta))

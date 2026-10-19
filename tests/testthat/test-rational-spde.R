@@ -10,27 +10,6 @@ test_that("rational_spde_coefficients returns integer flag for integer nu", {
   expect_true(rat2$is_integer)
 })
 
-test_that("spatial_spde accepts fractional nu (gcol33/tulpa#71)", {
-  coords <- cbind(runif(20), runif(20))
-  expect_s3_class(spatial_spde(coords, nu = 0.5), "tulpa_spatial")
-  expect_s3_class(spatial_spde(coords, nu = 1.5), "tulpa_spatial")
-  expect_error(spatial_spde(coords, nu = -0.5), "must be > 0")
-})
-
-test_that("nu = 0 is rejected at construction (gcol33/tulpa#281)", {
-  # The d = 2 Matern parameterisation is degenerate at nu = 0:
-  # kappa = sqrt(8 nu) / range is 0 and tau = 1 / (sqrt(4 pi nu) kappa^nu sigma)
-  # is infinite, so there is no precision to build. Reaching a fitter it could
-  # only report an infeasible cell (log_marginal = -Inf, no Newton iterations)
-  # with nothing saying why, so the rejection is at the front door.
-  coords <- cbind(runif(20), runif(20))
-  expect_error(spatial_spde(coords, nu = 0), "degenerate at nu = 0")
-  expect_error(spatial_spde_custom(
-    C = Matrix::Diagonal(3), G = Matrix::Diagonal(3),
-    A = Matrix::Diagonal(3), nu = 0), "degenerate at nu = 0")
-  expect_error(rational_spde_coefficients(0), "degenerate at nu = 0")
-})
-
 # Helper: a 1D circulant FEM wrapped as a custom SPDE spec, where the operator
 # spectrum is known and dense checks are cheap.
 .frac_1d_spec <- function(n = 150L, nu = 0.5, order = 2L,
@@ -47,6 +26,31 @@ test_that("nu = 0 is rejected at construction (gcol33/tulpa#281)", {
   spec$rational_order <- order
   spec
 }
+
+skip_on_cran_budget()
+
+test_that("spatial_spde accepts fractional nu (gcol33/tulpa#71)", {
+  skip_on_cran_budget()
+  coords <- cbind(runif(20), runif(20))
+  expect_s3_class(spatial_spde(coords, nu = 0.5), "tulpa_spatial")
+  expect_s3_class(spatial_spde(coords, nu = 1.5), "tulpa_spatial")
+  expect_error(spatial_spde(coords, nu = -0.5), "must be > 0")
+})
+
+test_that("nu = 0 is rejected at construction (gcol33/tulpa#281)", {
+  skip_on_cran_budget()
+  # The d = 2 Matern parameterisation is degenerate at nu = 0:
+  # kappa = sqrt(8 nu) / range is 0 and tau = 1 / (sqrt(4 pi nu) kappa^nu sigma)
+  # is infinite, so there is no precision to build. Reaching a fitter it could
+  # only report an infeasible cell (log_marginal = -Inf, no Newton iterations)
+  # with nothing saying why, so the rejection is at the front door.
+  coords <- cbind(runif(20), runif(20))
+  expect_error(spatial_spde(coords, nu = 0), "degenerate at nu = 0")
+  expect_error(spatial_spde_custom(
+    C = Matrix::Diagonal(3), G = Matrix::Diagonal(3),
+    A = Matrix::Diagonal(3), nu = 0), "degenerate at nu = 0")
+  expect_error(rational_spde_coefficients(0), "degenerate at nu = 0")
+})
 
 skip_on_cran()
 

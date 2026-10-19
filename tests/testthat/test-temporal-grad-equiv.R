@@ -16,52 +16,6 @@ grad_num <- function(f, w, h = 1e-6) {
   }, numeric(1))
 }
 
-test_that("the temporal gradients match numerical derivatives of their priors", {
-  set.seed(22)
-  n <- 8L; sigma2 <- 1.7; rho <- 0.6
-  tau <- 1 / sigma2
-  w <- rnorm(n)
-  g <- cpp_test_temporal_grad_equiv(w, sigma2, rho)
-
-  # RW1: -0.5 * tau * sum(diff(w)^2)
-  rw1_lp <- function(v) -0.5 * tau * sum(diff(v)^2)
-  expect_equal(g$rw1_tau, grad_num(rw1_lp, w), tolerance = 1e-5)
-
-  # RW2: -0.5 * tau * sum(second differences^2)
-  rw2_lp <- function(v) -0.5 * tau * sum(diff(v, differences = 2)^2)
-  expect_equal(g$rw2_tau, grad_num(rw2_lp, w), tolerance = 1e-5)
-
-  # AR1: stationary first term + conditional increments
-  ar1_lp <- function(v) {
-    -0.5 * tau * (1 - rho^2) * v[1]^2 -
-      0.5 * tau * sum((v[-1] - rho * v[-length(v)])^2)
-  }
-  expect_equal(g$ar1_tau, grad_num(ar1_lp, w), tolerance = 1e-5)
-})
-
-test_that("degenerate lengths are flat rather than out of bounds", {
-  # rw1_grad_w read w[1] at n = 1; rw2_grad_w wrote d[1] into an n-sized buffer.
-  # Both now return a zero gradient, matching the sigma2 copies' guards.
-  for (n in c(1L, 2L)) {
-    g <- cpp_test_temporal_grad_equiv(rnorm(n), 1.0, 0.5)
-    expect_equal(g$rw2_tau, rep(0, n), info = paste("n:", n))
-    expect_equal(g$rw2_sig, rep(0, n), info = paste("n:", n))
-    if (n == 1L) {
-      expect_equal(g$rw1_tau, 0, info = "rw1 at n = 1")
-      expect_equal(g$rw1_sig, 0, info = "rw1 at n = 1")
-    }
-  }
-})
-
-test_that("the AR1 rho gradient stays finite at the stationarity boundary", {
-  # -rho / (1 - rho^2) diverges as rho -> +-1; the tau copy had no guard.
-  for (rho in c(-0.999999999, 0.999999999, -1, 1)) {
-    g <- cpp_test_temporal_grad_equiv(rnorm(6), 1.0, rho)
-    expect_true(is.finite(g$rho_tau), info = paste("rho:", rho))
-    expect_true(all(is.finite(g$ar1_tau)), info = paste("rho:", rho))
-  }
-})
-
 # ---------------------------------------------------------------------------
 # Value against gradient: the check the cross-parameterization probe cannot make
 # ---------------------------------------------------------------------------
@@ -80,49 +34,6 @@ test_that("the AR1 rho gradient stays finite at the stationarity boundary", {
   ar1  = list(val = "ar1_val",  gphi = "ar1_sig",  gls2 = "ar1_dls2"),
   iid  = list(val = "iid_val",  gphi = "iid_sig",  gls2 = "iid_dls2")
 )
-
-test_that("augmenting moves the intrinsic arms and leaves the stationary ones", {
-  # The guard on the loop above: if `augment` were inert the paired check would
-  # pass in both states and say nothing. RW1 / cyclic RW1 / RW2 are augmented by
-  # the production density; AR1 and IID are not intrinsic and have no augmented
-  # form, so they must be untouched by the flag.
-  set.seed(588)
-  w <- rnorm(9)
-  off <- cpp_test_temporal_grad_equiv(w, 1.3, 0.6, FALSE)
-  on  <- cpp_test_temporal_grad_equiv(w, 1.3, 0.6, TRUE)
-  for (nm in c("rw1", "rw1c", "rw2")) {
-    a <- .tg_arms[[nm]]
-    expect_false(isTRUE(all.equal(off[[a$val]],  on[[a$val]])),  label = nm)
-    expect_false(isTRUE(all.equal(off[[a$gphi]], on[[a$gphi]])), label = nm)
-    expect_false(isTRUE(all.equal(off[[a$gls2]], on[[a$gls2]])), label = nm)
-  }
-  for (nm in c("ar1", "iid")) {
-    a <- .tg_arms[[nm]]
-    expect_identical(off[[a$val]],  on[[a$val]])
-    expect_identical(off[[a$gphi]], on[[a$gphi]])
-    expect_identical(off[[a$gls2]], on[[a$gls2]])
-  }
-})
-
-test_that("the AR1 logit-rho gradient differentiates the AR1 density", {
-  # rho = 2 * plogis(logit_rho) - 1 is the map the sampler carries, so the
-  # reported gradient is on logit_rho and the finite difference has to be taken
-  # there too.
-  set.seed(24)
-  w <- rnorm(9)
-  to_rho <- function(l) 2 * plogis(l) - 1
-  for (sigma2 in c(1e-6, 1.0)) {
-    for (rho in c(-0.3, 0.6, 0.85)) {
-      l <- qlogis((rho + 1) / 2)
-      h <- 1e-5
-      up <- cpp_test_temporal_grad_equiv(w, sigma2, to_rho(l + h))$ar1_val
-      dn <- cpp_test_temporal_grad_equiv(w, sigma2, to_rho(l - h))$ar1_val
-      got <- cpp_test_temporal_grad_equiv(w, sigma2, rho)$rho_sig
-      expect_equal(got, (up - dn) / (2 * h), tolerance = 1e-5,
-                   info = paste("sigma2:", sigma2, "rho:", rho))
-    }
-  }
-})
 
 test_that("inside the stationary floor the rho gradient is the floored density's (#589)", {
   # 1 - rho^2 is floored at 1e-10, so past |rho| = sqrt(1 - 1e-10) the
@@ -151,7 +62,104 @@ test_that("inside the stationary floor the rho gradient is the floored density's
   }
 })
 
+skip_on_cran_budget()
+
+test_that("the temporal gradients match numerical derivatives of their priors", {
+  skip_on_cran_budget()
+  set.seed(22)
+  n <- 8L; sigma2 <- 1.7; rho <- 0.6
+  tau <- 1 / sigma2
+  w <- rnorm(n)
+  g <- cpp_test_temporal_grad_equiv(w, sigma2, rho)
+
+  # RW1: -0.5 * tau * sum(diff(w)^2)
+  rw1_lp <- function(v) -0.5 * tau * sum(diff(v)^2)
+  expect_equal(g$rw1_tau, grad_num(rw1_lp, w), tolerance = 1e-5)
+
+  # RW2: -0.5 * tau * sum(second differences^2)
+  rw2_lp <- function(v) -0.5 * tau * sum(diff(v, differences = 2)^2)
+  expect_equal(g$rw2_tau, grad_num(rw2_lp, w), tolerance = 1e-5)
+
+  # AR1: stationary first term + conditional increments
+  ar1_lp <- function(v) {
+    -0.5 * tau * (1 - rho^2) * v[1]^2 -
+      0.5 * tau * sum((v[-1] - rho * v[-length(v)])^2)
+  }
+  expect_equal(g$ar1_tau, grad_num(ar1_lp, w), tolerance = 1e-5)
+})
+
+test_that("degenerate lengths are flat rather than out of bounds", {
+  skip_on_cran_budget()
+  # rw1_grad_w read w[1] at n = 1; rw2_grad_w wrote d[1] into an n-sized buffer.
+  # Both now return a zero gradient, matching the sigma2 copies' guards.
+  for (n in c(1L, 2L)) {
+    g <- cpp_test_temporal_grad_equiv(rnorm(n), 1.0, 0.5)
+    expect_equal(g$rw2_tau, rep(0, n), info = paste("n:", n))
+    expect_equal(g$rw2_sig, rep(0, n), info = paste("n:", n))
+    if (n == 1L) {
+      expect_equal(g$rw1_tau, 0, info = "rw1 at n = 1")
+      expect_equal(g$rw1_sig, 0, info = "rw1 at n = 1")
+    }
+  }
+})
+
+test_that("the AR1 rho gradient stays finite at the stationarity boundary", {
+  skip_on_cran_budget()
+  # -rho / (1 - rho^2) diverges as rho -> +-1; the tau copy had no guard.
+  for (rho in c(-0.999999999, 0.999999999, -1, 1)) {
+    g <- cpp_test_temporal_grad_equiv(rnorm(6), 1.0, rho)
+    expect_true(is.finite(g$rho_tau), info = paste("rho:", rho))
+    expect_true(all(is.finite(g$ar1_tau)), info = paste("rho:", rho))
+  }
+})
+
+test_that("augmenting moves the intrinsic arms and leaves the stationary ones", {
+  skip_on_cran_budget()
+  # The guard on the loop above: if `augment` were inert the paired check would
+  # pass in both states and say nothing. RW1 / cyclic RW1 / RW2 are augmented by
+  # the production density; AR1 and IID are not intrinsic and have no augmented
+  # form, so they must be untouched by the flag.
+  set.seed(588)
+  w <- rnorm(9)
+  off <- cpp_test_temporal_grad_equiv(w, 1.3, 0.6, FALSE)
+  on  <- cpp_test_temporal_grad_equiv(w, 1.3, 0.6, TRUE)
+  for (nm in c("rw1", "rw1c", "rw2")) {
+    a <- .tg_arms[[nm]]
+    expect_false(isTRUE(all.equal(off[[a$val]],  on[[a$val]])),  label = nm)
+    expect_false(isTRUE(all.equal(off[[a$gphi]], on[[a$gphi]])), label = nm)
+    expect_false(isTRUE(all.equal(off[[a$gls2]], on[[a$gls2]])), label = nm)
+  }
+  for (nm in c("ar1", "iid")) {
+    a <- .tg_arms[[nm]]
+    expect_identical(off[[a$val]],  on[[a$val]])
+    expect_identical(off[[a$gphi]], on[[a$gphi]])
+    expect_identical(off[[a$gls2]], on[[a$gls2]])
+  }
+})
+
+test_that("the AR1 logit-rho gradient differentiates the AR1 density", {
+  skip_on_cran_budget()
+  # rho = 2 * plogis(logit_rho) - 1 is the map the sampler carries, so the
+  # reported gradient is on logit_rho and the finite difference has to be taken
+  # there too.
+  set.seed(24)
+  w <- rnorm(9)
+  to_rho <- function(l) 2 * plogis(l) - 1
+  for (sigma2 in c(1e-6, 1.0)) {
+    for (rho in c(-0.3, 0.6, 0.85)) {
+      l <- qlogis((rho + 1) / 2)
+      h <- 1e-5
+      up <- cpp_test_temporal_grad_equiv(w, sigma2, to_rho(l + h))$ar1_val
+      dn <- cpp_test_temporal_grad_equiv(w, sigma2, to_rho(l - h))$ar1_val
+      got <- cpp_test_temporal_grad_equiv(w, sigma2, rho)$rho_sig
+      expect_equal(got, (up - dn) / (2 * h), tolerance = 1e-5,
+                   info = paste("sigma2:", sigma2, "rho:", rho))
+    }
+  }
+})
+
 test_that("the stationary-factor slope is the exact derivative on both sides", {
+  skip_on_cran_budget()
   # The helper is what makes the value and the gradient one function, so it is
   # checked against a central difference of ar1_one_minus_rho2 itself.
   for (rho in c(-0.9, -0.3, 0, 0.5, 0.9999)) {

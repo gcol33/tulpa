@@ -183,28 +183,6 @@ test_that("every species of the coupled fixture reaches the non-separable branch
   }
 })
 
-# --------------------------------------------------------------------------- #
-# (6) Input contracts the batched entry owns                                   #
-# --------------------------------------------------------------------------- #
-
-test_that("the batched entry validates the per-species response and dispersion shapes", {
-  cpp_register_test_separable_bernoulli_coupling()
-  skip_if_not(cpp_cell_coupling_registry_has("test_separable_bernoulli"),
-              "test_separable_bernoulli coupling spec not registered")
-
-  sim <- .nlb_bern_sim(seed = 4025L, n_batch = 2L, n_s = 8L, n_per_unit = 3L)
-  sigma_grid <- 1.0
-
-  expect_error(
-    .nlb_bern_batch(sim, sigma_grid,
-                    phi_batch = matrix(1, nrow = 1L, ncol = sim$n_batch + 1L)),
-    "phi_batch")
-  expect_error(
-    .nlb_bern_batch(sim, sigma_grid,
-                    y_batch = list(sim$y[, 1L, drop = FALSE])),
-    "y_batch")
-})
-
 test_that("the batched entry refuses a family whose arms are not cell-coupled", {
   sim <- .nlb_bern_sim(seed = 4026L, n_batch = 2L, n_s = 8L, n_per_unit = 3L)
   expect_error(
@@ -399,6 +377,31 @@ test_that("the batched entry refuses per-species dispersion axes of different sh
       phi_grid_batch = list(list(a = c(0.2, 0.5)), list(a = c(0.2, 0.5, 0.9))),
       cell_coupling = "test_weighted_gaussian", store_Q = FALSE),
     class = "tulpa_grid_batch_ineligible")
+})
+
+skip_on_cran_budget()
+
+# --------------------------------------------------------------------------- #
+# (6) Input contracts the batched entry owns                                   #
+# --------------------------------------------------------------------------- #
+
+test_that("the batched entry validates the per-species response and dispersion shapes", {
+  skip_on_cran_budget()
+  cpp_register_test_separable_bernoulli_coupling()
+  skip_if_not(cpp_cell_coupling_registry_has("test_separable_bernoulli"),
+              "test_separable_bernoulli coupling spec not registered")
+
+  sim <- .nlb_bern_sim(seed = 4025L, n_batch = 2L, n_s = 8L, n_per_unit = 3L)
+  sigma_grid <- 1.0
+
+  expect_error(
+    .nlb_bern_batch(sim, sigma_grid,
+                    phi_batch = matrix(1, nrow = 1L, ncol = sim$n_batch + 1L)),
+    "phi_batch")
+  expect_error(
+    .nlb_bern_batch(sim, sigma_grid,
+                    y_batch = list(sim$y[, 1L, drop = FALSE])),
+    "y_batch")
 })
 
 skip_on_cran()

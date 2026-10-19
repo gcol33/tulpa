@@ -70,11 +70,14 @@
     stats::setNames(apply(m, 2L, stats::median, na.rm = TRUE), colnames(m))
 }
 
+skip_on_cran_budget()
+
 # --------------------------------------------------------------------------- #
 # 4. The no-grid spec: a mode-Hessian proposal with no integration nodes       #
 # --------------------------------------------------------------------------- #
 
 test_that("a spec carrying no grid withholds the mixture and keeps the rest", {
+    skip_on_cran_budget()
     # The shape `tulpa_re_cov_nested()` and `fit_spde(method = "ccd")` build:
     # the proposal is the mode-find's own Gaussian, so there is no node set. The
     # mixture's bump width is a grid RESOLUTION, which a mode-Hessian proposal
@@ -107,6 +110,7 @@ test_that("a spec carrying no grid withholds the mixture and keeps the rest", {
 })
 
 test_that("the dispatch declines below the PSIS floor without touching the target", {
+    skip_on_cran_budget()
     # A sub-floor budget can never reach a GPD fit, so no candidate may pay an
     # (expensive) target evaluation to discover that. The mixture is the one
     # that would: it samples its components before scoring.

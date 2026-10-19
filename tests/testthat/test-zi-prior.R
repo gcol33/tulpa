@@ -35,8 +35,11 @@ zi_coef <- function(fit) {
   cf[grepl("^zi_", names(cf))]
 }
 
+skip_on_cran_budget()
+
 
 test_that("the ZI prior does not depend on whether beta_prior was supplied", {
+  skip_on_cran_budget()
   # The regression this pins: the ZI block's prior used to be appended only
   # when the caller passed a fixed-effect prior, so `beta_prior` -- which
   # governs the COUNT block -- silently set the ZI block's prior SD to 2.5 when
@@ -59,6 +62,7 @@ test_that("the ZI prior does not depend on whether beta_prior was supplied", {
 
 
 test_that("zi_prior$sd changes the zero-inflation coefficient", {
+  skip_on_cran_budget()
   d <- zi_pois_data()
 
   fit_default <- tulpa(y ~ x, data = d, family = "poisson",
@@ -79,6 +83,7 @@ test_that("zi_prior$sd changes the zero-inflation coefficient", {
 
 
 test_that("the ZI prior identifies a level that contributes no zeros", {
+  skip_on_cran_budget()
   d <- zi_separated_data()
   expect_true(all(d$y[d$g == "no_zeros"] > 0))
 
@@ -103,6 +108,7 @@ test_that("the ZI prior identifies a level that contributes no zeros", {
 
 
 test_that("zi_prior rejects malformed input", {
+  skip_on_cran_budget()
   d <- zi_pois_data(n = 200L)
   zi_fit <- function(...) {
     tulpa(y ~ x, data = d, family = "poisson", ziformula = ~1,
@@ -121,6 +127,7 @@ test_that("zi_prior rejects malformed input", {
 
 
 test_that("zi_prior = list(sd = Inf) removes the penalty", {
+  skip_on_cran_budget()
   d <- zi_pois_data()
   fit_inf <- tulpa(y ~ x, data = d, family = "poisson",
                    ziformula = ~1, mode = "laplace",

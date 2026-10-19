@@ -39,7 +39,10 @@ test_that("every temporal constructor warns on shared = FALSE", {
   }
 })
 
+skip_on_cran_budget()
+
 test_that("every spatial constructor warns on shared = FALSE", {
+  skip_on_cran_budget()
   W <- chain_W(5)
   expect_warning(car(W, shared = FALSE), "Non-shared spatial effects")
   expect_warning(bym2(W, shared = FALSE), "Non-shared spatial effects")
@@ -48,6 +51,7 @@ test_that("every spatial constructor warns on shared = FALSE", {
 })
 
 test_that("every temporal constructor coerces formula and string alike", {
+  skip_on_cran_budget()
   for (f in list(temporal_rw1, temporal_rw2, temporal_ar1)) {
     expect_identical(f(~ year)$time_var, "year")
     expect_identical(f("year")$time_var, "year")
@@ -58,6 +62,7 @@ test_that("every temporal constructor coerces formula and string alike", {
 })
 
 test_that("the spatial constructors reject the same bad graphs", {
+  skip_on_cran_budget()
   ctors <- list(car = car, bym2 = bym2, fld = fld)
   not_square <- matrix(0, 3, 4)
   asym <- chain_W(4); asym[1, 2] <- 0   # break symmetry on one side
@@ -70,6 +75,7 @@ test_that("the spatial constructors reject the same bad graphs", {
 })
 
 test_that("the spatial constructors surface the same structural issues as check_adjacency", {
+  skip_on_cran_budget()
   # These were accepted silently: only check_adjacency() reported them, so a
   # raw matrix handed straight to a constructor built an improper field with
   # no warning.
@@ -86,6 +92,7 @@ test_that("the spatial constructors surface the same structural issues as check_
 })
 
 test_that("a validated tulpa_adjacency passes the constructors without re-warning", {
+  skip_on_cran_budget()
   # .validate_adjacency_arg() short-circuits on a tulpa_adjacency, so an object
   # adjacency() already vetted must not be re-checked or re-warned about.
   adj <- chain_adjacency(5)
@@ -97,6 +104,7 @@ test_that("a validated tulpa_adjacency passes the constructors without re-warnin
 })
 
 test_that("a float-rounded symmetric graph is accepted, matching check_adjacency", {
+  skip_on_cran_budget()
   # The inline checks demanded exact symmetry via isSymmetric(), so a graph
   # check_adjacency() accepts was rejected by the constructors. 1e-14 is inside
   # the 1e-8 tolerance the validator uses, so the graph must be accepted rather

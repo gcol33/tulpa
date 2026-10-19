@@ -33,7 +33,32 @@
   mx + log(v) - log(h_lo + h_hi)
 }
 
+# --------------------------------------------------------------------------- #
+# The measurement (gcol33/tulpa#322's harness, no fitting minutes)            #
+# --------------------------------------------------------------------------- #
+
+# The candidate weight vector: the box multiplier entering as a per-cell design
+# weight, exactly the way the harness takes one.
+.bxm_weights <- function(d) {
+  bm <- tulpa:::.joint_local_ccd_box_mass(d$joint_grid, d$log_marginal,
+                                          d$axis_names, d$axis_tags)
+  base <- if (is.null(d$dnode)) rep(1, nrow(d$joint_grid)) else d$dnode
+  list(bm = bm, w = outer_grid_weights(d, dnode = base * exp(bm$log_box_ratio)))
+}
+
+# Every axis's own u-space level spacing. The multiplier form is only a rule at
+# all because the common cell volume `Delta` cancels in the softmax, and that is
+# a property of the grid rather than of the rule.
+.bxm_spacings <- function(d) {
+  lapply(seq_len(ncol(d$joint_grid)), function(j)
+    diff(sort(unique(tulpa:::.joint_pareto_fwd(d$axis_tags[j],
+                                               d$joint_grid[, j])))))
+}
+
+skip_on_cran_budget()
+
 test_that("the factor is the issue's pnorm form where that form can be evaluated", {
+  skip_on_cran_budget()
   # exp(0.5 g^2/a) sqrt(2 pi/a) (Phi(h; mu, s) - Phi(-h; mu, s)) / (2h), written
   # out directly. Its two factors diverge against each other as the local peak
   # leaves the box -- exp(0.5 g^2/a) up, the pnorm difference down at the
@@ -65,6 +90,7 @@ test_that("the factor is the issue's pnorm form where that form can be evaluated
 })
 
 test_that("a cell convex on one axis keeps the exact factor on the others", {
+  skip_on_cran_budget()
   # The separability is the whole argument for the diagonal rule: the decline is
   # per axis, so three good axes are not thrown away for a fourth the local
   # quadratic came back convex on.
@@ -91,6 +117,7 @@ test_that("a cell convex on one axis keeps the exact factor on the others", {
 # --------------------------------------------------------------------------- #
 
 test_that("the gradient is the same three points the curvature is", {
+  skip_on_cran_budget()
   # An exactly quadratic target in u, so the three-point stencil reproduces both
   # derivatives exactly and the two readings can be checked against the truth
   # rather than against each other.
@@ -127,6 +154,7 @@ test_that("the gradient is the same three points the curvature is", {
 })
 
 test_that("a boundary cell has no centred stencil and keeps its midpoint atom", {
+  skip_on_cran_budget()
   mu <- c(0.3, -0.2); s <- c(0.8, 1.3)
   lv <- list(a = c(-1, 0, 1), b = c(-1, 0, 1))
   gg <- as.matrix(expand.grid(lv, KEEP.OUT.ATTRS = FALSE))
@@ -178,6 +206,7 @@ test_that("a boundary cell has no centred stencil and keeps its midpoint atom", 
 # --------------------------------------------------------------------------- #
 
 test_that("a declined box axis names the gate it fell at", {
+  skip_on_cran_budget()
   # `no_factor`: the quadratic never formed. A box of zero extent has no
   # integral to divide by its own width, and a non-finite coefficient has no
   # integrand at all.
@@ -205,6 +234,7 @@ test_that("a declined box axis names the gate it fell at", {
 })
 
 test_that("a cell's decline tally is per axis, alongside the count", {
+  skip_on_cran_budget()
   # Four axes: one concave and answered in closed form, one whose closed form is
   # refused for conditioning and whose quadrature then returns nothing, one with
   # no extent at all, and one convex axis that is integrated rather than
@@ -233,6 +263,7 @@ test_that("a cell's decline tally is per axis, alongside the count", {
 })
 
 test_that("a refined cell records the box mass beside the cloud's own", {
+  skip_on_cran_budget()
   mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
   lv <- list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2))
   gg <- as.matrix(expand.grid(lv, KEEP.OUT.ATTRS = FALSE))
@@ -255,28 +286,6 @@ test_that("a refined cell records the box mass beside the cloud's own", {
   expect_equal(out$info$log_box_ratio, bm$log_box_ratio[out$info$cells],
                tolerance = 1e-12)
 })
-
-# --------------------------------------------------------------------------- #
-# The measurement (gcol33/tulpa#322's harness, no fitting minutes)            #
-# --------------------------------------------------------------------------- #
-
-# The candidate weight vector: the box multiplier entering as a per-cell design
-# weight, exactly the way the harness takes one.
-.bxm_weights <- function(d) {
-  bm <- tulpa:::.joint_local_ccd_box_mass(d$joint_grid, d$log_marginal,
-                                          d$axis_names, d$axis_tags)
-  base <- if (is.null(d$dnode)) rep(1, nrow(d$joint_grid)) else d$dnode
-  list(bm = bm, w = outer_grid_weights(d, dnode = base * exp(bm$log_box_ratio)))
-}
-
-# Every axis's own u-space level spacing. The multiplier form is only a rule at
-# all because the common cell volume `Delta` cancels in the softmax, and that is
-# a property of the grid rather than of the rule.
-.bxm_spacings <- function(d) {
-  lapply(seq_len(ncol(d$joint_grid)), function(j)
-    diff(sort(unique(tulpa:::.joint_pareto_fwd(d$axis_tags[j],
-                                               d$joint_grid[, j])))))
-}
 
 skip_on_cran()
 

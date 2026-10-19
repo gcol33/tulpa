@@ -1,16 +1,4 @@
 
-test_that("the nu=1 conversion is byte-identical to the old hardcoded formula", {
-  # Guards against a regression on the default GP/SPDE path: at nu = 1 the
-  # nu-general normalizer must reduce exactly to 1 / (sqrt(4*pi) * kappa * sigma).
-  for (range in c(0.3, 1.0, 4.0)) for (sigma in c(0.2, 1.0, 3.0)) {
-    kt <- tulpa:::.spde_kappa_tau(range, sigma, 1.0)
-    kappa_old <- sqrt(8 * 1) / range
-    tau_old   <- 1 / (sqrt(4 * pi) * kappa_old * sigma)
-    expect_identical(kt$kappa, kappa_old)
-    expect_identical(kt$tau_spde, tau_old)
-  }
-})
-
 test_that("the nu-general marginal variance matches the closed form at nu=2", {
   # sigma^2 = 1 / (4*pi*nu * kappa^(2nu) * tau^2), so recovering sigma from
   # (kappa, tau, nu) must invert it. A nu=1 hardcode would be wrong here.
@@ -42,9 +30,25 @@ test_that(".resolve_obs errors when the response cannot be found", {
   expect_equal(tulpa:::.resolve_obs(fake), c(2, 3))
 })
 
+skip_on_cran_budget()
+
+test_that("the nu=1 conversion is byte-identical to the old hardcoded formula", {
+  skip_on_cran_budget()
+  # Guards against a regression on the default GP/SPDE path: at nu = 1 the
+  # nu-general normalizer must reduce exactly to 1 / (sqrt(4*pi) * kappa * sigma).
+  for (range in c(0.3, 1.0, 4.0)) for (sigma in c(0.2, 1.0, 3.0)) {
+    kt <- tulpa:::.spde_kappa_tau(range, sigma, 1.0)
+    kappa_old <- sqrt(8 * 1) / range
+    tau_old   <- 1 / (sqrt(4 * pi) * kappa_old * sigma)
+    expect_identical(kt$kappa, kappa_old)
+    expect_identical(kt$tau_spde, tau_old)
+  }
+})
+
 # --- #238: spatial_gp / spatial_svc reject unsupported cov at construction --
 
 test_that("spatial_gp / spatial_svc validate cov and nu at construction", {
+  skip_on_cran_budget()
   expect_error(spatial_gp(~ x + y, cov = "gaussian"))
   expect_error(spatial_gp(~ x + y, cov = "spherical"))
   expect_error(spatial_gp(~ x + y, cov = "matern", nu = 0.75), "1.5, 2.5")

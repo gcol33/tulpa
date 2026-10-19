@@ -22,7 +22,10 @@ test_that("the re_cov_gibbs prior_df messages print", {
                "`prior_df` = 1 must exceed n_coefs - 1 = 2 for a proper")
 })
 
+skip_on_cran_budget()
+
 test_that("print.tulpa_criteria reports high Pareto-k observations", {
+  skip_on_cran_budget()
   set.seed(1)
   S <- 200L
   n <- 20L

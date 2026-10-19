@@ -1,48 +1,3 @@
-# A caller-stated outer-grid axis is a bound (gcol33/tulpa#658).
-#
-# Refinability used to be decided by axis NAME -- `alpha` and every `phi_*` axis
-# opted into the adaptive-grid and consistency passes whether or not the caller
-# had written their nodes down -- so a fit could integrate a range the caller
-# never asked for and report it nowhere. It is decided by PROVENANCE now: an
-# axis whose nodes the caller stated is densified inside that range and never
-# extended past its ends; one the engine placed may still be followed out.
-#
-# The contract asserted here:
-#   * the per-axis mode reaches the spec field `.hyper_refinable_axes()` reads;
-#   * a non-extendable axis's proposals stay inside its declared node span,
-#     on both the boundary and the consistency path;
-#   * provenance -- not the axis name -- is what picks the default;
-#   * an engine-placed axis still extends exactly as it did;
-#   * the reported span separates the half-node-step term from refinement.
-
-
-# --------------------------------------------------------------------------- #
-# 1. The spec field                                                            #
-# --------------------------------------------------------------------------- #
-
-test_that("hyper_axis_spec carries `extend`, defaulting to the historical answer", {
-    s <- hyper_axis_spec("alpha", grid = c(0.2, 0.5), log_scale = TRUE,
-                         refinable = TRUE)
-    expect_true(s$extend)
-    expect_true(tulpa:::.hyper_axis_may_extend(s))
-
-    b <- hyper_axis_spec("alpha", grid = c(0.2, 0.5), log_scale = TRUE,
-                         refinable = TRUE, extend = FALSE)
-    expect_false(b$extend)
-    expect_false(tulpa:::.hyper_axis_may_extend(b))
-
-    # A spec built before the field existed says nothing about it and keeps the
-    # historical answer, so no caller of the generic passes is silently bounded.
-    legacy <- s
-    legacy$extend <- NULL
-    expect_true(tulpa:::.hyper_axis_may_extend(legacy))
-
-    expect_error(hyper_axis_spec("alpha", grid = c(0.2, 0.5), extend = NA),
-                 "extend")
-    expect_error(hyper_axis_spec("alpha", grid = c(0.2, 0.5),
-                                 extend = c(TRUE, FALSE)),
-                 "extend")
-})
 
 
 test_that("the node limit is the declared span, and skips a log axis's atom", {
@@ -61,299 +16,6 @@ test_that("the node limit is the declared span, and skips a log axis's atom", {
                            bounds = c(0, Inf), refinable = TRUE, extend = FALSE,
                            atom_mass = 0.5)
     expect_length(tulpa:::.hyper_clip_to_node_limit(c(0.1, 0.3, 0.9), one), 0L)
-})
-
-
-# --------------------------------------------------------------------------- #
-# 2. The per-axis mode reaches the field the refinement passes read            #
-# --------------------------------------------------------------------------- #
-
-test_that(".joint_axis_specs reads the resolved mode, not the axis name", {
-    grids <- list(sigma = c(0.5, 1, 2),
-                  alpha = c(0, 0.2, 0.5),
-                  phi_y = c(0.5, 1, 2))
-    cp <- list(has_copy = TRUE)
-
-    specs <- tulpa:::.joint_axis_specs(
-        grids, cp, axis_refine = c(alpha = "densify", phi_y = "extend"))
-    by <- stats::setNames(specs, vapply(specs, `[[`, character(1), "name"))
-
-    expect_true(by$alpha$refinable)
-    expect_false(by$alpha$extend)
-    expect_true(by$phi_y$refinable)
-    expect_true(by$phi_y$extend)
-    # An axis the override does not name keeps the driver's own eligibility.
-    expect_true(by$sigma$refinable)
-
-    # This is the field `.hyper_refinable_axes()` reads, which is what the issue
-    # says was already in place and unreachable.
-    expect_equal(tulpa:::.hyper_refinable_names(specs),
-                 c("sigma", "alpha", "phi_y"))
-
-    none <- tulpa:::.joint_axis_specs(
-        grids, cp,
-        axis_refine = c(sigma = "none", alpha = "none", phi_y = "none"))
-    expect_length(tulpa:::.hyper_refinable_names(none), 0L)
-
-    # No provenance supplied -- a spec list rebuilt from an assembled grid, which
-    # no refinement pass reads -- keeps the driver's own eligibility.
-    bare <- tulpa:::.joint_axis_specs(grids, cp)
-    expect_equal(tulpa:::.hyper_refinable_names(bare),
-                 c("sigma", "alpha", "phi_y"))
-})
-
-
-# --------------------------------------------------------------------------- #
-# 3. Proposals on a bounded axis                                               #
-# --------------------------------------------------------------------------- #
-
-test_that("a bounded axis is densified inside its span and never past it", {
-    lev <- c(0.2, 0.35, 0.5)
-    mk <- function(extend) {
-        hyper_axis_spec("alpha", grid = lev, log_scale = TRUE,
-                        bounds = c(0, Inf), refinable = TRUE, extend = extend)
-    }
-    e <- mk(TRUE)
-    b <- mk(FALSE)
-
-    pts_e <- tulpa:::.hyper_propose_axis_extension(e, lev, "max")
-    expect_gt(max(pts_e), 0.5)
-
-    # The midpoint between the two outermost levels, and nothing else: on a log
-    # axis that is the geometric mean.
-    pts_b <- tulpa:::.hyper_propose_axis_extension(b, lev, "max")
-    expect_equal(pts_b, sqrt(0.35 * 0.5))
-    expect_true(all(pts_b > 0.35 & pts_b < 0.5))
-
-    pts_lo <- tulpa:::.hyper_propose_axis_extension(b, lev, "min")
-    expect_equal(pts_lo, sqrt(0.2 * 0.35))
-
-    # The clip is on the proposal, not only on the caller's request, so an
-    # explicit `extend_ok` cannot walk a bounded axis outward.
-    forced <- tulpa:::.hyper_propose_axis_extension(b, lev, "max",
-                                                    extend_ok = TRUE)
-    expect_true(all(forced >= 0.2 & forced <= 0.5))
-
-    # Interior densification is inside by construction, so the two agree there.
-    di_e <- tulpa:::.hyper_propose_interior_densification(e, lev, 2L,
-                                                          do_left = TRUE,
-                                                          do_right = TRUE)
-    di_b <- tulpa:::.hyper_propose_interior_densification(b, lev, 2L,
-                                                          do_left = TRUE,
-                                                          do_right = TRUE)
-    expect_equal(di_b, di_e)
-})
-
-
-test_that("consistency points stay inside a bounded axis's span", {
-    lev <- c(0.5, 1, 2)
-    mk <- function(extend) {
-        hyper_axis_spec("phi_y", grid = lev, log_scale = TRUE,
-                        bounds = c(0, Inf), refinable = TRUE, extend = extend)
-    }
-
-    # The points bisect gaps between existing levels, so a bounded axis is
-    # refined exactly as an extendable one is, and neither is widened.
-    for (lm in list(c(-3, 0, -3), c(-1, 0, -0.5), c(-0.5, 0, -2))) {
-        e <- tulpa:::.hyper_propose_mass_bisection(mk(TRUE), lev, lm)
-        b <- tulpa:::.hyper_propose_mass_bisection(mk(FALSE), lev, lm)
-        expect_gt(length(b), 0L)
-        expect_equal(b, e)
-        expect_true(all(b > 0.5 & b < 2))
-    }
-})
-
-
-# --------------------------------------------------------------------------- #
-# 4. Provenance, not the axis name, picks the default                          #
-# --------------------------------------------------------------------------- #
-
-test_that("a stated alpha axis is a bound and a placed one is not", {
-    arm <- function(fc) {
-        tulpa:::.normalise_arm_field_coef(list(field_coef = fc), 1L)
-    }
-    stated <- arm(list(name = "alpha", grid = c(0.2, 0.5)))
-    marked <- arm(list(name = "alpha", grid = auto_grid(c(0.2, 0.5))))
-    by_n   <- arm(list(name = "alpha", n = 9L))
-    named  <- arm("alpha")
-    deflt  <- arm(list(name = "alpha",
-                       grid = tulpa:::.nl_grid_axis("copy_alpha")))
-
-    expect_true(tulpa:::.joint_axis_is_stated("alpha", list(stated)))
-    # `as.numeric()` drops the marker, so the normaliser has to record it.
-    expect_true(marked$field_coef_axis$grid_auto)
-    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(marked)))
-    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(by_n)))
-    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(named)))
-    # Nodes that ARE the engine's own axis carry nothing a statement would add.
-    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(deflt)))
-    # No copy arm at all.
-    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(list())))
-})
-
-
-test_that("a phi axis is stated when the caller gave its nodes", {
-    st <- tulpa:::.joint_axis_is_stated("phi_y", list(),
-                                        phi_grid = list(y = c(0.5, 1, 2)),
-                                        arm_names = c("y", "z"))
-    expect_true(st)
-
-    au <- tulpa:::.joint_axis_is_stated("phi_y", list(),
-                                        phi_grid = list(y = auto_grid(c(0.5, 1, 2))),
-                                        arm_names = c("y", "z"))
-    expect_false(au)
-
-    # Positional `phi_grid`, the other shape `.normalise_phi_grid()` accepts.
-    pos <- tulpa:::.joint_axis_is_stated("phi_z", list(),
-                                         phi_grid = list(NULL, c(0.5, 1, 2)),
-                                         arm_names = c("y", "z"))
-    expect_true(pos)
-
-    # An arm with no axis of its own.
-    expect_false(tulpa:::.joint_axis_is_stated("phi_z", list(),
-                                               phi_grid = list(y = c(0.5, 1)),
-                                               arm_names = c("y", "z")))
-})
-
-
-test_that(".joint_axis_refine_modes resolves every axis of one grid", {
-    grids <- list(sigma = c(0.5, 1), alpha = c(0, 0.2, 0.5),
-                  phi_y = c(0.5, 1, 2))
-    cp <- list(has_copy = TRUE)
-    arm_stated <- tulpa:::.normalise_arm_field_coef(
-        list(field_coef = list(name = "alpha", grid = c(0.2, 0.5))), 1L)
-    arm_placed <- tulpa:::.normalise_arm_field_coef(
-        list(field_coef = list(name = "alpha", n = 9L)), 1L)
-
-    m <- tulpa:::.joint_axis_refine_modes(grids, cp, list(arm_stated),
-                                          phi_grid = list(y = c(0.5, 1, 2)),
-                                          arm_names = "y")
-    expect_equal(m[["alpha"]], "densify")
-    expect_equal(m[["phi_y"]], "densify")
-    # A field SD with no recorded provenance is the engine's own axis.
-    expect_equal(m[["sigma"]], "extend")
-
-    p <- tulpa:::.joint_axis_refine_modes(grids, cp, list(arm_placed),
-                                          phi_grid = NULL, arm_names = "y")
-    expect_equal(p[["alpha"]], "extend")
-    # With no caller nodes recorded there is no statement to honour, so the
-    # axis falls to the engine-placed default.
-    expect_equal(p[["phi_y"]], "extend")
-
-    u <- tulpa:::.joint_axis_refine_modes(grids, cp, list(arm_stated),
-                                          phi_grid = list(y = c(0.5, 1, 2)),
-                                          arm_names = "y",
-                                          user = c(alpha = "extend",
-                                                   phi_y = "none"))
-    expect_equal(u[["alpha"]], "extend")
-    expect_equal(u[["phi_y"]], "none")
-
-    # A fit with no copy arm has no alpha axis to resolve.
-    nc <- tulpa:::.joint_axis_refine_modes(grids, list(has_copy = FALSE),
-                                           list(list()))
-    expect_false("alpha" %in% names(nc))
-})
-
-
-test_that("a field SD's refinement mode follows who wrote its nodes", {
-    grids <- list(sigma = c(0.5, 1, 2))
-    cp <- list(has_copy = FALSE)
-    mode <- function(prior, grid_auto = logical(0))
-        tulpa:::.joint_axis_refine_modes(grids, cp, list(list()), prior = prior,
-                                         grid_auto = grid_auto)[["sigma"]]
-    pinned <- list(type = "icar", sigma_grid = c(0.3, 0.9, 2.7))
-    expect_equal(mode(pinned), "densify")
-    # Marked as a wrapper's default, the nodes carry no statement.
-    expect_equal(mode(pinned, c(sigma_grid = TRUE)), "extend")
-    # `place = FALSE` asks for the nodes as written, whoever made them.
-    expect_equal(mode(pinned, c(sigma_grid = FALSE)), "densify")
-    # The engine's own default axis is not a statement either.
-    expect_equal(mode(list(type = "icar")), "extend")
-})
-
-
-# --------------------------------------------------------------------------- #
-# 5. The control knob                                                          #
-# --------------------------------------------------------------------------- #
-
-test_that("control$axis_refine is validated against the fit's own axes", {
-    axes <- c("sigma", "alpha", "phi_y", "rho_car")
-
-    expect_null(tulpa:::.joint_check_axis_refine(NULL, axes))
-    expect_equal(tulpa:::.joint_check_axis_refine(c(alpha = "none"), axes),
-                 c(alpha = "none"))
-    expect_equal(tulpa:::.joint_check_axis_refine(list(alpha = "densify"), axes),
-                 c(alpha = "densify"))
-
-    # One unnamed value applies to every refinable axis, and only to those.
-    blanket <- tulpa:::.joint_check_axis_refine("none", axes)
-    expect_equal(sort(names(blanket)), c("alpha", "phi_y", "sigma"))
-    expect_true(all(blanket == "none"))
-
-    expect_error(tulpa:::.joint_check_axis_refine(c(alpha = "widen"), axes),
-                 "unknown mode")
-    expect_error(tulpa:::.joint_check_axis_refine(c(alfa = "none"), axes),
-                 "does not have")
-    # Asking for nodes on an axis this driver never places any on is an error,
-    # not a silent no-op that leaves the caller believing it took effect.
-    expect_error(tulpa:::.joint_check_axis_refine(c(rho_car = "extend"), axes),
-                 "only \"none\"")
-    expect_equal(tulpa:::.joint_check_axis_refine(c(rho_car = "none"), axes),
-                 c(rho_car = "none"))
-    expect_equal(tulpa:::.joint_check_axis_refine(c(sigma = "densify"), axes),
-                 c(sigma = "densify"))
-    expect_error(tulpa:::.joint_check_axis_refine(c("none", "extend"), axes),
-                 "named by axis")
-})
-
-
-# --------------------------------------------------------------------------- #
-# 6. The reported span, and the two widening terms                             #
-# --------------------------------------------------------------------------- #
-
-test_that("axis_span separates the half-node-step term from refinement", {
-    two <- c(0.2, 0.5)
-    spec <- hyper_axis_spec("alpha", grid = two, log_scale = TRUE,
-                            bounds = c(0, Inf), refinable = TRUE,
-                            extend = FALSE)
-    tg <- matrix(two, ncol = 1L, dimnames = list(NULL, "alpha"))
-    sp <- tulpa:::.joint_axis_span(tg, tg, list(spec))[["alpha"]]
-
-    expect_equal(sp$nodes, two)
-    expect_equal(sp$refine, "densify")
-    expect_equal(unname(sp$n_nodes), c(2L, 2L))
-    expect_equal(sp$integrated, sp$declared)
-    # For k equally log-spaced nodes the declared support is k / (k - 1) times
-    # the node range on the axis's own coordinate: 2x at two nodes.
-    expect_equal(diff(log(sp$declared)) / diff(log(sp$nodes)), 2)
-
-    nine <- exp(seq(log(0.2), log(0.5), length.out = 9L))
-    spec9 <- hyper_axis_spec("alpha", grid = nine, log_scale = TRUE,
-                             bounds = c(0, Inf), refinable = TRUE,
-                             extend = FALSE)
-    tg9 <- matrix(nine, ncol = 1L, dimnames = list(NULL, "alpha"))
-    sp9 <- tulpa:::.joint_axis_span(tg9, tg9, list(spec9))[["alpha"]]
-    expect_equal(diff(log(sp9$declared)) / diff(log(sp9$nodes)), 9 / 8)
-
-    # A grid refinement moved past the declared end: the second term is then
-    # visible as `integrated` reaching past `declared`.
-    ext <- hyper_axis_spec("alpha", grid = two, log_scale = TRUE,
-                           bounds = c(0, Inf), refinable = TRUE, extend = TRUE)
-    tgf <- matrix(c(0.08, 0.2, 0.5, 1.25), ncol = 1L,
-                  dimnames = list(NULL, "alpha"))
-    spe <- tulpa:::.joint_axis_span(tg, tgf, list(ext))[["alpha"]]
-    expect_equal(spe$refine, "extend")
-    expect_equal(spe$nodes, two)
-    expect_gt(spe$integrated[2L], spe$declared[2L])
-    expect_lt(spe$integrated[1L], spe$declared[1L])
-    expect_equal(unname(spe$n_nodes), c(2L, 4L))
-
-    # An axis with a single continuum level has no span to report, matching what
-    # `.hyper_grid_supports()` leaves out.
-    one <- hyper_axis_spec("alpha", grid = c(0, 0.3), log_scale = TRUE,
-                           bounds = c(0, Inf), atom_mass = 0.5)
-    tg1 <- matrix(c(0, 0.3), ncol = 1L, dimnames = list(NULL, "alpha"))
-    expect_null(tulpa:::.joint_axis_span(tg1, tg1, list(one)))
 })
 
 
@@ -409,53 +71,6 @@ test_that("axis_span separates the half-node-step term from refinement", {
         control = ctrl)
 }
 
-
-# --------------------------------------------------------------------------- #
-# 7. The multi-block driver runs the same passes                               #
-# --------------------------------------------------------------------------- #
-
-test_that("a multi-block axis is eligible by its bare name, a dispersion by its prefix", {
-    elig <- tulpa:::.joint_axis_refine_eligible
-    expect_true(all(vapply(c("b1.sigma", "b2.tau", "b2.alpha", "sigma", "tau",
-                             "alpha", "phi_y"), elig, logical(1))))
-    # `phi_gp` is a block's own lengthscale; only a bare `phi_<arm>` is a
-    # dispersion.
-    expect_false(elig("b1.phi_gp"))
-    expect_false(any(vapply(c("b1.rho", "b2.rho_car", "rho"), elig, logical(1))))
-})
-
-test_that("a multi-block axis's refinement mode follows who wrote its nodes", {
-    stated <- tulpa:::.joint_multi_axis_is_stated
-    icar <- function(...) list(type = "icar", ...)
-    copy <- list(arm = "y", block = 2L, alpha_grid = c(0.2, 0.5, 0.9))
-
-    # A non-copy block lays its field SD on the registry's precision axis.
-    expect_true(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
-                       list(logical(0))))
-    expect_false(stated("b1.tau", list(icar()), list(logical(0))))
-    expect_false(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
-                        list(c(tau_grid = TRUE))))
-    # `place = FALSE` asks for the nodes as written.
-    expect_true(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
-                       list(c(tau_grid = FALSE))))
-
-    # A copy block's field SD and copy scale follow the copy convention.
-    blocks <- list(icar(), icar(sigma_grid = c(0.3, 0.9, 2.7)))
-    expect_true(stated("b2.sigma", blocks, list(logical(0), logical(0)), copy,
-                       copy_blocks = 2L))
-    expect_false(stated("b2.sigma", blocks, list(logical(0), c(sigma_grid = TRUE)),
-                        copy, copy_blocks = 2L))
-    expect_true(stated("b2.alpha", blocks, list(), copy, copy_blocks = 2L))
-    copy$alpha_grid <- auto_grid(copy$alpha_grid)
-    expect_false(stated("b2.alpha", blocks, list(), copy, copy_blocks = 2L))
-    expect_false(stated("b2.alpha", blocks, list(), list(arm = "y", block = 2L),
-                        copy_blocks = 2L))
-
-    # A dispersion reads the front door's record, as it does single-block.
-    expect_true(stated("phi_y", blocks, list(), phi_grid = list(y = c(0.1, 0.2))))
-    expect_false(stated("phi_y", blocks, list(), phi_grid = list(y = 0.1)))
-})
-
 .axr_multi_sim <- function(seed = 1L, nr = 12L) {
     set.seed(seed)
     n  <- nr * nr
@@ -490,6 +105,405 @@ test_that("a multi-block axis's refinement mode follows who wrote its nodes", {
         phi_grid = list(cover = c(0.05, 0.09, 0.15)),
         control = c(list(diagnose_k = FALSE), control)))
 }
+
+skip_on_cran_budget()
+# A caller-stated outer-grid axis is a bound (gcol33/tulpa#658).
+#
+# Refinability used to be decided by axis NAME -- `alpha` and every `phi_*` axis
+# opted into the adaptive-grid and consistency passes whether or not the caller
+# had written their nodes down -- so a fit could integrate a range the caller
+# never asked for and report it nowhere. It is decided by PROVENANCE now: an
+# axis whose nodes the caller stated is densified inside that range and never
+# extended past its ends; one the engine placed may still be followed out.
+#
+# The contract asserted here:
+#   * the per-axis mode reaches the spec field `.hyper_refinable_axes()` reads;
+#   * a non-extendable axis's proposals stay inside its declared node span,
+#     on both the boundary and the consistency path;
+#   * provenance -- not the axis name -- is what picks the default;
+#   * an engine-placed axis still extends exactly as it did;
+#   * the reported span separates the half-node-step term from refinement.
+
+
+# --------------------------------------------------------------------------- #
+# 1. The spec field                                                            #
+# --------------------------------------------------------------------------- #
+
+test_that("hyper_axis_spec carries `extend`, defaulting to the historical answer", {
+    skip_on_cran_budget()
+    s <- hyper_axis_spec("alpha", grid = c(0.2, 0.5), log_scale = TRUE,
+                         refinable = TRUE)
+    expect_true(s$extend)
+    expect_true(tulpa:::.hyper_axis_may_extend(s))
+
+    b <- hyper_axis_spec("alpha", grid = c(0.2, 0.5), log_scale = TRUE,
+                         refinable = TRUE, extend = FALSE)
+    expect_false(b$extend)
+    expect_false(tulpa:::.hyper_axis_may_extend(b))
+
+    # A spec built before the field existed says nothing about it and keeps the
+    # historical answer, so no caller of the generic passes is silently bounded.
+    legacy <- s
+    legacy$extend <- NULL
+    expect_true(tulpa:::.hyper_axis_may_extend(legacy))
+
+    expect_error(hyper_axis_spec("alpha", grid = c(0.2, 0.5), extend = NA),
+                 "extend")
+    expect_error(hyper_axis_spec("alpha", grid = c(0.2, 0.5),
+                                 extend = c(TRUE, FALSE)),
+                 "extend")
+})
+
+
+# --------------------------------------------------------------------------- #
+# 2. The per-axis mode reaches the field the refinement passes read            #
+# --------------------------------------------------------------------------- #
+
+test_that(".joint_axis_specs reads the resolved mode, not the axis name", {
+    skip_on_cran_budget()
+    grids <- list(sigma = c(0.5, 1, 2),
+                  alpha = c(0, 0.2, 0.5),
+                  phi_y = c(0.5, 1, 2))
+    cp <- list(has_copy = TRUE)
+
+    specs <- tulpa:::.joint_axis_specs(
+        grids, cp, axis_refine = c(alpha = "densify", phi_y = "extend"))
+    by <- stats::setNames(specs, vapply(specs, `[[`, character(1), "name"))
+
+    expect_true(by$alpha$refinable)
+    expect_false(by$alpha$extend)
+    expect_true(by$phi_y$refinable)
+    expect_true(by$phi_y$extend)
+    # An axis the override does not name keeps the driver's own eligibility.
+    expect_true(by$sigma$refinable)
+
+    # This is the field `.hyper_refinable_axes()` reads, which is what the issue
+    # says was already in place and unreachable.
+    expect_equal(tulpa:::.hyper_refinable_names(specs),
+                 c("sigma", "alpha", "phi_y"))
+
+    none <- tulpa:::.joint_axis_specs(
+        grids, cp,
+        axis_refine = c(sigma = "none", alpha = "none", phi_y = "none"))
+    expect_length(tulpa:::.hyper_refinable_names(none), 0L)
+
+    # No provenance supplied -- a spec list rebuilt from an assembled grid, which
+    # no refinement pass reads -- keeps the driver's own eligibility.
+    bare <- tulpa:::.joint_axis_specs(grids, cp)
+    expect_equal(tulpa:::.hyper_refinable_names(bare),
+                 c("sigma", "alpha", "phi_y"))
+})
+
+
+# --------------------------------------------------------------------------- #
+# 3. Proposals on a bounded axis                                               #
+# --------------------------------------------------------------------------- #
+
+test_that("a bounded axis is densified inside its span and never past it", {
+    skip_on_cran_budget()
+    lev <- c(0.2, 0.35, 0.5)
+    mk <- function(extend) {
+        hyper_axis_spec("alpha", grid = lev, log_scale = TRUE,
+                        bounds = c(0, Inf), refinable = TRUE, extend = extend)
+    }
+    e <- mk(TRUE)
+    b <- mk(FALSE)
+
+    pts_e <- tulpa:::.hyper_propose_axis_extension(e, lev, "max")
+    expect_gt(max(pts_e), 0.5)
+
+    # The midpoint between the two outermost levels, and nothing else: on a log
+    # axis that is the geometric mean.
+    pts_b <- tulpa:::.hyper_propose_axis_extension(b, lev, "max")
+    expect_equal(pts_b, sqrt(0.35 * 0.5))
+    expect_true(all(pts_b > 0.35 & pts_b < 0.5))
+
+    pts_lo <- tulpa:::.hyper_propose_axis_extension(b, lev, "min")
+    expect_equal(pts_lo, sqrt(0.2 * 0.35))
+
+    # The clip is on the proposal, not only on the caller's request, so an
+    # explicit `extend_ok` cannot walk a bounded axis outward.
+    forced <- tulpa:::.hyper_propose_axis_extension(b, lev, "max",
+                                                    extend_ok = TRUE)
+    expect_true(all(forced >= 0.2 & forced <= 0.5))
+
+    # Interior densification is inside by construction, so the two agree there.
+    di_e <- tulpa:::.hyper_propose_interior_densification(e, lev, 2L,
+                                                          do_left = TRUE,
+                                                          do_right = TRUE)
+    di_b <- tulpa:::.hyper_propose_interior_densification(b, lev, 2L,
+                                                          do_left = TRUE,
+                                                          do_right = TRUE)
+    expect_equal(di_b, di_e)
+})
+
+
+test_that("consistency points stay inside a bounded axis's span", {
+    skip_on_cran_budget()
+    lev <- c(0.5, 1, 2)
+    mk <- function(extend) {
+        hyper_axis_spec("phi_y", grid = lev, log_scale = TRUE,
+                        bounds = c(0, Inf), refinable = TRUE, extend = extend)
+    }
+
+    # The points bisect gaps between existing levels, so a bounded axis is
+    # refined exactly as an extendable one is, and neither is widened.
+    for (lm in list(c(-3, 0, -3), c(-1, 0, -0.5), c(-0.5, 0, -2))) {
+        e <- tulpa:::.hyper_propose_mass_bisection(mk(TRUE), lev, lm)
+        b <- tulpa:::.hyper_propose_mass_bisection(mk(FALSE), lev, lm)
+        expect_gt(length(b), 0L)
+        expect_equal(b, e)
+        expect_true(all(b > 0.5 & b < 2))
+    }
+})
+
+
+# --------------------------------------------------------------------------- #
+# 4. Provenance, not the axis name, picks the default                          #
+# --------------------------------------------------------------------------- #
+
+test_that("a stated alpha axis is a bound and a placed one is not", {
+    skip_on_cran_budget()
+    arm <- function(fc) {
+        tulpa:::.normalise_arm_field_coef(list(field_coef = fc), 1L)
+    }
+    stated <- arm(list(name = "alpha", grid = c(0.2, 0.5)))
+    marked <- arm(list(name = "alpha", grid = auto_grid(c(0.2, 0.5))))
+    by_n   <- arm(list(name = "alpha", n = 9L))
+    named  <- arm("alpha")
+    deflt  <- arm(list(name = "alpha",
+                       grid = tulpa:::.nl_grid_axis("copy_alpha")))
+
+    expect_true(tulpa:::.joint_axis_is_stated("alpha", list(stated)))
+    # `as.numeric()` drops the marker, so the normaliser has to record it.
+    expect_true(marked$field_coef_axis$grid_auto)
+    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(marked)))
+    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(by_n)))
+    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(named)))
+    # Nodes that ARE the engine's own axis carry nothing a statement would add.
+    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(deflt)))
+    # No copy arm at all.
+    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(list())))
+})
+
+
+test_that("a phi axis is stated when the caller gave its nodes", {
+    skip_on_cran_budget()
+    st <- tulpa:::.joint_axis_is_stated("phi_y", list(),
+                                        phi_grid = list(y = c(0.5, 1, 2)),
+                                        arm_names = c("y", "z"))
+    expect_true(st)
+
+    au <- tulpa:::.joint_axis_is_stated("phi_y", list(),
+                                        phi_grid = list(y = auto_grid(c(0.5, 1, 2))),
+                                        arm_names = c("y", "z"))
+    expect_false(au)
+
+    # Positional `phi_grid`, the other shape `.normalise_phi_grid()` accepts.
+    pos <- tulpa:::.joint_axis_is_stated("phi_z", list(),
+                                         phi_grid = list(NULL, c(0.5, 1, 2)),
+                                         arm_names = c("y", "z"))
+    expect_true(pos)
+
+    # An arm with no axis of its own.
+    expect_false(tulpa:::.joint_axis_is_stated("phi_z", list(),
+                                               phi_grid = list(y = c(0.5, 1)),
+                                               arm_names = c("y", "z")))
+})
+
+
+test_that(".joint_axis_refine_modes resolves every axis of one grid", {
+    skip_on_cran_budget()
+    grids <- list(sigma = c(0.5, 1), alpha = c(0, 0.2, 0.5),
+                  phi_y = c(0.5, 1, 2))
+    cp <- list(has_copy = TRUE)
+    arm_stated <- tulpa:::.normalise_arm_field_coef(
+        list(field_coef = list(name = "alpha", grid = c(0.2, 0.5))), 1L)
+    arm_placed <- tulpa:::.normalise_arm_field_coef(
+        list(field_coef = list(name = "alpha", n = 9L)), 1L)
+
+    m <- tulpa:::.joint_axis_refine_modes(grids, cp, list(arm_stated),
+                                          phi_grid = list(y = c(0.5, 1, 2)),
+                                          arm_names = "y")
+    expect_equal(m[["alpha"]], "densify")
+    expect_equal(m[["phi_y"]], "densify")
+    # A field SD with no recorded provenance is the engine's own axis.
+    expect_equal(m[["sigma"]], "extend")
+
+    p <- tulpa:::.joint_axis_refine_modes(grids, cp, list(arm_placed),
+                                          phi_grid = NULL, arm_names = "y")
+    expect_equal(p[["alpha"]], "extend")
+    # With no caller nodes recorded there is no statement to honour, so the
+    # axis falls to the engine-placed default.
+    expect_equal(p[["phi_y"]], "extend")
+
+    u <- tulpa:::.joint_axis_refine_modes(grids, cp, list(arm_stated),
+                                          phi_grid = list(y = c(0.5, 1, 2)),
+                                          arm_names = "y",
+                                          user = c(alpha = "extend",
+                                                   phi_y = "none"))
+    expect_equal(u[["alpha"]], "extend")
+    expect_equal(u[["phi_y"]], "none")
+
+    # A fit with no copy arm has no alpha axis to resolve.
+    nc <- tulpa:::.joint_axis_refine_modes(grids, list(has_copy = FALSE),
+                                           list(list()))
+    expect_false("alpha" %in% names(nc))
+})
+
+
+test_that("a field SD's refinement mode follows who wrote its nodes", {
+    skip_on_cran_budget()
+    grids <- list(sigma = c(0.5, 1, 2))
+    cp <- list(has_copy = FALSE)
+    mode <- function(prior, grid_auto = logical(0))
+        tulpa:::.joint_axis_refine_modes(grids, cp, list(list()), prior = prior,
+                                         grid_auto = grid_auto)[["sigma"]]
+    pinned <- list(type = "icar", sigma_grid = c(0.3, 0.9, 2.7))
+    expect_equal(mode(pinned), "densify")
+    # Marked as a wrapper's default, the nodes carry no statement.
+    expect_equal(mode(pinned, c(sigma_grid = TRUE)), "extend")
+    # `place = FALSE` asks for the nodes as written, whoever made them.
+    expect_equal(mode(pinned, c(sigma_grid = FALSE)), "densify")
+    # The engine's own default axis is not a statement either.
+    expect_equal(mode(list(type = "icar")), "extend")
+})
+
+
+# --------------------------------------------------------------------------- #
+# 5. The control knob                                                          #
+# --------------------------------------------------------------------------- #
+
+test_that("control$axis_refine is validated against the fit's own axes", {
+    skip_on_cran_budget()
+    axes <- c("sigma", "alpha", "phi_y", "rho_car")
+
+    expect_null(tulpa:::.joint_check_axis_refine(NULL, axes))
+    expect_equal(tulpa:::.joint_check_axis_refine(c(alpha = "none"), axes),
+                 c(alpha = "none"))
+    expect_equal(tulpa:::.joint_check_axis_refine(list(alpha = "densify"), axes),
+                 c(alpha = "densify"))
+
+    # One unnamed value applies to every refinable axis, and only to those.
+    blanket <- tulpa:::.joint_check_axis_refine("none", axes)
+    expect_equal(sort(names(blanket)), c("alpha", "phi_y", "sigma"))
+    expect_true(all(blanket == "none"))
+
+    expect_error(tulpa:::.joint_check_axis_refine(c(alpha = "widen"), axes),
+                 "unknown mode")
+    expect_error(tulpa:::.joint_check_axis_refine(c(alfa = "none"), axes),
+                 "does not have")
+    # Asking for nodes on an axis this driver never places any on is an error,
+    # not a silent no-op that leaves the caller believing it took effect.
+    expect_error(tulpa:::.joint_check_axis_refine(c(rho_car = "extend"), axes),
+                 "only \"none\"")
+    expect_equal(tulpa:::.joint_check_axis_refine(c(rho_car = "none"), axes),
+                 c(rho_car = "none"))
+    expect_equal(tulpa:::.joint_check_axis_refine(c(sigma = "densify"), axes),
+                 c(sigma = "densify"))
+    expect_error(tulpa:::.joint_check_axis_refine(c("none", "extend"), axes),
+                 "named by axis")
+})
+
+
+# --------------------------------------------------------------------------- #
+# 6. The reported span, and the two widening terms                             #
+# --------------------------------------------------------------------------- #
+
+test_that("axis_span separates the half-node-step term from refinement", {
+    skip_on_cran_budget()
+    two <- c(0.2, 0.5)
+    spec <- hyper_axis_spec("alpha", grid = two, log_scale = TRUE,
+                            bounds = c(0, Inf), refinable = TRUE,
+                            extend = FALSE)
+    tg <- matrix(two, ncol = 1L, dimnames = list(NULL, "alpha"))
+    sp <- tulpa:::.joint_axis_span(tg, tg, list(spec))[["alpha"]]
+
+    expect_equal(sp$nodes, two)
+    expect_equal(sp$refine, "densify")
+    expect_equal(unname(sp$n_nodes), c(2L, 2L))
+    expect_equal(sp$integrated, sp$declared)
+    # For k equally log-spaced nodes the declared support is k / (k - 1) times
+    # the node range on the axis's own coordinate: 2x at two nodes.
+    expect_equal(diff(log(sp$declared)) / diff(log(sp$nodes)), 2)
+
+    nine <- exp(seq(log(0.2), log(0.5), length.out = 9L))
+    spec9 <- hyper_axis_spec("alpha", grid = nine, log_scale = TRUE,
+                             bounds = c(0, Inf), refinable = TRUE,
+                             extend = FALSE)
+    tg9 <- matrix(nine, ncol = 1L, dimnames = list(NULL, "alpha"))
+    sp9 <- tulpa:::.joint_axis_span(tg9, tg9, list(spec9))[["alpha"]]
+    expect_equal(diff(log(sp9$declared)) / diff(log(sp9$nodes)), 9 / 8)
+
+    # A grid refinement moved past the declared end: the second term is then
+    # visible as `integrated` reaching past `declared`.
+    ext <- hyper_axis_spec("alpha", grid = two, log_scale = TRUE,
+                           bounds = c(0, Inf), refinable = TRUE, extend = TRUE)
+    tgf <- matrix(c(0.08, 0.2, 0.5, 1.25), ncol = 1L,
+                  dimnames = list(NULL, "alpha"))
+    spe <- tulpa:::.joint_axis_span(tg, tgf, list(ext))[["alpha"]]
+    expect_equal(spe$refine, "extend")
+    expect_equal(spe$nodes, two)
+    expect_gt(spe$integrated[2L], spe$declared[2L])
+    expect_lt(spe$integrated[1L], spe$declared[1L])
+    expect_equal(unname(spe$n_nodes), c(2L, 4L))
+
+    # An axis with a single continuum level has no span to report, matching what
+    # `.hyper_grid_supports()` leaves out.
+    one <- hyper_axis_spec("alpha", grid = c(0, 0.3), log_scale = TRUE,
+                           bounds = c(0, Inf), atom_mass = 0.5)
+    tg1 <- matrix(c(0, 0.3), ncol = 1L, dimnames = list(NULL, "alpha"))
+    expect_null(tulpa:::.joint_axis_span(tg1, tg1, list(one)))
+})
+
+
+# --------------------------------------------------------------------------- #
+# 7. The multi-block driver runs the same passes                               #
+# --------------------------------------------------------------------------- #
+
+test_that("a multi-block axis is eligible by its bare name, a dispersion by its prefix", {
+    skip_on_cran_budget()
+    elig <- tulpa:::.joint_axis_refine_eligible
+    expect_true(all(vapply(c("b1.sigma", "b2.tau", "b2.alpha", "sigma", "tau",
+                             "alpha", "phi_y"), elig, logical(1))))
+    # `phi_gp` is a block's own lengthscale; only a bare `phi_<arm>` is a
+    # dispersion.
+    expect_false(elig("b1.phi_gp"))
+    expect_false(any(vapply(c("b1.rho", "b2.rho_car", "rho"), elig, logical(1))))
+})
+
+test_that("a multi-block axis's refinement mode follows who wrote its nodes", {
+    skip_on_cran_budget()
+    stated <- tulpa:::.joint_multi_axis_is_stated
+    icar <- function(...) list(type = "icar", ...)
+    copy <- list(arm = "y", block = 2L, alpha_grid = c(0.2, 0.5, 0.9))
+
+    # A non-copy block lays its field SD on the registry's precision axis.
+    expect_true(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
+                       list(logical(0))))
+    expect_false(stated("b1.tau", list(icar()), list(logical(0))))
+    expect_false(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
+                        list(c(tau_grid = TRUE))))
+    # `place = FALSE` asks for the nodes as written.
+    expect_true(stated("b1.tau", list(icar(tau_grid = c(0.3, 1.1, 4))),
+                       list(c(tau_grid = FALSE))))
+
+    # A copy block's field SD and copy scale follow the copy convention.
+    blocks <- list(icar(), icar(sigma_grid = c(0.3, 0.9, 2.7)))
+    expect_true(stated("b2.sigma", blocks, list(logical(0), logical(0)), copy,
+                       copy_blocks = 2L))
+    expect_false(stated("b2.sigma", blocks, list(logical(0), c(sigma_grid = TRUE)),
+                        copy, copy_blocks = 2L))
+    expect_true(stated("b2.alpha", blocks, list(), copy, copy_blocks = 2L))
+    copy$alpha_grid <- auto_grid(copy$alpha_grid)
+    expect_false(stated("b2.alpha", blocks, list(), copy, copy_blocks = 2L))
+    expect_false(stated("b2.alpha", blocks, list(), list(arm = "y", block = 2L),
+                        copy_blocks = 2L))
+
+    # A dispersion reads the front door's record, as it does single-block.
+    expect_true(stated("phi_y", blocks, list(), phi_grid = list(y = c(0.1, 0.2))))
+    expect_false(stated("phi_y", blocks, list(), phi_grid = list(y = 0.1)))
+})
 
 skip_on_cran()
 

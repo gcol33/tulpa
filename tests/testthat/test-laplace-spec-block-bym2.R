@@ -54,7 +54,10 @@ expect_bym2_match <- function(family, y, n_trials, X, spatial_idx, K, adj,
                info = paste0(family, " BYM2: log_marginal"))
 }
 
+skip_on_cran_budget()
+
 test_that("spec BYM2 blocks reproduce the nested BYM2 kernel (no RE)", {
+  skip_on_cran_budget()
   set.seed(101L)
   K <- 10L
   adj <- build_chain_adj(K)
@@ -78,6 +81,7 @@ test_that("spec BYM2 blocks reproduce the nested BYM2 kernel (no RE)", {
 })
 
 test_that("spec BYM2 blocks reproduce the nested BYM2 kernel (with iid RE)", {
+  skip_on_cran_budget()
   set.seed(202L)
   K <- 8L
   adj <- build_chain_adj(K)

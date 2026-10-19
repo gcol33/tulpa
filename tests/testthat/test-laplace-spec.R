@@ -1,67 +1,3 @@
-# LikelihoodSpec-driven Laplace path. cpp_laplace_spec_test_gaussian drives the
-# spec solver with a hand-written Gaussian LikelihoodSpec (a stand-in for a
-# downstream package's custom likelihood, NOT the built-in family adapter);
-# cross-checking it against ref_laplace_fit_single() (family = "gaussian", the built-in
-# adapter) proves an arbitrary user spec lands on the same posterior mode as the
-# shipped family math. The multi-RE blocks below check the spec solver against a
-# closed-form Gaussian posterior; the np == 2 fixtures exercise the multi-process
-# coupling no single-response export reaches.
-
-test_that("custom Gaussian spec matches the built-in family path for Gaussian + iid RE", {
-  set.seed(42L)
-  N <- 200L
-  p <- 3L
-  n_re_groups <- 10L
-  sigma_re <- 0.5
-  phi <- 1.0
-  beta_true <- c(0.5, -0.3, 0.8)
-
-  X <- cbind(1, matrix(rnorm(N * (p - 1L)), nrow = N))
-  re_idx <- sample.int(n_re_groups, N, replace = TRUE)
-  u_true <- rnorm(n_re_groups, sd = sigma_re)
-  eta <- as.numeric(X %*% beta_true) + u_true[re_idx]
-  y <- eta + rnorm(N, sd = phi)
-
-  # Reference: the built-in Gaussian family through ref_laplace_fit_single() (identity
-  # link), itself spec-driven since B2-live -- so this pins a custom user spec
-  # against the shipped family closed form.
-  ref <- ref_laplace_fit_single(
-    y         = y,
-    n         = rep(1L, N),
-    X         = X,
-    re_idx    = as.numeric(re_idx),
-    n_re_groups = n_re_groups,
-    sigma_re  = sigma_re,
-    family    = "gaussian",
-    phi       = phi,
-    max_iter  = 100L,
-    tol       = 1e-10,
-    n_threads = 1L
-  )
-
-  # Spec-driven Laplace via the new shim. Use sigma_beta = 100 so
-  # tau_beta = 1e-4 matches the reference's hardcoded prior precision.
-  spec <- tulpa:::cpp_laplace_spec_test_gaussian(
-    y           = y,
-    X           = X,
-    re_idx      = re_idx,
-    n_re_groups = n_re_groups,
-    sigma_re    = sigma_re,
-    sigma_beta  = 100,
-    phi         = phi,
-    max_iter    = 100L,
-    tol         = 1e-10,
-    n_threads   = 1L
-  )
-
-  expect_true(spec$converged)
-  expect_equal(length(spec$mode), p + n_re_groups)
-
-  # Mode agreement: same Newton solver shape, same priors, same likelihood
-  # contributions per obs → same fixed point. Tighter than 1e-6 in practice;
-  # 1e-5 leaves headroom for compiler reordering across the two TUs.
-  expect_equal(spec$mode, ref$mode, tolerance = 1e-5)
-})
 
 test_that("spec-driven Laplace works without RE", {
   set.seed(7L)
@@ -238,7 +174,75 @@ make_re_design <- function(re_terms_R, N) {
   do.call(cbind, Zs)
 }
 
+skip_on_cran_budget()
+# LikelihoodSpec-driven Laplace path. cpp_laplace_spec_test_gaussian drives the
+# spec solver with a hand-written Gaussian LikelihoodSpec (a stand-in for a
+# downstream package's custom likelihood, NOT the built-in family adapter);
+# cross-checking it against ref_laplace_fit_single() (family = "gaussian", the built-in
+# adapter) proves an arbitrary user spec lands on the same posterior mode as the
+# shipped family math. The multi-RE blocks below check the spec solver against a
+# closed-form Gaussian posterior; the np == 2 fixtures exercise the multi-process
+# coupling no single-response export reaches.
+
+test_that("custom Gaussian spec matches the built-in family path for Gaussian + iid RE", {
+  skip_on_cran_budget()
+  set.seed(42L)
+  N <- 200L
+  p <- 3L
+  n_re_groups <- 10L
+  sigma_re <- 0.5
+  phi <- 1.0
+  beta_true <- c(0.5, -0.3, 0.8)
+
+  X <- cbind(1, matrix(rnorm(N * (p - 1L)), nrow = N))
+  re_idx <- sample.int(n_re_groups, N, replace = TRUE)
+  u_true <- rnorm(n_re_groups, sd = sigma_re)
+  eta <- as.numeric(X %*% beta_true) + u_true[re_idx]
+  y <- eta + rnorm(N, sd = phi)
+
+  # Reference: the built-in Gaussian family through ref_laplace_fit_single() (identity
+  # link), itself spec-driven since B2-live -- so this pins a custom user spec
+  # against the shipped family closed form.
+  ref <- ref_laplace_fit_single(
+    y         = y,
+    n         = rep(1L, N),
+    X         = X,
+    re_idx    = as.numeric(re_idx),
+    n_re_groups = n_re_groups,
+    sigma_re  = sigma_re,
+    family    = "gaussian",
+    phi       = phi,
+    max_iter  = 100L,
+    tol       = 1e-10,
+    n_threads = 1L
+  )
+
+  # Spec-driven Laplace via the new shim. Use sigma_beta = 100 so
+  # tau_beta = 1e-4 matches the reference's hardcoded prior precision.
+  spec <- tulpa:::cpp_laplace_spec_test_gaussian(
+    y           = y,
+    X           = X,
+    re_idx      = re_idx,
+    n_re_groups = n_re_groups,
+    sigma_re    = sigma_re,
+    sigma_beta  = 100,
+    phi         = phi,
+    max_iter    = 100L,
+    tol         = 1e-10,
+    n_threads   = 1L
+  )
+
+  expect_true(spec$converged)
+  expect_equal(length(spec$mode), p + n_re_groups)
+
+  # Mode agreement: same Newton solver shape, same priors, same likelihood
+  # contributions per obs → same fixed point. Tighter than 1e-6 in practice;
+  # 1e-5 leaves headroom for compiler reordering across the two TUs.
+  expect_equal(spec$mode, ref$mode, tolerance = 1e-5)
+})
+
 test_that("spec-driven Laplace handles two crossed intercept-only terms (1|g1)+(1|g2)", {
+  skip_on_cran_budget()
   set.seed(202605L)
   N <- 200L
   p <- 3L
@@ -293,6 +297,7 @@ test_that("spec-driven Laplace handles two crossed intercept-only terms (1|g1)+(
 })
 
 test_that("spec-driven Laplace handles uncorrelated random slope (x||g)", {
+  skip_on_cran_budget()
   set.seed(202606L)
   N <- 200L
   p <- 2L
@@ -347,6 +352,7 @@ test_that("spec-driven Laplace handles uncorrelated random slope (x||g)", {
 })
 
 test_that("spec-driven Laplace handles correlated random slope (x|g)", {
+  skip_on_cran_budget()
   set.seed(202607L)
   N <- 200L
   p <- 2L
@@ -411,6 +417,7 @@ test_that("spec-driven Laplace handles correlated random slope (x|g)", {
 })
 
 test_that("spec-driven Laplace honours per-process offsets", {
+  skip_on_cran_budget()
   # Adding a constant offset c to one process's eta should shift its beta_0
   # mode by -c (when intercept is the only spanned term that can absorb it).
   # Here we add a small offset to process 1 only, no RE, no shared structure;
@@ -449,4 +456,3 @@ test_that("spec-driven Laplace honours per-process offsets", {
   expect_equal(spec$mode[1:2], ref1, tolerance = 1e-6)
   expect_equal(spec$mode[3:4], ref2, tolerance = 1e-6)
 })
-

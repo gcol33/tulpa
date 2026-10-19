@@ -16,7 +16,10 @@
   1 / sqrt(exp(mean(log(diag(Qinv)))))
 }
 
+skip_on_cran_budget()
+
 test_that("compute_bym2_scale matches the Riebler generalized-variance factor", {
+  skip_on_cran_budget()
   # 3-node path
   a3 <- matrix(c(0, 1, 0, 1, 0, 1, 0, 1, 0), 3, 3)
   expect_equal(compute_bym2_scale(a3), .ref_bym2_scale(a3), tolerance = 1e-8)

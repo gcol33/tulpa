@@ -1,32 +1,3 @@
-# Placement of every multi-block scale axis, and of an axis the fit's kept
-# cells hold at one node.
-#
-# The placement mode-find searches each axis over its DECLARED nodes, not only
-# the nodes the kept cells carry (an adaptive flood, a pilot thinning or a prune
-# screen keeps a subset), and the placement pass moves a non-copy block's own
-# scale -- an iid random effect's SD, an arm-specific field's precision -- the
-# way it moves a copied field's SD. On data that identify those scales sharply
-# against their node spacing they were otherwise integrated at one node with
-# posterior SD 0.
-
-test_that("the mode-find varies an axis its kept cells hold at one node", {
-    tg <- matrix(c(0.5, 4), nrow = 1L,
-                 dimnames = list(NULL, c("b1.sigma", "b2.tau")))
-    lp <- function(theta) {
-        -((log(theta[, 1L]) - log(0.45))^2 / (2 * 0.1^2) +
-              (log(theta[, 2L]) - log(3.5))^2 / (2 * 0.2^2))
-    }
-    held <- tulpa:::.nl_placement_mode(tg, 1, c("log", "log"), lp)
-    expect_identical(held$declined, "no_usable_curvature")
-
-    nodes <- list(b1.sigma = exp(seq(log(0.05), log(5), length.out = 9)),
-                  b2.tau   = exp(seq(log(0.04), log(400), length.out = 9)))
-    pm <- tulpa:::.nl_placement_mode(tg, 1, c("log", "log"), lp,
-                                     axis_nodes = nodes)
-    expect_null(pm$declined)
-    expect_equal(pm$mode_u, log(c(0.45, 3.5)), tolerance = 1e-3)
-    expect_equal(sqrt(diag(pm$cov_u)), c(0.1, 0.2), tolerance = 0.02)
-})
 
 .bs_chain_adj <- function(n_s) {
     nbr <- lapply(seq_len(n_s),
@@ -108,6 +79,38 @@ test_that("an axis left on one node is recorded and, when unheld, warned", {
     res_a <- list(theta_grid = cbind(b1.alpha = c(0, 0.5, 1)),
                   weights = c(0.995, 0.004, 0.001))
     expect_length(tulpa:::.nl_single_node_axes(res_a), 0L)
+})
+
+skip_on_cran_budget()
+# Placement of every multi-block scale axis, and of an axis the fit's kept
+# cells hold at one node.
+#
+# The placement mode-find searches each axis over its DECLARED nodes, not only
+# the nodes the kept cells carry (an adaptive flood, a pilot thinning or a prune
+# screen keeps a subset), and the placement pass moves a non-copy block's own
+# scale -- an iid random effect's SD, an arm-specific field's precision -- the
+# way it moves a copied field's SD. On data that identify those scales sharply
+# against their node spacing they were otherwise integrated at one node with
+# posterior SD 0.
+
+test_that("the mode-find varies an axis its kept cells hold at one node", {
+    skip_on_cran_budget()
+    tg <- matrix(c(0.5, 4), nrow = 1L,
+                 dimnames = list(NULL, c("b1.sigma", "b2.tau")))
+    lp <- function(theta) {
+        -((log(theta[, 1L]) - log(0.45))^2 / (2 * 0.1^2) +
+              (log(theta[, 2L]) - log(3.5))^2 / (2 * 0.2^2))
+    }
+    held <- tulpa:::.nl_placement_mode(tg, 1, c("log", "log"), lp)
+    expect_identical(held$declined, "no_usable_curvature")
+
+    nodes <- list(b1.sigma = exp(seq(log(0.05), log(5), length.out = 9)),
+                  b2.tau   = exp(seq(log(0.04), log(400), length.out = 9)))
+    pm <- tulpa:::.nl_placement_mode(tg, 1, c("log", "log"), lp,
+                                     axis_nodes = nodes)
+    expect_null(pm$declined)
+    expect_equal(pm$mode_u, log(c(0.45, 3.5)), tolerance = 1e-3)
+    expect_equal(sqrt(diag(pm$cov_u)), c(0.1, 0.2), tolerance = 0.02)
 })
 
 skip_on_cran()

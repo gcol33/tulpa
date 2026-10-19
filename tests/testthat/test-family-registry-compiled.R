@@ -43,7 +43,19 @@ test_that("every registered family has a case in the cross-check", {
   expect_setequal(family_names(), names(.registry_cases))
 })
 
+test_that(".family_obs_weight recycles to the longest argument", {
+  eta <- c(-0.4, 0.3, 1.1)
+  expect_length(tulpa:::.family_obs_weight(eta, 2, "poisson"), 3L)
+  expect_length(tulpa:::.family_obs_weight(0.3, c(1, 2, 5), "poisson"), 3L)
+  expect_equal(tulpa:::.family_obs_weight(eta, 2, "poisson"),
+               vapply(eta, function(e)
+                 tulpa:::.family_obs_weight(e, 2, "poisson"), numeric(1)))
+})
+
+skip_on_cran_budget()
+
 test_that("the second dispersion crosses to the compiled dispatch intact", {
+  skip_on_cran_budget()
   # tweedie has no default power, so a missing phi2 must still refuse rather
   # than reach the kernel as NA; `t` has one on both sides, and the two
   # defaults have to BE the same number or the compiled route quietly fits a
@@ -62,16 +74,8 @@ test_that("the second dispersion crosses to the compiled dispatch intact", {
   }
 })
 
-test_that(".family_obs_weight recycles to the longest argument", {
-  eta <- c(-0.4, 0.3, 1.1)
-  expect_length(tulpa:::.family_obs_weight(eta, 2, "poisson"), 3L)
-  expect_length(tulpa:::.family_obs_weight(0.3, c(1, 2, 5), "poisson"), 3L)
-  expect_equal(tulpa:::.family_obs_weight(eta, 2, "poisson"),
-               vapply(eta, function(e)
-                 tulpa:::.family_obs_weight(e, 2, "poisson"), numeric(1)))
-})
-
 test_that("neg_binomial_2 and beta are the families whose Laplace weight needs the response", {
+  skip_on_cran_budget()
   # Pins the characterisation rather than the family list: a family qualifies
   # when the compiled working weight IS the observed curvature AND the
   # registry carries a separate (y-carrying) observed form.

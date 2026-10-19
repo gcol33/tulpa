@@ -16,7 +16,21 @@ test_that("the default doors name `object` for an object with no method", {
   expect_error(cpo("a"), "class character")
 })
 
+test_that("a stored log_lik is read directly; DIC then reports dbar only", {
+  set.seed(2)
+  ll <- matrix(stats::dnorm(rnorm(60 * 8), log = TRUE), 60, 8)
+  fit <- structure(list(draws = list(log_lik = ll), draws_kind = "iid"),
+                   class = "tulpa_fit")
+  expect_equal(cpo(fit)$lpml, cpo(ll)$lpml)
+  d <- dic(fit)
+  expect_equal(d$dbar, -2 * mean(rowSums(ll)))
+  expect_true(is.na(d$dic))
+})
+
+skip_on_cran_budget()
+
 test_that("a fit with no pointwise log-likelihood is refused, naming its class", {
+  skip_on_cran_budget()
   bare <- structure(list(backend = "laplace", family = "poisson"),
                     class = c("my_fit", "tulpa_fit"))
   for (door in list(cpo, dic)) {
@@ -29,17 +43,6 @@ test_that("a fit with no pointwise log-likelihood is refused, naming its class",
   skip_if_not_installed("loo")
   expect_error(loo::waic(bare), "waic\\(\\): the fit of class my_fit/tulpa_fit")
   expect_error(loo::loo(bare), "loo\\(\\): the fit of class my_fit/tulpa_fit")
-})
-
-test_that("a stored log_lik is read directly; DIC then reports dbar only", {
-  set.seed(2)
-  ll <- matrix(stats::dnorm(rnorm(60 * 8), log = TRUE), 60, 8)
-  fit <- structure(list(draws = list(log_lik = ll), draws_kind = "iid"),
-                   class = "tulpa_fit")
-  expect_equal(cpo(fit)$lpml, cpo(ll)$lpml)
-  d <- dic(fit)
-  expect_equal(d$dbar, -2 * mean(rowSums(ll)))
-  expect_true(is.na(d$dic))
 })
 
 skip_on_cran()

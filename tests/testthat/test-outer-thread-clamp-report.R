@@ -1,44 +1,3 @@
-# gcol33/tulpa#651 -- the outer-grid width a fit RAN at, against the one it
-# asked for.
-#
-# `n_threads_outer` is clamped by the grid driver to the team the OpenMP
-# environment hands out, and the clamp is correct: the per-cell block cache
-# sizes its slot array from `omp_get_max_threads()`, so an unclamped
-# `num_threads(n)` clause would map excess workers onto slot 0. What was missing
-# is any trace of it. The progress reporter prints its thread suffix only above
-# one thread, so a ten-thread request clamped to one prints exactly what a
-# serial run prints, and a fit launched under `OMP_NUM_THREADS=1` to pin the
-# INNER threads runs the outer grid on one core for hours with nothing on the
-# fit or in the log to say so.
-#
-# What has to hold:
-#   1. the resolver reports the same cap the driver clamps against;
-#   2. a clamped request says so ONCE, naming the binding cap and how to lift
-#      it -- not once per grid cell, and not at all when nothing was clamped;
-#   3. both numbers reach the fit, because neither alone shows a clamp;
-#   4. the driver stamps the width it actually opened the region at, which is
-#      the environment cap clamped further by the cell count.
-
-test_that("the realised outer width is the request capped by the environment", {
-  cap <- tulpa:::cpp_get_max_threads()
-  expect_length(cap, 1L)
-  expect_true(is.numeric(cap) && is.finite(cap) && cap >= 1L)
-
-  tw <- suppressMessages(tulpa:::.nl_outer_threads(1L))
-  expect_identical(tw$requested, 1L)
-  expect_identical(tw$realised, 1L)
-
-  big <- as.integer(cap) + 10L
-  tw_big <- suppressMessages(tulpa:::.nl_outer_threads(big))
-  expect_identical(tw_big$requested, big)
-  expect_identical(tw_big$realised, as.integer(cap))
-  expect_lt(tw_big$realised, tw_big$requested)
-
-  # A non-positive request defers to the environment, which is what the driver's
-  # own resolver does with one.
-  expect_identical(suppressMessages(tulpa:::.nl_outer_threads(0L))$realised,
-                   as.integer(cap))
-})
 
 test_that("a clamped request is reported once and names the binding cap", {
   cap <- as.integer(tulpa:::cpp_get_max_threads())
@@ -71,7 +30,52 @@ test_that("an unclamped request is silent", {
   expect_length(testthat::capture_messages(tulpa:::.nl_outer_threads(cap)), 0L)
 })
 
+skip_on_cran_budget()
+# gcol33/tulpa#651 -- the outer-grid width a fit RAN at, against the one it
+# asked for.
+#
+# `n_threads_outer` is clamped by the grid driver to the team the OpenMP
+# environment hands out, and the clamp is correct: the per-cell block cache
+# sizes its slot array from `omp_get_max_threads()`, so an unclamped
+# `num_threads(n)` clause would map excess workers onto slot 0. What was missing
+# is any trace of it. The progress reporter prints its thread suffix only above
+# one thread, so a ten-thread request clamped to one prints exactly what a
+# serial run prints, and a fit launched under `OMP_NUM_THREADS=1` to pin the
+# INNER threads runs the outer grid on one core for hours with nothing on the
+# fit or in the log to say so.
+#
+# What has to hold:
+#   1. the resolver reports the same cap the driver clamps against;
+#   2. a clamped request says so ONCE, naming the binding cap and how to lift
+#      it -- not once per grid cell, and not at all when nothing was clamped;
+#   3. both numbers reach the fit, because neither alone shows a clamp;
+#   4. the driver stamps the width it actually opened the region at, which is
+#      the environment cap clamped further by the cell count.
+
+test_that("the realised outer width is the request capped by the environment", {
+  skip_on_cran_budget()
+  cap <- tulpa:::cpp_get_max_threads()
+  expect_length(cap, 1L)
+  expect_true(is.numeric(cap) && is.finite(cap) && cap >= 1L)
+
+  tw <- suppressMessages(tulpa:::.nl_outer_threads(1L))
+  expect_identical(tw$requested, 1L)
+  expect_identical(tw$realised, 1L)
+
+  big <- as.integer(cap) + 10L
+  tw_big <- suppressMessages(tulpa:::.nl_outer_threads(big))
+  expect_identical(tw_big$requested, big)
+  expect_identical(tw_big$realised, as.integer(cap))
+  expect_lt(tw_big$realised, tw_big$requested)
+
+  # A non-positive request defers to the environment, which is what the driver's
+  # own resolver does with one.
+  expect_identical(suppressMessages(tulpa:::.nl_outer_threads(0L))$realised,
+                   as.integer(cap))
+})
+
 test_that("both numbers reach the fit, and the driver's own width wins", {
+  skip_on_cran_budget()
   tw <- list(requested = 10L, realised = 1L)
 
   # Nothing from the driver: the environment-capped request stands in.
@@ -94,6 +98,7 @@ test_that("both numbers reach the fit, and the driver's own width wins", {
 })
 
 test_that("the grid driver stamps the width it ran at", {
+  skip_on_cran_budget()
   src <- test_path("..", "..", "src", "nested_laplace_grid.h")
   skip_if_not(file.exists(src), "package sources not available")
   txt <- readLines(src, warn = FALSE)

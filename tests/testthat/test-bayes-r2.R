@@ -1,9 +1,12 @@
+
+skip_on_cran_budget()
 # bayes_R2() (gcol33/tulpa C13): per-draw Var(fit)/(Var(fit)+Var(res)) with
 # the family's model-based residual variance. Validated against the known
 # population R^2 of a simulated gaussian regression and structurally across
 # families.
 
 test_that("family_variance matches the family's known response variance", {
+  skip_on_cran_budget()
   eta <- c(-0.5, 0, 1)
 
   expect_equal(tulpa:::family_variance(eta, "poisson"), exp(eta))

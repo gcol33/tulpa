@@ -28,13 +28,6 @@ test_that("validate_spatial accepts data with empty cells (integer group_var)", 
   expect_silent(validate_spatial(spec, dat))
 })
 
-test_that("validate_spatial rejects out-of-range integer group_var", {
-  adj <- make_3x3_adjacency()
-  dat <- data.frame(cell_idx = c(1L, 2L, 4L, 10L), y = rnorm(4))
-  spec <- spatial_car(adj, level = "group", group_var = "cell_idx")
-  expect_error(validate_spatial(spec, dat), "outside \\[1, n_spatial_units = 9\\]")
-})
-
 test_that("validate_spatial accepts character group_var matching rownames(adjacency)", {
   adj <- make_3x3_adjacency()
   rownames(adj) <- paste0("c", 1:9)
@@ -42,15 +35,6 @@ test_that("validate_spatial accepts character group_var matching rownames(adjace
   dat <- data.frame(cell_id = c("c1", "c2", "c4", "c5", "c8"), y = rnorm(5))
   spec <- spatial_car(adj, level = "group", group_var = "cell_id")
   expect_silent(validate_spatial(spec, dat))
-})
-
-test_that("validate_spatial rejects unknown character group_var values", {
-  adj <- make_3x3_adjacency()
-  rownames(adj) <- paste0("c", 1:9)
-  colnames(adj) <- paste0("c", 1:9)
-  dat <- data.frame(cell_id = c("c1", "c2", "c4", "c99"), y = rnorm(4))
-  spec <- spatial_car(adj, level = "group", group_var = "cell_id")
-  expect_error(validate_spatial(spec, dat), "not found in rownames\\(adjacency\\)")
 })
 
 test_that("validate_spatial keeps existing factor-without-rownames check", {
@@ -87,7 +71,28 @@ test_that("prior_from_spec preserves cell identity via rownames", {
   expect_equal(prior$spatial_idx, c(8L, 2L, 4L))
 })
 
+skip_on_cran_budget()
+
+test_that("validate_spatial rejects out-of-range integer group_var", {
+  skip_on_cran_budget()
+  adj <- make_3x3_adjacency()
+  dat <- data.frame(cell_idx = c(1L, 2L, 4L, 10L), y = rnorm(4))
+  spec <- spatial_car(adj, level = "group", group_var = "cell_idx")
+  expect_error(validate_spatial(spec, dat), "outside \\[1, n_spatial_units = 9\\]")
+})
+
+test_that("validate_spatial rejects unknown character group_var values", {
+  skip_on_cran_budget()
+  adj <- make_3x3_adjacency()
+  rownames(adj) <- paste0("c", 1:9)
+  colnames(adj) <- paste0("c", 1:9)
+  dat <- data.frame(cell_id = c("c1", "c2", "c4", "c99"), y = rnorm(4))
+  spec <- spatial_car(adj, level = "group", group_var = "cell_id")
+  expect_error(validate_spatial(spec, dat), "not found in rownames\\(adjacency\\)")
+})
+
 test_that("prior_from_spec for spatial_bym2 with empty cells", {
+  skip_on_cran_budget()
   adj <- make_3x3_adjacency()
   dat <- data.frame(cell_idx = c(1L, 5L, 9L), y = rnorm(3))
   spec <- spatial_bym2(adj, level = "group", group_var = "cell_idx")

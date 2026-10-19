@@ -1,3 +1,17 @@
+
+
+# --- tier 2: the fit itself --------------------------------------------------
+
+rsd_data <- function(seed = 21L, G = 14L, per = 4L, b0 = -2.5, sd_re = 0.7) {
+  set.seed(seed)
+  n <- G * per
+  grp <- rep(seq_len(G), each = per)
+  x <- rnorm(n)
+  data.frame(y = rbinom(n, 1L, plogis(b0 + 0.8 * x + rnorm(G, 0, sd_re)[grp])),
+             x = x, g = factor(grp))
+}
+
+skip_on_cran_budget()
 # ranef() on a random effect the subspace debias sampled (gcol33/tulpa#314).
 #
 # When the selector pulls a random-effect coordinate into S, that coordinate is
@@ -30,6 +44,7 @@
 # --- tier 1: the recombination and the overlay -------------------------------
 
 test_that(".re_cov_debias_coord_draws() mixes on the picks it is handed", {
+  skip_on_cran_budget()
   # The node mixture is the fixed-effect draws' own: given those picks, every
   # draw must land in ITS node's sampled set (mode + one of that node's
   # offsets), never in another node's. A re-drawn mixture would break this.
@@ -55,6 +70,7 @@ test_that(".re_cov_debias_coord_draws() mixes on the picks it is handed", {
 
 
 test_that(".re_cov_debias_coord_draws() falls back to the mode for a node that declined", {
+  skip_on_cran_budget()
   nodes <- list(matrix(c(0.1, 0.2), 2, 1), NULL)
   centers <- cbind(c(3, 7))
   picks <- c(1L, 2L, 2L, 1L)
@@ -69,6 +85,7 @@ test_that(".re_cov_debias_coord_draws() falls back to the mode for a node that d
 
 
 test_that(".ranef_overlay_sampled() replaces only the named rows and stamps the source", {
+  skip_on_cran_budget()
   tab <- data.frame(term = paste0("g[", 1:4, "]"),
                     estimate = c(1, 2, 3, 4), sd = c(1, 1, 1, 1),
                     conf.low = c(0, 1, 2, 3), conf.high = c(2, 3, 4, 5),
@@ -93,18 +110,6 @@ test_that(".ranef_overlay_sampled() replaces only the named rows and stamps the 
                                                          class = "tulpa_fit")),
                    tab)
 })
-
-
-# --- tier 2: the fit itself --------------------------------------------------
-
-rsd_data <- function(seed = 21L, G = 14L, per = 4L, b0 = -2.5, sd_re = 0.7) {
-  set.seed(seed)
-  n <- G * per
-  grp <- rep(seq_len(G), each = per)
-  x <- rnorm(n)
-  data.frame(y = rbinom(n, 1L, plogis(b0 + 0.8 * x + rnorm(G, 0, sd_re)[grp])),
-             x = x, g = factor(grp))
-}
 
 skip_on_cran()
 

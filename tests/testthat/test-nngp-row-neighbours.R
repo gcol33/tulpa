@@ -39,7 +39,28 @@
                          f$order0, f$inv, 0L)
 }
 
+test_that("the leading-run reading is a different answer from counting positives", {
+  # The negative control. Without this the test above passes for a fixture in
+  # which the two rules happen to coincide.
+  f <- .nnrow_fixture()
+  hole   <- f$nn_idx; hole[10, 3] <- 0L
+  # What the count-every-positive rule would have conditioned on, written as a
+  # well-formed row: the four surviving entries packed to the front.
+  packed <- f$nn_idx
+  packed[10, ] <- c(f$nn_idx[10, 1:2], f$nn_idx[10, 4:f$nn], 0L)
+
+  for (path in c("svc", "gp")) {
+    run <- if (path == "svc") .nnrow_svc else .nnrow_gp
+    expect_false(isTRUE(all.equal(unname(run(f, hole)[["dbl"]]),
+                                  unname(run(f, packed)[["dbl"]]))),
+                 info = path)
+  }
+})
+
+skip_on_cran_budget()
+
 test_that("a row with an interior zero is read as its leading run", {
+  skip_on_cran_budget()
   f <- .nnrow_fixture()
   expect_gte(sum(f$nn_idx[10, ] > 0), 5)      # the row starts full
 
@@ -61,25 +82,8 @@ test_that("a row with an interior zero is read as its leading run", {
   }
 })
 
-test_that("the leading-run reading is a different answer from counting positives", {
-  # The negative control. Without this the test above passes for a fixture in
-  # which the two rules happen to coincide.
-  f <- .nnrow_fixture()
-  hole   <- f$nn_idx; hole[10, 3] <- 0L
-  # What the count-every-positive rule would have conditioned on, written as a
-  # well-formed row: the four surviving entries packed to the front.
-  packed <- f$nn_idx
-  packed[10, ] <- c(f$nn_idx[10, 1:2], f$nn_idx[10, 4:f$nn], 0L)
-
-  for (path in c("svc", "gp")) {
-    run <- if (path == "svc") .nnrow_svc else .nnrow_gp
-    expect_false(isTRUE(all.equal(unname(run(f, hole)[["dbl"]]),
-                                  unname(run(f, packed)[["dbl"]]))),
-                 info = path)
-  }
-})
-
 test_that("an out-of-range entry ends the row instead of indexing past nn_order", {
+  skip_on_cran_budget()
   f <- .nnrow_fixture()
   oor   <- f$nn_idx; oor[10, 3]        <- as.integer(f$N + 7L)
   trunc <- f$nn_idx; trunc[10, 3:f$nn] <- 0L
@@ -95,6 +99,7 @@ test_that("an out-of-range entry ends the row instead of indexing past nn_order"
 })
 
 test_that("the leading rows of the Vecchia ordering are read at their own counts", {
+  skip_on_cran_budget()
   # Rows 1..nn are short by construction -- location i has at most i - 1
   # predecessors -- so the scan has to return 0, 1, 2, ... there rather than the
   # table's column count. The first row conditions on nothing and takes the

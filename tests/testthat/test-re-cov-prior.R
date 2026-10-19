@@ -37,50 +37,6 @@
 }
 
 
-test_that("the closed-form Jacobian matches finite differences (c = 2, 3)", {
-  set.seed(11L)
-  for (c_re in c(2L, 3L)) {
-    k <- c_re * (c_re + 1L) / 2L
-    for (rep in seq_len(5L)) {
-      # random theta: log-diagonal modest, off-diagonals modest
-      theta <- rnorm(k, sd = 0.4)
-      num <- log(abs(det(.num_jac(function(t) .theta_to_sigma_R(t, c_re),
-                                  theta))))
-      ana <- .analytic_logdet(theta, c_re)
-      expect_equal(ana, num, tolerance = 1e-5,
-                   label = sprintf("c=%d rep=%d Jacobian", c_re, rep))
-    }
-  }
-})
-
-
-test_that("re_cov_pc_lkj_prior assembles PC + LKJ + Jacobian correctly", {
-  set.seed(22L)
-  prior_sigma <- c(2.5, 0.05); eta <- 3
-  lambda <- -log(prior_sigma[2L]) / prior_sigma[1L]
-  for (c_re in c(2L, 3L)) {
-    k     <- c_re * (c_re + 1L) / 2L
-    prior <- re_cov_pc_lkj_prior(c_re, prior_sigma = prior_sigma, eta = eta)
-    for (rep in seq_len(4L)) {
-      theta <- rnorm(k, sd = 0.4)
-      L     <- tulpa:::.re_logchol_to_L(theta, c_re)
-      sig   <- sqrt(rowSums(L^2))
-      logdetR <- 2 * sum(log(diag(L))) - 2 * sum(log(sig))
-      # LKJ normalizing constant, Lewandowski, Kurowicka & Joe (2009) 3.2.
-      kk <- seq_len(c_re - 1L)
-      aa <- eta + (c_re - kk - 1) / 2
-      log_c <- sum((2 * eta - 2 + c_re - kk) * (c_re - kk)) * log(2) +
-        sum((c_re - kk) * lbeta(aa, aa))
-      expected <- sum(log(lambda) - lambda * sig) +    # PC on each SD
-        (eta - 1) * logdetR - log_c +                  # LKJ on correlation
-        .analytic_logdet(theta, c_re)                  # change of variables
-      expect_equal(prior(theta), expected, tolerance = 1e-10,
-                   label = sprintf("c=%d rep=%d assembled prior", c_re, rep))
-    }
-  }
-})
-
-
 test_that("c = 1 reduces to the exact scalar PC change of variables", {
   # c = 1: theta = log(sigma); p_theta(theta) = lambda exp(-lambda sigma) * sigma.
   prior <- re_cov_pc_lkj_prior(1L, prior_sigma = c(3, 0.05), eta = 2)
@@ -112,7 +68,74 @@ test_that("PC tail probability and LKJ shape behave as specified", {
 })
 
 
+test_that("the joint multi-block prior sums independent per-block priors", {
+  prior_sigma <- c(3, 0.05); eta <- 2
+  layout <- list(
+    list(nc = 2L, full = TRUE,  k = 3L, label = "g"),
+    list(nc = 1L, full = FALSE, k = 1L, label = "h")
+  )
+  joint <- tulpa:::.re_cov_joint_prior(layout, prior_sigma, eta)
+  p_g <- re_cov_pc_lkj_prior(2L, prior_sigma = prior_sigma, eta = eta,
+                             correlated = TRUE)
+  p_h <- re_cov_pc_lkj_prior(1L, prior_sigma = prior_sigma, eta = eta,
+                             correlated = FALSE)
+  set.seed(99L)
+  theta <- rnorm(4L, sd = 0.4)   # 3 (g) + 1 (h)
+  expect_equal(joint(theta), p_g(theta[1:3]) + p_h(theta[4]),
+               tolerance = 1e-12)
+})
+
+skip_on_cran_budget()
+
+
+test_that("the closed-form Jacobian matches finite differences (c = 2, 3)", {
+  skip_on_cran_budget()
+  set.seed(11L)
+  for (c_re in c(2L, 3L)) {
+    k <- c_re * (c_re + 1L) / 2L
+    for (rep in seq_len(5L)) {
+      # random theta: log-diagonal modest, off-diagonals modest
+      theta <- rnorm(k, sd = 0.4)
+      num <- log(abs(det(.num_jac(function(t) .theta_to_sigma_R(t, c_re),
+                                  theta))))
+      ana <- .analytic_logdet(theta, c_re)
+      expect_equal(ana, num, tolerance = 1e-5,
+                   label = sprintf("c=%d rep=%d Jacobian", c_re, rep))
+    }
+  }
+})
+
+
+test_that("re_cov_pc_lkj_prior assembles PC + LKJ + Jacobian correctly", {
+  skip_on_cran_budget()
+  set.seed(22L)
+  prior_sigma <- c(2.5, 0.05); eta <- 3
+  lambda <- -log(prior_sigma[2L]) / prior_sigma[1L]
+  for (c_re in c(2L, 3L)) {
+    k     <- c_re * (c_re + 1L) / 2L
+    prior <- re_cov_pc_lkj_prior(c_re, prior_sigma = prior_sigma, eta = eta)
+    for (rep in seq_len(4L)) {
+      theta <- rnorm(k, sd = 0.4)
+      L     <- tulpa:::.re_logchol_to_L(theta, c_re)
+      sig   <- sqrt(rowSums(L^2))
+      logdetR <- 2 * sum(log(diag(L))) - 2 * sum(log(sig))
+      # LKJ normalizing constant, Lewandowski, Kurowicka & Joe (2009) 3.2.
+      kk <- seq_len(c_re - 1L)
+      aa <- eta + (c_re - kk - 1) / 2
+      log_c <- sum((2 * eta - 2 + c_re - kk) * (c_re - kk)) * log(2) +
+        sum((c_re - kk) * lbeta(aa, aa))
+      expected <- sum(log(lambda) - lambda * sig) +    # PC on each SD
+        (eta - 1) * logdetR - log_c +                  # LKJ on correlation
+        .analytic_logdet(theta, c_re)                  # change of variables
+      expect_equal(prior(theta), expected, tolerance = 1e-10,
+                   label = sprintf("c=%d rep=%d assembled prior", c_re, rep))
+    }
+  }
+})
+
+
 test_that("a diagonal block uses log-SD coords with no LKJ term", {
+  skip_on_cran_budget()
   # correlated = FALSE: theta_i = log sigma_i, prior = PC(sigma_i) + Jacobian
   # sum_i theta_i, and no correlation factor regardless of eta.
   prior_sigma <- c(2.5, 0.05)
@@ -131,24 +154,6 @@ test_that("a diagonal block uses log-SD coords with no LKJ term", {
     # eta is irrelevant for a diagonal block
     expect_equal(p9(th), p2(th), tolerance = 1e-12)
   }
-})
-
-
-test_that("the joint multi-block prior sums independent per-block priors", {
-  prior_sigma <- c(3, 0.05); eta <- 2
-  layout <- list(
-    list(nc = 2L, full = TRUE,  k = 3L, label = "g"),
-    list(nc = 1L, full = FALSE, k = 1L, label = "h")
-  )
-  joint <- tulpa:::.re_cov_joint_prior(layout, prior_sigma, eta)
-  p_g <- re_cov_pc_lkj_prior(2L, prior_sigma = prior_sigma, eta = eta,
-                             correlated = TRUE)
-  p_h <- re_cov_pc_lkj_prior(1L, prior_sigma = prior_sigma, eta = eta,
-                             correlated = FALSE)
-  set.seed(99L)
-  theta <- rnorm(4L, sd = 0.4)   # 3 (g) + 1 (h)
-  expect_equal(joint(theta), p_g(theta[1:3]) + p_h(theta[4]),
-               tolerance = 1e-12)
 })
 
 skip_on_cran()

@@ -72,7 +72,10 @@ report_omp_reduction <- function(got, ref, nt, bound) {
   invisible(d)
 }
 
+skip_on_cran_budget()
+
 test_that("a parallel likelihood reduction is independent of the thread count", {
+  skip_on_cran_budget()
   set.seed(6)
   n <- 500L
   mu <- runif(n, 0.2, 6)
@@ -103,6 +106,7 @@ test_that("a parallel likelihood reduction is independent of the thread count", 
 })
 
 test_that("independent per-element writes are identical at any thread count", {
+  skip_on_cran_budget()
   n <- 1000L
   ref <- cpp_test_parallel_independent(n, 1L)
   i <- seq_len(n) - 1

@@ -62,8 +62,11 @@ test_that("a grouped TVC field is refused rather than collapsed to group 1", {
   expect_error(tvc(fake), "no group dimension")
 })
 
+skip_on_cran_budget()
+
 
 test_that(".draws_by_prefix orders by index, not by column position", {
+  skip_on_cran_budget()
   m <- matrix(seq_len(3L * 4L), nrow = 3L,
               dimnames = list(NULL, c("w[10]", "w[2]", "w[1]", "other")))
   got <- tulpa:::.draws_by_prefix(m, "w")

@@ -70,7 +70,43 @@
     a
 }
 
+# --------------------------------------------------------------------------- #
+# (5) Bootstrap outer Pareto-k: per-arm + RNG hygiene (gcol33/tulpa#127)       #
+# --------------------------------------------------------------------------- #
+# The k-hat's sampling uncertainty is bootstrapped from one batch's raw
+# log-ratios. The constructed single-axis res + analytic refit exercises the
+# scorer directly, fast, with a known proposal-covers target; the multi-block
+# fixtures exercise the per-arm bootstrap and the global-RNG hygiene.
+
+.jpk_cover_res <- function() {
+    sg <- exp(seq(-3, 3, length.out = 61))
+    lw <- stats::dnorm(log(sg), 0, 1.2, log = TRUE)
+    w  <- exp(lw - max(lw)); w <- w / sum(w)
+    list(theta_grid = matrix(sg, ncol = 1, dimnames = list(NULL, "sigma")),
+         weights = w, prior = list(type = "icar"))
+}
+# lt -> N(0, 0.8^2): target narrower than the grid-moment proposal (low k).
+.jpk_cover_refit <- function(tm) { u <- log(tm[, "sigma"]); -0.5 * (u / 0.8)^2 - u }
+
+test_that("control$k_refine / k_max_rounds validation (gcol33/tulpa#131)", {
+    sim <- .jpk_sim(seed = 95)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.9))
+    arms <- .jpk_arms_alpha(sim, c(0.5, 1.0))
+    expect_error(
+        tulpa_nested_laplace_joint(responses = arms, prior = prior,
+            control = list(k_refine = "bogus")), "k_refine")
+    expect_error(
+        tulpa_nested_laplace_joint(responses = arms, prior = prior,
+            control = list(k_max_rounds = -1L)), "k_max_rounds")
+})
+
+skip_on_cran_budget()
+
 test_that(".joint_pareto_k declines a fit carrying an unguessable axis, and NAMES it", {
+    skip_on_cran_budget()
     # A car_proper-typed single block with a rho_car axis: the resolver must
     # decline rather than guess the eigenvalue-bounded support -- and say which
     # axis stopped it, since that decline is PERMANENT for this family
@@ -88,6 +124,7 @@ test_that(".joint_pareto_k declines a fit carrying an unguessable axis, and NAME
 })
 
 test_that("each outer Pareto-k decline path reports its own reason", {
+    skip_on_cran_budget()
     # gcol33/tulpa#295: "you turned it off", "this family can never be scored"
     # and "the grid carries no weight" used to be one indistinguishable NA.
     lm0 <- function(tm) rep(0, nrow(tm))
@@ -122,6 +159,7 @@ test_that("each outer Pareto-k decline path reports its own reason", {
 })
 
 test_that(".k_decline_note reads each reason back, and only unguessable_axis is permanent", {
+    skip_on_cran_budget()
     for (r in tulpa:::.K_DECLINE_REASONS) {
         expect_true(is.character(tulpa:::.k_decline_note(r)))
     }
@@ -133,24 +171,6 @@ test_that(".k_decline_note reads each reason back, and only unguessable_axis is 
 })
 
 # --------------------------------------------------------------------------- #
-# (5) Bootstrap outer Pareto-k: per-arm + RNG hygiene (gcol33/tulpa#127)       #
-# --------------------------------------------------------------------------- #
-# The k-hat's sampling uncertainty is bootstrapped from one batch's raw
-# log-ratios. The constructed single-axis res + analytic refit exercises the
-# scorer directly, fast, with a known proposal-covers target; the multi-block
-# fixtures exercise the per-arm bootstrap and the global-RNG hygiene.
-
-.jpk_cover_res <- function() {
-    sg <- exp(seq(-3, 3, length.out = 61))
-    lw <- stats::dnorm(log(sg), 0, 1.2, log = TRUE)
-    w  <- exp(lw - max(lw)); w <- w / sum(w)
-    list(theta_grid = matrix(sg, ncol = 1, dimnames = list(NULL, "sigma")),
-         weights = w, prior = list(type = "icar"))
-}
-# lt -> N(0, 0.8^2): target narrower than the grid-moment proposal (low k).
-.jpk_cover_refit <- function(tm) { u <- log(tm[, "sigma"]); -0.5 * (u / 0.8)^2 - u }
-
-# --------------------------------------------------------------------------- #
 # (6) Bootstrap outer Pareto-k uncertainty (gcol33/tulpa#127)                  #
 # --------------------------------------------------------------------------- #
 # The k-hat is a single fixed number for a fit + proposal; its sampling
@@ -159,6 +179,7 @@ test_that(".k_decline_note reads each reason back, and only unguessable_axis is 
 # tail-threshold guard; k_conf_bands configurable band boundaries.
 
 test_that(".psis_tail_len: automatic PSIS rule and the 20%-of-draws cap", {
+    skip_on_cran_budget()
     expect_identical(.psis_tail_len(500L),  68L)        # ceil(min(100, 3*sqrt(500)))
     expect_identical(.psis_tail_len(5000L), 213L)       # ceil(min(1000, 3*sqrt(5000)))
     expect_identical(.psis_tail_len(500L, 60L),  60L)   # below ceiling: honoured
@@ -167,6 +188,7 @@ test_that(".psis_tail_len: automatic PSIS rule and the 20%-of-draws cap", {
 })
 
 test_that(".k_band_b / .within_one_band_b use (-Inf,0.5] (0.5,0.7] (0.7,Inf)", {
+    skip_on_cran_budget()
     b <- c(0.5, 0.7)
     expect_identical(.k_band_b(0.30, b), 0L)            # good
     expect_identical(.k_band_b(0.50, b), 0L)            # boundary belongs to good (strict >)
@@ -186,6 +208,7 @@ test_that(".k_band_b / .within_one_band_b use (-Inf,0.5] (0.5,0.7] (0.7,Inf)", {
 # --------------------------------------------------------------------------- #
 
 test_that(".ps_khat_threshold is the sample-size-dependent usable boundary", {
+    skip_on_cran_budget()
     expect_equal(.ps_khat_threshold(100), 0.5, tolerance = 1e-9)
     expect_equal(.ps_khat_threshold(200), 1 - 1 / log10(200), tolerance = 1e-12)
     expect_equal(round(.ps_khat_threshold(200), 4), 0.5654)
@@ -196,6 +219,7 @@ test_that(".ps_khat_threshold is the sample-size-dependent usable boundary", {
 })
 
 test_that(".ps_conf_bands keeps the good cut at 0.5 with a size-dependent usable cut", {
+    skip_on_cran_budget()
     b200 <- .ps_conf_bands(200)
     expect_length(b200, 2L)
     expect_identical(b200[1L], 0.5)
@@ -207,6 +231,7 @@ test_that(".ps_conf_bands keeps the good cut at 0.5 with a size-dependent usable
 })
 
 test_that("the size-dependent boundary changes the band verdict vs fixed c(0.5, 0.7)", {
+    skip_on_cran_budget()
     # A bootstrap interval [0.55, 0.62] at S = 200 crosses the size-dependent usable
     # cut (~0.565), so it is NOT confidently in one band; under the fixed ok band
     # (0.5, 0.7] it would read confident. The size-dependent default is stricter.
@@ -216,6 +241,7 @@ test_that("the size-dependent boundary changes the band verdict vs fixed c(0.5, 
 })
 
 test_that(".joint_pareto_k warns when k_tail_points exceeds the 20% cap", {
+    skip_on_cran_budget()
     res <- .jpk_cover_res()
     set.seed(99)
     # cap = floor(0.2 * 600) = 120; a request of 250 warns and the used count caps.
@@ -228,6 +254,7 @@ test_that(".joint_pareto_k warns when k_tail_points exceeds the 20% cap", {
 })
 
 test_that("control validation: k_bootstrap / k_tail_points / k_conf_bands", {
+    skip_on_cran_budget()
     sim <- .jpk_sim(seed = 95)
     adj <- .jpk_chain_adj(sim$n_s)
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
@@ -250,6 +277,7 @@ test_that("control validation: k_bootstrap / k_tail_points / k_conf_bands", {
 # --------------------------------------------------------------------------- #
 
 test_that("control$k_quality validation rejects unknown levels", {
+    skip_on_cran_budget()
     sim <- .jpk_sim(seed = 95)
     adj <- .jpk_chain_adj(sim$n_s)
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
@@ -261,22 +289,8 @@ test_that("control$k_quality validation rejects unknown levels", {
             control = list(k_quality = "great")), "k_quality")
 })
 
-test_that("control$k_refine / k_max_rounds validation (gcol33/tulpa#131)", {
-    sim <- .jpk_sim(seed = 95)
-    adj <- .jpk_chain_adj(sim$n_s)
-    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
-                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.9))
-    arms <- .jpk_arms_alpha(sim, c(0.5, 1.0))
-    expect_error(
-        tulpa_nested_laplace_joint(responses = arms, prior = prior,
-            control = list(k_refine = "bogus")), "k_refine")
-    expect_error(
-        tulpa_nested_laplace_joint(responses = arms, prior = prior,
-            control = list(k_max_rounds = -1L)), "k_max_rounds")
-})
-
 test_that("k_quality classifies the miss the escalation reads (gcol33/tulpa#131)", {
+    skip_on_cran_budget()
     # The verdict reads only the k-hat, the bootstrap band-confidence flag and
     # the bands, so the classification is exercised without a fit.
     mk <- function(k, conf) list(pareto_k = k, pareto_k_band_confident = conf,

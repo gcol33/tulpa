@@ -1,3 +1,5 @@
+
+skip_on_cran_budget()
 # test-nested-laplace-cpp.R
 # Tests for C++ nested Laplace grid loop (Feature 3b)
 
@@ -6,6 +8,7 @@
 # =====================================================================
 
 test_that("cpp_nested_laplace_icar runs and returns correct structure", {
+  skip_on_cran_budget()
   adj <- make_grid_adjacency(5, 5)  # 25 sites
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,
@@ -38,6 +41,7 @@ test_that("cpp_nested_laplace_icar runs and returns correct structure", {
 # =====================================================================
 
 test_that("C++ grid loop matches R single-point calls", {
+  skip_on_cran_budget()
   adj <- make_grid_adjacency(5, 5)
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,
@@ -84,6 +88,7 @@ test_that("C++ grid loop matches R single-point calls", {
 # =====================================================================
 
 test_that("warm-start chain in C++ grid uses fewer total iterations", {
+  skip_on_cran_budget()
   adj <- make_grid_adjacency(5, 5)
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,

@@ -1,118 +1,3 @@
-# Inner-Laplace skew CORRECTION (gcol33/tulpa#302): the consumer of gamma_3.
-#
-# test-inner-skew.R validates the cubic term itself -- that it is the quantity
-# the derivation defines and that it tracks an independently integrated exact
-# posterior skewness. This file validates what is now DONE with it: the
-# Cornish-Fisher marginal quantiles `summary()` / `confint()` report when
-# `control$skew_correct` is on.
-#
-# The arbiter is the same kind as everywhere else in this engine: an
-# independently computed exact answer, not a shape check. The exact posterior
-# quantiles of an intercept-only binomial-logit model are available by direct
-# quadrature (the construction test-inner-skew.R already uses for the skewness),
-# so the corrected endpoints are held against those, and the credible intervals
-# are held against nominal coverage over many simulated data sets.
-#
-# WHAT THE CORRECTION CANNOT DO, measured rather than assumed. gamma_3 is a
-# LOWER BOUND on the true skewness (test-inner-skew.R pins the ratio), so a
-# marginal corrected from it moves PART of the way, and being leading-order it
-# cannot describe a symmetric heavy tail at all. The centre is corrected as well
-# since gcol33/tulpa#354 (the location term gamma_1 plus the mean gamma_3 itself
-# induces), so what remains below is an improvement that is real and partial
-# rather than one that is real in the endpoints and negative over the marginal.
-
-# --------------------------------------------------------------------------- #
-# (1) Structural: the Cornish-Fisher kernel and its gates                     #
-# --------------------------------------------------------------------------- #
-
-test_that("the Cornish-Fisher quantile is the series it claims to be", {
-  z <- stats::qnorm(c(0.025, 0.25, 0.5, 0.75, 0.975))
-  g <- 0.4
-  g1 <- -0.1
-  out <- tulpa:::cpp_cornish_fisher_quantile(mu = 1.5, sigma = 2, gamma3 = g,
-                                             gamma1 = g1, z = z,
-                                             max_abs_gamma3 = 1,
-                                             max_abs_centre = 1.2)
-  expect_true(out$applied)
-  # The centre eq. (22) implies is gamma_1 + gamma_3 / 2 (gcol33/tulpa#354), not
-  # the mean-zero standardized variate the expansion is written in.
-  expect_equal(as.numeric(out$q),
-               1.5 + 2 * (g1 + g / 2 + z + (g / 6) * (z^2 - 1)))
-
-  # Zero skewness AND zero location term is the Gaussian quantile exactly, not
-  # approximately: the correction must be inert where the inner Laplace is exact
-  # (a gaussian-family coefficient reads both as 0 by construction). At
-  # gamma_3 = gamma_1 = 0 the centre and the reshaping term are both zero, so
-  # the applied row must come out of `mu + sigma w` bit for bit the same as a
-  # declined one. Both sides are the same routine, so no compiler's fused
-  # multiply-add can separate them.
-  out0 <- tulpa:::cpp_cornish_fisher_quantile(mu = -0.3, sigma = 1.7, gamma3 = 0,
-                                              gamma1 = 0, z = z,
-                                              max_abs_gamma3 = 1,
-                                              max_abs_centre = 1.2)
-  dec0 <- tulpa:::cpp_cornish_fisher_quantile(mu = -0.3, sigma = 1.7,
-                                              gamma3 = NA_real_,
-                                              gamma1 = NA_real_, z = z,
-                                              max_abs_gamma3 = 1,
-                                              max_abs_centre = 1.2)
-  expect_false(dec0$applied)
-  expect_identical(as.numeric(out0$q), as.numeric(dec0$q))
-  # And that row is the Gaussian quantile. R rounds `mu + sigma z` twice where a
-  # contracting compiler rounds it once, so the value is read to within a few
-  # units in the last place rather than to the bit.
-  expect_equal(as.numeric(out0$q), -0.3 + 1.7 * z, tolerance = 1e-15)
-  expect_true(out0$applied)
-
-  # At a symmetric level the whole correction is a relocation: the reshaping term
-  # takes the same value at both ends and the centre is a constant, so the
-  # interval width is untouched.
-  q <- as.numeric(out$q)
-  expect_equal(q[5] - q[1], 2 * (z[5] - z[1]))
-})
-
-test_that("a coefficient with no location term declines rather than assuming zero", {
-  z <- stats::qnorm(c(0.025, 0.975))
-  # gamma_1 is REQUIRED. Reading an absent one as 0 would assert
-  # gamma_1 = -gamma_3 / 2 (the mean-zero reading), which is a claim about the
-  # location term, not an absence of one.
-  out <- tulpa:::cpp_cornish_fisher_quantile(
-    mu = c(0, 0), sigma = c(1, 1), gamma3 = c(0.5, 0.5),
-    gamma1 = c(0.05, NaN), z = z, max_abs_gamma3 = 1, max_abs_centre = 1.2)
-  expect_identical(as.logical(out$applied), c(TRUE, FALSE))
-  expect_identical(out$q[2, ], z)
-  expect_equal(out$q[1, ], 0.05 + 0.25 + z + (0.5 / 6) * (z^2 - 1))
-})
-
-test_that("the correction declines rather than extrapolating, and says so per index", {
-  z <- stats::qnorm(c(0.025, 0.975))
-  # An `unreliable` band (|gamma_3| at or past the cutoff), a non-computable
-  # gamma_3, and a degenerate scale each fall back to the Gaussian quantiles --
-  # which are still REPORTED, so the table is complete and the flag says which
-  # rows they are.
-  out <- tulpa:::cpp_cornish_fisher_quantile(
-    mu = c(0, 0, 0, 0), sigma = c(1, 1, 1, 0),
-    gamma3 = c(0.9, 1.0, NaN, 0.5), gamma1 = rep(0, 4), z = z,
-    max_abs_gamma3 = 1, max_abs_centre = 1.2)
-  expect_identical(as.logical(out$applied), c(TRUE, FALSE, FALSE, FALSE))
-  expect_identical(out$q[2, ], z)          # band cutoff
-  expect_identical(out$q[3, ], z)          # gamma_3 not computable
-  expect_identical(out$q[4, ], c(0, 0))    # degenerate scale
-  expect_false(isTRUE(all.equal(out$q[1, ], z)))
-
-  # The map w(z) = z + (g/6)(z^2 - 1) is a quantile function only where it
-  # increases, dw/dz = 1 + (g/3) z > 0. At |g| < 1 that holds out to |z| < 3, so
-  # an extreme level with an otherwise eligible gamma_3 declines rather than
-  # returning a crossed interval.
-  wide <- stats::qnorm(c(1e-5, 1 - 1e-5))       # |z| ~ 4.26
-  far <- tulpa:::cpp_cornish_fisher_quantile(mu = 0, sigma = 1, gamma3 = 0.9,
-                                             gamma1 = 0, z = wide,
-                                             max_abs_gamma3 = 1,
-                                             max_abs_centre = 1.2)
-  expect_false(as.logical(far$applied))
-  expect_equal(as.numeric(far$q), wide)
-  # Every reported interval is ordered, corrected or not.
-  expect_lt(far$q[1, 1], far$q[1, 2])
-})
 
 test_that("the CENTRE band is a cutoff the predicate takes, and ships off", {
   # gcol33/tulpa#362 added it; gcol33/tulpa#376 measured every finite cutoff to
@@ -127,82 +12,6 @@ test_that("the CENTRE band is a cutoff the predicate takes, and ships off", {
     gamma1 = c(0, 5, 500), z = z, max_abs_gamma3 = 1,
     max_abs_centre = .nl_diag("centre_unreliable"))
   expect_identical(as.logical(shipped$applied), rep(TRUE, 3))
-})
-
-test_that("the CENTRE is banded, not only the shape", {
-  # gcol33/tulpa#362. The reported quantile is
-  # mu_i + sigma_i {gamma_1 + gamma_3 / 2 + w(z_p; gamma_3)}, so the correction
-  # relocates the marginal by the centre and a band on |gamma_3| alone bounds
-  # only the reshaping. The shape here is identical across the four rows and
-  # well inside its own band; the centre is what decides them.
-  z <- stats::qnorm(c(0.025, 0.975))
-  cut <- 1.2
-  g3 <- rep(0.4, 4)
-  g1 <- c(0.0, 0.5, cut - 0.4 / 2 - 1e-9, cut - 0.4 / 2)   # |m| = 0.2, 0.7, <cut, ==cut
-  out <- tulpa:::cpp_cornish_fisher_quantile(
-    mu = rep(0, 4), sigma = rep(1, 4), gamma3 = g3, gamma1 = g1, z = z,
-    max_abs_gamma3 = 1, max_abs_centre = cut)
-  # The band is strict: a centre AT the cutoff declines, as |gamma_3| at the
-  # shape cutoff already does.
-  expect_identical(as.logical(out$applied), c(TRUE, TRUE, TRUE, FALSE))
-  expect_identical(out$q[4, ], z)
-  expect_equal(out$q[2, ], 0.5 + 0.2 + z + (0.4 / 6) * (z^2 - 1))
-
-  # A wider band admits the row a tighter one declines, and nothing else moves.
-  wide <- tulpa:::cpp_cornish_fisher_quantile(
-    mu = rep(0, 4), sigma = rep(1, 4), gamma3 = g3, gamma1 = g1, z = z,
-    max_abs_gamma3 = 1, max_abs_centre = cut + 0.1)
-  expect_identical(as.logical(wide$applied), rep(TRUE, 4))
-  expect_identical(wide$q[1:3, ], out$q[1:3, ])
-})
-
-test_that("cpp_cornish_fisher_bands is the predicate the quantile path uses", {
-  # The eligibility RECORD and the quantile path must be one decision, not two
-  # implementations of it. `.nl_skew_correction_attach()` reads the bands from
-  # here; the quantile path calls the same predicate inside the loop.
-  g3 <- c(0.4, 0.4, 1.2, NaN, 0.4)
-  g1 <- c(0.1, 2.0, 0.0, 0.1, NaN)
-  b <- tulpa:::cpp_cornish_fisher_bands(g3, g1, 1.0, 1.2)
-  expect_equal(b$centre, g1 + g3 / 2)
-  expect_identical(as.logical(b$in_band), c(TRUE, FALSE, FALSE, FALSE, FALSE))
-  z <- stats::qnorm(c(0.025, 0.975))
-  q <- tulpa:::cpp_cornish_fisher_quantile(
-    mu = rep(0, 5), sigma = rep(1, 5), gamma3 = g3, gamma1 = g1, z = z,
-    max_abs_gamma3 = 1.0, max_abs_centre = 1.2)
-  expect_identical(as.logical(q$applied), as.logical(b$in_band))
-})
-
-test_that(".nl_skew_marginal is inert when the correction is switched off", {
-  probs <- c(0.025, 0.975)
-  mu <- c(0.4, -1.2); sd <- c(0.5, 0.9); g <- c(0.6, -0.7); g1 <- c(0.05, -0.03)
-  off <- .nl_skew_marginal(mu, sd, g, g1, probs, enabled = FALSE)
-  expect_identical(off$applied, c(FALSE, FALSE))
-  # Switching the correction off is the same read as a coefficient whose terms
-  # were not computable: same routine, same arithmetic, so bit for bit.
-  absent <- .nl_skew_marginal(mu, sd, rep(NA_real_, 2), rep(NA_real_, 2), probs,
-                              enabled = TRUE)
-  expect_identical(off$q, absent$q)
-  # R rounds `mu + sd z` twice where a contracting compiler rounds it once, so
-  # the value is read to within a few units in the last place, not to the bit.
-  expect_equal(off$q, matrix(mu, 2L, 2L) + outer(sd, stats::qnorm(probs)),
-               tolerance = 1e-15)
-  on <- .nl_skew_marginal(mu, sd, g, g1, probs, enabled = TRUE)
-  expect_identical(on$applied, c(TRUE, TRUE))
-  expect_false(isTRUE(all.equal(on$q, off$q)))
-})
-
-test_that(".nl_skew_by_fixed maps probed indices onto coefficients, never onto zero", {
-  # The default probe is 1:p, so gamma3[j] is coefficient j.
-  f <- list(inner_skew = c(0.3, -0.2), inner_skew_idx = 1:2)
-  expect_identical(.nl_skew_by_fixed(f, 2L), c(0.3, -0.2))
-  # A fit whose control$skew_idx probed something else leaves the unprobed
-  # coefficients NA -- "not scored" is not "no skew".
-  f2 <- list(inner_skew = c(0.5), inner_skew_idx = 2L)
-  expect_identical(.nl_skew_by_fixed(f2, 3L), c(NA_real_, 0.5, NA_real_))
-  # A latent index past the fixed block is not a coefficient and is dropped.
-  f3 <- list(inner_skew = c(0.5, 0.9), inner_skew_idx = c(1L, 40L))
-  expect_identical(.nl_skew_by_fixed(f3, 2L), c(0.5, NA_real_))
-  expect_identical(.nl_skew_by_fixed(list(), 2L), c(NA_real_, NA_real_))
 })
 
 test_that("a fit with no skew_correction record reports Gaussian quantiles", {
@@ -400,6 +209,206 @@ CENTRE_CUT_362 <- 1.2
   z <- stats::qnorm(lo + p * (hi - lo))
   mu + sigma * (g1 + g3 / 2 + z + (g3 / 6) * (z^2 - 1))
 }
+
+skip_on_cran_budget()
+# Inner-Laplace skew CORRECTION (gcol33/tulpa#302): the consumer of gamma_3.
+#
+# test-inner-skew.R validates the cubic term itself -- that it is the quantity
+# the derivation defines and that it tracks an independently integrated exact
+# posterior skewness. This file validates what is now DONE with it: the
+# Cornish-Fisher marginal quantiles `summary()` / `confint()` report when
+# `control$skew_correct` is on.
+#
+# The arbiter is the same kind as everywhere else in this engine: an
+# independently computed exact answer, not a shape check. The exact posterior
+# quantiles of an intercept-only binomial-logit model are available by direct
+# quadrature (the construction test-inner-skew.R already uses for the skewness),
+# so the corrected endpoints are held against those, and the credible intervals
+# are held against nominal coverage over many simulated data sets.
+#
+# WHAT THE CORRECTION CANNOT DO, measured rather than assumed. gamma_3 is a
+# LOWER BOUND on the true skewness (test-inner-skew.R pins the ratio), so a
+# marginal corrected from it moves PART of the way, and being leading-order it
+# cannot describe a symmetric heavy tail at all. The centre is corrected as well
+# since gcol33/tulpa#354 (the location term gamma_1 plus the mean gamma_3 itself
+# induces), so what remains below is an improvement that is real and partial
+# rather than one that is real in the endpoints and negative over the marginal.
+
+# --------------------------------------------------------------------------- #
+# (1) Structural: the Cornish-Fisher kernel and its gates                     #
+# --------------------------------------------------------------------------- #
+
+test_that("the Cornish-Fisher quantile is the series it claims to be", {
+  skip_on_cran_budget()
+  z <- stats::qnorm(c(0.025, 0.25, 0.5, 0.75, 0.975))
+  g <- 0.4
+  g1 <- -0.1
+  out <- tulpa:::cpp_cornish_fisher_quantile(mu = 1.5, sigma = 2, gamma3 = g,
+                                             gamma1 = g1, z = z,
+                                             max_abs_gamma3 = 1,
+                                             max_abs_centre = 1.2)
+  expect_true(out$applied)
+  # The centre eq. (22) implies is gamma_1 + gamma_3 / 2 (gcol33/tulpa#354), not
+  # the mean-zero standardized variate the expansion is written in.
+  expect_equal(as.numeric(out$q),
+               1.5 + 2 * (g1 + g / 2 + z + (g / 6) * (z^2 - 1)))
+
+  # Zero skewness AND zero location term is the Gaussian quantile exactly, not
+  # approximately: the correction must be inert where the inner Laplace is exact
+  # (a gaussian-family coefficient reads both as 0 by construction). At
+  # gamma_3 = gamma_1 = 0 the centre and the reshaping term are both zero, so
+  # the applied row must come out of `mu + sigma w` bit for bit the same as a
+  # declined one. Both sides are the same routine, so no compiler's fused
+  # multiply-add can separate them.
+  out0 <- tulpa:::cpp_cornish_fisher_quantile(mu = -0.3, sigma = 1.7, gamma3 = 0,
+                                              gamma1 = 0, z = z,
+                                              max_abs_gamma3 = 1,
+                                              max_abs_centre = 1.2)
+  dec0 <- tulpa:::cpp_cornish_fisher_quantile(mu = -0.3, sigma = 1.7,
+                                              gamma3 = NA_real_,
+                                              gamma1 = NA_real_, z = z,
+                                              max_abs_gamma3 = 1,
+                                              max_abs_centre = 1.2)
+  expect_false(dec0$applied)
+  expect_identical(as.numeric(out0$q), as.numeric(dec0$q))
+  # And that row is the Gaussian quantile. R rounds `mu + sigma z` twice where a
+  # contracting compiler rounds it once, so the value is read to within a few
+  # units in the last place rather than to the bit.
+  expect_equal(as.numeric(out0$q), -0.3 + 1.7 * z, tolerance = 1e-15)
+  expect_true(out0$applied)
+
+  # At a symmetric level the whole correction is a relocation: the reshaping term
+  # takes the same value at both ends and the centre is a constant, so the
+  # interval width is untouched.
+  q <- as.numeric(out$q)
+  expect_equal(q[5] - q[1], 2 * (z[5] - z[1]))
+})
+
+test_that("a coefficient with no location term declines rather than assuming zero", {
+  skip_on_cran_budget()
+  z <- stats::qnorm(c(0.025, 0.975))
+  # gamma_1 is REQUIRED. Reading an absent one as 0 would assert
+  # gamma_1 = -gamma_3 / 2 (the mean-zero reading), which is a claim about the
+  # location term, not an absence of one.
+  out <- tulpa:::cpp_cornish_fisher_quantile(
+    mu = c(0, 0), sigma = c(1, 1), gamma3 = c(0.5, 0.5),
+    gamma1 = c(0.05, NaN), z = z, max_abs_gamma3 = 1, max_abs_centre = 1.2)
+  expect_identical(as.logical(out$applied), c(TRUE, FALSE))
+  expect_identical(out$q[2, ], z)
+  expect_equal(out$q[1, ], 0.05 + 0.25 + z + (0.5 / 6) * (z^2 - 1))
+})
+
+test_that("the correction declines rather than extrapolating, and says so per index", {
+  skip_on_cran_budget()
+  z <- stats::qnorm(c(0.025, 0.975))
+  # An `unreliable` band (|gamma_3| at or past the cutoff), a non-computable
+  # gamma_3, and a degenerate scale each fall back to the Gaussian quantiles --
+  # which are still REPORTED, so the table is complete and the flag says which
+  # rows they are.
+  out <- tulpa:::cpp_cornish_fisher_quantile(
+    mu = c(0, 0, 0, 0), sigma = c(1, 1, 1, 0),
+    gamma3 = c(0.9, 1.0, NaN, 0.5), gamma1 = rep(0, 4), z = z,
+    max_abs_gamma3 = 1, max_abs_centre = 1.2)
+  expect_identical(as.logical(out$applied), c(TRUE, FALSE, FALSE, FALSE))
+  expect_identical(out$q[2, ], z)          # band cutoff
+  expect_identical(out$q[3, ], z)          # gamma_3 not computable
+  expect_identical(out$q[4, ], c(0, 0))    # degenerate scale
+  expect_false(isTRUE(all.equal(out$q[1, ], z)))
+
+  # The map w(z) = z + (g/6)(z^2 - 1) is a quantile function only where it
+  # increases, dw/dz = 1 + (g/3) z > 0. At |g| < 1 that holds out to |z| < 3, so
+  # an extreme level with an otherwise eligible gamma_3 declines rather than
+  # returning a crossed interval.
+  wide <- stats::qnorm(c(1e-5, 1 - 1e-5))       # |z| ~ 4.26
+  far <- tulpa:::cpp_cornish_fisher_quantile(mu = 0, sigma = 1, gamma3 = 0.9,
+                                             gamma1 = 0, z = wide,
+                                             max_abs_gamma3 = 1,
+                                             max_abs_centre = 1.2)
+  expect_false(as.logical(far$applied))
+  expect_equal(as.numeric(far$q), wide)
+  # Every reported interval is ordered, corrected or not.
+  expect_lt(far$q[1, 1], far$q[1, 2])
+})
+
+test_that("the CENTRE is banded, not only the shape", {
+  skip_on_cran_budget()
+  # gcol33/tulpa#362. The reported quantile is
+  # mu_i + sigma_i {gamma_1 + gamma_3 / 2 + w(z_p; gamma_3)}, so the correction
+  # relocates the marginal by the centre and a band on |gamma_3| alone bounds
+  # only the reshaping. The shape here is identical across the four rows and
+  # well inside its own band; the centre is what decides them.
+  z <- stats::qnorm(c(0.025, 0.975))
+  cut <- 1.2
+  g3 <- rep(0.4, 4)
+  g1 <- c(0.0, 0.5, cut - 0.4 / 2 - 1e-9, cut - 0.4 / 2)   # |m| = 0.2, 0.7, <cut, ==cut
+  out <- tulpa:::cpp_cornish_fisher_quantile(
+    mu = rep(0, 4), sigma = rep(1, 4), gamma3 = g3, gamma1 = g1, z = z,
+    max_abs_gamma3 = 1, max_abs_centre = cut)
+  # The band is strict: a centre AT the cutoff declines, as |gamma_3| at the
+  # shape cutoff already does.
+  expect_identical(as.logical(out$applied), c(TRUE, TRUE, TRUE, FALSE))
+  expect_identical(out$q[4, ], z)
+  expect_equal(out$q[2, ], 0.5 + 0.2 + z + (0.4 / 6) * (z^2 - 1))
+
+  # A wider band admits the row a tighter one declines, and nothing else moves.
+  wide <- tulpa:::cpp_cornish_fisher_quantile(
+    mu = rep(0, 4), sigma = rep(1, 4), gamma3 = g3, gamma1 = g1, z = z,
+    max_abs_gamma3 = 1, max_abs_centre = cut + 0.1)
+  expect_identical(as.logical(wide$applied), rep(TRUE, 4))
+  expect_identical(wide$q[1:3, ], out$q[1:3, ])
+})
+
+test_that("cpp_cornish_fisher_bands is the predicate the quantile path uses", {
+  skip_on_cran_budget()
+  # The eligibility RECORD and the quantile path must be one decision, not two
+  # implementations of it. `.nl_skew_correction_attach()` reads the bands from
+  # here; the quantile path calls the same predicate inside the loop.
+  g3 <- c(0.4, 0.4, 1.2, NaN, 0.4)
+  g1 <- c(0.1, 2.0, 0.0, 0.1, NaN)
+  b <- tulpa:::cpp_cornish_fisher_bands(g3, g1, 1.0, 1.2)
+  expect_equal(b$centre, g1 + g3 / 2)
+  expect_identical(as.logical(b$in_band), c(TRUE, FALSE, FALSE, FALSE, FALSE))
+  z <- stats::qnorm(c(0.025, 0.975))
+  q <- tulpa:::cpp_cornish_fisher_quantile(
+    mu = rep(0, 5), sigma = rep(1, 5), gamma3 = g3, gamma1 = g1, z = z,
+    max_abs_gamma3 = 1.0, max_abs_centre = 1.2)
+  expect_identical(as.logical(q$applied), as.logical(b$in_band))
+})
+
+test_that(".nl_skew_marginal is inert when the correction is switched off", {
+  skip_on_cran_budget()
+  probs <- c(0.025, 0.975)
+  mu <- c(0.4, -1.2); sd <- c(0.5, 0.9); g <- c(0.6, -0.7); g1 <- c(0.05, -0.03)
+  off <- .nl_skew_marginal(mu, sd, g, g1, probs, enabled = FALSE)
+  expect_identical(off$applied, c(FALSE, FALSE))
+  # Switching the correction off is the same read as a coefficient whose terms
+  # were not computable: same routine, same arithmetic, so bit for bit.
+  absent <- .nl_skew_marginal(mu, sd, rep(NA_real_, 2), rep(NA_real_, 2), probs,
+                              enabled = TRUE)
+  expect_identical(off$q, absent$q)
+  # R rounds `mu + sd z` twice where a contracting compiler rounds it once, so
+  # the value is read to within a few units in the last place, not to the bit.
+  expect_equal(off$q, matrix(mu, 2L, 2L) + outer(sd, stats::qnorm(probs)),
+               tolerance = 1e-15)
+  on <- .nl_skew_marginal(mu, sd, g, g1, probs, enabled = TRUE)
+  expect_identical(on$applied, c(TRUE, TRUE))
+  expect_false(isTRUE(all.equal(on$q, off$q)))
+})
+
+test_that(".nl_skew_by_fixed maps probed indices onto coefficients, never onto zero", {
+  skip_on_cran_budget()
+  # The default probe is 1:p, so gamma3[j] is coefficient j.
+  f <- list(inner_skew = c(0.3, -0.2), inner_skew_idx = 1:2)
+  expect_identical(.nl_skew_by_fixed(f, 2L), c(0.3, -0.2))
+  # A fit whose control$skew_idx probed something else leaves the unprobed
+  # coefficients NA -- "not scored" is not "no skew".
+  f2 <- list(inner_skew = c(0.5), inner_skew_idx = 2L)
+  expect_identical(.nl_skew_by_fixed(f2, 3L), c(NA_real_, 0.5, NA_real_))
+  # A latent index past the fixed block is not a coefficient and is dropped.
+  f3 <- list(inner_skew = c(0.5, 0.9), inner_skew_idx = c(1L, 40L))
+  expect_identical(.nl_skew_by_fixed(f3, 2L), c(0.5, NA_real_))
+  expect_identical(.nl_skew_by_fixed(list(), 2L), c(NA_real_, NA_real_))
+})
 
 skip_on_cran()
 

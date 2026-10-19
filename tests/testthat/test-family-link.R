@@ -1,5 +1,21 @@
 
+test_that("the R cauchit link reads the same tails as the kernel", {
+  eta <- c(-1e9, -1e6, -1e5, -3, 0, 3, 1e5, 1e6, 1e9)
+  lk <- tulpa:::.LINKS$cauchit
+  expect_equal(lk$linkinv(eta), unname(cpp_link_ladder(eta, "cauchit")[, "linkinv"]),
+               tolerance = 1e-15)
+  expect_equal(lk$mu_eta(eta), stats::dcauchy(eta), tolerance = 1e-15)
+
+  # linkfun is the inverse, and a mu that far into the tail is where
+  # tan(pi * (mu - 0.5)) loses the argument it is meant to recover.
+  mu <- c(1e-12, 1e-8, 1e-4, 0.3, 0.5, 0.7, 1 - 1e-4)
+  expect_equal(lk$linkinv(lk$linkfun(mu)), mu, tolerance = 1e-13)
+})
+
+skip_on_cran_budget()
+
 test_that("a canonical family code keeps the hand-written entry, not the composition", {
+  skip_on_cran_budget()
   # Identity, not equality: the simplified closures are the ones that must run,
   # so the canonical path's arithmetic is unchanged by the link layer existing.
   for (base in names(tulpa:::.LINK_DEFAULTS)) {
@@ -9,6 +25,7 @@ test_that("a canonical family code keeps the hand-written entry, not the composi
 })
 
 test_that("the canonical binomial weight is unchanged", {
+  skip_on_cran_budget()
   # The fix touches the generic route only; logit is answered before it.
   for (n in c(1L, 10L)) {
     for (eta in c(-0.8, 0, 0.5)) {
@@ -20,6 +37,7 @@ test_that("the canonical binomial weight is unchanged", {
 })
 
 test_that("the R log-likelihood is -Inf outside a constrained link's domain", {
+  skip_on_cran_budget()
   for (fam in c("gamma_inverse", "inverse_gaussian_1mu2")) {
     expect_identical(family_loglik(c(-2, 0), 1.5, fam, 1L, 2.0), c(-Inf, -Inf),
                      info = fam)
@@ -29,6 +47,7 @@ test_that("the R log-likelihood is -Inf outside a constrained link's domain", {
 })
 
 test_that("an unparseable family still errors, and the message names the links", {
+  skip_on_cran_budget()
   expect_error(.family_or_stop("not_a_family"), "Unknown family")
   expect_error(.family_or_stop("gamma_banana"), "Unknown family")
   # A base family that takes no link suffix stays rejected in suffixed form.
@@ -37,6 +56,7 @@ test_that("an unparseable family still errors, and the message names the links",
 })
 
 test_that("a hurdle spelling is answered with the composition, not the registry", {
+  skip_on_cran_budget()
   # There is no hurdle family to alias to -- the mixture over a zero-truncated
   # base IS the hurdle likelihood -- so the useful answer is which two pieces to
   # combine, not the list of everything else on offer.
@@ -67,6 +87,7 @@ test_that("a hurdle spelling is answered with the composition, not the registry"
 # --------------------------------------------------------------------------- #
 
 test_that("cloglog matches stats::binomial on relative tolerance into the tail", {
+  skip_on_cran_budget()
   eta <- c(seq(-50, 5, by = 0.25), -745, -100, -37, -36.7, -20, -1e-8)
   R_lk <- stats::binomial("cloglog")
   lad <- cpp_link_ladder(eta, "cloglog")
@@ -97,6 +118,7 @@ test_that("cloglog matches stats::binomial on relative tolerance into the tail",
 # --------------------------------------------------------------------------- #
 
 test_that("cauchit matches stats::pcauchy on relative tolerance into both tails", {
+  skip_on_cran_budget()
   eta <- c(-1e9, -1e8, -1e7, -1e6, -1e5, -1e3, -37, -3, -0.5, 0,
            0.5, 3, 37, 1e3, 1e5, 1e6, 1e7, 1e8, 1e9)
   lad <- cpp_link_ladder(eta, "cauchit")
@@ -117,19 +139,6 @@ test_that("cauchit matches stats::pcauchy on relative tolerance into both tails"
   rel <- abs(cancelling - stats::pcauchy(deep)) / stats::pcauchy(deep)
   expect_gt(max(rel), 1e-9)
   expect_true(all(diff(rel[order(abs(deep))]) > 0))
-})
-
-test_that("the R cauchit link reads the same tails as the kernel", {
-  eta <- c(-1e9, -1e6, -1e5, -3, 0, 3, 1e5, 1e6, 1e9)
-  lk <- tulpa:::.LINKS$cauchit
-  expect_equal(lk$linkinv(eta), unname(cpp_link_ladder(eta, "cauchit")[, "linkinv"]),
-               tolerance = 1e-15)
-  expect_equal(lk$mu_eta(eta), stats::dcauchy(eta), tolerance = 1e-15)
-
-  # linkfun is the inverse, and a mu that far into the tail is where
-  # tan(pi * (mu - 0.5)) loses the argument it is meant to recover.
-  mu <- c(1e-12, 1e-8, 1e-4, 0.3, 0.5, 0.7, 1 - 1e-4)
-  expect_equal(lk$linkinv(lk$linkfun(mu)), mu, tolerance = 1e-13)
 })
 
 skip_on_cran()

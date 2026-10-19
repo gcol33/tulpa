@@ -7,6 +7,7 @@ The single source of truth for the gates is `helper-tiers.R`.
 | Tier | Gate | Runs on | What lives here |
 |------|------|---------|-----------------|
 | 1 structural | *(none)* | everywhere, incl. CRAN | shape / class / dispatch / formula / closed-form / finite-difference-gradient checks; under 0.1 s (a block above that takes `skip_on_cran()`) |
+| 1 over the CRAN budget | `skip_on_cran_budget()` | everywhere but CRAN, incl. `TULPA_FAST=1` | tier-1 blocks measuring over 15 ms under the CRAN profile; see `helper-tiers.R` |
 | 2 recovery | `skip_on_cran()` | default local + CI | one (or a few) fits to convergence; parameter recovery vs a single simulated truth; equivalence (dense == sparse, serial == parallel, cpp == R) |
 | 3 full | `skip_if_not_slow()` | opt-in only | MCMC / HMC sampler chains, multi-seed coverage aggregates, multi-recovery loops |
 
@@ -22,12 +23,12 @@ Sys.setenv(TULPA_SLOW_TESTS = "true"); devtools::test()   # tiers 1 + 2 + 3  (fu
 skips (reported as skips, never silently dropped), leaving only the structural
 checks, so the whole suite runs in seconds for plumbing / dispatch iteration.
 
-`R CMD check` / CRAN run **tier 1 only** (`NOT_CRAN` unset trips `skip_on_cran()`,
+`R CMD check` / CRAN run **tier 1 only**, less the blocks over the CRAN budget
+(`NOT_CRAN` unset trips `skip_on_cran()` and `skip_on_cran_budget()`,
 `TULPA_SLOW_TESTS` unset trips `skip_if_not_slow()`).
 
-Files run in parallel across cores (`Config/testthat/parallel: true`); CRAN caps
-this at 2 cores. Keep tests file-independent (use `tempfile()` for any on-disk
-artefact) so parallel execution stays correct.
+Keep tests file-independent (use `tempfile()` for any on-disk artefact), so a
+file runs the same alone as in the suite.
 
 ## Adding a test
 

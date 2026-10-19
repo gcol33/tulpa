@@ -138,7 +138,10 @@ test_that("the temporal entry rejects a mis-shaped or out-of-range index", {
   expect_error(.temporal_call(replace(ok, 3L, NA_integer_)), "is NA")
 })
 
+skip_on_cran_budget()
+
 test_that("every spatiotemporal entry carries the check", {
+  skip_on_cran_budget()
   n_obs <- 24L
   n_units <- 6L
   adj <- .chain_adj(n_units)

@@ -1,24 +1,5 @@
 
 
-test_that("imh_laplace registers in Tier 1 (Exact)", {
-  expect_true("imh_laplace" %in% INFERENCE_TIERS$exact$backends)
-  ti <- get_backend_tier("imh_laplace")
-  expect_equal(ti$tier, 1L)
-  expect_equal(ti$name, "Exact")
-})
-
-
-test_that("imh_laplace errors on non-PD Hessian", {
-  log_post <- function(theta) sum(dnorm(theta, log = TRUE))
-  expect_error(
-    imh_laplace(log_post, mode = c(0, 0),
-                hessian = matrix(c(1, 2, 2, 1), 2L, 2L),
-                n_iter = 100L),
-    "positive-definite|singular"
-  )
-})
-
-
 test_that("imh_laplace errors on non-finite init", {
   log_post <- function(theta) {
     if (any(theta > 0)) -Inf else sum(dnorm(theta, log = TRUE))
@@ -27,6 +8,29 @@ test_that("imh_laplace errors on non-finite init", {
     imh_laplace(log_post, mode = c(0), hessian = matrix(1, 1L, 1L),
                 init = c(5), n_iter = 100L),
     "not finite"
+  )
+})
+
+skip_on_cran_budget()
+
+
+test_that("imh_laplace registers in Tier 1 (Exact)", {
+  skip_on_cran_budget()
+  expect_true("imh_laplace" %in% INFERENCE_TIERS$exact$backends)
+  ti <- get_backend_tier("imh_laplace")
+  expect_equal(ti$tier, 1L)
+  expect_equal(ti$name, "Exact")
+})
+
+
+test_that("imh_laplace errors on non-PD Hessian", {
+  skip_on_cran_budget()
+  log_post <- function(theta) sum(dnorm(theta, log = TRUE))
+  expect_error(
+    imh_laplace(log_post, mode = c(0, 0),
+                hessian = matrix(c(1, 2, 2, 1), 2L, 2L),
+                n_iter = 100L),
+    "positive-definite|singular"
   )
 })
 

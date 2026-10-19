@@ -68,7 +68,10 @@ lr_cases <- function() {
   )
 }
 
+skip_on_cran_budget()
+
 test_that("Woodbury reproduces the dense inverse on every group layout", {
+  skip_on_cran_budget()
   for (nm in names(lr_cases())) {
     cs <- lr_cases()[[nm]]
     n <- length(cs$inv_mass_diag)
@@ -87,6 +90,7 @@ test_that("Woodbury reproduces the dense inverse on every group layout", {
 })
 
 test_that("the kinetic energy is the same quadratic form", {
+  skip_on_cran_budget()
   for (nm in names(lr_cases())) {
     cs <- lr_cases()[[nm]]
     n <- length(cs$inv_mass_diag)
@@ -102,6 +106,7 @@ test_that("the kinetic energy is the same quadratic form", {
 })
 
 test_that("the fused drift and inv_mass_times_p agree", {
+  skip_on_cran_budget()
   # The zero-allocation NUTS loop applies the metric through apply_drift and
   # the rest of the sampler through inv_mass_times_p. Two application sites
   # that can drift apart is what this pins.
@@ -119,6 +124,7 @@ test_that("the fused drift and inv_mass_times_p agree", {
 })
 
 test_that("a rank-0 or malformed term is refused rather than approximated", {
+  skip_on_cran_budget()
   cs <- lr_cases()$irregular
   n <- length(cs$inv_mass_diag)
   p <- rep(1, n)
@@ -141,6 +147,7 @@ test_that("a rank-0 or malformed term is refused rather than approximated", {
 })
 
 test_that("the block is the only part of the metric the term touches", {
+  skip_on_cran_budget()
   cs <- lr_cases()$irregular
   n <- length(cs$inv_mass_diag)
   set.seed(5)
@@ -153,6 +160,7 @@ test_that("the block is the only part of the metric the term touches", {
 })
 
 test_that("make_margin_mass_term lays down the row and column sums", {
+  skip_on_cran_budget()
   S <- 3L; T <- 4L
   lam_row <- 1 / (0.001 * T)^2
   lam_col <- 1 / (0.001 * S)^2

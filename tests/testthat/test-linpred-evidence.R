@@ -13,7 +13,20 @@ make_trend_data <- function(seed, n_times = 24L, n = 720L) {
        trend = trend, time = time)
 }
 
+.lev_rw1_fit <- function(d, tg, prune = NULL) {
+  tulpa_nested_laplace(
+    y = d$df$y, n_trials = rep(1L, nrow(d$df)), X = cbind(1, d$df$x),
+    prior = list(type = "rw1", temporal_idx = as.integer(d$time),
+                 n_times = 24L, tau_grid = tg),
+    family = "binomial",
+    control = list(diagnose_k = FALSE, diagnose_skew = FALSE,
+                   auto_recenter = FALSE, prune = prune))
+}
+
+skip_on_cran_budget()
+
 test_that("the outer evidence sums the marginal against the absolute cell measure", {
+  skip_on_cran_budget()
   lm <- c(-10, -11, -12, -13)
   lq <- log(c(0.1, 0.2, 0.3, 0.4))
   expect_equal(tulpa:::.nl_outer_log_evidence(lm, lq),
@@ -24,6 +37,7 @@ test_that("the outer evidence sums the marginal against the absolute cell measur
 })
 
 test_that("a failed cell contributes nothing, and neither does a pruned one", {
+  skip_on_cran_budget()
   lm <- c(-10, -11, -12, -13)
   lq <- log(rep(0.25, 4))
   ref <- log(sum(exp(lm[1:3] + lq[1:3])))
@@ -37,6 +51,7 @@ test_that("a failed cell contributes nothing, and neither does a pruned one", {
 })
 
 test_that("a grid with every axis pinned has its one cell's marginal as evidence", {
+  skip_on_cran_budget()
   tg <- matrix(1, 1L, 1L, dimnames = list(NULL, "b1.sigma"))
   specs <- tulpa:::.joint_axis_specs_from_grid(tg)
   expect_null(specs)
@@ -63,17 +78,8 @@ test_that("a grid with every axis pinned has its one cell's marginal as evidence
   expect_equal(fit$log_evidence, as.numeric(fit$log_marginal), tolerance = 1e-14)
 })
 
-.lev_rw1_fit <- function(d, tg, prune = NULL) {
-  tulpa_nested_laplace(
-    y = d$df$y, n_trials = rep(1L, nrow(d$df)), X = cbind(1, d$df$x),
-    prior = list(type = "rw1", temporal_idx = as.integer(d$time),
-                 n_times = 24L, tau_grid = tg),
-    family = "binomial",
-    control = list(diagnose_k = FALSE, diagnose_skew = FALSE,
-                   auto_recenter = FALSE, prune = prune))
-}
-
 test_that("an axis with no proper prior declines the evidence and names itself", {
+  skip_on_cran_budget()
   fit <- structure(list(
     log_marginal = c(-10, -11), log_evidence = NA_real_,
     log_evidence_declined = "improper_hyperprior",
@@ -87,6 +93,7 @@ test_that("an axis with no proper prior declines the evidence and names itself",
 })
 
 test_that("a fit with a per-cell vector and no recorded measure declines", {
+  skip_on_cran_budget()
   fit <- structure(list(log_marginal = c(-10, -11, -12), n_fixed = 2L, N = 100L),
                    class = "tulpa_fit")
   ll <- logLik(fit)

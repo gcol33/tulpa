@@ -20,18 +20,6 @@ test_that("front doors reject misspelled control knobs", {
   )
 })
 
-test_that("the joint front door hard-errors on the renamed diagnose_draws knob", {
-  expect_error(
-    tulpa_nested_laplace_joint(
-      responses = list(a = list(y = rnorm(10), n_trials = rep(1L, 10),
-                                X = matrix(1, 10, 1), family = "gaussian",
-                                phi = 1.0)),
-      prior = list(type = "iid", sigma_grid = c(0.5, 1)),
-      control = list(diagnose_draws = 100L)),
-    "renamed.*k_samples"
-  )
-})
-
 test_that("valid control knobs still pass validation", {
   d <- data.frame(y = rpois(60, 3), x = rnorm(60))
   fit <- suppressMessages(tulpa(y ~ x, data = d, family = "poisson",
@@ -54,11 +42,27 @@ test_that("mode = 'laplace' refuses control knobs tulpa_laplace() does not read"
     "Unknown control knob.*checkpoint")
 })
 
+skip_on_cran_budget()
+
+test_that("the joint front door hard-errors on the renamed diagnose_draws knob", {
+  skip_on_cran_budget()
+  expect_error(
+    tulpa_nested_laplace_joint(
+      responses = list(a = list(y = rnorm(10), n_trials = rep(1L, 10),
+                                X = matrix(1, 10, 1), family = "gaussian",
+                                phi = 1.0)),
+      prior = list(type = "iid", sigma_grid = c(0.5, 1)),
+      control = list(diagnose_draws = 100L)),
+    "renamed.*k_samples"
+  )
+})
+
 # Under mode = "auto" the caller cannot know which backend the router picks, so
 # `n_threads` -- read by every Laplace candidate -- was a hard error exactly
 # when the model's terms sent auto to a sampler (gcol33/tulpa#911). Auto drops
 # it with a message naming the backend; an explicit sampler mode still refuses.
 test_that("mode = 'auto' drops n_threads when it resolves to a sampler", {
+  skip_on_cran_budget()
   ctl <- list(n_threads = 2L, n_iter = 10L)
   auto_hmc <- list(backend = "hmc", explicit = FALSE, requested = "auto")
   expect_message(out <- tulpa:::.auto_drop_unread_threads(ctl, auto_hmc),

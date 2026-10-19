@@ -10,7 +10,22 @@
              yb = rbinom(n, 1, plogis(x)), y = rpois(n, exp(0.5 + 0.3 * x)))
 }
 
+test_that("VarCorr labels a sampled Sigma_mean 'sampled' (#881)", {
+  base <- list(re_layout = list(list(group_var = "g", n_coefs = 1L,
+                                     coef_labels = "(Intercept)")),
+               Sigma_mean = matrix(0.25))
+  est <- structure(base, class = "tulpa_fit")
+  smp <- structure(c(base, list(Sigma_draws = list(matrix(0.2), matrix(0.3)))),
+                   class = "tulpa_fit")
+  expect_equal(VarCorr(est)$source, "estimated")
+  expect_equal(VarCorr(smp)$source, "sampled")
+  expect_equal(VarCorr(smp)$sd, 0.5)
+})
+
+skip_on_cran_budget()
+
 test_that("a non-numeric response is refused by name (#880)", {
+  skip_on_cran_budget()
   d <- .rg_data()
   d$yl <- d$yb == 1
   expect_error(tulpa(yl ~ x, d, family = "poisson"),
@@ -24,6 +39,7 @@ test_that("a non-numeric response is refused by name (#880)", {
 })
 
 test_that("an NA group or random slope is refused at the door (#880)", {
+  skip_on_cran_budget()
   d <- .rg_data()
   d$g[5] <- NA
   for (m in c("laplace", "mala", "eb")) {
@@ -45,6 +61,7 @@ test_that("an NA group or random slope is refused at the door (#880)", {
 })
 
 test_that("tulpa_build_model_data drops unused grouping levels (#880, #881)", {
+  skip_on_cran_budget()
   d <- data.frame(y = 1:6, g = factor(c("a", "a", "c", "c", "d", "d"),
                                       levels = c("a", "b", "c", "d", "e")))
   b <- tulpa_build_model_data(tulpa_parse_formula(y ~ 1 + (1 | g)), d)
@@ -54,6 +71,7 @@ test_that("tulpa_build_model_data drops unused grouping levels (#880, #881)", {
 })
 
 test_that("a random-effects-only formula is refused by name where unsupported (#881)", {
+  skip_on_cran_budget()
   d <- .rg_data()
   for (m in c("eb", "structured", "agq", "re_cov_gibbs")) {
     expect_error(tulpa(y ~ 0 + (1 | g), d, family = "poisson", mode = m),
@@ -62,6 +80,7 @@ test_that("a random-effects-only formula is refused by name where unsupported (#
 })
 
 test_that("an aliased fixed-effect column is dropped with a warning (#881)", {
+  skip_on_cran_budget()
   set.seed(1)
   x <- rnorm(50)
   X <- cbind(`(Intercept)` = 1, x = x, x2 = 2 * x, z = rnorm(50))
@@ -71,19 +90,8 @@ test_that("an aliased fixed-effect column is dropped with a warning (#881)", {
   expect_identical(.drop_aliased_fixed(X[, -3]), X[, -3])
 })
 
-test_that("VarCorr labels a sampled Sigma_mean 'sampled' (#881)", {
-  base <- list(re_layout = list(list(group_var = "g", n_coefs = 1L,
-                                     coef_labels = "(Intercept)")),
-               Sigma_mean = matrix(0.25))
-  est <- structure(base, class = "tulpa_fit")
-  smp <- structure(c(base, list(Sigma_draws = list(matrix(0.2), matrix(0.3)))),
-                   class = "tulpa_fit")
-  expect_equal(VarCorr(est)$source, "estimated")
-  expect_equal(VarCorr(smp)$source, "sampled")
-  expect_equal(VarCorr(smp)$sd, 0.5)
-})
-
 test_that("a non-normal tulpa_prior is refused as beta_prior (#893)", {
+  skip_on_cran_budget()
   expect_error(.beta_prior_fields(prior_half_normal(1)),
                "`beta_prior` is a half_normal prior.*prior_normal\\(mean, sd\\)")
   expect_error(.normalize_beta_prior(prior_half_normal(1), 2L),
@@ -99,6 +107,7 @@ test_that("a non-normal tulpa_prior is refused as beta_prior (#893)", {
 })
 
 test_that("re_prior keys the resolved backend does not read are refused (#893)", {
+  skip_on_cran_budget()
   expect_silent(.check_re_prior_backend(list(sigma_re_scale = 1), "hmc"))
   expect_silent(.check_re_prior_backend(list(prior_sigma = c(1, 0.05), eta = 2),
                                         "re_cov_nested"))

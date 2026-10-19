@@ -1,5 +1,8 @@
 
+skip_on_cran_budget()
+
 test_that("weighted log-posterior equals the duplicated-row log-posterior", {
+  skip_on_cran_budget()
   set.seed(57)
   n <- 60L
   d <- data.frame(x = rnorm(n), g = factor(rep(1:5, length.out = n)))
@@ -25,6 +28,7 @@ test_that("weighted log-posterior equals the duplicated-row log-posterior", {
 })
 
 test_that("weights are validated and unsupported backends refuse", {
+  skip_on_cran_budget()
   d <- data.frame(x = rnorm(40), g = factor(rep(1:4, 10)))
   d$y <- rbinom(40, 1, 0.5)
 
@@ -49,6 +53,7 @@ test_that("weights are validated and unsupported backends refuse", {
 # "not supplied" warning. re_cov_nested's inner solve is the weighted Laplace
 # kernel, so it carries the weights and the scale stays integrated.
 test_that("weights reach the scale-integrating backend, not a conditional one", {
+  skip_on_cran_budget()
   fam <- list(name = "poisson", distribution = "poisson")
   expect_true(tulpa:::.backend_carries_weights("re_cov_nested"))
   expect_true(tulpa:::.backend_carries_weights("laplace"))

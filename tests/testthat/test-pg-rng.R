@@ -17,7 +17,10 @@ pg1_var_exact <- function(z) {
   (sinh(z) - z) / (4 * z^3 * cosh(z / 2)^2)
 }
 
+skip_on_cran_budget()
+
 test_that("the large-b normal branch stays finite where cosh(z/2)^2 overflows", {
+  skip_on_cran_budget()
   # cosh(z/2)^2 overflows past |z| around 710. Written as
   # tanh(z/2) / (2 z^3) - sech(z/2)^2 / (4 z^2) the second term goes to zero
   # there, so the variance tends to its analytic limit 1 / (2 z^3) rather than

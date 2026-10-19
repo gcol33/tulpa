@@ -20,7 +20,10 @@
          n_neighbors = as.integer(nn))
 }
 
+skip_on_cran_budget()
+
 test_that("a cell edge is mirrored in the quantity's own coordinate", {
+    skip_on_cran_budget()
     v <- .nl_grid_axis("bym2_rho")           # 0.2 0.5 0.8 0.95 0.99 0.999
 
     # `unit`: both edges inside (0, 1), where the guessed log coordinate puts
@@ -56,6 +59,7 @@ test_that("a cell edge is mirrored in the quantity's own coordinate", {
 })
 
 test_that("the read note says which side of the vocabulary an axis is on", {
+    skip_on_cran_budget()
     # The four reasons split in two, and the two say opposite things about the
     # bound: `.NL_EDGE_FALLBACK` means the edges ARE the extreme coordinates, so
     # the bound is conservative, while the other pair means a declaration was
@@ -94,6 +98,7 @@ test_that("the read note says which side of the vocabulary an axis is on", {
 })
 
 test_that("the domain reaches the CDF read, not only the moment rule", {
+    skip_on_cran_budget()
     v <- c(0.2, 0.5, 0.8, 0.95)
     w <- c(0.001, 0.02, 0.35, 0.629)
     probs <- c(0.025, 0.5, 0.975)
@@ -133,6 +138,7 @@ test_that("the domain reaches the CDF read, not only the moment rule", {
 })
 
 test_that("the domain reaches a box-uniform read's INTERIOR edges too", {
+    skip_on_cran_budget()
     # "Only the outer half-cells move" above is a property of the CHORD
     # construction, whose interior knots are the coordinates themselves and so
     # carry no coordinate choice. Box-uniform's knots are the cell EDGES, every
@@ -158,6 +164,7 @@ test_that("the domain reaches a box-uniform read's INTERIOR edges too", {
 })
 
 test_that("declared bounds name the domain on the generic hyper-grid door", {
+    skip_on_cran_budget()
     expect_identical(.nl_domain_of_bounds(c(0, 1)), "unit")
     expect_identical(.nl_domain_of_bounds(c(-1, 1)), "correlation")
     expect_identical(.nl_domain_of_bounds(c(0, Inf)), "positive")
@@ -169,6 +176,7 @@ test_that("declared bounds name the domain on the generic hyper-grid door", {
 })
 
 test_that("a reported bound that left the node range says so", {
+  skip_on_cran_budget()
   # gcol33/tulpa#390. An endpoint past the outermost NODE is produced by the
   # `outside` rule -- `extend` mirrors a half-cell beyond the outer coordinate
   # -- so it is an extrapolation rather than a bound the design supports. On a

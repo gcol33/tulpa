@@ -29,26 +29,6 @@ fit_quietly <- function(...) {
 }
 
 
-# --- tier 1: the redirect bookkeeping, no fitting -----------------------------
-
-test_that(".sel_redirect records an override only off an explicit selection", {
-  expl <- list(backend = "eb", mode = "structured", requested = "eb",
-               explicit = TRUE, reason = "User-specified backend: eb")
-  out <- tulpa:::.sel_redirect(expl, "nested_laplace", "smoother present")
-  expect_equal(out$backend, "nested_laplace")
-  expect_equal(out$overridden$requested, "eb")
-  expect_equal(out$overridden$backend, "eb")
-  expect_match(out$reason, "^smoother present")
-  expect_match(out$reason, "overrides the requested mode = 'eb'")
-
-  auto <- list(backend = "mala", mode = "exact", requested = "auto",
-               explicit = FALSE, reason = "default")
-  out2 <- tulpa:::.sel_redirect(auto, "nested_laplace", "smoother present")
-  expect_null(out2$overridden)
-  expect_equal(out2$reason, "smoother present")
-})
-
-
 test_that(".sel_redirect keeps the first override across a redirect chain", {
   sel <- list(backend = "laplace", mode = "structured", requested = "structured",
               explicit = TRUE, reason = "User-specified mode: structured")
@@ -64,20 +44,6 @@ test_that(".sel_redirect keeps the first override across a redirect chain", {
   expect_match(b$reason, "overrides the requested mode = 'structured'")
   # Stated once, not once per redirect in the chain.
   expect_equal(length(gregexpr("overrides", b$reason)[[1L]]), 1L)
-})
-
-
-test_that(".sel_redirect names mode and backend separately only when they differ", {
-  tier <- tulpa:::.sel_redirect(
-    list(backend = "laplace", mode = "structured", requested = "structured",
-         explicit = TRUE, reason = "r"), "nested_laplace", "smoother")
-  expect_match(tier$reason, "mode = 'structured' \\(backend 'laplace'\\)")
-
-  named <- tulpa:::.sel_redirect(
-    list(backend = "eb", mode = "structured", requested = "eb",
-         explicit = TRUE, reason = "r"), "nested_laplace", "smoother")
-  expect_match(named$reason, "mode = 'eb'")
-  expect_false(grepl("backend 'eb'", named$reason))
 })
 
 
@@ -99,6 +65,44 @@ test_that("a redirect that lands on the same backend is not an override", {
               requested = "nested_laplace", explicit = TRUE, reason = "r")
   out <- tulpa:::.sel_redirect(sel, "nested_laplace", "smoother present")
   expect_null(out$overridden)
+})
+
+skip_on_cran_budget()
+
+
+# --- tier 1: the redirect bookkeeping, no fitting -----------------------------
+
+test_that(".sel_redirect records an override only off an explicit selection", {
+  skip_on_cran_budget()
+  expl <- list(backend = "eb", mode = "structured", requested = "eb",
+               explicit = TRUE, reason = "User-specified backend: eb")
+  out <- tulpa:::.sel_redirect(expl, "nested_laplace", "smoother present")
+  expect_equal(out$backend, "nested_laplace")
+  expect_equal(out$overridden$requested, "eb")
+  expect_equal(out$overridden$backend, "eb")
+  expect_match(out$reason, "^smoother present")
+  expect_match(out$reason, "overrides the requested mode = 'eb'")
+
+  auto <- list(backend = "mala", mode = "exact", requested = "auto",
+               explicit = FALSE, reason = "default")
+  out2 <- tulpa:::.sel_redirect(auto, "nested_laplace", "smoother present")
+  expect_null(out2$overridden)
+  expect_equal(out2$reason, "smoother present")
+})
+
+
+test_that(".sel_redirect names mode and backend separately only when they differ", {
+  skip_on_cran_budget()
+  tier <- tulpa:::.sel_redirect(
+    list(backend = "laplace", mode = "structured", requested = "structured",
+         explicit = TRUE, reason = "r"), "nested_laplace", "smoother")
+  expect_match(tier$reason, "mode = 'structured' \\(backend 'laplace'\\)")
+
+  named <- tulpa:::.sel_redirect(
+    list(backend = "eb", mode = "structured", requested = "eb",
+         explicit = TRUE, reason = "r"), "nested_laplace", "smoother")
+  expect_match(named$reason, "mode = 'eb'")
+  expect_false(grepl("backend 'eb'", named$reason))
 })
 
 skip_on_cran()

@@ -28,91 +28,6 @@
     }
 }
 
-test_that(".joint_ccd_engage applies the auto (>=4) / ccd (>=3) / grid thresholds", {
-    eng <- tulpa:::.joint_ccd_engage
-    # "grid" never engages, at any axis count.
-    expect_false(eng("grid", 3L)); expect_false(eng("grid", 6L))
-    # "auto" (default) engages only at >= 4 axes; tensor grid at <= 3.
-    expect_false(eng("auto", 2L)); expect_false(eng("auto", 3L))
-    expect_true(eng("auto", 4L));  expect_true(eng("auto", 6L))
-    # explicit "ccd" lowers the threshold to >= 3 axes.
-    expect_false(eng("ccd", 2L))
-    expect_true(eng("ccd", 3L));   expect_true(eng("ccd", 4L))
-    # "grid_adaptive" names the tensor lattice at every axis count, so the CCD
-    # does not take it over at >= 4 axes (gcol33/tulpa#914).
-    expect_false(eng("grid_adaptive", 3L)); expect_false(eng("grid_adaptive", 4L))
-    expect_false(eng("grid_adaptive", 6L))
-})
-
-test_that(".joint_announce_integration names the engaged outer integrator (gcol33/tulpa#63)", {
-    ann <- tulpa:::.joint_announce_integration
-    # CCD engaged, no phi: latent axes + node count, no cell product.
-    expect_message(
-        ann("ccd", d_axes = 4L, n_latent = 25L, n_phi = 1L, n_total = 25L,
-            declined = NULL),
-        "outer integration: CCD \\(4 latent axes, 25 nodes\\)")
-    # CCD engaged with a crossed phi tensor: nodes x phi = total cells.
-    expect_message(
-        ann("ccd", d_axes = 4L, n_latent = 25L, n_phi = 2L, n_total = 50L,
-            declined = NULL),
-        "CCD \\(4 latent axes, 25 nodes x 2 phi = 50 cells\\)")
-    # Plain tensor grid (e.g. <= 3 axes or integration = \"grid\").
-    expect_message(
-        ann("grid", d_axes = 3L, n_latent = 27L, n_phi = 1L, n_total = 27L,
-            declined = NULL),
-        "outer integration: tensor grid \\(27 cells\\)")
-    # CCD engaged by axis count but declined (ridge / unguessable axis) -> tensor.
-    expect_message(
-        ann("grid", d_axes = 4L, n_latent = 81L, n_phi = 1L, n_total = 81L,
-            declined = "CCD"),
-        "CCD declined -> tensor grid \\(81 cells\\)")
-    # An explicit grid_adaptive request whose lattice declined -> tensor.
-    expect_message(
-        ann("grid", d_axes = 3L, n_latent = 150L, n_phi = 1L, n_total = 150L,
-            declined = "adaptive lattice"),
-        "adaptive lattice declined -> tensor grid \\(150 cells\\)")
-})
-
-test_that(".joint_ccd_outer_hess_ok accepts neg-def, rejects ridge / indefinite", {
-    ok   <- tulpa:::.joint_ccd_outer_hess_ok
-    expect_true(ok(diag(c(-1, -2, -3))))
-    # near-zero curvature in one direction (a ridge) -> reject
-    expect_false(ok(diag(c(-1, -1, -1e-12))))
-    # indefinite (a saddle) -> reject
-    expect_false(ok(diag(c(-1, 1, -1))))
-    # non-finite -> reject
-    expect_false(ok(matrix(c(-1, NA, NA, -1), 2L)))
-    expect_false(ok(NULL))
-})
-
-test_that("mode-find converges to a well-conditioned concave mode", {
-    m    <- c(0.5, -0.3, 0.2)
-    eval <- .mk_quad_eval(m, prec = c(2, 3, 1.5))
-    mf <- tulpa:::.joint_ccd_modefind(
-        u0 = c(0, 0, 0), eval1 = eval,
-        lower = rep(-5, 3), upper = rep(5, 3), h = rep(0.1, 3),
-        trust = rep(2, 3))
-    expect_identical(mf$status, "ok")
-    expect_true(mf$converged)
-    expect_equal(mf$par, m, tolerance = 1e-2)
-    expect_true(tulpa:::.joint_ccd_outer_hess_ok(mf$hess))
-})
-
-test_that("mode-find declines FAST (status ridge) on a flat-curvature centre", {
-    # Zero curvature along axis 3: a ridge. The centre stencil alone reveals it,
-    # so the mode-find must bail before any backtracking line search.
-    rec  <- new.env(); rec$n <- 0L; rec$centres <- list()
-    eval <- .mk_quad_eval(c(0, 0, 0), prec = c(2, 3, 0), rec = rec)
-    mf <- tulpa:::.joint_ccd_modefind(
-        u0 = c(0.1, 0.1, 0.1), eval1 = eval,
-        lower = rep(-5, 3), upper = rep(5, 3), h = rep(0.1, 3),
-        trust = rep(2, 3))
-    expect_identical(mf$status, "ridge")
-    expect_false(mf$converged)
-    # One centre eval + one stencil = 2 calls; crucially, NO line-search probes.
-    expect_lte(rec$n, 3L)
-})
-
 test_that("the Newton step is trust-clamped so no round leaps past `trust`", {
     # Mode far from the start with a small trust radius: each accepted step is
     # bounded per coordinate, so the iterate crawls rather than jumping to the
@@ -147,7 +62,100 @@ test_that("the line search is capped at `max_halve` evaluations per round", {
     expect_lte(rec$n, 1L + 1L + (2L + 1L))
 })
 
+skip_on_cran_budget()
+
+test_that(".joint_ccd_engage applies the auto (>=4) / ccd (>=3) / grid thresholds", {
+    skip_on_cran_budget()
+    eng <- tulpa:::.joint_ccd_engage
+    # "grid" never engages, at any axis count.
+    expect_false(eng("grid", 3L)); expect_false(eng("grid", 6L))
+    # "auto" (default) engages only at >= 4 axes; tensor grid at <= 3.
+    expect_false(eng("auto", 2L)); expect_false(eng("auto", 3L))
+    expect_true(eng("auto", 4L));  expect_true(eng("auto", 6L))
+    # explicit "ccd" lowers the threshold to >= 3 axes.
+    expect_false(eng("ccd", 2L))
+    expect_true(eng("ccd", 3L));   expect_true(eng("ccd", 4L))
+    # "grid_adaptive" names the tensor lattice at every axis count, so the CCD
+    # does not take it over at >= 4 axes (gcol33/tulpa#914).
+    expect_false(eng("grid_adaptive", 3L)); expect_false(eng("grid_adaptive", 4L))
+    expect_false(eng("grid_adaptive", 6L))
+})
+
+test_that(".joint_announce_integration names the engaged outer integrator (gcol33/tulpa#63)", {
+    skip_on_cran_budget()
+    ann <- tulpa:::.joint_announce_integration
+    # CCD engaged, no phi: latent axes + node count, no cell product.
+    expect_message(
+        ann("ccd", d_axes = 4L, n_latent = 25L, n_phi = 1L, n_total = 25L,
+            declined = NULL),
+        "outer integration: CCD \\(4 latent axes, 25 nodes\\)")
+    # CCD engaged with a crossed phi tensor: nodes x phi = total cells.
+    expect_message(
+        ann("ccd", d_axes = 4L, n_latent = 25L, n_phi = 2L, n_total = 50L,
+            declined = NULL),
+        "CCD \\(4 latent axes, 25 nodes x 2 phi = 50 cells\\)")
+    # Plain tensor grid (e.g. <= 3 axes or integration = \"grid\").
+    expect_message(
+        ann("grid", d_axes = 3L, n_latent = 27L, n_phi = 1L, n_total = 27L,
+            declined = NULL),
+        "outer integration: tensor grid \\(27 cells\\)")
+    # CCD engaged by axis count but declined (ridge / unguessable axis) -> tensor.
+    expect_message(
+        ann("grid", d_axes = 4L, n_latent = 81L, n_phi = 1L, n_total = 81L,
+            declined = "CCD"),
+        "CCD declined -> tensor grid \\(81 cells\\)")
+    # An explicit grid_adaptive request whose lattice declined -> tensor.
+    expect_message(
+        ann("grid", d_axes = 3L, n_latent = 150L, n_phi = 1L, n_total = 150L,
+            declined = "adaptive lattice"),
+        "adaptive lattice declined -> tensor grid \\(150 cells\\)")
+})
+
+test_that(".joint_ccd_outer_hess_ok accepts neg-def, rejects ridge / indefinite", {
+    skip_on_cran_budget()
+    ok   <- tulpa:::.joint_ccd_outer_hess_ok
+    expect_true(ok(diag(c(-1, -2, -3))))
+    # near-zero curvature in one direction (a ridge) -> reject
+    expect_false(ok(diag(c(-1, -1, -1e-12))))
+    # indefinite (a saddle) -> reject
+    expect_false(ok(diag(c(-1, 1, -1))))
+    # non-finite -> reject
+    expect_false(ok(matrix(c(-1, NA, NA, -1), 2L)))
+    expect_false(ok(NULL))
+})
+
+test_that("mode-find converges to a well-conditioned concave mode", {
+    skip_on_cran_budget()
+    m    <- c(0.5, -0.3, 0.2)
+    eval <- .mk_quad_eval(m, prec = c(2, 3, 1.5))
+    mf <- tulpa:::.joint_ccd_modefind(
+        u0 = c(0, 0, 0), eval1 = eval,
+        lower = rep(-5, 3), upper = rep(5, 3), h = rep(0.1, 3),
+        trust = rep(2, 3))
+    expect_identical(mf$status, "ok")
+    expect_true(mf$converged)
+    expect_equal(mf$par, m, tolerance = 1e-2)
+    expect_true(tulpa:::.joint_ccd_outer_hess_ok(mf$hess))
+})
+
+test_that("mode-find declines FAST (status ridge) on a flat-curvature centre", {
+    skip_on_cran_budget()
+    # Zero curvature along axis 3: a ridge. The centre stencil alone reveals it,
+    # so the mode-find must bail before any backtracking line search.
+    rec  <- new.env(); rec$n <- 0L; rec$centres <- list()
+    eval <- .mk_quad_eval(c(0, 0, 0), prec = c(2, 3, 0), rec = rec)
+    mf <- tulpa:::.joint_ccd_modefind(
+        u0 = c(0.1, 0.1, 0.1), eval1 = eval,
+        lower = rep(-5, 3), upper = rep(5, 3), h = rep(0.1, 3),
+        trust = rep(2, 3))
+    expect_identical(mf$status, "ridge")
+    expect_false(mf$converged)
+    # One centre eval + one stencil = 2 calls; crucially, NO line-search probes.
+    expect_lte(rec$n, 3L)
+})
+
 test_that("on_accept receives the inner mode at each accepted point", {
+    skip_on_cran_budget()
     got  <- new.env(); got$modes <- list()
     eval <- .mk_quad_eval(c(0.4, -0.2, 0.1), prec = c(2, 2, 2),
                           modes_attr = TRUE)
@@ -167,6 +175,7 @@ test_that("on_accept receives the inner mode at each accepted point", {
 })
 
 test_that("ill-conditioned outer posterior: default declines, pilot + calibrated step rescues", {
+    skip_on_cran_budget()
     # A sharply-peaked, ill-conditioned outer log-posterior in u-space, of the
     # shape a joint occu_cover fit with an observation-arm random effect produces:
     # a SHARP field-SD axis whose mode sits at a grid EDGE (u-sd ~0.006), a WIDE

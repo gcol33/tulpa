@@ -1,3 +1,5 @@
+
+skip_on_cran_budget()
 # Second dispersion channel phi2 (gcol33/tulpa C7): configurable Student-t df
 # through the registry, the Laplace kernel, and the samplers; the lognormal
 # family registered with the variance convention; and the gaussian phi
@@ -10,6 +12,7 @@
 # than defaulted there (gcol33/tulpa#257).
 
 test_that("t-family registry ops honor phi2 and match dt()", {
+  skip_on_cran_budget()
   eta <- c(-0.5, 0.2, 1.4)
   y   <- c(0.3, -1.1, 2.0)
   s   <- 0.7
@@ -35,6 +38,7 @@ test_that("t-family registry ops honor phi2 and match dt()", {
 })
 
 test_that("phi2 is rejected for families without a second dispersion", {
+  skip_on_cran_budget()
   expect_error(tulpa:::family_loglik(0, 1, "gaussian", phi = 1, phi2 = 5),
                "no second dispersion")
   d <- data.frame(x = rnorm(30)); d$y <- rnorm(30)
@@ -48,6 +52,7 @@ test_that("phi2 is rejected for families without a second dispersion", {
 })
 
 test_that("lognormal is registered with the variance convention", {
+  skip_on_cran_budget()
   set.seed(85)
   eta <- c(0.2, 1.0); y <- c(1.5, 4.0); v <- 0.36
 

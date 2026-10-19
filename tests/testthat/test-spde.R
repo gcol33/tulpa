@@ -438,7 +438,10 @@ make_synthetic_spde_spec <- function(n_obs = 30, seed = 7) {
   )
 }
 
+skip_on_cran_budget()
+
 test_that("dispatch_laplace_spatial routes SPDE specs (no longer errors)", {
+  skip_on_cran_budget()
   ss <- make_synthetic_spde_spec()
   X <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
   y <- rbinom(ss$n_obs, 1, 0.5)

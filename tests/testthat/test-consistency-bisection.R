@@ -24,15 +24,6 @@ test_that("the heavy gap is bisected on the integration coordinate, first", {
                                    sqrt(1.28 * 3))))
 })
 
-test_that("the heaviest gap is bisected even when no gap reaches the share", {
-    lev <- exp(0:9)
-    p <- rep(0.1, 10L); p[6L] <- 0.12
-    pts <- tulpa:::.hyper_propose_mass_bisection(log_axis_spec(lev), lev, log(p),
-                                                 min_ess = 2)
-    expect_length(pts, 1L)
-    expect_true(pts > lev[5L] && pts < lev[7L])
-})
-
 test_that("a marginal peaking on an outermost level is not bisected", {
     # The span truncates it; bisecting towards the edge would only shrink the
     # edge level's box, one halving after another.
@@ -70,7 +61,37 @@ test_that("a point mass neither bounds a gap nor enters the shares", {
     expect_equal(pts[1L], sqrt(0.3 * 1))
 })
 
+test_that("the node budget stops a marginal no bisection can resolve", {
+    lev <- exp(seq(log(0.1), log(3), length.out = 5L))
+    target <- function(a) -0.5 * ((log(a) - log(0.8)) / 0.002)^2
+    specs <- list(log_axis_spec(lev))
+    tg <- matrix(lev, ncol = 1L, dimnames = list(NULL, "alpha"))
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                          screen = NULL) {
+        list(log_marginal = target(new_cells[, "alpha"]), extras = NULL)
+    }
+    out <- tulpa:::.hyper_consistency_pass(
+        theta_grid = tg, log_marginal = target(lev), extras = NULL,
+        refining_axis = rep("", nrow(tg)), specs = specs, kernel_fn = kernel_fn,
+        max_nodes = 3L)
+    expect_identical(out$n_added, 3L)
+    expect_identical(out$info$n_added, 3L)
+})
+
+skip_on_cran_budget()
+
+test_that("the heaviest gap is bisected even when no gap reaches the share", {
+    skip_on_cran_budget()
+    lev <- exp(0:9)
+    p <- rep(0.1, 10L); p[6L] <- 0.12
+    pts <- tulpa:::.hyper_propose_mass_bisection(log_axis_spec(lev), lev, log(p),
+                                                 min_ess = 2)
+    expect_length(pts, 1L)
+    expect_true(pts > lev[5L] && pts < lev[7L])
+})
+
 test_that("the pass re-reads the ESS and bisects until the axis is resolved", {
+    skip_on_cran_budget()
     lev <- exp(seq(log(0.1), log(3), length.out = 5L))
     target <- function(a) -0.5 * ((log(a) - log(0.8)) / 0.18)^2
     specs <- list(log_axis_spec(lev))
@@ -93,21 +114,4 @@ test_that("the pass re-reads the ESS and bisects until the axis is resolved", {
     added <- out$theta_grid[-seq_along(lev), "alpha"]
     expect_true(all(added > min(lev) & added < max(lev)))
     expect_true(all(out$refining_axis[-seq_along(lev)] == "alpha"))
-})
-
-test_that("the node budget stops a marginal no bisection can resolve", {
-    lev <- exp(seq(log(0.1), log(3), length.out = 5L))
-    target <- function(a) -0.5 * ((log(a) - log(0.8)) / 0.002)^2
-    specs <- list(log_axis_spec(lev))
-    tg <- matrix(lev, ncol = 1L, dimnames = list(NULL, "alpha"))
-    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
-                          screen = NULL) {
-        list(log_marginal = target(new_cells[, "alpha"]), extras = NULL)
-    }
-    out <- tulpa:::.hyper_consistency_pass(
-        theta_grid = tg, log_marginal = target(lev), extras = NULL,
-        refining_axis = rep("", nrow(tg)), specs = specs, kernel_fn = kernel_fn,
-        max_nodes = 3L)
-    expect_identical(out$n_added, 3L)
-    expect_identical(out$info$n_added, 3L)
 })

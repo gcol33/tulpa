@@ -13,7 +13,10 @@
             class = "tulpa_fit")
 }
 
+skip_on_cran_budget()
+
 test_that("confint() refuses a level outside (0, 1) naming it", {
+  skip_on_cran_budget()
   fit <- .sampler_like_fit()
   for (bad in list(1.5, 0, 1, -0.2, NA, "0.9", c(0.9, 0.95))) {
     expect_error(confint(fit, level = bad), "`level` must be a single number",
@@ -25,6 +28,7 @@ test_that("confint() refuses a level outside (0, 1) naming it", {
 })
 
 test_that("confint() names an unknown parm instead of subscript-out-of-bounds", {
+  skip_on_cran_budget()
   fit <- .sampler_like_fit()
   expect_error(confint(fit, parm = "zz"), "Unknown `parm`: zz")
   expect_error(confint(fit, parm = 3), "`parm` indices")
@@ -35,6 +39,7 @@ test_that("confint() names an unknown parm instead of subscript-out-of-bounds", 
 })
 
 test_that("confint() reads a sampler hyperparameter off the draws", {
+  skip_on_cran_budget()
   fit <- .sampler_like_fit()
   ci <- confint(fit, parm = c("x", "log_sigma_re"))
   expect_equal(rownames(ci), c("x", "log_sigma_re"))
@@ -47,6 +52,7 @@ test_that("confint() reads a sampler hyperparameter off the draws", {
 })
 
 test_that("durbin_watson() takes a fit and a time order (#899)", {
+  skip_on_cran_budget()
   set.seed(3)
   e  <- as.numeric(stats::arima.sim(list(ar = 0.6), n = 80))
   tt <- sample(80)

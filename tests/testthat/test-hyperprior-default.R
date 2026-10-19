@@ -19,86 +19,6 @@ test_that("every scale density integrates to one on the log coordinate", {
   }
 })
 
-test_that("the scale densities are the PC prior on sigma carried by hand", {
-  x <- c(0.01, 0.3, 1, 4, 50)
-  pc_sd <- function(s) log(.hp_lambda) - .hp_lambda * s
-  expect_equal(tulpa:::cpp_hyperprior_log_density(x, "sd", "natural",
-                                                  .hp_anchor[1], .hp_anchor[2]),
-               pc_sd(x), tolerance = 1e-12)
-  # variance v = sigma^2: dsigma/dv = 1 / (2 sqrt(v)).
-  expect_equal(tulpa:::cpp_hyperprior_log_density(x, "variance", "natural",
-                                                  .hp_anchor[1], .hp_anchor[2]),
-               pc_sd(sqrt(x)) - log(2 * sqrt(x)), tolerance = 1e-12)
-  # precision tau = sigma^-2: |dsigma/dtau| = tau^(-3/2) / 2.
-  expect_equal(tulpa:::cpp_hyperprior_log_density(x, "precision", "natural",
-                                                  .hp_anchor[1], .hp_anchor[2]),
-               pc_sd(1 / sqrt(x)) - log(2) - 1.5 * log(x), tolerance = 1e-12)
-  # The log coordinate adds log(theta).
-  expect_equal(tulpa:::cpp_hyperprior_log_density(log(x), "precision", "log",
-                                                  .hp_anchor[1], .hp_anchor[2]),
-               pc_sd(1 / sqrt(x)) - log(2) - 1.5 * log(x) + log(x),
-               tolerance = 1e-12)
-})
-
-test_that("the range PC prior is a density with its anchor in every dimension", {
-  for (d in 1:3) for (anchor in list(c(0.2, 0.5), c(1.5, 0.05))) {
-    f <- function(r) exp(tulpa:::cpp_hyperprior_log_density(
-      r, "range", "natural", anchor[1], anchor[2], d))
-    info <- sprintf("d = %d, U = %g, alpha = %g", d, anchor[1], anchor[2])
-    expect_equal(stats::integrate(f, 0, Inf, rel.tol = 1e-10)$value, 1,
-                 tolerance = 1e-6, info = info)
-    expect_equal(stats::integrate(f, 0, anchor[1], rel.tol = 1e-10)$value,
-                 anchor[2], tolerance = 1e-6, info = info)
-  }
-  # d = 2 is the form the SPDE path has always used.
-  r <- c(0.05, 0.4, 2, 9)
-  expect_equal(tulpa:::cpp_hyperprior_log_density(r, "range", "natural", 0.3, 0.5, 2),
-               tulpa:::cpp_test_log_prior_range_pc(r, 0.3, 0.5), tolerance = 1e-12)
-})
-
-test_that("the range prior's dimension is the one the coordinates span", {
-  set.seed(8)
-  x <- runif(40)
-  ex <- function(co) tulpa:::.hp_block_extent(list(coords = co))
-  expect_identical(ex(cbind(x))$dim, 1L)
-  # A constant or collinear column adds no direction, and leaves the extent
-  # bit-identical, so a field over the same points carries the same prior.
-  expect_identical(ex(cbind(x, 0)), ex(cbind(x)))
-  expect_identical(ex(cbind(x, 1e6))$dim, 1L)
-  expect_identical(ex(cbind(x, 2 * x))$dim, 1L)
-  expect_identical(ex(cbind(x, runif(40)))$dim, 2L)
-  expect_identical(ex(cbind(x, runif(40), 3.5))$dim, 2L)
-})
-
-test_that("each engine axis resolves to its density or a named decline", {
-  hp <- tulpa:::.hp_axis_default
-  expect_identical(hp("phi_arm", family = "inverse_gaussian")$reason,
-                   "dispersion_prior_unsourced")
-  expect_true(is.function(hp("phi_arm", family = "gaussian")$fn))
-  expect_identical(hp("phi_gp", list(type = "nngp"))$reason, "range_extent_unknown")
-  expect_identical(hp("L21", list(type = "mcar"))$group, "logchol")
-  expect_identical(hp("zeta", list(type = "icar"))$reason, "unclassified_axis")
-  expect_true(isTRUE(hp("alpha")$spec))
-
-  # The range anchor reads the coordinates' bounding-box diagonal.
-  co <- cbind(c(0, 3, 1), c(0, 4, 2))
-  fn <- hp("phi_gp", list(type = "nngp", coords = co))$fn
-  U <- tulpa:::.nl_hyperprior("range_extent_fraction") * 5
-  a <- tulpa:::.nl_hyperprior("range_alpha")
-  expect_equal(fn(c(0.4, 2)),
-               tulpa:::cpp_hyperprior_log_density(log(c(0.4, 2)), "range", "log",
-                                                  U, a, 2),
-               tolerance = 1e-12)
-
-  # Bounded axes: the uniform on the domain, the AR1 Beta normalised on rho.
-  expect_equal(hp("rho", list(type = "bym2"))$fn(c(0.2, 0.9)), c(0, 0))
-  for (ab in list(c(1, 1), c(10, 1), c(2, 5))) {
-    f <- hp("rho", list(type = "ar1", rho_prior = prior_beta(ab[1], ab[2])))$fn
-    expect_equal(stats::integrate(function(x) exp(f(x)), -1, 1,
-                                  rel.tol = 1e-10)$value, 1, tolerance = 1e-6)
-  }
-})
-
 test_that("the SPDE hyperprior is the PC density carried to log range, log sigma", {
   sp <- list(prior_range = c(0.3, 0.5), prior_sigma = c(1, 0.01))
   r <- c(0.1, 0.5, 2); s <- c(0.2, 1, 3)
@@ -106,153 +26,6 @@ test_that("the SPDE hyperprior is the PC density carried to log range, log sigma
   ls <- -log(0.01)
   ref <- log(lr) - 2 * log(r) - lr / r + log(r) + log(ls) - ls * s + log(s)
   expect_equal(tulpa:::.spde_log_hyperprior(r, s, sp), ref, tolerance = 1e-12)
-})
-
-test_that("the negative-binomial size prior is R-INLA's pc.mgamma density", {
-  lambda <- tulpa:::.nl_hyperprior("nb_size_lambda")
-  # inla.pc.dgamma() on the overdispersion a = 1 / size, written out.
-  pc_a <- function(a) {
-    z <- 1 / a
-    d <- sqrt(2 * (log(z) - digamma(z)))
-    -lambda * d - log(d) + log(lambda) - 2 * log(a) + log(trigamma(z) - a)
-  }
-  size <- c(0.3, 2, 20, 400)
-  expect_equal(tulpa:::cpp_hyperprior_log_density(size, "nb_size", "natural",
-                                                  1, 0.5, lambda = lambda),
-               pc_a(1 / size) - 2 * log(size), tolerance = 1e-8)
-  # Proper on log(size), across the switch to the asymptotic series at 1e4.
-  f <- function(u) exp(tulpa:::cpp_hyperprior_log_density(
-    u, "nb_size", "log", 1, 0.5, lambda = lambda))
-  expect_equal(stats::integrate(f, -30, 60, rel.tol = 1e-9,
-                                subdivisions = 4000L)$value, 1, tolerance = 1e-5)
-  u_switch <- log(1e4)
-  expect_equal(f(u_switch - 1e-9), f(u_switch + 1e-9), tolerance = 1e-6)
-  # Bound to the size families only; other dispersions decline by name.
-  expect_true(is.function(tulpa:::.hp_axis_default("phi_c",
-                                                   family = "neg_binomial_2")$fn))
-  expect_identical(tulpa:::.hp_axis_default("phi_c", family = "t")$reason,
-                   "dispersion_prior_unsourced")
-})
-
-test_that("a gamma shape and a beta precision carry R-INLA's exponential defaults (#736)", {
-  # loggamma(1, 0.01) on the gamma family's precision parameter and
-  # loggamma(1, 0.1) on the beta family's, i.e. Exponential(rate) on phi,
-  # carried to log phi where the axis integrates.
-  for (fam in c("gamma", "gamma_inverse", "beta")) {
-    rate <- if (startsWith(fam, "gamma")) 0.01 else 0.1
-    fn <- tulpa:::.hp_axis_default("phi_c", family = fam)$fn
-    expect_true(is.function(fn), info = fam)
-    x <- c(0.5, 3, 40, 900)
-    expect_equal(fn(x), stats::dexp(x, rate, log = TRUE) + log(x),
-                 tolerance = 1e-12, info = fam)
-    f <- function(u) exp(fn(exp(u)))
-    expect_equal(stats::integrate(f, -40, 12, rel.tol = 1e-10)$value, 1,
-                 tolerance = 1e-6, info = fam)
-  }
-})
-
-test_that("a log-Cholesky tensor is measured by its own column widths", {
-  G1 <- matrix(seq(-9, 3, length.out = 200L), ncol = 1L,
-               dimnames = list(NULL, "L11"))
-  d1 <- tulpa:::.hp_logchol_design(G1)
-  expect_identical(d1$design, "logchol")
-  mass <- sum(exp(tulpa:::.hp_logchol_log_density(G1, d1)$lp +
-                  tulpa:::.hyper_logchol_log_measure(G1, d1, absolute = TRUE)))
-  expect_equal(mass, 1, tolerance = 2e-3)
-
-  G <- as.matrix(expand.grid(L11 = c(-1, 0, 1), L21 = c(-0.5, 0.5),
-                             L22 = c(-1, 0.5)))
-  dG <- tulpa:::.hp_logchol_design(G)
-  expect_identical(dG$design, "logchol")
-  w <- function(x) { e <- c(x[1] - diff(x)[1] / 2, (x[-1] + x[-length(x)]) / 2,
-                            x[length(x)] + diff(x)[length(x) - 1] / 2); diff(e) }
-  ref <- log(w(c(-1, 0, 1)))[match(G[, 1], c(-1, 0, 1))] +
-         log(w(c(-0.5, 0.5)))[match(G[, 2], c(-0.5, 0.5))] +
-         log(w(c(-1, 0.5)))[match(G[, 3], c(-1, 0.5))]
-  expect_equal(tulpa:::.hyper_logchol_log_measure(G, dG, absolute = TRUE), ref,
-               tolerance = 1e-12)
-})
-
-test_that("a free-covariance block the grid does not measure declines by name", {
-  g <- tulpa:::.mcar_default_logchol_grid(2L)
-  pinned <- g
-  pinned[, "L22"] <- 0
-  expect_identical(tulpa:::.hp_logchol_design(pinned)$reason,
-                   "logchol_partial_block")
-  set.seed(735)
-  scattered <- cbind(L11 = rnorm(12), L21 = rnorm(12), L22 = rnorm(12))
-  expect_identical(tulpa:::.hp_logchol_design(scattered)$reason,
-                   "logchol_design_measure")
-  tg <- scattered; colnames(tg) <- paste0("b1.", colnames(tg))
-  sp <- tulpa:::.joint_axis_specs_from_grid(tg)
-  expect_true(all(is.na(tulpa:::.hyper_log_quad_weights(tg, sp, absolute = TRUE))))
-
-  # Through the joint collector, a measured block folds once over all its axes.
-  tg <- g; colnames(tg) <- paste0("b1.", colnames(g))
-  hp <- tulpa:::.joint_hyperprior(tg, list(list(type = "mcar")),
-                                  declared = tulpa:::.hp_declare(tg))
-  expect_setequal(hp$axes, colnames(tg))
-  expect_length(hp$declined, 0L)
-  dg <- tulpa:::.hp_logchol_design(g)
-  expect_equal(hp$lp, tulpa:::.hp_logchol_log_density(g, dg)$lp)
-  sp <- tulpa:::.joint_axis_specs_from_grid(tg)
-  expect_equal(tulpa:::.hyper_log_quad_weights(tg, sp, absolute = TRUE),
-               tulpa:::.hyper_logchol_log_measure(g, dg, absolute = TRUE))
-})
-
-test_that("a batch of a free-covariance block's rows reads the declared design", {
-  # gcol33/tulpa#762: the design was inferred from the rows handed to the fold,
-  # so a batch of rows of a tensor grid -- importance draws, adaptive seeds, a
-  # local-CCD cloud -- is a tensor in no coordinates and lost the Sigma prior.
-  g <- tulpa:::.mcar_default_logchol_grid(2L)
-  colnames(g) <- paste0("b1.", colnames(g))
-  bl <- list(list(type = "mcar"))
-  declared <- tulpa:::.hp_declare(g)
-  whole <- tulpa:::.joint_hyperprior(g, bl, declared = declared)
-  set.seed(762)
-  for (rows in list(sample(nrow(g), 7L), 5L, c(1L, nrow(g)))) {
-    part <- tulpa:::.joint_hyperprior(g[rows, , drop = FALSE], bl,
-                                      declared = declared)
-    expect_equal(part$lp, whole$lp[rows], tolerance = 0)
-    expect_setequal(unname(part$axes), unname(whole$axes))
-    expect_length(part$declined, 0L)
-  }
-
-  # A fold handed no declaration for the block refuses rather than inferring one.
-  expect_error(
-    tulpa:::.joint_hyperprior(g[1:3, , drop = FALSE], bl,
-                              declared = list(axes = colnames(g))),
-    "no declared design")
-})
-
-test_that("a joint tensor with a free-covariance block beside another folds and measures it", {
-  # gcol33/tulpa#762: the joint grid repeats the block's rows once per row of the
-  # other block, which is still the block's tensor.
-  g <- tulpa:::.mcar_default_logchol_grid(2L)
-  colnames(g) <- paste0("b1.", colnames(g))
-  tg <- cbind(g[rep(seq_len(nrow(g)), 2L), ],
-              b2.sigma = rep(c(0.5, 1), each = nrow(g)))
-  blocks <- list(list(type = "mcar"), list(type = "icar"))
-  hp <- tulpa:::.joint_hyperprior(tg, blocks, declared = tulpa:::.hp_declare(tg))
-  expect_setequal(hp$axes, colnames(tg))
-  expect_length(hp$declined, 0L)
-
-  dg <- tulpa:::.hp_logchol_design(g)
-  expect_identical(dg$design, "sd_rho")
-  lp_block <- tulpa:::.hp_logchol_log_density(g, dg)$lp
-  lp_sigma <- tulpa:::.joint_hyperprior(
-    tg[, "b2.sigma", drop = FALSE], blocks[2L],
-    declared = list(axes = "b2.sigma"))$lp
-  expect_equal(hp$lp, rep(lp_block, 2L) + lp_sigma, tolerance = 1e-12)
-
-  sp <- tulpa:::.joint_axis_specs_from_grid(tg, folded_axes = hp$axes)
-  lq <- tulpa:::.hyper_log_quad_weights(tg, sp, absolute = TRUE)
-  expect_true(all(is.finite(lq)))
-  # What is left after the block's own measure is the sigma axis's cell width,
-  # one value per sigma level.
-  rest <- lq - rep(tulpa:::.hyper_logchol_log_measure(g, dg, absolute = TRUE), 2L)
-  expect_equal(as.numeric(tapply(rest, tg[, "b2.sigma"], function(v) diff(range(v)))),
-               c(0, 0), tolerance = 1e-12)
 })
 
 test_that("a subset of the declared tensor is measured under the declared design", {
@@ -291,7 +64,247 @@ test_that("points laid in column coordinates read the density carried by the Jac
   expect_equal(b, a - log(exp(C[, 2L]) / (1 - C[, 3L]^2)), tolerance = 1e-10)
 })
 
+skip_on_cran_budget()
+
+test_that("the scale densities are the PC prior on sigma carried by hand", {
+  skip_on_cran_budget()
+  x <- c(0.01, 0.3, 1, 4, 50)
+  pc_sd <- function(s) log(.hp_lambda) - .hp_lambda * s
+  expect_equal(tulpa:::cpp_hyperprior_log_density(x, "sd", "natural",
+                                                  .hp_anchor[1], .hp_anchor[2]),
+               pc_sd(x), tolerance = 1e-12)
+  # variance v = sigma^2: dsigma/dv = 1 / (2 sqrt(v)).
+  expect_equal(tulpa:::cpp_hyperprior_log_density(x, "variance", "natural",
+                                                  .hp_anchor[1], .hp_anchor[2]),
+               pc_sd(sqrt(x)) - log(2 * sqrt(x)), tolerance = 1e-12)
+  # precision tau = sigma^-2: |dsigma/dtau| = tau^(-3/2) / 2.
+  expect_equal(tulpa:::cpp_hyperprior_log_density(x, "precision", "natural",
+                                                  .hp_anchor[1], .hp_anchor[2]),
+               pc_sd(1 / sqrt(x)) - log(2) - 1.5 * log(x), tolerance = 1e-12)
+  # The log coordinate adds log(theta).
+  expect_equal(tulpa:::cpp_hyperprior_log_density(log(x), "precision", "log",
+                                                  .hp_anchor[1], .hp_anchor[2]),
+               pc_sd(1 / sqrt(x)) - log(2) - 1.5 * log(x) + log(x),
+               tolerance = 1e-12)
+})
+
+test_that("the range PC prior is a density with its anchor in every dimension", {
+  skip_on_cran_budget()
+  for (d in 1:3) for (anchor in list(c(0.2, 0.5), c(1.5, 0.05))) {
+    f <- function(r) exp(tulpa:::cpp_hyperprior_log_density(
+      r, "range", "natural", anchor[1], anchor[2], d))
+    info <- sprintf("d = %d, U = %g, alpha = %g", d, anchor[1], anchor[2])
+    expect_equal(stats::integrate(f, 0, Inf, rel.tol = 1e-10)$value, 1,
+                 tolerance = 1e-6, info = info)
+    expect_equal(stats::integrate(f, 0, anchor[1], rel.tol = 1e-10)$value,
+                 anchor[2], tolerance = 1e-6, info = info)
+  }
+  # d = 2 is the form the SPDE path has always used.
+  r <- c(0.05, 0.4, 2, 9)
+  expect_equal(tulpa:::cpp_hyperprior_log_density(r, "range", "natural", 0.3, 0.5, 2),
+               tulpa:::cpp_test_log_prior_range_pc(r, 0.3, 0.5), tolerance = 1e-12)
+})
+
+test_that("the range prior's dimension is the one the coordinates span", {
+  skip_on_cran_budget()
+  set.seed(8)
+  x <- runif(40)
+  ex <- function(co) tulpa:::.hp_block_extent(list(coords = co))
+  expect_identical(ex(cbind(x))$dim, 1L)
+  # A constant or collinear column adds no direction, and leaves the extent
+  # bit-identical, so a field over the same points carries the same prior.
+  expect_identical(ex(cbind(x, 0)), ex(cbind(x)))
+  expect_identical(ex(cbind(x, 1e6))$dim, 1L)
+  expect_identical(ex(cbind(x, 2 * x))$dim, 1L)
+  expect_identical(ex(cbind(x, runif(40)))$dim, 2L)
+  expect_identical(ex(cbind(x, runif(40), 3.5))$dim, 2L)
+})
+
+test_that("each engine axis resolves to its density or a named decline", {
+  skip_on_cran_budget()
+  hp <- tulpa:::.hp_axis_default
+  expect_identical(hp("phi_arm", family = "inverse_gaussian")$reason,
+                   "dispersion_prior_unsourced")
+  expect_true(is.function(hp("phi_arm", family = "gaussian")$fn))
+  expect_identical(hp("phi_gp", list(type = "nngp"))$reason, "range_extent_unknown")
+  expect_identical(hp("L21", list(type = "mcar"))$group, "logchol")
+  expect_identical(hp("zeta", list(type = "icar"))$reason, "unclassified_axis")
+  expect_true(isTRUE(hp("alpha")$spec))
+
+  # The range anchor reads the coordinates' bounding-box diagonal.
+  co <- cbind(c(0, 3, 1), c(0, 4, 2))
+  fn <- hp("phi_gp", list(type = "nngp", coords = co))$fn
+  U <- tulpa:::.nl_hyperprior("range_extent_fraction") * 5
+  a <- tulpa:::.nl_hyperprior("range_alpha")
+  expect_equal(fn(c(0.4, 2)),
+               tulpa:::cpp_hyperprior_log_density(log(c(0.4, 2)), "range", "log",
+                                                  U, a, 2),
+               tolerance = 1e-12)
+
+  # Bounded axes: the uniform on the domain, the AR1 Beta normalised on rho.
+  expect_equal(hp("rho", list(type = "bym2"))$fn(c(0.2, 0.9)), c(0, 0))
+  for (ab in list(c(1, 1), c(10, 1), c(2, 5))) {
+    f <- hp("rho", list(type = "ar1", rho_prior = prior_beta(ab[1], ab[2])))$fn
+    expect_equal(stats::integrate(function(x) exp(f(x)), -1, 1,
+                                  rel.tol = 1e-10)$value, 1, tolerance = 1e-6)
+  }
+})
+
+test_that("the negative-binomial size prior is R-INLA's pc.mgamma density", {
+  skip_on_cran_budget()
+  lambda <- tulpa:::.nl_hyperprior("nb_size_lambda")
+  # inla.pc.dgamma() on the overdispersion a = 1 / size, written out.
+  pc_a <- function(a) {
+    z <- 1 / a
+    d <- sqrt(2 * (log(z) - digamma(z)))
+    -lambda * d - log(d) + log(lambda) - 2 * log(a) + log(trigamma(z) - a)
+  }
+  size <- c(0.3, 2, 20, 400)
+  expect_equal(tulpa:::cpp_hyperprior_log_density(size, "nb_size", "natural",
+                                                  1, 0.5, lambda = lambda),
+               pc_a(1 / size) - 2 * log(size), tolerance = 1e-8)
+  # Proper on log(size), across the switch to the asymptotic series at 1e4.
+  f <- function(u) exp(tulpa:::cpp_hyperprior_log_density(
+    u, "nb_size", "log", 1, 0.5, lambda = lambda))
+  expect_equal(stats::integrate(f, -30, 60, rel.tol = 1e-9,
+                                subdivisions = 4000L)$value, 1, tolerance = 1e-5)
+  u_switch <- log(1e4)
+  expect_equal(f(u_switch - 1e-9), f(u_switch + 1e-9), tolerance = 1e-6)
+  # Bound to the size families only; other dispersions decline by name.
+  expect_true(is.function(tulpa:::.hp_axis_default("phi_c",
+                                                   family = "neg_binomial_2")$fn))
+  expect_identical(tulpa:::.hp_axis_default("phi_c", family = "t")$reason,
+                   "dispersion_prior_unsourced")
+})
+
+test_that("a gamma shape and a beta precision carry R-INLA's exponential defaults (#736)", {
+  skip_on_cran_budget()
+  # loggamma(1, 0.01) on the gamma family's precision parameter and
+  # loggamma(1, 0.1) on the beta family's, i.e. Exponential(rate) on phi,
+  # carried to log phi where the axis integrates.
+  for (fam in c("gamma", "gamma_inverse", "beta")) {
+    rate <- if (startsWith(fam, "gamma")) 0.01 else 0.1
+    fn <- tulpa:::.hp_axis_default("phi_c", family = fam)$fn
+    expect_true(is.function(fn), info = fam)
+    x <- c(0.5, 3, 40, 900)
+    expect_equal(fn(x), stats::dexp(x, rate, log = TRUE) + log(x),
+                 tolerance = 1e-12, info = fam)
+    f <- function(u) exp(fn(exp(u)))
+    expect_equal(stats::integrate(f, -40, 12, rel.tol = 1e-10)$value, 1,
+                 tolerance = 1e-6, info = fam)
+  }
+})
+
+test_that("a log-Cholesky tensor is measured by its own column widths", {
+  skip_on_cran_budget()
+  G1 <- matrix(seq(-9, 3, length.out = 200L), ncol = 1L,
+               dimnames = list(NULL, "L11"))
+  d1 <- tulpa:::.hp_logchol_design(G1)
+  expect_identical(d1$design, "logchol")
+  mass <- sum(exp(tulpa:::.hp_logchol_log_density(G1, d1)$lp +
+                  tulpa:::.hyper_logchol_log_measure(G1, d1, absolute = TRUE)))
+  expect_equal(mass, 1, tolerance = 2e-3)
+
+  G <- as.matrix(expand.grid(L11 = c(-1, 0, 1), L21 = c(-0.5, 0.5),
+                             L22 = c(-1, 0.5)))
+  dG <- tulpa:::.hp_logchol_design(G)
+  expect_identical(dG$design, "logchol")
+  w <- function(x) { e <- c(x[1] - diff(x)[1] / 2, (x[-1] + x[-length(x)]) / 2,
+                            x[length(x)] + diff(x)[length(x) - 1] / 2); diff(e) }
+  ref <- log(w(c(-1, 0, 1)))[match(G[, 1], c(-1, 0, 1))] +
+         log(w(c(-0.5, 0.5)))[match(G[, 2], c(-0.5, 0.5))] +
+         log(w(c(-1, 0.5)))[match(G[, 3], c(-1, 0.5))]
+  expect_equal(tulpa:::.hyper_logchol_log_measure(G, dG, absolute = TRUE), ref,
+               tolerance = 1e-12)
+})
+
+test_that("a free-covariance block the grid does not measure declines by name", {
+  skip_on_cran_budget()
+  g <- tulpa:::.mcar_default_logchol_grid(2L)
+  pinned <- g
+  pinned[, "L22"] <- 0
+  expect_identical(tulpa:::.hp_logchol_design(pinned)$reason,
+                   "logchol_partial_block")
+  set.seed(735)
+  scattered <- cbind(L11 = rnorm(12), L21 = rnorm(12), L22 = rnorm(12))
+  expect_identical(tulpa:::.hp_logchol_design(scattered)$reason,
+                   "logchol_design_measure")
+  tg <- scattered; colnames(tg) <- paste0("b1.", colnames(tg))
+  sp <- tulpa:::.joint_axis_specs_from_grid(tg)
+  expect_true(all(is.na(tulpa:::.hyper_log_quad_weights(tg, sp, absolute = TRUE))))
+
+  # Through the joint collector, a measured block folds once over all its axes.
+  tg <- g; colnames(tg) <- paste0("b1.", colnames(g))
+  hp <- tulpa:::.joint_hyperprior(tg, list(list(type = "mcar")),
+                                  declared = tulpa:::.hp_declare(tg))
+  expect_setequal(hp$axes, colnames(tg))
+  expect_length(hp$declined, 0L)
+  dg <- tulpa:::.hp_logchol_design(g)
+  expect_equal(hp$lp, tulpa:::.hp_logchol_log_density(g, dg)$lp)
+  sp <- tulpa:::.joint_axis_specs_from_grid(tg)
+  expect_equal(tulpa:::.hyper_log_quad_weights(tg, sp, absolute = TRUE),
+               tulpa:::.hyper_logchol_log_measure(g, dg, absolute = TRUE))
+})
+
+test_that("a batch of a free-covariance block's rows reads the declared design", {
+  skip_on_cran_budget()
+  # gcol33/tulpa#762: the design was inferred from the rows handed to the fold,
+  # so a batch of rows of a tensor grid -- importance draws, adaptive seeds, a
+  # local-CCD cloud -- is a tensor in no coordinates and lost the Sigma prior.
+  g <- tulpa:::.mcar_default_logchol_grid(2L)
+  colnames(g) <- paste0("b1.", colnames(g))
+  bl <- list(list(type = "mcar"))
+  declared <- tulpa:::.hp_declare(g)
+  whole <- tulpa:::.joint_hyperprior(g, bl, declared = declared)
+  set.seed(762)
+  for (rows in list(sample(nrow(g), 7L), 5L, c(1L, nrow(g)))) {
+    part <- tulpa:::.joint_hyperprior(g[rows, , drop = FALSE], bl,
+                                      declared = declared)
+    expect_equal(part$lp, whole$lp[rows], tolerance = 0)
+    expect_setequal(unname(part$axes), unname(whole$axes))
+    expect_length(part$declined, 0L)
+  }
+
+  # A fold handed no declaration for the block refuses rather than inferring one.
+  expect_error(
+    tulpa:::.joint_hyperprior(g[1:3, , drop = FALSE], bl,
+                              declared = list(axes = colnames(g))),
+    "no declared design")
+})
+
+test_that("a joint tensor with a free-covariance block beside another folds and measures it", {
+  skip_on_cran_budget()
+  # gcol33/tulpa#762: the joint grid repeats the block's rows once per row of the
+  # other block, which is still the block's tensor.
+  g <- tulpa:::.mcar_default_logchol_grid(2L)
+  colnames(g) <- paste0("b1.", colnames(g))
+  tg <- cbind(g[rep(seq_len(nrow(g)), 2L), ],
+              b2.sigma = rep(c(0.5, 1), each = nrow(g)))
+  blocks <- list(list(type = "mcar"), list(type = "icar"))
+  hp <- tulpa:::.joint_hyperprior(tg, blocks, declared = tulpa:::.hp_declare(tg))
+  expect_setequal(hp$axes, colnames(tg))
+  expect_length(hp$declined, 0L)
+
+  dg <- tulpa:::.hp_logchol_design(g)
+  expect_identical(dg$design, "sd_rho")
+  lp_block <- tulpa:::.hp_logchol_log_density(g, dg)$lp
+  lp_sigma <- tulpa:::.joint_hyperprior(
+    tg[, "b2.sigma", drop = FALSE], blocks[2L],
+    declared = list(axes = "b2.sigma"))$lp
+  expect_equal(hp$lp, rep(lp_block, 2L) + lp_sigma, tolerance = 1e-12)
+
+  sp <- tulpa:::.joint_axis_specs_from_grid(tg, folded_axes = hp$axes)
+  lq <- tulpa:::.hyper_log_quad_weights(tg, sp, absolute = TRUE)
+  expect_true(all(is.finite(lq)))
+  # What is left after the block's own measure is the sigma axis's cell width,
+  # one value per sigma level.
+  rest <- lq - rep(tulpa:::.hyper_logchol_log_measure(g, dg, absolute = TRUE), 2L)
+  expect_equal(as.numeric(tapply(rest, tg[, "b2.sigma"], function(v) diff(range(v)))),
+               c(0, 0), tolerance = 1e-12)
+})
+
 test_that("a batch of cells reads the prior on the fit's axes, not on its own spread", {
+  skip_on_cran_budget()
   # Refinement slices, CCD points and importance draws are evaluated as batches
   # that share coordinates on axes the fit integrates. Each cell's prior is a
   # property of the cell and the fit, so a batch must read what the whole grid
@@ -327,6 +340,7 @@ test_that("a batch of cells reads the prior on the fit's axes, not on its own sp
 # --------------------------------------------------------------------------- #
 
 test_that("hyperprior = \"flat\" keeps only a density the call states", {
+  skip_on_cran_budget()
   flat <- function(bare, block = list(), family = NULL)
     tulpa:::.hp_axis_prior(bare, block, family, "flat")
   for (a in c("sigma", "sigma2", "tau", "range")) {

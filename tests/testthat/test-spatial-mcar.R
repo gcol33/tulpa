@@ -54,7 +54,10 @@
   list(fit = fit, fld = fld)
 })
 
+skip_on_cran_budget()
+
 test_that("spatial(~ ... | cell) builds one coupled MCAR block", {
+  skip_on_cran_budget()
   adj <- .mcar_grid_adj(4L, 4L)
   f <- spatial(graph = adj, formula = ~ 1 + x | cell)
   expect_true(f$correlated)

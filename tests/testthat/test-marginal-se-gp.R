@@ -60,7 +60,10 @@ gp_marginal_reference <- function(y, ntr, X, coords, sigma2, phi) {
   list(beta = th[seq_len(p)], H_beta = XtWX - XtWD %*% solve(DtWD, t(XtWD)))
 }
 
+skip_on_cran_budget()
+
 test_that(".nngp_cov_fn reads the compiled kernel at every CovType code (#798)", {
+  skip_on_cran_budget()
   # tulpa::CovType: 0 = exponential, 1 = matern32, 2 = gaussian, 4 = matern52.
   # .nngp_cov_fn() used to restate these formulas by hand with the PRE-#686
   # numbering (0/1/2 = exponential/matern32/matern52), so gp_cov_type()'s

@@ -35,7 +35,10 @@
                     c(log(0.3), log(0.5)), c(log(0.3), log(1.1)),
                     c(log(0.6), log(0.5)), c(log(0.6), log(1.1)))
 
+skip_on_cran_budget()
+
 test_that("value and gradient still agree under a tighter finite difference", {
+  skip_on_cran_budget()
   skip_if_not_installed("fmesher")
   # Kept as before: this certifies that the value and the gradient are of ONE
   # function. It is the tests above that say WHICH function.
@@ -51,6 +54,7 @@ test_that("value and gradient still agree under a tighter finite difference", {
 })
 
 test_that("the entry refuses a nu its analytic dQ/dtheta is not written for", {
+  skip_on_cran_budget()
   skip_if_not_installed("fmesher")
   f <- .impl_fixture()
   expect_error(

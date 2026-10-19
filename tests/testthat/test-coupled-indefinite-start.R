@@ -42,8 +42,11 @@ fit_344 <- function(d, ...) {
         control = ctl))
 }
 
+skip_on_cran_budget()
+
 
 test_that("the sparse-detection fixture reaches the indefinite-start regime", {
+    skip_on_cran_budget()
     d  <- data_344(TRUE)
     lp <- coupled_occ_log_post(d, PREC_344)
     cur <- coupled_occ_curvature(lp)
@@ -62,6 +65,7 @@ test_that("the sparse-detection fixture reaches the indefinite-start regime", {
 
 
 test_that("the convergence predicates read the cells the weights put mass on", {
+    skip_on_cran_budget()
     ok <- tulpa:::.nested_converged_cells(
         list(converged = c(TRUE, FALSE, NA)), 3L)
     expect_identical(ok, c(TRUE, FALSE, FALSE))

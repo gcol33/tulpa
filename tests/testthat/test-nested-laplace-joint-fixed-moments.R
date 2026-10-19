@@ -81,10 +81,31 @@
 }
 
 # --------------------------------------------------------------------------- #
+# (6) The block is extracted inside each cell's own solve (gcol33/tulpa#307).  #
+# --------------------------------------------------------------------------- #
+
+# Reference: the block read the way #305 read it -- off the STORED per-cell
+# precision, through the R-level `cpp_joint_inner_vcov_blocks()` entry. The
+# in-loop extraction hands the same cell CSC to the same routine, so the two
+# agree entry for entry, not to a tolerance.
+.j307_reference_blocks <- function(fq) {
+  p <- fq$n_fixed
+  n_x <- as.integer(fq$Q_csc_n)
+  cpp_joint_inner_vcov_blocks(
+    fq$Q_csc_p_per_grid, fq$Q_csc_i_per_grid, fq$Q_csc_x_per_grid,
+    n_x = n_x, idx = seq_len(p), n_dense = p,
+    A_cols_list = tulpa:::.joint_constraint_cols(fq$arm_layout, n_x),
+    field_marginal = FALSE, n_threads = 1L)
+}
+
+skip_on_cran_budget()
+
+# --------------------------------------------------------------------------- #
 # (5) Which cells the shared marginalizer sums over, and under what weights.   #
 # --------------------------------------------------------------------------- #
 
 test_that(".nested_fixed_moments ignores zero-weight and empty cells", {
+  skip_on_cran_budget()
   H <- matrix(c(4, 1, 1, 2), 2, 2)
   base <- list(weights = c(0.25, 0.75),
                grid_modes = list(c(1, 2), c(3, 4)),
@@ -110,24 +131,6 @@ test_that(".nested_fixed_moments ignores zero-weight and empty cells", {
   expect_equal(ref$mass, 1, tolerance = 1e-14)
   expect_equal(got$mass, 1, tolerance = 1e-14)
 })
-
-# --------------------------------------------------------------------------- #
-# (6) The block is extracted inside each cell's own solve (gcol33/tulpa#307).  #
-# --------------------------------------------------------------------------- #
-
-# Reference: the block read the way #305 read it -- off the STORED per-cell
-# precision, through the R-level `cpp_joint_inner_vcov_blocks()` entry. The
-# in-loop extraction hands the same cell CSC to the same routine, so the two
-# agree entry for entry, not to a tolerance.
-.j307_reference_blocks <- function(fq) {
-  p <- fq$n_fixed
-  n_x <- as.integer(fq$Q_csc_n)
-  cpp_joint_inner_vcov_blocks(
-    fq$Q_csc_p_per_grid, fq$Q_csc_i_per_grid, fq$Q_csc_x_per_grid,
-    n_x = n_x, idx = seq_len(p), n_dense = p,
-    A_cols_list = tulpa:::.joint_constraint_cols(fq$arm_layout, n_x),
-    field_marginal = FALSE, n_threads = 1L)
-}
 
 skip_on_cran()
 

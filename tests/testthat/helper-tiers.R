@@ -52,6 +52,15 @@
 # desktop on top of a fixed per-file cost. A block that measures above it under
 # the CRAN profile takes skip_on_cran() as its first line.
 #
+# CRAN runs a narrower slice of tier 1 than that bound admits. win-builder R-devel
+# spends some 640 s on the whole check against CRAN's 600 s, and the tests are the
+# share of it the package decides; so a tier-1 block that measures over 15 ms
+# under the CRAN profile, on the lower of two runs, also skips on CRAN. It stays
+# tier 1 everywhere else: its gate is skip_on_cran_budget(), which reads NOT_CRAN
+# alone, so the dev loop and TULPA_FAST=1 both run it. Such blocks sit between
+# the CRAN-run part of a file and its skip_on_cran() section, behind a top-level
+# skip_on_cran_budget(), and each carries that gate as its first line as well.
+#
 # A skipped block is not free: test_that() sets up its test context (a temporary
 # directory, the locale, the reproducible-output options) before the gate in the
 # body runs, about 10 ms a block, and the suite gates over a thousand of them. A
@@ -104,6 +113,17 @@ skip_on_cran <- function() {
   testthat::skip_on_cran()
 }
 
+# CRAN time-budget gate: a tier-1 block over the CRAN budget (see the header).
+# It skips on CRAN only, so TULPA_FAST=1 still runs the block, and
+# TULPA_CRAN_BUDGET=off opens it under the CRAN profile too, which is how the CI
+# check matrix runs the whole of tier 1 on every platform.
+skip_on_cran_budget <- function() {
+  if (identical(tolower(Sys.getenv("TULPA_CRAN_BUDGET")), "off")) {
+    return(invisible())
+  }
+  testthat::skip_on_cran()
+}
+
 # Tier-1 fixture size. A structural identity read over a grid of parameter
 # combinations -- a closed form against quadrature, a score against finite
 # differences, a normalizer summed over its support -- is tier 1 by nature, and
@@ -125,7 +145,8 @@ cran_fixture <- function() {
 # builtin when a test file calls it bare: globalenv is searched ahead of the
 # attached testthat package, whereas a helper-scoped binding is not. Mirrors the
 # namespace-aliasing in helper-internal.R.
-for (.nm in c("skip_if_fast", "skip_if_not_slow", "skip_on_cran", "cran_fixture")) {
+for (.nm in c("skip_if_fast", "skip_if_not_slow", "skip_on_cran", "skip_on_cran_budget",
+              "cran_fixture")) {
   assign(.nm, get(.nm), envir = globalenv())
 }
 rm(.nm)

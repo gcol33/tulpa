@@ -63,10 +63,38 @@ mx_vr <- rbind(c(0.09, 0.04), c(0.12, 0.05), c(0.16, 0.07))
 mx_w  <- c(0.2, 0.5, 0.3)
 
 # --------------------------------------------------------------------------- #
+# (4) Symmetry is not Gaussianity                                             #
+# --------------------------------------------------------------------------- #
+
+test_that("a symmetric mixture stays symmetric and is free to differ in width", {
+  # 0.5 N(-2, 1) + 0.5 N(2, 1) is symmetric about 0 and is not a Gaussian.
+  # Matching its mean and variance gives sd = sqrt(5), so the collapsed read
+  # reports +/- 1.96 sqrt(5) = +/- 4.38 while the mixture's own 95% interval
+  # sits near +/- 3.64. Requiring equality on a merely SYMMETRIC fixture would
+  # be asserting the shape away again, so the gate here is symmetry plus a
+  # difference -- equality is required only of the Gaussian-equivalent
+  # fixtures above.
+  fit <- mx_fit(rbind(-2, 2), rbind(1, 1), c(0.5, 0.5))
+  ci  <- mx_q(fit)
+  expect_equal(ci[1, 1], -ci[1, 2], tolerance = 1e-9)
+
+  g <- unname(mx_gauss_ci(fit))
+  expect_equal(g[1, 2], stats::qnorm(0.975) * sqrt(5), tolerance = 1e-12)
+  expect_lt(ci[1, 2], g[1, 2] - 0.5)
+
+  cdf <- function(b) 0.5 * stats::pnorm(b, -2, 1) + 0.5 * stats::pnorm(b, 2, 1)
+  expect_equal(cdf(ci[1, 2]), 0.975, tolerance = 1e-10)
+  expect_equal(cdf(ci[1, 1]), 0.025, tolerance = 1e-10)
+})
+
+skip_on_cran_budget()
+
+# --------------------------------------------------------------------------- #
 # (1) The bounds ARE the mixture's own quantiles                               #
 # --------------------------------------------------------------------------- #
 
 test_that("the fixed-effect bounds invert the mixture CDF", {
+  skip_on_cran_budget()
   fit <- mx_fit(mx_mu, mx_vr, mx_w)
   ci  <- confint(fit)
   ref <- tulpa:::.nl_gauss_mixture_summary(mx_mu, mx_vr, mx_w,
@@ -86,6 +114,7 @@ test_that("the fixed-effect bounds invert the mixture CDF", {
 })
 
 test_that("the requested level reaches the mixture read", {
+  skip_on_cran_budget()
   fit <- mx_fit(mx_mu, mx_vr, mx_w)
   ci  <- confint(fit, level = 0.80)
   ref <- tulpa:::.nl_gauss_mixture_summary(mx_mu, mx_vr, mx_w,
@@ -99,6 +128,7 @@ test_that("the requested level reaches the mixture read", {
 # --------------------------------------------------------------------------- #
 
 test_that("the estimate, standard error and vcov are the same moments as before", {
+  skip_on_cran_budget()
   fit <- mx_fit(mx_mu, mx_vr, mx_w)
   mom <- tulpa:::.nested_fixed_moments(fit)
 
@@ -129,6 +159,7 @@ test_that("the estimate, standard error and vcov are the same moments as before"
 # --------------------------------------------------------------------------- #
 
 test_that("a Gaussian-equivalent mixture reproduces the collapsed-Gaussian interval", {
+  skip_on_cran_budget()
   # One cell.
   f1 <- mx_fit(rbind(c(0.3, -1.1)), rbind(c(0.25, 0.04)), 1)
   expect_equal(mx_q(f1), unname(mx_gauss_ci(f1)), tolerance = 1e-10)
@@ -152,35 +183,11 @@ test_that("a Gaussian-equivalent mixture reproduces the collapsed-Gaussian inter
 })
 
 # --------------------------------------------------------------------------- #
-# (4) Symmetry is not Gaussianity                                             #
-# --------------------------------------------------------------------------- #
-
-test_that("a symmetric mixture stays symmetric and is free to differ in width", {
-  # 0.5 N(-2, 1) + 0.5 N(2, 1) is symmetric about 0 and is not a Gaussian.
-  # Matching its mean and variance gives sd = sqrt(5), so the collapsed read
-  # reports +/- 1.96 sqrt(5) = +/- 4.38 while the mixture's own 95% interval
-  # sits near +/- 3.64. Requiring equality on a merely SYMMETRIC fixture would
-  # be asserting the shape away again, so the gate here is symmetry plus a
-  # difference -- equality is required only of the Gaussian-equivalent
-  # fixtures above.
-  fit <- mx_fit(rbind(-2, 2), rbind(1, 1), c(0.5, 0.5))
-  ci  <- mx_q(fit)
-  expect_equal(ci[1, 1], -ci[1, 2], tolerance = 1e-9)
-
-  g <- unname(mx_gauss_ci(fit))
-  expect_equal(g[1, 2], stats::qnorm(0.975) * sqrt(5), tolerance = 1e-12)
-  expect_lt(ci[1, 2], g[1, 2] - 0.5)
-
-  cdf <- function(b) 0.5 * stats::pnorm(b, -2, 1) + 0.5 * stats::pnorm(b, 2, 1)
-  expect_equal(cdf(ci[1, 2]), 0.975, tolerance = 1e-10)
-  expect_equal(cdf(ci[1, 1]), 0.025, tolerance = 1e-10)
-})
-
-# --------------------------------------------------------------------------- #
 # (6) The #302 correction keeps its own read, and says why                     #
 # --------------------------------------------------------------------------- #
 
 test_that("an enabled skew correction reports the MAP-cell read it was measured on", {
+  skip_on_cran_budget()
   g   <- c(0.35, -0.28)
   g1  <- c(0.04, -0.06)
   fit <- mx_fit(mx_mu, mx_vr, mx_w, gamma3 = g, gamma1 = g1)
@@ -200,6 +207,7 @@ test_that("an enabled skew correction reports the MAP-cell read it was measured 
 })
 
 test_that("a coefficient the correction declines keeps the mixture read", {
+  skip_on_cran_budget()
   # gcol33/tulpa#386. The two corrections cannot be composed on a coefficient
   # the #302 read applies to, which is why an applied row reports the MAP-cell
   # read alone. A DECLINED row has no #302 read to preserve, so falling back
@@ -221,6 +229,7 @@ test_that("a coefficient the correction declines keeps the mixture read", {
 })
 
 test_that("a fit the correction declines everywhere reports what it would have", {
+  skip_on_cran_budget()
   # The case that makes the correction safe to default: a fit where NO
   # coefficient is eligible -- a fully coupled one, whose gamma_1 is not
   # reachable -- must report the same bounds enabled or not.
@@ -235,6 +244,7 @@ test_that("a fit the correction declines everywhere reports what it would have",
 })
 
 test_that("a fit with no retained components declines with its own reason", {
+  skip_on_cran_budget()
   fit <- mx_fit(mx_mu, mx_vr, mx_w)
   mom <- tulpa:::.nested_fixed_moments(fit)
   bare <- mom; bare$mu <- NULL; bare$var <- NULL

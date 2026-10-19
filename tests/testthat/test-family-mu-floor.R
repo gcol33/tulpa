@@ -21,7 +21,23 @@ BAND_ETA <- list(
   beta_probit      = c(-4, -5, -6, -7, -7.5)
 )
 
+test_that("the worked example of the two-floor band returns the exact score", {
+  # binomial_probit, y = 1, n = 1, eta = -6: mu = 9.87e-10 sits between the two
+  # floors. The exact score is dnorm(-6) / pnorm(-6) = 6.158; a score clamped at
+  # 1e-7 returns 6.076e-2, low by the factor mu / 1e-7 = 101, which grows
+  # without bound as eta decreases.
+  got <- cpp_family_terms(1, 1L, -6, "binomial_probit", 1)[["grad"]]
+  expect_equal(got, dnorm(-6) / pnorm(-6), tolerance = 1e-10)
+  # ... and the working weight, dmu^2 / V, carries the same factor.
+  mu <- pnorm(-6)
+  expect_equal(cpp_family_terms(1, 1L, -6, "binomial_probit", 1)[["neg_hess"]],
+               dnorm(-6)^2 / (mu * (1 - mu)), tolerance = 1e-10)
+})
+
+skip_on_cran_budget()
+
 test_that("the score is the eta-derivative of the reported density deep in the tail", {
+  skip_on_cran_budget()
   # Both quantities come from the same call, so this compares the two clamps
   # against each other rather than either against an outside reference.
   fd <- function(f, e) {
@@ -44,20 +60,8 @@ test_that("the score is the eta-derivative of the reported density deep in the t
   }
 })
 
-test_that("the worked example of the two-floor band returns the exact score", {
-  # binomial_probit, y = 1, n = 1, eta = -6: mu = 9.87e-10 sits between the two
-  # floors. The exact score is dnorm(-6) / pnorm(-6) = 6.158; a score clamped at
-  # 1e-7 returns 6.076e-2, low by the factor mu / 1e-7 = 101, which grows
-  # without bound as eta decreases.
-  got <- cpp_family_terms(1, 1L, -6, "binomial_probit", 1)[["grad"]]
-  expect_equal(got, dnorm(-6) / pnorm(-6), tolerance = 1e-10)
-  # ... and the working weight, dmu^2 / V, carries the same factor.
-  mu <- pnorm(-6)
-  expect_equal(cpp_family_terms(1, 1L, -6, "binomial_probit", 1)[["neg_hess"]],
-               dnorm(-6)^2 / (mu * (1 - mu)), tolerance = 1e-10)
-})
-
 test_that("the density and the score clamp mu at the same place", {
+  skip_on_cran_budget()
   # Straddle the analytic floor. Above it neither is clamped, below it both are,
   # and the reference computes the clamped mu itself -- so a score reading a
   # different floor misses on one side or the other.
@@ -76,6 +80,7 @@ test_that("the density and the score clamp mu at the same place", {
 })
 
 test_that("a family whose mu is not on the unit interval shares the same floor", {
+  skip_on_cran_budget()
   # The other arm of clamp_mu_for_family is max(mu, kMuFloor). poisson_sqrt has
   # mu = eta^2, so the floor is reachable at an ordinary eta. The working weight
   # dmu^2 / V = 4 eta^2 / mu_clamped is what pins which value was used: at
@@ -91,6 +96,7 @@ test_that("a family whose mu is not on the unit interval shares the same floor",
 })
 
 test_that("cauchit's score reads the same mu its density reports", {
+  skip_on_cran_budget()
   # pcauchy decays like 1/|eta|, so reaching mu < 1e-7 takes |eta| > 3e6, where a
   # finite difference of the density is dominated by cancellation. The reference
   # is built from the mu the density itself reports (y = 1, n = 1 makes the
@@ -106,6 +112,7 @@ test_that("cauchit's score reads the same mu its density reports", {
 })
 
 test_that("both curvature ladders are derivatives of the weight in the band", {
+  skip_on_cran_budget()
   # curvature_deta / curvature_deta2 feed gamma_3 and the debias correction, and
   # carry their own copy of the clamp. Finite differences bind each rung to the
   # one below it at etas inside the band.

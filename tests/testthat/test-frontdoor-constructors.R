@@ -11,7 +11,22 @@
   adj
 }
 
+test_that("temporal_rtr() refuses to build a spec no fitter projects", {
+  tm <- temporal_rw1("year")
+  expect_error(temporal_rtr(tm, restrict_to = ~ x),
+               "not fitted by any tulpa backend")
+  expect_error(temporal_rtr(list(), ~ x), "not fitted by any tulpa backend")
+})
+
+test_that("spatiotemporal_effects() rejects a fit that carries no ST field", {
+  fit_stub <- structure(list(), class = c("tulpa_fit", "list"))
+  expect_error(spatiotemporal_effects(fit_stub), "spatiotemporal|ST|field")
+})
+
+skip_on_cran_budget()
+
 test_that("spatiotemporal() and spatiotemporal_gp() refuse to build an unfitted spec", {
+  skip_on_cran_budget()
   sp <- spatial_car(.fc_adj(), level = "group", group_var = "region")
   tm <- temporal_rw1("year")
 
@@ -26,6 +41,7 @@ test_that("spatiotemporal() and spatiotemporal_gp() refuse to build an unfitted 
 })
 
 test_that("temporal_gp() validates covariance-specific parameters", {
+  skip_on_cran_budget()
   tg <- temporal_gp("year")
   expect_s3_class(tg, "tulpa_temporal")
   expect_identical(tg$type, "gp")
@@ -41,6 +57,7 @@ test_that("temporal_gp() validates covariance-specific parameters", {
 })
 
 test_that("temporal_tvc() builds all three terms forms; tvc() rejects non-TVC fits", {
+  skip_on_cran_budget()
   tv <- temporal_tvc("year", terms = 2L, structure = "rw2")
   expect_s3_class(tv, "tulpa_tvc")
   expect_s3_class(tv, "tulpa_temporal")
@@ -56,14 +73,8 @@ test_that("temporal_tvc() builds all three terms forms; tvc() rejects non-TVC fi
   expect_error(tvc(fit_stub), "TVC|tvc")
 })
 
-test_that("temporal_rtr() refuses to build a spec no fitter projects", {
-  tm <- temporal_rw1("year")
-  expect_error(temporal_rtr(tm, restrict_to = ~ x),
-               "not fitted by any tulpa backend")
-  expect_error(temporal_rtr(list(), ~ x), "not fitted by any tulpa backend")
-})
-
 test_that("spatial_svc() builds NNGP and HSGP variants and validates knobs", {
+  skip_on_cran_budget()
   sv <- spatial_svc(~ lon + lat, terms = 1L)
   expect_identical(sv$coord_vars, c("lon", "lat"))
   expect_identical(sv$terms_spec$type, "index")
@@ -79,9 +90,4 @@ test_that("spatial_svc() builds NNGP and HSGP variants and validates knobs", {
   expect_error(
     spatial_svc(~ lon + lat, terms = 1L, approx = "hsgp", c_boundary = 0.5),
     ">= 1")
-})
-
-test_that("spatiotemporal_effects() rejects a fit that carries no ST field", {
-  fit_stub <- structure(list(), class = c("tulpa_fit", "list"))
-  expect_error(spatiotemporal_effects(fit_stub), "spatiotemporal|ST|field")
 })

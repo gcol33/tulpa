@@ -39,11 +39,24 @@ test_that("the draws CRPS uses the sorted identity for the pairwise term", {
   expect_equal(sbc_crps(sbc_draws(x), y), ref, tolerance = 1e-12)
 })
 
+test_that("asking for the diagnostic leaves the ambient RNG stream where it was", {
+  sim <- function(seed) { set.seed(seed); list(theta = c(mu = stats::rnorm(1))) }
+  fit <- function(d) list(a = list(mu = sbc_normal(0, 1)))
+  set.seed(77L)
+  before <- get(".Random.seed", envir = globalenv())
+  invisible(recov_sbc(sim, fit, n_seed = 4L))
+  set.seed(77L)
+  expect_identical(get(".Random.seed", envir = globalenv()), before)
+})
+
+skip_on_cran_budget()
+
 # ---------------------------------------------------------------------------
 # 2. PIT
 # ---------------------------------------------------------------------------
 
 test_that("the mixture PIT is the mixture CDF and the fold preserves uniformity", {
+  skip_on_cran_budget()
   dist <- sbc_mixture(c(-1, 2), c(0.25, 4), c(0.7, 0.3))
   for (y in c(-3, -0.4, 0, 5)) {
     expect_equal(sbc_pit(dist, y),
@@ -57,6 +70,7 @@ test_that("the mixture PIT is the mixture CDF and the fold preserves uniformity"
 })
 
 test_that("a discrete PIT randomizes within its atom", {
+  skip_on_cran_budget()
   d <- sbc_discrete(c(1, 2, 3), c(0.5, 0.3, 0.2))
   expect_equal(sbc_pit(d, 1, u = 0), 0)
   expect_equal(sbc_pit(d, 1, u = 1), 0.5)
@@ -71,6 +85,7 @@ test_that("a discrete PIT randomizes within its atom", {
 # ---------------------------------------------------------------------------
 
 test_that("CRPS is refused as a posterior ranking on a fixed-truth experiment", {
+  skip_on_cran_budget()
   sim <- function(seed) list(theta = c(mu = 0.5))
   fit <- function(d) list(a = list(mu = sbc_normal(0.5, 1)),
                           b = list(mu = sbc_normal(0.5, 2)))
@@ -82,16 +97,6 @@ test_that("CRPS is refused as a posterior ranking on a fixed-truth experiment", 
   cmp <- sbc_crps_compare(pr, "a")
   expect_s3_class(cmp, "data.frame")
   expect_identical(cmp$arm, "b")
-})
-
-test_that("asking for the diagnostic leaves the ambient RNG stream where it was", {
-  sim <- function(seed) { set.seed(seed); list(theta = c(mu = stats::rnorm(1))) }
-  fit <- function(d) list(a = list(mu = sbc_normal(0, 1)))
-  set.seed(77L)
-  before <- get(".Random.seed", envir = globalenv())
-  invisible(recov_sbc(sim, fit, n_seed = 4L))
-  set.seed(77L)
-  expect_identical(get(".Random.seed", envir = globalenv()), before)
 })
 
 skip_on_cran()

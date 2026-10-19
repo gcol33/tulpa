@@ -49,12 +49,6 @@
   invisible(r)
 }
 
-test_that("MCAR assembles Sigma^-1 (x) Q with correct gradient and log-prior (p=2)", {
-  # logL11, L21, logL22 (column-major lower-tri log-Cholesky).
-  .mcar_check(n = 8L, p = 2L, theta = c(log(1.2), 0.5, log(0.9)), seed = 1)
-  .mcar_check(n = 12L, p = 2L, theta = c(log(0.7), -0.8, log(1.5)), seed = 2)
-})
-
 test_that("MCAR assembly is exact for p=3", {
   # col-major lower-tri: logL11, L21, L31, logL22, L32, logL33
   .mcar_check(n = 10L, p = 3L,
@@ -69,4 +63,13 @@ test_that("MCAR log|Sigma| matches the log-Cholesky diagonal", {
                                    g$csr$n_neighbors, rnorm(12))
   # |Sigma| = (L11 L22)^2 -> log|Sigma| = 2(logL11 + logL22).
   expect_lt(abs(r$log_det_Sigma - 2 * (theta[1] + theta[3])), 1e-12)
+})
+
+skip_on_cran_budget()
+
+test_that("MCAR assembles Sigma^-1 (x) Q with correct gradient and log-prior (p=2)", {
+  skip_on_cran_budget()
+  # logL11, L21, logL22 (column-major lower-tri log-Cholesky).
+  .mcar_check(n = 8L, p = 2L, theta = c(log(1.2), 0.5, log(0.9)), seed = 1)
+  .mcar_check(n = 12L, p = 2L, theta = c(log(0.7), -0.8, log(1.5)), seed = 2)
 })

@@ -1,3 +1,5 @@
+
+skip_on_cran_budget()
 # Soft sum-to-zero identification of intrinsic fields (gcol33/tulpa#241).
 #
 # The constant that pins an intrinsic field's constant null direction is a
@@ -7,6 +9,7 @@
 # the field mean aliases with the intercept -- the defect #241 records.
 
 test_that("s2z_precision implements sd(sum) = kappa * n", {
+  skip_on_cran_budget()
   kappa <- 0.001
   for (n in c(1L, 5L, 36L, 400L)) {
     expect_equal(tulpa:::cpp_test_s2z_precision(n, kappa),
@@ -25,6 +28,7 @@ test_that("s2z_precision implements sd(sum) = kappa * n", {
 })
 
 test_that("the RW sum-to-zero penalty uses the derived precision", {
+  skip_on_cran_budget()
   phi <- c(0.4, -0.1, 0.3, -0.2, 0.9)
   expected <- -0.5 * tulpa:::cpp_test_s2z_precision(length(phi), 0.001) * sum(phi)^2
   expect_equal(tulpa:::cpp_test_sum_to_zero_penalty(phi), expected, tolerance = 1e-9)
@@ -33,6 +37,7 @@ test_that("the RW sum-to-zero penalty uses the derived precision", {
 })
 
 test_that("multiscale temporal pins its intrinsic trend and seasonal arms", {
+  skip_on_cran_budget()
   # trend (RW1/RW2) and seasonal (cyclic RW1) are both intrinsic and both land
   # on the same linear predictor, so each needs its own pin. The multiscale
   # block is only populated by consumer packages, so this asserts the log-prior
@@ -90,6 +95,7 @@ test_that("multiscale temporal pins its intrinsic trend and seasonal arms", {
 # visits zero components and pins nothing, while n_spatial_components keeps its
 # own default of 1 and the rank normalizer still credits the pin.
 test_that("set_spatial_adjacency derives the partition the augmentation walks", {
+  skip_on_cran_budget()
   n_units <- 8L
   row_ptr <- c(0L, 1L, 3L, 5L, 7L, 9L, 11L, 13L, 14L)
   col_idx <- c(1L, 0L, 2L, 1L, 3L, 2L, 4L, 3L, 5L, 4L, 6L, 5L, 7L, 6L)
@@ -112,6 +118,7 @@ test_that("set_spatial_adjacency derives the partition the augmentation walks", 
 })
 
 test_that("a disconnected adjacency yields one pinned component per piece", {
+  skip_on_cran_budget()
   # Two disjoint 3-chains: 0-1-2 and 3-4-5.
   n_units <- 6L
   row_ptr <- c(0L, 1L, 3L, 4L, 5L, 7L, 8L)

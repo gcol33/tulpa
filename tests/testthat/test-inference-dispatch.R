@@ -1,26 +1,4 @@
 
-test_that("smc is Tier 1 (exact); sgld/sghmc/mclmc are Tier 3 (approximate)", {
-  # SMC (properly resampled) targets the exact posterior. SGLD/SGHMC carry
-  # fixed-step + minibatch bias and MCLMC's default is unadjusted, so they are
-  # approximate MCMC -- tier "optimized", not "exact".
-  expect_true("smc" %in% INFERENCE_TIERS$exact$backends)
-  expect_equal(get_backend_tier("smc")$tier, 1L)
-  for (b in c("sgld", "sghmc", "mclmc")) {
-    expect_false(b %in% INFERENCE_TIERS$exact$backends)
-    expect_true(b %in% INFERENCE_TIERS$optimized$backends)
-    expect_equal(get_backend_tier(b)$tier, 3L)
-  }
-})
-
-test_that("get_backend_tier preserves its shape and errors on unknown", {
-  ti <- get_backend_tier("laplace")
-  expect_equal(ti$tier, 2L)
-  expect_equal(ti$name, "Structured")
-  expect_equal(ti$mode, "structured")
-  expect_true(nzchar(ti$guarantee))
-  expect_error(get_backend_tier("nope"), "Unknown backend")
-})
-
 test_that("the gibbs backend's C-ABI symbols name the Polya-Gamma kernels", {
   cabi <- BACKEND_REGISTRY$gibbs$cabi
   expect_true(all(c("tulpa_pg_binomial_gibbs", "tulpa_pg_negbin_gibbs",
@@ -41,6 +19,32 @@ test_that("family support is derived from the registry", {
   expect_false(backend_supports_family("gibbs", gauss))
   # unrestricted backend accepts anything
   expect_true(backend_supports_family("laplace", gauss))
+})
+
+skip_on_cran_budget()
+
+test_that("smc is Tier 1 (exact); sgld/sghmc/mclmc are Tier 3 (approximate)", {
+  skip_on_cran_budget()
+  # SMC (properly resampled) targets the exact posterior. SGLD/SGHMC carry
+  # fixed-step + minibatch bias and MCLMC's default is unadjusted, so they are
+  # approximate MCMC -- tier "optimized", not "exact".
+  expect_true("smc" %in% INFERENCE_TIERS$exact$backends)
+  expect_equal(get_backend_tier("smc")$tier, 1L)
+  for (b in c("sgld", "sghmc", "mclmc")) {
+    expect_false(b %in% INFERENCE_TIERS$exact$backends)
+    expect_true(b %in% INFERENCE_TIERS$optimized$backends)
+    expect_equal(get_backend_tier(b)$tier, 3L)
+  }
+})
+
+test_that("get_backend_tier preserves its shape and errors on unknown", {
+  skip_on_cran_budget()
+  ti <- get_backend_tier("laplace")
+  expect_equal(ti$tier, 2L)
+  expect_equal(ti$name, "Structured")
+  expect_equal(ti$mode, "structured")
+  expect_true(nzchar(ti$guarantee))
+  expect_error(get_backend_tier("nope"), "Unknown backend")
 })
 
 skip_on_cran()

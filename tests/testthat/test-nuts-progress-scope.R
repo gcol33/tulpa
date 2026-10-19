@@ -26,7 +26,10 @@ with_heartbeat <- function(code) {
   file.exists(f)
 }
 
+skip_on_cran_budget()
+
 test_that("a chain ended by an exception leaves no reporter registered", {
+  skip_on_cran_budget()
   expect_false(cpp_test_nuts_progress_active())
 
   wrote <- with_heartbeat(
@@ -41,6 +44,7 @@ test_that("a chain ended by an exception leaves no reporter registered", {
 })
 
 test_that("a chain after a failed one still builds its own reporter", {
+  skip_on_cran_budget()
   with_heartbeat(
     expect_error(cpp_test_nuts_gradient_throws(throw_after = 30L, K = 3L,
                                                n_iter = 40L, n_warmup = 20L),

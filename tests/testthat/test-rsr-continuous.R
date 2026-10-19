@@ -60,7 +60,28 @@
 }
 
 
+# Several observations per location, so the observation -> location incidence
+# is not the identity and a projector differs from the gather it replaces.
+.rsrc_nngp_data <- function(seed = 3L, n_loc = 40L, reps = 2L) {
+  set.seed(seed)
+  loc <- data.frame(lon = stats::runif(n_loc), lat = stats::runif(n_loc))
+  d <- loc[rep(seq_len(n_loc), each = reps), ]
+  rownames(d) <- NULL
+  d$x <- stats::rnorm(nrow(d))
+  d$count <- stats::rpois(nrow(d), exp(0.3 + 0.5 * d$x + 0.5 * sin(4 * d$lon)))
+  d
+}
+
+.rsrc_nngp_block <- function(d, nn = 6L) {
+  tulpa:::.spatial_spec_to_nl_prior(
+    tulpa:::validate_gp(spatial_gp(~ lon + lat, nn = nn), d))
+}
+
+skip_on_cran_budget()
+
+
 test_that("spatial_rsr() takes the fields a kernel carries a precision for", {
+  skip_on_cran_budget()
   expect_s3_class(spatial_rsr(spatial_gp(~ lon + lat), restrict_to = ~ x),
                   "tulpa_rsr")
   W <- matrix(0, 4, 4)
@@ -78,6 +99,7 @@ test_that("spatial_rsr() takes the fields a kernel carries a precision for", {
 
 
 test_that("one projector builder over the observation -> field map", {
+  skip_on_cran_budget()
   # The areal route passes `spatial_idx`, the continuous one `obs_to_loc`; both
   # are 1-based maps into the field's own coordinates, and the projector is the
   # same construction over either.
@@ -99,24 +121,6 @@ test_that("one projector builder over the observation -> field map", {
   expect_equal(tulpa:::.rsr_unit_projection(X, seq_len(12), 12L),
                compute_rsr_projection(X), tolerance = 1e-10)
 })
-
-
-# Several observations per location, so the observation -> location incidence
-# is not the identity and a projector differs from the gather it replaces.
-.rsrc_nngp_data <- function(seed = 3L, n_loc = 40L, reps = 2L) {
-  set.seed(seed)
-  loc <- data.frame(lon = stats::runif(n_loc), lat = stats::runif(n_loc))
-  d <- loc[rep(seq_len(n_loc), each = reps), ]
-  rownames(d) <- NULL
-  d$x <- stats::rnorm(nrow(d))
-  d$count <- stats::rpois(nrow(d), exp(0.3 + 0.5 * d$x + 0.5 * sin(4 * d$lon)))
-  d
-}
-
-.rsrc_nngp_block <- function(d, nn = 6L) {
-  tulpa:::.spatial_spec_to_nl_prior(
-    tulpa:::validate_gp(spatial_gp(~ lon + lat, nn = nn), d))
-}
 
 skip_on_cran()
 

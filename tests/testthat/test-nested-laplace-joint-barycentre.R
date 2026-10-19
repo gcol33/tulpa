@@ -89,10 +89,37 @@
 }
 
 # --------------------------------------------------------------------------- #
+# The measurement (gcol33/tulpa#322's harness, no fitting minutes)            #
+# --------------------------------------------------------------------------- #
+
+# The two candidates, each entering the harness the way that kind of rule does:
+# the mass multiplier as a per-cell design weight, the barycentre as a perturbed
+# coordinate matrix. Their combination is the pair.
+.bar_mass_w <- function(d) {
+  bm <- tulpa:::.joint_local_ccd_box_mass(d$joint_grid, d$log_marginal,
+                                          d$axis_names, d$axis_tags)
+  base <- if (is.null(d$dnode)) rep(1, nrow(d$joint_grid)) else d$dnode
+  outer_grid_weights(d, dnode = base * exp(bm$log_box_ratio))
+}
+
+# The rules correct how a coarse grid integrates the marginal likelihood, so the
+# measurements state a flat outer prior. `dev_notes/issue327/bary327.R` measures
+# every figure below under a stated prior and within-cell read; where a figure is
+# quoted under both priors it is written flat / proper.
+.BAR_HYPERPRIOR <- "flat"
+
+.bar_place_g <- function(d)
+  tulpa:::.joint_local_ccd_barycentre(d$joint_grid, d$log_marginal,
+                                      d$axis_names, d$axis_tags)
+
+skip_on_cran_budget()
+
+# --------------------------------------------------------------------------- #
 # What a declined axis declined at (gcol33/tulpa#334)                         #
 # --------------------------------------------------------------------------- #
 
 test_that("a declined barycentre axis names the gate it fell at", {
+  skip_on_cran_budget()
   # `cancellation`: the local peak sits 5e11 nats above a box it is half a
   # million widths away from, so the closed form's `mu + corr` is refused before
   # it is formed (`.LCCD_BAR_CANCEL`) and the quadrature that takes over is
@@ -124,6 +151,7 @@ test_that("a declined barycentre axis names the gate it fell at", {
 })
 
 test_that("a cell's decline tally is per axis, alongside the count", {
+  skip_on_cran_budget()
   # Four axes: one concave and answered in closed form, one whose closed form is
   # refused for conditioning and whose quadrature returns nothing, one with no
   # extent at all, and one whose quadrature puts the atom outside its own box.
@@ -147,6 +175,7 @@ test_that("a cell's decline tally is per axis, alongside the count", {
 })
 
 test_that("the moved coordinate is the u-space barycentre through the axis map", {
+  skip_on_cran_budget()
   # The grid stores physical theta while the quadratic is fitted in
   # `u = log theta`, so the shipped coordinate is `exp` of the u-space
   # barycentre: a mean in `u` mapped through the axis's own monotone transform,
@@ -173,6 +202,7 @@ test_that("the moved coordinate is the u-space barycentre through the axis map",
 })
 
 test_that("a refined cell records its barycentre shift beside its box mass", {
+  skip_on_cran_budget()
   mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
   lv <- list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2))
   gg <- as.matrix(expand.grid(lv, KEEP.OUT.ATTRS = FALSE))
@@ -196,30 +226,6 @@ test_that("a refined cell records its barycentre shift beside its box mass", {
   expect_equal(out$info$bary_shift, bc$bary_shift[out$info$cells],
                tolerance = 1e-12)
 })
-
-# --------------------------------------------------------------------------- #
-# The measurement (gcol33/tulpa#322's harness, no fitting minutes)            #
-# --------------------------------------------------------------------------- #
-
-# The two candidates, each entering the harness the way that kind of rule does:
-# the mass multiplier as a per-cell design weight, the barycentre as a perturbed
-# coordinate matrix. Their combination is the pair.
-.bar_mass_w <- function(d) {
-  bm <- tulpa:::.joint_local_ccd_box_mass(d$joint_grid, d$log_marginal,
-                                          d$axis_names, d$axis_tags)
-  base <- if (is.null(d$dnode)) rep(1, nrow(d$joint_grid)) else d$dnode
-  outer_grid_weights(d, dnode = base * exp(bm$log_box_ratio))
-}
-
-# The rules correct how a coarse grid integrates the marginal likelihood, so the
-# measurements state a flat outer prior. `dev_notes/issue327/bary327.R` measures
-# every figure below under a stated prior and within-cell read; where a figure is
-# quoted under both priors it is written flat / proper.
-.BAR_HYPERPRIOR <- "flat"
-
-.bar_place_g <- function(d)
-  tulpa:::.joint_local_ccd_barycentre(d$joint_grid, d$log_marginal,
-                                      d$axis_names, d$axis_tags)
 
 skip_on_cran()
 

@@ -9,7 +9,10 @@ u  <- rnorm(16, 0, 0.6)
 d  <- data.frame(x = x, g = factor(g), time = rep(1:16, each = 10L),
                  yb = rbinom(n, 1, plogis(0.2 + 0.6 * x + u[g])))
 
+skip_on_cran_budget()
+
 test_that("the backends that read hyperprior are the registry's declaration", {
+  skip_on_cran_budget()
   expect_setequal(tulpa:::.hyperprior_backends(),
                   c("re_cov_nested", "eb", "nested_laplace",
                     "nested_laplace_joint", "spde"))
@@ -22,6 +25,7 @@ test_that("the backends that read hyperprior are the registry's declaration", {
 })
 
 test_that("a backend that does not read hyperprior refuses \"flat\"", {
+  skip_on_cran_budget()
   expect_error(tulpa(yb ~ x + (1 | g), data = d, family = "binomial",
                      mode = "laplace", sigma_re = 1, hyperprior = "flat"),
                "not read by backend 'laplace'")

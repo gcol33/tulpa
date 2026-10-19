@@ -18,7 +18,10 @@ fake_draw_fit <- function(cols, spatial = NULL) {
   structure(list(draws = dr, spatial = spatial), class = c("tulpa_fit", "list"))
 }
 
+skip_on_cran_budget()
+
 test_that("sampler BYM2 and proper-CAR fits report both hyperparameters", {
+  skip_on_cran_budget()
   bym <- spatial_range(fake_draw_fit(c("beta[1]", "log_sigma_spatial",
                                        "logit_rho_bym2")))
   expect_setequal(rownames(bym), c("sigma", "rho"))
@@ -31,6 +34,7 @@ test_that("sampler BYM2 and proper-CAR fits report both hyperparameters", {
 })
 
 test_that("a fit that conditioned on the hyperparameters says so", {
+  skip_on_cran_budget()
   f <- structure(list(draws = NULL, spatial = list(type = "icar"),
                       temporal = list(type = "ar1")),
                  class = c("tulpa_fit", "list"))
@@ -41,6 +45,7 @@ test_that("a fit that conditioned on the hyperparameters says so", {
 })
 
 test_that("coordinates are standardized by one common factor", {
+  skip_on_cran_budget()
   set.seed(2)
   xy <- cbind(lon = runif(40, 0, 10), lat = runif(40, 0, 1))
   s <- tulpa:::.scale_coords_isotropic(xy)
@@ -58,6 +63,7 @@ test_that("coordinates are standardized by one common factor", {
 })
 
 test_that("a temporal GP's lengthscale support sits on the spread of its times", {
+  skip_on_cran_budget()
   set.seed(1); tt <- sort(round(runif(12, 0, 100), 1))
   d <- data.frame(t = rep(tt, each = 2))
   spec <- validate_temporal_gp(temporal_gp("t"), d)

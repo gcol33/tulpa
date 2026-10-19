@@ -86,7 +86,43 @@
 }
 
 
+test_that("the settled-mode gate passes a fit that does not report a residual", {
+  # Every kernel reports score_max, but the gate must not block a fit assembled
+  # without one (a hand-built list in a downstream package, an older cached fit).
+  d <- .stn_sim("poisson", 1)
+  f <- .stn_fit(d, 1)
+  f$score_max <- NULL
+  g <- .laplace_exact_re_grad(
+    fit = f, y = d$y, X = d$X, n_trials = d$n_trials, offset = NULL,
+    weights = NULL, re_list = d$re_list, layout = d$layout,
+    L_list = list(d$L0), family = d$fam, phi = 1)
+  expect_true(is.numeric(g))
+})
+
+
+test_that("the refusals are reported once per fit, not once per inner solve", {
+  # .with_unsettled_report collapses the per-solve signal the outer optimizers
+  # would otherwise emit at every trial theta.
+  expect_warning(
+    out <- .with_unsettled_report({
+      for (i in 1:3) {
+        warning(structure(class = c("tulpa_unsettled_mode", "warning", "condition"),
+                          list(call = NULL, message = paste("solve", i))))
+      }
+      "done"
+    }, "caller_fn"),
+    "declined at 3 inner solves")
+  expect_identical(out, "done")
+
+  # Nothing signalled, nothing reported.
+  expect_silent(.with_unsettled_report("quiet", "caller_fn"))
+})
+
+skip_on_cran_budget()
+
+
 test_that("score_max is the joint score at the mode the solve returned", {
+  skip_on_cran_budget()
   for (fam in c("poisson", "neg_binomial_2", "neg_binomial_1")) {
     d <- .stn_sim(fam, 1.5)
     f <- .stn_fit(d, 1.5)
@@ -101,6 +137,7 @@ test_that("score_max is the joint score at the mode the solve returned", {
 
 
 test_that("a slowly converging inner solve is run to stationarity, not stopped at it", {
+  skip_on_cran_budget()
   # neg_binomial_1's Newton weight is the quasi-likelihood mu / (1 + phi), which
   # sits far below the observed curvature at large phi. The solve then converges
   # linearly at a rate that crosses 0.707 between phi = 3 and phi = 4 -- exactly
@@ -119,6 +156,7 @@ test_that("a slowly converging inner solve is run to stationarity, not stopped a
 
 
 test_that("the near-mode trust factor damps only a decrement that grew", {
+  skip_on_cran_budget()
   # Away from the mode the scale is 1, so those solves take the trial sequence
   # they always did; the gate is a decrement of 1e-6.
   expect_equal(tulpa:::cpp_newton_trust_probe(c(1, 1e-2, 1e-5, 1e-6)),
@@ -154,6 +192,7 @@ test_that("the near-mode trust factor damps only a decrement that grew", {
 
 
 test_that("the exact gradient refuses a mode that stopped short of stationarity", {
+  skip_on_cran_budget()
   d <- .stn_sim("neg_binomial_1", 0.5)
   phi <- 6
 
@@ -181,40 +220,8 @@ test_that("the exact gradient refuses a mode that stopped short of stationarity"
 })
 
 
-test_that("the settled-mode gate passes a fit that does not report a residual", {
-  # Every kernel reports score_max, but the gate must not block a fit assembled
-  # without one (a hand-built list in a downstream package, an older cached fit).
-  d <- .stn_sim("poisson", 1)
-  f <- .stn_fit(d, 1)
-  f$score_max <- NULL
-  g <- .laplace_exact_re_grad(
-    fit = f, y = d$y, X = d$X, n_trials = d$n_trials, offset = NULL,
-    weights = NULL, re_list = d$re_list, layout = d$layout,
-    L_list = list(d$L0), family = d$fam, phi = 1)
-  expect_true(is.numeric(g))
-})
-
-
-test_that("the refusals are reported once per fit, not once per inner solve", {
-  # .with_unsettled_report collapses the per-solve signal the outer optimizers
-  # would otherwise emit at every trial theta.
-  expect_warning(
-    out <- .with_unsettled_report({
-      for (i in 1:3) {
-        warning(structure(class = c("tulpa_unsettled_mode", "warning", "condition"),
-                          list(call = NULL, message = paste("solve", i))))
-      }
-      "done"
-    }, "caller_fn"),
-    "declined at 3 inner solves")
-  expect_identical(out, "done")
-
-  # Nothing signalled, nothing reported.
-  expect_silent(.with_unsettled_report("quiet", "caller_fn"))
-})
-
-
 test_that("the refusal count is readable while the wrapped expression runs", {
+  skip_on_cran_budget()
   # This is what lets the gradient-driven outer optimizer notice it was walking
   # blind and hand over to the derivative-free path. optim() receives a declined
   # gradient as zeros and cannot tell that from a stationary point, so without

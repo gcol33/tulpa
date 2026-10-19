@@ -1,3 +1,11 @@
+
+test_that("an unknown support kind is refused rather than translated", {
+  v <- c(1, 2, 3); w <- rep(1 / 3, 3)
+  expect_error(.nl_summary_quantile(v, w, 0.5, "positive", "draws"))
+  expect_error(.nl_summary_quantile(v, w, 0.5, "positive", "mcmc"))
+})
+
+skip_on_cran_budget()
 # A reported median / interval is read off a node set, and two node sets that
 # both carry a CDF still have different GEOMETRY at the edge (gcol33/tulpa#358).
 #
@@ -17,6 +25,7 @@
 # --------------------------------------------------------------- the taxonomy
 
 test_that("every support kind names an outer-edge policy exactly once", {
+  skip_on_cran_budget()
   expect_identical(.NL_SUPPORT_KINDS, names(.NL_SUPPORT))
   # `match.arg` takes the first entry as the default, so `density` staying first
   # is what keeps every existing caller's unnamed default unchanged.
@@ -60,6 +69,7 @@ test_that("every support kind names an outer-edge policy exactly once", {
 })
 
 test_that("a sample support clamps and a density support extends", {
+  skip_on_cran_budget()
   v <- c(1, 2, 3, 4, 5)
   w <- rep(0.2, 5)
   p <- c(0.005, 0.025, 0.5, 0.975, 0.995)
@@ -84,13 +94,8 @@ test_that("a sample support clamps and a density support extends", {
   expect_true(all(qd[c(1L, 2L)] > .nl_cell_edges(v)[1L]))
 })
 
-test_that("an unknown support kind is refused rather than translated", {
-  v <- c(1, 2, 3); w <- rep(1 / 3, 3)
-  expect_error(.nl_summary_quantile(v, w, 0.5, "positive", "draws"))
-  expect_error(.nl_summary_quantile(v, w, 0.5, "positive", "mcmc"))
-})
-
 test_that(".nl_node_support reads the producer that left the node set", {
+  skip_on_cran_budget()
   expect_identical(.nl_node_support("grid"), "density")
   expect_identical(.nl_node_support("grid_adaptive"), "density")
   expect_identical(.nl_node_support("ccd"), "moment_rule")
@@ -110,6 +115,7 @@ test_that(".nl_node_support reads the producer that left the node set", {
 # ------------------------------------------------- nothing reported moves
 
 test_that("sample and density agree at every probability the backends report", {
+  skip_on_cran_budget()
   # The policies differ only outside [1 / (2n), 1 - 1 / (2n)]. The reported
   # levels are 0.025 / 0.5 / 0.975, so from n = 21 draws up the two reads are
   # identical -- which is why separating them is a refactor.
@@ -134,6 +140,7 @@ test_that("sample and density agree at every probability the backends report", {
 })
 
 test_that("the derived-summary read is unchanged at the reported probabilities", {
+  skip_on_cran_budget()
   layout <- list(list(nc = 2L, full = TRUE, k = 3L, label = "g",
                       n_groups = 40L))
   set.seed(9L)

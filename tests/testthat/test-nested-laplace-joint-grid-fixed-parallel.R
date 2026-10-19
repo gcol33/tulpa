@@ -36,36 +36,6 @@
        weights = w)
 }
 
-
-# --------------------------------------------------------------------------- #
-# 1. A blank cell leaves an empty slot, never a shorter list                   #
-# --------------------------------------------------------------------------- #
-
-test_that("a trailing cell with no block keeps the retained pair grid-length", {
-  n <- 6L
-  out <- tulpa:::.joint_attach_grid_fixed(.j345_res(n, blank = n), 2L)
-
-  expect_length(out$grid_modes,    n)
-  expect_length(out$grid_hessians, n)
-  expect_length(out$weights,       n)
-  expect_true(is.na(out$grid_fixed_declined))
-
-  expect_null(out$grid_modes[[n]])
-  expect_null(out$grid_hessians[[n]])
-  expect_false(any(vapply(out$grid_modes[seq_len(n - 1L)], is.null, logical(1))))
-})
-
-test_that("an interior cell with no block leaves its own slot empty", {
-  n <- 6L
-  out <- tulpa:::.joint_attach_grid_fixed(.j345_res(n, blank = 3L), 2L)
-
-  expect_length(out$grid_modes,    n)
-  expect_length(out$grid_hessians, n)
-  expect_null(out$grid_modes[[3L]])
-  expect_null(out$grid_hessians[[3L]])
-  expect_true(is.na(out$grid_fixed_declined))
-})
-
 test_that("a run of trailing blank cells is still grid-length", {
   n <- 6L
   out <- tulpa:::.joint_attach_grid_fixed(.j345_res(n, blank = c(2L, 5L, 6L)), 2L)
@@ -73,74 +43,6 @@ test_that("a run of trailing blank cells is still grid-length", {
   expect_length(out$grid_hessians, n)
   expect_equal(which(vapply(out$grid_hessians, is.null, logical(1))),
                c(2L, 5L, 6L))
-})
-
-test_that("the retained slot holds the cell its own index names", {
-  n <- 6L
-  r <- .j345_res(n, blank = c(3L, 6L))
-  out <- tulpa:::.joint_attach_grid_fixed(r, 2L)
-  for (k in setdiff(seq_len(n), c(3L, 6L))) {
-    expect_equal(out$grid_modes[[k]], as.numeric(r$modes[k, ]))
-    expect_equal(solve(out$grid_hessians[[k]]), r$cov_block_per_grid[[k]])
-  }
-})
-
-
-# --------------------------------------------------------------------------- #
-# 2. The marginalizer reads such a grid, and reads it conditional on the       #
-#    cells that carry a block (gcol33/tulpa#342)                               #
-# --------------------------------------------------------------------------- #
-
-test_that(".nested_fixed_moments reads a grid whose last cell carried no block", {
-  n <- 6L
-  out <- tulpa:::.joint_attach_grid_fixed(.j345_res(n, blank = n), 2L)
-  mom <- tulpa:::.nested_fixed_moments(out)
-
-  expect_false(is.null(mom))
-  expect_true(all(is.finite(mom$mean)))
-  expect_true(all(is.finite(mom$cov)))
-  # The blank cell carried no weight, so nothing was dropped from the grid the
-  # weights describe.
-  expect_equal(mom$mass, 1)
-  expect_equal(mom$keep, seq_len(n - 1L))
-})
-
-test_that("the blank-cell grid reports what a grid without that cell reports", {
-  n <- 6L
-  full <- tulpa:::.joint_attach_grid_fixed(.j345_res(n, blank = n), 2L)
-  # The same grid with the zero-weight cell never present at all.
-  r <- .j345_res(n, blank = n)
-  r$cov_block_per_grid <- r$cov_block_per_grid[seq_len(n - 1L)]
-  r$modes   <- r$modes[seq_len(n - 1L), , drop = FALSE]
-  r$weights <- r$weights[seq_len(n - 1L)]
-  short <- tulpa:::.joint_attach_grid_fixed(r, 2L)
-
-  a <- tulpa:::.nested_fixed_moments(full)
-  b <- tulpa:::.nested_fixed_moments(short)
-  expect_equal(a$mean, b$mean)
-  expect_equal(a$cov,  b$cov)
-})
-
-
-# --------------------------------------------------------------------------- #
-# 3. Every path that leaves no coefficient table says why                      #
-# --------------------------------------------------------------------------- #
-
-test_that("a grid with no block on any weighted cell declines with a reason", {
-  n <- 4L
-  out <- tulpa:::.joint_attach_grid_fixed(.j345_res(n, blank = seq_len(n)), 2L)
-  expect_identical(out$grid_fixed_declined, "no_weighted_cell_block")
-  expect_null(out$grid_modes)
-  expect_null(out$grid_hessians)
-  expect_null(tulpa:::.nested_fixed_moments(out))
-})
-
-test_that("all-NA weights decline rather than retain an unreadable pair", {
-  n <- 4L
-  out <- tulpa:::.joint_attach_grid_fixed(
-    .j345_res(n, w = rep(NA_real_, n)), 2L)
-  expect_identical(out$grid_fixed_declined, "no_weighted_cell_block")
-  expect_null(tulpa:::.nested_fixed_moments(out))
 })
 
 test_that("a weighted cell with no block is still fatal, with its own reason", {
@@ -211,6 +113,113 @@ test_that("every decline reason a retained-pair-less result can carry is stated"
     control = list(adaptive_grid = TRUE, diagnose_k = FALSE,
                    var_of_means_consistency = FALSE))
 }
+
+skip_on_cran_budget()
+
+
+# --------------------------------------------------------------------------- #
+# 1. A blank cell leaves an empty slot, never a shorter list                   #
+# --------------------------------------------------------------------------- #
+
+test_that("a trailing cell with no block keeps the retained pair grid-length", {
+  skip_on_cran_budget()
+  n <- 6L
+  out <- tulpa:::.joint_attach_grid_fixed(.j345_res(n, blank = n), 2L)
+
+  expect_length(out$grid_modes,    n)
+  expect_length(out$grid_hessians, n)
+  expect_length(out$weights,       n)
+  expect_true(is.na(out$grid_fixed_declined))
+
+  expect_null(out$grid_modes[[n]])
+  expect_null(out$grid_hessians[[n]])
+  expect_false(any(vapply(out$grid_modes[seq_len(n - 1L)], is.null, logical(1))))
+})
+
+test_that("an interior cell with no block leaves its own slot empty", {
+  skip_on_cran_budget()
+  n <- 6L
+  out <- tulpa:::.joint_attach_grid_fixed(.j345_res(n, blank = 3L), 2L)
+
+  expect_length(out$grid_modes,    n)
+  expect_length(out$grid_hessians, n)
+  expect_null(out$grid_modes[[3L]])
+  expect_null(out$grid_hessians[[3L]])
+  expect_true(is.na(out$grid_fixed_declined))
+})
+
+test_that("the retained slot holds the cell its own index names", {
+  skip_on_cran_budget()
+  n <- 6L
+  r <- .j345_res(n, blank = c(3L, 6L))
+  out <- tulpa:::.joint_attach_grid_fixed(r, 2L)
+  for (k in setdiff(seq_len(n), c(3L, 6L))) {
+    expect_equal(out$grid_modes[[k]], as.numeric(r$modes[k, ]))
+    expect_equal(solve(out$grid_hessians[[k]]), r$cov_block_per_grid[[k]])
+  }
+})
+
+
+# --------------------------------------------------------------------------- #
+# 2. The marginalizer reads such a grid, and reads it conditional on the       #
+#    cells that carry a block (gcol33/tulpa#342)                               #
+# --------------------------------------------------------------------------- #
+
+test_that(".nested_fixed_moments reads a grid whose last cell carried no block", {
+  skip_on_cran_budget()
+  n <- 6L
+  out <- tulpa:::.joint_attach_grid_fixed(.j345_res(n, blank = n), 2L)
+  mom <- tulpa:::.nested_fixed_moments(out)
+
+  expect_false(is.null(mom))
+  expect_true(all(is.finite(mom$mean)))
+  expect_true(all(is.finite(mom$cov)))
+  # The blank cell carried no weight, so nothing was dropped from the grid the
+  # weights describe.
+  expect_equal(mom$mass, 1)
+  expect_equal(mom$keep, seq_len(n - 1L))
+})
+
+test_that("the blank-cell grid reports what a grid without that cell reports", {
+  skip_on_cran_budget()
+  n <- 6L
+  full <- tulpa:::.joint_attach_grid_fixed(.j345_res(n, blank = n), 2L)
+  # The same grid with the zero-weight cell never present at all.
+  r <- .j345_res(n, blank = n)
+  r$cov_block_per_grid <- r$cov_block_per_grid[seq_len(n - 1L)]
+  r$modes   <- r$modes[seq_len(n - 1L), , drop = FALSE]
+  r$weights <- r$weights[seq_len(n - 1L)]
+  short <- tulpa:::.joint_attach_grid_fixed(r, 2L)
+
+  a <- tulpa:::.nested_fixed_moments(full)
+  b <- tulpa:::.nested_fixed_moments(short)
+  expect_equal(a$mean, b$mean)
+  expect_equal(a$cov,  b$cov)
+})
+
+
+# --------------------------------------------------------------------------- #
+# 3. Every path that leaves no coefficient table says why                      #
+# --------------------------------------------------------------------------- #
+
+test_that("a grid with no block on any weighted cell declines with a reason", {
+  skip_on_cran_budget()
+  n <- 4L
+  out <- tulpa:::.joint_attach_grid_fixed(.j345_res(n, blank = seq_len(n)), 2L)
+  expect_identical(out$grid_fixed_declined, "no_weighted_cell_block")
+  expect_null(out$grid_modes)
+  expect_null(out$grid_hessians)
+  expect_null(tulpa:::.nested_fixed_moments(out))
+})
+
+test_that("all-NA weights decline rather than retain an unreadable pair", {
+  skip_on_cran_budget()
+  n <- 4L
+  out <- tulpa:::.joint_attach_grid_fixed(
+    .j345_res(n, w = rep(NA_real_, n)), 2L)
+  expect_identical(out$grid_fixed_declined, "no_weighted_cell_block")
+  expect_null(tulpa:::.nested_fixed_moments(out))
+})
 
 skip_on_cran()
 

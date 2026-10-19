@@ -16,19 +16,6 @@ vc_data <- function(seed = 1L, G = 30L, per = 12L, sigma = 0.8) {
 }
 
 
-test_that("a conditioning fit is labelled conditioned, not estimated", {
-  d <- vc_data()
-  fit <- tulpa(y ~ x + (1 | g), data = d, family = "poisson",
-               mode = "laplace", sigma_re = 0.5)
-  vc <- VarCorr(fit)
-
-  expect_equal(vc$source, "conditioned")
-  # The value is the input echoed back. That is exactly why it carries a label:
-  # without one it is indistinguishable from a fitted 0.5.
-  expect_equal(vc$sd, 0.5, tolerance = 1e-8)
-})
-
-
 test_that("a fit with no random effects returns an empty table", {
   set.seed(2)
   d <- data.frame(y = rpois(80, 2), x = rnorm(80))
@@ -41,8 +28,25 @@ test_that("a fit with no random effects returns an empty table", {
   expect_named(vc, c("term", "coef", "sd", "source"))
 })
 
+skip_on_cran_budget()
+
+
+test_that("a conditioning fit is labelled conditioned, not estimated", {
+  skip_on_cran_budget()
+  d <- vc_data()
+  fit <- tulpa(y ~ x + (1 | g), data = d, family = "poisson",
+               mode = "laplace", sigma_re = 0.5)
+  vc <- VarCorr(fit)
+
+  expect_equal(vc$source, "conditioned")
+  # The value is the input echoed back. That is exactly why it carries a label:
+  # without one it is indistinguishable from a fitted 0.5.
+  expect_equal(vc$sd, 0.5, tolerance = 1e-8)
+})
+
 
 test_that("the conditioned sigma_re is read off the fit, not the call (#868)", {
+  skip_on_cran_budget()
   d <- vc_data()
   # Passed through a variable local to a function: re-evaluating the call
   # outside that frame fell back to 1, or read an unrelated global `s`.

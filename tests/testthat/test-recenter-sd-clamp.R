@@ -1,5 +1,8 @@
 
+skip_on_cran_budget()
+
 test_that("the ceiling DECLINES by default, and the floor still clamps", {
+    skip_on_cran_budget()
     # The measured defaults (gcol33/tulpa#387): a clamped ceiling means the
     # stencil could not resolve that direction, and laying an axis from the
     # substituted number never wins a trial and loses none when skipped (7-0
@@ -29,6 +32,7 @@ test_that("the ceiling DECLINES by default, and the floor still clamps", {
 })
 
 test_that("the relative ceiling caps by the incoming span, or falls back", {
+    skip_on_cran_budget()
     withr::local_options(list(tulpa.recenter.sd_clamp_policy = "relative",
                               tulpa.recenter.min_sd_u = 0.15))
     span <- .nl_recenter("span")
@@ -55,6 +59,7 @@ test_that("the relative ceiling caps by the incoming span, or falls back", {
 })
 
 test_that("the incoming span is read in each axis's own coordinate", {
+    skip_on_cran_budget()
     # `.nl_axis_span_u()` is the registry/joint reader (log, logit01, identity);
     # the spatiotemporal driver's `rho` lives on (-1, 1) instead, so it has its
     # own. Both feed the SAME clamp -- the ST path no longer carries a second
@@ -72,6 +77,7 @@ test_that("the incoming span is read in each axis's own coordinate", {
 })
 
 test_that("a recentred registry fit records what its axis was laid from", {
+    skip_on_cran_budget()
     # A target that is SHARP in rho and nearly flat in log-sigma: the FD stencil
     # reads a mode SD of 8 nats on sigma, well past the ceiling, so the axis is
     # laid from a substituted spread. That is the #387 case, and the fit has to
@@ -136,6 +142,7 @@ test_that("a recentred registry fit records what its axis was laid from", {
 })
 
 test_that("declining on the ceiling is visible as its own reason", {
+    skip_on_cran_budget()
     sg <- .nl_grid_axis("field_sd")
     theta_grid <- cbind(sigma = sg)
     synthetic_lm <- function(tm) -0.5 * ((log(tm[, 1L]) - log(0.55)) / 8)^2
@@ -168,6 +175,7 @@ test_that("declining on the ceiling is visible as its own reason", {
 })
 
 test_that("every door lays an axis at the measured SD, and a caller-set floor still binds", {
+    skip_on_cran_budget()
     expect_identical(.nl_recenter("min_sd_u"), 0)
     fl <- .nl_recenter_axis_full("log", 0, 1e-3)
     expect_identical(fl$sd_clamp, "none")

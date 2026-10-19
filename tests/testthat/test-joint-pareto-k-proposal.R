@@ -31,18 +31,6 @@
     }
 }
 
-test_that("a collapsed grid with degenerate curvature declines to NA", {
-    # A flat outer target gives a non-PD Hessian: the FD fallback declines, and
-    # with all weight on one cell the grid covariance is exactly zero, so the
-    # diagnostic declines to NA (-> quad-ESS downstream) rather than inventing a
-    # proposal.
-    res  <- .pk_collapsed_res()
-    flat <- function(theta_mat) rep(0, nrow(theta_mat))
-    kd <- tulpa:::.joint_pareto_k(res, flat, n_samples = 200L, proposal = NULL)
-    expect_true(is.na(kd$pareto_k))
-    expect_true(is.na(kd$proposal_source))
-})
-
 # A collapsed grid carrying pinned axes (gcol33/tulpa#117). Mirrors the Abies
 # occu_cover repro: two icar blocks each (sigma -> log, alpha -> identity) plus a
 # trailing phi_pos dispersion axis. The two `alpha` axes are pinned at 0 (no
@@ -82,38 +70,6 @@ test_that("a collapsed grid with degenerate curvature declines to NA", {
         -0.5 * ((u1 - u_hat[1])^2 / s[1]^2 + (u3 - u_hat[2])^2 / s[2]^2)
     }
 }
-
-test_that(".joint_pareto_grid_vary_axes reads the grid layout, not the weights", {
-    # Single-valued columns are pinned; multi-valued ones vary, independent of any
-    # weight concentration (gcol33/tulpa#117).
-    tg <- as.matrix(expand.grid(`b1.sigma` = c(0.8, 1.0, 1.2), `b1.alpha` = 0,
-                                `b2.sigma` = c(0.25, 0.35), `phi_pos` = 1.0))
-    expect_equal(unname(tulpa:::.joint_pareto_grid_vary_axes(tg)), c(1L, 3L))
-})
-
-test_that(".joint_pareto_mode_cov restricts to the varying axes and zeros the pinned ones", {
-    # Direct unit on the helper: a 3-axis target Gaussian in axes 1 & 3, axis 2
-    # pinned. The returned covariance is the inverse curvature on {1, 3} embedded
-    # block-diagonally, zero on the pinned row/col.
-    cn   <- c("b1.sigma", "b1.alpha", "b2.sigma")
-    tags <- c("log", "identity", "log")
-    s    <- c(0.20, 0.30)
-    refit <- function(theta_mat) {
-        u1 <- log(theta_mat[, 1]); u3 <- log(theta_mat[, 3])
-        -0.5 * ((u1 - log(1.0))^2 / s[1]^2 + (u3 - log(0.4))^2 / s[2]^2)
-    }
-    u_center <- c(log(1.0), 0, log(0.4))
-    cov <- tulpa:::.joint_pareto_mode_cov(u_center, tags, cn, refit, d = 3L,
-                                          vary = c(1L, 3L))
-    expect_false(is.null(cov))
-    expect_equal(dim(cov), c(3L, 3L))
-    expect_equal(cov[2, ], rep(0, 3))                    # pinned row zero
-    expect_equal(cov[, 2], rep(0, 3))                    # pinned col zero
-    expect_equal(diag(cov)[c(1, 3)], s^2, tolerance = 1e-2)   # recovers curvature
-    # Full-d stencil (no vary) is singular on the pinned axis -> NULL, the
-    # pre-#117 behaviour the fix routes around.
-    expect_null(tulpa:::.joint_pareto_mode_cov(u_center, tags, cn, refit, d = 3L))
-})
 
 # --------------------------------------------------------------------------- #
 # End-to-end: CCD engages, and a forced tensor grid collapses                 #
@@ -187,7 +143,57 @@ test_that(".joint_pareto_mode_cov restricts to the varying axes and zeros the pi
     res
 }
 
+skip_on_cran_budget()
+
+test_that("a collapsed grid with degenerate curvature declines to NA", {
+    skip_on_cran_budget()
+    # A flat outer target gives a non-PD Hessian: the FD fallback declines, and
+    # with all weight on one cell the grid covariance is exactly zero, so the
+    # diagnostic declines to NA (-> quad-ESS downstream) rather than inventing a
+    # proposal.
+    res  <- .pk_collapsed_res()
+    flat <- function(theta_mat) rep(0, nrow(theta_mat))
+    kd <- tulpa:::.joint_pareto_k(res, flat, n_samples = 200L, proposal = NULL)
+    expect_true(is.na(kd$pareto_k))
+    expect_true(is.na(kd$proposal_source))
+})
+
+test_that(".joint_pareto_grid_vary_axes reads the grid layout, not the weights", {
+    skip_on_cran_budget()
+    # Single-valued columns are pinned; multi-valued ones vary, independent of any
+    # weight concentration (gcol33/tulpa#117).
+    tg <- as.matrix(expand.grid(`b1.sigma` = c(0.8, 1.0, 1.2), `b1.alpha` = 0,
+                                `b2.sigma` = c(0.25, 0.35), `phi_pos` = 1.0))
+    expect_equal(unname(tulpa:::.joint_pareto_grid_vary_axes(tg)), c(1L, 3L))
+})
+
+test_that(".joint_pareto_mode_cov restricts to the varying axes and zeros the pinned ones", {
+    skip_on_cran_budget()
+    # Direct unit on the helper: a 3-axis target Gaussian in axes 1 & 3, axis 2
+    # pinned. The returned covariance is the inverse curvature on {1, 3} embedded
+    # block-diagonally, zero on the pinned row/col.
+    cn   <- c("b1.sigma", "b1.alpha", "b2.sigma")
+    tags <- c("log", "identity", "log")
+    s    <- c(0.20, 0.30)
+    refit <- function(theta_mat) {
+        u1 <- log(theta_mat[, 1]); u3 <- log(theta_mat[, 3])
+        -0.5 * ((u1 - log(1.0))^2 / s[1]^2 + (u3 - log(0.4))^2 / s[2]^2)
+    }
+    u_center <- c(log(1.0), 0, log(0.4))
+    cov <- tulpa:::.joint_pareto_mode_cov(u_center, tags, cn, refit, d = 3L,
+                                          vary = c(1L, 3L))
+    expect_false(is.null(cov))
+    expect_equal(dim(cov), c(3L, 3L))
+    expect_equal(cov[2, ], rep(0, 3))                    # pinned row zero
+    expect_equal(cov[, 2], rep(0, 3))                    # pinned col zero
+    expect_equal(diag(cov)[c(1, 3)], s^2, tolerance = 1e-2)   # recovers curvature
+    # Full-d stencil (no vary) is singular on the pinned axis -> NULL, the
+    # pre-#117 behaviour the fix routes around.
+    expect_null(tulpa:::.joint_pareto_mode_cov(u_center, tags, cn, refit, d = 3L))
+})
+
 test_that(".joint_pareto_arm_axes maps block + phi columns to arms", {
+    skip_on_cran_budget()
     res <- .pk_arm_res()
     ax  <- tulpa:::.joint_pareto_arm_axes(res)
     expect_named(ax, c("occ", "pos"))
@@ -196,6 +202,7 @@ test_that(".joint_pareto_arm_axes maps block + phi columns to arms", {
 })
 
 test_that(".joint_pareto_arm_axes declines on the single-block layout", {
+    skip_on_cran_budget()
     # No axis_offsets / blocks -> one shared field across arms -> decline rather
     # than mis-attribute (the single-block joint path).
     res <- list(theta_grid = matrix(1, 1, 2,

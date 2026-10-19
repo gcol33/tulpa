@@ -44,7 +44,10 @@ test_that("tulpa_laplace() rejects them too", {
   )
 })
 
+skip_on_cran_budget()
+
 test_that("the guard names the offending row and lets clean input through", {
+  skip_on_cran_budget()
   nt <- rep(1L, n); nt[42] <- NaN
   expect_error(
     tulpa_laplace(y = yb, n_trials = nt, X = X, family = "binomial"),

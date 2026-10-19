@@ -12,7 +12,27 @@
        beta = beta)
 }
 
+
+# Negative-binomial random-intercept design with a genuinely uncertain size,
+# for the estimated-dispersion path (chi = [log sigma, log phi]).
+.em_sim_nb <- function(seed, G = 12L, per = 9L, beta = c(0.3, 0.5),
+                       sigma = 0.7, phi = 2.5) {
+  set.seed(seed)
+  n   <- G * per
+  grp <- rep(seq_len(G), each = per)
+  x   <- rnorm(n)
+  b   <- rnorm(G, 0, sigma)
+  eta <- beta[1] + beta[2] * x + b[grp]
+  list(y  = rnbinom(n, size = phi, mu = exp(eta)),
+       X  = cbind(1, x),
+       re = list(idx = grp, n_groups = G, n_coefs = 1L),
+       beta = beta, phi = phi)
+}
+
+skip_on_cran_budget()
+
 test_that("the new EB control knobs validate", {
+  skip_on_cran_budget()
   expect_silent(tulpa_check_control(
     list(marginal_step = 1e-4, marginal_richardson = TRUE),
     tulpa:::.CONTROL_KEYS$eb, "tulpa_eb"))
@@ -30,6 +50,7 @@ test_that("the new EB control knobs validate", {
 })
 
 test_that("force_sparse resolves TRUE / FALSE / auto", {
+  skip_on_cran_budget()
   expect_true(.resolve_force_sparse(TRUE, function() 1L))
   expect_false(.resolve_force_sparse(FALSE, function() 1e6))
   expect_false(.resolve_force_sparse("auto", function() 500L))
@@ -42,23 +63,6 @@ test_that("force_sparse resolves TRUE / FALSE / auto", {
   expect_error(.resolve_force_sparse("sparse", function() 1L),
                "must be TRUE, FALSE")
 })
-
-
-# Negative-binomial random-intercept design with a genuinely uncertain size,
-# for the estimated-dispersion path (chi = [log sigma, log phi]).
-.em_sim_nb <- function(seed, G = 12L, per = 9L, beta = c(0.3, 0.5),
-                       sigma = 0.7, phi = 2.5) {
-  set.seed(seed)
-  n   <- G * per
-  grp <- rep(seq_len(G), each = per)
-  x   <- rnorm(n)
-  b   <- rnorm(G, 0, sigma)
-  eta <- beta[1] + beta[2] * x + b[grp]
-  list(y  = rnbinom(n, size = phi, mu = exp(eta)),
-       X  = cbind(1, x),
-       re = list(idx = grp, n_groups = G, n_coefs = 1L),
-       beta = beta, phi = phi)
-}
 
 skip_on_cran()
 

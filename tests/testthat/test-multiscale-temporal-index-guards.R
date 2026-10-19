@@ -45,7 +45,16 @@ test_that("n_times below one is refused", {
   expect_error(.ms_fit(.ms_spec(rep(1L, 24L), 0L)), "n_times")
 })
 
+test_that("a valid multiscale spec still builds", {
+  fit <- .ms_fit(.ms_spec(rep(seq_len(6L), each = 4L), 6L))
+  expect_true("log_sigma2_trend" %in% fit$param_names)
+  expect_identical(sum(grepl("^trend[[]", fit$param_names)), 6L)
+})
+
+skip_on_cran_budget()
+
 test_that("group_index is checked for length and range", {
+  skip_on_cran_budget()
   n <- 24L
   t_ok <- rep(seq_len(6L), each = 4L)
   expect_error(
@@ -57,17 +66,12 @@ test_that("group_index is checked for length and range", {
     "group_index\\[7\\]")
 })
 
-test_that("a valid multiscale spec still builds", {
-  fit <- .ms_fit(.ms_spec(rep(seq_len(6L), each = 4L), 6L))
-  expect_true("log_sigma2_trend" %in% fit$param_names)
-  expect_identical(sum(grepl("^trend[[]", fit$param_names)), 6L)
-})
-
 # The AR1 arm's density is the stationary one, whose 1 - rho^2 factor is floored.
 # On the sampler path rho = 2 * inv_logit(logit_rho) - 1 and cannot leave the
 # unit interval; this entry point takes it raw, so it rejects what the floor
 # would otherwise absorb into a number that is not a density.
 test_that("the multiscale log-lik entry point rejects a non-stationary rho", {
+  skip_on_cran_budget()
   phi <- rnorm(8)
   ok <- cpp_test_multiscale_temporal_log_lik(phi, numeric(0), phi, 1, 1, 1,
                                              0.5, "rw1", 0L, "ar1")

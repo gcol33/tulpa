@@ -29,20 +29,6 @@ lp <- function(delta, temporal, cyclic) {
                  temporal = temporal, temporal_cyclic = cyclic), HYP))
 }
 
-test_that("a per-basis linear ramp is penalized under a non-cyclic RW2", {
-  a <- c(0.7, -1.3, 0.4)
-  zero <- numeric(M * T_st)
-  d <- lp(ramp_field(a, M, T_st), "rw2", FALSE) - lp(zero, "rw2", FALSE)
-
-  # The ramp has zero acyclic RW2 quadratic form and zero sum, so the whole
-  # difference is the trend pin, at the precision the engine's own helper gives.
-  v2 <- sum((seq_len(T_st) - 1 - (T_st - 1) / 2)^2)
-  expect_equal(d,
-               -0.5 * cpp_test_st_trend_precision(T_st) * sum((a * v2)^2),
-               tolerance = 1e-10)
-  expect_lt(d, 0)
-})
-
 test_that("the quadratic form reads the fit's own cyclic flag", {
   a <- c(0.7, -1.3, 0.4)
   zero <- numeric(M * T_st)
@@ -59,7 +45,40 @@ test_that("the quadratic form reads the fit's own cyclic flag", {
   expect_equal(d_cyclic2 / d_cyclic, 4, tolerance = 1e-8)
 })
 
+test_that("the non-centered flag is refused on the HSGP-ST interaction", {
+  # gcol33/tulpa#759: st_parameterization = 1 with st_is_hsgp took the Kronecker
+  # branch, which reads neither HSGP hyperparameter and treats basis weights as
+  # sites. The layout refuses the combination rather than silently centering.
+  expect_error(
+    do.call(cpp_test_st_hsgp_log_prior,
+            c(list(delta = numeric(M * T_st), eigenvalues = EIG, T = T_st,
+                   temporal = "rw1", st_parameterization = 1L), HYP)),
+    "no non-centered form")
+  expect_true(is.finite(
+    do.call(cpp_test_st_hsgp_log_prior,
+            c(list(delta = numeric(M * T_st), eigenvalues = EIG, T = T_st,
+                   temporal = "rw1", st_parameterization = 0L), HYP))))
+})
+
+skip_on_cran_budget()
+
+test_that("a per-basis linear ramp is penalized under a non-cyclic RW2", {
+  skip_on_cran_budget()
+  a <- c(0.7, -1.3, 0.4)
+  zero <- numeric(M * T_st)
+  d <- lp(ramp_field(a, M, T_st), "rw2", FALSE) - lp(zero, "rw2", FALSE)
+
+  # The ramp has zero acyclic RW2 quadratic form and zero sum, so the whole
+  # difference is the trend pin, at the precision the engine's own helper gives.
+  v2 <- sum((seq_len(T_st) - 1 - (T_st - 1) / 2)^2)
+  expect_equal(d,
+               -0.5 * cpp_test_st_trend_precision(T_st) * sum((a * v2)^2),
+               tolerance = 1e-10)
+  expect_lt(d, 0)
+})
+
 test_that("RW1 and cyclic RW2 take no trend pin", {
+  skip_on_cran_budget()
   # An RW1 kernel is the constants alone, and a cyclic RW2's is too (a ramp is
   # not periodic, so rw2_rank reports T - 1 there). Adding the pin to either
   # would be a second, unstated prior on a direction that already carries one.
@@ -77,6 +96,7 @@ test_that("RW1 and cyclic RW2 take no trend pin", {
 })
 
 test_that("a field the operator and both pins annihilate is free", {
+  skip_on_cran_budget()
   # A constant per basis function has zero RW1/RW2 quadratic form and zero
   # trend, so only the sum pin reaches it -- which is the term that was already
   # there. This is the negative control for the two above: it must be unchanged
@@ -94,19 +114,4 @@ test_that("a field the operator and both pins annihilate is free", {
                -0.5 * tulpa:::cpp_test_s2z_precision(T_st, kappa) *
                  sum((a * T_st)^2),
                tolerance = 1e-10)
-})
-
-test_that("the non-centered flag is refused on the HSGP-ST interaction", {
-  # gcol33/tulpa#759: st_parameterization = 1 with st_is_hsgp took the Kronecker
-  # branch, which reads neither HSGP hyperparameter and treats basis weights as
-  # sites. The layout refuses the combination rather than silently centering.
-  expect_error(
-    do.call(cpp_test_st_hsgp_log_prior,
-            c(list(delta = numeric(M * T_st), eigenvalues = EIG, T = T_st,
-                   temporal = "rw1", st_parameterization = 1L), HYP)),
-    "no non-centered form")
-  expect_true(is.finite(
-    do.call(cpp_test_st_hsgp_log_prior,
-            c(list(delta = numeric(M * T_st), eigenvalues = EIG, T = T_st,
-                   temporal = "rw1", st_parameterization = 0L), HYP))))
 })

@@ -1,5 +1,14 @@
 
+test_that("family_mean applies the documented clamps", {
+  expect_true(all(family_mean(c(-50, 50), "binomial") > 0 &
+                    family_mean(c(-50, 50), "binomial") < 1))
+  expect_true(all(family_mean(c(-50, 50), "poisson") >= 1e-8))
+})
+
+skip_on_cran_budget()
+
 test_that("score equals the finite-difference gradient of the log-likelihood", {
+  skip_on_cran_budget()
   h <- 1e-6
   fd_score <- function(eta, y, family, n_trials = NULL, phi = 1) {
     vapply(seq_along(eta), function(i) {
@@ -48,6 +57,7 @@ test_that("score equals the finite-difference gradient of the log-likelihood", {
 })
 
 test_that("glmm_weights is unchanged by the registry refactor", {
+  skip_on_cran_budget()
   eta <- seq(-2, 2, length.out = 9)
   n <- rep(7L, length(eta))
   # reference: the historical inline formulas
@@ -81,6 +91,7 @@ test_that("glmm_weights is unchanged by the registry refactor", {
 })
 
 test_that("family helpers validate names; glmm_weights errors on unknown family", {
+  skip_on_cran_budget()
   expect_error(family_loglik(0, 0, "weibull"), "Unknown family")
   expect_error(family_mean(0, "nope"), "Unknown family")
   expect_setequal(family_names(),
@@ -94,6 +105,7 @@ test_that("family helpers validate names; glmm_weights errors on unknown family"
 })
 
 test_that(".family_base resolves the longest family name, not the first prefix", {
+  skip_on_cran_budget()
   # Family names are prefixes of one another, so a registration-order scan
   # resolved "beta_binomial" to "beta" and "neg_binomial_2_log" to whichever
   # negative-binomial name came first. Every .family_base-driven validator
@@ -113,13 +125,8 @@ test_that(".family_base resolves the longest family name, not the first prefix",
                "integer")
 })
 
-test_that("family_mean applies the documented clamps", {
-  expect_true(all(family_mean(c(-50, 50), "binomial") > 0 &
-                    family_mean(c(-50, 50), "binomial") < 1))
-  expect_true(all(family_mean(c(-50, 50), "poisson") >= 1e-8))
-})
-
 test_that("the Laplace kernel scores gaussian, lognormal and beta with the clamped density", {
+  skip_on_cran_budget()
   terms <- function(y, eta, fam, phi) cpp_family_terms(y, 1L, eta, fam, phi)[["log_lik"]]
   expect_equal(terms(1.3, 0.4, "gaussian", 0.7), dnorm(1.3, 0.4, 0.7, log = TRUE))
   expect_equal(terms(2.1, 0.4, "lognormal", 0.7), dlnorm(2.1, 0.4, 0.7, log = TRUE))

@@ -44,7 +44,10 @@
   c(rep(0, n_flat), seq(0.5, 5, length.out = n_top))
 }
 
+skip_on_cran_budget()
+
 test_that("a tail tied at the cutoff leaves every weight finite and unsmoothed", {
+  skip_on_cran_budget()
   lr <- .psis_tied_tail_ratios()
   ps <- tulpa_psis(lr)
 
@@ -68,6 +71,7 @@ test_that("a tail tied at the cutoff leaves every weight finite and unsmoothed",
 })
 
 test_that("a usable tail fit still reports tail_smoothed", {
+  skip_on_cran_budget()
   set.seed(7)
   ps <- tulpa_psis(rnorm(500))
   expect_true(ps$tail_smoothed)
@@ -75,6 +79,7 @@ test_that("a usable tail fit still reports tail_smoothed", {
 })
 
 test_that("cpp_tulpa_psis rejects a tail_len at or past the sample size", {
+  skip_on_cran_budget()
   set.seed(9)
   lr <- rnorm(60)
   expect_error(cpp_tulpa_psis(lr, 60L), "tail_len")
@@ -85,6 +90,7 @@ test_that("cpp_tulpa_psis rejects a tail_len at or past the sample size", {
 })
 
 test_that("cpp_psis_loo_pit rejects a tail_len at or past the draw count", {
+  skip_on_cran_budget()
   set.seed(8)
   S <- 40L; N <- 3L
   ll <- matrix(stats::rnorm(S * N), S, N)

@@ -35,7 +35,10 @@
   list(graph = g, idx = idx, X = X, y = y, n = n, n_s = n_s)
 }
 
+skip_on_cran_budget()
+
 test_that("a projector is refused where it would be dropped", {
+  skip_on_cran_budget()
   d <- .proj_data()
   resp <- list(y = list(y = d$y, n_trials = rep(1L, d$n), X = d$X,
                         family = "poisson"))

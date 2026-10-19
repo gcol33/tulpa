@@ -75,28 +75,6 @@ ops_call <- function(f, cs, ..., phi) {
 }
 
 
-test_that("every registered family can carry its dispersion gradient exactly", {
-  # Three correct per-observation derivatives are not enough on their own. The
-  # ASSEMBLED dm/dphi reaches the mode only through q_eta = (dW/deta) s, so the
-  # registration is sound exactly when that channel is either identically zero
-  # or solved on the true curvature. This is the disjunction the file's header
-  # states; asserting it here is what keeps a future entry from being added on
-  # correct derivatives alone and landing ~1e-4 off the objective.
-  eta <- c(-0.4, 0.2, 0.9)
-  for (fam in tulpa:::.dispersion_families()) {
-    fx <- DISPERSION_FIXTURE[[fam]]
-    nt <- rep(if (is.null(fx$nt)) 1L else fx$nt, length(eta))
-    phi <- FAMILY_PHI[[fam]][2L]
-    y <- dispersion_case(fam, phi, n = length(eta))$y
-    dw <- tulpa:::cpp_family_curvature_deta_vec(
-      y, nt, eta, fam, phi, if (is.null(fx$phi2)) NA_real_ else fx$phi2)
-    channel_is_zero <- max(abs(dw)) < 1e-12
-    exact_inverse <- tulpa:::cpp_family_has_exact_mode_jacobian(fam)
-    expect_true(channel_is_zero || exact_inverse, info = fam)
-  }
-})
-
-
 test_that("the neg_binomial_2 weight derivative reduces to the expected one at y = mu", {
   # Averaging the observed curvature over y returns the expected weight, so
   # their phi-derivatives must agree at y = E[y] = mu. This pins the observed
@@ -110,30 +88,6 @@ test_that("the neg_binomial_2 weight derivative reduces to the expected one at y
     expected_form <- mu^2 / (mu + phi)^2
     expect_equal(at_mean, expected_form, tolerance = 1e-12,
                  info = sprintf("phi = %g", phi))
-  }
-})
-
-
-test_that("the derivatives are registered only where phi is free", {
-  # poisson and binomial have no dispersion at all, so estimating one is not a
-  # missing feature but a category error; .family_dphi() must refuse rather
-  # than return something the optimizer would happily walk along.
-  expect_null(tulpa:::.family_dphi("poisson"))
-  expect_null(tulpa:::.family_dphi("binomial"))
-  expect_null(tulpa:::.family_dphi("truncated_poisson"))
-  expect_false(any(startsWith(tulpa:::.dispersion_families(), ".")))
-
-  # Every front-door family that carries a dispersion carries its derivatives.
-  # .PHI_FAMILIES additionally holds interval_gaussian / truncated_gaussian,
-  # which are the composable per-observation censoring kernels rather than
-  # `family =` values, so they are excluded by family_names().
-  front_door <- intersect(tulpa:::.PHI_FAMILIES, tulpa:::family_names())
-  expect_setequal(tulpa:::.dispersion_families(), front_door)
-
-  for (fam in names(FAMILY_PHI)) {
-    d <- tulpa:::.family_dphi(fam)
-    expect_true(is.list(d), info = fam)
-    expect_setequal(names(d), c("dloglik", "dscore", "dweight"))
   }
 })
 
@@ -153,27 +107,6 @@ FAMILY_PHI2 <- list(
   gamma                    = c(0.7, 3.0, 12.0),
   t                        = c(0.4, 1.0, 3.0)
 )
-
-
-test_that("d(W_obs)/dphi matches a difference of the registered observed weight", {
-  # The one entry with no counterpart in .FAMILY_OPS for gamma and t, whose
-  # observed curvature is not registered there. Differenced against the compiled
-  # dispatch instead, which is what H_true is actually built from.
-  for (fam in names(FAMILY_PHI2)) {
-    if (!tulpa:::.family_dphi2_needs_obs(fam)) next
-    d2 <- tulpa:::.family_dphi2(fam)
-    for (phi in FAMILY_PHI2[[fam]]) {
-      cs <- dispersion_case(fam, phi)
-      p2 <- if (is.null(cs$phi2)) NA_real_ else cs$phi2
-      w_obs <- function(p) vapply(seq_along(cs$eta), function(i)
-        tulpa:::cpp_family_obs_terms(cs$y[i], cs$n_trials[i], cs$eta[i], fam,
-                                     p, p2)[["neg_hess"]], numeric(1))
-      expect_equal(d2$dobs_weight(cs$eta, cs$y, cs$n_trials, phi, cs$phi2),
-                   fd_dphi(w_obs, phi), tolerance = 1e-5,
-                   info = sprintf("%s, phi = %g", fam, phi))
-    }
-  }
-})
 
 
 # --- assembled dm/dlog_phi, against the objective it differentiates ----------
@@ -225,6 +158,78 @@ assembled_logmarg <- function(d, family, phi, theta = log(0.7)) {
                 return_hessian = TRUE, max_iter = 300L,
                 tol = 1e-12)$log_marginal
 }
+
+skip_on_cran_budget()
+
+
+test_that("every registered family can carry its dispersion gradient exactly", {
+  skip_on_cran_budget()
+  # Three correct per-observation derivatives are not enough on their own. The
+  # ASSEMBLED dm/dphi reaches the mode only through q_eta = (dW/deta) s, so the
+  # registration is sound exactly when that channel is either identically zero
+  # or solved on the true curvature. This is the disjunction the file's header
+  # states; asserting it here is what keeps a future entry from being added on
+  # correct derivatives alone and landing ~1e-4 off the objective.
+  eta <- c(-0.4, 0.2, 0.9)
+  for (fam in tulpa:::.dispersion_families()) {
+    fx <- DISPERSION_FIXTURE[[fam]]
+    nt <- rep(if (is.null(fx$nt)) 1L else fx$nt, length(eta))
+    phi <- FAMILY_PHI[[fam]][2L]
+    y <- dispersion_case(fam, phi, n = length(eta))$y
+    dw <- tulpa:::cpp_family_curvature_deta_vec(
+      y, nt, eta, fam, phi, if (is.null(fx$phi2)) NA_real_ else fx$phi2)
+    channel_is_zero <- max(abs(dw)) < 1e-12
+    exact_inverse <- tulpa:::cpp_family_has_exact_mode_jacobian(fam)
+    expect_true(channel_is_zero || exact_inverse, info = fam)
+  }
+})
+
+
+test_that("the derivatives are registered only where phi is free", {
+  skip_on_cran_budget()
+  # poisson and binomial have no dispersion at all, so estimating one is not a
+  # missing feature but a category error; .family_dphi() must refuse rather
+  # than return something the optimizer would happily walk along.
+  expect_null(tulpa:::.family_dphi("poisson"))
+  expect_null(tulpa:::.family_dphi("binomial"))
+  expect_null(tulpa:::.family_dphi("truncated_poisson"))
+  expect_false(any(startsWith(tulpa:::.dispersion_families(), ".")))
+
+  # Every front-door family that carries a dispersion carries its derivatives.
+  # .PHI_FAMILIES additionally holds interval_gaussian / truncated_gaussian,
+  # which are the composable per-observation censoring kernels rather than
+  # `family =` values, so they are excluded by family_names().
+  front_door <- intersect(tulpa:::.PHI_FAMILIES, tulpa:::family_names())
+  expect_setequal(tulpa:::.dispersion_families(), front_door)
+
+  for (fam in names(FAMILY_PHI)) {
+    d <- tulpa:::.family_dphi(fam)
+    expect_true(is.list(d), info = fam)
+    expect_setequal(names(d), c("dloglik", "dscore", "dweight"))
+  }
+})
+
+
+test_that("d(W_obs)/dphi matches a difference of the registered observed weight", {
+  skip_on_cran_budget()
+  # The one entry with no counterpart in .FAMILY_OPS for gamma and t, whose
+  # observed curvature is not registered there. Differenced against the compiled
+  # dispatch instead, which is what H_true is actually built from.
+  for (fam in names(FAMILY_PHI2)) {
+    if (!tulpa:::.family_dphi2_needs_obs(fam)) next
+    d2 <- tulpa:::.family_dphi2(fam)
+    for (phi in FAMILY_PHI2[[fam]]) {
+      cs <- dispersion_case(fam, phi)
+      p2 <- if (is.null(cs$phi2)) NA_real_ else cs$phi2
+      w_obs <- function(p) vapply(seq_along(cs$eta), function(i)
+        tulpa:::cpp_family_obs_terms(cs$y[i], cs$n_trials[i], cs$eta[i], fam,
+                                     p, p2)[["neg_hess"]], numeric(1))
+      expect_equal(d2$dobs_weight(cs$eta, cs$y, cs$n_trials, phi, cs$phi2),
+                   fd_dphi(w_obs, phi), tolerance = 1e-5,
+                   info = sprintf("%s, phi = %g", fam, phi))
+    }
+  }
+})
 
 skip_on_cran()
 

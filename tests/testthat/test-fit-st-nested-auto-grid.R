@@ -53,7 +53,10 @@
                   family = "binomial", temporal_type = "rw1", control = control)
 }
 
+skip_on_cran_budget()
+
 test_that(".st_pinned_axes reads value, mark and axis mapping", {
+    skip_on_cran_budget()
     pinned <- tulpa:::.st_pinned_axes
     # No knobs, engine defaults, and marked knobs are all defaults.
     expect_identical(pinned(list()), character(0))

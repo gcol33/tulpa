@@ -1,3 +1,5 @@
+
+skip_on_cran_budget()
 # test-arena-custom-backward.R
 # Smoke test for tulpa::arena::Arena::add_custom_backward — the new
 # variadic-input/variadic-output node type that hosts the sparse-Cholesky
@@ -10,6 +12,7 @@
 # analytical answer must agree.
 
 test_that("arena custom_backward matches standard path and analytical grad", {
+  skip_on_cran_budget()
   for (xy in list(c(2.0, 3.0), c(-1.5, 0.7), c(0.3, -2.1))) {
     res <- cpp_test_arena_custom_backward(xy[1], xy[2])
 

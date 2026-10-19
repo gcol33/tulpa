@@ -1,19 +1,3 @@
-# PC range prior (gcol33/tulpa#144) and the bounded-parameter map.
-
-test_that("the PC range prior honours P(range < U) = alpha", {
-  # The defining contract of the anchor, and the one the removed
-  # log_prior_phi_pc violated: it set rate = -log(alpha)/U where its own
-  # derivation, exp(-rate/U) = alpha, gives rate = -U * log(alpha). Integrating
-  # the density is what tells the two apart.
-  for (anchor in list(c(0.1, 0.05), c(0.3, 0.5), c(2.0, 0.01), c(0.75, 0.25))) {
-    U <- anchor[1]; alpha <- anchor[2]
-    dens <- function(r) exp(tulpa:::cpp_test_log_prior_range_pc(r, U, alpha))
-    p_below <- stats::integrate(dens, lower = 0, upper = U,
-                                rel.tol = 1e-10)$value
-    expect_equal(p_below, alpha, tolerance = 1e-6,
-                 info = sprintf("U = %g, alpha = %g", U, alpha))
-  }
-})
 
 test_that("the PC range prior integrates to one", {
   U <- 0.2; alpha <- 0.05
@@ -33,16 +17,6 @@ test_that("the C++ range prior matches its closed form", {
                log(lambda) - 2 * log(r) - lambda / r, tolerance = 1e-12)
 })
 
-test_that("the log-range entry point agrees with the range entry point", {
-  U <- 0.4; alpha <- 0.1
-  r <- c(0.02, 0.1, 0.5, 1.0, 3.0, 10.0)
-  expect_equal(
-    tulpa:::cpp_test_log_prior_range_pc_at_log(log(r), U, alpha),
-    tulpa:::cpp_test_log_prior_range_pc(r, U, alpha),
-    tolerance = 1e-12
-  )
-})
-
 test_that("the PC range prior prefers the truth over the old Uniform mean", {
   # The #144 failure: with coords on the unit square and a truth of phi = 0.25,
   # a Uniform(0.01, 10) on phi carries mean ~5 and a weakly informative binary
@@ -54,7 +28,63 @@ test_that("the PC range prior prefers the truth over the old Uniform mean", {
   expect_gt(at_truth, at_rail)
 })
 
+test_that("a GP/SVC NNGP block requires its range anchors", {
+  # ModelData ships the anchors unset (-1). The engine refuses rather than
+  # substituting a default, because a silent default is a prior -- which is how
+  # phi came to sit at the Uniform mean in the first place.
+  expect_error(tulpa:::cpp_test_gp_layout_anchor_check(-1, -1),
+               "PC prior on the range")
+  expect_error(tulpa:::cpp_test_gp_layout_anchor_check(0.1, -1),
+               "PC prior on the range")
+  expect_error(tulpa:::cpp_test_gp_layout_anchor_check(0.1, 1.0),
+               "PC prior on the range")
+  expect_error(tulpa:::cpp_test_gp_layout_anchor_check(0, 0.05),
+               "PC prior on the range")
+  expect_silent(tulpa:::cpp_test_gp_layout_anchor_check(0.1, 0.05))
+})
+
+test_that("the half-Cauchy density matches its definition on sigma", {
+  # The independently written twin: the density on sigma, transformed by hand.
+  scale <- 1.3
+  x <- c(-4, -1.5, 0, 0.8, 3.2)
+  sigma <- exp(x / 2)
+  twin <- -log(1 + sigma^2 / scale^2) - log(2) + 0.5 * x
+  expect_equal(tulpa:::cpp_test_log_prior_log_sigma2_half_cauchy(x, scale),
+               twin, tolerance = 1e-12)
+})
+
+skip_on_cran_budget()
+# PC range prior (gcol33/tulpa#144) and the bounded-parameter map.
+
+test_that("the PC range prior honours P(range < U) = alpha", {
+  skip_on_cran_budget()
+  # The defining contract of the anchor, and the one the removed
+  # log_prior_phi_pc violated: it set rate = -log(alpha)/U where its own
+  # derivation, exp(-rate/U) = alpha, gives rate = -U * log(alpha). Integrating
+  # the density is what tells the two apart.
+  for (anchor in list(c(0.1, 0.05), c(0.3, 0.5), c(2.0, 0.01), c(0.75, 0.25))) {
+    U <- anchor[1]; alpha <- anchor[2]
+    dens <- function(r) exp(tulpa:::cpp_test_log_prior_range_pc(r, U, alpha))
+    p_below <- stats::integrate(dens, lower = 0, upper = U,
+                                rel.tol = 1e-10)$value
+    expect_equal(p_below, alpha, tolerance = 1e-6,
+                 info = sprintf("U = %g, alpha = %g", U, alpha))
+  }
+})
+
+test_that("the log-range entry point agrees with the range entry point", {
+  skip_on_cran_budget()
+  U <- 0.4; alpha <- 0.1
+  r <- c(0.02, 0.1, 0.5, 1.0, 3.0, 10.0)
+  expect_equal(
+    tulpa:::cpp_test_log_prior_range_pc_at_log(log(r), U, alpha),
+    tulpa:::cpp_test_log_prior_range_pc(r, U, alpha),
+    tolerance = 1e-12
+  )
+})
+
 test_that("the bounded map stays inside its interval and its Jacobian is right", {
+  skip_on_cran_budget()
   lower <- 0.01; upper <- 10.0
 
   # The map never leaves [lower, upper]. Past |u| ~ 37 the logistic saturates in
@@ -84,22 +114,8 @@ test_that("the bounded map stays inside its interval and its Jacobian is right",
   expect_equal(ana, num, tolerance = 1e-6)
 })
 
-test_that("a GP/SVC NNGP block requires its range anchors", {
-  # ModelData ships the anchors unset (-1). The engine refuses rather than
-  # substituting a default, because a silent default is a prior -- which is how
-  # phi came to sit at the Uniform mean in the first place.
-  expect_error(tulpa:::cpp_test_gp_layout_anchor_check(-1, -1),
-               "PC prior on the range")
-  expect_error(tulpa:::cpp_test_gp_layout_anchor_check(0.1, -1),
-               "PC prior on the range")
-  expect_error(tulpa:::cpp_test_gp_layout_anchor_check(0.1, 1.0),
-               "PC prior on the range")
-  expect_error(tulpa:::cpp_test_gp_layout_anchor_check(0, 0.05),
-               "PC prior on the range")
-  expect_silent(tulpa:::cpp_test_gp_layout_anchor_check(0.1, 0.05))
-})
-
 test_that("the SVC half-Cauchy scale prior is proper on the sampled scale", {
+  skip_on_cran_budget()
   # The SVC block samples log_sigma2 and puts a half-Cauchy(0, scale) on the
   # marginal SD. The density has to be carried to log_sigma2 with that
   # coordinate's Jacobian; with the sigma2-row Jacobian instead the tail stops
@@ -123,14 +139,4 @@ test_that("the SVC half-Cauchy scale prior is proper on the sampled scale", {
     m160 <- stats::integrate(dens, lower = -80, upper = 160, rel.tol = 1e-10)$value
     expect_equal(m160, m80, tolerance = 1e-8)
   }
-})
-
-test_that("the half-Cauchy density matches its definition on sigma", {
-  # The independently written twin: the density on sigma, transformed by hand.
-  scale <- 1.3
-  x <- c(-4, -1.5, 0, 0.8, 3.2)
-  sigma <- exp(x / 2)
-  twin <- -log(1 + sigma^2 / scale^2) - log(2) + 0.5 * x
-  expect_equal(tulpa:::cpp_test_log_prior_log_sigma2_half_cauchy(x, scale),
-               twin, tolerance = 1e-12)
 })

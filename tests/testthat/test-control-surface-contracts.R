@@ -1,3 +1,5 @@
+
+skip_on_cran_budget()
 # The control surface: every door checks its keys, every default has one home.
 #
 # gcol33/tulpa#673 -- fit_st_nested() had no control-key check at all, so a
@@ -9,6 +11,7 @@
 # signatures already carry, so the same number lived in two files.
 
 test_that("fit_st_nested checks its control keys", {
+  skip_on_cran_budget()
   keys <- tulpa:::.CONTROL_KEYS$st_nested
   expect_true(is.character(keys) && length(keys) > 5L)
   # Both knobs the driver reads and the roxygen did not name.
@@ -23,6 +26,7 @@ test_that("fit_st_nested checks its control keys", {
 })
 
 test_that("the proper-CAR mixing default has one home", {
+  skip_on_cran_budget()
   # It was an inline literal in fit_st_nested(); .NL_ST_GRID is where every
   # other spatiotemporal grid default lives.
   expect_equal(tulpa:::.nl_st_default("rho_spatial"), 0.9)
@@ -32,6 +36,7 @@ test_that("the proper-CAR mixing default has one home", {
 })
 
 test_that("the dispatch omits a knob the caller did not set", {
+  skip_on_cran_budget()
   # .drop_null() is what lets a backend's own formal supply the default, so the
   # number lives in one file.
   expect_identical(tulpa:::.drop_null(list(a = 1, b = NULL, c = "x")),

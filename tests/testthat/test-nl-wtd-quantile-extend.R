@@ -24,7 +24,22 @@ test_that("extend leaves every interior probability byte-identical", {
                    .nl_wtd_quantile(v, w, pr, outside = "clamp"))
 })
 
+# ---------------------------------------------------------------------------
+# The interior read's own overflow (gcol33/tulpa#381). Distinct from the three
+# cell-edge fixes above it: no edge is involved, the partition is finite and its
+# mirror stands, and it reproduces on the `sample` support that forms no edge at
+# all.
+# ---------------------------------------------------------------------------
+
+# Two adjacent coordinates of opposite sign, each within a factor of two of
+# `double.xmax`, so `y1 - y0` leaves the double range while both knots are in it.
+.nl381_nodes <- function()
+  c(-9.494687e307, -9.365684e307, 9.464240e307, 1.229003e308, 1.380825e308)
+
+skip_on_cran_budget()
+
 test_that("that invariance is the OUTSIDE policy's, not the interior read's", {
+  skip_on_cran_budget()
   # The assertion above is about `outside`: both policies place the same knots
   # at the same coordinates and differ only in what happens past the extreme
   # ones. It is NOT a statement that the interior read is fixed. A WITHIN-CELL
@@ -50,6 +65,7 @@ test_that("that invariance is the OUTSIDE policy's, not the interior read's", {
 })
 
 test_that("the edge is the outer cell's own half-spacing", {
+  skip_on_cran_budget()
   # A geometric axis is equally spaced in log, so its half-cell is mirrored
   # there and the edge stays positive.
   v <- exp(seq(log(0.2), log(1.5), length.out = 5))
@@ -68,6 +84,7 @@ test_that("the edge is the outer cell's own half-spacing", {
 })
 
 test_that("a grid's outer half-cell of mass lands inside the extended support", {
+  skip_on_cran_budget()
   # The whole content of the defect: with equal weights over m cells, w_1 / 2 of
   # the mass sits below the first coordinate. Under the clamp every probability
   # there reads back as the first coordinate; under the extension it maps onto
@@ -84,6 +101,7 @@ test_that("a grid's outer half-cell of mass lands inside the extended support", 
 })
 
 test_that("the extended read is still a monotone quantile function", {
+  skip_on_cran_budget()
   set.seed(4L)
   v <- sort(exp(rnorm(9, 0, 0.5)))
   w <- runif(9)
@@ -102,6 +120,7 @@ test_that("the extended read is still a monotone quantile function", {
 })
 
 test_that("the axis read carries the extension through to a reported interval", {
+  skip_on_cran_budget()
   # `.nl_axis_quantiles()` is the entry point every nested fit's
   # `theta_ci_lo` / `theta_median` / `theta_ci_hi` come out of. A two-axis grid
   # whose marginal for axis 1 puts more than 0.025 of the weight on the first
@@ -128,6 +147,7 @@ test_that("the axis read carries the extension through to a reported interval", 
 })
 
 test_that("every CDF support dispatches to the extension, the moment rule does not", {
+  skip_on_cran_budget()
   v <- exp(seq(log(0.2), log(1.5), length.out = 5))
   w <- c(0.30, 0.25, 0.20, 0.15, 0.10)
   pr <- c(0.01, 0.5, 0.99)
@@ -156,19 +176,8 @@ test_that("every CDF support dispatches to the extension, the moment rule does n
     .nl_summary_quantile(v, w, c(0.01, 0.99), NA_character_, "moment_rule"))))
 })
 
-# ---------------------------------------------------------------------------
-# The interior read's own overflow (gcol33/tulpa#381). Distinct from the three
-# cell-edge fixes above it: no edge is involved, the partition is finite and its
-# mirror stands, and it reproduces on the `sample` support that forms no edge at
-# all.
-# ---------------------------------------------------------------------------
-
-# Two adjacent coordinates of opposite sign, each within a factor of two of
-# `double.xmax`, so `y1 - y0` leaves the double range while both knots are in it.
-.nl381_nodes <- function()
-  c(-9.494687e307, -9.365684e307, 9.464240e307, 1.229003e308, 1.380825e308)
-
 test_that("a knot pair a double range apart does not report Inf as a bound", {
+  skip_on_cran_budget()
   v <- .nl381_nodes()
   w <- rep(1 / 5, 5)
   pr <- c(0.25, 0.4, 0.5, 0.6, 0.75)
@@ -196,6 +205,7 @@ test_that("a knot pair a double range apart does not report Inf as a bound", {
 })
 
 test_that("the repair is reached only where the straight read failed", {
+  skip_on_cran_budget()
   # `stats::approx`'s `y0 + (y1 - y0) * t` and the convex `(1 - t) y0 + t y1` are
   # NOT the same double -- 21.49% of 840000 randomized reads move between them
   # (dev_notes/issue381/measure381.out) -- so the convex form is a fallback, not

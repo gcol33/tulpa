@@ -45,96 +45,6 @@ ref_lkj_density <- function(L, eta) {
   lp
 }
 
-# ---- tests ----
-
-test_that("build_L produces unit-norm rows", {
-  set.seed(1L)
-  for (n in 2:5) {
-    n_raw <- n * (n - 1) / 2
-    raw <- rnorm(n_raw, 0, 0.5)
-    res <- cpp_test_lkj_build_L(raw, n)
-    row_sq <- rowSums(res$L^2)
-    # Lower-triangular L: each row's squared entries should sum to 1
-    expect_equal(unname(row_sq), rep(1, n), tolerance = 1e-12)
-    # Diagonal must be > 0
-    expect_true(all(diag(res$L) > 0))
-    # Upper triangle untouched (zero)
-    expect_true(all(res$L[upper.tri(res$L)] == 0))
-  }
-})
-
-test_that("build_L matches reference R implementation", {
-  set.seed(2L)
-  n <- 4
-  n_raw <- n * (n - 1) / 2
-  raw <- rnorm(n_raw, 0, 0.7)
-  cpp <- cpp_test_lkj_build_L(raw, n)
-  ref <- ref_build_L(raw, n)
-  expect_equal(cpp$L, ref$L, tolerance = 1e-12)
-  expect_equal(cpp$log_jac, ref$log_jac, tolerance = 1e-12)
-})
-
-test_that("LKJ density matches reference formula", {
-  set.seed(3L)
-  for (n in 2:4) {
-    n_raw <- n * (n - 1) / 2
-    raw <- rnorm(n_raw, 0, 0.3)
-    res <- cpp_test_lkj_build_L(raw, n)
-    for (eta in c(1.0, 2.0, 4.0)) {
-      cpp <- cpp_test_lkj_density(res$L, eta)
-      ref <- ref_lkj_density(res$L, eta)
-      expect_equal(cpp, ref, tolerance = 1e-12,
-                   info = sprintf("n=%d eta=%g", n, eta))
-    }
-  }
-})
-
-test_that("raw-space density is the LKJ(eta) pushforward (det(R)^(eta-1) * |dR/draw|)", {
-  # Ground-truth independent of the helper: the density on the raw parameters
-  # that induces R ~ LKJ(eta) is det(R)^(eta-1) times the Jacobian of the free
-  # correlations (strict lower triangle of R) with respect to raw. The helper's
-  # (LKJ-on-Cholesky) + (tanh Jacobian) must equal this up to an additive
-  # constant that depends only on (n, eta). A second, spurious Jacobian in the
-  # helper would break the constant-offset property below.
-  free_corr <- function(raw, n) {
-    res <- cpp_test_lkj_build_L(raw, n)
-    R <- res$L %*% t(res$L)
-    R[lower.tri(R)]
-  }
-  target_logp <- function(raw, n, eta) {
-    res <- cpp_test_lkj_build_L(raw, n)
-    R <- res$L %*% t(res$L)
-    J <- numDeriv_jacobian(function(r) free_corr(r, n), raw)
-    (eta - 1) * log(det(R)) + log(abs(det(J)))
-  }
-  # small self-contained central-difference Jacobian (no extra dependency)
-  numDeriv_jacobian <- function(f, x, h = 1e-6) {
-    m <- length(f(x)); p <- length(x)
-    J <- matrix(0, m, p)
-    for (j in seq_len(p)) {
-      xp <- x; xp[j] <- xp[j] + h
-      xm <- x; xm[j] <- xm[j] - h
-      J[, j] <- (f(xp) - f(xm)) / (2 * h)
-    }
-    J
-  }
-  set.seed(31L)
-  for (n in 2:4) {
-    for (eta in c(1.0, 2.0, 3.5)) {
-      n_raw <- n * (n - 1) / 2
-      raws <- lapply(1:5, function(i) rnorm(n_raw, 0, 0.3))
-      offsets <- vapply(raws, function(raw) {
-        helper <- cpp_test_lkj_density(cpp_test_lkj_build_L(raw, n)$L, eta) +
-          cpp_test_lkj_build_L(raw, n)$log_jac
-        helper - target_logp(raw, n, eta)
-      }, numeric(1))
-      # helper and the LKJ pushforward differ only by the normalizing constant
-      expect_equal(max(offsets) - min(offsets), 0, tolerance = 1e-5,
-                   info = sprintf("n=%d eta=%g", n, eta))
-    }
-  }
-})
-
 test_that("LKJ gradient matches central finite difference", {
   set.seed(4L)
   n <- 4
@@ -159,42 +69,6 @@ test_that("LKJ gradient matches central finite difference", {
   }
 
   expect_equal(analytical, numerical, tolerance = 1e-6)
-})
-
-test_that("compute_u_eff equals sigma * (z %*% t(L))", {
-  set.seed(5L)
-  n <- 3; n_groups <- 6
-  n_raw <- n * (n - 1) / 2
-  raw <- rnorm(n_raw, 0, 0.5)
-  res <- cpp_test_lkj_build_L(raw, n)
-  sigma <- c(0.5, 1.0, 1.5)
-  z <- matrix(rnorm(n_groups * n), n_groups, n)
-
-  cpp <- cpp_test_compute_u_eff(res$L, sigma, z)
-
-  # Reference: u_eff[g, c] = sigma[c] * (L %*% z[g,])[c]
-  # In matrix form: U = (z %*% t(L)) %*% diag(sigma)
-  ref <- (z %*% t(res$L)) %*% diag(sigma)
-
-  expect_equal(cpp, ref, tolerance = 1e-12)
-})
-
-test_that("correlation_from_L equals L %*% t(L) and is a valid correlation matrix", {
-  set.seed(6L)
-  n <- 4
-  n_raw <- n * (n - 1) / 2
-  raw <- rnorm(n_raw, 0, 0.6)
-  res <- cpp_test_lkj_build_L(raw, n)
-  R_cpp <- cpp_test_correlation_from_L(res$L)
-  R_ref <- res$L %*% t(res$L)
-  expect_equal(R_cpp, R_ref, tolerance = 1e-12)
-
-  # Diagonal must be 1, off-diagonal in [-1, 1]
-  expect_equal(unname(diag(R_cpp)), rep(1, n), tolerance = 1e-12)
-  expect_true(all(abs(R_cpp) <= 1 + 1e-12))
-  # Symmetric, positive semi-definite
-  expect_equal(R_cpp, t(R_cpp), tolerance = 1e-12)
-  expect_true(all(eigen(R_cpp, symmetric = TRUE, only.values = TRUE)$values > -1e-10))
 })
 
 test_that("chol_nc_chain_rule grad_log_sigma matches finite difference", {
@@ -262,7 +136,155 @@ test_that("chol_nc_chain_rule grad_z matches finite difference", {
   expect_equal(cr$grad_z, fd, tolerance = 1e-6)
 })
 
+test_that("a saturating row at n = 3 gives a correlation matrix, not a clamped one", {
+  # (atanh(0.8), atanh(0.8)) on row 3 has a squared sum of 1.28 under the direct
+  # map, so its diagonal was clamped at sqrt(1e-12) and R = L L' came back with
+  # a diagonal entry of 1.28 rather than 1.
+  raw <- c(0.3, atanh(0.8), atanh(0.8))
+  res <- cpp_test_lkj_build_L(raw, 3L)
+  R <- cpp_test_correlation_from_L(res$L)
+  expect_equal(unname(diag(R)), rep(1, 3), tolerance = 1e-12)
+  expect_true(all(abs(R[lower.tri(R)]) < 1))
+  expect_true(all(eigen(R, symmetric = TRUE, only.values = TRUE)$values > 1e-8))
+  expect_true(is.finite(res$log_jac))
+})
+
+skip_on_cran_budget()
+
+# ---- tests ----
+
+test_that("build_L produces unit-norm rows", {
+  skip_on_cran_budget()
+  set.seed(1L)
+  for (n in 2:5) {
+    n_raw <- n * (n - 1) / 2
+    raw <- rnorm(n_raw, 0, 0.5)
+    res <- cpp_test_lkj_build_L(raw, n)
+    row_sq <- rowSums(res$L^2)
+    # Lower-triangular L: each row's squared entries should sum to 1
+    expect_equal(unname(row_sq), rep(1, n), tolerance = 1e-12)
+    # Diagonal must be > 0
+    expect_true(all(diag(res$L) > 0))
+    # Upper triangle untouched (zero)
+    expect_true(all(res$L[upper.tri(res$L)] == 0))
+  }
+})
+
+test_that("build_L matches reference R implementation", {
+  skip_on_cran_budget()
+  set.seed(2L)
+  n <- 4
+  n_raw <- n * (n - 1) / 2
+  raw <- rnorm(n_raw, 0, 0.7)
+  cpp <- cpp_test_lkj_build_L(raw, n)
+  ref <- ref_build_L(raw, n)
+  expect_equal(cpp$L, ref$L, tolerance = 1e-12)
+  expect_equal(cpp$log_jac, ref$log_jac, tolerance = 1e-12)
+})
+
+test_that("LKJ density matches reference formula", {
+  skip_on_cran_budget()
+  set.seed(3L)
+  for (n in 2:4) {
+    n_raw <- n * (n - 1) / 2
+    raw <- rnorm(n_raw, 0, 0.3)
+    res <- cpp_test_lkj_build_L(raw, n)
+    for (eta in c(1.0, 2.0, 4.0)) {
+      cpp <- cpp_test_lkj_density(res$L, eta)
+      ref <- ref_lkj_density(res$L, eta)
+      expect_equal(cpp, ref, tolerance = 1e-12,
+                   info = sprintf("n=%d eta=%g", n, eta))
+    }
+  }
+})
+
+test_that("raw-space density is the LKJ(eta) pushforward (det(R)^(eta-1) * |dR/draw|)", {
+  skip_on_cran_budget()
+  # Ground-truth independent of the helper: the density on the raw parameters
+  # that induces R ~ LKJ(eta) is det(R)^(eta-1) times the Jacobian of the free
+  # correlations (strict lower triangle of R) with respect to raw. The helper's
+  # (LKJ-on-Cholesky) + (tanh Jacobian) must equal this up to an additive
+  # constant that depends only on (n, eta). A second, spurious Jacobian in the
+  # helper would break the constant-offset property below.
+  free_corr <- function(raw, n) {
+    res <- cpp_test_lkj_build_L(raw, n)
+    R <- res$L %*% t(res$L)
+    R[lower.tri(R)]
+  }
+  target_logp <- function(raw, n, eta) {
+    res <- cpp_test_lkj_build_L(raw, n)
+    R <- res$L %*% t(res$L)
+    J <- numDeriv_jacobian(function(r) free_corr(r, n), raw)
+    (eta - 1) * log(det(R)) + log(abs(det(J)))
+  }
+  # small self-contained central-difference Jacobian (no extra dependency)
+  numDeriv_jacobian <- function(f, x, h = 1e-6) {
+    m <- length(f(x)); p <- length(x)
+    J <- matrix(0, m, p)
+    for (j in seq_len(p)) {
+      xp <- x; xp[j] <- xp[j] + h
+      xm <- x; xm[j] <- xm[j] - h
+      J[, j] <- (f(xp) - f(xm)) / (2 * h)
+    }
+    J
+  }
+  set.seed(31L)
+  for (n in 2:4) {
+    for (eta in c(1.0, 2.0, 3.5)) {
+      n_raw <- n * (n - 1) / 2
+      raws <- lapply(1:5, function(i) rnorm(n_raw, 0, 0.3))
+      offsets <- vapply(raws, function(raw) {
+        helper <- cpp_test_lkj_density(cpp_test_lkj_build_L(raw, n)$L, eta) +
+          cpp_test_lkj_build_L(raw, n)$log_jac
+        helper - target_logp(raw, n, eta)
+      }, numeric(1))
+      # helper and the LKJ pushforward differ only by the normalizing constant
+      expect_equal(max(offsets) - min(offsets), 0, tolerance = 1e-5,
+                   info = sprintf("n=%d eta=%g", n, eta))
+    }
+  }
+})
+
+test_that("compute_u_eff equals sigma * (z %*% t(L))", {
+  skip_on_cran_budget()
+  set.seed(5L)
+  n <- 3; n_groups <- 6
+  n_raw <- n * (n - 1) / 2
+  raw <- rnorm(n_raw, 0, 0.5)
+  res <- cpp_test_lkj_build_L(raw, n)
+  sigma <- c(0.5, 1.0, 1.5)
+  z <- matrix(rnorm(n_groups * n), n_groups, n)
+
+  cpp <- cpp_test_compute_u_eff(res$L, sigma, z)
+
+  # Reference: u_eff[g, c] = sigma[c] * (L %*% z[g,])[c]
+  # In matrix form: U = (z %*% t(L)) %*% diag(sigma)
+  ref <- (z %*% t(res$L)) %*% diag(sigma)
+
+  expect_equal(cpp, ref, tolerance = 1e-12)
+})
+
+test_that("correlation_from_L equals L %*% t(L) and is a valid correlation matrix", {
+  skip_on_cran_budget()
+  set.seed(6L)
+  n <- 4
+  n_raw <- n * (n - 1) / 2
+  raw <- rnorm(n_raw, 0, 0.6)
+  res <- cpp_test_lkj_build_L(raw, n)
+  R_cpp <- cpp_test_correlation_from_L(res$L)
+  R_ref <- res$L %*% t(res$L)
+  expect_equal(R_cpp, R_ref, tolerance = 1e-12)
+
+  # Diagonal must be 1, off-diagonal in [-1, 1]
+  expect_equal(unname(diag(R_cpp)), rep(1, n), tolerance = 1e-12)
+  expect_true(all(abs(R_cpp) <= 1 + 1e-12))
+  # Symmetric, positive semi-definite
+  expect_equal(R_cpp, t(R_cpp), tolerance = 1e-12)
+  expect_true(all(eigen(R_cpp, symmetric = TRUE, only.values = TRUE)$values > -1e-10))
+})
+
 test_that("chol_nc_chain_rule grad_raw matches finite difference", {
+  skip_on_cran_budget()
   set.seed(9L)
   n <- 3; n_groups <- 4
   n_raw <- n * (n - 1) / 2
@@ -291,6 +313,7 @@ test_that("chol_nc_chain_rule grad_raw matches finite difference", {
 })
 
 test_that("every raw vector maps into the cone, including saturating ones", {
+  skip_on_cran_budget()
   # raw = atanh(0.8) twice on row 3 has row sum of squares 1.28 under a direct
   # tanh map, which is the case that map cannot represent. Here it is an
   # ordinary interior point.
@@ -306,6 +329,7 @@ test_that("every raw vector maps into the cone, including saturating ones", {
 })
 
 test_that("raw_from_L inverts build_L_from_raw", {
+  skip_on_cran_budget()
   set.seed(11L)
   for (n in 2:5) {
     n_raw <- n * (n - 1) / 2
@@ -316,19 +340,6 @@ test_that("raw_from_L inverts build_L_from_raw", {
     # and the round trip through L is exact
     expect_equal(cpp_test_lkj_build_L(back, n)$L, res$L, tolerance = 1e-12)
   }
-})
-
-test_that("a saturating row at n = 3 gives a correlation matrix, not a clamped one", {
-  # (atanh(0.8), atanh(0.8)) on row 3 has a squared sum of 1.28 under the direct
-  # map, so its diagonal was clamped at sqrt(1e-12) and R = L L' came back with
-  # a diagonal entry of 1.28 rather than 1.
-  raw <- c(0.3, atanh(0.8), atanh(0.8))
-  res <- cpp_test_lkj_build_L(raw, 3L)
-  R <- cpp_test_correlation_from_L(res$L)
-  expect_equal(unname(diag(R)), rep(1, 3), tolerance = 1e-12)
-  expect_true(all(abs(R[lower.tri(R)]) < 1))
-  expect_true(all(eigen(R, symmetric = TRUE, only.values = TRUE)$values > 1e-8))
-  expect_true(is.finite(res$log_jac))
 })
 
 skip_on_cran()

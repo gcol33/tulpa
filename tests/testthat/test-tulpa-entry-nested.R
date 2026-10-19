@@ -34,34 +34,11 @@ sim_ar1_pois <- function(seed, n, sigma = 0.8, rho = 0.6, b0 = 0.2, b1 = 0.4) {
   data.frame(y = y, x = x)
 }
 
-test_that("latent blocks fail loudly on a non-nested backend", {
-  d   <- sim_ar1_pois(104, 40L)
-  blk <- make_ar1_block(40L)
-  for (m in c("laplace", "mala", "exact")) {
-    err <- expect_error(
-      tulpa(y ~ x + latent(blk), d, family = "poisson", mode = m))
-    expect_match(conditionMessage(err), "nested-Laplace|latent prior block")
-  }
-})
-
 test_that("nested_laplace without a latent block errors", {
   d <- sim_ar1_pois(105, 40L)
   err <- expect_error(
     tulpa(y ~ x, d, family = "poisson", mode = "nested_laplace"))
   expect_match(conditionMessage(err), "at least one .latent")
-})
-
-test_that("the joint engine cannot be driven from a single-response formula", {
-  d   <- sim_ar1_pois(106, 40L)
-  blk <- make_ar1_block(40L)
-  err <- expect_error(
-    tulpa(y ~ x + latent(blk), d, family = "poisson",
-          mode = "nested_laplace_joint"))
-  expect_match(conditionMessage(err), "multiple response arms")
-  # The redirect must name the REAL fitter (gcol33/tulpa#786): the function
-  # does not exist under the bare backend name.
-  expect_match(conditionMessage(err), "Call tulpa_nested_laplace_joint\\(\\) directly")
-  expect_false(exists("nested_laplace_joint", envir = asNamespace("tulpa")))
 })
 
 test_that("inference_mode_info() does not claim nested_laplace_joint dispatches via tulpa(mode =) (#786)", {
@@ -74,7 +51,35 @@ test_that("inference_mode_info() does not claim nested_laplace_joint dispatches 
   expect_match(line, "tulpa_nested_laplace_joint\\(\\)")
 })
 
+skip_on_cran_budget()
+
+test_that("latent blocks fail loudly on a non-nested backend", {
+  skip_on_cran_budget()
+  d   <- sim_ar1_pois(104, 40L)
+  blk <- make_ar1_block(40L)
+  for (m in c("laplace", "mala", "exact")) {
+    err <- expect_error(
+      tulpa(y ~ x + latent(blk), d, family = "poisson", mode = m))
+    expect_match(conditionMessage(err), "nested-Laplace|latent prior block")
+  }
+})
+
+test_that("the joint engine cannot be driven from a single-response formula", {
+  skip_on_cran_budget()
+  d   <- sim_ar1_pois(106, 40L)
+  blk <- make_ar1_block(40L)
+  err <- expect_error(
+    tulpa(y ~ x + latent(blk), d, family = "poisson",
+          mode = "nested_laplace_joint"))
+  expect_match(conditionMessage(err), "multiple response arms")
+  # The redirect must name the REAL fitter (gcol33/tulpa#786): the function
+  # does not exist under the bare backend name.
+  expect_match(conditionMessage(err), "Call tulpa_nested_laplace_joint\\(\\) directly")
+  expect_false(exists("nested_laplace_joint", envir = asNamespace("tulpa")))
+})
+
 test_that("nested_laplace and nested_laplace_joint are registered Tier 2", {
+  skip_on_cran_budget()
   for (b in c("nested_laplace", "nested_laplace_joint")) {
     expect_true(b %in% INFERENCE_TIERS$structured$backends, info = b)
     expect_equal(get_backend_tier(b)$tier, 2L, info = b)

@@ -29,7 +29,10 @@
     tgmrf      = c("a", "b"),
     lf         = character(0))
 
+skip_on_cran_budget()
+
 test_that("the name table matches what each registry theta() builder emits", {
+    skip_on_cran_budget()
     ax <- .reg_axis_names()
     expect_setequal(names(ax), names(.NL_REGISTRY))
     emit <- list(
@@ -65,6 +68,7 @@ test_that("the name table matches what each registry theta() builder emits", {
 })
 
 test_that("every family absent from the table is absent for a stated reason", {
+    skip_on_cran_budget()
     ax <- .reg_axis_names()
     absent <- setdiff(names(.NL_REGISTRY), names(.NL_REGISTRY_AXIS_FIELD))
     expect_setequal(absent, c("car_proper", "ar1", "hsgp_mo", "mcar", "miid",
@@ -93,6 +97,7 @@ test_that("every family absent from the table is absent for a stated reason", {
 })
 
 test_that(".nl_registry_write_theta writes each family's fields by column", {
+    skip_on_cran_budget()
     tm <- cbind(sigma2 = c(0.5, 1.5), phi_gp = c(0.2, 0.9))
     blk <- .nl_registry_write_theta(list(list(type = "nngp")), tm,
                                     colnames(tm))[[1L]]

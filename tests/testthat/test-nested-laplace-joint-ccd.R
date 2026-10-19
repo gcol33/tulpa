@@ -62,7 +62,10 @@ test_that("every recorded decline reason is one of the named ones", {
                     tulpa:::.CCD_DECLINE_REASONS))
 })
 
+skip_on_cran_budget()
+
 test_that("the CCD designs a copy scale on its declared log coordinate", {
+    skip_on_cran_budget()
     expect_identical(
         tulpa:::.joint_ccd_coord_tags(c("b1.sigma", "b1.alpha", "phi_pos"),
                                       c("log", "identity", "log")),

@@ -1,3 +1,5 @@
+
+skip_on_cran_budget()
 # A non-finite gradient is a divergence, not an acceptance (gcol33/tulpa#429).
 #
 # The default leapfrog op sequence ends in a Kick, so if the gradient at the
@@ -19,6 +21,7 @@
 # untrustworthy, so the failure being invisible is the whole of the defect.
 
 test_that("the state scan reads the momentum, not only the position", {
+  skip_on_cran_budget()
   # q finite, log_prob finite, p carrying a NaN: the exact state a trailing Kick
   # on a non-finite gradient produces.
   r <- cpp_test_divergence_predicates(log_prob = 0, q = c(1, 2),
@@ -35,6 +38,7 @@ test_that("the state scan reads the momentum, not only the position", {
 })
 
 test_that("a non-finite Hamiltonian is divergent", {
+  skip_on_cran_budget()
   # The negated comparison is what routes NaN to the divergent branch;
   # `H_new - H0 > delta_max` would not, because every comparison with NaN is
   # false.
@@ -50,6 +54,7 @@ test_that("a non-finite Hamiltonian is divergent", {
 })
 
 test_that("a chain whose gradient is NaN reports every iteration divergent", {
+  skip_on_cran_budget()
   # LikelihoodSpec::gradient_fn is a model package's hand-coded full gradient
   # and writes the fused log-posterior itself, so it is the supported way to put
   # the sampler in the state above: a finite log-posterior with a non-finite
@@ -71,6 +76,7 @@ test_that("a chain whose gradient is NaN reports every iteration divergent", {
 })
 
 test_that("run_hmc_chain_cpp verifies the gradient on a direct entry", {
+  skip_on_cran_budget()
   # gcol33/tulpa#684: the check sat in two callers -- the R wrapper and the
   # multi-chain producer -- while six production sites entered
   # run_hmc_chain_cpp directly, including the R_RegisterCCallable a LinkingTo

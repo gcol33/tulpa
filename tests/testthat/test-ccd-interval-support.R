@@ -42,7 +42,10 @@ test_that(".nl_summary_quantile reads a moment rule from its moments", {
   expect_equal(q, exp(m + qnorm(c(0.025, 0.5, 0.975)) * s))
 })
 
+skip_on_cran_budget()
+
 test_that("a moment interval leaves the node range where the design confines it", {
+  skip_on_cran_budget()
   # The scalar CCD of gcol33/tulpa#308: three nodes at 0 and +/- 1.1 whitened SDs
   # with the matching design weights, on a flat integrand. The design's own
   # second moment sets the interval half-width at 1.96 of it, which reaches past
@@ -68,6 +71,7 @@ test_that("a moment interval leaves the node range where the design confines it"
 })
 
 test_that("a moment rule on an axis with no known domain withholds the number", {
+  skip_on_cran_budget()
   v <- c(0.2, 0.4, 0.6)
   w <- c(0.3, 0.4, 0.3)
   q <- .nl_summary_quantile(v, w, c(0.025, 0.5, 0.975), NA_character_,
@@ -84,6 +88,7 @@ test_that("a moment rule on an axis with no known domain withholds the number", 
 })
 
 test_that("the unit domain keeps a mixing weight inside (0, 1)", {
+  skip_on_cran_budget()
   v <- c(0.55, 0.7, 0.85)
   w <- c(0.2, 0.6, 0.2)
   q <- .nl_summary_quantile(v, w, c(0.025, 0.5, 0.975), "unit", "moment_rule")
@@ -100,6 +105,7 @@ test_that("the unit domain keeps a mixing weight inside (0, 1)", {
 # ------------------------------------------------------------ axis registry
 
 test_that(".joint_axis_domains names each joint axis's coordinate", {
+  skip_on_cran_budget()
   mk <- function(types, axes) {
     cn <- unlist(lapply(seq_along(types), function(b)
       paste0("b", b, ".", axes[[b]])))
@@ -124,6 +130,7 @@ test_that(".joint_axis_domains names each joint axis's coordinate", {
 })
 
 test_that(".joint_pareto_axis_tags still declines a fit carrying an unguessable axis", {
+  skip_on_cran_budget()
   res <- list(
     theta_grid = matrix(0, 1L, 2L,
                         dimnames = list(NULL, c("b1.tau", "b1.rho_car"))),

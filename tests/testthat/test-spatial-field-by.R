@@ -38,11 +38,66 @@
     csr$row_ptr, csr$col_idx, csr$n_neighbors)
 }
 
+test_that("ICAR log-prior is invariant to node relabeling (non-contiguous components)", {
+  set.seed(12)
+  # A 5+3 disconnected graph, then a permutation that INTERLEAVES the two
+  # components so neither is contiguous in the node ordering. The log-prior is a
+  # relabeling invariant (edge sums + per-component constant pins), so the
+  # permuted value must match -- this is what exercises the arbitrary node-index
+  # path rather than the contiguous fast path.
+  adj_rep <- .blockdiag_list(list(.chain_adj_by(5L), .chain_adj_by(3L)))
+  n <- nrow(adj_rep); x <- rnorm(n)
+  perm <- c(1L, 6L, 2L, 7L, 3L, 8L, 4L, 5L)   # comp1 -> {1,3,5,7,8}, comp2 -> {2,4,6}
+  adj_perm <- adj_rep[perm, perm]
+  x_perm   <- x[perm]
+  for (tau in c(0.7, 2.1)) {
+    expect_equal(.icar_lp1(x, adj_rep, tau), .icar_lp1(x_perm, adj_perm, tau),
+                 tolerance = 1e-10, info = paste("tau", tau))
+  }
+})
+
+test_that("a single-level by is the identity (byte-identical graph + index)", {
+  adj <- .chain_adj_by(5L)
+  node <- rep(1:5, times = 2L)
+  lev  <- rep("only", 10L)
+  ri <- tulpa_bar_field_replicate(adj, node, lev)
+  expect_identical(ri$n_levels, 1L)
+  expect_equal(ri$adjacency, adj)
+  expect_identical(ri$index, as.integer(node))
+})
+
+test_that("tulpa_bar_field_replicate validates its inputs", {
+  adj <- .chain_adj_by(4L)
+  expect_error(tulpa_bar_field_replicate(adj, 1:3, rep("a", 4L)),
+               "same length")
+  expect_error(tulpa_bar_field_replicate(adj, c(1L, 5L, 2L, 3L), rep("a", 4L)),
+               "1-based indices")
+  expect_error(tulpa_bar_field_replicate(matrix(0, 2, 3), 1:2, c("a", "b")),
+               "square")
+})
+
+test_that("the |+proper gate holds with or without by", {
+  adj <- .chain_adj_by(5L)
+  expect_error(
+    spatial(adj, ~ 1 + time | cell, proper = TRUE, by = hab),
+    "Correlated proper CAR")
+})
+
+test_that("a by column missing from the data errors at fit time", {
+  adj <- .chain_adj_by(5L)
+  d <- data.frame(cell = rep(1:5, each = 3L))
+  f <- spatial(graph = adj, formula = ~ 1 || cell, by = nope)
+  expect_error(tulpa:::.spatial_field_blocks(f, d), "not found in the data")
+})
+
+skip_on_cran_budget()
+
 # --------------------------------------------------------------------------- #
 # (0) Kernel invariant: per-component rank deficiency (the regression guard)   #
 # --------------------------------------------------------------------------- #
 
 test_that("ICAR log-prior is additive across connected components (equal and unequal)", {
+  skip_on_cran_budget()
   set.seed(11)
   # UNEQUAL sizes are the discriminating case: the pre-fix kernel split the field
   # into n_components EQUAL contiguous blocks, so a 5+3 graph pinned {1..4},{5..8}
@@ -62,25 +117,8 @@ test_that("ICAR log-prior is additive across connected components (equal and une
   }
 })
 
-test_that("ICAR log-prior is invariant to node relabeling (non-contiguous components)", {
-  set.seed(12)
-  # A 5+3 disconnected graph, then a permutation that INTERLEAVES the two
-  # components so neither is contiguous in the node ordering. The log-prior is a
-  # relabeling invariant (edge sums + per-component constant pins), so the
-  # permuted value must match -- this is what exercises the arbitrary node-index
-  # path rather than the contiguous fast path.
-  adj_rep <- .blockdiag_list(list(.chain_adj_by(5L), .chain_adj_by(3L)))
-  n <- nrow(adj_rep); x <- rnorm(n)
-  perm <- c(1L, 6L, 2L, 7L, 3L, 8L, 4L, 5L)   # comp1 -> {1,3,5,7,8}, comp2 -> {2,4,6}
-  adj_perm <- adj_rep[perm, perm]
-  x_perm   <- x[perm]
-  for (tau in c(0.7, 2.1)) {
-    expect_equal(.icar_lp1(x, adj_rep, tau), .icar_lp1(x_perm, adj_perm, tau),
-                 tolerance = 1e-10, info = paste("tau", tau))
-  }
-})
-
 test_that("MCAR log-prior is additive across connected components (unequal)", {
+  skip_on_cran_budget()
   set.seed(13)
   p     <- 2L
   theta <- c(log(1.1), 0.4, log(0.8))       # log-Cholesky of a 2x2 Sigma
@@ -111,6 +149,7 @@ test_that("MCAR log-prior is additive across connected components (unequal)", {
 # --------------------------------------------------------------------------- #
 
 test_that("tulpa_bar_field_replicate builds I_L (x) Q and the level-offset index", {
+  skip_on_cran_budget()
   adj <- .chain_adj_by(4L)
   node <- rep(1:4, times = 3L)
   lev  <- rep(c("a", "b", "c"), each = 4L)
@@ -127,31 +166,12 @@ test_that("tulpa_bar_field_replicate builds I_L (x) Q and the level-offset index
   expect_identical(ri$index, as.integer(node + (rep(0:2, each = 4L)) * 4L))
 })
 
-test_that("a single-level by is the identity (byte-identical graph + index)", {
-  adj <- .chain_adj_by(5L)
-  node <- rep(1:5, times = 2L)
-  lev  <- rep("only", 10L)
-  ri <- tulpa_bar_field_replicate(adj, node, lev)
-  expect_identical(ri$n_levels, 1L)
-  expect_equal(ri$adjacency, adj)
-  expect_identical(ri$index, as.integer(node))
-})
-
-test_that("tulpa_bar_field_replicate validates its inputs", {
-  adj <- .chain_adj_by(4L)
-  expect_error(tulpa_bar_field_replicate(adj, 1:3, rep("a", 4L)),
-               "same length")
-  expect_error(tulpa_bar_field_replicate(adj, c(1L, 5L, 2L, 3L), rep("a", 4L)),
-               "1-based indices")
-  expect_error(tulpa_bar_field_replicate(matrix(0, 2, 3), 1:2, c("a", "b")),
-               "square")
-})
-
 # --------------------------------------------------------------------------- #
 # (2) Block expansion carries n_components; L = 1 is byte-identical            #
 # --------------------------------------------------------------------------- #
 
 test_that(".spatial_field_blocks replicates the graph and tags n_components", {
+  skip_on_cran_budget()
   adj <- .chain_adj_by(6L)
   d <- data.frame(cell = rep(1:6, each = 4L),
                   hab  = rep(c("x", "y"), each = 12L),
@@ -171,6 +191,7 @@ test_that(".spatial_field_blocks replicates the graph and tags n_components", {
 })
 
 test_that("a single-level by produces blocks byte-identical to no-by", {
+  skip_on_cran_budget()
   adj <- .chain_adj_by(6L)
   d <- data.frame(cell = rep(1:6, each = 4L), time = rnorm(24L))
   d$one <- "only"
@@ -181,6 +202,7 @@ test_that("a single-level by produces blocks byte-identical to no-by", {
 })
 
 test_that("correlated (|) by builds one mcar block over the replicated graph", {
+  skip_on_cran_budget()
   adj <- .chain_adj_by(5L)
   d <- data.frame(cell = rep(1:5, each = 6L),
                   hab  = rep(c("x", "y", "z"), each = 10L),
@@ -198,24 +220,11 @@ test_that("correlated (|) by builds one mcar block over the replicated graph", {
 # --------------------------------------------------------------------------- #
 
 test_that("spatial() records the by column (bare or string)", {
+  skip_on_cran_budget()
   adj <- .chain_adj_by(5L)
   expect_identical(spatial(adj, ~ 1 || cell, by = hab)$by_var, "hab")
   expect_identical(spatial(adj, ~ 1 || cell, by = "hab")$by_var, "hab")
   expect_null(spatial(adj, ~ 1 || cell)$by_var)
-})
-
-test_that("the |+proper gate holds with or without by", {
-  adj <- .chain_adj_by(5L)
-  expect_error(
-    spatial(adj, ~ 1 + time | cell, proper = TRUE, by = hab),
-    "Correlated proper CAR")
-})
-
-test_that("a by column missing from the data errors at fit time", {
-  adj <- .chain_adj_by(5L)
-  d <- data.frame(cell = rep(1:5, each = 3L))
-  f <- spatial(graph = adj, formula = ~ 1 || cell, by = nope)
-  expect_error(tulpa:::.spatial_field_blocks(f, d), "not found in the data")
 })
 
 skip_on_cran()

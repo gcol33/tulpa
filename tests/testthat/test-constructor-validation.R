@@ -1,8 +1,20 @@
+
+test_that("tulpa_check_control refuses a knob given twice", {
+  expect_error(
+    tulpa_check_control(list(max_iter = 1, max_iter = 2),
+                        c("max_iter", "tol"), "my_fit"),
+    "given more than once in my_fit\\(\\): 'max_iter'")
+  expect_null(tulpa_check_control(list(max_iter = 1, tol = 1e-6),
+                                  c("max_iter", "tol"), "my_fit"))
+})
+
+skip_on_cran_budget()
 # Utility constructors refuse invalid input with an error naming the argument
 # (gcol33/tulpa#896), rather than accepting it silently, truncating it, or
 # failing later with "missing value where TRUE/FALSE needed".
 
 test_that("the SBC predictive constructors validate their inputs", {
+  skip_on_cran_budget()
   expect_error(sbc_normal(0, -1), "`sd`")
   expect_error(sbc_normal(NA, 1), "`mean`")
   expect_error(sbc_normal("a", 1), "`mean`")
@@ -27,6 +39,7 @@ test_that("the SBC predictive constructors validate their inputs", {
 })
 
 test_that("the prior constructors name a missing or non-numeric argument", {
+  skip_on_cran_budget()
   expect_error(prior_normal(NA, 1), "`mean` must be a single finite number")
   expect_error(prior_normal("a", 1), "`mean`")
   expect_error(prior_normal(0, NA), "`sd` must be a single positive number")
@@ -45,6 +58,7 @@ test_that("the prior constructors name a missing or non-numeric argument", {
 })
 
 test_that("grid constructors refuse a fractional size instead of truncating it", {
+  skip_on_cran_budget()
   expect_error(ccd_grid(2.7), "`k` must be a single whole number")
   expect_error(ccd_grid(0), "`k`")
   expect_error(ccd_grid(NA), "`k`")
@@ -55,13 +69,4 @@ test_that("grid constructors refuse a fractional size instead of truncating it",
                "`n` must be a single whole number")
   expect_error(tulpa_grid_axis("field_sd", n = 0), "`n`")
   expect_length(tulpa_grid_axis("field_sd", n = 4), 4L)
-})
-
-test_that("tulpa_check_control refuses a knob given twice", {
-  expect_error(
-    tulpa_check_control(list(max_iter = 1, max_iter = 2),
-                        c("max_iter", "tol"), "my_fit"),
-    "given more than once in my_fit\\(\\): 'max_iter'")
-  expect_null(tulpa_check_control(list(max_iter = 1, tol = 1e-6),
-                                  c("max_iter", "tol"), "my_fit"))
 })

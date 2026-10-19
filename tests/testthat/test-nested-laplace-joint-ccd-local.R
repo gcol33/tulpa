@@ -29,121 +29,6 @@
   sqrt(sum(w * (x - m)^2) / sum(w))
 }
 
-test_that("ccd_weights are a partition of unity (the conservation footing)", {
-  for (d in 2:5) {
-    ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
-    expect_equal(sum(ccd_weights(ccd)), 1, tolerance = 1e-12)
-  }
-})
-
-test_that("local CCD refinement conserves the total outer design weight", {
-  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
-  lv <- list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2))
-  gd <- .lccd_grid(lv, mu, s)
-  out <- tulpa:::.joint_local_ccd_refine(
-    joint_grid = gd$grid, log_marginal = gd$lm, modes = NULL, dnode = NULL,
-    latent_axes = c("a", "b"), tags = c(a = "identity", b = "identity"),
-    eval_nodes = .lccd_eval(mu, s), max_cells = 4L)
-  expect_false(is.null(out))
-  # Uniform tensor base: sum(dnode) == n_cells. Each refined cell is replaced by
-  # a block whose design weights sum back to the cell's, so the total is fixed.
-  expect_equal(sum(out$dnode), nrow(gd$grid), tolerance = 1e-9)
-  expect_true(out$info$n_cells_refined >= 1L)
-  expect_true(out$info$n_nodes_added > 0L)
-})
-
-test_that("local CCD repopulates a coarse peak cell, recovering collapsed SD", {
-  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
-  lv <- list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2))
-  gd <- .lccd_grid(lv, mu, s)
-  tags <- c(a = "identity", b = "identity")
-
-  w0 <- tulpa:::.joint_integration_weights(gd$lm, NULL)
-  sd_coarse <- .lccd_wsd(gd$grid[, "a"], w0)
-
-  # Dense reference on the same support: the moment a fine grid would report.
-  fine <- seq(-1, 2, length.out = 61L)
-  gdf <- .lccd_grid(list(a = fine, b = fine), mu, s)
-  wf  <- tulpa:::.joint_integration_weights(gdf$lm, NULL)
-  sd_dense <- .lccd_wsd(gdf$grid[, "a"], wf)
-
-  out <- tulpa:::.joint_local_ccd_refine(
-    joint_grid = gd$grid, log_marginal = gd$lm, modes = NULL, dnode = NULL,
-    latent_axes = c("a", "b"), tags = tags,
-    eval_nodes = .lccd_eval(mu, s), max_cells = 4L)
-  w1 <- tulpa:::.joint_integration_weights(out$log_marginal, out$dnode)
-  sd_ref <- .lccd_wsd(out$joint_grid[, "a"], w1)
-
-  expect_gt(sd_ref, sd_coarse)                                   # collapsed SD recovers
-  expect_lt(abs(sd_ref - sd_dense), abs(sd_coarse - sd_dense))   # toward the dense answer
-  expect_equal(.lccd_wmean(out$joint_grid[, "a"], w1), 0.5,
-               tolerance = 1e-6)                                 # symmetric design keeps the mean
-})
-
-test_that("greedy selection picks mutually non-adjacent cells", {
-  # Five cells in a chain on one axis (1-2-3-4-5).
-  up <- matrix(c(2L, 3L, 4L, 5L, NA), ncol = 1L)
-  dn <- matrix(c(NA, 1L, 2L, 3L, 4L), ncol = 1L)
-  w  <- c(0.10, 0.90, 0.20, 0.80, 0.15)   # peaks at 2 and 4, both adjacent to 3
-  sel <- tulpa:::.joint_local_ccd_select(cands = 1:5, w = w, up = up, dn = dn,
-                                         max_cells = 5L)
-  expect_true(all(c(2L, 4L) %in% sel))
-  expect_false(3L %in% sel)               # excluded: adjacent to both chosen
-  for (i in sel) for (k in sel) if (i != k) {
-    expect_false(k %in% c(up[i, ], dn[i, ]))
-  }
-})
-
-test_that("the selection ranks by weight by default, or by the mass a cell misplaces", {
-  mu <- c(0.2, 0.9); s <- c(0.6, 0.5)
-  lv <- list(a = c(-1.5, -0.5, 0.5, 1.5), b = c(-1.5, -0.5, 0.5, 1.5))
-  gd <- .lccd_grid(lv, mu, s)
-  U  <- as.matrix(gd$grid)
-  nb <- tulpa:::.joint_local_ccd_neighbors(U, gd$grid, 1:2)
-  w  <- tulpa:::.joint_integration_weights(gd$lm, NULL)
-  curv <- vector("list", nrow(U)); cands <- integer(0)
-  for (c in seq_len(nrow(U))) {
-    cc <- tulpa:::.joint_local_ccd_cell_curv(c, U, gd$lm, nb$up, nb$dn)
-    if (is.null(cc)) next
-    curv[[c]] <- cc; cands <- c(cands, c)
-  }
-  expect_gt(length(cands), 1L)
-  expect_identical(tulpa:::.joint_local_ccd_rank_score("weight", cands, w, curv), w)
-  sc <- tulpa:::.joint_local_ccd_rank_score("mass_moved", cands, w, curv)
-  lbr <- vapply(cands, function(c)
-    tulpa:::.joint_local_ccd_cell_box_mass(curv[[c]])$log_box_ratio, numeric(1))
-  expect_equal(sc[cands], w[cands] * abs(expm1(lbr)), tolerance = 1e-14)
-  expect_true(all(sc[-cands] == -Inf))
-  expect_error(tulpa:::.joint_local_ccd_rank_score("size", cands, w, curv))
-
-  # The default rank is the weight ranking, bit for bit.
-  args <- list(joint_grid = gd$grid, log_marginal = gd$lm, modes = NULL,
-               dnode = NULL, latent_axes = c("a", "b"),
-               tags = c(a = "identity", b = "identity"),
-               eval_nodes = .lccd_eval(mu, s), max_cells = 2L)
-  expect_identical(do.call(tulpa:::.joint_local_ccd_refine, args),
-                   do.call(tulpa:::.joint_local_ccd_refine,
-                           c(args, list(rank = "weight"))))
-})
-
-test_that("local CCD declines on NULL tags, the engage gate, and a monotone field", {
-  expect_false(tulpa:::.joint_local_ccd_engage(3L))
-  expect_true(tulpa:::.joint_local_ccd_engage(4L))
-
-  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
-  gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
-
-  expect_null(tulpa:::.joint_local_ccd_refine(
-    gd$grid, gd$lm, NULL, NULL, c("a", "b"), tags = NULL,
-    eval_nodes = .lccd_eval(mu, s)))
-
-  lm_mono <- gd$grid[, "a"] + gd$grid[, "b"]       # no interior peak
-  expect_null(tulpa:::.joint_local_ccd_refine(
-    gd$grid, lm_mono, NULL, NULL, c("a", "b"),
-    tags = c(a = "identity", b = "identity"),
-    eval_nodes = .lccd_eval(mu, s)))
-})
-
 .lccd_chain_adj <- function(n_s) {
   nbr <- lapply(seq_len(n_s), function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
   nn  <- vapply(nbr, length, integer(1))
@@ -210,25 +95,6 @@ test_that("k_refine validates and accepts the ccd rung", {
     "local_ccd")
 })
 
-test_that("local CCD carries inner modes through the splice", {
-  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
-  gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
-  n  <- nrow(gd$grid); n_x <- 3L
-  modes <- matrix(seq_len(n * n_x), n, n_x)
-  eval_with_modes <- function(theta_mat, warm) {
-    list(log_marginal = .lccd_true_lm(theta_mat, mu, s),
-         modes = matrix(0, nrow(theta_mat), n_x))
-  }
-  out <- tulpa:::.joint_local_ccd_refine(
-    gd$grid, gd$lm, modes = modes, dnode = NULL,
-    latent_axes = c("a", "b"), tags = c(a = "identity", b = "identity"),
-    eval_nodes = eval_with_modes, max_cells = 4L)
-  expect_false(is.null(out))
-  expect_equal(nrow(out$modes), nrow(out$joint_grid))
-  expect_equal(ncol(out$modes), n_x)
-  expect_false(anyNA(out$modes))
-})
-
 test_that("local CCD splices per-cell covariance blocks alongside the modes", {
   mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
   gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
@@ -283,58 +149,6 @@ test_that("local CCD splices per-cell covariance blocks alongside the modes", {
   }, numeric(1)))
 }
 
-test_that("the cell's design scale is the marginal spread, not the conditional one", {
-  tg <- .lccd_corr(d = 4L, rho = 0.8)
-  nb <- tulpa:::.joint_local_ccd_neighbors(tg$grid, tg$grid, seq_len(4L))
-  ctr <- which(rowSums(abs(tg$grid)) == 0)
-  cc <- tulpa:::.joint_local_ccd_cell_curv(ctr, tg$grid, tg$lm, nb$up, nb$dn)
-
-  # The target is exactly quadratic, so both stencils are exact.
-  expect_equal(cc$sd, 1 / sqrt(diag(tg$Q)), tolerance = 1e-12)
-  expect_false(is.null(cc$sd_marginal))
-  expect_equal(cc$sd_marginal, sqrt(diag(tg$R)), tolerance = 1e-10)
-  # At rho = 0.8 in four dimensions the marginal spread is about twice the
-  # conditional one, which is the whole of gcol33/tulpa#316.
-  expect_equal(cc$sd_marginal / cc$sd, sqrt(diag(tg$Q) * diag(tg$R)),
-               tolerance = 1e-10)
-  expect_gt(min(cc$sd_marginal / cc$sd), 1.9)
-})
-
-test_that("a dominant refined cell reports the marginal spread it stands in for", {
-  exact <- diff(stats::qnorm(c(0.025, 0.975)))
-  for (rho in c(0.7, 0.8, 0.9)) {
-    tg <- .lccd_corr(d = 4L, rho = rho)
-    rf <- tulpa:::.joint_local_ccd_refine(
-      tg$grid, tg$lm, NULL, NULL, colnames(tg$grid), tg$tags, tg$eval,
-      max_cells = 4L)
-    expect_false(is.null(rf))
-
-    # The regime, asserted before the width is read: this cell carries
-    # essentially the whole posterior, so the neighbours the cloud is clamped
-    # against hold none of the truncated tail.
-    w <- tulpa:::.joint_integration_weights(rf$log_marginal, rf$dnode)
-    expect_gt(sum(w[rf$weight_kind == "design"]), 0.99)
-
-    # Measured from the conditional scale this replaces: 0.675 / 0.554 / 0.394
-    # of the exact width at these three correlations.
-    expect_equal(.lccd_mean_width(rf) / exact, 1, tolerance = 0.08)
-  }
-})
-
-test_that("the design scale is unchanged where the outer axes are uncorrelated", {
-  tg <- .lccd_corr(d = 4L, rho = 0)
-  nb <- tulpa:::.joint_local_ccd_neighbors(tg$grid, tg$grid, seq_len(4L))
-  ctr <- which(rowSums(abs(tg$grid)) == 0)
-  cc <- tulpa:::.joint_local_ccd_cell_curv(ctr, tg$grid, tg$lm, nb$up, nb$dn)
-  expect_equal(cc$sd_marginal, cc$sd, tolerance = 1e-10)
-
-  rf <- tulpa:::.joint_local_ccd_refine(
-    tg$grid, tg$lm, NULL, NULL, colnames(tg$grid), tg$tags, tg$eval,
-    max_cells = 4L)
-  expect_equal(.lccd_mean_width(rf) / diff(stats::qnorm(c(0.025, 0.975))),
-               1, tolerance = 0.02)
-})
-
 test_that("a grid with no corner stencil keeps the conditional scale", {
   # A grid a previous pass already spliced nodes into has no complete corner
   # stencil; the cell then reports its conditional scale and no marginal one,
@@ -367,101 +181,6 @@ test_that("each refined cell reports the base-grid share it held", {
   w0 <- tulpa:::.joint_integration_weights(gd$lm, NULL)
   expect_length(out$info$cell_share, out$info$n_cells_refined)
   expect_equal(out$info$cell_share, w0[out$info$cells], tolerance = 1e-12)
-})
-
-# --------------------------------------------------------------------------- #
-# Per-cell weight kind (gcol33/tulpa#311)                                      #
-# --------------------------------------------------------------------------- #
-
-test_that("the refined grid labels which cells carry a design weight", {
-  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
-  gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
-  out <- tulpa:::.joint_local_ccd_refine(
-    gd$grid, gd$lm, modes = NULL, dnode = NULL,
-    latent_axes = c("a", "b"), tags = c(a = "identity", b = "identity"),
-    eval_nodes = .lccd_eval(mu, s), max_cells = 4L)
-  expect_false(is.null(out))
-  expect_length(out$weight_kind, nrow(out$joint_grid))
-  expect_setequal(unique(out$weight_kind), c("mass", "design"))
-  # One label per row, and the design rows are exactly each refined cell's whole
-  # replacement cloud: the nodes added plus the centre that reuses the cell's
-  # own solve, which carries the design's centre weight rather than the cell's
-  # mass.
-  n_design <- out$info$n_nodes_added + out$info$n_cells_refined
-  expect_identical(sum(out$weight_kind == "design"), n_design)
-  expect_identical(out$info$n_design_nodes, n_design)
-  expect_identical(sum(out$weight_kind == "mass"),
-                   out$info$n_cells_before - out$info$n_cells_refined)
-  # The mass-labelled rows are the carried-over base cells, unchanged.
-  keep <- setdiff(seq_len(nrow(gd$grid)), out$info$cells)
-  expect_equal(out$joint_grid[out$weight_kind == "mass", , drop = FALSE],
-               gd$grid[keep, , drop = FALSE])
-})
-
-# --------------------------------------------------------------------------- #
-# What the per-axis interval was read off (gcol33/tulpa#317)                   #
-# --------------------------------------------------------------------------- #
-
-test_that("a heterogeneous weight kind names the support mixed", {
-  # `integration` describes a homogeneous support, and a locally refined grid
-  # reports "grid", so the integrator name alone reads it as a density one.
-  expect_identical(tulpa:::.nl_node_support("grid"), "density")
-  expect_identical(tulpa:::.nl_node_support("ccd"), "moment_rule")
-  expect_identical(tulpa:::.nl_node_support("grid", rep("mass", 4L)), "density")
-  expect_identical(tulpa:::.nl_node_support("ccd", rep("design", 4L)),
-                   "moment_rule")
-  expect_identical(tulpa:::.nl_node_support("grid", c("mass", "design", "mass")),
-                   "mixed")
-})
-
-test_that("the interval provenance carries the design share", {
-  w <- c(0.4, 0.1, 0.3, 0.2)
-  k <- c("mass", "design", "design", "mass")
-  p <- tulpa:::.nl_interval_provenance("grid", k, w)
-  expect_identical(p$read, "mixed")
-  expect_equal(p$design_mass, 0.4)
-  # A homogeneous support has no share to report: none of it is a moment rule
-  # read as a CDF on a density grid, all of it is on a CCD.
-  expect_equal(
-    tulpa:::.nl_interval_provenance("grid", rep("mass", 4L), w)$design_mass, 0)
-  expect_equal(
-    tulpa:::.nl_interval_provenance("ccd", rep("design", 4L), w)$design_mass, 1)
-})
-
-test_that("naming the support mixed leaves the reported interval unchanged", {
-  # The measurement behind that choice is in `.nl_summary_quantile`: against a
-  # converged tensor reference the weighted quantile beat every alternative read
-  # in both design_mass regimes, so the support name is what changes here, not
-  # the number.
-  set.seed(11L)
-  v <- sort(stats::rnorm(40L))
-  w <- stats::runif(40L); w <- w / sum(w)
-  probs <- c(0.025, 0.5, 0.975)
-  # Compared against the density dispatch itself, not against a hard-coded
-  # `outside` policy: the invariant is that the two supports take ONE `outside`
-  # construction, so it has to keep holding when that construction changes
-  # (gcol33/tulpa#353 moved it from "clamp" to "extend").
-  #
-  # `within` is the orthogonal field, and there the two supports part company:
-  # a refined grid's replacement clouds sit inside one base cell, so a Voronoi
-  # partition of its node set is not the design's own boxes and `mixed` declines
-  # the box-uniform default (gcol33/tulpa#357). Comparing at the chord read is
-  # what isolates the `outside` invariant from that decline.
-  expect_identical(
-    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
-    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "density", "chord"))
-  # The decline is recorded rather than silent, and it is what makes the two
-  # reads differ at the shipped default.
-  mixed_read <- tulpa:::.nl_summary_quantile_read(v, w, probs, "unbounded", "mixed")
-  expect_identical(mixed_read$within, "chord")
-  expect_identical(mixed_read$declined, "support_mixed")
-  expect_false(isTRUE(all.equal(
-    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
-    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "density"))))
-  # And it is NOT the moment read, which is what a design-weighted support takes.
-  expect_false(isTRUE(all.equal(
-    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
-    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "moment_rule"))))
 })
 
 # --------------------------------------------------------------------------- #
@@ -585,143 +304,6 @@ test_that("naming the support mixed leaves the reported interval unchanged", {
   do.call(rbind, acc)
 }
 
-# --------------------------------------------------------------------------- #
-# The engagement gate: refine only where the design's quadratic holds (#318)   #
-# --------------------------------------------------------------------------- #
-
-test_that("the local-quadratic misfit is zero on a quadratic and linear in the cubic", {
-  d <- 4L
-  ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
-  u_c <- rep(0, d)
-  sd  <- rep(1, d)
-  quad <- -0.5 * rowSums(ccd$z^2)
-  # A central composite design identifies a full quadratic exactly, so nothing is
-  # left over: the score cannot fire where the outer target is Gaussian in the
-  # transformed coordinate, whatever the correlation or the grid spacing.
-  expect_equal(tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, quad, sd)$misfit, 0,
-               tolerance = 1e-12)
-  # The least-squares residual is linear in the response, so a cubic term of
-  # twice the size scores exactly twice as high.
-  cub <- ccd$z[, 1L]^3
-  g1 <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, quad + cub / 6, sd)$misfit
-  g2 <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, quad + cub / 3, sd)$misfit
-  expect_gt(g1, 0)
-  expect_equal(g2, 2 * g1, tolerance = 1e-10)
-  # And it is invariant to the quadratic part it is measured against.
-  expect_equal(
-    tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, 3 - 2 * quad + cub / 6, sd)$misfit,
-    g1, tolerance = 1e-10)
-})
-
-test_that("the whitened gradient reads an off-centre cell the misfit cannot see", {
-  d <- 4L
-  ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
-  u_c <- rep(0, d)
-  sd  <- rep(1, d)
-  # A quadratic centred ON the cell: the design represents it exactly and the
-  # cell's coordinate is its peak, so both readings are zero.
-  at <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, -0.5 * rowSums(ccd$z^2), sd)
-  expect_equal(at$misfit, 0, tolerance = 1e-12)
-  expect_equal(at$offset, 0, tolerance = 1e-10)
-  # The same quadratic, peaked at `m` instead. It is still exactly quadratic in
-  # the whitened coordinate, so the design still represents it exactly and the
-  # misfit stays at zero however far off-centre the peak sits; the whitened
-  # gradient is `m` and its norm is what the offset reports.
-  for (m in list(c(0.4, 0, 0, 0), c(0.9, -0.6, 0.3, 0), c(-2, 1.5, -1, 0.5))) {
-    zc <- sweep(ccd$z, 2L, m, FUN = "-")
-    fit <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, -0.5 * rowSums(zc^2), sd)
-    expect_equal(fit$misfit, 0, tolerance = 1e-10)
-    expect_equal(fit$offset, sqrt(sum(m^2)), tolerance = 1e-8)
-  }
-  # And it is standardized: the same displacement read on a cell whose marginal
-  # spread is `s` per axis reports `|p| / s`, not `|p|`.
-  s <- c(0.5, 2, 1, 4)
-  p <- c(0.45, -1.2, 0.3, 2)
-  u_nodes <- sweep(ccd$z, 2L, s, FUN = "*")
-  lm_nodes <- -0.5 * rowSums(sweep(sweep(u_nodes, 2L, p, FUN = "-"),
-                                   2L, s, FUN = "/")^2)
-  scaled <- tulpa:::.joint_local_ccd_misfit(u_nodes, u_c, lm_nodes, s)
-  expect_equal(scaled$misfit, 0, tolerance = 1e-10)
-  expect_equal(scaled$offset, sqrt(sum((p / s)^2)), tolerance = 1e-8)
-})
-
-test_that("the offset declines with the fit rather than reporting an unestimated one", {
-  d <- 4L
-  ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
-  u_c <- rep(0, d)
-  sd  <- rep(1, d)
-  quad <- -0.5 * rowSums(ccd$z^2)
-  # A non-finite response identifies nothing: both readings decline together.
-  bad <- quad; bad[1L] <- NA_real_
-  na <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, bad, sd)
-  expect_true(is.na(na$misfit))
-  expect_true(is.na(na$offset))
-  # A design flat on one axis is rank deficient there: the residual is still a
-  # residual, but that axis's linear coefficient was never estimated, so the
-  # norm over the gradient declines instead of standing in for it.
-  z <- ccd$z; z[, d] <- 0
-  flat <- tulpa:::.joint_local_ccd_misfit(z, u_c, -0.5 * rowSums(z^2), sd)
-  expect_true(is.finite(flat$misfit))
-  expect_true(is.na(flat$offset))
-})
-
-test_that("a cell whose local quadratic does not hold is put back as a mass atom", {
-  # Gaussian copula with Gamma(2) marginals: correlated the same way as the
-  # quadratic target, skewed within the cell.
-  tg <- .lccd_gate_target(rho = 0.8, reach = 1.5, m = 3L, gamma_shape = 2)
-  off <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
-                                         colnames(tg$grid), tg$tags, tg$eval,
-                                         max_cells = 4L, skew_max = Inf)
-  on  <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
-                                         colnames(tg$grid), tg$tags, tg$eval,
-                                         max_cells = 4L)
-  # The regime is established first: unconditional refinement does place a cloud
-  # here, and its score is above the band.
-  expect_gt(off$info$n_cells_refined, 0L)
-  expect_gt(max(off$info$misfit), tulpa:::.nl_diag("gamma3_ok"))
-  # So the gate declines it, and says so.
-  expect_gt(on$info$n_cells_declined, 0L)
-  expect_equal(on$info$n_cells_refined,
-               off$info$n_cells_refined - on$info$n_cells_declined)
-  expect_true(all(on$info$misfit_declined >= on$info$skew_max))
-  expect_equal(on$info$skew_max, tulpa:::.nl_diag("gamma3_ok"))
-  # A declined cell still reports how far off-centre it sat: the offset is
-  # carried per cell on both sides of the gate (gcol33/tulpa#321).
-  expect_length(on$info$offset_declined, on$info$n_cells_declined)
-  expect_true(all(is.finite(on$info$offset_declined)))
-  expect_true(all(on$info$offset_declined >= 0))
-  expect_length(off$info$offset, off$info$n_cells_refined)
-  expect_true(all(is.finite(off$info$offset)))
-  # Every cell declined here, so the grid is the base grid again: same rows, no
-  # design weights, and nothing downstream reads it as a mixed support.
-  expect_equal(on$info$n_design_nodes, 0L)
-  expect_equal(on$joint_grid, tg$grid)
-  expect_equal(on$log_marginal, tg$lm)
-  expect_true(all(on$weight_kind == "mass"))
-  expect_identical(tulpa:::.nl_node_support("grid", on$weight_kind), "density")
-})
-
-test_that("the gate leaves a quadratic outer target's refinement untouched", {
-  tg <- .lccd_gate_target(rho = 0.8, reach = 3, m = 3L)
-  off <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
-                                         colnames(tg$grid), tg$tags, tg$eval,
-                                         max_cells = 4L, skew_max = Inf)
-  on  <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
-                                         colnames(tg$grid), tg$tags, tg$eval,
-                                         max_cells = 4L)
-  expect_gt(off$info$n_cells_refined, 0L)
-  expect_equal(on$info$n_cells_declined, 0L)
-  expect_equal(max(on$info$misfit), 0, tolerance = 1e-10)
-  # Zero misfit on a quadratic outer target says nothing about where in the cell
-  # its peak sat, and the offset is the number that does.
-  expect_length(on$info$offset, on$info$n_cells_refined)
-  expect_length(on$info$offset_declined, 0L)
-  expect_true(all(is.finite(on$info$offset)))
-  expect_equal(on$joint_grid, off$joint_grid)
-  expect_equal(on$log_marginal, off$log_marginal)
-  expect_equal(on$dnode, off$dnode)
-})
-
 # Gated against unconditional refinement on one target, scored the same way
 # `.lccd_gate_reads` scores the reads: mean absolute endpoint error of the
 # weighted quantile against the exact per-axis quantiles.
@@ -765,7 +347,447 @@ test_that("the gate leaves a quadratic outer target's refinement untouched", {
   b0 + drop(Z %*% g) + 0.5 * rowSums((Z %*% H) * Z)
 }
 
+skip_on_cran_budget()
+
+test_that("ccd_weights are a partition of unity (the conservation footing)", {
+  skip_on_cran_budget()
+  for (d in 2:5) {
+    ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
+    expect_equal(sum(ccd_weights(ccd)), 1, tolerance = 1e-12)
+  }
+})
+
+test_that("local CCD refinement conserves the total outer design weight", {
+  skip_on_cran_budget()
+  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
+  lv <- list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2))
+  gd <- .lccd_grid(lv, mu, s)
+  out <- tulpa:::.joint_local_ccd_refine(
+    joint_grid = gd$grid, log_marginal = gd$lm, modes = NULL, dnode = NULL,
+    latent_axes = c("a", "b"), tags = c(a = "identity", b = "identity"),
+    eval_nodes = .lccd_eval(mu, s), max_cells = 4L)
+  expect_false(is.null(out))
+  # Uniform tensor base: sum(dnode) == n_cells. Each refined cell is replaced by
+  # a block whose design weights sum back to the cell's, so the total is fixed.
+  expect_equal(sum(out$dnode), nrow(gd$grid), tolerance = 1e-9)
+  expect_true(out$info$n_cells_refined >= 1L)
+  expect_true(out$info$n_nodes_added > 0L)
+})
+
+test_that("local CCD repopulates a coarse peak cell, recovering collapsed SD", {
+  skip_on_cran_budget()
+  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
+  lv <- list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2))
+  gd <- .lccd_grid(lv, mu, s)
+  tags <- c(a = "identity", b = "identity")
+
+  w0 <- tulpa:::.joint_integration_weights(gd$lm, NULL)
+  sd_coarse <- .lccd_wsd(gd$grid[, "a"], w0)
+
+  # Dense reference on the same support: the moment a fine grid would report.
+  fine <- seq(-1, 2, length.out = 61L)
+  gdf <- .lccd_grid(list(a = fine, b = fine), mu, s)
+  wf  <- tulpa:::.joint_integration_weights(gdf$lm, NULL)
+  sd_dense <- .lccd_wsd(gdf$grid[, "a"], wf)
+
+  out <- tulpa:::.joint_local_ccd_refine(
+    joint_grid = gd$grid, log_marginal = gd$lm, modes = NULL, dnode = NULL,
+    latent_axes = c("a", "b"), tags = tags,
+    eval_nodes = .lccd_eval(mu, s), max_cells = 4L)
+  w1 <- tulpa:::.joint_integration_weights(out$log_marginal, out$dnode)
+  sd_ref <- .lccd_wsd(out$joint_grid[, "a"], w1)
+
+  expect_gt(sd_ref, sd_coarse)                                   # collapsed SD recovers
+  expect_lt(abs(sd_ref - sd_dense), abs(sd_coarse - sd_dense))   # toward the dense answer
+  expect_equal(.lccd_wmean(out$joint_grid[, "a"], w1), 0.5,
+               tolerance = 1e-6)                                 # symmetric design keeps the mean
+})
+
+test_that("greedy selection picks mutually non-adjacent cells", {
+  skip_on_cran_budget()
+  # Five cells in a chain on one axis (1-2-3-4-5).
+  up <- matrix(c(2L, 3L, 4L, 5L, NA), ncol = 1L)
+  dn <- matrix(c(NA, 1L, 2L, 3L, 4L), ncol = 1L)
+  w  <- c(0.10, 0.90, 0.20, 0.80, 0.15)   # peaks at 2 and 4, both adjacent to 3
+  sel <- tulpa:::.joint_local_ccd_select(cands = 1:5, w = w, up = up, dn = dn,
+                                         max_cells = 5L)
+  expect_true(all(c(2L, 4L) %in% sel))
+  expect_false(3L %in% sel)               # excluded: adjacent to both chosen
+  for (i in sel) for (k in sel) if (i != k) {
+    expect_false(k %in% c(up[i, ], dn[i, ]))
+  }
+})
+
+test_that("the selection ranks by weight by default, or by the mass a cell misplaces", {
+  skip_on_cran_budget()
+  mu <- c(0.2, 0.9); s <- c(0.6, 0.5)
+  lv <- list(a = c(-1.5, -0.5, 0.5, 1.5), b = c(-1.5, -0.5, 0.5, 1.5))
+  gd <- .lccd_grid(lv, mu, s)
+  U  <- as.matrix(gd$grid)
+  nb <- tulpa:::.joint_local_ccd_neighbors(U, gd$grid, 1:2)
+  w  <- tulpa:::.joint_integration_weights(gd$lm, NULL)
+  curv <- vector("list", nrow(U)); cands <- integer(0)
+  for (c in seq_len(nrow(U))) {
+    cc <- tulpa:::.joint_local_ccd_cell_curv(c, U, gd$lm, nb$up, nb$dn)
+    if (is.null(cc)) next
+    curv[[c]] <- cc; cands <- c(cands, c)
+  }
+  expect_gt(length(cands), 1L)
+  expect_identical(tulpa:::.joint_local_ccd_rank_score("weight", cands, w, curv), w)
+  sc <- tulpa:::.joint_local_ccd_rank_score("mass_moved", cands, w, curv)
+  lbr <- vapply(cands, function(c)
+    tulpa:::.joint_local_ccd_cell_box_mass(curv[[c]])$log_box_ratio, numeric(1))
+  expect_equal(sc[cands], w[cands] * abs(expm1(lbr)), tolerance = 1e-14)
+  expect_true(all(sc[-cands] == -Inf))
+  expect_error(tulpa:::.joint_local_ccd_rank_score("size", cands, w, curv))
+
+  # The default rank is the weight ranking, bit for bit.
+  args <- list(joint_grid = gd$grid, log_marginal = gd$lm, modes = NULL,
+               dnode = NULL, latent_axes = c("a", "b"),
+               tags = c(a = "identity", b = "identity"),
+               eval_nodes = .lccd_eval(mu, s), max_cells = 2L)
+  expect_identical(do.call(tulpa:::.joint_local_ccd_refine, args),
+                   do.call(tulpa:::.joint_local_ccd_refine,
+                           c(args, list(rank = "weight"))))
+})
+
+test_that("local CCD declines on NULL tags, the engage gate, and a monotone field", {
+  skip_on_cran_budget()
+  expect_false(tulpa:::.joint_local_ccd_engage(3L))
+  expect_true(tulpa:::.joint_local_ccd_engage(4L))
+
+  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
+  gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
+
+  expect_null(tulpa:::.joint_local_ccd_refine(
+    gd$grid, gd$lm, NULL, NULL, c("a", "b"), tags = NULL,
+    eval_nodes = .lccd_eval(mu, s)))
+
+  lm_mono <- gd$grid[, "a"] + gd$grid[, "b"]       # no interior peak
+  expect_null(tulpa:::.joint_local_ccd_refine(
+    gd$grid, lm_mono, NULL, NULL, c("a", "b"),
+    tags = c(a = "identity", b = "identity"),
+    eval_nodes = .lccd_eval(mu, s)))
+})
+
+test_that("local CCD carries inner modes through the splice", {
+  skip_on_cran_budget()
+  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
+  gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
+  n  <- nrow(gd$grid); n_x <- 3L
+  modes <- matrix(seq_len(n * n_x), n, n_x)
+  eval_with_modes <- function(theta_mat, warm) {
+    list(log_marginal = .lccd_true_lm(theta_mat, mu, s),
+         modes = matrix(0, nrow(theta_mat), n_x))
+  }
+  out <- tulpa:::.joint_local_ccd_refine(
+    gd$grid, gd$lm, modes = modes, dnode = NULL,
+    latent_axes = c("a", "b"), tags = c(a = "identity", b = "identity"),
+    eval_nodes = eval_with_modes, max_cells = 4L)
+  expect_false(is.null(out))
+  expect_equal(nrow(out$modes), nrow(out$joint_grid))
+  expect_equal(ncol(out$modes), n_x)
+  expect_false(anyNA(out$modes))
+})
+
+test_that("the cell's design scale is the marginal spread, not the conditional one", {
+  skip_on_cran_budget()
+  tg <- .lccd_corr(d = 4L, rho = 0.8)
+  nb <- tulpa:::.joint_local_ccd_neighbors(tg$grid, tg$grid, seq_len(4L))
+  ctr <- which(rowSums(abs(tg$grid)) == 0)
+  cc <- tulpa:::.joint_local_ccd_cell_curv(ctr, tg$grid, tg$lm, nb$up, nb$dn)
+
+  # The target is exactly quadratic, so both stencils are exact.
+  expect_equal(cc$sd, 1 / sqrt(diag(tg$Q)), tolerance = 1e-12)
+  expect_false(is.null(cc$sd_marginal))
+  expect_equal(cc$sd_marginal, sqrt(diag(tg$R)), tolerance = 1e-10)
+  # At rho = 0.8 in four dimensions the marginal spread is about twice the
+  # conditional one, which is the whole of gcol33/tulpa#316.
+  expect_equal(cc$sd_marginal / cc$sd, sqrt(diag(tg$Q) * diag(tg$R)),
+               tolerance = 1e-10)
+  expect_gt(min(cc$sd_marginal / cc$sd), 1.9)
+})
+
+test_that("a dominant refined cell reports the marginal spread it stands in for", {
+  skip_on_cran_budget()
+  exact <- diff(stats::qnorm(c(0.025, 0.975)))
+  for (rho in c(0.7, 0.8, 0.9)) {
+    tg <- .lccd_corr(d = 4L, rho = rho)
+    rf <- tulpa:::.joint_local_ccd_refine(
+      tg$grid, tg$lm, NULL, NULL, colnames(tg$grid), tg$tags, tg$eval,
+      max_cells = 4L)
+    expect_false(is.null(rf))
+
+    # The regime, asserted before the width is read: this cell carries
+    # essentially the whole posterior, so the neighbours the cloud is clamped
+    # against hold none of the truncated tail.
+    w <- tulpa:::.joint_integration_weights(rf$log_marginal, rf$dnode)
+    expect_gt(sum(w[rf$weight_kind == "design"]), 0.99)
+
+    # Measured from the conditional scale this replaces: 0.675 / 0.554 / 0.394
+    # of the exact width at these three correlations.
+    expect_equal(.lccd_mean_width(rf) / exact, 1, tolerance = 0.08)
+  }
+})
+
+test_that("the design scale is unchanged where the outer axes are uncorrelated", {
+  skip_on_cran_budget()
+  tg <- .lccd_corr(d = 4L, rho = 0)
+  nb <- tulpa:::.joint_local_ccd_neighbors(tg$grid, tg$grid, seq_len(4L))
+  ctr <- which(rowSums(abs(tg$grid)) == 0)
+  cc <- tulpa:::.joint_local_ccd_cell_curv(ctr, tg$grid, tg$lm, nb$up, nb$dn)
+  expect_equal(cc$sd_marginal, cc$sd, tolerance = 1e-10)
+
+  rf <- tulpa:::.joint_local_ccd_refine(
+    tg$grid, tg$lm, NULL, NULL, colnames(tg$grid), tg$tags, tg$eval,
+    max_cells = 4L)
+  expect_equal(.lccd_mean_width(rf) / diff(stats::qnorm(c(0.025, 0.975))),
+               1, tolerance = 0.02)
+})
+
+# --------------------------------------------------------------------------- #
+# Per-cell weight kind (gcol33/tulpa#311)                                      #
+# --------------------------------------------------------------------------- #
+
+test_that("the refined grid labels which cells carry a design weight", {
+  skip_on_cran_budget()
+  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
+  gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
+  out <- tulpa:::.joint_local_ccd_refine(
+    gd$grid, gd$lm, modes = NULL, dnode = NULL,
+    latent_axes = c("a", "b"), tags = c(a = "identity", b = "identity"),
+    eval_nodes = .lccd_eval(mu, s), max_cells = 4L)
+  expect_false(is.null(out))
+  expect_length(out$weight_kind, nrow(out$joint_grid))
+  expect_setequal(unique(out$weight_kind), c("mass", "design"))
+  # One label per row, and the design rows are exactly each refined cell's whole
+  # replacement cloud: the nodes added plus the centre that reuses the cell's
+  # own solve, which carries the design's centre weight rather than the cell's
+  # mass.
+  n_design <- out$info$n_nodes_added + out$info$n_cells_refined
+  expect_identical(sum(out$weight_kind == "design"), n_design)
+  expect_identical(out$info$n_design_nodes, n_design)
+  expect_identical(sum(out$weight_kind == "mass"),
+                   out$info$n_cells_before - out$info$n_cells_refined)
+  # The mass-labelled rows are the carried-over base cells, unchanged.
+  keep <- setdiff(seq_len(nrow(gd$grid)), out$info$cells)
+  expect_equal(out$joint_grid[out$weight_kind == "mass", , drop = FALSE],
+               gd$grid[keep, , drop = FALSE])
+})
+
+# --------------------------------------------------------------------------- #
+# What the per-axis interval was read off (gcol33/tulpa#317)                   #
+# --------------------------------------------------------------------------- #
+
+test_that("a heterogeneous weight kind names the support mixed", {
+  skip_on_cran_budget()
+  # `integration` describes a homogeneous support, and a locally refined grid
+  # reports "grid", so the integrator name alone reads it as a density one.
+  expect_identical(tulpa:::.nl_node_support("grid"), "density")
+  expect_identical(tulpa:::.nl_node_support("ccd"), "moment_rule")
+  expect_identical(tulpa:::.nl_node_support("grid", rep("mass", 4L)), "density")
+  expect_identical(tulpa:::.nl_node_support("ccd", rep("design", 4L)),
+                   "moment_rule")
+  expect_identical(tulpa:::.nl_node_support("grid", c("mass", "design", "mass")),
+                   "mixed")
+})
+
+test_that("the interval provenance carries the design share", {
+  skip_on_cran_budget()
+  w <- c(0.4, 0.1, 0.3, 0.2)
+  k <- c("mass", "design", "design", "mass")
+  p <- tulpa:::.nl_interval_provenance("grid", k, w)
+  expect_identical(p$read, "mixed")
+  expect_equal(p$design_mass, 0.4)
+  # A homogeneous support has no share to report: none of it is a moment rule
+  # read as a CDF on a density grid, all of it is on a CCD.
+  expect_equal(
+    tulpa:::.nl_interval_provenance("grid", rep("mass", 4L), w)$design_mass, 0)
+  expect_equal(
+    tulpa:::.nl_interval_provenance("ccd", rep("design", 4L), w)$design_mass, 1)
+})
+
+test_that("naming the support mixed leaves the reported interval unchanged", {
+  skip_on_cran_budget()
+  # The measurement behind that choice is in `.nl_summary_quantile`: against a
+  # converged tensor reference the weighted quantile beat every alternative read
+  # in both design_mass regimes, so the support name is what changes here, not
+  # the number.
+  set.seed(11L)
+  v <- sort(stats::rnorm(40L))
+  w <- stats::runif(40L); w <- w / sum(w)
+  probs <- c(0.025, 0.5, 0.975)
+  # Compared against the density dispatch itself, not against a hard-coded
+  # `outside` policy: the invariant is that the two supports take ONE `outside`
+  # construction, so it has to keep holding when that construction changes
+  # (gcol33/tulpa#353 moved it from "clamp" to "extend").
+  #
+  # `within` is the orthogonal field, and there the two supports part company:
+  # a refined grid's replacement clouds sit inside one base cell, so a Voronoi
+  # partition of its node set is not the design's own boxes and `mixed` declines
+  # the box-uniform default (gcol33/tulpa#357). Comparing at the chord read is
+  # what isolates the `outside` invariant from that decline.
+  expect_identical(
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "density", "chord"))
+  # The decline is recorded rather than silent, and it is what makes the two
+  # reads differ at the shipped default.
+  mixed_read <- tulpa:::.nl_summary_quantile_read(v, w, probs, "unbounded", "mixed")
+  expect_identical(mixed_read$within, "chord")
+  expect_identical(mixed_read$declined, "support_mixed")
+  expect_false(isTRUE(all.equal(
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "density"))))
+  # And it is NOT the moment read, which is what a design-weighted support takes.
+  expect_false(isTRUE(all.equal(
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "moment_rule"))))
+})
+
+# --------------------------------------------------------------------------- #
+# The engagement gate: refine only where the design's quadratic holds (#318)   #
+# --------------------------------------------------------------------------- #
+
+test_that("the local-quadratic misfit is zero on a quadratic and linear in the cubic", {
+  skip_on_cran_budget()
+  d <- 4L
+  ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
+  u_c <- rep(0, d)
+  sd  <- rep(1, d)
+  quad <- -0.5 * rowSums(ccd$z^2)
+  # A central composite design identifies a full quadratic exactly, so nothing is
+  # left over: the score cannot fire where the outer target is Gaussian in the
+  # transformed coordinate, whatever the correlation or the grid spacing.
+  expect_equal(tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, quad, sd)$misfit, 0,
+               tolerance = 1e-12)
+  # The least-squares residual is linear in the response, so a cubic term of
+  # twice the size scores exactly twice as high.
+  cub <- ccd$z[, 1L]^3
+  g1 <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, quad + cub / 6, sd)$misfit
+  g2 <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, quad + cub / 3, sd)$misfit
+  expect_gt(g1, 0)
+  expect_equal(g2, 2 * g1, tolerance = 1e-10)
+  # And it is invariant to the quadratic part it is measured against.
+  expect_equal(
+    tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, 3 - 2 * quad + cub / 6, sd)$misfit,
+    g1, tolerance = 1e-10)
+})
+
+test_that("the whitened gradient reads an off-centre cell the misfit cannot see", {
+  skip_on_cran_budget()
+  d <- 4L
+  ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
+  u_c <- rep(0, d)
+  sd  <- rep(1, d)
+  # A quadratic centred ON the cell: the design represents it exactly and the
+  # cell's coordinate is its peak, so both readings are zero.
+  at <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, -0.5 * rowSums(ccd$z^2), sd)
+  expect_equal(at$misfit, 0, tolerance = 1e-12)
+  expect_equal(at$offset, 0, tolerance = 1e-10)
+  # The same quadratic, peaked at `m` instead. It is still exactly quadratic in
+  # the whitened coordinate, so the design still represents it exactly and the
+  # misfit stays at zero however far off-centre the peak sits; the whitened
+  # gradient is `m` and its norm is what the offset reports.
+  for (m in list(c(0.4, 0, 0, 0), c(0.9, -0.6, 0.3, 0), c(-2, 1.5, -1, 0.5))) {
+    zc <- sweep(ccd$z, 2L, m, FUN = "-")
+    fit <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, -0.5 * rowSums(zc^2), sd)
+    expect_equal(fit$misfit, 0, tolerance = 1e-10)
+    expect_equal(fit$offset, sqrt(sum(m^2)), tolerance = 1e-8)
+  }
+  # And it is standardized: the same displacement read on a cell whose marginal
+  # spread is `s` per axis reports `|p| / s`, not `|p|`.
+  s <- c(0.5, 2, 1, 4)
+  p <- c(0.45, -1.2, 0.3, 2)
+  u_nodes <- sweep(ccd$z, 2L, s, FUN = "*")
+  lm_nodes <- -0.5 * rowSums(sweep(sweep(u_nodes, 2L, p, FUN = "-"),
+                                   2L, s, FUN = "/")^2)
+  scaled <- tulpa:::.joint_local_ccd_misfit(u_nodes, u_c, lm_nodes, s)
+  expect_equal(scaled$misfit, 0, tolerance = 1e-10)
+  expect_equal(scaled$offset, sqrt(sum((p / s)^2)), tolerance = 1e-8)
+})
+
+test_that("the offset declines with the fit rather than reporting an unestimated one", {
+  skip_on_cran_budget()
+  d <- 4L
+  ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
+  u_c <- rep(0, d)
+  sd  <- rep(1, d)
+  quad <- -0.5 * rowSums(ccd$z^2)
+  # A non-finite response identifies nothing: both readings decline together.
+  bad <- quad; bad[1L] <- NA_real_
+  na <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, bad, sd)
+  expect_true(is.na(na$misfit))
+  expect_true(is.na(na$offset))
+  # A design flat on one axis is rank deficient there: the residual is still a
+  # residual, but that axis's linear coefficient was never estimated, so the
+  # norm over the gradient declines instead of standing in for it.
+  z <- ccd$z; z[, d] <- 0
+  flat <- tulpa:::.joint_local_ccd_misfit(z, u_c, -0.5 * rowSums(z^2), sd)
+  expect_true(is.finite(flat$misfit))
+  expect_true(is.na(flat$offset))
+})
+
+test_that("a cell whose local quadratic does not hold is put back as a mass atom", {
+  skip_on_cran_budget()
+  # Gaussian copula with Gamma(2) marginals: correlated the same way as the
+  # quadratic target, skewed within the cell.
+  tg <- .lccd_gate_target(rho = 0.8, reach = 1.5, m = 3L, gamma_shape = 2)
+  off <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
+                                         colnames(tg$grid), tg$tags, tg$eval,
+                                         max_cells = 4L, skew_max = Inf)
+  on  <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
+                                         colnames(tg$grid), tg$tags, tg$eval,
+                                         max_cells = 4L)
+  # The regime is established first: unconditional refinement does place a cloud
+  # here, and its score is above the band.
+  expect_gt(off$info$n_cells_refined, 0L)
+  expect_gt(max(off$info$misfit), tulpa:::.nl_diag("gamma3_ok"))
+  # So the gate declines it, and says so.
+  expect_gt(on$info$n_cells_declined, 0L)
+  expect_equal(on$info$n_cells_refined,
+               off$info$n_cells_refined - on$info$n_cells_declined)
+  expect_true(all(on$info$misfit_declined >= on$info$skew_max))
+  expect_equal(on$info$skew_max, tulpa:::.nl_diag("gamma3_ok"))
+  # A declined cell still reports how far off-centre it sat: the offset is
+  # carried per cell on both sides of the gate (gcol33/tulpa#321).
+  expect_length(on$info$offset_declined, on$info$n_cells_declined)
+  expect_true(all(is.finite(on$info$offset_declined)))
+  expect_true(all(on$info$offset_declined >= 0))
+  expect_length(off$info$offset, off$info$n_cells_refined)
+  expect_true(all(is.finite(off$info$offset)))
+  # Every cell declined here, so the grid is the base grid again: same rows, no
+  # design weights, and nothing downstream reads it as a mixed support.
+  expect_equal(on$info$n_design_nodes, 0L)
+  expect_equal(on$joint_grid, tg$grid)
+  expect_equal(on$log_marginal, tg$lm)
+  expect_true(all(on$weight_kind == "mass"))
+  expect_identical(tulpa:::.nl_node_support("grid", on$weight_kind), "density")
+})
+
+test_that("the gate leaves a quadratic outer target's refinement untouched", {
+  skip_on_cran_budget()
+  tg <- .lccd_gate_target(rho = 0.8, reach = 3, m = 3L)
+  off <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
+                                         colnames(tg$grid), tg$tags, tg$eval,
+                                         max_cells = 4L, skew_max = Inf)
+  on  <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
+                                         colnames(tg$grid), tg$tags, tg$eval,
+                                         max_cells = 4L)
+  expect_gt(off$info$n_cells_refined, 0L)
+  expect_equal(on$info$n_cells_declined, 0L)
+  expect_equal(max(on$info$misfit), 0, tolerance = 1e-10)
+  # Zero misfit on a quadratic outer target says nothing about where in the cell
+  # its peak sat, and the offset is the number that does.
+  expect_length(on$info$offset, on$info$n_cells_refined)
+  expect_length(on$info$offset_declined, 0L)
+  expect_true(all(is.finite(on$info$offset)))
+  expect_equal(on$joint_grid, off$joint_grid)
+  expect_equal(on$log_marginal, off$log_marginal)
+  expect_equal(on$dnode, off$dnode)
+})
+
 test_that("mode_gain recovers 0.5 g' (-H)^-1 g from the design's own coefficients", {
+  skip_on_cran_budget()
   d <- 4L
   ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
   u_c <- rep(0, d)
@@ -821,6 +843,7 @@ test_that("mode_gain recovers 0.5 g' (-H)^-1 g from the design's own coefficient
 })
 
 test_that("mode_gain declines where the fitted quadratic has no interior peak", {
+  skip_on_cran_budget()
   d <- 4L
   ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
   u_c <- rep(0, d)
@@ -846,6 +869,7 @@ test_that("mode_gain declines where the fitted quadratic has no interior peak", 
 })
 
 test_that("a refined cell carries mode_gain beside the offset it scales", {
+  skip_on_cran_budget()
   tg <- .lccd_gate_target(rho = 0.8, reach = 3, m = 3L)
   rf <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
                                         colnames(tg$grid), tg$tags, tg$eval,
@@ -865,6 +889,7 @@ test_that("a refined cell carries mode_gain beside the offset it scales", {
 # --------------------------------------------------------------------------- #
 
 test_that("each refined cell reports its coarse-vs-refined mass comparison", {
+  skip_on_cran_budget()
   mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
   gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
   out <- tulpa:::.joint_local_ccd_refine(
@@ -906,6 +931,7 @@ test_that("each refined cell reports its coarse-vs-refined mass comparison", {
 })
 
 test_that("a declined cell reports the mass comparison its nodes already paid for", {
+  skip_on_cran_budget()
   tg <- .lccd_gate_target(rho = 0.8, reach = 1.5, m = 3L, gamma_shape = 2)
   on <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
                                         colnames(tg$grid), tg$tags, tg$eval,
@@ -931,6 +957,7 @@ test_that("a declined cell reports the mass comparison its nodes already paid fo
 })
 
 test_that("the mass ratio is stable where one node dominates the cell", {
+  skip_on_cran_budget()
   # A node sitting several nats above the cell's own coordinate is the regime the
   # ratio is read in, and the one a naive sum of exponentials loses.
   delta <- c(0.1, 0.3, 0.6)

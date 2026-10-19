@@ -1,6 +1,20 @@
+
+test_that("tulpa_variogram prints a header and its bins", {
+  set.seed(1)
+  co <- cbind(runif(30), runif(30))
+  vg <- tulpa_variogram(rnorm(30), co, n_bins = 5L)
+  out <- capture.output(res <- print(vg))
+  expect_identical(res, vg)
+  expect_match(out[1], sprintf("Empirical semivariogram: %d distance bins",
+                               nrow(vg)), fixed = TRUE)
+  expect_true(any(grepl("n_pairs", out, fixed = TRUE)))
+})
+
+skip_on_cran_budget()
 # Print methods of the user-facing classes that carry one (gcol33/tulpa#954).
 
 test_that("tulpa_family prints its name, processes and extra parameters", {
+  skip_on_cran_budget()
   fam <- tulpa_family(
     name = "gaussian",
     simulate_fn = function(eta, params, n_obs, ...) {
@@ -16,6 +30,7 @@ test_that("tulpa_family prints its name, processes and extra parameters", {
 })
 
 test_that("tulpa_hyper_axis_spec prints its span, scale, support and prior", {
+  skip_on_cran_budget()
   ax <- hyper_axis_spec("alpha", grid = c(0, 0.5, 1), log_scale = TRUE,
                         bounds = c(0, Inf), atom_mass = 0.5)
   out <- capture.output(res <- print(ax))
@@ -36,6 +51,7 @@ test_that("tulpa_hyper_axis_spec prints its span, scale, support and prior", {
 })
 
 test_that("a temporal AR(p) block prints its order, then the tgmrf body", {
+  skip_on_cran_budget()
   blk <- temporal_ar(rep(seq_len(12L), 2L), p = 3L)
   out <- capture.output(res <- print(blk))
   expect_identical(res, blk)
@@ -44,18 +60,8 @@ test_that("a temporal AR(p) block prints its order, then the tgmrf body", {
   expect_true(any(grepl("<tgmrf>", out, fixed = TRUE)))
 })
 
-test_that("tulpa_variogram prints a header and its bins", {
-  set.seed(1)
-  co <- cbind(runif(30), runif(30))
-  vg <- tulpa_variogram(rnorm(30), co, n_bins = 5L)
-  out <- capture.output(res <- print(vg))
-  expect_identical(res, vg)
-  expect_match(out[1], sprintf("Empirical semivariogram: %d distance bins",
-                               nrow(vg)), fixed = TRUE)
-  expect_true(any(grepl("n_pairs", out, fixed = TRUE)))
-})
-
 test_that("the posterior summary tables print a header with the draw count", {
+  skip_on_cran_budget()
   tab <- data.frame(time_idx = 1:2, time = 1:2, mean = c(0.1, -0.1),
                     sd = c(1, 1), q2.5 = c(-2, -2), q97.5 = c(2, 2))
   cases <- list(
@@ -83,6 +89,7 @@ test_that("the posterior summary tables print a header with the draw count", {
 })
 
 test_that("each nested-Laplace class prints its own header", {
+  skip_on_cran_budget()
   testthat::local_mocked_bindings(
     .print_nested_laplace_body = function(x) invisible(x),
     .print_fit_body = function(x) invisible(x),

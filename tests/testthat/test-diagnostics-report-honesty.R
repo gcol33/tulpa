@@ -11,7 +11,10 @@ u  <- rnorm(20, 0, 0.6)
 yp <- rpois(n, exp(0.3 + 0.4 * x + u[g]))
 dd <- data.frame(x = x, yp = yp, g = factor(g), s = factor(g))
 
+skip_on_cran_budget()
+
 test_that("the resolver prefers real names and falls back positionally", {
+  skip_on_cran_budget()
   fit <- list(param_names = c("a", "b", "c"))
   expect_identical(tulpa:::.tulpa_draw_names(c("x", "y", "z"), fit, 3L),
                    c("x", "y", "z"))

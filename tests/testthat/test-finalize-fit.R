@@ -1,3 +1,5 @@
+
+skip_on_cran_budget()
 # Direct-call fitters get the same tulpa_fit contract as tulpa()-dispatched
 # ones (gcol33/tulpa#102): the tulpa_fit class (so the generic S3 methods
 # dispatch), the fixed-effect layout, and an explicit posterior-provenance tag
@@ -8,6 +10,7 @@
 # pass).
 
 test_that(".finalize_fit attaches class, layout, and provenance", {
+  skip_on_cran_budget()
   # Bare list gains the tulpa_fit class and a registry-derived draws_kind.
   f <- .finalize_fit(list(means = 1:2), backend = "laplace",
                      n_fixed = 2L, fixed_names = c("a", "b"))

@@ -15,15 +15,6 @@ make_corr_re_data <- function(seed = 3L, G = 50L, npg = 14L) {
 }
 
 
-test_that("re_cov backends are registered, reachable, and forceable", {
-  expect_true(all(c("re_cov_nested", "re_cov_gibbs") %in% ALL_BACKENDS))
-  expect_true(backend_is_reachable("re_cov_nested"))
-  expect_true(backend_is_reachable("re_cov_gibbs"))
-  expect_equal(get_backend_tier("re_cov_nested")$tier, 2L)
-  expect_equal(get_backend_tier("re_cov_gibbs")$tier, 1L)
-})
-
-
 # --- multi-term: (1 + x | g) + (1 | h), correlated block + scalar block ------
 make_multi_re_data <- function(seed = 7L, G = 40L, H = 25L, npg = 12L) {
   set.seed(seed)
@@ -38,6 +29,18 @@ make_multi_re_data <- function(seed = 7L, G = 40L, H = 25L, npg = 12L) {
     uh[as.integer(h)]
   data.frame(y = rbinom(N, 1L, plogis(eta)), x = x, g = g, h = h)
 }
+
+skip_on_cran_budget()
+
+
+test_that("re_cov backends are registered, reachable, and forceable", {
+  skip_on_cran_budget()
+  expect_true(all(c("re_cov_nested", "re_cov_gibbs") %in% ALL_BACKENDS))
+  expect_true(backend_is_reachable("re_cov_nested"))
+  expect_true(backend_is_reachable("re_cov_gibbs"))
+  expect_equal(get_backend_tier("re_cov_nested")$tier, 2L)
+  expect_equal(get_backend_tier("re_cov_gibbs")$tier, 1L)
+})
 
 skip_on_cran()
 

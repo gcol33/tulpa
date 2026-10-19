@@ -37,22 +37,6 @@ test_that("the fixture itself runs, so a rejection below is the guard talking", 
   expect_no_error(.pg_spatial_call(.pg_fixture()))
 })
 
-test_that("an out-of-range spatial index is rejected, not used as an offset", {
-  f <- .pg_fixture()
-  bad <- f$spatial_group; bad[7] <- f$n_spatial_units + 1L
-  expect_error(.pg_spatial_call(f, spatial_group = bad),
-               "spatial_group")
-
-  zero <- f$spatial_group; zero[3] <- 0L
-  expect_error(.pg_spatial_call(f, spatial_group = zero), "spatial_group")
-
-  neg <- f$spatial_group; neg[1] <- -2L
-  expect_error(.pg_spatial_call(f, spatial_group = neg), "spatial_group")
-
-  na <- f$spatial_group; na[5] <- NA_integer_
-  expect_error(.pg_spatial_call(f, spatial_group = na), "spatial_group")
-})
-
 test_that("a spatial index of the wrong length is rejected", {
   f <- .pg_fixture()
   expect_error(.pg_spatial_call(f, spatial_group = f$spatial_group[-1]),
@@ -64,17 +48,6 @@ test_that("an out-of-range random-effect index is rejected", {
   bad <- f$re_group; bad[2] <- f$n_re_groups + 3L
   expect_error(.pg_spatial_call(f, re_group = bad), "re_group")
   expect_error(.pg_spatial_call(f, re_group = f$re_group[-1]), "length")
-})
-
-test_that("a neighbour list that disagrees with n_neighbors is rejected", {
-  # n_neighbors bounds the loop while adj_list supplies the entries, so a
-  # disagreement reads past the end of the neighbour vector.
-  f <- .pg_fixture()
-  wrong <- f$n_neighbors; wrong[2] <- wrong[2] + 3L
-  expect_error(.pg_spatial_call(f, n_neighbors = wrong), "neighbour|n_neighbors")
-
-  short <- f$adj_list; short[[3]] <- integer(0)
-  expect_error(.pg_spatial_call(f, adj_list = short), "neighbour|n_neighbors")
 })
 
 test_that("an out-of-range adjacency entry is rejected", {
@@ -119,7 +92,39 @@ test_that("a non-positive thinning or an inverted warmup is rejected", {
     "n_iter")
 })
 
+skip_on_cran_budget()
+
+test_that("an out-of-range spatial index is rejected, not used as an offset", {
+  skip_on_cran_budget()
+  f <- .pg_fixture()
+  bad <- f$spatial_group; bad[7] <- f$n_spatial_units + 1L
+  expect_error(.pg_spatial_call(f, spatial_group = bad),
+               "spatial_group")
+
+  zero <- f$spatial_group; zero[3] <- 0L
+  expect_error(.pg_spatial_call(f, spatial_group = zero), "spatial_group")
+
+  neg <- f$spatial_group; neg[1] <- -2L
+  expect_error(.pg_spatial_call(f, spatial_group = neg), "spatial_group")
+
+  na <- f$spatial_group; na[5] <- NA_integer_
+  expect_error(.pg_spatial_call(f, spatial_group = na), "spatial_group")
+})
+
+test_that("a neighbour list that disagrees with n_neighbors is rejected", {
+  skip_on_cran_budget()
+  # n_neighbors bounds the loop while adj_list supplies the entries, so a
+  # disagreement reads past the end of the neighbour vector.
+  f <- .pg_fixture()
+  wrong <- f$n_neighbors; wrong[2] <- wrong[2] + 3L
+  expect_error(.pg_spatial_call(f, n_neighbors = wrong), "neighbour|n_neighbors")
+
+  short <- f$adj_list; short[[3]] <- integer(0)
+  expect_error(.pg_spatial_call(f, adj_list = short), "neighbour|n_neighbors")
+})
+
 test_that("the temporal kernel validates its time index", {
+  skip_on_cran_budget()
   f <- .pg_fixture()
   n_times <- 6L
   t_idx <- as.integer(rep(seq_len(n_times), length.out = length(f$y)))
@@ -137,6 +142,7 @@ test_that("the temporal kernel validates its time index", {
 })
 
 test_that("the negative-binomial spatial kernel validates the same arguments", {
+  skip_on_cran_budget()
   f <- .pg_fixture()
   y_ct <- rpois(length(f$y), 3)
   call_nb <- function(...) {
@@ -164,6 +170,7 @@ test_that("the negative-binomial spatial kernel validates the same arguments", {
 })
 
 test_that("a design without an intercept column is rejected by the centring kernels", {
+  skip_on_cran_budget()
   # Centring a latent effect and adding the removed level to beta[0] leaves eta
   # unchanged only under an all-ones first column, so every kernel that centres
   # refuses a design without one rather than shifting the posterior silently.

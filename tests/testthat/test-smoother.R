@@ -7,7 +7,10 @@
 # fitted smooth unchanged and drops its importance-sample inner solves.
 .sm_ctl <- list(diagnose_k = FALSE)
 
+skip_on_cran_budget()
+
 test_that("the parser strips s() from the fixed formula and records the call", {
+  skip_on_cran_budget()
   p <- tulpa_parse_formula(y ~ x1 + s(elev) + s(prec, k = 15) + (1 | g))
   expect_equal(p$n_smooth_terms, 2L)
   fx <- attr(stats::terms(p$fixed_formula), "term.labels")
@@ -16,6 +19,7 @@ test_that("the parser strips s() from the fixed formula and records the call", {
 })
 
 test_that(".smooth_block_from_call bins and validates", {
+  skip_on_cran_budget()
   d <- data.frame(x = seq(-1, 1, length.out = 200), z = letters[1:4])
 
   b <- tulpa:::.smooth_block_from_call(quote(s(x)), d, globalenv())
@@ -48,6 +52,7 @@ test_that(".smooth_block_from_call bins and validates", {
 })
 
 test_that("unsupported smoother combinations error clearly", {
+  skip_on_cran_budget()
   d <- data.frame(x = runif(60), time = rep(1:10, 6),
                   lon = rnorm(60), lat = rnorm(60))
   d$y <- rbinom(60, 1, 0.5)

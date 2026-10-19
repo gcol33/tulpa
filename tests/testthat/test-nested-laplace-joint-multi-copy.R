@@ -22,36 +22,6 @@
          n_spatial_units = n_s)
 }
 
-test_that("duplicate copy block targets error", {
-    set.seed(7)
-    n_s <- 10L
-    adj <- .chain_adj_copy(n_s)
-    N <- 40L
-    s <- sample.int(n_s, N, replace = TRUE)
-    X <- cbind(1, rnorm(N))
-    arm <- list(y = rnorm(N), n_trials = rep(1L, N), X = X,
-                re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
-                family = "gaussian", phi = 1.0)
-    icar_block <- list(type = "icar",
-                       n_spatial_units = adj$n_spatial_units,
-                       adj_row_ptr = adj$adj_row_ptr,
-                       adj_col_idx = adj$adj_col_idx,
-                       n_neighbors = adj$n_neighbors,
-                       sigma_grid = c(0.5, 1.0),
-                       spatial_idx = list(s, s))
-    expect_error(
-        tulpa_nested_laplace_joint(
-            responses = list(a = arm, b = arm),
-            prior = list(icar_block, icar_block),
-            copy = list(
-                list(arm = "b", block = 1L, alpha_grid = c(0.5, 1.0)),
-                list(arm = "b", block = 1L, alpha_grid = c(0.5, 1.0))
-            )
-        ),
-        "distinct block"
-    )
-})
-
 test_that("copy on an unsupported block type (lf) errors", {
     set.seed(17)
     n_s <- 10L
@@ -85,6 +55,39 @@ test_that("copy on an unsupported block type (lf) errors", {
     }
     W
 }
+
+skip_on_cran_budget()
+
+test_that("duplicate copy block targets error", {
+    skip_on_cran_budget()
+    set.seed(7)
+    n_s <- 10L
+    adj <- .chain_adj_copy(n_s)
+    N <- 40L
+    s <- sample.int(n_s, N, replace = TRUE)
+    X <- cbind(1, rnorm(N))
+    arm <- list(y = rnorm(N), n_trials = rep(1L, N), X = X,
+                re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
+                family = "gaussian", phi = 1.0)
+    icar_block <- list(type = "icar",
+                       n_spatial_units = adj$n_spatial_units,
+                       adj_row_ptr = adj$adj_row_ptr,
+                       adj_col_idx = adj$adj_col_idx,
+                       n_neighbors = adj$n_neighbors,
+                       sigma_grid = c(0.5, 1.0),
+                       spatial_idx = list(s, s))
+    expect_error(
+        tulpa_nested_laplace_joint(
+            responses = list(a = arm, b = arm),
+            prior = list(icar_block, icar_block),
+            copy = list(
+                list(arm = "b", block = 1L, alpha_grid = c(0.5, 1.0)),
+                list(arm = "b", block = 1L, alpha_grid = c(0.5, 1.0))
+            )
+        ),
+        "distinct block"
+    )
+})
 
 skip_on_cran()
 

@@ -54,7 +54,10 @@ test_that("the dropped-mass bound counts every kept cell and the joined grid", {
                  exp(-8 + e) / (exp(1) + exp(0) + exp(-1) + exp(-2)))
 })
 
+skip_on_cran_budget()
+
 test_that("a round's screen record measures the cells on the merged grid", {
+    skip_on_cran_budget()
     specs <- list(list(name = "a", log_scale = FALSE, refinable = TRUE,
                        grid = c(0, 1, 2)))
     tg <- matrix(c(0, 1, 2), ncol = 1, dimnames = list(NULL, "a"))

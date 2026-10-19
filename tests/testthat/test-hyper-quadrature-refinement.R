@@ -58,22 +58,6 @@ REFINE <- list(adaptive_grid = TRUE, adaptive_grid_edge_thresh = 1e-6,
                var_of_means_consistency = TRUE)
 PINNED <- list(adaptive_grid = FALSE, var_of_means_consistency = FALSE)
 
-test_that("two grids that resolve the measure agree on the posterior", {
-  # The invariance the issue asks for: a coarse grid refined after seeing the
-  # data and a fine grid pinned before it integrate ONE measure, so they report
-  # one posterior. Before the nodes carried integration weights, the added
-  # nodes reweighted the prior instead and the reported SD of a refinable axis
-  # moved by more than 100 %.
-  set.seed(620)
-  y <- stats::rnorm(60, 0, 1.3)
-  refined <- fit_sigma(y, slab_grid(7L), REFINE)
-  fine    <- fit_sigma(y, slab_grid(21L), PINNED)
-  expect_equal(unname(refined$theta_mean[["sigma"]]),
-               unname(fine$theta_mean[["sigma"]]), tolerance = 0.02)
-  expect_equal(unname(refined$theta_sd[["sigma"]]),
-               unname(fine$theta_sd[["sigma"]]), tolerance = 0.15)
-})
-
 test_that("nodes outside the declared support are not proposed", {
   # The support is a prior choice, so refinement may only reduce the quadrature
   # error inside it. An axis whose posterior presses on the ceiling reports the
@@ -95,19 +79,6 @@ test_that("an evenly spaced grid keeps the equal weights it always had", {
                           bounds = c(0, Inf))
   w <- .hyper_axis_level_weights(lev, spec)
   expect_equal(unname(w), rep(1 / 6, 6), tolerance = 1e-12)
-})
-
-test_that("tulpa_hyper_grid refuses an unknown control knob", {
-  # The consistency-pass trigger moved from a ratio against the parabola to an
-  # ESS on the weights, so the retired spelling has to say so rather than be
-  # ignored.
-  expect_true("var_of_means_min_ess" %in% .CONTROL_KEYS$hyper_grid)
-  expect_false("var_of_means_tolerance" %in% .CONTROL_KEYS$hyper_grid)
-  expect_error(
-    tulpa_hyper_grid(list(hyper_axis_spec("sigma", grid = c(1, 2))),
-                     function(hypers) list(log_marginal = 0),
-                     control = list(var_of_means_tolerance = 0.7)),
-    "Unknown control knob")
 })
 
 # --------------------------------------------------------------------------- #
@@ -137,22 +108,6 @@ add_levels <- function(g, ref, axis, pts) {
   list(g = rbind(g, new), ref = c(ref, rep(axis, nrow(new))))
 }
 
-test_that("a new level is laid in every row of the grid", {
-  lm <- rep(-10, 25L); lm[13L] <- 0
-  pk <- .hyper_tensor_level_cells(LEVEL_TENSOR, lm, "sigma", c(0.2, 0.4))
-  expect_identical(nrow(pk$new_cells), 2L * length(LEVEL_AXES$phi_pos))
-  expect_setequal(pk$new_cells[, "phi_pos"], LEVEL_AXES$phi_pos)
-  expect_identical(pk$warm_start_idx, 13L)
-  # Rows through a level an earlier pass added to another axis are rows too.
-  x <- add_levels(LEVEL_TENSOR, rep("", 25L), "phi_pos", 2.5)
-  pk2 <- .hyper_tensor_level_cells(x$g, c(lm, rep(-10, 5L)), "sigma", 0.2)
-  expect_true(2.5 %in% pk2$new_cells[, "phi_pos"])
-  # An unsolved cell holds no row open.
-  lm2 <- lm; lm2[LEVEL_TENSOR[, "phi_pos"] == LEVEL_AXES$phi_pos[5]] <- -Inf
-  pk3 <- .hyper_tensor_level_cells(LEVEL_TENSOR, lm2, "sigma", 0.2)
-  expect_false(LEVEL_AXES$phi_pos[5] %in% pk3$new_cells[, "phi_pos"])
-})
-
 test_that("a new level skips only the rows holding the tail of the mass", {
   lm <- rep(0, 25L)
   row_mass <- c(0.5, 0.3, 0.1989, 1e-3, 1e-4)
@@ -171,7 +126,90 @@ test_that("a new level skips only the rows holding the tail of the mass", {
   }
 })
 
+test_that("a solved level grows into a row the screen dropped", {
+  phi <- LEVEL_AXES$phi_pos
+  # As above, with every cell of the third phi row screened out: the row is a
+  # row of the tensor whose mass at the new level nothing has read, so the
+  # level still follows its mass there.
+  g <- rbind(LEVEL_TENSOR, cbind(sigma = 0.2, phi_pos = phi[1:2]))
+  ref <- c(rep("", 25L), "sigma", "sigma")
+  lm <- c(rep(-50, 25L), -50, 0)
+  lm[LEVEL_TENSOR[, "phi_pos"] == phi[3]] <- -Inf
+  grow <- .hyper_level_frontier(g, lm, FLAT_LEVEL_SPECS, ref, "sigma", 0.2)
+  expect_equal(unname(grow[, "phi_pos"]), phi[3])
+})
+
+# Correlated two-axis posterior: log sigma and a location m, so a refinement on
+# sigma at the modal row is the configuration where a mask or a stand-in term
+# would move the reported m.
+two_axis_inner <- function(hypers) {
+  u <- log(as.numeric(hypers[["sigma"]])); m <- as.numeric(hypers[["m"]])
+  z1 <- (u - 0.2) / 0.35; z2 <- (m - 0.6) / 0.8
+  list(log_marginal = -0.5 * (z1^2 - 2 * 0.7 * z1 * z2 + z2^2) / (1 - 0.7^2))
+}
+fit_two_axis <- function(n_sigma, control) {
+  specs <- list(
+    hyper_axis_spec("sigma", grid = exp(seq(-1.5, 1.9, length.out = n_sigma)),
+                    log_scale = TRUE, bounds = c(0, Inf), refinable = TRUE,
+                    log_prior = function(s) 0, slab_bounds = exp(c(-1.8, 2.2))),
+    hyper_axis_spec("m", grid = seq(-3, 4, length.out = 15L),
+                    log_prior = function(x) stats::dnorm(x, 0, 3, log = TRUE)))
+  tulpa_hyper_grid(specs, two_axis_inner, combine = "none", n_draws = 0L,
+                   control = control)
+}
+
+skip_on_cran_budget()
+
+test_that("two grids that resolve the measure agree on the posterior", {
+  skip_on_cran_budget()
+  # The invariance the issue asks for: a coarse grid refined after seeing the
+  # data and a fine grid pinned before it integrate ONE measure, so they report
+  # one posterior. Before the nodes carried integration weights, the added
+  # nodes reweighted the prior instead and the reported SD of a refinable axis
+  # moved by more than 100 %.
+  set.seed(620)
+  y <- stats::rnorm(60, 0, 1.3)
+  refined <- fit_sigma(y, slab_grid(7L), REFINE)
+  fine    <- fit_sigma(y, slab_grid(21L), PINNED)
+  expect_equal(unname(refined$theta_mean[["sigma"]]),
+               unname(fine$theta_mean[["sigma"]]), tolerance = 0.02)
+  expect_equal(unname(refined$theta_sd[["sigma"]]),
+               unname(fine$theta_sd[["sigma"]]), tolerance = 0.15)
+})
+
+test_that("tulpa_hyper_grid refuses an unknown control knob", {
+  skip_on_cran_budget()
+  # The consistency-pass trigger moved from a ratio against the parabola to an
+  # ESS on the weights, so the retired spelling has to say so rather than be
+  # ignored.
+  expect_true("var_of_means_min_ess" %in% .CONTROL_KEYS$hyper_grid)
+  expect_false("var_of_means_tolerance" %in% .CONTROL_KEYS$hyper_grid)
+  expect_error(
+    tulpa_hyper_grid(list(hyper_axis_spec("sigma", grid = c(1, 2))),
+                     function(hypers) list(log_marginal = 0),
+                     control = list(var_of_means_tolerance = 0.7)),
+    "Unknown control knob")
+})
+
+test_that("a new level is laid in every row of the grid", {
+  skip_on_cran_budget()
+  lm <- rep(-10, 25L); lm[13L] <- 0
+  pk <- .hyper_tensor_level_cells(LEVEL_TENSOR, lm, "sigma", c(0.2, 0.4))
+  expect_identical(nrow(pk$new_cells), 2L * length(LEVEL_AXES$phi_pos))
+  expect_setequal(pk$new_cells[, "phi_pos"], LEVEL_AXES$phi_pos)
+  expect_identical(pk$warm_start_idx, 13L)
+  # Rows through a level an earlier pass added to another axis are rows too.
+  x <- add_levels(LEVEL_TENSOR, rep("", 25L), "phi_pos", 2.5)
+  pk2 <- .hyper_tensor_level_cells(x$g, c(lm, rep(-10, 5L)), "sigma", 0.2)
+  expect_true(2.5 %in% pk2$new_cells[, "phi_pos"])
+  # An unsolved cell holds no row open.
+  lm2 <- lm; lm2[LEVEL_TENSOR[, "phi_pos"] == LEVEL_AXES$phi_pos[5]] <- -Inf
+  pk3 <- .hyper_tensor_level_cells(LEVEL_TENSOR, lm2, "sigma", 0.2)
+  expect_false(LEVEL_AXES$phi_pos[5] %in% pk3$new_cells[, "phi_pos"])
+})
+
 test_that("a solved level grows into the rows next to the ones holding its mass", {
+  skip_on_cran_budget()
   phi <- LEVEL_AXES$phi_pos
   # sigma 0.2 laid in the first two phi rows; its mass sits in the second.
   g <- rbind(LEVEL_TENSOR, cbind(sigma = 0.2, phi_pos = phi[1:2]))
@@ -186,20 +224,8 @@ test_that("a solved level grows into the rows next to the ones holding its mass"
   expect_null(.hyper_level_frontier(g, lm, FLAT_LEVEL_SPECS, ref, "sigma", 0.2))
 })
 
-test_that("a solved level grows into a row the screen dropped", {
-  phi <- LEVEL_AXES$phi_pos
-  # As above, with every cell of the third phi row screened out: the row is a
-  # row of the tensor whose mass at the new level nothing has read, so the
-  # level still follows its mass there.
-  g <- rbind(LEVEL_TENSOR, cbind(sigma = 0.2, phi_pos = phi[1:2]))
-  ref <- c(rep("", 25L), "sigma", "sigma")
-  lm <- c(rep(-50, 25L), -50, 0)
-  lm[LEVEL_TENSOR[, "phi_pos"] == phi[3]] <- -Inf
-  grow <- .hyper_level_frontier(g, lm, FLAT_LEVEL_SPECS, ref, "sigma", 0.2)
-  expect_equal(unname(grow[, "phi_pos"]), phi[3])
-})
-
 test_that("interior levels are measured by the product rule over all levels", {
+  skip_on_cran_budget()
   lp <- log(LEVEL_AXES$phi_pos)
   x <- add_levels(LEVEL_TENSOR, rep("", 25L), "phi_pos",
                   exp((lp[2] + lp[3]) / 2))
@@ -216,6 +242,7 @@ test_that("interior levels are measured by the product rule over all levels", {
 })
 
 test_that("an unrefined grid reports the support of its levels", {
+  skip_on_cran_budget()
   for (specs in list(FLAT_LEVEL_SPECS,
                      .joint_axis_specs_from_grid(LEVEL_TENSOR))) {
     sup <- .hyper_grid_supports(LEVEL_TENSOR, specs)
@@ -235,6 +262,7 @@ test_that("an unrefined grid reports the support of its levels", {
 })
 
 test_that("densifying beside an outer node leaves the span the declared nodes had", {
+  skip_on_cran_budget()
   lp <- log(LEVEL_AXES$phi_pos); ls <- log(LEVEL_AXES$sigma)
   x <- add_levels(LEVEL_TENSOR, rep("", 25L), "phi_pos",
                   exp(c((lp[4] + 3 * lp[5]) / 4, (3 * lp[1] + lp[2]) / 4)))
@@ -257,6 +285,7 @@ test_that("densifying beside an outer node leaves the span the declared nodes ha
 })
 
 test_that("an extension widens the span to the added level's own mirror", {
+  skip_on_cran_budget()
   lp <- log(LEVEL_AXES$phi_pos); ls <- log(LEVEL_AXES$sigma)
   tensor <- .hyper_grid_supports(LEVEL_TENSOR, FLAT_LEVEL_SPECS)
   area0 <- prod(vapply(tensor, function(s) diff(log(s)), numeric(1)))
@@ -279,6 +308,7 @@ test_that("an extension widens the span to the added level's own mirror", {
 })
 
 test_that("an added level does not move a prior read off the declared nodes", {
+  skip_on_cran_budget()
   # The copy scale's exponential rate is set by its largest declared node, so
   # a level a pass laid past it must not reach the specs rebuilt from the grid.
   tg <- as.matrix(expand.grid(sigma = LEVEL_AXES$sigma,
@@ -290,25 +320,6 @@ test_that("an added level does not move a prior read off the declared nodes", {
                tolerance = 1e-14)
   expect_false(isTRUE(all.equal(lq, .nl_grid_log_quad(x$g))))
 })
-
-# Correlated two-axis posterior: log sigma and a location m, so a refinement on
-# sigma at the modal row is the configuration where a mask or a stand-in term
-# would move the reported m.
-two_axis_inner <- function(hypers) {
-  u <- log(as.numeric(hypers[["sigma"]])); m <- as.numeric(hypers[["m"]])
-  z1 <- (u - 0.2) / 0.35; z2 <- (m - 0.6) / 0.8
-  list(log_marginal = -0.5 * (z1^2 - 2 * 0.7 * z1 * z2 + z2^2) / (1 - 0.7^2))
-}
-fit_two_axis <- function(n_sigma, control) {
-  specs <- list(
-    hyper_axis_spec("sigma", grid = exp(seq(-1.5, 1.9, length.out = n_sigma)),
-                    log_scale = TRUE, bounds = c(0, Inf), refinable = TRUE,
-                    log_prior = function(s) 0, slab_bounds = exp(c(-1.8, 2.2))),
-    hyper_axis_spec("m", grid = seq(-3, 4, length.out = 15L),
-                    log_prior = function(x) stats::dnorm(x, 0, 3, log = TRUE)))
-  tulpa_hyper_grid(specs, two_axis_inner, combine = "none", n_draws = 0L,
-                   control = control)
-}
 
 skip_on_cran()
 

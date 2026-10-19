@@ -5,7 +5,17 @@
 
 rhs_labels <- function(pf) attr(terms(pf$fixed_formula), "term.labels")
 
+test_that("invalid special terms error clearly", {
+  expect_error(tulpa_parse_formula(y ~ spatial(a) + spatial(b)),
+               "At most one spatial")
+  expect_error(tulpa_parse_formula(y ~ spatial(a + b)),
+               "one bare column name")
+})
+
+skip_on_cran_budget()
+
 test_that("spatial(col) is recorded and stripped from the fixed formula", {
+  skip_on_cran_budget()
   pf <- tulpa_parse_formula(y ~ x + spatial(region))
   expect_identical(pf$spatial_var, "region")
   expect_null(pf$temporal_var)
@@ -14,6 +24,7 @@ test_that("spatial(col) is recorded and stripped from the fixed formula", {
 })
 
 test_that("temporal(col) is recorded and stripped", {
+  skip_on_cran_budget()
   pf <- tulpa_parse_formula(y ~ x + temporal(week))
   expect_identical(pf$temporal_var, "week")
   expect_null(pf$spatial_var)
@@ -21,6 +32,7 @@ test_that("temporal(col) is recorded and stripped", {
 })
 
 test_that("spatial + temporal + RE coexist in one formula", {
+  skip_on_cran_budget()
   pf <- tulpa_parse_formula(y ~ x + spatial(region) + temporal(week) + (1 | site))
   expect_identical(pf$spatial_var, "region")
   expect_identical(pf$temporal_var, "week")
@@ -29,16 +41,10 @@ test_that("spatial + temporal + RE coexist in one formula", {
 })
 
 test_that("plain formulas are unaffected (no regression)", {
+  skip_on_cran_budget()
   pf <- tulpa_parse_formula(y ~ x1 + x2 + (1 | g))
   expect_null(pf$spatial_var)
   expect_null(pf$temporal_var)
   expect_setequal(rhs_labels(pf), c("x1", "x2"))
   expect_equal(pf$n_re_terms, 1L)
-})
-
-test_that("invalid special terms error clearly", {
-  expect_error(tulpa_parse_formula(y ~ spatial(a) + spatial(b)),
-               "At most one spatial")
-  expect_error(tulpa_parse_formula(y ~ spatial(a + b)),
-               "one bare column name")
 })

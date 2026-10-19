@@ -15,7 +15,28 @@ test_that("the nine tulpaObs-357 doors are exported", {
   expect_true(all(doors %in% getNamespaceExports("tulpa")))
 })
 
+test_that("tulpa_batched_pareto_k(#831) matches .nested_is_pareto_k", {
+  lt <- function(U) -0.5 * rowSums(U^2)
+  set.seed(2)
+  got <- tulpa_batched_pareto_k(theta_hat = c(0, 0), L_scale = diag(2),
+                                 log_target_batched = lt, n_samples = 300,
+                                 Z = matrix(stats::rnorm(600), 300, 2))
+  set.seed(2)
+  ref <- tulpa:::.nested_is_pareto_k(theta_hat = c(0, 0), L_scale = diag(2),
+                                     log_target_batched = lt, n_samples = 300,
+                                     Z = matrix(stats::rnorm(600), 300, 2))
+  expect_identical(got, ref)
+})
+
+test_that("tulpa_joint_grid_batch(#834) is exported and validates its argument", {
+  expect_error(tulpa_joint_grid_batch(list()), "non-empty list")
+  expect_error(tulpa_joint_grid_batch(list(1)), "non-empty list")
+})
+
+skip_on_cran_budget()
+
 test_that("tulpa_grid_axis(#829) matches the internal default axis", {
+  skip_on_cran_budget()
   expect_identical(tulpa_grid_axis("field_sd"), tulpa:::.nl_grid_axis("field_sd"))
   expect_identical(tulpa_grid_axis("copy_alpha", n = 9L),
                     tulpa:::.nl_grid_axis("copy_alpha", 9L))
@@ -23,6 +44,7 @@ test_that("tulpa_grid_axis(#829) matches the internal default axis", {
 })
 
 test_that("tulpa_spde_precision_Q / tulpa_spde_log_hyperprior(#830) match the internals", {
+  skip_on_cran_budget()
   set.seed(1)
   n <- 25
   L <- cbind(lon = stats::runif(n, 0, 10), lat = stats::runif(n, 0, 10))
@@ -39,20 +61,8 @@ test_that("tulpa_spde_precision_Q / tulpa_spde_log_hyperprior(#830) match the in
   expect_identical(lp1, lp2)
 })
 
-test_that("tulpa_batched_pareto_k(#831) matches .nested_is_pareto_k", {
-  lt <- function(U) -0.5 * rowSums(U^2)
-  set.seed(2)
-  got <- tulpa_batched_pareto_k(theta_hat = c(0, 0), L_scale = diag(2),
-                                 log_target_batched = lt, n_samples = 300,
-                                 Z = matrix(stats::rnorm(600), 300, 2))
-  set.seed(2)
-  ref <- tulpa:::.nested_is_pareto_k(theta_hat = c(0, 0), L_scale = diag(2),
-                                     log_target_batched = lt, n_samples = 300,
-                                     Z = matrix(stats::rnorm(600), 300, 2))
-  expect_identical(got, ref)
-})
-
 test_that("tulpa_hyper_copy_slab_density / tulpa_hyper_check_copy_slab (#833) match the internals", {
+  skip_on_cran_budget()
   f1 <- tulpa_hyper_copy_slab_density(3)
   f2 <- tulpa:::.hyper_copy_slab_density(3)
   expect_equal(f1(c(0, 1, 2)), f2(c(0, 1, 2)))
@@ -61,11 +71,6 @@ test_that("tulpa_hyper_copy_slab_density / tulpa_hyper_check_copy_slab (#833) ma
   expect_identical(tulpa_hyper_check_copy_slab(NULL), "exponential")
   expect_identical(tulpa_hyper_check_copy_slab("flat"), "flat")
   expect_error(tulpa_hyper_check_copy_slab("bogus"), "copy_slab")
-})
-
-test_that("tulpa_joint_grid_batch(#834) is exported and validates its argument", {
-  expect_error(tulpa_joint_grid_batch(list()), "non-empty list")
-  expect_error(tulpa_joint_grid_batch(list(1)), "non-empty list")
 })
 
 skip_on_cran()

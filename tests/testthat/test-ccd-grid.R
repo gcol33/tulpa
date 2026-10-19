@@ -1,25 +1,3 @@
-# CCD grid generator: shape, point counts, and z -> theta mapping.
-
-test_that("ccd_grid k=1 returns 3 points (centre + 2 axial)", {
-  g <- ccd_grid(1L)
-  expect_equal(g$n_points, 3L)
-  expect_equal(dim(g$z), c(3L, 1L))
-  expect_equal(sum(g$kind == "center"), 1L)
-  expect_equal(sum(g$kind == "axial"), 2L)
-  expect_equal(sum(g$kind == "factorial"), 0L)
-})
-
-test_that("ccd_grid k=2 has 1 + 4 + 4 = 9 points (full factorial)", {
-  g <- ccd_grid(2L)
-  expect_equal(g$n_points, 9L)
-  expect_equal(dim(g$z), c(9L, 2L))
-  expect_equal(sum(g$kind == "factorial"), 4L)
-  # All non-centre points lie on the same sphere of radius f_0
-  norms <- sqrt(rowSums(g$z^2))
-  non_center <- norms[g$kind != "center"]
-  expect_equal(non_center, rep(g$f_0, length(non_center)),
-               tolerance = 1e-12)
-})
 
 test_that("ccd_grid k=7 falls back to Resolution-V half-fraction", {
   g <- ccd_grid(7L)
@@ -46,7 +24,34 @@ test_that("ccd_grid f_0 controls the sphere radius", {
                rep(1.5, g$n_points - 1L), tolerance = 1e-12)
 })
 
+skip_on_cran_budget()
+# CCD grid generator: shape, point counts, and z -> theta mapping.
+
+test_that("ccd_grid k=1 returns 3 points (centre + 2 axial)", {
+  skip_on_cran_budget()
+  g <- ccd_grid(1L)
+  expect_equal(g$n_points, 3L)
+  expect_equal(dim(g$z), c(3L, 1L))
+  expect_equal(sum(g$kind == "center"), 1L)
+  expect_equal(sum(g$kind == "axial"), 2L)
+  expect_equal(sum(g$kind == "factorial"), 0L)
+})
+
+test_that("ccd_grid k=2 has 1 + 4 + 4 = 9 points (full factorial)", {
+  skip_on_cran_budget()
+  g <- ccd_grid(2L)
+  expect_equal(g$n_points, 9L)
+  expect_equal(dim(g$z), c(9L, 2L))
+  expect_equal(sum(g$kind == "factorial"), 4L)
+  # All non-centre points lie on the same sphere of radius f_0
+  norms <- sqrt(rowSums(g$z^2))
+  non_center <- norms[g$kind != "center"]
+  expect_equal(non_center, rep(g$f_0, length(non_center)),
+               tolerance = 1e-12)
+})
+
 test_that("ccd_to_theta applies affine map and log_scale", {
+  skip_on_cran_budget()
   g <- ccd_grid(2L, f_0 = 1)
   theta_hat <- c(2, 0.5)
   L <- diag(c(0.3, 0.2))
@@ -73,6 +78,7 @@ test_that("ccd_to_theta applies affine map and log_scale", {
 })
 
 test_that("ccd_to_theta validates dimensions", {
+  skip_on_cran_budget()
   g <- ccd_grid(2L)
   expect_error(ccd_to_theta(g$z, theta_hat = c(0), diag(2)),
                "length k")
@@ -84,6 +90,7 @@ test_that("ccd_to_theta validates dimensions", {
 })
 
 test_that("ccd_weights matches the corrected R-INLA reference values", {
+  skip_on_cran_budget()
   # Corrected R-INLA formula (fixes the Rue et al. 2009 typo), standardized
   # f0 = 1.1: w = 1/((np-1)(1 + e^{-m f0^2/2}(f0^2-1))), w0 = 1-(np-1)w. These
   # constants are the function's output; the *correctness* property (Gaussian
@@ -105,6 +112,7 @@ test_that("ccd_weights matches the corrected R-INLA reference values", {
 })
 
 test_that("ccd_weights reproduce N(0, I) moments (the integration check)", {
+  skip_on_cran_budget()
   # The whole point of the design weights: on a standardized Gaussian posterior
   # the CCD quadrature must recover mean 0 and unit variance. W_k ~ Delta_k * pi.
   for (m in c(2L, 3L, 6L)) {

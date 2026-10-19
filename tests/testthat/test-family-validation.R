@@ -5,7 +5,10 @@ test_that(".validate_family_phi is a no-op for families without dispersion", {
   expect_silent(.validate_family_phi("not_a_family", -5))
 })
 
+skip_on_cran_budget()
+
 test_that(".validate_family_counts rejects non-integer / negative counts", {
+  skip_on_cran_budget()
   for (fam in c("poisson", "binomial", "neg_binomial_2")) {
     expect_error(.validate_family_counts(fam, c(0, 1, 2.5)), "integer", info = fam)
     expect_error(.validate_family_counts(fam, c(0, -1, 2)),  "integer", info = fam)
@@ -27,6 +30,7 @@ test_that(".validate_family_counts rejects non-integer / negative counts", {
 # `family = "Gamma"` (the stats::Gamma() spelling) reaching the registry as an
 # unresolved string, rather than the "gamma" it means (gcol33/tulpa#806).
 test_that(".canonical_family resolves case only as a last resort", {
+  skip_on_cran_budget()
   expect_equal(.canonical_family("Gamma"), "gamma")
   expect_equal(.canonical_family("GAMMA"), "gamma")
   expect_equal(.canonical_family("Gamma_log"), "gamma_log")

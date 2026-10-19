@@ -22,7 +22,10 @@
        n_neighbors = as.integer(nn))
 }
 
+skip_on_cran_budget()
+
 test_that("fit_spde accepts the screening knobs its entry can now reach", {
+  skip_on_cran_budget()
   keys <- tulpa:::.CONTROL_KEYS$spde
   for (k in c("prune", "prune_tol", "prune_log_gap", "screen_iters",
               "fitted_var", "subspace_debias", "cila")) {

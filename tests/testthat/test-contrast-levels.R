@@ -12,7 +12,17 @@ test_that("a one-level factor in the fixed effects is named", {
   )
 })
 
+test_that("a factor with two levels is not refused", {
+  d$hab <- factor(rep(c("A", "B"), 30))
+  parsed <- tulpa_parse_formula(y ~ x + hab)
+  md <- tulpa_build_model_data(parsed, d)
+  expect_equal(ncol(md$X), 3L)
+})
+
+skip_on_cran_budget()
+
 test_that("a one-level character or logical column is named too", {
+  skip_on_cran_budget()
   d$chr <- "k"
   d$flag <- TRUE
   expect_error(
@@ -26,16 +36,10 @@ test_that("a one-level character or logical column is named too", {
 })
 
 test_that("a one-level factor in a random-slope term is named", {
+  skip_on_cran_budget()
   expect_error(
     tulpa(y ~ x + (1 + hab | g), data = d, family = "binomial",
           mode = "laplace", sigma_re = 1),
     "`hab` in a random-slope term"
   )
-})
-
-test_that("a factor with two levels is not refused", {
-  d$hab <- factor(rep(c("A", "B"), 30))
-  parsed <- tulpa_parse_formula(y ~ x + hab)
-  md <- tulpa_build_model_data(parsed, d)
-  expect_equal(ncol(md$X), 3L)
 })

@@ -43,30 +43,10 @@ test_that("the GP sampler spec is accepted at the shapes it declares", {
     expect_type(.layout_with(.gp_spec()), "list")
 })
 
-test_that("a neighbour table whose shape disagrees with nn is named", {
-    sp <- .gp_spec()
-    sp$nn_idx <- matrix(0L, 6L, 1L)          # nn says 2
-    expect_error(.layout_with(sp), "nn_idx is 6 x 1; must be 6 x 2")
-
-    sp <- .gp_spec()
-    sp$nn_dist <- matrix(0, 3L, 2L)          # n_loc says 6
-    expect_error(.layout_with(sp), "nn_dist is 3 x 2; must be 6 x 2")
-})
-
 test_that("the neighbour-pair distance block is checked against n_loc * nn * nn", {
     sp <- .gp_spec()
     sp$nn_neighbor_dist <- numeric(6L * 2L)   # missing the second nn factor
     expect_error(.layout_with(sp), "length\\(nn_neighbor_dist\\)")
-})
-
-test_that("the ordering is checked for length and for range", {
-    sp <- .gp_spec()
-    sp$nn_order <- seq_len(3L) - 1L
-    expect_error(.layout_with(sp), "length\\(nn_order\\)")
-
-    sp <- .gp_spec()
-    sp$nn_order_inv[2L] <- 99L
-    expect_error(.layout_with(sp), "nn_order_inv\\[2\\]")
 })
 
 test_that("the random-effect term arrays must describe the same number of terms", {
@@ -116,41 +96,6 @@ test_that("the random-effect term arrays must describe the same number of terms"
     ))
 }
 
-test_that("a well-formed tgmrf block spec builds", {
-    expect_identical(cpp_test_tgmrf_block_spec(.tgmrf_block()), 4L)
-})
-
-test_that("the tgmrf CSC frame is checked against n_latent", {
-    expect_error(
-        cpp_test_tgmrf_block_spec(.tgmrf_block(mutate = function(s) {
-            s$Q_csc_i_per_grid[[1L]] <- s$Q_csc_i_per_grid[[1L]][-1L]
-            s
-        })),
-        "Q_csc_i_per_grid"
-    )
-    expect_error(
-        cpp_test_tgmrf_block_spec(.tgmrf_block(mutate = function(s) {
-            s$Q_csc_i_per_grid[[1L]][1L] <- s$n_latent
-            s
-        })),
-        "0-based row index"
-    )
-})
-
-test_that("an empty per-grid list is refused rather than read at grid point 0", {
-    expect_error(
-        cpp_test_tgmrf_block_spec(.tgmrf_block(mutate = function(s) {
-            s$Q_csc_p_per_grid <- list()
-            s$Q_csc_i_per_grid <- list()
-            s$Q_csc_x_per_grid <- list()
-            s$logdet_Q_per_grid <- numeric(0)
-            s$log_prior_theta_per_grid <- numeric(0)
-            s
-        })),
-        "at least one outer-grid point"
-    )
-})
-
 test_that("the symbolic frame is the union over grid points", {
     # SparseHessianBuilder::add discards an out-of-frame write, so a frame taken
     # from grid point 1 alone would silently drop what a later grid point holds
@@ -169,4 +114,66 @@ test_that("the symbolic frame is the union over grid points", {
     # The off-diagonal pairs of grid point 2 are in the frame even though grid
     # point 1 does not carry them.
     expect_true(all(paste(2:4, 1:3) %in% paste(pat$row, pat$col)))
+})
+
+skip_on_cran_budget()
+
+test_that("a neighbour table whose shape disagrees with nn is named", {
+    skip_on_cran_budget()
+    sp <- .gp_spec()
+    sp$nn_idx <- matrix(0L, 6L, 1L)          # nn says 2
+    expect_error(.layout_with(sp), "nn_idx is 6 x 1; must be 6 x 2")
+
+    sp <- .gp_spec()
+    sp$nn_dist <- matrix(0, 3L, 2L)          # n_loc says 6
+    expect_error(.layout_with(sp), "nn_dist is 3 x 2; must be 6 x 2")
+})
+
+test_that("the ordering is checked for length and for range", {
+    skip_on_cran_budget()
+    sp <- .gp_spec()
+    sp$nn_order <- seq_len(3L) - 1L
+    expect_error(.layout_with(sp), "length\\(nn_order\\)")
+
+    sp <- .gp_spec()
+    sp$nn_order_inv[2L] <- 99L
+    expect_error(.layout_with(sp), "nn_order_inv\\[2\\]")
+})
+
+test_that("a well-formed tgmrf block spec builds", {
+    skip_on_cran_budget()
+    expect_identical(cpp_test_tgmrf_block_spec(.tgmrf_block()), 4L)
+})
+
+test_that("the tgmrf CSC frame is checked against n_latent", {
+    skip_on_cran_budget()
+    expect_error(
+        cpp_test_tgmrf_block_spec(.tgmrf_block(mutate = function(s) {
+            s$Q_csc_i_per_grid[[1L]] <- s$Q_csc_i_per_grid[[1L]][-1L]
+            s
+        })),
+        "Q_csc_i_per_grid"
+    )
+    expect_error(
+        cpp_test_tgmrf_block_spec(.tgmrf_block(mutate = function(s) {
+            s$Q_csc_i_per_grid[[1L]][1L] <- s$n_latent
+            s
+        })),
+        "0-based row index"
+    )
+})
+
+test_that("an empty per-grid list is refused rather than read at grid point 0", {
+    skip_on_cran_budget()
+    expect_error(
+        cpp_test_tgmrf_block_spec(.tgmrf_block(mutate = function(s) {
+            s$Q_csc_p_per_grid <- list()
+            s$Q_csc_i_per_grid <- list()
+            s$Q_csc_x_per_grid <- list()
+            s$logdet_Q_per_grid <- numeric(0)
+            s$log_prior_theta_per_grid <- numeric(0)
+            s
+        })),
+        "at least one outer-grid point"
+    )
 })

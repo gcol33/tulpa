@@ -44,7 +44,10 @@ st_iv_cond_at <- function(f, log_tau) {
   max(e) / min(e)
 }
 
+skip_on_cran_budget()
+
 test_that("mass_matrix = 'gmrf_margin' parses and is distinct from 'gmrf'", {
+  skip_on_cran_budget()
   f <- st_iv_fixture()
   fit <- cpp_test_st_iv_nuts(
     f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,

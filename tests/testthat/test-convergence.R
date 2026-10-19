@@ -29,7 +29,46 @@ pool_chain_major <- function(arr) {
 }
 
 
+test_that("constant parameters yield NA diagnostics, not errors", {
+  arr <- make_draws_array(niter = 200L, nchain = 2L, npar = 2L)
+  arr[, , 2L] <- 3.5                                   # constant parameter
+  fit <- structure(list(draws = arr), class = "tulpa_fit")
+  diag <- diagnostics(fit)
+  const_row <- diag[diag$parameter == "theta2", ]
+  expect_true(is.na(const_row$rhat))
+  expect_true(is.na(const_row$ess_bulk))
+})
+
+
+test_that("multi-chain rhat sees between-chain offset that one chain misses", {
+  # Build chains with a large between-chain mean shift: pooled multi-chain
+  # Rhat must flag it; a single chain (split only) should not.
+  arr <- make_draws_array(niter = 500L, nchain = 4L, npar = 1L, phi = 0.3)
+  for (m in seq_len(4L)) arr[, m, 1L] <- arr[, m, 1L] + (m - 1) * 2.0
+  pooled <- pool_chain_major(arr)
+
+  diag_mc <- diagnostics(
+    structure(list(draws = pooled, n_chains = 4L), class = "tulpa_fit"))
+  diag_1c <- diagnostics(
+    structure(list(draws = arr[, 1L, , drop = FALSE]), class = "tulpa_fit"))
+
+  expect_gt(diag_mc$rhat, 1.5)            # offset chains: clearly unconverged
+  expect_lt(diag_1c$rhat, 1.1)            # one well-mixed chain: fine
+})
+
+
+test_that("select_main_params drops bracketed-index entries", {
+  pn <- c("sigma", "phi", "u[10]", "w[3]", "(Intercept)")
+  expect_identical(select_main_params(pn), c("sigma", "phi", "(Intercept)"))
+  # falls back to the full vector if everything is an indexed entry
+  expect_identical(select_main_params(c("u[1]", "u[2]")), c("u[1]", "u[2]"))
+})
+
+skip_on_cran_budget()
+
+
 test_that("rhat takes the max of bulk and folded split-Rhat", {
+  skip_on_cran_budget()
   skip_if_not_installed("posterior")
   arr <- make_draws_array()
   fit <- structure(list(draws = arr), class = "tulpa_fit")
@@ -49,6 +88,7 @@ test_that("rhat takes the max of bulk and folded split-Rhat", {
 
 
 test_that("default diagnostics() columns are stable", {
+  skip_on_cran_budget()
   arr <- make_draws_array(niter = 200L, nchain = 2L, npar = 2L)
   fit <- structure(list(draws = arr), class = "tulpa_fit")
   diag <- diagnostics(fit)
@@ -56,18 +96,8 @@ test_that("default diagnostics() columns are stable", {
 })
 
 
-test_that("constant parameters yield NA diagnostics, not errors", {
-  arr <- make_draws_array(niter = 200L, nchain = 2L, npar = 2L)
-  arr[, , 2L] <- 3.5                                   # constant parameter
-  fit <- structure(list(draws = arr), class = "tulpa_fit")
-  diag <- diagnostics(fit)
-  const_row <- diag[diag$parameter == "theta2", ]
-  expect_true(is.na(const_row$rhat))
-  expect_true(is.na(const_row$ess_bulk))
-})
-
-
 test_that("tulpa_draws_array recognises all chain layouts", {
+  skip_on_cran_budget()
   arr <- make_draws_array(niter = 100L, nchain = 3L, npar = 2L)
 
   # (a) already a 3D array
@@ -96,35 +126,11 @@ test_that("tulpa_draws_array recognises all chain layouts", {
   expect_null(tulpa_draws_array(structure(list(), class = "tulpa_fit")))
 })
 
-
-test_that("multi-chain rhat sees between-chain offset that one chain misses", {
-  # Build chains with a large between-chain mean shift: pooled multi-chain
-  # Rhat must flag it; a single chain (split only) should not.
-  arr <- make_draws_array(niter = 500L, nchain = 4L, npar = 1L, phi = 0.3)
-  for (m in seq_len(4L)) arr[, m, 1L] <- arr[, m, 1L] + (m - 1) * 2.0
-  pooled <- pool_chain_major(arr)
-
-  diag_mc <- diagnostics(
-    structure(list(draws = pooled, n_chains = 4L), class = "tulpa_fit"))
-  diag_1c <- diagnostics(
-    structure(list(draws = arr[, 1L, , drop = FALSE]), class = "tulpa_fit"))
-
-  expect_gt(diag_mc$rhat, 1.5)            # offset chains: clearly unconverged
-  expect_lt(diag_1c$rhat, 1.1)            # one well-mixed chain: fine
-})
-
-
-test_that("select_main_params drops bracketed-index entries", {
-  pn <- c("sigma", "phi", "u[10]", "w[3]", "(Intercept)")
-  expect_identical(select_main_params(pn), c("sigma", "phi", "(Intercept)"))
-  # falls back to the full vector if everything is an indexed entry
-  expect_identical(select_main_params(c("u[1]", "u[2]")), c("u[1]", "u[2]"))
-})
-
 # gcol33/tulpa#875 / #878: a chain with bulk-ESS in single digits printed clean
 # intervals, and only an opt-in diagnostic said otherwise. The front door now
 # checks every chain fit against a floor and warns, and print() repeats it.
 test_that("an unmixed chain warns at fit time and says so when printed", {
+  skip_on_cran_budget()
   set.seed(7L)
   # A random walk: every draw carries the last one, so bulk-ESS is tiny.
   rw <- cbind(a = cumsum(rnorm(1000L)), b = rnorm(1000L))
@@ -148,6 +154,7 @@ test_that("an unmixed chain warns at fit time and says so when printed", {
 })
 
 test_that("every backend declares a draws-provenance (emits) class", {
+  skip_on_cran_budget()
   emits <- vapply(BACKEND_REGISTRY, function(e) e$emits %||% NA_character_,
                   character(1))
   expect_false(anyNA(emits))
@@ -160,6 +167,7 @@ test_that("every backend declares a draws-provenance (emits) class", {
 })
 
 test_that("draws-kind resolves from tag, registry, or unknown-as-chain", {
+  skip_on_cran_budget()
   expect_true(.tulpa_is_chain(
     structure(list(backend = "mala"), class = "tulpa_fit")))
   expect_false(.tulpa_is_chain(
@@ -171,6 +179,7 @@ test_that("draws-kind resolves from tag, registry, or unknown-as-chain", {
 })
 
 test_that("chain diagnostics are withheld on a non-chain (approximation) fit", {
+  skip_on_cran_budget()
   set.seed(1)
   draws <- matrix(rnorm(2000), 1000, 2, dimnames = list(NULL, c("a", "b")))
   chain <- structure(list(draws = draws, backend = "mala", n_chains = 2L),

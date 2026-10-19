@@ -13,7 +13,10 @@ tempered_gauss <- function(mu, st, b, sp = 10) {
        mean_loglik = sum(-0.5 * ((m - mu)^2 + v) / st^2))
 }
 
+skip_on_cran_budget()
+
 test_that("wbic.default is minus the mean per-draw log-likelihood total", {
+  skip_on_cran_budget()
   set.seed(1)
   ll <- matrix(rnorm(50 * 8, -1), 50, 8)
   w <- wbic(ll)
@@ -29,6 +32,7 @@ test_that("wbic.default is minus the mean per-draw log-likelihood total", {
 })
 
 test_that("wbic.default refuses what has no WBIC temperature", {
+  skip_on_cran_budget()
   expect_error(wbic(matrix(-1, 10, 2)), "n >= 3")
   expect_error(wbic("a"), "numeric draws x observations")
   expect_error(wbic(matrix(c(NA, -1), 4, 3)), "NA at")

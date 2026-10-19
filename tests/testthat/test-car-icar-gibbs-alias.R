@@ -1,21 +1,3 @@
-# spatial_car() (the exported intrinsic-CAR / ICAR constructor, proper = FALSE)
-# returns type = "car". The nested-Laplace path already treats "car" as the
-# same field as a bare `list(type = "icar", ...)` (.NL_FRONTDOOR_AREAL,
-# .spatial_spec_to_nl_prior()), but dispatch_gibbs_spatial() and auto's
-# Gibbs-eligibility check matched only the literal "icar", so mode = "gibbs"
-# refused a spatial_car() spec and auto routed it to nested Laplace instead of
-# the Polya-Gamma Gibbs sampler the equivalent bare list reached
-# (gcol33/tulpa#819). .areal_gibbs_type() (R/spatial_car.R) is the one alias
-# both call sites now read.
-
-test_that(".areal_gibbs_type() aliases only 'car', leaving every other type alone", {
-  expect_equal(tulpa:::.areal_gibbs_type("car"), "icar")
-  for (t in c("icar", "bym2", "rsr", "car_proper", "gp", "nngp",
-             "multiscale", "multiscale_gp", "")) {
-    expect_equal(tulpa:::.areal_gibbs_type(t), t)
-  }
-  expect_null(tulpa:::.areal_gibbs_type(NULL))
-})
 
 test_that("auto routes a spatial_car() binomial model to Gibbs, matching a bare icar list", {
   sel_car <- tulpa:::auto_select_mode(
@@ -35,6 +17,27 @@ test_that("auto routes a spatial_car() binomial model to Gibbs, matching a bare 
     has_spatial = TRUE, has_temporal = FALSE, has_latent = FALSE,
     spatial_type = "car_proper")
   expect_equal(sel_car_proper$backend, "nested_laplace")
+})
+
+skip_on_cran_budget()
+# spatial_car() (the exported intrinsic-CAR / ICAR constructor, proper = FALSE)
+# returns type = "car". The nested-Laplace path already treats "car" as the
+# same field as a bare `list(type = "icar", ...)` (.NL_FRONTDOOR_AREAL,
+# .spatial_spec_to_nl_prior()), but dispatch_gibbs_spatial() and auto's
+# Gibbs-eligibility check matched only the literal "icar", so mode = "gibbs"
+# refused a spatial_car() spec and auto routed it to nested Laplace instead of
+# the Polya-Gamma Gibbs sampler the equivalent bare list reached
+# (gcol33/tulpa#819). .areal_gibbs_type() (R/spatial_car.R) is the one alias
+# both call sites now read.
+
+test_that(".areal_gibbs_type() aliases only 'car', leaving every other type alone", {
+  skip_on_cran_budget()
+  expect_equal(tulpa:::.areal_gibbs_type("car"), "icar")
+  for (t in c("icar", "bym2", "rsr", "car_proper", "gp", "nngp",
+             "multiscale", "multiscale_gp", "")) {
+    expect_equal(tulpa:::.areal_gibbs_type(t), t)
+  }
+  expect_null(tulpa:::.areal_gibbs_type(NULL))
 })
 
 skip_on_cran()

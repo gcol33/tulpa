@@ -38,7 +38,10 @@ test_that("unlabelled graphs take numeric labels as node numbers and refuse othe
                "whole-number")
 })
 
+skip_on_cran_budget()
+
 test_that("labelled time ids are put in time order", {
+  skip_on_cran_budget()
   tv <- as.character(c(1, 10, 2, 9, 25))
   f <- tulpa:::.resolve_time_index(tv, "time")
   expect_identical(levels(f), c("1", "2", "9", "10", "25"))

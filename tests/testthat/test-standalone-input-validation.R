@@ -24,7 +24,29 @@ test_that("a family typo is named at every standalone door", {
                                     family = "binomal"), msg)
 })
 
+.sv_ordinal <- function(n = 300L) {
+  set.seed(1)
+  x <- rnorm(n)
+  Fm <- plogis(outer(-0.8 * x, c(-1, 0.5, 2), "+"))
+  P <- cbind(Fm, 1) - cbind(0, Fm)
+  y <- ordered(apply(P, 1, function(pr) sample.int(4L, 1L, prob = pr)))
+  data.frame(y = y, x = x)
+}
+
+test_that("mala() refuses a gradient of the wrong length", {
+  lp <- function(t) -0.5 * sum(t^2)
+  expect_error(mala(lp, function(t) -t[1], init = c(0, 0), n_iter = 10,
+                    warmup = 5),
+               "must return a numeric vector of length 2 .* of length 1")
+  expect_error(mala(lp, function(t) c(NA, 0), init = c(0, 0), n_iter = 10,
+                    warmup = 5),
+               "`grad_log_posterior\\(init\\)` is not finite")
+})
+
+skip_on_cran_budget()
+
 test_that("n_quad must be a whole number (tulpa_eb, re_cov_nested, agq_fit)", {
+  skip_on_cran_budget()
   s <- .sv_glmm()
   msg <- "`n_quad` must be a single whole number >= 1; got 2.5"
   expect_error(tulpa_eb(s$y, NULL, s$X, s$rt, n_quad = 2.5), msg)
@@ -35,6 +57,7 @@ test_that("n_quad must be a whole number (tulpa_eb, re_cov_nested, agq_fit)", {
 })
 
 test_that("agq_fit refuses NA, y > n_trials and non-positive scales", {
+  skip_on_cran_budget()
   s <- .sv_glmm()
   expect_error(agq_fit(replace(s$y, 1, NA), s$X, s$g),
                "agq_fit: Non-finite value\\(s\\) in the response")
@@ -55,16 +78,8 @@ test_that("agq_fit refuses NA, y > n_trials and non-positive scales", {
                "length\\(beta_init\\) \\(1\\) must equal ncol\\(X\\) \\(2\\)")
 })
 
-.sv_ordinal <- function(n = 300L) {
-  set.seed(1)
-  x <- rnorm(n)
-  Fm <- plogis(outer(-0.8 * x, c(-1, 0.5, 2), "+"))
-  P <- cbind(Fm, 1) - cbind(0, Fm)
-  y <- ordered(apply(P, 1, function(pr) sample.int(4L, 1L, prob = pr)))
-  data.frame(y = y, x = x)
-}
-
 test_that("ordinal / multinomial refuse NA rows and empty response levels", {
+  skip_on_cran_budget()
   d <- .sv_ordinal()
   dn <- d
   dn$x[4] <- NA
@@ -83,16 +98,6 @@ test_that("ordinal / multinomial refuse NA rows and empty response levels", {
   de$y <- factor(as.character(d$y), levels = c(1, 2, 9, 3, 4))  # empty middle
   expect_error(tulpa_multinomial(y ~ x, de),
                "response level\\(s\\) '9' have no observations")
-})
-
-test_that("mala() refuses a gradient of the wrong length", {
-  lp <- function(t) -0.5 * sum(t^2)
-  expect_error(mala(lp, function(t) -t[1], init = c(0, 0), n_iter = 10,
-                    warmup = 5),
-               "must return a numeric vector of length 2 .* of length 1")
-  expect_error(mala(lp, function(t) c(NA, 0), init = c(0, 0), n_iter = 10,
-                    warmup = 5),
-               "`grad_log_posterior\\(init\\)` is not finite")
 })
 
 skip_on_cran()

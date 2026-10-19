@@ -42,7 +42,31 @@ sim_offset <- function(seed = 9L, G = 30L, per = 10L) {
        data = data.frame(y = y, x = x, g = factor(grp), E = E))
 }
 
+test_that("EB rejects a model with no random effects", {
+  d <- sim_re_pois(33L, G = 25L, per = 8L)
+  expect_error(
+    tulpa_eb(d$y, NULL, d$X, list(), family = "poisson"),
+    "no random-effect terms")
+})
+
+
+# --- estimate_phi on the front door ------------------------------------------
+
+sim_re_gauss <- function(seed, G = 15L, per = 12L, sigma_re = 0.7,
+                         sigma_y = 0.5) {
+  set.seed(seed)
+  n <- G * per
+  g <- rep(seq_len(G), each = per)
+  x <- rnorm(n)
+  u <- rnorm(G, 0, sigma_re)
+  data.frame(y = 1 + 0.5 * x + u[g] + rnorm(n, 0, sigma_y),
+             x = x, g = factor(g))
+}
+
+skip_on_cran_budget()
+
 test_that("the EB fit has no duplicated field names", {
+  skip_on_cran_budget()
   d <- sim_re_pois(23L, G = 25L, per = 8L)
   fit <- eb_pois(d)
   # The fit is built by c()-ing the inner Laplace result onto EB's own fields.
@@ -54,6 +78,7 @@ test_that("the EB fit has no duplicated field names", {
 })
 
 test_that("EB reports no posterior draws rather than a bogus array", {
+  skip_on_cran_budget()
   d <- sim_re_pois(22L, G = 25L, per = 8L)
   fit <- eb_pois(d)
   expect_null(posterior_sample(fit))
@@ -62,6 +87,7 @@ test_that("EB reports no posterior draws rather than a bogus array", {
 })
 
 test_that("eb is registered but never selected by auto or by tier", {
+  skip_on_cran_budget()
   expect_true("eb" %in% ALL_BACKENDS)
   expect_identical(BACKEND_REGISTRY$eb$tier, "structured")
   expect_identical(BACKEND_REGISTRY$eb$fitter, "tulpa_eb")
@@ -80,6 +106,7 @@ test_that("eb is registered but never selected by auto or by tier", {
 })
 
 test_that("EB warns that a supplied sigma_re is estimated, not conditioned", {
+  skip_on_cran_budget()
   d <- sim_re_pois(32L, G = 25L, per = 8L)
   expect_warning(
     tulpa(y ~ x + (1 | g), data = d$data, family = "poisson", mode = "eb",
@@ -87,14 +114,8 @@ test_that("EB warns that a supplied sigma_re is estimated, not conditioned", {
     "estimated, not conditioned")
 })
 
-test_that("EB rejects a model with no random effects", {
-  d <- sim_re_pois(33L, G = 25L, per = 8L)
-  expect_error(
-    tulpa_eb(d$y, NULL, d$X, list(), family = "poisson"),
-    "no random-effect terms")
-})
-
 test_that("EB rejects control keys belonging to the nested integrator", {
+  skip_on_cran_budget()
   d <- sim_re_pois(34L, G = 25L, per = 8L)
   expect_error(
     tulpa_eb(d$y, NULL, d$X, scalar_term(d), family = "poisson",
@@ -102,21 +123,8 @@ test_that("EB rejects control keys belonging to the nested integrator", {
     "integration")
 })
 
-
-# --- estimate_phi on the front door ------------------------------------------
-
-sim_re_gauss <- function(seed, G = 15L, per = 12L, sigma_re = 0.7,
-                         sigma_y = 0.5) {
-  set.seed(seed)
-  n <- G * per
-  g <- rep(seq_len(G), each = per)
-  x <- rnorm(n)
-  u <- rnorm(G, 0, sigma_re)
-  data.frame(y = 1 + 0.5 * x + u[g] + rnorm(n, 0, sigma_y),
-             x = x, g = factor(g))
-}
-
 test_that("estimate_phi is refused where the dispersion is conditioned on", {
+  skip_on_cran_budget()
   d <- sim_re_gauss(52L)
 
   expect_error(

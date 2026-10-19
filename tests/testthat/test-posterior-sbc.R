@@ -41,41 +41,6 @@ test_that("the driver hands the replicate its own seed", {
   expect_length(intersect(got$draw, got$rep), 0L)
 })
 
-test_that("recov_posterior_sbc declares the experiment it ran", {
-  m <- list(
-    data_obs = list(), fit = function(data) list(),
-    draw_theta = function(fit, seed) { set.seed(seed); c(a = stats::rnorm(1)) },
-    simulate = function(theta, seed) list(),
-    pool = function(obs, rep) list(),
-    arms = function(fit, data) list(sharp = list(a = sbc_normal(0, 1)),
-                                    blunt = list(a = sbc_normal(0, 3))))
-  res <- recov_posterior_sbc(m, n_seed = 8L)
-  expect_identical(attr(res, "truth"), "posterior_draw")
-  # The CRPS is proper here, because the truth is drawn from the distribution
-  # the forecast is a posterior update of -- the same reason it is proper under
-  # "prior_draw" and improper under "fixed".
-  expect_match(attr(res, "crps_role"), "^proper posterior score")
-  cmp <- sbc_crps_compare(res, baseline = "sharp")
-  expect_s3_class(cmp, "data.frame")
-  # The truth really is N(0, 1) here, so the proper score prefers the arm that
-  # says so and `blunt` must score worse.
-  expect_gt(cmp$delta[cmp$arm == "blunt"], 0)
-
-  bad <- recov_sbc(function(seed) list(theta = c(a = 0)),
-                   function(d) list(only = list(a = sbc_normal(0, 1))),
-                   n_seed = 3L, truth = "fixed")
-  expect_error(sbc_crps_compare(bad, baseline = "only"), "prior-predictive")
-})
-
-test_that("recov_posterior_sbc requires every callback", {
-  full <- list(data_obs = 1, fit = 1, draw_theta = 1, simulate = 1, pool = 1,
-               arms = 1)
-  for (nm in names(full)) {
-    expect_error(recov_posterior_sbc(full[setdiff(names(full), nm)], n_seed = 1L),
-                 nm, fixed = TRUE)
-  }
-})
-
 # ---------------------------------------------------------------------------
 # 2. The construction
 #
@@ -112,6 +77,45 @@ test_that("recov_posterior_sbc requires every callback", {
 # ---------------------------------------------------------------------------
 
 psbc_gauss_obs <- function() sbc_sim_gaussian(101L)
+
+skip_on_cran_budget()
+
+test_that("recov_posterior_sbc declares the experiment it ran", {
+  skip_on_cran_budget()
+  m <- list(
+    data_obs = list(), fit = function(data) list(),
+    draw_theta = function(fit, seed) { set.seed(seed); c(a = stats::rnorm(1)) },
+    simulate = function(theta, seed) list(),
+    pool = function(obs, rep) list(),
+    arms = function(fit, data) list(sharp = list(a = sbc_normal(0, 1)),
+                                    blunt = list(a = sbc_normal(0, 3))))
+  res <- recov_posterior_sbc(m, n_seed = 8L)
+  expect_identical(attr(res, "truth"), "posterior_draw")
+  # The CRPS is proper here, because the truth is drawn from the distribution
+  # the forecast is a posterior update of -- the same reason it is proper under
+  # "prior_draw" and improper under "fixed".
+  expect_match(attr(res, "crps_role"), "^proper posterior score")
+  cmp <- sbc_crps_compare(res, baseline = "sharp")
+  expect_s3_class(cmp, "data.frame")
+  # The truth really is N(0, 1) here, so the proper score prefers the arm that
+  # says so and `blunt` must score worse.
+  expect_gt(cmp$delta[cmp$arm == "blunt"], 0)
+
+  bad <- recov_sbc(function(seed) list(theta = c(a = 0)),
+                   function(d) list(only = list(a = sbc_normal(0, 1))),
+                   n_seed = 3L, truth = "fixed")
+  expect_error(sbc_crps_compare(bad, baseline = "only"), "prior-predictive")
+})
+
+test_that("recov_posterior_sbc requires every callback", {
+  skip_on_cran_budget()
+  full <- list(data_obs = 1, fit = 1, draw_theta = 1, simulate = 1, pool = 1,
+               arms = 1)
+  for (nm in names(full)) {
+    expect_error(recov_posterior_sbc(full[setdiff(names(full), nm)], n_seed = 1L),
+                 nm, fixed = TRUE)
+  }
+})
 
 skip_on_cran()
 

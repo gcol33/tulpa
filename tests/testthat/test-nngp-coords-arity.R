@@ -1,4 +1,7 @@
+
+skip_on_cran_budget()
 test_that("a 1-D coordinate matrix is 1-D, not two copies of one column", {
+  skip_on_cran_budget()
   # gcol33/tulpa#389, the R half. Four sampler specs and two prediction paths
   # reshaped their coordinates with `matrix(as.numeric(x), n, 2)`, which does
   # not CHECK the arity, it IMPOSES it: an `n x 1` matrix is recycled so that
@@ -31,6 +34,7 @@ test_that("a 1-D coordinate matrix is 1-D, not two copies of one column", {
 })
 
 test_that("the neighbour graph reads the same dimension the covariance does", {
+  skip_on_cran_budget()
   # gcol33/tulpa#391. gcol33/tulpa#389 made the neighbour COVARIANCE read every
   # coordinate column; `compute_nngp_neighbors()` still selected neighbours over
   # the first two, so on anything wider than 2 the selection and the covariance
@@ -67,6 +71,7 @@ test_that("the neighbour graph reads the same dimension the covariance does", {
 })
 
 test_that("each spatial door admits the dimension its storage can carry", {
+  skip_on_cran_budget()
   # One parser (`.parse_coord_spec()`) behind three doors that used to hold
   # three verbatim copies of it, with the arity as its one policy argument.
   # NNGP reads any dimension; the HSGP basis and every sampler spec are 2-D by

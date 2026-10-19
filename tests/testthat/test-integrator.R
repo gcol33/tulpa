@@ -1,6 +1,24 @@
+
+test_that("an out-of-range substep count is refused without moving the state", {
+  old <- tulpa_integrator()
+  on.exit(tulpa_integrator(old), add = TRUE)
+
+  tulpa_integrator("yoshida4")
+  # Each substep is one extra prior gradient per trajectory step, so an
+  # unbounded count multiplies the whole trajectory's cost silently.
+  expect_error(tulpa_integrator("mts", mts_substeps = 100000L), "mts_substeps")
+  expect_identical(tulpa_integrator(), "yoshida4")
+
+  # A rejected name leaves every selector as it was, not half-reset.
+  expect_error(tulpa_integrator("nope"), "unknown integrator")
+  expect_identical(tulpa_integrator(), "yoshida4")
+})
+
+skip_on_cran_budget()
 # Symplectic integrator selection (SIMP-backed), gcol33/tulpa.
 
 test_that("tulpa_integrator gets, sets, and validates", {
+  skip_on_cran_budget()
   old <- tulpa_integrator()
   on.exit(tulpa_integrator(old), add = TRUE)
 
@@ -19,6 +37,7 @@ test_that("tulpa_integrator gets, sets, and validates", {
 })
 
 test_that("adaptive selections round-trip by their own name", {
+  skip_on_cran_budget()
   old <- tulpa_integrator()
   on.exit(tulpa_integrator(old), add = TRUE)
 
@@ -44,6 +63,7 @@ test_that("adaptive selections round-trip by their own name", {
 # integrator for the rest of the session (gcol33/tulpa#483).
 
 test_that("with_tulpa_integrator restores on success and on error", {
+  skip_on_cran_budget()
   old <- tulpa_integrator()
   on.exit(tulpa_integrator(old), add = TRUE)
 
@@ -54,21 +74,6 @@ test_that("with_tulpa_integrator restores on success and on error", {
 
   expect_error(with_tulpa_integrator("yoshida4", stop("boom")), "boom")
   expect_identical(tulpa_integrator(), "leapfrog")
-})
-
-test_that("an out-of-range substep count is refused without moving the state", {
-  old <- tulpa_integrator()
-  on.exit(tulpa_integrator(old), add = TRUE)
-
-  tulpa_integrator("yoshida4")
-  # Each substep is one extra prior gradient per trajectory step, so an
-  # unbounded count multiplies the whole trajectory's cost silently.
-  expect_error(tulpa_integrator("mts", mts_substeps = 100000L), "mts_substeps")
-  expect_identical(tulpa_integrator(), "yoshida4")
-
-  # A rejected name leaves every selector as it was, not half-reset.
-  expect_error(tulpa_integrator("nope"), "unknown integrator")
-  expect_identical(tulpa_integrator(), "yoshida4")
 })
 
 skip_on_cran()

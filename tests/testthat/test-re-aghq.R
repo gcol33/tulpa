@@ -21,7 +21,10 @@ make_binom_site <- function(X, y, nt) {
   }
 }
 
+skip_on_cran_budget()
+
 test_that(".aghq_sigma_penalty: value matches the PC log-prior, grad matches FD", {
+  skip_on_cran_budget()
   # Two blocks: one scalar (targeted), one 2x2 (untargeted). n_theta = 3 fixed.
   re_terms <- list(list(n_groups = 12L, n_coefs = 1L, correlated = FALSE),
                    list(n_groups = 12L, n_coefs = 2L, correlated = TRUE))

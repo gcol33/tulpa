@@ -52,7 +52,10 @@ test_that("a spec with no IRLS callback declines, and says so", {
   expect_length(res$inv_mass, 0L)
 })
 
+skip_on_cran_budget()
+
 test_that("mass_matrix names resolve, and an unknown one is refused", {
+  skip_on_cran_budget()
   f <- st_iv_fixture()
   # Reaching the sampler at all proves "gmrf" parses; a two-iteration run is
   # the cheapest way to ask.
@@ -69,6 +72,7 @@ test_that("mass_matrix names resolve, and an unknown one is refused", {
 
 
 test_that("the cyclic flag reaches the interaction's quadratic form", {
+  skip_on_cran_budget()
   # SpatiotemporalData::temporal_cyclic used to reach the rank in the
   # normalizer and not the quadratic form beside it (gcol33/tulpa#596), so a
   # cyclic RW2 interaction put rank_space * (T - 1) powers of tau in the

@@ -22,15 +22,6 @@ test_that(".tulpa_timer accumulates phases under their labels", {
                unname(timing[["total"]]), tolerance = 1e-2)
 })
 
-test_that(".format_duration renders hour / minute / second bands", {
-  expect_equal(.format_duration(5 * 3600 + 25 * 60), "5h 25m")
-  expect_equal(.format_duration(2 * 3600 + 9 * 60), "2h 09m")     # zero-pad
-  expect_equal(.format_duration(3 * 60 + 12), "3m 12s")
-  expect_equal(.format_duration(4.2), "4.2s")
-  expect_true(is.na(.format_duration(-1)))
-  expect_true(is.na(.format_duration(c(1, 2))))
-})
-
 test_that(".timing_summary_line matches the issue's one-line format", {
   timing <- c(total = 5 * 3600 + 25 * 60, setup = 0, grid = 2 * 3600 + 9 * 60)
   expect_equal(.timing_summary_line(timing), "fit in 5h 25m (grid 2h 09m)")
@@ -56,6 +47,18 @@ test_that(".timing_summary_line matches the issue's one-line format", {
     n_spatial_units = n_s
   )
 }
+
+skip_on_cran_budget()
+
+test_that(".format_duration renders hour / minute / second bands", {
+  skip_on_cran_budget()
+  expect_equal(.format_duration(5 * 3600 + 25 * 60), "5h 25m")
+  expect_equal(.format_duration(2 * 3600 + 9 * 60), "2h 09m")     # zero-pad
+  expect_equal(.format_duration(3 * 60 + 12), "3m 12s")
+  expect_equal(.format_duration(4.2), "4.2s")
+  expect_true(is.na(.format_duration(-1)))
+  expect_true(is.na(.format_duration(c(1, 2))))
+})
 
 skip_on_cran()
 

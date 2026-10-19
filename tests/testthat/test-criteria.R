@@ -9,113 +9,6 @@ make_loglik <- function(S = 300L, N = 80L, seed = 1L) {
        levels = levels, S = S, N = N)
 }
 
-test_that("WAIC matches loo::waic", {
-  skip_if_not_installed("loo")
-  d <- make_loglik()
-  cr <- tulpa_criteria(d$ll, criteria = "waic")
-  lw <- loo::waic(d$ll)
-  expect_equal(cr$waic, lw$estimates["waic", "Estimate"], tolerance = 1e-8)
-  expect_equal(cr$p_waic, lw$estimates["p_waic", "Estimate"], tolerance = 1e-8)
-  expect_equal(cr$elpd_waic, lw$estimates["elpd_waic", "Estimate"],
-               tolerance = 1e-8)
-  expect_equal(cr$se_elpd_waic, lw$estimates["elpd_waic", "SE"],
-               tolerance = 1e-6)
-})
-
-test_that("PSIS-LOO matches loo::loo (elpd, p_loo, pareto_k)", {
-  skip_if_not_installed("loo")
-  d <- make_loglik()
-  cr <- tulpa_criteria(d$ll, criteria = "loo", pointwise = TRUE)
-  lo <- suppressWarnings(loo::loo(d$ll, r_eff = NA))
-  expect_equal(cr$elpd_loo, lo$estimates["elpd_loo", "Estimate"],
-               tolerance = 1e-8)
-  expect_equal(cr$p_loo, lo$estimates["p_loo", "Estimate"], tolerance = 1e-8)
-  expect_equal(max(abs(cr$pointwise$pareto_k - lo$diagnostics$pareto_k)),
-               0, tolerance = 1e-6)
-})
-
-test_that("CPO and LPML share the LOO computation", {
-  d <- make_loglik()
-  cr <- tulpa_criteria(d$ll, criteria = c("loo", "cpo", "lpml"),
-                       pointwise = TRUE)
-  expect_equal(cr$lpml, cr$elpd_loo)
-  expect_equal(cr$lpml, sum(log(cr$pointwise$cpo)), tolerance = 1e-10)
-  expect_equal(cr$pointwise$cpo, exp(cr$pointwise$elpd_loo), tolerance = 1e-12)
-})
-
-test_that("DIC obeys its identities and needs loglik_at_mean", {
-  d <- make_loglik()
-  cr <- tulpa_criteria(d$ll, criteria = "dic", loglik_at_mean = d$levels)
-  expect_equal(cr$dbar, -2 * mean(rowSums(d$ll)), tolerance = 1e-10)
-  expect_equal(cr$dhat, -2 * sum(d$levels), tolerance = 1e-10)
-  expect_equal(cr$p_dic, cr$dbar - cr$dhat, tolerance = 1e-12)
-  expect_equal(cr$dic, cr$dbar + cr$p_dic, tolerance = 1e-12)
-
-  cr_na <- tulpa_criteria(d$ll, criteria = "dic")
-  expect_true(is.na(cr_na$dic))
-  expect_true(is.na(cr_na$p_dic))
-  expect_false(is.na(cr_na$dbar))
-})
-
-test_that("streaming over column blocks equals the materialized matrix", {
-  d <- make_loglik(N = 53L)
-  full <- tulpa_criteria(d$ll, criteria = c("waic", "loo", "dic"),
-                         loglik_at_mean = d$levels)
-  gen <- function(cols) d$ll[, cols, drop = FALSE]
-  streamed <- tulpa_criteria(
-    tulpa_loglik(gen, n_obs = d$N, n_draws = d$S),
-    criteria = c("waic", "loo", "dic"), loglik_at_mean = d$levels,
-    chunk_size = 5L
-  )
-  expect_equal(streamed$waic, full$waic, tolerance = 1e-12)
-  expect_equal(streamed$elpd_loo, full$elpd_loo, tolerance = 1e-12)
-  expect_equal(streamed$dic, full$dic, tolerance = 1e-12)
-})
-
-test_that("group = NULL is byte-identical to the ungrouped call", {
-  d <- make_loglik(N = 40L)
-  base <- tulpa_criteria(d$ll, criteria = c("waic", "loo", "cpo", "lpml"),
-                         pointwise = TRUE)
-  same <- tulpa_criteria(d$ll, criteria = c("waic", "loo", "cpo", "lpml"),
-                         group = NULL, pointwise = TRUE)
-  expect_identical(base$n_obs, same$n_obs)
-  expect_null(same$n_groups)
-  expect_equal(same$waic, base$waic, tolerance = 0)
-  expect_equal(same$elpd_loo, base$elpd_loo, tolerance = 0)
-  expect_equal(same$pointwise$pareto_k, base$pointwise$pareto_k, tolerance = 0)
-})
-
-test_that("grouped LOGO-CV equals criteria on the hand-aggregated matrix", {
-  d <- make_loglik(N = 60L, seed = 7L)
-  # 60 columns -> 12 groups of 5 (each column is one observation within a cell).
-  group <- rep(seq_len(12L), each = 5L)
-  grouped <- tulpa_criteria(d$ll, criteria = c("waic", "loo", "cpo", "lpml"),
-                            group = group, pointwise = TRUE)
-  # Hand-aggregate: a fold's joint conditional log-lik is the within-group sum.
-  G <- sapply(split(seq_len(60L), group), function(cols) rowSums(d$ll[, cols, drop = FALSE]))
-  ref <- tulpa_criteria(G, criteria = c("waic", "loo", "cpo", "lpml"),
-                        pointwise = TRUE)
-  expect_equal(grouped$n_groups, 12L)
-  expect_equal(grouped$n_obs, 60L)
-  expect_equal(grouped$waic, ref$waic, tolerance = 1e-12)
-  expect_equal(grouped$elpd_loo, ref$elpd_loo, tolerance = 1e-12)
-  expect_equal(grouped$se_elpd_loo, ref$se_elpd_loo, tolerance = 1e-12)
-  expect_equal(grouped$pointwise$pareto_k, ref$pointwise$pareto_k, tolerance = 1e-12)
-  expect_equal(nrow(grouped$pointwise), 12L)
-})
-
-test_that("grouped LOO streams over column blocks identically", {
-  d <- make_loglik(N = 57L, seed = 9L)
-  group <- ((seq_len(57L) - 1L) %% 9L) + 1L      # 9 interleaved groups
-  full <- tulpa_criteria(d$ll, criteria = c("waic", "loo"), group = group)
-  gen <- function(cols) d$ll[, cols, drop = FALSE]
-  streamed <- tulpa_criteria(
-    tulpa_loglik(gen, n_obs = d$N, n_draws = d$S),
-    criteria = c("waic", "loo"), group = group, chunk_size = 4L)
-  expect_equal(streamed$waic, full$waic, tolerance = 1e-12)
-  expect_equal(streamed$elpd_loo, full$elpd_loo, tolerance = 1e-12)
-})
-
 test_that("group must match n_obs", {
   d <- make_loglik(N = 20L)
   expect_error(tulpa_criteria(d$ll, criteria = "loo", group = rep(1L, 19L)),
@@ -136,7 +29,133 @@ test_that("tulpa_pit is uniform under a correct continuous model", {
   expect_true(all(pit >= 0 & pit <= 1))
 })
 
+test_that("tulpa_pit(log_lik =) needs the log-lik and cdf shapes to agree", {
+  ll <- matrix(stats::rnorm(20 * 5), 20, 5)
+  Fu <- matrix(stats::runif(20 * 4), 20, 4)
+  expect_error(tulpa_pit(Fu, log_lik = ll), "numbers of observations")
+  expect_error(tulpa_pit(matrix(stats::runif(10 * 5), 10, 5), log_lik = ll),
+               "draws \\(rows\\)")
+})
+
+skip_on_cran_budget()
+
+test_that("WAIC matches loo::waic", {
+  skip_on_cran_budget()
+  skip_if_not_installed("loo")
+  d <- make_loglik()
+  cr <- tulpa_criteria(d$ll, criteria = "waic")
+  lw <- loo::waic(d$ll)
+  expect_equal(cr$waic, lw$estimates["waic", "Estimate"], tolerance = 1e-8)
+  expect_equal(cr$p_waic, lw$estimates["p_waic", "Estimate"], tolerance = 1e-8)
+  expect_equal(cr$elpd_waic, lw$estimates["elpd_waic", "Estimate"],
+               tolerance = 1e-8)
+  expect_equal(cr$se_elpd_waic, lw$estimates["elpd_waic", "SE"],
+               tolerance = 1e-6)
+})
+
+test_that("PSIS-LOO matches loo::loo (elpd, p_loo, pareto_k)", {
+  skip_on_cran_budget()
+  skip_if_not_installed("loo")
+  d <- make_loglik()
+  cr <- tulpa_criteria(d$ll, criteria = "loo", pointwise = TRUE)
+  lo <- suppressWarnings(loo::loo(d$ll, r_eff = NA))
+  expect_equal(cr$elpd_loo, lo$estimates["elpd_loo", "Estimate"],
+               tolerance = 1e-8)
+  expect_equal(cr$p_loo, lo$estimates["p_loo", "Estimate"], tolerance = 1e-8)
+  expect_equal(max(abs(cr$pointwise$pareto_k - lo$diagnostics$pareto_k)),
+               0, tolerance = 1e-6)
+})
+
+test_that("CPO and LPML share the LOO computation", {
+  skip_on_cran_budget()
+  d <- make_loglik()
+  cr <- tulpa_criteria(d$ll, criteria = c("loo", "cpo", "lpml"),
+                       pointwise = TRUE)
+  expect_equal(cr$lpml, cr$elpd_loo)
+  expect_equal(cr$lpml, sum(log(cr$pointwise$cpo)), tolerance = 1e-10)
+  expect_equal(cr$pointwise$cpo, exp(cr$pointwise$elpd_loo), tolerance = 1e-12)
+})
+
+test_that("DIC obeys its identities and needs loglik_at_mean", {
+  skip_on_cran_budget()
+  d <- make_loglik()
+  cr <- tulpa_criteria(d$ll, criteria = "dic", loglik_at_mean = d$levels)
+  expect_equal(cr$dbar, -2 * mean(rowSums(d$ll)), tolerance = 1e-10)
+  expect_equal(cr$dhat, -2 * sum(d$levels), tolerance = 1e-10)
+  expect_equal(cr$p_dic, cr$dbar - cr$dhat, tolerance = 1e-12)
+  expect_equal(cr$dic, cr$dbar + cr$p_dic, tolerance = 1e-12)
+
+  cr_na <- tulpa_criteria(d$ll, criteria = "dic")
+  expect_true(is.na(cr_na$dic))
+  expect_true(is.na(cr_na$p_dic))
+  expect_false(is.na(cr_na$dbar))
+})
+
+test_that("streaming over column blocks equals the materialized matrix", {
+  skip_on_cran_budget()
+  d <- make_loglik(N = 53L)
+  full <- tulpa_criteria(d$ll, criteria = c("waic", "loo", "dic"),
+                         loglik_at_mean = d$levels)
+  gen <- function(cols) d$ll[, cols, drop = FALSE]
+  streamed <- tulpa_criteria(
+    tulpa_loglik(gen, n_obs = d$N, n_draws = d$S),
+    criteria = c("waic", "loo", "dic"), loglik_at_mean = d$levels,
+    chunk_size = 5L
+  )
+  expect_equal(streamed$waic, full$waic, tolerance = 1e-12)
+  expect_equal(streamed$elpd_loo, full$elpd_loo, tolerance = 1e-12)
+  expect_equal(streamed$dic, full$dic, tolerance = 1e-12)
+})
+
+test_that("group = NULL is byte-identical to the ungrouped call", {
+  skip_on_cran_budget()
+  d <- make_loglik(N = 40L)
+  base <- tulpa_criteria(d$ll, criteria = c("waic", "loo", "cpo", "lpml"),
+                         pointwise = TRUE)
+  same <- tulpa_criteria(d$ll, criteria = c("waic", "loo", "cpo", "lpml"),
+                         group = NULL, pointwise = TRUE)
+  expect_identical(base$n_obs, same$n_obs)
+  expect_null(same$n_groups)
+  expect_equal(same$waic, base$waic, tolerance = 0)
+  expect_equal(same$elpd_loo, base$elpd_loo, tolerance = 0)
+  expect_equal(same$pointwise$pareto_k, base$pointwise$pareto_k, tolerance = 0)
+})
+
+test_that("grouped LOGO-CV equals criteria on the hand-aggregated matrix", {
+  skip_on_cran_budget()
+  d <- make_loglik(N = 60L, seed = 7L)
+  # 60 columns -> 12 groups of 5 (each column is one observation within a cell).
+  group <- rep(seq_len(12L), each = 5L)
+  grouped <- tulpa_criteria(d$ll, criteria = c("waic", "loo", "cpo", "lpml"),
+                            group = group, pointwise = TRUE)
+  # Hand-aggregate: a fold's joint conditional log-lik is the within-group sum.
+  G <- sapply(split(seq_len(60L), group), function(cols) rowSums(d$ll[, cols, drop = FALSE]))
+  ref <- tulpa_criteria(G, criteria = c("waic", "loo", "cpo", "lpml"),
+                        pointwise = TRUE)
+  expect_equal(grouped$n_groups, 12L)
+  expect_equal(grouped$n_obs, 60L)
+  expect_equal(grouped$waic, ref$waic, tolerance = 1e-12)
+  expect_equal(grouped$elpd_loo, ref$elpd_loo, tolerance = 1e-12)
+  expect_equal(grouped$se_elpd_loo, ref$se_elpd_loo, tolerance = 1e-12)
+  expect_equal(grouped$pointwise$pareto_k, ref$pointwise$pareto_k, tolerance = 1e-12)
+  expect_equal(nrow(grouped$pointwise), 12L)
+})
+
+test_that("grouped LOO streams over column blocks identically", {
+  skip_on_cran_budget()
+  d <- make_loglik(N = 57L, seed = 9L)
+  group <- ((seq_len(57L) - 1L) %% 9L) + 1L      # 9 interleaved groups
+  full <- tulpa_criteria(d$ll, criteria = c("waic", "loo"), group = group)
+  gen <- function(cols) d$ll[, cols, drop = FALSE]
+  streamed <- tulpa_criteria(
+    tulpa_loglik(gen, n_obs = d$N, n_draws = d$S),
+    criteria = c("waic", "loo"), group = group, chunk_size = 4L)
+  expect_equal(streamed$waic, full$waic, tolerance = 1e-12)
+  expect_equal(streamed$elpd_loo, full$elpd_loo, tolerance = 1e-12)
+})
+
 test_that("randomized PIT interpolates between the CDF limits", {
+  skip_on_cran_budget()
   set.seed(3)
   S <- 200L; N <- 50L
   Fl <- matrix(stats::runif(S * N, 0, 0.4), S, N)
@@ -147,6 +166,7 @@ test_that("randomized PIT interpolates between the CDF limits", {
 })
 
 test_that("tulpa_pit(log_lik =) matches the leave-one-out PSIS reference", {
+  skip_on_cran_budget()
   old_loo <- function(ll, Fl, Fu) {
     Nn <- ncol(ll); Ss <- nrow(ll); fl <- numeric(Nn); fu <- numeric(Nn)
     for (i in seq_len(Nn)) {
@@ -164,14 +184,6 @@ test_that("tulpa_pit(log_lik =) matches the leave-one-out PSIS reference", {
   set.seed(11); got <- tulpa_pit(Fu, cdf_lower = Fl, log_lik = ll)
   expect_equal(got, ref, tolerance = 1e-12)
   expect_true(all(got >= 0 & got <= 1))
-})
-
-test_that("tulpa_pit(log_lik =) needs the log-lik and cdf shapes to agree", {
-  ll <- matrix(stats::rnorm(20 * 5), 20, 5)
-  Fu <- matrix(stats::runif(20 * 4), 20, 4)
-  expect_error(tulpa_pit(Fu, log_lik = ll), "numbers of observations")
-  expect_error(tulpa_pit(matrix(stats::runif(10 * 5), 10, 5), log_lik = ll),
-               "draws \\(rows\\)")
 })
 
 skip_on_cran()

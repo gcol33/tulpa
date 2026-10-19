@@ -23,17 +23,6 @@
   )
 }
 
-test_that("log at and below zero returns the finite sentinel on every type", {
-  for (x in c(0, -2)) {
-    r <- cpp_test_scalar_guard("log", x)
-    expect_equal(r$value_double, -1e10)
-    expect_equal(r$value_tape,   -1e10)
-    expect_equal(r$value_arena,  -1e10)
-    expect_true(is.finite(r$grad_tape))
-    expect_true(is.finite(r$grad_arena))
-  }
-})
-
 test_that("pow keeps a finite partial where p * x^(p-1) diverges", {
   r <- cpp_test_scalar_guard("pow", 0, 0.5)
   expect_equal(r$value_tape, 0)
@@ -44,40 +33,6 @@ test_that("pow keeps a finite partial where p * x^(p-1) diverges", {
   r2 <- cpp_test_scalar_guard("pow", 0, 3)
   expect_equal(r2$grad_tape, 0)
   expect_equal(r2$grad_arena, 0)
-})
-
-test_that("logit is finite at the endpoints of the unit interval", {
-  for (x in c(0, 1)) {
-    r <- cpp_test_scalar_guard("logit", x)
-    expect_true(is.finite(r$value_tape),  info = paste("tape at", x))
-    expect_true(is.finite(r$value_arena), info = paste("arena at", x))
-    expect_true(is.finite(r$grad_tape))
-    expect_true(is.finite(r$grad_arena))
-    expect_equal(r$value_tape, r$value_arena, tolerance = 1e-12)
-    expect_equal(r$grad_tape,  r$grad_arena,  tolerance = 1e-12)
-  }
-})
-
-# --- the tape primitives, each against its own closed-form derivative ---------
-
-test_that("tape reverse mode reproduces every elementary derivative", {
-  x <- 0.7
-  chk <- function(res, info) {
-    expect_equal(res$gradient, res$expected_gradient, tolerance = 1e-9,
-                 info = info)
-  }
-  chk(cpp_test_autodiff_exp_chain(x), "exp(x^2)")
-  chk(cpp_test_autodiff_log(x),       "log")
-  chk(cpp_test_autodiff_sqrt(x),      "sqrt")
-  chk(cpp_test_autodiff_pow(x, 3),    "pow")
-  chk(cpp_test_autodiff_log1p(x),     "log1p")
-  chk(cpp_test_autodiff_logit(x),     "logit")
-  chk(cpp_test_autodiff_lgamma(2.3),  "lgamma")
-  chk(cpp_test_autodiff_softplus(x),  "softplus")
-  chk(cpp_test_autodiff_inv_logit(x), "inv_logit")
-  chk(cpp_test_autodiff_division(3.0, 1.5), "division")
-  chk(cpp_test_autodiff_log_sum_exp(1.2, -0.4), "log_sum_exp")
-  chk(cpp_test_autodiff_negbin_loglik(3L, 2.5, 4.0), "negbin loglik")
 })
 
 test_that("tape values match the R closed forms", {
@@ -107,6 +62,56 @@ test_that("tape gradients of a multivariate objective are exact", {
   expect_equal(ll$value, sum(y * eta - exp(eta)))
   expect_equal(ll$gradient, ll$expected_gradient, tolerance = 1e-10)
   expect_equal(ll$gradient, y - exp(eta), tolerance = 1e-10)
+})
+
+skip_on_cran_budget()
+
+test_that("log at and below zero returns the finite sentinel on every type", {
+  skip_on_cran_budget()
+  for (x in c(0, -2)) {
+    r <- cpp_test_scalar_guard("log", x)
+    expect_equal(r$value_double, -1e10)
+    expect_equal(r$value_tape,   -1e10)
+    expect_equal(r$value_arena,  -1e10)
+    expect_true(is.finite(r$grad_tape))
+    expect_true(is.finite(r$grad_arena))
+  }
+})
+
+test_that("logit is finite at the endpoints of the unit interval", {
+  skip_on_cran_budget()
+  for (x in c(0, 1)) {
+    r <- cpp_test_scalar_guard("logit", x)
+    expect_true(is.finite(r$value_tape),  info = paste("tape at", x))
+    expect_true(is.finite(r$value_arena), info = paste("arena at", x))
+    expect_true(is.finite(r$grad_tape))
+    expect_true(is.finite(r$grad_arena))
+    expect_equal(r$value_tape, r$value_arena, tolerance = 1e-12)
+    expect_equal(r$grad_tape,  r$grad_arena,  tolerance = 1e-12)
+  }
+})
+
+# --- the tape primitives, each against its own closed-form derivative ---------
+
+test_that("tape reverse mode reproduces every elementary derivative", {
+  skip_on_cran_budget()
+  x <- 0.7
+  chk <- function(res, info) {
+    expect_equal(res$gradient, res$expected_gradient, tolerance = 1e-9,
+                 info = info)
+  }
+  chk(cpp_test_autodiff_exp_chain(x), "exp(x^2)")
+  chk(cpp_test_autodiff_log(x),       "log")
+  chk(cpp_test_autodiff_sqrt(x),      "sqrt")
+  chk(cpp_test_autodiff_pow(x, 3),    "pow")
+  chk(cpp_test_autodiff_log1p(x),     "log1p")
+  chk(cpp_test_autodiff_logit(x),     "logit")
+  chk(cpp_test_autodiff_lgamma(2.3),  "lgamma")
+  chk(cpp_test_autodiff_softplus(x),  "softplus")
+  chk(cpp_test_autodiff_inv_logit(x), "inv_logit")
+  chk(cpp_test_autodiff_division(3.0, 1.5), "division")
+  chk(cpp_test_autodiff_log_sum_exp(1.2, -0.4), "log_sum_exp")
+  chk(cpp_test_autodiff_negbin_loglik(3L, 2.5, 4.0), "negbin loglik")
 })
 
 skip_on_cran()

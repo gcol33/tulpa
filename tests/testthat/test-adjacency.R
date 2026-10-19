@@ -1,24 +1,3 @@
-test_that("adjacency.data.frame builds queen contiguity on a regular grid", {
-  grid <- expand.grid(x = 1:3, y = 1:3)
-  grid$cell <- paste0("c", seq_len(nrow(grid)))
-
-  g <- adjacency(grid, x_coord = "x", y_coord = "y", id = "cell",
-                 type = "queen")
-
-  expect_s4_class(g$adjacency, "dgCMatrix")
-  expect_equal(g$n, 9L)
-  expect_identical(g$ids, grid$cell)
-
-  W <- g$adjacency
-  expect_true(Matrix::isSymmetric(W))
-  expect_true(all(Matrix::diag(W) == 0))
-  expect_true(all(W@x == 1))
-
-  deg <- Matrix::rowSums(W)
-  # 1 centre (8), 4 edge-mid (5), 4 corners (3); 20 undirected edges
-  expect_equal(sort(deg), sort(c(8, 5, 5, 5, 5, 3, 3, 3, 3)))
-  expect_equal(sum(Matrix::tril(W) != 0), 20L)
-})
 
 test_that("adjacency.data.frame builds rook contiguity on a regular grid", {
   grid <- expand.grid(x = 1:3, y = 1:3)
@@ -32,39 +11,6 @@ test_that("adjacency.data.frame builds rook contiguity on a regular grid", {
   expect_equal(sum(Matrix::tril(W) != 0), 12L)
   expect_equal(unname(g$cellsize[["x"]]), 1)
   expect_equal(unname(g$cellsize[["y"]]), 1)
-})
-
-test_that("order extends the neighbourhood to higher rings (queen and rook)", {
-  grid <- expand.grid(x = 1:5, y = 1:5)          # centre cell (3,3) is interior
-  centre <- which(grid$x == 3 & grid$y == 3)
-
-  q1 <- adjacency(grid, type = "queen", order = 1)
-  q2 <- adjacency(grid, type = "queen", order = 2)
-  r2 <- adjacency(grid, type = "rook",  order = 2)
-
-  expect_true(Matrix::isSymmetric(q2$adjacency))
-  expect_equal(q2$order, 2L)
-  # queen order k: (2k+1)^2 - 1 neighbours -> 8 (k=1), 24 (k=2) at the interior
-  expect_equal(Matrix::rowSums(q1$adjacency)[centre], 8)
-  expect_equal(Matrix::rowSums(q2$adjacency)[centre], 24)
-  # rook order k: 2k(k+1) -> 12 at k=2
-  expect_equal(Matrix::rowSums(r2$adjacency)[centre], 12)
-  # order 1 is a strict subset of order 2
-  expect_true(all((q1$adjacency != 0) <= (q2$adjacency != 0)))
-
-  expect_error(adjacency(grid, order = 0), "positive integer")
-  expect_error(adjacency(grid, order = -1), "positive integer")
-})
-
-test_that("a custom symmetric stencil builds exactly that neighbourhood", {
-  grid <- expand.grid(x = 1:5, y = 1:5)
-  centre <- which(grid$x == 3 & grid$y == 3)
-  # horizontal-only neighbours (left + right), symmetric already
-  g <- adjacency(grid, offsets = list(c(1, 0), c(-1, 0)))
-  expect_true(Matrix::isSymmetric(g$adjacency))
-  expect_equal(g$type, "custom")
-  expect_true(is.na(g$order))
-  expect_equal(Matrix::rowSums(g$adjacency)[centre], 2)   # only left + right
 })
 
 test_that("an asymmetric custom stencil is symmetrized for the undirected field", {
@@ -82,15 +28,6 @@ test_that("an asymmetric custom stencil is symmetrized for the undirected field"
   expect_error(adjacency(grid, offsets = list(c(0, 0))), "no non-origin")
 })
 
-test_that("rook is a strict subset of queen on the same grid", {
-  grid <- expand.grid(x = 1:4, y = 1:4)
-  q <- adjacency(grid, type = "queen")$adjacency
-  r <- adjacency(grid, type = "rook")$adjacency
-  # every rook edge is a queen edge
-  expect_true(all((r != 0) <= (q != 0)))
-  expect_gt(sum(q != 0), sum(r != 0))
-})
-
 test_that("contiguity is correct around a hole (missing centre cell)", {
   grid <- expand.grid(x = 1:3, y = 1:3)
   grid <- grid[!(grid$x == 2 & grid$y == 2), ]  # drop the centre
@@ -101,15 +38,6 @@ test_that("contiguity is correct around a hole (missing centre cell)", {
   # the 4 edge-mid cells lose the centre neighbour -> degree 2; corners stay 2
   deg <- Matrix::rowSums(g$adjacency)
   expect_equal(sum(deg == 2), 8L)
-})
-
-test_that("non-square grid spacing is handled per axis", {
-  grid <- expand.grid(x = c(0, 10, 20), y = c(0, 2, 4))
-  g <- adjacency(grid, type = "rook")
-  expect_equal(unname(g$cellsize[["x"]]), 10)
-  expect_equal(unname(g$cellsize[["y"]]), 2)
-  deg <- Matrix::rowSums(g$adjacency)
-  expect_equal(sort(deg), sort(c(4, 3, 3, 3, 3, 2, 2, 2, 2)))
 })
 
 test_that("node_index maps cell ids to node indices by key", {
@@ -137,7 +65,109 @@ test_that("adjacency errors on missing coords, duplicates, and bad ids", {
   expect_error(adjacency(bad, id = "cell"), "duplicate")
 })
 
+test_that("check_adjacency reports non-square and id mismatches", {
+  expect_warning(rns <- check_adjacency(matrix(0, 2, 3)), "not square")
+  expect_false(rns$square)
+
+  adj <- matrix(0, 3, 3); adj[1, 2] <- adj[2, 1] <- adj[2, 3] <- adj[3, 2] <- 1
+  expect_warning(check_adjacency(adj, ids = c("a", "b")), "match")
+})
+
+test_that("constructed graph emits a message on isolated nodes", {
+  # two disconnected single cells far apart relative to the grid step
+  grid <- data.frame(x = c(1, 2, 10), y = c(1, 1, 10))
+  expect_message(g <- adjacency(grid, type = "rook"), "isolated")
+  expect_equal(sum(Matrix::rowSums(g$adjacency) == 0), 1L)
+})
+
+test_that("print methods run without error", {
+  grid <- expand.grid(x = 1:3, y = 1:3)
+  g <- adjacency(grid, type = "queen")
+  expect_output(print(g), "tulpa_adjacency")
+  expect_output(print(check_adjacency(g$adjacency)), "adjacency check")
+})
+
+skip_on_cran_budget()
+test_that("adjacency.data.frame builds queen contiguity on a regular grid", {
+  skip_on_cran_budget()
+  grid <- expand.grid(x = 1:3, y = 1:3)
+  grid$cell <- paste0("c", seq_len(nrow(grid)))
+
+  g <- adjacency(grid, x_coord = "x", y_coord = "y", id = "cell",
+                 type = "queen")
+
+  expect_s4_class(g$adjacency, "dgCMatrix")
+  expect_equal(g$n, 9L)
+  expect_identical(g$ids, grid$cell)
+
+  W <- g$adjacency
+  expect_true(Matrix::isSymmetric(W))
+  expect_true(all(Matrix::diag(W) == 0))
+  expect_true(all(W@x == 1))
+
+  deg <- Matrix::rowSums(W)
+  # 1 centre (8), 4 edge-mid (5), 4 corners (3); 20 undirected edges
+  expect_equal(sort(deg), sort(c(8, 5, 5, 5, 5, 3, 3, 3, 3)))
+  expect_equal(sum(Matrix::tril(W) != 0), 20L)
+})
+
+test_that("order extends the neighbourhood to higher rings (queen and rook)", {
+  skip_on_cran_budget()
+  grid <- expand.grid(x = 1:5, y = 1:5)          # centre cell (3,3) is interior
+  centre <- which(grid$x == 3 & grid$y == 3)
+
+  q1 <- adjacency(grid, type = "queen", order = 1)
+  q2 <- adjacency(grid, type = "queen", order = 2)
+  r2 <- adjacency(grid, type = "rook",  order = 2)
+
+  expect_true(Matrix::isSymmetric(q2$adjacency))
+  expect_equal(q2$order, 2L)
+  # queen order k: (2k+1)^2 - 1 neighbours -> 8 (k=1), 24 (k=2) at the interior
+  expect_equal(Matrix::rowSums(q1$adjacency)[centre], 8)
+  expect_equal(Matrix::rowSums(q2$adjacency)[centre], 24)
+  # rook order k: 2k(k+1) -> 12 at k=2
+  expect_equal(Matrix::rowSums(r2$adjacency)[centre], 12)
+  # order 1 is a strict subset of order 2
+  expect_true(all((q1$adjacency != 0) <= (q2$adjacency != 0)))
+
+  expect_error(adjacency(grid, order = 0), "positive integer")
+  expect_error(adjacency(grid, order = -1), "positive integer")
+})
+
+test_that("a custom symmetric stencil builds exactly that neighbourhood", {
+  skip_on_cran_budget()
+  grid <- expand.grid(x = 1:5, y = 1:5)
+  centre <- which(grid$x == 3 & grid$y == 3)
+  # horizontal-only neighbours (left + right), symmetric already
+  g <- adjacency(grid, offsets = list(c(1, 0), c(-1, 0)))
+  expect_true(Matrix::isSymmetric(g$adjacency))
+  expect_equal(g$type, "custom")
+  expect_true(is.na(g$order))
+  expect_equal(Matrix::rowSums(g$adjacency)[centre], 2)   # only left + right
+})
+
+test_that("rook is a strict subset of queen on the same grid", {
+  skip_on_cran_budget()
+  grid <- expand.grid(x = 1:4, y = 1:4)
+  q <- adjacency(grid, type = "queen")$adjacency
+  r <- adjacency(grid, type = "rook")$adjacency
+  # every rook edge is a queen edge
+  expect_true(all((r != 0) <= (q != 0)))
+  expect_gt(sum(q != 0), sum(r != 0))
+})
+
+test_that("non-square grid spacing is handled per axis", {
+  skip_on_cran_budget()
+  grid <- expand.grid(x = c(0, 10, 20), y = c(0, 2, 4))
+  g <- adjacency(grid, type = "rook")
+  expect_equal(unname(g$cellsize[["x"]]), 10)
+  expect_equal(unname(g$cellsize[["y"]]), 2)
+  deg <- Matrix::rowSums(g$adjacency)
+  expect_equal(sort(deg), sort(c(4, 3, 3, 3, 3, 2, 2, 2, 2)))
+})
+
 test_that("check_adjacency validates a clean matrix and flags defects", {
+  skip_on_cran_budget()
   adj <- matrix(0, 4, 4)
   for (i in 1:3) adj[i, i + 1] <- adj[i + 1, i] <- 1
   rep_ok <- check_adjacency(adj)
@@ -160,22 +190,8 @@ test_that("check_adjacency validates a clean matrix and flags defects", {
   expect_equal(r3$n_isolated, 1L)
 })
 
-test_that("check_adjacency reports non-square and id mismatches", {
-  expect_warning(rns <- check_adjacency(matrix(0, 2, 3)), "not square")
-  expect_false(rns$square)
-
-  adj <- matrix(0, 3, 3); adj[1, 2] <- adj[2, 1] <- adj[2, 3] <- adj[3, 2] <- 1
-  expect_warning(check_adjacency(adj, ids = c("a", "b")), "match")
-})
-
-test_that("constructed graph emits a message on isolated nodes", {
-  # two disconnected single cells far apart relative to the grid step
-  grid <- data.frame(x = c(1, 2, 10), y = c(1, 1, 10))
-  expect_message(g <- adjacency(grid, type = "rook"), "isolated")
-  expect_equal(sum(Matrix::rowSums(g$adjacency) == 0), 1L)
-})
-
 test_that("spatial() and spatial_car() accept a tulpa_adjacency object", {
+  skip_on_cran_budget()
   grid <- expand.grid(x = 1:3, y = 1:3)
   grid$cell <- paste0("c", seq_len(nrow(grid)))
   g <- adjacency(grid, id = "cell", type = "queen")
@@ -186,13 +202,6 @@ test_that("spatial() and spatial_car() accept a tulpa_adjacency object", {
 
   car <- spatial_car(g, level = "group", group_var = "node")
   expect_s3_class(car, "tulpa_spatial")
-})
-
-test_that("print methods run without error", {
-  grid <- expand.grid(x = 1:3, y = 1:3)
-  g <- adjacency(grid, type = "queen")
-  expect_output(print(g), "tulpa_adjacency")
-  expect_output(print(check_adjacency(g$adjacency)), "adjacency check")
 })
 
 skip_on_cran()

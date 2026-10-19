@@ -1,5 +1,8 @@
 
+skip_on_cran_budget()
+
 test_that("tweedie matches the reference tweedie package density", {
+  skip_on_cran_budget()
   skip_if_not_installed("tweedie")
   for (p in c(1.2, 1.5, 1.8)) {
     eta <- c(-0.5, 0.3, 1.2); phi <- 0.9
@@ -11,6 +14,7 @@ test_that("tweedie matches the reference tweedie package density", {
 })
 
 test_that("tweedie validation fires", {
+  skip_on_cran_budget()
   expect_error(tulpa:::.tweedie_power(NULL), "requires")
   expect_error(tulpa:::.tweedie_power(2.5), "strictly in \\(1, 2\\)")
   d <- data.frame(x = rnorm(20), y = rgamma(20, 2))

@@ -18,11 +18,20 @@
   adj
 }
 
+test_that("the bare spatial(col) areal-naming path still parses", {
+  p <- tulpa_parse_formula(y ~ x + spatial(region))
+  expect_identical(p$spatial_var, "region")
+  expect_identical(p$n_spatial_field_blocks, 0L)
+})
+
+skip_on_cran_budget()
+
 # --------------------------------------------------------------------------- #
 # (1) Construction + expansion                                                #
 # --------------------------------------------------------------------------- #
 
 test_that("spatial() builds a field spec and expands one CAR block per column", {
+  skip_on_cran_budget()
   adj <- .chain_adj_field(10L)
   f <- spatial(graph = adj, formula = ~ 1 + time || cell)
   expect_s3_class(f, "tulpa_spatial_field")
@@ -53,6 +62,7 @@ test_that("spatial() builds a field spec and expands one CAR block per column", 
 })
 
 test_that("spatial() intercept-only and slope-only expand correctly", {
+  skip_on_cran_budget()
   adj <- .chain_adj_field(6L)
   d <- data.frame(cell = rep(1:6, each = 3), time = rnorm(18))
 
@@ -73,6 +83,7 @@ test_that("spatial() intercept-only and slope-only expand correctly", {
 # --------------------------------------------------------------------------- #
 
 test_that("spatial() enforces the bar grammar", {
+  skip_on_cran_budget()
   adj <- .chain_adj_field(8L)
   # Single bar | now builds correlated fields (separable MCAR); see
   # test-spatial-mcar.R. It constructs without error.
@@ -106,6 +117,7 @@ test_that("spatial() enforces the bar grammar", {
 # --------------------------------------------------------------------------- #
 
 test_that("inline spatial() does not leak its bar into random effects", {
+  skip_on_cran_budget()
   adj <- .chain_adj_field(10L)
   p <- tulpa_parse_formula(
     y ~ time + spatial(graph = adj, formula = ~ 1 + time || cell) + (1 | site))
@@ -122,6 +134,7 @@ test_that("inline spatial() does not leak its bar into random effects", {
 })
 
 test_that("an inline field refuses a mode naming every mode it accepts (#912)", {
+  skip_on_cran_budget()
   # The message used to list only 'auto' and 'laplace', leaving out the
   # `nested_laplace` spelling the check itself accepts.
   expect_error(tulpa:::.bar_field_check_mode("hmc", "spatial"),
@@ -138,12 +151,6 @@ test_that("an inline field refuses a mode naming every mode it accepts (#912)", 
     tulpa(y ~ time + spatial(graph = adj, formula = ~ 1 || cell), data = d,
           mode = "hmc"),
     "'nested_laplace'")
-})
-
-test_that("the bare spatial(col) areal-naming path still parses", {
-  p <- tulpa_parse_formula(y ~ x + spatial(region))
-  expect_identical(p$spatial_var, "region")
-  expect_identical(p$n_spatial_field_blocks, 0L)
 })
 
 skip_on_cran()

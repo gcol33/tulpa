@@ -11,7 +11,10 @@
   pmin(1, pmax(0, pit))
 }
 
+skip_on_cran_budget()
+
 test_that("tulpa_pit matches the R reference under a fixed seed", {
+  skip_on_cran_budget()
   set.seed(5); S <- 40L; N <- 60L
   cu <- matrix(runif(S * N, 0.3, 1), S, N); cl <- matrix(runif(S * N, 0, 0.3), S, N)
   set.seed(9); R1 <- .old_tulpa_pit(cu, cl); set.seed(9); C1 <- tulpa_pit(cu, cl)
@@ -21,6 +24,7 @@ test_that("tulpa_pit matches the R reference under a fixed seed", {
 })
 
 test_that("cpp_psis_loo_pit matches the per-column R loop, thread invariant", {
+  skip_on_cran_budget()
   old_loo <- function(ll, Fl, Fu) {
     Nn <- ncol(ll); Ss <- nrow(ll); fl <- numeric(Nn); fu <- numeric(Nn)
     for (i in seq_len(Nn)) {

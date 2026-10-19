@@ -24,11 +24,14 @@
   z - mean(z)
 }
 
+skip_on_cran_budget()
+
 # --------------------------------------------------------------------------- #
 # (1) Construction: proper = TRUE builds car_proper blocks carrying rho_bounds #
 # --------------------------------------------------------------------------- #
 
 test_that("proper = TRUE builds car_proper blocks with rho_bounds", {
+  skip_on_cran_budget()
   adj <- .grid_adj(4L, 4L)
   f <- spatial(graph = adj, formula = ~ 1 + time || cell, proper = TRUE)
   expect_true(f$proper)
@@ -50,6 +53,7 @@ test_that("proper = TRUE builds car_proper blocks with rho_bounds", {
 })
 
 test_that("proper-CAR field spec prints its structure", {
+  skip_on_cran_budget()
   adj <- .grid_adj(4L, 4L)
   f <- spatial(graph = adj, formula = ~ 1 || cell, proper = TRUE)
   out <- paste(capture.output(print(f)), collapse = "\n")

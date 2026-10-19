@@ -1,5 +1,8 @@
 
+skip_on_cran_budget()
+
 test_that("dispatch_gibbs_temporal rejects rw2, non-binomial, and spatial+temporal", {
+  skip_on_cran_budget()
   spec_rw2 <- validate_temporal_multiscale(
     temporal_multiscale("t", trend = "rw2"),
     data = data.frame(t = rep(1:5, 2))

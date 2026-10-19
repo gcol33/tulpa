@@ -68,7 +68,17 @@ test_that("the five predictive shapes are exported and the verb is the only one"
                      "sbc_crps_compare", "sbc_ecdf_band", "sbc_pit") %in% ex))
 })
 
+test_that("a replicate re-observing the same groups is refused", {
+  m <- fd_model(group_ids = function(data) data$g,
+                pool = function(obs, rep)
+                  list(y = c(obs$y, rep$y), g = c(obs$g, rep$g)))
+  expect_error(sbc("posterior", model = m, n_sim = 5L), "FRESH groups")
+})
+
+skip_on_cran_budget()
+
 test_that("the declaration is checked in both directions", {
+  skip_on_cran_budget()
   # A quantity that DID move contradicts the declaration.
   expect_error(sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
                    n_sim = 20L, flat_prior = "mu"),
@@ -80,6 +90,7 @@ test_that("the declaration is checked in both directions", {
 })
 
 test_that("a rank quantity needs no truth and is exempt from the guard", {
+  skip_on_cran_budget()
   # Every arm reports it as a rank, so there is no prior to be proper.
   fitter <- function(d)
     list(a = list(r = sbc_rank(sum(stats::runif(40L) < 0.5), 40L)))
@@ -90,6 +101,7 @@ test_that("a rank quantity needs no truth and is exempt from the guard", {
 })
 
 test_that("a pool that drops the observed data is refused", {
+  skip_on_cran_budget()
   # The documented collapse: fitting the replicate ALONE is ordinary SBC under
   # a hand-made prior, and the sequential-updating identity does not hold.
   m <- fd_model(pool = function(obs, rep) rep)
@@ -106,14 +118,8 @@ test_that("a pool that drops the observed data is refused", {
   expect_s3_class(sbc("posterior", model = m3, n_sim = 5L), "sbc")
 })
 
-test_that("a replicate re-observing the same groups is refused", {
-  m <- fd_model(group_ids = function(data) data$g,
-                pool = function(obs, rep)
-                  list(y = c(obs$y, rep$y), g = c(obs$g, rep$g)))
-  expect_error(sbc("posterior", model = m, n_sim = 5L), "FRESH groups")
-})
-
 test_that("the two experiments do not accept each other's arguments", {
+  skip_on_cran_budget()
   m <- fd_model()
   expect_error(sbc("posterior", model = m, n_sim = 5L, flat_prior = "mu"),
                "prior-predictive experiment")
@@ -131,6 +137,7 @@ test_that("the two experiments do not accept each other's arguments", {
 # ---------------------------------------------------------------------------
 
 test_that("CRPS is refused as a ranking where it is not a proper posterior score", {
+  skip_on_cran_budget()
   # The door offers only the two experiments in which the score IS proper, so a
   # fixed-truth result cannot come out of it -- and the refusal underneath is
   # still enforced.
@@ -145,6 +152,7 @@ test_that("CRPS is refused as a ranking where it is not a proper posterior score
 })
 
 test_that("proper_prior is not 'verified' on a run that probed nothing", {
+  skip_on_cran_budget()
   # gcol33/tulpa#716: .sbc_check_proper_prior() returns early with n_probe = 0
   # when every scored quantity is of the "rank" kind, having probed no truth at
   # all, and the premise was hardcoded "verified". The 0 does disclose it to a

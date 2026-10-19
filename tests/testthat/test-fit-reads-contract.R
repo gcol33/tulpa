@@ -1,15 +1,3 @@
-# What the estimation-level accessors read, and in which layout they report it:
-# interval column labels (gcol33/tulpa#756), one posterior read per fit
-# (gcol33/tulpa#752), a declined logLik() never an unexplained NA
-# (gcol33/tulpa#750), and a named `means` on every producer (gcol33/tulpa#758).
-
-test_that("interval columns are labelled as stats::confint.default labels them", {
-  for (level in c(0.95, 0.90, 0.80, 0.5, 0.99, 0.999)) {
-    ref <- colnames(stats::confint(stats::lm(dist ~ speed, data = cars),
-                                   level = level))
-    expect_identical(tulpa:::.interval_colnames(level), ref, info = level)
-  }
-})
 
 # A fit reporting a closed-form Gaussian: every coefficient accessor reads that
 # Gaussian, and none of them reads the draws sampled from it.
@@ -36,7 +24,34 @@ expect_gaussian_read <- function(fit, level = 0.9) {
                                 tolerance = 0)))
 }
 
+test_that("naming leaves a named or differently sized means as it is", {
+  named <- list(param_names = c("a", "b"), means = c(u = 1, v = 2))
+  expect_identical(names(tulpa:::.name_means_by_parameter(named)$means),
+                   c("u", "v"))
+  short <- list(param_names = c("a", "b", "c"), means = c(1, 2))
+  expect_null(names(tulpa:::.name_means_by_parameter(short)$means))
+  bare <- list(param_names = c("a", "b"), means = c(1, 2))
+  expect_identical(names(tulpa:::.name_means_by_parameter(bare)$means),
+                   c("a", "b"))
+})
+
+skip_on_cran_budget()
+# What the estimation-level accessors read, and in which layout they report it:
+# interval column labels (gcol33/tulpa#756), one posterior read per fit
+# (gcol33/tulpa#752), a declined logLik() never an unexplained NA
+# (gcol33/tulpa#750), and a named `means` on every producer (gcol33/tulpa#758).
+
+test_that("interval columns are labelled as stats::confint.default labels them", {
+  skip_on_cran_budget()
+  for (level in c(0.95, 0.90, 0.80, 0.5, 0.99, 0.999)) {
+    ref <- colnames(stats::confint(stats::lm(dist ~ speed, data = cars),
+                                   level = level))
+    expect_identical(tulpa:::.interval_colnames(level), ref, info = level)
+  }
+})
+
 test_that("a draw-based fit with no per-draw log posterior declines by name", {
+  skip_on_cran_budget()
   fit <- structure(list(draws = matrix(rnorm(40), 20, 2), n_fixed = 2L,
                         N = 50L, backend = "ess"),
                    class = "tulpa_fit")
@@ -54,17 +69,6 @@ test_that("a draw-based fit with no per-draw log posterior declines by name", {
   expect_no_match(tryCatch(stats::AIC(bare), error = conditionMessage), "\\bNA\\b")
 
   expect_error(tulpa:::.loglik_decline("not_a_reason"))
-})
-
-test_that("naming leaves a named or differently sized means as it is", {
-  named <- list(param_names = c("a", "b"), means = c(u = 1, v = 2))
-  expect_identical(names(tulpa:::.name_means_by_parameter(named)$means),
-                   c("u", "v"))
-  short <- list(param_names = c("a", "b", "c"), means = c(1, 2))
-  expect_null(names(tulpa:::.name_means_by_parameter(short)$means))
-  bare <- list(param_names = c("a", "b"), means = c(1, 2))
-  expect_identical(names(tulpa:::.name_means_by_parameter(bare)$means),
-                   c("a", "b"))
 })
 
 skip_on_cran()

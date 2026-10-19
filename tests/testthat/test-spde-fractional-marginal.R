@@ -76,7 +76,20 @@
     offset_nullable = off, tau_beta = tau_beta, weights_nullable = wt)
 }
 
+test_that("an unsupported family is named rather than silently mis-evaluated", {
+  f <- .frac_fixture()
+  expect_error(
+    cpp_spde_fractional_logmarginal(
+      y = f$y, X = f$X, A_eff = f$A, Pl = f$Pl, C0sub = f$C0,
+      family = "gamma", phi = 1, beta_hat = f$beta, x_hat = f$x,
+      n_trials = f$nt),
+    "gaussian, poisson, binomial")
+})
+
+skip_on_cran_budget()
+
 test_that("the fractional marginal reproduces an independent R reference", {
+  skip_on_cran_budget()
   f <- .frac_fixture()
   expect_equal(.frac_call(f), .frac_ref(f), tolerance = 1e-10)
   wv <- c(rep(1, 6), rep(0.5, 6))
@@ -84,6 +97,7 @@ test_that("the fractional marginal reproduces an independent R reference", {
 })
 
 test_that("a confident binomial fit is finite, where a materialised pi is not", {
+  skip_on_cran_budget()
   f <- .frac_fixture(big_eta = TRUE)
   eta <- as.numeric(f$X %*% f$beta + f$A %*% f$x)
   expect_gt(min(abs(eta)), 40)          # the fixture is in the regime
@@ -99,6 +113,7 @@ test_that("a confident binomial fit is finite, where a materialised pi is not", 
 })
 
 test_that("a zero-mass FEM node contributes 0 rather than making the cell NaN", {
+  skip_on_cran_budget()
   f <- .frac_fixture(c0_zero = TRUE)
   expect_true(any(f$C0 == 0))
   got <- .frac_call(f)
@@ -120,6 +135,7 @@ test_that("a zero-mass FEM node contributes 0 rather than making the cell NaN", 
 })
 
 test_that("the lengths and shapes R hands it are checked", {
+  skip_on_cran_budget()
   f <- .frac_fixture()
   expect_error(.frac_call(f, off = rnorm(3)), "offset length")
   expect_error(.frac_call(f, nt = rep(3L, 3)), "n_trials length")
@@ -131,14 +147,4 @@ test_that("the lengths and shapes R hands it are checked", {
                fixed = TRUE)
   expect_error(.frac_call(f, beta = c(0.1)), "beta_hat", fixed = TRUE)
   expect_error(.frac_call(f, x = rep(0, 3)), "x_hat", fixed = TRUE)
-})
-
-test_that("an unsupported family is named rather than silently mis-evaluated", {
-  f <- .frac_fixture()
-  expect_error(
-    cpp_spde_fractional_logmarginal(
-      y = f$y, X = f$X, A_eff = f$A, Pl = f$Pl, C0sub = f$C0,
-      family = "gamma", phi = 1, beta_hat = f$beta, x_hat = f$x,
-      n_trials = f$nt),
-    "gaussian, poisson, binomial")
 })

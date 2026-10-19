@@ -55,7 +55,10 @@ expect_assemblies_agree <- function(dn, sp, n_x) {
                tolerance = 1e-12)
 }
 
+skip_on_cran_budget()
+
 test_that("sparse and dense assembly agree at a sparse size", {
+  skip_on_cran_budget()
   fx <- sparse_asm_fixture(11L, G1 = 110L, G2 = 9L)
   expect_gte(fx$n_x, 200L)
   dn <- sparse_asm_fit(fx, -1L)
@@ -66,6 +69,7 @@ test_that("sparse and dense assembly agree at a sparse size", {
 })
 
 test_that("the structural route is chosen below the dense route's threshold", {
+  skip_on_cran_budget()
   fx <- sparse_asm_fixture(15L, G1 = 30L, G2 = 6L)
   expect_gte(fx$n_x, 50L)
   expect_lt(fx$n_x, 200L)
@@ -75,6 +79,7 @@ test_that("the structural route is chosen below the dense route's threshold", {
 })
 
 test_that("sparse assembly forced at a dense size agrees with the dense one", {
+  skip_on_cran_budget()
   fx <- sparse_asm_fixture(12L, G1 = 14L, G2 = 5L)
   expect_lt(fx$n_x, 50L)
   dn <- sparse_asm_fit(fx, -1L)
@@ -83,6 +88,7 @@ test_that("sparse assembly forced at a dense size agrees with the dense one", {
 })
 
 test_that("two processes sharing a random effect assemble identically", {
+  skip_on_cran_budget()
   set.seed(13L)
   N <- 240L; G <- 30L
   X1 <- cbind(1, rnorm(N)); X2 <- cbind(1, rnorm(N), rnorm(N))

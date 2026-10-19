@@ -17,7 +17,10 @@ make_tvc_pois <- function(n_t = 20L, reps = 8L, seed = 505L) {
   list(d = d, walk = walk, n_t = n_t)
 }
 
+skip_on_cran_budget()
+
 test_that("tvc requires an exact mode", {
+  skip_on_cran_budget()
   s <- make_tvc_pois(n_t = 6L, reps = 4L)
   expect_error(
     tulpa(y ~ x, data = s$d, family = "poisson",

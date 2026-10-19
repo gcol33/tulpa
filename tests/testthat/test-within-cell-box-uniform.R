@@ -18,9 +18,12 @@
 
 PROBS_WC <- c(0.005, 0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975, 0.995)
 
+skip_on_cran_budget()
+
 # --------------------------------------------------------------- the boxes tile
 
 test_that("the boxes tile the axis and carry the shipped masses exactly", {
+  skip_on_cran_budget()
   v <- exp(seq(log(0.2), log(1.5), length.out = 6))
   w <- c(0.05, 0.15, 0.3, 0.25, 0.15, 0.10)
   e <- .nl_box_edges(v, "positive")
@@ -42,6 +45,7 @@ test_that("the boxes tile the axis and carry the shipped masses exactly", {
 })
 
 test_that("a cumulative mass that rounds past 1 does not break the inversion", {
+  skip_on_cran_budget()
   # gcol33/tulpa#388. `cumsum(m)` can round ABOVE 1, and a grid whose trailing
   # cells hold no mass carries that same value from the last positive cell
   # onward, so forcing the LAST entry of the CDF to 1 made the vector DECREASE
@@ -80,6 +84,7 @@ test_that("a cumulative mass that rounds past 1 does not break the inversion", {
 })
 
 test_that("the partition comes from the grid, the masses from the weights", {
+  skip_on_cran_budget()
   # gcol33/tulpa#337's own rule is "keep the masses, tile the axis", and the two
   # halves come from different places. A cell whose integration weight underflows
   # to exactly 0 still SITS on the axis, and its coordinate is what fixes its
@@ -119,6 +124,7 @@ test_that("the partition comes from the grid, the masses from the weights", {
 })
 
 test_that("a bounded axis's boxes stay inside its support", {
+  skip_on_cran_budget()
   # gcol33/tulpa#361 extended `bym2_rho` to six nodes including 0.999, so a
   # `unit` axis with a node that close to its boundary is live. Mirroring or
   # bisecting such an axis in `log` -- which is what a coordinate guessed from
@@ -141,6 +147,7 @@ test_that("a bounded axis's boxes stay inside its support", {
 # ------------------------------------------------------ the per-axis provenance
 
 test_that("the axis read says which construction produced each interval", {
+  skip_on_cran_budget()
   v1 <- exp(seq(log(0.2), log(1.5), length.out = 4))
   v2 <- c(0.5, 1.5)
   tg <- as.matrix(expand.grid(sigma = v1, tau = v2))
@@ -163,6 +170,7 @@ test_that("the axis read says which construction produced each interval", {
 })
 
 test_that("the per-axis resolution is reported in the axis's own coordinate", {
+  skip_on_cran_budget()
   # `h / sd` is the regime variable for the position sensitivity a within-cell
   # reconstruction has, so a fit reports it rather than leaving the reader with
   # no way to tell a resolved axis from an unresolved one.

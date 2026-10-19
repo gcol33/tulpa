@@ -1,3 +1,12 @@
+
+test_that("the bare temporal(col) naming path still parses (accessor unaffected)", {
+  p <- tulpa_parse_formula(y ~ x + temporal(year))
+  expect_identical(p$temporal_var, "year")
+  expect_identical(p$n_temporal_field_blocks, 0L)
+  expect_identical(deparse(p$fixed_formula), "y ~ x")
+})
+
+skip_on_cran_budget()
 # Inline temporal varying-coefficient fields: temporal(formula = ~ 1 + x ||
 # time, structure = "rw1"/"rw2"/"ar1") (gcol33/tulpa#91). The temporal mirror of
 # the spatial() bar API: the intercept column is a smooth temporal level, a
@@ -8,6 +17,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("temporal(formula=, structure=) builds temporal blocks with svc_weight", {
+  skip_on_cran_budget()
   f <- temporal(formula = ~ 1 + x || time, structure = "rw1")
   expect_s3_class(f, "tulpa_temporal_field")
   expect_identical(f$structure, "rw1")
@@ -28,6 +38,7 @@ test_that("temporal(formula=, structure=) builds temporal blocks with svc_weight
 })
 
 test_that("temporal() field grammar is strict", {
+  skip_on_cran_budget()
   # Single bar | (correlated) is reserved.
   expect_error(temporal(formula = ~ 1 + x | time), "Correlated")
   # Nested grouping is rejected.
@@ -45,6 +56,7 @@ test_that("temporal() field grammar is strict", {
 # --------------------------------------------------------------------------- #
 
 test_that("inline temporal() does not leak its bar into random effects", {
+  skip_on_cran_budget()
   p <- tulpa_parse_formula(
     y ~ temporal(formula = ~ 1 + x || time, structure = "rw1") + (1 | site))
   expect_identical(p$n_temporal_field_blocks, 1L)
@@ -55,13 +67,6 @@ test_that("inline temporal() does not leak its bar into random effects", {
   # The field's covariate x is stripped from the fixed part.
   expect_identical(deparse(p$fixed_formula), "y ~ 1")
   expect_null(p$temporal_var)
-})
-
-test_that("the bare temporal(col) naming path still parses (accessor unaffected)", {
-  p <- tulpa_parse_formula(y ~ x + temporal(year))
-  expect_identical(p$temporal_var, "year")
-  expect_identical(p$n_temporal_field_blocks, 0L)
-  expect_identical(deparse(p$fixed_formula), "y ~ x")
 })
 
 skip_on_cran()

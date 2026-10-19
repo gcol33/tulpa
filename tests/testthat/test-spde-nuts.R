@@ -16,15 +16,6 @@ helper_make_spde_spec <- function(coords, max_edge = c(0.15, 0.5),
   )
 }
 
-test_that("tulpa_nuts_spde rejects non-SPDE spatial spec", {
-  expect_error(
-    tulpa_nuts_spde(y = 1:5, X = cbind(1, 1:5),
-                    spatial = list(type = "bym2"),
-                    control = list(n_iter = 50L, n_warmup = 25L)),
-    "SPDE tulpa_spatial"
-  )
-})
-
 test_that("tulpa_nuts_spde recovers gaussian SPDE on small mesh", {
   skip_if_not_installed("fmesher")
   skip_if_not_slow()
@@ -200,21 +191,6 @@ test_that("tulpa_nuts_spde beta recovers intercept and precision", {
   expect_lt(abs(beta_post - beta0), 0.30)
   expect_lt(abs(log(phi_post) - log(phi_true)), 0.50)
   expect_true(mean(fit$accept_prob) > 0.4)
-})
-
-test_that("tulpa_nuts_spde rejects unsupported family", {
-  skip_if_not_installed("fmesher")
-  set.seed(2)
-  coords <- cbind(runif(20), runif(20))
-  spec <- helper_make_spde_spec(coords, max_edge = c(0.3, 0.6), cutoff = 0.15)
-  y <- rnorm(20)
-  X <- matrix(1.0, nrow = 20, ncol = 1)
-  expect_error(
-    tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "inverse_gaussian",
-                    range = 0.3, sigma = 0.3,
-                    control = list(n_iter = 50L, n_warmup = 25L)),
-    "should be one of"  # match.arg() rejects before the C++ shim sees it
-  )
 })
 
 test_that("tulpa_nuts_spde gaussian beta posterior matches Laplace mode", {
@@ -427,4 +403,32 @@ test_that("fractional-nu fixed-hyper NUTS calibrates beta SD to the Laplace SE (
   # Calibrated, not under-dispersed: pre-fix the intercept SD ratio was ~0.28.
   expect_lt(abs(sd_n[1] - se_lap[1]) / se_lap[1], 0.30)
   expect_lt(abs(sd_n[2] - se_lap[2]) / se_lap[2], 0.30)
+})
+
+skip_on_cran_budget()
+
+test_that("tulpa_nuts_spde rejects non-SPDE spatial spec", {
+  skip_on_cran_budget()
+  expect_error(
+    tulpa_nuts_spde(y = 1:5, X = cbind(1, 1:5),
+                    spatial = list(type = "bym2"),
+                    control = list(n_iter = 50L, n_warmup = 25L)),
+    "SPDE tulpa_spatial"
+  )
+})
+
+test_that("tulpa_nuts_spde rejects unsupported family", {
+  skip_on_cran_budget()
+  skip_if_not_installed("fmesher")
+  set.seed(2)
+  coords <- cbind(runif(20), runif(20))
+  spec <- helper_make_spde_spec(coords, max_edge = c(0.3, 0.6), cutoff = 0.15)
+  y <- rnorm(20)
+  X <- matrix(1.0, nrow = 20, ncol = 1)
+  expect_error(
+    tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "inverse_gaussian",
+                    range = 0.3, sigma = 0.3,
+                    control = list(n_iter = 50L, n_warmup = 25L)),
+    "should be one of"  # match.arg() rejects before the C++ shim sees it
+  )
 })

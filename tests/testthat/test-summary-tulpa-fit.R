@@ -26,7 +26,10 @@
   ), class = "tulpa_fit")
 }
 
+skip_on_cran_budget()
+
 test_that("summary() returns a summary.tulpa_fit carrying the whole report", {
+  skip_on_cran_budget()
   fit <- .sm_laplace_shaped()
   s <- summary(fit)
   expect_s3_class(s, "summary.tulpa_fit")
@@ -43,6 +46,7 @@ test_that("summary() returns a summary.tulpa_fit carrying the whole report", {
 })
 
 test_that("coef(summary()) is the fixed-effect table confint() reads", {
+  skip_on_cran_budget()
   fit <- .sm_laplace_shaped()
   tab <- coef(summary(fit))
   expect_s3_class(tab, "data.frame")
@@ -58,6 +62,7 @@ test_that("coef(summary()) is the fixed-effect table confint() reads", {
 })
 
 test_that("print() is the short display and points at summary()", {
+  skip_on_cran_budget()
   fit <- .sm_laplace_shaped()
   out <- utils::capture.output(print(fit))
   expect_match(out[1L], "tulpa fit  (laplace, tier 2)", fixed = TRUE)
@@ -69,6 +74,7 @@ test_that("print() is the short display and points at summary()", {
 })
 
 test_that("print(summary()) renders every section the fit carries", {
+  skip_on_cran_budget()
   s <- summary(.sm_grid_shaped())
   out <- utils::capture.output(print(s))
   expect_true(any(grepl("Fixed effects:", out, fixed = TRUE)))
@@ -84,6 +90,7 @@ test_that("print(summary()) renders every section the fit carries", {
 })
 
 test_that("a reliability record with nothing to report prints no header", {
+  skip_on_cran_budget()
   bare <- list(kind = "iid", verdict = NA_character_,
                convergence = list(ok = NA, rhat_max = NA, ess_bulk_min = NA))
   expect_identical(utils::capture.output(.print_reliability(bare, 4L)),
@@ -95,6 +102,7 @@ test_that("a reliability record with nothing to report prints no header", {
 })
 
 test_that("the hyperparameter table reads the outer-grid moments", {
+  skip_on_cran_budget()
   h <- summary(.sm_grid_shaped())$hyperparameters
   expect_identical(names(h), c("parameter", "mean", "sd", "median",
                                "ci_lo", "ci_hi"))
@@ -104,6 +112,7 @@ test_that("the hyperparameter table reads the outer-grid moments", {
 })
 
 test_that("tulpa_outer_grid() returns nodes, normalized weights and modes", {
+  skip_on_cran_budget()
   fit <- .sm_grid_shaped()
   g <- tulpa_outer_grid(fit)
   expect_identical(names(g), c("nodes", "weights", "log_marginal", "support",
@@ -119,11 +128,13 @@ test_that("tulpa_outer_grid() returns nodes, normalized weights and modes", {
 })
 
 test_that("tulpa_outer_grid() refuses a fit with no outer grid", {
+  skip_on_cran_budget()
   expect_error(tulpa_outer_grid(.sm_laplace_shaped()),
                "no outer hyperparameter grid")
 })
 
 test_that("tulpa_fit_summary() wraps a model package's own coefficient table", {
+  skip_on_cran_budget()
   fit <- .sm_laplace_shaped()
   tab <- data.frame(estimate = c(1, 2), std.error = c(0.1, 0.2),
                     `2.5 %` = c(0.8, 1.6), `97.5 %` = c(1.2, 2.4),

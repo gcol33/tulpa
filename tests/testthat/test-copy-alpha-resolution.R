@@ -1,3 +1,13 @@
+
+test_that("a resolution override is refused where there is no resolution", {
+    # An axis declared as explicit nodes has no `lo`/`hi` to redistribute
+    # between, so raising it would have to invent a rule.
+    expect_error(tulpa:::.nl_grid_axis("bym2_rho", n = 9L), "explicit nodes")
+    expect_error(tulpa:::.nl_grid_axis("copy_alpha", n = 0L), "whole number >= 1")
+    expect_error(tulpa:::.nl_grid_axis("copy_alpha", n = c(3L, 4L)), "whole number >= 1")
+})
+
+skip_on_cran_budget()
 # The copy coefficient's outer axis, and the resolution knob it lacked
 # (gcol33/tulpa#633).
 #
@@ -17,6 +27,7 @@
 # `prune = TRUE` reproduces the same node counts and the same ESS to the digit.
 
 test_that("a resolution override keeps the axis's declared shape", {
+    skip_on_cran_budget()
     base <- tulpa:::.nl_grid_axis("copy_alpha")
     expect_identical(base[1L], 0)                 # the atom
     expect_length(base, 10L)                      # atom + 9 slab nodes
@@ -37,15 +48,8 @@ test_that("a resolution override keeps the axis's declared shape", {
                      base)
 })
 
-test_that("a resolution override is refused where there is no resolution", {
-    # An axis declared as explicit nodes has no `lo`/`hi` to redistribute
-    # between, so raising it would have to invent a rule.
-    expect_error(tulpa:::.nl_grid_axis("bym2_rho", n = 9L), "explicit nodes")
-    expect_error(tulpa:::.nl_grid_axis("copy_alpha", n = 0L), "whole number >= 1")
-    expect_error(tulpa:::.nl_grid_axis("copy_alpha", n = c(3L, 4L)), "whole number >= 1")
-})
-
 test_that("alpha_grid and alpha_n answer different questions and cannot be mixed", {
+    skip_on_cran_budget()
     # Not ranked silently: one states the nodes, the other states how many.
     expect_error(tulpa:::.nl_copy_alpha_axis(c(0, 1, 2), 9L),
                  "not both")
@@ -61,6 +65,7 @@ test_that("alpha_grid and alpha_n answer different questions and cannot be mixed
 })
 
 test_that("the multi-block copy resolver reads alpha_n", {
+    skip_on_cran_budget()
     spec <- list(arm = 2L, block = 1L, alpha_n = 9L)
     got <- tulpa:::.nl_copy_alpha_axis(spec$alpha_grid, spec$alpha_n)
     expect_length(got, 10L)
@@ -68,6 +73,7 @@ test_that("the multi-block copy resolver reads alpha_n", {
 })
 
 test_that("a named field_coef is not read as a resolution request", {
+    skip_on_cran_budget()
     # `$` PARTIAL-matches on a list, so `fc$n` resolves to `fc$name` on every
     # spec that names its coefficient -- which fed a character into the integer
     # check and errored every existing `field_coef = list(name = , grid = )`

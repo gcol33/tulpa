@@ -21,7 +21,19 @@
   exp(mean(log(diag(Lp))))
 }
 
+.island_data <- function() {
+  A <- matrix(0, 16, 16)
+  A[1:15, 1:15] <- .chain(15L)
+  set.seed(1)
+  d <- data.frame(region = rep(1:16, each = 4), x = rnorm(64))
+  d$y <- rpois(64, exp(0.3 + 0.5 * d$x))
+  list(A = A, d = d)
+}
+
+skip_on_cran_budget()
+
 test_that("a connected graph keeps its Riebler scale and carries no multipliers", {
+  skip_on_cran_budget()
   A <- .chain(12L)
   sc <- tulpa:::.bym2_component_scaling(A)
   expect_null(sc$node_prec)
@@ -30,6 +42,7 @@ test_that("a connected graph keeps its Riebler scale and carries no multipliers"
 })
 
 test_that("an island no longer makes the scale infinite (#902)", {
+  skip_on_cran_budget()
   A <- matrix(0, 16, 16)
   A[1:15, 1:15] <- .chain(15L)                 # node 16 isolated
   s <- suppressWarnings(spatial_bym2(A, group_var = "region"))
@@ -43,6 +56,7 @@ test_that("an island no longer makes the scale infinite (#902)", {
 })
 
 test_that("each component of a disconnected graph reaches unit generalised variance", {
+  skip_on_cran_budget()
   # A 10-chain, a 3 x 3 lattice (a different geometry, so a different scale)
   # and an island.
   lat <- matrix(0, 9, 9)
@@ -64,16 +78,8 @@ test_that("each component of a disconnected graph reaches unit generalised varia
   expect_equal(sc$scale_factor^2 / sc$node_prec[20], 1)
 })
 
-.island_data <- function() {
-  A <- matrix(0, 16, 16)
-  A[1:15, 1:15] <- .chain(15L)
-  set.seed(1)
-  d <- data.frame(region = rep(1:16, each = 4), x = rnorm(64))
-  d$y <- rpois(64, exp(0.3 + 0.5 * d$x))
-  list(A = A, d = d)
-}
-
 test_that("the ModelData sampler's BYM2 prior is diag(node_prec) Q_aug (#902)", {
+  skip_on_cran_budget()
   # Shifting phi by a constant leaves the centred field -- and so eta and the
   # likelihood -- unchanged, so the log-posterior difference is the prior's
   # alone. Q 1 = 0 on every component, so what moves is each component's

@@ -1,6 +1,25 @@
+
+test_that("rubins_pool() recovers zero skewness from symmetric inputs", {
+  set.seed(4)
+  K <- 200L; p <- 1L
+  mu_k    <- rnorm(K, mean = 0, sd = 0.05)
+  sigma_k <- rep(0.5, K)
+  gamma_k <- rep(0, K)
+
+  draws <- lapply(seq_len(K), function(k) {
+    list(only = list(beta = mu_k[k], se = sigma_k[k], gamma = gamma_k[k]))
+  })
+  pooled <- rubins_pool(draws)
+  # No within-draw skewness and (approximately) symmetric between-draw mu
+  # distribution should leave kappa3 ~ 0.
+  expect_lt(abs(pooled$only$kappa3), 5e-4)
+})
+
+skip_on_cran_budget()
 # Tests for the third-cumulant (gamma) extension of rubins_pool().
 
 test_that("rubins_pool() pools gamma via law of total cumulants", {
+  skip_on_cran_budget()
   set.seed(1)
   K <- 50L
   p <- 2L
@@ -43,6 +62,7 @@ test_that("rubins_pool() pools gamma via law of total cumulants", {
 })
 
 test_that("rubins_pool() skips gamma path when any draw lacks gamma", {
+  skip_on_cran_budget()
   set.seed(2)
   K <- 5L; p <- 2L
   draws <- lapply(seq_len(K), function(k) {
@@ -59,6 +79,7 @@ test_that("rubins_pool() skips gamma path when any draw lacks gamma", {
 })
 
 test_that("rubins_pool() reduces to existing path when no gamma supplied", {
+  skip_on_cran_budget()
   set.seed(3)
   K <- 4L; p <- 2L
   draws <- lapply(seq_len(K), function(k) {
@@ -70,23 +91,8 @@ test_that("rubins_pool() reduces to existing path when no gamma supplied", {
                ignore.order = TRUE)
 })
 
-test_that("rubins_pool() recovers zero skewness from symmetric inputs", {
-  set.seed(4)
-  K <- 200L; p <- 1L
-  mu_k    <- rnorm(K, mean = 0, sd = 0.05)
-  sigma_k <- rep(0.5, K)
-  gamma_k <- rep(0, K)
-
-  draws <- lapply(seq_len(K), function(k) {
-    list(only = list(beta = mu_k[k], se = sigma_k[k], gamma = gamma_k[k]))
-  })
-  pooled <- rubins_pool(draws)
-  # No within-draw skewness and (approximately) symmetric between-draw mu
-  # distribution should leave kappa3 ~ 0.
-  expect_lt(abs(pooled$only$kappa3), 5e-4)
-})
-
 test_that("rubins_pool() gamma is the skewness of the draw mixture (#888)", {
+  skip_on_cran_budget()
   # Equal-weight mixture of N(0, 1), N(0, 1), N(3, 1): mean 1, variance
   # 1 + 2 = 3, third central moment 2, so skewness 2 / 3^1.5 = 0.3849.
   # Standardizing by Rubin's V_total = 1 + (4/3) * 3 = 5 read 0.179.
@@ -114,6 +120,7 @@ test_that("rubins_pool() gamma is the skewness of the draw mixture (#888)", {
 })
 
 test_that("rubins_pool() refuses mismatched draws instead of recycling (#888)", {
+  skip_on_cran_budget()
   expect_error(
     rubins_pool(list(list(m = list(beta = 1, se = 1)),
                      list(m = list(beta = c(1, 2), se = c(1, 1))))),
@@ -133,6 +140,7 @@ test_that("rubins_pool() refuses mismatched draws instead of recycling (#888)", 
 })
 
 test_that("rubins_pool() pools a submodel draw 1 lacks (#888)", {
+  skip_on_cran_budget()
   dr <- list(list(a = list(beta = 1, se = 1)),
              list(a = list(beta = 2, se = 1), b = list(beta = 5, se = 1)),
              list(a = list(beta = 3, se = 1), b = list(beta = 6, se = 1)))

@@ -78,11 +78,25 @@
   ), class = c("tulpa_fit"))
 }
 
+test_that("diagnostics keeps chain behaviour for an MCMC fit", {
+  set.seed(6)
+  draws <- matrix(rnorm(400 * 2), 400, 2, dimnames = list(NULL, c("a", "b")))
+  fit <- structure(list(draws = draws, draws_kind = "chain"),
+                   class = "tulpa_fit")
+  md <- diagnostics(fit)
+  expect_false(inherits(md, "laplace_diagnostics"))
+  expect_true("rhat" %in% names(md))
+  expect_equal(nrow(md), 2L)
+})
+
+skip_on_cran_budget()
+
 # --------------------------------------------------------------------------- #
 # (4) diagnostics() routing: chain behaviour preserved, i.i.d. routed here.    #
 # --------------------------------------------------------------------------- #
 
 test_that("diagnostics routes an i.i.d. fit to the reliability table", {
+  skip_on_cran_budget()
   set.seed(5)
   draws <- matrix(rnorm(1000 * 3), 1000, 3,
                   dimnames = list(NULL, c("a", "b", "c")))
@@ -98,18 +112,8 @@ test_that("diagnostics routes an i.i.d. fit to the reliability table", {
   expect_true(all(is.finite(md$rhat)))
 })
 
-test_that("diagnostics keeps chain behaviour for an MCMC fit", {
-  set.seed(6)
-  draws <- matrix(rnorm(400 * 2), 400, 2, dimnames = list(NULL, c("a", "b")))
-  fit <- structure(list(draws = draws, draws_kind = "chain"),
-                   class = "tulpa_fit")
-  md <- diagnostics(fit)
-  expect_false(inherits(md, "laplace_diagnostics"))
-  expect_true("rhat" %in% names(md))
-  expect_equal(nrow(md), 2L)
-})
-
 test_that("diagnostics honours pars and reads a cached k-hat on an i.i.d. fit", {
+  skip_on_cran_budget()
   set.seed(8)
   draws <- matrix(rnorm(600 * 4), 600, 4,
                   dimnames = list(NULL, c("a", "b", "c", "d")))
@@ -124,6 +128,7 @@ test_that("diagnostics honours pars and reads a cached k-hat on an i.i.d. fit", 
 })
 
 test_that("the k-hat interpretation bands match the Vehtari et al. (2024) thresholds", {
+  skip_on_cran_budget()
   expect_equal(.tulpa_khat_band(0.3),  "good")
   expect_equal(.tulpa_khat_band(0.49), "good")
   expect_equal(.tulpa_khat_band(0.5),  "ok")

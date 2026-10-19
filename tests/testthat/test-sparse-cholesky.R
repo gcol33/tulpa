@@ -1,3 +1,5 @@
+
+skip_on_cran_budget()
 # test-sparse-cholesky.R
 # Validates CHOLMOD sparse solver path (Feature 1)
 # These tests use n_spatial > 200 to trigger the sparse Cholesky backend.
@@ -9,6 +11,7 @@
 # =====================================================================
 
 test_that("ICAR Laplace works with sparse Cholesky (300 sites)", {
+  skip_on_cran_budget()
   adj <- make_grid_adjacency(15, 20)  # 300 sites
   expect_equal(adj$n, 300L)
 
@@ -57,6 +60,7 @@ test_that("ICAR Laplace works with sparse Cholesky (300 sites)", {
 # =====================================================================
 
 test_that("BYM2 Laplace works with sparse Cholesky (225 sites)", {
+  skip_on_cran_budget()
   adj <- make_grid_adjacency(15, 15)  # 225 sites
   expect_equal(adj$n, 225L)
 
@@ -102,6 +106,7 @@ test_that("BYM2 Laplace works with sparse Cholesky (225 sites)", {
 # =====================================================================
 
 test_that("Poisson ICAR works with sparse Cholesky (400 sites)", {
+  skip_on_cran_budget()
   adj <- make_grid_adjacency(20, 20)  # 400 sites
   set.seed(123)
   n_sites <- 400L
@@ -143,6 +148,7 @@ test_that("Poisson ICAR works with sparse Cholesky (400 sites)", {
 # column-major footgun history most wants on this path.
 
 test_that("ICAR single-response: dense and sparse agree byte-level on identical data", {
+  skip_on_cran_budget()
   adj <- make_grid_adjacency(15, 15)  # 225 sites -> n_x = 226 (auto-sparse)
   dat <- simulate_spatial_data(
     n_sites = 225, n_obs_per_site = 4,

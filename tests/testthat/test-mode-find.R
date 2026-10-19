@@ -1,7 +1,17 @@
+
+test_that(".nl_lbfgsb_mode_find returns NULL rather than propagating an error", {
+  boom <- function(u) stop("objective exploded")
+  expect_null(tulpa:::.nl_lbfgsb_mode_find(
+    c(0, 0), boom, c(-1, -1), c(1, 1),
+    tulpa:::.nl_mode_find_tuning("spde")))
+})
+
+skip_on_cran_budget()
 # test-mode-find.R
 # The shared outer mode-find (R/mode_find.R) and its settings entry.
 
 test_that(".NL_MODE_FIND pins the shipped tuning for both consumers", {
+  skip_on_cran_budget()
   expect_setequal(names(tulpa:::.NL_MODE_FIND), c("spde", "st", "pathfinder"))
   # The two helper consumers carry the full knob set. pathfinder takes only
   # factr: it is unbounded, gradient-aware, and carries maxit / pgtol as its
@@ -25,6 +35,7 @@ test_that(".NL_MODE_FIND pins the shipped tuning for both consumers", {
 })
 
 test_that("the st ndeps entry is optim's own default, so writing it changes nothing", {
+  skip_on_cran_budget()
   # The ST auto-grid used to omit ndeps and inherit optim()'s default. Stating
   # it in .NL_MODE_FIND is only an improvement if the stated value IS that
   # default -- otherwise the refactor silently retuned that path.
@@ -47,6 +58,7 @@ test_that("the st ndeps entry is optim's own default, so writing it changes noth
 })
 
 test_that(".nl_lbfgsb_mode_find reproduces the call it replaced, bit for bit", {
+  skip_on_cran_budget()
   fn <- function(u) sum((u - c(0.4, -1.3))^2) + 0.05 * sum(u^4)
   u0 <- c(1.7, -0.2)
   lo <- c(-6, -6); hi <- c(6, 6)
@@ -67,14 +79,8 @@ test_that(".nl_lbfgsb_mode_find reproduces the call it replaced, bit for bit", {
   }
 })
 
-test_that(".nl_lbfgsb_mode_find returns NULL rather than propagating an error", {
-  boom <- function(u) stop("objective exploded")
-  expect_null(tulpa:::.nl_lbfgsb_mode_find(
-    c(0, 0), boom, c(-1, -1), c(1, 1),
-    tulpa:::.nl_mode_find_tuning("spde")))
-})
-
 test_that("control$mode_find overrides the defaults it names and no others", {
+  skip_on_cran_budget()
   base <- tulpa:::.nl_mode_find_tuning("spde")
   expect_identical(base$ndeps, 1e-2)
 
@@ -97,6 +103,7 @@ test_that("control$mode_find overrides the defaults it names and no others", {
 })
 
 test_that("a misspelled or ill-typed mode_find knob errors instead of fitting the default", {
+  skip_on_cran_budget()
   expect_error(
     tulpa:::.nl_mode_find_tuning("spde", list(mode_find = list(ndpes = 1e-3))),
     "Unknown control\\$mode_find knob")
@@ -116,6 +123,7 @@ test_that("a misspelled or ill-typed mode_find knob errors instead of fitting th
 })
 
 test_that("fit_spde() accepts control$mode_find and rejects a typo in it", {
+  skip_on_cran_budget()
   expect_silent(tulpa_check_control(list(mode_find = list(ndeps = 1e-3)),
                                     tulpa:::.CONTROL_KEYS$spde, "fit_spde"))
   expect_error(
@@ -128,6 +136,7 @@ test_that("fit_spde() accepts control$mode_find and rejects a typo in it", {
 })
 
 test_that("both mode-find consumers reach optim only through the shared helper", {
+  skip_on_cran_budget()
   # The point of .NL_MODE_FIND is that this tuning lives in one file. A call
   # site that calls optim() itself carries its own factr / ndeps again, which
   # is the copy this replaced. all.names() walks the parse tree, so this holds

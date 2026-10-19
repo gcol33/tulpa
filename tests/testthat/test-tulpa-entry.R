@@ -22,7 +22,10 @@ make_binom_re <- function(seed = 3, ng = 8L, per = 12L, nt = 10L) {
   )
 }
 
+skip_on_cran_budget()
+
 test_that("Gibbs rejects unsupported families and non-intercept RE structure", {
+  skip_on_cran_budget()
   s <- make_binom_re()
   # gaussian not supported by the PG sampler
   err1 <- expect_error(

@@ -10,7 +10,10 @@
 COV <- c(exponential = 0L, matern32 = 1L, gaussian = 2L, spherical = 3L,
          matern52 = 4L)
 
+skip_on_cran_budget()
+
 test_that("the gaussian phi-derivative carries its factor of two", {
+  skip_on_cran_budget()
   # The GP copy returned cov_val*d^2/phi^3 instead of cov_val*2*d^2/phi^3, i.e.
   # exactly half. Pin the closed form so the halved version cannot come back.
   sigma2 <- 1.3; phi <- 0.9
@@ -22,6 +25,7 @@ test_that("the gaussian phi-derivative carries its factor of two", {
 })
 
 test_that("the spherical derivative is its own, not the exponential's", {
+  skip_on_cran_budget()
   # SPHERICAL fell through `default:` to the exponential derivative, so the
   # value and the gradient described different kernels.
   sigma2 <- 1.0; phi <- 1.0
@@ -40,6 +44,7 @@ test_that("the spherical derivative is its own, not the exponential's", {
 })
 
 test_that("the derivative vanishes at zero distance for every kernel", {
+  skip_on_cran_budget()
   for (nm in names(COV)) {
     expect_equal(cpp_test_dcov_dphi(0, 1.0, 1.0, COV[[nm]]), 0, info = nm)
   }

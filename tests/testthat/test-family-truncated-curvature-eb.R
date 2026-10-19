@@ -87,19 +87,6 @@ mean_sigma <- function(seeds, family, ...) {
   mean(est)
 }
 
-test_that("neg_binomial_2 registers the observed curvature for Newton", {
-  # The untruncated sibling carries y in its Newton weight, so it is a control
-  # for the estimator rather than for the curvature choice.
-  phi <- 2.0
-  for (eta in c(-0.5, 0.4, 1.3)) {
-    w1 <- cpp_family_terms(1, 1L, eta, "neg_binomial_2", phi)[["neg_hess"]]
-    w9 <- cpp_family_terms(9, 1L, eta, "neg_binomial_2", phi)[["neg_hess"]]
-    expect_false(isTRUE(all.equal(w1, w9, tolerance = 1e-8)))
-    expect_equal(w1, cpp_family_obs_terms(1, 1L, eta, "neg_binomial_2", phi)[["neg_hess"]],
-                 tolerance = 1e-12)
-  }
-})
-
 test_that("truncated_neg_binomial_2 Newton weight is y-free and differs from observed", {
   # The gap is the quantity the recovery tests are sensitive to. It is not a
   # rounding difference: it grows linearly in y, since the observed form carries
@@ -123,6 +110,22 @@ test_that("truncated_neg_binomial_2 Newton weight is y-free and differs from obs
   # And the two disagree materially somewhere in the support that the fits
   # below actually sample.
   expect_gt(max(abs(w_obs - w_newton)) / w_newton[1L], 0.5)
+})
+
+skip_on_cran_budget()
+
+test_that("neg_binomial_2 registers the observed curvature for Newton", {
+  skip_on_cran_budget()
+  # The untruncated sibling carries y in its Newton weight, so it is a control
+  # for the estimator rather than for the curvature choice.
+  phi <- 2.0
+  for (eta in c(-0.5, 0.4, 1.3)) {
+    w1 <- cpp_family_terms(1, 1L, eta, "neg_binomial_2", phi)[["neg_hess"]]
+    w9 <- cpp_family_terms(9, 1L, eta, "neg_binomial_2", phi)[["neg_hess"]]
+    expect_false(isTRUE(all.equal(w1, w9, tolerance = 1e-8)))
+    expect_equal(w1, cpp_family_obs_terms(1, 1L, eta, "neg_binomial_2", phi)[["neg_hess"]],
+                 tolerance = 1e-12)
+  }
 })
 
 skip_on_cran()

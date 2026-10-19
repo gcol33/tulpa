@@ -1,5 +1,61 @@
 
+test_that("a node set well inside the domain keeps the edges it had", {
+    g <- c(0.1, 0.3, 0.5, 0.7)
+    expect_identical(tulpa:::.hyper_axis_support(g, hyper_axis_spec("rho", g)),
+                     tulpa:::.hyper_default_coord_bounds(g))
+
+    # An axis the registry does not classify carries no domain at all.
+    h <- c(-1.2, 0, 1.2)
+    expect_identical(
+        tulpa:::.hyper_axis_support(h, hyper_axis_spec("mcar_logchol_off", h)),
+        tulpa:::.hyper_default_coord_bounds(h))
+})
+
+test_that("a node outside the declared domain sets the declaration aside", {
+    # The convention `.nl_cell_partition()` takes on the reporting side: a
+    # declaration the data contradicts is set aside rather than the data moved.
+    g <- c(0.8, 0.95, 1.2)
+    expect_identical(
+        tulpa:::.hyper_axis_support(g, hyper_axis_spec("rho_car", g)),
+        tulpa:::.hyper_default_coord_bounds(g))
+})
+
+test_that("a positive-scale axis keeps the support it had", {
+    g <- tulpa:::.nl_grid_axis("field_sd")
+    spec <- hyper_axis_spec("sigma", g, log_scale = TRUE, bounds = c(0, Inf))
+    sup <- tulpa:::.hyper_axis_support(g, spec)
+    # The log coordinate cannot reach 0, so the clamp is an exact no-op there.
+    expect_identical(sup, exp(tulpa:::.hyper_default_coord_bounds(log(g))))
+    expect_gt(sup[1L], 0)
+
+    # A declared span already inside the domain is returned as declared.
+    spec$slab_bounds <- exp(tulpa:::.hyper_default_coord_bounds(log(g)))
+    expect_identical(tulpa:::.hyper_axis_support(g, spec), spec$slab_bounds)
+})
+
+test_that("the stored per-axis support is inside every axis's domain", {
+    tg <- as.matrix(expand.grid(sigma = c(0.5, 1, 2),
+                                rho_car = c(0.5, 0.8, 0.95, 0.99)))
+    specs <- list(
+        hyper_axis_spec("sigma", c(0.5, 1, 2), log_scale = TRUE,
+                        bounds = c(0, Inf)),
+        hyper_axis_spec("rho_car", c(0.5, 0.8, 0.95, 0.99))
+    )
+    sup <- tulpa:::.hyper_grid_supports(tg, specs)
+    expect_named(sup, c("sigma", "rho_car"))
+    expect_equal(sup$rho_car, c(0.35, 0.995))
+    expect_lt(sup$rho_car[2L], 1)
+    expect_gt(sup$sigma[1L], 0)
+})
+
+test_that("an axis with fewer than two continuum levels reports no support", {
+    expect_null(tulpa:::.hyper_axis_support(0.9, hyper_axis_spec("rho", 0.9)))
+})
+
+skip_on_cran_budget()
+
 test_that("a domain is keyed on the axis name without its block prefix", {
+    skip_on_cran_budget()
     expect_identical(tulpa:::.hyper_axis_bare("b1.rho_car"), "rho_car")
     expect_identical(tulpa:::.hyper_axis_bare("b12.rho"), "rho")
     expect_identical(tulpa:::.hyper_axis_bare("rho_car"), "rho_car")
@@ -13,6 +69,7 @@ test_that("a domain is keyed on the axis name without its block prefix", {
 })
 
 test_that("the proper-CAR default grid no longer closes outside its domain", {
+    skip_on_cran_budget()
     g <- tulpa:::.nl_grid_axis("joint_car_rho")
     expect_equal(g, c(0.5, 0.8, 0.95, 0.99))
 
@@ -29,19 +86,8 @@ test_that("the proper-CAR default grid no longer closes outside its domain", {
     expect_gt(sup[2L], max(g))
 })
 
-test_that("a node set well inside the domain keeps the edges it had", {
-    g <- c(0.1, 0.3, 0.5, 0.7)
-    expect_identical(tulpa:::.hyper_axis_support(g, hyper_axis_spec("rho", g)),
-                     tulpa:::.hyper_default_coord_bounds(g))
-
-    # An axis the registry does not classify carries no domain at all.
-    h <- c(-1.2, 0, 1.2)
-    expect_identical(
-        tulpa:::.hyper_axis_support(h, hyper_axis_spec("mcar_logchol_off", h)),
-        tulpa:::.hyper_default_coord_bounds(h))
-})
-
 test_that("a block's own bounds tighten the domain the name declares", {
+    skip_on_cran_budget()
     g <- c(0.2, 0.5, 0.8, 0.95, 0.99, 0.999)
     bare <- tulpa:::.hyper_axis_support(g, hyper_axis_spec("rho", g))
     bym2 <- tulpa:::.hyper_axis_support(
@@ -64,16 +110,8 @@ test_that("a block's own bounds tighten the domain the name declares", {
     expect_true(unit[1L] < min(g2))
 })
 
-test_that("a node outside the declared domain sets the declaration aside", {
-    # The convention `.nl_cell_partition()` takes on the reporting side: a
-    # declaration the data contradicts is set aside rather than the data moved.
-    g <- c(0.8, 0.95, 1.2)
-    expect_identical(
-        tulpa:::.hyper_axis_support(g, hyper_axis_spec("rho_car", g)),
-        tulpa:::.hyper_default_coord_bounds(g))
-})
-
 test_that("a contradicted bound is set aside on its own side only", {
+    skip_on_cran_budget()
     # `hyper_axis_spec()` refuses a grid outside a spec's own `bounds`, so the
     # side-by-side decision is reached through the REGISTRY domain, which is a
     # claim about the axis name rather than a validated field. Driven directly
@@ -100,6 +138,7 @@ test_that("a contradicted bound is set aside on its own side only", {
 })
 
 test_that("an engine axis named rho accepts the nodes its families lay", {
+    skip_on_cran_budget()
     # `rho` names a BYM2 mixing weight on (0, 1) in one family and an AR1 or
     # multi-output cross-field correlation reaching below zero in two others,
     # so the support the NAME fixes is the upper end only. A spec builder
@@ -124,20 +163,8 @@ test_that("an engine axis named rho accepts the nodes its families lay", {
     }
 })
 
-test_that("a positive-scale axis keeps the support it had", {
-    g <- tulpa:::.nl_grid_axis("field_sd")
-    spec <- hyper_axis_spec("sigma", g, log_scale = TRUE, bounds = c(0, Inf))
-    sup <- tulpa:::.hyper_axis_support(g, spec)
-    # The log coordinate cannot reach 0, so the clamp is an exact no-op there.
-    expect_identical(sup, exp(tulpa:::.hyper_default_coord_bounds(log(g))))
-    expect_gt(sup[1L], 0)
-
-    # A declared span already inside the domain is returned as declared.
-    spec$slab_bounds <- exp(tulpa:::.hyper_default_coord_bounds(log(g)))
-    expect_identical(tulpa:::.hyper_axis_support(g, spec), spec$slab_bounds)
-})
-
 test_that("the level weights are normalised over the same closed interval", {
+    skip_on_cran_budget()
     g <- c(0.5, 0.8, 0.95, 0.99)
     spec <- hyper_axis_spec("rho_car", g)
     w <- unname(tulpa:::.hyper_axis_level_weights(g, spec))
@@ -154,6 +181,7 @@ test_that("the level weights are normalised over the same closed interval", {
 })
 
 test_that("rho_car is declared on the coordinate its cells are measured on", {
+    skip_on_cran_budget()
     # Both correlation axes are integrated on the natural coordinate: their
     # domain is bounded, so the uniform measure on it is proper, and its
     # endpoints are models rather than an arbitrary origin.
@@ -171,25 +199,6 @@ test_that("rho_car is declared on the coordinate its cells are measured on", {
     w <- unname(tulpa:::.hyper_axis_level_weights(g, spec))
     expect_gt(w[1L] / w[length(w)], 5)
     expect_true(all(diff(w) < 0))
-})
-
-test_that("the stored per-axis support is inside every axis's domain", {
-    tg <- as.matrix(expand.grid(sigma = c(0.5, 1, 2),
-                                rho_car = c(0.5, 0.8, 0.95, 0.99)))
-    specs <- list(
-        hyper_axis_spec("sigma", c(0.5, 1, 2), log_scale = TRUE,
-                        bounds = c(0, Inf)),
-        hyper_axis_spec("rho_car", c(0.5, 0.8, 0.95, 0.99))
-    )
-    sup <- tulpa:::.hyper_grid_supports(tg, specs)
-    expect_named(sup, c("sigma", "rho_car"))
-    expect_equal(sup$rho_car, c(0.35, 0.995))
-    expect_lt(sup$rho_car[2L], 1)
-    expect_gt(sup$sigma[1L], 0)
-})
-
-test_that("an axis with fewer than two continuum levels reports no support", {
-    expect_null(tulpa:::.hyper_axis_support(0.9, hyper_axis_spec("rho", 0.9)))
 })
 
 skip_on_cran()

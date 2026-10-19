@@ -21,7 +21,18 @@
     log(max(P, 1e-300))
 }
 
+test_that("an empty interval is refused rather than floored", {
+    # upper <= lower carries no mass: -Inf is what the line search backtracks
+    # off, where a floored finite value would be accepted as a trial point.
+    out <- tulpa:::cpp_interval_gaussian_terms(1.0, 1.0, 0.0, 1.0)
+    expect_equal(out[["ll"]], -Inf)
+    expect_equal(out[["grad"]], 0)
+})
+
+skip_on_cran_budget()
+
 test_that("a finite bound far from eta stays finite (no Inf * 0 = NaN)", {
+    skip_on_cran_budget()
     # zl/zu overflow while the density underflows: the z * phi(z) product must
     # take its analytic 0 limit rather than NaN.
     out <- tulpa:::cpp_interval_gaussian_terms(8.0, 9.0, 0.0, 0.3)
@@ -31,6 +42,7 @@ test_that("a finite bound far from eta stays finite (no Inf * 0 = NaN)", {
 })
 
 test_that("an interval far below eta keeps a gradient pointing back to it", {
+    skip_on_cran_budget()
     # gcol33/tulpa#462: the probability was differenced on the natural scale and
     # floored at 1e-300, so once both pnorm tails underflowed the kernel
     # returned a finite ll, an exactly zero gradient and a floored positive
@@ -60,6 +72,7 @@ test_that("an interval far below eta keeps a gradient pointing back to it", {
 })
 
 test_that("the deep-tail gradient matches the one-sided Mills ratio", {
+    skip_on_cran_budget()
     # Far outside a narrow interval the mass is dominated by the near edge, so
     # d logP / d eta -> (edge - eta) / sigma^2 to leading order. That is an
     # independent reference for a regime where a finite difference of the R
@@ -76,14 +89,6 @@ test_that("the deep-tail gradient matches the one-sided Mills ratio", {
                      log(1e-3 * sg) - 0.5 * z^2 - 0.5 * log(2 * pi) - log(sg),
                      tolerance = 1e-2)
     }
-})
-
-test_that("an empty interval is refused rather than floored", {
-    # upper <= lower carries no mass: -Inf is what the line search backtracks
-    # off, where a floored finite value would be accepted as a trial point.
-    out <- tulpa:::cpp_interval_gaussian_terms(1.0, 1.0, 0.0, 1.0)
-    expect_equal(out[["ll"]], -Inf)
-    expect_equal(out[["grad"]], 0)
 })
 
 skip_on_cran()

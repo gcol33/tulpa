@@ -39,7 +39,21 @@ make_synthetic_gp_spec <- function(n_obs = 50, k = 5L, seed = 11L) {
   list(spec = spec, n_obs = n_obs, coords = coords_ord, ord = ord)
 }
 
+test_that("laplace_gp_at refuses an unvalidated spec with a clear error", {
+  raw_spec <- spatial_gp(coords = ~ x1 + x2)
+  expect_error(
+    laplace_gp_at(
+      y = rbinom(10, 1, 0.5), n_trials = rep(1L, 10),
+      X = matrix(1, 10, 1), spatial = raw_spec
+    ),
+    "neighbor_info is NULL"
+  )
+})
+
+skip_on_cran_budget()
+
 test_that("dispatch_laplace_spatial routes GP specs (no longer errors)", {
+  skip_on_cran_budget()
   ss <- make_synthetic_gp_spec()
   X  <- matrix(1.0, ss$n_obs, 1)
   y  <- rbinom(ss$n_obs, 1, 0.5)
@@ -62,18 +76,8 @@ test_that("dispatch_laplace_spatial routes GP specs (no longer errors)", {
   if (is.na(msg)) expect_true(is.list(res))
 })
 
-test_that("laplace_gp_at refuses an unvalidated spec with a clear error", {
-  raw_spec <- spatial_gp(coords = ~ x1 + x2)
-  expect_error(
-    laplace_gp_at(
-      y = rbinom(10, 1, 0.5), n_trials = rep(1L, 10),
-      X = matrix(1, 10, 1), spatial = raw_spec
-    ),
-    "neighbor_info is NULL"
-  )
-})
-
 test_that("gp_cov_type maps cov + nu correctly", {
+  skip_on_cran_budget()
   expect_equal(gp_cov_type(list(cov = "exponential")), 0L)
   expect_equal(gp_cov_type(list(cov = "matern", nu = 1.5)), 1L)
   # 4, not 2: 2 is the Gaussian kernel in tulpa::CovType, and handing a

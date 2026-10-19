@@ -33,7 +33,10 @@
        w_nb = stats::rnorm(n))
 }
 
+skip_on_cran_budget()
+
 test_that("jitter is a nugget in both cores, not a pivot floor", {
+  skip_on_cran_budget()
   # A pivot floor is INERT on a well-conditioned input: C is far from singular
   # here, so its pivots all sit above 1e-3 and a floor at that value would
   # leave the answer bit-identical to jitter = 0. A nugget moves it.
@@ -57,6 +60,7 @@ test_that("jitter is a nugget in both cores, not a pivot floor", {
 })
 
 test_that("both cores decline a neighbour covariance that is not PD", {
+  skip_on_cran_budget()
   # A core that cannot report a non-PD C hands its caller kriged moments off an
   # unusable factor. Rank 1, so any n > 1 is singular.
   n <- 4L

@@ -35,7 +35,10 @@
 .fe_cols <- c("unit", "label", "estimate", "sd", "conf.low", "conf.high",
               "source")
 
+skip_on_cran_budget()
+
 test_that("field_effects() refuses a fit with no spatial field", {
+  skip_on_cran_budget()
   expect_error(field_effects(list()), "tulpa_fit")
   expect_error(field_effects(structure(list(backend = "laplace"),
                                        class = "tulpa_fit")),

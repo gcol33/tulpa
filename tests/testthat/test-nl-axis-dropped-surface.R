@@ -34,11 +34,14 @@
                          control = list(diagnose_k = FALSE))
 }
 
+skip_on_cran_budget()
+
 # --------------------------------------------------------------------------- #
 # The formatter                                                                #
 # --------------------------------------------------------------------------- #
 
 test_that("the note names the field, the block, the path and the axis used", {
+    skip_on_cran_budget()
     rec <- data.frame(block = 2L, type = "icar", field = "sigma_grid",
                       path = "registry", integrates = "tau_grid",
                       reason = "default_axis_not_read_by_this_path",
@@ -67,6 +70,7 @@ test_that("the note names the field, the block, the path and the axis used", {
 })
 
 test_that("the reader unwraps a model package's nested fit", {
+    skip_on_cran_budget()
     rec <- data.frame(block = NA_integer_, type = "icar", field = "sigma_grid",
                       path = "registry", integrates = "tau_grid",
                       reason = "default_axis_not_read_by_this_path",

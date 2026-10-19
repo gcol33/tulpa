@@ -114,7 +114,10 @@ test_that("moment interval reproduces the lognormal the design's moments imply",
                c(min(v), max(v)))
 })
 
+skip_on_cran_budget()
+
 test_that("moment interval respects each domain and declines outside it", {
+  skip_on_cran_budget()
   probs <- c(0.025, 0.5, 0.975)
   # A correlation is summarized on the Fisher-z coordinate, so the interval
   # stays inside (-1, 1) however wide the nodes are.
@@ -140,6 +143,7 @@ test_that("moment interval respects each domain and declines outside it", {
 })
 
 test_that("the discrete quantile's out-of-support policy is explicit", {
+  skip_on_cran_budget()
   v <- c(1, 2, 3); w <- rep(1 / 3, 3L)
   # Default: the extreme atom, the cumulative-mass convention a sample uses.
   expect_equal(tulpa:::.nl_wtd_quantile(v, w, c(0.025, 0.975)), c(1, 3))
@@ -157,6 +161,7 @@ test_that("the discrete quantile's out-of-support policy is explicit", {
 })
 
 test_that("each derived quantity carries the domain its interval is formed on", {
+  skip_on_cran_budget()
   S <- matrix(c(0.49, 0.14, 0.14, 0.25), 2, 2)
   D <- tulpa:::.re_cov_derived_matrix(list(S, S * 1.1), 2L, full = TRUE)
   expect_equal(colnames(D),
@@ -180,6 +185,7 @@ test_that("each derived quantity carries the domain its interval is formed on", 
 })
 
 test_that("the summary support decides how the interval is read off the nodes", {
+  skip_on_cran_budget()
   layout <- list(list(nc = 1L, full = FALSE, k = 1L, label = "g",
                       n_groups = 5L))
   sig <- exp(-0.3 + 0.8 * ccd1$z)

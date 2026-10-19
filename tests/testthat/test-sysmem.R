@@ -1,31 +1,3 @@
-# System-memory queries and the outer-grid thread memory budget.
-#
-# The nested-Laplace joint grid caps its outer OpenMP width so the replicated
-# per-thread working set fits available memory, then warns when it has to
-# reduce the requested thread count (or, in the floor case, run best-effort at
-# one thread). The clamp must budget against the memory that is actually FREE,
-# not the installed total: half of a 64 GB install is 32 GB even when only 40 GB
-# is free and 23 GB is already committed, which is what pushed a wide fit into
-# swap / OOM. These tests pin (a) the RAM queries return sane byte counts and
-# (b) the budget arithmetic tracks available RAM, floors at one thread, and is
-# monotone in the per-thread footprint.
-
-test_that("RAM queries return sane byte counts", {
-  total <- tulpa:::cpp_total_ram_bytes()
-  avail <- tulpa:::cpp_available_ram_bytes()
-
-  expect_true(is.numeric(total) && length(total) == 1L)
-  expect_true(is.numeric(avail) && length(avail) == 1L)
-  expect_false(is.na(total))
-  expect_false(is.na(avail))
-  expect_gte(total, 0)
-  expect_gte(avail, 0)
-
-  # Free memory can never exceed the installed total (when both are detected).
-  if (total > 0 && avail > 0) {
-    expect_lte(avail, total)
-  }
-})
 
 test_that("outer-thread budget is sized against available RAM, not total", {
   gb <- 1024^3
@@ -43,7 +15,39 @@ test_that("outer-thread budget is sized against available RAM, not total", {
   expect_lt(budget, total / 2)
 })
 
+skip_on_cran_budget()
+# System-memory queries and the outer-grid thread memory budget.
+#
+# The nested-Laplace joint grid caps its outer OpenMP width so the replicated
+# per-thread working set fits available memory, then warns when it has to
+# reduce the requested thread count (or, in the floor case, run best-effort at
+# one thread). The clamp must budget against the memory that is actually FREE,
+# not the installed total: half of a 64 GB install is 32 GB even when only 40 GB
+# is free and 23 GB is already committed, which is what pushed a wide fit into
+# swap / OOM. These tests pin (a) the RAM queries return sane byte counts and
+# (b) the budget arithmetic tracks available RAM, floors at one thread, and is
+# monotone in the per-thread footprint.
+
+test_that("RAM queries return sane byte counts", {
+  skip_on_cran_budget()
+  total <- tulpa:::cpp_total_ram_bytes()
+  avail <- tulpa:::cpp_available_ram_bytes()
+
+  expect_true(is.numeric(total) && length(total) == 1L)
+  expect_true(is.numeric(avail) && length(avail) == 1L)
+  expect_false(is.na(total))
+  expect_false(is.na(avail))
+  expect_gte(total, 0)
+  expect_gte(avail, 0)
+
+  # Free memory can never exceed the installed total (when both are detected).
+  if (total > 0 && avail > 0) {
+    expect_lte(avail, total)
+  }
+})
+
 test_that("outer-thread budget falls back cleanly when a query is unavailable", {
+  skip_on_cran_budget()
   gb <- 1024^3
 
   # available unknown (0), total known -> half of total.
@@ -59,6 +63,7 @@ test_that("outer-thread budget falls back cleanly when a query is unavailable", 
 })
 
 test_that("the factor size is measured from a real symbolic analysis", {
+  skip_on_cran_budget()
   # Small 4x4 lattice: the measured factor must be a positive byte count and
   # the pattern nnz must match the 5-point stencil (diagonal + 2k(k-1) edges,
   # lower triangle) -- a sanity check that the lattice and analyze wired up.
@@ -69,6 +74,7 @@ test_that("the factor size is measured from a real symbolic analysis", {
 })
 
 test_that("outer-thread cap fits the budget, floors at one, and is monotone", {
+  skip_on_cran_budget()
   gb <- 1024^3
   budget <- 24 * gb
 

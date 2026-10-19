@@ -1,3 +1,13 @@
+
+test_that("temporal_ar2() builds a valid tgmrf latent block", {
+  blk <- temporal_ar2(rep(seq_len(40L), each = 2L))
+  expect_s3_class(blk, "tgmrf")
+  expect_s3_class(blk, "tulpa_latent_block")
+  expect_equal(blk$n_latent, 40L)
+  expect_equal(blk$theta_dim, 3L)
+})
+
+skip_on_cran_budget()
 # AR(2) temporal field via the tgmrf latent-block path (gcol33/tulpa C10). The
 # precision builder is proven to be the EXACT stationary AR(2) GMRF (its inverse
 # is the Yule-Walker Toeplitz covariance; it is pentadiagonal and PD); the PACF
@@ -5,6 +15,7 @@
 # block recovers the AR coefficients end-to-end through nested Laplace.
 
 test_that(".ar2_precision is the exact stationary AR(2) GMRF", {
+  skip_on_cran_budget()
   n <- 60L; phi1 <- 0.5; phi2 <- 0.3; tau <- 4
   Q <- as.matrix(tulpa:::.ar2_precision(n, phi1, phi2, tau))
 
@@ -27,6 +38,7 @@ test_that(".ar2_precision is the exact stationary AR(2) GMRF", {
 })
 
 test_that("PACF parameterization stays inside the stationarity triangle", {
+  skip_on_cran_budget()
   for (a1 in c(-2.5, -0.6, 0.7, 2.5)) for (a2 in c(-2.5, 0, 1.8)) {
     phi <- tulpa:::.ar2_pacf_to_phi(tanh(a1), tanh(a2))
     p1 <- phi[["phi1"]]; p2 <- phi[["phi2"]]
@@ -34,15 +46,8 @@ test_that("PACF parameterization stays inside the stationarity triangle", {
   }
 })
 
-test_that("temporal_ar2() builds a valid tgmrf latent block", {
-  blk <- temporal_ar2(rep(seq_len(40L), each = 2L))
-  expect_s3_class(blk, "tgmrf")
-  expect_s3_class(blk, "tulpa_latent_block")
-  expect_equal(blk$n_latent, 40L)
-  expect_equal(blk$theta_dim, 3L)
-})
-
 test_that(".arp_* generalize the AR(2) construction (gcol33/tulpa C10)", {
+  skip_on_cran_budget()
   # Levinson-Durbin PACF map: round-trips against stats::ARMAacf(pacf = TRUE)
   # for a general AR(3), and reduces to the closed form at p = 2.
   psi <- c(0.5, -0.3, 0.2)
@@ -76,6 +81,7 @@ test_that(".arp_* generalize the AR(2) construction (gcol33/tulpa C10)", {
 })
 
 test_that("temporal_ar() builds valid blocks and pins the p = 2 equivalence", {
+  skip_on_cran_budget()
   idx <- rep(seq_len(30L), each = 2L)
   blk3 <- temporal_ar(idx, p = 3)
   expect_s3_class(blk3, "tgmrf")

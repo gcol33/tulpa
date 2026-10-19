@@ -21,6 +21,8 @@ nngp_grad_inputs <- function(N = 25L, nn = 8L, seed = 3L) {
        nbd = nbd, order0 = order0, inv = inv, N = N, nn = nn)
 }
 
+skip_on_cran_budget()
+
 # The nugget channel in the sigma2 gradient (gcol33/tulpa#584).
 #
 # The forward builds C = sigma2 R + jitter I against c = sigma2 r, so neither
@@ -37,6 +39,7 @@ nngp_grad_inputs <- function(N = 25L, nn = 8L, seed = 3L) {
 # 1e-2 relative and the GP sweep at 6e-9 to 5e-7.
 
 test_that("the SVC finite-difference reference is converged, so a disagreement is real", {
+  skip_on_cran_budget()
   d <- nngp_grad_inputs()
   # The configuration the largest #584 disagreement was measured at.
   ls2 <- log(0.4); lphi <- log(0.6)
@@ -55,6 +58,7 @@ test_that("the SVC finite-difference reference is converged, so a disagreement i
 })
 
 test_that("the sigma2 gradient tracks the nugget across coordinate arities", {
+  skip_on_cran_budget()
   # gcol33/tulpa#389: coords_dist sums over every column the matrix carries, so
   # the coords-fallback pair_dist this path takes must agree with a 2-D fixture
   # whose second column is constant. Distances are unchanged, so every gradient

@@ -26,22 +26,6 @@ test_that("svc requires an exact mode (nested/laplace refuse)", {
   )
 })
 
-test_that("auto mode routes SVC / TVC to the exact ModelData backend (#222)", {
-  sel_svc <- tulpa:::auto_select_mode(
-    family = list(name = "poisson"), n_obs = 100L,
-    has_spatial = TRUE, has_temporal = FALSE, has_latent = FALSE,
-    spatial_type = "svc")
-  expect_equal(sel_svc$mode, "exact")
-  expect_equal(tulpa:::BACKEND_REGISTRY[[sel_svc$backend]]$input, "modeldata")
-
-  sel_tvc <- tulpa:::auto_select_mode(
-    family = list(name = "poisson"), n_obs = 100L,
-    has_spatial = FALSE, has_temporal = TRUE, has_latent = FALSE,
-    temporal = list(type = "tvc"))
-  expect_equal(sel_tvc$mode, "exact")
-  expect_equal(tulpa:::BACKEND_REGISTRY[[sel_tvc$backend]]$input, "modeldata")
-})
-
 # HSGP-approximated SVC (gcol33/tulpa#813): the same front door, a Hilbert-
 # space basis field instead of an NNGP one. compute_param_layout keys the field
 # size on data.svc_hsgp_data.m_total (m^2, shared across terms) rather than
@@ -78,7 +62,27 @@ make_svc_sites <- function(n_site = 30L, per = 3L, seed = 405L) {
   list(d = d, bsurf = bsurf, site = site)
 }
 
+skip_on_cran_budget()
+
+test_that("auto mode routes SVC / TVC to the exact ModelData backend (#222)", {
+  skip_on_cran_budget()
+  sel_svc <- tulpa:::auto_select_mode(
+    family = list(name = "poisson"), n_obs = 100L,
+    has_spatial = TRUE, has_temporal = FALSE, has_latent = FALSE,
+    spatial_type = "svc")
+  expect_equal(sel_svc$mode, "exact")
+  expect_equal(tulpa:::BACKEND_REGISTRY[[sel_svc$backend]]$input, "modeldata")
+
+  sel_tvc <- tulpa:::auto_select_mode(
+    family = list(name = "poisson"), n_obs = 100L,
+    has_spatial = FALSE, has_temporal = TRUE, has_latent = FALSE,
+    temporal = list(type = "tvc"))
+  expect_equal(sel_tvc$mode, "exact")
+  expect_equal(tulpa:::BACKEND_REGISTRY[[sel_tvc$backend]]$input, "modeldata")
+})
+
 test_that("svc(approx = 'nngp') puts the field on the distinct locations", {
+  skip_on_cran_budget()
   s <- make_svc_sites()
   X <- model.matrix(~ x, s$d)
   v <- validate_svc(spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 5L), s$d, X)
@@ -100,6 +104,7 @@ test_that("svc(approx = 'nngp') puts the field on the distinct locations", {
 })
 
 test_that("rows sharing a site read one field value in eta", {
+  skip_on_cran_budget()
   s <- make_svc_sites(n_site = 12L, per = 2L)
   X <- model.matrix(~ x, s$d)
   v <- validate_svc(spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 4L,

@@ -1,3 +1,66 @@
+
+test_that("the tighter threshold leaves a healthy screened fit alone", {
+  # A cut of 6.9 nats and a screen accurate to a twentieth of one: the dropped
+  # cell, lifted by that error, may carry 3.5e-4 of the posterior, far under
+  # the gate. A well-conditioned pruned fit is left as it came.
+  res_ok <- list(
+    log_marginal = c(-1, -1.2, -1.1, -Inf),
+    prune_mask = c(FALSE, FALSE, FALSE, TRUE),
+    prune_cheap_log_marginal = c(-1.05, -1.25, -1.15, -8),
+    prune_argmax_disagree = FALSE,
+    prune_cheap_full_gap = 0.05,
+    prune_n_pruned = 1L,
+    prune_log_gap_cut = -log(1e-3),
+    prune_cheap_lm_spread = 7)
+  out <- expect_warning(
+    tulpa:::.joint_prune_safety_gate(
+      res_ok, resolve_full = function() stop("must not re-solve")),
+    regexp = NA)
+  expect_null(out$prune_fallback_triggered)
+
+  # And a fit that was never screened is returned untouched, cut or no cut.
+  res_none <- list(log_marginal = c(-1, -2, -3))
+  expect_identical(
+    tulpa:::.joint_prune_safety_gate(
+      res_none, resolve_full = function() stop("must not re-solve")),
+    res_none)
+})
+
+# --- 2. the floor, on a real screened grid -----------------------------------
+
+# ICAR chain on a tau axis spanning ten orders of magnitude: the outer nodes are
+# far enough apart that the log-marginal moves by hundreds of nats between them,
+# which is the regime where a tolerance-only screen collapses the kept set onto
+# the modal cell.
+.psg_fixture <- function(seed = 656L) {
+  set.seed(seed)
+  S <- 24L
+  reps <- 6L
+  nb <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+  nn <- lengths(nb)
+  field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4))))
+  idx <- rep(seq_len(S), each = reps)
+  N <- length(idx)
+  x <- rnorm(N)
+  y <- rpois(N, exp(0.2 + 0.5 * x + 0.6 * field[idx]))
+  list(y = as.numeric(y), n_trials = rep(1L, N), X = cbind(1, x),
+       prior = list(type = "icar", n_spatial_units = S, spatial_idx = idx,
+                    adj_row_ptr = as.integer(c(0L, cumsum(nn))),
+                    adj_col_idx = as.integer(unlist(nb)) - 1L,
+                    n_neighbors = as.integer(nn),
+                    tau_grid = c(1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100, 1e3,
+                                 1e4, 1e5)))
+}
+
+.psg_fit <- function(f, ctrl = list()) {
+  tulpa_nested_laplace(
+    f$y, f$n_trials, f$X, prior = f$prior, family = "poisson",
+    control = utils::modifyList(
+      list(auto_recenter = FALSE, diagnose_k = FALSE, diagnose_skew = FALSE),
+      ctrl))
+}
+
+skip_on_cran_budget()
 # gcol33/tulpa#656 -- the cheap-pass screen on a sharply peaked outer grid.
 #
 # Measured on a 4435-cell `occu_cover` fit whose outer log-marginal spans about
@@ -29,6 +92,7 @@
 # --- 1. the cut, in the units the surface is measured in ---------------------
 
 test_that("the kept-cell floor is one value across the R and C++ defaults", {
+  skip_on_cran_budget()
   ref <- as.integer(tulpa:::.nl_screen("min_keep"))
   expect_true(is.finite(ref) && ref >= 3L)
 
@@ -41,6 +105,7 @@ test_that("the kept-cell floor is one value across the R and C++ defaults", {
 })
 
 test_that("the dropped-mass gate is one value across the R and C++ defaults", {
+  skip_on_cran_budget()
   ref <- tulpa:::.nl_screen("gate_mass")
   expect_true(is.finite(ref) && ref > 0 && ref < 1)
 
@@ -53,6 +118,7 @@ test_that("the dropped-mass gate is one value across the R and C++ defaults", {
 })
 
 test_that("prune_log_gap states a cut the tolerance cannot reach", {
+  skip_on_cran_budget()
   # What `prune_tol` cuts at is -(log(tol) + log(Z)) nats below the best
   # screened cell. The documented "conservative" setting is a handful of nats,
   # and the whole range a caller would type stays inside a few tens -- which is
@@ -82,6 +148,7 @@ test_that("prune_log_gap states a cut the tolerance cannot reach", {
 })
 
 test_that("the two knobs state one cut, so setting both is refused", {
+  skip_on_cran_budget()
   expect_equal(tulpa:::.nl_prune_tol_from_control(list(), 1e-3), 1e-3)
   expect_equal(
     tulpa:::.nl_prune_tol_from_control(list(prune_log_gap = 50), 1e-3),
@@ -93,6 +160,7 @@ test_that("the two knobs state one cut, so setting both is refused", {
 })
 
 test_that("the driver reports the cut and the surface it was applied to", {
+  skip_on_cran_budget()
   src <- test_path("..", "..", "src", "nested_laplace_grid.h")
   skip_if_not(file.exists(src), "package sources not available")
   txt <- paste(readLines(src, warn = FALSE), collapse = "\n")
@@ -113,6 +181,7 @@ test_that("the driver reports the cut and the surface it was applied to", {
 # --- 4. the gate's threshold -------------------------------------------------
 
 test_that("the gate judges the screen's error by the mass it could have moved", {
+  skip_on_cran_budget()
   # The measured shape: five kept cells spanning ~98000 nats, the posterior a
   # point mass on one of them, and the screen out by 339.5 nats on exactly that
   # cell. Read off the spread of the kept cells the error is small; what it
@@ -148,36 +217,10 @@ test_that("the gate judges the screen's error by the mass it could have moved", 
   expect_null(kept$prune_fallback_triggered)
 })
 
-test_that("the tighter threshold leaves a healthy screened fit alone", {
-  # A cut of 6.9 nats and a screen accurate to a twentieth of one: the dropped
-  # cell, lifted by that error, may carry 3.5e-4 of the posterior, far under
-  # the gate. A well-conditioned pruned fit is left as it came.
-  res_ok <- list(
-    log_marginal = c(-1, -1.2, -1.1, -Inf),
-    prune_mask = c(FALSE, FALSE, FALSE, TRUE),
-    prune_cheap_log_marginal = c(-1.05, -1.25, -1.15, -8),
-    prune_argmax_disagree = FALSE,
-    prune_cheap_full_gap = 0.05,
-    prune_n_pruned = 1L,
-    prune_log_gap_cut = -log(1e-3),
-    prune_cheap_lm_spread = 7)
-  out <- expect_warning(
-    tulpa:::.joint_prune_safety_gate(
-      res_ok, resolve_full = function() stop("must not re-solve")),
-    regexp = NA)
-  expect_null(out$prune_fallback_triggered)
-
-  # And a fit that was never screened is returned untouched, cut or no cut.
-  res_none <- list(log_marginal = c(-1, -2, -3))
-  expect_identical(
-    tulpa:::.joint_prune_safety_gate(
-      res_none, resolve_full = function() stop("must not re-solve")),
-    res_none)
-})
-
 # --- 3. a decline on a screened grid is its own event ------------------------
 
 test_that("a placement decline records whether the grid had been screened", {
+  skip_on_cran_budget()
   screened <- tulpa:::.nl_decline_recenter(
     list(prune_mask = c(TRUE, FALSE, FALSE)), "no_usable_curvature")
   expect_identical(screened$outer_grid_recenter_declined,
@@ -199,6 +242,7 @@ test_that("a placement decline records whether the grid had been screened", {
 })
 
 test_that("a screened fit whose placement lost its curvature falls back", {
+  skip_on_cran_budget()
   lost <- list(prune_mask = c(TRUE, FALSE),
                outer_grid_placement = "fixed",
                outer_grid_recenter_declined = "no_usable_curvature")
@@ -235,40 +279,6 @@ test_that("a screened fit whose placement lost its curvature falls back", {
     tulpa:::.nl_prune_placement_fallback(ok, function() stop("must not re-solve")),
     ok)
 })
-
-# --- 2. the floor, on a real screened grid -----------------------------------
-
-# ICAR chain on a tau axis spanning ten orders of magnitude: the outer nodes are
-# far enough apart that the log-marginal moves by hundreds of nats between them,
-# which is the regime where a tolerance-only screen collapses the kept set onto
-# the modal cell.
-.psg_fixture <- function(seed = 656L) {
-  set.seed(seed)
-  S <- 24L
-  reps <- 6L
-  nb <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
-  nn <- lengths(nb)
-  field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4))))
-  idx <- rep(seq_len(S), each = reps)
-  N <- length(idx)
-  x <- rnorm(N)
-  y <- rpois(N, exp(0.2 + 0.5 * x + 0.6 * field[idx]))
-  list(y = as.numeric(y), n_trials = rep(1L, N), X = cbind(1, x),
-       prior = list(type = "icar", n_spatial_units = S, spatial_idx = idx,
-                    adj_row_ptr = as.integer(c(0L, cumsum(nn))),
-                    adj_col_idx = as.integer(unlist(nb)) - 1L,
-                    n_neighbors = as.integer(nn),
-                    tau_grid = c(1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100, 1e3,
-                                 1e4, 1e5)))
-}
-
-.psg_fit <- function(f, ctrl = list()) {
-  tulpa_nested_laplace(
-    f$y, f$n_trials, f$X, prior = f$prior, family = "poisson",
-    control = utils::modifyList(
-      list(auto_recenter = FALSE, diagnose_k = FALSE, diagnose_skew = FALSE),
-      ctrl))
-}
 
 skip_on_cran()
 

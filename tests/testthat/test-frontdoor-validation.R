@@ -12,7 +12,34 @@ test_that("tulpa_em_laplace hard-errors on the ignored spatial/re_list (#156g)",
   )
 })
 
+test_that("plot.tulpa_st_summary hard-errors on an unknown type (#156g)", {
+  st <- structure(
+    data.frame(s = rep(1:3, each = 2), t = rep(1:2, 3), mean = rnorm(6)),
+    n_spatial = 3L, n_times = 2L,
+    class = c("tulpa_st_summary", "data.frame"))
+  expect_error(plot(st, type = "not_a_type"), "Unknown plot")
+})
+
+# ============================================================================
+# One spatial gate, whichever way the spec arrives (gcol33/tulpa#670, #671)
+# ============================================================================
+
+.sp_frontdoor_data <- function(n_units = 10L, n_obs = 100L) {
+  set.seed(4L)
+  data.frame(s = factor(rep(seq_len(n_units), length.out = n_obs)),
+             x = rnorm(n_obs), yb = rbinom(n_obs, 1L, 0.5))
+}
+
+.sp_chain_W <- function(n) {
+  W <- matrix(0, n, n)
+  for (i in seq_len(n - 1L)) { W[i, i + 1L] <- 1; W[i + 1L, i] <- 1 }
+  W
+}
+
+skip_on_cran_budget()
+
 test_that("a no-intercept single slope (0 + x | g) is rejected on intercept-only paths (#195)", {
+  skip_on_cran_budget()
   set.seed(1)
   d <- data.frame(y = rbinom(120, 1, 0.5), x = rnorm(120),
                   g = factor(rep(1:12, 10)))
@@ -31,6 +58,7 @@ test_that("a no-intercept single slope (0 + x | g) is rejected on intercept-only
 })
 
 test_that("spatiotemporal summary aligns s/t labels with the array when S != T (#197)", {
+  skip_on_cran_budget()
   S <- 3L; T <- 2L; nd <- 4L
   # Draws are stored s-fastest: the column for (s, t) is (t - 1) * S + s. Give
   # each column a distinct constant so a mispaired label is visible.
@@ -48,6 +76,7 @@ test_that("spatiotemporal summary aligns s/t labels with the array when S != T (
 })
 
 test_that("ST and latent-factor accessors read a model package's own fit class", {
+  skip_on_cran_budget()
   S <- 2L; n_t <- 3L; nd <- 5L
   st_draws <- matrix(rep(seq_len(S * n_t), each = nd), nrow = nd)
   cols <- sprintf("factor[%d,%d]", rep(1:2, 2), rep(1:2, each = 2))
@@ -68,14 +97,6 @@ test_that("ST and latent-factor accessors read a model package's own fit class",
   expect_error(spatiotemporal_effects(1:3), "spatiotemporal")
 })
 
-test_that("plot.tulpa_st_summary hard-errors on an unknown type (#156g)", {
-  st <- structure(
-    data.frame(s = rep(1:3, each = 2), t = rep(1:2, 3), mean = rnorm(6)),
-    n_spatial = 3L, n_times = 2L,
-    class = c("tulpa_st_summary", "data.frame"))
-  expect_error(plot(st, type = "not_a_type"), "Unknown plot")
-})
-
 # gcol33/tulpa#613. `.assert_finite_model_inputs()` was wired into three doors by
 # hand and not into `tulpa_nested_laplace()`, so an NA response was absorbed
 # rather than refused: every grid cell came back `converged = FALSE` with
@@ -85,6 +106,7 @@ test_that("plot.tulpa_st_summary hard-errors on an unknown type (#156g)", {
 # `.validate_glm_design()`, which is what every `(y, X, n_trials)` door goes
 # through, so these are one fix rather than four.
 test_that("tulpa_nested_laplace() refuses a non-finite response (#613)", {
+  skip_on_cran_budget()
   set.seed(1)
   N <- 24L
   region <- rep(seq_len(6L), each = 4L)
@@ -123,6 +145,7 @@ test_that("tulpa_nested_laplace() refuses a non-finite response (#613)", {
 })
 
 test_that("the guard reaches every door sharing .validate_glm_design (#613)", {
+  skip_on_cran_budget()
   set.seed(2)
   N <- 20L
   X <- cbind(1, rnorm(N))
@@ -142,23 +165,8 @@ test_that("the guard reaches every door sharing .validate_glm_design (#613)", {
                "a_new_door: Non-finite")
 })
 
-# ============================================================================
-# One spatial gate, whichever way the spec arrives (gcol33/tulpa#670, #671)
-# ============================================================================
-
-.sp_frontdoor_data <- function(n_units = 10L, n_obs = 100L) {
-  set.seed(4L)
-  data.frame(s = factor(rep(seq_len(n_units), length.out = n_obs)),
-             x = rnorm(n_obs), yb = rbinom(n_obs, 1L, 0.5))
-}
-
-.sp_chain_W <- function(n) {
-  W <- matrix(0, n, n)
-  for (i in seq_len(n - 1L)) { W[i, i + 1L] <- 1; W[i + 1L, i] <- 1 }
-  W
-}
-
 test_that("a bare-list adjacency passes the same graph check as a constructor", {
+  skip_on_cran_budget()
   d <- .sp_frontdoor_data()
   W <- .sp_chain_W(10L)
   asym <- W
@@ -173,6 +181,7 @@ test_that("a bare-list adjacency passes the same graph check as a constructor", 
 })
 
 test_that("spatial$type is normalised once, before the selector reads it", {
+  skip_on_cran_budget()
   d <- .sp_frontdoor_data()
   W <- .sp_chain_W(10L)
   up <- tulpa(yb ~ x + spatial(s), data = d, family = "binomial",

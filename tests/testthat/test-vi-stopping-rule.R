@@ -19,7 +19,24 @@ replay <- function(elbo, grad = stationary_grad(length(elbo)), ...) {
   cpp_vi_convergence_replay(elbo, grad, ...)
 }
 
+test_that("a falling run stops", {
+  res <- replay(-100 - seq_len(300), patience = 40)
+  expect_true(res$stopped)
+  expect_equal(res$reason, "patience")
+})
+
+test_that("a small gradient norm stops the run whatever the ELBO does", {
+  res <- replay(-100 + seq_len(300),
+                grad = matrix(1e-9, 300, 3))
+  expect_true(res$stopped)
+  expect_equal(res$reason, "gradient_norm")
+  expect_equal(res$iteration, 1L)
+})
+
+skip_on_cran_budget()
+
 test_that("the stopping rule is invariant to an ELBO offset", {
+  skip_on_cran_budget()
   # The property the old rule failed. An ELBO's additive constant is not part
   # of the model, so shifting a whole run by one must not move the stop.
   set.seed(11)
@@ -34,6 +51,7 @@ test_that("the stopping rule is invariant to an ELBO offset", {
 })
 
 test_that("the stopping rule is invariant to an ELBO rescaling", {
+  skip_on_cran_budget()
   # Gain and threshold are both differences of the same sequence, so a common
   # positive scale cancels out of the comparison.
   set.seed(12)
@@ -46,6 +64,7 @@ test_that("the stopping rule is invariant to an ELBO rescaling", {
 })
 
 test_that("a run still climbing is not stopped", {
+  skip_on_cran_budget()
   # A steady climb of 1 nat per iteration on a run whose span is ~400: the old
   # rule stopped this at iteration 50 for any |ELBO| above 100, because 1 nat
   # is under 1% of it.
@@ -62,6 +81,7 @@ test_that("a run still climbing is not stopped", {
 })
 
 test_that("a flat run stops once the window is full", {
+  skip_on_cran_budget()
   flat <- rep(-123.456, 200)
   res <- replay(flat, patience = 50)
   expect_true(res$stopped)
@@ -69,13 +89,8 @@ test_that("a flat run stops once the window is full", {
   expect_equal(res$iteration, 50L)
 })
 
-test_that("a falling run stops", {
-  res <- replay(-100 - seq_len(300), patience = 40)
-  expect_true(res$stopped)
-  expect_equal(res$reason, "patience")
-})
-
 test_that("tol_rel_elbo and patience move the stop in the expected direction", {
+  skip_on_cran_budget()
   set.seed(13)
   s <- -2000 + 1900 * (1 - exp(-seq_len(2000) / 120)) + rnorm(2000, 0, 1)
   loose <- replay(s, tol_rel_elbo = 0.05, patience = 50)
@@ -88,6 +103,7 @@ test_that("tol_rel_elbo and patience move the stop in the expected direction", {
 })
 
 test_that("a flat ELBO does not stop a run whose gradient keeps its sign", {
+  skip_on_cran_budget()
   # The #917 shape: the ELBO shows no gain while one scale is still
   # contracting, which shows as a gradient coordinate with a steady mean far
   # above its noise. Once that coordinate settles to zero mean the run stops
@@ -105,15 +121,8 @@ test_that("a flat ELBO does not stop a run whose gradient keeps its sign", {
   expect_false(replay(elbo, grad = g, patience = 50)$stopped)
 })
 
-test_that("a small gradient norm stops the run whatever the ELBO does", {
-  res <- replay(-100 + seq_len(300),
-                grad = matrix(1e-9, 300, 3))
-  expect_true(res$stopped)
-  expect_equal(res$reason, "gradient_norm")
-  expect_equal(res$iteration, 1L)
-})
-
 test_that("the control layer rejects a stopping rule it cannot run", {
+  skip_on_cran_budget()
   d <- data.frame(x = rnorm(30), y = rpois(30, 2))
   expect_error(tulpa(y ~ x, data = d, family = "poisson", mode = "vi",
                      control = list(vi_patience = 1L)),

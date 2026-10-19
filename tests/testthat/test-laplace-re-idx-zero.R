@@ -1,8 +1,11 @@
+
+skip_on_cran_budget()
 # `re_list` idx = 0 means "no group": the kernel skips the row, and the R-side
 # RE design the Hessian path builds has to give it no column either
 # (gcol33/tulpa#883 -- it indexed column 0 and sparseMatrix() refused).
 
 test_that(".re_design_matrix gives an idx = 0 row no RE column", {
+  skip_on_cran_budget()
   idx <- c(0L, 1L, 2L, 0L, 2L)
   x <- c(0.5, -1, 2, 3, 1)
   Z1 <- .re_design_matrix(list(list(idx = idx, n_groups = 2L, n_coefs = 1L)), 5L)

@@ -47,7 +47,10 @@ test_that("the two parameterizations differ by the transform's log-determinant",
   expect_equal(p$nc$log_post - p$centered$log_post, shift, tolerance = 1e-10)
 })
 
+skip_on_cran_budget()
+
 test_that("the identity holds where the (1 - rho^2) floor binds", {
+  skip_on_cran_budget()
   # dt / phi = 1e-11, so 1 - rho^2 ~ 2e-11 is below the 1e-10 floor at every
   # step. sigma^2 = 1e-4 is small enough that flooring the product instead of
   # the correlation factor would place the conditional variance six orders of
@@ -67,6 +70,7 @@ test_that("the identity holds where the (1 - rho^2) floor binds", {
 })
 
 test_that("the identity holds over several independent groups", {
+  skip_on_cran_budget()
   set.seed(9L)
   times <- sort(runif(5L, 0, 3))
   z <- rnorm(15L)

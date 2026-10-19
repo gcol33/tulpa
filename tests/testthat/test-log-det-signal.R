@@ -22,7 +22,20 @@
                      1, 1, 0,
                      0, 0, 2), 3, 3)        # exactly singular, PSD
 
+test_that("an exactly singular H is refused too", {
+  expect_lt(min(eigen(.SING_H, symmetric = TRUE, only.values = TRUE)$values),
+            1e-12)
+  for (sparse in c(FALSE, TRUE)) {
+    r <- cpp_test_log_det_signal(.SING_H, prefer_sparse = sparse)
+    expect_false(r$ok, info = paste("sparse =", sparse))
+    expect_false(is.finite(r$log_det), info = paste("sparse =", sparse))
+  }
+})
+
+skip_on_cran_budget()
+
 test_that("a positive definite H factors and reports its log-determinant", {
+  skip_on_cran_budget()
   for (sparse in c(FALSE, TRUE)) {
     r <- cpp_test_log_det_signal(.PD_H, prefer_sparse = sparse)
     expect_true(r$ok, info = paste("sparse =", sparse))
@@ -34,6 +47,7 @@ test_that("a positive definite H factors and reports its log-determinant", {
 })
 
 test_that("an indefinite H is refused rather than returned as a number", {
+  skip_on_cran_budget()
   expect_lt(min(eigen(.IND_H, symmetric = TRUE, only.values = TRUE)$values), 0)
   for (sparse in c(FALSE, TRUE)) {
     r <- cpp_test_log_det_signal(.IND_H, prefer_sparse = sparse)
@@ -44,17 +58,8 @@ test_that("an indefinite H is refused rather than returned as a number", {
   }
 })
 
-test_that("an exactly singular H is refused too", {
-  expect_lt(min(eigen(.SING_H, symmetric = TRUE, only.values = TRUE)$values),
-            1e-12)
-  for (sparse in c(FALSE, TRUE)) {
-    r <- cpp_test_log_det_signal(.SING_H, prefer_sparse = sparse)
-    expect_false(r$ok, info = paste("sparse =", sparse))
-    expect_false(is.finite(r$log_det), info = paste("sparse =", sparse))
-  }
-})
-
 test_that("the base ridge does not rescue an indefinite H", {
+  skip_on_cran_budget()
   # dispatch_factor_log_det adds LAPLACE_UNIFORM_RIDGE before factoring. On the
   # PD matrix that shifts the log-determinant by a hair and still succeeds; on
   # the indefinite one it changes nothing about the verdict.
@@ -68,6 +73,7 @@ test_that("the base ridge does not rescue an indefinite H", {
 })
 
 test_that("the two backends agree on which matrices they refuse", {
+  skip_on_cran_budget()
   # The joint Newton loop and the plain one pick different arms of the same
   # dispatch, so a verdict that depended on the arm would put two paths on the
   # same model into disagreement.

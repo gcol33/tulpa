@@ -1,3 +1,5 @@
+
+skip_on_cran_budget()
 # The links carried on eta > 0: inverse (mu = 1/eta), 1mu2 (mu = 1/sqrt(eta))
 # and sqrt (mu = eta^2). The first two have no mean outside the domain; sqrt has
 # one, but it is the mirror image of the eta > 0 branch, so admitting it would
@@ -11,6 +13,7 @@
 # inside before the first iteration.
 
 test_that("the log-likelihood is -Inf outside the eta > 0 links' domain", {
+  skip_on_cran_budget()
   cases <- list(
     list(family = "gamma_inverse",         y = 1.5, phi = 2.0),
     list(family = "inverse_gaussian_1mu2", y = 1.5, phi = 1.1),
@@ -37,6 +40,7 @@ test_that("the log-likelihood is -Inf outside the eta > 0 links' domain", {
 # is the end-to-end path: before the link layer existed the mode-finding
 # succeeded in C++ and the R side then failed to describe the same family.
 test_that("a constrained-link fit returns a fixed-effect Hessian", {
+  skip_on_cran_budget()
   set.seed(15)
   n <- 200
   x <- runif(n, -1, 1)
@@ -70,6 +74,7 @@ test_that("a constrained-link fit returns a fixed-effect Hessian", {
 # not a prior.
 
 test_that("gamma with the inverse link reproduces the glm MLE", {
+  skip_on_cran_budget()
   set.seed(11)
   n <- 400
   x <- runif(n, -1, 1)
@@ -93,6 +98,7 @@ test_that("gamma with the inverse link reproduces the glm MLE", {
 })
 
 test_that("inverse gaussian with the 1/mu^2 link reproduces the glm MLE", {
+  skip_on_cran_budget()
   set.seed(12)
   n <- 400
   x <- runif(n, -1, 1)
@@ -116,6 +122,7 @@ test_that("inverse gaussian with the 1/mu^2 link reproduces the glm MLE", {
 })
 
 test_that("a start outside the domain is moved inside, not clamped", {
+  skip_on_cran_budget()
   # x = 0 gives eta = 0 for every observation, which is the boundary. The
   # feasibility sweep has to find an interior start; if it silently clamped
   # instead, the fit would sit at mu = 1e10 with a huge reported gradient.
@@ -138,6 +145,7 @@ test_that("a start outside the domain is moved inside, not clamped", {
 })
 
 test_that("the log link is unaffected by the feasibility sweep", {
+  skip_on_cran_budget()
   # The sweep only runs when the start has a non-finite objective, so a log-link
   # fit must reach the same MLE it always did.
   set.seed(14)

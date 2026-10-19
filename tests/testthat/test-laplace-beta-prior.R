@@ -29,15 +29,6 @@ fit_beta <- function(d, beta_prior = NULL) {
 }
 
 
-test_that("beta_prior validation rejects malformed input", {
-  d <- sim_logit(n = 50L)
-  expect_error(fit_beta(d, list(mean = 0)),            "must supply `sd`")
-  expect_error(fit_beta(d, list(sd = -1)),             "must be positive")
-  expect_error(fit_beta(d, list(sd = c(1, 2))),        "length 1 or 3")
-  expect_error(fit_beta(d, 2.5),                       "must be NULL or a list")
-})
-
-
 test_that("beta_prior errors on the spatial Laplace path", {
   adj <- matrix(0, 4, 4)
   adj[1, 2] <- adj[2, 1] <- adj[2, 3] <- adj[3, 2] <- adj[3, 4] <- adj[4, 3] <- 1
@@ -51,6 +42,18 @@ test_that("beta_prior errors on the spatial Laplace path", {
     ),
     "not supported on the spatial Laplace path"
   )
+})
+
+skip_on_cran_budget()
+
+
+test_that("beta_prior validation rejects malformed input", {
+  skip_on_cran_budget()
+  d <- sim_logit(n = 50L)
+  expect_error(fit_beta(d, list(mean = 0)),            "must supply `sd`")
+  expect_error(fit_beta(d, list(sd = -1)),             "must be positive")
+  expect_error(fit_beta(d, list(sd = c(1, 2))),        "length 1 or 3")
+  expect_error(fit_beta(d, 2.5),                       "must be NULL or a list")
 })
 
 skip_on_cran()

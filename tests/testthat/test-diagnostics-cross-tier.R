@@ -30,7 +30,10 @@ nested_areal_fit <- function(type) {
   fit
 }
 
+skip_on_cran_budget()
+
 test_that("the nested transform maps mirror the sampler's interpretable formulas (#199)", {
+  skip_on_cran_budget()
   sm <- tulpa:::.SPATIAL_HYPER_TRANSFORM
   expect_equal(sm$tau$fn(4), 0.5)         # 1/sqrt(4)  -> sigma
   expect_equal(sm$sigma2$fn(9), 3)        # sqrt(9)    -> sigma
@@ -44,6 +47,7 @@ test_that("the nested transform maps mirror the sampler's interpretable formulas
 })
 
 test_that("nested temporal_corr maps its grid axes to the sampler labels (#199)", {
+  skip_on_cran_budget()
   ft <- structure(
     list(theta_grid = matrix(c(0.5, 1, 2), ncol = 1,
                              dimnames = list(NULL, "tau")),

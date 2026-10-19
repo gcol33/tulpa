@@ -17,8 +17,11 @@ sim_zip <- function(n, beta, gamma, seed) {
   data.frame(y = y, x = x, z = z)
 }
 
+skip_on_cran_budget()
+
 
 test_that("ziformula reaches the kernel and is labelled in the fit", {
+  skip_on_cran_budget()
   d <- sim_zip(400, c(1.2, 0.5), c(-0.4, 0.8), seed = 1)
   fit <- tulpa(y ~ x, data = d, family = "poisson", ziformula = ~ z,
                mode = "laplace")
@@ -34,6 +37,7 @@ test_that("ziformula reaches the kernel and is labelled in the fit", {
 
 
 test_that("ignoring zero inflation biases the count intercept downward", {
+  skip_on_cran_budget()
   # The check that a silently-dropped mixture cannot pass: fitting the same
   # data without ziformula must show the structural zeros pulling the count
   # intercept below the truth, while the ZI fit stays on it.
@@ -48,6 +52,7 @@ test_that("ignoring zero inflation biases the count intercept downward", {
 
 
 test_that("the front door refuses zero inflation it cannot fit", {
+  skip_on_cran_budget()
   d <- data.frame(y = c(0, 1, 2, 3), x = c(1, 2, 3, 4), z = c(1, 0, 1, 0))
   # Continuous family: no atom at zero.
   expect_error(tulpa(y ~ x, data = d, family = "gaussian", ziformula = ~ 1),

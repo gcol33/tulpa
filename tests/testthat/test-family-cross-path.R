@@ -1,5 +1,8 @@
 
+skip_on_cran_budget()
+
 test_that("gaussian: passing phi on the wrong scale is detectable", {
+  skip_on_cran_budget()
   # Guards the guard: if the two conventions were accidentally the same, the
   # test above would pass even after a convention flip. At sd != 1 the wrong
   # scale must give a different answer.

@@ -30,7 +30,21 @@ sim_count <- function(fam, n, beta, phi, seed) {
 }
 
 
+test_that("an unregistered family errors rather than fitting a Poisson", {
+  # The dispatch used to fall through to the Poisson branch, so a family known
+  # to R but not to C++ fitted silently and wrongly. .R_ONLY_FAMILIES is now
+  # empty because every shipped family is wired; this pins the backstop that
+  # made emptying it safe.
+  expect_length(.R_ONLY_FAMILIES, 0L)
+  expect_error(cpp_family_terms(1, 1L, 0.5, "not_a_real_family", 1),
+               "no compiled implementation")
+})
+
+skip_on_cran_budget()
+
+
 test_that("the compiled kernels reproduce the R registry pointwise", {
+  skip_on_cran_budget()
   for (fam in count_fams) {
     phi <- fam_phi(fam)
     eta <- seq(-0.8, 1.8, length.out = 9)
@@ -62,6 +76,7 @@ test_that("the compiled kernels reproduce the R registry pointwise", {
 
 
 test_that("the AD density agrees with the double density and its own score", {
+  skip_on_cran_budget()
   # The sampler backends differentiate builtin_family_ll_ad.h, which expresses
   # each density separately from log_lik_for_family. Evaluating it at fwd::Dual
   # checks both at once: the value against the independent double
@@ -88,6 +103,7 @@ test_that("the AD density agrees with the double density and its own score", {
 
 
 test_that("the Newton working weight is positive where the observed one is not", {
+  skip_on_cran_budget()
   # The reason the two accessors exist rather than one. neg_binomial_1's
   # observed curvature turns negative once the realized y sits well above the
   # mean, which would break the PD Hessian Newton needs; the registered working
@@ -107,6 +123,7 @@ test_that("the Newton working weight is positive where the observed one is not",
 
 
 test_that("the observed curvature the ZI mixture reads is positive", {
+  skip_on_cran_budget()
   # The mixture only ever evaluates the observed curvature at y = 0, so the
   # negativity above never reaches it. For neg_binomial_1 that value is
   # r log1p(phi) with r = mu / phi, which is positive for every eta -- this is
@@ -129,6 +146,7 @@ test_that("the observed curvature the ZI mixture reads is positive", {
 
 
 test_that("a truncated fit is not the untruncated fit", {
+  skip_on_cran_budget()
   # Zero-truncated data has no zeros, so a Poisson fit to it overestimates the
   # mean: the truncation term is exactly what corrects for that. Without this
   # the recovery test above would also pass for a kernel that silently dropped
@@ -148,6 +166,7 @@ test_that("a truncated fit is not the untruncated fit", {
 
 
 test_that("a hurdle model factorizes into its two independent fits", {
+  skip_on_cran_budget()
   # The strongest available check on the hurdle path, and independent of the
   # mixture code: the hurdle log-likelihood separates exactly into a Bernoulli
   # for zero-vs-positive (carrying only the zi coefficients) and a
@@ -195,17 +214,6 @@ test_that("a hurdle model factorizes into its two independent fits", {
   expect_equal(unname(joint[["zi_(Intercept)"]]),
                unname(zero[["(Intercept)"]]), tolerance = 1e-9)
   expect_equal(unname(joint[["zi_z"]]), unname(zero[["z"]]), tolerance = 1e-9)
-})
-
-
-test_that("an unregistered family errors rather than fitting a Poisson", {
-  # The dispatch used to fall through to the Poisson branch, so a family known
-  # to R but not to C++ fitted silently and wrongly. .R_ONLY_FAMILIES is now
-  # empty because every shipped family is wired; this pins the backstop that
-  # made emptying it safe.
-  expect_length(.R_ONLY_FAMILIES, 0L)
-  expect_error(cpp_family_terms(1, 1L, 0.5, "not_a_real_family", 1),
-               "no compiled implementation")
 })
 
 skip_on_cran()

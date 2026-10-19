@@ -1,5 +1,19 @@
 
+test_that("the borrowed default is registered, not exported", {
+  # An exported pp_check.default would win dispatch inside bayesplot's own
+  # generic too, and a forwarding one would then call itself forever.
+  skip_if_not_installed("bayesplot")
+  tbl <- get(".__S3MethodsTable__.", envir = asNamespace("tulpa"))
+  expect_true(exists("pp_check.default", envir = tbl, inherits = FALSE))
+  expect_false(exists("pp_check.default", envir = asNamespace("tulpa"),
+                      inherits = FALSE))
+  expect_false("pp_check.default" %in% getNamespaceExports("tulpa"))
+})
+
+skip_on_cran_budget()
+
 test_that("bayesplot's own pp_check still reaches its default method", {
+  skip_on_cran_budget()
   skip_if_not_installed("bayesplot")
   # tulpa's generic masks bayesplot's on attach, and a registered S3 method is
   # not an exported object, so without the borrowed default every
@@ -13,18 +27,8 @@ test_that("bayesplot's own pp_check still reaches its default method", {
   expect_no_error(pp_check(y, yrep, bayesplot::ppc_dens_overlay))
 })
 
-test_that("the borrowed default is registered, not exported", {
-  # An exported pp_check.default would win dispatch inside bayesplot's own
-  # generic too, and a forwarding one would then call itself forever.
-  skip_if_not_installed("bayesplot")
-  tbl <- get(".__S3MethodsTable__.", envir = asNamespace("tulpa"))
-  expect_true(exists("pp_check.default", envir = tbl, inherits = FALSE))
-  expect_false(exists("pp_check.default", envir = asNamespace("tulpa"),
-                      inherits = FALSE))
-  expect_false("pp_check.default" %in% getNamespaceExports("tulpa"))
-})
-
 test_that("rstantools' generics keep their default behaviour under tulpa", {
+  skip_on_cran_budget()
   skip_if_not_installed("rstantools")
   tbl <- get(".__S3MethodsTable__.", envir = asNamespace("tulpa"))
   for (gen in c("bayes_R2", "posterior_predict")) {

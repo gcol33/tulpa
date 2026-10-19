@@ -47,9 +47,25 @@
   Q
 }
 
+test_that("the hyper prior is flat when either hyper slot is absent", {
+  # compute_spde_hyper_prior reads params[log_tau_spde_idx] after checking
+  # log_kappa_spde_idx, so a layout carrying one slot and not the other used to
+  # index at -1. Both guards are in place; with joint_hypers off the layout
+  # reserves neither and the prior is flat.
+  expect_equal(
+    tulpa:::cpp_spde_hyper_prior_probe(
+      log_kappa = 0.3, log_tau = -0.2, nu = 2,
+      prior_range_0 = 0.2, prior_range_alpha = 0.05,
+      prior_sigma_0 = 1.0, prior_sigma_alpha = -1.0
+    )$prior_val, 0.0, tolerance = 1e-12)
+})
+
+skip_on_cran_budget()
+
 # --- #281: nu <= 0 is not a model -------------------------------------------
 
 test_that("nu <= 0 is refused with the reason (gcol33/tulpa#281)", {
+  skip_on_cran_budget()
   coords <- cbind(runif(20), runif(20))
   expect_error(spatial_spde(coords, nu = 0), "degenerate at nu = 0")
   expect_error(spatial_spde(coords, nu = -1), "must be > 0")
@@ -60,6 +76,7 @@ test_that("nu <= 0 is refused with the reason (gcol33/tulpa#281)", {
 })
 
 test_that("nu = 1 keeps the old hardcoded conversion exactly (gcol33/tulpa#279)", {
+  skip_on_cran_budget()
   # The nu-general tau must reduce to 1 / (sqrt(4 pi) kappa sigma) at nu = 1,
   # so the default SPDE path is unmoved by the fix.
   spec <- .nu_fixture()
@@ -74,6 +91,7 @@ test_that("nu = 1 keeps the old hardcoded conversion exactly (gcol33/tulpa#279)"
 })
 
 test_that("(kappa, tau) invert the d = 2 Matern marginal variance", {
+  skip_on_cran_budget()
   # sigma^2 = 1 / (4 pi nu kappa^(2 nu) tau^2). A nu-independent tau satisfies
   # this only at nu = 1.
   spec <- .nu_fixture()
@@ -90,6 +108,7 @@ test_that("(kappa, tau) invert the d = 2 Matern marginal variance", {
 # --- #280: the assembly is the alpha it was asked for ------------------------
 
 test_that("the FEM assembly reproduces K (C^-1 K)^(alpha-1) at every integer alpha", {
+  skip_on_cran_budget()
   spec <- .nu_fixture()
   n <- spec$n_mesh
   for (alpha in 1:4) {
@@ -105,6 +124,7 @@ test_that("the FEM assembly reproduces K (C^-1 K)^(alpha-1) at every integer alp
 })
 
 test_that("alpha >= 3 is assembled, not silently folded into alpha = 2 (gcol33/tulpa#280)", {
+  skip_on_cran_budget()
   # The pre-fix `if (alpha == 1) ... else <alpha 2>` returned the alpha = 2
   # precision for every alpha >= 2, on the alpha = 2 sparsity pattern. The
   # higher-order operator has a strictly wider stencil, so the pattern alone
@@ -126,6 +146,7 @@ test_that("alpha >= 3 is assembled, not silently folded into alpha = 2 (gcol33/t
 })
 
 test_that("the R precision mirror agrees with the compiled assembly at nu = 1 and nu = 2", {
+  skip_on_cran_budget()
   # .spde_precision_Q (the analytic marginal-SE path) and the compiled builder
   # are two implementations of the same operator; #279/#280 had them disagree
   # at nu = 2 on both the tau map and the assembly order.
@@ -147,6 +168,7 @@ test_that("the R precision mirror agrees with the compiled assembly at nu = 1 an
 })
 
 test_that("joint NUTS refuses an integer alpha it cannot differentiate (gcol33/tulpa#280)", {
+  skip_on_cran_budget()
   # The non-centered transform's adjoint is written for the alpha = 2 assembly.
   # Sampling nu = 2 there would silently be a nu = 1 fit.
   set.seed(3)
@@ -160,6 +182,7 @@ test_that("joint NUTS refuses an integer alpha it cannot differentiate (gcol33/t
 })
 
 test_that("nu != 1 moves the hyper prior away from the nu = 1 map", {
+  skip_on_cran_budget()
   # The negative control for the test above: at nu = 1 the two references
   # coincide, so a test run only at nu = 1 passes against either map. This
   # states how far apart they are at nu = 2, which is reachable with no user
@@ -178,19 +201,6 @@ test_that("nu != 1 moves the hyper prior away from the nu = 1 map", {
   # path moved.
   expect_equal(tulpa:::.spde_range_sigma(exp(0.7), exp(-0.4), 1)$sigma,
                nu1_sigma_map(0.7, -0.4), tolerance = 1e-14)
-})
-
-test_that("the hyper prior is flat when either hyper slot is absent", {
-  # compute_spde_hyper_prior reads params[log_tau_spde_idx] after checking
-  # log_kappa_spde_idx, so a layout carrying one slot and not the other used to
-  # index at -1. Both guards are in place; with joint_hypers off the layout
-  # reserves neither and the prior is flat.
-  expect_equal(
-    tulpa:::cpp_spde_hyper_prior_probe(
-      log_kappa = 0.3, log_tau = -0.2, nu = 2,
-      prior_range_0 = 0.2, prior_range_alpha = 0.05,
-      prior_sigma_0 = 1.0, prior_sigma_alpha = -1.0
-    )$prior_val, 0.0, tolerance = 1e-12)
 })
 
 skip_on_cran()

@@ -72,7 +72,10 @@
                  var_of_means_consistency = FALSE), extra))
 }
 
+skip_on_cran_budget()
+
 test_that("the adaptive builder names why it declined (gcol33/tulpa#915)", {
+    skip_on_cran_budget()
     grid_fn <- tulpa:::.joint_adaptive_grid
     ax <- list(seq(-3, 3, length.out = 10), seq(-3, 3, length.out = 10))
     cn <- c("a", "b")

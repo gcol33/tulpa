@@ -1,3 +1,13 @@
+
+test_that("the warm start leaves that model's diagonal intact", {
+  r <- cpp_test_hsgp_warm_start(has_hsgp = FALSE)
+  expect_length(r$inv_mass, r$total_params)
+  expect_true(all(is.finite(r$inv_mass)))
+  expect_true(all(is.finite(r$sqrt_mass)))
+  expect_true(all(r$inv_mass > 0))
+})
+
+skip_on_cran_budget()
 # The HSGP warm start reads its indices, not only its flag (gcol33/tulpa#428).
 #
 # layout.is_hsgp follows data.spatial_type alone; the three HSGP index fields
@@ -16,6 +26,7 @@
 # check; HSGP was the one unguarded pair.
 
 test_that("the flag and the indices can disagree", {
+  skip_on_cran_budget()
   r <- cpp_test_hsgp_warm_start(has_hsgp = FALSE)
   expect_true(r$is_hsgp)
   expect_identical(r$sigma2_idx, -1L)
@@ -28,15 +39,8 @@ test_that("the flag and the indices can disagree", {
   expect_gt(2L, r$total_params - 1L)
 })
 
-test_that("the warm start leaves that model's diagonal intact", {
-  r <- cpp_test_hsgp_warm_start(has_hsgp = FALSE)
-  expect_length(r$inv_mass, r$total_params)
-  expect_true(all(is.finite(r$inv_mass)))
-  expect_true(all(is.finite(r$sqrt_mass)))
-  expect_true(all(r$inv_mass > 0))
-})
-
 test_that("the ordinary HSGP model still gets its indices and its warm start", {
+  skip_on_cran_budget()
   # The control: with the basis present the flag and the indices agree, the two
   # hyperparameters have slots, and the guard is an exact no-op.
   r <- cpp_test_hsgp_warm_start(has_hsgp = TRUE, n_basis = 4L, n_spatial = 6L)

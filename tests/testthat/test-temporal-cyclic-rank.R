@@ -1,18 +1,3 @@
-# Guards the cyclic RW1 / RW2 rank normalizer that both the production
-# exact-NUTS log-posterior (compute_temporal_prior) and the double twin share
-# via the single-source tulpa_temporal::rw1_rank / rw2_rank helpers. A cyclic
-# RW1 is the cycle-graph Laplacian (one null direction -> rank T-1); a cyclic
-# RW2 annihilates only constants on a ring (a linear ramp is not periodic ->
-# rank T-1). A regression to `rank = T` in the cyclic branch would bias tau
-# high / sigma_temporal low on seasonal fits.
-
-test_that("cyclic RW rank helper returns T-1 for both RW1 and RW2", {
-  T_len <- 12L
-  expect_equal(tulpa:::cpp_test_temporal_rank("rw1", T_len, TRUE),  T_len - 1L)
-  expect_equal(tulpa:::cpp_test_temporal_rank("rw1", T_len, FALSE), T_len - 1L)
-  expect_equal(tulpa:::cpp_test_temporal_rank("rw2", T_len, TRUE),  T_len - 1L)  # ring: T-1
-  expect_equal(tulpa:::cpp_test_temporal_rank("rw2", T_len, FALSE), T_len - 2L)  # path: T-2
-})
 
 # Independent R references for the temporal log-priors. These are the
 # DEFINITION: a kernel that disagrees with them is the defect.
@@ -49,37 +34,6 @@ test_that("cyclic RW rank helper returns T-1 for both RW1 and RW2", {
   else               { rank <- if (cyclic) T - 1 else T - 2; q <- .rw2_quad(phi, cyclic) }
   0.5 * rank * (log(tau) - .LOG_2PI) - 0.5 * tau * q
 }
-
-test_that("temporal log-prior matches the intrinsic-GMRF normalizer (cyclic + acyclic)", {
-  set.seed(11)
-  phi <- rnorm(12)
-  for (cyc in c(FALSE, TRUE)) {
-    for (ty in c("rw1", "rw2")) {
-      got <- tulpa:::cpp_test_temporal_log_prior(phi, ty, tau = 1.7, rho = 0, cyclic = cyc)
-      expect_equal(got, .ref_lp(phi, ty, 1.7, cyc), tolerance = 1e-9,
-                   info = paste(ty, "cyclic =", cyc))
-    }
-  }
-})
-
-test_that("the RW normalizer carries the 2*pi term at every rank", {
-  # The offset a missing 2*pi leaves is 0.5 * rank * log(2*pi), which tracks the
-  # structure rather than being one constant: 10.1 nats for a rank-11 RW1 on
-  # T = 12, 9.2 for the rank-10 acyclic RW2 on the same field. Pinned so a copy
-  # that normalizes on tau alone is named by its size, not just by a mismatch.
-  set.seed(12)
-  phi <- rnorm(12)
-  for (cyc in c(FALSE, TRUE)) {
-    for (ty in c("rw1", "rw2")) {
-      rank <- if (ty == "rw1") 11 else if (cyc) 11 else 10
-      got <- tulpa:::cpp_test_temporal_log_prior(phi, ty, tau = 1.7, rho = 0, cyclic = cyc)
-      no_2pi <- 0.5 * rank * log(1.7) -
-        0.5 * 1.7 * (if (ty == "rw1") .rw1_quad(phi, cyc) else .rw2_quad(phi, cyc))
-      expect_equal(no_2pi - got, 0.5 * rank * .LOG_2PI, tolerance = 1e-9,
-                   info = paste(ty, "cyclic =", cyc))
-    }
-  }
-})
 
 # ---------------------------------------------------------------------------
 # AR1: proper, rank T, and one floor on the stationary factor 1 - rho^2.
@@ -130,6 +84,57 @@ test_that("the AR1 floor engages on rho alone, not on the stationary precision",
   expect_equal(lp(100) - lp(0.01),
                0.5 * length(phi) * log(100 / 0.01) - 0.5 * (100 - 0.01) * q,
                tolerance = 1e-9)
+})
+
+skip_on_cran_budget()
+# Guards the cyclic RW1 / RW2 rank normalizer that both the production
+# exact-NUTS log-posterior (compute_temporal_prior) and the double twin share
+# via the single-source tulpa_temporal::rw1_rank / rw2_rank helpers. A cyclic
+# RW1 is the cycle-graph Laplacian (one null direction -> rank T-1); a cyclic
+# RW2 annihilates only constants on a ring (a linear ramp is not periodic ->
+# rank T-1). A regression to `rank = T` in the cyclic branch would bias tau
+# high / sigma_temporal low on seasonal fits.
+
+test_that("cyclic RW rank helper returns T-1 for both RW1 and RW2", {
+  skip_on_cran_budget()
+  T_len <- 12L
+  expect_equal(tulpa:::cpp_test_temporal_rank("rw1", T_len, TRUE),  T_len - 1L)
+  expect_equal(tulpa:::cpp_test_temporal_rank("rw1", T_len, FALSE), T_len - 1L)
+  expect_equal(tulpa:::cpp_test_temporal_rank("rw2", T_len, TRUE),  T_len - 1L)  # ring: T-1
+  expect_equal(tulpa:::cpp_test_temporal_rank("rw2", T_len, FALSE), T_len - 2L)  # path: T-2
+})
+
+test_that("temporal log-prior matches the intrinsic-GMRF normalizer (cyclic + acyclic)", {
+  skip_on_cran_budget()
+  set.seed(11)
+  phi <- rnorm(12)
+  for (cyc in c(FALSE, TRUE)) {
+    for (ty in c("rw1", "rw2")) {
+      got <- tulpa:::cpp_test_temporal_log_prior(phi, ty, tau = 1.7, rho = 0, cyclic = cyc)
+      expect_equal(got, .ref_lp(phi, ty, 1.7, cyc), tolerance = 1e-9,
+                   info = paste(ty, "cyclic =", cyc))
+    }
+  }
+})
+
+test_that("the RW normalizer carries the 2*pi term at every rank", {
+  skip_on_cran_budget()
+  # The offset a missing 2*pi leaves is 0.5 * rank * log(2*pi), which tracks the
+  # structure rather than being one constant: 10.1 nats for a rank-11 RW1 on
+  # T = 12, 9.2 for the rank-10 acyclic RW2 on the same field. Pinned so a copy
+  # that normalizes on tau alone is named by its size, not just by a mismatch.
+  set.seed(12)
+  phi <- rnorm(12)
+  for (cyc in c(FALSE, TRUE)) {
+    for (ty in c("rw1", "rw2")) {
+      rank <- if (ty == "rw1") 11 else if (cyc) 11 else 10
+      got <- tulpa:::cpp_test_temporal_log_prior(phi, ty, tau = 1.7, rho = 0, cyclic = cyc)
+      no_2pi <- 0.5 * rank * log(1.7) -
+        0.5 * 1.7 * (if (ty == "rw1") .rw1_quad(phi, cyc) else .rw2_quad(phi, cyc))
+      expect_equal(no_2pi - got, 0.5 * rank * .LOG_2PI, tolerance = 1e-9,
+                   info = paste(ty, "cyclic =", cyc))
+    }
+  }
 })
 
 skip_on_cran()

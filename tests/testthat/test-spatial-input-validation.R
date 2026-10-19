@@ -11,7 +11,27 @@
   A
 }
 
+test_that("a temporal field needs every time and enough of them (#909)", {
+  d <- data.frame(t = 1, x = rnorm(6), y = rnorm(6))
+  expect_error(validate_temporal(temporal_rw1("t"), d),
+               "RW1 requires at least 2 distinct time points")
+  expect_error(validate_temporal(temporal_ar1("t"), d),
+               "AR1 requires at least 2")
+  d2 <- data.frame(t = c(1:5, NA), x = rnorm(6), y = rnorm(6))
+  expect_error(validate_temporal(temporal_rw1("t"), d2),
+               "'t' has 1 missing value\\(s\\) \\(first at row 6\\)")
+  d3 <- data.frame(t = rep(1:5, 4), x = rnorm(20))
+  d3$t[3] <- NA
+  expect_error(
+    tulpa:::validate_tvc(temporal_tvc("t", terms = "x"), d3,
+                         cbind(`(Intercept)` = 1, x = d3$x)),
+    "'t' has 1 missing value")
+})
+
+skip_on_cran_budget()
+
 test_that("an adjacency with a missing or negative entry is refused (#909)", {
+  skip_on_cran_budget()
   A <- .chain_adj(5L)
   An <- A; An[1, 2] <- NA
   expect_error(spatial_car(An, group_var = "r"), "missing or non-finite")
@@ -30,6 +50,7 @@ test_that("an adjacency with a missing or negative entry is refused (#909)", {
 })
 
 test_that("check_adjacency reports connected components (#902)", {
+  skip_on_cran_budget()
   A <- .chain_adj(4L)
   r <- check_adjacency(A)
   expect_identical(r$n_components, 1L)
@@ -54,6 +75,7 @@ test_that("check_adjacency reports connected components (#902)", {
 })
 
 test_that("coordinates must be finite and, when scaled, not constant (#909)", {
+  skip_on_cran_budget()
   set.seed(1)
   d <- data.frame(lon = runif(20), lat = 1, x = rnorm(20), y = rnorm(20))
   expect_error(validate_gp(spatial_gp(~ lon + lat, nn = 5), d),
@@ -74,6 +96,7 @@ test_that("coordinates must be finite and, when scaled, not constant (#909)", {
 })
 
 test_that("compute_nngp_neighbors() refuses a k no ordering can fill (#909)", {
+  skip_on_cran_budget()
   set.seed(2)
   co <- cbind(runif(10), runif(10))
   expect_error(compute_nngp_neighbors(co, 20), "`k` must be a whole number in \\[0, 9\\]")
@@ -91,24 +114,8 @@ test_that("compute_nngp_neighbors() refuses a k no ordering can fill (#909)", {
   expect_no_error(compute_nngp_neighbors(co[1, , drop = FALSE], 0))
 })
 
-test_that("a temporal field needs every time and enough of them (#909)", {
-  d <- data.frame(t = 1, x = rnorm(6), y = rnorm(6))
-  expect_error(validate_temporal(temporal_rw1("t"), d),
-               "RW1 requires at least 2 distinct time points")
-  expect_error(validate_temporal(temporal_ar1("t"), d),
-               "AR1 requires at least 2")
-  d2 <- data.frame(t = c(1:5, NA), x = rnorm(6), y = rnorm(6))
-  expect_error(validate_temporal(temporal_rw1("t"), d2),
-               "'t' has 1 missing value\\(s\\) \\(first at row 6\\)")
-  d3 <- data.frame(t = rep(1:5, 4), x = rnorm(20))
-  d3$t[3] <- NA
-  expect_error(
-    tulpa:::validate_tvc(temporal_tvc("t", terms = "x"), d3,
-                         cbind(`(Intercept)` = 1, x = d3$x)),
-    "'t' has 1 missing value")
-})
-
 test_that("spatial_spde() meshes repeated sites once and keeps every row (#909)", {
+  skip_on_cran_budget()
   set.seed(1)
   sites <- data.frame(lon = runif(25), lat = runif(25))
   d <- sites[rep(seq_len(25L), each = 2L), ]
@@ -122,6 +129,7 @@ test_that("spatial_spde() meshes repeated sites once and keeps every row (#909)"
 })
 
 test_that("fit_spde() refuses a response whose length is not A's row count (#908)", {
+  skip_on_cran_budget()
   set.seed(1)
   d <- data.frame(lon = runif(40), lat = runif(40), x = rnorm(40))
   d$y <- rpois(40, 2)

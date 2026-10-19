@@ -81,20 +81,6 @@ cila_binom_exact_log_marg <- function(d, sigma, half = 14, ng = 1601L) {
   m + log(sum(exp(lp - m))) + log(diff(b[1:2])) + log(diff(u[1:2]))
 }
 
-# ---------------------------------------------------------------------------
-# 1. The request is validated before anything runs
-# ---------------------------------------------------------------------------
-
-test_that("control$cila rejects settings it does not have", {
-  expect_error(.cila_config(list(npoints = 1024L)), "Unknown")
-  expect_error(.cila_config(list(variant = "sobol")), "variant")
-  expect_error(.cila_config(list(n_points = 0L)), "positive")
-  expect_null(.cila_config(NULL))
-  expect_null(.cila_config(FALSE))
-  expect_equal(.cila_config(TRUE)$variant, "qmc")
-  expect_equal(.cila_config(TRUE)$n_points, 1024L)
-})
-
 test_that("the effort floor names the measurement it comes from", {
   # gcol33/tulpa#341 measured every variant leaving the simultaneous
   # calibration band at M = 64 and the iid one still leaving it at M = 256:
@@ -103,25 +89,6 @@ test_that("the effort floor names the measurement it comes from", {
   expect_error(.cila_config(list(n_points = 64L)), "512")
   expect_error(.cila_config(list(n_points = 256L)), "particle set")
   expect_silent(.cila_config(list(n_points = 512L)))
-})
-
-test_that("the kernel request is NULL where there is nothing to retain", {
-  cfg <- .cila_config(TRUE)
-  expect_null(.cila_request(cfg, 0L))
-  expect_null(.cila_request(NULL, 3L))
-  req <- .cila_request(cfg, 3L)
-  expect_equal(req$n_fixed, 3L)
-  expect_equal(req$variant, 0L)
-})
-
-test_that("a declined correction leaves the Laplace read in place, and says so", {
-  cfg <- .cila_config(TRUE)
-  res <- .nl_cila_attach(list(log_marginal = c(-1, -2), weights = c(0.6, 0.4)),
-                         cfg, function(req) stop("boom"), p_fixed = 2L)
-  expect_equal(res$weights_source, "laplace_grid")
-  expect_equal(res$weights, c(0.6, 0.4))
-  expect_false(res$cila$weights_adopted)
-  expect_equal(res$cila$declined, "redispatch_failed")
 })
 
 # ---------------------------------------------------------------------------
@@ -166,11 +133,50 @@ test_that("tulpa_nested_laplace() accepts the correction", {
                                     "tulpa_nested_laplace"))
 })
 
+skip_on_cran_budget()
+
+# ---------------------------------------------------------------------------
+# 1. The request is validated before anything runs
+# ---------------------------------------------------------------------------
+
+test_that("control$cila rejects settings it does not have", {
+  skip_on_cran_budget()
+  expect_error(.cila_config(list(npoints = 1024L)), "Unknown")
+  expect_error(.cila_config(list(variant = "sobol")), "variant")
+  expect_error(.cila_config(list(n_points = 0L)), "positive")
+  expect_null(.cila_config(NULL))
+  expect_null(.cila_config(FALSE))
+  expect_equal(.cila_config(TRUE)$variant, "qmc")
+  expect_equal(.cila_config(TRUE)$n_points, 1024L)
+})
+
+test_that("the kernel request is NULL where there is nothing to retain", {
+  skip_on_cran_budget()
+  cfg <- .cila_config(TRUE)
+  expect_null(.cila_request(cfg, 0L))
+  expect_null(.cila_request(NULL, 3L))
+  req <- .cila_request(cfg, 3L)
+  expect_equal(req$n_fixed, 3L)
+  expect_equal(req$variant, 0L)
+})
+
+test_that("a declined correction leaves the Laplace read in place, and says so", {
+  skip_on_cran_budget()
+  cfg <- .cila_config(TRUE)
+  res <- .nl_cila_attach(list(log_marginal = c(-1, -2), weights = c(0.6, 0.4)),
+                         cfg, function(req) stop("boom"), p_fixed = 2L)
+  expect_equal(res$weights_source, "laplace_grid")
+  expect_equal(res$weights, c(0.6, 0.4))
+  expect_false(res$cila$weights_adopted)
+  expect_equal(res$cila$declined, "redispatch_failed")
+})
+
 # ---------------------------------------------------------------------------
 # 6. Declines say why
 # ---------------------------------------------------------------------------
 
 test_that("a fit with no fixed effects to retain declines with a reason", {
+  skip_on_cran_budget()
   cfg <- .cila_config(TRUE)
   res <- .nl_cila_attach(list(), cfg, function(req) NULL, p_fixed = 0L)
   expect_equal(res$cila$declined, "no_fixed_effects")

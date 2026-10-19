@@ -42,10 +42,13 @@ zi_re_sim <- function(seed, family, G = 50L, per = 20L, sigma = 0.8, phi = 3,
 ZI_RE_FAMILIES <- c("poisson", "neg_binomial_2",
                     "truncated_poisson", "truncated_neg_binomial_2")
 
+skip_on_cran_budget()
+
 
 # --- 1. the fixed block is [beta | beta_zi] ----------------------------------
 
 test_that("a ZI fit with random effects reports both fixed blocks", {
+  skip_on_cran_budget()
   d <- zi_re_sim(1L, "poisson", G = 25L, per = 12L)
   fit <- suppressMessages(
     tulpa(y ~ x + (1 | g), data = d$data, family = "poisson",
@@ -63,6 +66,7 @@ test_that("a ZI fit with random effects reports both fixed blocks", {
 })
 
 test_that("the fixed-effect precision is the Schur complement of the joint curvature", {
+  skip_on_cran_budget()
   d <- zi_re_sim(2L, "poisson", G = 25L, per = 12L)
   # tulpa_laplace conditions on the RE scale, so the term carries one here;
   # tulpa_eb() estimates it and takes the term without.
@@ -84,6 +88,7 @@ test_that("the fixed-effect precision is the Schur complement of the joint curva
 # --- 2. the mixture's curvature derivatives ----------------------------------
 
 test_that("the six mixture curvature partials match central differences", {
+  skip_on_cran_budget()
   # What the analytic outer gradient contracts against the predictor
   # (co)variances. The y = 0 rows are the only place the two predictors couple,
   # so a grid that missed them would verify almost nothing.
@@ -112,6 +117,7 @@ test_that("the six mixture curvature partials match central differences", {
 })
 
 test_that("the mixture curvature derivative is gated on the family", {
+  skip_on_cran_budget()
   for (fam in ZI_RE_FAMILIES) {
     expect_true(cpp_family_has_zi_curvature_derivative(fam), info = fam)
   }
@@ -138,6 +144,7 @@ test_that("the mixture curvature derivative is gated on the family", {
 # --- 6. refusals -------------------------------------------------------------
 
 test_that("zero inflation is refused where the backend cannot carry it", {
+  skip_on_cran_budget()
   d <- zi_re_sim(41L, "poisson", G = 20L, per = 10L)
   expect_error(
     suppressMessages(tulpa(y ~ x + (1 | g), data = d$data, family = "poisson",
@@ -154,6 +161,7 @@ test_that("zero inflation is refused where the backend cannot carry it", {
 
 
 test_that("the closed outer Hessian carries a hurdle", {
+  skip_on_cran_budget()
   # Against a difference of the exact GRADIENT rather than a second difference
   # of the objective: the gradient is already pinned above, so this isolates the
   # Hessian assembly instead of folding the gradient's own error back in.
@@ -186,6 +194,7 @@ test_that("the closed outer Hessian carries a hurdle", {
 
 
 test_that("the mixture curvature gate tracks the observed derivative, not a family list", {
+  skip_on_cran_budget()
   # What the untruncated y = 0 branch actually needs is the OBSERVED curvature's
   # eta-derivative: the registered working-weight one plus the
   # observed-minus-working correction. neg_binomial_1 is the family that
@@ -215,6 +224,7 @@ test_that("the mixture curvature gate tracks the observed derivative, not a fami
 
 
 test_that("neg_binomial_1's mixture curvature derivatives are exact", {
+  skip_on_cran_budget()
   # The coupled y = 0 branch reads the observed curvature's first and second
   # eta-derivatives, which for this family are the working ones plus a
   # tetragamma and a pentagamma correction. Checked against differences of the
@@ -249,6 +259,7 @@ test_that("neg_binomial_1's mixture curvature derivatives are exact", {
 
 
 test_that("the engine contributes nothing where the base registry already applies", {
+  skip_on_cran_budget()
   # The two sources are summed over disjoint rows, so overlap would double-count
   # silently. Asserted as exact zeros rather than "small".
   n <- 12L
@@ -267,6 +278,7 @@ test_that("the engine contributes nothing where the base registry already applie
 
 
 test_that("estimate_phi is still refused where the mixture branch is unregistered", {
+  skip_on_cran_budget()
   # neg_binomial_1 has no dispersion registry at all, so it stays refused --
   # a different gap from the one closed here, and the message has to say so
   # rather than silently maximizing along the base family's derivative.

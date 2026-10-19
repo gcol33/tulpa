@@ -34,50 +34,6 @@ sim_gp_binomial <- function(n_loc = 60L, reps = 3L, sigma2 = 0.7, phi_gp = 0.25,
   )
 }
 
-test_that("mode = laplace fits a GP field alongside a (1 | g) RE term (issue #74)", {
-  s <- sim_gp_binomial(n_loc = 50L, reps = 3L)
-  d <- s$data
-  d$g <- factor(rep_len(seq_len(6L), nrow(d)))
-
-  fit <- suppressMessages(tulpa(
-    y ~ x + (1 | g), data = d, family = "binomial", n_trials = d$ntrials,
-    spatial = spatial_gp(~ lon + lat, nn = 8L), mode = "laplace"
-  ))
-
-  expect_s3_class(fit, "tulpa_fit")
-  # Latent mode is [beta (2), re (6 groups), w_gp (n_loc)]; the RE block is
-  # present, so the fixed-effect slope still recovers.
-  expect_length(fit$mode, 2L + 6L + s$n_loc)
-  beta <- fit$mode[seq_len(2L)]
-  expect_lt(abs(beta[2] - s$beta[2]), 0.35)        # slope
-})
-
-test_that("a continuous field rejects a spatial(col) term", {
-  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
-  s$data$site <- factor(seq_len(nrow(s$data)))
-  expect_error(
-    suppressMessages(tulpa(
-      y ~ x + spatial(site), data = s$data, family = "binomial",
-      n_trials = s$data$ntrials, spatial = spatial_gp(~ lon + lat),
-      mode = "nested_laplace")),
-    "coordinate columns"
-  )
-})
-
-# SPDE is now routed through tulpa() (its own `spde` backend; see
-# test-tulpa-spatial-spde-frontdoor.R), and so is multiscale (exact NUTS; see
-# test-multiscale-gp-noncentered-amplitude.R). A type the grammar does not know
-# at all must still error with guidance rather than fall through.
-test_that("an unrouted spatial type errors with guidance", {
-  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
-  expect_error(
-    suppressMessages(tulpa(
-      y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
-      spatial = list(type = "not_a_field_type"), mode = "nested_laplace")),
-    "Unknown spatial type"
-  )
-})
-
 test_that("a bare list multiscale spec is rejected with guidance", {
   # "multiscale" now routes to validate_gp(), so a bare list must be caught by
   # the spec-class check rather than the unknown-type arm above.
@@ -120,7 +76,57 @@ test_that("an HSGP spec rejects a spatial(col) term and a bare list", {
   )
 })
 
+skip_on_cran_budget()
+
+test_that("mode = laplace fits a GP field alongside a (1 | g) RE term (issue #74)", {
+  skip_on_cran_budget()
+  s <- sim_gp_binomial(n_loc = 50L, reps = 3L)
+  d <- s$data
+  d$g <- factor(rep_len(seq_len(6L), nrow(d)))
+
+  fit <- suppressMessages(tulpa(
+    y ~ x + (1 | g), data = d, family = "binomial", n_trials = d$ntrials,
+    spatial = spatial_gp(~ lon + lat, nn = 8L), mode = "laplace"
+  ))
+
+  expect_s3_class(fit, "tulpa_fit")
+  # Latent mode is [beta (2), re (6 groups), w_gp (n_loc)]; the RE block is
+  # present, so the fixed-effect slope still recovers.
+  expect_length(fit$mode, 2L + 6L + s$n_loc)
+  beta <- fit$mode[seq_len(2L)]
+  expect_lt(abs(beta[2] - s$beta[2]), 0.35)        # slope
+})
+
+test_that("a continuous field rejects a spatial(col) term", {
+  skip_on_cran_budget()
+  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
+  s$data$site <- factor(seq_len(nrow(s$data)))
+  expect_error(
+    suppressMessages(tulpa(
+      y ~ x + spatial(site), data = s$data, family = "binomial",
+      n_trials = s$data$ntrials, spatial = spatial_gp(~ lon + lat),
+      mode = "nested_laplace")),
+    "coordinate columns"
+  )
+})
+
+# SPDE is now routed through tulpa() (its own `spde` backend; see
+# test-tulpa-spatial-spde-frontdoor.R), and so is multiscale (exact NUTS; see
+# test-multiscale-gp-noncentered-amplitude.R). A type the grammar does not know
+# at all must still error with guidance rather than fall through.
+test_that("an unrouted spatial type errors with guidance", {
+  skip_on_cran_budget()
+  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
+  expect_error(
+    suppressMessages(tulpa(
+      y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
+      spatial = list(type = "not_a_field_type"), mode = "nested_laplace")),
+    "Unknown spatial type"
+  )
+})
+
 test_that("cpp_hsgp_basis_2d matches the make_hsgp_basis_2d oracle", {
+  skip_on_cran_budget()
   # Independent check that the exported basis builder agrees with the
   # hand-written 2D HSGP basis used in test-nested-laplace-gp.R. Mirrors
   # setup_hsgp_2d: L = c * range / 2 (floored at 0.1), centred coords,

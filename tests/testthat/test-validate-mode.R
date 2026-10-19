@@ -7,7 +7,10 @@
                  inference_tier = tier), class = "tulpa_fit")
 }
 
+skip_on_cran_budget()
+
 test_that("validate_mode matches the backend and the tier", {
+  skip_on_cran_budget()
   f <- .vm_fit("laplace", "structured", 2L)
   expect_true(validate_mode(f, "laplace"))
   expect_true(validate_mode(f, "LAPLACE"))
@@ -24,6 +27,7 @@ test_that("validate_mode matches the backend and the tier", {
 })
 
 test_that("validate_mode accepts a set of modes and refuses unknown names", {
+  skip_on_cran_budget()
   f <- .vm_fit("mala", "exact", 1L)
   expect_true(validate_mode(f, c("laplace", "mala")))
   expect_false(validate_mode(f, c("laplace", "hmc"), error = FALSE))

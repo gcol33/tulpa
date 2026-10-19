@@ -29,7 +29,24 @@ sim_areal_binomial <- function(nr = 7L, nc = 7L, reps = 4L, seed = 7L) {
   )
 }
 
+test_that("a continuous type given with an areal spatial(col) term is rejected", {
+  # A continuous field is addressed by coordinates, not a unit column, so a
+  # spatial(col) term alongside a continuous type is contradictory. (Genuinely
+  # continuous routing -- gp/nngp via spatial_gp() -- lives in
+  # test-tulpa-spatial-gp-frontdoor.R; hsgp/spde "not yet routed" too.)
+  s <- sim_areal_binomial(reps = 1L)
+  expect_error(
+    tulpa(y ~ x + spatial(region), data = s$data, family = "binomial",
+          n_trials = s$data$ntrials, spatial = list(type = "gp"),
+          mode = "nested_laplace"),
+    "coordinate columns"
+  )
+})
+
+skip_on_cran_budget()
+
 test_that("front door rejects malformed spatial specifications", {
+  skip_on_cran_budget()
   s <- sim_areal_binomial(reps = 1L)
 
   # spatial = supplied but no spatial(col) term in the formula.
@@ -60,6 +77,7 @@ test_that("front door rejects malformed spatial specifications", {
 })
 
 test_that("spatial Gibbs is binomial-only and rejects random slopes", {
+  skip_on_cran_budget()
   s <- sim_areal_binomial(reps = 1L)
 
   # Non-binomial under spatial Gibbs.
@@ -75,20 +93,6 @@ test_that("spatial Gibbs is binomial-only and rejects random slopes", {
           family = "binomial", n_trials = s$data$ntrials,
           spatial = list(type = "icar", adjacency = s$W), mode = "gibbs"),
     "Random-slope"
-  )
-})
-
-test_that("a continuous type given with an areal spatial(col) term is rejected", {
-  # A continuous field is addressed by coordinates, not a unit column, so a
-  # spatial(col) term alongside a continuous type is contradictory. (Genuinely
-  # continuous routing -- gp/nngp via spatial_gp() -- lives in
-  # test-tulpa-spatial-gp-frontdoor.R; hsgp/spde "not yet routed" too.)
-  s <- sim_areal_binomial(reps = 1L)
-  expect_error(
-    tulpa(y ~ x + spatial(region), data = s$data, family = "binomial",
-          n_trials = s$data$ntrials, spatial = list(type = "gp"),
-          mode = "nested_laplace"),
-    "coordinate columns"
   )
 })
 

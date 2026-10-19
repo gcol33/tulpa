@@ -29,7 +29,10 @@
          outer_grid_railed_axes = railed)
 }
 
+skip_on_cran_budget()
+
 test_that("each condition that withholds an axis SD names itself", {
+    skip_on_cran_budget()
     v <- c(0.5, 1, 2, 4, 8)
     # Mode interior: a number, and no reason.
     ok <- .nl_laplace_at_mode_sd_axis(v, c(-3, -1, 0, -1, -3))
@@ -62,6 +65,7 @@ test_that("each condition that withholds an axis SD names itself", {
 })
 
 test_that("the reason survives the axis-resolution read, per axis", {
+    skip_on_cran_budget()
     d  <- .gres_two_axis()
     rs <- .nl_axis_resolution(d$tg, d$lm, NULL)
 
@@ -77,6 +81,7 @@ test_that("the reason survives the axis-resolution read, per axis", {
 })
 
 test_that("a whole-grid verdict is withheld when an axis went unscored", {
+    skip_on_cran_budget()
     d  <- .gres_two_axis()
     rs <- .nl_axis_resolution(d$tg, d$lm, NULL)
     r  <- .tulpa_grid_resolution(.gres_fit(rs))
@@ -95,6 +100,7 @@ test_that("a whole-grid verdict is withheld when an axis went unscored", {
 })
 
 test_that("the note names the unscored axis before the coarsest scored one", {
+    skip_on_cran_budget()
     d  <- .gres_two_axis()
     rs <- .nl_axis_resolution(d$tg, d$lm, NULL)
     n  <- .tulpa_grid_resolution_note(.tulpa_grid_resolution(
@@ -115,6 +121,7 @@ test_that("the note names the unscored axis before the coarsest scored one", {
 })
 
 test_that("a fully resolved grid still reports nothing", {
+    skip_on_cran_budget()
     va <- seq(-1, 1, length.out = 9L)
     g  <- as.matrix(expand.grid(A = va, B = va))
     lm <- -0.5 * ((g[, "A"] / 0.6)^2 + (g[, "B"] / 0.6)^2)
@@ -129,6 +136,7 @@ test_that("a fully resolved grid still reports nothing", {
 })
 
 test_that("a grid where NOTHING scored says so instead of returning nothing", {
+    skip_on_cran_budget()
     # Both axes rise to their top node: no axis carries a ratio at all. The old
     # `!any(is.finite(r))` early return made this indistinguishable from a fit
     # that records no resolution -- the emptiest possible grid reporting the
@@ -150,11 +158,13 @@ test_that("a grid where NOTHING scored says so instead of returning nothing", {
 })
 
 test_that("a fit carrying no resolution at all is still NULL", {
+    skip_on_cran_budget()
     expect_null(.tulpa_grid_resolution(list()))
     expect_null(.tulpa_grid_resolution(list(outer_grid_h_over_sd = numeric(0))))
 })
 
 test_that("the provenance attach stamps the rail report unconditionally", {
+    skip_on_cran_budget()
     # The rail report's only attach points used to be inside the registry
     # rescue, which does not run on a grid the caller pinned -- so the one
     # placement the engine leaves alone by construction was the one that never
