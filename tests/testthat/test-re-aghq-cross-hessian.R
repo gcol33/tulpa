@@ -9,6 +9,8 @@
 # NA, never a silent 0 (a 0 cross term reads as "theta and b_s are
 # independent", which is the exact miscalibration this exists to avoid).
 
+skip_on_cran()
+
 l1pe <- function(x) ifelse(x > 0, x + log1p(exp(-x)), log1p(exp(x)))
 
 test_that("the R-closure bridge declines blup_cross (NA, not a silent 0)", {

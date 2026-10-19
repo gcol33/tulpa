@@ -3,6 +3,8 @@
 # front door; the tests fit them directly on simulated data with a known field
 # and assert recovery, so the fixes are validated rather than assumed.
 
+skip_on_cran()
+
 chain_adj <- function(n_s) {
   nb <- lapply(seq_len(n_s), function(i) setdiff(c(i - 1L, i + 1L), c(0L, n_s + 1L)))
   list(adj_list = nb, n_neighbors = vapply(nb, length, integer(1)))

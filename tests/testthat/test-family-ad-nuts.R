@@ -7,6 +7,8 @@
 # AD form ships too but its sampler-registry entry is deferred (its phi = SD
 # convention collides with the load-bearing gaussian phi = variance entry).
 
+skip_on_cran()
+
 hmc_ctrl <- list(n_iter = 1500L, warmup = 750L, n_chains = 2L, seed = 7L,
                  adapt_delta = 0.9)
 

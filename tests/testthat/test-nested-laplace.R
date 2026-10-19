@@ -5,6 +5,8 @@
 # Test: Hot-start reduces Newton iterations
 # =====================================================================
 
+skip_on_cran()
+
 test_that("hot-start reduces Newton iterations vs cold start", {
   skip_on_cran()
   adj <- make_grid_adjacency(5, 5)  # 25 sites (dense path)

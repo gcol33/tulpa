@@ -12,6 +12,8 @@
 # Coverage of a single scalar hyperparameter across seeds. `fit_extract(seed)`
 # returns c(lo, hi) (the CI) or NULL to skip a degenerate seed; NULL seeds do not
 # count toward the denominator.
+skip_on_cran()
+
 .hp_ci_coverage <- function(truth, fit_extract, n_seeds) {
   hit <- 0L; used <- 0L
   for (s in seq_len(n_seeds)) {

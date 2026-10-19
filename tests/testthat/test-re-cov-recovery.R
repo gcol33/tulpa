@@ -10,6 +10,8 @@
 # (dev_notes/binary_identifiability.R), so in the SMALL regimes rho is gated
 # on coverage only and its point recovery is gated in the identified regime.
 
+skip_on_cran()
+
 sim_recov <- function(seed, family, G, npg, ntr = 1L, beta = c(0, 0.3),
                       Sigma = matrix(c(0.7^2, 0.4 * 0.7 * 0.5,
                                        0.4 * 0.7 * 0.5, 0.5^2), 2)) {

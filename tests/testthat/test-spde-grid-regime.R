@@ -5,6 +5,8 @@
 # so it gets the same pareto_k_regime diagnostic every other family carries
 # -- visibility, not a silent override of the user's chosen method.
 
+skip_on_cran()
+
 test_that("fit_spde(method = 'grid') attaches pareto_k_regime", {
     skip_on_cran()
     set.seed(42)

@@ -15,6 +15,8 @@
 # Build a tgmrf with the same precision form as tulpa's built-in AR1.
 #   Q_ii = tau (i = 0 or n-1) ; tau * (1 + rho^2) (interior)
 #   Q_{i, i+1} = Q_{i+1, i} = -tau * rho
+skip_on_cran()
+
 make_ar1_tgmrf <- function(n, theta_grid_matrix, bounds = NULL) {
   blk <- tgmrf(
     Q = function(theta) {

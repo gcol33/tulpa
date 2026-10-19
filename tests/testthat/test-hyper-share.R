@@ -13,6 +13,8 @@
 # Reported as a number with no threshold: what counts as too little depends on
 # the model.
 
+skip_on_cran()
+
 test_that("the hyperparameter share is reported and matches the grid pieces", {
     skip_on_cran()
     sim <- .sparse_icar_arm()

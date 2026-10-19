@@ -6,6 +6,8 @@
 # log-marginal peaks at the reference's dispersion estimate, which pins down its
 # dependence on phi -- a term the first claim holds fixed and so cannot see.
 
+skip_on_cran()
+
 test_that("poisson reproduces glm()", {
   skip_on_cran()
   set.seed(101)

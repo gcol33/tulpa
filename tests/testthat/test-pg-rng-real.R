@@ -5,6 +5,8 @@
 #   Var  = b * (sinh(c) - c) / (4 c^3 * cosh(c/2)^2)
 # (limits b/4 and b/24 at c = 0).
 
+skip_on_cran()
+
 test_that("rpg_real matches PG(b, c) moments at fractional shapes", {
   skip_on_cran()
   set.seed(707)

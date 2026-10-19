@@ -5,6 +5,8 @@
 
 # A chain of 8 regions and an island, region 9, with 4 / 4 successes: a
 # separated island, which a near-flat island prior lets run off.
+skip_on_cran()
+
 .island_chain_data <- function() {
   J <- 9
   A <- matrix(0, J, J)

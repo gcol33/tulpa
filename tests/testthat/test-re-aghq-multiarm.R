@@ -16,6 +16,8 @@
 # recovery are a model-adapter concern (tulpaObs ms_abun), tested there, not in
 # the generic engine.
 
+skip_on_cran()
+
 cl <- function(e) pmin(pmax(e, -30), 30)
 l1pe <- function(x) ifelse(x > 0, x + log1p(exp(-x)), log1p(exp(x)))   # log(1+e^x)
 

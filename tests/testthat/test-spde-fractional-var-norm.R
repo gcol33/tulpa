@@ -17,6 +17,8 @@
 # The CCD grid the fit then laid at the mode topped out at range 1.53 and
 # carried zero weight above 100, which is why the coefficients do not move.
 
+skip_on_cran()
+
 .svn_sim <- function(n = 120L, seed = 2L) {
   set.seed(seed)
   L <- cbind(lon = runif(n, 0, 10), lat = runif(n, 0, 10))

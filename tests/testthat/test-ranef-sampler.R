@@ -4,6 +4,8 @@
 # hyperparameters]; a regression would re-include the latent field and a
 # spurious `log_sigma_re` row.
 
+skip_on_cran()
+
 test_that("ranef() on a sampler-tier fit returns exactly the RE coefficients", {
   skip_if_not_slow()
   set.seed(3)

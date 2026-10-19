@@ -18,6 +18,8 @@
 
 # One Poisson observation per unique location, driven by a dense-GP field with
 # known amplitude.
+skip_on_cran()
+
 sim_gp_amplitude <- function(n = 70L, sigma2 = 1.0, phi = 0.30,
                              a0 = 0.4, seed = 1L) {
   set.seed(seed)

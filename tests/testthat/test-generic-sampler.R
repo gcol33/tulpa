@@ -1,3 +1,5 @@
+skip_on_cran()
+
 test_that("generic LikelihoodSpec path runs through production NUTS", {
   skip_if_not_slow()
 

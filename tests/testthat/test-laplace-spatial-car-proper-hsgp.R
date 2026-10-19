@@ -5,6 +5,8 @@
 # log-marginal is checked against a brute-force Laplace. Both are wired into
 # dispatch_laplace_spatial / tulpa_laplace with a Schur-complement marginal SE.
 
+skip_on_cran()
+
 ring_adj <- function(n) {
   W <- matrix(0, n, n)
   for (i in 1:(n - 1)) { W[i, i + 1] <- 1; W[i + 1, i] <- 1 }

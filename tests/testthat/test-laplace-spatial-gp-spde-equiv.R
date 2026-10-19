@@ -22,6 +22,8 @@
 # A Vecchia ordering with its nearest-predecessor neighbour lists: site i
 # conditions on its `nn` closest predecessors in the natural order, which is the
 # layout both entries expect (nn_order 0-based, nn_idx 1-based into that order).
+skip_on_cran()
+
 .gp_fixture <- function(ng, seed, nn = 5L, p = 2L) {
   set.seed(seed)
   coords <- cbind(runif(ng), runif(ng))

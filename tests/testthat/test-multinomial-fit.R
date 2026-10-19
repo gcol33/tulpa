@@ -3,6 +3,8 @@
 # driver that assembles it into the joint Newton + Laplace fit is validated by
 # recovering the baseline-category coefficients from simulated data.
 
+skip_on_cran()
+
 test_that("tulpa_multinomial recovers baseline-category coefficients", {
   skip_on_cran()
   set.seed(2)

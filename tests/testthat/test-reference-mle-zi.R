@@ -7,6 +7,8 @@
 # coefficients are compared -- a sign error in the logit linkage moves only the
 # latter.
 
+skip_on_cran()
+
 test_that("zero-inflated poisson reproduces pscl::zeroinfl", {
   skip_on_cran()
   skip_if_not_installed("pscl")

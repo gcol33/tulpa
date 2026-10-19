@@ -11,6 +11,8 @@
 # diagonal, the joint Hessian wires the (beta_0, beta_1) and
 # (beta_0, z[c]), (beta_1, z[c]) cross-arm cells.
 
+skip_on_cran()
+
 .chain_adj <- function(n_s) {
     nbr <- lapply(seq_len(n_s),
                   function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))

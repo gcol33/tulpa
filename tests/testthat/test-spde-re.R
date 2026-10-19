@@ -7,6 +7,8 @@
 # The mesh (about 95 nodes, interior plus an outer extension) only carries the
 # simulated field: the blocks below read the routing and the fixed-effect
 # slope, and neither depends on the mesh resolution.
+skip_on_cran()
+
 make_spde_re <- function(n = 250L, G = 12L, seed = 7L) {
   set.seed(seed)
   coords <- cbind(runif(n), runif(n))

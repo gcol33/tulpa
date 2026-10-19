@@ -14,6 +14,8 @@
 # Both are checked on the calling thread, so the fit either runs or names what
 # is missing.
 
+skip_on_cran()
+
 bound_arm_fit <- function(arm_extra, family, y, n_group = 6L, per_group = 4L,
                           seed = 3L) {
   set.seed(seed)

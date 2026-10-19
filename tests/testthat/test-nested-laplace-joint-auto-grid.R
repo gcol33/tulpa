@@ -21,6 +21,8 @@
 # The fixture and its pinned-axis prior live in `helper-sparse-icar-arm.R`,
 # shared with `test-outer-grid-collapse-reporting.R`.
 
+skip_on_cran()
+
 test_that("auto-recenter resolves a sigma-axis edge collapse and stays spread", {
     skip_on_cran()
     sim   <- .sparse_icar_arm()

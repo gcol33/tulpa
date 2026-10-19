@@ -2,6 +2,8 @@
 # (gcol33/tulpa C7, ordinal half). Validated by recovering the covariate effect
 # and cutpoints from simulated proportional-odds data.
 
+skip_on_cran()
+
 test_that("tulpa_ordinal recovers the effect and cutpoints", {
   skip_on_cran()
   set.seed(4)

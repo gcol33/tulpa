@@ -4,6 +4,8 @@
 # carried their initial value (slope SD exactly 1), and the fixed effects were
 # conditioned on it. A within-term variant of gcol33/tulpa#201.
 
+skip_on_cran()
+
 test_that("ESS moves every scale and correlation coordinate of a slope term", {
   skip_on_cran()
   set.seed(1); J <- 30; n <- 300; gi <- sample(J, n, TRUE); x <- rnorm(n)

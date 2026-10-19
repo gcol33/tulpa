@@ -53,6 +53,8 @@
 
 # Both descriptors of every cell that has a centred stencil, off the engine's
 # own per-cell routines rather than a second reading of the same quadratic.
+skip_on_cran()
+
 .dp_descr <- function(d) {
   n <- nrow(d$joint_grid); dd <- ncol(d$joint_grid)
   U <- matrix(0, n, dd)

@@ -21,6 +21,8 @@
 # branch, so a collapse has to be reported whether or not the k-hat ran -- that
 # independence is the property these tests pin.
 
+skip_on_cran()
+
 test_that("a collapsed outer grid reports its regime through diagnostics()", {
     skip_on_cran()
     sim <- .sparse_icar_arm()

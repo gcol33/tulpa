@@ -12,6 +12,8 @@
 # inner importance k-hat ~ 0.73), so it exercises the note without needing the
 # occu_cover route.
 
+skip_on_cran()
+
 test_that("a flagged inner layer names the corrections it did not run", {
     skip_on_cran()
     sim <- .sparse_icar_arm()

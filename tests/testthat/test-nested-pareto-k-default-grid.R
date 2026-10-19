@@ -5,6 +5,8 @@
 # declined to pareto_k = NA even though an explicit-grid fit on the same axis
 # produced a real k-hat.
 
+skip_on_cran()
+
 rook_pk <- function(nr, nc) {
   n <- nr * nc; W <- matrix(0, n, n); id <- function(r, c) (c - 1) * nr + r
   for (r in seq_len(nr)) for (c in seq_len(nc)) {

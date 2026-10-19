@@ -5,6 +5,8 @@
 # the projection; include_field = FALSE returns the fixed-effect (population)
 # prediction.
 
+skip_on_cran()
+
 test_that("predict() kriges the SPDE Matern field to new coordinates", {
   skip_on_cran()
   skip_if_not_installed("tulpaMesh")

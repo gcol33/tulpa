@@ -20,6 +20,8 @@
 #   [nested-laplace-joint] <done>/<total> cells (<pct>%) | elapsed .. | ETA <m><eta> | ..
 # with <m> in {">=", "~", ""} (lower bound / point estimate / done).
 
+skip_on_cran()
+
 .chain_adj_115 <- function(n_s) {
   nbr <- lapply(seq_len(n_s),
                 function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))

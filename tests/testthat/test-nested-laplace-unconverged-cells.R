@@ -10,6 +10,8 @@
 # Newton needs four to six steps on this fixture, so a cap of three leaves
 # cells without a mode while a re-solve from a converged neighbour recovers
 # some of them.
+skip_on_cran()
+
 .uc_fit <- function(max_iter, nr = 8L, seed = 2L) {
     set.seed(seed)
     n <- nr * nr

@@ -7,6 +7,8 @@
 # tulpa_laplace_beta(), and marginalized by NUTS in tulpa_nuts_beta() -- and all
 # three are checked against the same MLE.
 
+skip_on_cran()
+
 make_beta_data <- function(N = 600L, beta = c(0.3, 0.7), kappa = 30,
                            seed = 2026L) {
   set.seed(seed)

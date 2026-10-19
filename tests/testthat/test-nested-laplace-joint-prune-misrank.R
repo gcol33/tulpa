@@ -18,6 +18,8 @@
 # theta_mean as the full grid. It also asserts the safety gate triggers a
 # warning + fallback on a constructed mis-rank.
 
+skip_on_cran()
+
 .mr_chain_adj <- function(n_s) {
     nbr <- lapply(seq_len(n_s),
                   function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))

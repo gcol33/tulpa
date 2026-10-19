@@ -3,6 +3,8 @@
 # GLM weight depends on eta, so an offset omitted from the Hessian eta gives
 # vcov/SEs for a different model even though the mode itself is correct.
 
+skip_on_cran()
+
 test_that("Laplace H_beta includes the offset (glm oracle, poisson)", {
   skip_on_cran()
   set.seed(404)

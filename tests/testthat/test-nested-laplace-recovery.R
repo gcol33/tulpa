@@ -51,6 +51,8 @@
 # The law itself lives in `sbc_draw_y()` (helper-sbc.R section 9) beside its own
 # log density, so the SBC fixtures simulate from the same parameterization they
 # score under and neither harness can drift from the other.
+skip_on_cran()
+
 recov_draw_y <- function(family, eta, ntr, phi) sbc_draw_y(family, eta, ntr, phi)
 
 # ----- simulate: known beta + region IID RE -> built-in family response -----

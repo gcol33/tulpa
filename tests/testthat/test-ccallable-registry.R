@@ -10,6 +10,8 @@
 # The names are scraped from the headers rather than listed here, so a header
 # added without its registration fails in this suite instead of downstream.
 
+skip_on_cran()
+
 test_that("every R_GetCCallable name in the exported headers is registered", {
   skip_on_cran()
   inc <- system.file("include", "tulpa", package = "tulpa")

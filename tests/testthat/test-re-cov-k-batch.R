@@ -5,6 +5,8 @@
 # the same zero weight where a draw cannot be solved, and the same value at any
 # thread width.
 
+skip_on_cran()
+
 k_batch_fixture <- function(seed = 401L, G = 30L, per = 3L) {
   set.seed(seed)
   grp <- rep(seq_len(G), each = per)

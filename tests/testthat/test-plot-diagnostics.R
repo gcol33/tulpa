@@ -5,6 +5,8 @@
 # %in% dimnames(...) (gcol33/tulpa#772). No test file referenced this
 # function before.
 
+skip_on_cran()
+
 test_that("plot_diagnostics() gates on a non-chain fit instead of erroring", {
   skip_on_cran()
   skip_if_not_installed("ggplot2")

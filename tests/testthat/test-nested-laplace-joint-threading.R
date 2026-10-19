@@ -8,6 +8,8 @@
 # leave the fit unchanged up to the floating-point summation order of the inner
 # reduction -- the documented threading invariant.
 
+skip_on_cran()
+
 test_that("outer/inner thread split leaves the joint fit unchanged", {
   skip_on_cran()
 

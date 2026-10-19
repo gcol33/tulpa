@@ -8,6 +8,8 @@
 # Helpers                                                                      #
 # --------------------------------------------------------------------------- #
 
+skip_on_cran()
+
 .chain_adj <- function(n_s) {
     nbr <- lapply(seq_len(n_s),
                   function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))

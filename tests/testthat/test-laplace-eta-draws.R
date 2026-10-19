@@ -9,6 +9,8 @@
 # Laplace precision `H_latent`, which paired with N(beta_hat, Schur^-1) is the
 # joint Gaussian draw of [beta | b].
 
+skip_on_cran()
+
 .eta_fixture <- function() {
   set.seed(1)
   n <- 200; G <- 10

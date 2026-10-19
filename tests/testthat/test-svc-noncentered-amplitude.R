@@ -62,6 +62,8 @@
 # in test-svc-parameterization-equivalence.R, and their gap on this fixture is
 # measured and attributed in #842.
 
+skip_on_cran()
+
 sim_svc_bernoulli <- function(n = 150L, sigma2 = 1.0, phi = 0.30,
                               a0 = 0.0, x_sd = 0.6, seed = 1L) {
   set.seed(seed)

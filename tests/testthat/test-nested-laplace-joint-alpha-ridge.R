@@ -25,6 +25,8 @@
 # the flat-prior baseline carries `expect_gt(gb_flat, 0.08)` upward
 # bias on the same fixture, and PC / half-normal priors cut it.
 
+skip_on_cran()
+
 .chain_adj_ridge <- function(n_s) {
     nbr <- lapply(seq_len(n_s),
                   function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))

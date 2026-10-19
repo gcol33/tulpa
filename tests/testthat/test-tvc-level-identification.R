@@ -18,6 +18,8 @@
 # is not, because its constant direction already has a prior. Both are CENTRED
 # on the way into eta, which is what removes the alias.
 
+skip_on_cran()
+
 .tvcl_sim <- function(seed = 3L, Tn = 40L, per = 4L, rho = 0.8, sd_i = 0.35) {
   set.seed(seed)
   v <- numeric(Tn); v[1] <- rnorm(1, 0, 0.5)

@@ -3,6 +3,8 @@
 # multi-block driver (gcol33/tulpa#946). All three build the same DENSE_BASIS
 # block from one factory, so on one declared grid they are one model.
 
+skip_on_cran()
+
 .hsgp_door_data <- function(seed = 4L, n = 120L) {
   set.seed(seed)
   coords <- cbind(stats::runif(n), stats::runif(n))

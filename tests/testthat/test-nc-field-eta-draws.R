@@ -12,6 +12,8 @@
 # other ModelData kernel (ess / sghmc / sgld / mclmc / smc / vi) applies this
 # store-side overwrite, so those fits keep their own spec unchanged.
 
+skip_on_cran()
+
 nc_field_fixture <- function(n = 60L, seed = 1L, box = 5) {
   set.seed(seed)
   lon <- runif(n, 0, box); lat <- runif(n, 0, box)

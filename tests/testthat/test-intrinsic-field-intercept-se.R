@@ -20,6 +20,8 @@
 # reaching the Hessian.
 
 # Fixed-effect prior SD the nested kernels use (nested_laplace.cpp sigma_beta).
+skip_on_cran()
+
 .SIGMA_BETA <- 100
 
 .rw_data <- function(seed = 7, n = 400L, T = 40L) {

@@ -25,6 +25,8 @@
 # marginals at the same correlation. The second is skewed within the cell, which
 # is where the local quadratic stops accounting for the cell's mass and where
 # `misfit` fires.
+skip_on_cran()
+
 .mps_target <- function(rho, reach, m, d = 4L, gamma_shape = NULL) {
   R <- matrix(rho, d, d); diag(R) <- 1
   if (is.null(gamma_shape)) {

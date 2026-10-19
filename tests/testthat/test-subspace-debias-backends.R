@@ -26,6 +26,8 @@
 
 # Rare-event binomial logit, unreached iid block: the regime the inner Laplace
 # is skewed in, on the multi-block grid driver (run_multi_block_nested_laplace).
+skip_on_cran()
+
 .sd306_rare_data <- function(seed = 3L, n = 120L, b = c(-3.2, 0.9)) {
   set.seed(seed)
   x <- rnorm(n)

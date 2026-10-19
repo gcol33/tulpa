@@ -19,6 +19,8 @@
 # BYM2 joint fit over a 45-cell (sigma x rho x alpha) grid, at a seed where the
 # prune safety gate does not fall back.
 
+skip_on_cran()
+
 .screen_chain_adj <- function(n_s) {
     nbr <- lapply(seq_len(n_s),
                   function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))

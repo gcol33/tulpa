@@ -13,6 +13,8 @@
 # that the marginalized sigma_re CI is calibrated.                               #
 # --------------------------------------------------------------------------- #
 
+skip_on_cran()
+
 test_that("generic NUTS recovers (beta, sigma_re) with calibrated CIs", {
   skip_if_not_slow()
 

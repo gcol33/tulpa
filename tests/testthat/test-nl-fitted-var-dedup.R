@@ -21,6 +21,8 @@
 #   1 = (x = -1, unit 1)   3 = (x =  0, unit 1)
 #   2 = (x =  0, unit 2)   4 = (x =  1, unit 2)
 # Classes 2 and 3 share the covariate row; classes 1 and 3 share the unit.
+skip_on_cran()
+
 sim_fvdedup <- function(seed = 41L) {
   cls    <- c(1L, 3L, 2L, 4L, 1L, 2L, 3L, 1L, 4L, 2L, 1L, 3L)
   xv     <- c(-1, 0, 0, 1)[cls]

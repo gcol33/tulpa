@@ -12,6 +12,8 @@
 # Integer nu only: fractional nu is the operator-based rational construction
 # fit_spde() owns, and it refuses an RE term regardless.
 
+skip_on_cran()
+
 make_spde_re_data <- function(seed, sd_re = 0.8, n = 150L, n_groups = 8L) {
   set.seed(seed)
   L <- cbind(lon = stats::runif(n, 0, 10), lat = stats::runif(n, 0, 10))

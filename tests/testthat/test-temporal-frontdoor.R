@@ -2,6 +2,8 @@
 # a 1D chain, so it integrates through the nested-Laplace areal (ICAR) path. These
 # tests guard the front-door wiring and the fixed-effect recovery.
 
+skip_on_cran()
+
 make_temporal_data <- function(seed, Tt = 24L, m = 25L, b1 = 0.9) {
   set.seed(seed)
   time <- rep(seq_len(Tt), each = m)

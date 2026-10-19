@@ -4,6 +4,8 @@
 # grid. Correctness anchor: the kriged field recovers a known smooth surface at
 # held-out coordinates, and the training-location field recovers it too.
 
+skip_on_cran()
+
 test_that("GP/NNGP predict krige recovers a smooth surface at new coordinates", {
   skip_on_cran()
   set.seed(202)

@@ -7,6 +7,8 @@
 # is exercised; the outer width is held at one so the warm-start route is the
 # same on both sides.
 
+skip_on_cran()
+
 .cci_fit <- function(n_threads) {
   cpp_register_test_occupancy_mixture_coupling()
   set.seed(921)

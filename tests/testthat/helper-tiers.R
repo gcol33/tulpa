@@ -52,6 +52,15 @@
 # desktop on top of a fixed per-file cost. A block that measures above it under
 # the CRAN profile takes skip_on_cran() as its first line.
 #
+# A skipped block is not free: test_that() sets up its test context (a temporary
+# directory, the locale, the reproducible-output options) before the gate in the
+# body runs, about 10 ms a block, and the CRAN tier skips some 1700 of them. A
+# file none of whose blocks is tier 1 therefore also carries skip_on_cran() at
+# top level, before its first expression, which skips the file in one step and
+# reports it as one skip. The block gates stay, so moving a block to another
+# file keeps it gated. A tier-1 block added to such a file goes in another file,
+# or the file gate comes off.
+#
 # A tier-1 block is under 0.1 s, and a structural identity swept over a large
 # parameter grid is not. That is a fixture size rather than a tier: size the grid
 # through cran_fixture() (below) instead of gating the block, so CRAN keeps

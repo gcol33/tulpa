@@ -9,6 +9,8 @@
 # own default axis, or marked with `auto_grid()`, is a default whoever wrote it.
 # `control$auto_recenter = FALSE` is the opt-out that holds any grid as given.
 
+skip_on_cran()
+
 .chain_adj_reg <- function(n_s) {
     nbr <- lapply(seq_len(n_s),
                   function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))

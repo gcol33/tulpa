@@ -17,6 +17,8 @@
 
 # Shared periodic-AR1 R closure -- matches the kernel in
 # inst/examples/tgmrf_periodic_ar1.cpp exactly.
+skip_on_cran()
+
 make_periodic_ar1_r <- function(n, init,
                                 bounds = NULL,
                                 theta_grid = NULL) {

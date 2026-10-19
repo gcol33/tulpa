@@ -7,6 +7,8 @@
 # split-Rhat around 2 and bulk-ESS in single digits. The sweep now draws the
 # shared level exactly and moves each log-SD holding the effects fixed.
 
+skip_on_cran()
+
 test_that("ESS mixes the intercept and the RE scale of a (1 | g) model (gcol33/tulpa#877)", {
   skip_on_cran()
   pars <- c("(Intercept)", "x", "log_sigma_re")

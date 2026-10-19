@@ -7,6 +7,8 @@
 # approximation of (beta, z | theta), the bias correction is exact MH.
 # ---------------------------------------------------------------------------
 
+skip_on_cran()
+
 make_ar1_tgmrf_imh <- function(n) {
   tgmrf(
     Q = function(theta) {

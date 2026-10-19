@@ -4,6 +4,8 @@
 # hyperparameter-grid posterior weights. Correctness anchor: the kriged field at
 # held-out coordinates recovers a known smooth surface.
 
+skip_on_cran()
+
 test_that("HSGP predict adds a kriged field that recovers a smooth surface", {
   skip_on_cran()
   set.seed(101)

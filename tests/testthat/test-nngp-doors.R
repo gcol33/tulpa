@@ -3,6 +3,8 @@
 # (gcol33/tulpa#943). All three build the block from make_nngp_block, so on
 # one declared grid they are one model, gathered or read through a projector.
 
+skip_on_cran()
+
 .nngp_door_data <- function(seed = 3L, n_loc = 40L, reps = 2L) {
   set.seed(seed)
   loc <- data.frame(lon = stats::runif(n_loc), lat = stats::runif(n_loc))

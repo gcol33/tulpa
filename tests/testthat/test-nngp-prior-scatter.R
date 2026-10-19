@@ -18,6 +18,8 @@
 # A Vecchia ordering with nearest-predecessor neighbour lists: site i conditions
 # on its `nn` closest predecessors in the natural order (nn_order 0-based,
 # nn_idx 1-based into that order).
+skip_on_cran()
+
 .nngp_scatter_fixture <- function(ng, nn, seed) {
   set.seed(seed)
   coords <- cbind(runif(ng), runif(ng))

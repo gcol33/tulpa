@@ -11,6 +11,8 @@
 # conditioned value, was set on `tulpa_eb()` alone, so nowhere else could a
 # consumer even ask.
 
+skip_on_cran()
+
 .pca_data <- function(n = 200L, seed = 5L) {
   set.seed(seed)
   d <- data.frame(x = rnorm(n), g = factor(sample(12L, n, TRUE)))

@@ -19,6 +19,8 @@
 # coefficient therefore gets its own gate below, against the kernel's own
 # log-prior rather than against another R statement of it.
 
+skip_on_cran()
+
 rook_adj_se <- function(nr, nc) {
   n <- nr * nc; W <- matrix(0, n, n)
   id <- function(r, c) (c - 1) * nr + r

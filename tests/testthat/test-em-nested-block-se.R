@@ -4,6 +4,8 @@
 # the grid-marginalized H_beta (law of total variance), the same summary()/vcov()
 # use on a nested fit.
 
+skip_on_cran()
+
 test_that("a nested-prior EM block attaches a finite grid-marginalized H_beta (#204)", {
   skip_on_cran()
   set.seed(3)

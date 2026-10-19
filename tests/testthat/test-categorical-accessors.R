@@ -3,6 +3,8 @@
 # probabilities are scored against the baseline-category softmax and the
 # cumulative-link differences written out by hand.
 
+skip_on_cran()
+
 cat_data <- function(n = 240, seed = 1) {
   set.seed(seed)
   d <- data.frame(x = stats::rnorm(n))

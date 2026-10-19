@@ -5,6 +5,8 @@
 # R_PPStackTop (gcol33/tulpa#918). This checks the resolver covers every stub
 # the sources use.
 
+skip_on_cran()
+
 test_that("the DLL-load resolver calls every M_cholmod_* stub used in src/", {
   skip_on_cran()
   src <- test_path("..", "..", "src")

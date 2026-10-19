@@ -6,6 +6,8 @@
 # maximizer land on the phi that generated the data? A gradient can be exact and
 # the estimator still biased, if the objective is not the one the model implies.
 
+skip_on_cran()
+
 eb_disp_data <- function(family, phi_true, sigma_true = 0.7,
                          G = 40L, per = 12L, seed = 1L, n_trials = NULL,
                          loc = 0.4) {

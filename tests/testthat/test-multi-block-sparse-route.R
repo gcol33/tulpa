@@ -6,6 +6,8 @@
 # forced sparse on a small lattice, and the routed path against the joint door
 # on a lattice past the threshold.
 
+skip_on_cran()
+
 .sparse_route_lattice <- function(nr, nc) {
   adj_list <- lapply(grid_neighbours(nr, nc), sort)
   nn <- vapply(adj_list, length, integer(1))

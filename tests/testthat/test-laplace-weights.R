@@ -7,6 +7,8 @@
 # Before the fix the search judged the weighted step against the UNWEIGHTED
 # log-likelihood and stalled, returning a mode shrunk toward the prior.
 
+skip_on_cran()
+
 test_that("weighted gaussian tulpa_laplace matches lm(weights=)", {
   skip_on_cran()
   set.seed(1); n <- 400L

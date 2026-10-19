@@ -24,6 +24,8 @@
 # A region-grouped IID latent keeps the random effect identified (several sites
 # per region) while leaving each site one detection observation, as in a real
 # single-season design.
+skip_on_cran()
+
 sim_occu <- function(seed, n_regions = 40L, sites_per_region = 5L,
                      beta = c(-0.1, 0.8), sigma_u = 0.6, p_det = 0.4) {
   set.seed(seed)

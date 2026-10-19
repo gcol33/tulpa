@@ -6,6 +6,8 @@
 # targets have a known v-marginal, so every check below is against the target
 # itself rather than against another sampler.
 
+skip_on_cran()
+
 funnel_v <- function(seed, walnuts = TRUE, neck = TRUE, n_iter = 10000L,
                      n_warmup = 1500L, max_step_halvings = 10L,
                      max_error = 0.5) {

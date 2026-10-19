@@ -6,6 +6,8 @@
 # optimum and biases the structured-vs-iid decomposition.
 
 # Build a 1D chain adjacency on S units (each interior unit has 2 neighbours).
+skip_on_cran()
+
 .chain_graph <- function(S) {
   adj <- vector("list", S)
   for (s in seq_len(S)) {

@@ -17,6 +17,8 @@
 # per-group effects, not |est - truth| on the SD, which would encode the +0.12
 # as though it were the target.
 
+skip_on_cran()
+
 make_smooth_re <- function(seed, G = 15L, npg = 25L, sd_true = 0.9) {
   set.seed(seed)
   n <- G * npg

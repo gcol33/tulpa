@@ -4,6 +4,8 @@
 # (positive) arm: same code path as binomial+gaussian, just routed through
 # the beta branch of grad_hess_for_family.
 
+skip_on_cran()
+
 .chain_adj <- function(n_s) {
     nbr <- lapply(seq_len(n_s),
                   function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))

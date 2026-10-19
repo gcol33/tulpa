@@ -12,6 +12,8 @@
 # mismatch into the random-effect scales, and the variance components are no
 # longer comparable to lme4's.
 
+skip_on_cran()
+
 lme4_sd <- function(ref, grp) {
   vc <- as.data.frame(lme4::VarCorr(ref))
   vc$sdcor[vc$grp == grp & is.na(vc$var2)]

@@ -9,6 +9,8 @@
 
 # rook_adj() / helpers live in helper-spatial.R.
 
+skip_on_cran()
+
 sim_car_proper_pois <- function(nr = 6L, nc = 6L, reps = 5L,
                                  tau = 1.2, rho = 0.85, seed = 11L) {
   set.seed(seed)

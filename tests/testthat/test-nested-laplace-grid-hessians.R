@@ -3,6 +3,8 @@
 # exposed in the return list and match what tulpa_laplace() produces at the
 # same theta value.
 
+skip_on_cran()
+
 icar_prior <- function(adj, n_sites, tau_grid = NULL) {
   list(
     type = "icar",

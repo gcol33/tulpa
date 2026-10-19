@@ -6,6 +6,8 @@
 # second-difference penalty and the T-1 (vs T-2) rank normalizer both move the
 # inner marginal, so a correctly-wired flag must change log_marginal.
 
+skip_on_cran()
+
 test_that("cyclic RW2 changes the multi-block nested-Laplace fit", {
   skip_on_cran()
   set.seed(7)

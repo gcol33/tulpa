@@ -37,6 +37,8 @@
 
 # Build CSR adjacency for a 5x5 grid (n_sites = 25). Borrowed from the
 # spatial helpers used elsewhere in the suite.
+skip_on_cran()
+
 adj <- make_grid_adjacency(5, 5)
 n_sites <- 25
 n_years <- 10

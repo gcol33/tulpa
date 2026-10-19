@@ -26,6 +26,8 @@
 # n_threads is the one shared argument with no observable: the drivers are
 # required to return the same numbers at any thread count.
 
+skip_on_cran()
+
 .nlf_grid_adj <- function(side) {
   g <- expand.grid(r = seq_len(side), c = seq_len(side))
   n_s <- nrow(g)

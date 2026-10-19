@@ -3,6 +3,8 @@
 # Cholesky, Sigma = L L') or `cov`; the off-diagonal enters both the joint
 # Hessian (mode finding, via the C++ kernel) and the marginal fixed-effect SE.
 
+skip_on_cran()
+
 sim_corr <- function(seed, G = 60L, npg = 15L, beta = c(-0.3, 0.7),
                      Sigma = matrix(c(0.9^2, 0.6 * 0.9 * 0.5,
                                       0.6 * 0.9 * 0.5, 0.5^2), 2)) {

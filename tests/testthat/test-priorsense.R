@@ -4,6 +4,8 @@
 # and must flag a prior-data conflict; the likelihood component must be finite
 # and informative; and the input guards must fire.
 
+skip_on_cran()
+
 test_that("power-scaling flags a tight conflicting prior as more sensitive", {
   skip_on_cran()
   set.seed(7)

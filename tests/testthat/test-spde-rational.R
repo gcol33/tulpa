@@ -4,6 +4,8 @@
 # mode on a 1D periodic (circulant) mesh, where the generalized eigenvalues of
 # CiL are known in closed form.
 
+skip_on_cran()
+
 spde_mode_eigs <- function(n = 200L, kappa = 7) {
   h <- 1 / n
   k <- 0:(n - 1)

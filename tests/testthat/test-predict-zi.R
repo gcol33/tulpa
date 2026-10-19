@@ -4,6 +4,8 @@
 # mixture density. Every expectation is scored against the mixture written out
 # by hand from coef() and the design, not against another accessor.
 
+skip_on_cran()
+
 zi_predict_data <- function(n = 300, seed = 1) {
   set.seed(seed)
   d <- data.frame(x = stats::rnorm(n), z = stats::rnorm(n))

@@ -7,6 +7,8 @@
 
 # Random intercepts (poisson) through NUTS: the slope, intercept, and the RE
 # standard deviation all recover, and the layout exposes log_sigma_re + b[G].
+skip_on_cran()
+
 test_that("NUTS recovers a poisson random-intercept model", {
   skip_if_not_slow()
   set.seed(1)

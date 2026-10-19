@@ -15,6 +15,8 @@
 # is the same target tulpa_laplace() approximates by a Gaussian, so the three
 # marginals -- exact, Laplace, subspace-corrected -- are directly comparable.
 
+skip_on_cran()
+
 sdr_fixture <- function(seed = 11L, G = 12L, per = 4L, b = c(-2.5, 0.8),
                         su = 0.7) {
   set.seed(seed)

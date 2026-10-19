@@ -16,6 +16,8 @@
 # A gaussian arm at phi = 1 has a Gaussian posterior in beta under the ridge
 # prior the front door applies, so mean and covariance are exact. phi = 1 also
 # keeps the fixture clear of the residual-scale convention (gcol33/tulpa#560).
+skip_on_cran()
+
 .scale_reference <- function(y, X) {
   prior_sd <- .tulpa_prior_sd("sample_glmm")
   V <- solve(crossprod(X) + diag(1 / prior_sd^2, ncol(X)))

@@ -26,6 +26,8 @@
 
 # Seed budget for the multi-seed sweeps. Every caller sits behind
 # skip_if_not_slow(), so this always runs at the full tier-3 budget.
+skip_on_cran()
+
 .nlsr_n_seed <- function() 16L
 
 # ---- self-contained simulators / graph helpers ----------------------------

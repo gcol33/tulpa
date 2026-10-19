@@ -17,6 +17,8 @@
 # equality is the right assertion and any per-thread scratch that leaked between
 # cells would break it.
 
+skip_on_cran()
+
 cila_par_fit <- function(cila, n_threads_outer, seed = 11L,
                          n_group = 12L, per_group = 5L) {
   set.seed(seed)

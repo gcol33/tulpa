@@ -30,6 +30,8 @@
 #      pins how each side scales with the hyperparameters -- a density whose
 #      log-determinant term was wrong in sigma2 would still pass (1).
 
+skip_on_cran()
+
 svc_eq_inputs <- function(N = 30L, nn = 8L, seed = 5L) {
   set.seed(seed)
   coords <- cbind(runif(N), runif(N))

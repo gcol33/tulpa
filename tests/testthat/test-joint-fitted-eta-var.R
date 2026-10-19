@@ -15,6 +15,8 @@
 # pin at any size), so the two storages of the same pin have to report the same
 # variance.
 
+skip_on_cran()
+
 .jev_chain_adj <- function(n_s) {
   nbr <- lapply(seq_len(n_s),
                 function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))

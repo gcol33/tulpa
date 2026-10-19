@@ -5,6 +5,8 @@
 # spatial_type == HSGP) and samples them jointly. The Laplacian basis is built
 # in C++ by setup_hsgp_2d, the single source of truth every HSGP path uses.
 
+skip_on_cran()
+
 make_hsgp_pois <- function(n = 90L, seed = 303L) {
   set.seed(seed)
   truef <- function(lon, lat) 1.0 * sin(3 * lon) + 0.8 * cos(2.5 * lat)

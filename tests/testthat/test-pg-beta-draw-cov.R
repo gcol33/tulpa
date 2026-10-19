@@ -6,6 +6,8 @@
 # the beta posterior is ~ N(beta_mle, vcov(glm)); a correlated design makes
 # the lower-vs-upper triangle distinction numerically large.
 
+skip_on_cran()
+
 test_that("PG Gibbs beta draws have the conjugate posterior covariance", {
   skip_on_cran()
   set.seed(303)

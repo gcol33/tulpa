@@ -11,6 +11,8 @@
 # Build the column-major lower-tri log-Cholesky grid for a p = 2 Sigma from
 # interpretable (sigma_1, sigma_2, rho) nodes (same mapping as the engine's
 # .mcar_default_logchol_grid, just a coarser, test-controlled bracket).
+skip_on_cran()
+
 .miid_logchol_p2 <- function(sig1, sig2, rho) {
   g <- expand.grid(s1 = sig1, s2 = sig2, rho = rho, KEEP.OUT.ATTRS = FALSE)
   out <- cbind(L11 = log(g$s1),
