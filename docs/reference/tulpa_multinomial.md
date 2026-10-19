@@ -16,6 +16,9 @@ tulpa_multinomial(
   beta_prior = .tulpa_default_beta_prior("multinomial"),
   control = list()
 )
+
+# S3 method for class 'tulpa_multinomial'
+print(x, ...)
 ```
 
 ## Arguments
@@ -41,14 +44,22 @@ tulpa_multinomial(
   List of numerical knobs: `max_iter` (default 100), `tol` (default
   1e-8), `n_draws` (posterior draws, default 2000), `seed`.
 
+- x:
+
+  A `tulpa_multinomial` fit.
+
+- ...:
+
+  Ignored.
+
 ## Value
 
 A `tulpa_fit` (subclass `tulpa_multinomial`) with `means` (the posterior
 mode, named `class:term`) and `cov` of the Laplace Gaussian, which is
 the posterior [`coef()`](https://rdrr.io/r/stats/coef.html),
 [`vcov()`](https://rdrr.io/r/stats/vcov.html),
-[`summary()`](https://rdrr.io/r/base/summary.html) and
-[`confint()`](https://rdrr.io/r/stats/confint.html) report; `draws`
+[`summary.tulpa_fit()`](https://gillescolling.com/tulpa/reference/summary.tulpa_fit.md)
+and [`confint()`](https://rdrr.io/r/stats/confint.html) report; `draws`
 sampled from that Gaussian; `log_marginal`, `classes`, `baseline`, and
 the standard generic-method support.
 

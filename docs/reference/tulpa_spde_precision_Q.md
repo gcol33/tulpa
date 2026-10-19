@@ -49,3 +49,17 @@ A sparse `n_mesh x n_mesh` precision matrix.
 [`tulpa_spde_log_hyperprior()`](https://gillescolling.com/tulpa/reference/tulpa_spde_log_hyperprior.md),
 [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md),
 [`spatial_spde()`](https://gillescolling.com/tulpa/reference/spatial_spde.md)
+
+## Examples
+
+``` r
+n <- 6L
+G <- Matrix::bandSparse(n, k = c(-1, 0, 1),
+                        diagonals = list(rep(-1, n - 1), c(1, rep(2, n - 2), 1),
+                                         rep(-1, n - 1)))
+sp <- spatial_spde_custom(Matrix::Diagonal(n), G, Matrix::Diagonal(n),
+                          prior_range = c(1, 0.5), prior_sigma = c(1, 0.01))
+Q <- tulpa_spde_precision_Q(sp, kappa = sqrt(8) / 1, tau_spde = 1)
+dim(Q)
+#> [1] 6 6
+```

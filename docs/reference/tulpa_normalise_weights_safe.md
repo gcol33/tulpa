@@ -44,3 +44,13 @@ as `lm`, or all-`NA` if no cell carries finite mass.
 
 [`tulpa_theta_matrix()`](https://gillescolling.com/tulpa/reference/tulpa_theta_matrix.md),
 [`tulpa_grid_log_quad()`](https://gillescolling.com/tulpa/reference/tulpa_grid_log_quad.md)
+
+## Examples
+
+``` r
+tulpa_normalise_weights_safe(c(-1, 0, -2))
+#> [1] 0.24472847 0.66524096 0.09003057
+# With per-cell log quadrature weights (cell prior masses):
+tulpa_normalise_weights_safe(c(-1, 0, -2), log_quad = log(c(0.2, 0.5, 0.3)))
+#> [1] 0.11979601 0.81409826 0.06610573
+```

@@ -1,7 +1,7 @@
-# Response-scale mean of y given eta for a family (trial-scaled where relevant).
+# Response-scale mean of y given eta for a family (trial-scaled where relevant)
 
 Response-scale mean of y given eta for a family (trial-scaled where
-relevant).
+relevant)
 
 ## Usage
 

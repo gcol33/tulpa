@@ -43,11 +43,16 @@ tulpa(
 - formula:
 
   A model formula. Fixed effects, `(1 | g)` / `(1 + x | g)` random
-  effects, and `offset(...)` terms are recognised.
+  effects, and `offset(...)` terms are recognised. As in
+  [`stats::lm()`](https://rdrr.io/r/stats/lm.html) and lme4, aliased
+  fixed-effect columns of a rank-deficient design are dropped with a
+  warning, and unused levels of a grouping factor are dropped. A
+  binomial response may be logical (`TRUE` a success).
 
 - data:
 
-  A data frame.
+  A data frame. Incomplete rows (an `NA` in the response, a predictor or
+  a grouping variable) are refused, not dropped.
 
 - family:
 
@@ -71,7 +76,11 @@ tulpa(
   Bayes instead of conditioning on `sigma_re` (see
   [`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md));
   it is opt-in by name, because its intervals are conditional on that
-  estimate rather than marginal over it.
+  estimate rather than marginal over it. The maximized likelihood
+  integrates the fixed effects out rather than profiling them, so with
+  `hyperprior = "flat"` the estimate is restricted (REML-type) – it
+  matches `glmmTMB(..., REML = TRUE)`, not the ML fit of
+  [`lme4::glmer()`](https://rdrr.io/pkg/lme4/man/glmer.html).
 
 - sigma_re:
 
@@ -93,8 +102,11 @@ tulpa(
   scaled by its weight (prior / frequency weights, e.g. survey weights
   or aggregated-data counts – a weight of 2 is equivalent to duplicating
   the row). Supported on the non-spatial Laplace path
-  (`mode = "laplace"`) and the log-posterior samplers (`mala`,
-  `imh_laplace`, `pathfinder`); other backends reject weights loudly.
+  (`mode = "laplace"`), the nested-Laplace random-effect covariance
+  integrator (`re_cov_nested`, which `mode = "auto"` / `"structured"`
+  pick for a weighted random-effect model, so its scale is still
+  integrated) and the log-posterior samplers (`mala`, `imh_laplace`,
+  `pathfinder`); other backends reject weights loudly.
 
 - phi:
 
@@ -117,8 +129,11 @@ tulpa(
   empirical-Bayes maximization as one further coordinate carrying the
   exact derivative of the Laplace log-marginal, so the estimate is
   ML-II: the hyperprior covers the random-effect covariances only and
-  the dispersion enters unpenalized. `fit$phi` is the estimate and
-  `fit$phi_estimated` distinguishes it from a conditioned value.
+  the dispersion enters unpenalized. That marginal integrates the fixed
+  effects out, so the estimate is the restricted (REML-type) one – for a
+  gaussian response, the REML residual variance. `fit$phi` is the
+  estimate and `fit$phi_estimated` distinguishes it from a conditioned
+  value.
 
   Available under `mode = "eb"`, and for the families whose dispersion
   derivative is registered (see
@@ -161,7 +176,8 @@ tulpa(
   (inverse-Wishart on the RE covariance, `control$re_cov = "gibbs"`),
   `prior_sigma_scale` (half-Cauchy scale on the RE SD for
   `mode = "gibbs"`), and `sigma_re_scale` (half-Cauchy scale on the RE /
-  BYM2 SD for the ModelData samplers).
+  BYM2 SD for the ModelData samplers). An entry the resolved backend
+  does not read is an error naming the backends that do.
 
 - hyperprior:
 
@@ -295,6 +311,24 @@ tulpa(
   `re_cov` (`"nested"` / `"gibbs"` / `"aghq"`), which selects the
   RE-covariance integrator on any random-effect model.
 
+  `n_iter` does not count the same thing on every sampler, and `warmup`
+  (alias `n_warmup`) is validated against it before any sampler runs:
+
+  - On `hmc`, `ess`, `sghmc`, `sgld`, `gibbs`, `mala` and `imh_laplace`,
+    `n_iter` is the TOTAL number of iterations, warmup included, so the
+    fit keeps `n_iter - warmup` draws per chain and `warmup < n_iter` is
+    required (`n_iter = 2000, warmup = 1000` keeps 1000).
+
+  - On `re_cov_gibbs` (`control$re_cov = "gibbs"`) and `mclmc`, `n_iter`
+    is the number of KEPT iterations and warmup runs on top of it, so
+    any `warmup >= 0` is valid (`n_iter = 1000, warmup = 1000` keeps
+    1000).
+
+  - `smc` and `vi` read neither (`n_particles`, `vi_max_iter` instead).
+
+  The default `warmup` is `n_iter %/% 2` on the ModelData samplers and
+  1000 on `gibbs` / `re_cov_gibbs`.
+
   One statistical knob lives here rather than in the signature:
   `marginal` (`mode = "eb"` only) turns on the marginal-Laplace
   covariance correction, which widens the reported intervals to account
@@ -410,10 +444,26 @@ fit <- tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "laplace")
 #> Warning: tulpa(): `sigma_re` not supplied; conditioning on sigma_re = 1 for each of the 1 RE term(s). Pass `sigma_re` to override.
 coef(fit)
 #> (Intercept)           x 
-#>  -0.4031451   0.1952674 
+#>  -0.3964454   0.1946737 
 summary(fit)
-#>               estimate std.error       2.5 %    97.5 %
-#> (Intercept) -0.4031451 0.3251204 -1.04036939 0.2340792
-#> x            0.1952674 0.1382947 -0.07578526 0.4663201
+#> tulpa fit  (laplace, tier 2) 
+#> Call: tulpa(formula = y ~ x + (1 | g), data = d, family = "binomial", mode = "laplace")
+#>   inference mode: structured 
+#>   selected because: User-specified backend: laplace 
+#>   family: binomial 
+#>   n_obs: 200 
+#> 
+#> Fixed effects:
+#>             estimate std.error    2.5 % 97.5 %
+#> (Intercept)  -0.3964    0.3224 -1.02833 0.2354
+#> x             0.1947    0.1381 -0.07591 0.4653
+#> 
+#> Random effects:
+#>   term        coef sd      source
+#> 1    g (Intercept)  1 conditioned
+#> 
+#> Fixed-effect prior: normal(0, 2.5)
+#> 
+#> Reliability (iid draws):
 # }
 ```

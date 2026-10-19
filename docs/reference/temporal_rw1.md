@@ -1,4 +1,4 @@
-# RW1 temporal structure (First-order Random Walk)
+# RW1 temporal structure (first-order random walk)
 
 Specify a first-order random walk temporal random effect. RW1 penalizes
 first differences, so adjacent time points are smoothed toward each

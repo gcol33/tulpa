@@ -16,6 +16,12 @@ Gaussian biases skewed or multimodal-over-grid posteriors.
 
 ``` r
 tulpa_posterior_draws(fit, idx = NULL, n = 1000, ...)
+
+# Default S3 method
+tulpa_posterior_draws(fit, idx = NULL, n = 1000, ...)
+
+# S3 method for class 'tulpa_nested_laplace'
+tulpa_posterior_draws(fit, idx = NULL, n = 1000, ...)
 ```
 
 ## Arguments
@@ -78,3 +84,35 @@ returned matrix says so in its `scope` attribute.
 [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md),
 [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md),
 [`posterior_sample()`](https://gillescolling.com/tulpa/reference/posterior_sample.md)
+
+## Examples
+
+``` r
+# \donttest{
+set.seed(1)
+S <- 30L                                   # spatial units in a chain
+nb <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+nn <- lengths(nb)
+field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4))))
+idx <- rep(seq_len(S), each = 6L); n <- length(idx); x <- rnorm(n)
+y <- rbinom(n, 1L, plogis(-0.2 + 0.6 * x + field[idx]))
+prior <- list(type = "icar", n_spatial_units = S, spatial_idx = idx,
+              adj_row_ptr = c(0L, cumsum(nn)), adj_col_idx = unlist(nb) - 1L,
+              n_neighbors = nn, tau_grid = c(0.5, 1, 2, 4, 8))
+fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
+                            family = "binomial",
+                            control = list(progress = FALSE))
+dr <- tulpa_posterior_draws(fit, n = 200)
+colMeans(dr)                # fixed effects, mixed over the outer grid
+#>       beta1           x 
+#> -0.02097457  0.57813071 
+summary(attr(dr, "theta"))  # the hyperparameter half of the same draws
+#>       tau         
+#>  Min.   : 0.4106  
+#>  1st Qu.: 3.9219  
+#>  Median : 5.7068  
+#>  Mean   : 5.9962  
+#>  3rd Qu.: 8.3608  
+#>  Max.   :11.3051  
+# }
+```

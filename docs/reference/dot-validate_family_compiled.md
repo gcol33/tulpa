@@ -1,6 +1,6 @@
-# Reject families the compiled kernels do not implement.
+# Reject families the compiled kernels do not implement
 
-Reject families the compiled kernels do not implement.
+Reject families the compiled kernels do not implement
 
 ## Usage
 

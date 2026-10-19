@@ -23,6 +23,9 @@ tulpa_simulate(
   seed = NULL,
   ...
 )
+
+# S3 method for class 'tulpa_simulate'
+print(x, ...)
 ```
 
 ## Arguments
@@ -38,17 +41,30 @@ tulpa_simulate(
 
 - data:
 
-  Data frame with covariates and grouping factors.
+  Data frame with covariates and grouping factors. The response column
+  may be absent or NA; it is not read.
 
 - theta:
 
   One of:
 
   - A named list with `beta` (numeric or list per process), `u` (list of
-    RE coefficient vectors, one per RE term per process), `extras`
-    (named list of family-specific extras like `phi`, `sigma_y`).
+    RE blocks, one per RE term per process, each an `n_groups x n_coefs`
+    matrix; a vector of length `n_groups` is accepted for a
+    single-coefficient term), `extras` (named list of family-specific
+    extras like `phi`, `sigma_y`).
 
-  - A `tulpa_fit` object: posterior draws are sampled from `$draws`.
+  - A `tulpa_fit` object: each simulation takes one posterior draw of
+    the fixed effects and, paired with it, of the FITTED random effects
+    (read through the same accessor as
+    [`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md) and
+    [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)).
+    The data are therefore simulated conditional on the fitted groups:
+    every level of a grouping variable in `data` must be one the fit
+    estimated (matched by level), and a fit that carries no
+    random-effect posterior is an error rather than a set of zero
+    effects. To simulate NEW groups, pass `theta` as a list with `u`
+    drawn for them.
 
   - `NULL`: equivalent to a single prior draw (shortcut).
 
@@ -69,6 +85,10 @@ tulpa_simulate(
 - ...:
 
   Passed to `family$simulate_fn`.
+
+- x:
+
+  A `tulpa_simulate` object.
 
 ## Value
 

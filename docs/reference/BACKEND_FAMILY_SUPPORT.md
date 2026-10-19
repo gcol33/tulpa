@@ -1,6 +1,6 @@
-# Backend -\> supported families, derived from the registry.
+# Backend -\> supported families, derived from the registry
 
-Backend -\> supported families, derived from the registry.
+Backend -\> supported families, derived from the registry
 
 ## Usage
 

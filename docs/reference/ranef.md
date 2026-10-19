@@ -60,6 +60,13 @@ returning an empty table, which would be indistinguishable from a model
 with no random effects. A model that genuinely has none returns a
 zero-row data frame.
 
+## See also
+
+[`field_effects()`](https://gillescolling.com/tulpa/reference/field_effects.md)
+for a spatial field,
+[`smooth_effects()`](https://gillescolling.com/tulpa/reference/smooth_effects.md)
+for an `s(x)` term.
+
 ## Examples
 
 ``` r
@@ -68,17 +75,18 @@ set.seed(1)
 df <- data.frame(x = rnorm(100), g = factor(rep(1:10, 10)))
 df$y <- rpois(100, exp(0.3 * df$x))
 fit <- tulpa(y ~ x + (1 | g), data = df, family = "poisson")
+#> Warning: tulpa(): the 're_cov_gibbs' chain has not converged -- x: Rhat 1.01, bulk-ESS 67. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
 ranef(fit)
-#>     term    estimate        sd    conf.low conf.high  source
-#> 1   g[1] -0.03440163 0.3200910 -0.67338883 0.5633255 sampled
-#> 2   g[2] -0.30716711 0.3501207 -1.02674969 0.3579386 sampled
-#> 3   g[3]  0.44546222 0.3129228 -0.15838631 1.1105862 sampled
-#> 4   g[4]  0.12801940 0.2963089 -0.44919419 0.7201445 sampled
-#> 5   g[5] -0.03222652 0.3082457 -0.65034249 0.5322588 sampled
-#> 6   g[6] -0.23900668 0.3138558 -0.90134746 0.3529231 sampled
-#> 7   g[7] -0.16793187 0.3464956 -0.96553074 0.4907918 sampled
-#> 8   g[8] -0.03564679 0.3016781 -0.71789661 0.5092494 sampled
-#> 9   g[9]  0.01878258 0.3156123 -0.60385114 0.6120418 sampled
-#> 10 g[10]  0.43706633 0.2855437 -0.08502797 1.0603283 sampled
+#>     term    estimate        sd   conf.low conf.high  source
+#> 1   g[1] -0.04236037 0.3099103 -0.6875981 0.5397354 sampled
+#> 2   g[2] -0.31658002 0.3386600 -1.0186997 0.2724267 sampled
+#> 3   g[3]  0.41457813 0.2956690 -0.1304489 1.0242238 sampled
+#> 4   g[4]  0.10813286 0.3237494 -0.5371499 0.7474092 sampled
+#> 5   g[5] -0.04184347 0.3218825 -0.7036788 0.5629522 sampled
+#> 6   g[6] -0.26006011 0.3384532 -1.0014842 0.3438895 sampled
+#> 7   g[7] -0.18195490 0.3461762 -0.9084533 0.4893878 sampled
+#> 8   g[8] -0.04564851 0.3204036 -0.7054439 0.5693173 sampled
+#> 9   g[9] -0.01274066 0.3232769 -0.6864370 0.6125156 sampled
+#> 10 g[10]  0.39926011 0.2922594 -0.1986759 0.9656433 sampled
 # }
 ```

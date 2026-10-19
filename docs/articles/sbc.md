@@ -1,5 +1,27 @@
 # Validating calibration: simulation-based calibration
 
+## Installation
+
+``` r
+
+# Current release, built for Windows and macOS
+install.packages("tulpa",
+                 repos = c("https://gcol33.r-universe.dev",
+                           "https://cloud.r-project.org"))
+
+# Development version from GitHub
+install.packages("pak")
+pak::pak("gcol33/tulpa")
+
+# Pin a release
+pak::pak("gcol33/tulpa@v0.6.0")
+```
+
+`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
+for SPDE mesh construction). `tulpa` compiles its C++ backend on first
+install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
+tools on macOS, `r-base-dev` on Linux.
+
 ``` r
 
 library(tulpa)
@@ -116,13 +138,13 @@ arms <- function(d) {
   m   <- coef(fit)
   se  <- sqrt(diag(vcov(fit)))
   D   <- tulpa_posterior_draws(fit, n = 2000)
-  w   <- fit$weights / sum(fit$weights)
+  g   <- tulpa_outer_grid(fit)
 
   list(
     mixture = list(
       beta1 = sbc_draws(D[, 1]),
       beta2 = sbc_draws(D[, 2]),
-      sigma = sbc_discrete(as.numeric(fit$theta_grid), w)),
+      sigma = sbc_discrete(as.numeric(g$nodes), g$weights)),
     collapsed = list(
       beta1 = sbc_normal(m[1], se[1]),
       beta2 = sbc_normal(m[2], se[2])),
@@ -258,7 +280,7 @@ model <- list(
     b <- tulpa_posterior_draws(fit, n = 1L)
     k <- attr(b, "cells")[1]
     c(beta1 = unname(b[1, 1]), beta2 = unname(b[1, 2]),
-      sigma = as.numeric(fit$theta_grid)[k])
+      sigma = as.numeric(tulpa_outer_grid(fit)$nodes)[k])
   },
 
   simulate = function(theta, seed) {
@@ -284,8 +306,8 @@ model <- list(
       mixture = list(
         beta1 = sbc_draws(D[, 1]),
         beta2 = sbc_draws(D[, 2]),
-        sigma = sbc_discrete(as.numeric(fit$theta_grid),
-                             fit$weights / sum(fit$weights))),
+        sigma = sbc_discrete(as.numeric(tulpa_outer_grid(fit)$nodes),
+                             tulpa_outer_grid(fit)$weights)),
       narrow = list(
         beta1 = sbc_normal(m[1], se[1] / 1.25),
         beta2 = sbc_normal(m[2], se[2] / 1.25)))

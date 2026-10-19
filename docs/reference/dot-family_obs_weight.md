@@ -1,4 +1,4 @@
-# Observed curvature (-d^2 log-lik / d eta^2 at the realized `y`), elementwise.
+# Observed curvature (-d^2 log-lik / d eta^2 at the realized `y`), elementwise
 
 One path, the compiled dispatch (`obs_grad_hess_for_family`), for every
 family. It used to answer from the registry's `obs_weight` closure where
@@ -20,6 +20,6 @@ beta_binomial is in `.ZI_FAMILIES`, so the zero-inflation mixture in
 
 ## Details
 
-The registry's three `obs_weight` closures stay as the R oracle the
-compiled dispatch is pinned against in
-`test-family-registry-compiled.R`.
+The registry's `obs_weight` closures (neg_binomial_2, neg_binomial_1,
+truncated_neg_binomial_2, beta) stay as the R oracle the compiled
+dispatch is pinned against in `test-family-registry-compiled.R`.

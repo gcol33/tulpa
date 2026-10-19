@@ -1,4 +1,4 @@
-# Gaussian Process temporal structure
+# Gaussian process temporal structure
 
 Specify a Gaussian Process (GP) temporal random effect for
 irregularly-spaced or continuous time points. Unlike RW1/RW2/AR1 which
@@ -26,6 +26,9 @@ temporal_gp(
   scale_coords = TRUE,
   parameterization = c("noncentered", "centered")
 )
+
+# S3 method for class 'tulpa_temporal_gp'
+print(x, ...)
 ```
 
 ## Arguments
@@ -72,7 +75,10 @@ temporal_gp(
 - scale_coords:
 
   Logical; if TRUE (default), time values are scaled to unit variance
-  before computing distances.
+  before computing distances. Either way the lengthscale's support is
+  placed relative to the spread of the times, and
+  [`temporal_corr()`](https://gillescolling.com/tulpa/reference/temporal_corr.md)
+  reports the lengthscale in the original time units.
 
 - parameterization:
 
@@ -80,6 +86,14 @@ temporal_gp(
   N(0,1) and scales by covariance (better for weakly-informed effects);
   `"centered"` stores effects directly (better for strongly-informed
   effects).
+
+- x:
+
+  A `tulpa_temporal_gp` specification.
+
+- ...:
+
+  Ignored.
 
 ## Value
 
@@ -170,5 +184,6 @@ fit <- tulpa(
   mode = "hmc",
   control = list(n_iter = 200, warmup = 100, n_chains = 1)
 )
+#> Warning: tulpa(): the 'hmc' chain has not converged -- log_sigma2_temporal_gp: Rhat 1.02, bulk-ESS 26; (Intercept): Rhat 1.01, bulk-ESS 35; logit_phi_temporal_gp: Rhat 0.99, bulk-ESS 45; x: Rhat 1.04, bulk-ESS 94. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
 # }
 ```

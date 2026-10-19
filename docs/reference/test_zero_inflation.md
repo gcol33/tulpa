@@ -39,3 +39,23 @@ test_zero_inflation(object, observed = NULL, nsim = 250L, seed = 123L, ...)
 ## Value
 
 An `htest` object with zero-inflation ratio and p-value
+
+## Examples
+
+``` r
+# \donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(80))
+d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+test_zero_inflation(fit, nsim = 50)
+#> 
+#>  Simulation-based zero-inflation test
+#> 
+#> data:  fit
+#> zero-inflation ratio = 0.90476, observed zeros = 19, expected zeros =
+#> 21, p-value = 0.76
+#> alternative hypothesis: two.sided
+#> 
+# }
+```

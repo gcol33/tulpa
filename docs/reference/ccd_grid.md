@@ -1,4 +1,4 @@
-# Central Composite Design (CCD) grid for nested-Laplace integration
+# Central composite design (CCD) grid for nested-Laplace integration
 
 Produces a structured set of standardised hyperparameter points \\z \in
 \mathbb{R}^k\\ for use as integration nodes in a nested Laplace
@@ -64,3 +64,15 @@ A list with components:
 
 [`ccd_to_theta()`](https://gillescolling.com/tulpa/reference/ccd_to_theta.md)
 to map z-coordinates to physical theta.
+
+## Examples
+
+``` r
+g <- ccd_grid(3)
+g$n_points
+#> [1] 15
+table(g$kind)
+#> 
+#>     axial    center factorial 
+#>         6         1         8 
+```

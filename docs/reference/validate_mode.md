@@ -3,6 +3,16 @@
 Ensures the fit object was created with the expected inference mode.
 Useful for enforcing mode requirements in downstream analysis.
 
+A fit matches a mode when the mode names either the backend that ran
+(`fit$backend`, e.g. `"laplace"`, `"mala"`, `"re_cov_gibbs"`) or the
+tier it ran in (`fit$inference_mode`: `"exact"`, `"structured"`,
+`"optimized"`). So a fit made with `mode = "laplace"` validates against
+both `"laplace"` and `"structured"`, and a fit made with `mode = "auto"`
+validates against the backend and the tier auto chose. A request that
+[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) overrode
+(see `fit$mode_overridden`) validates against what ran, not what was
+asked for.
+
 ## Usage
 
 ``` r
@@ -17,7 +27,8 @@ validate_mode(fit, expected_mode, error = TRUE)
 
 - expected_mode:
 
-  Mode that should have been used
+  Mode(s) that should have been used: a character vector of backend and
+  / or tier names, any one of which is accepted.
 
 - error:
 
@@ -26,3 +37,21 @@ validate_mode(fit, expected_mode, error = TRUE)
 ## Value
 
 If error = FALSE, returns TRUE/FALSE. Otherwise errors on mismatch.
+
+## Examples
+
+``` r
+# \donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(60))
+d$y <- rpois(60, exp(0.5 + 0.3 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "hmc",
+             control = list(n_iter = 400L, warmup = 200L, n_chains = 2L,
+                            seed = 1L))
+#> Warning: tulpa(): the 'hmc' chain has not converged -- x: Rhat 1.04, bulk-ESS 72. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
+validate_mode(fit, "exact")                      # the tier hmc runs in
+#> [1] TRUE
+validate_mode(fit, "structured", error = FALSE)  # FALSE
+#> [1] FALSE
+# }
+```

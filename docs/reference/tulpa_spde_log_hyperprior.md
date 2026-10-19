@@ -42,3 +42,16 @@ Numeric vector of log-density values, one per `(range, sigma)` pair.
 
 [`tulpa_spde_precision_Q()`](https://gillescolling.com/tulpa/reference/tulpa_spde_precision_Q.md),
 [`spatial_spde()`](https://gillescolling.com/tulpa/reference/spatial_spde.md)
+
+## Examples
+
+``` r
+n <- 6L
+G <- Matrix::bandSparse(n, k = c(-1, 0, 1),
+                        diagonals = list(rep(-1, n - 1), c(1, rep(2, n - 2), 1),
+                                         rep(-1, n - 1)))
+sp <- spatial_spde_custom(Matrix::Diagonal(n), G, Matrix::Diagonal(n),
+                          prior_range = c(1, 0.5), prior_sigma = c(1, 0.01))
+tulpa_spde_log_hyperprior(range = c(0.5, 1, 2), sigma = 1, sp = sp)
+#> [1] -4.137651 -4.137651 -4.484224
+```

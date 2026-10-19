@@ -23,6 +23,10 @@ tulpa_psis(log_ratios, tail_points = NULL)
 
   Numeric vector of (unnormalized) log importance ratios
   `log p_target(x) - log q_proposal(x)` evaluated at draws `x ~ q`.
+  `-Inf` marks a draw of zero weight (it keeps its place and counts
+  towards `S`); `NA` / `NaN` is an error. A `+Inf` ratio is the worst
+  possible one and returns `pareto_k = Inf` with all the weight on the
+  `+Inf` draws.
 
 - tail_points:
 
@@ -38,7 +42,9 @@ tulpa_psis(log_ratios, tail_points = NULL)
 A list with `pareto_k` (the tail shape, `NA` if the sample is too small
 to fit), `is_ess` (importance-sampling effective sample size,
 `1 / sum(w^2)` on the normalized smoothed weights), `log_weights` (the
-normalized smoothed log weights), `tail_len` (the tail size used), and
+normalized smoothed log weights, one per element of `log_ratios` and in
+the same order; with fewer than 5 draws the raw ratios, normalized),
+`tail_len` (the tail size used, `0` when no tail was fitted), and
 `tail_smoothed` (`FALSE` when the tail kept its raw log ratios because
 the generalized-Pareto fit was not attempted or returned a shape / scale
 the quantile function is undefined at; `pareto_k` then reports the

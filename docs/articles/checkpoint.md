@@ -1,4 +1,26 @@
-# Checkpoint and resume long fits
+# 
+
+## Installation
+
+``` r
+
+# Current release, built for Windows and macOS
+install.packages("tulpa",
+                 repos = c("https://gcol33.r-universe.dev",
+                           "https://cloud.r-project.org"))
+
+# Development version from GitHub
+install.packages("pak")
+pak::pak("gcol33/tulpa")
+
+# Pin a release
+pak::pak("gcol33/tulpa@v0.6.0")
+```
+
+`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
+for SPDE mesh construction). `tulpa` compiles its C++ backend on first
+install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
+tools on macOS, `r-base-dev` on Linux.
 
 ``` r
 
@@ -36,7 +58,7 @@ ckpt <- tempfile(fileext = ".ckpt")
 fit <- tulpa(y ~ x + spatial(region), data = df, family = "binomial",
              n_trials = rep(20L, S),
              spatial = spatial_car(W, level = "obs"),
-             mode = "laplace",
+             mode = "structured",
              control = list(checkpoint = list(path = ckpt, resume = FALSE)))
 coef(fit)
 ```
@@ -59,7 +81,7 @@ so this call returns essentially instantly and to the same result.
 fit2 <- tulpa(y ~ x + spatial(region), data = df, family = "binomial",
               n_trials = rep(20L, S),
               spatial = spatial_car(W, level = "obs"),
-              mode = "laplace",
+              mode = "structured",
               control = list(checkpoint = list(path = ckpt, resume = TRUE)))
 all.equal(coef(fit), coef(fit2))
 ```

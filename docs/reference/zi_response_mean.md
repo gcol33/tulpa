@@ -1,6 +1,6 @@
-# Response-scale mean of the zero-inflated mixture.
+# Response-scale mean of the zero-inflated mixture
 
-Response-scale mean of the zero-inflated mixture.
+Response-scale mean of the zero-inflated mixture
 
 ## Usage
 

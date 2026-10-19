@@ -1,4 +1,4 @@
-# Simulation-Based Diagnostics for tulpa Models
+# Simulation-based diagnostics for tulpa models
 
 Model-checking tools based on posterior predictive simulation. These are
 native R implementations equivalent to DHARMa's test suite, with no

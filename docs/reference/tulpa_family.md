@@ -19,6 +19,9 @@ tulpa_family(
   extra_params = list(),
   link_inv = NULL
 )
+
+# S3 method for class 'tulpa_family'
+print(x, ...)
 ```
 
 ## Arguments
@@ -51,6 +54,14 @@ tulpa_family(
   so most families implement the link inside `simulate_fn` (e.g.,
   `mu = exp(eta)` for Poisson). The `link_inv` slot exists for families
   that prefer to keep the inverse-link separate.
+
+- x:
+
+  A `tulpa_family`.
+
+- ...:
+
+  Ignored.
 
 ## Value
 

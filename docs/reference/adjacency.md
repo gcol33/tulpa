@@ -78,6 +78,9 @@ adjacency(
   na_rm = TRUE,
   ...
 )
+
+# S3 method for class 'tulpa_adjacency'
+print(x, ...)
 ```
 
 ## Arguments

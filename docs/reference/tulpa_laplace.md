@@ -181,7 +181,13 @@ tulpa_laplace(
   approximation takes the determinant of, so it is what an exact
   derivative of the log-marginal has to differentiate through; `H_beta`
   is only its fixed-effect Schur complement. Costs one extra copy of the
-  Hessian, so it is off by default. Non-spatial multi-RE path only.
+  Hessian, so it is off by default. Non-spatial multi-RE path only. With
+  `return_hessian = TRUE` it also returns `H_latent`, the same precision
+  at the observed curvature (identical to `H_joint` except for the
+  families whose Newton weight is the expected one); `H_beta` is its
+  Schur complement, and
+  [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)
+  draws the random effects from it.
 
 - compute_skew:
 
@@ -229,6 +235,9 @@ A list with:
 - `log_det_Q`: log-determinant of the Hessian
 
 - `H_beta`: fixed-effect block of the Hessian (if return_hessian = TRUE)
+
+- `H_joint`, `H_latent`: the joint latent precision, at the kernel's and
+  at the observed curvature (if return_joint_hessian = TRUE)
 
 - `cov_blocks`: list of per-group posterior covariance matrices, one per
   (RE term, group) in term-major then group order (if return_re_cov =

@@ -1,4 +1,4 @@
-# Inference Mode System
+# Inference mode system
 
 tulpa uses an explicit tier system for inference that encodes
 **epistemic guarantees**, not just runtime characteristics.

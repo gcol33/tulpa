@@ -33,7 +33,13 @@ sbc(
 )
 
 # S3 method for class 'sbc'
+print(x, ...)
+
+# S3 method for class 'sbc'
 summary(object, baseline = NULL, ...)
+
+# S3 method for class 'sbc_summary'
+print(x, ...)
 
 # S3 method for class 'sbc'
 plot(x, arm = NULL, quantity = NULL, folded = FALSE, ...)
@@ -96,16 +102,16 @@ plot(x, arm = NULL, quantity = NULL, folded = FALSE, ...)
   the driver's own, so a result is reproducible and the fits are not
   perturbed by asking for the diagnostic).
 
+- x:
+
+  An `sbc` result.
+
 - baseline:
 
   Optional arm name. When given, the summary also carries the PAIRED
   CRPS differences of every other arm against it, seed by seed. A
   negative `delta` is the arm scoring better. This is refused on an
   experiment where the CRPS is not a proper posterior score.
-
-- x:
-
-  An `sbc` result.
 
 - arm, quantity:
 

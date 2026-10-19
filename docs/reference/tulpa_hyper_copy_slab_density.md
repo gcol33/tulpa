@@ -28,3 +28,11 @@ is not a finite positive number.
 
 [`tulpa_hyper_check_copy_slab()`](https://gillescolling.com/tulpa/reference/tulpa_hyper_check_copy_slab.md),
 [`tulpa_joint_axis_specs_from_grid()`](https://gillescolling.com/tulpa/reference/tulpa_joint_axis_specs_from_grid.md)
+
+## Examples
+
+``` r
+lp <- tulpa_hyper_copy_slab_density(upper = 2)
+lp(c(0.1, 1, 2))
+#> [1]  0.2542549 -1.0938246 -2.5916908
+```

@@ -29,6 +29,13 @@ A data frame with columns `x` (node location) and `estimate` (the
 posterior-mean smooth at that node), with the covariate name as an
 attribute `"var"`.
 
+## See also
+
+[`field_effects()`](https://gillescolling.com/tulpa/reference/field_effects.md)
+for a spatial field,
+[`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md) for
+random effects.
+
 ## Examples
 
 ``` r

@@ -1,8 +1,17 @@
 # Show default priors for a tulpa family
 
-Display the default prior specifications used for each model family.
-Useful for understanding what priors are applied before fitting and as a
-starting point for customization.
+Display the default
+[`tulpa_priors()`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
+specification: the priors the simulation tools
+([`prior_predict()`](https://gillescolling.com/tulpa/reference/prior_predict.md),
+[`tulpa_simulate()`](https://gillescolling.com/tulpa/reference/tulpa_simulate.md))
+draw from, and a starting point for customizing them.
+[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) does not
+read a `tulpa_priors` object; the no-family printout closes with the
+defaults a
+[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) fit does
+use, which differ for the random-effect SDs (see
+[`tulpa_priors()`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)).
 
 ## Usage
 
@@ -14,9 +23,14 @@ priors_default(family = NULL, spatial = FALSE, temporal = FALSE)
 
 - family:
 
-  A tulpa family object (e.g. a ratio family constructor from a model
-  package such as tulpaRatio). If NULL (default), shows defaults for all
-  families.
+  `NULL` (default) for the general printout, or a `tulpa_family` object
+  – a model package's family constructor, such as a tulpaRatio ratio
+  family, or one built with
+  [`tulpa_family()`](https://gillescolling.com/tulpa/reference/tulpa_family.md)
+  – for the parameters that family carries. A family NAME (`"poisson"`)
+  is not a `tulpa_family` and is refused; the built-in
+  [`family_names()`](https://gillescolling.com/tulpa/reference/family_names.md)
+  share the general printout.
 
 - spatial:
 
@@ -33,7 +47,14 @@ called for its side effect of printing.
 
 ## Details
 
-Default priors in tulpa follow these principles:
+The family-specific overdispersion lines name the ratio families a model
+package registers (`negbin_negbin`, `negbin_gamma`, `poisson_gamma`,
+`gamma_gamma`, `beta_binomial`); they are not among tulpa's own
+[`family_names()`](https://gillescolling.com/tulpa/reference/family_names.md).
+
+Default priors in
+[`tulpa_priors()`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
+follow these principles:
 
 - **Fixed effects (beta)**: Normal(0, 2.5) - weakly informative, allows
   coefficients roughly in \[-5, 5\] on the link scale.
@@ -65,7 +86,9 @@ priors_default()
 #> Default priors for tulpa models
 #> ================================
 #> 
-#> These defaults apply to all families unless overridden.
+#> These are tulpa_priors()'s defaults: what prior_predict() and
+#> tulpa_simulate() draw from. tulpa() fits do not read them; their own
+#> defaults are listed at the end.
 #> 
 #> Fixed effects (beta):
 #>   Normal(0, 2.5)
@@ -83,10 +106,16 @@ priors_default()
 #>                   phi -> Inf is the Poisson limit
 #>   Customization: prior_pc(U, alpha) or prior_gamma(shape, rate)
 #> 
-#> Family-specific notes:
+#> Family-specific notes (model-package ratio families):
 #>   negbin_negbin: Uses phi for both processes
 #>   binomial: No overdispersion parameter (unless beta_binomial)
 #>   poisson_gamma: Uses phi for gamma shape parameter
+#> 
+#> What a tulpa() fit uses instead (set via beta_prior / re_prior):
+#>   Fixed effects: Normal(0, 2.5) on every backend
+#>   Random-effect SD: PC prior P(sigma > 3) = 0.01 (+ LKJ(2) on
+#>     correlations) on nested Laplace / re_cov_nested / eb;
+#>     half-Cauchy(2.5) on the samplers and mode = "gibbs"
 
 # Family-specific defaults take a tulpa_family object. Model packages
 # (e.g. tulpaRatio) register rich families; a minimal one is enough here.

@@ -29,6 +29,7 @@ tulpa_re_cov_nested(
   log_prior_theta = NULL,
   beta_prior = NULL,
   offset = NULL,
+  weights = NULL,
   n_quad = 1L,
   X_zi = NULL,
   zi_prior_sd = 2.5,
@@ -105,6 +106,15 @@ tulpa_re_cov_nested(
   `length(y)`), e.g. `log(exposure)` for a rate model. Not supported
   with `n_quad > 1`, which errors rather than dropping it.
 
+- weights:
+
+  Optional non-negative observation weights (length `length(y)`), each
+  scaling its row's log-likelihood in every inner
+  [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
+  solve, so the covariance is integrated under the weighted likelihood.
+  Not supported with `n_quad > 1`, which errors rather than dropping
+  them.
+
 - n_quad:
 
   Quadrature order for the inner marginal. `1` (default) uses the
@@ -178,7 +188,16 @@ tulpa_re_cov_nested(
     500). It is a precision knob: the GPD tail size is held at the
     fraction that default budget implies, so raising it supplies more
     tail ratios for the SAME estimand rather than moving the fit to a
-    deeper quantile of the weight distribution (gcol33/tulpa#631).
+    deeper quantile of the weight distribution (gcol33/tulpa#631). Each
+    draw is one inner Laplace solve, so this sets the diagnostic's cost;
+    the draws are solved in one compiled batch, each started from the
+    mode at the proposal centre.
+
+  - `k_threads`: thread width for those draws (`NULL`, the default,
+    follows `n_threads`; `"auto"` takes the physical performance cores;
+    an integer sets it, `1L` forcing serial). Each draw is solved
+    single-threaded and from the same start, so the k-hat does not
+    depend on the width.
 
   - `k_tail_points`: expert override for that tail size, in upper-tail
     order statistics. Silently capped at 20% of the draws, beyond which
@@ -313,9 +332,18 @@ and summed over blocks (PC prior on each marginal SD via `prior_sigma`,
 LKJ prior on each correlated block's correlation matrix via `eta`),
 expressed in the same parameterization with the exact
 change-of-variables Jacobian. `hyperprior = "flat"` makes it the zero
-function, flat in log(theta). Supply a custom `log_prior_theta` function
-to override either default (then `prior_sigma` / `eta` / `hyperprior`
-are ignored); it must act on the full stacked parameter vector.
+function, flat in log(theta). The likelihood it multiplies is the inner
+Laplace marginal, which integrates the fixed effects out together with
+the random effects rather than profiling them, so under `"flat"` the
+node centre `theta_hat` is a restricted (REML-type) estimate – REML for
+a gaussian response, agreeing with `glmmTMB(..., REML = TRUE)` rather
+than with the ML fit of
+[`lme4::glmer()`](https://rdrr.io/pkg/lme4/man/glmer.html) otherwise
+(see
+[`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md)).
+Supply a custom `log_prior_theta` function to override either default
+(then `prior_sigma` / `eta` / `hyperprior` are ignored); it must act on
+the full stacked parameter vector.
 [`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md)
 shares this same objective and the same default, so
 `tulpa_eb()$theta_hat` and `tulpa_re_cov_nested()$theta_hat` stay the
@@ -354,6 +382,6 @@ fit <- tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), re_term,
 fit$Sigma_mean        # marginalized RE covariance
 #>             [,1]        [,2]
 #> [1,]  0.45590235 -0.04201789
-#> [2,] -0.04201789  0.25672717
+#> [2,] -0.04201789  0.25672716
 # }
 ```

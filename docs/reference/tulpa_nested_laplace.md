@@ -23,6 +23,9 @@ Supported priors:
 ## Usage
 
 ``` r
+# S3 method for class 'tulpa_nested_laplace'
+print(x, ...)
+
 tulpa_nested_laplace(
   y,
   n_trials,
@@ -43,6 +46,14 @@ tulpa_nested_laplace(
 ```
 
 ## Arguments
+
+- x:
+
+  A nested-Laplace fit.
+
+- ...:
+
+  Ignored.
 
 - y:
 
@@ -81,7 +92,27 @@ tulpa_nested_laplace(
   - rw1/rw2: `temporal_idx` (1-based), `n_times`; optional `tau_grid`,
     `cyclic` (default FALSE).
 
-  - ar1: `temporal_idx`, `n_times`; optional `tau_grid`, `rho_grid`.
+  - ar1: `temporal_idx`, `n_times`; optional `tau_grid`, `rho_grid`
+    (each `rho_grid` value strictly inside (-1, 1)).
+
+  An `icar`, `bym2`, `car_proper` or `nngp` block may carry `projector`,
+  an `N x n_spatial_units` (`N x n_spatial` for `nngp`) matrix (dense or
+  a Matrix sparse matrix), in place of `spatial_idx`: observation `i`
+  then receives `(A z)_i`, so restricted spatial regression is
+  `A = S P_perp` with `S` the observation-to-unit incidence. The block
+  is fitted by the multi-block driver, alone or in a list of blocks. An
+  intrinsic field's level is placed from `A 1`: removed with no fold
+  where it is zero, folded into the intercept where it is the intercept
+  column, otherwise left to the augmentation. The `nngp` and
+  `car_proper` priors are proper and carry their level themselves.
+
+  Grids of a two-axis type (`bym2`, `car_proper`, `ar1`) are PAIRED when
+  both are supplied: the i-th entries of `tau_grid` / `sigma_grid` and
+  `rho_grid` form the i-th outer-grid cell, so the two must have equal
+  length, and a tensor grid is written as
+  [`expand.grid()`](https://rdrr.io/r/base/expand.grid.html) columns. A
+  single supplied axis is kept as an axis (its distinct values) and
+  crossed with the default of the other.
 
   A default grid axis is a starting axis, not a hard ceiling: for `icar`
   (`tau_grid`) and `bym2` (`sigma_grid`) a posterior mode that rails a
@@ -238,37 +269,31 @@ tulpa_nested_laplace(
     [`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
     for the combined whole-fit verdict.
 
-  - `within_cell` (`"box_uniform"`) – the WITHIN-CELL construction the
+  - `within_cell` (`"log_quadratic"`) – the WITHIN-CELL construction the
     reported per-axis hyperparameter intervals are read with. The outer
     grid's weights say how much mass each cell holds; they do not say
     how it is spread inside the cell, and a quantile needs both.
-    `"box_uniform"` puts the cumulative FULL mass at each cell EDGE and
-    interpolates between edges; `"chord"` puts the cumulative MID-mass
-    at each cell coordinate and interpolates between coordinates – the
-    same masses over the same boxes with the knots moved half a cell,
-    which measures as a whole order of convergence (2.00 against 1.04 on
-    a fixture with a closed-form posterior). THE DEFAULT IS
-    `"box_uniform"` since 0.0.188, decided on FIXED-TRUTH coverage at
-    the placement the engine ships, with `auto_recenter = "resolve"` as
-    the default. Summed \|coverage - nominal\| over nominal 0.95 / 0.80
-    / 0.50, chord against box-uniform: 0.2900 / 0.1233 on the
-    pre-registered fixed-truth instrument, 0.2004 / 0.0361 over 4680
-    truth-swept fits of the same fixture, and 0.2467 / 0.1572 over nine
-    (config, axis) rows spanning seven families, at 0.69 to 1.08x the
-    width. The conditional-coverage swing that held the default back
-    reads 0.110 at the shipped placement against 0.415 on the coarse
-    pinned grid it was measured on, and at nominal 0.50 it is the same
-    on both reads. `outer_grid_h_over_sd` is how wide a cell is on each
-    axis (with `outer_grid_resolution_declined` naming why an axis
-    carries no ratio, and `outer_grid_railed_axes` naming any axis whose
-    nodes do not contain its own posterior mode), and
-    `theta_within_cell` is what each axis was actually read with. Only a
-    `"density"` support admits it – a CCD design, a locally refined grid
-    and a posterior sample are not cell partitions that tile – and an
-    axis it declines on reports `"chord"` with a reason rather than
+    `"log_quadratic"` joins each row's node log densities by overlapping
+    quadratics, exact for a Gaussian at any spacing, and continues the
+    end quadratic past the outer node instead of stopping at the box
+    edge; it runs on the rows that resolve their own conditional
+    (`h / sd <= 2`) and reads every other row as boxes, declining to
+    `"box_uniform"` where no row qualifies. `"box_uniform"` puts the
+    cumulative FULL mass at each cell EDGE and interpolates between
+    edges; `"chord"` puts the cumulative MID-mass at each cell
+    coordinate and interpolates between coordinates. The default moved
+    from `"box_uniform"` at gcol33/tulpa#932: a placed axis sits at 1.25
+    posterior SDs per cell, where the box read is narrow by
+    construction, and against dense references of a two-arm ICAR fixture
+    the log-quadratic read's summed error is 0.038 against the box
+    read's 0.110 on the same grids. `outer_grid_h_over_sd` is how wide a
+    cell is on each axis, and `theta_within_cell` is what each axis was
+    actually read with. Only a `"density"` support admits the box and
+    log-quadratic reads – a CCD design, a locally refined grid and a
+    posterior sample are not cell partitions that tile – and an axis
+    they decline on reports the read that ran with a reason rather than
     erroring. Nothing else moves: point estimates, moments, draws and
-    weights are untouched, and `"chord"` restores the previous report
-    exactly.
+    weights are untouched.
 
   - `skew_correct` (`TRUE`) – consume the inner-Laplace expansion
     instead of only grading it: report Cornish-Fisher marginal quantiles
@@ -407,12 +432,11 @@ tulpa_nested_laplace(
     [`fit_st_nested()`](https://gillescolling.com/tulpa/reference/fit_st_nested.md)
     refuse them rather than accept them and ignore them.
 
-  - `max_grid_cells` (`2048L`) – cell-count ceiling on a multi-block
-    outer grid, refused with an error above it. Each cell is one inner
-    Newton solve, so the default catches a per-block grid that
-    multiplied out to a run nobody asked for; a deliberate converged
-    tensor reference grid (4 axes at 7 levels is 2401 cells) raises it
-    here.
+  - `max_grid_cells` (`NULL`, no ceiling) – a ceiling on a multi-block
+    outer grid's cell count, one inner Newton solve per cell; a grid
+    past it is refused before any solve, naming the axes that produced
+    the count. Unset, a grid of any size is solved, and one past 2048
+    cells is announced with a warning first.
 
   - `checkpoint` (`list(path =, resume =)`) – grid-cell checkpoint /
     resume. Each solved outer cell is appended to `path`, keyed by its
@@ -425,12 +449,11 @@ tulpa_nested_laplace(
     the outer-grid progress reporter: whether to print, how often (in
     cells), where to, and the minimum seconds between lines.
 
-  - `prune` (`FALSE`), `prune_tol` (`1e-3`), `screen_iters`
-    (`.NL_SCREEN$iters`, 2 – the doc said 5 while the engine read 2,
-    which is what gcol33/tulpa#640 measured the depth down to) – opt-in
-    cheap-pass screening of the outer grid. When `prune = TRUE`, the
-    driver first sweeps the lattice running a `screen_iters`-step inner
-    Newton per cell, each warm-started from the previous screened cell's
+  - `prune` (`TRUE`), `prune_tol` (`1e-3`), `screen_iters`
+    (`.NL_SCREEN$iters`, 2 – the depth gcol33/tulpa#640 measured the
+    screen down to) – cheap-pass screening of the outer grid. The driver
+    first sweeps the lattice running a `screen_iters`-step inner Newton
+    per cell, each warm-started from the previous screened cell's
     quasi-mode, computes a screening Laplace log-marginal,
     softmax-normalises it, and skips the full inner Newton on every cell
     whose screened weight is below `prune_tol`. The neighbour warm-start
@@ -442,22 +465,21 @@ tulpa_nested_laplace(
     whatever the tolerance says – the highest-ranked dropped cells are
     restored up to that floor, because the outer grid placement pass
     reads a finite-difference curvature off the cells that were SOLVED
-    and a kept set of one carries none. A safety gate falls back to the
-    full grid (with a warning) whenever the cheap-screen argmax
-    disagrees with the full-solve argmax, or the kept posterior
-    collapses onto a cell the screen mis-estimated by more than the
-    margin it discarded cells by. The gate bounds a MIS-RANKING, not the
-    whole error: it compares the screen against the cells that were
-    solved, so a cell it discarded and never solved is outside what it
-    can see. The default `prune = FALSE` is the setting under which no
-    such question arises. `prune_tol` must be a finite numeric in
-    `[0, 1)` and `screen_iters` a single integer `>= 1`; both are
-    validated whatever `prune` says. Pruning is OPT-IN: the default
-    `FALSE` solves every cell, which is correct whatever the grid looks
-    like. `prune` / `prune_tol` reach both the single-block and the
-    multi-block dispatch; the screening DEPTH is declared by the
-    single-block kernels only, so a multi-block prior refuses a pinned
-    `screen_iters` rather than accepting it and ignoring it.
+    and a kept set of one carries none. After the full pass the
+    posterior mass the dropped cells may carry is bounded by lifting
+    each by the worst screening error measured on a kept cell
+    (`prune_dropped_mass_bound`); past 1% the driver solves the dropped
+    cells that contribute most to it until it is under 1%
+    (`prune_n_repaired`), and a safety gate falls back to the full grid
+    (with a warning) if the bound still fails. The bound assumes a
+    dropped cell is screened no worse than the worst kept one. On by
+    default (gcol33/tulpa#925); `FALSE` solves every cell. `prune_tol`
+    must be a finite numeric in `[0, 1)` and `screen_iters` a single
+    integer `>= 1`; both are validated whatever `prune` says. `prune` /
+    `prune_tol` reach both the single-block and the multi-block
+    dispatch; the screening DEPTH is declared by the single-block
+    kernels only, so a multi-block prior refuses a pinned `screen_iters`
+    rather than accepting it and ignoring it.
 
   - `prune_log_gap` (unset) – the screening cut stated in nats instead
     of as a normalised weight: keep every cell within this many nats of
@@ -483,6 +505,27 @@ tulpa_nested_laplace(
     included, each read off its cell's own precision at the mode; a
     multi-block prior refuses `FALSE` rather than accepting it and
     ignoring it.
+
+  - `var_of_means_consistency` (`TRUE`) – the consistency pass of
+    [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md):
+    a field SD (`tau` of an `icar`, `rw1` or `rw2` block, `sigma` of an
+    `iid`, `bym2` or `spde` block) whose marginal has collapsed onto too
+    few nodes to carry a spread has levels added in every row of the
+    other axes that holds the posterior until it resolves, and the new
+    cells are solved and carried like the rest
+    (`var_of_means_consistency_info` records the pass). Other axes keep
+    the nodes they were laid on.
+
+  - `adaptive_grid` (`FALSE`), `adaptive_grid_edge_thresh` (`0.02`),
+    `adaptive_grid_max_passes` (`1L`) – the opt-in boundary / interior
+    pass, on the same axes.
+
+  - `axis_refine` (`NULL`) – per-axis override of how far those axes may
+    be moved, named by the grid's axes (`"tau"`; `"b1.tau"` on a
+    multi-block prior): `"none"`, `"densify"` (inside the declared span)
+    or `"extend"`. Nodes the caller wrote down densify by default and an
+    engine-placed axis extends, as in
+    [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md).
 
 ## Value
 
@@ -523,10 +566,12 @@ A list with:
   Laplace pass that scales with grid size. Surfaced one-line in `print`.
 
 - `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
-  `prune_tol`: present only when `control$prune = TRUE` and the safety
-  gate did not trip – the cheap-screen log-marginal per cell, the
-  logical mask of pruned cells, the pruned-cell count, and the threshold
-  actually applied.
+  `prune_tol`: present when the grid was screened and the safety gate
+  did not trip – the cheap-screen log-marginal per cell (the truncated
+  solve's value plus half its Newton decrement, the second-order
+  estimate of the converged value the cells are ranked by; the decrement
+  itself is `prune_screen_decrement`), the logical mask of pruned cells,
+  the pruned-cell count, and the threshold actually applied.
 
 - `prune_log_gap_cut`, `prune_cheap_lm_spread`, `prune_min_keep`,
   `prune_n_floor_restored`: the same screen read on the scale it
@@ -535,11 +580,24 @@ A list with:
   applied, and how many cells that floor put back. A cut that is a
   sliver of the spread is a tolerance with no resolution on this grid.
 
+- `prune_dropped_mass_bound`, `prune_n_repaired`, `prune_gate_mass`: the
+  posterior mass the dropped cells may carry, with each lifted by the
+  worst screening error measured on a kept cell; how many dropped cells
+  the driver solved in full to bring that under the gate; and the gate.
+
 - `prune_fallback_triggered`, `prune_fallback_reason`: present only when
   the gate did trip; the rest of the fit is then the full-grid result
   and the reason string records which check fired.
 
 - `prior`: echoed input.
+
+## Details
+
+[`print()`](https://rdrr.io/r/base/print.html) shows the integrated
+hyperparameters, the outer-grid size, the outer Pareto-\\\hat{k}\\
+diagnostic when present and the wall-clock timing line
+(`"fit in 5h 25m (grid 2h 09m)"`) when `fit$timing` is attached, then
+the fixed effects.
 
 ## References
 

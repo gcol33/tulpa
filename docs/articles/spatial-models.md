@@ -1,4 +1,26 @@
-# Spatial fields in tulpa
+# 
+
+## Installation
+
+``` r
+
+# Current release, built for Windows and macOS
+install.packages("tulpa",
+                 repos = c("https://gcol33.r-universe.dev",
+                           "https://cloud.r-project.org"))
+
+# Development version from GitHub
+install.packages("pak")
+pak::pak("gcol33/tulpa")
+
+# Pin a release
+pak::pak("gcol33/tulpa@v0.6.0")
+```
+
+`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
+for SPDE mesh construction). `tulpa` compiles its C++ backend on first
+install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
+tools on macOS, `r-base-dev` on Linux.
 
 ``` r
 
@@ -237,7 +259,7 @@ with a message rather than guessing.
 fit <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
              spatial = list(type = "icar", adjacency = W),
              mode = "nested_laplace")
-fit$backend
+summary(fit)$inference$backend
 ```
 
 `mode = "nested_laplace"` runs the Tier-2 path that integrates the
@@ -296,12 +318,14 @@ summary(fit)
 
 The slopes are only half the story. Often the field itself is the
 quantity of interest, the smoothed map you wanted in the first place,
-and the nested fit carries it on the object. `$modes` is an `n_grid` by
-`n_latent` matrix. Each row is one grid point’s inner-Laplace mode, and
-the columns run `[fixed effects, field]`, so the first `n_fixed` columns
-are the intercept and slopes and the rest are the per-region effects.
-`$weights` are the integration weights over the grid, one per row, and
-they sum to one after normalising.
+and the nested fit carries it on its outer grid, which
+[`tulpa_outer_grid()`](https://gillescolling.com/tulpa/reference/tulpa_outer_grid.md)
+returns. Its `modes` is an `n_grid` by `n_latent` matrix. Each row is
+one grid point’s inner-Laplace mode, and the columns run
+`[fixed effects, field]`, so the first `n_fixed` columns are the
+intercept and slopes and the rest are the per-region effects. Its
+`weights` are the integration weights over the grid, one per row,
+normalised to sum to one.
 
 The grid-marginalised value for region $`u`$ is the weighted average of
 its own column across grid points: take column `n_fixed + u`, weight
@@ -311,18 +335,16 @@ of the fixed effects.
 
 ``` r
 
-w     <- fit$weights / sum(fit$weights)
-nf    <- fit$n_fixed
-field_hat <- vapply(seq_len(K), function(u) sum(w * fit$modes[, nf + u]),
-                    numeric(1))
+g         <- tulpa_outer_grid(fit)
+field_hat <- colSums(g$weights * g$modes)[g$n_fixed + seq_len(K)]
 round(head(field_hat), 3)
 ```
 
 That recipe is the same one the temporal path uses for a random-walk
 field, since an RW1 chain is an ICAR on a line: time $`t`$ neighbours
 $`t-1`$ and $`t+1`$, the chain adjacency’s Laplacian is the RW1
-precision, and the field-extraction step reads the same `$modes`
-columns. One marginalisation serves both areal maps and time series.
+precision, and the field-extraction step reads the same `modes` columns.
+One marginalisation serves both areal maps and time series.
 
 ## Checking the fit
 
@@ -359,14 +381,14 @@ overall level even when their shapes match perfectly. Subtracting each
 mean removes that free constant and leaves the contrasts, which are what
 the model actually identifies.
 
-The precision $`\tau`$ is summarised on the object. `$theta_mean` is the
+The precision $`\tau`$ is summarised in the `hyperparameters` table of
+[`summary()`](https://rdrr.io/r/base/summary.html): `mean` is the
 posterior mean over the grid, on the natural precision scale, and
-`$theta_ci_lo` / `$theta_ci_hi` give a credible interval.
+`ci_lo` / `ci_hi` give a credible interval.
 
 ``` r
 
-c(tau_mean = fit$theta_mean,
-  lo = fit$theta_ci_lo, hi = fit$theta_ci_hi)
+summary(fit)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
 ```
 
 A larger $`\tau`$ would mean a stiffer penalty on neighbour differences
@@ -412,7 +434,7 @@ nuisance level rather than a quantity to interpret.
 
 ``` r
 
-summary(fit)["(Intercept)", "std.error"]
+coef(summary(fit))["(Intercept)", "std.error"]
 ```
 
 The wide value here is by design, not a fitting failure. A proper CAR or
@@ -620,17 +642,18 @@ y      <- rpois(n, exp(1.0 + 0.5 * xcov + field))
 spde <- spatial_spde(~ lon + lat, data = coords, max_edge = c(0.2, 0.5))
 fit  <- fit_spde(y = y, X = model.matrix(~ xcov), spatial = spde,
                  family = "poisson", range = 0.4, sigma = 0.9)
-round(fit$beta, 3)
+round(coef(fit), 3)
 ```
 
 The fixed-effect estimates land on the generating intercept and slope;
-the mesh-node field effects sit in `fit$spatial_effects`, ready to
+`field_effects(fit)` returns the field at each mesh node, ready to
 project onto a prediction grid. Leaving `range` and `sigma` at their
 default `NULL` switches
 [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md) to
 nested Laplace over the two hyperparameters and adds an outer
-Pareto-k-hat to the result (`fit$pareto_k`), the same accuracy
-diagnostic the areal nested integration reports.
+Pareto-k-hat, which
+[`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
+reports as it does for the areal nested integration.
 
 ## See also
 

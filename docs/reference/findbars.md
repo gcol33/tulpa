@@ -18,3 +18,15 @@ findbars(term)
 ## Value
 
 A list of language objects, each a `|` or `||` call
+
+## Examples
+
+``` r
+findbars(y ~ x + (1 | g) + (1 + x | h))
+#> [[1]]
+#> 1 | g
+#> 
+#> [[2]]
+#> 1 + x | h
+#> 
+```

@@ -1,8 +1,8 @@
-# Inference tiers with their properties (derived from `TIER_META` + `BACKEND_REGISTRY`). Preserves the `INFERENCE_TIERS$<tier>$backends` interface relied on by downstream code and tests.
+# Inference tiers with their properties
 
-Inference tiers with their properties (derived from `TIER_META` +
-`BACKEND_REGISTRY`). Preserves the `INFERENCE_TIERS$<tier>$backends`
-interface relied on by downstream code and tests.
+Derived from `TIER_META` and `BACKEND_REGISTRY`. Preserves the
+`INFERENCE_TIERS$<tier>$backends` interface relied on by downstream code
+and tests.
 
 ## Usage
 

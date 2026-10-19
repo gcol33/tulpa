@@ -1,6 +1,6 @@
-# Reject a ZI request against a family with no atom at zero.
+# Reject a ZI request against a family with no atom at zero
 
-Reject a ZI request against a family with no atom at zero.
+Reject a ZI request against a family with no atom at zero
 
 ## Usage
 

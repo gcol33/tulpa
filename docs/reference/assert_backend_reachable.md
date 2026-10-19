@@ -1,4 +1,4 @@
-# Error if a selected backend has no R-level fitter.
+# Error if a selected backend has no R-level fitter
 
 Enforces the registry honesty contract: a backend may ship a C++ kernel
 reachable from model packages (via `LinkingTo: tulpa`) yet have no R

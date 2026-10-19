@@ -1,8 +1,8 @@
 # Observation-level accessors for categorical fits
 
-[`fitted()`](https://rdrr.io/r/stats/fitted.values.html),
-[`residuals()`](https://rdrr.io/r/stats/residuals.html),
-[`predict()`](https://rdrr.io/r/stats/predict.html) and
+[`stats::fitted()`](https://rdrr.io/r/stats/fitted.values.html),
+[`stats::residuals()`](https://rdrr.io/r/stats/residuals.html),
+[`stats::predict()`](https://rdrr.io/r/stats/predict.html) and
 [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)
 for a categorical response: a
 [`tulpa_multinomial()`](https://gillescolling.com/tulpa/reference/tulpa_multinomial.md)

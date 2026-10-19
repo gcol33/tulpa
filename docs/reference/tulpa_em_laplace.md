@@ -74,6 +74,14 @@ tulpa_em_laplace(
 
   - `re_list`, `spatial` (optional) – forwarded as-is.
 
+  - `control` (list, optional) – on a block with a `prior`, entries
+    merged over the driver's own
+    [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
+    control (`n_threads`, `keep_grid_hessians = TRUE`,
+    `diagnose_k = FALSE`); an M-step fit is one iterate of the EM
+    objective, so its outer Pareto-k diagnostic is off unless the block
+    sets `diagnose_k = TRUE`.
+
 - spatial, re_list:
 
   Not consumed at the driver level – latent structure is per-submodel,

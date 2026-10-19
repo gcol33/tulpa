@@ -1,4 +1,4 @@
-# Rational Approximation Coefficients for a Fractional SPDE
+# Rational approximation coefficients for a fractional SPDE
 
 Returns the coefficient descriptor for an SPDE Matern field of operator
 order `alpha = nu + 1` (in 2D). For integer `nu` the construction is

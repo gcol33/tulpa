@@ -92,9 +92,11 @@ tulpa_laplace_beta(
 
 For `mode = "laplace"`, the list returned by
 [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
-at the optimum, augmented with `phi` (the optimised precision) and
-`phi_log_marginal` (the optimisation trace). For `mode = "nuts"`, the
-draws object returned by
+at the optimum, augmented with `phi` (the optimised precision),
+`phi_trace` (the optimisation trace: a matrix with one row per objective
+evaluation and columns `phi` and `log_marginal`) and `phi_converged`
+(`TRUE` when the Brent search reported convergence). For
+`mode = "nuts"`, the draws object returned by
 [`tulpa_nuts_beta()`](https://gillescolling.com/tulpa/reference/tulpa_nuts_beta.md).
 
 ## Examples
@@ -107,5 +109,5 @@ mu <- plogis(X %*% c(0.2, 0.7)); phi <- 8
 y <- rbeta(n, mu * phi, (1 - mu) * phi)
 fit <- tulpa_laplace_beta(y, X)
 fit$mode
-#> [1] 0.1156379 0.6452995
+#> [1] 0.1156376 0.6452978
 ```

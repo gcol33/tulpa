@@ -17,11 +17,15 @@ confint(object, parm = NULL, level = 0.95, ...)
 
 - parm:
 
-  Parameter names or indices (default: all fixed effects).
+  Parameter names or indices (default: all fixed effects). Indices
+  address the fixed effects. A name that is not a fixed effect is read
+  off the fit's posterior draws when they carry a column of that name
+  (for example a sampler's `log_sigma_re`), as their equal-tailed
+  quantile interval; any other name is an error.
 
 - level:
 
-  Interval level (default 0.95).
+  Interval level, a single number in `(0, 1)` (default 0.95).
 
 - ...:
 

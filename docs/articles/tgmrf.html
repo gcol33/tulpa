@@ -6,6 +6,11 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <title>User-defined GMRF latent blocks with tgmrf() • tulpa</title>
+<!-- favicons --><link rel="icon" type="image/png" sizes="96x96" href="../favicon-96x96.png">
+<link rel="icon" type="”image/svg+xml”" href="../favicon.svg">
+<link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
+<link rel="icon" sizes="any" href="../favicon.ico">
+<link rel="manifest" href="../site.webmanifest">
 <script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
@@ -35,7 +40,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.1</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -48,17 +53,17 @@
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">The data a tulpa model expects</a></li>
-    <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace for latent-variable models</a></li>
+<li><a class="dropdown-item" href="../articles/checkpoint.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/em-laplace.html">UNKNOWN TITLE</a></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes: the three tiers and how to choose one</a></li>
-    <li><a class="dropdown-item" href="../articles/model-comparison.html">Comparing tulpa models</a></li>
+    <li><a class="dropdown-item" href="../articles/model-comparison.html">UNKNOWN TITLE</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Specifying and checking priors</a></li>
     <li><a class="dropdown-item" href="../articles/quickstart.html">Getting started with tulpa</a></li>
-    <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes and the free random-effect covariance</a></li>
-    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability of nested approximations: reading the outer Pareto-k</a></li>
+    <li><a class="dropdown-item" href="../articles/random-slopes.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">UNKNOWN TITLE</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Validating calibration: simulation-based calibration</a></li>
-    <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial fields in tulpa</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-models.html">UNKNOWN TITLE</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal random-walk effects with tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">User-defined GMRF latent blocks with tgmrf()</a></li>
   </ul>
@@ -82,8 +87,7 @@
 
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
-
-      <h1>User-defined GMRF latent blocks with tgmrf()</h1>
+      <img src="../logo.svg" class="logo" alt=""><h1>User-defined GMRF latent blocks with tgmrf()</h1>
             
       
       <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/tgmrf.Rmd" class="external-link"><code>vignettes/tgmrf.Rmd</code></a></small>
@@ -323,11 +327,7 @@ propagate through every fit as the reported parameter names.</p>
 <span>  prior  <span class="op">=</span> <span class="va">blk</span>,</span>
 <span>  family <span class="op">=</span> <span class="st">"poisson"</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 13/13 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
-<span><span class="va">fit_lap</span><span class="op">$</span><span class="va">theta_mean</span>    <span class="co"># posterior mean over the outer grid</span></span>
-<span><span class="co">#&gt; b1.log_sigma b1.atanh_rho </span></span>
-<span><span class="co">#&gt;   -0.2274788    0.7023186</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_lap</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span>   <span class="co"># posterior over the outer grid</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="tier-2-structured-pathfinder-vi">Tier 2 (structured): Pathfinder VI<a class="anchor" aria-label="anchor" href="#tier-2-structured-pathfinder-vi"></a>
@@ -342,11 +342,8 @@ covariance matrix rather than a discrete grid.</p>
 <span>  family  <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"vi"</span>,</span>
 <span>  n_draws <span class="op">=</span> <span class="fl">800L</span></span>
 <span><span class="op">)</span></span>
-<span><span class="va">fit_vi</span><span class="op">$</span><span class="va">mode_theta</span></span>
-<span><span class="co">#&gt;  log_sigma  atanh_rho </span></span>
-<span><span class="co">#&gt; -0.2388442  0.5969964</span></span>
-<span><span class="va">fit_vi</span><span class="op">$</span><span class="va">elbo</span></span>
-<span><span class="co">#&gt; [1] -84.02656</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/colSums-methods.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="fu"><a href="../reference/posterior_sample.html">posterior_sample</a></span><span class="op">(</span><span class="va">fit_vi</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_vi</span><span class="op">)</span><span class="op">$</span><span class="va">reliability</span><span class="op">$</span><span class="va">elbo</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="tier-1-exact-imh-laplace">Tier 1 (exact): IMH-Laplace<a class="anchor" aria-label="anchor" href="#tier-1-exact-imh-laplace"></a>
@@ -360,11 +357,8 @@ acceptance, low MC error.</p>
 <span>  family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"imh"</span>,</span>
 <span>  n_iter <span class="op">=</span> <span class="fl">1200L</span>, warmup <span class="op">=</span> <span class="fl">400L</span></span>
 <span><span class="op">)</span></span>
-<span><span class="va">fit_imh</span><span class="op">$</span><span class="va">means</span></span>
-<span><span class="co">#&gt;  log_sigma  atanh_rho </span></span>
-<span><span class="co">#&gt; -0.2153406  0.7003226</span></span>
-<span><span class="va">fit_imh</span><span class="op">$</span><span class="va">mean_accept</span></span>
-<span><span class="co">#&gt; [1] 0.56125</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/colSums-methods.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="fu"><a href="../reference/posterior_sample.html">posterior_sample</a></span><span class="op">(</span><span class="va">fit_imh</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_imh</span><span class="op">)</span><span class="op">$</span><span class="va">reliability</span><span class="op">$</span><span class="va">mean_accept</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="tier-1-exact-nuts-over-theta">Tier 1 (exact): NUTS over <code>theta</code><a class="anchor" aria-label="anchor" href="#tier-1-exact-nuts-over-theta"></a>
@@ -380,7 +374,7 @@ call when the posterior is multi-modal or strongly non-Gaussian.</p>
 <span>  n_iter    <span class="op">=</span> <span class="fl">200L</span>, warmup <span class="op">=</span> <span class="fl">100L</span>,</span>
 <span>  max_depth <span class="op">=</span> <span class="fl">4L</span></span>
 <span><span class="op">)</span></span>
-<span><span class="va">fit_nuts</span><span class="op">$</span><span class="va">means</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/colSums-methods.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="fu"><a href="../reference/posterior_sample.html">posterior_sample</a></span><span class="op">(</span><span class="va">fit_nuts</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -392,13 +386,10 @@ call when the posterior is multi-modal or strongly non-Gaussian.</p>
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
 <span>  parameter <span class="op">=</span> <span class="va">blk</span><span class="op">$</span><span class="va">theta_names</span>,</span>
 <span>  true      <span class="op">=</span> <span class="va">theta_true</span>,</span>
-<span>  laplace   <span class="op">=</span> <span class="va">fit_lap</span><span class="op">$</span><span class="va">theta_mean</span>,</span>
-<span>  vi_mode   <span class="op">=</span> <span class="va">fit_vi</span><span class="op">$</span><span class="va">mode_theta</span>,</span>
-<span>  imh_mean  <span class="op">=</span> <span class="va">fit_imh</span><span class="op">$</span><span class="va">means</span></span>
-<span><span class="op">)</span></span>
-<span><span class="co">#&gt;              parameter       true    laplace    vi_mode   imh_mean</span></span>
-<span><span class="co">#&gt; b1.log_sigma log_sigma -0.2231436 -0.2274788 -0.2388442 -0.2153406</span></span>
-<span><span class="co">#&gt; b1.atanh_rho atanh_rho  0.6931472  0.7023186  0.5969964  0.7003226</span></span></code></pre></div>
+<span>  laplace   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_lap</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">$</span><span class="va">mean</span>,</span>
+<span>  vi_mean   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/colSums-methods.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="fu"><a href="../reference/posterior_sample.html">posterior_sample</a></span><span class="op">(</span><span class="va">fit_vi</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  imh_mean  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/colSums-methods.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="fu"><a href="../reference/posterior_sample.html">posterior_sample</a></span><span class="op">(</span><span class="va">fit_imh</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">)</span></span></code></pre></div>
 <p>Laplace and VI agree to within grid resolution / Gaussian-fit
 curvature; IMH lifts the structured-tier bias at the cost of
 <code>n_iter</code> inner Laplace solves.</p>
@@ -414,9 +405,9 @@ fixed-effects design matrix
 of dimension
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>×</mo><mi>p</mi></mrow><annotation encoding="application/x-tex">N \times p</annotation></semantics></math>
 carries coefficients
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>∈</mo><msup><mi>ℝ</mi><mi>p</mi></msup></mrow><annotation encoding="application/x-tex">\beta \in \mathbb{R}^p</annotation></semantics></math>.
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>∈</mo><msup><mi mathvariant="double-struck">ℝ</mi><mi>p</mi></msup></mrow><annotation encoding="application/x-tex">\beta \in \mathbb{R}^p</annotation></semantics></math>.
 The latent block contributes a vector
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>∈</mo><msup><mi>ℝ</mi><msub><mi>n</mi><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">t</mi></mrow></msub></msup></mrow><annotation encoding="application/x-tex">z \in \mathbb{R}^{n_{\mathrm{lat}}}</annotation></semantics></math>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>∈</mo><msup><mi mathvariant="double-struck">ℝ</mi><msub><mi>n</mi><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">t</mi></mrow></msub></msup></mrow><annotation encoding="application/x-tex">z \in \mathbb{R}^{n_{\mathrm{lat}}}</annotation></semantics></math>
 where
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>n</mi><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">t</mi></mrow></msub><annotation encoding="application/x-tex">n_{\mathrm{lat}}</annotation></semantics></math>
 is <code>n_latent</code>. An index vector <code>obs_idx</code> maps each
@@ -433,7 +424,7 @@ is
 for the family’s link
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>g</mi><annotation encoding="application/x-tex">g</annotation></semantics></math>.
 The hyperparameter vector is
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mo>∈</mo><msup><mi>ℝ</mi><mi>d</mi></msup></mrow><annotation encoding="application/x-tex">\theta \in \mathbb{R}^d</annotation></semantics></math>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mo>∈</mo><msup><mi mathvariant="double-struck">ℝ</mi><mi>d</mi></msup></mrow><annotation encoding="application/x-tex">\theta \in \mathbb{R}^d</annotation></semantics></math>
 with
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>d</mi><annotation encoding="application/x-tex">d</annotation></semantics></math>
 equal to <code>theta_dim</code>, living on the unconstrained scale your

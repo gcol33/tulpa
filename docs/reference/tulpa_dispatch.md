@@ -1,4 +1,4 @@
-# Dispatch a fit to the backend chosen by the mode/tier system.
+# Dispatch a fit to the backend chosen by the mode/tier system
 
 The routing spine. Resolves `mode` to a concrete backend via
 [`select_inference_mode()`](https://gillescolling.com/tulpa/reference/select_inference_mode.md),

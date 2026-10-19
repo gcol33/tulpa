@@ -43,3 +43,13 @@ Updated spatial object with computed neighbor structure.
 [`validate_temporal_multiscale()`](https://gillescolling.com/tulpa/reference/validate_temporal_multiscale.md),
 [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md),
 [`spatial_multiscale()`](https://gillescolling.com/tulpa/reference/spatial_multiscale.md)
+
+## Examples
+
+``` r
+set.seed(1)
+d <- data.frame(lon = runif(30), lat = runif(30))
+gp <- validate_gp(spatial_gp(~ lon + lat, nn = 5), d)
+gp$n_spatial
+#> [1] 30
+```

@@ -1,4 +1,4 @@
-# Validate the response against a family's support.
+# Validate the response against a family's support
 
 The one support rule set, shared by the
 [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) front

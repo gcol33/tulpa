@@ -1,4 +1,4 @@
-# Build NNGP precision Lambda = (I - A)' D^-1 (I - A) at given hyperparameters.
+# Build NNGP precision Lambda = (I - A)' D^-1 (I - A) at given hyperparameters
 
 Mirrors the algorithm in `src/gpu_nngp_laplace.h::batch_nngp_scatter`
 plus `apply_nngp_full_prior_dense` – for each Vecchia row i (in NNGP

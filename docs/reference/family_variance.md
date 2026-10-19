@@ -1,6 +1,6 @@
-# Response variance Var(y \| eta) for a family, elementwise.
+# Response variance Var(y \| eta) for a family, elementwise
 
-Response variance Var(y \| eta) for a family, elementwise.
+Response variance Var(y \| eta) for a family, elementwise
 
 ## Usage
 

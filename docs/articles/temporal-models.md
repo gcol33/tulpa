@@ -1,5 +1,27 @@
 # Temporal random-walk effects with tulpa
 
+## Installation
+
+``` r
+
+# Current release, built for Windows and macOS
+install.packages("tulpa",
+                 repos = c("https://gcol33.r-universe.dev",
+                           "https://cloud.r-project.org"))
+
+# Development version from GitHub
+install.packages("pak")
+pak::pak("gcol33/tulpa")
+
+# Pin a release
+pak::pak("gcol33/tulpa@v0.6.0")
+```
+
+`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
+for SPDE mesh construction). `tulpa` compiles its C++ backend on first
+install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
+tools on macOS, `r-base-dev` on Linux.
+
 ``` r
 
 library(tulpa)
@@ -267,8 +289,7 @@ below. How was the fit routed?
 
 ``` r
 
-c(backend = fit$backend, tier = fit$inference_tier)
-fit$selection_reason
+summary(fit)$inference[c("backend", "inference_tier", "selection_reason")]
 ```
 
 `mode = "auto"` recognised the temporal field, turned the RW1 into its
@@ -308,20 +329,19 @@ confint(fit)
 ### Extracting the temporal trend
 
 The fixed-effect accessors report $`\beta`$, but the trend $`\phi`$ is
-the reason you added the field. A nested fit carries the per-grid
-posterior modes in `$modes`, a matrix with one row per grid point and
-one column per latent coordinate, ordered as `[fixed effects, field]`.
-It also carries the grid `$weights`. The grid-marginalized value of the
-field at time $`u`$ is the weight-averaged mode in the column for that
-time point.
+the reason you added the field.
+[`tulpa_outer_grid()`](https://gillescolling.com/tulpa/reference/tulpa_outer_grid.md)
+returns a nested fit’s grid: the per-grid posterior modes in `modes`, a
+matrix with one row per grid point and one column per latent coordinate,
+ordered as `[fixed effects, field]`, and the normalized grid `weights`.
+The grid-marginalized value of the field at time $`u`$ is the
+weight-averaged mode in the column for that time point.
 
 ``` r
 
-w     <- fit$weights / sum(fit$weights)
-nf    <- fit$n_fixed
-phi_hat <- vapply(seq_len(T_pts),
-                  function(u) sum(w * fit$modes[, nf + u]),
-                  numeric(1))
+g       <- tulpa_outer_grid(fit)
+nf      <- g$n_fixed
+phi_hat <- colSums(g$weights * g$modes)[nf + seq_len(T_pts)]
 round(head(phi_hat), 3)
 ```
 
@@ -331,7 +351,7 @@ smoothing precision rather than fixing it at a point, which is the whole
 reason for the grid. This recipe is identical for a spatial field; only
 the meaning of the index changes.
 
-The column ordering is the key to reading `$modes`. Each row is one grid
+The column ordering is the key to reading `modes`. Each row is one grid
 point’s joint posterior mode for the latent vector, laid out as the
 fixed effects first and the field after, so column `nf + u` is always
 time point $`u`$ regardless of how many grid points the integrator
@@ -368,15 +388,13 @@ round(cor(phi_hat, trend), 3)
 ```
 
 The smoothing precision $`\tau`$ controls how tightly the walk hugs a
-straight line, and the fit reports its posterior summary directly.
-`$theta_mean` is the posterior mean of the field’s hyperparameter, with
-`$theta_ci_lo` and `$theta_ci_hi` bounding it.
+straight line, and [`summary()`](https://rdrr.io/r/base/summary.html)
+reports its posterior in the `hyperparameters` table: the posterior mean
+of the field’s hyperparameter, with `ci_lo` and `ci_hi` bounding it.
 
 ``` r
 
-c(mean = fit$theta_mean,
-  lower = fit$theta_ci_lo,
-  upper = fit$theta_ci_hi)
+summary(fit)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
 ```
 
 A larger $`\tau`$ means a stiffer walk. Here the interval excludes the
@@ -432,7 +450,7 @@ error sits at roughly the prior width.
 
 ``` r
 
-summary(fit)["(Intercept)", c("estimate", "std.error")]
+coef(summary(fit))["(Intercept)", c("estimate", "std.error")]
 ```
 
 That large standard error is a feature of the parameterisation, not a
@@ -521,13 +539,13 @@ m_nt <- tulpa(y ~ x, data = df, family = "binomial", mode = "laplace")
 as.numeric(logLik(m_nt))
 ```
 
-A nested fit integrates over a grid of $`\tau`$, so its `$log_marginal`
-is a vector with one entry per grid point. Each point also stands for a
-cell of the grid, and the cell’s prior mass (`$log_quad`) is part of the
-integral, so the evidence is the log of the mass-weighted sum over the
-cells rather than of the plain sum.
-[`logLik()`](https://rdrr.io/r/stats/logLik.html) returns it, and since
-both fits now report a log evidence,
+A nested fit integrates over a grid of $`\tau`$, so its log marginal
+likelihood (`tulpa_outer_grid(fit)$log_marginal`) is a vector with one
+entry per grid point. Each point also stands for a cell of the grid, and
+the cell’s prior mass is part of the integral, so the evidence is the
+log of the mass-weighted sum over the cells rather than of the plain
+sum. [`logLik()`](https://rdrr.io/r/stats/logLik.html) returns it, and
+since both fits now report a log evidence,
 [`compare_models()`](https://gillescolling.com/tulpa/reference/compare_models.md)
 ranks them on it directly.
 
@@ -575,14 +593,14 @@ coef(fitg)["x"]
 ```
 
 The slope again recovers near $`0.9`$, and the same field-extraction
-recipe lifts the trend out of `fitg$modes`. For the Gaussian family the
-dispersion `phi` is the residual variance, conditioned on rather than
-estimated on this path, so the value you pass should reflect the noise
-you expect; here it matches the `sd = 0.5` the data were drawn with. The
-mechanics are otherwise unchanged. The same chain ICAR block, the same
-grid over $`\tau`$, the same marginalized slope. Only the inner
-likelihood differs, which is the point of routing every family through
-one integrator.
+recipe lifts the trend out of `tulpa_outer_grid(fitg)$modes`. For the
+Gaussian family the dispersion `phi` is the residual variance,
+conditioned on rather than estimated on this path, so the value you pass
+should reflect the noise you expect; here it matches the `sd = 0.5` the
+data were drawn with. The mechanics are otherwise unchanged. The same
+chain ICAR block, the same grid over $`\tau`$, the same marginalized
+slope. Only the inner likelihood differs, which is the point of routing
+every family through one integrator.
 
 ## Practical guidance
 

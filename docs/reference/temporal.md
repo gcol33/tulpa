@@ -6,6 +6,12 @@ model with temporal specification.
 ## Usage
 
 ``` r
+# S3 method for class 'tulpa_temporal_field_fit'
+print(x, ...)
+
+# S3 method for class 'tulpa_temporal_field'
+print(x, ...)
+
 temporal(
   object,
   component = "all",
@@ -22,9 +28,29 @@ temporal(
   probs = c(0.025, 0.5, 0.975),
   ...
 )
+
+# S3 method for class 'tulpa_temporal_posterior'
+print(x, ...)
+
+# S3 method for class 'tulpa_temporal_posterior'
+summary(object, probs = c(0.025, 0.5, 0.975), ...)
+
+# S3 method for class 'tulpa_temporal_summary'
+print(x, ...)
 ```
 
 ## Arguments
+
+- x:
+
+  A `temporal()` field specification, the fit
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
+  returns for one, a `tulpa_temporal_posterior` or a
+  `tulpa_temporal_summary`.
+
+- ...:
+
+  Ignored
 
 - object:
 
@@ -44,13 +70,15 @@ temporal(
 
   Quantiles to compute if `summary = TRUE`.
 
-- ...:
-
-  Ignored
-
 ## Value
 
 A `tulpa_temporal_posterior` object
+
+[`summary()`](https://rdrr.io/r/base/summary.html) on a
+`tulpa_temporal_posterior` returns a `tulpa_temporal_summary` data frame
+with one row per time point (per component for multi-scale fits),
+holding the posterior mean, SD and requested quantiles of the temporal
+effect.
 
 ## Details
 
@@ -66,6 +94,21 @@ smooth temporal level (the intercept column) plus a temporally varying
 slope on each covariate column. `structure` is one of `"rw1"` (default),
 `"rw2"`, or `"ar1"`; only the double bar `||` (independent fields) is
 supported.
+
+On a sampler fit the posterior is the field's own draws. On a
+nested-Laplace fit it is the Gaussian mixture the outer grid defines:
+each hyperparameter cell contributes its conditional mode and marginal
+variance, weighted by the cell's posterior weight, and
+[`summary()`](https://rdrr.io/r/base/summary.html) reports that
+mixture's exact mean, SD and quantiles. The `draws` of such a fit are
+sampled from the same mixture, each from its cell's joint Gaussian, so
+they carry the correlation between time points as well as each point's
+marginal, and a quantity derived from them (a trend, a difference
+between two times) has the right spread. A field so large that its
+per-cell covariance was not retained (more than 4 million values over
+the grid) is drawn with independent time points within each cell
+instead. The `time` column of the summary holds the time values the
+field was fitted on.
 
 ## See also
 
@@ -88,10 +131,12 @@ fit <- tulpa(
   mode = "exact",
   control = list(n_iter = 200L, n_warmup = 100L, seed = 1L)
 )
+#> Warning: tulpa(): the 'hmc' chain has not converged -- log_sigma2_short: Rhat 1.67, bulk-ESS 7; log_sigma2_trend: Rhat 1.52, bulk-ESS 8; log_sigma2_seasonal: Rhat 1.23, bulk-ESS 13; logit_rho_short: Rhat 1.23, bulk-ESS 15. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
 
 # Extract all temporal effects
 temp_post <- temporal(fit)
 summary(temp_post)
+#> Temporal effect posterior summary, 400 posterior draws
 #>                component time_idx time          mean         sd       q2.5
 #> trend.1            trend        1    1  0.1315250833 0.36912178 -0.6253769
 #> trend.2            trend        2    2  0.1367559885 0.30676160 -0.5034162

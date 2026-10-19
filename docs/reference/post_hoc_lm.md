@@ -14,6 +14,9 @@ post_hoc_lm(
   n_boot = 1000L,
   probs = c(0.025, 0.975)
 )
+
+# S3 method for class 'post_hoc_lm'
+print(x, ...)
 ```
 
 ## Arguments
@@ -37,6 +40,14 @@ post_hoc_lm(
 - probs:
 
   Quantile probabilities for bootstrap CI (default 0.025, 0.975).
+
+- x:
+
+  A `post_hoc_lm` result.
+
+- ...:
+
+  Ignored.
 
 ## Value
 

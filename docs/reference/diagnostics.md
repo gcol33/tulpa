@@ -49,6 +49,9 @@ diagnostics(
   ...
 )
 
+# S3 method for class 'laplace_diagnostics'
+print(x, ...)
+
 # S3 method for class 'sbc'
 diagnostics(fit, ...)
 ```
@@ -91,6 +94,10 @@ diagnostics(fit, ...)
   Optional [`sbc()`](https://gillescolling.com/tulpa/reference/sbc.md)
   result for the same model, whose calibration verdict is attached to
   the returned table.
+
+- x:
+
+  A `laplace_diagnostics` table returned by `diagnostics()`.
 
 ## Value
 
@@ -253,10 +260,19 @@ full latent field is not scored by default on a large spatial field.
 ## Approximation-reliability table columns
 
 The table has one row per parameter – `parameter`, `mean`, `sd`,
-`n_draws`, `mcse_mean` – carrying attributes. There is deliberately no
-`rhat` / `ess_*` column: those are what the draws-provenance gate
-withholds on a non-chain fit, and this table is where it dispatches
-instead.
+`n_draws`, `mcse_mean`, `moment_source` – carrying attributes. There is
+deliberately no `rhat` / `ess_*` column: those are what the
+draws-provenance gate withholds on a non-chain fit, and this table is
+where it dispatches instead. Where the draws were sampled from an
+outer-grid mixture the fit carries (`attr(draws, "grid_mixture")`,
+stamped by
+[`tulpa_posterior_draws()`](https://gillescolling.com/tulpa/reference/tulpa_posterior_draws.md)
+on a single-block fit, by
+[`tulpa_re_cov_nested()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_nested.md)
+and by model packages), `mean` / `sd` are that mixture's exact moments,
+`mcse_mean` is 0 and `moment_source` is `"mixture_moments"`; otherwise
+they are the draw moments, `mcse_mean` is `sd / sqrt(n_draws)` and
+`moment_source` is `"draws"`.
 
 - `pareto_k`:
 
@@ -278,6 +294,24 @@ instead.
 - `pareto_k_is_ess`:
 
   importance-sampling ESS on the smoothed weights.
+
+- `pareto_k_ci_low`, `pareto_k_ci_high`, `pareto_k_se_boot`,
+  `pareto_k_band_confident`, `diagnose_draws`:
+
+  the bootstrap interval of the outer k-hat, its standard error, whether
+  the interval sits inside one band, and the draw count it used; present
+  when the fit ran the bootstrap.
+
+- `k_quality_requested`, `k_quality_reached`, `k_quality_best`,
+  `k_quality_reason`, `k_quality_rounds`:
+
+  the outcome of a `control$k_quality` request; present when one was
+  made.
+
+- `inner_skew`, `inner_skew_idx`:
+
+  the per-index inner-Laplace skewness `gamma_3` and the latent indices
+  it was probed at; present when the probe ran.
 
 - `ess_grid`, `n_grid`, `rel_ess_grid`, `max_weight`:
 
@@ -472,8 +506,8 @@ diagnostics(smc)
 #>   Monte-Carlo error of each reported mean (not chain mixing:
 #>   Rhat and ESS are not defined for these draws).
 #> 
-#>     parameter      mean         sd n_draws   mcse_mean
-#> 1 (Intercept) 0.5126089 0.08280063    1000 0.002618386
-#> 2           x 0.3939599 0.10680048    1000 0.003377328
+#>     parameter      mean        sd n_draws   mcse_mean moment_source
+#> 1 (Intercept) 0.5307693 0.1040623    1000 0.003290738         draws
+#> 2           x 0.3061802 0.1214444    1000 0.003840409         draws
 # }
 ```

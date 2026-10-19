@@ -36,6 +36,9 @@ fit_st_nested(
   hsgp_m = 6L,
   hsgp_c = 1.5
 )
+
+# S3 method for class 'tulpa_st_nested'
+print(x, ...)
 ```
 
 ## Arguments
@@ -158,10 +161,10 @@ fit_st_nested(
   `"hsgp"`/`"nngp"`, same reason), `rho_spatial` (the proper-CAR mixing
   value the `car_proper` axis is held at, default
   `.NL_ST_GRID$rho_spatial`; unrelated to bym2's own integrated
-  `rho_spatial` grid axis) and `within_cell` (`"box_uniform"` /
-  `"chord"`, the within-cell construction the reported per-axis
-  intervals are read with; defaults to `.NL_DIAG$within_cell`, as on
-  every other nested door).
+  `rho_spatial` grid axis) and `within_cell` (`"log_quadratic"` /
+  `"box_uniform"` / `"chord"`, the within-cell construction the reported
+  per-axis intervals are read with; defaults to `.NL_DIAG$within_cell`,
+  as on every other nested door).
 
   For `spatial_type = "hsgp"`/`"nngp"`, the spatial axes are the field
   variance (`sigma2`) paired with the lengthscale (`lengthscale`) or
@@ -225,6 +228,14 @@ fit_st_nested(
   Hilbert-space GP basis size (per dimension, default 6) and boundary
   factor (default 1.5), `spatial_type = "hsgp"` only – the same
   parameterisation and defaults as `spatial_gp(approx = "hsgp")`.
+
+- x:
+
+  A `fit_st_nested()` fit.
+
+- ...:
+
+  Ignored.
 
 ## Value
 

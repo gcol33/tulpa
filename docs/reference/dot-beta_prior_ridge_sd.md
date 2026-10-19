@@ -1,4 +1,4 @@
-# Resolve a `beta_prior = list(mean, sd)` to a single ridge SD.
+# Resolve a `beta_prior = list(mean, sd)` to a single ridge SD
 
 For the fitters whose fixed-effect prior is a mean-zero Gaussian ridge
 with a scalar SD (EP, multinomial, ordinal): validates the unified

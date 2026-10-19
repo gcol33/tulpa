@@ -41,3 +41,11 @@ Nothing: the call always signals an error.
 [`spatial_rsr()`](https://gillescolling.com/tulpa/reference/spatial_rsr.md),
 [`temporal_rw1()`](https://gillescolling.com/tulpa/reference/temporal_rw1.md),
 [`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md)
+
+## Examples
+
+``` r
+# No backend fits a restricted temporal field, so the constructor refuses:
+try(temporal_rtr(temporal_rw1("year"), ~ x))
+#> Error : Restricted temporal regression is not fitted by any tulpa backend: no temporal solver applies the (I - P_X) projection, so an RTR specification would fit as the unrestricted temporal model. Use spatial_rsr() for the spatial analogue, which the binomial Polya-Gamma Gibbs sampler carries.
+```

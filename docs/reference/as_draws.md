@@ -92,10 +92,10 @@ fit <- tulpa(y ~ x, data = df, family = "poisson")
 if (requireNamespace("posterior", quietly = TRUE)) {
   posterior::summarise_draws(as_draws(fit))
 }
-#> # A tibble: 2 × 10
+#> # A tibble: 2 x 10
 #>   variable     mean median     sd    mad    q5   q95  rhat ess_bulk ess_tail
 #>   <chr>       <dbl>  <dbl>  <dbl>  <dbl> <dbl> <dbl> <dbl>    <dbl>    <dbl>
-#> 1 (Intercept) 0.549  0.549 0.0883 0.0831 0.398 0.685 1.00      433.     457.
-#> 2 x           0.293  0.295 0.0886 0.0938 0.141 0.441 1.000     345.     485.
+#> 1 (Intercept) 0.556  0.558 0.0864 0.0844 0.419 0.696  1.00     589.     756.
+#> 2 x           0.290  0.296 0.0899 0.0896 0.140 0.435  1.01     599.     626.
 # }
 ```

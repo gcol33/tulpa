@@ -16,6 +16,9 @@ temporal_multiscale(
   group_var = NULL,
   shared = NULL
 )
+
+# S3 method for class 'tulpa_temporal_multiscale'
+print(x, ...)
 ```
 
 ## Arguments
@@ -50,6 +53,14 @@ temporal_multiscale(
   Whether the effect is shared across processes in a multi-process
   model. `NULL` (default) shares it; `FALSE` fits process-specific
   effects and emits a warning.
+
+- x:
+
+  A `tulpa_temporal_multiscale` specification.
+
+- ...:
+
+  Ignored.
 
 ## Value
 

@@ -1,4 +1,4 @@
-# Latent Factor Specification for Unmeasured Confounders
+# Latent factor specification for unmeasured confounders
 
 Specify latent factors to capture shared unmeasured confounders between
 model processes. Latent factors are particularly useful when you suspect

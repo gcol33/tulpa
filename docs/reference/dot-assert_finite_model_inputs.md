@@ -1,4 +1,4 @@
-# Reject non-finite fitting inputs.
+# Reject non-finite fitting inputs
 
 The design is built with `na.action = na.pass`, so a missing predictor
 or response survives into `X` / `y`. No fitter drops incomplete cases,

@@ -1,4 +1,4 @@
-# Proper-CAR precision Q = tau \* (D - rho W) at fixed (tau, rho).
+# Proper-CAR precision Q = tau \* (D - rho W) at fixed (tau, rho)
 
 D is the diagonal degree matrix (neighbour counts) and W the adjacency,
 so Q has the same nonzero structure as the ICAR precision with rho

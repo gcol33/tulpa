@@ -1,4 +1,4 @@
-# n_obs x n_re_groups indicator design for an iid RE block.
+# n_obs x n_re_groups indicator design for an iid RE block
 
 `re_idx` is the 1-based per-observation group index. Observations whose
 group falls outside `1:n_re_groups` contribute no RE column, matching

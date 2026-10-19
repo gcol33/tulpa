@@ -36,3 +36,13 @@ Updated object with indices computed.
 
 [`validate_gp()`](https://gillescolling.com/tulpa/reference/validate_gp.md),
 [`temporal_multiscale()`](https://gillescolling.com/tulpa/reference/temporal_multiscale.md)
+
+## Examples
+
+``` r
+tm <- temporal_multiscale("t", trend = "rw1", seasonal = 12)
+tm <- validate_temporal_multiscale(tm, data.frame(t = 1:36))
+class(tm)
+#> [1] "tulpa_temporal_multiscale" "tulpa_temporal"           
+#> [3] "list"                     
+```

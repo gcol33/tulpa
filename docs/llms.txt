@@ -1,418 +1,205 @@
 # tulpa
 
-*hierarchical Bayesian models, approximated then corrected*
+*templated unified latent process approximations*
 
-[![Lifecycle:
-experimental](https://lifecycle.r-lib.org/articles/figures/lifecycle-experimental.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
-[![License:
-MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![R \>=
-4.1](https://img.shields.io/badge/R-%3E%3D%204.1-blue.svg)](https://cran.r-project.org/)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&logoColor=white)](https://en.cppreference.com/cpp/17)
+tulpa fits Bayesian hierarchical models in R, including models for
+counts, proportions, repeated measurements, and observations distributed
+across space or time.
 
-**A Bayesian hierarchical modelling engine that splits the posterior: a
-deterministic approximation (Laplace, EP, VI, Pathfinder) handles the
-well-behaved Gaussian-latent blocks, and exact MCMC corrects only the
-directions where that approximation is biased.** Autodiff, the samplers,
-and the spatial / temporal / covariance machinery are templated C++.
+A formula describes how measured predictors and unobserved effects
+contribute to the response. The engine combines these effects with an
+observation distribution and fits the model using nested Laplace
+approximation or Markov chain Monte Carlo (MCMC). Its numerical routines
+are written in templated C++. The result includes posterior estimates,
+uncertainty intervals, and diagnostics that help you assess the fit.
 
-Two established tools sit at opposite ends. INLA fits these models with
-fast deterministic approximations and applies no exact correction. Stan
-runs exact MCMC and pays the full sampling price on every block,
-including the many a deterministic approximation handles exactly.
-`tulpa` nests the approximation over the Gaussian-latent structure, then
-debiases only the directions where it is wrong. The deterministic body
-carries most of the posterior; the MCMC correction runs over the
-residual directions alone, a low-dimensional remainder — so the cost
-stays near a deterministic approximation instead of scaling like full
-MCMC over the whole model, while the calibration matches exact MCMC
-where it counts.
+tulpa supports:
+
+- Random intercepts and slopes, including uncertainty in their variances
+  and correlations.
+- Smooth covariate effects, spatial fields, temporal processes, and
+  combinations of these structures.
+- Deterministic approximations, MCMC sampling, and correction methods
+  selected through the same fitting function.
+- Model-specific observation likelihoods and custom latent processes
+  supplied through R or C++ interfaces.
+
+The [calibration
+article](https://gillescolling.com/tulpa/articles/sbc.html) shows how to
+assess posterior calibration through repeated simulations. [Reliability
+diagnostics](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html)
+explain what can be checked on an individual fit. The package is
+experimental and its interface may change.
+
+## Installation
+
+Install from r-universe:
+
+``` r
+
+install.packages(
+  "tulpa",
+  repos = c("https://gcol33.r-universe.dev",
+            "https://cloud.r-project.org")
+)
+```
+
+Source installations require a C++17 compiler and the build tools for R.
+
+| Operating system | Build tools |
+|:---|:---|
+| Windows | [Rtools](https://cran.r-project.org/bin/windows/Rtools/) matching your R version |
+| macOS | Xcode Command Line Tools: `xcode-select --install` |
+| Debian / Ubuntu | `r-base-dev` and a C++17 compiler |
+
+Check the toolchain before installing the development version:
+
+``` r
+
+# install.packages(c("pkgbuild", "pak"))
+pkgbuild::has_build_tools(debug = TRUE)
+pak::pak("gcol33/tulpa")
+```
+
+The build links against R’s BLAS and LAPACK libraries for matrix
+operations. Package dependencies, including `tulpaMesh` for spatial mesh
+construction, are installed with tulpa. R’s [installation
+guide](https://cran.r-project.org/doc/manuals/r-release/R-admin.html)
+describes the platform toolchains.
+
+### Optional multithreading
+
+The nested-Laplace fitters expose OpenMP thread controls through their
+`control` argument. The
+[single-process](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.html)
+and
+[joint-model](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.html)
+references describe the available controls. The build uses the OpenMP
+flags provided by R’s toolchain.
+
+On macOS, OpenMP requires a runtime compatible with the compiler used to
+build R packages. Follow the R project’s [macOS OpenMP
+setup](https://mac.r-project.org/openmp/) before compiling tulpa with
+OpenMP enabled.
+
+## Usage
+
+1.  Fit a model with
+    [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md).
+2.  Inspect the estimates and inference method with
+    [`summary()`](https://rdrr.io/r/base/summary.html).
+3.  Extract the group effects with
+    [`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md).
+
+The built-in `InsectSprays` data contain insect counts and the spray
+treatment used for each observation. This Poisson model gives each
+treatment a random intercept, estimating its effect relative to the
+overall log count.
 
 ``` r
 
 library(tulpa)
 
-# Poisson counts with a correlated site-level intercept and slope
-set.seed(1)
-site <- rep(seq_len(40), each = 8)
-x    <- rnorm(320)
-b0   <- rnorm(40, 0, 0.7)                          # site intercepts (truth SD 0.7)
-b1   <- rnorm(40, 0, 0.4)                          # site slopes     (truth SD 0.4)
-y    <- rpois(320, exp(0.2 + (0.5 + b1[site]) * x + b0[site]))
-d    <- data.frame(y, x, site = factor(site))
-
-fit <- tulpa(y ~ x + (1 + x | site), data = d, family = "poisson")
-
-fit$selection_reason
-#> "random-slope term(s) present; RE covariance(s) integrated via re_cov_gibbs (1 block(s))"
-
-summary(fit)
-#>             estimate  std.error    2.5%   97.5%
-#> (Intercept)    0.214      0.103  -0.003   0.401
-#> x              0.488      0.087   0.322   0.658
-
-fit$posterior          # the random-effect covariance, marginalized to sigma / rho
-#>   parameter    mean     sd   median   ci_lo   ci_hi
-#>     sigma_1   0.688  0.102    0.678   0.516   0.918   # intercept SD (truth 0.7)
-#>     sigma_2   0.469  0.074    0.461   0.345   0.636   # slope SD     (truth 0.4)
-#>      rho_12  -0.145  0.206   -0.156  -0.523   0.254   # correlation  (truth 0)
-```
-
-`mode = "auto"` picks a backend and records the reason on the fit. The
-random-effect covariance is not a plug-in point estimate: `sigma_1`,
-`sigma_2`, and `rho_12` are read off the joint posterior with full
-credible intervals. The result is a `tulpa_fit` with the usual accessors
-(`coef`, `confint`, `vcov`, `summary`, `tidy`, `glance`, `ranef`) and a
-full diagnostics surface (`diagnostics`, `check_model`, `pp_check`).
-
-## One front door, every backend
-
-[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) is the
-only verb you need. The same call fits a GLMM, a covariate smoother, a
-spatial field, a temporal effect, or a free random-effect covariance;
-`mode` and `control` pick how hard the correctness check runs, without
-changing the front door.
-
-``` r
-
-# Default: auto routes and records why on the fit
-fit <- tulpa(y ~ x + (1 + x | site), data = d, family = "poisson")
-fit$selection_reason
-#> "random-slope term(s) present; RE covariance(s) integrated via re_cov_gibbs (1 block(s))"
-
-# Same model, cheaper deterministic covariance integration (nested Laplace + CCD)
-fit <- tulpa(y ~ x + (1 + x | site), data = d, family = "poisson",
-             control = list(re_cov = "nested"))
-fit$selection_reason
-#> "random-slope term(s) present; RE covariance(s) integrated via re_cov_nested (1 block(s))"
-
-# Drop the correlation: an uncorrelated (diagonal) covariance block
-fit <- tulpa(y ~ x + (1 + x || site), data = d, family = "poisson")
-```
-
-## GLMMs and GAMs
-
-Random effects use `lme4`’s formula grammar and smoothers use `mgcv`’s,
-so a mixed model and an additive model are both
-[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) calls.
-Each fit reports the structure it carries.
-
-``` r
-
-# GLMM: correlated random intercept and slope per site
-fit <- tulpa(y ~ x + (1 + x | site), data = d, family = "poisson",
-             control = list(seed = 1))
-
-VarCorr(fit)
-#>   term        coef        sd    source
-#> 1 site (Intercept) 0.7128243 estimated
-#> 2 site           x 0.4628957 estimated
-```
-
-`source` says where each number came from: `estimated` for a covariance
-the fit determined, `sampled` for a posterior mean over draws,
-`conditioned` for one supplied through `sigma_re`. These are the
-lme4-shaped summary of the mean covariance; the marginalized SDs with
-credible intervals are the `sigma_i` rows of `fit$posterior` above.
-Families cover the counts (Poisson, both negative-binomial
-parameterizations, their truncated forms, and zero-inflated or hurdle
-mixtures through `ziformula`), binomial and beta-binomial, gaussian,
-lognormal, gamma, inverse gaussian, beta, Student-t, and Tweedie.
-`mode = "eb"` estimates the covariance by empirical Bayes and
-`estimate_phi = TRUE` frees the family’s dispersion.
-
-``` r
-
-# GAM: an RW2 smoother over a binned covariate, 20 nodes
-set.seed(2)
-dg   <- data.frame(x = runif(300, -2, 2))
-dg$y <- rpois(300, exp(0.3 + sin(2 * dg$x)))
-
-fit <- tulpa(y ~ s(x, k = 20), data = dg, family = "poisson")
-fit
-#> tulpa nested-Laplace fit
-#>   hyperparameters: tau  (grid: 9 cells)
-#>   outer pareto-k: -0.02 (reliable)
-#>   n_obs: 300
-#>
-#> Fixed effects:
-#>             estimate std.error
-#> (Intercept)   0.2416    0.0803
-#>
-#> Smooth terms:
-#>   term basis nodes
-#> 1 s(x)   RW2    20
-
-head(smooth_effects(fit))   # node-by-node posterior of the smooth
-plot(fit, type = "smooth")  # the fitted curve
-```
-
-Each smoother’s smoothness hyperparameter is integrated by nested
-Laplace, so the fitted curve carries the uncertainty of not knowing how
-smooth it is. `s(x, structure = "rw1")` selects a first-difference walk.
-Smoothers and random effects combine in one formula, the GAMM case,
-where the smoothness is integrated and the random-effect SD is
-conditioned on `sigma_re`:
-
-``` r
-
-fit <- tulpa(y ~ s(x, k = 15) + (1 | site), data = d, family = "poisson",
-             sigma_re = 0.7)
-```
-
-## Tiers encode correctness
-
-Each tier names a correctness guarantee; which code path runs fastest
-depends on the model and the data. `mode = "auto"` chooses between Tier
-1 and Tier 2 and records why. Tier 3 is opt-in.
-
-| Tier   | Guarantee   | Methods                                    |
-|--------|-------------|--------------------------------------------|
-| Tier 1 | Exact MCMC  | HMC/NUTS, MALA, IMH-Laplace, Gibbs         |
-| Tier 2 | Laplace     | Laplace, EM+Laplace, nested Laplace + CCD  |
-| Tier 3 | Variational | Variational inference, Pathfinder (opt-in) |
-
-Correction layers — importance sampling and multiple-imputation / Gibbs
-debiasing — sit on top of a Tier-2 fit and pool through Rubin’s rules.
-Each composition is named for the layer it adds:
-
-- **IMH-Laplace** — Laplace body, Metropolis–Hastings bias correction.
-- **Pathfinder** — L-BFGS mode, Gaussian fit, ELBO scoring.
-- **Nested Laplace + CCD** — inner Laplace, outer hyperparameter
-  integration.
-
-## Latent structure
-
-| Layer     | Choices                                         |
-|-----------|-------------------------------------------------|
-| Spatial   | HSGP, NNGP, ICAR, BYM2, CAR (proper), SPDE, RSR |
-| Temporal  | RW1, RW2, AR1, GP, multiscale                   |
-| Smoothers | RW2, RW1 over a binned covariate, via `s(x)`    |
-| Other     | Random effects, SVC, TVC, latent factors        |
-
-Spatial fields are specified through helpers
-([`spatial_bym2()`](https://gillescolling.com/tulpa/reference/spatial_bym2.md),
-[`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md),
-[`spatial_spde()`](https://gillescolling.com/tulpa/reference/spatial_spde.md),
-…; the Hilbert-space GP is `spatial_gp(approx = "hsgp")`) and temporal
-structure through
-[`temporal_rw1()`](https://gillescolling.com/tulpa/reference/temporal_rw1.md),
-[`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md),
-[`temporal_gp()`](https://gillescolling.com/tulpa/reference/temporal_gp.md),
-and friends.
-
-``` r
-
-# Areal BYM2 field: a spatial(unit) term plus the structure spec
 fit <- tulpa(
-  cases ~ covariate + spatial(region),
-  data    = areal_df,
-  family  = "poisson",
-  spatial = list(type = "bym2", adjacency = W)
+  count ~ (1 | spray),
+  data = InsectSprays,
+  family = "poisson"
 )
-
-# Continuous Gaussian-process field, addressed by coordinates
-fit <- tulpa(
-  y ~ x,
-  data    = point_df,
-  family  = "gaussian",
-  spatial = spatial_gp(~ lon + lat)
-)
+summary(fit)
 ```
-
-This makes the engine useful for spatial and spatio-temporal regression
-(disease mapping, abundance, occupancy), hierarchical models with
-correlated random slopes and free covariances, and workflows where
-calibrated uncertainty matters as much as point estimates.
-
-## Random-effect covariances as inferred quantities
-
-For random-slope terms the engine infers the full posterior of the
-covariance `Sigma` itself — the approximation + debias philosophy
-applied to a free `Sigma`. The `sigma_i` / `rho_ij` table in the
-flagship above is not a point estimate: each derived quantity is
-summarised by marginalising the joint posterior rather than plugging in
-the mode of its components. Three routes share that summary, selectable
-from the front door or callable directly:
-
-- [`tulpa_re_cov_gibbs()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_gibbs.md)
-  — exact debias via Metropolis-within-Gibbs with conjugate
-  inverse-Wishart draws (the auto default for slopes).
-- [`tulpa_re_cov_nested()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_nested.md)
-  — nested-Laplace integration over `Sigma` in log-Cholesky coordinates
-  (`control = list(re_cov = "nested")`).
-- [`tulpa_re_aghq()`](https://gillescolling.com/tulpa/reference/tulpa_re_aghq.md)
-  — deterministic debias via adaptive Gauss–Hermite quadrature.
-
-Correlated `(1 + x | g)`, uncorrelated `(1 + x || g)`, multiple terms,
-and any accompanying `(1 | g)` are each handled as covariance blocks;
-nothing is silently conditioned at a fixed variance.
-
-## Diagnostics
-
-Rhat (improved rank-normalised / folded split-Rhat, Vehtari et
-al. 2021), bulk/tail ESS, and MCSE are implemented natively and
-reproduce `posterior` to ~1e-12, so downstream packages call
-[`tulpa::diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
-directly. For deterministic (non-chain) fits the engine reports Pareto-k̂
-— the accuracy counterpart to Rhat — instead of withholding a vacuous
-convergence pass.
 
 ``` r
 
-summary(fit)
-coef(fit)
 ranef(fit)
-diagnostics(fit)               # Rhat, bulk/tail ESS
-check_model(fit)               # posterior-predictive + residual diagnostics
+#>       term   estimate        sd     conf.low   conf.high  source
+#> 1 spray[A]  0.7386708 0.3870264 -0.017749852  1.48042176 sampled
+#> 2 spray[B]  0.7853605 0.3887216 -0.001892667  1.53329087 sampled
+#> 3 spray[C] -1.1428689 0.4119541 -1.964684002 -0.34034883 sampled
+#> 4 spray[D] -0.3322485 0.3952148 -1.108025514  0.43413875 sampled
+#> 5 spray[E] -0.6733208 0.4057579 -1.476008236  0.09512154 sampled
+#> 6 spray[F]  0.8653154 0.3884234  0.096952610  1.60901019 sampled
 ```
 
-Posterior-predictive checks (`pp_check`, `check_model`), residual tests
-(`pit_residuals`, `test_dispersion`, `test_zero_inflation`), and
-spatial/temporal diagnostics (`moran_i`, `durbin_watson`,
-`tulpa_variogram`) round out the surface.
+Supply a data frame with the response, predictors, and grouping
+variables named in the formula. Choose an observation family appropriate
+to the response. The [data-formatting
+guide](https://gillescolling.com/tulpa/articles/data-formatting.html)
+covers response encodings, grouping variables, and spatial inputs.
 
-## Calibration, validated
+## Random effects, smoothers, and fields
 
-Those diagnostics score one fit. Whether a backend’s posteriors are
-*calibrated* is a question no single fit answers, and coverage answers
-it weakly: counting how often a 95% interval contains the truth reads
-one point of the marginal CDF.
-[`sbc()`](https://gillescolling.com/tulpa/reference/sbc.md) reads the
-whole CDF.
+Formula terms describe the model structure: `(1 | group)` adds random
+intercepts, `(1 + x | group)` adds correlated random intercepts and
+slopes, and `s(x)` adds a smooth covariate effect. Spatial and temporal
+specifications describe dependence between locations or times.
 
-``` r
+[Random slopes and
+covariances](https://gillescolling.com/tulpa/articles/random-slopes.html)
+walks through inference for group-level variances and correlations. The
+[spatial](https://gillescolling.com/tulpa/articles/spatial-models.html)
+and
+[temporal](https://gillescolling.com/tulpa/articles/temporal-models.html)
+articles show how to supply the corresponding structures.
 
-res <- sbc("prior_predictive", simulator = sim, fitter = arms, n_sim = 200)
-res                            # KS, the simultaneous band, the folded read, CRPS
-summary(res, baseline = "map") # paired proper-score ranking, seed by seed
-plot(res, folded = TRUE)       # PIT ECDF difference against the band
-```
+## Inference and diagnostics
 
-Both experiments ship: ordinary SBC averaged over the prior (Talts et
-al. 2018), and calibration conditional on an observed data set
-(Sailynoja et al. 2026), which needs no proper prior. The band is a
-*simultaneous* one, calibrated by bisection against the exact crossing
-probability of the uniform order statistics — a pointwise binomial band
-holds all 100 order statistics together only 44.71% of the time.
-Discrete quantities are randomized within their atom, so a grid
-hyperparameter and a continuous coefficient share one reference. The
-premises each experiment rests on are checked rather than assumed, and
-each guard’s conclusion travels on the result.
+Automatic mode selects an inference method and records its reason on the
+fit. An explicit mode selects MCMC, Laplace approximation, or
+variational inference; variational methods require an explicit choice.
+The [inference
+guide](https://gillescolling.com/tulpa/articles/inference-modes.html)
+describes the methods and the models each supports.
 
-Read the per-fit reliability band as a screen and this as the verdict:
-measured over fifteen configurations, the two disagree in both
-directions — a fit with a clean Pareto-k̂ of 0.196 and both inner scores
-in the `good` band fails calibration at `p = 2.3e-13`, and one with a k̂
-of 1.413 passes at `p = 0.17`. See [Validating
-calibration](https://gillescolling.com/tulpa/articles/sbc.html).
+Diagnostics depend on how the posterior was computed. MCMC fits report
+chain convergence and effective sample sizes. Approximation fits report
+the available integration and inner-approximation checks. The
+[reliability
+guide](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html)
+explains how to interpret these results and their limits.
 
-## Model packages
+## Custom models and processes
 
-`tulpa` ships the engine. Observation likelihoods live in companion
-packages that link against it via `LinkingTo: tulpa`: a model package
-supplies a templated `LikelihoodSpec` and a little data encoding, and
-inherits the spatial, temporal, prior, and inference machinery.
+Companion packages supply observation likelihoods and reuse tulpa’s
+inference and latent structures.
+[tulpaObs](https://github.com/gcol33/tulpaObs) provides models for
+occupancy, abundance, and detection; tulpaRatio provides models for
+ratios, rates, and proportions.
 
-- [tulpaObs](https://github.com/gcol33/tulpaObs) — single-season,
-  dynamic, community, integrated, and JSDM occupancy; abundance;
-  distance sampling; removal; false-positive occupancy; and hurdle-Beta
-  cover.
-- `tulpaRatio` — ratio, rate, and proportion models (numerator /
-  denominator likelihoods on shared latent fields). Release pending.
-
-## Custom latent blocks
-
-User-supplied templated C++ snippets compile against `tulpa`’s autodiff
-types (`A`, `A_r`) and register as new latent structures. Because the
-snippet uses the same AD types as the built-in blocks, custom blocks
-work under every tier including NUTS, with full gradient flow through
-the user code. For a Gaussian GMRF block,
-[`tgmrf()`](https://gillescolling.com/tulpa/reference/tgmrf.md) offers a
-pure-R route: supply `Q(theta)` and `mu(theta)` as closures and the
-engine derives the score and Hessian numerically, with no DSL, parser,
-or codegen
-([`vignette("tgmrf", package = "tulpa")`](https://gillescolling.com/tulpa/articles/tgmrf.md)).
-
-| Interface | Mechanism | Exact-MCMC support |
-|----|----|----|
-| INLA `rgeneric` | R callback, no autodiff | Laplace tier only |
-| INLA `cgeneric` | C function, no autodiff | no |
-| Stan | full DSL with parser + codegen | yes |
-| TMB | templated C++ snippet (CppAD) | yes (closest analog) |
-| **tulpa** | templated C++ snippet, shared AD types | yes — all tiers |
-
-## Installation
-
-``` r
-
-# Current release, built for Windows and macOS
-install.packages("tulpa",
-                 repos = c("https://gcol33.r-universe.dev",
-                           "https://cloud.r-project.org"))
-
-# Development version from GitHub
-install.packages("pak")
-pak::pak("gcol33/tulpa")
-
-# Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
-```
-
-`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
-for SPDE mesh construction). `tulpa` compiles its C++ backend on first
-install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
-tools on macOS, `r-base-dev` on Linux.
+For a custom Gaussian latent process, supply its precision matrix and
+mean through R functions or a compiled C++ definition. The
+[custom-process
+tutorial](https://gillescolling.com/tulpa/articles/tgmrf.html) shows
+both interfaces. The [EM + Laplace
+article](https://gillescolling.com/tulpa/articles/em-laplace.html)
+describes the shared fitting framework for models with unobserved
+observation states.
 
 ## Documentation
 
-Getting started:
+Start with the
+[quickstart](https://gillescolling.com/tulpa/articles/quickstart.html)
+for a complete path from a formula to a fitted model.
 
-- [Quickstart](https://gillescolling.com/tulpa/articles/quickstart.html)
-- [Data
-  formatting](https://gillescolling.com/tulpa/articles/data-formatting.html)
-
-Inference:
-
-- [Inference
-  modes](https://gillescolling.com/tulpa/articles/inference-modes.html)
-- [Priors](https://gillescolling.com/tulpa/articles/priors.html)
-- [Random slopes and free
-  covariances](https://gillescolling.com/tulpa/articles/random-slopes.html)
-- [EM +
-  Laplace](https://gillescolling.com/tulpa/articles/em-laplace.html)
+- [Priors](https://gillescolling.com/tulpa/articles/priors.html):
+  specify prior distributions for coefficients and latent structures.
 - [Model
-  comparison](https://gillescolling.com/tulpa/articles/model-comparison.html)
-- [Reliability and
-  Pareto-k](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html)
-- [Validating calibration: simulation-based
-  calibration](https://gillescolling.com/tulpa/articles/sbc.html)
-
-Latent structure:
-
-- [Spatial
-  models](https://gillescolling.com/tulpa/articles/spatial-models.html)
-- [Temporal
-  models](https://gillescolling.com/tulpa/articles/temporal-models.html)
-
-Extending the engine:
-
-- [Custom GMRF latent
-  blocks](https://gillescolling.com/tulpa/articles/tgmrf.html)
+  comparison](https://gillescolling.com/tulpa/articles/model-comparison.html):
+  compare fitted models and combine predictions.
+- [Calibration](https://gillescolling.com/tulpa/articles/sbc.html):
+  assess posterior calibration through repeated simulations.
 - [Checkpoint and
-  resume](https://gillescolling.com/tulpa/articles/checkpoint.html)
+  resume](https://gillescolling.com/tulpa/articles/checkpoint.html):
+  save and continue sampling runs.
+- [Function reference](https://gillescolling.com/tulpa/reference/):
+  arguments, return values, and examples for the fitting and diagnostic
+  functions.
 
-The [function reference](https://gillescolling.com/tulpa/reference/)
-lists every fitter, accessor, and diagnostic;
-[`?tulpa`](https://gillescolling.com/tulpa/reference/tulpa.md) is the
-front door.
+## Getting help
 
-## Status
-
-Experimental — expect breaking changes. The C++ ABI version
-(`TULPA_ABI_VERSION` in `inst/include/tulpa/model_data.h`) is checked at
-runtime, so a mismatch between `tulpa` and a model package is caught at
-load and reported with a readable error.
+Use [GitHub issues](https://github.com/gcol33/tulpa/issues) for
+questions and bug reports. Include a small reproducible example and the
+output of [`sessionInfo()`](https://rdrr.io/r/utils/sessionInfo.html)
+when reporting a problem.
 
 ## Support
 
@@ -430,19 +217,33 @@ Coffee](https://img.shields.io/badge/-Buy%20me%20a%20coffee-FFDD00?logo=buymeaco
 
 ## License
 
-MIT (see the LICENSE file).
+MIT. See [LICENSE](https://gillescolling.com/tulpa/LICENSE).
 
 ## Citation
 
+To cite the tulpa package in publications, use:
+
+``` text
+Colling G (2026). _tulpa: Templated Unified Library for Posterior
+Approximation in Bayesian Hierarchical Models_. R package version
+0.7.5, <https://github.com/gcol33/tulpa>.
+```
+
+BibTeX:
+
 ``` bibtex
 @Manual{tulpa,
-  author = {Colling, Gilles},
-  title  = {tulpa: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},
-  year   = {2026},
-  note   = {R package version 0.6.0},
-  url    = {https://github.com/gcol33/tulpa}
+  title = {{tulpa}: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},
+  author = {Gilles Colling},
+  year = {2026},
+  note = {R package version 0.7.5},
+  url = {https://github.com/gcol33/tulpa},
 }
 ```
+
+Download the citation as
+[BibTeX](https://gillescolling.com/tulpa/tulpa.bib) or
+[RIS](https://gillescolling.com/tulpa/tulpa.ris).
 
 # Package index
 
@@ -453,6 +254,7 @@ The main fitter, its formula surface, and the mode / family helpers.
 - [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) : Fit
   a tulpa model
 - [`tulpa_parse_formula()`](https://gillescolling.com/tulpa/reference/tulpa_parse_formula.md)
+  [`print(`*`<tulpa_parsed_formula>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_parse_formula.md)
   : Parse a mixed-model formula
 - [`findbars()`](https://gillescolling.com/tulpa/reference/findbars.md)
   : Find all bar terms in a formula's parse tree
@@ -463,12 +265,14 @@ The main fitter, its formula surface, and the mode / family helpers.
 - [`validate_mode()`](https://gillescolling.com/tulpa/reference/validate_mode.md)
   : Validate that a fit used the expected mode
 - [`tulpa_family()`](https://gillescolling.com/tulpa/reference/tulpa_family.md)
+  [`print(`*`<tulpa_family>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_family.md)
   : Construct a minimal tulpa_family for simulation
 - [`tulpa_gaussian()`](https://gillescolling.com/tulpa/reference/tulpa_gaussian.md)
   : Fit a Gaussian linear model via tulpa's generic engine
 - [`tulpa_build_model_data()`](https://gillescolling.com/tulpa/reference/tulpa_build_model_data.md)
   : Build model matrices from a parsed formula
 - [`tulpa_simulate()`](https://gillescolling.com/tulpa/reference/tulpa_simulate.md)
+  [`print(`*`<tulpa_simulate>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_simulate.md)
   : Simulate data from a tulpa model
 
 ## Tier 2 – structured approximations
@@ -479,11 +283,15 @@ Laplace, nested Laplace, and the free-Sigma random-effect backends.
   : Fit a model via Laplace approximation
 - [`tulpa_laplace_beta()`](https://gillescolling.com/tulpa/reference/tulpa_laplace_beta.md)
   : Fit a beta-regression model via Laplace, estimating the precision
-- [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
+- [`print(`*`<tulpa_nested_laplace>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
+  [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
   : Nested Laplace approximation for latent Gaussian models
-- [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md)
+- [`print(`*`<tulpa_nested_laplace_joint>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md)
+  [`print(`*`<tulpa_nested_laplace_joint_multi>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md)
+  [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md)
   : Joint multi-likelihood nested Laplace approximation
 - [`fit_st_nested()`](https://gillescolling.com/tulpa/reference/fit_st_nested.md)
+  [`print(`*`<tulpa_st_nested>`*`)`](https://gillescolling.com/tulpa/reference/fit_st_nested.md)
   : Fit an additive spatiotemporal GLM by nested Laplace
 - [`tulpa_hyper_grid()`](https://gillescolling.com/tulpa/reference/tulpa_hyper_grid.md)
   : Outer hyperparameter-grid integration with a user-supplied inner fit
@@ -501,12 +309,15 @@ Laplace, nested Laplace, and the free-Sigma random-effect backends.
 - [`agq_fit()`](https://gillescolling.com/tulpa/reference/agq_fit.md) :
   Adaptive Gauss-Hermite quadrature for one-RE GLMMs
 - [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md)
-  : Fit a Spatial Model using SPDE Laplace Approximation
+  : Fit a spatial model using SPDE Laplace approximation
 - [`tulpa_ep()`](https://gillescolling.com/tulpa/reference/tulpa_ep.md)
   : Expectation-Propagation fit for a GLM
 - [`tulpa_multinomial()`](https://gillescolling.com/tulpa/reference/tulpa_multinomial.md)
+  [`print(`*`<tulpa_multinomial>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_multinomial.md)
   : Multinomial (nominal K-class) logistic regression via Laplace
 - [`tulpa_ordinal()`](https://gillescolling.com/tulpa/reference/tulpa_ordinal.md)
+  [`coef(`*`<tulpa_ordinal>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_ordinal.md)
+  [`print(`*`<tulpa_ordinal>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_ordinal.md)
   : Ordinal (ordered K-class) cumulative-logit regression via Laplace
 - [`imh_laplace()`](https://gillescolling.com/tulpa/reference/imh_laplace.md)
   : Independence Metropolis-Hastings with Laplace proposal
@@ -529,8 +340,10 @@ Laplace, nested Laplace, and the free-Sigma random-effect backends.
 - [`tulpa_tgmrf()`](https://gillescolling.com/tulpa/reference/tulpa_tgmrf.md)
   : Fit a custom tgmrf latent block
 
-- [`tgmrf()`](https://gillescolling.com/tulpa/reference/tgmrf.md) :
-  User-defined GMRF latent block
+- [`tgmrf()`](https://gillescolling.com/tulpa/reference/tgmrf.md)
+  [`print(`*`<tgmrf>`*`)`](https://gillescolling.com/tulpa/reference/tgmrf.md)
+  [`summary(`*`<tgmrf>`*`)`](https://gillescolling.com/tulpa/reference/tgmrf.md)
+  : User-defined GMRF latent block
 
 - [`tgmrf_cpp()`](https://gillescolling.com/tulpa/reference/tgmrf_cpp.md)
   : User-defined GMRF latent block, compiled C++ backend
@@ -546,7 +359,7 @@ Laplace, nested Laplace, and the free-Sigma random-effect backends.
   : Remove compiled blocks from the tgmrf_cpp() cache
 
 - [`mala()`](https://gillescolling.com/tulpa/reference/mala.md) :
-  Metropolis-Adjusted Langevin Algorithm (MALA)
+  Metropolis-adjusted Langevin algorithm (MALA)
 
 - [`tulpa_integrator()`](https://gillescolling.com/tulpa/reference/tulpa_integrator.md)
   : Select the symplectic integrator for HMC and NUTS
@@ -565,8 +378,10 @@ Laplace, nested Laplace, and the free-Sigma random-effect backends.
 
 Spatial, temporal, and varying-coefficient constructors.
 
-- [`spatial()`](https://gillescolling.com/tulpa/reference/spatial.md) :
-  Areal spatially varying coefficient field
+- [`spatial()`](https://gillescolling.com/tulpa/reference/spatial.md)
+  [`print(`*`<tulpa_spatial_field_fit>`*`)`](https://gillescolling.com/tulpa/reference/spatial.md)
+  [`print(`*`<tulpa_spatial_field>`*`)`](https://gillescolling.com/tulpa/reference/spatial.md)
+  : Areal spatially varying coefficient field
 - [`spatial_car()`](https://gillescolling.com/tulpa/reference/spatial_car.md)
   : CAR / ICAR spatial structure
 - [`spatial_car_proper()`](https://gillescolling.com/tulpa/reference/spatial_car_proper.md)
@@ -574,32 +389,41 @@ Spatial, temporal, and varying-coefficient constructors.
 - [`spatial_bym2()`](https://gillescolling.com/tulpa/reference/spatial_bym2.md)
   : BYM2 spatial structure
 - [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md)
+  [`print(`*`<tulpa_gp>`*`)`](https://gillescolling.com/tulpa/reference/spatial_gp.md)
+  [`print(`*`<tulpa_hsgp>`*`)`](https://gillescolling.com/tulpa/reference/spatial_gp.md)
   : Gaussian process spatial structure (NNGP)
 - [`spatial_multiscale()`](https://gillescolling.com/tulpa/reference/spatial_multiscale.md)
-  : Multi-Scale Gaussian Process spatial structure
+  [`print(`*`<tulpa_multiscale>`*`)`](https://gillescolling.com/tulpa/reference/spatial_multiscale.md)
+  : Multi-scale Gaussian process spatial structure
 - [`spatial_svc()`](https://gillescolling.com/tulpa/reference/spatial_svc.md)
+  [`print(`*`<tulpa_svc>`*`)`](https://gillescolling.com/tulpa/reference/spatial_svc.md)
   : Spatially varying coefficient structure
 - [`spatial_rsr()`](https://gillescolling.com/tulpa/reference/spatial_rsr.md)
-  : Restricted Spatial Regression (RSR)
+  [`print(`*`<tulpa_rsr>`*`)`](https://gillescolling.com/tulpa/reference/spatial_rsr.md)
+  : Restricted spatial regression (RSR)
 - [`spatial_spde()`](https://gillescolling.com/tulpa/reference/spatial_spde.md)
-  : SPDE Spatial Field (Matern via Triangular Mesh)
+  : SPDE spatial field (Matern via triangular mesh)
 - [`spatial_spde_custom()`](https://gillescolling.com/tulpa/reference/spatial_spde_custom.md)
-  : SPDE Spatial Field from Custom Matrices
+  : SPDE spatial field from custom matrices
 - [`temporal_rw1()`](https://gillescolling.com/tulpa/reference/temporal_rw1.md)
-  : RW1 temporal structure (First-order Random Walk)
+  : RW1 temporal structure (first-order random walk)
 - [`temporal_rw2()`](https://gillescolling.com/tulpa/reference/temporal_rw2.md)
-  : RW2 temporal structure (Second-order Random Walk)
+  : RW2 temporal structure (second-order random walk)
 - [`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md)
-  : AR1 temporal structure (First-order Autoregressive)
+  : AR1 temporal structure (first-order autoregressive)
 - [`temporal_ar2()`](https://gillescolling.com/tulpa/reference/temporal_ar2.md)
   : AR(2) temporal latent field (second-order autoregressive)
 - [`temporal_ar()`](https://gillescolling.com/tulpa/reference/temporal_ar.md)
+  [`print(`*`<tulpa_temporal_latent_block>`*`)`](https://gillescolling.com/tulpa/reference/temporal_ar.md)
   : AR(p) temporal latent field (general-order autoregressive)
 - [`temporal_gp()`](https://gillescolling.com/tulpa/reference/temporal_gp.md)
-  : Gaussian Process temporal structure
+  [`print(`*`<tulpa_temporal_gp>`*`)`](https://gillescolling.com/tulpa/reference/temporal_gp.md)
+  : Gaussian process temporal structure
 - [`temporal_multiscale()`](https://gillescolling.com/tulpa/reference/temporal_multiscale.md)
+  [`print(`*`<tulpa_temporal_multiscale>`*`)`](https://gillescolling.com/tulpa/reference/temporal_multiscale.md)
   : Multi-scale temporal structure
 - [`temporal_tvc()`](https://gillescolling.com/tulpa/reference/temporal_tvc.md)
+  [`print(`*`<tulpa_tvc>`*`)`](https://gillescolling.com/tulpa/reference/temporal_tvc.md)
   : Time-varying coefficient structure
 - [`temporal_rtr()`](https://gillescolling.com/tulpa/reference/temporal_rtr.md)
   : Restricted temporal regression (RTR)
@@ -607,17 +431,26 @@ Spatial, temporal, and varying-coefficient constructors.
   : Spatiotemporal interaction specifications for tulpa
 - [`spatiotemporal_gp()`](https://gillescolling.com/tulpa/reference/spatiotemporal_gp.md)
   : Non-separable spatiotemporal GP
-- [`svc()`](https://gillescolling.com/tulpa/reference/svc.md) : Extract
-  spatially-varying coefficients from a fitted model
-- [`tvc()`](https://gillescolling.com/tulpa/reference/tvc.md) : Extract
-  temporally-varying coefficients from a fitted model
+- [`svc()`](https://gillescolling.com/tulpa/reference/svc.md)
+  [`summary(`*`<tulpa_svc_posterior>`*`)`](https://gillescolling.com/tulpa/reference/svc.md)
+  [`print(`*`<tulpa_svc_posterior>`*`)`](https://gillescolling.com/tulpa/reference/svc.md)
+  [`print(`*`<tulpa_svc_summary>`*`)`](https://gillescolling.com/tulpa/reference/svc.md)
+  : Extract spatially-varying coefficients from a fitted model
+- [`tvc()`](https://gillescolling.com/tulpa/reference/tvc.md)
+  [`print(`*`<tulpa_tvc_posterior>`*`)`](https://gillescolling.com/tulpa/reference/tvc.md)
+  [`print(`*`<tulpa_tvc_summary>`*`)`](https://gillescolling.com/tulpa/reference/tvc.md)
+  [`summary(`*`<tulpa_tvc_posterior>`*`)`](https://gillescolling.com/tulpa/reference/tvc.md)
+  : Extract temporally-varying coefficients from a fitted model
 - [`latent()`](https://gillescolling.com/tulpa/reference/latent.md) :
   Mark an expression as a latent block in a tulpa formula
 - [`latent_factor()`](https://gillescolling.com/tulpa/reference/latent_factor.md)
+  [`print(`*`<tulpa_latent>`*`)`](https://gillescolling.com/tulpa/reference/latent_factor.md)
   : Create a latent factor specification
 - [`adjacency()`](https://gillescolling.com/tulpa/reference/adjacency.md)
+  [`print(`*`<tulpa_adjacency>`*`)`](https://gillescolling.com/tulpa/reference/adjacency.md)
   : Construct a spatial adjacency graph for areal models
 - [`check_adjacency()`](https://gillescolling.com/tulpa/reference/check_adjacency.md)
+  [`print(`*`<tulpa_adjacency_check>`*`)`](https://gillescolling.com/tulpa/reference/check_adjacency.md)
   : Validate a spatial adjacency matrix
 - [`node_index()`](https://gillescolling.com/tulpa/reference/node_index.md)
   : Map cell identifiers to graph node indices
@@ -636,6 +469,16 @@ Spatial, temporal, and varying-coefficient constructors.
 The prior surface and the individual prior builders.
 
 - [`tulpa_priors()`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
+  [`print(`*`<tulpa_priors>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
+  [`print(`*`<tulpa_prior>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
+  [`format(`*`<tulpa_prior_normal>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
+  [`format(`*`<tulpa_prior_half_normal>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
+  [`format(`*`<tulpa_prior_half_cauchy>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
+  [`format(`*`<tulpa_prior_gamma>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
+  [`format(`*`<tulpa_prior_exponential>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
+  [`format(`*`<tulpa_prior_beta>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
+  [`format(`*`<tulpa_prior_pc>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
+  [`format(`*`<tulpa_prior>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_priors.md)
   : Prior specification for tulpa models
 
 - [`priors_default()`](https://gillescolling.com/tulpa/reference/priors_default.md)
@@ -675,6 +518,7 @@ The prior surface and the individual prior builders.
 ## Methods, criteria, and prediction
 
 - [`tulpa_criteria()`](https://gillescolling.com/tulpa/reference/tulpa_criteria.md)
+  [`print(`*`<tulpa_criteria>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_criteria.md)
   : Model criteria from a pointwise log-likelihood
 - [`pointwise_loglik()`](https://gillescolling.com/tulpa/reference/criteria_doors.md)
   [`dic()`](https://gillescolling.com/tulpa/reference/criteria_doors.md)
@@ -682,6 +526,9 @@ The prior surface and the individual prior builders.
   [`waic(`*`<tulpa_fit>`*`)`](https://gillescolling.com/tulpa/reference/criteria_doors.md)
   [`loo(`*`<tulpa_fit>`*`)`](https://gillescolling.com/tulpa/reference/criteria_doors.md)
   : DIC, CPO, WAIC and PSIS-LOO on a fit
+- [`wbic()`](https://gillescolling.com/tulpa/reference/wbic.md)
+  [`print(`*`<tulpa_wbic>`*`)`](https://gillescolling.com/tulpa/reference/wbic.md)
+  : Widely applicable Bayesian information criterion (WBIC)
 - [`tulpa_kfold()`](https://gillescolling.com/tulpa/reference/tulpa_kfold.md)
   : K-fold cross-validation for a tulpa fit
 - [`tulpa_reloo()`](https://gillescolling.com/tulpa/reference/tulpa_reloo.md)
@@ -703,6 +550,7 @@ The prior surface and the individual prior builders.
 - [`pp_check()`](https://gillescolling.com/tulpa/reference/pp_check.md)
   : Posterior predictive check
 - [`prior_predict()`](https://gillescolling.com/tulpa/reference/prior_predict.md)
+  [`print(`*`<tulpa_prior_predict>`*`)`](https://gillescolling.com/tulpa/reference/prior_predict.md)
   : Prior predictive simulation
 - [`reexports`](https://gillescolling.com/tulpa/reference/reexports.md)
   [`tidy`](https://gillescolling.com/tulpa/reference/reexports.md)
@@ -715,6 +563,13 @@ Accessors for a fitted model: the coefficient surface, the posterior
 draws in whatever representation the backend produced, and the extracted
 latent effects.
 
+- [`print(`*`<tulpa_fit>`*`)`](https://gillescolling.com/tulpa/reference/summary.tulpa_fit.md)
+  [`summary(`*`<tulpa_fit>`*`)`](https://gillescolling.com/tulpa/reference/summary.tulpa_fit.md)
+  [`coef(`*`<summary.tulpa_fit>`*`)`](https://gillescolling.com/tulpa/reference/summary.tulpa_fit.md)
+  [`print(`*`<summary.tulpa_fit>`*`)`](https://gillescolling.com/tulpa/reference/summary.tulpa_fit.md)
+  : Summarize and print a tulpa fit
+- [`tulpa_fit_summary()`](https://gillescolling.com/tulpa/reference/tulpa_fit_summary.md)
+  : Build the summary of a tulpa fit around a coefficient table
 - [`fixef()`](https://gillescolling.com/tulpa/reference/fixef.md) :
   Fixed-effect coefficients (lme4-compatible)
 - [`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md) :
@@ -727,6 +582,8 @@ latent effects.
   : MCMC chain draws from a fit
 - [`tulpa_posterior_draws()`](https://gillescolling.com/tulpa/reference/tulpa_posterior_draws.md)
   : Posterior draws from a nested-Laplace fit
+- [`tulpa_outer_grid()`](https://gillescolling.com/tulpa/reference/tulpa_outer_grid.md)
+  : The outer hyperparameter grid of a nested-Laplace fit
 - [`tulpa_draws_array()`](https://gillescolling.com/tulpa/reference/tulpa_draws_array.md)
   : Posterior draws as a 3D array
 - [`as_draws()`](https://gillescolling.com/tulpa/reference/as_draws.md)
@@ -735,12 +592,20 @@ latent effects.
   [`as_draws_df()`](https://gillescolling.com/tulpa/reference/as_draws.md)
   [`as_draws_rvars()`](https://gillescolling.com/tulpa/reference/as_draws.md)
   : Posterior draws in the posterior package's format
-- [`temporal()`](https://gillescolling.com/tulpa/reference/temporal.md)
+- [`print(`*`<tulpa_temporal_field_fit>`*`)`](https://gillescolling.com/tulpa/reference/temporal.md)
+  [`print(`*`<tulpa_temporal_field>`*`)`](https://gillescolling.com/tulpa/reference/temporal.md)
+  [`temporal()`](https://gillescolling.com/tulpa/reference/temporal.md)
+  [`print(`*`<tulpa_temporal_posterior>`*`)`](https://gillescolling.com/tulpa/reference/temporal.md)
+  [`summary(`*`<tulpa_temporal_posterior>`*`)`](https://gillescolling.com/tulpa/reference/temporal.md)
+  [`print(`*`<tulpa_temporal_summary>`*`)`](https://gillescolling.com/tulpa/reference/temporal.md)
   : Extract temporal effects from a fitted model
 - [`spatiotemporal_effects()`](https://gillescolling.com/tulpa/reference/spatiotemporal_effects.md)
+  [`print(`*`<tulpa_st_summary>`*`)`](https://gillescolling.com/tulpa/reference/spatiotemporal_effects.md)
   : Extract spatiotemporal effects from fitted model
 - [`smooth_effects()`](https://gillescolling.com/tulpa/reference/smooth_effects.md)
   : Extract fitted covariate smooths
+- [`field_effects()`](https://gillescolling.com/tulpa/reference/field_effects.md)
+  : Spatial field effects per unit
 - [`latent_factors()`](https://gillescolling.com/tulpa/reference/latent_factors.md)
   : Extract latent factor posteriors from fit
 
@@ -751,25 +616,32 @@ deterministic ones, and the residual / goodness-of-fit surface both
 share.
 
 - [`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
+  [`print(`*`<laplace_diagnostics>`*`)`](https://gillescolling.com/tulpa/reference/diagnostics.md)
   : Posterior diagnostics for a fitted model
 - [`check_diagnostics()`](https://gillescolling.com/tulpa/reference/check_diagnostics.md)
   : Quick convergence check
 - [`diagnostic_summary()`](https://gillescolling.com/tulpa/reference/diagnostic_summary.md)
-  : Comprehensive Diagnostic Summary
+  [`print(`*`<tulpa_diagnostic_summary>`*`)`](https://gillescolling.com/tulpa/reference/diagnostic_summary.md)
+  : Comprehensive diagnostic summary
+- [`energy_bfmi()`](https://gillescolling.com/tulpa/reference/energy_bfmi.md)
+  : Energy Bayesian Fraction of Missing Information (E-BFMI)
 - [`select_main_params()`](https://gillescolling.com/tulpa/reference/select_main_params.md)
   : Select the "main" model parameters for diagnostic display
 - [`n_divergent()`](https://gillescolling.com/tulpa/reference/n_divergent.md)
   : Number of divergent transitions
 - [`geweke_test()`](https://gillescolling.com/tulpa/reference/geweke_test.md)
-  : Geweke Convergence Test
+  [`print(`*`<tulpa_geweke>`*`)`](https://gillescolling.com/tulpa/reference/geweke_test.md)
+  : Geweke convergence test
 - [`moran_i()`](https://gillescolling.com/tulpa/reference/moran_i.md) :
   Moran's I test for spatial autocorrelation in residuals
 - [`durbin_watson()`](https://gillescolling.com/tulpa/reference/durbin_watson.md)
   : Durbin-Watson test for temporal autocorrelation
 - [`tulpa_variogram()`](https://gillescolling.com/tulpa/reference/tulpa_variogram.md)
+  [`plot(`*`<tulpa_variogram>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_variogram.md)
+  [`print(`*`<tulpa_variogram>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_variogram.md)
   : Empirical semivariogram of residuals
 - [`pit_residuals()`](https://gillescolling.com/tulpa/reference/pit_residuals.md)
-  : PIT (Probability Integral Transform) residuals
+  : PIT (probability integral transform) residuals
 - [`tulpa_pit()`](https://gillescolling.com/tulpa/reference/tulpa_pit.md)
   : Probability integral transform from a predictive CDF
 - [`test_uniformity()`](https://gillescolling.com/tulpa/reference/test_uniformity.md)
@@ -787,6 +659,7 @@ share.
 - [`temporal_corr()`](https://gillescolling.com/tulpa/reference/temporal_corr.md)
   : Extract temporal correlation parameters from a fitted model
 - [`post_hoc_lm()`](https://gillescolling.com/tulpa/reference/post_hoc_lm.md)
+  [`print(`*`<post_hoc_lm>`*`)`](https://gillescolling.com/tulpa/reference/post_hoc_lm.md)
   : Fit a post-hoc linear model on estimated parameters
 
 ## Calibration
@@ -796,7 +669,9 @@ these score whether an inference algorithm’s posteriors are calibrated
 across the generative model, by reading the whole marginal CDF.
 
 - [`sbc()`](https://gillescolling.com/tulpa/reference/sbc.md)
+  [`print(`*`<sbc>`*`)`](https://gillescolling.com/tulpa/reference/sbc.md)
   [`summary(`*`<sbc>`*`)`](https://gillescolling.com/tulpa/reference/sbc.md)
+  [`print(`*`<sbc_summary>`*`)`](https://gillescolling.com/tulpa/reference/sbc.md)
   [`plot(`*`<sbc>`*`)`](https://gillescolling.com/tulpa/reference/sbc.md)
   : Simulation-based calibration
 - [`sbc_mixture()`](https://gillescolling.com/tulpa/reference/sbc_predictive.md)
@@ -809,19 +684,19 @@ across the generative model, by reading the whole marginal CDF.
 ## Plots
 
 - [`plot_rhat()`](https://gillescolling.com/tulpa/reference/plot_rhat.md)
-  : Plot Rhat Convergence Diagnostic
+  : Plot Rhat convergence diagnostic
 - [`plot_ess()`](https://gillescolling.com/tulpa/reference/plot_ess.md)
-  : Plot Effective Sample Size Diagnostic
+  : Plot effective sample size diagnostic
 - [`plot_acf()`](https://gillescolling.com/tulpa/reference/plot_acf.md)
-  : Plot Autocorrelation Functions
+  : Plot autocorrelation functions
 - [`plot_energy()`](https://gillescolling.com/tulpa/reference/plot_energy.md)
-  : Plot Energy Diagnostic (E-BFMI)
+  : Plot energy diagnostic (E-BFMI)
 - [`plot_divergences()`](https://gillescolling.com/tulpa/reference/plot_divergences.md)
-  : Plot Divergent Transitions
+  : Plot divergent transitions
 - [`plot_pairs()`](https://gillescolling.com/tulpa/reference/plot_pairs.md)
-  : Plot Bivariate Parameter Posteriors (Pairs Plot)
+  : Plot bivariate parameter posteriors (pairs plot)
 - [`plot_diagnostics()`](https://gillescolling.com/tulpa/reference/plot_diagnostics.md)
-  : Diagnostic Plotting Functions for tulpa Models
+  : Diagnostic plotting functions for tulpa models
 - [`plot_map()`](https://gillescolling.com/tulpa/reference/plot_map.md)
   : Plot spatial predictions as a map
 - [`plot_map_panel()`](https://gillescolling.com/tulpa/reference/plot_map_panel.md)
@@ -833,7 +708,7 @@ The node designs the outer hyperparameter integration is laid on, the
 axis-provenance surface, and the small numerical helpers.
 
 - [`ccd_grid()`](https://gillescolling.com/tulpa/reference/ccd_grid.md)
-  : Central Composite Design (CCD) grid for nested-Laplace integration
+  : Central composite design (CCD) grid for nested-Laplace integration
 
 - [`ccd_weights()`](https://gillescolling.com/tulpa/reference/ccd_weights.md)
   : Corrected R-INLA CCD integration weights
@@ -842,6 +717,7 @@ axis-provenance surface, and the small numerical helpers.
   : Map standardised CCD coordinates to physical hyperparameters
 
 - [`hyper_axis_spec()`](https://gillescolling.com/tulpa/reference/hyper_axis_spec.md)
+  [`print(`*`<tulpa_hyper_axis_spec>`*`)`](https://gillescolling.com/tulpa/reference/hyper_axis_spec.md)
   : Describe one outer-grid hyperparameter axis
 
 - [`auto_grid()`](https://gillescolling.com/tulpa/reference/auto_grid.md)
@@ -863,7 +739,7 @@ axis-provenance surface, and the small numerical helpers.
   : Match three cumulants to a skew-normal parameterisation
 
 - [`tulpa_profile()`](https://gillescolling.com/tulpa/reference/tulpa_profile.md)
-  : Profile the inner Laplace solve by phase
+  : Profile a fit by solver phase
 
 - [`tulpa_check_control()`](https://gillescolling.com/tulpa/reference/tulpa_check_control.md)
   :
@@ -874,28 +750,28 @@ axis-provenance surface, and the small numerical helpers.
 
 ### All vignettes
 
-- [Checkpoint and resume long
-  fits](https://gillescolling.com/tulpa/articles/checkpoint.md):
-- [The data a tulpa model
-  expects](https://gillescolling.com/tulpa/articles/data-formatting.md):
-- [EM + Laplace for latent-variable
-  models](https://gillescolling.com/tulpa/articles/em-laplace.md):
+- [UNKNOWN
+  TITLE](https://gillescolling.com/tulpa/articles/checkpoint.md):
+- [UNKNOWN
+  TITLE](https://gillescolling.com/tulpa/articles/data-formatting.md):
+- [UNKNOWN
+  TITLE](https://gillescolling.com/tulpa/articles/em-laplace.md):
 - [Inference modes: the three tiers and how to choose
   one](https://gillescolling.com/tulpa/articles/inference-modes.md):
-- [Comparing tulpa
-  models](https://gillescolling.com/tulpa/articles/model-comparison.md):
+- [UNKNOWN
+  TITLE](https://gillescolling.com/tulpa/articles/model-comparison.md):
 - [Specifying and checking
   priors](https://gillescolling.com/tulpa/articles/priors.md):
 - [Getting started with
   tulpa](https://gillescolling.com/tulpa/articles/quickstart.md):
-- [Random slopes and the free random-effect
-  covariance](https://gillescolling.com/tulpa/articles/random-slopes.md):
-- [Reliability of nested approximations: reading the outer
-  Pareto-k](https://gillescolling.com/tulpa/articles/reliability-pareto-k.md):
+- [UNKNOWN
+  TITLE](https://gillescolling.com/tulpa/articles/random-slopes.md):
+- [UNKNOWN
+  TITLE](https://gillescolling.com/tulpa/articles/reliability-pareto-k.md):
 - [Validating calibration: simulation-based
   calibration](https://gillescolling.com/tulpa/articles/sbc.md):
-- [Spatial fields in
-  tulpa](https://gillescolling.com/tulpa/articles/spatial-models.md):
+- [UNKNOWN
+  TITLE](https://gillescolling.com/tulpa/articles/spatial-models.md):
 - [Temporal random-walk effects with
   tulpa](https://gillescolling.com/tulpa/articles/temporal-models.md):
 - [User-defined GMRF latent blocks with

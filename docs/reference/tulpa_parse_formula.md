@@ -8,6 +8,9 @@ pattern matching on bar terms – no string manipulation.
 
 ``` r
 tulpa_parse_formula(formula)
+
+# S3 method for class 'tulpa_parsed_formula'
+print(x, ...)
 ```
 
 ## Arguments
@@ -15,6 +18,14 @@ tulpa_parse_formula(formula)
 - formula:
 
   A formula object (e.g., `y ~ x + (1 | group)`)
+
+- x:
+
+  A `tulpa_parsed_formula` object.
+
+- ...:
+
+  Ignored.
 
 ## Value
 
@@ -46,5 +57,5 @@ pf$response        # "y"
 #> [1] "y"
 pf$fixed_formula   # y ~ x1 + x2
 #> y ~ x1 + x2
-#> <environment: 0x000002090fa28858>
+#> <environment: 0x0000020daa62eba0>
 ```

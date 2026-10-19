@@ -47,3 +47,16 @@ check_model(object, coords = NULL, nsim = 250L, seed = 123L, ...)
 ## Value
 
 Invisible list with `ks_p`, `disp_ratio`, `moran` (if spatial)
+
+## Examples
+
+``` r
+# \donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(80))
+d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+check_model(fit, nsim = 50)
+
+# }
+```

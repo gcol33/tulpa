@@ -1,4 +1,4 @@
-# Redirect a backend selection: swap the backend and restamp mode / tier / tier name from the registry, recording the reason shown on the fit.
+# Redirect a backend selection: swap the backend and restamp mode / tier / tier name from the registry, recording the reason shown on the fit
 
 A redirect off an EXPLICIT request (anything but `mode = "auto"`) is an
 override, not a resolution: the fit does what the model structure

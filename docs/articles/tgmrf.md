@@ -1,5 +1,27 @@
 # User-defined GMRF latent blocks with tgmrf()
 
+## Installation
+
+``` r
+
+# Current release, built for Windows and macOS
+install.packages("tulpa",
+                 repos = c("https://gcol33.r-universe.dev",
+                           "https://cloud.r-project.org"))
+
+# Development version from GitHub
+install.packages("pak")
+pak::pak("gcol33/tulpa")
+
+# Pin a release
+pak::pak("gcol33/tulpa@v0.6.0")
+```
+
+`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
+for SPDE mesh construction). `tulpa` compiles its C++ backend on first
+install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
+tools on macOS, `r-base-dev` on Linux.
+
 ``` r
 
 library(tulpa)
@@ -202,7 +224,7 @@ fit_lap <- tulpa_nested_laplace(
   prior  = blk,
   family = "poisson"
 )
-fit_lap$theta_mean    # posterior mean over the outer grid
+summary(fit_lap)$hyperparameters   # posterior over the outer grid
 ```
 
 ### Tier 2 (structured): Pathfinder VI
@@ -218,8 +240,8 @@ fit_vi <- tulpa_tgmrf(
   family  = "poisson", mode = "vi",
   n_draws = 800L
 )
-fit_vi$mode_theta
-fit_vi$elbo
+colMeans(posterior_sample(fit_vi))
+summary(fit_vi)$reliability$elbo
 ```
 
 ### Tier 1 (exact): IMH-Laplace
@@ -235,8 +257,8 @@ fit_imh <- tulpa_tgmrf(
   family = "poisson", mode = "imh",
   n_iter = 1200L, warmup = 400L
 )
-fit_imh$means
-fit_imh$mean_accept
+colMeans(posterior_sample(fit_imh))
+summary(fit_imh)$reliability$mean_accept
 ```
 
 ### Tier 1 (exact): NUTS over `theta`
@@ -254,7 +276,7 @@ fit_nuts <- tulpa_tgmrf(
   n_iter    = 200L, warmup = 100L,
   max_depth = 4L
 )
-fit_nuts$means
+colMeans(posterior_sample(fit_nuts))
 ```
 
 ## Comparing posteriors
@@ -266,9 +288,9 @@ The three estimators target the same posterior `p(theta | y)`:
 data.frame(
   parameter = blk$theta_names,
   true      = theta_true,
-  laplace   = fit_lap$theta_mean,
-  vi_mode   = fit_vi$mode_theta,
-  imh_mean  = fit_imh$means
+  laplace   = summary(fit_lap)$hyperparameters$mean,
+  vi_mean   = unname(colMeans(posterior_sample(fit_vi))),
+  imh_mean  = unname(colMeans(posterior_sample(fit_imh)))
 )
 ```
 

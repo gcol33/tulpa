@@ -22,6 +22,9 @@ tulpa_criteria(
   chunk_size = NULL,
   pointwise = FALSE
 )
+
+# S3 method for class 'tulpa_criteria'
+print(x, digits = 1, ...)
 ```
 
 ## Arguments
@@ -72,6 +75,18 @@ tulpa_criteria(
 
   If `TRUE`, also return the per-observation vectors (`elpd_waic`,
   `p_waic`, `elpd_loo`, `pareto_k`, `cpo`) for plotting / stacking.
+
+- x:
+
+  A `tulpa_criteria` result.
+
+- digits:
+
+  Decimal places printed.
+
+- ...:
+
+  Ignored.
 
 ## Value
 

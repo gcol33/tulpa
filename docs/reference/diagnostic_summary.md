@@ -1,4 +1,4 @@
-# Comprehensive Diagnostic Summary
+# Comprehensive diagnostic summary
 
 Provides a comprehensive diagnostic report for a tulpa model, combining
 convergence metrics, divergence information, and actionable
@@ -8,6 +8,9 @@ recommendations.
 
 ``` r
 diagnostic_summary(fit, quiet = FALSE)
+
+# S3 method for class 'tulpa_diagnostic_summary'
+print(x, ...)
 ```
 
 ## Arguments
@@ -19,6 +22,14 @@ diagnostic_summary(fit, quiet = FALSE)
 - quiet:
 
   Logical; if TRUE, suppress printed output (default: FALSE).
+
+- x:
+
+  A `tulpa_diagnostic_summary` object.
+
+- ...:
+
+  Ignored.
 
 ## Value
 

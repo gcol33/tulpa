@@ -1,6 +1,6 @@
-# One draw per element from the zero-inflated mixture.
+# One draw per element from the zero-inflated mixture
 
-One draw per element from the zero-inflated mixture.
+One draw per element from the zero-inflated mixture
 
 ## Usage
 

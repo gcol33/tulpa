@@ -54,6 +54,6 @@ df$y <- rpois(80, exp(0.5 + 0.3 * df$x))
 fit <- tulpa(y ~ x, data = df, family = "poisson")
 fixef(fit)
 #> (Intercept)           x 
-#>   0.5486971   0.2925246 
+#>   0.5558075   0.2896581 
 # }
 ```

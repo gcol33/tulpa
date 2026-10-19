@@ -98,3 +98,11 @@ space-time data. Journal of the American Statistical Association,
 Cressie, N., & Huang, H. C. (1999). Classes of nonseparable,
 spatio-temporal stationary covariance functions. Journal of the American
 Statistical Association, 94(448), 1330-1340.
+
+## Examples
+
+``` r
+# No backend fits a joint space-time covariance, so the constructor refuses:
+try(spatiotemporal_gp(~ lon + lat, "year", nonsep_type = "gneiting"))
+#> Error : Non-separable spatiotemporal GP fields are not fitted by any tulpa backend: no solver carries a joint space-time covariance, and tulpa() has no `spatiotemporal =` argument. A spatial GP alongside a temporal field is fitted directly by fit_st_nested(spatial_type = 'hsgp' or 'nngp', ...); tulpa()'s formula front door routes spatial + temporal jointly only for an areal spatial field (icar/bym2/car_proper) via tulpa(spatial = , temporal = ).
+```

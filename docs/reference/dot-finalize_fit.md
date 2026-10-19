@@ -1,4 +1,4 @@
-# Attach the standard `tulpa_fit` contract to a fitter's result.
+# Attach the standard `tulpa_fit` contract to a fitter's result
 
 The dispatch layer and the fitters that return generic-accessor-facing
 objects route their return value through this helper (some

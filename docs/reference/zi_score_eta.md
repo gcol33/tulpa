@@ -1,4 +1,4 @@
-# Score of the zero-inflated mixture in the two-process eta ordering.
+# Score of the zero-inflated mixture in the two-process eta ordering
 
 Returns an `n x 2` matrix with columns `count` (d loglik / d eta_count)
 and `zi` (d loglik / d logit_zi).

@@ -1,7 +1,11 @@
 # Fit a Gaussian linear model via tulpa's generic engine
 
-Proof-of-concept function demonstrating the tulpa generic interface.
-Fits y ~ Normal(X \* beta, sigma) with HMC sampling.
+Proof-of-concept function demonstrating the tulpa generic interface: the
+Gaussian likelihood is supplied as a `LikelihoodSpec` and fitted by the
+production NUTS sampler every other ModelData backend runs
+(dual-averaged step size, adapted diagonal mass matrix, reverse-mode AD
+gradient checked against finite differences before sampling). Fits
+`y ~ Normal(X * beta, sigma)`.
 
 ## Usage
 
@@ -32,11 +36,34 @@ tulpa_gaussian(
 
 - control:
 
-  List of numerical / sampler knobs: `iter` (total iterations, default
-  2000), `warmup` (default 1000), `step_size` (HMC step size, default
-  0.05), `n_leapfrog` (default 10), `seed` (`NULL` draws from the
-  session RNG).
+  List of sampler knobs: `iter` (total iterations, default 2000),
+  `warmup` (default 1000), `max_treedepth` (default 10), `adapt_delta`
+  (target acceptance statistic, default 0.8), `seed` (`NULL` draws from
+  the session RNG).
 
 ## Value
 
-A list with draws matrix, posterior means, and metadata
+A `tulpa_fit` list with `draws` (post-warmup draws of `beta[j]` and
+`log_sigma`), `means`, `sigma`
+([`exp()`](https://rdrr.io/r/base/Log.html) of the posterior mean of
+`log_sigma`), `accept_rate` (the mean NUTS acceptance statistic over the
+post-warmup iterations), the per-iteration `accept_prob`, `divergent`,
+`treedepth` and `log_prob`, the adapted step size `epsilon`, and
+`formula`, `N`, `p`.
+
+## Examples
+
+``` r
+# \donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(40))
+d$y <- 1 + 2 * d$x + rnorm(40, 0, 0.6)
+fit <- tulpa_gaussian(y ~ x, d, control = list(iter = 1000, warmup = 500,
+                                              seed = 1))
+fit$means
+#>    beta[1]    beta[2]  log_sigma 
+#>  1.0595875  2.1440584 -0.6091963 
+fit$accept_rate
+#> [1] 0.9070892
+# }
+```

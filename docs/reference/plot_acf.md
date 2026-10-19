@@ -1,4 +1,4 @@
-# Plot Autocorrelation Functions
+# Plot autocorrelation functions
 
 Creates autocorrelation function (ACF) plots for selected parameters.
 High autocorrelation indicates slow mixing and low effective sample

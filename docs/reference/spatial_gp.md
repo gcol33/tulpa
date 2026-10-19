@@ -21,6 +21,12 @@ spatial_gp(
   scale_coords = TRUE,
   parameterization = c("noncentered", "centered", "collapsed")
 )
+
+# S3 method for class 'tulpa_gp'
+print(x, ...)
+
+# S3 method for class 'tulpa_hsgp'
+print(x, ...)
 ```
 
 ## Arguments
@@ -78,7 +84,12 @@ spatial_gp(
 
 - scale_coords:
 
-  Logical. Standardize coordinates before fitting (default `TRUE`).
+  Logical. Standardize coordinates before fitting (default `TRUE`): each
+  column is centred and all are divided by one common factor, so
+  distances keep their proportions and an isotropic kernel stays
+  isotropic.
+  [`spatial_range()`](https://gillescolling.com/tulpa/reference/spatial_range.md)
+  reports the range in the original coordinate units either way.
 
 - parameterization:
 
@@ -87,6 +98,14 @@ spatial_gp(
   field as `w = f(z, sigma2, phi)`, avoiding the field/hyperparameter
   funnel), `"centered"` (places the NNGP density on the field directly),
   or `"collapsed"` (deprecated).
+
+- x:
+
+  A `tulpa_gp` or `tulpa_hsgp` specification.
+
+- ...:
+
+  Ignored.
 
 ## Value
 

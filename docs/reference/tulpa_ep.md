@@ -80,12 +80,12 @@ tulpa_ep(
 
 ## Value
 
-A `tulpa_fit` (subclass `tulpa_ep`) with `means` (posterior mean) and
-`cov` (posterior covariance) of the EP Gaussian, which is the posterior
+A `tulpa_fit` with `means` (posterior mean) and `cov` (posterior
+covariance) of the EP Gaussian, which is the posterior
 [`coef()`](https://rdrr.io/r/stats/coef.html),
 [`vcov()`](https://rdrr.io/r/stats/vcov.html),
-[`summary()`](https://rdrr.io/r/base/summary.html) and
-[`confint()`](https://rdrr.io/r/stats/confint.html) report; `draws`
+[`summary.tulpa_fit()`](https://gillescolling.com/tulpa/reference/summary.tulpa_fit.md)
+and [`confint()`](https://rdrr.io/r/stats/confint.html) report; `draws`
 sampled from that Gaussian; `log_marginal` (the EP approximation);
 `converged` (the sweep tolerance was met AND every site's adaptive
 quadrature mode search converged AND no site's tilted variance floored –

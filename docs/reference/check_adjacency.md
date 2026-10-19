@@ -4,15 +4,20 @@ Check that a hand-built adjacency matrix is a well-formed spatial graph
 before passing it to
 [`spatial()`](https://gillescolling.com/tulpa/reference/spatial.md) /
 [`spatial_car()`](https://gillescolling.com/tulpa/reference/spatial_car.md):
-square, symmetric, zero on the diagonal, 0/1 valued, and free of
-isolated nodes.
+square, finite, symmetric, zero on the diagonal, 0/1 valued, free of
+negative weights and of isolated nodes, and connected.
 [`adjacency()`](https://gillescolling.com/tulpa/reference/adjacency.md)
-runs the same checks on the graphs it constructs.
+runs the same checks on the graphs it constructs. The spatial
+constructors refuse a graph with a missing, non-finite or negative
+entry.
 
 ## Usage
 
 ``` r
 check_adjacency(adjacency, ids = NULL)
+
+# S3 method for class 'tulpa_adjacency_check'
+print(x, ...)
 ```
 
 ## Arguments
@@ -26,11 +31,20 @@ check_adjacency(adjacency, ids = NULL)
   Optional cell identifiers; if supplied, their length must match
   `nrow(adjacency)` and they must be unique.
 
+- x:
+
+  A `tulpa_adjacency_check` report.
+
+- ...:
+
+  Ignored.
+
 ## Value
 
 Invisibly, a `tulpa_adjacency_check` list with the per-check results
-(`square`, `symmetric`, `zero_diag`, `binary`, isolated-node indices,
-edge count) and an overall `ok` flag. Issues are reported via
+(`square`, `finite`, `symmetric`, `zero_diag`, `binary`, `nonneg`,
+isolated-node indices, `n_components` and `component_sizes`, edge count)
+and an overall `ok` flag. Issues are reported via
 [`warning()`](https://rdrr.io/r/base/warning.html) and printed; the
 function does not stop, so every problem surfaces in one pass.
 
@@ -52,6 +66,7 @@ check_adjacency(adj)
 #>   zero diag: ok
 #>   binary:    ok
 #>   isolated:  0 node(s)
+#>   components: 1
 #>   edges:     3
 #>   overall:   ok
 ```

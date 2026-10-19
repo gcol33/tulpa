@@ -1,4 +1,4 @@
-# Plot Energy Diagnostic (E-BFMI)
+# Plot energy diagnostic (E-BFMI)
 
 Creates overlaid histograms of marginal energy and energy transition,
 along with the E-BFMI statistic. Low E-BFMI indicates poor exploration

@@ -1,8 +1,7 @@
-# Inverse-link mean for a family. `phi` reaches entries whose response mean depends on the dispersion (lognormal); the others ignore it via `...`.
+# Inverse-link mean for a family
 
-Inverse-link mean for a family. `phi` reaches entries whose response
-mean depends on the dispersion (lognormal); the others ignore it via
-`...`.
+`phi` reaches entries whose response mean depends on the dispersion
+(lognormal); the others ignore it via `...`.
 
 ## Usage
 

@@ -18,6 +18,12 @@ tulpa_ordinal(
   cut_prior_sd = 10,
   control = list()
 )
+
+# S3 method for class 'tulpa_ordinal'
+coef(object, ...)
+
+# S3 method for class 'tulpa_ordinal'
+print(x, ...)
 ```
 
 ## Arguments
@@ -25,7 +31,9 @@ tulpa_ordinal(
 - formula:
 
   Model formula; the response must be an ordered (or coercible) factor
-  with \>= 3 levels. An intercept in `formula` is dropped.
+  with \>= 3 levels, each observed at least once. An intercept in
+  `formula` is dropped; `y ~ 1` fits the cutpoints alone. Incomplete
+  rows are refused, not dropped.
 
 - data:
 
@@ -51,6 +59,18 @@ tulpa_ordinal(
   List of numerical knobs: `max_iter` (default 200), `n_draws` (default
   2000), `seed`.
 
+- object:
+
+  A `tulpa_ordinal` fit.
+
+- ...:
+
+  Ignored.
+
+- x:
+
+  A `tulpa_ordinal` fit.
+
 ## Value
 
 A `tulpa_fit` (subclass `tulpa_ordinal`) with `coefficients` (covariate
@@ -58,10 +78,16 @@ effects) and `cutpoints` at the posterior mode, `draws` (the Laplace
 Gaussian mapped to ordered cutpoints), `log_marginal`, `levels`. The
 draws are the posterior [`coef()`](https://rdrr.io/r/stats/coef.html),
 [`vcov()`](https://rdrr.io/r/stats/vcov.html),
-[`summary()`](https://rdrr.io/r/base/summary.html) and
-[`confint()`](https://rdrr.io/r/stats/confint.html) report;
+[`summary.tulpa_fit()`](https://gillescolling.com/tulpa/reference/summary.tulpa_fit.md)
+and [`confint()`](https://rdrr.io/r/stats/confint.html) report;
 [`coef()`](https://rdrr.io/r/stats/coef.html) omits the cutpoints, as
 [`MASS::polr`](https://rdrr.io/pkg/MASS/man/polr.html) does.
+
+[`coef()`](https://rdrr.io/r/stats/coef.html) returns the covariate
+effects without the cutpoints, as
+[`MASS::polr()`](https://rdrr.io/pkg/MASS/man/polr.html) omits its
+`zeta`; [`vcov()`](https://rdrr.io/r/stats/vcov.html) and
+[`summary()`](https://rdrr.io/r/base/summary.html) keep them.
 
 ## See also
 

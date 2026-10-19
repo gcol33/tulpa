@@ -1,4 +1,4 @@
-# Intrinsic ICAR field precision, augmented to full rank.
+# Intrinsic ICAR field precision, augmented to full rank
 
 `L = D - W` (degree minus adjacency) plus the sum-to-zero augmentation
 `sum_c 1_c 1_c' / J_c` that identifies each component's constant null
@@ -12,7 +12,7 @@ kernel penalizes with.
 ## Usage
 
 ``` r
-.icar_precision_Q(spatial)
+.icar_precision_Q(spatial, node_prec = NULL)
 ```
 
 ## Details
@@ -23,3 +23,8 @@ carries sigma and rho in its `d_fac` instead), and the field enters the
 linear predictor with `d_fac = 1`, so this is exactly the field block of
 that fit's joint Hessian. `test-marginal-se-areal.R` pins it against the
 kernel's own `log_prior_icar`.
+
+`node_prec` (optional, one multiplier per node, constant within a
+component) scales each component's block, `diag(node_prec) Q_aug` – the
+per-component BYM2 scaling the kernels apply to the structured prior
+(`.bym2_component_scaling()`, gcol33/tulpa#902).

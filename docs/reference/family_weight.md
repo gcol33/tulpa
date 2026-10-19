@@ -1,6 +1,6 @@
-# Laplace/IRLS working weight (-d^2 log-lik / d eta^2), elementwise.
+# Laplace/IRLS working weight (-d^2 log-lik / d eta^2), elementwise
 
-Laplace/IRLS working weight (-d^2 log-lik / d eta^2), elementwise.
+Laplace/IRLS working weight (-d^2 log-lik / d eta^2), elementwise
 
 ## Usage
 

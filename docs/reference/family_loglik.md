@@ -1,6 +1,6 @@
-# Elementwise log-likelihood for a family.
+# Elementwise log-likelihood for a family
 
-Elementwise log-likelihood for a family.
+Elementwise log-likelihood for a family
 
 ## Usage
 

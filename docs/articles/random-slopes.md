@@ -1,4 +1,26 @@
-# Random slopes and the free random-effect covariance
+# 
+
+## Installation
+
+``` r
+
+# Current release, built for Windows and macOS
+install.packages("tulpa",
+                 repos = c("https://gcol33.r-universe.dev",
+                           "https://cloud.r-project.org"))
+
+# Development version from GitHub
+install.packages("pak")
+pak::pak("gcol33/tulpa")
+
+# Pin a release
+pak::pak("gcol33/tulpa@v0.6.0")
+```
+
+`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
+for SPDE mesh construction). `tulpa` compiles its C++ backend on first
+install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
+tools on macOS, `r-base-dev` on Linux.
 
 ``` r
 
@@ -56,7 +78,7 @@ collapsed to its mode.
 
 fit <- tulpa(y ~ x + (1 + x | g), data = d, family = "poisson",
              mode = "laplace")
-fit$posterior[, c("parameter", "median", "ci_lo", "ci_hi")]
+summary(fit)$hyperparameters[, c("parameter", "median", "ci_lo", "ci_hi")]
 ```
 
 The posterior medians track the truth (`sigma_1 = 0.7`, `sigma_2 = 0.5`,
@@ -80,8 +102,8 @@ fit_gibbs <- tulpa(y ~ x + (1 + x | g), data = d, family = "poisson",
                                   n_iter = 2000L, warmup = 1000L))
 ```
 
-Both fits return the same accessors: `fit$posterior` holds the `Sigma`
-summary, and `coef(fit)` / `summary(fit)` report the fixed effects. The
-choice between them is the engine’s design in miniature – a cheap
-deterministic approximation, with an exact sampler available exactly
-where the approximation is biased.
+Both fits return the same accessors: `summary(fit)$hyperparameters`
+holds the `Sigma` summary, and `coef(fit)` / `summary(fit)` report the
+fixed effects. The choice between them is the engine’s design in
+miniature – a cheap deterministic approximation, with an exact sampler
+available exactly where the approximation is biased.

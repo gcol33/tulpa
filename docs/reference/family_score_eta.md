@@ -1,6 +1,6 @@
-# Score (d log-likelihood / d eta), elementwise.
+# Score (d log-likelihood / d eta), elementwise
 
-Score (d log-likelihood / d eta), elementwise.
+Score (d log-likelihood / d eta), elementwise
 
 ## Usage
 

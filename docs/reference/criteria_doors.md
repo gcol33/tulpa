@@ -149,7 +149,7 @@ dic(fit)
 #>   DIC            391.9
 #>   p_DIC            2.0
 cpo(fit)$lpml
-#> [1] -196.2028
+#> [1] -196.2013
 if (requireNamespace("loo", quietly = TRUE)) loo::waic(fit)
 #> Warning: 
 #> 1 (0.8%) p_waic estimates greater than 0.4. We recommend trying loo instead.

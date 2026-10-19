@@ -1,4 +1,4 @@
-# Plot Divergent Transitions
+# Plot divergent transitions
 
 Creates visualizations to investigate divergent transitions. Parallel
 coordinates and scatter plots highlight where in parameter space

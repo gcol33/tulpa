@@ -1,4 +1,4 @@
-# Backend registry – single source of truth for the inference backends.
+# Backend registry – single source of truth for the inference backends
 
 One entry per backend. Adding a backend is a single entry here; tier
 membership, family support, the input contract, and R-level reachability
@@ -56,6 +56,12 @@ Fields:
 - `cabi` – the registered C-ABI callable backing the backend (the symbol
   a model package reaches via `LinkingTo: tulpa`, and the one an R
   wrapper would call), or `NULL`.
+
+- `carries_weights` – `TRUE` when a `"design"` backend threads
+  observation `weights` into its likelihood (non-spatially); absent
+  otherwise. Every `"logpost"` backend carries them through the
+  log-posterior builder, and `.backend_carries_weights()` is the one
+  predicate reading both.
 
 - `hyperprior` – `TRUE` when the backend's fitter takes the outer
   `hyperprior = c("proper", "flat")` choice

@@ -1,5 +1,27 @@
 # Getting started with tulpa
 
+## Installation
+
+``` r
+
+# Current release, built for Windows and macOS
+install.packages("tulpa",
+                 repos = c("https://gcol33.r-universe.dev",
+                           "https://cloud.r-project.org"))
+
+# Development version from GitHub
+install.packages("pak")
+pak::pak("gcol33/tulpa")
+
+# Pin a release
+pak::pak("gcol33/tulpa@v0.6.0")
+```
+
+`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
+for SPDE mesh construction). `tulpa` compiles its C++ backend on first
+install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
+tools on macOS, `r-base-dev` on Linux.
+
 ``` r
 
 library(tulpa)
@@ -114,11 +136,11 @@ the estimates recover the values you put in.
 A point estimate alone is half a fit.
 [`summary()`](https://rdrr.io/r/base/summary.html) adds the posterior
 standard error and the 2.5% and 97.5% credible bounds for each fixed
-effect, which is what turns “the slope is about 1.2” into “the slope is
-1.2 with a 95% credible interval that excludes zero by a wide margin”.
-Read the standard error as the posterior spread of the coefficient and
-the bounds as the interval the coefficient falls in with 95% posterior
-probability.
+effect, alongside how the fit was produced and how reliable it is, which
+is what turns “the slope is about 1.2” into “the slope is 1.2 with a 95%
+credible interval that excludes zero by a wide margin”. Read the
+standard error as the posterior spread of the coefficient and the bounds
+as the interval the coefficient falls in with 95% posterior probability.
 
 ``` r
 
@@ -460,14 +482,17 @@ data.frame(
 ```
 
 The agreement here is itself a signal that Laplace was safe for this
-model. Every fit records which backend ran and at which tier, through
-the `backend` and `inference_tier` fields, and `selection_reason`
-records why `mode = "auto"` chose what it did, so you are never left
-guessing which engine produced a number.
+model. Every fit records which backend ran and at which tier, and why
+`mode = "auto"` chose what it did.
+[`print()`](https://rdrr.io/r/base/print.html) names the backend and
+tier in its first line, and
+[`summary()`](https://rdrr.io/r/base/summary.html) carries all three in
+its `inference` part, so you are never left guessing which engine
+produced a number.
 
 ``` r
 
-c(backend = fit_mala$backend, tier = fit_mala$inference_tier)
+unlist(summary(fit_mala)$inference[c("backend", "inference_tier")])
 ```
 
 The tiers encode an epistemic guarantee that goes beyond the speed
@@ -551,15 +576,16 @@ coef(fit_sp)
 
 The slope recovers near its true 0.7 while the ICAR field absorbs the
 regional structure. Plot the per-region field effect around the ring to
-see the wave the fit pulled out of binary data: the mode at each
-region’s latent column traces the smooth signal the covariate could not
-explain.
+see the wave the fit pulled out of binary data:
+[`field_effects()`](https://gillescolling.com/tulpa/reference/field_effects.md)
+returns the field at each region, here its posterior mode, and traces
+the smooth signal the covariate could not explain.
 
 ``` r
 
 library(ggplot2)
-fe <- tail(fit_sp$mode, K)
-ggplot(data.frame(region = seq_len(K), effect = fe), aes(region, effect)) +
+fe <- field_effects(fit_sp)
+ggplot(data.frame(region = fe$unit, effect = fe$estimate), aes(region, effect)) +
   geom_line(linewidth = 1, colour = "steelblue") +
   geom_point() +
   labs(x = "region", y = "field effect") +
@@ -620,18 +646,17 @@ coef(fit_t)
 
 The slope lands near its true 0.5 with the trend absorbed into the field
 rather than the coefficient. `mode = "auto"` routes the temporal field
-to the nested-Laplace backend, which carries the per-grid latent modes
-in `$modes` (one row per grid point, columns ordered
-`[fixed effects, field]`) and the grid `$weights`. Weight-average the
-field column for each time point to integrate over the smoothing
-precision, then plot the recovered walk against the truth.
+to the nested-Laplace backend, and
+[`tulpa_outer_grid()`](https://gillescolling.com/tulpa/reference/tulpa_outer_grid.md)
+returns its grid: the per-grid latent modes in `modes` (one row per grid
+point, columns ordered `[fixed effects, field]`) and the grid `weights`.
+Weight-average the field column for each time point to integrate over
+the smoothing precision, then plot the recovered walk against the truth.
 
 ``` r
 
-w  <- fit_t$weights / sum(fit_t$weights)
-nf <- fit_t$n_fixed
-te <- vapply(seq_len(Tt),
-             function(u) sum(w * fit_t$modes[, nf + u]), numeric(1))
+g  <- tulpa_outer_grid(fit_t)
+te <- colSums(g$weights * g$modes)[g$n_fixed + seq_len(Tt)]
 ggplot(data.frame(time = seq_len(Tt),
                   est = te - mean(te),
                   truth = trend - mean(trend)),
@@ -774,12 +799,14 @@ already know from base R or broom is the intended workflow.
 | Accessor | Returns |
 |----|----|
 | [`coef()`](https://rdrr.io/r/stats/coef.html) | named fixed-effect estimates |
-| [`summary()`](https://rdrr.io/r/base/summary.html) | fixed effects: estimate, SE, credible bounds |
+| [`summary()`](https://rdrr.io/r/base/summary.html) | the full report: backend and tier, fixed effects with SE and credible bounds, variance components, hyperparameters, reliability; `coef(summary(fit))` is the fixed-effect table |
 | [`confint()`](https://rdrr.io/r/stats/confint.html) | credible intervals (matrix) |
 | [`vcov()`](https://rdrr.io/r/stats/vcov.html) | fixed-effect covariance |
 | [`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md) | group-level random effects |
 | [`tidy()`](https://generics.r-lib.org/reference/tidy.html) | one-row-per-term data frame (broom style) |
 | [`glance()`](https://generics.r-lib.org/reference/glance.html) | one-row model summary |
+| [`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md) | convergence or approximation reliability, per parameter |
+| [`tulpa_outer_grid()`](https://gillescolling.com/tulpa/reference/tulpa_outer_grid.md) | a nested-Laplace fit’s hyperparameter grid: nodes, weights, per-cell modes |
 | [`predict()`](https://rdrr.io/r/stats/predict.html), [`fitted()`](https://rdrr.io/r/stats/fitted.values.html) | fixed-effect prediction / in-sample mean |
 | [`logLik()`](https://rdrr.io/r/stats/logLik.html) | log marginal likelihood (Laplace) or mean log-density |
 | [`plot()`](https://rdrr.io/r/graphics/plot.default.html) | fixed-effect densities (or trace for sampler fits) |

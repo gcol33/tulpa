@@ -1,4 +1,4 @@
-# Build a length-n_obs -\> length-n_units indicator design matrix Z.
+# Build a length-n_obs -\> length-n_units indicator design matrix Z
 
 The latent field lives on units – unique coordinates for an NNGP field,
 adjacency units for an areal one – and each observation belongs to

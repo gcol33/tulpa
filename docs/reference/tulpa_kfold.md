@@ -16,7 +16,7 @@ spatial or temporal field, so those fits are rejected (use PSIS-LOO via
 [`tulpa_criteria()`](https://gillescolling.com/tulpa/reference/tulpa_criteria.md)).
 Held-out random-effect groups contribute at their prior mean
 (population-level held-out prediction), matching
-[`predict()`](https://rdrr.io/r/stats/predict.html).
+[`stats::predict()`](https://rdrr.io/r/stats/predict.html).
 
 ## Usage
 
@@ -77,6 +77,6 @@ d$y <- rpois(120, exp(0.4 + 0.6 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
 cv  <- tulpa_kfold(fit, data = d, K = 5, seed = 1)
 cv$elpd_kfold
-#> [1] -186.7652
+#> [1] -186.7639
 # }
 ```

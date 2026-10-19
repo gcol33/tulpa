@@ -24,6 +24,12 @@ tgmrf(
   obs_idx = NULL,
   name = NULL
 )
+
+# S3 method for class 'tgmrf'
+print(x, ...)
+
+# S3 method for class 'tgmrf'
+summary(object, ...)
 ```
 
 ## Arguments
@@ -77,6 +83,19 @@ tgmrf(
   [`print()`](https://rdrr.io/r/base/print.html) /
   [`summary()`](https://rdrr.io/r/base/summary.html).
 
+- x:
+
+  A `tgmrf` block.
+
+- ...:
+
+  Passed from [`summary()`](https://rdrr.io/r/base/summary.html) to
+  [`print()`](https://rdrr.io/r/base/print.html).
+
+- object:
+
+  A `tgmrf` block.
+
 ## Value
 
 An object of class `c("tgmrf", "tulpa_latent_block")` with components:
@@ -92,6 +111,9 @@ An object of class `c("tgmrf", "tulpa_latent_block")` with components:
 - `graph` – user-supplied pattern, validated against `pattern` if given.
 
 - `bounds`, `name` – passed through.
+
+[`summary()`](https://rdrr.io/r/base/summary.html) prints the block, its
+log prior at `init` and its bounds, and returns `object` invisibly.
 
 ## Details
 

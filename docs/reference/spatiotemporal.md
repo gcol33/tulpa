@@ -148,3 +148,15 @@ variation in disease risk. Statistics in Medicine, 19(17-18), 2555-2567.
 [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md),
 [`temporal_rw1()`](https://gillescolling.com/tulpa/reference/temporal_rw1.md),
 [`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md)
+
+## Examples
+
+``` r
+adj <- matrix(0, 4, 4)
+for (i in 1:3) adj[i, i + 1] <- adj[i + 1, i] <- 1
+# No backend fits an interaction term, so the constructor refuses; the
+# additive model is tulpa(spatial = , temporal = ).
+try(spatiotemporal(spatial_car(adj, group_var = "region"),
+                   temporal_rw1("year"), type = "IV"))
+#> Error : Spatiotemporal interaction terms are not fitted by any tulpa backend: no solver carries a Knorr-Held type I-IV interaction, and tulpa() has no `spatiotemporal =` argument. The additive space-time model `X beta + u_spatial + v_temporal` is fitted directly by fit_st_nested(); tulpa(spatial = , temporal = ) reaches the same joint nested-Laplace path only for an AREAL spatial field (icar/bym2/car_proper) -- a continuous one (hsgp/nngp) is not yet routed through tulpa()'s formula front door.
+```

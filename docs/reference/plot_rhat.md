@@ -1,4 +1,4 @@
-# Plot Rhat Convergence Diagnostic
+# Plot Rhat convergence diagnostic
 
 Creates a visual display of Rhat values for all parameters, with
 color-coding to highlight convergence issues. Rhat values \> 1.01

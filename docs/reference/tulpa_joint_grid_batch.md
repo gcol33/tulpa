@@ -47,11 +47,42 @@ are muffled; the replay raises them again.
 Raises a `tulpa_grid_batch_ineligible` condition (catchable with
 `tryCatch(..., tulpa_grid_batch_ineligible = ...)`) when the fits do not
 share a design or a request uses a setting the fused driver does not
-carry. The random number state is restored to where the batch was called
-before that condition leaves, so a caller that falls back to fitting the
-responses one at a time draws the stream it would have drawn without the
-batch.
+carry, and says so on the first fit's capture when the setting is the
+request's own. The cheap-pass screen is one: it prunes each response's
+grid to its own kept set, which one fused grid walk cannot, and it is on
+by default, so fits meant for the fused solve pass
+`control$prune = FALSE`. The random number state is restored to where
+the batch was called before that condition leaves, so a caller that
+falls back to fitting the responses one at a time draws the stream it
+would have drawn without the batch.
 
 ## See also
 
 [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md)
+
+## Examples
+
+``` r
+# \donttest{
+# The fused solve serves coupled-arm families (a model package's joint
+# occupancy-cover fit, say); for designs it does not carry it signals
+# `tulpa_grid_batch_ineligible`, and the caller fits one at a time.
+set.seed(1)
+n_s <- 20L; N <- 100L
+s <- sample.int(n_s, N, replace = TRUE); x <- rnorm(N)
+nb <- lapply(seq_len(n_s), function(i) setdiff(c(i - 1L, i + 1L), c(0L, n_s + 1L)))
+prior <- list(type = "icar", n_spatial_units = n_s,
+              adj_row_ptr = as.integer(c(0L, cumsum(lengths(nb)))),
+              adj_col_idx = as.integer(unlist(nb)) - 1L,
+              n_neighbors = lengths(nb), sigma_grid = c(0.5, 1))
+fit_one <- function(y) function() tulpa_nested_laplace_joint(
+  responses = list(occ = list(y = y, n_trials = rep(1L, N), X = cbind(1, x),
+                              spatial_idx = s, family = "binomial")),
+  prior = prior, control = list(progress = FALSE))
+fits <- lapply(1:2, function(b) fit_one(rbinom(N, 1, plogis(0.3 * x))))
+res <- tryCatch(tulpa_joint_grid_batch(fits),
+                tulpa_grid_batch_ineligible = function(e) lapply(fits, function(f) f()))
+length(res)
+#> [1] 2
+# }
+```

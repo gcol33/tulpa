@@ -1,4 +1,4 @@
-# Validate a GLM design bundle (`y`, `X`, `n_trials`) at a fitter's front door.
+# Validate a GLM design bundle (`y`, `X`, `n_trials`) at a fitter's front door
 
 Shared by the flagship drivers
 ([`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md),

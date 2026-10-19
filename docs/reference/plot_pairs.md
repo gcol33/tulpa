@@ -1,4 +1,4 @@
-# Plot Bivariate Parameter Posteriors (Pairs Plot)
+# Plot bivariate parameter posteriors (pairs plot)
 
 Creates a pairs plot showing bivariate relationships between parameters.
 Divergent transitions (if present) are highlighted to help identify

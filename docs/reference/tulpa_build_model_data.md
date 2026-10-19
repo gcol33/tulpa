@@ -41,3 +41,22 @@ A list with:
 - `offset`: numeric vector or NULL
 
 - `re_terms`: list of RE data structures (group indices, slope matrices)
+
+## Details
+
+Missing values pass through (`na.action = na.pass`), because a prior
+predictive may have no response; the fitting doors refuse them. Unused
+levels of a grouping factor are dropped, so `n_groups` counts the groups
+that have data.
+
+## Examples
+
+``` r
+d <- data.frame(y = rnorm(6), x = 1:6, g = rep(1:2, 3))
+parsed <- tulpa_parse_formula(y ~ x + (1 | g))
+md <- tulpa_build_model_data(parsed, d)
+dim(md$X)
+#> [1] 6 2
+md$n_re_terms
+#> [1] 1
+```

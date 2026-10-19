@@ -27,16 +27,17 @@ sbc_draws(x)
 
 - mu, var, w:
 
-  Component means, variances and weights. `w` defaults to equal weights
-  and is normalized.
+  Component means, variances (`>= 0`) and non-negative weights, one of
+  each per component. `w` defaults to equal weights and is normalized.
 
 - mean, sd:
 
-  Mean and standard deviation of a single Gaussian.
+  Mean and standard deviation (`>= 0`) of a single Gaussian.
 
 - support, probs:
 
-  Finite support and its probabilities, normalized.
+  Finite support and its non-negative probabilities, one per support
+  point; normalized.
 
 - rank, n_ref:
 

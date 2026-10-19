@@ -79,3 +79,14 @@ average for that observation.
 
 [`tulpa_criteria()`](https://gillescolling.com/tulpa/reference/tulpa_criteria.md),
 [`tulpa_psis()`](https://gillescolling.com/tulpa/reference/tulpa_psis.md)
+
+## Examples
+
+``` r
+set.seed(1)
+Fl <- matrix(runif(200 * 10, 0, 0.4), 200, 10)   # per-draw CDF limits
+Fu <- Fl + 0.3
+tulpa_pit(Fu, cdf_lower = Fl)
+#>  [1] 0.4686053 0.4777655 0.4678017 0.3345223 0.2513600 0.2167066 0.3655746
+#>  [8] 0.2252162 0.3534343 0.3404781
+```

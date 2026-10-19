@@ -1,7 +1,7 @@
-# One response draw per element of `eta` (posterior predictive), elementwise.
+# One response draw per element of `eta` (posterior predictive), elementwise
 
 One response draw per element of `eta` (posterior predictive),
-elementwise.
+elementwise
 
 ## Usage
 

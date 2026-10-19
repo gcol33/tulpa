@@ -1,4 +1,4 @@
-# Build the zero-inflation design matrix from `ziformula`.
+# Build the zero-inflation design matrix from `ziformula`
 
 A one-sided formula giving the fixed effects of the structural-zero
 logit. `~ 1` is the constant-probability model. Random effects in the ZI

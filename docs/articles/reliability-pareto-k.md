@@ -1,4 +1,26 @@
-# Reliability of nested approximations: reading the outer Pareto-k
+# 
+
+## Installation
+
+``` r
+
+# Current release, built for Windows and macOS
+install.packages("tulpa",
+                 repos = c("https://gcol33.r-universe.dev",
+                           "https://cloud.r-project.org"))
+
+# Development version from GitHub
+install.packages("pak")
+pak::pak("gcol33/tulpa")
+
+# Pin a release
+pak::pak("gcol33/tulpa@v0.6.0")
+```
+
+`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
+for SPDE mesh construction). `tulpa` compiles its C++ backend on first
+install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
+tools on macOS, `r-base-dev` on Linux.
 
 ``` r
 
@@ -68,7 +90,9 @@ prior <- list(type = "icar", n_spatial_units = S,
 ```
 
 Fit the two arms together. The diagnostic runs by default, so the k-hat
-comes back on the fitted object with no extra request.
+comes back on the fitted object with no extra request, and
+[`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
+reads it off the fit.
 
 ``` r
 
@@ -79,9 +103,10 @@ fit <- tulpa_nested_laplace_joint(
   prior     = prior,
   control   = list(k_samples = 400L))
 
-c(pareto_k = round(fit$pareto_k, 3),
-  is_ess   = round(fit$pareto_k_is_ess, 1))
-fit$pareto_k_scope
+d <- diagnostics(fit)
+c(pareto_k = round(attr(d, "pareto_k"), 3),
+  is_ess   = round(attr(d, "pareto_k_is_ess"), 1))
+attr(d, "scope")
 ```
 
 The scope string names what was scored: the Gaussian proposal the
@@ -116,7 +141,7 @@ the first thing to read.
 
 ``` r
 
-band <- cut(fit$pareto_k, c(-Inf, 0.5, 0.7, Inf),
+band <- cut(attr(d, "pareto_k"), c(-Inf, 0.5, 0.7, Inf),
             labels = c("good", "ok", "unreliable"))
 band
 ```
@@ -177,10 +202,10 @@ inside a single reliability band.
 
 ``` r
 
-c(k       = round(fit$pareto_k, 3),
-  ci_low  = round(fit$pareto_k_ci_low, 3),
-  ci_high = round(fit$pareto_k_ci_high, 3))
-fit$pareto_k_band_confident
+c(k       = round(attr(d, "pareto_k"), 3),
+  ci_low  = round(attr(d, "pareto_k_ci_low"), 3),
+  ci_high = round(attr(d, "pareto_k_ci_high"), 3))
+attr(d, "pareto_k_band_confident")
 ```
 
 `pareto_k_band_confident` is the number to act on, not the point
@@ -211,10 +236,11 @@ fit_hi <- tulpa_nested_laplace_joint(
   prior     = prior,
   control   = list(k_samples = 1500L))
 
-c(k              = round(fit_hi$pareto_k, 3),
-  ci_low         = round(fit_hi$pareto_k_ci_low, 3),
-  ci_high        = round(fit_hi$pareto_k_ci_high, 3),
-  band_confident = fit_hi$pareto_k_band_confident)
+d_hi <- diagnostics(fit_hi)
+c(k              = round(attr(d_hi, "pareto_k"), 3),
+  ci_low         = round(attr(d_hi, "pareto_k_ci_low"), 3),
+  ci_high        = round(attr(d_hi, "pareto_k_ci_high"), 3),
+  band_confident = attr(d_hi, "pareto_k_band_confident"))
 ```
 
 Raising `k_samples` is the lever for both halves of the reading at once.
@@ -275,11 +301,12 @@ fit_q <- tulpa_nested_laplace_joint(
   prior     = prior,
   control   = list(k_quality = "good"))
 
-c(requested = fit_q$k_quality_requested,
-  reached   = fit_q$k_quality_reached,
-  best      = fit_q$k_quality_best,
-  draws     = fit_q$diagnose_draws)
-fit_q$k_quality_reason
+d_q <- diagnostics(fit_q)
+c(requested = attr(d_q, "k_quality_requested"),
+  reached   = attr(d_q, "k_quality_reached"),
+  best      = attr(d_q, "k_quality_best"),
+  draws     = attr(d_q, "diagnose_draws"))
+attr(d_q, "k_quality_reason")
 ```
 
 `k_quality = "good"` requires the k-hat interval to sit confidently in
@@ -326,8 +353,8 @@ fixed-effects coefficients.
 
 ``` r
 
-fit$inner_skew
-fit$inner_skew_idx
+attr(d, "inner_skew")
+attr(d, "inner_skew_idx")
 ```
 
 The two occupancy-arm coefficients (indices 1-2, binomial) carry a small
@@ -341,7 +368,7 @@ k-hat uses:
 
 ``` r
 
-cut(abs(fit$inner_skew), c(-Inf, 0.5, 1.0, Inf),
+cut(abs(attr(d, "inner_skew")), c(-Inf, 0.5, 1.0, Inf),
     labels = c("good", "ok", "unreliable"))
 ```
 

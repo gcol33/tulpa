@@ -27,6 +27,12 @@ formula, the same way a random-effect bar is written:
 
 ``` r
 spatial(graph, formula, proper = FALSE, shared = NULL, by = NULL)
+
+# S3 method for class 'tulpa_spatial_field_fit'
+print(x, ...)
+
+# S3 method for class 'tulpa_spatial_field'
+print(x, ...)
 ```
 
 ## Arguments
@@ -82,6 +88,16 @@ spatial(graph, formula, proper = FALSE, shared = NULL, by = NULL)
   while `by` sets how many independent replicates of the whole field
   exist. Default `NULL` (one field). Correlated proper CAR (`|` with
   `proper = TRUE`) stays out of scope with or without `by`.
+
+- x:
+
+  A `spatial()` field specification, or the fit
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
+  returns for one.
+
+- ...:
+
+  Ignored.
 
 ## Value
 

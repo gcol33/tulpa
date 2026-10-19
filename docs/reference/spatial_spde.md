@@ -1,4 +1,4 @@
-# SPDE Spatial Field (Matern via Triangular Mesh)
+# SPDE spatial field (Matern via triangular mesh)
 
 Specify a continuous Matern spatial field using the SPDE approach
 (Lindgren, Rue & Lindstrom 2011). Builds a triangular mesh from

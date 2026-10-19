@@ -10,6 +10,15 @@ tvc(object, terms = NULL, summary = FALSE, probs = c(0.025, 0.5, 0.975), ...)
 
 # S3 method for class 'tulpa_fit'
 tvc(object, terms = NULL, summary = FALSE, probs = c(0.025, 0.5, 0.975), ...)
+
+# S3 method for class 'tulpa_tvc_posterior'
+print(x, ...)
+
+# S3 method for class 'tulpa_tvc_summary'
+print(x, ...)
+
+# S3 method for class 'tulpa_tvc_posterior'
+summary(object, probs = c(0.025, 0.5, 0.975), ...)
 ```
 
 ## Arguments
@@ -35,6 +44,10 @@ tvc(object, terms = NULL, summary = FALSE, probs = c(0.025, 0.5, 0.975), ...)
 
   Ignored
 
+- x:
+
+  A `tulpa_tvc_posterior` or `tulpa_tvc_summary` object.
+
 ## Value
 
 A `tulpa_tvc_posterior` object containing:
@@ -44,6 +57,11 @@ A `tulpa_tvc_posterior` object containing:
 - `time_levels`: Time point labels
 
 - `term_names`: Names of TVC terms
+
+[`summary()`](https://rdrr.io/r/base/summary.html) on a
+`tulpa_tvc_posterior` returns a `tulpa_tvc_summary` data frame with one
+row per time point and term, holding the posterior mean, SD and
+requested quantiles of each temporally varying coefficient.
 
 ## See also
 
@@ -73,6 +91,7 @@ fit <- tulpa(
 
 tvc_post <- tvc(fit)
 summary(tvc_post)
+#> Temporally varying coefficient posterior summary, 400 posterior draws
 #>    time_idx time term        mean        sd        q2.5         q50     q97.5
 #> 1         1    1    x -0.51812356 0.3438930 -1.26815867 -0.48358081 0.1138761
 #> 2         2    2    x -0.43151069 0.3186817 -1.08518130 -0.39639008 0.1291343

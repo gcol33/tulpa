@@ -21,6 +21,12 @@ land under Phase 3.
 ## Usage
 
 ``` r
+# S3 method for class 'tulpa_nested_laplace_joint'
+print(x, ...)
+
+# S3 method for class 'tulpa_nested_laplace_joint_multi'
+print(x, ...)
+
 tulpa_nested_laplace_joint(
   responses,
   prior,
@@ -36,6 +42,14 @@ tulpa_nested_laplace_joint(
 ```
 
 ## Arguments
+
+- x:
+
+  A joint nested-Laplace fit.
+
+- ...:
+
+  Ignored.
 
 - responses:
 
@@ -103,19 +117,24 @@ tulpa_nested_laplace_joint(
   `sigma_grid`'s default is a starting axis, not a hard ceiling: when
   the fitted field-SD posterior mode rails the top node (the axis's own
   marginal is maximal there, or the whole grid collapsed onto it:
-  `pareto_k_regime = "collapsed_edge"`, see below), the driver
-  re-centres the axis on a mode-Hessian and refits (up to two attempts,
-  the second adding a light default PC(U=3, alpha=0.01) prior on sigma
-  unless `prior_sigma` was pinned – see there), so a sparse or
-  strongly-identified species is not silently truncated at 3.0. This
-  engages whether or not `control$diagnose_k` computed the full outer
-  Pareto-k diagnostic: the mode-Hessian is reused from the diagnostic
-  when it ran, or computed on its own (one extra batched
-  finite-difference solve, only when the axis actually railed) when it
-  did not – so `diagnose_k = FALSE`, the default, does not leave a
-  railed axis stuck. A `sigma_grid` the caller PINNED always wins:
-  auto-recenter engages when the field is left `NULL`, when it is marked
-  with
+  `pareto_k_regime = "collapsed_edge"`, see below), the driver finds the
+  outer posterior mode – a damped Newton search over every outer axis,
+  started at the grid's heaviest cell and read through full inner
+  solves, the same mode-find the CCD integrator places its design with –
+  lays the axis at that mode +/- 2.5 of the SDs its curvature there
+  gives, and refits (up to two attempts, the second adding a light
+  default PC(U=3, alpha=0.01) prior on sigma unless `prior_sigma` was
+  pinned – see there), so a sparse or strongly-identified species is not
+  silently truncated at 3.0. This engages whether or not
+  `control$diagnose_k` computed the full outer Pareto-k diagnostic, and
+  only when an axis actually railed. A field SD still on a boundary of
+  its grid after the attempts is named in a warning, with the reason it
+  stayed, in `outer_grid_axis_declined` (gcol33/tulpa#919). The mode the
+  placement was laid around is on the fit as `outer_mode_u` /
+  `outer_mode_cov_u` (in each axis's `outer_mode_axis_tags` coordinate),
+  with `outer_mode_status`, `outer_mode_rounds` and `outer_mode_evals`.
+  A `sigma_grid` the caller PINNED always wins: auto-recenter engages
+  when the field is left `NULL`, when it is marked with
   [`auto_grid()`](https://gillescolling.com/tulpa/reference/auto_grid.md)
   (how a wrapper package declares an axis it defaulted rather than one
   the user chose), or when its nodes are exactly the engine's own
@@ -123,6 +142,27 @@ tulpa_nested_laplace_joint(
   another axis in the same grid has unguessable support (car_proper's
   `rho_car`); whichever way it declines, `outer_grid_recenter_declined`
   says which (see below).
+
+  On the list-of-blocks path an `icar`, `bym2`, `car_proper` or `nngp`
+  block may carry `projector` in place of `spatial_idx`: a list of
+  `n_arms` matrices (dense or a Matrix sparse matrix), arm `k`'s of size
+  `N_k x n_spatial_units` (`N_k x n_spatial` for `nngp`), or one matrix
+  shared by every arm; a `NULL` entry is an arm the field does not
+  reach. Arm `k`'s predictor then receives `A_k z` with `z` on the
+  block's own prior, so restricted spatial regression is
+  `A_k = P_k S_k`, with `P_k = I - X_k (X_k' X_k)^-1 X_k'` and `S_k` the
+  observation-to-unit incidence. An areal field's level is placed from
+  `A_k 1`: where it is zero on every arm the level never reaches the
+  predictor and is removed with no fold; where it is the intercept
+  column it folds into the intercept. The `nngp` and `car_proper` priors
+  are proper and carry their level themselves. Restricting the field
+  changes the estimand to the marginal association (see
+  [`spatial_rsr()`](https://gillescolling.com/tulpa/reference/spatial_rsr.md)).
+
+  An empty `prior = list()` is a list of zero blocks: the model carries
+  no latent field, each arm's predictor is its fixed effects, and the
+  outer grid is spanned by the per-arm dispersion axes of `phi_grid`
+  alone (one cell when there are none).
 
 - copy:
 
@@ -362,15 +402,20 @@ tulpa_nested_laplace_joint(
     CHOLMOD solver and NewtonScratch (inner OpenMP auto-disabled). `1L`
     is serial, chained warm-starts – bitwise identical to the
     pre-speedup driver. Recommended on multi-core workstations:
-    `parallel::detectCores() - 1L`. It is a REQUEST: the driver clamps
-    it to the team the OpenMP environment hands out
-    (`omp_get_max_threads()`, `OMP_THREAD_LIMIT`, and the check farm's
-    core cap), because the per-cell block cache sizes its slot array
-    from that same number. A job script exporting `OMP_NUM_THREADS=1` to
-    pin the INNER threads therefore runs the outer grid serially
-    whatever is asked for here; the fit says so once, in a message, and
-    records the pair in `n_threads_outer_requested` /
-    `n_threads_outer_realised`.
+    `parallel::detectCores() - 1L`. A solve that runs alone holds every
+    thread the fit was granted, the larger of `n_threads` and
+    `n_threads_outer` under the `n_threads_scatter` cap, on its inner
+    loop: the pilot, every cell of a refinement or var-of-means
+    consistency round, and the skew probe. A fit is therefore
+    reproducible bit for bit at a given pair of `n_threads` and
+    `n_threads_outer`. It is a REQUEST: the driver clamps it to the team
+    the OpenMP environment hands out (`omp_get_max_threads()`,
+    `OMP_THREAD_LIMIT`, and the check farm's core cap), because the
+    per-cell block cache sizes its slot array from that same number. A
+    job script exporting `OMP_NUM_THREADS=1` to pin the INNER threads
+    therefore runs the outer grid serially whatever is asked for here;
+    the fit says so once, in a message, and records the pair in
+    `n_threads_outer_requested` / `n_threads_outer_realised`.
 
   - `tile_warm` (`TRUE`) – when `n_threads_outer > 1` and a copy block
     is present, group outer cells into tiles sharing every axis except
@@ -380,31 +425,37 @@ tulpa_nested_laplace_joint(
     / `n_threads_outer <= 1L`. `FALSE` recovers the pre-tiling behaviour
     (e.g. regression testing).
 
-  - `prune` (`FALSE`), `prune_tol` (`1e-3`) – opt-in cheap-pass
-    screening. When `prune = TRUE`, the driver sweeps the outer lattice
-    running a short inner Newton per cell, each warm-started from the
-    previous screened cell's quasi-mode (lattice-adjacent), computes a
-    screening Laplace log-marginal, softmax-normalises, and skips the
-    full inner Newton on cells whose normalised weight is `< prune_tol`.
-    The neighbour-warm-start sweep keeps every cheap mode near its
-    cell's true mode, so the cheap ranking is faithful to the full-solve
-    ranking even when the inner latent mode moves substantially across
-    the grid. Pruned cells get `log_marginal = -Inf`, `n_iter = 0`, and
-    inherit the pilot mode; the pilot cell is never pruned, and at least
-    `prune_min_keep` cells (5) are solved in full whatever the tolerance
-    says – the highest-ranked dropped cells are restored up to that
-    floor, because the outer grid placement pass reads a
-    finite-difference curvature off the cells that were SOLVED and a
-    kept set of one carries none. Two fallbacks to the full grid, each
-    with a warning: the cheap-pass safety gate (the cheap-screen argmax
-    disagrees with the full-solve argmax, or the kept posterior
-    collapses onto a cell the screen mis-estimated by more than the
-    margin it discarded cells by), and a screened fit whose grid
-    placement declined for want of curvature. Neither bounds the error
-    from a cell that was discarded and never solved: the gate compares
-    the screen against the cells it kept. Stacks with `n_threads_outer`.
-    `prune_tol` must be in `[0, 1)`. Default `FALSE` (the full grid is
-    correct).
+  - `prune` (`TRUE`), `prune_tol` (`1e-3`) – cheap-pass screening. The
+    driver sweeps the outer lattice running a short inner Newton per
+    cell, each warm-started from the previous screened cell's quasi-mode
+    (lattice-adjacent), computes a screening Laplace log-marginal,
+    softmax-normalises, and skips the full inner Newton on cells whose
+    normalised weight is `< prune_tol`. The neighbour-warm-start sweep
+    keeps every cheap mode near its cell's true mode, so the cheap
+    ranking is faithful to the full-solve ranking even when the inner
+    latent mode moves substantially across the grid. Pruned cells get
+    `log_marginal = -Inf`, `n_iter = 0`, and inherit the pilot mode; the
+    pilot cell is never pruned, and at least `prune_min_keep` cells (5)
+    are solved in full whatever the tolerance says – the highest-ranked
+    dropped cells are restored up to that floor, because the outer grid
+    placement pass reads a finite-difference curvature off the cells
+    that were SOLVED and a kept set of one carries none. After the full
+    pass the kept cells say how far off the screen was, and the
+    posterior mass the dropped cells may carry is bounded by lifting
+    each by the worst error measured on a kept cell
+    (`prune_dropped_mass_bound`). Past 1% the driver solves the dropped
+    cells that contribute most to the bound until it is under 1%
+    (`prune_n_repaired`), so what the fit returns holds that bound. Two
+    fallbacks to the full grid remain, each with a warning: a bound the
+    repair could not bring under 1%, and a screened fit whose grid
+    placement declined for want of curvature. On by default: a grid
+    placed around its mode crosses axes the posterior does not fill
+    (gcol33/tulpa#925), and solving every one of those cells is most of
+    a large fit's cost. `FALSE` solves every cell, and is the default
+    when the fit asks for local CCD refinement (`local_ccd`, or
+    `k_refine = "ccd"`), whose stencil reads each refined cell's axis
+    neighbours. Stacks with `n_threads_outer`. `prune_tol` must be in
+    `[0, 1)`.
 
   - `prune_log_gap` (unset) – the screening cut in nats: keep every cell
     within this many nats of the best screened cell. `prune_tol` is a
@@ -464,42 +515,51 @@ tulpa_nested_laplace_joint(
     `adaptive_grid_max_passes` (`1L`) – when `adaptive_grid = TRUE`, a
     mode-tracked 1D refinement pass triggers on any axis whose marginal
     boundary weight exceeds `adaptive_grid_edge_thresh`. New points are
-    appended on that axis (interior densification + outward log-spaced
-    extension) paired with the boundary cell's modal other-axis values,
-    each measured by the part of its row's base cells it takes over (a
-    slice past the outermost node adds that row's extension region) –
-    `O(n_new_points)` kernel solves, not the full cartesian product. The
-    edge score is
+    added to that axis as levels (interior densification + outward
+    log-spaced extension), each laid in every row of the other axes that
+    holds the posterior – at most `n_new_points * n_rows` kernel solves.
+    The edge score is
     `max(marginal_weight_at_boundary, exp(max_log_marginal_at _boundary - max_log_marginal_overall))`,
     catching both boundary pile-up and integrand truncation; `0.02` is
     ~4 log units of decay. `adaptive_grid_max_passes` caps the passes
     (one usually suffices). Fixes posterior CI under-coverage when truth
-    sits near a grid edge.
+    sits near a grid edge. Both the single-block and the multi-block
+    driver run the passes on a tensor grid; a CCD design, the adaptive
+    lattice and a locally CCD-refined grid keep the nodes they were laid
+    on.
 
     How far a given axis may be moved depends on where its nodes came
-    from. An axis whose nodes the CALLER wrote down – `copy$alpha_grid`
-    / `field_coef$grid`, an entry of `phi_grid` – states where the fit
-    integrates, so refinement densifies it and never places a node past
-    either end node; a mode outside that range shows up as mass at the
-    edge. An axis the ENGINE placed (`alpha_n` / `field_coef$n`, or no
-    nodes given) carries no such statement, so refinement may follow the
-    posterior out past its ends. Nodes a wrapper package computed as a
-    default of its own are declared with
+    from. An axis whose nodes the CALLER wrote down – a block's
+    `sigma_grid`, `copy$alpha_grid` / `field_coef$grid`, an entry of
+    `phi_grid` – states where the fit integrates, so refinement
+    densifies it and never places a node past either end node; a mode
+    outside that range shows up as mass at the edge. An axis the ENGINE
+    placed (`alpha_n` / `field_coef$n`, or no nodes given) carries no
+    such statement, so refinement may follow the posterior out past its
+    ends. Nodes a wrapper package computed as a default of its own are
+    declared with
     [`auto_grid()`](https://gillescolling.com/tulpa/reference/auto_grid.md)
     and count as engine-placed.
 
   - `axis_refine` (`NULL`) – per-axis override of the rule above, named
-    by outer-grid axis (`"alpha"`, `"phi_<arm>"`): `"none"` (the axis
-    takes no refinement nodes), `"densify"` (nodes inside the declared
-    span only) or `"extend"` (nodes past the end nodes too). A single
-    unnamed value applies to every refinable axis. An unknown axis name,
-    or a request for nodes on an axis this driver does not refine, is an
-    error rather than a silent no-op. Read only when
-    `adaptive_grid = TRUE` or `var_of_means_consistency = TRUE`.
+    by outer-grid axis (`"sigma"`, `"alpha"`, `"phi_<arm>"`;
+    `"b<k>.sigma"`, `"b<k>.tau"` and `"b<k>.alpha"` on a multi-block
+    grid): `"none"` (the axis takes no refinement nodes), `"densify"`
+    (nodes inside the declared span only) or `"extend"` (nodes past the
+    end nodes too). A single unnamed value applies to every refinable
+    axis. An unknown axis name, or a request for nodes on an axis this
+    driver does not refine, is an error rather than a silent no-op. Read
+    only when `adaptive_grid = TRUE` or
+    `var_of_means_consistency = TRUE`.
 
   - `var_of_means_consistency` (`TRUE`) – run a post-integration
-    consistency pass on the variance of the per-arm posterior means and
-    attach `var_of_means_consistency_info`.
+    consistency pass over the refinable axes (a block's field SD, the
+    copy scale and the per-arm dispersions). An axis whose marginal has
+    collapsed onto too few nodes to carry a spread, such as a field SD
+    narrower than its placed cell, has levels added in every row of the
+    other axes that holds the posterior until its marginal resolves, so
+    the reported interval is read off the posterior and not off a cell
+    box. Attaches `var_of_means_consistency_info`.
 
   - `inner_factorization` (`"auto"`) – which factorization the dense
     inner Newton applies to the Hessian it assembled: `"auto"` by the
@@ -614,6 +674,19 @@ tulpa_nested_laplace_joint(
     integrators. The kept-cell / dense / solve counts are returned as
     `$adaptive_grid_info`.
 
+  - `hessian` (`"auto"`) – the curvature each inner Newton step is built
+    from, where a cell-coupled arm makes the joint Hessian indefinite
+    away from the mode. `"auto"` takes the observed Hessian wherever it
+    factors as it stands, the Newton step, and the coupled cells'
+    complete-data expected information (Fisher scoring, positive
+    semi-definite) where it does not; `"lm"` always takes the observed
+    Hessian, loading its diagonal until it factors; `"fisher"` always
+    takes the expected information, which converges linearly; `"psd"`
+    eigen-clamps the observed Hessian (small `n_x` only). The final
+    mode-pass behind `log_det`, the log marginal and the SEs uses the
+    observed Hessian under every choice, and a fit with no coupled arm
+    runs `"auto"` and `"fisher"` as `"lm"`.
+
   - `inner_refresh` (`1L`) – inner-Newton Cholesky factor reuse interval
     (Shamanskii / chord method). For a non-quadratic positive arm (e.g.
     a beta cover arm) the latent Hessian changes every inner iteration,
@@ -625,8 +698,8 @@ tulpa_nested_laplace_joint(
     converged mode is unchanged and the final mode-pass Hessian
     (`log_det`, SEs) is always fresh; only the path to the mode uses a
     stale curvature, which may cost a few extra inner iterations.
-    Applies to the sparse joint path with the default
-    `control$hessian = "lm"` curvature; the dense small-`n_x` path
+    Applies to the sparse joint path with an LM-guarded step (`hessian`
+    `"auto"`, `"lm"` or `"fisher"`); the dense small-`n_x` path
     re-factorizes a cheap Hessian and ignores it. `2L`-`4L` is a good
     range for a slow beta arm.
 
@@ -778,34 +851,31 @@ tulpa_nested_laplace_joint(
     (icar/bym2/car_proper) and the multi-block path (a per-group RE, a
     trend field, or an arm-specific field block).
 
-  - `within_cell` (`"box_uniform"`) – the WITHIN-CELL construction the
+  - `within_cell` (`"log_quadratic"`) – the WITHIN-CELL construction the
     reported per-axis hyperparameter intervals are read with. The outer
     grid's weights say how much mass each cell holds; they do not say
     how it is spread inside the cell, and a quantile needs both.
-    `"box_uniform"` puts the cumulative FULL mass at each cell EDGE and
-    interpolates between edges; `"chord"` puts the cumulative MID-mass
-    at each cell coordinate and interpolates between coordinates – the
-    same masses over the same boxes with the knots moved half a cell,
-    which measures as a whole order of convergence (2.00 against 1.04 on
-    a fixture with a closed-form posterior). THE DEFAULT IS
-    `"box_uniform"` since 0.0.188, decided on FIXED-TRUTH coverage at
-    the placement the engine ships, with `auto_recenter = "resolve"` as
-    the default. Summed \|coverage - nominal\| over nominal 0.95 / 0.80
-    / 0.50, chord against box-uniform: 0.2900 / 0.1233 on the
-    pre-registered fixed-truth instrument, 0.2004 / 0.0361 over 4680
-    truth-swept fits of the same fixture, and 0.2467 / 0.1572 over nine
-    (config, axis) rows spanning seven families, at 0.69 to 1.08x the
-    width. The conditional-coverage swing that held the default back
-    reads 0.110 at the shipped placement against 0.415 on the coarse
-    pinned grid it was measured on, and at nominal 0.50 it is the same
-    on both reads. `outer_grid_h_over_sd` is how wide a cell is on each
-    axis, and `theta_within_cell` is what each axis was actually read
-    with. Only a `"density"` support admits it – a CCD design, a locally
-    refined grid and a posterior sample are not cell partitions that
-    tile – and an axis it declines on reports `"chord"` with a reason
-    rather than erroring. Nothing else moves: point estimates, moments,
-    draws and weights are untouched, and `"chord"` restores the previous
-    report exactly.
+    `"log_quadratic"` joins each row's node log densities by overlapping
+    quadratics, exact for a Gaussian at any spacing, and continues the
+    end quadratic past the outer node instead of stopping at the box
+    edge; it runs on the rows that resolve their own conditional
+    (`h / sd <= 2`) and reads every other row as boxes, declining to
+    `"box_uniform"` where no row qualifies. `"box_uniform"` puts the
+    cumulative FULL mass at each cell EDGE and interpolates between
+    edges; `"chord"` puts the cumulative MID-mass at each cell
+    coordinate and interpolates between coordinates. The default moved
+    from `"box_uniform"` at gcol33/tulpa#932: a placed axis sits at 1.25
+    posterior SDs per cell, where the box read is narrow by
+    construction, and against dense references of a two-arm ICAR fixture
+    the log-quadratic read's summed error is 0.038 against the box
+    read's 0.110 on the same grids. `outer_grid_h_over_sd` is how wide a
+    cell is on each axis, and `theta_within_cell` is what each axis was
+    actually read with. Only a `"density"` support admits the box and
+    log-quadratic reads – a CCD design, a locally refined grid and a
+    posterior sample are not cell partitions that tile – and an axis
+    they decline on reports the read that ran with a reason rather than
+    erroring. Nothing else moves: point estimates, moments, draws and
+    weights are untouched.
 
   - `skew_correct` (`TRUE`) – consume the inner-Laplace expansion
     instead of only grading it: report Cornish-Fisher marginal quantiles
@@ -891,8 +961,14 @@ tulpa_nested_laplace_joint(
     (`phi_grid`) is the exception and fires on its own sizing: it is
     crossed onto the tensor independently of the field's geometry, so
     whether the field's grid collapsed says nothing about whether the
-    dispersion axis brackets its own posterior. `FALSE` holds that axis
-    too.
+    dispersion axis brackets its own posterior. The copy scale `alpha`
+    fires the same way when its grid is the engine's own or a wrapper's
+    [`auto_grid()`](https://gillescolling.com/tulpa/reference/auto_grid.md)
+    default: its continuum is laid at the mode and its "no coupling"
+    atom at 0 kept, and an axis whose posterior sits on that atom is
+    left where it is. Every axis that fires is laid from the ONE outer
+    mode the placement mode-find reached, and the grid is refit once
+    with all of them (gcol33/tulpa#925). `FALSE` holds these axes too.
 
   - `recenter_pilot` (`FALSE`) – detect the placement above on a THINNED
     grid rather than on the full one. Placement reads two things, the
@@ -924,13 +1000,14 @@ tulpa_nested_laplace_joint(
     bit-identical to the same fit with the knob off. What the pilot
     detected on is recorded in `outer_grid_pilot`.
 
-  - `max_grid_cells` (`2048L`) – cell-count ceiling on a multi-block
-    tensor outer grid, refused with an error above it. Each cell is one
-    inner Newton solve, so the default catches per-block grids that
-    multiplied out to a run nobody asked for; a deliberate converged
-    tensor reference grid (4 axes at 7 levels is 2401 cells) raises it
-    here, which `integration = "ccd"` cannot serve since a CCD is a
-    different integration design.
+  - `max_grid_cells` (`NULL`, no ceiling) – a ceiling on a multi-block
+    tensor outer grid's cell count, refused before any inner solve with
+    the axes that produced the count. The count is the number of inner
+    solves, so it includes an active `phi_grid`: 2500 latent cells
+    crossed with 4 dispersion values are 10000 cells. It bounds the
+    dense tensor, including the one a declined `"grid_adaptive"` falls
+    back to. Unset, a tensor of any size is solved, and one past 2048
+    cells is announced with a warning first.
 
   - `checkpoint` (`NULL`) – grid-cell checkpoint/resume. Set
     `list(path = "fit.ckpt", resume = TRUE)` to make a killed or
@@ -966,6 +1043,13 @@ A list of class
   (alpha at small n_pos, sigma/range/phi near a boundary), where the
   posterior mean is pulled by the right tail away from the bulk and
   `mean +/- 1.96 sd` mis-states the uncertainty.
+
+- `theta_sd_source` – per axis, what the reported SD was read off:
+  `"weighted"` (the spread of the weights, on a resolved axis),
+  `"stencil"` (a parabola at the modal node) or `"within_cell"` (the
+  modal node's mass spread over its cell, the read the interval of an
+  unresolved axis comes from). `theta_sd_stencil_declined` says why a
+  parabola was not formed.
 
 - `modes` – `[n_grid x n_x]` matrix of inner modes.
 
@@ -1067,14 +1151,14 @@ A list of class
   if it is a default rather than a choice), `"default_axis_pinned"` (a
   wrapper package declared the nodes with `auto_grid(place = FALSE)` and
   asked for them as written – nothing you pinned), or
-  `"no_usable_curvature"` (the mode-Hessian the recenter needs was
-  unavailable or degenerate, e.g. a car_proper grid whose `rho_car` axis
-  has unguessable support). Absent when the fit WAS recentred. A joint
-  fit's field SD and its per-arm dispersion are placed by different
-  passes over the same grid, and this slot reduces over them rather than
-  holding the last to speak: an axis held because it was declared does
-  not stand as the fit's answer while a pass with a movable axis has
-  one.
+  `"no_usable_curvature"` (the outer mode-find the recenter lays the
+  axis from did not reach a mode with a usable curvature, e.g. a
+  car_proper grid whose `rho_car` axis has unguessable support). Absent
+  when the fit WAS recentred. A joint fit's field SD and its per-arm
+  dispersion are placed by different passes over the same grid, and this
+  slot reduces over them rather than holding the last to speak: an axis
+  held because it was declared does not stand as the fit's answer while
+  a pass with a movable axis has one.
 
 - `outer_grid_axis_declined` – the same question PER AXIS, as a named
   character vector. The slot above holds one reason for the whole fit
@@ -1084,7 +1168,9 @@ A list of class
   then names. Written by the field-SD passes for `sigma` (`b<k>.sigma`
   on a copy block) and by the per-arm dispersion pass for `phi_<arm>`,
   and carried across a later pass placing a different axis; absent on a
-  fit no pass declined an axis of.
+  fit no pass declined an axis of. An axis a pass DID move that still
+  rails reads `"attempts_exhausted"` (or the reason its last attempt
+  could not be laid), and is the axis the railed-mode warning names.
 
 - `outer_grid_pilot` – present only when `control$recenter_pilot` ran:
   the pilot's resolution (`n_pilot`), its cell count (`cells`), the axes
@@ -1206,22 +1292,31 @@ A list of class
   `phi_grid`, or no peaked interior cell).
 
 - `integration_requested`, `integration_declined` – what `integration`
-  asked for, and why the CCD did not run. `$integration` names the
-  integrator that RAN, and `.nl_node_support()` keys the interval
-  construction off it, so a caller who asked for a moment rule and
-  received a density grid reads the reason here rather than inferring
-  it. `integration_declined` is `NA_character_` when nothing was
-  declined, and otherwise one of `"axis_count"` (fewer transformable
-  latent axes than the requested mode's threshold), `"unguessable_axis"`
-  (a CAR_proper `rho_car` or a non-BYM2 `rho`), `"degenerate_axis"` (a
-  single-valued axis), `"modefind_ridge"` / `"modefind_boundary"` /
-  `"modefind_degenerate"` / `"modefind_failed"`, `"hessian_singular"`,
-  `"hessian_not_pd"`, `"copy_atom_components"` (more copy atoms than the
-  design splits into, see `copy_atom_mass`), `"copy_atom_mass"` (a
-  declared atom mass outside `[0, 1)`) or `"placement_budget"` (placing
-  the design would cost more inner solves than integrating the tensor
-  grid it replaces; see the `ccd_budget` control knob). Multi-block fits
-  only.
+  asked for, and why the requested CCD or adaptive lattice did not run.
+  `$integration` names the integrator that RAN, and `.nl_node_support()`
+  keys the interval construction off it, so a caller who asked for a
+  moment rule and received a density grid reads the reason here rather
+  than inferring it. `integration_declined` is `NA_character_` when
+  nothing was declined, and otherwise one of `"axis_count"` (fewer
+  transformable latent axes than the requested mode's threshold),
+  `"unguessable_axis"` (a CAR_proper `rho_car` or a non-BYM2 `rho`),
+  `"degenerate_axis"` (a single-valued axis), `"modefind_ridge"` /
+  `"modefind_boundary"` / `"modefind_degenerate"` / `"modefind_failed"`,
+  `"hessian_singular"`, `"hessian_not_pd"`, `"copy_atom_components"`
+  (more copy atoms than the design splits into, see `copy_atom_mass`),
+  `"copy_atom_mass"` (a declared atom mass outside `[0, 1)`) or
+  `"placement_budget"` (placing the design would cost more inner solves
+  than integrating the tensor grid it replaces; see the `ccd_budget`
+  control knob). Under `integration = "grid_adaptive"` it is one of
+  `"adaptive_small_grid"` (fewer outer cells than
+  `adaptive_grid_min_cells`), `"adaptive_degenerate_lattice"`,
+  `"adaptive_seed_failed"` (no finite marginal in the coarse seed),
+  `"adaptive_diffuse_seed"` / `"adaptive_flood_cap"` /
+  `"adaptive_kept_cap"` (the posterior mass spreads over more than
+  `adaptive_grid_max_frac` of the dense grid, read at the seed, during
+  the flood, or on the closed kept region), or `"adaptive_error"` (the
+  flood raised an error, reported as a warning carrying its message);
+  the fit then integrates the dense tensor. Multi-block fits only.
 
 - `ccd_modefind_evals`, `ccd_modefind_budget`, `ccd_modefind_rounds`,
   `ccd_modefind_seconds` – what PLACING the CCD cost: inner Newton
@@ -1259,14 +1354,18 @@ A list of class
   `theta_within_cell_declined` – the WITHIN-CELL construction the same
   intervals were read with. The kind above says what the integrator
   left; this says how each cell's mass was spread inside its own box
-  when the grid was read back. `"box_uniform"` is the default and puts
-  the cumulative full mass at each cell edge; `"chord"`
-  (`control$within_cell`) puts the cumulative mid-mass at each cell
-  coordinate, the same masses over the same boxes with the knots moved
-  half a cell. The construction is recorded per axis, and an axis whose
-  cell partition could not be built falls back to `"chord"` on its own
-  with the reason in `theta_within_cell_declined` (`"support_<kind>"`,
-  `"single_node"`, `"boxes_do_not_tile"`, `"no_usable_node"`).
+  when the grid was read back. `"log_quadratic"` is the default and
+  interpolates each row's node log densities; `"box_uniform"`
+  (`control$within_cell`) puts the cumulative full mass at each cell
+  edge; `"chord"` puts the cumulative mid-mass at each cell coordinate,
+  the same masses over the same boxes with the knots moved half a cell.
+  The construction is recorded per axis, and an axis whose cell
+  partition could not be built falls back to `"chord"` on its own with
+  the reason in `theta_within_cell_declined` (`"support_<kind>"`,
+  `"single_node"`, `"boxes_do_not_tile"`, `"no_usable_node"`). A
+  `"log_quadratic"` request falls back to `"box_uniform"` first, with
+  `"unresolved"` (no row resolves its own conditional),
+  `"not_a_grid_axis"` or `"no_node_density"` as the reason.
 
 - `theta_cell_edge_coord`, `theta_cell_edge_declined` – per axis, the
   COORDINATE that axis's outer cell edges were mirrored in, and why the
@@ -1307,10 +1406,15 @@ A list of class
 - `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
   `prune_tol`, `prune_screen_iters` – present only when `prune = TRUE`
   and the safety gate did not fall back. Cheap-pass log-marginals at
-  every cell, a logical mask of pruned cells, the pruned-cell count, the
-  threshold actually applied, and the screening depth the driver
-  actually ran at. Pruned cells have `log_marginal = -Inf` so they get
-  zero weight under `.nl_normalise_weights_safe`.
+  every cell – the truncated solve's value plus half its Newton
+  decrement, the second-order estimate of the converged value the screen
+  ranks by, so a cell whose inner mode had far to move from its warm
+  start is not ranked on where the truncation left it
+  (gcol33/tulpa#919); that decrement is `prune_screen_decrement` – a
+  logical mask of pruned cells, the pruned-cell count, the threshold
+  actually applied, and the screening depth the driver actually ran at.
+  Pruned cells have `log_marginal = -Inf` so they get zero weight under
+  `.nl_normalise_weights_safe`.
 
 - `prune_log_gap_cut`, `prune_cheap_lm_spread`, `prune_min_keep`,
   `prune_n_floor_restored` – the screen read on the scale it operates
@@ -1318,6 +1422,16 @@ A list of class
   how many nats the screened surface spans, the kept-cell floor applied,
   and how many cells that floor put back. A cut that is a sliver of the
   spread is a tolerance with no resolution on this grid.
+
+- `prune_dropped_mass_bound`, `prune_n_repaired`, `prune_gate_mass` –
+  the posterior mass the dropped cells may carry, with each lifted by
+  the worst screening error measured on a kept cell; how many dropped
+  cells the driver solved in full to bring that under the gate; and the
+  gate.
+
+- `outer_mode_carried` – `TRUE` on a placement refit that read the outer
+  mode it was laid from rather than finding it again, which it does
+  unless the placed grid rails.
 
 - `prune_fallback_triggered`, `prune_fallback_reason` – present only
   when a fallback to the full grid fired. The returned fit is the
@@ -1330,6 +1444,19 @@ A list of class
   clamps the request to the team the OpenMP environment hands out, so a
   fit launched under `OMP_NUM_THREADS=1` with `n_threads_outer = 10`
   runs serial; the pair is what a timing has to be recorded against.
+
+- `converged`, `n_iter`, `score_max` – per cell, whether the inner
+  Newton reached a mode within `control$max_iter`, the iterations it
+  took, and the largest absolute component of the joint penalized score
+  at the mode it reported (the residual a cell that stopped short
+  stopped at). A cell that stopped without a mode is solved again from
+  the mode of its nearest converged cell (`nonconverged_resolve` counts
+  the cells that first stalled and those the re-solve recovered); one
+  that still has no mode stays in the integration at the value it
+  stopped at, is listed in `nonconverged_cells` with the posterior mass
+  such cells carry in `nonconverged_mass`, and is named by
+  [`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md).
+  Past the screen's mass gate the fit warns.
 
 ## (sigma, alpha) parameterization
 
@@ -1382,6 +1509,9 @@ fit <- tulpa_nested_laplace_joint(
   prior = prior)
 #> [nested-laplace-joint] 1/3 cells (33%) | elapsed 0s | ETA >=0s | 0.00s/cells
 #> [nested-laplace-joint] 3/3 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [outer placement] round 1/30 | 11 evals | |step| 0.181 | logpost -345.9097 | elapsed 0s | 0s/eval
+#> [outer placement] round 2/30 | 14 evals | Newton step 0.00545 sd | logpost -345.9097 | elapsed 0s | 0s/eval
+#> [outer placement] mode-find done | 14 evals | logpost -345.9097 | elapsed 0s | 0s/eval
 fit$theta_mean        # shared field amplitude, integrated across both arms
 #>     sigma 
 #> 0.3064725 

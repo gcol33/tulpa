@@ -1,5 +1,27 @@
 # Inference modes: the three tiers and how to choose one
 
+## Installation
+
+``` r
+
+# Current release, built for Windows and macOS
+install.packages("tulpa",
+                 repos = c("https://gcol33.r-universe.dev",
+                           "https://cloud.r-project.org"))
+
+# Development version from GitHub
+install.packages("pak")
+pak::pak("gcol33/tulpa")
+
+# Pin a release
+pak::pak("gcol33/tulpa@v0.6.0")
+```
+
+`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
+for SPDE mesh construction). `tulpa` compiles its C++ backend on first
+install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
+tools on macOS, `r-base-dev` on Linux.
+
 ``` r
 
 library(tulpa)
@@ -153,8 +175,7 @@ and says so.
 
 fit_auto <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
                   spatial = list(type = "icar", adjacency = W), mode = "auto")
-c(backend = fit_auto$backend, tier = fit_auto$inference_tier)
-fit_auto$selection_reason
+summary(fit_auto)$inference[c("backend", "inference_tier", "selection_reason")]
 ```
 
 Auto reached for the most reliable method, Tier 1, because for this
@@ -175,8 +196,7 @@ xL <- rnorm(nL)
 dL <- data.frame(y = 0.5 + 1.2 * xL + rnorm(nL, sd = 0.8), x = xL)
 fit_big <- tulpa(y ~ x, data = dL, family = "gaussian", mode = "auto",
                  phi = 0.8^2)
-c(backend = fit_big$backend, tier = fit_big$inference_tier)
-fit_big$selection_reason
+summary(fit_big)$inference[c("backend", "inference_tier", "selection_reason")]
 ```
 
 Here auto stepped down to the Laplace path. The reason names the dataset
@@ -255,7 +275,7 @@ fit_pf <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                 mode = "pathfinder", sigma_re = 0.6,
                 control = list(n_draws = 450))
 coef(fit_pf)
-fit_pf$elbo
+summary(fit_pf)$reliability$elbo
 ```
 
 Pathfinder fits three situations well: you want draws but not the cost
@@ -279,7 +299,7 @@ fit_mala <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
                   control = list(n_iter = 450, warmup = 150))
 coef(fit_mala)
-fit_mala$mean_accept
+summary(fit_mala)$reliability$mean_accept
 ```
 
 MALA earns its keep when you want exact posterior moments at moderate
@@ -305,7 +325,7 @@ fit_imh <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                  mode = "imh_laplace", sigma_re = 0.6,
                  control = list(n_iter = 450, warmup = 150))
 coef(fit_imh)
-fit_imh$mean_accept
+summary(fit_imh)$reliability$mean_accept
 ```
 
 The acceptance here is high, which says the Laplace fit was already
@@ -322,13 +342,16 @@ deviation rather than conditioning on a fixed `sigma_re`, which is why
 the spatial fit earlier reported a Gibbs backend. It returns posterior
 draws, so the fixed effects come through
 [`coef()`](https://rdrr.io/r/stats/coef.html) and the field and its
-precision are columns of the same draws matrix, named in `param_names`.
+precision are named columns of the same draws matrix, which
+[`posterior_sample()`](https://gillescolling.com/tulpa/reference/posterior_sample.md)
+returns.
 
 ``` r
 
 round(coef(fit_auto), 3)
-tail(fit_auto$param_names, 3)
-round(fit_auto$means[c("log_tau_spatial", "phi_spatial[1]")], 3)
+draws_auto <- posterior_sample(fit_auto)
+tail(colnames(draws_auto), 3)
+round(colMeans(draws_auto)[c("log_tau_spatial", "phi_spatial[1]")], 3)
 ```
 
 Gibbs is the right call when the family is conjugate-friendly under the
@@ -362,17 +385,20 @@ dsl <- data.frame(y = rbinom(ng * ni, 1, plogis(eta)),
 
 fit_rc <- tulpa(y ~ x + (1 + x | g), data = dsl,
                 family = "binomial", mode = "laplace")
-fit_rc$backend
+summary(fit_rc)$inference$backend
 ```
 
 The slope term routed the fit to `re_cov_nested` without being named.
 What comes back is the integrated covariance, not a point estimate of
 one: a 2x2 matrix carrying the intercept and slope variances on its
 diagonal and their covariance off it.
+[`VarCorr()`](https://gillescolling.com/tulpa/reference/VarCorr.md)
+reports the standard deviations and carries the matrix in its `cov`
+attribute, one per random-effect term.
 
 ``` r
 
-round(fit_rc$Sigma_mean, 3)
+round(attr(VarCorr(fit_rc), "cov")$g, 3)
 ```
 
 Integrating the covariance through a Gaussian grid over the
@@ -382,7 +408,7 @@ reports.
 
 ``` r
 
-round(fit_rc$pareto_k, 2)
+round(attr(diagnostics(fit_rc), "pareto_k"), 2)
 ```
 
 Here k-hat sits below the 0.7 threshold, so the Gaussian grid fits the
@@ -450,11 +476,13 @@ elapsed time into one table.
 
 ``` r
 
-slope_se <- function(f) summary(f)["x", "std.error"]
+slope_se <- function(f) coef(summary(f))["x", "std.error"]
 data.frame(
-  backend  = c(f_lap$backend, f_mala$backend, f_pf$backend),
-  tier     = c(f_lap$inference_tier, f_mala$inference_tier,
-               f_pf$inference_tier),
+  backend  = vapply(list(f_lap, f_mala, f_pf),
+                    function(f) summary(f)$inference$backend, character(1)),
+  tier     = vapply(list(f_lap, f_mala, f_pf),
+                    function(f) summary(f)$inference$inference_tier,
+                    numeric(1)),
   slope    = round(c(coef(f_lap)["x"], coef(f_mala)["x"],
                      coef(f_pf)["x"]), 3),
   slope_se = round(c(slope_se(f_lap), slope_se(f_mala),

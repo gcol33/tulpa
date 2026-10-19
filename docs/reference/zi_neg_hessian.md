@@ -1,4 +1,4 @@
-# Negative Hessian of the zero-inflated mixture in eta space.
+# Negative Hessian of the zero-inflated mixture in eta space
 
 Returns an `n x 3` matrix with columns `count` (-d2/d eta_count^2), `zi`
 (-d2/d logit_zi^2) and `cross` (-d2/d eta_count d logit_zi), i.e. the

@@ -1,4 +1,4 @@
-# Metropolis-Adjusted Langevin Algorithm (MALA)
+# Metropolis-adjusted Langevin algorithm (MALA)
 
 Sample from a posterior using MALA: a Langevin proposal driven by the
 gradient of the log posterior, corrected by a Metropolis- Hastings
@@ -23,6 +23,7 @@ mala(
   epsilon = 0.1,
   target_accept = 0.574,
   mass_diag = NULL,
+  mass_matrix = NULL,
   thin = 1L,
   seed = NULL,
   verbose = FALSE
@@ -73,6 +74,18 @@ mala(
   For posteriors with very different scales across dimensions, set this
   to (an estimate of) the posterior variances, i.e. the squared
   posterior SDs.
+
+- mass_matrix:
+
+  Optional dense preconditioner: a `d x d` symmetric positive-definite
+  inverse mass `M^-1`, typically (an estimate of) the posterior
+  covariance. The proposal is then
+  `N(theta + (eps^2/2) * M^-1 * grad, eps^2 * M^-1)`, which also reaches
+  the correlations a diagonal cannot: in a random-effect model the fixed
+  intercept and the group effects are strongly correlated a posteriori,
+  and an identity or diagonal metric crosses that ridge at the rate of
+  its narrowest direction. Supply at most one of `mass_diag` /
+  `mass_matrix`.
 
 - thin:
 
@@ -131,7 +144,7 @@ log_post <- function(t) -0.5 * sum((t - c(1, 2))^2)
 grad <- function(t) -(t - c(1, 2))
 fit <- mala(log_post, grad, init = c(0, 0), n_iter = 1000)
 colMeans(fit$draws)  # near c(1, 2)
-#> [1] 1.018460 2.046022
+#> [1] 1.112830 1.965615
 fit$mean_accept      # should adapt toward 0.574
-#> [1] 0.66
+#> [1] 0.61
 ```

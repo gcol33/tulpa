@@ -37,9 +37,13 @@ VarCorr(x, sigma = 1, ...)
 
 A data frame with one row per random-effect coefficient: `term`, `coef`,
 `sd`, and `source` (one of `"estimated"`, `"sampled"`, `"conditioned"`).
-Correlated terms additionally carry the covariance matrices in the
-`"cov"` attribute, one per term, each with a `"correlation"` attribute.
-Returns an empty data frame when the fit has no random effects.
+A gaussian fit adds a final `term = "Residual"` row (`coef` `NA`) with
+the residual SD `sqrt(phi)`, labelled `"estimated"` under
+`estimate_phi = TRUE` and `"conditioned"` otherwise; it has no entry in
+`"cov"`. Correlated terms additionally carry the covariance matrices in
+the `"cov"` attribute, one per term, each with a `"correlation"`
+attribute. Returns an empty data frame when the fit has no random
+effects.
 
 ## See also
 
@@ -61,6 +65,6 @@ d <- data.frame(y = rpois(n, exp(0.3 + 0.5 * x + b[grp])), x = x,
 fit <- tulpa(y ~ x + (1 | g), data = d, family = "poisson", mode = "eb")
 VarCorr(fit)
 #>   term        coef        sd    source
-#> 1    g (Intercept) 0.7649598 estimated
+#> 1    g (Intercept) 0.7650541 estimated
 # }
 ```

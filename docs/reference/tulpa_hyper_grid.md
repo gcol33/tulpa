@@ -119,10 +119,11 @@ tulpa_hyper_grid(
   - `var_of_means_consistency` (`FALSE`) – run a post-integration
     consistency pass: for refinable axes whose marginal has collapsed
     onto too few nodes to carry a spread, bisect the gaps between
-    adjacent nodes that carry the axis's mass, with slice points in the
-    modal cell's row, and repeat until the axis reaches
-    `var_of_means_min_ess` or has taken `.nl_diag("axis_refine_nodes")`
-    new nodes. One kernel call per round.
+    adjacent nodes that carry the axis's mass, each new point a level
+    laid in every row of the other axes that holds the posterior, and
+    repeat until the axis reaches `var_of_means_min_ess` or has taken
+    `.nl_diag("axis_refine_nodes")` new levels. One kernel call per
+    round.
 
   - `var_of_means_min_ess` (`.nl_diag("axis_sd_ess")`) – the quadrature
     effective sample size an axis marginal has to reach for the pass to
@@ -131,7 +132,7 @@ tulpa_hyper_grid(
 
 ## Value
 
-A list of class `c("tulpa_hyper_grid", "tulpa_fit", "list")` with:
+A list of class `c("tulpa_fit", "list")` with:
 
 - `theta_grid` – numeric matrix `[n_cells x n_axes]` of outer-grid
   hyperparameter values; columns named after the axes.
@@ -197,10 +198,29 @@ for the family-specific outer-grid driver that this helper generalises.
 ## Examples
 
 ``` r
-if (FALSE) { # \dontrun{
-# Integrate an inner fit over a hyperparameter grid: inner_fit(theta) returns
-# a per-cell fit and hyper_specs names the axes. tulpa_nested_laplace() is the
-# packaged driver built on this.
-res <- tulpa_hyper_grid(hyper_specs, inner_fit)
-} # }
+# Integrate a Gaussian linear model's residual SD: inner_fit(hypers) returns
+# the per-cell log marginal and the conditional fixed-effect posterior, and
+# the axis spec names the grid. tulpa_nested_laplace() is the packaged driver
+# built on this.
+set.seed(1)
+n <- 40L; X <- cbind(1, rnorm(n)); y <- as.numeric(X %*% c(0.5, -1) + rnorm(n))
+XtX <- crossprod(X); Xty <- crossprod(X, y)
+inner_fit <- function(hypers) {
+  sigma <- as.numeric(hypers["sigma"])
+  V <- chol2inv(chol(XtX / sigma^2 + diag(1e-4, 2)))
+  mu <- as.numeric(V %*% (Xty / sigma^2))
+  list(log_marginal = -n * log(sigma) - 0.5 * sum((y - X %*% mu)^2) / sigma^2 +
+         0.5 * as.numeric(determinant(V)$modulus),
+       beta_mean = stats::setNames(mu, c("b0", "b1")), beta_cov = V)
+}
+specs <- list(hyper_axis_spec("sigma", grid = exp(seq(log(0.5), log(2),
+                                                      length.out = 9)),
+                              log_scale = TRUE, bounds = c(0, Inf)))
+res <- tulpa_hyper_grid(specs, inner_fit, n_draws = 500L, seed = 1L)
+res$theta_median
+#>     sigma 
+#> 0.9210447 
+res$beta
+#>         b0         b1 
+#>  0.5982129 -0.7603655 
 ```

@@ -1,6 +1,6 @@
-# Backend names belonging to a tier (derived from the registry).
+# Backend names belonging to a tier (derived from the registry)
 
-Backend names belonging to a tier (derived from the registry).
+Backend names belonging to a tier (derived from the registry)
 
 ## Usage
 

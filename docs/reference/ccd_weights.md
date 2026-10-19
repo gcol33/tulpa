@@ -39,3 +39,12 @@ point (the centre weight `w0` for the central point, `w` otherwise).
 
 [`ccd_grid()`](https://gillescolling.com/tulpa/reference/ccd_grid.md),
 [`ccd_to_theta()`](https://gillescolling.com/tulpa/reference/ccd_to_theta.md).
+
+## Examples
+
+``` r
+ccd_weights(ccd_grid(3))
+#>  [1] 0.00000000 0.07142857 0.07142857 0.07142857 0.07142857 0.07142857
+#>  [7] 0.07142857 0.07142857 0.07142857 0.07142857 0.07142857 0.07142857
+#> [13] 0.07142857 0.07142857 0.07142857
+```

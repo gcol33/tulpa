@@ -2,29 +2,20 @@
 
 Switches read from the process environment rather than from a fitter's
 `control` list, because each one changes how the compiled kernels
-partition work rather than what model is fitted. Each is read once, when
-the package's shared library loads, so it has to be set before
-[`library(tulpa)`](https://github.com/gcol33/tulpa) – setting it later
-in a session has no effect.
+partition work or which tests run rather than what model is fitted.
 
-## Reproducibility of a parallel scatter
+## Parallel scatter
 
-- `TULPA_GRID_WORKSTEAL=0`:
+- `TULPA_SCATTER_FORCE_PARALLEL=1`:
 
-  Forces the serial per-cell coupling scatter. The work-stealing
-  partition is pinned by the grid geometry, so a grid solved with
-  several outer threads already reproduces the serial reduction; this is
-  the escape hatch if that ever has to be verified against a plain
-  sequential pass.
+  Takes the per-thread parallel fill of an uncoupled arm's
+  per-observation scatter whatever its size, instead of only where the
+  fill work outweighs the per-thread buffers. Read on every scatter
+  call, so it can be set within a session.
 
-- `TULPA_COUPLING_FORCE_PARALLEL`:
-
-  Set (to any value) to take the chunked parallel reduce on every
-  coupled cell instead of only where the cell count pays for the
-  per-chunk partial gradient and Hessian buffers. A small grid then
-  exercises the parallel path. The reduce runs in fixed chunk order, so
-  the answer is identical either way, which is what
-  `tests/testthat/test-coupling-force-parallel.R` asserts.
+The cell-coupled scatter needs no switch: its cells are split into a
+fixed number of chunks set by the cell count alone, so a fit returns the
+same numbers at every thread count.
 
 ## Test-suite tiers
 

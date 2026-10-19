@@ -14,6 +14,9 @@ latent_factor(
   constraint = c("sum_to_zero", "first_zero"),
   scale = TRUE
 )
+
+# S3 method for class 'tulpa_latent'
+print(x, ...)
 ```
 
 ## Arguments
@@ -47,6 +50,14 @@ latent_factor(
 
   Logical; if TRUE (default), factor loadings are standardized to have
   unit variance before applying sigma.
+
+- x:
+
+  A `tulpa_latent` specification.
+
+- ...:
+
+  Ignored.
 
 ## Value
 

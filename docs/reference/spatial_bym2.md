@@ -50,7 +50,11 @@ spatial_bym2(
 - scale_factor:
 
   Scaling factor for the ICAR component. If NULL (default), computed
-  from the adjacency matrix following Riebler et al.
+  from the adjacency matrix following Riebler et al. On a graph with
+  several connected components each component is scaled to unit
+  generalized variance separately and an isolated node (island) gets
+  unit variance on its structured part, following Freni-Sterrantino et
+  al. (2018). A supplied value is one scale for the whole graph.
 
 - parameterization:
 
@@ -65,6 +69,10 @@ A `tulpa_spatial` object
 Riebler, A., Sorbye, S. H., Simpson, D., & Rue, H. (2016). An intuitive
 Bayesian spatial model for disease mapping that accounts for scaling.
 Statistical Methods in Medical Research, 25(4), 1145-1165.
+
+Freni-Sterrantino, A., Ventrucci, M., & Rue, H. (2018). A note on
+intrinsic conditional autoregressive models for disconnected graphs.
+Spatial and Spatio-temporal Epidemiology, 26, 25-34.
 
 ## Examples
 
@@ -107,8 +115,18 @@ fit <- tulpa(
   mode = "laplace"
 )
 summary(fit)
-#>                 estimate   std.error        2.5 %      97.5 %
-#> (Intercept) -1.957897801 0.378119249 -2.698997911 -1.21679769
-#> age          0.006390932 0.004661451 -0.002745343  0.01552721
+#> tulpa fit  (laplace, tier 2) 
+#> Call: tulpa(formula = cases ~ age + spatial(region), data = epi_data, family = "binomial", mode = "laplace", n_trials = rep(100L, nrow(epi_data)), spatial = spatial_bym2(adj, level = "group", group_var = "region"))
+#>   inference mode: structured 
+#>   selected because: User-specified backend: laplace 
+#>   family: binomial 
+#>   n_obs: 40 
+#> 
+#> Fixed effects:
+#>              estimate std.error     2.5 %   97.5 %
+#> (Intercept) -1.957898  0.331077 -2.606797 -1.30900
+#> age          0.006391  0.004661 -0.002745  0.01553
+#> 
+#> Reliability (iid draws):
 # }
 ```

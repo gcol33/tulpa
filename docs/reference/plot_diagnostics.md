@@ -1,4 +1,4 @@
-# Diagnostic Plotting Functions for tulpa Models
+# Diagnostic plotting functions for tulpa models
 
 Visual diagnostic tools for MCMC convergence assessment. All functions
 provide base R fallbacks when ggplot2/bayesplot are unavailable.

@@ -19,6 +19,9 @@ prior_predict(
   seed = NULL,
   ...
 )
+
+# S3 method for class 'tulpa_prior_predict'
+print(x, ...)
 ```
 
 ## Arguments
@@ -59,6 +62,10 @@ prior_predict(
 - ...:
 
   Passed to `family$simulate_fn`.
+
+- x:
+
+  A `tulpa_prior_predict` object.
 
 ## Value
 

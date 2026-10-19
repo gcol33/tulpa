@@ -90,9 +90,26 @@ the formula slot that consumes a `tgmrf` block.
 ## Examples
 
 ``` r
-if (FALSE) { # \dontrun{
-# Compile a user latent block against tulpa's AD types; see
-# inst/examples/tgmrf_periodic_ar1.cpp for a complete block.
-blk <- tgmrf_cpp("my_block.cpp", id = "ar1", init = c(0, 0), graph = my_graph)
-} # }
+# \donttest{
+# Compile the periodic AR(1) block shipped with the package (80 nodes,
+# theta = (log sigma, atanh rho)) into a temporary cache, then evaluate
+# its registered precision kernel at the initial theta.
+cpp_file <- system.file("examples", "tgmrf_periodic_ar1.cpp",
+                        package = "tulpa")
+blk <- tgmrf_cpp(cpp_file, id = "tgmrf_periodic_ar1",
+                 init = c(log_sigma = 0, atanh_rho = atanh(0.5)),
+                 name = "periodic_ar1",
+                 cache_dir = file.path(tempdir(), "tulpa-cache"))
+blk$n_latent
+#> [1] 80
+Q <- blk$Q(c(0, atanh(0.5)))
+dim(Q)
+#> [1] 80 80
+Q[1:3, 1:3]
+#> 3 x 3 sparse Matrix of class "dgCMatrix"
+#>                       
+#> [1,]  1.25 -0.50  .   
+#> [2,] -0.50  1.25 -0.50
+#> [3,]  .    -0.50  1.25
+# }
 ```

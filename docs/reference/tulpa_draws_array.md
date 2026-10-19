@@ -38,3 +38,19 @@ backend and the representation it carries instead.
 [`posterior_sample()`](https://gillescolling.com/tulpa/reference/posterior_sample.md),
 [`tulpa_posterior_draws()`](https://gillescolling.com/tulpa/reference/tulpa_posterior_draws.md),
 [`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
+
+## Examples
+
+``` r
+# \donttest{
+set.seed(1)
+d <- data.frame(x = rnorm(60))
+d$y <- rpois(60, exp(0.5 + 0.3 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "hmc",
+             control = list(n_iter = 400L, warmup = 200L, n_chains = 2L,
+                            seed = 1L))
+#> Warning: tulpa(): the 'hmc' chain has not converged -- x: Rhat 1.04, bulk-ESS 72. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
+dim(tulpa_draws_array(fit))   # [iteration, chain, parameter]
+#> [1] 200   2   2
+# }
+```

@@ -1,4 +1,4 @@
-# Multi-Scale Gaussian Process spatial structure
+# Multi-scale Gaussian process spatial structure
 
 Specify a multi-scale spatial random effect that decomposes spatial
 variation into local (fine-scale) and regional (broad-scale) components.
@@ -26,6 +26,9 @@ spatial_multiscale(
   scale_coords = TRUE,
   sampler = c("auto", "noncentered", "centered", "interweaved")
 )
+
+# S3 method for class 'tulpa_multiscale'
+print(x, ...)
 ```
 
 ## Arguments
@@ -93,8 +96,9 @@ spatial_multiscale(
 
 - scale_coords:
 
-  Logical; if TRUE (default), coordinates are scaled to unit variance
-  before computing distances.
+  Logical; if TRUE (default), coordinates are centred and divided by one
+  common factor before computing distances (see
+  [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md)).
 
 - sampler:
 
@@ -104,6 +108,14 @@ spatial_multiscale(
   field/hyperparameter funnel; `"centered"` places the NNGP density on
   each field directly. `"interweaved"` alternates between
   parameterizations and is not implemented on the exact-NUTS path.
+
+- x:
+
+  A `tulpa_multiscale` specification.
+
+- ...:
+
+  Ignored.
 
 ## Value
 
@@ -189,10 +201,31 @@ fit <- tulpa(
   mode = "exact",
   control = list(n_iter = 60L, n_warmup = 30L, seed = 1L)
 )
+#> Warning: tulpa(): the 'hmc' chain has not converged -- log_sigma2_gp_local: Rhat 1.57, bulk-ESS 10; log_sigma2_gp_regional: Rhat 1.29, bulk-ESS 15; depth: Rhat 1.12, bulk-ESS 28; log_phi_gp_local: Rhat 1.09, bulk-ESS 31; temp: Rhat 1.14, bulk-ESS 37. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
 summary(fit)
-#>               estimate std.error       2.5 %    97.5 %
-#> (Intercept) 0.94597840 0.3710487  0.15697851 1.5176985
-#> depth       0.22858182 0.1292459  0.01878731 0.4725801
-#> temp        0.04685671 0.1172341 -0.18428174 0.2186235
+#> tulpa fit  (hmc, tier 1) 
+#> Call: tulpa(formula = count ~ depth + temp, data = df, family = "poisson", mode = "exact", spatial = spatial_multiscale(~lon + lat, range_local = c(0.1, 0.5), range_regional = c(1, 5), nn_local = 5L, nn_regional = 8L), control = list(n_iter = 60L, n_warmup = 30L, seed = 1L))
+#>   inference mode: exact 
+#>   selected because: User-specified mode: exact 
+#>   family: poisson 
+#>   n_obs: 25 
+#>   posterior draws: 120 
+#> 
+#> Fixed effects:
+#>             estimate std.error    2.5 % 97.5 %
+#> (Intercept)  1.20713    0.2425  0.75076 1.6022
+#> depth        0.24136    0.1379 -0.05657 0.4809
+#> temp         0.01353    0.1310 -0.21479 0.3051
+#> 
+#> Fixed-effect prior: normal(0, 2.5)
+#> 
+#> Reliability (chain draws):
+#>   max Rhat 1.57, min bulk-ESS 9.762, min tail-ESS 16.18
+#>   mean acceptance: 0.6856 
+#>   divergent transitions: 9 
+#>   verdict: not converged 
+#> 
+#> WARNING: chain not converged (max Rhat 1.57, min bulk-ESS 10 on (Intercept), depth, temp, log_sigma2_gp_local, log_phi_gp_local, log_sigma2_gp_regional, log_phi_gp_regional);
+#>   these estimates are not yet the posterior. See check_diagnostics().
 # }
 ```

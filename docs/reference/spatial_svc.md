@@ -19,6 +19,9 @@ spatial_svc(
   c_boundary = 1.5,
   parameterization = c("noncentered", "centered")
 )
+
+# S3 method for class 'tulpa_svc'
+print(x, ...)
 ```
 
 ## Arguments
@@ -51,7 +54,12 @@ spatial_svc(
 
 - scale_coords:
 
-  Logical. Standardize coordinates before fitting (default `TRUE`).
+  Logical. Standardize coordinates before fitting (default `TRUE`), by
+  one common factor as in
+  [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md).
+  Ranges and the coordinates
+  [`svc()`](https://gillescolling.com/tulpa/reference/svc.md) reports
+  are in the original units either way.
 
 - approx:
 
@@ -78,6 +86,14 @@ spatial_svc(
   field directly; it is marginally cheaper on a well-identified
   response, but on a weakly identified one it recovers only about a
   third of the field's spread.
+
+- x:
+
+  A `tulpa_svc` specification.
+
+- ...:
+
+  Ignored.
 
 ## Value
 

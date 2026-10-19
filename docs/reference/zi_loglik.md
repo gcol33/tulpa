@@ -1,6 +1,6 @@
-# Elementwise log-likelihood of the zero-inflated mixture.
+# Elementwise log-likelihood of the zero-inflated mixture
 
-Elementwise log-likelihood of the zero-inflated mixture.
+Elementwise log-likelihood of the zero-inflated mixture
 
 ## Usage
 

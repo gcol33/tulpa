@@ -1,4 +1,4 @@
-# Validate the response `y` for a count family.
+# Validate the response `y` for a count family
 
 Errors when `family` is a count family and `y` carries negative or
 non-integer values, which the integer-casting kernels would silently

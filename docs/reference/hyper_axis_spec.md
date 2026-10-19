@@ -21,6 +21,9 @@ hyper_axis_spec(
   log_prior_coord = c("integration", "natural"),
   extend = TRUE
 )
+
+# S3 method for class 'tulpa_hyper_axis_spec'
+print(x, ...)
 ```
 
 ## Arguments
@@ -115,6 +118,14 @@ hyper_axis_spec(
   range given, and a mode outside it shows up as mass at the edge
   instead of moving the range. Inert when `refinable = FALSE`.
 
+- x:
+
+  A `tulpa_hyper_axis_spec`.
+
+- ...:
+
+  Ignored.
+
 ## Value
 
 An object of class `tulpa_hyper_axis_spec` (a validated list with the
@@ -123,3 +134,20 @@ fields listed above).
 ## See also
 
 [`tulpa_hyper_grid()`](https://gillescolling.com/tulpa/reference/tulpa_hyper_grid.md).
+
+## Examples
+
+``` r
+hyper_axis_spec("sigma", grid = c(0.5, 1, 2), log_scale = TRUE,
+                bounds = c(0, Inf))
+#> Hyperparameter axis 'sigma': 3 levels in [0.5, 2], log scale
+#>   support: (0, Inf)
+#>   prior: flat
+# A zero level on a log-scale axis is a point mass with a declared share:
+hyper_axis_spec("alpha", grid = c(0, 0.5, 1), log_scale = TRUE,
+                bounds = c(0, Inf), atom_mass = 0.5)
+#> Hyperparameter axis 'alpha': 3 levels in [0, 1], log scale
+#>   point mass at 0: 0.5
+#>   support: (0, Inf)
+#>   prior: flat
+```

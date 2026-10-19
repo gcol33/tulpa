@@ -52,3 +52,15 @@ prior_from_spec(spec, data)
 
 A `prior` list ready for
 [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md).
+
+## Examples
+
+``` r
+d <- data.frame(year = rep(1:10, each = 3))
+pr <- prior_from_spec(temporal_ar1("year"), d)
+str(pr)
+#> List of 3
+#>  $ type        : chr "ar1"
+#>  $ temporal_idx: int [1:30] 1 1 1 2 2 2 3 3 3 4 ...
+#>  $ n_times     : int 10
+```

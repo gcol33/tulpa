@@ -1,4 +1,4 @@
-# AR1 temporal structure (First-order Autoregressive)
+# AR1 temporal structure (first-order autoregressive)
 
 Specify a first-order autoregressive temporal random effect. AR1 models
 temporal correlation where each time point depends on the previous one:
@@ -91,8 +91,27 @@ fit <- tulpa(
   mode = "auto"
 )
 summary(fit)
-#>              estimate  std.error      2.5 %    97.5 %
-#> (Intercept) 1.1133192 0.49660115 0.07923634 2.0258771
-#> x           0.3297074 0.07602842 0.18287279 0.4808987
+#> tulpa fit  (nested_laplace, tier 2) 
+#> Call: tulpa(formula = count ~ x, data = df, family = "poisson", mode = "auto", temporal = temporal_ar1("year"))
+#>   inference mode: structured 
+#>   selected because: temporal ar1 field; nested-Laplace integration 
+#>   family: poisson 
+#>   n_obs: 60 
+#> 
+#> Fixed effects:
+#>             estimate std.error   2.5 % 97.5 %
+#> (Intercept)   1.1134   0.49232 0.08823 2.0181
+#> x             0.3297   0.07599 0.18296 0.4808
+#>   interval read: skew_map_cell 
+#>   interval declined: skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had 
+#> 
+#> Hyperparameters:
+#>  parameter   mean     sd median  ci_lo  ci_hi
+#>        tau 8.4592 4.8630 7.1050 2.2867 24.286
+#>        rho 0.6618 0.2235 0.7196 0.1365  1.193
+#> 
+#> Reliability (iid draws):
+#>   outer pareto_k NA (NA); grid ESS 6.996 of 25 cells; inner skew 0.006854 (good)
+#>   verdict: outer integration not assessed; inner Laplace good 
 # }
 ```

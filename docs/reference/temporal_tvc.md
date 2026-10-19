@@ -30,6 +30,9 @@ temporal_tvc(
   sigma_prior_alpha = 0.01,
   scale_coords = TRUE
 )
+
+# S3 method for class 'tulpa_tvc'
+print(x, ...)
 ```
 
 ## Arguments
@@ -91,6 +94,14 @@ temporal_tvc(
   [`temporal_gp()`](https://gillescolling.com/tulpa/reference/temporal_gp.md)
   uses. `period` is stated in the raw time units and makes the same
   trip.
+
+- x:
+
+  A `tulpa_tvc` specification.
+
+- ...:
+
+  Ignored.
 
 ## Value
 

@@ -1,6 +1,6 @@
-# Links available as a `<family>_<link>` suffix.
+# Links available as a `<family>_<link>` suffix
 
-Links available as a `<family>_<link>` suffix.
+Links available as a `<family>_<link>` suffix
 
 ## Usage
 

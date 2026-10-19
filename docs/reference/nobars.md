@@ -18,3 +18,10 @@ nobars(term)
 ## Value
 
 A language object with all bar terms removed, or NULL if nothing remains
+
+## Examples
+
+``` r
+nobars(y ~ x + (1 | g) + (1 + x | h))
+#> y ~ x
+```

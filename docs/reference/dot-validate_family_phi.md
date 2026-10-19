@@ -1,4 +1,4 @@
-# Validate the dispersion parameter `phi` for a family.
+# Validate the dispersion parameter `phi` for a family
 
 Errors when `family` carries a dispersion / precision parameter and
 `phi` is not a positive finite scalar. A no-op for families without

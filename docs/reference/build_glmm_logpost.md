@@ -1,6 +1,6 @@
-# Build a GLMM log-posterior (and gradient) from a model-data bundle.
+# Build a GLMM log-posterior (and gradient) from a model-data bundle
 
-Build a GLMM log-posterior (and gradient) from a model-data bundle.
+Build a GLMM log-posterior (and gradient) from a model-data bundle
 
 ## Usage
 

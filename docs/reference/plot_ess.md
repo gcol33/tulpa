@@ -1,4 +1,4 @@
-# Plot Effective Sample Size Diagnostic
+# Plot effective sample size diagnostic
 
 Creates a visual display of effective sample size (ESS) for all
 parameters, expressed as a ratio of ESS to total samples. Low ESS
