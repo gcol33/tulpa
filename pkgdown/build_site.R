@@ -20,8 +20,10 @@ INTERNAL_MD <- c("CLAUDE.md", "AGENTS.md", "api.md", "todo.md",
                  "ENGINEERING_HISTORY.md")
 
 build_site_without_internal_md <- function(root = ".",
-                                           internal = INTERNAL_MD) {
+                                           internal = INTERNAL_MD,
+                                           home_only = FALSE) {
   root  <- normalizePath(root, winslash = "/")
+  rmarkdown::render(file.path(root, "README.Rmd"), quiet = TRUE)
   stash <- file.path(root, ".pkgdown-stash")
   dir.create(stash, showWarnings = FALSE, recursive = TRUE)
 
@@ -66,7 +68,11 @@ build_site_without_internal_md <- function(root = ".",
   }
   message("held back from the site: ", paste(present, collapse = ", "))
 
-  pkgdown::build_site(preview = FALSE, install = FALSE)
+  if (home_only) {
+    pkgdown::build_home(preview = FALSE)
+  } else {
+    pkgdown::build_site(preview = FALSE, install = FALSE)
+  }
 
   # GitHub Pages runs Jekyll over `docs/` unless this file is present, and
   # Jekyll re-renders pkgdown's already-built markdown through Liquid. The
@@ -97,5 +103,5 @@ build_site_without_internal_md <- function(root = ".",
   invisible(present)
 }
 
-build_site_without_internal_md()
+build_site_without_internal_md(home_only = "--home" %in% commandArgs(TRUE))
 message("site built, internal pages absent from docs/ and search.json")

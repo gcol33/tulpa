@@ -21,6 +21,7 @@
 ^dev_notes$
 ^dev_scripts$
 ^data-raw$
+^sidecars$
 ^experimental$
 ^.*\.tar\.gz$
 ^.*\.Rcheck$
@@ -42,3 +43,4 @@
 ^man-roxygen$
 ^Rplots\.pdf$
 ^tests/testthat/Rplots\.pdf$
+^CITATION\.cff$
