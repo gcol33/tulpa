@@ -39,6 +39,4 @@ transitions), the last two pooled across chains for plotting.
 set.seed(1)
 energy <- c(cumsum(rnorm(200, sd = 0.3)), rnorm(200, sd = 1))
 energy_bfmi(energy, chain = rep(1:2, each = 200))$per_chain
-#>          1          2 
-#> 0.04979473 2.10733734 
 ```

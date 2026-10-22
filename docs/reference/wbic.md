@@ -106,6 +106,5 @@ d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "smc",
              control = list(wbic = TRUE, n_particles = 500L, seed = 1L))
 wbic(fit)
-#> WBIC  121.06  (beta = 1 / log(80) = 0.2282, 500 draws)
 # }
 ```

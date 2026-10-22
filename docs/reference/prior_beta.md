@@ -36,9 +36,6 @@ A `tulpa_prior` object
 
 ``` r
 prior_beta(1, 1)   # Uniform
-#> Beta(1.00, 1.00)  [mean = 0.50]
 prior_beta(2, 2)   # Symmetric, centered at 0.5
-#> Beta(2.00, 2.00)  [mean = 0.50]
 prior_beta(5, 2)   # Skewed toward 1 (for high autocorrelation)
-#> Beta(5.00, 2.00)  [mean = 0.71]
 ```

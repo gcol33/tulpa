@@ -41,8 +41,10 @@ Where the posterior comes from follows what the fit computes:
   as `NA`.
 
 - A Polya-Gamma Gibbs fit (`mode = "gibbs"`) stores the field it samples
-  (`phi_spatial[k]`, plus `theta_spatial[k]` for BYM2, summed); the rows
-  summarize those draws.
+  (`phi_spatial[k]`); for BYM2 each draw's two unit-scale components are
+  combined into the same
+  `sigma * (sqrt(rho) * s * phi + sqrt(1 - rho) * theta)` the sampler
+  path reports. The rows summarize those draws.
 
 - A nested-Laplace fit with an ICAR or proper-CAR field: each outer cell
   contributes its conditional mode, and its marginal variance where the
@@ -98,6 +100,5 @@ fit <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
              spatial = list(type = "icar", adjacency = W), mode = "laplace")
 fe <- field_effects(fit)
 plot(fe$unit, fe$estimate, type = "b")
-
 # }
 ```

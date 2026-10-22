@@ -35,10 +35,6 @@ set.seed(1)
 df <- data.frame(x = rnorm(100), g = factor(rep(1:10, 10)))
 df$y <- rpois(100, exp(0.3 * df$x))
 fit <- tulpa(y ~ x + (1 | g), data = df, family = "poisson")
-#> Warning: tulpa(): the 're_cov_gibbs' chain has not converged -- x: Rhat 1.01, bulk-ESS 67. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
 tidy(fit)
-#>          term   estimate std.error   conf.low  conf.high
-#> 1 (Intercept) -0.3850430 0.2033565 -0.7866048 0.00483819
-#> 2           x  0.4237101 0.1235747  0.1703145 0.66292298
 # }
 ```

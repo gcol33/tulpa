@@ -98,8 +98,8 @@ for the compiled-block form.
 ``` r
 # \donttest{
 # An iid random intercept written as a tgmrf block over 15 groups; the
-# inference method is an argument, not a parallel verb. See
-# vignette("tgmrf").
+# inference method is an argument, not a parallel verb. See the
+# custom-process article at https://gillescolling.com/tulpa/articles/tgmrf.html.
 set.seed(3)
 J <- 15L; g <- rep(seq_len(J), each = 6L); n <- length(g); x <- rnorm(n)
 y <- rpois(n, exp(0.3 + 0.5 * x + rnorm(J, 0, 0.6)[g]))
@@ -111,6 +111,5 @@ fit <- tulpa_tgmrf(y, rep(1L, n), cbind(1, x), block = blk,
                    family = "poisson", mode = "imh",
                    control = list(n_iter = 300L, warmup = 150L))
 mean(exp(fit$draws[, "log_sigma"]))   # posterior mean group SD
-#> [1] 0.6861869
 # }
 ```

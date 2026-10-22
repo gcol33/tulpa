@@ -35,17 +35,17 @@ than RW1: phi[t] - 2*phi[t-1] + phi[t-2] ~ N(0, sigma^2)."><meta property="og:im
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/checkpoint.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/em-laplace.html">UNKNOWN TITLE</a></li>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">The data a tulpa model expects</a></li>
+    <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace for latent-variable models</a></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes: the three tiers and how to choose one</a></li>
-    <li><a class="dropdown-item" href="../articles/model-comparison.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/model-comparison.html">Comparing tulpa models</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Specifying and checking priors</a></li>
     <li><a class="dropdown-item" href="../articles/quickstart.html">Getting started with tulpa</a></li>
-    <li><a class="dropdown-item" href="../articles/random-slopes.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes and the free random-effect covariance</a></li>
+    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability of nested approximations: reading the outer Pareto-k</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Validating calibration: simulation-based calibration</a></li>
-    <li><a class="dropdown-item" href="../articles/spatial-models.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial fields in tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal random-walk effects with tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">User-defined GMRF latent blocks with tgmrf()</a></li>
   </ul></li>
@@ -117,57 +117,29 @@ It requires at least 3 time points.</p>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># Create temporal RW2 specification</span></span></span>
-<span class="r-in"><span><span class="fu">temporal_rw2</span><span class="op">(</span><span class="st">"year"</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> tulpa temporal specification</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> ============================</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Type: RW2 (Second-order Random Walk) </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Time variable: year </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Shared: Yes (enters both processes) </span>
-<span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="co"># \donttest{</span></span></span>
-<span class="r-in"><span><span class="co"># Smooth temporal trend</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">126</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span></span>
-<span class="r-in"><span>  year <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">20</span>, each <span class="op">=</span> <span class="fl">4</span><span class="op">)</span>,</span></span>
-<span class="r-in"><span>  x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">80</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">trend</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">sin</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">2</span>, length.out <span class="op">=</span> <span class="fl">20</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">df</span><span class="op">$</span><span class="va">count</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fl">80</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span> <span class="op">+</span> <span class="va">trend</span><span class="op">[</span><span class="va">df</span><span class="op">$</span><span class="va">year</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span></span></span>
-<span class="r-in"><span>  <span class="va">count</span> <span class="op">~</span> <span class="va">x</span>,</span></span>
-<span class="r-in"><span>  data <span class="op">=</span> <span class="va">df</span>,</span></span>
-<span class="r-in"><span>  family <span class="op">=</span> <span class="st">"poisson"</span>,</span></span>
-<span class="r-in"><span>  temporal <span class="op">=</span> <span class="fu">temporal_rw2</span><span class="op">(</span><span class="st">"year"</span><span class="op">)</span>,</span></span>
-<span class="r-in"><span>  mode <span class="op">=</span> <span class="st">"auto"</span></span></span>
-<span class="r-in"><span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> tulpa fit  (nested_laplace, tier 2) </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Call: tulpa(formula = count ~ x, data = df, family = "poisson", mode = "auto", temporal = temporal_rw2("year"))</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   inference mode: structured </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   selected because: temporal rw2 field; nested-Laplace integration </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   family: poisson </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   n_obs: 80 </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Fixed effects:</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>             estimate std.error  2.5 % 97.5 %</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> (Intercept)   1.6663   0.05080 1.5667 1.7658</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> x             0.2927   0.05272 0.1895 0.3962</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   interval read: mixture_cdf </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   interval declined: NA </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Hyperparameters:</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>  parameter mean   sd median ci_lo ci_hi</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>        tau 3346 7360  984.2 56.35 36619</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Reliability (iid draws):</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   outer pareto_k 0.6048 (ok); grid ESS 5.555 of 7 cells; inner skew NA (NA)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   verdict: scoped: outer integration borderline; inner Laplace not assessed </span>
-<span class="r-in"><span><span class="co"># }</span></span></span>
-<span class="r-in"><span></span></span>
-</code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># Create temporal RW2 specification</span></span>
+<span><span class="fu">temporal_rw2</span><span class="op">(</span><span class="st">"year"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># \donttest{</span></span>
+<span><span class="co"># Smooth temporal trend</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">126</span><span class="op">)</span></span>
+<span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  year <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">20</span>, each <span class="op">=</span> <span class="fl">4</span><span class="op">)</span>,</span>
+<span>  x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">80</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">trend</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">sin</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">2</span>, length.out <span class="op">=</span> <span class="fl">20</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">df</span><span class="op">$</span><span class="va">count</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fl">80</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span> <span class="op">+</span> <span class="va">trend</span><span class="op">[</span><span class="va">df</span><span class="op">$</span><span class="va">year</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span></span>
+<span>  <span class="va">count</span> <span class="op">~</span> <span class="va">x</span>,</span>
+<span>  data <span class="op">=</span> <span class="va">df</span>,</span>
+<span>  family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
+<span>  temporal <span class="op">=</span> <span class="fu">temporal_rw2</span><span class="op">(</span><span class="st">"year"</span><span class="op">)</span>,</span>
+<span>  mode <span class="op">=</span> <span class="st">"auto"</span></span>
+<span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co"># }</span></span>
+<span></span></code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

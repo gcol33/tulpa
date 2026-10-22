@@ -253,5 +253,4 @@ eta <- X %*% c(-0.3, 0.8)
 y <- rbinom(n, 1, plogis(eta))
 fit <- tulpa_laplace(y, rep(1L, n), X, family = "binomial")
 fit$mode          # posterior mode of the fixed effects
-#> [1] -0.4406277  0.4822831
 ```

@@ -50,17 +50,5 @@ d <- data.frame(x = rnorm(80))
 d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
 test_outliers(fit, nsim = 50)
-#> 
-#>  Simulation outlier test (0/80 outside envelope)
-#> 
-#> data:  n_outliers and N
-#> number of successes = 0, number of trials = 80, p-value = 1
-#> alternative hypothesis: true probability of success is greater than 0.03921569
-#> 95 percent confidence interval:
-#>  0 1
-#> sample estimates:
-#> probability of success 
-#>                      0 
-#> 
 # }
 ```

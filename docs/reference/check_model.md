@@ -57,6 +57,5 @@ d <- data.frame(x = rnorm(80))
 d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
 check_model(fit, nsim = 50)
-
 # }
 ```

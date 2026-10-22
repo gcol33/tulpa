@@ -115,7 +115,5 @@ d <- data.frame(x = rnorm(200))
 d$y <- rbinom(200, 1, plogis(-0.3 + 0.8 * d$x))
 fit <- tulpa_ep(y ~ x, data = d, family = "binomial")
 coef(fit)
-#> (Intercept)           x 
-#>  -0.4432535   0.4887355 
 # }
 ```

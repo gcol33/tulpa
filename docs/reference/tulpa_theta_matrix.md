@@ -51,11 +51,5 @@ fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                             family = "binomial",
                             control = list(progress = FALSE))
 tulpa_theta_matrix(fit)
-#>      tau
-#> [1,] 0.5
-#> [2,] 1.0
-#> [3,] 2.0
-#> [4,] 4.0
-#> [5,] 8.0
 # }
 ```

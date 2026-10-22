@@ -441,29 +441,7 @@ d <- data.frame(
 )
 # Random-intercept logistic GLMM, Laplace tier.
 fit <- tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "laplace")
-#> Warning: tulpa(): `sigma_re` not supplied; conditioning on sigma_re = 1 for each of the 1 RE term(s). Pass `sigma_re` to override.
 coef(fit)
-#> (Intercept)           x 
-#>  -0.3964454   0.1946737 
 summary(fit)
-#> tulpa fit  (laplace, tier 2) 
-#> Call: tulpa(formula = y ~ x + (1 | g), data = d, family = "binomial", mode = "laplace")
-#>   inference mode: structured 
-#>   selected because: User-specified backend: laplace 
-#>   family: binomial 
-#>   n_obs: 200 
-#> 
-#> Fixed effects:
-#>             estimate std.error    2.5 % 97.5 %
-#> (Intercept)  -0.3964    0.3224 -1.02833 0.2354
-#> x             0.1947    0.1381 -0.07591 0.4653
-#> 
-#> Random effects:
-#>   term        coef sd      source
-#> 1    g (Intercept)  1 conditioned
-#> 
-#> Fixed-effect prior: normal(0, 2.5)
-#> 
-#> Reliability (iid draws):
 # }
 ```

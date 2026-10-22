@@ -380,8 +380,5 @@ re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
 fit <- tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), re_term,
                            family = "binomial")
 fit$Sigma_mean        # marginalized RE covariance
-#>             [,1]        [,2]
-#> [1,]  0.45590235 -0.04201789
-#> [2,] -0.04201789  0.25672716
 # }
 ```

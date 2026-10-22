@@ -2,6 +2,14 @@
 
 ## tulpa 0.7.5
 
+CRAN release: 2026-10-19
+
+- Three vignettes ship with the package (quickstart, inference modes,
+  spatial models). The other ten (priors, temporal models, model
+  comparison, calibration, reliability, data formatting, random slopes,
+  EM + Laplace, checkpointing, custom latent processes) are articles on
+  the package website, <https://gillescolling.com/tulpa/articles/>.
+
 - [`energy_bfmi()`](https://gillescolling.com/tulpa/reference/energy_bfmi.md)
   is exported: E-BFMI from a vector of per-iteration Hamiltonian
   energies and their chain ids, diffed within each chain and reported
@@ -12,6 +20,32 @@
   fit’s record has nothing to report under it, as on a plain Laplace
   fit, instead of ending on a bare header
   ([\#961](https://github.com/gcol33/tulpa/issues/961)).
+
+- The Polya-Gamma Gibbs areal kernels (binomial ICAR, BYM2 and
+  restricted ICAR, negative-binomial ICAR) sample the ICAR prior the
+  other backends sample on a disconnected graph. Each component’s level,
+  an island’s whole value, now carries the field’s own precision, where
+  the kernels gave it a flat prior and an island a near-flat N(0, 1000)
+  one. On a chain with a separated island the Gibbs island read 14.5
+  against the sampler’s 0.32 and pulled the mainland and the intercept
+  with it; it now reads 0.30. A component with no observation is drawn
+  from its prior instead of refused. On a connected graph nothing
+  changes ([\#963](https://github.com/gcol33/tulpa/issues/963)).
+
+- [`field_effects()`](https://gillescolling.com/tulpa/reference/field_effects.md)
+  and
+  [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)
+  on a Gibbs BYM2 fit use the combined field
+  `sigma * (sqrt(rho) * s * phi + sqrt(1 - rho) * theta)` that enters
+  the linear predictor, where they summed the two unit-scale components
+  ([\#964](https://github.com/gcol33/tulpa/issues/964)).
+
+- An isolated node is reported with what the field does with it: an ICAR
+  field gives it its own N(0, 1 / tau) level and a BYM2 field unit
+  variance on its structured part, both as a message; a proper CAR field
+  leaves it without a prior and warns. The constructors had warned that
+  every field is improper there
+  ([\#962](https://github.com/gcol33/tulpa/issues/962)).
 
 ## tulpa 0.7.4
 
@@ -466,9 +500,8 @@ detail.
   `control$max_iter` kept their full weight; on the four-seed joint
   fixture the mean inner iteration count went from 9.3-16.4 to 3.6-4.0
   and no cell stalls. A joint fit records each cell’s final score
-  residual as `score_max`, and
-  [`glmm_weights()`](https://gillescolling.com/tulpa/reference/glmm_weights.md)
-  for beta now needs `y` (gcol33/tulpa#936).
+  residual as `score_max`, and `glmm_weights()` for beta now needs `y`
+  (gcol33/tulpa#936).
 
 - An EM M-step block fitted by nested Laplace no longer runs the outer
   Pareto-k diagnostic on every iteration: the fit is one iterate of the
@@ -2292,46 +2325,40 @@ CRAN release: 2026-09-21
   [`pathfinder()`](https://gillescolling.com/tulpa/reference/pathfinder.md)
   /
   [`imh_laplace()`](https://gillescolling.com/tulpa/reference/imh_laplace.md)
-  build their target from the R registry through
-  [`build_glmm_logpost()`](https://gillescolling.com/tulpa/reference/build_glmm_logpost.md),
-  and
-  [`glmm_weights()`](https://gillescolling.com/tulpa/reference/glmm_weights.md)
-  rebuilds the Laplace Hessian from it for the post-fit marginal SEs on
-  GP / NNGP / HSGP / SPDE fits, while every other backend runs the
-  compiled kernels. The existing cross-checks reached 7 non-canonical
-  families; plain gaussian, poisson, binomial, neg_binomial_2, gamma and
-  beta had none. The log-likelihood and score agree across all 14 to
-  machine precision. The curvature did not:
+  build their target from the R registry through `build_glmm_logpost()`,
+  and `glmm_weights()` rebuilds the Laplace Hessian from it for the
+  post-fit marginal SEs on GP / NNGP / HSGP / SPDE fits, while every
+  other backend runs the compiled kernels. The existing cross-checks
+  reached 7 non-canonical families; plain gaussian, poisson, binomial,
+  neg_binomial_2, gamma and beta had none. The log-likelihood and score
+  agree across all 14 to machine precision. The curvature did not:
 
-- **[`glmm_weights()`](https://gillescolling.com/tulpa/reference/glmm_weights.md)
-  returned the expected weight where the engine’s Laplace Hessian
-  carries the observed one.** The compiled `neg_binomial_2` branch
-  deliberately returns `(y + phi) phi mu / (mu + phi)^2` – and
-  `working_weight_is_observed()` names it – while the registry’s y-free
-  `weight` is the expected `mu phi / (mu + phi)`. At `phi = 1.7`,
-  `eta = 1.3`, `y = 9` those are 2.315 and 1.162. Every
-  [`vcov()`](https://rdrr.io/r/stats/vcov.html) /
+- **`glmm_weights()` returned the expected weight where the engine’s
+  Laplace Hessian carries the observed one.** The compiled
+  `neg_binomial_2` branch deliberately returns
+  `(y + phi) phi mu / (mu + phi)^2` – and `working_weight_is_observed()`
+  names it – while the registry’s y-free `weight` is the expected
+  `mu phi / (mu + phi)`. At `phi = 1.7`, `eta = 1.3`, `y = 9` those are
+  2.315 and 1.162. Every [`vcov()`](https://rdrr.io/r/stats/vcov.html) /
   [`confint()`](https://rdrr.io/r/stats/confint.html) that reconstructs
   `H = D'WD + Q` on a neg_binomial_2 spatial fit used a different
-  curvature from the fit.
-  [`glmm_weights()`](https://gillescolling.com/tulpa/reference/glmm_weights.md)
-  now takes `y` and routes through the compiled predicate, so the weight
-  it returns is the one the fit used for every family; `y` is required
-  exactly where it changes the answer.
+  curvature from the fit. `glmm_weights()` now takes `y` and routes
+  through the compiled predicate, so the weight it returns is the one
+  the fit used for every family; `y` is required exactly where it
+  changes the answer.
 
-- **[`.family_obs_weight()`](https://gillescolling.com/tulpa/reference/dot-family_obs_weight.md)
-  substituted the expected weight for six families.** It answered from
-  the registry’s `obs_weight` closure where one was registered and fell
-  back to the y-free `weight` where none was – exact only where the
-  response enters the log-likelihood linearly in `eta`. For beta, gamma,
-  inverse_gaussian, beta_binomial, tweedie and t it is a different
-  function and can carry the **opposite sign**: at `y = 12`,
-  `eta = -0.9` the beta_binomial observed curvature is -0.125 against an
-  expected weight of +0.658. `beta_binomial` is in `.ZI_FAMILIES`, so
-  the zero-inflation mixture in `R/family_zi.R` differentiated through
-  the wrong one. It is now one compiled path (`cpp_family_obs_weight()`)
-  for every family, with the three registry closures kept as the R
-  oracle it is pinned against.
+- **`.family_obs_weight()` substituted the expected weight for six
+  families.** It answered from the registry’s `obs_weight` closure where
+  one was registered and fell back to the y-free `weight` where none was
+  – exact only where the response enters the log-likelihood linearly in
+  `eta`. For beta, gamma, inverse_gaussian, beta_binomial, tweedie and t
+  it is a different function and can carry the **opposite sign**: at
+  `y = 12`, `eta = -0.9` the beta_binomial observed curvature is -0.125
+  against an expected weight of +0.658. `beta_binomial` is in
+  `.ZI_FAMILIES`, so the zero-inflation mixture in `R/family_zi.R`
+  differentiated through the wrong one. It is now one compiled path
+  (`cpp_family_obs_weight()`) for every family, with the three registry
+  closures kept as the R oracle it is pinned against.
 
 ## tulpa 0.4.7
 
@@ -2418,13 +2445,12 @@ CRAN release: 2026-09-21
   converter behind `nested_laplace` (`.nl_block_spec_for_cpp()`) has no
   `gp` / `nngp` / `hsgp` arm, so both errored (“Block type ‘…’ is not
   supported in multi-block priors”) after building the full outer grid.
-  [`auto_select_mode()`](https://gillescolling.com/tulpa/reference/auto_select_mode.md)
-  now refuses `nested_laplace` for this combination and falls back to
-  the exact ModelData NUTS sampler (`hmc`), which threads the field
-  directly; an explicit `mode = "nested_laplace"` now refuses up front
-  with a message naming `mode = "laplace"` / `mode = "exact"` instead of
-  reaching the deep C++ error. An areal field (icar / bym2 /
-  car_proper) + RE is unaffected.
+  `auto_select_mode()` now refuses `nested_laplace` for this combination
+  and falls back to the exact ModelData NUTS sampler (`hmc`), which
+  threads the field directly; an explicit `mode = "nested_laplace"` now
+  refuses up front with a message naming `mode = "laplace"` /
+  `mode = "exact"` instead of reaching the deep C++ error. An areal
+  field (icar / bym2 / car_proper) + RE is unaffected.
 
 - **[`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md),
   [`simulate()`](https://rdrr.io/r/stats/simulate.html), WAIC and LOO
@@ -2478,18 +2504,16 @@ CRAN release: 2026-09-21
   zero-inflation channel, and the slope redirect applied after selection
   ignored the call’s features entirely (a `(1 + x | g)` model with
   `weights` picked MALA, then was force-redirected to `re_cov_gibbs`,
-  which also refuses weights). Every arm in
-  [`auto_select_mode()`](https://gillescolling.com/tulpa/reference/auto_select_mode.md)
-  now consults `.auto_backend_ok()` and falls back to the exact
-  ModelData NUTS sampler (`hmc`) where it carries the call and nested
-  Laplace does not (areal icar/bym2/car_proper and continuous
-  gp/nngp/hsgp fields; not SPDE or plain intrinsic `car`, which `hmc`
-  does not thread); the slope redirect re-checks both RE-covariance
-  integrators before redirecting and refuses, naming the conflicting
-  feature, when neither carries the call. The
-  `spatial_multiscale (approx = "hsgp")` advice text no longer
-  recommends a nested-Laplace mode, which refuses multi-scale fields
-  entirely.
+  which also refuses weights). Every arm in `auto_select_mode()` now
+  consults `.auto_backend_ok()` and falls back to the exact ModelData
+  NUTS sampler (`hmc`) where it carries the call and nested Laplace does
+  not (areal icar/bym2/car_proper and continuous gp/nngp/hsgp fields;
+  not SPDE or plain intrinsic `car`, which `hmc` does not thread); the
+  slope redirect re-checks both RE-covariance integrators before
+  redirecting and refuses, naming the conflicting feature, when neither
+  carries the call. The `spatial_multiscale (approx = "hsgp")` advice
+  text no longer recommends a nested-Laplace mode, which refuses
+  multi-scale fields entirely.
 
 - **A `control` knob only some OTHER backend reads passed
   [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)’s
@@ -2595,11 +2619,10 @@ CRAN release: 2026-09-21
   override recorded, in two places** (gcol33/tulpa#768). An SPDE field
   under any explicit Tier-1 backend other than the natural
   `mode = "exact"` / `"hmc"` route (e.g. `mode = "gibbs"`) is fitted by
-  the SPDE NUTS engine without going through
-  [`.sel_redirect()`](https://gillescolling.com/tulpa/reference/dot-sel_redirect.md),
-  so the override was invisible on the fit and never warned about; it
-  now is, via the same `sel$overridden` / `notify` mechanism every other
-  backend redirect uses. An areal + temporal field redirected every
+  the SPDE NUTS engine without going through `.sel_redirect()`, so the
+  override was invisible on the fit and never warned about; it now is,
+  via the same `sel$overridden` / `notify` mechanism every other backend
+  redirect uses. An areal + temporal field redirected every
   non-ModelData selection to `nested_laplace` with `notify = FALSE`,
   which is right for a Tier-2 `mode = "laplace"` request (nothing is
   lost) but wrong for an explicit Tier-1 request (`gibbs`, `mala`,
@@ -3582,11 +3605,11 @@ simulates).
   accepted – a non-canonical link rides the name in the engine’s own
   `<base>_<link>` convention rather than being silently fitted at the
   canonical one – and the other four are named.
-- **[`.zi_design()`](https://gillescolling.com/tulpa/reference/dot-zi_design.md)
-  detected random effects with a regex on deparsed code**
-  (gcol33/tulpa#680), which false-positives on a `|` inside a string
-  literal and whose [`any()`](https://rdrr.io/r/base/any.html) was
-  papering over a deparse that wraps a long line. It walks the AST with
+- **`.zi_design()` detected random effects with a regex on deparsed
+  code** (gcol33/tulpa#680), which false-positives on a `|` inside a
+  string literal and whose [`any()`](https://rdrr.io/r/base/any.html)
+  was papering over a deparse that wraps a long line. It walks the AST
+  with
   [`findbars()`](https://gillescolling.com/tulpa/reference/findbars.md),
   two hundred lines above in the same file.
 
@@ -3809,13 +3832,11 @@ simulates).
   already hard-refuses `mass_matrix` and a warm start on those backends,
   so this is refused beside them, in R where a default is still
   distinguishable from a request.
-- **[`tulpa_sample_glmm()`](https://gillescolling.com/tulpa/reference/tulpa_sample_glmm.md)
-  stamped neither backend nor draws kind** (gcol33/tulpa#693), and the
-  provenance gate treats an untagged fit as a chain – so
-  `mcmc_diagnostics()` computed Rhat and ESS on SMC particles and VI
-  draws. It closes through
-  [`.finalize_fit()`](https://gillescolling.com/tulpa/reference/dot-finalize_fit.md)
-  now, which reads `emits` off the registry.
+- **`tulpa_sample_glmm()` stamped neither backend nor draws kind**
+  (gcol33/tulpa#693), and the provenance gate treats an untagged fit as
+  a chain – so `mcmc_diagnostics()` computed Rhat and ESS on SMC
+  particles and VI draws. It closes through `.finalize_fit()` now, which
+  reads `emits` off the registry.
 - **`inst/include/tulpa/joint_nested_laplace_api.h` advertised a C
   callable registered nowhere** (gcol33/tulpa#688). `R_GetCCallable` on
   an unregistered name is a hard R error, so a `LinkingTo: tulpa`
@@ -3848,27 +3869,25 @@ simulates).
   kernels, the Laplace NNGP scatter, the Polya-Gamma sweep and the field
   predictor alike – so the smoothness travels IN the code and no path
   reads a `nu` beside it to learn which kernel it is evaluating.
-  [`gp_cov_type()`](https://gillescolling.com/tulpa/reference/gp_cov_type.md)
-  (renamed from `gp_cov_type_for_laplace()`, since it is no longer the
-  Laplace path’s own mapping) returns 0 / 1 / 4. **ABI break**
-  (`TULPA_ABI_VERSION` 42 -\> 43): a consumer passing a raw `cov_type`
-  integer must re-read it against the enum, and the bump is what makes
-  that a rebuild rather than a different kernel.
+  `gp_cov_type()` (renamed from `gp_cov_type_for_laplace()`, since it is
+  no longer the Laplace path’s own mapping) returns 0 / 1 / 4. **ABI
+  break** (`TULPA_ABI_VERSION` 42 -\> 43): a consumer passing a raw
+  `cov_type` integer must re-read it against the enum, and the bump is
+  what makes that a rebuild rather than a different kernel.
 
 ### A periodic temporal GP’s period is stated in the units the kernel sees
 
 - **`temporal_gp(cov = "periodic", period =)` collapsed to nothing under
   the default `scale_coords = TRUE`** (gcol33/tulpa#687).
-  [`validate_temporal_gp()`](https://gillescolling.com/tulpa/reference/validate_temporal_gp.md)
-  standardizes the time axis and the kernel evaluates
-  `sin(pi * d / period)` against those scaled lags, while `period`
-  travelled untouched: on a 60-month series with `period = 12` the
-  maximum scaled lag is 3.32 against a period of 12, over which the sine
-  is monotone and small, so the fitted kernel had no periodic structure
-  in it at all. `period` is a LAG and now makes the same trip the axis
-  does. The declared number is left on the spec, so it prints and
-  validates as the user wrote it; `period_scaled` is that period in the
-  kernel’s own units and is what the fit reads.
+  `validate_temporal_gp()` standardizes the time axis and the kernel
+  evaluates `sin(pi * d / period)` against those scaled lags, while
+  `period` travelled untouched: on a 60-month series with `period = 12`
+  the maximum scaled lag is 3.32 against a period of 12, over which the
+  sine is monotone and small, so the fitted kernel had no periodic
+  structure in it at all. `period` is a LAG and now makes the same trip
+  the axis does. The declared number is left on the spec, so it prints
+  and validates as the user wrote it; `period_scaled` is that period in
+  the kernel’s own units and is what the fit reads.
 
 ### The two HSGP-ST prior defects the Kronecker branch’s fixes did not reach
 
@@ -3901,12 +3920,10 @@ simulates).
   guarded `X` and `y` alone, and
   [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
   – a front door in its own right, which does not route through
-  [`.validate_glm_design()`](https://gillescolling.com/tulpa/reference/dot-validate_glm_design.md)
-  – guarded neither. An `NA` in either reached the kernel and came back
-  as an all-zero coefficient vector with no error and no warning. Both
-  arms are now in
-  [`.assert_finite_model_inputs()`](https://gillescolling.com/tulpa/reference/dot-assert_finite_model_inputs.md)
-  and both doors call it with them.
+  `.validate_glm_design()` – guarded neither. An `NA` in either reached
+  the kernel and came back as an all-zero coefficient vector with no
+  error and no warning. Both arms are now in
+  `.assert_finite_model_inputs()` and both doors call it with them.
 
 ### No NUTS entry can start a trajectory on an unverified gradient
 
@@ -3930,10 +3947,9 @@ simulates).
 ### A covariate transform is carried through the formula strippers unchanged
 
 - **[`nobars()`](https://gillescolling.com/tulpa/reference/nobars.md) /
-  [`no_latent_terms()`](https://gillescolling.com/tulpa/reference/no_latent_terms.md)
-  / `no_special_terms()` rebuilt every call from at most two positional
-  children, discarding argument names and any third argument**
-  (gcol33/tulpa#664).
+  `no_latent_terms()` / `no_special_terms()` rebuilt every call from at
+  most two positional children, discarding argument names and any third
+  argument** (gcol33/tulpa#664).
   [`nobars()`](https://gillescolling.com/tulpa/reference/nobars.md) runs
   on every formula, so the damage reached every backend:
   `poly(x, 2, raw = TRUE)` was refitted as the ORTHOGONAL basis
@@ -4009,11 +4025,10 @@ simulates).
   (gcol33/tulpa#671).
   [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
   lowercased the type for its own branch and handed the raw string to
-  [`select_inference_mode()`](https://gillescolling.com/tulpa/reference/select_inference_mode.md),
-  whose comparisons are case-sensitive. The type is normalised once at
-  the door and written back onto the spec, so every consumer reads the
-  canonical spelling; `"ICAR"` and `"icar"` now give identical
-  coefficients.
+  `select_inference_mode()`, whose comparisons are case-sensitive. The
+  type is normalised once at the door and written back onto the spec, so
+  every consumer reads the canonical spelling; `"ICAR"` and `"icar"` now
+  give identical coefficients.
 
 ## tulpa 0.3.2
 
@@ -4435,27 +4450,23 @@ remaining four are below.
   [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md),
   [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md),
   [`tulpa_ep()`](https://gillescolling.com/tulpa/reference/tulpa_ep.md)
-  and
-  [`build_glmm_logpost()`](https://gillescolling.com/tulpa/reference/build_glmm_logpost.md)
-  and the residual SD at
+  and `build_glmm_logpost()` and the residual SD at
   [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md),
   [`fit_st_nested()`](https://gillescolling.com/tulpa/reference/fit_st_nested.md),
   [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md),
   the
   [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md)
-  arms and their `phi_grid`,
-  [`tulpa_sample_glmm()`](https://gillescolling.com/tulpa/reference/tulpa_sample_glmm.md),
-  the `laplace_*_at()` helpers and the rational-SPDE helpers, so one
-  model was `phi` at one door and `sqrt(phi)` at another.
-  `.phi_to_kernel()` is now called once per function, adjacent to the
-  kernel call that wants the SD; the joint tier converts at its single
-  C++ boundary, covering the arm scalar, the per-arm `phi_grid` override
-  and the `[n_arms x n_batch]` `phi_batch`. The compiled surface is not
-  uniformly SD, so the conversion is not blanket: `cpp_glmm_oracle_make`
-  and `cpp_re_cov_gibbs_sweep` take the variance and are handed `phi`
-  raw, and `truncated_gaussian`, `interval_gaussian` and
-  `inverse_gaussian` are their own families rather than variance
-  families.
+  arms and their `phi_grid`, `tulpa_sample_glmm()`, the `laplace_*_at()`
+  helpers and the rational-SPDE helpers, so one model was `phi` at one
+  door and `sqrt(phi)` at another. `.phi_to_kernel()` is now called once
+  per function, adjacent to the kernel call that wants the SD; the joint
+  tier converts at its single C++ boundary, covering the arm scalar, the
+  per-arm `phi_grid` override and the `[n_arms x n_batch]` `phi_batch`.
+  The compiled surface is not uniformly SD, so the conversion is not
+  blanket: `cpp_glmm_oracle_make` and `cpp_re_cov_gibbs_sweep` take the
+  variance and are handed `phi` raw, and `truncated_gaussian`,
+  `interval_gaussian` and `inverse_gaussian` are their own families
+  rather than variance families.
   [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md)
   stores `$phi` in that one convention instead of `$phi_kernel`. **This
   changes what an existing call means**: a script passing a residual SD
@@ -4503,26 +4514,18 @@ remaining four are below.
   families where the value is neither convention and staying silent on
   gaussian;
   [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md)
-  and the internal
-  [`laplace_spde_at()`](https://gillescolling.com/tulpa/reference/laplace_spde_at.md)
-  /
-  [`laplace_gp_at()`](https://gillescolling.com/tulpa/reference/laplace_gp_at.md)
-  said “negbin only” / “negbin / gamma only” for a `phi` the shipped
-  tests pass `sqrt(0.05)` to on a gaussian fit;
+  and the internal `laplace_spde_at()` / `laplace_gp_at()` said “negbin
+  only” / “negbin / gamma only” for a `phi` the shipped tests pass
+  `sqrt(0.05)` to on a gaussian fit;
   [`fit_st_nested()`](https://gillescolling.com/tulpa/reference/fit_st_nested.md),
   [`tulpa_ep()`](https://gillescolling.com/tulpa/reference/tulpa_ep.md)
-  and
-  [`build_glmm_logpost()`](https://gillescolling.com/tulpa/reference/build_glmm_logpost.md)
-  said only “passed to the family”. Each now names its convention, the
-  per-family reading and the counterpart door.
+  and `build_glmm_logpost()` said only “passed to the family”. Each now
+  names its convention, the per-family reading and the counterpart door.
   [`tulpa_ep()`](https://gillescolling.com/tulpa/reference/tulpa_ep.md)
-  and
-  [`build_glmm_logpost()`](https://gillescolling.com/tulpa/reference/build_glmm_logpost.md)
-  evaluate the R registry, so their `phi` is the variance; the rest are
-  kernel doors and take the SD.
+  and `build_glmm_logpost()` evaluate the R registry, so their `phi` is
+  the variance; the rest are kernel doors and take the SD.
   [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md),
-  [`tulpa_sample_glmm()`](https://gillescolling.com/tulpa/reference/tulpa_sample_glmm.md),
-  `fit_spde_nuts()` and
+  `tulpa_sample_glmm()`, `fit_spde_nuts()` and
   [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
   already said so and are unchanged. Documentation only: no argument,
   default or numerical behaviour moved.
@@ -5236,16 +5239,15 @@ remaining four are below.
 
 - **[`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
   refuses a non-finite response instead of blaming itself for one.**
-  [`.assert_finite_model_inputs()`](https://gillescolling.com/tulpa/reference/dot-assert_finite_model_inputs.md)
-  was wired into three doors by hand and not into this one, so an NA
-  response was absorbed rather than rejected: every grid cell returned
-  `converged = FALSE` with `log_marginal = 0`, the softmax over those
-  weights was uniform, a fit came back, and the grid-Hessian retention
-  then found no `Q` on any cell and reported the user’s own missing data
-  to them as “This is a tulpa bug; please report.” The guard now runs
-  inside
-  [`.validate_glm_design()`](https://gillescolling.com/tulpa/reference/dot-validate_glm_design.md),
-  the one validator every `(y, X, n_trials)` door goes through, so
+  `.assert_finite_model_inputs()` was wired into three doors by hand and
+  not into this one, so an NA response was absorbed rather than
+  rejected: every grid cell returned `converged = FALSE` with
+  `log_marginal = 0`, the softmax over those weights was uniform, a fit
+  came back, and the grid-Hessian retention then found no `Q` on any
+  cell and reported the user’s own missing data to them as “This is a
+  tulpa bug; please report.” The guard now runs inside
+  `.validate_glm_design()`, the one validator every `(y, X, n_trials)`
+  door goes through, so
   [`tulpa_gibbs()`](https://gillescolling.com/tulpa/reference/tulpa_gibbs.md),
   [`fit_st_nested()`](https://gillescolling.com/tulpa/reference/fit_st_nested.md)
   and the `re_cov` fitters are covered by the same fix and a door added
@@ -5328,8 +5330,7 @@ remaining four are below.
   [`sbc()`](https://gillescolling.com/tulpa/reference/sbc.md) and the
   predictive shapes it consumes shipped exported and tested, and
   appeared in no reference index, no vignette and no README section, so
-  the only way to find them was to read `NAMESPACE`.
-  [`vignette("sbc")`](https://gillescolling.com/tulpa/articles/sbc.md)
+  the only way to find them was to read `NAMESPACE`. `vignette("sbc")`
   is the new article: both experiments run end to end on a
   nested-Laplace fit, with the deliberately mis-scaled control arm the
   run has to reject, the guards each experiment’s premises are checked
@@ -5362,14 +5363,11 @@ remaining four are below.
   outside the band reporting `inside`. Both reads now come from one
   `.sbc_panel_note()` (gcol33/tulpa#612).
 
-- `api.md` named `spatial_hsgp()`,
-  [`find_latent_terms()`](https://gillescolling.com/tulpa/reference/find_latent_terms.md),
-  [`no_latent_terms()`](https://gillescolling.com/tulpa/reference/no_latent_terms.md)
-  and
-  [`parse_bar_term()`](https://gillescolling.com/tulpa/reference/parse_bar_term.md)
-  as public. The first does not exist – the Hilbert-space basis is
-  `spatial_gp(approx = "hsgp")` – and the other three are internal.
-  Thirty-eight exports it did not name are now listed, including
+- `api.md` named `spatial_hsgp()`, `find_latent_terms()`,
+  `no_latent_terms()` and `parse_bar_term()` as public. The first does
+  not exist – the Hilbert-space basis is `spatial_gp(approx = "hsgp")` –
+  and the other three are internal. Thirty-eight exports it did not name
+  are now listed, including
   [`tulpa_re_aghq()`](https://gillescolling.com/tulpa/reference/tulpa_re_aghq.md),
   [`fit_st_nested()`](https://gillescolling.com/tulpa/reference/fit_st_nested.md),
   [`tulpa_hyper_grid()`](https://gillescolling.com/tulpa/reference/tulpa_hyper_grid.md),
@@ -6966,17 +6964,15 @@ Behaviour changes, in the order they are most likely to affect a fit.
 
 - **A `beta_prior` a fitter cannot express is an error, not a silent
   swap** ([\#411](https://github.com/gcol33/tulpa/issues/411)).
-  [`.beta_prior_ridge_sd()`](https://gillescolling.com/tulpa/reference/dot-beta_prior_ridge_sd.md)
-  replaced a prior with no `sd` field – a
+  `.beta_prior_ridge_sd()` replaced a prior with no `sd` field – a
   [`prior_half_cauchy()`](https://gillescolling.com/tulpa/reference/prior_half_cauchy.md),
   a
   [`prior_pc()`](https://gillescolling.com/tulpa/reference/prior_pc.md),
   a misnamed list – by its default, so
   `tulpa(..., mode = "ep", beta_prior = prior_half_cauchy(2.5))` fitted
   under a different prior and reported nothing. Both resolvers now
-  validate through one
-  [`.beta_prior_fields()`](https://gillescolling.com/tulpa/reference/dot-beta_prior_fields.md),
-  so a prior one accepts is a prior the other accepts.
+  validate through one `.beta_prior_fields()`, so a prior one accepts is
+  a prior the other accepts.
 
 - **[`tulpa_variogram()`](https://gillescolling.com/tulpa/reference/tulpa_variogram.md)
   checks `coords` against the residual length**
@@ -7837,8 +7833,7 @@ version number marks the release rather than a feature change.
 ## tulpa 0.0.184
 
 - `weights` reaches the spatial mode-finding, not only the marginal
-  precision built at it (gcol33/tulpa#385).
-  [`dispatch_laplace_spatial()`](https://gillescolling.com/tulpa/reference/dispatch_laplace_spatial.md)
+  precision built at it (gcol33/tulpa#385). `dispatch_laplace_spatial()`
   carried no `weights` argument at all, so a spatial
   [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
   fit found the UNWEIGHTED mode and then handed it to
@@ -7962,13 +7957,12 @@ version number marks the release rather than a feature change.
   with no arguments while `time_var` has no default, so
   `checking examples` was an ERROR on any machine; it now passes
   `"year"`, as every other call site in the package does.
-  [`.canonical_family()`](https://gillescolling.com/tulpa/reference/dot-canonical_family.md)’s
-  roxygen linked `.family_or_stop()`, which is internal and has no Rd,
-  giving a dangling cross-reference; the sentence naming it stays, the
-  link goes. And `lmtest`, `numDeriv` and `spdep` are used through `::`
-  in the test suite and were not declared – they are used TODAY, all
-  three are on CRAN, and this is a declaration rather than a new
-  dependency. The `numDeriv` test is now
+  `.canonical_family()`’s roxygen linked `.family_or_stop()`, which is
+  internal and has no Rd, giving a dangling cross-reference; the
+  sentence naming it stays, the link goes. And `lmtest`, `numDeriv` and
+  `spdep` are used through `::` in the test suite and were not declared
+  – they are used TODAY, all three are on CRAN, and this is a
+  declaration rather than a new dependency. The `numDeriv` test is now
   `skip_if_not_installed()`-guarded like the other two, so it skips
   rather than errors where the package is absent.
 
@@ -11189,10 +11183,9 @@ version number marks the release rather than a feature change.
   [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) worked
   example, but
   [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
-  rejected `type = "gp"` by name,
-  [`validate_temporal_gp()`](https://gillescolling.com/tulpa/reference/validate_temporal_gp.md)
-  had no caller, and nothing in `R/` or `src/` populated
-  `TemporalGPData` or set `TemporalType::GP`. The C++ was not the gap –
+  rejected `type = "gp"` by name, `validate_temporal_gp()` had no
+  caller, and nothing in `R/` or `src/` populated `TemporalGPData` or
+  set `TemporalType::GP`. The C++ was not the gap –
   `tulpa_priors_temporal.h` has carried a complete templated temporal-GP
   prior, in both parameterizations, the whole time. What was missing was
   the marshalling.
@@ -11479,8 +11472,8 @@ version number marks the release rather than a feature change.
   parameterisation is degenerate there – `kappa` is 0 and `tau` infinite
   – so a fit could only report an infeasible cell
   (`log_marginal = -Inf`, no Newton iterations) with nothing saying why.
-  [`.validate_spde_nu()`](https://gillescolling.com/tulpa/reference/dot-validate_spde_nu.md)
-  now requires `nu > 0` and names both broken quantities.
+  `.validate_spde_nu()` now requires `nu > 0` and names both broken
+  quantities.
 
 - Joint-hyper NUTS refuses an integer `nu != 1`. Its non-centered
   transform differentiates the `alpha = 2` assembly, so higher orders
@@ -11750,10 +11743,8 @@ version number marks the release rather than a feature change.
   a `NULL` condition once the guard it expected was gone. Bisected past
   the [\#267](https://github.com/gcol33/tulpa/issues/267) auto-mode
   change [\#271](https://github.com/gcol33/tulpa/issues/271) suspected
-  as the cause:
-  [`auto_select_mode()`](https://gillescolling.com/tulpa/reference/auto_select_mode.md)
-  checks `has_latent` before `has_re`, so a model combining RE terms
-  with a
+  as the cause: `auto_select_mode()` checks `has_latent` before
+  `has_re`, so a model combining RE terms with a
   [`latent()`](https://gillescolling.com/tulpa/reference/latent.md)
   block already routes to `nested_laplace`, not `re_cov_gibbs`,
   regardless of [\#267](https://github.com/gcol33/tulpa/issues/267). The
@@ -11799,8 +11790,7 @@ version number marks the release rather than a feature change.
   `tulpa(y ~ x + (1 | g))` on the default mode reported
   `sd = 1, source = "conditioned"`, while the same term with a slope
   added (`(1 + x | g)`) had its whole covariance inferred – the richer
-  model was handled better than the plainer one.
-  [`auto_select_mode()`](https://gillescolling.com/tulpa/reference/auto_select_mode.md)
+  model was handled better than the plainer one. `auto_select_mode()`
   took no random-effect argument at all, so a mixed model fell through
   to the same Tier-1 default a plain GLM reaches.
 
@@ -11842,8 +11832,7 @@ version number marks the release rather than a feature change.
   `Sigma | b` conjugate draw cannot go fully flat – an improper prior is
   not a valid target for that step – so it keeps its existing
   minimal-proper Inverse-Wishart default (`prior_df = n_coefs + 1`),
-  documented as the closest analogue. See
-  [`vignette("priors")`](https://gillescolling.com/tulpa/articles/priors.md).
+  documented as the closest analogue. See `vignette("priors")`.
 
 ## tulpa 0.0.113
 
@@ -11914,18 +11903,17 @@ version number marks the release rather than a feature change.
   nothing on the fit recorded that the requested inference method had
   been swapped. The redirect machinery now carries that:
 
-  - [`select_inference_mode()`](https://gillescolling.com/tulpa/reference/select_inference_mode.md)
-    marks a selection explicit (anything but `mode = "auto"`) and keeps
-    the literal request, so a later redirect can name what it overrode.
-  - [`.sel_redirect()`](https://gillescolling.com/tulpa/reference/dot-sel_redirect.md)
-    records the override in `sel$overridden` and appends a clause to the
-    reason. The clause is re-appended to *whatever* reason the selection
-    ends up carrying rather than only the one that recorded it: each
-    redirect replaces `sel$reason`, so in a chain (slopes then a
-    smoother) the later one used to drop the statement and leave the fit
-    looking as though nothing had been overridden. Only the first
-    override is recorded, since the request the user actually made is
-    the one worth naming.
+  - `select_inference_mode()` marks a selection explicit (anything but
+    `mode = "auto"`) and keeps the literal request, so a later redirect
+    can name what it overrode.
+  - `.sel_redirect()` records the override in `sel$overridden` and
+    appends a clause to the reason. The clause is re-appended to
+    *whatever* reason the selection ends up carrying rather than only
+    the one that recorded it: each redirect replaces `sel$reason`, so in
+    a chain (slopes then a smoother) the later one used to drop the
+    statement and leave the fit looking as though nothing had been
+    overridden. Only the first override is recorded, since the request
+    the user actually made is the one worth naming.
   - [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
     warns, and stamps the machine-readable `fit$mode_overridden`
     (`requested` + the backend it would have used). A
@@ -12280,22 +12268,19 @@ version number marks the release rather than a feature change.
   whose unparseable case already lands on the default.
 
 - **A warm start whose source supplies the wrong number of SDs is
-  refused (gcol33/tulpa#252).**
-  [`.build_warm_start()`](https://gillescolling.com/tulpa/reference/dot-build_warm_start.md)
-  errors when a source fit’s block does not match the sampler’s layout,
-  but two branches took `s_t[1]` and carried on – seeding every
-  coefficient of a term from the first coefficient’s SD, for both the
-  mass scale and the `log_sigma_re` starting value, and reporting that
-  as a warm start. A single SD still broadcasts (the scalar-term case);
-  any length other than one or the term’s coefficient count now stops
-  with the wording the coefficient placement already used.
+  refused (gcol33/tulpa#252).** `.build_warm_start()` errors when a
+  source fit’s block does not match the sampler’s layout, but two
+  branches took `s_t[1]` and carried on – seeding every coefficient of a
+  term from the first coefficient’s SD, for both the mass scale and the
+  `log_sigma_re` starting value, and reporting that as a warm start. A
+  single SD still broadcasts (the scalar-term case); any length other
+  than one or the term’s coefficient count now stops with the wording
+  the coefficient placement already used.
 
-- **[`get_mode_backends()`](https://gillescolling.com/tulpa/reference/get_mode_backends.md)
-  derives its mode list from `INFERENCE_TIERS` (gcol33/tulpa#254).** Its
-  error message restated the names its sibling
-  [`select_inference_mode()`](https://gillescolling.com/tulpa/reference/select_inference_mode.md)
-  already builds from the registry. Correct today, stale the moment a
-  tier is added.
+- **`get_mode_backends()` derives its mode list from `INFERENCE_TIERS`
+  (gcol33/tulpa#254).** Its error message restated the names its sibling
+  `select_inference_mode()` already builds from the registry. Correct
+  today, stale the moment a tier is added.
 
 ## tulpa 0.0.104
 
@@ -12349,12 +12334,11 @@ version number marks the release rather than a feature change.
   derivative for four; the other eight hit a hard refusal at fit time.
   `lognormal`, `t`, `neg_binomial_1`, `beta`, `inverse_gaussian`,
   `beta_binomial` and `tweedie` are now registered, so
-  [`.dispersion_families()`](https://gillescolling.com/tulpa/reference/dot-dispersion_families.md)
-  is exactly the set of front-door families carrying a `phi`. Each new
-  entry finite-differences against the `.FAMILY_OPS` likelihood, score
-  and weight it claims to differentiate (~1e-9), and the assembled
-  `dm/dlog_phi` matches a central difference of the Laplace log-marginal
-  to the same order.
+  `.dispersion_families()` is exactly the set of front-door families
+  carrying a `phi`. Each new entry finite-differences against the
+  `.FAMILY_OPS` likelihood, score and weight it claims to differentiate
+  (~1e-9), and the assembled `dm/dlog_phi` matches a central difference
+  of the Laplace log-marginal to the same order.
 
   `gaussian` and `lognormal` now share one set of derivatives read at
   their own residual – the lognormal is the same normal density on the
@@ -12412,12 +12396,11 @@ version number marks the release rather than a feature change.
   relied on. The border now carries `dH_true/dpsi`, which needs the
   phi-derivative of the observed-minus-working correction as well as the
   eta-derivative the random-effect block already had; a family in that
-  position supplies `dobs_weight` and
-  [`.family_dphi2()`](https://gillescolling.com/tulpa/reference/dot-family_dphi2.md)
-  withholds the whole entry without it, rather than pairing two
-  different inverses. The second mode derivative’s right-hand side reads
-  the same correction: the score’s eta-derivative is the OBSERVED
-  curvature, and the two differ for exactly these families.
+  position supplies `dobs_weight` and `.family_dphi2()` withholds the
+  whole entry without it, rather than pairing two different inverses.
+  The second mode derivative’s right-hand side reads the same
+  correction: the score’s eta-derivative is the OBSERVED curvature, and
+  the two differ for exactly these families.
 
   The truncated family’s three weight derivatives are one chain rule
   over `f(a, a_e)` and the shape’s own derivatives, the same partials
@@ -12957,12 +12940,11 @@ Fixed:
   control surface is the union over the backends it dispatches, so
   `n_warmup` (which the NUTS-SPDE driver reads) passed the front-door
   check, and the subset that narrows `control` for the chosen fitter
-  then discarded it because
-  [`tulpa_sample_glmm()`](https://gillescolling.com/tulpa/reference/tulpa_sample_glmm.md)
-  spells the same knob `warmup`. Warmup silently stayed at `n_iter / 2`
-  while appearing to honour the request. Control knobs are now
-  canonicalized through one alias table, so a fitter that reads the
-  other spelling still receives it and an explicit value always wins.
+  then discarded it because `tulpa_sample_glmm()` spells the same knob
+  `warmup`. Warmup silently stayed at `n_iter / 2` while appearing to
+  honour the request. Control knobs are now canonicalized through one
+  alias table, so a fitter that reads the other spelling still receives
+  it and an explicit value always wins.
 
 An exact analytic gradient of the joint-field Laplace log-marginal with
 respect to the random-effect covariances, and the outer optimizer and
@@ -13068,18 +13050,16 @@ Fixed:
   coefficient instead.
 - `tulpa_laplace(return_hessian = TRUE)` assembled the marginal
   fixed-effect precision by hand as `X'WX - X'WZ (Z'WZ + D^-1)^-1 Z'WX`
-  from
-  [`glmm_weights()`](https://gillescolling.com/tulpa/reference/glmm_weights.md).
-  That form reaches ONE linear predictor, so it sliced the random
-  effects out of the mode at `ncol(X)` – inside the `beta_zi` block when
-  a zero-inflation process is present – and it carried the R-side Fisher
-  weight rather than the curvature the kernel found the mode under,
-  measured 1.8% apart on `neg_binomial_2`. It is now the Schur
-  complement of the joint curvature over the random-effect block,
-  corrected to the observed weight for the two families whose Newton
-  weight is not it. The joint Hessian already carries the fixed-effect
-  prior and the random-effect penalty the mode was found under, so
-  nothing is added back.
+  from `glmm_weights()`. That form reaches ONE linear predictor, so it
+  sliced the random effects out of the mode at `ncol(X)` – inside the
+  `beta_zi` block when a zero-inflation process is present – and it
+  carried the R-side Fisher weight rather than the curvature the kernel
+  found the mode under, measured 1.8% apart on `neg_binomial_2`. It is
+  now the Schur complement of the joint curvature over the random-effect
+  block, corrected to the observed weight for the two families whose
+  Newton weight is not it. The joint Hessian already carries the
+  fixed-effect prior and the random-effect penalty the mode was found
+  under, so nothing is added back.
 - The exact outer gradient’s `dW/dtheta` channel formed its mode-motion
   solve on the working-weight inverse. That channel is
   `v_r' (dx_hat/dtheta)`, and the mode follows the true stationarity
@@ -13431,22 +13411,20 @@ New:
   `grad_hess_for_family()` returns the Newton working weight, chosen for
   positive-definiteness; `obs_grad_hess_for_family()` returns the
   observed curvature at the realized `y`, mirroring
-  [`.family_obs_weight()`](https://gillescolling.com/tulpa/reference/dot-family_obs_weight.md)
-  in R. The zero-inflation mixture needs the latter, because its `y = 0`
-  branch differentiates the density rather than taking an expectation.
-  The distinction is not cosmetic: `neg_binomial_1`’s observed curvature
-  turns negative once `y` sits well above the mean, which would break
-  Newton, while its working weight `mu / (1 + phi)` never does. The
-  mixture only ever evaluates the observed form at `y = 0`, where it is
-  positive.
+  `.family_obs_weight()` in R. The zero-inflation mixture needs the
+  latter, because its `y = 0` branch differentiates the density rather
+  than taking an expectation. The distinction is not cosmetic:
+  `neg_binomial_1`’s observed curvature turns negative once `y` sits
+  well above the mean, which would break Newton, while its working
+  weight `mu / (1 + phi)` never does. The mixture only ever evaluates
+  the observed form at `y = 0`, where it is positive.
 
 - Compiled ZI coverage follows from that: a family becomes ZI-fittable
   exactly when its observed curvature is registered, which is now
   `poisson`, `binomial`, `neg_binomial_2`, `neg_binomial_1`,
   `truncated_poisson` and `truncated_neg_binomial_2`. The remaining
-  count families keep the R-level composition
-  ([`zi_loglik()`](https://gillescolling.com/tulpa/reference/zi_loglik.md)
-  and friends) for density work and are refused at the front door for
+  count families keep the R-level composition (`zi_loglik()` and
+  friends) for density work and are refused at the front door for
   fitting.
 
 - `arena::Var` and `ad::Var` gain `expm1` (`fwd::Dual` already had it),
@@ -13608,10 +13586,8 @@ Audit fixes (0.0.90 review, issues
   default `mode = "auto"`, a spatially- or
   temporally-varying-coefficient model fell to a Laplace / size
   heuristic and then hit the varying-coefficient guard, which only the
-  exact ModelData NUTS backend clears.
-  [`auto_select_mode()`](https://gillescolling.com/tulpa/reference/auto_select_mode.md)
-  now routes SVC / TVC to the exact backend so the default mode fits end
-  to end.
+  exact ModelData NUTS backend clears. `auto_select_mode()` now routes
+  SVC / TVC to the exact backend so the default mode fits end to end.
 
 - **Gradient-check fallback leaked across fits
   ([\#223](https://github.com/gcol33/tulpa/issues/223)).** A failed
@@ -13903,11 +13879,10 @@ Bug fixes and cleanups from a second whole-repo audit (issues
   row.
 - **BYM2 default scaling
   ([\#184](https://github.com/gcol33/tulpa/issues/184)).**
-  [`compute_bym2_scale()`](https://gillescolling.com/tulpa/reference/compute_bym2_scale.md)
-  now returns the Riebler et al. (2016) generalized-variance factor
-  `1 / sqrt(geomean(diag(Q^+)))` instead of the geometric mean of the
-  ICAR eigenvalues, so the spatial fraction `rho` stays interpretable
-  across graphs.
+  `compute_bym2_scale()` now returns the Riebler et al. (2016)
+  generalized-variance factor `1 / sqrt(geomean(diag(Q^+)))` instead of
+  the geometric mean of the ICAR eigenvalues, so the spatial fraction
+  `rho` stays interpretable across graphs.
 - **[`spatial_range()`](https://gillescolling.com/tulpa/reference/spatial_range.md)
   /
   [`temporal_corr()`](https://gillescolling.com/tulpa/reference/temporal_corr.md)
@@ -14878,8 +14853,7 @@ CRAN-preparation release.
   now happens once at each R-to-kernel boundary. The direct doors
   ([`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md),
   [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md),
-  [`tulpa_sample_glmm()`](https://gillescolling.com/tulpa/reference/tulpa_sample_glmm.md))
-  keep their documented SD parameterization.
+  `tulpa_sample_glmm()`) keep their documented SD parameterization.
 - New families: `lognormal` (variance convention, front-door fittable on
   the Laplace and sampler tiers) and `tweedie` (compound Poisson-gamma,
   `phi2` = power in (1, 2); Dunn-Smyth series density in R and the
@@ -15999,8 +15973,7 @@ CRAN-preparation release.
   fractional path’s R-side fold is removed accordingly. Exposed and
   fixed a latent gap where the SPDE CCD refit returned a `NULL` `beta`
   (the mode was never split into fixed effects / field), now done once
-  in
-  [`laplace_spde_at()`](https://gillescolling.com/tulpa/reference/laplace_spde_at.md).
+  in `laplace_spde_at()`.
 
 - fix(diagnostics): the outer Pareto-k radius cap no longer biases k-hat
   downward in the heavy-tail regime it exists to flag
@@ -16013,10 +15986,9 @@ CRAN-preparation release.
 
 - fix(s3): every exported front-door fitter (`tulpa_re_cov_nested` /
   `_gibbs`, `tulpa_laplace`, `fit_spde`, `tulpa_nested_laplace[_joint]`,
-  `tulpa_tgmrf`) routes its return through a shared
-  [`.finalize_fit()`](https://gillescolling.com/tulpa/reference/dot-finalize_fit.md)
-  so a directly-called fit carries the same `tulpa_fit` class,
-  fixed-effect layout, and explicit `draws_kind` provenance tag as a
+  `tulpa_tgmrf`) routes its return through a shared `.finalize_fit()` so
+  a directly-called fit carries the same `tulpa_fit` class, fixed-effect
+  layout, and explicit `draws_kind` provenance tag as a
   [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)-dispatched
   one. The chain-vs-iid diagnostic gate no longer computes a vacuous
   Rhat on a directly-called iid fit
@@ -16413,8 +16385,8 @@ CRAN-preparation release.
   a per-grid vector) in the spatial and temporal vignettes, refreshed
   the stale temporal front-door scope note (rw1/rw2/ar1 plus panel and
   areal space-time are all wired), replaced an unexported
-  [`is_connected()`](https://gillescolling.com/tulpa/reference/is_connected.md)
-  reference with a base-R graph-Laplacian connectivity check, and moved
+  `is_connected()` reference with a base-R graph-Laplacian connectivity
+  check, and moved
   [`tgmrf_cpp()`](https://gillescolling.com/tulpa/reference/tgmrf_cpp.md)
   from a “forthcoming” framing to its shipped present-tense description.
 - build: drop the precompiled-header mechanism; each translation unit
@@ -16467,8 +16439,8 @@ CRAN-preparation release.
   thread limit. Rd: a dangling `\link` and lost-brace math in the
   rational-SPDE docs are fixed; NAMESPACE gains
   `importFrom(utils, flush.console)` / `importFrom(stats, vcov)`; the
-  [`tulpa_sample_glmm()`](https://gillescolling.com/tulpa/reference/tulpa_sample_glmm.md)
-  offset is passed by its full name (`offset_nullable`).
+  `tulpa_sample_glmm()` offset is passed by its full name
+  (`offset_nullable`).
 - fix(build): the Windows precompiled header now rebuilds when
   `Makevars.win` changes, so a `.gch` left from an earlier flag set is
   no longer silently rejected (“created and used with differing
@@ -16560,9 +16532,7 @@ CRAN-preparation release.
   [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) guards
   are removed;
   [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md)
-  and
-  [`tulpa_sample_glmm()`](https://gillescolling.com/tulpa/reference/tulpa_sample_glmm.md)
-  gain an `offset` argument.
+  and `tulpa_sample_glmm()` gain an `offset` argument.
 
 - fix(spde): gate fractional Matern smoothness (`nu`) instead of
   silently fitting a mis-specified field (gcol33/tulpa#71). The wired
@@ -16572,10 +16542,9 @@ CRAN-preparation release.
   any number of poles – so no choice of poles/weights recovers a
   fractional `alpha`; the construction collapses to an `alpha = 2` field
   regardless of the coefficients (verified to machine precision). The
-  coefficient generator
-  ([`rational_spde_coefficients()`](https://gillescolling.com/tulpa/reference/rational_spde_coefficients.md))
-  previously returned a self-derived log-uniform approximation while
-  documenting the published BRASIL / Bolin et al. (2023) method.
+  coefficient generator (`rational_spde_coefficients()`) previously
+  returned a self-derived log-uniform approximation while documenting
+  the published BRASIL / Bolin et al. (2023) method.
   [`spatial_spde()`](https://gillescolling.com/tulpa/reference/spatial_spde.md)
   /
   [`spatial_spde_custom()`](https://gillescolling.com/tulpa/reference/spatial_spde_custom.md)
@@ -16914,11 +16883,10 @@ CRAN-preparation release.
   package refine a custom marginal (e.g. a latent-state-integrated
   occupancy / detection likelihood) through the same quadrature. Reuses
   the existing log-Cholesky covariance parametrization (`.re_cov_*`),
-  [`gauss_hermite_prob()`](https://gillescolling.com/tulpa/reference/gauss_hermite_prob.md),
-  and an optional LKJ correlation penalty; the fixed parameters and
-  `chol(Sigma)` are optimized jointly on the exact-marginal
-  log-likelihood, with SEs from the marginal Hessian. Recovery tests in
-  `tests/testthat/test-re-aghq.R`.
+  `gauss_hermite_prob()`, and an optional LKJ correlation penalty; the
+  fixed parameters and `chol(Sigma)` are optimized jointly on the
+  exact-marginal log-likelihood, with SEs from the marginal Hessian.
+  Recovery tests in `tests/testthat/test-re-aghq.R`.
 
 ## tulpa 0.0.3 (2026-05-28)
 
@@ -17257,9 +17225,7 @@ CRAN-preparation release.
   proper-CAR field is well-defined on every node of the graph regardless
   of whether each node has an observation; unobserved cells simply
   contribute no likelihood term (matching INLA’s
-  `f(cell, model = "besag", graph = g)`).
-  [`validate_spatial()`](https://gillescolling.com/tulpa/reference/validate_spatial.md)
-  and
+  `f(cell, model = "besag", graph = g)`). `validate_spatial()` and
   [`prior_from_spec()`](https://gillescolling.com/tulpa/reference/prior_from_spec.md)
   now resolve `group_var` to 1-based adjacency row indices via a new
   `.resolve_spatial_idx()` helper:

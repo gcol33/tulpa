@@ -34,7 +34,5 @@ because it reads as a pin rather than because it asked to be held.
 
 ``` r
 auto_grid_place(auto_grid(c(0.5, 1, 2)))
-#> [1] TRUE
 auto_grid_place(auto_grid(c(0.5, 1, 2), place = FALSE))
-#> [1] FALSE
 ```

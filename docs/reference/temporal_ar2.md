@@ -69,7 +69,5 @@ d <- data.frame(t = seq_len(Tt), y = w + rnorm(Tt, 0, 0.3))
 # simulated with. Left unsupplied the fit conditions on 1 and says so.
 fit <- tulpa(y ~ latent(temporal_ar2(d$t)), data = d, family = "gaussian",
              phi = 0.3^2, mode = "nested_laplace")
-#> [nested-laplace] 1/125 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
-#> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.01s/cells
 # }
 ```

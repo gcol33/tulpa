@@ -157,22 +157,6 @@ ms <- spatial_multiscale(
   range_regional = c(1, 5)
 )
 print(ms)
-#> tulpa Multi-Scale spatial specification
-#> ========================================
-#> 
-#> Coordinates: lon, lat 
-#> Scales: local + regional 
-#> 
-#> Local scale:
-#>   Range prior: [0.1, 0.5]
-#>   Neighbors: 10 
-#> 
-#> Regional scale:
-#>   Range prior: [1, 5]
-#>   Neighbors: 30 
-#> 
-#> Covariance: exponential 
-#> Shared: Yes (enters both processes) 
 
 # \donttest{
 set.seed(101)
@@ -201,31 +185,6 @@ fit <- tulpa(
   mode = "exact",
   control = list(n_iter = 60L, n_warmup = 30L, seed = 1L)
 )
-#> Warning: tulpa(): the 'hmc' chain has not converged -- log_sigma2_gp_local: Rhat 1.57, bulk-ESS 10; log_sigma2_gp_regional: Rhat 1.29, bulk-ESS 15; depth: Rhat 1.12, bulk-ESS 28; log_phi_gp_local: Rhat 1.09, bulk-ESS 31; temp: Rhat 1.14, bulk-ESS 37. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
 summary(fit)
-#> tulpa fit  (hmc, tier 1) 
-#> Call: tulpa(formula = count ~ depth + temp, data = df, family = "poisson", mode = "exact", spatial = spatial_multiscale(~lon + lat, range_local = c(0.1, 0.5), range_regional = c(1, 5), nn_local = 5L, nn_regional = 8L), control = list(n_iter = 60L, n_warmup = 30L, seed = 1L))
-#>   inference mode: exact 
-#>   selected because: User-specified mode: exact 
-#>   family: poisson 
-#>   n_obs: 25 
-#>   posterior draws: 120 
-#> 
-#> Fixed effects:
-#>             estimate std.error    2.5 % 97.5 %
-#> (Intercept)  1.20713    0.2425  0.75076 1.6022
-#> depth        0.24136    0.1379 -0.05657 0.4809
-#> temp         0.01353    0.1310 -0.21479 0.3051
-#> 
-#> Fixed-effect prior: normal(0, 2.5)
-#> 
-#> Reliability (chain draws):
-#>   max Rhat 1.57, min bulk-ESS 9.762, min tail-ESS 16.18
-#>   mean acceptance: 0.6856 
-#>   divergent transitions: 9 
-#>   verdict: not converged 
-#> 
-#> WARNING: chain not converged (max Rhat 1.57, min bulk-ESS 10 on (Intercept), depth, temp, log_sigma2_gp_local, log_phi_gp_local, log_sigma2_gp_regional, log_phi_gp_regional);
-#>   these estimates are not yet the posterior. See check_diagnostics().
 # }
 ```

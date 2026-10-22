@@ -158,5 +158,4 @@ for (i in 1:3) adj[i, i + 1] <- adj[i + 1, i] <- 1
 # additive model is tulpa(spatial = , temporal = ).
 try(spatiotemporal(spatial_car(adj, group_var = "region"),
                    temporal_rw1("year"), type = "IV"))
-#> Error : Spatiotemporal interaction terms are not fitted by any tulpa backend: no solver carries a Knorr-Held type I-IV interaction, and tulpa() has no `spatiotemporal =` argument. The additive space-time model `X beta + u_spatial + v_temporal` is fitted directly by fit_st_nested(); tulpa(spatial = , temporal = ) reaches the same joint nested-Laplace path only for an AREAL spatial field (icar/bym2/car_proper) -- a continuous one (hsgp/nngp) is not yet routed through tulpa()'s formula front door.
 ```

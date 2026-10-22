@@ -49,17 +49,17 @@ stability."><meta property="og:image" content="https://gillescolling.com/tulpa/l
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/checkpoint.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/em-laplace.html">UNKNOWN TITLE</a></li>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">The data a tulpa model expects</a></li>
+    <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace for latent-variable models</a></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes: the three tiers and how to choose one</a></li>
-    <li><a class="dropdown-item" href="../articles/model-comparison.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/model-comparison.html">Comparing tulpa models</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Specifying and checking priors</a></li>
     <li><a class="dropdown-item" href="../articles/quickstart.html">Getting started with tulpa</a></li>
-    <li><a class="dropdown-item" href="../articles/random-slopes.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes and the free random-effect covariance</a></li>
+    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability of nested approximations: reading the outer Pareto-k</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Validating calibration: simulation-based calibration</a></li>
-    <li><a class="dropdown-item" href="../articles/spatial-models.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial fields in tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal random-walk effects with tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">User-defined GMRF latent blocks with tgmrf()</a></li>
   </ul></li>
@@ -159,7 +159,7 @@ rough quality check, smaller is better.</p></li>
 
 <p>Bridge sampling is a <em>post-hoc</em> marginal-likelihood estimator, not
 a sampling backend, so it does not appear in the
-<a href="INFERENCE_TIERS.html">INFERENCE_TIERS</a> registry. It operates on draws from any Tier-1
+<code>INFERENCE_TIERS</code> registry. It operates on draws from any Tier-1
 (Exact) backend.</p>
     </div>
     <div class="section level2">
@@ -174,19 +174,17 @@ M., ... &amp; Steingroever, H. (2017). A tutorial on bridge sampling.
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># Toy: marginal likelihood of N(theta | 0, 1) under Y = theta + eps,</span></span></span>
-<span class="r-in"><span><span class="co"># eps ~ N(0, 1), prior theta ~ N(0, 10). Closed-form available.</span></span></span>
-<span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fl">1.5</span></span></span>
-<span class="r-in"><span><span class="va">log_post</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">theta</span><span class="op">)</span> <span class="op">{</span></span></span>
-<span class="r-in"><span>  <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">dnorm</a></span><span class="op">(</span><span class="va">y</span>, <span class="va">theta</span>, <span class="fl">1</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">dnorm</a></span><span class="op">(</span><span class="va">theta</span>, <span class="fl">0</span>, <span class="fl">10</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="op">}</span></span></span>
-<span class="r-in"><span><span class="va">draws</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">2000</span>, mean <span class="op">=</span> <span class="va">y</span> <span class="op">*</span> <span class="fl">100</span> <span class="op">/</span> <span class="fl">101</span>, sd <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fl">100</span> <span class="op">/</span> <span class="fl">101</span><span class="op">)</span><span class="op">)</span>,</span></span>
-<span class="r-in"><span>                ncol <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">bs</span> <span class="op">&lt;-</span> <span class="fu">bridge_sampling</span><span class="op">(</span><span class="va">draws</span>, <span class="va">log_post</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">bs</span><span class="op">$</span><span class="va">log_marginal</span>  <span class="co"># should match dnorm(y, 0, sqrt(101), log = TRUE)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> [1] -3.238743</span>
-<span class="r-in"><span></span></span>
-</code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># Toy: marginal likelihood of N(theta | 0, 1) under Y = theta + eps,</span></span>
+<span><span class="co"># eps ~ N(0, 1), prior theta ~ N(0, 10). Closed-form available.</span></span>
+<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fl">1.5</span></span>
+<span><span class="va">log_post</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">theta</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">dnorm</a></span><span class="op">(</span><span class="va">y</span>, <span class="va">theta</span>, <span class="fl">1</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">dnorm</a></span><span class="op">(</span><span class="va">theta</span>, <span class="fl">0</span>, <span class="fl">10</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="va">draws</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">2000</span>, mean <span class="op">=</span> <span class="va">y</span> <span class="op">*</span> <span class="fl">100</span> <span class="op">/</span> <span class="fl">101</span>, sd <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fl">100</span> <span class="op">/</span> <span class="fl">101</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>                ncol <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">bs</span> <span class="op">&lt;-</span> <span class="fu">bridge_sampling</span><span class="op">(</span><span class="va">draws</span>, <span class="va">log_post</span><span class="op">)</span></span>
+<span><span class="va">bs</span><span class="op">$</span><span class="va">log_marginal</span>  <span class="co"># should match dnorm(y, 0, sqrt(101), log = TRUE)</span></span>
+<span></span></code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

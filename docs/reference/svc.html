@@ -33,17 +33,17 @@ from a fitted tulpa model with SVC specification."><meta property="og:image" con
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/checkpoint.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/em-laplace.html">UNKNOWN TITLE</a></li>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">The data a tulpa model expects</a></li>
+    <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace for latent-variable models</a></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes: the three tiers and how to choose one</a></li>
-    <li><a class="dropdown-item" href="../articles/model-comparison.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/model-comparison.html">Comparing tulpa models</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Specifying and checking priors</a></li>
     <li><a class="dropdown-item" href="../articles/quickstart.html">Getting started with tulpa</a></li>
-    <li><a class="dropdown-item" href="../articles/random-slopes.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes and the free random-effect covariance</a></li>
+    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability of nested approximations: reading the outer Pareto-k</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Validating calibration: simulation-based calibration</a></li>
-    <li><a class="dropdown-item" href="../articles/spatial-models.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial fields in tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal random-walk effects with tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">User-defined GMRF latent blocks with tgmrf()</a></li>
   </ul></li>
@@ -131,82 +131,27 @@ quantiles of each spatially varying coefficient.</p>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">303</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">25L</span></span></span>
-<span class="r-in"><span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>lon <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, lat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">bsurf</span> <span class="op">&lt;-</span> <span class="fl">0.9</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">sin</a></span><span class="op">(</span><span class="fl">2.8</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">lon</span><span class="op">)</span> <span class="op">+</span> <span class="fl">0.7</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">cos</a></span><span class="op">(</span><span class="fl">2.2</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">lat</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">df</span><span class="op">$</span><span class="va">count</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">n</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.2</span> <span class="op">+</span> <span class="op">(</span><span class="fl">0.8</span> <span class="op">+</span> <span class="va">bsurf</span><span class="op">)</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="co"># The varying slope on `x` is a spatial field; SVC is exact-mode only.</span></span></span>
-<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span></span></span>
-<span class="r-in"><span>  <span class="va">count</span> <span class="op">~</span> <span class="va">x</span>,</span></span>
-<span class="r-in"><span>  data <span class="op">=</span> <span class="va">df</span>,</span></span>
-<span class="r-in"><span>  family <span class="op">=</span> <span class="st">"poisson"</span>,</span></span>
-<span class="r-in"><span>  spatial <span class="op">=</span> <span class="fu"><a href="spatial_svc.html">spatial_svc</a></span><span class="op">(</span><span class="op">~</span> <span class="va">lon</span> <span class="op">+</span> <span class="va">lat</span>, terms <span class="op">=</span> <span class="op">~</span> <span class="va">x</span> <span class="op">-</span> <span class="fl">1</span>, nn <span class="op">=</span> <span class="fl">5L</span><span class="op">)</span>,</span></span>
-<span class="r-in"><span>  mode <span class="op">=</span> <span class="st">"exact"</span>,</span></span>
-<span class="r-in"><span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">80L</span>, n_warmup <span class="op">=</span> <span class="fl">40L</span>, seed <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="op">)</span></span></span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>tulpa(): the 'hmc' chain has not converged -- x: Rhat 1.08, bulk-ESS 75; (Intercept): Rhat 1.06, bulk-ESS 83. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().</span>
-<span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="va">svc_post</span> <span class="op">&lt;-</span> <span class="fu">svc</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">svc_post</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Spatially varying coefficient posterior summary, 160 posterior draws</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>    obs term    coord_1    coord_2        mean        sd        q2.5         q50</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1    1    x 0.30961600 0.61092037 -0.29955276 0.2754405 -0.83258898 -0.28358041</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2    2    x 0.83457367 0.80210956  0.07684232 0.5137690 -0.80691643  0.02130666</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3    3    x 0.60981555 0.11600718  0.31467963 0.3146108 -0.22604839  0.32560296</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4    4    x 0.73997696 0.23340995  0.33696713 0.1564360 -0.05245735  0.33990260</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5    5    x 0.64968413 0.36752677  0.27862680 0.2447322 -0.20136058  0.27398674</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6    6    x 0.98059526 0.16249526  0.22643969 0.4004588 -0.60962565  0.21284090</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 7    7    x 0.52733891 0.04603014  0.23684137 0.3922178 -0.53231554  0.24342274</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 8    8    x 0.46789913 0.78060351 -0.27176240 0.4035566 -0.87923196 -0.30979724</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 9    9    x 0.28156115 0.27811056 -0.26053960 0.3257951 -0.90718482 -0.25519256</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 10  10    x 0.27876133 0.31064937 -0.22190751 0.2799448 -0.83635274 -0.21140732</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 11  11    x 0.90555893 0.27413493  0.31147715 0.2745749 -0.15269345  0.28268969</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 12  12    x 0.87261579 0.32569479  0.34187649 0.2000977 -0.04559340  0.34979228</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 13  13    x 0.10369257 0.46935352 -0.43397330 0.3166352 -0.95220572 -0.44007890</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 14  14    x 0.03638615 0.71076074 -0.52574158 0.3907374 -1.21073090 -0.49549134</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 15  15    x 0.23365584 0.82966674 -0.51370739 0.2588695 -1.13598678 -0.49314375</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16  16    x 0.21302249 0.71354593 -0.43514052 0.2000422 -0.89112415 -0.41569495</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17  17    x 0.40852481 0.34971824  0.07108789 0.2883693 -0.43770592  0.03688384</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18  18    x 0.23366216 0.63985821 -0.33225264 0.1944496 -0.65892967 -0.33687258</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19  19    x 0.72840439 0.51725032  0.22163497 0.3582945 -0.41519648  0.20622132</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20  20    x 0.65473955 0.16251311  0.29457893 0.2782473 -0.20617223  0.30690111</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21  21    x 0.84652193 0.77875231  0.09886014 0.5253306 -0.83512163  0.03070179</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 22  22    x 0.65537863 0.24884834  0.29802986 0.2299392 -0.11763532  0.30136161</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 23  23    x 0.82734509 0.18598061  0.35009241 0.3242799 -0.28753375  0.36869740</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 24  24    x 0.24047672 0.78207493 -0.50923955 0.1573022 -0.80090618 -0.49704394</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 25  25    x 0.82767551 0.38519677  0.34578249 0.3450844 -0.15577561  0.30474151</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>           q97.5</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1   0.260490230</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2   1.507156430</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3   0.965364913</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4   0.595960825</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5   0.741558173</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6   1.015070588</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 7   0.886641767</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 8   0.474778654</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 9   0.294706611</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 10  0.261061638</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 11  0.840042438</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 12  0.694373585</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 13  0.162077862</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 14  0.091937749</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 15  0.013569761</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16 -0.004261005</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17  0.687604541</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18  0.015105274</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19  0.997678626</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20  0.886060150</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21  1.505796594</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 22  0.765099534</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 23  0.983745477</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 24 -0.254437878</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 25  1.248545267</span>
-<span class="r-in"><span><span class="co"># }</span></span></span>
-<span class="r-in"><span></span></span>
-</code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">303</span><span class="op">)</span></span>
+<span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">25L</span></span>
+<span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>lon <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, lat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">bsurf</span> <span class="op">&lt;-</span> <span class="fl">0.9</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">sin</a></span><span class="op">(</span><span class="fl">2.8</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">lon</span><span class="op">)</span> <span class="op">+</span> <span class="fl">0.7</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">cos</a></span><span class="op">(</span><span class="fl">2.2</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">lat</span><span class="op">)</span></span>
+<span><span class="va">df</span><span class="op">$</span><span class="va">count</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">n</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.2</span> <span class="op">+</span> <span class="op">(</span><span class="fl">0.8</span> <span class="op">+</span> <span class="va">bsurf</span><span class="op">)</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># The varying slope on `x` is a spatial field; SVC is exact-mode only.</span></span>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span></span>
+<span>  <span class="va">count</span> <span class="op">~</span> <span class="va">x</span>,</span>
+<span>  data <span class="op">=</span> <span class="va">df</span>,</span>
+<span>  family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
+<span>  spatial <span class="op">=</span> <span class="fu"><a href="spatial_svc.html">spatial_svc</a></span><span class="op">(</span><span class="op">~</span> <span class="va">lon</span> <span class="op">+</span> <span class="va">lat</span>, terms <span class="op">=</span> <span class="op">~</span> <span class="va">x</span> <span class="op">-</span> <span class="fl">1</span>, nn <span class="op">=</span> <span class="fl">5L</span><span class="op">)</span>,</span>
+<span>  mode <span class="op">=</span> <span class="st">"exact"</span>,</span>
+<span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">80L</span>, n_warmup <span class="op">=</span> <span class="fl">40L</span>, seed <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">svc_post</span> <span class="op">&lt;-</span> <span class="fu">svc</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">svc_post</span><span class="op">)</span></span>
+<span><span class="co"># }</span></span>
+<span></span></code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

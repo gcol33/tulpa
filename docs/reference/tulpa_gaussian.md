@@ -61,9 +61,6 @@ d$y <- 1 + 2 * d$x + rnorm(40, 0, 0.6)
 fit <- tulpa_gaussian(y ~ x, d, control = list(iter = 1000, warmup = 500,
                                               seed = 1))
 fit$means
-#>    beta[1]    beta[2]  log_sigma 
-#>  1.0595875  2.1440584 -0.6091963 
 fit$accept_rate
-#> [1] 0.9070892
 # }
 ```

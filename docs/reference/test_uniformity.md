@@ -48,25 +48,11 @@ An `htest` object (KS test result)
 ``` r
 set.seed(1)
 test_uniformity(runif(50))   # PIT residuals supplied directly
-#> 
-#>  Exact one-sample Kolmogorov-Smirnov test
-#> 
-#> data:  r
-#> D = 0.11212, p-value = 0.5196
-#> alternative hypothesis: two-sided
-#> 
 # \donttest{
 set.seed(1)
 d <- data.frame(x = rnorm(80))
 d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
 test_uniformity(fit, nsim = 50)
-#> 
-#>  Exact one-sample Kolmogorov-Smirnov test
-#> 
-#> data:  r
-#> D = 0.044078, p-value = 0.9959
-#> alternative hypothesis: two-sided
-#> 
 # }
 ```

@@ -491,23 +491,9 @@ hmc <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
                             seed = 1L))
 diagnostics(hmc)
-#>     parameter     rhat ess_bulk ess_tail
-#> 1 (Intercept) 1.019236 235.0473 194.7569
-#> 2           x 1.015787 169.8574 145.9035
 
 # deterministic fit -> PSIS approximation reliability
 smc <- tulpa(y ~ x, data = df, family = "poisson", mode = "smc")
 diagnostics(smc)
-#> Sequential Monte Carlo approximation reliability (i.i.d. draws)
-#>   scope: the draws are the particle population after the final tempering
-#>     stage, resampled to equal weights and moved by MCMC mutation steps; no
-#>     pareto_k or other reliability quantity is computed for this backend.
-#>   2 parameters, 1000 draws; mcse_mean below is the i.i.d.
-#>   Monte-Carlo error of each reported mean (not chain mixing:
-#>   Rhat and ESS are not defined for these draws).
-#> 
-#>     parameter      mean        sd n_draws   mcse_mean moment_source
-#> 1 (Intercept) 0.5307693 0.1040623    1000 0.003290738         draws
-#> 2           x 0.3061802 0.1214444    1000 0.003840409         draws
 # }
 ```

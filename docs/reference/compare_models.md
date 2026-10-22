@@ -69,8 +69,5 @@ df$y <- rpois(120, exp(0.4 + 0.5 * df$x))
 f1 <- tulpa(y ~ x, data = df, family = "poisson")
 f2 <- tulpa(y ~ 1, data = df, family = "poisson")
 compare_models(full = f1, null = f2, criterion = "waic")
-#>   model      elpd  se_elpd    p_eff       ic     delta  se_diff      weight
-#> 1  full -188.1304 9.729789 2.187836 376.2607   0.00000       NA 1.00000e+00
-#> 2  null -208.3904 8.892827 1.436874 416.7808 -20.26005 7.381431 1.58918e-09
 # }
 ```

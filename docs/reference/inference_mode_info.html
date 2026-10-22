@@ -33,17 +33,17 @@ including their tiers, guarantees, and appropriate use cases."><meta property="o
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/checkpoint.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/em-laplace.html">UNKNOWN TITLE</a></li>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">The data a tulpa model expects</a></li>
+    <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace for latent-variable models</a></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes: the three tiers and how to choose one</a></li>
-    <li><a class="dropdown-item" href="../articles/model-comparison.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/model-comparison.html">Comparing tulpa models</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Specifying and checking priors</a></li>
     <li><a class="dropdown-item" href="../articles/quickstart.html">Getting started with tulpa</a></li>
-    <li><a class="dropdown-item" href="../articles/random-slopes.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes and the free random-effect covariance</a></li>
+    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability of nested approximations: reading the outer Pareto-k</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Validating calibration: simulation-based calibration</a></li>
-    <li><a class="dropdown-item" href="../articles/spatial-models.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial fields in tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal random-walk effects with tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">User-defined GMRF latent blocks with tgmrf()</a></li>
   </ul></li>
@@ -82,63 +82,7 @@ console.</p>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="fu">inference_mode_info</span><span class="op">(</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> tulpa Inference Modes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> ========================</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Modes encode EPISTEMIC GUARANTEES, not just runtime characteristics.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> TIER 1: EXACT</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Asymptotically correct posterior inference</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Guarantee: Credible intervals interpretable as posterior uncertainty</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Backends: hmc, ess, gibbs, re_cov_gibbs, smc, imh_laplace, mala</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Note: Reference standard</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> TIER 2: STRUCTURED</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Accurate inference conditional on structural assumptions</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Guarantee: Correct if model meets structural assumptions</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Backends: laplace, re_cov_nested, pathfinder, agq, ep, eb, nested_laplace, nested_laplace_joint, spde</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Note: Controlled approximation, not heuristics</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> TIER 3: OPTIMIZED</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Optimization-based approximate inference</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Guarantee: No general correctness guarantee</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Backends: sghmc, sgld, mclmc, vi</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Note: Uncertainty often underestimated; requires explicit opt-in</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> AUTO MODE</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Selects between Tier 1 and Tier 2 only.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   NEVER silently chooses Tier 3 (Optimized).</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Contract: 'Use the most reliable method expected to finish.'</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Usage (by tier):</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   tulpa(..., mode = 'auto')       # Tier 1 or 2 (default)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   tulpa(..., mode = 'exact')      # Tier 1</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   tulpa(..., mode = 'structured') # Tier 2</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   tulpa(..., mode = 'optimized')  # Tier 3 (explicit opt-in)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Backends ([R] = tulpa(mode =) dispatch, [direct] = has an R fitter but tulpa(mode =) refuses it -- call the fitter itself, [C-ABI] = model-package kernel only):</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'hmc'               # Tier 1 (Exact)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'ess'               # Tier 1 (Exact)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'gibbs'             # Tier 1 (Exact)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 're_cov_gibbs'      # Tier 1 (Exact)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'smc'               # Tier 1 (Exact)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'imh_laplace'       # Tier 1 (Exact)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'mala'              # Tier 1 (Exact)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'laplace'           # Tier 2 (Structured)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 're_cov_nested'     # Tier 2 (Structured)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'pathfinder'        # Tier 2 (Structured)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'agq'               # Tier 2 (Structured)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'ep'                # Tier 2 (Structured)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'eb'                # Tier 2 (Structured)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'nested_laplace'    # Tier 2 (Structured)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [direct] tulpa_nested_laplace_joint() # Tier 2 (Structured)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'spde'              # Tier 2 (Structured)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'sghmc'             # Tier 3 (Optimized)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'sgld'              # Tier 3 (Optimized)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'mclmc'             # Tier 3 (Optimized)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   [R]     mode = 'vi'                # Tier 3 (Optimized)</span>
-</code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">inference_mode_info</span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

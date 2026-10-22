@@ -81,15 +81,9 @@ d <- data.frame(cell = rep(1:5, each = 4), w = rnorm(20))
 # Intercept plus a varying slope on w
 specs <- tulpa_bar_field_specs(~ 1 + w || cell, d)
 length(specs)                 # 2
-#> [1] 2
 specs[[1]]$column_name        # "Intercept"
-#> [1] "Intercept"
 is.null(specs[[1]]$weight)    # TRUE (unweighted field)
-#> [1] TRUE
 specs[[2]]$column_name        # "w"
-#> [1] "w"
 identical(specs[[2]]$weight, d$w)  # TRUE
-#> [1] TRUE
 attr(specs, "node")           # "cell"
-#> [1] "cell"
 ```

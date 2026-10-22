@@ -121,24 +121,7 @@ for a GP over time that is not a varying coefficient.
 ``` r
 # Intercept that drifts as a first-order random walk over year
 temporal_tvc("year", structure = "rw1")
-#> tulpa temporally-varying coefficients
-#> ======================================
-#> 
-#> Time variable: year 
-#> Structure: RW1 (first-order random walk) 
-#> Shared: Yes (enters both processes) 
-#> 
-#> Terms: columns  1 
 
 # A slope evolving as a continuous-time GP over irregularly-spaced visits
 temporal_tvc("day", terms = ~ x - 1, structure = "gp", cov = "matern")
-#> tulpa temporally-varying coefficients
-#> ======================================
-#> 
-#> Time variable: day 
-#> Structure: GP (Gaussian process over the distinct times) 
-#> Covariance: matern (nu = 1.5) 
-#> Shared: Yes (enters both processes) 
-#> 
-#> Terms: ~x - 1 
 ```

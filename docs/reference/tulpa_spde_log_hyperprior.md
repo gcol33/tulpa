@@ -53,5 +53,4 @@ G <- Matrix::bandSparse(n, k = c(-1, 0, 1),
 sp <- spatial_spde_custom(Matrix::Diagonal(n), G, Matrix::Diagonal(n),
                           prior_range = c(1, 0.5), prior_sigma = c(1, 0.01))
 tulpa_spde_log_hyperprior(range = c(0.5, 1, 2), sigma = 1, sp = sp)
-#> [1] -4.137651 -4.137651 -4.484224
 ```

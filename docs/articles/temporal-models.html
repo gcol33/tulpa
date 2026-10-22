@@ -53,17 +53,17 @@
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/checkpoint.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/em-laplace.html">UNKNOWN TITLE</a></li>
+<li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">The data a tulpa model expects</a></li>
+    <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace for latent-variable models</a></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes: the three tiers and how to choose one</a></li>
-    <li><a class="dropdown-item" href="../articles/model-comparison.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/model-comparison.html">Comparing tulpa models</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Specifying and checking priors</a></li>
     <li><a class="dropdown-item" href="../articles/quickstart.html">Getting started with tulpa</a></li>
-    <li><a class="dropdown-item" href="../articles/random-slopes.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes and the free random-effect covariance</a></li>
+    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability of nested approximations: reading the outer Pareto-k</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Validating calibration: simulation-based calibration</a></li>
-    <li><a class="dropdown-item" href="../articles/spatial-models.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial fields in tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal random-walk effects with tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">User-defined GMRF latent blocks with tgmrf()</a></li>
   </ul>
@@ -90,7 +90,7 @@
       <img src="../logo.svg" class="logo" alt=""><h1>Temporal random-walk effects with tulpa</h1>
             
       
-      <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/temporal-models.Rmd" class="external-link"><code>vignettes/temporal-models.Rmd</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/articles/temporal-models.Rmd" class="external-link"><code>vignettes/articles/temporal-models.Rmd</code></a></small>
       <div class="d-none name"><code>temporal-models.Rmd</code></div>
     </div>
 
@@ -350,7 +350,7 @@ and each observation picks up the trend value at its time point.</p>
 <span><span class="va">y</span>     <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">eta</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">df</span>    <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">y</span>, x <span class="op">=</span> <span class="va">x</span>, time <span class="op">=</span> <span class="va">time</span><span class="op">)</span></span></code></pre></div>
 <p>The <code>time</code> column holds integer time indices, but any
-orderable variable works. <code><a href="../reference/validate_temporal.html">validate_temporal()</a></code> sorts the
+orderable variable works. <code>validate_temporal()</code> sorts the
 unique values and maps them to a chain in that order, so calendar years,
 dates, or ordered factor levels all land on the same
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>,</mo><mi>…</mi><mo>,</mo><mi>T</mi></mrow><annotation encoding="application/x-tex">1, \dots, T</annotation></semantics></math>

@@ -218,9 +218,5 @@ specs <- list(hyper_axis_spec("sigma", grid = exp(seq(log(0.5), log(2),
                               log_scale = TRUE, bounds = c(0, Inf)))
 res <- tulpa_hyper_grid(specs, inner_fit, n_draws = 500L, seed = 1L)
 res$theta_median
-#>     sigma 
-#> 0.9210447 
 res$beta
-#>         b0         b1 
-#>  0.5982129 -0.7603655 
 ```

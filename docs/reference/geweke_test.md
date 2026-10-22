@@ -73,15 +73,5 @@ fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
                             seed = 1L))
 geweke_test(fit)
-#> Geweke Convergence Diagnostic
-#> =============================
-#> 
-#>  chain   parameter z_score p_value
-#>      1 (Intercept)   0.787  0.4314
-#>      1           x  -2.611  0.0090
-#>      2 (Intercept)  -0.727  0.4671
-#>      2           x   2.678  0.0074
-#> 
-#> Warning: 2 chain/parameter pair(s) have |z| > 2 (potential non-convergence)
 # }
 ```

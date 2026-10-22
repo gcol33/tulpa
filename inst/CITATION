@@ -8,17 +8,18 @@ note <- sprintf("R package version %s", meta$Version)
 
 bibentry(
   bibtype = "Manual",
-  key     = "tulpa",
+  key     = "colling2026tulpa",
   title   = "{tulpa}: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models",
   author  = person("Gilles", "Colling",
                    comment = c(ORCID = "0000-0003-3070-6066")),
   year    = year,
   note    = note,
-  url     = "https://github.com/gcol33/tulpa",
+  doi     = "10.32614/CRAN.package.tulpa",
+  url     = "https://CRAN.R-project.org/package=tulpa",
   textVersion = paste0(
     "Colling, G. (", year, "). ",
     "tulpa: Templated Unified Library for Posterior Approximation in Bayesian ",
     "Hierarchical Models. ", note, ". ",
-    "https://github.com/gcol33/tulpa"
+    "doi:10.32614/CRAN.package.tulpa"
   )
 )

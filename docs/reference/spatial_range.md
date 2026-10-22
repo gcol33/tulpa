@@ -53,7 +53,5 @@ d$y <- rpois(nrow(d), exp(0.3 + 0.4 * d$x + field[d$region]))
 fit <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
              spatial = spatial_car(adj, level = "group", group_var = "region"))
 spatial_range(fit)
-#>            mean        sd      q2.5    q97.5
-#> sigma 0.6657209 0.2016541 0.3646487 1.148533
 # }
 ```

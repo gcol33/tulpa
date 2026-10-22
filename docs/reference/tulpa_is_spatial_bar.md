@@ -40,9 +40,6 @@ for expanding the bar into per-column field specs.
 
 ``` r
 tulpa_is_spatial_bar(~ 1 + w || cell)   # TRUE
-#> [1] TRUE
 tulpa_is_spatial_bar(~ 1 + w | cell)    # TRUE (correlated)
-#> [1] TRUE
 tulpa_is_spatial_bar(~ 1 + w)           # FALSE (no bar)
-#> [1] FALSE
 ```

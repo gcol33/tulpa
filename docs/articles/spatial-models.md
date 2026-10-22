@@ -1,4 +1,4 @@
-# 
+# Spatial fields in tulpa
 
 ## Installation
 
@@ -657,10 +657,12 @@ reports as it does for the areal nested integration.
 
 ## See also
 
-- `vignettes/quickstart.Rmd` for the engine basics: families, tiers,
-  random effects, prediction.
-- `vignettes/tgmrf.Rmd` for user-defined GMRF latent blocks, the general
-  form behind the built-in fields.
+- [`vignette("quickstart", package = "tulpa")`](https://gillescolling.com/tulpa/articles/quickstart.md)
+  for the engine basics: families, tiers, random effects, prediction.
+- The [custom-process
+  article](https://gillescolling.com/tulpa/articles/tgmrf.html) for
+  user-defined GMRF latent blocks, the general form behind the built-in
+  fields.
 - [`?spatial_car`](https://gillescolling.com/tulpa/reference/spatial_car.md),
   [`?spatial_bym2`](https://gillescolling.com/tulpa/reference/spatial_bym2.md),
   [`?spatial_gp`](https://gillescolling.com/tulpa/reference/spatial_gp.md)

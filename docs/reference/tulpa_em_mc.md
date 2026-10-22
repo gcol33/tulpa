@@ -166,13 +166,6 @@ m_step_encode <- function(weights, ...) {
 fit <- tulpa_em_mc(e_step_sample, m_step_encode, n_mc = 5L, max_iter = 5L,
                    tol = 5e-3, verbose = FALSE)
 sapply(fit$pooled, function(p) p$mean)
-#>     comp0     comp1 
-#> -1.062815  1.984884 
 fit$history
-#>   iter n_mc       delta
-#> 1    1    5         Inf
-#> 2    2    5 0.633027460
-#> 3    3    5 0.201654017
-#> 4    4    5 0.003172351
 # }
 ```

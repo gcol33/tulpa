@@ -155,18 +155,6 @@ rsr <- spatial_rsr(
   restrict_to = ~ depth + temp
 )
 print(rsr)
-#> tulpa spatial specification
-#> ===========================
-#> 
-#> Type: ICAR (Intrinsic CAR) 
-#> Level: obs 
-#> Spatial units: 4 
-#> Shared: Yes (enters both processes) 
-#>   (rho fixed at 1, sum-to-zero constraint applied)
-#> 
-#> Restricted Spatial Regression (RSR):
-#>   Orthogonal to: ~depth + temp 
-#>   (Spatial effect constrained to be orthogonal to covariate space)
 
 # \donttest{
 # Areal binomial data on a chain of regions, covariate spatially confounded
@@ -188,29 +176,7 @@ fit <- tulpa(
   mode = "auto",
   control = list(n_iter = 500L, warmup = 250L)
 )
-#> Warning: tulpa(): the 'gibbs' chain has not converged -- log_tau_spatial: Rhat 1.01, bulk-ESS 52. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
 summary(fit)
-#> tulpa fit  (gibbs, tier 1) 
-#> Call: tulpa(formula = y ~ x + spatial(region), data = df, family = "binomial", mode = "auto", n_trials = rep(20L, nrow(df)), spatial = spatial_rsr(spatial_car(W, level = "obs"), restrict_to = ~x), control = list(n_iter = 500L, warmup = 250L))
-#>   inference mode: exact 
-#>   selected because: rsr spatial model (binomial Polya-Gamma Gibbs) 
-#>   family: binomial 
-#>   n_obs: 60 
-#>   posterior draws: 250 
-#> 
-#> Fixed effects:
-#>             estimate std.error   2.5 %   97.5 %
-#> (Intercept)  -0.3172   0.11295 -0.5502 -0.09914
-#> x             0.5278   0.06516  0.4023  0.65217
-#> 
-#> Fixed-effect prior: normal(0, 2.5)
-#> 
-#> Reliability (chain draws):
-#>   max Rhat 1.022, min bulk-ESS 51.96, min tail-ESS 87.51
-#>   verdict: not converged 
-#> 
-#> WARNING: chain not converged (max Rhat 1.01, min bulk-ESS 52 on log_tau_spatial);
-#>   these estimates are not yet the posterior. See check_diagnostics().
 
 # The same modifier on a continuous field: one observation per location,
 # the projector built at the unique coordinates.
@@ -228,28 +194,6 @@ fit_gp <- tulpa(
   mode = "gibbs",
   control = list(n_iter = 500L, warmup = 250L)
 )
-#> Warning: tulpa(): the 'gibbs' chain has not converged -- log_sigma2_gp: Rhat 2.12, bulk-ESS 1; log_phi_gp: Rhat 1.33, bulk-ESS 3. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
 summary(fit_gp)
-#> tulpa fit  (gibbs, tier 1) 
-#> Call: tulpa(formula = y ~ x, data = pts, family = "binomial", mode = "gibbs", n_trials = rep(25L, n), spatial = spatial_rsr(spatial_gp(~lon + lat), restrict_to = ~x), control = list(n_iter = 500L, warmup = 250L))
-#>   inference mode: exact 
-#>   selected because: User-specified backend: gibbs 
-#>   family: binomial 
-#>   n_obs: 80 
-#>   posterior draws: 250 
-#> 
-#> Fixed effects:
-#>             estimate std.error   2.5 %   97.5 %
-#> (Intercept)  -0.1682   0.05011 -0.2674 -0.07419
-#> x             0.9771   0.05917  0.8526  1.08864
-#> 
-#> Fixed-effect prior: normal(0, 2.5)
-#> 
-#> Reliability (chain draws):
-#>   max Rhat 2.116, min bulk-ESS 1.399, min tail-ESS 11.1
-#>   verdict: not converged 
-#> 
-#> WARNING: chain not converged (max Rhat 2.12, min bulk-ESS 1 on log_sigma2_gp, log_phi_gp);
-#>   these estimates are not yet the posterior. See check_diagnostics().
 # }
 ```

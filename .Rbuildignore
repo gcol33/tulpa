@@ -45,3 +45,4 @@
 ^tests/testthat/Rplots\.pdf$
 ^CITATION\.cff$
 ^vignettes/articles$
+^\.run.*$

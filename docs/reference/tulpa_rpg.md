@@ -32,5 +32,4 @@ A numeric vector of `PG(b, z)` draws, the same length as `b`.
 
 ``` r
 tulpa_rpg(rep(1L, 5), rnorm(5))
-#> [1] 0.06843288 0.10272653 0.17211161 0.07873079 0.31075252
 ```

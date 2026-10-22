@@ -34,8 +34,5 @@ df$count <- rpois(60, exp(1 + 0.3 * df$x + f[df$year]))
 fit <- tulpa(count ~ x, data = df, family = "poisson",
              temporal = temporal_ar1("year"))
 temporal_corr(fit)
-#>                mean        sd     q2.5     q97.5
-#> precision 8.4591944 5.1750858 2.286663 24.285980
-#> rho_ar1   0.6618371 0.2234641 0.136503  1.193266
 # }
 ```

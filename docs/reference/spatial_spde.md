@@ -86,10 +86,4 @@ set.seed(42)
 coords <- cbind(runif(50), runif(50))
 spec <- spatial_spde(coords)
 print(spec)
-#> tulpa_spatial: SPDE (Matern, nu = 1 )
-#>   Mesh nodes: 63 
-#>   Triangles:  111 
-#>   Observations: 50 
-#>   Prior range: P(range < 0.2782498 ) = 0.5 
-#>   Prior sigma: P(sigma > 3 ) = 0.01 
 ```

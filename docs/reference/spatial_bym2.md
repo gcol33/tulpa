@@ -86,15 +86,6 @@ for (i in 1:9) {
 # Create BYM2 spatial structure
 bym2 <- spatial_bym2(adj, level = "group", group_var = "region")
 print(bym2)
-#> tulpa spatial specification
-#> ===========================
-#> 
-#> Type: BYM2 
-#> Level: group 
-#> Spatial units: 10 
-#> Shared: Yes (enters both processes) 
-#> Group variable: region 
-#> Scale factor: 0.8169 
 
 # \donttest{
 # Disease mapping with BYM2 spatial smoothing
@@ -115,18 +106,5 @@ fit <- tulpa(
   mode = "laplace"
 )
 summary(fit)
-#> tulpa fit  (laplace, tier 2) 
-#> Call: tulpa(formula = cases ~ age + spatial(region), data = epi_data, family = "binomial", mode = "laplace", n_trials = rep(100L, nrow(epi_data)), spatial = spatial_bym2(adj, level = "group", group_var = "region"))
-#>   inference mode: structured 
-#>   selected because: User-specified backend: laplace 
-#>   family: binomial 
-#>   n_obs: 40 
-#> 
-#> Fixed effects:
-#>              estimate std.error     2.5 %   97.5 %
-#> (Intercept) -1.957898  0.331077 -2.606797 -1.30900
-#> age          0.006391  0.004661 -0.002745  0.01553
-#> 
-#> Reliability (iid draws):
 # }
 ```

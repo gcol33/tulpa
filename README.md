@@ -1,19 +1,17 @@
 
 # tulpa <img src="man/figures/logo.svg" align="right" height="139" alt="tulpa logo" />
 
-*templated unified latent process approximations*
+*Bayesian hierarchical models for grouped, spatial and temporal data*
 
 <!-- badges: start -->
 
-[![Lifecycle:
-experimental](https://lifecycle.r-lib.org/articles/figures/lifecycle-experimental.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
-[![License:
-MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![R \>=
-4.1](https://img.shields.io/badge/R-%3E%3D%204.1-blue.svg)](https://cran.r-project.org/)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&logoColor=white)](https://en.cppreference.com/cpp/17)
+[![CRAN
+status](https://www.r-pkg.org/badges/version/tulpa)](https://CRAN.R-project.org/package=tulpa)
+[![R-CMD-check](https://github.com/gcol33/tulpa/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/gcol33/tulpa/actions/workflows/R-CMD-check.yaml)
 [![Codecov test
 coverage](https://codecov.io/gh/gcol33/tulpa/graph/badge.svg)](https://app.codecov.io/gh/gcol33/tulpa)
+[![License:
+MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 <!-- badges: end -->
 
 tulpa fits Bayesian hierarchical models in R, including models for
@@ -29,70 +27,100 @@ uncertainty intervals, and diagnostics that help you assess the fit.
 
 tulpa supports:
 
-- Random intercepts and slopes, including uncertainty in their variances
-  and correlations.
-- Smooth covariate effects, spatial fields, temporal processes, and
-  combinations of these structures.
-- Deterministic approximations, MCMC sampling, and correction methods
-  selected through the same fitting function.
-- Model-specific observation likelihoods and custom latent processes
-  supplied through R or C++ interfaces.
+- **Grouped effects.** Random intercepts and slopes, including
+  uncertainty in their variances and correlations.
+- **Smooth, spatial and temporal structure.** Smooth covariate effects,
+  spatial fields, temporal processes, and combinations of these
+  structures.
+- **Several inference methods.** Deterministic approximations, MCMC
+  sampling, and correction methods are selected through the same fitting
+  function.
+- **Custom models.** Model-specific observation likelihoods and custom
+  latent processes are supplied through R or C++ interfaces.
 
-The [calibration
-article](https://gillescolling.com/tulpa/articles/sbc.html) shows how to
-assess posterior calibration through repeated simulations. [Reliability
+[Calibration](https://gillescolling.com/tulpa/articles/sbc.html) shows
+how to assess posterior calibration through repeated simulations.
+[Reliability
 diagnostics](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html)
-explain what can be checked on an individual fit. The package is
+explains what can be checked on an individual fit. The package is
 experimental and its interface may change.
 
 ## Installation
 
-Install from r-universe:
+Install the released version from CRAN:
 
 ``` r
-install.packages(
-  "tulpa",
-  repos = c("https://gcol33.r-universe.dev",
-            "https://cloud.r-project.org")
-)
+install.packages("tulpa")
 ```
 
-Source installations require a C++17 compiler and the build tools for R.
+CRAN provides binaries for Windows and macOS, which need no build tools.
+
+The development version compiles C++17 code. Install the build tools for
+your operating system first:
 
 | Operating system | Build tools |
-|:---|:---|
+|----|----|
 | Windows | [Rtools](https://cran.r-project.org/bin/windows/Rtools/) matching your R version |
-| macOS | Xcode Command Line Tools: `xcode-select --install` |
-| Debian / Ubuntu | `r-base-dev` and a C++17 compiler |
+| macOS | Run `xcode-select --install` in Terminal |
+| Debian / Ubuntu | Install `r-base-dev` |
 
-Check the toolchain before installing the development version:
+Check that R can find the compiler:
 
 ``` r
-# install.packages(c("pkgbuild", "pak"))
 pkgbuild::has_build_tools(debug = TRUE)
+```
+
+Then install tulpa from GitHub:
+
+``` r
+# install.packages("pak")
 pak::pak("gcol33/tulpa")
 ```
 
-The build links against R’s BLAS and LAPACK libraries for matrix
-operations. Package dependencies, including `tulpaMesh` for spatial mesh
-construction, are installed with tulpa. R’s [installation
-guide](https://cran.r-project.org/doc/manuals/r-release/R-admin.html)
-describes the platform toolchains.
+The build links against the BLAS and LAPACK libraries that R itself uses
+for matrix operations, so no other system library is needed. Package
+dependencies, including
+[tulpaMesh](https://CRAN.R-project.org/package=tulpaMesh) for spatial
+mesh construction, are installed with tulpa.
 
-### Optional multithreading
+### Optional: multithreading
 
-The nested-Laplace fitters expose OpenMP thread controls through their
-`control` argument. The
+OpenMP lets the nested-Laplace fitters use several CPU threads through
+`n_threads` in their `control` list. The
 [single-process](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.html)
 and
 [joint-model](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.html)
-references describe the available controls. The build uses the OpenMP
-flags provided by R’s toolchain.
+reference pages describe the available controls.
 
-On macOS, OpenMP requires a runtime compatible with the compiler used to
-build R packages. Follow the R project’s [macOS OpenMP
-setup](https://mac.r-project.org/openmp/) before compiling tulpa with
-OpenMP enabled.
+Rtools on Windows and the default compiler on Linux include OpenMP.
+Without it, the package installs and runs on one thread.
+
+#### macOS setup
+
+Apple’s compiler needs an additional OpenMP runtime. Install it in
+Terminal:
+
+``` sh
+brew install libomp
+```
+
+Before installing tulpa from source, add the settings for your Mac to
+`~/.R/Makevars`, R’s personal compiler-settings file. Create the
+directory and file if needed.
+
+**Apple Silicon:**
+
+``` makefile
+CPPFLAGS += -I/opt/homebrew/opt/libomp/include -Xclang -fopenmp
+LDFLAGS += -L/opt/homebrew/opt/libomp/lib -lomp
+```
+
+**Intel:**
+
+``` makefile
+CPPFLAGS += -I/usr/local/opt/libomp/include -Xclang -fopenmp
+LDFLAGS += -L/usr/local/opt/libomp/lib -lomp
+```
 
 ## Usage
 
@@ -131,13 +159,13 @@ effects <- ranef(fit)
 
 Supply a data frame with the response, predictors, and grouping
 variables named in the formula. Choose an observation family appropriate
-to the response. The [data-formatting
-guide](https://gillescolling.com/tulpa/articles/data-formatting.html)
+to the response. [Data
+formatting](https://gillescolling.com/tulpa/articles/data-formatting.html)
 covers response encodings, grouping variables, and spatial inputs.
 
 ## Random effects, smoothers, and fields
 
-Formula terms describe the model structure: `(1 | group)` adds random
+Formula terms describe the model structure. `(1 | group)` adds random
 intercepts, `(1 + x | group)` adds correlated random intercepts and
 slopes, and `s(x)` adds a smooth covariate effect. Spatial and temporal
 specifications describe dependence between locations or times.
@@ -155,15 +183,14 @@ articles show how to supply the corresponding structures.
 Automatic mode selects an inference method and records its reason on the
 fit. An explicit mode selects MCMC, Laplace approximation, or
 variational inference; variational methods require an explicit choice.
-The [inference
-guide](https://gillescolling.com/tulpa/articles/inference-modes.html)
+[Inference
+modes](https://gillescolling.com/tulpa/articles/inference-modes.html)
 describes the methods and the models each supports.
 
 Diagnostics depend on how the posterior was computed. MCMC fits report
 chain convergence and effective sample sizes. Approximation fits report
-the available integration and inner-approximation checks. The
-[reliability
-guide](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html)
+the available integration and inner-approximation checks. [Reliability
+diagnostics](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html)
 explains how to interpret these results and their limits.
 
 ## Custom models and processes
@@ -171,7 +198,8 @@ explains how to interpret these results and their limits.
 Companion packages supply observation likelihoods and reuse tulpa’s
 inference and latent structures.
 [tulpaObs](https://github.com/gcol33/tulpaObs) provides models for
-occupancy, abundance, and detection; tulpaRatio provides models for
+occupancy, abundance, and detection;
+[tulpaRatio](https://github.com/gcol33/tulpaRatio) provides models for
 ratios, rates, and proportions.
 
 For a custom Gaussian latent process, supply its precision matrix and
@@ -186,28 +214,51 @@ observation states.
 ## Documentation
 
 Start with the
-[quickstart](https://gillescolling.com/tulpa/articles/quickstart.html)
-for a complete path from a formula to a fitted model.
+[quickstart](https://gillescolling.com/tulpa/articles/quickstart.html):
+a complete path from a formula to a fitted model.
 
-- [Priors](https://gillescolling.com/tulpa/articles/priors.html):
-  specify prior distributions for coefficients and latent structures.
+- [Data
+  formatting](https://gillescolling.com/tulpa/articles/data-formatting.html):
+  response encodings, grouping variables and spatial inputs.
+- [Random slopes and
+  covariances](https://gillescolling.com/tulpa/articles/random-slopes.html):
+  group-level variances and correlations.
+- [Spatial
+  models](https://gillescolling.com/tulpa/articles/spatial-models.html)
+  and [temporal
+  models](https://gillescolling.com/tulpa/articles/temporal-models.html):
+  supplying dependence between locations or times.
+- [Inference
+  modes](https://gillescolling.com/tulpa/articles/inference-modes.html):
+  the inference methods and the models each supports.
+- [Priors](https://gillescolling.com/tulpa/articles/priors.html): prior
+  distributions for coefficients and latent structures.
+- [Reliability
+  diagnostics](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html):
+  what can be checked on an individual fit.
+- [Calibration](https://gillescolling.com/tulpa/articles/sbc.html):
+  posterior calibration through repeated simulations.
 - [Model
   comparison](https://gillescolling.com/tulpa/articles/model-comparison.html):
-  compare fitted models and combine predictions.
-- [Calibration](https://gillescolling.com/tulpa/articles/sbc.html):
-  assess posterior calibration through repeated simulations.
+  comparing fitted models and combining predictions.
 - [Checkpoint and
   resume](https://gillescolling.com/tulpa/articles/checkpoint.html):
-  save and continue sampling runs.
-- [Function reference](https://gillescolling.com/tulpa/reference/):
-  arguments, return values, and examples for the fitting and diagnostic
-  functions.
+  saving and continuing sampling runs.
+- [Custom latent
+  processes](https://gillescolling.com/tulpa/articles/tgmrf.html) and
+  [EM +
+  Laplace](https://gillescolling.com/tulpa/articles/em-laplace.html):
+  extending the engine.
+- [Full reference](https://gillescolling.com/tulpa/reference/): every
+  function, grouped by job.
 
 ## Getting help
 
-Use [GitHub issues](https://github.com/gcol33/tulpa/issues) for
-questions and bug reports. Include a small reproducible example and the
-output of `sessionInfo()` when reporting a problem.
+Questions and bug reports go to the [GitHub
+issues](https://github.com/gcol33/tulpa/issues). A bug report is easiest
+to act on with a small reproducible example, for instance made with
+[reprex](https://reprex.tidyverse.org/), and the output of
+`sessionInfo()`.
 
 ## Support
 
@@ -225,7 +276,14 @@ Coffee](https://img.shields.io/badge/-Buy%20me%20a%20coffee-FFDD00?logo=buymeaco
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+tulpa is licensed under MIT. Three bundled components carry their own
+notices, listed in `inst/COPYRIGHTS`:
+
+- Sobol direction numbers by Frances Y. Kuo and Stephen Joe, under a
+  3-clause BSD licence.
+- Double-precision exp and log routines ported from Arm Optimized
+  Routines, copyright Arm Limited, under MIT.
+- The WALNUTS transition, ported from walnutpie, under MIT.
 
 ## Citation
 
@@ -233,19 +291,22 @@ To cite the tulpa package in publications, use:
 
 ``` text
 Colling G (2026). _tulpa: Templated Unified Library for Posterior
-Approximation in Bayesian Hierarchical Models_. R package version
-0.7.5, <https://github.com/gcol33/tulpa>.
+Approximation in Bayesian Hierarchical Models_.
+doi:10.32614/CRAN.package.tulpa
+<https://doi.org/10.32614/CRAN.package.tulpa>. R package version 0.7.5,
+<https://CRAN.R-project.org/package=tulpa>.
 ```
 
 BibTeX:
 
 ``` bibtex
-@Manual{tulpa,
+@Manual{colling2026tulpa,
   title = {{tulpa}: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},
   author = {Gilles Colling},
   year = {2026},
   note = {R package version 0.7.5},
-  url = {https://github.com/gcol33/tulpa},
+  doi = {10.32614/CRAN.package.tulpa},
+  url = {https://CRAN.R-project.org/package=tulpa},
 }
 ```
 

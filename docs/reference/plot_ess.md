@@ -59,8 +59,6 @@ fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
                             seed = 1L))
 plot_ess(fit)
-
 plot_ess(fit, type = "tail")
-
 # }
 ```

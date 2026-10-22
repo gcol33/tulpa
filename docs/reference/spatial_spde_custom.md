@@ -76,5 +76,4 @@ A <- Matrix::Diagonal(n)
 sp <- spatial_spde_custom(C, G, A, prior_range = c(1, 0.5),
                           prior_sigma = c(1, 0.01))
 sp$type
-#> [1] "spde"
 ```

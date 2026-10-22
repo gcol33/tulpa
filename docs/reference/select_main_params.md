@@ -25,5 +25,4 @@ full vector if that would be empty).
 
 ``` r
 select_main_params(c("beta[1]", "beta[2]", "log_sigma_re", "re[1]", "re[2]"))
-#> [1] "log_sigma_re"
 ```

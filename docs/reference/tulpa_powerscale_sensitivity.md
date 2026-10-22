@@ -87,8 +87,5 @@ d$y <- rpois(150, exp(0.5 + 0.7 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace",
              beta_prior = list(mean = 0, sd = 5))
 tulpa_powerscale_sensitivity(fit, prior = list(mean = 0, sd = 5))
-#>      variable        prior hyperparameter likelihood diagnosis
-#> 1 (Intercept) 0.0001082344             NA 0.08144299         -
-#> 2           x 0.0001187752             NA 0.08331296         -
 # }
 ```

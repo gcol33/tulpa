@@ -33,17 +33,17 @@ binomial and negative binomial GLMMs."><meta property="og:image" content="https:
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/checkpoint.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/em-laplace.html">UNKNOWN TITLE</a></li>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">The data a tulpa model expects</a></li>
+    <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace for latent-variable models</a></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes: the three tiers and how to choose one</a></li>
-    <li><a class="dropdown-item" href="../articles/model-comparison.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/model-comparison.html">Comparing tulpa models</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Specifying and checking priors</a></li>
     <li><a class="dropdown-item" href="../articles/quickstart.html">Getting started with tulpa</a></li>
-    <li><a class="dropdown-item" href="../articles/random-slopes.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes and the free random-effect covariance</a></li>
+    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability of nested approximations: reading the outer Pareto-k</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Validating calibration: simulation-based calibration</a></li>
-    <li><a class="dropdown-item" href="../articles/spatial-models.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial fields in tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal random-walk effects with tulpa</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">User-defined GMRF latent blocks with tgmrf()</a></li>
   </ul></li>
@@ -126,7 +126,7 @@ so a non-zero <code>mean</code> errors.</p></dd>
 
 <dt id="arg-spatial">spatial<a class="anchor" aria-label="anchor" href="#arg-spatial"></a></dt>
 <dd><p>Optional spatial spec. When supplied the fit routes to the
-matching spatial Polya-Gamma Gibbs sampler via <code><a href="dispatch_gibbs_spatial.html">dispatch_gibbs_spatial()</a></code>;
+matching spatial Polya-Gamma Gibbs sampler via <code>dispatch_gibbs_spatial()</code>;
 <code>group</code>/<code>n_groups</code> are the iid random-effect block carried alongside the
 field. The full areal + continuous family is available for
 <code>family = "binomial"</code>; <code>family = "neg_binomial_2"</code> is backed by the areal
@@ -145,7 +145,7 @@ observation per unique location in coordinate order.</p></li>
 <dt id="arg-temporal">temporal<a class="anchor" aria-label="anchor" href="#arg-temporal"></a></dt>
 <dd><p>Optional temporal spec: a validated <code><a href="temporal_multiscale.html">temporal_multiscale()</a></code>
 object. Routes to the multiscale temporal Polya-Gamma sampler via
-<code><a href="dispatch_gibbs_temporal.html">dispatch_gibbs_temporal()</a></code> (binomial only; RW1 trend + cyclic seasonal +
+<code>dispatch_gibbs_temporal()</code> (binomial only; RW1 trend + cyclic seasonal +
 AR1/IID short-term). Cannot be combined with <code>spatial</code>.</p></dd>
 
 
@@ -199,45 +199,18 @@ priors define.</p>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">G</span> <span class="op">&lt;-</span> <span class="fl">20L</span>; <span class="va">npg</span> <span class="op">&lt;-</span> <span class="fl">15L</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">npg</span></span></span>
-<span class="r-in"><span><span class="va">grp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">npg</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">X</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.6</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">X</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.2</span>, <span class="fl">0.5</span><span class="op">)</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="co"># \donttest{</span></span></span>
-<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_gibbs</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="va">X</span>, <span class="va">grp</span>, <span class="va">G</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span></span>
-<span class="r-in"><span>                   control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">500L</span>, warmup <span class="op">=</span> <span class="fl">250L</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>    beta[1]    beta[2] </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 0.05113498 0.47895299 </span>
-<span class="r-in"><span><span class="fu"><a href="diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>       parameter      rhat  ess_bulk  ess_tail</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1       beta[1] 0.9994892 174.67795 171.50405</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2       beta[2] 1.0079899 195.29629 222.99091</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3  log_sigma_re 1.0189955  30.08361  44.55205</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4         re[1] 0.9981450 248.67134 205.65889</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5         re[2] 1.0103747 159.72752 169.70804</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6         re[3] 1.0014289  62.42346 180.58399</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 7         re[4] 0.9999902  86.58332 183.94880</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 8         re[5] 1.0055948 258.88968  98.48576</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 9         re[6] 1.0006344  78.93758 157.76480</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 10        re[7] 1.0067015 160.72260 190.56408</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 11        re[8] 1.0035467 217.12126 240.08551</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 12        re[9] 1.0114679 129.51291 138.50106</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 13       re[10] 1.0020908 155.25306 216.15668</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 14       re[11] 1.0002456 230.14582 232.21690</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 15       re[12] 1.0077990 261.31527 187.34137</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16       re[13] 1.0043439 208.37927 234.64435</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17       re[14] 0.9994984 217.48683 260.27161</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18       re[15] 0.9997324 228.78774 208.60393</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19       re[16] 0.9967272 171.25306 165.00215</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20       re[17] 0.9971519 187.42189 181.37760</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21       re[18] 1.0030375 228.04636 182.03745</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 22       re[19] 1.0121462 135.01159 202.01066</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 23       re[20] 1.0050720 233.24839 190.52853</span>
-<span class="r-in"><span><span class="co"># }</span></span></span>
-</code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">G</span> <span class="op">&lt;-</span> <span class="fl">20L</span>; <span class="va">npg</span> <span class="op">&lt;-</span> <span class="fl">15L</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">npg</span></span>
+<span><span class="va">grp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">npg</span><span class="op">)</span></span>
+<span><span class="va">X</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.6</span><span class="op">)</span></span>
+<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">X</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.2</span>, <span class="fl">0.5</span><span class="op">)</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co"># \donttest{</span></span>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_gibbs</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="va">X</span>, <span class="va">grp</span>, <span class="va">G</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
+<span>                   control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">500L</span>, warmup <span class="op">=</span> <span class="fl">250L</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="fu"><a href="diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co"># }</span></span></code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

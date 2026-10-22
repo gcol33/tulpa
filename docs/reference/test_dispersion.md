@@ -61,12 +61,5 @@ d <- data.frame(x = rnorm(80))
 d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
 test_dispersion(fit, nsim = 50)
-#> 
-#>  Simulation-based dispersion test
-#> 
-#> data:  fit
-#> dispersion ratio = 0.80214, p-value = 0.32
-#> alternative hypothesis: two.sided
-#> 
 # }
 ```

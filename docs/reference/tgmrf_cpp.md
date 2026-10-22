@@ -101,15 +101,8 @@ blk <- tgmrf_cpp(cpp_file, id = "tgmrf_periodic_ar1",
                  name = "periodic_ar1",
                  cache_dir = file.path(tempdir(), "tulpa-cache"))
 blk$n_latent
-#> [1] 80
 Q <- blk$Q(c(0, atanh(0.5)))
 dim(Q)
-#> [1] 80 80
 Q[1:3, 1:3]
-#> 3 x 3 sparse Matrix of class "dgCMatrix"
-#>                       
-#> [1,]  1.25 -0.50  .   
-#> [2,] -0.50  1.25 -0.50
-#> [3,]  .    -0.50  1.25
 # }
 ```

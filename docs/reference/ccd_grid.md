@@ -70,9 +70,5 @@ to map z-coordinates to physical theta.
 ``` r
 g <- ccd_grid(3)
 g$n_points
-#> [1] 15
 table(g$kind)
-#> 
-#>     axial    center factorial 
-#>         6         1         8 
 ```

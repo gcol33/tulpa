@@ -22,3 +22,4 @@ claude/
 *.done
 tests/testthat/testthat-problems.rds
 tests/testthat/_problems/
+.run*

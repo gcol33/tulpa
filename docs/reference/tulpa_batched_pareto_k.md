@@ -88,5 +88,4 @@ lt <- function(U) -0.5 * rowSums(sweep(U, 2L, c(1.2, 0.8), "/")^2)
 k <- tulpa_batched_pareto_k(theta_hat = c(0, 0), L_scale = diag(2),
                             log_target_batched = lt, n_samples = 500)
 k$pareto_k
-#> [1] 0.3034994
 ```

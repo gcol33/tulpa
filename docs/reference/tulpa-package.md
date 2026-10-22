@@ -56,5 +56,6 @@ Other contributors:
 - Arm Limited (exp and log routines in src/fastmath.h and
   src/fastmath_data.cpp, MIT) \[copyright holder\]
 
-- The Walnutpie Developers (WALNUTS transition in src/hmc_walnuts.cpp,
-  ported from walnutpie, MIT) \[copyright holder\]
+- The Walnutpie Developers (WALNUTS transition in
+  inst/include/tulpa/walnuts.h, ported from walnutpie, MIT) \[copyright
+  holder\]

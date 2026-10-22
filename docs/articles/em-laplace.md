@@ -1,4 +1,4 @@
-# 
+# EM + Laplace for latent-variable models
 
 ## Installation
 

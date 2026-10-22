@@ -87,14 +87,5 @@ fit <- structure(
 
 st_effects <- spatiotemporal_effects(fit, format = "summary")
 head(st_effects)
-#> Spatiotemporal interaction posterior summary: 3 locations x 4 times, 100 posterior draws
-#>   s t         mean        q2.5         q50      q97.5         sd
-#> 1 1 1  0.160888737 -0.01712975  0.16139092 0.32974683 0.08981994
-#> 2 2 1 -0.003780808 -0.15911316 -0.01772172 0.20815038 0.09578791
-#> 3 3 1 -0.147032646 -0.37872770 -0.15016061 0.02914034 0.10342655
-#> 4 1 2  0.055160186 -0.15293965  0.05247047 0.22115838 0.09916751
-#> 5 2 2 -0.003913424 -0.20671992 -0.01381795 0.23192542 0.11696122
-#> 6 3 2 -0.054451936 -0.26602449 -0.05567811 0.11191994 0.09661804
 dim(spatiotemporal_effects(fit, format = "array"))
-#> [1]   3   4 100
 ```

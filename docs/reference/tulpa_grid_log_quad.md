@@ -91,6 +91,5 @@ tg <- tulpa_theta_matrix(fit)
 lq <- tulpa_grid_log_quad(tg)
 # The fit's own cell weights, rebuilt from its log marginals:
 tulpa_normalise_weights_safe(fit$log_marginal, log_quad = lq)
-#> [1] 0.001157234 0.021253946 0.133119591 0.361654250 0.482814980
 # }
 ```

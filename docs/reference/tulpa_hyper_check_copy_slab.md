@@ -31,7 +31,5 @@ tulpa_hyper_check_copy_slab(x)
 
 ``` r
 tulpa_hyper_check_copy_slab("exponential")
-#> [1] "exponential"
 try(tulpa_hyper_check_copy_slab("uniform"))
-#> Error : `copy_slab` must be one of "exponential" or "flat".
 ```

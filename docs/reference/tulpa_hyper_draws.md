@@ -100,7 +100,5 @@ fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                             control = list(progress = FALSE))
 th <- tulpa_hyper_draws(fit, n = 200)
 quantile(th[, "tau"], c(0.025, 0.5, 0.975))
-#>       2.5%        50%      97.5% 
-#>  0.9517755  5.6838606 11.0879221 
 # }
 ```

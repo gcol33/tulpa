@@ -145,26 +145,8 @@ for spatial GP effects
 ``` r
 # Create GP temporal specification
 temporal_gp("timestamp")
-#> tulpa Gaussian Process temporal specification
-#> ==============================================
-#> 
-#> Time variable: timestamp 
-#> Covariance: exponential 
-#> Shared: Yes (enters both processes) 
 temporal_gp("day", cov = "matern", nu = 1.5)
-#> tulpa Gaussian Process temporal specification
-#> ==============================================
-#> 
-#> Time variable: day 
-#> Covariance: matern (nu = 1.5) 
-#> Shared: Yes (enters both processes) 
 temporal_gp("month", cov = "periodic", period = 12)
-#> tulpa Gaussian Process temporal specification
-#> ==============================================
-#> 
-#> Time variable: month 
-#> Covariance: periodic (period = 12.0) 
-#> Shared: Yes (enters both processes) 
 
 # \donttest{
 # Irregularly-spaced time series
@@ -184,6 +166,5 @@ fit <- tulpa(
   mode = "hmc",
   control = list(n_iter = 200, warmup = 100, n_chains = 1)
 )
-#> Warning: tulpa(): the 'hmc' chain has not converged -- log_sigma2_temporal_gp: Rhat 1.02, bulk-ESS 26; (Intercept): Rhat 1.01, bulk-ESS 35; logit_phi_temporal_gp: Rhat 0.99, bulk-ESS 45; x: Rhat 1.04, bulk-ESS 94. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
 # }
 ```

@@ -238,13 +238,11 @@ df    <- data.frame(y = y, x = x, time = time)
 ```
 
 The `time` column holds integer time indices, but any orderable variable
-works.
-[`validate_temporal()`](https://gillescolling.com/tulpa/reference/validate_temporal.md)
-sorts the unique values and maps them to a chain in that order, so
-calendar years, dates, or ordered factor levels all land on the same
-$`1, \dots, T`$ index internally. The trend enters every observation
-that shares a time point, which is what gives the random walk enough
-replication per node to be informed.
+works. `validate_temporal()` sorts the unique values and maps them to a
+chain in that order, so calendar years, dates, or ordered factor levels
+all land on the same $`1, \dots, T`$ index internally. The trend enters
+every observation that shares a time point, which is what gives the
+random walk enough replication per node to be informed.
 
 A few details in the setup are deliberate. The trend is centred, so it
 carries shape but no level, which keeps it from quarrelling with the

@@ -77,7 +77,5 @@ node <- rep(1:4, times = 2)
 lev  <- rep(c("a", "b"), each = 4)
 rep_info <- tulpa_bar_field_replicate(adj, node, lev)
 dim(rep_info$adjacency)   # 8 x 8 (I_2 (x) Q)
-#> [1] 8 8
 rep_info$index            # level b nodes offset by 4
-#> [1] 1 2 3 4 5 6 7 8
 ```

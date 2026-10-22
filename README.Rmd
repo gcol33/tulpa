@@ -1,98 +1,99 @@
 ---
-output:
-  github_document:
-    html_preview: false
+output: github_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include = FALSE}
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+options(width = 80)
 set.seed(1)
 ```
 
 # tulpa <img src="man/figures/logo.svg" align="right" height="139" alt="tulpa logo" />
 
-*templated unified latent process approximations*
+*Bayesian hierarchical models for grouped, spatial and temporal data*
 
 <!-- badges: start -->
-[![Lifecycle: experimental](https://lifecycle.r-lib.org/articles/figures/lifecycle-experimental.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![R >= 4.1](https://img.shields.io/badge/R-%3E%3D%204.1-blue.svg)](https://cran.r-project.org/)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&logoColor=white)](https://en.cppreference.com/cpp/17)
+[![CRAN status](https://www.r-pkg.org/badges/version/tulpa)](https://CRAN.R-project.org/package=tulpa)
+[![R-CMD-check](https://github.com/gcol33/tulpa/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/gcol33/tulpa/actions/workflows/R-CMD-check.yaml)
 [![Codecov test coverage](https://codecov.io/gh/gcol33/tulpa/graph/badge.svg)](https://app.codecov.io/gh/gcol33/tulpa)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 <!-- badges: end -->
 
-tulpa fits Bayesian hierarchical models in R, including models for counts,
-proportions, repeated measurements, and observations distributed across space
-or time.
+tulpa fits Bayesian hierarchical models in R, including models for counts, proportions, repeated measurements, and observations distributed across space or time.
 
-A formula describes how measured predictors and unobserved effects contribute
-to the response. The engine combines these effects with an observation
-distribution and fits the model using nested Laplace approximation or Markov
-chain Monte Carlo (MCMC). Its numerical routines are written in templated C++.
-The result includes posterior estimates, uncertainty intervals, and diagnostics
-that help you assess the fit.
+A formula describes how measured predictors and unobserved effects contribute to the response. The engine combines these effects with an observation distribution and fits the model using nested Laplace approximation or Markov chain Monte Carlo (MCMC). Its numerical routines are written in templated C++. The result includes posterior estimates, uncertainty intervals, and diagnostics that help you assess the fit.
 
 tulpa supports:
 
-- Random intercepts and slopes, including uncertainty in their variances and
-  correlations.
-- Smooth covariate effects, spatial fields, temporal processes, and combinations
-  of these structures.
-- Deterministic approximations, MCMC sampling, and correction methods selected
-  through the same fitting function.
-- Model-specific observation likelihoods and custom latent processes supplied
-  through R or C++ interfaces.
+- **Grouped effects.** Random intercepts and slopes, including uncertainty in their variances and correlations.
+- **Smooth, spatial and temporal structure.** Smooth covariate effects, spatial fields, temporal processes, and combinations of these structures.
+- **Several inference methods.** Deterministic approximations, MCMC sampling, and correction methods are selected through the same fitting function.
+- **Custom models.** Model-specific observation likelihoods and custom latent processes are supplied through R or C++ interfaces.
 
-The [calibration article](https://gillescolling.com/tulpa/articles/sbc.html)
-shows how to assess posterior calibration through repeated simulations.
-[Reliability diagnostics](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html)
-explain what can be checked on an individual fit. The package is experimental
-and its interface may change.
+[Calibration](https://gillescolling.com/tulpa/articles/sbc.html) shows how to assess posterior calibration through repeated simulations. [Reliability diagnostics](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html) explains what can be checked on an individual fit. The package is experimental and its interface may change.
 
 ## Installation
 
-Install from r-universe:
+Install the released version from CRAN:
 
-```{r install, eval=FALSE}
-install.packages(
-  "tulpa",
-  repos = c("https://gcol33.r-universe.dev",
-            "https://cloud.r-project.org")
-)
+```r
+install.packages("tulpa")
 ```
 
-Source installations require a C++17 compiler and the build tools for R.
+CRAN provides binaries for Windows and macOS, which need no build tools.
+
+The development version compiles C++17 code. Install the build tools for your operating system first:
 
 | Operating system | Build tools |
-|:--|:--|
+|---|---|
 | Windows | [Rtools](https://cran.r-project.org/bin/windows/Rtools/) matching your R version |
-| macOS | Xcode Command Line Tools: `xcode-select --install` |
-| Debian / Ubuntu | `r-base-dev` and a C++17 compiler |
+| macOS | Run `xcode-select --install` in Terminal |
+| Debian / Ubuntu | Install `r-base-dev` |
 
-Check the toolchain before installing the development version:
+Check that R can find the compiler:
 
-```{r development-install, eval=FALSE}
-# install.packages(c("pkgbuild", "pak"))
+```r
 pkgbuild::has_build_tools(debug = TRUE)
+```
+
+Then install tulpa from GitHub:
+
+```r
+# install.packages("pak")
 pak::pak("gcol33/tulpa")
 ```
 
-The build links against R's BLAS and LAPACK libraries for matrix operations.
-Package dependencies, including `tulpaMesh` for spatial mesh construction,
-are installed with tulpa. R's [installation guide](https://cran.r-project.org/doc/manuals/r-release/R-admin.html)
-describes the platform toolchains.
+The build links against the BLAS and LAPACK libraries that R itself uses for matrix operations, so no other system library is needed. Package dependencies, including [tulpaMesh](https://CRAN.R-project.org/package=tulpaMesh) for spatial mesh construction, are installed with tulpa.
 
-### Optional multithreading
+### Optional: multithreading
 
-The nested-Laplace fitters expose OpenMP thread controls through their
-`control` argument. The [single-process](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.html)
-and [joint-model](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.html)
-references describe the available controls. The build uses the OpenMP flags
-provided by R's toolchain.
+OpenMP lets the nested-Laplace fitters use several CPU threads through `n_threads` in their `control` list. The [single-process](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.html) and [joint-model](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.html) reference pages describe the available controls.
 
-On macOS, OpenMP requires a runtime compatible with the compiler used to build
-R packages. Follow the R project's [macOS OpenMP setup](https://mac.r-project.org/openmp/)
-before compiling tulpa with OpenMP enabled.
+Rtools on Windows and the default compiler on Linux include OpenMP. Without it, the package installs and runs on one thread.
+
+#### macOS setup
+
+Apple's compiler needs an additional OpenMP runtime. Install it in Terminal:
+
+```sh
+brew install libomp
+```
+
+Before installing tulpa from source, add the settings for your Mac to `~/.R/Makevars`, R's personal compiler-settings file. Create the directory and file if needed.
+
+**Apple Silicon:**
+
+```makefile
+CPPFLAGS += -I/opt/homebrew/opt/libomp/include -Xclang -fopenmp
+LDFLAGS += -L/opt/homebrew/opt/libomp/lib -lomp
+```
+
+**Intel:**
+
+```makefile
+CPPFLAGS += -I/usr/local/opt/libomp/include -Xclang -fopenmp
+LDFLAGS += -L/usr/local/opt/libomp/lib -lomp
+```
 
 ## Usage
 
@@ -100,11 +101,9 @@ before compiling tulpa with OpenMP enabled.
 2. Inspect the estimates and inference method with `summary()`.
 3. Extract the group effects with `ranef()`.
 
-The built-in `InsectSprays` data contain insect counts and the spray treatment
-used for each observation. This Poisson model gives each treatment a random
-intercept, estimating its effect relative to the overall log count.
+The built-in `InsectSprays` data contain insect counts and the spray treatment used for each observation. This Poisson model gives each treatment a random intercept, estimating its effect relative to the overall log count.
 
-```{r usage, results='hide', message=FALSE}
+```{r usage, results = "hide", message = FALSE}
 library(tulpa)
 
 fit <- tulpa(
@@ -115,11 +114,11 @@ fit <- tulpa(
 summary(fit)
 ```
 
-```{r group-effects, results='hide'}
+```{r group-effects, results = "hide"}
 effects <- ranef(fit)
 ```
 
-```{r group-effects-table, echo=FALSE, results='asis'}
+```{r group-effects-table, echo = FALSE, results = "asis"}
 knitr::kable(
   effects[c("term", "estimate", "conf.low", "conf.high")],
   digits = 2,
@@ -127,73 +126,45 @@ knitr::kable(
 )
 ```
 
-Supply a data frame with the response, predictors, and grouping variables named
-in the formula. Choose an observation family appropriate to the response.
-The [data-formatting guide](https://gillescolling.com/tulpa/articles/data-formatting.html)
-covers response encodings, grouping variables, and spatial inputs.
+Supply a data frame with the response, predictors, and grouping variables named in the formula. Choose an observation family appropriate to the response. [Data formatting](https://gillescolling.com/tulpa/articles/data-formatting.html) covers response encodings, grouping variables, and spatial inputs.
 
 ## Random effects, smoothers, and fields
 
-Formula terms describe the model structure: `(1 | group)` adds random
-intercepts, `(1 + x | group)` adds correlated random intercepts and slopes,
-and `s(x)` adds a smooth covariate effect. Spatial and temporal specifications
-describe dependence between locations or times.
+Formula terms describe the model structure. `(1 | group)` adds random intercepts, `(1 + x | group)` adds correlated random intercepts and slopes, and `s(x)` adds a smooth covariate effect. Spatial and temporal specifications describe dependence between locations or times.
 
-[Random slopes and covariances](https://gillescolling.com/tulpa/articles/random-slopes.html)
-walks through inference for group-level variances and correlations.
-The [spatial](https://gillescolling.com/tulpa/articles/spatial-models.html) and
-[temporal](https://gillescolling.com/tulpa/articles/temporal-models.html) articles
-show how to supply the corresponding structures.
+[Random slopes and covariances](https://gillescolling.com/tulpa/articles/random-slopes.html) walks through inference for group-level variances and correlations. The [spatial](https://gillescolling.com/tulpa/articles/spatial-models.html) and [temporal](https://gillescolling.com/tulpa/articles/temporal-models.html) articles show how to supply the corresponding structures.
 
 ## Inference and diagnostics
 
-Automatic mode selects an inference method and records its reason on the fit.
-An explicit mode selects MCMC, Laplace approximation, or variational inference;
-variational methods require an explicit choice. The
-[inference guide](https://gillescolling.com/tulpa/articles/inference-modes.html)
-describes the methods and the models each supports.
+Automatic mode selects an inference method and records its reason on the fit. An explicit mode selects MCMC, Laplace approximation, or variational inference; variational methods require an explicit choice. [Inference modes](https://gillescolling.com/tulpa/articles/inference-modes.html) describes the methods and the models each supports.
 
-Diagnostics depend on how the posterior was computed. MCMC fits report chain
-convergence and effective sample sizes. Approximation fits report the available
-integration and inner-approximation checks. The
-[reliability guide](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html)
-explains how to interpret these results and their limits.
+Diagnostics depend on how the posterior was computed. MCMC fits report chain convergence and effective sample sizes. Approximation fits report the available integration and inner-approximation checks. [Reliability diagnostics](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html) explains how to interpret these results and their limits.
 
 ## Custom models and processes
 
-Companion packages supply observation likelihoods and reuse tulpa's inference
-and latent structures. [tulpaObs](https://github.com/gcol33/tulpaObs) provides
-models for occupancy, abundance, and detection; tulpaRatio provides models for
-ratios, rates, and proportions.
+Companion packages supply observation likelihoods and reuse tulpa's inference and latent structures. [tulpaObs](https://github.com/gcol33/tulpaObs) provides models for occupancy, abundance, and detection; [tulpaRatio](https://github.com/gcol33/tulpaRatio) provides models for ratios, rates, and proportions.
 
-For a custom Gaussian latent process, supply its precision matrix and mean
-through R functions or a compiled C++ definition. The
-[custom-process tutorial](https://gillescolling.com/tulpa/articles/tgmrf.html)
-shows both interfaces. The [EM + Laplace article](https://gillescolling.com/tulpa/articles/em-laplace.html)
-describes the shared fitting framework for models with unobserved observation
-states.
+For a custom Gaussian latent process, supply its precision matrix and mean through R functions or a compiled C++ definition. The [custom-process tutorial](https://gillescolling.com/tulpa/articles/tgmrf.html) shows both interfaces. The [EM + Laplace article](https://gillescolling.com/tulpa/articles/em-laplace.html) describes the shared fitting framework for models with unobserved observation states.
 
 ## Documentation
 
-Start with the [quickstart](https://gillescolling.com/tulpa/articles/quickstart.html)
-for a complete path from a formula to a fitted model.
+Start with the [quickstart](https://gillescolling.com/tulpa/articles/quickstart.html): a complete path from a formula to a fitted model.
 
-- [Priors](https://gillescolling.com/tulpa/articles/priors.html): specify prior
-  distributions for coefficients and latent structures.
-- [Model comparison](https://gillescolling.com/tulpa/articles/model-comparison.html):
-  compare fitted models and combine predictions.
-- [Calibration](https://gillescolling.com/tulpa/articles/sbc.html): assess
-  posterior calibration through repeated simulations.
-- [Checkpoint and resume](https://gillescolling.com/tulpa/articles/checkpoint.html):
-  save and continue sampling runs.
-- [Function reference](https://gillescolling.com/tulpa/reference/): arguments,
-  return values, and examples for the fitting and diagnostic functions.
+- [Data formatting](https://gillescolling.com/tulpa/articles/data-formatting.html): response encodings, grouping variables and spatial inputs.
+- [Random slopes and covariances](https://gillescolling.com/tulpa/articles/random-slopes.html): group-level variances and correlations.
+- [Spatial models](https://gillescolling.com/tulpa/articles/spatial-models.html) and [temporal models](https://gillescolling.com/tulpa/articles/temporal-models.html): supplying dependence between locations or times.
+- [Inference modes](https://gillescolling.com/tulpa/articles/inference-modes.html): the inference methods and the models each supports.
+- [Priors](https://gillescolling.com/tulpa/articles/priors.html): prior distributions for coefficients and latent structures.
+- [Reliability diagnostics](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html): what can be checked on an individual fit.
+- [Calibration](https://gillescolling.com/tulpa/articles/sbc.html): posterior calibration through repeated simulations.
+- [Model comparison](https://gillescolling.com/tulpa/articles/model-comparison.html): comparing fitted models and combining predictions.
+- [Checkpoint and resume](https://gillescolling.com/tulpa/articles/checkpoint.html): saving and continuing sampling runs.
+- [Custom latent processes](https://gillescolling.com/tulpa/articles/tgmrf.html) and [EM + Laplace](https://gillescolling.com/tulpa/articles/em-laplace.html): extending the engine.
+- [Full reference](https://gillescolling.com/tulpa/reference/): every function, grouped by job.
 
 ## Getting help
 
-Use [GitHub issues](https://github.com/gcol33/tulpa/issues) for questions and bug
-reports. Include a small reproducible example and the output of `sessionInfo()`
-when reporting a problem.
+Questions and bug reports go to the [GitHub issues](https://github.com/gcol33/tulpa/issues). A bug report is easiest to act on with a small reproducible example, for instance made with [reprex](https://reprex.tidyverse.org/), and the output of `sessionInfo()`.
 
 ## Support
 
@@ -207,21 +178,21 @@ If this package saved you some time, buying me a coffee is a nice way to say tha
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+tulpa is licensed under MIT. Three bundled components carry their own notices, listed in `inst/COPYRIGHTS`:
+
+- Sobol direction numbers by Frances Y. Kuo and Stephen Joe, under a 3-clause BSD licence.
+- Double-precision exp and log routines ported from Arm Optimized Routines, copyright Arm Limited, under MIT.
+- The WALNUTS transition, ported from walnutpie, under MIT.
 
 ## Citation
 
-```{r citation, echo=FALSE, results='asis'}
-meta <- as.list(read.dcf("DESCRIPTION")[1, ])
-cit <- utils::readCitationFile("inst/CITATION", meta = meta)
-fence <- function(lang, x) {
-  cat("```", lang, "\n", paste(x, collapse = "\n\n"), "\n```\n\n", sep = "")
-}
+```{r citation, echo = FALSE, results = "asis"}
+cit <- citation("tulpa")
+fence <- function(lang, x) cat("```", lang, "\n", paste(x, collapse = "\n\n"), "\n```\n\n", sep = "")
 cat(attr(cit, "mheader"), "\n\n", sep = "")
 fence("text", format(cit, style = "text"))
 cat("BibTeX:\n\n")
 fence("bibtex", format(cit, style = "bibtex"))
 ```
 
-Download the citation as [BibTeX](https://gillescolling.com/tulpa/tulpa.bib)
-or [RIS](https://gillescolling.com/tulpa/tulpa.ris).
+Download the citation as [BibTeX](https://gillescolling.com/tulpa/tulpa.bib) or [RIS](https://gillescolling.com/tulpa/tulpa.ris).

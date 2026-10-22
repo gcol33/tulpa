@@ -61,5 +61,4 @@ sp <- spatial_spde_custom(Matrix::Diagonal(n), G, Matrix::Diagonal(n),
                           prior_range = c(1, 0.5), prior_sigma = c(1, 0.01))
 Q <- tulpa_spde_precision_Q(sp, kappa = sqrt(8) / 1, tau_spde = 1)
 dim(Q)
-#> [1] 6 6
 ```

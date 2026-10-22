@@ -65,13 +65,4 @@ A `tulpa_spatial` object with `type = "car"` (or `"car_proper"` when
 adj <- matrix(0, 10, 10)
 for (i in 1:9) adj[i, i + 1] <- adj[i + 1, i] <- 1
 spatial_car(adj, level = "group", group_var = "region")
-#> tulpa spatial specification
-#> ===========================
-#> 
-#> Type: ICAR (Intrinsic CAR) 
-#> Level: group 
-#> Spatial units: 10 
-#> Shared: Yes (enters both processes) 
-#> Group variable: region 
-#>   (rho fixed at 1, sum-to-zero constraint applied)
 ```

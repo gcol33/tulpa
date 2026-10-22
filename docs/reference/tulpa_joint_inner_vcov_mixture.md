@@ -106,9 +106,5 @@ mix <- tulpa_joint_inner_vcov_mixture(
   n_x = 12L, idx = 1:12, n_dense = 2L, A_cols_list = list(3:12),
   weights = c(0.7, 0.3), modes = modes)
 mix$mean[1:2]
-#> [1] -0.07668493 -0.02127116
 mix$vcov[1:2, 1:2]
-#>              [,1]         [,2]
-#> [1,]  0.482785289 -0.006185382
-#> [2,] -0.006185382  0.526911020
 ```

@@ -47,6 +47,5 @@ df <- data.frame(x = rnorm(80))
 df$y <- rpois(80, exp(0.5 + 0.3 * df$x))
 fit <- tulpa(y ~ x, data = df, family = "poisson")
 dim(posterior_sample(fit))
-#> [1] 1000    2
 # }
 ```

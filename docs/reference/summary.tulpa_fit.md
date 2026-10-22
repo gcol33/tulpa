@@ -209,36 +209,8 @@ df <- data.frame(x = rnorm(60))
 df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
 fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "laplace")
 fit
-#> tulpa fit  (laplace, tier 2) 
-#> Call: tulpa(formula = y ~ x, data = df, family = "poisson", mode = "laplace")
-#>   n_obs: 60 
-#> 
-#> Coefficients:
-#> (Intercept)           x 
-#>      0.5403      0.3044 
-#> 
-#> Use summary() for intervals, variance components, hyperparameters and reliability.
 s <- summary(fit)
 s
-#> tulpa fit  (laplace, tier 2) 
-#> Call: tulpa(formula = y ~ x, data = df, family = "poisson", mode = "laplace")
-#>   inference mode: structured 
-#>   selected because: User-specified backend: laplace 
-#>   family: poisson 
-#>   n_obs: 60 
-#> 
-#> Fixed effects:
-#>             estimate std.error  2.5 % 97.5 %
-#> (Intercept)   0.5403    0.1023 0.3398 0.7409
-#> x             0.3044    0.1179 0.0733 0.5355
-#> 
-#> Fixed-effect prior: normal(0, 2.5)
-#> 
-#> Reliability (iid draws):
 coef(s)
-#>              estimate std.error      2.5 %    97.5 %
-#> (Intercept) 0.5403445 0.1023242 0.33979269 0.7408963
-#> x           0.3043774 0.1179012 0.07329522 0.5354596
 s$inference$backend
-#> [1] "laplace"
 ```

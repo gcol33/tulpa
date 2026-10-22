@@ -35,5 +35,4 @@ to remove cached objects.
 ``` r
 # Where compiled tgmrf_cpp() blocks are cached. Reporting creates nothing.
 tulpa_cache_dir()
-#> [1] "C:\\Users\\Gilles Colling\\AppData\\Local/R/cache/R/tulpa"
 ```

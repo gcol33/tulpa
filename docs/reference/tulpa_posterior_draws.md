@@ -104,15 +104,6 @@ fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                             control = list(progress = FALSE))
 dr <- tulpa_posterior_draws(fit, n = 200)
 colMeans(dr)                # fixed effects, mixed over the outer grid
-#>       beta1           x 
-#> -0.02097457  0.57813071 
 summary(attr(dr, "theta"))  # the hyperparameter half of the same draws
-#>       tau         
-#>  Min.   : 0.4106  
-#>  1st Qu.: 3.9219  
-#>  Median : 5.7068  
-#>  Mean   : 5.9962  
-#>  3rd Qu.: 8.3608  
-#>  Max.   :11.3051  
 # }
 ```

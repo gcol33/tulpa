@@ -60,8 +60,5 @@ fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                             control = list(progress = FALSE))
 tg <- tulpa_theta_matrix(fit)
 tulpa_hyper_grid_supports(tg, tulpa_joint_axis_specs_from_grid(tg))
-#> $tau
-#> [1]  0.3535534 11.3137085
-#> 
 # }
 ```

@@ -231,6 +231,5 @@ if (requireNamespace("fmesher", quietly = TRUE)) {
   fit <- fit_spde(y = y, X = cbind(1, x), spatial = spec, family = "poisson")
   fit$nested$range_mean
 }
-#> [1] 0.07370861
 # }
 ```

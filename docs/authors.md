@@ -15,7 +15,8 @@
   exp and log routines in src/fastmath.h and src/fastmath_data.cpp, MIT
 
 - **The Walnutpie Developers**. Copyright holder.\
-  WALNUTS transition in src/hmc_walnuts.cpp, ported from walnutpie, MIT
+  WALNUTS transition in inst/include/tulpa/walnuts.h, ported from
+  walnutpie, MIT
 
 ## Citation
 
@@ -24,12 +25,13 @@ Source:
 
 Colling, G. (2026). tulpa: Templated Unified Library for Posterior
 Approximation in Bayesian Hierarchical Models. R package version 0.7.5.
-https://github.com/gcol33/tulpa
+doi:10.32614/CRAN.package.tulpa
 
-    @Manual{tulpa,
+    @Manual{colling2026tulpa,
       title = {{tulpa}: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},
       author = {Gilles Colling},
       year = {2026},
       note = {R package version 0.7.5},
-      url = {https://github.com/gcol33/tulpa},
+      doi = {10.32614/CRAN.package.tulpa},
+      url = {https://CRAN.R-project.org/package=tulpa},
     }

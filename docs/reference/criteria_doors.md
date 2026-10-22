@@ -135,32 +135,12 @@ y  <- rnorm(40)
 mu <- matrix(rnorm(200 * 40, sd = 0.2), 200, 40)
 ll <- dnorm(matrix(y, 200, 40, byrow = TRUE), mean = mu, log = TRUE)
 cpo(ll)
-#> tulpa model criteria  (200 draws x 40 observations)
-#>   LOOIC          107.8  (SE 7.3)
-#>   elpd_loo       -53.9  (SE 3.7)
-#>   p_loo            1.4
-#>   LPML           -53.9
 # \donttest{
 d <- data.frame(x = rnorm(120))
 d$y <- rpois(120, exp(0.4 + 0.6 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
 dic(fit)
-#> tulpa model criteria  (400 draws x 120 observations)
-#>   DIC            391.9
-#>   p_DIC            2.0
 cpo(fit)$lpml
-#> [1] -196.2013
 if (requireNamespace("loo", quietly = TRUE)) loo::waic(fit)
-#> Warning: 
-#> 1 (0.8%) p_waic estimates greater than 0.4. We recommend trying loo instead.
-#> 
-#> Computed from 400 by 120 log-likelihood matrix.
-#> 
-#>           Estimate   SE
-#> elpd_waic   -196.2  9.9
-#> p_waic         2.4  0.6
-#> waic         392.4 19.8
-#> 
-#> 1 (0.8%) p_waic estimates greater than 0.4. We recommend trying loo instead. 
 # }
 ```

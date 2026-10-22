@@ -44,9 +44,5 @@ approach to constructing priors. Statistical Science, 32(1), 1-28.
 
 ``` r
 prior_pc(U = 1, alpha = 0.01)    # P(sigma > 1) = 0.01
-#> PC prior: P(x > 1.00) = 0.010
-#>   => Exponential(4.605)
 prior_pc(U = 0.5, alpha = 0.05)  # Tighter, P(sigma > 0.5) = 0.05
-#> PC prior: P(x > 0.50) = 0.050
-#>   => Exponential(5.991)
 ```

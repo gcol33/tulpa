@@ -99,10 +99,5 @@ blocks <- tulpa_joint_inner_vcov_blocks(
   lapply(cells, `[[`, "p"), lapply(cells, `[[`, "i"), lapply(cells, `[[`, "x"),
   n_x = 12L, idx = 1:12, n_dense = 2L, A_cols_list = list(3:12))
 blocks[[1]][1:2, 1:2]        # fixed-effect covariance in the first cell
-#>             [,1]        [,2]
-#> [1,]  0.47727273 -0.02272727
-#> [2,] -0.02272727  0.47727273
 diag(blocks[[2]])[3:12]      # field marginal variances in the second
-#>  [1] 0.4709259 0.3273387 0.2462806 0.2029780 0.1841968 0.1841968 0.2029780
-#>  [8] 0.2462806 0.3273387 0.4709259
 ```

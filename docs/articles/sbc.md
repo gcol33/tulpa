@@ -408,7 +408,8 @@ diagnostics(fit, sbc = res)
   is.
 - [`?sbc_predictive`](https://gillescolling.com/tulpa/reference/sbc_predictive.md)
   for the predictive shapes, and which one a backend should report.
-- [`vignette("reliability-pareto-k")`](https://gillescolling.com/tulpa/articles/reliability-pareto-k.md)
+- The [reliability
+  article](https://gillescolling.com/tulpa/articles/reliability-pareto-k.md)
   for the single-fit reliability band this screens against: the outer
   Pareto-k-hat, `gamma_3`, and the combined verdict.
 - [`?tulpa_posterior_draws`](https://gillescolling.com/tulpa/reference/tulpa_posterior_draws.md)

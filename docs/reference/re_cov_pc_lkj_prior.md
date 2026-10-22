@@ -86,8 +86,6 @@ differentiation in `test-re-cov-prior.R`.)
 # coordinates (log sd_1, log sd_2, L_21):
 lp <- re_cov_pc_lkj_prior(2)
 lp(c(0, 0, 0))
-#> [1] -2.500661
 # A diagonal block takes one log-SD coordinate per coefficient:
 re_cov_pc_lkj_prior(2, correlated = FALSE)(c(0, 0))
-#> [1] -2.212979
 ```

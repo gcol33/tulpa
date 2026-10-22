@@ -58,14 +58,4 @@ adj <- matrix(0, 10, 10)
 for (i in 1:9) adj[i, i+1] <- adj[i+1, i] <- 1
 spec <- spatial_car_proper(adj, level = "group", group_var = "site")
 print(spec)
-#> tulpa spatial specification
-#> ===========================
-#> 
-#> Type: Proper CAR 
-#> Level: group 
-#> Spatial units: 10 
-#> Shared: Yes (enters both processes) 
-#> Group variable: site 
-#> Rho bounds: [0, 1]
-#>   (spatial autocorrelation parameter, estimated from data)
 ```

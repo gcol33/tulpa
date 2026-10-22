@@ -2,9 +2,8 @@
 
 Bayesian counterpart to
 [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md) /
-[`laplace_spde_at()`](https://gillescolling.com/tulpa/reference/laplace_spde_at.md).
-Routes the SPDE-augmented GLM through tulpa's full NUTS backend via the
-generic `LikelihoodSpec` interface. Two modes:
+`laplace_spde_at()`. Routes the SPDE-augmented GLM through tulpa's full
+NUTS backend via the generic `LikelihoodSpec` interface. Two modes:
 
 - **Legacy / fixed-hyper** (`joint = FALSE`, the default): conditions on
   the supplied `(range, sigma)`. Samples the latent block
@@ -181,10 +180,6 @@ fit <- tulpa_nuts_spde(y, cbind(1, x), spatial = spec, family = "gaussian",
                        control = list(n_iter = 300L, n_warmup = 150L,
                                       seed = 1L))
 colMeans(fit$draws[, c("beta[1]", "beta[2]")])
-#>    beta[1]    beta[2] 
-#>  0.7120346 -0.9037404 
 fit$phi_summary
-#>      mean    median       q05       q95 
-#> 0.2856609 0.2806777 0.2321932 0.3384912 
 # }
 ```

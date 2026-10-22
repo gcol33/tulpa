@@ -83,6 +83,5 @@ fits <- lapply(1:2, function(b) fit_one(rbinom(N, 1, plogis(0.3 * x))))
 res <- tryCatch(tulpa_joint_grid_batch(fits),
                 tulpa_grid_batch_ineligible = function(e) lapply(fits, function(f) f()))
 length(res)
-#> [1] 2
 # }
 ```

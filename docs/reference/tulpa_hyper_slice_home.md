@@ -40,7 +40,5 @@ name for a cell a refinement pass added.
 
 ``` r
 tulpa_hyper_slice_home(NULL, 3)
-#> [1] "" "" ""
 tulpa_hyper_slice_home(c("", "", "sigma"), 3)
-#> [1] ""      ""      "sigma"
 ```

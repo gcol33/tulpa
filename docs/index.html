@@ -56,17 +56,17 @@
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="articles/checkpoint.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="articles/data-formatting.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="articles/em-laplace.html">UNKNOWN TITLE</a></li>
+<li><a class="dropdown-item" href="articles/checkpoint.html">Checkpoint and resume long fits</a></li>
+    <li><a class="dropdown-item" href="articles/data-formatting.html">The data a tulpa model expects</a></li>
+    <li><a class="dropdown-item" href="articles/em-laplace.html">EM + Laplace for latent-variable models</a></li>
     <li><a class="dropdown-item" href="articles/inference-modes.html">Inference modes: the three tiers and how to choose one</a></li>
-    <li><a class="dropdown-item" href="articles/model-comparison.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="articles/model-comparison.html">Comparing tulpa models</a></li>
     <li><a class="dropdown-item" href="articles/priors.html">Specifying and checking priors</a></li>
     <li><a class="dropdown-item" href="articles/quickstart.html">Getting started with tulpa</a></li>
-    <li><a class="dropdown-item" href="articles/random-slopes.html">UNKNOWN TITLE</a></li>
-    <li><a class="dropdown-item" href="articles/reliability-pareto-k.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="articles/random-slopes.html">Random slopes and the free random-effect covariance</a></li>
+    <li><a class="dropdown-item" href="articles/reliability-pareto-k.html">Reliability of nested approximations: reading the outer Pareto-k</a></li>
     <li><a class="dropdown-item" href="articles/sbc.html">Validating calibration: simulation-based calibration</a></li>
-    <li><a class="dropdown-item" href="articles/spatial-models.html">UNKNOWN TITLE</a></li>
+    <li><a class="dropdown-item" href="articles/spatial-models.html">Spatial fields in tulpa</a></li>
     <li><a class="dropdown-item" href="articles/temporal-models.html">Temporal random-walk effects with tulpa</a></li>
     <li><a class="dropdown-item" href="articles/tgmrf.html">User-defined GMRF latent blocks with tgmrf()</a></li>
   </ul>
@@ -90,68 +90,83 @@
 <img src="logo.svg" class="logo" alt=""><h1 id="tulpa-">tulpa <a class="anchor" aria-label="anchor" href="#tulpa-"></a>
 </h1>
 </div>
-<p><em>templated unified latent process approximations</em></p>
+<p><em>Bayesian hierarchical models for grouped, spatial and temporal data</em></p>
 <!-- badges: start -->
 
 <p>tulpa fits Bayesian hierarchical models in R, including models for counts, proportions, repeated measurements, and observations distributed across space or time.</p>
 <p>A formula describes how measured predictors and unobserved effects contribute to the response. The engine combines these effects with an observation distribution and fits the model using nested Laplace approximation or Markov chain Monte Carlo (MCMC). Its numerical routines are written in templated C++. The result includes posterior estimates, uncertainty intervals, and diagnostics that help you assess the fit.</p>
 <p>tulpa supports:</p>
 <ul>
-<li>Random intercepts and slopes, including uncertainty in their variances and correlations.</li>
-<li>Smooth covariate effects, spatial fields, temporal processes, and combinations of these structures.</li>
-<li>Deterministic approximations, MCMC sampling, and correction methods selected through the same fitting function.</li>
-<li>Model-specific observation likelihoods and custom latent processes supplied through R or C++ interfaces.</li>
+<li>
+<strong>Grouped effects.</strong> Random intercepts and slopes, including uncertainty in their variances and correlations.</li>
+<li>
+<strong>Smooth, spatial and temporal structure.</strong> Smooth covariate effects, spatial fields, temporal processes, and combinations of these structures.</li>
+<li>
+<strong>Several inference methods.</strong> Deterministic approximations, MCMC sampling, and correction methods are selected through the same fitting function.</li>
+<li>
+<strong>Custom models.</strong> Model-specific observation likelihoods and custom latent processes are supplied through R or C++ interfaces.</li>
 </ul>
-<p>The <a href="https://gillescolling.com/tulpa/articles/sbc.html">calibration article</a> shows how to assess posterior calibration through repeated simulations. <a href="https://gillescolling.com/tulpa/articles/reliability-pareto-k.html">Reliability diagnostics</a> explain what can be checked on an individual fit. The package is experimental and its interface may change.</p>
+<p><a href="https://gillescolling.com/tulpa/articles/sbc.html">Calibration</a> shows how to assess posterior calibration through repeated simulations. <a href="https://gillescolling.com/tulpa/articles/reliability-pareto-k.html">Reliability diagnostics</a> explains what can be checked on an individual fit. The package is experimental and its interface may change.</p>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
 </h2>
-<p>Install from r-universe:</p>
+<p>Install the released version from CRAN:</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span></span>
-<span>  <span class="st">"tulpa"</span>,</span>
-<span>  repos <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"https://gcol33.r-universe.dev"</span>,</span>
-<span>            <span class="st">"https://cloud.r-project.org"</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>Source installations require a C++17 compiler and the build tools for R.</p>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"tulpa"</span><span class="op">)</span></span></code></pre></div>
+<p>CRAN provides binaries for Windows and macOS, which need no build tools.</p>
+<p>The development version compiles C++17 code. Install the build tools for your operating system first:</p>
 <table class="table">
 <colgroup>
 <col width="50%">
 <col width="50%">
 </colgroup>
 <thead><tr>
-<th align="left">Operating system</th>
-<th align="left">Build tools</th>
+<th>Operating system</th>
+<th>Build tools</th>
 </tr></thead>
 <tbody>
 <tr>
-<td align="left">Windows</td>
-<td align="left">
+<td>Windows</td>
+<td>
 <a href="https://cran.r-project.org/bin/windows/Rtools/" class="external-link">Rtools</a> matching your R version</td>
 </tr>
 <tr>
-<td align="left">macOS</td>
-<td align="left">Xcode Command Line Tools: <code>xcode-select --install</code>
-</td>
+<td>macOS</td>
+<td>Run <code>xcode-select --install</code> in Terminal</td>
 </tr>
 <tr>
-<td align="left">Debian / Ubuntu</td>
-<td align="left">
-<code>r-base-dev</code> and a C++17 compiler</td>
+<td>Debian / Ubuntu</td>
+<td>Install <code>r-base-dev</code>
+</td>
 </tr>
 </tbody>
 </table>
-<p>Check the toolchain before installing the development version:</p>
+<p>Check that R can find the compiler:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># install.packages(c("pkgbuild", "pak"))</span></span>
-<span><span class="fu">pkgbuild</span><span class="fu">::</span><span class="fu"><a href="https://pkgbuild.r-lib.org/reference/has_build_tools.html" class="external-link">has_build_tools</a></span><span class="op">(</span>debug <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="fu">pkgbuild</span><span class="fu">::</span><span class="fu"><a href="https://pkgbuild.r-lib.org/reference/has_build_tools.html" class="external-link">has_build_tools</a></span><span class="op">(</span>debug <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
+<p>Then install tulpa from GitHub:</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># install.packages("pak")</span></span>
 <span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa"</span><span class="op">)</span></span></code></pre></div>
-<p>The build links against R’s BLAS and LAPACK libraries for matrix operations. Package dependencies, including <code>tulpaMesh</code> for spatial mesh construction, are installed with tulpa. R’s <a href="https://cran.r-project.org/doc/manuals/r-release/R-admin.html" class="external-link">installation guide</a> describes the platform toolchains.</p>
+<p>The build links against the BLAS and LAPACK libraries that R itself uses for matrix operations, so no other system library is needed. Package dependencies, including <a href="https://CRAN.R-project.org/package=tulpaMesh" class="external-link">tulpaMesh</a> for spatial mesh construction, are installed with tulpa.</p>
 <div class="section level3">
-<h3 id="optional-multithreading">Optional multithreading<a class="anchor" aria-label="anchor" href="#optional-multithreading"></a>
+<h3 id="optional-multithreading">Optional: multithreading<a class="anchor" aria-label="anchor" href="#optional-multithreading"></a>
 </h3>
-<p>The nested-Laplace fitters expose OpenMP thread controls through their <code>control</code> argument. The <a href="https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.html">single-process</a> and <a href="https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.html">joint-model</a> references describe the available controls. The build uses the OpenMP flags provided by R’s toolchain.</p>
-<p>On macOS, OpenMP requires a runtime compatible with the compiler used to build R packages. Follow the R project’s <a href="https://mac.r-project.org/openmp/" class="external-link">macOS OpenMP setup</a> before compiling tulpa with OpenMP enabled.</p>
+<p>OpenMP lets the nested-Laplace fitters use several CPU threads through <code>n_threads</code> in their <code>control</code> list. The <a href="https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.html">single-process</a> and <a href="https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.html">joint-model</a> reference pages describe the available controls.</p>
+<p>Rtools on Windows and the default compiler on Linux include OpenMP. Without it, the package installs and runs on one thread.</p>
+<div class="section level4">
+<h4 id="macos-setup">macOS setup<a class="anchor" aria-label="anchor" href="#macos-setup"></a>
+</h4>
+<p>Apple’s compiler needs an additional OpenMP runtime. Install it in Terminal:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="ex">brew</span> install libomp</span></code></pre></div>
+<p>Before installing tulpa from source, add the settings for your Mac to <code>~/.R/Makevars</code>, R’s personal compiler-settings file. Create the directory and file if needed.</p>
+<p><strong>Apple Silicon:</strong></p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode makefile"><code class="sourceCode makefile"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="dt">CPPFLAGS</span> <span class="ch">+=</span><span class="st"> -I/opt/homebrew/opt/libomp/include -Xclang -fopenmp</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="dt">LDFLAGS</span> <span class="ch">+=</span><span class="st"> -L/opt/homebrew/opt/libomp/lib -lomp</span></span></code></pre></div>
+<p><strong>Intel:</strong></p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode makefile"><code class="sourceCode makefile"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="dt">CPPFLAGS</span> <span class="ch">+=</span><span class="st"> -I/usr/local/opt/libomp/include -Xclang -fopenmp</span></span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="dt">LDFLAGS</span> <span class="ch">+=</span><span class="st"> -L/usr/local/opt/libomp/lib -lomp</span></span></code></pre></div>
+</div>
 </div>
 </div>
 <div class="section level2">
@@ -163,7 +178,7 @@
 <li>Extract the group effects with <code><a href="reference/ranef.html">ranef()</a></code>.</li>
 </ol>
 <p>The built-in <code>InsectSprays</code> data contain insect counts and the spray treatment used for each observation. This Poisson model gives each treatment a random intercept, estimating its effect relative to the overall log count.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/gcol33/tulpa" class="external-link">tulpa</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/tulpa.html">tulpa</a></span><span class="op">(</span></span>
@@ -172,7 +187,7 @@
 <span>  family <span class="op">=</span> <span class="st">"poisson"</span></span>
 <span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">effects</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ranef.html">ranef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
 <table class="table">
 <thead><tr>
@@ -220,47 +235,59 @@
 </tr>
 </tbody>
 </table>
-<p>Supply a data frame with the response, predictors, and grouping variables named in the formula. Choose an observation family appropriate to the response. The <a href="https://gillescolling.com/tulpa/articles/data-formatting.html">data-formatting guide</a> covers response encodings, grouping variables, and spatial inputs.</p>
+<p>Supply a data frame with the response, predictors, and grouping variables named in the formula. Choose an observation family appropriate to the response. <a href="https://gillescolling.com/tulpa/articles/data-formatting.html">Data formatting</a> covers response encodings, grouping variables, and spatial inputs.</p>
 </div>
 <div class="section level2">
 <h2 id="random-effects-smoothers-and-fields">Random effects, smoothers, and fields<a class="anchor" aria-label="anchor" href="#random-effects-smoothers-and-fields"></a>
 </h2>
-<p>Formula terms describe the model structure: <code>(1 | group)</code> adds random intercepts, <code>(1 + x | group)</code> adds correlated random intercepts and slopes, and <code>s(x)</code> adds a smooth covariate effect. Spatial and temporal specifications describe dependence between locations or times.</p>
+<p>Formula terms describe the model structure. <code>(1 | group)</code> adds random intercepts, <code>(1 + x | group)</code> adds correlated random intercepts and slopes, and <code>s(x)</code> adds a smooth covariate effect. Spatial and temporal specifications describe dependence between locations or times.</p>
 <p><a href="https://gillescolling.com/tulpa/articles/random-slopes.html">Random slopes and covariances</a> walks through inference for group-level variances and correlations. The <a href="https://gillescolling.com/tulpa/articles/spatial-models.html">spatial</a> and <a href="https://gillescolling.com/tulpa/articles/temporal-models.html">temporal</a> articles show how to supply the corresponding structures.</p>
 </div>
 <div class="section level2">
 <h2 id="inference-and-diagnostics">Inference and diagnostics<a class="anchor" aria-label="anchor" href="#inference-and-diagnostics"></a>
 </h2>
-<p>Automatic mode selects an inference method and records its reason on the fit. An explicit mode selects MCMC, Laplace approximation, or variational inference; variational methods require an explicit choice. The <a href="https://gillescolling.com/tulpa/articles/inference-modes.html">inference guide</a> describes the methods and the models each supports.</p>
-<p>Diagnostics depend on how the posterior was computed. MCMC fits report chain convergence and effective sample sizes. Approximation fits report the available integration and inner-approximation checks. The <a href="https://gillescolling.com/tulpa/articles/reliability-pareto-k.html">reliability guide</a> explains how to interpret these results and their limits.</p>
+<p>Automatic mode selects an inference method and records its reason on the fit. An explicit mode selects MCMC, Laplace approximation, or variational inference; variational methods require an explicit choice. <a href="https://gillescolling.com/tulpa/articles/inference-modes.html">Inference modes</a> describes the methods and the models each supports.</p>
+<p>Diagnostics depend on how the posterior was computed. MCMC fits report chain convergence and effective sample sizes. Approximation fits report the available integration and inner-approximation checks. <a href="https://gillescolling.com/tulpa/articles/reliability-pareto-k.html">Reliability diagnostics</a> explains how to interpret these results and their limits.</p>
 </div>
 <div class="section level2">
 <h2 id="custom-models-and-processes">Custom models and processes<a class="anchor" aria-label="anchor" href="#custom-models-and-processes"></a>
 </h2>
-<p>Companion packages supply observation likelihoods and reuse tulpa’s inference and latent structures. <a href="https://github.com/gcol33/tulpaObs" class="external-link">tulpaObs</a> provides models for occupancy, abundance, and detection; tulpaRatio provides models for ratios, rates, and proportions.</p>
+<p>Companion packages supply observation likelihoods and reuse tulpa’s inference and latent structures. <a href="https://github.com/gcol33/tulpaObs" class="external-link">tulpaObs</a> provides models for occupancy, abundance, and detection; <a href="https://github.com/gcol33/tulpaRatio" class="external-link">tulpaRatio</a> provides models for ratios, rates, and proportions.</p>
 <p>For a custom Gaussian latent process, supply its precision matrix and mean through R functions or a compiled C++ definition. The <a href="https://gillescolling.com/tulpa/articles/tgmrf.html">custom-process tutorial</a> shows both interfaces. The <a href="https://gillescolling.com/tulpa/articles/em-laplace.html">EM + Laplace article</a> describes the shared fitting framework for models with unobserved observation states.</p>
 </div>
 <div class="section level2">
 <h2 id="documentation">Documentation<a class="anchor" aria-label="anchor" href="#documentation"></a>
 </h2>
-<p>Start with the <a href="https://gillescolling.com/tulpa/articles/quickstart.html">quickstart</a> for a complete path from a formula to a fitted model.</p>
+<p>Start with the <a href="https://gillescolling.com/tulpa/articles/quickstart.html">quickstart</a>: a complete path from a formula to a fitted model.</p>
 <ul>
 <li>
-<a href="https://gillescolling.com/tulpa/articles/priors.html">Priors</a>: specify prior distributions for coefficients and latent structures.</li>
+<a href="https://gillescolling.com/tulpa/articles/data-formatting.html">Data formatting</a>: response encodings, grouping variables and spatial inputs.</li>
 <li>
-<a href="https://gillescolling.com/tulpa/articles/model-comparison.html">Model comparison</a>: compare fitted models and combine predictions.</li>
+<a href="https://gillescolling.com/tulpa/articles/random-slopes.html">Random slopes and covariances</a>: group-level variances and correlations.</li>
 <li>
-<a href="https://gillescolling.com/tulpa/articles/sbc.html">Calibration</a>: assess posterior calibration through repeated simulations.</li>
+<a href="https://gillescolling.com/tulpa/articles/spatial-models.html">Spatial models</a> and <a href="https://gillescolling.com/tulpa/articles/temporal-models.html">temporal models</a>: supplying dependence between locations or times.</li>
 <li>
-<a href="https://gillescolling.com/tulpa/articles/checkpoint.html">Checkpoint and resume</a>: save and continue sampling runs.</li>
+<a href="https://gillescolling.com/tulpa/articles/inference-modes.html">Inference modes</a>: the inference methods and the models each supports.</li>
 <li>
-<a href="https://gillescolling.com/tulpa/reference/">Function reference</a>: arguments, return values, and examples for the fitting and diagnostic functions.</li>
+<a href="https://gillescolling.com/tulpa/articles/priors.html">Priors</a>: prior distributions for coefficients and latent structures.</li>
+<li>
+<a href="https://gillescolling.com/tulpa/articles/reliability-pareto-k.html">Reliability diagnostics</a>: what can be checked on an individual fit.</li>
+<li>
+<a href="https://gillescolling.com/tulpa/articles/sbc.html">Calibration</a>: posterior calibration through repeated simulations.</li>
+<li>
+<a href="https://gillescolling.com/tulpa/articles/model-comparison.html">Model comparison</a>: comparing fitted models and combining predictions.</li>
+<li>
+<a href="https://gillescolling.com/tulpa/articles/checkpoint.html">Checkpoint and resume</a>: saving and continuing sampling runs.</li>
+<li>
+<a href="https://gillescolling.com/tulpa/articles/tgmrf.html">Custom latent processes</a> and <a href="https://gillescolling.com/tulpa/articles/em-laplace.html">EM + Laplace</a>: extending the engine.</li>
+<li>
+<a href="https://gillescolling.com/tulpa/reference/">Full reference</a>: every function, grouped by job.</li>
 </ul>
 </div>
 <div class="section level2">
 <h2 id="getting-help">Getting help<a class="anchor" aria-label="anchor" href="#getting-help"></a>
 </h2>
-<p>Use <a href="https://github.com/gcol33/tulpa/issues" class="external-link">GitHub issues</a> for questions and bug reports. Include a small reproducible example and the output of <code><a href="https://rdrr.io/r/utils/sessionInfo.html" class="external-link">sessionInfo()</a></code> when reporting a problem.</p>
+<p>Questions and bug reports go to the <a href="https://github.com/gcol33/tulpa/issues" class="external-link">GitHub issues</a>. A bug report is easiest to act on with a small reproducible example, for instance made with <a href="https://reprex.tidyverse.org/" class="external-link">reprex</a>, and the output of <code><a href="https://rdrr.io/r/utils/sessionInfo.html" class="external-link">sessionInfo()</a></code>.</p>
 </div>
 <div class="section level2">
 <h2 id="support">Support<a class="anchor" aria-label="anchor" href="#support"></a>
@@ -275,23 +302,31 @@
 <div class="section level2">
 <h2 id="license">License<a class="anchor" aria-label="anchor" href="#license"></a>
 </h2>
-<p>MIT. See <a href="LICENSE">LICENSE</a>.</p>
+<p>tulpa is licensed under MIT. Three bundled components carry their own notices, listed in <code>inst/COPYRIGHTS</code>:</p>
+<ul>
+<li>Sobol direction numbers by Frances Y. Kuo and Stephen Joe, under a 3-clause BSD licence.</li>
+<li>Double-precision exp and log routines ported from Arm Optimized Routines, copyright Arm Limited, under MIT.</li>
+<li>The WALNUTS transition, ported from walnutpie, under MIT.</li>
+</ul>
 </div>
 <div class="section level2">
 <h2 id="citation">Citation<a class="anchor" aria-label="anchor" href="#citation"></a>
 </h2>
 <p>To cite the tulpa package in publications, use:</p>
 <pre class="text"><code>Colling G (2026). _tulpa: Templated Unified Library for Posterior
-Approximation in Bayesian Hierarchical Models_. R package version
-0.7.5, &lt;https://github.com/gcol33/tulpa&gt;.</code></pre>
+Approximation in Bayesian Hierarchical Models_.
+doi:10.32614/CRAN.package.tulpa
+&lt;https://doi.org/10.32614/CRAN.package.tulpa&gt;. R package version 0.7.5,
+&lt;https://CRAN.R-project.org/package=tulpa&gt;.</code></pre>
 <p>BibTeX:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode bibtex"><code class="sourceCode bibtex"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="va">@Manual</span>{<span class="ot">tulpa</span>,</span>
-<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>  <span class="dt">title</span> = {{tulpa}: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},</span>
-<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>  <span class="dt">author</span> = {Gilles Colling},</span>
-<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>  <span class="dt">year</span> = {2026},</span>
-<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>  <span class="dt">note</span> = {R package version 0.7.5},</span>
-<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>  <span class="dt">url</span> = {https://github.com/gcol33/tulpa},</span>
-<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode bibtex"><code class="sourceCode bibtex"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="va">@Manual</span>{<span class="ot">colling2026tulpa</span>,</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  <span class="dt">title</span> = {{tulpa}: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="dt">author</span> = {Gilles Colling},</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="dt">year</span> = {2026},</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="dt">note</span> = {R package version 0.7.5},</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>  <span class="dt">doi</span> = {10.32614/CRAN.package.tulpa},</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>  <span class="dt">url</span> = {https://CRAN.R-project.org/package=tulpa},</span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a>}</span></code></pre></div>
 <p>Download the citation as <a href="https://gillescolling.com/tulpa/tulpa.bib">BibTeX</a> or <a href="https://gillescolling.com/tulpa/tulpa.ris">RIS</a>.</p>
 </div>
 </div>
@@ -332,11 +367,10 @@ Approximation in Bayesian Hierarchical Models_. R package version
 <div class="dev-status">
 <h2 data-toc-skip>Dev status</h2>
 <ul class="list-unstyled">
-<li><a href="https://lifecycle.r-lib.org/articles/stages.html#experimental" class="external-link"><img src="https://lifecycle.r-lib.org/articles/figures/lifecycle-experimental.svg" alt="Lifecycle: experimental"></a></li>
-<li><a href="https://opensource.org/licenses/MIT" class="external-link"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a></li>
-<li><a href="https://cran.r-project.org/" class="external-link"><img src="https://img.shields.io/badge/R-%3E%3D%204.1-blue.svg" alt="R &gt;= 4.1"></a></li>
-<li><a href="https://en.cppreference.com/cpp/17" class="external-link"><img src="https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&amp;logoColor=white" alt="C++17"></a></li>
+<li><a href="https://CRAN.R-project.org/package=tulpa" class="external-link"><img src="https://www.r-pkg.org/badges/version/tulpa" alt="CRAN status"></a></li>
+<li><a href="https://github.com/gcol33/tulpa/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/gcol33/tulpa/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a></li>
 <li><a href="https://app.codecov.io/gh/gcol33/tulpa" class="external-link"><img src="https://codecov.io/gh/gcol33/tulpa/graph/badge.svg" alt="Codecov test coverage"></a></li>
+<li><a href="https://opensource.org/licenses/MIT" class="external-link"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a></li>
 </ul>
 </div>
 

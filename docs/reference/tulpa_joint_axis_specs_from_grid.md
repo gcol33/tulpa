@@ -73,6 +73,5 @@ fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                             control = list(progress = FALSE))
 specs <- tulpa_joint_axis_specs_from_grid(tulpa_theta_matrix(fit))
 specs[[1]]$log_scale
-#> [1] TRUE
 # }
 ```

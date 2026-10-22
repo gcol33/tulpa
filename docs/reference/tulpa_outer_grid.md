@@ -90,12 +90,6 @@ fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                             control = list(progress = FALSE))
 g <- tulpa_outer_grid(fit)
 cbind(g$nodes, weight = g$weights)
-#>      tau      weight
-#> [1,] 0.5 0.001157234
-#> [2,] 1.0 0.021253946
-#> [3,] 2.0 0.133119591
-#> [4,] 4.0 0.361654250
-#> [5,] 8.0 0.482814980
 field_hat <- colSums(g$weights * g$modes)[-seq_len(g$n_fixed)]
 # }
 ```

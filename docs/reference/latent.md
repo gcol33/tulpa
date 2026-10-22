@@ -35,5 +35,4 @@ blk <- tgmrf(
   init = c(log_sigma = 0))
 parsed <- tulpa_parse_formula(y ~ x + latent(blk))
 parsed$n_latent_blocks
-#> [1] 1
 ```

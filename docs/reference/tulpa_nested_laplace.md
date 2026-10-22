@@ -622,6 +622,5 @@ prior <- list(type = "icar", n_spatial_units = S, spatial_idx = idx,
 fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                             family = "binomial")
 fit$theta_mean        # marginalized ICAR precision
-#> [1] 5.597209
 # }
 ```

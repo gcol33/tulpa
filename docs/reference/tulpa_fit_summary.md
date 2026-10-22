@@ -49,5 +49,4 @@ df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
 fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "laplace")
 tab <- coef(summary(fit))
 identical(coef(tulpa_fit_summary(fit, tab)), tab)
-#> [1] TRUE
 ```

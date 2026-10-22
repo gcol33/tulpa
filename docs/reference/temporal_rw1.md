@@ -59,18 +59,5 @@ for other temporal priors.
 ``` r
 # Create temporal RW1 specification
 temporal_rw1("year")
-#> tulpa temporal specification
-#> ============================
-#> 
-#> Type: RW1 (First-order Random Walk) 
-#> Time variable: year 
-#> Shared: Yes (enters both processes) 
 temporal_rw1("month", cyclic = TRUE)
-#> tulpa temporal specification
-#> ============================
-#> 
-#> Type: RW1 (First-order Random Walk) 
-#> Time variable: month 
-#> Cyclic: Yes
-#> Shared: Yes (enters both processes) 
 ```

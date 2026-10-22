@@ -43,5 +43,4 @@ and `materialized`.
 ``` r
 ll <- tulpa_loglik(matrix(rnorm(20 * 5, -1), nrow = 20))  # 20 draws x 5 obs
 c(ll$n_draws, ll$n_obs)
-#> [1] 20  5
 ```

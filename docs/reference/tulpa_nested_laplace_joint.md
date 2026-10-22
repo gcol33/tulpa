@@ -1507,13 +1507,6 @@ prior <- list(type = "icar", n_spatial_units = S,
 fit <- tulpa_nested_laplace_joint(
   responses = list(occ = mk_arm(200L, "binomial"), pos = mk_arm(200L, "gaussian")),
   prior = prior)
-#> [nested-laplace-joint] 1/3 cells (33%) | elapsed 0s | ETA >=0s | 0.00s/cells
-#> [nested-laplace-joint] 3/3 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
-#> [outer placement] round 1/30 | 11 evals | |step| 0.181 | logpost -345.9097 | elapsed 0s | 0s/eval
-#> [outer placement] round 2/30 | 14 evals | Newton step 0.00545 sd | logpost -345.9097 | elapsed 0s | 0s/eval
-#> [outer placement] mode-find done | 14 evals | logpost -345.9097 | elapsed 0s | 0s/eval
 fit$theta_mean        # shared field amplitude, integrated across both arms
-#>     sigma 
-#> 0.3064725 
 # }
 ```

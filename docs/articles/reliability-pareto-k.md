@@ -1,4 +1,4 @@
-# 
+# Reliability of nested approximations: reading the outer Pareto-k
 
 ## Installation
 
@@ -409,10 +409,11 @@ probed indices past the default fixed-effects set (1-based, into the
 - The inference-modes vignette runs the reliability ladder from a
   Laplace fit through an exact debias, and shows the k-hat on a
   random-effect covariance fit.
-- [`vignette("sbc")`](https://gillescolling.com/tulpa/articles/sbc.md)
-  is the instrument this one screens for. Everything above scores ONE
-  fit; [`sbc()`](https://gillescolling.com/tulpa/reference/sbc.md)
-  scores whether the backend’s posteriors are calibrated across the
-  generative model, and the two verdicts have been measured to disagree
-  in both directions, so a clean band here is a screen rather than a
-  calibration result. \`\`\`
+- The [calibration
+  article](https://gillescolling.com/tulpa/articles/sbc.md) is the
+  instrument this one screens for. Everything above scores ONE fit;
+  [`sbc()`](https://gillescolling.com/tulpa/reference/sbc.md) scores
+  whether the backend’s posteriors are calibrated across the generative
+  model, and the two verdicts have been measured to disagree in both
+  directions, so a clean band here is a screen rather than a calibration
+  result. \`\`\`
