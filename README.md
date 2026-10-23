@@ -7,6 +7,10 @@
 
 [![CRAN
 status](https://www.r-pkg.org/badges/version/tulpa)](https://CRAN.R-project.org/package=tulpa)
+[![CRAN
+downloads](https://cranlogs.r-pkg.org/badges/grand-total/tulpa)](https://cran.r-project.org/package=tulpa)
+[![Monthly
+downloads](https://cranlogs.r-pkg.org/badges/tulpa)](https://cran.r-project.org/package=tulpa)
 [![R-CMD-check](https://github.com/gcol33/tulpa/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/gcol33/tulpa/actions/workflows/R-CMD-check.yaml)
 [![Codecov test
 coverage](https://codecov.io/gh/gcol33/tulpa/graph/badge.svg)](https://app.codecov.io/gh/gcol33/tulpa)
