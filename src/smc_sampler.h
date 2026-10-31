@@ -224,7 +224,7 @@ inline double prior_path_power(double tau, double b) {
 // the evidence only when pi_0 and every exp(h_k) carry every normalizing
 // constant.
 
-inline SMCResult smc_sample(
+SMCResult smc_sample(
     const std::vector<std::function<double(const std::vector<double>&)>>& legs,
     const std::function<void(std::vector<double>&, std::mt19937&, double)>& initial_sample,
     const std::function<void(std::vector<double>&, double, std::mt19937&)>& mcmc_mutation,
@@ -236,143 +236,7 @@ inline SMCResult smc_sample(
     const std::function<double(const std::vector<double>&)>& initial_log_weight = nullptr,
     const std::function<void(const std::vector<std::vector<double>>&, double)>&
         prepare_mutation = nullptr
-) {
-    int N = n_particles;
-    std::mt19937 rng(seed);
-    const int n_legs = static_cast<int>(legs.size());
-    if (n_legs < 1) {
-        throw std::invalid_argument("tulpa SMC: the path needs at least one leg.");
-    }
-
-    SMCResult result;
-    result.log_marginal_likelihood = 0.0;
-    result.n_resamples = 0;
-    result.n_mutations = 0;
-    result.temperatures.push_back(0.0);
-
-    // ------------------------------------------------------------------
-    // 1. Initialize: draw N particles from q
-    // ------------------------------------------------------------------
-    std::vector<std::vector<double>> particles(N, std::vector<double>(dim));
-    for (int n = 0; n < N; n++) {
-        initial_sample(particles[n], rng, 0.0);
-    }
-
-    // Tempering direction h of the current leg at each particle, refreshed
-    // after every mutation and when a leg begins.
-    int leg = 0;
-    std::vector<double> incr(N);
-    for (int n = 0; n < N; n++) {
-        incr[n] = legs[leg](particles[n]);
-    }
-
-    double tau = 0.0;
-    double ess_target = ess_threshold * N;
-
-    // Reweight by exp(log_w), accumulate the normalizing-constant increment,
-    // and resample. Resampling at every step leaves the particles equally
-    // weighted, which is exactly the assumption the equal-weight temperature
-    // search (find_next_temperature), the log-mean-weight Z increment, and the
-    // uniform final weights all rely on. Adaptive resampling (only when
-    // ess < target) would instead require carrying normalized weights across
-    // rounds and feeding them back into all three. Resampling unconditionally
-    // keeps these consistent (Del Moral et al. 2006); the modest extra Monte
-    // Carlo variance is offset by the per-particle MCMC mutations that follow.
-    auto reweight_resample = [&](const std::vector<double>& log_w) {
-        double max_lw = *std::max_element(log_w.begin(), log_w.end());
-        double sum_w = 0.0;
-        for (int n = 0; n < N; n++) sum_w += std::exp(log_w[n] - max_lw);
-        result.log_marginal_likelihood += max_lw + std::log(sum_w / N);
-        std::vector<double> weights(N);
-        for (int n = 0; n < N; n++) {
-            weights[n] = std::exp(log_w[n] - max_lw) / sum_w;
-        }
-        result.ess_history.push_back(compute_ess(log_w));
-
-        auto ancestors = systematic_resample(weights, N, rng);
-        auto old_particles = particles;
-        auto old_incr = incr;
-        for (int n = 0; n < N; n++) {
-            particles[n] = old_particles[ancestors[n]];
-            incr[n] = old_incr[ancestors[n]];
-        }
-        result.n_resamples++;
-    };
-
-    auto mutate = [&]() {
-        if (prepare_mutation) prepare_mutation(particles, tau);
-        for (int n = 0; n < N; n++) {
-            for (int k = 0; k < n_mcmc_steps; k++) {
-                mcmc_mutation(particles[n], tau, rng);
-            }
-            incr[n] = legs[leg](particles[n]);
-        }
-        result.n_mutations += N * n_mcmc_steps;
-    };
-
-    // A population drawn from q but meant to represent pi_0 != q is corrected
-    // once, up front, by importance weights pi_0 / q, then moved at beta = 0.
-    if (initial_log_weight) {
-        std::vector<double> log_w0(N);
-        for (int n = 0; n < N; n++) log_w0[n] = initial_log_weight(particles[n]);
-        if (!std::isfinite(*std::max_element(log_w0.begin(), log_w0.end()))) {
-            throw std::runtime_error(
-                "SMC: no initial particle carries a finite pi_0 / q weight.");
-        }
-        reweight_resample(log_w0);
-        mutate();
-    }
-
-    // ------------------------------------------------------------------
-    // 2. Tempering loop
-    // ------------------------------------------------------------------
-    int n_steps = 0;
-    for (leg = 0; leg < n_legs; leg++) {
-        if (leg > 0) {
-            for (int n = 0; n < N; n++) incr[n] = legs[leg](particles[n]);
-        }
-        double t = 0.0;
-        while (t < 1.0) {
-            Rcpp::checkUserInterrupt();
-            if (++n_steps > kMaxTemperatureSteps) {
-                throw std::runtime_error(
-                    "SMC tempering did not reach the end of its path within " +
-                    std::to_string(kMaxTemperatureSteps) + " steps (stalled at "
-                    "leg " + std::to_string(leg + 1) + " of " +
-                    std::to_string(n_legs) + ", t = " + std::to_string(t) +
-                    "). The ESS target is unreachable at every temperature "
-                    "above it, which a particle carrying a non-finite "
-                    "log-likelihood produces; check the initial population "
-                    "and the likelihood at it.");
-            }
-
-            // (a) Adaptive temperature selection within the leg
-            double t_new = find_next_temperature(incr, t, ess_target, N);
-            double delta = t_new - t;
-
-            // (b) Incremental log-weights, reweight and resample
-            std::vector<double> log_w(N);
-            for (int n = 0; n < N; n++) log_w[n] = delta * incr[n];
-            reweight_resample(log_w);
-
-            // (c) MCMC mutations at the new temperature
-            t = t_new;
-            tau = leg + t;
-            result.temperatures.push_back(tau);
-            mutate();
-        }
-        if (leg + 1 < n_legs) result.leg_end_particles.push_back(particles);
-    }
-
-    // ------------------------------------------------------------------
-    // 3. Final: uniform weights after last resampling
-    // ------------------------------------------------------------------
-    result.particles = particles;
-    result.weights.assign(N, 1.0 / N);
-    result.n_temperatures = static_cast<int>(result.temperatures.size()) - 1;  // exclude beta=0
-
-    return result;
-}
+);
 
 } // namespace tulpa_smc
 

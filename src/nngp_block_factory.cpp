@@ -1,0 +1,194 @@
+// nngp_block_factory.cpp
+// Definition of make_nngp_block, declared in nngp_block_factory.h.
+
+#include <RcppEigen.h>
+#include "nngp_block_factory.h"
+
+namespace tulpa {
+
+LatentBlock make_nngp_block(
+    int                            start,
+    int                            n_spatial,
+    const Rcpp::List&              spatial_idx_per_arm,
+    const Rcpp::IntegerVector&     n_obs_per_arm,
+    int                            n_arms,
+    int                            block_index,
+    int                            nn,
+    int                            cov_type,
+    const Rcpp::NumericMatrix&     coords,
+    const Rcpp::IntegerMatrix&     nn_idx,
+    const Rcpp::NumericMatrix&     nn_dist,
+    const Rcpp::IntegerVector&     nn_order,
+    int                            axis_sigma2,
+    int                            axis_phi_gp,
+    const Rcpp::NumericMatrix&     theta_grid
+) {
+    if (static_cast<int>(spatial_idx_per_arm.size()) != n_arms ||
+        n_obs_per_arm.size() != n_arms) {
+        Rcpp::stop("Block %d (type 'nngp'): spatial_idx_per_arm / "
+                   "n_obs_per_arm must each have length n_arms (%d).",
+                   block_index + 1, n_arms);
+    }
+    if (coords.nrow() != n_spatial) {
+        Rcpp::stop("Block %d (type 'nngp'): nrow(coords) (%d) must equal "
+                   "n_spatial (%d).",
+                   block_index + 1, static_cast<int>(coords.nrow()),
+                   n_spatial);
+    }
+    if (nn_idx.nrow() != n_spatial || nn_idx.ncol() != nn) {
+        Rcpp::stop("Block %d (type 'nngp'): nn_idx must be n_spatial x nn "
+                   "(%d x %d), got %d x %d.",
+                   block_index + 1, n_spatial, nn,
+                   static_cast<int>(nn_idx.nrow()),
+                   static_cast<int>(nn_idx.ncol()));
+    }
+    if (nn_order.size() != n_spatial) {
+        Rcpp::stop("Block %d (type 'nngp'): length(nn_order) (%d) must equal "
+                   "n_spatial (%d).",
+                   block_index + 1, static_cast<int>(nn_order.size()),
+                   n_spatial);
+    }
+
+    // Materialize per-arm spatial_idx vectors at factory time.
+    auto sidx_per_arm =
+        std::make_shared<std::vector<Rcpp::IntegerVector>>(n_arms);
+    for (int k = 0; k < n_arms; k++) {
+        Rcpp::IntegerVector sidx = spatial_idx_per_arm[k];
+        int N_k = n_obs_per_arm[k];
+        if (static_cast<int>(sidx.size()) != N_k) {
+            Rcpp::stop("Block %d (type 'nngp'): spatial_idx_per_arm[[%d]] "
+                       "must have length n_obs_per_arm[%d] (expected %d, "
+                       "got %d).",
+                       block_index + 1, k + 1, k + 1, N_k,
+                       static_cast<int>(sidx.size()));
+        }
+        // Every consumer of block.idx tests the returned value against
+        // blk.size, so an out-of-range entry drops that row from the field
+        // silently in all of them. 0 is the "no field on this row" encoding.
+        for (int i = 0; i < N_k; i++) {
+            if (sidx[i] == NA_INTEGER || sidx[i] < 0 || sidx[i] > n_spatial) {
+                Rcpp::stop("Block %d (type 'nngp'): "
+                           "spatial_idx_per_arm[[%d]][%d] is %s; it must be 0 "
+                           "(no field on this row) or a 1-based index in "
+                           "[1, %d].",
+                           block_index + 1, k + 1, i + 1,
+                           sidx[i] == NA_INTEGER
+                               ? "NA"
+                               : std::to_string(sidx[i]).c_str(),
+                           n_spatial);
+            }
+        }
+        (*sidx_per_arm)[k] = sidx;
+    }
+
+    // Per-cell NNGP state (nl_cell_cache.h): (alpha, cv) are rebuilt by
+    // prep() per outer-grid cell and the joint driver runs cells
+    // concurrently, so they live in per-cell slots. cm is not used outside
+    // batch_nngp_scatter (the prior scatter recomputes the residual from w
+    // directly) but the function signature demands it.
+    struct NngpCellState {
+        std::vector<double> alpha;
+        std::vector<double> cv;
+        std::vector<double> cm;
+    };
+    auto cell_cache = std::make_shared<NlCellCache<NngpCellState>>();
+
+    LatentBlock block;
+    block.start = start;
+    block.size  = n_spatial;
+    block.contrib_kind = BlockContribKind::INDEXED_SINGLE;
+    block.prior_kind   = PriorFillKind::NN_K;
+    block.d_fac        = [](int) -> double { return 1.0; };
+
+    block.idx = [sidx_per_arm](int i, int k_arm) -> int {
+        const Rcpp::IntegerVector& sidx = (*sidx_per_arm)[k_arm];
+        if (i < 0 || i >= static_cast<int>(sidx.size())) return -1;
+        return static_cast<int>(sidx[i]);
+    };
+
+    // Rebuild (alpha, cv) for cell k. batch_nngp_scatter is well-defined on
+    // w = 0 (alpha and cv are functions of (coords, nn_idx, nn_dist, sigma2,
+    // phi_gp, cov_type) only; cm carries the w-dependence and we ignore it).
+    block.prep = [cell_cache, n_spatial, nn, cov_type, coords, nn_idx,
+                   nn_dist, nn_order, axis_sigma2, axis_phi_gp,
+                   theta_grid](int k_grid) -> bool {
+        double sigma2 = theta_grid(k_grid, axis_sigma2);
+        double phi_gp = theta_grid(k_grid, axis_phi_gp);
+        if (!(sigma2 > 0.0) || !(phi_gp > 0.0)) return false;
+        auto& st = cell_cache->claim();
+        st.alpha.assign(static_cast<size_t>(n_spatial) * nn, 0.0);
+        st.cv.assign(n_spatial, 0.0);
+        st.cm.assign(n_spatial, 0.0);
+        std::vector<double> w_zero(n_spatial, 0.0);
+        bool gpu_used = false;
+        batch_nngp_scatter(w_zero, n_spatial, nn, sigma2, phi_gp, cov_type,
+                            coords, nn_idx, nn_dist, nn_order,
+                            st.cm, st.cv, gpu_used, &st.alpha);
+        cell_cache->publish(k_grid);
+        return true;
+    };
+
+    // Pattern: full NN_K-shaped fill, normalized to lower triangle by the
+    // builder's init().
+    block.add_prior_pattern = [start, n_spatial, nn, nn_idx, nn_order](
+        std::vector<std::pair<int,int>>& out
+    ) {
+        make_nngp_prior_sparsity_pattern(out, nn_idx, nn_order,
+                                          n_spatial, nn, start);
+    };
+
+    block.add_prior_sparse = [cell_cache, start, n_spatial, nn, nn_idx,
+                               nn_order](
+        SparseHessianBuilder& H, DenseVec& grad,
+        const Rcpp::NumericVector& x, int k_grid
+    ) {
+        const auto& st = cell_cache->find(k_grid);
+        std::vector<double> w(n_spatial);
+        for (int s = 0; s < n_spatial; s++) w[s] = x[start + s];
+        apply_nngp_full_prior_sparse(grad, H, w, st.alpha, st.cv,
+                                      nn_idx, nn_order, n_spatial, nn, start);
+    };
+
+    // The prior scatters through the sparse builder only, so
+    // blocks_require_sparse() sends every fit carrying the block to the sparse
+    // Newton (the single-arm multi-block driver routes it there too).
+
+    block.log_prior = [cell_cache, start, n_spatial, nn, nn_idx, nn_order](
+        const Rcpp::NumericVector& x, int k_grid
+    ) -> double {
+        const auto& st = cell_cache->find(k_grid);
+        // Conditional Gaussian log-density across the NNGP-ordered chain:
+        //   log p(w_focal | w_neighbors) = -0.5*log(2*pi*cv_i)
+        //                                  - 0.5*(w_focal - sum_k alpha_k * w_k)^2 / cv_i
+        // summed over the n_spatial sites in nn_order. Matches the legacy
+        // formula in cpp_nested_laplace_nngp.
+        double lp = 0.0;
+        const double* alpha_data = st.alpha.data();
+        for (int i_nngp = 0; i_nngp < n_spatial; i_nngp++) {
+            int obs_focal = nn_order[i_nngp];
+            if (obs_focal < 0 || obs_focal >= n_spatial) continue;
+            double v_i = st.cv[obs_focal];
+            if (!(v_i > 0.0)) continue;
+            double w_focal = x[start + obs_focal];
+            double resid = w_focal;
+            const double* arow = alpha_data + static_cast<size_t>(i_nngp) * nn;
+            for (int k = 0; k < nn; k++) {
+                int nnidx_k = nn_idx(i_nngp, k);
+                if (nnidx_k <= 0 || nnidx_k > n_spatial) continue;
+                int obs_k = nn_order[nnidx_k - 1];
+                if (obs_k < 0 || obs_k >= n_spatial) continue;
+                resid -= arow[k] * x[start + obs_k];
+            }
+            lp += -0.5 * std::log(2.0 * M_PI * v_i)
+                  - 0.5 * resid * resid / v_i;
+        }
+        return lp;
+    };
+
+    // No centering — NNGP latent has no sum-to-zero constraint (the
+    // ordering anchors it via the chain).
+
+    return block;
+}
+
+} // namespace tulpa

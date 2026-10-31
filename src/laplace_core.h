@@ -308,93 +308,12 @@ inline void attach_cila_fields(Rcpp::List& out, const LaplaceResult& res) {
 // solver computed them. One attach point for the single-fit contract
 // (laplace_result_to_list) and the grid driver's per-cell emitters
 // (nested_laplace_grid.h), so the R side reads one set of names everywhere.
-inline void attach_inner_is_fields(Rcpp::List& out, const LaplaceResult& res) {
-  if (res.inner_is_sigma.empty()) return;
-  const int P = static_cast<int>(res.inner_is_sigma.size());
-  const int S = static_cast<int>(res.inner_is_z.size());
-  out["inner_is_z"]     = res.inner_is_z;
-  out["inner_is_sigma"] = res.inner_is_sigma;
-  out["inner_is_declined"] = res.inner_is_declined;
-  if (S > 0 && static_cast<int>(res.inner_is_log_joint.size()) == S * P) {
-    Rcpp::NumericMatrix lj(S, P);
-    for (int e = 0; e < S * P; e++) lj[e] = res.inner_is_log_joint[e];
-    out["inner_is_log_joint"] = lj;
-  }
-}
+void attach_inner_is_fields(Rcpp::List& out, const LaplaceResult& res);
 
 // Convert LaplaceResult to Rcpp::List. Single source of truth used by every
 // laplace_core* R export. Rcpp wraps std::vector<double> implicitly into a
 // fresh NumericVector at the boundary.
-inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
-  Rcpp::List out = Rcpp::List::create(
-    Rcpp::Named("mode") = result.mode,
-    Rcpp::Named("log_det_Q") = result.log_det_Q,
-    Rcpp::Named("log_marginal") = result.log_marginal,
-    Rcpp::Named("n_iter") = result.n_iter,
-    Rcpp::Named("converged") = result.converged,
-    Rcpp::Named("score_max") = result.score_max,
-    Rcpp::Named("start_infeasible") = result.start_infeasible,
-    Rcpp::Named("hessian_pd_at_mode") = result.hessian_pd_at_mode,
-    Rcpp::Named("pd_conditioned") = result.pd_conditioned
-  );
-
-  // Marginal posterior-covariance blocks, when the solver was asked to extract
-  // them. Emitted as an R list of m_b x m_b numeric matrices (one per block),
-  // in the order the layout requested. Absent otherwise so every other caller
-  // is unaffected.
-  if (!result.re_cov_block_sizes.empty()) {
-    int n_blocks = static_cast<int>(result.re_cov_block_sizes.size());
-    Rcpp::List cov_blocks(n_blocks);
-    std::size_t off = 0;
-    for (int b = 0; b < n_blocks; b++) {
-      int m = result.re_cov_block_sizes[b];
-      Rcpp::NumericMatrix M(m, m);
-      // re_cov_flat is column-major per block, matching NumericMatrix storage.
-      for (int e = 0; e < m * m; e++) M[e] = result.re_cov_flat[off + e];
-      off += static_cast<std::size_t>(m) * m;
-      cov_blocks[b] = M;
-    }
-    out["cov_blocks"] = cov_blocks;
-  }
-
-  // The posterior precision at the mode, when the solver was asked to keep it.
-  // Lower triangle in CSC (stype = -1), so the R side symmetrizes. Emitted as
-  // the raw triplet of vectors rather than a dgCMatrix because this header has
-  // no Matrix dependency; .laplace_joint_hessian() assembles it.
-  if (result.Q_csc_n > 0) {
-    out["H_joint_p"] = result.Q_csc_p;
-    out["H_joint_i"] = result.Q_csc_i;
-    out["H_joint_x"] = result.Q_csc_x;
-    out["H_joint_n"] = result.Q_csc_n;
-  }
-
-  // Inner-Laplace skewness diagnostic, when the solver was asked to compute
-  // it (compute_skew = true). `inner_skew_idx` is 1-based on the R side.
-  if (!result.inner_skew_idx.empty()) {
-    Rcpp::IntegerVector idx_r(result.inner_skew_idx.size());
-    for (std::size_t k = 0; k < result.inner_skew_idx.size(); k++) {
-      idx_r[k] = result.inner_skew_idx[k] + 1;
-    }
-    out["inner_skew"] = result.inner_skew;
-    out["inner_skew_gamma1"] = result.inner_skew_gamma1;
-    out["inner_skew_gamma1_declined"] = result.inner_skew_gamma1_declined;
-    out["inner_skew_idx"] = idx_r;
-    out["inner_skew_dropped"] = result.inner_skew_dropped;
-    out["inner_skew_declined"] = result.inner_skew_declined;
-    if (!result.inner_skew_arms_declined.empty()) {
-      Rcpp::IntegerVector arms_r(result.inner_skew_arms_declined.size());
-      for (std::size_t k = 0; k < result.inner_skew_arms_declined.size(); k++) {
-        arms_r[k] = result.inner_skew_arms_declined[k] + 1;
-      }
-      out["inner_skew_arms_declined"] = arms_r;
-    }
-  }
-  attach_inner_is_fields(out, result);
-  attach_debias_fields(out, result);
-  attach_cila_fields(out, result);
-
-  return out;
-}
+Rcpp::List laplace_result_to_list(const LaplaceResult& result);
 
 } // namespace tulpa
 

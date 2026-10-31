@@ -127,11 +127,27 @@ unity_laplace.o: \
   stochastic_logdet.cpp
 unity_nl.o: \
   unity_nl.cpp \
+  areal_input_check.cpp \
+  block_projector.cpp \
+  gpu_nngp_laplace.cpp \
+  hsgp_block_factory.cpp \
+  laplace_spec_fit.cpp \
+  mcar_block_factory.cpp \
   nested_laplace.cpp \
+  nested_laplace_checkpoint.cpp \
+  nested_laplace_grid.cpp \
+  nested_laplace_joint_core.cpp \
   nested_laplace_multi.cpp \
   nested_laplace_test_occupancy.cpp \
+  nl_entry_inputs.cpp \
   nl_field_identity_export.cpp \
-  nl_lq_density.cpp
+  nl_lq_density.cpp \
+  nngp_block_factory.cpp \
+  re_structure.cpp \
+  sparse_hessian.cpp \
+  spde_block_factory.cpp \
+  spde_qbuilder.cpp \
+  tgmrf_block_factory.cpp
 unity_nl_joint.o: \
   unity_nl_joint.cpp \
   cell_coupling_probe.cpp \
@@ -154,7 +170,10 @@ unity_pg.o: \
   pg_spatial.cpp
 unity_samplers.o: \
   unity_samplers.cpp \
+  hmc_chain_stack.cpp \
   psis_kernel.cpp \
+  sampler_model_data.cpp \
+  sghmc_sampler.cpp \
   simp_integrator.cpp \
   smc_sampler.cpp \
   tulpa_beta_sampler.cpp \

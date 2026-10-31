@@ -7,7 +7,10 @@
 // before Rcpp.h is, and the first member to include either would decide.
 #include <RcppEigen.h>
 
+#include "hmc_chain_stack.cpp"
 #include "psis_kernel.cpp"
+#include "sampler_model_data.cpp"
+#include "sghmc_sampler.cpp"
 #include "simp_integrator.cpp"
 #include "smc_sampler.cpp"
 #include "tulpa_beta_sampler.cpp"

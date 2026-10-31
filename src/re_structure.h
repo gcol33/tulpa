@@ -31,128 +31,14 @@ namespace tulpa {
 // only difference is that `correlated` is supplied by the caller (the Laplace
 // path derives it from the packed-Sigma length, the sampler from the formula)
 // rather than inferred here.
-inline void populate_re_structure(
+void populate_re_structure(
     ModelData& data, int N,
     const Rcpp::List& re_idx_list,
     const std::vector<int>& re_ngroups,
     const std::vector<int>& ncoefs,
     const Rcpp::Nullable<Rcpp::List>& re_Z_list,
     const std::vector<bool>& correlated
-) {
-    const int K = (int)re_ngroups.size();
-    if ((int)ncoefs.size() != K || (int)correlated.size() != K ||
-        (int)re_idx_list.size() != K) {
-        Rcpp::stop("RE structure malformed: re_ngroups (%d), ncoefs (%d), "
-                   "correlated (%d) and re_idx_list (%d) must all describe the "
-                   "same number of terms.",
-                   K, (int)ncoefs.size(), (int)correlated.size(),
-                   (int)re_idx_list.size());
-    }
-
-    data.n_re_terms = K;
-    data.re_n_groups_multi.assign(K, 0);
-    data.re_n_coefs.assign(K, 1);
-    data.re_n_slopes.assign(K, 0);
-    data.re_has_intercept.assign(K, 1);
-    data.re_correlated.assign(K, false);
-    data.re_n_chol.assign(K, 0);
-    data.re_offsets.assign(K, 0);
-    data.re_slope_matrices.assign(K, std::vector<double>());
-    data.re_group_multi_flat.assign((size_t)N * K, 0);
-
-    const bool have_Z = re_Z_list.isNotNull();
-    Rcpp::List zl = have_Z ? Rcpp::as<Rcpp::List>(re_Z_list) : Rcpp::List();
-    if (have_Z && (int)zl.size() != K) {
-        Rcpp::stop("re_Z_list has %d entries but there are %d RE terms.",
-                   (int)zl.size(), K);
-    }
-
-    int total_re_groups = 0, total_re_params = 0;
-    int total_sigma_params = 0, total_chol_params = 0;
-    bool any_slopes = false, any_correlated = false;
-
-    for (int t = 0; t < K; t++) {
-        const int n_g = re_ngroups[t];
-        const int q   = ncoefs[t];
-        if (n_g < 1) {
-            Rcpp::stop("RE term %d declares %d groups; it must declare at "
-                       "least 1.", t + 1, n_g);
-        }
-        if (q < 1) {
-            Rcpp::stop("RE term %d declares %d coefficients; it must declare "
-                       "at least 1.", t + 1, q);
-        }
-        Rcpp::IntegerVector gi = Rcpp::as<Rcpp::IntegerVector>(re_idx_list[t]);
-        if ((int)gi.size() != N) {
-            Rcpp::stop("re_idx_list[[%d]] has length %d but N = %d.",
-                       t + 1, (int)gi.size(), N);
-        }
-        // The eta assembly reads re_vals[offset + (gi - 1) * n_coefs], guarded
-        // only by gi > 0, so the upper bound has to hold here. 0 is the
-        // "no random effect on this row" encoding the assembly skips.
-        for (int i = 0; i < N; i++) {
-            if (gi[i] == NA_INTEGER || gi[i] < 0 || gi[i] > n_g) {
-                Rcpp::stop("re_idx_list[[%d]][%d] is %s; it must be 0 (no "
-                           "group) or a 1-based index in [1, %d].",
-                           t + 1, i + 1,
-                           gi[i] == NA_INTEGER ? "NA"
-                                               : std::to_string(gi[i]).c_str(),
-                           n_g);
-            }
-        }
-        const bool corr = (q > 1) && correlated[t];
-
-        // RE design -> intercept flag + slope matrix. An all-ones first column
-        // marks the implicit intercept (lme4 (1 + x | g)); a non-ones first
-        // column is a no-intercept design ((0 + x | g)).
-        bool has_int = true;
-        int  n_slopes = 0;
-        if (have_Z && !Rf_isNull(zl[t])) {
-            Rcpp::NumericMatrix Z = Rcpp::as<Rcpp::NumericMatrix>(zl[t]);
-            if (Z.nrow() != N) {
-                Rcpp::stop("re_Z_list[[%d]] has %d rows but N = %d.",
-                           t + 1, Z.nrow(), N);
-            }
-            if (Z.ncol() < 1) {
-                Rcpp::stop("re_Z_list[[%d]] has no columns; the intercept "
-                           "test reads column 1.", t + 1);
-            }
-            has_int = true;
-            for (int i = 0; i < N; i++) { if (Z(i, 0) != 1.0) { has_int = false; break; } }
-            n_slopes = has_int ? (Z.ncol() - 1) : Z.ncol();
-            if (n_slopes > 0) {
-                data.re_slope_matrices[t].assign((size_t)N * n_slopes, 0.0);
-                for (int i = 0; i < N; i++)
-                    for (int s = 0; s < n_slopes; s++)
-                        data.re_slope_matrices[t][(size_t)i * n_slopes + s]
-                            = Z(i, has_int ? s + 1 : s);
-            }
-        }
-
-        data.re_n_groups_multi[t] = n_g;
-        data.re_n_coefs[t]        = q;
-        data.re_n_slopes[t]       = n_slopes;
-        data.re_has_intercept[t]  = has_int ? 1 : 0;
-        data.re_correlated[t]     = corr;
-        data.re_n_chol[t]         = corr ? q * (q - 1) / 2 : 0;
-        data.re_offsets[t]        = total_re_groups;
-        for (int i = 0; i < N; i++) data.re_group_multi_flat[(size_t)i * K + t] = gi[i];
-
-        if (n_slopes > 0) any_slopes = true;
-        if (corr)         any_correlated = true;
-        total_re_groups    += n_g;
-        total_re_params    += n_g * q;
-        total_sigma_params += q;
-        total_chol_params  += data.re_n_chol[t];
-    }
-
-    data.total_re_groups          = total_re_groups;
-    data.total_re_params          = total_re_params;
-    data.total_sigma_params       = total_sigma_params;
-    data.total_chol_params        = total_chol_params;
-    data.has_re_slopes            = any_slopes;
-    data.has_re_correlated_slopes = any_correlated;
-}
+);
 
 } // namespace tulpa
 

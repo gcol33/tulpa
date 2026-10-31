@@ -2998,3 +2998,133 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     out["n_outer"] = n_outer;
     return out;
 }
+
+namespace tulpa {
+
+void compute_eta_joint_sparse_dispatch(
+    const Rcpp::NumericVector&        x,
+    std::vector<Rcpp::NumericVector>& etas,
+    const std::vector<JointArm>&      arms,
+    const std::vector<ParsedArm>&     parsed,
+    const std::vector<LatentBlock>&   blocks,
+    int                                k_grid,
+    const std::vector<std::vector<double>>& d_eff,
+    std::vector<double>&              basis_scratch,
+    std::vector<std::pair<int,double>>& multi_scratch
+) {
+    const int n_arms = static_cast<int>(arms.size());
+    const int B      = static_cast<int>(blocks.size());
+    for (int k_arm = 0; k_arm < n_arms; k_arm++) {
+        const ParsedArm& pa = parsed[k_arm];
+        const int N_k    = arms[k_arm].N;
+        const int p_k    = pa.p;
+        const int n_re_k = pa.n_re_groups;
+        const int bstart = pa.beta_start;
+        const int rstart = pa.re_start;
+
+        for (int i = 0; i < N_k; i++) {
+            double e = (pa.offset.size() != 0) ? pa.offset[i] : 0.0;
+            for (int j = 0; j < p_k; j++) e += pa.X(i, j) * x[bstart + j];
+            if (n_re_k > 0) {
+                int g = static_cast<int>(pa.re_idx[i]) - 1;
+                if (g >= 0 && g < n_re_k) e += x[rstart + g];
+            }
+            for (int b = 0; b < B; b++) {
+                const LatentBlock& blk = blocks[b];
+                // Same fold as the scatter walkers: the per-row SVC weight
+                // rides the block amplitude on every kind, and is 1.0 where
+                // the block declares none.
+                const double d_e = d_eff[b][k_arm]
+                                 * block_row_weight(blk, i, k_arm);
+                if (d_e == 0.0) continue;
+                switch (blk.contrib_kind) {
+                case BlockContribKind::INDEXED_SINGLE: {
+                    if (!blk.idx) break;
+                    int l = blk.idx(i, k_arm);
+                    if (l > 0 && l <= blk.size) {
+                        e += d_e * x[blk.start + l - 1];
+                    }
+                    break;
+                }
+                case BlockContribKind::INDEXED_MULTI: {
+                    if (!blk.obs_indices) break;
+                    blk.fill_obs_indices(i, k_arm, multi_scratch);
+                    for (const auto& jw : multi_scratch) {
+                        int l = jw.first;
+                        if (l > 0 && l <= blk.size) {
+                            e += d_e * jw.second * x[blk.start + l - 1];
+                        }
+                    }
+                    break;
+                }
+                case BlockContribKind::DENSE_BASIS: {
+                    if (!blk.basis_eval) break;
+                    if (static_cast<int>(basis_scratch.size()) < blk.size) {
+                        basis_scratch.assign(blk.size, 0.0);
+                    }
+                    blk.basis_eval(i, k_arm, k_grid, basis_scratch.data());
+                    double acc = 0.0;
+                    for (int j = 0; j < blk.size; j++) {
+                        acc += basis_scratch[j] * x[blk.start + j];
+                    }
+                    e += d_e * acc;
+                    break;
+                }
+                case BlockContribKind::BILINEAR_FACTOR: {
+                    if (!blk.obs_factor_lambda) break;
+                    // Both slots are bounded by obs_factor_lambda itself, which
+                    // returns {-1, -1} outside the factor's latent range.
+                    auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
+                    if (u_slot >= 0 && lambda_slot >= 0) {
+                        e += d_e * x[u_slot] * x[lambda_slot];
+                    }
+                    break;
+                }
+                }
+            }
+            etas[k_arm][i] = e;
+        }
+    }
+}
+
+void nl_attach_fitted_eta_single_arm(
+    Rcpp::List& out,
+    const std::vector<JointArm>& arms,
+    const std::vector<ParsedArm>& parsed,
+    const std::vector<LatentBlock>& blocks
+) {
+    if (arms.size() != 1 || !out.containsElementNamed("modes")) return;
+    Rcpp::NumericMatrix modes = out["modes"];
+    const int ng = modes.nrow();
+    const int N  = arms[0].N;
+    const int B  = static_cast<int>(blocks.size());
+    Rcpp::NumericVector log_marginal =
+        out.containsElementNamed("log_marginal")
+        ? Rcpp::as<Rcpp::NumericVector>(out["log_marginal"])
+        : Rcpp::NumericVector();
+    const bool have_lm = (log_marginal.size() == ng);
+    Rcpp::NumericMatrix fitted_eta(ng, N);
+    std::vector<Rcpp::NumericVector> etas(1, Rcpp::NumericVector(N));
+    std::vector<std::vector<double>> d_eff(B, std::vector<double>(1, 0.0));
+    std::vector<double> basis_scratch;
+    std::vector<std::pair<int, double>> multi_scratch;
+    for (int k = 0; k < ng; k++) {
+        bool ok = !have_lm || R_finite(log_marginal[k]);
+        for (int b = 0; ok && b < B; b++) {
+            if (blocks[b].prep && !blocks[b].prep(k)) { ok = false; break; }
+            const double s = blocks[b].arm_scale ? blocks[b].arm_scale(0, k) : 1.0;
+            d_eff[b][0] = s * blocks[b].d_fac_at(k);
+        }
+        if (!ok) {
+            for (int i = 0; i < N; i++) fitted_eta(k, i) = NA_REAL;
+            continue;
+        }
+        Rcpp::NumericVector x = modes(k, Rcpp::_);
+        compute_eta_joint_sparse_dispatch(x, etas, arms, parsed, blocks, k,
+                                          d_eff, basis_scratch, multi_scratch);
+        for (int i = 0; i < N; i++) fitted_eta(k, i) = etas[0][i];
+    }
+    out["fitted_eta"] = fitted_eta;
+}
+
+} // namespace tulpa
