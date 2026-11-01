@@ -99,9 +99,10 @@ test_that("both numbers reach the fit, and the driver's own width wins", {
 
 test_that("the grid driver stamps the width it ran at", {
   skip_on_cran_budget()
-  src <- test_path("..", "..", "src", "nested_laplace_grid.h")
-  skip_if_not(file.exists(src), "package sources not available")
-  txt <- readLines(src, warn = FALSE)
+  src <- test_path("..", "..", "src",
+                   c("nested_laplace_grid.h", "nested_laplace_grid.cpp"))
+  skip_if_not(all(file.exists(src)), "package sources not available")
+  txt <- unlist(lapply(src, readLines, warn = FALSE))
 
   # The clamp stays -- the cache's slot count depends on it.
   expect_true(any(grepl("tulpa_omp_team_size_req(n_threads_outer, n_grid)",
