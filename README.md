@@ -1,7 +1,7 @@
 
 # tulpa <img src="man/figures/logo.svg" align="right" height="139" alt="tulpa logo" />
 
-*Bayesian hierarchical models for grouped, spatial and temporal data*
+*Templated Unified Library for Posterior Approximation: Bayesian hierarchical models for grouped, spatial and temporal data*
 
 <!-- badges: start -->
 
