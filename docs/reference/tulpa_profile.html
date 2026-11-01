@@ -48,20 +48,20 @@ reported times cover the whole fit rather than only the calling thread
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">The data a tulpa model expects</a></li>
-    <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes and the free random-effect covariance</a></li>
-    <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial fields in tulpa</a></li>
-    <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal random-walk effects with tulpa</a></li>
-    <li><a class="dropdown-item" href="../articles/priors.html">Specifying and checking priors</a></li>
-    <li><a class="dropdown-item" href="../articles/model-comparison.html">Comparing tulpa models</a></li>
-    <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
-    <li><a class="dropdown-item" href="../articles/tgmrf.html">User-defined GMRF latent blocks with tgmrf()</a></li>
-    <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace for latent-variable models</a></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
+    <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
+    <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
+    <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
-    <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes: the three tiers and how to choose one</a></li>
-    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability of nested approximations: reading the outer Pareto-k</a></li>
-    <li><a class="dropdown-item" href="../articles/sbc.html">Validating calibration: simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><a class="dropdown-item" href="../articles/index.html">More articles...</a></li>
   </ul></li>
@@ -178,14 +178,14 @@ the leaf phases sum to one.</p>
 <span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">X</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu">tulpa_profile</span><span class="op">(</span><span class="fu"><a href="tulpa_laplace.html">tulpa_laplace</a></span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="va">X</span>, family <span class="op">=</span> <span class="st">"binomial"</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>                phase  seconds calls  ms_per_call       share</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1        line_search 1.06e-05     3 0.0035333333 0.522167488</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2            scatter 8.10e-06     4 0.0020250000 0.399014778</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3          factorize 5.00e-07     3 0.0001666667 0.024630542</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4    hessian_extract 4.00e-07     1 0.0004000000 0.019704433</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5                eta 2.00e-07     4 0.0000500000 0.009852217</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6            log_det 2.00e-07     1 0.0002000000 0.009852217</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 7      log_lik_prior 2.00e-07     1 0.0002000000 0.009852217</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 8  inner_diagnostics 1.00e-07     1 0.0001000000 0.004926108</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1        line_search 1.07e-05     3 0.0035666667 0.509523810</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2            scatter 8.70e-06     4 0.0021750000 0.414285714</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3          factorize 7.00e-07     3 0.0002333333 0.033333333</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4    hessian_extract 4.00e-07     1 0.0004000000 0.019047619</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                eta 2.00e-07     4 0.0000500000 0.009523810</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6            log_det 1.00e-07     1 0.0001000000 0.004761905</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7      log_lik_prior 1.00e-07     1 0.0001000000 0.004761905</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8  inner_diagnostics 1.00e-07     1 0.0001000000 0.004761905</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 9      pattern_build 0.00e+00     0 0.0000000000 0.000000000</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 10              prep 0.00e+00     0 0.0000000000 0.000000000</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 11           analyze 0.00e+00     0 0.0000000000 0.000000000</span>

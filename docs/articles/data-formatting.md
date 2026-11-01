@@ -1,4 +1,4 @@
-# The data a tulpa model expects
+# Data formatting
 
 ## Installation
 

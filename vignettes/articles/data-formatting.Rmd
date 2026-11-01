@@ -1,8 +1,8 @@
 ﻿---
-title: "The data a tulpa model expects"
+title: "Data formatting"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{The data a tulpa model expects}
+  %\VignetteIndexEntry{Data formatting}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

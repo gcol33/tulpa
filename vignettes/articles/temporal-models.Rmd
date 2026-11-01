@@ -1,8 +1,8 @@
 ---
-title: "Temporal random-walk effects with tulpa"
+title: "Temporal models"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Temporal random-walk effects with tulpa}
+  %\VignetteIndexEntry{Temporal models}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

@@ -57,5 +57,5 @@ pf$response        # "y"
 #> [1] "y"
 pf$fixed_formula   # y ~ x1 + x2
 #> y ~ x1 + x2
-#> <environment: 0x000001d1adc62540>
+#> <environment: 0x000001dca899e740>
 ```

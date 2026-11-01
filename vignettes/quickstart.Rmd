@@ -1,8 +1,8 @@
 ---
-title: "Getting started with tulpa"
+title: "Get started"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Getting started with tulpa}
+  %\VignetteIndexEntry{Get started}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -55,8 +55,8 @@ library(tulpa)
 tulpa is a Bayesian hierarchical modelling engine. You write a formula such
 as `y ~ x + (1 | g)`, choose a family, and `tulpa()` parses the formula,
 builds the design, picks an inference backend, and returns a fitted object
-you can summarise, predict from, plot, and compare. The call shape is the
-one you already know from `lm()` and `glmer()`; the machinery behind it is a
+you can summarise, predict from, plot, and compare. The call has the same
+shape as `lm()` and `glmer()`; the machinery behind it is a
 nested-approximation Bayesian engine rather than a frequentist optimiser or
 a single MCMC sampler.
 
@@ -111,8 +111,8 @@ admired on their own.
 
 ## A first model
 
-The honest way to learn a fitting interface is to feed it data whose answer
-you already know, then check that the fit finds it. Start with a Gaussian
+Data simulated with known parameters shows whether the fit recovers them.
+Start with a Gaussian
 response built from a fixed intercept of 0.5 and a slope of 1.2, with
 residual noise at a standard deviation of 0.8. Four hundred rows is enough
 for the estimates to settle close to the truth without being so many that
@@ -726,8 +726,8 @@ block written once reaches all four tiers without modification.
 The fitted object answers the standard accessors, and they work the same way
 on a Laplace fit and a sampler fit. The Laplace tier reports the Gaussian
 approximation it computed; the sampler tier reports empirical posterior
-summaries from its draws. Reaching for the accessor you already know from
-base R or broom is the intended workflow.
+summaries from its draws. The accessors are the generics of base R and
+broom.
 
 | Accessor | Returns |
 |---|---|

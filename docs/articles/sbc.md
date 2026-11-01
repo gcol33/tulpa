@@ -1,4 +1,4 @@
-# Validating calibration: simulation-based calibration
+# Simulation-based calibration
 
 ## Installation
 

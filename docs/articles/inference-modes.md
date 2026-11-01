@@ -1,4 +1,4 @@
-# Inference modes: the three tiers and how to choose one
+# Inference modes
 
 ## Installation
 

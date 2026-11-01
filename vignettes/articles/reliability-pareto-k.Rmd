@@ -1,8 +1,8 @@
 ﻿---
-title: "Reliability of nested approximations: reading the outer Pareto-k"
+title: "Reliability diagnostics"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Reliability of nested approximations: reading the outer Pareto-k}
+  %\VignetteIndexEntry{Reliability diagnostics}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

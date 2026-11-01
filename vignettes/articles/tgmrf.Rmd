@@ -1,8 +1,8 @@
 ---
-title: "User-defined GMRF latent blocks with tgmrf()"
+title: "Custom latent blocks"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{User-defined GMRF latent blocks with tgmrf()}
+  %\VignetteIndexEntry{Custom latent blocks}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

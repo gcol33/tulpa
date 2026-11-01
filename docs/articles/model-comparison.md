@@ -1,4 +1,4 @@
-# Comparing tulpa models
+# Model comparison
 
 ## Installation
 

@@ -1,8 +1,8 @@
 ﻿---
-title: "EM + Laplace for latent-variable models"
+title: "EM + Laplace"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{EM + Laplace for latent-variable models}
+  %\VignetteIndexEntry{EM + Laplace}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

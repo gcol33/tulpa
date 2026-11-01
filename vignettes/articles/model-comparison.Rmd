@@ -1,8 +1,8 @@
 ﻿---
-title: "Comparing tulpa models"
+title: "Model comparison"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Comparing tulpa models}
+  %\VignetteIndexEntry{Model comparison}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

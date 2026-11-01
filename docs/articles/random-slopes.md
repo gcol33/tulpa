@@ -1,4 +1,4 @@
-# Random slopes and the free random-effect covariance
+# Random slopes
 
 ## Installation
 

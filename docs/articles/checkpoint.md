@@ -1,4 +1,4 @@
-# Checkpoint and resume long fits
+# Checkpointing
 
 ## Installation
 

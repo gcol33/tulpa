@@ -1,8 +1,8 @@
 ---
-title: "Validating calibration: simulation-based calibration"
+title: "Simulation-based calibration"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Validating calibration: simulation-based calibration}
+  %\VignetteIndexEntry{Simulation-based calibration}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

@@ -1,4 +1,4 @@
-# User-defined GMRF latent blocks with tgmrf()
+# Custom latent blocks
 
 ## Installation
 

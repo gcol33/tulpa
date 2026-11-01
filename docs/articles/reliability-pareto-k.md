@@ -1,4 +1,4 @@
-# Reliability of nested approximations: reading the outer Pareto-k
+# Reliability diagnostics
 
 ## Installation
 

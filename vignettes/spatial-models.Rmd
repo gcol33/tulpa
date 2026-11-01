@@ -1,8 +1,8 @@
 ﻿---
-title: "Spatial fields in tulpa"
+title: "Spatial models"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Spatial fields in tulpa}
+  %\VignetteIndexEntry{Spatial models}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

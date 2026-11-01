@@ -1,4 +1,4 @@
-# Spatial fields in tulpa
+# Spatial models
 
 ## Installation
 

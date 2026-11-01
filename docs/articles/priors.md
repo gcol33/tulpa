@@ -1,4 +1,4 @@
-# Specifying and checking priors
+# Priors
 
 ## Installation
 

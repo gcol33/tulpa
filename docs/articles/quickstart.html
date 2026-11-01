@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Getting started with tulpa • tulpa</title>
+<title>Get started • tulpa</title>
 <!-- favicons --><link rel="icon" type="image/png" sizes="96x96" href="../favicon-96x96.png">
 <link rel="icon" type="”image/svg+xml”" href="../favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
@@ -16,7 +16,7 @@
 <script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
-<meta property="og:title" content="Getting started with tulpa">
+<meta property="og:title" content="Get started">
 <script>
 (function () {
   var D = String.fromCharCode(36);
@@ -49,27 +49,27 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
-<li class="nav-item"><a class="nav-link" href="../articles/quickstart.html">Get started</a></li>
+<li class="active nav-item"><a class="nav-link" href="../articles/quickstart.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">The data a tulpa model expects</a></li>
-    <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes and the free random-effect covariance</a></li>
-    <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial fields in tulpa</a></li>
-    <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal random-walk effects with tulpa</a></li>
-    <li><a class="dropdown-item" href="../articles/priors.html">Specifying and checking priors</a></li>
-    <li><a class="dropdown-item" href="../articles/model-comparison.html">Comparing tulpa models</a></li>
-    <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
-    <li><a class="dropdown-item" href="../articles/tgmrf.html">User-defined GMRF latent blocks with tgmrf()</a></li>
-    <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace for latent-variable models</a></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
+    <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
+    <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
+    <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
-    <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes: the three tiers and how to choose one</a></li>
-    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability of nested approximations: reading the outer Pareto-k</a></li>
-    <li><a class="dropdown-item" href="../articles/sbc.html">Validating calibration: simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><a class="dropdown-item" href="../articles/index.html">More articles...</a></li>
   </ul>
@@ -93,7 +93,7 @@
 
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
-      <img src="../logo.svg" class="logo" alt=""><h1>Getting started with tulpa</h1>
+      <img src="../logo.svg" class="logo" alt=""><h1>Get started</h1>
             
       
       <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/quickstart.Rmd" class="external-link"><code>vignettes/quickstart.Rmd</code></a></small>
@@ -132,10 +132,10 @@ toolchain is required: Rtools on Windows, Xcode CLI tools on macOS,
 formula such as <code>y ~ x + (1 | g)</code>, choose a family, and
 <code><a href="../reference/tulpa.html">tulpa()</a></code> parses the formula, builds the design, picks an
 inference backend, and returns a fitted object you can summarise,
-predict from, plot, and compare. The call shape is the one you already
-know from <code><a href="https://rdrr.io/r/stats/lm.html" class="external-link">lm()</a></code> and <code>glmer()</code>; the machinery
-behind it is a nested-approximation Bayesian engine rather than a
-frequentist optimiser or a single MCMC sampler.</p>
+predict from, plot, and compare. The call has the same shape as
+<code><a href="https://rdrr.io/r/stats/lm.html" class="external-link">lm()</a></code> and <code>glmer()</code>; the machinery behind it is a
+nested-approximation Bayesian engine rather than a frequentist optimiser
+or a single MCMC sampler.</p>
 <p>The engine carries the structural pieces that hierarchical models
 reuse: fixed effects, random intercepts and slopes, spatial fields
 (SPDE, NNGP, HSGP, ICAR, BYM2), temporal random walks, spatially and
@@ -190,12 +190,11 @@ own.</p>
 <div class="section level2">
 <h2 id="a-first-model">A first model<a class="anchor" aria-label="anchor" href="#a-first-model"></a>
 </h2>
-<p>The honest way to learn a fitting interface is to feed it data whose
-answer you already know, then check that the fit finds it. Start with a
-Gaussian response built from a fixed intercept of 0.5 and a slope of
-1.2, with residual noise at a standard deviation of 0.8. Four hundred
-rows is enough for the estimates to settle close to the truth without
-being so many that the fit is trivially easy.</p>
+<p>Data simulated with known parameters shows whether the fit recovers
+them. Start with a Gaussian response built from a fixed intercept of 0.5
+and a slope of 1.2, with residual noise at a standard deviation of 0.8.
+Four hundred rows is enough for the estimates to settle close to the
+truth without being so many that the fit is trivially easy.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">n</span>  <span class="op">&lt;-</span> <span class="fl">400</span></span>
 <span><span class="va">x</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span>
@@ -813,8 +812,8 @@ all four tiers without modification.</p>
 <p>The fitted object answers the standard accessors, and they work the
 same way on a Laplace fit and a sampler fit. The Laplace tier reports
 the Gaussian approximation it computed; the sampler tier reports
-empirical posterior summaries from its draws. Reaching for the accessor
-you already know from base R or broom is the intended workflow.</p>
+empirical posterior summaries from its draws. The accessors are the
+generics of base R and broom.</p>
 <table class="table">
 <colgroup>
 <col width="50%">

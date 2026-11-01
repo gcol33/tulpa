@@ -1,8 +1,8 @@
 ﻿---
-title: "Random slopes and the free random-effect covariance"
+title: "Random slopes"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Random slopes and the free random-effect covariance}
+  %\VignetteIndexEntry{Random slopes}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

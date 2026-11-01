@@ -1,4 +1,4 @@
-# Getting started with tulpa
+# Get started
 
 ## Installation
 
@@ -34,10 +34,9 @@ such as `y ~ x + (1 | g)`, choose a family, and
 [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) parses
 the formula, builds the design, picks an inference backend, and returns
 a fitted object you can summarise, predict from, plot, and compare. The
-call shape is the one you already know from
-[`lm()`](https://rdrr.io/r/stats/lm.html) and `glmer()`; the machinery
-behind it is a nested-approximation Bayesian engine rather than a
-frequentist optimiser or a single MCMC sampler.
+call has the same shape as [`lm()`](https://rdrr.io/r/stats/lm.html) and
+`glmer()`; the machinery behind it is a nested-approximation Bayesian
+engine rather than a frequentist optimiser or a single MCMC sampler.
 
 The engine carries the structural pieces that hierarchical models reuse:
 fixed effects, random intercepts and slopes, spatial fields (SPDE, NNGP,
@@ -94,12 +93,11 @@ own.
 
 ## A first model
 
-The honest way to learn a fitting interface is to feed it data whose
-answer you already know, then check that the fit finds it. Start with a
-Gaussian response built from a fixed intercept of 0.5 and a slope of
-1.2, with residual noise at a standard deviation of 0.8. Four hundred
-rows is enough for the estimates to settle close to the truth without
-being so many that the fit is trivially easy.
+Data simulated with known parameters shows whether the fit recovers
+them. Start with a Gaussian response built from a fixed intercept of 0.5
+and a slope of 1.2, with residual noise at a standard deviation of 0.8.
+Four hundred rows is enough for the estimates to settle close to the
+truth without being so many that the fit is trivially easy.
 
 ``` r
 
@@ -793,8 +791,8 @@ written once reaches all four tiers without modification.
 The fitted object answers the standard accessors, and they work the same
 way on a Laplace fit and a sampler fit. The Laplace tier reports the
 Gaussian approximation it computed; the sampler tier reports empirical
-posterior summaries from its draws. Reaching for the accessor you
-already know from base R or broom is the intended workflow.
+posterior summaries from its draws. The accessors are the generics of
+base R and broom.
 
 | Accessor | Returns |
 |----|----|

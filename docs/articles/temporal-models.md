@@ -1,4 +1,4 @@
-# Temporal random-walk effects with tulpa
+# Temporal models
 
 ## Installation
 

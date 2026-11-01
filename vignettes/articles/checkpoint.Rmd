@@ -1,8 +1,8 @@
 ﻿---
-title: "Checkpoint and resume long fits"
+title: "Checkpointing"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Checkpoint and resume long fits}
+  %\VignetteIndexEntry{Checkpointing}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

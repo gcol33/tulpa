@@ -1,8 +1,8 @@
 ---
-title: "Inference modes: the three tiers and how to choose one"
+title: "Inference modes"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Inference modes: the three tiers and how to choose one}
+  %\VignetteIndexEntry{Inference modes}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

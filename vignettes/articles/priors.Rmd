@@ -1,8 +1,8 @@
 ---
-title: "Specifying and checking priors"
+title: "Priors"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Specifying and checking priors}
+  %\VignetteIndexEntry{Priors}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
