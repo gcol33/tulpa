@@ -478,8 +478,8 @@ confint(fit_tight)["x", ]
 
 The tight prior narrows the slope’s interval and shifts it toward zero.
 A vector `sd` lets you regularise some coefficients hard while leaving
-others free, which is the usual pattern: pin nuisance terms, let the
-effects of interest follow the data.
+others free: pin nuisance terms, let the effects of interest follow the
+data.
 
 The amount of movement is set by the ratio of prior to likelihood
 information, which on this Gaussian fit has a closed form worth carrying

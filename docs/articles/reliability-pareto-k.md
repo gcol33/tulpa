@@ -40,23 +40,23 @@ intervals still come back looking entirely ordinary.
 
 A sampler has a standard answer to this problem. Run several chains, and
 Rhat tells you whether they agree and the effective sample size tells
-you how much independent information you bought. Those numbers are not
-the posterior; they are a verdict on whether the machinery that produced
-it converged. A nested approximation draws no chains, so Rhat is vacuous
-for it, but it needs the same kind of verdict. The outer Pareto-k-hat is
-that verdict. It is the accuracy gate for a deterministic fit, the
+you how much independent information you bought. Those numbers are a
+verdict on whether the machinery that produced the posterior converged.
+A nested approximation draws no chains, so Rhat is vacuous for it, but
+it needs the same kind of verdict. The outer Pareto-k-hat is that
+verdict. It is the accuracy gate for a deterministic fit, the
 counterpart to what Rhat and ESS are for a sampled one.
 
-The one thing to fix before anything else is what the number actually
-checks. The outer k-hat scores the **outer integration**: whether the
-Gaussian grid the integrator places over the hyperparameters faithfully
-covers the hyperparameter posterior it is integrating. It does not see
-the inner Laplace. A fit can carry a clean k-hat and still be biased if
-the inner Gaussian was a poor fit to a skewed latent conditional,
-because the k-hat was never measuring that. Read `pareto_k < 0.5` as
-“the integration is reliable”, never as “the posterior is correct”. The
-distinction decides how you act on the number, and the last section
-comes back to it.
+The one thing to fix before anything else is what the number checks. The
+outer k-hat scores the **outer integration**: whether the Gaussian grid
+the integrator places over the hyperparameters faithfully covers the
+hyperparameter posterior it is integrating. It is computed from the
+outer cells alone and says nothing about the inner Laplace. A fit can
+carry a clean k-hat and still be biased if the inner Gaussian was a poor
+fit to a skewed latent conditional, because the k-hat was never
+measuring that. Read `pareto_k < 0.5` as “the integration is reliable”,
+never as “the posterior is correct”. The distinction decides how you act
+on the number, and the last section comes back to it.
 
 ## A fit to diagnose
 
@@ -313,11 +313,9 @@ attr(d_q, "k_quality_reason")
 the good band and raises the default `k_samples` so the bootstrap CI can
 resolve it; `"ok"` lowers the target to the usable band; `"report"` (the
 default) computes the diagnostic without a target; `"none"` turns it
-off. The verdict is the honest part. `k_quality_reached` is `TRUE` only
-when the requested band is confidently met; when it is not, the fit
-reports the band it did reach (`k_quality_best`) and the reason
-(`k_quality_reason`), and the request is a target rather than a promise
-the output quietly pretends to keep.
+off. `k_quality_reached` is `TRUE` only when the requested band is
+confidently met; when it is not, the fit reports the band it did reach
+(`k_quality_best`) and the reason (`k_quality_reason`).
 
 When the first fit does not reach the requested band, `k_quality` chases
 it by refining the integration grid, driven by the bad k. A bad outer k
@@ -359,12 +357,11 @@ attr(d, "inner_skew_idx")
 
 The two occupancy-arm coefficients (indices 1-2, binomial) carry a small
 non-zero skew; the two positive-value coefficients (indices 3-4,
-gaussian) read exactly zero. That is not a numerical accident: a
-gaussian log-likelihood is exactly quadratic in the linear predictor, so
-its inner Laplace is exact and has nothing to be skewed. A binomial or
-Poisson coefficient with thin data is the case where this number moves,
-and it grows toward the same “good / ok / unreliable” bands the outer
-k-hat uses:
+gaussian) read exactly zero, because a gaussian log-likelihood is
+exactly quadratic in the linear predictor, so its inner Laplace is exact
+and has nothing to be skewed. A binomial or Poisson coefficient with
+thin data is the case where this number moves, and it grows toward the
+same “good / ok / unreliable” bands the outer k-hat uses:
 
 ``` r
 

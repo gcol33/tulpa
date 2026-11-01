@@ -557,8 +557,8 @@ side.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint</a></span><span class="op">(</span><span class="va">fit_tight</span><span class="op">)</span><span class="op">[</span><span class="st">"x"</span>, <span class="op">]</span></span></code></pre></div>
 <p>The tight prior narrows the slope’s interval and shifts it toward
 zero. A vector <code>sd</code> lets you regularise some coefficients
-hard while leaving others free, which is the usual pattern: pin nuisance
-terms, let the effects of interest follow the data.</p>
+hard while leaving others free: pin nuisance terms, let the effects of
+interest follow the data.</p>
 <p>The amount of movement is set by the ratio of prior to likelihood
 information, which on this Gaussian fit has a closed form worth carrying
 in your head. For a single coefficient the posterior mean is a

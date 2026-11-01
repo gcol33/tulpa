@@ -178,14 +178,14 @@ the leaf phases sum to one.</p>
 <span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">X</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu">tulpa_profile</span><span class="op">(</span><span class="fu"><a href="tulpa_laplace.html">tulpa_laplace</a></span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="va">X</span>, family <span class="op">=</span> <span class="st">"binomial"</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>                phase  seconds calls  ms_per_call       share</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1        line_search 1.07e-05     3 0.0035666667 0.509523810</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2            scatter 8.70e-06     4 0.0021750000 0.414285714</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3          factorize 7.00e-07     3 0.0002333333 0.033333333</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4    hessian_extract 4.00e-07     1 0.0004000000 0.019047619</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5                eta 2.00e-07     4 0.0000500000 0.009523810</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6            log_det 1.00e-07     1 0.0001000000 0.004761905</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 7      log_lik_prior 1.00e-07     1 0.0001000000 0.004761905</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 8  inner_diagnostics 1.00e-07     1 0.0001000000 0.004761905</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1        line_search 1.12e-05     3 0.0037333333 0.530805687</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2            scatter 8.10e-06     4 0.0020250000 0.383886256</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3          factorize 7.00e-07     3 0.0002333333 0.033175355</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4    hessian_extract 5.00e-07     1 0.0005000000 0.023696682</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                eta 3.00e-07     4 0.0000750000 0.014218009</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6            log_det 1.00e-07     1 0.0001000000 0.004739336</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7      log_lik_prior 1.00e-07     1 0.0001000000 0.004739336</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8  inner_diagnostics 1.00e-07     1 0.0001000000 0.004739336</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 9      pattern_build 0.00e+00     0 0.0000000000 0.000000000</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 10              prep 0.00e+00     0 0.0000000000 0.000000000</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 11           analyze 0.00e+00     0 0.0000000000 0.000000000</span>

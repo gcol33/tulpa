@@ -105,8 +105,8 @@ where $`t(i)`$ is the time index of observation $`i`$ and
 $`\phi = (\phi_1, \dots,
 \phi_T)`$ is a vector of one effect per time point. The covariate part
 $`\beta_0 +
-x_i^\top \beta`$ is the usual fixed-effect structure. The new piece is
-$`\phi`$, and the model is its prior.
+x_i^\top \beta`$ is the fixed-effect part of a generalized linear model.
+The new piece is $`\phi`$, and the model is its prior.
 
 The prior on $`\phi`$ encodes a belief about time: nearby time points
 are alike. Rather than impose a parametric shape such as a line or a

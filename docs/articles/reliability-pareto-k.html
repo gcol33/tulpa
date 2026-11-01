@@ -139,22 +139,22 @@ intervals still come back looking entirely ordinary.</p>
 <p>A sampler has a standard answer to this problem. Run several chains,
 and Rhat tells you whether they agree and the effective sample size
 tells you how much independent information you bought. Those numbers are
-not the posterior; they are a verdict on whether the machinery that
-produced it converged. A nested approximation draws no chains, so Rhat
-is vacuous for it, but it needs the same kind of verdict. The outer
-Pareto-k-hat is that verdict. It is the accuracy gate for a
-deterministic fit, the counterpart to what Rhat and ESS are for a
-sampled one.</p>
-<p>The one thing to fix before anything else is what the number actually
-checks. The outer k-hat scores the <strong>outer integration</strong>:
-whether the Gaussian grid the integrator places over the hyperparameters
-faithfully covers the hyperparameter posterior it is integrating. It
-does not see the inner Laplace. A fit can carry a clean k-hat and still
-be biased if the inner Gaussian was a poor fit to a skewed latent
-conditional, because the k-hat was never measuring that. Read
-<code>pareto_k &lt; 0.5</code> as “the integration is reliable”, never
-as “the posterior is correct”. The distinction decides how you act on
-the number, and the last section comes back to it.</p>
+a verdict on whether the machinery that produced the posterior
+converged. A nested approximation draws no chains, so Rhat is vacuous
+for it, but it needs the same kind of verdict. The outer Pareto-k-hat is
+that verdict. It is the accuracy gate for a deterministic fit, the
+counterpart to what Rhat and ESS are for a sampled one.</p>
+<p>The one thing to fix before anything else is what the number checks.
+The outer k-hat scores the <strong>outer integration</strong>: whether
+the Gaussian grid the integrator places over the hyperparameters
+faithfully covers the hyperparameter posterior it is integrating. It is
+computed from the outer cells alone and says nothing about the inner
+Laplace. A fit can carry a clean k-hat and still be biased if the inner
+Gaussian was a poor fit to a skewed latent conditional, because the
+k-hat was never measuring that. Read <code>pareto_k &lt; 0.5</code> as
+“the integration is reliable”, never as “the posterior is correct”. The
+distinction decides how you act on the number, and the last section
+comes back to it.</p>
 </div>
 <div class="section level2">
 <h2 id="a-fit-to-diagnose">A fit to diagnose<a class="anchor" aria-label="anchor" href="#a-fit-to-diagnose"></a>
@@ -405,12 +405,11 @@ confidently in the good band and raises the default
 <code>k_samples</code> so the bootstrap CI can resolve it;
 <code>"ok"</code> lowers the target to the usable band;
 <code>"report"</code> (the default) computes the diagnostic without a
-target; <code>"none"</code> turns it off. The verdict is the honest
-part. <code>k_quality_reached</code> is <code>TRUE</code> only when the
-requested band is confidently met; when it is not, the fit reports the
-band it did reach (<code>k_quality_best</code>) and the reason
-(<code>k_quality_reason</code>), and the request is a target rather than
-a promise the output quietly pretends to keep.</p>
+target; <code>"none"</code> turns it off. <code>k_quality_reached</code>
+is <code>TRUE</code> only when the requested band is confidently met;
+when it is not, the fit reports the band it did reach
+(<code>k_quality_best</code>) and the reason
+(<code>k_quality_reason</code>).</p>
 <p>When the first fit does not reach the requested band,
 <code>k_quality</code> chases it by refining the integration grid,
 driven by the bad k. A bad outer k means the grid does not faithfully
@@ -449,12 +448,11 @@ each arm’s fixed-effects coefficients.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">d</span>, <span class="st">"inner_skew_idx"</span><span class="op">)</span></span></code></pre></div>
 <p>The two occupancy-arm coefficients (indices 1-2, binomial) carry a
 small non-zero skew; the two positive-value coefficients (indices 3-4,
-gaussian) read exactly zero. That is not a numerical accident: a
-gaussian log-likelihood is exactly quadratic in the linear predictor, so
-its inner Laplace is exact and has nothing to be skewed. A binomial or
-Poisson coefficient with thin data is the case where this number moves,
-and it grows toward the same “good / ok / unreliable” bands the outer
-k-hat uses:</p>
+gaussian) read exactly zero, because a gaussian log-likelihood is
+exactly quadratic in the linear predictor, so its inner Laplace is exact
+and has nothing to be skewed. A binomial or Poisson coefficient with
+thin data is the case where this number moves, and it grows toward the
+same “good / ok / unreliable” bands the outer k-hat uses:</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/cut.html" class="external-link">cut</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">d</span>, <span class="st">"inner_skew"</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="cn">Inf</span>, <span class="fl">0.5</span>, <span class="fl">1.0</span>, <span class="cn">Inf</span><span class="op">)</span>,</span>
 <span>    labels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"good"</span>, <span class="st">"ok"</span>, <span class="st">"unreliable"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>

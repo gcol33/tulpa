@@ -646,12 +646,12 @@ sample size as the fallback) for multi-axis or bounded grids.
 <code>diagnostic_summary(fit)</code> surfaces this for any non-chain
 fit, and <code><a href="../reference/tulpa_psis.html">tulpa_psis()</a></code> is the underlying PSIS core if you
 want to compute it on your own importance ratios.</p>
-<p>For the exact-tier MCMC fits the diagnostics are the usual ones. The
-IMH fit reports <code>$mean_accept</code>, the post-warmup acceptance
-rate; a rate in a healthy band (the VI fit makes a near-optimal
-proposal, so a good model sees high acceptance) means the proposal
-matches the target. A collapsed acceptance rate is the signal to switch
-to NUTS. The NUTS fit reports <code>$mean_accept</code> plus
+<p>For the exact-tier MCMC fits the diagnostics are the standard sampler
+ones. The IMH fit reports <code>$mean_accept</code>, the post-warmup
+acceptance rate; a rate in a healthy band (the VI fit makes a
+near-optimal proposal, so a good model sees high acceptance) means the
+proposal matches the target. A collapsed acceptance rate is the signal
+to switch to NUTS. The NUTS fit reports <code>$mean_accept</code> plus
 <code>$tree_depth</code> per draw and the adapted <code>$epsilon</code>;
 draws repeatedly hitting <code>max_depth</code> indicate a step size
 that is too small for the posterior geometry. Both produce a

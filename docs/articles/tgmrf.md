@@ -452,19 +452,20 @@ for any non-chain fit, and
 is the underlying PSIS core if you want to compute it on your own
 importance ratios.
 
-For the exact-tier MCMC fits the diagnostics are the usual ones. The IMH
-fit reports `$mean_accept`, the post-warmup acceptance rate; a rate in a
-healthy band (the VI fit makes a near-optimal proposal, so a good model
-sees high acceptance) means the proposal matches the target. A collapsed
-acceptance rate is the signal to switch to NUTS. The NUTS fit reports
-`$mean_accept` plus `$tree_depth` per draw and the adapted `$epsilon`;
-draws repeatedly hitting `max_depth` indicate a step size that is too
-small for the posterior geometry. Both produce a `$draws` matrix you can
-feed to `diagnostics(fit)` for Rhat and effective sample size, or to
-`check_diagnostics(fit)` for a pass/fail summary. The cleanest single
-check is to run the structured-tier fit, read its Pareto-$`\hat{k}`$,
-and only reach for the MCMC tiers when the diagnostic says the Gaussian
-approximation is biased.
+For the exact-tier MCMC fits the diagnostics are the standard sampler
+ones. The IMH fit reports `$mean_accept`, the post-warmup acceptance
+rate; a rate in a healthy band (the VI fit makes a near-optimal
+proposal, so a good model sees high acceptance) means the proposal
+matches the target. A collapsed acceptance rate is the signal to switch
+to NUTS. The NUTS fit reports `$mean_accept` plus `$tree_depth` per draw
+and the adapted `$epsilon`; draws repeatedly hitting `max_depth`
+indicate a step size that is too small for the posterior geometry. Both
+produce a `$draws` matrix you can feed to `diagnostics(fit)` for Rhat
+and effective sample size, or to `check_diagnostics(fit)` for a
+pass/fail summary. The cleanest single check is to run the
+structured-tier fit, read its Pareto-$`\hat{k}`$, and only reach for the
+MCMC tiers when the diagnostic says the Gaussian approximation is
+biased.
 
 ## Tuning
 
