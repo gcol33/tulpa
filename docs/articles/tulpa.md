@@ -71,9 +71,11 @@ small. The engine fits the common regression families itself, from
 packages built on the engine plug their own likelihoods into the same
 inference machinery through a `LikelihoodSpec` and inherit every tier,
 every latent block, and every accessor for free. Occupancy and detection
-models live in tulpaObs, ratio and rate models in tulpaRatio,
-generalized linear mixed models in tulpaGlmm. This vignette stays on the
-engine’s own surface: simulate data with a known truth, fit it with
+models live in tulpaObs, ratio and rate models in tulpaRatio.
+Generalized linear mixed models need no extra package:
+[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) fits
+them directly. This vignette stays on the engine’s own surface: simulate
+data with a known truth, fit it with
 [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md), pull
 the estimates out, predict, compare specifications, and take a short
 tour of the latent blocks. Each tour stop links to the dedicated
@@ -1000,5 +1002,5 @@ A few rules of thumb for everyday use:
   model-comparison vignette.
 
 - Posterior-predictive checks, WAIC, and LOO on a full observation
-  model: the model packages (tulpaObs, tulpaRatio, tulpaGlmm) that build
-  on this engine. \`\`\`
+  model: the model packages (tulpaObs, tulpaRatio) that build on this
+  engine. \`\`\`

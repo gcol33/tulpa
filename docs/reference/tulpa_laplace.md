@@ -4,11 +4,11 @@ General-purpose Laplace approximation for latent Gaussian models. Finds
 the mode of the latent field (beta + random effects) and returns the
 Laplace-approximated marginal likelihood.
 
-This is the public API for model packages (tulpaGlmm, tulpaObs, etc.) to
-call tulpa's Laplace engine. As the low-level engine entry point (not a
-front-door fitter), it keeps its numerical controls (`max_iter`, `tol`,
-`n_threads`, `return_hessian`) inline in the signature rather than in a
-`control` list, so callers assembling many solves pass them
+This is the public API for model packages (tulpaObs, tulpaRatio, etc.)
+to call tulpa's Laplace engine. As the low-level engine entry point (not
+a front-door fitter), it keeps its numerical controls (`max_iter`,
+`tol`, `n_threads`, `return_hessian`) inline in the signature rather
+than in a `control` list, so callers assembling many solves pass them
 positionally.
 
 ## Usage
