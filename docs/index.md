@@ -210,9 +210,9 @@ observation states.
 
 ## Documentation
 
-Start with the
-[quickstart](https://gillescolling.com/tulpa/articles/quickstart.html):
-a complete path from a formula to a fitted model.
+Start with [Get
+started](https://gillescolling.com/tulpa/articles/tulpa.html): a
+complete path from a formula to a fitted model.
 
 - [Data
   formatting](https://gillescolling.com/tulpa/articles/data-formatting.html):

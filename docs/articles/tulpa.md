@@ -121,6 +121,8 @@ immediately, with no iteration and no Monte Carlo error.
 fit <- tulpa(y ~ x, data = df, family = "gaussian",
              mode = "laplace", phi = 0.8^2)
 coef(fit)
+#> (Intercept)           x 
+#>   0.4955585   1.1714548
 ```
 
 The coefficients land near the truth.
@@ -143,6 +145,19 @@ as the interval the coefficient falls in with 95% posterior probability.
 ``` r
 
 summary(fit)
+#> tulpa fit  (laplace, tier 2) 
+#> Call: tulpa(formula = y ~ x, data = df, family = "gaussian", mode = "laplace", phi = 0.8^2)
+#>   inference mode: structured 
+#>   selected because: User-specified backend: laplace 
+#>   family: gaussian 
+#>   n_obs: 400 
+#> 
+#> Fixed effects:
+#>             estimate std.error  2.5 % 97.5 %
+#> (Intercept)   0.4956   0.04000 0.4172  0.574
+#> x             1.1715   0.04087 1.0913  1.252
+#> 
+#> Fixed-effect prior: normal(0, 2.5)
 ```
 
 The credible bounds bracket the true values, which is the second
@@ -159,6 +174,9 @@ already run.
 ``` r
 
 confint(fit)
+#>                 2.5 %    97.5 %
+#> (Intercept) 0.4171669 0.5739501
+#> x           1.0913427 1.2515670
 ```
 
 The `phi` argument is the family’s dispersion parameter, and its meaning
@@ -228,6 +246,8 @@ df$g <- g
 fit_re <- tulpa(y ~ x + (1 | g), data = df, family = "gaussian",
                 mode = "laplace", sigma_re = 0.6, phi = 0.8^2)
 coef(fit_re)
+#> (Intercept)           x 
+#>   0.3701095   1.1487966
 ```
 
 [`coef()`](https://rdrr.io/r/stats/coef.html) reports the fixed effects,
@@ -244,6 +264,11 @@ variance.
 ``` r
 
 head(ranef(fit_re), 4)
+#>   term   estimate sd conf.low conf.high source
+#> 1 g[1] -1.1829526 NA       NA        NA   mode
+#> 2 g[2] -0.6775484 NA       NA        NA   mode
+#> 3 g[3] -0.8049470 NA       NA        NA   mode
+#> 4 g[4] -0.4488576 NA       NA        NA   mode
 ```
 
 This fit conditions on `sigma_re` rather than estimating it: you pass
@@ -312,6 +337,10 @@ m1 <- tulpa(y ~ x,     data = df, family = "gaussian", mode = "laplace", phi = 0
 m2 <- tulpa(y ~ x + (1 | g), data = df, family = "gaussian",
             mode = "laplace", sigma_re = 0.6, phi = 0.8^2)
 compare_models(intercept = m0, slope = m1, slope_re = m2, criterion = "loglik")
+#>       model n_params     logLik     quantity conditioned_on
+#> 1 intercept        1 -1055.3670 log_evidence               
+#> 2     slope        2  -665.1433 log_evidence               
+#> 3  slope_re        2  -489.0224 log_evidence
 ```
 
 The table reports each model’s name (taken straight from the argument
@@ -356,6 +385,10 @@ band on the prediction inherits the uncertainty in the coefficients.
 nd <- data.frame(x = seq(-2, 2, length.out = 50))
 pr <- predict(fit_re, newdata = nd, se.fit = TRUE)
 head(pr, 3)
+#>         fit    se.fit     lower     upper
+#> 1 -1.927484 0.1958178 -2.311280 -1.543688
+#> 2 -1.833704 0.1944247 -2.214770 -1.452639
+#> 3 -1.739925 0.1930800 -2.118355 -1.361495
 ```
 
 The return value carries the prediction in `fit` and the bounds in
@@ -375,6 +408,9 @@ ggplot(data.frame(x = nd$x, fit = pr$fit, lo = pr$lower, hi = pr$upper),
   theme(panel.background = element_rect(fill = "transparent"),
         plot.background  = element_rect(fill = "transparent"))
 ```
+
+![Predicted response across x with a 95 percent credible
+band](tulpa_files/figure-html/predict-plot-1.png)
 
 The band is narrow in the middle of the covariate range and flares at
 the edges, which is the signature of a linear fit: the prediction is
@@ -402,11 +438,15 @@ pluggable component and everything above it is family-blind.
 # Poisson counts
 dp <- data.frame(y = rpois(n, exp(0.2 + 0.6 * x)), x = x)
 coef(tulpa(y ~ x, data = dp, family = "poisson", mode = "laplace"))
+#> (Intercept)           x 
+#>   0.2170317   0.5693984
 
 # Beta proportions in (0, 1), precision phi
 mu <- plogis(0.1 + 0.8 * x)
 db <- data.frame(y = rbeta(n, mu * 8, (1 - mu) * 8), x = x)
 coef(tulpa(y ~ x, data = db, family = "beta", mode = "laplace", phi = 8))
+#> (Intercept)           x 
+#>   0.1751979   0.8559101
 ```
 
 The Poisson slope recovers the 0.6 it was built from and the beta slope
@@ -461,6 +501,10 @@ fit_lap <- tulpa(y ~ x + (1 | g), data = df_b, family = "binomial",
 fit_mala <- tulpa(y ~ x + (1 | g), data = df_b, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
                   control = list(n_iter = 450, warmup = 150))
+#> Warning: tulpa(): the 'mala' chain has not converged -- x: Rhat 1.00, bulk-ESS
+#> 58; (Intercept): Rhat 1.01, bulk-ESS 59. Its estimates and intervals are not
+#> yet the posterior. Run longer (control$n_iter / control$warmup), or use mode =
+#> 'hmc'; see check_diagnostics().
 ```
 
 The two tiers agree on the fixed effects to within their uncertainty,
@@ -477,6 +521,9 @@ data.frame(
   laplace = round(coef(fit_lap), 3),
   mala    = round(coef(fit_mala), 3)
 )
+#>                    term laplace   mala
+#> (Intercept) (Intercept)  -0.468 -0.493
+#> x                     x   1.085  1.087
 ```
 
 The agreement here is itself a signal that Laplace was safe for this
@@ -491,6 +538,8 @@ produced a number.
 ``` r
 
 unlist(summary(fit_mala)$inference[c("backend", "inference_tier")])
+#>        backend inference_tier 
+#>         "mala"            "1"
 ```
 
 The tiers encode an epistemic guarantee that goes beyond the speed
@@ -519,6 +568,9 @@ band with no drift or sticking.
 
 plot(fit_mala, type = "trace")
 ```
+
+![Trace of the MALA chain for the fixed
+effects](tulpa_files/figure-html/trace-plot-1.png)
 
 The agreement between the tiers here is the typical case for a latent
 Gaussian model with enough data, and it is also the case where the cheap
@@ -570,6 +622,8 @@ fit_sp <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
                 spatial = list(type = "icar", adjacency = W),
                 mode = "laplace")
 coef(fit_sp)
+#>  (Intercept)            x 
+#> -0.008787351  0.751041095
 ```
 
 The slope recovers near its true 0.7 while the ICAR field absorbs the
@@ -590,6 +644,9 @@ ggplot(data.frame(region = fe$unit, effect = fe$estimate), aes(region, effect)) 
   theme(panel.background = element_rect(fill = "transparent"),
         plot.background  = element_rect(fill = "transparent"))
 ```
+
+![Estimated spatial field effect per region around the
+ring](tulpa_files/figure-html/spatial-plot-1.png)
 
 The field absorbs the regional signal so the slope does not have to.
 Without the field, a covariate that happens to vary across the ring the
@@ -640,6 +697,8 @@ dt    <- data.frame(y = rpois(n, exp(0.4 + 0.5 * xt + trend[time])),
 fit_t <- tulpa(y ~ x, data = dt, family = "poisson",
                temporal = temporal_rw1("time"), mode = "auto")
 coef(fit_t)
+#> (Intercept)           x 
+#>   0.3297003   0.5500785
 ```
 
 The slope lands near its true 0.5 with the trend absorbed into the field
@@ -665,6 +724,9 @@ ggplot(data.frame(time = seq_len(Tt),
   theme(panel.background = element_rect(fill = "transparent"),
         plot.background  = element_rect(fill = "transparent"))
 ```
+
+![Estimated temporal random-walk trend against the simulated
+truth](tulpa_files/figure-html/temporal-plot-1.png)
 
 The estimated walk follows the wave, centred to remove the level the
 sum-to-zero handling leaves free. The front door carries
@@ -701,6 +763,12 @@ fam <- tulpa_family(
 pp <- prior_predict(y ~ x, family = fam, data = dp, n_draws = 50,
                     priors = tulpa_priors(beta = prior_normal(0, 1)))
 pp
+#> tulpa prior predictive draws
+#> ============================
+#> Family:     poisson 
+#> Processes:  y 
+#> Draws:      50 
+#> Obs:        400
 ```
 
 `pp$y` holds one simulated dataset per prior draw. Overlay their
@@ -719,6 +787,9 @@ ggplot(sims, aes(value, group = draw)) +
   theme(panel.background = element_rect(fill = "transparent"),
         plot.background  = element_rect(fill = "transparent"))
 ```
+
+![Prior predictive densities of the simulated response under the chosen
+priors](tulpa_files/figure-html/prior-plot-1.png)
 
 A wide prior predictive that spills past the plausible range says the
 priors are too vague; tightening `prior_normal(0, 2.5)` toward
@@ -756,6 +827,12 @@ blk <- tgmrf(
   init  = c(tau = 1)
 )
 blk
+#> <tgmrf>
+#>   n_latent : 20
+#>   theta    : 1 dim (tau)
+#>   init     : 1
+#>   Q nnz    : 58 (14.5% of dense)
+#>   backend  : r
 ```
 
 The constructor evaluates `Q(init)` once to catch errors early, infer
@@ -776,6 +853,9 @@ ggplot(data.frame(row = ix[, 1], col = ix[, 2]), aes(col, row)) +
   theme(panel.background = element_rect(fill = "transparent"),
         plot.background  = element_rect(fill = "transparent"))
 ```
+
+![Sparsity pattern of the user-defined RW1 precision
+matrix](tulpa_files/figure-html/tgmrf-plot-1.png)
 
 The tridiagonal pattern is the Markov property written as a matrix: each
 node is conditionally independent of every non-neighbour given its
@@ -817,6 +897,9 @@ feed a table or a coefficient plot.
 ``` r
 
 tidy(fit_re)
+#>          term  estimate  std.error   conf.low conf.high
+#> 1 (Intercept) 0.3701095 0.17749748 0.02222084 0.7179982
+#> 2           x 1.1487966 0.04109486 1.06825221 1.2293411
 ```
 
 [`glance()`](https://generics.r-lib.org/reference/glance.html) returns a
@@ -829,6 +912,8 @@ diagnostics that say whether the chain mixed.
 ``` r
 
 glance(fit_mala)[c("n_samples", "logLik", "mean_accept", "n_divergent")]
+#>   n_samples    logLik mean_accept n_divergent
+#> 1       300 -233.0712   0.6733333          NA
 ```
 
 [`plot()`](https://rdrr.io/r/graphics/plot.default.html) defaults to the

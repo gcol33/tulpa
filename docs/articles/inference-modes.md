@@ -72,6 +72,61 @@ prints the full map, tier by tier, with the guarantee attached to each.
 ``` r
 
 inference_mode_info()
+#> tulpa Inference Modes
+#> ========================
+#> 
+#> Modes encode EPISTEMIC GUARANTEES, not just runtime characteristics.
+#> 
+#> TIER 1: EXACT
+#>   Asymptotically correct posterior inference
+#>   Guarantee: Credible intervals interpretable as posterior uncertainty
+#>   Backends: hmc, ess, gibbs, re_cov_gibbs, smc, imh_laplace, mala
+#>   Note: Reference standard
+#> 
+#> TIER 2: STRUCTURED
+#>   Accurate inference conditional on structural assumptions
+#>   Guarantee: Correct if model meets structural assumptions
+#>   Backends: laplace, re_cov_nested, pathfinder, agq, ep, eb, nested_laplace, nested_laplace_joint, spde
+#>   Note: Controlled approximation, not heuristics
+#> 
+#> TIER 3: OPTIMIZED
+#>   Optimization-based approximate inference
+#>   Guarantee: No general correctness guarantee
+#>   Backends: sghmc, sgld, mclmc, vi
+#>   Note: Uncertainty often underestimated; requires explicit opt-in
+#> 
+#> AUTO MODE
+#>   Selects between Tier 1 and Tier 2 only.
+#>   NEVER silently chooses Tier 3 (Optimized).
+#>   Contract: 'Use the most reliable method expected to finish.'
+#> 
+#> Usage (by tier):
+#>   tulpa(..., mode = 'auto')       # Tier 1 or 2 (default)
+#>   tulpa(..., mode = 'exact')      # Tier 1
+#>   tulpa(..., mode = 'structured') # Tier 2
+#>   tulpa(..., mode = 'optimized')  # Tier 3 (explicit opt-in)
+#> 
+#> Backends ([R] = tulpa(mode =) dispatch, [direct] = has an R fitter but tulpa(mode =) refuses it -- call the fitter itself, [C-ABI] = model-package kernel only):
+#>   [R]     mode = 'hmc'               # Tier 1 (Exact)
+#>   [R]     mode = 'ess'               # Tier 1 (Exact)
+#>   [R]     mode = 'gibbs'             # Tier 1 (Exact)
+#>   [R]     mode = 're_cov_gibbs'      # Tier 1 (Exact)
+#>   [R]     mode = 'smc'               # Tier 1 (Exact)
+#>   [R]     mode = 'imh_laplace'       # Tier 1 (Exact)
+#>   [R]     mode = 'mala'              # Tier 1 (Exact)
+#>   [R]     mode = 'laplace'           # Tier 2 (Structured)
+#>   [R]     mode = 're_cov_nested'     # Tier 2 (Structured)
+#>   [R]     mode = 'pathfinder'        # Tier 2 (Structured)
+#>   [R]     mode = 'agq'               # Tier 2 (Structured)
+#>   [R]     mode = 'ep'                # Tier 2 (Structured)
+#>   [R]     mode = 'eb'                # Tier 2 (Structured)
+#>   [R]     mode = 'nested_laplace'    # Tier 2 (Structured)
+#>   [direct] tulpa_nested_laplace_joint() # Tier 2 (Structured)
+#>   [R]     mode = 'spde'              # Tier 2 (Structured)
+#>   [R]     mode = 'sghmc'             # Tier 3 (Optimized)
+#>   [R]     mode = 'sgld'              # Tier 3 (Optimized)
+#>   [R]     mode = 'mclmc'             # Tier 3 (Optimized)
+#>   [R]     mode = 'vi'                # Tier 3 (Optimized)
 ```
 
 The output names three tiers. Read them as a ladder of promises.
@@ -176,6 +231,14 @@ and says so.
 fit_auto <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
                   spatial = list(type = "icar", adjacency = W), mode = "auto")
 summary(fit_auto)$inference[c("backend", "inference_tier", "selection_reason")]
+#> $backend
+#> [1] "gibbs"
+#> 
+#> $inference_tier
+#> [1] 1
+#> 
+#> $selection_reason
+#> [1] "icar spatial model (binomial Polya-Gamma Gibbs)"
 ```
 
 Auto reached for the most reliable method, Tier 1, because for this
@@ -197,6 +260,14 @@ dL <- data.frame(y = 0.5 + 1.2 * xL + rnorm(nL, sd = 0.8), x = xL)
 fit_big <- tulpa(y ~ x, data = dL, family = "gaussian", mode = "auto",
                  phi = 0.8^2)
 summary(fit_big)$inference[c("backend", "inference_tier", "selection_reason")]
+#> $backend
+#> [1] "laplace"
+#> 
+#> $inference_tier
+#> [1] 2
+#> 
+#> $selection_reason
+#> [1] "large dataset (n=60,000)"
 ```
 
 Here auto stepped down to the Laplace path. The reason names the dataset
@@ -207,6 +278,8 @@ Gaussian likelihood is exact anyway. The estimates land on the truth.
 ``` r
 
 coef(fit_big)
+#> (Intercept)           x 
+#>   0.5077508   1.2038241
 ```
 
 Two models, two different branches, each recorded. The same rule that
@@ -249,6 +322,8 @@ db <- data.frame(y = rbinom(n, 1, plogis(-0.3 + 1.0 * x + u[g])),
 fit_lap <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                  mode = "laplace", sigma_re = 0.6)
 coef(fit_lap)
+#> (Intercept)           x 
+#>  -0.2562997   0.7999603
 ```
 
 The Laplace fit is deterministic, carries no Monte Carlo error, and its
@@ -275,7 +350,10 @@ fit_pf <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                 mode = "pathfinder", sigma_re = 0.6,
                 control = list(n_draws = 450))
 coef(fit_pf)
+#> (Intercept)           x 
+#>  -0.2313448   0.7959445
 summary(fit_pf)$reliability$elbo
+#> [1] -252.4946
 ```
 
 Pathfinder fits three situations well: you want draws but not the cost
@@ -298,8 +376,15 @@ warmup toward an acceptance rate near 0.574.
 fit_mala <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
                   control = list(n_iter = 450, warmup = 150))
+#> Warning: tulpa(): the 'mala' chain has not converged -- x: Rhat 1.02, bulk-ESS
+#> 72; (Intercept): Rhat 1.00, bulk-ESS 82. Its estimates and intervals are not
+#> yet the posterior. Run longer (control$n_iter / control$warmup), or use mode =
+#> 'hmc'; see check_diagnostics().
 coef(fit_mala)
+#> (Intercept)           x 
+#>  -0.2706339   0.8233584
 summary(fit_mala)$reliability$mean_accept
+#> [1] 0.7
 ```
 
 MALA earns its keep when you want exact posterior moments at moderate
@@ -325,7 +410,10 @@ fit_imh <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                  mode = "imh_laplace", sigma_re = 0.6,
                  control = list(n_iter = 450, warmup = 150))
 coef(fit_imh)
+#> (Intercept)           x 
+#>  -0.2746751   0.8342437
 summary(fit_imh)$reliability$mean_accept
+#> [1] 0.8833333
 ```
 
 The acceptance here is high, which says the Laplace fit was already
@@ -349,9 +437,14 @@ returns.
 ``` r
 
 round(coef(fit_auto), 3)
+#> (Intercept)           x 
+#>      -0.165       0.616
 draws_auto <- posterior_sample(fit_auto)
 tail(colnames(draws_auto), 3)
+#> [1] "phi_spatial[18]" "phi_spatial[19]" "phi_spatial[20]"
 round(colMeans(draws_auto)[c("log_tau_spatial", "phi_spatial[1]")], 3)
+#> log_tau_spatial  phi_spatial[1] 
+#>           1.265           0.421
 ```
 
 Gibbs is the right call when the family is conjugate-friendly under the
@@ -386,6 +479,7 @@ dsl <- data.frame(y = rbinom(ng * ni, 1, plogis(eta)),
 fit_rc <- tulpa(y ~ x + (1 + x | g), data = dsl,
                 family = "binomial", mode = "laplace")
 summary(fit_rc)$inference$backend
+#> [1] "re_cov_nested"
 ```
 
 The slope term routed the fit to `re_cov_nested` without being named.
@@ -399,6 +493,13 @@ attribute, one per random-effect term.
 ``` r
 
 round(attr(VarCorr(fit_rc), "cov")$g, 3)
+#>             (Intercept)     x
+#> (Intercept)       0.994 0.249
+#> x                 0.249 0.553
+#> attr(,"correlation")
+#>             (Intercept)         x
+#> (Intercept)   1.0000000 0.3355217
+#> x             0.3355217 1.0000000
 ```
 
 Integrating the covariance through a Gaussian grid over the
@@ -409,6 +510,7 @@ reports.
 ``` r
 
 round(attr(diagnostics(fit_rc), "pareto_k"), 2)
+#> [1] 0.48
 ```
 
 Here k-hat sits below the 0.7 threshold, so the Gaussian grid fits the
@@ -465,6 +567,10 @@ t_mala <- system.time(
   f_mala <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
                   control = list(n_iter = 450, warmup = 150)))[["elapsed"]]
+#> Warning: tulpa(): the 'mala' chain has not converged -- x: Rhat 1.02, bulk-ESS
+#> 47; (Intercept): Rhat 1.00, bulk-ESS 66. Its estimates and intervals are not
+#> yet the posterior. Run longer (control$n_iter / control$warmup), or use mode =
+#> 'hmc'; see check_diagnostics().
 t_pf   <- system.time(
   f_pf   <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "pathfinder", sigma_re = 0.6,
@@ -489,6 +595,10 @@ data.frame(
                      slope_se(f_pf)), 3),
   seconds  = round(c(t_lap, t_mala, t_pf), 3)
 )
+#>      backend tier slope slope_se seconds
+#> 1    laplace    2 0.800    0.128    0.00
+#> 2       mala    1 0.863    0.140    0.12
+#> 3 pathfinder    2 0.802    0.130    0.03
 ```
 
 Three patterns sit in this table. The slope estimates agree across all
@@ -529,6 +639,8 @@ divergence count.
 ``` r
 
 glance(f_mala)[c("n_samples", "mean_accept", "n_divergent")]
+#>   n_samples mean_accept n_divergent
+#> 1       300        0.73          NA
 ```
 
 An acceptance rate inside the healthy band and no divergences say the
@@ -598,7 +710,7 @@ guarantee on purpose.
   prints the full tier and backend map, with the R-callable and
   C-ABI-only backends tagged.
 
-- The quickstart vignette covers the fitting workflow.
+- The Get started article covers the fitting workflow.
 
 - The [`tgmrf()`](https://gillescolling.com/tulpa/reference/tgmrf.md)
   vignette runs the same tier ladder on a user-defined latent block,

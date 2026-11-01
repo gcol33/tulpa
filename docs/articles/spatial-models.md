@@ -260,6 +260,7 @@ fit <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
              spatial = list(type = "icar", adjacency = W),
              mode = "nested_laplace")
 summary(fit)$inference$backend
+#> [1] "nested_laplace"
 ```
 
 `mode = "nested_laplace"` runs the Tier-2 path that integrates the
@@ -289,6 +290,8 @@ The fixed effects come back from
 ``` r
 
 coef(fit)
+#> (Intercept)           x 
+#>  -0.3185314   0.8184737
 ```
 
 The slope lands near the simulated $`0.8`$. With the regional wave
@@ -312,6 +315,27 @@ knowing how smooth the surface is.
 ``` r
 
 summary(fit)
+#> tulpa fit  (nested_laplace, tier 2) 
+#> Call: tulpa(formula = y ~ x + spatial(region), data = ds, family = "binomial", mode = "nested_laplace", spatial = list(type = "icar", adjacency = W))
+#>   inference mode: structured 
+#>   selected because: User-specified backend: nested_laplace 
+#>   family: binomial 
+#>   n_obs: 800 
+#> 
+#> Fixed effects:
+#>             estimate std.error   2.5 %  97.5 %
+#> (Intercept)  -0.3185   0.08391 -0.4830 -0.1541
+#> x             0.8185   0.09491  0.6326  1.0046
+#>   interval read: mixture_cdf 
+#>   interval declined: NA 
+#> 
+#> Hyperparameters:
+#>  parameter  mean    sd median ci_lo ci_hi
+#>        tau 4.848 2.357  4.353 1.665 10.76
+#> 
+#> Reliability (iid draws):
+#>   outer pareto_k -1.494 (good); grid ESS 5.987 of 12 cells; inner skew NA (NA)
+#>   verdict: outer integration good; inner Laplace not assessed
 ```
 
 ### Extracting the field per region
@@ -338,6 +362,7 @@ of the fixed effects.
 g         <- tulpa_outer_grid(fit)
 field_hat <- colSums(g$weights * g$modes)[g$n_fixed + seq_len(K)]
 round(head(field_hat), 3)
+#> [1] 0.272 0.374 0.805 0.774 1.501 1.499
 ```
 
 That recipe is the same one the temporal path uses for a random-walk
@@ -364,9 +389,13 @@ plot(field_true - mean(field_true),
 abline(0, 1, lwd = 2, col = "grey40")
 ```
 
+![Estimated spatial field per region against the simulated truth, near
+the identity line](spatial-models_files/figure-html/field-plot-1.png)
+
 ``` r
 
 cor(field_true, field_hat)
+#> [1] 0.9809531
 ```
 
 The points fall along the identity line and the correlation is high. The
@@ -389,6 +418,8 @@ posterior mean over the grid, on the natural precision scale, and
 ``` r
 
 summary(fit)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
+#>   parameter     mean    ci_lo    ci_hi
+#> 1       tau 4.848278 1.664748 10.76048
 ```
 
 A larger $`\tau`$ would mean a stiffer penalty on neighbour differences
@@ -417,6 +448,18 @@ the fixed-effect covariance.
 ``` r
 
 confint(fit)
+#>                  2.5 %     97.5 %
+#> (Intercept) -0.4830167 -0.1540832
+#> x            0.6325718  1.0045989
+#> attr(,"skew_applied")
+#> (Intercept)           x 
+#>       FALSE       FALSE 
+#> attr(,"interval_source")
+#> [1] "mixture_cdf"
+#> attr(,"interval_declined")
+#> [1] NA
+#> attr(,"retained_mass")
+#> [1] 1
 ```
 
 The second point is the intercept, and it follows directly from the
@@ -435,6 +478,7 @@ nuisance level rather than a quantity to interpret.
 ``` r
 
 coef(summary(fit))["(Intercept)", "std.error"]
+#> [1] 0.08391077
 ```
 
 The wide value here is by design, not a fitting failure. A proper CAR or
@@ -463,6 +507,10 @@ grid-marginalised fixed-effect covariance the summary uses.
 nd <- data.frame(x = seq(-2.5, 2.5, length.out = 50))
 pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE)
 head(pr, 3)
+#>         fit    se.fit     lower     upper
+#> 1 -2.364716 0.2590453 -2.872435 -1.856996
+#> 2 -2.281198 0.2498980 -2.770989 -1.791407
+#> 3 -2.197680 0.2407926 -2.669625 -1.725735
 ```
 
 Plot the trend on the link scale with its credible band.
@@ -474,6 +522,9 @@ polygon(c(nd$x, rev(nd$x)), c(pr$lower, rev(pr$upper)),
         col = adjustcolor("steelblue", 0.25), border = NA)
 lines(nd$x, pr$fit, lwd = 2)
 ```
+
+![Predicted logit response across x with a 95 percent credible
+band](spatial-models_files/figure-html/predict-plot-1.png)
 
 For a probability instead of a logit, pass `type = "response"`; the
 prediction and its bounds then pass through the inverse-logit and stay
@@ -510,11 +561,15 @@ nothing left to integrate.
 m0 <- tulpa(y ~ x, data = ds, family = "binomial", mode = "laplace")
 cmp <- compare_models(nonspatial = m0, spatial = fit, criterion = "loglik")
 cmp
+#>        model n_params    logLik     quantity conditioned_on
+#> 1 nonspatial        2 -511.5366 log_evidence               
+#> 2    spatial        2 -466.0906 log_evidence
 ```
 
 ``` r
 
 diff(cmp$logLik)
+#> [1] 45.44601
 ```
 
 The spatial fit carries the higher evidence by a wide margin, matching
@@ -608,6 +663,7 @@ no `spatial(col)` term and no adjacency to build:
 
 gp_spec <- spatial_gp(~ lon + lat)
 gp_spec$type
+#> [1] "gp"
 ```
 
 The call shape mirrors the areal path: pass the spec through `spatial=`,
@@ -643,6 +699,8 @@ spde <- spatial_spde(~ lon + lat, data = coords, max_edge = c(0.2, 0.5))
 fit  <- fit_spde(y = y, X = model.matrix(~ xcov), spatial = spde,
                  family = "poisson", range = 0.4, sigma = 0.9)
 round(coef(fit), 3)
+#> (Intercept)        xcov 
+#>       0.988       0.540
 ```
 
 The fixed-effect estimates land on the generating intercept and slope;
@@ -657,7 +715,7 @@ reports as it does for the areal nested integration.
 
 ## See also
 
-- [`vignette("quickstart", package = "tulpa")`](https://gillescolling.com/tulpa/articles/quickstart.md)
+- [`vignette("tulpa", package = "tulpa")`](https://gillescolling.com/tulpa/articles/tulpa.md)
   for the engine basics: families, tiers, random effects, prediction.
 - The [custom-process
   article](https://gillescolling.com/tulpa/articles/tgmrf.html) for

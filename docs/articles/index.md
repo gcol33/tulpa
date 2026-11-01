@@ -1,9 +1,5 @@
 # Articles
 
-### Get started
-
-- [Get started](https://gillescolling.com/tulpa/articles/quickstart.md):
-
 ### Workflows
 
 - [Data

@@ -224,7 +224,12 @@ fit_lap <- tulpa_nested_laplace(
   prior  = blk,
   family = "poisson"
 )
+#> [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 13/13 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 summary(fit_lap)$hyperparameters   # posterior over the outer grid
+#>      parameter       mean        sd     median       ci_lo     ci_hi
+#> 1 b1.log_sigma -0.2274788 0.2336395 -0.1785439 -0.87187317 0.2173285
+#> 2 b1.atanh_rho  0.7023186 0.3472034  0.6769688  0.09696435 1.5481582
 ```
 
 ### Tier 2 (structured): Pathfinder VI
@@ -241,7 +246,10 @@ fit_vi <- tulpa_tgmrf(
   n_draws = 800L
 )
 colMeans(posterior_sample(fit_vi))
+#>  log_sigma  atanh_rho 
+#> -0.2390735  0.6178152
 summary(fit_vi)$reliability$elbo
+#> [1] -84.02656
 ```
 
 ### Tier 1 (exact): IMH-Laplace
@@ -258,7 +266,10 @@ fit_imh <- tulpa_tgmrf(
   n_iter = 1200L, warmup = 400L
 )
 colMeans(posterior_sample(fit_imh))
+#>  log_sigma  atanh_rho 
+#> -0.2153406  0.7003226
 summary(fit_imh)$reliability$mean_accept
+#> [1] 0.56125
 ```
 
 ### Tier 1 (exact): NUTS over `theta`
@@ -292,6 +303,9 @@ data.frame(
   vi_mean   = unname(colMeans(posterior_sample(fit_vi))),
   imh_mean  = unname(colMeans(posterior_sample(fit_imh)))
 )
+#>   parameter       true    laplace    vi_mean   imh_mean
+#> 1 log_sigma -0.2231436 -0.2274788 -0.2390735 -0.2153406
+#> 2 atanh_rho  0.6931472  0.7023186  0.6178152  0.7003226
 ```
 
 Laplace and VI agree to within grid resolution / Gaussian-fit curvature;

@@ -79,6 +79,13 @@ collapsed to its mode.
 fit <- tulpa(y ~ x + (1 + x | g), data = d, family = "poisson",
              mode = "laplace")
 summary(fit)$hyperparameters[, c("parameter", "median", "ci_lo", "ci_hi")]
+#>   parameter     median       ci_lo     ci_hi
+#> 1   sigma_1 0.66750590  0.53632452 0.8307734
+#> 2   sigma_2 0.53971080  0.43067893 0.6763455
+#> 3    rho_12 0.25869066 -0.05141170 0.5232948
+#> 4  Sigma_11 0.44556413  0.28764399 0.6901844
+#> 5  Sigma_12 0.09172985 -0.01662728 0.2000870
+#> 6  Sigma_22 0.29128774  0.18548434 0.4574432
 ```
 
 The posterior medians track the truth (`sigma_1 = 0.7`, `sigma_2 = 0.5`,

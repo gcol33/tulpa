@@ -21,7 +21,7 @@ R users fitting models with grouped, spatial, or temporal observations. The READ
 - question: How do I represent grouping, smooth effects, and dependence?
 - answer: Formula terms and structure specifications describe the effects.
 - evidence: man/tulpa.Rd; vignettes/random-slopes.Rmd
-- home: vignettes/quickstart.Rmd
+- home: vignettes/tulpa.Rmd
 - also: README, with links to spatial and temporal articles
 
 ### A2 Choose and assess inference
@@ -44,6 +44,6 @@ R users fitting models with grouped, spatial, or temporal observations. The READ
 ## Documents
 
 - README.Rmd / README.md: overview, installation, first model, routing, help, and citation.
-- vignettes/quickstart.Rmd: a tutorial through model fitting.
+- vignettes/tulpa.Rmd: a tutorial through model fitting.
 - Topic articles: complete workflows, methods, and limitations.
 - Help pages: argument and return-value contracts.

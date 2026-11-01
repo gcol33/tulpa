@@ -630,7 +630,7 @@ the areal nested integration.
 
 ## See also
 
-- `vignette("quickstart", package = "tulpa")` for the engine basics: families, tiers,
+- `vignette("tulpa", package = "tulpa")` for the engine basics: families, tiers,
   random effects, prediction.
 - The [custom-process article](https://gillescolling.com/tulpa/articles/tgmrf.html) for user-defined GMRF latent blocks, the
   general form behind the built-in fields.

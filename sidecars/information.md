@@ -2,7 +2,7 @@
 
 ## Terms
 
-- Hierarchical model: models observations through predictors and unobserved effects; introduced in the README opening, developed in the quickstart.
+- Hierarchical model: models observations through predictors and unobserved effects; introduced in the README opening, developed in the Get started article.
 - MCMC: Markov chain Monte Carlo; expanded at first use in the README.
 - Random intercept: a group-specific change in the intercept; illustrated by spray treatment in the README example.
 - Posterior calibration: assessed through repeated simulations; home is vignettes/sbc.Rmd.

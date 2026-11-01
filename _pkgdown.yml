@@ -235,15 +235,11 @@ navbar:
     - search
     - github
     - lightswitch
-  components:
-    intro:
-      text: Get started
-      href: articles/quickstart.html
+
+redirects:
+- ["articles/quickstart.html", "articles/tulpa.html"]
 
 articles:
-- title: Get started
-  contents:
-  - quickstart
 - title: Workflows
   navbar: Workflows
   contents:

@@ -74,7 +74,9 @@ on the link scale and can take either sign. The default is
 ``` r
 
 prior_normal(0, 2.5)
+#> Normal(0.00, 2.50)
 prior_normal(0, 1)
+#> Normal(0.00, 1.00)
 ```
 
 The mean sets where the prior is centred and the standard deviation sets
@@ -105,9 +107,13 @@ tulpa offers four.
 ``` r
 
 prior_half_normal(1)
+#> Half-Normal(1.00)
 prior_half_cauchy(2.5)
+#> Half-Cauchy(2.50)
 prior_gamma(2, 0.1)
+#> Gamma(2.00, 0.10)  [mean = 20.00]
 prior_exponential(1)
+#> Exponential(1.00)  [mean = 1.00]
 ```
 
 `prior_half_normal(sd)` folds a mean-zero normal at the origin: light
@@ -144,6 +150,8 @@ live possibility.
 c(half_normal_mean = prior_half_normal(1)$sd * sqrt(2 / pi),
   exponential_mean = 1 / prior_exponential(1)$rate,
   gamma_mean       = prior_gamma(2, 0.1)$shape / prior_gamma(2, 0.1)$rate)
+#> half_normal_mean exponential_mean       gamma_mean 
+#>        0.7978846        1.0000000       20.0000000
 ```
 
 ### The PC prior
@@ -156,7 +164,11 @@ encodes the statement `P(parameter > U) = alpha`.
 ``` r
 
 prior_pc(U = 1, alpha = 0.01)
+#> PC prior: P(x > 1.00) = 0.010
+#>   => Exponential(4.605)
 prior_pc(U = 0.5, alpha = 0.05)
+#> PC prior: P(x > 0.50) = 0.050
+#>   => Exponential(5.991)
 ```
 
 The print-out shows both the readable statement and the exponential it
@@ -223,6 +235,9 @@ pp_wide  <- prior_predict(y ~ x + (1 | g), family = bin, data = gdat,
   n_draws = 200, priors = tulpa_priors(sigma = prior_pc(5, 0.01)), seed = 7)
 rbind(tight = quantile(group_spread(pp_tight), c(0.5, 0.9, 0.99)),
       wide  = quantile(group_spread(pp_wide),  c(0.5, 0.9, 0.99)))
+#>              50%       90%       99%
+#> tight 0.08188838 0.1307099 0.1557274
+#> wide  0.12642536 0.2664106 0.3764848
 ```
 
 Under the tight default the between-group spread of probabilities stays
@@ -241,8 +256,11 @@ proportion.
 ``` r
 
 prior_beta(1, 1)
+#> Beta(1.00, 1.00)  [mean = 0.50]
 prior_beta(2, 2)
+#> Beta(2.00, 2.00)  [mean = 0.50]
 prior_beta(5, 2)
+#> Beta(5.00, 2.00)  [mean = 0.71]
 ```
 
 `prior_beta(1, 1)` is uniform on the interval. `prior_beta(2, 2)` is
@@ -321,6 +339,25 @@ slots at once.
 ``` r
 
 tulpa_priors()
+#> tulpa prior specification
+#> =========================
+#> 
+#> Fixed effects (beta):
+#>   Normal(0.00, 2.50)
+#> 
+#> Random effect SD (sigma):
+#>   PC prior: P(x > 1.00) = 0.010
+#>     => Exponential(4.605)
+#> 
+#> Overdispersion (phi):
+#>   PC prior: P(x > 10.00) = 0.010
+#>     => Exponential(0.461)
+#> 
+#> Temporal autocorrelation (rho_temporal):
+#>   Beta(2.00, 2.00)  [mean = 0.50]
+#> 
+#> Spatial proportion (rho_spatial):
+#>   Beta(1.00, 1.00)  [mean = 0.50]
 ```
 
 The defaults read as follows. Fixed effects get `prior_normal(0, 2.5)`,
@@ -340,6 +377,39 @@ customisation entry point for each slot.
 ``` r
 
 priors_default()
+#> Default priors for tulpa models
+#> ================================
+#> 
+#> These are tulpa_priors()'s defaults: what prior_predict() and
+#> tulpa_simulate() draw from. tulpa() fits do not read them; their own
+#> defaults are listed at the end.
+#> 
+#> Fixed effects (beta):
+#>   Normal(0, 2.5)
+#>   Interpretation: Coefficients roughly in [-5, 5] on link scale
+#>   Customization: prior_normal(mean, sd)
+#> 
+#> Random effect SD (sigma):
+#>   PC prior: P(sigma > 1) = 0.01
+#>   Interpretation: Favors smaller variance components
+#>   Customization: prior_pc(U, alpha) or prior_half_normal(sd)
+#> 
+#> Overdispersion (phi) [negbin/poisson_gamma only]:
+#>   PC prior: P(phi > 10) = 0.01
+#>   Interpretation: NB2 size; keeps phi finite (allows overdispersion),
+#>                   phi -> Inf is the Poisson limit
+#>   Customization: prior_pc(U, alpha) or prior_gamma(shape, rate)
+#> 
+#> Family-specific notes (model-package ratio families):
+#>   negbin_negbin: Uses phi for both processes
+#>   binomial: No overdispersion parameter (unless beta_binomial)
+#>   poisson_gamma: Uses phi for gamma shape parameter
+#> 
+#> What a tulpa() fit uses instead (set via beta_prior / re_prior):
+#>   Fixed effects: Normal(0, 2.5) on every backend
+#>   Random-effect SD: PC prior P(sigma > 3) = 0.01 (+ LKJ(2) on
+#>     correlations) on nested Laplace / re_cov_nested / eb;
+#>     half-Cauchy(2.5) on the samplers and mode = "gibbs"
 ```
 
 Change one slot by naming it; the rest stay at their defaults.
@@ -350,6 +420,25 @@ tulpa_priors(
   beta  = prior_normal(0, 1),
   sigma = prior_pc(U = 0.5, alpha = 0.01)
 )
+#> tulpa prior specification
+#> =========================
+#> 
+#> Fixed effects (beta):
+#>   Normal(0.00, 1.00)
+#> 
+#> Random effect SD (sigma):
+#>   PC prior: P(x > 0.50) = 0.010
+#>     => Exponential(9.210)
+#> 
+#> Overdispersion (phi):
+#>   PC prior: P(x > 10.00) = 0.010
+#>     => Exponential(0.461)
+#> 
+#> Temporal autocorrelation (rho_temporal):
+#>   Beta(2.00, 2.00)  [mean = 0.50]
+#> 
+#> Spatial proportion (rho_spatial):
+#>   Beta(1.00, 1.00)  [mean = 0.50]
 ```
 
 Because each slot validates its argument, passing something that is not
@@ -437,6 +526,8 @@ the likelihood.
 fit_weak <- tulpa(y ~ x, data = df, family = "gaussian",
                   mode = "laplace", phi = 1.5^2)
 coef(fit_weak)
+#> (Intercept)           x 
+#>   0.5863787   1.3844333
 ```
 
 Now impose a tight prior that says the slope is near zero: mean 0 and a
@@ -449,6 +540,8 @@ fit_tight <- tulpa(y ~ x, data = df, family = "gaussian",
                    mode = "laplace", phi = 1.5^2,
                    beta_prior = list(mean = c(0, 0), sd = c(10, 0.2)))
 coef(fit_tight)
+#> (Intercept)           x 
+#>   0.7566181   0.2777332
 ```
 
 The slope under the tight prior sits well below its weakly informed
@@ -463,6 +556,9 @@ data.frame(
   weak  = round(coef(fit_weak), 3),
   tight = round(coef(fit_tight), 3)
 )
+#>                    term  weak tight
+#> (Intercept) (Intercept) 0.586 0.757
+#> x                     x 1.384 0.278
 ```
 
 This is regularisation made explicit. Shrinking a coefficient toward a
@@ -473,7 +569,11 @@ The credible intervals tell the same story from the uncertainty side.
 ``` r
 
 confint(fit_weak)["x", ]
+#>     2.5 %    97.5 % 
+#> 0.6003595 2.1685071
 confint(fit_tight)["x", ]
+#>       2.5 %      97.5 % 
+#> -0.07380275  0.62926923
 ```
 
 The tight prior narrows the slope’s interval and shifts it toward zero.
@@ -546,6 +646,12 @@ pp_vague <- prior_predict(
   priors = tulpa_priors(beta = prior_normal(0, 5)), seed = 1
 )
 pp_vague
+#> tulpa prior predictive draws
+#> ============================
+#> Family:     poisson 
+#> Processes:  y 
+#> Draws:      200 
+#> Obs:        60
 ```
 
 The returned object holds one simulated dataset per draw in
@@ -554,6 +660,7 @@ The returned object holds one simulated dataset per draw in
 ``` r
 
 max(vapply(pp_vague$y, max, numeric(1)))
+#> [1] 1.998827e+23
 ```
 
 That number is far past anything a real count process would produce. The
@@ -568,6 +675,7 @@ pp_ok <- prior_predict(
   priors = tulpa_priors(beta = prior_normal(0, 1)), seed = 1
 )
 max(vapply(pp_ok$y, max, numeric(1)))
+#> [1] 757
 ```
 
 The largest simulated count now sits in a range a count model can take
@@ -581,6 +689,9 @@ rbind(
   vague    = quantile(vague_all, c(0.5, 0.9, 0.99)),
   sensible = quantile(ok_all,    c(0.5, 0.9, 0.99))
 )
+#>          50%    90%       99%
+#> vague      1 5471.2 141786616
+#> sensible   1    5.0        26
 ```
 
 The median is modest under both priors, but the upper tail under the
@@ -600,10 +711,16 @@ pp_capped$y <- lapply(pp_vague$y, function(yi) pmin(yi, 200))
 plot(pp_capped, max_draws = 40)
 ```
 
+![Prior predictive draws under a vague Normal(0, 5)
+prior](priors_files/figure-html/pp-plot-1.png)
+
 ``` r
 
 plot(pp_ok, max_draws = 40)
 ```
+
+![Prior predictive draws under a sensible Normal(0, 1)
+prior](priors_files/figure-html/pp-plot-ok-1.png)
 
 The sensible-prior draws cluster in a believable band; the vague-prior
 draws, even capped, spread across the full range. Reading the `$y`
@@ -633,6 +750,9 @@ ggplot(sp, aes(spread, fill = prior)) +
   theme(panel.background = element_rect(fill = "transparent"),
         plot.background  = element_rect(fill = "transparent"))
 ```
+
+![Between-group spread under two PC priors on
+sigma](priors_files/figure-html/pc-pp-plot-1.png)
 
 Reading this plot is the variance-component analogue of the count check:
 the question is whether the spread the prior expects between groups

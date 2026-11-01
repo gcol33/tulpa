@@ -150,7 +150,7 @@ For a custom Gaussian latent process, supply its precision matrix and mean throu
 
 ## Documentation
 
-Start with the [quickstart](https://gillescolling.com/tulpa/articles/quickstart.html): a complete path from a formula to a fitted model.
+Start with [Get started](https://gillescolling.com/tulpa/articles/tulpa.html): a complete path from a formula to a fitted model.
 
 - [Data formatting](https://gillescolling.com/tulpa/articles/data-formatting.html): response encodings, grouping variables and spatial inputs.
 - [Random slopes and covariances](https://gillescolling.com/tulpa/articles/random-slopes.html): group-level variances and correlations.
