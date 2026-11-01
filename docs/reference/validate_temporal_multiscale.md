@@ -43,4 +43,6 @@ Updated object with indices computed.
 tm <- temporal_multiscale("t", trend = "rw1", seasonal = 12)
 tm <- validate_temporal_multiscale(tm, data.frame(t = 1:36))
 class(tm)
+#> [1] "tulpa_temporal_multiscale" "tulpa_temporal"           
+#> [3] "list"                     
 ```

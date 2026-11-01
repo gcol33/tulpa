@@ -22,4 +22,5 @@ A `tulpa_prior` object
 
 ``` r
 prior_half_normal(1)
+#> Half-Normal(1.00)
 ```

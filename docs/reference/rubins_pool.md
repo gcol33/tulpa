@@ -49,5 +49,7 @@ draws <- list(
 )
 pooled <- rubins_pool(draws)
 pooled$m$mean
+#> [1] 1.033333 0.500000
 pooled$m$se
+#> [1] 0.2666667 0.1154701
 ```

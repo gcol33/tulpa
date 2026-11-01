@@ -180,6 +180,10 @@ fit <- tulpa_nuts_spde(y, cbind(1, x), spatial = spec, family = "gaussian",
                        control = list(n_iter = 300L, n_warmup = 150L,
                                       seed = 1L))
 colMeans(fit$draws[, c("beta[1]", "beta[2]")])
+#>    beta[1]    beta[2] 
+#>  0.7120346 -0.9037404 
 fit$phi_summary
+#>      mean    median       q05       q95 
+#> 0.2856609 0.2806777 0.2321932 0.3384912 
 # }
 ```

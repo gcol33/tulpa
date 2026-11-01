@@ -223,3 +223,42 @@ reference:
 - title: internal
   contents:
   - lacks_concepts(c("spatial", "temporal"))
+
+navbar:
+  structure:
+    left:
+    - intro
+    - reference
+    - articles
+    - news
+    right:
+    - search
+    - github
+    - lightswitch
+  components:
+    intro:
+      text: Get started
+      href: articles/quickstart.html
+
+articles:
+- title: Get started
+  contents:
+  - quickstart
+- title: Workflows
+  navbar: Workflows
+  contents:
+  - articles/data-formatting
+  - articles/random-slopes
+  - spatial-models
+  - articles/temporal-models
+  - articles/priors
+  - articles/model-comparison
+  - articles/checkpoint
+  - articles/tgmrf
+  - articles/em-laplace
+- title: Background
+  navbar: Background
+  contents:
+  - inference-modes
+  - articles/reliability-pareto-k
+  - articles/sbc

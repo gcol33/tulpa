@@ -96,5 +96,22 @@ set.seed(1)
 n <- 200L; X <- cbind(1, rnorm(n))
 y <- rbinom(n, 1, plogis(X %*% c(0, 0.5)))
 tulpa_profile(tulpa_laplace(y, rep(1L, n), X, family = "binomial"))
+#>                phase  seconds calls  ms_per_call       share
+#> 1        line_search 1.06e-05     3 0.0035333333 0.522167488
+#> 2            scatter 8.10e-06     4 0.0020250000 0.399014778
+#> 3          factorize 5.00e-07     3 0.0001666667 0.024630542
+#> 4    hessian_extract 4.00e-07     1 0.0004000000 0.019704433
+#> 5                eta 2.00e-07     4 0.0000500000 0.009852217
+#> 6            log_det 2.00e-07     1 0.0002000000 0.009852217
+#> 7      log_lik_prior 2.00e-07     1 0.0002000000 0.009852217
+#> 8  inner_diagnostics 1.00e-07     1 0.0001000000 0.004926108
+#> 9      pattern_build 0.00e+00     0 0.0000000000 0.000000000
+#> 10              prep 0.00e+00     0 0.0000000000 0.000000000
+#> 11           analyze 0.00e+00     0 0.0000000000 0.000000000
+#> 12             solve 0.00e+00     0 0.0000000000 0.000000000
+#> 13          gradient 0.00e+00     0 0.0000000000 0.000000000
+#> 14   outer_grid_cell 0.00e+00     0 0.0000000000          NA
+#> 15       nuts_warmup 0.00e+00     0 0.0000000000          NA
+#> 16     nuts_sampling 0.00e+00     0 0.0000000000          NA
 # }
 ```

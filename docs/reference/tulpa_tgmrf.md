@@ -111,5 +111,6 @@ fit <- tulpa_tgmrf(y, rep(1L, n), cbind(1, x), block = blk,
                    family = "poisson", mode = "imh",
                    control = list(n_iter = 300L, warmup = 150L))
 mean(exp(fit$draws[, "log_sigma"]))   # posterior mean group SD
+#> [1] 0.6861869
 # }
 ```

@@ -51,4 +51,5 @@ set.seed(1)
 d <- data.frame(lon = runif(30), lat = runif(30))
 gp <- validate_gp(spatial_gp(~ lon + lat, nn = 5), d)
 gp$n_spatial
+#> [1] 30
 ```

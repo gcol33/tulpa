@@ -100,5 +100,6 @@ fit <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
              spatial = list(type = "icar", adjacency = W), mode = "laplace")
 fe <- field_effects(fit)
 plot(fe$unit, fe$estimate, type = "b")
+
 # }
 ```

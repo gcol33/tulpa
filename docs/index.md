@@ -1,6 +1,7 @@
 # tulpa
 
-*Bayesian hierarchical models for grouped, spatial and temporal data*
+*Templated Unified Library for Posterior Approximation: Bayesian
+hierarchical models for grouped, spatial and temporal data*
 
 tulpa fits Bayesian hierarchical models in R, including models for
 counts, proportions, repeated measurements, and observations distributed
