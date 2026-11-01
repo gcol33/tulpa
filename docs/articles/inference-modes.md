@@ -597,7 +597,7 @@ data.frame(
 )
 #>      backend tier slope slope_se seconds
 #> 1    laplace    2 0.800    0.128    0.00
-#> 2       mala    1 0.863    0.140    0.12
+#> 2       mala    1 0.863    0.140    0.09
 #> 3 pathfinder    2 0.802    0.130    0.03
 ```
 

@@ -66,17 +66,17 @@ the synthesis: approximate the easy blocks, sample only the hard
 directions, and never hide which one ran where.
 
 The observation likelihood is the one piece tulpa keeps deliberately
-small. The engine ships five built-in families (`gaussian`, `binomial`,
-`poisson`, `neg_binomial_2`, `beta`), which cover the common regression
-cases. Model packages built on the engine plug their own likelihoods
-into the same inference machinery through a `LikelihoodSpec` and inherit
-every tier, every latent block, and every accessor for free. Occupancy
-and detection models live in tulpaObs, ratio and rate models in
-tulpaRatio, generalized linear mixed models in tulpaGlmm. This vignette
-stays on the engine’s own surface: simulate data with a known truth, fit
-it with [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md),
-pull the estimates out, predict, compare specifications, and take a
-short tour of the latent blocks. Each tour stop links to the dedicated
+small. The engine fits the common regression families itself, from
+`gaussian`, `binomial` and `poisson` to `beta` and `gamma`. Model
+packages built on the engine plug their own likelihoods into the same
+inference machinery through a `LikelihoodSpec` and inherit every tier,
+every latent block, and every accessor for free. Occupancy and detection
+models live in tulpaObs, ratio and rate models in tulpaRatio,
+generalized linear mixed models in tulpaGlmm. This vignette stays on the
+engine’s own surface: simulate data with a known truth, fit it with
+[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md), pull
+the estimates out, predict, compare specifications, and take a short
+tour of the latent blocks. Each tour stop links to the dedicated
 vignette that goes deep.
 
 One habit runs through everything below: simulate against a known truth.
@@ -423,15 +423,13 @@ the response range, so a binomial prediction reports probabilities in
 the natural scale for a symmetric credible band; map to the response
 scale when you want the answer in the units a reader expects.
 
-## Other families
+## Other response families
 
-The five built-in families share one call shape. Only `family` changes,
-plus any dispersion `phi` the family needs. The same
-[`coef()`](https://rdrr.io/r/stats/coef.html),
-[`summary()`](https://rdrr.io/r/base/summary.html),
-[`predict()`](https://rdrr.io/r/stats/predict.html), and comparison
-machinery applies, because the engine treats the likelihood as a
-pluggable component and everything above it is family-blind.
+The fits so far have a gaussian response. For another kind of response,
+change the `family` argument. The formula, the inference mode and the
+functions that read the fit stay the same. The two fits below simulate a
+Poisson count and a beta proportion with known coefficients and fit each
+with the Laplace approximation.
 
 ``` r
 
@@ -449,17 +447,34 @@ coef(tulpa(y ~ x, data = db, family = "beta", mode = "laplace", phi = 8))
 #>   0.1751979   0.8559101
 ```
 
-The Poisson slope recovers the 0.6 it was built from and the beta slope
-recovers its 0.8, each on its own link scale: log for the Poisson rate,
-logit for the beta mean. Counts go through `poisson` or, when they are
-overdispersed, through `neg_binomial_2` with `phi` setting the size.
-Binary and binomial outcomes go through `binomial`, which the next
-sections use heavily. Proportions strictly inside the unit interval go
-through `beta` with `phi` as the precision. When your response does not
-fit one of these five, the right move is a model package rather than a
-workaround in the formula: zero-inflation, hurdles, detection and
-occupancy, and ratio responses all have a dedicated likelihood in a
-package that plugs into this same engine.
+Each slope is close to the value the data were simulated with, 0.6 for
+the Poisson counts and 0.8 for the beta proportions. The coefficients
+are on the scale of the family’s link function: the log of the expected
+count for the Poisson model and the logit of the mean proportion for the
+beta model.
+
+The beta model also needs its precision, which is passed as `phi`.
+[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) holds
+`phi` fixed at the value you give it; here that is 8, the precision used
+to simulate the data. Other families read their dispersion from the same
+argument: the size for `neg_binomial_2` and the residual variance for
+`gaussian`. `binomial` and `poisson` have no dispersion and ignore it.
+
+[`family_names()`](https://gillescolling.com/tulpa/reference/family_names.md)
+lists every family
+[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) fits.
+The common choices are:
+
+- counts: `poisson`, or `neg_binomial_2` when the counts vary more than
+  a Poisson distribution allows;
+- binary outcomes and successes out of a number of trials: `binomial`,
+  used in the sections that follow;
+- proportions strictly between 0 and 1: `beta`;
+- positive continuous values: `gamma` or `lognormal`.
+
+Detection and occupancy models are in tulpaObs, and ratio, rate and
+zero-inflated models in tulpaRatio. Both packages add their own
+likelihood to this engine.
 
 ## Inference modes
 

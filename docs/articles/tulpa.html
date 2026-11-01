@@ -160,19 +160,18 @@ including the ones a Laplace step would have settled instantly. tulpa is
 the synthesis: approximate the easy blocks, sample only the hard
 directions, and never hide which one ran where.</p>
 <p>The observation likelihood is the one piece tulpa keeps deliberately
-small. The engine ships five built-in families (<code>gaussian</code>,
-<code>binomial</code>, <code>poisson</code>,
-<code>neg_binomial_2</code>, <code>beta</code>), which cover the common
-regression cases. Model packages built on the engine plug their own
-likelihoods into the same inference machinery through a
-<code>LikelihoodSpec</code> and inherit every tier, every latent block,
-and every accessor for free. Occupancy and detection models live in
-tulpaObs, ratio and rate models in tulpaRatio, generalized linear mixed
-models in tulpaGlmm. This vignette stays on the engine’s own surface:
-simulate data with a known truth, fit it with <code><a href="../reference/tulpa.html">tulpa()</a></code>, pull
-the estimates out, predict, compare specifications, and take a short
-tour of the latent blocks. Each tour stop links to the dedicated
-vignette that goes deep.</p>
+small. The engine fits the common regression families itself, from
+<code>gaussian</code>, <code>binomial</code> and <code>poisson</code> to
+<code>beta</code> and <code>gamma</code>. Model packages built on the
+engine plug their own likelihoods into the same inference machinery
+through a <code>LikelihoodSpec</code> and inherit every tier, every
+latent block, and every accessor for free. Occupancy and detection
+models live in tulpaObs, ratio and rate models in tulpaRatio,
+generalized linear mixed models in tulpaGlmm. This vignette stays on the
+engine’s own surface: simulate data with a known truth, fit it with
+<code><a href="../reference/tulpa.html">tulpa()</a></code>, pull the estimates out, predict, compare
+specifications, and take a short tour of the latent blocks. Each tour
+stop links to the dedicated vignette that goes deep.</p>
 <p>One habit runs through everything below: simulate against a known
 truth. Real data never reveal the values that generated them, so a fit
 that merely looks reasonable proves nothing about whether the method
@@ -465,14 +464,13 @@ symmetric credible band; map to the response scale when you want the
 answer in the units a reader expects.</p>
 </div>
 <div class="section level2">
-<h2 id="other-families">Other families<a class="anchor" aria-label="anchor" href="#other-families"></a>
+<h2 id="other-response-families">Other response families<a class="anchor" aria-label="anchor" href="#other-response-families"></a>
 </h2>
-<p>The five built-in families share one call shape. Only
-<code>family</code> changes, plus any dispersion <code>phi</code> the
-family needs. The same <code><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef()</a></code>, <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>,
-<code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code>, and comparison machinery applies, because the
-engine treats the likelihood as a pluggable component and everything
-above it is family-blind.</p>
+<p>The fits so far have a gaussian response. For another kind of
+response, change the <code>family</code> argument. The formula, the
+inference mode and the functions that read the fit stay the same. The
+two fits below simulate a Poisson count and a beta proportion with known
+coefficients and fit each with the Laplace approximation.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Poisson counts</span></span>
 <span><span class="va">dp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">n</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.6</span> <span class="op">*</span> <span class="va">x</span><span class="op">)</span><span class="op">)</span>, x <span class="op">=</span> <span class="va">x</span><span class="op">)</span></span>
@@ -486,18 +484,32 @@ above it is family-blind.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"beta"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>, phi <span class="op">=</span> <span class="fl">8</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; (Intercept)           x </span></span>
 <span><span class="co">#&gt;   0.1751979   0.8559101</span></span></code></pre></div>
-<p>The Poisson slope recovers the 0.6 it was built from and the beta
-slope recovers its 0.8, each on its own link scale: log for the Poisson
-rate, logit for the beta mean. Counts go through <code>poisson</code>
-or, when they are overdispersed, through <code>neg_binomial_2</code>
-with <code>phi</code> setting the size. Binary and binomial outcomes go
-through <code>binomial</code>, which the next sections use heavily.
-Proportions strictly inside the unit interval go through
-<code>beta</code> with <code>phi</code> as the precision. When your
-response does not fit one of these five, the right move is a model
-package rather than a workaround in the formula: zero-inflation,
-hurdles, detection and occupancy, and ratio responses all have a
-dedicated likelihood in a package that plugs into this same engine.</p>
+<p>Each slope is close to the value the data were simulated with, 0.6
+for the Poisson counts and 0.8 for the beta proportions. The
+coefficients are on the scale of the family’s link function: the log of
+the expected count for the Poisson model and the logit of the mean
+proportion for the beta model.</p>
+<p>The beta model also needs its precision, which is passed as
+<code>phi</code>. <code><a href="../reference/tulpa.html">tulpa()</a></code> holds <code>phi</code> fixed at
+the value you give it; here that is 8, the precision used to simulate
+the data. Other families read their dispersion from the same argument:
+the size for <code>neg_binomial_2</code> and the residual variance for
+<code>gaussian</code>. <code>binomial</code> and <code>poisson</code>
+have no dispersion and ignore it.</p>
+<p><code><a href="../reference/family_names.html">family_names()</a></code> lists every family <code><a href="../reference/tulpa.html">tulpa()</a></code>
+fits. The common choices are:</p>
+<ul>
+<li>counts: <code>poisson</code>, or <code>neg_binomial_2</code> when
+the counts vary more than a Poisson distribution allows;</li>
+<li>binary outcomes and successes out of a number of trials:
+<code>binomial</code>, used in the sections that follow;</li>
+<li>proportions strictly between 0 and 1: <code>beta</code>;</li>
+<li>positive continuous values: <code>gamma</code> or
+<code>lognormal</code>.</li>
+</ul>
+<p>Detection and occupancy models are in tulpaObs, and ratio, rate and
+zero-inflated models in tulpaRatio. Both packages add their own
+likelihood to this engine.</p>
 </div>
 <div class="section level2">
 <h2 id="inference-modes">Inference modes<a class="anchor" aria-label="anchor" href="#inference-modes"></a>
