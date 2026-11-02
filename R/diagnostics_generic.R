@@ -563,15 +563,17 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
     if (!is.null(s)) return(s)
   }
   # fit_spde()'s CCD / grid path (the "auto"/nested SPDE backend) carries its
-  # own (range, sigma) outer-grid posterior in $nested rather than a generic
-  # $theta_grid or draw columns: R/fit_spde_nested.R stores $range / $sigma on
-  # the fit as the single anchor point the fixed effects were refit at, so
-  # reading those instead of $nested would report a point, not a posterior.
-  if (!is.null(object$nested) && !is.null(object$nested$range_grid) &&
-      !is.null(object$nested$sigma_grid) && !is.null(object$nested$weights)) {
-    return(.wtd_grid_summary(
-      list(range = object$nested$range_grid, sigma = object$nested$sigma_grid),
-      object$nested$weights, probs))
+  # (range, sigma) outer-grid record in $nested (`.spde_nested_record()`);
+  # $range / $sigma on the fit are the single anchor point the fixed effects
+  # were refit at, a point rather than a posterior. The record is read by the
+  # same summary as every other nested grid, which reads a CCD as the moment
+  # rule it is: the weighted quantile of its nine nodes cannot reach past the
+  # outermost one, about 1.6 posterior SDs out, so a 95% interval read that
+  # way is cut at the design.
+  if (is.list(object$nested) && !is.null(object$nested$theta_grid)) {
+    s <- .nested_hyper_summary(object$nested, probs,
+                               transform = .SPATIAL_HYPER_TRANSFORM)
+    if (!is.null(s)) return(s)
   }
   # The sampler's own column names (src/sampler_model_data.h): BYM2 samples
   # its total SD as `log_sigma_spatial` and its mixing weight as

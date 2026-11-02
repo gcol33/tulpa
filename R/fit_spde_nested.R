@@ -163,12 +163,14 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
       sigma_mean = sum(weights * grid$sigma),
       range_best = grid$range[best],
       sigma_best = grid$sigma[best]
-    ), .spde_nested_record(result, grid$range, grid$sigma, log_post, sp))
+    ), .spde_nested_record(result, grid$range, grid$sigma, log_post, sp,
+                         integration = "grid"))
   )
 }
 
 # The outer-grid record every nested-Laplace fit carries, for the (range,
-# sigma) integration: the cells (`theta_grid`), each cell's log posterior
+# sigma) integration: the rule that laid it (`integration`, "ccd" or "grid"),
+# the cells (`theta_grid`), each cell's log posterior
 # density (`log_marginal`, hyperprior included), its inner Laplace mode
 # (`modes`, the latent [beta, RE, mesh] vector) and the marginal variance of
 # every mesh node within the cell (`grid_field_var`, columns
@@ -179,8 +181,10 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
 # `field_effects()` summarizes. A cell whose precision was not retained (the fractional-nu path
 # solves its own operator and stores none) carries modes and variances only
 # where the kernel returned them.
-.spde_nested_record <- function(result, range_grid, sigma_grid, log_post, sp) {
+.spde_nested_record <- function(result, range_grid, sigma_grid, log_post, sp,
+                               integration) {
   rec <- list(
+    integration  = integration,
     theta_grid   = cbind(range = as.numeric(range_grid),
                          sigma = as.numeric(sigma_grid)),
     log_marginal = as.numeric(log_post)
@@ -431,6 +435,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
       hessian_logsc = H,
       f_0           = ccd$f_0,
       n_points      = ccd$n_points
-    ), .spde_nested_record(result, range_grid, sigma_grid, log_post, sp))
+    ), .spde_nested_record(result, range_grid, sigma_grid, log_post, sp,
+                         integration = "ccd"))
   )
 }

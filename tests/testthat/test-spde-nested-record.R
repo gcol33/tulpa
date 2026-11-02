@@ -72,7 +72,7 @@ test_that("the per-node field variance is the exact Gaussian posterior variance"
     n_obs = n, n_mesh = sp$n_mesh, C0_diag = sp$C0_diag, G1_x = sp$G1_x,
     G1_i = sp$G1_i, G1_p = sp$G1_p, range_grid = r, sigma_grid = s, nu = 1,
     family = "gaussian", phi = sqrt(phi), store_Q = TRUE)
-  rec <- tulpa:::.spde_nested_record(res, r, s, 0, sp)
+  rec <- tulpa:::.spde_nested_record(res, r, s, 0, sp, "grid")
   kappa <- sqrt(8) / r
   Q <- tulpa_spde_precision_Q(sp, kappa, 1 / (sqrt(4 * pi) * kappa * s))
   D <- cbind(X, as.matrix(sp$A))
@@ -83,3 +83,21 @@ test_that("the per-node field variance is the exact Gaussian posterior variance"
                tolerance = 1e-6)
 })
 
+
+test_that("spatial_range() reads a fit_spde() CCD as a moment rule", {
+  skip_on_cran()
+  fx <- .spde_record_fixture()
+  fit <- fx$fit
+  rec <- fit$nested
+  expect_identical(rec$integration, rec$method)
+  sr <- spatial_range(fit)
+  ref <- tulpa:::.nested_hyper_summary(rec, c(0.025, 0.975),
+                                       transform = tulpa:::.SPATIAL_HYPER_TRANSFORM)
+  expect_equal(sr, ref)
+  if (identical(rec$method, "ccd")) {
+    # A weighted quantile of the nine design nodes stops at the outermost node,
+    # about 1.6 posterior SDs out; the moment-rule read reaches past it.
+    expect_gt(sr["range", "q97.5"], max(rec$range_grid))
+    expect_gt(sr["sigma", "q97.5"], max(rec$sigma_grid))
+  }
+})
