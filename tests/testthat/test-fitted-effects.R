@@ -115,3 +115,11 @@ test_that("the diagnostics take residual vectors and other models unchanged", {
                unname(durbin_watson(stats::residuals(lm_fit))$statistic))
   expect_error(moran_i(list(a = 1), coords), "fitted model or a numeric vector")
 })
+
+test_that("plot.tulpa_variogram passes graphical arguments over its defaults", {
+  set.seed(1)
+  vg <- tulpa_variogram(rnorm(60), cbind(runif(60), runif(60)), n_bins = 5)
+  pdf(NULL); on.exit(grDevices::dev.off(), add = TRUE)
+  expect_no_error(plot(vg, main = "custom", xlab = "km", pch = 1, cex = 1))
+  expect_invisible(plot(vg))
+})

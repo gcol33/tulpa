@@ -660,11 +660,14 @@ tulpa_variogram <- function(object, coords, n_bins = 15L, max_dist = NULL,
 #'   by the pair count, and returns `x` invisibly.
 #' @export
 plot.tulpa_variogram <- function(x, ...) {
-  plot(x$dist, x$gamma,
-       xlab = "Distance", ylab = "Semivariance",
-       main = "Empirical Semivariogram",
-       pch = 19, cex = sqrt(x$n_pairs / max(x$n_pairs)) * 2, ...)
-  lines(x$dist, x$gamma, lty = 2, col = "grey50")
+  # The drawn defaults are overridden by any graphical argument in `...`.
+  args <- utils::modifyList(
+    list(x = x$dist, y = x$gamma, xlab = "Distance", ylab = "Semivariance",
+         main = "Empirical Semivariogram", pch = 19,
+         cex = sqrt(x$n_pairs / max(x$n_pairs)) * 2),
+    list(...))
+  do.call(graphics::plot, args)
+  graphics::lines(x$dist, x$gamma, lty = 2, col = "grey50")
   invisible(x)
 }
 
