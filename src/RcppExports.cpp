@@ -675,21 +675,22 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// cpp_gp_field_predict
-Rcpp::NumericVector cpp_gp_field_predict(const Rcpp::NumericMatrix& new_coords, const Rcpp::NumericMatrix& unique_coords, const Rcpp::NumericMatrix& field_grid, const Rcpp::NumericVector& sigma2_grid, const Rcpp::NumericVector& phi_grid, const Rcpp::NumericVector& weights, int nn, int cov_type);
-RcppExport SEXP _tulpa_cpp_gp_field_predict(SEXP new_coordsSEXP, SEXP unique_coordsSEXP, SEXP field_gridSEXP, SEXP sigma2_gridSEXP, SEXP phi_gridSEXP, SEXP weightsSEXP, SEXP nnSEXP, SEXP cov_typeSEXP) {
+// cpp_gp_field_rows
+Rcpp::NumericMatrix cpp_gp_field_rows(const Rcpp::NumericMatrix& new_coords, const Rcpp::NumericMatrix& unique_coords, const Rcpp::NumericMatrix& field_rows, const Rcpp::IntegerVector& cell, const Rcpp::NumericVector& sigma2_cell, const Rcpp::NumericVector& phi_cell, int nn, int cov_type, const Rcpp::NumericMatrix& noise);
+RcppExport SEXP _tulpa_cpp_gp_field_rows(SEXP new_coordsSEXP, SEXP unique_coordsSEXP, SEXP field_rowsSEXP, SEXP cellSEXP, SEXP sigma2_cellSEXP, SEXP phi_cellSEXP, SEXP nnSEXP, SEXP cov_typeSEXP, SEXP noiseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type new_coords(new_coordsSEXP);
     Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type unique_coords(unique_coordsSEXP);
-    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type field_grid(field_gridSEXP);
-    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type sigma2_grid(sigma2_gridSEXP);
-    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type phi_grid(phi_gridSEXP);
-    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type weights(weightsSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type field_rows(field_rowsSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::IntegerVector& >::type cell(cellSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type sigma2_cell(sigma2_cellSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type phi_cell(phi_cellSEXP);
     Rcpp::traits::input_parameter< int >::type nn(nnSEXP);
     Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_gp_field_predict(new_coords, unique_coords, field_grid, sigma2_grid, phi_grid, weights, nn, cov_type));
+    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type noise(noiseSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_gp_field_rows(new_coords, unique_coords, field_rows, cell, sigma2_cell, phi_cell, nn, cov_type, noise));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -786,24 +787,6 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type m(mSEXP);
     Rcpp::traits::input_parameter< double >::type c(cSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_hsgp_basis_2d(coords, m, c));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_hsgp_field_predict
-Rcpp::NumericVector cpp_hsgp_field_predict(const Rcpp::NumericMatrix& coords_train, const Rcpp::NumericMatrix& coords_new, int m, double c, const Rcpp::NumericMatrix& beta_grid, const Rcpp::NumericVector& sigma2_grid, const Rcpp::NumericVector& lengthscale_grid, const Rcpp::NumericVector& weights);
-RcppExport SEXP _tulpa_cpp_hsgp_field_predict(SEXP coords_trainSEXP, SEXP coords_newSEXP, SEXP mSEXP, SEXP cSEXP, SEXP beta_gridSEXP, SEXP sigma2_gridSEXP, SEXP lengthscale_gridSEXP, SEXP weightsSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type coords_train(coords_trainSEXP);
-    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type coords_new(coords_newSEXP);
-    Rcpp::traits::input_parameter< int >::type m(mSEXP);
-    Rcpp::traits::input_parameter< double >::type c(cSEXP);
-    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type beta_grid(beta_gridSEXP);
-    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type sigma2_grid(sigma2_gridSEXP);
-    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type lengthscale_grid(lengthscale_gridSEXP);
-    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type weights(weightsSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_hsgp_field_predict(coords_train, coords_new, m, c, beta_grid, sigma2_grid, lengthscale_grid, weights));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -2427,18 +2410,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// cpp_spde_field_se
-Rcpp::NumericVector cpp_spde_field_se(const Eigen::Map<Eigen::SparseMatrix<double>> H, const Eigen::Map<Eigen::SparseMatrix<double>> Cq);
-RcppExport SEXP _tulpa_cpp_spde_field_se(SEXP HSEXP, SEXP CqSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const Eigen::Map<Eigen::SparseMatrix<double>> >::type H(HSEXP);
-    Rcpp::traits::input_parameter< const Eigen::Map<Eigen::SparseMatrix<double>> >::type Cq(CqSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_spde_field_se(H, Cq));
-    return rcpp_result_gen;
-END_RCPP
-}
 // cpp_laplace_fit_spde
 Rcpp::List cpp_laplace_fit_spde(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p, int n_obs, int n_mesh, Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, double kappa, double tau_spde, std::string family, double phi, int alpha, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::NumericVector> weights_nullable, Rcpp::Nullable<Rcpp::List> beta_prior);
 RcppExport SEXP _tulpa_cpp_laplace_fit_spde(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP A_xSEXP, SEXP A_iSEXP, SEXP A_pSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP kappaSEXP, SEXP tau_spdeSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP alphaSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP rational_poles_nullableSEXP, SEXP rational_weights_nullableSEXP, SEXP offset_nullableSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP weights_nullableSEXP, SEXP beta_priorSEXP) {
@@ -3119,7 +3090,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_family_ad_terms", (DL_FUNC) &_tulpa_cpp_family_ad_terms, 6},
     {"_tulpa_cpp_glmm_elt_terms", (DL_FUNC) &_tulpa_cpp_glmm_elt_terms, 5},
     {"_tulpa_cpp_link_ladder", (DL_FUNC) &_tulpa_cpp_link_ladder, 2},
-    {"_tulpa_cpp_gp_field_predict", (DL_FUNC) &_tulpa_cpp_gp_field_predict, 8},
+    {"_tulpa_cpp_gp_field_rows", (DL_FUNC) &_tulpa_cpp_gp_field_rows, 9},
     {"_tulpa_cpp_gpu_available", (DL_FUNC) &_tulpa_cpp_gpu_available, 0},
     {"_tulpa_cpp_gpu_backend_kind", (DL_FUNC) &_tulpa_cpp_gpu_backend_kind, 0},
     {"_tulpa_cpp_gpu_info", (DL_FUNC) &_tulpa_cpp_gpu_info, 0},
@@ -3129,7 +3100,6 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_available_ram_bytes", (DL_FUNC) &_tulpa_cpp_available_ram_bytes, 0},
     {"_tulpa_cpp_performance_core_count", (DL_FUNC) &_tulpa_cpp_performance_core_count, 0},
     {"_tulpa_cpp_hsgp_basis_2d", (DL_FUNC) &_tulpa_cpp_hsgp_basis_2d, 3},
-    {"_tulpa_cpp_hsgp_field_predict", (DL_FUNC) &_tulpa_cpp_hsgp_field_predict, 8},
     {"_tulpa_cpp_hsgp_domain_2d", (DL_FUNC) &_tulpa_cpp_hsgp_domain_2d, 2},
     {"_tulpa_cpp_hsgp_basis_2d_domain", (DL_FUNC) &_tulpa_cpp_hsgp_basis_2d_domain, 3},
     {"_tulpa_cpp_hsgp_sqrt_spectral", (DL_FUNC) &_tulpa_cpp_hsgp_sqrt_spectral, 3},
@@ -3192,7 +3162,6 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_tulpa_set_integrator_cpp", (DL_FUNC) &_tulpa_tulpa_set_integrator_cpp, 2},
     {"_tulpa_tulpa_get_integrator_cpp", (DL_FUNC) &_tulpa_tulpa_get_integrator_cpp, 0},
     {"_tulpa_cpp_selected_inversion_diagonal", (DL_FUNC) &_tulpa_cpp_selected_inversion_diagonal, 4},
-    {"_tulpa_cpp_spde_field_se", (DL_FUNC) &_tulpa_cpp_spde_field_se, 2},
     {"_tulpa_cpp_laplace_fit_spde", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde, 31},
     {"_tulpa_cpp_laplace_fit_spde_precomputed", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde_precomputed, 25},
     {"_tulpa_cpp_nested_laplace_spde", (DL_FUNC) &_tulpa_cpp_nested_laplace_spde, 38},

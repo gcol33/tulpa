@@ -58,6 +58,12 @@ reports its exact mean, SD and quantiles. A fit run with
 \code{control$fitted_var = FALSE} carries no within-cell variance, and its summary
 reports the mixture mean alone (\code{source = "mode"}, \code{sd} and bounds \code{NA}).
 Every other fit summarizes its draws.
+
+At \code{newdata}, a continuous spatial field (SPDE, GP / NNGP, HSGP) is drawn at
+the new locations from its conditional distribution given the fitted field,
+within each hyperparameter cell and mixed over the cells; these are the
+draws \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}} summarizes, so the two agree to Monte Carlo
+error.
 }
 \examples{
 \donttest{

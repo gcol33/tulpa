@@ -148,7 +148,6 @@ unity_spatial.o: \
   hsgp_basis.cpp \
   msgp_nc_apply.cpp \
   nngp_nc_term_apply.cpp \
-  spde_field_se.cpp \
   spde_laplace.cpp \
   spde_nc_apply.cpp \
   spde_nc_transform.cpp \

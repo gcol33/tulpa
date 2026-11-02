@@ -725,6 +725,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         r, r$blocks, r$axis_offsets, r$theta_grid, within = within_cell))
     tm$mark("diagnostics")
     res$prior <- prior
+    res$field_solve <- .nl_field_solve_record("multi", cargs_no_ckpt, prior,
+                                              likelihood)
     res$timing <- tm$timing()
     res <- .nl_attach_checkpoint_loaded(res, .ckpt, ckpt_loaded0)
     return(.finalize_fit(res, backend = "nested_laplace",
@@ -848,6 +850,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     remoments = function(r) .nl_posterior_moments(r, type, within = within_cell))
   tm$mark("diagnostics")
   res$prior <- prior
+  res$field_solve <- .nl_field_solve_record("registry", cargs_no_ckpt, prior,
+                                            type = type)
   res$timing <- tm$timing()
   res <- .nl_attach_checkpoint_loaded(res, .ckpt, ckpt_loaded0)
   .finalize_fit(res, backend = "nested_laplace",
@@ -1841,6 +1845,24 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
+
+# The record a cell of a grid fit is solved again from when the latent
+# posterior of a continuous spatial field is drawn (`.field_cell_solve()`): the
+# dispatcher arguments the grid ran under, less the response and the design
+# the fit carries itself, and the door (`"registry"`, a single block's kernel,
+# with its `type`; `"multi"`, the multi-block driver). NULL for a fit with no
+# continuous field block, and for one through a model-supplied likelihood,
+# whose spec is not kept.
+.nl_field_solve_record <- function(door, cargs, prior, likelihood = NULL,
+                                   type = NULL) {
+  blocks <- if (is.list(prior) && is.null(prior$type)) prior else list(prior)
+  types <- vapply(blocks, function(b) tolower(b$type %||% ""), character(1))
+  if (!is.null(likelihood) || !any(types %in% c("spde", "gp", "nngp", "hsgp"))) {
+    return(NULL)
+  }
+  cargs[c("y", "X", "checkpoint_path", "screen_refine")] <- NULL
+  list(door = door, type = type, args = cargs)
+}
 
 # ----------------------------------------------------------------------------
 # Per-grid-point fixed-effects Hessian extraction.

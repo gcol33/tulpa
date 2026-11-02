@@ -1006,6 +1006,15 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
     result$range <- range
     result$sigma <- sigma
     result$spatial <- spatial
+    # The record this one cell is solved again from when its latent posterior
+    # is drawn (`.field_cell_solve()`): the grid kernel at (range, sigma). The
+    # grid kernel takes no observation weights, so a weighted fit has none.
+    if (is.null(weights)) {
+      result$field_solve <- list(door = "spde", args = list(
+        re_idx = re_idx, n_re_groups = as.integer(n_re_groups),
+        sigma_re = sigma_re, max_iter = as.integer(max_iter), tol = tol,
+        beta_prior = beta_prior))
+    }
   }
 
   # Split the mode into fixed effects and the mesh field so every caller (the

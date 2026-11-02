@@ -30,23 +30,24 @@ test_that("svc requires an exact mode (nested/laplace refuse)", {
 # space basis field instead of an NNGP one. compute_param_layout keys the field
 # size on data.svc_hsgp_data.m_total (m^2, shared across terms) rather than
 # n_obs, so the stored svc_w[] columns are basis coefficients (beta), not
-# per-observation field values -- reconstructing the surface needs the same
-# cpp_hsgp_field_predict() krige the HSGP spatial-field predict path uses
-# (R/methods_generic.R:.hsgp_field_at), treating each posterior draw as its own
-# equally-weighted grid cell.
+# per-observation field values. The surface is the posterior mean over draws of
+# Phi diag(sqrt(S_d)) beta_d, the basis rebuilt at the training coordinates on
+# their own domain and the spectral scales at each draw's hyperparameters.
 .hsgp_svc_field_from_draws <- function(fit, spatial, term = 1L) {
   m    <- as.integer(spatial$m)
   Mtot <- m * m
   wcol <- grep("^svc_w\\[", colnames(fit$draws))
   beta_grid <- fit$draws[, wcol[seq((term - 1L) * Mtot + 1L, term * Mtot)],
                         drop = FALSE]
-  sigma2_grid     <- exp(fit$draws[, sprintf("log_sigma2_svc[%d]", term)])
-  lengthscale_grid <- exp(fit$draws[, sprintf("log_phi_svc[%d]", term)])
-  n_draws <- nrow(fit$draws)
-  cm <- as.matrix(spatial$coords_matrix)
-  as.numeric(cpp_hsgp_field_predict(
-    cm, cm, m, as.numeric(spatial$c_boundary),
-    beta_grid, sigma2_grid, lengthscale_grid, rep(1 / n_draws, n_draws)))
+  sigma2 <- exp(fit$draws[, sprintf("log_sigma2_svc[%d]", term)])
+  ls     <- exp(fit$draws[, sprintf("log_phi_svc[%d]", term)])
+  cm <- matrix(as.numeric(spatial$coords_matrix), ncol = 2L)
+  dom <- cpp_hsgp_domain_2d(cm, as.numeric(spatial$c_boundary))
+  basis <- cpp_hsgp_basis_2d_domain(cm, m, dom)
+  scaled <- t(vapply(seq_len(nrow(beta_grid)), function(d) beta_grid[d, ] *
+    as.numeric(cpp_hsgp_sqrt_spectral(basis$lambda_eig, sigma2[d], ls[d])),
+    numeric(Mtot)))
+  as.numeric(basis$phi_basis %*% colMeans(scaled))
 }
 
 # Rows sharing a site: the NNGP field lives on the distinct locations and each

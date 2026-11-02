@@ -189,8 +189,8 @@ cpp_link_ladder <- function(eta, link) {
     .Call(`_tulpa_cpp_link_ladder`, eta, link)
 }
 
-cpp_gp_field_predict <- function(new_coords, unique_coords, field_grid, sigma2_grid, phi_grid, weights, nn, cov_type) {
-    .Call(`_tulpa_cpp_gp_field_predict`, new_coords, unique_coords, field_grid, sigma2_grid, phi_grid, weights, nn, cov_type)
+cpp_gp_field_rows <- function(new_coords, unique_coords, field_rows, cell, sigma2_cell, phi_cell, nn, cov_type, noise) {
+    .Call(`_tulpa_cpp_gp_field_rows`, new_coords, unique_coords, field_rows, cell, sigma2_cell, phi_cell, nn, cov_type, noise)
 }
 
 cpp_gpu_available <- function() {
@@ -227,10 +227,6 @@ cpp_performance_core_count <- function() {
 
 cpp_hsgp_basis_2d <- function(coords, m, c) {
     .Call(`_tulpa_cpp_hsgp_basis_2d`, coords, m, c)
-}
-
-cpp_hsgp_field_predict <- function(coords_train, coords_new, m, c, beta_grid, sigma2_grid, lengthscale_grid, weights) {
-    .Call(`_tulpa_cpp_hsgp_field_predict`, coords_train, coords_new, m, c, beta_grid, sigma2_grid, lengthscale_grid, weights)
 }
 
 cpp_hsgp_domain_2d <- function(coords, c) {
@@ -479,10 +475,6 @@ tulpa_get_integrator_cpp <- function() {
 
 cpp_selected_inversion_diagonal <- function(Q_x, Q_i, Q_p, n) {
     .Call(`_tulpa_cpp_selected_inversion_diagonal`, Q_x, Q_i, Q_p, n)
-}
-
-cpp_spde_field_se <- function(H, Cq) {
-    .Call(`_tulpa_cpp_spde_field_se`, H, Cq)
 }
 
 cpp_laplace_fit_spde <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi = 1.0, alpha = 2L, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL, offset_nullable = NULL, compute_skew = FALSE, skew_idx = NULL, weights_nullable = NULL, beta_prior = NULL) {

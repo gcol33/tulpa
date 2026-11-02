@@ -34,25 +34,18 @@ mixture mean \verb{(1 - pi) E[y | eta]}, \verb{pi = plogis(X_zi beta_zi)}, with 
 zero-inflation design rebuilt from the fit's \code{ziformula} at \code{newdata}.}
 
 \item{se.fit}{If \code{TRUE}, also return the link-scale standard error and
-credible bounds. With an included SPDE field the SE propagates the joint
-(fixed-effect, field) posterior precision at the fitted hyperparameters
--- including the cross term -- conditional on \verb{(range, sigma)} (a nested
-fit's hyperparameter-grid spread is not propagated, so the bound is
-mildly optimistic when that posterior is wide). Integer-nu, no-RE SPDE
-fits only; other layouts decline with an explanation. On a zero-inflated
-fit \code{se.fit} is the count predictor's, and the response-scale bounds are
-quantiles of the mixture mean over draws of the count and zero-inflation
-coefficients jointly (pinned, so repeated calls agree).}
+credible bounds. On a zero-inflated fit \code{se.fit} is the count predictor's,
+and the response-scale bounds are quantiles of the mixture mean over draws
+of the count and zero-inflation coefficients jointly (pinned, so repeated
+calls agree).}
 
 \item{level}{Credible-interval level (default 0.95).}
 
 \item{include_field}{For a continuous-spatial fit (SPDE, HSGP, or GP/NNGP),
-add the kriged field to the prediction (default \code{TRUE}), and for a
+add the field to the prediction (default \code{TRUE}), and for a
 varying-coefficient fit the coefficient field at the \code{newdata} coordinates
-/ times. \code{FALSE} gives the fixed-effect (population) prediction. Ignored for fits with no continuous
-field. For an HSGP or GP/NNGP fit the field is added to the point
-prediction but its uncertainty is not yet propagated into \code{se.fit} (the
-interval reflects the fixed-effect covariance only).}
+/ times. \code{FALSE} gives the fixed-effect (population) prediction. Ignored
+for fits with no continuous field.}
 
 \item{re_form}{Which formula random-effect terms to condition on, as lme4's
 \code{re.form}: \code{NULL} (default) every term, \code{NA} or \code{~0} none (the population
@@ -84,21 +77,29 @@ the covariance and at its estimate or conditioned value otherwise.
 zero); a one-sided formula such as \code{~ (1 | site)} conditions on that term
 alone. With random effects the interval is read over 4000 pinned draws of
 the fixed and random effects jointly (the same on every call), and
-\code{se.fit} is the SD of those draws. For a fit carrying a continuous spatial
-field, the posterior-mean field is interpolated (kriged) to the \code{newdata}
-coordinates and added to the linear predictor by default, so \code{predict()}
-gives the conditional (location-specific) prediction. Three continuous field
-families are supported: an SPDE Matern field (\code{spatial_spde()}), projected
-through the mesh; a Hilbert-space GP field (\code{spatial_gp(approx = "hsgp")}),
-where the Laplacian basis is re-evaluated at the new coordinates (with the
-training centring / boundary); and a GP / NNGP field (\code{spatial_gp()}),
-interpolated by the NNGP conditional mean at each new location's nearest
-training locations. The HSGP and GP/NNGP fields are marginalised over the
-hyperparameter grid (not plugged in at the posterior mean). An areal (ICAR /
-BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field is held at zero, at the
-training design too; the in-sample
-linear predictor with every fitted component is what \code{\link[=posterior_predict]{posterior_predict()}}
-draws and what \code{compare_models(criterion = "waic")} / \code{"loo"} score.
+\code{se.fit} is the SD of those draws.
+
+A fit carrying a continuous spatial field -- an SPDE Matern field
+(\code{\link[=spatial_spde]{spatial_spde()}}), a GP / NNGP field (\code{\link[=spatial_gp]{spatial_gp()}}) or a Hilbert-space GP
+field (\code{spatial_gp(approx = "hsgp")}) -- adds the field at the \code{newdata}
+coordinates by default. The fit's latent posterior is a mixture over its
+hyperparameter cells of Gaussians in the coefficients and the field at its
+fitted support (the mesh nodes, the fitted locations, the basis
+coefficients), and the field at a new location is its conditional
+distribution given that fitted field: the mesh projector there for the SPDE
+field, the basis re-evaluated there (on the domain the fit was built on)
+for the HSGP field, and the NNGP predictive given the field at the nearest
+fitted locations for the GP / NNGP field. \code{fit} is the exact posterior mean
+of the linear predictor, and \code{se.fit} / \code{lower} / \code{upper} are read over 4000
+pinned draws of the cell, the coefficients, the field and its conditional
+at the new locations, so the interval carries the uncertainty of the
+coefficients and the field, the field's conditional (kriging) variance away
+from the data, and the spread of the hyperparameters. These are the draws
+\code{\link[=posterior_linpred]{posterior_linpred()}} and \code{\link[=posterior_predict]{posterior_predict()}} return at the same
+\code{newdata}. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field
+is held at zero, at the training design too; the in-sample linear predictor
+with every fitted component is what \code{\link[=posterior_predict]{posterior_predict()}} draws and what
+\code{compare_models(criterion = "waic")} / \code{"loo"} score.
 
 A spatially or temporally varying coefficient (\code{\link[=spatial_svc]{spatial_svc()}},
 \code{\link[=temporal_tvc]{temporal_tvc()}}) is predicted at the \code{newdata} coordinates / times from

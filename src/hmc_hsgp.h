@@ -28,7 +28,7 @@ using tulpa::HSGPData;
 // Fill the eigenvalues + basis matrix for a GIVEN centering (x_center, y_center)
 // and boundary (L1, L2). Single source of truth for the eigenfunction /
 // eigenvalue math; setup_hsgp_2d derives (center, L) from the coordinate range
-// and calls this, and the prediction path (cpp_hsgp_field_predict) reuses it
+// and calls this, and the prediction basis (cpp_hsgp_basis_2d_domain) reuses it
 // with the training-derived (center, L) so a new-coordinate basis is consistent
 // with the fitted one (the basis depends on the training extent, not the
 // prediction extent).

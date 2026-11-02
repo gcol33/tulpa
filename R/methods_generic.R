@@ -2011,205 +2011,6 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
 }
 
 
-# Krige a fitted HSGP field to coordinates (predict()). The field is
-# grid-marginalised in C++ (cpp_hsgp_field_predict): for each hyperparameter
-# grid cell the per-cell latent (modes tail) is spectral-scaled and projected
-# through the Laplacian basis evaluated at the new coordinates, then weighted by
-# the cell's posterior weight -- never a plug-in at the posterior mean. Returns
-# NULL (decline, leaving eta at the fixed-effect prediction) when the fit is not
-# a plain single-block HSGP nested fit (e.g. it carries an extra latent block),
-# so the caller can fall through cleanly.
-#' @keywords internal
-.hsgp_field_at <- function(object, newdata) {
-  sp <- object$spatial
-  if (is.null(sp) || !identical(sp$type, "hsgp") || is.null(object$modes) ||
-      is.null(object$weights) || is.null(object$sigma2_grid) ||
-      is.null(object$lengthscale_grid) || is.null(sp$coords_matrix)) {
-    return(NULL)
-  }
-  m       <- as.integer(sp[["m"]])
-  Mtot    <- m * m
-  p_fixed <- object$n_fixed %||% ncol(object$model_matrix)
-  modes   <- object$modes
-  # The HSGP basis coefficients are the latent block immediately after the fixed
-  # effects. Any additional latent tail (an iid RE) means this simple slice is
-  # not the field, so decline rather than mis-index.
-  if (ncol(modes) != p_fixed + Mtot) return(NULL)
-  beta_grid <- modes[, p_fixed + seq_len(Mtot), drop = FALSE]
-
-  coords_train <- as.matrix(sp$coords_matrix)
-  if (is.null(newdata)) {
-    coords_new <- coords_train
-  } else {
-    cv <- sp$coord_vars
-    miss <- setdiff(cv, names(newdata))
-    if (length(miss)) {
-      stop("newdata is missing the coordinate column(s): ",
-           paste(miss, collapse = ", "), call. = FALSE)
-    }
-    coords_new <- as.matrix(newdata[, cv, drop = FALSE])
-    # Reapply the training coordinate standardisation (scale() recorded the
-    # training centre / scale as attributes on coords_matrix) so the prediction
-    # basis matches the fitted one.
-    if (isTRUE(sp$scale_coords)) {
-      ctr <- attr(coords_train, "scaled:center")
-      scl <- attr(coords_train, "scaled:scale")
-      if (!is.null(ctr) && !is.null(scl)) {
-        coords_new <- sweep(sweep(coords_new, 2, ctr, "-"), 2, scl, "/")
-      }
-    }
-  }
-  # Strip attributes so the coords reach C++ as plain numeric matrices.
-  ct <- .coords_2col(coords_train, "hsgp() prediction")
-  cn <- .coords_2col(coords_new, "hsgp() prediction")
-  as.numeric(cpp_hsgp_field_predict(
-    ct, cn, m, as.numeric(sp[["c"]]),
-    beta_grid, as.numeric(object$sigma2_grid),
-    as.numeric(object$lengthscale_grid), as.numeric(object$weights)))
-}
-
-# Krige a fitted GP / NNGP field to coordinates (predict()). At the training
-# locations (newdata = NULL) the field is the grid-marginalised posterior mode
-# at each observation's location (exact, no re-kriging). At new coordinates the
-# field is the NNGP conditional mean given the fitted field at the location's
-# nearest training locations, computed per hyperparameter-grid cell in C++
-# (cpp_gp_field_predict, reusing the fit's covariance + conditional kernels) and
-# weighted over the grid. Returns NULL (decline) when the fit is not a plain
-# single-block GP / NNGP nested fit.
-#' @keywords internal
-.gp_field_at <- function(object, newdata) {
-  sp <- object$spatial
-  if (is.null(sp) || !(sp$type %in% c("gp", "nngp")) || is.null(object$modes) ||
-      is.null(object$weights) || is.null(object$theta_grid) ||
-      is.null(sp$unique_coords)) {
-    return(NULL)
-  }
-  tn <- object$theta_names
-  si <- match("sigma2", tn); pj <- match("phi_gp", tn)
-  if (is.na(si) || is.na(pj)) return(NULL)
-  sigma2_grid <- object$theta_grid[, si]
-  phi_grid    <- object$theta_grid[, pj]
-
-  nloc    <- sp$n_unique %||% nrow(sp$unique_coords)
-  p_fixed <- object$n_fixed %||% ncol(object$model_matrix)
-  modes   <- object$modes
-  # The field-at-locations latent is the block after the fixed effects; an extra
-  # latent tail (an iid RE) means this slice is not the field, so decline.
-  if (ncol(modes) != p_fixed + nloc) return(NULL)
-  field_grid <- modes[, p_fixed + seq_len(nloc), drop = FALSE]
-  uc <- .coords_plain(sp$unique_coords)
-
-  if (is.null(newdata)) {
-    # Training locations: the grid-marginalised field at each unique location,
-    # mapped back to observations by obs_to_loc (exact -- no re-kriging).
-    field_loc <- as.numeric(as.numeric(object$weights) %*% field_grid)
-    otl <- sp$obs_to_loc
-    if (is.null(otl)) return(NULL)
-    return(field_loc[otl])
-  }
-
-  cv   <- sp$coord_vars
-  miss <- setdiff(cv, names(newdata))
-  if (length(miss)) {
-    stop("newdata is missing the coordinate column(s): ",
-         paste(miss, collapse = ", "), call. = FALSE)
-  }
-  ncoord <- as.matrix(newdata[, cv, drop = FALSE])
-  if (isTRUE(sp$scale_coords)) {
-    ctr <- attr(sp$coords_matrix, "scaled:center")
-    scl <- attr(sp$coords_matrix, "scaled:scale")
-    if (!is.null(ctr) && !is.null(scl)) {
-      ncoord <- sweep(sweep(ncoord, 2, ctr, "-"), 2, scl, "/")
-    }
-  }
-  nc  <- .coords_plain(ncoord)
-  nn  <- as.integer(object$prior$nn %||% sp$nn %||% 10L)
-  cty <- as.integer(object$prior$cov_type %||% 0L)
-  as.numeric(cpp_gp_field_predict(nc, uc, field_grid, sigma2_grid, phi_grid,
-                                  as.numeric(object$weights), nn, cty))
-}
-
-# The dispersion of an SPDE fit, for the R-side working weights. Every door
-# stores `$phi` in the one engine convention (gaussian / lognormal: the
-# residual variance), so a front-door tulpa() fit and a direct fit_spde() fit
-# read the same way.
-#' @keywords internal
-.spde_phi_variance <- function(object) {
-  object$phi %||% 1.0
-}
-
-# Linear-predictor SE at query points for an SPDE fit with the field included:
-# Var(x*' beta + a*' w) = c' H^{-1} c with c = [x*, a*] and H the joint
-# (beta, field) posterior precision at the fitted hyperparameters -- the
-# working-weight cross term X'WA, the field precision Q(range, sigma), and
-# the kernel's default fixed-effect prior precision. Conditional on the
-# hyperparameters: a nested fit's grid spread in (range, sigma) is not
-# propagated, so the SE is mildly optimistic when the hyperparameter posterior
-# is wide. Integer-nu, no-RE fits only; everything else declines loudly.
-#' @keywords internal
-.spde_linpred_se <- function(object, X_new, A_new) {
-  sp <- object$spatial
-  if (.spde_nu_is_fractional(sp$nu)) {
-    stop("field SE is not available for fractional-nu SPDE fits yet.",
-         call. = FALSE)
-  }
-  X <- object$model_matrix
-  if (is.null(X)) {
-    stop("field SE needs the training design ($model_matrix); fit through ",
-         "tulpa().", call. = FALSE)
-  }
-  p      <- ncol(X)
-  n_mesh <- sp$n_mesh
-  mode   <- object$mode
-  if (is.null(mode) || length(mode) != p + n_mesh) {
-    stop("field SE needs the joint (beta, field) mode with no extra ",
-         "random-effect block; this fit's latent layout does not match.",
-         call. = FALSE)
-  }
-  range_val <- object$range %||% object$nested$range_mean
-  sigma_val <- object$sigma %||% object$nested$sigma_mean
-  if (is.null(range_val) || is.null(sigma_val)) {
-    stop("field SE needs the fitted (range, sigma); none stored.",
-         call. = FALSE)
-  }
-
-  A    <- as(sp$A, "CsparseMatrix")
-  beta <- mode[seq_len(p)]
-  w    <- mode[p + seq_len(n_mesh)]
-  eta  <- as.numeric(X %*% beta) + as.numeric(A %*% w) +
-    (object$offset %||% 0)
-  W <- glmm_weights(eta, object$family, object$n_trials,
-                    .spde_phi_variance(object), y = object$y)
-
-  .kt      <- .spde_kappa_tau(range_val, sigma_val, sp$nu)
-  kappa    <- .kt$kappa
-  tau_spde <- .kt$tau_spde
-  Q <- .spde_precision_Q(sp, kappa, tau_spde)
-
-  XtWX <- crossprod(X, W * X) + diag(1 / .tulpa_prior_sd("laplace")^2, p)
-  WA   <- W * A
-  AtWA <- Matrix::crossprod(A, WA)
-  XtWA <- Matrix::crossprod(Matrix::Matrix(X, sparse = TRUE), WA)
-  H <- rbind(
-    cbind(Matrix::Matrix(XtWX, sparse = TRUE), XtWA),
-    cbind(Matrix::t(XtWA), AtWA + Q)
-  )
-  Cq <- rbind(
-    Matrix::t(Matrix::Matrix(X_new, sparse = TRUE)),
-    Matrix::t(as(A_new, "CsparseMatrix"))
-  )
-  # Per-cell field SE sqrt(colSums(Cq (.) H^{-1} Cq)) is streamed column-by-
-  # column in C++ (cpp_spde_field_se): the joint precision is factorized once,
-  # then each query column is solved on its own, so the dense working set stays
-  # O(p + n_mesh) rather than the (p + n_mesh) x n_cells dense H^{-1} Cq a large
-  # prediction grid would otherwise form.
-  if (ncol(Cq) == 0L) return(numeric(0))
-  cpp_spde_field_se(
-    as(as(H,  "generalMatrix"), "CsparseMatrix"),
-    as(as(Cq, "generalMatrix"), "CsparseMatrix")
-  )
-}
-
 #' Fitted values
 #'
 #' @description
@@ -2319,21 +2120,29 @@ nobs.tulpa_fit <- function(object, ...) {
 #' zero); a one-sided formula such as `~ (1 | site)` conditions on that term
 #' alone. With random effects the interval is read over 4000 pinned draws of
 #' the fixed and random effects jointly (the same on every call), and
-#' `se.fit` is the SD of those draws. For a fit carrying a continuous spatial
-#' field, the posterior-mean field is interpolated (kriged) to the `newdata`
-#' coordinates and added to the linear predictor by default, so `predict()`
-#' gives the conditional (location-specific) prediction. Three continuous field
-#' families are supported: an SPDE Matern field (`spatial_spde()`), projected
-#' through the mesh; a Hilbert-space GP field (`spatial_gp(approx = "hsgp")`),
-#' where the Laplacian basis is re-evaluated at the new coordinates (with the
-#' training centring / boundary); and a GP / NNGP field (`spatial_gp()`),
-#' interpolated by the NNGP conditional mean at each new location's nearest
-#' training locations. The HSGP and GP/NNGP fields are marginalised over the
-#' hyperparameter grid (not plugged in at the posterior mean). An areal (ICAR /
-#' BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field is held at zero, at the
-#' training design too; the in-sample
-#' linear predictor with every fitted component is what [posterior_predict()]
-#' draws and what `compare_models(criterion = "waic")` / `"loo"` score.
+#' `se.fit` is the SD of those draws.
+#'
+#' A fit carrying a continuous spatial field -- an SPDE Matern field
+#' ([spatial_spde()]), a GP / NNGP field ([spatial_gp()]) or a Hilbert-space GP
+#' field (`spatial_gp(approx = "hsgp")`) -- adds the field at the `newdata`
+#' coordinates by default. The fit's latent posterior is a mixture over its
+#' hyperparameter cells of Gaussians in the coefficients and the field at its
+#' fitted support (the mesh nodes, the fitted locations, the basis
+#' coefficients), and the field at a new location is its conditional
+#' distribution given that fitted field: the mesh projector there for the SPDE
+#' field, the basis re-evaluated there (on the domain the fit was built on)
+#' for the HSGP field, and the NNGP predictive given the field at the nearest
+#' fitted locations for the GP / NNGP field. `fit` is the exact posterior mean
+#' of the linear predictor, and `se.fit` / `lower` / `upper` are read over 4000
+#' pinned draws of the cell, the coefficients, the field and its conditional
+#' at the new locations, so the interval carries the uncertainty of the
+#' coefficients and the field, the field's conditional (kriging) variance away
+#' from the data, and the spread of the hyperparameters. These are the draws
+#' [posterior_linpred()] and [posterior_predict()] return at the same
+#' `newdata`. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field
+#' is held at zero, at the training design too; the in-sample linear predictor
+#' with every fitted component is what [posterior_predict()] draws and what
+#' `compare_models(criterion = "waic")` / `"loo"` score.
 #'
 #' A spatially or temporally varying coefficient ([spatial_svc()],
 #' [temporal_tvc()]) is predicted at the `newdata` coordinates / times from
@@ -2377,23 +2186,16 @@ nobs.tulpa_fit <- function(object, ...) {
 #'   mixture mean `(1 - pi) E[y | eta]`, `pi = plogis(X_zi beta_zi)`, with the
 #'   zero-inflation design rebuilt from the fit's `ziformula` at `newdata`.
 #' @param se.fit If `TRUE`, also return the link-scale standard error and
-#'   credible bounds. With an included SPDE field the SE propagates the joint
-#'   (fixed-effect, field) posterior precision at the fitted hyperparameters
-#'   -- including the cross term -- conditional on `(range, sigma)` (a nested
-#'   fit's hyperparameter-grid spread is not propagated, so the bound is
-#'   mildly optimistic when that posterior is wide). Integer-nu, no-RE SPDE
-#'   fits only; other layouts decline with an explanation. On a zero-inflated
-#'   fit `se.fit` is the count predictor's, and the response-scale bounds are
-#'   quantiles of the mixture mean over draws of the count and zero-inflation
-#'   coefficients jointly (pinned, so repeated calls agree).
+#'   credible bounds. On a zero-inflated fit `se.fit` is the count predictor's,
+#'   and the response-scale bounds are quantiles of the mixture mean over draws
+#'   of the count and zero-inflation coefficients jointly (pinned, so repeated
+#'   calls agree).
 #' @param level Credible-interval level (default 0.95).
 #' @param include_field For a continuous-spatial fit (SPDE, HSGP, or GP/NNGP),
-#'   add the kriged field to the prediction (default `TRUE`), and for a
+#'   add the field to the prediction (default `TRUE`), and for a
 #'   varying-coefficient fit the coefficient field at the `newdata` coordinates
-#'   / times. `FALSE` gives the fixed-effect (population) prediction. Ignored for fits with no continuous
-#'   field. For an HSGP or GP/NNGP fit the field is added to the point
-#'   prediction but its uncertainty is not yet propagated into `se.fit` (the
-#'   interval reflects the fixed-effect covariance only).
+#'   / times. `FALSE` gives the fixed-effect (population) prediction. Ignored
+#'   for fits with no continuous field.
 #' @param re_form Which formula random-effect terms to condition on, as lme4's
 #'   `re.form`: `NULL` (default) every term, `NA` or `~0` none (the population
 #'   level), or a one-sided formula naming a subset, e.g. `~ (1 | site)`.
@@ -2425,41 +2227,17 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   X   <- lp$X
   eta <- lp$eta
 
-  # Kriged SPDE field. At training data (newdata = NULL) reuse the fitted
-  # projector; at new coordinates re-project the mesh-node field through the
-  # spec's mesh. Only mesh-backed SPDE fits carry a field here; every other fit
-  # leaves `eta` at the fixed-effect (population) prediction. With se.fit the
-  # joint (beta, field) posterior precision propagates the field uncertainty
-  # (see .spde_linpred_se).
-  is_spde_field <- isTRUE(include_field) &&
-    identical(object$spatial$type, "spde") &&
-    !is.null(object$spatial_effects)
-  spde_se <- NULL
-  if (is_spde_field) {
-    A_new <- if (is.null(newdata)) object$spatial$A
-             else .spde_A_at(object, newdata)
-    eta <- eta + as.numeric(A_new %*% object$spatial_effects)
-    if (se.fit) {
-      spde_se <- .spde_linpred_se(object, X, A_new)
-    }
-  }
+  sel   <- .re_form_select(object, re_form)
+  re_on <- !is.null(sel) && any(sel)
 
-  # Kriged HSGP field: add the grid-marginalised Laplacian-basis field at the
-  # prediction coordinates. Field-uncertainty SE propagation is not yet wired
-  # here (unlike SPDE), so with se.fit the interval reflects the fixed-effect
-  # covariance only -- the point prediction still includes the field.
-  if (isTRUE(include_field) && identical(object$spatial$type, "hsgp") &&
-      !is.null(object$modes)) {
-    hsgp_fld <- .hsgp_field_at(object, newdata)
-    if (!is.null(hsgp_fld)) eta <- eta + hsgp_fld
-  }
-
-  # Kriged GP / NNGP field: the NNGP conditional mean at the prediction
-  # coordinates (grid-marginalised). Same se.fit caveat as HSGP.
-  if (isTRUE(include_field) && !is.null(object$spatial) &&
-      object$spatial$type %in% c("gp", "nngp") && !is.null(object$modes)) {
-    gp_fld <- .gp_field_at(object, newdata)
-    if (!is.null(gp_fld)) eta <- eta + gp_fld
+  # A continuous spatial field (SPDE, GP / NNGP, HSGP): the point prediction is
+  # the exact posterior mean of the linear predictor at the rows, every outer
+  # cell's mode mapped there (`.field_point_eta()`), with the fitted groups'
+  # effects at their cell values and a new group's at zero; the interval is
+  # read over the draws posterior_linpred() returns (`.field_eta_draws()`).
+  src <- if (isTRUE(include_field)) .field_source(object)
+  if (!is.null(src)) {
+    eta <- .field_point_eta(object, src, newdata, sel)
   }
 
   # Spatially / temporally varying coefficients: each posterior draw's
@@ -2472,10 +2250,8 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   # Formula random effects (`re_form`): a group the fit saw at the posterior
   # mean of its effect, a new group at its prior mean, zero -- the conditional
   # point read fitted() uses (`.tulpa_re_point_eta()`).
-  sel   <- .re_form_select(object, re_form)
-  re_on <- !is.null(sel) && any(sel)
   eta_fixed_fields <- eta
-  if (re_on) {
+  if (re_on && is.null(src)) {
     des <- if (is.null(newdata)) object$re_design
            else .tulpa_re_design_at(object, newdata)
     re_pt <- .tulpa_re_point_eta(object, des, sel, accessor = "predict")
@@ -2489,20 +2265,22 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   }
 
   z  <- stats::qnorm(1 - (1 - level) / 2)
-  if (re_on) {
-    # The interval is read over pinned, RNG-neutral draws of the fixed effects
-    # with each row's group effects -- a fitted group's from its conditional
-    # given the row's fixed effects, a new group's from the term's covariance
-    # -- so a new group's band carries the between-group spread. A field the
-    # draws do not carry (a kriged spatial field) enters at its point value.
+  if (re_on || !is.null(src)) {
+    # The interval is read over pinned, RNG-neutral draws: on a continuous-field
+    # fit the field at the rows with the coefficients, otherwise the fixed
+    # effects with each row's group effects -- a fitted group's from its
+    # conditional given the row's fixed effects, a new group's from the term's
+    # covariance -- so a new group's band carries the between-group spread.
     D <- .tulpa_eta_draws(object, newdata = newdata,
                           ndraws = .PREDICT_DRAWS$ndraws,
                           synth_seed = .PREDICT_DRAWS$seed,
-                          re_form = re_form, latent = FALSE)
+                          re_form = re_form, latent = !is.null(src))
     lz <- attr(D, "logit_zi")
-    in_draws <- if (!is.null(newdata) && !is.null(vc_eta)) colMeans(vc_eta)
-                else lp$eta
-    D <- sweep(D, 2L, eta_fixed_fields - in_draws, "+")
+    if (is.null(src)) {
+      in_draws <- if (!is.null(newdata) && !is.null(vc_eta)) colMeans(vc_eta)
+                  else lp$eta
+      D <- sweep(D, 2L, eta_fixed_fields - in_draws, "+")
+    }
     a  <- (1 - level) / 2
     se <- apply(D, 2L, stats::sd)
     if (type == "response") {
@@ -2535,12 +2313,8 @@ predict.tulpa_fit <- function(object, newdata = NULL,
     return(data.frame(fit = eta, se.fit = se, lower = lo, upper = hi))
   }
 
-  se <- if (!is.null(spde_se)) {
-    spde_se
-  } else {
-    V <- vcov(object)[lp$count_names, lp$count_names, drop = FALSE]
-    sqrt(pmax(rowSums((X %*% V) * X), 0))
-  }
+  V  <- vcov(object)[lp$count_names, lp$count_names, drop = FALSE]
+  se <- sqrt(pmax(rowSums((X %*% V) * X), 0))
   lo <- eta - z * se
   hi <- eta + z * se
   if (type == "response") {

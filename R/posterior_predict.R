@@ -221,17 +221,18 @@
 }
 
 # The effect of each group the fit did not see, drawn per row from that row's
-# covariance (`.re_sigma_rows()`), on the linear predictor (S x n_obs) of the
-# term design `des`. Rows of one new group share its draw. Zero where every
-# group was fitted, and for the terms `sel` leaves out.
+# covariance (`sig`, by default `.re_sigma_rows()`: a list over terms of the S
+# per-row matrices), on the linear predictor (S x n_obs) of the term design
+# `des`. Rows of one new group share its draw. Zero where every group was
+# fitted, and for the terms `sel` leaves out.
 #' @keywords internal
-.re_new_group_eta <- function(object, des, keep, S, sel = NULL) {
+.re_new_group_eta <- function(object, des, keep, S, sel = NULL, sig = NULL) {
   n_obs <- length(des[[1L]]$group_idx)
   out <- matrix(0, S, n_obs)
   fresh <- vapply(seq_along(des), function(m)
     (is.null(sel) || sel[m]) && anyNA(des[[m]]$group_idx), logical(1))
   if (!any(fresh)) return(out)
-  sig <- .re_sigma_rows(object, keep, S)
+  if (is.null(sig)) sig <- .re_sigma_rows(object, keep, S)
   for (m in which(fresh)) {
     rt <- des[[m]]
     nc <- rt$n_coefs %||% 1L
@@ -589,6 +590,12 @@
 }
 
 
+# `"field_mixture"`: a fit carrying a continuous spatial field (SPDE, GP /
+# NNGP, HSGP) with its outer cells and the record its cells are solved again
+# from, and no per-cell `fitted_eta` (`.field_source()`). Its linear predictor
+# is the field's latent mixture mapped to the training rows
+# (`.field_eta_draws()`).
+#
 # `"coefficients"`: everything else. The fit carries its fixed effects (and at
 # most the formula random effects and an SPDE field) rather than its linear
 # predictor, so eta is assembled from those.
@@ -602,6 +609,8 @@
       length(object$weights) == nrow(object$fitted_eta)) {
     return("grid_mixture")
   }
+  src <- .field_source(object)
+  if (!is.null(src) && !is.null(src$solve)) return("field_mixture")
   "coefficients"
 }
 
@@ -644,8 +653,12 @@
 # At the training design (newdata = NULL) the draws carry every component the
 # fit estimated, read from the source `.tulpa_linpred_source()` names: the
 # engine's own eta at each sampler draw, the per-cell grid mixture on a
-# nested-Laplace fit, and otherwise the fixed effects plus the offset, the
-# formula random effects and a posterior-mean SPDE field. Fixed effects on that
+# nested-Laplace fit, the latent mixture of a continuous spatial field, and
+# otherwise the fixed effects plus the offset, the formula random effects and a
+# posterior-mean field. A continuous spatial field is drawn the same way at
+# `newdata` and at the training rows when `re_form` keeps a subset of the terms
+# (`.field_eta_draws()`): the field at the new locations given the fitted
+# field, per outer cell. Fixed effects on that
 # last source come from `.fixed_coef_draws()`. At `newdata` the draws carry the
 # fixed effects and the offset, a varying coefficient's field at the newdata
 # coordinates / times, and the formula random effects: a fitted group's effect
@@ -674,7 +687,17 @@
   sel <- .re_form_select(object, re_form)
   source <- if (is.null(newdata) && latent && (is.null(sel) || all(sel))) {
     .tulpa_linpred_source(object)
+  } else if (latent && !is.null(.field_source(object))) {
+    "field_mixture"
   } else "coefficients"
+  if (identical(source, "field_mixture")) {
+    if (!is.null(object$zi_model_matrix)) {
+      stop("posterior_predict(): a continuous-field fit carries no ",
+           "zero-inflation predictor to draw.", call. = FALSE)
+    }
+    return(.field_eta_draws(object, .field_source(object), newdata,
+                            as.integer(ndraws %||% 400L), sel))
+  }
   if (identical(source, "sampler_model")) {
     return(.tulpa_eta_draws_sampler(object, ndraws))
   }
@@ -928,7 +951,9 @@
 # every component the fit estimated, from the same source the replicates of
 # posterior_predict() / simulate() are drawn from (`.tulpa_linpred_source()`):
 # the mean over the stored draws of the engine's own eta on a sampler fit, the
-# weight-averaged per-cell `fitted_eta` on a nested-Laplace grid, and otherwise
+# weight-averaged per-cell `fitted_eta` on a nested-Laplace grid, the
+# weight-averaged map of the cell modes on a continuous-field mixture
+# (`.field_point_eta()`), and otherwise
 # coef() plus the posterior-mean random effects (`.tulpa_re_point()`) and field
 # (`.tulpa_add_latent_eta(point = TRUE)`). Residuals read against this
 # predictor are the ones the replicates are checked against, so a structure the
@@ -963,6 +988,12 @@
     }
     M <- object$fitted_eta[on, , drop = FALSE]
     return(list(eta = as.numeric(colSums(w[on] * M) / sum(w[on])),
+                logit_zi = NULL))
+  }
+  if (identical(source, "field_mixture")) {
+    return(list(eta = .field_point_eta(object, .field_source(object), NULL,
+                                       sel = .re_form_select(object, NULL),
+                                       accessor = accessor),
                 logit_zi = NULL))
   }
   lp <- .tulpa_point_linpred(object, NULL, accessor)
@@ -1125,6 +1156,12 @@ posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
 #' `control$fitted_var = FALSE` carries no within-cell variance, and its summary
 #' reports the mixture mean alone (`source = "mode"`, `sd` and bounds `NA`).
 #' Every other fit summarizes its draws.
+#'
+#' At `newdata`, a continuous spatial field (SPDE, GP / NNGP, HSGP) is drawn at
+#' the new locations from its conditional distribution given the fitted field,
+#' within each hyperparameter cell and mixed over the cells; these are the
+#' draws [predict.tulpa_fit()] summarizes, so the two agree to Monte Carlo
+#' error.
 #'
 #' @param object A `tulpa_fit` object.
 #' @param ... Passed to methods.

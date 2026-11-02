@@ -271,6 +271,11 @@ fit_spde <- function(y, X, spatial,
   no_re_idx       <- if (has_re) re_idx      else rep(0L, n_obs)
   no_re_n_groups  <- if (has_re) as.integer(n_re_groups) else 0L
   no_re_sigma     <- if (has_re) as.numeric(sigma_re)    else 1.0
+  # The inputs of an inner solve the fit does not otherwise carry, kept on the
+  # fit so a cell can be solved again at prediction (`.field_cell_solve()`).
+  solve <- list(re_idx = no_re_idx, n_re_groups = no_re_n_groups,
+                sigma_re = no_re_sigma, max_iter = max_iter, tol = tol,
+                beta_prior = bp)
 
   # Fractional nu integrates the covariance-based rational SPDE:
   # each (range, sigma) cell assembles its own (Q, A_eff)
@@ -309,32 +314,20 @@ fit_spde <- function(y, X, spatial,
       }
       return(list(log_marginal = lm, n_iter = ni))
     }
-    res <- cpp_nested_laplace_spde(
-      y = y, n_trials = n_trials, X = X,
-      re_idx = no_re_idx, n_re_groups = no_re_n_groups,
-      sigma_re = no_re_sigma,
-      A_x = sp$A_x, A_i = sp$A_i, A_p = sp$A_p,
-      n_obs = n_obs, n_mesh = sp$n_mesh,
-      C0_diag = sp$C0_diag,
-      G1_x = sp$G1_x, G1_i = sp$G1_i, G1_p = sp$G1_p,
-      range_grid = range_vec, sigma_grid = sigma_vec,
-      nu = sp$nu,
-      family = family, phi = .phi_to_kernel(family, phi),
-      max_iter = max_iter, tol = tol, n_threads = n_threads,
-      store_Q = isTRUE(keep_Q),
-      checkpoint_path = .ckpt$path,
-      offset_nullable = offset,
-      beta_prior = bp,
-      debias = debias_req, cila = cila_req,
-      prune_tol = prune_tol_eff, screen_iters = screen_it,
-      compute_fitted_var = fitted_var,
-      # The grid and the CCD design weigh a cell by its marginal plus the PC
-      # prior on (log range, log sigma), so a screened solve ranks with both.
-      screen_log_offset = if (prune_tol_eff > 0)
-                            .spde_log_hyperprior(range_vec, sigma_vec, sp,
-                                                 hyperprior)
-    )
-    res
+    .spde_grid_solve(
+      sp, y = y, n_trials = n_trials, X = X, family = family, phi = phi,
+      offset = offset, solve = solve, range_vec = range_vec,
+      sigma_vec = sigma_vec, n_threads = n_threads, store_Q = isTRUE(keep_Q),
+      extra = list(
+        checkpoint_path = .ckpt$path,
+        debias = debias_req, cila = cila_req,
+        prune_tol = prune_tol_eff, screen_iters = screen_it,
+        compute_fitted_var = fitted_var,
+        # The grid and the CCD design weigh a cell by its marginal plus the PC
+        # prior on (log range, log sigma), so a screened solve ranks with both.
+        screen_log_offset = if (prune_tol_eff > 0)
+                              .spde_log_hyperprior(range_vec, sigma_vec, sp,
+                                                   hyperprior)))
   }
 
   # Analytic (log range, log sigma) gradient of the log-marginal, for the CCD
@@ -423,6 +416,10 @@ fit_spde <- function(y, X, spatial,
   # residual variance), the same `$phi` a front-door tulpa() fit carries.
   fit$family <- fit$family %||% family
   fit$phi    <- phi
+  # The record a cell of the fit is solved again from when its latent
+  # posterior is drawn (`.field_cell_solve()`). The fractional-nu operator is
+  # assembled per cell in R and keeps no precision, so it has none.
+  if (!is_frac) fit$field_solve <- list(door = "spde", args = solve)
 
   # Fixed-effect mode + marginal curvature so the generic accessors (coef /
   # summary / confint / vcov / predict) work on a direct or auto-mode SPDE
@@ -487,4 +484,31 @@ fit_spde <- function(y, X, spatial,
          "<data>)), one row per observation.", call. = FALSE)
   }
   invisible(TRUE)
+}
+
+
+# One call of the integer-nu SPDE nested-Laplace kernel at the cells
+# (`range_vec`, `sigma_vec`). `solve` holds the inputs of an inner solve a fit
+# does not otherwise carry (the random-intercept block, the Newton tuning and
+# the fixed-effect prior), so the fit's own grid and a later solve of some of
+# its cells (`.field_cell_solve()`) run one call; `extra` carries the per-call
+# kernel requests (screening, checkpoint, corrections).
+#' @keywords internal
+.spde_grid_solve <- function(sp, y, n_trials, X, family, phi, offset, solve,
+                             range_vec, sigma_vec, n_threads = 1L,
+                             store_Q = FALSE, extra = list()) {
+  do.call(cpp_nested_laplace_spde, c(list(
+    y = y, n_trials = n_trials, X = X,
+    re_idx = solve$re_idx, n_re_groups = solve$n_re_groups,
+    sigma_re = solve$sigma_re,
+    A_x = sp$A_x, A_i = sp$A_i, A_p = sp$A_p,
+    n_obs = length(y), n_mesh = sp$n_mesh,
+    C0_diag = sp$C0_diag,
+    G1_x = sp$G1_x, G1_i = sp$G1_i, G1_p = sp$G1_p,
+    range_grid = range_vec, sigma_grid = sigma_vec,
+    nu = sp$nu,
+    family = family, phi = .phi_to_kernel(family, phi),
+    max_iter = solve$max_iter, tol = solve$tol, n_threads = n_threads,
+    store_Q = store_Q, offset_nullable = offset,
+    beta_prior = solve$beta_prior), extra))
 }

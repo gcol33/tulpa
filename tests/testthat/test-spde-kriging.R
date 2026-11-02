@@ -89,7 +89,9 @@ test_that("SPDE field SE matches the dense joint-precision oracle", {
   Cq <- rbind(t(cbind(1, nd$x)), t(A_new))        # (p + n_mesh) x 2
   V  <- solve(H, Cq)
   se_ref <- sqrt(colSums(Cq * V))
-  expect_equal(pr$se.fit, se_ref, tolerance = 1e-6)
+  # predict() reads the SD off 4000 pinned draws of the cell's Gaussian, whose
+  # relative Monte Carlo error is 1 / sqrt(2 * 4000) = 1.1%.
+  expect_equal(pr$se.fit, se_ref, tolerance = 0.04)
 
   # include_field = FALSE keeps the fixed-effect-only SE path. (No ordering
   # assertion: the beta-field cross-covariance is negative under spatial

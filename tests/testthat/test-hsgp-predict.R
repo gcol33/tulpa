@@ -1,8 +1,8 @@
-# predict() kriging for an HSGP fit (#158). The field is grid-marginalised in
-# C++ (cpp_hsgp_field_predict): the per-cell latent is spectral-scaled and
-# projected through the Laplacian basis at the new coordinates, weighted by the
-# hyperparameter-grid posterior weights. Correctness anchor: the kriged field at
-# held-out coordinates recovers a known smooth surface.
+# predict() for an HSGP fit (#158). At new coordinates the field is the
+# Laplacian basis rebuilt there on the fitted domain (cpp_hsgp_basis_2d_domain)
+# times each cell's spectrally scaled latent, mixed over the hyperparameter
+# grid. Correctness anchor: the predicted field at held-out coordinates
+# recovers a known smooth surface.
 
 skip_on_cran()
 

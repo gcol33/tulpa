@@ -1,7 +1,7 @@
-# predict() kriging for a GP / NNGP fit (#158). The field is interpolated to new
-# coordinates by the NNGP conditional mean (cpp_gp_field_predict) at each new
-# location's nearest training locations, marginalised over the hyperparameter
-# grid. Correctness anchor: the kriged field recovers a known smooth surface at
+# predict() for a GP / NNGP fit (#158). At new coordinates the field is the
+# NNGP predictive given the fitted field at each new location's nearest fitted
+# locations (cpp_gp_field_rows), mixed over the hyperparameter grid.
+# Correctness anchor: the predicted field recovers a known smooth surface at
 # held-out coordinates, and the training-location field recovers it too.
 
 skip_on_cran()
