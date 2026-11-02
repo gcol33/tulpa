@@ -8,10 +8,12 @@ tulpa_em_mc(
   e_step_sample,
   m_step_encode,
   n_mc = 10L,
-  n_mc_growth = 1,
+  n_mc_growth = 4/3,
   n_mc_max = 200L,
   max_iter = 30L,
-  tol = 0.001,
+  tol = 0.1,
+  alpha = 0.25,
+  n_consecutive = 3L,
   verbose = TRUE,
   ...
 )
@@ -21,29 +23,40 @@ tulpa_em_mc(
 Must return a list of length \code{n_mc}, each element a weights
 object of the same shape \code{m_step_encode} consumes (typically a
 numeric vector of length \code{n_obs}, or a matrix \verb{n_obs x K} for
-K-class latent variables). On the first iteration \code{fits} is
-\code{list()} -- the callback should return draws from the prior.}
+K-class latent variables). \code{fits} has the shape the \code{e_step} of
+\code{\link[=tulpa_em_laplace]{tulpa_em_laplace()}} receives: a named list with one entry per
+submodel, each carrying \code{mode} (the mean of the per-draw mode vectors of
+the previous M-step), \code{beta} and \code{se} (the pooled fixed effects and their
+standard errors). On the first iteration \code{fits} is \code{list()} -- the
+callback should return draws from the prior or a starting guess.}
 
 \item{m_step_encode}{Function \verb{function(weights, ...) -> list of blocks}.
 Identical to the contract used by \code{\link[=tulpa_em_laplace]{tulpa_em_laplace()}}: each
 block is a list with required fields \code{y}, \code{X}, \code{family}, and
 optional \code{n_trials}, \code{offset}, \code{phi}, \code{re_list}, \code{spatial},
-\code{weights}. See \code{?tulpa_em_laplace} for the full spec.}
+\code{weights}. See \code{?tulpa_em_laplace} for the full spec. A submodel has to
+keep one latent layout (the length of its mode vector) across draws.}
 
 \item{n_mc}{Initial number of Monte-Carlo draws per iteration
 (default \code{10L}).}
 
-\item{n_mc_growth}{Multiplicative growth of \code{n_mc} per iteration
-(default \code{1.0} = constant). Set \verb{> 1} for ascent-based MCEM
-that ramps up MC accuracy near convergence.}
+\item{n_mc_growth}{Factor by which \code{n_mc} grows after an iteration whose
+step is swamped by Monte Carlo error (default \code{4 / 3}, Booth and
+Hobert's \code{1 + 1/r} at \code{r = 3}). \code{1} keeps \code{n_mc} constant.}
 
 \item{n_mc_max}{Cap on \code{n_mc} (default \code{200L}).}
 
 \item{max_iter}{Maximum EM iterations (default \code{30L}).}
 
-\item{tol}{Convergence tolerance on max relative change in pooled
-parameter estimates (default \code{1e-3}). Looser than \code{tulpa_em_laplace}
-default because Monte-Carlo noise floors the achievable precision.}
+\item{tol}{Convergence tolerance on the largest change between iterations
+in units of each coefficient's pooled standard error (default \code{0.1}).}
+
+\item{alpha}{Level of the confidence ellipsoid that decides whether a step
+is swamped by Monte Carlo error (default \code{0.25}, Booth and Hobert's
+choice).}
+
+\item{n_consecutive}{Number of consecutive iterations \code{delta < tol} has to
+hold for (default \code{3L}).}
 
 \item{verbose}{Print per-iteration progress (default \code{TRUE}).}
 
@@ -55,12 +68,17 @@ A list with:
 \item \code{pooled} -- named list of pooled per-submodel summaries
 (\code{mean}, \code{se}, \code{V_within}, \code{V_between}, \code{V_total}); see
 \code{\link[=rubins_pool]{rubins_pool()}}.
-\item \code{fits} -- list of per-MC-draw fit lists from the \emph{final}
+\item \code{fits} -- the point estimate in the shape \code{e_step_sample} receives:
+per submodel, \code{mode}, \code{beta}, \code{se}.
+\item \code{draws} -- list of per-MC-draw fit lists from the \emph{final}
 iteration, each indexed by submodel name.
 \item \code{n_iter} -- iterations actually run.
-\item \code{n_mc_final} -- \code{n_mc} value used in the last iteration.
+\item \code{n_mc_final} -- \code{n_mc} used in the last iteration.
 \item \code{converged} -- logical.
-\item \code{history} -- \code{data.frame(iter, n_mc, delta)}.
+\item \code{history} -- \code{data.frame(iter, n_mc, delta, mcse, swamped)}: \code{delta}
+the standardized step, \code{mcse} the largest Monte Carlo standard error
+as a fraction of the pooled standard error, \code{swamped} whether the step
+lay inside the Monte Carlo confidence ellipsoid.
 }
 }
 \description{
@@ -71,16 +89,45 @@ instead of computing closed-form weights, an \code{e_step_sample}
 callback returns \code{n_mc} weight draws per iteration. Each draw is
 run through the M-step independently and the resulting parameter
 estimates are pooled via \code{\link[=rubins_pool]{rubins_pool()}}.
+}
+\section{Convergence and the Monte Carlo sample size}{
 
-Convergence criterion is the max relative change in \emph{pooled} M-step
-parameter estimates between iterations. To increase Monte-Carlo
-accuracy as iterations progress (Booth-Hobert ascent-based MCEM),
-set \code{n_mc_growth > 1}.
+An MCEM update carries Monte Carlo error, so a rule on the raw change
+between iterations stalls at the noise floor of the draws however long it
+runs, and a change relative to \verb{|theta|} asks for unbounded precision on a
+coefficient near zero. The rule here follows Booth and Hobert (1999):
+\itemize{
+\item \strong{Step against noise.} The Monte Carlo standard error of the pooled
+update is \code{mcse_j = sqrt(V_between_j / n_mc)}. When the previous
+estimate lies inside the \code{1 - alpha} confidence ellipsoid of the update,
+\code{sum_j (theta_j - theta_prev_j)^2 / mcse_j^2 < qchisq(1 - alpha, P)},
+the EM step is swamped by Monte Carlo error and the next iteration
+draws \code{n_mc * n_mc_growth} (capped at \code{n_mc_max}). A step clearly
+larger than the noise keeps the draw count.
+\item \strong{Stopping on the posterior scale.} The change is measured against
+the pooled standard error \code{se_j} of each coefficient,
+\verb{delta = max_j |theta_j - theta_prev_j| / se_j}, and the fit stops once
+\code{delta < tol} on \code{n_consecutive} consecutive iterations. A step of
+\code{tol} posterior SDs is small whatever the coefficient's magnitude.
+}
+
+The noise in \code{delta} is about \verb{sqrt(2) mcse_j / se_j}, so \code{tol} is also
+the precision the draws have to reach; \code{history$mcse} reports
+\verb{max_j mcse_j / se_j} per iteration. A run that ends with \code{n_mc} at
+\code{n_mc_max} and \code{delta} still at that noise level warns: the cap, not the
+EM, is what stopped it.
+
+Each M-step fits every draw on its own and averages the per-draw
+estimates. The fixed point is therefore the mean of the complete-data
+estimators under \code{p(z | y, theta)}, which agrees with the EM fixed point
+(the maximizer of the averaged complete-data log-likelihood) to first
+order in \code{1/n}.
 
 This is an engine block, not a front door: model packages call it
 programmatically, so its tuning knobs (\code{max_iter}, \code{tol}, \code{n_mc})
 sit in the signature rather than in a \code{control} list.
 }
+
 \section{Tier}{
 
 Inherits the tier of the inner M-step (Laplace => Tier 2). The
@@ -102,10 +149,8 @@ e_step_sample <- function(fits, n_mc, ...) {
   p1 <- if (length(fits) == 0L) {
     ifelse(y > median(y), 0.8, 0.2)
   } else {
-    mu0 <- fits[[1]]$comp0$mode[1]
-    mu1 <- fits[[1]]$comp1$mode[1]
-    l0 <- dnorm(y, mu0, log = TRUE) + log(0.6)
-    l1 <- dnorm(y, mu1, log = TRUE) + log(0.4)
+    l0 <- dnorm(y, fits$comp0$mode[1], log = TRUE) + log(0.6)
+    l1 <- dnorm(y, fits$comp1$mode[1], log = TRUE) + log(0.4)
     1 / (1 + exp(l0 - l1))
   }
   lapply(seq_len(n_mc), function(s) rbinom(length(y), 1, p1))
@@ -117,8 +162,8 @@ m_step_encode <- function(weights, ...) {
                     family = "gaussian"))
 }
 
-fit <- tulpa_em_mc(e_step_sample, m_step_encode, n_mc = 5L, max_iter = 5L,
-                   tol = 5e-3, verbose = FALSE)
+fit <- tulpa_em_mc(e_step_sample, m_step_encode, n_mc = 5L, max_iter = 8L,
+                   verbose = FALSE)
 sapply(fit$pooled, function(p) p$mean)
 fit$history
 }
@@ -131,6 +176,9 @@ of the EM algorithm and the poor man's data augmentation algorithms.
 Booth, J. G., & Hobert, J. P. (1999). Maximizing generalized linear
 mixed model likelihoods with an automated Monte Carlo EM algorithm.
 \emph{JRSS B}, 61(1), 265-285.
+
+Caffo, B. S., Jank, W., & Jones, G. L. (2005). Ascent-based Monte Carlo
+expectation-maximization. \emph{JRSS B}, 67(2), 235-251.
 }
 \seealso{
 \code{\link[=tulpa_em_laplace]{tulpa_em_laplace()}} for the closed-form-weights variant,
