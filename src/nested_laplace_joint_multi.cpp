@@ -1295,12 +1295,26 @@ inline void apply_phi_overrides_multi(
 // nothing. `fixed_block_constraints` is a list of constraint rows
 // (read_constraint_rows), one per field sum-to-zero group or hard constraint, so the retained block is the constrained
 // covariance the fit's own posterior draws are generated from.
+// `fixed_block_extra` (1-based latent indices past the fixed effects) widens the
+// block to those coordinates as well.
 inline tulpa::JointFixedBlockRequest parse_joint_fixed_block_request(
-    int fixed_block_p, Rcpp::Nullable<Rcpp::List> fixed_block_constraints
+    int fixed_block_p, Rcpp::Nullable<Rcpp::List> fixed_block_constraints,
+    Rcpp::Nullable<Rcpp::IntegerVector> fixed_block_extra
 ) {
     tulpa::JointFixedBlockRequest req;
     if (fixed_block_p > 0) {
         req.p = fixed_block_p;
+        if (fixed_block_extra.isNotNull()) {
+            Rcpp::IntegerVector ex(fixed_block_extra);
+            req.extra_idx.reserve(ex.size());
+            for (int e = 0; e < ex.size(); e++) {
+                if (ex[e] <= fixed_block_p) {
+                    Rcpp::stop("fixed_block_extra must index latent coordinates "
+                               "past the %d fixed effects.", fixed_block_p);
+                }
+                req.extra_idx.push_back(ex[e] - 1);
+            }
+        }
         if (fixed_block_constraints.isNotNull()) {
             req.A_cols = tulpa::read_constraint_rows(
                 Rcpp::List(fixed_block_constraints), /*n_x=*/-1,
@@ -1402,6 +1416,7 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     int                 fixed_block_p = 0,
     Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue,
+    Rcpp::Nullable<Rcpp::IntegerVector> fixed_block_extra = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     int                 inner_sparse_override = 0,
@@ -1411,7 +1426,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     bool                screen_only = false  // return the screened surface, no full pass (run_nested_laplace_grid)
 ) {
     const tulpa::JointFixedBlockRequest fixed_block_req =
-        parse_joint_fixed_block_request(fixed_block_p, fixed_block_constraints);
+        parse_joint_fixed_block_request(fixed_block_p, fixed_block_constraints,
+                                        fixed_block_extra);
     const tulpa::JointFixedBlockRequest* fixed_block_ptr =
         fixed_block_req.active() ? &fixed_block_req : nullptr;
 
@@ -1708,10 +1724,12 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
     bool                force_sparse = false,
     int                 fixed_block_p = 0,
     Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue,
-    bool                compute_fitted_var = true
+    bool                compute_fitted_var = true,
+    Rcpp::Nullable<Rcpp::IntegerVector> fixed_block_extra = R_NilValue
 ) {
     const tulpa::JointFixedBlockRequest fixed_block_req =
-        parse_joint_fixed_block_request(fixed_block_p, fixed_block_constraints);
+        parse_joint_fixed_block_request(fixed_block_p, fixed_block_constraints,
+                                        fixed_block_extra);
     int n_arms = arms_list.size();
     int Bspec  = blocks_spec.size();
     if (axis_offsets.size() != Bspec + 1)

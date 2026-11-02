@@ -12,6 +12,7 @@
   level = 0.95,
   include_field = TRUE,
   re_form = NULL,
+  arm = NULL,
   ...
 )
 }
@@ -57,6 +58,8 @@ interval reflects the fixed-effect covariance only).}
 \code{re.form}: \code{NULL} (default) every term, \code{NA} or \code{~0} none (the population
 level), or a one-sided formula naming a subset, e.g. \code{~ (1 | site)}.
 \code{newdata} then carries the grouping columns of the terms kept.}
+\item{arm}{For a \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} fit, the response arm to
+predict (its name or index); may be left \code{NULL} on a one-arm fit.}
 
 \item{...}{Ignored.}
 }
@@ -110,4 +113,17 @@ any grid structure, a factor level the fit did not see, and a group without
 a fitted path are refused with the reason. \code{fit} is then the posterior mean
 of the linear predictor and \code{se.fit} / \code{lower} / \code{upper} are its posterior
 SD and quantiles.
+
+A \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} fit (no model formula) is predicted for one
+response \code{arm} at \code{newdata = list(X = , coords = )}: \code{X} is the arm's design
+at the new rows, with the columns of the arm's fitted \code{X} in their order,
+and \code{coords} the rows' coordinates, needed where an \code{hsgp} block given by its
+coordinates (a basis builder: \code{coords}, \code{m}, \code{c}) reaches the arm. The basis
+is rebuilt at \code{coords} on the domain the block was fitted on and, for a
+block with \code{svc_column}, scaled by that column of \code{X}. Within each
+outer-grid cell the linear predictor is Gaussian, with the cell's mode and
+its covariance over the fixed effects and the builder blocks' coefficients
+(retained per cell by the fit as \code{basis_block_cov}); the prediction is the
+weighted mixture of those Gaussians over the cells, so \code{lower} / \code{upper} are
+the mixture's quantiles. Blocks without a basis builder are held at zero.
 }

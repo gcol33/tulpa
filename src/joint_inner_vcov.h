@@ -100,8 +100,15 @@ bool extract_inner_vcov_strip_cell(
 // [0, p). `A_cols` are the field sum-to-zero groups (0-based), so the block is
 // the CONSTRAINED covariance the fit's own posterior draws are generated from;
 // leave it empty for an unconstrained fit.
+//
+// `extra_idx` (0-based, each >= p) widens the block to the latent indices
+// [0, p) followed by `extra_idx`, so a block whose prediction needs its own
+// coefficients' covariance with the fixed effects -- a varying-coefficient
+// basis read at new coordinates -- carries it from the same cell solve. The
+// leading p x p of the widened block is the fixed-effect block.
 struct JointFixedBlockRequest {
     int p = 0;
+    std::vector<int> extra_idx;
     std::vector<LinearConstraintRow> A_cols;
     bool active() const { return p > 0; }
 };

@@ -337,6 +337,7 @@ tulpa_joint_grid_batch <- function(fits) {
     force_sparse       = isTRUE(req1$force_sparse),
     fixed_block_p      = as.integer(req1$fixed_block_p %||% 0L),
     fixed_block_constraints = req1$fixed_block_constraints,
+    fixed_block_extra  = req1$fixed_block_extra,
     # Read where the single-species kernel call reads it: the switch is added at
     # the kernel call rather than captured on the request, so a batched species
     # that read it anywhere else could integrate under a different answer from

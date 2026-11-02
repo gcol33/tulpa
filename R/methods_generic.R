@@ -2305,6 +2305,19 @@ nobs.tulpa_fit <- function(object, ...) {
 #' of the linear predictor and `se.fit` / `lower` / `upper` are its posterior
 #' SD and quantiles.
 #'
+#' A [tulpa_nested_laplace_joint()] fit (no model formula) is predicted for one
+#' response `arm` at `newdata = list(X = , coords = )`: `X` is the arm's design
+#' at the new rows, with the columns of the arm's fitted `X` in their order,
+#' and `coords` the rows' coordinates, needed where an `hsgp` block given by its
+#' coordinates (a basis builder: `coords`, `m`, `c`) reaches the arm. The basis
+#' is rebuilt at `coords` on the domain the block was fitted on and, for a
+#' block with `svc_column`, scaled by that column of `X`. Within each
+#' outer-grid cell the linear predictor is Gaussian, with the cell's mode and
+#' its covariance over the fixed effects and the builder blocks' coefficients
+#' (retained per cell by the fit as `basis_block_cov`); the prediction is the
+#' weighted mixture of those Gaussians over the cells, so `lower` / `upper` are
+#' the mixture's quantiles. Blocks without a basis builder are held at zero.
+#'
 #' @param object A `tulpa_fit` object.
 #' @param newdata Data frame of covariates (and, for an SPDE fit, the coordinate
 #'   columns named in the spec's coordinate formula; for a varying-coefficient
@@ -2340,6 +2353,8 @@ nobs.tulpa_fit <- function(object, ...) {
 #'   `re.form`: `NULL` (default) every term, `NA` or `~0` none (the population
 #'   level), or a one-sided formula naming a subset, e.g. `~ (1 | site)`.
 #'   `newdata` then carries the grouping columns of the terms kept.
+#' @param arm For a [tulpa_nested_laplace_joint()] fit, the response arm to
+#'   predict (its name or index); may be left `NULL` on a one-arm fit.
 #' @param ... Ignored.
 #' @return If `se.fit = FALSE`, a numeric vector. If `se.fit = TRUE`, a data
 #'   frame with `fit`, `se.fit` (link scale), `lower`, `upper` on the requested
@@ -2348,8 +2363,17 @@ nobs.tulpa_fit <- function(object, ...) {
 predict.tulpa_fit <- function(object, newdata = NULL,
                               type = c("link", "response"),
                               se.fit = FALSE, level = 0.95,
-                              include_field = TRUE, re_form = NULL, ...) {
+                              include_field = TRUE, re_form = NULL, arm = NULL, ...) {
   type <- match.arg(type)
+  if (inherits(object, "tulpa_nested_laplace_joint") && is.null(object$formula)) {
+    if (is.null(newdata)) {
+      stop("predict() on a tulpa_nested_laplace_joint() fit needs `newdata`: ",
+           "list(X = <the arm's design at the new rows>, coords = <their ",
+           "coordinates, where a field with a basis builder reaches the arm>).",
+           call. = FALSE)
+    }
+    return(.joint_predict(object, newdata, arm, type, se.fit, level))
+  }
   # Count design and linear predictor (offset included, matching
   # fitted()/residuals()), plus the structural-zero logit on a zero-inflated fit.
   lp  <- .tulpa_point_linpred(object, newdata, "predict")

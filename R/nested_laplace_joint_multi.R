@@ -1221,6 +1221,7 @@
                                       max_iter, tol, inner_refresh,
                                       fixed_block_p = 0L,
                                       fixed_block_constraints = NULL,
+                                      fixed_block_extra = NULL,
                                       inner_sparse_override = 0L) {
     force(arms); force(cp); force(blocks_spec); force(axis_offsets); force(B)
     force(n_threads); force(force_sparse); force(cell_coupling)
@@ -1228,6 +1229,7 @@
     force(hessian_pd_mode); force(step_curvature_mode)
     force(max_iter); force(tol); force(inner_refresh)
     force(fixed_block_p); force(fixed_block_constraints)
+    force(fixed_block_extra)
 
     function(theta_mat,
              x_init           = NULL,
@@ -1291,6 +1293,7 @@
             fixed_block_p       = if (isTRUE(fixed_block))
                                       as.integer(fixed_block_p) else 0L,
             fixed_block_constraints = fixed_block_constraints,
+            fixed_block_extra   = if (isTRUE(fixed_block)) fixed_block_extra,
             debias              = debias,
             cila                = cila,
             inner_sparse_override = as.integer(inner_sparse_override),
@@ -1567,6 +1570,9 @@
         .normalise_joint_arm_multi(a, k)
     })
     arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
+    arm_n_obs <- vapply(arms, function(a) length(a$y), integer(1))
+    prior_list <- lapply(seq_along(prior_list), function(b)
+        .joint_hsgp_expand_builder(prior_list[[b]], n_arms, arm_n_obs, b))
 
     cp <- .resolve_copy_multi(copy, responses, prior_list)
     hp_families <- .joint_multi_hp_families(arms, arm_names)
@@ -1626,7 +1632,11 @@
     # instead of the grid keeping every precision.
     fixed_layout <- .joint_fixed_layout(responses)
     fb_layout    <- .joint_multi_layout(arms, prepared)
-    fixed_block_p <- if (isTRUE(keep_grid_hessians))
+    # A block carrying a basis builder is predicted at new coordinates from its
+    # coefficients and the fixed effects jointly, so its coordinates widen the
+    # same per-cell block (`.joint_attach_basis_block_cov()`).
+    fixed_block_extra <- .joint_basis_block_idx(prepared, fb_layout)
+    fixed_block_p <- if (isTRUE(keep_grid_hessians) || length(fixed_block_extra))
         as.integer(fixed_layout$n_fixed) else 0L
     fixed_block_constraints <- .joint_constraint_cols(fb_layout, fb_layout$n_x)
 
@@ -1639,6 +1649,7 @@
         max_iter = max_iter, tol = tol, inner_refresh = inner_refresh,
         fixed_block_p = fixed_block_p,
         fixed_block_constraints = fixed_block_constraints,
+        fixed_block_extra = fixed_block_extra,
         inner_sparse_override = inner_sparse_override)
 
     # Per-latent-axis fine grid values (sorted unique), shared by the CCD and the
@@ -2382,6 +2393,7 @@
     # Per-cell fixed-effect mode + precision for the grid marginalization.
     # Local-CCD refinement invalidates the stored cells, so a fit it engaged on
     # records that reason instead.
+    res <- .joint_attach_basis_block_cov(res, fixed$n_fixed, fixed_block_extra)
     res <- .joint_finalize_grid_fixed(res, fixed$n_fixed, keep_grid_hessians)
     # Subspace debias, over the settled grid, through the
     # same `call_kernel` the skew probe and the Pareto-k batch re-dispatch with.
@@ -2417,6 +2429,107 @@
                   extra_class = c("tulpa_nested_laplace_joint_multi",
                     "tulpa_nested_laplace_joint",
                                   "tulpa_nested_laplace", "list"))
+}
+
+# An `hsgp` block given by its coordinates instead of its basis: `coords`, a
+# list of n_arms two-column matrices (NULL for an arm the field does not reach),
+# `m` basis functions per dimension and the boundary factor `c`. The domain is
+# the one setup_hsgp_2d derives from the pooled coordinates of every arm the
+# block reaches, so all arms read the basis on one spectrum. The block keeps the
+# builder as `basis` (m, c, domain, coordinate names, the arms it reaches) so a
+# prediction rebuilds the basis at new coordinates on the fitted domain. A block
+# that carries `phi` / `eigenvalues` itself is returned unchanged.
+.joint_hsgp_expand_builder <- function(p, n_arms, arm_n_obs, block_index) {
+    if (!identical(tolower(p$type %||% ""), "hsgp") || is.null(p$coords)) {
+        return(p)
+    }
+    lab <- paste0("Block ", block_index, " (type 'hsgp')")
+    if (!is.null(p$phi) || !is.null(p$eigenvalues)) {
+        stop(lab, ": give either `coords` (with `m`, `c`) or the basis ",
+             "(`phi`, `eigenvalues`), not both.", call. = FALSE)
+    }
+    if (!is.list(p$coords) || length(p$coords) != n_arms) {
+        stop(lab, ": `coords` must be a list of n_arms (", n_arms, ") ",
+             "two-column coordinate matrices, NULL for an arm the field does ",
+             "not reach.", call. = FALSE)
+    }
+    m <- p[["m"]] %||% 6L
+    if (length(m) != 1L || !is.finite(m) || m < 1 || m != round(m)) {
+        stop(lab, ": `m` must be a positive integer.", call. = FALSE)
+    }
+    m <- as.integer(m)
+    cc <- as.numeric(p[["c"]] %||% 1.5)
+    if (length(cc) != 1L || !is.finite(cc) || cc < 1) {
+        stop(lab, ": `c` (boundary factor) must be a number >= 1.", call. = FALSE)
+    }
+    mats <- lapply(seq_len(n_arms), function(k) {
+        xy <- p$coords[[k]]
+        if (is.null(xy)) return(NULL)
+        xy <- as.matrix(xy)
+        if (ncol(xy) != 2L || nrow(xy) != arm_n_obs[k] || !all(is.finite(xy))) {
+            stop(lab, ": `coords[[", k, "]]` must be a finite ", arm_n_obs[k],
+                 " x 2 matrix (one row per observation of arm ", k, ").",
+                 call. = FALSE)
+        }
+        storage.mode(xy) <- "double"
+        xy
+    })
+    reached <- !vapply(mats, is.null, logical(1))
+    if (!any(reached)) {
+        stop(lab, ": `coords` reaches no arm.", call. = FALSE)
+    }
+    domain <- cpp_hsgp_domain_2d(do.call(rbind, mats[reached]), cc)
+    M <- m * m
+    first <- which(reached)[1L]
+    phi <- lapply(seq_len(n_arms), function(k) {
+        if (!reached[k]) return(matrix(0, arm_n_obs[k], M))
+        cpp_hsgp_basis_2d_domain(mats[[k]], m, domain)$phi_basis
+    })
+    p$phi           <- phi
+    p$eigenvalues   <- cpp_hsgp_basis_2d_domain(mats[[first]][1L, , drop = FALSE],
+                                                m, domain)$lambda_eig
+    p$m_total       <- M
+    p$n_obs_per_arm <- as.integer(arm_n_obs)
+    p$basis <- list(m = m, c = cc, domain = as.numeric(domain),
+                    coord_names = colnames(mats[[first]]), reached = reached)
+    p$coords <- NULL
+    p
+}
+
+# 1-based latent indices of every block carrying a basis builder, in block
+# order; NULL when none does.
+.joint_basis_block_idx <- function(prepared, layout) {
+    b_idx <- which(vapply(prepared, function(p) !is.null(p$basis), logical(1)))
+    if (!length(b_idx)) return(NULL)
+    as.integer(unlist(lapply(b_idx, function(b)
+        layout$block_start[b] + seq_len(layout$block_size[b]))))
+}
+
+# The per-cell covariance of the fixed effects and the basis-builder blocks'
+# coefficients, read off the widened block the kernel extracted in each cell's
+# solve, kept as `basis_block_cov` (`idx`: the 1-based latent indices, `cov`:
+# one matrix per cell, NULL where the cell's block was not extracted). The
+# leading n_fixed x n_fixed of each block goes on as the fixed-effect block.
+.joint_attach_basis_block_cov <- function(res, n_fixed, extra) {
+    if (!length(extra)) return(res)
+    V <- res$cov_block_per_grid
+    idx <- c(seq_len(n_fixed), extra)
+    q <- length(idx)
+    if (!is.list(V) || length(V) != nrow(res$theta_grid)) {
+        res$basis_block_cov_declined <- "block_not_extracted"
+        return(res)
+    }
+    res$basis_block_cov <- list(
+        idx = as.integer(idx),
+        cov = lapply(V, function(Vk) {
+            if (is.matrix(Vk) && nrow(Vk) == q) Vk else NULL
+        }))
+    res$cov_block_per_grid <- lapply(V, function(Vk) {
+        if (is.matrix(Vk) && nrow(Vk) == q) {
+            Vk[seq_len(n_fixed), seq_len(n_fixed), drop = FALSE]
+        } else Vk
+    })
+    res
 }
 
 # Fixed-effect layout of a joint fit: the latent stacks all arm betas as a

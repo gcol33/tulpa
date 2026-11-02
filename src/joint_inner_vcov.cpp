@@ -222,6 +222,23 @@ bool extract_joint_fixed_block(
 ) {
     const int p = req.p;
     if (p <= 0 || p > n_x || nnz <= 0) return false;
+    if (!req.extra_idx.empty()) {
+        std::vector<int> idx0(static_cast<std::size_t>(p));
+        for (int j = 0; j < p; j++) idx0[static_cast<std::size_t>(j)] = j;
+        for (int e : req.extra_idx) {
+            if (e < p || e >= n_x) return false;
+            idx0.push_back(e);
+        }
+        std::vector<double> block;
+        if (!extract_inner_vcov_block_cell(
+                Qp, Qi, Qx, n_x, nnz, idx0, static_cast<int>(idx0.size()),
+                req.A_cols, /*field_marginal=*/false, solver, block)) {
+            return false;
+        }
+        flat_out.insert(flat_out.end(), block.begin(), block.end());
+        sizes_out.push_back(static_cast<int>(idx0.size()));
+        return true;
+    }
     if (!factorize_cell(solver, Qp, Qi, Qx, n_x, nnz)) return false;
 
     auto solve_cell = [&](const double* rhs, double* out) {

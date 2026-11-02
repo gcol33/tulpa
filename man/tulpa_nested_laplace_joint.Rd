@@ -144,6 +144,24 @@ mode. The joint mode over scores and loadings is not used: it shrinks the
 scores and inflates the loadings by an amount that does not fall as units
 are added.
 
+On the list-of-blocks path an \code{hsgp} block is a Hilbert-space GP field on
+one shared spectrum, over the outer axes \verb{(sigma2, lengthscale)}. It is
+given either by its basis (\code{phi}, a list of \code{n_arms} \verb{N_k x m_total}
+matrices, with \code{eigenvalues}, \code{m_total} and \code{n_obs_per_arm}) or by its
+coordinates: \code{coords}, a list of \code{n_arms} \verb{N_k x 2} coordinate matrices
+(\code{NULL} for an arm the field does not reach), \code{m} basis functions per
+dimension (default \code{6}) and the boundary factor \code{c} (default \code{1.5}). Given
+by its coordinates, the basis is built on the domain the pooled
+coordinates imply (the rule of \code{\link[=spatial_gp]{spatial_gp()}}'s \code{approx = "hsgp"}) and the
+fit keeps that builder, so \code{\link[=predict]{predict()}} rebuilds the basis at new
+coordinates on the same domain. \code{svc_column} (a column index into every
+arm's \code{X}) makes the field a spatially varying coefficient on that column:
+arm \code{k}'s predictor receives \verb{X_k[i, svc_column] f(s_i)}. A fit with a
+builder block retains, per outer-grid cell, the posterior covariance of
+the fixed effects and the builder blocks' coefficients as
+\code{basis_block_cov} (\code{idx}, the latent indices; \code{cov}, one matrix per cell),
+extracted in the cell's own inner solve.
+
 An empty \code{prior = list()} is a list of zero blocks: the model carries no
 latent field, each arm's predictor is its fixed effects, and the outer
 grid is spanned by the per-arm dispersion axes of \code{phi_grid} alone (one

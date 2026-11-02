@@ -848,6 +848,44 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_hsgp_domain_2d
+Rcpp::NumericVector cpp_hsgp_domain_2d(const Rcpp::NumericMatrix& coords, double c);
+RcppExport SEXP _tulpa_cpp_hsgp_domain_2d(SEXP coordsSEXP, SEXP cSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< double >::type c(cSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_hsgp_domain_2d(coords, c));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_hsgp_basis_2d_domain
+Rcpp::List cpp_hsgp_basis_2d_domain(const Rcpp::NumericMatrix& coords, int m, const Rcpp::NumericVector& domain);
+RcppExport SEXP _tulpa_cpp_hsgp_basis_2d_domain(SEXP coordsSEXP, SEXP mSEXP, SEXP domainSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< int >::type m(mSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type domain(domainSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_hsgp_basis_2d_domain(coords, m, domain));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_hsgp_sqrt_spectral
+Rcpp::NumericVector cpp_hsgp_sqrt_spectral(const Rcpp::NumericVector& lambda_eig, double sigma2, double lengthscale);
+RcppExport SEXP _tulpa_cpp_hsgp_sqrt_spectral(SEXP lambda_eigSEXP, SEXP sigma2SEXP, SEXP lengthscaleSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type lambda_eig(lambda_eigSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type lengthscale(lengthscaleSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_hsgp_sqrt_spectral(lambda_eig, sigma2, lengthscale));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_hyperprior_log_density
 Rcpp::NumericVector cpp_hyperprior_log_density(Rcpp::NumericVector x, std::string kind, std::string coordinate, double U, double alpha, double d, double lambda);
 RcppExport SEXP _tulpa_cpp_hyperprior_log_density(SEXP xSEXP, SEXP kindSEXP, SEXP coordinateSEXP, SEXP USEXP, SEXP alphaSEXP, SEXP dSEXP, SEXP lambdaSEXP) {
@@ -1936,8 +1974,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nested_laplace_joint_multi
-Rcpp::List cpp_nested_laplace_joint_multi(Rcpp::List arms_list, Rcpp::IntegerVector copy_arms, Rcpp::IntegerVector copy_blocks, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, Rcpp::Nullable<Rcpp::List> phi_grid_per_arm, int n_threads_outer, Rcpp::Nullable<Rcpp::IntegerVector> tile_ids, Rcpp::Nullable<Rcpp::IntegerVector> tile_pilot_cells, double prune_tol, bool force_sparse, std::string cell_coupling_name, int hessian_pd_mode, int step_curvature_mode, int inner_refresh, bool progress, int progress_every, double progress_throttle, std::string progress_file, std::string checkpoint_path, Rcpp::Nullable<Rcpp::NumericMatrix> x_init_per_cell, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, int fixed_block_p, Rcpp::Nullable<Rcpp::List> fixed_block_constraints, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila, int inner_sparse_override, int screen_iters, Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset, bool compute_fitted_var, bool screen_only);
-RcppExport SEXP _tulpa_cpp_nested_laplace_joint_multi(SEXP arms_listSEXP, SEXP copy_armsSEXP, SEXP copy_blocksSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP phi_grid_per_armSEXP, SEXP n_threads_outerSEXP, SEXP tile_idsSEXP, SEXP tile_pilot_cellsSEXP, SEXP prune_tolSEXP, SEXP force_sparseSEXP, SEXP cell_coupling_nameSEXP, SEXP hessian_pd_modeSEXP, SEXP step_curvature_modeSEXP, SEXP inner_refreshSEXP, SEXP progressSEXP, SEXP progress_everySEXP, SEXP progress_throttleSEXP, SEXP progress_fileSEXP, SEXP checkpoint_pathSEXP, SEXP x_init_per_cellSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP fixed_block_pSEXP, SEXP fixed_block_constraintsSEXP, SEXP debiasSEXP, SEXP cilaSEXP, SEXP inner_sparse_overrideSEXP, SEXP screen_itersSEXP, SEXP screen_log_offsetSEXP, SEXP compute_fitted_varSEXP, SEXP screen_onlySEXP) {
+Rcpp::List cpp_nested_laplace_joint_multi(Rcpp::List arms_list, Rcpp::IntegerVector copy_arms, Rcpp::IntegerVector copy_blocks, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, Rcpp::Nullable<Rcpp::List> phi_grid_per_arm, int n_threads_outer, Rcpp::Nullable<Rcpp::IntegerVector> tile_ids, Rcpp::Nullable<Rcpp::IntegerVector> tile_pilot_cells, double prune_tol, bool force_sparse, std::string cell_coupling_name, int hessian_pd_mode, int step_curvature_mode, int inner_refresh, bool progress, int progress_every, double progress_throttle, std::string progress_file, std::string checkpoint_path, Rcpp::Nullable<Rcpp::NumericMatrix> x_init_per_cell, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, int fixed_block_p, Rcpp::Nullable<Rcpp::List> fixed_block_constraints, Rcpp::Nullable<Rcpp::IntegerVector> fixed_block_extra, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila, int inner_sparse_override, int screen_iters, Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset, bool compute_fitted_var, bool screen_only);
+RcppExport SEXP _tulpa_cpp_nested_laplace_joint_multi(SEXP arms_listSEXP, SEXP copy_armsSEXP, SEXP copy_blocksSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP phi_grid_per_armSEXP, SEXP n_threads_outerSEXP, SEXP tile_idsSEXP, SEXP tile_pilot_cellsSEXP, SEXP prune_tolSEXP, SEXP force_sparseSEXP, SEXP cell_coupling_nameSEXP, SEXP hessian_pd_modeSEXP, SEXP step_curvature_modeSEXP, SEXP inner_refreshSEXP, SEXP progressSEXP, SEXP progress_everySEXP, SEXP progress_throttleSEXP, SEXP progress_fileSEXP, SEXP checkpoint_pathSEXP, SEXP x_init_per_cellSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP fixed_block_pSEXP, SEXP fixed_block_constraintsSEXP, SEXP fixed_block_extraSEXP, SEXP debiasSEXP, SEXP cilaSEXP, SEXP inner_sparse_overrideSEXP, SEXP screen_itersSEXP, SEXP screen_log_offsetSEXP, SEXP compute_fitted_varSEXP, SEXP screen_onlySEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1972,6 +2010,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< int >::type fixed_block_p(fixed_block_pSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type fixed_block_constraints(fixed_block_constraintsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type fixed_block_extra(fixed_block_extraSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
     Rcpp::traits::input_parameter< int >::type inner_sparse_override(inner_sparse_overrideSEXP);
@@ -1979,13 +2018,13 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type screen_log_offset(screen_log_offsetSEXP);
     Rcpp::traits::input_parameter< bool >::type compute_fitted_var(compute_fitted_varSEXP);
     Rcpp::traits::input_parameter< bool >::type screen_only(screen_onlySEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_multi(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse, cell_coupling_name, hessian_pd_mode, step_curvature_mode, inner_refresh, progress, progress_every, progress_throttle, progress_file, checkpoint_path, x_init_per_cell, compute_skew, skew_idx, fixed_block_p, fixed_block_constraints, debias, cila, inner_sparse_override, screen_iters, screen_log_offset, compute_fitted_var, screen_only));
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_multi(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse, cell_coupling_name, hessian_pd_mode, step_curvature_mode, inner_refresh, progress, progress_every, progress_throttle, progress_file, checkpoint_path, x_init_per_cell, compute_skew, skew_idx, fixed_block_p, fixed_block_constraints, fixed_block_extra, debias, cila, inner_sparse_override, screen_iters, screen_log_offset, compute_fitted_var, screen_only));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_nested_laplace_joint_multi_batch
-Rcpp::List cpp_nested_laplace_joint_multi_batch(Rcpp::List arms_list, Rcpp::IntegerVector copy_arms, Rcpp::IntegerVector copy_blocks, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, int n_batch, Rcpp::List y_batch, Rcpp::NumericMatrix phi_batch, int max_iter, double tol, std::string cell_coupling_name, bool store_Q, Rcpp::Nullable<Rcpp::List> phi_grid_per_arm, int hessian_pd_mode, int step_curvature_mode, bool force_sparse, int fixed_block_p, Rcpp::Nullable<Rcpp::List> fixed_block_constraints, bool compute_fitted_var);
-RcppExport SEXP _tulpa_cpp_nested_laplace_joint_multi_batch(SEXP arms_listSEXP, SEXP copy_armsSEXP, SEXP copy_blocksSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP n_batchSEXP, SEXP y_batchSEXP, SEXP phi_batchSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP cell_coupling_nameSEXP, SEXP store_QSEXP, SEXP phi_grid_per_armSEXP, SEXP hessian_pd_modeSEXP, SEXP step_curvature_modeSEXP, SEXP force_sparseSEXP, SEXP fixed_block_pSEXP, SEXP fixed_block_constraintsSEXP, SEXP compute_fitted_varSEXP) {
+Rcpp::List cpp_nested_laplace_joint_multi_batch(Rcpp::List arms_list, Rcpp::IntegerVector copy_arms, Rcpp::IntegerVector copy_blocks, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, int n_batch, Rcpp::List y_batch, Rcpp::NumericMatrix phi_batch, int max_iter, double tol, std::string cell_coupling_name, bool store_Q, Rcpp::Nullable<Rcpp::List> phi_grid_per_arm, int hessian_pd_mode, int step_curvature_mode, bool force_sparse, int fixed_block_p, Rcpp::Nullable<Rcpp::List> fixed_block_constraints, bool compute_fitted_var, Rcpp::Nullable<Rcpp::IntegerVector> fixed_block_extra);
+RcppExport SEXP _tulpa_cpp_nested_laplace_joint_multi_batch(SEXP arms_listSEXP, SEXP copy_armsSEXP, SEXP copy_blocksSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP n_batchSEXP, SEXP y_batchSEXP, SEXP phi_batchSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP cell_coupling_nameSEXP, SEXP store_QSEXP, SEXP phi_grid_per_armSEXP, SEXP hessian_pd_modeSEXP, SEXP step_curvature_modeSEXP, SEXP force_sparseSEXP, SEXP fixed_block_pSEXP, SEXP fixed_block_constraintsSEXP, SEXP compute_fitted_varSEXP, SEXP fixed_block_extraSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -2009,7 +2048,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type fixed_block_p(fixed_block_pSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type fixed_block_constraints(fixed_block_constraintsSEXP);
     Rcpp::traits::input_parameter< bool >::type compute_fitted_var(compute_fitted_varSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_multi_batch(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter, tol, cell_coupling_name, store_Q, phi_grid_per_arm, hessian_pd_mode, step_curvature_mode, force_sparse, fixed_block_p, fixed_block_constraints, compute_fitted_var));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type fixed_block_extra(fixed_block_extraSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_multi_batch(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter, tol, cell_coupling_name, store_Q, phi_grid_per_arm, hessian_pd_mode, step_curvature_mode, force_sparse, fixed_block_p, fixed_block_constraints, compute_fitted_var, fixed_block_extra));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -5250,6 +5290,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_performance_core_count", (DL_FUNC) &_tulpa_cpp_performance_core_count, 0},
     {"_tulpa_cpp_hsgp_basis_2d", (DL_FUNC) &_tulpa_cpp_hsgp_basis_2d, 3},
     {"_tulpa_cpp_hsgp_field_predict", (DL_FUNC) &_tulpa_cpp_hsgp_field_predict, 8},
+    {"_tulpa_cpp_hsgp_domain_2d", (DL_FUNC) &_tulpa_cpp_hsgp_domain_2d, 2},
+    {"_tulpa_cpp_hsgp_basis_2d_domain", (DL_FUNC) &_tulpa_cpp_hsgp_basis_2d_domain, 3},
+    {"_tulpa_cpp_hsgp_sqrt_spectral", (DL_FUNC) &_tulpa_cpp_hsgp_sqrt_spectral, 3},
     {"_tulpa_cpp_hyperprior_log_density", (DL_FUNC) &_tulpa_cpp_hyperprior_log_density, 7},
     {"_tulpa_cpp_spde_laplace_gradient", (DL_FUNC) &_tulpa_cpp_spde_laplace_gradient, 21},
     {"_tulpa_cpp_interval_gaussian_terms", (DL_FUNC) &_tulpa_cpp_interval_gaussian_terms, 4},
@@ -5291,8 +5334,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_st_hsgp", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_hsgp, 34},
     {"_tulpa_cpp_nested_laplace_st_nngp", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp, 40},
     {"_tulpa_cpp_nl_checkpoint_loaded_total", (DL_FUNC) &_tulpa_cpp_nl_checkpoint_loaded_total, 0},
-    {"_tulpa_cpp_nested_laplace_joint_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi, 38},
-    {"_tulpa_cpp_nested_laplace_joint_multi_batch", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi_batch, 20},
+    {"_tulpa_cpp_nested_laplace_joint_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi, 39},
+    {"_tulpa_cpp_nested_laplace_joint_multi_batch", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi_batch, 21},
     {"_tulpa_cpp_test_joint_pattern", (DL_FUNC) &_tulpa_cpp_test_joint_pattern, 6},
     {"_tulpa_cpp_test_joint_logpost_grad", (DL_FUNC) &_tulpa_cpp_test_joint_logpost_grad, 9},
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 30},

@@ -3,6 +3,7 @@
 
 #include <RcppEigen.h>
 #include "hsgp_block_factory.h"
+#include "hmc_hsgp_kernels.h"  // spectral_density_se
 
 namespace tulpa {
 
@@ -78,13 +79,11 @@ LatentBlock make_hsgp_block(
         const double sigma2 = theta_grid(k_grid, axis_sigma2);
         const double ell    = theta_grid(k_grid, axis_ell);
         if (!(sigma2 > 0.0) || !(ell > 0.0)) return false;
-        const double pref = sigma2 * (2.0 * M_PI) * ell * ell;
-        const double e_coef = -0.5 * ell * ell;
         auto& cache = sqrt_S_cache->claim();
         cache.assign(m_total, 0.0);
         const auto& evs = *eig;
         for (int j = 0; j < m_total; j++) {
-            double S_j = pref * std::exp(e_coef * evs[j]);
+            const double S_j = tulpa_hsgp::spectral_density_se(evs[j], sigma2, ell);
             cache[j] = std::sqrt(S_j > 0.0 ? S_j : 0.0);
         }
         sqrt_S_cache->publish(k_grid);

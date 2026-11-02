@@ -145,6 +145,24 @@
 #'   scores and inflates the loadings by an amount that does not fall as units
 #'   are added.
 #'
+#'   On the list-of-blocks path an `hsgp` block is a Hilbert-space GP field on
+#'   one shared spectrum, over the outer axes `(sigma2, lengthscale)`. It is
+#'   given either by its basis (`phi`, a list of `n_arms` `N_k x m_total`
+#'   matrices, with `eigenvalues`, `m_total` and `n_obs_per_arm`) or by its
+#'   coordinates: `coords`, a list of `n_arms` `N_k x 2` coordinate matrices
+#'   (`NULL` for an arm the field does not reach), `m` basis functions per
+#'   dimension (default `6`) and the boundary factor `c` (default `1.5`). Given
+#'   by its coordinates, the basis is built on the domain the pooled
+#'   coordinates imply (the rule of [spatial_gp()]'s `approx = "hsgp"`) and the
+#'   fit keeps that builder, so [predict()] rebuilds the basis at new
+#'   coordinates on the same domain. `svc_column` (a column index into every
+#'   arm's `X`) makes the field a spatially varying coefficient on that column:
+#'   arm `k`'s predictor receives `X_k[i, svc_column] f(s_i)`. A fit with a
+#'   builder block retains, per outer-grid cell, the posterior covariance of
+#'   the fixed effects and the builder blocks' coefficients as
+#'   `basis_block_cov` (`idx`, the latent indices; `cov`, one matrix per cell),
+#'   extracted in the cell's own inner solve.
+#'
 #'   An empty `prior = list()` is a list of zero blocks: the model carries no
 #'   latent field, each arm's predictor is its fixed effects, and the outer
 #'   grid is spanned by the per-arm dispersion axes of `phi_grid` alone (one
