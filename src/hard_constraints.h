@@ -31,19 +31,27 @@
 // log|B' M B| sees it. That is what the precision augmentation of an intrinsic
 // field does along its level row.
 //
-// A level row's block carries the AUGMENTED density as its log-prior, a proper
-// Gaussian with precision P on the whole block, and P 1 = tau a for the row's
-// weights a (the augmentation pins each component's sum at the field
-// precision times that component's multiplier). The density of the field
-// conditioned on a'x = 0, with respect to Lebesgue measure on the subspace, is
-// that density divided by the density of s = a'x at zero and by |a|:
+// A level-constrained block carries the AUGMENTED density as its log-prior, a
+// proper Gaussian with precision P on the whole block. The density of the field
+// conditioned on its r level rows A x = 0, with respect to Lebesgue measure on
+// the subspace, is that density divided by the density of s = A x at zero and
+// by |A A'|^(1/2):
 //
-//   log p(x | a'x = 0) = log p_aug(x) + 0.5 log(2 pi a' P^{-1} a) - 0.5 log(a'a),
+//   log p(x | A x = 0) = log p_aug(x) + 0.5 log|2 pi A P^-1 A'| - 0.5 log|A A'|.
 //
-// and a' P^{-1} a = (a'1)^2 / (1' P 1) because P^{-1} a = 1 / tau. That
-// constant (level_prior_conditioning) is what turns the augmented density into
-// the conditioned one in the log-marginal; it carries the field precision, so
-// it moves with the outer grid.
+// The block's probes V (LatentBlock::level_probes) satisfy A' = P V C, so
+// P^-1 A' = V C with C = (V' P V)^-1 V' A', and
+//
+//   A P^-1 A' = (A V) (V' P V)^-1 (A V)',
+//
+// where V' P V is read off the block's own log-prior along V. For one level
+// row and the constant as probe this is (a'1)^2 / (1' P 1): the augmentation
+// pins each component's sum at the field precision times that component's
+// multiplier, so P 1 = tau a. For p coupled fields (MCAR) the probes are the
+// per-field constants and A P^-1 A' is n times the folded fields' block of
+// Sigma. That constant (level_prior_conditioning) turns the augmented density
+// into the conditioned one in the log-marginal; it carries the field
+// precision, so it moves with the outer grid.
 
 #ifndef TULPA_HARD_CONSTRAINTS_H
 #define TULPA_HARD_CONSTRAINTS_H
@@ -55,6 +63,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -75,37 +84,96 @@ inline std::vector<LinearConstraintRow> collect_hard_constraints(
     return rows;
 }
 
-// The log-density conditioning of every level row of a block list at grid cell
-// k_grid (see the header): sum over level-constrained blocks of
-// 0.5 log(2 pi (a'1)^2 / (1' P 1)) - 0.5 log(a'a). 1' P 1 is read off the
-// block's own log-prior as the second difference along the block's constant,
-// exact for the Gaussian prior it is. `probe` is caller-owned scratch of at
-// least the latent length; its contents are restored on return.
+// log|M| of a small symmetric positive-definite r x r row-major matrix, and
+// optionally its lower factor; NaN when it does not factor.
+inline double small_spd_log_det(const std::vector<double>& M, int r,
+                                std::vector<double>* L_out = nullptr) {
+    std::vector<double> L(static_cast<std::size_t>(r) * r, 0.0);
+    if (!tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
+            M.data(), L.data(), r, r, 0.0))
+        return std::numeric_limits<double>::quiet_NaN();
+    double ld = 0.0;
+    for (int i = 0; i < r; i++) ld += 2.0 * std::log(L[static_cast<std::size_t>(i) * r + i]);
+    if (L_out) *L_out = std::move(L);
+    return ld;
+}
+
+// The log-density conditioning of every block's level rows at grid cell
+// k_grid (see the header): per level-constrained block,
+// 0.5 log|2 pi (A V) (V' P V)^-1 (A V)'| - 0.5 log|A A'|. V' P V is the
+// polarized second difference of the block's own log-prior along the probes,
+// exact for the zero-mean Gaussian prior it is: with q(x) = lp(0) - lp(x),
+// (V'PV)_hh = 2 q(v_h) and (V'PV)_hk = q(v_h + v_k) - q(v_h) - q(v_k).
+// `probe` is caller-owned scratch of at least the latent length; its contents
+// are restored on return.
 inline double level_prior_conditioning(const std::vector<LatentBlock>& blocks,
                                        int k_grid, Rcpp::NumericVector& probe) {
     double out = 0.0;
     for (const auto& b : blocks) {
-        if (!b.level_hard || b.hard_constraints.empty() || !b.log_prior) continue;
-        const LinearConstraintRow& a = b.hard_constraints.front();
-        double a1 = 0.0, aa = 0.0;
-        for (std::size_t e = 0; e < a.cols.size(); e++) {
-            a1 += a.weight(e);
-            aa += a.weight(e) * a.weight(e);
-        }
+        const int r = b.n_level_rows;
+        const int m = static_cast<int>(b.level_probes.size());
+        if (r <= 0 || m <= 0 || !b.log_prior) continue;
         std::vector<double> saved(static_cast<std::size_t>(b.size));
         for (int j = 0; j < b.size; j++) saved[j] = probe[b.start + j];
-        auto set_level = [&](double v) {
-            for (int j = 0; j < b.size; j++) probe[b.start + j] = v;
+        auto clear = [&]() { for (int j = 0; j < b.size; j++) probe[b.start + j] = 0.0; };
+        auto add = [&](const LinearConstraintRow& v) {
+            for (std::size_t e = 0; e < v.cols.size(); e++) probe[v.cols[e]] += v.weight(e);
         };
-        set_level(0.0);
+        clear();
         const double lp0 = b.log_prior(probe, k_grid);
-        set_level(1.0);
-        const double lp_up = b.log_prior(probe, k_grid);
-        set_level(-1.0);
-        const double lp_dn = b.log_prior(probe, k_grid);
+        std::vector<double> qh(static_cast<std::size_t>(m));
+        for (int h = 0; h < m; h++) {
+            clear(); add(b.level_probes[h]);
+            qh[h] = lp0 - b.log_prior(probe, k_grid);
+        }
+        std::vector<double> G(static_cast<std::size_t>(m) * m, 0.0);
+        for (int h = 0; h < m; h++) {
+            G[static_cast<std::size_t>(h) * m + h] = 2.0 * qh[h];
+            for (int k = 0; k < h; k++) {
+                clear(); add(b.level_probes[h]); add(b.level_probes[k]);
+                const double g = lp0 - b.log_prior(probe, k_grid) - qh[h] - qh[k];
+                G[static_cast<std::size_t>(h) * m + k] = g;
+                G[static_cast<std::size_t>(k) * m + h] = g;
+            }
+        }
+        // (A V) and A A' over the dense block-local copies of the probes.
+        std::vector<double> AV(static_cast<std::size_t>(r) * m, 0.0);
+        std::vector<double> AA(static_cast<std::size_t>(r) * r, 0.0);
+        for (int h = 0; h < m; h++) {
+            clear(); add(b.level_probes[h]);
+            for (int g = 0; g < r; g++)
+                AV[static_cast<std::size_t>(g) * m + h] =
+                    constraint_row_dot(b.hard_constraints[g], probe.begin());
+        }
+        for (int g = 0; g < r; g++) {
+            clear(); add(b.hard_constraints[g]);
+            for (int k = 0; k < r; k++)
+                AA[static_cast<std::size_t>(k) * r + g] =
+                    constraint_row_dot(b.hard_constraints[k], probe.begin());
+        }
         for (int j = 0; j < b.size; j++) probe[b.start + j] = saved[j];
-        const double one_P_one = 2.0 * lp0 - lp_up - lp_dn;
-        out += 0.5 * std::log(2.0 * M_PI * a1 * a1 / one_P_one) - 0.5 * std::log(aa);
+
+        // S = (A V) G^-1 (A V)' through the factor of G.
+        std::vector<double> LG;
+        if (!std::isfinite(small_spd_log_det(G, m, &LG)))
+            return std::numeric_limits<double>::quiet_NaN();
+        std::vector<double> Z(static_cast<std::size_t>(r) * m), y(m), z(m);
+        for (int g = 0; g < r; g++) {
+            tulpa_linalg::tri_solve_lower<tulpa_linalg::TriLayout::RowMajor>(
+                LG.data(), m, m, AV.data() + static_cast<std::size_t>(g) * m, y.data());
+            for (int h = 0; h < m; h++) Z[static_cast<std::size_t>(g) * m + h] = y[h];
+        }
+        std::vector<double> S(static_cast<std::size_t>(r) * r, 0.0);
+        for (int g = 0; g < r; g++)
+            for (int k = 0; k < r; k++) {
+                double sgk = 0.0;
+                for (int h = 0; h < m; h++)
+                    sgk += Z[static_cast<std::size_t>(g) * m + h] *
+                           Z[static_cast<std::size_t>(k) * m + h];
+                S[static_cast<std::size_t>(g) * r + k] = sgk;
+            }
+        out += 0.5 * (r * std::log(2.0 * M_PI) + small_spd_log_det(S, r)) -
+               0.5 * small_spd_log_det(AA, r);
     }
     return out;
 }
@@ -167,7 +235,7 @@ struct HardConstraintState {
     void init(int nx, const std::vector<LatentBlock>& blocks) {
         bool all_level = true;
         for (const auto& b : blocks) {
-            const std::size_t n_level = b.level_hard ? 1 : 0;
+            const std::size_t n_level = static_cast<std::size_t>(b.n_level_rows);
             if (b.hard_constraints.size() > n_level) all_level = false;
         }
         init(nx, collect_hard_constraints(blocks));

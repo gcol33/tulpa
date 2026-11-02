@@ -230,6 +230,25 @@ LatentBlock make_mcar_block(
         }
         return folds;
     };
+    // Each folded field's level is a hard constraint of the inner solve. The
+    // probes are every field's constant: P_aug (e_a (x) 1) =
+    // sum_b Sinv[b,a] (e_b (x) 1), because Q_aug 1 = 1, so the per-field
+    // constants span a P-invariant space holding every level row, and the rows'
+    // prior covariance is n times the folded fields' block of Sigma.
+    {
+        std::vector<LinearConstraintRow> rows, probes;
+        for (int a = 0; a < p; ++a) {
+            LinearConstraintRow v;
+            v.cols.resize(static_cast<std::size_t>(n));
+            for (int i = 0; i < n; ++i) v.cols[i] = start + a * n + i;
+            const int off = (a < (int) field_beta_offset.size())
+                                ? field_beta_offset[a] : -1;
+            if (off >= 0) rows.push_back(v);
+            probes.push_back(std::move(v));
+        }
+        if (!rows.empty())
+            declare_level_constraints(block, std::move(rows), std::move(probes));
+    }
 
 
     // A cell whose Sigma cannot be formed is INFEASIBLE, and the drivers

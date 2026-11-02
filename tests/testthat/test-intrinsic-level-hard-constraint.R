@@ -32,20 +32,24 @@ skip_on_cran()
   W
 }
 
-# Exact constrained Laplace reference for a binomial model with latent
-# x = [beta | field (| theta)], eta = M x, prior precision P (full rank), and
-# the one constraint row `a` over x.
-.constrained_ref <- function(y, ntr, M, P, a) {
-  n_x <- ncol(M)
-  B <- qr.Q(qr(cbind(a, diag(n_x))))[, -1]
+# Exact constrained Laplace reference for a binomial or Gaussian (phi = 1)
+# model with latent x = [beta | fields], eta = M x, prior precision P (full
+# rank), and the constraint rows `a` (a vector, or a matrix with one row per
+# constraint) over x.
+.constrained_ref <- function(y, ntr, M, P, a, family = "binomial") {
+  A <- if (is.matrix(a)) a else matrix(a, 1L)
+  n_x <- ncol(M); r <- nrow(A)
+  B <- MASS::Null(t(A))
+  mu <- function(e) if (family == "binomial") ntr * plogis(e) else e
+  wt <- function(e) {
+    if (family == "binomial") { pr <- plogis(e); ntr * pr * (1 - pr) }
+    else rep(1, length(e))
+  }
   score <- function(th) {
     e <- as.numeric(M %*% th)
-    as.numeric(crossprod(M, y - ntr * plogis(e))) - as.numeric(P %*% th)
+    as.numeric(crossprod(M, y - mu(e))) - as.numeric(P %*% th)
   }
-  hess <- function(th) {
-    pr <- plogis(as.numeric(M %*% th))
-    crossprod(M, (ntr * pr * (1 - pr)) * M) + P
-  }
+  hess <- function(th) crossprod(M, wt(as.numeric(M %*% th)) * M) + P
   th <- rep(0, n_x)
   for (it in seq_len(200)) {
     st <- as.numeric(B %*% solve(crossprod(B, hess(th) %*% B),
@@ -53,13 +57,17 @@ skip_on_cran()
     th <- th + st
     if (max(abs(st)) < 1e-13) break
   }
-  ll <- sum(dbinom(y, ntr, plogis(as.numeric(M %*% th)), log = TRUE))
+  e <- as.numeric(M %*% th)
+  ll <- if (family == "binomial") sum(dbinom(y, ntr, plogis(e), log = TRUE))
+        else sum(dnorm(y, e, 1, log = TRUE))
   ldP <- as.numeric(determinant(P)$modulus)
-  s_a <- as.numeric(crossprod(a, solve(P, a)))
-  lp <- 0.5 * ldP - 0.5 * n_x * log(2 * pi) - 0.5 * sum(th * (P %*% th)) -
-    dnorm(0, 0, sqrt(s_a), log = TRUE) - 0.5 * log(sum(a^2))
-  lm <- ll + lp - 0.5 * as.numeric(determinant(crossprod(B, hess(th) %*% B))$modulus) +
-    0.5 * (n_x - 1) * log(2 * pi)
+  S_a <- A %*% solve(P, t(A))
+  lp <- 0.5 * ldP - 0.5 * n_x * log(2 * pi) - 0.5 * sum(th * (P %*% th)) +
+    0.5 * (r * log(2 * pi) + as.numeric(determinant(S_a)$modulus)) -
+    0.5 * as.numeric(determinant(tcrossprod(A))$modulus)
+  lm <- ll + lp -
+    0.5 * as.numeric(determinant(crossprod(B, hess(th) %*% B))$modulus) +
+    0.5 * (n_x - r) * log(2 * pi)
   list(theta = th, log_marginal = lm,
        tscore = function(x) as.numeric(crossprod(B, score(x))))
 }
@@ -210,4 +218,47 @@ test_that("the subspace debias walks the Gaussian conditioned on the level", {
   Sc <- (Sig - tcrossprod(w) / sum(a * w))[c(1, 3), c(1, 3)]
   expect_equal(diag(cov(ns$debias_draws_per_grid[[1]])), diag(Sc),
                tolerance = 0.1)
+})
+
+test_that("an MCAR field's coupled levels are the constrained model", {
+  # p = 2 fields over one graph with prior Sigma^-1 (x) Q_aug: each folded
+  # field's level is a level row, and the rows' prior covariance is n times the
+  # folded fields' block of Sigma, read along the per-field constants. With
+  # only the first field folded, the second field's level stays in the field
+  # under the augmentation, still coupled to the first through Sigma.
+  set.seed(10534)
+  W <- .rook(2, 4); n <- nrow(W); N <- 160L
+  cell <- sample.int(n, N, TRUE); x <- rnorm(N)
+  y <- as.numeric(rbinom(N, 1, plogis(0.2 + 0.4 * x + rnorm(n, 0, 0.6)[cell] +
+                                        x * rnorm(n, 0, 0.4)[cell])))
+  adj <- tulpa:::adjacency_to_csr_tulpa(W)
+  th <- c(log(0.9), 0.3, log(0.6))
+  L <- matrix(c(exp(th[1]), th[2], 0, exp(th[3])), 2)
+  Sinv <- solve(tcrossprod(L))
+  Z <- outer(cell, seq_len(n), "==") * 1
+  M <- cbind(1, x, Z, x * Z)
+  P <- as.matrix(Matrix::bdiag(diag(.tau_b(), 2),
+                               kronecker(Sinv, .icar_aug_precision(W, 1))))
+  rows <- rbind(c(0, 0, rep(1, n), rep(0, n)), c(0, 0, rep(0, n), rep(1, n)))
+  arm <- list(y = y, n_trials = rep(1L, N), X = cbind(1, x),
+              re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1,
+              family = "binomial", phi = 1)
+  for (off in list(c(0L, 1L), c(0L, -1L))) {
+    blk <- list(type = "mcar", spatial_idx = list(cell), n_spatial_units = n,
+                n_fields = 2L, adj_row_ptr = adj$row_ptr,
+                adj_col_idx = adj$col_idx, n_neighbors = adj$n_neighbors,
+                field_weight = list(list(rep(1, N)), list(x)),
+                field_beta_offset = off,
+                logchol_grid = matrix(th, 1,
+                                      dimnames = list(NULL, c("L11", "L21", "L22"))))
+    f <- suppressWarnings(suppressMessages(tulpa_nested_laplace_joint(
+      responses = list(a = arm), prior = list(blk), hyperprior = "flat",
+      control = list(max_iter = 300L, tol = 1e-12, axis_refine = "none",
+                     progress = FALSE))))
+    ref <- .constrained_ref(y, rep(1, N), M, P, rows[off >= 0, , drop = FALSE])
+    mode <- as.numeric(f$modes[1, ])
+    expect_lt(max(abs(mode - ref$theta)), 1e-9)
+    expect_lt(max(abs(ref$tscore(mode))), 1e-8)
+    expect_equal(f$log_marginal[1], ref$log_marginal, tolerance = 1e-9)
+  }
 })

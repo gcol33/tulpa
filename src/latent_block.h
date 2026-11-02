@@ -33,6 +33,7 @@
 #include "linear_constraint_rows.h"
 #include <Rcpp.h>
 #include <functional>
+#include <iterator>
 #include <utility>
 #include <vector>
 
@@ -278,12 +279,17 @@ struct LatentBlock {
     // constraint subspace. Empty for every other block.
     std::vector<LinearConstraintRow> hard_constraints;
 
-    // True when hard_constraints[0] is the block's LEVEL ROW: the constant
-    // direction its centring folds into a fixed effect, carried as a hard
-    // constraint so that coefficient's prior acts on the level
-    // (declare_level_constraint below). The block's log_prior stays the
-    // augmented density; hard_constraints.h conditions it on the row.
-    bool level_hard = false;
+    // The first n_level_rows of hard_constraints are the block's LEVEL ROWS:
+    // the constant directions its centring folds into fixed effects, carried
+    // as hard constraints so each coefficient's prior acts on its level
+    // (declare_level_constraints below). The block's log_prior stays the
+    // augmented density, and hard_constraints.h conditions it on the rows
+    // through `level_probes`: vectors V over the block, in GLOBAL latent
+    // indices, whose image under the block's prior precision P contains every
+    // level row (A' = P V C for some C), so A P^-1 A' = (A V) (V' P V)^-1 (A V)'
+    // is read off the log-prior along V alone.
+    int n_level_rows = 0;
+    std::vector<LinearConstraintRow> level_probes;
 
     // ----- Sparse-builder fields -----
     //
@@ -462,17 +468,34 @@ inline Rcpp::LogicalVector block_center_flags(
 // the reported mode is the mode of a model whose coefficient prior is wider by
 // the augmentation's variance on the level. Under the constraint the level is
 // the coefficient's alone and the mode is that of the stated prior.
+//
+// The general form: `rows` are the block's level rows and `probes` the vectors
+// V their conditioning is read along (see LatentBlock::level_probes). A field
+// of p coupled components (MCAR) declares one row per folded field and one
+// probe per field.
+inline void declare_level_constraints(LatentBlock& blk,
+                                      std::vector<LinearConstraintRow> rows,
+                                      std::vector<LinearConstraintRow> probes) {
+    blk.hard_constraints.erase(blk.hard_constraints.begin(),
+                               blk.hard_constraints.begin() + blk.n_level_rows);
+    blk.n_level_rows = static_cast<int>(rows.size());
+    blk.hard_constraints.insert(blk.hard_constraints.begin(),
+                                std::make_move_iterator(rows.begin()),
+                                std::make_move_iterator(rows.end()));
+    blk.level_probes = std::move(probes);
+}
+
+// The single-level form: the row is the plain or `w`-weighted sum over the
+// whole block, and the probe is the block's constant, which an augmented
+// intrinsic prior maps onto the row (P 1 = tau w).
 inline void declare_level_constraint(LatentBlock& blk,
                                      const std::vector<double>& w = {}) {
-    LinearConstraintRow row;
+    LinearConstraintRow row, ones;
     row.cols.resize(static_cast<std::size_t>(blk.size));
     for (int j = 0; j < blk.size; j++) row.cols[j] = blk.start + j;
+    ones.cols = row.cols;
     row.w = w;
-    if (blk.level_hard && !blk.hard_constraints.empty())
-        blk.hard_constraints.front() = std::move(row);
-    else
-        blk.hard_constraints.insert(blk.hard_constraints.begin(), std::move(row));
-    blk.level_hard = true;
+    declare_level_constraints(blk, {std::move(row)}, {std::move(ones)});
 }
 
 // Give an INTRINSIC block its centring: the block's constant is removed and
@@ -537,7 +560,8 @@ inline Rcpp::List intrinsic_constraint_cols(
         }
     }
     for (const auto& b : blocks) {
-        const std::size_t first = (b.level_hard && b.intrinsic_level) ? 1 : 0;
+        const std::size_t first =
+            b.intrinsic_level ? static_cast<std::size_t>(b.n_level_rows) : 0;
         for (std::size_t h = first; h < b.hard_constraints.size(); h++) {
             const LinearConstraintRow& r = b.hard_constraints[h];
             Rcpp::IntegerVector cols(r.cols.size());
