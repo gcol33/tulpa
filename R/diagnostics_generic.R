@@ -73,6 +73,21 @@
 #' and needs every fit to carry its tempered draws (`mode = "smc"`,
 #' `control = list(wbic = TRUE)`); a fit without them gets an `NA` row.
 #'
+#' An evidence (`"wbic"`, and `"loglik"` wherever [logLik()] reports a log
+#' marginal likelihood) integrates the likelihood against the prior, so it
+#' moves with the prior's width in a way the posterior hardly does: widening a
+#' prior SD by a factor `c` on a parameter the data pin down lowers the log
+#' evidence by about `log(c)` per parameter. Two model types fitted under
+#' different default priors are therefore compared with their priors, not only
+#' their likelihoods. An ordinal fit, for instance, puts a `N(0, 10^2)` ridge
+#' on its cutpoint parameters (the first cutpoint and the log gaps,
+#' `cut_prior_sd` of [tulpa_ordinal()]) where a multinomial fit's class
+#' intercepts carry the fixed-effect `N(0, 2.5^2)`, so part of the evidence gap
+#' between the two is the gap between those priors. Set the priors to
+#' statements you would defend for both models before ranking by evidence, or
+#' rank by `"waic"` / `"loo"`, which read the posterior predictive and depend
+#' on the prior only through the posterior.
+#'
 #' @param ... Named `tulpa_fit` objects.
 #' @param criterion `"waic"` (default), `"loo"`, `"wbic"`, or `"loglik"`.
 #' @return A data frame. For `"wbic"` (ranked best-first): `model`, `wbic`,

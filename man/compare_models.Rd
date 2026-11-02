@@ -38,6 +38,21 @@ columns rather than an error, so the table always has one row per model.
 \code{"wbic"} ranks by \code{\link[=wbic]{wbic()}}, an estimate of each fit's negative log evidence,
 and needs every fit to carry its tempered draws (\code{mode = "smc"},
 \code{control = list(wbic = TRUE)}); a fit without them gets an \code{NA} row.
+
+An evidence (\code{"wbic"}, and \code{"loglik"} wherever \code{\link[=logLik]{logLik()}} reports a log
+marginal likelihood) integrates the likelihood against the prior, so it
+moves with the prior's width in a way the posterior hardly does: widening a
+prior SD by a factor \code{c} on a parameter the data pin down lowers the log
+evidence by about \code{log(c)} per parameter. Two model types fitted under
+different default priors are therefore compared with their priors, not only
+their likelihoods. An ordinal fit, for instance, puts a \code{N(0, 10^2)} ridge
+on its cutpoint parameters (the first cutpoint and the log gaps,
+\code{cut_prior_sd} of \code{\link[=tulpa_ordinal]{tulpa_ordinal()}}) where a multinomial fit's class
+intercepts carry the fixed-effect \code{N(0, 2.5^2)}, so part of the evidence gap
+between the two is the gap between those priors. Set the priors to
+statements you would defend for both models before ranking by evidence, or
+rank by \code{"waic"} / \code{"loo"}, which read the posterior predictive and depend
+on the prior only through the posterior.
 }
 \examples{
 \donttest{
