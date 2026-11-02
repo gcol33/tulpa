@@ -106,8 +106,9 @@
   if (!any(ok)) return(list(declined = "no_usable_node"))
 
   groups <- sort(unique(row_id[ok]))
+  laid <- range(u[fin & is.finite(u)])
   pieces <- lapply(groups, function(g) {
-    .nl_lq_group(which(ok & row_id == g), u, ulo, uhi, ld_c, w)
+    .nl_lq_group(which(ok & row_id == g), u, ulo, uhi, ld_c, w, laid = laid)
   })
   mass <- vapply(pieces, `[[`, numeric(1), "mass")
   is_lq <- vapply(pieces, function(p) identical(p$kind, "lq"), logical(1))
@@ -168,7 +169,17 @@
 # nodes, its mode on an end node, a non-concave modal triple, or `h / sd` above
 # the gate) is its cells' boxes, each holding its own mass -- the box read of
 # that row.
-.nl_lq_group <- function(cells, u, ulo, uhi, ld, w) {
+#
+# `laid` is the range of the axis's levels over every cell, those carrying no
+# mass included. A tail continues a row past its outer node only where the axis
+# has no level beyond that node: the tail is what removes the truncation of the
+# grid's own extent, and inside that extent the levels the row carries no mass
+# at -- a cell pruned by the screen, one solved to a negligible weight, or a
+# level a refinement pass laid only in the rows holding the posterior -- say
+# that the row's density there is negligible. A tail running across them puts
+# there the mass the grid measured it not to hold, so such an end stops at its
+# node's box edge.
+.nl_lq_group <- function(cells, u, ulo, uhi, ld, w, laid = range(u)) {
   uv <- sort(unique(u[cells]))
   k <- match(u[cells], uv)
   f <- factor(k, levels = seq_along(uv))
@@ -211,8 +222,9 @@
   top <- max(p$lg)
   reach <- function(i, side) {
     a <- p$d2[i]
-    if (a >= 0) return(if (side < 0) lo_b[1L] else hi_b[n])
     end <- if (side < 0) uv[1L] else uv[n]
+    walled <- if (side < 0) laid[1L] < end else laid[2L] > end
+    if (a >= 0 || walled) return(if (side < 0) lo_b[1L] else hi_b[n])
     # The quadratic as a(x - x0)^2 + c: its peak and where it falls
     # `tail_nats` below the larger of that peak and the row's top node.
     b <- p$d1[i] - a * (uv[i] + uv[i + 1L])

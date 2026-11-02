@@ -142,3 +142,31 @@ test_that("a declared point mass is split off before the continuum is read", {
                exp(stats::qnorm((probs[3:4] - 0.3) / 0.7, mu, s)),
                tolerance = 1e-4)
 })
+
+test_that("a row's tail stops at a level laid beyond it that holds no mass", {
+  skip_on_cran_budget()
+  # One row of a Gaussian on the unbounded coordinate, nodes 1.25 SDs apart, and
+  # a level one node step below the lowest massive one whose cell carries no
+  # mass (pruned by the screen: weight 0, log marginal -Inf). The tail
+  # continued past the lowest massive node would put mass on that level's box,
+  # which the grid measured to hold none.
+  s <- 1; h <- 1.25 * s
+  u_mass <- seq(-2, 2) * h
+  u <- c(-3 * h, u_mass)
+  ld <- c(-Inf, stats::dnorm(u_mass, 0, s, log = TRUE))
+  w <- c(0, exp(ld[-1L])); w <- w / sum(w)
+  probs <- c(5e-4, 0.025, 0.5, 0.975)
+  rd <- .nl_summary_quantile_read(u, w, probs, "unbounded", "density",
+                                  "log_quadratic", row_id = rep(1L, length(u)),
+                                  log_density = ld)
+  expect_identical(rd$within, "log_quadratic")
+  # The lowest massive node's box ends half way to the laid level below it.
+  edge <- (u[1L] + u_mass[1L]) / 2
+  expect_gte(min(rd$q), edge)
+  # Without the laid level the same row's tail runs past that edge.
+  free <- .nl_summary_quantile_read(u_mass, w[-1L], probs, "unbounded",
+                                    "density", "log_quadratic",
+                                    row_id = rep(1L, length(u_mass)),
+                                    log_density = ld[-1L])
+  expect_lt(free$q[1L], edge)
+})
