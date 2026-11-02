@@ -107,8 +107,10 @@ test_that("mode = 'laplace' forwards max_iter / tol / n_threads to tulpa_laplace
   set.seed(1)
   d <- data.frame(x = rnorm(30))
   d$y <- rpois(30, exp(1 + d$x))
-  f1 <- tulpa(y ~ x, d, family = "poisson", mode = "laplace",
-              control = list(max_iter = 1L))
+  expect_warning(
+    f1 <- tulpa(y ~ x, d, family = "poisson", mode = "laplace",
+                control = list(max_iter = 1L)),
+    "mode-find stopped before converging")
   # The front door applies its default fixed-effect prior; the reference
   # solve takes the same one so the comparison is of max_iter alone.
   ref <- tulpa_laplace(d$y, NULL, cbind(1, d$x), family = "poisson",

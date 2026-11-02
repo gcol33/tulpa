@@ -836,9 +836,19 @@
     )
     all_blocks <- c(field_blocks, latent_blocks)
     if (length(all_blocks) == 0L) {
+      # An `iid` block for a `(1 | g)` term rides the multi-block driver only,
+      # so random effects alone are not a nested-Laplace model; the scale they
+      # carry is integrated by the RE-covariance integrator instead.
+      has_re <- length(bundle$re_terms %||% list()) > 0L
       stop("Backend 'nested_laplace' needs at least one `latent(...)` block, ",
-           "s(...) smoother, spatial(col) field, or temporal field. For a ",
-           "plain GLMM use mode = 'laplace' / 'mala' / 'auto'.", call. = FALSE)
+           "s(...) smoother, spatial(col) field, or temporal field. ",
+           if (has_re) paste0(
+             "To integrate the random-effect scale of this model use ",
+             "mode = 'structured' (or 'auto'), which fits it with the ",
+             "RE-covariance integrator; mode = 'laplace' conditions on ",
+             "`sigma_re` instead.")
+           else "For a fixed-effect model use mode = 'laplace' or 'auto'.",
+           call. = FALSE)
     }
     # Each random-effect term becomes an `iid` latent block, so its SD is
     # integrated on the outer grid alongside the other blocks' hyperparameters
