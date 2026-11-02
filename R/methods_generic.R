@@ -1497,12 +1497,17 @@ glance.tulpa_fit <- function(x, ...) {
 #'     A group effect the subspace debias selected
 #'     (`control$subspace_debias`) is moved by the Metropolis sampler at every
 #'     node instead, and is reported from those draws.
-#'   \item The Laplace tier reports the conditional mode with no spread (`sd` and
-#'     the bounds are `NA`), which is the only per-group quantity it forms.
+#'   \item The Laplace tier (`mode = "laplace"`) reports the Laplace Gaussian of
+#'     each group effect given the conditioned `sigma_re`: the mode, the
+#'     marginal SD from the diagonal of the inverse joint Hessian (the fixed
+#'     effects and the other groups integrated out), and the Gaussian bounds.
+#'     The interval holds `sigma_re` fixed, so it omits the scale's uncertainty.
+#'     A fit that keeps no such curvature reports the mode with `NA` spread.
 #' }
 #' The `source` column says per row which of these produced it: `"sampled"` for
-#' a posterior draw summary, `"mixture"` for the node mixture, `"mode"` for a
-#' conditional mode.
+#' a posterior draw summary, `"mixture"` for the node mixture, `"laplace"` for
+#' the Laplace Gaussian at a conditioned scale, `"mode"` for a conditional mode
+#' without spread.
 #' A fit whose backend never forms a per-group posterior at all (the adaptive
 #' Gauss-Hermite inner marginal integrates each group out by quadrature) errors
 #' with that reason rather than returning an empty table, which would be
@@ -1716,6 +1721,23 @@ ranef.tulpa_fit <- function(object, ...) {
     blups <- object$mode[(n_fixed + 1L):length(object$mode)]
     nm <- if (length(re_names) == length(blups)) re_names
           else re_names[seq_len(length(blups))]
+    # Per-(term, group) blocks of the inverse joint Hessian, term-major then
+    # group, coefficient within group: the order of the mode's latent tail.
+    cb <- object$cov_blocks
+    v <- if (is.list(cb) && length(cb) &&
+             all(vapply(cb, is.matrix, logical(1)))) {
+      unlist(lapply(cb, diag), use.names = FALSE)
+    }
+    if (length(v) == length(blups) && all(is.finite(v)) && all(v >= 0)) {
+      s <- sqrt(v)
+      z <- stats::qnorm(0.975)
+      return(data.frame(
+        term = nm, estimate = blups, sd = s,
+        conf.low = blups - z * s, conf.high = blups + z * s,
+        source = "laplace",
+        row.names = NULL, stringsAsFactors = FALSE
+      ))
+    }
     return(data.frame(
       term = nm, estimate = blups,
       sd = NA_real_, conf.low = NA_real_, conf.high = NA_real_,

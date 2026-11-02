@@ -1139,7 +1139,10 @@
         # Keeps the joint latent precision (`H_latent`) on the fit, so the
         # linear-predictor draws behind posterior_predict() and WAIC / LOO take
         # the random effects jointly with the fixed effects (gcol33/tulpa#871).
-        return_joint_hessian = TRUE
+        return_joint_hessian = TRUE,
+        # The per-group marginal covariance blocks ranef() reports the group
+        # effects' spread from.
+        return_re_cov = length(bundle$re_terms %||% list()) > 0L
       ), numerics))
     }
     if (backend == "gibbs") {

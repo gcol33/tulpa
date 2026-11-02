@@ -37,12 +37,17 @@ they carry both the within-node curvature and the \code{Sigma} uncertainty.
 A group effect the subspace debias selected
 (\code{control$subspace_debias}) is moved by the Metropolis sampler at every
 node instead, and is reported from those draws.
-\item The Laplace tier reports the conditional mode with no spread (\code{sd} and
-the bounds are \code{NA}), which is the only per-group quantity it forms.
+\item The Laplace tier (\code{mode = "laplace"}) reports the Laplace Gaussian of
+each group effect given the conditioned \code{sigma_re}: the mode, the
+marginal SD from the diagonal of the inverse joint Hessian (the fixed
+effects and the other groups integrated out), and the Gaussian bounds.
+The interval holds \code{sigma_re} fixed, so it omits the scale's uncertainty.
+A fit that keeps no such curvature reports the mode with \code{NA} spread.
 }
 The \code{source} column says per row which of these produced it: \code{"sampled"} for
-a posterior draw summary, \code{"mixture"} for the node mixture, \code{"mode"} for a
-conditional mode.
+a posterior draw summary, \code{"mixture"} for the node mixture, \code{"laplace"} for
+the Laplace Gaussian at a conditioned scale, \code{"mode"} for a conditional mode
+without spread.
 A fit whose backend never forms a per-group posterior at all (the adaptive
 Gauss-Hermite inner marginal integrates each group out by quadrature) errors
 with that reason rather than returning an empty table, which would be
