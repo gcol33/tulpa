@@ -419,6 +419,13 @@ adjacency.stars <- function(x, type = c("queen", "rook"),
             paste(utils::head(ids[report$isolated], 3L), collapse = ", "),
             if (report$n_isolated > 3L) ", ...", ".")
   }
+  # Identifiers other than the node positions name the matrix's rows and
+  # columns, so a unit column holding them resolves by name wherever the
+  # matrix travels (`.resolve_spatial_idx()`), including after
+  # `as.matrix(g$adjacency)`. Positional ids already resolve as indices.
+  if (!is.numeric(ids) || !identical(as.integer(ids), seq_len(nrow(W)))) {
+    dimnames(W) <- list(as.character(ids), as.character(ids))
+  }
   structure(
     list(adjacency = W,
          ids       = ids,
@@ -490,11 +497,12 @@ node_index <- function(graph, ids) {
 #' @param ids Optional cell identifiers; if supplied, their length must match
 #'   `nrow(adjacency)` and they must be unique.
 #'
-#' @return Invisibly, a `tulpa_adjacency_check` list with the per-check results
+#' @return A `tulpa_adjacency_check` list with the per-check results
 #'   (`square`, `finite`, `symmetric`, `zero_diag`, `binary`, `nonneg`,
 #'   isolated-node indices, `n_components` and `component_sizes`, edge count)
-#'   and an overall `ok` flag. Issues are reported via `warning()` and printed;
-#'   the function does not stop, so every problem surfaces in one pass.
+#'   and an overall `ok` flag, which prints as a report when it is not
+#'   assigned. Issues are reported via `warning()`; the function does not stop,
+#'   so every problem surfaces in one pass.
 #'
 #' @seealso [adjacency()] to construct a graph, [node_index()].
 #'
@@ -551,8 +559,7 @@ check_adjacency <- function(adjacency, ids = NULL) {
     }
   }
   if (!is.null(report$id_error)) warning(report$id_error, call. = FALSE)
-  print(report)
-  invisible(report)
+  report
 }
 
 # Shared validator: pure (no warnings / printing), returns a report list used by

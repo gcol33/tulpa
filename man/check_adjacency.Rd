@@ -20,11 +20,12 @@ check_adjacency(adjacency, ids = NULL)
 \item{...}{Ignored.}
 }
 \value{
-Invisibly, a \code{tulpa_adjacency_check} list with the per-check results
+A \code{tulpa_adjacency_check} list with the per-check results
 (\code{square}, \code{finite}, \code{symmetric}, \code{zero_diag}, \code{binary}, \code{nonneg},
 isolated-node indices, \code{n_components} and \code{component_sizes}, edge count)
-and an overall \code{ok} flag. Issues are reported via \code{warning()} and printed;
-the function does not stop, so every problem surfaces in one pass.
+and an overall \code{ok} flag, which prints as a report when it is not
+assigned. Issues are reported via \code{warning()}; the function does not stop,
+so every problem surfaces in one pass.
 }
 \description{
 Check that a hand-built adjacency matrix is a well-formed spatial graph

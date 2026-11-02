@@ -105,7 +105,8 @@ test_that("adjacency.data.frame builds queen contiguity on a regular grid", {
   expect_true(all(Matrix::diag(W) == 0))
   expect_true(all(W@x == 1))
 
-  deg <- Matrix::rowSums(W)
+  expect_identical(rownames(W), grid$cell)
+  deg <- unname(Matrix::rowSums(W))
   # 1 centre (8), 4 edge-mid (5), 4 corners (3); 20 undirected edges
   expect_equal(sort(deg), sort(c(8, 5, 5, 5, 5, 3, 3, 3, 3)))
   expect_equal(sum(Matrix::tril(W) != 0), 20L)
