@@ -424,7 +424,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
       y = as.numeric(y), X = as.matrix(X),
       A_eff = asm$A_eff, Pl = asm$Pl,
       C0sub = as.numeric(spatial$C0_diag)[asm$keep],
-      family = family, phi = phi,
+      family = family, phi = phi_kernel,
       beta_hat = as.numeric(result$mode[seq_len(ncol(X))]),
       x_hat = as.numeric(x_mesh),
       n_trials = as.integer(n_trials %||% rep(1L, length(y))),
