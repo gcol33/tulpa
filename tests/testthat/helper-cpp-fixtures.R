@@ -12,7 +12,13 @@
 # The engine objects are built once per source tree and cached, keyed by a
 # hash of src/, inst/include/, the R version and the LinkingTo packages, under
 # TULPA_FIXTURE_CACHE (default tools::R_user_dir("tulpa", "cache")). A
-# fixture's own library is cached by sourceCpp next to them.
+# fixture's own library and wrapper script are cached next to them, one
+# directory per fixture source and flags, published by an atomic rename once
+# complete (.cpp_fixture_publish()). Each process builds in its own temporary
+# directory and loads its own copy of a published library
+# (.cpp_fixture_load_shared()), so concurrent test processes never compile
+# into, or load from, a file another one is writing, and Windows' lock on a
+# loaded library binds no other process.
 #
 # A fixture links its own copy of the engine's objects, so process state the
 # engine keeps (a registry, a verification flag) is the fixture's own. A
@@ -153,8 +159,60 @@
   .cpp_fixture_state$engine
 }
 
+# The sourceCpp cache of one fixture build: its directory under the engine's
+# `fixtures/`, keyed by the fixture source (path and content) and the flags it
+# compiles with.
+.cpp_fixture_shared_dir <- function(engine, file, flags) {
+  blob <- c(file, unname(tools::md5sum(file)), flags)
+  tf <- tempfile()
+  on.exit(unlink(tf), add = TRUE)
+  writeLines(blob, tf)
+  key <- substr(unname(tools::md5sum(tf)), 1L, 16L)
+  file.path(engine$dir, "fixtures",
+            paste0(tools::file_path_sans_ext(basename(file)), "-", key))
+}
+
+# Publish the fixture sourceCpp built in `private` as `shared`: its library
+# and the R wrapper script sourceCpp generated, copied into a staging
+# directory of this process and then renamed into place. A rename that loses to
+# another process's leaves the winner's, which holds the same build.
+.cpp_fixture_publish <- function(private, shared) {
+  dll <- list.files(private, pattern = paste0("\\", .Platform$dynlib.ext, "$"),
+                    recursive = TRUE, full.names = TRUE)
+  wrappers <- list.files(private, pattern = "\\.cpp\\.R$", recursive = TRUE,
+                         full.names = TRUE)
+  if (length(dll) != 1L || length(wrappers) != 1L) return(invisible(FALSE))
+  stage <- paste0(shared, ".stage-", Sys.getpid())
+  unlink(stage, recursive = TRUE)
+  dir.create(stage, recursive = TRUE)
+  ok <- file.copy(dll, file.path(stage, paste0("fixture", .Platform$dynlib.ext))) &&
+    file.copy(wrappers, file.path(stage, "wrappers.R"))
+  if (!ok || !file.rename(stage, shared)) unlink(stage, recursive = TRUE)
+  invisible(dir.exists(shared))
+}
+
+# The functions of a published fixture, bound to this process's own copy of
+# its library. The wrapper script loads the library through dyn.load(); it is
+# evaluated where dyn.load() reads the private copy instead of the path the
+# building process recorded.
+.cpp_fixture_load_shared <- function(shared, name) {
+  ext <- .Platform$dynlib.ext
+  local <- tempfile(paste0(name, "-"), fileext = ext)
+  if (!file.copy(file.path(shared, paste0("fixture", ext)), local)) {
+    stop("could not copy the fixture library from ", shared, call. = FALSE)
+  }
+  fx <- new.env(parent = globalenv())
+  fx$dyn.load <- function(x, ...) base::dyn.load(local, ...)
+  sys.source(file.path(shared, "wrappers.R"), envir = fx)
+  rm("dyn.load", envir = fx)
+  fx
+}
+
 # Compile tests/testthat/cpp/<name>.cpp against the engine and assign its
 # exported functions into `env` (the calling test file or block by default).
+# A build another process published is loaded from a private copy of its
+# library; otherwise the fixture is built by sourceCpp in this process's
+# temporary directory, used from there, and published.
 load_cpp_fixture <- function(name, env = parent.frame()) {
   skip_if_fast()
   skip_on_cran_budget()
@@ -172,15 +230,22 @@ load_cpp_fixture <- function(name, env = parent.frame()) {
       paste0("\"", engine$objects, "\"", collapse = " "),
       "$(SHLIB_OPENMP_CXXFLAGS) $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)"
     )
-    fx <- new.env(parent = globalenv())
-    withr::with_envvar(
-      c(PKG_CPPFLAGS = .cpp_fixture_include_flags(file.path(engine$dir)),
-        PKG_CXXFLAGS = "$(SHLIB_OPENMP_CXXFLAGS)",
-        PKG_LIBS = lib_flags,
-        USE_CXX17 = "yes"),
-      Rcpp::sourceCpp(file, env = fx,
-                      cacheDir = file.path(engine$dir, "fixtures"))
-    )
+    flags <- c(PKG_CPPFLAGS = .cpp_fixture_include_flags(file.path(engine$dir)),
+               PKG_CXXFLAGS = "$(SHLIB_OPENMP_CXXFLAGS)",
+               PKG_LIBS = lib_flags,
+               USE_CXX17 = "yes")
+    shared <- .cpp_fixture_shared_dir(engine, file, flags)
+    if (dir.exists(shared)) {
+      fx <- .cpp_fixture_load_shared(shared, name)
+    } else {
+      private <- file.path(tempdir(), "tulpa-fixtures", basename(shared))
+      unlink(private, recursive = TRUE)
+      dir.create(private, recursive = TRUE)
+      fx <- new.env(parent = globalenv())
+      withr::with_envvar(flags, Rcpp::sourceCpp(file, env = fx,
+                                                cacheDir = private))
+      .cpp_fixture_publish(private, shared)
+    }
     fns <- as.list(fx)
     if (is.null(.cpp_fixture_state$loaded)) .cpp_fixture_state$loaded <- list()
     .cpp_fixture_state$loaded[[name]] <- fns
