@@ -1272,8 +1272,14 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 
 # Weighted mean and SD of `values` under pre-normalized `weights` (which
 # sum to 1). SD uses the E[x^2] - E[x]^2 form, floored at 0 to absorb the
-# floating-point negatives that form can produce near a degenerate axis.
+# floating-point negatives that form can produce near a degenerate axis. A node
+# of zero weight carries no mass and enters neither moment, so a value it holds
+# that overflows when squared (a scale at a far design node) cannot turn the
+# sums into 0 * Inf.
 .nl_wtd_mean_sd <- function(values, weights) {
+  keep <- is.na(weights) | weights != 0
+  values <- values[keep]
+  weights <- weights[keep]
   mu <- sum(weights * values)
   list(mean = mu, sd = sqrt(max(0, sum(weights * values^2) - mu^2)))
 }
