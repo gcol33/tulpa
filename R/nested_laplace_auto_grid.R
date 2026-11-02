@@ -1239,7 +1239,7 @@ auto_grid_place <- function(x)
              reason = reason)
     }
     if (length(tag) != 1L || is.na(tag) ||
-        !tag %in% c("log", "logit01", "identity")) {
+        !tag %in% c("log", "logit01", "atanh", "identity")) {
         return(bad("no_usable_curvature"))
     }
     if (length(mode_u) != 1L || length(sd_u) != 1L) return(bad("no_usable_curvature"))
@@ -1252,6 +1252,7 @@ auto_grid_place <- function(x)
     nodes <- .joint_pareto_inv(tag, u_seq)$theta
     keep  <- is.finite(nodes)
     if (identical(tag, "logit01")) keep <- keep & nodes > 0 & nodes < 1
+    if (identical(tag, "atanh")) keep <- keep & abs(nodes) < 1
     nodes <- sort(unique(nodes[keep]))
     if (length(nodes) < .nl_recenter("min_nodes")) {
         return(bad("no_usable_curvature", cl$clamp, cl$sd_raw))

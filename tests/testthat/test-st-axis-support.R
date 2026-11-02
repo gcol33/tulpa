@@ -86,3 +86,19 @@ test_that("fit_st_nested rw1 / rw2 carry no temporal rho axis", {
                      c("tau_spatial", "tau_temporal"))
   }
 })
+
+test_that("an ar1 rho carries the atanh proposal coordinate and its Jacobian", {
+  tags <- tulpa:::.joint_pareto_block_tags("ar1", c("tau", "rho"))
+  expect_identical(unname(tags), c("log", "atanh"))
+  expect_true(is.na(tulpa:::.joint_pareto_block_tags("car_proper", "rho")))
+  u <- c(-8, -1.3, 0, 0.4, 2.2, 9)
+  iv <- tulpa:::.joint_pareto_inv("atanh", u)
+  expect_equal(iv$theta, tanh(u))
+  expect_equal(tulpa:::.joint_pareto_fwd("atanh", iv$theta[2:5]), u[2:5])
+  # log |d rho / d u| = log(1 - tanh(u)^2), in a form that stays finite in the
+  # tails where 1 - tanh(u)^2 rounds to 0.
+  expect_equal(iv$log_jac[2:5], log(1 - tanh(u[2:5])^2), tolerance = 1e-12)
+  expect_true(all(is.finite(iv$log_jac)))
+  nodes <- tulpa:::.nl_recenter_axis_full("atanh", atanh(0.8), 0.3)$nodes
+  expect_true(length(nodes) >= 2L && all(abs(nodes) < 1))
+})

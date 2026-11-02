@@ -395,11 +395,11 @@
 
 # Per-axis transform tag for one block. `type` is the (lower-case) block type,
 # `axes` the bare axis names (block prefix already stripped). Returns one tag
-# per axis ("log" / "logit01" / "identity") or NULL to DECLINE the whole fit
-# when any axis has a support that cannot be safely transformed:
-#   * `rho` is the BYM2 mixing weight in (0, 1) -> logit, but for CAR_proper /
-#     AR1 / multi-output HSGP the same name denotes an eigenvalue- or
-#     autocorrelation-bounded parameter whose support is not (0, 1); decline.
+# per axis ("log" / "logit01" / "atanh" / "identity") or NULL to DECLINE the
+# whole fit when any axis has a support that cannot be safely transformed:
+#   * `rho` is the BYM2 mixing weight in (0, 1) -> logit and an AR(1)
+#     autocorrelation in (-1, 1) -> atanh; for CAR_proper / multi-output HSGP
+#     the same name denotes an eigenvalue-bounded parameter; decline.
 #   * `rho_car` is the proper-CAR correlation on the adjacency eigenvalue
 #     interval; decline.
 #   * `alpha` is the unbounded copy coefficient; identity.
@@ -415,7 +415,9 @@
     if (type %in% c("mcar", "miid")) return(rep("identity", length(axes)))
     tag_one <- function(a) {
         if (a == "alpha") return("identity")
-        if (a == "rho") return(if (identical(type, "bym2")) "logit01" else NA_character_)
+        if (a == "rho") {
+            return(switch(type, bym2 = "logit01", ar1 = "atanh", NA_character_))
+        }
         if (a == "rho_car") return(NA_character_)
         if (a %in% .JOINT_POS_AXES || startsWith(a, "phi_")) return("log")
         NA_character_
@@ -495,15 +497,12 @@
 # The SUPPORT of an axis whose proposal tag is NA. A proposal tag names a
 # coordinate the outer Pareto-k, the joint CCD and the recenter lay nodes in;
 # the support is what a reported interval and a cell's mirrored edge must stay
-# inside. The two coincide wherever a tag exists, and an axis can have a known
-# support without a registered proposal coordinate: an AR(1) autocorrelation
-# lives on (-1, 1) by stationarity, while `rho` under a proper CAR (the
+# inside. The two coincide wherever a tag exists; `rho` under a proper CAR (the
 # adjacency eigenvalue interval) or a multi-output HSGP has no support this
 # registry can name and stays NA. `st` is the axis vocabulary of
 # `fit_st_nested()`'s grid (`.ST_AXIS_MAP`), where `rho` is always the temporal
 # AR(1) correlation and `rho_spatial` the BYM2 mixing weight.
 .JOINT_AXIS_SUPPORT <- list(
-    ar1 = c(rho = "correlation"),
     st  = c(rho = "correlation", rho_spatial = "unit",
             tau_spatial = "positive", tau_temporal = "positive")
 )
@@ -535,7 +534,8 @@
 # an unconstrained coordinate (a copy `alpha`, an MCAR log-Cholesky entry) is
 # `unbounded`. An axis the registry will not guess carries NA, and its summary
 # is withheld rather than guessed.
-.JOINT_AXIS_DOMAIN <- c(log = "positive", logit01 = "unit", identity = "unbounded")
+.JOINT_AXIS_DOMAIN <- c(log = "positive", logit01 = "unit", atanh = "correlation",
+                        identity = "unbounded")
 
 # The REPORTING geometry of every joint-grid axis: the domain its continuum is
 # partitioned on, and the coordinate of a declared point mass that is not part
@@ -587,6 +587,7 @@
     switch(tag,
         log      = log(theta),
         logit01  = stats::qlogis(theta),
+        atanh    = atanh(theta),
         identity = theta)
 }
 
@@ -601,7 +602,9 @@
 # overstates the grid-node ground truth by ~0.25-0.55, enough to flip a verdict
 # near 0.7). A `logit01` (correlation) axis has a grid uniform in the natural
 # rho, so mapping rho -> logit(rho) DOES carry the logit Jacobian
-# log(rho (1 - rho)). `identity` (a copy alpha) is uniform in u already.
+# log(rho (1 - rho)). An `atanh` axis (an AR(1) autocorrelation on (-1, 1)) is
+# laid uniform in the natural rho too, and carries log(1 - tanh(u)^2).
+# `identity` (a copy alpha) is uniform in u already.
 .joint_pareto_inv <- function(tag, u) {
     switch(tag,
         log = list(theta = exp(u), log_jac = rep(0, length(u))),
@@ -612,6 +615,9 @@
                  log_jac = stats::plogis(u, log.p = TRUE) +
                            stats::plogis(-u, log.p = TRUE))
         },
+        atanh = list(theta = tanh(u),
+                     log_jac = log(4) - 2 * abs(u) -
+                               2 * log1p(exp(-2 * abs(u)))),
         identity = list(theta = u, log_jac = rep(0, length(u))))
 }
 
