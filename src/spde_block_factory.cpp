@@ -12,8 +12,7 @@ LatentBlock spde_assemble_block(
     std::shared_ptr<std::vector<ARows>>          a_rows_per_arm,
     std::shared_ptr<SpdeQBuilder>                qb,
     std::function<bool(int)>                     cell_in_domain,
-    std::function<bool(int, SpdeCellState&)>     refresh,
-    bool                                         center_field
+    std::function<bool(int, SpdeCellState&)>     refresh
 ) {
     auto cell_cache = std::make_shared<NlCellCache<SpdeCellState>>(
         [qb](SpdeCellState& st) { st.qb = *qb; });
@@ -116,15 +115,12 @@ LatentBlock spde_assemble_block(
         return spde_gmrf_log_density(st.half_ldQ, qf, n_mesh);
     };
 
-    // Sum-to-zero centring for intercept identifiability. Left empty for the
-    // precomputed rational latent, whose stacked components x are not the field
-    // (u = Pr x) and whose proper prior (kappa^2 > 0) already identifies the
-    // constant mode.
-    if (center_field) {
-        block.center = [start, n_mesh](Rcpp::NumericVector& x) {
-            return tulpa::center_intercept(x, start, n_mesh);
-        };
-    }
+    // No centerer: the proper SPDE prior (kappa^2 > 0) gives the field's
+    // constant its own prior variance, so the constant is identified against
+    // the intercept by the two priors and the mode is reported as the Newton
+    // loop found it. Moving the field's mean into the intercept afterwards
+    // keeps eta but not the log-prior, so the reported point would not be the
+    // mode of the model whose log-marginal the fit carries.
 
     return block;
 }
@@ -203,7 +199,7 @@ LatentBlock make_spde_block(
     };
 
     return spde_assemble_block(start, n_mesh, a_rows_per_arm, qb,
-                               in_domain, refresh, /*center_field=*/true);
+                               in_domain, refresh);
 }
 
 } // namespace tulpa

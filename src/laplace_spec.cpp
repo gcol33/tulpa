@@ -39,6 +39,7 @@
 #include "laplace_re_priors.h"
 #include "laplace_spec_curvature3.h"  // build_spec_curvature3_oracle (inner-skew diagnostic)
 #include "laplace_spec_solve.h"   // spec_inner_solve (defined below, shared with driver)
+#include "hard_constraints.h"     // HardConstraintState, level_prior_conditioning
 #include "laplace_spatial_priors.h"
 #include "latent_block.h"
 #include "linalg_fast.h"
@@ -1465,13 +1466,24 @@ LaplaceResult spec_inner_solve(
         }
     }
 
+    // The hard constraints the blocks carry: an intrinsic field's level row,
+    // which puts the level in the coefficient it folds into so that
+    // coefficient's prior acts on it.
+    HardConstraintState hard;
+    if (blocks) {
+        hard.init(n_x, *blocks);
+        if (hard.active())
+            hard.prior_conditioning =
+                level_prior_conditioning(*blocks, k_grid, scratch.x_try);
+    }
+
     return laplace_newton_solve_ll(
         n_eta, n_x, max_iter, tol,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
         log_lik_fn, scratch, x_init, solver, store_Q, inv_block_layout,
         sparse_override, &feasible_start_coords,
         compute_skew, skew_probe_idx, &curvature3, debias, cila, cila_cell_key,
-        sparse_H
+        sparse_H, hard.active() ? &hard : nullptr
     );
 }
 

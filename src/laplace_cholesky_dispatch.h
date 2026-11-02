@@ -135,9 +135,20 @@ inline bool dispatch_factor_log_det_ridged(
     return std::isfinite(log_det_out);
 }
 
-// g' H^-1 g off the factor a dispatch above left live: the CHOLMOD factor when
-// `sparse_live`, the dense lower factor in `dense_scratch` otherwise. It is the
-// Newton decrement at the point H and g were scattered at
+// out = H^-1 rhs off the factor a dispatch above left live: the CHOLMOD factor
+// when `sparse_live`, the dense lower factor in `dense_scratch` otherwise.
+inline bool live_factor_solve(const double* rhs, double* out, int n_x,
+                              bool sparse_live,
+                              SparseCholeskySolver& sparse_solver,
+                              DenseCholeskyScratch& dense_scratch) {
+    if (sparse_live) return sparse_solver.solve(rhs, out, n_x);
+    std::vector<double> z_work(n_x, 0.0);
+    return chol_substitute_raw(dense_scratch.L.data(), n_x, rhs, out,
+                               z_work.data());
+}
+
+// g' H^-1 g off the live factor (live_factor_solve). It is the Newton
+// decrement at the point H and g were scattered at
 // (`LaplaceResult::newton_decrement`). NaN where the solve fails. `step_out`,
 // when given, receives the step H^-1 g the decrement is read off.
 inline double newton_decrement_live(const double* grad, int n_x,
@@ -148,14 +159,8 @@ inline double newton_decrement_live(const double* grad, int n_x,
     std::vector<double> local;
     std::vector<double>& step = step_out ? *step_out : local;
     step.assign(n_x, 0.0);
-    bool ok;
-    if (sparse_live) {
-        ok = sparse_solver.solve(grad, step.data(), n_x);
-    } else {
-        std::vector<double> z_work(n_x, 0.0);
-        ok = chol_substitute_raw(dense_scratch.L.data(), n_x, grad, step.data(),
-                                 z_work.data());
-    }
+    const bool ok = live_factor_solve(grad, step.data(), n_x, sparse_live,
+                                      sparse_solver, dense_scratch);
     if (!ok) return std::numeric_limits<double>::quiet_NaN();
     double dec = 0.0;
     for (int j = 0; j < n_x; j++) dec += grad[j] * step[j];

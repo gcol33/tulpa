@@ -189,11 +189,13 @@ test_that("SPDE single-point == nested SPDE with covariates and an RE block", {
 test_that("the SPDE single fit returns a mode its own score confirms", {
   skip_if_not_installed("fmesher")
   skip_on_cran()
-  # The mesh field is sum-to-zero centred after the Newton loop. Centring it
-  # without moving the constant into the intercept shifts eta away from the mode
-  # the loop found: the fit then reported a beta score of ~0.47 at a converged
-  # solve. The driver folds the removed constant into the arm intercept, so eta
-  # -- and with it the reported mode -- is the one the loop settled on.
+  # The SPDE prior is proper, so the field's constant carries its own prior
+  # variance and the intercept and the field level are identified by the two
+  # priors together. The mode is reported as the Newton loop found it: moving
+  # the field's mean into the intercept afterwards keeps eta but not the
+  # log-prior, and under the N(0, 2.5^2) fixed-effect prior that left a beta
+  # score of 0.0027 at a converged solve (0.47 before the fold kept eta). Both
+  # blocks of the score are therefore clean stationarity statements.
   a <- .spde_fixture(n_obs = 160L, seed = 15L, p = 2L)
   kt <- .spde_kt(0.35, 0.6, 1)
   sp <- do.call(tulpa:::cpp_laplace_fit_spde,
@@ -203,21 +205,26 @@ test_that("the SPDE single fit returns a mode its own score confirms", {
 
   p <- ncol(a$X)
   mesh <- sp$mode[(p + 1):(p + a$n_mesh)]
-  expect_lt(abs(mean(mesh)), 1e-8)          # the field really is centred
 
-  # d(log lik)/d beta at the reported mode, less the kernel's default prior
-  # precision (DEFAULT_TAU_BETA). The mesh score carries the sum-to-zero
-  # multiplier, so only the beta block is a clean stationarity statement.
+  # The score at the reported mode: the fixed effects less the kernel's default
+  # prior precision (DEFAULT_TAU_BETA), the mesh less the alpha = 2 precision
+  # Q = tau^2 (kappa^4 C + 2 kappa^2 G + G C^-1 G) on the lumped mass C.
   A <- Matrix::sparseMatrix(i = a$A_i, p = a$A_p, x = a$A_x,
                             dims = c(a$n_obs, a$n_mesh), index1 = FALSE)
+  G <- Matrix::sparseMatrix(i = a$G1_i, p = a$G1_p, x = a$G1_x,
+                            dims = c(a$n_mesh, a$n_mesh), index1 = FALSE)
+  C <- Matrix::Diagonal(x = a$C0_diag)
+  Ci <- Matrix::Diagonal(x = 1 / a$C0_diag)
+  Q <- kt$tau^2 * (kt$kappa^4 * C + 2 * kt$kappa^2 * G + G %*% Ci %*% G)
   eta <- as.numeric(a$X %*% sp$mode[seq_len(p)] + A %*% mesh)
-  # The Newton loop stops on its step, so this residual settles at a floor set
-  # by conditioning rather than at zero: it is ~2e-06 here. The bound is what
-  # separates a settled mode from the uncompensated centring, which left this
-  # same quantity at ~0.47 -- five orders of magnitude up.
-  g_beta <- as.numeric(crossprod(a$X, a$y - plogis(eta))) -
+  resid <- a$y - plogis(eta)
+  g_beta <- as.numeric(crossprod(a$X, resid)) -
     sp$mode[seq_len(p)] / default_sigma_beta()^2
-  expect_lt(max(abs(g_beta)), 1e-4)
+  g_mesh <- as.numeric(Matrix::crossprod(A, resid)) - as.numeric(Q %*% mesh)
+  expect_lt(max(abs(g_beta)), 1e-6)
+  expect_lt(max(abs(g_mesh)), 1e-6)
+  # The field's level is not moved into the intercept.
+  expect_gt(abs(mean(mesh)), 1e-6)
 })
 
 

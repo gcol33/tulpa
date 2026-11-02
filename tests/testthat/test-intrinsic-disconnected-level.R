@@ -71,11 +71,11 @@ test_that("an ICAR field on a disconnected graph reads each component exactly", 
   ex <- .dc_exact(y, cbind(1, x, Z),
                   as.matrix(Matrix::bdiag(diag(1 / sb^2, 2), tau * .dc_aug(A, g$comp))),
                   phi, c(0, 0, rep(1, K)), rbind(matrix(0, 2, K), diag(K)))
-  expect_equal(fe$estimate, ex$mean, tolerance = 1e-5)
+  expect_equal(fe$estimate, ex$mean, tolerance = 1e-8)
   expect_equal(fe$sd, ex$sd, tolerance = 1e-8)
   # The component levels, the quantity the augmentation identifies softly.
   expect_equal(as.numeric(tapply(fe$estimate, g$comp, mean)),
-               as.numeric(tapply(ex$mean, g$comp, mean)), tolerance = 1e-5)
+               as.numeric(tapply(ex$mean, g$comp, mean)), tolerance = 1e-8)
 })
 
 test_that("a per-component BYM2 field is conditioned on its weighted level", {
@@ -101,10 +101,10 @@ test_that("a per-component BYM2 field is conditioned on its weighted level", {
   ex <- .dc_exact(y, cbind(1, x, a * I_K, b * I_K), Pprior, phi,
                   c(0, 0, w, rep(0, K)),
                   rbind(matrix(0, 2, K), a * I_K, b * I_K))
-  # The mean is the augmented mode centred on the weighted level; it differs
-  # from the conditional mean by the level's prior variance against the
-  # intercept's, 1.4e-5 here.
-  expect_equal(fe$estimate, ex$mean, tolerance = 1e-4)
+  # The level is a hard constraint on the inner solve (gcol33/tulpa#1053), so
+  # the mode is the conditional mean itself; folding the augmented mode's
+  # level into the intercept left 1.4e-5 between them.
+  expect_equal(fe$estimate, ex$mean, tolerance = 1e-8)
   expect_equal(fe$sd, ex$sd, tolerance = 1e-8)
   # The structured component's reported level is the weighted one.
   phi_mode <- f$modes[which.max(f$weights), 2L + seq_len(K)]
@@ -129,13 +129,19 @@ test_that("the disconnected-graph evidence is exact on the single and multi-bloc
     -0.5 * (n * log(2 * pi) + as.numeric(determinant(Sg)$modulus) +
               sum(y * solve(Sg, y)))
   }
+  # The augmented field covariance conditioned on the block's level row
+  # a'u = 0: the level is a hard constraint and sits in the intercept
+  # (gcol33/tulpa#1053), the per-component contrasts stay in the field.
+  cond <- function(C, a) { Ca <- C %*% a; C - tcrossprod(Ca) / sum(a * Ca) }
   Qa <- .dc_aug(A, g$comp)
   f <- tulpa_nested_laplace(y, rep(1L, n), X, prior = blk(type = "icar", tau_grid = 2),
                             family = "gaussian", phi = phi, hyperprior = "flat",
                             control = .dc_ctl)
-  expect_equal(f$log_marginal, evid(Z %*% solve(2 * Qa) %*% t(Z)), tolerance = 1e-8)
+  expect_equal(f$log_marginal, evid(Z %*% cond(solve(2 * Qa), rep(1, K)) %*% t(Z)),
+               tolerance = 1e-8)
   bs <- tulpa:::.bym2_component_scaling(A)
-  Cb <- 0.81 * (0.6 * bs$scale_factor^2 * solve(diag(bs$node_prec) %*% Qa) +
+  Cb <- 0.81 * (0.6 * bs$scale_factor^2 *
+                  cond(solve(diag(bs$node_prec) %*% Qa), bs$node_prec) +
                   0.4 * diag(K))
   f <- tulpa_nested_laplace(y, rep(1L, n), X,
     prior = blk(type = "bym2", scale_factor = bs$scale_factor,

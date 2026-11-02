@@ -399,7 +399,7 @@ void run_spde_laplace(
     F callback,
     const Rcpp::NumericVector& re_idx = Rcpp::NumericVector(),
     int n_re_groups = 0, double sigma_re = 1.0,
-    bool center_mesh = true, double prior_lognorm = 0.0,
+    double prior_lognorm = 0.0,
     // Inner-Laplace skewness diagnostic: forwarded
     // unchanged to laplace_newton_solve, which already supports it (the
     // dense/auto-sparse family-enum path every other single-block kernel
@@ -423,13 +423,9 @@ void run_spde_laplace(
                      x, eta, grad, H);
     };
 
-    // Integer-alpha field is sum-to-zero centred for intercept identifiability;
-    // the rational path's latent is the stacked components x (field u = Pr x),
-    // which must NOT be centred -- the proper SPDE prior (kappa^2 > 0) already
-    // identifies the constant mode.
-    auto center = [&](Rcpp::NumericVector& x) {
-        if (center_mesh) center_effects(x, mesh_start, n_mesh);
-    };
+    // The proper SPDE prior (kappa^2 > 0) gives the field's constant its own
+    // prior variance, so the mode is reported as the Newton loop found it.
+    auto center = [](Rcpp::NumericVector&) {};
 
     auto log_prior = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector&) {
         double qf = 0.0;

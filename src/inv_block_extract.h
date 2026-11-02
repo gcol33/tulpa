@@ -189,6 +189,28 @@ struct InvBlockConstraint {
             solve(e.data(), v.data());
             W[i] = v;
         }
+        factor_cap(Dinv, neg_base);
+    }
+
+    // The same build from the rows' columns W = H^{-1} A' already solved, for
+    // rows taken by set_rows() (no anchors): `cols` holds the kc columns back
+    // to back, each of length n_x, in row order.
+    void build_from_columns(const double* cols, int n_x,
+                            const std::vector<double>* Dinv = nullptr) {
+        usable = false;
+        W.clear();
+        if (kc <= 0 || !anchor_node.empty()) return;
+        W.resize(kc);
+        for (int g = 0; g < kc; g++)
+            W[g].assign(cols + static_cast<std::size_t>(g) * n_x,
+                        cols + static_cast<std::size_t>(g + 1) * n_x);
+        factor_cap(Dinv, 0);
+    }
+
+    // Cap = Psi^{-1} + Vb' W from the solved W, and its eigendecomposition.
+    void factor_cap(const std::vector<double>* Dinv, int neg_base) {
+        const int na = static_cast<int>(anchor_node.size());
+        const int m = kc + na;
 
         // Vb_i' w for column i of Vb.
         auto vb_dot = [&](int i, const std::vector<double>& w) {

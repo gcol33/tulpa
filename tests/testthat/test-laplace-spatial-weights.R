@@ -21,8 +21,14 @@
 #   sum_i w_i * ll(y_i | eta_i)
 #   - 0.5 * tau_beta * ||beta||^2            (the kernel's default prior)
 #   - 0.5 * tau * u' (D - A) u               (ICAR structure, tau_spatial = 1)
-#   - 0.5 * (tau / J) * (sum_c u)^2          (sum-to-zero pin, J the component
-#                                             size; inst/include/tulpa/sum_to_zero.h)
+# on the set 1'u = 0: the field's level is a hard constraint, so the level sits
+# in the intercept and the intercept's own prior acts on it. The sum-to-zero
+# pin (tau / J) (sum u)^2 of inst/include/tulpa/sum_to_zero.h is zero on that
+# set; it is kept in the Hessian, where it changes neither the constrained step
+# nor anything read on the constraint subspace. The arbiter is a Newton solve
+# restricted to the subspace (B an orthonormal basis of null(A)), and
+# stationarity is the score's component along the subspace, `tscore`: the rest
+# of the score is the multiplier on the constraint.
 .icar_ref <- function(y, ntr, X, W, unit, w) {
   n_units <- nrow(W); N <- length(unit); p <- ncol(X)
   Q <- diag(rowSums(W)) - W + matrix(1 / n_units, n_units, n_units)
@@ -39,19 +45,17 @@
     e <- as.numeric(M %*% th); pr <- plogis(e)
     crossprod(M, (w * ntr * pr * (1 - pr)) * M) + Qj
   }
+  a <- c(rep(0, p), rep(1, n_units))
+  B <- qr.Q(qr(cbind(a, diag(p + n_units))))[, -1]
+  tscore <- function(th) as.numeric(crossprod(B, score(th)))
   th <- rep(0, p + n_units)
   for (it in seq_len(300)) {
-    st <- solve(hess(th), score(th))
+    st <- as.numeric(B %*% solve(crossprod(B, hess(th) %*% B), tscore(th)))
     th <- th + st
     if (max(abs(st)) < 1e-12) break
   }
-  # The kernel centres the field after the Newton loop and folds the removed
-  # mean into the intercept, leaving eta unchanged; match that convention.
-  m <- mean(th[p + seq_len(n_units)])
-  th[1] <- th[1] + m
-  th[p + seq_len(n_units)] <- th[p + seq_len(n_units)] - m
-  list(theta = th, score = score, hess = hess, M = M, Qj = Qj, p = p,
-       n_units = n_units)
+  list(theta = th, score = score, tscore = tscore, hess = hess, M = M,
+       Qj = Qj, p = p, n_units = n_units)
 }
 
 .areal_fixture <- function(seed, nr = 5L, nc = 5L, N = 300L) {
@@ -216,12 +220,13 @@ test_that("the weighted spatial mode is the weighted penalized optimum", {
   # the assertion above is not satisfied by simply ignoring the weight.
   expect_gt(max(abs(ref_w$theta[seq_len(p)] - ref_u$theta[seq_len(p)])), 0.05)
 
-  # Stationarity of the weighted objective at the point the fit reports. The
-  # Newton loop stops on its step, so this residual settles at a floor set by
-  # conditioning rather than at zero (~1e-06 here). What the bound separates is
-  # a settled weighted mode from the unweighted one, which left this same
-  # quantity at 14.86 -- seven orders of magnitude up.
-  expect_lt(max(abs(ref_w$score(fit$mode))), 1e-4)
+  # Stationarity of the weighted objective on the constraint set, at the point
+  # the fit reports. What the bound separates is a settled weighted mode from
+  # the unweighted one, which left this same quantity at 14.86, and from the
+  # augmented solve with its mean folded into the intercept afterwards, which
+  # left the full score at 0.0018 under the N(0, 2.5^2) intercept prior.
+  expect_lt(max(abs(ref_w$tscore(fit$mode))), 1e-8)
+  expect_lt(abs(sum(fit$mode[p + seq_len(ref_w$n_units)])), 1e-10)
 })
 
 
@@ -251,5 +256,5 @@ test_that("the spatial mode and its H_beta describe the same weighted model", {
   schur <- schur - diag(1 / default_sigma_beta()^2, p)
 
   expect_lt(max(abs(fit$H_beta - schur)) / max(abs(schur)), 1e-6)
-  expect_lt(max(abs(ref$score(fit$mode))), 1e-4)
+  expect_lt(max(abs(ref$tscore(fit$mode))), 1e-8)
 })

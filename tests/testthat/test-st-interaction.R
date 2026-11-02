@@ -29,6 +29,9 @@
   MASS::Null(t(Am))
 }
 
+# A covariance conditioned on the sum of its coordinates being zero.
+.kh_cond1 <- function(C) { c1 <- rowSums(C); C - tcrossprod(c1) / sum(c1) }
+
 .kh_cov <- function(st, tau) {
   B <- .kh_null_basis(st)
   B %*% solve(tau * crossprod(B, as.matrix(st$R) %*% B)) %*% t(B)
@@ -75,8 +78,11 @@ test_that("an interaction's log marginal and mode are the exact Gaussian ones", 
   Zs <- outer(d$s, 1:S, "==") * 1; Zt <- outer(d$t, 1:n_t, "==") * 1
   Zd <- outer((d$t - 1) * S + d$s, 1:(S * n_t), "==") * 1
   tau_s <- 2; tau_t <- 3; tau_d <- 4
-  Cs <- solve(tau_s * (diag(rowSums(A)) - A + 1 / S))
-  Ct <- solve(tau_t * (crossprod(diff(diag(n_t))) + 1 / n_t))
+  # The main effects' augmented covariances conditioned on their level rows:
+  # each level is a hard constraint and sits in the intercept
+  # (gcol33/tulpa#1053).
+  Cs <- .kh_cond1(solve(tau_s * (diag(rowSums(A)) - A + 1 / S)))
+  Ct <- .kh_cond1(solve(tau_t * (crossprod(diff(diag(n_t))) + 1 / n_t)))
   icar <- list(type = "icar", spatial_idx = d$s, n_spatial_units = S,
                adj_row_ptr = csr$row_ptr, adj_col_idx = csr$col_idx,
                n_neighbors = csr$n_neighbors, tau_grid = tau_s)
@@ -133,8 +139,8 @@ test_that("spatiotemporal_effects() on a tulpa() fit is the exact cell posterior
   aug <- diag(rowSums(A)) - A
   for (cc in tulpa:::.graph_components(A))
     aug[cc, cc] <- aug[cc, cc] + 1 / length(cc)
-  Cs <- solve(tau_s * aug)
-  Ct <- solve(tau_t * (crossprod(diff(diag(n_t))) + 1 / n_t))
+  Cs <- .kh_cond1(solve(tau_s * aug))
+  Ct <- .kh_cond1(solve(tau_t * (crossprod(diff(diag(n_t))) + 1 / n_t)))
   Zs <- outer(d$region, 1:S, "==") * 1; Zt <- outer(d$year, 1:n_t, "==") * 1
   Zd <- outer((d$year - 1) * S + d$region, 1:(S * n_t), "==") * 1
   X <- cbind(1, d$x)

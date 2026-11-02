@@ -80,8 +80,8 @@ struct SpdeCellState {
 // Assemble the LatentBlock around a pattern-seeded template builder. Every
 // field below reads whatever CSC the per-cell builder holds, so the FEM entries
 // (which rebuild Q from the cell's operator parameters) and the precomputed
-// entry (whose Q is fixed) share all of it; only `refresh` and `center_field`
-// differ between them.
+// entry (whose Q is fixed) share all of it; only `refresh` differs between
+// them.
 //
 // `cell_in_domain` is an optional pre-claim parameter-domain gate. It runs
 // BEFORE the cache slot is claimed, so a cell outside the operator's domain
@@ -95,8 +95,7 @@ LatentBlock spde_assemble_block(
     std::shared_ptr<std::vector<ARows>>          a_rows_per_arm,
     std::shared_ptr<SpdeQBuilder>                qb,
     std::function<bool(int)>                     cell_in_domain,
-    std::function<bool(int, SpdeCellState&)>     refresh,
-    bool                                         center_field
+    std::function<bool(int, SpdeCellState&)>     refresh
 );
 
 LatentBlock make_spde_block(
@@ -202,8 +201,7 @@ inline LatentBlock make_spde_block_precomputed(
     };
 
     return spde_assemble_block(start, n_mesh, a_rows_per_arm, qb,
-                               /*cell_in_domain=*/nullptr, refresh,
-                               /*center_field=*/false);
+                               /*cell_in_domain=*/nullptr, refresh);
 }
 
 } // namespace tulpa

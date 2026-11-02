@@ -389,6 +389,7 @@ inline void install_projected_field_center(
         block.center = make_field_center_fn(start, size, /*no fold=*/-1);
     } else if (level == tulpa::ProjectedLevel::INTERCEPT && centre_uniform) {
         block.center = make_field_center_fn(start, size, /*intercept=*/0);
+        tulpa::declare_level_constraint(block);
     }
 }
 
@@ -427,9 +428,13 @@ inline void install_field_center(
     if (!has_weight) {
         // An empty uniform_center installs no centerer at all (the replicated
         // L > 1 ICAR), so there is no fold to verify.
+        // A folding centerer carries the level it removes as the block's
+        // level row (declare_level_constraint), weighted where the block
+        // records level weights.
         if (uniform_center) {
             check_alias_column(/*beta_offset=*/0, parsed, block_index, what,
                                nullptr);
+            tulpa::declare_level_constraint(block, block.level_weights);
         }
         block.center = std::move(uniform_center);
         return;
@@ -439,6 +444,7 @@ inline void install_field_center(
     Rcpp::List weight_list = bs["svc_weight"];
     check_alias_column(off, parsed, block_index, what, &weight_list);
     block.center = make_field_center_fn(start, size, off);
+    tulpa::declare_level_constraint(block);
 }
 
 // Per-arm amplitude dispatch for a copy block. axis_donor and axis_copy are
@@ -2219,6 +2225,10 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     std::vector<NewtonScratchJoint> scratch_pool(n_outer);
     for (auto& s : scratch_pool)
         s.allocate(n_x, arms, want_fixed_block || compute_eta_var);
+    // Hard linear constraints the blocks carry (hard_constraints.h), one state
+    // per outer slot.
+    std::vector<HardConstraintState> hard_pool(n_outer);
+    for (auto& h : hard_pool) h.init(n_x, blocks);
 
     // Resolve each arm to a spec view ONCE for the whole grid: built-in family
     // arms materialize a builtin_family_spec + response, model-supplied arms
@@ -2407,6 +2417,10 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
         NewtonScratchJoint& scratch = scratch_override
                                        ? *scratch_override
                                        : scratch_pool[tid];
+        HardConstraintState& hard = hard_pool[tid];
+        if (hard.active())
+            hard.prior_conditioning =
+                level_prior_conditioning(blocks, k_grid, scratch.x_try);
 
         JointSpecLogLik joint_ll{&specs_use.views, n_inner};
         if (any_coupling) {
@@ -2457,7 +2471,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             is_cheap ? nullptr : cila,
             static_cast<std::uint64_t>(k_grid) + 1ULL,
             inner_sparse_override,
-            eta_var_req.active() ? &eta_var_req : nullptr
+            eta_var_req.active() ? &eta_var_req : nullptr,
+            hard.active() ? &hard : nullptr
         );
     };
 
@@ -2724,10 +2739,9 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // Hard linear constraints the blocks carry (hard_constraints.h), one state
     // per outer slot: the pinned copy of the Hessian and its factor are
     // per-solve working storage.
-    const std::vector<LinearConstraintRow> hard_rows =
-        collect_hard_constraints(blocks);
     std::vector<HardConstraintState> hard_pool(n_outer);
-    for (auto& h : hard_pool) h.init(n_x, hard_rows);
+    for (auto& h : hard_pool) h.init(n_x, blocks);
+    const bool any_hard = !hard_pool.empty() && hard_pool[0].active();
 
     // Per-thread arm specs, built in place: JointArmSpecs is self-referential
     // (its views point at the owner's own storage and members), so it cannot be
@@ -3048,6 +3062,9 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         // `full = false` is a bare mode-find: the read-outs of the final mode
         // (stored precision, skewness probe, fixed-effect block, debiases,
         // predictor variances) are left to the solve that returns.
+        if (any_hard)
+            hard_pool[slot].prior_conditioning =
+                level_prior_conditioning(blocks, k_grid, sc.x_try);
         auto solve_once = [&](const std::vector<double>& warm, bool full) {
             factor_curv_on = full && !factor_blocks.empty();
             const bool skew_now = want_skew && full;
@@ -3068,7 +3085,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                 extras ? cila : nullptr,
                 static_cast<std::uint64_t>(k_grid) + 1ULL,
                 (full && eta_var_req.active()) ? &eta_var_req : nullptr,
-                hard_rows.empty() ? nullptr : &hard_pool[slot]
+                any_hard ? &hard_pool[slot] : nullptr
             );
         };
         if (factor_blocks.empty()) return solve_once(prev_mode, true);

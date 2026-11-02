@@ -32,6 +32,9 @@ test_that("a random walk's generalized log-determinant has its closed form", {
   }
 })
 
+# A covariance conditioned on the sum of its coordinates being zero.
+.ilp_cond1 <- function(C) { c1 <- rowSums(C); C - tcrossprod(c1) / sum(c1) }
+
 test_that("a nested RW1 / cyclic RW2 log marginal is the exact Gaussian evidence", {
   skip_on_cran()
   load_cpp_fixture("helpers")
@@ -50,10 +53,11 @@ test_that("a nested RW1 / cyclic RW2 log marginal is the exact Gaussian evidence
       prior = list(type = case[[1]], temporal_idx = t_idx, n_times = T,
                    cyclic = case[[2]], tau_grid = tau),
       family = "gaussian", phi = 1, hyperprior = "flat", control = ctl)
-    # The walk's augmented precision tau (Q + 1 1' / T): the pinned level
-    # carries the walk's own precision.
-    C <- solve(.ilp_rw_Q(T, if (case[[1]] == "rw1") 1 else 2, case[[2]]) +
-                 1 / T) / tau
+    # The walk's augmented precision tau (Q + 1 1' / T), its covariance
+    # conditioned on the level row 1'u = 0: the level is a hard constraint and
+    # sits in the intercept (gcol33/tulpa#1053).
+    C <- .ilp_cond1(solve(.ilp_rw_Q(T, if (case[[1]] == "rw1") 1 else 2,
+                                    case[[2]]) + 1 / T) / tau)
     S <- diag(n) + s0^2 * X %*% t(X) + Z %*% C %*% t(Z)
     ex <- -0.5 * (n * log(2 * pi) + as.numeric(determinant(S)$modulus) +
                     sum(y * solve(S, y)))
@@ -80,7 +84,7 @@ test_that("the multi-block driver's RW1 log marginal is the exact Gaussian evide
                       tau_grid = 2),
                  list(type = "iid", obs_idx = g, n_units = 3L, sigma_grid = 0.5)),
     family = "gaussian", phi = 1, hyperprior = "flat", control = ctl)
-  C <- solve(.ilp_rw_Q(T, 1, FALSE) + 1 / T) / 2
+  C <- .ilp_cond1(solve(.ilp_rw_Q(T, 1, FALSE) + 1 / T) / 2)
   S <- diag(n) + s0^2 * X %*% t(X) + Z %*% C %*% t(Z) + 0.25 * Zr %*% t(Zr)
   ex <- -0.5 * (n * log(2 * pi) + as.numeric(determinant(S)$modulus) +
                   sum(y * solve(S, y)))

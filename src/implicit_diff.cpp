@@ -94,7 +94,7 @@ Rcpp::List cpp_spde_laplace_gradient(
         max_iter, tol, n_threads, x_init, &solver, /*offset=*/nullptr,
         [&](const tulpa::LaplaceResult& res) { inner_result = res; },
         /*re_idx=*/Rcpp::NumericVector(), /*n_re_groups=*/0, /*sigma_re=*/1.0,
-        /*center_mesh=*/false, /*prior_lognorm=*/half_ldQ
+        /*prior_lognorm=*/half_ldQ
     );
 
     // Compute gradient via implicit differentiation. Both sides now use

@@ -38,7 +38,10 @@ skip_on_cran()
 # the sparse driver keeps off the stored precision whatever its size (an RW
 # chain's, S2ZStorage::Fold): `idx` its latent coordinates, `coef` the per-cell
 # coefficient tau_k / n of its 11'.
-.jev_reference <- function(fit, A, fold = NULL) {
+# Var(A x) under the stored precision Q at each cell, conditioned by kriging on
+# the constraint rows `constr` (index vectors, every weight 1): the fields'
+# levels are hard constraints on the inner solve (gcol33/tulpa#1053).
+.jev_reference <- function(fit, A, fold = NULL, constr = NULL) {
   n_x <- fit$Q_csc_n
   t(vapply(seq_along(fit$Q_csc_p_per_grid), function(k) {
     L <- Matrix::sparseMatrix(i = fit$Q_csc_i_per_grid[[k]],
@@ -51,7 +54,15 @@ skip_on_cran()
       Q[fold$idx, fold$idx] <- Q[fold$idx, fold$idx] + fold$coef[k]
     }
     V <- as.matrix(Matrix::solve(Q, t(A)))
-    rowSums(A * t(V))
+    v <- rowSums(A * t(V))
+    if (length(constr)) {
+      Ac <- t(vapply(constr, function(i) { a <- numeric(n_x); a[i] <- 1; a },
+                     numeric(n_x)))
+      W <- as.matrix(Matrix::solve(Q, t(Ac)))
+      AW <- A %*% W
+      v <- v - rowSums((AW %*% solve(Ac %*% W)) * AW)
+    }
+    v
   }, numeric(nrow(A))))
 }
 
@@ -64,7 +75,7 @@ test_that("st_icar reports the variance its dense precision implies", {
   expect_true(is.matrix(V))
   expect_equal(dim(V), c(length(fit$log_marginal), nrow(fx$A)))
   expect_true(all(is.finite(V)) && all(V > 0))
-  expect_equal(V, .jev_reference(fit, fx$A), tolerance = 1e-8)
+  expect_equal(V, .jev_reference(fit, fx$A, constr = fx$constr), tolerance = 1e-8)
 })
 
 test_that("a folded sum-to-zero pin gives the variance of the stored one", {
@@ -78,7 +89,8 @@ test_that("a folded sum-to-zero pin gives the variance of the stored one", {
   # block always folds), so the reference adds it back; the variance is then
   # the inverse of the full precision to 1e-15.
   expect_equal(stored$fitted_eta_var,
-               .jev_reference(stored, fx$A, fold = fx$rw_fold),
+               .jev_reference(stored, fx$A, fold = fx$rw_fold,
+                              constr = fx$constr),
                tolerance = 1e-6)
 
   withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "0")

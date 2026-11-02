@@ -575,7 +575,8 @@ bool s2z_block_schur(
     double* logdet_out,        // log|B| output, or nullptr
     S2ZBlockSchurCache* cache = nullptr,
     bool field_inertia = false,
-    bool* field_indefinite = nullptr
+    bool* field_indefinite = nullptr,
+    int n_rhs = 1              // grad / delta hold n_rhs columns of length n_x
 );
 
 // Determinant-only convenience wrapper over s2z_block_schur.

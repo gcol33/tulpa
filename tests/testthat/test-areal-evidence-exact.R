@@ -1,6 +1,6 @@
 # The log marginal likelihood an areal field reports, against the closed form a
 # Gaussian response gives at a fixed outer cell. The ICAR density is the
-# augmented one, precision tau * (Q + 1 1' / J), whose normalizer carries the
+# augmented one, precision tau * (Q + 1 1' / J), conditioned on 1'u = 0; its normalizer carries the
 # graph's generalized determinant |Q|_+ (matrix-tree: J * det of any principal
 # (J - 1)-minor); BYM2's structured component carries the same at unit
 # precision. With the kernels' default fixed-effect prior N(0, s^2 I)
@@ -41,10 +41,15 @@
          n_neighbors = fx$csr$n_neighbors), list(...))
 }
 
-# The field covariance at unit precision: the inverse of the augmented
-# precision Q + 1 1' / J, i.e. Q^+ + 1 1' / J -- the level carries its own unit
-# variance and the intercept's prior is not touched by the field.
-.ae_lap_pinv <- function(A) solve(diag(rowSums(A)) - A + 1 / nrow(A))
+# The field covariance at unit precision: the augmented covariance
+# (Q + 1 1' / J)^-1 conditioned on the level row 1'u = 0, which is Q^+. The
+# level is a hard constraint (gcol33/tulpa#1053): it sits in the intercept,
+# under the intercept's own prior, and the field carries none of it.
+.ae_lap_pinv <- function(A) {
+  C <- solve(diag(rowSums(A)) - A + 1 / nrow(A))
+  c1 <- rowSums(C)
+  C - tcrossprod(c1) / sum(c1)
+}
 
 test_that("the ICAR normalizer carries the graph's generalized determinant", {
   # Path, cycle and a disconnected pair: |Q|_+ = J * (spanning trees) per

@@ -91,8 +91,12 @@ test_that("a forecast row's linear predictor is the exact Gaussian predictive", 
   Am <- t(vapply(st$constr, tulpa:::.constraint_row_dense, numeric(nd), n_x = nd))
   B <- MASS::Null(t(Am))
   Cd <- B %*% solve(tau_d * crossprod(B, as.matrix(st$R) %*% B)) %*% t(B)
-  Cs <- solve(tau_s * (diag(rowSums(A)) - A + 1 / S))
-  Ct <- solve(tau_t * (crossprod(diff(diag(n_t))) + 1 / n_t))
+  # The main effects' augmented covariances conditioned on their level rows
+  # 1'u = 0: each level is a hard constraint and sits in the intercept
+  # (gcol33/tulpa#1053).
+  cond1 <- function(C) { c1 <- rowSums(C); C - tcrossprod(c1) / sum(c1) }
+  Cs <- cond1(solve(tau_s * (diag(rowSums(A)) - A + 1 / S)))
+  Ct <- cond1(solve(tau_t * (crossprod(diff(diag(n_t))) + 1 / n_t)))
   Zs <- outer(d$region, 1:S, "==") * 1; Zt <- outer(d$year, 1:n_t, "==") * 1
   Zd <- outer((d$year - 1) * S + d$region, 1:nd, "==") * 1
   X <- cbind(1, d$x)

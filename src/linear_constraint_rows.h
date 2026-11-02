@@ -12,6 +12,7 @@
 #define TULPA_LINEAR_CONSTRAINT_ROWS_H
 
 #include <Rcpp.h>
+#include <cmath>
 #include <cstddef>
 #include <vector>
 
@@ -54,6 +55,30 @@ inline double constraint_row_dot(const LinearConstraintRow& a, const double* v) 
     double s = 0.0;
     for (std::size_t e = 0; e < a.cols.size(); e++) s += a.weight(e) * v[a.cols[e]];
     return s;
+}
+
+// Whether two rows state the same constraint entry for entry: the same latent
+// indices in the same order, with weights equal to a relative 1e-12.
+inline bool same_constraint_row(const LinearConstraintRow& a,
+                                const LinearConstraintRow& b) {
+    if (a.cols != b.cols) return false;
+    for (std::size_t e = 0; e < a.cols.size(); e++) {
+        const double wa = a.weight(e), wb = b.weight(e);
+        if (std::abs(wa - wb) > 1e-12 * (std::abs(wa) + std::abs(wb))) return false;
+    }
+    return true;
+}
+
+// Append each row of `more` that `dst` does not already state, so a set read
+// from two sources (a caller's sum-to-zero groups and the blocks' hard rows)
+// holds no constraint twice and its capacitance stays non-singular.
+inline void append_new_constraint_rows(std::vector<LinearConstraintRow>& dst,
+                                       const std::vector<LinearConstraintRow>& more) {
+    for (const auto& r : more) {
+        bool seen = false;
+        for (const auto& d : dst) if (same_constraint_row(d, r)) { seen = true; break; }
+        if (!seen) dst.push_back(r);
+    }
 }
 
 // Read a list of constraint rows handed over from R. Element g is either an

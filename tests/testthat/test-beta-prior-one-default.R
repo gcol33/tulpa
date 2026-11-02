@@ -3,7 +3,8 @@
 # route, and a caller's `beta_prior` replaces it there too; a direct engine call
 # with none solves under the kernels' own weak default. Checked on the evidence, whose dependence on the prior is exact for a
 # Gaussian response: N(0, phi I + X S_b X' + Z C Z'), C the inverse of the
-# augmented ICAR precision tau (Q + 1 1' / K).
+# augmented ICAR precision tau (Q + 1 1' / K) conditioned on the level row
+# 1'u = 0, i.e. Q^+ / tau: the level is the intercept's (gcol33/tulpa#1053).
 
 .bp_fixture <- function(seed = 1) {
   set.seed(seed)
@@ -14,7 +15,10 @@
   list(A = A, K = K, idx = idx, n = n, X = cbind(1, x),
        y = 0.3 + 0.5 * x + rnorm(n), Z = outer(idx, seq_len(K), "==") * 1,
        csr = tulpa:::adjacency_to_csr_tulpa(A),
-       Qp = solve(diag(rowSums(A)) - A + 1 / K))
+       Qp = local({
+         C <- solve(diag(rowSums(A)) - A + 1 / K); c1 <- rowSums(C)
+         C - tcrossprod(c1) / sum(c1)
+       }))
 }
 
 .bp_exact <- function(fx, Sb, C) {

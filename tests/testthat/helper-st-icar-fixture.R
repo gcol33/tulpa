@@ -1,7 +1,8 @@
 # A Poisson st_icar fit (cpp_nested_laplace_st_icar): an ICAR chain over n_s
 # units plus an RW1 over n_t times, both intrinsic and loading every row, on
 # a two-cell (tau_spatial, tau_temporal) grid. `A` is the loading matrix of
-# eta on the latent vector [beta, ICAR, RW1].
+# eta on the latent vector [beta, ICAR, RW1]; `constr` the two fields' level
+# rows (1-based latent indices).
 
 .st_icar_chain_adj <- function(n_s) {
   nbr <- lapply(seq_len(n_s),
@@ -34,5 +35,7 @@
   # The RW1 chain's pin, which the sparse driver always folds.
   rw_fold <- list(idx = ncol(X) + n_s + seq_len(n_t),
                   coef = args$tau_temporal_grid / n_t)
-  list(args = args, A = A, rw_fold = rw_fold)
+  # The two fields' level rows.
+  constr <- list(ncol(X) + seq_len(n_s), ncol(X) + n_s + seq_len(n_t))
+  list(args = args, A = A, rw_fold = rw_fold, constr = constr)
 }

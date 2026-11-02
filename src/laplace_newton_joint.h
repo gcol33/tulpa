@@ -515,10 +515,14 @@ inline void joint_newton_finalize_dense(
     const JointCurvature3Oracles* curvature3_fns,
     const JointFixedBlockRequest* fixed_block,
     const SubspaceDebiasOptions* debias, const CilaOptions* cila,
-    std::uint64_t cila_cell_key, const JointEtaVarRequest* eta_var
+    std::uint64_t cila_cell_key, const JointEtaVarRequest* eta_var,
+    HardConstraintState* hard = nullptr
 ) {
     Rcpp::NumericVector& x = scratch.x;
-    result.score_max = max_abs(grad);
+    const bool hard_on = hard && hard->active();
+    // On the constraint set the score's component along it is what vanishes.
+    result.score_max = hard_on ? hard->max_abs_tangent(grad.data())
+                               : max_abs(grad);
 
     // The base ridge is loaded ONCE onto this assembly, here, and both the
     // log-determinant and the escalating solve below read the same loaded
@@ -539,6 +543,19 @@ inline void joint_newton_finalize_dense(
     // and record that the stored precision below is no longer the matrix the
     // scatter built. A PD Hessian never reaches this, so every fit that
     // factorizes on the first attempt is unchanged.
+    // A solve against the factor just built for the log-determinant.
+    auto solve_live = [&](const double* rhs, double* out) {
+        live_factor_solve(rhs, out, n_x, use_sparse && sparse_solver.factored(),
+                          sparse_solver, scratch.chol);
+    };
+    // On the constraint set the expansion is over the subspace:
+    // log|B' H B| = log|H| + log|A H^-1 A'| - log|A A'|.
+    if (hard_on && hessian_pd_at_mode) {
+        if (hard->factor_cap(solve_live))
+            result.log_det_Q += hard->log_det_subspace_correction();
+        else
+            hessian_pd_at_mode = false;
+    }
     result.hessian_pd_at_mode = hessian_pd_at_mode;
     result.pd_conditioned = !hessian_pd_at_mode;
     std::vector<double> final_step;
@@ -559,6 +576,18 @@ inline void joint_newton_finalize_dense(
         result.newton_decrement = newton_decrement_live(
             grad.data(), n_x, use_sparse && sparse_solver.factored(),
             sparse_solver, scratch.chol, &final_step);
+        if (hard_on && std::isfinite(result.newton_decrement)) {
+            hard->project_step(x.begin(), final_step.data());
+            double dec = 0.0;
+            for (int j = 0; j < n_x; j++) dec += grad[j] * final_step[j];
+            result.newton_decrement = std::isfinite(dec)
+                ? dec : std::numeric_limits<double>::quiet_NaN();
+        }
+    }
+    if (hard_on && !hessian_pd_at_mode) {
+        result.log_det_Q = std::numeric_limits<double>::quiet_NaN();
+        result.newton_decrement = std::numeric_limits<double>::quiet_NaN();
+        final_step.clear();
     }
 
     double log_lik, log_prior;
@@ -566,7 +595,9 @@ inline void joint_newton_finalize_dense(
       log_lik   = log_lik_fn(scratch.etas);
       log_prior = compute_log_prior_joint(x, scratch.etas); }
 
-    result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
+    result.log_marginal = hard_on
+        ? hard->log_marginal(log_lik, log_prior, result.log_det_Q)
+        : finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
     if (std::isfinite(result.newton_decrement)) {
         result.newton_step_gain = newton_step_gain(
             x, final_step.data(), n_x, log_lik + log_prior, eval_objective,
@@ -634,7 +665,8 @@ inline void joint_newton_finalize_dense(
 
         run_subspace_debias(result, n_x, pre_center_x, scratch.chol,
                             sparse_solver, used_sparse_factor,
-                            eval_objective, x, debias);
+                            eval_objective, x, debias, nullptr,
+                            hard_on ? hard : nullptr);
 
         // The correction reads the same pre-centering iterate for the same reason,
         // and presents each draw through the loop's own centering fold so a drawn
@@ -642,7 +674,7 @@ inline void joint_newton_finalize_dense(
         run_inner_cila(result, n_x, pre_center_x, scratch.chol, sparse_solver,
                        used_sparse_factor, eval_objective,
                        [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); },
-                       x, cila, cila_cell_key);
+                       x, cila, cila_cell_key, hard_on ? hard : nullptr);
     }
 
     center_effects_fn(x);
@@ -673,19 +705,31 @@ inline void joint_newton_finalize_dense(
         dense_to_csc_lower_drop_raw(H, n_x, SPARSE_DROP_TOL_DISPATCH,
                                     csc_p, csc_i, csc_x);
         if (want_block) {
+            // Conditioned on the caller's sum-to-zero groups and the blocks'
+            // hard rows.
+            JointFixedBlockRequest req_hard;
+            const JointFixedBlockRequest* req = fixed_block;
+            if (hard_on) {
+                req_hard = *fixed_block;
+                append_new_constraint_rows(req_hard.A_cols, hard->rows);
+                req = &req_hard;
+            }
             extract_joint_fixed_block(
                 csc_p.data(), csc_i.data(), csc_x.data(), n_x,
-                static_cast<int>(csc_x.size()), *fixed_block,
+                static_cast<int>(csc_x.size()), *req,
                 *scratch.extract_solver,
                 result.re_cov_flat, result.re_cov_block_sizes);
         }
         // The dense scatter writes every sum-to-zero pin into H itself, so the
-        // stored precision is the whole one and nothing is folded on the side.
+        // stored precision is the whole one and nothing is folded on the side;
+        // the hard rows enter as the D^{-1} = 0 limit of the Woodbury fold.
         if (want_eta_var) {
+            const std::size_t r = hard_on ? static_cast<std::size_t>(hard->rank()) : 0;
             extract_joint_eta_var(
                 csc_p.data(), csc_i.data(), csc_x.data(), n_x,
                 static_cast<int>(csc_x.size()), loadings,
-                /*pin_groups=*/{}, /*pin_Dinv=*/{},
+                hard_on ? hard->rows : std::vector<LinearConstraintRow>(),
+                std::vector<double>(r * r, 0.0),
                 *scratch.extract_solver, result.eta_var);
         }
         if (store_Q) {
@@ -775,7 +819,11 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // Per-row predictive variance of the linear predictor, read off the same
     // precision at the mode the fixed-effect block is (see the sparse loop's
     // parameter of the same name).
-    const JointEtaVarRequest* eta_var = nullptr
+    const JointEtaVarRequest* eta_var = nullptr,
+    // Hard linear constraints the blocks carry (hard_constraints.h); nullptr
+    // or empty solves the unconstrained problem. Every step is the KKT step
+    // against the LM-conditioned Hessian.
+    HardConstraintState* hard = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -794,6 +842,18 @@ LaplaceResult laplace_newton_solve_joint_ll(
 
     SparseCholeskySolver local_solver;
     SparseCholeskySolver& sparse_solver = shared_solver ? *shared_solver : local_solver;
+
+    // Under hard constraints every iterate stays on the constraint set, and the
+    // KKT projection needs the factor the LM step leaves.
+    const bool hard_on = hard && hard->active();
+    if (hard_on) {
+        hard->project_point(x.begin());
+        pd_mode = JointPDMode::LM;
+    }
+    auto solve_live = [&](const double* rhs, double* out) {
+        live_factor_solve(rhs, out, n_x, use_sparse && sparse_solver.factored(),
+                          sparse_solver, scratch.chol);
+    };
 
     auto eval_objective = [&](const Rcpp::NumericVector& xv) -> double {
         return eval_penalized_log_lik_joint_ll(
@@ -819,10 +879,13 @@ LaplaceResult laplace_newton_solve_joint_ll(
             },
             [&](bool guarded) {
                 TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
-                return joint_pd_step_solve_dense(
+                const bool ok = joint_pd_step_solve_dense(
                     scratch.H, scratch.grad, scratch.delta, n_x, sparse_solver,
                     use_sparse, scratch.chol, pd_mode, nullptr, nullptr,
                     guarded ? JOINT_LM_MAX_TRIES : 1);
+                return ok && (!hard_on ||
+                              hard->kkt_project(x.begin(), scratch.delta.data(),
+                                                solve_live));
             });
     };
     auto cholesky_solve = [&]() -> bool { return step_ok; };
@@ -860,7 +923,7 @@ LaplaceResult laplace_newton_solve_joint_ll(
         compute_eta_joint, center_effects_fn, compute_log_prior_joint,
         log_lik_fn, eval_objective, store_Q, pd_mode, compute_skew,
         skew_probe_idx, curvature3_fns, fixed_block, debias, cila,
-        cila_cell_key, eta_var);
+        cila_cell_key, eta_var, hard_on ? hard : nullptr);
 
     return result;
 }

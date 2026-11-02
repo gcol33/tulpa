@@ -47,6 +47,7 @@
 #ifndef TULPA_SUBSPACE_DEBIAS_H
 #define TULPA_SUBSPACE_DEBIAS_H
 
+#include "hard_constraints.h"
 #include "inner_laplace_probe.h"
 #include "laplace_cholesky.h"
 #include "rwmh.h"
@@ -115,7 +116,8 @@ inline SubspaceDebiasOutcome compute_subspace_debias(
     bool use_sparse,
     EvalLogJoint eval_log_joint,
     Rcpp::NumericVector& x_buf,
-    const SubspaceDebiasOptions& opts
+    const SubspaceDebiasOptions& opts,
+    const HardConstraintState* hard = nullptr
 ) {
   SubspaceDebiasOutcome out;
   out.idx = opts.idx;
@@ -134,6 +136,23 @@ inline SubspaceDebiasOutcome compute_subspace_debias(
       return out;
     }
     for (int k = 0; k < n_x; k++) V[static_cast<std::size_t>(b) * n_x + k] = v[k];
+  }
+  // Under hard constraints A x = 0 the inner Gaussian is the one conditioned
+  // on the constraint set, Sigma_c = Sigma - W C^-1 W' (W = Sigma A', C = A W,
+  // the state's factor of the same H), so each column is kriged,
+  // V_c = V - W C^-1 (A V), and the surface stays on the set.
+  if (hard && hard->active()) {
+    const int r = hard->rank();
+    std::vector<double> sA, y(static_cast<std::size_t>(r));
+    for (int b = 0; b < q; b++) {
+      double* col = V.data() + static_cast<std::size_t>(b) * n_x;
+      hard->apply_A(col, sA);
+      hard->cap.solve_cap(sA.data(), y.data());
+      for (int g = 0; g < r; g++) {
+        const std::vector<double>& wg = hard->cap.W[g];
+        for (int k = 0; k < n_x; k++) col[k] -= wg[k] * y[g];
+      }
+    }
   }
 
   // Sigma_SS = V[S, :] -- symmetric by construction; symmetrized against the
@@ -261,7 +280,8 @@ inline void run_subspace_debias(
     EvalLogJoint eval_log_joint,
     Rcpp::NumericVector& x_buf,
     const SubspaceDebiasOptions* opts,
-    const char* gate_declined = nullptr
+    const char* gate_declined = nullptr,
+    const HardConstraintState* hard = nullptr
 ) {
   if (!opts || opts->idx.empty()) return;
   if (gate_declined || !result.converged) {
@@ -273,7 +293,8 @@ inline void run_subspace_debias(
     return;
   }
   SubspaceDebiasOutcome db = compute_subspace_debias(
-      n_x, mode, chol, sparse_solver, use_sparse, eval_log_joint, x_buf, *opts);
+      n_x, mode, chol, sparse_solver, use_sparse, eval_log_joint, x_buf, *opts,
+      hard);
   result.debias_idx      = std::move(db.idx);
   result.debias_draws    = std::move(db.draws);
   result.debias_sigma_ss = std::move(db.sigma_ss);

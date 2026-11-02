@@ -5,8 +5,12 @@
 # uniformly. The centerer therefore folds the field's global level into the
 # declared covariate column (svc_beta_offset), where the coefficient absorbs it;
 # folding into the intercept (the old behavior) would corrupt the reported mode's
-# eta reconstruction. The fold is a post-hoc, eta-preserving reparameterization of
-# the reported mode, so it leaves the log-marginal untouched.
+# eta reconstruction. Declaring the column also declares the field's level a
+# hard constraint of the inner solve (gcol33/tulpa#1053): the level is the
+# coefficient's, under the coefficient's own prior, while a field with no declared
+# column keeps its level in the field under the augmentation's prior. The two are
+# different models, and their log-marginals differ by exactly the difference of
+# the two Gaussian evidences.
 
 .chain_adj_svc <- function(n_s) {
   nbr <- lapply(seq_len(n_s),
@@ -96,9 +100,33 @@ test_that("areal SVC: the constant folds into the covariate coefficient, preserv
   f_fold   <- .wmean_cols(fit_fold, fstart + seq_len(n_s))
   f_none   <- .wmean_cols(fit_none, fstart + seq_len(n_s))
 
-  # (1) The fold is post-hoc and eta-preserving: it does not touch the inner
-  # Laplace marginal, so the per-cell log-marginal is identical to the no-fold fit.
-  expect_equal(fit_fold$log_marginal, fit_none$log_marginal, tolerance = 1e-8)
+  # (1) The folded fit carries the level as a hard constraint, the other leaves
+  # it to the augmentation: on a Gaussian response each per-cell log-marginal is
+  # exact, so their difference is the difference of the exact evidences, with
+  # the field covariance (tau (Q + 1 1' / n))^-1 conditioned on 1'u = 0 for the
+  # first and unconditioned for the second.
+  Q <- diag(adj$n_neighbors)
+  for (i in seq_len(n_s))
+    for (k in (adj$adj_row_ptr[i] + 1L):adj$adj_row_ptr[i + 1L])
+      Q[i, adj$adj_col_idx[k] + 1L] <- -1
+  Dz <- x * outer(s, seq_len(n_s), "==")
+  Xd <- cbind(1, x)
+  sb <- default_sigma_beta()
+  ev <- function(C) {
+    S <- diag(N) + sb^2 * Xd %*% t(Xd) + Dz %*% C %*% t(Dz)
+    -0.5 * (N * log(2 * pi) + as.numeric(determinant(S)$modulus) +
+              sum(y * solve(S, y)))
+  }
+  cond1 <- function(C) { r <- rowSums(C); C - tcrossprod(r) / sum(r) }
+  tg <- fit_fold$theta_grid[, 1]
+  expect_equal(fit_none$theta_grid[, 1], tg)
+  ev_diff <- vapply(tg, function(t) {
+    Ca <- solve(t * (Q + 1 / n_s))
+    ev(cond1(Ca)) - ev(Ca)
+  }, numeric(1))
+  # Absolute: the differences are 5e-4 to 2.5e-3 nats, each log-marginal ~870.
+  expect_lt(max(abs(fit_fold$log_marginal - fit_none$log_marginal - ev_diff)),
+            1e-8)
 
   # (2) Reconstructing the fitted eta from the reported mode (intercept + b1 x +
   # x f[s]) gives the SAME values whether or not the level was folded out -- the

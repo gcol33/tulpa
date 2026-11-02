@@ -250,7 +250,8 @@ struct LatentBlock {
     // centre_intrinsic_level() below. The model such a block stands for carries
     // that direction as a HARD sum-to-zero constraint: the solve's augmentation
     // gives it a finite precision only so the Hessian is invertible, and the
-    // centring then puts the level in the intercept. A covariance read off the
+    // inner solve keeps the field on the constraint set (the level row,
+    // declare_level_constraint), so the level is the intercept's. A covariance read off the
     // stored precision therefore has to be conditioned on the block's sum, or
     // the augmentation's 1 / (tau J) variance on the level lands in the
     // intercept's standard error (gcol33/tulpa#901). A proper block (SPDE,
@@ -276,6 +277,13 @@ struct LatentBlock {
     // equality-constrained one, and the Laplace log-determinant is taken on the
     // constraint subspace. Empty for every other block.
     std::vector<LinearConstraintRow> hard_constraints;
+
+    // True when hard_constraints[0] is the block's LEVEL ROW: the constant
+    // direction its centring folds into a fixed effect, carried as a hard
+    // constraint so that coefficient's prior acts on the level
+    // (declare_level_constraint below). The block's log_prior stays the
+    // augmented density; hard_constraints.h conditions it on the row.
+    bool level_hard = false;
 
     // ----- Sparse-builder fields -----
     //
@@ -445,11 +453,34 @@ inline Rcpp::LogicalVector block_center_flags(
     return out;
 }
 
+// Declare the block's level row a'x = 0 as a hard constraint the inner solve
+// carries (hard_constraints.h), a the plain sum (`w` empty) or the weights `w`
+// over the block. A field whose constant direction aliases a fixed effect
+// that carries a proper prior has to take it this way: solving the augmented
+// problem and folding the field's mean into the coefficient afterwards leaves
+// the level shared between the coefficient's prior and the augmentation, so
+// the reported mode is the mode of a model whose coefficient prior is wider by
+// the augmentation's variance on the level. Under the constraint the level is
+// the coefficient's alone and the mode is that of the stated prior.
+inline void declare_level_constraint(LatentBlock& blk,
+                                     const std::vector<double>& w = {}) {
+    LinearConstraintRow row;
+    row.cols.resize(static_cast<std::size_t>(blk.size));
+    for (int j = 0; j < blk.size; j++) row.cols[j] = blk.start + j;
+    row.w = w;
+    if (blk.level_hard && !blk.hard_constraints.empty())
+        blk.hard_constraints.front() = std::move(row);
+    else
+        blk.hard_constraints.insert(blk.hard_constraints.begin(), std::move(row));
+    blk.level_hard = true;
+}
+
 // Give an INTRINSIC block its centring: the block's constant is removed and
 // folded into the intercept (center_intercept), and the block is marked as
-// carrying that direction as a hard constraint (intrinsic_level). One setter,
-// so no factory can centre an intrinsic field without declaring the
-// constraint the covariance read has to honour.
+// carrying that direction as a hard constraint (intrinsic_level), which the
+// inner solve imposes (declare_level_constraint). One setter, so no factory
+// can centre an intrinsic field without declaring the constraint the solve and
+// the covariance read have to honour.
 //
 // `node_prec` is the field's per-node precision multiplier (empty: none). When
 // it is not constant the level is its weighted mean (see level_weights).
@@ -477,6 +508,7 @@ inline void centre_intrinsic_level(
         };
     }
     blk.intrinsic_level = true;
+    declare_level_constraint(blk, blk.level_weights);
 }
 
 // The constraint rows a covariance read of a block list conditions on: one
@@ -505,7 +537,9 @@ inline Rcpp::List intrinsic_constraint_cols(
         }
     }
     for (const auto& b : blocks) {
-        for (const auto& r : b.hard_constraints) {
+        const std::size_t first = (b.level_hard && b.intrinsic_level) ? 1 : 0;
+        for (std::size_t h = first; h < b.hard_constraints.size(); h++) {
+            const LinearConstraintRow& r = b.hard_constraints[h];
             Rcpp::IntegerVector cols(r.cols.size());
             Rcpp::NumericVector w(r.cols.size());
             for (std::size_t e = 0; e < r.cols.size(); e++) {

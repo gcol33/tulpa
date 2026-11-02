@@ -148,6 +148,11 @@ test_that("svc_weight of all ones reproduces the no-svc joint fit", {
         re_idx = rep(0, length(y)), n_re_groups = 0L, sigma_re = 1.0,
         spatial_idx = s, family = "gaussian", phi = 1.0)
 
+    # An all-ones weight aliases the intercept exactly as the unweighted field
+    # does, so it declares the intercept (column 0) as its counterpart: both
+    # fits then carry the field's level as the same hard constraint, the level
+    # under the intercept's prior (gcol33/tulpa#1053). Without the declaration
+    # the augmentation identifies the level in the field, a different model.
     base_block <- function(svc) {
         b <- list(type = "icar",
                   n_spatial_units = adj$n_spatial_units,
@@ -156,7 +161,10 @@ test_that("svc_weight of all ones reproduces the no-svc joint fit", {
                   n_neighbors = adj$n_neighbors,
                   sigma_grid  = c(0.6, 1.0, 1.4),
                   spatial_idx = list(s1, s2))
-        if (!is.null(svc)) b$svc_weight <- svc
+        if (!is.null(svc)) {
+            b$svc_weight <- svc
+            b$svc_beta_offset <- 0L
+        }
         b
     }
 

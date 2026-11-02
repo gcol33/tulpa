@@ -58,6 +58,7 @@ struct SpeciesState {
     NewtonScratchJoint       dense;
     NewtonScratchJointSparse sparse;
     SparseCholeskySolver     solver;
+    HardConstraintState      hard;   // the blocks' hard constraints
 
     void allocate(int n_x, const std::vector<JointArm>& arms, bool use_sparse,
                   bool want_extract) {
@@ -237,9 +238,12 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     const bool want_eta_var = compute_fitted_var && arms.size() == 1u;
 
     std::vector<SpeciesState> st(B);
-    for (int s = 0; s < B; s++)
+    for (int s = 0; s < B; s++) {
         st[s].allocate(n_x, arms, use_sparse,
                        want_fixed_block || want_eta_var);
+        st[s].hard.init(n_x, blocks);
+    }
+    const bool hard_on = st.empty() ? false : st[0].hard.active();
 
     BatchArmBuffers wbuf = buf;  // working copy carries etas (species-major)
     std::vector<std::vector<LaplaceResult>> cell_results(
@@ -344,6 +348,12 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                 for (int j = 0; j < n_x; j++) v.x[j] = prev_mode[s][j];
             else
                 for (int j = 0; j < n_x; j++) v.x[j] = 0.0;
+            // Every iterate stays on the constraint set.
+            if (hard_on) {
+                st[s].hard.project_point(v.x.begin());
+                st[s].hard.prior_conditioning =
+                    level_prior_conditioning(blocks, kg, v.x_try);
+            }
         }
 
         std::vector<LaplaceResult> res(B);
@@ -373,6 +383,11 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                 add_species_priors_sparse(H, grad, v.x, blocks, parsed, kg);
                 H.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
                 bool used_block_schur = false;
+                if (hard_on)
+                    return hard_kkt_step_sparse(
+                        H, st[s].solver, n_x, st[s].hard, v.x.begin(),
+                        grad.data(), v.delta.data(), used_block_schur,
+                        &st[s].sparse.s2z_block_schur_cache, guarded);
                 return s2z_newton_step(H, st[s].solver, n_x, pd_mode, grad.data(),
                                        v.delta.data(), used_block_schur,
                                        &st[s].sparse.s2z_block_schur_cache,
@@ -381,11 +396,18 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
             DenseMat& H = H_per_sp[s];
             for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, v.x, kg);
             add_per_arm_beta_re_priors(grad, H, v.x, parsed);
-            return joint_pd_step_solve_dense(H, grad, v.delta, n_x,
-                                             st[s].solver, dense_factor_sparse,
-                                             st[s].dense.chol, pd_mode, nullptr,
-                                             nullptr,
-                                             guarded ? JOINT_LM_MAX_TRIES : 1);
+            const bool ok = joint_pd_step_solve_dense(
+                H, grad, v.delta, n_x, st[s].solver, dense_factor_sparse,
+                st[s].dense.chol, hard_on ? JointPDMode::LM : pd_mode, nullptr,
+                nullptr, guarded ? JOINT_LM_MAX_TRIES : 1);
+            if (!ok || !hard_on) return ok;
+            return st[s].hard.kkt_project(
+                v.x.begin(), v.delta.data(),
+                [&](const double* rhs, double* out) {
+                    live_factor_solve(rhs, out, n_x,
+                                      dense_factor_sparse && st[s].solver.factored(),
+                                      st[s].solver, st[s].dense.chol);
+                });
         };
 
         for (int iter = 0; iter < max_iter; iter++) {
@@ -488,7 +510,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                     compute_eta, center, log_prior, log_lik, eval_objective,
                     store_Q, pd_mode, false, nullptr, nullptr, fixed_block,
                     nullptr, nullptr, static_cast<std::uint64_t>(kg) + 1ULL,
-                    eta_var_ptr);
+                    eta_var_ptr, hard_on ? &st[s].hard : nullptr);
             } else {
                 DenseMat& H = H_per_sp[s];
                 for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, v.x, kg);
@@ -498,7 +520,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                     dense_factor_sparse, compute_eta, center, log_prior,
                     log_lik, eval_objective, store_Q, pd_mode, false, nullptr,
                     nullptr, fixed_block, nullptr, nullptr,
-                    static_cast<std::uint64_t>(kg) + 1ULL, eta_var_ptr);
+                    static_cast<std::uint64_t>(kg) + 1ULL, eta_var_ptr,
+                    hard_on ? &st[s].hard : nullptr);
             }
             cell_results[s][kg] = std::move(r);
             prev_mode[s] = cell_results[s][kg].mode;

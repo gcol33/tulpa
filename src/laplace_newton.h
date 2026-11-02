@@ -14,6 +14,7 @@
 #include "subspace_debias.h"            // compute_subspace_debias
 #include "inner_laplace_skew.h"         // compute_inner_skew_gamma3
 #include "inv_block_extract.h"          // extract_inv_diag_blocks
+#include "hard_constraints.h"           // HardConstraintState
 #include "sparse_cholesky.h"
 #include "laplace_profile.h"            // TULPA_PROFILE_PHASE
 #include <Rcpp.h>
@@ -225,7 +226,12 @@ LaplaceResult laplace_newton_solve_ll(
     // where `scatter_grad_hess` accepts a SparseHessianBuilder&, the Hessian is
     // assembled into it instead of the dense scratch.H. The scatter must write only inside the pattern; a write
     // off it is counted for the enclosing HessianPatternGuard.
-    SparseHessianBuilder* sparse_H = nullptr
+    SparseHessianBuilder* sparse_H = nullptr,
+    // Hard linear constraints the latent blocks carry (hard_constraints.h);
+    // nullptr or empty solves the unconstrained problem. Every step is the KKT
+    // step against the factored Hessian and the log-marginal is the constrained
+    // model's.
+    HardConstraintState* hard = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -246,6 +252,11 @@ LaplaceResult laplace_newton_solve_ll(
 
     SparseCholeskySolver local_solver;
     SparseCholeskySolver& sparse_solver = shared_solver ? *shared_solver : local_solver;
+
+    // Under hard constraints every iterate stays on the constraint set, so the
+    // start is moved to its nearest feasible point first.
+    const bool hard_on = hard && hard->active();
+    if (hard_on) hard->project_point(x.begin());
 
     // Do NOT call omp_set_num_threads here. When the outer driver runs us
     // from inside a parallel region we want the inner kernels (per-obs
@@ -326,7 +337,16 @@ LaplaceResult laplace_newton_solve_ll(
             { TULPA_PROFILE_PHASE(PHASE_SCATTER);
               scatter_grad_hess(x, scratch.eta, scratch.grad, store.hessian()); }
         };
-        auto cholesky_solve = [&]() -> bool { return store.factor_solve(); };
+        // A solve against the live factor of the Hessian just factored.
+        auto solve_live = [&](const double* rhs, double* out) {
+            live_factor_solve(rhs, out, n_x, store.sparse_live(), sparse_solver,
+                              scratch.chol);
+        };
+        auto cholesky_solve = [&]() -> bool {
+            if (!store.factor_solve()) return false;
+            return !hard_on ||
+                   hard->kkt_project(x.begin(), scratch.delta.data(), solve_live);
+        };
 
         for (int iter = 0; iter < max_iter; iter++) {
             if (newton_step(x, scratch, n_x, iter, tol, refresh_grad_hess,
@@ -348,7 +368,8 @@ LaplaceResult laplace_newton_solve_ll(
         // exactly the amount the shift moved off the mode. This is the ordering the
         // joint loops already take.
         refresh_grad_hess();
-        result.score_max = max_abs(scratch.grad);
+        result.score_max = hard_on ? hard->max_abs_tangent(scratch.grad.data())
+                                   : max_abs(scratch.grad);
 
         // A non-finite log-determinant is the plain Cholesky reporting that the
         // Hessian at the returned point is not PD -- a point the solve stopped at
@@ -359,6 +380,15 @@ LaplaceResult laplace_newton_solve_ll(
         // reaches this, so every fit that factorizes is unchanged.
         { TULPA_PROFILE_PHASE(PHASE_LOG_DET);
           result.hessian_pd_at_mode = store.factor_log_det(result.log_det_Q); }
+        // On the constraint set the expansion is over the subspace:
+        // log|B' H B| = log|H| + log|A H^-1 A'| - log|A A'|.
+        if (hard_on && result.hessian_pd_at_mode) {
+            if (hard->factor_cap(solve_live)) {
+                result.log_det_Q += hard->log_det_subspace_correction();
+            } else {
+                result.hessian_pd_at_mode = false;
+            }
+        }
         if (!result.hessian_pd_at_mode) {
             result.log_det_Q = std::numeric_limits<double>::quiet_NaN();
             result.converged = false;
@@ -384,6 +414,13 @@ LaplaceResult laplace_newton_solve_ll(
             result.newton_decrement = newton_decrement_live(
                 scratch.grad.data(), n_x, used_sparse_factor, sparse_solver,
                 scratch.chol, &final_step);
+            if (hard_on && std::isfinite(result.newton_decrement)) {
+                hard->project_step(x.begin(), final_step.data());
+                double dec = 0.0;
+                for (int j = 0; j < n_x; j++) dec += scratch.grad[j] * final_step[j];
+                result.newton_decrement = std::isfinite(dec)
+                    ? dec : std::numeric_limits<double>::quiet_NaN();
+            }
         }
 
         if (inv_block_layout && !inv_block_layout->empty() &&
@@ -400,7 +437,8 @@ LaplaceResult laplace_newton_solve_ll(
                 }
             };
             extract_inv_diag_blocks(solve_live, n_x, *inv_block_layout,
-                                    /*constr=*/nullptr, InvBlockSymmetry::Average,
+                                    hard_on ? &hard->cap : nullptr,
+                                    InvBlockSymmetry::Average,
                                     result.re_cov_flat, result.re_cov_block_sizes);
         }
 
@@ -409,7 +447,9 @@ LaplaceResult laplace_newton_solve_ll(
           log_lik = log_lik_memo(scratch.eta);
           log_prior = compute_log_prior(x, scratch.eta); }
 
-        result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
+        result.log_marginal = hard_on
+            ? hard->log_marginal(log_lik, log_prior, result.log_det_Q)
+            : finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
         if (std::isfinite(result.newton_decrement)) {
             result.newton_step_gain = newton_step_gain(
                 x, final_step.data(), n_x, log_lik + log_prior, eval_objective,
@@ -494,7 +534,8 @@ LaplaceResult laplace_newton_solve_ll(
 
             run_subspace_debias(result, n_x, pre_center_x, scratch.chol,
                                 sparse_solver, used_sparse_factor,
-                                eval_objective, x, debias);
+                                eval_objective, x, debias, nullptr,
+                                hard_on ? hard : nullptr);
 
             // The correction reads the same pre-centering iterate, and presents each
             // draw through the loop's own centering fold so a drawn coefficient is in
@@ -502,7 +543,7 @@ LaplaceResult laplace_newton_solve_ll(
             run_inner_cila(result, n_x, pre_center_x, scratch.chol, sparse_solver,
                            used_sparse_factor, eval_objective,
                            [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); },
-                           x, cila, cila_cell_key);
+                           x, cila, cila_cell_key, hard_on ? hard : nullptr);
         }
 
         center_effects_fn(x);

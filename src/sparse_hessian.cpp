@@ -68,7 +68,8 @@ bool s2z_block_schur(
     double* logdet_out,
     S2ZBlockSchurCache* cache,
     bool field_inertia,
-    bool* field_indefinite) {
+    bool* field_indefinite,
+    int n_rhs) {
     if (field_indefinite) *field_indefinite = false;
     const int K = static_cast<int>(r1.size());
     if (K == 0) return false;
@@ -222,13 +223,15 @@ bool s2z_block_schur(
         *logdet_out = ld;
     }
 
-    // Step: delta = B^-1 grad via block elimination.
+    // Step: delta = B^-1 grad via block elimination, once per right-hand side.
     //   bf_g = B_FF^-1 g_f ;  S s = g_s - A_fs' bf_g ;  f = bf_g - sum_j Z[j] s_j.
-    if (grad && delta) {
+    for (int rh = 0; grad && delta && rh < n_rhs; ++rh) {
+        const double* grad_r = grad + (std::size_t) rh * n_x;
+        double* delta_r = delta + (std::size_t) rh * n_x;
         std::vector<double> gf(nf, 0.0), gs(ns, 0.0);
         for (int g = 0; g < n_x; ++g) {
-            if (floc[g] >= 0) gf[floc[g]] = grad[g];
-            else              gs[sloc[g]] = grad[g];
+            if (floc[g] >= 0) gf[floc[g]] = grad_r[g];
+            else              gs[sloc[g]] = grad_r[g];
         }
         std::vector<double> bf_g(nf, 0.0);
         bff_solve(gf.data(), bf_g.data());
@@ -247,12 +250,12 @@ bool s2z_block_schur(
                 const int i = floc[g];
                 double acc = bf_g[i];
                 for (int j = 0; j < ns; ++j) acc -= Z[j][i] * svec[j];
-                delta[g] = acc;
+                delta_r[g] = acc;
             } else {
-                delta[g] = svec[sloc[g]];
+                delta_r[g] = svec[sloc[g]];
             }
         }
-        for (int g = 0; g < n_x; ++g) if (!std::isfinite(delta[g])) return false;
+        for (int g = 0; g < n_x; ++g) if (!std::isfinite(delta_r[g])) return false;
     }
     return true;
 }
