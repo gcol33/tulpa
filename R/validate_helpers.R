@@ -529,3 +529,45 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
                     tail = paste0("P(", param, if (lower) " < " else " > ",
                                   arg, "[1])"))
 }
+
+
+# The nested-Laplace statements a field spec carries about its own
+# hyperparameters: outer-grid axes (any `*_grid` entry) and the PC anchor
+# `prior_sigma = c(U, alpha)` on the field SD.
+.nl_spec_entries_stated <- function(spec) {
+  if (is.null(spec) || !is.list(spec)) return(character(0))
+  nm <- names(spec)[!vapply(spec, is.null, logical(1))]
+  nm[grepl("_grid$", nm) | nm == "prior_sigma"]
+}
+
+# The outer-grid entries of a field spec that the nested block of type
+# `block_type` lays its axes from, validated: the axes a type accepts are its
+# `.NL_FAMILY_AXES` row, so an axis that row does not list, or a malformed
+# value, is refused rather than dropped. Returns the entries to write onto the
+# block, as numeric vectors.
+.nl_spec_grid_entries <- function(spec, block_type) {
+  ok <- names(.NL_FAMILY_AXES[[block_type]])
+  grids <- grep("_grid$", names(spec), value = TRUE)
+  bad <- setdiff(grids, ok)
+  if (length(bad)) {
+    stop(sprintf(paste0(
+      "`%s` is not an outer-grid axis of a nested-Laplace '%s' field, whose ",
+      "axes are %s."), bad[1L], block_type,
+      paste0("`", ok, "`", collapse = " and ")), call. = FALSE)
+  }
+  out <- list()
+  for (g in grids) {
+    v <- spec[[g]]
+    if (!is.numeric(v) || !length(v) || anyNA(v) || any(!is.finite(v))) {
+      stop(sprintf("`%s` must be a non-empty finite numeric vector.", g),
+           call. = FALSE)
+    }
+    out[[g]] <- as.numeric(v)
+  }
+  if (!is.null(spec$prior_sigma)) {
+    .check_pc_anchor_pair(spec$prior_sigma, "prior_sigma",
+                          sprintf("nested-Laplace '%s' field", block_type))
+    out$prior_sigma <- as.numeric(spec$prior_sigma)
+  }
+  out
+}

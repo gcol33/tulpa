@@ -81,9 +81,15 @@
 # Subset a validated front-door control list to the keys an inner fitter
 # accepts, so wholesale forwarding does not carry front-door-only knobs
 # (grid shape, backend selection) into the inner fitter's narrower check.
+#
+# An outer-grid knob (`.OUTER_GRID_KNOBS`) the fitter does not read is refused
+# here rather than dropped: it is the one place a front-door control list is
+# cut down to a fitter's own, so every route that subsets passes through it.
+# `backend` names the fitter in the message.
 #' @keywords internal
-.control_subset <- function(control, allowed) {
+.control_subset <- function(control, allowed, backend = NULL) {
   if (is.null(control) || length(control) == 0L) return(list())
+  .check_outer_grid_knobs(control, allowed, backend)
 
   nm <- names(control)
   for (from in names(.CONTROL_ALIASES)) {
@@ -303,6 +309,54 @@ tulpa_check_control <- function(control, allowed, where) {
   ), .tulpa_hyperprior_keys)))
   keys
 })
+
+# The `control` knobs that shape an outer hyperparameter grid: its node count
+# and design, the refinement and placement passes over it, its screen, and how
+# its cells are read. tulpa()'s control surface is the union over every backend
+# it dispatches, so each of these passes tulpa()'s name check whichever backend
+# the call reaches, and the subset handed to that backend
+# (`.control_subset()`) dropped the ones it does not read -- an `n_grid`,
+# `n_per_axis` or `integration` reaching the registry nested door, or any of
+# them reaching a backend with no outer grid, was accepted and did nothing.
+#' @keywords internal
+.OUTER_GRID_KNOBS <- c(
+  "n_grid", "n_per_axis", "n_grid_spatial", "n_grid_temporal", "n_grid_rho",
+  "span", "integration", "local_ccd", "ccd_budget", "ccd_budget_floor",
+  "max_grid_cells", "auto_recenter", "recenter_pilot", "axis_refine",
+  "adaptive_grid", "adaptive_grid_cutoff", "adaptive_grid_edge_thresh",
+  "adaptive_grid_max_frac", "adaptive_grid_max_passes",
+  "adaptive_grid_min_cells", "adaptive_grid_stride",
+  "var_of_means_consistency", "var_of_means_min_ess",
+  "prune", "prune_tol", "prune_log_gap", "screen_iters", "within_cell")
+
+# Refuse an outer-grid knob a fitter does not read (`reads`, its key set): the
+# knob is either in that set and reaches the fitter through `.control_subset()`,
+# or the call stops here and names what the fitter does read.
+#' @keywords internal
+.check_outer_grid_knobs <- function(control, reads, backend = NULL) {
+  given <- intersect(names(control %||% list()), .OUTER_GRID_KNOBS)
+  if (!length(given)) return(invisible(NULL))
+  unread <- setdiff(given, reads)
+  if (!length(unread)) return(invisible(NULL))
+  own <- intersect(reads, .OUTER_GRID_KNOBS)
+  stop(sprintf(paste0(
+    "control knob%s %s shape%s an outer hyperparameter grid that %s ",
+    "does not lay that way, so %s would have no effect. %s"),
+    if (length(unread) > 1L) "s" else "",
+    paste0("`", unread, "`", collapse = ", "),
+    if (length(unread) > 1L) "" else "s",
+    if (is.null(backend)) "the fitter this call reaches"
+    else sprintf("backend '%s'", backend),
+    if (length(unread) > 1L) "they" else "it",
+    paste0(
+      if (length(own)) paste0("Its outer-grid knobs are: ",
+                              paste0("`", own, "`", collapse = ", "), ".")
+      else "It integrates no outer grid.",
+      if (identical(backend, "nested_laplace"))
+        paste0(" Its grid's nodes are the field spec's own `*_grid` entries ",
+               "(e.g. `spatial$tau_grid` on an ICAR field).")
+      else "")), call. = FALSE)
+}
 
 # Drop the entries a caller did not set, so a `do.call` onto a fitter takes
 # that fitter's OWN formal default rather than one restated at the dispatch

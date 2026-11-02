@@ -8,7 +8,8 @@ spatial_car_proper(
   adjacency,
   level = c("group", "obs"),
   group_var = NULL,
-  shared = NULL
+  shared = NULL,
+  prior_sigma = NULL
 )
 }
 \arguments{
@@ -22,6 +23,13 @@ spatial_car_proper(
 when \code{level = "group"}.}
 
 \item{shared}{Optional shared-effect handle (see model docs).}
+
+\item{prior_sigma}{Optional PC prior on the field's standard deviation,
+\code{c(U, alpha)} with \eqn{P(\sigma > U) = \alpha}, read by the
+nested-Laplace path (\code{mode = "nested_laplace"}, \code{"structured"} or
+\code{"auto"}), which carries it to the precision axis it integrates. \code{NULL}
+(default) keeps the engine's weakly-informative anchor. A backend that
+does not integrate the field's hyperparameters refuses it.}
 }
 \value{
 A \code{tulpa_spatial} object with \code{type = "car_proper"}.

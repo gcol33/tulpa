@@ -197,7 +197,11 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 #   list(reason = "<why>")   no normalised density.
 .hp_axis_default <- function(bare, block = list(), family = NULL) {
   type <- tolower(block$type %||% "")
-  scale <- function(kind, anchor = .nl_scale_anchor()) {
+  # A block's `prior_sigma = c(U, alpha)` anchors the PC prior on its field SD,
+  # carried to whichever scale coordinate the axis is laid on.
+  scale <- function(kind,
+                    anchor = as.numeric(block$prior_sigma %||%
+                                          .nl_scale_anchor())[1:2]) {
     force(kind); force(anchor)
     list(fn = function(x) .hp_log_scale_density(x, kind, anchor))
   }
@@ -215,8 +219,6 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     return(list(group = "logchol"))
   }
   switch(paste(type, bare, sep = ":"),
-    "spde:sigma" = return(scale(
-      "sd", as.numeric(block$prior_sigma %||% .nl_scale_anchor())[1:2])),
     "bym2:rho"       = return(uniform(c(0, 1))),
     "car_proper:rho" = return(uniform(block$rho_bounds %||%
                                         .nl_grid_par("car_rho", "bounds"))),
@@ -279,6 +281,13 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 
 # The density of ONE axis under a hyperprior choice, in `.hp_axis_default()`'s
 # return shape. Under `"flat"` an axis keeps only a density its block states.
+# A field-scale axis: a precision (`tau*`), a variance (`sigma2`) or an SD
+# (`sigma*`), the axes `.hp_axis_default()` carries the PC prior on the field SD
+# to. A dispersion (`phi_*`) is not one.
+.hp_is_scale_axis <- function(bare) {
+  startsWith(bare, "tau") || startsWith(bare, "sigma")
+}
+
 .hp_axis_prior <- function(bare, block = list(), family = NULL,
                            hyperprior = "proper") {
   if (identical(.hp_choice(hyperprior), "proper")) {
@@ -287,7 +296,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   type <- tolower(block$type %||% "")
   stated <- identical(bare, "alpha") ||
     (identical(type, "ar1") && identical(bare, "rho") && !is.null(block$rho_prior)) ||
-    (identical(type, "spde") && identical(bare, "sigma") && !is.null(block$prior_sigma)) ||
+    (!is.null(block$prior_sigma) && .hp_is_scale_axis(bare)) ||
     (bare %in% c("range", "phi_gp", "lengthscale", "ell") && !is.null(block$prior_range))
   if (stated) return(.hp_axis_default(bare, block, family))
   list(reason = .hp_decline("flat_hyperprior"))

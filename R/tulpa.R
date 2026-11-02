@@ -119,6 +119,12 @@
 #    basis math is never duplicated in R. The HSGP field is evaluated per
 #    observation directly (no obs->location map).
 # Field types outside .NL_FRONTDOOR_NESTED error rather than silently fall back.
+#
+# A spec also carries the nested-Laplace statements a caller may make about the
+# field's own hyperparameters (`.nl_spec_grid_entries()`): its outer-grid axes,
+# named as the block type's `.NL_FAMILY_AXES` row names them, and the PC anchor
+# `prior_sigma = c(U, alpha)`, P(sigma > U) = alpha on the field SD, which the
+# default hyperprior reads off the block (`.hp_axis_default()`).
 .spatial_spec_to_nl_prior <- function(spatial) {
   type <- tolower(spatial$type)
 
@@ -142,6 +148,8 @@
     if (backend == "car_proper" && !is.null(spatial$rho_bounds)) {
       prior$rho_bounds <- as.numeric(spatial$rho_bounds)
     }
+    nl <- .nl_spec_grid_entries(spatial, backend)
+    prior[names(nl)] <- nl
     if (isTRUE(spatial$rsr)) {
       # Restricted spatial regression: observation i receives (P z)[unit_i],
       # with P the unit-level projector orthogonal to the restrict_to design
@@ -179,7 +187,7 @@
       type       = "hsgp",
       phi_basis  = basis$phi_basis,
       lambda_eig = basis$lambda_eig
-    ), .hp_coord_fields(cm)))
+    ), .hp_coord_fields(cm), .nl_spec_grid_entries(spatial, "hsgp")))
   }
 
   if (type %in% c("gp", "nngp")) {
@@ -214,6 +222,8 @@
       prior$projector   <- P[prior$spatial_idx, , drop = FALSE]
       prior$spatial_idx <- NULL
     }
+    nl <- .nl_spec_grid_entries(spatial, "nngp")
+    prior[names(nl)] <- nl
     return(prior)
   }
 
@@ -652,6 +662,8 @@
   if (type == "ar1" && !is.null(temporal$rho_prior)) {
     out$rho_prior <- temporal$rho_prior
   }
+  nl <- .nl_spec_grid_entries(temporal, type)
+  out[names(nl)] <- nl
   out
 }
 
@@ -728,6 +740,20 @@
   rp <- re_prior %||% list()
   .check_re_prior_backend(rp, backend)
   input <- BACKEND_REGISTRY[[backend]]$input
+  if (!identical(input, "nested")) {
+    # An SPDE spec's own prior anchors are read by its own integrators.
+    sp_nl <- if (!identical(tolower(spatial$type %||% ""), "spde")) spatial
+    stated <- c(.nl_spec_entries_stated(sp_nl),
+                .nl_spec_entries_stated(temporal))
+    if (length(stated)) {
+      stop(sprintf(paste0(
+        "`%s` on the field spec states its nested-Laplace hyperparameter ",
+        "integration, which backend '%s' does not run. Use mode = ",
+        "'nested_laplace' (or 'auto' / 'structured'), or drop the entr%s."),
+        stated[1L], backend, if (length(stated) > 1L) "ies" else "y"),
+        call. = FALSE)
+    }
+  }
 
   # Observation weights scale each row's log-likelihood. Supported where the
   # likelihood carries a per-obs multiplier today: the non-spatial Laplace
@@ -892,7 +918,8 @@
       # Forward only the keys the inner fitter reads: front-door-only knobs
       # (grid shape, backend selection) were consumed above and would trip
       # tulpa_nested_laplace()'s own whitelist.
-      control     = .control_subset(control, .CONTROL_KEYS$nested_laplace)
+      control     = .control_subset(control, .CONTROL_KEYS$nested_laplace,
+                                    backend)
     )
     # Where the RE blocks landed in the prior list, and whether their SD was
     # integrated or conditioned. Read by VarCorr() / ranef() so they report the
@@ -959,7 +986,8 @@
       n_re_groups    = spde_re_n,
       sigma_re       = spde_sigma_re,
       hyperprior     = hyperprior,
-      control        = .control_subset(control, .CONTROL_KEYS$spde)
+      control        = .control_subset(control, .CONTROL_KEYS$spde,
+                                       backend)
     ))
   }
 
@@ -1050,7 +1078,8 @@
           eta         = rp$eta,
           hyperprior  = hyperprior,
           n_quad      = n_quad,
-          control     = .control_subset(control, .CONTROL_KEYS$re_cov_nested)
+          control     = .control_subset(control, .CONTROL_KEYS$re_cov_nested,
+                                        backend)
         )))
       }
       # re_cov_gibbs: exact Metropolis-within-Gibbs debias.
@@ -1058,7 +1087,8 @@
         prior_df        = rp$prior_df,
         prior_scale     = rp$prior_scale,
         beta_prior      = beta_prior_default,
-        control         = .control_subset(control, .CONTROL_KEYS$re_cov_gibbs)
+        control         = .control_subset(control, .CONTROL_KEYS$re_cov_gibbs,
+                                          backend)
       )))
     }
     if (backend == "laplace") {
@@ -1175,7 +1205,8 @@
         beta_prior = beta_prior_default,
         prior_sigma_scale = rp$prior_sigma_scale %||% 2.5,
         spatial = spatial,
-        control = .control_subset(control, .CONTROL_KEYS$gibbs)
+        control = .control_subset(control, .CONTROL_KEYS$gibbs,
+                                  backend)
       ))
     }
     if (backend == "agq") {
@@ -1253,7 +1284,8 @@
         n_trials   = n_trials,
         beta_prior = beta_prior_default,
         offset     = bundle$offset,
-        control    = .control_subset(control, .CONTROL_KEYS$ep)
+        control    = .control_subset(control, .CONTROL_KEYS$ep,
+                                     backend)
       ))
     }
     stop(sprintf(paste0(
@@ -1544,7 +1576,8 @@
       # this sampler path), not a control knob; inject it into the sampler's
       # sigma_beta. Other perf knobs forward from control.
       sigma_beta    = .beta_prior_ridge_sd(beta_prior_default),
-      control       = .control_subset(control, .CONTROL_KEYS$sample_glmm)
+      control       = .control_subset(control, .CONTROL_KEYS$sample_glmm,
+                                      backend)
     )
 
     # Resolved here rather than at the front door because the source fit and the
@@ -1788,10 +1821,14 @@
 #'   accepts its own set, checked at the door: `n_iter` / `warmup` / `epsilon`
 #'   (`mala`), `n_draws` (`pathfinder`), `n_chains` / `max_treedepth` /
 #'   `adapt_delta` / `mass_matrix` (`hmc`), the outer-grid knobs
-#'   `?tulpa_nested_laplace` documents (`n_per_axis`, `prune`, `screen_iters`,
-#'   `diagnose_k`, `within_cell`, `checkpoint`, the `progress*` family, ...),
-#'   and `re_cov` (`"nested"` / `"gibbs"` / `"aghq"`), which selects the
-#'   RE-covariance integrator on any random-effect model.
+#'   `?tulpa_nested_laplace` documents (`prune`, `screen_iters`,
+#'   `adaptive_grid`, `diagnose_k`, `within_cell`, `checkpoint`, the
+#'   `progress*` family, ...), and `re_cov` (`"nested"` / `"gibbs"` /
+#'   `"aghq"`), which selects the RE-covariance integrator on any
+#'   random-effect model. An outer-grid knob the reached backend does not read
+#'   (`n_grid`, `n_per_axis`, `integration`, ... on the nested-Laplace field
+#'   path, whose nodes are the field spec's own `*_grid` entries) is an error
+#'   rather than a no-op.
 #'
 #'   `n_iter` does not count the same thing on every sampler, and `warmup`
 #'   (alias `n_warmup`) is validated against it before any sampler runs:
@@ -1974,7 +2011,8 @@ tulpa <- function(formula, data,
       tulpa_ordinal(formula, data,
                     link = if (family == "ordinal_probit") "probit" else "logit",
                     beta_prior = beta_prior %||% .tulpa_default_beta_prior(),
-                    control = .control_subset(control, .CONTROL_KEYS$ordinal))
+                    control = .control_subset(control, .CONTROL_KEYS$ordinal,
+                                              "ordinal"))
     }
     fit$call <- match.call()
     return(fit)
@@ -2224,6 +2262,14 @@ tulpa <- function(formula, data,
       # never by their sort order (gcol33/tulpa#900).
       spatial_spec$spatial_idx <- .resolve_spatial_idx(
         data[[parsed$spatial_var]], n_units, adj_mat, parsed$spatial_var)
+      # A BYM2 field is the scaled one (Riebler et al. 2016) whichever way the
+      # spec arrived: a bare list carries no scale, so it takes the one
+      # spatial_bym2() computes, per connected component.
+      if (sp_lc == "bym2" && is.null(spatial_spec$scale_factor)) {
+        sc <- .bym2_component_scaling(adj_mat)
+        spatial_spec$scale_factor <- sc$scale_factor
+        spatial_spec$node_prec    <- sc$node_prec
+      }
       if (isTRUE(spatial_spec$rsr)) {
         # The unit-level projector orthogonal to the restrict_to design -- the
         # whole point of the modifier. dispatch_gibbs_spatial() consumes the
@@ -2696,7 +2742,8 @@ tulpa <- function(formula, data,
     fit <- fit_spde(
       y = bundle$y, X = bundle$X, spatial = spatial_spec, family = family,
       n_trials = n_trials, mode = "nuts",
-      control = .control_subset(control, .CONTROL_KEYS$nuts_spde))
+      control = .control_subset(control, .CONTROL_KEYS$nuts_spde,
+                                "nuts_spde"))
     fit$formula <- formula
     fit$family <- family
     fit$call <- match.call()

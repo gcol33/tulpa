@@ -15,6 +15,12 @@
 #'   ICAR (`type = "car"`).
 #' @param shared Optional shared-effect handle (see model docs).
 #' @param parameterization `"standard"` (default) or `"collapsed"` (deprecated).
+#' @param prior_sigma Optional PC prior on the field's standard deviation,
+#'   `c(U, alpha)` with \eqn{P(\sigma > U) = \alpha}, read by the
+#'   nested-Laplace path (`mode = "nested_laplace"`, `"structured"` or
+#'   `"auto"`), which carries it to the precision axis it integrates. `NULL`
+#'   (default) keeps the engine's weakly-informative anchor. A backend that
+#'   does not integrate the field's hyperparameters refuses it.
 #'
 #' @return A `tulpa_spatial` object with `type = "car"` (or
 #'   `"car_proper"` when `proper = TRUE`).
@@ -27,7 +33,8 @@
 #' @export
 spatial_car <- function(adjacency, level = c("group", "obs"),
                         group_var = NULL, proper = FALSE, shared = NULL,
-                        parameterization = c("standard", "collapsed")) {
+                        parameterization = c("standard", "collapsed"),
+                        prior_sigma = NULL) {
 
   level <- match.arg(level)
   parameterization <- match.arg(parameterization)
@@ -63,6 +70,9 @@ spatial_car <- function(adjacency, level = c("group", "obs"),
   }
 
   if (isFALSE(shared)) .warn_nonshared("spatial effects")
+  if (!is.null(prior_sigma)) {
+    .check_pc_anchor_pair(prior_sigma, "prior_sigma", "spatial_car()")
+  }
 
   structure(
     list(
@@ -74,7 +84,8 @@ spatial_car <- function(adjacency, level = c("group", "obs"),
       rho_bounds = rho_bounds,
       shared = shared,
       parameterization = parameterization,
-      n_spatial = nrow(adjacency)
+      n_spatial = nrow(adjacency),
+      prior_sigma = if (!is.null(prior_sigma)) as.numeric(prior_sigma)
     ),
     class = c("tulpa_spatial", "list")
   )
@@ -123,14 +134,16 @@ spatial_car <- function(adjacency, level = c("group", "obs"),
 spatial_car_proper <- function(adjacency,
                                level = c("group", "obs"),
                                group_var = NULL,
-                               shared = NULL) {
+                               shared = NULL,
+                               prior_sigma = NULL) {
   spatial_car(
     adjacency = adjacency,
     level = match.arg(level),
     group_var = group_var,
     proper = TRUE,
     shared = shared,
-    parameterization = "standard"
+    parameterization = "standard",
+    prior_sigma = prior_sigma
   )
 }
 
@@ -368,7 +381,8 @@ compute_car_rho_bounds <- function(adjacency) {
 spatial_bym2 <- function(adjacency, level = c("group", "obs"),
                          group_var = NULL, shared = NULL,
                          scale_factor = NULL,
-                         parameterization = c("standard", "collapsed")) {
+                         parameterization = c("standard", "collapsed"),
+                         prior_sigma = NULL) {
 
   level <- match.arg(level)
   parameterization <- match.arg(parameterization)
@@ -405,6 +419,9 @@ spatial_bym2 <- function(adjacency, level = c("group", "obs"),
   }
 
   if (isFALSE(shared)) .warn_nonshared("spatial effects")
+  if (!is.null(prior_sigma)) {
+    .check_pc_anchor_pair(prior_sigma, "prior_sigma", "spatial_bym2()")
+  }
 
   structure(
     list(
@@ -416,7 +433,8 @@ spatial_bym2 <- function(adjacency, level = c("group", "obs"),
       parameterization = parameterization,
       n_spatial = nrow(adjacency),
       scale_factor = scale_factor,
-      node_prec = node_prec
+      node_prec = node_prec,
+      prior_sigma = if (!is.null(prior_sigma)) as.numeric(prior_sigma)
     ),
     class = c("tulpa_spatial", "list")
   )

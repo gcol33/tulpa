@@ -112,7 +112,7 @@ test_that("temporal_ar(p = 3) recovers the AR field through nested Laplace", {
 
   fit <- suppressWarnings(suppressMessages(tulpa(
     y ~ latent(temporal_ar(d$t, p = 3)), data = d, family = "gaussian",
-    mode = "nested_laplace", control = list(n_per_axis = 3L))))
+    mode = "nested_laplace")))
 
   expect_true(is.finite(fit$log_marginal[which.max(fit$log_marginal)]))
   expect_length(fit$theta_mean, 4L)

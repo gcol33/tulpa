@@ -222,10 +222,14 @@ field it forms an additive space-time joint prior.}
 accepts its own set, checked at the door: \code{n_iter} / \code{warmup} / \code{epsilon}
 (\code{mala}), \code{n_draws} (\code{pathfinder}), \code{n_chains} / \code{max_treedepth} /
 \code{adapt_delta} / \code{mass_matrix} (\code{hmc}), the outer-grid knobs
-\code{?tulpa_nested_laplace} documents (\code{n_per_axis}, \code{prune}, \code{screen_iters},
-\code{diagnose_k}, \code{within_cell}, \code{checkpoint}, the \verb{progress*} family, ...),
-and \code{re_cov} (\code{"nested"} / \code{"gibbs"} / \code{"aghq"}), which selects the
-RE-covariance integrator on any random-effect model.
+\code{?tulpa_nested_laplace} documents (\code{prune}, \code{screen_iters},
+\code{adaptive_grid}, \code{diagnose_k}, \code{within_cell}, \code{checkpoint}, the
+\verb{progress*} family, ...), and \code{re_cov} (\code{"nested"} / \code{"gibbs"} /
+\code{"aghq"}), which selects the RE-covariance integrator on any
+random-effect model. An outer-grid knob the reached backend does not read
+(\code{n_grid}, \code{n_per_axis}, \code{integration}, ... on the nested-Laplace field
+path, whose nodes are the field spec's own \verb{*_grid} entries) is an error
+rather than a no-op.
 
 \code{n_iter} does not count the same thing on every sampler, and \code{warmup}
 (alias \code{n_warmup}) is validated against it before any sampler runs:

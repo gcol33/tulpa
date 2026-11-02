@@ -10,7 +10,8 @@ spatial_bym2(
   group_var = NULL,
   shared = NULL,
   scale_factor = NULL,
-  parameterization = c("standard", "collapsed")
+  parameterization = c("standard", "collapsed"),
+  prior_sigma = NULL
 )
 }
 \arguments{
@@ -33,6 +34,13 @@ gets unit variance on its structured part, following Freni-Sterrantino
 et al. (2018). A supplied value is one scale for the whole graph.}
 
 \item{parameterization}{\code{"standard"} (default) or \code{"collapsed"} (deprecated).}
+
+\item{prior_sigma}{Optional PC prior on the field's standard deviation,
+\code{c(U, alpha)} with \eqn{P(\sigma > U) = \alpha}, read by the
+nested-Laplace path (\code{mode = "nested_laplace"}, \code{"structured"} or
+\code{"auto"}), which carries it to the precision axis it integrates. \code{NULL}
+(default) keeps the engine's weakly-informative anchor. A backend that
+does not integrate the field's hyperparameters refuses it.}
 }
 \value{
 A \code{tulpa_spatial} object
