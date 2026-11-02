@@ -463,7 +463,8 @@
 # field's `rho` (a BYM2 mixing weight, an AR(1) autocorrelation) takes the
 # passes' points on the coordinate its mode is tagged with, logit or atanh,
 # which keeps every point inside its open interval.
-.JOINT_REFINABLE_BLOCK_AXES <- c("sigma", "tau", "alpha", "rho")
+.JOINT_FIELD_SD_AXES <- c("sigma", "tau")
+.JOINT_REFINABLE_BLOCK_AXES <- c(.JOINT_FIELD_SD_AXES, "alpha", "rho")
 
 # Is `axis` a per-arm dispersion (`phi_<arm>`)? Only an unprefixed name is:
 # `b1.phi_gp` is a block's own NNGP lengthscale.
@@ -472,14 +473,13 @@
 }
 
 #
-# `dispersions = FALSE` is the registry door's single-block grid, whose axes are
-# bare but name no per-arm dispersion (`phi_gp` is the nngp lengthscale there).
-.joint_axis_refine_eligible <- function(axis, dispersions = TRUE) {
+# The registry door refines its field SD axes only
+# (`.nl_refinable_registry_axes()`, `.JOINT_FIELD_SD_AXES`).
+.joint_axis_refine_eligible <- function(axis) {
     if (grepl("^b[0-9]+[.]", axis)) {
         return(.hyper_axis_bare(axis) %in% .JOINT_REFINABLE_BLOCK_AXES)
     }
-    axis %in% .JOINT_REFINABLE_BLOCK_AXES ||
-        (isTRUE(dispersions) && .joint_axis_is_dispersion(axis))
+    axis %in% .JOINT_REFINABLE_BLOCK_AXES || .joint_axis_is_dispersion(axis)
 }
 
 # One entry of the user-facing `phi_grid` argument, by arm name. The argument is

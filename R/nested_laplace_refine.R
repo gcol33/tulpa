@@ -26,8 +26,7 @@
     nm <- vapply(slots, function(s)
         if (isTRUE(multi)) paste0("b", s$block, ".", s$axis) else s$axis,
         character(1))
-    nm[vapply(nm, .joint_axis_refine_eligible, logical(1),
-              dispersions = FALSE)]
+    nm[.hyper_axis_bare(nm) %in% .JOINT_FIELD_SD_AXES]
 }
 
 # The refinement mode of each refinable axis of one registry grid, from who wrote

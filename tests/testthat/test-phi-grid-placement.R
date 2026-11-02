@@ -413,7 +413,8 @@ test_that("a fit with no dispersion axis carries no per-axis decline", {
     expect_false("phi_pos" %in% colnames(fit$theta_grid))
     expect_false("phi_pos" %in% names(fit$outer_grid_axis_declined))
     # The placement pass speaks about the axes the fit carries: the pinned field
-    # SD and the copy scale this fixture states.
+    # SD, the copy scale and the BYM2 mixing weight this fixture states.
     expect_identical(fit$outer_grid_axis_declined,
-                     c(sigma = "axis_pinned", alpha = "axis_pinned"))
+                     c(sigma = "axis_pinned", alpha = "axis_pinned",
+                       rho = "axis_pinned"))
 })
