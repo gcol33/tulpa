@@ -29,6 +29,7 @@ gauss_gauss_truth <- function(mu_t, sigma_t, sigma_prior = 10) {
 skip_on_cran()
 
 test_that("SMC recovers Gaussian-Gaussian posterior moments and log Z (1-D)", {
+  load_cpp_fixture("smc")
   mu_t <- 2.5
   sigma_t <- 1.0
   truth <- gauss_gauss_truth(mu_t, sigma_t)
@@ -43,6 +44,7 @@ test_that("SMC recovers Gaussian-Gaussian posterior moments and log Z (1-D)", {
 })
 
 test_that("SMC recovers a 3-D Gaussian-Gaussian posterior", {
+  load_cpp_fixture("smc")
   mu_t    <- c(-1, 0, 2)
   sigma_t <- c(0.8, 1.2, 0.6)
   truth <- gauss_gauss_truth(mu_t, sigma_t)
@@ -56,6 +58,7 @@ test_that("SMC recovers a 3-D Gaussian-Gaussian posterior", {
 })
 
 test_that("SMC diagnostic invariants hold", {
+  load_cpp_fixture("smc")
   res <- cpp_smc_test(mu_target = c(1, -1), sigma_target = c(1, 1),
                       n_particles = 500, n_mcmc_steps = 4, seed = 3L)
 
@@ -79,6 +82,7 @@ test_that("SMC diagnostic invariants hold", {
 })
 
 test_that("Different seeds give different particle realisations", {
+  load_cpp_fixture("smc")
   a <- cpp_smc_test(mu_target = 1.0, sigma_target = 1.0,
                     n_particles = 200, n_mcmc_steps = 3, seed = 11L)
   b <- cpp_smc_test(mu_target = 1.0, sigma_target = 1.0,
@@ -88,6 +92,7 @@ test_that("Different seeds give different particle realisations", {
 })
 
 test_that("Identical seeds give identical results (deterministic)", {
+  load_cpp_fixture("smc")
   a <- cpp_smc_test(mu_target = c(0, 1), sigma_target = c(1, 1),
                     n_particles = 200, n_mcmc_steps = 3, seed = 7L)
   b <- cpp_smc_test(mu_target = c(0, 1), sigma_target = c(1, 1),

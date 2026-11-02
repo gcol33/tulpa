@@ -42,6 +42,7 @@ test_that("inside the stationary floor the rho gradient is the floored density's
   # derivative of the density that was EVALUATED, so both stationary terms drop
   # out there rather than continuing smoothly -- the same convention
   # var_floor_slope() carries for the NNGP conditional variance.
+  load_cpp_fixture("temporal_grad_equiv")
   set.seed(589)
   w <- rnorm(9)
   to_rho <- function(l) 2 * stats::plogis(l) - 1
@@ -66,6 +67,7 @@ skip_on_cran_budget()
 
 test_that("the temporal gradients match numerical derivatives of their priors", {
   skip_on_cran_budget()
+  load_cpp_fixture("temporal_grad_equiv")
   set.seed(22)
   n <- 8L; sigma2 <- 1.7; rho <- 0.6
   tau <- 1 / sigma2
@@ -92,6 +94,7 @@ test_that("degenerate lengths are flat rather than out of bounds", {
   skip_on_cran_budget()
   # rw1_grad_w read w[1] at n = 1; rw2_grad_w wrote d[1] into an n-sized buffer.
   # Both now return a zero gradient, matching the sigma2 copies' guards.
+  load_cpp_fixture("temporal_grad_equiv")
   for (n in c(1L, 2L)) {
     g <- cpp_test_temporal_grad_equiv(rnorm(n), 1.0, 0.5)
     expect_equal(g$rw2_tau, rep(0, n), info = paste("n:", n))
@@ -106,6 +109,7 @@ test_that("degenerate lengths are flat rather than out of bounds", {
 test_that("the AR1 rho gradient stays finite at the stationarity boundary", {
   skip_on_cran_budget()
   # -rho / (1 - rho^2) diverges as rho -> +-1; the tau copy had no guard.
+  load_cpp_fixture("temporal_grad_equiv")
   for (rho in c(-0.999999999, 0.999999999, -1, 1)) {
     g <- cpp_test_temporal_grad_equiv(rnorm(6), 1.0, rho)
     expect_true(is.finite(g$rho_tau), info = paste("rho:", rho))
@@ -119,6 +123,7 @@ test_that("augmenting moves the intrinsic arms and leaves the stationary ones", 
   # pass in both states and say nothing. RW1 / cyclic RW1 / RW2 are augmented by
   # the production density; AR1 and IID are not intrinsic and have no augmented
   # form, so they must be untouched by the flag.
+  load_cpp_fixture("temporal_grad_equiv")
   set.seed(588)
   w <- rnorm(9)
   off <- cpp_test_temporal_grad_equiv(w, 1.3, 0.6, FALSE)
@@ -142,6 +147,7 @@ test_that("the AR1 logit-rho gradient differentiates the AR1 density", {
   # rho = 2 * plogis(logit_rho) - 1 is the map the sampler carries, so the
   # reported gradient is on logit_rho and the finite difference has to be taken
   # there too.
+  load_cpp_fixture("temporal_grad_equiv")
   set.seed(24)
   w <- rnorm(9)
   to_rho <- function(l) 2 * plogis(l) - 1
@@ -162,6 +168,7 @@ test_that("the stationary-factor slope is the exact derivative on both sides", {
   skip_on_cran_budget()
   # The helper is what makes the value and the gradient one function, so it is
   # checked against a central difference of ar1_one_minus_rho2 itself.
+  load_cpp_fixture("temporal_grad_equiv")
   for (rho in c(-0.9, -0.3, 0, 0.5, 0.9999)) {
     h <- 1e-7
     fd <- ((1 - (rho + h)^2) - (1 - (rho - h)^2)) / (2 * h)
@@ -182,6 +189,7 @@ test_that("the sigma2 wrappers equal the canonical tau kernels", {
   # two parameterizations of one kernel rather than a wrapper compared against
   # its own internal arithmetic. A conversion that reproduced whatever the
   # wrapper does internally would make this pass for any wrapper.
+  load_cpp_fixture("temporal_grad_equiv")
   set.seed(21)
   for (n in c(3L, 5L, 12L)) {
     for (sigma2 in c(0.25, 1.0, 4.0)) {
@@ -206,6 +214,7 @@ test_that("the sigma2 wrappers equal the canonical tau kernels", {
 # constant, or normalized at the unaugmented rank, fails on that arm alone.
 test_that("each multiscale value function is differentiated by its own gradient", {
   skip_on_cran()
+  load_cpp_fixture("temporal_grad_equiv")
   set.seed(23)
   rho <- 0.6
   val <- function(field, w, sigma2, aug) {

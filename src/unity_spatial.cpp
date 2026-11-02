@@ -13,7 +13,6 @@
 #include "hsgp_basis.cpp"
 #include "msgp_nc_apply.cpp"
 #include "nngp_nc_term_apply.cpp"
-#include "nngp_twin_export.cpp"
 #include "spde_field_se.cpp"
 #include "spde_laplace.cpp"
 #include "spde_nc_apply.cpp"

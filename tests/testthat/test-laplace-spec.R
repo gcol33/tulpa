@@ -1,5 +1,6 @@
 
 test_that("spec-driven Laplace works without RE", {
+  load_cpp_fixture("laplace_spec_harness")
   set.seed(7L)
   N <- 100L
   p <- 2L
@@ -21,7 +22,7 @@ test_that("spec-driven Laplace works without RE", {
     n_threads = 1L
   )
 
-  spec <- tulpa:::cpp_laplace_spec_test_gaussian(
+  spec <- cpp_laplace_spec_test_gaussian(
     y           = y,
     X           = X,
     re_idx      = integer(0),
@@ -46,6 +47,7 @@ test_that("spec-driven Laplace handles n_processes == 2 with shared iid RE", {
   #   X2' (y2 - X2 beta_2 - u_idx) / phi2^2 - tau_beta * beta_2 = 0
   #   sum_{i: idx == g} ((y1 - eta1)/phi1^2 + (y2 - eta2)/phi2^2) - tau_re u_g = 0
   # This is a linear system; solve it directly in R as the reference.
+  load_cpp_fixture("laplace_spec_harness")
   set.seed(123L)
   N <- 150L
   p1 <- 2L
@@ -68,7 +70,7 @@ test_that("spec-driven Laplace handles n_processes == 2 with shared iid RE", {
   y1 <- eta1 + rnorm(N, sd = phi1)
   y2 <- eta2 + rnorm(N, sd = phi2)
 
-  spec <- tulpa:::cpp_laplace_spec_test_gaussian2p(
+  spec <- cpp_laplace_spec_test_gaussian2p(
     y1 = y1, y2 = y2, X1 = X1, X2 = X2,
     offset1 = numeric(0), offset2 = numeric(0),
     re_idx = re_idx, n_re_groups = n_re_groups,
@@ -186,6 +188,7 @@ skip_on_cran_budget()
 
 test_that("custom Gaussian spec matches the built-in family path for Gaussian + iid RE", {
   skip_on_cran_budget()
+  load_cpp_fixture("laplace_spec_harness")
   set.seed(42L)
   N <- 200L
   p <- 3L
@@ -219,7 +222,7 @@ test_that("custom Gaussian spec matches the built-in family path for Gaussian + 
 
   # Spec-driven Laplace via the new shim. Use sigma_beta = 100 so
   # tau_beta = 1e-4 matches the reference's hardcoded prior precision.
-  spec <- tulpa:::cpp_laplace_spec_test_gaussian(
+  spec <- cpp_laplace_spec_test_gaussian(
     y           = y,
     X           = X,
     re_idx      = re_idx,
@@ -243,6 +246,7 @@ test_that("custom Gaussian spec matches the built-in family path for Gaussian + 
 
 test_that("spec-driven Laplace handles two crossed intercept-only terms (1|g1)+(1|g2)", {
   skip_on_cran_budget()
+  load_cpp_fixture("laplace_spec_harness")
   set.seed(202605L)
   N <- 200L
   p <- 3L
@@ -267,7 +271,7 @@ test_that("spec-driven Laplace handles two crossed intercept-only terms (1|g1)+(
     list(group_idx = g2, n_groups = G2, n_coefs = 1L,
          sigma = sigma2, correlated = FALSE)
   )
-  spec <- tulpa:::cpp_laplace_spec_test_multi_re(
+  spec <- cpp_laplace_spec_test_multi_re(
     y = y, X = X, re_terms = re_terms,
     sigma_beta = sigma_beta, phi = phi,
     max_iter = 200L, tol = 1e-12, n_threads = 1L
@@ -298,6 +302,7 @@ test_that("spec-driven Laplace handles two crossed intercept-only terms (1|g1)+(
 
 test_that("spec-driven Laplace handles uncorrelated random slope (x||g)", {
   skip_on_cran_budget()
+  load_cpp_fixture("laplace_spec_harness")
   set.seed(202606L)
   N <- 200L
   p <- 2L
@@ -322,7 +327,7 @@ test_that("spec-driven Laplace handles uncorrelated random slope (x||g)", {
          sigma = c(sigma_int, sigma_slope), correlated = FALSE,
          slope_mat = matrix(x_slope, ncol = 1L))
   )
-  spec <- tulpa:::cpp_laplace_spec_test_multi_re(
+  spec <- cpp_laplace_spec_test_multi_re(
     y = y, X = X, re_terms = re_terms,
     sigma_beta = sigma_beta, phi = phi,
     max_iter = 200L, tol = 1e-12, n_threads = 1L
@@ -353,6 +358,7 @@ test_that("spec-driven Laplace handles uncorrelated random slope (x||g)", {
 
 test_that("spec-driven Laplace handles correlated random slope (x|g)", {
   skip_on_cran_budget()
+  load_cpp_fixture("laplace_spec_harness")
   set.seed(202607L)
   N <- 200L
   p <- 2L
@@ -389,7 +395,7 @@ test_that("spec-driven Laplace handles correlated random slope (x|g)", {
          slope_mat = matrix(x_slope, ncol = 1L),
          chol_raw = raw)
   )
-  spec <- tulpa:::cpp_laplace_spec_test_multi_re(
+  spec <- cpp_laplace_spec_test_multi_re(
     y = y, X = X, re_terms = re_terms,
     sigma_beta = sigma_beta, phi = phi,
     max_iter = 200L, tol = 1e-12, n_threads = 1L
@@ -422,6 +428,7 @@ test_that("spec-driven Laplace honours per-process offsets", {
   # mode by -c (when intercept is the only spanned term that can absorb it).
   # Here we add a small offset to process 1 only, no RE, no shared structure;
   # the closed-form mode follows directly from the OLS fit on (y - offset).
+  load_cpp_fixture("laplace_spec_harness")
   set.seed(99L)
   N <- 100L
   X1 <- cbind(1, rnorm(N))
@@ -436,7 +443,7 @@ test_that("spec-driven Laplace honours per-process offsets", {
   y1 <- as.numeric(X1 %*% beta1_true) + off + rnorm(N, sd = phi1)
   y2 <- as.numeric(X2 %*% beta2_true) + rnorm(N, sd = phi2)
 
-  spec <- tulpa:::cpp_laplace_spec_test_gaussian2p(
+  spec <- cpp_laplace_spec_test_gaussian2p(
     y1 = y1, y2 = y2, X1 = X1, X2 = X2,
     offset1 = off, offset2 = numeric(0),
     re_idx = integer(0), n_re_groups = 0L,

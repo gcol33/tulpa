@@ -229,22 +229,23 @@ test_that("an unparseable densify cutoff leaves the default in place", {
   # the suite can see which one a setting selected. 0 is a MEANINGFUL setting
   # here (always fold to the rank-1 path), which is what makes an atoi()-style
   # read dangerous: every unparseable string maps to it.
+  load_cpp_fixture("s2z_densify")
   old <- Sys.getenv("TULPA_S2Z_DENSIFY_MAX", unset = NA)
   on.exit(if (is.na(old)) Sys.unsetenv("TULPA_S2Z_DENSIFY_MAX")
           else Sys.setenv(TULPA_S2Z_DENSIFY_MAX = old), add = TRUE)
 
   Sys.unsetenv("TULPA_S2Z_DENSIFY_MAX")
-  default <- tulpa:::cpp_s2z_densify_max()
+  default <- cpp_s2z_densify_max()
   expect_gt(default, 0L)
 
   Sys.setenv(TULPA_S2Z_DENSIFY_MAX = "0")
-  expect_identical(tulpa:::cpp_s2z_densify_max(), 0L)
+  expect_identical(cpp_s2z_densify_max(), 0L)
   Sys.setenv(TULPA_S2Z_DENSIFY_MAX = "512")
-  expect_identical(tulpa:::cpp_s2z_densify_max(), 512L)
+  expect_identical(cpp_s2z_densify_max(), 512L)
 
   for (bad in c("ture", "256a", "1e3", " ", "-1", "99999999999999999999")) {
     Sys.setenv(TULPA_S2Z_DENSIFY_MAX = bad)
-    expect_identical(tulpa:::cpp_s2z_densify_max(), default, info = bad)
+    expect_identical(cpp_s2z_densify_max(), default, info = bad)
   }
 })
 

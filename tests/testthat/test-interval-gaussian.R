@@ -24,7 +24,8 @@
 test_that("an empty interval is refused rather than floored", {
     # upper <= lower carries no mass: -Inf is what the line search backtracks
     # off, where a floored finite value would be accepted as a trial point.
-    out <- tulpa:::cpp_interval_gaussian_terms(1.0, 1.0, 0.0, 1.0)
+    load_cpp_fixture("interval_gaussian")
+    out <- cpp_interval_gaussian_terms(1.0, 1.0, 0.0, 1.0)
     expect_equal(out[["ll"]], -Inf)
     expect_equal(out[["grad"]], 0)
 })
@@ -35,7 +36,8 @@ test_that("a finite bound far from eta stays finite (no Inf * 0 = NaN)", {
     skip_on_cran_budget()
     # zl/zu overflow while the density underflows: the z * phi(z) product must
     # take its analytic 0 limit rather than NaN.
-    out <- tulpa:::cpp_interval_gaussian_terms(8.0, 9.0, 0.0, 0.3)
+    load_cpp_fixture("interval_gaussian")
+    out <- cpp_interval_gaussian_terms(8.0, 9.0, 0.0, 0.3)
     expect_true(is.finite(out[["ll"]]))
     expect_true(is.finite(out[["grad"]]))
     expect_true(is.finite(out[["neg_hess"]]) && out[["neg_hess"]] >= 0)
@@ -49,12 +51,13 @@ test_that("an interval far below eta keeps a gradient pointing back to it", {
     # curvature -- a plateau of the floor. The line search accepts a finite
     # objective and newton_converged reads max|grad| == 0 as a mode, so a solve
     # that wandered out here reported convergence at a point that is not one.
+    load_cpp_fixture("interval_gaussian")
     sg  <- 0.4
     eta <- 0.0
     for (mult in c(20, 38, 50, 120, 400)) {
         lo <- eta + mult * sg
         hi <- lo + sg
-        out <- tulpa:::cpp_interval_gaussian_terms(lo, hi, eta, sg)
+        out <- cpp_interval_gaussian_terms(lo, hi, eta, sg)
 
         expect_true(is.finite(out[["ll"]]), info = paste("mult", mult))
         expect_lt(out[["ll"]], -100)
@@ -66,7 +69,7 @@ test_that("an interval far below eta keeps a gradient pointing back to it", {
     }
 
     # Mirror image below eta: the gradient turns around.
-    below <- tulpa:::cpp_interval_gaussian_terms(-50 * sg - sg, -50 * sg, 0, sg)
+    below <- cpp_interval_gaussian_terms(-50 * sg - sg, -50 * sg, 0, sg)
     expect_lt(below[["grad"]], 0)
     expect_true(is.finite(below[["ll"]]))
 })
@@ -77,10 +80,11 @@ test_that("the deep-tail gradient matches the one-sided Mills ratio", {
     # d logP / d eta -> (edge - eta) / sigma^2 to leading order. That is an
     # independent reference for a regime where a finite difference of the R
     # log-mass cannot be formed (both pnorm values underflow to 0).
+    load_cpp_fixture("interval_gaussian")
     sg <- 0.5; eta <- 0.0
     for (mult in c(45, 60, 100)) {
         lo <- mult * sg
-        out <- tulpa:::cpp_interval_gaussian_terms(lo, lo + 1e-3 * sg, eta, sg)
+        out <- cpp_interval_gaussian_terms(lo, lo + 1e-3 * sg, eta, sg)
         expect_equal(out[["grad"]], (lo - eta) / sg^2, tolerance = 1e-2,
                      info = paste("mult", mult))
         # log P ~ log(width) + log phi(z) for a narrow interval.
@@ -95,6 +99,7 @@ skip_on_cran()
 
 test_that("analytic grad / neg_hess match central differences (finite interval)", {
     skip_on_cran()
+    load_cpp_fixture("interval_gaussian")
     h <- 1e-5
     ax <- list(eta = c(-2.0, -0.5, 0.3, 1.4), sigma = c(0.4, 0.85, 1.6))
     # CRAN reads eta and sigma at their two ends, every band; the dev loop reads
@@ -106,7 +111,7 @@ test_that("analytic grad / neg_hess match central differences (finite interval)"
     for (r in seq_len(nrow(grid))) {
         b   <- bounds[[as.character(grid$band[r])]]
         eta <- grid$eta[r]; sg <- grid$sigma[r]
-        out <- tulpa:::cpp_interval_gaussian_terms(b[1], b[2], eta, sg)
+        out <- cpp_interval_gaussian_terms(b[1], b[2], eta, sg)
 
         expect_equal(out[["ll"]], .ig_ll_R(b[1], b[2], eta, sg), tolerance = 1e-10)
 
@@ -124,11 +129,12 @@ test_that("analytic grad / neg_hess match central differences (finite interval)"
 
 test_that("open outer classes (+/-Inf bounds) match a one-sided tail", {
     skip_on_cran()
+    load_cpp_fixture("interval_gaussian")
     h <- 1e-5
     for (eta in c(-1.0, 0.0, 1.2)) for (sg in c(0.5, 1.3)) {
         # Lowest class: (-Inf, b] -> P = Phi((b - eta)/sigma).
         b   <- 0.4
-        lo  <- tulpa:::cpp_interval_gaussian_terms(-Inf, b, eta, sg)
+        lo  <- cpp_interval_gaussian_terms(-Inf, b, eta, sg)
         expect_equal(lo[["ll"]], stats::pnorm((b - eta) / sg, log.p = TRUE),
                      tolerance = 1e-10)
         g_fd <- (stats::pnorm((b - eta - h) / sg, log.p = TRUE) -
@@ -138,7 +144,7 @@ test_that("open outer classes (+/-Inf bounds) match a one-sided tail", {
 
         # Highest class: (a, +Inf) -> P = 1 - Phi((a - eta)/sigma).
         a  <- -0.3
-        hi <- tulpa:::cpp_interval_gaussian_terms(a, Inf, eta, sg)
+        hi <- cpp_interval_gaussian_terms(a, Inf, eta, sg)
         expect_equal(hi[["ll"]],
                      stats::pnorm((a - eta) / sg, lower.tail = FALSE, log.p = TRUE),
                      tolerance = 1e-10)
@@ -146,7 +152,7 @@ test_that("open outer classes (+/-Inf bounds) match a one-sided tail", {
     }
 
     # Fully open (-Inf, +Inf) is the whole line: P = 1, flat in eta.
-    full <- tulpa:::cpp_interval_gaussian_terms(-Inf, Inf, 0.7, 0.9)
+    full <- cpp_interval_gaussian_terms(-Inf, Inf, 0.7, 0.9)
     expect_equal(full[["ll"]], 0)
     expect_equal(full[["grad"]], 0)
 })

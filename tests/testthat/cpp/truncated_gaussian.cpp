@@ -1,4 +1,4 @@
-// truncated_gaussian_export.cpp
+// truncated_gaussian.cpp
 // Internal Rcpp entry exposing the upper-truncated Gaussian (upper-truncated
 // lognormal on the natural scale) per-observation kernel for unit / FD-gradient
 // tests. Not user-facing; the family is consumed through

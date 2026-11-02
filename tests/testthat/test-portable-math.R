@@ -8,7 +8,8 @@
 # over the argument ranges the families reach.
 
 .pm <- function(fn, x, y = numeric(0)) {
-    tulpa:::cpp_portable_math(fn, as.numeric(x), as.numeric(y))
+    load_cpp_fixture("portable_math")
+    cpp_portable_math(fn, as.numeric(x), as.numeric(y))
 }
 
 # Relative agreement, with an absolute floor for values near zero.

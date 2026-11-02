@@ -1,4 +1,4 @@
-// portable_math_export.cpp
+// portable_math.cpp
 // Internal Rcpp entry exposing the thread-safe replacements in
 // tulpa/portable_math.h so their agreement with R's own Rmath routines is
 // checkable rather than assumed. Every one of these is evaluated on OpenMP

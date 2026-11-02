@@ -1,4 +1,4 @@
-// sobol_export.cpp
+// sobol.cpp
 // R entry point for the native Sobol' generator in sobol.h.
 #include "sobol.h"
 #include <Rcpp.h>

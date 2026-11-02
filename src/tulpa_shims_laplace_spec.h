@@ -10,29 +10,7 @@
 // definitions of each and fails at link time.
 
 #include "shim_guard.h"
-
-namespace tulpa {
-
-// Forward declaration: the GMRF-block parameters below are pointer-only at
-// this declaration, so an incomplete type suffices (full definition in
-// latent_block.h, pulled in by the .cpp that drives the nested kernel).
-struct LatentBlock;
-
-void laplace_mode_spec_dense_impl(
-    const ModelData& data,
-    const ParamLayout& layout,
-    std::vector<double>& params_inout,
-    const std::vector<int>& re_group_1based,
-    int max_iter, double tol, int n_threads,
-    int* n_iter_out,
-    int* converged_out,
-    double* log_det_Q_out,
-    double* log_marginal_out,
-    const std::vector<LatentBlock>* blocks = nullptr,
-    int k_grid = 0
-);
-
-} // namespace tulpa
+#include "laplace_spec_solve.h"   // laplace_mode_spec_dense_impl
 
 extern "C" void tulpa_laplace_spec_dense_impl(
     const tulpa::ModelData* data,

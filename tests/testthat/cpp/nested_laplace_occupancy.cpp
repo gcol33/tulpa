@@ -1,4 +1,4 @@
-// nested_laplace_test_occupancy.cpp
+// nested_laplace_occupancy.cpp
 // Reference scaled-Bernoulli occupancy LikelihoodSpec for the nested-Laplace
 // spec path. This is the in-package equivalence net for the spec-driven
 // likelihood path AND the template a model package (tulpaObs) copies into its own

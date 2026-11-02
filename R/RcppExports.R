@@ -61,14 +61,6 @@ cpp_cornish_fisher_bands <- function(gamma3, gamma1, max_abs_gamma3, max_abs_cen
     .Call(`_tulpa_cpp_cornish_fisher_bands`, gamma3, gamma1, max_abs_gamma3, max_abs_centre)
 }
 
-cpp_test_compute_cov <- function(d, sigma2, phi, cov_type) {
-    .Call(`_tulpa_cpp_test_compute_cov`, d, sigma2, phi, cov_type)
-}
-
-cpp_test_dcov_dphi <- function(d, sigma2, phi, cov_type) {
-    .Call(`_tulpa_cpp_test_dcov_dphi`, d, sigma2, phi, cov_type)
-}
-
 cpp_gp_cov_value <- function(d, sigma2, phi, cov_type) {
     .Call(`_tulpa_cpp_gp_cov_value`, d, sigma2, phi, cov_type)
 }
@@ -193,10 +185,6 @@ cpp_glmm_elt_terms <- function(family, eta, y, n_trials, phi) {
     .Call(`_tulpa_cpp_glmm_elt_terms`, family, eta, y, n_trials, phi)
 }
 
-cpp_test_laplace_gaussian <- function(y, eta, phi) {
-    .Call(`_tulpa_cpp_test_laplace_gaussian`, y, eta, phi)
-}
-
 cpp_link_ladder <- function(eta, link) {
     .Call(`_tulpa_cpp_link_ladder`, eta, link)
 }
@@ -265,10 +253,6 @@ cpp_spde_laplace_gradient <- function(y, n_trials, X, A_x, A_i, A_p, n_obs, n_me
     .Call(`_tulpa_cpp_spde_laplace_gradient`, y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, log_range, log_sigma, nu, family, phi, max_iter, tol, n_threads, x_init_nullable)
 }
 
-cpp_interval_gaussian_terms <- function(lower, upper, eta, sigma) {
-    .Call(`_tulpa_cpp_interval_gaussian_terms`, lower, upper, eta, sigma)
-}
-
 cpp_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_joint_inner_vcov_blocks`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads)
 }
@@ -323,42 +307,6 @@ cpp_profile_reset <- function() {
 
 cpp_profile_read <- function() {
     .Call(`_tulpa_cpp_profile_read`)
-}
-
-cpp_s2z_densify_max <- function() {
-    .Call(`_tulpa_cpp_s2z_densify_max`)
-}
-
-cpp_laplace_spec_test_gaussian <- function(y, X, re_idx, n_re_groups, sigma_re, sigma_beta, phi, max_iter = 100L, tol = 1e-8, n_threads = 1L) {
-    .Call(`_tulpa_cpp_laplace_spec_test_gaussian`, y, X, re_idx, n_re_groups, sigma_re, sigma_beta, phi, max_iter, tol, n_threads)
-}
-
-cpp_laplace_spec_test_gaussian2p <- function(y1, y2, X1, X2, offset1, offset2, re_idx, n_re_groups, sigma_re, sigma_beta, phi1, phi2, re_into_proc0 = TRUE, re_into_proc1 = TRUE, max_iter = 100L, tol = 1e-10, n_threads = 1L, sparse_override = 0L) {
-    .Call(`_tulpa_cpp_laplace_spec_test_gaussian2p`, y1, y2, X1, X2, offset1, offset2, re_idx, n_re_groups, sigma_re, sigma_beta, phi1, phi2, re_into_proc0, re_into_proc1, max_iter, tol, n_threads, sparse_override)
-}
-
-cpp_laplace_spec_test_multi_re <- function(y, X, re_terms, sigma_beta, phi, max_iter = 200L, tol = 1e-12, n_threads = 1L, sparse_override = 0L, store_Q = FALSE, return_re_cov = FALSE) {
-    .Call(`_tulpa_cpp_laplace_spec_test_multi_re`, y, X, re_terms, sigma_beta, phi, max_iter, tol, n_threads, sparse_override, store_Q, return_re_cov)
-}
-
-cpp_test_tri_solve <- function(Lbuf, n, b, layout, transpose) {
-    .Call(`_tulpa_cpp_test_tri_solve`, Lbuf, n, b, layout, transpose)
-}
-
-cpp_test_chol_factor <- function(Abuf, n, layout) {
-    .Call(`_tulpa_cpp_test_chol_factor`, Abuf, n, layout)
-}
-
-cpp_test_nngp_moments <- function(Lbuf, n, c_vec, w_nb, sigma2, var_floor, layout) {
-    .Call(`_tulpa_cpp_test_nngp_moments`, Lbuf, n, c_vec, w_nb, sigma2, var_floor, layout)
-}
-
-cpp_test_nngp_cond_cores <- function(Cbuf, n, c_vec, w_nb, sigma2, jitter, var_floor) {
-    .Call(`_tulpa_cpp_test_nngp_cond_cores`, Cbuf, n, c_vec, w_nb, sigma2, jitter, var_floor)
-}
-
-cpp_mclmc_test <- function(mu_target, sigma_target, init, n_iter = 2000L, n_warmup = 1000L, seed = 42L, adjusted = FALSE) {
-    .Call(`_tulpa_cpp_mclmc_test`, mu_target, sigma_target, init, n_iter, n_warmup, seed, adjusted)
 }
 
 cpp_multinomial_logit_terms <- function(eta, cls) {
@@ -441,60 +389,8 @@ cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blo
     .Call(`_tulpa_cpp_nested_laplace_multi`, y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood, progress, progress_every, progress_throttle, progress_file, checkpoint_path, compute_skew, skew_idx, debias, cila, offset_nullable, screen_log_offset, beta_prior)
 }
 
-cpp_nested_laplace_test_occupancy_likelihood <- function(y, det_prob) {
-    .Call(`_tulpa_cpp_nested_laplace_test_occupancy_likelihood`, y, det_prob)
-}
-
-cpp_test_nl_field_seed <- function(kind, tag, n_spatial_units, scale_factor, adj_row_ptr, adj_col_idx, n_spatial, nn, cov_type, coords, nn_idx, spatial_idx, M, phi_basis, lambda_eig, temporal_type, n_times, cyclic, temporal_idx, n_groups, with_groups) {
-    .Call(`_tulpa_cpp_test_nl_field_seed`, kind, tag, n_spatial_units, scale_factor, adj_row_ptr, adj_col_idx, n_spatial, nn, cov_type, coords, nn_idx, spatial_idx, M, phi_basis, lambda_eig, temporal_type, n_times, cyclic, temporal_idx, n_groups, with_groups)
-}
-
 cpp_nl_lq_group_cdf <- function(is_lq, u, lg, d1, d2, lt, lo_b, hi_b, lo, hi, x) {
     .Call(`_tulpa_cpp_nl_lq_group_cdf`, is_lq, u, lg, d1, d2, lt, lo_b, hi_b, lo, hi, x)
-}
-
-cpp_test_gp_nngp_twins <- function(w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type) {
-    .Call(`_tulpa_cpp_test_gp_nngp_twins`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type)
-}
-
-cpp_test_nngp_nc_grad <- function(z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, fd_eps = 1e-6) {
-    .Call(`_tulpa_cpp_test_nngp_nc_grad`, z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, fd_eps)
-}
-
-cpp_test_svc_nngp_twins <- function(w, sigma2, phi, coords, nn_idx, nn_dist, nn_order, cov_type) {
-    .Call(`_tulpa_cpp_test_svc_nngp_twins`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_order, cov_type)
-}
-
-cpp_test_svc_nngp_nc_grad <- function(z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_order, nn_order_inv, cov_type, fd_eps = 1e-6) {
-    .Call(`_tulpa_cpp_test_svc_nngp_nc_grad`, z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_order, nn_order_inv, cov_type, fd_eps)
-}
-
-cpp_test_msgp_nngp_nc_grad <- function(z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, scale, fd_eps = 1e-6) {
-    .Call(`_tulpa_cpp_test_msgp_nngp_nc_grad`, z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, scale, fd_eps)
-}
-
-cpp_test_log_prior_log_sigma2_half_cauchy <- function(log_sigma2, scale) {
-    .Call(`_tulpa_cpp_test_log_prior_log_sigma2_half_cauchy`, log_sigma2, scale)
-}
-
-cpp_test_log_prior_range_pc <- function(range, U, alpha) {
-    .Call(`_tulpa_cpp_test_log_prior_range_pc`, range, U, alpha)
-}
-
-cpp_test_log_prior_range_pc_at_log <- function(log_range, U, alpha) {
-    .Call(`_tulpa_cpp_test_log_prior_range_pc_at_log`, log_range, U, alpha)
-}
-
-cpp_test_bounded_from_logit <- function(u, lower, upper) {
-    .Call(`_tulpa_cpp_test_bounded_from_logit`, u, lower, upper)
-}
-
-cpp_test_log_jacobian_bounded <- function(phi, lower, upper) {
-    .Call(`_tulpa_cpp_test_log_jacobian_bounded`, phi, lower, upper)
-}
-
-cpp_test_gp_layout_anchor_check <- function(U, alpha) {
-    invisible(.Call(`_tulpa_cpp_test_gp_layout_anchor_check`, U, alpha))
 }
 
 cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
@@ -529,10 +425,6 @@ cpp_pg_binomial_gibbs_temporal <- function(y, n, X, re_group, n_re_groups, time_
     .Call(`_tulpa_cpp_pg_binomial_gibbs_temporal`, y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_trend_scale, prior_sigma_seasonal_scale, prior_sigma_short_scale, rho_short_init, store_eta, verbose, n_threads)
 }
 
-cpp_test_negbin_loglik_eta <- function(y, eta, r) {
-    .Call(`_tulpa_cpp_test_negbin_loglik_eta`, y, eta, r)
-}
-
 cpp_pg_negbin_gibbs <- function(y, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, prior_r_shape, prior_r_rate, r_init, store_eta, verbose, n_threads) {
     .Call(`_tulpa_cpp_pg_negbin_gibbs`, y, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, prior_r_shape, prior_r_rate, r_init, store_eta, verbose, n_threads)
 }
@@ -551,10 +443,6 @@ cpp_rpg <- function(b, z) {
 
 cpp_rpg_real <- function(b, z) {
     .Call(`_tulpa_cpp_rpg_real`, b, z)
-}
-
-cpp_portable_math <- function(fn, x, y) {
-    .Call(`_tulpa_cpp_portable_math`, fn, x, y)
 }
 
 cpp_tulpa_psis <- function(log_ratios, tail_len) {
@@ -589,18 +477,6 @@ tulpa_get_integrator_cpp <- function() {
     .Call(`_tulpa_tulpa_get_integrator_cpp`)
 }
 
-cpp_smc_test <- function(mu_target, sigma_target, n_particles = 500L, n_mcmc_steps = 5L, seed = 42L, bridge_end = 1.0) {
-    .Call(`_tulpa_cpp_smc_test`, mu_target, sigma_target, n_particles, n_mcmc_steps, seed, bridge_end)
-}
-
-cpp_sobol_points <- function(n, d) {
-    .Call(`_tulpa_cpp_sobol_points`, n, d)
-}
-
-cpp_sobol_max_dim <- function() {
-    .Call(`_tulpa_cpp_sobol_max_dim`)
-}
-
 cpp_selected_inversion_diagonal <- function(Q_x, Q_i, Q_p, n) {
     .Call(`_tulpa_cpp_selected_inversion_diagonal`, Q_x, Q_i, Q_p, n)
 }
@@ -625,14 +501,6 @@ cpp_stochastic_log_determinant <- function(Q_x, Q_i, Q_p, n, n_probes = 30L, n_l
     .Call(`_tulpa_cpp_stochastic_log_determinant`, Q_x, Q_i, Q_p, n, n_probes, n_lanczos, seed)
 }
 
-cpp_test_temporal_grad_equiv <- function(w, sigma2, rho, augment = FALSE) {
-    .Call(`_tulpa_cpp_test_temporal_grad_equiv`, w, sigma2, rho, augment)
-}
-
-cpp_test_ar1_omr2_slope <- function(rho) {
-    .Call(`_tulpa_cpp_test_ar1_omr2_slope`, rho)
-}
-
 cpp_tgmrf_nuts_joint <- function(y, n_trials, X, obs_idx, family, phi, cpp_id, theta_dim, n_latent, beta_init, z_init, theta_init, M_inv_diag, epsilon0, n_iter, n_warmup, max_depth, target_accept, fd_step, verbose, seed, debug_gradient_check, gradient_check_tol, fd_check_step) {
     .Call(`_tulpa_cpp_tgmrf_nuts_joint`, y, n_trials, X, obs_idx, family, phi, cpp_id, theta_dim, n_latent, beta_init, z_init, theta_init, M_inv_diag, epsilon0, n_iter, n_warmup, max_depth, target_accept, fd_step, verbose, seed, debug_gradient_check, gradient_check_tol, fd_check_step)
 }
@@ -651,10 +519,6 @@ cpp_tgmrf_eval <- function(id, theta) {
 
 cpp_tgmrf_eval_mu <- function(id, theta) {
     .Call(`_tulpa_cpp_tgmrf_eval_mu`, id, theta)
-}
-
-cpp_truncated_gaussian_terms <- function(y, upper, eta, sigma) {
-    .Call(`_tulpa_cpp_truncated_gaussian_terms`, y, upper, eta, sigma)
 }
 
 cpp_tulpa_fit_beta_nuts <- function(y_r, X_r, sigma_beta = 10.0, log_phi_prior_sd = 3.0, log_phi_init = 0.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE) {
@@ -719,9 +583,5 @@ cpp_tulpa_fit_spde_nuts <- function(y_r, n_trials_r, X_r, A_x, A_i, A_p, n_obs, 
 
 cpp_varying_coef_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sigma_beta = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL, svc_coords_new = NULL, tvc_new = NULL, svc_nn = 15L) {
     .Call(`_tulpa_cpp_varying_coef_draws`, draws, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, phi2, svc_spec, tvc_spec, zi_spec, svc_coords_new, tvc_new, svc_nn)
-}
-
-cpp_vi_convergence_replay <- function(elbo, grad, tol_grad = 1e-4, tol_rel_elbo = 0.01, patience = 50L) {
-    .Call(`_tulpa_cpp_vi_convergence_replay`, elbo, grad, tol_grad, tol_rel_elbo, patience)
 }
 

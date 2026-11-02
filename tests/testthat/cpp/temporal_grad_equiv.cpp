@@ -1,4 +1,4 @@
-// temporal_grad_equiv_export.cpp
+// temporal_grad_equiv.cpp
 // Equivalence probe for the analytic temporal gradient kernels.
 //
 // The RW1 / RW2 / AR1 gradients are reachable in two parameterizations:

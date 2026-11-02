@@ -495,18 +495,6 @@ Rcpp::NumericVector cpp_glmm_elt_terms(std::string family, double eta, double y,
       Rcpp::_["neg_hess"] = -e.d2);
 }
 
-// Terms from the explicit gaussian triplet (laplace_likelihoods.cpp). `phi` is
-// the residual SD. The other triplets already have probes
-// (cpp_test_laplace_binomial / _poisson / _negbin); gaussian had none, which is
-// why its phi convention was the one nobody could see.
-// [[Rcpp::export]]
-Rcpp::NumericVector cpp_test_laplace_gaussian(double y, double eta, double phi) {
-  return Rcpp::NumericVector::create(
-      Rcpp::_["log_lik"]  = tulpa::log_lik_gaussian(y, eta, phi),
-      Rcpp::_["grad"]     = tulpa::grad_log_lik_gaussian(y, eta, phi),
-      Rcpp::_["neg_hess"] = tulpa::neg_hess_log_lik_gaussian(y, eta, phi));
-}
-
 // The link ladder itself, vectorized over eta. The mean and its first four
 // eta-derivatives all reach a gradient, and each is a place a difference of
 // two nearly-equal quantities can cancel: cloglog's mu is 1 - exp(-exp(eta)),

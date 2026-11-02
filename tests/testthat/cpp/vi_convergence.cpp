@@ -1,4 +1,4 @@
-// vi_convergence_probe.cpp
+// vi_convergence.cpp
 // Replays a given ELBO sequence, with the stochastic gradient at each
 // iteration, through the VI stopping rule (ConvergenceChecker,
 // src/vi_optimizer.h) and reports where it stops.

@@ -12,6 +12,7 @@ skip_on_cran()
 # Verify both samplers recover means/SDs of a standard 1-D Gaussian.
 test_that("unadjusted MCLMC recovers a 1-D Gaussian", {
   # Long chain to keep stochastic noise below the asserted tolerance
+  load_cpp_fixture("mclmc")
   res <- cpp_mclmc_test(mu_target = 0.0, sigma_target = 1.0,
                         init = 0.0, n_iter = 10000, n_warmup = 2000,
                         seed = 1L, adjusted = FALSE)
@@ -23,6 +24,7 @@ test_that("unadjusted MCLMC recovers a 1-D Gaussian", {
 })
 
 test_that("MAMCLMC recovers a 1-D Gaussian and acceptance is reasonable", {
+  load_cpp_fixture("mclmc")
   res <- cpp_mclmc_test(mu_target = 0.0, sigma_target = 1.0,
                         init = 0.0, n_iter = 10000, n_warmup = 2000,
                         seed = 1L, adjusted = TRUE)
@@ -34,6 +36,7 @@ test_that("MAMCLMC recovers a 1-D Gaussian and acceptance is reasonable", {
 })
 
 test_that("unadjusted MCLMC recovers a 3-D anisotropic Gaussian", {
+  load_cpp_fixture("mclmc")
   mu <- c(-1, 0, 2)
   sd <- c(0.5, 1.5, 1.0)
   res <- cpp_mclmc_test(mu_target = mu, sigma_target = sd,
@@ -44,6 +47,7 @@ test_that("unadjusted MCLMC recovers a 3-D anisotropic Gaussian", {
 })
 
 test_that("MAMCLMC recovers a 3-D anisotropic Gaussian", {
+  load_cpp_fixture("mclmc")
   mu <- c(-1, 0, 2)
   sd <- c(0.5, 1.5, 1.0)
   res <- cpp_mclmc_test(mu_target = mu, sigma_target = sd,
@@ -54,6 +58,7 @@ test_that("MAMCLMC recovers a 3-D anisotropic Gaussian", {
 })
 
 test_that("MCLMC reports gradient evaluations and structural fields sanely", {
+  load_cpp_fixture("mclmc")
   res <- cpp_mclmc_test(mu_target = 0.0, sigma_target = 1.0,
                         init = 0.0, n_iter = 500, n_warmup = 200,
                         seed = 3L, adjusted = FALSE)
@@ -65,6 +70,7 @@ test_that("MCLMC reports gradient evaluations and structural fields sanely", {
 })
 
 test_that("Identical seeds give identical results (deterministic)", {
+  load_cpp_fixture("mclmc")
   a <- cpp_mclmc_test(mu_target = 0.0, sigma_target = 1.0, init = 0.0,
                       n_iter = 200, n_warmup = 100, seed = 7L, adjusted = FALSE)
   b <- cpp_mclmc_test(mu_target = 0.0, sigma_target = 1.0, init = 0.0,
@@ -83,6 +89,7 @@ test_that("Identical seeds give identical results (deterministic)", {
 })
 
 test_that("Different seeds give different particle realisations", {
+  load_cpp_fixture("mclmc")
   a <- cpp_mclmc_test(mu_target = 0.0, sigma_target = 1.0, init = 0.0,
                       n_iter = 500, n_warmup = 200, seed = 11L, adjusted = TRUE)
   b <- cpp_mclmc_test(mu_target = 0.0, sigma_target = 1.0, init = 0.0,

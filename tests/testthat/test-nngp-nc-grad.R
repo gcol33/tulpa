@@ -40,6 +40,7 @@ skip_on_cran_budget()
 
 test_that("the SVC finite-difference reference is converged, so a disagreement is real", {
   skip_on_cran_budget()
+  load_cpp_fixture("nngp_twin")
   d <- nngp_grad_inputs()
   # The configuration the largest #584 disagreement was measured at.
   ls2 <- log(0.4); lphi <- log(0.6)
@@ -63,6 +64,7 @@ test_that("the sigma2 gradient tracks the nugget across coordinate arities", {
   # the coords-fallback pair_dist this path takes must agree with a 2-D fixture
   # whose second column is constant. Distances are unchanged, so every gradient
   # is.
+  load_cpp_fixture("nngp_twin")
   d <- nngp_grad_inputs()
   flat <- cbind(d$coords[, 1], 0)
   ni <- compute_nngp_neighbors(flat, d$nn)
@@ -92,6 +94,7 @@ skip_on_cran()
 
 test_that("nngp_nc_backward matches finite differences (z, log_sigma2, log_phi)", {
   skip_on_cran()
+  load_cpp_fixture("nngp_twin")
   d <- nngp_grad_inputs()
   for (cov_type in 0:1) {                       # exponential, matern 3/2
     for (ls2 in c(log(0.4), log(1.44))) {
@@ -123,6 +126,7 @@ test_that("nngp_nc_backward matches finite differences (z, log_sigma2, log_phi)"
 # the other branch cpp_test_nngp_nc_grad above never exercises.
 test_that("SVC nngp_nc_backward matches finite differences (coords-fallback pair_dist)", {
   skip_on_cran()
+  load_cpp_fixture("nngp_twin")
   d <- nngp_grad_inputs()
   for (cov_type in 0:1) {
     for (ls2 in c(log(0.4), log(1.44))) {
@@ -154,6 +158,7 @@ test_that("SVC nngp_nc_backward matches finite differences (coords-fallback pair
 # of pair_dist().
 test_that("multiscale-GP nngp_nc_backward matches finite differences (both scales)", {
   skip_on_cran()
+  load_cpp_fixture("nngp_twin")
   d <- nngp_grad_inputs()
   for (scale in c("local", "regional")) {
     for (ls2 in c(log(0.4), log(1.44))) {

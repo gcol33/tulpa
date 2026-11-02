@@ -8,6 +8,7 @@ nb_reference <- function(y, eta, r) {
 }
 
 test_that("the two references agree wherever dnbinom is itself finite", {
+  load_cpp_fixture("pg_negbin_loglik")
   y <- c(0L, 5L)
   r <- 3
   eta <- c(-15, 15)
@@ -17,6 +18,7 @@ test_that("the two references agree wherever dnbinom is itself finite", {
 })
 
 test_that("a length mismatch is refused", {
+  load_cpp_fixture("pg_negbin_loglik")
   expect_error(cpp_test_negbin_loglik_eta(c(1L, 2L), c(0.1), 1.0),
                "eta holds")
 })
@@ -25,6 +27,7 @@ skip_on_cran()
 
 test_that("negbin_loglik_eta matches dnbinom on the range the sampler visits", {
   skip_on_cran()
+  load_cpp_fixture("pg_negbin_loglik")
   y <- c(0L, 1L, 3L, 7L, 40L)
   for (r in c(0.5, 1, 12.5)) {
     for (e in c(-3, -1, 0, 1, 3)) {
@@ -42,6 +45,7 @@ test_that("it stays exact where mu underflows and where it overflows", {
   skip_on_cran()
   # dnbinom is itself unusable once mu = r exp(eta) overflows, so the far tail
   # is scored against the closed form the kernel claims rather than against R.
+  load_cpp_fixture("pg_negbin_loglik")
   y <- c(0L, 2L, 11L)
   r <- 2.5
   closed_form <- function(y, eta, r) {

@@ -98,6 +98,7 @@ test_that("the sampler-spec kernels refuse a coordinate matrix they cannot store
   # instead of misreading it. This is the back door the R guard above does not
   # cover, reachable with a hand-built spec.
   skip_on_cran()
+  load_cpp_fixture("nngp_twin")
   n <- 6L
   co1 <- matrix(seq(0, 1, length.out = n), ncol = 1L)
   ni  <- matrix(0L, n, 2L); nd <- matrix(0, n, 2L)

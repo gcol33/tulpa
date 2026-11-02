@@ -29,6 +29,7 @@ sparse_asm_fixture <- function(seed, G1, G2, per = 3L, empty = 2L) {
 }
 
 sparse_asm_fit <- function(fx, override) {
+  load_cpp_fixture("laplace_spec_harness")
   cpp_laplace_spec_test_multi_re(
     y = fx$y, X = fx$X, re_terms = fx$terms, sigma_beta = 10, phi = 0.8,
     max_iter = 200L, tol = 1e-12, n_threads = 1L,
@@ -89,6 +90,7 @@ test_that("sparse assembly forced at a dense size agrees with the dense one", {
 
 test_that("two processes sharing a random effect assemble identically", {
   skip_on_cran_budget()
+  load_cpp_fixture("laplace_spec_harness")
   set.seed(13L)
   N <- 240L; G <- 30L
   X1 <- cbind(1, rnorm(N)); X2 <- cbind(1, rnorm(N), rnorm(N))

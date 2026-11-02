@@ -48,9 +48,10 @@ sim_occu <- function(seed, n_regions = 40L, sites_per_region = 5L,
 # Fit through the model-supplied occupancy LikelihoodSpec (the L5 path):
 # build the scaled-Bernoulli spec from (D_i, q_i) and pass it as `likelihood`.
 fit_occu <- function(d, det_prob = d$det_prob, sigma_grid = c(0.3, 0.6, 1.0)) {
+  load_cpp_fixture("nested_laplace_occupancy")
   prior <- list(list(type = "iid", obs_idx = d$region,
                      n_units = d$n_regions, sigma_grid = sigma_grid))
-  lik <- tulpa:::cpp_nested_laplace_test_occupancy_likelihood(
+  lik <- cpp_nested_laplace_test_occupancy_likelihood(
     y = as.numeric(d$y), det_prob = as.numeric(det_prob))
   suppressWarnings(tulpa_nested_laplace(
     y = d$y, n_trials = rep(1L, d$n_sites), X = d$X,

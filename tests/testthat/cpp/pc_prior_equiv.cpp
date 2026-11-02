@@ -1,4 +1,4 @@
-// pc_prior_equiv_export.cpp
+// pc_prior_equiv.cpp
 // Probes for the d = 2 PC range prior and the bounded-parameter map
 
 //

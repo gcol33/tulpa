@@ -34,6 +34,7 @@ test_that("the twins agree on a near-degenerate configuration", {
   # Duplicate coordinates drive the neighbour covariance toward singular, which
   # is where the jitter and the variance floor actually bite -- and where the
   # two copies' policies differed most.
+  load_cpp_fixture("nngp_twin")
   set.seed(9)
   N <- 12L; nn <- 4L
   coords <- cbind(rep(c(0.2, 0.5, 0.8), each = 4), rep(c(0.2, 0.5, 0.8), each = 4))
@@ -57,6 +58,7 @@ skip_on_cran()
 
 test_that("the GP NNGP autodiff kernel agrees with its double twin", {
   skip_on_cran()
+  load_cpp_fixture("nngp_twin")
   d <- nngp_inputs()
   for (cov_type in 0:1) {            # exponential, matern 3/2
     for (sigma2 in c(0.4, 1.0, 2.5)) {
@@ -81,6 +83,7 @@ test_that("the SVC NNGP autodiff kernel agrees with its double twin", {
   # double-only core the autodiff twin could not use, so the twin kept 1e-4 and
   # the two described different models. Both now read tulpa_svc::kSvcJitter /
   # kSvcVarFloor.
+  load_cpp_fixture("nngp_twin")
   d <- nngp_inputs(seed = 5L)
   for (cov_type in 0:1) {
     for (sigma2 in c(0.4, 1.0, 2.5)) {

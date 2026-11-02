@@ -17,9 +17,10 @@
 
 .nngp_cores <- function(C, c_vec, w_nb, sigma2 = 1, jitter = 0,
                         var_floor = 1e-8) {
+  load_cpp_fixture("linalg_tri_layout")
   n <- nrow(C)
   # row-major buffer: C is symmetric here, but the core is documented row-major.
-  tulpa:::cpp_test_nngp_cond_cores(as.numeric(t(C)), n, c_vec, w_nb,
+  cpp_test_nngp_cond_cores(as.numeric(t(C)), n, c_vec, w_nb,
                                    sigma2, jitter, var_floor)
 }
 

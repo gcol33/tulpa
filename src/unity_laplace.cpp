@@ -13,7 +13,6 @@
 #include "laplace_core_spatial.cpp"
 #include "laplace_likelihoods.cpp"
 #include "laplace_profile.cpp"
-#include "laplace_s2z_probe.cpp"
 #include "laplace_spatial_priors.cpp"
 #include "laplace_spec.cpp"
 #include "laplace_temporal_priors.cpp"

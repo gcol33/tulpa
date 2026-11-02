@@ -16,6 +16,7 @@ test_that("the gaussian phi-derivative carries its factor of two", {
   skip_on_cran_budget()
   # The GP copy returned cov_val*d^2/phi^3 instead of cov_val*2*d^2/phi^3, i.e.
   # exactly half. Pin the closed form so the halved version cannot come back.
+  load_cpp_fixture("cov_kernel_equiv")
   sigma2 <- 1.3; phi <- 0.9
   for (d in c(0.2, 0.6, 1.5)) {
     k <- sigma2 * exp(-(d / phi)^2)
@@ -28,6 +29,7 @@ test_that("the spherical derivative is its own, not the exponential's", {
   skip_on_cran_budget()
   # SPHERICAL fell through `default:` to the exponential derivative, so the
   # value and the gradient described different kernels.
+  load_cpp_fixture("cov_kernel_equiv")
   sigma2 <- 1.0; phi <- 1.0
   for (d in c(0.2, 0.5, 0.85)) {
     r <- d / phi
@@ -45,6 +47,7 @@ test_that("the spherical derivative is its own, not the exponential's", {
 
 test_that("the derivative vanishes at zero distance for every kernel", {
   skip_on_cran_budget()
+  load_cpp_fixture("cov_kernel_equiv")
   for (nm in names(COV)) {
     expect_equal(cpp_test_dcov_dphi(0, 1.0, 1.0, COV[[nm]]), 0, info = nm)
   }
@@ -54,6 +57,7 @@ skip_on_cran()
 
 test_that("dcov_dphi matches a numerical derivative of compute_cov", {
   skip_on_cran()
+  load_cpp_fixture("cov_kernel_equiv")
   h <- 1e-6
   s2_grid <- c(0.5, 1.0, 3.0); phi_grid <- c(0.3, 1.0, 2.5)
   d_grid <- c(0.05, 0.25, 0.7, 1.3, 3.0)
@@ -83,6 +87,7 @@ test_that("dcov_dphi matches a numerical derivative of compute_cov", {
 
 test_that("each covariance kernel matches its closed form", {
   skip_on_cran()
+  load_cpp_fixture("cov_kernel_equiv")
   sigma2 <- 2.0; phi <- 1.5
   for (d in c(0.1, 0.8, 1.4, 2.2)) {
     expect_equal(cpp_test_compute_cov(d, sigma2, phi, COV[["exponential"]]),

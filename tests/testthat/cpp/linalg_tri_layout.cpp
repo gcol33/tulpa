@@ -1,4 +1,4 @@
-// linalg_tri_layout_export.cpp
+// linalg_tri_layout.cpp
 // Probes for the layout contract of the shared small-dense Cholesky core.
 //
 // A lower-triangular factor stored column-major is the same bytes as an

@@ -16,6 +16,7 @@ stationary_grad <- function(n, p = 3L) {
   withr::with_seed(99L, matrix(rnorm(n * p), n, p))
 }
 replay <- function(elbo, grad = stationary_grad(length(elbo)), ...) {
+  load_cpp_fixture("vi_convergence")
   cpp_vi_convergence_replay(elbo, grad, ...)
 }
 

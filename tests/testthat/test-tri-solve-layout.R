@@ -53,6 +53,7 @@ cusolver_style_buffer <- function(C) {
 }
 
 test_that("tri_solve_lower_transpose solves L' x = y for the same matrix", {
+  load_cpp_fixture("linalg_tri_layout")
   L <- test_L()
   y <- c(0.4, 1.1, -0.6)
 
@@ -65,6 +66,7 @@ test_that("tri_solve_lower_transpose solves L' x = y for the same matrix", {
 })
 
 test_that("chol_factor_lower writes the layout it was asked for", {
+  load_cpp_fixture("linalg_tri_layout")
   A <- matrix(c(4.0, -1.0, 0.5,
                 -1.0, 3.0, -1.5,
                 0.5, -1.5, 2.0),
@@ -81,6 +83,7 @@ skip_on_cran_budget()
 
 test_that("tri_solve_lower solves against the matrix its layout spells out", {
   skip_on_cran_budget()
+  load_cpp_fixture("linalg_tri_layout")
   L <- test_L()
   b <- c(1.0, -2.0, 0.75)
 
@@ -104,6 +107,7 @@ test_that("a densely-stored factor read under the wrong layout loses its off-dia
   # triangular matrix, whose lower triangle is the diagonal alone. So the wrong
   # read degenerates to a diagonal solve: every off-diagonal entry of the factor
   # is silently dropped, and the answer is finite and ordinary-looking.
+  load_cpp_fixture("linalg_tri_layout")
   L <- test_L()
   b <- c(1.0, -2.0, 0.75)
 
@@ -121,6 +125,7 @@ test_that("a cuSOLVER-style buffer read row-major returns plausible nonsense", {
   # The #283 buffer: the opposite triangle still holds input covariances, so the
   # wrong read picks up real nonzero numbers rather than zeros. Nothing about
   # the result announces itself as wrong.
+  load_cpp_fixture("linalg_tri_layout")
   C <- matrix(c(1.0, 0.6, 0.3,
                 0.6, 1.0, 0.5,
                 0.3, 0.5, 1.0),
@@ -144,6 +149,7 @@ test_that("NNGP kriging moments read the layout of the factor they are given", {
   # The #283 call site: cond_var = sigma2 - c' C^-1 c off an already-built
   # factor. Under the wrong layout it stayed finite and landed on the variance
   # floor, which reads as near-determinism rather than as a broken factor.
+  load_cpp_fixture("linalg_tri_layout")
   C <- matrix(c(1.0, 0.6, 0.3,
                 0.6, 1.0, 0.5,
                 0.3, 0.5, 1.0),

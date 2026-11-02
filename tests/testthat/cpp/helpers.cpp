@@ -14,6 +14,7 @@
 #include "s2z_direct_reference.h"
 #include "spde_qbuilder.h"
 #include "laplace_core.h"
+#include "laplace_likelihoods.h"
 #include "pg_binomial.h"
 #include "pg_shared.h"
 #include "pg_spatial.h"
@@ -2407,4 +2408,16 @@ double cpp_test_default_sigma_beta() {
 // [[Rcpp::export]]
 double cpp_test_rw_log_pdet(int n_times, int order, bool cyclic) {
   return tulpa::rw_log_pdet(n_times, order, cyclic);
+}
+
+// Terms from the explicit gaussian triplet (laplace_likelihoods.cpp). `phi` is
+// the residual SD. The other triplets already have probes
+// (cpp_test_laplace_binomial / _poisson / _negbin); gaussian had none, which is
+// why its phi convention was the one nobody could see.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_test_laplace_gaussian(double y, double eta, double phi) {
+  return Rcpp::NumericVector::create(
+      Rcpp::_["log_lik"]  = tulpa::log_lik_gaussian(y, eta, phi),
+      Rcpp::_["grad"]     = tulpa::grad_log_lik_gaussian(y, eta, phi),
+      Rcpp::_["neg_hess"] = tulpa::neg_hess_log_lik_gaussian(y, eta, phi));
 }

@@ -29,24 +29,16 @@ unity_core.o: \
   autodiff.cpp \
   cholmod_stub_resolve.cpp \
   cornish_fisher.cpp \
-  cov_kernel_equiv_export.cpp \
   cov_kernel_export.cpp \
   crt_rng.cpp \
   family_terms_export.cpp \
   fastmath_data.cpp \
   gpu_backend.cpp \
   hyperprior_density_export.cpp \
-  interval_gaussian_export.cpp \
-  linalg_tri_layout_export.cpp \
   multinomial_logit_export.cpp \
-  pc_prior_equiv_export.cpp \
-  portable_math_export.cpp \
-  sobol_export.cpp \
   sysmem.cpp \
-  temporal_grad_equiv_export.cpp \
   tgmrf_nuts.cpp \
   tgmrf_registry.cpp \
-  truncated_gaussian_export.cpp \
   tulpa_init.cpp
 unity_exports.o: \
   unity_exports.cpp \
@@ -91,7 +83,6 @@ unity_laplace.o: \
   laplace_core_spatial.cpp \
   laplace_likelihoods.cpp \
   laplace_profile.cpp \
-  laplace_s2z_probe.cpp \
   laplace_spatial_priors.cpp \
   laplace_spec.cpp \
   laplace_temporal_priors.cpp \
@@ -111,9 +102,7 @@ unity_nl.o: \
   nested_laplace_grid.cpp \
   nested_laplace_joint_core.cpp \
   nested_laplace_multi.cpp \
-  nested_laplace_test_occupancy.cpp \
   nl_entry_inputs.cpp \
-  nl_field_identity_export.cpp \
   nl_lq_density.cpp \
   nngp_block_factory.cpp \
   re_structure.cpp \
@@ -150,7 +139,6 @@ unity_samplers.o: \
   smc_sampler.cpp \
   tulpa_beta_sampler.cpp \
   tulpa_generic_sampler.cpp \
-  vi_convergence_probe.cpp \
   vi_sampler.cpp
 unity_spatial.o: \
   unity_spatial.cpp \
@@ -160,7 +148,6 @@ unity_spatial.o: \
   hsgp_basis.cpp \
   msgp_nc_apply.cpp \
   nngp_nc_term_apply.cpp \
-  nngp_twin_export.cpp \
   spde_field_se.cpp \
   spde_laplace.cpp \
   spde_nc_apply.cpp \

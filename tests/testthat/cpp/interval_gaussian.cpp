@@ -1,4 +1,4 @@
-// interval_gaussian_export.cpp
+// interval_gaussian.cpp
 // Internal Rcpp entry exposing the interval-censored Gaussian (ordered-probit
 // with known thresholds) per-observation kernel for unit / FD-gradient tests.
 // Not user-facing; the family is consumed through tulpa_nested_laplace_joint()

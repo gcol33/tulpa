@@ -15,5 +15,4 @@
 #include "smc_sampler.cpp"
 #include "tulpa_beta_sampler.cpp"
 #include "tulpa_generic_sampler.cpp"
-#include "vi_convergence_probe.cpp"
 #include "vi_sampler.cpp"

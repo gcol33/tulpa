@@ -90,6 +90,7 @@ test_that("the scale densities are the PC prior on sigma carried by hand", {
 
 test_that("the range PC prior is a density with its anchor in every dimension", {
   skip_on_cran_budget()
+  load_cpp_fixture("pc_prior_equiv")
   for (d in 1:3) for (anchor in list(c(0.2, 0.5), c(1.5, 0.05))) {
     f <- function(r) exp(tulpa:::cpp_hyperprior_log_density(
       r, "range", "natural", anchor[1], anchor[2], d))
@@ -102,7 +103,7 @@ test_that("the range PC prior is a density with its anchor in every dimension", 
   # d = 2 is the form the SPDE path has always used.
   r <- c(0.05, 0.4, 2, 9)
   expect_equal(tulpa:::cpp_hyperprior_log_density(r, "range", "natural", 0.3, 0.5, 2),
-               tulpa:::cpp_test_log_prior_range_pc(r, 0.3, 0.5), tolerance = 1e-12)
+               cpp_test_log_prior_range_pc(r, 0.3, 0.5), tolerance = 1e-12)
 })
 
 test_that("the range prior's dimension is the one the coordinates span", {

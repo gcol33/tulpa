@@ -45,6 +45,7 @@ svc_eq_inputs <- function(N = 30L, nn = 8L, seed = 5L) {
 
 # w = f(z) at the given hyperparameters, straight off the shipped transform.
 svc_eq_forward <- function(d, z, sigma2, phi, cov_type) {
+  load_cpp_fixture("nngp_twin")
   cpp_test_svc_nngp_nc_grad(z, log(sigma2), log(phi), rep(0, d$N),
                             d$coords, d$nn_idx, d$nn_dist, d$order0, d$inv,
                             cov_type)$w
@@ -52,6 +53,7 @@ svc_eq_forward <- function(d, z, sigma2, phi, cov_type) {
 
 # ll(f(z)) + 0.5 z'z, the quantity the change of variables makes constant.
 svc_eq_g <- function(d, z, sigma2, phi, cov_type) {
+  load_cpp_fixture("nngp_twin")
   w <- svc_eq_forward(d, z, sigma2, phi, cov_type)
   ll <- cpp_test_svc_nngp_twins(w, sigma2, phi, d$coords, d$nn_idx, d$nn_dist,
                                 d$order0, cov_type)[["dbl"]]

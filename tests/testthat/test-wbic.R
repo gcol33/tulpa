@@ -41,6 +41,7 @@ test_that("wbic.default refuses what has no WBIC temperature", {
 skip_on_cran()
 
 test_that("the two-leg SMC path records the tempered posterior exactly", {
+  load_cpp_fixture("smc")
   mu <- c(-1, 0.5, 2)
   st <- c(0.8, 1.2, 0.6)
   b  <- 0.3
@@ -64,6 +65,7 @@ test_that("the two-leg SMC path records the tempered posterior exactly", {
 })
 
 test_that("bridge_end = 1 is the one-leg path and records nothing", {
+  load_cpp_fixture("smc")
   a <- cpp_smc_test(mu_target = c(0, 1), sigma_target = c(1, 1),
                     n_particles = 300L, n_mcmc_steps = 3L, seed = 7L)
   b <- cpp_smc_test(mu_target = c(0, 1), sigma_target = c(1, 1),

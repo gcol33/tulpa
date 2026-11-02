@@ -1,4 +1,4 @@
-// nl_field_identity_export.cpp
+// nl_field_identity.cpp
 // Equivalence probe for NlFieldIdentity.
 //
 // NlFieldIdentity (nested_laplace_checkpoint.h) names each structural group

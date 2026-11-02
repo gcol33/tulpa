@@ -1,4 +1,4 @@
-// nngp_twin_export.cpp
+// nngp_twin.cpp
 // Twin-equivalence probes for the NNGP conditional kernels (A3).
 //
 // Each NNGP log-likelihood exists twice: a hand-written `double` version and a

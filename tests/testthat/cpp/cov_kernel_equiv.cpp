@@ -1,4 +1,4 @@
-// cov_kernel_equiv_export.cpp
+// cov_kernel_equiv.cpp
 // Probes for the isotropic covariance kernel and its phi-derivative.
 //
 // dcov_dphi has ONE implementation, tulpa_svc::dcov_dphi_svc, which the GP

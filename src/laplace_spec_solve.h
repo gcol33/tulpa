@@ -111,6 +111,24 @@ LaplaceResult laplace_mode_spec_dense_solve(
     const SubspaceDebiasOptions* debias = nullptr
 );
 
+// Void wrapper over laplace_mode_spec_dense_solve with the cross-package
+// C-callable's signature (tulpa_shims_laplace_spec.h): the mode comes back
+// through params_inout and the diagnostics through the out-pointers, each of
+// which may be null.
+void laplace_mode_spec_dense_impl(
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& params_inout,
+    const std::vector<int>& re_group_1based,
+    int max_iter, double tol, int n_threads,
+    int* n_iter_out,
+    int* converged_out,
+    double* log_det_Q_out,
+    double* log_marginal_out,
+    const std::vector<LatentBlock>* blocks = nullptr,
+    int k_grid = 0
+);
+
 } // namespace tulpa
 
 #endif // TULPA_LAPLACE_SPEC_SOLVE_H

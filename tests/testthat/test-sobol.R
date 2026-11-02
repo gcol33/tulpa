@@ -4,8 +4,14 @@
 # every caller maps the unit cube through qnorm and qnorm(0) is -Inf. Two of the
 # checks below are stated in terms of that skip rather than around it.
 
-sob <- tulpa:::cpp_sobol_points
-sob_max_dim <- tulpa:::cpp_sobol_max_dim()
+sob <- function(n, d) {
+  load_cpp_fixture("sobol")
+  cpp_sobol_points(n, d)
+}
+sob_max_dim <- function() {
+  load_cpp_fixture("sobol")
+  cpp_sobol_max_dim()
+}
 
 # ---------------------------------------------------------------------------
 # An independent R construction, written from the published recurrence rather
@@ -191,14 +197,14 @@ test_that("integration error decays faster than Monte Carlo", {
 
 test_that("dimensions outside the table are refused", {
   skip_on_cran_budget()
-  expect_identical(sob_max_dim, 1024L)
-  expect_error(sob(16L, sob_max_dim + 1L), "exceeds the tabulated maximum")
+  expect_identical(sob_max_dim(), 1024L)
+  expect_error(sob(16L, sob_max_dim() + 1L), "exceeds the tabulated maximum")
   expect_error(sob(16L, 0L), "d must be positive")
   expect_error(sob(16L, -3L), "d must be positive")
   expect_error(sob(0L, 4L), "n must be positive")
   expect_error(sob(-1L, 4L), "n must be positive")
   # The last tabulated dimension is reachable.
-  expect_equal(dim(sob(8L, sob_max_dim)), c(8L, sob_max_dim))
+  expect_equal(dim(sob(8L, sob_max_dim())), c(8L, sob_max_dim()))
 })
 
 skip_on_cran()

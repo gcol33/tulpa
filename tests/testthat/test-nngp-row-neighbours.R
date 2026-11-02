@@ -32,9 +32,11 @@
 }
 
 .nnrow_svc <- function(f, idx) {
+  load_cpp_fixture("nngp_twin")
   cpp_test_svc_nngp_twins(f$w, 1.0, 0.5, f$coords, idx, f$nn_dist, f$order0, 0L)
 }
 .nnrow_gp <- function(f, idx) {
+  load_cpp_fixture("nngp_twin")
   cpp_test_gp_nngp_twins(f$w, 1.0, 0.5, f$coords, idx, f$nn_dist, f$nbd,
                          f$order0, f$inv, 0L)
 }

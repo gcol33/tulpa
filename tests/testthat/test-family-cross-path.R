@@ -36,6 +36,7 @@ test_that("gaussian: the SD and VARIANCE phi conventions line up exactly", {
   # glmm_oracle.h takes phi = residual VARIANCE. The R layer bridges this
   # (fit_laplace.R sqrt()s the variance; agq.R squares sigma_eps). If either
   # kernel's convention silently flips, these equalities break.
+  load_cpp_fixture("helpers")
   for (sd in c(0.5, 1.0, 2.0)) {
     for (y in c(-1.3, 0.0, 2.7)) {
       for (eta in c(-0.8, 0.0, 1.5)) {

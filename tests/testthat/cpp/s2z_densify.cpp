@@ -1,4 +1,4 @@
-// laplace_s2z_probe.cpp
+// s2z_densify.cpp
 // R-visible view of the sum-to-zero densify cutoff.
 //
 // The cutoff decides how the augmentation's rank-1 11' is STORED, not what the

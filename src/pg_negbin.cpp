@@ -121,7 +121,7 @@ static double negbin_log_lik_family(const IntegerVector& y,
 // The right-hand side is exact at every eta -- the log(1 + exp(eta)) branches
 // on the sign of eta the way log_lik_binomial_kernel does -- so the density
 // needs neither an eta clamp nor a floor on prob to stay finite.
-static double negbin_loglik_eta(
+double negbin_loglik_eta(
     const IntegerVector& y,
     const NumericVector& eta,
     double r
@@ -813,22 +813,6 @@ List pg_negbin_gibbs_spatial(
 // ---------------------------------------------------------------------
 // R exports
 // ---------------------------------------------------------------------
-
-// Scores the negative-binomial log-likelihood the Gibbs kernels evaluate, at a
-// linear predictor supplied directly, so it can be held against dnbinom() over
-// a range of eta the sampler never visits.
-// [[Rcpp::export]]
-double cpp_test_negbin_loglik_eta(
-    Rcpp::IntegerVector y,
-    Rcpp::NumericVector eta,
-    double r
-) {
-  if (eta.size() != y.size()) {
-    Rcpp::stop("eta holds %d values for %d observations.",
-               (int) eta.size(), (int) y.size());
-  }
-  return tulpa::negbin_loglik_eta(y, eta, r);
-}
 
 // [[Rcpp::export]]
 Rcpp::List cpp_pg_negbin_gibbs(

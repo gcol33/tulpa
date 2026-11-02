@@ -35,6 +35,12 @@ namespace tulpa {
 //
 // ---------------------------------------------------------------------
 
+// Log-likelihood of the NB at linear predictor eta (Zhou's logit
+// parameterization, mu = r exp(eta)); the density the Gibbs kernels
+// evaluate. Defined in pg_negbin.cpp.
+double negbin_loglik_eta(const Rcpp::IntegerVector& y,
+                         const Rcpp::NumericVector& eta, double r);
+
 // Pure C++ result structure (safe for OpenMP parallel regions)
 struct PGNegBinResultCpp {
   std::vector<std::vector<double>> beta;       // [n_iter][n_beta]

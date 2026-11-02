@@ -78,6 +78,7 @@ test_that("dispatch_laplace_spatial routes GP specs (no longer errors)", {
 
 test_that("gp_cov_type maps cov + nu correctly", {
   skip_on_cran_budget()
+  load_cpp_fixture("cov_kernel_equiv")
   expect_equal(gp_cov_type(list(cov = "exponential")), 0L)
   expect_equal(gp_cov_type(list(cov = "matern", nu = 1.5)), 1L)
   # 4, not 2: 2 is the Gaussian kernel in tulpa::CovType, and handing a

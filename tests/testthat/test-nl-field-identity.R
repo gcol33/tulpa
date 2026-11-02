@@ -25,6 +25,7 @@ seed_pair <- function(kind, tag,
                       temporal_type = "ar1", n_times = 4L, cyclic = FALSE,
                       temporal_idx = c(1L, 2L, 3L, 4L, 1L, 2L),
                       n_groups = 2L, with_groups = FALSE) {
+  load_cpp_fixture("nl_field_identity")
   cpp_test_nl_field_seed(kind, tag, n_spatial_units, scale_factor,
                          adj_row_ptr, adj_col_idx,
                          n_spatial, nn, cov_type, coords, nn_idx, spatial_idx,
