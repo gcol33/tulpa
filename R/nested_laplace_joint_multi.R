@@ -536,12 +536,14 @@
             out$rational_weights <- as.numeric(p$rational_weights)
         out
     } else if (type == "lf") {
-        # Latent factor block. Per-arm `obs_idx` maps each
-        # obs to a slot in the factor field `u` (length n_latent); the
-        # per-arm loadings `lambda` (length n_arms) are part of the joint
-        # latent vector and co-optimized by the inner Newton. No outer-
-        # grid axes -- identifiability handled by tight Gaussian anchors
-        # on (u_1, lambda_1) inside the C++ factory.
+        # Latent factor block. Per-arm `obs_idx` maps each obs to a unit of
+        # the factor's scores `u` (length n_latent, u ~ N(0, 1)); the loadings
+        # of arms `first_arm`, ..., n_arms - 1 are latent coordinates of the
+        # inner solve, which integrates the scores out unit by unit. No outer-
+        # grid axes. `first_arm` is the block's position among the prior's
+        # latent-factor blocks (.joint_lf_first_arms), which makes the
+        # loading matrix lower-triangular.
+        .joint_lf_check_dead_fields(p, block_index, c("sigma_u", "anchor_eps"))
         #
         # The unit count is checked BEFORE the indices are checked against it:
         # an `n_latent` of 1 makes every real index out of range, so validating
@@ -559,18 +561,75 @@
                                               block_index, "obs_idx",
                                               arm_n_obs, n_latent)
         out <- list(
-            type     = "lf",
-            n_latent = n_latent,
-            obs_idx  = obs_idx
+            type      = "lf",
+            n_latent  = n_latent,
+            obs_idx   = obs_idx,
+            first_arm = as.integer(p$first_arm %||% 0L)
         )
-        if (!is.null(p$sigma_u))      out$sigma_u      <- as.numeric(p$sigma_u)
         if (!is.null(p$sigma_lambda)) out$sigma_lambda <- as.numeric(p$sigma_lambda)
-        if (!is.null(p$anchor_eps))   out$anchor_eps   <- as.numeric(p$anchor_eps)
         out
     } else {
         stop("Block type '", type, "' is not supported in multi-block joint priors.",
              call. = FALSE)
     }
+}
+
+# Fields a latent-factor block does not take. The scores have unit variance,
+# so the loadings carry the factor's scale; the sign is fixed by the factor's
+# first arm loading positively; and the f-th 'lf' block of the prior does not
+# load on arms 1, ..., f - 1, which is what anchors a rotation between factors.
+.joint_lf_check_dead_fields <- function(p, block_index, fields) {
+    dead <- intersect(fields, names(p))
+    if (!length(dead)) return(invisible(NULL))
+    stop("Block ", block_index, " (type 'lf'): ",
+         paste0("`", dead, "`", collapse = ", "), " is not a latent-factor ",
+         "field. The scores have unit variance, so the loadings carry the ",
+         "factor's scale (their prior SD is `sigma_lambda`); the factor's ",
+         "first arm loads positively; and the f-th 'lf' block of `prior` ",
+         "does not load on arms 1, ..., f - 1 (reorder `responses` to choose ",
+         "which arm anchors which factor).", call. = FALSE)
+}
+
+# The first arm (0-based) each latent-factor block loads on, NA for every
+# other block: the f-th 'lf' block of the prior starts at arm f - 1, so the
+# loading matrix is lower-triangular. The factors of one prior describe one
+# set of units, so every 'lf' block must read the same `n_latent` and
+# `obs_idx`: the scores of a unit are integrated jointly.
+.joint_lf_first_arms <- function(prepared, n_arms) {
+    is_lf <- vapply(prepared, function(p) identical(tolower(p$type %||% ""), "lf"),
+                    logical(1))
+    out <- rep(NA_integer_, length(prepared))
+    if (!any(is_lf)) return(out)
+    lf_at <- which(is_lf)
+    for (b in lf_at) .joint_lf_check_dead_fields(prepared[[b]], b, "first_arm")
+    if (length(lf_at) > n_arms) {
+        stop(length(lf_at), " latent-factor blocks for ", n_arms, " arms: ",
+             "factor f does not load on arms 1, ..., f - 1, so there can be ",
+             "at most as many factors as arms.", call. = FALSE)
+    }
+    ref <- prepared[[lf_at[1L]]]
+    key <- function(p) list(as.integer(p$n_latent),
+                            lapply(p$obs_idx, as.integer))
+    for (b in lf_at[-1L]) {
+        if (!identical(key(prepared[[b]]), key(ref))) {
+            stop("Blocks ", lf_at[1L], " and ", b, " (type 'lf') read ",
+                 "different units: the factors of one prior share `n_latent` ",
+                 "and `obs_idx`.", call. = FALSE)
+        }
+    }
+    out[lf_at] <- seq_along(lf_at) - 1L
+    out
+}
+
+# Every prior block in the C++ driver's format, latent-factor blocks carrying
+# their first arm.
+.joint_blocks_spec_for_cpp <- function(prepared, n_arms, arms = NULL) {
+    first_arm <- .joint_lf_first_arms(prepared, n_arms)
+    lapply(seq_along(prepared), function(b) {
+        p <- prepared[[b]]
+        if (!is.na(first_arm[b])) p$first_arm <- first_arm[b]
+        .joint_block_spec_for_cpp(p, n_arms, b, arms = arms)
+    })
 }
 
 # Coerce + validate the optional `svc_weight` for an areal block into a
@@ -1551,9 +1610,7 @@
         }
     }
 
-    blocks_spec <- lapply(seq_along(prepared), function(b) {
-        .joint_block_spec_for_cpp(prepared[[b]], n_arms, b, arms = arms)
-    })
+    blocks_spec <- .joint_blocks_spec_for_cpp(prepared, n_arms, arms = arms)
 
     # Every `.cpp_joint_multi` call on this path goes through this closure, so
     # the fit-scoped settings are supplied once instead of at each of the seven
@@ -2413,6 +2470,7 @@
     B <- length(prepared)
     block_start <- integer(B)
     block_size  <- integer(B)
+    lf_first_arm <- .joint_lf_first_arms(prepared, n_arms)
     phi_start   <- NULL
     theta_start <- NULL
     # Per-spatial-block latent offset (0-based) of the structured field, in
@@ -2445,9 +2503,9 @@
                 theta_start <- cur + n_units
             }
         } else if (type == "lf") {
-            # Latent factor block stores u (n_latent) followed by lambda
-            # (n_arms). Total size = n_latent + n_arms.
-            block_size[b] <- n_units + n_arms
+            # Latent factor block stores its scores u (n_latent) followed by
+            # the loadings of arms first_arm, ..., n_arms - 1.
+            block_size[b] <- n_units + n_arms - lf_first_arm[b]
         } else if (type == "hsgp_mo") {
             # Multi-output HSGP stores K * M coefficients in output-major
             # order: beta_{k, m} at offset k * M + m. K = n_arms.

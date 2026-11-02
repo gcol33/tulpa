@@ -11,6 +11,8 @@
 //   (2) per-block prior-induced fill via LatentBlock::add_prior_pattern
 //       (adjacency / NN_K / SPDE_Q / USER_CSC / none); diagonal of every
 //       latent block always added
+//   (2b) with latent-factor blocks, dense over the reached arms' fixed
+//       effects and the loadings (factor_curvature_coords)
 //   (3) per-arm × per-block data-induced fill, dispatched on
 //       LatentBlock::contrib_kind:
 //         INDEXED_SINGLE: one block-local DOF per obs (via `idx`)
@@ -35,6 +37,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cstddef>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -187,6 +190,30 @@ inline void coupled_cell_arm_dofs(
 // contributions (10592-124160 on occu_cover's coupled ICAR field
 // crossed with a correlated random-slope RE block, or with its own detection
 // arm beta under the rank-1 s2z fold path).
+// The coordinates the curvature of a latent-factor model's score
+// log-determinant is carried on (latent_factor_marginal.h): the fixed effects
+// of every arm a factor reaches and every loading, sorted. Empty without a
+// latent-factor block.
+inline std::vector<int> factor_curvature_coords(
+    const std::vector<ParsedArm>&    parsed,
+    const std::vector<LatentBlock>&  blocks
+) {
+    std::vector<int> out;
+    int first = std::numeric_limits<int>::max();
+    for (const auto& blk : blocks) {
+        if (blk.contrib_kind != BlockContribKind::BILINEAR_FACTOR) continue;
+        first = std::min(first, blk.factor_first_arm);
+        for (int j = blk.start + blk.factor_n_latent; j < blk.start + blk.size; j++)
+            out.push_back(j);
+    }
+    if (out.empty()) return out;
+    for (int k = first; k < static_cast<int>(parsed.size()); k++)
+        for (int j = 0; j < parsed[k].p; j++) out.push_back(parsed[k].beta_start + j);
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
 inline void build_joint_hessian_pattern(
     const std::vector<ParsedArm>&    parsed,
     const std::vector<JointArm>&     arms,
@@ -250,6 +277,14 @@ inline void build_joint_hessian_pattern(
         if (blk.add_prior_pattern) {
             blk.add_prior_pattern(entries);
         }
+    }
+
+    // ---- (2b) Latent-factor score log-determinant curvature: dense over the
+    // fixed effects of the arms the factors reach and the loadings ----
+    {
+        const std::vector<int> fc = factor_curvature_coords(parsed, blocks);
+        for (std::size_t a = 0; a < fc.size(); a++)
+            for (std::size_t b = 0; b <= a; b++) entries.emplace_back(fc[a], fc[b]);
     }
 
     // ---- (3) Per-arm × per-block data-induced pattern ----

@@ -322,6 +322,12 @@ struct LatentBlock {
     std::function<std::pair<int,int>(int /*i*/, int /*k_arm*/)>
         obs_factor_lambda;
 
+    // BILINEAR_FACTOR only. The block holds `factor_n_latent` scores at
+    // [start, start + factor_n_latent), followed by one loading for each arm
+    // k >= `factor_first_arm` (the arms below it do not load on this factor).
+    int factor_n_latent  = 0;
+    int factor_first_arm = 0;
+
     // Append (row, col) lower-triangle entries the prior contributes to the
     // joint H sparsity pattern. Indices are global in the joint latent x
     // (i.e. include `start` offsets). Called ONCE at fit-time, before any

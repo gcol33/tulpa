@@ -1434,11 +1434,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   ),
 
   lf = list(
-    # Latent factor block. F = 1 only. No outer-grid axes:
-    # identifiability is handled by tight Gaussian anchors on (u_1,
-    # lambda_1) inside the C++ factory; everything else is jointly
-    # optimized by the inner Newton. Returns a 1 x 0 grid so the joint
-    # Cartesian product treats this block as a "no axis" contributor.
+    # Latent factor block, one factor per block. No outer-grid axes: the
+    # inner solve integrates the scores and places the loadings at their
+    # score-marginal mode. Returns a 1 x 0 grid so the joint Cartesian
+    # product treats this block as a "no axis" contributor.
     cpp_fn = NULL,
     required = list(joint = c("obs_idx", "n_latent")),
     defaults = function(p, a) p,

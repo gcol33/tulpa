@@ -77,6 +77,7 @@
 #include "nngp_block_factory.h"
 #include "hsgp_mo_block_factory.h"
 #include "latent_factor_block_factory.h"
+#include "latent_factor_marginal.h"
 #include "mcar_block_factory.h"
 #include "spde_block_factory.h"
 #include "tgmrf_block_factory.h"
@@ -1223,18 +1224,18 @@ int build_joint_blocks_from_spec(
     }
 
     if (type == "lf") {
-        // Latent factor block: u in R^n_latent shared across
-        // arms, lambda in R^n_arms per-arm loadings, eta_i += u[obs_idx(i)] *
-        // lambda[k_arm]. F = 1 is the only supported case.
+        // Latent factor block: scores u in R^n_latent shared across arms,
+        // one loading per arm from `first_arm` on, eta_i += u[obs_idx(i)] *
+        // lambda[k_arm]. Several factors are several blocks, factor f
+        // starting at arm f (lower-triangular loadings).
         if (is_copy_block) {
             Rcpp::stop("Block %d: copy semantics are not supported for "
                        "latent factor blocks (the factor field IS the "
                        "shared latent; per-arm scaling lives in `lambda`).",
                        block_index + 1);
         }
-        // No outer-grid axes for first-ship latent factors. sigma_u,
-        // sigma_lambda, anchor_eps are R-side scalar fields on the block
-        // spec; data informs (u, lambda) via the joint Newton solve.
+        // No outer-grid axes: the scores are integrated by the inner
+        // Laplace, the loadings are latent coordinates of the inner solve.
         require_axes(0);
 
         int n_latent = Rcpp::as<int>(bs["n_latent"]);
@@ -1242,26 +1243,17 @@ int build_joint_blocks_from_spec(
         auto obs_idx_fn = make_per_arm_idx_fn(obs_idx_list, n_arms,
                                                 "obs_idx", block_index, arms_ptr);
 
-        double sigma_u      = bs.containsElementNamed("sigma_u")
-                                  ? Rcpp::as<double>(bs["sigma_u"])      : 1.0;
         double sigma_lambda = bs.containsElementNamed("sigma_lambda")
                                   ? Rcpp::as<double>(bs["sigma_lambda"]) : 1.0;
-        // Width of the tight Gaussian anchor that pins (u_1, lambda_1) and so
-        // fixes the sign / scale the bilinear factorization is free in. Narrow
-        // enough to hold the anchor, wide enough not to dominate the block's
-        // own N(0, sigma^2) prior.
-        constexpr double kLatentFactorAnchorEps = 1e-3;
-        double anchor_eps   = bs.containsElementNamed("anchor_eps")
-                                  ? Rcpp::as<double>(bs["anchor_eps"])
-                                  : kLatentFactorAnchorEps;
+        int first_arm = bs.containsElementNamed("first_arm")
+                            ? Rcpp::as<int>(bs["first_arm"]) : 0;
 
         tulpa::LatentBlock block = tulpa::make_latent_factor_block(
-            latent_offset, n_latent, n_arms, obs_idx_fn,
-            sigma_u, sigma_lambda, anchor_eps,
-            block_index
+            latent_offset, n_latent, n_arms, first_arm, obs_idx_fn,
+            sigma_lambda, block_index
         );
         blocks.push_back(block);
-        return latent_offset + n_latent + n_arms;
+        return latent_offset + block.size;
     }
 
     Rcpp::stop("Unknown block type '%s' in cpp_nested_laplace_joint_multi",
@@ -2739,6 +2731,47 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     for (auto& d : db_buffers_pool)
         d.assign(static_cast<size_t>(n_arms) * B, DenseBasisScratch{});
 
+    // Latent-factor blocks: their scores are integrated out per unit by the
+    // fixed-point solve of latent_factor_marginal.h, which reads the third
+    // derivative of every arm a factor reaches. One oracle set per outer slot,
+    // built from that slot's own spec views.
+    const std::vector<int> factor_blocks = factor_block_indices(blocks);
+    const std::vector<int> factor_coords = factor_curvature_coords(parsed, blocks);
+    std::vector<std::vector<Curvature3Oracle>> factor_l3_pool;
+    if (!factor_blocks.empty()) {
+        factor_l3_pool.resize(n_outer);
+        for (int t = 0; t < n_outer; t++) {
+            factor_l3_pool[t].resize(n_arms);
+            for (int k = 0; k < n_arms; k++) {
+                if (arm_is_coupled[k]) continue;
+                const ArmSpecView& v = specs_pool[t].views[k];
+                factor_l3_pool[t][k] = build_spec_curvature3_oracle(
+                    *v.spec, v.response_data, *v.data, *v.layout, *v.params);
+            }
+        }
+        for (int k = 0; k < n_arms; k++) {
+            bool reached = false;
+            for (int b : factor_blocks)
+                if (k >= blocks[b].factor_first_arm) reached = true;
+            if (!reached) continue;
+            if (arm_is_coupled[k]) {
+                Rcpp::stop("Arm %d is cell-coupled and reads a latent-factor "
+                           "block; latent factors enter per-observation arms "
+                           "only.", k + 1);
+            }
+            if (!factor_l3_pool[0][k].scalar) {
+                Rcpp::stop("Arm %d reads a latent-factor block, whose scores "
+                           "are integrated by a Laplace approximation that "
+                           "needs the third derivative of the arm's "
+                           "log-likelihood in its linear predictor; the arm's "
+                           "likelihood provides none (%s).", k + 1,
+                           factor_l3_pool[0][k].declined.empty()
+                               ? "multi-process likelihood"
+                               : factor_l3_pool[0][k].declined.c_str());
+            }
+        }
+    }
+
     // Cheap-pass solver, one per outer worker slot. The cheap screen may run
     // per-tile chains concurrently and CHOLMOD's
     // cholmod_common is not thread-safe, so each worker needs its own factor.
@@ -2860,6 +2893,16 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         SparseHessianBuilder& H_use = H_builders[slot];
         const ScatterIndexCache* idx_cache_use = &idx_cache;
 
+        // Linear tilt of the inner objective carrying the latent-factor score
+        // marginalisation (latent_factor_marginal.h); empty without factors.
+        std::vector<double> factor_tilt(factor_blocks.empty() ? 0 : n_x, 0.0);
+        FactorProx factor_prox;
+        // The full solve also carries the curvature of the scores' log-determinant
+        // (factor_score_marginal_curvature) on the observed Hessian.
+        bool factor_curv_on = false;
+        std::function<bool(const std::vector<double>&, std::vector<double>&)> factor_tilt_at;
+        std::vector<double> factor_D;
+
         // `cm` is the coupled-cell curvature the Newton loop asks for: the
         // inner step's under `step_curvature` (joint_pd_step.h), the observed
         // Hessian on the final mode-pass so log_det_Q and the SEs are the true
@@ -2898,6 +2941,30 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                 if (b.add_prior_sparse) b.add_prior_sparse(H, grad, x, k_grid);
             }
             add_per_arm_beta_re_priors_sparse(grad, H, x, parsed);
+            if (!factor_blocks.empty()) {
+                for (int j = 0; j < n_x; j++) grad[j] += factor_tilt[j];
+                if (factor_prox.rho > 0.0) {
+                    for (int j = 0; j < n_x; j++) {
+                        grad[j] -= factor_prox.rho * (x[j] - factor_prox.center[j]);
+                        if (!grad_only) H.add(j, j, factor_prox.rho);
+                    }
+                }
+                if (!grad_only && cm == CurvatureMode::Observed) {
+                    add_factor_observed_cross(x, etas, arms, specs_use.views,
+                                              blocks, factor_blocks, d_eff,
+                                              arm_is_coupled, H);
+                    if (factor_curv_on && factor_score_marginal_curvature(
+                            x, etas, arms, parsed, specs_use.views, blocks,
+                            factor_blocks, d_eff, arm_is_coupled, factor_coords,
+                            factor_tilt_at, factor_D)) {
+                        const int nc = static_cast<int>(factor_coords.size());
+                        for (int a = 0; a < nc; a++)
+                            for (int b = 0; b <= a; b++)
+                                H.add(factor_coords[a], factor_coords[b],
+                                      -factor_D[static_cast<std::size_t>(a) * nc + b]);
+                    }
+                }
+            }
         };
 
         auto center_joint = [&](Rcpp::NumericVector& x) {
@@ -2909,7 +2976,16 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         auto log_prior_joint = [&](const Rcpp::NumericVector& x,
                                     const std::vector<Rcpp::NumericVector>&)
             -> double {
-            return log_prior_joint_blocks(x, blocks, parsed, k_grid);
+            double lp = log_prior_joint_blocks(x, blocks, parsed, k_grid);
+            for (std::size_t j = 0; j < factor_tilt.size(); j++)
+                lp += factor_tilt[j] * x[j];
+            if (factor_prox.rho > 0.0) {
+                for (int j = 0; j < n_x; j++) {
+                    const double dj = x[j] - factor_prox.center[j];
+                    lp -= 0.5 * factor_prox.rho * dj * dj;
+                }
+            }
+            return lp;
         };
 
         NewtonScratchJointSparse& sc = scratches[slot];
@@ -2942,22 +3018,48 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                 joint_row_loadings(xm, arms, parsed, blocks, k_grid, d_eff, L);
             };
         }
-        return laplace_newton_solve_joint_sparse_ll(
-            n_x,
-            max_iter_use, tol,
-            compute_eta_joint, scatter_joint_sparse,
-            center_joint, log_prior_joint,
-            joint_ll, H_use, sc, prev_mode, shared_solver, store_Q, pd_mode,
-            effective_step_curvature(step_curvature, any_coupling),
-            refresh_use,
-            want_skew, skew_probe_idx,
-            want_skew ? &skew_curvature3_fns_pool[slot] : nullptr,
-            use_cheap_scratch ? nullptr : fixed_block,
-            use_cheap_scratch ? nullptr : debias,
-            use_cheap_scratch ? nullptr : cila,
-            static_cast<std::uint64_t>(k_grid) + 1ULL,
-            eta_var_req.active() ? &eta_var_req : nullptr
-        );
+        // `full = false` is a bare mode-find: the read-outs of the final mode
+        // (stored precision, skewness probe, fixed-effect block, debiases,
+        // predictor variances) are left to the solve that returns.
+        auto solve_once = [&](const std::vector<double>& warm, bool full) {
+            factor_curv_on = full && !factor_blocks.empty();
+            const bool skew_now = want_skew && full;
+            const bool extras   = full && !use_cheap_scratch;
+            return laplace_newton_solve_joint_sparse_ll(
+                n_x,
+                max_iter_use, tol,
+                compute_eta_joint, scatter_joint_sparse,
+                center_joint, log_prior_joint,
+                joint_ll, H_use, sc, warm, shared_solver, store_Q && full,
+                pd_mode,
+                effective_step_curvature(step_curvature, any_coupling),
+                refresh_use,
+                skew_now, skew_probe_idx,
+                skew_now ? &skew_curvature3_fns_pool[slot] : nullptr,
+                extras ? fixed_block : nullptr,
+                extras ? debias : nullptr,
+                extras ? cila : nullptr,
+                static_cast<std::uint64_t>(k_grid) + 1ULL,
+                (full && eta_var_req.active()) ? &eta_var_req : nullptr
+            );
+        };
+        if (factor_blocks.empty()) return solve_once(prev_mode, true);
+
+        std::vector<Rcpp::NumericVector> tilt_etas(n_arms);
+        for (int k = 0; k < n_arms; k++)
+            tilt_etas[k] = Rcpp::NumericVector(arms[k].N);
+        factor_tilt_at = [&](const std::vector<double>& xs,
+                             std::vector<double>& out) -> bool {
+            Rcpp::NumericVector xv(xs.begin(), xs.end());
+            compute_eta_joint(xv, tilt_etas);
+            return factor_score_marginal_tilt(
+                xv, tilt_etas, arms, parsed, specs_use.views,
+                factor_l3_pool[slot], blocks, factor_blocks, d_eff,
+                arm_is_coupled, k_grid, out);
+        };
+        return solve_factor_score_marginal(
+            solve_once, factor_tilt_at, factor_tilt, factor_prox, prev_mode, n_x, blocks,
+            factor_blocks, tol, kFactorMarginalMaxRounds);
     };
 
     auto solve_at_theta = [&](int k_grid,

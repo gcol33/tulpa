@@ -126,6 +126,25 @@
 #'   `car_proper` priors are proper and carry their level themselves. Restricting the field changes the estimand
 #'   to the marginal association (see [spatial_rsr()]).
 #'
+#'   On the list-of-blocks path an `lf` block is one latent factor:
+#'   `n_latent` units and `obs_idx`, a list of `n_arms` integer vectors mapping
+#'   each observation of an arm to its unit (`0` = the row does not see the
+#'   factor); optional `sigma_lambda` (prior SD of the loadings, default `1`).
+#'   Arm `k`'s predictor receives `lambda_k u_l`, with scores
+#'   `u_l ~ N(0, 1)` -- so the loadings carry the factor's scale -- and
+#'   loadings `lambda_k ~ N(0, sigma_lambda^2)`. The f-th `lf` block of `prior`
+#'   is factor f: it does not load on arms `1, ..., f - 1`, and its loading on
+#'   arm `f` is positive (a half-normal prior), which fixes the rotation and
+#'   the sign of the factors; order `responses` so that arm f is one the factor
+#'   is known to load on. Every `lf` block of one prior reads the same units.
+#'   The scores are integrated out unit by unit by a Laplace approximation
+#'   inside the inner solve, so the loadings and every other latent
+#'   coordinate sit at the mode of their posterior with the scores
+#'   marginalised; the scores' conditional posterior is the Gaussian at that
+#'   mode. The joint mode over scores and loadings is not used: it shrinks the
+#'   scores and inflates the loadings by an amount that does not fall as units
+#'   are added.
+#'
 #'   An empty `prior = list()` is a list of zero blocks: the model carries no
 #'   latent field, each arm's predictor is its fixed effects, and the outer
 #'   grid is spanned by the per-arm dispersion axes of `phi_grid` alone (one

@@ -1,51 +1,39 @@
 // latent_factor_block_factory.h
-// Build a LatentBlock for a F=1 latent factor field shared across arms,
-// with per-arm loadings jointly optimized in the latent vector.
+// Build a LatentBlock for one latent factor shared across arms, with per-arm
+// loadings in the joint latent vector.
 //
 // Model.
 //   eta_i (in arm k_arm) += u[obs_idx_per_arm[k_arm](i)] * lambda[k_arm]
 //
 // where
-//   * u in R^n_latent is the shared factor field
-//   * lambda in R^n_arms holds the per-arm loadings
-//
-// Both u and lambda live in the joint latent vector and are co-optimized
-// by the inner Newton solve. The eta contribution is BILINEAR in x — see
-// BlockContribKind::BILINEAR_FACTOR in latent_block.h for the scatter and
-// eta-accumulator dispatch shape.
+//   * u in R^n_latent is the factor's score at each unit, u_l ~ N(0, 1)
+//   * lambda holds the loading of each arm k_arm >= first_arm
 //
 // Block storage layout:
-//   x[start ... start + n_latent)              ->  u_1, ..., u_n_latent
-//   x[start + n_latent ... start + size)       ->  lambda_1, ..., lambda_n_arms
-// where size = n_latent + n_arms.
+//   x[start ... start + n_latent)        ->  u_1, ..., u_n_latent
+//   x[start + n_latent ... start + size) ->  lambda_first_arm, ..., lambda_{n_arms-1}
+// where size = n_latent + (n_arms - first_arm).
 //
-// Identifiability. A bilinear (u, lambda) product carries three degeneracies:
-//   (a) overall sign: (u, lambda) and (-u, -lambda) give identical eta.
-//   (b) overall scale: (c*u, lambda/c) and (u/c, c*lambda) give identical
-//       eta for any c != 0.
-//   (c) field level: adding a constant a to every u_l shifts arm k's linear
-//       predictor by a * lambda_k, an arm-specific constant that arm's own
-//       intercept absorbs.
-// Two tight Gaussian priors act as soft anchors, one per group:
-//   * lambda_1 ~ N(1, eps^2)            (eps = anchor_eps, default 1e-3)
-//       pins (a) and (b) together: it penalizes lambda_1 = -1 and it
-//       penalizes lambda_1 = c for every c != 1, so neither the sign flip
-//       nor a rescaling by c leaves the density unchanged.
-//   * u_1     ~ N(0, eps^2)             (same anchor_eps)
-//       pins (c): it fixes the level of u against the arm intercepts.
-// The remaining latents carry the user-facing priors:
-//   * u_j     ~ N(0, sigma_u^2)         (sigma_u defaults to 1.0)
-//   * lambda_k ~ N(0, sigma_lambda^2)   (sigma_lambda defaults to 1.0)
+// Identifiability. The product u_l * lambda_k is unchanged by
+//   (a) a common rescaling (c u, lambda / c): fixed by the unit variance of
+//       the score prior, so the loadings carry the factor's scale;
+//   (b) the sign flip (-u, -lambda): fixed by taking the loading of the
+//       factor's first arm positive. The prior on that loading is the
+//       half-normal 2 N(0, sigma_lambda^2) on (0, Inf), so the reported mode is
+//       the one of the two mirror-image modes with lambda_first_arm > 0, and
+//       the factor 2 is the mass of the mirror mode;
+//   (c) for several factors, a rotation of the score / loading matrices:
+//       fixed by the lower-triangular loading matrix, factor f (0-based) not
+//       loading on arms 0, ..., f - 1 (`first_arm = f`). Arms below
+//       `first_arm` carry no loading slot at all.
+// A level shift u -> u + a moves arm k's predictor by a * lambda_k, which the
+// arm's intercept absorbs; the proper N(0, 1) prior on u carries that
+// direction, so nothing is pinned for it.
 //
-// Soft anchoring (tight prior) instead of hard reparameterization keeps
-// the block storage layout uniform across all (u, lambda) slots and lets
-// the same BILINEAR_FACTOR scatter handle every arm × every obs without
-// dispatching on "is this slot pinned?" — much simpler than a true
-// reparam at the cost of two extra well-conditioned diagonal entries.
-//
-// First-ship scope. F = 1 factor. Multi-factor F > 1 deferred until a
-// downstream workload requests it (rotation identifiability on the F x F
-// loading matrix needs additional pinning beyond the F = 1 case here).
+// The scores are not estimated jointly with the loadings: the inner solve
+// integrates them out by a Laplace approximation (latent_factor_marginal.h),
+// since the joint mode of a bilinear posterior shrinks the scores and inflates
+// the loadings by the score variance it ignores.
 
 #ifndef TULPA_LATENT_FACTOR_BLOCK_FACTORY_H
 #define TULPA_LATENT_FACTOR_BLOCK_FACTORY_H
@@ -72,35 +60,30 @@ inline LatentBlock make_latent_factor_block(
     int                                  start,
     int                                  n_latent,
     int                                  n_arms,
+    int                                  first_arm,
     const PerArmIdxFn&                   obs_idx,
-    double                               sigma_u,
     double                               sigma_lambda,
-    double                               anchor_eps,
     int                                  block_index
 ) {
     if (n_latent < 2) {
         Rcpp::stop("Block %d (type 'lf'): `n_latent` must be at least 2 "
                    "(got %d).", block_index + 1, n_latent);
     }
-    if (n_arms < 1) {
-        Rcpp::stop("Block %d (type 'lf'): n_arms must be >= 1 (got %d).",
-                   block_index + 1, n_arms);
+    if (first_arm < 0 || first_arm >= n_arms) {
+        Rcpp::stop("Block %d (type 'lf'): the factor's first arm must be one "
+                   "of the %d arms (got %d, 0-based).", block_index + 1,
+                   n_arms, first_arm);
     }
-    if (!(sigma_u > 0.0) || !(sigma_lambda > 0.0) || !(anchor_eps > 0.0)) {
-        Rcpp::stop("Block %d (type 'lf'): sigma_u, sigma_lambda, and "
-                   "anchor_eps must all be positive (got %g, %g, %g).",
-                   block_index + 1, sigma_u, sigma_lambda, anchor_eps);
+    if (!(sigma_lambda > 0.0)) {
+        Rcpp::stop("Block %d (type 'lf'): sigma_lambda must be positive "
+                   "(got %g).", block_index + 1, sigma_lambda);
     }
 
     const int u_start      = start;
     const int lambda_start = start + n_latent;
-    const int size         = n_latent + n_arms;
-
-    // Precision parameters for the prior diagonal entries.
-    const double prec_u_anchor    = 1.0 / (anchor_eps * anchor_eps);
-    const double prec_u_free      = 1.0 / (sigma_u * sigma_u);
-    const double prec_l_anchor    = 1.0 / (anchor_eps * anchor_eps);
-    const double prec_l_free      = 1.0 / (sigma_lambda * sigma_lambda);
+    const int n_loadings   = n_arms - first_arm;
+    const int size         = n_latent + n_loadings;
+    const double prec_l    = 1.0 / (sigma_lambda * sigma_lambda);
 
     LatentBlock block;
     block.start = start;
@@ -108,78 +91,55 @@ inline LatentBlock make_latent_factor_block(
     block.contrib_kind = BlockContribKind::BILINEAR_FACTOR;
     block.prior_kind   = PriorFillKind::NONE;
     block.d_fac        = [](int) -> double { return 1.0; };
-    // arm_scale, idx, basis_eval, obs_indices intentionally left empty —
-    // scatter dispatches on BILINEAR_FACTOR and reads obs_factor_lambda
-    // below.
+    block.factor_n_latent = n_latent;
+    block.factor_first_arm = first_arm;
 
     block.obs_factor_lambda = [obs_idx, u_start, lambda_start, n_latent,
-                               n_arms](
+                               n_arms, first_arm](
         int i, int k_arm
     ) -> std::pair<int,int> {
-        if (k_arm < 0 || k_arm >= n_arms) return {-1, -1};
+        if (k_arm < first_arm || k_arm >= n_arms) return {-1, -1};
         int l = obs_idx(i, k_arm);
         if (l <= 0 || l > n_latent) return {-1, -1};
-        return {u_start + (l - 1), lambda_start + k_arm};
+        return {u_start + (l - 1), lambda_start + (k_arm - first_arm)};
     };
 
-    // Sparse-path prior scatter: diagonal Gaussian on each slot, tight
-    // anchor on (u_1, lambda_1). Off-diagonal entries are not used (prior
-    // precision is diagonal); pattern builder adds the diagonal via the
-    // always-present block-diagonal pass.
-    block.add_prior_sparse = [u_start, lambda_start, n_latent, n_arms,
-                               prec_u_anchor, prec_u_free,
-                               prec_l_anchor, prec_l_free](
+    // Diagonal Gaussian prior: unit precision on every score, 1 / sigma_lambda^2
+    // on every loading.
+    block.add_prior_sparse = [u_start, lambda_start, n_latent, n_loadings,
+                               prec_l](
         SparseHessianBuilder& H, DenseVec& grad,
         const Rcpp::NumericVector& x, int /*k_grid*/
     ) {
-        // u_1 anchor: N(0, eps^2). u_j (j > 1): N(0, sigma_u^2).
         for (int j = 0; j < n_latent; j++) {
-            int idx = u_start + j;
-            double prec = (j == 0) ? prec_u_anchor : prec_u_free;
-            grad[idx] -= prec * x[idx];
-            H.add(idx, idx, prec);
+            const int idx = u_start + j;
+            grad[idx] -= x[idx];
+            H.add(idx, idx, 1.0);
         }
-        // lambda_1 anchor: N(1, eps^2). lambda_k (k > 0): N(0, sigma_lambda^2).
-        for (int k = 0; k < n_arms; k++) {
-            int idx = lambda_start + k;
-            if (k == 0) {
-                grad[idx] -= prec_l_anchor * (x[idx] - 1.0);
-                H.add(idx, idx, prec_l_anchor);
-            } else {
-                grad[idx] -= prec_l_free * x[idx];
-                H.add(idx, idx, prec_l_free);
-            }
+        for (int k = 0; k < n_loadings; k++) {
+            const int idx = lambda_start + k;
+            grad[idx] -= prec_l * x[idx];
+            H.add(idx, idx, prec_l);
         }
     };
 
-    block.log_prior = [u_start, lambda_start, n_latent, n_arms,
-                        prec_u_anchor, prec_u_free,
-                        prec_l_anchor, prec_l_free](
+    // log p(u) + log p(lambda): standard normal scores, N(0, sigma_lambda^2)
+    // loadings, the first loading's density doubled on its half-line.
+    block.log_prior = [u_start, lambda_start, n_latent, n_loadings, prec_l](
         const Rcpp::NumericVector& x, int /*k_grid*/
     ) -> double {
+        const double half_log_2pi = 0.5 * std::log(2.0 * M_PI);
         double lp = 0.0;
-        // u priors.
         for (int j = 0; j < n_latent; j++) {
-            double v = x[u_start + j];
-            double prec = (j == 0) ? prec_u_anchor : prec_u_free;
-            lp += -0.5 * prec * v * v + 0.5 * std::log(prec) -
-                  0.5 * std::log(2.0 * M_PI);
+            const double v = x[u_start + j];
+            lp += -0.5 * v * v - half_log_2pi;
         }
-        // lambda priors. lambda_1 centered at 1, others at 0.
-        for (int k = 0; k < n_arms; k++) {
-            double v = x[lambda_start + k];
-            double mu = (k == 0) ? 1.0 : 0.0;
-            double prec = (k == 0) ? prec_l_anchor : prec_l_free;
-            double diff = v - mu;
-            lp += -0.5 * prec * diff * diff + 0.5 * std::log(prec) -
-                  0.5 * std::log(2.0 * M_PI);
+        for (int k = 0; k < n_loadings; k++) {
+            const double v = x[lambda_start + k];
+            lp += -0.5 * prec_l * v * v + 0.5 * std::log(prec_l) - half_log_2pi;
         }
-        return lp;
+        return lp + std::log(2.0);
     };
-
-    // No centering: the soft anchors on u_1 and lambda_1 break both
-    // identifiability ambiguities. Newton step on the well-conditioned
-    // joint H finds the unique mode.
 
     return block;
 }

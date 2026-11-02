@@ -125,6 +125,25 @@ intercept column it folds into the intercept. The \code{nngp} and
 \code{car_proper} priors are proper and carry their level themselves. Restricting the field changes the estimand
 to the marginal association (see \code{\link[=spatial_rsr]{spatial_rsr()}}).
 
+On the list-of-blocks path an \code{lf} block is one latent factor:
+\code{n_latent} units and \code{obs_idx}, a list of \code{n_arms} integer vectors mapping
+each observation of an arm to its unit (\code{0} = the row does not see the
+factor); optional \code{sigma_lambda} (prior SD of the loadings, default \code{1}).
+Arm \code{k}'s predictor receives \verb{lambda_k u_l}, with scores
+\code{u_l ~ N(0, 1)} -- so the loadings carry the factor's scale -- and
+loadings \code{lambda_k ~ N(0, sigma_lambda^2)}. The f-th \code{lf} block of \code{prior}
+is factor f: it does not load on arms \verb{1, ..., f - 1}, and its loading on
+arm \code{f} is positive (a half-normal prior), which fixes the rotation and
+the sign of the factors; order \code{responses} so that arm f is one the factor
+is known to load on. Every \code{lf} block of one prior reads the same units.
+The scores are integrated out unit by unit by a Laplace approximation
+inside the inner solve, so the loadings and every other latent
+coordinate sit at the mode of their posterior with the scores
+marginalised; the scores' conditional posterior is the Gaussian at that
+mode. The joint mode over scores and loadings is not used: it shrinks the
+scores and inflates the loadings by an amount that does not fall as units
+are added.
+
 An empty \code{prior = list()} is a list of zero blocks: the model carries no
 latent field, each arm's predictor is its fixed effects, and the outer
 grid is spanned by the per-arm dispersion axes of \code{phi_grid} alone (one

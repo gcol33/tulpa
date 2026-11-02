@@ -375,9 +375,7 @@ tulpa_joint_grid_batch <- function(fits) {
     cn <- colnames(block_grids[[b]])
     if (is.null(cn) || length(cn) == 0L) character(0) else paste0("b", b, ".", cn)
   }))
-  blocks_spec <- lapply(seq_along(prepared), function(b) {
-    .joint_block_spec_for_cpp(prepared[[b]], n_arms, b, arms = arms)
-  })
+  blocks_spec <- .joint_blocks_spec_for_cpp(prepared, n_arms, arms = arms)
 
   row_counts <- vapply(block_grids, nrow, integer(1))
   idx <- do.call(expand.grid, lapply(row_counts, seq_len))
