@@ -476,6 +476,38 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   list(posterior = posterior, Sigma_mean = Sigma_mean)
 }
 
+# The derived covariance quantities of every free-covariance block an outer grid
+# integrates (`mcar` / `miid`, whose Sigma = L L' is laid on the log-Cholesky
+# columns `.hp_logchol_block_cols()` finds), summarized by
+# `.re_cov_derived_summary()` over the grid's cells and weights: each cell's L
+# is unpacked by `.re_logchol_to_L()`, its Sigma formed, and `sigma_i`,
+# `rho_ij` and `Sigma_ij` read off that one matrix before any weighting. Rows
+# carry the block's column prefix (`b1.sigma_1`). NULL when the grid holds no
+# complete block.
+.logchol_grid_derived_summary <- function(theta_grid, w,
+                                          support = .NL_SUPPORT_KINDS) {
+  if (is.null(theta_grid) || !length(w)) return(NULL)
+  tg <- as.matrix(theta_grid)
+  cn <- colnames(tg) %||% character(0)
+  lc <- cn[.hp_is_logchol_col(.hyper_axis_bare(cn))]
+  parts <- list()
+  for (pre in unique(.hp_col_prefix_vec(lc))) {
+    cols <- .hp_logchol_block_cols(cn, pre)
+    if (is.null(cols)) next
+    p <- as.integer(round((sqrt(8 * length(cols) + 1) - 1) / 2))
+    Sig <- lapply(seq_len(nrow(tg)), function(k) {
+      L <- .re_logchol_to_L(as.numeric(tg[k, cols]), p)
+      list(tcrossprod(L))
+    })
+    layout <- list(list(nc = p, full = TRUE, label = sub("[.]$", "", pre)))
+    post <- .re_cov_derived_summary(Sig, w, layout, support = support)$posterior
+    post$parameter <- paste0(pre, post$parameter)
+    parts[[length(parts) + 1L]] <- post
+  }
+  if (!length(parts)) return(NULL)
+  do.call(rbind, parts)
+}
+
 # Posterior beta draws for the nested-Laplace mixture. Each grid node k carries
 # a Gaussian fixed-effect block N(beta_k, Vb_k) from its inner Laplace solve;
 # the node weights w summarize the joint Sigma posterior. Drawing node ~

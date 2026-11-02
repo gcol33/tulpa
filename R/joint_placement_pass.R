@@ -127,8 +127,62 @@
                 else st$prior[[s$block]]$rho_grid <- nodes
                 st
             },
-            together = FALSE, escalate = FALSE, idle = "grid_resolves_posterior")
+            together = FALSE, escalate = FALSE, idle = "grid_resolves_posterior"),
+        logchol = list(
+            slots = function(res, st) .joint_logchol_slots(res, st),
+            hold = function(s, st)
+                .nl_axis_hold(st$prior[[s$block]], "logchol_grid",
+                              .nl_auto_fields_at(auto, s$block),
+                              type = tolower(st$prior[[s$block]]$type %||% "")),
+            fires = function(res, s)
+                .nl_axis_placement_fires(res, s$label, "identity"),
+            write = function(st, s, nodes) .joint_logchol_write(st, s, nodes),
+            together = TRUE, escalate = FALSE, idle = "grid_resolves_posterior")
     )
+}
+
+# --- a free-covariance block's log-Cholesky axes -----------------------------
+#
+# An `mcar` / `miid` block integrates its Sigma = L L' on the p(p + 1) / 2
+# log-Cholesky columns `b<k>.L<i><j>` (`.mcar_logchol_names()`), each on its own
+# coordinate (`identity`: `log L_ii` and the raw `L_ij` are already
+# unconstrained). The axes are coupled through the one `logchol_grid` matrix the
+# block carries, so the family moves them together and writes the placed axes
+# back as a TENSOR in those columns -- the "logchol" design
+# (`.hp_logchol_design()`), whose prior and cell measure are the PC + LKJ
+# density and the product of widths in the same coordinates. The default grid
+# is laid in (sigma_1, sigma_2, rho) instead, and its levels are fixed whatever
+# the data say.
+.joint_logchol_slots <- function(res, st) {
+    if (!.is_multi_block_prior(st$prior)) return(list())
+    cn <- colnames(res$theta_grid) %||% character(0)
+    out <- list()
+    for (b in seq_along(st$prior)) {
+        if (!tolower(st$prior[[b]]$type %||% "") %in% c("mcar", "miid")) next
+        cols <- .hp_logchol_block_cols(cn, paste0("b", b, "."))
+        for (lbl in cols) {
+            out[[length(out) + 1L]] <- list(
+                label = lbl, axis = .hyper_axis_bare(lbl), block = b,
+                ref = .joint_declared_axis_ref(lbl))
+        }
+    }
+    out
+}
+
+# The block's grid with one log-Cholesky column laid on `nodes`, as the tensor
+# over every column's levels. A column not yet written keeps the distinct
+# values the block's current grid gives it; the family moves its axes together,
+# so within one attempt every placed column is written before the refit reads
+# the grid.
+.joint_logchol_write <- function(st, s, nodes) {
+    blk <- st$prior[[s$block]]
+    G <- .nl_strip_auto(.mcar_logchol_grid(blk))
+    lev <- lapply(colnames(G), function(c) sort(unique(signif(G[, c], 12L))))
+    names(lev) <- colnames(G)
+    lev[[s$axis]] <- sort(unique(as.numeric(nodes)))
+    out <- as.matrix(expand.grid(lev, KEEP.OUT.ATTRS = FALSE))
+    st$prior[[s$block]]$logchol_grid <- auto_grid(out)
+    st
 }
 
 # --- a BYM2 field's mixing weight --------------------------------------------
@@ -320,6 +374,13 @@
                     type = if (b %in% copied) ".copy"
                            else tolower(blk$type %||% ""))
                 if (is.null(hold)) scale <- c(scale, paste0("b", b, ".", a))
+            }
+            type <- tolower(blk$type %||% "")
+            if (type %in% c("mcar", "miid") &&
+                is.null(.nl_axis_hold(blk, "logchol_grid",
+                                      .nl_auto_fields_at(auto, b), type = type))) {
+                scale <- c(scale, paste0("b", b, ".",
+                                         .mcar_logchol_names(as.integer(blk$n_fields))))
             }
         }
     } else {

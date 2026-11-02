@@ -222,3 +222,129 @@ test_that("an MCAR block's logchol_grid without column names takes the layout's"
   expect_equal(unnamed$log_marginal, named$log_marginal)
   expect_error(fit(matrix(th[1:2], 1)), "3 log-Cholesky coordinates")
 })
+
+# A two-arm MCAR fit on the joint door: a 7 x 7 lattice, a Poisson count arm
+# carrying field 1 and a binomial arm carrying field 2, Sigma with sigma =
+# (1, 0.8) and rho = 0.6. The block states no `logchol_grid`, so the engine
+# starts from its default (sigma_1, sigma_2, rho) grid.
+.mcar_joint_case <- fixture_once(function(seed) {
+  set.seed(seed)
+  W <- .mcar_grid_adj(7L, 7L); S <- nrow(W)
+  adj <- tulpa:::adjacency_to_csr_tulpa(W)
+  Sigma <- matrix(c(1, 0.48, 0.48, 0.64), 2)
+  R <- chol(diag(rowSums(W)) - 0.99 * W)
+  f <- sapply(1:2, function(k) backsolve(R, rnorm(S))) %*% chol(Sigma)
+  f <- sweep(f, 2, colMeans(f))
+  s1 <- rep(seq_len(S), each = 4L); x1 <- rnorm(length(s1))
+  s2 <- rep(seq_len(S), each = 4L); x2 <- rnorm(length(s2))
+  n1 <- length(s1); n2 <- length(s2)
+  arms <- list(
+    a = list(y = rpois(n1, exp(0.5 + 0.4 * x1 + f[s1, 1])),
+             n_trials = rep(1L, n1), X = cbind(1, x = x1), family = "poisson"),
+    b = list(y = rbinom(n2, 10L, plogis(-0.3 + 0.8 * x2 + f[s2, 2])),
+             n_trials = rep(10L, n2), X = cbind(1, x = x2), family = "binomial"))
+  blk <- list(type = "mcar", n_spatial_units = S, n_fields = 2L,
+              adj_row_ptr = adj$row_ptr, adj_col_idx = adj$col_idx,
+              n_neighbors = adj$n_neighbors, spatial_idx = list(s1, s2),
+              field_weight = list(list(rep(1, n1), rep(0, n2)),
+                                  list(rep(0, n1), rep(1, n2))))
+  fit <- tulpa_nested_laplace_joint(arms, prior = list(blk),
+                                    control = list(progress = FALSE,
+                                                   store_Q = TRUE))
+  list(arms = arms, blk = blk, fit = fit)
+})
+
+.mcar_cell_sigma_rho <- function(nodes) {
+  s2 <- sqrt(nodes[, "b1.L21"]^2 + exp(2 * nodes[, "b1.L22"]))
+  cbind(sigma_1 = exp(nodes[, "b1.L11"]), sigma_2 = s2,
+        rho_12 = nodes[, "b1.L21"] / s2,
+        Sigma_12 = exp(nodes[, "b1.L11"]) * nodes[, "b1.L21"])
+}
+
+.mcar_refine_modes <- function(fit, axes) {
+  vapply(fit$axis_span[axes], function(a) a$refine, character(1))
+}
+
+test_that("an MCAR block's sigma_i / rho_ij / Sigma_ij are marginalized over the cell weights", {
+  skip_on_cran()
+  fit <- .mcar_joint_case(1062L)$fit
+  h <- summary(fit)$hyperparameters
+  expect_true(all(c("b1.sigma_1", "b1.sigma_2", "b1.rho_12", "b1.Sigma_11",
+                    "b1.Sigma_12", "b1.Sigma_22") %in% h$parameter))
+  og <- tulpa_outer_grid(fit)
+  set.seed(7)
+  pick <- sample.int(nrow(og$nodes), 2e5, replace = TRUE, prob = og$weights)
+  D <- .mcar_cell_sigma_rho(og$nodes[pick, , drop = FALSE])
+  for (nm in colnames(D)) {
+    row <- h[h$parameter == paste0("b1.", nm), ]
+    mc_se <- stats::sd(D[, nm]) / sqrt(nrow(D))
+    expect_lt(abs(row$mean - mean(D[, nm])), 5 * mc_se)
+    expect_lt(abs(row$sd / stats::sd(D[, nm]) - 1), 0.01)
+    expect_true(row$ci_lo < row$median && row$median < row$ci_hi)
+  }
+  rho <- h[h$parameter == "b1.rho_12", ]
+  expect_true(rho$ci_lo > -1 && rho$ci_hi < 1)
+})
+
+test_that("the default MCAR grid is placed at the outer mode, as a log-Cholesky tensor, against a dense reference", {
+  skip_on_cran()
+  case <- .mcar_joint_case(1062L)
+  fit <- case$fit
+  axes <- c("b1.L11", "b1.L21", "b1.L22")
+  expect_identical(fit$outer_grid_placement, "auto_recentered")
+  expect_setequal(fit$outer_grid_recenter_axes, axes)
+  lc <- fit$theta_grid[, axes]
+  expect_identical(tulpa:::.hp_logchol_design(lc)$design, "logchol")
+  # Placed by the engine, the axes may take levels past their nodes.
+  expect_true(all(.mcar_refine_modes(fit, axes) == "extend"))
+
+  # Dense reference: a 25^3 log-Cholesky tensor over +/- 5 posterior SDs,
+  # 0.42 SD apart, integrated as given.
+  m <- colSums(fit$weights * lc)
+  s <- sqrt(colSums(fit$weights * sweep(lc, 2, m)^2))
+  lev <- lapply(1:3, function(j) seq(m[j] - 5 * s[j], m[j] + 5 * s[j],
+                                     length.out = 25L))
+  G <- as.matrix(expand.grid(L11 = lev[[1]], L21 = lev[[2]], L22 = lev[[3]],
+                             KEEP.OUT.ATTRS = FALSE))
+  ref <- suppressWarnings(tulpa_nested_laplace_joint(
+    case$arms, prior = list(c(case$blk, list(logchol_grid = G))),
+    control = list(progress = FALSE, auto_recenter = FALSE,
+                   axis_refine = "none", prune = FALSE, diagnose_k = FALSE,
+                   diagnose_skew = FALSE)))
+  hf <- summary(fit)$hyperparameters
+  hr <- summary(ref)$hyperparameters
+  for (nm in c("b1.sigma_1", "b1.sigma_2", "b1.rho_12")) {
+    a <- hf[hf$parameter == nm, ]; b <- hr[hr$parameter == nm, ]
+    expect_lt(abs(a$mean - b$mean), 0.1 * b$sd)
+    expect_lt(abs(a$sd / b$sd - 1), 0.1)
+  }
+})
+
+test_that("a stated log-Cholesky tensor is refined by levels; a (sigma, rho) grid is not", {
+  skip_on_cran()
+  case <- .mcar_joint_case(1062L)
+  axes <- c("b1.L11", "b1.L21", "b1.L22")
+  lc <- case$fit$theta_grid[, axes]
+  m <- colSums(case$fit$weights * lc)
+  s <- sqrt(colSums(case$fit$weights * sweep(lc, 2, m)^2))
+  lev <- lapply(1:3, function(j) m[j] + c(-3, 0, 3) * s[j])
+  G <- as.matrix(expand.grid(L11 = lev[[1]], L21 = lev[[2]], L22 = lev[[3]],
+                             KEEP.OUT.ATTRS = FALSE))
+  fit <- suppressWarnings(tulpa_nested_laplace_joint(
+    case$arms, prior = list(c(case$blk, list(logchol_grid = G))),
+    control = list(progress = FALSE)))
+  expect_identical(fit$outer_grid_placement, "fixed")
+  expect_true(any(fit$refining_axis %in% axes))
+  expect_gt(nrow(fit$theta_grid), nrow(G))
+  expect_true(all(.mcar_refine_modes(fit, axes) == "densify"))
+
+  sds <- c(0.5, 0.8, 1.2)
+  g <- expand.grid(s1 = sds, s2 = sds, rho = c(0, 0.3, 0.6))
+  G2 <- cbind(L11 = log(g$s1), L21 = g$rho * g$s2,
+              L22 = log(g$s2 * sqrt(1 - g$rho^2)))
+  fit2 <- suppressWarnings(tulpa_nested_laplace_joint(
+    case$arms, prior = list(c(case$blk, list(logchol_grid = G2))),
+    control = list(progress = FALSE)))
+  expect_false(any(fit2$refining_axis %in% axes))
+  expect_identical(nrow(fit2$theta_grid), nrow(G2))
+})

@@ -475,9 +475,20 @@
 #
 # The registry door refines its field SD axes only
 # (`.nl_refinable_registry_axes()`, `.JOINT_FIELD_SD_AXES`).
-.joint_axis_refine_eligible <- function(axis) {
+#
+# A free-covariance block's log-Cholesky column takes levels only when the
+# block's declared grid is a tensor in those columns (`logchol`, the
+# `.hp_logchol_designs()` record of the fit): a level added to one column of
+# the (sigma_1, sigma_2, rho) default is a point of no tensor the block's
+# measure and prior are declared on.
+.joint_axis_refine_eligible <- function(axis, logchol = NULL) {
     if (grepl("^b[0-9]+[.]", axis)) {
-        return(.hyper_axis_bare(axis) %in% .JOINT_REFINABLE_BLOCK_AXES)
+        bare <- .hyper_axis_bare(axis)
+        if (.hp_is_logchol_col(bare)) {
+            d <- logchol[[.hp_logchol_key(.hp_col_prefix(axis))]]
+            return(identical(d$design, "logchol"))
+        }
+        return(bare %in% .JOINT_REFINABLE_BLOCK_AXES)
     }
     axis %in% .JOINT_REFINABLE_BLOCK_AXES || .joint_axis_is_dispersion(axis)
 }
@@ -608,8 +619,9 @@
                                       type = ".copy")))
     }
     # A copy block's donor SD is defaulted on the `.copy` convention; its other
-    # axes (a BYM2 mixing weight) on the block's own family.
-    field <- paste0(bare, "_grid")
+    # axes (a BYM2 mixing weight) on the block's own family. A log-Cholesky
+    # column lives on the block's one `logchol_grid`.
+    field <- if (.hp_is_logchol_col(bare)) "logchol_grid" else paste0(bare, "_grid")
     !is.null(.nl_axis_hold(
         prior[[b]], field, .nl_auto_fields_at(grid_auto, b),
         type = if (b %in% copy_blocks && field %in% names(.NL_FAMILY_AXES$.copy))

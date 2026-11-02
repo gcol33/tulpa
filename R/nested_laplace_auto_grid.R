@@ -1469,8 +1469,12 @@ auto_grid_place <- function(x)
     if (!length(axes)) return(FALSE)
     cn <- colnames(res$theta_grid) %||% character(0)
     for (a in intersect(axes, cn)) {
-        # A mixing weight is read on its logit, every other movable axis on log.
-        tag <- if (identical(.hyper_axis_bare(a), "rho")) "logit01" else "log"
+        # A mixing weight is read on its logit, a free-covariance block's
+        # log-Cholesky column on its own (already unconstrained) coordinate,
+        # every other movable axis on log.
+        bare <- .hyper_axis_bare(a)
+        tag <- if (identical(bare, "rho")) "logit01"
+               else if (.hp_is_logchol_col(bare)) "identity" else "log"
         if (.nl_axis_placement_fires(res, a, tag)) return(TRUE)
     }
     FALSE

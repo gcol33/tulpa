@@ -1682,12 +1682,16 @@
     refine_axes <- c(as.character(axis_names),
                      if (has_phi) paste0("phi_", names(phi_axes)[
                          vapply(phi_axes, length, integer(1)) > 0L]))
+    refine_eligible <- function(a)
+        .joint_axis_refine_eligible(a, logchol = hp_declared$logchol)
     axis_refine_modes <- .joint_axis_refine_modes_by(
         refine_axes,
         function(a) .joint_multi_axis_is_stated(
             a, prior_list, grid_auto, copy, as.integer(cp$copy_blocks_zero) + 1L,
             phi_grid, arm_names, phi_auto),
-        user = .joint_check_axis_refine(axis_refine, refine_axes))
+        user = .joint_check_axis_refine(axis_refine, refine_axes,
+                                        eligible_fn = refine_eligible),
+        eligible = refine_eligible)
 
     # Node placement for the LATENT axes. CCD integrates on a
     # central composite design around the joint hyperparameter mode; it declines
@@ -2760,5 +2764,8 @@
     res$theta_ci_lo  <- qs$ci_lo
     res$theta_ci_hi  <- qs$ci_hi
     res$within_cell_requested <- within
+    # A free-covariance block's standard deviations, correlations and
+    # covariances, each computed per cell and read off the same weights.
+    res$hyper_derived <- .logchol_grid_derived_summary(joint_grid, w, support)
     .nl_attach_interval_provenance(res, qs, joint_grid, geo$domain, geo$atom)
 }

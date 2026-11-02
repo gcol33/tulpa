@@ -901,10 +901,18 @@ coef.summary.tulpa_fit <- function(object, ...) object$coefficients
     v <- as.numeric(v)
     if (length(v) == k) v * ks else rep(NA_real_, k)
   }
-  data.frame(parameter = nm, mean = as.numeric(tm) * ks,
-             sd = axis(object$theta_sd), median = axis(object$theta_median),
-             ci_lo = axis(object$theta_ci_lo), ci_hi = axis(object$theta_ci_hi),
-             row.names = NULL, stringsAsFactors = FALSE)
+  out <- data.frame(parameter = nm, mean = as.numeric(tm) * ks,
+                    sd = axis(object$theta_sd), median = axis(object$theta_median),
+                    ci_lo = axis(object$theta_ci_lo), ci_hi = axis(object$theta_ci_hi),
+                    row.names = NULL, stringsAsFactors = FALSE)
+  # A free-covariance block's SDs, correlations and covariances, marginalized
+  # per cell (`.logchol_grid_derived_summary()`), follow its grid axes.
+  der <- object$hyper_derived
+  if (is.data.frame(der) && nrow(der)) {
+    out <- rbind(out, der[, cols, drop = FALSE])
+    rownames(out) <- NULL
+  }
+  out
 }
 
 
