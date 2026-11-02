@@ -614,11 +614,34 @@ test_that("the outer k-hat reads one proposal across seed-only redraws", {
                       c("grid_moment", "moment_matched", "grid_mixture", "skew_normal")))
     }, numeric(4)))
     expect_true(all(r[, "src"] == 3))
-    # Every redraw's bootstrap interval covers the redraws' median: the
-    # reported k-hat is one estimand, not a choice between two.
-    med <- stats::median(r[, "k"])
-    expect_gte(mean(r[, "lo"] <= med & med <= r[, "hi"]), 10 / 12)
-    expect_lt(diff(range(r[, "k"])), 1)
+    # The diagnostic draws on its own stream, so the session seed moves
+    # neither the proposal nor the number read off it.
+    expect_equal(diff(range(r[, "k"])), 0)
+    expect_equal(diff(range(r[, "lo"])), 0)
+})
+
+test_that("the outer k-hat interval covers re-scorings of its own proposal", {
+    skip_on_cran()
+    fx <- .pk_chain_fixture()
+    seen <- new.env()
+    orig <- tulpa:::.k_dispatch
+    testthat::local_mocked_bindings(
+        .k_dispatch = function(spec, n_samples, tail_points = NULL) {
+            out <- orig(spec, n_samples, tail_points)
+            seen$out <- out; seen$spec <- spec; seen$tp <- tail_points
+            out
+        }, .package = "tulpa")
+    f <- tulpa_nested_laplace_joint(responses = fx$responses, prior = fx$prior,
+                                    control = list(k_samples = 400L, progress = FALSE))
+    expect_identical(seen$out$source, "grid_mixture")
+    # The mixture is a function of the grid alone, so it can be re-scored on
+    # independent streams; the fit's interval is conditional on it and should
+    # hold most of those re-scorings.
+    ks <- vapply(1:40, function(s) {
+        set.seed(9000 + s)
+        tulpa:::.k_score_mixture(seen$spec, 400L, tail_points = seen$tp)$pareto_k
+    }, numeric(1))
+    expect_gte(mean(ks >= f$pareto_k_ci_low & ks <= f$pareto_k_ci_high), 0.8)
 })
 
 test_that("the grid mixture scores no draw outside its coverage hull", {

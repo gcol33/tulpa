@@ -526,10 +526,12 @@ test_that("a tiny-binary RE-covariance k-hat is a proposal scale, not a skewed p
   #    succeeding (k 0.66) with its per-draw log-marginals unchanged to 2e-12.
   expect_true(all(fpb > .nl_diag("k_usable")))
   src <- vapply(c(fa, fb), function(f) f$pareto_k_proposal_source, "")
-  expect_true(all(src %in% c("mode_hessian", "moment_matched")))
+  # A first pass just above the good band can also be taken over by the
+  # skew-normal rescue, which is adopted only on a lower k-hat.
+  expect_true(all(src %in% c("mode_hessian", "moment_matched", "skew_normal")))
   k_all  <- c(ka, kb)
   fp_all <- c(fpa, fpb)
-  mm <- src == "moment_matched"
+  mm <- src != "mode_hessian"
   expect_true(all(k_all[mm] < fp_all[mm]))
   expect_identical(k_all[!mm], fp_all[!mm])
 })

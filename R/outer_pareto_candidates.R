@@ -504,6 +504,11 @@
     if (covered && improves) list(best = mix, source = "grid_mixture") else g_out
 }
 
+# Seed of the outer diagnostic's own random stream: the candidate dispatch's
+# importance draws (`.k_dispatch()`) and the bootstrap of the chosen proposal's
+# ratios (`.tulpa_psis_k_uncertainty()`).
+.K_DIAG_STREAM_SEED <- 20260702L
+
 # Full outer Pareto-k proposal dispatch: the symmetric choice above (grid-moment
 # / mode-Hessian / moment-matched Gaussian, or the grid mixture where the grid
 # is spread and covers the posterior), then the skew-normal rescue
@@ -516,6 +521,16 @@
 # or its GPD shape came back non-finite". Shared by the joint k and the per-arm k.
 .k_dispatch <- function(spec, n_samples, tail_points = NULL) {
     if (is.null(spec) || !nrow(spec$Su)) return(.k_decline("no_varying_axis"))
+    # Every draw below comes from one fixed stream, independent of the session's
+    # RNG state, which is restored on exit. The moment-matching passes estimate
+    # each next proposal from the previous pass's draws, and every candidate is
+    # chosen on scored draws, so on the session stream the proposal itself would
+    # be a function of the seed (on a 60-row binary chain-ICAR fit two seeds
+    # give k-hats of 0.13 and 1.64 from two proposals), and a bootstrap of one batch,
+    # conditional on its proposal, covers neither the other proposal nor the
+    # choice between them. On a fixed stream the proposal and the reported k-hat
+    # are functions of the fit alone.
+    .seed_scoped(.K_DIAG_STREAM_SEED)
     # Below the GPD-fit floor no candidate can return a number, and the mixture
     # would sample and evaluate the (expensive) target before finding that out,
     # so the floor is read once here rather than in each scorer.

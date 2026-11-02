@@ -388,6 +388,9 @@
   out$conf_bands <- conf_bands
   nb <- max(0L, as.integer(n_boot))
   if (nb >= 2L) {
+    # The resamples come from the outer diagnostic's fixed stream, so a fit's
+    # interval is reproducible the way its k-hat is (`.k_dispatch()`).
+    .seed_scoped(.K_DIAG_STREAM_SEED + 1L)
     ks <- vapply(seq_len(nb), function(b) {
       tulpa_psis(lr[sample.int(S, S, replace = TRUE)],
                  tail_points = tail_points)$pareto_k
