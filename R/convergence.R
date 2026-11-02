@@ -280,7 +280,8 @@
 # parameters. A fit that is not a chain, or is too short to diagnose, passes
 # through untouched.
 .tulpa_check_fit_convergence <- function(fit, caller = "tulpa()") {
-  if (!is.list(fit) || !.tulpa_is_chain(fit)) return(fit)
+  if (!is.list(fit)) return(fit)
+  if (!.tulpa_is_chain(fit)) return(.tulpa_check_mode_convergence(fit, caller))
   diag <- tryCatch(suppressWarnings(suppressMessages(
     diagnostics(fit, measures = c("rhat", "ess_bulk")))),
     error = function(e) NULL)
@@ -307,6 +308,47 @@
                   shown$ess_bulk), collapse = "; ")),
     call. = FALSE)
   fit
+}
+
+# The same check for a fit whose summary is read at an optimum: a Laplace /
+# EP / Pathfinder / categorical fit reports `$converged`, the mode-finder's
+# own stopping verdict. A mode-find that stopped on its iteration budget leaves
+# an estimate that is not the mode and a curvature taken somewhere else, so the
+# printed intervals are not the approximation the fit names. The verdict is
+# recorded as `$convergence` (kind "mode"), which print(), summary() and
+# diagnostics() read, and the fit warns once here. A fit carrying no scalar
+# verdict passes through untouched.
+#' @keywords internal
+.tulpa_check_mode_convergence <- function(fit, caller = "tulpa()") {
+  cv <- fit$converged
+  if (!is.logical(cv) || length(cv) != 1L || !identical(cv, FALSE)) {
+    return(fit)
+  }
+  n_iter <- fit$n_iter
+  n_iter <- if (is.numeric(n_iter) && length(n_iter) == 1L) as.integer(n_iter)
+  fit$convergence <- list(ok = FALSE, kind = "mode", n_iter = n_iter)
+  warning(sprintf(paste0(
+    "%s: the '%s' mode-find stopped before converging%s. Its estimates and ",
+    "intervals are not yet the mode and curvature of the posterior. Raise ",
+    "control$max_iter, or look for a separated or weakly identified term."),
+    caller, fit$backend %||% "optimizer",
+    if (is.null(n_iter)) "" else sprintf(" (after %d iterations)", n_iter)),
+    call. = FALSE)
+  fit
+}
+
+# The one-line statement of an unconverged fit, for print() and diagnostics():
+# a chain that has not mixed, or a mode-find that stopped early. NULL when the
+# fit records no failed verdict.
+#' @keywords internal
+.tulpa_not_converged_line <- function(fit) {
+  cv <- if (is.list(fit)) fit$convergence
+  if (!is.list(cv) || !identical(cv$ok, FALSE)) return(NULL)
+  if (identical(cv$kind, "mode")) {
+    return(paste("the mode-find stopped before converging; these estimates are",
+                 "not yet the posterior mode."))
+  }
+  "chain not converged; these estimates are not yet the posterior."
 }
 
 # Shared explanation for why chain diagnostics are withheld on a non-chain fit.

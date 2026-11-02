@@ -1808,9 +1808,11 @@
     has_band <- !is.null(grid) || !is.null(inner) || !is.null(inner_k) ||
       !is.null(regime) || is.finite(k)
     if (!has_band) {
+      nc <- .tulpa_not_converged_line(fit)
       message(.tulpa_no_draws_note(fit, "diagnostics"),
               " No approximation-reliability quantity was computed for it ",
-              "either, so there is nothing to report.")
+              "either, so there is nothing to report.",
+              if (!is.null(nc)) paste0(" WARNING: ", nc))
       return(NULL)
     }
     param_declined <- paste(

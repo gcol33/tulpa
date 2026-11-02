@@ -649,11 +649,8 @@ print.tulpa_fit <- function(x, ...) {
     cat("\nPosterior means:\n")
     print(round(x$means, 4))
   }
-  cv <- x$convergence
-  if (is.list(cv) && identical(cv$ok, FALSE)) {
-    cat("\nWARNING: chain not converged; these estimates are not yet the",
-        "posterior.\n")
-  }
+  nc <- .tulpa_not_converged_line(x)
+  if (!is.null(nc)) cat("\nWARNING: ", nc, "\n", sep = "")
   cat("\nUse summary() for intervals, variance components, hyperparameters",
       "and reliability.\n")
   invisible(x)
@@ -1045,7 +1042,15 @@ print.summary.tulpa_fit <- function(x, digits = max(3L, getOption("digits") - 3L
     cat("\nReliability (", r$kind, " draws):\n", sep = "")
     cat(paste0("  ", body, "\n"), sep = "")
   }
-  if (identical(r$verdict, "not converged") && is.list(r$convergence)) {
+  if (identical(r$verdict, "not converged") && is.list(r$convergence) &&
+      identical(r$convergence$kind, "mode")) {
+    n_it <- r$convergence$n_iter
+    cat(sprintf(paste0(
+      "\nWARNING: the mode-find stopped before converging%s;",
+      "\n  these estimates are not yet the posterior mode. Raise ",
+      "control$max_iter.\n"),
+      if (is.null(n_it)) "" else sprintf(" (after %d iterations)", n_it)))
+  } else if (identical(r$verdict, "not converged") && is.list(r$convergence)) {
     cv <- r$convergence
     cat(sprintf(paste0(
       "\nWARNING: chain not converged (max Rhat %.2f, min bulk-ESS %.0f on %s);",
