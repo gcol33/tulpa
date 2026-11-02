@@ -56,7 +56,8 @@
 # The grid carries no `b<k>.` block prefixes and no prior list, so this is how
 # the generic accessors read a fit_st_nested() fit (gcol33/tulpa#910). `rho` is
 # the TEMPORAL AR1 correlation and is an axis only under ar1 (a rw1 / rw2 grid
-# holds it at a placeholder 0); bym2's mixing weight is `rho_spatial`.
+# carries no such column, `.st_integrated_grid()`); bym2's mixing weight is
+# `rho_spatial`.
 .ST_AXIS_MAP <- list(
   tau_spatial   = c(role = "spatial",  bare = "tau"),
   sigma_spatial = c(role = "spatial",  bare = "sigma"),
@@ -75,7 +76,6 @@
   bare <- ifelse(vapply(m, is.null, logical(1)), axes,
                  vapply(m, function(e) if (is.null(e)) "" else e[["bare"]],
                         character(1), USE.NAMES = FALSE))
-  if (!identical(object$temporal_type, "ar1")) role[axes == "rho"] <- "other"
   type <- ifelse(role == "spatial", object$spatial_type %||% NA_character_,
                  ifelse(role == "temporal", object$temporal_type %||% NA_character_,
                         NA_character_))
@@ -110,6 +110,15 @@
             .hp_axis_prior("rho", list(type = "bym2"), hyperprior = hyperprior)
         } else .hp_axis_prior(a, block, hyperprior = hyperprior)
     }, axes = axes)
+}
+
+# The outer axes of a spatiotemporal grid. The kernels take a per-cell temporal
+# autocorrelation under every temporal type, but only ar1 carries one: a rw1 /
+# rw2 field is handed rho = 0, which is not a hyperparameter of the model, so
+# the column is dropped from the grid the fit integrates over and reports.
+.st_integrated_grid <- function(grid, temporal_type) {
+  if (identical(temporal_type, "ar1")) return(grid)
+  grid[, setdiff(colnames(grid), "rho"), drop = FALSE]
 }
 
 # Fold the hyperprior into a spatiotemporal kernel result and attach its cell
@@ -242,7 +251,9 @@
 #'   `temporal_effects`, `log_marginal`, `weights`, `theta_grid` over
 #'   `(tau_spatial, tau_temporal, rho)` for an areal spatial field or
 #'   `(sigma2, lengthscale, tau_temporal, rho)` / `(sigma2, phi_gp,
-#'   tau_temporal, rho)` for `"hsgp"` / `"nngp"`, and `family` / `n_trials` /
+#'   tau_temporal, rho)` for `"hsgp"` / `"nngp"` (bym2: `(sigma_spatial,
+#'   rho_spatial, tau_temporal, rho)`; the temporal `rho` column is present
+#'   for `temporal_type = "ar1"` only), and `family` / `n_trials` /
 #'   `phi` (the
 #'   R-level convention), which is what [fitted()], [residuals()],
 #'   [posterior_predict()] and [simulate()] read the response family from.
@@ -488,8 +499,9 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
     kargs$phi_gp_spatial_grid <- as.numeric(grid$phi_gp)
     hp_block <- list(coords = coords)
   }
-  out <- .st_attach_outer_integration(do.call(kernel, kargs), grid, hyperprior,
-                                      block = hp_block)
+  out <- .st_attach_outer_integration(do.call(kernel, kargs),
+                                      .st_integrated_grid(grid, temporal_type),
+                                      hyperprior, block = hp_block)
   # Outer-grid collapse visibility + recenter:
   # tau_lower/tau_upper's default [0.25, 16] span (and, for ar1, the default
   # rho_lower/rho_upper) is a starting axis, not a hard ceiling, the same

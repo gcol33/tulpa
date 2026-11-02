@@ -440,13 +440,22 @@
 # `.joint_pareto_axis_tags()` below is the whole-fit view that declines on any
 # of them.
 .joint_axis_tags_raw <- function(res) {
+    .joint_axis_walk(res, .joint_pareto_block_tags, phi = "log")
+}
+
+# The walk over a joint result's block layout that assigns each `theta_grid`
+# column the answer `per_block(type, bare_axes)` gives for the block owning it,
+# and `phi` to a trailing per-arm dispersion column. One walk serves the
+# proposal tags above and the axis supports below, so the two cannot come to
+# disagree about which block owns a column.
+.joint_axis_walk <- function(res, per_block, phi) {
     tg <- res$theta_grid
     if (is.null(tg) || !is.matrix(tg) || ncol(tg) == 0L) {
         return(.k_decline("not_applicable", "no outer hyperparameter grid"))
     }
     cn <- colnames(tg)
     d  <- ncol(tg)
-    tags <- rep(NA_character_, d)
+    out <- rep(NA_character_, d)
 
     bare <- function(idx) sub("^b[0-9]+\\.", "", cn[idx])
 
@@ -456,8 +465,8 @@
         for (b in seq_len(B)) {
             if (ao[b + 1L] <= ao[b]) next                  # block carries no axis
             cols <- (ao[b] + 1L):ao[b + 1L]
-            tags[cols] <- .joint_pareto_block_tags(
-                tolower(res$blocks[[b]]$type %||% ""), bare(cols))
+            out[cols] <- per_block(tolower(res$blocks[[b]]$type %||% ""),
+                                   bare(cols))
         }
         # Columns past the last block axis are per-arm phi dispersion axes.
         if (ao[B + 1L] < d) {
@@ -468,7 +477,7 @@
                                   paste0("axis past the last block is not a phi axis: ",
                                          paste(cn[extra][!named], collapse = ", "))))
             }
-            tags[extra] <- "log"
+            out[extra] <- phi
         }
     } else {
         # Single-block: every non-phi column belongs to the lone prior block;
@@ -476,11 +485,33 @@
         type <- tolower(res$prior$type %||% "")
         is_phi <- startsWith(cn, "phi_")
         if (any(!is_phi)) {
-            tags[!is_phi] <- .joint_pareto_block_tags(type, bare(which(!is_phi)))
+            out[!is_phi] <- per_block(type, bare(which(!is_phi)))
         }
-        tags[is_phi] <- "log"
+        out[is_phi] <- phi
     }
-    tags
+    out
+}
+
+# The SUPPORT of an axis whose proposal tag is NA. A proposal tag names a
+# coordinate the outer Pareto-k, the joint CCD and the recenter lay nodes in;
+# the support is what a reported interval and a cell's mirrored edge must stay
+# inside. The two coincide wherever a tag exists, and an axis can have a known
+# support without a registered proposal coordinate: an AR(1) autocorrelation
+# lives on (-1, 1) by stationarity, while `rho` under a proper CAR (the
+# adjacency eigenvalue interval) or a multi-output HSGP has no support this
+# registry can name and stays NA. `st` is the axis vocabulary of
+# `fit_st_nested()`'s grid (`.ST_AXIS_MAP`), where `rho` is always the temporal
+# AR(1) correlation and `rho_spatial` the BYM2 mixing weight.
+.JOINT_AXIS_SUPPORT <- list(
+    ar1 = c(rho = "correlation"),
+    st  = c(rho = "correlation", rho_spatial = "unit",
+            tau_spatial = "positive", tau_temporal = "positive")
+)
+
+.joint_block_axis_support <- function(type, axes) {
+    sup <- .JOINT_AXIS_SUPPORT[[type]]
+    if (is.null(sup)) return(rep(NA_character_, length(axes)))
+    unname(sup[axes])
 }
 
 # Whole-fit view of the same walk: every axis must be transformable, so a fit
@@ -535,6 +566,8 @@
         return(list(domain = rep(NA_character_, d), atom = rep(NA_real_, d)))
     }
     doms <- unname(.JOINT_AXIS_DOMAIN[tags])
+    sup <- .joint_axis_walk(res, .joint_block_axis_support, phi = NA_character_)
+    if (!.k_is_decline(sup)) doms[is.na(doms)] <- sup[is.na(doms)]
     cn <- colnames(res$theta_grid) %||% rep("", d)
     # A log-scale axis is a positive one and may carry a zero level. The claim
     # agrees with the tag on every axis that has both -- `log` already maps to

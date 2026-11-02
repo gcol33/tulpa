@@ -382,7 +382,8 @@
         return(.nl_decline_recenter(out, "refit_failed"))
     }
 
-    refit <- .st_attach_outer_integration(refit, new_grid, hyperprior)
+    refit <- .st_attach_outer_integration(
+        refit, .st_integrated_grid(new_grid, temporal_type), hyperprior)
     refit <- .joint_attach_pareto_k_regime(refit)
     refit$outer_grid_placement         <- "auto_recentered"
     refit$outer_grid_recenter_attempts <- 1L

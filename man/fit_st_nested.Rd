@@ -175,7 +175,8 @@ A \code{tulpa_fit} (subclass \code{tulpa_nested_laplace}) carrying the
 fixed-effect posterior (\code{draws} via the grid mixture), \code{spatial_effects},
 \code{temporal_effects}, \code{log_marginal}, \code{weights}, \code{theta_grid} over
 \verb{(tau_spatial, tau_temporal, rho)} for an areal spatial field or
-\verb{(sigma2, lengthscale, tau_temporal, rho)} / \verb{(sigma2, phi_gp, tau_temporal, rho)} for \code{"hsgp"} / \code{"nngp"}, and \code{family} / \code{n_trials} /
+\verb{(sigma2, lengthscale, tau_temporal, rho)} / \verb{(sigma2, phi_gp, tau_temporal, rho)} for \code{"hsgp"} / \code{"nngp"} (bym2: \verb{(sigma_spatial, rho_spatial, tau_temporal, rho)}; the temporal \code{rho} column is present
+for \code{temporal_type = "ar1"} only), and \code{family} / \code{n_trials} /
 \code{phi} (the
 R-level convention), which is what \code{\link[=fitted]{fitted()}}, \code{\link[=residuals]{residuals()}},
 \code{\link[=posterior_predict]{posterior_predict()}} and \code{\link[=simulate]{simulate()}} read the response family from.
