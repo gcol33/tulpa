@@ -1720,7 +1720,7 @@
     use_ccd <- ccd_requested
     # Set only on the Cartesian-product branch below (CCD and the adaptive
     # grid do not build a dense tensor, so the "reduce the grid" remedy the
-    # post-solve timing check reports does not apply to them).
+    # cap and the dense-grid warning report does not apply to them).
     n_cells <- NA_integer_
     grid_warn_remedy <- NULL
     grid_layout <- ""
@@ -2037,7 +2037,6 @@
             screen_only      = pilot_screen && tol_prune > 0)
     }
     tm$mark("setup")
-    grid_solve_start <- proc.time()[["elapsed"]]
     res <- .joint_main_grid_solve(function() call_kernel_with_tol(prune_tol))
     # Safety gate: fall back to the full grid when the
     # cheap-pass ranking is unreliable rather than silently returning a
@@ -2045,10 +2044,6 @@
     if (as.numeric(prune_tol) > 0) {
         res <- .joint_prune_safety_gate(
             res, resolve_full = function() call_kernel_with_tol(0.0))
-    }
-    if (!is.null(grid_warn_remedy)) {
-        .nl_multi_grid_warn(proc.time()[["elapsed"]] - grid_solve_start,
-                            n_cells, grid_warn_remedy, grid_layout)
     }
     tm$mark("grid")
 

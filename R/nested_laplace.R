@@ -978,7 +978,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     if (length(lm) != nrow(theta_mat)) rep(-Inf, nrow(theta_mat)) else lm
   }
 
-  kd <- .with_diagnostic_seed(tryCatch(
+  kd <- .with_preserved_seed(tryCatch(
     .nested_grid_pareto_k(matrix(log(tg), ncol = 1L), res$weights, refit,
                           n_samples, tail_points = tail_points),
     error = function(e) NULL))
@@ -2503,45 +2503,17 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   list(grid = grid, names = colnames(grid), prepared = p)
 }
 
-# Wall-clock threshold, in seconds, above which a multi-block outer-grid
-# solve gets a "this was slow" warning. Cell count alone does not predict
-# solve time -- a family/likelihood pair, N, or a block's own per-cell cost
-# (gcol33/tulpa#638) can make the same cell count cheap or expensive, and the
-# engine's own default per-block grids already exceed any static cell-count
-# threshold that fires on genuinely slow custom grids (gcol33/tulpa#820) --
-# so the trigger is measured cost, read off the "grid" bucket both multi-block
-# dispatchers already mark with `.tulpa_timer()`.
-.NL_MULTI_GRID_WARN_SECONDS <- 2
-
-# Shared by the single-response multi-block dispatch (`tulpa_nested_laplace()`
-# in this file) and the joint multi-block dispatch
-# (`R/nested_laplace_joint_multi.R`): both solve their outer grid in one call
-# and mark its elapsed time as the "grid" timing bucket, so both warn off that
-# measurement through this one function rather than keeping two copies of the
-# same message. `layout` is `.nl_grid_crossing()`'s account of the axes that
-# produced the count, so the advice names which grids to shrink.
-.nl_multi_grid_warn <- function(elapsed, n_cells, remedy, layout = "") {
-  if (isTRUE(elapsed > .NL_MULTI_GRID_WARN_SECONDS) && !.nl_internal_batch()) {
-    warning(sprintf(
-      "Multi-block outer grid (%s cells) took %s to solve.%s %s",
-      format(n_cells, scientific = FALSE, trim = TRUE),
-      .format_duration(elapsed), layout, remedy
-    ), call. = FALSE)
-  }
-  invisible(NULL)
-}
-
 # Cell count above which a dense multi-block outer tensor is announced with a
 # warning BEFORE its solve starts. Each cell is one inner Laplace solve, so the
 # count is the run's size in solves; it does not know the per-solve cost, which
-# is why it warns rather than refuses and why the post-solve warning above reads
-# measured time.
+# is why it warns rather than refuses. The warning is a function of the grid
+# alone, so the same call warns or stays silent on every machine and every run.
 .NL_DENSE_GRID_WARN_CELLS <- 2048L
 
 # Shared by both multi-block dispatchers: the dense tensor about to be solved
 # has `n_cells` inner solves, `layout` (`.nl_grid_crossing()`) names the axes
-# that produced them and `remedy` is the dispatcher's advice. Gated like the
-# timing warning, so an internal batch the caller did not size stays quiet.
+# that produced them and `remedy` is the dispatcher's advice. An internal batch
+# the caller did not size (`.nl_internal_batch()`) stays quiet.
 .nl_dense_grid_warn <- function(n_cells, remedy, layout = "") {
   if (isTRUE(n_cells > .NL_DENSE_GRID_WARN_CELLS) && !.nl_internal_batch()) {
     warning(sprintf(
@@ -2554,7 +2526,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 }
 
 # Whether the dispatch currently running is an INTERNAL batch rather than the
-# grid the caller asked for. The soft-cap warning above is advice addressed to
+# grid the caller asked for. The dense-grid warning above is advice addressed to
 # whoever chose the cell count, and on an internal batch that is not the caller:
 # the outer Pareto-k diagnostic re-evaluates `log_marginal` at `k_samples`
 # importance draws by substituting them for the block's grid axis, so a 7-node
@@ -2695,9 +2667,9 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     paste0("b", b, ".", colnames(block_grids[[b]]))
   }))
 
-  # Set only on the Cartesian-product branch below, so the post-solve timing
-  # check (which reads these) is a no-op on a single-cell override re-dispatch
-  # (skew / k-hat / recenter probes -- already never the caller's own grid).
+  # Set only on the Cartesian-product branch below, so the cap and the
+  # dense-grid warning (which read these) are no-ops on a single-cell override
+  # re-dispatch (skew / k-hat / recenter probes -- never the caller's own grid).
   n_cells <- NA_integer_
   grid_warn_remedy <- NULL
   grid_layout <- ""
@@ -2756,7 +2728,6 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   })
   prune_tol <- as.numeric(cargs$prune_tol %||% 0)
 
-  grid_solve_start <- proc.time()[["elapsed"]]
   out <- cpp_nested_laplace_multi(
     y           = cargs$y,
     n           = cargs$n,
@@ -2794,10 +2765,6 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
                                                 screen = cargs$screen_refine),
     beta_prior        = cargs$beta_prior
   )
-  if (!is.null(grid_warn_remedy)) {
-    .nl_multi_grid_warn(proc.time()[["elapsed"]] - grid_solve_start,
-                        n_cells, grid_warn_remedy, grid_layout)
-  }
 
   out$theta_grid   <- joint_grid
   out$theta_names  <- axis_names

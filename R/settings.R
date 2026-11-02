@@ -1586,6 +1586,20 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     ndraws = 4000L
 )
 
+# --- the fixed streams engine diagnostics draw on -----------------------------
+#
+# A diagnostic that draws its own randomness reads it from a fixed seed, so two
+# identical calls report the same value whatever the session RNG holds, and the
+# caller's stream is restored afterwards. `criteria`: the draws a criterion
+# (WAIC / LOO / DIC) is evaluated at, and a subsample of a fit's stored draws.
+# `outer_k`: the outer Pareto-k candidate dispatch (`.k_dispatch()`), its
+# importance batches and moment-matching passes; `outer_k + 1` is the bootstrap
+# of the chosen proposal's ratios (`.tulpa_psis_k_uncertainty()`).
+.DIAGNOSTIC_SEED <- list(
+    criteria = 285603L,
+    outer_k  = 20260702L
+)
+
 # `predict()` on a varying-coefficient fit draws the coefficient field at the
 # new coordinates / times from its conditional given each posterior draw. The
 # seed is pinned (and restored afterwards) for the same reason: the prediction

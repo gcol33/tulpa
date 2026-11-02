@@ -159,8 +159,8 @@ test_that("the ?temporal_ar2 default fit does not warn about its own default gri
   # The default AR2 grid is 125 cells (>.NL_MULTI_GRID_WARN's old 50-cell
   # threshold), so this used to warn "Joint multi-block grid has 125 cells
   # (>50) ... CCD integration is a follow-up." on the documented example. The
-  # engine's own default grid should never trigger a "this is slow" warning
-  # by itself: the fit is well under the wall-clock threshold.
+  # engine's own default grid should never trigger a grid-size warning by
+  # itself: 125 cells is well under the dense-grid threshold.
   #
   # The call MIRRORS `?temporal_ar2`'s own example, `phi` included, which is
   # what makes this a statement about the documented default rather than about

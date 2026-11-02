@@ -23,16 +23,6 @@ test_that("the crossing names the dispersion axes crossed on top", {
                    " It crosses b1 (6 rows: tau 6) x phi_b 4.")
 })
 
-test_that("the timing warning carries the count, the layout and the remedy", {
-  over <- .NL_MULTI_GRID_WARN_SECONDS + 1
-  expect_warning(
-    .nl_multi_grid_warn(over, 10000, "Reduce per-block or phi grid sizes.",
-                        " It crosses b1 (50 rows: sigma 5 x alpha 10) x phi_pos 4."),
-    paste0("Multi-block outer grid \\(10000 cells\\) took .* to solve\\. It crosses ",
-           "b1 \\(50 rows: sigma 5 x alpha 10\\) x phi_pos 4\\. Reduce per-block ",
-           "or phi grid sizes\\."))
-})
-
 test_that("a dense grid past the threshold is announced before its solve", {
   n <- .NL_DENSE_GRID_WARN_CELLS + 1L
   expect_warning(

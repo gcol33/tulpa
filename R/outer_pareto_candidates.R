@@ -504,11 +504,6 @@
     if (covered && improves) list(best = mix, source = "grid_mixture") else g_out
 }
 
-# Seed of the outer diagnostic's own random stream: the candidate dispatch's
-# importance draws (`.k_dispatch()`) and the bootstrap of the chosen proposal's
-# ratios (`.tulpa_psis_k_uncertainty()`).
-.K_DIAG_STREAM_SEED <- 20260702L
-
 # Full outer Pareto-k proposal dispatch: the symmetric choice above (grid-moment
 # / mode-Hessian / moment-matched Gaussian, or the grid mixture where the grid
 # is spread and covers the posterior), then the skew-normal rescue
@@ -530,7 +525,7 @@
     # conditional on its proposal, covers neither the other proposal nor the
     # choice between them. On a fixed stream the proposal and the reported k-hat
     # are functions of the fit alone.
-    .seed_scoped(.K_DIAG_STREAM_SEED)
+    .seed_scoped(.DIAGNOSTIC_SEED$outer_k)
     # Below the GPD-fit floor no candidate can return a number, and the mixture
     # would sample and evaluate the (expensive) target before finding that out,
     # so the floor is read once here rather than in each scorer.

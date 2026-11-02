@@ -38,7 +38,7 @@
     lm + .spde_log_hyperprior(r, s, sp, hyperprior)
   }
   .k_tail_cap_warn(tail_points, n_samples)
-  kd <- .with_diagnostic_seed(
+  kd <- .with_preserved_seed(
     tryCatch(.k_dispatch_report(
       .k_cand_spec(lt = lt, u_hat = theta_hat,
                    Su = L_scale %*% t(L_scale), u_grid = u_grid, w = w,
@@ -178,9 +178,9 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
 # The variances are the diagonal of the cell's constrained inverse precision,
 # one Takahashi pass per cell on unit loadings (`cpp_loading_marginal_var()`);
 # with the modes they are the Gaussian components of the grid mixture
-# `field_effects()` summarizes. A cell whose precision was not retained (the fractional-nu path
-# solves its own operator and stores none) carries modes and variances only
-# where the kernel returned them.
+# `field_effects()` summarizes. A cell whose precision was not retained (the
+# fractional-nu path solves its own operator and stores none) carries modes and
+# variances only where the kernel returned them.
 .spde_nested_record <- function(result, range_grid, sigma_grid, log_post, sp,
                                integration) {
   rec <- list(

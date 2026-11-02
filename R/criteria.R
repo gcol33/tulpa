@@ -796,7 +796,7 @@ print.tulpa_wbic <- function(x, digits = 2, ...) {
     # predictors are those of the posterior-mean parameter vector.
     theta <- object[["draws"]]
     if (!is.null(ndraws) && ndraws < nrow(theta)) {
-      .seed_scoped(.DIAGNOSTIC_SEED)
+      .seed_scoped(.DIAGNOSTIC_SEED$criteria)
       theta <- theta[sample.int(nrow(theta), ndraws), , drop = FALSE]
     }
     return(list(
@@ -809,7 +809,7 @@ print.tulpa_wbic <- function(x, digits = 2, ...) {
                   "is no engine density to evaluate at the draws"))
   }
   eta <- tryCatch(.tulpa_eta_draws(object, ndraws = ndraws,
-                                   synth_seed = 285603L),
+                                   synth_seed = .DIAGNOSTIC_SEED$criteria),
                   error = identity)
   if (inherits(eta, "error")) {
     refuse(paste0("its linear-predictor draws could not be formed (",

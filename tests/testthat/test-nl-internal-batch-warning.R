@@ -6,22 +6,17 @@
 # per-block grid sizes", which does not reach the number in the message.
 # `.nl_internal_batch()` is the one predicate that separates the two.
 #
-# gcol33/tulpa#820 (a293202f) later replaced the warning's trigger: a static
-# cell-count threshold fired on the engine's own default per-block grids, so
-# it now fires on MEASURED ELAPSED TIME instead (`.nl_multi_grid_warn()`,
-# `R/nested_laplace.R`), with a rewritten message ("Multi-block outer grid (N
-# cells) took ... to solve."). A caller-chosen grid the engine solves quickly
-# no longer warns by itself -- by design -- so the "a grid the caller did
-# choose still warns" side of #614's fixture now tests `.nl_multi_grid_warn()`
-# directly at a synthetic elapsed time rather than a real fit, which is also
-# what makes it deterministic rather than a wall-clock race.
+# The dense-grid warning (`.nl_dense_grid_warn()`, `R/nested_laplace.R`) is
+# announced before the solve and reads the cell count alone, so the "a grid the
+# caller did choose still warns" side of #614's fixture tests it directly at a
+# count past the threshold rather than through a real fit of that size.
 
 grid_warnings <- function(expr) {
   w <- character(0)
   withCallingHandlers(
     force(expr),
     warning = function(cnd) {
-      if (grepl("Multi-block outer grid (", conditionMessage(cnd), fixed = TRUE)) {
+      if (grepl("Multi-block outer grid", conditionMessage(cnd), fixed = TRUE)) {
         w <<- c(w, conditionMessage(cnd))
       }
       invokeRestart("muffleWarning")
@@ -56,30 +51,30 @@ test_that(".nl_internal_batch() is off by default and restores (#614)", {
   expect_false(.nl_internal_batch())
 })
 
-test_that(".nl_multi_grid_warn() fires on measured elapsed time, gated by .nl_internal_batch() (gcol33/tulpa#820, #614)", {
+test_that(".nl_dense_grid_warn() fires past its cell count, gated by .nl_internal_batch() (#614)", {
   skip_on_cran_budget()
-  over <- tulpa:::.NL_MULTI_GRID_WARN_SECONDS + 1
+  over <- tulpa:::.NL_DENSE_GRID_WARN_CELLS + 1L
 
-  # A grid the caller DID choose still warns once it crosses the measured
-  # wall-clock threshold, and the message names its own cell count.
+  # A grid the caller DID choose warns once it crosses the threshold, and the
+  # message names its own cell count.
   w <- grid_warnings(
-    tulpa:::.nl_multi_grid_warn(elapsed = over, n_cells = 60L,
+    tulpa:::.nl_dense_grid_warn(n_cells = over,
                                 remedy = "Reduce per-block grid sizes."))
   expect_length(w, 1L)
-  expect_match(w, "60 cells", fixed = TRUE)
+  expect_match(w, paste(over, "cells"), fixed = TRUE)
   expect_match(w, "Reduce per-block grid sizes.", fixed = TRUE)
-  expect_false(any(grepl("200 cells", w, fixed = TRUE)))
 
-  # Below the threshold: silent regardless of cell count.
+  # At or below the threshold: silent.
   w0 <- grid_warnings(
-    tulpa:::.nl_multi_grid_warn(elapsed = 0.01, n_cells = 60L, remedy = "x"))
+    tulpa:::.nl_dense_grid_warn(n_cells = tulpa:::.NL_DENSE_GRID_WARN_CELLS,
+                                remedy = "x"))
   expect_identical(w0, character(0))
 
   # An internal re-dispatch (the Pareto-k diagnostic's own re-evaluation) is
-  # exempt even when IT is the slow one -- #614's whole point.
+  # exempt even past the threshold -- #614's whole point.
   w2 <- grid_warnings(
     tulpa:::.nl_with_internal_batch(
-      tulpa:::.nl_multi_grid_warn(elapsed = over, n_cells = 200L, remedy = "x")))
+      tulpa:::.nl_dense_grid_warn(n_cells = over, remedy = "x")))
   expect_identical(w2, character(0))
 })
 

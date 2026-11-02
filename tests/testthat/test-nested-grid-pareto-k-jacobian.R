@@ -52,10 +52,10 @@ test_that(".nested_grid_pareto_k target carries no change-of-variables Jacobian"
   tp <- tulpa:::.k_outer_tail_points(600L)
   set.seed(202)
   got <- tulpa:::.nested_grid_pareto_k(u_grid, w, refit, n_samples = 600L)$pareto_k
-  set.seed(tulpa:::.K_DIAG_STREAM_SEED)
+  set.seed(tulpa:::.DIAGNOSTIC_SEED$outer_k)
   ref_nojac <- tulpa:::.nested_is_pareto_k(u_hat, L, lt_nojac, n_samples = 600L,
                                            radius_cap = rcap, tail_points = tp)$pareto_k
-  set.seed(tulpa:::.K_DIAG_STREAM_SEED)
+  set.seed(tulpa:::.DIAGNOSTIC_SEED$outer_k)
   ref_withjac <- tulpa:::.nested_is_pareto_k(u_hat, L, lt_withjac, n_samples = 600L,
                                              radius_cap = rcap, tail_points = tp)$pareto_k
 
