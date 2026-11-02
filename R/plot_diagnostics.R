@@ -49,30 +49,85 @@ theme_tulpa <- function() {
 }
 
 
-#' Plot Rhat convergence diagnostic
+#' MCMC diagnostic plots
 #'
 #' @description
-#' Creates a visual display of Rhat values for all parameters, with color-coding
-#' to highlight convergence issues. Rhat values > 1.01 indicate potential
-#' convergence problems.
+#' Plots of a sampled fit's convergence and exploration diagnostics:
 #'
-#' @param fit A `tulpa_fit` object.
-#' @param threshold Rhat threshold for warnings (default: 1.01).
-#' @param pars Character vector of parameter names to include. If NULL (default),
-#'   includes all main parameters (excludes high-dimensional RE/spatial).
+#' - `plot_rhat()`: Rhat values for all parameters, colour-coded to highlight
+#'   convergence issues. Rhat values > 1.01 indicate potential convergence
+#'   problems.
+#' - `plot_ess()`: effective sample size (ESS) for all parameters, expressed
+#'   as a ratio of ESS to total samples. Low ESS indicates high
+#'   autocorrelation.
+#' - `plot_acf()`: autocorrelation function (ACF) plots for selected
+#'   parameters. High autocorrelation indicates slow mixing and low effective
+#'   sample size.
+#' - `plot_pairs()`: a pairs plot of the bivariate relationships between
+#'   parameters. Divergent transitions (if present) are highlighted to help
+#'   identify problematic posterior regions.
+#' - `plot_divergences()`: parallel coordinates or scatter plots that
+#'   highlight where in parameter space divergent transitions occur.
+#' - `plot_energy()`: overlaid histograms of the marginal energy (centred
+#'   within each chain) and the energy transition, along with the E-BFMI
+#'   statistic. Low E-BFMI indicates poor exploration of the posterior.
 #'
-#' @return A ggplot object (if ggplot2 available) or base R plot (invisible).
+#' @param fit A `tulpa_fit` object; an HMC fit for `plot_divergences()` and
+#'   `plot_energy()`.
+#' @param threshold `plot_rhat()`: Rhat threshold for warnings (default:
+#'   1.01). `plot_ess()`: minimum acceptable ESS (default: 400).
+#' @param pars Character vector of parameter names to include. If NULL
+#'   (default): all main parameters, excluding high-dimensional RE/spatial
+#'   ones (`plot_rhat()`); the worst-mixing parameters by ESS (`plot_acf()`);
+#'   the fixed effects followed by the hyperparameters (variance components,
+#'   precisions, dispersions and correlations), up to `n_pars`
+#'   (`plot_pairs()`); the hyperparameters on their sampled scale, filled up
+#'   to six with the fixed effects (`plot_divergences()`). A latent field's
+#'   per-unit values are never chosen by default.
+#' @param type `plot_ess()`: type of ESS, "bulk" (default) or "tail".
+#'   `plot_divergences()`: plot type, "parcoord" (parallel coordinates,
+#'   default) or "scatter".
+#' @param lags Maximum number of lags to compute (default: 25).
+#' @param n_pars Maximum number of parameters to plot (default: 6 for
+#'   `plot_acf()`, 5 for `plot_pairs()`).
+#' @param highlight_divergent Logical; highlight divergent transitions in red
+#'   (default: TRUE).
+#' @param alpha Point transparency (default: 0.3).
+#'
+#' @return A ggplot object (if ggplot2, and for `plot_pairs()` GGally, is
+#'   available) or a base R plot (invisible).
 #'
 #' @details
-#' Color coding:
+#' Rhat colour coding:
 #' - Green: Rhat < 1.01 (converged)
 #' - Yellow: 1.01 <= Rhat < 1.05 (borderline)
 #' - Red: Rhat >= 1.05 (not converged)
 #'
-#' @examples
-#' # Diagnostic plots require a fitted tulpa model
-#' # See tulpa() examples for fitting models
+#' ESS/iter colour coding:
+#' - Green: ESS >= threshold
+#' - Yellow: threshold/2 <= ESS < threshold
+#' - Red: ESS < threshold/2
 #'
+#' Ideal ACF plots show rapid decay to zero. Slow decay indicates high
+#' autocorrelation, which reduces effective sample size and may indicate
+#' poor mixing.
+#'
+#' Pairs plots help identify:
+#' - Strong correlations between parameters (potential non-identifiability)
+#' - Multimodality
+#' - Regions where divergences cluster (indicating problematic geometry)
+#'
+#' Divergent transitions indicate regions of high posterior curvature that
+#' the sampler cannot efficiently explore. Common causes:
+#' - Very narrow funnels (hierarchical models)
+#' - Strong correlations
+#' - Multi-modality
+#'
+#' E-BFMI (Energy Bayesian Fraction of Missing Information) compares the
+#' distribution of energy levels to energy transitions. Values below 0.3
+#' indicate the sampler may not be exploring the full posterior.
+#'
+#' @examples
 #' \donttest{
 #' set.seed(123)
 #' df <- data.frame(x = rnorm(60))
@@ -81,9 +136,24 @@ theme_tulpa <- function() {
 #'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
 #'                             seed = 1L))
 #' plot_rhat(fit)
+#' plot_ess(fit)
+#' plot_ess(fit, type = "tail")
+#' plot_acf(fit)
+#' plot_acf(fit, lags = 10)
+#' plot_pairs(fit)
+#' plot_pairs(fit, n_pars = 2)
+#' plot_divergences(fit)
+#' plot_divergences(fit, type = "scatter")
+#' plot_energy(fit)
 #' }
 #'
-#' @seealso [plot_ess()], [diagnostic_summary()], [diagnostics()]
+#' @seealso [plot_diagnostics()], [diagnostic_summary()], [diagnostics()],
+#'   [check_diagnostics()], [n_divergent()]
+#' @name mcmc_plots
+NULL
+
+
+#' @rdname mcmc_plots
 #' @export
 plot_rhat <- function(fit, threshold = 1.01, pars = NULL) {
   if (!inherits(fit, "tulpa_fit")) {
@@ -180,39 +250,7 @@ plot_rhat_base <- function(diag, threshold) {
 }
 
 
-#' Plot effective sample size diagnostic
-#'
-#' @description
-#' Creates a visual display of effective sample size (ESS) for all parameters,
-#' expressed as a ratio of ESS to total samples. Low ESS indicates high
-#' autocorrelation.
-#'
-#' @param fit A `tulpa_fit` object.
-#' @param type Type of ESS: "bulk" (default) or "tail".
-#' @param threshold Minimum acceptable ESS (default: 400).
-#' @param pars Character vector of parameter names to include.
-#'
-#' @return A ggplot object (if ggplot2 available) or base R plot (invisible).
-#'
-#' @details
-#' ESS/iter ratio interpretation:
-#' - Green: ESS >= threshold
-#' - Yellow: threshold/2 <= ESS < threshold
-#' - Red: ESS < threshold/2
-#'
-#' @examples
-#' \donttest{
-#' set.seed(123)
-#' df <- data.frame(x = rnorm(60))
-#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
-#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
-#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
-#'                             seed = 1L))
-#' plot_ess(fit)
-#' plot_ess(fit, type = "tail")
-#' }
-#'
-#' @seealso [plot_rhat()], [diagnostic_summary()], [diagnostics()]
+#' @rdname mcmc_plots
 #' @export
 plot_ess <- function(fit, type = c("bulk", "tail"), threshold = 400, pars = NULL) {
   if (!inherits(fit, "tulpa_fit")) {
@@ -308,38 +346,7 @@ plot_ess_base <- function(diag, threshold, type) {
 }
 
 
-#' Plot autocorrelation functions
-#'
-#' @description
-#' Creates autocorrelation function (ACF) plots for selected parameters.
-#' High autocorrelation indicates slow mixing and low effective sample size.
-#'
-#' @param fit A `tulpa_fit` object.
-#' @param pars Character vector of parameter names. If NULL, selects worst-mixing
-#'   parameters based on ESS.
-#' @param lags Maximum number of lags to compute (default: 25).
-#' @param n_pars Maximum number of parameters to plot (default: 6).
-#'
-#' @return A ggplot object (if ggplot2 available) or base R plot (invisible).
-#'
-#' @details
-#' Ideal ACF plots show rapid decay to zero. Slow decay indicates high
-#' autocorrelation, which reduces effective sample size and may indicate
-#' poor mixing.
-#'
-#' @examples
-#' \donttest{
-#' set.seed(123)
-#' df <- data.frame(x = rnorm(60))
-#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
-#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
-#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
-#'                             seed = 1L))
-#' plot_acf(fit)
-#' plot_acf(fit, lags = 10)
-#' }
-#'
-#' @seealso [plot_ess()], [diagnostics()]
+#' @rdname mcmc_plots
 #' @export
 plot_acf <- function(fit, pars = NULL, lags = 25, n_pars = 6) {
   if (!inherits(fit, "tulpa_fit")) {
@@ -438,44 +445,7 @@ plot_acf_base <- function(draws, pars, lags) {
 }
 
 
-#' Plot bivariate parameter posteriors (pairs plot)
-#'
-#' @description
-#' Creates a pairs plot showing bivariate relationships between parameters.
-#' Divergent transitions (if present) are highlighted to help identify
-#' problematic posterior regions.
-#'
-#' @param fit A `tulpa_fit` object.
-#' @param pars Character vector of parameter names. If NULL, the fixed effects
-#'   followed by the hyperparameters (variance components, precisions,
-#'   dispersions and correlations), up to `n_pars`; a latent field's per-unit
-#'   values are never chosen by default.
-#' @param highlight_divergent Logical; highlight divergent transitions in red
-#'   (default: TRUE).
-#' @param n_pars Maximum number of parameters (default: 5).
-#' @param alpha Point transparency (default: 0.3).
-#'
-#' @return A ggplot object (if ggplot2/GGally available) or base R plot.
-#'
-#' @details
-#' Pairs plots help identify:
-#' - Strong correlations between parameters (potential non-identifiability)
-#' - Multimodality
-#' - Regions where divergences cluster (indicating problematic geometry)
-#'
-#' @examples
-#' \donttest{
-#' set.seed(123)
-#' df <- data.frame(x = rnorm(60))
-#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
-#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
-#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
-#'                             seed = 1L))
-#' plot_pairs(fit)
-#' plot_pairs(fit, n_pars = 2)
-#' }
-#'
-#' @seealso [plot_divergences()], [diagnostics()]
+#' @rdname mcmc_plots
 #' @export
 plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
                        n_pars = 5, alpha = 0.3) {
@@ -713,42 +683,7 @@ plot_pairs_base <- function(draws_df, pars, has_divergent, alpha) {
 }
 
 
-#' Plot divergent transitions
-#'
-#' @description
-#' Creates visualizations to investigate divergent transitions. Parallel
-#' coordinates and scatter plots highlight where in parameter space
-#' divergences occur.
-#'
-#' @param fit A `tulpa_fit` object (HMC backend).
-#' @param pars Character vector of parameter names. If NULL, the
-#'   hyperparameters (variance components, precisions, dispersions and
-#'   correlations, on their sampled scale), filled up to six with the fixed
-#'   effects; a latent field's per-unit values are never chosen by default.
-#' @param type Plot type: "parcoord" (parallel coordinates) or "scatter".
-#'
-#' @return A ggplot object or base R plot (invisible).
-#'
-#' @details
-#' Divergent transitions indicate regions of high posterior curvature that
-#' the sampler cannot efficiently explore. Common causes:
-#' - Very narrow funnels (hierarchical models)
-#' - Strong correlations
-#' - Multi-modality
-#'
-#' @examples
-#' \donttest{
-#' set.seed(123)
-#' df <- data.frame(x = rnorm(60))
-#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
-#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
-#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
-#'                             seed = 1L))
-#' plot_divergences(fit)
-#' plot_divergences(fit, type = "scatter")
-#' }
-#'
-#' @seealso [plot_pairs()], [n_divergent()]
+#' @rdname mcmc_plots
 #' @export
 plot_divergences <- function(fit, pars = NULL, type = c("parcoord", "scatter")) {
   if (!inherits(fit, "tulpa_fit")) {
@@ -931,35 +866,7 @@ plot_divergences_scatter <- function(draws_df, pars) {
 }
 
 
-#' Plot energy diagnostic (E-BFMI)
-#'
-#' @description
-#' Creates overlaid histograms of the marginal energy (centred within each
-#' chain) and the energy transition,
-#' along with the E-BFMI statistic. Low E-BFMI indicates poor exploration
-#' of the posterior.
-#'
-#' @param fit A `tulpa_fit` object (HMC backend).
-#'
-#' @return A ggplot object (if ggplot2 available) or base R plot.
-#'
-#' @details
-#' E-BFMI (Energy Bayesian Fraction of Missing Information) compares the
-#' distribution of energy levels to energy transitions. Values below 0.3
-#' indicate the sampler may not be exploring the full posterior.
-#'
-#' @examples
-#' \donttest{
-#' set.seed(123)
-#' df <- data.frame(x = rnorm(60))
-#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
-#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
-#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
-#'                             seed = 1L))
-#' plot_energy(fit)
-#' }
-#'
-#' @seealso [diagnostic_summary()], [check_diagnostics()]
+#' @rdname mcmc_plots
 #' @export
 plot_energy <- function(fit) {
   if (!inherits(fit, "tulpa_fit")) {

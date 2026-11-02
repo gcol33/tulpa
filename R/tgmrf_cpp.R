@@ -273,24 +273,38 @@ tgmrf_cpp <- function(cpp_file, id, init,
   )
 }
 
-#' Default cache directory for `tgmrf_cpp()`-compiled DLLs
+#' Cache of `tgmrf_cpp()`-compiled DLLs
 #'
 #' @description
-#' Reports the per-user directory under `tools::R_user_dir("tulpa", "cache")`
-#' where [tgmrf_cpp()] keeps the objects it compiles. Reporting the path does
-#' not create it: the directory appears the first time a compile needs it, and
-#' [tulpa_cache_clear()] removes what it holds.
+#' `tulpa_cache_dir()` reports the per-user directory under
+#' `tools::R_user_dir("tulpa", "cache")` where [tgmrf_cpp()] keeps the objects
+#' it compiles. Reporting the path does not create it: the directory appears
+#' the first time a compile needs it.
+#'
+#' `tulpa_cache_clear()` deletes cached compilation output under
+#' `tulpa_cache_dir()`. The cache holds build artefacts only -- a removed entry
+#' is rebuilt by the next [tgmrf_cpp()] call on the same source -- so it can be
+#' emptied at any time.
 #'
 #' @param create Create the directory if it is missing. `FALSE` (the default)
 #'   only reports the path.
+#' @param older_than Remove only entries whose last modification is more than
+#'   this many days ago. `0` (the default) removes every entry.
 #'
-#' @return Absolute path (character) to the cache directory.
-#'
-#' @seealso [tulpa_cache_clear()] to remove cached objects.
+#' @return `tulpa_cache_dir()`: the absolute path (character) to the cache
+#'   directory. `tulpa_cache_clear()`: the number of entries removed,
+#'   invisibly.
 #'
 #' @examples
 #' # Where compiled tgmrf_cpp() blocks are cached. Reporting creates nothing.
 #' tulpa_cache_dir()
+#'
+#' # Clearing deletes the caller's own cached builds, so it runs only in an
+#' # interactive session.
+#' if (interactive()) {
+#'   tulpa_cache_clear(older_than = 30)  # keep the last 30 days
+#'   tulpa_cache_clear()                 # empty the cache
+#' }
 #'
 #' @export
 tulpa_cache_dir <- function(create = FALSE) {
@@ -301,28 +315,7 @@ tulpa_cache_dir <- function(create = FALSE) {
   d
 }
 
-#' Remove compiled blocks from the tgmrf_cpp() cache
-#'
-#' @description
-#' Deletes cached compilation output under [tulpa_cache_dir()]. The cache holds
-#' build artefacts only -- a removed entry is rebuilt by the next [tgmrf_cpp()]
-#' call on the same source -- so it can be emptied at any time.
-#'
-#' @param older_than Remove only entries whose last modification is more than
-#'   this many days ago. `0` (the default) removes every entry.
-#'
-#' @return The number of entries removed, invisibly.
-#'
-#' @seealso [tulpa_cache_dir()] for the location.
-#'
-#' @examples
-#' # Deletes the caller's own cached builds, so it runs only in an
-#' # interactive session.
-#' if (interactive()) {
-#'   tulpa_cache_clear(older_than = 30)  # keep the last 30 days
-#'   tulpa_cache_clear()                 # empty the cache
-#' }
-#'
+#' @rdname tulpa_cache_dir
 #' @export
 tulpa_cache_clear <- function(older_than = 0) {
   if (!is.numeric(older_than) || length(older_than) != 1L ||

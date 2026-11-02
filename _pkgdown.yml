@@ -26,7 +26,6 @@ reference:
   - tulpa
   - tulpa_parse_formula
   - findbars
-  - nobars
   - inference_mode_info
   - validate_mode
   - tulpa_family
@@ -63,7 +62,6 @@ reference:
   - tgmrf
   - tgmrf_cpp
   - tulpa_cache_dir
-  - tulpa_cache_clear
   - mala
   - tulpa_integrator
   - with_tulpa_integrator
@@ -112,13 +110,7 @@ reference:
   - tulpa_priors
   - priors_default
   - prior_from_spec
-  - prior_normal
-  - prior_beta
-  - prior_gamma
-  - prior_exponential
-  - prior_half_cauchy
-  - prior_half_normal
-  - prior_pc
+  - prior_distributions
   - re_cov_pc_lkj_prior
 - title: Methods, criteria, and prediction
   contents:
@@ -178,10 +170,7 @@ reference:
   - tulpa_variogram
   - pit_residuals
   - tulpa_pit
-  - test_uniformity
-  - test_dispersion
-  - test_outliers
-  - test_zero_inflation
+  - simulation_tests
   - check_model
   - spatial_range
   - temporal_corr
@@ -196,12 +185,7 @@ reference:
   - sbc_predictive
 - title: Plots
   contents:
-  - plot_rhat
-  - plot_ess
-  - plot_acf
-  - plot_energy
-  - plot_divergences
-  - plot_pairs
+  - mcmc_plots
   - plot_diagnostics
   - plot_map
   - plot_map_panel
@@ -211,15 +195,11 @@ reference:
     axis-provenance surface, and the small numerical helpers.
   contents:
   - ccd_grid
-  - ccd_weights
-  - ccd_to_theta
   - hyper_axis_spec
   - auto_grid
   - is_auto_grid
   - rubins_pool
-  - sn_cdf
-  - sn_quantile
-  - sn_match
+  - skew_normal
   - tulpa_profile
   - tulpa_check_control
 - title: internal

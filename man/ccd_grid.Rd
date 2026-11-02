@@ -2,9 +2,15 @@
 % Please edit documentation in R/ccd_grid.R
 \name{ccd_grid}
 \alias{ccd_grid}
+\alias{ccd_to_theta}
+\alias{ccd_weights}
 \title{Central composite design (CCD) grid for nested-Laplace integration}
 \usage{
 ccd_grid(k, f_0 = sqrt(k))
+
+ccd_to_theta(z, theta_hat, L, log_scale = FALSE)
+
+ccd_weights(ccd)
 }
 \arguments{
 \item{k}{Number of hyperparameters (length of theta). Must be >= 1.}
@@ -12,9 +18,30 @@ ccd_grid(k, f_0 = sqrt(k))
 \item{f_0}{Radius of the design sphere (default \eqn{\sqrt{k}}). Larger
 \code{f_0} spreads points further out; smaller concentrates near the
 centre. INLA's default scales like \eqn{\sqrt{k}}.}
+
+\item{z}{Matrix \verb{[n_points x k]} of standardised coordinates from
+\code{ccd_grid()}.}
+
+\item{theta_hat}{Numeric vector of length \code{k}: centre of the design,
+in either physical or log-space (per \code{log_scale}).}
+
+\item{L}{Numeric \verb{[k x k]} matrix: scale/rotation applied to z. Pass
+\code{diag(sd)} for a diagonal axis-aligned grid where \code{sd} is the
+per-axis posterior SD; pass a Cholesky factor to capture
+correlations between hyperparameters.}
+
+\item{log_scale}{Logical (or logical vector of length k). If \code{TRUE}
+for component j, \code{theta_hat[j]} and column j of the affine
+transform live on log-scale and are exponentiated afterward
+(useful for positive parameters like tau). Default \code{FALSE} everywhere.}
+
+\item{ccd}{A \code{ccd_grid()} result. The standardized scaling is recovered as
+\code{f0 = ccd$f_0 / sqrt(m)}: a \code{ccd_grid(m, f_0 = sqrt(m) * f0)} design places
+the factorial corners at \verb{+/- f0}, matching the INLA convention (\code{f0 = 1.1}
+is the INLA default).}
 }
 \value{
-A list with components:
+\code{ccd_grid()}: a list with components:
 \itemize{
 \item \code{z}: numeric matrix \verb{[n_points x k]} of standardised hyperparameter
 coordinates.
@@ -23,6 +50,13 @@ coordinates.
 \code{"center"}, \code{"axial"}, or \code{"factorial"}.
 \item \code{f_0}: the sphere radius used.
 }
+
+\code{ccd_to_theta()}: a numeric matrix \verb{[n_points x k]} of physical
+theta-values.
+
+\code{ccd_weights()}: a numeric vector of length \code{ccd$n_points}, the design
+weight for each point (the centre weight \code{w0} for the central point, \code{w}
+otherwise).
 }
 \description{
 Produces a structured set of standardised hyperparameter points
@@ -48,14 +82,35 @@ while preserving Resolution V.
 
 Used by \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for higher-dimensional hyperparameter
 blocks. The standardised z-coordinates are mapped to physical
-hyperparameters \eqn{\theta} via \code{\link[=ccd_to_theta]{ccd_to_theta()}}.
+hyperparameters \eqn{\theta} via \code{ccd_to_theta()}.
+
+\code{ccd_to_theta()} converts standardised CCD z-coordinates (in
+\eqn{\mathbb{R}^k}) to physical hyperparameters \eqn{\theta} via the affine
+map \eqn{\theta = \hat\theta + L \cdot z} with optional log-scale
+transform per component. \code{L} is typically a Cholesky factor of the
+negative Hessian inverse evaluated at the (working) mode \eqn{\hat\theta}
+-- i.e. it scales \code{z} to one posterior standard deviation per axis.
+
+\code{ccd_weights()} gives the per-point design weights for a \code{ccd_grid()} used
+as nested-Laplace integration nodes. It implements the corrected R-INLA
+central-composite-design weights: the formula in Rue, Martino and Chopin
+(2009) has a typo, corrected by the R-INLA team to give a positive central
+weight. With \code{m} hyperparameters, \code{np} design points and standardized
+scaling \code{f0}, every non-centre point gets
+\deqn{w = 1 / ((np - 1)(1 + e^{-m f0^2 / 2}(f0^2 - 1)))}
+and the centre point gets \eqn{w_0 = 1 - (np - 1) w}. Used as
+\eqn{\Delta_k}: the integration weight of node \eqn{k} is
+\eqn{\Delta_k \exp(\log\,\mathrm{marginal}_k)}, renormalized. On a
+standardized (whitened) hyperparameter posterior these reproduce the
+Gaussian moments exactly.
 }
 \examples{
 g <- ccd_grid(3)
 g$n_points
 table(g$kind)
-}
-\seealso{
-\code{\link[=ccd_to_theta]{ccd_to_theta()}} to map z-coordinates to physical theta.
+ccd_weights(g)
+
+g2 <- ccd_grid(2)
+ccd_to_theta(g2$z, theta_hat = c(0, 1), L = diag(c(0.5, 0.2)))
 }
 \keyword{internal}

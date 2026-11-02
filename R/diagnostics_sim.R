@@ -127,20 +127,43 @@ pit_residuals.default <- function(object, observed = NULL, nsim = 250L,
 # Test Uniformity (KS test on PIT residuals)
 # ==============================================================================
 
-#' Test uniformity of PIT residuals
+#' Simulation-based residual tests
 #'
-#' If the model is correct, PIT residuals should follow Uniform(0, 1).
-#' Applies a Kolmogorov-Smirnov test against that null.
-#' Equivalent to `DHARMa::testUniformity()`.
+#' @description
+#' Tests of a fitted model against data simulated from it, the
+#' simulation-based residual checks of the DHARMa package:
 #'
-#' @param object A fitted model, a numeric vector of PIT residuals, or a
-#'   matrix of simulations
-#' @param observed Observed data (if object is simulations matrix)
+#' - `test_uniformity()`: if the model is correct, PIT residuals follow
+#'   Uniform(0, 1). Applies a Kolmogorov-Smirnov test against that null.
+#'   Equivalent to `DHARMa::testUniformity()`.
+#' - `test_dispersion()`: compares the variance of the observed data to the
+#'   variance expected under the fitted model (via simulation). Ratio > 1 =
+#'   overdispersion; < 1 = underdispersion. Equivalent to
+#'   `DHARMa::testDispersion()`.
+#' - `test_outliers()`: counts how many observations fall outside the
+#'   min-to-max range of all simulations. Under a correct model, the expected
+#'   number is approximately `2 * N / (nsim + 1)`. Equivalent to
+#'   `DHARMa::testOutliers()`.
+#' - `test_zero_inflation()`: compares the number of zeros in the observed data
+#'   to the distribution expected under the fitted model. Equivalent to
+#'   `DHARMa::testZeroInflation()`.
+#'
+#' @param object A fitted model with a `simulate()` method. For
+#'   `test_uniformity()` also a numeric vector of PIT residuals, or a matrix
+#'   of simulations.
+#' @param observed Observed response vector (optional -- extracted from the
+#'   fit; required by `test_uniformity()` when `object` is a simulations
+#'   matrix).
 #' @param nsim Number of simulations (default 250)
 #' @param seed Random seed (default 123)
-#' @param plot If TRUE, draws a QQ plot
+#' @param plot If TRUE, `test_uniformity()` draws a QQ plot
+#' @param alternative `"two.sided"`, `"greater"`, or `"less"`
+#' @param ... Passed to methods.
 #'
-#' @return An `htest` object (KS test result)
+#' @return An `htest` object: the KS test (`test_uniformity()`), the
+#'   dispersion ratio and its p-value (`test_dispersion()`), the binomial test
+#'   on the count outside the envelope (`test_outliers()`), the zero-inflation
+#'   ratio and its p-value (`test_zero_inflation()`).
 #'
 #' @examples
 #' set.seed(1)
@@ -151,7 +174,14 @@ pit_residuals.default <- function(object, observed = NULL, nsim = 250L,
 #' d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
 #' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
 #' test_uniformity(fit, nsim = 50)
+#' test_dispersion(fit, nsim = 50)
+#' test_outliers(fit, nsim = 50)
+#' test_zero_inflation(fit, nsim = 50)
 #' }
+#' @name simulation_tests
+NULL
+
+#' @rdname simulation_tests
 #' @export
 test_uniformity <- function(object, observed = NULL, nsim = 250L, seed = 123L,
                             plot = FALSE) {
@@ -191,35 +221,13 @@ test_uniformity <- function(object, observed = NULL, nsim = 250L, seed = 123L,
 # Test Dispersion
 # ==============================================================================
 
-#' Test for over- or underdispersion
-#'
-#' Compares the variance of observed data to the variance expected under
-#' the fitted model (via simulation). Ratio > 1 = overdispersion;
-#' < 1 = underdispersion. Equivalent to `DHARMa::testDispersion()`.
-#'
-#' @param object A fitted model with `simulate()` method
-#' @param observed Observed response vector (optional -- extracted from fit)
-#' @param nsim Number of simulations (default 250)
-#' @param seed Random seed (default 123)
-#' @param alternative `"two.sided"`, `"greater"`, or `"less"`
-#' @param ... Passed to methods.
-#'
-#' @return An `htest` object with dispersion ratio and p-value
-#'
-#' @examples
-#' \donttest{
-#' set.seed(1)
-#' d <- data.frame(x = rnorm(80))
-#' d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
-#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
-#' test_dispersion(fit, nsim = 50)
-#' }
+#' @rdname simulation_tests
 #' @export
 test_dispersion <- function(object, ...) {
   UseMethod("test_dispersion")
 }
 
-#' @rdname test_dispersion
+#' @rdname simulation_tests
 #' @export
 test_dispersion.default <- function(object, observed = NULL, nsim = 250L,
                                     seed = 123L,
@@ -260,34 +268,13 @@ test_dispersion.default <- function(object, observed = NULL, nsim = 250L,
 # Test Outliers
 # ==============================================================================
 
-#' Test for outliers (simulation envelope)
-#'
-#' Counts how many observations fall outside the min-to-max range of
-#' all simulations. Under a correct model, the expected number is
-#' approximately `2 * N / (nsim + 1)`. Equivalent to `DHARMa::testOutliers()`.
-#'
-#' @param object A fitted model with `simulate()` method
-#' @param observed Observed response vector (optional)
-#' @param nsim Number of simulations (default 250)
-#' @param seed Random seed (default 123)
-#' @param ... Passed to methods.
-#'
-#' @return An `htest` object (binomial test)
-#'
-#' @examples
-#' \donttest{
-#' set.seed(1)
-#' d <- data.frame(x = rnorm(80))
-#' d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
-#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
-#' test_outliers(fit, nsim = 50)
-#' }
+#' @rdname simulation_tests
 #' @export
 test_outliers <- function(object, ...) {
   UseMethod("test_outliers")
 }
 
-#' @rdname test_outliers
+#' @rdname simulation_tests
 #' @export
 test_outliers.default <- function(object, observed = NULL, nsim = 250L,
                                   seed = 123L, ...) {
@@ -312,34 +299,13 @@ test_outliers.default <- function(object, observed = NULL, nsim = 250L,
 # Test Zero Inflation
 # ==============================================================================
 
-#' Test for zero inflation
-#'
-#' Compares the number of zeros in observed data to the distribution
-#' expected under the fitted model. Equivalent to `DHARMa::testZeroInflation()`.
-#'
-#' @param object A fitted model with `simulate()` method
-#' @param observed Observed response vector (optional)
-#' @param nsim Number of simulations (default 250)
-#' @param seed Random seed (default 123)
-#'
-#' @param ... Passed to methods.
-#'
-#' @return An `htest` object with zero-inflation ratio and p-value
-#'
-#' @examples
-#' \donttest{
-#' set.seed(1)
-#' d <- data.frame(x = rnorm(80))
-#' d$y <- rpois(80, exp(0.3 + 0.5 * d$x))
-#' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
-#' test_zero_inflation(fit, nsim = 50)
-#' }
+#' @rdname simulation_tests
 #' @export
 test_zero_inflation <- function(object, ...) {
   UseMethod("test_zero_inflation")
 }
 
-#' @rdname test_zero_inflation
+#' @rdname simulation_tests
 #' @export
 test_zero_inflation.default <- function(object, observed = NULL, nsim = 250L,
                                         seed = 123L, ...) {

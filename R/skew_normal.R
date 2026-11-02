@@ -56,23 +56,42 @@
 }
 
 
-#' Match three cumulants to a skew-normal parameterisation
+#' Skew-normal distribution matched to three cumulants
 #'
-#' Inverts the skew-normal moment formulas to convert
+#' @description
+#' `sn_match()` inverts the skew-normal moment formulas to convert
 #' \code{(mu, sigma, gamma)} into \code{(xi, omega, alpha)} parameters.
-#' Returns \code{NULL} with a warning when \code{|gamma|} exceeds the
+#' It returns \code{NULL} with a warning when \code{|gamma|} exceeds the
 #' skew-normal ceiling (~0.9953) -- in that regime the third cumulant
 #' cannot be matched by any skew-normal and the caller should fall back
 #' to direct-quadrature quantiles.
 #'
+#' `sn_cdf()` is the cumulative distribution function of the univariate
+#' skew-normal,
+#' \deqn{F(q; \xi, \omega, \alpha) = \Phi(z) - 2 T(z, \alpha),}
+#' where \eqn{z = (q - \xi) / \omega} and \eqn{T} is Owen's T function.
+#' Owen's T is evaluated by base R numerical quadrature; no extra
+#' dependencies are required.
+#'
+#' `sn_quantile()` inverts the skew-normal CDF by Newton iteration on
+#' `sn_cdf()`, with a Brent-style bracket fallback when Newton fails to
+#' converge.
+#'
 #' @param mu Posterior mean (numeric, length 1).
 #' @param sigma Posterior standard deviation (positive numeric, length 1).
 #' @param gamma Posterior skewness (numeric, length 1).
-#' @return Named list with elements \code{xi}, \code{omega}, \code{alpha};
-#'   or \code{NULL} if \code{|gamma| >= .SN_GAMMA_MAX}.
+#' @return `sn_match()`: a named list with elements \code{xi}, \code{omega},
+#'   \code{alpha}; or \code{NULL} if \code{|gamma| >= .SN_GAMMA_MAX}.
+#'   `sn_cdf()`: a numeric vector of CDF values, same length as \code{q}.
+#'   `sn_quantile()`: a numeric vector of quantiles, same length as \code{p}.
 #' @references Azzalini, A. (1985). A class of distributions which
 #'   includes the normal ones. \emph{Scand. J. Statist.} \strong{12}: 171-178.
 #' @keywords internal
+#' @name skew_normal
+NULL
+
+
+#' @rdname skew_normal
 #' @export
 sn_match <- function(mu, sigma, gamma) {
   if (!is.numeric(sigma) || length(sigma) != 1L || sigma <= 0) {
@@ -103,19 +122,10 @@ sn_match <- function(mu, sigma, gamma) {
 }
 
 
-#' Skew-normal CDF
-#'
-#' Cumulative distribution function of the univariate skew-normal,
-#' \deqn{F(q; \xi, \omega, \alpha) = \Phi(z) - 2 T(z, \alpha),}
-#' where \eqn{z = (q - \xi) / \omega} and \eqn{T} is Owen's T function.
-#' Owen's T is evaluated by base R numerical quadrature; no extra
-#' dependencies are required.
-#'
+#' @rdname skew_normal
 #' @param q Numeric vector of quantiles.
-#' @param sn Skew-normal parameter list from [sn_match()] with elements
+#' @param sn Skew-normal parameter list from `sn_match()` with elements
 #'   \code{xi}, \code{omega}, \code{alpha}.
-#' @return Numeric vector of CDF values, same length as \code{q}.
-#' @keywords internal
 #' @export
 sn_cdf <- function(q, sn) {
   .check_sn(sn)
@@ -124,18 +134,10 @@ sn_cdf <- function(q, sn) {
 }
 
 
-#' Skew-normal quantile
-#'
-#' Inverse of the skew-normal CDF via Newton iteration on
-#' [sn_cdf()] with a Brent-style bracket fallback when Newton fails to
-#' converge.
-#'
+#' @rdname skew_normal
 #' @param p Numeric vector of probabilities in \eqn{[0, 1]}.
-#' @param sn Skew-normal parameter list from [sn_match()].
 #' @param tol Absolute tolerance on the CDF residual (default \code{1e-10}).
 #' @param max_iter Maximum Newton iterations (default \code{60}).
-#' @return Numeric vector of quantiles, same length as \code{p}.
-#' @keywords internal
 #' @export
 sn_quantile <- function(p, sn, tol = 1e-10, max_iter = 60L) {
   .check_sn(sn)

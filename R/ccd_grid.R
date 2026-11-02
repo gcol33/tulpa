@@ -22,14 +22,34 @@
 #'
 #' Used by [tulpa_nested_laplace()] for higher-dimensional hyperparameter
 #' blocks. The standardised z-coordinates are mapped to physical
-#' hyperparameters \eqn{\theta} via [ccd_to_theta()].
+#' hyperparameters \eqn{\theta} via `ccd_to_theta()`.
+#'
+#' `ccd_to_theta()` converts standardised CCD z-coordinates (in
+#' \eqn{\mathbb{R}^k}) to physical hyperparameters \eqn{\theta} via the affine
+#' map \eqn{\theta = \hat\theta + L \cdot z} with optional log-scale
+#' transform per component. `L` is typically a Cholesky factor of the
+#' negative Hessian inverse evaluated at the (working) mode \eqn{\hat\theta}
+#' -- i.e. it scales `z` to one posterior standard deviation per axis.
+#'
+#' `ccd_weights()` gives the per-point design weights for a `ccd_grid()` used
+#' as nested-Laplace integration nodes. It implements the corrected R-INLA
+#' central-composite-design weights: the formula in Rue, Martino and Chopin
+#' (2009) has a typo, corrected by the R-INLA team to give a positive central
+#' weight. With `m` hyperparameters, `np` design points and standardized
+#' scaling `f0`, every non-centre point gets
+#' \deqn{w = 1 / ((np - 1)(1 + e^{-m f0^2 / 2}(f0^2 - 1)))}
+#' and the centre point gets \eqn{w_0 = 1 - (np - 1) w}. Used as
+#' \eqn{\Delta_k}: the integration weight of node \eqn{k} is
+#' \eqn{\Delta_k \exp(\log\,\mathrm{marginal}_k)}, renormalized. On a
+#' standardized (whitened) hyperparameter posterior these reproduce the
+#' Gaussian moments exactly.
 #'
 #' @param k Number of hyperparameters (length of theta). Must be >= 1.
 #' @param f_0 Radius of the design sphere (default \eqn{\sqrt{k}}). Larger
 #'   `f_0` spreads points further out; smaller concentrates near the
 #'   centre. INLA's default scales like \eqn{\sqrt{k}}.
 #'
-#' @return A list with components:
+#' @return `ccd_grid()`: a list with components:
 #'   * `z`: numeric matrix `[n_points x k]` of standardised hyperparameter
 #'     coordinates.
 #'   * `n_points`: integer; total grid size.
@@ -37,12 +57,22 @@
 #'     `"center"`, `"axial"`, or `"factorial"`.
 #'   * `f_0`: the sphere radius used.
 #'
-#' @seealso [ccd_to_theta()] to map z-coordinates to physical theta.
+#'   `ccd_to_theta()`: a numeric matrix `[n_points x k]` of physical
+#'   theta-values.
+#'
+#'   `ccd_weights()`: a numeric vector of length `ccd$n_points`, the design
+#'   weight for each point (the centre weight `w0` for the central point, `w`
+#'   otherwise).
+#'
 #' @keywords internal
 #' @examples
 #' g <- ccd_grid(3)
 #' g$n_points
 #' table(g$kind)
+#' ccd_weights(g)
+#'
+#' g2 <- ccd_grid(2)
+#' ccd_to_theta(g2$z, theta_hat = c(0, 1), L = diag(c(0.5, 0.2)))
 #' @export
 ccd_grid <- function(k, f_0 = sqrt(k)) {
   # A fractional `k` is refused, not truncated: ccd_grid(2.7) was a 2-D design.
@@ -98,18 +128,9 @@ ccd_grid <- function(k, f_0 = sqrt(k)) {
   )
 }
 
-#' Map standardised CCD coordinates to physical hyperparameters
-#'
-#' @description
-#' Converts standardised CCD z-coordinates (in \eqn{\mathbb{R}^k}) to
-#' physical hyperparameters \eqn{\theta} via the affine map
-#' \eqn{\theta = \hat\theta + L \cdot z} with optional log-scale
-#' transform per component. `L` is typically a Cholesky factor of the
-#' negative Hessian inverse evaluated at the (working) mode \eqn{\hat\theta}
-#' -- i.e. it scales `z` to one posterior standard deviation per axis.
-#'
+#' @rdname ccd_grid
 #' @param z Matrix `[n_points x k]` of standardised coordinates from
-#'   [ccd_grid()].
+#'   `ccd_grid()`.
 #' @param theta_hat Numeric vector of length `k`: centre of the design,
 #'   in either physical or log-space (per `log_scale`).
 #' @param L Numeric `[k x k]` matrix: scale/rotation applied to z. Pass
@@ -120,13 +141,6 @@ ccd_grid <- function(k, f_0 = sqrt(k)) {
 #'   for component j, `theta_hat[j]` and column j of the affine
 #'   transform live on log-scale and are exponentiated afterward
 #'   (useful for positive parameters like tau). Default `FALSE` everywhere.
-#'
-#' @return Numeric matrix `[n_points x k]` of physical theta-values.
-#'
-#' @keywords internal
-#' @examples
-#' g <- ccd_grid(2)
-#' ccd_to_theta(g$z, theta_hat = c(0, 1), L = diag(c(0.5, 0.2)))
 #' @export
 ccd_to_theta <- function(z, theta_hat, L, log_scale = FALSE) {
   if (!is.matrix(z)) stop("`z` must be a matrix.", call. = FALSE)
@@ -147,33 +161,11 @@ ccd_to_theta <- function(z, theta_hat, L, log_scale = FALSE) {
   unname(theta)
 }
 
-#' Corrected R-INLA CCD integration weights
-#'
-#' @description
-#' Per-point design weights for a [ccd_grid()] used as nested-Laplace integration
-#' nodes. Implements the corrected R-INLA central-composite-design weights: the
-#' formula in Rue, Martino and Chopin (2009) has a typo, corrected by the R-INLA
-#' team to give a positive central weight. With `m` hyperparameters, `np` design
-#' points and standardized scaling `f0`, every non-centre point gets
-#' \deqn{w = 1 / ((np - 1)(1 + e^{-m f0^2 / 2}(f0^2 - 1)))}
-#' and the centre point gets \eqn{w_0 = 1 - (np - 1) w}. Used as
-#' \eqn{\Delta_k}: the integration weight of node \eqn{k} is
-#' \eqn{\Delta_k \exp(\log\,\mathrm{marginal}_k)}, renormalized. On a standardized
-#' (whitened) hyperparameter posterior these reproduce the Gaussian moments
-#' exactly.
-#'
-#' @param ccd A [ccd_grid()] result. The standardized scaling is recovered as
+#' @rdname ccd_grid
+#' @param ccd A `ccd_grid()` result. The standardized scaling is recovered as
 #'   `f0 = ccd$f_0 / sqrt(m)`: a `ccd_grid(m, f_0 = sqrt(m) * f0)` design places
 #'   the factorial corners at `+/- f0`, matching the INLA convention (`f0 = 1.1`
 #'   is the INLA default).
-#'
-#' @return Numeric vector of length `ccd$n_points`: the design weight for each
-#'   point (the centre weight `w0` for the central point, `w` otherwise).
-#'
-#' @seealso [ccd_grid()], [ccd_to_theta()].
-#' @keywords internal
-#' @examples
-#' ccd_weights(ccd_grid(3))
 #' @export
 ccd_weights <- function(ccd) {
   m  <- ncol(ccd$z)

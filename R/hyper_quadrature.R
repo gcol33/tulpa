@@ -551,22 +551,36 @@
 # al. 2017). The rate is read off the grid the caller declared, by putting 5 % of
 # the prior mass above its largest node, so the prior is fixed before the fit and
 # is weakly informative relative to the range the caller thought plausible.
-#' The copy-scale axis's PC-prior density
+#' The copy-scale axis's slab measure
 #'
-#' The proper density tulpa uses for the copy scale's continuum: an
-#' exponential, the penalized-complexity prior for a scale parameter with its
-#' base model at zero (Simpson et al. 2017). The rate is set by putting 5% of
-#' the prior mass above `upper`, so a caller that reads this off a fit's own
-#' declared grid gets the exact rate the outer integration used -- rather
-#' than restating a PC-prior rate that could silently drift from it.
+#' @description
+#' `tulpa_hyper_copy_slab_density()` returns the proper density tulpa uses for
+#' the copy scale's continuum: an exponential, the penalized-complexity prior
+#' for a scale parameter with its base model at zero (Simpson et al. 2017).
+#' The rate is set by putting 5% of the prior mass above `upper`, so a caller
+#' that reads this off a fit's own declared grid gets the exact rate the outer
+#' integration used -- rather than restating a PC-prior rate that could
+#' silently drift from it.
+#'
+#' `tulpa_hyper_check_copy_slab()` validates a `copy_slab` argument --
+#' `"exponential"` (the default) or `"flat"`, the two continuum measures tulpa
+#' supports for a copy scale's non-atom mass -- defaulting `NULL` to
+#' `"exponential"` and erroring on anything else. Intended so a consumer
+#' package's own `copy_slab` argument stays in sync with tulpa's own accepted
+#' choices rather than restating them.
 #'
 #' @param upper The largest declared node of the copy-scale axis.
-#' @return A function `log p(x) = log(lambda) - lambda * x`, or `NULL` if
-#'   `upper` is not a finite positive number.
-#' @seealso [tulpa_hyper_check_copy_slab()], [tulpa_joint_axis_specs_from_grid()]
+#' @param x A `copy_slab` value: `NULL`, `"exponential"`, or `"flat"`.
+#' @return `tulpa_hyper_copy_slab_density()`: a function
+#'   `log p(x) = log(lambda) - lambda * x`, or `NULL` if `upper` is not a
+#'   finite positive number. `tulpa_hyper_check_copy_slab()`: `x`, defaulted
+#'   to `"exponential"` when `NULL`.
+#' @seealso [tulpa_joint_axis_specs_from_grid()]
 #' @examples
 #' lp <- tulpa_hyper_copy_slab_density(upper = 2)
 #' lp(c(0.1, 1, 2))
+#' tulpa_hyper_check_copy_slab("exponential")
+#' try(tulpa_hyper_check_copy_slab("uniform"))
 #' @export
 tulpa_hyper_copy_slab_density <- function(upper) .hyper_copy_slab_density(upper)
 
@@ -908,21 +922,7 @@ tulpa_hyper_slice_home <- function(refining, n) .hyper_slice_home(refining, n)
 # over the declared span, the measure the other log-scale axes carry.
 .TULPA_COPY_SLAB_CHOICES <- c("exponential", "flat")
 
-#' Validate/default a copy-scale slab measure choice
-#'
-#' Validates a `copy_slab` argument -- `"exponential"` (the default) or
-#' `"flat"`, the two continuum measures tulpa supports for a copy scale's
-#' non-atom mass -- defaulting `NULL` to `"exponential"` and erroring on
-#' anything else. Intended so a consumer package's own `copy_slab` argument
-#' stays in sync with tulpa's own accepted choices rather than restating
-#' them.
-#'
-#' @param x A `copy_slab` value: `NULL`, `"exponential"`, or `"flat"`.
-#' @return `x`, defaulted to `"exponential"` when `NULL`.
-#' @seealso [tulpa_hyper_copy_slab_density()]
-#' @examples
-#' tulpa_hyper_check_copy_slab("exponential")
-#' try(tulpa_hyper_check_copy_slab("uniform"))
+#' @rdname tulpa_hyper_copy_slab_density
 #' @export
 tulpa_hyper_check_copy_slab <- function(x) .hyper_check_copy_slab(x)
 

@@ -2,29 +2,46 @@
 % Please edit documentation in R/hyper_quadrature.R
 \name{tulpa_hyper_copy_slab_density}
 \alias{tulpa_hyper_copy_slab_density}
-\title{The copy-scale axis's PC-prior density}
+\alias{tulpa_hyper_check_copy_slab}
+\title{The copy-scale axis's slab measure}
 \usage{
 tulpa_hyper_copy_slab_density(upper)
+
+tulpa_hyper_check_copy_slab(x)
 }
 \arguments{
 \item{upper}{The largest declared node of the copy-scale axis.}
+
+\item{x}{A \code{copy_slab} value: \code{NULL}, \code{"exponential"}, or \code{"flat"}.}
 }
 \value{
-A function \verb{log p(x) = log(lambda) - lambda * x}, or \code{NULL} if
-\code{upper} is not a finite positive number.
+\code{tulpa_hyper_copy_slab_density()}: a function
+\verb{log p(x) = log(lambda) - lambda * x}, or \code{NULL} if \code{upper} is not a
+finite positive number. \code{tulpa_hyper_check_copy_slab()}: \code{x}, defaulted
+to \code{"exponential"} when \code{NULL}.
 }
 \description{
-The proper density tulpa uses for the copy scale's continuum: an
-exponential, the penalized-complexity prior for a scale parameter with its
-base model at zero (Simpson et al. 2017). The rate is set by putting 5\% of
-the prior mass above \code{upper}, so a caller that reads this off a fit's own
-declared grid gets the exact rate the outer integration used -- rather
-than restating a PC-prior rate that could silently drift from it.
+\code{tulpa_hyper_copy_slab_density()} returns the proper density tulpa uses for
+the copy scale's continuum: an exponential, the penalized-complexity prior
+for a scale parameter with its base model at zero (Simpson et al. 2017).
+The rate is set by putting 5\% of the prior mass above \code{upper}, so a caller
+that reads this off a fit's own declared grid gets the exact rate the outer
+integration used -- rather than restating a PC-prior rate that could
+silently drift from it.
+
+\code{tulpa_hyper_check_copy_slab()} validates a \code{copy_slab} argument --
+\code{"exponential"} (the default) or \code{"flat"}, the two continuum measures tulpa
+supports for a copy scale's non-atom mass -- defaulting \code{NULL} to
+\code{"exponential"} and erroring on anything else. Intended so a consumer
+package's own \code{copy_slab} argument stays in sync with tulpa's own accepted
+choices rather than restating them.
 }
 \examples{
 lp <- tulpa_hyper_copy_slab_density(upper = 2)
 lp(c(0.1, 1, 2))
+tulpa_hyper_check_copy_slab("exponential")
+try(tulpa_hyper_check_copy_slab("uniform"))
 }
 \seealso{
-\code{\link[=tulpa_hyper_check_copy_slab]{tulpa_hyper_check_copy_slab()}}, \code{\link[=tulpa_joint_axis_specs_from_grid]{tulpa_joint_axis_specs_from_grid()}}
+\code{\link[=tulpa_joint_axis_specs_from_grid]{tulpa_joint_axis_specs_from_grid()}}
 }

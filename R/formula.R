@@ -22,16 +22,24 @@ NULL
 # nobars:  rewrite the tree with bar terms removed (fixed effects)
 # ============================================================================
 
-#' Find all bar terms in a formula's parse tree
+#' Bar terms of a formula's parse tree
 #'
-#' Recursively walks the formula AST and collects all `|` and `||` nodes
-#' found inside parentheses. These are the random effect specifications.
+#' @description
+#' `findbars()` recursively walks the formula AST and collects all `|` and
+#' `||` nodes found inside parentheses. These are the random effect
+#' specifications.
+#'
+#' `nobars()` recursively rewrites the formula AST, removing any `|` or `||`
+#' nodes found inside parentheses. It returns the fixed-effects-only formula.
 #'
 #' @param term A language object (formula term)
-#' @return A list of language objects, each a `|` or `||` call
+#' @return `findbars()`: a list of language objects, each a `|` or `||` call.
+#'   `nobars()`: a language object with all bar terms removed, or NULL if
+#'   nothing remains.
 #' @keywords internal
 #' @examples
 #' findbars(y ~ x + (1 | g) + (1 + x | h))
+#' nobars(y ~ x + (1 | g) + (1 + x | h))
 #' @export
 findbars <- function(term) {
   if (is.name(term) || !is.language(term)) return(NULL)
@@ -106,16 +114,7 @@ findbars <- function(term) {
   is.call(x) && (identical(x[[1]], as.name("|")) || identical(x[[1]], as.name("||")))
 }
 
-#' Remove all bar terms from a formula's parse tree
-#'
-#' Recursively rewrites the formula AST, removing any `|` or `||` nodes
-#' found inside parentheses. Returns the fixed-effects-only formula.
-#'
-#' @param term A language object (formula term)
-#' @return A language object with all bar terms removed, or NULL if nothing remains
-#' @keywords internal
-#' @examples
-#' nobars(y ~ x + (1 | g) + (1 + x | h))
+#' @rdname findbars
 #' @export
 nobars <- function(term) {
   .strip_rhs(term, function(x) {

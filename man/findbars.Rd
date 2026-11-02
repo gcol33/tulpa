@@ -2,21 +2,31 @@
 % Please edit documentation in R/formula.R
 \name{findbars}
 \alias{findbars}
-\title{Find all bar terms in a formula's parse tree}
+\alias{nobars}
+\title{Bar terms of a formula's parse tree}
 \usage{
 findbars(term)
+
+nobars(term)
 }
 \arguments{
 \item{term}{A language object (formula term)}
 }
 \value{
-A list of language objects, each a \code{|} or \code{||} call
+\code{findbars()}: a list of language objects, each a \code{|} or \code{||} call.
+\code{nobars()}: a language object with all bar terms removed, or NULL if
+nothing remains.
 }
 \description{
-Recursively walks the formula AST and collects all \code{|} and \code{||} nodes
-found inside parentheses. These are the random effect specifications.
+\code{findbars()} recursively walks the formula AST and collects all \code{|} and
+\code{||} nodes found inside parentheses. These are the random effect
+specifications.
+
+\code{nobars()} recursively rewrites the formula AST, removing any \code{|} or \code{||}
+nodes found inside parentheses. It returns the fixed-effects-only formula.
 }
 \examples{
 findbars(y ~ x + (1 | g) + (1 + x | h))
+nobars(y ~ x + (1 | g) + (1 + x | h))
 }
 \keyword{internal}

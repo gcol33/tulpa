@@ -2,28 +2,45 @@
 % Please edit documentation in R/tgmrf_cpp.R
 \name{tulpa_cache_dir}
 \alias{tulpa_cache_dir}
-\title{Default cache directory for \code{tgmrf_cpp()}-compiled DLLs}
+\alias{tulpa_cache_clear}
+\title{Cache of \code{tgmrf_cpp()}-compiled DLLs}
 \usage{
 tulpa_cache_dir(create = FALSE)
+
+tulpa_cache_clear(older_than = 0)
 }
 \arguments{
 \item{create}{Create the directory if it is missing. \code{FALSE} (the default)
 only reports the path.}
+
+\item{older_than}{Remove only entries whose last modification is more than
+this many days ago. \code{0} (the default) removes every entry.}
 }
 \value{
-Absolute path (character) to the cache directory.
+\code{tulpa_cache_dir()}: the absolute path (character) to the cache
+directory. \code{tulpa_cache_clear()}: the number of entries removed,
+invisibly.
 }
 \description{
-Reports the per-user directory under \code{tools::R_user_dir("tulpa", "cache")}
-where \code{\link[=tgmrf_cpp]{tgmrf_cpp()}} keeps the objects it compiles. Reporting the path does
-not create it: the directory appears the first time a compile needs it, and
-\code{\link[=tulpa_cache_clear]{tulpa_cache_clear()}} removes what it holds.
+\code{tulpa_cache_dir()} reports the per-user directory under
+\code{tools::R_user_dir("tulpa", "cache")} where \code{\link[=tgmrf_cpp]{tgmrf_cpp()}} keeps the objects
+it compiles. Reporting the path does not create it: the directory appears
+the first time a compile needs it.
+
+\code{tulpa_cache_clear()} deletes cached compilation output under
+\code{tulpa_cache_dir()}. The cache holds build artefacts only -- a removed entry
+is rebuilt by the next \code{\link[=tgmrf_cpp]{tgmrf_cpp()}} call on the same source -- so it can be
+emptied at any time.
 }
 \examples{
 # Where compiled tgmrf_cpp() blocks are cached. Reporting creates nothing.
 tulpa_cache_dir()
 
+# Clearing deletes the caller's own cached builds, so it runs only in an
+# interactive session.
+if (interactive()) {
+  tulpa_cache_clear(older_than = 30)  # keep the last 30 days
+  tulpa_cache_clear()                 # empty the cache
 }
-\seealso{
-\code{\link[=tulpa_cache_clear]{tulpa_cache_clear()}} to remove cached objects.
+
 }
