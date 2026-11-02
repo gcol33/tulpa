@@ -200,7 +200,10 @@ test_that("alpha hyperprior gently reduces small-n_pos bias without corrupting s
     )
 
     # (1) The axis's own exponential slab (lambda = 1.50) already holds the
-    #     median near truth on this fixture (measured -0.018).
+    #     median near truth on this fixture (measured -0.026; the same fits on
+    #     a 65-node alpha axis laid down to 0.004 read -0.032). Its lowest
+    #     continuum cell, (0, 0.53), is scored from the atom and its node: scored
+    #     at the node alone it read -0.066.
     expect_lt(abs(gb_flat), 0.05, label = info_str)
 
     # (2) The recommended default pc.prec(U=4, alpha=0.01) shrinks the bias
@@ -218,7 +221,7 @@ test_that("alpha hyperprior gently reduces small-n_pos bias without corrupting s
 
     # (5) What U means is set by the slab a prior_alpha replaces: at U=4 the
     #     PC rate is -log(0.01) / 4 = 1.15, below the slab's 1.50, so it
-    #     shrinks LESS than the no-prior axis (measured +0.022 against -0.018).
+    #     shrinks LESS than the no-prior axis (measured +0.011 against -0.026).
     #     Both fits are deterministic on these seeds, so this is an exact
     #     comparison. It fails if the slab stops being what a missing prior
     #     means, or if a prior_alpha stops replacing it.

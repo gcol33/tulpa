@@ -130,7 +130,8 @@
                                               what = "adaptive_grid edge scores",
                                               log_quad = .hyper_log_quad_weights(
                                                   theta_grid, specs,
-                                                  refining = refining_axis))
+                                                  refining = refining_axis,
+                                                  log_marginal = log_marginal))
   if (all(is.na(weights))) return(list())
   out <- list()
   per_level_max <- function(lm_at_lev) {
@@ -636,7 +637,9 @@
   n0 <- nrow(theta_grid)
   merged <- rbind(theta_grid, cells)
   lq <- .hyper_log_quad_weights(merged, specs,
-                                refining = c(refining, rep(axis, nrow(cells))))
+                                refining = c(refining, rep(axis, nrow(cells))),
+                                log_marginal = c(log_marginal,
+                                                 rep(NA_real_, nrow(cells))))
   if (length(lq) != nrow(merged)) return(NULL)
   lw <- log_marginal + lq[seq_len(n0)]
   lw <- lw[is.finite(lw)]
@@ -710,7 +713,8 @@
                                   row_tail = .nl_diag("level_row_tail")) {
   others <- setdiff(colnames(theta_grid), axis)
   if (!length(others) || row_tail <= 0) return(NULL)
-  lq <- .hyper_log_quad_weights(theta_grid, specs, refining = refining)
+  lq <- .hyper_log_quad_weights(theta_grid, specs, refining = refining,
+                                log_marginal = log_marginal)
   lw <- if (length(lq) == length(log_marginal)) log_marginal + lq else log_marginal
   at <- is.finite(lw) & theta_grid[, axis] %in% levels
   if (!any(at)) return(NULL)
@@ -785,7 +789,8 @@
       if (is.null(ei)) next
       spec <- .hyper_spec_by_name(specs, a)
       lw <- log_marginal + .hyper_log_quad_weights(theta_grid, specs,
-                                                   refining = refining_axis)
+                                                   refining = refining_axis,
+                                                   log_marginal = log_marginal)
       pack <- .hyper_detect_axis_refinement(theta_grid, log_marginal, ei, a,
                                              spec, edge_thresh, log_weight = lw)
       if (is.null(pack)) next
@@ -872,7 +877,8 @@
     # Refinement grows theta_grid / log_marginal, so the log quadrature weights
     # are recomputed on every read to stay aligned with the current grid rows.
     log_quad <- .hyper_log_quad_weights(theta_grid, specs,
-                                        refining = refining_axis)
+                                        refining = refining_axis,
+                                        log_marginal = log_marginal)
     lm_eff <- log_marginal
     if (!is.null(log_quad) && length(log_quad) == length(lm_eff)) {
       lm_eff <- lm_eff + log_quad

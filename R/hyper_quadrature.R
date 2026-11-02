@@ -397,19 +397,127 @@
 # `edge_u` (on the integration coordinate). Integrated on the coordinate the
 # density is declared on -- the natural scale from 0, or the log coordinate from
 # -Inf -- where the cell is a finite interval or an integrable tail.
-.hyper_floor_cell_mass <- function(edge_u, dens, spec) {
+#
+# `log_tilt`, a function of the natural-scale value, multiplies the density by
+# `exp(log_tilt(x))` inside the integral: the likelihood shape the cell is scored
+# with (`.hyper_floor_cell_log_tilt()`).
+.hyper_floor_cell_mass <- function(edge_u, dens, spec, log_tilt = NULL) {
   coord <- spec$slab_log_density_coord %||% "natural"
-  f <- function(x) exp(.hyper_prior_carry(x, dens, FALSE))
+  tilt <- if (is.null(log_tilt)) function(a) 0 else log_tilt
   if (identical(coord, "natural")) {
+    f <- function(x) exp(.hyper_prior_carry(x, dens, FALSE) + tilt(x))
     hi <- if (isTRUE(spec$log_scale)) exp(edge_u) else edge_u
     lo <- 0
   } else {
+    f <- function(x) exp(.hyper_prior_carry(x, dens, FALSE) + tilt(exp(x)))
     hi <- edge_u
     lo <- -Inf
   }
   m <- tryCatch(stats::integrate(f, lo, hi, rel.tol = 1e-10)$value,
                 error = function(e) NA_real_)
   if (!is.finite(m) || m < 0) NA_real_ else m
+}
+
+# Per-cell log factor that scores the lowest continuum cell of an axis whose
+# continuum reaches its atom (`.hyper_continuum_reaches_atom()`) from the
+# likelihood at both of its ends, 0 on every other cell.
+#
+# That cell runs from the atom at zero to the edge above its node `x1`, and the
+# measure gives it the declared prior mass of the whole of (0, edge). Scored at
+# `x1` alone, the likelihood there stands for the whole stretch down to zero,
+# where the inner marginal is the atom's own: a coupled field whose likelihood
+# falls away towards zero has the stretch over-weighted, and how much depends on
+# where `x1` happens to sit. Within each row of the other axes the log
+# likelihood between the atom and `x1` is the polynomial in the natural-scale
+# value through the atom's (`lambda_0`), the node's (`lambda_1`) and, where its
+# cell is solved, the next node's (`lambda_2`): the copy scale multiplies the
+# field inside the linear predictor, so the log likelihood is locally a
+# quadratic in it, as in a regression coefficient, and a chord through the two
+# ends alone lies below a concave one. From `x1` to the edge the cell keeps the
+# score at its node, the box every other cell is scored by. With `q` that
+# polynomial,
+#
+#   factor = [int_0^x1 p(a) exp(q(a) - lambda_1) da + int_x1^edge p(a) da]
+#            / int_0^edge p(a) da,
+#
+# `p` the declared slab density. A density folded into the marginal
+# (`log_prior`) reaches the continuum's cells and not the atom's, so it is taken
+# off before the levels are compared. A row with no atom cell, or whose node
+# cell carries no finite marginal, keeps the score at `x1` (factor 1).
+#
+# A cell the cheap-pass screen pruned carries `-Inf` in `log_marginal`: its mass
+# is negligible, its likelihood is not. Where `log_marginal` carries the screen's
+# own values (attribute `screen`, the fit's `prune_cheap_log_marginal`), such a
+# level's ordinate is the screen's value carried onto the solved scale by the
+# row's node `x1`, `screen - screen[x1] + log_marginal[x1]`: within a row the two
+# differ by the folded hyperprior of the other axes and the screen's Newton
+# decrement.
+.hyper_floor_cell_log_tilt <- function(theta_grid, a, spec, log_marginal,
+                                       atom_mass, close_domain = TRUE,
+                                       declared = NULL) {
+  v <- as.numeric(theta_grid[, a])
+  out <- numeric(length(v))
+  m <- .hyper_axis_measure(v, spec, atom_mass, close_domain = close_domain,
+                           declared = declared)
+  if (!length(m$x)) return(out)
+  xs <- c(0, m$x[seq_len(min(2L, length(m$x)))])
+  dens <- spec$slab_log_density
+  m_edge <- .hyper_floor_cell_mass(m$edges[2L], dens, spec)
+  u1 <- .hyper_axis_coord(xs[2L], spec)
+  m_x1 <- .hyper_floor_cell_mass(u1, dens, spec)
+  if (!is.finite(m_edge) || m_edge <= 0 || !is.finite(m_x1)) return(out)
+  fold <- if (is.null(spec$log_prior)) c(0, 0, 0)[seq_along(xs)] else
+    c(0, .hyper_prior_carry(xs[-1L], spec$log_prior, spec$log_scale,
+                            spec$log_prior_coord %||% "integration"))
+  key <- .hyper_row_key(as.matrix(theta_grid),
+                        which(colnames(theta_grid) != a))
+  scr <- attr(log_marginal, "screen")
+  lm <- as.numeric(log_marginal)
+  if (length(scr) != length(lm)) scr <- NULL
+  probe <- seq(0, xs[2L], length.out = 201L)
+  for (k in which(v == xs[2L])) {
+    at <- vapply(xs, function(x) {
+      i <- which(key == key[k] & v == x)
+      if (length(i) == 1L) i else NA_integer_
+    }, integer(1))
+    if (is.na(at[1L])) next
+    lam <- lm[at]
+    if (!is.null(scr) && is.finite(lm[k]) && is.finite(scr[k])) {
+      cut <- !is.na(at) & lam %in% -Inf & is.finite(scr[at])
+      lam[cut] <- scr[at][cut] - scr[k] + lm[k]
+    }
+    lam <- lam - fold
+    if (is.na(lam[1L]) || lam[1L] == Inf || !is.finite(lam[2L])) next
+    use <- c(TRUE, TRUE, if (length(xs) > 2L) is.finite(lam[3L]))
+    q <- .hyper_lagrange(xs[use], lam[use] - lam[2L])
+    off <- max(q(probe), 0)
+    low <- .hyper_floor_cell_mass(u1, dens, spec,
+                                  log_tilt = function(x) q(x) - off)
+    if (!is.finite(low)) next
+    out[k] <- .tulpa_logsumexp(c(log(low) + off,
+                                 log(max(m_edge - m_x1, 0)))) - log(m_edge)
+  }
+  out
+}
+
+# The interpolating polynomial through the points (`x`, `y`), as a function of
+# a numeric vector. A `-Inf` ordinate (a level whose cell carries no likelihood)
+# is reachable only at `x[1]`, and makes the function `-Inf` below `x[2]`.
+.hyper_lagrange <- function(x, y) {
+  force(x); force(y)
+  if (!is.finite(y[1L])) {
+    rest <- .hyper_lagrange(x[-1L], y[-1L])
+    return(function(z) ifelse(z < x[2L], -Inf, rest(z)))
+  }
+  function(z) {
+    out <- 0
+    for (i in seq_along(x)) {
+      li <- 1
+      for (j in seq_along(x)[-i]) li <- li * (z - x[j]) / (x[i] - x[j])
+      out <- out + y[i] * li
+    }
+    out
+  }
 }
 
 # Scale the atom is weighed against the continuum on.
@@ -633,8 +741,14 @@ tulpa_hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
 # negligible mass; the tags say which levels were declared,
 # and the outer cells keep the span those levels were declared over
 # (`.hyper_span_coord_bounds()`).
+#
+# `log_marginal`, where the cells have been solved, scores the lowest continuum
+# cell of a copy scale reaching its atom from both of its ends
+# (`.hyper_floor_cell_log_tilt()`). Without it -- a ranking taken before any cell
+# is solved -- that cell carries its prior mass alone.
 .hyper_log_quad_weights <- function(theta_grid, specs, close_domain = TRUE,
-                                    absolute = FALSE, refining = NULL) {
+                                    absolute = FALSE, refining = NULL,
+                                    log_marginal = NULL) {
   if (is.null(theta_grid) || is.null(specs)) return(NULL)
   theta_grid <- as.matrix(theta_grid)
   n <- nrow(theta_grid)
@@ -661,6 +775,13 @@ tulpa_hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
     idx <- match(v, levels)
     contrib <- log(as.numeric(lw)[idx])
     contrib[!is.finite(contrib)] <- -Inf
+    if (!is.null(log_marginal) && length(log_marginal) == n &&
+        .hyper_continuum_reaches_atom(levels, spec,
+                                      .hyper_axis_atom_mass(spec))) {
+      contrib <- contrib + .hyper_floor_cell_log_tilt(
+        theta_grid, a, spec, log_marginal, .hyper_axis_atom_mass(spec),
+        close_domain = close_domain, declared = v[declared])
+    }
     out <- out + contrib
   }
   .hyper_add_logchol_measure(out, theta_grid, groups, close_domain, absolute)

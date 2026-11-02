@@ -1092,11 +1092,9 @@
         res$theta_grid[base, , drop = FALSE], hp$axes, joint_grid, axis_offsets,
         B, fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass,
         logchol = hp_declared$logchol, axis_refine = axis_refine)
-    res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, specs,
-                                                refining = refining)
     res$axis_support <- .hyper_grid_supports(res$theta_grid, specs,
                                              refining = refining)
-    res <- .nl_record_unconverged(res)
+    res <- .joint_attach_cell_measure(res, specs, refining)
     res$weights      <- .joint_integration_weights(res$log_marginal, dnode,
                                                    log_quad = res$log_quad)
     list(res = res, specs = specs)

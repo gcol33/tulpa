@@ -2348,13 +2348,11 @@ tulpa_nested_laplace_joint <- function(responses,
 
     res$theta_grid  <- theta_grid_M
     res$theta_names <- colnames(res$theta_grid)
-    res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, specs,
-                                                refining = refining_axis)
     res$axis_support <- .hyper_grid_supports(res$theta_grid, specs,
                                              refining = refining_axis)
     res$axis_span    <- .joint_axis_span(theta_grid_init, res$theta_grid, specs,
                                          refining = refining_axis)
-    res <- .nl_record_unconverged(res)
+    res <- .joint_attach_cell_measure(res, specs, refining_axis)
     res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid",
                                                   log_quad = res$log_quad)
     res$log_hyperprior <- hp_fn(res$theta_grid)

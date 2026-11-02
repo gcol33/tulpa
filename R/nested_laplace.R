@@ -1791,7 +1791,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 .nl_attach_evidence <- function(res, tg, specs,
                                 log_measure = .hyper_log_quad_weights(
                                   tg, specs, absolute = TRUE,
-                                  refining = res$refining_axis)) {
+                                  refining = res$refining_axis,
+                                  log_marginal = res$log_marginal)) {
   uncovered <- .nl_evidence_uncovered(tg, specs, res)
   res$log_evidence_declined_axes <- if (length(uncovered)) uncovered else NULL
   if (length(uncovered)) {

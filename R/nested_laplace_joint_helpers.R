@@ -1064,6 +1064,29 @@ tulpa_joint_axis_specs_from_grid <- function(
     list(log_marginal = log_marginal, extras = extras, info = info)
 }
 
+# The cell measure of a joint result's settled grid, `res$log_quad`, with the
+# unconverged and indefinite cells recorded against it (`.nl_record_unconverged()`).
+# The measure reads the solved marginals -- a copy scale's lowest continuum cell
+# is scored from both of its ends (`.hyper_floor_cell_log_tilt()`), a pruned
+# end read off the cheap-pass screen -- so it is taken again when the record
+# takes an indefinite cell out of the marginals.
+# The one attach both joint doors use before their weights.
+.joint_attach_cell_measure <- function(res, specs, refining) {
+    measure <- function() {
+        lm <- res$log_marginal
+        if (length(res$prune_cheap_log_marginal) == length(lm)) {
+            attr(lm, "screen") <- as.numeric(res$prune_cheap_log_marginal)
+        }
+        .hyper_log_quad_weights(res$theta_grid, specs, refining = refining,
+                                log_marginal = lm)
+    }
+    res$log_quad <- measure()
+    lm0 <- res$log_marginal
+    res <- .nl_record_unconverged(res)
+    if (!identical(res$log_marginal, lm0)) res$log_quad <- measure()
+    res
+}
+
 # Record the cells whose inner solve never reached a mode, once the grid and
 # its cell measure are final and before the weights are taken. A log marginal
 # read off an iterate that is not a mode is not a Laplace approximation at a

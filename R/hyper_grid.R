@@ -334,7 +334,8 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
 
   # Initial weighted moments.
   log_quad <- .hyper_log_quad_weights(theta_grid, specs,
-                                      refining = refining_axis)
+                                      refining = refining_axis,
+                                      log_marginal = log_marginal)
   weights <- .nl_normalise_weights_safe(
     log_marginal, what = "hyper-grid cells", log_quad = log_quad)
   weights_for_summary <- weights
@@ -373,7 +374,8 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
                         else hp_fn(theta_grid)
       # Re-derive weights / moments on the merged grid.
       log_quad <- .hyper_log_quad_weights(theta_grid, specs,
-                                          refining = refining_axis)
+                                          refining = refining_axis,
+                                          log_marginal = log_marginal)
       weights <- .nl_normalise_weights_safe(
         log_marginal, what = "hyper-grid cells", log_quad = log_quad)
       weights_for_summary <- weights

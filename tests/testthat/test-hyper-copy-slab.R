@@ -238,6 +238,49 @@ test_that("a continuum reaching its atom is partitioned from the atom up", {
   expect_identical(rd$declined, "floor_cell")
 })
 
+test_that("the lowest continuum cell is scored from the atom and its node", {
+  skip_on_cran_budget()
+  # Two rows of a second axis, the copy scale's log likelihood a quadratic in
+  # alpha that falls away towards zero, so a cell scored at its node alone
+  # over-weights the stretch down to the atom.
+  a_lv <- c(0, 0.4, 0.7, 1.0, 1.4, 2.0)
+  tg <- as.matrix(expand.grid(alpha = a_lv, sigma = c(0.5, 1)))
+  specs <- .joint_axis_specs(list(alpha = a_lv, sigma = c(0.5, 1)), CP)
+  ax <- alpha_axis(specs)
+  ll <- function(a, s) -25 * (a - 0.9)^2 + s
+  lm <- ll(tg[, "alpha"], tg[, "sigma"])
+  lq0 <- .hyper_log_quad_weights(tg, specs, absolute = TRUE)
+  lq  <- .hyper_log_quad_weights(tg, specs, absolute = TRUE, log_marginal = lm)
+  # Every cell but the lowest continuum one keeps its prior measure.
+  floor_cell <- tg[, "alpha"] == 0.4
+  expect_equal(lq[!floor_cell], lq0[!floor_cell])
+  # The lowest cell holds the exact integral of the slab against the likelihood
+  # between the atom and its node, where the quadratic through the atom and the
+  # first two nodes is the likelihood itself, and the box score above the node.
+  lambda <- -log(0.05) / 2
+  edge <- sqrt(0.4 * 0.7)
+  dens <- function(a) lambda * exp(-lambda * a)
+  for (s in c(0.5, 1)) {
+    k <- which(floor_cell & tg[, "sigma"] == s)
+    exact <- stats::integrate(function(a) dens(a) * exp(ll(a, s)), 0, 0.4)$value +
+      exp(ll(0.4, s)) * (exp(-lambda * 0.4) - exp(-lambda * edge))
+    prior_mass <- 1 - exp(-lambda * edge)
+    expect_equal(lq[k] - lq0[k], log(exact / (exp(ll(0.4, s)) * prior_mass)),
+                 tolerance = 1e-6)
+  }
+  expect_lt(max(lq[floor_cell] - lq0[floor_cell]), -1)
+
+  # A pruned atom carries -Inf; the screen's own value, carried onto the solved
+  # scale by the row's node, stands in for it and scores the cell the same.
+  lm_pruned <- lm
+  atom <- tg[, "alpha"] == 0
+  lm_pruned[atom] <- -Inf
+  attr(lm_pruned, "screen") <- lm - 3
+  lq_pruned <- .hyper_log_quad_weights(tg, specs, absolute = TRUE,
+                                       log_marginal = lm_pruned)
+  expect_equal(lq_pruned, lq)
+})
+
 test_that("a copy scale truly zero reads the atom mass a grid laid toward zero reads", {
   skip_if_not_slow()
   nr <- 8L; nc <- 8L; S <- nr * nc
