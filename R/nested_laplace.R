@@ -1975,33 +1975,44 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   keep_cov <- n_var > 0L && as.numeric(n_grid) * n_var^2 <= .NL_FIELD_COV_MAX
   field_cov <- if (keep_cov) vector("list", n_grid)
 
-  E <- matrix(0, nrow = n_x, ncol = p_fixed + n_var)
-  E[cbind(c(seq_len(p_fixed), var_cols), seq_len(p_fixed + n_var))] <- 1
-
   modes_mat <- res$modes  # n_grid x n_x
 
   # An intrinsic block (ICAR, BYM2's structured part, RW1 / RW2) stands for a
-  # field whose constant is a HARD sum-to-zero constraint. The inner solve
-  # augments that direction so the Hessian inverts, and centres it into the
-  # intercept, so the stored precision carries a finite 1 / (tau J) variance
-  # on the level -- and the unconditioned inverse puts it into the intercept's
-  # standard error (3-4x the exact posterior SD on a 50-node ICAR,
-  # gcol33/tulpa#901) and into an intrinsic temporal field's marginal variance.
-  # The driver names each intrinsic block's constraint group
-  # (`constraint_cols`), and both reads are conditioned on them by the kriging
-  # correction a joint fit's retained block and posterior draws use
-  # (cpp_joint_inner_vcov_blocks, Rue & Held 2005):
-  #   Cov(x | A x = 0) = V - W (A W)^-1 W',  V = Q^-1 E,  W = Q^-1 A'.
-  # The mode needs no correction: the centring already put it on the
-  # constraint.
+  # field whose constant is a HARD sum-to-zero constraint, and a Knorr-Held
+  # interaction carries hard rows of its own. Unconditioned, the inverse puts
+  # the level's variance into the intercept's standard error (3-4x the exact
+  # posterior SD on a 50-node ICAR, gcol33/tulpa#901) and into an intrinsic
+  # temporal field's marginal variance. The driver names every constraint row
+  # (`constraint_cols`), and both reads are the block of
+  #   Cov(x | A x = 0) = V - W (A W)^-1 W',  V = Q^-1 E,  W = Q^-1 A'
+  # (Rue & Held 2005) over the fixed effects and the read field columns.
+  #
+  # The stored precision need not be invertible on its own: the sparse joint
+  # Newton folds the sum-to-zero pins at solve time and leaves them off the
+  # stored Q, so two intrinsic fields loading the same rows (an ICAR and an RW1
+  # beside a space-time interaction) leave their opposite shift, +c on one
+  # level and -c on the other, with no curvature at all. Q^-1 is then of order
+  # 1 / round-off along it, A W carries that in one direction, and the O(1)
+  # answer is the difference of such terms. The block is therefore read by
+  # the engine's own extraction (cpp_joint_inner_vcov_blocks), which folds the
+  # conditioning against a precision anchored on the constraint rows' own
+  # nodes (InvBlockConstraint, inv_block_extract.h) and is the read a joint
+  # fit's retained block uses. The mode needs no correction: the centring
+  # already put it on the constraint.
   constr <- res$constraint_cols
-  n_con <- length(constr)
-  if (n_con) {
-    E <- cbind(E, vapply(constr, .constraint_row_dense, numeric(n_x),
-                         n_x = n_x))
+  sel_idx <- c(seq_len(p_fixed), var_cols)
+  n_sel <- length(sel_idx)
+  solved <- vapply(Q_p, function(qp) length(qp) == n_x + 1L, logical(1))
+  blocks_k <- vector("list", n_grid)
+  if (any(solved)) {
+    blocks_k[solved] <- cpp_joint_inner_vcov_blocks(
+      Q_p_per_grid = Q_p[solved], Q_i_per_grid = Q_i[solved],
+      Q_x_per_grid = Q_x[solved], n_x = as.integer(n_x),
+      idx = as.integer(sel_idx), n_dense = n_sel,
+      A_cols_list = .constraint_rows_for_cpp(constr),
+      field_marginal = FALSE,
+      n_threads = 1L)
   }
-  sel <- seq_len(p_fixed + n_var)
-  con_sel <- length(sel) + seq_len(n_con)
 
   for (k in seq_len(n_grid)) {
     # A cell the cheap screen pruned is never solved, so it holds no precision
@@ -2012,40 +2023,17 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     # rather than assigning NULL is what keeps `grid_modes` / `grid_hessians`
     # parallel to `weights` -- assigning NULL removes the element and shortens
     # the list, which NAs the whole coefficient table (gcol33/tulpa#345).
-    if (length(Q_p[[k]]) != n_x + 1L) next
+    if (!solved[k]) next
     grid_modes[[k]] <- if (!is.null(modes_mat)) {
       as.numeric(modes_mat[k, seq_len(p_fixed)])
     } else {
       rep(NA_real_, p_fixed)
     }
-    L <- Matrix::sparseMatrix(
-      i = Q_i[[k]], p = Q_p[[k]], x = Q_x[[k]],
-      dims = c(n_x, n_x), index1 = FALSE
-    )
-    diag_L <- Matrix::diag(L)
-    Qk <- L + Matrix::t(L) - Matrix::Diagonal(n_x, diag_L)
-
-    # V = Qk^{-1} E selects the fixed-effect (and read field) columns of the
-    # joint inverse. A dense GP / NNGP field precision at close locations makes
-    # the joint precision ill-conditioned, which trips Matrix's
-    # condition-number guard. Retry with a negligible diagonal jitter (scaled
-    # to the precision) so the marginal-SE extraction stays available rather
-    # than aborting the whole fit.
-    V <- tryCatch(
-      as.matrix(Matrix::solve(Qk, E)),
-      error = function(e) {
-        jit <- 1e-8 * mean(Matrix::diag(Qk))
-        as.matrix(Matrix::solve(Qk + Matrix::Diagonal(n_x, jit), E))
-      }
-    )
-    Es <- E[, sel, drop = FALSE]
-    S <- crossprod(Es, V[, sel, drop = FALSE])
-    if (n_con) {
-      W  <- V[, con_sel, drop = FALSE]
-      AW <- crossprod(E[, con_sel, drop = FALSE], W)
-      Wr <- crossprod(Es, W)
-      S  <- S - Wr %*% solve((AW + t(AW)) / 2, t(Wr))
-    }
+    # A cell whose precision factors neither bare nor with the extraction's
+    # relative ridge holds no covariance to read; its slot stays blank and the
+    # moments drop it the way they drop a pruned cell.
+    S <- blocks_k[[k]]
+    if (is.null(S)) next
     Sigma_bb <- S[seq_len(p_fixed), seq_len(p_fixed), drop = FALSE]
     grid_hessians[[k]] <- .spd_inverse(Sigma_bb)
     if (n_var) {

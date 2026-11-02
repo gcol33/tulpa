@@ -232,12 +232,21 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
 # is the shared n_x x k_constr constraint matrix (or NULL for an unconstrained
 # block).
 #
-# Unconstrained part: z ~ N(0, Q^{-1}) via the sparse Cholesky factor
+# Unconstrained: z ~ N(0, Q^{-1}) via the sparse Cholesky factor
 #   P Q P' = L L'  =>  z = P' L'^{-1} u,  u ~ N(0, I).
-# Constraint (conditioning by kriging, Rue & Held 2005):
-#   z_c = z - W (A Q^{-1} A')^{-1} (A z),  W = Q^{-1} A'.
-# The resulting covariance is Q^{-1} - Q^{-1} A' (A Q^{-1} A')^{-1} A Q^{-1},
-# exactly the constrained inner-Laplace covariance.
+# Constrained: V = B (B' Q B)^{-1} B' for B a basis of null(A), the solution
+# operator of the KKT system
+#   [Q  A'] [x     ]   [e]
+#   [A  0 ] [lambda] = [0],
+# so x = V e. With e = Q z ~ N(0, Q), Cov(x) = V Q V = V. Q is never
+# inverted along the constraint: the stored precision may carry no curvature
+# on a direction only the constraint identifies (the sum-to-zero pins the
+# sparse joint Newton folds at solve time and leaves off the stored Q, which
+# leave two intrinsic fields loading the same rows free to trade a constant),
+# and the kriging form z - Q^{-1} A' (A Q^{-1} A')^{-1} A z reads its answer
+# as the difference of terms of order 1 / round-off there. The KKT matrix is
+# nonsingular whenever Q is positive definite on null(A) and A has full row
+# rank, which is what the constrained model needs anyway.
 .joint_draw_cell <- function(Qp, Qi, Qx, n_x, A_t, n_k) {
     Qk_lt <- Matrix::sparseMatrix(
         i = as.integer(Qi) + 1L,
@@ -251,28 +260,31 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
 
     Ch <- tryCatch(Matrix::Cholesky(Qk, perm = TRUE, LDL = FALSE),
                    error = function(e) NULL)
+    Qf <- Qk
     if (is.null(Ch)) {
-        # The (intercept, mean-field) direction of an improper field can leave
-        # Q_k numerically singular; lift it with a tiny ridge. The field
-        # constraint below projects that direction out, so the ridge's effect
-        # on the constrained draw is negligible.
+        # A precision with no curvature along a constrained direction need not
+        # factor; a ridge at 1e-8 of its scale does, and only perturbs the
+        # noise covariance below by that relative amount.
         jit <- 1e-8 * (mean(Matrix::diag(Qk)) + 1e-8)
-        Qk <- Qk + Matrix::Diagonal(n_x, jit)
-        Ch <- Matrix::Cholesky(Qk, perm = TRUE, LDL = FALSE)
+        Qf <- Qk + Matrix::Diagonal(n_x, jit)
+        Ch <- Matrix::Cholesky(Qf, perm = TRUE, LDL = FALSE)
     }
 
     U <- matrix(stats::rnorm(n_x * n_k), n_x, n_k)
     # z = P' L'^{-1} U
     z <- as.matrix(Matrix::solve(Ch, Matrix::solve(Ch, U, system = "Lt"),
                                  system = "Pt"))
+    if (is.null(A_t)) return(z)
 
-    if (!is.null(A_t)) {
-        W  <- as.matrix(Matrix::solve(Ch, A_t, system = "A"))  # Q^{-1} A'
-        M  <- as.matrix(Matrix::crossprod(A_t, W))             # A Q^{-1} A'
-        Az <- as.matrix(Matrix::crossprod(A_t, z))             # A z
-        z  <- z - W %*% solve(M, Az)
-    }
-    z
+    A_s <- methods::as(Matrix::Matrix(A_t, sparse = TRUE), "CsparseMatrix")
+    k_c <- ncol(A_s)
+    e <- as.matrix(Qf %*% z)
+    K <- rbind(cbind(methods::as(Qk, "generalMatrix"), A_s),
+               cbind(Matrix::t(A_s),
+                     Matrix::sparseMatrix(i = integer(0), j = integer(0),
+                                          x = numeric(0), dims = c(k_c, k_c))))
+    x <- Matrix::solve(K, rbind(e, matrix(0, k_c, n_k)))
+    as.matrix(x[seq_len(n_x), , drop = FALSE])
 }
 
 # Law-of-total-covariance moments of the joint mixture restricted to `idx`:
