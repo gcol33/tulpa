@@ -399,6 +399,11 @@ posterior_sample <- function(fit) {
     message(.tulpa_no_draws_note(fit, "posterior_sample"))
     return(NULL)
   }
+  # Columns read the names diagnostics() and tulpa_draws_array() report, which
+  # a sampler storing an unnamed matrix carries only in `$param_names`.
+  if (is.matrix(draws)) {
+    colnames(draws) <- .tulpa_draw_names(colnames(draws), fit, ncol(draws))
+  }
   draws
 }
 
