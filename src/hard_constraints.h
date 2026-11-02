@@ -293,7 +293,8 @@ struct HardConstraintState {
     // W = M^{-1} A' through a per-column solve with M, and the factor of C.
     template <typename SolveFn>
     bool factor_cap(SolveFn solve) {
-        cap.build(solve, n_x, rows);
+        cap.set_rows(n_x, rows);
+        cap.build(solve, n_x);
         return cap.usable;
     }
 
