@@ -7,7 +7,10 @@
 # (DEFAULT_SIGMA_BETA), the evidence is the density of y under
 # N(0, phi I + s^2 X X' + Z C Z'), C the field covariance.
 
-.ae_sb <- tulpa:::cpp_test_default_sigma_beta()
+.ae_sb <- function() {
+  load_cpp_fixture("helpers")
+  cpp_test_default_sigma_beta()
+}
 
 .ae_graph <- function() {
   K <- 30L
@@ -27,7 +30,7 @@
 }
 
 .ae_exact <- function(fx, C) {
-  S <- diag(fx$n) + fx$X %*% diag(.ae_sb^2, 2) %*% t(fx$X) +
+  S <- diag(fx$n) + fx$X %*% diag(.ae_sb()^2, 2) %*% t(fx$X) +
     fx$Z %*% C %*% t(fx$Z)
   -0.5 * (fx$n * log(2 * pi) + as.numeric(determinant(S)$modulus) +
             sum(fx$y * solve(S, fx$y)))
@@ -51,6 +54,7 @@
 test_that("the ICAR normalizer carries the graph's generalized determinant", {
   # Path, cycle and a disconnected pair: |Q|_+ = J * (spanning trees) per
   # component, so a path of J nodes gives J, a cycle J^2, and components add.
+  load_cpp_fixture("helpers")
   path <- matrix(0, 5, 5); for (i in 1:4) path[i, i + 1] <- path[i + 1, i] <- 1
   cyc <- path; cyc[1, 5] <- cyc[5, 1] <- 1
   two <- as.matrix(Matrix::bdiag(path, cyc))
@@ -59,7 +63,7 @@ test_that("the ICAR normalizer carries the graph's generalized determinant", {
     n <- nrow(A)
     ev <- eigen(diag(rowSums(A)) - A, symmetric = TRUE, only.values = TRUE)$values
     L <- sum(ev < 1e-9)
-    lp <- tulpa:::cpp_test_log_prior_icar(numeric(n), n, 1.0, csr$row_ptr,
+    lp <- cpp_test_log_prior_icar(numeric(n), n, 1.0, csr$row_ptr,
                                           csr$col_idx, csr$n_neighbors)
     expect_equal(lp, 0.5 * sum(log(ev[ev > 1e-9])) - 0.5 * n * log(2 * pi),
                  tolerance = 1e-10)
@@ -99,7 +103,7 @@ test_that("the multi-block driver's areal log marginal is the exact evidence", {
   f <- tulpa_nested_laplace(fx$y, rep(1L, fx$n), fx$X,
     prior = list(.ae_block(fx, type = "icar", tau_grid = 2), iid),
     family = "gaussian", phi = 1, hyperprior = "flat", control = .ae_ctl)
-  S <- diag(fx$n) + fx$X %*% diag(.ae_sb^2, 2) %*% t(fx$X) +
+  S <- diag(fx$n) + fx$X %*% diag(.ae_sb()^2, 2) %*% t(fx$X) +
     fx$Z %*% (Qp / 2) %*% t(fx$Z) + 0.49 * Zr %*% t(Zr)
   ex <- -0.5 * (fx$n * log(2 * pi) + as.numeric(determinant(S)$modulus) +
                   sum(fx$y * solve(S, fx$y)))
@@ -110,7 +114,7 @@ test_that("the multi-block driver's areal log marginal is the exact evidence", {
                            sigma_grid = 0.8, rho_grid = 0.5), iid),
     family = "gaussian", phi = 1, hyperprior = "flat", control = .ae_ctl)
   C <- 0.64 * (0.5 * sf^2 * Qp + 0.5 * diag(fx$K))
-  S <- diag(fx$n) + fx$X %*% diag(.ae_sb^2, 2) %*% t(fx$X) +
+  S <- diag(fx$n) + fx$X %*% diag(.ae_sb()^2, 2) %*% t(fx$X) +
     fx$Z %*% C %*% t(fx$Z) + 0.49 * Zr %*% t(Zr)
   ex <- -0.5 * (fx$n * log(2 * pi) + as.numeric(determinant(S)$modulus) +
                   sum(fx$y * solve(S, fx$y)))

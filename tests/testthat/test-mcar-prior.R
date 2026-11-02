@@ -17,10 +17,11 @@
 }
 
 .mcar_check <- function(n, p, theta, seed) {
+  load_cpp_fixture("helpers")
   set.seed(seed)
   g <- .mcar_chain_csr(n)
   x <- rnorm(p * n)
-  r <- tulpa:::cpp_test_mcar_prior(theta, p, n, g$csr$row_ptr, g$csr$col_idx,
+  r <- cpp_test_mcar_prior(theta, p, n, g$csr$row_ptr, g$csr$col_idx,
                                    g$csr$n_neighbors, x)
   Sinv <- r$Sinv
   Q    <- g$Q
@@ -57,9 +58,10 @@ test_that("MCAR assembly is exact for p=3", {
 })
 
 test_that("MCAR log|Sigma| matches the log-Cholesky diagonal", {
+  load_cpp_fixture("helpers")
   g <- .mcar_chain_csr(6L)
   theta <- c(log(1.4), 0.6, log(0.7))
-  r <- tulpa:::cpp_test_mcar_prior(theta, 2L, 6L, g$csr$row_ptr, g$csr$col_idx,
+  r <- cpp_test_mcar_prior(theta, 2L, 6L, g$csr$row_ptr, g$csr$col_idx,
                                    g$csr$n_neighbors, rnorm(12))
   # |Sigma| = (L11 L22)^2 -> log|Sigma| = 2(logL11 + logL22).
   expect_lt(abs(r$log_det_Sigma - 2 * (theta[1] + theta[3])), 1e-12)

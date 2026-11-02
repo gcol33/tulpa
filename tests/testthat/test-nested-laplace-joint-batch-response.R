@@ -71,6 +71,7 @@ skip_on_cran()
 
 .wg_fit <- function(sim, phi_batch, trials_a = 1L, trials_b = 1L,
                     sigma_grid = c(0.4, 0.8, 1.3)) {
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_weighted_gaussian_coupling(c(0L, 1L))
   tulpa_nl_joint_batch(
     responses = list(a = .wg_arm(sim, sim$y_a[, 1L], rep(trials_a, sim$N)),

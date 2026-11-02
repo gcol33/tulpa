@@ -1,4 +1,4 @@
-// test_fastmath_fixture.cpp
+// fastmath.cpp
 // Exposes tulpa::fastmath::exp / log elementwise so testthat can compare them
 // with the system libm over ordinary, extreme and special inputs.
 

@@ -57,7 +57,8 @@ skip_on_cran()
 }
 
 .nngp_scatter <- function(fx, w, sigma2 = 0.9, phi_gp = 0.4, cov_type = 0L) {
-  tulpa:::cpp_test_nngp_prior_scatter(
+  load_cpp_fixture("helpers")
+  cpp_test_nngp_prior_scatter(
     w = w, coords = fx$coords, nn_idx = fx$nn_idx, nn_dist = fx$nn_dist,
     nn_order = fx$nn_order, n_spatial = fx$ng, nn = fx$nn,
     sigma2 = sigma2, phi_gp = phi_gp, cov_type = cov_type)

@@ -10,6 +10,7 @@
 skip_on_cran()
 
 .cci_fit <- function(n_threads) {
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_occupancy_mixture_coupling()
   set.seed(921)
   n_cells <- 600L

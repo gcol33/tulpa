@@ -24,6 +24,7 @@
 }
 
 test_that("pow keeps a finite partial where p * x^(p-1) diverges", {
+  load_cpp_fixture("helpers")
   r <- cpp_test_scalar_guard("pow", 0, 0.5)
   expect_equal(r$value_tape, 0)
   expect_equal(r$value_arena, 0)
@@ -36,6 +37,7 @@ test_that("pow keeps a finite partial where p * x^(p-1) diverges", {
 })
 
 test_that("tape values match the R closed forms", {
+  load_cpp_fixture("helpers")
   expect_equal(cpp_test_autodiff_log(0.7)$value, log(0.7))
   expect_equal(cpp_test_autodiff_sqrt(0.7)$value, sqrt(0.7))
   expect_equal(cpp_test_autodiff_log1p(0.7)$value, log1p(0.7))
@@ -51,6 +53,7 @@ test_that("tape values match the R closed forms", {
 })
 
 test_that("tape gradients of a multivariate objective are exact", {
+  load_cpp_fixture("helpers")
   x <- c(-1.5, 0.25, 3)
   g <- cpp_test_autodiff_gradient(x)
   expect_equal(g$value, sum(x^2))
@@ -68,6 +71,7 @@ skip_on_cran_budget()
 
 test_that("log at and below zero returns the finite sentinel on every type", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   for (x in c(0, -2)) {
     r <- cpp_test_scalar_guard("log", x)
     expect_equal(r$value_double, -1e10)
@@ -80,6 +84,7 @@ test_that("log at and below zero returns the finite sentinel on every type", {
 
 test_that("logit is finite at the endpoints of the unit interval", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   for (x in c(0, 1)) {
     r <- cpp_test_scalar_guard("logit", x)
     expect_true(is.finite(r$value_tape),  info = paste("tape at", x))
@@ -95,6 +100,7 @@ test_that("logit is finite at the endpoints of the unit interval", {
 
 test_that("tape reverse mode reproduces every elementary derivative", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   x <- 0.7
   chk <- function(res, info) {
     expect_equal(res$gradient, res$expected_gradient, tolerance = 1e-9,
@@ -118,6 +124,7 @@ skip_on_cran()
 
 test_that("every scalar type evaluates the same primitive in the interior", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   cases <- list(
     list(fn = "exp",   x = 1.3),
     list(fn = "exp",   x = -4.2),
@@ -148,6 +155,7 @@ test_that("exp is clamped on every scalar type, not only the value path", {
   # exp(800) overflows to +Inf unclamped. The value path has always clamped, so
   # an unclamped reverse mode is a different function from the one the runtime
   # gradient check finite-differences.
+  load_cpp_fixture("helpers")
   for (x in c(800, 1e4, -800, -1e4)) {
     r <- cpp_test_scalar_guard("exp", x)
     expect_true(is.finite(r$value_double))
@@ -166,6 +174,7 @@ test_that("sqrt at and below zero is finite in value and derivative everywhere",
   # high basis index, so sqrt(0) is an ordinary argument here. Unguarded, the
   # reverse-mode partial is 0.5 / 0 = +Inf and any nonzero upstream adjoint
   # makes the reported gradient Inf or NaN while the value path stays finite.
+  load_cpp_fixture("helpers")
   for (x in c(0, -1e-12, -3.5)) {
     r <- cpp_test_scalar_guard("sqrt", x)
     expect_equal(r$value_double, 0)

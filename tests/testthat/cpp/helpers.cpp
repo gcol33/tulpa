@@ -1,4 +1,4 @@
-// test_helpers.cpp
+// helpers.cpp
 // Rcpp wrappers to expose internal C++ functions for unit testing
 
 #include <Rcpp.h>

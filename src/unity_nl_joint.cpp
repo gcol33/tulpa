@@ -12,4 +12,3 @@
 #include "joint_inner_vcov.cpp"
 #include "nested_laplace_joint_batch.cpp"
 #include "nested_laplace_joint_multi.cpp"
-#include "test_cell_coupling_register.cpp"

@@ -60,6 +60,7 @@ test_that("gaussian: the SD and VARIANCE phi conventions line up exactly", {
 
 test_that("poisson: every kernel agrees at a shared eta", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   for (y in c(0L, 1L, 5L, 17L)) {
     for (eta in c(-1.0, 0.0, 1.2, 2.5)) {
       link <- cpp_family_terms(y, 1L, eta, "poisson", 1.0)
@@ -81,6 +82,7 @@ test_that("poisson: every kernel agrees at a shared eta", {
 test_that("neg_binomial_2: every kernel agrees, and phi is the size everywhere", {
   skip_on_cran()
   # A mu/size vs mu/dispersion split between copies would show up here.
+  load_cpp_fixture("helpers")
   ys <- c(0L, 3L, 12L); etas <- c(-0.5, 0.0, 1.4); sizes <- c(0.7, 2.0, 10.0)
   # CRAN reads each axis at its two ends; the dev loop reads the whole grid.
   if (cran_fixture()) { ys <- range(ys); etas <- range(etas); sizes <- range(sizes) }
@@ -107,6 +109,7 @@ test_that("neg_binomial_2: every kernel agrees, and phi is the size everywhere",
 
 test_that("binomial: every kernel agrees and keeps the lchoose normalizer", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   for (n in c(1L, 5L, 20L)) {
     for (y in unique(c(0L, 1L, n %/% 2L, n))) {
       for (eta in c(-2.0, -0.3, 0.0, 1.1)) {

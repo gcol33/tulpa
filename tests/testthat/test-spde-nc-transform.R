@@ -32,6 +32,7 @@ skip_on_cran_budget()
 
 test_that("SPDE NC transform: arena adjoint matches finite differences", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   fem <- helper_make_small_spde_fem(n_obs = 80, max_edge = c(0.30, 0.60),
                                     cutoff = 0.10, seed = 42L)
   n   <- fem$n_mesh
@@ -98,6 +99,7 @@ test_that("SPDE NC transform: arena adjoint matches finite differences", {
 # accumulation, not at the upstream integer path.
 test_that("SPDE NC transform: rational adjoint matches finite differences", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   fem <- helper_make_small_spde_fem(n_obs = 80, max_edge = c(0.30, 0.60),
                                     cutoff = 0.10, seed = 42L)
   n   <- fem$n_mesh
@@ -163,6 +165,7 @@ test_that("SPDE NC transform: rational adjoint matches finite differences", {
 
 test_that("SPDE NC transform: rational forward-mode tangent matches FD", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   fem <- helper_make_small_spde_fem(n_obs = 80, max_edge = c(0.30, 0.60),
                                     cutoff = 0.10, seed = 42L)
   n   <- fem$n_mesh
@@ -213,6 +216,7 @@ skip_on_cran()
 # tangent is seeded; we check dw_fwd ≈ dw_fd column-by-column.
 test_that("SPDE NC transform: forward-mode tangent matches finite differences", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   fem <- helper_make_small_spde_fem(n_obs = 80, max_edge = c(0.30, 0.60),
                                     cutoff = 0.10, seed = 42L)
   n   <- fem$n_mesh

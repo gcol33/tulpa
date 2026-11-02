@@ -681,6 +681,7 @@ test_that("gamma_3 is exactly zero for a coupled GAUSSIAN cell (K = 2 tensor, to
   # the contraction must return exactly 0 -- finite, not NaN (the cell IS
   # scorable) and not merely small. Before gcol33/tulpa#301 this fit came back
   # all-NaN because both arms were coupled and therefore excluded.
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_bivariate_gaussian_coupling(lam00 = 2.0, lam11 = 1.5,
                                                 lam01 = 0.7)
   skip_if_not(cpp_cell_coupling_registry_has("test_bivariate_gaussian"),

@@ -10,30 +10,32 @@ skip_on_cran_budget()
 
 test_that("s2z_precision implements sd(sum) = kappa * n", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   kappa <- 0.001
   for (n in c(1L, 5L, 36L, 400L)) {
-    expect_equal(tulpa:::cpp_test_s2z_precision(n, kappa),
+    expect_equal(cpp_test_s2z_precision(n, kappa),
                  1 / (kappa * n)^2, tolerance = 1e-9)
   }
   # It is a precision, not a standard deviation: larger fields are pinned at a
   # LOWER precision, because the sum they pin is longer.
-  expect_lt(tulpa:::cpp_test_s2z_precision(400L, kappa),
-            tulpa:::cpp_test_s2z_precision(36L, kappa))
+  expect_lt(cpp_test_s2z_precision(400L, kappa),
+            cpp_test_s2z_precision(36L, kappa))
   # The field MEAN is held at sd = kappa regardless of n, which is the point of
   # scaling with n: precision on the mean = n^2 * precision on the sum.
   for (n in c(5L, 36L, 400L)) {
-    expect_equal(1 / sqrt(n^2 * tulpa:::cpp_test_s2z_precision(n, kappa)), kappa,
+    expect_equal(1 / sqrt(n^2 * cpp_test_s2z_precision(n, kappa)), kappa,
                  tolerance = 1e-9)
   }
 })
 
 test_that("the RW sum-to-zero penalty uses the derived precision", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   phi <- c(0.4, -0.1, 0.3, -0.2, 0.9)
-  expected <- -0.5 * tulpa:::cpp_test_s2z_precision(length(phi), 0.001) * sum(phi)^2
-  expect_equal(tulpa:::cpp_test_sum_to_zero_penalty(phi), expected, tolerance = 1e-9)
+  expected <- -0.5 * cpp_test_s2z_precision(length(phi), 0.001) * sum(phi)^2
+  expect_equal(cpp_test_sum_to_zero_penalty(phi), expected, tolerance = 1e-9)
   # A centred field is unpenalised however large the constraint precision is.
-  expect_equal(tulpa:::cpp_test_sum_to_zero_penalty(phi - mean(phi)), 0, tolerance = 1e-12)
+  expect_equal(cpp_test_sum_to_zero_penalty(phi - mean(phi)), 0, tolerance = 1e-12)
 })
 
 test_that("multiscale temporal pins its intrinsic trend and seasonal arms", {
@@ -42,12 +44,13 @@ test_that("multiscale temporal pins its intrinsic trend and seasonal arms", {
   # on the same linear predictor, so each needs its own pin. The multiscale
   # block is only populated by consumer packages, so this asserts the log-prior
   # directly rather than through a fit.
+  load_cpp_fixture("helpers")
   set.seed(4)
   n <- 24L; per <- 12L
   trend <- rnorm(n); seasonal <- rnorm(per); short <- rnorm(n)
 
   lp <- function(tr, se) {
-    tulpa:::cpp_test_multiscale_temporal_log_lik(
+    cpp_test_multiscale_temporal_log_lik(
       tr, se, short,
       sigma2_trend = 1, sigma2_seasonal = 1, sigma2_short = 1, rho_short = 0.5,
       trend_type = "rw1", seasonal_period = per, short_term_type = "ar1")
@@ -76,7 +79,7 @@ test_that("multiscale temporal pins its intrinsic trend and seasonal arms", {
   # It scales with the arm's own variance, which the soft pin it replaced did
   # not: at sigma2 = 4 the same shift moves the log-prior a quarter as far.
   lp4 <- function(tr, se) {
-    tulpa:::cpp_test_multiscale_temporal_log_lik(
+    cpp_test_multiscale_temporal_log_lik(
       tr, se, short,
       sigma2_trend = 4, sigma2_seasonal = 1, sigma2_short = 1, rho_short = 0.5,
       trend_type = "rw1", seasonal_period = per, short_term_type = "ar1")
@@ -96,6 +99,7 @@ test_that("multiscale temporal pins its intrinsic trend and seasonal arms", {
 # own default of 1 and the rank normalizer still credits the pin.
 test_that("set_spatial_adjacency derives the partition the augmentation walks", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   n_units <- 8L
   row_ptr <- c(0L, 1L, 3L, 5L, 7L, 9L, 11L, 13L, 14L)
   col_idx <- c(1L, 0L, 2L, 1L, 3L, 2L, 4L, 3L, 5L, 4L, 6L, 5L, 7L, 6L)
@@ -120,6 +124,7 @@ test_that("set_spatial_adjacency derives the partition the augmentation walks", 
 test_that("a disconnected adjacency yields one pinned component per piece", {
   skip_on_cran_budget()
   # Two disjoint 3-chains: 0-1-2 and 3-4-5.
+  load_cpp_fixture("helpers")
   n_units <- 6L
   row_ptr <- c(0L, 1L, 3L, 4L, 5L, 7L, 8L)
   col_idx <- c(1L, 0L, 2L, 1L, 4L, 3L, 5L, 4L)

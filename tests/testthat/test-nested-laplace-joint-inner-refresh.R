@@ -127,6 +127,7 @@ test_that("factor reuse with a grad-only-honoring cell-coupling spec matches", {
     # test Bernoulli spec skips its Hessian when out.grad_only, so reuse steps
     # build only the gradient. The converged mode must still match the
     # every-step default (the gradient is exact on every step).
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_separable_bernoulli_coupling()
     set.seed(909L)
     n_s <- 14L; N <- 90L

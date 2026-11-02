@@ -20,36 +20,39 @@ guard_matrix <- function() {
 test_that("the discarded contribution is invisible in the stored matrix", {
   # The point of the counter: what remains passes every structural check while
   # being wrong by exactly the dropped value.
+  load_cpp_fixture("helpers")
   A <- guard_matrix()
-  full <- tulpa:::cpp_test_hessian_pattern_guard(A, omit_entry = -1L, raise = FALSE)
+  full <- cpp_test_hessian_pattern_guard(A, omit_entry = -1L, raise = FALSE)
   # Entry 0 in (col, row) traversal order is A[1, 1].
-  holed <- tulpa:::cpp_test_hessian_pattern_guard(A, omit_entry = 0L, raise = FALSE)
+  holed <- cpp_test_hessian_pattern_guard(A, omit_entry = 0L, raise = FALSE)
 
   expect_equal(full$stored_sum - holed$stored_sum, A[1, 1], tolerance = 1e-12)
   expect_true(is.finite(holed$stored_sum))
 })
 
 test_that("the guard raises on a fit that discarded a contribution", {
+  load_cpp_fixture("helpers")
   A <- guard_matrix()
 
   expect_error(
-    tulpa:::cpp_test_hessian_pattern_guard(A, omit_entry = 0L, raise = TRUE),
+    cpp_test_hessian_pattern_guard(A, omit_entry = 0L, raise = TRUE),
     "outside the registered sparsity pattern"
   )
-  expect_silent(tulpa:::cpp_test_hessian_pattern_guard(A, omit_entry = -1L, raise = TRUE))
+  expect_silent(cpp_test_hessian_pattern_guard(A, omit_entry = -1L, raise = TRUE))
 })
 
 test_that("an unresolved cached slot counts only a nonzero contribution", {
   # Index caches resolve whole cross products up front and legitimately hold -1
   # for pairs no observation touches; those slots are written with a structural
   # zero, which changes nothing whether it lands or not.
+  load_cpp_fixture("helpers")
   A <- guard_matrix()
 
-  zero_write <- tulpa:::cpp_test_hessian_pattern_guard(A, omit_entry = -1L,
+  zero_write <- cpp_test_hessian_pattern_guard(A, omit_entry = -1L,
                                                raise = FALSE, slot_val = 0)
   expect_equal(zero_write$dropped, 0)
 
-  live_write <- tulpa:::cpp_test_hessian_pattern_guard(A, omit_entry = -1L,
+  live_write <- cpp_test_hessian_pattern_guard(A, omit_entry = -1L,
                                                raise = FALSE, slot_val = 1.5)
   expect_equal(live_write$dropped, 1)
 })
@@ -58,8 +61,9 @@ skip_on_cran_budget()
 
 test_that("a complete pattern stores every contribution and drops nothing", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   A <- guard_matrix()
-  res <- tulpa:::cpp_test_hessian_pattern_guard(A, omit_entry = -1L, raise = FALSE)
+  res <- cpp_test_hessian_pattern_guard(A, omit_entry = -1L, raise = FALSE)
 
   expect_equal(res$dropped, 0)
   # 4 diagonal + 3 off-diagonal lower-triangle nonzeros.
@@ -71,12 +75,13 @@ test_that("a complete pattern stores every contribution and drops nothing", {
 
 test_that("an entry missing from the pattern is counted, not silently dropped", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   A <- guard_matrix()
-  full <- tulpa:::cpp_test_hessian_pattern_guard(A, omit_entry = -1L, raise = FALSE)
+  full <- cpp_test_hessian_pattern_guard(A, omit_entry = -1L, raise = FALSE)
 
   # Omit each lower-triangle nonzero in turn: every one must be detected.
   for (e in seq_len(full$nnz) - 1L) {
-    res <- tulpa:::cpp_test_hessian_pattern_guard(A, omit_entry = e, raise = FALSE)
+    res <- cpp_test_hessian_pattern_guard(A, omit_entry = e, raise = FALSE)
     expect_equal(res$dropped, 1,
                  info = sprintf("omitted pattern entry %d", e))
     expect_equal(res$nnz, full$nnz - 1L)

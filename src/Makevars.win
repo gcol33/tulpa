@@ -48,8 +48,7 @@ OBJECTS = \
   unity_nl_joint.o \
   unity_pg.o \
   unity_samplers.o \
-  unity_spatial.o \
-  unity_tests.o
+  unity_spatial.o
 all: $(SHLIB)
 unity_core.o: \
   unity_core.cpp \
@@ -155,8 +154,7 @@ unity_nl_joint.o: \
   cell_coupling_registry.cpp \
   joint_inner_vcov.cpp \
   nested_laplace_joint_batch.cpp \
-  nested_laplace_joint_multi.cpp \
-  test_cell_coupling_register.cpp
+  nested_laplace_joint_multi.cpp
 unity_pg.o: \
   unity_pg.cpp \
   pg_binomial.cpp \
@@ -179,7 +177,6 @@ unity_samplers.o: \
   smc_sampler.cpp \
   tulpa_beta_sampler.cpp \
   tulpa_generic_sampler.cpp \
-  tulpa_test_funnel.cpp \
   vi_convergence_probe.cpp \
   vi_sampler.cpp
 unity_spatial.o: \
@@ -198,20 +195,4 @@ unity_spatial.o: \
   svc_nc_apply.cpp \
   tulpa_spde_layout_probe.cpp \
   tulpa_spde_sampler.cpp
-unity_tests.o: \
-  unity_tests.cpp \
-  test_ccallable_registry.cpp \
-  test_cholesky_log_det_signal.cpp \
-  test_fastmath_fixture.cpp \
-  test_helpers.cpp \
-  test_hsgp_warm_start.cpp \
-  test_laplace_sample_fixture.cpp \
-  test_lkj_chol.cpp \
-  test_mass_lowrank.cpp \
-  test_nan_gradient_nuts.cpp \
-  test_pg_nngp_conditional.cpp \
-  test_smc_cabi.cpp \
-  test_st_hsgp_prior.cpp \
-  test_st_iv_fixture.cpp \
-  test_temporal_gp_fixture.cpp
 # unity-build: end

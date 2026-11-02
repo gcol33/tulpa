@@ -1,11 +1,13 @@
 
 test_that("the negbin kernel answers the mu = 0 boundary rather than 0 * -Inf", {
+  load_cpp_fixture("helpers")
   expect_equal(cpp_test_negbin_loglik(0L, 0.0, 2.5), 0)
   expect_equal(cpp_test_negbin_loglik(2L, 0.0, 2.5), -Inf)
 })
 
 test_that("the sparse Laplacian quadratic form matches the dense x L x", {
   # Path graph on 5 nodes, CSR neighbour lists.
+  load_cpp_fixture("helpers")
   n <- 5L
   nb <- list(2L, c(1L, 3L), c(2L, 4L), c(3L, 5L), 4L)
   row_ptr <- as.integer(c(0, cumsum(lengths(nb))))
@@ -20,6 +22,7 @@ test_that("the sparse Laplacian quadratic form matches the dense x L x", {
 })
 
 test_that("the two-process linear predictors match X beta on each arm", {
+  load_cpp_fixture("helpers")
   set.seed(3)
   Xn <- matrix(rnorm(30), 10, 3); bn <- rnorm(3)
   Xd <- matrix(rnorm(20), 10, 2); bd <- rnorm(2)
@@ -29,6 +32,7 @@ test_that("the two-process linear predictors match X beta on each arm", {
 })
 
 test_that("the leapfrog integrator is time-reversible", {
+  load_cpp_fixture("helpers")
   q0 <- c(1.0, -0.5); p0 <- c(0.2, 0.9)
   fwd <- cpp_test_leapfrog(q0, p0, 0.1, 12L)
   back <- cpp_test_leapfrog(fwd$q, -fwd$p, 0.1, 12L)
@@ -62,6 +66,7 @@ skip_on_cran_budget()
 
 test_that("scalar math kernels match their R closed forms", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   v <- c(-3.2, 0.4, 7.1, 2.0)
   expect_equal(cpp_test_log_sum_exp(v), log(sum(exp(v))))
   expect_equal(cpp_test_softmax(v), exp(v) / sum(exp(v)))
@@ -71,6 +76,7 @@ test_that("scalar math kernels match their R closed forms", {
 
 test_that("log_sum_exp does not overflow on a large shift", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   big <- c(800, 799)
   expect_equal(cpp_test_log_sum_exp(big), 800 + log(1 + exp(-1)))
   expect_true(all(is.finite(cpp_test_softmax(big))))
@@ -81,6 +87,7 @@ test_that("empty and mismatched inputs are answered, not dereferenced", {
   skip_on_cran_budget()
   # max_element on an empty range dereferences end(); log_sum_exp already
   # answers the empty case and softmax reads the same way.
+  load_cpp_fixture("helpers")
   expect_equal(cpp_test_log_sum_exp(numeric(0)), -Inf)
   expect_equal(cpp_test_softmax(numeric(0)), numeric(0))
 
@@ -95,6 +102,7 @@ test_that("empty and mismatched inputs are answered, not dereferenced", {
 
 test_that("family log-likelihood kernels match the R densities", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   y   <- c(0L, 2L, 5L, 1L)
   lam <- c(0.4, 2.1, 4.4, 1.0)
   expect_equal(cpp_test_poisson_loglik(y, lam),
@@ -116,6 +124,7 @@ test_that("family log-likelihood kernels match the R densities", {
 
 test_that("dense linear algebra kernels match base R", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   set.seed(11)
   A <- crossprod(matrix(rnorm(16), 4, 4)) + diag(4)
   x <- rnorm(4)
@@ -136,6 +145,7 @@ test_that("dense linear algebra kernels match base R", {
 
 test_that("vector kernels match base R", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   x <- c(1.5, -2, 0.25, 4)
   y <- c(0.5, 3, -1, 2)
   expect_equal(cpp_test_dot_product(x, y), sum(x * y))
@@ -150,6 +160,7 @@ test_that("vector kernels match base R", {
 
 test_that("temporal quadratic forms and the AR1 density match their definitions", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   phi <- c(0.4, -0.2, 1.1, 0.7, -0.5)
   T_n <- length(phi)
   expect_equal(cpp_test_rw1_quadratic_form(phi, FALSE), sum(diff(phi)^2))
@@ -177,6 +188,7 @@ test_that("the leapfrog integrator conserves the Hamiltonian to second order", {
   skip_on_cran_budget()
   # U(q) = 0.5 q'q, K(p) = 0.5 p'p: a harmonic oscillator, where a symplectic
   # integrator has bounded rather than growing energy error.
+  load_cpp_fixture("helpers")
   q0 <- c(1.0, -0.5); p0 <- c(0.2, 0.9)
   H0 <- cpp_test_hamiltonian(q0, p0)
   expect_equal(H0, 0.5 * sum(q0^2) + 0.5 * sum(p0^2))
@@ -191,6 +203,7 @@ test_that("the leapfrog integrator conserves the Hamiltonian to second order", {
 
 test_that("the Polya-Gamma conditional updates are the posteriors they claim", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   set.seed(7)
   N <- 40L; p <- 2L
   X <- cbind(1, rnorm(N))
@@ -243,6 +256,7 @@ test_that("the Chinese-restaurant-table sampler has the mean it advertises", {
 
 test_that("the Laplace sampler draws from the Gaussian its Hessian defines", {
   skip_on_cran_budget()
+  load_cpp_fixture("laplace_sample")
   set.seed(23)
   H <- matrix(c(4, 1, 1, 2), 2, 2)
   mode <- c(-1, 3)

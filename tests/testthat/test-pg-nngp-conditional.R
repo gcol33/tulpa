@@ -16,6 +16,7 @@
 
 .pgnngp_probe <- function(N = 20L, nn = 3L, seed = 4L, sigma2 = 0.7, phi = 0.35,
                           cov_type = 0L) {
+  load_cpp_fixture("pg_nngp_conditional")
   set.seed(seed)
   coords <- cbind(runif(N), runif(N))
   ni     <- compute_nngp_neighbors(coords, nn)

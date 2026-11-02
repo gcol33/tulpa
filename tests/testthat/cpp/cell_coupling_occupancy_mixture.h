@@ -1,4 +1,4 @@
-// test_cell_coupling_occupancy_mixture.h
+// cell_coupling_occupancy_mixture.h
 // Test-only CellCouplingSpec exposing a two-arm occupancy mixture: the
 // smallest genuinely NON-SEPARABLE per-cell density the engine can fit
 // entirely on its own.
@@ -58,8 +58,7 @@
 //
 // Registered under the name "test_occupancy_mixture" by
 // `cpp_register_test_occupancy_mixture_coupling()` in
-// src/test_cell_coupling_register.cpp. Lives under src/ rather than
-// inst/include/ because no other package consumes it.
+// cell_coupling_register.cpp.
 
 #ifndef TULPA_TEST_CELL_COUPLING_OCCUPANCY_MIXTURE_H
 #define TULPA_TEST_CELL_COUPLING_OCCUPANCY_MIXTURE_H

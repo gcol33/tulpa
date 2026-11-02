@@ -111,7 +111,8 @@ ICAR_BETA_SD <- 0.6
 
 .icar_sweep <- function(fx, tau, phi_in, beta0 = ICAR_BETA0,
                         beta_sd = ICAR_BETA_SD) {
-  tulpa:::cpp_test_update_spatial_icar(
+  load_cpp_fixture("helpers")
+  cpp_test_update_spatial_icar(
     kappa = fx$kappa, omega = fx$omega, offset = fx$offset,
     group = fx$group, adj_list = fx$adj_list, n_neighbors = fx$n_neighbors,
     n_units = fx$J, tau = tau, phi = phi_in, beta0 = beta0,
@@ -255,6 +256,7 @@ test_that("the kernels' ICAR prior is the marginal of the centred Q_aug field (#
   # Integrating the constant direction out of x' diag(w) Q_aug x leaves the
   # Schur complement diag(w) Q_aug - w w' / W, so Qt is checked against that
   # construction, and its quadratic form against the integral it stands for.
+  load_cpp_fixture("helpers")
   fx_two <- .icar_two_components()
   fx_isl <- .icar_island()
   cases <- list(
@@ -269,7 +271,7 @@ test_that("the kernels' ICAR prior is the marginal of the centred Q_aug field (#
     J <- fx$J
     w <- cases[[nm]]$w %||% rep(1, J)
     x <- rnorm(J)
-    got <- tulpa:::cpp_test_pg_icar_prior(fx$adj_list, fx$n_neighbors, J, x,
+    got <- cpp_test_pg_icar_prior(fx$adj_list, fx$n_neighbors, J, x,
                                           node_prec = cases[[nm]]$w)
     want <- .icar_Qt(fx$adj_list, J, w)
     expect_equal(got$Qt, want, tolerance = 1e-12, info = nm)
@@ -297,7 +299,7 @@ test_that("the kernels' ICAR prior is the marginal of the centred Q_aug field (#
   }
   # Connected and unweighted, Qt is the plain ICAR precision.
   fx <- .icar_chain()
-  got <- tulpa:::cpp_test_pg_icar_prior(fx$adj_list, fx$n_neighbors, fx$J,
+  got <- cpp_test_pg_icar_prior(fx$adj_list, fx$n_neighbors, fx$J,
                                         rnorm(fx$J))
   Q <- -outer(seq_len(fx$J), seq_len(fx$J),
               function(a, b) as.numeric(abs(a - b) == 1))

@@ -36,12 +36,13 @@ test_that("every non-NULL registry $cabi name resolves as a registered C-ABI cal
   # today (assert_backend_reachable() is the only reader, and it only fires
   # for a backend with no R fitter, which none currently are), so nothing
   # catches drift without this test.
+  load_cpp_fixture("ccallable_registry")
   reg <- tulpa:::BACKEND_REGISTRY
   for (backend in names(reg)) {
     cabi <- reg[[backend]]$cabi
     if (is.null(cabi)) next
     for (nm in cabi) {
-      resolved <- isTRUE(tryCatch(tulpa:::cpp_test_ccallable_resolves(nm),
+      resolved <- isTRUE(tryCatch(cpp_test_ccallable_resolves(nm),
                                    error = function(e) FALSE))
       expect_true(resolved, info = sprintf("%s: cabi '%s'", backend, nm))
     }

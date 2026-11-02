@@ -11,7 +11,8 @@ skip_on_cran()
 funnel_v <- function(seed, walnuts = TRUE, neck = TRUE, n_iter = 10000L,
                      n_warmup = 1500L, max_step_halvings = 10L,
                      max_error = 0.5) {
-  tulpa:::cpp_test_funnel_nuts(
+  load_cpp_fixture("funnel_nuts")
+  cpp_test_funnel_nuts(
     K = 9L, gamma = 3, n_iter = n_iter, n_warmup = n_warmup,
     max_treedepth = 10L, adapt_delta = 0.8, seed = seed,
     walnuts = walnuts, max_step_halvings = max_step_halvings,
@@ -22,8 +23,9 @@ funnel_v <- function(seed, walnuts = TRUE, neck = TRUE, n_iter = 10000L,
 test_that("the funnel entry returns a well-formed fit under either transition", {
   skip_on_cran()  # tier 2: short fits, plumbing + shape
 
+  load_cpp_fixture("funnel_nuts")
   for (w in c(FALSE, TRUE)) {
-    fit <- tulpa:::cpp_test_funnel_nuts(
+    fit <- cpp_test_funnel_nuts(
       K = 6L, gamma = 3, n_iter = 400L, n_warmup = 200L,
       max_treedepth = 8L, seed = 1L, walnuts = w
     )

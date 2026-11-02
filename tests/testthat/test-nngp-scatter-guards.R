@@ -29,12 +29,13 @@
 }
 
 .guard_call <- function(fx, ...) {
+  load_cpp_fixture("helpers")
   args <- list(w = fx$w, coords = fx$coords, nn_idx = fx$nn_idx,
                nn_dist = fx$nn_dist, nn_order = fx$nn_order,
                n_spatial = fx$ng, nn = fx$nn,
                sigma2 = 0.9, phi_gp = 0.4, cov_type = 0L)
   args[names(list(...))] <- list(...)
-  do.call(tulpa:::cpp_test_nngp_prior_scatter, args)
+  do.call(cpp_test_nngp_prior_scatter, args)
 }
 
 test_that("a one-column coordinate matrix is still a valid NNGP domain", {

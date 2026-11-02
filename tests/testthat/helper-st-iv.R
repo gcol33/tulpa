@@ -1,4 +1,4 @@
-# Shared scaffolding for the Knorr-Held Type-IV fixture in src/test_st_iv_fixture.cpp.
+# Shared scaffolding for the Knorr-Held Type-IV fixture in tests/testthat/cpp/st_iv.cpp.
 #
 # A helper file rather than the top of one test file: both the
 # precision-informed diagonal (gcol33/tulpa#585) and the margin low-rank metric
@@ -53,6 +53,7 @@ st_iv_fixture <- function(S1 = 3, S2 = 3, T = 4, family = "poisson",
 }
 
 st_iv_layout <- function(f) {
+  load_cpp_fixture("st_iv")
   cpp_test_st_iv_layout(
     f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
     family = f$family, temporal = f$temporal,
@@ -61,6 +62,7 @@ st_iv_layout <- function(f) {
 }
 
 st_iv_gmrf <- function(f, q, with_eta_weights = TRUE) {
+  load_cpp_fixture("st_iv")
   cpp_test_st_iv_gmrf_mass(
     f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
     q = q, family = f$family, temporal = f$temporal,
@@ -93,6 +95,7 @@ st_iv_dense_mass <- function(gmrf, S, T) {
 st_iv_trend <- function(T) seq_len(T) - (T + 1) / 2
 
 st_iv_lp <- function(f, q) {
+  load_cpp_fixture("st_iv")
   cpp_test_st_iv_log_post(
     f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
     q = q, family = f$family, temporal = f$temporal,

@@ -68,6 +68,7 @@ skip_on_cran()
 
 test_that("CG and Cholesky NNGP solvers agree on log-lik and gradients", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   set.seed(7)
   n_obs <- 100
   nn_k <- 10L

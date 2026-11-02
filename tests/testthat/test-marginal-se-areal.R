@@ -115,9 +115,10 @@ for (ty in c("icar", "car", "bym2")) {
 #   Q_ij = -(lp(e_i + e_j) - lp(e_i) - lp(e_j) + lp(0))
 # recovers it with no truncation error.
 kernel_icar_Q <- function(W) {
+  load_cpp_fixture("helpers")
   n   <- nrow(W)
   csr <- tulpa:::adjacency_to_csr_tulpa(W)
-  lp  <- function(x) tulpa:::cpp_test_log_prior_icar(
+  lp  <- function(x) cpp_test_log_prior_icar(
     x, as.integer(n), 1.0, as.integer(csr$row_ptr), as.integer(csr$col_idx),
     as.integer(csr$n_neighbors))
   e  <- function(k) { v <- numeric(n); if (k > 0L) v[k] <- 1; v }

@@ -43,8 +43,8 @@ static inline void nngp_marginal_contrib(double wi, double sigma2,
 // across observations.
 //
 // Reference implementation: the only caller is the cpp_test_gp_solver_dispatch
-// export in test_helpers.cpp, which test-gp-cg.R drives to score the GP solver
-// backends against each other.
+// test fixture in tests/testthat/cpp/helpers.cpp, which test-gp-cg.R drives to
+// score the GP solver backends against each other.
 inline void gp_nngp_gradients(
     const std::vector<double>& w,
     double sigma2,

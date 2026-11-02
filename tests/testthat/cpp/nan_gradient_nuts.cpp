@@ -1,4 +1,4 @@
-// test_nan_gradient_nuts.cpp
+// nan_gradient_nuts.cpp
 // Test-only entry points: NUTS chains whose gradient misbehaves in a way the
 // model, not the sampler, controls -- one arm non-finite where its
 // log-posterior is not, one arm raising an exception mid-chain.

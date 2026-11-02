@@ -1,4 +1,4 @@
-// test_cell_coupling_separable_bernoulli.h
+// cell_coupling_separable_bernoulli.h
 // Test-only CellCouplingSpec that reproduces a single-arm binomial
 // (n_trials = 1) per-obs likelihood as a per-cell coupled spec, with
 // one row per cell. Used by tests/testthat/test-cell-coupling-recovery.R
@@ -6,9 +6,8 @@
 // byte-equivalent (~1e-12) mode + log-marginal output as the existing
 // arm-separable per-obs path on the same data.
 //
-// Lives under src/ (not inst/include/) because it is consumed only
-// internally by `tulpa_register_test_separable_bernoulli_coupling` -- the
-// Rcpp export in src/test_cell_coupling_register.cpp.
+// Registered by `cpp_register_test_separable_bernoulli_coupling()` in
+// cell_coupling_register.cpp.
 
 #ifndef TULPA_TEST_CELL_COUPLING_SEPARABLE_BERNOULLI_H
 #define TULPA_TEST_CELL_COUPLING_SEPARABLE_BERNOULLI_H

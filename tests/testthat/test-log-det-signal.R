@@ -23,6 +23,7 @@
                      0, 0, 2), 3, 3)        # exactly singular, PSD
 
 test_that("an exactly singular H is refused too", {
+  load_cpp_fixture("cholesky_log_det_signal")
   expect_lt(min(eigen(.SING_H, symmetric = TRUE, only.values = TRUE)$values),
             1e-12)
   for (sparse in c(FALSE, TRUE)) {
@@ -36,6 +37,7 @@ skip_on_cran_budget()
 
 test_that("a positive definite H factors and reports its log-determinant", {
   skip_on_cran_budget()
+  load_cpp_fixture("cholesky_log_det_signal")
   for (sparse in c(FALSE, TRUE)) {
     r <- cpp_test_log_det_signal(.PD_H, prefer_sparse = sparse)
     expect_true(r$ok, info = paste("sparse =", sparse))
@@ -48,6 +50,7 @@ test_that("a positive definite H factors and reports its log-determinant", {
 
 test_that("an indefinite H is refused rather than returned as a number", {
   skip_on_cran_budget()
+  load_cpp_fixture("cholesky_log_det_signal")
   expect_lt(min(eigen(.IND_H, symmetric = TRUE, only.values = TRUE)$values), 0)
   for (sparse in c(FALSE, TRUE)) {
     r <- cpp_test_log_det_signal(.IND_H, prefer_sparse = sparse)
@@ -63,6 +66,7 @@ test_that("the base ridge does not rescue an indefinite H", {
   # dispatch_factor_log_det adds LAPLACE_UNIFORM_RIDGE before factoring. On the
   # PD matrix that shifts the log-determinant by a hair and still succeeds; on
   # the indefinite one it changes nothing about the verdict.
+  load_cpp_fixture("cholesky_log_det_signal")
   ok_pd <- cpp_test_log_det_signal(.PD_H, add_ridge = TRUE)
   expect_true(ok_pd$ok)
   expect_equal(ok_pd$log_det, log(prod(diag(.PD_H) + 1e-10)), tolerance = 1e-9)
@@ -77,6 +81,7 @@ test_that("the two backends agree on which matrices they refuse", {
   # The joint Newton loop and the plain one pick different arms of the same
   # dispatch, so a verdict that depended on the arm would put two paths on the
   # same model into disagreement.
+  load_cpp_fixture("cholesky_log_det_signal")
   for (H in list(.PD_H, .IND_H, .SING_H)) {
     a <- cpp_test_log_det_signal(H, prefer_sparse = FALSE)
     b <- cpp_test_log_det_signal(H, prefer_sparse = TRUE)

@@ -1,4 +1,4 @@
-// test_cholesky_log_det_signal.cpp
+// cholesky_log_det_signal.cpp
 // Test-only entry point: the failure signal on the factorize-for-log-determinant
 // dispatch.
 //

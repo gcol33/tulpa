@@ -69,6 +69,11 @@
 # part covers its subsystem's constructors and closed forms cheaply; the CI check
 # matrix (TULPA_CRAN_BUDGET=off) and every other profile run all files.
 #
+# A block that drives the engine through a C++ test fixture (load_cpp_fixture(),
+# helper-cpp-fixtures.R) is tier 2 whatever its own cost, because the fixture
+# has to be compiled: the loader carries the skip_on_cran() gate. A smoke file's
+# CRAN part therefore reaches the engine through R-level doors only.
+#
 # A skipped block is not free: test_that() sets up its test context (a temporary
 # directory, the locale, the reproducible-output options) before the gate in the
 # body runs, about 10 ms a block, and the suite gates over a thousand of them. A
@@ -143,10 +148,9 @@ CRAN_SMOKE_FILES <- c(
   "adjacency", "formula", "family-count-extensions", "prior-predict",
   "spatial-spde-api", "temporal", "nested-laplace-joint-multi", "beta-nuts",
   "methods-interop", "diagnostics", "posterior-sbc", "psis", "tgmrf",
-  "control-check", "simulate", "autodiff-primitives", "re-cov-prior",
+  "control-check", "simulate", "re-cov-prior",
   "nested-posterior-draws", "criteria-tulpa-fit", "em-laplace",
-  "pg-index-validation", "pg-nngp-conditional", "st-hsgp-prior", "mcar-prior",
-  "ccd-modefind-budget", "auto-grid-provenance"
+  "pg-index-validation", "ccd-modefind-budget", "auto-grid-provenance"
 )
 
 # test_check()'s file filter: the smoke set under the CRAN budget, else every file.

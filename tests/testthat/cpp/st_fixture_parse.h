@@ -1,4 +1,4 @@
-// test_st_fixture_parse.h
+// st_fixture_parse.h
 // The string arguments the spatiotemporal test fixtures take, mapped onto the
 // engine's enums in one place so every fixture names a configuration the same
 // way and an unknown name is an error rather than a silent RW1.

@@ -24,6 +24,7 @@ test_that("the state scan reads the momentum, not only the position", {
   skip_on_cran_budget()
   # q finite, log_prob finite, p carrying a NaN: the exact state a trailing Kick
   # on a non-finite gradient produces.
+  load_cpp_fixture("nan_gradient_nuts")
   r <- cpp_test_divergence_predicates(log_prob = 0, q = c(1, 2),
                                       p = c(1, NaN), H0 = 5, H_new = 5.1)
   expect_true(r$state_nonfinite)
@@ -42,6 +43,7 @@ test_that("a non-finite Hamiltonian is divergent", {
   # The negated comparison is what routes NaN to the divergent branch;
   # `H_new - H0 > delta_max` would not, because every comparison with NaN is
   # false.
+  load_cpp_fixture("nan_gradient_nuts")
   expect_true(cpp_test_divergence_predicates(0, 1, 1, H0 = 5, H_new = NaN)$hamiltonian_divergent)
   expect_true(cpp_test_divergence_predicates(0, 1, 1, H0 = 5, H_new = Inf)$hamiltonian_divergent)
   expect_false(isTRUE(NaN - 5 > 1000))   # what the old form evaluated
@@ -60,6 +62,7 @@ test_that("a chain whose gradient is NaN reports every iteration divergent", {
   # the sampler in the state above: a finite log-posterior with a non-finite
   # gradient. The target is a standard normal, so the two arms differ in one
   # planted entry and nothing else.
+  load_cpp_fixture("nan_gradient_nuts")
   nan   <- cpp_test_nan_gradient_nuts(plant_nan = TRUE)
   clean <- cpp_test_nan_gradient_nuts(plant_nan = FALSE)
 
@@ -87,6 +90,7 @@ test_that("run_hmc_chain_cpp verifies the gradient on a direct entry", {
   # This probe IS such a direct entry. With the gate live, the planted NaN is
   # caught before the first trajectory and the chain falls back to numerical
   # gradients, so it samples instead of standing still.
+  load_cpp_fixture("nan_gradient_nuts")
   expect_warning(
     gated <- cpp_test_nan_gradient_nuts(plant_nan = TRUE, bypass_gate = FALSE),
     "Gradient mismatch"

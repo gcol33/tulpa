@@ -1,10 +1,10 @@
-// test_st_hsgp_prior.cpp
+// st_hsgp_prior.cpp
 // The HSGP-ST interaction prior, driven directly.
 //
 // Nothing in tulpa sets ModelData::has_spatiotemporal -- spatiotemporal() errors
 // at the R door and the whole ST sampler path is a consumer-package
 // configuration -- so this fixture fills the ModelData a consumer would hand the
-// engine, exactly as src/test_st_iv_fixture.cpp does for the Kronecker Type-IV
+// engine, exactly as st_iv.cpp does for the Kronecker Type-IV
 // branch. It is the only way an R test reaches the spectral branch.
 //
 // It evaluates the SHIPPED density (tulpa::priors::compute_st_prior), not a copy
@@ -19,7 +19,7 @@
 #include "tulpa/likelihood.h"
 #include "tulpa/autodiff_arena.h"
 #include "tulpa_priors_st.h"
-#include "test_st_fixture_parse.h"
+#include "st_fixture_parse.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;

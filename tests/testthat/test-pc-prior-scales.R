@@ -53,6 +53,7 @@ test_that("each PC-prior scale integrates to one (a proper density)", {
   skip_on_cran_budget()
   # A wrong Jacobian (the tvc/hsgp bugs) breaks normalization: the tvc form was
   # improper as tau -> Inf. Integrating on each coordinate catches that.
+  load_cpp_fixture("helpers")
   U <- 1.0; alpha <- 0.01
 
   for (scale in names(pc_sigma_of)) {
@@ -73,6 +74,7 @@ skip_on_cran()
 
 test_that("every PC-prior scale equals the base density plus a numerical Jacobian", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   U <- 1.0; alpha <- 0.01
   lambda <- pc_lambda(U, alpha)
 
@@ -93,6 +95,7 @@ test_that("every PC-prior scale equals the base density plus a numerical Jacobia
 
 test_that("the PC-prior rate is calibrated so P(sigma > U) = alpha", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   for (U in c(0.5, 1, 3)) {
     for (alpha in c(0.01, 0.05, 0.5)) {
       lambda <- pc_lambda(U, alpha)

@@ -35,11 +35,18 @@ st_d_args <- function(f) {
        st_parameterization = f$st_parameterization, st_type = f$st_type)
 }
 
-st_d_layout <- function(f) do.call(cpp_test_st_iv_layout, st_d_args(f))
-st_d_prior  <- function(f, q) do.call(cpp_test_st_iv_log_prior,
-                                      c(st_d_args(f), list(q = q)))
-st_d_lp     <- function(f, q) do.call(cpp_test_st_iv_log_post,
-                                      c(st_d_args(f), list(q = q)))
+st_d_layout <- function(f) {
+  load_cpp_fixture("st_iv")
+  do.call(cpp_test_st_iv_layout, st_d_args(f))
+}
+st_d_prior <- function(f, q) {
+  load_cpp_fixture("st_iv")
+  do.call(cpp_test_st_iv_log_prior, c(st_d_args(f), list(q = q)))
+}
+st_d_lp <- function(f, q) {
+  load_cpp_fixture("st_iv")
+  do.call(cpp_test_st_iv_log_post, c(st_d_args(f), list(q = q)))
+}
 
 # ---------------------------------------------------------------------------
 # Dense reference
@@ -242,6 +249,7 @@ test_that("the log-posterior moves with logit_rho_st by the prior's own change",
 
 test_that("an HSGP-ST AR1 margin reads rho in its normalizer and its form", {
   skip_on_cran_budget()
+  load_cpp_fixture("st_hsgp_prior")
   EIG <- c(0.4, 1.1, 2.7)
   M <- length(EIG)
   T_st <- 6L

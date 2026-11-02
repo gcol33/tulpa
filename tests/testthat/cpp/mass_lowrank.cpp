@@ -1,4 +1,4 @@
-// test_mass_lowrank.cpp
+// mass_lowrank.cpp
 // R-reachable probe for the diagonal-plus-low-rank metric.
 //
 // The metric is installed on a real DenseMassMatrix and driven through the

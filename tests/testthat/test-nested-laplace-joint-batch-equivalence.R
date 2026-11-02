@@ -327,6 +327,7 @@ test_that("a grid batch refuses fits that do not share a design", {
 }
 
 .nlb_wg_batch <- function(sim, tau_grid) {
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_weighted_gaussian_coupling(c(0L, 1L))
   tulpa_nl_joint_batch(
     responses = .nlb_wg_arms(sim, 1L),
@@ -341,6 +342,7 @@ test_that("a grid batch refuses fits that do not share a design", {
 }
 
 .nlb_wg_single <- function(sim, s, tau_grid) {
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_weighted_gaussian_coupling(c(0L, 1L))
   tulpa_nl_joint_single(
     responses = .nlb_wg_arms(sim, s),
@@ -352,6 +354,7 @@ test_that("a grid batch refuses fits that do not share a design", {
 }
 
 .nlb_wg_front_door <- function(sim, s, tau_grid) {
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_weighted_gaussian_coupling(c(0L, 1L))
   suppressWarnings(tulpa_nested_laplace_joint(
     responses = .nlb_wg_arms(sim, s),
@@ -365,6 +368,7 @@ test_that("a grid batch refuses fits that do not share a design", {
 }
 
 test_that("the batched entry refuses per-species dispersion axes of different shape", {
+  load_cpp_fixture("cell_coupling_register")
   sim <- .nlb_wg_sim(seed = 7203L, n_batch = 2L, n_s = 6L, n_per_unit = 2L)
   cpp_register_test_weighted_gaussian_coupling(c(0L, 1L))
   expect_error(
@@ -387,6 +391,7 @@ skip_on_cran_budget()
 
 test_that("the batched entry validates the per-species response and dispersion shapes", {
   skip_on_cran_budget()
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_separable_bernoulli_coupling()
   skip_if_not(cpp_cell_coupling_registry_has("test_separable_bernoulli"),
               "test_separable_bernoulli coupling spec not registered")
@@ -412,6 +417,7 @@ skip_on_cran()
 
 test_that("batched dense path reproduces the single-species fit for every species", {
   skip_on_cran()
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_separable_bernoulli_coupling()
   skip_if_not(cpp_cell_coupling_registry_has("test_separable_bernoulli"),
               "test_separable_bernoulli coupling spec not registered")
@@ -430,6 +436,7 @@ test_that("batched dense path reproduces the single-species fit for every specie
 
 test_that("batched dense path is bit-identical to the single-species fit", {
   skip_on_cran()
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_separable_bernoulli_coupling()
   skip_if_not(cpp_cell_coupling_registry_has("test_separable_bernoulli"),
               "test_separable_bernoulli coupling spec not registered")
@@ -451,6 +458,7 @@ test_that("batched dense path is bit-identical to the single-species fit", {
 
 test_that("batched sparse path reproduces the single-species fit for every species", {
   skip_on_cran()
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_separable_bernoulli_coupling()
   skip_if_not(cpp_cell_coupling_registry_has("test_separable_bernoulli"),
               "test_separable_bernoulli coupling spec not registered")
@@ -478,6 +486,7 @@ test_that("batched sparse path reproduces the single-species fit for every speci
 
 test_that("n_batch = 1 reproduces the single-species path exactly", {
   skip_on_cran()
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_separable_bernoulli_coupling()
   skip_if_not(cpp_cell_coupling_registry_has("test_separable_bernoulli"),
               "test_separable_bernoulli coupling spec not registered")
@@ -503,6 +512,7 @@ test_that("n_batch = 1 reproduces the single-species path exactly", {
 # per-cell predictor is the arm's own rather than a matrix of the right shape.
 test_that("a one-arm batch carries the per-cell predictor and its variance", {
   skip_on_cran()
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_separable_bernoulli_coupling()
   skip_if_not(cpp_cell_coupling_registry_has("test_separable_bernoulli"),
               "test_separable_bernoulli coupling spec not registered")
@@ -566,6 +576,7 @@ test_that("batched cross-arm scatter reproduces the single-species coupled fit",
 
 test_that("the batched driver reports per-species per-cell convergence", {
   skip_on_cran()
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_separable_bernoulli_coupling()
   skip_if_not(cpp_cell_coupling_registry_has("test_separable_bernoulli"),
               "test_separable_bernoulli coupling spec not registered")

@@ -79,6 +79,7 @@ test_that("nu = 1 keeps the old hardcoded conversion exactly (gcol33/tulpa#279)"
   skip_on_cran_budget()
   # The nu-general tau must reduce to 1 / (sqrt(4 pi) kappa sigma) at nu = 1,
   # so the default SPDE path is unmoved by the fix.
+  load_cpp_fixture("helpers")
   spec <- .nu_fixture()
   for (range in c(0.2, 0.5, 1.3)) for (sigma in c(0.3, 1.0)) {
     res <- cpp_test_spde_assemble(spec$C0_diag, spec$G1_x, spec$G1_i, spec$G1_p,
@@ -94,6 +95,7 @@ test_that("(kappa, tau) invert the d = 2 Matern marginal variance", {
   skip_on_cran_budget()
   # sigma^2 = 1 / (4 pi nu kappa^(2 nu) tau^2). A nu-independent tau satisfies
   # this only at nu = 1.
+  load_cpp_fixture("helpers")
   spec <- .nu_fixture()
   for (nu in c(0.5, 1, 2, 3)) {
     res <- cpp_test_spde_assemble(spec$C0_diag, spec$G1_x, spec$G1_i, spec$G1_p,
@@ -109,6 +111,7 @@ test_that("(kappa, tau) invert the d = 2 Matern marginal variance", {
 
 test_that("the FEM assembly reproduces K (C^-1 K)^(alpha-1) at every integer alpha", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   spec <- .nu_fixture()
   n <- spec$n_mesh
   for (alpha in 1:4) {
@@ -129,6 +132,7 @@ test_that("alpha >= 3 is assembled, not silently folded into alpha = 2 (gcol33/t
   # precision for every alpha >= 2, on the alpha = 2 sparsity pattern. The
   # higher-order operator has a strictly wider stencil, so the pattern alone
   # separates them.
+  load_cpp_fixture("helpers")
   spec <- .nu_fixture()
   n <- spec$n_mesh
   args <- list(spec$C0_diag, spec$G1_x, spec$G1_i, spec$G1_p,
@@ -150,6 +154,7 @@ test_that("the R precision mirror agrees with the compiled assembly at nu = 1 an
   # .spde_precision_Q (the analytic marginal-SE path) and the compiled builder
   # are two implementations of the same operator; #279/#280 had them disagree
   # at nu = 2 on both the tau map and the assembly order.
+  load_cpp_fixture("helpers")
   spec_shared <- .nu_fixture()
   n <- spec_shared$n_mesh
   for (nu in c(1, 2)) {
@@ -209,6 +214,7 @@ skip_on_cran()
 
 test_that("the C++ (range, sigma) -> (kappa, tau) map matches the R one at every nu", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   spec <- .nu_fixture()
   for (nu in c(0.5, 1, 1.5, 2, 3)) {
     for (range in c(0.2, 0.8)) for (sigma in c(0.4, 1.7)) {
@@ -233,6 +239,7 @@ test_that("the assembled field carries the requested marginal SD at nu = 1 and n
   # marginal SD at interior mesh nodes. The FEM discretisation inflates it by a
   # mesh-dependent factor, but that factor must not depend on nu -- a wrong tau
   # or a wrong operator order shows up as a factor that moves with nu.
+  load_cpp_fixture("helpers")
   spec <- .nu_fixture()
   n  <- spec$n_mesh
   mv <- spec$mesh$vertices

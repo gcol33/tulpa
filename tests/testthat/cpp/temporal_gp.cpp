@@ -1,4 +1,4 @@
-// test_temporal_gp_fixture.cpp
+// temporal_gp.cpp
 // Drives the templated temporal-GP density at both parameterizations.
 //
 // The two parameterizations target the same posterior, so their densities are

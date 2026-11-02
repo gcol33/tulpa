@@ -24,6 +24,7 @@ ramp_field <- function(a, M, T_st) {
 }
 
 lp <- function(delta, temporal, cyclic) {
+  load_cpp_fixture("st_hsgp_prior")
   do.call(cpp_test_st_hsgp_log_prior,
           c(list(delta = delta, eigenvalues = EIG, T = T_st,
                  temporal = temporal, temporal_cyclic = cyclic), HYP))
@@ -49,6 +50,7 @@ test_that("the non-centered flag is refused on the HSGP-ST interaction", {
   # gcol33/tulpa#759: st_parameterization = 1 with st_is_hsgp took the Kronecker
   # branch, which reads neither HSGP hyperparameter and treats basis weights as
   # sites. The layout refuses the combination rather than silently centering.
+  load_cpp_fixture("st_hsgp_prior")
   expect_error(
     do.call(cpp_test_st_hsgp_log_prior,
             c(list(delta = numeric(M * T_st), eigenvalues = EIG, T = T_st,
@@ -64,6 +66,7 @@ skip_on_cran_budget()
 
 test_that("a per-basis linear ramp is penalized under a non-cyclic RW2", {
   skip_on_cran_budget()
+  load_cpp_fixture("st_hsgp_prior")
   a <- c(0.7, -1.3, 0.4)
   zero <- numeric(M * T_st)
   d <- lp(ramp_field(a, M, T_st), "rw2", FALSE) - lp(zero, "rw2", FALSE)
@@ -101,6 +104,7 @@ test_that("a field the operator and both pins annihilate is free", {
   # trend, so only the sum pin reaches it -- which is the term that was already
   # there. This is the negative control for the two above: it must be unchanged
   # by the cyclic flag.
+  load_cpp_fixture("helpers")
   const <- as.numeric(rep(c(0.3, -0.2, 0.9), each = T_st))
   zero <- numeric(M * T_st)
   d_acyclic <- lp(const, "rw2", FALSE) - lp(zero, "rw2", FALSE)
@@ -111,7 +115,7 @@ test_that("a field the operator and both pins annihilate is free", {
   a <- c(0.3, -0.2, 0.9)
   kappa <- 0.001
   expect_equal(d_acyclic,
-               -0.5 * tulpa:::cpp_test_s2z_precision(T_st, kappa) *
+               -0.5 * cpp_test_s2z_precision(T_st, kappa) *
                  sum((a * T_st)^2),
                tolerance = 1e-10)
 })

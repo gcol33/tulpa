@@ -1,4 +1,4 @@
-// test_laplace_sample_fixture.cpp
+// laplace_sample.cpp
 // Draws x = mode + L^{-T} z from a Gaussian precision H (Cholesky of
 // H + LAPLACE_UNIFORM_RIDGE * I), the same uniform regularization every
 // Laplace solve uses. No production door samples a bare (mode, H) pair --

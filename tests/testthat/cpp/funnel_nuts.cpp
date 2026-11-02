@@ -1,4 +1,4 @@
-// tulpa_test_funnel.cpp
+// funnel_nuts.cpp
 // Test-only entry point: fit Neal's funnel through the production chain driver
 // (run_hmc_chain_cpp) with either the NUTS or the WALNUTS transition.
 //

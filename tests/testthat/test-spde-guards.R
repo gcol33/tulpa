@@ -77,6 +77,7 @@ skip_on_cran()
 # the pair it used comes back with the matrix and is checked against the one the
 # other two assemblies were handed.
 .spde_qb_Q <- function(fem, range = 0.4, sigma = 1) {
+  load_cpp_fixture("helpers")
   qb <- cpp_test_spde_assemble(
     C0_diag = fem$C0_diag, G1_x = fem$G1_x, G1_i = fem$G1_i, G1_p = fem$G1_p,
     range = range, sigma = sigma, nu = 1, alpha = 2L)
@@ -103,6 +104,7 @@ skip_on_cran()
 }
 
 .spde_nc_Q <- function(fem, kappa, tau) {
+  load_cpp_fixture("helpers")
   q <- cpp_test_spde_nc_transform_Q(
     C0_diag = fem$C0_diag, G1_x = fem$G1_x, G1_i = fem$G1_i, G1_p = fem$G1_p,
     log_kappa_val = log(kappa), log_tau_val = log(tau))
@@ -116,6 +118,7 @@ test_that("both assemblies build the same Q on a mesh with a zero-mass vertex", 
   # different routes to Q -- SpdeQBuilder the operator-chain EXPANSION, the
   # non-centered transform the product K diag(1/C0) K -- and those agree only
   # where C diag(1/C0) = I, which a floored orphan row is not.
+  load_cpp_fixture("helpers")
   fem <- .spde_orphan(.spde_guard_fem())
   kappa <- sqrt(8) / 0.4
   tau   <- 1 / (sqrt(4 * pi) * kappa)
@@ -195,6 +198,7 @@ test_that("the Laplace fit runs to convergence on a mesh with a zero-mass vertex
 })
 
 test_that("the non-centered assembly factors the same mesh and its adjoint holds", {
+  load_cpp_fixture("helpers")
   fem <- .spde_orphan(.spde_guard_fem())
   set.seed(7L)
   z <- stats::rnorm(fem$n_mesh, sd = 0.5)
@@ -223,6 +227,7 @@ test_that("the non-centered assembly factors the same mesh and its adjoint holds
 test_that("a mesh with no orphan is unchanged by the ridge machinery", {
   # The negative control: the ridge must not touch a healthy mesh, or the
   # assertions above would pass for the wrong reason.
+  load_cpp_fixture("helpers")
   fem <- .spde_guard_fem()
   expect_true(all(fem$C0_diag > 1e-15))
   set.seed(7L)

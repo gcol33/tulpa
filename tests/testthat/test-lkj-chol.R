@@ -46,6 +46,7 @@ ref_lkj_density <- function(L, eta) {
 }
 
 test_that("LKJ gradient matches central finite difference", {
+  load_cpp_fixture("lkj_chol")
   set.seed(4L)
   n <- 4
   eta <- 2.0
@@ -72,6 +73,7 @@ test_that("LKJ gradient matches central finite difference", {
 })
 
 test_that("chol_nc_chain_rule grad_log_sigma matches finite difference", {
+  load_cpp_fixture("lkj_chol")
   set.seed(7L)
   n <- 3; n_groups <- 5
   n_raw <- n * (n - 1) / 2
@@ -108,6 +110,7 @@ test_that("chol_nc_chain_rule grad_log_sigma matches finite difference", {
 })
 
 test_that("chol_nc_chain_rule grad_z matches finite difference", {
+  load_cpp_fixture("lkj_chol")
   set.seed(8L)
   n <- 3; n_groups <- 4
   n_raw <- n * (n - 1) / 2
@@ -140,6 +143,7 @@ test_that("a saturating row at n = 3 gives a correlation matrix, not a clamped o
   # (atanh(0.8), atanh(0.8)) on row 3 has a squared sum of 1.28 under the direct
   # map, so its diagonal was clamped at sqrt(1e-12) and R = L L' came back with
   # a diagonal entry of 1.28 rather than 1.
+  load_cpp_fixture("lkj_chol")
   raw <- c(0.3, atanh(0.8), atanh(0.8))
   res <- cpp_test_lkj_build_L(raw, 3L)
   R <- cpp_test_correlation_from_L(res$L)
@@ -155,6 +159,7 @@ skip_on_cran_budget()
 
 test_that("build_L produces unit-norm rows", {
   skip_on_cran_budget()
+  load_cpp_fixture("lkj_chol")
   set.seed(1L)
   for (n in 2:5) {
     n_raw <- n * (n - 1) / 2
@@ -172,6 +177,7 @@ test_that("build_L produces unit-norm rows", {
 
 test_that("build_L matches reference R implementation", {
   skip_on_cran_budget()
+  load_cpp_fixture("lkj_chol")
   set.seed(2L)
   n <- 4
   n_raw <- n * (n - 1) / 2
@@ -184,6 +190,7 @@ test_that("build_L matches reference R implementation", {
 
 test_that("LKJ density matches reference formula", {
   skip_on_cran_budget()
+  load_cpp_fixture("lkj_chol")
   set.seed(3L)
   for (n in 2:4) {
     n_raw <- n * (n - 1) / 2
@@ -206,6 +213,7 @@ test_that("raw-space density is the LKJ(eta) pushforward (det(R)^(eta-1) * |dR/d
   # (LKJ-on-Cholesky) + (tanh Jacobian) must equal this up to an additive
   # constant that depends only on (n, eta). A second, spurious Jacobian in the
   # helper would break the constant-offset property below.
+  load_cpp_fixture("lkj_chol")
   free_corr <- function(raw, n) {
     res <- cpp_test_lkj_build_L(raw, n)
     R <- res$L %*% t(res$L)
@@ -247,6 +255,7 @@ test_that("raw-space density is the LKJ(eta) pushforward (det(R)^(eta-1) * |dR/d
 
 test_that("compute_u_eff equals sigma * (z %*% t(L))", {
   skip_on_cran_budget()
+  load_cpp_fixture("lkj_chol")
   set.seed(5L)
   n <- 3; n_groups <- 6
   n_raw <- n * (n - 1) / 2
@@ -266,6 +275,7 @@ test_that("compute_u_eff equals sigma * (z %*% t(L))", {
 
 test_that("correlation_from_L equals L %*% t(L) and is a valid correlation matrix", {
   skip_on_cran_budget()
+  load_cpp_fixture("lkj_chol")
   set.seed(6L)
   n <- 4
   n_raw <- n * (n - 1) / 2
@@ -285,6 +295,7 @@ test_that("correlation_from_L equals L %*% t(L) and is a valid correlation matri
 
 test_that("chol_nc_chain_rule grad_raw matches finite difference", {
   skip_on_cran_budget()
+  load_cpp_fixture("lkj_chol")
   set.seed(9L)
   n <- 3; n_groups <- 4
   n_raw <- n * (n - 1) / 2
@@ -317,6 +328,7 @@ test_that("every raw vector maps into the cone, including saturating ones", {
   # raw = atanh(0.8) twice on row 3 has row sum of squares 1.28 under a direct
   # tanh map, which is the case that map cannot represent. Here it is an
   # ordinary interior point.
+  load_cpp_fixture("lkj_chol")
   for (raw in list(c(8, 8, 8), c(atanh(0.8), atanh(0.8), atanh(0.8)),
                    c(-30, 30, -30), rep(0, 3))) {
     res <- cpp_test_lkj_build_L(raw, 3)
@@ -330,6 +342,7 @@ test_that("every raw vector maps into the cone, including saturating ones", {
 
 test_that("raw_from_L inverts build_L_from_raw", {
   skip_on_cran_budget()
+  load_cpp_fixture("lkj_chol")
   set.seed(11L)
   for (n in 2:5) {
     n_raw <- n * (n - 1) / 2
@@ -356,6 +369,7 @@ test_that("n = 2 reduces to the direct tanh map", {
   # 2*sigmoid(2x) - 1 and differs from std::tanh in the last bit; that
   # implementation is what the HMC prior already used and is not what this
   # reduction is about.
+  load_cpp_fixture("lkj_chol")
   set.seed(41L)
   for (raw in as.list(rnorm(12, 0, 1.5))) {
     res <- cpp_test_lkj_build_L(raw, 2L)

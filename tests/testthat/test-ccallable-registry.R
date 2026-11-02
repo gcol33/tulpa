@@ -14,6 +14,7 @@ skip_on_cran()
 
 test_that("every R_GetCCallable name in the exported headers is registered", {
   skip_on_cran()
+  load_cpp_fixture("ccallable_registry")
   inc <- system.file("include", "tulpa", package = "tulpa")
   skip_if(!nzchar(inc) || !dir.exists(inc), "headers not installed")
 
@@ -29,7 +30,7 @@ test_that("every R_GetCCallable name in the exported headers is registered", {
   expect_gt(length(names_found), 20L)
 
   unresolved <- Filter(function(nm) {
-    !isTRUE(tryCatch(tulpa:::cpp_test_ccallable_resolves(nm),
+    !isTRUE(tryCatch(cpp_test_ccallable_resolves(nm),
                      error = function(e) FALSE))
   }, names_found)
 

@@ -56,6 +56,7 @@ skip_on_cran_budget()
 
 test_that("mass_matrix names resolve, and an unknown one is refused", {
   skip_on_cran_budget()
+  load_cpp_fixture("st_iv")
   f <- st_iv_fixture()
   # Reaching the sampler at all proves "gmrf" parses; a two-iteration run is
   # the cheapest way to ask.
@@ -133,6 +134,7 @@ test_that("a disconnected spatial graph is handled at its true rank", {
 
 test_that("a Type-IV NUTS fit under mass_matrix = 'gmrf' installs the override", {
   skip_if_not_slow()
+  load_cpp_fixture("st_iv")
   f <- st_iv_fixture(S1 = 4, S2 = 4, T = 6, family = "poisson")
   fit <- cpp_test_st_iv_nuts(
     f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,

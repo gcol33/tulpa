@@ -1,4 +1,4 @@
-// test_cell_coupling_weighted_gaussian.h
+// cell_coupling_weighted_gaussian.h
 // Test-only CellCouplingSpec that reads the two pieces of the batched
 // CellResponse surface no other in-repo spec touches: the per-species
 // dispersion `phi(k, s)` and the per-row trial count `n_trials(k, j)`
@@ -32,8 +32,8 @@
 // with one arm, or with one species, a transposed index reads the same cell and
 // no fixture can tell. With n_arms = 2 and B >= 2 it does not.
 //
-// Lives under src/ (not inst/include/) because it is consumed only by the Rcpp
-// registration export in src/test_cell_coupling_register.cpp.
+// Registered by `cpp_register_test_weighted_gaussian_coupling()` in
+// cell_coupling_register.cpp.
 
 #ifndef TULPA_TEST_CELL_COUPLING_WEIGHTED_GAUSSIAN_H
 #define TULPA_TEST_CELL_COUPLING_WEIGHTED_GAUSSIAN_H

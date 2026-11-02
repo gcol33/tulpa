@@ -63,6 +63,7 @@ prior_spec_biv <- function(d) {
 
 test_that("dense and sparse paths agree under non-zero cross_hess", {
     skip_on_cran()
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 2.0, lam11 = 1.5, lam01 = 0.7
     )
@@ -106,6 +107,7 @@ test_that("cross_hess scatter reduces to independent fits when lam01 = 0", {
     # lam01 = 0 -> the joint density factorises into two independent
     # Gaussian likelihoods per arm; the coupled fit must agree with two
     # separate uncoupled fits on the same data (up to FP noise).
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 2.0, lam11 = 1.5, lam01 = 0.0
     )
@@ -146,6 +148,7 @@ test_that("fisher step-curvature retains the true Gaussian cross-Hessian", {
     # so the coupled fit reproduces the default observed-Hessian fit to
     # precision. Dropping cross-Hessians is correct only for a mixture spec
     # (occu_cover); a spurious global cross-drop here would shift the mode.
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 2.0, lam11 = 1.5, lam01 = 0.7
     )
@@ -174,6 +177,7 @@ test_that("fisher step-curvature retains the true Gaussian cross-Hessian", {
 
 test_that("opposite-sign cross_hess (lam01 < 0) still gives consistent dense/sparse", {
     skip_on_cran()
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 3.0, lam11 = 2.0, lam01 = -1.1
     )
@@ -255,6 +259,7 @@ test_that("opposite-sign cross_hess (lam01 < 0) still gives consistent dense/spa
 
 test_that("coupled field + per-group RE: dense and sparse paths agree (#86)", {
     skip_on_cran()
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 2.0, lam11 = 1.5, lam01 = 0.6)
     n_s <- 30L; n_g <- 6L
@@ -292,6 +297,7 @@ test_that("coupled field + per-group RE: dense and sparse paths agree (#86)", {
 
 test_that("coupled field + per-group RE: the RE variance component is integrated (#86)", {
     skip_on_cran()
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 2.0, lam11 = 1.5, lam01 = 0.6)
     n_s <- 60L; n_g <- 10L
@@ -347,6 +353,7 @@ test_that("build-once + copy: parallel outer grid matches serial (sparse coupled
     # n_threads_outer > 1 the copy loops run and every outer thread solves
     # against a COPIED builder/cache; the result must be bit-for-bit identical to
     # the single-builder serial path.
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 2.0, lam11 = 1.5, lam01 = 0.7)
     d <- setup_bivariate_data(seed = 23L, n_s = 16L)
@@ -386,6 +393,7 @@ test_that("build-once + copy: parallel outer grid matches serial (sparse coupled
 
 test_that("coupled field + arm-exclusive RE block: dense and sparse agree (#270)", {
     skip_on_cran()
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 2.0, lam11 = 1.5, lam01 = 0.6)
     n_s <- 30L; n_g <- 6L
@@ -433,6 +441,7 @@ test_that("coupled field + arm-exclusive RE block: dense and sparse agree (#270)
 
 test_that("coupled field private to one arm: rank-1 s2z pattern matches densify (#270)", {
     skip_on_cran()
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 2.0, lam11 = 1.5, lam01 = 0.6)
     n_s <- 300L

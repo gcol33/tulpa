@@ -61,6 +61,7 @@ prior_spec <- function(d) {
 }
 
 test_that("kernel rejects spec arm_ids() that disagree with arms' coupled flags", {
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_separable_bernoulli_coupling()
     d <- setup_test_data(seed = 4L, N = 20L)
     expect_error(
@@ -94,6 +95,7 @@ skip_on_cran()
 
 test_that("per-cell branch matches per-obs path: mode and log-marginal", {
     skip_if_not_slow()
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_separable_bernoulli_coupling()
     expect_true(cpp_cell_coupling_registry_has("test_separable_bernoulli"))
 
@@ -134,6 +136,7 @@ test_that("fisher step-curvature reproduces the observed-Hessian fit (Bernoulli 
     # control$hessian = "fisher" (Expected step curvature) must therefore
     # reproduce the default observed-Hessian fit to numerical precision -- the
     # fisher path is a correct no-op for a curvature-invariant spec.
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_separable_bernoulli_coupling()
     d <- setup_test_data(seed = 2L)
 
@@ -158,6 +161,7 @@ test_that("fisher step-curvature reproduces the observed-Hessian fit (Bernoulli 
 
 test_that("sparse per-cell branch matches dense per-obs baseline (B.2)", {
     skip_if_not_slow()
+    load_cpp_fixture("cell_coupling_register")
     cpp_register_test_separable_bernoulli_coupling()
     d <- setup_test_data(seed = 5L)
 

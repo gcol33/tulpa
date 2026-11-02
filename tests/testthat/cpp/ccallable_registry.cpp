@@ -1,4 +1,4 @@
-// test_ccallable_registry.cpp
+// ccallable_registry.cpp
 // Does a name the exported headers advertise actually resolve?
 //
 // `inst/include/tulpa/*.h` reach the engine through R_GetCCallable, and an

@@ -72,6 +72,7 @@ test_that("group_index is checked for length and range", {
 # would otherwise absorb into a number that is not a density.
 test_that("the multiscale log-lik entry point rejects a non-stationary rho", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   phi <- rnorm(8)
   ok <- cpp_test_multiscale_temporal_log_lik(phi, numeric(0), phi, 1, 1, 1,
                                              0.5, "rw1", 0L, "ar1")

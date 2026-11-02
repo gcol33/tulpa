@@ -1,4 +1,4 @@
-// test_hsgp_warm_start.cpp
+// hsgp_warm_start.cpp
 // Test-only entry point: warm_start_mass_matrix() on a ModelData whose HSGP
 // flag and HSGP indices disagree.
 //

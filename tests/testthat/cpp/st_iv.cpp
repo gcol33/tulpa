@@ -1,4 +1,4 @@
-// test_st_iv_fixture.cpp
+// st_iv.cpp
 // A Knorr-Held Type-IV spatiotemporal interaction model the ENGINE can fit.
 //
 // Nothing in tulpa sets ModelData::has_spatiotemporal: the interaction is a
@@ -37,7 +37,7 @@
 #include "tulpa/autodiff_fwd.h"
 #include "tulpa/likelihood.h"
 #include "tulpa_priors_st.h"
-#include "test_st_fixture_parse.h"
+#include "st_fixture_parse.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;

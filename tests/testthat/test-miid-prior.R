@@ -6,9 +6,10 @@
 # C++ assembly, independent of the fit pipeline (mirrors test-mcar-prior.R).
 
 .miid_check <- function(n, p, theta, seed) {
+  load_cpp_fixture("helpers")
   set.seed(seed)
   x <- rnorm(p * n)
-  r <- tulpa:::cpp_test_miid_prior(theta, p, n, x)
+  r <- cpp_test_miid_prior(theta, p, n, x)
   Sinv <- r$Sinv
   ref_H <- kronecker(Sinv, diag(n))
 
@@ -37,11 +38,12 @@ test_that("MIID assembly is exact for p=3", {
 
 test_that("MIID degenerate p=1 is a scalar N(0, sigma^2) precision", {
   # p = 1: Sigma = sigma^2 with sigma = exp(theta), Sigma^-1 = exp(-2 theta).
+  load_cpp_fixture("helpers")
   n <- 7L
   theta <- log(1.3)
   set.seed(4)
   x <- rnorm(n)
-  r <- tulpa:::cpp_test_miid_prior(theta, 1L, n, x)
+  r <- cpp_test_miid_prior(theta, 1L, n, x)
   sinv <- exp(-2 * theta)
   expect_lt(max(abs(r$H - sinv * diag(n))), 1e-12)
   expect_lt(max(abs(r$grad - (-sinv * x))), 1e-12)
@@ -50,8 +52,9 @@ test_that("MIID degenerate p=1 is a scalar N(0, sigma^2) precision", {
 })
 
 test_that("MIID log|Sigma| matches the log-Cholesky diagonal", {
+  load_cpp_fixture("helpers")
   theta <- c(log(1.4), 0.6, log(0.7))
-  r <- tulpa:::cpp_test_miid_prior(theta, 2L, 6L, rnorm(12))
+  r <- cpp_test_miid_prior(theta, 2L, 6L, rnorm(12))
   # |Sigma| = (L11 L22)^2 -> log|Sigma| = 2(logL11 + logL22).
   expect_lt(abs(r$log_det_Sigma - 2 * (theta[1] + theta[3])), 1e-12)
 })

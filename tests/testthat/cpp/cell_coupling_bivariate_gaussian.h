@@ -1,4 +1,4 @@
-// test_cell_coupling_bivariate_gaussian.h
+// cell_coupling_bivariate_gaussian.h
 // Test-only CellCouplingSpec exposing a two-arm bivariate Gaussian per
 // cell with one row per arm per cell. Used by
 // tests/testthat/test-cell-coupling-cross-hess.R to gate the cross-arm

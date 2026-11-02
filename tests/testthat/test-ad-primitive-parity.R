@@ -7,6 +7,7 @@ test_that("safe_log reports one derivative in the clamped region", {
   # implemented function is locally flat and its derivative is 0. A reverse
   # partial of 1/1e-15 there is a 1e15 multiplier on a region the double
   # reference finite-differences as flat.
+  load_cpp_fixture("helpers")
   for (x in c(-1, -1e-12, 0)) {
     g <- cpp_test_scalar_guard("log", x)
     expect_equal(g$value_double, g$value_tape,  tolerance = 0)
@@ -27,6 +28,7 @@ test_that("safe_log reports one derivative in the clamped region", {
 
 test_that("log_sum_exp returns -Inf, not NaN, when both components underflow", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   g <- cpp_test_lse_guard(-Inf, -Inf)
   expect_equal(g$value_double, -Inf)
   expect_equal(g$value_dual,   -Inf)
@@ -42,6 +44,7 @@ test_that("log_sum_exp returns -Inf, not NaN, when both components underflow", {
 
 test_that("log_sum_exp agrees across types on ordinary arguments", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   for (ab in list(c(0, 0), c(-3, 2), c(700, 699), c(-800, -801))) {
     a <- ab[1]; b <- ab[2]
     ref <- max(a, b) + log(exp(a - max(a, b)) + exp(b - max(a, b)))
@@ -72,6 +75,7 @@ test_that("expm1 keeps its precision on every type, not just the double one", {
   # exp(x) - 1 loses about half its significant digits as x -> 0; expm1 does
   # not. Comparing against the R primitive is the arbiter, not against the
   # cancelling form.
+  load_cpp_fixture("helpers")
   for (x in c(-1e-10, -1e-8, -1e-4, -0.5, 0.5, 2)) {
     g <- cpp_test_scalar_guard("expm1", x)
     ref <- expm1(x)
@@ -90,6 +94,7 @@ test_that("log1m_exp agrees across types in the small-argument branch", {
   skip_on_cran()
   # log(1 - exp(-a)). The branch at a <= log(2) goes through expm1 precisely to
   # avoid the cancellation in log1p(-exp(-a)); a cancelling expm1 puts it back.
+  load_cpp_fixture("helpers")
   for (a in c(1e-10, 1e-8, 1e-4, 0.5, 0.6931471805599453, 1, 40)) {
     g <- cpp_test_scalar_guard("log1m_exp", a)
     ref <- log(-expm1(-a))

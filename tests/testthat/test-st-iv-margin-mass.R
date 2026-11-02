@@ -48,6 +48,7 @@ skip_on_cran_budget()
 
 test_that("mass_matrix = 'gmrf_margin' parses and is distinct from 'gmrf'", {
   skip_on_cran_budget()
+  load_cpp_fixture("st_iv")
   f <- st_iv_fixture()
   fit <- cpp_test_st_iv_nuts(
     f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
@@ -182,6 +183,7 @@ test_that("the installed metric inverts the Type-IV precision-plus-margins", {
   # The engine's diagonal and lambdas, driven through the generic metric, have
   # to reproduce the dense M they describe. This is what ties the Type-IV
   # numbers to the storage test-lowrank-mass.R scores.
+  load_cpp_fixture("mass_lowrank")
   f <- st_iv_fixture()
   r <- st_iv_margin_probe(f)$gmrf
   S <- f$S; T <- f$T
@@ -222,6 +224,7 @@ test_that("the installed metric inverts the Type-IV precision-plus-margins", {
 
 test_that("a Type-IV NUTS fit under 'gmrf_margin' installs the margin term", {
   skip_if_not_slow()
+  load_cpp_fixture("st_iv")
   f <- st_iv_fixture(S1 = 4, S2 = 4, T = 6, family = "poisson")
   args <- list(f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx,
                f$S, f$T)

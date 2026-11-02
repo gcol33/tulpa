@@ -1,4 +1,4 @@
-// test_lkj_chol.cpp
+// lkj_chol.cpp
 // Rcpp wrappers exposing the lkj_chol_helpers.h functions to R for unit
 // testing. The helpers themselves are header-only and namespace-private.
 

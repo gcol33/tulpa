@@ -1,8 +1,15 @@
-// test_smc_cabi.cpp
 // Drives the `tulpa_smc_fit` C entry the way a model package does -- through
 // R_GetCCallable and the flat SMCShimResult -- on a built-in-family GLM, so the
 // shim's argument order, its buffer copies and the tempered population it
 // returns are checked against the in-process driver the front door runs.
+//
+// The likelihood is the built-in family's own, compiled into this library, and
+// tulpa calls it from its own: the cross-DLL position of a model package's
+// likelihood. Each DLL holds its own thread-local current_arena(), which the
+// engine sets only in its own copy, so a constant built inside the density
+// (T(0.5) with T = arena::Var) would find no arena. The arena slot is therefore
+// wrapped as a model package wraps its own: point this library's
+// current_arena() at the arena the incoming eta records on, then evaluate.
 
 #include <Rcpp.h>
 #include <string>
@@ -11,6 +18,24 @@
 #include "laplace_spec_fit.h"      // as_offset_vec
 #include "sampler_model_data.h"    // build_sampler_model_inputs
 #include "tulpa/smc_api.h"         // SmcFitFn, SMCShimResult, get_smc_fit_fn
+
+namespace {
+
+using tulpa::arena::Var;
+
+tulpa::LikelihoodFn<Var> g_family_ll_arena = nullptr;
+
+Var family_ll_arena_synced(int i, const Var* eta, const Var& logit_zi,
+                           const Var& logit_oi, const std::vector<Var>& params,
+                           const tulpa::ModelData& data,
+                           const tulpa::ParamLayout& layout,
+                           const void* model_data) {
+    tulpa::arena::current_arena() = eta[0].arena_;
+    return g_family_ll_arena(i, eta, logit_zi, logit_oi, params, data, layout,
+                             model_data);
+}
+
+}  // namespace
 
 // [[Rcpp::export]]
 Rcpp::List cpp_test_smc_cabi(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials,
@@ -23,6 +48,14 @@ Rcpp::List cpp_test_smc_cabi(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials
     tulpa::build_sampler_model_inputs(
         in, y, n_trials, X, family, phi, NA_REAL, sigma_beta, offset, 2.5,
         R_NilValue, R_NilValue, R_NilValue);
+    if (in.spec.ll_arena != nullptr) {
+        g_family_ll_arena = in.spec.ll_arena;
+        in.spec.ll_arena = &family_ll_arena_synced;
+    }
+    if (in.spec.extra_prior_arena != nullptr) {
+        Rcpp::stop("the built-in family spec carries an arena extra prior, "
+                   "which this fixture does not route across the DLL boundary");
+    }
     const int D = in.layout.total_params;
     std::vector<double> init(D, 0.0);
     tulpa::init_bounded_support_params(init, in.data, in.layout);

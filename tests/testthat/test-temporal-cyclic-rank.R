@@ -69,13 +69,14 @@ test_that("the AR1 floor engages on rho alone, not on the stationary precision",
   # in one fit and not in another. Holding phi and rho fixed, the difference
   # between two taus must be exactly the normalizer's, with no floor term left
   # over.
+  load_cpp_fixture("helpers")
   set.seed(15)
   phi <- rnorm(7)
   # 1 - rho^2 is about 1e-9 here: above the correlation floor at either tau, and
   # below a precision floor at tau = 0.01 but not at tau = 100.
   rho <- 1 - 5e-10
   lp <- function(tau) {
-    tulpa:::cpp_test_temporal_log_prior(phi, "ar1", tau = tau, rho = rho,
+    cpp_test_temporal_log_prior(phi, "ar1", tau = tau, rho = rho,
                                         cyclic = FALSE)
   }
   omr2 <- 1 - rho * rho
@@ -97,20 +98,22 @@ skip_on_cran_budget()
 
 test_that("cyclic RW rank helper returns T-1 for both RW1 and RW2", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   T_len <- 12L
-  expect_equal(tulpa:::cpp_test_temporal_rank("rw1", T_len, TRUE),  T_len - 1L)
-  expect_equal(tulpa:::cpp_test_temporal_rank("rw1", T_len, FALSE), T_len - 1L)
-  expect_equal(tulpa:::cpp_test_temporal_rank("rw2", T_len, TRUE),  T_len - 1L)  # ring: T-1
-  expect_equal(tulpa:::cpp_test_temporal_rank("rw2", T_len, FALSE), T_len - 2L)  # path: T-2
+  expect_equal(cpp_test_temporal_rank("rw1", T_len, TRUE),  T_len - 1L)
+  expect_equal(cpp_test_temporal_rank("rw1", T_len, FALSE), T_len - 1L)
+  expect_equal(cpp_test_temporal_rank("rw2", T_len, TRUE),  T_len - 1L)  # ring: T-1
+  expect_equal(cpp_test_temporal_rank("rw2", T_len, FALSE), T_len - 2L)  # path: T-2
 })
 
 test_that("temporal log-prior matches the intrinsic-GMRF normalizer (cyclic + acyclic)", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   set.seed(11)
   phi <- rnorm(12)
   for (cyc in c(FALSE, TRUE)) {
     for (ty in c("rw1", "rw2")) {
-      got <- tulpa:::cpp_test_temporal_log_prior(phi, ty, tau = 1.7, rho = 0, cyclic = cyc)
+      got <- cpp_test_temporal_log_prior(phi, ty, tau = 1.7, rho = 0, cyclic = cyc)
       expect_equal(got, .ref_lp(phi, ty, 1.7, cyc), tolerance = 1e-9,
                    info = paste(ty, "cyclic =", cyc))
     }
@@ -123,12 +126,13 @@ test_that("the RW normalizer carries the 2*pi term at every rank", {
   # structure rather than being one constant: 10.1 nats for a rank-11 RW1 on
   # T = 12, 9.2 for the rank-10 acyclic RW2 on the same field. Pinned so a copy
   # that normalizes on tau alone is named by its size, not just by a mismatch.
+  load_cpp_fixture("helpers")
   set.seed(12)
   phi <- rnorm(12)
   for (cyc in c(FALSE, TRUE)) {
     for (ty in c("rw1", "rw2")) {
       rank <- if (ty == "rw1") 11 else if (cyc) 11 else 10
-      got <- tulpa:::cpp_test_temporal_log_prior(phi, ty, tau = 1.7, rho = 0, cyclic = cyc)
+      got <- cpp_test_temporal_log_prior(phi, ty, tau = 1.7, rho = 0, cyclic = cyc)
       no_2pi <- 0.5 * rank * log(1.7) -
         0.5 * 1.7 * (if (ty == "rw1") .rw1_quad(phi, cyc) else .rw2_quad(phi, cyc))
       expect_equal(no_2pi - got, 0.5 * rank * .LOG_2PI, tolerance = 1e-9,
@@ -141,11 +145,12 @@ skip_on_cran()
 
 test_that("AR1 log-prior equals the dense multivariate normal it factorizes", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   set.seed(13)
   phi <- rnorm(9)
   for (tau in c(0.4, 1.7, 12)) {
     for (rho in c(-0.85, -0.2, 0, 0.3, 0.95)) {
-      got <- tulpa:::cpp_test_temporal_log_prior(phi, "ar1", tau = tau,
+      got <- cpp_test_temporal_log_prior(phi, "ar1", tau = tau,
                                                  rho = rho, cyclic = FALSE)
       expect_equal(got, .ref_ar1_dense(phi, tau, rho), tolerance = 1e-9,
                    info = paste("tau =", tau, "rho =", rho))
@@ -159,11 +164,12 @@ test_that("AR1 log-prior stays finite at and past the stationarity boundary", {
   skip_on_cran()
   # An unregularized stationary variance sigma^2 / (1 - rho^2) diverges here and
   # took the log-prior to -Inf just inside the boundary.
+  load_cpp_fixture("helpers")
   set.seed(14)
   phi <- rnorm(9)
   for (tau in c(0.01, 1, 100)) {
     for (rho in c(0.999999, 1 - 1e-9, 1 - 1e-13, 1, -1)) {
-      got <- tulpa:::cpp_test_temporal_log_prior(phi, "ar1", tau = tau,
+      got <- cpp_test_temporal_log_prior(phi, "ar1", tau = tau,
                                                  rho = rho, cyclic = FALSE)
       expect_true(is.finite(got), info = paste("tau =", tau, "rho =", rho))
       expect_equal(got, .ref_ar1(phi, tau, rho), tolerance = 1e-9,

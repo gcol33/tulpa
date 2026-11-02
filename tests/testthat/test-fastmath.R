@@ -9,6 +9,7 @@ ulps_apart <- function(a, b) {
 }
 
 test_that("fastmath exp returns the special values the C library does", {
+  load_cpp_fixture("fastmath")
   x <- c(0, -0, Inf, -Inf, NaN, 710, 1e308, -746, -1e308)
   a <- cpp_test_fastmath(x, "exp")
   expect_identical(a[1:4], c(1, 1, Inf, 0))
@@ -17,6 +18,7 @@ test_that("fastmath exp returns the special values the C library does", {
 })
 
 test_that("fastmath log matches the system log to within two ulps", {
+  load_cpp_fixture("fastmath")
   set.seed(2)
   x <- c(exp(runif(2e4, -700, 700)), runif(2e4, 0.9, 1.1),
          1 + rnorm(2e4, 0, 1e-6), runif(2e4, 1, 2),
@@ -30,6 +32,7 @@ skip_on_cran_budget()
 
 test_that("fastmath exp matches the system exp to within two ulps", {
   skip_on_cran_budget()
+  load_cpp_fixture("fastmath")
   set.seed(1)
   x <- c(runif(2e4, -745, 709.7), runif(2e4, -30, 30), rnorm(2e4, 0, 1e-3),
          runif(2e3, -745.1, -708), runif(2e3, 700, 709.78),
@@ -43,6 +46,7 @@ test_that("fastmath exp matches the system exp to within two ulps", {
 
 test_that("fastmath log returns the special values the C library does", {
   skip_on_cran_budget()
+  load_cpp_fixture("fastmath")
   a <- cpp_test_fastmath(c(1, 0, -0, Inf, -1, -Inf, NaN), "log")
   expect_identical(a[1:4], c(0, -Inf, -Inf, Inf))
   expect_true(all(is.nan(a[5:7])))

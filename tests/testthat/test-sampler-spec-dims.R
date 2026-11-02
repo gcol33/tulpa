@@ -101,6 +101,7 @@ test_that("the symbolic frame is the union over grid points", {
     # from grid point 1 alone would silently drop what a later grid point holds
     # beyond it -- and grid point 1 can be the sparser one (an AR1 Q at rho = 0
     # is diagonal). The frame the block reports must cover every grid point.
+    load_cpp_fixture("helpers")
     spec <- .tgmrf_block(mutate = function(s) {
         # grid point 1 diagonal only, grid point 2 tridiagonal
         n <- s$n_latent
@@ -142,11 +143,13 @@ test_that("the ordering is checked for length and for range", {
 
 test_that("a well-formed tgmrf block spec builds", {
     skip_on_cran_budget()
+    load_cpp_fixture("helpers")
     expect_identical(cpp_test_tgmrf_block_spec(.tgmrf_block()), 4L)
 })
 
 test_that("the tgmrf CSC frame is checked against n_latent", {
     skip_on_cran_budget()
+    load_cpp_fixture("helpers")
     expect_error(
         cpp_test_tgmrf_block_spec(.tgmrf_block(mutate = function(s) {
             s$Q_csc_i_per_grid[[1L]] <- s$Q_csc_i_per_grid[[1L]][-1L]
@@ -165,6 +168,7 @@ test_that("the tgmrf CSC frame is checked against n_latent", {
 
 test_that("an empty per-grid list is refused rather than read at grid point 0", {
     skip_on_cran_budget()
+    load_cpp_fixture("helpers")
     expect_error(
         cpp_test_tgmrf_block_spec(.tgmrf_block(mutate = function(s) {
             s$Q_csc_p_per_grid <- list()

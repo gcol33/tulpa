@@ -26,6 +26,7 @@ tgp_log_det_shift <- function(times, n_groups, sigma2, phi) {
 
 tgp_pair <- function(times, z, log_sigma2, logit_phi, n_groups = 1L,
                      phi_lower = 0.01, phi_upper = 10) {
+  load_cpp_fixture("temporal_gp")
   nc <- cpp_test_temporal_gp_density(times, n_groups, z, log_sigma2, logit_phi,
                                      parameterization = 1L,
                                      phi_lower = phi_lower,

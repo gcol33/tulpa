@@ -1,4 +1,4 @@
-// test_pg_nngp_conditional.cpp
+// pg_nngp_conditional.cpp
 // Test-only entry point: the NNGP prior's full conditional of one field value,
 // alongside the geometry needed to rebuild the joint precision outside the
 // engine.

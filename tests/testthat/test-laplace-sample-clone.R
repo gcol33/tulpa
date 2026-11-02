@@ -1,13 +1,14 @@
 
 test_that("repeated calls sample from the same precision", {
+  load_cpp_fixture("laplace_sample")
   set.seed(4L)
   n <- 3L
   A <- matrix(rnorm(n * n), n, n)
   H <- crossprod(A) + diag(n)
   mode <- rep(0, n)
 
-  set.seed(99L); s1 <- tulpa:::cpp_test_laplace_sample(mode, H, 400L)
-  set.seed(99L); s2 <- tulpa:::cpp_test_laplace_sample(mode, H, 400L)
+  set.seed(99L); s1 <- cpp_test_laplace_sample(mode, H, 400L)
+  set.seed(99L); s2 <- cpp_test_laplace_sample(mode, H, 400L)
   # An accumulating in-place ridge makes the second draw set a different one
   # even at the same seed.
   expect_equal(s1, s2, tolerance = 0)
@@ -24,6 +25,7 @@ skip_on_cran_budget()
 
 test_that("the caller's precision matrix is unchanged by sampling", {
   skip_on_cran_budget()
+  load_cpp_fixture("laplace_sample")
   set.seed(3L)
   n <- 4L
   A <- matrix(rnorm(n * n), n, n)
@@ -31,7 +33,7 @@ test_that("the caller's precision matrix is unchanged by sampling", {
   H_before <- H
   mode <- rnorm(n)
 
-  s <- tulpa:::cpp_test_laplace_sample(mode, H, 5L)
+  s <- cpp_test_laplace_sample(mode, H, 5L)
   expect_equal(dim(s), c(5L, n))
   expect_true(all(is.finite(s)))
   expect_identical(H, H_before)

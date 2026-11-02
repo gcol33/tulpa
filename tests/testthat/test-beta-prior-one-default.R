@@ -35,8 +35,9 @@
 
 test_that("a nested ICAR fit solves under the kernel default or the caller's prior", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   fx <- .bp_fixture()
-  s0 <- tulpa:::cpp_test_default_sigma_beta()
+  s0 <- cpp_test_default_sigma_beta()
   fit <- function(beta_prior, prior = .bp_icar(fx, 2)) {
     tulpa_nested_laplace(fx$y, rep(1L, fx$n), fx$X, prior = prior,
                          family = "gaussian", phi = 1, hyperprior = "flat",

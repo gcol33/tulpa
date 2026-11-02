@@ -59,6 +59,7 @@ test_that("the density falls back to flat rather than -Inf or NaN", {
   # alpha = 1 gives rate 0, so log(rate) is -Inf at every sigma; alpha > 1 gives
   # a negative rate, so log(rate) is NaN and -rate*sigma grows without bound.
   # Both used to reach a gradient as a number.
+  load_cpp_fixture("helpers")
   for (bad in list(c(1, 1), c(1, 1.5), c(1, 0), c(0, 0.01), c(-1, 0.01))) {
     v <- cpp_pc_prior_scales(sigma = 0.8, U = bad[1], alpha = bad[2])
     expect_true(all(is.finite(v)),

@@ -16,6 +16,7 @@
 # visit).
 
 .c3_register <- function() {
+  load_cpp_fixture("cell_coupling_register")
   cpp_register_test_occupancy_mixture_coupling()
   testthat::skip_if_not(
     cpp_cell_coupling_registry_has("test_occupancy_mixture"),

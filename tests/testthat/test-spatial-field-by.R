@@ -33,8 +33,9 @@
 }
 
 .icar_lp1 <- function(x, adj, tau) {
+  load_cpp_fixture("helpers")
   csr <- tulpa:::adjacency_to_csr_tulpa(adj)
-  tulpa:::cpp_test_log_prior_icar(x, nrow(adj), tau,
+  cpp_test_log_prior_icar(x, nrow(adj), tau,
     csr$row_ptr, csr$col_idx, csr$n_neighbors)
 }
 
@@ -119,12 +120,13 @@ test_that("ICAR log-prior is additive across connected components (equal and une
 
 test_that("MCAR log-prior is additive across connected components (unequal)", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   set.seed(13)
   p     <- 2L
   theta <- c(log(1.1), 0.4, log(0.8))       # log-Cholesky of a 2x2 Sigma
   mcar1 <- function(x, adj) {
     csr <- tulpa:::adjacency_to_csr_tulpa(adj)
-    tulpa:::cpp_test_mcar_prior(theta, p, nrow(adj),
+    cpp_test_mcar_prior(theta, p, nrow(adj),
       csr$row_ptr, csr$col_idx, csr$n_neighbors, x)$log_prior
   }
   sizes   <- c(5L, 3L)                        # unequal -> discriminates equal-split

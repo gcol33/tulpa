@@ -76,6 +76,7 @@ skip_on_cran_budget()
 
 test_that("a parallel likelihood reduction is independent of the thread count", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   set.seed(6)
   n <- 500L
   mu <- runif(n, 0.2, 6)
@@ -107,6 +108,7 @@ test_that("a parallel likelihood reduction is independent of the thread count", 
 
 test_that("independent per-element writes are identical at any thread count", {
   skip_on_cran_budget()
+  load_cpp_fixture("helpers")
   n <- 1000L
   ref <- cpp_test_parallel_independent(n, 1L)
   i <- seq_len(n) - 1
@@ -121,6 +123,7 @@ skip_on_cran()
 
 test_that("a parallel dot-product reduction is independent of the thread count", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   set.seed(5)
   X <- matrix(rnorm(200 * 8), 200, 8)
   b <- rnorm(8)

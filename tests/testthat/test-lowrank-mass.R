@@ -72,6 +72,7 @@ skip_on_cran_budget()
 
 test_that("Woodbury reproduces the dense inverse on every group layout", {
   skip_on_cran_budget()
+  load_cpp_fixture("mass_lowrank")
   for (nm in names(lr_cases())) {
     cs <- lr_cases()[[nm]]
     n <- length(cs$inv_mass_diag)
@@ -91,6 +92,7 @@ test_that("Woodbury reproduces the dense inverse on every group layout", {
 
 test_that("the kinetic energy is the same quadratic form", {
   skip_on_cran_budget()
+  load_cpp_fixture("mass_lowrank")
   for (nm in names(lr_cases())) {
     cs <- lr_cases()[[nm]]
     n <- length(cs$inv_mass_diag)
@@ -110,6 +112,7 @@ test_that("the fused drift and inv_mass_times_p agree", {
   # The zero-allocation NUTS loop applies the metric through apply_drift and
   # the rest of the sampler through inv_mass_times_p. Two application sites
   # that can drift apart is what this pins.
+  load_cpp_fixture("mass_lowrank")
   for (nm in names(lr_cases())) {
     cs <- lr_cases()[[nm]]
     n <- length(cs$inv_mass_diag)
@@ -125,6 +128,7 @@ test_that("the fused drift and inv_mass_times_p agree", {
 
 test_that("a rank-0 or malformed term is refused rather than approximated", {
   skip_on_cran_budget()
+  load_cpp_fixture("mass_lowrank")
   cs <- lr_cases()$irregular
   n <- length(cs$inv_mass_diag)
   p <- rep(1, n)
@@ -148,6 +152,7 @@ test_that("a rank-0 or malformed term is refused rather than approximated", {
 
 test_that("the block is the only part of the metric the term touches", {
   skip_on_cran_budget()
+  load_cpp_fixture("mass_lowrank")
   cs <- lr_cases()$irregular
   n <- length(cs$inv_mass_diag)
   set.seed(5)
@@ -161,6 +166,7 @@ test_that("the block is the only part of the metric the term touches", {
 
 test_that("make_margin_mass_term lays down the row and column sums", {
   skip_on_cran_budget()
+  load_cpp_fixture("mass_lowrank")
   S <- 3L; T <- 4L
   lam_row <- 1 / (0.001 * T)^2
   lam_col <- 1 / (0.001 * S)^2
@@ -201,6 +207,7 @@ test_that("the momentum draw has covariance M", {
   # exactly. Whitening by chol(M) is scale-free, so the Type-IV lambdas -- four
   # orders of magnitude above the diagonal -- are scored on the same footing as
   # the diagonal directions rather than swamping them.
+  load_cpp_fixture("mass_lowrank")
   cs <- lr_cases()$margins
   n <- length(cs$inv_mass_diag)
   M <- lr_dense_mass(cs$inv_mass_diag, cs$start, cs$group_ptr,

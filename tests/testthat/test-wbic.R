@@ -152,13 +152,14 @@ test_that("compare_models(criterion = 'wbic') ranks by the free energy", {
 })
 
 test_that("the tulpa_smc_fit C entry returns the tempered population", {
+  load_cpp_fixture("smc_cabi")
   set.seed(7)
   n <- 60L
   x <- rnorm(n)
   y <- rpois(n, exp(0.2 + 0.5 * x))
   X <- cbind(1, x)
   b <- 1 / log(n)
-  cabi <- tulpa:::cpp_test_smc_cabi(y, rep(1L, n), X, "poisson", phi = 1,
+  cabi <- cpp_test_smc_cabi(y, rep(1L, n), X, "poisson", phi = 1,
                                     sigma_beta = 2.5, n_particles = 300L,
                                     seed = 4L, bridge_end = b)
   direct <- tulpa:::cpp_tulpa_sample_glmm(
@@ -169,7 +170,7 @@ test_that("the tulpa_smc_fit C entry returns the tempered population", {
   expect_identical(unname(cabi$tempered_draws), unname(direct$tempered_draws))
   expect_identical(unname(cabi$draws), unname(direct$draws))
 
-  plain <- tulpa:::cpp_test_smc_cabi(y, rep(1L, n), X, "poisson", phi = 1,
+  plain <- cpp_test_smc_cabi(y, rep(1L, n), X, "poisson", phi = 1,
                                      sigma_beta = 2.5, n_particles = 100L,
                                      seed = 4L, bridge_end = 1)
   expect_null(plain$tempered_draws)

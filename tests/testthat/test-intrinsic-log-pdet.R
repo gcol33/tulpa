@@ -18,14 +18,15 @@
 }
 
 test_that("a random walk's generalized log-determinant has its closed form", {
+  load_cpp_fixture("helpers")
   for (T in c(5L, 12L)) {
-    expect_equal(tulpa:::cpp_test_rw_log_pdet(T, 1L, FALSE), log(T), tolerance = 1e-10)
-    expect_equal(tulpa:::cpp_test_rw_log_pdet(T, 1L, TRUE), 2 * log(T), tolerance = 1e-10)
-    expect_equal(tulpa:::cpp_test_rw_log_pdet(T, 2L, FALSE),
+    expect_equal(cpp_test_rw_log_pdet(T, 1L, FALSE), log(T), tolerance = 1e-10)
+    expect_equal(cpp_test_rw_log_pdet(T, 1L, TRUE), 2 * log(T), tolerance = 1e-10)
+    expect_equal(cpp_test_rw_log_pdet(T, 2L, FALSE),
                  log(T^2 * (T^2 - 1) / 12), tolerance = 1e-10)
-    expect_equal(tulpa:::cpp_test_rw_log_pdet(T, 2L, TRUE), 4 * log(T), tolerance = 1e-10)
+    expect_equal(cpp_test_rw_log_pdet(T, 2L, TRUE), 4 * log(T), tolerance = 1e-10)
     for (o in 1:2) for (cy in c(FALSE, TRUE)) {
-      expect_equal(tulpa:::cpp_test_rw_log_pdet(T, o, cy),
+      expect_equal(cpp_test_rw_log_pdet(T, o, cy),
                    .ilp_eig(.ilp_rw_Q(T, o, cy)), tolerance = 1e-8)
     }
   }
@@ -33,12 +34,13 @@ test_that("a random walk's generalized log-determinant has its closed form", {
 
 test_that("a nested RW1 / cyclic RW2 log marginal is the exact Gaussian evidence", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   set.seed(4)
   T <- 15L
   t_idx <- rep(seq_len(T), each = 3L); n <- length(t_idx); x <- rnorm(n)
   y <- 0.2 + 0.4 * x + sin(t_idx / 3) + rnorm(n)
   X <- cbind(1, x); Z <- outer(t_idx, seq_len(T), "==") * 1
-  s0 <- tulpa:::cpp_test_default_sigma_beta()
+  s0 <- cpp_test_default_sigma_beta()
   ctl <- list(diagnose_k = FALSE, diagnose_skew = FALSE, auto_recenter = FALSE,
               prune = FALSE, var_of_means_consistency = FALSE,
               skew_correct = FALSE, progress = FALSE)
@@ -61,6 +63,7 @@ test_that("a nested RW1 / cyclic RW2 log marginal is the exact Gaussian evidence
 
 test_that("the multi-block driver's RW1 log marginal is the exact Gaussian evidence", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   set.seed(6)
   T <- 12L
   t_idx <- rep(seq_len(T), each = 3L); n <- length(t_idx); x <- rnorm(n)
@@ -68,7 +71,7 @@ test_that("the multi-block driver's RW1 log marginal is the exact Gaussian evide
   y <- 0.2 + 0.4 * x + cos(t_idx / 2) + rnorm(n)
   X <- cbind(1, x); Z <- outer(t_idx, seq_len(T), "==") * 1
   Zr <- outer(g, 1:3, "==") * 1
-  s0 <- tulpa:::cpp_test_default_sigma_beta()
+  s0 <- cpp_test_default_sigma_beta()
   ctl <- list(diagnose_k = FALSE, diagnose_skew = FALSE, auto_recenter = FALSE,
               prune = FALSE, var_of_means_consistency = FALSE,
               skew_correct = FALSE, progress = FALSE)
