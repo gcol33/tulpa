@@ -162,6 +162,48 @@ the fixed effects and the builder blocks' coefficients as
 \code{basis_block_cov} (\code{idx}, the latent indices; \code{cov}, one matrix per cell),
 extracted in the cell's own inner solve.
 
+On the list-of-blocks path an \code{mcar} block is \code{n_fields} areal fields on
+one graph whose joint prior is \eqn{\Sigma \otimes Q^{-}}: \code{Q} the ICAR
+structure of the graph (\code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx},
+\code{n_neighbors}, as for \code{icar}) and \eqn{\Sigma} a free
+\verb{n_fields x n_fields} covariance across the fields. An \code{miid} block is the
+same with \code{Q = I}: \code{n_fields} coefficients per group, the correlated
+random effect \code{(1 + x | g)}, over \code{n_groups} groups. Their fields:
+\itemize{
+\item \code{n_fields} -- the number of coupled fields \code{p}.
+\item \code{spatial_idx} (\code{mcar}) / \code{obs_idx} (\code{miid}) -- a list of \code{n_arms}
+integer vectors, arm \code{k}'s mapping each of its observations to its
+1-based unit or group; every field reads the same index.
+\item \code{field_weight} -- a list of \code{n_fields} entries, each a list of \code{n_arms}
+numeric vectors: entry \verb{[[a]][[k]]} is the per-row weight with which
+field \code{a} enters arm \code{k}, so arm \code{k}'s row \code{i} receives
+\eqn{\sum_a w_{a,k,i} u_a(s_i)}. All-ones is a field on the intercept,
+a covariate column a varying slope on it, and zeros an arm the field
+does not reach.
+\item \code{logchol_grid} -- optional outer grid over \eqn{\Sigma = L L^\top}, a
+matrix with one column per entry of the lower-triangular \code{L}, column by
+column (\verb{L11, L21, ..., Lp1, L22, ...}): \eqn{\log L_{ii}} on the
+diagonal and the raw \eqn{L_{ij}} below it. Each row is one cell. Left
+\code{NULL}, the engine starts from its default grid (for two fields, four
+values of each \eqn{\sigma_i} crossed with six of \eqn{\rho}) and the
+placement pass lays the axes at the outer posterior mode, as a tensor
+in the log-Cholesky columns, and refits; a grid marked with
+\code{\link[=auto_grid]{auto_grid()}} is treated the same way. A grid the caller supplies
+unmarked is integrated as given, and is refined by added levels only
+when it is a tensor in the log-Cholesky columns.
+\item \code{field_beta_offset} (\code{mcar}, optional) -- integer \code{n_fields}: the
+0-based fixed-effect column field \code{a}'s level is aliased with (\code{0}, the
+intercept, for an all-ones field), \code{-1} for none.
+\item \code{n_components} (\code{mcar}, optional) -- the number of equal-size
+components the graph is made of, one replicate of the fields on each.
+}
+
+The fit reports the log-Cholesky axes (\verb{b<k>.L11}, ...) and, after them,
+each field's standard deviation \verb{b<k>.sigma_i}, each correlation
+\verb{b<k>.rho_ij} and each covariance \verb{b<k>.Sigma_ij}, computed per cell and
+summarized over the cell weights, in the hyperparameter table of
+\code{summary()}.
+
 An empty \code{prior = list()} is a list of zero blocks: the model carries no
 latent field, each arm's predictor is its fixed effects, and the outer
 grid is spanned by the per-arm dispersion axes of \code{phi_grid} alone (one

@@ -163,6 +163,46 @@
 #'   `basis_block_cov` (`idx`, the latent indices; `cov`, one matrix per cell),
 #'   extracted in the cell's own inner solve.
 #'
+#'   On the list-of-blocks path an `mcar` block is `n_fields` areal fields on
+#'   one graph whose joint prior is \eqn{\Sigma \otimes Q^{-}}: `Q` the ICAR
+#'   structure of the graph (`n_spatial_units`, `adj_row_ptr`, `adj_col_idx`,
+#'   `n_neighbors`, as for `icar`) and \eqn{\Sigma} a free
+#'   `n_fields x n_fields` covariance across the fields. An `miid` block is the
+#'   same with `Q = I`: `n_fields` coefficients per group, the correlated
+#'   random effect `(1 + x | g)`, over `n_groups` groups. Their fields:
+#'   * `n_fields` -- the number of coupled fields `p`.
+#'   * `spatial_idx` (`mcar`) / `obs_idx` (`miid`) -- a list of `n_arms`
+#'     integer vectors, arm `k`'s mapping each of its observations to its
+#'     1-based unit or group; every field reads the same index.
+#'   * `field_weight` -- a list of `n_fields` entries, each a list of `n_arms`
+#'     numeric vectors: entry `[[a]][[k]]` is the per-row weight with which
+#'     field `a` enters arm `k`, so arm `k`'s row `i` receives
+#'     \eqn{\sum_a w_{a,k,i} u_a(s_i)}. All-ones is a field on the intercept,
+#'     a covariate column a varying slope on it, and zeros an arm the field
+#'     does not reach.
+#'   * `logchol_grid` -- optional outer grid over \eqn{\Sigma = L L^\top}, a
+#'     matrix with one column per entry of the lower-triangular `L`, column by
+#'     column (`L11, L21, ..., Lp1, L22, ...`): \eqn{\log L_{ii}} on the
+#'     diagonal and the raw \eqn{L_{ij}} below it. Each row is one cell. Left
+#'     `NULL`, the engine starts from its default grid (for two fields, four
+#'     values of each \eqn{\sigma_i} crossed with six of \eqn{\rho}) and the
+#'     placement pass lays the axes at the outer posterior mode, as a tensor
+#'     in the log-Cholesky columns, and refits; a grid marked with
+#'     [auto_grid()] is treated the same way. A grid the caller supplies
+#'     unmarked is integrated as given, and is refined by added levels only
+#'     when it is a tensor in the log-Cholesky columns.
+#'   * `field_beta_offset` (`mcar`, optional) -- integer `n_fields`: the
+#'     0-based fixed-effect column field `a`'s level is aliased with (`0`, the
+#'     intercept, for an all-ones field), `-1` for none.
+#'   * `n_components` (`mcar`, optional) -- the number of equal-size
+#'     components the graph is made of, one replicate of the fields on each.
+#'
+#'   The fit reports the log-Cholesky axes (`b<k>.L11`, ...) and, after them,
+#'   each field's standard deviation `b<k>.sigma_i`, each correlation
+#'   `b<k>.rho_ij` and each covariance `b<k>.Sigma_ij`, computed per cell and
+#'   summarized over the cell weights, in the hyperparameter table of
+#'   `summary()`.
+#'
 #'   An empty `prior = list()` is a list of zero blocks: the model carries no
 #'   latent field, each arm's predictor is its fixed effects, and the outer
 #'   grid is spanned by the per-arm dispersion axes of `phi_grid` alone (one
