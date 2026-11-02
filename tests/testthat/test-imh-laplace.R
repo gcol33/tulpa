@@ -66,8 +66,9 @@ test_that("imh_laplace recovers conjugate-normal posterior (1-D)", {
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(fit$inference_tier, 1L)
   expect_equal(fit$backend, "imh_laplace")
-  # Acceptance should be near 1: target = proposal exactly.
-  expect_gt(fit$mean_accept, 0.95)
+  # The proposal is a t with the target's own location and curvature, so the
+  # acceptance is set by the t / Gaussian density ratio alone: 0.92 here.
+  expect_gt(fit$mean_accept, 0.85)
   expect_lt(abs(fit$means[1] - post_mean), 0.05)
   expect_lt(abs(stats::sd(fit$draws[, 1]) - sqrt(post_var)), 0.1)
 })
@@ -89,7 +90,8 @@ test_that("imh_laplace recovers 2-D conjugate posterior", {
   fit <- imh_laplace(log_post, mode = post_mean, hessian = H,
                      n_iter = 4000L)
 
-  expect_gt(fit$mean_accept, 0.95)
+  # 0.87 for the 2-D t / Gaussian density ratio.
+  expect_gt(fit$mean_accept, 0.8)
   expect_true(all(abs(fit$means - post_mean) < 0.05))
   emp_sd <- apply(fit$draws, 2L, sd)
   expect_true(all(abs(emp_sd - sqrt(post_var)) < 0.1))
@@ -126,9 +128,30 @@ test_that("imh_laplace flags low acceptance for non-Gaussian targets", {
   log_post <- function(theta) dcauchy(theta, log = TRUE)
   fit <- imh_laplace(log_post, mode = 0, hessian = matrix(1, 1L, 1L),
                      n_iter = 4000L, scale = 1.0)
-  # Acceptance well below 1 (heavy tails of Cauchy vs light-tailed
-  # Gaussian proposal).
+  # Acceptance well below 1 (the Cauchy's tails are heavier than the
+  # proposal's t tails).
   expect_lt(fit$mean_accept, 0.85)
   # But it still draws *something* — never gets stuck.
   expect_gt(length(unique(fit$draws[, 1])), 100L)
+})
+
+
+test_that("imh_laplace's t proposal recovers a target with heavier than Gaussian tails", {
+  # A t_7 target: its tails decay polynomially, so a Gaussian proposal at the
+  # mode's curvature (SD 0.94 against the target's 1.18) is not uniformly
+  # ergodic for it, and a chain that wanders into the tail sticks there.
+  # Measured over these 20 seeds, the Gaussian's SD error ranges -0.10 to
+  # +0.51; the t proposal stays within 0.04 on every seed.
+  skip_on_cran()
+  log_post <- function(theta) stats::dt(theta, df = 7, log = TRUE)
+  true_sd <- sqrt(7 / 5)
+  err <- vapply(1:20, function(s) {
+    fit <- imh_laplace(log_post, mode = 0, hessian = matrix(8 / 7, 1L, 1L),
+                       n_iter = 6000L, warmup = 1000L, seed = s)
+    stats::sd(fit$draws[, 1]) / true_sd - 1
+  }, numeric(1))
+  expect_lt(max(abs(err)), 0.06)
+  fit <- imh_laplace(log_post, mode = 0, hessian = matrix(8 / 7, 1L, 1L),
+                     n_iter = 200L, seed = 1L)
+  expect_identical(fit$proposal$df, .imh_proposal("df"))
 })

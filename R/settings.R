@@ -1795,6 +1795,42 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     .CCD_PLACEMENT[[par]]
 }
 
+# Degrees of freedom of `imh_laplace()`'s multivariate-t proposal.
+#
+# An independence sampler is uniformly ergodic when the proposal's tails
+# dominate the target's; a Gaussian proposal at the mode's curvature does not
+# dominate a posterior with a polynomial or a slowly decaying tail, and the
+# chain then under-visits that tail. `df` trades the two failure directions: a
+# small `df` wastes proposals far out on a near-Gaussian target, a large one
+# returns to the Gaussian's tail.
+#
+# Measured on the periodic-AR1 tgmrf fixture of test-tgmrf-fixed-draws (2
+# seeds x 10000 iterations), whose fixed-effect SD over the unbounded theta
+# posterior is 0.548 by dense quadrature, and on the conjugate-normal targets
+# of test-imh-laplace (acceptance, 1-D / 2-D):
+#
+#   df          SD error         rho ESS      acceptance   conjugate acc
+#   3       +0.004 / -0.035   2982 / 2829    0.76 / 0.75    0.88 / 0.81
+#   4       +0.042 / -0.017   1914 / 2200    0.78 / 0.77    0.91 / 0.83
+#   5       +0.006 / +0.030   1795 / 1679    0.79 / 0.78    0.92 / 0.87
+#   7       +0.003 / -0.033   1707 / 1575    0.81 / 0.80    0.94 / 0.90
+#   10      -0.014 / +0.058    873 /  444    0.81 / 0.81    0.96 / 0.93
+#   Gauss   -0.166 / -0.175    925 / 1525    0.82 / 0.83    1.00 / 1.00
+#
+# From 3 to 7 the SD sits within MC error of the reference; at 10 the tail ESS
+# halves; the Gaussian misses the tail by 17%. 5 keeps the near-Gaussian
+# acceptance at 0.87-0.92.
+.IMH_PROPOSAL <- list(
+    df = 5
+)
+
+.imh_proposal <- function(par) {
+    if (!par %in% names(.IMH_PROPOSAL)) {
+        stop("Unknown IMH proposal setting '", par, "'.", call. = FALSE)
+    }
+    .IMH_PROPOSAL[[par]]
+}
+
 # Default outer design of every door that lays its hyperparameter nodes from the
 # outer mode and the Cholesky factor of the mode Hessian's inverse
 # (`tulpa_re_cov_nested()`, `fit_spde()`), by the number k of outer

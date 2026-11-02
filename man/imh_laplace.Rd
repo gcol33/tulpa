@@ -33,10 +33,8 @@ from \code{tulpa_laplace}).}
 
 \item{warmup}{Warmup iterations to discard (default \code{n_iter / 2}).}
 
-\item{scale}{Optional inflation factor on the proposal covariance
-(default 1.0). Values slightly > 1 (e.g., 1.5) give heavier-tailed
-proposals that improve mixing when Laplace underestimates posterior
-spread.}
+\item{scale}{Optional inflation factor on the proposal scale matrix
+(default 1.0); the scale matrix is \code{scale^2 * hessian^{-1}}.}
 
 \item{init}{Optional starting parameter vector (default = \code{mode}).}
 
@@ -59,12 +57,19 @@ A list with class \code{tulpa_fit} carrying:
 \item \code{inference_mode}: \code{"exact"}.
 \item \code{inference_tier}: \code{1L}.
 \item \code{backend}: \code{"imh_laplace"}.
+\item \code{proposal}: \code{list(mode, cov, scale, df)}, the proposal's location,
+scale matrix, inflation and degrees of freedom.
 }
 }
 \description{
 Sample from a posterior using independence Metropolis-Hastings with
-a multivariate-normal proposal centred at the Laplace mode and
-scaled by the inverse Hessian. For posteriors that are well-
+a multivariate-t proposal centred at the Laplace mode, with the inverse
+Hessian as its scale matrix. The t's polynomial tails dominate any
+target whose tails are no heavier than its own, which is the condition
+under which an independence sampler is uniformly ergodic; a Gaussian
+proposal lighter-tailed than the target under-visits the target's tails
+and the chain sticks there. The degrees of freedom are one package
+setting. For posteriors that are well-
 approximated by a Gaussian near the mode this is dramatically
 cheaper than HMC: each iteration is one log-posterior evaluation
 plus one accept/reject step. Embarrassingly parallel across chains.

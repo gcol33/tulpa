@@ -78,3 +78,34 @@ test_that("tgmrf vi / imh report fixed-effect draws matching dense quadrature", 
   expect_lt(abs(mean(b_in) - ref$mean) / ref_sd, 0.15)
   expect_lt(abs(stats::sd(b_in) / ref_sd - 1), 0.15)
 })
+
+
+test_that("tgmrf imh reaches the rho -> 1 tail of the unbounded theta posterior", {
+  # Outside the block's box the posterior keeps 6% of its mass toward
+  # rho -> 1, where the level is weakly identified and the fixed effect's
+  # conditional spread grows; the unbounded fixed-effect SD is 0.548 by dense
+  # quadrature against 0.430 inside the box. A Gaussian proposal at the mode's
+  # curvature is lighter-tailed than this posterior and read 0.452-0.457
+  # (-17%) at 10000 iterations; the t proposal reads within 0.04.
+  skip_if_not_slow()
+  skip_if_not_installed("Matrix")
+  n <- 40L; blk <- .tgfd_block(n); y <- .tgfd_data(blk, n, 20260518L)
+  X <- matrix(1, n, 1L)
+
+  b2 <- blk; b2$obs_idx <- seq_len(n)
+  b2$theta_grid_built <- as.matrix(expand.grid(
+    log_sigma = seq(-2.5, 2, length.out = 46L),
+    atanh_rho = seq(-1.5, 4.5, length.out = 121L)))
+  wide <- suppressWarnings(tulpa_nested_laplace(
+    y = y, n_trials = rep(1L, n), X = X, prior = b2, family = "poisson",
+    control = list(progress = FALSE, prune = FALSE, axis_refine = "none")))
+  # The region holds the posterior: no mass on its rho -> 1 edge.
+  expect_lt(sum(wide$weights[wide$theta_grid[, 2] > 3]), 1e-3)
+  ref_sd <- sqrt(.nested_fixed_moments(wide)$cov[1, 1])
+
+  set.seed(1)
+  fi <- tulpa_tgmrf(y = y, n_trials = rep(1L, n), X = X, block = blk,
+                    family = "poisson", mode = "imh", n_iter = 10000L,
+                    warmup = 500L)
+  expect_lt(abs(stats::sd(fi$draws_beta[, 1]) / ref_sd - 1), 0.06)
+})

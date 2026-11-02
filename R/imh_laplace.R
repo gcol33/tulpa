@@ -2,8 +2,13 @@
 #'
 #' @description
 #' Sample from a posterior using independence Metropolis-Hastings with
-#' a multivariate-normal proposal centred at the Laplace mode and
-#' scaled by the inverse Hessian. For posteriors that are well-
+#' a multivariate-t proposal centred at the Laplace mode, with the inverse
+#' Hessian as its scale matrix. The t's polynomial tails dominate any
+#' target whose tails are no heavier than its own, which is the condition
+#' under which an independence sampler is uniformly ergodic; a Gaussian
+#' proposal lighter-tailed than the target under-visits the target's tails
+#' and the chain sticks there. The degrees of freedom are one package
+#' setting. For posteriors that are well-
 #' approximated by a Gaussian near the mode this is dramatically
 #' cheaper than HMC: each iteration is one log-posterior evaluation
 #' plus one accept/reject step. Embarrassingly parallel across chains.
@@ -32,10 +37,8 @@
 #'   from `tulpa_laplace`).
 #' @param n_iter Total iterations including warmup (default 2000).
 #' @param warmup Warmup iterations to discard (default `n_iter / 2`).
-#' @param scale Optional inflation factor on the proposal covariance
-#'   (default 1.0). Values slightly > 1 (e.g., 1.5) give heavier-tailed
-#'   proposals that improve mixing when Laplace underestimates posterior
-#'   spread.
+#' @param scale Optional inflation factor on the proposal scale matrix
+#'   (default 1.0); the scale matrix is `scale^2 * hessian^{-1}`.
 #' @param init Optional starting parameter vector (default = `mode`).
 #' @param thin Keep every `thin`-th post-warmup sample (default 1).
 #' @param seed Optional integer RNG seed. Scoped to this call: the caller's
@@ -52,6 +55,8 @@
 #'   * `inference_mode`: `"exact"`.
 #'   * `inference_tier`: `1L`.
 #'   * `backend`: `"imh_laplace"`.
+#'   * `proposal`: `list(mode, cov, scale, df)`, the proposal's location,
+#'     scale matrix, inflation and degrees of freedom.
 #'
 #' @seealso [tulpa_laplace()] for the mode + Hessian,
 #'   [bridge_sampling()] for marginal-likelihood estimation on the
@@ -105,7 +110,9 @@ imh_laplace <- function(log_posterior,
   .check_run_length(n_iter, warmup, "imh_laplace")
   if (scale <= 0) stop("`scale` must be positive.", call. = FALSE)
 
-  # Proposal: theta ~ N(mode, scale^2 * H^{-1}).
+  # Proposal: theta ~ t_df(mode, scale^2 * H^{-1}), a multivariate t with
+  # location `mode` and scale matrix `scale^2 * H^{-1}`.
+  df <- .imh_proposal("df")
   prop_cov <- tryCatch(scale^2 * .spd_inverse(hessian),
                        error = function(e) {
                          stop("Hessian is singular or not positive-definite; ",
@@ -119,12 +126,13 @@ imh_laplace <- function(log_posterior,
                        call. = FALSE)
                 })
   log_det_cov <- 2 * sum(log(diag(R)))
+  log_norm <- lgamma((df + d) / 2) - lgamma(df / 2) -
+    0.5 * d * log(df * pi) - 0.5 * log_det_cov
 
   # Proposal log-density at a vector.
   log_prop <- function(theta) {
     z <- forwardsolve(t(R), theta - mode)
-    -0.5 * d * log(2 * pi) - 0.5 * log_det_cov -
-      0.5 * sum(z^2)
+    log_norm - 0.5 * (df + d) * log1p(sum(z^2) / df)
   }
 
   # Initial state.
@@ -142,8 +150,10 @@ imh_laplace <- function(log_posterior,
   log_prob_all <- numeric(n_iter)
   accept_all <- logical(n_iter)
 
-  # Pre-draw all proposals (vectorised standard normals once).
-  z_all <- matrix(rnorm(n_iter * d), nrow = n_iter)
+  # Pre-draw all proposals: a t draw is a standard normal divided by
+  # sqrt(W / df), W ~ chi^2_df, mapped through the scale matrix's factor.
+  z_all <- matrix(rnorm(n_iter * d), nrow = n_iter) /
+    sqrt(stats::rchisq(n_iter, df) / df)
 
   for (t in seq_len(n_iter)) {
     prop <- mode + as.numeric(z_all[t, ] %*% R)
@@ -189,7 +199,7 @@ imh_laplace <- function(log_posterior,
     inference_mode = "exact",
     inference_tier = 1L,
     backend = "imh_laplace",
-    proposal = list(mode = mode, cov = prop_cov, scale = scale)
+    proposal = list(mode = mode, cov = prop_cov, scale = scale, df = df)
   )
   .finalize_fit(fit, param_names = names(mode))
 }
