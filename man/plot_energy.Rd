@@ -13,7 +13,8 @@ plot_energy(fit)
 A ggplot object (if ggplot2 available) or base R plot.
 }
 \description{
-Creates overlaid histograms of marginal energy and energy transition,
+Creates overlaid histograms of the marginal energy (centred within each
+chain) and the energy transition,
 along with the E-BFMI statistic. Low E-BFMI indicates poor exploration
 of the posterior.
 }

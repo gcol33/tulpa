@@ -2,7 +2,7 @@
 % Please edit documentation in R/plot_diagnostics.R
 \name{plot_diagnostics}
 \alias{plot_diagnostics}
-\title{Diagnostic plotting functions for tulpa models}
+\title{Multi-Panel Diagnostic Figure}
 \usage{
 plot_diagnostics(fit, pars = NULL)
 }
@@ -16,9 +16,6 @@ uses the parameter with worst Rhat.}
 A combined plot (ggplot + patchwork) or NULL if requirements not met.
 }
 \description{
-Visual diagnostic tools for MCMC convergence assessment. All functions
-provide base R fallbacks when ggplot2/bayesplot are unavailable.
-
 Creates a combined diagnostic figure with Rhat, ESS, trace plot, and
 energy/ACF panels. Requires the \code{patchwork} package for layout.
 }
@@ -46,4 +43,3 @@ plot_diagnostics(fit)
 \seealso{
 \code{\link[=diagnostic_summary]{diagnostic_summary()}}, \code{\link[=plot_rhat]{plot_rhat()}}, \code{\link[=plot_ess]{plot_ess()}}
 }
-\keyword{internal}

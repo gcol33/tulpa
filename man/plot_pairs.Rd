@@ -15,8 +15,10 @@ plot_pairs(
 \arguments{
 \item{fit}{A \code{tulpa_fit} object.}
 
-\item{pars}{Character vector of parameter names. If NULL, selects main
-variance parameters.}
+\item{pars}{Character vector of parameter names. If NULL, the fixed effects
+followed by the hyperparameters (variance components, precisions,
+dispersions and correlations), up to \code{n_pars}; a latent field's per-unit
+values are never chosen by default.}
 
 \item{highlight_divergent}{Logical; highlight divergent transitions in red
 (default: TRUE).}

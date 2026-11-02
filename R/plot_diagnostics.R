@@ -1,12 +1,34 @@
-#' Diagnostic plotting functions for tulpa models
-#'
-#' @description
-#' Visual diagnostic tools for MCMC convergence assessment. All functions
-#' provide base R fallbacks when ggplot2/bayesplot are unavailable.
-#'
-#' @name plot_diagnostics
+# Diagnostic plotting functions for tulpa models: visual MCMC convergence
+# assessment, each with a base R fallback when ggplot2 / bayesplot are
+# unavailable.
+
+# The default parameters of the pairs and divergence plots, split into the
+# fixed effects and the hyperparameters. A hyperparameter is a scalar draw
+# column (`select_main_params()`: no per-element index, so a latent field's
+# per-unit values such as `phi_spatial[k]` are not one) that is not a fixed
+# effect: the variance components, precisions, dispersions and correlations,
+# on the scale the sampler drew them.
 #' @keywords internal
-NULL
+.plot_default_pars <- function(fit, draws) {
+  all_pars <- colnames(draws)
+  # Fixed effects lead the draws by convention (`.pg_as_chain`, the tgmrf joint
+  # samplers, tulpa()'s own layout), so position is tried first: a NULL or
+  # blank fixed name `.tulpa_pooled_draws()` filled positionally ("param1")
+  # no longer name-matches `fit$fixed_names` (gcol33/tulpa#780). Then the name
+  # match, then a generic beta / intercept pattern covering ratio's beta_num /
+  # beta_denom when `n_fixed` is absent.
+  fixed <- if (!is.null(fit$n_fixed) && fit$n_fixed >= 1L &&
+               fit$n_fixed <= length(all_pars)) {
+    all_pars[seq_len(fit$n_fixed)]
+  } else {
+    intersect(fit$fixed_names %||% character(0), all_pars)
+  }
+  if (!length(fixed)) {
+    fixed <- grep("^(beta[_[]|\\(Intercept\\))", all_pars, value = TRUE)
+  }
+  scalar <- all_pars[!grepl("\\[[0-9]+(,[0-9]+)*\\]$", all_pars)]
+  list(fixed = fixed, hyper = setdiff(scalar, fixed))
+}
 
 # Consistent color scheme for diagnostic plots
 tulpa_diag_colors <- list(
@@ -424,8 +446,10 @@ plot_acf_base <- function(draws, pars, lags) {
 #' problematic posterior regions.
 #'
 #' @param fit A `tulpa_fit` object.
-#' @param pars Character vector of parameter names. If NULL, selects main
-#'   variance parameters.
+#' @param pars Character vector of parameter names. If NULL, the fixed effects
+#'   followed by the hyperparameters (variance components, precisions,
+#'   dispersions and correlations), up to `n_pars`; a latent field's per-unit
+#'   values are never chosen by default.
 #' @param highlight_divergent Logical; highlight divergent transitions in red
 #'   (default: TRUE).
 #' @param n_pars Maximum number of parameters (default: 5).
@@ -469,27 +493,8 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
 
   # Select parameters
   if (is.null(pars)) {
-    # Select variance parameters and key fixed effects
-    all_pars <- colnames(draws)
-    var_pars <- grep("^(sigma|phi|tau|rho)", all_pars, value = TRUE)
-    # Fixed effects are always the leading columns of `draws` by convention
-    # (`.pg_as_chain`, the tgmrf joint samplers, tulpa()'s own layout), so
-    # position is tried first: a NULL or blank fixed name that
-    # `.tulpa_pooled_draws()` has since filled in positionally (e.g. "param1")
-    # no longer name-matches `fit$fixed_names` itself (gcol33/tulpa#780). Fall
-    # back to the name match, then a generic beta / intercept pattern --
-    # covering ratio's beta_num / beta_denom -- when `n_fixed` is absent.
-    beta_pars <- if (!is.null(fit$n_fixed) && fit$n_fixed >= 1L &&
-                     fit$n_fixed <= length(all_pars)) {
-      all_pars[seq_len(fit$n_fixed)]
-    } else {
-      intersect(fit$fixed_names %||% character(0), all_pars)
-    }
-    if (!length(beta_pars)) {
-      beta_pars <- grep("^(beta[_[]|\\(Intercept\\))", all_pars, value = TRUE)
-    }
-    pars <- c(beta_pars, var_pars)
-    pars <- head(pars, n_pars)
+    dp <- .plot_default_pars(fit, draws)
+    pars <- head(c(dp$fixed, dp$hyper), n_pars)
   } else {
     pars <- grep_params(pars, colnames(draws))
     pars <- head(pars, n_pars)
@@ -716,8 +721,10 @@ plot_pairs_base <- function(draws_df, pars, has_divergent, alpha) {
 #' divergences occur.
 #'
 #' @param fit A `tulpa_fit` object (HMC backend).
-#' @param pars Character vector of parameter names. If NULL, uses variance
-#'   parameters.
+#' @param pars Character vector of parameter names. If NULL, the
+#'   hyperparameters (variance components, precisions, dispersions and
+#'   correlations, on their sampled scale), filled up to six with the fixed
+#'   effects; a latent field's per-unit values are never chosen by default.
 #' @param type Plot type: "parcoord" (parallel coordinates) or "scatter".
 #'
 #' @return A ggplot object or base R plot (invisible).
@@ -777,9 +784,8 @@ plot_divergences <- function(fit, pars = NULL, type = c("parcoord", "scatter")) 
 
   # Select parameters
   if (is.null(pars)) {
-    all_pars <- colnames(draws)
-    var_pars <- grep("^(sigma|phi|tau|rho)", all_pars, value = TRUE)
-    pars <- head(var_pars, 6)
+    dp <- .plot_default_pars(fit, draws)
+    pars <- head(c(dp$hyper, dp$fixed), 6)
   } else {
     pars <- grep_params(pars, colnames(draws))
     pars <- head(pars, 6)
@@ -928,7 +934,8 @@ plot_divergences_scatter <- function(draws_df, pars) {
 #' Plot energy diagnostic (E-BFMI)
 #'
 #' @description
-#' Creates overlaid histograms of marginal energy and energy transition,
+#' Creates overlaid histograms of the marginal energy (centred within each
+#' chain) and the energy transition,
 #' along with the E-BFMI statistic. Low E-BFMI indicates poor exploration
 #' of the posterior.
 #'
@@ -975,6 +982,11 @@ plot_energy <- function(fit) {
   bfmi <- .tulpa_energy_bfmi(fit)
   e_bfmi <- bfmi$value
   energy_diff <- bfmi$energy_diff
+  # The marginal energy is drawn centred within each chain: E-BFMI compares
+  # the spread of the transitions with the spread of the energy, and only the
+  # centred marginal shares the transitions' location, so the two histograms
+  # are comparable on one axis.
+  energy <- bfmi$energy_centred
 
   # Create data for plotting
   n <- length(energy)

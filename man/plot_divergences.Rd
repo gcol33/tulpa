@@ -9,8 +9,10 @@ plot_divergences(fit, pars = NULL, type = c("parcoord", "scatter"))
 \arguments{
 \item{fit}{A \code{tulpa_fit} object (HMC backend).}
 
-\item{pars}{Character vector of parameter names. If NULL, uses variance
-parameters.}
+\item{pars}{Character vector of parameter names. If NULL, the
+hyperparameters (variance components, precisions, dispersions and
+correlations, on their sampled scale), filled up to six with the fixed
+effects; a latent field's per-unit values are never chosen by default.}
 
 \item{type}{Plot type: "parcoord" (parallel coordinates) or "scatter".}
 }
