@@ -1,3 +1,58 @@
+# tulpa (development version)
+
+## Models and inference
+
+* The engine default fixed-effect prior is N(0, 2.5^2) on every door
+  (`DEFAULT_SIGMA_BETA`); `beta_prior` overrides it, including on the SPDE
+  Laplace path (#1045, #1056).
+
+* An intrinsic field's level is a hard constraint of the inner solve, MCAR
+  included, and a proper SPDE field is no longer recentred. On a p = 2 MCAR
+  fit the log-marginal error against a dense constrained reference fell from
+  0.012 to 9e-11 nats (#1047, #1053, #1055).
+
+* Knorr-Held interaction types II-IV are reachable through `spatiotemporal()`
+  in `tulpa()`, and an NA response is a masked row, so `tulpa()` forecasts
+  (#1030, #1032).
+
+* Long-format latent factors through `tulpa(factors = )` (#1005).
+
+* The aligned tensor is the default outer design for up to three
+  hyperparameters, which reads right-skewed upper bounds the CCD missed. It
+  costs time: a random-slope fit runs several times longer than before (#1048).
+
+* Fractional SPDE: a covariance-based rational field with the exact normaliser
+  (#1049, #1054).
+
+* `predict()` at new data conditions on the fitted groups; a new group draws
+  from `Sigma`, and `re_form = NA` gives the population level (#1017).
+
+* Random-effect covariance: each nested node is centred at the leading-order
+  latent mean (`control$skew_correct`), the AGHQ profile runs in one compiled
+  batch, and the Gibbs fixed effects move by a Newton step (#998, #1019,
+  #1052).
+
+* A joint-door hsgp block keeps its basis builder, so `predict()` rebuilds the
+  basis at new coordinates (#1046).
+
+* `tulpa_tgmrf(mode = "imh")` centres a multivariate-t proposal on the outer
+  mode (#1057).
+
+* The copy scale's lowest continuum cell is scored from the atom and its first
+  node, and the within-cell tail stops at a level laid beyond the declared grid
+  (#1044, #1051).
+
+* One numerically stable `neg_binomial_2` density; at large size the old one
+  cancelled and drove the size parameter off under NUTS (#1058).
+
+* The runtime gradient check also compares against a Richardson estimate before
+  falling back to numerical gradients (#1050).
+
+## Package
+
+* C++ test fixtures live in `tests/testthat/cpp` and compile per test file;
+  related help topics share one page (#972).
+
 # tulpa 0.7.6
 
 ## Models and inference
