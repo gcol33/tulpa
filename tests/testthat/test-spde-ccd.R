@@ -264,7 +264,7 @@ test_that("fit_spde_nested_ccd builds the CCD design at a clean interior mode", 
   # the branch is exercised without depending on a particular mesh/data
   # realisation landing interior.
   r0 <- 0.3; s0 <- 0.6
-  spde_log_marginal <- function(r, s) {
+  spde_log_marginal <- function(r, s, keep_Q = FALSE) {
     lm <- -0.5 * ((log(r) - log(r0))^2 / 0.25 + (log(s) - log(s0))^2 / 0.25)
     list(log_marginal = lm, n_iter = rep(5L, length(r)))
   }

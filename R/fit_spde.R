@@ -269,7 +269,10 @@ fit_spde <- function(y, X, spatial,
             "the fractional SPDE grid runs without it.", call. = FALSE)
   }
 
-  spde_log_marginal <- function(range_vec, sigma_vec) {
+  # `keep_Q = TRUE` retains each cell's joint precision, which the final
+  # integration grid reads its per-node field variances from
+  # (`.spde_nested_record()`); the mode-find and diagnostic calls do not need it.
+  spde_log_marginal <- function(range_vec, sigma_vec, keep_Q = FALSE) {
     if (is_frac) {
       K  <- length(range_vec)
       lm <- numeric(K); ni <- integer(K)
@@ -297,6 +300,7 @@ fit_spde <- function(y, X, spatial,
       nu = sp$nu,
       family = family, phi = .phi_to_kernel(family, phi),
       max_iter = max_iter, tol = tol, n_threads = n_threads,
+      store_Q = isTRUE(keep_Q),
       checkpoint_path = .ckpt$path,
       offset_nullable = offset,
       debias = debias_req, cila = cila_req,

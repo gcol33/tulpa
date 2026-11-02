@@ -13,7 +13,8 @@
 #' random effects, in the order the fit's latent vector stores them.
 #'
 #' @param fit A nested-Laplace fit: [tulpa_nested_laplace()],
-#'   [tulpa_nested_laplace_joint()], or a [tulpa()] fit routed to that tier.
+#'   [tulpa_nested_laplace_joint()], a [fit_spde()] fit integrating
+#'   `(range, sigma)`, or a [tulpa()] fit routed to one of them.
 #' @return A list:
 #'   \describe{
 #'     \item{`nodes`}{numeric matrix `[n_cells x n_axes]`, the hyperparameter
@@ -54,11 +55,7 @@
 #' }
 #' @export
 tulpa_outer_grid <- function(fit) {
-  src <- if (is.null(fit[["theta_grid"]]) && is.list(fit[["joint_fit"]])) {
-    fit[["joint_fit"]]
-  } else {
-    fit
-  }
+  src <- .nl_outer_record(fit)
   nodes <- .nl_theta_matrix(src)
   w <- as.numeric(src[["weights"]])
   if (is.null(nodes) || !length(w)) {
@@ -81,4 +78,17 @@ tulpa_outer_grid <- function(fit) {
     modes        = if (is.matrix(modes) && nrow(modes) == length(w)) modes,
     n_fixed      = as.integer(src[["n_fixed"]] %||% fit[["n_fixed"]] %||% 0L)
   )
+}
+
+# Where a fit keeps its outer-grid record: on the fit itself (the registry and
+# multi-block drivers), on the joint fit a one-arm wrapper holds
+# (`$joint_fit`), or on the (range, sigma) integration of an SPDE fit
+# (`$nested`, `.spde_nested_record()`).
+.nl_outer_record <- function(fit) {
+  if (!is.null(fit[["theta_grid"]])) return(fit)
+  if (is.list(fit[["joint_fit"]])) return(fit[["joint_fit"]])
+  if (is.list(fit[["nested"]]) && !is.null(fit[["nested"]][["theta_grid"]])) {
+    return(fit[["nested"]])
+  }
+  fit
 }

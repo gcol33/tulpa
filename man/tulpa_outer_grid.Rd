@@ -8,7 +8,8 @@ tulpa_outer_grid(fit)
 }
 \arguments{
 \item{fit}{A nested-Laplace fit: \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}},
-\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}, or a \code{\link[=tulpa]{tulpa()}} fit routed to that tier.}
+\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}, a \code{\link[=fit_spde]{fit_spde()}} fit integrating
+\verb{(range, sigma)}, or a \code{\link[=tulpa]{tulpa()}} fit routed to one of them.}
 }
 \value{
 A list:

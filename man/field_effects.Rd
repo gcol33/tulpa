@@ -53,8 +53,11 @@ reports the field at its mode, with no spread. For BYM2 this is the
 combined field at the \code{sigma = 1}, \code{rho = 0.5} the conditional kernel
 fixes.
 \item An SPDE fit (\code{\link[=fit_spde]{fit_spde()}}) reports the mesh-node field: its draws on
-the sampler path, its mode (the posterior-mean hyperparameters' fit on
-the nested path) otherwise.
+the sampler path; on the nested \verb{(range, sigma)} path the Gaussian
+mixture over the integration cells, each cell's inner Laplace mode and
+per-node marginal variance weighted by the cell's posterior weight
+(\code{source = "mixture"}); at fixed hyperparameters, and for a
+fractional-\code{nu} field, its mode.
 }
 A fit whose field cannot be located this way (a continuous GP / NNGP /
 HSGP field, a restricted field, an inline \code{spatial()} varying-coefficient

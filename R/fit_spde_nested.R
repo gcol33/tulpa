@@ -75,7 +75,7 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
                         length.out = n_grid))
 
   grid <- expand.grid(range = range_grid, sigma = sigma_grid)
-  result <- spde_log_marginal(grid$range, grid$sigma)
+  result <- spde_log_marginal(grid$range, grid$sigma, keep_Q = TRUE)
 
   hp <- .spde_hyperprior_record(grid$range, grid$sigma, sp, hyperprior)
   log_post <- result$log_marginal + hp$lp
@@ -151,7 +151,7 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
     pareto_k_regime          = regime$pareto_k_regime,
     pareto_k_grid_edge_axes  = regime$pareto_k_grid_edge_axes,
     pareto_k_grid_edge_sides = regime$pareto_k_grid_edge_sides,
-    nested = list(
+    nested = c(list(
       method     = "grid",
       range_grid = grid$range,
       sigma_grid = grid$sigma,
@@ -163,8 +163,46 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
       sigma_mean = sum(weights * grid$sigma),
       range_best = grid$range[best],
       sigma_best = grid$sigma[best]
-    )
+    ), .spde_nested_record(result, grid$range, grid$sigma, log_post, sp))
   )
+}
+
+# The outer-grid record every nested-Laplace fit carries, for the (range,
+# sigma) integration: the cells (`theta_grid`), each cell's log posterior
+# density (`log_marginal`, hyperprior included), its inner Laplace mode
+# (`modes`, the latent [beta, RE, mesh] vector) and the marginal variance of
+# every mesh node within the cell (`grid_field_var`, columns
+# `grid_field_var_cols` of `modes`). `weights` sits beside it in the same list.
+# The variances are the diagonal of the cell's constrained inverse precision,
+# one Takahashi pass per cell on unit loadings (`cpp_loading_marginal_var()`);
+# with the modes they are the Gaussian components of the grid mixture
+# `field_effects()` summarizes. A cell whose precision was not retained (the fractional-nu path
+# solves its own operator and stores none) carries modes and variances only
+# where the kernel returned them.
+.spde_nested_record <- function(result, range_grid, sigma_grid, log_post, sp) {
+  rec <- list(
+    theta_grid   = cbind(range = as.numeric(range_grid),
+                         sigma = as.numeric(sigma_grid)),
+    log_marginal = as.numeric(log_post)
+  )
+  M <- result$modes
+  if (!is.matrix(M) || nrow(M) != length(log_post)) return(rec)
+  rec$modes <- M
+  n_x <- ncol(M)
+  mesh_cols <- seq.int(n_x - as.integer(sp$n_mesh) + 1L, n_x)
+  Q_p <- result$Q_csc_p_per_grid
+  if (is.list(Q_p) && length(Q_p) == nrow(M) &&
+      identical(as.integer(result$Q_csc_n), n_x)) {
+    p_mesh <- length(mesh_cols)
+    rec$grid_field_var <- cpp_loading_marginal_var(
+      Q_p_per_grid = Q_p, Q_i_per_grid = result$Q_csc_i_per_grid,
+      Q_x_per_grid = result$Q_csc_x_per_grid, n_x = n_x,
+      load_idx = as.integer(mesh_cols), load_ptr = seq.int(0L, p_mesh),
+      load_w = matrix(1, nrow(M), p_mesh),
+      A_cols_list = lapply(result$constraint_cols %||% list(), as.integer))
+    rec$grid_field_var_cols <- mesh_cols
+  }
+  rec
 }
 
 # ---------------------------------------------------------------------
@@ -313,7 +351,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   range_grid <- exp(theta_grid[, 1])
   sigma_grid <- exp(theta_grid[, 2])
 
-  result <- spde_log_marginal(range_grid, sigma_grid)
+  result <- spde_log_marginal(range_grid, sigma_grid, keep_Q = TRUE)
   hp <- .spde_hyperprior_record(range_grid, sigma_grid, sp, hyperprior)
   log_post <- result$log_marginal + hp$lp
   # CCD quadrature: node weight = design weight (Delta_k) times exp(log_post),
@@ -375,7 +413,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
     # invisible on this path (gcol33/tulpa#692).
     pareto_k_tail_points = kd$tail_points %||% NA_integer_,
     pareto_k_scope   = "outer (range, sigma) Gaussian proposal",
-    nested = list(
+    nested = c(list(
       method        = "ccd",
       range_grid    = range_grid,
       sigma_grid    = sigma_grid,
@@ -393,6 +431,6 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
       hessian_logsc = H,
       f_0           = ccd$f_0,
       n_points      = ccd$n_points
-    )
+    ), .spde_nested_record(result, range_grid, sigma_grid, log_post, sp))
   )
 }

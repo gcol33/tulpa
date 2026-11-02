@@ -48,8 +48,11 @@
 #'     combined field at the `sigma = 1`, `rho = 0.5` the conditional kernel
 #'     fixes.
 #'   \item An SPDE fit ([fit_spde()]) reports the mesh-node field: its draws on
-#'     the sampler path, its mode (the posterior-mean hyperparameters' fit on
-#'     the nested path) otherwise.
+#'     the sampler path; on the nested `(range, sigma)` path the Gaussian
+#'     mixture over the integration cells, each cell's inner Laplace mode and
+#'     per-node marginal variance weighted by the cell's posterior weight
+#'     (`source = "mixture"`); at fixed hyperparameters, and for a
+#'     fractional-`nu` field, its mode.
 #' }
 #' A fit whose field cannot be located this way (a continuous GP / NNGP /
 #' HSGP field, a restricted field, an inline `spatial()` varying-coefficient
@@ -201,6 +204,20 @@ field_effects <- function(object) {
   if (is.matrix(object$field_draws) && nrow(object$field_draws) > 0L) {
     return(.field_read(.field_draws_stats(object$field_draws), "sampled",
                        "spde"))
+  }
+  rec <- object$nested
+  if (is.list(rec) && is.matrix(rec$grid_field_var)) {
+    mix <- .nl_field_mixture(rec, rec$grid_field_var_cols)
+    mx <- if (!is.null(mix)) {
+      .nl_gauss_mixture_summary(mix$mu, mix$var, mix$w,
+                                probs = .FIELD_EFFECTS_PROBS)
+    }
+    if (!is.null(mx)) {
+      stats <- data.frame(estimate = mx$mean, sd = mx$sd,
+                          conf.low = mx$quantiles[, 1L],
+                          conf.high = mx$quantiles[, 2L])
+      return(.field_read(stats, "mixture", "spde"))
+    }
   }
   if (is.numeric(object$spatial_effects) && length(object$spatial_effects)) {
     return(.field_read(.field_point_stats(object$spatial_effects), "mode",
