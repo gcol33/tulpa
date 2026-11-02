@@ -811,9 +811,11 @@ test_that("gamma_3 is exactly zero for a gaussian precomputed-rational SPDE fit"
   G <- as(G, "CsparseMatrix"); G[1, n] <- -1 / h; G[n, 1] <- -1 / h
 
   asm <- tulpa:::.spde_rational_assemble(C0, G, kappa = kappa, tau = 1,
-                                         nu = 0.5, order = 4L, d = 2)
+                                         nu = 0.5, order = 4L, d = 2,
+                                         l_max = kappa^2 + 4 / h^2)
+  n_lat <- ncol(asm$Q)
   R <- chol(as.matrix(asm$Q))
-  x_true <- backsolve(R, rnorm(n))
+  x_true <- backsolve(R, rnorm(n_lat))
   u_true <- as.numeric(asm$Pr %*% x_true)
   u_true <- u_true / sd(u_true)
   y <- 0.2 + u_true + rnorm(n, 0, 0.3)
@@ -823,7 +825,7 @@ test_that("gamma_3 is exactly zero for a gaussian precomputed-rational SPDE fit"
   fit <- tulpa:::cpp_laplace_fit_spde_precomputed(
     y = as.numeric(y), n_trials = rep(1L, n), X = matrix(1, n, 1),
     re_idx = rep(0, n), n_re_groups = 0L, sigma_re = 1.0,
-    n_obs = n, n_mesh = n,
+    n_obs = n, n_mesh = n_lat,
     Q_p = Qg@p, Q_i = Qg@i, Q_x = Qg@x,
     Aeff_x = Prg@x, Aeff_i = Prg@i, Aeff_p = Prg@p,
     family = "gaussian", phi = 0.09,

@@ -152,10 +152,10 @@ Rcpp::List cpp_laplace_fit_spde(
 
 // =====================================================================
 // Fractional SPDE single fit from a PRECOMPUTED rational precision + obs map.
-// The rational rSPDE construction makes the latent the auxiliary weights
-// x ~ N(0, Q^{-1}) with field u = Pr x, so the obs map is A_eff = A Pr and the
-// precision is Q = Pl' Ci Pl. Both are assembled in R (.spde_rational_assemble,
-// the validated oracle) and passed here as CSC. Like the integer entry above,
+// The covariance-based rational SPDE makes the latent the stack x of its
+// independent GMRF components with field u = Pr x, so the obs map is
+// A_eff = A Pr and the precision Q is the block diagonal of the components'.
+// Both are assembled in R (.spde_rational_assemble) and passed here as CSC. Like the integer entry above,
 // this is a one-cell run of the joint driver: make_spde_block_precomputed seeds
 // its builder from the supplied CSC instead of the FEM operators, and leaves the
 // latent uncentred (the proper SPDE prior identifies the constant mode).

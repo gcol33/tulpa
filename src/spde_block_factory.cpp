@@ -108,16 +108,16 @@ LatentBlock spde_assemble_block(
                 qf += x[start + q_cell.Q_i[idx]] * q_cell.Q_x[idx] * x_col;
             }
         }
-        // log p(x|theta) = 0.5 log|Q(theta)| - 0.5 x'Qx (the theta-independent
-        // -(n/2) log(2 pi) is dropped). 0.5 log|Q| is the prior normalizer set
-        // by prep() each cell; it is the Occam term that makes the (range,sigma)
-        // marginal interior-peaked rather than monotone in sigma. It is NOT
-        // absorbed by the Laplace Hessian log-determinant (H = Q + A'WA != Q).
-        return st.half_ldQ - 0.5 * qf;
+        // log p(x|theta) = 0.5 log|Q(theta)| - 0.5 x'Qx - (n/2) log(2 pi).
+        // 0.5 log|Q| is the prior normalizer set by prep() each cell; it is the
+        // Occam term that makes the (range,sigma) marginal interior-peaked
+        // rather than monotone in sigma. It is NOT absorbed by the Laplace
+        // Hessian log-determinant (H = Q + A'WA != Q).
+        return spde_gmrf_log_density(st.half_ldQ, qf, n_mesh);
     };
 
     // Sum-to-zero centring for intercept identifiability. Left empty for the
-    // precomputed rational latent, whose auxiliary weights x are not the field
+    // precomputed rational latent, whose stacked components x are not the field
     // (u = Pr x) and whose proper prior (kappa^2 > 0) already identifies the
     // constant mode.
     if (center_field) {

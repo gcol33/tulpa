@@ -323,13 +323,13 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
                        "and of equal length.");
         }
     }
-    // Precomputed-Q path (fractional-nu fixed-hyper): the
-    // current operator-based rational field (BRASIL roots) assembles its
-    // precision Q = Pl' C^{-1} Pl in R (.spde_assemble_at), which the stale
-    // poles/weights QBuilder rebuild cannot reproduce. When the caller passes
-    // the precomputed Q (and A carries the rational A_eff = A Pr), use it
-    // directly: the sampler then draws the auxiliary weights x ~ N(0, Q^{-1})
-    // with eta = X beta + A_eff x, the field being u = Pr x (mapped back in R).
+    // Precomputed-Q path (fractional-nu fixed-hyper): the covariance-based
+    // rational field assembles the block-diagonal precision Q of its
+    // components in R (.spde_assemble_at), which the poles/weights QBuilder
+    // rebuild cannot reproduce. When the caller passes the precomputed Q (and A
+    // carries the rational A_eff = A Pr), use it directly: the sampler then
+    // draws the stacked components x ~ N(0, Q^{-1}) with
+    // eta = X beta + A_eff x, the field being u = Pr x (mapped back in R).
     const bool use_precomp_Q = Q_precomp_x.isNotNull() &&
                                Q_precomp_i.isNotNull() && Q_precomp_p.isNotNull();
     if (use_precomp_Q && joint_hypers) {

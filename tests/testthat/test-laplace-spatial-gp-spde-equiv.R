@@ -223,18 +223,16 @@ test_that("the SPDE single fit returns a mode its own score confirms", {
 
 # ------------------------------------------- SPDE, precomputed rational -------
 
-# The rational rSPDE construction assembles its precision Q = Pl' C^-1 Pl and
-# observation map A_eff = A Pr in R (.spde_rational_assemble) and hands them to
-# cpp_laplace_fit_spde_precomputed finished, so the latent is the auxiliary
-# weights x (field u = Pr x) and there is no operator for the block to rebuild.
-# A 1D circulant FEM mesh gives that assembly without an fmesher mesh.
-#
-# order = 2 keeps cond(Q) around 1e8 rather than the 1e13+ a high-order rational
-# reaches, which is what lets R recompute log|Q| accurately enough to check the
-# log-marginal below against the engine's own value.
+# The covariance-based rational SPDE assembles the block-diagonal precision Q of
+# its components and the observation map A_eff = A Pr in R
+# (.spde_rational_assemble) and hands them to cpp_laplace_fit_spde_precomputed
+# finished, so the latent is the stack of components x (field u = Pr x) and
+# there is no operator for the block to rebuild. A 1D circulant FEM mesh gives
+# that assembly without an fmesher mesh; the spectrum of its C^-1 G is bounded
+# by 4 / h^2.
 .spde_pre_fixture <- function(n = 240L, kappa = 30, nu = 0.5, order = 2L,
                               seed = 4L, p = 2L, n_re_groups = 0L,
-                              sigma_re = 0.7) {
+                              sigma_re = 0.7, level = 0) {
   set.seed(seed)
   h  <- 1 / n
   C0 <- rep(h, n)
@@ -245,13 +243,15 @@ test_that("the SPDE single fit returns a mode its own score confirms", {
   G[1, n] <- -1 / h
   G[n, 1] <- -1 / h
   asm <- tulpa:::.spde_rational_assemble(C0, G, kappa = kappa, tau = 1,
-                                         nu = nu, order = order, d = 2)
+                                         nu = nu, order = order, d = 2,
+                                         l_max = kappa^2 + 4 / h^2)
+  n_lat <- ncol(asm$Q)
 
   s <- seq_len(n) / n
   u <- sin(2 * pi * s) + 0.3 * cos(6 * pi * s)
-  u <- u / sd(u)
-  X <- if (p == 1L) matrix(1, n, 1) else cbind(1, rnorm(n))
-  beta <- if (p == 1L) 0.2 else c(0.2, -0.4)
+  u <- u / sd(u) + level
+  X <- if (p == 1L) matrix(rnorm(n), n, 1) else cbind(1, rnorm(n))
+  beta <- if (p == 1L) -0.4 else c(0.2, -0.4)
   eta <- as.numeric(X %*% beta) + u
   re_idx <- if (n_re_groups > 0L)
     as.numeric(rep(seq_len(n_re_groups), length.out = n)) else rep(0, n)
@@ -264,12 +264,12 @@ test_that("the SPDE single fit returns a mode its own score confirms", {
   list(
     args = list(y = y, n_trials = rep(1L, n), X = X,
                 re_idx = re_idx, n_re_groups = as.integer(n_re_groups),
-                sigma_re = sigma_re, n_obs = n, n_mesh = n,
+                sigma_re = sigma_re, n_obs = n, n_mesh = n_lat,
                 Q_p = Qg@p, Q_i = Qg@i, Q_x = Qg@x,
                 Aeff_x = Prg@x, Aeff_i = Prg@i, Aeff_p = Prg@p,
                 family = "binomial", phi = 1.0,
                 max_iter = 300L, tol = 1e-10),
-    Q = as(asm$Q, "CsparseMatrix"), Aeff = Prg, p = p, n = n,
+    Q = as(asm$Q, "CsparseMatrix"), Aeff = Prg, p = p, n = n, n_lat = n_lat,
     n_re_groups = n_re_groups, sigma_re = sigma_re)
 }
 
@@ -284,7 +284,7 @@ test_that("the precomputed SPDE fit returns a mode its own score confirms", {
   expect_true(fit$converged)
 
   p <- fx$p
-  xm <- fit$mode[(p + 1L):(p + fx$n)]
+  xm <- fit$mode[(p + 1L):(p + fx$n_lat)]
   eta <- as.numeric(fx$args$X %*% fit$mode[seq_len(p)]) +
     as.numeric(fx$Aeff %*% xm)
   resid <- fx$args$y - plogis(eta)
@@ -301,21 +301,22 @@ test_that("the precomputed SPDE fit returns a mode its own score confirms", {
 
 test_that("the precomputed SPDE latent is not sum-to-zero centred", {
   skip_on_cran()
-  # The auxiliary weights are not the field, and the proper SPDE prior
+  # The stacked components are not the field, and the proper SPDE prior
   # (kappa^2 > 0) already identifies the constant mode, so this block carries no
   # centring -- the integer entry's `expect_lt(abs(mean(mesh)), 1e-8)` must NOT
   # hold here. Sharing one block factory between the two is what makes this
-  # worth pinning.
-  fx  <- .spde_pre_fixture()
+  # worth pinning. The design carries no intercept and the field a level, so
+  # the level has nowhere to go but the latent.
+  fx  <- .spde_pre_fixture(p = 1L, level = 0.8)
   fit <- do.call(tulpa:::cpp_laplace_fit_spde_precomputed, fx$args)
-  xm  <- fit$mode[(fx$p + 1L):(fx$p + fx$n)]
-  expect_gt(abs(mean(xm)), 1e-6)
+  xm  <- fit$mode[(fx$p + 1L):(fx$p + fx$n_lat)]
+  expect_gt(abs(mean(xm)), 1e-5)
 })
 
 # log p(y | theta) at the reported mode, in the engine's own convention:
 #   log lik + log p(x | Q) + log p(b | tau_re) - 0.5 log|H| + (n_x/2) log(2 pi)
-# with log p(x | Q) = 0.5 log|Q| - 0.5 x'Qx  (the constant -(n/2) log(2 pi) is
-# dropped, being theta-independent) and the RE block carrying its FULL normalizer
+# with log p(x | Q) = 0.5 log|Q| - 0.5 x'Qx - (n_x/2) log(2 pi), the full
+# normalized density, the RE block carrying its FULL normalizer
 # 0.5 G (log tau_re - log 2 pi), which does move with sigma_re, and the weak
 # fixed-effect ridge carrying its own density and normalizer.
 #
@@ -327,8 +328,8 @@ test_that("the precomputed SPDE latent is not sum-to-zero centred", {
 # reproduces.
 .spde_pre_expected_lm <- function(fx, fit) {
   p <- fx$p
-  n_x <- p + fx$n_re_groups + fx$n
-  xm <- fit$mode[(p + fx$n_re_groups + 1L):(p + fx$n_re_groups + fx$n)]
+  n_x <- p + fx$n_re_groups + fx$n_lat
+  xm <- fit$mode[(p + fx$n_re_groups + 1L):(p + fx$n_re_groups + fx$n_lat)]
   eta <- as.numeric(fx$args$X %*% fit$mode[seq_len(p)]) +
     as.numeric(fx$Aeff %*% xm)
   if (fx$n_re_groups > 0L)
@@ -337,7 +338,8 @@ test_that("the precomputed SPDE latent is not sum-to-zero centred", {
 
   half_ldQ <- 0.5 * as.numeric(
     Matrix::determinant(fx$Q, logarithm = TRUE)$modulus)
-  log_prior <- half_ldQ - 0.5 * as.numeric(Matrix::crossprod(xm, fx$Q %*% xm))
+  log_prior <- half_ldQ - 0.5 * as.numeric(Matrix::crossprod(xm, fx$Q %*% xm)) -
+    0.5 * fx$n_lat * log(2 * pi)
   if (fx$n_re_groups > 0L) {
     tau_re <- 1 / (fx$sigma_re^2 + 1e-10)
     b <- fit$mode[p + seq_len(fx$n_re_groups)]

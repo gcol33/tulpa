@@ -955,9 +955,9 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
   if (is.null(range)) range <- spatial$prior_range[1]
   if (is.null(sigma)) sigma <- spatial$prior_sigma[1]
 
-  # Fractional nu: the operator-based rational SPDE (Bolin & Kirchner 2020) with
-  # BRASIL coefficients. Assembled in R (the validated oracle)
-  # and solved by the precomputed C++ fit; the integer branch below is the exact
+  # Fractional nu: the covariance-based rational SPDE (Bolin, Simas & Xiong
+  # 2024) with BRASIL coefficients. Assembled in R and solved by the
+  # precomputed C++ fit; the integer branch below is the exact
   # FEM construction. Both branches return the same [beta (p), re (n_re_groups),
   # mesh (n_mesh)] mode layout, so the beta / spatial_effects split is shared.
   if (.spde_nu_is_fractional(spatial$nu)) {
@@ -967,7 +967,7 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
       re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       max_iter = max_iter, tol = tol, n_threads = n_threads, offset = offset,
       weights = weights,
-      order = spatial$rational_order %||% 2L
+      order = .spde_rational_order(spatial)
     )
   } else {
     .kt <- .spde_kappa_tau(range, sigma, spatial$nu)

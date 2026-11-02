@@ -111,9 +111,9 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
       choose(alpha, j) * k2^(alpha - j) * M[[j + 1L]]
     }))
   } else {
-    # Fractional alpha: the operator-based rational field does
-    # NOT have a shifted-alpha=2 precision; its precision is Q = Pl' C^{-1} Pl
-    # from the rational roots (see .spde_rational_assemble). This analytic
+    # Fractional alpha: the covariance-based rational field does
+    # NOT have a shifted-alpha=2 precision; its latent is a stack of components
+    # (see .spde_rational_assemble). This analytic
     # marginal-SE path covers only the integer construction; fractional-nu field
     # SEs go through the assembly-based fit, not this rebuild.
     stop("Analytic SPDE marginal SEs are integer-nu only. ",
@@ -414,14 +414,14 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
   beta   <- mode[seq_len(p)]
   tau_re <- 1 / (sigma_re^2 + 1e-10)
 
-  # Fractional nu: the operator-based rational field. The
-  # latent is the auxiliary weight vector x ~ N(0, Q_rat^{-1}) on the non-orphan
+  # Fractional nu: the covariance-based rational field. The
+  # latent is the stack x ~ N(0, Q_rat^{-1}) of its components on the non-orphan
   # submesh, with obs -> latent map A_eff = A Pr; the field is u = Pr x. The
   # marginal-beta Schur is parameterisation-invariant, so it runs on (A_eff,
   # Q_rat) exactly as the integer path runs on (A, Q_spde). eta at the mode reads
   # off the field-space mesh block (A w = A_eff x), so W needs no x.
   if (.spde_nu_is_fractional(spatial$nu)) {
-    order <- spatial$rational_order %||% 2L
+    order <- .spde_rational_order(spatial)
     asm   <- .spde_assemble_at(spatial, range_val, sigma_val, order = order)
     A_full     <- as(spatial$A, "CsparseMatrix")
     D_re       <- .re_design(re_idx, n_re_groups, n_obs)

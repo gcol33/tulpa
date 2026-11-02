@@ -109,7 +109,7 @@ test_that("fractional single-point Laplace recovers the field", {
   set.seed(11)
   a <- tulpa:::.spde_assemble_at(spec, range = 0.15, sigma = 1.0, order = 2L)
   ch <- Matrix::Cholesky(a$Q, LDL = FALSE, perm = TRUE)
-  x_true <- as.numeric(Matrix::solve(ch, Matrix::solve(ch, rnorm(n), system = "Lt"),
+  x_true <- as.numeric(Matrix::solve(ch, Matrix::solve(ch, rnorm(a$n_latent), system = "Lt"),
                                      system = "Pt"))
   u_true <- as.numeric(a$Pr %*% x_true)
   y <- 0.5 + u_true + rnorm(n, 0, sqrt(0.05))
@@ -131,7 +131,7 @@ test_that("fractional nested fit_spde recovers (range, sigma) -- Gaussian", {
   set.seed(11)
   a <- tulpa:::.spde_assemble_at(spec, range = range_true, sigma = sigma_true, order = 2L)
   ch <- Matrix::Cholesky(a$Q, LDL = FALSE, perm = TRUE)
-  x_true <- as.numeric(Matrix::solve(ch, Matrix::solve(ch, rnorm(n), system = "Lt"),
+  x_true <- as.numeric(Matrix::solve(ch, Matrix::solve(ch, rnorm(a$n_latent), system = "Lt"),
                                      system = "Pt"))
   u_true <- as.numeric(a$Pr %*% x_true)
   y <- 0.5 + u_true + rnorm(n, 0, sqrt(0.05))
@@ -160,7 +160,7 @@ test_that("fractional nested fit_spde recovers range on a 2D mesh -- Gaussian", 
   a <- tulpa:::.spde_assemble_at(spec, range = range_true, sigma = sigma_true, order = 2L)
   ns <- length(a$keep)
   ch <- Matrix::Cholesky(a$Q, LDL = FALSE, perm = TRUE)
-  x_true <- as.numeric(Matrix::solve(ch, Matrix::solve(ch, rnorm(ns), system = "Lt"),
+  x_true <- as.numeric(Matrix::solve(ch, Matrix::solve(ch, rnorm(a$n_latent), system = "Lt"),
                                      system = "Pt"))
   field_full <- numeric(spec$n_mesh)
   field_full[a$keep] <- as.numeric(a$Pr %*% x_true)

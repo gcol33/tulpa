@@ -357,8 +357,7 @@ inline double newton_trust_scale(NewtonConvState& st, double decrement) {
 //   1. max|delta| < tol -- the historic step criterion. On a well-conditioned
 //      solve this fires exactly when it always did, so those fits are unchanged.
 //   2. a stalled step -- the rescue for an ill-conditioned H (a high-order
-//      rational SPDE precision Q = Pl' Ci Pl, which squares cond(Pl); a
-//      near-singular GMRF). There the Cholesky solve loses too many digits for
+//      high-order SPDE precision at a long range; a near-singular GMRF). There the Cholesky solve loses too many digits for
 //      the step to ever fall below tol: H^-1 amplifies the gradient's rounding
 //      residual into a spurious step, and the iteration thrashes around a floor
 //      instead of walking down to it, yet the mode is found.

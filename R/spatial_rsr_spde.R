@@ -313,9 +313,9 @@ compute_rsr_projection <- function(X) {
 #' @param cutoff Minimum distance between mesh vertices. Default 0.
 #' @param nu Matern smoothness parameter. A positive number. Integer `nu`
 #'   (1, 2, 3, ...) gives an exact FEM construction (operator order
-#'   `alpha = nu + 1`). Fractional `nu` (e.g. 0.5, 1.5) uses the operator-based
-#'   rational SPDE approximation with BRASIL best-rational coefficients
-#'   (Bolin & Kirchner 2020; Hofreither 2021); supported by the Laplace fitter
+#'   `alpha = nu + 1`). Fractional `nu` (e.g. 0.5, 1.5) uses the
+#'   covariance-based rational SPDE approximation with BRASIL best-rational
+#'   coefficients (Bolin, Simas & Xiong 2024; Hofreither 2021); supported by the Laplace fitter
 #'   `fit_spde()` (single-point and nested over range/sigma). NUTS and analytic
 #' marginal SEs remain integer-only. Default 1.
 #' @param prior_range PC prior on the spatial range, `c(U, alpha)` with
@@ -412,7 +412,10 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
       # Pre-extracted CSC slots for C++ (avoids repeated extraction at fit time)
       A_x = A_csc@x, A_i = A_csc@i, A_p = A_csc@p,
       C0_diag = C0_diag,
-      G1_x = G1_csc@x, G1_i = G1_csc@i, G1_p = G1_csc@p
+      G1_x = G1_csc@x, G1_i = G1_csc@i, G1_p = G1_csc@p,
+      # Spectrum bound of C^-1 G, a property of the mesh: the fractional-nu
+      # rational approximation interval reads it at every (range, sigma).
+      lambda_max_G = .spde_operator_lambda_max(C0_diag, G1_csc)
     ),
     class = c("tulpa_spatial", "list")
   )
@@ -497,7 +500,10 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
       C = C, G = G, A = A,
       A_x = A_csc@x, A_i = A_csc@i, A_p = A_csc@p,
       C0_diag = C0_diag,
-      G1_x = G1_csc@x, G1_i = G1_csc@i, G1_p = G1_csc@p
+      G1_x = G1_csc@x, G1_i = G1_csc@i, G1_p = G1_csc@p,
+      # Spectrum bound of C^-1 G, a property of the mesh: the fractional-nu
+      # rational approximation interval reads it at every (range, sigma).
+      lambda_max_G = .spde_operator_lambda_max(C0_diag, G1_csc)
     ),
     class = c("tulpa_spatial", "list")
   )

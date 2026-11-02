@@ -235,7 +235,7 @@
     # own `iid` block, so the RE SD becomes an outer axis instead of being
     # pinned at 1 (gcol33/tulpa#817).
     #
-    # Integer nu only. Fractional nu in fit_spde() is the operator-based
+    # Integer nu only. Fractional nu in fit_spde() is the covariance-based
     # rational construction (`.spde_rational_assemble()`), not the shifted-alpha
     # precision `make_spde_block` builds, and fit_spde() refuses a random
     # effect alongside it anyway -- so there is no fractional + RE fit for this
@@ -2743,7 +2743,7 @@ tulpa <- function(formula, data,
   # integrating the hyperparameters (gcol33/tulpa#817). The generic nested
   # driver already carries an `spde` block type, so the field goes there as a
   # block beside the RE's own `iid` block and both SDs are integrated on one
-  # outer grid. Integer nu only: fractional nu is the operator-based rational
+  # outer grid. Integer nu only: fractional nu is the covariance-based rational
   # construction fit_spde() owns, and it refuses an RE term regardless.
   spde_re_integrated <- isTRUE(has_re) &&
     !.spde_nu_is_fractional(spatial_spec$nu %||% 1)

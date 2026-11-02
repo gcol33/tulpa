@@ -283,13 +283,13 @@ test_that("tulpa_laplace returns marginal H_beta for a fractional-nu SPDE (#85)"
   expect_true(all(is.finite(sd) & sd > 0 & sd < 5))
 
   # Strong wiring check: fit$H_beta must equal the Schur marginal precision of an
-  # INDEPENDENTLY assembled joint Hessian over (beta, auxiliary field x), built
+  # INDEPENDENTLY assembled joint Hessian over (beta, stacked components x), built
   # from the rational assembly at the fitted (range, sigma). The marginal beta
   # covariance solve(H_beta) must match the beta-block of the full joint
   # posterior covariance.
   p <- ncol(X)
   asm   <- tulpa:::.spde_assemble_at(spatial, fit$range, fit$sigma,
-                                     order = spatial$rational_order %||% 2L)
+                                     order = tulpa:::.spde_rational_order(spatial))
   A_full  <- as(spatial$A, "CsparseMatrix")
   beta_h  <- fit$mode[seq_len(p)]
   field_h <- fit$mode[p + seq_len(spatial$n_mesh)]

@@ -26,10 +26,10 @@
 // (kappa, tau) used as-is.
 //
 // make_spde_block_precomputed is the third entry: the precision arrives already
-// assembled (the rational rSPDE construction assembles Q = Pl' C^-1 Pl and the
-// obs map A_eff = A Pr in R, .spde_rational_assemble), so there is no operator
-// to rebuild and the block's latent is the auxiliary weights x rather than the
-// field u = Pr x. Everything downstream of the assembly -- obs_indices, the
+// assembled (the covariance-based rational SPDE assembles the block-diagonal
+// precision of its components and the obs map A_eff = A Pr in R,
+// .spde_rational_assemble), so there is no operator to rebuild and the block's
+// latent is the stack of components x rather than the field u = Pr x. Everything downstream of the assembly -- obs_indices, the
 // pattern, both prior scatters, log_prior -- reads whatever CSC the builder
 // holds and is shared with the FEM entries through spde_assemble_block.
 //
@@ -136,10 +136,10 @@ LatentBlock make_spde_block(
 
 // SPDE block over a PRECOMPUTED precision and observation map.
 //
-// The rational rSPDE construction (.spde_rational_assemble, R/brasil.R) makes
-// the latent the auxiliary weights x ~ N(0, Q^-1) with field u = Pr x, so the
-// obs map is A_eff = A Pr and the precision is Q = Pl' C^-1 Pl. Both arrive
-// assembled as CSC; nothing here depends on the outer cell, so `refresh` only
+// The covariance-based rational SPDE (.spde_rational_assemble, R/brasil.R)
+// makes the latent the stack of its independent GMRF components with field
+// u = Pr x, so the obs map is A_eff = A Pr and the precision is the block
+// diagonal of the components'. Both arrive assembled as CSC; nothing here depends on the outer cell, so `refresh` only
 // computes the prior normalizer and there is no operator rebuild.
 //
 // `Q_*` is the FULL symmetric precision in CSC (both triangles), the layout
@@ -195,15 +195,10 @@ inline LatentBlock make_spde_block_precomputed(
 
     // Q does not depend on the cell, so the slot copy made at first claim is
     // already the finished precision; only 0.5 log|Q| has to be computed, once
-    // per slot. A precision the Cholesky cannot factor leaves the normalizer at
-    // 0 and keeps the cell feasible: the rational Q spans ~1e13 in condition
-    // number by construction, and its callers either need only the mode or
-    // re-derive the marginal through the well-conditioned operator factor Pl
-    // (.spde_nested_logmarginal_at), so dropping the cell would discard a valid
-    // mode over a normalizer they do not read.
+    // per slot. A precision the Cholesky cannot factor has no normalizer and
+    // makes the cell infeasible, as on the FEM path.
     auto refresh = [](int, SpdeCellState& st) -> bool {
-        if (!st.qld.half_logdet(st.qb, st.half_ldQ)) st.half_ldQ = 0.0;
-        return true;
+        return st.qld.half_logdet(st.qb, st.half_ldQ);
     };
 
     return spde_assemble_block(start, n_mesh, a_rows_per_arm, qb,

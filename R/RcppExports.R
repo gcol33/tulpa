@@ -597,10 +597,6 @@ cpp_spde_field_se <- function(H, Cq) {
     .Call(`_tulpa_cpp_spde_field_se`, H, Cq)
 }
 
-cpp_spde_fractional_logmarginal <- function(y, X, A_eff, Pl, C0sub, family, phi, beta_hat, x_hat, n_trials, offset_nullable = NULL, tau_beta = 1e-4, weights_nullable = NULL) {
-    .Call(`_tulpa_cpp_spde_fractional_logmarginal`, y, X, A_eff, Pl, C0sub, family, phi, beta_hat, x_hat, n_trials, offset_nullable, tau_beta, weights_nullable)
-}
-
 cpp_laplace_fit_spde <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi = 1.0, alpha = 2L, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL, offset_nullable = NULL, compute_skew = FALSE, skew_idx = NULL, weights_nullable = NULL) {
     .Call(`_tulpa_cpp_laplace_fit_spde`, y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi, alpha, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable, offset_nullable, compute_skew, skew_idx, weights_nullable)
 }

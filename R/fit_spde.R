@@ -252,14 +252,14 @@ fit_spde <- function(y, X, spatial,
   no_re_n_groups  <- if (has_re) as.integer(n_re_groups) else 0L
   no_re_sigma     <- if (has_re) as.numeric(sigma_re)    else 1.0
 
-  # Fractional nu integrates the operator-based rational SPDE:
-  # each (range, sigma) cell assembles its own (Q, A_eff) via the validated R
-  # oracle and is solved by the precomputed C++ fit, with 0.5 log|Q| folded into
-  # the per-cell marginal (done inside .spde_laplace_fractional_at). The outer
+  # Fractional nu integrates the covariance-based rational SPDE:
+  # each (range, sigma) cell assembles its own (Q, A_eff)
+  # (.spde_assemble_at) and is solved by the precomputed C++ fit, whose
+  # precision-space Laplace marginal is the per-cell marginal. The outer
   # CCD / grid integrators are reused unchanged -- they read only $log_marginal
   # and $n_iter. The cpp grid-cell checkpoint is integer-path only.
   is_frac   <- .spde_nu_is_fractional(sp$nu)
-  order_rat <- sp$rational_order %||% 2L
+  order_rat <- .spde_rational_order(sp)
   if (is_frac && has_re) {
     stop("A random-effect term alongside a fractional-nu SPDE field is not ",
          "supported yet; use an integer nu, or drop the (1 | g) term.",

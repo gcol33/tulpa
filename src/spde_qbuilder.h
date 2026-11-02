@@ -375,6 +375,17 @@ inline void spde_scatter(
     }
 }
 
+// Log density of the SPDE GMRF prior N(0, Q^-1) at a latent whose quadratic
+// form is qf = x'Qx, given half_ldQ = 0.5 log|Q|. The normalizer is complete,
+// -(n/2) log(2 pi) included: the Laplace marginal adds (n_x/2) log(2 pi) for
+// every latent coordinate (laplace_newton_loop.h), and each block's log prior
+// carries its own share of the matching term, so the marginal is the density of
+// y and not that density times (2 pi)^(n_mesh/2).
+inline double spde_gmrf_log_density(double half_ldQ, double qf, int n) {
+    constexpr double LOG_2PI = 1.8378770664093454835606594728112;
+    return half_ldQ - 0.5 * qf - 0.5 * static_cast<double>(n) * LOG_2PI;
+}
+
 template<typename F>
 void run_spde_laplace(
     const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
@@ -413,7 +424,7 @@ void run_spde_laplace(
     };
 
     // Integer-alpha field is sum-to-zero centred for intercept identifiability;
-    // the rational path's latent is the auxiliary weights x (field u = Pr x),
+    // the rational path's latent is the stacked components x (field u = Pr x),
     // which must NOT be centred -- the proper SPDE prior (kappa^2 > 0) already
     // identifies the constant mode.
     auto center = [&](Rcpp::NumericVector& x) {
@@ -431,7 +442,7 @@ void run_spde_laplace(
         // prior_lognorm = 0.5 log|Q(theta)|: the SPDE prior normalizer, supplied
         // by the caller (constant in x). Required whenever this fit's
         // log_marginal is compared across (range, sigma); see spde_logdet.h.
-        double lp = prior_lognorm - 0.5 * qf;
+        double lp = spde_gmrf_log_density(prior_lognorm, qf, n_mesh);
 
         // Every term the SCATTER applies, this objective applies too.
         // `spde_scatter` is handed DEFAULT_TAU_BETA and puts the weak

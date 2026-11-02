@@ -1,6 +1,6 @@
 # The fractional-nu single-point fit and the nested grid cell read the gaussian
 # residual variance phi through one kernel convention (the SD), so at one
-# (range, sigma) they compute the same det-lemma marginal.
+# (range, sigma) they compute the same marginal.
 
 skip_on_cran()
 
@@ -26,7 +26,8 @@ test_that("fractional single-point and nested marginals agree for gaussian", {
     tol = 1e-6, n_threads = 1L, offset = NULL)
   nested <- tulpa:::.spde_nested_logmarginal_at(
     spatial = fx$sp, range = 0.3, sigma = 0.5, y = fx$d$y, X = fx$X,
-    family = "gaussian", phi = phi, n_trials = rep(1L, fx$n), order = 2L,
+    family = "gaussian", phi = phi, n_trials = rep(1L, fx$n),
+    order = tulpa:::.spde_rational_order(fx$sp),
     max_iter = 100L, tol = 1e-6, n_threads = 1L, offset = NULL)
   expect_equal(single$log_marginal, nested$log_marginal, tolerance = 1e-6)
 })

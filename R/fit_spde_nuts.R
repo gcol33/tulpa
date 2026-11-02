@@ -135,10 +135,10 @@ tulpa_nuts_spde <- function(y, X, spatial,
          "(see `spatial_spde()` / `spatial_spde_custom()`).",
          call. = FALSE)
   }
-  # Fractional nu uses the operator-based rational field (BRASIL roots).
-  # The fixed-hyper sampler (joint = FALSE) precomputes the rational precision
-  # Q = Pl' C^{-1} Pl in R (.spde_assemble_at) and samples the auxiliary weights
-  # x ~ N(0, Q^{-1}); the field is u = Pr x. Joint-over-hypers fractional NUTS
+  # Fractional nu uses the covariance-based rational field (BRASIL roots).
+  # The fixed-hyper sampler (joint = FALSE) precomputes the block-diagonal
+  # precision Q of its components in R (.spde_assemble_at) and samples the
+  # stacked components x ~ N(0, Q^{-1}); the field is u = Pr x. Joint-over-hypers fractional NUTS
   # stays gated -- the rational roots are not differentiable in kappa, so the
   # non-centered z -> w transform has no fractional analogue.
   frac_fixed_hyper <- FALSE
@@ -250,9 +250,9 @@ tulpa_nuts_spde <- function(y, X, spatial,
 
   # Fractional fixed-hyper: assemble the rational precision Q and rational
   # observation map A_eff = A Pr at (range, sigma) on the non-orphan submesh, and
-  # pass them precomputed (the legacy poles/weights QBuilder cannot reproduce the
-  # BRASIL field). The sampler then draws the auxiliary weights x (named "w") of
-  # length n_sub; the field u = Pr x is reconstructed below. Integer / joint runs
+  # pass them precomputed (the poles/weights QBuilder cannot reproduce the
+  # BRASIL field). The sampler then draws the stacked components x (named "w")
+  # of length n_latent; the field u = Pr x is reconstructed below. Integer / joint runs
   # keep the FEM construction.
   A_x_use <- spatial$A_x; A_i_use <- spatial$A_i; A_p_use <- spatial$A_p
   n_mesh_use <- spatial$n_mesh
@@ -261,9 +261,8 @@ tulpa_nuts_spde <- function(y, X, spatial,
   Q_pre_x <- NULL; Q_pre_i <- NULL; Q_pre_p <- NULL
   frac_asm <- NULL
   if (frac_fixed_hyper) {
-    order    <- spatial$rational_order %||% 2L
+    order    <- .spde_rational_order(spatial)
     frac_asm <- .spde_assemble_at(spatial, range, sigma, order = order)
-    n_sub    <- length(frac_asm$keep)
     Aeff     <- as(frac_asm$A_eff, "CsparseMatrix")
     # Full both-triangle storage: .spde_assemble_at returns Q as a symmetric
     # dsCMatrix (one stored triangle), but the C++ SPDE prior loop sums over
@@ -274,7 +273,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
     fem      <- .spde_fem_matrices(spatial)
     Gk       <- as(fem$G[frac_asm$keep, frac_asm$keep, drop = FALSE], "CsparseMatrix")
     A_x_use <- Aeff@x; A_i_use <- Aeff@i; A_p_use <- Aeff@p
-    n_mesh_use <- n_sub
+    n_mesh_use <- frac_asm$n_latent
     C0_use  <- as.numeric(spatial$C0_diag)[frac_asm$keep]
     G1_x_use <- Gk@x; G1_i_use <- Gk@i; G1_p_use <- Gk@p
     Q_pre_x <- Qg@x; Q_pre_i <- Qg@i; Q_pre_p <- Qg@p
@@ -344,7 +343,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
   res$spatial <- spatial
   res$joint   <- joint
 
-  # Fractional fixed-hyper: the auxiliary weights x on the submesh are either
+  # Fractional fixed-hyper: the stacked components x on the submesh are either
   # the sampled block (centered) or the transformed field v = L^{-T} z exposed
   # as `w_draws` (non-centered). Reconstruct the field u = Pr x and
   # scatter to the full mesh (orphan nodes carry zero field), so `field_draws`

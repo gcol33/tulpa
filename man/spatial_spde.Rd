@@ -39,9 +39,9 @@ or \code{c(inner, outer)}.}
 
 \item{nu}{Matern smoothness parameter. A positive number. Integer \code{nu}
 (1, 2, 3, ...) gives an exact FEM construction (operator order
-\code{alpha = nu + 1}). Fractional \code{nu} (e.g. 0.5, 1.5) uses the operator-based
-rational SPDE approximation with BRASIL best-rational coefficients
-(Bolin & Kirchner 2020; Hofreither 2021); supported by the Laplace fitter
+\code{alpha = nu + 1}). Fractional \code{nu} (e.g. 0.5, 1.5) uses the
+covariance-based rational SPDE approximation with BRASIL best-rational
+coefficients (Bolin, Simas & Xiong 2024; Hofreither 2021); supported by the Laplace fitter
 \code{fit_spde()} (single-point and nested over range/sigma). NUTS and analytic
 marginal SEs remain integer-only. Default 1.}
 
