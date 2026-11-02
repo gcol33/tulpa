@@ -1515,7 +1515,7 @@ tulpa_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_gr
     Q_p_per_grid = Q_p_per_grid, Q_i_per_grid = Q_i_per_grid,
     Q_x_per_grid = Q_x_per_grid,
     n_x = as.integer(n_x), idx = as.integer(idx), n_dense = as.integer(n_dense),
-    A_cols_list = lapply(A_cols_list, as.integer),
+    A_cols_list = .constraint_rows_for_cpp(A_cols_list),
     field_marginal = isTRUE(field_marginal), n_threads = as.integer(n_threads)
   )
 }
@@ -1577,7 +1577,7 @@ tulpa_joint_inner_vcov_mixture <- function(Q_p_per_grid, Q_i_per_grid,
     Q_p_per_grid = Q_p_per_grid, Q_i_per_grid = Q_i_per_grid,
     Q_x_per_grid = Q_x_per_grid,
     n_x = as.integer(n_x), idx = as.integer(idx), n_dense = as.integer(n_dense),
-    A_cols_list = lapply(A_cols_list, as.integer),
+    A_cols_list = .constraint_rows_for_cpp(A_cols_list),
     weights = as.numeric(weights), modes = modes,
     field_marginal = isTRUE(field_marginal), n_threads = as.integer(n_threads)
   )

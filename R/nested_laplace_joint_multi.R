@@ -2474,6 +2474,10 @@
     field_starts      <- integer(0)
     field_block_types <- character(0)
     field_n_fields    <- integer(0)
+    # A BYM2 field scaled per connected component (non-constant node_prec)
+    # carries its level along node_prec (LatentBlock::level_weights), keyed by
+    # its field start; NULL where the level is the plain sum.
+    field_level_w     <- list()
     for (b in seq_len(B)) {
         block_start[b] <- cur
         type <- tolower(prepared[[b]]$type %||% "")
@@ -2493,6 +2497,10 @@
             field_starts      <- c(field_starts, cur)
             field_block_types <- c(field_block_types, "bym2")
             field_n_fields    <- c(field_n_fields, 1L)
+            np <- prepared[[b]]$node_prec
+            field_level_w[length(field_starts)] <- list(
+                if (length(np) == n_units && length(unique(np)) > 1L)
+                    as.numeric(np))
             if (is.null(phi_start)) {
                 phi_start   <- cur
                 theta_start <- cur + n_units
@@ -2550,6 +2558,8 @@
         out$field_starts      <- field_starts
         out$field_block_types <- field_block_types
         out$field_n_fields    <- field_n_fields
+        length(field_level_w) <- length(field_starts)
+        out$field_level_w     <- field_level_w
     }
     out
 }

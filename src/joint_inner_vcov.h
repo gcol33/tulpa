@@ -29,6 +29,7 @@
 #ifndef TULPA_JOINT_INNER_VCOV_H
 #define TULPA_JOINT_INNER_VCOV_H
 
+#include "linear_constraint_rows.h"
 #include "row_classes.h"
 #include "sparse_cholesky.h"
 #include <algorithm>
@@ -45,7 +46,8 @@ namespace tulpa {
 //   idx0     : 0-based latent indices, length p = n_dense + n_field. The first
 //              n_dense are the dense (fixed-effect) block; the remaining are the
 //              field block (diagonal only when field_marginal).
-//   A_cols   : sum-to-zero constraint groups, each a vector of 0-based latent
+//   A_cols   : constraint rows (linear_constraint_rows.h): sum-to-zero groups
+//              and hard linear constraints, over 0-based latent
 //              indices summed to zero (one group per ICAR/CAR field, two per
 //              BYM2 field). Empty => unconstrained block.
 //   field_marginal : true => cheap recipe (dense columns + field diagonal);
@@ -56,7 +58,7 @@ namespace tulpa {
 bool extract_inner_vcov_block_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const std::vector<int>& idx0, int n_dense,
-    const std::vector<std::vector<int>>& A_cols,
+    const std::vector<LinearConstraintRow>& A_cols,
     bool field_marginal,
     SparseCholeskySolver& solver,
     std::vector<double>& out_block
@@ -83,7 +85,7 @@ inline int inner_vcov_strip_width(int p, int n_dense, bool field_marginal) {
 bool extract_inner_vcov_strip_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const std::vector<int>& idx0, int n_dense,
-    const std::vector<std::vector<int>>& A_cols,
+    const std::vector<LinearConstraintRow>& A_cols,
     bool field_marginal,
     SparseCholeskySolver& solver,
     InnerVcovStrip& out
@@ -100,7 +102,7 @@ bool extract_inner_vcov_strip_cell(
 // leave it empty for an unconstrained fit.
 struct JointFixedBlockRequest {
     int p = 0;
-    std::vector<std::vector<int>> A_cols;
+    std::vector<LinearConstraintRow> A_cols;
     bool active() const { return p > 0; }
 };
 
@@ -143,7 +145,7 @@ struct JointEtaVarRequest {
 bool extract_joint_eta_var(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const RowLoadings& L,
-    const std::vector<std::vector<int>>& pin_groups,
+    const std::vector<LinearConstraintRow>& pin_groups,
     const std::vector<double>& pin_Dinv,
     SparseCholeskySolver& solver,
     std::vector<double>& var_out

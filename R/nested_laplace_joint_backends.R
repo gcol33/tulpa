@@ -87,8 +87,16 @@
             .append_phi_columns(base, grids)
         },
         layout = function(arms, prior) {
-            .joint_layout(arms, prior$n_spatial_units, n_spatial_blocks = 2L,
-                          spatial_block_names = c("phi_start", "theta_start"))
+            lay <- .joint_layout(arms, prior$n_spatial_units,
+                                 n_spatial_blocks = 2L,
+                                 spatial_block_names = c("phi_start",
+                                                         "theta_start"))
+            # A per-component-scaled field's level is node_prec-weighted
+            # (LatentBlock::level_weights), and the reads condition on it.
+            np <- prior$node_prec
+            if (length(np) == prior$n_spatial_units && length(unique(np)) > 1L)
+                lay$phi_level_w <- as.numeric(np)
+            lay
         }
     ),
 

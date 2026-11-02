@@ -3,6 +3,7 @@
 \name{spatiotemporal_effects}
 \alias{spatiotemporal_effects}
 \alias{spatiotemporal_effects.default}
+\alias{spatiotemporal_effects.tulpa_fit}
 \alias{print.tulpa_st_summary}
 \title{Extract spatiotemporal effects from fitted model}
 \usage{
@@ -20,15 +21,23 @@ spatiotemporal_effects(
   ...
 )
 
+\method{spatiotemporal_effects}{tulpa_fit}(
+  object,
+  format = c("array", "long", "summary"),
+  probs = c(0.025, 0.5, 0.975),
+  ndraws = 1000L,
+  seed = NULL,
+  ...
+)
+
 \method{print}{tulpa_st_summary}(x, ...)
 }
 \arguments{
-\item{object}{A fit carrying a \verb{$spatiotemporal} Knorr-Held interaction
-block (\code{n_spatial}, \code{n_times}) and its draws in
-\verb{$.internal$spatiotemporal_draws}. \code{tulpa()} itself has no
-\verb{spatiotemporal =} argument; such a block comes from a model package's
-own fitter (see \code{\link[=spatiotemporal]{spatiotemporal()}} for what the engine itself fits), and
-the default method reads any fit, of any class, that stores it this way.}
+\item{object}{A nested-Laplace fit of \code{\link[=tulpa]{tulpa()}} carrying a
+\code{\link[=spatiotemporal]{spatiotemporal()}} interaction, or any fit storing a \verb{$spatiotemporal}
+Knorr-Held block (\code{n_spatial}, \code{n_times}) with its draws in
+\verb{$.internal$spatiotemporal_draws} (a model package's own fitter), which
+the default method reads.}
 
 \item{format}{Output format: \code{"array"} (default, S x T x draws), \code{"long"}
 (data frame with s, t, draw, value columns), or \code{"summary"} (posterior summaries).}
@@ -36,6 +45,12 @@ the default method reads any fit, of any class, that stores it this way.}
 \item{probs}{Quantiles to compute if \code{format = "summary"}.}
 
 \item{...}{Ignored}
+
+\item{ndraws}{Number of joint posterior draws for \code{format = "array"} or
+\code{"long"} on a fit carrying a \code{\link[=spatiotemporal]{spatiotemporal()}} interaction.}
+
+\item{seed}{Optional integer seed for those draws (RNG state is restored on
+exit).}
 
 \item{x}{A \code{tulpa_st_summary} table.}
 }
@@ -49,6 +64,16 @@ per entry of \code{probs} and \code{sd}, which has \code{print()} and \code{plot
 \description{
 Extract posterior distributions of spatiotemporal interaction effects
 from a fitted tulpa model.
+}
+\details{
+On a fit carrying a \code{\link[=spatiotemporal]{spatiotemporal()}} interaction the summary is the exact
+Gaussian mixture over the outer grid of each cell's posterior (mean, SD and
+the \code{probs} quantiles), the read \code{\link[=latent_effects]{latent_effects()}} makes for a \code{latent()}
+block. The \code{"array"} and \code{"long"} formats are joint draws of all S x T
+cells: a grid cell drawn by its weight, then the latent vector from that
+cell's Gaussian conditioned on the model's constraints, so a derived
+quantity over cells (a sum over areas, a change between two times) carries
+the cells' correlation.
 }
 \examples{
 # A Knorr-Held interaction block is attached by a model package's own

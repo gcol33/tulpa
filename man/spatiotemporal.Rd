@@ -2,126 +2,94 @@
 % Please edit documentation in R/spatiotemporal.R
 \name{spatiotemporal}
 \alias{spatiotemporal}
-\title{Spatiotemporal interaction specifications for tulpa}
+\title{Spatiotemporal interaction specification}
 \usage{
 spatiotemporal(
-  spatial,
-  temporal,
-  type = c("I", "II", "III", "IV", "iid", "separable"),
+  spatial = NULL,
+  temporal = NULL,
+  type = c("IV", "I", "II", "III", "iid", "separable"),
+  tau_grid = NULL,
   shared = NULL
 )
 }
 \arguments{
-\item{spatial}{A spatial specification from \code{\link[=spatial_car]{spatial_car()}}, \code{\link[=spatial_bym2]{spatial_bym2()}},
-or \code{\link[=spatial_gp]{spatial_gp()}}.}
+\item{spatial}{The areal spatial spec whose graph structures the
+interaction (\code{\link[=spatial_car]{spatial_car()}}, \code{\link[=spatial_bym2]{spatial_bym2()}} or
+\code{list(type = "icar", adjacency = W)}). \code{NULL} (default) takes the fit's
+own \verb{spatial =} spec. The interaction uses the graph's intrinsic CAR
+structure \eqn{R_s = D - W} whatever the main effect's family.}
 
-\item{temporal}{A temporal specification from \code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_rw2]{temporal_rw2()}},
-\code{\link[=temporal_ar1]{temporal_ar1()}}, or \code{\link[=temporal_gp]{temporal_gp()}}.}
+\item{temporal}{The temporal spec structuring the interaction in time,
+\code{\link[=temporal_rw1]{temporal_rw1()}} or \code{\link[=temporal_rw2]{temporal_rw2()}} (cyclic allowed). \code{NULL} (default)
+takes the fit's own \verb{temporal =} spec.}
 
 \item{type}{Interaction type:
 \itemize{
-\item \code{"I"} or \code{"iid"}: Unstructured interaction (IID)
-\item \code{"II"}: Structured time at each location
-\item \code{"III"}: Structured space at each time point
-\item \code{"IV"}: Fully structured (Kronecker product of spatial and temporal)
-\item \code{"separable"}: Separable covariance (Kronecker product)
+\item \code{"I"} (or \code{"iid"}): unstructured, \eqn{R = I_T \otimes I_S}.
+\item \code{"II"}: each area its own temporal walk, \eqn{R = R_t \otimes I_S}.
+\item \code{"III"}: each time its own spatial ICAR, \eqn{R = I_T \otimes R_s}.
+\item \code{"IV"} (or \code{"separable"}): \eqn{R = R_t \otimes R_s}.
 }}
 
-\item{shared}{Logical; if TRUE (default), spatiotemporal effect enters both
-all processes. Set to FALSE for process-specific effects
-(triggers warning about potential confounding).}
+\item{tau_grid}{Optional outer-grid nodes for the interaction precision
+\eqn{\tau}; the default is the engine's intrinsic-field precision axis.}
+
+\item{shared}{Not used.}
 }
 \value{
-Nothing: the call always signals an error.
+A \code{tulpa_spatiotemporal} spec.
 }
 \description{
-Functions to specify spatiotemporal interaction effects for tulpa models.
-These capture dependencies that arise when spatial patterns vary over time,
-or when temporal trends differ across space.
-
-Specify a spatiotemporal interaction effect for tulpa models.
-The interaction captures structured or unstructured deviation from
-the additive spatial + temporal model.
-
-No tulpa backend fits an interaction term, so this constructor errors. The
-additive space-time model is fitted by \code{tulpa(spatial = , temporal = )} and
-by \code{\link[=fit_st_nested]{fit_st_nested()}}.
+A Knorr-Held (2000) space-time interaction for \code{\link[=tulpa]{tulpa()}}: one latent value
+\eqn{\delta_{st}} per area and time, added to the linear predictor of every
+observation at that area and time. Pass the spec as
+\code{tulpa(..., spatiotemporal = spatiotemporal(type = "IV"))}; it rides the
+nested-Laplace path beside the spatial and temporal main effects, with the
+interaction precision \eqn{\tau} integrated on the outer grid.
 }
 \details{
-Spatiotemporal interactions extend the basic additive model:
+The interaction's prior is \eqn{\delta \sim N(0, (\tau R)^-)} conditioned
+on \eqn{A \delta = 0}, where the rows of \eqn{A} span the null space of
+\eqn{R}: for type II a walk's null space per area (its level, and its
+linear trend under an acyclic RW2), for type III a sum over each connected
+component of the graph at every time, for type IV both. These are hard
+linear constraints: the inner Newton solves on the constraint set and the
+Laplace approximation integrates over the \eqn{ST - r} dimensional
+subspace, with the log-density normalised by the generalized determinant
+\eqn{|R|_+}. The interaction therefore carries no area level and no time
+level (and, under RW2, no area-specific trend) that the main effects
+already model.
 
-\deqn{\eta_{st} = X\beta + f_s(space) + f_t(time)}
-
-to include interactions:
-
-\deqn{\eta_{st} = X\beta + f_s(space) + f_t(time) + \delta_{st}}
-
-where \eqn{\delta_{st}} captures space-time interactions.
-
-\strong{Interaction Types (following Knorr-Held, 2000):}
-\itemize{
-\item \strong{Type I}: Unstructured interaction - IID \eqn{\delta_{st} \sim N(0, \sigma^2)}
-\item \strong{Type II}: Structured time, unstructured space - temporal structure at each location
-\item \strong{Type III}: Structured space, unstructured time - spatial structure at each time
-\item \strong{Type IV}: Structured space AND time - full Kronecker interaction
-}
-
-\strong{Separable Models:}
-\itemize{
-\item \strong{Separable}: Covariance is Kronecker product \eqn{C_{st} = C_s \otimes C_t}
-\item \strong{Non-separable}: GP with joint space-time metric
-}
-
-\strong{Type I (IID)}
-
-Independent random effect for each space-time combination:
-\deqn{\delta_{st} \stackrel{iid}{\sim} N(0, \sigma^2_\delta)}
-
-This is the simplest form, requiring S*T parameters but capturing no
-structured interaction.
-
-\strong{Type II (Temporal structure per location)}
-
-Each location has its own temporal random effect:
-\deqn{\delta_{\cdot t}^{(s)} \sim RW(\sigma^2)}
-
-This captures location-specific temporal trends but assumes independence
-across locations.
-
-\strong{Type III (Spatial structure per time point)}
-
-Each time point has its own spatial random effect:
-\deqn{\delta_{s \cdot}^{(t)} \sim ICAR(\tau)}
-
-This captures time-specific spatial patterns but assumes independence
-across time points.
-
-\strong{Type IV (Full structure)}
-
-Kronecker product of spatial and temporal precision matrices:
-\deqn{Q_\delta = Q_s \otimes Q_t}
-
-This is the most constrained model, assuming the interaction has the
-same structure as the marginal effects.
-
-\strong{Separable}
-
-For GP-based effects, assumes separable covariance:
-\deqn{C(\mathbf{s}_1, t_1; \mathbf{s}_2, t_2) = C_s(\mathbf{s}_1, \mathbf{s}_2) \cdot C_t(t_1, t_2)}
+The cells are laid out area-fastest: cell \eqn{(s, t)} is coordinate
+\eqn{(t - 1) S + s}. A time whose rows all have an \code{NA} response is still a
+node of the walk, so the interaction forecasts it.
+\code{\link[=spatiotemporal_effects]{spatiotemporal_effects()}} reads the posterior back per cell.
 }
 \examples{
-adj <- matrix(0, 4, 4)
-for (i in 1:3) adj[i, i + 1] <- adj[i + 1, i] <- 1
-# No backend fits an interaction term, so the constructor refuses; the
-# additive model is tulpa(spatial = , temporal = ).
-try(spatiotemporal(spatial_car(adj, group_var = "region"),
-                   temporal_rw1("year"), type = "IV"))
+\donttest{
+set.seed(1)
+S <- 8; n_t <- 6
+W <- matrix(0, S, S)
+for (i in 1:(S - 1)) W[i, i + 1] <- W[i + 1, i] <- 1
+d <- expand.grid(region = 1:S, year = 1:n_t)
+d$y <- rpois(nrow(d), exp(1 + 0.3 * sin(d$region) + 0.1 * d$year))
+fit <- tulpa(y ~ 1 + spatial(region), data = d, family = "poisson",
+             spatial = list(type = "icar", adjacency = W),
+             temporal = temporal_rw1("year"),
+             spatiotemporal = spatiotemporal(type = "IV"),
+             mode = "nested_laplace", control = list(progress = FALSE))
+head(spatiotemporal_effects(fit, format = "summary"))
+}
 }
 \references{
 Knorr-Held, L. (2000). Bayesian modelling of inseparable space-time variation
 in disease risk. Statistics in Medicine, 19(17-18), 2555-2567.
+
+Goicoa, T., Adin, A., Ugarte, M. D., & Hodges, J. S. (2018). In
+spatio-temporal disease mapping models, identifiability constraints affect
+PQL and INLA results. Stochastic Environmental Research and Risk Assessment,
+32, 749-770.
 }
 \seealso{
-\code{\link[=spatial_car]{spatial_car()}}, \code{\link[=spatial_gp]{spatial_gp()}}, \code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_ar1]{temporal_ar1()}}
+\code{\link[=spatiotemporal_effects]{spatiotemporal_effects()}}, \code{\link[=spatial_car]{spatial_car()}}, \code{\link[=temporal_rw1]{temporal_rw1()}}
 }
-\keyword{models}

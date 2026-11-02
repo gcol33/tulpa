@@ -356,6 +356,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     bym2       = list(sigma_grid = "field_sd", rho_grid = "bym2_rho"),
     ar1        = list(tau_grid = "ar1_tau", rho_grid = "ar1_rho"),
     iid        = list(sigma_grid = "field_sd"),
+    st_interaction = list(tau_grid = "gmrf_tau"),
     nngp       = list(sigma2_grid = "gp_var", phi_gp_grid = "gp_lengthscale"),
     hsgp       = list(sigma2_grid = "gp_var",
                       lengthscale_grid = "gp_lengthscale"),

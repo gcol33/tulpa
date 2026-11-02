@@ -25,14 +25,15 @@ test_that("spatiotemporal_effects() rejects a fit that carries no ST field", {
 
 skip_on_cran_budget()
 
-test_that("spatiotemporal() and spatiotemporal_gp() refuse to build an unfitted spec", {
+test_that("spatiotemporal() builds a Knorr-Held spec; spatiotemporal_gp() refuses", {
   skip_on_cran_budget()
   sp <- spatial_car(.fc_adj(), level = "group", group_var = "region")
   tm <- temporal_rw1("year")
 
   for (ty in c("I", "II", "III", "IV", "iid", "separable")) {
-    expect_error(spatiotemporal(spatial = sp, temporal = tm, type = ty),
-                 "not fitted through tulpa()", fixed = TRUE)
+    st <- spatiotemporal(spatial = sp, temporal = tm, type = ty)
+    expect_s3_class(st, "tulpa_spatiotemporal")
+    expect_true(st$type %in% c("I", "II", "III", "IV"))
   }
   expect_error(spatiotemporal_gp(~ lon + lat, time_var = "year", nn = 10),
                "not fitted by any tulpa backend")

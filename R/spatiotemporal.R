@@ -1,129 +1,274 @@
-#' Spatiotemporal interaction specifications for tulpa
+#' Spatiotemporal interaction specification
 #'
 #' @description
-#' Functions to specify spatiotemporal interaction effects for tulpa models.
-#' These capture dependencies that arise when spatial patterns vary over time,
-#' or when temporal trends differ across space.
+#' A Knorr-Held (2000) space-time interaction for [tulpa()]: one latent value
+#' \eqn{\delta_{st}} per area and time, added to the linear predictor of every
+#' observation at that area and time. Pass the spec as
+#' `tulpa(..., spatiotemporal = spatiotemporal(type = "IV"))`; it rides the
+#' nested-Laplace path beside the spatial and temporal main effects, with the
+#' interaction precision \eqn{\tau} integrated on the outer grid.
+#'
+#' @param spatial The areal spatial spec whose graph structures the
+#'   interaction ([spatial_car()], [spatial_bym2()] or
+#'   `list(type = "icar", adjacency = W)`). `NULL` (default) takes the fit's
+#'   own `spatial =` spec. The interaction uses the graph's intrinsic CAR
+#'   structure \eqn{R_s = D - W} whatever the main effect's family.
+#' @param temporal The temporal spec structuring the interaction in time,
+#'   [temporal_rw1()] or [temporal_rw2()] (cyclic allowed). `NULL` (default)
+#'   takes the fit's own `temporal =` spec.
+#' @param type Interaction type:
+#'   - `"I"` (or `"iid"`): unstructured, \eqn{R = I_T \otimes I_S}.
+#'   - `"II"`: each area its own temporal walk, \eqn{R = R_t \otimes I_S}.
+#'   - `"III"`: each time its own spatial ICAR, \eqn{R = I_T \otimes R_s}.
+#'   - `"IV"` (or `"separable"`): \eqn{R = R_t \otimes R_s}.
+#' @param tau_grid Optional outer-grid nodes for the interaction precision
+#'   \eqn{\tau}; the default is the engine's intrinsic-field precision axis.
+#' @param shared Not used.
+#'
+#' @return A `tulpa_spatiotemporal` spec.
 #'
 #' @details
-#' Spatiotemporal interactions extend the basic additive model:
+#' The interaction's prior is \eqn{\delta \sim N(0, (\tau R)^-)} conditioned
+#' on \eqn{A \delta = 0}, where the rows of \eqn{A} span the null space of
+#' \eqn{R}: for type II a walk's null space per area (its level, and its
+#' linear trend under an acyclic RW2), for type III a sum over each connected
+#' component of the graph at every time, for type IV both. These are hard
+#' linear constraints: the inner Newton solves on the constraint set and the
+#' Laplace approximation integrates over the \eqn{ST - r} dimensional
+#' subspace, with the log-density normalised by the generalized determinant
+#' \eqn{|R|_+}. The interaction therefore carries no area level and no time
+#' level (and, under RW2, no area-specific trend) that the main effects
+#' already model.
 #'
-#' \deqn{\eta_{st} = X\beta + f_s(space) + f_t(time)}
+#' The cells are laid out area-fastest: cell \eqn{(s, t)} is coordinate
+#' \eqn{(t - 1) S + s}. A time whose rows all have an `NA` response is still a
+#' node of the walk, so the interaction forecasts it.
+#' [spatiotemporal_effects()] reads the posterior back per cell.
 #'
-#' to include interactions:
-#'
-#' \deqn{\eta_{st} = X\beta + f_s(space) + f_t(time) + \delta_{st}}
-#'
-#' where \eqn{\delta_{st}} captures space-time interactions.
-#'
-#' **Interaction Types (following Knorr-Held, 2000):**
-#'
-#' - **Type I**: Unstructured interaction - IID \eqn{\delta_{st} \sim N(0, \sigma^2)}
-#' - **Type II**: Structured time, unstructured space - temporal structure at each location
-#' - **Type III**: Structured space, unstructured time - spatial structure at each time
-#' - **Type IV**: Structured space AND time - full Kronecker interaction
-#'
-#' **Separable Models:**
-#'
-#' - **Separable**: Covariance is Kronecker product \eqn{C_{st} = C_s \otimes C_t}
-#' - **Non-separable**: GP with joint space-time metric
-#'
-#' @name spatiotemporal
 #' @references
 #' Knorr-Held, L. (2000). Bayesian modelling of inseparable space-time variation
 #' in disease risk. Statistics in Medicine, 19(17-18), 2555-2567.
 #'
-#' @keywords models
-NULL
-
-
-#' Spatiotemporal interaction specification
+#' Goicoa, T., Adin, A., Ugarte, M. D., & Hodges, J. S. (2018). In
+#' spatio-temporal disease mapping models, identifiability constraints affect
+#' PQL and INLA results. Stochastic Environmental Research and Risk Assessment,
+#' 32, 749-770.
 #'
-#' @description
-#' Specify a spatiotemporal interaction effect for tulpa models.
-#' The interaction captures structured or unstructured deviation from
-#' the additive spatial + temporal model.
-#'
-#' No tulpa backend fits an interaction term, so this constructor errors. The
-#' additive space-time model is fitted by `tulpa(spatial = , temporal = )` and
-#' by [fit_st_nested()].
-#'
-#' @param spatial A spatial specification from [spatial_car()], [spatial_bym2()],
-#'   or [spatial_gp()].
-#' @param temporal A temporal specification from [temporal_rw1()], [temporal_rw2()],
-#'   [temporal_ar1()], or [temporal_gp()].
-#' @param type Interaction type:
-#'   - `"I"` or `"iid"`: Unstructured interaction (IID)
-#'   - `"II"`: Structured time at each location
-#'   - `"III"`: Structured space at each time point
-#'   - `"IV"`: Fully structured (Kronecker product of spatial and temporal)
-#'   - `"separable"`: Separable covariance (Kronecker product)
-#' @param shared Logical; if TRUE (default), spatiotemporal effect enters both
-#'   all processes. Set to FALSE for process-specific effects
-#'   (triggers warning about potential confounding).
-#'
-#' @return Nothing: the call always signals an error.
-#'
-#' @details
-#' **Type I (IID)**
-#'
-#' Independent random effect for each space-time combination:
-#' \deqn{\delta_{st} \stackrel{iid}{\sim} N(0, \sigma^2_\delta)}
-#'
-#' This is the simplest form, requiring S*T parameters but capturing no
-#' structured interaction.
-#'
-#' **Type II (Temporal structure per location)**
-#'
-#' Each location has its own temporal random effect:
-#' \deqn{\delta_{\cdot t}^{(s)} \sim RW(\sigma^2)}
-#'
-#' This captures location-specific temporal trends but assumes independence
-#' across locations.
-#'
-#' **Type III (Spatial structure per time point)**
-#'
-#' Each time point has its own spatial random effect:
-#' \deqn{\delta_{s \cdot}^{(t)} \sim ICAR(\tau)}
-#'
-#' This captures time-specific spatial patterns but assumes independence
-#' across time points.
-#'
-#' **Type IV (Full structure)**
-#'
-#' Kronecker product of spatial and temporal precision matrices:
-#' \deqn{Q_\delta = Q_s \otimes Q_t}
-#'
-#' This is the most constrained model, assuming the interaction has the
-#' same structure as the marginal effects.
-#'
-#' **Separable**
-#'
-#' For GP-based effects, assumes separable covariance:
-#' \deqn{C(\mathbf{s}_1, t_1; \mathbf{s}_2, t_2) = C_s(\mathbf{s}_1, \mathbf{s}_2) \cdot C_t(t_1, t_2)}
-#'
-#' @seealso [spatial_car()], [spatial_gp()], [temporal_rw1()], [temporal_ar1()]
+#' @seealso [spatiotemporal_effects()], [spatial_car()], [temporal_rw1()]
 #'
 #' @examples
-#' adj <- matrix(0, 4, 4)
-#' for (i in 1:3) adj[i, i + 1] <- adj[i + 1, i] <- 1
-#' # No backend fits an interaction term, so the constructor refuses; the
-#' # additive model is tulpa(spatial = , temporal = ).
-#' try(spatiotemporal(spatial_car(adj, group_var = "region"),
-#'                    temporal_rw1("year"), type = "IV"))
+#' \donttest{
+#' set.seed(1)
+#' S <- 8; n_t <- 6
+#' W <- matrix(0, S, S)
+#' for (i in 1:(S - 1)) W[i, i + 1] <- W[i + 1, i] <- 1
+#' d <- expand.grid(region = 1:S, year = 1:n_t)
+#' d$y <- rpois(nrow(d), exp(1 + 0.3 * sin(d$region) + 0.1 * d$year))
+#' fit <- tulpa(y ~ 1 + spatial(region), data = d, family = "poisson",
+#'              spatial = list(type = "icar", adjacency = W),
+#'              temporal = temporal_rw1("year"),
+#'              spatiotemporal = spatiotemporal(type = "IV"),
+#'              mode = "nested_laplace", control = list(progress = FALSE))
+#' head(spatiotemporal_effects(fit, format = "summary"))
+#' }
 #' @export
-spatiotemporal <- function(spatial,
-                           temporal,
-                           type = c("I", "II", "III", "IV", "iid", "separable"),
+spatiotemporal <- function(spatial = NULL,
+                           temporal = NULL,
+                           type = c("IV", "I", "II", "III", "iid", "separable"),
+                           tau_grid = NULL,
                            shared = NULL) {
-  stop("Spatiotemporal interaction terms are not fitted through tulpa(): it ",
-       "has no `spatiotemporal =` argument, and no front-door solver carries a ",
-       "Knorr-Held type I-IV interaction. The additive space-time model ",
-       "`X beta + u_spatial + v_temporal` is fitted by tulpa(spatial = , ",
-       "temporal = ) for an areal or spatial_gp() field, and by ",
-       "fit_st_nested().", call. = FALSE)
+  type <- match.arg(type)
+  type <- switch(type, iid = "I", separable = "IV", type)
+  if (!is.null(tau_grid) &&
+      (!is.numeric(tau_grid) || !length(tau_grid) ||
+       any(!is.finite(tau_grid)) || any(tau_grid <= 0))) {
+    stop("`tau_grid` must be a vector of positive finite precisions.",
+         call. = FALSE)
+  }
+  structure(list(spatial = spatial, temporal = temporal, type = type,
+                 tau_grid = if (!is.null(tau_grid)) as.numeric(tau_grid)),
+            class = "tulpa_spatiotemporal")
 }
 
+#' @export
+print.tulpa_spatiotemporal <- function(x, ...) {
+  cat("tulpa spatiotemporal interaction: Knorr-Held type ", x$type, "\n",
+      sep = "")
+  invisible(x)
+}
+
+# Structure of an intrinsic walk over `n_times` nodes: crossprod of the
+# first (RW1) or second (RW2) differences, closed into a ring when cyclic.
+.st_walk_structure <- function(n_times, type, cyclic) {
+  if (n_times < 2L) {
+    stop("A space-time interaction needs at least two time points.",
+         call. = FALSE)
+  }
+  I <- diag(n_times)
+  D <- if (cyclic) {
+    D1 <- I - I[c(seq.int(2L, n_times), 1L), , drop = FALSE]
+    if (type == "rw1") D1 else D1 %*% D1
+  } else {
+    diff(I, differences = if (type == "rw1") 1L else 2L)
+  }
+  Matrix::Matrix(crossprod(D), sparse = TRUE)
+}
+
+# Basis of the walk structure's null space: the constant, and the linear ramp
+# for an acyclic RW2 (on a ring a ramp is not periodic).
+.st_walk_null <- function(n_times, type, cyclic) {
+  if (type == "rw2" && !cyclic) {
+    cbind(1, seq_len(n_times) - (n_times + 1) / 2)
+  } else {
+    matrix(1, n_times, 1L)
+  }
+}
+
+# log of the product of the nonzero eigenvalues of a PSD matrix whose null
+# space has dimension `k`.
+.st_log_pdet <- function(R, k) {
+  ev <- sort(eigen(as.matrix(R), symmetric = TRUE, only.values = TRUE)$values,
+             decreasing = TRUE)
+  m <- length(ev) - k
+  if (m <= 0L) return(0)
+  sum(log(ev[seq_len(m)]))
+}
+
+# The interaction's structure R, its generalized log-determinant and the rows
+# spanning null(R), for `type` over S areas (graph `adjacency`) and `n_times`
+# times. Cells are area-fastest: cell (s, t) is (t - 1) * S + s, so a
+# Kronecker product reads R_t (x) R_s.
+#
+# null(R_t (x) R_s) = null(R_t) (x) R^S  +  R^T (x) null(R_s): per area the
+# walk's null vectors over time (type II), per time the indicator of each
+# connected component (type III), both for type IV. Type IV's two families
+# overlap in null(R_t) (x) null(R_s), so an independent subset is kept: the
+# column-pivoted QR of the rows' Gram matrix picks it, and its size is checked
+# against S T - rank(R).
+#
+# The matrix handed to the kernel is R + A'A: zero on the constraint set, and
+# positive definite along the null directions the constraint removes.
+.st_interaction_structure <- function(type, adjacency, n_times, walk = "rw1",
+                                      cyclic = FALSE) {
+  W <- as.matrix(adjacency)
+  diag(W) <- 0
+  S <- nrow(W)
+  n_t <- as.integer(n_times)
+  n <- S * n_t
+  Rs <- Matrix::Matrix(diag(rowSums(W), S) - W, sparse = TRUE)
+  Rt <- .st_walk_structure(n_t, walk, cyclic)
+  Is <- Matrix::Diagonal(S)
+  It <- Matrix::Diagonal(n_t)
+  comps <- .graph_components(W)
+  Nt <- .st_walk_null(n_t, walk, cyclic)
+  k_t <- ncol(Nt)
+  n_c <- length(comps)
+  cell <- function(s, t) (t - 1L) * S + s
+  rows_area <- unlist(lapply(seq_len(S), function(s) lapply(seq_len(k_t),
+    function(j) list(cols = cell(s, seq_len(n_t)), w = as.numeric(Nt[, j])))),
+    recursive = FALSE)
+  rows_time <- unlist(lapply(seq_len(n_t), function(t) lapply(comps,
+    function(cc) list(cols = cell(as.integer(cc), t), w = rep(1, length(cc))))),
+    recursive = FALSE)
+  R <- switch(type,
+    I   = Matrix::kronecker(It, Is),
+    II  = Matrix::kronecker(Rt, Is),
+    III = Matrix::kronecker(It, Rs),
+    IV  = Matrix::kronecker(Rt, Rs))
+  rows <- switch(type, I = list(), II = rows_area, III = rows_time,
+                 IV = c(rows_area, rows_time))
+  rank_R <- switch(type, I = n, II = S * (n_t - k_t), III = (S - n_c) * n_t,
+                   IV = (S - n_c) * (n_t - k_t))
+  A <- NULL
+  if (length(rows)) {
+    A <- Matrix::sparseMatrix(
+      i = rep(seq_along(rows), lengths(lapply(rows, `[[`, "cols"))),
+      j = unlist(lapply(rows, `[[`, "cols")),
+      x = unlist(lapply(rows, `[[`, "w")), dims = c(length(rows), n))
+  }
+  if (length(rows) > n - rank_R) {
+    q <- qr(as.matrix(Matrix::tcrossprod(A)), tol = 1e-9)
+    keep <- sort(q$pivot[seq_len(q$rank)])
+    rows <- rows[keep]
+    A <- A[keep, , drop = FALSE]
+  }
+  if (length(rows) != n - rank_R) {
+    stop(sprintf(paste0(
+      "Internal: the type %s interaction's constraint rows span %d ",
+      "directions, but its structure has a %d-dimensional null space."),
+      type, length(rows), n - rank_R), call. = FALSE)
+  }
+  log_pdet_s <- sum(vapply(comps, function(cc) {
+    m <- length(cc)
+    if (m < 2L) return(0)
+    Lc <- as.matrix(Rs[cc, cc]) + 1 / m
+    as.numeric(determinant(Lc, logarithm = TRUE)$modulus)
+  }, numeric(1)))
+  log_pdet_t <- .st_log_pdet(Rt, k_t)
+  log_pdet <- switch(type,
+    I   = 0,
+    II  = S * log_pdet_t,
+    III = n_t * log_pdet_s,
+    IV  = (S - n_c) * log_pdet_t + (n_t - k_t) * log_pdet_s)
+  S_aug <- if (!is.null(A)) R + Matrix::crossprod(A) else R
+  S_aug <- methods::as(methods::as(Matrix::forceSymmetric(S_aug),
+                                   "generalMatrix"), "CsparseMatrix")
+  list(S_p = S_aug@p, S_i = S_aug@i, S_x = S_aug@x, R = R,
+       log_pdet = log_pdet, constr = rows, n_latent = n, n_spatial = S,
+       n_times = n_t, rank = rank_R)
+}
+
+# The nested-Laplace block of a spatiotemporal() spec against `data`: the
+# areas from the spatial spec's unit column, the times from the temporal spec,
+# and the structure above. `spatial` / `temporal` are the fit's own specs, used
+# where the interaction spec leaves its own NULL; `spatial_var` is the formula's
+# spatial(col) term.
+.st_interaction_block <- function(st, spatial, temporal, data, spatial_var) {
+  sp <- st$spatial %||% spatial
+  tm <- st$temporal %||% temporal
+  if (is.null(sp) || is.null(sp$adjacency)) {
+    stop("spatiotemporal() needs an areal graph: give it an areal spatial spec ",
+         "(spatial_car() / spatial_bym2() / list(type = 'icar', adjacency = W)) ",
+         "or pass one as tulpa(spatial = ).", call. = FALSE)
+  }
+  if (is.null(tm)) {
+    stop("spatiotemporal() needs a temporal walk: give it temporal_rw1() / ",
+         "temporal_rw2() or pass one as tulpa(temporal = ).", call. = FALSE)
+  }
+  walk <- tolower(tm$type %||% "")
+  if (!walk %in% c("rw1", "rw2")) {
+    stop(sprintf(paste0(
+      "spatiotemporal() structures time by an intrinsic walk (rw1 / rw2); a ",
+      "'%s' temporal spec has a parameter the interaction's fixed structure ",
+      "does not carry."), walk), call. = FALSE)
+  }
+  if (!is.null(tm$group_var)) {
+    stop("spatiotemporal() takes an ungrouped temporal spec; the areas are its ",
+         "groups already.", call. = FALSE)
+  }
+  adj <- as.matrix(.validate_adjacency_arg(
+    sp$adjacency, "spatiotemporal()$spatial$adjacency"))
+  S <- nrow(adj)
+  unit_col <- sp$group_var %||% spatial_var
+  if (is.null(unit_col) || !unit_col %in% names(data)) {
+    stop("spatiotemporal(): no area column. Give the spatial spec a ",
+         "`group_var`, or add a spatial(col) term to the formula.",
+         call. = FALSE)
+  }
+  s_idx <- .resolve_spatial_idx(data[[unit_col]], S, adj, unit_col)
+  tv <- validate_temporal(tm, data)
+  str <- .st_interaction_structure(st$type, adj, tv$n_times, walk,
+                                   isTRUE(tm$cyclic))
+  blk <- list(type = "st_interaction",
+              obs_idx = as.integer((tv$time_index - 1L) * S + s_idx),
+              n_latent = str$n_latent, S_p = str$S_p, S_i = str$S_i,
+              S_x = str$S_x, log_pdet = str$log_pdet, constr = str$constr,
+              n_spatial = S, n_times = tv$n_times, kh_type = st$type,
+              time_levels = tv$time_levels,
+              unit_levels = rownames(adj) %||% as.character(seq_len(S)))
+  if (!is.null(st$tau_grid)) blk$tau_grid <- st$tau_grid
+  blk
+}
 
 
 #' Extract spatiotemporal effects from fitted model
@@ -132,12 +277,11 @@ spatiotemporal <- function(spatial,
 #' Extract posterior distributions of spatiotemporal interaction effects
 #' from a fitted tulpa model.
 #'
-#' @param object A fit carrying a `$spatiotemporal` Knorr-Held interaction
-#'   block (`n_spatial`, `n_times`) and its draws in
-#'   `$.internal$spatiotemporal_draws`. `tulpa()` itself has no
-#'   `spatiotemporal =` argument; such a block comes from a model package's
-#'   own fitter (see [spatiotemporal()] for what the engine itself fits), and
-#'   the default method reads any fit, of any class, that stores it this way.
+#' @param object A nested-Laplace fit of [tulpa()] carrying a
+#'   [spatiotemporal()] interaction, or any fit storing a `$spatiotemporal`
+#'   Knorr-Held block (`n_spatial`, `n_times`) with its draws in
+#'   `$.internal$spatiotemporal_draws` (a model package's own fitter), which
+#'   the default method reads.
 #' @param format Output format: `"array"` (default, S x T x draws), `"long"`
 #'   (data frame with s, t, draw, value columns), or `"summary"` (posterior summaries).
 #' @param probs Quantiles to compute if `format = "summary"`.
@@ -189,10 +333,10 @@ spatiotemporal_effects.default <- function(object,
 
   # Check if model has spatiotemporal effects
   if (!is.list(object) || is.null(object$spatiotemporal)) {
-    stop("Model carries no $spatiotemporal Knorr-Held interaction block. ",
-         "tulpa() has no `spatiotemporal =` argument (see ?spatiotemporal); ",
-         "such a block is attached by a model package's own interaction ",
-         "fitter.", call. = FALSE)
+    stop("Model carries no Knorr-Held interaction. Fit one with ",
+         "tulpa(..., spatiotemporal = spatiotemporal(type = ...)); a model ",
+         "package's own fitter may attach a `$spatiotemporal` block instead.",
+         call. = FALSE)
   }
 
   st_info <- object$spatiotemporal
@@ -264,6 +408,100 @@ spatiotemporal_effects.default <- function(object,
     class(result) <- c("tulpa_st_summary", "data.frame")
     return(result)
   }
+}
+
+#' @rdname spatiotemporal_effects
+#' @param ndraws Number of joint posterior draws for `format = "array"` or
+#'   `"long"` on a fit carrying a [spatiotemporal()] interaction.
+#' @param seed Optional integer seed for those draws (RNG state is restored on
+#'   exit).
+#' @details
+#' On a fit carrying a [spatiotemporal()] interaction the summary is the exact
+#' Gaussian mixture over the outer grid of each cell's posterior (mean, SD and
+#' the `probs` quantiles), the read [latent_effects()] makes for a `latent()`
+#' block. The `"array"` and `"long"` formats are joint draws of all S x T
+#' cells: a grid cell drawn by its weight, then the latent vector from that
+#' cell's Gaussian conditioned on the model's constraints, so a derived
+#' quantity over cells (a sum over areas, a change between two times) carries
+#' the cells' correlation.
+#' @export
+spatiotemporal_effects.tulpa_fit <- function(object,
+                                             format = c("array", "long", "summary"),
+                                             probs = c(0.025, 0.5, 0.975),
+                                             ndraws = 1000L, seed = NULL, ...) {
+  sizes <- object$grid_spatiotemporal_sizes
+  if (!length(sizes)) return(NextMethod())
+  format <- match.arg(format)
+  b <- as.integer(names(sizes)[1L])
+  blk <- object$blocks[[b]]
+  S <- as.integer(blk$n_spatial)
+  n_t <- as.integer(blk$n_times)
+  cols <- seq_len(sizes[1L])
+  w <- as.numeric(object$weights)
+
+  if (format == "summary") {
+    mu <- object$grid_spatiotemporal_mean[, cols, drop = FALSE]
+    V <- object$grid_spatiotemporal_var
+    V <- if (is.matrix(V)) V[, cols, drop = FALSE]
+    keep <- is.finite(w) & w > 0 & is.finite(rowSums(mu))
+    if (!is.null(V)) keep <- keep & is.finite(rowSums(V))
+    mx <- .nl_gauss_mixture_summary(mu[keep, , drop = FALSE],
+                                    if (!is.null(V)) pmax(V[keep, , drop = FALSE], 0),
+                                    w[keep] / sum(w[keep]), probs = probs)
+    out <- data.frame(s = rep(seq_len(S), n_t), t = rep(seq_len(n_t), each = S),
+                      mean = mx$mean)
+    for (k in seq_along(probs)) out[[paste0("q", probs[k] * 100)]] <- mx$quantiles[, k]
+    out$sd <- mx$sd
+    attr(out, "n_spatial") <- S
+    attr(out, "n_times") <- n_t
+    class(out) <- c("tulpa_st_summary", "data.frame")
+    return(out)
+  }
+
+  .seed_scoped(seed)
+  draws <- .st_interaction_draws(object, b, as.integer(ndraws))
+  spatiotemporal_effects.default(
+    list(spatiotemporal = list(n_spatial = S, n_times = n_t),
+         .internal = list(spatiotemporal_draws = draws)),
+    format = format, probs = probs)
+}
+
+# Joint posterior draws of block `b` (an st_interaction block) of a nested
+# fit: `ndraws` rows, each a grid cell drawn by weight and the latent vector
+# from that cell's Gaussian N(mode_k, Q_k^-1) conditioned on the fit's
+# constraint rows (the intrinsic blocks' sum-to-zero groups and the blocks'
+# hard rows), by .joint_draw_cell().
+.st_interaction_draws <- function(fit, b, ndraws) {
+  Qp <- fit$Q_csc_p_per_grid
+  Qi <- fit$Q_csc_i_per_grid
+  Qx <- fit$Q_csc_x_per_grid
+  n_x <- as.integer(fit$Q_csc_n)
+  if (is.null(Qp) || !length(n_x)) {
+    stop("spatiotemporal_effects(): the fit retains no per-cell precision to ",
+         "draw the interaction from.", call. = FALSE)
+  }
+  off <- fit$block_latent_offsets
+  cols <- seq.int(off[b] + 1L, off[b + 1L])
+  constr <- fit$constraint_cols %||% list()
+  A_t <- if (length(constr)) {
+    vapply(constr, .constraint_row_dense, numeric(n_x), n_x = n_x)
+  }
+  w <- as.numeric(fit$weights)
+  ok <- which(is.finite(w) & w > 0 &
+                vapply(seq_along(Qp), function(k) length(Qp[[k]]) == n_x + 1L,
+                       logical(1)))
+  if (!length(ok)) {
+    stop("spatiotemporal_effects(): no outer-grid cell carries a precision ",
+         "and a positive weight.", call. = FALSE)
+  }
+  out <- .nl_mixture_draw(w[ok] / sum(w[ok]), ok, ndraws, length(cols),
+    function(i, n_i) {
+      k <- ok[i]
+      z <- .joint_draw_cell(Qp[[k]], Qi[[k]], Qx[[k]], n_x, A_t, n_i)
+      t(fit$modes[k, cols] + z[cols, , drop = FALSE])
+    })
+  attr(out, "cells") <- NULL
+  out
 }
 
 #' @rdname spatiotemporal_effects

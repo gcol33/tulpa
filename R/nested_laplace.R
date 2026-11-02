@@ -993,6 +993,46 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   .k_attach_declined(res, kd)
 }
 
+# A constraint row as a driver hands it back (`constraint_cols`): an integer
+# vector of 1-based latent indices is a sum-to-zero group (every weight 1); a
+# list(cols, w) is a weighted row, a hard linear constraint a block declares
+# or a weighted level. `.constraint_row_dense()` is the row as a length-n_x
+# vector; `.constraint_rows_for_cpp()` the list in the form
+# read_constraint_rows() takes.
+.constraint_row_dense <- function(cc, n_x) {
+  a <- numeric(n_x)
+  if (is.list(cc)) {
+    cols <- as.integer(cc$cols)
+    a[sort(unique(cols))] <- as.numeric(rowsum(as.numeric(cc$w), cols))
+  } else {
+    a[unique(as.integer(cc))] <- 1
+  }
+  a
+}
+
+# The rows as the columns of a sparse n_x x k matrix (A').
+.constraint_rows_matrix <- function(constr, n_x) {
+  ij <- lapply(seq_along(constr), function(g) {
+    cc <- constr[[g]]
+    if (is.list(cc)) {
+      data.frame(i = as.integer(cc$cols), j = g, x = as.numeric(cc$w))
+    } else {
+      u <- unique(as.integer(cc))
+      data.frame(i = u, j = rep(g, length(u)), x = rep(1, length(u)))
+    }
+  })
+  ij <- do.call(rbind, ij)
+  Matrix::sparseMatrix(i = ij$i, j = ij$j, x = ij$x,
+                       dims = c(n_x, length(constr)))
+}
+
+.constraint_rows_for_cpp <- function(constr) {
+  lapply(constr %||% list(), function(cc) {
+    if (is.list(cc)) list(cols = as.integer(cc$cols), w = as.numeric(cc$w))
+    else as.integer(cc)
+  })
+}
+
 # --- Per-prior registry & dispatcher ---
 #
 # Each entry describes one supported prior `type`. To add a new prior:
@@ -1298,6 +1338,24 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                     sigma = as.numeric(p$sigma_grid)),
       names = c("range", "sigma")
     )
+  ),
+
+  st_interaction = list(
+    # Knorr-Held space-time interaction (types I-IV), built by
+    # .st_interaction_block() from a spatiotemporal() spec: precision tau R on
+    # the S x T cells, conditioned on the rows spanning null(R). Multi-block
+    # only (the hard constraints live in the sparse joint Newton).
+    cpp_fn = NULL,
+    required = list(multi = c("obs_idx", "n_latent", "S_p", "S_i", "S_x",
+                              "log_pdet")),
+    defaults = function(p, a) .nl_fill_family_axes(p, "st_interaction"),
+    pack = function(p) stop(
+      "st_interaction is only supported inside a multi-block latent prior on ",
+      "the nested-Laplace path. Pass it as one element of a block list to ",
+      "tulpa_nested_laplace(prior = list(...), ...).",
+      call. = FALSE
+    ),
+    theta = function(p) list(grid = as.numeric(p$tau_grid), names = "tau")
   ),
 
   iid = list(
@@ -1901,11 +1959,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   constr <- res$constraint_cols
   n_con <- length(constr)
   if (n_con) {
-    E <- cbind(E, vapply(constr, function(cc) {
-      a <- numeric(n_x)
-      a[as.integer(cc)] <- 1
-      a
-    }, numeric(n_x)))
+    E <- cbind(E, vapply(constr, .constraint_row_dense, numeric(n_x),
+                         n_x = n_x))
   }
   sel <- seq_len(p_fixed + n_var)
   con_sel <- length(sel) + seq_len(n_con)
@@ -1974,11 +2029,15 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     if (keep_cov) res$grid_field_cov <- field_cov
   }
   if (isTRUE(keep_joint)) res$H_joint <- .nl_modal_joint_precision(res)
-  # Strip the verbose CSC scratch fields once Hessians are assembled.
-  res$Q_csc_p_per_grid <- NULL
-  res$Q_csc_i_per_grid <- NULL
-  res$Q_csc_x_per_grid <- NULL
-  res$Q_csc_n          <- NULL
+  # Strip the verbose CSC scratch fields once Hessians are assembled -- except
+  # under a Knorr-Held interaction, whose joint draws over the S x T cells
+  # (spatiotemporal_effects()) are taken from each cell's precision.
+  if (is.null(units$spatiotemporal)) {
+    res$Q_csc_p_per_grid <- NULL
+    res$Q_csc_i_per_grid <- NULL
+    res$Q_csc_x_per_grid <- NULL
+    res$Q_csc_n          <- NULL
+  }
   res
 }
 
@@ -2217,34 +2276,38 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
        })
 }
 
-# The coordinates of every `latent()` block (a tgmrf() field, whose
-# coordinates enter eta as they are, `eta_i += x[obs_idx[i]]`), concatenated in
-# block order; `sizes` holds each block's width, so latent_effects() can split
-# them back. NULL when the fit carries no such block.
-.nl_latent_field_load <- function(blocks, offsets, n_x) {
+# The coordinates of every block of `type` -- a `latent()` block (a tgmrf()
+# field) or a Knorr-Held interaction (st_interaction), both of whose
+# coordinates enter eta as they are, `eta_i += x[obs_idx[i]]` -- concatenated
+# in block order; `sizes` holds each block's width, keyed by its position in
+# the block list, so an accessor can split them back. NULL when the fit
+# carries no such block.
+.nl_coord_field_load <- function(blocks, offsets, n_x, type) {
   if (!is.list(blocks) || !is.null(blocks$type) ||
       length(offsets) != length(blocks) + 1L || is.null(n_x)) return(NULL)
   cols <- integer(0)
   sizes <- integer(0)
   for (b in seq_along(blocks)) {
-    if (!identical(tolower(blocks[[b]]$type %||% ""), "tgmrf")) next
+    if (!identical(tolower(blocks[[b]]$type %||% ""), type)) next
     if (offsets[b + 1L] <= offsets[b] || offsets[b + 1L] > n_x) return(NULL)
     cb <- seq.int(offsets[b] + 1L, offsets[b + 1L])
     cols <- c(cols, cb)
     sizes <- c(sizes, stats::setNames(length(cb), as.character(b)))
   }
   if (!length(cols)) return(NULL)
-  list(type = "tgmrf", n_units = length(cols), cols = list(cols),
+  list(type = type, n_units = length(cols), cols = list(cols),
        sizes = sizes, weights = function(k) 1)
 }
 
 # The per-unit fields a nested fit retains as loadings of each cell's latent
-# Gaussian, by role: the areal spatial field, the random effects and the
-# latent() blocks.
+# Gaussian, by role: the areal spatial field, the random effects, the
+# latent() blocks and the Knorr-Held interactions.
 .nl_unit_loads <- function(blocks, offsets, n_x, theta_grid) {
   list(spatial = .nl_spatial_field_load(blocks, offsets, n_x, theta_grid),
        re      = .nl_re_field_load(blocks, offsets, n_x, theta_grid),
-       latent  = .nl_latent_field_load(blocks, offsets, n_x))
+       latent  = .nl_coord_field_load(blocks, offsets, n_x, "tgmrf"),
+       spatiotemporal = .nl_coord_field_load(blocks, offsets, n_x,
+                                             "st_interaction"))
 }
 
 # Per-cell mean and variance of every unit loading in `units`
@@ -2278,7 +2341,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
       Q_p_per_grid = Q_p, Q_i_per_grid = Q_i, Q_x_per_grid = Q_x,
       n_x = as.integer(n_x), load_idx = idx,
       load_ptr = as.integer(seq(0L, n_u * n_c, by = n_c)),
-      load_w = W, A_cols_list = lapply(constr %||% list(), as.integer),
+      load_w = W, A_cols_list = .constraint_rows_for_cpp(constr),
       n_threads = 1L)
     res[[paste0("grid_", role, "_mean")]] <- mu
     res[[paste0("grid_", role, "_var")]]  <- v
@@ -2350,6 +2413,20 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     )
     if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(p$cyclic)
     .with_svc(out)
+  } else if (type == "st_interaction") {
+    # A Knorr-Held interaction (.st_interaction_structure()): the structure R + A'A
+    # as a full symmetric CSC, its generalized log-determinant, and the hard
+    # null-space rows A the driver solves under.
+    .with_svc(list(
+      type     = "st_interaction",
+      obs_idx  = as.integer(p$obs_idx),
+      n_latent = as.integer(p$n_latent),
+      S_p      = as.integer(p$S_p),
+      S_i      = as.integer(p$S_i),
+      S_x      = as.numeric(p$S_x),
+      log_pdet = as.numeric(p$log_pdet),
+      constr   = .constraint_rows_for_cpp(p$constr)
+    ))
   } else if (type == "iid") {
     .with_svc(list(
       type    = "iid",

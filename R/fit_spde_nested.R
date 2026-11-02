@@ -203,7 +203,7 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
       Q_x_per_grid = result$Q_csc_x_per_grid, n_x = n_x,
       load_idx = as.integer(mesh_cols), load_ptr = seq.int(0L, p_mesh),
       load_w = matrix(1, nrow(M), p_mesh),
-      A_cols_list = lapply(result$constraint_cols %||% list(), as.integer))
+      A_cols_list = .constraint_rows_for_cpp(result$constraint_cols))
     rec$grid_field_var_cols <- mesh_cols
   }
   rec

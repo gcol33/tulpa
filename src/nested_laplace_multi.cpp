@@ -27,6 +27,7 @@
 //   iid        : 1 axis  = (sigma,)
 //   nngp       : 2 axes  = (sigma2, phi_gp)
 //   hsgp       : 2 axes  = (sigma2, lengthscale)
+//   st_interaction : 1 axis = (tau,)
 //
 // One block-spec maps to ONE input-list element but may push 1 or 2
 // LatentBlocks into the vector (BYM2 is the only 2-block expansion).
@@ -34,6 +35,7 @@
 #include "areal_input_check.h"     // check_latent_obs_index
 #include "block_projector.h"       // projected areal fields (RSR)
 #include "car_proper_block.h"      // set_car_proper_block_priors
+#include "constrained_structure_block.h"  // st_interaction
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "field_block_priors.h"    // set_icar / set_temporal_block_priors
 #include "hsgp_block_factory.h"
@@ -88,7 +90,9 @@ std::shared_ptr<std::vector<tulpa::ARows>> read_single_arm_projector(
 // constraint the gathered field's does.
 void centre_projected_intrinsic_level(tulpa::LatentBlock& blk,
                                       const std::vector<tulpa::ARows>& rows,
-                                      const Rcpp::NumericMatrix& X) {
+                                      const Rcpp::NumericMatrix& X,
+                                      const std::vector<double>& node_prec =
+                                          std::vector<double>()) {
     const tulpa::ProjectedLevel level = tulpa::projected_level(
         rows, [&X](int /*k*/, int i, double& x0) {
             if (X.ncol() == 0 || i >= X.nrow()) return false;
@@ -96,7 +100,7 @@ void centre_projected_intrinsic_level(tulpa::LatentBlock& blk,
             return true;
         });
     if (level == tulpa::ProjectedLevel::INTERCEPT) {
-        tulpa::centre_intrinsic_level(blk);
+        tulpa::centre_intrinsic_level(blk, node_prec);
     } else if (level == tulpa::ProjectedLevel::ABSENT) {
         const int start = blk.start;
         const int size  = blk.size;
@@ -230,9 +234,9 @@ int build_blocks_of_type(
             adj_rp, adj_ci, n_nbr, sp_part, node_prec);
         if (projector) {
             tulpa::apply_block_projector(phi_block, projector);
-            centre_projected_intrinsic_level(phi_block, *projector, X);
+            centre_projected_intrinsic_level(phi_block, *projector, X, node_prec);
         } else {
-            tulpa::centre_intrinsic_level(phi_block);
+            tulpa::centre_intrinsic_level(phi_block, node_prec);
         }
         blocks.push_back(phi_block);
 
@@ -454,6 +458,28 @@ int build_blocks_of_type(
             Q_p, Q_i, Q_x, logdet_Q, log_pi, /*block_index=*/0);
         blocks.push_back(block);
         return start + size;
+    }
+
+    if (type == "st_interaction") {
+        // Knorr-Held space-time interaction: tau (R + A'A) over the S x T
+        // cells, conditioned on the null-space rows A (constrained_structure_
+        // block.h). One axis, tau.
+        require_axes(1);
+        tulpa::nl_grid_axis_positive("st_interaction tau axis", theta_grid, axis0);
+        const int size = Rcpp::as<int>(bs["n_latent"]);
+        Rcpp::IntegerVector obs_idx = bs["obs_idx"];
+        check_idx(obs_idx, size, "blocks_spec$obs_idx");
+        const std::vector<tulpa::LinearConstraintRow> rows =
+            tulpa::read_constraint_rows(Rcpp::as<Rcpp::List>(bs["constr"]),
+                                        size, "blocks_spec$constr");
+        blocks.push_back(tulpa::make_constrained_structure_block(
+            latent_offset, size, obs_idx,
+            Rcpp::as<Rcpp::IntegerVector>(bs["S_p"]),
+            Rcpp::as<Rcpp::IntegerVector>(bs["S_i"]),
+            Rcpp::as<Rcpp::NumericVector>(bs["S_x"]),
+            Rcpp::as<double>(bs["log_pdet"]), rows,
+            [theta_grid, axis0](int k) { return theta_grid(k, axis0); }));
+        return latent_offset + size;
     }
 
     if (type == "iid") {

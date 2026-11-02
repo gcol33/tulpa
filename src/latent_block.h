@@ -30,6 +30,7 @@
 
 #include <stdexcept>
 #include "laplace_types.h"
+#include "linear_constraint_rows.h"
 #include <Rcpp.h>
 #include <functional>
 #include <utility>
@@ -67,6 +68,22 @@ inline std::vector<CenterFold> center_intercept(Rcpp::NumericVector& x,
     mean /= length;
     for (int i = 0; i < length; i++) x[start + i] -= mean;
     return { CenterFold{0, mean} };
+}
+
+// The weighted twin: the level removed is c = sum_i w_i x_i / sum_i w_i, the
+// representative with w'x = 0, and every coordinate moves by the same c, so
+// the fold into the intercept leaves eta unchanged exactly as the plain one
+// does.
+inline std::vector<CenterFold> center_intercept_weighted(
+    Rcpp::NumericVector& x, int start, const std::vector<double>& w
+) {
+    const int length = static_cast<int>(w.size());
+    if (length <= 0) return {};
+    double num = 0.0, den = 0.0;
+    for (int i = 0; i < length; i++) { num += w[i] * x[start + i]; den += w[i]; }
+    const double c = num / den;
+    for (int i = 0; i < length; i++) x[start + i] -= c;
+    return { CenterFold{0, c} };
 }
 
 // How obs contribute to this block's latent indices.
@@ -241,6 +258,25 @@ struct LatentBlock {
     // carries a real prior variance.
     bool intrinsic_level = false;
 
+    // The direction the level constraint is taken along, one weight per
+    // coordinate; empty is the plain sum (every weight 1). A field whose prior
+    // precision is diag(w) Q_aug (BYM2 scaled per connected component) has
+    // diag(w) Q_aug 1 = w, so its constant direction is a priori independent of
+    // the contrasts with w'x = 0 and not of those with 1'x = 0: the level is
+    // the w-weighted mean, removed by centre_intrinsic_level() and conditioned
+    // on by every covariance read (intrinsic_constraint_cols()).
+    std::vector<double> level_weights;
+
+    // Hard linear constraints sum_j w_j x[cols_j] = 0 the block's model carries
+    // exactly, in GLOBAL 0-based latent indices, linearly independent. They
+    // span the null space of an intrinsic prior whose null directions do not
+    // all alias the intercept (a Knorr-Held interaction: one per time and one
+    // per area), so no fold into a fixed effect can remove them. The sparse
+    // joint Newton solves under them (hard_constraints.h): every step is the
+    // equality-constrained one, and the Laplace log-determinant is taken on the
+    // constraint subspace. Empty for every other block.
+    std::vector<LinearConstraintRow> hard_constraints;
+
     // ----- Sparse-builder fields -----
     //
     // The defaults describe an areal block: one block-local DOF per
@@ -414,21 +450,44 @@ inline Rcpp::LogicalVector block_center_flags(
 // carrying that direction as a hard constraint (intrinsic_level). One setter,
 // so no factory can centre an intrinsic field without declaring the
 // constraint the covariance read has to honour.
-inline void centre_intrinsic_level(LatentBlock& blk) {
+//
+// `node_prec` is the field's per-node precision multiplier (empty: none). When
+// it is not constant the level is its weighted mean (see level_weights).
+inline void centre_intrinsic_level(
+    LatentBlock& blk, const std::vector<double>& node_prec = std::vector<double>()
+) {
     const int start = blk.start;
     const int size  = blk.size;
-    blk.center = [start, size](Rcpp::NumericVector& x) {
-        return center_intercept(x, start, size);
-    };
+    bool weighted = static_cast<int>(node_prec.size()) == size && size > 0;
+    if (weighted) {
+        weighted = false;
+        for (int i = 1; i < size; i++)
+            if (node_prec[i] != node_prec[0]) { weighted = true; break; }
+    }
+    if (weighted) {
+        blk.level_weights = node_prec;
+        const std::vector<double> w = node_prec;
+        blk.center = [start, w](Rcpp::NumericVector& x) {
+            return center_intercept_weighted(x, start, w);
+        };
+    } else {
+        blk.level_weights.clear();
+        blk.center = [start, size](Rcpp::NumericVector& x) {
+            return center_intercept(x, start, size);
+        };
+    }
     blk.intrinsic_level = true;
 }
 
-// The sum-to-zero constraint groups of a block list, one per intrinsic block:
-// the 1-based latent indices [start + 1, start + size] whose sum is fixed at
-// zero. The same `A_cols_list` contract cpp_joint_inner_vcov_blocks() reads, so
-// a single-arm grid's fixed-effect covariance is conditioned by the same
-// kriging correction as a joint fit's (gcol33/tulpa#901). Empty where no block
-// is intrinsic.
+// The constraint rows a covariance read of a block list conditions on: one
+// level row per intrinsic block, the 1-based latent indices
+// [start + 1, start + size] whose sum (weighted by level_weights, when the
+// block carries them) is fixed at zero, then every hard row a
+// block declares, as list(cols = <1-based indices>, w = <weights>). The same
+// `A_cols_list` contract cpp_joint_inner_vcov_blocks() reads
+// (read_constraint_rows), so a single-arm grid's fixed-effect covariance is
+// conditioned by the same kriging correction as a joint fit's
+// (gcol33/tulpa#901). Empty where no block carries a constraint.
 inline Rcpp::List intrinsic_constraint_cols(
     const std::vector<LatentBlock>& blocks
 ) {
@@ -437,7 +496,25 @@ inline Rcpp::List intrinsic_constraint_cols(
         if (!b.intrinsic_level || b.size <= 0) continue;
         Rcpp::IntegerVector cols(b.size);
         for (int j = 0; j < b.size; j++) cols[j] = b.start + j + 1;
-        out.push_back(cols);
+        if (b.level_weights.empty()) {
+            out.push_back(cols);
+        } else {
+            out.push_back(Rcpp::List::create(
+                Rcpp::Named("cols") = cols,
+                Rcpp::Named("w") = Rcpp::wrap(b.level_weights)));
+        }
+    }
+    for (const auto& b : blocks) {
+        for (const auto& r : b.hard_constraints) {
+            Rcpp::IntegerVector cols(r.cols.size());
+            Rcpp::NumericVector w(r.cols.size());
+            for (std::size_t e = 0; e < r.cols.size(); e++) {
+                cols[e] = r.cols[e] + 1;
+                w[e] = r.weight(e);
+            }
+            out.push_back(Rcpp::List::create(Rcpp::Named("cols") = cols,
+                                             Rcpp::Named("w") = w));
+        }
     }
     return out;
 }

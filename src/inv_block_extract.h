@@ -26,7 +26,10 @@
 #define TULPA_INV_BLOCK_EXTRACT_H
 
 #include "linalg_fast.h"
+#include "linear_constraint_rows.h"
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <cstddef>
 #include <utility>
 #include <vector>
@@ -41,15 +44,16 @@ namespace tulpa {
 // reference output was produced with.
 enum class InvBlockSymmetry { Average, MirrorLower };
 
-// Sum-to-zero constraint correction for a factorized precision H.
+// Linear-constraint correction for a factorized precision H.
 //
-// With A the k_constr x n_x incidence matrix of the constraint groups (row g is
-// the indicator of group g's latent indices), conditioning by kriging gives
+// With A the k_constr x n_x constraint matrix (row g a LinearConstraintRow: a
+// sum-to-zero group's indicator, or any weighted row), conditioning by kriging
+// gives
 //
 //   V = H^{-1} - H^{-1} A' (A H^{-1} A')^{-1} A H^{-1}
 //
 // so the correction at latent indices (a, b) is G_a' M^{-1} G_b with
-// W = H^{-1} A' (one solve per group), M = A W, and G_a = W[a, ].
+// W = H^{-1} A' (one solve per row), M = A W, and G_a = W[a, ].
 //
 // The same algebra covers a SOFT rank-k penalty. The precision
 // H + A' D A (a sum-to-zero pin the scatter left off the stored H, D the pins'
@@ -58,62 +62,52 @@ enum class InvBlockSymmetry { Average, MirrorLower };
 //   (H + A' D A)^{-1} = H^{-1} - H^{-1} A' (D^{-1} + A H^{-1} A')^{-1} A H^{-1}
 //
 // by Woodbury, which is the constrained V with M = D^{-1} + A W. The hard
-// constraint is the D^{-1} = 0 limit.
+// constraint is the D^{-1} = 0 limit, so a set mixing soft pins and hard rows
+// is one build with D^{-1} zero on the hard rows' block.
 struct InvBlockConstraint {
     int kc = 0;
     std::vector<std::vector<double>> W;   // kc columns of H^{-1} A', length n_x
     std::vector<double> Lm;               // kc x kc row-major lower Cholesky of M
     bool usable = false;                  // false when M is not PD (degenerate)
 
-    // Solve W_g and factor M. `A_cols[g]` holds group g's 0-based latent
-    // indices; out-of-range entries are ignored. `Dinv`, when given, is the
-    // row-major kc x kc inverse penalty precision added to M (the soft form
-    // above); nullptr imposes the hard constraint. An M that does not factor
-    // leaves `usable = false`, and the caller then skips the correction rather
-    // than subtracting a wrong one.
+    // Solve W_g and factor M. Row entries outside [0, n_x) are ignored.
+    // `Dinv`, when given, is the row-major kc x kc inverse penalty precision
+    // added to M (the soft form above); nullptr imposes the hard constraint. An
+    // M that does not factor leaves `usable = false`, and the caller then skips
+    // the correction rather than subtracting a wrong one.
     //
-    // Row g of A is the INDICATOR of group g's indices, so a latent index
-    // repeated within a group contributes once. Both the right-hand side and the
-    // Gram matrix are therefore read off one normalized index list, in the
-    // caller's own order with later repeats dropped: the two must use the same A
-    // or the factored M is not `A W`, and reordering would move the summation
-    // and with it the last bits of the correction.
+    // The right-hand side A' e_g and the Gram entries a_g' W_h are read off the
+    // rows in their own entry order, so an indicator row built by
+    // indicator_row() sums in the caller's order.
     template <typename SolveFn>
     void build(SolveFn solve, int n_x,
-               const std::vector<std::vector<int>>& A_cols,
+               const std::vector<LinearConstraintRow>& rows,
                const std::vector<double>* Dinv = nullptr) {
-        kc = static_cast<int>(A_cols.size());
+        kc = static_cast<int>(rows.size());
         usable = false;
         W.clear();
         Lm.clear();
         if (kc <= 0) return;
 
-        std::vector<std::vector<int>> cols(kc);
-        std::vector<char> seen(n_x > 0 ? n_x : 1, 0);
-        for (int g = 0; g < kc; g++) {
-            cols[g].reserve(A_cols[g].size());
-            for (int latent : A_cols[g]) {
-                if (latent < 0 || latent >= n_x || seen[latent]) continue;
-                seen[latent] = 1;
-                cols[g].push_back(latent);
-            }
-            for (int latent : cols[g]) seen[latent] = 0;
-        }
-
+        auto in_range = [n_x](int latent) { return latent >= 0 && latent < n_x; };
         std::vector<double> e(n_x, 0.0), v(n_x, 0.0);
         W.resize(kc);
         for (int g = 0; g < kc; g++) {
             std::fill(e.begin(), e.end(), 0.0);
-            for (int latent : cols[g]) e[latent] = 1.0;
+            const LinearConstraintRow& r = rows[g];
+            for (std::size_t t = 0; t < r.cols.size(); t++)
+                if (in_range(r.cols[t])) e[r.cols[t]] += r.weight(t);
             solve(e.data(), v.data());
             W[g] = v;
         }
 
         std::vector<double> M(static_cast<std::size_t>(kc) * kc, 0.0);
         for (int g1 = 0; g1 < kc; g1++) {
+            const LinearConstraintRow& r = rows[g1];
             for (int g2 = 0; g2 < kc; g2++) {
                 double s = 0.0;
-                for (int latent : cols[g1]) s += W[g2][latent];
+                for (std::size_t t = 0; t < r.cols.size(); t++)
+                    if (in_range(r.cols[t])) s += r.weight(t) * W[g2][r.cols[t]];
                 M[static_cast<std::size_t>(g1) * kc + g2] = s;
             }
         }
@@ -126,6 +120,25 @@ struct InvBlockConstraint {
         usable = tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
             M.data(), Lm.data(), kc, kc, /*nugget=*/0.0);
         if (!usable) Lm.clear();
+    }
+
+    // log|M|, the capacitance's log-determinant; NaN when M did not factor.
+    double log_det_M() const {
+        if (!usable) return std::numeric_limits<double>::quiet_NaN();
+        double s = 0.0;
+        for (int g = 0; g < kc; g++)
+            s += 2.0 * std::log(Lm[static_cast<std::size_t>(g) * kc + g]);
+        return s;
+    }
+
+    // y = M^{-1} b for a kc-vector b (no-op zeros when M did not factor).
+    void solve_cap(const double* b, double* y) const {
+        if (!usable) { std::fill(y, y + kc, 0.0); return; }
+        std::vector<double> tmp(kc);
+        tulpa_linalg::tri_solve_lower<tulpa_linalg::TriLayout::RowMajor>(
+            Lm.data(), kc, kc, b, tmp.data());
+        tulpa_linalg::tri_solve_lower_transpose<tulpa_linalg::TriLayout::RowMajor>(
+            Lm.data(), kc, kc, tmp.data(), y);
     }
 
     // y = M^{-1} G_latent, with G_latent[g] = W[g][latent]. `y` is resized to kc.

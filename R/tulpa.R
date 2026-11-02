@@ -712,7 +712,8 @@
 .tulpa_fitter_args <- function(backend, bundle, family, sigma_re,
                                n_trials, phi, beta_prior, control,
                                latent_blocks = list(), spatial = NULL,
-                               temporal = NULL, weights = NULL,
+                               temporal = NULL, spatiotemporal = NULL,
+                               weights = NULL,
                                phi2 = NULL, smoothers = list(),
                                re_prior = NULL, zi_prior = NULL,
                                hyperprior = "proper",
@@ -832,6 +833,8 @@
         list(with_role(.spatial_spec_to_nl_prior(spatial), "spatial")) else list(),
       if (!is.null(temporal))
         list(with_role(.temporal_spec_to_nl_prior(temporal), "temporal")) else list(),
+      if (!is.null(spatiotemporal))
+        list(with_role(spatiotemporal, "spatiotemporal")) else list(),
       smoothers
     )
     all_blocks <- c(field_blocks, latent_blocks)
@@ -905,7 +908,11 @@
     # joint path (both are handled by tulpa_nested_laplace()). An `iid` block is
     # multi-block-only, which holds here: the length-0 check above already
     # required a field / smoother / latent block, so RE blocks are never alone.
-    prior <- if (length(all_blocks) == 1L) all_blocks[[1L]] else all_blocks
+    # A type the registry fits only inside a block list (no single-arm
+    # kernel, `cpp_fn = NULL`) stays a list of one.
+    lone <- length(all_blocks) == 1L &&
+      !is.null(.NL_REGISTRY[[tolower(all_blocks[[1L]]$type %||% "")]]$cpp_fn)
+    prior <- if (lone) all_blocks[[1L]] else all_blocks
     out <- list(
       y           = bundle$y,
       n_trials    = n_trials %||% rep(1L, bundle$n_obs),
@@ -1829,6 +1836,11 @@
 #'   single-block temporal kernel; a `group_var` panel spec fits a separate walk
 #'   per group sharing one hyperparameter; combined with an areal `spatial`
 #'   field it forms an additive space-time joint prior.
+#' @param spatiotemporal Optional Knorr-Held space-time interaction, a
+#'   [spatiotemporal()] spec (types I-IV): one latent value per area and time,
+#'   conditioned exactly on the null space of its structure so that it carries
+#'   nothing the `spatial` and `temporal` main effects model. Fit on the
+#'   nested-Laplace path; read back with [spatiotemporal_effects()].
 #' @param factors Optional [latent_factor()] specification naming the `unit`
 #'   and `response` columns of a long-format `data` (one row per unit and
 #'   response level, e.g. per site and species). Each response level gets its
@@ -1943,6 +1955,7 @@ tulpa <- function(formula, data,
                   warm_start = NULL,
                   spatial = NULL,
                   temporal = NULL,
+                  spatiotemporal = NULL,
                   factors = NULL,
                   baseline = NULL,
                   control = list(),
@@ -2038,6 +2051,7 @@ tulpa <- function(formula, data,
         (pf$n_temporal_field_blocks %||% 0L) > 0L ||
         !is.null(pf$spatial_var) || !is.null(pf$temporal_var) ||
         !is.null(spatial) || !is.null(temporal) || !is.null(factors) ||
+        !is.null(spatiotemporal) ||
         !is.null(sigma_re) || !is.null(n_trials) || !is.null(weights) ||
         !is.null(phi2)) {
       stop(sprintf(paste0(
@@ -2137,7 +2151,8 @@ tulpa <- function(formula, data,
       sigma_re = sigma_re, weights = weights, estimate_phi = estimate_phi,
       phi2 = phi2, beta_prior = beta_prior, re_prior = re_prior,
       ziformula = ziformula, zi_prior = zi_prior, warm_start = warm_start,
-      spatial = spatial, temporal = temporal))
+      spatial = spatial, temporal = temporal,
+      spatiotemporal = spatiotemporal))
     return(.tulpa_fit_factors(factors, parsed, bundle, data, family, phi,
                               n_trials, control, formula, sys.call()))
   }
@@ -2431,6 +2446,18 @@ tulpa <- function(formula, data,
     }
   }
 
+  # Knorr-Held space-time interaction: one nested block over the S x T cells,
+  # structured by the graph and the walk of the specs it names (or the fit's
+  # own), conditioned on its structure's null space.
+  st_block <- NULL
+  if (!is.null(spatiotemporal)) {
+    if (!inherits(spatiotemporal, "tulpa_spatiotemporal")) {
+      stop("`spatiotemporal=` must be a spatiotemporal() spec.", call. = FALSE)
+    }
+    st_block <- .st_interaction_block(spatiotemporal, spatial_spec, temporal,
+                                      data, parsed$spatial_var)
+  }
+
   # Covariate smoothers s(x): RW1/RW2 GMRF blocks over the binned covariate --
   # the temporal-field construction with bins as nodes (R/smoother.R), riding
   # the same nested-Laplace kernels (single block alone, the joint stack
@@ -2475,10 +2502,19 @@ tulpa <- function(formula, data,
   )
   sel <- select_inference_mode(
     mode, family = fam_obj, n_obs = bundle$n_obs,
-    has_spatial = has_spatial, has_temporal = has_temporal, has_latent = has_latent,
+    has_spatial = has_spatial, has_temporal = has_temporal,
+    has_latent = has_latent || !is.null(st_block),
     spatial_type = spatial_type, temporal = temporal_spec, has_re = has_re,
     feat = call_feat
   )
+  if (!is.null(st_block) &&
+      !identical(BACKEND_REGISTRY[[sel$backend]]$input, "nested")) {
+    stop(sprintf(paste0(
+      "A spatiotemporal() interaction is fit on the nested-Laplace path, whose ",
+      "sparse inner Newton carries its hard constraints; mode resolved to ",
+      "backend '%s'. Use mode = 'nested_laplace' (or 'auto')."), sel$backend),
+      call. = FALSE)
+  }
 
   # Spatially- / temporally-varying coefficients are sampled only by the
   # generic ModelData sampler (there is no nested-Laplace SVC/TVC front door),
@@ -2961,6 +2997,7 @@ tulpa <- function(formula, data,
                              n_trials, phi, beta_prior, control,
                              latent_blocks = parsed$latent_blocks,
                              spatial = spatial_spec, temporal = temporal_spec,
+                             spatiotemporal = st_block,
                              weights = weights, phi2 = phi2,
                              smoothers = lapply(smooth_specs, `[[`, "block"),
                              re_prior = re_prior, zi_prior = zi_prior,

@@ -611,8 +611,10 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
       Matrix::Diagonal(n_units, x = 1.0)   # theta: iid
     ),
     re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re, y = y,
-    # Only the structured phi is intrinsic and centred; theta is proper.
-    constr_field = matrix(rep(c(1, 0), each = n_units), 2L * n_units, 1L)
+    # Only the structured phi is intrinsic and centred; theta is proper. The
+    # level is the node_prec-weighted sum, the kernel's level_weights.
+    constr_field = matrix(c(spatial$node_prec %||% rep(1, n_units),
+                            rep(0, n_units)), 2L * n_units, 1L)
   )
 }
 

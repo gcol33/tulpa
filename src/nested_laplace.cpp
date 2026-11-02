@@ -178,7 +178,7 @@ inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
     tulpa::set_icar_block_priors(
         phi_block, phi_start, n_s, [](int) { return 1.0; },
         adj_row_ptr, adj_col_idx, n_neighbors, sp_part, node_prec);
-    tulpa::centre_intrinsic_level(phi_block);
+    tulpa::centre_intrinsic_level(phi_block, node_prec);
 
     tulpa::LatentBlock theta_block;
     theta_block.start = theta_start;

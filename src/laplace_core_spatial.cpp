@@ -213,7 +213,7 @@ Rcpp::List cpp_laplace_fit_bym2(
                                      n_neighbors, sp_part, log_pdet,
                                      tulpa::node_prec_ptr(node_prec));
     };
-    tulpa::centre_intrinsic_level(phi_block);
+    tulpa::centre_intrinsic_level(phi_block, node_prec);
 
     // theta block: IID, d = sigma * sqrt(1 - rho), no centering.
     tulpa::LatentBlock theta_block;

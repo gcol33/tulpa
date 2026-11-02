@@ -129,11 +129,7 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
     # cells (the constraint structure is grid-constant); only Q changes per cell.
     A_cols <- .joint_constraint_cols(fit$arm_layout, n_x)
     k_constr <- length(A_cols)
-    A_t <- if (k_constr > 0L) {
-        ii <- unlist(A_cols)
-        jj <- rep(seq_len(k_constr), vapply(A_cols, length, integer(1)))
-        Matrix::sparseMatrix(i = ii, j = jj, x = 1, dims = c(n_x, k_constr))
-    } else NULL
+    A_t <- if (k_constr > 0L) .constraint_rows_matrix(A_cols, n_x) else NULL
 
     # Each cell draws its share i.i.d. from the constrained N(m_k, V_k); the
     # allocation across cells is the shared `.nl_mixture_draw()`.
@@ -189,7 +185,12 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
                 # centerer, so constraining it removes a genuine degree of
                 # freedom and under-disperses the field draws.
                 nu <- as.integer(sz / 2L)
-                cols[[length(cols) + 1L]] <- s0 + seq_len(nu)
+                lw <- layout$field_level_w[[i]]
+                cols[[length(cols) + 1L]] <- if (length(lw) == nu) {
+                    list(cols = s0 + seq_len(nu), w = lw)
+                } else {
+                    s0 + seq_len(nu)
+                }
             } else if (type == "mcar") {
                 # A separable MCAR block stores p coupled fields field-major
                 # (field a at offset a * n_units); each field has its own
@@ -215,8 +216,12 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
     # multi-block branch above).
     if (!is.null(layout$phi_start)) {
         n_phi <- (layout$theta_start %||% n_x) - layout$phi_start
-        if (n_phi > 0L) cols[[length(cols) + 1L]] <- layout$phi_start +
-            seq_len(n_phi)
+        lw <- layout$phi_level_w
+        if (n_phi > 0L) cols[[length(cols) + 1L]] <- if (length(lw) == n_phi) {
+            list(cols = layout$phi_start + seq_len(n_phi), w = lw)
+        } else {
+            layout$phi_start + seq_len(n_phi)
+        }
     }
     cols
 }
@@ -297,11 +302,7 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
 
     A_cols <- .joint_constraint_cols(fit$arm_layout, n_x)
     k_constr <- length(A_cols)
-    A_t <- if (k_constr > 0L) {
-        ii <- unlist(A_cols)
-        jj <- rep(seq_len(k_constr), vapply(A_cols, length, integer(1)))
-        Matrix::sparseMatrix(i = ii, j = jj, x = 1, dims = c(n_x, k_constr))
-    } else NULL
+    A_t <- if (k_constr > 0L) .constraint_rows_matrix(A_cols, n_x) else NULL
 
     # Selector for idx columns of Q^{-1}.
     E <- Matrix::sparseMatrix(i = idx, j = seq_len(p_out), x = 1,

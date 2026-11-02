@@ -26,6 +26,7 @@ tulpa(
   warm_start = NULL,
   spatial = NULL,
   temporal = NULL,
+  spatiotemporal = NULL,
   factors = NULL,
   baseline = NULL,
   control = list(),
@@ -230,6 +231,12 @@ routes them to the exact ModelData sampler. A plain field routes the
 single-block temporal kernel; a \code{group_var} panel spec fits a separate walk
 per group sharing one hyperparameter; combined with an areal \code{spatial}
 field it forms an additive space-time joint prior.}
+
+\item{spatiotemporal}{Optional Knorr-Held space-time interaction, a
+\code{\link[=spatiotemporal]{spatiotemporal()}} spec (types I-IV): one latent value per area and time,
+conditioned exactly on the null space of its structure so that it carries
+nothing the \code{spatial} and \code{temporal} main effects model. Fit on the
+nested-Laplace path; read back with \code{\link[=spatiotemporal_effects]{spatiotemporal_effects()}}.}
 
 \item{factors}{Optional \code{\link[=latent_factor]{latent_factor()}} specification naming the \code{unit}
 and \code{response} columns of a long-format \code{data} (one row per unit and

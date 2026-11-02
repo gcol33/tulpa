@@ -28,6 +28,7 @@
 #ifndef TULPA_LAPLACE_NEWTON_JOINT_SPARSE_H
 #define TULPA_LAPLACE_NEWTON_JOINT_SPARSE_H
 
+#include "hard_constraints.h"         // HardConstraintState
 #include "joint_pd_step.h"            // JointPDMode, pd_lm_escalate, pd_eigen_clamp_solve
 #include "laplace_family_link.h"
 #include "laplace_newton_joint.h"     // JointArm, compute_total_log_lik_joint
@@ -208,9 +209,15 @@ inline void joint_newton_finalize_sparse(
     const JointCurvature3Oracles* curvature3_fns,
     const JointFixedBlockRequest* fixed_block,
     const SubspaceDebiasOptions* debias, const CilaOptions* cila,
-    std::uint64_t cila_cell_key, const JointEtaVarRequest* eta_var
+    std::uint64_t cila_cell_key, const JointEtaVarRequest* eta_var,
+    HardConstraintState* hard = nullptr
 ) {
     Rcpp::NumericVector& x = scratch.x;
+    const bool hard_on = hard && hard->active();
+    // The probes below read the plain factor of the stored Hessian, which under
+    // hard constraints is neither the matrix the step solved against nor the
+    // one on the constraint subspace.
+    if (hard_on) { debias = nullptr; cila = nullptr; }
     // Read before joint_pd_step_solve below, which consumes grad.
     result.score_max = max_abs(grad);
     H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
@@ -229,7 +236,7 @@ inline void joint_newton_finalize_sparse(
     // which would inflate the determinant. Factoring H + 1 1' matches the dense
     // full-1 1' path. LM only (the PSD path densifies the small
     // Hessian and registers no rank-1).
-    const bool s2z_direct =
+    const bool s2z_direct = !hard_on &&
         (pd_mode == JointPDMode::LM) && !H_builder.s2z_rank1.empty();
     const double S2Z_NA = std::numeric_limits<double>::quiet_NaN();
     double s2z_log_det = S2Z_NA;
@@ -256,7 +263,8 @@ inline void joint_newton_finalize_sparse(
         // value below stands in for it.
         result.s2z_log_det_fallback = !std::isfinite(s2z_log_det);
     }
-    const bool run_pd_solve = !s2z_step_ok || (cila && cila->active());
+    const bool run_pd_solve =
+        !hard_on && (!s2z_step_ok || (cila && cila->active()));
     // The values as the scatter left them, plus the base ridge. joint_pd_step_solve
     // below loads the diagonal further on every failed factorization and never
     // takes the load back off, so the builder afterwards holds H + lambda I --
@@ -271,6 +279,13 @@ inline void joint_newton_finalize_sparse(
         eta_var && eta_var->active() && scratch.extract_solver;
     std::vector<double> H_values_at_mode;
     if (store_Q || want_block || want_eta_var) H_values_at_mode = H_builder.values;
+    // Under hard constraints the factor is of the pinned copy M (pins written
+    // in), whose values at the mode the predictor variance reads.
+    std::vector<double> M_values_at_mode;
+    if (hard_on) {
+        hard->pinned.assemble(H_builder);
+        if (want_eta_var) M_values_at_mode = hard->pinned.M.values;
+    }
 
     bool pd_conditioned = false;
     bool step_ok = s2z_step_ok;
@@ -289,6 +304,24 @@ inline void joint_newton_finalize_sparse(
                                                 H_builder.s2z_coupling);
         }
     }
+    // Constrained final pass: the factor of M, the step projected onto the
+    // constraint set, and log|B' M B| on the (n_x - r)-dimensional subspace.
+    bool hard_ok = false;
+    if (hard_on) {
+        { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
+          step_ok = joint_pd_step_solve(hard->pinned.M, hard->solver, n_x,
+                                        JointPDMode::LM, grad.data(),
+                                        scratch.delta.data(),
+                                        &result.log_det_Q, &pd_conditioned); }
+        hard_ok = step_ok && hard->factor_cap();
+        if (hard_ok) {
+            hard->project_step(x.begin(), scratch.delta.data());
+            result.log_det_Q += hard->log_det_subspace_correction();
+        } else {
+            result.log_det_Q = std::numeric_limits<double>::quiet_NaN();
+        }
+        folded = hard_ok;
+    }
     // The Newton decrement off the step one more iteration would take.
     if (folded) {
         double dec = 0.0;
@@ -305,15 +338,18 @@ inline void joint_newton_finalize_sparse(
     // there is the factor of the pinned matrix, which is the true one.
     result.pd_conditioned = pd_conditioned;
     result.hessian_pd_at_mode =
-        s2z_direct ? std::isfinite(s2z_log_det) : !pd_conditioned;
+        hard_on    ? (hard_ok && !pd_conditioned)
+        : s2z_direct ? std::isfinite(s2z_log_det) : !pd_conditioned;
 
     double log_lik, log_prior;
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
       log_lik   = log_lik_fn(scratch.etas);
       log_prior = compute_log_prior_joint(x, scratch.etas); }
 
-    result.log_marginal = finalize_log_marginal(log_lik, log_prior,
-                                                  result.log_det_Q, n_x);
+    // The constrained model integrates over n_x - r dimensions.
+    result.log_marginal = finalize_log_marginal(
+        log_lik, log_prior, result.log_det_Q,
+        hard_on ? n_x - hard->rank() : n_x);
     if (std::isfinite(result.newton_decrement)) {
         result.newton_step_gain = newton_step_gain(
             x, scratch.delta.data(), n_x, log_lik + log_prior, eval_objective,
@@ -328,6 +364,7 @@ inline void joint_newton_finalize_sparse(
     // one blocked by the PD mode this fit was configured with.
     const char* factor_declined = nullptr;
     if (!result.converged)                    factor_declined = "not_converged";
+    else if (hard_on)                         factor_declined = "hard_constraint";
     else if (pd_mode != JointPDMode::LM)      factor_declined = "pd_eigen_clamp";
     else if (!H_builder.s2z_rank1.empty())    factor_declined = "s2z_rank1_factor";
     else if (!solver.factored())              factor_declined = "factor_unavailable";
@@ -399,10 +436,20 @@ inline void joint_newton_finalize_sparse(
     // fit-level and untouched by the escalation, so only the values are held.
     if (want_block) {
         TULPA_PROFILE_PHASE(PHASE_HESSIAN_EXTRACT);
+        // The block is conditioned on every constraint the model carries: the
+        // caller's sum-to-zero groups and the blocks' hard rows.
+        JointFixedBlockRequest req_hard;
+        const JointFixedBlockRequest* req = fixed_block;
+        if (hard_on) {
+            req_hard = *fixed_block;
+            req_hard.A_cols.insert(req_hard.A_cols.end(), hard->rows.begin(),
+                                   hard->rows.end());
+            req = &req_hard;
+        }
         extract_joint_fixed_block(
             H_builder.col_ptr.data(), H_builder.row_idx.data(),
             H_values_at_mode.data(), n_x,
-            static_cast<int>(H_values_at_mode.size()), *fixed_block,
+            static_cast<int>(H_values_at_mode.size()), *req,
             *scratch.extract_solver,
             result.re_cov_flat, result.re_cov_block_sizes);
     }
@@ -413,15 +460,26 @@ inline void joint_newton_finalize_sparse(
         eta_var->loadings(pre_center_x.data(), loadings);
         result.eta_var.assign(static_cast<std::size_t>(loadings.n_rows()),
                               std::numeric_limits<double>::quiet_NaN());
+        if (hard_on && result.hessian_pd_at_mode) {
+            // M holds every pin, so the hard rows are the only correction: the
+            // D^{-1} = 0 limit of the Woodbury fold.
+            const int r = hard->rank();
+            const std::vector<double> hard_Dinv(static_cast<std::size_t>(r) * r, 0.0);
+            const SparseHessianBuilder& M = hard->pinned.M;
+            extract_joint_eta_var(
+                M.col_ptr.data(), M.row_idx.data(), M_values_at_mode.data(),
+                n_x, static_cast<int>(M_values_at_mode.size()), loadings,
+                hard->rows, hard_Dinv, *scratch.extract_solver, result.eta_var);
+        }
         const auto& r1 = H_builder.s2z_rank1;
-        std::vector<std::vector<int>> pin_groups(r1.size());
+        std::vector<LinearConstraintRow> pin_groups(r1.size());
         for (std::size_t k = 0; k < r1.size(); k++) {
-            pin_groups[k].resize(r1[k].n);
-            for (int i = 0; i < r1[k].n; i++) pin_groups[k][i] = r1[k].node(i);
+            pin_groups[k].cols.resize(r1[k].n);
+            for (int i = 0; i < r1[k].n; i++) pin_groups[k].cols[i] = r1[k].node(i);
         }
         std::vector<double> pin_Dinv;
         double pin_log_det = 0.0;
-        if (result.hessian_pd_at_mode &&
+        if (!hard_on && result.hessian_pd_at_mode &&
             s2z_build_Dinv(r1, H_builder.s2z_coupling, pin_Dinv, pin_log_det)) {
             extract_joint_eta_var(
                 H_builder.col_ptr.data(), H_builder.row_idx.data(),
@@ -511,7 +569,10 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     // its own factorization; the sum-to-zero pins the scatter registered on the
     // side rather than in the stored H are folded in by Woodbury, so the
     // variance is the one of the precision the log-determinant was taken of.
-    const JointEtaVarRequest* eta_var = nullptr
+    const JointEtaVarRequest* eta_var = nullptr,
+    // Hard linear constraints the blocks carry (hard_constraints.h); nullptr
+    // or empty solves the unconstrained problem.
+    HardConstraintState* hard = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -529,6 +590,11 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
 
     SparseCholeskySolver local_solver;
     SparseCholeskySolver& solver = shared_solver ? *shared_solver : local_solver;
+
+    // Under hard constraints every iterate stays on the constraint set, so a
+    // warm start from anywhere else is moved to its nearest feasible point.
+    const bool hard_on = hard && hard->active();
+    if (hard_on) hard->project_point(x.begin());
 
     auto eval_objective = [&](const Rcpp::NumericVector& xv) -> double {
         return eval_penalized_log_lik_joint_ll(
@@ -571,7 +637,8 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
         // the (expensive) likelihood curvature and emit the gradient only.
         const bool do_factor =
             !reuse_enabled || !have_factor || (iter % refresh == 0) ||
-            !H_builder.s2z_rank1.empty();   // s2z large-field path: block-Schur every iter, no reuse
+            !H_builder.s2z_rank1.empty() ||  // s2z large-field path: block-Schur every iter, no reuse
+            hard_on;                         // the projection needs this iteration's factor
 
         // Zero, scatter at `cm` and load the uniform upstream base ridge (the
         // numerical hygiene of an already-PD H).
@@ -604,6 +671,17 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
                 [&](CurvatureMode cm) { assemble(cm, /*grad_only=*/false); },
                 [&](bool guarded) {
                     TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
+                    if (hard_on) {
+                        // The KKT step against the full precision M.
+                        hard->pinned.assemble(H_builder);
+                        const bool ok = joint_pd_step_solve(
+                            hard->pinned.M, hard->solver, n_x, JointPDMode::LM,
+                            scratch.grad.data(), scratch.delta.data(), nullptr,
+                            nullptr, guarded ? JOINT_LM_MAX_TRIES : 1);
+                        if (!ok || !hard->factor_cap()) return false;
+                        hard->project_step(x.begin(), scratch.delta.data());
+                        return true;
+                    }
                     return s2z_newton_step(H_builder, solver, n_x, pd_mode,
                                            scratch.grad.data(),
                                            scratch.delta.data(),
@@ -666,7 +744,7 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
         compute_eta_joint, center_effects_fn, compute_log_prior_joint,
         log_lik_fn, eval_objective, store_Q, pd_mode, compute_skew,
         skew_probe_idx, curvature3_fns, fixed_block, debias, cila,
-        cila_cell_key, eta_var);
+        cila_cell_key, eta_var, hard_on ? hard : nullptr);
 
     return result;
 }

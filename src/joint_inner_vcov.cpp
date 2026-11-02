@@ -92,7 +92,7 @@ template <class Emit>
 bool visit_inner_vcov_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const std::vector<int>& idx0, int n_dense,
-    const std::vector<std::vector<int>>& A_cols,
+    const std::vector<LinearConstraintRow>& A_cols,
     bool field_marginal,
     SparseCholeskySolver& solver,
     Emit&& emit
@@ -174,7 +174,7 @@ bool visit_inner_vcov_cell(
 bool extract_inner_vcov_block_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const std::vector<int>& idx0, int n_dense,
-    const std::vector<std::vector<int>>& A_cols,
+    const std::vector<LinearConstraintRow>& A_cols,
     bool field_marginal,
     SparseCholeskySolver& solver,
     std::vector<double>& out_block
@@ -192,7 +192,7 @@ bool extract_inner_vcov_block_cell(
 bool extract_inner_vcov_strip_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const std::vector<int>& idx0, int n_dense,
-    const std::vector<std::vector<int>>& A_cols,
+    const std::vector<LinearConstraintRow>& A_cols,
     bool field_marginal,
     SparseCholeskySolver& solver,
     InnerVcovStrip& out
@@ -244,7 +244,7 @@ bool extract_joint_fixed_block(
 bool extract_joint_eta_var(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const RowLoadings& L,
-    const std::vector<std::vector<int>>& pin_groups,
+    const std::vector<LinearConstraintRow>& pin_groups,
     const std::vector<double>& pin_Dinv,
     SparseCholeskySolver& solver,
     std::vector<double>& var_out
@@ -304,7 +304,7 @@ struct VcovGridInputs {
     int n_grid = 0;
     int p = 0;
     std::vector<int> idx0;
-    std::vector<std::vector<int>> A_cols;
+    std::vector<tulpa::LinearConstraintRow> A_cols;
     std::vector<std::vector<int>> Qp, Qi;
     std::vector<std::vector<double>> Qx;
     std::vector<char> has_cell;
@@ -343,19 +343,7 @@ VcovGridInputs read_vcov_grid_inputs(
             Rcpp::stop("idx[%d] is not a latent index in [1, %d].", t + 1, n_x);
         in.idx0[t] = v - 1;
     }
-    const int kc = A_cols_list.size();
-    in.A_cols.resize(kc);
-    for (int g = 0; g < kc; g++) {
-        Rcpp::IntegerVector col = A_cols_list[g];
-        in.A_cols[g].reserve(col.size());
-        for (int e = 0; e < col.size(); e++) {
-            const int v = col[e];
-            if (v == NA_INTEGER || v < 1 || v > n_x)
-                Rcpp::stop("A_cols_list[[%d]][%d] is not a latent index in "
-                           "[1, %d].", g + 1, e + 1, n_x);
-            in.A_cols[g].push_back(v - 1);
-        }
-    }
+    in.A_cols = tulpa::read_constraint_rows(A_cols_list, n_x, "A_cols_list");
 
     in.Qp.resize(n_grid);
     in.Qi.resize(n_grid);

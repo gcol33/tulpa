@@ -758,9 +758,24 @@ int build_joint_blocks_from_spec(
         // intercept; weighted areal SVC: the covariate coefficient). The
         // unstructured theta component below stays uncentred (proper N(0, I)).
         if (projector) tulpa::apply_block_projector(phi_block, projector);
+        // A per-component-scaled field's level is its node_prec-weighted
+        // mean (LatentBlock::level_weights); centre_intrinsic_level() sets the
+        // weighted centerer and records the weights.
+        bool level_weighted = false;
+        for (std::size_t i = 1; i < node_prec.size(); i++)
+            if (node_prec[i] != node_prec[0]) { level_weighted = true; break; }
+        std::function<std::vector<tulpa::CenterFold>(Rcpp::NumericVector&)>
+            phi_center = make_field_center_fn(phi_start, size, /*intercept=*/0);
+        if (level_weighted) {
+            tulpa::LatentBlock tmp;
+            tmp.start = phi_start;
+            tmp.size  = size;
+            tulpa::centre_intrinsic_level(tmp, node_prec);
+            phi_center = tmp.center;
+            phi_block.level_weights = tmp.level_weights;
+        }
         install_field_center(phi_block, bs, phi_start, size, parsed, block_index,
-                             make_field_center_fn(phi_start, size, /*intercept=*/0),
-                             projector.get());
+                             std::move(phi_center), projector.get());
         blocks.push_back(phi_block);
 
         tulpa::LatentBlock theta_block;
@@ -1277,8 +1292,8 @@ inline void apply_phi_overrides_multi(
 
 // Per-cell fixed-effect covariance retention, extracted inside each cell's own
 // solve. `fixed_block_p` is the leading latent block size; zero extracts
-// nothing. `fixed_block_constraints` is a list of 1-based latent index vectors,
-// one per field sum-to-zero group, so the retained block is the constrained
+// nothing. `fixed_block_constraints` is a list of constraint rows
+// (read_constraint_rows), one per field sum-to-zero group or hard constraint, so the retained block is the constrained
 // covariance the fit's own posterior draws are generated from.
 inline tulpa::JointFixedBlockRequest parse_joint_fixed_block_request(
     int fixed_block_p, Rcpp::Nullable<Rcpp::List> fixed_block_constraints
@@ -1287,14 +1302,9 @@ inline tulpa::JointFixedBlockRequest parse_joint_fixed_block_request(
     if (fixed_block_p > 0) {
         req.p = fixed_block_p;
         if (fixed_block_constraints.isNotNull()) {
-            Rcpp::List ac(fixed_block_constraints);
-            req.A_cols.resize(ac.size());
-            for (int g = 0; g < ac.size(); g++) {
-                Rcpp::IntegerVector col = ac[g];
-                req.A_cols[g].reserve(col.size());
-                for (int e = 0; e < col.size(); e++)
-                    req.A_cols[g].push_back(col[e] - 1);
-            }
+            req.A_cols = tulpa::read_constraint_rows(
+                Rcpp::List(fixed_block_constraints), /*n_x=*/-1,
+                "fixed_block_constraints");
         }
     }
     return req;
@@ -2702,6 +2712,14 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     for (auto& s : scratches)
         s.allocate(n_x, arms, want_fixed_block || compute_eta_var);
 
+    // Hard linear constraints the blocks carry (hard_constraints.h), one state
+    // per outer slot: the pinned copy of the Hessian and its factor are
+    // per-solve working storage.
+    const std::vector<LinearConstraintRow> hard_rows =
+        collect_hard_constraints(blocks);
+    std::vector<HardConstraintState> hard_pool(n_outer);
+    for (auto& h : hard_pool) h.init(n_x, hard_rows);
+
     // Per-thread arm specs, built in place: JointArmSpecs is self-referential
     // (its views point at the owner's own storage and members), so it cannot be
     // moved into a pool slot -- see build_joint_arm_specs_into. Read-only in
@@ -3040,7 +3058,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                 extras ? debias : nullptr,
                 extras ? cila : nullptr,
                 static_cast<std::uint64_t>(k_grid) + 1ULL,
-                (full && eta_var_req.active()) ? &eta_var_req : nullptr
+                (full && eta_var_req.active()) ? &eta_var_req : nullptr,
+                hard_rows.empty() ? nullptr : &hard_pool[slot]
             );
         };
         if (factor_blocks.empty()) return solve_once(prev_mode, true);
