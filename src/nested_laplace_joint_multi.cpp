@@ -51,7 +51,7 @@
 // offset.
 
 #include "areal_input_check.h"    // check_areal_adjacency
-#include "block_projector.h"       // projected areal fields (RSR)
+#include "block_projector.h"       // projected fields (RSR, RTR)
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "cell_coupling_registry.h"
 #include "cell_curvature3.h"        // coupled-cell gamma_3 tensor contraction
@@ -864,16 +864,20 @@ int build_joint_blocks_from_spec(
 
     if (type == "rw1" || type == "rw2") {
         int size = Rcpp::as<int>(bs["n_times"]);
-        Rcpp::List temporal_idx_list = bs["temporal_idx"];
         bool cyclic = (type == "rw1" || type == "rw2") &&
                       bs.containsElementNamed("cyclic") &&
                       Rcpp::as<bool>(bs["cyclic"]);
         int start = latent_offset;
+        // A restricted temporal field reaches the observations through its
+        // projector (A_k = S_k P_perp) in place of the time-index gather.
+        const auto projector = read_joint_block_projector(bs, n_arms, size,
+                                                          block_index, type, arms_ptr);
 
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
-        block.idx   = make_per_arm_idx_fn(temporal_idx_list, n_arms,
+        if (!projector)
+            block.idx = make_per_arm_idx_fn(bs["temporal_idx"], n_arms,
                                             "temporal_idx", block_index, arms_ptr);
         // Optional per-arm per-row design weight (temporal varying coefficient):
         // eta_i += svc_weight[[k]][i] * amplitude * f[time_i]. The areal
@@ -909,23 +913,28 @@ int build_joint_blocks_from_spec(
             [](int) { return 0.0; }, cyclic);
         block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
         block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
+        if (projector) tulpa::apply_block_projector(block, projector);
         // Uniform RW folds its constant into the intercept; a temporal SVC (TVC)
-        // aliases with the covariate coefficient instead.
+        // aliases with the covariate coefficient instead; a projected walk's
+        // level goes where its projector's row sums put it.
         install_field_center(block, bs, start, size, parsed, block_index,
-                             make_field_center_fn(start, size, /*intercept=*/0));
+                             make_field_center_fn(start, size, /*intercept=*/0),
+                             projector.get());
         blocks.push_back(block);
         return start + size;
     }
 
     if (type == "ar1") {
         int size = Rcpp::as<int>(bs["n_times"]);
-        Rcpp::List temporal_idx_list = bs["temporal_idx"];
         int start = latent_offset;
+        const auto projector = read_joint_block_projector(bs, n_arms, size,
+                                                          block_index, type, arms_ptr);
 
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
-        block.idx   = make_per_arm_idx_fn(temporal_idx_list, n_arms,
+        if (!projector)
+            block.idx = make_per_arm_idx_fn(bs["temporal_idx"], n_arms,
                                             "temporal_idx", block_index, arms_ptr);
         // Optional per-arm per-row design weight (temporal varying coefficient),
         // as for rw1/rw2 above; unset => uniform 1.
@@ -959,9 +968,10 @@ int build_joint_blocks_from_spec(
             },
             [theta_grid, axis_rho](int k) { return theta_grid(k, axis_rho); },
             /*cyclic=*/false);
+        if (projector) tulpa::apply_block_projector(block, projector);
         // AR1's precision is full rank for |rho| < 1, so the field level is
-        // identified by the prior and nothing is centered -- the same rule the
-        // proper-CAR branch above follows.
+        // identified by the prior and nothing is centered, projected or not --
+        // the same rule the proper-CAR branch above follows.
         blocks.push_back(block);
         return start + size;
     }

@@ -2,33 +2,146 @@
 #'
 #' @description
 #' The temporal analogue of [spatial_rsr()]: constrain a temporal random effect
-#' to be orthogonal to a set of covariates, so a temporally smooth covariate does
-#' not have its fixed-effect coefficient attenuated by a confounded temporal
-#' field, \eqn{u_{RTR} = (I - P_X) u}.
+#' to be orthogonal to a set of covariates, so a covariate that moves with the
+#' temporal trend does not share its signal with the temporal field,
+#' \eqn{u_{RTR} = (I - P_X) u}.
 #'
-#' No tulpa backend applies that projection to a temporal field, so this
-#' constructor errors rather than returning a specification that would fit as the
-#' unrestricted temporal model. [spatial_rsr()] is the wired spatial analogue.
-#'
-#' @param temporal A `tulpa_temporal` specification (e.g. [temporal_rw1()],
-#'   [temporal_ar1()]).
+#' @param temporal A single-walk temporal field: [temporal_rw1()],
+#'   [temporal_rw2()] (cyclic or not) or [temporal_ar1()], without a
+#'   `group_var`. The projection is applied by nested Laplace, which reads the
+#'   field through a projector in place of its time index; a grouped (panel)
+#'   walk, [temporal_multiscale()], [temporal_gp()] and [temporal_tvc()] are
+#'   not carried by that path and are refused here rather than accepted and
+#'   then fitted unrestricted.
 #' @param restrict_to A one-sided formula giving the covariate space the temporal
 #'   effect is made orthogonal to, e.g. `~ x`.
 #'
-#' @return Nothing: the call always signals an error.
+#' @return The temporal specification, flagged as restricted (class
+#'   `tulpa_rtr` in front of its own classes). It keeps its type, so it
+#'   validates against the data as the field it is.
 #'
-#' @seealso [spatial_rsr()], [temporal_rw1()], [temporal_ar1()]
+#' @details
+#' The projector is built at the field's own resolution: one row per time
+#' point, with the restricted design averaged over the observations at each,
+#' \eqn{P_\perp = I - Q Q'} with \eqn{Q} an orthonormal basis of that design.
+#' Observation \eqn{i} at time \eqn{t_i} receives \eqn{(P_\perp u)_{t_i}}, so
+#' the field reaches the linear predictor through \eqn{S P_\perp}, \eqn{S} the
+#' observation-to-time incidence. A design that carries an intercept
+#' annihilates the field's constant, so an RW1 / RW2 walk's level reaches the
+#' predictor through the intercept alone.
+#'
+#' **What RTR estimates.** As for [spatial_rsr()], the restriction puts no part
+#' of the shared temporal signal in the field, so the fixed effect takes all of
+#' it: RTR targets the MARGINAL association between the covariate and the
+#' response, where the unrestricted temporal model targets the association
+#' conditional on the field. The two differ by exactly the covariate's
+#' projection onto the field, so they are different estimands rather than a
+#' biased and an unbiased version of one (Bradley, 2024).
+#' Measured on a confounded Gaussian fixture (5 seeds, 50 time points with 4
+#' observations each, conditional slope 1.0, marginal slope 1.51 on average):
+#' the restricted fit averaged 0.018 from the marginal value and 0.51 from the
+#' conditional one under each of RW1, RW2 and AR1, the unrestricted fit 0.45
+#' and 0.06 to 0.08.
+#'
+#' **The restriction is not free.** For the spatial restriction Hanks et al.
+#' (2015) and Khan and Calder (2022) measured POORER interval coverage than
+#' under the model that does not restrict; that has not been measured here for
+#' a temporal field. Read an RTR interval as an interval for the marginal
+#' association under a correctly specified model.
+#'
+#' A non-cyclic RW2 walk leaves its linear trend unpenalised; a `restrict_to`
+#' that spans the linear time trend (e.g. `~ x + year`) would leave that
+#' direction identified by neither the prior nor the data, and the fit refuses
+#' it.
+#'
+#' A restricted field is fitted by nested Laplace (`mode = "auto"`,
+#' `"structured"` or `"nested_laplace"`) under any family that path takes, on
+#' its own or alongside an areal or NNGP spatial field, smoothers, random
+#' effects or `latent()` blocks. [temporal()] reports the restricted field
+#' \eqn{P_\perp u}, the quantity that enters the linear predictor.
+#'
+#' @references
+#' Hodges, J. S., & Reich, B. J. (2010). Adding spatially-correlated errors
+#' can mess up the fixed effect you love. The American Statistician, 64(4),
+#' 325-334.
+#'
+#' Hanks, E. M., Schliep, E. M., Hooten, M. B., & Hoeting, J. A. (2015).
+#' Restricted spatial regression in practice: geostatistical models,
+#' confounding, and robustness under model misspecification. Environmetrics,
+#' 26(4), 243-254.
+#'
+#' Khan, K., & Calder, C. A. (2022). Restricted spatial regression methods:
+#' implications for inference. Journal of the American Statistical
+#' Association, 117(537), 482-494.
+#'
+#' Bradley, J. R. (2024). Restricted spatial regression is reasonable
+#' statistical practice: clarifications, interpretations, and new
+#' developments. arXiv:2408.05106.
+#'
+#' @seealso [spatial_rsr()], [temporal_rw1()], [temporal_rw2()],
+#'   [temporal_ar1()]
 #'
 #' @examples
-#' # No backend fits a restricted temporal field, so the constructor refuses:
-#' try(temporal_rtr(temporal_rw1("year"), ~ x))
+#' temporal_rtr(temporal_rw1("year"), restrict_to = ~ x)
+#'
+#' \donttest{
+#' set.seed(2)
+#' n_t <- 40
+#' trend <- as.numeric(arima.sim(list(ar = 0.9), n_t, sd = 0.3))
+#' df <- data.frame(year = rep(seq_len(n_t), each = 3))
+#' df$x <- trend[df$year] + rnorm(nrow(df), 0, 0.3)
+#' df$y <- rnorm(nrow(df), 1 + df$x + trend[df$year], 0.3)
+#' fit <- tulpa(y ~ x, data = df, family = "gaussian",
+#'              temporal = temporal_rtr(temporal_ar1("year"), ~ x))
+#' coef(fit)
+#' }
 #' @export
 temporal_rtr <- function(temporal, restrict_to) {
-  stop("Restricted temporal regression is not fitted by any tulpa backend: ",
-       "no temporal solver applies the (I - P_X) projection, so an RTR ",
-       "specification would fit as the unrestricted temporal model. Use ",
-       "spatial_rsr() for the spatial analogue, which the binomial ",
-       "Polya-Gamma Gibbs sampler carries.", call. = FALSE)
+  if (!inherits(temporal, "tulpa_temporal")) {
+    stop("`temporal` must be a tulpa temporal specification ",
+         "(temporal_rw1() / temporal_rw2() / temporal_ar1()).", call. = FALSE)
+  }
+  if (!inherits(restrict_to, "formula") || length(restrict_to) != 2L) {
+    stop("`restrict_to` must be a one-sided formula, e.g. ~ x.", call. = FALSE)
+  }
+  type <- tolower(temporal$type %||% "")
+  if (!type %in% .RTR_FIELDS) {
+    stop(sprintf(paste0(
+      "temporal_rtr() restricts a single RW1, RW2 or AR1 walk (%s); got '%s'.\n",
+      "The projection is applied by nested Laplace, which reads such a walk ",
+      "through a projector in place of its time index; a multiscale, GP or ",
+      "varying-coefficient temporal structure has no block that path can ",
+      "project. Restrict a temporal_rw1() / temporal_rw2() / temporal_ar1() ",
+      "field, or drop temporal_rtr() and fit the field directly."),
+      paste(.RTR_FIELDS, collapse = ", "), temporal$type %||% "<none>"),
+      call. = FALSE)
+  }
+  if (!is.null(temporal$group_var)) {
+    stop("temporal_rtr() restricts a single walk. A grouped (panel) field ",
+         "(group_var = '", temporal$group_var, "') is fitted by the ",
+         "single-block temporal kernel, which has no projector; the ",
+         "multi-block drivers that apply one carry one walk per block.",
+         call. = FALSE)
+  }
+  temporal$rtr <- TRUE
+  temporal$rtr_formula <- restrict_to
+  class(temporal) <- c("tulpa_rtr", class(temporal))
+  temporal
+}
+
+# The temporal structures temporal_rtr() takes: the single-walk temporal blocks
+# both nested-Laplace multi-block drivers read through a projector.
+.RTR_FIELDS <- c("rw1", "rw2", "ar1")
+
+#' @rdname temporal_rtr
+#' @param x A `tulpa_rtr` specification.
+#' @param ... Passed to the print method of the restricted field.
+#' @export
+print.tulpa_rtr <- function(x, ...) {
+  NextMethod()
+  cat("\nRestricted Temporal Regression (RTR):\n")
+  cat("  Orthogonal to:", deparse(x$rtr_formula), "\n")
+  invisible(x)
 }
 
 
@@ -175,6 +288,30 @@ temporal <- function(object, component = "all", summary = FALSE,
        w = w[keep] / sum(w[keep]))
 }
 
+# The mixture of a linear map P of a field: a restricted temporal field
+# (temporal_rtr()) enters the linear predictor as P z, z the block's
+# coordinates, so each cell's Gaussian maps to mean P mu_k and covariance
+# P C_k P'. Its marginal variances need each cell's full covariance; a field
+# that retained only the marginals cannot report P z's spread, and is refused.
+.nl_mixture_project <- function(mix, P) {
+  if (!is.matrix(P) || ncol(P) != ncol(mix$mu)) {
+    stop("Internal: the restricted temporal field carries no projection ",
+         "matching its block.", call. = FALSE)
+  }
+  out <- mix
+  out$mu <- mix$mu %*% t(P)
+  if (is.null(mix$var)) return(out)
+  if (is.null(mix$cov)) {
+    stop("temporal(): the restricted field P z mixes every time point, so its ",
+         "spread needs each grid cell's covariance, which this fit did not ",
+         "retain (a field wider than the retained-covariance limit).",
+         call. = FALSE)
+  }
+  out$cov <- lapply(mix$cov, function(Ck) P %*% Ck %*% t(P))
+  out$var <- do.call(rbind, lapply(out$cov, function(Ck) pmax(diag(Ck), 0)))
+  out
+}
+
 # A factor R with crossprod(R) == S, for a covariance that may be singular: the
 # constrained covariance of an intrinsic field (RW1 / RW2) has the sum-to-zero
 # direction at exactly zero variance, where chol() refuses. Eigenvalues below
@@ -282,6 +419,9 @@ temporal.tulpa_fit <- function(object, component = "all", summary = FALSE,
     width <- (temp_info$n_times %||% 0L) * max(temp_info$n_groups %||% 1L, 1L)
     if (is.null(latent_blk) && length(cols) != width) cols <- NULL
     mixture <- if (length(cols)) .nl_field_mixture(object, cols)
+    if (!is.null(mixture) && isTRUE(temp_info$rtr)) {
+      mixture <- .nl_mixture_project(mixture, temp_info$rtr_projection)
+    }
     if (!is.null(mixture)) {
       if (is.null(mixture$var)) {
         warning("This nested-Laplace fit retained no per-cell variance for ",

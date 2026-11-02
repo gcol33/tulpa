@@ -216,18 +216,17 @@ adjacency_to_list_tulpa <- function(adj) {
   compute_rsr_projection(X_unit)
 }
 
-# The projection `spatial_rsr()` declares, attached to the spec at the field's
-# own resolution. One builder for both field shapes and every backend that
-# applies it: `restrict_to` is the design it orthogonalises against -- the
-# spec's own formula, not the full model design. A spec without one (a bare
-# `type = "rsr"` list) is restricted against `X_default`, the model design.
-.attach_rsr_projection <- function(spatial_spec, data, obs_to_field, n_field,
-                                   X_default) {
-  X_rsr <- if (is.null(spatial_spec$rsr_formula)) X_default
-           else stats::model.matrix(spatial_spec$rsr_formula, data = data)
-  spatial_spec$rsr_projection <-
-    .rsr_unit_projection(X_rsr, obs_to_field, n_field)
-  spatial_spec
+# The projection a restriction modifier declares (`spatial_rsr()`,
+# `temporal_rtr()`), at the field's own resolution. One builder for every field
+# shape and every backend that applies it: `restrict_to` is the formula of the
+# design it orthogonalises against -- the modifier's own, not the full model
+# design. A spec without one (a bare `type = "rsr"` list) is restricted against
+# `X_default`, the model design.
+.restriction_projection <- function(restrict_to, data, obs_to_field, n_field,
+                                    X_default) {
+  X_r <- if (is.null(restrict_to)) X_default
+         else stats::model.matrix(restrict_to, data = data)
+  .rsr_unit_projection(X_r, obs_to_field, n_field)
 }
 
 #' Dispatch a spatial Polya-Gamma Gibbs fit to the correct sampler
@@ -328,7 +327,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
     ))), "bym2", X)
   } else if (spatial_type == "rsr") {
     # Restricted spatial regression: an ICAR field projected orthogonal to the
-    # covariates each sweep. Reuse the projector .attach_rsr_projection()
+    # covariates each sweep. Reuse the projector .restriction_projection()
     # built, else assemble the unit-level P_perp from the model design.
     rsr_n  <- areal$n_spatial_units
     P_perp <- spatial$rsr_projection %||%

@@ -1,6 +1,6 @@
 # Structural coverage for the exported spec constructors whose fitting paths
 # live in the companion model packages (or are experimental): the
-# spatiotemporal, temporal-GP, TVC/RTR, and SVC front doors. Constructors no
+# spatiotemporal, temporal-GP, TVC, and SVC front doors. Constructors no
 # fitter consumes refuse to build; the rest must hold their construction,
 # field layout, and validation errors even where no end-to-end tulpa() route
 # exists yet.
@@ -10,13 +10,6 @@
   for (i in seq_len(n - 1L)) adj[i, i + 1L] <- adj[i + 1L, i] <- 1
   adj
 }
-
-test_that("temporal_rtr() refuses to build a spec no fitter projects", {
-  tm <- temporal_rw1("year")
-  expect_error(temporal_rtr(tm, restrict_to = ~ x),
-               "not fitted by any tulpa backend")
-  expect_error(temporal_rtr(list(), ~ x), "not fitted by any tulpa backend")
-})
 
 test_that("spatiotemporal_effects() rejects a fit that carries no ST field", {
   fit_stub <- structure(list(), class = c("tulpa_fit", "list"))

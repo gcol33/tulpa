@@ -611,6 +611,47 @@
 }
 
 
+# The 1-based field node of every observation of a validated temporal spec.
+# Panel (grouped) data is a separate walk per group, all sharing one tau (and
+# one AR1 rho): validate_temporal() resolved n_groups + the per-obs
+# group_index, and (group, time) flattens to node (group-1)*n_times + time so
+# the G chains occupy contiguous, disconnected blocks. A single walk is the
+# n_groups == 1 case (the node is the time index).
+.temporal_node_index <- function(temporal) {
+  t_idx <- as.integer(temporal$time_index)
+  if (as.integer(temporal$n_groups %||% 1L) > 1L) {
+    return((as.integer(temporal$group_index) - 1L) *
+             as.integer(temporal$n_times) + t_idx)
+  }
+  t_idx
+}
+
+# The projection `temporal_rtr()` declares, at the field's own resolution (one
+# row per time point). A non-cyclic RW2 walk leaves its linear trend over the
+# time points unpenalised, so a restrict_to design that spans that trend
+# leaves it reaching neither the prior nor the predictor: the field then
+# carries a direction nothing identifies, and the fit is refused here.
+.attach_rtr_projection <- function(temporal, data, X_default) {
+  n_field <- as.integer(temporal$n_times) *
+    max(as.integer(temporal$n_groups %||% 1L), 1L)
+  P <- .restriction_projection(temporal$rtr_formula, data,
+                               obs_to_field = .temporal_node_index(temporal),
+                               n_field = n_field, X_default = X_default)
+  if (identical(temporal$type, "rw2") && !isTRUE(temporal$cyclic)) {
+    trend <- seq_len(n_field) - (n_field + 1) / 2
+    if (sqrt(sum((P %*% trend)^2)) < 1e-8 * sqrt(sum(trend^2))) {
+      stop("temporal_rtr(): the restrict_to design spans the linear time ",
+           "trend, which an RW2 walk leaves unpenalised. Restricted against ",
+           "it, that direction reaches neither the prior nor the linear ",
+           "predictor and nothing identifies it. Drop the time trend from ",
+           "restrict_to, or restrict an RW1 / AR1 field.", call. = FALSE)
+    }
+  }
+  temporal$rtr_projection <- P
+  temporal
+}
+
+
 # Convert a validated temporal spec (rw1 / rw2 / ar1) into the nested-Laplace
 # temporal prior block. The block format is the one the single-block registry
 # (R/nested_laplace.R: `rw1` / `rw2` / `ar1` entries) and the multi-block
@@ -638,24 +679,27 @@
     stop("tulpa() routes temporal types rw1, rw2, ar1 through nested Laplace; ",
          "got '", type, "'.", call. = FALSE)
   }
-  # Panel (grouped) data: a separate walk per group, all sharing one tau (and one
-  # AR1 rho). validate_temporal() resolved n_groups + the per-obs group_index;
-  # flatten (group, time) into the block's 1-based node (group-1)*n_times + time
-  # so the G chains occupy contiguous, disconnected blocks. A single walk is the
-  # n_groups == 1 case (the flattened index reduces to time_index).
   n_groups <- as.integer(temporal$n_groups %||% 1L)
-  if (n_groups > 1L) {
-    g_idx <- as.integer(temporal$group_index)
-    temporal_idx <- (g_idx - 1L) * as.integer(n_times) + as.integer(temporal$time_index)
-  } else {
-    temporal_idx <- as.integer(temporal$time_index)
-  }
+  temporal_idx <- .temporal_node_index(temporal)
   out <- list(
     type         = type,
     temporal_idx = temporal_idx,
     n_times      = as.integer(n_times),
     n_groups     = n_groups
   )
+  if (isTRUE(temporal$rtr)) {
+    # Restricted temporal regression: observation i receives (P z)[t_i], with
+    # P the time-level projector orthogonal to the restrict_to design, so the
+    # block reads the field through A = S P (S the observation-to-time
+    # incidence) in place of the gather.
+    P <- temporal$rtr_projection
+    if (is.null(P)) {
+      stop("Internal: a restricted temporal spec reached the nested path ",
+           "without its projection.", call. = FALSE)
+    }
+    out$projector    <- P[temporal_idx, , drop = FALSE]
+    out$temporal_idx <- NULL
+  }
   if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(temporal$cyclic)
   # AR1 rho prior travels on the block; the outer nested-Laplace grid reweights
   # by it (.nl_apply_ar1_rho_prior). NULL stays the default Uniform(-1, 1).
@@ -2314,8 +2358,8 @@ tulpa <- function(formula, data,
         # A restricted continuous field: the projector is built at the unique
         # locations the field is indexed by, which validate_gp() has just
         # resolved (gcol33/tulpa#848).
-        spatial_spec <- .attach_rsr_projection(
-          spatial_spec, data,
+        spatial_spec$rsr_projection <- .restriction_projection(
+          spatial_spec$rsr_formula, data,
           obs_to_field = as.integer(spatial_spec$obs_to_loc),
           n_field = as.integer(spatial_spec$n_spatial %||%
                                  nrow(spatial_spec$unique_coords)),
@@ -2357,8 +2401,8 @@ tulpa <- function(formula, data,
         # whole point of the modifier. dispatch_gibbs_spatial() consumes the
         # precomputed n_units x n_units projection, and the nested path reads
         # it through the block's projector (.spatial_spec_to_nl_prior()).
-        spatial_spec <- .attach_rsr_projection(
-          spatial_spec, data,
+        spatial_spec$rsr_projection <- .restriction_projection(
+          spatial_spec$rsr_formula, data,
           obs_to_field = spatial_spec$spatial_idx,
           n_field = n_units, X_default = bundle$X)
       }
@@ -2446,6 +2490,12 @@ tulpa <- function(formula, data,
     # temporal_multiscale() spec and delegates every other spec to
     # validate_temporal(), so single-component fields are unaffected.
     temporal_spec <- validate_temporal_multiscale(temporal_spec, data)
+    if (isTRUE(temporal_spec$rtr)) {
+      # The time-level projector orthogonal to the restrict_to design, read by
+      # the nested-Laplace multi-block drivers as the block's projector
+      # (.temporal_spec_to_nl_prior()).
+      temporal_spec <- .attach_rtr_projection(temporal_spec, data, bundle$X)
+    }
     }
   }
 
@@ -2890,6 +2940,18 @@ tulpa <- function(formula, data,
       "'nested_laplace' (or 'gibbs' for a binomial response)."),
       if (identical(spatial_type, "rsr")) "areal" else "continuous",
       sel$backend, mode, spatial_spec$type), call. = FALSE)
+  }
+
+  # temporal_rtr()'s projection is read only by the nested-Laplace multi-block
+  # drivers, as the temporal block's projector; a ModelData sampler would fit
+  # the plain walk while the spec still reports the restriction.
+  if (isTRUE(temporal_spec$rtr) && !identical(sel$backend, "nested_laplace")) {
+    stop(sprintf(paste0(
+      "A restricted temporal field (temporal_rtr()) is fit by nested Laplace; ",
+      "the selected backend '%s' (mode = '%s') reads the underlying '%s' ",
+      "field and would fit it unprojected. Use mode = 'auto', 'structured' or ",
+      "'nested_laplace'."), sel$backend, mode, temporal_spec$type),
+      call. = FALSE)
   }
 
   # An explicit `mode` that the redirects above moved off is reported, never

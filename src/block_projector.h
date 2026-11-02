@@ -2,11 +2,12 @@
 // A per-arm linear projector from a latent block onto the observations:
 // arm k's linear predictor receives A_k x_block, with A_k an N_k x size matrix
 // stored column-compressed (A_x / A_i / A_p, 0-based). The SPDE block reaches
-// its mesh through one (barycentric, ~3 nonzeros per row) and an areal block
-// carrying a `projector` reaches its units through one (restricted spatial
-// regression: A_k = P_k S_k, dense). Both are INDEXED_MULTI blocks: each row's
-// nonzeros are materialized once at factory time and handed to every walker
-// through `obs_indices`.
+// its mesh through one (barycentric, ~3 nonzeros per row), and an areal, NNGP
+// or temporal block carrying a `projector` reaches its units through one
+// (restricted spatial or temporal regression: A_k = S_k P_perp, dense, with
+// S_k arm k's observation-to-unit incidence). All are INDEXED_MULTI blocks:
+// each row's nonzeros are materialized once at factory time and handed to every
+// walker through `obs_indices`.
 
 #ifndef TULPA_BLOCK_PROJECTOR_H
 #define TULPA_BLOCK_PROJECTOR_H
@@ -66,9 +67,9 @@ inline std::vector<std::vector<double>> projector_row_sums(
     return out;
 }
 
-// The per-arm projector of an areal block spec (`projector`, the column-
-// compressed lists A_x / A_i / A_p, one entry per arm), or null when the block
-// reads its units through `spatial_idx`. A projector replaces the gather, so any
+// The per-arm projector of a block spec (`projector`, the column-compressed
+// lists A_x / A_i / A_p, one entry per arm), or null when the block reads its
+// units through its index gather (`spatial_idx` / `temporal_idx`). A projector replaces the gather, so any
 // per-row weight belongs inside A_k: a spec carrying `svc_weight` as well is
 // refused rather than weighted twice.
 inline std::shared_ptr<std::vector<ARows>> read_block_projector(

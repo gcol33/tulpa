@@ -2,34 +2,114 @@
 % Please edit documentation in R/temporal_rtr_posteriors.R
 \name{temporal_rtr}
 \alias{temporal_rtr}
+\alias{print.tulpa_rtr}
 \title{Restricted temporal regression (RTR)}
 \usage{
 temporal_rtr(temporal, restrict_to)
+
+\method{print}{tulpa_rtr}(x, ...)
 }
 \arguments{
-\item{temporal}{A \code{tulpa_temporal} specification (e.g. \code{\link[=temporal_rw1]{temporal_rw1()}},
-\code{\link[=temporal_ar1]{temporal_ar1()}}).}
+\item{temporal}{A single-walk temporal field: \code{\link[=temporal_rw1]{temporal_rw1()}},
+\code{\link[=temporal_rw2]{temporal_rw2()}} (cyclic or not) or \code{\link[=temporal_ar1]{temporal_ar1()}}, without a
+\code{group_var}. The projection is applied by nested Laplace, which reads the
+field through a projector in place of its time index; a grouped (panel)
+walk, \code{\link[=temporal_multiscale]{temporal_multiscale()}}, \code{\link[=temporal_gp]{temporal_gp()}} and \code{\link[=temporal_tvc]{temporal_tvc()}} are
+not carried by that path and are refused here rather than accepted and
+then fitted unrestricted.}
 
 \item{restrict_to}{A one-sided formula giving the covariate space the temporal
 effect is made orthogonal to, e.g. \code{~ x}.}
+
+\item{x}{A \code{tulpa_rtr} specification.}
+
+\item{...}{Passed to the print method of the restricted field.}
 }
 \value{
-Nothing: the call always signals an error.
+The temporal specification, flagged as restricted (class
+\code{tulpa_rtr} in front of its own classes). It keeps its type, so it
+validates against the data as the field it is.
 }
 \description{
 The temporal analogue of \code{\link[=spatial_rsr]{spatial_rsr()}}: constrain a temporal random effect
-to be orthogonal to a set of covariates, so a temporally smooth covariate does
-not have its fixed-effect coefficient attenuated by a confounded temporal
-field, \eqn{u_{RTR} = (I - P_X) u}.
+to be orthogonal to a set of covariates, so a covariate that moves with the
+temporal trend does not share its signal with the temporal field,
+\eqn{u_{RTR} = (I - P_X) u}.
+}
+\details{
+The projector is built at the field's own resolution: one row per time
+point, with the restricted design averaged over the observations at each,
+\eqn{P_\perp = I - Q Q'} with \eqn{Q} an orthonormal basis of that design.
+Observation \eqn{i} at time \eqn{t_i} receives \eqn{(P_\perp u)_{t_i}}, so
+the field reaches the linear predictor through \eqn{S P_\perp}, \eqn{S} the
+observation-to-time incidence. A design that carries an intercept
+annihilates the field's constant, so an RW1 / RW2 walk's level reaches the
+predictor through the intercept alone.
 
-No tulpa backend applies that projection to a temporal field, so this
-constructor errors rather than returning a specification that would fit as the
-unrestricted temporal model. \code{\link[=spatial_rsr]{spatial_rsr()}} is the wired spatial analogue.
+\strong{What RTR estimates.} As for \code{\link[=spatial_rsr]{spatial_rsr()}}, the restriction puts no part
+of the shared temporal signal in the field, so the fixed effect takes all of
+it: RTR targets the MARGINAL association between the covariate and the
+response, where the unrestricted temporal model targets the association
+conditional on the field. The two differ by exactly the covariate's
+projection onto the field, so they are different estimands rather than a
+biased and an unbiased version of one (Bradley, 2024).
+Measured on a confounded Gaussian fixture (5 seeds, 50 time points with 4
+observations each, conditional slope 1.0, marginal slope 1.51 on average):
+the restricted fit averaged 0.018 from the marginal value and 0.51 from the
+conditional one under each of RW1, RW2 and AR1, the unrestricted fit 0.45
+and 0.06 to 0.08.
+
+\strong{The restriction is not free.} For the spatial restriction Hanks et al.
+(2015) and Khan and Calder (2022) measured POORER interval coverage than
+under the model that does not restrict; that has not been measured here for
+a temporal field. Read an RTR interval as an interval for the marginal
+association under a correctly specified model.
+
+A non-cyclic RW2 walk leaves its linear trend unpenalised; a \code{restrict_to}
+that spans the linear time trend (e.g. \code{~ x + year}) would leave that
+direction identified by neither the prior nor the data, and the fit refuses
+it.
+
+A restricted field is fitted by nested Laplace (\code{mode = "auto"},
+\code{"structured"} or \code{"nested_laplace"}) under any family that path takes, on
+its own or alongside an areal or NNGP spatial field, smoothers, random
+effects or \code{latent()} blocks. \code{\link[=temporal]{temporal()}} reports the restricted field
+\eqn{P_\perp u}, the quantity that enters the linear predictor.
 }
 \examples{
-# No backend fits a restricted temporal field, so the constructor refuses:
-try(temporal_rtr(temporal_rw1("year"), ~ x))
+temporal_rtr(temporal_rw1("year"), restrict_to = ~ x)
+
+\donttest{
+set.seed(2)
+n_t <- 40
+trend <- as.numeric(arima.sim(list(ar = 0.9), n_t, sd = 0.3))
+df <- data.frame(year = rep(seq_len(n_t), each = 3))
+df$x <- trend[df$year] + rnorm(nrow(df), 0, 0.3)
+df$y <- rnorm(nrow(df), 1 + df$x + trend[df$year], 0.3)
+fit <- tulpa(y ~ x, data = df, family = "gaussian",
+             temporal = temporal_rtr(temporal_ar1("year"), ~ x))
+coef(fit)
+}
+}
+\references{
+Hodges, J. S., & Reich, B. J. (2010). Adding spatially-correlated errors
+can mess up the fixed effect you love. The American Statistician, 64(4),
+325-334.
+
+Hanks, E. M., Schliep, E. M., Hooten, M. B., & Hoeting, J. A. (2015).
+Restricted spatial regression in practice: geostatistical models,
+confounding, and robustness under model misspecification. Environmetrics,
+26(4), 243-254.
+
+Khan, K., & Calder, C. A. (2022). Restricted spatial regression methods:
+implications for inference. Journal of the American Statistical
+Association, 117(537), 482-494.
+
+Bradley, J. R. (2024). Restricted spatial regression is reasonable
+statistical practice: clarifications, interpretations, and new
+developments. arXiv:2408.05106.
 }
 \seealso{
-\code{\link[=spatial_rsr]{spatial_rsr()}}, \code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_ar1]{temporal_ar1()}}
+\code{\link[=spatial_rsr]{spatial_rsr()}}, \code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_rw2]{temporal_rw2()}},
+\code{\link[=temporal_ar1]{temporal_ar1()}}
 }

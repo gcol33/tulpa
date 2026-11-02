@@ -320,15 +320,19 @@
             out$n_components <- as.integer(p$n_components)
         }
         out
-    } else if (type %in% c("rw1", "rw2", "ar1")) {
-        temporal_idx <- .multi_block_per_arm_idx(p$temporal_idx, n_arms,
-                                                   block_index, "temporal_idx",
-                                                   arm_n_obs, p$n_times)
+    } else if (type %in% .NL_PROJECTABLE_TEMPORAL) {
+        temporal_idx <- if (!projected)
+            .multi_block_per_arm_idx(p$temporal_idx, n_arms, block_index,
+                                     "temporal_idx", arm_n_obs, p$n_times)
         out <- list(
             type         = type,
             temporal_idx = temporal_idx,
             n_times      = as.integer(p$n_times)
         )
+        if (projected) {
+            out$projector <- .nl_block_projector(p, n_arms, block_index,
+                                                 arm_n_obs)
+        }
         if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(p$cyclic)
         # Optional per-arm per-row design weight (temporal SVC). Parallel to the
         # areal branch: the field's contribution to arm k row i is row-scaled by

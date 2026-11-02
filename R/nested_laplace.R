@@ -555,7 +555,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
          "tulpa_nested_laplace_joint(prior = list(), phi_grid = ).",
          call. = FALSE)
   }
-  # A projected areal field is read by the multi-block driver alone, so a
+  # A projected field is read by the multi-block driver alone, so a
   # single projected block routes there as a length-1 block list.
   if (.nl_block_is_projected(prior)) prior <- list(prior)
   # Outer-axis provenance: record which grid axes the caller
@@ -1448,7 +1448,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   rw1 = list(
     cpp_fn = "cpp_nested_laplace_temporal",
     required = list(single = .NL_REQ_TEMPORAL, multi = .NL_REQ_TEMPORAL,
-                    joint = .NL_REQ_TEMPORAL),
+                    joint = .NL_REQ_TEMPORAL, projected = "n_times"),
     defaults = function(p, a) .nl_fill_family_axes(p, "rw1"),
     pack = function(p) list(
       temporal_idx  = as.integer(p$temporal_idx),
@@ -1465,7 +1465,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   rw2 = list(
     cpp_fn = "cpp_nested_laplace_temporal",
     required = list(single = .NL_REQ_TEMPORAL, multi = .NL_REQ_TEMPORAL,
-                    joint = .NL_REQ_TEMPORAL),
+                    joint = .NL_REQ_TEMPORAL, projected = "n_times"),
     defaults = function(p, a) .nl_fill_family_axes(p, "rw2"),
     pack = function(p) list(
       temporal_idx  = as.integer(p$temporal_idx),
@@ -1482,7 +1482,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   ar1 = list(
     cpp_fn = "cpp_nested_laplace_temporal",
     required = list(single = .NL_REQ_TEMPORAL, multi = .NL_REQ_TEMPORAL,
-                    joint = .NL_REQ_TEMPORAL),
+                    joint = .NL_REQ_TEMPORAL, projected = "n_times"),
     defaults = function(p, a) {
       # The temporal kernel takes rho as given, so an AR1 correlation outside
       # (-1, 1) -- a non-stationary process -- is refused here, by name.
@@ -2064,12 +2064,20 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # Cartesian product of per-block axes.
 
 # Block types whose field may reach the observations through a projector: arm
-# k's predictor receives A_k z in place of the unit gather z[spatial_idx]
-# (restricted spatial regression, A_k = P_k S_k). Both multi-block drivers read
-# one; an areal block's level is placed from A_k 1, an NNGP block's prior
-# carries its own.
+# k's predictor receives A_k z in place of the unit gather z[spatial_idx] or
+# z[temporal_idx] (restricted spatial or temporal regression, A_k = S_k P_perp
+# with S_k the observation-to-unit incidence). Both multi-block drivers read
+# one; an intrinsic block's (ICAR, BYM2, RW1, RW2) level is placed from A_k 1,
+# a proper block's (proper CAR, NNGP, AR1) prior carries its own.
 .NL_PROJECTABLE_AREAL <- c("icar", "bym2", "car_proper")
-.NL_PROJECTABLE_TYPES <- c(.NL_PROJECTABLE_AREAL, "nngp")
+.NL_PROJECTABLE_TEMPORAL <- c("rw1", "rw2", "ar1")
+.NL_PROJECTABLE_TYPES <- c(.NL_PROJECTABLE_AREAL, "nngp",
+                           .NL_PROJECTABLE_TEMPORAL)
+
+# The per-observation index a projector replaces on a block of `type`.
+.nl_projector_idx_field <- function(type) {
+  if (type %in% .NL_PROJECTABLE_TEMPORAL) "temporal_idx" else "spatial_idx"
+}
 
 .nl_block_is_projected <- function(p) {
   is.list(p) && tolower(p$type %||% "") %in% .NL_PROJECTABLE_TYPES &&
@@ -2086,7 +2094,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   has <- vapply(blocks, function(b) is.list(b) && !is.null(b$projector),
                 logical(1))
   if (any(has)) {
-    stop(door, " does not read a block `projector`; a projected areal field ",
+    stop(door, " does not read a block `projector`; a projected field ",
          "is fitted by tulpa_nested_laplace_joint() with a list of blocks, ",
          "`prior = list(<block>)`.", call. = FALSE)
   }
@@ -2098,13 +2106,14 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # layout). `p$projector` is a list of n_arms matrices, each N_k x n_units
 # (dense or a Matrix sparse matrix), or one matrix shared by every arm; a NULL
 # entry is an arm the field does not reach. The projector replaces the unit
-# gather, so a block carrying `spatial_idx` as well, or a per-row
-# `svc_weight` that belongs inside A_k, is refused.
+# gather, so a block carrying its index (`spatial_idx` / `temporal_idx`) as
+# well, or a per-row `svc_weight` that belongs inside A_k, is refused.
 .nl_block_projector <- function(p, n_arms, block_index, arm_n_obs) {
   type <- tolower(p$type)
   lab <- paste0("Block ", block_index, " (type '", type, "')")
-  if (!is.null(p$spatial_idx)) {
-    stop(lab, ": pass either `projector` or `spatial_idx`, not both; a ",
+  idx_field <- .nl_projector_idx_field(type)
+  if (!is.null(p[[idx_field]])) {
+    stop(lab, ": pass either `projector` or `", idx_field, "`, not both; a ",
          "projector already maps the observations to the units.",
          call. = FALSE)
   }
@@ -2116,7 +2125,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     stop(lab, ": a projector needs the arms' observation counts.",
          call. = FALSE)
   }
-  n_units <- as.integer(p$n_spatial_units %||% p$n_spatial)
+  n_units <- as.integer(p$n_spatial_units %||% p$n_spatial %||% p$n_times)
   projector <- p$projector
   if (!is.list(projector)) projector <- rep(list(projector), n_arms)
   if (length(projector) != n_arms) {
@@ -2420,12 +2429,15 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
       phi_basis  = as.matrix(p$phi_basis),
       lambda_eig = as.numeric(p$lambda_eig)
     ))
-  } else if (type %in% c("rw1", "rw2", "ar1")) {
+  } else if (type %in% .NL_PROJECTABLE_TEMPORAL) {
     out <- list(
       type         = type,
-      temporal_idx = as.integer(p$temporal_idx),
+      temporal_idx = if (!projected) as.integer(p$temporal_idx),
       n_times      = as.integer(p$n_times)
     )
+    if (projected) {
+      out$projector <- .nl_block_projector(p, 1L, block_index %||% 1L, n_obs)
+    }
     if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(p$cyclic)
     .with_svc(out)
   } else if (type == "st_interaction") {

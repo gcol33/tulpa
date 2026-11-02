@@ -33,7 +33,7 @@
 // LatentBlocks into the vector (BYM2 is the only 2-block expansion).
 
 #include "areal_input_check.h"     // check_latent_obs_index
-#include "block_projector.h"       // projected areal fields (RSR)
+#include "block_projector.h"       // projected fields (RSR, RTR)
 #include "car_proper_block.h"      // set_car_proper_block_priors
 #include "constrained_structure_block.h"  // st_interaction
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
@@ -64,20 +64,22 @@
 
 namespace {
 
-// The projector of an areal block spec, or null when it gathers its units
-// through `spatial_idx`. A projector replaces the gather, so a spec carrying
+// The projector of a block spec, or null when it gathers its units through
+// its index field (`spatial_idx` for an areal or NNGP field, `temporal_idx`
+// for a temporal one). A projector replaces the gather, so a spec carrying
 // both is refused.
 std::shared_ptr<std::vector<tulpa::ARows>> read_single_arm_projector(
     const Rcpp::List& bs, int n_obs, int size, int block_index,
-    const std::string& type
+    const std::string& type, const char* idx_field
 ) {
     auto rows = tulpa::read_block_projector(
         bs, Rcpp::IntegerVector::create(n_obs), size, block_index, type);
-    if (rows && bs.containsElementNamed("spatial_idx") &&
-        !Rf_isNull(bs["spatial_idx"])) {
+    if (rows && bs.containsElementNamed(idx_field) &&
+        !Rf_isNull(bs[idx_field])) {
         Rcpp::stop("Block %d (type '%s'): pass either `projector` or "
-                   "`spatial_idx`, not both; a projector already maps the "
-                   "observations to the units.", block_index + 1, type.c_str());
+                   "`%s`, not both; a projector already maps the "
+                   "observations to the units.", block_index + 1, type.c_str(),
+                   idx_field);
     }
     return rows;
 }
@@ -153,7 +155,8 @@ int build_blocks_of_type(
         require_axes(1);
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
         const auto projector = read_single_arm_projector(bs, n_obs, size,
-                                                         block_index, type);
+                                                         block_index, type,
+                                                         "spatial_idx");
         Rcpp::IntegerVector spatial_idx;
         if (!projector) {
             spatial_idx = bs["spatial_idx"];
@@ -192,7 +195,8 @@ int build_blocks_of_type(
         require_axes(2);
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
         const auto projector = read_single_arm_projector(bs, n_obs, size,
-                                                         block_index, type);
+                                                         block_index, type,
+                                                         "spatial_idx");
         Rcpp::IntegerVector spatial_idx;
         if (!projector) {
             spatial_idx = bs["spatial_idx"];
@@ -259,7 +263,8 @@ int build_blocks_of_type(
         require_axes(2);
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
         const auto projector = read_single_arm_projector(bs, n_obs, size,
-                                                         block_index, type);
+                                                         block_index, type,
+                                                         "spatial_idx");
         Rcpp::IntegerVector spatial_idx;
         if (!projector) {
             spatial_idx = bs["spatial_idx"];
@@ -295,7 +300,8 @@ int build_blocks_of_type(
         tulpa::nl_grid_axis_positive("nngp sigma2 axis", theta_grid, axis0);
         tulpa::nl_grid_axis_positive("nngp phi_gp axis", theta_grid, axis0 + 1);
         const auto projector = read_single_arm_projector(bs, n_obs, n_spatial,
-                                                         block_index, type);
+                                                         block_index, type,
+                                                         "spatial_idx");
         // A projected field reaches no unit through the gather: every row
         // reads 0 ("no field on this row") until the projector replaces it.
         Rcpp::IntegerVector spatial_idx(n_obs, 0);
@@ -391,8 +397,14 @@ int build_blocks_of_type(
     if (type == "rw1" || type == "rw2") {
         require_axes(1);
         int size = Rcpp::as<int>(bs["n_times"]);
-        Rcpp::IntegerVector temporal_idx = bs["temporal_idx"];
-        check_idx(temporal_idx, size, "blocks_spec$temporal_idx");
+        const auto projector = read_single_arm_projector(bs, n_obs, size,
+                                                         block_index, type,
+                                                         "temporal_idx");
+        Rcpp::IntegerVector temporal_idx;
+        if (!projector) {
+            temporal_idx = bs["temporal_idx"];
+            check_idx(temporal_idx, size, "blocks_spec$temporal_idx");
+        }
         bool cyclic = bs.containsElementNamed("cyclic") &&
                       Rcpp::as<bool>(bs["cyclic"]);
         int start = latent_offset;
@@ -408,7 +420,12 @@ int build_blocks_of_type(
             block, type, start, /*n_groups=*/1, size,
             [theta_grid, axis0](int k) { return theta_grid(k, axis0); },
             [](int) { return 0.0; }, cyclic);
-        tulpa::centre_intrinsic_level(block);
+        if (projector) {
+            tulpa::apply_block_projector(block, projector);
+            centre_projected_intrinsic_level(block, *projector, X);
+        } else {
+            tulpa::centre_intrinsic_level(block);
+        }
         blocks.push_back(block);
         return start + size;
     }
@@ -416,8 +433,14 @@ int build_blocks_of_type(
     if (type == "ar1") {
         require_axes(2);
         int size = Rcpp::as<int>(bs["n_times"]);
-        Rcpp::IntegerVector temporal_idx = bs["temporal_idx"];
-        check_idx(temporal_idx, size, "blocks_spec$temporal_idx");
+        const auto projector = read_single_arm_projector(bs, n_obs, size,
+                                                         block_index, type,
+                                                         "temporal_idx");
+        Rcpp::IntegerVector temporal_idx;
+        if (!projector) {
+            temporal_idx = bs["temporal_idx"];
+            check_idx(temporal_idx, size, "blocks_spec$temporal_idx");
+        }
         int start = latent_offset;
 
         tulpa::LatentBlock block;
@@ -430,8 +453,9 @@ int build_blocks_of_type(
             [theta_grid, axis0](int k) { return theta_grid(k, axis0); },
             [theta_grid, axis0](int k) { return theta_grid(k, axis0 + 1); },
             /*cyclic=*/false);
-        // AR1 is proper at |rho| < 1: full rank, so no centering. Same rule as
-        // proper CAR above and as the joint multi-arm driver.
+        // AR1 is proper at |rho| < 1: full rank, so no centering, projected or
+        // not. Same rule as proper CAR above and as the joint multi-arm driver.
+        if (projector) tulpa::apply_block_projector(block, projector);
         blocks.push_back(block);
         return start + size;
     }
