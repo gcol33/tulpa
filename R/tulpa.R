@@ -842,6 +842,34 @@
 }
 
 
+# Why the Polya-Gamma temporal Gibbs sampler (`dispatch_gibbs_temporal()`)
+# cannot carry a validated temporal spec through tulpa(), as a clause naming
+# what it lacks; NULL when it can. Its kernel is a binomial
+# temporal_multiscale() field with an RW1 trend (or none), a cyclic seasonal
+# component and an AR1 / iid short-term one, with no spatial field beside it
+# and one walk shared by every observation.
+.gibbs_temporal_unfit <- function(temporal, family, has_spatial) {
+  if (!identical(tolower(temporal$type %||% ""), "multiscale")) {
+    return("the Polya-Gamma temporal sampler does not carry (it carries a temporal_multiscale() field)")
+  }
+  if (!identical(family, "binomial")) {
+    return(sprintf("the Polya-Gamma temporal sampler does not carry for family '%s' (binomial only)",
+                   family))
+  }
+  if (!temporal$trend %in% c("rw1", "none")) {
+    return(sprintf("the Polya-Gamma temporal sampler does not carry with an %s trend (its trend is RW1)",
+                   temporal$trend))
+  }
+  if (isTRUE(has_spatial)) {
+    return("no Gibbs sampler carries beside a spatial field")
+  }
+  if (!is.null(temporal$group_var)) {
+    return("the Polya-Gamma temporal sampler does not carry per group (one walk for every observation)")
+  }
+  NULL
+}
+
+
 # The fixed-effect prior a backend actually received, read back off the
 # assembled fitter arguments: `beta_prior` where the fitter takes the list,
 # `sigma_beta` where it takes the scalar mean-zero SD. A backend that carries
@@ -1335,14 +1363,15 @@
     }
     if (backend == "gibbs") {
       re <- bundle$re_terms %||% list()
-      # The spatial Polya-Gamma samplers carry the iid random-intercept block
-      # alongside the field, so 0 or 1 `(1 | g)` term is allowed; the plain
-      # Gibbs path requires exactly one. Either way the term must be a single
-      # random intercept (no slopes).
-      if (!is.null(spatial)) {
+      # The spatial and temporal Polya-Gamma samplers carry the iid
+      # random-intercept block alongside the field, so 0 or 1 `(1 | g)` term is
+      # allowed; the plain Gibbs path requires exactly one. Either way the term
+      # must be a single random intercept (no slopes).
+      if (!is.null(spatial) || !is.null(temporal)) {
         if (length(re) > 1L || (length(re) == 1L && !.is_scalar_re_intercept(re[[1]]))) {
-          stop("Spatial Gibbs supports at most one random-intercept (1 | g) ",
-               "term alongside the spatial field.", call. = FALSE)
+          stop(if (is.null(spatial)) "Temporal" else "Spatial",
+               " Gibbs supports at most one random-intercept (1 | g) ",
+               "term alongside the field.", call. = FALSE)
         }
       } else if (length(re) != 1L || !.is_scalar_re_intercept(re[[1]])) {
         stop("Gibbs (tulpa_gibbs) supports exactly one random-intercept term ",
@@ -1394,6 +1423,7 @@
         beta_prior = beta_prior_default,
         prior_sigma_scale = rp$prior_sigma_scale %||% 2.5,
         spatial = spatial,
+        temporal = temporal,
         control = .control_subset(control, .CONTROL_KEYS$gibbs,
                                   backend)
       ))
@@ -2964,10 +2994,21 @@ tulpa <- function(formula, data,
   # approximation instead of the exact sampler it asked for -- and that is
   # exactly the case the front door's override contract warns about
   # (gcol33/tulpa#768).
-  if (has_temporal && BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
+  #
+  # The Polya-Gamma Gibbs backend keeps its selection where its temporal kernel
+  # carries the field (`.gibbs_temporal_unfit()`); elsewhere the redirect names
+  # what that kernel does not carry.
+  gibbs_temporal_why <- if (has_temporal && identical(sel$backend, "gibbs")) {
+    .gibbs_temporal_unfit(temporal_spec, family, has_spatial)
+  }
+  if (has_temporal && BACKEND_REGISTRY[[sel$backend]]$input != "modeldata" &&
+      !(identical(sel$backend, "gibbs") && is.null(gibbs_temporal_why))) {
     sel <- .sel_redirect(sel, "nested_laplace", if (has_spatial) {
       sprintf("%s spatial field + temporal %s field; joint nested-Laplace integration",
               spatial_type, temporal_spec$type)
+    } else if (!is.null(gibbs_temporal_why)) {
+      sprintf("temporal %s field, which %s; nested-Laplace integration",
+              temporal_spec$type, gibbs_temporal_why)
     } else {
       sprintf("temporal %s field; nested-Laplace integration", temporal_spec$type)
     }, notify = isTRUE(sel$tier == 1L))

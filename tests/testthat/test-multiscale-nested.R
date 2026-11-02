@@ -204,3 +204,22 @@ test_that("an HSGP multi-scale field fits on the nested path and nowhere else", 
                "nested-Laplace path")
 })
 
+test_that("mode = 'gibbs' runs the temporal Polya-Gamma sampler where it carries the field", {
+  skip_on_cran()
+  set.seed(2)
+  tt <- rep(1:20, each = 4)
+  d <- data.frame(time = tt, x = rnorm(80))
+  d$y <- rbinom(80, 10, plogis(0.2 * d$x + sin(tt / 4)))
+  fit <- suppressWarnings(tulpa(
+    y ~ x, data = d, family = "binomial", n_trials = rep(10L, 80),
+    temporal = temporal_multiscale("time", trend = "rw1", short_term = "none"),
+    mode = "gibbs", control = list(n_iter = 60L, warmup = 30L, seed = 1L)))
+  expect_identical(fit$backend, "gibbs")
+  expect_true(any(grepl("^trend\\[", colnames(fit$draws))))
+  # An RW2 trend is outside that sampler; the redirect says so.
+  expect_warning(
+    tulpa(y ~ x, data = d, family = "binomial", n_trials = rep(10L, 80),
+          temporal = temporal_multiscale("time", trend = "rw2", short_term = "none"),
+          mode = "gibbs"),
+    "rw2 trend")
+})
