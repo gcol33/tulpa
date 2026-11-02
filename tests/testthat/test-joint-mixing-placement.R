@@ -70,21 +70,29 @@ test_that("a mixing weight below its default ladder is placed, not cut", {
 
 test_that("the placed four-axis default reads a dense tensor's bounds", {
   skip_if_not_slow()
-  fx <- .mix_fixture(11L)
-  f <- .mix_fit(fx)
   mk <- function(a, b, n) exp(seq(log(a), log(b), length.out = n))
-  pr <- fx$prior
-  pr[[1L]]$sigma_grid <- mk(0.25, 1.3, 13L)
-  pr[[1L]]$rho_grid <- stats::plogis(seq(-3.5, 7, length.out = 13L))
-  pr[[2L]]$sigma_grid <- mk(0.2, 1.3, 13L)
-  ref <- suppressWarnings(suppressMessages(tulpa_nested_laplace_joint(
-    fx$responses, pr,
-    copy = list(arm = "pos", block = 1L, alpha_grid = c(0, mk(0.6, 2.6, 13L), 3)),
-    control = list(integration = "grid", diagnose_k = FALSE, progress = FALSE,
-                   axis_refine = "none", var_of_means_consistency = FALSE,
-                   auto_recenter = FALSE))))
-  ax <- names(ref$theta_mean)
-  # Reference (seed 11): b1.rho (0.051, 0.864); the CCD read (0.055, 0.706).
-  expect_true(all(abs(f$theta_ci_hi[ax] / ref$theta_ci_hi[ax] - 1) < 0.1))
-  expect_true(all(abs(f$theta_ci_lo[ax] - ref$theta_ci_lo[ax]) < 0.05))
+  # Reference b1.rho (0.051, 0.864) on seed 11 and (0.177, 0.980) on seed 2024;
+  # the CCD read (0.055, 0.706) and (0.211, 0.941), the default ladder before
+  # the edge-closing rounds reached it 0.124 on seed 2024's lower bound.
+  for (seed in c(11L, 2024L)) {
+    fx <- .mix_fixture(seed)
+    f <- .mix_fit(fx)
+    pr <- fx$prior
+    pr[[1L]]$sigma_grid <- mk(0.25, 1.3, 13L)
+    pr[[1L]]$rho_grid <- stats::plogis(seq(-3.5, 7, length.out = 13L))
+    pr[[2L]]$sigma_grid <- mk(0.2, 1.3, 13L)
+    ref <- suppressWarnings(suppressMessages(tulpa_nested_laplace_joint(
+      fx$responses, pr,
+      copy = list(arm = "pos", block = 1L,
+                  alpha_grid = c(0, mk(0.6, 2.6, 13L), 3)),
+      control = list(integration = "grid", diagnose_k = FALSE, progress = FALSE,
+                     axis_refine = "none", var_of_means_consistency = FALSE,
+                     auto_recenter = FALSE))))
+    ax <- names(ref$theta_mean)
+    expect_true(all(abs(f$theta_ci_hi[ax] / ref$theta_ci_hi[ax] - 1) < 0.1),
+                label = paste("upper bounds, seed", seed))
+    expect_true(all(abs(f$theta_ci_lo[ax] - ref$theta_ci_lo[ax]) <
+                      pmax(0.02, 0.05 * ref$theta_ci_lo[ax])),
+                label = paste("lower bounds, seed", seed))
+  }
 })

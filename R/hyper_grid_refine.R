@@ -827,7 +827,11 @@
 # SD now the weighted one wherever the axis is resolved (gcol33/tulpa#621), that
 # comparison would have been the estimator against itself and the pass would
 # never fire. The ESS answers the question the pass is actually asking -- how
-# many nodes the marginal spreads over.
+# many nodes the marginal spreads over. An axis whose ESS is met but which still
+# reads mass across a gap (`.hyper_propose_edge_close()`, read from its outer
+# mode) enters too, for the edge-closing rounds only: on a BYM2 mixing weight
+# laid on the default ladder, its lowest node holding 11% of the axis spread it
+# over a half-cell and read the 2.5% bound at 0.124 against 0.177.
 #
 # The pass re-reads the ESS after every round and bisects again until the axis
 # reaches `min_ess` or has taken `max_nodes` new levels. A single round cannot
@@ -893,11 +897,20 @@
     spec <- .hyper_spec_by_name(specs, axis)
     rd <- axis_ess(axis, spec)
     ess_before <- rd$ess
-    if (!is.finite(ess_before) || ess_before >= min_ess) next
+    if (!is.finite(ess_before)) next
     at_mode <- axis_modes[[axis]]
     added <- 0L
     ladder <- 0L
     first <- TRUE
+    if (ess_before >= min_ess) {
+      # A resolved axis can still misread a gap: an outer node holding a share
+      # of the axis spreads it across its whole half-cell. It takes the
+      # edge-closing rounds alone, never the at-mode ladder a collapsed axis
+      # is laid by.
+      if (is.null(at_mode) ||
+          !length(.hyper_propose_edge_close(spec, rd$marg, at_mode))) next
+      first <- FALSE
+    }
     while (added - ladder < max_nodes && is.finite(rd$ess)) {
       collapsed <- rd$ess < min_ess
       new_pts <- if (is.null(at_mode)) numeric(0)
