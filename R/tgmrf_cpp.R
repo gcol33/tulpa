@@ -21,7 +21,8 @@
 #'   with an unchanged source skip the rebuild.
 #' @param id Character: the stable id used as the registry key. Must match
 #'   the first argument of `TULPA_REGISTER_TGMRF` in the user's `.cpp`.
-#' @param init,mu,graph,bounds,obs_idx,name Same arguments as [tgmrf()].
+#' @param init,mu,graph,bounds,obs_idx,name,n_grid Same arguments as
+#'   [tgmrf()].
 #'   `init` is required and supplies the canonical theta names. `mu` is
 #'   currently ignored on the C++ path -- the mu kernel registered by
 #'   `TULPA_REGISTER_TGMRF` is the source of truth; pass the argument here
@@ -62,6 +63,7 @@ tgmrf_cpp <- function(cpp_file, id, init,
                       bounds    = NULL,
                       obs_idx   = NULL,
                       name      = NULL,
+                      n_grid    = NULL,
                       cache_dir = tulpa_cache_dir(),
                       rebuild   = FALSE) {
 
@@ -260,6 +262,7 @@ tgmrf_cpp <- function(cpp_file, id, init,
       pattern     = pattern,
       graph       = graph,
       bounds      = bounds,
+      n_grid      = .tgmrf_check_n_grid(n_grid, theta_dim),
       obs_idx     = obs_idx,
       name        = name,
       backend     = "cpp",

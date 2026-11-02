@@ -14,7 +14,8 @@ tgmrf(
   graph = NULL,
   bounds = NULL,
   obs_idx = NULL,
-  name = NULL
+  name = NULL,
+  n_grid = NULL
 )
 
 \method{print}{tgmrf}(x, ...)
@@ -51,6 +52,12 @@ observation per latent slot, in row order.}
 
 \item{name}{Optional character; cosmetic label used by \code{print()} /
 \code{summary()}.}
+
+\item{n_grid}{Optional integer: the number of equispaced outer-grid nodes
+per theta axis on the nested-Laplace path (length 1, recycled, or
+\code{length(init)}), each at least 2. \code{NULL} (default) takes the engine's
+default node count. The axis spans \code{bounds} where supplied, else
+\code{init} plus or minus a fixed half-width. Unused by NUTS / VI.}
 
 \item{x}{A \code{tgmrf} block.}
 

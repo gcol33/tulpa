@@ -692,7 +692,8 @@
                               copy_atom_mass = .TULPA_COPY_ATOM_MASS,
                               copy_slab = "exponential",
                               axis_refine = NULL,
-                              folded_axes = NULL) {
+                              folded_axes = NULL,
+                              linear_axes = NULL) {
     copy_slab <- .hyper_check_copy_slab(copy_slab)
     axes <- .joint_spec_axis_names(grids, cp)
     lapply(axes, function(a) {
@@ -700,9 +701,11 @@
         # domain and the point-mass metadata are resolved on the bare axis name:
         # an axis's support does not change because the block it is laid on is
         # the second one. Which axes refine, and in what order, stays keyed on
-        # the full name.
+        # the full name. `linear_axes` are axes whose block declares them on
+        # their own natural coordinate whatever they are called (a tgmrf()
+        # block's theta, `.nl_linear_axes()`).
         bare <- sub("^b[0-9]+[.]", "", a)
-        scale_known <- .hyper_axis_scale(bare)
+        scale_known <- if (a %in% linear_axes) FALSE else .hyper_axis_scale(bare)
         log_scale <- isTRUE(scale_known)
         bounds <- .hyper_spec_bounds(bare)
         # How far refinement may move this axis: whether it participates at all,
@@ -837,7 +840,8 @@ tulpa_joint_axis_specs_from_grid <- function(
                                         copy_slab = "exponential",
                                         folded_axes = NULL,
                                         logchol = .hp_logchol_designs(theta_grid),
-                                        axis_refine = NULL) {
+                                        axis_refine = NULL,
+                                        linear_axes = NULL) {
     if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
     theta_grid <- as.matrix(theta_grid)
     grids <- stats::setNames(
@@ -854,7 +858,8 @@ tulpa_joint_axis_specs_from_grid <- function(
     if (length(grids) == 0L) return(NULL)
     specs <- .joint_axis_specs(grids, list(has_copy = TRUE), copy_slab = copy_slab,
                                folded_axes = folded_axes,
-                               axis_refine = axis_refine)
+                               axis_refine = axis_refine,
+                               linear_axes = linear_axes)
     lapply(specs, function(sp) {
         if (.hp_is_logchol_col(.hyper_axis_bare(sp$name))) {
             sp$logchol_design <- logchol[[.hp_logchol_key(.hp_col_prefix(sp$name))]]

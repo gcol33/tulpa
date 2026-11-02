@@ -1449,9 +1449,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   tgmrf = list(
     # User-defined GMRF block (see ?tgmrf). Only available inside a multi-
     # block prior. The outer theta-grid is the Cartesian product of
-    # per-axis grids; per-axis defaults are 5 equispaced points between
-    # block$bounds$lower[j] and block$bounds$upper[j], or block$init[j] +/-
-    # 2 if no bounds are supplied. Precomputed Q_k / logdet / log p(theta_k)
+    # per-axis grids: `block$n_grid[j]` (default `.NL_GRID$tgmrf_axis$n`)
+    # equispaced points between block$bounds$lower[j] and
+    # block$bounds$upper[j], or block$init[j] +/- `half_width` if no bounds
+    # are supplied. Precomputed Q_k / logdet / log p(theta_k)
     # at every grid row are packed into the C++ block spec by
     # `.nl_block_spec_for_cpp`.
     cpp_fn = NULL,
@@ -1467,6 +1468,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       if (is.null(p$theta_grid_built)) {
         d <- p$theta_dim
         axes <- vector("list", d)
+        n_ax <- rep_len(as.integer(p$n_grid %||%
+                                     .nl_grid_par("tgmrf_axis", "n")), d)
         for (j in seq_len(d)) {
           if (!is.null(p$bounds)) {
             lo <- p$bounds$lower[j]
@@ -1476,8 +1479,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
             lo <- p$init[j] - hw
             hi <- p$init[j] + hw
           }
-          axes[[j]] <- seq(lo, hi,
-                           length.out = .nl_grid_par("tgmrf_axis", "n"))
+          axes[[j]] <- seq(lo, hi, length.out = n_ax[j])
         }
         names(axes) <- p$theta_names
         gr <- do.call(expand.grid, axes)
@@ -1577,6 +1579,31 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   off
 }
 
+# Grid columns a block declares on their own natural coordinate whatever their
+# names: a tgmrf() block's theta, laid evenly in theta by the registry
+# (`.NL_REGISTRY$tgmrf$theta`) and carrying the user's prior as a density on
+# theta. Read off the result's block layout (`blocks`, `axis_offsets`), so the
+# cell measure of such an axis is its width in theta rather than undeclared.
+.NL_LINEAR_AXIS_BLOCKS <- "tgmrf"
+
+.nl_linear_axes <- function(res) {
+  tg <- .nl_theta_matrix(res)
+  blocks <- res$blocks
+  ao <- as.integer(res$axis_offsets)
+  if (is.null(tg) || !is.list(blocks) || length(ao) != length(blocks) + 1L) {
+    return(NULL)
+  }
+  cn <- colnames(tg)
+  out <- character(0)
+  for (b in seq_along(blocks)) {
+    if (ao[b + 1L] <= ao[b]) next
+    if (tolower(blocks[[b]]$type %||% "") %in% .NL_LINEAR_AXIS_BLOCKS) {
+      out <- c(out, cn[(ao[b] + 1L):ao[b + 1L]])
+    }
+  }
+  out
+}
+
 # The outer grid's cell measure, its weights and its log evidence, set together
 # from the grid and the log-marginals the fit carries. `log_marginal` already
 # holds the hyperprior density the dispatch folded in (`R/hyperprior_default.R`),
@@ -1589,7 +1616,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   refining <- res$refining_axis
   base  <- !nzchar(.hyper_slice_home(refining, nrow(tg)))
   specs <- .joint_axis_specs_from_grid(
-    tg[base, , drop = FALSE], folded_axes = res$log_hyperprior_axes)
+    tg[base, , drop = FALSE], folded_axes = res$log_hyperprior_axes,
+    linear_axes = .nl_linear_axes(res))
   res$log_quad     <- .hyper_log_quad_weights(tg, specs, refining = refining)
   res$axis_support <- .hyper_grid_supports(tg, specs, refining = refining)
   res$weights      <- .nl_normalise_weights_safe(res$log_marginal, what,
@@ -1715,6 +1743,20 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   }
   res$log_evidence <- .nl_outer_log_evidence(res$log_marginal, log_measure)
   res$log_evidence_declined <- NULL
+  if (is.na(res$log_evidence)) {
+    # Every axis is covered and the evidence is still not a number: either some
+    # integrated axis carries no declared coordinate to measure a cell by, or no
+    # cell holds both a finite marginal and a finite measure.
+    undeclared <- Filter(function(s) isTRUE(s$unweighted), specs %||% list())
+    undeclared <- vapply(undeclared, `[[`, character(1), "name")
+    if (length(undeclared)) {
+      res$log_evidence_declined <- "undeclared_axis_coordinate"
+      res$log_evidence_declined_axes <- stats::setNames(
+        rep("undeclared_axis_coordinate", length(undeclared)), undeclared)
+    } else {
+      res$log_evidence_declined <- "no_finite_cell"
+    }
+  }
   res
 }
 

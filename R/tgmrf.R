@@ -39,6 +39,11 @@
 #' @param bounds Optional list with components `lower` and `upper`, each a
 #'   numeric vector of length `length(init)`. Used by `nested_laplace + CCD`
 #'   to build the outer grid; unused by NUTS / VI.
+#' @param n_grid Optional integer: the number of equispaced outer-grid nodes
+#'   per theta axis on the nested-Laplace path (length 1, recycled, or
+#'   `length(init)`), each at least 2. `NULL` (default) takes the engine's
+#'   default node count. The axis spans `bounds` where supplied, else
+#'   `init` plus or minus a fixed half-width. Unused by NUTS / VI.
 #' @param obs_idx Optional integer vector mapping each observation to a
 #'   latent slot in `[1, n_latent]`. If `NULL` (default), the fit-time
 #'   driver assumes `N == n_latent` and uses `seq_len(N)` -- i.e. one
@@ -88,7 +93,8 @@ tgmrf <- function(Q, prior, init,
                   graph   = NULL,
                   bounds  = NULL,
                   obs_idx = NULL,
-                  name    = NULL) {
+                  name    = NULL,
+                  n_grid  = NULL) {
 
   if (!is.function(Q))     stop("`Q` must be a function of theta.",     call. = FALSE)
   if (!is.function(prior)) stop("`prior` must be a function of theta.", call. = FALSE)
@@ -217,6 +223,8 @@ tgmrf <- function(Q, prior, init,
     }
   }
 
+  n_grid <- .tgmrf_check_n_grid(n_grid, theta_dim)
+
   structure(
     list(
       type        = "tgmrf",          # registry key for .NL_REGISTRY dispatch
@@ -230,12 +238,25 @@ tgmrf <- function(Q, prior, init,
       pattern     = pattern,
       graph       = graph,
       bounds      = bounds,
+      n_grid      = n_grid,
       obs_idx     = obs_idx,
       name        = name,
       backend     = "r"
     ),
     class = c("tgmrf", "tulpa_latent_block")
   )
+}
+
+# The per-axis outer-grid node count of a tgmrf block: NULL (the engine
+# default) or integers >= 2, one per theta axis.
+.tgmrf_check_n_grid <- function(n_grid, theta_dim) {
+  if (is.null(n_grid)) return(NULL)
+  if (!is.numeric(n_grid) || anyNA(n_grid) || any(n_grid != round(n_grid)) ||
+      any(n_grid < 2) || !length(n_grid) %in% c(1L, theta_dim)) {
+    stop("`n_grid` must be NULL or whole numbers >= 2, of length 1 or ",
+         "length(init) = ", theta_dim, ".", call. = FALSE)
+  }
+  rep_len(as.integer(n_grid), theta_dim)
 }
 
 
