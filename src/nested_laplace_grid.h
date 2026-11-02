@@ -590,6 +590,7 @@ inline Rcpp::List run_nested_laplace_grid(
         // serially against one solver -- the same shape the serial solve path
         // below takes. It costs one factorization at the restored mode per
         // loaded cell, against the full solve resume exists to avoid.
+        nl_checkpoint_add_loaded(n_loaded);
         if (n_loaded) {
             SparseCholeskySolver refill_solver;
             for (int k = 0; k < n_grid; k++) {

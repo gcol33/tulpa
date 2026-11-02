@@ -265,6 +265,13 @@ std::unique_ptr<GridCheckpoint> make_nl_grid_checkpoint(
     Rcpp::Nullable<Rcpp::NumericVector> offset = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> weights = R_NilValue);
 
+// Running count, over the process, of outer-grid cells read back from a
+// checkpoint instead of solved. One fit makes several kernel calls on one path
+// (the first grid, a recentred refit, refinement rounds), so a door reports
+// the difference of this count across its own run.
+void nl_checkpoint_add_loaded(int n);
+double nl_checkpoint_loaded_total();
+
 } // namespace tulpa
 
 #endif // TULPA_NESTED_LAPLACE_CHECKPOINT_H

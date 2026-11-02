@@ -444,6 +444,10 @@ dropped for a non-finite third derivative (see \code{control$diagnose_skew}).
 \item \code{timing}: named numeric of wall-clock seconds (\code{total}, \code{setup},
 \code{grid}, \code{postproc}, \code{diagnostics}); the \code{grid} phase is the inner
 Laplace pass that scales with grid size. Surfaced one-line in \code{print}.
+\item \code{checkpoint_n_loaded}: present when \code{control$checkpoint} is set -- the
+number of outer-grid cells this fit read back from the checkpoint file
+instead of solving, over every grid it solved (a recentred refit and
+refinement rounds included). \code{0} on a fresh run.
 \item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned}, \code{prune_tol}:
 present when the grid was screened and the safety gate did not
 trip -- the cheap-screen log-marginal per cell (the truncated solve's

@@ -212,6 +212,7 @@ fit_spde <- function(y, X, spatial,
   # final grid -- every cell is keyed by its (range, sigma) coordinate, so all
   # those calls share one file and any previously solved coordinate is reused.
   .ckpt <- .nl_checkpoint_args(list(checkpoint = checkpoint))
+  ckpt_loaded0 <- .nl_checkpoint_loaded()
   if (nzchar(.ckpt$path) && !isTRUE(.ckpt$resume) && file.exists(.ckpt$path)) {
     file.remove(.ckpt$path)
   }
@@ -432,6 +433,7 @@ fit_spde <- function(y, X, spatial,
     )
   }
 
+  fit <- .nl_attach_checkpoint_loaded(fit, .ckpt, ckpt_loaded0)
   .finalize_fit(fit, backend = "spde",
                 n_fixed = ncol(X), fixed_names = colnames(X),
                 data = list(y = y, n_trials = n_trials, model_matrix = X,

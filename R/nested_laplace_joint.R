@@ -1394,6 +1394,7 @@ tulpa_nested_laplace_joint <- function(responses,
         file.exists(.ckpt_fit$path)) {
         file.remove(.ckpt_fit$path)
     }
+    ckpt_loaded0 <- .nl_checkpoint_loaded()
 
     ctrl <- control
     fit_once <- function(prior_i, prior_sigma_i, ctrl_i = ctrl,
@@ -1679,6 +1680,7 @@ tulpa_nested_laplace_joint <- function(responses,
     .nl_warn_single_node_axes(res, "tulpa_nested_laplace_joint()")
     .nl_warn_unconverged(res, "tulpa_nested_laplace_joint()")
     .nl_warn_indefinite(res, "tulpa_nested_laplace_joint()")
+    res <- .nl_attach_checkpoint_loaded(res, .ckpt_fit, ckpt_loaded0)
     .nl_attach_outer_threads(res, outer_threads)
 }
 

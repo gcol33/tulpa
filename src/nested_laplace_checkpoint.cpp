@@ -3,6 +3,7 @@
 
 #include <RcppEigen.h>
 #include "nested_laplace_checkpoint.h"
+#include <atomic>
 
 namespace tulpa {
 
@@ -64,4 +65,21 @@ std::unique_ptr<GridCheckpoint> make_nl_grid_checkpoint(
         new GridCheckpoint(path, fp.value(), kb.take()));
 }
 
+namespace {
+std::atomic<long long> g_nl_checkpoint_loaded{0};
+}
+
+void nl_checkpoint_add_loaded(int n) {
+    if (n > 0) g_nl_checkpoint_loaded.fetch_add(n);
+}
+
+double nl_checkpoint_loaded_total() {
+    return static_cast<double>(g_nl_checkpoint_loaded.load());
+}
+
 } // namespace tulpa
+
+// [[Rcpp::export]]
+double cpp_nl_checkpoint_loaded_total() {
+    return tulpa::nl_checkpoint_loaded_total();
+}

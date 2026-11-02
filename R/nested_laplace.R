@@ -358,6 +358,10 @@
 #'   * `timing`: named numeric of wall-clock seconds (`total`, `setup`,
 #'     `grid`, `postproc`, `diagnostics`); the `grid` phase is the inner
 #'     Laplace pass that scales with grid size. Surfaced one-line in `print`.
+#'   * `checkpoint_n_loaded`: present when `control$checkpoint` is set -- the
+#'     number of outer-grid cells this fit read back from the checkpoint file
+#'     instead of solving, over every grid it solved (a recentred refit and
+#'     refinement rounds included). `0` on a fresh run.
 #'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`, `prune_tol`:
 #'     present when the grid was screened and the safety gate did not
 #'     trip -- the cheap-screen log-marginal per cell (the truncated solve's
@@ -511,6 +515,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # (.nl_dispatch_multi) kernels by name; the k-hat diagnostic re-evaluations
   # are run with it stripped so they do not pollute the file.
   .ckpt <- .nl_checkpoint_args(control)
+  ckpt_loaded0 <- .nl_checkpoint_loaded()
   if (nzchar(.ckpt$path) && !isTRUE(.ckpt$resume) && file.exists(.ckpt$path)) {
     file.remove(.ckpt$path)
   }
@@ -721,6 +726,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     tm$mark("diagnostics")
     res$prior <- prior
     res$timing <- tm$timing()
+    res <- .nl_attach_checkpoint_loaded(res, .ckpt, ckpt_loaded0)
     return(.finalize_fit(res, backend = "nested_laplace",
                          n_fixed = p_fixed, fixed_names = colnames(X),
                          extra_class = c("tulpa_nested_laplace", "list"),
@@ -843,6 +849,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   tm$mark("diagnostics")
   res$prior <- prior
   res$timing <- tm$timing()
+  res <- .nl_attach_checkpoint_loaded(res, .ckpt, ckpt_loaded0)
   .finalize_fit(res, backend = "nested_laplace",
                 n_fixed = p_fixed, fixed_names = colnames(X),
                 extra_class = c("tulpa_nested_laplace", "list"),
@@ -2988,4 +2995,18 @@ prior_from_spec <- function(spec, data) {
          call. = FALSE)
   }
   list(path = path.expand(cp$path), resume = isTRUE(resume))
+}
+
+# Outer-grid cells read back from the checkpoint over the process; a door
+# reports the difference across its own run, which spans every kernel call the
+# fit makes on the path (first grid, recentred refit, refinement rounds).
+.nl_checkpoint_loaded <- function() cpp_nl_checkpoint_loaded_total()
+
+# Stamp `checkpoint_n_loaded` on a fit run with a checkpoint: the number of
+# grid cells this fit took from the file rather than solving. A fresh run
+# reads 0; a full resume reads every cell its grids carried.
+.nl_attach_checkpoint_loaded <- function(res, ckpt, loaded0) {
+  if (!is.list(res) || !nzchar(ckpt$path)) return(res)
+  res$checkpoint_n_loaded <- as.integer(round(.nl_checkpoint_loaded() - loaded0))
+  res
 }
