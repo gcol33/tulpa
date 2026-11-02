@@ -73,8 +73,7 @@ test_that("every family absent from the table is absent for a stated reason", {
     skip_on_cran_budget()
     ax <- .reg_axis_names()
     absent <- setdiff(names(.NL_REGISTRY), names(.NL_REGISTRY_AXIS_FIELD))
-    expect_setequal(absent, c("car_proper", "hsgp_mo", "mcar", "miid",
-                              "tgmrf", "lf"))
+    expect_setequal(absent, c("car_proper", "hsgp_mo", "mcar", "miid", "lf"))
     for (fam in absent) {
         a <- ax[[fam]]
         n_field <- length(.NL_FAMILY_AXES[[fam]] %||% list())
@@ -97,6 +96,32 @@ test_that("every family absent from the table is absent for a stated reason", {
     expect_length(ax$lf, 0L)
 })
 
+test_that("a tgmrf block's axes are placeable unless it declares a bounds box", {
+    skip_on_cran_budget()
+    ax <- .reg_axis_names()$tgmrf
+    expect_identical(unname(.joint_pareto_block_tags("tgmrf", ax)),
+                     rep("identity", 2L))
+    boxed <- list(type = "tgmrf", theta_names = ax,
+                  bounds = list(lower = c(-1, -1), upper = c(1, 1)))
+    expect_true(all(is.na(.joint_pareto_block_tags("tgmrf", ax, boxed))))
+
+    # One slot per axis, all on the block's one matrix field, each carrying the
+    # node count the block states for it.
+    blk <- list(type = "tgmrf", theta_names = ax, n_grid = c(7L, 4L))
+    sl <- .nl_registry_axis_slots(list(blk))
+    expect_identical(vapply(sl, `[[`, "", "axis"), ax)
+    expect_identical(unique(vapply(sl, `[[`, "", "field")), "theta_grid_built")
+    expect_identical(vapply(sl, function(s) s$n_pts, 1L), c(7L, 4L))
+    expect_null(.nl_registry_axis_slots(list(blk[-3L]))[[1L]]$n_pts)
+
+    # A declared box holds the axes as the caller's own; an undeclared one
+    # leaves them to the placement pass.
+    expect_null(.nl_slot_hold(list(blk), sl[[1L]]))
+    expect_identical(.nl_slot_hold(list(boxed),
+                                   .nl_registry_axis_slots(list(boxed))[[2L]]),
+                     "axis_pinned")
+})
+
 test_that(".nl_registry_write_theta writes each family's fields by column", {
     skip_on_cran_budget()
     tm <- cbind(sigma2 = c(0.5, 1.5), phi_gp = c(0.2, 0.9))
@@ -115,6 +140,14 @@ test_that(".nl_registry_write_theta writes each family's fields by column", {
     expect_identical(bl2[[2L]]$sigma_grid, c(0.3, 0.4))
     expect_null(bl2[[1L]]$sigma_grid)
 
+    # A matrix-field family is written whole, one named column per axis.
+    tm4 <- cbind(b1.a = c(0.1, 0.2), b1.b = c(-1, 1))
+    bl4 <- .nl_registry_write_theta(
+        list(list(type = "tgmrf", theta_names = c("a", "b"))), tm4,
+        colnames(tm4), multi = TRUE)
+    expect_identical(bl4[[1L]]$theta_grid_built,
+                     cbind(a = c(0.1, 0.2), b = c(-1, 1)))
+
     # A family with no entry is left untouched.
     tm3 <- cbind(tau = c(1, 2), rho = c(0.2, 0.4))
     bl3 <- .nl_registry_write_theta(list(list(type = "car_proper")), tm3,
@@ -128,14 +161,19 @@ test_that("the movable-axis table names every axis of every family it lists", {
     skip_on_cran()
     ax <- .reg_axis_names()
     for (fam in names(.NL_REGISTRY_AXIS_FIELD)) {
-        fields <- .NL_REGISTRY_AXIS_FIELD[[fam]]
+        entry <- .NL_REGISTRY_AXIS_FIELD[[fam]]
+        # A matrix-field entry names its axes off the block; the table's
+        # stand-in block carries the axis names `.reg_axis_names()` shows.
+        blk <- list(type = fam, theta_names = ax[[fam]])
+        sl <- .nl_registry_axis_slots(list(blk))
+        fields <- unique(vapply(sl, `[[`, "", "field"))
         # Every axis of the family is listed, and nothing else: a passenger
         # axis re-crossed unchanged is what #361 was filed about.
-        expect_setequal(unname(fields), ax[[fam]])
+        expect_setequal(vapply(sl, `[[`, "", "axis"), ax[[fam]])
         # Every field is one `.NL_FAMILY_AXES` binds for that family, so the
         # provenance layer recognises the engine's own default coming back in
         # through a caller's prior (gcol33/tulpa#293).
-        expect_true(all(names(fields) %in% names(.NL_FAMILY_AXES[[fam]])),
+        expect_true(all(fields %in% names(.NL_FAMILY_AXES[[fam]])),
                     info = paste(fam, "lists a field the family never defaults"))
         # And the transform registry names a coordinate for each, which is what
         # makes the axis placeable at all.

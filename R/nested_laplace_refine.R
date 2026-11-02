@@ -17,28 +17,42 @@
 # bound onto the base result field by field (`.nl_bind_cell_results()`), rather
 # than described by a table that would drift from the kernel's own output.
 
-# The axes of a registry grid the passes may refine: a field SD (`sigma`, or the
-# precision `tau`) the dispatcher can write a cell onto (`.nl_registry_axis_slots()`,
-# the families `.NL_REGISTRY_AXIS_FIELD` binds). Named as the grid names them.
-.nl_refinable_registry_axes <- function(prior, multi) {
+# The registry slots of a prior, each named as the grid names its axis.
+.nl_registry_named_slots <- function(prior, multi) {
     blocks <- if (isTRUE(multi)) prior else list(prior)
     slots <- .nl_registry_axis_slots(blocks)
-    nm <- vapply(slots, function(s)
+    names(slots) <- vapply(slots, function(s)
         if (isTRUE(multi)) paste0("b", s$block, ".", s$axis) else s$axis,
         character(1))
-    nm[.hyper_axis_bare(nm) %in% .JOINT_FIELD_SD_AXES]
+    slots
+}
+
+# The axes of a registry grid the passes may refine, among those the dispatcher
+# can write a cell onto (`.nl_registry_axis_slots()`, the families
+# `.NL_REGISTRY_AXIS_FIELD` binds): a field SD (`sigma`, or the precision `tau`),
+# and an axis a block declares on its own natural coordinate
+# (`.NL_LINEAR_AXIS_BLOCKS`, a tgmrf() block's theta), which the passes lay their
+# points on linearly. Named as the grid names them.
+.nl_refinable_registry_axes <- function(prior, multi) {
+    slots <- .nl_registry_named_slots(prior, multi)
+    nm <- names(slots) %||% character(0)
+    linear <- vapply(slots, function(s) s$type %in% .NL_LINEAR_AXIS_BLOCKS,
+                     logical(1))
+    nm[.hyper_axis_bare(nm) %in% .JOINT_FIELD_SD_AXES | linear]
 }
 
 # The refinement mode of each refinable axis of one registry grid, from who wrote
-# its nodes (`.nl_axis_hold()`, the rule the joint doors read), `user` the
-# caller's `control$axis_refine`.
+# its nodes (`.nl_slot_hold()` on the axis's slot, the rule the placement pass
+# reads), `user` the caller's `control$axis_refine`.
 .nl_registry_refine_modes <- function(axes, refinable, prior, multi, auto,
                                       user = NULL) {
-    type <- if (isTRUE(multi)) NULL else tolower(prior$type %||% "")
+    blocks <- if (isTRUE(multi)) prior else list(prior)
+    slots <- .nl_registry_named_slots(prior, multi)
     stated <- function(a) {
-        if (isTRUE(multi)) return(.joint_multi_axis_is_stated(a, prior, auto))
-        !is.null(.nl_axis_hold(prior, paste0(a, "_grid"),
-                               .nl_auto_fields_at(auto), type = type))
+        s <- slots[[a]]
+        if (is.null(s)) return(TRUE)
+        !is.null(.nl_slot_hold(
+            blocks, s, .nl_auto_fields_at(auto, if (isTRUE(multi)) s$block)))
     }
     .joint_axis_refine_modes_by(
         axes, stated, user,
@@ -150,7 +164,8 @@
     modes <- .nl_registry_refine_modes(colnames(tg), refinable, prior, multi,
                                        auto, user)
     specs <- .joint_axis_specs_from_grid(
-        tg, folded_axes = res$log_hyperprior_axes, axis_refine = modes)
+        tg, folded_axes = res$log_hyperprior_axes, axis_refine = modes,
+        linear_axes = .nl_linear_axes(res))
     if (is.null(specs)) return(res)
     n_base <- nrow(tg)
     ck <- .nl_chunked_kernel(solve, n_base)

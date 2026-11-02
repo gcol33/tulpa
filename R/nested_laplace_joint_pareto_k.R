@@ -408,11 +408,21 @@
 #     so every axis is identity (zero Jacobian). This is what lets the joint CCD
 #     mode-centre the Sigma grid (and the outer Pareto-k score it) rather than
 #     decline to the fixed log-Cholesky tensor.
-.joint_pareto_block_tags <- function(type, axes) {
+#   * a `tgmrf` block's theta is the coordinate its own `prior(theta)` is a
+#     density on, unconstrained on all of R, so every axis is identity -- unless
+#     the block declares `bounds`. A bounded box is the block's own support, which
+#     no coordinate here names, so those axes are NA.
+# `block` is the prior block owning the axes, read where the answer depends on
+# more than the family (a tgmrf block's `bounds`).
+.joint_pareto_block_tags <- function(type, axes, block = NULL) {
     # mcar / miid axes are the log-Cholesky coordinates of Sigma = L L' (log L_ii
     # on the diagonal, raw strict-lower L_ij), unconstrained on all of R, so
     # every axis is identity (zero Jacobian).
     if (type %in% c("mcar", "miid")) return(rep("identity", length(axes)))
+    if (identical(type, "tgmrf")) {
+        tag <- if (is.null(block$bounds)) "identity" else NA_character_
+        return(rep(tag, length(axes)))
+    }
     tag_one <- function(a) {
         if (a == "alpha") return("identity")
         if (a == "rho") {
@@ -446,7 +456,7 @@
 }
 
 # The walk over a joint result's block layout that assigns each `theta_grid`
-# column the answer `per_block(type, bare_axes)` gives for the block owning it,
+# column the answer `per_block(type, bare_axes, block)` gives for the block owning it,
 # and `phi` to a trailing per-arm dispersion column. One walk serves the
 # proposal tags above and the axis supports below, so the two cannot come to
 # disagree about which block owns a column.
@@ -468,7 +478,7 @@
             if (ao[b + 1L] <= ao[b]) next                  # block carries no axis
             cols <- (ao[b] + 1L):ao[b + 1L]
             out[cols] <- per_block(tolower(res$blocks[[b]]$type %||% ""),
-                                   bare(cols))
+                                   bare(cols), res$blocks[[b]])
         }
         # Columns past the last block axis are per-arm phi dispersion axes.
         if (ao[B + 1L] < d) {
@@ -487,7 +497,7 @@
         type <- tolower(res$prior$type %||% "")
         is_phi <- startsWith(cn, "phi_")
         if (any(!is_phi)) {
-            out[!is_phi] <- per_block(type, bare(which(!is_phi)))
+            out[!is_phi] <- per_block(type, bare(which(!is_phi)), res$prior)
         }
         out[is_phi] <- phi
     }
@@ -507,7 +517,7 @@
             tau_spatial = "positive", tau_temporal = "positive")
 )
 
-.joint_block_axis_support <- function(type, axes) {
+.joint_block_axis_support <- function(type, axes, block = NULL) {
     sup <- .JOINT_AXIS_SUPPORT[[type]]
     if (is.null(sup)) return(rep(NA_character_, length(axes)))
     unname(sup[axes])

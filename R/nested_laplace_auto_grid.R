@@ -1087,7 +1087,8 @@ auto_grid_place <- function(x)
 #     the rest.
 #   * `"family_out_of_scope"` -- nothing about this fit's axis geometry is in
 #     the rescue's scope at all (mcar / miid's log-Cholesky coordinates, a
-#     `tgmrf` block's user-declared axes, a `lf` block carrying no axis).
+#     `lf` block carrying no axis). A `tgmrf` block declaring a `bounds` box
+#     is the first case: its axes are tagged NA.
 #
 # `tags` is the per-column transform registry read for this fit
 # (`.nl_registry_axis_tags()`), so the two answers are decided from the same
@@ -1605,15 +1606,25 @@ auto_grid_place <- function(x)
 #     fit says `unguessable_axis: rho`, which is also what tells a caller that
 #     pinning that axis themselves unblocks the rest.
 #   * mcar / miid hold their p(p+1)/2 log-Cholesky coordinates in a SINGLE
-#     matrix field (`logchol_grid`), so the field-to-axis binding this table is
-#     built on does not describe them at all, and the re-cross below would
-#     write a `data.frame` where a matrix belongs. Their tags are all
-#     `identity`, so the block is the field shape, not the coordinate.
-#   * tgmrf declares its own axis names and its own bounds box
-#     (`theta_grid_built`, again one matrix field), and the transform registry
-#     names no coordinate for a user's axis.
+#     matrix field (`logchol_grid`) whose columns are not named by the axes
+#     they carry, so the binding below cannot address one coordinate. Their
+#     tags are all `identity`, so the block is the field shape, not the
+#     coordinate.
+#   * a tgmrf block that declares `bounds` lays its axes over that box, which
+#     is the block's own support and one no registry coordinate names
+#     (`.joint_pareto_block_tags()` tags it NA), so the fit says
+#     `unguessable_axis`. An unbounded tgmrf block IS listed: its theta is the
+#     coordinate its own prior is a density on, the identity.
 #   * lf carries no outer axis at all (a 1 x 0 grid), so there is nothing to
 #     place.
+#
+# An entry is either a named character vector, one vector grid field per axis
+# (`field = "axis"`), or a list describing ONE matrix field that holds every
+# axis of the block as a named column: `matrix` the field, `names_from` the
+# block field naming the columns (the axes), `n_from` the block field, if any,
+# stating each axis's node count, which a placed axis keeps, and `stated_by`
+# the block field, if any, whose presence declares the axes' span, which holds
+# them as the caller's own (`.nl_slot_hold()`).
 .NL_REGISTRY_AXIS_FIELD <- list(
     icar = c(tau_grid = "tau"),
     rw1  = c(tau_grid = "tau"),
@@ -1624,25 +1635,82 @@ auto_grid_place <- function(x)
     bym2 = c(sigma_grid = "sigma", rho_grid = "rho"),
     nngp = c(sigma2_grid = "sigma2", phi_gp_grid = "phi_gp"),
     hsgp = c(sigma2_grid = "sigma2", lengthscale_grid = "lengthscale"),
-    spde = c(range_grid = "range", sigma_grid = "sigma")
+    spde = c(range_grid = "range", sigma_grid = "sigma"),
+    tgmrf = list(matrix = "theta_grid_built", names_from = "theta_names",
+                 n_from = "n_grid", stated_by = "bounds")
 )
 
-# The per-axis movable slots a prior offers: one entry per (block, field) the
+# The per-axis movable slots a prior offers: one entry per (block, axis) the
 # table above binds, in block then table order. A single-block prior is the
 # length-1 case, so the rescue has one representation to walk whether it was
-# handed a block or a list of them.
+# handed a block or a list of them. A slot on a matrix field carries the
+# `column` it occupies, `n_pts` the node count the block states for it (NULL:
+# the placement default) and `stated` whether the block declared its span.
 .nl_registry_axis_slots <- function(blocks) {
     slots <- list()
     for (b in seq_along(blocks)) {
-        fl <- .NL_REGISTRY_AXIS_FIELD[[tolower(blocks[[b]]$type %||% "")]]
+        type <- tolower(blocks[[b]]$type %||% "")
+        fl <- .NL_REGISTRY_AXIS_FIELD[[type]]
         if (is.null(fl)) next
+        if (is.list(fl)) {
+            axes <- as.character(blocks[[b]][[fl$names_from]] %||% character(0))
+            n_ax <- if (!is.null(fl$n_from) && !is.null(blocks[[b]][[fl$n_from]]))
+                rep_len(as.integer(blocks[[b]][[fl$n_from]]), length(axes))
+            stated <- !is.null(fl$stated_by) && !is.null(blocks[[b]][[fl$stated_by]])
+            for (j in seq_along(axes)) {
+                slots[[length(slots) + 1L]] <- list(
+                    block = b, type = type, field = fl$matrix, axis = axes[j],
+                    column = axes[j], n_pts = n_ax[j], stated = stated)
+            }
+            next
+        }
         for (f in names(fl)) {
             slots[[length(slots) + 1L]] <- list(
-                block = b, type = tolower(blocks[[b]]$type),
-                field = f, axis = unname(fl[[f]]))
+                block = b, type = type, field = f, axis = unname(fl[[f]]))
         }
     }
     slots
+}
+
+# Why the placement pass must leave a slot's axis as declared, NULL when it may
+# move it: the block's own declaration of the axis's span (`stated`), else the
+# provenance of the grid field it binds (`.nl_axis_hold()`). `auto_fields` is
+# the marker record of the block carrying the slot.
+.nl_slot_hold <- function(blocks, s, auto_fields = logical(0)) {
+    if (isTRUE(s$stated)) return("axis_pinned")
+    .nl_axis_hold(blocks[[s$block]], s$field, auto_fields, type = s$type)
+}
+
+# Write per-axis node vectors onto the grid fields the slots bind. `values` is
+# a list parallel to `slots`, all one length, NULL for a slot left as it is. A
+# vector field takes its axis's vector; a matrix field is rebuilt whole from its
+# columns, so every column of one has to be supplied together.
+.nl_registry_write_slots <- function(blocks, slots, values) {
+    mats <- list()
+    for (i in seq_along(slots)) {
+        s <- slots[[i]]
+        v <- values[[i]]
+        if (is.null(v)) next
+        if (is.null(s$column)) {
+            blocks[[s$block]][[s$field]] <- as.numeric(v)
+            next
+        }
+        k <- paste(s$block, s$field, sep = ".")
+        mats[[k]]$block <- s$block
+        mats[[k]]$field <- s$field
+        mats[[k]]$cols[[s$column]] <- as.numeric(v)
+    }
+    for (m in mats) {
+        fl <- .NL_REGISTRY_AXIS_FIELD[[tolower(blocks[[m$block]]$type %||% "")]]
+        axes <- as.character(blocks[[m$block]][[fl$names_from]])
+        if (!setequal(names(m$cols), axes)) {
+            stop("Internal error: the matrix grid field `", m$field, "` of block ",
+                 m$block, " is written whole, and ", length(m$cols), " of its ",
+                 length(axes), " columns were supplied.", call. = FALSE)
+        }
+        blocks[[m$block]][[m$field]] <- do.call(cbind, m$cols[axes])
+    }
+    blocks
 }
 
 # One transform tag per grid column of a registry fit. Single-block: the lone
@@ -1653,11 +1721,11 @@ auto_grid_place <- function(x)
 .nl_registry_axis_tags <- function(res, blocks, multi) {
     cn <- res$theta_names %||% colnames(res$theta_grid)
     if (is.null(cn) || !length(cn)) return(NULL)
-    tag1 <- function(type, axes) tryCatch(
-        .joint_pareto_block_tags(tolower(type %||% ""), axes),
+    tag1 <- function(block, axes) tryCatch(
+        .joint_pareto_block_tags(tolower(block$type %||% ""), axes, block),
         error = function(e) rep(NA_character_, length(axes)))
     if (!isTRUE(multi)) {
-        tags <- tag1(blocks[[1L]]$type, cn)
+        tags <- tag1(blocks[[1L]], cn)
         names(tags) <- cn
         return(tags)
     }
@@ -1670,7 +1738,7 @@ auto_grid_place <- function(x)
     for (b in seq_along(blocks)) {
         if (ao[b + 1L] <= ao[b]) next
         cols <- (ao[b] + 1L):ao[b + 1L]
-        tags[cols] <- tag1(blocks[[b]]$type, bare[cols])
+        tags[cols] <- tag1(blocks[[b]], bare[cols])
     }
     names(tags) <- cn
     tags
@@ -1690,20 +1758,20 @@ auto_grid_place <- function(x)
 
 # Write an `[S x d]` theta matrix back onto the prior's own grid fields, so the
 # FD stencil's re-evaluation runs the kernel at exactly those coordinates. One
-# generic write over `.NL_REGISTRY_AXIS_FIELD`. A call site branching on
-# `type == "icar"` / `"bym2"` by hand silently
+# generic write over `.NL_REGISTRY_AXIS_FIELD` (`.nl_registry_write_slots()`).
+# A call site branching on `type == "icar"` / `"bym2"` by hand silently
 # ignored `theta_mat` for every other family, which returned the fit's OWN
 # log-marginal at the wrong length and made the curvature unusable.
 .nl_registry_write_theta <- function(blocks, theta_mat, cn, multi = FALSE) {
     n_blocks <- if (isTRUE(multi)) length(blocks) else 0L
-    for (s in .nl_registry_axis_slots(blocks)) {
+    slots <- .nl_registry_axis_slots(blocks)
+    values <- lapply(slots, function(s) {
         aliases <- .nl_axis_alias(s$axis, if (isTRUE(multi)) s$block else NULL,
                                   n_blocks)
         j <- .nl_axis_index(cn, aliases)
-        if (is.na(j)) next
-        blocks[[s$block]][[s$field]] <- as.numeric(theta_mat[, j])
-    }
-    blocks
+        if (is.na(j)) NULL else theta_mat[, j]
+    })
+    .nl_registry_write_slots(blocks, slots, values)
 }
 
 # The nodes an axis was laid on for the fit just completed -- the INCOMING span
@@ -1792,9 +1860,8 @@ auto_grid_place <- function(x)
     # A prior that pins EVERY axis the table lists leaves the rescue nothing to
     # move whatever the fit did, which is the answer the joint path gives and
     # the one a caller holding their own grid expects.
-    held <- lapply(slots, function(s) .nl_axis_hold(
-        blocks[[s$block]], s$field, .nl_auto_fields_at(auto, bidx(s)),
-        type = s$type))
+    held <- lapply(slots, function(s) .nl_slot_hold(
+        blocks, s, .nl_auto_fields_at(auto, bidx(s))))
     pinned <- !vapply(held, is.null, logical(1))
     if (all(pinned)) {
         out$res <- .nl_decline_recenter(out$res, .nl_reduce_decline(held))
@@ -1859,6 +1926,7 @@ auto_grid_place <- function(x)
             if (is.na(j)) next
             rc <- .nl_recenter_axis_full(
                 mc$tags[j], mc$u_mode[j], sqrt(mc$cov[j, j]),
+                n_pts = s$n_pts %||% .nl_recenter("n_pts"),
                 ref_span_u = .nl_axis_span_u(
                     .nl_rescue_axis_nodes(res, .nl_axis_colname(res, alias_of(s))),
                     mc$tags[j]))
@@ -1872,7 +1940,7 @@ auto_grid_place <- function(x)
             }
             clamps[alias_of(s)[1L]]  <- rc$sd_clamp
             sd_used[alias_of(s)[1L]] <- rc$sd_used
-            moved[[paste(s$block, s$field, sep = ".")]] <- rc$nodes
+            moved[[paste(s$block, s$axis, sep = ".")]] <- rc$nodes
         }
         # An axis the clamp policy declined says so; a mixed set of reasons
         # reports the generic one rather than picking a winner among them.
@@ -1891,12 +1959,11 @@ auto_grid_place <- function(x)
         for (b in unique(vapply(slots[movable], function(s) s$block, integer(1)))) {
             bs <- Filter(function(s) identical(s$block, b), slots)
             axes <- lapply(bs, function(s)
-                moved[[paste(b, s$field, sep = ".")]] %||%
+                moved[[paste(b, s$axis, sep = ".")]] %||%
                     .nl_rescue_axis_nodes(res, .nl_axis_colname(res, alias_of(s))))
-            names(axes) <- vapply(bs, function(s) s$field, character(1))
             if (any(vapply(axes, is.null, logical(1)))) { ok <- FALSE; break }
-            gr <- expand.grid(axes, KEEP.OUT.ATTRS = FALSE)
-            for (f in names(axes)) nxt[[b]][[f]] <- as.numeric(gr[[f]])
+            gr <- expand.grid(unname(axes), KEEP.OUT.ATTRS = FALSE)
+            nxt <- .nl_registry_write_slots(nxt, bs, unname(as.list(gr)))
         }
         if (!ok) {
             reason <- "no_usable_curvature"
