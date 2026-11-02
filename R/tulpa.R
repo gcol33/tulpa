@@ -2181,7 +2181,7 @@ tulpa <- function(formula, data,
     # An adjacency reaching the door as a bare list never passed a constructor,
     # so the graph check runs on whatever `spatial$adjacency` holds, whichever
     # way it got here (gcol33/tulpa#670). The check is idempotent, so a spec
-    # built by spatial_icar() / spatial_car() is not re-reported.
+    # built by spatial_car() / spatial_car_proper() is not re-reported.
     if (!is.null(spatial_spec$adjacency)) {
       spatial_spec$adjacency <-
         .validate_adjacency_arg(spatial_spec$adjacency, "spatial$adjacency",

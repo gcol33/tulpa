@@ -72,8 +72,9 @@ validate_spatial <- function(spatial, data) {
 #' variables, elevation) because the spatial random effect can "steal"
 #' variance from these covariates, leading to biased coefficient estimates.
 #'
-#' @param spatial An areal specification -- `spatial_car()`, `spatial_icar()`,
-#'   `spatial_bym2()` or a proper-CAR spec -- or an NNGP one, `spatial_gp()`.
+#' @param spatial An areal specification -- an ICAR field `spatial_car()`, a
+#'   proper CAR `spatial_car_proper()` or `spatial_bym2()` -- or an NNGP one,
+#'   `spatial_gp()`.
 #'   The projection is applied by the binomial Polya-Gamma Gibbs sampler and
 #'   by nested Laplace, both of which carry the field's own prior precision as
 #'   an adjacency or as Vecchia factors; an HSGP basis (`spatial_gp(approx = "hsgp")`) and an SPDE mesh
@@ -237,7 +238,7 @@ spatial_rsr <- function(spatial, restrict_to) {
       "and by nested Laplace, which carry an areal neighbour list or an NNGP ",
       "field and neither an ",
       "HSGP basis nor an SPDE mesh. Build the RSR field on spatial_car() / ",
-      "spatial_icar() / spatial_bym2() / spatial_gp(), or drop spatial_rsr() ",
+      "spatial_car_proper() / spatial_bym2() / spatial_gp(), or drop spatial_rsr() ",
       "and fit the field directly."),
       paste(.RSR_FIELDS, collapse = ", "), spatial$type %||% "<none>"),
       call. = FALSE)

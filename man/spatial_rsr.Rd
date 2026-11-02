@@ -10,8 +10,9 @@ spatial_rsr(spatial, restrict_to)
 \method{print}{tulpa_rsr}(x, ...)
 }
 \arguments{
-\item{spatial}{An areal specification -- \code{spatial_car()}, \code{spatial_icar()},
-\code{spatial_bym2()} or a proper-CAR spec -- or an NNGP one, \code{spatial_gp()}.
+\item{spatial}{An areal specification -- an ICAR field \code{spatial_car()}, a
+proper CAR \code{spatial_car_proper()} or \code{spatial_bym2()} -- or an NNGP one,
+\code{spatial_gp()}.
 The projection is applied by the binomial Polya-Gamma Gibbs sampler and
 by nested Laplace, both of which carry the field's own prior precision as
 an adjacency or as Vecchia factors; an HSGP basis (\code{spatial_gp(approx = "hsgp")}) and an SPDE mesh
