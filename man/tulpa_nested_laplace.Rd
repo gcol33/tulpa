@@ -329,10 +329,10 @@ axes already resolve their posterior, where it takes 50\% coverage to
 0.135 against a nominal 0.5.
 
 Which families carry movable axes is \code{.NL_REGISTRY_AXIS_FIELD}: icar,
-rw1, rw2, ar1, iid, bym2, nngp, hsgp and spde. car_proper and hsgp_mo
-each carry a correlation axis with no guessable coordinate, and mcar /
-miid / tgmrf hold their axes in one matrix field; a fit of any of them
-records which through \code{outer_grid_recenter_declined} rather than passing
+rw1, rw2, ar1, iid, st_interaction, bym2, nngp, hsgp and spde.
+car_proper and hsgp_mo each carry a correlation axis with no guessable
+coordinate, and mcar / miid / tgmrf hold their axes in one matrix field;
+a fit of any of them records which through \code{outer_grid_recenter_declined} rather than passing
 in silence. The per-axis policy names are the standalone registry path
 only -- \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} and \code{\link[=fit_st_nested]{fit_st_nested()}} refuse them
 rather than accept them and ignore them.

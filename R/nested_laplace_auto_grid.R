@@ -1620,6 +1620,7 @@ auto_grid_place <- function(x)
     rw2  = c(tau_grid = "tau"),
     ar1  = c(tau_grid = "tau", rho_grid = "rho"),
     iid  = c(sigma_grid = "sigma"),
+    st_interaction = c(tau_grid = "tau"),
     bym2 = c(sigma_grid = "sigma", rho_grid = "rho"),
     nngp = c(sigma2_grid = "sigma2", phi_gp_grid = "phi_gp"),
     hsgp = c(sigma2_grid = "sigma2", lengthscale_grid = "lengthscale"),

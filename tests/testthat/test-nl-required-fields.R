@@ -152,7 +152,8 @@ test_that("each converter branch reads only declared or defensively-read fields"
   # requirement.
   allow <- list(
     tgmrf = c("Q", "prior",      # only read when backend == "r"
-              "backend")         # selects which of the two it is
+              "backend"),        # selects which of the two it is
+    st_interaction = "constr"    # empty for a type I interaction (no null space)
   )
   targets <- list(
     multi = tulpa:::.nl_block_spec_for_cpp,

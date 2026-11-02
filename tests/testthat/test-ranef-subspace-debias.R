@@ -218,7 +218,10 @@ test_that("a fit with no random effect in S reports exactly what the plain fit r
   d <- rsd_data()
   common <- list(formula = y ~ x + (1 | g), data = d, family = "binomial",
                  mode = "re_cov_nested")
-  plain <- do.call(tulpa, c(common, list(control = list(seed = 3L))))
+  # The debias runs without the node centring (`skew_correct`), so the plain
+  # fit it is held to is the uncentred one.
+  plain <- do.call(tulpa, c(common, list(
+    control = list(seed = 3L, skew_correct = FALSE))))
   # The default probe is the fixed effects, so S can contain no random effect.
   fixed_only <- do.call(tulpa, c(common, list(
     control = list(seed = 3L, subspace_debias = TRUE))))

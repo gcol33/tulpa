@@ -7,6 +7,7 @@
 # form: N(0, A Sigma_u A' + X X' / tau_beta + phi I). The rational assembly and
 # the precomputed Laplace solve must reproduce it, with the full normalizer, so
 # that a fractional fit's evidence is comparable with an integer one's.
+# tau_beta is the kernels' default fixed-effect prior precision.
 
 .frac_fixture <- function(seed = 3L, n = 90L, range = 0.2, sigma = 0.8) {
   set.seed(seed)
@@ -26,7 +27,8 @@
 
 # Exact gaussian log marginal of the discrete field at (range, sigma), from the
 # eigendecomposition of C^-1/2 G C^-1/2 on the nodes carrying mass.
-.frac_exact_lm <- function(fx, sp, range, sigma, tau_beta = 1e-4) {
+.frac_exact_lm <- function(fx, sp, range, sigma,
+                           tau_beta = 1 / default_sigma_beta()^2) {
   C0 <- as.numeric(sp$C0_diag)
   keep <- which(C0 > 1e-12)
   C0k <- C0[keep]
@@ -107,14 +109,14 @@ test_that("the fractional marginal orders the ranges as the exact one does", {
   expect_lt(max(abs(k - e)), 5)
 })
 
-test_that("a nested fractional fit finds an interior mode and lays a CCD design", {
+test_that("a nested fractional fit finds an interior mode and lays the aligned tensor", {
   skip_on_cran()
   fx <- .frac_fixture()
   sp <- .frac_spec(fx, 0.5)
   expect_no_warning(
     f <- fit_spde(fx$y, fx$X, sp, family = "gaussian", phi = fx$phi,
                   control = list(diagnose_k = FALSE)))
-  expect_identical(f$nested$method, "ccd")
+  expect_identical(f$nested$method, "aligned_grid")
   expect_gt(f$nested$range_mean, 0.05)
   expect_lt(f$nested$range_mean, 0.8)
 })
