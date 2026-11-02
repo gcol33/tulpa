@@ -775,8 +775,7 @@ print.tulpa_wbic <- function(x, digits = 2, ...) {
     # predictors are those of the posterior-mean parameter vector.
     theta <- object[["draws"]]
     if (!is.null(ndraws) && ndraws < nrow(theta)) {
-      .preserve_seed_in_frame()
-      set.seed(285603L)
+      .seed_scoped(.DIAGNOSTIC_SEED)
       theta <- theta[sample.int(nrow(theta), ndraws), , drop = FALSE]
     }
     return(list(

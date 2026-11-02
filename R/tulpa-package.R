@@ -92,3 +92,15 @@ tulpa_version <- function() {
   on.exit(restore(), add = TRUE)
   expr
 }
+
+# The stream an engine diagnostic draws its own randomness from (an outer
+# Pareto-k importance batch, a subsample of draws for a criterion): one fixed
+# seed, so two identical calls report the same diagnostic whatever the session
+# RNG holds, and the caller's stream is left as it was.
+.DIAGNOSTIC_SEED <- 285603L
+
+#' @keywords internal
+.with_diagnostic_seed <- function(expr) {
+  .seed_scoped(.DIAGNOSTIC_SEED)
+  expr
+}

@@ -957,7 +957,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     if (length(lm) != nrow(theta_mat)) rep(-Inf, nrow(theta_mat)) else lm
   }
 
-  kd <- .with_preserved_seed(tryCatch(
+  kd <- .with_diagnostic_seed(tryCatch(
     .nested_grid_pareto_k(matrix(log(tg), ncol = 1L), res$weights, refit,
                           n_samples, tail_points = tail_points),
     error = function(e) NULL))

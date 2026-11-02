@@ -38,7 +38,7 @@
     lm + .spde_log_hyperprior(r, s, sp, hyperprior)
   }
   .k_tail_cap_warn(tail_points, n_samples)
-  kd <- .with_preserved_seed(
+  kd <- .with_diagnostic_seed(
     tryCatch(.k_dispatch_report(
       .k_cand_spec(lt = lt, u_hat = theta_hat,
                    Su = L_scale %*% t(L_scale), u_grid = u_grid, w = w,

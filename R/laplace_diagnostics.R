@@ -645,16 +645,18 @@
       if (!is.null(spec) && is.function(spec$defaults)) {
         blk <- tryCatch(spec$defaults(blk, cargs), error = function(e) blk)
       }
-      # Narrow EVERY *_grid field (icar has one, bym2/car_proper/nngp/hsgp
-      # have two paired axes) to its MAP-row value -- unlike
-      # .nl_attach_pareto_k this does not require exactly one axis, since
-      # there is no importance-sampling proposal to fit, just a point re-solve.
-      gfs <- grep("_grid$", names(blk), value = TRUE)
-      gfs <- gfs[vapply(gfs, function(f) is.numeric(blk[[f]]) && length(blk[[f]]) == length(w),
-                        logical(1))]
-      if (length(gfs) == 0L) return(NULL)
-      blk2 <- blk
-      for (f in gfs) blk2[[f]] <- blk[[f]][map_idx]
+      # The MAP cell is a row of the fit's own grid, refinement levels
+      # included, so it is written onto the block the way the refinement passes
+      # write a cell (`.nl_registry_write_theta()`), whatever the block's
+      # declared grid fields hold -- unlike .nl_attach_pareto_k this does not
+      # require exactly one axis, since there is no importance-sampling
+      # proposal to fit, just a point re-solve.
+      tg <- .nl_theta_matrix(res)
+      if (is.null(tg) || is.null(colnames(tg)) || nrow(tg) != length(w)) {
+        return(NULL)
+      }
+      tg1 <- tg[map_idx, , drop = FALSE]
+      blk2 <- .nl_registry_write_theta(list(blk), tg1, colnames(tg1))[[1L]]
       cargs2 <- utils::modifyList(cargs_no_ckpt,
                                   list(compute_skew = TRUE, skew_idx = probe_idx))
       .nl_dispatch(type, cargs2, blk2, blk)

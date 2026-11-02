@@ -44,3 +44,22 @@ test_that("an adjacency() graph names its matrix by the unit identifiers", {
     tulpa:::.resolve_spatial_idx(lab, 9L, as.matrix(g$adjacency), "fips"),
     c(9L, 1L, 5L, 5L))
 })
+
+test_that("a nested BYM2 fit scores its inner Laplace and its k-hat is reproducible", {
+  skip_on_cran()
+  fx <- .fe_data()
+  f2 <- tulpa(y ~ x + spatial(region), fx$d, family = "poisson",
+              spatial = list(type = "bym2", adjacency = fx$A),
+              mode = "nested_laplace", control = .fe_ctl)
+  expect_true(all(is.finite(f2$inner_skew)))
+  expect_true(is.na(f2$inner_skew_declined))
+  run <- function() {
+    set.seed(sample.int(1e6, 1L))
+    tulpa(y ~ x + spatial(region), fx$d, family = "poisson",
+          spatial = list(type = "icar", adjacency = fx$A),
+          mode = "nested_laplace", control = .fe_ctl)$pareto_k
+  }
+  k1 <- run(); k2 <- run()
+  expect_true(is.finite(k1))
+  expect_identical(k1, k2)
+})
