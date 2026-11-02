@@ -522,7 +522,7 @@ actionable.
   and the field only the departures from it; the fit above reports an
   intercept standard error of
   `r if (EVAL_FITS) signif(coef(summary(fit))["(Intercept)", "std.error"], 2) else "about 0.08"`.
-  [Identifiability](identifiability.html) shows the alias the constraint
+  [Identifiability](https://gillescolling.com/tulpa/articles/identifiability.html) shows the alias the constraint
   removes.
 
 - **ICAR versus BYM2.** Reach for `icar` when you want the simplest smooth

@@ -421,7 +421,7 @@ coef(tulpa(y ~ x, data = dz, family = "poisson", ziformula = ~ 1,
 The count coefficients come back next to the zero-inflation intercept, which
 sits on the logit scale. With `truncated_poisson` or `truncated_neg_binomial_2`
 as the family the same argument gives the hurdle model;
-[EM + Laplace](em-laplace.html) fits the same mixture through two callbacks,
+[EM + Laplace](https://gillescolling.com/tulpa/articles/em-laplace.html) fits the same mixture through two callbacks,
 for latent-variable models the formula does not cover.
 
 Detection and occupancy models are in tulpaObs, and ratio and rate models in
@@ -843,28 +843,28 @@ A few rules of thumb for everyday use:
 
 ## Where to go next
 
-- The vocabulary used across these articles: [Concepts](concepts.html).
+- The vocabulary used across these articles: [Concepts](https://gillescolling.com/tulpa/articles/concepts.html).
 
-- Preparing the input: [Data formatting](data-formatting.html).
+- Preparing the input: [Data formatting](https://gillescolling.com/tulpa/articles/data-formatting.html).
 
-- Model types: [Random slopes](random-slopes.html),
+- Model types: [Random slopes](https://gillescolling.com/tulpa/articles/random-slopes.html),
   [Spatial models](spatial-models.html),
-  [Temporal models](temporal-models.html), [Space-time models](space-time.html),
-  [Varying coefficients](varying-coefficients.html),
-  [Continuous fields with the SPDE](spde.html),
-  [Spatial confounding](spatial-confounding.html),
-  [Joint models](joint-models.html), [Latent factors](latent-factors.html),
-  [Categorical and ordinal responses](categorical-responses.html).
-- Checking and comparing fits: [Diagnostics](diagnostics.html),
-  [Model comparison](model-comparison.html), [Priors](priors.html).
-- When a fit stops with an error: [Troubleshooting](troubleshooting.html).
+  [Temporal models](https://gillescolling.com/tulpa/articles/temporal-models.html), [Space-time models](https://gillescolling.com/tulpa/articles/space-time.html),
+  [Varying coefficients](https://gillescolling.com/tulpa/articles/varying-coefficients.html),
+  [Continuous fields with the SPDE](https://gillescolling.com/tulpa/articles/spde.html),
+  [Spatial confounding](https://gillescolling.com/tulpa/articles/spatial-confounding.html),
+  [Joint models](https://gillescolling.com/tulpa/articles/joint-models.html), [Latent factors](https://gillescolling.com/tulpa/articles/latent-factors.html),
+  [Categorical and ordinal responses](https://gillescolling.com/tulpa/articles/categorical-responses.html).
+- Checking and comparing fits: [Diagnostics](https://gillescolling.com/tulpa/articles/diagnostics.html),
+  [Model comparison](https://gillescolling.com/tulpa/articles/model-comparison.html), [Priors](https://gillescolling.com/tulpa/articles/priors.html).
+- When a fit stops with an error: [Troubleshooting](https://gillescolling.com/tulpa/articles/troubleshooting.html).
 
 - A full analysis on real data: [sudden infant deaths in North
-  Carolina](case-study-sids.html).
+  Carolina](https://gillescolling.com/tulpa/articles/case-study-sids.html).
 - How the inference works: [Inference modes](inference-modes.html),
-  [Identifiability](identifiability.html),
-  [Reliability diagnostics](reliability-pareto-k.html),
-  [Simulation-based calibration](sbc.html).
+  [Identifiability](https://gillescolling.com/tulpa/articles/identifiability.html),
+  [Reliability diagnostics](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html),
+  [Simulation-based calibration](https://gillescolling.com/tulpa/articles/sbc.html).
 - Agreement with lme4, glmmTMB, brms and INLA:
-  [Compatibility](compatibility.html).
-- Your own latent structure: [Custom latent blocks](tgmrf.html).
+  [Compatibility](https://gillescolling.com/tulpa/articles/compatibility.html).
+- Your own latent structure: [Custom latent blocks](https://gillescolling.com/tulpa/articles/tgmrf.html).
