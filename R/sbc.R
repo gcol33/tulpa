@@ -1061,9 +1061,8 @@ recov_posterior_sbc <- function(model, n_seed, quantities = NULL,
 #'
 #' @section Two guards:
 #' The prior-predictive experiment draws the truth from the prior, so an
-#' IMPROPER prior cannot be used -- and the nested-Laplace door puts no prior on
-#' the fixed effects. A scored quantity whose truth does not move across
-#' simulations was not drawn from a proper prior, and `sbc()` errors on it
+#' IMPROPER prior cannot be used. A scored quantity whose truth does not move
+#' across simulations was not drawn from a proper prior, and `sbc()` errors on it
 #' before spending the fits, pointing at `experiment = "posterior"`. A location
 #' parameter whose flat prior leaves the PIT uniform by a structural argument is
 #' admitted through `flat_prior`, which is itself checked and travels on the
@@ -1298,8 +1297,11 @@ print.tulpa_sbc <- function(x, ...) {
   }
   cat("\n")
   print(.sbc_report_frame(x$report), row.names = FALSE)
+  # A read is inside the band when both its raw and its folded ECDF are, the
+  # same reading .sbc_verdict() lists the exceptions of.
   cat("\n", sprintf("%d of %d (arm, quantity) reads inside the band; %s.\n",
-                    sum(x$report$inside), nrow(x$report),
+                    sum(x$report$inside & x$report$inside_folded),
+                    nrow(x$report),
                     .sbc_verdict(x$report)), sep = "")
   invisible(x)
 }

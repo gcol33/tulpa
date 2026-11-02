@@ -167,9 +167,8 @@ function of the truth, which is not \verb{p(y | theta')}.
 \section{Two guards}{
 
 The prior-predictive experiment draws the truth from the prior, so an
-IMPROPER prior cannot be used -- and the nested-Laplace door puts no prior on
-the fixed effects. A scored quantity whose truth does not move across
-simulations was not drawn from a proper prior, and \code{sbc()} errors on it
+IMPROPER prior cannot be used. A scored quantity whose truth does not move
+across simulations was not drawn from a proper prior, and \code{sbc()} errors on it
 before spending the fits, pointing at \code{experiment = "posterior"}. A location
 parameter whose flat prior leaves the PIT uniform by a structural argument is
 admitted through \code{flat_prior}, which is itself checked and travels on the

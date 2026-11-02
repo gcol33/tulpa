@@ -201,6 +201,20 @@ test_that("a fit whose axes all contain their mode still reports boundary mass",
   expect_null(.tulpa_grid_placement_note(pl))
 })
 
+test_that("the boundary mass is stated once when the regime note carries it", {
+  skip_on_cran_budget()
+  rg <- list(regime = "spread", edge_axes = character(0),
+             edge_sides = character(0), edge_mass_axes = "b1.sigma",
+             edge_mass_sides = "lower")
+  pl <- list(placement = NA_character_, railed = character(0),
+             edge_mass = "b1.sigma:lower", moved = character(0),
+             clamped = character(0), declined = NA_character_)
+  notes <- c(.tulpa_outer_regime_note(rg),
+             .tulpa_grid_placement_note(pl, mass_noted = TRUE))
+  expect_length(notes, 1L)
+  expect_true(grepl("b1.sigma", notes))
+})
+
 test_that("the span measure drops the closure and nothing else", {
   skip_on_cran_budget()
   f <- .em_rho_fit(log(c(0.15, 0.20, 0.32, 0.33)))

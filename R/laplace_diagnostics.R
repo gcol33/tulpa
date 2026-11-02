@@ -1204,7 +1204,10 @@
 
 # One-line reading of a placement. NULL when every axis brackets its own mode
 # and nothing had to move -- the common case, which needs no sentence.
-.tulpa_grid_placement_note <- function(pl) {
+# `mass_noted` says the regime note already states the boundary mass
+# (.tulpa_outer_regime_note() reads the same `.nl_edge_mass_axes()` record), so
+# the weaker statement below is left to it rather than printed twice.
+.tulpa_grid_placement_note <- function(pl, mass_noted = FALSE) {
   if (is.null(pl)) return(NULL)
   if (identical(pl$placement, "auto_recentered")) {
     ax <- if (length(pl$moved)) paste(pl$moved, collapse = ", ") else "an axis"
@@ -1229,7 +1232,7 @@
     # axis can still hold material weight on a boundary node, and truncate its
     # marginal there (gcol33/tulpa#622).
     em <- pl$edge_mass %||% character(0)
-    if (!length(em)) return(NULL)
+    if (!length(em) || isTRUE(mass_noted)) return(NULL)
     return(paste0("outer grid axis holding weight on its own boundary node on ",
                   paste(em, collapse = ", "),
                   ": that axis truncates its marginal there even though its ",
@@ -1896,7 +1899,8 @@
     }
     attr(tab, "grid_recentred_axes")   <- placement$moved
     attr(tab, "grid_placement_declined") <- placement$declined
-    attr(tab, "grid_placement_note")   <- .tulpa_grid_placement_note(placement)
+    attr(tab, "grid_placement_note")   <- .tulpa_grid_placement_note(
+      placement, mass_noted = length(regime$edge_mass_axes) > 0L)
   }
   # What the reported per-axis hyperparameter intervals were read off, and how
   # finely the node set they came from divides the posterior. Both are

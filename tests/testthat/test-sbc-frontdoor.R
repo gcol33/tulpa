@@ -300,6 +300,20 @@ test_that("the posterior door runs and records what it verified", {
 # 6. The methods
 # ---------------------------------------------------------------------------
 
+test_that("print counts a read inside only when its folded ECDF is too", {
+  rep <- data.frame(arm = c("a", "b"), quantity = "beta", n = 40L,
+                    ks = 0.1, inside = c(TRUE, TRUE), p_unif = 0.5,
+                    inside_folded = c(TRUE, FALSE), p_unif_folded = 0.5,
+                    crps = 0.2, crps_se = 0.01, stringsAsFactors = FALSE)
+  x <- structure(list(experiment = "prior_predictive", n_sim = 40L,
+                      level = 0.95, crps_role = "proper posterior score",
+                      premises = list(), report = rep), class = "tulpa_sbc")
+  out <- utils::capture.output(print(x))
+  expect_true(any(grepl("1 of 2 \\(arm, quantity\\) reads inside the band",
+                        out)))
+  expect_true(any(grepl("outside the band: b/beta", out)))
+})
+
 test_that("print, summary, plot and diagnostics read the result", {
   skip_on_cran()
   res <- sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
