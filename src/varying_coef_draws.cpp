@@ -18,8 +18,9 @@
 //     the kernel, nugget and variance floor the density runs (Datta et al.
 //     2016, section 2.2).
 //   * HSGP SVC: the basis re-evaluated at the new coordinates with the
-//     training centring and boundary; the field is a deterministic function of
-//     the draw's basis coefficients there.
+//     training centring and boundary; the field, and with it the level the
+//     centring removed, is a deterministic function of the draw's basis
+//     coefficients.
 //   * TVC rw1: Brownian bridge between fitted levels, Brownian increments past
 //     either end (the random walk is the Brownian motion read at integer
 //     positions). rw2 / ar1: the recursion run forward past the last level and
@@ -30,7 +31,7 @@
 // The stored field is CENTRED (its level aliases the fixed effect and is
 // removed from eta). For an intrinsic field (rw1 / rw2) every operation above
 // is equivariant in the level, so the centred field is predicted directly. A
-// proper field's conditional mean is NOT equivariant -- far from the data it
+// proper NNGP / GP / AR1 field's conditional mean is NOT equivariant -- far from the data it
 // reverts to zero, not to the centred field's mean -- so its level is first
 // drawn from its exact conditional: the likelihood sees only w_c, and under the
 // prior N(0, Q^-1)
@@ -523,12 +524,26 @@ Rcpp::List cpp_varying_coef_draws(
                     ph[j] = safe_exp(params[layout.log_phi_svc_start + j]);
                 }
                 if (data.svc_is_hsgp) {
+                    // The basis field is a deterministic function of the draw,
+                    // so its level is too: the mean of the uncentred field over
+                    // the fitted rows, which the centred field the likelihood
+                    // read has removed.
                     const int M = data.svc_hsgp_data.m_total;
+                    std::vector<double> f_train(sv.n_obs);
                     for (int j = 0; j < sv.n_svc; j++) {
+                        const double* beta_j = &params[layout.svc_w_start + j * M];
+                        tulpa::priors::svc_hsgp_term_field(
+                            data.svc_hsgp_data.phi_flat,
+                            data.svc_hsgp_data.eigenvalues, sv.n_obs, M,
+                            s2[j], ph[j], beta_j, f_train.data());
+                        double level = 0.0;
+                        for (double v : f_train) level += v;
+                        level /= sv.n_obs;
+                        double* out_j = row_svc.data() + (std::size_t)j * n_svc_new;
                         tulpa::priors::svc_hsgp_term_field(
                             new_basis.phi_flat, new_basis.eigenvalues, n_svc_new, M,
-                            s2[j], ph[j], &params[layout.svc_w_start + j * M],
-                            row_svc.data() + (std::size_t)j * n_svc_new);
+                            s2[j], ph[j], beta_j, out_j);
+                        for (int p = 0; p < n_svc_new; p++) out_j[p] -= level;
                     }
                 } else {
                     svc_nngp_predict_row(sv, pn, state.svc_w, s2, ph, row_svc.data());

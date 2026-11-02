@@ -32,7 +32,8 @@
       }
 
       // SVC (NNGP path only -- HSGP SVC carries basis coefficients, not a
-      // field, and no z block here). Under the non-centered parameterization
+      // field, and no z block here; its centred field is reconstructed from
+      // them by every reader, through the log-posterior state). Under the non-centered parameterization
       // the stored slice is the reconstructed w rather than the sampled z;
       // under the centered one it is already w. Either way it is stored
       // CENTERED, matching what the log-post fed into svc_eta -- the level is

@@ -2382,7 +2382,7 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   # newdata is NULL), so the prediction, its SE and its bounds are read over the
   # joint draws of the fixed effects and the field.
   vc_eta <- if (isTRUE(include_field)) .predict_varying_coef_eta(object, newdata, lp)
-  if (!is.null(vc_eta)) eta <- colMeans(vc_eta)
+  if (!is.null(vc_eta)) eta <- unname(colMeans(vc_eta))
 
   ph <- object$phi %||% 1.0
   response_mean <- function(e, z) .response_mean(e, z, object$family, phi = ph)

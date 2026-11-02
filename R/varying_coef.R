@@ -101,15 +101,41 @@
                  svc_nn = nn)))
 }
 
-# `engine_slot` names the element of `.varying_coef_field_draws()` this
-# accessor reads ("svc" / "tvc"); its units run fastest and its terms next,
-# which is exactly the fill order of an [n_draws, n_units, n_terms] array. A
-# model package that assembles its own fit supplies the array itself at
-# `.internal[[draws_field]]`.
+# The engine's SVC fields as an [n_draws, n_units, n_terms] array: units run
+# fastest and terms next in `$svc`, which is the array's own fill order.
+#' @keywords internal
+.svc_engine_draws <- function(object, info) {
+  m <- .varying_coef_field_draws(object)$svc
+  if (is.null(m)) return(NULL)
+  n_terms <- length(info$svc_names)
+  array(m, dim = c(nrow(m), ncol(m) / n_terms, n_terms))
+}
+
+# The engine's TVC fields as an [n_draws, n_groups * n_times, n_terms] array,
+# a unit being one (group, time) pair, group-major. `$tvc` runs time fastest
+# within a (group, term) block, group-major, so the columns are permuted into
+# the array's (unit, term) order; with one group that is the identity.
+#' @keywords internal
+.tvc_engine_draws <- function(object, info) {
+  m <- .varying_coef_field_draws(object)$tvc
+  if (is.null(m)) return(NULL)
+  n_terms <- length(info$tvc_names)
+  n_t <- as.integer(info$n_times)
+  n_g <- as.integer(info$n_groups %||% 1L)
+  g <- rep(seq_len(n_g) - 1L, each = n_t)
+  t <- rep(seq_len(n_t), times = n_g)
+  cols <- unlist(lapply(seq_len(n_terms) - 1L,
+                        function(j) (g * n_terms + j) * n_t + t))
+  array(m[, cols, drop = FALSE], dim = c(nrow(m), n_g * n_t, n_terms))
+}
+
+# `engine_draws(object, info)` returns the [n_draws, n_units, n_terms] field
+# array from `.varying_coef_field_draws()`, or NULL. A model package that
+# assembles its own fit supplies the array itself at `.internal[[draws_field]]`.
 .extract_varying_coef <- function(object, terms, summary, probs,
                                   slot, info_class, not_fitted_msg,
                                   draws_field, names_field, build_result,
-                                  field_slot = NULL, engine_slot = NULL) {
+                                  field_slot = NULL, engine_draws = NULL) {
   info <- .varying_coef_info(object, c(slot, field_slot), info_class)
   if (is.null(info)) {
     stop(not_fitted_msg, call. = FALSE)
@@ -117,12 +143,8 @@
 
   term_names <- info[[names_field]]
   draws <- object$.internal[[draws_field]]
-  if (is.null(draws) && !is.null(engine_slot)) {
-    m <- .varying_coef_field_draws(object)[[engine_slot]]
-    if (!is.null(m)) {
-      draws <- array(m, dim = c(nrow(m), ncol(m) / length(term_names),
-                                length(term_names)))
-    }
+  if (is.null(draws) && !is.null(engine_draws)) {
+    draws <- engine_draws(object, info)
   }
   if (is.null(draws)) {
     stop(toupper(slot), " draws not found in model output", call. = FALSE)

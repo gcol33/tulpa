@@ -434,7 +434,7 @@ svc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
     draws_field = "svc_draws",
     names_field = "svc_names",
     field_slot = "spatial",
-    engine_slot = "svc",
+    engine_draws = .svc_engine_draws,
     build_result = function(info, draws, term_names) {
       # The field is sampled per location; report it per row, as before, so
       # rows sharing a site carry the same draws.

@@ -96,7 +96,9 @@ test_that("svc() reads an HSGP fit through its basis, and it is the field eta re
   expect_identical(dim(post$draws), c(nrow(fit$draws), nrow(d), 1L))
 
   # The basis expansion recomputed from the draw columns with the R-facing
-  # basis builder and the 2-D squared-exponential spectral density.
+  # basis builder and the 2-D squared-exponential spectral density, centred
+  # over the fitted rows: the field is proper, so its level aliases the slope
+  # and is removed on its way into eta.
   cm <- tulpa:::.coords_plain(fit$spatial$coords_matrix)
   B <- tulpa:::cpp_hsgp_basis_2d(cm, 4L, fit$spatial$c_boundary)
   s2 <- exp(fit$draws[, "log_sigma2_svc[1]"])
@@ -104,7 +106,8 @@ test_that("svc() reads an HSGP fit through its basis, and it is the field eta re
   beta <- tulpa:::.draws_by_prefix(fit$draws, "svc_w")
   ref <- t(vapply(seq_len(nrow(beta)), function(s) {
     S <- s2[s] * 2 * pi * ls[s]^2 * exp(-0.5 * ls[s]^2 * B$lambda_eig)
-    as.numeric(B$phi_basis %*% (sqrt(S) * beta[s, ]))
+    f <- as.numeric(B$phi_basis %*% (sqrt(S) * beta[s, ]))
+    f - mean(f)
   }, numeric(nrow(d))))
   expect_equal(unname(post$draws[, , 1L]), ref, tolerance = 1e-10)
 
@@ -146,6 +149,41 @@ test_that("svc() / tvc() read the field the likelihood read on every backend", {
   expect_gt(max(abs(w - z)), 1e-3)
   # A VI TVC draw is stored uncentred; the accessor's field is centred.
   expect_lt(max(abs(apply(tvc(fits$tvc_ar1_vi)$draws[, , 1L], 1L, mean))), 1e-10)
+})
+
+test_that("tvc() reads a grouped field, keyed by group, time and term", {
+  skip_on_cran()
+  set.seed(5)
+  n_t <- 6L
+  d <- expand.grid(year = seq_len(n_t), site = c("a", "b", "c"), rep = 1:4)
+  d$x <- stats::rnorm(nrow(d))
+  d$y <- stats::rpois(nrow(d), exp(0.3 + 0.5 * d$x))
+  fit <- .vcp_fit(d, temporal = temporal_tvc("year", terms = ~ x - 1,
+                                             structure = "rw1",
+                                             group_var = "site"))
+  post <- tvc(fit)
+  expect_identical(dim(post$draws), c(nrow(fit$draws), 3L * n_t, 1L))
+  expect_identical(post$groups, rep(c("a", "b", "c"), each = n_t))
+
+  # Each (group, time) unit is the (group, term, time) block the eta assembly
+  # reads, unit for unit.
+  raw <- tulpa:::.varying_coef_field_draws(fit)$tvc
+  for (g in 1:3) {
+    expect_equal(post$draws[, (g - 1L) * n_t + seq_len(n_t), 1L],
+                 raw[, (g - 1L) * n_t + seq_len(n_t)])
+  }
+  s <- summary(post)
+  expect_identical(names(s)[1:4], c("time_idx", "time", "group", "term"))
+  expect_identical(nrow(s), 3L * n_t)
+  expect_equal(s$mean[s$group == "b"],
+               unname(colMeans(post$draws[, n_t + seq_len(n_t), 1L])))
+  expect_no_error(plot(post))
+
+  # predict() reads the same field at a fitted (group, year).
+  nd <- data.frame(year = 2, site = "c", x = 1)
+  ref <- mean(tulpa:::.fixed_coef_draws(fit)$beta %*% c(1, 1) +
+                post$draws[, 2L * n_t + 2L, 1L])
+  expect_equal(predict(fit, newdata = nd), ref, tolerance = 1e-10)
 })
 
 # Monte Carlo over one draw replicated S times, against the closed-form mean and

@@ -341,8 +341,11 @@ validate_tvc <- function(tvc, data, X) {
 #' @param ... Ignored
 #'
 #' @return A `tulpa_tvc_posterior` object containing:
-#' - `draws`: Array of posterior draws (draws x times x terms)
+#' - `draws`: Array of posterior draws (draws x units x terms). A unit is one
+#'   time point, or on a grouped fit (`temporal_tvc(group_var =)`) one
+#'   (group, time point) pair, group-major.
 #' - `time_levels`: Time point labels
+#' - `groups`: The group of each unit (`NULL` on an ungrouped fit)
 #' - `term_names`: Names of TVC terms
 #'
 #' @examples
@@ -382,36 +385,30 @@ tvc <- function(object, terms = NULL, summary = FALSE,
 #' @export
 tvc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
                            probs = c(0.025, 0.5, 0.975), ...) {
-  # `tulpa_tvc_posterior` carries a [draws, time, term] field and no group
-  # axis, while a grouped fit's flat layout is (group, term, time). Reshaping
-  # it into the ungrouped shape would report the first group as though it were
-  # the whole field, so a grouped fit is refused here rather than collapsed.
-  info <- .varying_coef_info(object, c("tvc", "temporal"), "tulpa_tvc")
-  if (!is.null(info) && is.null(object$.internal$tvc_draws) &&
-      isTRUE((info$n_groups %||% 1L) > 1L)) {
-    stop("tvc() cannot summarize a grouped TVC field (group_var = \"",
-         info$group_var, "\", ", info$n_groups, " groups): the posterior it ",
-         "returns has no group dimension. Read the `tvc_w[...]` draws ",
-         "directly, laid out group-major over (term, time).", call. = FALSE)
-  }
   .extract_varying_coef(
     object, terms, summary, probs,
     slot = "tvc",
     info_class = "tulpa_tvc",
     not_fitted_msg = paste0(
-      "Model was not fitted with temporally-varying coefficients.\n",
+      "Model was not fitted with temporally-varying coefficients.
+",
       "Pass `temporal = temporal_tvc(...)` to tulpa() with `mode = \"exact\"`."),
     draws_field = "tvc_draws",
     names_field = "tvc_names",
     field_slot = "temporal",
-    engine_slot = "tvc",
+    engine_draws = .tvc_engine_draws,
     build_result = function(info, draws, term_names) {
+      n_t <- as.integer(info$n_times)
+      n_g <- dim(draws)[2] %/% n_t
       structure(
         list(
           draws = draws,
           time_levels = info$time_levels,
+          groups = if (n_g > 1L) rep(info$group_levels, each = n_t),
+          group_var = if (n_g > 1L) info$group_var,
           term_names = term_names,
-          n_times = info$n_times,
+          n_times = n_t,
+          n_groups = n_g,
           n_tvc = length(term_names),
           n_draws = dim(draws)[1],
           structure = info$structure
@@ -429,7 +426,10 @@ tvc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
 print.tulpa_tvc_posterior <- function(x, ...) {
   .print_varying_coef(
     x, "Temporally-varying",
-    axis_label = "Time points", axis_value = x$n_times,
+    axis_label = "Time points",
+    axis_value = if (isTRUE((x$n_groups %||% 1L) > 1L))
+      paste0(x$n_times, " in each of ", x$n_groups, " groups (", x$group_var, ")")
+      else x$n_times,
     meta_label = "Structure", meta_value = x$structure,
     viz = "temporal"
   )
@@ -445,18 +445,24 @@ print.tulpa_tvc_summary <- function(x, ...) {
 
 #' @rdname tvc
 #' @return `summary()` on a `tulpa_tvc_posterior` returns a `tulpa_tvc_summary`
-#'   data frame with one row per time point and term, holding the posterior
+#'   data frame with one row per time point and term (per group, time point
+#'   and term on a grouped fit, with a `group` column), holding the posterior
 #'   mean, SD and requested quantiles of each temporally varying coefficient.
 #' @export
 summary.tulpa_tvc_posterior <- function(object, probs = c(0.025, 0.5, 0.975), ...) {
+  n_g <- object$n_groups %||% 1L
   .summary_varying_coef(
     object, probs,
     n_terms = object$n_tvc,
-    lead_cols = function(j) data.frame(
-      time_idx = seq_len(object$n_times),
-      time = object$time_levels,
-      term = object$term_names[j]
-    ),
+    lead_cols = function(j) {
+      lead <- data.frame(
+        time_idx = rep(seq_len(object$n_times), times = n_g),
+        time = rep(object$time_levels, times = n_g)
+      )
+      if (n_g > 1L) lead$group <- object$groups
+      lead$term <- object$term_names[j]
+      lead
+    },
     summary_class = "tulpa_tvc_summary"
   )
 }
@@ -488,8 +494,9 @@ plot.tulpa_tvc_posterior <- function(x, term = 1, type = "ribbon", ...) {
   term_name <- x$term_names[term_idx]
   draws <- x$draws[, , term_idx]
 
-  n_times <- x$n_times
-  times <- as.numeric(x$time_levels)
+  # One path per group on a grouped fit, coloured by group.
+  times <- rep(as.numeric(x$time_levels), times = x$n_groups %||% 1L)
+  groups <- x$groups %||% rep("all", length(times))
 
   # Compute summaries
   means <- colMeans(draws)
@@ -497,27 +504,43 @@ plot.tulpa_tvc_posterior <- function(x, term = 1, type = "ribbon", ...) {
   upper <- apply(draws, 2, quantile, probs = 0.975)
 
   title <- paste("TVC:", term_name)
+  grouped <- !is.null(x$groups)
 
   # Use ggplot2 if available
   if (requireNamespace("ggplot2", quietly = TRUE)) {
     df <- data.frame(
       time = times,
+      group = factor(groups, levels = unique(groups)),
       mean = means,
       lower = lower,
       upper = upper
     )
 
-    p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$time, y = .data$mean)) +
-      ggplot2::geom_ribbon(
-        ggplot2::aes(ymin = .data$lower, ymax = .data$upper),
-        alpha = 0.3, fill = "steelblue"
-      ) +
-      ggplot2::geom_line(color = "steelblue", linewidth = 1) +
+    aes_group <- if (grouped) {
+      ggplot2::aes(x = .data$time, y = .data$mean, group = .data$group,
+                   colour = .data$group, fill = .data$group)
+    } else {
+      ggplot2::aes(x = .data$time, y = .data$mean)
+    }
+    p <- ggplot2::ggplot(df, aes_group)
+    p <- if (grouped) {
+      p + ggplot2::geom_ribbon(
+            ggplot2::aes(ymin = .data$lower, ymax = .data$upper),
+            alpha = 0.2, colour = NA) +
+        ggplot2::geom_line(linewidth = 1)
+    } else {
+      p + ggplot2::geom_ribbon(
+            ggplot2::aes(ymin = .data$lower, ymax = .data$upper),
+            alpha = 0.3, fill = "steelblue") +
+        ggplot2::geom_line(color = "steelblue", linewidth = 1)
+    }
+    p <- p +
       ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
       ggplot2::labs(
         title = title,
         x = "Time",
-        y = "Time-Varying Effect"
+        y = "Time-Varying Effect",
+        colour = x$group_var, fill = x$group_var
       ) +
       theme_tulpa()
 
@@ -526,16 +549,18 @@ plot.tulpa_tvc_posterior <- function(x, term = 1, type = "ribbon", ...) {
 
   # Base R fallback
   ylim <- range(c(lower, upper))
+  ug <- unique(groups)
+  cols <- if (grouped) grDevices::hcl.colors(length(ug)) else "steelblue"
 
-  plot(times, means, type = "l", col = "steelblue", lwd = 2,
-       ylim = ylim, xlab = "Time", ylab = "Time-Varying Effect",
-       main = title, ...)
-
-  polygon(c(times, rev(times)), c(lower, rev(upper)),
-          col = adjustcolor("steelblue", alpha.f = 0.3), border = NA)
-
+  plot(range(times), ylim, type = "n", xlab = "Time",
+       ylab = "Time-Varying Effect", main = title, ...)
+  for (k in seq_along(ug)) {
+    r <- groups == ug[k]
+    polygon(c(times[r], rev(times[r])), c(lower[r], rev(upper[r])),
+            col = adjustcolor(cols[k], alpha.f = 0.3), border = NA)
+    lines(times[r], means[r], col = cols[k], lwd = 2)
+  }
   abline(h = 0, lty = 2, col = "gray50")
-  lines(times, means, col = "steelblue", lwd = 2)
 
   invisible(NULL)
 }

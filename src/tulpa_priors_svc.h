@@ -47,10 +47,10 @@ inline void svc_hsgp_term_field(const std::vector<double>& phi_flat,
     }
 }
 
-// `svc_w` receives the field the likelihood reads, flat term-major: on the
-// HSGP basis the value at every row, on the centered NNGP path the centred
-// field at every location. The non-centered NNGP path reconstructs its field
-// outside this function and leaves `svc_w` empty here.
+// `svc_w` receives the field the likelihood reads, flat term-major and centred
+// per term: on the HSGP basis the value at every row, on the centered NNGP path
+// the value at every location. The non-centered NNGP path reconstructs its
+// field outside this function and leaves `svc_w` empty here.
 template<typename T>
 T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                      const ParamLayout& layout, std::vector<T>& svc_eta,
@@ -98,7 +98,9 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                                     n_obs, m_total, sigma2_j, ls_j, beta_j,
                                     svc_w.data() + (std::size_t)j * n_obs);
             }
-            tulpa_svc_ad::compute_svc_eta(svc_w, data.svc_data, svc_eta);
+            // The basis field is proper, so its level aliases beta_j exactly as
+            // the NNGP field's does; it is removed by the same centring.
+            tulpa_svc_ad::svc_center_eta(svc_w, data.svc_data, svc_eta);
         } else {
             // NNGP-based SVC (original path)
 

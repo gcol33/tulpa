@@ -35,13 +35,17 @@ full posterior draws.}
 \value{
 A \code{tulpa_tvc_posterior} object containing:
 \itemize{
-\item \code{draws}: Array of posterior draws (draws x times x terms)
+\item \code{draws}: Array of posterior draws (draws x units x terms). A unit is one
+time point, or on a grouped fit (\code{temporal_tvc(group_var =)}) one
+(group, time point) pair, group-major.
 \item \code{time_levels}: Time point labels
+\item \code{groups}: The group of each unit (\code{NULL} on an ungrouped fit)
 \item \code{term_names}: Names of TVC terms
 }
 
 \code{summary()} on a \code{tulpa_tvc_posterior} returns a \code{tulpa_tvc_summary}
-data frame with one row per time point and term, holding the posterior
+data frame with one row per time point and term (per group, time point
+and term on a grouped fit, with a \code{group} column), holding the posterior
 mean, SD and requested quantiles of each temporally varying coefficient.
 }
 \description{

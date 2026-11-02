@@ -46,22 +46,6 @@ plain_fixture <- function(n = 40L, seed = 2L) {
 }
 
 
-test_that("a grouped TVC field is refused rather than collapsed to group 1", {
-  # `tulpa_tvc_posterior` has no group axis, and the flat layout is
-  # group-major, so reshaping a grouped field into it would report the first
-  # group as the whole field.
-  info <- structure(
-    list(type = "tvc", group_var = "site", n_groups = 3L, n_times = 4L,
-         n_tvc = 1L, tvc_names = "x", time_levels = as.character(1:4),
-         structure = "rw1"),
-    class = c("tulpa_tvc", "tulpa_temporal", "list")
-  )
-  draws <- matrix(0, nrow = 5L, ncol = 12L,
-                  dimnames = list(NULL, paste0("tvc_w[", 1:12, "]")))
-  fake <- structure(list(temporal = info, draws = draws), class = "tulpa_fit")
-  expect_error(tvc(fake), "no group dimension")
-})
-
 skip_on_cran_budget()
 
 
