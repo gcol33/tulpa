@@ -841,20 +841,26 @@ auto_grid_place <- function(x)
 # A declared point mass is not an endpoint. The copy scale's zero level on its
 # log axis (`.hyper_axis_scale()`'s one rule) is the "no coupling" model: a
 # marginal heaviest there has its mass ON the model the atom states, not past
-# the span, so the axis is not railed; otherwise the rail is read on the
-# continuum alone.
+# the span, so the axis is not railed. Nor is a continuum heaviest at its
+# lowest node: the atom is the continuum's limit at zero, so the axis's span
+# reaches below that node to the atom, and a mode between the two lies inside
+# the span the grid measured at both ends. Only the continuum's upper end can
+# rail on such an axis.
 .nl_axis_rail <- function(res, axis, edge_mult = .nl_recenter("edge_mass_mult")) {
     mw <- .nl_axis_marginal_w(res, axis, measure = "inner")
     if (is.null(mw)) return(NULL)
+    atom_below <- FALSE
     if (isTRUE(.hyper_axis_scale(sub("^b[0-9]+[.]", "", axis))) &&
         any(mw$vals <= 0)) {
         if (mw$vals[which.max(mw$w)] <= 0) return(NULL)
         mw <- .nl_axis_continuum(mw, "log")
         if (is.null(mw) || length(mw$w) < 2L) return(NULL)
+        atom_below <- TRUE
     }
     m <- length(mw$w)
     k <- which.max(mw$w)
     if (k != 1L && k != m) return(NULL)
+    if (atom_below && k == 1L) return(NULL)
     lift <- m * mw$w[k]
     if (!is.finite(lift) || lift < edge_mult) return(NULL)
     list(side = if (k == 1L) "lower" else "upper",
@@ -1021,9 +1027,18 @@ auto_grid_place <- function(x)
 #
 # Returns a list of `list(side, mass, lift, node)`, empty when neither end
 # qualifies.
+#
+# A declared point mass is not a boundary node: the copy scale's zero level
+# carries the "no coupling" model's own mass, so the read is taken on the
+# continuum. The continuum's lowest node stays a boundary there, since the
+# measure leaves the stretch between it and the atom to no cell.
 .nl_axis_edge_mass <- function(res, axis,
                                lift_mult = .nl_diag("edge_mass_lift")) {
     mw <- .nl_axis_marginal_w(res, axis, measure = "span")
+    if (!is.null(mw) && isTRUE(.hyper_axis_scale(sub("^b[0-9]+[.]", "", axis)))) {
+        mw <- .nl_axis_continuum(mw, "log")
+        if (!is.null(mw) && length(mw$w) < 2L) mw <- NULL
+    }
     if (is.null(mw)) return(list())
     m <- length(mw$w)
     out <- list()

@@ -162,6 +162,37 @@ test_that("a copy scale heaviest on its atom is neither railed nor placed", {
     expect_true(is.finite(.nl_axis_h_over_sd(res, "alpha", "log")))
 })
 
+test_that("a copy scale heaviest on the continuum node next to its atom is not railed", {
+    skip_on_cran_budget()
+    # The inner marginal of a fit whose truth is alpha = 0: flat from the atom
+    # to the first continuum node, falling after it. The mode lies between the
+    # atom and that node, inside the span the axis measured at both ends.
+    a <- c(0, 0.1, 0.153, 0.234, 0.358, 0.548)
+    res <- list(theta_grid = matrix(a, ncol = 1L, dimnames = list(NULL, "alpha")),
+                log_marginal = log(c(0.312, 0.426, 0.229, 0.032, 1e-6, 1e-12)))
+    expect_null(.nl_axis_rail(res, "alpha"))
+    expect_identical(.nl_railed_axes(res), character(0))
+    # The same marginal on an axis with no atom below it IS a lower rail.
+    res_cont <- list(theta_grid = matrix(a[-1L], ncol = 1L,
+                                         dimnames = list(NULL, "alpha")),
+                     log_marginal = res$log_marginal[-1L])
+    expect_identical(.nl_axis_rail(res_cont, "alpha")$side, "lower")
+})
+
+test_that("a copy scale's atom is not read as boundary mass", {
+    skip_on_cran_budget()
+    a <- c(0, 0.1, 0.3, 1, 3)
+    # Atom-heavy, continuum peaked inside: no boundary of the continuum
+    # carries weight.
+    res <- list(theta_grid = matrix(a, ncol = 1L, dimnames = list(NULL, "alpha")),
+                log_marginal = c(5, -6, 0, -6, -9))
+    expect_length(.nl_axis_edge_mass(res, "alpha"), 0L)
+    # A continuum piled on its top node still is.
+    res$log_marginal <- c(5, -9, -6, -3, 0)
+    expect_identical(vapply(.nl_axis_edge_mass(res, "alpha"), `[[`, "", "side"),
+                     "upper")
+})
+
 test_that("the pilot thins a marked copy scale and keeps a stated one", {
     skip_on_cran_budget()
     marked <- auto_grid(c(0, exp(seq(log(0.1), log(3), length.out = 9))))
