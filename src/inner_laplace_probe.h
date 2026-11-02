@@ -26,13 +26,22 @@
 #include "sparse_cholesky.h"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <vector>
 
 namespace tulpa {
 
+// A solve against a Hessian the live factor does not hold by itself: on the
+// sparse joint path, a field's sum-to-zero pins enter as rank-1 terms the stored
+// matrix leaves off, and the solve steps with the pinned matrix through its
+// block-Schur fold. `pinned(rhs, out)` writes that matrix's inverse applied to
+// `rhs` and returns false on failure.
+using InnerPinnedSolve = std::function<bool(const double*, double*)>;
+
 // Solve H v = rhs against the LIVE factor (dense scratch.chol, or the sparse
 // solver when use_sparse) without refactorizing -- the same pattern the
-// inv_block_layout diagonal-block extraction in laplace_newton.h uses. `v` and
+// inv_block_layout diagonal-block extraction in laplace_newton.h uses -- or
+// through `pinned` when the matrix carries pins the factor does not. `v` and
 // `z_work` are caller scratch sized n_x (z_work is read only on the dense path).
 // Returns false when the solve fails or produces a non-finite entry.
 inline bool inner_solve(int n_x,
@@ -41,7 +50,15 @@ inline bool inner_solve(int n_x,
                         bool use_sparse,
                         std::vector<double>& rhs,
                         std::vector<double>& v,
-                        std::vector<double>& z_work) {
+                        std::vector<double>& z_work,
+                        const InnerPinnedSolve* pinned = nullptr) {
+  if (pinned) {
+    if (!(*pinned)(rhs.data(), v.data())) return false;
+    for (int k = 0; k < n_x; k++) {
+      if (!std::isfinite(v[k])) return false;
+    }
+    return true;
+  }
   if (use_sparse) {
     if (!sparse_solver.solve(rhs.data(), v.data(), n_x)) return false;
     for (int k = 0; k < n_x; k++) {
@@ -69,12 +86,14 @@ inline bool inner_probe_column(int n_x, int i,
                                std::vector<double>& rhs,
                                std::vector<double>& v,
                                std::vector<double>& z_work,
-                               double& sigma_i) {
+                               double& sigma_i,
+                               const InnerPinnedSolve* pinned = nullptr) {
   if (i < 0 || i >= n_x) return false;
 
   std::fill(rhs.begin(), rhs.end(), 0.0);
   rhs[i] = 1.0;
-  if (!inner_solve(n_x, chol, sparse_solver, use_sparse, rhs, v, z_work)) {
+  if (!inner_solve(n_x, chol, sparse_solver, use_sparse, rhs, v, z_work,
+                   pinned)) {
     return false;
   }
 

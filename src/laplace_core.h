@@ -176,7 +176,7 @@ struct LaplaceResult {
   // stopped short of a mode, so there is no point to expand about and no
   // Gaussian at a mode to score), and on the sparse joint path
   // "pd_eigen_clamp", "s2z_rank1_factor" and "factor_unavailable", each naming
-  // a way the live CHOLMOD factor holds a different matrix than the one the
+  // a way the factor the probes read holds a different matrix than the one the
   // solve stepped with.
   // `inner_skew_arms_declined` lists the joint arms with no oracle at all
   // (0-based here, 1-based on the R side), so a PARTIALLY scored joint fit

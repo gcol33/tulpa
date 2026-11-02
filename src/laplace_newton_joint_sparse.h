@@ -412,21 +412,44 @@ inline void joint_newton_finalize_sparse(
             scratch.x_try);
     }
 
-    // The three inner-layer probes read the live CHOLMOD factor directly, so
-    // each condition below is a way for that factor to hold a different matrix
-    // than the one the solve stepped with. They are separated rather than
-    // collapsed into one flag so a declined fit says WHICH: a probe that never
-    // ran because the solve stalled sends a reader to a different question than
-    // one blocked by the PD mode this fit was configured with.
+    // The inner-layer probes solve against the Hessian the solve stepped with,
+    // so each condition below is a way for the factor they read to hold a
+    // different matrix. They are separated rather than collapsed into one flag
+    // so a declined fit says WHICH: a probe that never ran because the solve
+    // stalled sends a reader to a different question than one blocked by the PD
+    // mode this fit was configured with.
+    //
+    // With sum-to-zero pins registered the stepped matrix is H + the pins, which
+    // the live CHOLMOD factor of H alone does not hold; the skewness and
+    // importance-curve probes then solve through the same block-Schur fold of
+    // the pinned matrix the step and the log-determinant were read off
+    // (`pinned_solve`). That needs the builder to still hold H at the mode on the
+    // base ridge: a PD-enforced solve that had to raise the ridge leaves
+    // H + lambda I in it. The subspace debias reads the live factor itself
+    // (its triangular factor, not only solves), so it keeps declining there.
     const char* factor_declined = nullptr;
     if (!result.converged)                    factor_declined = "not_converged";
     else if (pd_mode != JointPDMode::LM)      factor_declined = "pd_eigen_clamp";
-    else if (!H_builder.s2z_rank1.empty())    factor_declined = "s2z_rank1_factor";
-    else if (!solver.factored())              factor_declined = "factor_unavailable";
+    else if (s2z_direct && (!s2z_step_ok || pd_conditioned))
+                                              factor_declined = "s2z_rank1_factor";
+    else if (!s2z_direct && !solver.factored())
+                                              factor_declined = "factor_unavailable";
+    const char* live_factor_declined =
+        (factor_declined == nullptr && s2z_direct) ? "s2z_rank1_factor"
+                                                   : factor_declined;
     const char* skew_declined =
         (factor_declined == nullptr && hard_probes_declined) ? "hard_constraint"
                                                              : factor_declined;
     const bool skew_factor_valid = (skew_declined == nullptr);
+    InnerPinnedSolve pinned_solve;
+    if (s2z_direct) {
+        pinned_solve = [&](const double* rhs, double* out) {
+            return s2z_block_schur(H_builder, H_builder.s2z_rank1, rhs, out,
+                                   nullptr, &scratch.s2z_block_schur_cache,
+                                   /*field_inertia=*/true);
+        };
+    }
+    const InnerPinnedSolve* probe_solve = s2z_direct ? &pinned_solve : nullptr;
 
     std::vector<double> pre_center_x(n_x);
     for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
@@ -443,7 +466,7 @@ inline void joint_newton_finalize_sparse(
                 InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
                     n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
                     compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
-                    *curvature3_fns, probe
+                    *curvature3_fns, probe, probe_solve
                 );
                 result.inner_skew = std::move(sk.gamma3);
                 result.inner_skew_gamma1 = std::move(sk.gamma1);
@@ -464,7 +487,7 @@ inline void joint_newton_finalize_sparse(
             if (skew_factor_valid) {
                 InnerISOutcome is_out = compute_inner_is_curve(
                     n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
-                    eval_objective, x, probe
+                    eval_objective, x, probe, probe_solve
                 );
                 result.inner_is_z         = std::move(is_out.z);
                 result.inner_is_log_joint = std::move(is_out.log_joint);
@@ -476,7 +499,7 @@ inline void joint_newton_finalize_sparse(
         run_subspace_debias(result, n_x, pre_center_x, unused_dense_chol,
                             solver, /*use_sparse=*/true,
                             eval_objective, x, debias,
-                            result.converged ? factor_declined : nullptr,
+                            result.converged ? live_factor_declined : nullptr,
                             hard_on ? hard : nullptr);
 
         run_inner_cila(result, n_x, pre_center_x, unused_dense_chol, solver,
@@ -593,15 +616,14 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     StepCurvature step_curvature = StepCurvature::Observed,
     int hessian_refresh = 1,
     // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
-    // store_Q. Only computable on the plain-CHOLMOD final factor: the s2z
-    // (sum-to-zero large-field) path solves against H + a rank-1 correction
-    // the stored CHOLMOD factor of H_builder alone does not reflect (see
-    // s2z_newton_step / apply_s2z_rank1_correction above), and the PSD path
-    // never populates `solver` at all (its final factorize goes through the
-    // dense eigen-clamp branch of joint_pd_step_solve). Probing either with a
-    // plain solver.solve() would silently solve against the wrong matrix, so
-    // both decline BY NAME -- the probed indices come back NaN carrying the
-    // reason -- rather than report a wrong gamma_3 or emit nothing at all.
+    // store_Q. The s2z (sum-to-zero large-field) path solves against H + a
+    // rank-1 correction the stored CHOLMOD factor of H_builder alone does not
+    // reflect, so its probes solve through the block-Schur fold of that pinned
+    // matrix instead (joint_newton_finalize_sparse). The PSD path never
+    // populates `solver` at all (its final factorize goes through the dense
+    // eigen-clamp branch of joint_pd_step_solve), so it declines BY NAME -- the
+    // probed indices come back NaN carrying the reason -- rather than report a
+    // wrong gamma_3 or emit nothing at all.
     bool compute_skew = false,
     const std::vector<int>* skew_probe_idx = nullptr,
     const JointCurvature3Oracles* curvature3_fns = nullptr,

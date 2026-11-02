@@ -135,7 +135,8 @@ inline InnerISOutcome compute_inner_is_curve(
     bool use_sparse,
     EvalLogJoint eval_log_joint,
     Rcpp::NumericVector& x_buf,
-    const std::vector<int>& probe_idx
+    const std::vector<int>& probe_idx,
+    const InnerPinnedSolve* pinned = nullptr
 ) {
   const double NaN = std::numeric_limits<double>::quiet_NaN();
   InnerISOutcome out;
@@ -154,7 +155,7 @@ inline InnerISOutcome compute_inner_is_curve(
   for (std::size_t idx = 0; idx < P; idx++) {
     double sigma_i = NaN;
     if (!inner_probe_column(n_x, probe_idx[idx], chol, sparse_solver, use_sparse,
-                            rhs, v, z_work, sigma_i)) {
+                            rhs, v, z_work, sigma_i, pinned)) {
       continue;
     }
     out.sigma[idx] = sigma_i;

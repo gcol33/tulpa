@@ -311,7 +311,8 @@ inline std::string inner_eta_var_scan(
     Rcpp::NumericVector& x_buf,
     ProbeFn probe_direction,
     StashFn stash,
-    AccumFn accumulate
+    AccumFn accumulate,
+    const InnerPinnedSolve* pinned = nullptr
 ) {
   if (n_x > INNER_ETA_VAR_MAX_SOLVES) return "eta_var_budget";
 
@@ -326,7 +327,7 @@ inline std::string inner_eta_var_scan(
 
     double sigma_k = 0.0;
     if (!inner_probe_column(n_x, k, chol, sparse_solver, use_sparse,
-                            rhs, v, z_work, sigma_k)) {
+                            rhs, v, z_work, sigma_k, pinned)) {
       for (int t = 0; t < n_x; t++) x_buf[t] = mode[t];
       return "eta_var_solve_failed";
     }
@@ -455,7 +456,8 @@ inline InnerSkewOutcome inner_skew_probe_scan(
     const std::vector<int>& probe_idx,
     FillEta1Fn fill_eta1,
     AccumFn accumulate,
-    bool have_eta_var
+    bool have_eta_var,
+    const InnerPinnedSolve* pinned = nullptr
 ) {
   InnerSkewOutcome out;
   out.gamma3.assign(probe_idx.size(), std::numeric_limits<double>::quiet_NaN());
@@ -472,7 +474,7 @@ inline InnerSkewOutcome inner_skew_probe_scan(
 
     double sigma_i = 0.0;
     if (!inner_probe_column(n_x, i, chol, sparse_solver, use_sparse,
-                            rhs, v, z_work, sigma_i)) {
+                            rhs, v, z_work, sigma_i, pinned)) {
       continue;
     }
     const double sigma2_i = v[i];
@@ -668,7 +670,8 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
     std::vector<Rcpp::NumericVector>& eta_buf0,
     std::vector<Rcpp::NumericVector>& eta_buf1,
     const JointCurvature3Oracles& oracles,
-    const std::vector<int>& probe_idx
+    const std::vector<int>& probe_idx,
+    const InnerPinnedSolve* pinned = nullptr
 ) {
   const int n_arms = static_cast<int>(eta_buf0.size());
   if (probe_idx.empty() || !oracles.any()) {
@@ -738,7 +741,8 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
               eta_var[k][j] += stash[k][j] * (eta_buf1[k][j] - eta_buf0[k][j]);
             }
           }
-        });
+        },
+        pinned);
     if (!var_declined.empty()) eta_var.assign(n_arms, std::vector<double>());
   }
   const bool have_var = all_separable && var_declined.empty();
@@ -795,7 +799,7 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
   InnerSkewOutcome out =
       inner_skew_probe_scan(n_x, mode, chol, sparse_solver, use_sparse,
                             x_buf, probe_idx, fill_eta1, accumulate,
-                            have_var);
+                            have_var, pinned);
   out.arms_declined = oracles.arms_declined;
   out.gamma1_declined = var_declined;
   return out;

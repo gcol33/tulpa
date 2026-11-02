@@ -348,3 +348,45 @@ test_that("a stated log-Cholesky tensor is refined by levels; a (sigma, rho) gri
   expect_false(any(fit2$refining_axis %in% axes))
   expect_identical(nrow(fit2$theta_grid), nrow(G2))
 })
+
+test_that("diagnostics() grades the inner Laplace layer of an MCAR block, solving against the pinned Hessian", {
+  skip_on_cran()
+  case <- .mcar_joint_case(1062L)
+  fit <- case$fit
+  expect_true(is.na(fit$inner_skew_declined))
+  expect_true(all(is.finite(fit$inner_skew)))
+  expect_true(all(is.finite(fit$inner_pareto_k)))
+
+  # The probes' conditional SD at each probed coefficient is the one of the
+  # stored (unpinned) precision of the probed cell plus the field's
+  # sum-to-zero augmentation, Sigma^-1 (x) 1 1' / n.
+  probe <- NULL
+  env <- environment()
+  trace(".inner_skew_attach", where = asNamespace("tulpa"), print = FALSE,
+        tracer = bquote(assign("probe", out, envir = .(env))))
+  on.exit(untrace(".inner_skew_attach", where = asNamespace("tulpa")),
+          add = TRUE)
+  fit2 <- suppressWarnings(tulpa_nested_laplace_joint(
+    case$arms, prior = list(case$blk),
+    control = list(progress = FALSE, store_Q = TRUE)))
+  expect_false(is.null(probe$inner_is_sigma))
+  k <- which.max(fit2$weights)
+  n <- length(fit2$modes[k, ])
+  Hl <- Matrix::sparseMatrix(i = fit2$Q_csc_i_per_grid[[k]] + 1L,
+                             p = fit2$Q_csc_p_per_grid[[k]],
+                             x = fit2$Q_csc_x_per_grid[[k]], dims = c(n, n))
+  H <- as.matrix(Hl)
+  H <- H + t(H) - diag(diag(H))
+  th <- fit2$theta_grid[k, ]
+  L <- matrix(c(exp(th[["b1.L11"]]), th[["b1.L21"]], 0,
+                exp(th[["b1.L22"]])), 2)
+  S <- case$blk$n_spatial_units
+  fs <- fit2$arm_layout$field_starts
+  U <- matrix(0, n, 2)
+  U[fs + seq_len(S), 1] <- 1
+  U[fs + S + seq_len(S), 2] <- 1
+  Haug <- H + U %*% (solve(tcrossprod(L)) / S) %*% t(U)
+  expect_equal(as.numeric(probe$inner_is_sigma),
+               sqrt(diag(solve(Haug))[probe$inner_skew_idx]),
+               tolerance = 1e-8)
+})

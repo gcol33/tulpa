@@ -111,9 +111,13 @@
 #                          eigen-solves a densified Hessian and leaves no CHOLMOD
 #                          factor for either probe to solve against.
 #   s2z_rank1_factor       sparse joint only: the field carries sum-to-zero
-#                          rank-1 pins the stored Hessian does not hold, so the
-#                          live factor is of a different matrix than the one the
-#                          solve stepped with.
+#                          rank-1 pins the stored Hessian does not hold, and no
+#                          factor of the pinned matrix at the mode was left to
+#                          probe: its block-Schur fold failed there, or a
+#                          PD-enforced solve raised the ridge on the stored
+#                          Hessian. The subspace debias, which reads the live
+#                          factor of the stored Hessian itself, declines with it
+#                          whenever pins are registered.
 #   factor_unavailable     sparse joint only: the solve left no live factor at
 #                          all.
 #
@@ -170,7 +174,7 @@
     pd_eigen_clamp      = list("not_applicable",
                                "the PSD inner step leaves no factor to propose from"),
     s2z_rank1_factor    = list("not_applicable",
-                               "the live factor omits the field's sum-to-zero pins"),
+                               "no factor of the pinned Hessian at the mode"),
     factor_unavailable  = list("not_applicable", "the solve left no live factor")
 )
 
@@ -366,9 +370,9 @@
                                "sparse factor for the probe to solve against;",
                                "the default control$hessian = \"auto\" restores it"),
         s2z_rank1_factor = paste("the field carries sum-to-zero rank-1 pins that",
-                                 "the stored Hessian does not hold, so the live",
-                                 "factor is of a different matrix than the solve",
-                                 "stepped with"),
+                                 "the stored Hessian does not hold, and no factor",
+                                 "of the pinned Hessian at the mode was available",
+                                 "to probe"),
         factor_unavailable = "the inner solve left no live factor to probe",
         NULL)
 }
