@@ -134,6 +134,7 @@ reference:
   - compare_models
   - model_average
   - posterior_linpred
+  - latent_effects
   - posterior_predict
   - pp_check
   - prior_predict

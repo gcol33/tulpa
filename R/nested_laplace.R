@@ -2211,11 +2211,34 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
        })
 }
 
+# The coordinates of every `latent()` block (a tgmrf() field, whose
+# coordinates enter eta as they are, `eta_i += x[obs_idx[i]]`), concatenated in
+# block order; `sizes` holds each block's width, so latent_effects() can split
+# them back. NULL when the fit carries no such block.
+.nl_latent_field_load <- function(blocks, offsets, n_x) {
+  if (!is.list(blocks) || !is.null(blocks$type) ||
+      length(offsets) != length(blocks) + 1L || is.null(n_x)) return(NULL)
+  cols <- integer(0)
+  sizes <- integer(0)
+  for (b in seq_along(blocks)) {
+    if (!identical(tolower(blocks[[b]]$type %||% ""), "tgmrf")) next
+    if (offsets[b + 1L] <= offsets[b] || offsets[b + 1L] > n_x) return(NULL)
+    cb <- seq.int(offsets[b] + 1L, offsets[b + 1L])
+    cols <- c(cols, cb)
+    sizes <- c(sizes, stats::setNames(length(cb), as.character(b)))
+  }
+  if (!length(cols)) return(NULL)
+  list(type = "tgmrf", n_units = length(cols), cols = list(cols),
+       sizes = sizes, weights = function(k) 1)
+}
+
 # The per-unit fields a nested fit retains as loadings of each cell's latent
-# Gaussian, by role: the areal spatial field and the random effects.
+# Gaussian, by role: the areal spatial field, the random effects and the
+# latent() blocks.
 .nl_unit_loads <- function(blocks, offsets, n_x, theta_grid) {
   list(spatial = .nl_spatial_field_load(blocks, offsets, n_x, theta_grid),
-       re      = .nl_re_field_load(blocks, offsets, n_x, theta_grid))
+       re      = .nl_re_field_load(blocks, offsets, n_x, theta_grid),
+       latent  = .nl_latent_field_load(blocks, offsets, n_x))
 }
 
 # Per-cell mean and variance of every unit loading in `units`
@@ -2253,6 +2276,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
       n_threads = 1L)
     res[[paste0("grid_", role, "_mean")]] <- mu
     res[[paste0("grid_", role, "_var")]]  <- v
+    if (!is.null(ld$sizes)) res[[paste0("grid_", role, "_sizes")]] <- ld$sizes
   }
   res
 }
