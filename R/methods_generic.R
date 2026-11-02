@@ -1645,15 +1645,31 @@ ranef.tulpa_fit <- function(object, ...) {
     # other block's width: their coefficients are the final `length(re_names)`
     # columns. SE stays NA for the same reason as the branch below -- the
     # between-grid spread omits the within-cell curvature.
-    if (!is.null(object$re_block_index) && n_tail > length(re_names)) {
-      w   <- object$weights / sum(object$weights)
-      seg <- M[, (ncol(M) - length(re_names) + 1L):ncol(M), drop = FALSE]
+    # The fit retains each cell's random effects as a loading of its latent
+    # Gaussian (`grid_re_mean` / `grid_re_var`, `.nl_re_field_load()`): the
+    # non-centred coordinate times the cell's sigma, with its conditional
+    # variance. Mixed over the outer weights, that is the per-group posterior.
+    mu_re <- object$grid_re_mean
+    if (!is.null(object$re_block_index) && is.matrix(mu_re) &&
+        ncol(mu_re) == length(re_names)) {
+      V <- object$grid_re_var
+      w <- as.numeric(object$weights)
+      keep <- is.finite(w) & w > 0 & is.finite(rowSums(mu_re))
+      if (is.matrix(V)) keep <- keep & is.finite(rowSums(V))
+      var <- if (is.matrix(V)) pmax(V[keep, , drop = FALSE], 0)
+      mx <- .nl_gauss_mixture_summary(mu_re[keep, , drop = FALSE], var,
+                                      w[keep] / sum(w[keep]),
+                                      probs = c(0.025, 0.975))
       return(data.frame(
-        term = re_names, estimate = as.numeric(crossprod(w, seg)),
-        sd = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
-        source = "mode",
+        term = re_names, estimate = mx$mean, sd = mx$sd,
+        conf.low = mx$quantiles[, 1L], conf.high = mx$quantiles[, 2L],
+        source = if (is.null(var)) "mode" else "mixture",
         row.names = NULL, stringsAsFactors = FALSE
       ))
+    }
+    if (!is.null(object$re_block_index) && n_tail > length(re_names)) {
+      .accessor_unavailable("ranef", object,
+        "the per-cell random effects (the fit retained no grid_re_mean)")
     }
     if (n_tail > 0L && n_tail == length(re_names)) {
       w   <- object$weights / sum(object$weights)

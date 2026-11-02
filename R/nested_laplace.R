@@ -779,8 +779,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res <- .nl_attach_grid_hessians(
       res, p_fixed, keep_joint_prec,
       var_cols = .nl_role_cols(prior, NULL, res$Q_csc_n, "temporal"),
-      spatial = .nl_spatial_field_load(prior, NULL, res$Q_csc_n,
-                                       .nl_theta_matrix(res)))
+      units = list(spatial = .nl_spatial_field_load(prior, NULL, res$Q_csc_n,
+                                       .nl_theta_matrix(res))))
   }
   tm$mark("postproc")
   res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
@@ -805,8 +805,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         r <- .nl_attach_grid_hessians(
           r, p_fixed, keep_joint_prec,
           var_cols = .nl_role_cols(prior_i, NULL, r$Q_csc_n, "temporal"),
-          spatial = .nl_spatial_field_load(prior_i, NULL, r$Q_csc_n,
-                                           .nl_theta_matrix(r)))
+          units = list(spatial = .nl_spatial_field_load(prior_i, NULL, r$Q_csc_n,
+                                           .nl_theta_matrix(r))))
       }
       .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "single", type, NULL,
                           k_samples, compute = diagnose_k,
@@ -1844,7 +1844,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
                                                      res$block_latent_offsets,
                                                      res$Q_csc_n, "temporal"),
                                        .nl_temporal_latent_block(res)$cols),
-                                     spatial = .nl_spatial_field_load(
+                                     units = .nl_unit_loads(
                                        res$blocks, res$block_latent_offsets,
                                        res$Q_csc_n, res$theta_grid)) {
   Q_p <- res$Q_csc_p_per_grid
@@ -1878,26 +1878,6 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 
   modes_mat <- res$modes  # n_grid x n_x
 
-  # The areal spatial field's per-unit value at each cell is a loading of the
-  # latent vector (`.nl_spatial_field_load()`): its mean is the loading of the
-  # cell mode, its variance the loading's quadratic form in the cell's
-  # (constrained) inverse precision, read off the same solve as one more column
-  # of E per unit. The transient solve holds n_x doubles per unit, so a field
-  # past `.NL_FIELD_COV_MAX` of them keeps its per-cell means only.
-  n_sp <- if (!is.null(spatial)) spatial$n_units else 0L
-  sp_var <- n_sp > 0L && as.numeric(n_x) * n_sp <= .NL_FIELD_COV_MAX
-  sp_mean <- if (n_sp) matrix(NA_real_, n_grid, n_sp)
-  sp_v    <- if (sp_var) matrix(NA_real_, n_grid, n_sp)
-  sp_load <- function(k) {
-    w <- spatial$weights(k)
-    Lk <- matrix(0, n_x, n_sp)
-    for (b in seq_along(spatial$cols)) {
-      Lk[cbind(spatial$cols[[b]], seq_len(n_sp))] <- w[b]
-    }
-    Lk
-  }
-  if (sp_var) E <- cbind(E, matrix(0, n_x, n_sp))
-
   # An intrinsic block (ICAR, BYM2's structured part, RW1 / RW2) stands for a
   # field whose constant is a HARD sum-to-zero constraint. The inner solve
   # augments that direction so the Hessian inverts, and centres it into the
@@ -1921,16 +1901,10 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
       a
     }, numeric(n_x)))
   }
-  sel <- seq_len(p_fixed + n_var + if (sp_var) n_sp else 0L)
-  sp_sel <- if (sp_var) p_fixed + n_var + seq_len(n_sp)
+  sel <- seq_len(p_fixed + n_var)
   con_sel <- length(sel) + seq_len(n_con)
 
   for (k in seq_len(n_grid)) {
-    if (n_sp && !is.null(modes_mat) && all(is.finite(modes_mat[k, ]))) {
-      Lk <- sp_load(k)
-      sp_mean[k, ] <- as.numeric(crossprod(Lk, modes_mat[k, ]))
-      if (sp_var) E[, sp_sel] <- Lk
-    }
     # A cell the cheap screen pruned is never solved, so it holds no precision
     # to retain and its CSC slot is empty. Skip the write and the slot stays
     # blank, which is what `.nested_fixed_moments()` already reads: it drops any
@@ -1983,12 +1957,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
         field_cov[[k]] <- (Sf + t(Sf)) / 2
       }
     }
-    if (sp_var) sp_v[k, ] <- diag(S)[sp_sel]
   }
-  if (n_sp) {
-    res$grid_spatial_mean <- sp_mean
-    res$grid_spatial_var  <- sp_v
-  }
+  res <- .nl_attach_unit_loads(res, units, Q_p, Q_i, Q_x, n_x, constr)
 
   res$grid_hessians <- grid_hessians
   res$grid_modes    <- grid_modes
@@ -2208,6 +2178,83 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
          sg <- tg[k, cs[1L]]; rh <- tg[k, cs[2L]]
          c(sg * sqrt(rh) * sf, sg * sqrt(1 - rh))
        })
+}
+
+# The random-effect loading of a multi-block fit: every `iid` block, in block
+# order (the order ranef() names the groups in). The block is non-centred, an
+# N(0, 1) coordinate entering eta as `sigma_k * z` (build_blocks_from_spec's
+# d_fac), so the random effect a cell implies is its coordinate times that
+# cell's sigma. NULL when the fit carries no iid block.
+.nl_re_field_load <- function(blocks, offsets, n_x, theta_grid) {
+  if (!is.list(blocks) || !is.null(blocks$type) ||
+      length(offsets) != length(blocks) + 1L || is.null(n_x)) return(NULL)
+  tg <- if (!is.null(theta_grid)) as.matrix(theta_grid)
+  cols <- integer(0)
+  sig <- list()
+  for (b in seq_along(blocks)) {
+    if (!identical(tolower(blocks[[b]]$type %||% ""), "iid")) next
+    if (offsets[b + 1L] <= offsets[b] || offsets[b + 1L] > n_x) return(NULL)
+    cb <- seq.int(offsets[b] + 1L, offsets[b + 1L])
+    nm <- paste0("b", b, ".sigma")
+    s_fixed <- as.numeric(blocks[[b]]$sigma_grid)[1L]
+    cols <- c(cols, cb)
+    sig[[length(sig) + 1L]] <- list(n = length(cb), nm = nm, fixed = s_fixed)
+  }
+  if (!length(cols)) return(NULL)
+  list(type = "iid", n_units = length(cols), cols = list(cols),
+       weights = function(k) {
+         list(unlist(lapply(sig, function(s) {
+           v <- if (!is.null(tg) && s$nm %in% colnames(tg)) tg[k, s$nm]
+                else s$fixed
+           rep(v, s$n)
+         })))
+       })
+}
+
+# The per-unit fields a nested fit retains as loadings of each cell's latent
+# Gaussian, by role: the areal spatial field and the random effects.
+.nl_unit_loads <- function(blocks, offsets, n_x, theta_grid) {
+  list(spatial = .nl_spatial_field_load(blocks, offsets, n_x, theta_grid),
+       re      = .nl_re_field_load(blocks, offsets, n_x, theta_grid))
+}
+
+# Per-cell mean and variance of every unit loading in `units`
+# (`.nl_unit_loads()`), stored as `grid_<role>_mean` / `grid_<role>_var`
+# (n_grid x n_units). The mean is the loading of the cell mode; the variance is
+# the loading's quadratic form in the cell's inverse precision, conditioned on
+# the sum-to-zero groups `constr`, read off one selected inversion per cell
+# (`cpp_loading_marginal_var()`), so it costs nothing per unit beyond the
+# loading itself and needs no dense solve against the units' columns.
+.nl_attach_unit_loads <- function(res, units, Q_p, Q_i, Q_x, n_x, constr) {
+  M <- res$modes
+  n_grid <- length(Q_p)
+  for (role in names(units)) {
+    ld <- units[[role]]
+    if (is.null(ld)) next
+    n_u <- as.integer(ld$n_units)
+    n_c <- length(ld$cols)
+    idx <- as.integer(do.call(rbind, ld$cols))
+    W <- matrix(NA_real_, n_grid, n_u * n_c)
+    mu <- matrix(NA_real_, n_grid, n_u)
+    for (k in seq_len(n_grid)) {
+      wk <- lapply(ld$weights(k), function(w) rep_len(as.numeric(w), n_u))
+      W[k, ] <- as.numeric(do.call(rbind, wk))
+      if (is.matrix(M) && all(is.finite(M[k, ]))) {
+        mu[k, ] <- Reduce(`+`, lapply(seq_len(n_c), function(c)
+          wk[[c]] * M[k, ld$cols[[c]]]))
+      }
+    }
+    W[!is.finite(W)] <- 0
+    v <- cpp_loading_marginal_var(
+      Q_p_per_grid = Q_p, Q_i_per_grid = Q_i, Q_x_per_grid = Q_x,
+      n_x = as.integer(n_x), load_idx = idx,
+      load_ptr = as.integer(seq(0L, n_u * n_c, by = n_c)),
+      load_w = W, A_cols_list = lapply(constr %||% list(), as.integer),
+      n_threads = 1L)
+    res[[paste0("grid_", role, "_mean")]] <- mu
+    res[[paste0("grid_", role, "_var")]]  <- v
+  }
+  res
 }
 
 # Structural spec for one block sent to cpp_nested_laplace_multi. Grid values

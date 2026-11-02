@@ -463,6 +463,94 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
     return out;
 }
 
+// Rcpp entry: per-cell variance of a set of sparse LOADINGS of the latent
+// vector, a_j = sum_e w[k, e] e_{idx[e]} over column j's entries, under each
+// cell's constrained inverse precision:
+//
+//   Var(a_j' x | theta_k) = a_j' Q_k^{-1} a_j - G_j' M^{-1} G_j,
+//
+// the second term the sum-to-zero conditioning (InvBlockConstraint). The
+// quadratic form is read off one Takahashi selected inversion per cell, so a
+// loading's entries must lie on the precision's pattern pairwise -- true of
+// coordinates that load the same observations (a BYM2 unit's two components),
+// and of a single coordinate. The weights may differ by cell (a non-centred
+// block's scale, BYM2's (sigma, rho) mixing).
+//
+// load_idx : 1-based latent indices of every entry, columns concatenated.
+// load_ptr : length m + 1, 0-based start of each column's entries.
+// load_w   : n_grid x length(load_idx) weights.
+// Returns an n_grid x m matrix; a row whose cell is absent or fails to factor
+// is NA.
+//
+// [[Rcpp::export]]
+Rcpp::NumericMatrix cpp_loading_marginal_var(
+    Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid,
+    int n_x, Rcpp::IntegerVector load_idx, Rcpp::IntegerVector load_ptr,
+    Rcpp::NumericMatrix load_w, Rcpp::List A_cols_list, int n_threads = 1
+) {
+    const VcovGridInputs in = read_vcov_grid_inputs(
+        Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, Rcpp::IntegerVector(0),
+        A_cols_list);
+    const int n_grid = in.n_grid;
+    const int n_e = load_idx.size();
+    const int m = load_ptr.size() - 1;
+    if (m < 0 || load_ptr[0] != 0 || load_ptr[m] != n_e)
+        Rcpp::stop("load_ptr must start at 0 and end at length(load_idx).");
+    for (int j = 0; j < m; j++)
+        if (load_ptr[j] > load_ptr[j + 1])
+            Rcpp::stop("load_ptr must be non-decreasing.");
+    if (load_w.nrow() != n_grid || load_w.ncol() != n_e)
+        Rcpp::stop("load_w must be n_grid x length(load_idx).");
+    std::vector<int> idx0(n_e), ptr(load_ptr.begin(), load_ptr.end());
+    for (int e = 0; e < n_e; e++) {
+        const int v = load_idx[e];
+        if (v == NA_INTEGER || v < 1 || v > n_x)
+            Rcpp::stop("load_idx[%d] is not a latent index in [1, %d].", e + 1, n_x);
+        idx0[e] = v - 1;
+    }
+    std::vector<double> W(load_w.begin(), load_w.end());   // column-major
+
+    const int nthr = tulpa_omp_team_size_req(n_threads, n_grid);
+    auto pool = solver_pool(nthr);
+    std::vector<double> out(static_cast<std::size_t>(n_grid) * m,
+                            NA_REAL);
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(dynamic, 1) num_threads(nthr)
+#endif
+    for (int k = 0; k < n_grid; k++) {
+        if (!in.has_cell[k]) continue;
+        tulpa::SparseCholeskySolver& solver = *pool[omp_tid()];
+        if (!tulpa::factorize_cell(solver, in.Qp[k].data(), in.Qi[k].data(),
+                            in.Qx[k].data(), n_x, in.nnz(k))) continue;
+        auto solve_cell = [&](const double* rhs, double* o) {
+            solver.solve(rhs, o, n_x);
+        };
+        tulpa::InvBlockConstraint constr;
+        constr.build(solve_cell, n_x, in.A_cols);
+        const tulpa::SparseCholeskySolver::SelectedInverse si =
+            solver.selected_inversion_full();
+        if (si.n != n_x) continue;
+        std::vector<double> wk(n_e);
+        for (int e = 0; e < n_e; e++)
+            wk[e] = W[static_cast<std::size_t>(e) * n_grid + k];
+        for (int j = 0; j < m; j++) {
+            double q = 0.0;
+            for (int a = ptr[j]; a < ptr[j + 1]; a++)
+                for (int b = ptr[j]; b < ptr[j + 1]; b++)
+                    q += wk[a] * wk[b] * si.at(idx0[a], idx0[b]);
+            q -= constr.quad_correction(idx0.data(), wk.data(),
+                                        static_cast<std::size_t>(ptr[j]),
+                                        static_cast<std::size_t>(ptr[j + 1]));
+            out[static_cast<std::size_t>(j) * n_grid + k] = q;
+        }
+    }
+
+    Rcpp::NumericMatrix res(n_grid, m);
+    std::copy(out.begin(), out.end(), res.begin());
+    return res;
+}
+
 // Rcpp entry: the outer grid's posterior covariance of idx by the law of total
 // covariance,
 //   V = sum_k w_k [ C_k + (m_k - mbar)(m_k - mbar)' ],  mbar = sum_k w_k m_k,

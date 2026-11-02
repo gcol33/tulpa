@@ -257,6 +257,10 @@ cpp_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid
     .Call(`_tulpa_cpp_joint_inner_vcov_blocks`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads)
 }
 
+cpp_loading_marginal_var <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, load_idx, load_ptr, load_w, A_cols_list, n_threads = 1L) {
+    .Call(`_tulpa_cpp_loading_marginal_var`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, load_idx, load_ptr, load_w, A_cols_list, n_threads)
+}
+
 cpp_joint_inner_vcov_mixture <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, weights, modes = NULL, field_marginal = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_joint_inner_vcov_mixture`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, weights, modes, field_marginal, n_threads)
 }

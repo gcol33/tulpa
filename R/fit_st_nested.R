@@ -534,7 +534,23 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
                       hsgp = ncol(basis$phi_basis), n_s)
   sp_block <- lat0 + seq_len(n_sp_cols)
   te_cols  <- lat0 + n_sp_cols + seq_len(n_times)
-  out <- .nl_attach_grid_hessians(out, p, var_cols = te_cols)
+  # The per-unit spatial field as a loading of the latent vector, as
+  # `.nl_spatial_field_load()` states it for the registry doors: weight 1 on an
+  # areal unit's own coordinate, BYM2's cell-dependent mix of its two
+  # components. hsgp's basis weights are not per-unit and carry none.
+  sp_load <- switch(spatial_type,
+    bym2 = list(type = "bym2", n_units = n_s,
+                cols = list(sp_block[seq_len(n_s)], sp_block[n_s + seq_len(n_s)]),
+                weights = function(k) {
+                  sg <- out$theta_grid[k, "sigma_spatial"]
+                  rh <- out$theta_grid[k, "rho_spatial"]
+                  c(sg * sqrt(rh) * kargs$scale_factor, sg * sqrt(1 - rh))
+                }),
+    hsgp = NULL,
+    list(type = spatial_type, n_units = n_s, cols = list(sp_block),
+         weights = function(k) 1))
+  out <- .nl_attach_grid_hessians(out, p, var_cols = te_cols,
+                                  units = list(spatial = sp_load))
 
   # Grid-marginalised field posterior means. bym2's spatial contribution to eta
   # is the sigma/rho-weighted MIX of its two raw (standardized) sub-fields, not

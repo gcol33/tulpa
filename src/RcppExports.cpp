@@ -908,6 +908,25 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_loading_marginal_var
+Rcpp::NumericMatrix cpp_loading_marginal_var(Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid, int n_x, Rcpp::IntegerVector load_idx, Rcpp::IntegerVector load_ptr, Rcpp::NumericMatrix load_w, Rcpp::List A_cols_list, int n_threads);
+RcppExport SEXP _tulpa_cpp_loading_marginal_var(SEXP Q_p_per_gridSEXP, SEXP Q_i_per_gridSEXP, SEXP Q_x_per_gridSEXP, SEXP n_xSEXP, SEXP load_idxSEXP, SEXP load_ptrSEXP, SEXP load_wSEXP, SEXP A_cols_listSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type Q_p_per_grid(Q_p_per_gridSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type Q_i_per_grid(Q_i_per_gridSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type Q_x_per_grid(Q_x_per_gridSEXP);
+    Rcpp::traits::input_parameter< int >::type n_x(n_xSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type load_idx(load_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type load_ptr(load_ptrSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type load_w(load_wSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type A_cols_list(A_cols_listSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_loading_marginal_var(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, load_idx, load_ptr, load_w, A_cols_list, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_joint_inner_vcov_mixture
 Rcpp::List cpp_joint_inner_vcov_mixture(Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid, int n_x, Rcpp::IntegerVector idx, int n_dense, Rcpp::List A_cols_list, Rcpp::NumericVector weights, Rcpp::Nullable<Rcpp::NumericMatrix> modes, bool field_marginal, int n_threads);
 RcppExport SEXP _tulpa_cpp_joint_inner_vcov_mixture(SEXP Q_p_per_gridSEXP, SEXP Q_i_per_gridSEXP, SEXP Q_x_per_gridSEXP, SEXP n_xSEXP, SEXP idxSEXP, SEXP n_denseSEXP, SEXP A_cols_listSEXP, SEXP weightsSEXP, SEXP modesSEXP, SEXP field_marginalSEXP, SEXP n_threadsSEXP) {
@@ -5197,6 +5216,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_spde_laplace_gradient", (DL_FUNC) &_tulpa_cpp_spde_laplace_gradient, 21},
     {"_tulpa_cpp_interval_gaussian_terms", (DL_FUNC) &_tulpa_cpp_interval_gaussian_terms, 4},
     {"_tulpa_cpp_joint_inner_vcov_blocks", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_blocks, 9},
+    {"_tulpa_cpp_loading_marginal_var", (DL_FUNC) &_tulpa_cpp_loading_marginal_var, 9},
     {"_tulpa_cpp_joint_inner_vcov_mixture", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_mixture, 11},
     {"_tulpa_cpp_laplace_fit_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_fit_multi_re, 26},
     {"_tulpa_cpp_laplace_log_marginal_multi_re_batch", (DL_FUNC) &_tulpa_cpp_laplace_log_marginal_multi_re_batch, 21},
