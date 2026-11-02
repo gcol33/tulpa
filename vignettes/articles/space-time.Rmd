@@ -35,11 +35,12 @@ interaction types of Knorr-Held (2000).
 It ends with maps per time slice, a forecast for two held-out years, a
 comparison of the models, and a table of which door fits which model.
 It builds on [Spatial models](spatial-models.html) and
-[Temporal models](temporal-models.html), and the interaction blocks use the
-`tgmrf()` construction from [Custom latent blocks](tgmrf.html).
+[Temporal models](temporal-models.html); the prior-sensitivity section builds
+one interaction block with the `tgmrf()` construction from
+[Custom latent blocks](tgmrf.html).
 
-Installation is covered in [Get started](tulpa.html). The interaction blocks
-are sparse precision matrices built with Matrix.
+Installation is covered in [Get started](tulpa.html). That custom block is a
+sparse precision matrix built with Matrix.
 
 ```{r load, message = FALSE}
 library(tulpa)
@@ -103,13 +104,14 @@ $B \delta = 0$:
 - types II and IV: $\sum_{t=1}^{T} \delta_{st} = 0$ for every region $s$;
 - types III and IV: $\sum_{s=1}^{S} \delta_{st} = 0$ for every time $t$.
 
-The rows of $B$ span the null space of $K$, so adding $\kappa B^\top B$ to the
-precision penalises only the directions $\tau_\delta K$ leaves free. With
-$\kappa = 1000$ the constrained directions carry a prior standard deviation of
-at most 0.01 on the log scale for the sizes used here, and the determinant of
-$\tau_\delta K + \kappa B^\top B$ depends on $\tau_\delta$ through
-$\operatorname{rank}(K) \log \tau_\delta$ only, which is the normalisation of
-the intrinsic density. This is how the blocks below are built.
+The rows of $B$ span the null space of $K$. tulpa imposes $B \delta = 0$ as a
+hard constraint: the inner Newton step solves on the constraint set, and the
+Laplace approximation integrates over the $ST - \operatorname{rank}(B)$
+directions left. The density is normalised by the generalized determinant of
+$\tau_\delta K$, which depends on $\tau_\delta$ through
+$\operatorname{rank}(K) \log \tau_\delta$. `spatiotemporal(type = )` builds
+$K$ and $B$ from the adjacency and the walk of the fit's own spatial and
+temporal specs.
 
 ## Simulating data
 
@@ -194,9 +196,10 @@ integrates over a grid of the two precisions, `b1.tau` for the spatial block and
 intercept has a standard error of 0.033.
 
 The two fields are read back with their own accessors. `field_effects()`
-returns the spatial field per region; on this fit it reports the grid-weighted
-mode only (`source = "mode"`, `sd` missing). `temporal()` returns the trend
-with its posterior spread, from 2000 draws of the grid mixture.
+returns the spatial field per region with its posterior standard deviation and
+95% interval, read from the grid mixture (`source = "mixture"`). `temporal()`
+returns the trend with its posterior spread, from 2000 draws of the grid
+mixture.
 
 ```{r effects}
 fe <- field_effects(fit_add)
@@ -246,9 +249,8 @@ summary(fit_ar1)$hyperparameters[, c("parameter", "mean", "sd")]
 c(rw1 = logLik(fit_st), ar1 = logLik(fit_ar1))
 ```
 
-The AR(1) fit puts the correlation's posterior mean at 0.82 and its log
-evidence 0.35 below the random walk's, so these data do not separate the two
-temporal priors. `fit_st_nested()` also takes `spatial_type = "bym2"`,
+The AR(1) fit puts the correlation's posterior mean at 0.81 and its log
+evidence 1.5 below the random walk's. `fit_st_nested()` also takes `spatial_type = "bym2"`,
 `"car_proper"`, `"hsgp"` and `"nngp"`; the same pairs reach `tulpa()` through
 `spatial = list(type = "bym2", ...)` or `spatial_gp()`.
 
@@ -268,7 +270,7 @@ summary(fit_gp)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
 
 The grid now runs over the field variance `b1.sigma2`, its range `b1.phi_gp`
 and the trend precision `b2.tau`. With 25 locations the variance interval runs
-from 0.16 to 4.85.
+from 0.16 to 4.53.
 
 ## Checking the additive fit
 
@@ -352,88 +354,55 @@ fit_I <- tulpa(y ~ x + spatial(region) + (1 | cell), data = dI,
 summary(fit_I)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
 ```
 
-The outer grid now crosses 9 spatial, 9 temporal and 5 interaction nodes, 405
-cells in all. tulpa warns when a multi-block grid takes more than 2 s to solve;
-this fit and the interaction fits below sit near that limit on the machine that
-built the article, and their warnings are not printed. The
-posterior of $\sigma_\delta$ sits at 0.17 with an interval from 0.08
-to 0.27, against an interaction whose true standard deviation is 0.107.
-`ranef()` returns the 250 cell effects, here as grid-weighted modes without a
-spread.
+tulpa warns when a multi-block grid takes more than 2 s to solve; this fit and
+the interaction fits below sit near that limit on the machine that built the
+article, and their warnings are not printed. The posterior of $\sigma_\delta$
+sits at 0.17 with an interval from 0.08 to 0.26, against an interaction whose
+true standard deviation is 0.107. `ranef()` returns the 250 cell effects with
+their posterior standard deviations and 95% intervals.
 
 ```{r type-I-ranef}
 re_I <- ranef(fit_I)
 head(re_I, 3)
 ```
 
-### Types II, III and IV: Kronecker blocks
+### Types II, III and IV: `spatiotemporal()`
 
-The structured types are built as `tgmrf()` blocks and enter the formula
-through `latent()`. `st_block()` takes the structure matrix `K` and the
-constraint matrix `B`, and returns a block whose precision is
-$\tau_\delta K + 1000\, B^\top B$ with hyperparameter
-$\theta = \log \tau_\delta$, a normal prior on $\theta$ and grid bounds.
-`obs_idx` maps each row to its cell of the stacked interaction.
-
-```{r kron}
-R_s <- Matrix(diag(rowSums(W)) - W, sparse = TRUE)
-R_t <- Matrix(crossprod(diff(diag(Tn))), sparse = TRUE)
-one_s <- matrix(1, 1, S); one_t <- matrix(1, 1, Tn)
-st_block <- function(K, B, name, idx = d$cell, mean = 3, sd = 1.5,
-                     lower = 0, upper = 7) {
-  C <- 1e3 * Matrix(crossprod(B), sparse = TRUE)
-  tgmrf(
-    Q = function(theta) as(as(exp(theta[1]) * K + C, "generalMatrix"),
-                           "CsparseMatrix"),
-    prior = function(theta) dnorm(theta[1], mean, sd, log = TRUE),
-    init = c(log_tau = mean), bounds = list(lower = lower, upper = upper),
-    obs_idx = idx, name = name)
-}
-```
-
-The three blocks differ only in their structure and constraints, as in the
-table of the model section. The constraint rows `kronecker(one_t, diag(S))` sum
-each region over time, and `kronecker(diag(Tn), one_s)` sums each time over
-regions.
-
-```{r blocks}
-B_II  <- kronecker(one_t, diag(S))
-B_III <- kronecker(diag(Tn), one_s)
-blk_II  <- st_block(kronecker(R_t, Diagonal(S)), B_II, "type II")
-blk_III <- st_block(kronecker(Diagonal(Tn), R_s), B_III, "type III")
-blk_IV  <- st_block(kronecker(R_t, R_s), rbind(B_II, B_III), "type IV")
-blk_IV
-```
-
-The printed block confirms 250 latent values and a precision with 15.9% of its
-entries nonzero. `fit_int()` adds a block to the additive model.
+The structured types go into `tulpa()` through `spatiotemporal = `.
+`spatiotemporal(type = )` takes the graph from the fit's `spatial =` spec and
+the walk from its `temporal =` spec, builds the Kronecker structure and the
+constraints of the model section, and adds the interaction as a third block
+whose precision $\tau_\delta$ is integrated on its own grid axis, `b3.tau`.
+`fit_int()` adds an interaction of the given type to the additive model.
 
 ```{r fit-interactions, warning = FALSE}
-fit_int <- function(blk) {
-  tulpa(y ~ x + spatial(region) + latent(blk), data = d, family = "poisson",
+fit_int <- function(type, data = d) {
+  tulpa(y ~ x + spatial(region), data = data, family = "poisson",
         spatial = list(type = "icar", adjacency = W),
-        temporal = temporal_rw1("time"), mode = "auto", control = ctl)
+        temporal = temporal_rw1("time"),
+        spatiotemporal = spatiotemporal(type = type),
+        mode = "auto", control = ctl)
 }
-fit_II  <- fit_int(blk_II)
-fit_III <- fit_int(blk_III)
-fit_IV  <- fit_int(blk_IV)
+fit_II  <- fit_int("II")
+fit_III <- fit_int("III")
+fit_IV  <- fit_int("IV")
 summary(fit_IV)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
 ```
 
 ### Extracting the interaction
 
-The interaction comes back from the outer grid. `tulpa_outer_grid()` returns
-each cell's inner mode, with columns ordered as the blocks were stacked: the
-fixed effects, the 25 spatial values, the 10 temporal values, then the 250
-interaction values. Their grid-weighted average is the posterior mean.
-`dc()` removes region and time means, which the type I estimate needs before it
-can be compared with a centred truth; the constrained types satisfy it already.
+`spatiotemporal_effects()` reads the interaction back per region and time:
+with `format = "summary"` it returns one row per cell, region fastest, with the
+posterior mean, quantiles and standard deviation from draws of the grid
+mixture. `dc()` removes region and time means, which the type I estimate needs
+before it can be compared with a centred truth; the constrained types satisfy
+it already.
 
 ```{r delta-extract}
+st_IV <- spatiotemporal_effects(fit_IV, format = "summary")
+head(st_IV, 3)
 delta_hat <- function(fit) {
-  g <- tulpa_outer_grid(fit)
-  cols <- g$n_fixed + S + Tn + seq_len(S * Tn)
-  matrix(colSums(g$weights * g$modes)[cols], S, Tn)
+  matrix(spatiotemporal_effects(fit, format = "summary")$mean, S, Tn)
 }
 dc <- function(M) M - outer(rowMeans(M), rep(1, Tn)) -
   outer(rep(1, S), colMeans(M)) + mean(M)
@@ -445,7 +414,7 @@ sapply(est, function(M) round(c(cor = cor(c(M), c(delta_true)),
 
 Type IV recovers the hotspot best, with a correlation of 0.78 against the
 truth, followed by types II and III. Type I, which shares no information
-between cells, reaches 0.19. In the scatter the type IV estimates follow the
+between cells, reaches 0.20. In the scatter the type IV estimates follow the
 identity line and are shrunk toward zero at the largest true values, while the
 type I estimates spread over the whole vertical range at every true value.
 
@@ -488,65 +457,45 @@ information about its log mean.
 
 ## Forecasting two years ahead
 
-A random walk extends past the data in closed form. Given $v_T$, the effect
-$h$ steps ahead is $v_{T+h} = v_T + \epsilon$ with
-$\epsilon \sim \mathcal{N}(0, h / \tau_t)$, and a type II interaction adds its
-own walk in each region, with variance $h / \tau_\delta$. The forecast of
-$\eta_{s, T+h}$ is the posterior of $\eta_{sT}$ plus these innovations, with
-the covariate term moved to the new $x$.
+A random walk extends past the data. Given $v_T$, the effect $h$ steps ahead
+is $v_{T+h} = v_T + \epsilon$ with $\epsilon \sim \mathcal{N}(0, h / \tau_t)$,
+and a type II interaction adds its own walk in each region. In `tulpa()` a
+forecast is a row whose response is `NA`: the row is left out of the
+likelihood, its time is still a node of the walk and of the interaction, and
+its covariate value enters its linear predictor as usual.
 
-To check the forecast against data, fit the additive and the type II models to
-the first eight time points and hold out times 9 and 10.
+To check the forecast against data, set the counts at times 9 and 10 to `NA`
+and fit the additive and the type II models to what is left.
 
 ```{r fit-past, warning = FALSE}
-past <- d[d$time <= 8, ]
-blk_past <- st_block(kronecker(crossprod(diff(diag(8))), Diagonal(S)),
-                     kronecker(matrix(1, 1, 8), diag(S)), "type II",
-                     idx = past$cell)
-fp_add <- tulpa(y ~ x + spatial(region), data = past, family = "poisson",
+held <- d$time > 8
+d_na <- d
+d_na$y[held] <- NA
+fp_add <- tulpa(y ~ x + spatial(region), data = d_na, family = "poisson",
                 spatial = list(type = "icar", adjacency = W),
                 temporal = temporal_rw1("time"), mode = "auto", control = ctl)
-fp_II  <- tulpa(y ~ x + spatial(region) + latent(blk_past), data = past,
-                family = "poisson",
-                spatial = list(type = "icar", adjacency = W),
-                temporal = temporal_rw1("time"), mode = "auto", control = ctl)
+fp_II  <- fit_int("II", data = d_na)
 ```
 
-`forecast_st()` draws the hyperparameters with `tulpa_hyper_draws()`, which
-records the grid cell of each draw, draws $\eta_{s8}$ from that same cell, adds
-the innovations, and draws a Poisson count. The type II walk is extrapolated
-without its sum-over-time constraint, so its innovation variance is the
-unconstrained one. The result holds a 90% predictive interval per region and
-held-out time.
+`posterior_predict()` draws a count for every row, the masked ones included.
+`forecast_st()` takes 2000 draws and returns a 90% predictive interval per
+region and held-out time.
 
 ```{r forecast}
-forecast_st <- function(fit, h, n = 2000, interaction = FALSE) {
-  hd <- tulpa_hyper_draws(fit, n = n)
-  k  <- attr(hd, "cells")
-  last <- which(past$time == 8)
-  E <- fit$fitted_eta[k, last]; V <- fit$fitted_eta_var[k, last]
-  out <- lapply(h, function(hh) {
-    new <- d[d$time == 8 + hh, ]
-    var_h <- hh / hd[, "b2.tau"]
-    if (interaction) var_h <- var_h + hh / exp(hd[, "b3.log_tau"])
-    eta <- E + sqrt(V) * rnorm(length(E)) + sqrt(var_h) * rnorm(length(E)) +
-      coef(fit)[["x"]] * rep(new$x - past$x[last], each = n)
-    yrep <- matrix(rpois(length(eta), exp(eta)), n)
-    data.frame(region = new$region, time = 8 + hh, y = new$y,
-               lo = apply(yrep, 2, quantile, 0.05),
-               hi = apply(yrep, 2, quantile, 0.95))
-  })
-  do.call(rbind, out)
+forecast_st <- function(fit, n = 2000) {
+  yrep <- posterior_predict(fit, ndraws = n, seed = 3)[, held]
+  data.frame(region = d$region[held], time = d$time[held], y = d$y[held],
+             lo = apply(yrep, 2, quantile, 0.05),
+             hi = apply(yrep, 2, quantile, 0.95))
 }
-set.seed(3)
-fc <- list(additive = forecast_st(fp_add, 1:2),
-           type_II  = forecast_st(fp_II, 1:2, interaction = TRUE))
+fc <- list(additive = forecast_st(fp_add), type_II = forecast_st(fp_II))
 t(sapply(fc, function(f) c(covered = sum(f$y >= f$lo & f$y <= f$hi),
                            of = nrow(f), mean_width = mean(f$hi - f$lo))))
 ```
 
-Both models cover 42 of the 50 held-out counts with their 90% intervals, and
-the type II intervals are wider by the interaction's own innovation. The plot
+The additive model covers 41 and the type II model 42 of the 50 held-out
+counts with their 90% intervals, and the two sets of intervals have the same
+mean width to within 0.1 counts. The plot
 shows the south-west corner region, where the hotspot grows, and the opposite
 corner.
 
@@ -559,7 +508,7 @@ for (s in c(1, 25)) {
   f_2 <- fc$type_II[fc$type_II$region == s, ]
   plot(1:Tn, ys, pch = 19, ylim = c(0, max(ys, f_2$hi, f_a$hi)),
        xlab = "time", ylab = "count", main = paste("region", s))
-  lines(1:8, exp(ep_past$mean[past$region == s]), lwd = 2)
+  lines(1:8, exp(ep_past$mean[d$region == s & !held]), lwd = 2)
   arrows(9:10 - 0.1, f_a$lo, 9:10 - 0.1, f_a$hi, angle = 90, code = 3,
          length = 0.03, lty = 2)
   arrows(9:10 + 0.1, f_2$lo, 9:10 + 0.1, f_2$hi, angle = 90, code = 3,
@@ -581,42 +530,84 @@ compare_models(additive = fit_add, type_I = fit_I, type_II = fit_II,
                type_III = fit_III, type_IV = fit_IV, criterion = "waic")
 ```
 
-Every interaction model ranks above the additive one, which sits 6.7 units of
+Every interaction model ranks above the additive one, which sits 6.9 units of
 expected log predictive density (`elpd`) below the best, at a standard error
-of the difference of 2.9. Among the interaction types the differences are
-between 1.5 and 3.8 units, each within about one and a half standard errors.
-The ranking puts type I first even though type IV recovered the interaction
+of the difference of 3.4. Among the interaction types the differences reach
+4.1 units, each within about 1.2 standard errors. The ranking puts type III
+first and type I 0.15 behind it, even though type IV recovered the interaction
 best: WAIC scores the fit to these 250 counts, and a free effect per cell can
 fit them as well as a smooth one.
 
-The log evidence is defined for the fits whose grid axes all carry a proper
-hyperprior. It is reported for the additive and the type I fit; on the
-`tgmrf()` fits `logLik()` returns `NA`.
+The log evidence is defined for every fit here, since the grid axes of all
+five carry a proper hyperprior.
 
 ```{r compare-loglik}
-compare_models(additive = fit_add, type_I = fit_I, criterion = "loglik")
-logLik(fit_IV)
+compare_models(additive = fit_add, type_I = fit_I, type_II = fit_II,
+               type_III = fit_III, type_IV = fit_IV, criterion = "loglik")
 ```
+
+The type IV fit has the highest log evidence, 2.0 above the additive model,
+and the five fits lie within those 2.0 units of each other.
 
 ## Prior sensitivity
 
-The prior on $\log \tau_\delta$ sets how much interaction the model expects
-before seeing the data. The default block uses $\mathcal{N}(3, 1.5^2)$. A
-second block centres it at 6 with standard deviation 0.25, a prior that expects
-an interaction with roughly a twentieth of the default's variance.
+The prior on $\tau_\delta$ sets how much interaction the model expects before
+seeing the data. `spatiotemporal()` places the engine's default hyperprior on
+it. A prior of your own takes the same type IV interaction built as a
+`tgmrf()` block, which carries its prior as a function of
+$\theta = \log \tau_\delta$ and enters the formula through `latent()`.
+`st_block()` takes the structure matrix `K` and the constraint matrix `B` and
+returns a block whose precision is $\tau_\delta K + 1000\, B^\top B$: the
+constraints enter as a stiff penalty on the null space of `K`, with a normal
+prior on $\theta$ and grid bounds.
+
+```{r kron}
+R_s <- Matrix(diag(rowSums(W)) - W, sparse = TRUE)
+R_t <- Matrix(crossprod(diff(diag(Tn))), sparse = TRUE)
+B_IV <- rbind(kronecker(matrix(1, 1, Tn), diag(S)),
+              kronecker(diag(Tn), matrix(1, 1, S)))
+st_block <- function(K, B, name, mean = 3, sd = 1.5, lower = 0, upper = 7) {
+  C <- 1e3 * Matrix(crossprod(B), sparse = TRUE)
+  tgmrf(
+    Q = function(theta) as(as(exp(theta[1]) * K + C, "generalMatrix"),
+                           "CsparseMatrix"),
+    prior = function(theta) dnorm(theta[1], mean, sd, log = TRUE),
+    init = c(log_tau = mean), bounds = list(lower = lower, upper = upper),
+    obs_idx = d$cell, name = name)
+}
+```
+
+One block puts $\mathcal{N}(3, 1.5^2)$ on $\log \tau_\delta$. The second
+centres it at 6 with standard deviation 0.25, a prior that expects an
+interaction with roughly a twentieth of the first one's variance.
 
 ```{r prior-sens, warning = FALSE}
-blk_tight <- st_block(kronecker(R_t, R_s), rbind(B_II, B_III), "type IV tight",
-                      mean = 6, sd = 0.25)
-fit_tight <- fit_int(blk_tight)
+fit_blk <- function(blk) {
+  tulpa(y ~ x + spatial(region) + latent(blk), data = d, family = "poisson",
+        spatial = list(type = "icar", adjacency = W),
+        temporal = temporal_rw1("time"), mode = "auto", control = ctl)
+}
+fit_wide  <- fit_blk(st_block(kronecker(R_t, R_s), B_IV, "IV wide"))
+fit_tight <- fit_blk(st_block(kronecker(R_t, R_s), B_IV, "IV tight",
+                              mean = 6, sd = 0.25))
 hp <- function(f) summary(f)$hyperparameters[3, c("mean", "ci_lo", "ci_hi")]
-rbind(default = hp(fit_IV), tight = hp(fit_tight))
-M_tight <- delta_hat(fit_tight)
-round(c(cor_default = cor(c(est$IV), c(delta_true)),
+rbind(wide = hp(fit_wide), tight = hp(fit_tight))
+blk_delta <- function(fit) {
+  g <- tulpa_outer_grid(fit)
+  cols <- g$n_fixed + S + Tn + seq_len(S * Tn)
+  matrix(colSums(g$weights * g$modes)[cols], S, Tn)
+}
+M_wide <- blk_delta(fit_wide); M_tight <- blk_delta(fit_tight)
+round(c(cor_wide = cor(c(M_wide), c(delta_true)),
         cor_tight = cor(c(M_tight), c(delta_true)),
-        sd_default = sd(c(est$IV)), sd_tight = sd(c(M_tight)),
+        sd_wide = sd(c(M_wide)), sd_tight = sd(c(M_tight)),
         sd_true = sd(c(delta_true))), 3)
 ```
+
+`blk_delta()` reads a `tgmrf()` block's interaction from
+`tulpa_outer_grid()`, whose per-cell inner modes are ordered as the blocks
+were stacked: the fixed effects, the 25 spatial values, the 10 temporal
+values, then the 250 interaction values.
 
 The tight prior moves the posterior mean of $\log \tau_\delta$ from 3.6 to 5.3.
 The estimated interaction keeps its shape, with a correlation with the truth of
@@ -650,30 +641,25 @@ Both precisions move by less than a tenth of their interval width.
 | HSGP or NNGP + temporal field | `fit_st_nested(spatial_type = "hsgp" / "nngp")` | integrated |
 | type I interaction | a random intercept per cell in the `tulpa()` formula | $\sigma_\delta$ integrated |
 | type I interaction | `fit_st_nested(re_idx =, sigma_re =)` | $\sigma_\delta$ held at `sigma_re` |
-| types II, III, IV | `tgmrf()` block in `latent()` | $\log \tau_\delta$ on the block's grid |
+| types I, II, III, IV on an areal graph with an RW1 or RW2 walk | `tulpa(spatiotemporal = spatiotemporal(type = ))` | $\tau_\delta$ integrated |
+| an interaction with a prior of your own | `tgmrf()` block in `latent()` | $\log \tau_\delta$ on the block's grid |
+| forecast | `NA` response rows in any of the above | |
 | panel trend (`group_var`) + spatial field | refused by `tulpa()` | |
 | non-separable space-time GP | none | |
 
-`spatiotemporal()` and `spatiotemporal_gp()` describe the interaction and
-non-separable models but fit nothing; both stop with a message that names the
-doors above.
+`spatiotemporal_gp()` describes a non-separable model but fits nothing; it
+stops with a message that names the additive doors above.
 
 ```{r refuse, error = TRUE}
-spatiotemporal(spatial_car(W, group_var = "region"), temporal_rw1("time"),
-               type = "IV")
+spatiotemporal_gp(~ lon + lat, "time")
 ```
-
-`spatiotemporal_effects()` summarises an interaction block that a model
-package's own fitter attaches to its fit; the `tulpa()` fits above carry none,
-which is why the interaction was read from `tulpa_outer_grid()`.
 
 ### Cost against regions and times
 
 `time_fit()` simulates an additive data set on an `nside` by `nside` lattice
-over `Tk` time points and times one fit, additive or with a type IV block. The
-table reports the outer grid size, the nonzero count of the interaction
-precision and the wall time, measured while this article was built (two
-threads, Windows workstation).
+over `Tk` time points and times one fit, additive or with a type IV
+interaction. The table reports the outer grid size and the wall time, measured
+while this article was built (two threads, Windows workstation).
 
 ```{r cost, warning = FALSE}
 time_fit <- function(nside, Tk, type_IV = FALSE) {
@@ -682,36 +668,27 @@ time_fit <- function(nside, Tk, type_IV = FALSE) {
   dk <- expand.grid(region = 1:Sk, time = 1:Tk); dk$x <- rnorm(nrow(dk))
   dk$y <- rpois(nrow(dk), exp(1 + 0.4 * dk$x + 0.3 * sin(dk$region) +
                                 0.3 * cos(dk$time)))
-  f <- y ~ x + spatial(region); nnz <- NA
-  if (type_IV) {
-    Rs <- Matrix(diag(rowSums(W_k)) - W_k, sparse = TRUE)
-    Rt <- Matrix(crossprod(diff(diag(Tk))), sparse = TRUE)
-    B  <- rbind(kronecker(matrix(1, 1, Tk), diag(Sk)),
-                kronecker(diag(Tk), matrix(1, 1, Sk)))
-    bk <- st_block(kronecker(Rt, Rs), B, "type IV", idx = seq_len(nrow(dk)))
-    nnz <- nnzero(bk$pattern); f <- y ~ x + spatial(region) + latent(bk)
-  }
-  el <- system.time(fk <- tulpa(f, data = dk, family = "poisson",
-    spatial = list(type = "icar", adjacency = W_k),
-    temporal = temporal_rw1("time"), mode = "auto", control = ctl))
+  st <- if (type_IV) spatiotemporal(type = "IV")
+  el <- system.time(fk <- tulpa(y ~ x + spatial(region), data = dk,
+    family = "poisson", spatial = list(type = "icar", adjacency = W_k),
+    temporal = temporal_rw1("time"), spatiotemporal = st, mode = "auto",
+    control = ctl))
   c(regions = Sk, times = Tk, grid_cells = nrow(tulpa_outer_grid(fk)$nodes),
-    nnz = nnz, seconds = round(el[["elapsed"]], 1))
+    seconds = round(el[["elapsed"]], 1))
 }
 set.seed(5)
-cost <- rbind(time_fit(5, 10), time_fit(8, 10), time_fit(5, 20),
-              time_fit(5, 10, TRUE), time_fit(8, 10, TRUE),
+cost <- rbind(time_fit(5, 10), time_fit(6, 10), time_fit(5, 20),
+              time_fit(5, 10, TRUE), time_fit(6, 10, TRUE),
               time_fit(5, 20, TRUE))
 cost
 ```
 
 The additive fit stays under a second at every size. The type IV fit solves
-405 to 504 grid cells, each over all $S T$ interaction values, and its time
-follows the nonzero count more closely than the number of cells. The
-constraint term $B^\top B$ is dense within each time point and within each
-region, so the precision holds about $S^2 T + T^2 S$ nonzero entries: 640
-cells on 64 regions carry 50752 of them and took `r round(cost[5, "seconds"])`
-s, 500 cells on 20 time points carry 25040 and took
-`r round(cost[6, "seconds"])` s.
+`r min(cost[4:6, "grid_cells"])` to `r max(cost[4:6, "grid_cells"])` grid
+cells, each over all $S T$ interaction values, and takes
+`r round(cost[4, "seconds"])` s on 25 regions over 10 times,
+`r round(cost[5, "seconds"])` s on 36 regions over 10 times and
+`r round(cost[6, "seconds"])` s on 25 regions over 20 times.
 
 ### Rules of thumb
 
@@ -722,11 +699,11 @@ s, 500 cells on 20 time points carry 25040 and took
 - Choose the type by what the interaction should look like. Type II suits
   regions with their own trends, type III maps that change shape from one time
   point to the next, type IV a change that is smooth in both. On these data the
-  smooth hotspot was recovered with correlation 0.78 by type IV and 0.19 by
+  smooth hotspot was recovered with correlation 0.78 by type IV and 0.20 by
   type I.
 - Do not choose among types I to IV on WAIC alone at this data size. With 250
-  counts the four interaction fits sat within 3.8 `elpd` units of each other,
-  inside about one and a half standard errors.
+  counts the four interaction fits sat within 4.1 `elpd` units of each other,
+  inside about 1.2 standard errors.
 - Report the prior on $\tau_\delta$ with any interaction map. With one count
   per cell and a mean count near 4.5, moving the prior centre from 3 to 6 on
   the log scale shrank the estimated interaction's standard deviation from
@@ -734,11 +711,13 @@ s, 500 cells on 20 time points carry 25040 and took
 - Keep the additive model when the residual check over time finds nothing
   and the WAIC gain of an interaction is within its standard error. An
   interaction adds one value per region-time cell: here the type IV fit
-  carried 250 of them for a WAIC gain of 5.2 over the additive model, and
+  carried 250 of them for a WAIC gain of 5.1 over the additive model, and
   the type I estimate, which shares nothing between cells, correlated with the
-  truth at only 0.19.
-- Budget the interaction fit by $S^2 T + T^2 S$: 64 regions over 10 times took
-  longer than 25 regions over 20 times in the cost table.
+  truth at 0.20.
+- Budget the interaction fit from the cost table: with a type IV interaction
+  over 250 cells the fit took about
+  `r round(cost[4, "seconds"] / max(cost[1, "seconds"], 0.1))` times as long
+  as the additive fit on the same lattice.
 
 ## See also
 
@@ -746,8 +725,8 @@ s, 500 cells on 20 time points carry 25040 and took
   against BYM2 and proper CAR.
 - [Temporal models](temporal-models.html): random walks and AR(1) trends on
   their own.
-- [Custom latent blocks](tgmrf.html): the `tgmrf()` contract the interaction
-  blocks use, and the exact-tier samplers it reaches.
+- [Custom latent blocks](tgmrf.html): the `tgmrf()` contract the
+  prior-sensitivity block uses, and the exact-tier samplers it reaches.
 - `?fit_st_nested`, `?spatiotemporal`: reference pages for the direct fitter
   and the interaction descriptions.
 

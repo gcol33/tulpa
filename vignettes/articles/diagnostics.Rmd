@@ -157,10 +157,9 @@ p = 0.69) and the observed variance sits inside the simulated ones, at 1.04
 times their median. On the misspecified fit the QQ plot bends away from the
 diagonal (p = 2.6e-08), and the observed variance, 1.86 times the simulated
 median, falls beyond the right edge of the histogram, so its red line is not
-drawn. The correlogram reads Moran's I between 0.34 and 0.38 on the correct
-fit, for a reason covered in
-[Spatial and temporal structure](#spatial-and-temporal-structure): it is built
-from `residuals()`, which holds the field at zero.
+drawn. The correlogram reads Moran's I between -0.075 and -0.04 on the correct
+fit: it is built from `residuals()`, which include the fitted field (see
+[Spatial and temporal structure](#spatial-and-temporal-structure)).
 
 `check_model()` is the panel for the observation model. Two other one-call
 doors cover the inference itself: `diagnostics()` returns Rhat and effective
@@ -305,16 +304,18 @@ test_dispersion(fit_nb)
 test_uniformity(fit_nb)
 ```
 
-The dispersion ratio drops to 1.03 (p = 0.87) and the PIT residuals pass the
-uniformity test (p = 0.84).
+The dispersion ratio drops to 1.03 (p = 0.79) and the PIT residuals pass the
+uniformity test (p = 0.85).
 
 ## Spatial and temporal structure
 
-`residuals()` on a tulpa fit is population-level: it subtracts the
-fixed-effect fitted mean, with every random effect and field held at zero.
-Moran's I of those residuals asks whether a model without the field leaves
-spatial structure. Fit the non-spatial model and test its residuals with
-`moran_i()`, which uses inverse-distance weights on the coordinates by default.
+`residuals()` on a tulpa fit is conditional by default: it subtracts the
+fitted mean with every random effect and field the fit estimated included.
+`residuals(fit, effects = "population")` holds them at zero instead. Moran's I
+of a non-spatial model's residuals asks whether a model without the field
+leaves spatial structure. Fit the non-spatial model and test its residuals
+with `moran_i()`, which uses inverse-distance weights on the coordinates by
+default.
 
 ```{r fit-nonspatial}
 fit0 <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace",
@@ -325,13 +326,17 @@ moran_i(fit0, coords)
 Moran's I is 0.085 against an expectation of -0.0017 under no correlation
 (p below 2.2e-16): the residuals of neighbouring regions are positively
 correlated, so the covariate does not explain the regional pattern. The same
-call on the spatial fit returns nearly the same value, since its `residuals()`
-also leave the field out, which is why the correlogram in the panel above read
-high on the correct fit.
+call on the spatial fit asks whether the field has absorbed it.
 
-To ask whether the spatial fit has absorbed the pattern, use residuals that are
-conditional on the field. The PIT residuals are: they come from `simulate()`,
-which draws the field. Transformed to the normal scale with `qnorm()`, they
+```{r moran-spatial}
+moran_i(fit, coords)
+```
+
+On the spatial fit's residuals Moran's I is -0.0002 (p = 0.27): the field has
+taken up the regional pattern.
+
+The PIT residuals give the same check from the simulation side: they come from
+`simulate()`, which draws the field. Transformed to the normal scale with `qnorm()`, they
 can be passed to `moran_i()` as a residual vector. An observation outside the
 range of all 250 replicates has a PIT residual of exactly 0 or 1, which
 `qnorm()` maps to an infinite value, so the residuals are first kept half a
@@ -343,8 +348,7 @@ z_pit <- qnorm(pmin(pmax(pit, eps), 1 - eps))
 moran_i(z_pit, coords)
 ```
 
-On these residuals Moran's I is -0.0006 (p = 0.46): the field has taken up
-the regional pattern.
+On these residuals Moran's I is -0.0006 (p = 0.46), the same reading.
 
 An empirical semivariogram shows the same contrast as a function of distance.
 `tulpa_variogram()` bins half the squared differences of residual pairs by
@@ -405,7 +409,7 @@ fit_bad <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
 ```
 
 `tulpa()` already warns that the chains have not converged and names the
-three worst fixed parameters. `diagnostics()` on a chain fit returns the rank-normalised Rhat and the bulk
+three worst main parameters. `diagnostics()` on a chain fit returns the rank-normalised Rhat and the bulk
 and tail effective sample sizes (ESS) of every parameter. Rhat compares the
 variation within and between chains and is 1 when they agree; values above
 1.01 say the chains have not mixed. `check_diagnostics()` applies the
@@ -418,9 +422,9 @@ head(dg_bad[order(-dg_bad$rhat), ], 5)
 check_diagnostics(fit_bad)
 ```
 
-The worst parameters are field values, with Rhat up to 1.49 and bulk-ESS near
-20 from 800 post-warmup draws. All three main parameters fail both thresholds,
-and the run has 78 divergences.
+The worst parameters are field values, with Rhat up to 1.61 and bulk-ESS
+between 14 and 35 from 800 post-warmup draws. All three main parameters fail
+both thresholds, and the run has 141 divergences.
 
 A divergence is a trajectory along which the sampler's energy error blew up,
 and it marks a region of the posterior the sampler could not follow.
@@ -434,7 +438,8 @@ n_divergent(fit_bad)
 round(energy_bfmi(fit_bad$energy, fit_bad$chain_id)$per_chain, 2)
 ```
 
-Every chain's E-BFMI is above 1, so this check does not flag the run: E-BFMI
+Every chain's E-BFMI is above 0.3 (0.89 to 2.01), so this check does not flag
+the run: E-BFMI
 detects a sampler that cannot move between energy levels, which is not the
 failure here.
 
@@ -460,7 +465,7 @@ plot_acf(fit_bad, n_pars = 4)
 parallel coordinates, each parameter scaled to (0, 1), so a cluster of
 divergences at one end of a parameter points to where the posterior is hard to
 traverse. Here the divergent iterations spread over the whole range of the
-first six field values.
+field precision and both coefficients.
 
 ```{r plot-divergences, fig.alt = "Parallel-coordinates plot of the poor HMC run with divergent iterations highlighted"}
 plot_divergences(fit_bad)
@@ -549,8 +554,8 @@ cv0 <- tulpa_kfold(fit0, data = d, K = 5, seed = 1)
 c(elpd_kfold = cv0$elpd_kfold, se = cv0$se_elpd_kfold)
 ```
 
-The 5-fold elpd of the covariate-only model, -1194.4, is within its standard
-error of 31.9 of the LOO estimate in the table, -1192.2.
+The 5-fold elpd of the covariate-only model, -1193.0, is within its standard
+error of 31.7 of the LOO estimate in the table, -1192.2.
 
 ## Prior sensitivity
 
@@ -570,7 +575,7 @@ fit_wide <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace",
 tulpa_powerscale_sensitivity(fit_wide, prior = list(mean = 0, sd = 5))
 ```
 
-Under the wide prior the prior sensitivity is about 1e-4 for both
+Under the wide prior the prior sensitivity is below 1e-4 for both
 coefficients. The likelihood sensitivity of about 0.08 is above the threshold,
 which is what a likelihood that informs the posterior looks like, and with a
 quiet prior the diagnosis column stays empty.
@@ -580,8 +585,6 @@ fit_tight <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace",
                    beta_prior = list(mean = 0, sd = 0.1), control = ctl)
 tulpa_powerscale_sensitivity(fit_tight, prior = list(mean = 0, sd = 0.1))
 ```
-
-The effect on the estimates:
 
 Under the tight prior both coefficients carry prior sensitivity above the
 threshold (0.22 for the intercept, 0.069 for the slope) together with high
@@ -614,7 +617,7 @@ flags the conflict all the same.
    together; a negative binomial family is the first fix to try.
 4. **Spatial structure.** Run `moran_i()` and `tulpa_variogram()` on the
    residuals of a model without the field to see whether one is needed, and on
-   `qnorm(pit_residuals(fit))` of the spatial fit to see whether it absorbed
+   the spatial fit (or `qnorm(pit_residuals(fit))`) to see whether it absorbed
    the pattern.
 5. **Temporal structure.** Run `durbin_watson()` with `time =` set to the time
    variable whenever the data carry one.

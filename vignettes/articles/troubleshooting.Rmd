@@ -162,7 +162,9 @@ The slope is close to the 1 the counts were simulated with.
 
 ### Missing values in the response
 
-A missing response value stops the fit, and the message names its row.
+A missing response value stops a Laplace fit, and the message counts the
+rows and names the path that reads them: on the nested-Laplace path a row with
+no response is a forecast, with its likelihood term masked.
 
 ```{r na, error = TRUE}
 dna <- d
@@ -170,7 +172,9 @@ dna$y[3] <- NA
 tulpa(y ~ x, data = dna, family = "gaussian", mode = "laplace", phi = 0.8^2)
 ```
 
-Remove the incomplete rows, or impute them, before fitting.
+A model with no latent field has no nested-Laplace path (see
+[Nested Laplace on a model with no latent field](#nested-laplace-on-a-model-with-no-latent-field)),
+so remove the incomplete rows, or impute them, before fitting.
 
 ```{r na-fix}
 coef(tulpa(y ~ x, data = dna[!is.na(dna$y), ], family = "gaussian",
@@ -406,7 +410,7 @@ The lines to read, in order:
   than its posterior.
 - `whole-fit verdict`, which combines the outer and inner layers.
 
-Here the outer k is 0.567, in the ok band, and the verdict reads the outer
+Here the outer k is 0.645, in the ok band, and the verdict reads the outer
 integration as borderline. Each number is also an attribute of the returned
 object. On the two-field fit `fit_st` of the grid entry the outer k is `NA`,
 because it is not defined on a multi-block grid, and that fit's verdict says

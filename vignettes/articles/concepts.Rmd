@@ -101,9 +101,9 @@ VarCorr(fit1)
 head(ranef(fit1), 3)
 ```
 
-`ranef()` returns each group's $u_j$ at the posterior mode, which is what the
-`source` column records; this Laplace fit reports no standard deviation or
-interval for them. Later sections integrate a hyperparameter instead of
+`ranef()` returns each group's $u_j$ at the posterior mode, with the
+standard deviation and 95% interval of the Laplace Gaussian; the `source`
+column records that read. Later sections integrate a hyperparameter instead of
 fixing it.
 
 ## Family, link and phi
@@ -227,8 +227,9 @@ data.frame(tier = fit_imh$inference_tier,
            accept = round(fit_imh$mean_accept, 2))
 ```
 
-The fit is Tier 1, and the acceptance rate is printed above; a rate this high
-says the Laplace Gaussian was close to the posterior of this model.
+The fit is Tier 1 and accepts about half of its proposals, above the 0.5 that
+[Inference modes](inference-modes.html) reads as a Laplace Gaussian close to
+the posterior.
 
 ## Posterior draws and mixture reads
 
@@ -331,7 +332,7 @@ model. The table lists the exported accessors for a `tulpa_fit`.
 | `tulpa_draws_array()` | the same draws as an iterations x chains x parameters array |
 | `tulpa_posterior_draws()` | independent draws from a nested-Laplace fit's mixture |
 | `diagnostics()` | the reliability report for the method that ran |
-| `predict()`, `fitted()` | fixed-effect predictions at new data, in-sample means |
+| `predict()`, `fitted()` | predictions at new data, conditioned on fitted groups (`re_form = NA` for the population level); in-sample means |
 | `logLik()` | log marginal likelihood (Laplace) or mean log density (sampler) |
 | `tidy()`, `glance()` | broom-style term table and one-row model summary |
 | `plot()` | fixed-effect densities, or traces for a sampler fit |

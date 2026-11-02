@@ -242,8 +242,8 @@ summary(fit_vi)$reliability$elbo
 ### Tier 1 (exact): IMH-Laplace
 
 The Tier-1 upgrade composes the Laplace body with an
-independence-MH bias correction. The VI fit makes a near-optimal
-proposal: high acceptance, low MC error.
+independence-MH bias correction. Its proposal is a multivariate t centred
+on the outer mode, with the inverse curvature there as its scale matrix.
 
 ```{r imh}
 fit_imh <- tulpa_tgmrf(
@@ -281,8 +281,8 @@ data.frame(
   parameter = blk$theta_names,
   true      = theta_true,
   laplace   = summary(fit_lap)$hyperparameters$mean,
-  vi_mean   = unname(colMeans(posterior_sample(fit_vi))),
-  imh_mean  = unname(colMeans(posterior_sample(fit_imh)))
+  vi_mean   = unname(colMeans(posterior_sample(fit_vi))[blk$theta_names]),
+  imh_mean  = unname(colMeans(posterior_sample(fit_imh))[blk$theta_names])
 )
 ```
 
@@ -299,7 +299,8 @@ hyp  <- summary(fit_lap)$hyperparameters
 tier <- c("laplace", "vi", "imh")
 op <- par(mfrow = c(1, 2), mar = c(4, 5, 1, 1))
 for (j in seq_along(blk$theta_names)) {
-  dr  <- list(posterior_sample(fit_vi)[, j], posterior_sample(fit_imh)[, j])
+  th  <- blk$theta_names[j]
+  dr  <- list(posterior_sample(fit_vi)[, th], posterior_sample(fit_imh)[, th])
   lo  <- c(hyp$ci_lo[j], vapply(dr, quantile, numeric(1), 0.025))
   hi  <- c(hyp$ci_hi[j], vapply(dr, quantile, numeric(1), 0.975))
   mid <- c(hyp$mean[j],  vapply(dr, mean, numeric(1)))
@@ -316,8 +317,8 @@ On both axes all three intervals cover the simulated value (orange line). On
 `log_sigma` they nearly coincide. On `atanh_rho` the grid and IMH intervals
 agree with each other, while the VI interval is narrower and sits lower: the
 Gaussian fitted at the optimum trims the right tail that the exact sampler
-keeps. The intercept $\beta_0$ is left out because the `tulpa_tgmrf()`
-adapters report draws of `theta` only.
+keeps. The intercept $\beta_0$ is left out of the figure; the
+`tulpa_tgmrf()` adapters report its draws in the columns before `theta`.
 
 ## The mathematics
 
@@ -468,8 +469,8 @@ want to compute it on your own importance ratios.
 
 For the exact-tier MCMC fits the diagnostics are the standard sampler ones. The IMH
 fit reports `$mean_accept`, the post-warmup acceptance rate; a rate in a
-healthy band (the VI fit makes a near-optimal proposal, so a good model
-sees high acceptance) means the proposal matches the target. A collapsed
+healthy band (the proposal is fitted at the outer mode, so a near-Gaussian
+posterior sees high acceptance) means the proposal matches the target. A collapsed
 acceptance rate is the signal to switch to NUTS. The NUTS fit reports
 `$mean_accept` plus `$tree_depth` per draw and the adapted `$epsilon`;
 draws repeatedly hitting `max_depth` indicate a step size that is too
@@ -494,8 +495,8 @@ fast structured fit and read its `$pareto_k`. If the diagnostic is below
 0.7 the structured posterior is trustworthy and you are done; if it is
 above 0.7, escalate. `tulpa_tgmrf_imh()` is the cheapest exact tier and
 the right default escalation for low `theta_dim` (2-4) with a roughly
-Gaussian posterior, since its proposal is the VI Gaussian, so acceptance stays
-high. `tulpa_tgmrf_nuts()` is for higher `theta_dim` (5+) or a strongly
+Gaussian posterior, since its proposal is fitted at the outer mode, so
+acceptance stays high. `tulpa_tgmrf_nuts()` is for higher `theta_dim` (5+) or a strongly
 non-Gaussian or multi-modal posterior, where independence-MH acceptance
 collapses and gradient information pays for itself.
 
@@ -521,8 +522,8 @@ mode and Hessian estimates. Raise it when the default grid is too coarse
 to locate the mode. `tulpa_tgmrf_imh()` adds `n_iter` (default `2000L`),
 `warmup` (default `n_iter %/% 2L`), `thin`, `scale` (the proposal scale
 multiplier, default `1.0`, lower it if acceptance is too high, raise it
-if too low); its proposal is centred on the outer mode found from the
-pilot's best cell and scaled by the curvature there. `tulpa_tgmrf_vi()` adds `n_draws` (default `1000L`,
+if too low); its proposal is a multivariate t centred on the outer mode
+found from the pilot's best cell and scaled by the curvature there. `tulpa_tgmrf_vi()` adds `n_draws` (default `1000L`,
 the variational draws returned), `max_lbfgs` (default `100L`), and
 `lbfgs_tol` (default `1e-6`). `tulpa_tgmrf_nuts()` adds `epsilon` (default
 `0.2 / sqrt(theta_dim)`, the initial leapfrog step), `max_depth` (default

@@ -347,7 +347,7 @@ integrates a random-effect covariance matrix rather than conditioning on a
 fixed standard deviation. A random-slope term such as `(1 + x | g)` has no
 scalar `sigma_re` to condition on, so when a slope term is present the
 Laplace path redirects to this backend automatically and integrates the
-covariance with a CCD design and a PC or LKJ prior. You reach it not by
+covariance on an aligned tensor grid and a PC or LKJ prior. You reach it not by
 name but by writing a slope term and fitting at `mode = "laplace"`.
 
 ```{r re-cov-slope}
@@ -516,8 +516,9 @@ and the divergence count.
 glance(f_mala)[c("n_samples", "mean_accept", "n_divergent")]
 ```
 
-An acceptance rate inside the healthy band and no divergences say the MALA
-chain mixed well, which is the prerequisite for trusting its intervals.
+An acceptance rate inside the healthy band says the MALA chain mixed well,
+which is the prerequisite for trusting its intervals. `n_divergent` is `NA`
+because the MALA fit records no divergence count.
 Without that check, a Tier 1 fit is only nominally exact: a stuck chain
 reports a posterior it never explored.
 
@@ -545,8 +546,7 @@ for when to depart from it.
   low, or when you simply need intervals you can quote without the
   Gaussian caveat, the gradient sampler is the next step. Budget a few
   thousand iterations with warmup at a third to a half of them, and watch
-  the acceptance rate settle near 0.574 and the divergence count stay at
-  zero.
+  the acceptance rate settle near 0.574.
 
 - **Use `mode = "pathfinder"` when you want draws cheaply.** It costs more
   than Laplace and far less than MALA, returns a sample you can feed to

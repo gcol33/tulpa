@@ -120,7 +120,7 @@ ctl <- list(n_iter = 600, warmup = 300, n_chains = 2, seed = 1)
 
 Lay 200 sites uniformly on the unit square, one observation per site. The
 slope of a Poisson count on the covariate $x$ is $0.7$ on average and varies
-smoothly around it: higher in the lower left, lower toward the upper right.
+smoothly around it: higher along the lower middle, lower along the top edge.
 The deviation `bsurf` is centred over the sites, so the true average slope is
 exactly $0.7$, the quantity $\beta_1$ estimates.
 
@@ -169,8 +169,8 @@ range, come from `spatial_range()`, in the units of the coordinates.
 spatial_range(fit_svc)
 ```
 
-The standard deviation of the slope field sits between 0.41 and 2.4. The range
-interval runs from 0.85 to 64 on a unit square, so the data say the slopes are
+The standard deviation of the slope field sits between 0.38 and 2.2. The range
+interval runs from 0.81 to 37 on a unit square, so the data say the slopes are
 correlated over at least the size of the study area and leave its upper end
 open.
 
@@ -220,7 +220,7 @@ c(cor = cor(slope$mean, truth),
   coverage = mean(slope$lo <= truth & truth <= slope$hi))
 ```
 
-The estimates follow the identity line with a correlation of 0.92, and 97% of
+The estimates follow the identity line with a correlation of 0.93, and 97% of
 the 200 intervals hold the true slope. The points lie on a line slightly
 flatter than the identity at the extremes, where the prior pulls the field
 toward its mean.
@@ -236,7 +236,7 @@ glance(fit_svc)[c("n_divergent", "mean_accept")]
 ```
 
 All Rhat values are below 1.05, no transition diverged, and the smallest bulk
-effective sample size is 118 draws. A formal check of the observation model
+effective sample size is 151 draws. A formal check of the observation model
 compares the dispersion of the counts with data simulated from the posterior:
 
 ```{r svc-dispersion}
@@ -249,7 +249,7 @@ spread out than the fitted Poisson model predicts.
 A map shows where the slope is strong. The left panel colours each site by its
 true slope, the right by the posterior mean; both use one colour scale.
 
-```{r svc-map, fig.width = 7, fig.height = 3.6, fig.alt = "Two maps of 200 sites on the unit square coloured by local slope: the true slope on the left and the posterior mean on the right, both high in the lower left and low in the upper right"}
+```{r svc-map, fig.width = 7, fig.height = 3.6, fig.alt = "Two maps of 200 sites on the unit square coloured by local slope: the true slope on the left and the posterior mean on the right, both high along the lower middle and low along the top edge"}
 pal  <- hcl.colors(50, "viridis")
 brks <- seq(min(truth, slope$mean), max(truth, slope$mean), length.out = 51)
 col_of <- function(v) pal[findInterval(v, brks, all.inside = TRUE)]
@@ -260,8 +260,8 @@ plot(lon, lat, pch = 19, col = col_of(slope$mean), asp = 1,
 par(op)
 ```
 
-The estimated surface reproduces the high slopes in the lower left and the low
-ones toward the upper right, with less contrast than the truth.
+The estimated surface reproduces the high slopes along the lower middle and the
+low ones along the top edge, with less contrast than the truth.
 
 ### Comparing against a constant slope
 
@@ -285,13 +285,14 @@ effective parameters (`p_eff`).
 
 ### Prediction
 
-`predict()` holds the field at its centre, the average site. Its prediction is
-the population-level relationship $\beta_0 + \beta_1 x$, whatever coordinates
-`newdata` carries:
+With `include_field = FALSE`, `predict()` holds the field at its centre, the
+average site. Its prediction is the population-level relationship
+$\beta_0 + \beta_1 x$, and `newdata` needs no coordinate columns:
 
 ```{r svc-predict}
 nd <- data.frame(x = c(-1, 0, 1))
-predict(fit_svc, newdata = nd, type = "link", se.fit = TRUE)
+predict(fit_svc, newdata = nd, type = "link", se.fit = TRUE,
+        include_field = FALSE)
 ```
 
 A site-specific prediction uses the slope at that site. For the site where the
@@ -321,9 +322,35 @@ legend("topleft", c("highest slope", "lowest slope"), bty = "n",
 
 At the first site the expected count rises steeply with $x$; at the second
 it falls slowly, the sign change the simulation built in. These predictions
-are at sites the model was fitted on. tulpa does not yet
-predict the field at new coordinates for an SVC, so a map of the slope between
-the sites has to be read off the sites themselves.
+are at sites the model was fitted on. With `lon` and `lat` in `newdata`,
+`predict()` also reaches coordinates the model was not fitted on: each
+posterior draw of the field is carried to them by the NNGP predictive at the
+nearest fitted sites. The difference between the link-scale predictions at
+$x = 1$ and $x = 0$ is then the total slope there. The maps evaluate it on a
+25 x 25 grid over the study area, next to the true slope surface, on one
+colour scale.
+
+```{r svc-predict-grid, fig.width = 7, fig.height = 3.6, fig.alt = "Two maps of the unit square: the true slope surface on the left and the slope predicted by the fit on a 25 by 25 grid on the right, both high along the lower middle and low along the top edge"}
+gx <- seq(0, 1, length.out = 25)
+gr <- expand.grid(lon = gx, lat = gx)
+s_new <- predict(fit_svc, newdata = data.frame(gr, x = 1), type = "link") -
+  predict(fit_svc, newdata = data.frame(gr, x = 0), type = "link")
+s_true <- 0.7 + 0.6 * sin(3 * gr$lon) + 0.5 * cos(3 * gr$lat) -
+  mean(0.6 * sin(3 * lon) + 0.5 * cos(3 * lat))
+zl <- range(s_new, s_true)
+op <- par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+image(gx, gx, matrix(s_true, 25), zlim = zl, col = pal, asp = 1,
+      xlab = "lon", ylab = "lat", main = "true slope")
+image(gx, gx, matrix(s_new, 25), zlim = zl, col = pal, asp = 1,
+      xlab = "lon", ylab = "lat", main = "predicted slope")
+points(lon, lat, pch = 20, cex = 0.4)
+par(op)
+c(cor = cor(s_new, s_true), range(s_new))
+```
+
+Over the grid the predicted slope correlates with the true surface at 0.93
+and runs from -0.28 to 1.31. It reproduces the high band along the lower
+middle and the low values along the top edge.
 
 ## A spatially varying intercept
 
@@ -419,7 +446,7 @@ temporal_corr(fit_rw1)
 ```
 
 The fixed slope interval holds $0.5$. `temporal_corr()` reports the precision
-$\tau$ of the walk's increments, `tau_tvc`; a precision of 45 is an increment
+$\tau$ of the walk's increments, `tau_tvc`; a precision of 46 is an increment
 standard deviation of about $0.15$ per year.
 
 `tvc()` returns the field draws, one column per time point. `plot()` of the
@@ -494,7 +521,7 @@ temporal_corr(fit_ar1)
 
 All three recover the sine with a correlation of 0.97 or more. The `rw2`
 curve is the smoothest and closest to the truth, which is itself smooth. The
-AR(1) correlation is estimated at 0.85, with an interval that reaches 0.996:
+AR(1) correlation is estimated at 0.83, with an interval that reaches 0.98:
 on 25 years the data barely separate a strongly correlated stationary process
 from a walk.
 
@@ -540,10 +567,10 @@ choice when the shape is unknown.
 
 ### Prediction at a given time
 
-`predict()` gives the population-level line $\beta_0 + \beta_1 x$, the slope at
-the average year. A prediction for a particular year adds that year's
-deviation. The expected count across $x$ in year 6, where the slope peaks, and
-in year 19, where it is lowest:
+With `include_field = FALSE`, `predict()` gives the population-level line
+$\beta_0 + \beta_1 x$, the slope at the average year. A prediction for a
+particular year adds that year's deviation. The expected count across $x$ in
+year 6, where the slope peaks, and in year 19, where it is lowest:
 
 ```{r tvc-predict, fig.alt = "Expected count against x in year 6 and year 19 with 95 percent bands; the count rises steeply with x in year 6 and is almost flat in year 19"}
 b0_t <- fit_rw1$draws[, "(Intercept)"]
@@ -563,9 +590,25 @@ legend("topleft", c("year 6", "year 19"), bty = "n",
        col = c("darkorange", "steelblue"), lwd = 2, lty = 1:2)
 ```
 
-A forecast beyond the last year would extend the walk with its increment
-variance; tulpa does not do that for a TVC, so a prediction is limited to the
-years in the data.
+With `year` in `newdata`, `predict()` reads the slope at any year: inside the
+data it takes the fitted deviation, and past the last year it extends each
+posterior draw of the walk with Brownian steps of the increment variance. The
+link-scale prediction at $x = 1$ minus the one at $x = 0$ is the total slope.
+
+```{r tvc-forecast}
+fy <- data.frame(year = c(19, 25, 26, 28, 30))
+p1 <- predict(fit_rw1, newdata = data.frame(fy, x = 1), type = "link",
+              se.fit = TRUE)
+p0 <- predict(fit_rw1, newdata = data.frame(fy, x = 0), type = "link")
+data.frame(year = fy$year, slope = round(p1$fit - p0, 3),
+           lower = round(p1$lower - p0, 3), upper = round(p1$upper - p0, 3))
+```
+
+The bounds are those of the linear predictor at $x = 1$ shifted by the point
+prediction at $x = 0$, so they carry the intercept's uncertainty as well.
+Past year 25 the slope stays at its last fitted level, about 0.30, and the
+interval widens with the horizon, from 0.62 wide in year 25 to 1.62 in year
+30.
 
 ## A time-varying intercept
 
@@ -650,9 +693,9 @@ legend("bottomleft", "rw1", bty = "n", col = "darkorange", lwd = 2, lty = 3)
 ```
 
 The GP follows the truth more closely than the walk: a correlation of 0.94
-against 0.91 and a root-mean-square error of 0.18 against 0.20. The walk
+against 0.92 and a root-mean-square error of 0.188 against 0.193. The walk
 penalises a change across a 25-day gap as much as one across a 0.3-day gap.
-The lengthscale is estimated at 73 days with a wide interval, from 5 to 228
+The lengthscale is estimated at 81 days with a wide interval, from 6 to 227
 days, which says only that the slope changes slowly relative to the gaps. `cov = "matern"` with `nu = 1.5` or
 `2.5`, `cov = "gaussian"` and `cov = "periodic"` (with `period=` in the time
 units) give smoother or periodic kernels; those take a dense Cholesky
@@ -695,9 +738,9 @@ t(sapply(fits_p, function(f) {
 sd(0.5 + wt)
 ```
 
-The tight prior raises the precision from 45 to 113, lowers the spread of the
-curve from 0.33 to 0.30 against a true 0.43, and narrows the band from 0.57 to
-0.47. The loose prior moves all three by less than 0.02 or a precision of 7.
+The tight prior raises the precision from 46 to 113, lowers the spread of the
+curve from 0.33 to 0.30 against a true 0.43, and narrows the band from 0.58 to
+0.48. The loose prior moves all three by less than 0.02 or a precision of 7.
 The correlation with the truth stays between 0.97 and 0.98 under all three,
 so the shape of the slope is set by the data and the prior acts on its
 amplitude. With 250 observations over 25 years the default and the loose prior
@@ -760,8 +803,7 @@ When not to fit one:
 - When the covariate barely varies within a site or a year. The slope at a
   node is then informed by the prior alone.
 - When the varying coefficient must sit beside another field. A TVC cannot yet
-  be combined with a spatial or `latent()` field through `tulpa()`, and
-  `tvc()` cannot summarise a grouped TVC (`group_var`).
+  be combined with a spatial or `latent()` field through `tulpa()`.
 
 ## See also
 

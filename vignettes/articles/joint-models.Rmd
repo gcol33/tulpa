@@ -264,7 +264,7 @@ round(p_alpha, 3)
 ```
 
 The grid holds more $\alpha$ levels than the default axis, because the fit's
-refinement added levels between 0.44 and 0.75, where the posterior sits. The
+refinement added levels between 0.44 and 1.04, where the posterior sits. The
 point mass at zero carries no weight.
 
 ```{r alpha-plot, fig.alt = "Bar chart of the posterior weight on each level of the copy scale alpha, with the level at zero empty and the weight concentrated between about 0.45 and 0.85"}
@@ -383,8 +383,8 @@ fit_z <- tulpa_nested_laplace_joint(list(counts = counts, detect = detect_z),
 fit_z$copy_atom
 ```
 
-The point mass now holds 0.90 of the posterior weight on $\alpha$. The
-warning concerns the continuum part of the axis: its own weight piles up at
+The point mass now holds 0.82 of the posterior weight on $\alpha$. The
+continuum part of the axis carries the rest, and its own weight piles up at
 its smallest node, 0.1, as the per-level weights show.
 
 ```{r zero-levels}
@@ -400,7 +400,7 @@ pm <- fit_z$copy_atom$posterior_mass
 c(posterior_mass = pm, bayes_factor_uncoupled = pm / (1 - pm))
 ```
 
-The data favour the uncoupled model by a factor of about 9.
+The data favour the uncoupled model by a factor of about 4.7.
 
 ## A weak second arm
 
@@ -420,7 +420,7 @@ fit_w$theta_ci_lo["alpha"]; fit_w$theta_ci_hi["alpha"]
 ```
 
 With 160 binary detections the 95% interval for $\alpha$ runs from 0.32 to
-1.38, against 0.50 to 0.87 with ten trials per detection, and the point mass
+1.49, against 0.50 to 0.90 with ten trials per detection, and the point mass
 still holds almost no weight. The weaker arm leaves the coupling detected but
 its strength poorly resolved.
 
@@ -429,17 +429,16 @@ its strength poorly resolved.
 - **Read `copy_atom` with its prior.** The point at $\alpha = 0$ starts with
   probability 1/2, so the posterior mass on it reads directly as a posterior
   probability, and its odds as a Bayes factor. Here it was 0 at
-  $\alpha = 0.6$ and 0.90 at $\alpha = 0$.
+  $\alpha = 0.6$ and 0.82 at $\alpha = 0$.
 - **The arm with less information decides how well $\alpha$ is resolved.**
   With 160 detections of ten trials each the 95% interval for $\alpha$ was
-  0.37 wide; with 160 single trials it was 1.06 wide. A large
+  0.41 wide; with 160 single trials it was 1.17 wide. A large
   `posterior_mass` is evidence for "no shared field" only if the weaker arm
   could have shown one; simulating from the fitted model at a plausible
   $\alpha$ checks that.
-- **A railed warning beside a heavy point mass is about the continuum.** When
-  most of the weight sits at $\alpha = 0$, the remainder piles up at the
-  smallest continuum node and the fit warns that $\alpha$ lies on its lower
-  edge. `copy_atom` and the per-level weights from `tulpa_outer_grid()` show
+- **Beside a heavy point mass, the continuum's weight sits at its low end.**
+  When most of the weight sits at $\alpha = 0$, the remainder piles up at the
+  smallest continuum node. `copy_atom` and the per-level weights from `tulpa_outer_grid()` show
   how the mass is split.
 - **The gain from sharing is largest where one arm has no data.** On the
   24 units without detections the field error fell from 0.25 to 0.11; the

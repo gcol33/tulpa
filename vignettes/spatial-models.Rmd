@@ -420,7 +420,7 @@ reporting it from an intrinsic model says which average it refers to.
 ## Prediction
 
 `predict()` gives the fixed-effect prediction at new covariate values.
-The spatial field is held at its population level, so the result is the
+The areal field is held at zero, its population level, so the result is the
 marginal covariate trend with the regional signal averaged out. This is
 the right default for a question like "what does the covariate do on
 average across the map", as opposed to "what happens in region 7", which
@@ -601,7 +601,8 @@ fit  <- fit_spde(y = y, X = model.matrix(~ xcov), spatial = spde,
 round(coef(fit), 3)
 ```
 
-The fixed-effect estimates land on the generating intercept and slope;
+The slope lands near the generating 0.5, and the intercept reads 0.81
+against the generating 1.0;
 `field_effects(fit)` returns the field at each mesh node, ready to project
 onto a prediction grid. Leaving `range` and `sigma` at their default `NULL`
 switches `fit_spde()` to nested Laplace over the two hyperparameters and

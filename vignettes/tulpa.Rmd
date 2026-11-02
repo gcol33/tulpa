@@ -323,17 +323,18 @@ and how to read each criterion.
 ## Prediction
 
 A fitted model earns its keep when it predicts. `predict()` gives the
-fixed-effect prediction at new covariate values you supply through
-`newdata`. Random effects are held at their population mean of zero, so the
-result is the marginal trend: what the covariate does on average across
-groups, rather than what happens in any one group. `se.fit = TRUE` adds the
-link-scale standard error and credible bounds, drawn from the same
-fixed-effect covariance the summary reports, so the band on the prediction
-inherits the uncertainty in the coefficients.
+prediction at new covariate values you supply through `newdata`. A row whose
+group the fit saw takes that group's estimated effect, so `newdata` carries
+the grouping column `g` by default. `re_form = NA` holds every random effect
+at its population mean of zero instead, so the result is the marginal trend:
+what the covariate does on average across groups, rather than what happens in
+any one group. `se.fit = TRUE` adds the link-scale standard error and credible
+bounds, so the band on the prediction inherits the uncertainty in the
+coefficients.
 
 ```{r predict}
 nd <- data.frame(x = seq(-2, 2, length.out = 50))
-pr <- predict(fit_re, newdata = nd, se.fit = TRUE)
+pr <- predict(fit_re, newdata = nd, se.fit = TRUE, re_form = NA)
 head(pr, 3)
 ```
 
@@ -402,6 +403,7 @@ argument: the size for `neg_binomial_2` and the residual variance for
 - binary outcomes and successes out of a number of trials: `binomial`, used in
   the sections that follow;
 - proportions strictly between 0 and 1: `beta`;
+
 - positive continuous values: `gamma` or `lognormal`.
 
 Excess zeros in a count response are a second linear predictor, given as a
@@ -462,6 +464,9 @@ fit_mala <- tulpa(y ~ x + (1 | g), data = df_b, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
                   control = list(n_iter = 450, warmup = 150))
 ```
+
+This short MALA run warns that its chain has not converged, at a bulk ESS of
+38 for the slope; `control$n_iter` and `control$warmup` lengthen it.
 
 The two tiers agree on the fixed effects to within their uncertainty, which
 is the expected outcome when the posterior is near-Gaussian: the posterior
@@ -649,10 +654,11 @@ ggplot(data.frame(time = seq_len(Tt),
 ```
 
 The estimated walk follows the wave, centred to remove the level the
-sum-to-zero handling leaves free. The front door carries `temporal_rw1()`
-today; the second-order walk, the AR(1) process, and per-group panel trends
-have direct fitters the temporal vignette covers, which walks the full path
-from model to recovery to honest uncertainty.
+sum-to-zero handling leaves free. The front door also carries the
+second-order walk `temporal_rw2()`, the AR(1) process `temporal_ar1()` and
+per-group panel trends, and a row with an `NA` response is forecast. The
+temporal vignette covers them and walks the full path from model to recovery
+to honest uncertainty.
 
 ## Priors
 
@@ -772,7 +778,7 @@ broom.
 | `glance()` | one-row model summary |
 | `diagnostics()` | convergence or approximation reliability, per parameter |
 | `tulpa_outer_grid()` | a nested-Laplace fit's hyperparameter grid: nodes, weights, per-cell modes |
-| `predict()`, `fitted()` | fixed-effect prediction / in-sample mean |
+| `predict()`, `fitted()` | prediction at new data, fitted groups conditioned on (`re_form = NA` for the population level) / in-sample mean |
 | `logLik()` | log marginal likelihood (Laplace) or mean log-density |
 | `plot()` | fixed-effect densities (or trace for sampler fits) |
 
@@ -838,7 +844,9 @@ A few rules of thumb for everyday use:
 ## Where to go next
 
 - The vocabulary used across these articles: [Concepts](concepts.html).
+
 - Preparing the input: [Data formatting](data-formatting.html).
+
 - Model types: [Random slopes](random-slopes.html),
   [Spatial models](spatial-models.html),
   [Temporal models](temporal-models.html), [Space-time models](space-time.html),
@@ -850,6 +858,7 @@ A few rules of thumb for everyday use:
 - Checking and comparing fits: [Diagnostics](diagnostics.html),
   [Model comparison](model-comparison.html), [Priors](priors.html).
 - When a fit stops with an error: [Troubleshooting](troubleshooting.html).
+
 - A full analysis on real data: [sudden infant deaths in North
   Carolina](case-study-sids.html).
 - How the inference works: [Inference modes](inference-modes.html),

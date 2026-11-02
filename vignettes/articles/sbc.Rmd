@@ -93,7 +93,7 @@ fit_one <- function(d, diagnose = FALSE) {
     y = d$y, n_trials = rep(1L, length(d$y)), X = d$X,
     prior = list(list(type = "iid", obs_idx = d$region,
                       n_units = max(d$region), sigma_grid = GRID)),
-    family = "gaussian", phi = PHI,
+    family = "gaussian", phi = PHI^2,
     control = list(n_threads = 1L, keep_grid_hessians = TRUE,
                    auto_recenter = FALSE, progress = FALSE,
                    diagnose_k = diagnose, diagnose_skew = diagnose))
@@ -166,12 +166,17 @@ res
 ```
 
 `flat_prior` is a guard doing its job. Ordinary SBC draws the truth from the
-prior, so an improper prior has nothing to draw from, and the nested-Laplace
-door puts no prior on the fixed effects. `sbc()` probes the simulator, sees
-that `beta1` and `beta2` do not move across simulations, and refuses to score
-them unless the caller names them. Naming them asserts that their flat prior
-leaves the PIT uniform by a structural argument; the assertion is checked in
-both directions and travels on the result in `res$premises`.
+prior. The nested-Laplace door puts a wide normal prior, standard deviation 2.5,
+on the fixed effects, and the simulator holds them at fixed values instead of
+drawing them from it. `sbc()` probes the simulator, sees that `beta1` and
+`beta2` do not move across simulations, and refuses to score them unless the
+caller names them. Naming them asserts that their prior is flat against the
+likelihood, so the PIT stays uniform by a structural argument; the assertion is
+checked in both directions and travels on the result in `res$premises`.
+
+The `narrow` arm leaves the band on the folded read for both coefficients and
+on the raw read for `beta2`. The mixture arm's `sigma` leaves it on the folded
+read at p = 0.046, against a band whose level is 0.05 per read.
 
 ## Three reads of the same PIT sample
 
@@ -211,8 +216,10 @@ them.
 
 Expect the mixture and collapsed arms to score close together. They carry the
 same first two moments, and the CRPS integrates the whole squared CDF
-difference, which those moments dominate. Where they separate is on the ECDF
-reads above, which is why both instruments are worth running.
+difference, which those moments dominate. Here their `delta` has a `t` of 0.30
+and 0.72, and both pass every ECDF read. The `narrow` arm scores worse on
+`beta2` (`t` = 2.01) and leaves the band on the ECDF reads, which carry the
+larger signal for a mis-scaled posterior.
 
 The CRPS is a proper posterior score here only because the truth is drawn
 afresh each simulation. Hold the truth fixed across seeds and the

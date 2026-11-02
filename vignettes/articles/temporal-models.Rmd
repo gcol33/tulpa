@@ -83,9 +83,9 @@ A note on scope before we start. The front-door route through `tulpa()` carries
 the first- and second-order random walks and the autoregressive process,
 `temporal_rw1()`, `temporal_rw2()`, and `temporal_ar1()`. A panel (per-group)
 trend runs through the same door, and a temporal field can sit beside an areal
-(ICAR, BYM2, CAR) spatial field. Pairing a panel trend with a spatial field, or a
-temporal field with a continuous (GP, NNGP, HSGP) or SPDE spatial field, raises a
-clean error and points you at the direct fitters. The main example below uses
+(ICAR, BYM2, CAR) or a continuous (GP, NNGP, HSGP) spatial field. Pairing a panel
+trend with a spatial field, or a temporal field with an SPDE spatial field,
+raises a clean error and points you at the direct fitters. The main example below uses
 `temporal_rw1()`; the closing section runs the others.
 
 ## The model
@@ -256,8 +256,8 @@ fit <- tulpa(y ~ x, data = df, family = "binomial",
 coef(fit)
 ```
 
-The slope lands near the true $0.9$. The intercept reads near zero with a very
-wide interval, the sum-to-zero constraint at work, covered below. How was the
+The slope lands near the true $0.9$, and the intercept near the true $-0.2$,
+the level the sum-to-zero constraint leaves to it, covered below. How was the
 fit routed?
 
 ```{r routing}
@@ -444,12 +444,33 @@ slope alone.
 
 `predict()` holds the temporal field at its population average. What you see is
 the covariate effect with the trend marginalised out, not a forecast at a
-particular time. To predict at a specific time point, add that time's $\phi$
-value from the extracted trend to the linear predictor before applying the
-inverse link, and set the intercept to whatever level you want to anchor on.
-The engine's population-level `predict()` deliberately stays on the marginal
-trend, so the default answer is the covariate relationship rather than a
-time-specific one.
+particular time.
+
+### Forecasting
+
+A prediction at a particular time, past the last one included, comes from the
+fit itself. Append rows with an `NA` response at the times and covariate values
+you want: the nested-Laplace fit leaves their likelihood term out and still
+forms their linear predictor, and `posterior_linpred()` summarises it. The rows
+below sit at the last observed time and the three after it, at $x = 0$.
+
+```{r forecast}
+h      <- 0:3
+df_fc  <- rbind(df, data.frame(y = NA, x = 0, time = T_pts + h))
+fit_fc <- tulpa(y ~ x, data = df_fc, family = "binomial",
+                temporal = tspec, mode = "auto")
+fc <- tail(posterior_linpred(fit_fc, summary = TRUE), length(h))
+data.frame(time = T_pts + h,
+           round(fc[, c("estimate", "sd", "conf.low", "conf.high")], 3),
+           row.names = NULL)
+```
+
+At time 30 the row reads the fitted level of the walk; its interval contains
+the simulated linear predictor at that time, $-0.2$. Past it the RW1 carries
+that level forward unchanged, and the standard deviation grows with each step
+of the horizon, from 0.32 at time 30 to 0.75 three steps later. Only the
+nested-Laplace path masks a row with no response; another backend refuses an
+`NA` response by name.
 
 ## Comparing against no temporal field
 
@@ -587,10 +608,13 @@ tulpa(y ~ x + spatial(region), data = st_df, family = "binomial",
       temporal = temporal_rw1("time"), mode = "auto")
 ```
 
+A space-time interaction on top of the two main effects, one effect per
+area and time, is `spatiotemporal(type = )` with Knorr-Held types I to IV;
+[Space-time models](space-time.html) fits it.
+
 Still off the front door: a panel temporal field alongside a spatial or
-`latent()` block, a temporal field alongside an SPDE or a restricted
-(`spatial_rsr()`) field, and a `temporal_gp()` or `temporal_tvc()` field
-alongside any other field. Each reports an error naming the combination rather
+`latent()` block, a temporal field alongside an SPDE field, and a
+`temporal_gp()` or `temporal_tvc()` field alongside any other field. Each reports an error naming the combination rather
 than dropping a term. `fit_st_nested()` fits the same additive model directly
 through its own kernels, for an areal, HSGP or NNGP spatial field.
 

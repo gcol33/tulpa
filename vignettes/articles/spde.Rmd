@@ -95,7 +95,8 @@ G)$. An entry of $Q$ is nonzero only for vertices that share a triangle or a
 neighbour, so the field's cost grows with the mesh and stays sparse. The
 projector $A$, with $A_{ik} = \psi_k(s_i)$, gives the field at the
 observations as $A w$. A non-integer $\nu$ makes $\alpha$ fractional; tulpa
-then uses a rational approximation of the operator (Bolin and Kirchner 2020),
+then uses a rational approximation of the field's covariance (Bolin and
+Kirchner 2020),
 shown at the end of the article.
 
 ## Simulating point data
@@ -162,7 +163,7 @@ points(obs$lon, obs$lat, pch = 20, cex = 0.4, col = "darkorange")
 par(op)
 ```
 
-The fine mesh ends about 0.05 beyond the outermost observations. A mesh with a
+The fine mesh ends about 0.27 beyond the outermost observations. A mesh with a
 wider margin is built with `tulpaMesh::tulpa_mesh()` and its `extend`
 argument, and passed to `spatial_spde()` as `mesh`.
 
@@ -174,7 +175,7 @@ fit goes to the SPDE backend.
 
 ```{r fit}
 fit <- tulpa(y ~ x, data = obs, family = "poisson", spatial = fine,
-             control = list(n_threads = 2, progress = FALSE))
+             control = list(n_threads = 2))
 fit$backend
 coef(summary(fit))
 ```
@@ -194,7 +195,7 @@ Both intervals contain the simulated values, a range of 0.3 and an SD of 0.8.
 `diagnostics()`
 scores the outer integration over $(\rho, \sigma)$ with a Pareto-$\hat k$
 from importance sampling against the Gaussian the design was laid on; here it
-reads 0.552, marked ok.
+reads 0.491, marked good.
 
 ```{r diagnostics}
 diagnostics(fit)
@@ -232,15 +233,15 @@ round(rbind(median_0.05 = prior_fit(c(0.05, 0.5)),
             median_1    = prior_fit(c(1, 0.5))), 3)
 ```
 
-The posterior mean range moves from about 0.25 to about 0.31 across the two
+The posterior mean range moves from about 0.37 to about 0.44 across the two
 priors and the slope by less than 0.002, so with 300 observations the data
 dominate both priors.
 
 ## The field on a grid
 
 `field_effects()` returns the field at each mesh vertex. On the nested path
-this is the mode of the fit at the posterior-mean hyperparameters, so `sd` is
-`NA`.
+this is the Gaussian mixture over the integration cells, so `sd` carries both
+the within-cell variance and the spread over the hyperparameters.
 
 ```{r field-nodes}
 fe <- field_effects(fit)
@@ -343,11 +344,11 @@ round(res_mesh, 3)
 ```
 
 Times are elapsed seconds on the machine that built this page, 300
-observations, two threads. The coarsest mesh, with edges as long as the range,
-falls back from the composite design to a rectangular grid and reports a
-range of 0.10, against 0.27 and 0.25 on the two finer meshes. Those two agree
-on the hyperparameters within their posterior SD, and the finest takes about
-nineteen times as long as the middle one for a grid error 0.02 lower.
+observations, two threads. All three meshes report a range between 0.37 and
+0.40, within the posterior SD of the range; the coarsest mesh, with edges as
+long as the range, reports a larger SD, 1.17 against 0.93 and 0.97 on the two
+finer meshes. The finest takes about thirteen times as long as the middle one
+for a grid error 0.006 lower.
 
 ## Comparing with other spatial fits
 
@@ -359,7 +360,7 @@ field to the prediction, so subtracting the prediction without the field
 (`include_field = FALSE`) gives the field on the grid.
 
 ```{r fit-others}
-ctl <- list(n_threads = 2, progress = FALSE)
+ctl <- list(n_threads = 2)
 nd  <- data.frame(grid, x = 0)
 fits <- list(spde = fit)
 time <- c(spde = NA)
@@ -391,7 +392,7 @@ tab <- cbind(tab, seconds = time[rownames(tab)],
 round(tab, 3)
 ```
 
-The three fields reach grid errors within about 0.04 of each other, the NNGP
+The three fields reach grid errors within about 0.03 of each other, the SPDE
 field the lowest, and agree on the slope to within 0.015. On this dataset the
 non-spatial slope, 0.402, is closer to the simulated 0.4, and its standard
 error is smaller than those of the spatial fits; every slope interval contains
@@ -406,15 +407,16 @@ compare_models(nonspatial = fits$nonspatial, spde = fits$spde,
                nngp = fits$nngp, hsgp = fits$hsgp, criterion = "waic")
 ```
 
-All three spatial fits sit about 150 to 170 units of expected log predictive
-density above the non-spatial one. Among them the NNGP field ranks first, the
-HSGP field 4.9 below it with a standard error of 4.7 on the difference, and
-the SPDE field 16.8 below with a standard error of 7.0.
+All three spatial fits sit about 165 to 177 units of expected log predictive
+density above the non-spatial one. Among them the SPDE field ranks first, the
+NNGP field 7.6 below it with a standard error of 4.6 on the difference, and
+the HSGP field 12.6 below with a standard error of 4.8.
 
 ## Fractional smoothness
 
 `nu` sets the smoothness. An integer $\nu$ gives the exact construction
-above; any other positive $\nu$ uses the rational approximation, with the
+above; any other positive $\nu$ uses a covariance-based rational field, a sum
+of Markov components whose prior carries its exact normaliser, with the
 Laplace fitter `fit_spde()` at fixed or integrated hyperparameters. At
 $\nu = 0.5$ the Matern covariance is exponential. A fit at fixed range and SD
 shows the call:
@@ -428,8 +430,9 @@ round(coef(f_half), 3)
 ```
 
 Leaving `range` and `sigma` unset integrates over both at fractional $\nu$
-too. The sampler path (`mode = "nuts"`) and the analytic standard errors
-behind `predict(se.fit = TRUE)` take integer $\nu$ only.
+too. The sampler path (`mode = "nuts"`) takes fractional $\nu$ at fixed
+`range` and `sigma` only, and the analytic standard errors behind
+`predict(se.fit = TRUE)` take integer $\nu$ only.
 
 ## Matrices from another mesh
 
@@ -452,16 +455,16 @@ rbind(spatial_spde = coef(fit), spatial_spde_custom = coef(f_custom))
 
 - **Mesh edge against the range.** On these data, inner edges of a sixth and
   a half of the range (0.05 and 0.15 against 0.3) gave the same
-  hyperparameters within their posterior SD and grid errors 0.02 apart, while
-  edges as long as the range lost the range estimate. Start with an inner
+  hyperparameters within their posterior SD and grid errors 0.006 apart, while
+  edges as long as the range raised the SD estimate from 0.93 to 1.17. Start with an inner
   `max_edge` at most half the range you expect, and refit at half that edge:
   if the range and the slope do not move, the coarser mesh is enough.
 - **Cost grows with the vertices.** The fine mesh of the comparison above had
-  about seven times the vertices of the middle one and took about nineteen
+  about eight times the vertices of the middle one and took about thirteen
   times as long. `cutoff` is the lever for clustered data, since every point
   closer than `cutoff` to another shares its vertex.
 - **Priors.** With 300 observations, prior medians for the range twenty times
-  apart moved the posterior mean range by about a quarter and the slope by less
+  apart moved the posterior mean range by about a sixth and the slope by less
   than 0.002. With few observations or a range close to the size of the study
   area, set `prior_range` from what is known about the process, and compare
   two priors as above.

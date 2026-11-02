@@ -224,7 +224,7 @@ at the maximum. With `mode = "laplace"` a slope term routes to that
 integration (the [Random slopes](random-slopes.html) article covers it). The
 posterior medians of the two SDs equal the restricted estimates to two
 decimals, and the median of the correlation is 0.52 against the restricted
-0.57, inside an interval from 0.25 to 0.72.
+0.57, inside an interval from 0.22 to 0.73.
 
 ```{r slopes-nested}
 s_n <- tulpa(y ~ x + (1 + x | g), data = d2, family = "poisson",
@@ -271,14 +271,14 @@ the two packages' defaults differ.
 |---|---|---|---|
 | total SD `sigma` | PC prior, P(sigma > 3) = 0.01 | `pc.prec`, P(sigma > 1) = 0.01 | `pc.prec` with `param = c(3, 0.01)` |
 | mixing weight | uniform on (0, 1) | `pc`, P(phi < 0.5) = 2/3 | `logitbeta` with `param = c(1, 1)` (uniform) |
-| intercept | the nested-Laplace door's own weak prior | flat | flat |
+| intercept | `normal(0, 2.5)` | flat | flat |
 | slope | the same | normal, precision 0.001 | normal, precision 0.001 |
 
 INLA's `pc.prec` with `param = c(U, alpha)` states P(1 / sqrt(precision) > U)
 = alpha, which is the same statement as tulpa's PC prior on `sigma`. The
-fixed-effect priors cannot be matched exactly, because tulpa's
-nested-Laplace door refuses a supplied `beta_prior`; the conditional check
-below measures how much that matters here.
+fixed-effect priors are left at each package's default, `normal(0, 2.5)` in
+tulpa against a flat intercept and a precision of 0.001 in INLA; the
+conditional check below measures how much that matters here.
 
 ```{r bym2-tulpa}
 tm$tulpa_bym2 <- system.time(
@@ -361,7 +361,7 @@ rbind(vb_off = c(c_i0$summary.fixed$mean,
                  max_abs_eta_diff = max(abs(eta_t - c_i1$summary.linear.predictor$mean))))
 ```
 
-With the correction off, INLA's fixed effects equal tulpa's to within 1e-5
+With the correction off, INLA's fixed effects equal tulpa's to within 2e-4
 and the linear predictors of the 100 regions agree to within 2e-4, so
 the two packages build the same model, the same scaling and the same
 constraint, and the fixed-effect priors make no visible difference. With the
@@ -418,9 +418,9 @@ tab_brms <- agree(
 round(tab_brms, 4)
 ```
 
-The posterior means of the fixed effects agree to within 0.06 posterior SD and
-the mean of the SD to within 0.14. The brms posterior SDs of the slope and of
-the random-intercept SD are 0.016 and 0.022 larger than tulpa's. The effective sample sizes
+The posterior means of the fixed effects agree to within 0.08 posterior SD and
+the mean of the SD to within 0.04. The brms posterior SDs of the slope and of
+the random-intercept SD are 0.016 and 0.007 larger than tulpa's. The effective sample sizes
 of the brms draws set the Monte Carlo error of its means:
 
 ```{r brms-ess, eval = EVAL_FITS && has_brms}
@@ -430,8 +430,8 @@ cbind(fx[, c("Est.Error", "Bulk_ESS")],
 ```
 
 A brms mean carries a Monte Carlo error of about 0.03 posterior SD here, so
-the differences in the fixed-effect means are within two Monte Carlo
-standard errors.
+the difference in the slope's mean is 1.5 Monte Carlo standard errors and
+the difference in the intercept's 2.3.
 
 ## Measured agreement
 
@@ -512,7 +512,7 @@ packages estimate it by default.
 | brms `exponential(rate)` on `sd`; INLA `pc.prec` with `param = c(U, alpha)` | `re_prior = list(prior_sigma = c(U, alpha))`, rate `-log(alpha) / U` |
 | brms `lkj(eta)` on `cor` | `re_prior = list(eta = eta)` |
 | INLA `pc.range` / `pc.prec` in `inla.spde2.pcmatern()` | `spatial_spde(..., prior_range = , prior_sigma = )` |
-| INLA `control.fixed` | the nested-Laplace door's own prior; `beta_prior` is refused there |
+| INLA `control.fixed` | `beta_prior = list(mean = , sd = )` |
 | a flat prior on the variance components | `hyperprior = "flat"` |
 
 ### Accessors
@@ -521,7 +521,7 @@ packages estimate it by default.
 |---|---|
 | `fixef()`, `ranef()`, `VarCorr()` | `fixef()`, `ranef()`, `VarCorr()` |
 | `summary()`, `confint()`, `vcov()`, `logLik()` | the same |
-| `predict(newdata = , re.form = NA)` | `predict(newdata = , type = , include_field = )` |
+| `predict(newdata = , re.form = NA)` | `predict(newdata = , re_form = NA, type = , include_field = )` |
 | `simulate()` | `simulate()` |
 | brms `posterior_predict()`, `pp_check()`, `bayes_R2()`, `as_draws_df()` | the same names |
 | brms `loo()`, `waic()` | `loo::loo()`, `loo::waic()` methods |
@@ -615,7 +615,10 @@ Laplace centre and leaves the skew to its diagnostics and to an exact sampler.
 
 lme4, glmmTMB and brms drop a row with a missing value under their default
 `na.action`; INLA treats a missing response as a value to predict. tulpa
-refuses the data, so the rows a fit uses are always the rows supplied.
+refuses a missing predictor, so the rows a fit uses are always the rows
+supplied. A missing response is read as INLA reads it on tulpa's
+nested-Laplace path, which leaves the row's likelihood term out and still
+forms its linear predictor; every other backend refuses it.
 
 ```{r diff-na, error = TRUE}
 d_na <- d; d_na$x[3] <- NA
@@ -628,9 +631,10 @@ nobs(lme4::glmer(y ~ x + (1 | g), data = d_na, family = binomial))
 
 ### Optimiser tolerance of the AGQ backend
 
-At its default tolerance, `mode = "agq"` stops slightly short of the maximum
-on this data set: the log-likelihood is 0.0005 below glmmTMB's and the SD
-differs by 0.006. The fits above set `tol = 1e-10`.
+At its default tolerance, `mode = "agq"` reaches the same maximum on this
+data set: the log-likelihood and the SD equal those of the `tol = 1e-10` fit
+to the printed digits, and the SD differs from glmmTMB's by 1e-7. The fits
+above set `tol = 1e-10`.
 
 ```{r diff-tol, eval = EVAL_FITS && has_glmmTMB}
 f_d <- tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "agq",

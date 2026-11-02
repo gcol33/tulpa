@@ -162,9 +162,9 @@ round(rbind(unrestricted = slope_row(fit_u),
 ```
 
 None of the three intervals contains the conditional slope of 1. The
-restricted estimate, 1.668, lands on the marginal slope of 1.672. The
+restricted estimate, 1.667, lands on the marginal slope of 1.672. The
 non-spatial estimate, 1.541, is lower, and its interval stops short of the
-marginal slope on this seed. The unrestricted estimate, 1.509, lies between
+marginal slope on this seed. The unrestricted estimate, 1.508, lies between
 the two truths: the field took part of the shared variation and the slope took
 the rest.
 
@@ -258,7 +258,7 @@ covers(areal)
 
 The restricted estimates are closest to the marginal slope, 0.030 on average,
 and their intervals contain it on all four seeds. The non-spatial estimates
-are 0.076 from it and cover it on two seeds, the unrestricted ones 0.126 and
+are 0.076 from it and cover it on two seeds, the unrestricted ones 0.127 and
 three seeds. No interval contains the conditional slope. Four seeds give
 coverage in steps of 0.25, enough to show which truth each interval sits
 around and too few to measure a coverage rate.
@@ -313,7 +313,7 @@ covers(points)
 ```
 
 On the continuous field the restricted and non-spatial estimates are 0.056
-and 0.048 from the marginal slope on average, the unrestricted ones 0.092.
+and 0.048 from the marginal slope on average, the unrestricted ones 0.094.
 Every interval contains the marginal slope and none the conditional one, so
 here the unrestricted fit is pulled toward the marginal slope as well, only
 less far.

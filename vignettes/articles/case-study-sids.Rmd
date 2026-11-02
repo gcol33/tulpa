@@ -259,9 +259,9 @@ fit_bym2 <- tulpa(SID74 ~ x + offset(log(E)) + spatial(county), data = d,
 summary(fit_bym2)
 ```
 
-BYM2 gives the same slope, 0.196 with a standard error of 0.033. Its field
-has a standard deviation of 0.31 (95% interval 0.14 to 0.50) on the log
-relative-risk scale. The structured share $\rho$ has an interval from 0.11 to
+BYM2 gives the same slope, 0.197 with a standard error of 0.033. Its field
+has a standard deviation of 0.27 (95% interval 0.12 to 0.42) on the log
+relative-risk scale. The structured share $\rho$ has an interval from 0.09 to
 0.97, so 100 counties leave open how much of the county variation is shared
 with neighbours and how much is independent. The summary reports no
 reliability verdict for this grid ("not computed").
@@ -324,7 +324,7 @@ plot(nc["rr"], breaks = br, pal = hcl.colors(6, "Blue-Red 3"),
 ```
 
 On the same colour classes, the fitted risks span a narrower range than the
-SMRs, from 0.52 to 2.55 against 0 to 4.73. The 13 counties without a recorded
+SMRs, from 0.52 to 2.51 against 0 to 4.73. The 13 counties without a recorded
 death get fitted risks from 0.52 to 1.48, set by their non-white share and
 their neighbours.
 
@@ -342,7 +342,7 @@ nc$NAME[which.max(nc$rr_sd)]
 round(cor(nc$rr, nc$rr_sd), 2)
 ```
 
-The standard deviation runs from 0.12 to 0.69, largest in Anson County, and
+The standard deviation runs from 0.12 to 0.67, largest in Anson County, and
 its correlation with the posterior mean across counties is 0.89. The risk is
 the exponential of a roughly Gaussian linear predictor, so its standard
 deviation grows with its mean, and the map above largely repeats the risk
@@ -367,24 +367,21 @@ head(st_drop_geometry(nc)[order(-nc$p_exc),
 
 In 18 counties the posterior probability that the risk exceeds the state
 average is above 0.95, and in 26 it is below 0.05. Anson County has the
-largest SMR, 4.73 on 15 deaths, and a fitted risk of 2.55. The counties with
+largest SMR, 4.73 on 15 deaths, and a fitted risk of 2.51. The counties with
 a high exceedance probability lie in the north-east and the south, the
 regions with the highest non-white share.
 
 ## Residual Moran's I after the spatial fit
 
-`residuals()` on a tulpa fit is population level: it holds random effects and
-fields at zero, so `moran_i(fit_bym2, ...)` would test the same residuals as
-the non-spatial fit. The residuals of the spatial model use the fitted mean
-with the field included, the posterior mean of $E_i \theta_i$:
+`moran_i()` on a tulpa fit reads its residuals at the posterior-mean linear
+predictor with the field included (`effects = "conditional"`, the default), so
+it tests what the spatial model leaves behind:
 
 ```{r moran-after}
-mu_bym2 <- d$E * nc$rr
-r_bym2  <- (d$SID74 - mu_bym2) / sqrt(mu_bym2)
-moran_i(r_bym2, cc, weights = "knn", k = 5)
+moran_i(fit_bym2, cc, weights = "knn", k = 5)
 ```
 
-Moran's I of these residuals is -0.023 (p = 0.82). The check is weak by
+Moran's I of these residuals is -0.030 (p = 0.74). The check is weak by
 construction: every county has its own field value, so the fitted mean
 follows each county's count and the residuals shrink towards zero. A value
 near zero says the spatial model leaves no clustering in its residuals; it
@@ -406,11 +403,11 @@ compare_models(nonspatial = fit0, icar = fit_icar, bym2 = fit_bym2,
 ```
 
 Both spatial models score higher than the non-spatial one, by an amount
-close to its own uncertainty. BYM2 leads the non-spatial fit by 5.8 in
+close to its own uncertainty. BYM2 leads the non-spatial fit by 5.5 in
 expected log predictive density under WAIC and by 4.6 under LOO, with a
-standard error of the difference of 4.1 under both. ICAR and BYM2 differ by
-1.4 and 0.6, within one standard error. The effective number of parameters
-(`p_eff`) is about 3 for the non-spatial fit and 21 to 25 for the spatial
+standard error of the difference of 4.0 and 3.9. ICAR and BYM2 differ by
+1.1 and 0.6, within one standard error. The effective number of parameters
+(`p_eff`) is about 3 for the non-spatial fit and 21 to 24 for the spatial
 ones, the cost of one field value per county.
 
 ## Sensitivity to the prior on the field
@@ -450,7 +447,7 @@ Under every prior the slope is 0.196 or 0.197, with standard errors within
 0.002 of each other. The posterior of the field's scale changes
 in its tail: the ICAR precision's interval runs from 2.7 to 54 under the flat
 prior against 2.6 to 39 under the PC prior, and the BYM2 standard deviation
-from 0.11 to 0.48 against 0.14 to 0.50. For an areal field `tulpa()` offers
+from 0.09 to 0.40 against 0.12 to 0.42. For an areal field `tulpa()` offers
 these two choices; the PC prior's anchor is fixed at $P(\sigma > 3) = 0.01$
 on this path ([Priors](priors.html)).
 
@@ -474,8 +471,8 @@ round(exp(coef(summary(fit_bym2_79))["x", c(1, 3, 4)]), 3)
 ```
 
 The later period gives a weaker association: a relative risk of 1.07 per 10
-percentage points, with an interval from 1.003 to 1.143. That interval ends
-where the 1974-78 interval (1.142 to 1.301) begins, so the two periods agree
+percentage points, with an interval from 1.003 to 1.144. That interval ends
+where the 1974-78 interval (1.142 to 1.302) begins, so the two periods agree
 that the association is positive and differ on its size.
 
 ## What the data can and cannot say
@@ -499,8 +496,8 @@ county rates and is not a causal effect of the share.
 
 One hundred counties set the precision of everything above. The BYM2 split
 between structured and independent county effects is left almost entirely
-open ($\rho$ between 0.11 and 0.97), the predictive gain of the spatial models
-is 4.6 to 5.8 against a standard error of 4.1, and the second period puts the
+open ($\rho$ between 0.09 and 0.97), the predictive gain of the spatial models
+is 4.6 to 5.5 against a standard error of about 4.0, and the second period puts the
 association at 1.07 instead of 1.22. A single county's risk rests on its own
 few deaths plus what its neighbours and covariate lend it; the exceedance map
 separates 18 counties above the state average and 26 below it with

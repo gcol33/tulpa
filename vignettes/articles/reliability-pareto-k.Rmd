@@ -212,48 +212,44 @@ current tail estimate is, given the draws in hand. To make the interval itself
 tighter you need more actual tail ratios, which means raising `k_samples`,
 not the bootstrap count.
 
-Redrawing the importance sample shows how far the reading moves. The chunk
-refits the same model twenty times at each of four draw counts, each time
-under a different seed, so the importance draws differ between refits.
+The importance draws come from a fixed stream inside the engine, so a refit
+under another session seed returns the same k-hat: the reading is a function of
+the fit and its draw count. The draw count is what moves it. The chunk refits
+the same model at four draw counts and reads the k-hat and its bootstrap
+interval at each.
 
 ```{r redraws, results = "hide", message = FALSE}
 S_draws <- c(100L, 400L, 1500L, 4000L)
-redraw  <- expand.grid(rep = 1:20, S = S_draws)
-redraw$k <- mapply(function(rep, S) {
-  set.seed(rep)
-  f <- tulpa_nested_laplace_joint(responses = resp, prior = prior,
-                                  control = list(k_samples = S))
-  attr(diagnostics(f), "pareto_k")
-}, redraw$rep, redraw$S)
+by_S <- do.call(rbind, lapply(S_draws, function(S) {
+  dS <- diagnostics(tulpa_nested_laplace_joint(
+    responses = resp, prior = prior, control = list(k_samples = S)))
+  data.frame(S = S, k = attr(dS, "pareto_k"),
+             lo = attr(dS, "pareto_k_ci_low"), hi = attr(dS, "pareto_k_ci_high"))
+}))
 ```
 
-```{r redraws-plot, fig.alt = "Pareto k-hat readings from twenty importance redraws at each of 100, 400, 1500 and 4000 draws, on a log draw-count axis, with the usable boundary min(1 - 1/log10(S), 0.7) as a curve, a dashed line at the good cut 0.5, and the bootstrap interval of the article's fit at 400 draws as a vertical segment."}
+```{r redraws-table}
+round(by_S, 3)
+```
+
+```{r redraws-plot, fig.alt = "Pareto k-hat with its bootstrap interval at 100, 400, 1500 and 4000 importance draws, on a log draw-count axis, with the usable boundary min(1 - 1/log10(S), 0.7) as a curve and a dashed line at the good cut 0.5."}
 S_line <- exp(seq(log(70), log(5500), length.out = 200))
-spread <- exp(seq(-0.12, 0.12, length.out = 20))[redraw$rep]
-k_low  <- min(redraw$k, attr(d, "pareto_k_ci_low"))
-plot(redraw$S * spread, redraw$k, log = "x",
-     pch = 19, col = adjustcolor("grey30", 0.5),
-     ylim = c(k_low - 0.7, max(k_usable(S_line))),
+plot(by_S$S, by_S$k, log = "x", pch = 19, col = "steelblue",
+     ylim = c(min(by_S$lo) - 0.3, max(k_usable(S_line))),
      xlab = "importance draws (log scale)", ylab = "Pareto k-hat", las = 1)
+segments(by_S$S, by_S$lo, by_S$S, by_S$hi, col = "steelblue", lwd = 3)
 lines(S_line, k_usable(S_line), col = "darkorange", lwd = 2)
 abline(h = 0.5, lty = 2)
-segments(400 * 1.25, attr(d, "pareto_k_ci_low"),
-         400 * 1.25, attr(d, "pareto_k_ci_high"), col = "steelblue", lwd = 3)
-points(400 * 1.25, attr(d, "pareto_k"), pch = 19, col = "steelblue")
-legend("bottom", c("redraw", "usable boundary", "good cut",
-                   "this fit, bootstrap interval"),
-       col = c("grey30", "darkorange", "black", "steelblue"),
-       pch = c(19, NA, NA, 19), lty = c(NA, 1, 2, 1), lwd = c(NA, 2, 1, 3),
-       bty = "n", cex = 0.8, ncol = 2)
+legend("right", c("k-hat, bootstrap interval", "usable boundary", "good cut"),
+       col = c("steelblue", "darkorange", "black"),
+       pch = c(19, NA, NA), lty = c(1, 1, 2), lwd = c(3, 2, 1),
+       bty = "n", cex = 0.8)
 ```
 
-Most redraws land far below the good cut, but at every draw count at least one
-lands in a second cluster just under the dashed line at 0.5. The bootstrap
-interval of the fit above (blue) covers only part of the spread of the
-redraws at its own draw count and reaches none of that second cluster. The
-bootstrap describes the tail of the draws in hand; only a fresh importance sample shows how far a second reading
-can move. The orange curve is the usable boundary from the previous section,
-which every redraw here clears.
+The k-hat falls from -1.21 at 100 draws to -1.78 at 4000, and its bootstrap
+interval narrows from 1.13 wide to 0.27. Every reading and every interval sits
+far below the good cut, and the orange curve, the usable boundary from the
+previous section, lies above all of them.
 
 ## Tightening a borderline reading
 
@@ -379,9 +375,9 @@ attr(d, "inner_skew_idx")
 
 The two occupancy-arm coefficients (indices 1-2, binomial) carry a small
 non-zero skew; the two positive-value coefficients (indices 3-4, gaussian)
-read exactly zero, because a gaussian log-likelihood
-is exactly quadratic in the linear predictor, so its inner Laplace is exact
-and has nothing to be skewed. A binomial or Poisson coefficient with thin
+read about 1e-5, four orders of magnitude below them: a gaussian
+log-likelihood is exactly quadratic in the linear predictor, so the gaussian
+arm adds no skew of its own. A binomial or Poisson coefficient with thin
 data is the case where this number moves, and it grows toward the same
 "good / ok / unreliable" bands the outer k-hat uses:
 
