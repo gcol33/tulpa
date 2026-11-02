@@ -1238,9 +1238,13 @@ vcov.tulpa_fit <- function(object, ...) {
 #' random-effect covariance prior, a dispersion whose family has no PC prior yet,
 #' an axis on a block that does not carry its coordinates) reports `NA` with
 #' `declined = "improper_hyperprior"` and names the axes in a `declined_axes`
-#' attribute. A central-composite (CCD) design reproduces moments and carries no
-#' cell volume, so a fit integrated on one reports `NA` with a `declined`
-#' attribute.
+#' attribute. A central-composite (CCD) design carries no cell volume. On the
+#' random-effect covariance integrator ([tulpa_re_cov_nested()], the `tulpa()`
+#' random-slope door) each CCD node's weight is calibrated against the Gaussian
+#' the design was laid on, which makes the evidence exact when the ratio of the
+#' hyperparameter posterior to that Gaussian is a cubic in the whitened
+#' coordinates; the other nested doors report `NA` on a CCD design with a
+#' `declined` attribute.
 #'
 #' A sampler fit whose producer kept no per-draw log posterior reports `NA`
 #' with `quantity = "log_posterior_mean"` and

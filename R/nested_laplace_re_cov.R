@@ -1888,12 +1888,14 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   }
   theta_grid <- ccd_to_theta(z, theta_hat, L_scale)   # n_grid x k
   ng <- nrow(theta_grid)
-  # The tensor's absolute cell volume in theta: its whitened spacing to the k-th
-  # power, scaled by the whitening map's determinant.
+  # Each node's absolute measure in theta. The tensor's is its cell volume: the
+  # whitened spacing to the k-th power, scaled by the whitening map's
+  # determinant. The CCD's is its moment-rule weight calibrated against the
+  # Gaussian it was laid on (`.ccd_log_measure()`).
   re_cov_log_measure <- if (identical(integration, "grid")) {
     log(dnode) + k * log(2 * span / (as.integer(n_per_axis) - 1)) +
       sum(log(abs(diag(as.matrix(L_scale)))))
-  } else NULL
+  } else .ccd_log_measure(ccd, L_scale)
 
   # --- node checkpoint/resume -----------------------------
   # Each CCD / grid node is one full inner Laplace solve. `checkpoint =
@@ -2161,14 +2163,11 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     weights     = w,
     log_marginal = logm,
     # The node log-marginals already carry the hyperparameter log-prior, so the
-    # evidence normalises that prior over the same nodes. A CCD's design weights
-    # reproduce moments and carry no volume, so no evidence is read off them.
+    # evidence integrates that prior against the nodes' absolute measure.
     log_hyperprior = lp_theta_nodes,
-    log_evidence = if (identical(integration, "ccd") || !prior_proper) NA_real_
+    log_evidence = if (!prior_proper) NA_real_
                    else .nl_outer_log_evidence(logm, re_cov_log_measure),
-    log_evidence_declined = if (identical(integration, "ccd"))
-                              "moment_rule_design"
-                            else if (!prior_proper) "improper_hyperprior"
+    log_evidence_declined = if (!prior_proper) "improper_hyperprior"
                             else NA_character_,
     n_grid      = ng,
     layout      = layout,

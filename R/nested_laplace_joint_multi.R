@@ -1630,6 +1630,7 @@
     # tensor blow-up bites hardest, and keeps the cheaper, ridge-robust tensor
     # grid at d <= 3; explicit "ccd" lowers the threshold to d >= 3.
     dnode                 <- NULL
+    ccd_log_measure       <- NULL
     tile_partition        <- NULL
     phi_grid_per_arm_list <- NULL
     integration_used      <- "grid"
@@ -1729,6 +1730,7 @@
         } else {
             joint_grid       <- ccd$grid
             dnode            <- ccd$dnode
+            ccd_log_measure  <- ccd$log_measure
             integration_used <- "ccd"
             hp_declared      <- ccd_declared
             # The CCD axes are exactly the leading latent-block columns of
@@ -1901,6 +1903,9 @@
         # Replicate the CCD design weights across the crossed phi cells (NULL on
         # the dense path, where weights are the uniform-cell softmax).
         if (!is.null(dnode)) dnode <- dnode[crossed$latent_row]
+        if (!is.null(ccd_log_measure)) {
+            ccd_log_measure <- ccd_log_measure[crossed$latent_row]
+        }
     }
 
     # Announce the engaged outer integrator at selection time:
@@ -2186,11 +2191,25 @@
     is_ccd <- identical(integration_used, "ccd")
     # The evidence is read under the same measure the weights take: the cell
     # masses on a tensor grid, the partition-of-unity design shares on a
-    # locally refined one. A global CCD's design weights reproduce moments and
-    # carry no volume, so no evidence is read off them.
+    # locally refined one. A global CCD's nodes carry their moment-rule weight
+    # calibrated against the Gaussian each component was laid on
+    # (`.ccd_log_measure()`) on the latent axes, and a crossed phi tensor its
+    # own cell measure on top. A design whose nodes the box moved carries none.
     if (is_ccd) {
-        res$log_evidence          <- NA_real_
-        res$log_evidence_declined <- "moment_rule_design"
+        tg <- as.matrix(res$theta_grid)
+        lq <- if (length(ccd_log_measure) == nrow(tg)) {
+            phi_cols <- setdiff(colnames(tg), axis_names)
+            ccd_log_measure + if (length(phi_cols))
+                .hyper_log_quad_weights(tg[, phi_cols, drop = FALSE],
+                                        multi_specs, absolute = TRUE)
+                else 0
+        } else rep(NA_real_, nrow(tg))
+        if (anyNA(lq)) {
+            res$log_evidence          <- NA_real_
+            res$log_evidence_declined <- "moment_rule_design"
+        } else {
+            res <- .nl_attach_evidence(res, tg, multi_specs, log_measure = lq)
+        }
     } else if (is.null(dnode)) {
         res <- .nl_attach_evidence(res, res$theta_grid, multi_specs)
     } else {

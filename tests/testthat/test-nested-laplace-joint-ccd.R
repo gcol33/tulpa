@@ -399,12 +399,12 @@ test_that("a copy atom splits the CCD into one design per coupling configuration
     # 3-axis continuum design (1 + 2*3 + 2^3) plus the 2-axis design at
     # alpha = 0 (1 + 2*2 + 2^2).
     expect_identical(nrow(fit$theta_grid), 24L)
-    # Each component carries the prior mass its configuration declares, so the
-    # atom's design weights sum to the declared atom mass and the whole design
-    # to one.
-    expect_equal(sum(fit$dnode), 1, tolerance = 1e-10)
-    expect_equal(sum(fit$dnode[al == 0]), tulpa:::.TULPA_COPY_ATOM_MASS,
-                 tolerance = 1e-10)
+    # Each node carries its absolute measure: the component's design measure
+    # on its own free axes times the prior mass its configuration declares, so
+    # the components, which cover different numbers of axes, are weighted on
+    # one scale and the design reads an evidence.
+    expect_true(all(fit$dnode > 0))
+    expect_true(is.finite(fit$log_evidence))
 })
 
 test_that("a split CCD matches a fine tensor grid carrying the same atom", {
@@ -485,8 +485,21 @@ test_that("a copy atom's design mass follows control$copy_atom_mass", {
         control = list(integration = "ccd", diagnose_k = FALSE,
                        var_of_means_consistency = FALSE,
                        copy_atom_mass = 0.2))
+    fit5 <- tulpa_nested_laplace_joint(
+        sim$responses, list(blk),
+        copy = list(arm = "pos", block = 1L, alpha_grid = c(0, 0.3, 0.7, 1.2)),
+        control = list(integration = "ccd", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE,
+                       copy_atom_mass = 0.5))
     expect_identical(fit$integration, "ccd")
     acol <- grep("alpha$", colnames(fit$theta_grid), value = TRUE)
-    al <- as.numeric(fit$theta_grid[, acol])
-    expect_equal(sum(fit$dnode[al == 0]), 0.2, tolerance = 1e-10)
+    share <- function(f) {
+        al <- as.numeric(f$theta_grid[, acol])
+        sum(f$dnode[al == 0]) / sum(f$dnode[al > 0])
+    }
+    # The nodes are laid independently of the mass, which enters each
+    # component's measure as the factor a or 1 - a.
+    expect_equal(fit$theta_grid, fit5$theta_grid)
+    expect_equal(share(fit) / share(fit5), (0.2 / 0.8) / (0.5 / 0.5),
+                 tolerance = 1e-10)
 })

@@ -184,3 +184,25 @@ ccd_weights <- function(ccd) {
   w0 <- 1 - (np - 1) * w
   ifelse(ccd$kind == "center", w0, w)
 }
+
+# Absolute log measure of each CCD node on the coordinate theta = theta_hat +
+# L z the design was mapped to, so that sum_k exp(g(theta_k) + measure_k)
+# approximates the integral of exp(g).
+#
+# With phi_u(z) = exp(-|z|^2 / 2), the weights v_k = Delta_k phi_u(z_k) /
+# sum_j Delta_j phi_u(z_j) are a moment rule for N(0, I): they sum to one,
+# reproduce the unit second moments (the condition `ccd_weights()` is solved
+# from), and every odd and mixed moment vanishes by the design's symmetry, so the
+# rule is exact for polynomials of degree 3. Writing exp(g(z)) = r(z) phi_u(z),
+# the integral is (2 pi)^(k/2) |det L| E_phi[r], and the rule reads
+#   E_phi[r] ~ sum_k v_k r(z_k) = sum_k Delta_k exp(g_k) / sum_j Delta_j phi_u(z_j),
+# exact whenever the ratio of the target to the design's Gaussian is a cubic in
+# z, in particular when exp(g) is itself Gaussian at that centre and scale.
+#' @keywords internal
+.ccd_log_measure <- function(ccd, L) {
+  k <- ncol(ccd$z)
+  ld <- log(ccd_weights(ccd))
+  log_norm <- .tulpa_logsumexp(ld - 0.5 * rowSums(ccd$z^2))
+  ld - log_norm + 0.5 * k * log(2 * pi) +
+    as.numeric(determinant(as.matrix(L), logarithm = TRUE)$modulus)
+}

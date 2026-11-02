@@ -307,6 +307,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   ccd <- ccd_grid(k = 2L, f_0 = sqrt(2) * 1.1)
   dnode <- ccd_weights(ccd)
   theta_grid <- ccd_to_theta(ccd$z, theta_hat, L, log_scale = FALSE)
+  theta_free <- theta_grid
   theta_grid[, 1] <- pmin(pmax(theta_grid[, 1], lower[1]), upper[1])
   theta_grid[, 2] <- pmin(pmax(theta_grid[, 2], lower[2]), upper[2])
   range_grid <- exp(theta_grid[, 1])
@@ -322,6 +323,22 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   weights <- weights / sum(weights)
 
   best <- which.max(log_post)
+
+  # The evidence on (log range, log sigma), the coordinate the hyperprior
+  # density and the design both live on: each node's moment-rule weight
+  # calibrated against the Gaussian it was laid on (`.ccd_log_measure()`). A
+  # node the box moved is no longer where the rule placed it, and then the
+  # design carries no measure.
+  ev <- if (identical(theta_grid, theta_free)) {
+    tg <- cbind(range = range_grid, sigma = sigma_grid)
+    .nl_attach_evidence(
+      list(log_marginal = log_post, log_hyperprior_axes = hp$axes,
+           log_hyperprior_declined = hp$declined), tg,
+      .joint_axis_specs_from_grid(tg, folded_axes = hp$axes),
+      log_measure = .ccd_log_measure(ccd, L))
+  } else {
+    list(log_evidence = NA_real_, log_evidence_declined = "moment_rule_design")
+  }
 
   # Refit at the joint posterior mode so the result has a usable mode
   # (the Laplace posterior at the marginal-mode hypers).
@@ -342,10 +359,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
     spatial_effects  = fit_at_mode$spatial_effects,
     log_det_Q        = fit_at_mode$log_det_Q,
     log_marginal     = result$log_marginal,
-    # A CCD's design weights reproduce moments and carry no volume, so no
-    # evidence is read off them.
-    log_evidence     = NA_real_,
-    log_evidence_declined = "moment_rule_design",
+    log_evidence     = ev$log_evidence,
+    log_evidence_declined = ev$log_evidence_declined,
     log_hyperprior_declined = if (length(hp$declined)) hp$declined,
     converged        = all(result$n_iter > 0),
     spatial          = spatial,

@@ -55,9 +55,13 @@ covers the posterior. A fit carrying an axis with no proper prior (a flat
 random-effect covariance prior, a dispersion whose family has no PC prior yet,
 an axis on a block that does not carry its coordinates) reports \code{NA} with
 \code{declined = "improper_hyperprior"} and names the axes in a \code{declined_axes}
-attribute. A central-composite (CCD) design reproduces moments and carries no
-cell volume, so a fit integrated on one reports \code{NA} with a \code{declined}
-attribute.
+attribute. A central-composite (CCD) design carries no cell volume. On the
+random-effect covariance integrator (\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}}, the \code{tulpa()}
+random-slope door) each CCD node's weight is calibrated against the Gaussian
+the design was laid on, which makes the evidence exact when the ratio of the
+hyperparameter posterior to that Gaussian is a cubic in the whitened
+coordinates; the other nested doors report \code{NA} on a CCD design with a
+\code{declined} attribute.
 
 A sampler fit whose producer kept no per-draw log posterior reports \code{NA}
 with \code{quantity = "log_posterior_mean"} and

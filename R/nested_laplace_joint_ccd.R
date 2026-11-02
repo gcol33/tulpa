@@ -710,7 +710,8 @@
     # origin of the copy coordinates, carrying its whole prior mass.
     if (dk == 0L) {
         return(list(grid = fill(NULL, 1L), dnode = 1,
-                    u_hat = numeric(0), L_scale = matrix(0, 0L, 0L)))
+                    u_hat = numeric(0), L_scale = matrix(0, 0L, 0L),
+                    log_measure = 0))
     }
 
     # u-space search box, generously wider than the supplied per-axis grid
@@ -748,13 +749,25 @@
         }
         fill(M, nrow(U))
     }
+    # log |d(axis coordinate) / du| summed over the free axes: the hyperprior
+    # densities in `eval_logpost` live on each axis's own integration
+    # coordinate (log for a scale, the natural unit interval for a mixing
+    # weight), so the density the design integrates on `u` carries this term.
+    # Zero on every axis whose design coordinate is its integration coordinate.
+    u_log_jac <- function(U) {
+        out <- numeric(nrow(U))
+        for (j in seq_len(dk)) {
+            out <- out + .joint_pareto_inv(tags[free[j]], U[, j])$log_jac
+        }
+        out
+    }
     eval1 <- function(U) {
         # Charged before the solves are issued, so a batch that would cross the
         # placement ceiling is declined rather than paid for.
         .ccd_meter_spend(meter, nrow(U))
         out <- eval_logpost(u_to_theta(U))
         md  <- attr(out, "modes")
-        lp  <- as.numeric(out)
+        lp  <- as.numeric(out) + u_log_jac(U)
         lp[!is.finite(lp)] <- -1e10
         # Carry the inner latent modes through (single-row probes only) so the
         # mode-find can advance the inner warm start.
@@ -842,11 +855,22 @@
     ccd   <- ccd_grid(dk, f_0 = sqrt(dk) * 1.1)
     dnode <- ccd_weights(ccd)
     u_grid <- ccd_to_theta(ccd$z, u_hat, L_scale)
+    u_free <- u_grid
     for (j in seq_len(dk)) {
         u_grid[, j] <- pmin(pmax(u_grid[, j], lower[j]), upper[j])
     }
+    # Each node's absolute measure on the design coordinate. A node the box
+    # moved is no longer where the rule placed it, so the design then carries
+    # no measure.
+    # The node log-posteriors the fit weights are on the axes' own coordinates,
+    # so each node's design weight and measure carry the Jacobian to `u`.
+    lj <- u_log_jac(u_grid)
+    log_measure <- if (identical(u_grid, u_free))
+                       .ccd_log_measure(ccd, L_scale) + lj
+                   else rep(NA_real_, nrow(u_grid))
+    dnode <- dnode * exp(lj)
     list(grid = u_to_theta(u_grid), dnode = dnode, u_hat = u_hat,
-         L_scale = L_scale)
+         L_scale = L_scale, log_measure = log_measure)
 }
 
 # Build the CCD node grid for the joint multi-block path. `eval_logpost` maps a
@@ -967,6 +991,7 @@
 
     grids  <- vector("list", length(offs))
     dnodes <- vector("list", length(offs))
+    lmeas  <- vector("list", length(offs))
     full   <- NULL
     # A budget reached mid-placement unwinds here. Nothing the abort leaves
     # behind is read by the tensor fallback: the components already designed are
@@ -993,6 +1018,9 @@
                     else prod(ifelse(atom %in% off, a, 1 - a))
             grids[[i]]  <- cmp$grid
             dnodes[[i]] <- cmp$dnode * mass
+            # A component's nodes carry its design measure on its free axes,
+            # times the prior probability of its atom configuration.
+            lmeas[[i]]  <- cmp$log_measure + log(mass)
             if (length(off) == 0L) full <- cmp
         }
         reason
@@ -1008,7 +1036,15 @@
     # `u_hat` / `L_scale` describe the all-continuum component, the one defined
     # on all d axes. `atom_split` says whether there are others beside it, which
     # is what decides if a single Gaussian describes the design at all.
-    finish(list(grid = do.call(rbind, grids), dnode = unlist(dnodes),
+    # Components cover different numbers of free axes, so their design weights
+    # (each summing to one over its own nodes) are not on one scale; the
+    # absolute node measures are, and where every component carries one they
+    # are what the nodes are weighted by.
+    lm_all <- unlist(lmeas)
+    dn_all <- if (n_atom > 0L && all(is.finite(lm_all)))
+                  exp(lm_all - max(lm_all)) else unlist(dnodes)
+    finish(list(grid = do.call(rbind, grids), dnode = dn_all,
+                log_measure = lm_all,
                 u_hat = full$u_hat, L_scale = full$L_scale, tags = tags,
                 atom_split = n_atom > 0L))
 }
