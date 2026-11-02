@@ -166,8 +166,11 @@ test_that("nested_laplace AR1 recovers high autocorrelation in the simulation", 
                 temporal_idx = d$time, n_times = d$T,
                 tau_grid = gr$tau, rho_grid = gr$rho)
 
+  # The declared 4 x 4 tensor is the grid read below; an ar1 axis is
+  # refinable, so the refinement passes are held off.
   res <- tulpa_nested_laplace(d$y, d$n_trials, d$X, prior = prior,
-                        family = "binomial")
+                        family = "binomial",
+                        control = list(axis_refine = "none"))
 
   expect_s3_class(res, "tulpa_nested_laplace")
   expect_equal(length(res$log_marginal), nrow(gr))
