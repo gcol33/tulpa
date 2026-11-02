@@ -20,18 +20,18 @@ NULL
 #' Create a latent factor specification
 #'
 #' @description
-#' Define latent factors for capturing unmeasured shared structure between
-#' all processes. Factors are observation-level random effects
-#' that enter both linear predictors when `shared = TRUE` (default).
+#' Define latent factors for capturing unmeasured structure shared by the
+#' processes of a model. Factors are observation-level random effects that
+#' enter every process's linear predictor when `shared = TRUE` (default).
 #'
 #' @param n_factors Integer; number of latent factors. Default is 1.
 #'   More factors capture more complex unmeasured structure but increase
 #'   computational cost and risk overfitting.
 #' @param prior Prior for factor standard deviations. Default is a PC prior
 #'   with P(sigma > 1) = 0.01, which shrinks toward simpler models.
-#' @param shared Logical; if TRUE (default), latent factors enter both
-#'   all process linear predictors identically. If FALSE,
-#'   factors only affect the first process.
+#' @param shared Logical; if TRUE (default), latent factors enter the linear
+#'   predictors of all processes identically. If FALSE, factors only affect the
+#'   first process.
 #' @param constraint Identifiability constraint for factors:
 #'   - `"sum_to_zero"` (default): Factors sum to zero across observations
 #'   - `"first_zero"`: First observation's factor is fixed to zero

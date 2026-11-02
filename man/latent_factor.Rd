@@ -23,9 +23,9 @@ computational cost and risk overfitting.}
 \item{prior}{Prior for factor standard deviations. Default is a PC prior
 with P(sigma > 1) = 0.01, which shrinks toward simpler models.}
 
-\item{shared}{Logical; if TRUE (default), latent factors enter both
-all process linear predictors identically. If FALSE,
-factors only affect the first process.}
+\item{shared}{Logical; if TRUE (default), latent factors enter the linear
+predictors of all processes identically. If FALSE, factors only affect the
+first process.}
 
 \item{constraint}{Identifiability constraint for factors:
 \itemize{
@@ -47,9 +47,9 @@ packages built on tulpa (e.g. tulpaRatio); not read by the single-response
 latent Gaussian block).
 }
 \description{
-Define latent factors for capturing unmeasured shared structure between
-all processes. Factors are observation-level random effects
-that enter both linear predictors when \code{shared = TRUE} (default).
+Define latent factors for capturing unmeasured structure shared by the
+processes of a model. Factors are observation-level random effects that
+enter every process's linear predictor when \code{shared = TRUE} (default).
 }
 \details{
 \subsection{Why Use Latent Factors?}{
