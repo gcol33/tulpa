@@ -213,10 +213,11 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' overall scale carries kappa-dependent constants (the `l_max` normalization,
 #' the per-factor conditioning rescalings); without the variance normalization
 #' the implied field variance is not `sigma^2` and varies with the range, which
-#' biases the nested `(range, sigma)` integration. The normalization rescales
-#' `Pr` (hence `A_eff = A Pr`) by `sigma / sqrt(mean marginal variance)`; `Q` is
-#' untouched, so `logdet_Q` remains the correct prior normalizer for the
-#' variance-normalized model.
+#' biases the nested `(range, sigma)` integration. The normalization factor
+#' `var_scale = sigma / sqrt(mean marginal variance)` rescales the latent
+#' weights: `Q` and `Pl` are returned divided by `var_scale^2` and `var_scale`,
+#' `Pr` and `A_eff = A Pr` unscaled, so `u = Pr x` has marginal variance
+#' `sigma^2` and `logdet_Q` is the prior normalizer of that latent.
 #'
 #' @param spatial A validated `spatial_spde` spec with fractional `nu`.
 #' @param range,sigma Spatial range and marginal SD.
@@ -258,20 +259,28 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
   mv        <- .spde_mean_marginal_var(asm$Q, asm$Pr, C0k)
   mean_var  <- mv$value
   var_scale <- sigma / sqrt(mean_var)
-  Pr        <- as(var_scale * asm$Pr, "CsparseMatrix")
 
-  A_eff    <- as(Ak %*% Pr, "CsparseMatrix")
-  # log|Q| via the operator factor Pl (Q = Pl' C^{-1} Pl, so
-  # log|Q| = 2 log|Pl| - sum log C0). cond(Pl) is the square root of cond(Q), so
-  # this is far more accurate than factoring the ill-conditioned Q directly --
-  # essential because the nested range identification rides on the prior
+  # The variance normalization is carried by the LATENT, not by the field map:
+  # with x' = var_scale x the field is u = Pr x' and x' ~ N(0, Q'^{-1}),
+  # Q' = Q / var_scale^2 = Pl' C^{-1} Pl with Pl' = Pl / var_scale. It is the
+  # same Gaussian model -- a linear change of the latent coordinate, under which
+  # the Laplace marginal is invariant -- but x' is on the scale of the field
+  # (var_scale is O(1e-3) on a typical mesh, which would put x at O(1e3)), so the
+  # inner Newton's absolute step test reads a step on the field's own scale.
+  Pr    <- as(asm$Pr, "CsparseMatrix")
+  Pl    <- as(asm$Pl / var_scale, "CsparseMatrix")
+  Q     <- as(asm$Q / var_scale^2, "CsparseMatrix")
+  A_eff <- as(Ak %*% Pr, "CsparseMatrix")
+  # log|Q| via the operator factor (Q = t(Pl) C^{-1} Pl for the returned Q and
+  # Pl, so log|Q| = 2 log|Pl| - sum log C0). cond(Pl) is the square root of cond(Q),
+  # so this is far more accurate than factoring the ill-conditioned Q directly
+  # -- essential because the nested range identification rides on the prior
   # normalizer 0.5 log|Q|, whose tiny eigenvalues dominate a direct determinant.
-  logPl    <- as.numeric(Matrix::determinant(asm$Pl, logarithm = TRUE)$modulus)
+  logPl    <- as.numeric(Matrix::determinant(Pl, logarithm = TRUE)$modulus)
   logdet_Q <- 2 * logPl - sum(log(C0k))
 
   list(
-    Q = as(asm$Q, "CsparseMatrix"), Pr = Pr, A_eff = A_eff,
-    Pl = as(asm$Pl, "CsparseMatrix"),
+    Q = Q, Pr = Pr, A_eff = A_eff, Pl = Pl,
     keep = keep, n_mesh_full = n_full,
     kappa = kappa, var_scale = var_scale, l_max = asm$l_max,
     logdet_Q = logdet_Q, var_norm_singular = mv$singular
