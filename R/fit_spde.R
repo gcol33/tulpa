@@ -20,6 +20,12 @@
 #' @template phi
 #' @param offset Optional fixed additive term on the linear predictor
 #'   (`eta = offset + X beta + A w`), length `length(y)`; `NULL` -> no offset.
+#' @param beta_prior Optional Gaussian prior on the fixed effects, as
+#'   `list(mean, sd)` with each entry a scalar or a length-`ncol(X)` vector
+#'   (`sd = Inf` leaves a coefficient unpenalized). `NULL` (default) is the
+#'   engine default `beta ~ N(0, 2.5^2)`. Every inner solve carries it, so the
+#'   nested marginal over `(range, sigma)` is the marginal under this prior.
+#'   Under `mode = "nuts"` it must be mean-zero with one scalar `sd`.
 #' @param re_idx,n_re_groups,sigma_re Optional single iid random-intercept
 #'   `(1 | g)` term alongside the Matern field: `re_idx` is a length-`length(y)`
 #'   1-based group index, `n_re_groups` the number of groups, and `sigma_re` the
@@ -137,7 +143,7 @@ fit_spde <- function(y, X, spatial,
                      family = "binomial", n_trials = NULL,
                      range = NULL, sigma = NULL,
                      nested_laplace = is.null(range) || is.null(sigma),
-                     phi = 1.0, offset = NULL,
+                     phi = 1.0, offset = NULL, beta_prior = NULL,
                      re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                      mode = c("laplace", "nuts"),
                      hyperprior = c("proper", "flat"),
@@ -172,6 +178,7 @@ fit_spde <- function(y, X, spatial,
       n_trials = n_trials,
       joint = is.null(range) || is.null(sigma),
       range = range, sigma = sigma,
+      beta_prior = beta_prior %||% .tulpa_default_beta_prior("spde_nuts"),
       control = control))
   }
   tulpa_check_control(control, .CONTROL_KEYS$spde, "fit_spde")
@@ -228,6 +235,13 @@ fit_spde <- function(y, X, spatial,
   X <- as.matrix(X)
   n_trials <- .validate_glm_design(y, X, n_trials, "fit_spde()",
                              missing_response = TRUE)$n_trials
+  # A stated prior equal to the engine default is the kernels' own default, so
+  # it keeps the paths that implement only that prior (the analytic outer
+  # gradient below).
+  bp <- .normalize_beta_prior(beta_prior, ncol(X))
+  if (!is.null(bp) && all(bp$mean == 0) && all(bp$sd == .tulpa_prior_sd())) {
+    bp <- NULL
+  }
 
   sp <- spatial  # shorthand
 
@@ -288,7 +302,7 @@ fit_spde <- function(y, X, spatial,
           spatial = sp, range = range_vec[k], sigma = sigma_vec[k],
           y = y, X = X, family = family, phi = phi, n_trials = n_trials,
           order = order_rat, max_iter = max_iter, tol = tol,
-          n_threads = n_threads, offset = offset
+          n_threads = n_threads, offset = offset, beta_prior = bp
         )
         lm[k] <- f$log_marginal
         ni[k] <- f$n_iter
@@ -310,6 +324,7 @@ fit_spde <- function(y, X, spatial,
       store_Q = isTRUE(keep_Q),
       checkpoint_path = .ckpt$path,
       offset_nullable = offset,
+      beta_prior = bp,
       debias = debias_req, cila = cila_req,
       prune_tol = prune_tol_eff, screen_iters = screen_it,
       compute_fitted_var = fitted_var,
@@ -325,10 +340,11 @@ fit_spde <- function(y, X, spatial,
   # Analytic (log range, log sigma) gradient of the log-marginal, for the CCD
   # outer mode-find's L-BFGS-B (fit_spde_nested_mode() -> .nl_lbfgsb_mode_find()).
   # cpp_spde_laplace_gradient() implements exactly the alpha = 2 (nu = 1)
-  # operator with no offset and no random-effect term (gcol33/tulpa#809);
-  # outside that scope the mode-find keeps its central-difference gradient.
+  # operator with no offset, no random-effect term and the engine default
+  # fixed-effect prior (gcol33/tulpa#809); outside that scope the mode-find
+  # keeps its central-difference gradient.
   spde_log_marginal_grad <- if (!is_frac && isTRUE(all.equal(sp$nu, 1)) &&
-                                is.null(offset) && !has_re) {
+                                is.null(offset) && !has_re && is.null(bp)) {
     function(log_range, log_sigma) {
       g <- cpp_spde_laplace_gradient(
         y = y, n_trials = n_trials, X = X,
@@ -359,6 +375,7 @@ fit_spde <- function(y, X, spatial,
                                      range = r, sigma = s,
                                      max_iter = max_iter, tol = tol,
                                      n_threads = n_threads, offset = offset,
+                                     beta_prior = bp,
                                      re_idx = no_re_idx,
                                      n_re_groups = no_re_n_groups,
                                      sigma_re = no_re_sigma
@@ -382,7 +399,7 @@ fit_spde <- function(y, X, spatial,
       family = family, phi = phi,
       range = range, sigma = sigma,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
-      offset = offset,
+      offset = offset, beta_prior = bp,
       re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma
     )
 
@@ -421,7 +438,7 @@ fit_spde <- function(y, X, spatial,
       family = family, phi = phi,
       range = range_hy, sigma = sigma_hy,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
-      offset = offset,
+      offset = offset, beta_prior = bp,
       re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma
     )
     fit$mode            <- anchor$mode

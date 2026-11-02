@@ -82,7 +82,8 @@ Rcpp::List cpp_laplace_fit_spde(
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     int N = n_obs;
     int p = X.ncol();
@@ -110,6 +111,7 @@ Rcpp::List cpp_laplace_fit_spde(
     tulpa::make_single_arm(parsed, arms, X, re_idx, Rcpp::IntegerVector(N, 0),
                            p, n_re_groups, sigma_re, y, n_trials, family, phi,
                            N, offset_nullable, weights_nullable);
+    tulpa::apply_beta_prior(parsed[0], tulpa::read_beta_prior(beta_prior, p));
 
     // One-row grid holding the operator parameters directly: this entry is
     // handed (kappa, tau_spde) by its caller, so direct_kappa_tau skips the
@@ -174,7 +176,8 @@ Rcpp::List cpp_laplace_fit_spde_precomputed(
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     int N = n_obs;
     int p = X.ncol();
@@ -198,6 +201,7 @@ Rcpp::List cpp_laplace_fit_spde_precomputed(
     tulpa::make_single_arm(parsed, arms, X, re_idx, Rcpp::IntegerVector(N, 0),
                            p, n_re_groups, sigma_re, y, n_trials, family, phi,
                            N, offset_nullable, weights_nullable);
+    tulpa::apply_beta_prior(parsed[0], tulpa::read_beta_prior(beta_prior, p));
 
     Rcpp::List Aeff_x_per_arm = Rcpp::List::create(Aeff_x);
     Rcpp::List Aeff_i_per_arm = Rcpp::List::create(Aeff_i);

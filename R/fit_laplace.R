@@ -50,8 +50,9 @@
 #'   coefficient) or a length-`ncol(X)` vector. Adds
 #'   `sum((beta - mean)^2 / (2 * sd^2))` to the negative log-posterior, so the
 #'   mode is the penalized (MAP) estimate. A coefficient's `sd` may be `+Inf`,
-#'   which sets its precision to 0 (no penalty on that coefficient). Not
-#'   supported on the spatial path.
+#'   which sets its precision to 0 (no penalty on that coefficient). On the
+#'   spatial path it is carried by an SPDE field's solver; the areal, NNGP,
+#'   proper-CAR and HSGP solvers hold the engine default and refuse it.
 #'
 #' @param return_re_cov If `TRUE`, additionally return per-group marginal
 #'   posterior covariance blocks `Cov(u_g | y, Sigma)` -- one
@@ -215,12 +216,6 @@ tulpa_laplace <- function(y, n_trials, X,
 
   # Route based on number of RE terms and spatial type
   if (!is.null(spatial)) {
-    if (!is.null(bp)) {
-      stop("`beta_prior` is not supported on the spatial Laplace path. ",
-           "The spatial solvers use the engine default fixed-effect prior; ",
-           "drop `beta_prior`, or use NUTS for a custom fixed-effect prior ",
-           "under a spatial field.", call. = FALSE)
-    }
     # Spatial path: use first RE term (single-block)
     if (length(re_list) == 0) {
       # No formula-side RE: genuine no-RE fit (n_re_groups = 0). The areal
@@ -241,7 +236,7 @@ tulpa_laplace <- function(y, n_trials, X,
     result <- dispatch_laplace_spatial(
       y, n_trials, X, re_idx, n_re_groups, sigma_re,
       spatial, family, phi, max_iter, tol, n_threads, offset = offset,
-      weights = weights
+      weights = weights, beta_prior = bp
     )
   } else {
     # All non-spatial paths: use cpp_laplace_fit_multi_re
@@ -807,13 +802,25 @@ tulpa_laplace <- function(y, n_trials, X,
 #' scales each row's log-density, score and Fisher curvature by the same `w_i`,
 #' so the mode these kernels return and the marginal precision
 #' `.marginal_H_beta_*()` builds at it describe one model.
+#'
+#' `beta_prior` is the normalized fixed-effect prior
+#' (`.normalize_beta_prior()`), `NULL` for the engine default. The SPDE kernels
+#' carry it on their arm; the other spatial kernels hold the engine default
+#' and refuse a supplied one.
 #' @noRd
 dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
                                      sigma_re, spatial, family, phi,
                                      max_iter, tol, n_threads, offset = NULL,
-                                     weights = NULL) {
+                                     weights = NULL, beta_prior = NULL) {
 
   spatial_type <- spatial$type
+  if (!is.null(beta_prior) && !identical(spatial_type, "spde")) {
+    stop(sprintf(paste0(
+      "`beta_prior` is not supported on the spatial Laplace path for a '%s' ",
+      "field. Its solver uses the engine default fixed-effect prior; drop ",
+      "`beta_prior`, or use NUTS for a custom fixed-effect prior under a ",
+      "spatial field."), spatial_type), call. = FALSE)
+  }
   off_arg <- if (is.null(offset)) NULL else as.numeric(offset)
   wt_arg  <- if (is.null(weights)) NULL else as.numeric(weights)
   # The two kernels called directly below take the SD for the variance
@@ -872,7 +879,7 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       range = NULL, sigma = NULL,
       re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
-      offset = offset, weights = weights
+      offset = offset, weights = weights, beta_prior = beta_prior
     )
   } else if (spatial_type == "gp") {
     # NNGP Laplace at fixed hyperparameters, with an optional iid RE block
@@ -934,6 +941,9 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
 #' @param n_threads OpenMP threads.
 #' @param weights Optional per-observation likelihood weights (length
 #'   `length(y)`), scaling each row's log-density, score and Fisher curvature.
+#' @param beta_prior Normalized fixed-effect prior (`.normalize_beta_prior()`,
+#'   per-coefficient `mean` / `sd` of length `ncol(X)`), `NULL` for the engine
+#'   default.
 #' @return The raw `cpp_laplace_fit_spde` result list (mode, log_det_Q,
 #'   log_marginal, n_iter, converged), augmented with `range`, `sigma`,
 #'   and the spatial spec for downstream prediction.
@@ -943,7 +953,7 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
                              range = NULL, sigma = NULL,
                              re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                              max_iter = 100L, tol = 1e-6, n_threads = 1L,
-                             offset = NULL, weights = NULL) {
+                             offset = NULL, weights = NULL, beta_prior = NULL) {
   if (is.null(range)) range <- spatial$prior_range[1]
   if (is.null(sigma)) sigma <- spatial$prior_sigma[1]
 
@@ -958,7 +968,7 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
       family = family, phi = phi, range = range, sigma = sigma,
       re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       max_iter = max_iter, tol = tol, n_threads = n_threads, offset = offset,
-      weights = weights,
+      weights = weights, beta_prior = beta_prior,
       order = .spde_rational_order(spatial)
     )
   } else {
@@ -989,7 +999,8 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
       rational_poles_nullable = if (!rat$is_integer) rat$poles else NULL,
       rational_weights_nullable = if (!rat$is_integer) rat$weights else NULL,
       offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
-      weights_nullable = if (is.null(weights)) NULL else as.numeric(weights)
+      weights_nullable = if (is.null(weights)) NULL else as.numeric(weights),
+      beta_prior = beta_prior
     )
 
     result$range <- range

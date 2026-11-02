@@ -2440,8 +2440,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_laplace_fit_spde
-Rcpp::List cpp_laplace_fit_spde(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p, int n_obs, int n_mesh, Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, double kappa, double tau_spde, std::string family, double phi, int alpha, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::NumericVector> weights_nullable);
-RcppExport SEXP _tulpa_cpp_laplace_fit_spde(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP A_xSEXP, SEXP A_iSEXP, SEXP A_pSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP kappaSEXP, SEXP tau_spdeSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP alphaSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP rational_poles_nullableSEXP, SEXP rational_weights_nullableSEXP, SEXP offset_nullableSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP weights_nullableSEXP) {
+Rcpp::List cpp_laplace_fit_spde(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p, int n_obs, int n_mesh, Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, double kappa, double tau_spde, std::string family, double phi, int alpha, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::NumericVector> weights_nullable, Rcpp::Nullable<Rcpp::List> beta_prior);
+RcppExport SEXP _tulpa_cpp_laplace_fit_spde(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP A_xSEXP, SEXP A_iSEXP, SEXP A_pSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP kappaSEXP, SEXP tau_spdeSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP alphaSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP rational_poles_nullableSEXP, SEXP rational_weights_nullableSEXP, SEXP offset_nullableSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP weights_nullableSEXP, SEXP beta_priorSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -2475,13 +2475,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type weights_nullable(weights_nullableSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_spde(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi, alpha, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable, offset_nullable, compute_skew, skew_idx, weights_nullable));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type beta_prior(beta_priorSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_spde(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi, alpha, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable, offset_nullable, compute_skew, skew_idx, weights_nullable, beta_prior));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_laplace_fit_spde_precomputed
-Rcpp::List cpp_laplace_fit_spde_precomputed(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, int n_obs, int n_mesh, Rcpp::IntegerVector Q_p, Rcpp::IntegerVector Q_i, Rcpp::NumericVector Q_x, Rcpp::NumericVector Aeff_x, Rcpp::IntegerVector Aeff_i, Rcpp::IntegerVector Aeff_p, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::NumericVector> weights_nullable);
-RcppExport SEXP _tulpa_cpp_laplace_fit_spde_precomputed(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP Q_pSEXP, SEXP Q_iSEXP, SEXP Q_xSEXP, SEXP Aeff_xSEXP, SEXP Aeff_iSEXP, SEXP Aeff_pSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP offset_nullableSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP weights_nullableSEXP) {
+Rcpp::List cpp_laplace_fit_spde_precomputed(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, int n_obs, int n_mesh, Rcpp::IntegerVector Q_p, Rcpp::IntegerVector Q_i, Rcpp::NumericVector Q_x, Rcpp::NumericVector Aeff_x, Rcpp::IntegerVector Aeff_i, Rcpp::IntegerVector Aeff_p, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::NumericVector> weights_nullable, Rcpp::Nullable<Rcpp::List> beta_prior);
+RcppExport SEXP _tulpa_cpp_laplace_fit_spde_precomputed(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP Q_pSEXP, SEXP Q_iSEXP, SEXP Q_xSEXP, SEXP Aeff_xSEXP, SEXP Aeff_iSEXP, SEXP Aeff_pSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP offset_nullableSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP weights_nullableSEXP, SEXP beta_priorSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -2509,7 +2510,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type weights_nullable(weights_nullableSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_spde_precomputed(y, n_trials, X, re_idx, n_re_groups, sigma_re, n_obs, n_mesh, Q_p, Q_i, Q_x, Aeff_x, Aeff_i, Aeff_p, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable, compute_skew, skew_idx, weights_nullable));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type beta_prior(beta_priorSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_spde_precomputed(y, n_trials, X, re_idx, n_re_groups, sigma_re, n_obs, n_mesh, Q_p, Q_i, Q_x, Aeff_x, Aeff_i, Aeff_p, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable, compute_skew, skew_idx, weights_nullable, beta_prior));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3190,8 +3192,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_tulpa_get_integrator_cpp", (DL_FUNC) &_tulpa_tulpa_get_integrator_cpp, 0},
     {"_tulpa_cpp_selected_inversion_diagonal", (DL_FUNC) &_tulpa_cpp_selected_inversion_diagonal, 4},
     {"_tulpa_cpp_spde_field_se", (DL_FUNC) &_tulpa_cpp_spde_field_se, 2},
-    {"_tulpa_cpp_laplace_fit_spde", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde, 30},
-    {"_tulpa_cpp_laplace_fit_spde_precomputed", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde_precomputed, 24},
+    {"_tulpa_cpp_laplace_fit_spde", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde, 31},
+    {"_tulpa_cpp_laplace_fit_spde_precomputed", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde_precomputed, 25},
     {"_tulpa_cpp_nested_laplace_spde", (DL_FUNC) &_tulpa_cpp_nested_laplace_spde, 38},
     {"_tulpa_cpp_stochastic_log_determinant", (DL_FUNC) &_tulpa_cpp_stochastic_log_determinant, 7},
     {"_tulpa_cpp_tgmrf_nuts_joint", (DL_FUNC) &_tulpa_cpp_tgmrf_nuts_joint, 24},

@@ -950,8 +950,8 @@
   if (input == "spde") {
     # Continuous Matern SPDE field, nested-Laplace integrated over (range, sigma)
     # by fit_spde() (its own CCD / grid engine). fit_spde() takes the design
-    # bundle (y, X, offset) plus the self-contained SPDE spec; it has no RE /
-    # latent / beta_prior support, so reject those loudly rather than drop them.
+    # bundle (y, X, offset), the fixed-effect prior and the self-contained SPDE
+    # spec; it has no latent support, so reject that loudly rather than drop it.
     if (length(latent_blocks) > 0L) {
       stop("An SPDE spatial field cannot be combined with latent(...) blocks ",
            "through tulpa(); fit_spde() integrates a single Matern field. Drop ",
@@ -973,10 +973,6 @@
       spde_re_n     <- as.integer(re[[1]]$n_groups)
       spde_sigma_re <- sigma_re[1]
     }
-    if (!is.null(beta_prior)) {
-      stop("`beta_prior` is not supported on the SPDE path; fit_spde() uses ",
-           "the engine default fixed-effect prior.", call. = FALSE)
-    }
     spde_fams <- BACKEND_REGISTRY$spde$families
     if (!family %in% spde_fams) {
       stop(sprintf(
@@ -994,6 +990,7 @@
       nested_laplace = TRUE,
       phi            = phi,
       offset         = bundle$offset,
+      beta_prior     = beta_prior %||% beta_prior_default,
       re_idx         = spde_re_idx,
       n_re_groups    = spde_re_n,
       sigma_re       = spde_sigma_re,
@@ -1125,25 +1122,23 @@
         # random-intercept (1 | g) term may ride alongside the field -- the
         # spatial solvers consume a single RE block (re_list[[1]]); richer RE
         # structure is not supported here. An offset() is threaded into the
-        # field's linear predictor; beta_prior is not threaded through the
-        # spatial solvers, so reject it loudly rather than drop.
+        # field's linear predictor. The SPDE solver carries the fixed-effect
+        # prior; the other spatial solvers hold the engine default, and
+        # dispatch_laplace_spatial() refuses a prior supplied to them.
         re <- bundle$re_terms %||% list()
         if (length(re) > 1L || (length(re) == 1L && !.is_scalar_re_intercept(re[[1]]))) {
           stop("Spatial Laplace supports at most one random-intercept (1 | g) ",
                "term alongside the spatial field; drop the extra RE term(s).",
                call. = FALSE)
         }
-        if (!is.null(beta_prior)) {
-          stop("`beta_prior` is not supported on the spatial Laplace path; the ",
-               "spatial solvers use the engine default fixed-effect prior. Drop ",
-               "`beta_prior`, or use a sampler for a custom prior under a field.",
-               call. = FALSE)
-        }
+        carries_prior <- identical(tolower(spatial$type %||% ""), "spde")
         return(c(list(
           y = bundle$y, n_trials = n_trials, X = bundle$X,
           re_list = .bundle_to_re_list(bundle, sigma_re),
           family = family, phi = phi, spatial = spatial,
-          offset = bundle$offset
+          offset = bundle$offset,
+          beta_prior = if (carries_prior) beta_prior %||% beta_prior_default
+                       else beta_prior
         ), numerics))
       }
       return(c(list(
@@ -1742,9 +1737,10 @@
 #'   effects. `NULL` takes the engine default, `prior_normal(0, 2.5)`, on every
 #'   backend that carries a fixed-effect prior -- the prior is a modelling
 #'   statement, so the backend `mode = "auto"` selects does not change it. The
-#'   nested-Laplace path solves every outer cell under it; the SPDE and the
-#'   conditional spatial-Laplace paths solve under the same default and refuse
-#'   a supplied `beta_prior`. The resolved prior is reported on the fit as
+#'   nested-Laplace path and the SPDE path ([fit_spde()]) solve every outer
+#'   cell under it; the conditional spatial-Laplace paths for an areal, NNGP,
+#'   proper-CAR or HSGP field solve under the same default and refuse a
+#'   supplied `beta_prior`. The resolved prior is reported on the fit as
 #'   `$beta_prior`.
 #' @param re_prior Optional `list()` of random-effect / variance-component
 #'   hyperpriors (statistical, so they live in the signature rather than in

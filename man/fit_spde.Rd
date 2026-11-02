@@ -15,6 +15,7 @@ fit_spde(
   nested_laplace = is.null(range) || is.null(sigma),
   phi = 1,
   offset = NULL,
+  beta_prior = NULL,
   re_idx = NULL,
   n_re_groups = 0L,
   sigma_re = 1,
@@ -59,6 +60,13 @@ was estimated or conditioned on.}
 
 \item{offset}{Optional fixed additive term on the linear predictor
 (\verb{eta = offset + X beta + A w}), length \code{length(y)}; \code{NULL} -> no offset.}
+
+\item{beta_prior}{Optional Gaussian prior on the fixed effects, as
+\code{list(mean, sd)} with each entry a scalar or a length-\code{ncol(X)} vector
+(\code{sd = Inf} leaves a coefficient unpenalized). \code{NULL} (default) is the
+engine default \code{beta ~ N(0, 2.5^2)}. Every inner solve carries it, so the
+nested marginal over \verb{(range, sigma)} is the marginal under this prior.
+Under \code{mode = "nuts"} it must be mean-zero with one scalar \code{sd}.}
 
 \item{re_idx, n_re_groups, sigma_re}{Optional single iid random-intercept
 \code{(1 | g)} term alongside the Matern field: \code{re_idx} is a length-\code{length(y)}

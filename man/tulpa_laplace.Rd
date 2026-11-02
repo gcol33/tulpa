@@ -95,8 +95,9 @@ list with element \code{sd} (prior standard deviation, required) and optional
 coefficient) or a length-\code{ncol(X)} vector. Adds
 \code{sum((beta - mean)^2 / (2 * sd^2))} to the negative log-posterior, so the
 mode is the penalized (MAP) estimate. A coefficient's \code{sd} may be \code{+Inf},
-which sets its precision to 0 (no penalty on that coefficient). Not
-supported on the spatial path.}
+which sets its precision to 0 (no penalty on that coefficient). On the
+spatial path it is carried by an SPDE field's solver; the areal, NNGP,
+proper-CAR and HSGP solvers hold the engine default and refuse it.}
 
 \item{return_re_cov}{If \code{TRUE}, additionally return per-group marginal
 posterior covariance blocks \code{Cov(u_g | y, Sigma)} -- one

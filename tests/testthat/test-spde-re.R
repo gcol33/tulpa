@@ -1,8 +1,7 @@
 # SPDE path composability (#158f): a single iid random-intercept `(1 | g)` can
 # ride alongside the Matern field, conditioned on sigma_re, through both
-# fit_spde() and the tulpa() front door. beta_prior and latent() stay
-# unsupported (kernel has no fixed-effect-prior arg), and random slopes / a
-# fractional field with an RE term are rejected.
+# fit_spde() and the tulpa() front door. latent() stays unsupported, and random
+# slopes / a fractional field with an RE term are rejected.
 
 # The mesh (about 95 nodes, interior plus an outer extension) only carries the
 # simulated field: the blocks below read the routing and the fixed-effect

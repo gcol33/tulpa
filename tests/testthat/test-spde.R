@@ -654,20 +654,24 @@ test_that("fit_spde absorbs a constant offset into the intercept (gcol33/tulpa#7
   y  <- rpois(ss$n_obs, exp(0.4))
   r  <- ss$spec$prior_range[1]; s <- ss$spec$prior_sigma[1]
   cc <- 0.5
-  fit <- function(o) fit_spde(
+  fit <- function(o, bp = NULL) fit_spde(
     y = y, X = X, spatial = ss$spec, family = "poisson",
     n_trials = rep(1L, ss$n_obs), range = r, sigma = s,
-    nested_laplace = FALSE, offset = o,
+    nested_laplace = FALSE, offset = o, beta_prior = bp,
     control = list(max_iter = 300L, tol = 1e-12))
 
+  # eta = c + b0 + field under b0 ~ N(m, s^2) is the model eta = b0' + field
+  # under b0' = b0 + c ~ N(m + c, s^2). So the fit with a constant offset c and
+  # the intercept prior moved to mean -c is the default-prior fit exactly: the
+  # intercept shifts by -c, the field and the log-marginal are unchanged. Under
+  # the default prior alone the offset is absorbed only up to the prior's pull
+  # on the shifted intercept, a property of the prior, not of the solver.
   base <- fit(NULL)
-  con  <- fit(rep(cc, ss$n_obs))
-  # eta = c + b0 + field is invariant under (b0 -> b0 - c): the fitted intercept
-  # shifts by -c, the centered field and log-marginal unchanged to the weak
-  # intercept-prior tolerance.
-  expect_equal(con$beta[1], base$beta[1] - cc, tolerance = 1e-3)
-  expect_equal(con$spatial_effects, base$spatial_effects, tolerance = 1e-3)
-  expect_equal(con$log_marginal, base$log_marginal, tolerance = 1e-2)
+  con  <- fit(rep(cc, ss$n_obs),
+              list(mean = -cc, sd = tulpa:::cpp_test_default_sigma_beta()))
+  expect_equal(con$beta[1], base$beta[1] - cc, tolerance = 1e-8)
+  expect_equal(con$spatial_effects, base$spatial_effects, tolerance = 1e-8)
+  expect_equal(con$log_marginal, base$log_marginal, tolerance = 1e-8)
 })
 
 test_that("fit_spde nested integrates offset (offset = 0 == no offset) (gcol33/tulpa#72)", {

@@ -127,9 +127,10 @@ log-posterior samplers, and the ModelData samplers. Backends without a
 effects. \code{NULL} takes the engine default, \code{prior_normal(0, 2.5)}, on every
 backend that carries a fixed-effect prior -- the prior is a modelling
 statement, so the backend \code{mode = "auto"} selects does not change it. The
-nested-Laplace path solves every outer cell under it; the SPDE and the
-conditional spatial-Laplace paths solve under the same default and refuse
-a supplied \code{beta_prior}. The resolved prior is reported on the fit as
+nested-Laplace path and the SPDE path (\code{\link[=fit_spde]{fit_spde()}}) solve every outer
+cell under it; the conditional spatial-Laplace paths for an areal, NNGP,
+proper-CAR or HSGP field solve under the same default and refuse a
+supplied \code{beta_prior}. The resolved prior is reported on the fit as
 \verb{$beta_prior}.}
 
 \item{re_prior}{Optional \code{list()} of random-effect / variance-component

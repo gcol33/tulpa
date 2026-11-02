@@ -208,12 +208,14 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' (`.spde_assemble_at()`). Its log marginal is the precision-space Laplace
 #' marginal of the stacked latent, which for a gaussian response is the exact
 #' conjugate marginal. `phi` follows the engine convention (the Gaussian
-#' residual variance) and is converted for the kernel here.
+#' residual variance) and is converted for the kernel here. `beta_prior` is
+#' the normalized fixed-effect prior (`.normalize_beta_prior()`), `NULL` for
+#' the engine default.
 #' @noRd
 .spde_fractional_solve <- function(asm, y, n_trials, X, family, phi,
                                    re_idx, n_re_groups, sigma_re,
                                    max_iter, tol, n_threads, offset,
-                                   weights = NULL) {
+                                   weights = NULL, beta_prior = NULL) {
   Qg <- as(asm$Q, "generalMatrix")
   n  <- length(y)
   cpp_laplace_fit_spde_precomputed(
@@ -230,7 +232,8 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
     max_iter = as.integer(max_iter), tol = tol,
     n_threads = as.integer(n_threads),
     offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
-    weights_nullable = if (is.null(weights)) NULL else as.numeric(weights))
+    weights_nullable = if (is.null(weights)) NULL else as.numeric(weights),
+    beta_prior = beta_prior)
 }
 
 #' Laplace log-marginal of a fractional SPDE fit at (range, sigma)
@@ -243,13 +246,14 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' @noRd
 .spde_nested_logmarginal_at <- function(spatial, range, sigma, y, X, family, phi,
                                         n_trials, order, max_iter, tol, n_threads,
-                                        offset) {
+                                        offset, beta_prior = NULL) {
   asm <- tryCatch(.spde_assemble_at(spatial, range, sigma, order = order),
                   error = function(e) NULL)
   fit <- if (!is.null(asm)) tryCatch(.spde_fractional_solve(
     asm, y = y, n_trials = n_trials, X = X, family = family, phi = phi,
     re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0, max_iter = max_iter,
-    tol = tol, n_threads = n_threads, offset = offset),
+    tol = tol, n_threads = n_threads, offset = offset,
+    beta_prior = beta_prior),
     error = function(e) NULL)
   if (is.null(fit) || !isTRUE(fit$converged) || !is.finite(fit$log_marginal)) {
     return(list(log_marginal = -Inf, n_iter = fit$n_iter %||% 0L,
@@ -273,14 +277,14 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
                                         family, phi, range, sigma,
                                         re_idx, n_re_groups, sigma_re,
                                         max_iter, tol, n_threads, offset,
-                                        weights = NULL,
+                                        weights = NULL, beta_prior = NULL,
                                         order = .spde_rational_order(spatial)) {
   asm <- .spde_assemble_at(spatial, range, sigma, order = order)
   result <- .spde_fractional_solve(
     asm, y = y, n_trials = n_trials, X = X, family = family, phi = phi,
     re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
     max_iter = max_iter, tol = tol, n_threads = n_threads, offset = offset,
-    weights = weights)
+    weights = weights, beta_prior = beta_prior)
 
   ms     <- ncol(X) + as.integer(n_re_groups)
   x_lat  <- result$mode[(ms + 1L):(ms + asm$n_latent)]
