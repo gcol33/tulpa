@@ -104,7 +104,7 @@ test_that("a fractional fit runs clean and integrates no declined coordinate", {
   # Unchanged by the decline: the coefficients are what they were while the
   # warnings were being raised, because no warned coordinate was ever in the
   # integration.
-  expect_equal(unname(coef(fit)[1:2]), c(0.675, 0.557), tolerance = 0.01)
+  expect_equal(unname(coef(fit)[1:2]), c(0.702, 0.543), tolerance = 0.01)
 
   # And the grid it integrates lives well inside the domain: the extent is
   # 13.8, the largest node 1.53.

@@ -25,7 +25,12 @@ spatial_spde(
 is built automatically from \code{coords}.}
 
 \item{boundary}{Optional boundary: a two-column matrix of polygon vertices,
-an sf polygon, or NULL for convex hull with extension.}
+or an sf polygon. NULL (the default) is the convex hull of the
+coordinates widened on every side by a fifth of their bounding-box
+diagonal (the default range prior's median), so the observations sit
+away from the band near the domain edge where the SPDE's boundary
+condition inflates the field variance. A boundary that ends at the data
+biases the fitted sigma and range low.}
 
 \item{max_edge}{Maximum edge length for mesh refinement. A single value
 or \code{c(inner, outer)}.}

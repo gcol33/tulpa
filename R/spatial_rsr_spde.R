@@ -302,7 +302,12 @@ compute_rsr_projection <- function(X) {
 #' @param mesh A pre-built `tulpa_mesh` object. If NULL (default), a mesh
 #'   is built automatically from `coords`.
 #' @param boundary Optional boundary: a two-column matrix of polygon vertices,
-#'   an sf polygon, or NULL for convex hull with extension.
+#'   or an sf polygon. NULL (the default) is the convex hull of the
+#'   coordinates widened on every side by a fifth of their bounding-box
+#'   diagonal (the default range prior's median), so the observations sit
+#'   away from the band near the domain edge where the SPDE's boundary
+#'   condition inflates the field variance. A boundary that ends at the data
+#'   biases the fitted sigma and range low.
 #' @param max_edge Maximum edge length for mesh refinement. A single value
 #'   or `c(inner, outer)`.
 #' @param cutoff Minimum distance between mesh vertices. Default 0.
@@ -354,7 +359,8 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
   .check_coords_finite(obs_coords, "spatial_spde()")
   .check_spde_prior_args(prior_range, prior_sigma, "spatial_spde()")
   prior_stated <- c(range = !is.null(prior_range), sigma = !is.null(prior_sigma))
-  prior_range <- prior_range %||% .nl_default_range_prior(obs_coords)
+  prior_range_default <- .nl_default_range_prior(obs_coords)
+  prior_range <- prior_range %||% prior_range_default
   prior_sigma <- prior_sigma %||% .nl_scale_anchor()
   if (is.null(prior_range)) {
     stop("spatial_spde(): the coordinates span a single point, so no default ",
@@ -368,8 +374,10 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
   # CDT's "Duplicate vertex detected"; gcol33/tulpa#909). Every observation,
   # repeats included, still gets its own row of the projector A below.
   if (is.null(mesh)) {
-    mesh_args <- list(coords = unique(obs_coords), cutoff = cutoff)
-    if (!is.null(boundary)) mesh_args$boundary <- boundary
+    sites <- unique(obs_coords)
+    mesh_args <- list(coords = sites, cutoff = cutoff,
+                      boundary = boundary %||%
+                        .spde_default_boundary(sites, prior_range_default[1]))
     if (!is.null(max_edge)) mesh_args$max_edge <- max_edge
     mesh <- do.call(tulpaMesh::tulpa_mesh, mesh_args)
   }
@@ -506,6 +514,28 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
 # sum is its diagonal, so both inputs reach the same C-tilde.
 .spde_lumped_mass <- function(C) {
   as.numeric(Matrix::rowSums(C))
+}
+
+# The default mesh domain: the convex hull of the sites widened by `width` on
+# every side. The SPDE is solved with Neumann boundary conditions, which
+# inflate the field's variance and shorten its correlation near the edge of
+# the domain over a band about one range wide; a domain that ends at the data
+# puts the outermost observations inside that band, and the fit then reads
+# sigma and range low. `width` is the data-anchored range (a fifth of the
+# coordinates' bounding-box diagonal, the default range prior's median). Each
+# hull vertex is pushed out along 16 directions and the hull of those points
+# taken, which lies at least width * cos(pi / 16) from the data hull. NULL
+# (the coordinates span a single point) leaves the domain to tulpa_mesh().
+.spde_default_boundary <- function(sites, width) {
+  if (is.null(width) || !is.finite(width) || width <= 0) return(NULL)
+  sites <- as.matrix(sites)
+  hull <- sites[grDevices::chull(sites), , drop = FALSE]
+  ang <- 2 * pi * (0:15) / 16
+  ring <- width * cbind(cos(ang), sin(ang))
+  pts <- do.call(rbind, lapply(seq_len(nrow(hull)), function(i) {
+    sweep(ring, 2L, hull[i, ], "+")
+  }))
+  pts[grDevices::chull(pts), , drop = FALSE]
 }
 
 # A stated SPDE anchor pair is checked where the user set it, so a range or
