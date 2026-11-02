@@ -199,6 +199,7 @@ List cpp_re_cov_gibbs_sweep(std::string family, double phi,
         _["log_prob"]    = wrap(out.log_joint),
         _["Sigma_draws"] = sig,
         _["accept_beta"] = out.accept_beta,
+        _["accept_beta_newton"] = out.accept_beta_newton,
         _["accept_b"]    = out.accept_b,
         _["n_kept"]      = out.n_kept);
 }

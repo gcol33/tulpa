@@ -28,3 +28,16 @@ test_that("the fixed-effect proposal reads the conditional precision", {
   expect_gt(.rcg_ess(f$draws[, "x"]), 200)
   expect_gt(.rcg_ess(f$draws[, "(Intercept)"]), 1000)
 })
+
+test_that("the Newton-step move mixes an auto-routed (1 | g) binomial at the default length", {
+  set.seed(2)
+  n <- 300; x <- rnorm(n)
+  d1 <- data.frame(y = rbinom(n, 1, plogis(-0.3 + x)), x = x,
+                   g = factor(sample(1:3, n, TRUE)))
+  expect_no_warning(fa <- tulpa(y ~ x + (1 | g), d1, family = "binomial"))
+  expect_identical(fa$backend, "re_cov_gibbs")
+  # 2000 kept sweeps. With the random walk alone the slope's effective size sat
+  # at 144-308 over 40 simulated data sets; with the Newton-step move, 754-1504.
+  expect_gt(.rcg_ess(fa$draws[, "x"]), 600)
+  expect_gt(fa$accept$beta_newton, 0.5)
+})

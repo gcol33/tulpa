@@ -102,7 +102,12 @@ log-prior, which corrects the non-Gaussianity the Laplace approximation
 misses. The linear predictor holds every other term's contribution fixed.
 \item \strong{\verb{beta | b, Sigma, y}} -- random-walk Metropolis, proposal shape from the
 fixed-effect block of the joint Laplace precision (the conditional of
-\code{beta} given the random effects).
+\code{beta} given the random effects), followed by a Newton-step Metropolis
+move whose proposal is the Laplace approximation of that conditional at
+the current point, \verb{N(beta + P^-1 g, P^-1)} with \code{g} and \code{P} its gradient
+and negative Hessian (Gamerman 1997). On a near-Gaussian conditional that
+proposal is close to an independent draw. \code{accept$beta_newton} on the fit
+is its acceptance rate.
 \item \strong{\code{Sigma_m | b_m}} -- exact conjugate draw. A correlated block draws the
 full matrix from \verb{IW(prior_df + G_m, prior_scale + sum_g b_\{m,g\} b_\{m,g\}')};
 an uncorrelated (diagonal) block draws each variance from its scalar
@@ -138,6 +143,8 @@ fit$Sigma_mean        # exact-debias RE covariance posterior mean
 }
 }
 \references{
+Gamerman (1997). Sampling from the posterior distribution in generalized
+linear mixed models. \emph{Statistics and Computing} 7(1):57-68.
 Lewandowski, Kurowicka & Joe (2009). Generating random correlation matrices
 based on vines and extended onion method. \emph{Journal of Multivariate
 Analysis} 100(9):1989-2001.

@@ -14,7 +14,9 @@
 #       (return_re_cov) and a per-term adapted scale. MH against the exact group
 #       likelihood + Gaussian RE prior corrects the non-Gaussianity.
 #   * beta | b, Sigma, y    -- random-walk Metropolis, proposal shape from the
-#       fixed-effect block of the joint Laplace precision.
+#       fixed-effect block of the joint Laplace precision, then a Newton-step
+#       Metropolis move: the Laplace approximation of the conditional at the
+#       current point, N(beta + P^-1 g, P^-1), as the proposal (Gamerman 1997).
 #   * Sigma_m | b_m         -- EXACT conjugate draw. For a CORRELATED term, under
 #       an inverse-Wishart prior IW(nu0, Lambda0) and b_{m,g} ~ N(0, Sigma_m)
 #       i.i.d. over G_m groups, Sigma_m | b_m ~ IW(nu0 + G_m, Lambda0 + sum_g
@@ -153,7 +155,12 @@
 #'   misses. The linear predictor holds every other term's contribution fixed.
 #' - **`beta | b, Sigma, y`** -- random-walk Metropolis, proposal shape from the
 #'   fixed-effect block of the joint Laplace precision (the conditional of
-#'   `beta` given the random effects).
+#'   `beta` given the random effects), followed by a Newton-step Metropolis
+#'   move whose proposal is the Laplace approximation of that conditional at
+#'   the current point, `N(beta + P^-1 g, P^-1)` with `g` and `P` its gradient
+#'   and negative Hessian (Gamerman 1997). On a near-Gaussian conditional that
+#'   proposal is close to an independent draw. `accept$beta_newton` on the fit
+#'   is its acceptance rate.
 #' - **`Sigma_m | b_m`** -- exact conjugate draw. A correlated block draws the
 #'   full matrix from `IW(prior_df + G_m, prior_scale + sum_g b_{m,g} b_{m,g}')`;
 #'   an uncorrelated (diagonal) block draws each variance from its scalar
@@ -231,6 +238,8 @@
 #'   [tulpa_laplace()] for the pilot solve and per-group covariance blocks.
 #'
 #' @references
+#' Gamerman (1997). Sampling from the posterior distribution in generalized
+#' linear mixed models. \emph{Statistics and Computing} 7(1):57-68.
 #' Lewandowski, Kurowicka & Joe (2009). Generating random correlation matrices
 #' based on vines and extended onion method. \emph{Journal of Multivariate
 #' Analysis} 100(9):1989-2001.
@@ -457,7 +466,9 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
     n_samples   = n_kept,
     n_params    = p,
     N           = n_obs,
-    accept      = list(beta = out$accept_beta, b = out$accept_b),
+    accept      = list(beta = out$accept_beta,
+                       beta_newton = out$accept_beta_newton,
+                       b = out$accept_b),
     n_kept      = n_kept,
     integration = integration,
     n_blocks    = M,

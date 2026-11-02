@@ -11,6 +11,14 @@
 //                             the other blocks' RE contributions carried in that
 //                             block's per-observation offset; plus a Gaussian
 //                             beta prior. Proposal shape = supplied L_beta.
+//                             Then a Newton-step Metropolis move on the same
+//                             conditional (Gamerman 1997): the proposal is the
+//                             Laplace approximation at the current point,
+//                             N(beta + P^-1 g, P^-1), g and P the gradient and
+//                             negative Hessian of log p(beta | b, Sigma, y),
+//                             accepted against the reverse proposal. On a
+//                             near-Gaussian conditional it is close to an
+//                             independent draw, which a random walk is not.
 //   * b_{m,g} | beta, Sigma -- per-(block, group) random-walk Metropolis. eta =
 //                             X beta + (other blocks' RE) + Z_m b; the MH ratio
 //                             is the group log-lik + the Gaussian RE log-prior
@@ -266,7 +274,25 @@ struct GibbsOutput {
     // the conjugate Sigma prior, with Sigma on its natural scale.
     Eigen::VectorXd log_joint;
     double accept_beta = 0.0;
+    double accept_beta_newton = 0.0;   // Newton-step move
     double accept_b    = 0.0;
+};
+
+// The Laplace approximation of log p(beta | b, Sigma, y) at one point: the
+// value `lp`, the Newton mean beta + P^-1 g, the factor of P = L L' and
+// log|L|. `ok` is false where P is not positive definite or a value is not
+// finite.
+struct BetaNewtonStep {
+    double lp = 0.0;
+    Eigen::VectorXd mean;
+    Eigen::LLT<Eigen::MatrixXd> llt;
+    double half_logdet = 0.0;
+    bool ok = false;
+    // log N(x; mean, P^-1) up to the constant shared by both directions.
+    double log_q(const Eigen::VectorXd& x) const {
+        const Eigen::VectorXd r = llt.matrixU() * (x - mean);
+        return half_logdet - 0.5 * r.squaredNorm();
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -342,7 +368,7 @@ inline GibbsOutput run_glmm_gibbs(
     long acc_beta_rec = 0, acc_b_rec = 0, n_b_rec = 0;
     int kept = 0;
 
-    std::vector<double> gscr(0), hscr(0);
+    long acc_newton_rec = 0;
 
     for (int sweep = 1; sweep <= n_sweep; ++sweep) {
         const bool adapting  = sweep <= cfg.n_burnin;
@@ -352,19 +378,35 @@ inline GibbsOutput run_glmm_gibbs(
         // Total data log-lik via block 0's group partition (offset carries the
         // other blocks' RE; X beta via rebind), plus the Gaussian beta prior.
         push_offset(0);
-        const int nc0 = blocks[0].nc;
-        gscr.assign(nc0, 0.0); hscr.assign((std::size_t)nc0 * nc0, 0.0);
         auto beta_loglik = [&](const Eigen::VectorXd& bvec) -> double {
             oracles[0]->rebind(bvec.data());
-            double ll = 0.0, logL;
-            for (int g = 0; g < blocks[0].n_groups; ++g) {
-                Eigen::VectorXd bg = B[0].row(g).transpose();
-                oracles[0]->grad_hess(g, bg.data(), logL, gscr.data(), hscr.data());
-                ll += logL;
-            }
+            double ll = oracles[0]->theta_loglik(B[0], nullptr, nullptr);
             for (int j = 0; j < p; ++j)
                 ll += R::dnorm(bvec(j), cfg.beta_prior_mean(j), cfg.beta_prior_sd(j), 1);
             return ll;
+        };
+        auto beta_newton_step = [&](const Eigen::VectorXd& bvec) {
+            BetaNewtonStep st;
+            oracles[0]->rebind(bvec.data());
+            Eigen::VectorXd gr;
+            Eigen::MatrixXd P;
+            double lp = oracles[0]->theta_loglik(B[0], &gr, &P);
+            for (int j = 0; j < p; ++j) {
+                const double s2 = cfg.beta_prior_sd(j) * cfg.beta_prior_sd(j);
+                lp += R::dnorm(bvec(j), cfg.beta_prior_mean(j),
+                               cfg.beta_prior_sd(j), 1);
+                gr(j) -= (bvec(j) - cfg.beta_prior_mean(j)) / s2;
+                P(j, j) += 1.0 / s2;
+            }
+            if (!std::isfinite(lp) || !gr.allFinite() || !P.allFinite()) return st;
+            st.llt.compute(P);
+            if (st.llt.info() != Eigen::Success) return st;
+            st.lp = lp;
+            st.mean = bvec + st.llt.solve(gr);
+            st.half_logdet =
+                st.llt.matrixLLT().diagonal().array().log().sum();
+            st.ok = st.mean.allFinite() && std::isfinite(st.half_logdet);
+            return st;
         };
 
         double ll_cur = beta_loglik(beta);
@@ -378,6 +420,31 @@ inline GibbsOutput run_glmm_gibbs(
         if (adapting)
             s_beta = rw_adapt_scale(s_beta, gamma_t, acc_beta ? 1.0 : 0.0,
                                     tgt_beta);
+
+        // --- beta | b, Sigma : Newton-step Metropolis -----------------------
+        // A point whose negative Hessian is not positive definite proposes
+        // nothing from there and cannot be proposed to (its reverse density
+        // does not exist), so the move is reversible on its own.
+        bool acc_newton = false;
+        {
+            const BetaNewtonStep cur = beta_newton_step(beta);
+            if (cur.ok) {
+                Eigen::VectorXd zn(p);
+                for (int j = 0; j < p; ++j) zn(j) = R::rnorm(0.0, 1.0);
+                const Eigen::VectorXd prop =
+                    cur.mean + cur.llt.matrixU().solve(zn);
+                const BetaNewtonStep nxt = beta_newton_step(prop);
+                if (nxt.ok) {
+                    const double log_ratio = nxt.lp + nxt.log_q(beta)
+                                             - cur.lp - cur.log_q(prop);
+                    if (rw_accept(log_ratio)) {
+                        beta = prop;
+                        acc_newton = true;
+                    }
+                }
+            }
+            for (int m = 0; m < M; ++m) oracles[m]->rebind(beta.data());
+        }
 
         // --- b_{m,g} | beta, Sigma : per-(block, group) RW Metropolis -------
         long n_acc_b = 0, n_prop_b = 0;
@@ -461,6 +528,7 @@ inline GibbsOutput run_glmm_gibbs(
             }
             out.log_joint(kept) = lj;
             acc_beta_rec += acc_beta ? 1 : 0;
+            acc_newton_rec += acc_newton ? 1 : 0;
             acc_b_rec    += n_acc_b;
             n_b_rec      += n_prop_b;
             ++kept;
@@ -474,6 +542,8 @@ inline GibbsOutput run_glmm_gibbs(
     // Roberts-Rosenthal target at a large `thin` is worth re-reading at
     // thin = 1.
     out.accept_beta = (n_kept > 0) ? static_cast<double>(acc_beta_rec) / n_kept : 0.0;
+    out.accept_beta_newton =
+        (n_kept > 0) ? static_cast<double>(acc_newton_rec) / n_kept : 0.0;
     out.accept_b    = (n_b_rec > 0) ? static_cast<double>(acc_b_rec) / n_b_rec
                                     : std::numeric_limits<double>::quiet_NaN();
     return out;

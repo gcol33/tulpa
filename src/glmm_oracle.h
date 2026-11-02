@@ -156,6 +156,30 @@ struct SingleArmGLMMOracle : REGroupOracle {
         for (int j = 0; j < n_theta; ++j) dl[j] = s(j);
     }
 
+    // Data log-likelihood over every group at the bound beta, with this block's
+    // random effects B (n_groups x d) and the offset. When `score` / `info` are
+    // non-null they receive its gradient in beta and the observed information
+    // -d^2 l / d beta^2 (p x p).
+    double theta_loglik(const Eigen::MatrixXd& B, Eigen::VectorXd* score,
+                        Eigen::MatrixXd* info) const {
+        double ll = 0.0;
+        if (score) score->setZero(n_theta);
+        if (info) info->setZero(n_theta, n_theta);
+        for (int g = 0; g < n_groups; ++g) {
+            const Eigen::VectorXd bg = B.row(g).transpose();
+            for (int i : rows_by_g[g]) {
+                const double eta = xb(i) + offset(i) + Z.row(i).dot(bg);
+                const GLMMElt e = glmm_elt(fam, eta, y(i), ntrials(i), phi_var);
+                ll += e.l;
+                if (score) score->noalias() += e.d1 * X.row(i).transpose();
+                if (info) {
+                    info->noalias() += (-e.d2) * (X.row(i).transpose() * X.row(i));
+                }
+            }
+        }
+        return ll;
+    }
+
     bool thread_safe() const override { return true; }
 };
 
