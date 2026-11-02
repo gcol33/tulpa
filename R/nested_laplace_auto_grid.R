@@ -1592,16 +1592,16 @@ auto_grid_place <- function(x)
 # `.joint_pareto_block_tags()` name a coordinate for EVERY axis of the family's
 # grid? A recentred axis is laid in that coordinate (`.nl_recenter_axis()`) and
 # the placement mode-find searches the whole grid in it (`.nl_placement_mode()`),
-# so one unguessable axis takes the fit's curvature with it. The five registry
-# families absent below are absent for a stated reason, and each records it on
-# the fit rather than passing in silence:
+# so one unguessable axis takes the fit's curvature with it. An AR(1)
+# autocorrelation is laid on `atanh`, so ar1 is listed. The registry families
+# absent below are absent for a stated reason, and each records it on the fit
+# rather than passing in silence:
 #
-#   * car_proper (`rho` on the adjacency eigenvalue interval), ar1 (`rho` an
-#     autocorrelation on (-1, 1)) and hsgp_mo (`rho` a cross-output
-#     correlation on (-1, 1)) each carry ONE axis the transform registry
-#     declines, so their scale axes are blocked with it. The fit says
-#     `unguessable_axis: rho`, which is also what tells a caller that pinning
-#     that axis themselves unblocks the rest.
+#   * car_proper (`rho` on the adjacency eigenvalue interval) and hsgp_mo
+#     (`rho` a cross-output correlation on (-1, 1)) each carry ONE axis the
+#     transform registry declines, so their scale axes are blocked with it. The
+#     fit says `unguessable_axis: rho`, which is also what tells a caller that
+#     pinning that axis themselves unblocks the rest.
 #   * mcar / miid hold their p(p+1)/2 log-Cholesky coordinates in a SINGLE
 #     matrix field (`logchol_grid`), so the field-to-axis binding this table is
 #     built on does not describe them at all, and the re-cross below would
@@ -1616,6 +1616,7 @@ auto_grid_place <- function(x)
     icar = c(tau_grid = "tau"),
     rw1  = c(tau_grid = "tau"),
     rw2  = c(tau_grid = "tau"),
+    ar1  = c(tau_grid = "tau", rho_grid = "rho"),
     iid  = c(sigma_grid = "sigma"),
     bym2 = c(sigma_grid = "sigma", rho_grid = "rho"),
     nngp = c(sigma2_grid = "sigma2", phi_gp_grid = "phi_gp"),

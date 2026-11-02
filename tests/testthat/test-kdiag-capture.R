@@ -200,13 +200,14 @@ test_that("the joint driver publishes the SELECTED proposal's ratios", {
 test_that("the joint driver publishes a moment-matched proposal's ratios", {
   skip_on_cran()
     # A skewed target the refinement loop DOES improve on: the reported k-hat
-    # comes from a later pass than the first. Same aperture contract.
+    # comes from a later pass than the first. Same aperture contract. The
+    # dispatch draws on its own fixed stream, so which candidate wins is a
+    # function of the target alone: this one is won by the moment-matched pass.
     res   <- .kcap_joint_res(sd_w = 1.0)
     refit <- function(tm) {
         u <- log(tm[, "sigma"])
-        stats::dgamma(u + 6, shape = 4, scale = 0.7, log = TRUE) - u
+        stats::dgamma(u + 6, shape = 4, scale = 0.5, log = TRUE) - u
     }
-    set.seed(21)
     k <- .kcap_run(function()
         tulpa:::.joint_pareto_k(res, refit, n_samples = 2000L))
 

@@ -325,11 +325,15 @@ test_that("joint multi-block (BYM2 copy + AR1 + IID) runs end-to-end", {
             prior = prior,
             copy = list(block = 1L, arm = "pos",
                         alpha_grid = c(0.5, 1.0, 1.5)),
-            control = list(max_iter = 30L, tol = 1e-5)
+            # The user grids are what this block reads: with every axis on a
+            # named coordinate (an ar1 rho on atanh), `integration = "auto"`
+            # lays a CCD over six axes instead.
+            control = list(max_iter = 30L, tol = 1e-5, integration = "grid")
         )
     )
 
     expect_s3_class(fit, "tulpa_nested_laplace_joint_multi")
+    expect_identical(fit$integration, "grid")
     expect_cells_solved(fit)
     expect_length(fit$block_moments, 3L)
 

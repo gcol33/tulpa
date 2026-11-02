@@ -32,7 +32,7 @@ test_that("spatiotemporal() and spatiotemporal_gp() refuse to build an unfitted 
 
   for (ty in c("I", "II", "III", "IV", "iid", "separable")) {
     expect_error(spatiotemporal(spatial = sp, temporal = tm, type = ty),
-                 "not fitted by any tulpa backend")
+                 "not fitted through tulpa()", fixed = TRUE)
   }
   expect_error(spatiotemporal_gp(~ lon + lat, time_var = "year", nn = 10),
                "not fitted by any tulpa backend")

@@ -71,7 +71,7 @@ test_that("every family absent from the table is absent for a stated reason", {
     skip_on_cran_budget()
     ax <- .reg_axis_names()
     absent <- setdiff(names(.NL_REGISTRY), names(.NL_REGISTRY_AXIS_FIELD))
-    expect_setequal(absent, c("car_proper", "ar1", "hsgp_mo", "mcar", "miid",
+    expect_setequal(absent, c("car_proper", "hsgp_mo", "mcar", "miid",
                               "tgmrf", "lf"))
     for (fam in absent) {
         a <- ax[[fam]]
@@ -89,7 +89,6 @@ test_that("every family absent from the table is absent for a stated reason", {
     # The specific block each one carries, so a family moving between them is
     # visible rather than silently re-classified.
     expect_true(anyNA(.joint_pareto_block_tags("car_proper", ax$car_proper)))
-    expect_true(anyNA(.joint_pareto_block_tags("ar1", ax$ar1)))
     expect_true(anyNA(.joint_pareto_block_tags("hsgp_mo", ax$hsgp_mo)))
     expect_false(anyNA(.joint_pareto_block_tags("mcar", ax$mcar)))
     expect_length(.NL_FAMILY_AXES$mcar, 1L)
@@ -179,17 +178,17 @@ test_that("a newly-covered family recentres end to end and honours a pin", {
 test_that("an out-of-scope family names the axis that blocked it", {
     skip_on_cran()
     set.seed(24)
-    Tn <- 60L; per <- 8L
-    idx <- rep(seq_len(Tn), each = per)
-    eff <- as.numeric(stats::arima.sim(list(ar = 0.8), Tn)) * 0.4
-    X <- cbind(1, rnorm(length(idx)))
-    y <- as.numeric(X %*% c(-0.2, 0.7)) + eff[idx] + rnorm(length(idx), 0, 0.7)
+    adj <- make_grid_adjacency(4, 5)
+    dat <- simulate_spatial_data(n_sites = 20, n_obs_per_site = 8,
+                                 beta0 = 0.1, tau_spatial = 3.0, adj = adj)
     fit <- suppressWarnings(tulpa_nested_laplace(
-        y = y, n_trials = rep(1L, length(y)), X = X,
-        prior = list(type = "ar1", temporal_idx = idx, n_times = Tn),
-        family = "gaussian", phi = 0.49,
-        control = list(max_iter = 200L, tol = 1e-8, n_threads = 1L,
-                       diagnose_k = FALSE, diagnose_skew = FALSE,
+        dat$y, dat$n_trials, dat$X,
+        prior = list(type = "car_proper", spatial_idx = dat$spatial_idx,
+                     n_spatial_units = 20L, adj_row_ptr = adj$adj_row_ptr,
+                     adj_col_idx = adj$adj_col_idx,
+                     n_neighbors = adj$n_neighbors, rho_bounds = c(0, 1)),
+        family = "binomial",
+        control = list(diagnose_k = FALSE, diagnose_skew = FALSE,
                        auto_recenter = "always")))
     expect_identical(fit$outer_grid_placement, "fixed")
     expect_match(fit$outer_grid_recenter_declined, "^unguessable_axis: ")

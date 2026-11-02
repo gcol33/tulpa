@@ -29,7 +29,7 @@ make_spde_re_data <- function(seed, sd_re = 0.8, n = 150L, n_groups = 8L) {
 fit_spde_re <- function(d, ...) {
   suppressWarnings(tulpa(y ~ x + (1 | g), data = d, family = "poisson",
                          spatial = spatial_spde(~ lon + lat, data = d),
-                         control = list(verbose = FALSE), ...))
+                         ...))
 }
 
 # The routing blocks read which driver a fit lands on and the shape of its
@@ -44,8 +44,7 @@ fit_spde_re <- function(d, ...) {
   warns <- character(0)
   fit <- withCallingHandlers(
     tulpa(y ~ x + (1 | g), data = d, family = "poisson", mode = mode,
-          spatial = spatial_spde(~ lon + lat, data = d),
-          control = list(verbose = FALSE)),
+          spatial = spatial_spde(~ lon + lat, data = d)),
     warning = function(w) {
       warns <<- c(warns, conditionMessage(w)); invokeRestart("muffleWarning")
     })
@@ -98,8 +97,7 @@ test_that("an SPDE field with no RE term still reaches fit_spde()", {
   d <- .re_int_data()$d
   fit <- suppressWarnings(tulpa(y ~ x, data = d, family = "poisson",
                                 spatial = spatial_spde(~ lon + lat, data = d),
-                                control = list(verbose = FALSE,
-                                               diagnose_k = FALSE)))
+                                control = list(diagnose_k = FALSE)))
   expect_identical(fit$backend, "spde")
 })
 

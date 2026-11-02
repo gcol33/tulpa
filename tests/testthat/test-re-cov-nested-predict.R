@@ -74,8 +74,8 @@ test_that("WAIC on nested fits scores the conditional model and agrees with the 
                mode = "laplace", control = list(re_cov = "nested",
                                                 diagnose_k = FALSE))
   gib <- suppressWarnings(tulpa(y ~ x + (1 + x | g), data = d, family = "poisson",
-               mode = "laplace", control = list(re_cov = "gibbs", n_iter = 3000L,
-                                                warmup = 1000L, seed = 3L)))
+               mode = "laplace", control = list(re_cov = "gibbs", n_iter = 12000L,
+                                                warmup = 2000L, seed = 3L)))
   cmp <- compare_models(intercept = int, slopes = slp, criterion = "waic")
   expect_identical(cmp$model[1], "slopes")
   e <- function(f) cmp_elpd(compare_models(intercept = int, m = f,
