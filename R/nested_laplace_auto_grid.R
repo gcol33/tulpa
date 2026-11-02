@@ -1327,12 +1327,12 @@ auto_grid_place <- function(x)
     if (is.null(mode_u) || is.null(cov_u) || is.null(axis_names)) return(bad())
     aliases <- .nl_axis_alias(axis, block_index, n_blocks)
     j <- .nl_axis_index(axis_names, aliases, axis_tags)
-    if (is.na(j)) return(bad())
-    if (is.null(axis_tags) || !identical(axis_tags[j], "log")) return(bad())
+    if (is.na(j) || is.null(axis_tags) || length(axis_tags) < j) return(bad())
+    tag <- axis_tags[j]
     if (!is.matrix(cov_u) || nrow(cov_u) < j || ncol(cov_u) < j) return(bad())
     sd_u <- suppressWarnings(sqrt(cov_u[j, j]))
-    .nl_recenter_axis_full("log", mode_u[j], sd_u, n_pts = n_pts, span = span,
-                           ref_span_u = .nl_axis_span_u(ref_nodes, "log"))
+    .nl_recenter_axis_full(tag, mode_u[j], sd_u, n_pts = n_pts, span = span,
+                           ref_span_u = .nl_axis_span_u(ref_nodes, tag))
 }
 
 .nl_axis_recenter_from_fit <- function(mode_u, cov_u, axis_tags, axis_names,
@@ -1468,7 +1468,9 @@ auto_grid_place <- function(x)
     if (!length(axes)) return(FALSE)
     cn <- colnames(res$theta_grid) %||% character(0)
     for (a in intersect(axes, cn)) {
-        if (.nl_axis_placement_fires(res, a, "log")) return(TRUE)
+        # A mixing weight is read on its logit, every other movable axis on log.
+        tag <- if (identical(.hyper_axis_bare(a), "rho")) "logit01" else "log"
+        if (.nl_axis_placement_fires(res, a, tag)) return(TRUE)
     }
     FALSE
 }

@@ -523,10 +523,13 @@ prior. A central composite design (CCD) integrates the hyperparameter
 posterior on \verb{1 + 2d + 2^d} nodes oriented by the Cholesky of the
 posterior covariance at the joint hyperparameter mode -- far fewer inner
 solves than the \code{d}-dimensional tensor product (\code{25} vs \code{81} at \code{d = 4}).
-\code{"auto"} (the default) uses the CCD only at \verb{>= 4} transformable axes,
-where the tensor product's \code{k^d} blow-up bites hardest, and keeps the
-cheaper, more ridge-robust tensor grid at \verb{<= 3} axes; \code{"ccd"} lowers the
-CCD threshold to \verb{>= 3} axes; \code{"grid"} always forces the full tensor
+\code{"auto"} (the default) keeps the tensor grid -- placed from the outer
+mode and refined by the passes that add levels -- at \verb{<= 3} transformable
+axes, and at \verb{>= 4} while the declared tensor stays within 2048 cells;
+past that, where the tensor product's \code{k^d} blow-up bites, it uses the
+CCD. On a four-axis BYM2-copy + IID fit the CCD read the BYM2 mixing
+weight's 97.5\\% bound up to 18\\% short of a dense reference, the placed
+tensor within 8\\%. \code{"ccd"} lowers the CCD threshold to \verb{>= 3} axes; \code{"grid"} always forces the full tensor
 product. \code{"grid_adaptive"} is the low-dimensional companion to the CCD:
 it seeds a coarse subsample of the SAME tensor lattice (latent block axes
 and phi axes together), floods outward from the posterior mode on the fine
@@ -546,7 +549,7 @@ Single-block joint priors always use the tensor grid. The CCD mode-find
 runs cheap warm-started inner solves and does not write to the checkpoint
 file. Under \code{verbose = TRUE} the engaged integrator is announced in one
 line at selection time (e.g. \verb{outer integration: CCD (4 latent axes, 25 nodes)} or \verb{tensor grid (72 cells)}, or \verb{CCD declined -> tensor grid}),
-so the auto switch to the CCD at \verb{>= 4} axes is never silent. The
+so the auto switch to the CCD is never silent. The
 resolved integrator is also returned on the joint result as
 \verb{$integration}, alongside \verb{$integration_requested} and
 \verb{$integration_declined} (see Value), so a fallback is on the fit itself

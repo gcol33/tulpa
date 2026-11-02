@@ -23,17 +23,25 @@
 # NULL to DECLINE CCD when any axis has unguessable support (CAR_proper's
 # rho_car, a non-BYM2 rho) -- the caller then falls back to the tensor grid.
 # Does the CCD engage at this transformable-axis count for this integration
-# mode? "ccd" lowers the threshold to >= 3 axes (explicit opt-in); "auto" (the
-# default) engages only at >= 4 axes, where the tensor product's k^d blow-up
-# bites hardest, and keeps the cheaper, more ridge-robust tensor grid at <= 3
-# axes. "grid" and "grid_adaptive" never engage: both name the tensor lattice,
-# the full one or its mass-carrying subset, and a CCD is a different design
-# (gcol33/tulpa#914).
-.joint_ccd_engage <- function(integration, d_axes) {
+# mode? "ccd" lowers the threshold to >= 3 axes (explicit opt-in). "auto" (the
+# default) keeps the tensor grid -- placed from the outer mode and refined by
+# the passes that add levels -- at <= 3 axes, and at >= 4 axes while that
+# tensor, `n_tensor` cells as declared, stays within the dense-grid cap
+# (`.NL_DENSE_GRID_WARN_CELLS`); past it, where the tensor's k^d blow-up
+# bites, the CCD engages. "grid" and "grid_adaptive" never engage: both name
+# the tensor lattice, the full one or its mass-carrying subset, and a CCD is a
+# different design (gcol33/tulpa#914).
+#
+# Measured on a BYM2-copy + IID multi-block fit (four axes, 2.5% / 97.5%
+# bounds against a 13^4 tensor over the posterior, three seeds): the CCD read
+# the BYM2 mixing weight's upper bound up to 18% short (0.706 against 0.864)
+# and the copy scale's 5-8% short; the placed tensor reads every bound within
+# 8%, at 2100-3050 cells and 10-14 s against 40 cells and 1-5 s.
+.joint_ccd_engage <- function(integration, d_axes, n_tensor = NA_real_) {
     integration <- integration %||% "auto"
     if (!integration %in% c("auto", "ccd")) return(FALSE)
-    min_axes <- if (identical(integration, "ccd")) 3L else 4L
-    d_axes >= min_axes
+    if (identical(integration, "ccd")) return(d_axes >= 3L)
+    d_axes >= 4L && !isTRUE(n_tensor <= .NL_DENSE_GRID_WARN_CELLS)
 }
 
 .joint_ccd_axis_tags <- function(axis_names, axis_offsets, prepared) {

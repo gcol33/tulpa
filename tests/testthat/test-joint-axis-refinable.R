@@ -469,7 +469,10 @@ test_that("a multi-block axis is eligible by its bare name, a dispersion by its 
     # `phi_gp` is a block's own lengthscale; only a bare `phi_<arm>` is a
     # dispersion.
     expect_false(elig("b1.phi_gp"))
-    expect_false(any(vapply(c("b1.rho", "b2.rho_car", "rho"), elig, logical(1))))
+    # A field's `rho` takes points on the coordinate its mode is tagged with; a
+    # proper-CAR `rho_car` has no such coordinate.
+    expect_true(all(vapply(c("b1.rho", "rho"), elig, logical(1))))
+    expect_false(elig("b2.rho_car"))
 })
 
 test_that("a multi-block axis's refinement mode follows who wrote its nodes", {

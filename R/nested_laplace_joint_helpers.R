@@ -459,8 +459,11 @@
 # per-arm dispersions bare (`phi_<arm>`), so a `phi_`-prefixed name is a
 # dispersion only when no block prefix is present: `b1.phi_gp` is a block's own
 # lengthscale. The field SD is `sigma` on a field-SD parameterisation and `tau`
-# on a precision one, and the two are one axis under `tau = 1 / sigma^2`.
-.JOINT_REFINABLE_BLOCK_AXES <- c("sigma", "tau", "alpha")
+# on a precision one, and the two are one axis under `tau = 1 / sigma^2`. A
+# field's `rho` (a BYM2 mixing weight, an AR(1) autocorrelation) takes the
+# passes' points on the coordinate its mode is tagged with, logit or atanh,
+# which keeps every point inside its open interval.
+.JOINT_REFINABLE_BLOCK_AXES <- c("sigma", "tau", "alpha", "rho")
 
 # Is `axis` a per-arm dispersion (`phi_<arm>`)? Only an unprefixed name is:
 # `b1.phi_gp` is a block's own NNGP lengthscale.
@@ -512,6 +515,11 @@
         return(!is.null(.nl_axis_hold(prior, "sigma_grid",
                                       .nl_auto_fields_at(grid_auto),
                                       type = ".joint_areal")))
+    }
+    if (identical(axis, "rho")) {
+        return(!is.null(.nl_axis_hold(prior, "rho_grid",
+                                      .nl_auto_fields_at(grid_auto),
+                                      type = tolower(prior$type %||% ""))))
     }
     if (identical(axis, "alpha")) {
         for (a in arms) {
@@ -599,9 +607,13 @@
         return(!is.null(.nl_axis_hold(list(alpha_grid = declared), "alpha_grid",
                                       type = ".copy")))
     }
+    # A copy block's donor SD is defaulted on the `.copy` convention; its other
+    # axes (a BYM2 mixing weight) on the block's own family.
+    field <- paste0(bare, "_grid")
     !is.null(.nl_axis_hold(
-        prior[[b]], paste0(bare, "_grid"), .nl_auto_fields_at(grid_auto, b),
-        type = if (b %in% copy_blocks) ".copy"
+        prior[[b]], field, .nl_auto_fields_at(grid_auto, b),
+        type = if (b %in% copy_blocks && field %in% names(.NL_FAMILY_AXES$.copy))
+                   ".copy"
                else tolower(prior[[b]]$type %||% "")))
 }
 

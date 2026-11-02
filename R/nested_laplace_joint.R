@@ -503,10 +503,13 @@
 #'     posterior on `1 + 2d + 2^d` nodes oriented by the Cholesky of the
 #'     posterior covariance at the joint hyperparameter mode -- far fewer inner
 #'     solves than the `d`-dimensional tensor product (`25` vs `81` at `d = 4`).
-#'     `"auto"` (the default) uses the CCD only at `>= 4` transformable axes,
-#'     where the tensor product's `k^d` blow-up bites hardest, and keeps the
-#'     cheaper, more ridge-robust tensor grid at `<= 3` axes; `"ccd"` lowers the
-#'     CCD threshold to `>= 3` axes; `"grid"` always forces the full tensor
+#'     `"auto"` (the default) keeps the tensor grid -- placed from the outer
+#'     mode and refined by the passes that add levels -- at `<= 3` transformable
+#'     axes, and at `>= 4` while the declared tensor stays within 2048 cells;
+#'     past that, where the tensor product's `k^d` blow-up bites, it uses the
+#'     CCD. On a four-axis BYM2-copy + IID fit the CCD read the BYM2 mixing
+#'     weight's 97.5\% bound up to 18\% short of a dense reference, the placed
+#'     tensor within 8\%. `"ccd"` lowers the CCD threshold to `>= 3` axes; `"grid"` always forces the full tensor
 #'     product. `"grid_adaptive"` is the low-dimensional companion to the CCD:
 #'     it seeds a coarse subsample of the SAME tensor lattice (latent block axes
 #'     and phi axes together), floods outward from the posterior mode on the fine
@@ -527,7 +530,7 @@
 #'     file. Under `verbose = TRUE` the engaged integrator is announced in one
 #'     line at selection time (e.g. `outer integration: CCD (4 latent axes, 25
 #'     nodes)` or `tensor grid (72 cells)`, or `CCD declined -> tensor grid`),
-#'     so the auto switch to the CCD at `>= 4` axes is never silent. The
+#'     so the auto switch to the CCD is never silent. The
 #'     resolved integrator is also returned on the joint result as
 #'     `$integration`, alongside `$integration_requested` and
 #'     `$integration_declined` (see Value), so a fallback is on the fit itself
@@ -1925,8 +1928,9 @@ tulpa_nested_laplace_joint <- function(responses,
     # places a central-composite design around the joint hyperparameter mode --
     # far fewer inner solves than the full tensor product (1 + 2d + 2^d vs k^d).
     # "auto" (default) uses the CCD only where the tensor blow-up bites hardest,
-    # >= 4 transformable axes, and the tensor grid at <= 3 axes (the d = 3 grid
-    # is cheap and a ridged 3-axis posterior integrates more reliably on it).
+    # >= 4 transformable axes past the dense-grid cap (`.joint_ccd_engage()`),
+    # and the placed tensor grid otherwise (a ridged posterior integrates more
+    # reliably on it).
     # "ccd" lowers the threshold to >= 3 axes; "grid" always forces the tensor
     # product. The CCD auto-falls back to the tensor grid for an unguessable axis
     # (CAR_proper rho_car / non-BYM2 rho), a flat / ridged outer posterior, or a

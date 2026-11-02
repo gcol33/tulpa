@@ -1,8 +1,8 @@
 # The joint driver's outer-grid placement pass.
 #
 # Every axis `tulpa_nested_laplace_joint()` may move -- the single-block field
-# SD, each multi-block copy block's field SD, the per-arm dispersions and the
-# copy scale -- is laid from the ONE outer mode the detecting fit's mode-find
+# SD, each multi-block copy block's field SD, the per-arm dispersions, the copy
+# scale and a BYM2 field's mixing weight -- is laid from the ONE outer mode the detecting fit's mode-find
 # reached (`.joint_attach_placement()`), and the grid is refit once per attempt
 # with every placement applied. The mode-find varies every axis the grid lays
 # more than one node on, so one run already holds what each axis needs. Placing
@@ -114,8 +114,49 @@
                               "alpha_grid", type = ".copy"),
             fires = function(res, s) .nl_axis_placement_fires(res, s$label, "log"),
             write = function(st, s, nodes) .joint_alpha_write(st, s, nodes),
+            together = FALSE, escalate = FALSE, idle = "grid_resolves_posterior"),
+        mixing = list(
+            slots = function(res, st) .joint_mixing_slots(res, st),
+            hold = function(s, st)
+                .nl_axis_hold(if (is.null(s$block)) st$prior else st$prior[[s$block]],
+                              "rho_grid", .nl_auto_fields_at(auto, s$block),
+                              type = "bym2"),
+            fires = function(res, s) .nl_axis_placement_fires(res, s$label, "logit01"),
+            write = function(st, s, nodes) {
+                if (is.null(s$block)) st$prior$rho_grid <- nodes
+                else st$prior[[s$block]]$rho_grid <- nodes
+                st
+            },
             together = FALSE, escalate = FALSE, idle = "grid_resolves_posterior")
     )
+}
+
+# --- a BYM2 field's mixing weight --------------------------------------------
+#
+# The BYM2 mixing weight `rho` lives on (0, 1) and is placed on its logit, the
+# coordinate the mode-find tags it with (`logit01`), from the same outer mode as
+# the field's SD. A default rho axis is a fixed ladder graded towards 1, so a
+# posterior reaching below its lowest node is cut at that node's box edge until
+# the axis is laid where the mode-find found it. Single-block the axis is `rho`;
+# multi-block every BYM2 block's own `b<k>.rho`, copied or not.
+.joint_mixing_slots <- function(res, st) {
+    cn <- colnames(res$theta_grid) %||% character(0)
+    if (!.is_multi_block_prior(st$prior)) {
+        if (!identical(tolower(st$prior$type %||% ""), "bym2") || !"rho" %in% cn) {
+            return(list())
+        }
+        return(list(list(label = "rho", axis = "rho", block = NULL,
+                         ref = .joint_declared_axis_ref("rho"))))
+    }
+    out <- list()
+    for (b in seq_along(st$prior)) {
+        lbl <- paste0("b", b, ".rho")
+        if (!identical(tolower(st$prior[[b]]$type %||% ""), "bym2") ||
+            !lbl %in% cn) next
+        out[[length(out) + 1L]] <- list(label = lbl, axis = "rho", block = b,
+                                        ref = .joint_declared_axis_ref(lbl))
+    }
+    out
 }
 
 # --- a non-copy block's own scale --------------------------------------------
@@ -247,9 +288,9 @@
 # grid names them, read off the call arguments before any fit: the mode-find's
 # own trigger (`.joint_attach_placement()`) is handed them, so it runs on a grid
 # that concentrated without railing. They are the dispersions, the copy scales,
-# and on a multi-block prior every block's own scale -- a copied field's SD as
-# much as a non-copy block's SD or precision -- since each of those fires on an
-# unresolved posterior as well as on a rail.
+# on a multi-block prior every block's own scale -- a copied field's SD as
+# much as a non-copy block's SD or precision -- and every BYM2 mixing weight,
+# since each of those fires on an unresolved posterior as well as on a rail.
 .joint_movable_extra_axes <- function(st, phi_auto, auto = logical(0)) {
     phi <- paste0("phi_", intersect(names(which(phi_auto)),
                                     names(st$phi_grid) %||% character(0)))
@@ -285,7 +326,24 @@
         k <- .joint_copy_arm_index(st$responses)
         if (!is.na(k) && movable(list(block = NULL, arm = k))) alpha <- "alpha"
     }
-    c(phi, alpha, scale)
+    c(phi, alpha, scale, .joint_movable_mixing_axes(st, auto))
+}
+
+# The BYM2 mixing weights the pass may move (`.joint_mixing_slots()`), named as
+# the grid names them: `rho` on a single-block BYM2 prior, `b<k>.rho` for every
+# BYM2 block of a multi-block one, each unless the caller stated its nodes.
+.joint_movable_mixing_axes <- function(st, auto = logical(0)) {
+    movable <- function(blk, b) {
+        identical(tolower(blk$type %||% ""), "bym2") &&
+            is.null(.nl_axis_hold(blk, "rho_grid", .nl_auto_fields_at(auto, b),
+                                  type = "bym2"))
+    }
+    if (!.is_multi_block_prior(st$prior)) {
+        return(if (movable(st$prior, NULL)) "rho" else character(0))
+    }
+    b <- which(vapply(seq_along(st$prior), function(b)
+        movable(st$prior[[b]], b), logical(1)))
+    paste0("b", b, ".rho")
 }
 
 # --- the pass ----------------------------------------------------------------

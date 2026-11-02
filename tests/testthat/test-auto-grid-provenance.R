@@ -283,10 +283,13 @@ test_that("recentering from a fit resolves a prefixed axis and its curvature", {
     # Centred on the mode, spanning +/- 2.5 SD on the log axis.
     expect_equal(ax[3L], 3, tolerance = 1e-8)
     expect_equal(log(ax[5L]) - log(ax[1L]), 2 * 2.5 * 0.5, tolerance = 1e-8)
-    # An axis on another transform, or absent, declines.
-    expect_null(tulpa:::.nl_axis_recenter_from_fit(
+    # An axis on another transform is laid on that transform's coordinate.
+    al <- tulpa:::.nl_axis_recenter_from_fit(
         mode_u, cov_u, c("log", "identity"), c("b1.sigma", "b1.alpha"),
-        "alpha", block_index = 1L, n_blocks = 1L))
+        "alpha", block_index = 1L, n_blocks = 1L)
+    expect_equal(al[3L], 0.4, tolerance = 1e-8)
+    expect_equal(al[5L] - al[1L], 2 * 2.5 * 0.3, tolerance = 1e-8)
+    # An absent axis declines.
     expect_null(tulpa:::.nl_axis_recenter_from_fit(
         mode_u, cov_u, c("log", "identity"), c("b1.sigma", "b1.alpha"),
         "sigma", block_index = 2L, n_blocks = 3L))

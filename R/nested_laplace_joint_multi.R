@@ -1692,9 +1692,9 @@
     #. An active phi axis no longer disables CCD
     #: the CCD rides the latent axes and the phi tensor
     # crosses on top, with the CCD design weights replicated across phi cells.
-    # Axis threshold: "auto" (the default) engages CCD only at d >= 4, where the
-    # tensor blow-up bites hardest, and keeps the cheaper, ridge-robust tensor
-    # grid at d <= 3; explicit "ccd" lowers the threshold to d >= 3.
+    # Axis threshold (`.joint_ccd_engage()`): "auto" (the default) engages CCD
+    # only at d >= 4 and past the dense-grid cap, and keeps the placed tensor
+    # grid otherwise; explicit "ccd" lowers the threshold to d >= 3.
     dnode                 <- NULL
     ccd_log_measure       <- NULL
     tile_partition        <- NULL
@@ -1711,7 +1711,11 @@
     # grid concentrates on ~1 cell (where the grid-weighted covariance collapses).
     ccd_proposal          <- NULL
 
-    ccd_requested <- .joint_ccd_engage(integration, d_axes)
+    # The declared tensor's size in inner solves: its latent cells crossed with
+    # every active dispersion axis.
+    n_tensor <- prod(vapply(block_grids, nrow, integer(1))) *
+        prod(lengths(if (has_phi) phi_axes[lengths(phi_axes) > 0L]))
+    ccd_requested <- .joint_ccd_engage(integration, d_axes, n_tensor)
     # Why a CCD the caller asked for did not run. NA when
     # nothing was declined, so `fit$integration == "grid"` is never the only
     # trace of a request the engine turned down. An explicit
