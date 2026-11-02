@@ -284,7 +284,7 @@ step size adapts during warmup toward an acceptance rate near 0.574.
 ```{r mala-fit}
 fit_mala <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
-                  control = list(n_iter = 450, warmup = 150))
+                  control = list(n_iter = 2000, warmup = 500))
 coef(fit_mala)
 summary(fit_mala)$reliability$mean_accept
 ```
@@ -308,7 +308,7 @@ Laplace was biased.
 ```{r imh-fit}
 fit_imh <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                  mode = "imh_laplace", sigma_re = 0.6,
-                 control = list(n_iter = 450, warmup = 150))
+                 control = list(n_iter = 2000, warmup = 500))
 coef(fit_imh)
 summary(fit_imh)$reliability$mean_accept
 ```
@@ -430,7 +430,7 @@ t_lap  <- system.time(
 t_mala <- system.time(
   f_mala <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
-                  control = list(n_iter = 450, warmup = 150)))[["elapsed"]]
+                  control = list(n_iter = 2000, warmup = 500)))[["elapsed"]]
 t_pf   <- system.time(
   f_pf   <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "pathfinder", sigma_re = 0.6,
@@ -466,6 +466,30 @@ IMH acceptance earlier. Timing is where the methods part ways. The
 deterministic Laplace fit returns fastest. Pathfinder costs an optimisation
 plus a draw step. MALA pays for its full chain of gradient evaluations, and
 that cost is the visible price of the exact guarantee.
+
+The same comparison as a figure: each backend's 95% interval for the slope
+against the value it was simulated at, next to the elapsed time of each fit.
+
+```{r timing-plot, fig.width = 7, fig.height = 3.2, fig.alt = "Left: 95% credible intervals for the slope from the Laplace, MALA and Pathfinder fits, with a vertical line at the simulated slope of 1. Right: elapsed seconds for each of the three fits as horizontal bars."}
+fits  <- list(laplace = f_lap, mala = f_mala, pathfinder = f_pf)
+ci    <- t(vapply(fits, function(f) confint(f)["x", ], numeric(2)))
+est   <- vapply(fits, function(f) coef(f)[["x"]], numeric(1))
+secs  <- c(t_lap, t_mala, t_pf)
+op <- par(mfrow = c(1, 2), mar = c(4, 7, 1, 1))
+plot(est, seq_along(fits), xlim = range(ci, 1.0), ylim = c(0.5, 3.5),
+     pch = 19, yaxt = "n", xlab = "slope", ylab = "")
+segments(ci[, 1], seq_along(fits), ci[, 2], seq_along(fits), lwd = 2)
+axis(2, at = seq_along(fits), labels = names(fits), las = 1)
+abline(v = 1.0, col = "darkorange", lwd = 2)
+barplot(secs, names.arg = names(fits), horiz = TRUE, las = 1,
+        col = adjustcolor("steelblue", 0.6), border = NA, xlab = "seconds")
+par(op)
+```
+
+All three intervals cover the simulated slope (orange line) and overlap
+almost entirely, so the backends agree on the width as well as the centre.
+The right panel is where they differ: the bar lengths are the price of each
+backend on this model, with the MALA chain the longest.
 
 Read the table as a guarantee you bought, not effort you wasted. The
 sampler purchased a promise this model did not need and another model

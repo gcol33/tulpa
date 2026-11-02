@@ -1,0 +1,554 @@
+---
+title: "Identifiability"
+description: "The maths of each alias and weakly identified hyperparameter behind tulpa's fields and random effects, with stress tests that show how many regions, locations or groups recovery needs."
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Identifiability}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6, fig.height = 4
+)
+set.seed(20260529)
+```
+
+```{r cran-gate, include = FALSE}
+# The model fits below are evaluated when the article is built locally, in CI
+# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
+# the whole check a ten-minute budget, which these fits do not fit inside, so
+# there the code is shown without being run.
+EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
+knitr::opts_chunk$set(eval = EVAL_FITS)
+```
+
+A parameter is identifiable when different values of it give different
+distributions of the data. Two kinds of failure appear in the models tulpa
+fits. In an exact alias, two parameters can move together without changing the
+likelihood at all, so no amount of data separates them and the model has to
+fix one of them by construction. In a weak identification, the likelihood does
+change, but slowly, so a hyperparameter is learned only once the design holds
+enough regions, locations or groups. This article derives the four cases the
+engine handles (the level of an intrinsic field, the level of a varying
+coefficient, the BYM2 variance split together with the range and scale of a
+Gaussian process, and a random-effect standard deviation), shows how the
+engine resolves the exact aliases, and ends with stress tests and the design
+numbers they give. It assumes the model syntax of
+[Spatial models](spatial-models.html) and [Temporal models](temporal-models.html).
+Installation is covered in [Get started](tulpa.html).
+
+```{r load, message = FALSE}
+library(tulpa)
+```
+
+## The intercept and the level of an intrinsic field
+
+Consider $K$ regions joined by an adjacency matrix $W$, and let $D$ be the
+diagonal matrix of neighbour counts. Observation $i$ lies in region $r_i$ and
+has the linear predictor
+
+$$
+\eta_i = \beta_0 + x_i^\top \beta + \phi_{r_i}.
+$$
+
+The ICAR prior on the field $\phi = (\phi_1, \ldots, \phi_K)$ has density
+proportional to $\exp\{-\tfrac{\tau}{2}\, \phi^\top (D - W)\, \phi\}$. Every row
+of $D - W$ sums to zero, so $(D - W)\mathbf{1} = 0$ for the vector of ones
+$\mathbf{1}$. Replacing $\phi$ by $\phi + c\mathbf{1}$ therefore leaves the
+prior density unchanged, and replacing $\beta_0$ by $\beta_0 - c$ at the same
+time leaves every $\eta_i$ unchanged. The likelihood is constant along the
+line $(\beta_0 - c, \phi + c\mathbf{1})$ for every real $c$, and the ICAR
+prior puts no density on that direction either.
+
+The engine removes the alias with a sum-to-zero constraint,
+$\sum_{r=1}^{K} \phi_r = 0$, which picks one point on each such line. The field
+then carries only the contrasts between regions, and the intercept carries the
+overall level, including any level the true field had. A graph with several
+connected components has one zero eigenvalue of $D - W$ per component, so each
+component needs its own constraint, and an RW1 time trend is the same
+construction on a chain graph.
+
+The simulation below puts a field with a known level on a ring of 25 regions.
+The field is a centred wave plus a shift of 0.3, and the intercept is 0.5, so
+the model can identify an intercept of 0.8 and a field equal to the centred
+wave.
+
+```{r icar-sim}
+ring <- function(K) {
+  W <- matrix(0, K, K)
+  for (i in 1:K) {
+    j <- if (i < K) i + 1 else 1
+    W[i, j] <- W[j, i] <- 1
+  }
+  W
+}
+K <- 25
+W <- ring(K)
+wave <- as.numeric(scale(sin(2 * pi * (1:K) / K)))
+set.seed(1)
+n <- 600
+x <- rnorm(n)
+region <- sample(1:K, n, replace = TRUE)
+y <- rpois(n, exp(0.5 + 0.4 * x + wave[region] + 0.3))
+d_icar <- data.frame(y = y, x = x, region = factor(region))
+```
+
+Fit the field by nested Laplace and read the intercept and slope.
+
+```{r icar-fit}
+fit_icar <- tulpa(y ~ x + spatial(region), data = d_icar,
+                  family = "poisson",
+                  spatial = list(type = "icar", adjacency = W),
+                  mode = "nested_laplace", control = list(n_threads = 2))
+coef(summary(fit_icar))
+```
+
+The intercept interval contains 0.8, the intercept plus the shift, and the
+slope interval contains 0.4. Each cell of the outer grid holds one inner
+Laplace mode, whose columns after the fixed effects are the 25 field values
+(`tulpa_outer_grid()`). Their sums show the constraint at every cell.
+
+```{r icar-constraint}
+g <- tulpa_outer_grid(fit_icar)
+field_cells <- g$modes[, g$n_fixed + seq_len(K)]
+range(rowSums(field_cells))
+field_hat <- colSums(g$weights * field_cells)
+cor(field_hat, wave)
+```
+
+The field sums to zero up to rounding error in every cell, and the
+grid-averaged field tracks the centred wave. The shift of 0.3 cannot be
+recovered as a property of the field: the data contain it only as part of the
+intercept.
+
+## The level of a varying coefficient
+
+A varying coefficient lets a slope change over time or space. With a
+coefficient $w(t)$ on a covariate $x$, the linear predictor is
+
+$$
+\eta_i = \beta_0 + x_i \bigl(\beta_1 + w(t_i)\bigr).
+$$
+
+Replacing $w$ by $w + c$ and $\beta_1$ by $\beta_1 - c$ leaves
+$x_i(\beta_1 + w(t_i))$, and so $\eta_i$, unchanged for every value of $x_i$.
+This is the same alias as in the previous section, moved from the intercept to
+a slope. Which instrument removes it depends on the prior on $w$:
+
+- For an intrinsic prior (`rw1`, `rw2`), the constant direction carries no
+  prior density, so the engine supplies the missing constraint: it augments
+  the precision on the constant direction and pins $\sum_t w(t) = 0$, as for
+  the ICAR field.
+- For a proper prior (`ar1`, `gp`), the constant direction already carries a
+  prior, with precision $\mathbf{1}^\top \Sigma^{-1} \mathbf{1}$ for the field
+  covariance $\Sigma$. Nothing needs to be added to the prior. The engine
+  instead removes the direction from the likelihood by centring the field on
+  its way into $\eta$, so the linear predictor uses $w(t) - \bar{w}$, with
+  $\bar{w}$ the mean over the time points.
+
+In both cases $\beta_1$ is the average coefficient over the time points and
+$w$ is the departure from it. The simulation below uses 30 time points with 20
+observations each, a wave of amplitude 0.4 shifted up by 0.25 as the true
+$w$, and $\beta_1 = 0.5$. The identifiable slope is therefore $0.5 + 0.25 =
+0.75$.
+
+```{r tvc-sim}
+set.seed(5)
+n_time <- 30
+time <- rep(1:n_time, each = 20)
+w_true <- 0.4 * sin(2 * pi * (1:n_time) / n_time) + 0.25
+x <- rnorm(length(time))
+y <- rpois(length(time), exp(0.5 + (0.5 + w_true[time]) * x))
+d_tvc <- data.frame(y = y, x = x, time = time)
+```
+
+Fit the coefficient once with an intrinsic `rw1` prior and once with a proper
+`ar1` prior. Both fits run the NUTS sampler, here with two chains.
+
+```{r tvc-fit, message = FALSE}
+fit_tvc <- lapply(c(rw1 = "rw1", ar1 = "ar1"), function(s) {
+  tulpa(y ~ x, data = d_tvc, family = "poisson",
+        temporal = temporal_tvc("time", terms = ~ x - 1, structure = s),
+        mode = "hmc", control = list(n_chains = 2, seed = 1))
+})
+t(sapply(fit_tvc, function(f) coef(summary(f))["x", ]))
+```
+
+Both slope intervals contain 0.75, the slope plus the mean of $w$. The stored
+draws of the field are centred to match, which the sum over time points of
+each draw shows.
+
+```{r tvc-centred}
+sapply(fit_tvc, function(f) {
+  w_draws <- f$draws[, grep("^tvc_w", colnames(f$draws))]
+  range(rowSums(w_draws))
+})
+```
+
+The two priors split the predictor the same way, so the slope means the same
+thing under either structure. A reported slope from a varying-coefficient fit
+is the average coefficient over the time points, never the coefficient at a
+reference time. [Varying coefficients](varying-coefficients.html) covers the
+spatial version of this term.
+
+## Weakly identified variance components
+
+The next three cases have no exact alias. The likelihood does depend on each
+parameter, but it changes slowly along one direction, so the posterior along
+that direction stays wide until the design carries enough information.
+
+### The BYM2 split between structured and unstructured variance
+
+BYM2 writes the field for region $r$ as
+
+$$
+\phi_r = \sigma \bigl(\sqrt{\rho}\, u_r^{\star} + \sqrt{1 - \rho}\, v_r\bigr),
+$$
+
+where $u^{\star}$ is an ICAR field scaled so that the geometric mean of its
+marginal variances is one (Riebler et al. 2016), $v$ is an independent
+standard normal effect per region, $\sigma$ is the overall standard deviation
+and $\rho \in [0, 1]$ is the share of variance that is spatially structured.
+The marginal variance of a region's effect is
+$\sigma^2 \bigl(\rho\, s_r + 1 - \rho\bigr)$, where $s_r$ is the scaled ICAR
+variance at region $r$. Because the $s_r$ average to one on the log scale,
+this variance depends on $\rho$ only weakly, and $\sigma$ is set by the spread
+of the effects. The parameter $\rho$ enters mainly through the covariance
+between neighbours, $\sigma^2 \rho\, \Sigma^{\star}_{rs}$, so it is learned from
+how much more alike neighbouring regions are than distant ones. Each region
+contributes one noisy effect to that comparison, and the information on $\rho$
+grows with the number of regions.
+
+### Range and marginal standard deviation of a Gaussian process
+
+A continuous field with exponential covariance has
+
+$$
+\operatorname{Cov}\bigl(w(s), w(s')\bigr) = \sigma^2 \exp(-d / \phi),
+$$
+
+where $d$ is the distance between the locations $s$ and $s'$, $\sigma^2$ the
+marginal variance and $\phi$ the range. When the locations stay inside a fixed
+region and only become denser, $\sigma^2$ and $\phi$ cannot both be estimated
+consistently; only the ratio $\sigma^2 / \phi$ can (Zhang 2004). The reason is
+visible at short distances. For small $d$,
+
+$$
+\operatorname{Var}\bigl(w(s) - w(s')\bigr) = 2\sigma^2\bigl(1 - e^{-d/\phi}\bigr)
+\approx 2 \frac{\sigma^2}{\phi}\, d,
+$$
+
+so dense data pin down how rough the field is, which is the ratio. A larger
+range with a proportionally larger variance gives almost the same roughness,
+and only the behaviour at distances comparable to the size of the region
+separates the two. This means that adding locations to the same region should
+narrow the posterior of $\log(\sigma^2/\phi)$ much faster than the posteriors
+of $\log \sigma^2$ and $\log \phi$. The same holds for a Matern field with
+smoothness $\nu$, where the identified quantity is
+$\sigma^2 / \phi^{2\nu}$.
+
+### Random-effect standard deviation with few groups
+
+For a random intercept $(1 \mid g)$ the group effects are
+$b_j \sim \mathcal{N}(0, \sigma^2)$ for groups $j = 1, \ldots, J$. Everything
+the data say about $\sigma$ passes through these $J$ effects. Even if the
+$b_j$ were observed exactly, the sample variance $s^2$ would satisfy
+$(J - 1)\, s^2 / \sigma^2 \sim \chi^2_{J-1}$, so the standard deviation of
+$\log s$ is close to $1 / \sqrt{2(J - 1)}$: 0.50 at three groups and 0.16 at
+twenty. Observations within a group only sharpen each $b_j$; they cannot add
+groups. With few groups the interval for $\sigma$ is wide whatever the number
+of observations, and the prior on $\sigma$ has a larger share in it.
+
+## Stress tests
+
+Each test below simulates data with known parameters at increasing sizes,
+refits, and plots the interval of the hyperparameter against the truth. The
+replicate counts are small so the article renders quickly; the numbers in the
+design section come from these runs and carry their seeds.
+
+### Random-effect standard deviation against the number of groups
+
+The simulation draws $J$ groups of 10 Poisson observations each, with
+intercept 0.3, slope 0.5 and a group standard deviation of 0.7. The fit uses
+`mode = "structured"`, which integrates the random-effect scale on an outer
+grid. Twenty replicates (seeds 1 to 20) run at each of $J = 3, 5, 10, 20, 40$.
+
+```{r re-one}
+re_one <- function(J, seed, m = 10, sigma = 0.7) {
+  set.seed(seed)
+  grp <- rep(seq_len(J), each = m)
+  b <- rnorm(J, 0, sigma)
+  x <- rnorm(J * m)
+  d <- data.frame(y = rpois(J * m, exp(0.3 + 0.5 * x + b[grp])),
+                  x = x, g = factor(grp))
+  f <- tulpa(y ~ x + (1 | g), data = d, family = "poisson",
+             mode = "structured", control = list(n_threads = 2))
+  h <- summary(f)$hyperparameters
+  h <- h[h$parameter == "sigma_1", ]
+  data.frame(J = J, seed = seed, mean = h$mean, lo = h$ci_lo, hi = h$ci_hi)
+}
+```
+
+```{r re-run}
+J_set <- c(3, 5, 10, 20, 40)
+re <- do.call(rbind, lapply(J_set, function(J) {
+  do.call(rbind, lapply(1:20, function(s) re_one(J, s)))
+}))
+re$covers <- re$lo <= 0.7 & re$hi >= 0.7
+re_tab <- aggregate(cbind(covers, width = hi - lo) ~ J, data = re,
+                    FUN = function(v) round(median(v), 2))
+re_tab$covers <- aggregate(covers ~ J, data = re, FUN = sum)$covers
+re_tab
+```
+
+`covers` counts the replicates (of 20) whose 95% interval contains 0.7, and
+`width` is the median interval width.
+
+```{r re-plot, fig.alt = "95 percent intervals for the random-effect standard deviation in 20 replicates at 3, 5, 10, 20 and 40 groups, with the true value 0.7 as a horizontal line; intervals narrow as the number of groups grows"}
+xpos <- match(re$J, J_set) + (re$seed - 10.5) / 30
+plot(xpos, re$mean, ylim = range(c(re$lo, re$hi)), pch = 19, cex = 0.5,
+     xaxt = "n", xlab = "number of groups J",
+     ylab = "random-effect SD")
+axis(1, at = seq_along(J_set), labels = J_set)
+segments(xpos, re$lo, xpos, re$hi, col = "grey40")
+abline(h = 0.7, lty = 2, lwd = 2, col = "steelblue")
+```
+
+At `r J_set[1]` groups the median interval is `r re_tab$width[1]` wide, more than twice the
+true value, and the median lower end is `r round(median(re$lo[re$J == 3]), 2)`. At
+`r J_set[5]` groups the median width is `r re_tab$width[5]`. Of the `r nrow(re)`
+intervals, `r sum(re$covers)` contain 0.7. With few groups the failure is
+the width: the intervals still contain the truth but are too wide to say much
+about $\sigma$.
+
+### The BYM2 mixing parameter against the number of regions
+
+The regions are square lattices of 4 x 4, 7 x 7, 10 x 10 and 14 x 14 cells,
+each joined to its edge neighbours. The true field is a BYM2 draw with
+$\sigma = 0.6$ and $\rho = 0.5$, built from the eigen-decomposition of
+$D - W$ and the scaling of Riebler et al. (2016). Each region carries 10
+Poisson observations with intercept 1 and slope 0.3. Four replicates
+(seeds 1 to 4) run at each size.
+
+<details><summary>Simulation code</summary>
+
+```{r bym2-helpers}
+lattice <- function(k) {
+  W <- matrix(0, k * k, k * k)
+  id <- function(i, j) (i - 1) * k + j
+  for (i in 1:k) for (j in 1:k) {
+    if (i < k) W[id(i, j), id(i + 1, j)] <- W[id(i + 1, j), id(i, j)] <- 1
+    if (j < k) W[id(i, j), id(i, j + 1)] <- W[id(i, j + 1), id(i, j)] <- 1
+  }
+  W
+}
+draw_bym2 <- function(W, sigma, rho) {
+  e <- eigen(diag(rowSums(W)) - W, symmetric = TRUE)
+  keep <- e$values > 1e-8
+  V <- e$vectors[, keep]
+  Qinv <- V %*% (t(V) / e$values[keep])
+  scale_u <- exp(mean(log(diag(Qinv))))
+  u <- as.numeric(V %*% (rnorm(sum(keep)) / sqrt(e$values[keep])))
+  sigma * (sqrt(rho) * u / sqrt(scale_u) + sqrt(1 - rho) * rnorm(nrow(W)))
+}
+```
+
+</details>
+
+```{r bym2-one}
+bym2_one <- function(k, seed) {
+  set.seed(seed)
+  W <- lattice(k)
+  phi <- draw_bym2(W, sigma = 0.6, rho = 0.5)
+  r <- rep(seq_len(k * k), each = 10)
+  x <- rnorm(length(r))
+  d <- data.frame(y = rpois(length(r), exp(1 + 0.3 * x + phi[r])),
+                  x = x, region = factor(r))
+  f <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
+             spatial = spatial_bym2(W, group_var = "region"),
+             mode = "nested_laplace", control = list(n_threads = 2))
+  h <- summary(f)$hyperparameters
+  cbind(K = k * k, seed = seed, h[, c("parameter", "mean", "ci_lo", "ci_hi")])
+}
+```
+
+```{r bym2-run}
+k_set <- c(4, 7, 10, 14)
+bym <- do.call(rbind, lapply(k_set, function(k) {
+  do.call(rbind, lapply(1:4, function(s) bym2_one(k, s)))
+}))
+bym$width <- bym$ci_hi - bym$ci_lo
+aggregate(width ~ parameter + K, data = bym, FUN = function(v) round(median(v), 2))
+```
+
+```{r bym2-plot, fig.alt = "95 percent intervals for the BYM2 mixing parameter rho in four replicates at 16, 49, 100 and 196 regions, with the true value 0.5 as a horizontal line; the intervals cover most of the unit interval at 16 regions and narrow with more regions"}
+rb <- bym[bym$parameter == "rho", ]
+K_set <- k_set^2
+xpos <- match(rb$K, K_set) + (rb$seed - 2.5) / 10
+plot(xpos, rb$mean, ylim = c(0, 1), pch = 19, xaxt = "n",
+     xlab = "number of regions K", ylab = "mixing parameter rho")
+axis(1, at = seq_along(K_set), labels = K_set)
+segments(xpos, rb$ci_lo, xpos, rb$ci_hi, col = "grey40")
+abline(h = 0.5, lty = 2, lwd = 2, col = "steelblue")
+```
+
+```{r bym2-numbers, include = FALSE}
+rho_w <- aggregate(width ~ K, data = rb, FUN = median)
+sig_w <- aggregate(width ~ K, data = bym[bym$parameter == "sigma", ],
+                   FUN = median)
+rho_cover <- sum(rb$ci_lo <= 0.5 & rb$ci_hi >= 0.5)
+```
+
+The median width of the $\rho$ interval is `r round(rho_w$width[1], 2)` at 16
+regions, so the data barely move the posterior away from the whole unit
+interval, and `r round(rho_w$width[4], 2)` at 196 regions. The interval for
+$\sigma$ is much narrower from the start (`r round(sig_w$width[1], 2)` at 16
+regions, `r round(sig_w$width[4], 2)` at 196), which matches the derivation:
+the overall spread of the effects informs $\sigma$ directly, while $\rho$ needs
+many neighbour comparisons. Of the 16 $\rho$ intervals, `r rho_cover`
+contain 0.5.
+
+### Range and variance of a Gaussian process against the number of locations
+
+The locations are uniform on the unit square, $n = 100, 200, 400, 800$. The
+true field has exponential covariance with $\sigma^2 = 0.64$ and range
+$\phi = 0.3$, drawn exactly by a Cholesky factor of its covariance matrix, and
+the response is Poisson with intercept 1 and slope 0.3. The fit is the
+nearest-neighbour GP of `spatial_gp()` by nested Laplace, with
+`scale_coords = FALSE` so that the range is reported in the units of the
+square. Three replicates (seeds 1 to 3) run at each size. Each fit integrates
+$(\sigma^2, \phi)$ on an outer grid, and `tulpa_outer_grid()` returns its cells
+and weights, from which the posterior mean and standard deviation of
+$\log\phi$, $\log\sigma^2$ and $\log(\sigma^2/\phi)$ follow as weighted
+moments.
+
+```{r gp-one}
+gp_one <- function(n, seed) {
+  set.seed(seed)
+  co <- data.frame(lon = runif(n), lat = runif(n))
+  S <- 0.64 * exp(-as.matrix(dist(co)) / 0.3)
+  w <- as.numeric(t(chol(S + diag(1e-8, n))) %*% rnorm(n))
+  d <- data.frame(co, x = rnorm(n))
+  d$y <- rpois(n, exp(1 + 0.3 * d$x + w))
+  f <- tulpa(y ~ x, data = d, family = "poisson",
+             spatial = spatial_gp(~ lon + lat, scale_coords = FALSE),
+             mode = "nested_laplace", control = list(n_threads = 2))
+  g <- tulpa_outer_grid(f)
+  L <- cbind(log_phi = log(g$nodes[, "phi_gp"]),
+             log_sigma2 = log(g$nodes[, "sigma2"]))
+  L <- cbind(L, log_ratio = L[, "log_sigma2"] - L[, "log_phi"])
+  m <- colSums(g$weights * L)
+  s <- sqrt(colSums(g$weights * sweep(L, 2, m)^2))
+  data.frame(n = n, seed = seed, qty = colnames(L), mean = m, sd = s)
+}
+```
+
+```{r gp-run}
+n_set <- c(100, 200, 400, 800)
+gp <- do.call(rbind, lapply(n_set, function(n) {
+  do.call(rbind, lapply(1:3, function(s) gp_one(n, s)))
+}))
+gp_tab <- aggregate(sd ~ qty + n, data = gp,
+                    FUN = function(v) round(median(v), 2))
+reshape(gp_tab, idvar = "n", timevar = "qty", direction = "wide")
+```
+
+The table gives the median posterior standard deviation on the log scale over
+the three replicates. The plot shows each replicate's mean plus and minus two
+standard deviations against the truth.
+
+```{r gp-plot, fig.width = 7.5, fig.height = 3.5, fig.alt = "Three panels for log range, log variance and log of their ratio, each showing posterior mean plus and minus two standard deviations in three replicates at 100, 200, 400 and 800 locations, with the true value as a horizontal line; only the ratio narrows clearly with more locations"}
+truth <- c(log_phi = log(0.3), log_sigma2 = log(0.64),
+           log_ratio = log(0.64 / 0.3))
+op <- par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+for (q in names(truth)) {
+  gq <- gp[gp$qty == q, ]
+  xpos <- match(gq$n, n_set) + (gq$seed - 2) / 8
+  ylim <- range(gp$mean - 2 * gp$sd, gp$mean + 2 * gp$sd)
+  plot(xpos, gq$mean, ylim = ylim, pch = 19, xaxt = "n",
+       xlab = "locations n", ylab = q, main = q)
+  axis(1, at = seq_along(n_set), labels = n_set)
+  segments(xpos, gq$mean - 2 * gq$sd, xpos, gq$mean + 2 * gq$sd,
+           col = "grey40")
+  abline(h = truth[q], lty = 2, lwd = 2, col = "steelblue")
+}
+par(op)
+```
+
+```{r gp-numbers, include = FALSE}
+sd_at <- function(q, n) gp_tab$sd[gp_tab$qty == q & gp_tab$n == n]
+```
+
+From 100 to 800 locations the median posterior standard deviation of
+$\log(\sigma^2/\phi)$ falls from `r sd_at("log_ratio", 100)` to
+`r sd_at("log_ratio", 800)`, while that of $\log\phi$ stays between
+`r min(gp_tab$sd[gp_tab$qty == "log_phi"])` and
+`r max(gp_tab$sd[gp_tab$qty == "log_phi"])` and that of $\log\sigma^2$
+between `r min(gp_tab$sd[gp_tab$qty == "log_sigma2"])` and
+`r max(gp_tab$sd[gp_tab$qty == "log_sigma2"])`.
+
+## Design recommendations
+
+The numbers below come from the stress tests above, with their seeds and
+replicate counts; they describe these simulations and are a starting point for
+a design check on your own model, which repeats a test like these at your
+own sample sizes and effect sizes.
+
+- **Random-effect SD.** With 10 Poisson observations per group and a true SD
+  of 0.7 (20 replicates per size), the median 95% interval for the SD was
+  `r re_tab$width[re_tab$J == 3]` wide at 3 groups,
+  `r re_tab$width[re_tab$J == 5]` at 5, `r re_tab$width[re_tab$J == 10]` at 10
+  and `r re_tab$width[re_tab$J == 20]` at 20. The derivation gives the floor:
+  even with the effects known, the standard deviation of the log SD is about
+  $1/\sqrt{2(J-1)}$, so more observations per group cannot replace groups.
+  With a handful of groups, report the interval, read its upper end as prior
+  information, or treat the groups as fixed effects.
+- **BYM2 mixing parameter.** At 16 regions the median $\rho$ interval was
+  `r round(rho_w$width[1], 2)` wide on a unit interval, and at 196 regions
+  `r round(rho_w$width[4], 2)` (4 replicates per size, 10 observations per
+  region). On maps of a few dozen regions, read $\rho$ as weakly informed and
+  base conclusions on $\sigma$ and the fitted field; an ICAR field
+  ([Spatial models](spatial-models.html)) drops the parameter.
+- **Gaussian-process range and variance.** Inside a fixed unit square, going
+  from 100 to 800 locations reduced the posterior SD of
+  $\log(\sigma^2/\phi)$ from `r sd_at("log_ratio", 100)` to
+  `r sd_at("log_ratio", 800)` and left those of $\log\phi$ and $\log\sigma^2$
+  at `r sd_at("log_phi", 800)` and `r sd_at("log_sigma2", 800)` (3 replicates
+  per size). Denser sampling in the same region identifies the ratio. By the
+  derivation, the range is informed separately by distances comparable to
+  the size of the region, which this test did not vary; the prior on it
+  ([Priors](priors.html)) carries the rest. Report the range with its interval and avoid
+  conclusions that depend on the range alone.
+- **Intercept and field level.** Under an ICAR, RW1 or varying-coefficient
+  term the intercept or slope carries the level of the field, so it is the
+  quantity to report and compare. A shift of the true field shows up in the
+  fixed effect, as the 0.3 shift did in the intercept above.
+
+## See also
+
+- [Spatial models](spatial-models.html): the ICAR and BYM2 fields end to end.
+- [Temporal models](temporal-models.html): RW1 and AR1 trends, the chain-graph
+  case of the intrinsic level.
+- [Varying coefficients](varying-coefficients.html): spatially and temporally
+  varying slopes.
+- [Random slopes](random-slopes.html): random-effect covariance blocks, where
+  each variance and correlation is learned from the same groups.
+- [Priors](priors.html): the PC priors that inform a weakly identified
+  hyperparameter.
+- [Diagnostics](diagnostics.html): the outer-grid checks of a nested-Laplace
+  fit.
+
+## References
+
+Riebler, A., Sorbye, S. H., Simpson, D., & Rue, H. (2016). An intuitive
+Bayesian spatial model for disease mapping that accounts for scaling.
+Statistical Methods in Medical Research, 25(4), 1145-1165.
+
+Zhang, H. (2004). Inconsistent estimation and asymptotically equal
+interpolations in model-based geostatistics. Journal of the American
+Statistical Association, 99(465), 250-261.
+[doi:10.1198/016214504000000241](https://doi.org/10.1198/016214504000000241)

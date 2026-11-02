@@ -1,0 +1,430 @@
+---
+title: "Troubleshooting"
+description: "The errors and warnings a tulpa fit most often stops on, grouped by stage, each with the message as printed and a corrected call that runs."
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Troubleshooting}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6, fig.height = 4
+)
+set.seed(20260529)
+```
+
+```{r cran-gate, include = FALSE}
+# The model fits below are evaluated when the article is built locally, in CI
+# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
+# the whole check a ten-minute budget, which these fits do not fit inside, so
+# there the code is shown without being run.
+EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
+knitr::opts_chunk$set(eval = EVAL_FITS)
+```
+
+Each entry below starts from a situation, shows the message tulpa prints in
+that situation, and ends on a corrected call that runs. The entries are
+grouped by the stage at which the message appears: preparing the input,
+setting priors and the dispersion, fitting, and reading how reliable a fit is.
+The terms used here (control knob, tier, outer grid, Pareto k) are defined in
+[Concepts](concepts.html). Installation is covered in
+[Get started](tulpa.html).
+
+```{r load, message = FALSE}
+library(tulpa)
+```
+
+## Example data
+
+Every entry uses the data below. `d` holds 300 Gaussian measurements on 12
+groups `g`, simulated from an intercept of 0.5, a slope of 1.2 on `x`, group
+offsets with standard deviation 0.6 and residual standard deviation 0.8. `db`
+holds a binary response on the same `x` and `g`, and `dc` a count of successes
+out of 5 trials. `ds` places binary observations in 10 regions on a ring, with
+the adjacency matrix `W`, and adds a time index `time` and a three-level panel
+factor `site`.
+
+```{r data}
+n <- 300
+x <- rnorm(n)
+g <- factor(sample(1:12, n, replace = TRUE))
+u <- rnorm(12, sd = 0.6)
+d  <- data.frame(y = 0.5 + 1.2 * x + u[g] + rnorm(n, sd = 0.8), x = x, g = g)
+db <- data.frame(y = rbinom(n, 1, plogis(-0.3 + x + u[g])), x = x, g = g)
+dc <- data.frame(y = rbinom(n, 5, plogis(-0.3 + x)), x = x)
+
+K <- 10
+W <- matrix(0, K, K)
+for (i in 1:K) { j <- if (i < K) i + 1 else 1; W[i, j] <- W[j, i] <- 1 }
+ds <- data.frame(y = rbinom(n, 1, plogis(-0.2 + 0.7 * x)), x = x,
+                 region = sample(1:K, n, replace = TRUE),
+                 time = sample(1:15, n, replace = TRUE),
+                 site = factor(sample(1:3, n, replace = TRUE)))
+```
+
+## Input
+
+### A tuning setting passed as an argument
+
+`n_threads`, `n_iter`, `max_iter` and the other settings that change how the
+computation runs are not arguments of `tulpa()`. Given as one, the fit stops
+before any work and says where the setting goes.
+
+```{r knob-dots, error = TRUE}
+tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
+      phi = 0.8^2, n_threads = 2)
+```
+
+Move it into `control`.
+
+```{r knob-dots-fix}
+fit <- tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
+             phi = 0.8^2, control = list(n_threads = 2))
+coef(fit)
+```
+
+### A misspelled control knob
+
+A name in `control` that no backend reads is refused, and the message lists
+every name `tulpa()` accepts.
+
+```{r knob-typo, error = TRUE}
+tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
+      phi = 0.8^2, control = list(n_thread = 2))
+```
+
+The list is long because it covers every backend; the fix is the spelling
+`n_threads` used in the previous entry.
+
+### A knob the chosen backend does not read
+
+Once `mode` is fixed, `control` is checked against the backend that will run.
+A Laplace fit has no chain, so a chain length is refused, and the message
+lists the three knobs the Laplace backend reads.
+
+```{r knob-backend, error = TRUE}
+tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "laplace",
+      sigma_re = 0.6, phi = 0.8^2, control = list(n_iter = 2000))
+```
+
+Either drop the knob or pick a backend that reads it. `n_iter` and `warmup`
+belong to the samplers.
+
+```{r knob-backend-fix}
+fit <- tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "mala",
+             sigma_re = 0.6, phi = 0.8^2,
+             control = list(n_iter = 2000, warmup = 500))
+coef(fit)
+```
+
+### A variable the data do not contain
+
+A covariate missing from `data` stops the fit with R's own message. A missing
+grouping variable is named by tulpa.
+
+```{r missing-var, error = TRUE}
+tulpa(y ~ z, data = d, family = "gaussian", mode = "laplace", phi = 0.8^2)
+tulpa(y ~ x + (1 | h), data = d, family = "gaussian", mode = "laplace",
+      phi = 0.8^2)
+```
+
+Check `names(d)` against every variable in the formula, including the one
+after the bar.
+
+```{r missing-var-fix}
+names(d)
+coef(tulpa(y ~ x + (1 | g), data = d, family = "gaussian",
+           mode = "laplace", sigma_re = 0.6, phi = 0.8^2))
+```
+
+### Binomial counts without the number of trials
+
+`dc$y` counts successes out of 5. Without `n_trials`, `binomial` expects a 0/1
+response and stops.
+
+```{r trials, error = TRUE}
+tulpa(y ~ x, data = dc, family = "binomial", mode = "laplace")
+```
+
+Pass the trials, one per row.
+
+```{r trials-fix}
+coef(tulpa(y ~ x, data = dc, family = "binomial", mode = "laplace",
+           n_trials = rep(5, n)))
+```
+
+The slope is close to the 1 the counts were simulated with.
+[Data formatting](data-formatting.html) shows the other response encodings.
+
+### Missing values in the response
+
+A missing response value stops the fit, and the message names its row.
+
+```{r na, error = TRUE}
+dna <- d
+dna$y[3] <- NA
+tulpa(y ~ x, data = dna, family = "gaussian", mode = "laplace", phi = 0.8^2)
+```
+
+Remove the incomplete rows, or impute them, before fitting.
+
+```{r na-fix}
+coef(tulpa(y ~ x, data = dna[!is.na(dna$y), ], family = "gaussian",
+           mode = "laplace", phi = 0.8^2))
+```
+
+### Region codes that do not match the adjacency
+
+An integer region code is a row of the adjacency matrix. `W` has 10 rows, so
+codes 11 and 12 point outside it.
+
+```{r adj-range, error = TRUE}
+ds_bad <- ds
+ds_bad$region[1:2] <- c(11, 12)
+tulpa(y ~ x + spatial(region), data = ds_bad, family = "binomial",
+      spatial = list(type = "icar", adjacency = W), mode = "laplace")
+```
+
+An adjacency with a one-sided link is refused too. `check_adjacency()` reports
+every property the spatial fit needs, and flags the asymmetry here.
+
+```{r adj-sym}
+W_bad <- W
+W_bad[1, 2] <- 0
+check_adjacency(W_bad)
+```
+
+With codes in `1:10` and the symmetric `W`, the fit runs.
+
+```{r adj-fix}
+fit_sp <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
+                spatial = list(type = "icar", adjacency = W),
+                mode = "laplace")
+coef(fit_sp)
+```
+
+## Priors and dispersion
+
+### A penalised-complexity prior with an invalid tail probability
+
+A penalised-complexity (PC) prior on a standard deviation is set by two
+numbers: a scale `U` and the probability `alpha` that the standard deviation
+exceeds it. The prior exists only for `U > 0` and `alpha` strictly between 0
+and 1, and each constructor that takes the pair checks it.
+
+```{r pc, error = TRUE}
+prior_pc(U = 1, alpha = 1.5)
+spatial_gp(~ lon + lat, approx = "hsgp", sigma_prior_alpha = 1)
+```
+
+`alpha = 0.05` with `U = 1` reads "a 5% prior probability that the standard
+deviation exceeds 1".
+
+```{r pc-fix}
+prior_pc(U = 1, alpha = 0.05)
+```
+
+[Priors](priors.html) covers how to choose `U` and `alpha`.
+
+### A Gaussian fit without `phi`
+
+For `gaussian`, `phi` is the residual variance, and `mode = "laplace"` and
+the samplers hold it fixed at the value passed. Left out, it is fixed at 1
+with a warning.
+
+```{r phi}
+fit <- tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace")
+```
+
+When the residual variance is known, pass it as a variance: here `0.8^2`, not
+`0.8`. When it is not known and the model has a random effect,
+`mode = "eb"` with `estimate_phi = TRUE` estimates it along with the
+random-effect standard deviation.
+
+```{r phi-fix}
+fit_eb <- tulpa(y ~ x + (1 | g), data = d, family = "gaussian",
+                mode = "eb", estimate_phi = TRUE)
+VarCorr(fit_eb)
+```
+
+Both standard deviations are labelled `estimated`: 0.48 for the groups and
+0.79 for the residual, against the 0.6 and 0.8 the data were simulated with.
+
+## Fitting
+
+### A combination `tulpa()` does not fit yet
+
+Some combinations of terms are refused before fitting. A random slope next to
+a spatial field is one.
+
+```{r combo-slope, error = TRUE}
+tulpa(y ~ x + (1 + x | site) + spatial(region), data = ds,
+      family = "binomial", spatial = list(type = "icar", adjacency = W))
+```
+
+A temporal field with one trend per panel group (`group_var`) next to a
+spatial field is another.
+
+```{r combo-panel, error = TRUE}
+tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
+      spatial = list(type = "icar", adjacency = W),
+      temporal = temporal_rw1("time", group_var = "site"))
+```
+
+Each message names the combination that does fit. With a random intercept in
+place of the slope, the spatial model runs.
+
+```{r combo-fix}
+fit <- tulpa(y ~ x + (1 | site) + spatial(region), data = ds,
+             family = "binomial",
+             spatial = list(type = "icar", adjacency = W),
+             mode = "laplace", sigma_re = 0.5)
+coef(fit)
+```
+
+### Nested Laplace on a model with no latent field
+
+`mode = "nested_laplace"` integrates the hyperparameters of a spatial,
+temporal, smooth or custom field. A model with only a random intercept has
+none of these, and the message names the modes that fit it.
+
+```{r nl-none, error = TRUE}
+tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+      mode = "nested_laplace")
+```
+
+`mode = "structured"` stays in Tier 2 and integrates the random-effect
+standard deviation.
+
+```{r nl-none-fix}
+fit <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+             mode = "structured")
+c(backend = fit$backend, tier = fit$inference_tier)
+```
+
+### An outer grid larger than the cap
+
+A model with a spatial and a temporal field has two hyperparameters, and its
+outer grid crosses the two axes, one inner solve per cell.
+`control$max_grid_cells` caps the cell count, and a grid past the cap is
+refused before any solve, with the axes that produced the count.
+
+```{r grid-cap, error = TRUE}
+tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
+      spatial = list(type = "icar", adjacency = W),
+      temporal = temporal_rw1("time"),
+      control = list(max_grid_cells = 50, n_threads = 2))
+```
+
+Raise the cap above the count the message gives, or leave it unset.
+`?tulpa_nested_laplace` documents that an unset cap solves a grid of any size
+and warns first when it passes 2048 cells.
+
+```{r grid-cap-fix}
+fit_st <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
+                spatial = list(type = "icar", adjacency = W),
+                temporal = temporal_rw1("time"),
+                control = list(max_grid_cells = 100, n_threads = 2,
+                               progress = FALSE))
+coef(fit_st)
+```
+
+## Reliability
+
+### A sampler chain that has not converged
+
+A sampler fit checks its own chain. A short chain on the binary data leaves
+too few effective draws, and the fit warns, naming the parameters and their
+Rhat and bulk effective sample size.
+
+```{r chain}
+fit_short <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+                   mode = "mala", sigma_re = 0.6,
+                   control = list(n_iter = 150, warmup = 30))
+check_diagnostics(fit_short)
+```
+
+`check_diagnostics()` lists the checks that failed. A longer chain clears
+them.
+
+```{r chain-fix}
+fit_long <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+                  mode = "mala", sigma_re = 0.6,
+                  control = list(n_iter = 3000, warmup = 1000))
+check_diagnostics(fit_long)
+head(diagnostics(fit_long), 2)
+```
+
+### `diagnostics()` returns nothing for a Laplace fit
+
+A plain Laplace fit computes no reliability quantity, so `diagnostics()`
+returns `NULL` with a message.
+
+```{r diag-laplace}
+fit_lap <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+                 mode = "laplace", sigma_re = 0.6)
+diagnostics(fit_lap)
+```
+
+`mode = "imh_laplace"` reuses the Laplace Gaussian as the proposal of an exact
+Metropolis-Hastings sampler. A high acceptance rate says the Laplace
+approximation was close to the posterior, and the fit then carries a chain
+that `diagnostics()` reads.
+
+```{r diag-laplace-fix}
+fit_imh <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+                 mode = "imh_laplace", sigma_re = 0.6)
+round(fit_imh$mean_accept, 2)
+rbind(laplace = coef(fit_lap), imh = coef(fit_imh))
+```
+
+### Reading the reliability report of a nested-Laplace fit
+
+On a nested-Laplace fit `diagnostics()` prints the reliability of the outer
+integration over the hyperparameters, and of the inner Laplace layer where
+the backend scores it. The fit below puts a random walk over the 15 time
+points of `ds`.
+
+```{r diag-read}
+fit_rw <- tulpa(y ~ x, data = ds, family = "binomial",
+                temporal = temporal_rw1("time"),
+                control = list(n_threads = 2))
+diagnostics(fit_rw)
+```
+
+The lines to read, in order:
+
+- `outer PSIS pareto_k` with its band in parentheses: below 0.5 is good,
+  0.5 to 0.7 ok, 0.7 and above unreliable.
+- `outer grid quadrature ESS`: how many cells carry the weight. A value near 1
+  means a single cell holds the posterior.
+- the `note:` lines, which name an axis whose grid was moved or is coarser
+  than its posterior.
+- `whole-fit verdict`, which combines the outer and inner layers.
+
+Here the outer k is 0.567, in the ok band, and the verdict reads the outer
+integration as borderline. Each number is also an attribute of the returned
+object. On the two-field fit `fit_st` of the grid entry the outer k is `NA`,
+because it is not defined on a multi-block grid, and that fit's verdict says
+the outer integration was not assessed.
+
+```{r diag-read-st}
+attr(diagnostics(fit_rw), "pareto_k")
+attr(diagnostics(fit_st), "pareto_k")
+```
+
+[Reliability diagnostics](reliability-pareto-k.html) explains what a k in the
+ok or unreliable band means and the levers for it.
+
+## Where next
+
+- [Concepts](concepts.html): the terms used in these messages.
+- [Data formatting](data-formatting.html): response encodings, grouping
+  variables and spatial inputs.
+- [Reliability diagnostics](reliability-pareto-k.html): the outer Pareto k in
+  depth.
+- [Inference modes](inference-modes.html): which backend fits which model.

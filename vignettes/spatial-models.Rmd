@@ -522,13 +522,13 @@ actionable.
   eigenvalues of the graph Laplacian `diag(rowSums(W)) - W` counts the
   connected components; more than one means the graph is split.
 
-- **Read slopes, never the intercept, under ICAR.** The intercept
-  confounds with the field level and its standard error runs to the
-  prior scale, on the order of 100 on the link scale, against slope errors
-  three orders of magnitude smaller. That gap is expected and is the
-  signature of the intrinsic ridge, not a convergence problem. If you need
-  a clean intercept, move to a proper CAR or a BYM2 field, whose IID part
-  breaks the exact confounding.
+- **Read the intercept as the level of a centred field.** The ICAR field
+  is constrained to sum to zero, so the intercept carries the overall level
+  and the field only the departures from it; the fit above reports an
+  intercept standard error of
+  `r if (EVAL_FITS) signif(coef(summary(fit))["(Intercept)", "std.error"], 2) else "about 0.08"`.
+  [Identifiability](identifiability.html) shows the alias the constraint
+  removes.
 
 - **ICAR versus BYM2.** Reach for `icar` when you want the simplest smooth
   field and do not need to separate structured from unstructured variation;

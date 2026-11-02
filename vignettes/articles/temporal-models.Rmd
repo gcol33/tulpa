@@ -559,11 +559,11 @@ A handful of rules of thumb for everyday use.
   the ring's wrap-around increment lets the trend join up across the seam. Leave
   it `FALSE` for an open calendar sequence whose endpoints are not neighbours.
 
-- **Read slopes, not the intercept.** Under the intrinsic RW1 the intercept's
-  standard error sits near the prior width because the trend level is not
-  separately identified. The covariate slopes are identified and their intervals
-  are marginalized over $\tau$. If you need the overall level, read it from the
-  extracted, centred trend.
+- **Read the intercept as the level of a centred trend.** The RW1 trend is
+  constrained to sum to zero, so the intercept carries the overall level and the
+  trend only the departures from it; the covariate slopes and the intercept are
+  both identified, and their intervals are marginalized over $\tau$.
+  [Identifiability](identifiability.html) shows the alias the constraint removes.
 
 - **Skip the field when time carries no shared signal.** If observations are not
   clustered in time, or the response has no plausible smooth temporal component,

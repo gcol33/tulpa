@@ -1,5 +1,6 @@
-﻿---
+---
 title: "Checkpointing"
+description: "Save the progress of a long fit to disk, resume it after an interruption, and see the fingerprint refuse a file written for other inputs."
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Checkpointing}
@@ -9,7 +10,6 @@ vignette: >
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
-set.seed(20260716)
 ```
 
 ```{r cran-gate, include = FALSE}
@@ -21,47 +21,32 @@ EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
 knitr::opts_chunk$set(eval = EVAL_FITS)
 ```
 
-## Installation
+A nested Laplace fit solves one inner problem per cell of its hyperparameter
+grid, and a NUTS fit runs several independent chains. Either can run for
+hours, and a reboot or a killed job near the end would otherwise lose all of
+it. With `control$checkpoint` set, tulpa appends every finished cell or chain
+to a file; a later call with the same inputs loads what is finished and
+computes only the rest. This article turns checkpointing on, cuts the file
+the way a kill during a write would, resumes from it, and shows the file
+being refused once the data change.
 
-```{r, eval = FALSE}
-# Current release, built for Windows and macOS
-install.packages("tulpa",
-                 repos = c("https://gcol33.r-universe.dev",
-                           "https://cloud.r-project.org"))
-
-# Development version from GitHub
-install.packages("pak")
-pak::pak("gcol33/tulpa")
-
-# Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
-```
-
-`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used for SPDE mesh construction). `tulpa` compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, `r-base-dev` on Linux.
+Installation is covered in [Get started](tulpa.html).
 
 ```{r load, message = FALSE}
 library(tulpa)
 ```
 
-## Why checkpoint
-
-A nested-Laplace fit is a loop over independent hyperparameter grid
-cells; a multi-chain NUTS fit is a loop over independent chains. Both can
-run for a long time, and a killed or rebooted run should not have to
-start over. tulpa writes each finished unit to a content-addressed
-append log: on resume it reloads the completed units and runs only the
-rest, and a run interrupted mid-write is detected and re-run rather than
-trusted.
-
 ## Turn it on
 
-Every nested-Laplace fitter takes `control$checkpoint = list(path =,
-resume =)`. `path` is the checkpoint file; `resume = TRUE` reloads any
-completed cells from it, `resume = FALSE` (the default) starts fresh and
-overwrites.
+`control$checkpoint = list(path =, resume =)` takes the file and whether to
+continue from it. With a `path` given, `resume` defaults to `TRUE`;
+`resume = FALSE` removes any existing file and starts over. The example is a
+binomial model with an intrinsic CAR field on a chain of 30 regions, fitted
+by nested Laplace through `mode = "structured"`. `fit_ckpt()` wraps the call
+so the later sections can repeat it with other data or another `resume`.
 
 ```{r fit}
-# A small nested-Laplace fit over an ICAR field on a chain graph.
+set.seed(20260716)
 S <- 30L
 W <- matrix(0, S, S)
 for (i in 1:(S - 1)) W[i, i + 1] <- W[i + 1, i] <- 1
@@ -70,44 +55,113 @@ df$x <- as.integer(df$region) / 10 + rnorm(S, 0, 0.3)
 df$y <- rbinom(S, 20, plogis(-0.4 + 0.5 * df$x))
 
 ckpt <- tempfile(fileext = ".ckpt")
-fit <- tulpa(y ~ x + spatial(region), data = df, family = "binomial",
-             n_trials = rep(20L, S),
-             spatial = spatial_car(W, level = "obs"),
-             mode = "structured",
-             control = list(checkpoint = list(path = ckpt, resume = FALSE)))
+fit_ckpt <- function(data, resume) {
+  tulpa(y ~ x + spatial(region), data = data, family = "binomial",
+        n_trials = rep(20L, S), spatial = spatial_car(W, level = "obs"),
+        mode = "structured",
+        control = list(n_threads = 2,
+                       checkpoint = list(path = ckpt, resume = resume)))
+}
+fit <- fit_ckpt(df, resume = FALSE)
 coef(fit)
+full_size <- file.size(ckpt)
+full_size
 ```
 
-The grid cells are now on disk:
+The file starts with a header holding a fingerprint of the inputs: the
+response, trial counts, design matrix, offsets, the field's structure and the
+solver settings. Each solved grid cell follows as one record, keyed by its
+hyperparameter coordinate and closed by a checksum over key and payload.
 
-```{r size}
-file.exists(ckpt) && file.info(ckpt)$size > 0
+## Resume after an interruption
+
+A job killed while it writes leaves a file that ends in the middle of a
+record. Cutting the file to 45% of its bytes reproduces that: the records
+before the cut are intact, the last one is torn, and the rest are missing.
+
+```{r interrupt}
+bytes <- readBin(ckpt, "raw", full_size)
+writeBin(bytes[seq_len(floor(0.45 * full_size))], ckpt)
+file.size(ckpt)
 ```
 
-## Resume
-
-A second call with the same data, settings, and grid plus `resume =
-TRUE` reloads every completed cell instead of re-solving it -- so this
-call returns essentially instantly and to the same result.
+The same call with `resume = TRUE` reads the intact records, detects the torn
+one by its short length or failed checksum, truncates the file to the last
+good record, and solves the cells that are not on disk, appending each as it
+finishes.
 
 ```{r resume}
-fit2 <- tulpa(y ~ x + spatial(region), data = df, family = "binomial",
-              n_trials = rep(20L, S),
-              spatial = spatial_car(W, level = "obs"),
-              mode = "structured",
-              control = list(checkpoint = list(path = ckpt, resume = TRUE)))
+fit2 <- fit_ckpt(df, resume = TRUE)
+c(size_after_resume = file.size(ckpt), size_uninterrupted = full_size)
 all.equal(coef(fit), coef(fit2))
 ```
 
-```{r cleanup, include = FALSE}
-unlink(ckpt)
+The file is complete again, and the resumed fit returns the coefficients of
+the uninterrupted one.
+
+## A changed input is refused
+
+Resuming onto a file written for other inputs would mix cells from two
+models. Changing a single count changes the fingerprint, and the resume
+stops before solving anything:
+
+```{r fingerprint, error = TRUE}
+df_changed <- df
+df_changed$y[1] <- df_changed$y[1] + 1L
+fit_ckpt(df_changed, resume = TRUE)
 ```
 
-## What the fingerprint protects
+`resume = FALSE` on the same path discards the old file and fits the new
+data from the start:
 
-The checkpoint header carries a fingerprint of the data, settings, and
-grid. Resuming onto a file written for a *different* fit errors rather
-than silently mixing results, and a torn final record (a run killed
-mid-write) is truncated and re-run. A multi-chain NUTS resume is
-bit-for-bit identical to the uninterrupted run, because a chain is
-deterministic in its seed and data.
+```{r restart}
+fit3 <- fit_ckpt(df_changed, resume = FALSE)
+coef(fit3)
+```
+
+## Sampler chains
+
+The sampler kernel of `mode = "hmc"` takes the same `control$checkpoint`,
+with a chain as the unit. A chain is deterministic in its seed, its chain
+number, the data and the settings, so a resumed run returns exactly the
+draws of the uninterrupted one. The example is a Poisson model with a random
+intercept over 10 groups, four chains, cut at 60% of the file:
+
+```{r chains}
+set.seed(1)
+g <- factor(rep(1:10, each = 10))
+d <- data.frame(g = g, x = rnorm(100))
+d$y <- rpois(100, exp(0.3 + 0.4 * d$x + rnorm(10, 0, 0.5)[g]))
+
+ckpt_chains <- tempfile(fileext = ".ckpt")
+fit_chains <- function(resume) {
+  tulpa(y ~ x + (1 | g), data = d, family = "poisson", mode = "hmc",
+        control = list(n_chains = 4, n_iter = 1000, warmup = 500, seed = 11,
+                       checkpoint = list(path = ckpt_chains, resume = resume)))
+}
+run1 <- fit_chains(resume = FALSE)
+size <- file.size(ckpt_chains)
+writeBin(readBin(ckpt_chains, "raw", size)[seq_len(floor(0.6 * size))],
+         ckpt_chains)
+run2 <- fit_chains(resume = TRUE)
+identical(run1$draws, run2$draws)
+```
+
+```{r cleanup, include = FALSE}
+unlink(c(ckpt, ckpt_chains))
+```
+
+The records are stored in the byte order of the machine that wrote them, so
+a checkpoint is for resuming on that machine, not for moving a fit between
+platforms. The
+fitters that take `control$checkpoint` are the nested Laplace doors
+(`tulpa_nested_laplace()`, `tulpa_nested_laplace_joint()`, `fit_spde()` and
+`tulpa()` when it routes to them) and the NUTS/HMC sampler; other sampler
+backends refuse the key.
+
+## See also
+
+- [Inference modes](inference-modes.html): which mode routes to nested
+  Laplace and which to a sampler.
+- `?tulpa_nested_laplace`, section on `control`, for the checkpoint entry
+  alongside the other grid knobs.

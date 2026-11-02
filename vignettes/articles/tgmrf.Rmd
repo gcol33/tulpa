@@ -290,6 +290,35 @@ Laplace and VI agree to within grid resolution / Gaussian-fit
 curvature; IMH lifts the structured-tier bias at the cost of `n_iter`
 inner Laplace solves.
 
+The means hide the spread. The figure puts each fit's 95% interval for both
+hyperparameters next to the value the data were simulated at: the grid's
+weighted quantiles for nested Laplace, the draw quantiles for VI and IMH.
+
+```{r compare-plot, fig.width = 7, fig.height = 3.2, fig.alt = "Two panels, one per hyperparameter (log_sigma and atanh_rho). Each shows the 95% interval and mean from nested Laplace, VI and IMH as horizontal segments, with a vertical line at the simulated value."}
+hyp  <- summary(fit_lap)$hyperparameters
+tier <- c("laplace", "vi", "imh")
+op <- par(mfrow = c(1, 2), mar = c(4, 5, 1, 1))
+for (j in seq_along(blk$theta_names)) {
+  dr  <- list(posterior_sample(fit_vi)[, j], posterior_sample(fit_imh)[, j])
+  lo  <- c(hyp$ci_lo[j], vapply(dr, quantile, numeric(1), 0.025))
+  hi  <- c(hyp$ci_hi[j], vapply(dr, quantile, numeric(1), 0.975))
+  mid <- c(hyp$mean[j],  vapply(dr, mean, numeric(1)))
+  plot(mid, 1:3, xlim = range(lo, hi, theta_true[j]), ylim = c(0.5, 3.5),
+       pch = 19, yaxt = "n", xlab = blk$theta_names[j], ylab = "")
+  segments(lo, 1:3, hi, 1:3, lwd = 2)
+  axis(2, at = 1:3, labels = tier, las = 1)
+  abline(v = theta_true[j], col = "darkorange", lwd = 2)
+}
+par(op)
+```
+
+On both axes all three intervals cover the simulated value (orange line). On
+`log_sigma` they nearly coincide. On `atanh_rho` the grid and IMH intervals
+agree with each other, while the VI interval is narrower and sits lower: the
+Gaussian fitted at the optimum trims the right tail that the exact sampler
+keeps. The intercept $\beta_0$ is left out because the `tulpa_tgmrf()`
+adapters report draws of `theta` only.
+
 ## The mathematics
 
 Fix notation first. The model has three layers. The data is

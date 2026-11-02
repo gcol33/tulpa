@@ -1,0 +1,402 @@
+---
+title: "Concepts"
+description: "The vocabulary the other articles use, each term defined on a small fit, followed by the fitted object, its accessors and the rules the fitting functions enforce."
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Concepts}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6, fig.height = 4
+)
+set.seed(20260529)
+```
+
+```{r cran-gate, include = FALSE}
+# The model fits below are evaluated when the article is built locally, in CI
+# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
+# the whole check a ten-minute budget, which these fits do not fit inside, so
+# there the code is shown without being run.
+EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
+knitr::opts_chunk$set(eval = EVAL_FITS)
+# Read here, not in a gated chunk: chunk options are evaluated whether or not
+# the chunk runs, so a flag a chunk option reads has to exist either way.
+has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
+```
+
+The README, [Get started](tulpa.html) and the model articles use a small set
+of terms: linear predictor, latent field, hyperparameter, family, `phi`,
+inference mode, tier, outer grid, debias, mixture read and the diagnostics
+door. This article defines them in that order, each on a fit small enough to
+run in a second, and each built on the one before. It ends with the fitted
+object itself, the functions that read it, and three rules every fitting
+function enforces. Installation is covered in [Get started](tulpa.html).
+
+```{r load, message = FALSE}
+library(tulpa)
+```
+
+## The linear predictor and fixed effects
+
+The data for the first sections are 300 Gaussian measurements on 12 groups.
+`x` is a measured covariate, `g` the group, and `y` the response, simulated
+from an intercept of 0.5, a slope of 1.2, a group offset with standard
+deviation 0.6 and residual noise with standard deviation 0.8.
+
+```{r sim}
+n <- 300
+x <- rnorm(n)
+g <- factor(sample(1:12, n, replace = TRUE))
+u <- rnorm(12, sd = 0.6)
+d <- data.frame(y = 0.5 + 1.2 * x + u[g] + rnorm(n, sd = 0.8), x = x, g = g)
+```
+
+The formula `y ~ x` gives each observation $i$ a linear predictor
+
+$$
+\eta_i = \beta_0 + \beta_1 x_i ,
+$$
+
+where $\beta_0$ and $\beta_1$ are the fixed effects: one coefficient per
+column of the design matrix, shared by every observation. `coef()` returns
+their posterior means.
+
+```{r fixed}
+fit0 <- tulpa(y ~ x, data = d, family = "gaussian",
+              mode = "laplace", phi = 0.8^2)
+coef(fit0)
+```
+
+## Latent fields and their hyperparameters
+
+The group offsets in `d` are not explained by `x`. Adding `(1 | g)` gives the
+linear predictor one extra term per group,
+
+$$
+\eta_i = \beta_0 + \beta_1 x_i + u_{g[i]}, \qquad
+u_j \sim \mathrm{N}(0, \sigma_{\mathrm{re}}^2),
+$$
+
+where $g[i]$ is the group of observation $i$ and $u_j$ the offset of group $j$.
+The $u_j$ are latent: they are never observed, and their prior ties them
+together through the scale $\sigma_{\mathrm{re}}$. A collection of latent
+values with a joint Gaussian prior is a latent field. A random intercept is the
+simplest one; spatial fields (`spatial()`, `spatial_gp()`), temporal fields
+(`temporal_rw1()` and its siblings) and custom blocks (`tgmrf()`) are others.
+
+The parameters of the field's prior, here $\sigma_{\mathrm{re}}$, are its
+hyperparameters. The fit below conditions on `sigma_re = 0.6`, so the
+hyperparameter is held at that value and `VarCorr()` labels it
+`conditioned`.
+
+```{r latent}
+fit1 <- tulpa(y ~ x + (1 | g), data = d, family = "gaussian",
+              mode = "laplace", sigma_re = 0.6, phi = 0.8^2)
+VarCorr(fit1)
+head(ranef(fit1), 3)
+```
+
+`ranef()` returns each group's $u_j$ at the posterior mode, which is what the
+`source` column records; this Laplace fit reports no standard deviation or
+interval for them. Later sections integrate a hyperparameter instead of
+fixing it.
+
+## Family, link and phi
+
+The family is the distribution of $y_i$ given $\eta_i$. The link connects
+the two: the family's mean is $\mu_i = h^{-1}(\eta_i)$, with $h$ the identity
+for `gaussian`, the log for `poisson` and the logit for `binomial` and `beta`.
+Coefficients are therefore on the link scale. `family_names()` lists every
+family `tulpa()` fits.
+
+```{r families}
+family_names()
+```
+
+`phi` is the family's dispersion, one number whose meaning depends on the
+family: the residual variance for `gaussian`, the size for `neg_binomial_2`,
+the precision for `beta`. `binomial` and `poisson` have none. The fits above
+pass `phi = 0.8^2`, the variance the data were simulated with. A Poisson fit
+of a count response takes no `phi`, and its coefficients are log rates.
+
+```{r poisson}
+dp <- data.frame(y = rpois(n, exp(0.2 + 0.6 * x)), x = x)
+coef(tulpa(y ~ x, data = dp, family = "poisson", mode = "laplace"))
+```
+
+## Inference mode and tier
+
+`mode` selects how the posterior is computed. Each mode belongs to one of
+three tiers, and the tier states what the reported intervals mean:
+
+- Tier 1 (exact): the mode draws from the posterior, so its intervals are
+  posterior intervals up to Monte Carlo error. `"mala"`, `"hmc"`,
+  `"imh_laplace"` and `"gibbs"` are examples.
+- Tier 2 (structured): the mode is accurate when a stated assumption holds,
+  usually a Gaussian shape of some block of the posterior. `"laplace"` and
+  `"nested_laplace"` are examples.
+- Tier 3 (optimized): a point and a spread from an optimisation objective,
+  with no general guarantee on the spread. `"vi"` is an example.
+
+The fit records the backend that ran and its tier.
+
+```{r tier}
+c(backend = fit1$backend, tier = fit1$inference_tier)
+```
+
+`inference_mode_info()` prints the full list of modes with their tiers.
+
+## Inner Laplace and outer hyperparameter integration
+
+A temporal field shows what happens when a hyperparameter is integrated. The
+data `dt` are 300 Poisson counts over 20 time points, with a sinusoidal trend
+over time and a slope of 0.5 on `x`.
+
+```{r sim-time}
+Tt    <- 20
+time  <- sample(seq_len(Tt), n, replace = TRUE)
+trend <- sin(2 * pi * seq_len(Tt) / Tt)
+dt <- data.frame(y = rpois(n, exp(0.3 + 0.5 * x + trend[time])),
+                 x = x, time = time)
+```
+
+`temporal_rw1("time")` puts a first-order random walk on the 20 time points.
+Its hyperparameter is the precision `tau`, which sets how far neighbouring
+time points may differ. No value for `tau` is passed, so the fit integrates
+over it.
+
+```{r fit-time}
+fit_t <- tulpa(y ~ x, data = dt, family = "poisson",
+               temporal = temporal_rw1("time"),
+               control = list(n_threads = 2))
+fit_t
+```
+
+The printed header names the method: nested Laplace over a grid of cells for
+`tau`. The computation has two layers. For each fixed value of `tau`, the
+inner Laplace approximation finds the mode of the fixed effects and the field
+and the curvature there, and with them an approximate log marginal likelihood
+of that `tau`. The outer layer lays a grid of `tau` values, the outer grid,
+whose points are its cells, and turns those log marginal likelihoods (plus the
+hyperprior) into one weight per cell. `tulpa_outer_grid()` returns the grid.
+
+```{r outer-grid}
+og <- tulpa_outer_grid(fit_t)
+data.frame(tau = round(og$nodes[, 1], 2), weight = round(og$weights, 3))
+```
+
+The rows are in the order the cells were solved: the first nine are the
+declared grid, and the cells after them are points a refinement pass added
+between the heaviest ones. The cells at `tau` below 1 carry weights under
+0.001. The posterior of any quantity is the
+weighted mixture of the per-cell inner posteriors, so the fixed-effect
+interval already contains the uncertainty in `tau`.
+
+```{r outer-plot, eval = has_ggplot && EVAL_FITS, fig.alt = "Outer-grid weight of each cell against the random-walk precision tau on a log axis"}
+library(ggplot2)
+ggplot(data.frame(tau = og$nodes[, 1], weight = og$weights),
+       aes(tau, weight)) +
+  geom_segment(aes(xend = tau, yend = 0), colour = "steelblue") +
+  geom_point() +
+  scale_x_log10() +
+  labs(x = "tau (log scale)", y = "cell weight") +
+  theme(panel.background = element_rect(fill = "transparent"),
+        plot.background  = element_rect(fill = "transparent"))
+```
+
+## Debias
+
+A Tier 2 mode is exact only when its Gaussian assumption holds. A debias step
+corrects the remaining error with exact sampling. `mode = "imh_laplace"` is
+the simplest: it draws proposals from the Laplace Gaussian and accepts or
+rejects them with a Metropolis-Hastings step, so the accepted draws come from
+the exact posterior. Its acceptance rate is a check on the Laplace fit: a rate
+near 1 says the Gaussian was close to the posterior. The data `db` reuse `x`
+and the groups as a binary response.
+
+```{r debias}
+db <- data.frame(y = rbinom(n, 1, plogis(-0.3 + x + u[g])), x = x, g = g)
+fit_imh <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+                 mode = "imh_laplace", sigma_re = 0.6)
+data.frame(tier = fit_imh$inference_tier,
+           accept = round(fit_imh$mean_accept, 2))
+```
+
+The fit is Tier 1, and the acceptance rate is printed above; a rate this high
+says the Laplace Gaussian was close to the posterior of this model.
+
+## Posterior draws and mixture reads
+
+A sampler fit carries posterior draws. `posterior_sample()` returns them as a
+matrix with one row per draw and one column per sampled quantity, here the two
+fixed effects and the 12 group offsets.
+
+```{r draws}
+dr <- posterior_sample(fit_imh)
+dim(dr)
+```
+
+A nested-Laplace fit carries no draws. Its summaries are read from the
+weighted mixture of Gaussians on the outer grid: `summary()` and `confint()`
+invert the mixture's distribution function, and the `interval_source`
+attribute records that read.
+
+```{r mixture}
+ci <- confint(fit_t)
+attr(ci, "interval_source")
+posterior_sample(fit_t)
+```
+
+`posterior_sample()` returns `NULL` with a message pointing to
+`tulpa_posterior_draws()`, which draws independent samples from that mixture
+when draws are needed.
+
+```{r mixture-draws}
+md <- tulpa_posterior_draws(fit_t)
+dim(md)
+```
+
+## The diagnostics door
+
+`diagnostics()` is the one function that reports how far a fit can be
+trusted, and what it reports follows the method. For a sampler it is the
+per-parameter Rhat and effective sample sizes.
+
+```{r diag-sampler}
+head(diagnostics(fit_imh), 3)
+```
+
+For a nested-Laplace fit it is the reliability of the outer integration:
+the Pareto k of the grid, the grid's effective sample size and notes on its
+resolution. [Reliability diagnostics](reliability-pareto-k.html) explains
+each line.
+
+```{r diag-nested}
+diagnostics(fit_t)
+```
+
+A plain Laplace fit computes no reliability quantity, and `diagnostics()` says
+so in a message and returns `NULL`. `mode = "imh_laplace"`, as in the Debias
+section, is the check for that case.
+
+## The fitted object
+
+Every fit is a list with class `tulpa_fit`; a nested-Laplace fit adds
+`tulpa_nested_laplace` in front.
+
+```{r class}
+class(fit1)
+class(fit_t)
+```
+
+The fields an analysis reads are the method record and the fit status. Other
+fields hold the design, the response and the per-backend internals the
+accessors use.
+
+```{r fields}
+fit1[c("backend", "inference_mode", "inference_tier",
+       "selection_reason", "converged", "log_marginal")]
+```
+
+`print()` shows the backend and tier on its first line and the fixed effects
+below; `summary()` adds intervals, variance components, hyperparameters and
+the reliability verdict.
+
+```{r print}
+fit1
+```
+
+## Accessors
+
+Each accessor reads a stored field of the fit, so none of them refits the
+model. The table lists the exported accessors for a `tulpa_fit`.
+
+| Accessor | Returns |
+|---|---|
+| `coef()`, `fixef()` | posterior means of the fixed effects |
+| `vcov()` | fixed-effect posterior covariance |
+| `confint()` | credible intervals for the fixed effects |
+| `summary()` | method record, fixed-effect table, variance components, hyperparameters, reliability; `coef(summary(fit))` is the table |
+| `ranef()` | per-group posterior of each random effect |
+| `VarCorr()` | random-effect standard deviations, labelled `conditioned`, `estimated` or `sampled` |
+| `field_effects()` | the spatial field per unit |
+| `temporal()` | the temporal field per time point |
+| `tulpa_outer_grid()` | a nested-Laplace fit's grid: nodes, weights, per-cell modes |
+| `posterior_sample()` | posterior draws of a sampler fit as a matrix |
+| `tulpa_draws_array()` | the same draws as an iterations x chains x parameters array |
+| `tulpa_posterior_draws()` | independent draws from a nested-Laplace fit's mixture |
+| `diagnostics()` | the reliability report for the method that ran |
+| `predict()`, `fitted()` | fixed-effect predictions at new data, in-sample means |
+| `logLik()` | log marginal likelihood (Laplace) or mean log density (sampler) |
+| `tidy()`, `glance()` | broom-style term table and one-row model summary |
+| `plot()` | fixed-effect densities, or traces for a sampler fit |
+
+`fixef()` and `coef()` return the same vector on a `tulpa_fit`.
+
+```{r accessors}
+all.equal(fixef(fit1), coef(fit1))
+coef(summary(fit1))
+```
+
+## Rules the fitting functions enforce
+
+### Statistical arguments and control knobs
+
+The signature of `tulpa()` carries only statistical arguments: the formula,
+the data, the family, `mode`, `phi`, `sigma_re`, the priors and the latent
+structure. Everything that changes how the computation runs (threads,
+iterations, tolerances, grid settings) goes in one `control = list()`. A knob
+given as a top-level argument stops the fit and names the place it belongs.
+
+```{r knob-dots, error = TRUE}
+tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
+      phi = 0.8^2, n_threads = 2)
+```
+
+### Misplaced knobs are errors
+
+A knob the selected backend does not read is refused, with the list of the
+knobs it does read. A Laplace fit has no iterations to set.
+
+```{r knob-mode, error = TRUE}
+tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
+      phi = 0.8^2, control = list(n_iter = 2000))
+```
+
+The same call with a knob the Laplace backend reads runs.
+
+```{r knob-ok}
+coef(tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
+           phi = 0.8^2, control = list(n_threads = 2)))
+```
+
+### Automatic mode stays in Tiers 1 and 2
+
+`mode = "auto"`, the default, picks a backend from the model's terms and
+records why in `selection_reason`. It chooses only Tier 1 or Tier 2 backends.
+A Tier 3 backend runs only when it is named.
+
+```{r auto}
+fit_auto <- tulpa(y ~ x, data = db, family = "binomial")
+fit_vi   <- tulpa(y ~ x, data = db, family = "binomial", mode = "vi")
+rbind(auto = c(fit_auto$backend, fit_auto$inference_tier,
+               fit_auto$selection_reason),
+      vi   = c(fit_vi$backend, fit_vi$inference_tier,
+               fit_vi$selection_reason))
+```
+
+## Where next
+
+- [Get started](tulpa.html): one path from a formula to a fitted, compared
+  and predicted model.
+- [Inference modes](inference-modes.html): the backends side by side on one
+  model, with timings.
+- [Reliability diagnostics](reliability-pareto-k.html): what the outer Pareto
+  k measures and how to act on it.
+- [Troubleshooting](troubleshooting.html): the error and warning messages,
+  each with its fix.

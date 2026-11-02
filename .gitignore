@@ -23,3 +23,5 @@ claude/
 tests/testthat/testthat-problems.rds
 tests/testthat/_problems/
 .run*
+vignettes/articles/*_cache/
+vignettes/articles/*_files/

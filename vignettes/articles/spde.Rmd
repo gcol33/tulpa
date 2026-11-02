@@ -1,0 +1,496 @@
+---
+title: "Continuous fields with the SPDE"
+description: "Matern fields on a triangular mesh in depth: the SPDE model, mesh construction and resolution, PC priors, mean and SD maps on a grid, and a comparison with non-spatial, NNGP and HSGP fits."
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Continuous fields with the SPDE}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6, fig.height = 4
+)
+set.seed(20260529)
+```
+
+```{r cran-gate, include = FALSE}
+# The model fits below are evaluated when the article is built locally, in CI
+# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
+# the whole check a ten-minute budget, which these fits do not fit inside, so
+# there the code is shown without being run.
+EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
+knitr::opts_chunk$set(eval = EVAL_FITS)
+```
+
+Survey points, traps and sensors sit on coordinates, and a spatial signal
+between them is smooth in distance. A Matern Gaussian field is a prior for such
+a signal, and the stochastic partial differential equation (SPDE)
+approach of Lindgren, Rue and Lindstrom (2011) represents it on a triangular
+mesh with a sparse precision matrix. This article writes the model down,
+builds meshes with [tulpaMesh](https://github.com/gcol33/tulpaMesh),
+simulates Poisson counts from a field with known range and standard deviation,
+fits it, maps the posterior mean and SD of the field on a grid, and compares
+the fit with a non-spatial model and with NNGP and HSGP fields. It ends with
+guidance on the mesh, measured on the same data. [Spatial models](spatial-models.html)
+shows a first SPDE fit in a few lines; installation is covered in
+[Get started](tulpa.html).
+
+```{r load, message = FALSE}
+library(tulpa)
+```
+
+## The Matern field and its SPDE
+
+Consider $n$ observations at locations $s_1, \ldots, s_n$ in the plane, with
+counts $y_i$ and one covariate $x_i$. The counts are Poisson with mean
+$\mu_i$, and
+
+$$
+\log \mu_i = \beta_0 + \beta_1 x_i + w(s_i),
+$$
+
+where $w$ is a spatial field with mean zero. The field has a Matern
+covariance: two locations at distance $h$ have
+
+$$
+\operatorname{cov}\{w(s), w(s')\} = \frac{\sigma^2}{2^{\nu - 1}\,\Gamma(\nu)}
+  (\kappa h)^{\nu} K_{\nu}(\kappa h),
+$$
+
+where $\sigma$ is the marginal standard deviation, $\nu$ the smoothness,
+$\kappa$ a scale parameter and $K_\nu$ the modified Bessel function of the
+second kind. The range $\rho = \sqrt{8\nu} / \kappa$ is the distance at which
+the correlation has fallen to about 0.1 to 0.14, depending on $\nu$; `fit_spde()` and
+`spatial_spde()` take and report the field by $(\rho, \sigma)$.
+
+A field with this covariance solves the SPDE
+
+$$
+(\kappa^2 - \Delta)^{\alpha / 2}\, \tau\, w(s) = \mathcal{W}(s),
+\qquad \alpha = \nu + 1,
+$$
+
+with $\Delta$ the Laplacian and $\mathcal{W}$ Gaussian white noise. The
+constant $\tau$ fixes the marginal variance, $\sigma^2 = 1 / (4 \pi \nu
+\kappa^{2\nu} \tau^2)$, so a pair $(\rho, \sigma)$ determines $(\kappa,
+\tau)$ and the other way round.
+
+The finite-element step writes the field as $w(s) = \sum_{k} \psi_k(s)\, w_k$,
+one piecewise-linear basis function $\psi_k$ per mesh vertex, so $w_k$ is the
+field at vertex $k$. Two sparse matrices describe the mesh: the mass matrix
+$C$, here diagonal, and the stiffness matrix $G$, whose entries are the
+integrals of $\nabla\psi_j \cdot \nabla\psi_k$. With $K = \kappa^2 C + G$, the
+vertex values have precision
+
+$$
+Q = \tau^2 K (C^{-1} K)^{\alpha - 1},
+$$
+
+which at the default $\nu = 1$ is $\tau^2 (\kappa^4 C + 2\kappa^2 G + G C^{-1}
+G)$. An entry of $Q$ is nonzero only for vertices that share a triangle or a
+neighbour, so the field's cost grows with the mesh and stays sparse. The
+projector $A$, with $A_{ik} = \psi_k(s_i)$, gives the field at the
+observations as $A w$. A non-integer $\nu$ makes $\alpha$ fractional; tulpa
+then uses a rational approximation of the operator (Bolin and Kirchner 2020),
+shown at the end of the article.
+
+## Simulating point data
+
+Place 300 observations uniformly in the unit square and lay a 40 by 40
+prediction grid over the same square. The field is drawn once, jointly at the
+observations and the grid nodes, from the Matern covariance at $\nu = 1$ with
+range 0.3 and marginal SD 0.8, so the grid carries the true field for later
+checks. At $\nu = 1$ the covariance reduces to $\sigma^2 (\kappa h) K_1(\kappa
+h)$.
+
+```{r sim-field}
+matern1 <- function(h, range, sigma) {
+  kh <- sqrt(8) / range * h
+  ifelse(h == 0, sigma^2, sigma^2 * kh * besselK(kh, 1))
+}
+set.seed(11)
+n    <- 300
+obs  <- data.frame(lon = runif(n), lat = runif(n))
+g1   <- seq(0.0125, 0.9875, length.out = 40)
+grid <- expand.grid(lon = g1, lat = g1)
+K    <- matern1(as.matrix(dist(rbind(obs, grid))), range = 0.3, sigma = 0.8)
+w    <- as.numeric(t(chol(K + diag(1e-8, nrow(K)))) %*% rnorm(nrow(K)))
+w_obs <- w[1:n]; w_grid <- w[-(1:n)]
+```
+
+The counts have intercept 0.5 and covariate slope 0.4, with the covariate
+drawn independently of the field.
+
+```{r sim-counts}
+obs$x <- rnorm(n)
+obs$y <- rpois(n, exp(0.5 + 0.4 * obs$x + w_obs))
+summary(obs$y)
+```
+
+## Building a mesh
+
+`spatial_spde()` builds the mesh from the coordinates through
+`tulpaMesh::tulpa_mesh()`, computes the finite-element matrices and the
+projector, and returns the field specification. Two arguments set the mesh:
+`max_edge` is the longest triangle edge allowed, as `c(inner, outer)` for the
+study area and a narrow extension around it, and `cutoff` is the distance below which points are
+merged into one vertex. Every observation is a mesh vertex unless `cutoff`
+merges it, so `cutoff` controls the resolution among the points and
+`max_edge` the resolution in the gaps between them.
+
+```{r meshes}
+fine   <- spatial_spde(~ lon + lat, data = obs,
+                       max_edge = c(0.1, 0.4), cutoff = 0.03)
+coarse <- spatial_spde(~ lon + lat, data = obs,
+                       max_edge = c(0.3, 0.4), cutoff = 0.15)
+c(fine = fine$n_mesh, coarse = coarse$n_mesh)
+apply(fine$mesh$vertices, 2, range)
+```
+
+The tulpaMesh `plot()` method draws a mesh; the points are the observations.
+
+```{r mesh-plot, fig.width = 7, fig.height = 3.6, fig.alt = "Two triangular meshes over the unit square with the observation locations: a fine mesh with many small triangles and a coarse mesh with few large ones"}
+op <- par(mfrow = c(1, 2), mar = c(2.5, 2.5, 2, 0.5))
+plot(fine$mesh, main = paste(fine$n_mesh, "vertices"))
+points(obs$lon, obs$lat, pch = 20, cex = 0.4, col = "darkorange")
+plot(coarse$mesh, main = paste(coarse$n_mesh, "vertices"))
+points(obs$lon, obs$lat, pch = 20, cex = 0.4, col = "darkorange")
+par(op)
+```
+
+The fine mesh ends about 0.05 beyond the outermost observations. A mesh with a
+wider margin is built with `tulpaMesh::tulpa_mesh()` and its `extend`
+argument, and passed to `spatial_spde()` as `mesh`.
+
+## Fitting
+
+Pass the specification through `spatial=` in `tulpa()`. The coordinates are
+already in the specification, so the formula has no `spatial()` term, and the
+fit goes to the SPDE backend.
+
+```{r fit}
+fit <- tulpa(y ~ x, data = obs, family = "poisson", spatial = fine,
+             control = list(n_threads = 2, progress = FALSE))
+fit$backend
+coef(summary(fit))
+```
+
+The slope interval contains the simulated 0.4. With `range` and `sigma` left
+unset, the fit integrates over both by nested Laplace: an inner Laplace solve
+of the coefficients and the vertex field at each design point of a central
+composite design in $(\log\rho, \log\sigma)$, weighted by the marginal
+likelihood and the priors. `spatial_range()` reports the two hyperparameters
+with their posterior mean, SD and 95% bounds.
+
+```{r range}
+spatial_range(fit)
+```
+
+Both intervals contain the simulated values, a range of 0.3 and an SD of 0.8.
+`diagnostics()`
+scores the outer integration over $(\rho, \sigma)$ with a Pareto-$\hat k$
+from importance sampling against the Gaussian the design was laid on; here it
+reads 0.552, marked ok.
+
+```{r diagnostics}
+diagnostics(fit)
+```
+
+## PC priors on range and SD
+
+The hyperparameters carry penalised-complexity (PC) priors, set on the
+specification as `c(U, alpha)` pairs: `prior_range` states
+$P(\rho < U) = \alpha$ and `prior_sigma` states $P(\sigma > U) = \alpha$. By
+default `U` for the range is a fifth of the diagonal of the coordinates'
+bounding box, with $\alpha = 0.5$, so `U` is the prior median, and the SD prior
+is `c(3, 0.01)`.
+
+```{r priors-default}
+rbind(range = fine$prior_range, sigma = fine$prior_sigma)
+```
+
+To see how much the range prior moves the fit, refit with a prior median of
+0.05 and of 1, twenty times apart. `fit_spde()` is the SPDE fitter
+`tulpa()` called above; it takes the response, a design matrix and the
+specification directly.
+
+```{r priors-compare}
+X <- model.matrix(~ x, obs)
+prior_fit <- function(pr) {
+  sp <- spatial_spde(~ lon + lat, data = obs, max_edge = c(0.1, 0.4),
+                     cutoff = 0.03, prior_range = pr)
+  f <- fit_spde(obs$y, X, sp, family = "poisson",
+                control = list(n_threads = 2))
+  c(range = f$nested$range_mean, sigma = f$nested$sigma_mean,
+    slope = coef(f)[["x"]])
+}
+round(rbind(median_0.05 = prior_fit(c(0.05, 0.5)),
+            median_1    = prior_fit(c(1, 0.5))), 3)
+```
+
+The posterior mean range moves from about 0.25 to about 0.31 across the two
+priors and the slope by less than 0.002, so with 300 observations the data
+dominate both priors.
+
+## The field on a grid
+
+`field_effects()` returns the field at each mesh vertex. On the nested path
+this is the mode of the fit at the posterior-mean hyperparameters, so `sd` is
+`NA`.
+
+```{r field-nodes}
+fe <- field_effects(fit)
+head(fe[, c("unit", "estimate", "sd")], 3)
+```
+
+`predict()` projects the vertex field to new coordinates through the mesh and
+adds the fixed effects. At $x = 0$ the link-scale prediction is $\beta_0 +
+w(s)$. With `se.fit = TRUE` its standard error carries the joint posterior
+of the coefficients and the field at the fitted hyperparameters, so it
+includes the intercept's uncertainty and leaves out the spread over
+$(\rho, \sigma)$.
+
+```{r predict-grid}
+pg <- predict(fit, newdata = data.frame(grid, x = 0), se.fit = TRUE)
+head(pg, 3)
+```
+
+The true linear predictor at $x = 0$ is $0.5 + w$. The three maps show it,
+the posterior mean and the posterior SD, with the observation locations on
+the SD map.
+
+<details><summary>Plotting code</summary>
+
+```{r map-fn}
+map <- function(v, main, zlim = range(v)) {
+  image(g1, g1, matrix(v, 40, 40), zlim = zlim, asp = 1, main = main,
+        col = hcl.colors(50, "viridis"), xlab = "lon", ylab = "lat")
+}
+```
+
+</details>
+
+```{r maps, fig.width = 7.5, fig.height = 2.9, fig.alt = "Three maps of the unit square: the true linear predictor, its posterior mean, which shows the same large-scale highs and lows, and the posterior SD, which is lowest where observations are dense"}
+eta_true <- 0.5 + w_grid
+zl <- range(eta_true, pg$fit)
+op <- par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+map(eta_true, "truth", zl)
+map(pg$fit, "posterior mean", zl)
+map(pg$se.fit, "posterior SD")
+points(obs$lon, obs$lat, pch = 20, cex = 0.3, col = "white")
+par(op)
+```
+
+The posterior mean recovers the large-scale highs and lows of the truth and
+smooths the small-scale detail. The SD is lowest among dense observations and
+highest in the gaps and at the edges.
+
+## Checking the fit
+
+Plotting the predicted against the true linear predictor over the 1600 grid
+nodes shows how much of the field the counts identify.
+
+```{r check-plot, fig.alt = "Predicted against true linear predictor at the grid nodes, scattered around the identity line"}
+plot(eta_true, pg$fit, pch = 20, cex = 0.4, col = "steelblue",
+     xlab = "true linear predictor", ylab = "posterior mean")
+abline(0, 1, lwd = 2, col = "grey40")
+```
+
+The points scatter around the identity line, and the lowest true values are
+predicted too high. The share of grid nodes whose true value lies inside the
+95% prediction interval, and the correlation between truth and posterior mean:
+
+```{r check-cover}
+c(coverage = mean(eta_true >= pg$lower & eta_true <= pg$upper),
+  correlation = cor(eta_true, pg$fit))
+```
+
+The coverage is below 0.95. The interval holds $(\rho, \sigma)$ at their fitted
+values and leaves out their spread, which `?predict.tulpa_fit` notes makes it
+mildly optimistic when that posterior is wide.
+
+## Mesh resolution
+
+A mesh coarser than the field's range cannot represent the field's variation
+between vertices. Fit the same data on three meshes, from triangles six times
+shorter than the range to triangles as long as the range, and score each by
+time, the hyperparameters, the slope and the root mean squared error of the
+projected field against the truth on the grid. `tulpaMesh::fem_matrices()`
+with `obs_coords` returns the projector from the mesh vertices to the grid.
+
+```{r mesh-fn}
+mesh_fit <- function(edge, cutoff) {
+  sp <- spatial_spde(~ lon + lat, data = obs, max_edge = c(edge, 0.4),
+                     cutoff = cutoff)
+  t <- system.time(f <- fit_spde(obs$y, X, sp, family = "poisson",
+                                 control = list(n_threads = 2)))
+  A_grid <- tulpaMesh::fem_matrices(sp$mesh, obs_coords = as.matrix(grid))$A
+  w_hat  <- as.numeric(A_grid %*% field_effects(f)$estimate)
+  c(max_edge = edge, vertices = sp$n_mesh, seconds = t[["elapsed"]],
+    range = f$nested$range_mean, sigma = f$nested$sigma_mean,
+    slope = coef(f)[["x"]], rmse = sqrt(mean((w_hat - w_grid)^2)))
+}
+```
+
+```{r mesh-compare}
+res_mesh <- rbind(mesh_fit(0.05, 0.02), mesh_fit(0.15, 0.08),
+                  mesh_fit(0.3, 0.15))
+round(res_mesh, 3)
+```
+
+Times are elapsed seconds on the machine that built this page, 300
+observations, two threads. The coarsest mesh, with edges as long as the range,
+falls back from the composite design to a rectangular grid and reports a
+range of 0.10, against 0.27 and 0.25 on the two finer meshes. Those two agree
+on the hyperparameters within their posterior SD, and the finest takes about
+nineteen times as long as the middle one for a grid error 0.02 lower.
+
+## Comparing with other spatial fits
+
+The same counts can be fitted without a field and with the two other
+continuous fields of tulpa: an NNGP field (`spatial_gp()`, exponential
+covariance, 15 neighbours) and a Hilbert-space GP (`approx = "hsgp"`, here
+with 12 basis functions per dimension). `predict()` adds each continuous
+field to the prediction, so subtracting the prediction without the field
+(`include_field = FALSE`) gives the field on the grid.
+
+```{r fit-others}
+ctl <- list(n_threads = 2, progress = FALSE)
+nd  <- data.frame(grid, x = 0)
+fits <- list(spde = fit)
+time <- c(spde = NA)
+time["nonspatial"] <- system.time(fits$nonspatial <- tulpa(
+  y ~ x, data = obs, family = "poisson", mode = "laplace"))[["elapsed"]]
+time["nngp"] <- system.time(fits$nngp <- tulpa(
+  y ~ x, data = obs, family = "poisson",
+  spatial = spatial_gp(~ lon + lat), control = ctl))[["elapsed"]]
+time["hsgp"] <- system.time(fits$hsgp <- tulpa(
+  y ~ x, data = obs, family = "poisson",
+  spatial = spatial_gp(~ lon + lat, approx = "hsgp", m = 12),
+  control = ctl))[["elapsed"]]
+time["spde"] <- system.time(tulpa(
+  y ~ x, data = obs, family = "poisson", spatial = fine,
+  control = ctl))[["elapsed"]]
+```
+
+```{r compare-table}
+field_rmse <- function(f) {
+  w_hat <- predict(f, newdata = nd) - predict(f, newdata = nd,
+                                              include_field = FALSE)
+  sqrt(mean((w_hat - w_grid)^2))
+}
+tab <- t(sapply(fits, function(f) {
+  unlist(coef(summary(f))["x", c("estimate", "std.error")])
+}))
+tab <- cbind(tab, seconds = time[rownames(tab)],
+             grid_rmse = c(sapply(fits[-2], field_rmse), nonspatial = NA)[rownames(tab)])
+round(tab, 3)
+```
+
+The three fields reach grid errors within about 0.04 of each other, the NNGP
+field the lowest, and agree on the slope to within 0.015. On this dataset the
+non-spatial slope, 0.402, is closer to the simulated 0.4, and its standard
+error is smaller than those of the spatial fits; every slope interval contains
+0.4. The non-spatial fit has no field to project.
+
+The widely applicable information criterion (WAIC) ranks the four fits by
+estimated out-of-sample predictive accuracy, computed from each fit's
+pointwise log-likelihood with its field included.
+
+```{r waic}
+compare_models(nonspatial = fits$nonspatial, spde = fits$spde,
+               nngp = fits$nngp, hsgp = fits$hsgp, criterion = "waic")
+```
+
+All three spatial fits sit about 150 to 170 units of expected log predictive
+density above the non-spatial one. Among them the NNGP field ranks first, the
+HSGP field 4.9 below it with a standard error of 4.7 on the difference, and
+the SPDE field 16.8 below with a standard error of 7.0.
+
+## Fractional smoothness
+
+`nu` sets the smoothness. An integer $\nu$ gives the exact construction
+above; any other positive $\nu$ uses the rational approximation, with the
+Laplace fitter `fit_spde()` at fixed or integrated hyperparameters. At
+$\nu = 0.5$ the Matern covariance is exponential. A fit at fixed range and SD
+shows the call:
+
+```{r fractional}
+sp_half <- spatial_spde(~ lon + lat, data = obs, max_edge = c(0.1, 0.4),
+                        cutoff = 0.03, nu = 0.5)
+f_half <- fit_spde(obs$y, X, sp_half, family = "poisson",
+                   range = 0.3, sigma = 0.8)
+round(coef(f_half), 3)
+```
+
+Leaving `range` and `sigma` unset integrates over both at fractional $\nu$
+too. The sampler path (`mode = "nuts"`) and the analytic standard errors
+behind `predict(se.fit = TRUE)` take integer $\nu$ only.
+
+## Matrices from another mesh
+
+`spatial_spde_custom()` takes the mass matrix, the stiffness matrix and the
+projector directly, for a mesh built elsewhere. Built from the finite-element
+matrices of the fine mesh, it should give the same fit as `spatial_spde()`.
+
+```{r custom}
+fem <- tulpaMesh::fem_matrices(fine$mesh,
+                               obs_coords = as.matrix(obs[, c("lon", "lat")]))
+sp_custom <- spatial_spde_custom(fem$C, fem$G, fem$A,
+                                 prior_range = fine$prior_range,
+                                 prior_sigma = fine$prior_sigma)
+f_custom <- fit_spde(obs$y, X, sp_custom, family = "poisson",
+                     control = list(n_threads = 2))
+rbind(spatial_spde = coef(fit), spatial_spde_custom = coef(f_custom))
+```
+
+## Practical guidance
+
+- **Mesh edge against the range.** On these data, inner edges of a sixth and
+  a half of the range (0.05 and 0.15 against 0.3) gave the same
+  hyperparameters within their posterior SD and grid errors 0.02 apart, while
+  edges as long as the range lost the range estimate. Start with an inner
+  `max_edge` at most half the range you expect, and refit at half that edge:
+  if the range and the slope do not move, the coarser mesh is enough.
+- **Cost grows with the vertices.** The fine mesh of the comparison above had
+  about seven times the vertices of the middle one and took about nineteen
+  times as long. `cutoff` is the lever for clustered data, since every point
+  closer than `cutoff` to another shares its vertex.
+- **Priors.** With 300 observations, prior medians for the range twenty times
+  apart moved the posterior mean range by about a quarter and the slope by less
+  than 0.002. With few observations or a range close to the size of the study
+  area, set `prior_range` from what is known about the process, and compare
+  two priors as above.
+- **Read the hyperparameter intervals with the prediction intervals.** The
+  grid intervals hold $(\rho, \sigma)$ fixed and covered less than 95% of the
+  true values here.
+- **When not to use the SPDE field.** Areal data on regions with borders take
+  an areal field ([Spatial models](spatial-models.html)). A field that has to
+  be restricted with `spatial_rsr()` must be areal or NNGP
+  ([Spatial confounding and restricted spatial regression](spatial-confounding.html)).
+  When residuals of a non-spatial fit show no spatial structure, the field
+  adds cost and no information.
+
+## References
+
+Bolin, D., & Kirchner, K. (2020). The rational SPDE approach for Gaussian
+random fields with general smoothness. Journal of Computational and Graphical
+Statistics, 29(2), 274-285.
+
+Lindgren, F., Rue, H., & Lindstrom, J. (2011). An explicit link between
+Gaussian fields and Gaussian Markov random fields: the stochastic partial
+differential equation approach. Journal of the Royal Statistical Society:
+Series B, 73(4), 423-498.
+
+## See also
+
+- [Spatial models](spatial-models.html): areal fields end to end and a first
+  SPDE fit.
+- [Spatial confounding and restricted spatial regression](spatial-confounding.html).
+- `?spatial_spde`, `?spatial_spde_custom`, `?fit_spde`, `?tulpa_nuts_spde`,
+  and the tulpaMesh help pages `?tulpaMesh::tulpa_mesh` and
+  `?tulpaMesh::fem_matrices`.

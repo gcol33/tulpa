@@ -240,21 +240,43 @@ redirects:
 - ["articles/quickstart.html", "articles/tulpa.html"]
 
 articles:
+- title: Concepts
+  navbar: Concepts
+  contents:
+  - articles/concepts
+- title: Models
+  navbar: Models
+  contents:
+  - articles/random-slopes
+  - spatial-models
+  - articles/temporal-models
+  - articles/space-time
+  - articles/varying-coefficients
+  - articles/spde
+  - articles/spatial-confounding
+  - articles/joint-models
+  - articles/latent-factors
+  - articles/categorical-responses
 - title: Workflows
   navbar: Workflows
   contents:
   - articles/data-formatting
-  - articles/random-slopes
-  - spatial-models
-  - articles/temporal-models
   - articles/priors
+  - articles/diagnostics
   - articles/model-comparison
+  - articles/troubleshooting
   - articles/checkpoint
   - articles/tgmrf
   - articles/em-laplace
+- title: Case studies
+  navbar: Case studies
+  contents:
+  - articles/case-study-sids
 - title: Background
   navbar: Background
   contents:
   - inference-modes
+  - articles/identifiability
   - articles/reliability-pareto-k
   - articles/sbc
+  - articles/compatibility

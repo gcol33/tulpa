@@ -1,0 +1,411 @@
+---
+title: "Latent factors"
+description: "Many species counted at the same sites, sharing one latent site factor with a loading per species: simulate, fit, read scores, loadings and the residual covariance they imply, and compare with a fit without the factor."
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Latent factors}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6, fig.height = 4
+)
+set.seed(20260529)
+```
+
+```{r cran-gate, include = FALSE}
+# The model fits below are evaluated when the article is built locally, in CI
+# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
+# the whole check a ten-minute budget, which these fits do not fit inside, so
+# there the code is shown without being run.
+EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
+knitr::opts_chunk$set(eval = EVAL_FITS)
+```
+
+This article fits counts of eight species at the same 80 sites with one
+latent site factor: an unmeasured site property that every species responds
+to, each with its own loading. It ends with the residual covariance between
+species that the factor implies, a held-out prediction for one species, and a
+comparison with a fit that has no factor. The engine's latent-factor block is
+a prior block of `tulpa_nested_laplace_joint()`, the door the
+[Joint models](joint-models.html) article introduces. Installation is covered
+in [Get started](tulpa.html).
+
+```{r load, message = FALSE}
+library(tulpa)
+```
+
+## Two routes to latent factors
+
+`latent_factor()` builds a latent-factor specification:
+
+```{r spec}
+latent_factor()
+```
+
+That object is read by the fitters of model packages built on tulpa, such as
+tulpaRatio, whose ratio models put a factor into both arms of a numerator and
+denominator. `latent_factors()` summarizes the factor draws those fitters
+store.
+
+Within tulpa itself, the route for several response arms is a block of type
+`"lf"` in the `prior` list of `tulpa_nested_laplace_joint()`. The block
+carries one factor, and this article uses it.
+
+## The model
+
+Index the species by $k = 1, \ldots, K$ and the sites by
+$s = 1, \ldots, S$. Let $y_{ks}$ denote the count of species $k$ at site $s$
+and $x_s$ a measured site covariate. Each species has its own intercept and
+slope, and every species reads the same site score $u_s$, scaled by its own
+loading $\lambda_k$:
+
+$$
+y_{ks} \sim \mathrm{Poisson}(\mu_{ks}), \qquad
+\log \mu_{ks} = \beta_{k0} + \beta_{k1} x_s + \lambda_k u_s .
+$$
+
+The scores and the loadings both carry Gaussian priors,
+$u_s \sim \mathcal{N}(0, \sigma_u^2)$ and
+$\lambda_k \sim \mathcal{N}(0, \sigma_\lambda^2)$, with
+$\sigma_u = \sigma_\lambda = 1$ by default. Both sit in the inner latent
+vector next to the coefficients, so one inner Newton solve finds them
+together, and the block adds no outer hyperparameter axis.
+
+The product $\lambda_k u_s$ leaves three directions unidentified. Changing
+the sign of every loading and every score leaves it unchanged; so does
+multiplying the scores by $c \neq 0$ and dividing the loadings by $c$; and
+adding a constant $a$ to every score shifts species $k$ by $a \lambda_k$, which
+its intercept absorbs. Two tight priors remove them:
+
+$$
+\lambda_1 \sim \mathcal{N}(1, \varepsilon^2), \qquad
+u_1 \sim \mathcal{N}(0, \varepsilon^2), \qquad \varepsilon = 10^{-3}.
+$$
+
+The first fixes the sign and the scale: the factor is measured in the units
+of species 1's response, and a positive score raises species 1. The second
+fixes the level: site 1 is the reference site, and every other score reads
+relative to it.
+
+With one factor, the covariance the factor induces between species $k$ and
+$l$ on the log scale is
+
+$$
+\Omega_{kl} = \lambda_k \lambda_l \operatorname{Var}(u),
+$$
+
+where $\operatorname{Var}(u)$ is the variance of the scores across sites.
+This is the residual covariance: the co-variation of the species left after
+the covariate. Its correlation form is $\pm 1$ for every pair, the sign of
+$\lambda_k \lambda_l$, because a single factor moves all species together;
+the covariance carries the magnitudes. With more than one factor the loading
+matrix would be identified only up to a rotation of the factors. The `"lf"`
+block carries one factor, so that rotation does not arise here.
+
+## Simulating data
+
+The community has $K = 8$ species at $S = 80$ sites. The scores are standard
+normal, with site 1 set to zero to match the reference-site anchor. Species 1
+has loading 1, as the anchor requires; the others range from $-0.8$ to $0.9$,
+and species 6 does not respond to the factor at all.
+
+```{r truth}
+set.seed(4)
+S <- 80L; K <- 8L
+u <- rnorm(S); u[1] <- 0
+lam <- c(1, 0.9, 0.7, -0.6, 0.3, 0, -0.8, 0.5)
+b0  <- c(1, 0.5, 1.2, 0.2, 0.8, 1.5, 0.3, 0.6)
+b1  <- c(0.3, -0.2, 0.5, 0, 0.4, -0.3, 0.2, 0.1)
+x   <- rnorm(S)
+```
+
+```{r simulate}
+eta <- sapply(seq_len(K), function(k) b0[k] + b1[k] * x + lam[k] * u)
+Y <- matrix(rpois(S * K, exp(eta)), S, K,
+            dimnames = list(NULL, paste0("sp", seq_len(K))))
+head(Y, 3)
+```
+
+Species 8 is kept out of the fit at sites 61 to 80, so that its counts there
+can test a prediction later. Every other species is used at every site.
+
+## Fitting
+
+Each species is one response arm. `sites` lists, for each arm, the sites its
+observations come from; it serves twice, to select the rows of `Y` and as the
+block's `obs_idx`, which tells the block which score each observation reads.
+
+```{r arms}
+train <- 1:60; test <- 61:80
+sites <- lapply(seq_len(K), function(k)
+  if (k == K) train else seq_len(S))
+arms <- lapply(seq_len(K), function(k) list(
+  y = Y[sites[[k]], k], n_trials = rep(1L, length(sites[[k]])),
+  X = cbind(1, x = x[sites[[k]]]), family = "poisson"))
+names(arms) <- colnames(Y)
+```
+
+```{r fit}
+lf <- list(type = "lf", n_latent = S, obs_idx = sites)
+ctl <- list(n_threads = 2L, store_Q = TRUE, progress = FALSE)
+fit <- tulpa_nested_laplace_joint(arms, prior = list(lf), control = ctl)
+fit$converged
+```
+
+The block has no outer axis, so the outer grid is one cell and its inner
+solve converged. The coefficients of all eight species, with intervals, come
+from `summary()`; the first two species are shown here.
+
+```{r coef}
+head(coef(summary(fit)), 4)
+```
+
+## Scores and loadings
+
+`tulpa_posterior_draws()` samples the inner latent vector: the 16
+coefficients first, then the block's 80 scores, then its eight loadings.
+`arm_layout$block_start` gives the 0-based position where the block starts.
+
+```{r draws}
+set.seed(5)
+d  <- tulpa_posterior_draws(fit, n = 1000)
+bs <- fit$arm_layout$block_start + 1L
+uc <- bs + seq_len(S) - 1L
+lc <- bs + S + seq_len(K) - 1L
+q_lam <- apply(d[, lc], 2, quantile, c(0.025, 0.5, 0.975))
+round(rbind(true = lam, q_lam), 2)
+```
+
+The loading of species 1 is held at 1 by the anchor. The others keep the
+signs and the order of the true loadings, and species 6 sits at zero.
+
+```{r loading-plot, fig.alt = "Estimated loadings with 95 percent intervals against the true loadings for the eight species, with the identity line; the points lie on a line steeper than the identity"}
+plot(lam, q_lam[2, ], pch = 19, ylim = range(q_lam),
+     xlab = "true loading", ylab = "estimated loading")
+segments(lam, q_lam[1, ], lam, q_lam[3, ], col = "grey60")
+abline(0, 1, lty = 2)
+c(slope = unname(coef(lm(q_lam[2, ] ~ 0 + lam))),
+  covered = sum(q_lam[1, -1] <= lam[-1] & lam[-1] <= q_lam[3, -1]))
+```
+
+The estimated loadings are larger in magnitude than the true ones: a line
+through the origin has the slope printed above, and the printed count says
+how many of the seven free loadings have an interval containing the truth.
+The scores show the matching shrinkage:
+
+```{r score-plot, fig.alt = "Estimated site scores with 95 percent intervals against the true scores for the 80 sites, with the identity line; the points lie on a line flatter than the identity"}
+q_u <- apply(d[, uc], 2, quantile, c(0.025, 0.5, 0.975))
+plot(u, q_u[2, ], pch = 19, ylim = range(q_u),
+     xlab = "true score", ylab = "estimated score")
+segments(u, q_u[1, ], u, q_u[3, ], col = "grey60")
+abline(0, 1, lty = 2)
+c(correlation = cor(q_u[2, ], u), sd_estimate = sd(q_u[2, ]), sd_true = sd(u))
+```
+
+Each score is informed by eight counts only, so the $\mathcal{N}(0, 1)$
+prior pulls it toward zero, and the loadings grow to keep $\lambda_k u_s$ at
+the size the counts require. The scores themselves track the truth closely.
+
+## The residual covariance
+
+The covariance $\Omega_{kl} = \lambda_k \lambda_l \operatorname{Var}(u)$ is
+computed once per draw, so its interval carries the uncertainty of both the
+loadings and the scores.
+
+```{r omega}
+low <- lower.tri(diag(K))
+om <- apply(d, 1, function(r) {
+  l <- r[lc]
+  (l %o% l * var(r[uc]))[low]
+})
+om_true <- (lam %o% lam * var(u))[low]
+q_om <- apply(om, 1, quantile, c(0.025, 0.5, 0.975))
+```
+
+```{r omega-plot, fig.alt = "Estimated residual covariance for the 28 species pairs with 95 percent intervals against the true covariance, with the identity line"}
+plot(om_true, q_om[2, ], pch = 19, ylim = range(q_om),
+     xlab = "true residual covariance", ylab = "estimated")
+segments(om_true, q_om[1, ], om_true, q_om[3, ], col = "grey60")
+abline(0, 1, lty = 2)
+c(slope = unname(coef(lm(q_om[2, ] ~ 0 + om_true))),
+  covered = mean(q_om[1, ] <= om_true & om_true <= q_om[3, ]))
+```
+
+The covariances carry the same inflation as the loadings, with a slope of
+1.30 through the origin, and 22 of the 28 pairs (79%) have an interval
+containing the true value. Every pair that does not involve species 6, whose
+true loading is zero, has the sign of its true covariance, so the pattern of
+which species rise and fall together is recovered while its magnitude is
+overstated.
+
+## Checking the fit
+
+Counts that share a site factor vary more than a Poisson model with the
+covariate alone allows. A fit with an empty `prior` list has no factor:
+
+```{r fit-0}
+fit_0 <- tulpa_nested_laplace_joint(arms, prior = list(), control = ctl)
+```
+
+A posterior predictive check replicates each species' counts at the 80 sites
+from both fits and compares the variance-to-mean ratio with the observed one.
+For the factor fit the replicate at a site uses that site's score.
+
+```{r ppc}
+set.seed(6)
+d0 <- tulpa_posterior_draws(fit_0, n = 1000)
+ratio <- function(v) var(v) / mean(v)
+rep_ratio <- function(dr, k, factor) {
+  b <- fit$arm_layout$beta_start[k] + 1:2
+  e <- dr[, b[1]] + outer(dr[, b[2]], x)
+  if (factor) e <- e + dr[, lc[k]] * dr[, uc]
+  y <- matrix(rpois(length(e), exp(e)), nrow(e))
+  quantile(apply(y, 1, ratio), c(0.025, 0.975))
+}
+ppc <- sapply(1:7, function(k) c(obs = ratio(Y[, k]),
+  factor = rep_ratio(d, k, TRUE), none = rep_ratio(d0, k, FALSE)))
+round(ppc, 2)
+```
+
+Species 8 is left out because its counts at the held-out sites were not
+fitted. Both fits have the same arm layout, so the coefficient positions read
+from `fit` serve `fit_0` too.
+
+```{r ppc-plot, fig.alt = "Observed variance-to-mean ratio of the counts for species 1 to 7 with the 95 percent replicated intervals of the factor fit and the fit without factor; the intervals without factor miss the observed ratios of species 1, 2, 3 and 7"}
+k <- 1:7
+plot(k, ppc["obs", ], pch = 4, lwd = 2, col = "darkorange",
+     ylim = range(ppc), xlab = "species", ylab = "variance / mean")
+segments(k - 0.1, ppc["factor.2.5%", ], k - 0.1, ppc["factor.97.5%", ])
+segments(k + 0.1, ppc["none.2.5%", ], k + 0.1, ppc["none.97.5%", ],
+         col = "steelblue")
+legend("topright", c("observed", "factor fit", "no factor"),
+       pch = c(4, NA, NA), lty = c(NA, 1, 1),
+       col = c("darkorange", "black", "steelblue"), bty = "n")
+```
+
+Without the factor, the replicated intervals miss the observed ratio for
+species 1, 2, 3 and 7, the four with the largest true loadings in magnitude.
+The intervals of the factor fit contain the observed ratio for all seven
+species.
+
+## Prediction
+
+At sites 61 to 80 species 8 was not fitted, but the seven other species were.
+Their counts inform the scores there, and species 8's loading turns the
+scores into a prediction. Without the factor, the prediction uses species 8's
+intercept and slope only. Both are scored by the log predictive density of
+the held-out counts and by the error of the predicted mean.
+
+```{r predict}
+b8 <- fit$arm_layout$beta_start[K] + 1:2
+mu_f <- exp(d[, b8[1]] + outer(d[, b8[2]], x[test]) +
+            d[, lc[K]] * d[, uc[test]])
+mu_0 <- exp(d0[, b8[1]] + outer(d0[, b8[2]], x[test]))
+y8 <- Y[test, K]
+lpd <- function(mu) sum(log(colMeans(t(dpois(y8, t(mu))))))
+rmse <- function(mu) sqrt(mean((colMeans(mu) - y8)^2))
+rbind(factor = c(lpd = lpd(mu_f), rmse = rmse(mu_f)),
+      no_factor = c(lpd = lpd(mu_0), rmse = rmse(mu_0)))
+```
+
+```{r predict-plot, fig.alt = "Predicted mean count of species 8 at the 20 held-out sites with 95 percent intervals from the factor fit, against the observed counts"}
+q_mu <- apply(mu_f, 2, quantile, c(0.025, 0.5, 0.975))
+plot(y8, q_mu[2, ], pch = 19, ylim = range(q_mu, y8),
+     xlab = "observed count, species 8", ylab = "predicted mean")
+segments(y8, q_mu[1, ], y8, q_mu[3, ], col = "grey60")
+abline(0, 1, lty = 2)
+```
+
+On these 20 sites the factor prediction scores below the prediction without
+the factor on both measures. Species 8's loading is estimated at 0.88 in the
+loading table, against a true 0.5 that lies outside its interval.
+
+## Model comparison
+
+`logLik()` returns each fit's log evidence, the Laplace approximation to the
+marginal likelihood of the data both fits saw.
+
+```{r compare}
+compare_models(no_factor = fit_0, one_factor = fit, criterion = "loglik")
+```
+
+The factor fit's evidence is higher by 246 log units. The evidence scores
+the fitted sites, where the factor explains the shared overdispersion; the
+held-out score above measures one species' prediction at new sites, which
+was worse with the factor.
+
+The `"lf"` block carries one factor, so a choice between one, two and three
+factors is not available on this door. Stacking two `"lf"` blocks in the
+`prior` list does not make a two-factor model: each block anchors species 1
+at loading 1 and site 1 at score 0, which leaves the rotation between the two
+factors unpinned.
+
+## Prior sensitivity
+
+The anchors fix the factor's scale to species 1, but the prior widths
+$\sigma_u$ and $\sigma_\lambda$ still decide how the product $\lambda_k u_s$
+is split between scores and loadings. Each setting below is one refit.
+
+```{r sensitivity}
+refit <- function(...) {
+  b <- modifyList(lf, list(...))
+  f <- tulpa_nested_laplace_joint(arms, prior = list(b), control = ctl)
+  c(round(f$modes[1, lc[-1]], 2), log_evidence = round(logLik(f), 1))
+}
+rbind(true = c(lam[-1], NA),
+      sigma_u_0.5 = refit(sigma_u = 0.5),
+      default     = refit(),
+      sigma_u_2   = refit(sigma_u = 2),
+      sigma_lambda_0.5 = refit(sigma_lambda = 0.5))
+```
+
+The score prior moves the loadings most: at $\sigma_u = 0.5$ the loading of
+species 2 is 1.88, at $\sigma_u = 2$ it is 1.15, against a truth of 0.9. A
+narrower score prior shrinks the scores further and the loadings grow to
+compensate. Narrowing the loading prior to $\sigma_\lambda = 0.5$ brings the
+loadings closest to the truth of the four settings and gives the highest log
+evidence, $-1273.2$.
+
+## Practical guidance
+
+- **Read loadings as relative to species 1.** The anchor fixes
+  $\lambda_1 = 1$, so a loading of 1.3 says the species responds 1.3 times as
+  strongly as species 1. Put a species that is common and clearly responsive
+  first; a species with a loading near zero there leaves the scale of every
+  other loading poorly determined.
+- **Expect inflated loadings and shrunk scores.** In the example the
+  estimated loadings were 1.32 times the truth along a line through the
+  origin, and 4 of the 7 free loadings had intervals that missed the true
+  value; the residual covariances were inflated by 1.30. Signs and ordering
+  were right, and the scores correlated 0.94 with the truth. Use loadings and
+  covariances to rank and group species, not as magnitudes.
+- **Refit at several prior widths.** The width $\sigma_u$ moved the loading
+  of species 2 between 1.15 and 1.88 in the sensitivity table, more than
+  $\sigma_\lambda$ did. Report how the loadings move across two or three
+  widths, and set $\sigma_u$ near the spread you expect of species 1's site
+  effect on the log scale.
+- **Each score is informed by the species at that site.** With eight species
+  the scores in the example were shrunk to about 0.8 of their true spread.
+- **Validate predictions on held-out data before relying on them.** The log
+  evidence favoured the factor strongly, while the held-out prediction for
+  species 8 was worse than without it.
+- **Use one factor only.** The `"lf"` block carries a single factor; a model
+  needing two or more independent site gradients is outside what this door
+  fits. When the gradient is spatially structured, a shared spatial field
+  with a copy scale ([Joint models](joint-models.html)) is the alternative.
+
+## See also
+
+- [Joint models](joint-models.html): two response arms sharing one spatial
+  field through a copy scale.
+- [Model comparison](model-comparison.html): log evidence and other criteria
+  across fits.
+- `?latent_factor` and `?latent_factors`: the specification read by model
+  packages built on tulpa, and the summary of their factor draws.
+- `?tulpa_nested_laplace_joint`: the arm specification and the list-of-blocks
+  `prior`.

@@ -404,9 +404,26 @@ argument: the size for `neg_binomial_2` and the residual variance for
 - proportions strictly between 0 and 1: `beta`;
 - positive continuous values: `gamma` or `lognormal`.
 
-Detection and occupancy models are in tulpaObs, and ratio, rate and
-zero-inflated models in tulpaRatio. Both packages add their own likelihood to
-this engine.
+Excess zeros in a count response are a second linear predictor, given as a
+one-sided `ziformula`: with probability `plogis(X_zi beta_zi)` an observation
+is a structural zero, otherwise it is drawn from `family`. The counts below
+are simulated with a structural-zero probability of `plogis(-0.5)`, about 0.38.
+
+```{r zero-inflated}
+zi <- rbinom(n, 1, plogis(-0.5))
+dz <- data.frame(y = ifelse(zi == 1, 0, rpois(n, exp(0.2 + 0.6 * x))), x = x)
+coef(tulpa(y ~ x, data = dz, family = "poisson", ziformula = ~ 1,
+           mode = "laplace"))
+```
+
+The count coefficients come back next to the zero-inflation intercept, which
+sits on the logit scale. With `truncated_poisson` or `truncated_neg_binomial_2`
+as the family the same argument gives the hurdle model;
+[EM + Laplace](em-laplace.html) fits the same mixture through two callbacks,
+for latent-variable models the formula does not cover.
+
+Detection and occupancy models are in tulpaObs, and ratio and rate models in
+tulpaRatio. Both packages add their own likelihood to this engine.
 
 ## Inference modes
 
@@ -814,25 +831,31 @@ A few rules of thumb for everyday use:
   0.4 to 0.8, or any divergences, means the chain needs more warmup or a
   smaller step size (`control$epsilon`). A Tier-1 fit is only nominally
   exact until the chain has been shown to mix.
-- **Reach for a model package when the likelihood is not built in.** The
-  five families here cover the common cases. Zero-inflation, hurdles,
-  detection and occupancy, ratio responses, and posterior-predictive
-  checking live in the packages built on this engine, not in `tulpa()`
-  itself, and they inherit every tier and accessor shown here.
+- **Reach for a model package when the likelihood is not built in.**
+  Detection and occupancy models and ratio responses live in the packages
+  built on this engine, and they inherit every tier and accessor shown here.
 
 ## Where to go next
 
-- Inference details and the tier guarantees: the inference-modes and
-  algorithm vignettes.
-- Spatial and temporal fields, spatially varying coefficients: the
-  spatial, temporal, and SVC vignettes.
-- Priors and prior predictive checks: the priors vignette and
-  `prior_predict()`.
-- User-defined latent structure: the `tgmrf()` vignette.
-
-- Model comparison by marginal likelihood, WAIC, and LOO: the
-  model-comparison vignette.
-- Posterior-predictive checks, WAIC, and LOO on a full observation model:
-  the model packages (tulpaObs, tulpaRatio) that build on this
-  engine.
-```
+- The vocabulary used across these articles: [Concepts](concepts.html).
+- Preparing the input: [Data formatting](data-formatting.html).
+- Model types: [Random slopes](random-slopes.html),
+  [Spatial models](spatial-models.html),
+  [Temporal models](temporal-models.html), [Space-time models](space-time.html),
+  [Varying coefficients](varying-coefficients.html),
+  [Continuous fields with the SPDE](spde.html),
+  [Spatial confounding](spatial-confounding.html),
+  [Joint models](joint-models.html), [Latent factors](latent-factors.html),
+  [Categorical and ordinal responses](categorical-responses.html).
+- Checking and comparing fits: [Diagnostics](diagnostics.html),
+  [Model comparison](model-comparison.html), [Priors](priors.html).
+- When a fit stops with an error: [Troubleshooting](troubleshooting.html).
+- A full analysis on real data: [sudden infant deaths in North
+  Carolina](case-study-sids.html).
+- How the inference works: [Inference modes](inference-modes.html),
+  [Identifiability](identifiability.html),
+  [Reliability diagnostics](reliability-pareto-k.html),
+  [Simulation-based calibration](sbc.html).
+- Agreement with lme4, glmmTMB, brms and INLA:
+  [Compatibility](compatibility.html).
+- Your own latent structure: [Custom latent blocks](tgmrf.html).

@@ -1,0 +1,526 @@
+---
+title: "Case study: sudden infant deaths in North Carolina"
+description: "An applied areal analysis on real county data: expected counts as an offset, non-spatial, ICAR and BYM2 fits, risk maps with exceedance probabilities, residual Moran's I, a prior check and the limits of an ecological question."
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Case study: sudden infant deaths in North Carolina}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6, fig.height = 4
+)
+set.seed(20260529)
+```
+
+```{r cran-gate, include = FALSE}
+# The model fits below are evaluated when the article is built locally, in CI
+# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
+# the whole check a ten-minute budget, which these fits do not fit inside, so
+# there the code is shown without being run.
+EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
+# The data and the polygon operations come from sf; the neighbour cross-check
+# uses spdep. Both are suggested packages, so the article runs only with them.
+has_sf    <- requireNamespace("sf", quietly = TRUE)
+has_spdep <- requireNamespace("spdep", quietly = TRUE)
+knitr::opts_chunk$set(eval = EVAL_FITS && has_sf)
+```
+
+This article analyses a real dataset from start to finish: counts of sudden
+infant death syndrome (SIDS) in the 100 counties of North Carolina. The
+question is whether counties with a larger share of non-white births have a
+higher SIDS risk once neighbouring counties are allowed to share unmeasured
+risk. It ends with a map of each county's relative risk, the probability that
+the risk exceeds the state average, and a list of what the data can and cannot
+answer. The data ship with [sf](https://r-spatial.github.io/sf/), which also
+reads the county polygons; [spdep](https://r-spatial.github.io/spdep/) is used
+once to cross-check the neighbour graph. The model family itself is introduced
+in [Spatial models](spatial-models.html), which fits the same fields to
+simulated data with a known truth.
+
+Installation is covered in [Get started](tulpa.html).
+
+```{r load, message = FALSE}
+library(tulpa)
+library(sf)
+```
+
+## The data
+
+The file `nc.shp` in sf holds one polygon per county and, for two periods
+(1974-78 and 1979-84), the number of live births (`BIR74`, `BIR79`), the
+number of SIDS deaths (`SID74`, `SID79`) and the number of non-white live
+births (`NWBIR74`, `NWBIR79`). sf documents it as the North Carolina SIDS
+sample data (`?sf::nc`); the counts were analysed for spatial clustering by
+Cressie and Read (1985) and Cressie and Chan (1989). The polygons are stored
+in longitude and latitude (NAD27). Transform them to the North Carolina state
+plane (EPSG 32119), a planar system in metres, so that boundaries and
+centroids are computed on a flat map.
+
+```{r read}
+nc <- st_read(system.file("shape/nc.shp", package = "sf"), quiet = TRUE)
+nc <- st_transform(nc, 32119)
+dim(nc)
+```
+
+Most of the analysis uses the first period. The deaths are rare: a county
+with few births may record none, and the raw rate of such a county says
+little.
+
+```{r counts}
+summary(nc$SID74)
+sum(nc$SID74 == 0)
+```
+
+Risk is compared through the expected count $E_i$: the number of deaths
+county $i$ would have if every county shared the statewide rate,
+$E_i = B_i \sum_j D_j / \sum_j B_j$, with $B_i$ the births and $D_i$ the
+deaths of county $i$. The ratio $D_i / E_i$ is the standardised mortality
+ratio (SMR). The covariate is the share of non-white births, centred at its
+mean across counties and multiplied by 10, so that its coefficient is the
+change in log relative risk per 10 percentage points.
+
+```{r prepare}
+nc$E   <- nc$BIR74 * sum(nc$SID74) / sum(nc$BIR74)
+nc$smr <- nc$SID74 / nc$E
+nc$pnw <- nc$NWBIR74 / nc$BIR74
+pnw_mean <- mean(nc$pnw)
+nc$x <- 10 * (nc$pnw - pnw_mean)
+round(pnw_mean, 3)
+round(range(nc$smr), 2)
+```
+
+```{r map-smr, fig.width = 7, fig.height = 4, fig.alt = "Map of North Carolina counties coloured by the standardised mortality ratio for SIDS in 1974-78, from below 0.5 to above 2"}
+br <- c(0, 0.5, 0.8, 1, 1.25, 2, 5)
+plot(nc["smr"], breaks = br, pal = hcl.colors(6, "Blue-Red 3"),
+     main = "SMR, 1974-78", key.pos = 1)
+```
+
+```{r map-pnw, fig.width = 7, fig.height = 4, fig.alt = "Map of North Carolina counties coloured by the share of non-white births in 1974-78, highest in the north-east and the south"}
+plot(nc["pnw"], pal = function(k) hcl.colors(k, "Greens 3", rev = TRUE),
+     main = "Share of non-white births", key.pos = 1)
+```
+
+The mean non-white share across counties is 31.2%. The SMR runs from zero, in
+the 13 counties without a recorded death, to 4.73, and neighbouring counties
+often fall in classes far apart. High SMRs gather in the north-east and the
+south of the state, the same two regions where the non-white share is
+highest.
+
+## The model
+
+Write $y_i$ for the SIDS deaths of county $i = 1, \ldots, 100$ and $x_i$ for
+its scaled non-white share. The counts are modelled as Poisson around the
+expected count times a relative risk $\theta_i$:
+
+$$
+y_i \sim \text{Poisson}(E_i\,\theta_i), \qquad
+\log \theta_i = \beta_0 + \beta_1 x_i + \phi_i .
+$$
+
+Taking logs, $\log E_i$ enters the linear predictor with coefficient one;
+this fixed term is the offset. $\beta_0$ is the log relative risk of a county
+at the mean non-white share, $\beta_1$ the change per 10 percentage points,
+and $\phi_i$ a county effect that carries the part of the risk the covariate
+does not explain. The non-spatial model sets $\phi_i = 0$.
+
+Two priors for $\phi$ tie each county to its neighbours. The intrinsic
+conditional autoregression (ICAR) centres each $\phi_i$ on the mean of its
+neighbours, with a precision $\tau$ that sets how strongly they agree. BYM2
+writes the field as a mix of a scaled ICAR part and an independent part per
+county, with an overall standard deviation $\sigma$ and a share $\rho$ of the
+variance that is spatially structured. Both are written out in
+[Spatial models](spatial-models.html); here they are compared on the same
+counties.
+
+## Building the neighbour graph
+
+Two counties are neighbours when their polygons share a boundary point.
+`adjacency()` builds that graph directly from the polygons; `id = "FIPS"`
+records the county code of each node, so the graph can be matched to the data
+by key.
+
+```{r adjacency}
+g <- adjacency(nc, id = "FIPS")
+g
+```
+
+`check_adjacency()` confirms that the matrix is symmetric and binary, and,
+for an intrinsic field, the property that matters most: the graph has one
+connected component and no county without neighbours.
+
+```{r check}
+chk <- check_adjacency(g$adjacency)
+```
+
+The same contiguity rule in spdep gives the same matrix:
+
+```{r spdep-check, eval = EVAL_FITS && has_sf && has_spdep}
+nb <- spdep::poly2nb(nc, queen = TRUE)
+W_spdep <- spdep::nb2mat(nb, style = "B")
+all(W_spdep == as.matrix(g$adjacency))
+```
+
+The model needs a column mapping each row of the data to a node of the graph.
+`node_index()` looks the county code up in the graph. Build the data frame the
+fits use, with one row per county:
+
+```{r data-frame}
+W <- as.matrix(g$adjacency)
+d <- st_drop_geometry(nc)[, c("NAME", "FIPS", "SID74", "E", "x")]
+d$county <- node_index(g, d$FIPS)
+head(d, 3)
+```
+
+## A non-spatial fit
+
+The offset enters the formula as `offset(log(E))`. Fit the Poisson model
+without a county effect first:
+
+```{r fit-nonspatial}
+fit0 <- tulpa(SID74 ~ x + offset(log(E)), data = d,
+              family = "poisson", mode = "laplace")
+summary(fit0)
+```
+
+The slope is 0.187 per 10 percentage points, with a standard error of 0.022.
+Exponentiated, its interval bounds give the ratio of the relative risks of two
+counties whose non-white shares differ by 10 percentage points:
+
+```{r rr-nonspatial}
+round(exp(confint(fit0)["x", ]), 3)
+```
+
+## Residual spatial structure
+
+A spatial term is justified when the residuals of the non-spatial fit still
+cluster on the map. `moran_i()` tests that with Moran's I on a set of
+neighbour weights. With polygons, the coordinates are the county centroids,
+and the five nearest neighbours of each centroid stand in for the contiguity
+graph, whose mean is 4.9 neighbours per county.
+
+Start with the raw risk: the Pearson residuals of a model with an intercept
+only.
+
+```{r moran-raw}
+cc <- st_coordinates(st_centroid(st_geometry(nc)))
+fit_int <- tulpa(SID74 ~ 1 + offset(log(E)), data = d,
+                 family = "poisson", mode = "laplace")
+moran_i(fit_int, cc, weights = "knn", k = 5)
+```
+
+Then the residuals after the covariate:
+
+```{r moran-nonspatial}
+moran_i(fit0, cc, weights = "knn", k = 5)
+```
+
+The raw risk clusters: Moran's I is 0.274, against an expectation of -0.010
+under no autocorrelation (p < 0.001). After the covariate, I falls to 0.038
+(p = 0.41), so most of the clustering of the raw rates follows the map of the
+non-white share, which is clustered itself. A test on 100 counties may still
+miss weak residual structure, and a field changes the uncertainty of the
+slope even where the test finds none, which the next section shows.
+
+## Spatial fits
+
+An areal field takes two pieces: `spatial = list(type =, adjacency =)` carries
+the graph, and a `spatial(county)` term in the formula names the column that
+maps rows to nodes. `mode = "nested_laplace"` integrates the field's
+hyperparameters over a grid.
+
+```{r fit-icar}
+fit_icar <- tulpa(SID74 ~ x + offset(log(E)) + spatial(county), data = d,
+                  family = "poisson",
+                  spatial = list(type = "icar", adjacency = W),
+                  mode = "nested_laplace", control = list(n_threads = 2))
+summary(fit_icar)
+```
+
+The slope moves from 0.187 to 0.197 and its standard error from 0.022 to
+0.034. The field's precision $\tau$ has a posterior mean of 9.2 and a 95%
+interval from 2.6 to 39. As a standard deviation, $1/\sqrt{\tau}$, that is
+between 0.16 and 0.62 on the log relative-risk scale. The reliability line
+calls the outer integration borderline: the grid weight sits on 3.8 effective
+cells out of 9, so the interval for $\tau$ is resolved to about one grid cell.
+`diagnostics(fit_icar)` gives the full report.
+
+BYM2 adds an independent part per county to the ICAR field:
+
+```{r fit-bym2}
+fit_bym2 <- tulpa(SID74 ~ x + offset(log(E)) + spatial(county), data = d,
+                  family = "poisson",
+                  spatial = list(type = "bym2", adjacency = W),
+                  mode = "nested_laplace", control = list(n_threads = 2))
+summary(fit_bym2)
+```
+
+BYM2 gives the same slope, 0.196 with a standard error of 0.033. Its field
+has a standard deviation of 0.31 (95% interval 0.14 to 0.50) on the log
+relative-risk scale. The structured share $\rho$ has an interval from 0.11 to
+0.97, so 100 counties leave open how much of the county variation is shared
+with neighbours and how much is independent. The summary reports no
+reliability verdict for this grid ("not computed").
+
+The three slopes side by side, as relative risks per 10 percentage points:
+
+```{r slopes}
+fits <- list(nonspatial = fit0, icar = fit_icar, bym2 = fit_bym2)
+slope_row <- function(f) unlist(coef(summary(f))["x", ])
+slopes <- t(sapply(fits, slope_row))
+round(exp(slopes[, c(1, 3, 4)]), 3)
+round(slopes[, "std.error"], 3)
+```
+
+All three fits put the relative risk per 10 percentage points at 1.21 or
+1.22. The spatial fits widen the interval, with standard errors of 0.033 and
+0.034 against 0.022: the field adds county-level variation beyond the Poisson
+noise, and the slope's uncertainty grows with it.
+
+## Mapping relative risk
+
+A nested-Laplace fit stores, for every cell of its hyperparameter grid, the
+mean and variance of each observation's linear predictor (`fitted_eta` and
+`fitted_eta_var`, see `?tulpa_nested_laplace`), offset included. The
+posterior of the linear predictor is the mixture of these Gaussians, weighted
+by the grid weights `tulpa_outer_grid()` returns. The helper below draws from
+that mixture county by county and divides by the expected count, which gives
+draws of $\theta_i$.
+
+```{r rr-draws-fn}
+rr_draws <- function(fit, E, n = 4000) {
+  w   <- tulpa_outer_grid(fit)$weights
+  k   <- sample(seq_along(w), n, replace = TRUE, prob = w)
+  m   <- fit$fitted_eta[k, , drop = FALSE]
+  s   <- sqrt(fit$fitted_eta_var[k, , drop = FALSE])
+  eta <- m + s * matrix(rnorm(length(m)), nrow(m))
+  sweep(exp(eta), 2, E, "/")
+}
+```
+
+Each column is one county. Because a draw picks one grid cell for every
+county at once but draws the counties independently within it, the columns
+give each county's own posterior correctly; a quantity that combines several
+counties (a ranking, a regional total) would need their joint covariance,
+which the fit does not keep.
+
+```{r rr-summary}
+set.seed(1)
+th <- rr_draws(fit_bym2, d$E)
+nc$rr      <- colMeans(th)
+nc$rr_sd   <- apply(th, 2, sd)
+nc$p_exc   <- colMeans(th > 1)
+summary(nc$rr)
+round(range(nc$rr[nc$SID74 == 0]), 2)
+```
+
+```{r map-rr, fig.width = 7, fig.height = 4, fig.alt = "Map of North Carolina counties coloured by the BYM2 posterior mean relative risk, on the same colour classes as the SMR map"}
+plot(nc["rr"], breaks = br, pal = hcl.colors(6, "Blue-Red 3"),
+     main = "Relative risk, BYM2 posterior mean", key.pos = 1)
+```
+
+On the same colour classes, the fitted risks span a narrower range than the
+SMRs, from 0.52 to 2.55 against 0 to 4.73. The 13 counties without a recorded
+death get fitted risks from 0.52 to 1.48, set by their non-white share and
+their neighbours.
+
+```{r map-sd, fig.width = 7, fig.height = 4, fig.alt = "Map of North Carolina counties coloured by the posterior standard deviation of the relative risk"}
+plot(nc["rr_sd"], pal = function(k) hcl.colors(k, "Purples 3", rev = TRUE),
+     main = "Posterior SD of the relative risk", key.pos = 1)
+```
+
+The posterior standard deviation shows how well each county's risk is
+determined:
+
+```{r sd-facts}
+summary(nc$rr_sd)
+nc$NAME[which.max(nc$rr_sd)]
+round(cor(nc$rr, nc$rr_sd), 2)
+```
+
+The standard deviation runs from 0.12 to 0.69, largest in Anson County, and
+its correlation with the posterior mean across counties is 0.89. The risk is
+the exponential of a roughly Gaussian linear predictor, so its standard
+deviation grows with its mean, and the map above largely repeats the risk
+map. The probability that the risk exceeds one combines the two into a single
+number per county:
+
+```{r map-exc, fig.width = 7, fig.height = 4, fig.alt = "Map of North Carolina counties coloured by the posterior probability that the relative risk exceeds one, in classes below 0.05, 0.05 to 0.2, 0.2 to 0.8, 0.8 to 0.95 and above 0.95"}
+plot(nc["p_exc"], breaks = c(0, 0.05, 0.2, 0.8, 0.95, 1),
+     pal = hcl.colors(5, "Blue-Red 3"),
+     main = "P(relative risk > 1)", key.pos = 1)
+```
+
+The exceedance probability reads off which counties the data place above the
+state average with some confidence:
+
+```{r exceed}
+sum(nc$p_exc > 0.95)
+sum(nc$p_exc < 0.05)
+head(st_drop_geometry(nc)[order(-nc$p_exc),
+                          c("NAME", "SID74", "smr", "rr", "p_exc")], 5)
+```
+
+In 18 counties the posterior probability that the risk exceeds the state
+average is above 0.95, and in 26 it is below 0.05. Anson County has the
+largest SMR, 4.73 on 15 deaths, and a fitted risk of 2.55. The counties with
+a high exceedance probability lie in the north-east and the south, the
+regions with the highest non-white share.
+
+## Residual Moran's I after the spatial fit
+
+`residuals()` on a tulpa fit is population level: it holds random effects and
+fields at zero, so `moran_i(fit_bym2, ...)` would test the same residuals as
+the non-spatial fit. The residuals of the spatial model use the fitted mean
+with the field included, the posterior mean of $E_i \theta_i$:
+
+```{r moran-after}
+mu_bym2 <- d$E * nc$rr
+r_bym2  <- (d$SID74 - mu_bym2) / sqrt(mu_bym2)
+moran_i(r_bym2, cc, weights = "knn", k = 5)
+```
+
+Moran's I of these residuals is -0.023 (p = 0.82). The check is weak by
+construction: every county has its own field value, so the fitted mean
+follows each county's count and the residuals shrink towards zero. A value
+near zero says the spatial model leaves no clustering in its residuals; it
+does not show that the field has the right form.
+
+## Comparing the models
+
+`compare_models()` ranks the fits by WAIC or PSIS-LOO, both computed from each
+fit's pointwise log-likelihood with the field included.
+
+```{r compare-waic}
+compare_models(nonspatial = fit0, icar = fit_icar, bym2 = fit_bym2,
+               criterion = "waic")
+```
+
+```{r compare-loo}
+compare_models(nonspatial = fit0, icar = fit_icar, bym2 = fit_bym2,
+               criterion = "loo")
+```
+
+Both spatial models score higher than the non-spatial one, by an amount
+close to its own uncertainty. BYM2 leads the non-spatial fit by 5.8 in
+expected log predictive density under WAIC and by 4.6 under LOO, with a
+standard error of the difference of 4.1 under both. ICAR and BYM2 differ by
+1.4 and 0.6, within one standard error. The effective number of parameters
+(`p_eff`) is about 3 for the non-spatial fit and 21 to 25 for the spatial
+ones, the cost of one field value per county.
+
+## Sensitivity to the prior on the field
+
+On the nested-Laplace path the field's scale axis carries a penalised
+complexity (PC) prior with $P(\sigma > 3) = 0.01$ by default
+(`hyperprior = "proper"`, see `?tulpa_nested_laplace`), carried to whichever
+of $\sigma$ or $\tau$ the axis integrates. `hyperprior = "flat"` removes it,
+so the field's scale is integrated under the grid's own measure. Refit both
+spatial models that way:
+
+```{r fit-flat}
+fit_icar_flat <- tulpa(
+  SID74 ~ x + offset(log(E)) + spatial(county), data = d,
+  family = "poisson", spatial = list(type = "icar", adjacency = W),
+  mode = "nested_laplace", hyperprior = "flat",
+  control = list(n_threads = 2))
+fit_bym2_flat <- tulpa(
+  SID74 ~ x + offset(log(E)) + spatial(county), data = d,
+  family = "poisson", spatial = list(type = "bym2", adjacency = W),
+  mode = "nested_laplace", hyperprior = "flat",
+  control = list(n_threads = 2))
+```
+
+The slope and the field hyperparameters under the two priors:
+
+```{r prior-table}
+pfits <- list(icar_pc = fit_icar, icar_flat = fit_icar_flat,
+              bym2_pc = fit_bym2, bym2_flat = fit_bym2_flat)
+round(t(sapply(pfits, slope_row)), 3)
+hyp <- lapply(pfits, function(f)
+  summary(f)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")])
+do.call(rbind, hyp)
+```
+
+Under every prior the slope is 0.196 or 0.197, with standard errors within
+0.002 of each other. The posterior of the field's scale changes
+in its tail: the ICAR precision's interval runs from 2.7 to 54 under the flat
+prior against 2.6 to 39 under the PC prior, and the BYM2 standard deviation
+from 0.11 to 0.48 against 0.14 to 0.50. For an areal field `tulpa()` offers
+these two choices; the PC prior's anchor is fixed at $P(\sigma > 3) = 0.01$
+on this path ([Priors](priors.html)).
+
+## A second period
+
+The 1979-84 counts give a second look at the same counties. Rebuild the
+expected counts and the covariate from the later columns, keeping the
+1974-78 mean for the centring so that $x = 0$ means the same share in both
+periods, and refit the BYM2 model:
+
+```{r fit-79}
+d79 <- st_drop_geometry(nc)[, c("FIPS", "SID79", "BIR79", "NWBIR79")]
+d79$E <- d79$BIR79 * sum(d79$SID79) / sum(d79$BIR79)
+d79$x <- 10 * (d79$NWBIR79 / d79$BIR79 - pnw_mean)
+d79$county <- node_index(g, d79$FIPS)
+fit_bym2_79 <- tulpa(SID79 ~ x + offset(log(E)) + spatial(county),
+                     data = d79, family = "poisson",
+                     spatial = list(type = "bym2", adjacency = W),
+                     mode = "nested_laplace", control = list(n_threads = 2))
+round(exp(coef(summary(fit_bym2_79))["x", c(1, 3, 4)]), 3)
+```
+
+The later period gives a weaker association: a relative risk of 1.07 per 10
+percentage points, with an interval from 1.003 to 1.143. That interval ends
+where the 1974-78 interval (1.142 to 1.301) begins, so the two periods agree
+that the association is positive and differ on its size.
+
+## What the data can and cannot say
+
+Across the counties of North Carolina in 1974-78, a higher share of non-white
+births goes with a higher SIDS rate: a relative risk of about 1.21 per 10
+percentage points in every model fitted here. Allowing neighbouring counties
+to share unmeasured risk leaves that estimate where it was and widens its
+interval by about half. The clustering of the raw rates largely follows the
+covariate, which is itself clustered on the map.
+
+The estimate compares counties, and it cannot be carried over to infants. The
+data record deaths per county, without the race of the infants who died, so a
+county-level slope of this size is consistent with many individual-level
+patterns, including ones in which the excess deaths in high-share counties
+occur among white infants. Reading a group-level association as an
+individual-level one is the ecological fallacy. The non-white share may also
+stand for other county characteristics the data do not contain, such as
+income or access to care, so the slope describes an association between
+county rates and is not a causal effect of the share.
+
+One hundred counties set the precision of everything above. The BYM2 split
+between structured and independent county effects is left almost entirely
+open ($\rho$ between 0.11 and 0.97), the predictive gain of the spatial models
+is 4.6 to 5.8 against a standard error of 4.1, and the second period puts the
+association at 1.07 instead of 1.22. A single county's risk rests on its own
+few deaths plus what its neighbours and covariate lend it; the exceedance map
+separates 18 counties above the state average and 26 below it with
+probability 0.95, and leaves the remaining 56 undecided.
+
+## See also
+
+- [Spatial models](spatial-models.html): the ICAR and BYM2 fields on
+  simulated data, with recovery checks against a known truth.
+- [Model comparison](model-comparison.html): WAIC, PSIS-LOO and the evidence
+  on tulpa fits.
+- [Priors](priors.html): the default priors on every path, including the PC
+  prior on a field's scale.
+- `?adjacency`, `?check_adjacency`, `?node_index`: building and validating a
+  neighbour graph.
+
+## References
+
+Cressie, N. and Chan, N. H. (1989). Spatial modelling of regional variables.
+*Journal of the American Statistical Association*, 84, 393-401.
+
+Cressie, N. and Read, T. R. C. (1985). Do sudden infant deaths come in
+clusters? *Statistics and Decisions*, Supplement Issue 2, 333-349.
