@@ -40,13 +40,15 @@ skip_on_cran()
 .sd306_rare_fit <- function(d, ctrl = list()) {
   tulpa_nested_laplace(
     d$y, rep(1L, d$n), d$X, prior = d$prior, family = "binomial",
+    beta_prior = list(mean = 0, sd = 100),
     control = utils::modifyList(
       list(max_iter = 100L, tol = 1e-10, keep_grid_hessians = TRUE,
            diagnose_k = FALSE, progress = FALSE), ctrl))
 }
 
-# The engine's own target for that fit: binomial log-lik plus the driver's
-# N(0, 100^2) ridge on beta (sigma_beta = 100 in the multi-block driver).
+# The engine's own target for that fit: binomial log-lik plus the vague
+# N(0, 100^2) prior on beta the fit states. The rare-event skew the fixture is
+# built on is the likelihood's, which a vague prior leaves in place.
 .sd306_rare_log_post <- function(d) {
   function(g0, g1) {
     M <- matrix(NA_real_, length(g0), length(g1))

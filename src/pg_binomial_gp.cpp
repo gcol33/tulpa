@@ -5,6 +5,7 @@
 #include "pg_rng.h"
 #include "linalg_fast.h"
 #include <Rcpp.h>
+#include "fixed_effect_prior.h"
 #include <cmath>
 #include <algorithm>
 #include <vector>
@@ -41,7 +42,7 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
     int n_iter = 2000,
     int n_warmup = 1000,
     int thin = 1,
-    double prior_beta_sd = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd = R_NilValue,
     double prior_sigma_re_scale = 2.5,
     double prior_sigma_gp_U = 1.0,
     double prior_sigma_gp_alpha = 0.01,
@@ -51,6 +52,8 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
     bool verbose = true,
     int n_threads = 1
 ) {
+    const double prior_beta_sd_value =
+        tulpa::read_sigma_beta(prior_beta_sd, "prior_beta_sd");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
   tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
                          prior_sigma_re_scale, n_threads, store_eta);
@@ -98,7 +101,7 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
     tulpa::pg_gibbs_core_step(
         N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
         gp_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
-        prior_beta_sd, prior_sigma_re_scale, C.n_threads_team);
+        prior_beta_sd_value, prior_sigma_re_scale, C.n_threads_team);
 
     // 5. Update the GP scale (field, marginal variance, range)
     for (int i = 0; i < N; i++) {
@@ -116,7 +119,7 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
     {
       double prec_field = 0.0, lin_field = 0.0;
       tulpa::pg_nngp_level_terms(gp, prec_field, lin_field);
-      const double c = tulpa::pg_draw_intercept_level(C.beta[0], prior_beta_sd,
+      const double c = tulpa::pg_draw_intercept_level(C.beta[0], prior_beta_sd_value,
                                                       prec_field, lin_field);
       for (int s = 0; s < n_spatial; s++) gp.w[s] -= c;
       C.absorb_level(c);
@@ -136,7 +139,7 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
       sigma2_gp_draws[save_idx] = gp.sigma2;
       phi_gp_draws[save_idx] = gp.phi;
       C.log_prob_draws[save_idx] =
-          C.log_joint_common(y, n, gp_contrib.begin(), prior_beta_sd,
+          C.log_joint_common(y, n, gp_contrib.begin(), prior_beta_sd_value,
                              prior_sigma_re_scale) +
           tulpa::pg_log_nngp_scale(gp, prior_sigma_gp_U, prior_sigma_gp_alpha,
                                    prior_phi_lower, prior_phi_upper);

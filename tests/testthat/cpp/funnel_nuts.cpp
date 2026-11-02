@@ -93,7 +93,6 @@ static void build_funnel_model(
 
     data.N = K;
     data.n_processes = 1;
-    data.sigma_beta = 10.0;  // unused: no fixed-effect columns
 
     tulpa::ProcessData proc;
     proc.p = 0;  // zero fixed effects -> no N(0, sigma_beta) prior on the target

@@ -43,6 +43,7 @@
 // ----------------------------------------------------------------------------
 
 #include <Rcpp.h>
+#include "fixed_effect_prior.h"
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -424,7 +425,7 @@ Rcpp::List cpp_varying_coef_draws(
     Rcpp::NumericMatrix X,
     std::string family,
     double phi = 1.0,
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> re_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> spatial_spec = R_NilValue,
@@ -438,12 +439,14 @@ Rcpp::List cpp_varying_coef_draws(
     Rcpp::Nullable<Rcpp::List> tvc_new = R_NilValue,
     int svc_nn = 15
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
     using namespace tulpa_vc;
     const int N = y.size();
     tulpa::SamplerModelInputs in;
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     tulpa::build_sampler_model_inputs(
-        in, y, n_trials, X, family, phi, phi2, sigma_beta, offset,
+        in, y, n_trials, X, family, phi, phi2, sigma_beta_value, offset,
         sigma_re_scale, re_spec, spatial_spec, temporal_spec, svc_spec,
         tvc_spec, zi_spec);
     const ModelData& data = in.data;

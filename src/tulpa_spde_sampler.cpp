@@ -23,6 +23,7 @@
 // are fixed; Q is built once and cached on ModelData::spde_data.
 
 #include <Rcpp.h>
+#include "fixed_effect_prior.h"
 #include <vector>
 #include <cmath>
 #include "hmc_sampler.h"
@@ -207,7 +208,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     std::string family,
     int alpha = 2,
     double nu = -1.0,
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     double log_phi_prior_sd = 3.0,
     double log_phi_init = 0.0,
     int n_iter = 2000,
@@ -231,6 +232,8 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     bool noncenter = true,
     std::string mass_matrix = "diag"
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
     const int N = y_r.size();
     const int p = X_r.ncol();
     if (N != n_obs) Rcpp::stop("length(y) must equal n_obs");
@@ -392,7 +395,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     ModelData data;
     data.N           = N;
     data.n_processes = 1;
-    data.sigma_beta  = sigma_beta;
+    data.sigma_beta  = sigma_beta_value;
 
     tulpa::ProcessData proc;
     proc.p = p;

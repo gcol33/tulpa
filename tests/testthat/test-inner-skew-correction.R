@@ -26,8 +26,8 @@ test_that("a fit with no skew_correction record reports Gaussian quantiles", {
 
 # Exact posterior quantiles of an intercept-only binomial-logit model by direct
 # quadrature -- the quantile-side extension of `.exact_intercept_skew()` in
-# test-inner-skew.R, with the same weakly-informative N(0, sigma_beta^2) prior
-# the C++ kernel applies.
+# test-inner-skew.R, with the same vague N(0, sigma_beta^2) prior the fits in
+# `.skew_intercept_fit()` state.
 .exact_intercept_quantiles <- function(N, S, probs, sigma_beta = 100) {
   lp <- function(e) S * e - N * log1p(exp(e)) - 0.5 * (e / sigma_beta)^2
   mode <- stats::optimize(lp, c(-40, 40), maximum = TRUE)$maximum
@@ -46,7 +46,7 @@ test_that("a fit with no skew_correction record reports Gaussian quantiles", {
   f <- ref_laplace_fit_single(
     y = as.numeric(y), n = rep(1L, N), X = matrix(1, N, 1),
     re_idx = numeric(0), n_re_groups = 0L, sigma_re = 1.0,
-    family = "binomial", compute_skew = TRUE, skew_idx = 1L)
+    family = "binomial", compute_skew = TRUE, skew_idx = 1L, beta_sd = 100)
   list(mu = f$mode[1L], sd = f$inner_is_sigma[1L], g3 = f$inner_skew[1L],
        g1 = f$inner_skew_gamma1[1L])
 }

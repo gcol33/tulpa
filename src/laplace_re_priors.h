@@ -5,6 +5,7 @@
 #define TULPA_LAPLACE_RE_PRIORS_H
 
 #include "laplace_types.h"
+#include "tulpa/model_data.h"
 #include <Rcpp.h>
 #include <cmath>
 
@@ -14,30 +15,22 @@
 
 namespace tulpa {
 
-// The weak fixed-effect prior a kernel applies when its caller states none,
-// beta_j ~ N(0, 100^2), in the two parameterizations the kernels read it in:
-// the nested-Laplace prior helpers take a precision, the spec path takes an SD
-// on ModelData::sigma_beta. Both are defined here so a change to the default
-// cannot move only one of them. The tulpa() front door always states its own
-// default (`.TULPA_PRIOR$beta_sd`, R/settings.R) to every backend, this one
-// included, so this value is reached only by a direct engine-level call.
-inline constexpr double DEFAULT_TAU_BETA   = 1e-4;
-inline constexpr double DEFAULT_SIGMA_BETA = 100.0;
-static_assert(DEFAULT_SIGMA_BETA * DEFAULT_SIGMA_BETA * DEFAULT_TAU_BETA
-                  - 1.0 < 1e-12 &&
-              1.0 - DEFAULT_SIGMA_BETA * DEFAULT_SIGMA_BETA * DEFAULT_TAU_BETA
-                  < 1e-12,
-              "DEFAULT_SIGMA_BETA and DEFAULT_TAU_BETA must describe the same "
-              "prior: tau = 1 / sigma^2.");
+// The fixed-effect prior a kernel applies when its caller states none,
+// beta_j ~ N(0, DEFAULT_SIGMA_BETA^2) (tulpa/model_data.h), in the precision
+// parameterization the nested-Laplace prior helpers read; the spec path reads
+// the SD on ModelData::sigma_beta. The precision is derived from the SD, so the
+// two cannot describe different priors.
+inline constexpr double DEFAULT_TAU_BETA =
+    1.0 / (DEFAULT_SIGMA_BETA * DEFAULT_SIGMA_BETA);
 
 // Floor added to sigma_re^2 before inverting it into a precision, so a zero or
 // near-zero random-effect SD yields a large but finite tau_re instead of a
 // division by zero.
 inline constexpr double RE_VARIANCE_FLOOR = 1e-10;
 
-// Gaussian prior on the fixed effects beta. With both vectors empty it
-// reproduces the historical weak prior beta_j ~ N(0, 1e4) applied
-// uniformly. A non-empty `tau` overrides the precision (1/sd^2) per
+// Gaussian prior on the fixed effects beta. With both vectors empty it is the
+// engine default beta_j ~ N(0, DEFAULT_SIGMA_BETA^2) applied uniformly. A
+// non-empty `tau` overrides the precision (1/sd^2) per
 // coefficient; a non-empty `mean` shifts the prior mean per coefficient.
 // When set, each vector must have length p -- the R layer recycles scalar
 // mean/sd to full length before constructing this.

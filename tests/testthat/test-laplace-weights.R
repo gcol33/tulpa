@@ -9,6 +9,9 @@
 
 skip_on_cran()
 
+# The lm()/glm() oracles are unpenalized, so the fits state a vague prior.
+VAGUE_BETA <- list(mean = 0, sd = 100)
+
 test_that("weighted gaussian tulpa_laplace matches lm(weights=)", {
   skip_on_cran()
   set.seed(1); n <- 400L
@@ -17,7 +20,7 @@ test_that("weighted gaussian tulpa_laplace matches lm(weights=)", {
   y <- ifelse(grp == 1L, 1.2, -1.2) + 0.5 * x + rnorm(n, 0, 0.8)
   w <- as.numeric(grp)
   fit <- tulpa_laplace(y, rep(1L, n), cbind(1, x), family = "gaussian",
-                       phi = 0.8, weights = w)
+                       phi = 0.8, weights = w, beta_prior = VAGUE_BETA)
   expect_true(fit$converged)
   expect_equal(unname(fit$mode), unname(coef(lm(y ~ x, weights = w))),
                tolerance = 1e-5)
@@ -29,7 +32,7 @@ test_that("weighted binomial tulpa_laplace matches glm(weights=)", {
   x <- rnorm(n); w <- as.numeric(rbinom(n, 1L, 0.4))
   y <- rbinom(n, 1L, plogis(0.3 + 0.6 * x))
   fit <- tulpa_laplace(y, rep(1L, n), cbind(1, x), family = "binomial",
-                       weights = w)
+                       weights = w, beta_prior = VAGUE_BETA)
   expect_true(fit$converged)
   expect_equal(unname(fit$mode),
                unname(coef(glm(y ~ x, family = binomial, weights = w))),

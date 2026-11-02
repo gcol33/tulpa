@@ -561,10 +561,14 @@ ogd_fixture_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L,
 # user gets; a file whose experiment is about another read or another prior
 # passes it and says so. The grid is solved in full (`prune = FALSE`): a dump
 # rebuilds weight rules off every cell's log-marginal, and a screened cell has
-# none (gcol33/tulpa#925 turned the screen on by default).
+# none (gcol33/tulpa#925 turned the screen on by default). The fixed-effect
+# prior is stated on the same rule: the recorded numbers were measured under a
+# vague N(0, 100^2), so the arm carries that precision rather than the engine
+# default.
 ogd_fixture_fit <- function(sim, levels, spread = 3,
                             within_cell = "log_quadratic",
-                            hyperprior = "proper") {
+                            hyperprior = "proper",
+                            beta_sd = 100) {
   prior <- lapply(seq_along(sim$grp), function(k) {
     s <- sim$sd_true[k]
     list(type = "iid", obs_idx = list(sim$grp[[k]]), n_units = sim$G,
@@ -575,7 +579,9 @@ ogd_fixture_fit <- function(sim, levels, spread = 3,
   suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(a = list(y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
                               family = family,
-                              phi = sim$phi)),
+                              phi = sim$phi,
+                              beta_prior_prec = rep(1 / beta_sd^2,
+                                                    ncol(sim$X)))),
     prior = prior,
     hyperprior = hyperprior,
     # The grid is the one the caller wrote down, so a weight rule is scored on

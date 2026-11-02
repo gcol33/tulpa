@@ -71,8 +71,9 @@ test_that("SPDE field SE matches the dense joint-precision oracle", {
   pr <- predict(fit, newdata = nd, se.fit = TRUE)
 
   # Dense oracle: gaussian likelihood, so the joint precision is exact.
-  # H = [[X'X/phi + 1e-4 I, X'A/phi], [A'X/phi, A'A/phi + Q]] at the fitted
-  # (range, sigma); Var(c'theta) = c' H^{-1} c.
+  # H = [[X'X/phi + tau_b I, X'A/phi], [A'X/phi, A'A/phi + Q]] at the fitted
+  # (range, sigma), tau_b the default fixed-effect prior precision the SPDE
+  # path solves under; Var(c'theta) = c' H^{-1} c.
   X <- cbind(1, d$x)
   A <- as.matrix(spec$A)
   kappa <- sqrt(8 * spec$nu) / fit$range
@@ -80,7 +81,8 @@ test_that("SPDE field SE matches the dense joint-precision oracle", {
   Q <- as.matrix(tulpa:::.spde_precision_Q(spec, kappa, tau_s))
   phi <- 0.25
   H <- rbind(
-    cbind(crossprod(X) / phi + diag(1e-4, 2), crossprod(X, A) / phi),
+    cbind(crossprod(X) / phi + diag(1 / tulpa:::.tulpa_prior_sd()^2, 2),
+          crossprod(X, A) / phi),
     cbind(crossprod(A, X) / phi, crossprod(A) / phi + Q)
   )
   A_new <- as.matrix(tulpa:::.spde_A_at(fit, nd))

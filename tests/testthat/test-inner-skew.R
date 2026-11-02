@@ -22,8 +22,8 @@ test_that(".tulpa_combined_reliability reports which layer degrades, not a singl
 # direct numerical quadrature (no Laplace approximation at all) -- the
 # independent ground truth gamma_3 is checked against. log-lik is
 # S*eta - N*log1p(exp(eta)) for S successes out of N (all sharing one eta);
-# the prior is the same weakly-informative N(0, sigma_beta^2) the C++ kernel
-# uses (sigma_beta = 100, negligible curvature next to the likelihood here).
+# the prior is the vague N(0, sigma_beta^2) the fits below state (sigma_beta =
+# 100, negligible curvature next to the likelihood here).
 .exact_intercept_skew <- function(N, S, sigma_beta = 100) {
   log_post <- function(eta) S * eta - N * log1p(exp(eta)) - 0.5 * (eta / sigma_beta)^2
   mode <- stats::optimize(log_post, interval = c(-30, 30), maximum = TRUE)$maximum
@@ -431,7 +431,8 @@ test_that("gamma_3 tracks the exact posterior skewness of a rare-event binomial 
     fit <- ref_laplace_fit_single(
       y = as.numeric(y), n = rep(1L, N), X = matrix(1, N, 1),
       re_idx = numeric(0), n_re_groups = 0L, sigma_re = 1.0,
-      family = "binomial", compute_skew = TRUE, skew_idx = 1L
+      family = "binomial", compute_skew = TRUE, skew_idx = 1L,
+    beta_sd = 100
     )
     exact <- .exact_intercept_skew(N, S)
     ratio <- fit$inner_skew[1] / exact
@@ -450,7 +451,8 @@ test_that("gamma_3 tracks the exact posterior skewness of a rare-event binomial 
   fit <- ref_laplace_fit_single(
     y = as.numeric(y), n = rep(1L, 15), X = matrix(1, 15, 1),
     re_idx = numeric(0), n_re_groups = 0L, sigma_re = 1.0,
-    family = "binomial", compute_skew = TRUE, skew_idx = 1L
+    family = "binomial", compute_skew = TRUE, skew_idx = 1L,
+    beta_sd = 100
   )
   expect_false(identical(.tulpa_gamma3_band(fit$inner_skew[1]), "good"))
 
@@ -460,7 +462,8 @@ test_that("gamma_3 tracks the exact posterior skewness of a rare-event binomial 
   fit_bal <- ref_laplace_fit_single(
     y = as.numeric(y_bal), n = rep(1L, 500), X = matrix(1, 500, 1),
     re_idx = numeric(0), n_re_groups = 0L, sigma_re = 1.0,
-    family = "binomial", compute_skew = TRUE, skew_idx = 1L
+    family = "binomial", compute_skew = TRUE, skew_idx = 1L,
+    beta_sd = 100
   )
   expect_equal(.tulpa_gamma3_band(fit_bal$inner_skew[1]), "good")
 })
@@ -483,7 +486,7 @@ test_that("gamma_3 scores a zero-inflated (multi-process) fit and tracks its exa
   expect_identical(fit_zi$inner_skew_declined, "")
 
   # The exact log posterior of this intercept-only ZI Poisson, with the priors
-  # the kernel applies: N(0, 100^2) on the count block (tau = 1e-4) and
+  # the kernel applies: its default N(0, s^2) on the count block and
   # N(0, zi_prior_sd^2) with the default zi_prior_sd = 2.5 on the ZI block.
   # The data enter only through their sufficient statistics, so the density is
   # elementwise in (a, b) and the quadrature below evaluates it on the whole
@@ -491,11 +494,12 @@ test_that("gamma_3 scores a zero-inflated (multi-process) fit and tracks its exa
   ypos <- y[y > 0]
   n_zero <- sum(y == 0); n_pos <- length(ypos); s_pos <- sum(ypos)
   lg_pos <- sum(lgamma(ypos + 1))
+  tau_b <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
   zi_lp <- function(a, b) {
     mu <- exp(a); p <- plogis(b)
     n_zero * log(p + (1 - p) * exp(-mu)) +
       n_pos * log1p(-p) + s_pos * a - n_pos * mu -
-      lg_pos - 0.5 * 1e-4 * a^2 - 0.5 * (1 / 2.5^2) * b^2
+      lg_pos - 0.5 * tau_b * a^2 - 0.5 * (1 / 2.5^2) * b^2
   }
   f2 <- function(p) zi_lp(p[1], p[2])
   ctr <- stats::optim(c(0, 0), function(v) -f2(v), method = "BFGS",

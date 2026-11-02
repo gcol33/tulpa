@@ -3,6 +3,7 @@
 // Demonstrates the tulpa multi-process interface end-to-end
 
 #include <Rcpp.h>
+#include "fixed_effect_prior.h"
 #include <R_ext/Rdynload.h>
 #include <vector>
 #include <cmath>
@@ -140,7 +141,7 @@ namespace tulpa_hmc {
 Rcpp::List cpp_tulpa_fit_generic(
     Rcpp::NumericVector y_r,           // Response vector
     Rcpp::NumericMatrix X_r,           // Design matrix (single process for now)
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     int n_iter = 2000,
     int n_warmup = 1000,
     int max_treedepth = 10,
@@ -150,13 +151,15 @@ Rcpp::List cpp_tulpa_fit_generic(
     Rcpp::Nullable<Rcpp::NumericVector> init = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init = R_NilValue
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
     const int p = X_r.ncol();
 
     GaussianData gd;
     tulpa::LikelihoodSpec spec;
     ModelData data;
     ParamLayout layout;
-    build_gaussian_model(y_r, X_r, sigma_beta, gd, spec, data, layout);
+    build_gaussian_model(y_r, X_r, sigma_beta_value, gd, spec, data, layout);
     int n_params = layout.total_params;
 
     // Initial values — default origin, or caller-supplied for chain resume.
@@ -258,7 +261,7 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
     Rcpp::NumericVector y_r,
     Rcpp::NumericMatrix X_r,
     int n_chains = 4,
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     int n_iter = 2000,
     int n_warmup = 1000,
     int max_treedepth = 10,
@@ -269,6 +272,8 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
     Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init = R_NilValue,
     std::string checkpoint_path = ""
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
     if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
     const int p = X_r.ncol();
 
@@ -276,7 +281,7 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
     tulpa::LikelihoodSpec spec;
     ModelData data;
     ParamLayout layout;
-    build_gaussian_model(y_r, X_r, sigma_beta, gd, spec, data, layout);
+    build_gaussian_model(y_r, X_r, sigma_beta_value, gd, spec, data, layout);
     const int n_params = layout.total_params;
 
     // Per-chain initial position (rows of `init`, else origin).
@@ -377,7 +382,7 @@ Rcpp::List cpp_test_c_abi_resume_roundtrip(
     tulpa::LikelihoodSpec spec;
     ModelData data;
     ParamLayout layout;
-    build_gaussian_model(y_r, X_r, /*sigma_beta=*/10.0, gd, spec, data, layout);
+    build_gaussian_model(y_r, X_r, tulpa::DEFAULT_SIGMA_BETA, gd, spec, data, layout);
     const int n_params = layout.total_params;
 
     std::vector<double> init_vec(n_params, 0.0);
@@ -483,7 +488,7 @@ Rcpp::List cpp_test_c_abi_chains_roundtrip(
     tulpa::LikelihoodSpec spec;
     ModelData data;
     ParamLayout layout;
-    build_gaussian_model(y_r, X_r, /*sigma_beta=*/10.0, gd, spec, data, layout);
+    build_gaussian_model(y_r, X_r, tulpa::DEFAULT_SIGMA_BETA, gd, spec, data, layout);
     const int n_params = layout.total_params;
     const int p = X_r.ncol();
 

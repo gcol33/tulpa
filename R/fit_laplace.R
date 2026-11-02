@@ -1,11 +1,3 @@
-# The fixed-effect ridge the compiled Laplace kernels apply when no
-# `beta_prior` is supplied: beta ~ N(0, 100^2), i.e. precision 1e-4. Mirrors
-# DEFAULT_TAU_BETA in src/laplace_re_priors.h, which is where the penalty is
-# actually added to the objective; the two must agree or the reported curvature
-# describes a different posterior than the one the mode came from.
-.LAPLACE_DEFAULT_TAU_BETA <- 1e-4
-
-
 #' Fit a model via Laplace approximation
 #'
 #' @description
@@ -52,7 +44,7 @@
 #' @param n_threads Number of threads (default 1)
 #' @param return_hessian Logical: return the fixed-effect Hessian block? (default TRUE)
 #' @param beta_prior Optional Gaussian prior on the fixed effects. `NULL`
-#'   (default) keeps the weak built-in prior `beta ~ N(0, 100^2)`. Otherwise a
+#'   (default) takes the engine default `beta ~ N(0, 2.5^2)`. Otherwise a
 #'   list with element `sd` (prior standard deviation, required) and optional
 #'   `mean` (prior mean, default 0). Each may be a scalar (applied to every
 #'   coefficient) or a length-`ncol(X)` vector. Adds
@@ -225,7 +217,7 @@ tulpa_laplace <- function(y, n_trials, X,
   if (!is.null(spatial)) {
     if (!is.null(bp)) {
       stop("`beta_prior` is not supported on the spatial Laplace path. ",
-           "The spatial solvers use the built-in weak fixed-effect prior; ",
+           "The spatial solvers use the engine default fixed-effect prior; ",
            "drop `beta_prior`, or use NUTS for a custom fixed-effect prior ",
            "under a spatial field.", call. = FALSE)
     }

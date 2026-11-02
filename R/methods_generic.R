@@ -2097,7 +2097,7 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
 # Var(x*' beta + a*' w) = c' H^{-1} c with c = [x*, a*] and H the joint
 # (beta, field) posterior precision at the fitted hyperparameters -- the
 # working-weight cross term X'WA, the field precision Q(range, sigma), and
-# the kernel's weak fixed-effect ridge (sigma_beta = 100). Conditional on the
+# the kernel's default fixed-effect prior precision. Conditional on the
 # hyperparameters: a nested fit's grid spread in (range, sigma) is not
 # propagated, so the SE is mildly optimistic when the hyperparameter posterior
 # is wide. Integer-nu, no-RE fits only; everything else declines loudly.
@@ -2141,7 +2141,7 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
   tau_spde <- .kt$tau_spde
   Q <- .spde_precision_Q(sp, kappa, tau_spde)
 
-  XtWX <- crossprod(X, W * X) + diag(1e-4, p)   # kernel ridge sigma_beta = 100
+  XtWX <- crossprod(X, W * X) + diag(1 / .tulpa_prior_sd("laplace")^2, p)
   WA   <- W * A
   AtWA <- Matrix::crossprod(A, WA)
   XtWA <- Matrix::crossprod(Matrix::Matrix(X, sparse = TRUE), WA)

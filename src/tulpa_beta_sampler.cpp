@@ -12,6 +12,7 @@
 // the would-be nested-Laplace grid over phi with a single MCMC pass.
 
 #include <Rcpp.h>
+#include "fixed_effect_prior.h"
 #include <vector>
 #include <cmath>
 #include "hmc_sampler.h"
@@ -118,7 +119,7 @@ namespace tulpa_hmc {
 Rcpp::List cpp_tulpa_fit_beta_nuts(
     Rcpp::NumericVector y_r,
     Rcpp::NumericMatrix X_r,
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     double log_phi_prior_sd = 3.0,
     double log_phi_init = 0.0,
     int n_iter = 2000,
@@ -128,6 +129,8 @@ Rcpp::List cpp_tulpa_fit_beta_nuts(
     int seed = 42,
     bool verbose = false
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
     const int N = y_r.size();
     const int p = X_r.ncol();
 
@@ -165,7 +168,7 @@ Rcpp::List cpp_tulpa_fit_beta_nuts(
     ModelData data;
     data.N           = N;
     data.n_processes = 1;
-    data.sigma_beta  = sigma_beta;
+    data.sigma_beta  = sigma_beta_value;
 
     tulpa::ProcessData proc;
     proc.p = p;

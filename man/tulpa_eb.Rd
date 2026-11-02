@@ -203,7 +203,7 @@ alone.
 
 The marginal likelihood is marginal over the fixed effects too: the inner
 Laplace approximation integrates \code{beta} out together with the random
-effects (under \code{beta_prior}, or the inner solve's vague \code{N(0, 100^2)} default)
+effects (under \code{beta_prior}, or the engine default \code{N(0, 2.5^2)})
 rather than profiling it. \code{hyperprior = "flat"} is therefore a RESTRICTED,
 REML-type estimate, not maximum likelihood: for a gaussian response it is
 REML, and for a non-gaussian one it agrees with

@@ -74,7 +74,7 @@ tulpa_priors <- function(
 ) {
 
   # Set defaults
-  if (is.null(beta)) beta <- prior_normal(0, 2.5)
+  if (is.null(beta)) beta <- prior_normal(0, .tulpa_prior_sd())
   if (is.null(sigma)) sigma <- prior_pc(U = 1.0, alpha = 0.01)
   if (is.null(phi)) phi <- prior_pc(U = 10.0, alpha = 0.01)
   if (is.null(rho_temporal)) rho_temporal <- prior_beta(2, 2)
@@ -462,7 +462,7 @@ priors_default <- function(family = NULL, spatial = FALSE, temporal = FALSE) {
     cat("defaults are listed at the end.\n\n")
 
     cat("Fixed effects (beta):\n")
-    cat("  Normal(0, 2.5)\n")
+    cat(sprintf("  Normal(0, %g)\n", .tulpa_prior_sd()))
     cat("  Interpretation: Coefficients roughly in [-5, 5] on link scale\n")
     cat("  Customization: prior_normal(mean, sd)\n\n")
 
@@ -497,7 +497,8 @@ priors_default <- function(family = NULL, spatial = FALSE, temporal = FALSE) {
     cat("  poisson_gamma: Uses phi for gamma shape parameter\n\n")
 
     cat("What a tulpa() fit uses instead (set via beta_prior / re_prior):\n")
-    cat("  Fixed effects: Normal(0, 2.5) on every backend\n")
+    cat(sprintf("  Fixed effects: Normal(0, %g) on every backend\n",
+                .tulpa_prior_sd()))
     cat("  Random-effect SD: PC prior P(sigma > 3) = 0.01 (+ LKJ(2) on\n")
     cat("    correlations) on nested Laplace / re_cov_nested / eb;\n")
     cat("    half-Cauchy(2.5) on the samplers and mode = \"gibbs\"\n")

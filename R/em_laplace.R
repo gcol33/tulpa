@@ -532,7 +532,7 @@
 #'   Gaussian sigma). When `NULL` (default), behavior is unchanged.
 #' @param beta_prior Optional Gaussian prior on the fixed effects, applied to
 #'   every block fit via [tulpa_laplace()] (i.e. blocks without a `prior`
-#'   field). `NULL` (default) keeps the weak built-in prior. Otherwise a list
+#'   field). `NULL` (default) takes the engine default `N(0, 2.5^2)`. Otherwise a list
 #'   with `sd` (required) and optional `mean`; see [tulpa_laplace()]. The same
 #'   prior flows into the MI / Gibbs correction refits, so penalized
 #'   corrections come for free. A block may override the default by setting its

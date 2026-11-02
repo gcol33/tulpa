@@ -177,11 +177,14 @@ sbc_fit_nested <- function(d, phi = d$phi,
               diagnose_skew = FALSE, auto_recenter = FALSE, prune = FALSE,
               axis_refine = "none")
   if (length(control)) ctl <- utils::modifyList(ctl, control)
+  # The fixture's model integrates beta under a flat prior (`.sbc_exact_cell()`),
+  # so the fit states that prior rather than taking the engine default.
   suppressWarnings(tulpa_nested_laplace(
     y = d$y, n_trials = rep(ntr, d$N), X = d$X,
     prior = list(list(type = "iid", obs_idx = d$region,
                       n_units = d$nr, sigma_grid = d$grid)),
-    family = family, phi = phi, control = ctl))
+    family = family, phi = phi, beta_prior = list(mean = 0, sd = Inf),
+    control = ctl))
 }
 
 # The joint log-likelihood rank: draw `n_ref` (beta, sigma) pairs from the

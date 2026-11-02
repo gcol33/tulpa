@@ -224,6 +224,14 @@ struct SharingSpec {
     }
 };
 
+// The engine's fixed-effect prior when a caller states none,
+// beta_j ~ N(0, DEFAULT_SIGMA_BETA^2): weakly informative on the linear
+// predictor's scale, the same prior every front door states
+// (`.TULPA_PRIOR$beta_sd`, R/settings.R, which a test pins to this value).
+// Every kernel default reads it, in the SD parameterization here and as a
+// precision through DEFAULT_TAU_BETA (src/laplace_re_priors.h).
+constexpr double DEFAULT_SIGMA_BETA = 2.5;
+
 // ============================================================================
 // ModelData: the core data container passed to all samplers
 //
@@ -587,7 +595,7 @@ struct ModelData {
     // ================================================================
     // PRIOR HYPERPARAMETERS
     // ================================================================
-    double sigma_beta = 2.5;
+    double sigma_beta = DEFAULT_SIGMA_BETA;
     double sigma_re_scale = 1.0;
     double phi_prior_shape = 1.0;
     double phi_prior_rate = 0.01;

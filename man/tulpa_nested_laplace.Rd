@@ -151,9 +151,8 @@ are offered by \code{\link[=tulpa]{tulpa()}}, \code{\link[=tulpa_eb]{tulpa_eb()}
 \item{beta_prior}{Optional Gaussian prior on the fixed effects,
 \code{list(mean = , sd = )} (or \code{\link[=prior_normal]{prior_normal()}}), each scalar or of length
 \code{ncol(X)}; \code{sd = Inf} leaves a coefficient unpenalized. Every grid cell
-is solved under it. \code{NULL} (default) keeps the kernels' weak built-in
-prior \code{N(0, 100^2)}, as in \code{\link[=tulpa_laplace]{tulpa_laplace()}}; \code{\link[=tulpa]{tulpa()}} always states its
-own default, \code{N(0, 2.5^2)}, here as on every other backend.}
+is solved under it. \code{NULL} (default) takes the engine default
+\code{N(0, 2.5^2)}, as in \code{\link[=tulpa_laplace]{tulpa_laplace()}} and \code{\link[=tulpa]{tulpa()}}.}
 
 \item{control}{Optional list of perf/numerical tuning knobs (statistical
 arguments stay top-level), following the \code{control} convention of

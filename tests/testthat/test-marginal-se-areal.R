@@ -13,8 +13,8 @@
 #       the correct field-aware one, not the field-ignoring dense branch.
 #
 # (a) and (b) are both weak on the AUGMENTATION COEFFICIENT specifically: the
-# intercept prior is deliberately weak (sigma_beta = 100), so the field constant
-# is driven to ~0 by any pin of order 1 and the mode barely moves; and (b)
+# field constant is driven to ~0 by any pin of order 1, so the mode barely
+# moves with the coefficient; and (b)
 # compares the helper against a reference stating the same convention. The
 # coefficient therefore gets its own gate below, against the kernel's own
 # log-prior rather than against another R statement of it.
@@ -51,15 +51,23 @@ areal_reference <- function(spatial_type, y, ntr, X, W, unit) {
   }
   Dm <- as.matrix(D); nlat <- ncol(Dm)
   M  <- cbind(X, Dm)
-  # Mode-find with the kernel's built-in weak beta prior (sigma_beta = 100) so
-  # the modes line up; the marginal itself omits that negligible ridge.
-  Qjoint <- Matrix::bdiag(Matrix::Diagonal(p, 1 / 100^2), Qlat)
+  # Mode-find with the kernel's default beta prior so the modes line up; the
+  # marginal itself omits that prior precision, as the engine's H_beta does.
+  Qjoint <- Matrix::bdiag(
+    Matrix::Diagonal(p, 1 / tulpa:::cpp_test_default_sigma_beta()^2), Qlat)
+  # The structured field's sum is held at zero as a hard constraint
+  # (gcol33/tulpa#901), so the mode is the constrained one: Newton on the KKT
+  # system of the objective and the linear constraint c' th = 0. Under a proper
+  # intercept prior it differs from the augmented objective's free mode.
+  cc <- c(rep(0, p), rep(1, n_units), rep(0, nlat - n_units))
   th <- rep(0, p + nlat)
   for (it in seq_len(200)) {
     eta <- as.numeric(M %*% th); pr <- plogis(eta); Wv <- ntr * pr * (1 - pr)
     g <- as.numeric(crossprod(M, y - ntr * pr)) - as.numeric(Qjoint %*% th)
     H <- crossprod(M, Wv * M) + as.matrix(Qjoint)
-    step <- solve(H, g); th <- th + step
+    K <- rbind(cbind(H, cc), c(cc, 0))
+    step <- solve(K, c(g, -sum(cc * th)))[seq_along(th)]
+    th <- th + step
     if (max(abs(step)) < 1e-10) break
   }
   eta <- as.numeric(M %*% th); pr <- plogis(eta); Wv <- ntr * pr * (1 - pr)

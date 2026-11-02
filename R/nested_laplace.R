@@ -404,9 +404,8 @@
 #' @param beta_prior Optional Gaussian prior on the fixed effects,
 #'   `list(mean = , sd = )` (or [prior_normal()]), each scalar or of length
 #'   `ncol(X)`; `sd = Inf` leaves a coefficient unpenalized. Every grid cell
-#'   is solved under it. `NULL` (default) keeps the kernels' weak built-in
-#'   prior `N(0, 100^2)`, as in [tulpa_laplace()]; [tulpa()] always states its
-#'   own default, `N(0, 2.5^2)`, here as on every other backend.
+#'   is solved under it. `NULL` (default) takes the engine default
+#'   `N(0, 2.5^2)`, as in [tulpa_laplace()] and [tulpa()].
 #'
 #' @references
 #' Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent

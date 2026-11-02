@@ -89,7 +89,7 @@ mode and the marginal precision \code{H_beta} describe one weighted model.
 \item{return_hessian}{Logical: return the fixed-effect Hessian block? (default TRUE)}
 
 \item{beta_prior}{Optional Gaussian prior on the fixed effects. \code{NULL}
-(default) keeps the weak built-in prior \code{beta ~ N(0, 100^2)}. Otherwise a
+(default) takes the engine default \code{beta ~ N(0, 2.5^2)}. Otherwise a
 list with element \code{sd} (prior standard deviation, required) and optional
 \code{mean} (prior mean, default 0). Each may be a scalar (applied to every
 coefficient) or a length-\code{ncol(X)} vector. Adds

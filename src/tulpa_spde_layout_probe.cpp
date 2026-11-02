@@ -31,7 +31,6 @@ Rcpp::List cpp_spde_layout_probe(int n_mesh,
     ModelData data;
     data.N           = 1;             // unused by the allocator
     data.n_processes = 1;
-    data.sigma_beta  = 10.0;
 
     tulpa::ProcessData proc;
     proc.p = p;
@@ -92,7 +91,6 @@ Rcpp::List cpp_spde_prior_probe(Rcpp::NumericVector vals,
     ModelData data;
     data.N           = 1;
     data.n_processes = 1;
-    data.sigma_beta  = 10.0;
 
     tulpa::ProcessData proc;
     proc.p = 1;
@@ -174,7 +172,6 @@ Rcpp::List cpp_spde_nc_apply_probe(Rcpp::NumericVector z,
     ModelData data;
     data.N           = 1;
     data.n_processes = 1;
-    data.sigma_beta  = 10.0;
 
     tulpa::ProcessData proc;
     proc.p = 1;
@@ -242,7 +239,6 @@ Rcpp::List cpp_spde_hyper_prior_probe(double log_kappa,
     ModelData data;
     data.N           = 1;
     data.n_processes = 1;
-    data.sigma_beta  = 10.0;
 
     tulpa::ProcessData proc;
     proc.p = 1;

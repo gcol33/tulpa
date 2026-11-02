@@ -128,8 +128,8 @@ effects. \code{NULL} takes the engine default, \code{prior_normal(0, 2.5)}, on e
 backend that carries a fixed-effect prior -- the prior is a modelling
 statement, so the backend \code{mode = "auto"} selects does not change it. The
 nested-Laplace path solves every outer cell under it; the SPDE and the
-conditional spatial-Laplace paths hold their own weak fixed-effect prior
-and refuse a supplied \code{beta_prior}. The resolved prior is reported on the fit as
+conditional spatial-Laplace paths solve under the same default and refuse
+a supplied \code{beta_prior}. The resolved prior is reported on the fit as
 \verb{$beta_prior}.}
 
 \item{re_prior}{Optional \code{list()} of random-effect / variance-component

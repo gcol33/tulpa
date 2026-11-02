@@ -12,15 +12,19 @@ ref_laplace_fit_single <- function(y, n, X, re_idx = numeric(0),
                                    n_re_groups = 0L, sigma_re = 1.0,
                                    family, phi = 1.0, max_iter = 100L,
                                    tol = 1e-6, n_threads = 1L,
-                                   compute_skew = FALSE, skew_idx = NULL) {
+                                   compute_skew = FALSE, skew_idx = NULL,
+                                   beta_sd = NULL) {
   has_re <- n_re_groups > 0L
+  p <- ncol(X)
   cpp_laplace_fit_multi_re(
     y = y, n = n, X = X,
     re_idx_list = if (has_re) list(as.integer(re_idx)) else list(),
     re_ngroups = if (has_re) as.integer(n_re_groups) else integer(0),
     re_sigma_list = if (has_re) list(sigma_re) else list(),
     family = family, phi = phi, max_iter = max_iter, tol = tol,
-    n_threads = n_threads, compute_skew = compute_skew, skew_idx = skew_idx
+    n_threads = n_threads, compute_skew = compute_skew, skew_idx = skew_idx,
+    beta_prior_mean = if (is.null(beta_sd)) NULL else rep(0, p),
+    beta_prior_sd = if (is.null(beta_sd)) NULL else rep(beta_sd, length.out = p)
   )
 }
 

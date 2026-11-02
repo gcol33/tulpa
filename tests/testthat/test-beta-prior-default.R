@@ -9,6 +9,45 @@ test_that("there is one default fixed-effect prior, at the documented scale", {
   expect_equal(tulpa:::.tulpa_default_beta_prior(), list(mean = 0, sd = 2.5))
   # prior_normal()'s own default is what the setting records.
   expect_equal(tulpa:::.TULPA_PRIOR$beta_sd, prior_normal()$sd)
+  # The compiled kernels' default is the same prior, so a direct engine call
+  # that states none solves under what every front door states.
+  expect_equal(tulpa:::cpp_test_default_sigma_beta(), tulpa:::.TULPA_PRIOR$beta_sd)
+})
+
+test_that("no compiled entry restates the default fixed-effect prior", {
+  src_dir <- test_path("..", "..", "src")
+  skip_if_not(dir.exists(src_dir), "package sources not available")
+  files <- list.files(src_dir, pattern = "\\.(cpp|h)$", full.names = TRUE)
+  files <- files[!grepl("RcppExports", basename(files))]
+  # A literal default on an entry's prior-SD or prior-precision argument is a
+  # second copy of DEFAULT_SIGMA_BETA (tulpa/model_data.h), one an R signature
+  # generated from it would then carry too.
+  pat <- "double\\s+(sigma_beta|prior_beta_sd|tau_beta)\\s*=\\s*[0-9.eE+-]+\\s*[,)]"
+  hits <- unlist(lapply(files, function(f) {
+    l <- readLines(f, warn = FALSE)
+    i <- grep(pat, l, perl = TRUE)
+    if (length(i)) paste0(basename(f), ":", i) else character(0)
+  }))
+  expect_identical(hits, character(0))
+})
+
+test_that("a compiled entry handed no prior SD reads the engine default", {
+  skip_on_cran()
+  set.seed(3)
+  n <- 40L
+  X <- cbind(1, rnorm(n))
+  y <- rpois(n, exp(0.3 + 0.5 * X[, 2]))
+  draws <- matrix(c(0.2, -0.4), 1L)
+  lp <- function(...) tulpa:::cpp_tulpa_glmm_log_prob_draws(
+    draws, as.numeric(y), rep(1L, n), X, "poisson", ...)
+  s0 <- tulpa:::.TULPA_PRIOR$beta_sd
+  expect_equal(lp(), lp(sigma_beta = s0))
+  # The sampler's log posterior carries the kernel -0.5 beta^2 / s^2 per
+  # coefficient, so the default and a stated SD differ by exactly that term.
+  expect_equal(lp(sigma_beta = 10) - lp(),
+               -0.5 * sum(draws^2) * (1 / 10^2 - 1 / s0^2), tolerance = 1e-10)
+  expect_error(lp(sigma_beta = -1), "one positive number")
+  expect_error(lp(sigma_beta = c(1, 2)), "one positive number")
 })
 
 test_that("the scalar-ridge resolver takes the same default", {

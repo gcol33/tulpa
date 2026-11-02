@@ -57,6 +57,8 @@ test_that("an empty prior fits the arms on the dispersion axes alone", {
 test_that("an empty prior with no dispersion axis is one cell at the GLM mode", {
   skip_on_cran()
   resp <- .no_latent_arms()["num"]
+  # The GLM oracle is unpenalized: the arm states a vague N(0, 100^2) prior.
+  resp$num$beta_prior_prec <- rep(1 / 100^2, ncol(resp$num$X))
   fit <- tulpa_nested_laplace_joint(responses = resp, prior = list())
   expect_equal(nrow(fit$theta_grid), 1L)
   expect_equal(ncol(fit$theta_grid), 0L)

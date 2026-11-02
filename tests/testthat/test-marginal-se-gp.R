@@ -35,7 +35,7 @@ make_full_nngp_spec <- function(coords) {
 
 # Exact dense-GP reference: Q = K^{-1}, K the exponential kernel with the same
 # kGpJitter (1e-8) the kernel adds, then a penalized-IRLS mode + Schur of the
-# latent block (beta ridge 1/100^2, matching the built-in weak N(0,100^2)).
+# latent block (beta prior precision at the kernel's default N(0, s^2)).
 gp_marginal_reference <- function(y, ntr, X, coords, sigma2, phi) {
   n <- nrow(coords); p <- ncol(X)
   D <- as.matrix(dist(coords))
@@ -43,7 +43,7 @@ gp_marginal_reference <- function(y, ntr, X, coords, sigma2, phi) {
   Q <- solve(K)
   Z <- diag(n); M <- cbind(X, Z)
   Qjoint <- rbind(
-    cbind(diag(p) / 100^2, matrix(0, p, n)),
+    cbind(diag(p) / tulpa:::cpp_test_default_sigma_beta()^2, matrix(0, p, n)),
     cbind(matrix(0, n, p), Q))
   th <- rep(0, p + n)
   for (it in seq_len(200)) {

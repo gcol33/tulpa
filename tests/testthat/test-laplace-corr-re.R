@@ -102,7 +102,10 @@ test_that("the marginal SE uses the off-diagonal precision (tulpa#28)", {
   Dinv <- Matrix::bdiag(rep(list(Matrix::Matrix(Q, sparse = TRUE)), d$G))
   ZtWZ <- Matrix::crossprod(Zs, W * Zs)
   XtWZ <- crossprod(d$X, as.matrix(W * Zs))
-  H_indep <- crossprod(d$X, W * d$X) -
+  # H_beta is the marginal precision of beta, so it carries the kernel's
+  # default fixed-effect prior precision on its diagonal.
+  tau_b <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
+  H_indep <- crossprod(d$X, W * d$X) + diag(tau_b, 2L) -
     XtWZ %*% solve(as.matrix(ZtWZ + Dinv)) %*% t(XtWZ)
 
   expect_equal(unname(f_corr$H_beta), unname(as.matrix(H_indep)),
@@ -112,13 +115,13 @@ test_that("the marginal SE uses the off-diagonal precision (tulpa#28)", {
 
 # Independent reference for the per-group posterior covariance: assemble the
 # full joint precision H at the fit's mode using the SAME working weights the
-# kernel uses (glmm_weights), add the RE prior precision per group, the weak
-# beta-prior ridge (DEFAULT_TAU_BETA), and the uniform 1e-10 ridge, invert, and
+# kernel uses (glmm_weights), add the RE prior precision per group, the default
+# beta-prior precision (DEFAULT_TAU_BETA), and the uniform 1e-10 ridge, invert, and
 # read off each group's 2x2 diagonal block of solve(H). This is the FULL
 # inverse block (fixed effects + other groups marginalized out), which is what
 # the kernel returns.
 ref_cov_blocks <- function(d, Sigma, fit) {
-  DEFAULT_TAU_BETA <- 1e-4   # BetaPrior() default (laplace_re_priors.h)
+  DEFAULT_TAU_BETA <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
   UNIFORM_RIDGE    <- 1e-10  # LAPLACE_UNIFORM_RIDGE (laplace_cholesky.h)
   p <- ncol(d$X)
 

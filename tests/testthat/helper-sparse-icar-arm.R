@@ -17,7 +17,10 @@
 # A sparse, strongly separated occurrence pattern -- a few units almost
 # always positive, the rest almost always negative -- the "sparse,
 # weakly-identified species" regime gcol33/tulpa#289 targets: the field-SD
-# posterior wants to sit well past the old fixed ceiling of 3.0.
+# posterior wants to sit well past the old fixed ceiling of 3.0. That regime is
+# the one a vague fixed-effect prior leaves, so the arm states N(0, 100^2) on
+# its coefficients: under the engine default N(0, 2.5^2) the same data read
+# as a `spread` outer grid, not a collapse on the sigma axis.
 .sparse_icar_arm <- function(n_s = 20L, n_per = 6L, seed = 11) {
     set.seed(seed)
     spatial_idx <- rep(seq_len(n_s), each = n_per)
@@ -28,7 +31,8 @@
         arm = list(y = as.numeric(y), n_trials = rep(1L, length(y)),
                   X = X, spatial_idx = as.integer(spatial_idx),
                   re_idx = rep(0, length(y)), n_re_groups = 0L, sigma_re = 1.0,
-                  family = "binomial", phi = 1.0),
+                  family = "binomial", phi = 1.0,
+                  beta_prior_prec = rep(1 / 100^2, ncol(X))),
         adj = .chain_adj_ag(n_s)
     )
 }

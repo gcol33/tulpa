@@ -974,8 +974,8 @@
       spde_sigma_re <- sigma_re[1]
     }
     if (!is.null(beta_prior)) {
-      stop("`beta_prior` is not supported on the SPDE path; fit_spde() uses a ",
-           "built-in weak fixed-effect prior.", call. = FALSE)
+      stop("`beta_prior` is not supported on the SPDE path; fit_spde() uses ",
+           "the engine default fixed-effect prior.", call. = FALSE)
     }
     spde_fams <- BACKEND_REGISTRY$spde$families
     if (!family %in% spde_fams) {
@@ -1135,7 +1135,7 @@
         }
         if (!is.null(beta_prior)) {
           stop("`beta_prior` is not supported on the spatial Laplace path; the ",
-               "spatial solvers use a built-in weak fixed-effect prior. Drop ",
+               "spatial solvers use the engine default fixed-effect prior. Drop ",
                "`beta_prior`, or use a sampler for a custom prior under a field.",
                call. = FALSE)
         }
@@ -1743,8 +1743,8 @@
 #'   backend that carries a fixed-effect prior -- the prior is a modelling
 #'   statement, so the backend `mode = "auto"` selects does not change it. The
 #'   nested-Laplace path solves every outer cell under it; the SPDE and the
-#'   conditional spatial-Laplace paths hold their own weak fixed-effect prior
-#'   and refuse a supplied `beta_prior`. The resolved prior is reported on the fit as
+#'   conditional spatial-Laplace paths solve under the same default and refuse
+#'   a supplied `beta_prior`. The resolved prior is reported on the fit as
 #'   `$beta_prior`.
 #' @param re_prior Optional `list()` of random-effect / variance-component
 #'   hyperpriors (statistical, so they live in the signature rather than in

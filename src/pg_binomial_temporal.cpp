@@ -7,6 +7,7 @@
 #include "linalg_fast.h"
 #include "hmc_temporal.h"   // rw1_quadratic_form, rw1_rank, ar1_log_density
 #include <Rcpp.h>
+#include "fixed_effect_prior.h"
 #include <cmath>
 #include <algorithm>
 #include <vector>
@@ -41,7 +42,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
     int n_iter = 2000,
     int n_warmup = 1000,
     int thin = 1,
-    double prior_beta_sd = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd = R_NilValue,
     double prior_sigma_re_scale = 2.5,
     double prior_sigma_trend_scale = 1.0,
     double prior_sigma_seasonal_scale = 1.0,
@@ -51,6 +52,8 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
     bool verbose = true,
     int n_threads = 1
 ) {
+    const double prior_beta_sd_value =
+        tulpa::read_sigma_beta(prior_beta_sd, "prior_beta_sd");
   if (trend_type < 0 || trend_type > 1) {
     Rcpp::stop("`trend_type` must be 0 (none) or 1 (RW1); got %d. The temporal "
                "Gibbs kernel implements an RW1 trend only.", trend_type);
@@ -127,7 +130,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
     tulpa::pg_gibbs_core_step(
         N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
         temp_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
-        prior_beta_sd, prior_sigma_re_scale, C.n_threads_team);
+        prior_beta_sd_value, prior_sigma_re_scale, C.n_threads_team);
 
     // 5. Update temporal effects
     for (int i = 0; i < N; i++) {
@@ -152,7 +155,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
       tulpa::PgInterceptLevel level(
           C.beta[0],
           n_seasonal > 0 ? tulpa::pg_mean(seasonal.begin(), n_seasonal) : 0.0,
-          prior_beta_sd, 1.0, trend.begin(), n_trend);
+          prior_beta_sd_value, 1.0, trend.begin(), n_trend);
       for (int t = 0; t < n_trend; t++) {
         double tau_prior, mean_prior;
         if (t == 0) {
@@ -203,7 +206,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
           1.0 / (sigma_seasonal.sigma * sigma_seasonal.sigma);
       tulpa::PgInterceptLevel level(
           C.beta[0], n_trend > 0 ? tulpa::pg_mean(trend.begin(), n_trend) : 0.0,
-          prior_beta_sd, 1.0, seasonal.begin(), n_seasonal);
+          prior_beta_sd_value, 1.0, seasonal.begin(), n_seasonal);
       for (int s = 0; s < n_seasonal; s++) {
         const int s_prev = (s == 0) ? n_seasonal - 1 : s - 1;
         const int s_next = (s == n_seasonal - 1) ? 0 : s + 1;
@@ -366,7 +369,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
       sigma_seasonal_draws[save_idx] = sigma_seasonal.sigma;
       sigma_short_draws[save_idx] = sigma_short.sigma;
       rho_short_draws[save_idx] = rho_short;
-      double lp = C.log_joint_common(y, n, temp_contrib.begin(), prior_beta_sd,
+      double lp = C.log_joint_common(y, n, temp_contrib.begin(), prior_beta_sd_value,
                                      prior_sigma_re_scale);
       // Each arm at precision 1 / sigma^2 under its own half-Cauchy.
       auto arm_tau = [](const tulpa::PgScaleState& st) {

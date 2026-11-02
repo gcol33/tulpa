@@ -205,8 +205,8 @@ test_that("the SPDE single fit returns a mode its own score confirms", {
   mesh <- sp$mode[(p + 1):(p + a$n_mesh)]
   expect_lt(abs(mean(mesh)), 1e-8)          # the field really is centred
 
-  # d(log lik)/d beta at the reported mode, less the kernel's weak ridge
-  # (DEFAULT_TAU_BETA = 1e-4). The mesh score carries the sum-to-zero
+  # d(log lik)/d beta at the reported mode, less the kernel's default prior
+  # precision (DEFAULT_TAU_BETA). The mesh score carries the sum-to-zero
   # multiplier, so only the beta block is a clean stationarity statement.
   A <- Matrix::sparseMatrix(i = a$A_i, p = a$A_p, x = a$A_x,
                             dims = c(a$n_obs, a$n_mesh), index1 = FALSE)
@@ -216,7 +216,7 @@ test_that("the SPDE single fit returns a mode its own score confirms", {
   # separates a settled mode from the uncompensated centring, which left this
   # same quantity at ~0.47 -- five orders of magnitude up.
   g_beta <- as.numeric(crossprod(a$X, a$y - plogis(eta))) -
-    1e-4 * sp$mode[seq_len(p)]
+    sp$mode[seq_len(p)] / tulpa:::cpp_test_default_sigma_beta()^2
   expect_lt(max(abs(g_beta)), 1e-4)
 })
 
@@ -288,8 +288,9 @@ test_that("the precomputed SPDE fit returns a mode its own score confirms", {
   eta <- as.numeric(fx$args$X %*% fit$mode[seq_len(p)]) +
     as.numeric(fx$Aeff %*% xm)
   resid <- fx$args$y - plogis(eta)
-  # DEFAULT_TAU_BETA = 1e-4 is the kernel's weak ridge on the fixed effects.
-  g_beta <- as.numeric(crossprod(fx$args$X, resid)) - 1e-4 * fit$mode[seq_len(p)]
+  # DEFAULT_TAU_BETA is the kernel's default prior precision on the fixed effects.
+  g_beta <- as.numeric(crossprod(fx$args$X, resid)) -
+    fit$mode[seq_len(p)] / tulpa:::cpp_test_default_sigma_beta()^2
   g_mesh <- as.numeric(Matrix::crossprod(fx$Aeff, resid)) -
     as.numeric(fx$Q %*% xm)
   expect_lt(max(abs(g_beta)), 1e-6)
@@ -346,9 +347,8 @@ test_that("the precomputed SPDE latent is not sum-to-zero centred", {
     log_prior <- log_prior - 0.5 * tau_re * sum(b^2) +
       0.5 * fx$n_re_groups * (log(tau_re) - log(2 * pi))
   }
-  # The weak default fixed-effect prior, at the precision
-  # laplace_re_priors.h's DEFAULT_TAU_BETA states (sd 100).
-  tau_beta <- 1e-4
+  # The default fixed-effect prior, at the precision DEFAULT_TAU_BETA states.
+  tau_beta <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
   bcoef <- fit$mode[seq_len(p)]
   log_prior <- log_prior - 0.5 * tau_beta * sum(bcoef^2) +
     0.5 * p * (log(tau_beta) - log(2 * pi))

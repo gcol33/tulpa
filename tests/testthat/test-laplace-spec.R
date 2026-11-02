@@ -28,7 +28,7 @@ test_that("spec-driven Laplace works without RE", {
     re_idx      = integer(0),
     n_re_groups = 0L,
     sigma_re    = 1.0,
-    sigma_beta  = 100,
+    sigma_beta  = tulpa:::cpp_test_default_sigma_beta(),
     phi         = 0.5,
     max_iter    = 100L,
     tol         = 1e-10,
@@ -220,15 +220,15 @@ test_that("custom Gaussian spec matches the built-in family path for Gaussian + 
     n_threads = 1L
   )
 
-  # Spec-driven Laplace via the new shim. Use sigma_beta = 100 so
-  # tau_beta = 1e-4 matches the reference's hardcoded prior precision.
+  # Spec-driven Laplace via the test shim, at the kernel default prior SD so
+  # the fixed-effect prior matches the built-in path's.
   spec <- cpp_laplace_spec_test_gaussian(
     y           = y,
     X           = X,
     re_idx      = re_idx,
     n_re_groups = n_re_groups,
     sigma_re    = sigma_re,
-    sigma_beta  = 100,
+    sigma_beta  = tulpa:::cpp_test_default_sigma_beta(),
     phi         = phi,
     max_iter    = 100L,
     tol         = 1e-10,

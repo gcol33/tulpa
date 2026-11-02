@@ -16,6 +16,7 @@
 // ----------------------------------------------------------------------------
 
 #include <Rcpp.h>
+#include "fixed_effect_prior.h"
 #include <string>
 #include <vector>
 
@@ -59,7 +60,7 @@ Rcpp::List cpp_tulpa_glmm_layout(
     std::string family,
     double phi = 1.0,
     double phi2 = NA_REAL,
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> re_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> spatial_spec = R_NilValue,
@@ -70,12 +71,14 @@ Rcpp::List cpp_tulpa_glmm_layout(
     Rcpp::Nullable<Rcpp::List> tvc_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> zi_spec = R_NilValue
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
     const int N = y.size();
 
     tulpa::SamplerModelInputs in;
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     tulpa::build_sampler_model_inputs(
-        in, y, n_trials, X, family, phi, phi2, sigma_beta, offset,
+        in, y, n_trials, X, family, phi, phi2, sigma_beta_value, offset,
         sigma_re_scale,
         re_spec, spatial_spec, temporal_spec, svc_spec, tvc_spec, zi_spec);
 

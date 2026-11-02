@@ -20,6 +20,7 @@
 // ----------------------------------------------------------------------------
 
 #include <Rcpp.h>
+#include "fixed_effect_prior.h"
 #include <string>
 #include <vector>
 #include <cmath>
@@ -150,9 +151,11 @@ Rcpp::List cpp_vi_elbo_grad(
     int rank = 2,
     Rcpp::Nullable<Rcpp::NumericVector> x = R_NilValue,
     double phi = 1.0,
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
     using namespace tulpa::vi;
 
     if (mc_samples < 1) Rcpp::stop("mc_samples must be at least 1.");
@@ -164,7 +167,7 @@ Rcpp::List cpp_vi_elbo_grad(
     tulpa::SamplerModelInputs in;
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     tulpa::build_sampler_model_inputs(
-        in, y, n_trials, X, family, phi, /*phi2=*/NA_REAL, sigma_beta, offset,
+        in, y, n_trials, X, family, phi, /*phi2=*/NA_REAL, sigma_beta_value, offset,
         /*sigma_re_scale=*/2.5, R_NilValue, R_NilValue, R_NilValue);
     const int D = in.layout.total_params;
 
@@ -260,7 +263,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
     std::string family,
     std::string backend,
     double phi = 1.0,
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     int n_iter = 2000,
     int n_warmup = 1000,
     int seed = 42,
@@ -304,6 +307,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
     std::string checkpoint_path = "",
     double smc_bridge_end = 1.0
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
     // Argument groups (kept out of the signature so Rcpp::compileAttributes does
     // not fold the comments into the generated wrapper):
     //   NUTS:  n_chains, max_treedepth, adapt_delta
@@ -327,7 +332,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
     tulpa::SamplerModelInputs in;
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     tulpa::build_sampler_model_inputs(
-        in, y, n_trials, X, family, phi, phi2, sigma_beta, offset, sigma_re_scale,
+        in, y, n_trials, X, family, phi, phi2, sigma_beta_value, offset, sigma_re_scale,
         re_spec, spatial_spec, temporal_spec, svc_spec, tvc_spec, zi_spec);
     const int D = in.layout.total_params;
     std::vector<double> init(D, 0.0);
@@ -552,7 +557,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
     if (backend == "smc") {
         tulpa::SMCConfig cfg;
         cfg.n_particles = n_particles; cfg.n_mcmc_steps = n_mcmc_steps;
-        cfg.ess_threshold = ess_threshold; cfg.prior_sigma = sigma_beta;
+        cfg.ess_threshold = ess_threshold; cfg.prior_sigma = sigma_beta_value;
         cfg.seed = (unsigned int)seed; cfg.verbose = verbose;
         cfg.bridge_end = smc_bridge_end;
         tulpa::SMCDriverResult res = tulpa::run_smc_sampler(

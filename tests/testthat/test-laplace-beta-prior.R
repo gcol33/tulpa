@@ -59,13 +59,14 @@ test_that("beta_prior validation rejects malformed input", {
 skip_on_cran()
 
 
-test_that("beta_prior = NULL reproduces the explicit weak prior N(0, 100^2)", {
+test_that("beta_prior = NULL reproduces the explicit engine default prior", {
   skip_on_cran()
   d <- sim_logit()
   b_default <- fit_beta(d, NULL)
-  b_weak    <- fit_beta(d, list(mean = 0, sd = 100))
-  # tau_beta = 1e-4 <-> sd = 100: the two paths must hit the same mode.
-  expect_equal(b_default, b_weak, tolerance = 1e-8)
+  b_stated  <- fit_beta(d, list(mean = 0, sd = tulpa:::.tulpa_prior_sd()))
+  # The kernel's own default and the same prior stated through `beta_prior`
+  # must hit the same mode.
+  expect_equal(b_default, b_stated, tolerance = 1e-8)
 })
 
 

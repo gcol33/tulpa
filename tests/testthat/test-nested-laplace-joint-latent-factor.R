@@ -23,8 +23,8 @@ skip_on_cran()
 }
 
 # Laplace marginal of a one-factor Poisson model with u_l integrated per unit:
-# theta = (b0, b1, lambda), priors N(0, 100^2) on b (the joint driver's default
-# fixed-effect precision 1e-4) and N(0, 1) on lambda.
+# theta = (b0, b1, lambda), priors N(0, s^2) on b (the joint driver's default
+# fixed-effect prior, DEFAULT_TAU_BETA = 1 / s^2) and N(0, 1) on lambda.
 .lf_ref_log_marg <- function(th, d) {
     K <- d$K
     b0 <- th[1:K]; b1 <- th[K + 1:K]; lam <- th[2 * K + 1:K]
@@ -37,7 +37,8 @@ skip_on_cran()
     E <- E0 + outer(u, lam)
     h <- as.numeric(exp(E) %*% lam^2) + 1
     sum(rowSums(d$Y * E - exp(E) - lgamma(d$Y + 1)) - u^2 / 2 - 0.5 * log(h)) +
-        sum(dnorm(lam, 0, 1, log = TRUE)) + sum(dnorm(c(b0, b1), 0, 100, log = TRUE))
+        sum(dnorm(lam, 0, 1, log = TRUE)) +
+        sum(dnorm(c(b0, b1), 0, tulpa:::cpp_test_default_sigma_beta(), log = TRUE))
 }
 
 .lf_ref_fit <- function(d) {
@@ -179,7 +180,8 @@ test_that("two lf blocks: lower-triangular loadings, converged, stationary for t
                 0.5 * as.numeric(determinant(H)$modulus)
         }
         lv <- th[-(1:(2 * K))]
-        tot - sum(lv^2) / 2 - sum(th[1:(2 * K)]^2) / 2e4
+        tot - sum(lv^2) / 2 -
+            sum(th[1:(2 * K)]^2) / (2 * tulpa:::cpp_test_default_sigma_beta()^2)
     }
     th <- c(beta[c(TRUE, FALSE)], beta[c(FALSE, TRUE)], L[, 1], L[2:K, 2])
     g <- vapply(seq_along(th), function(j) {

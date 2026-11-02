@@ -116,7 +116,7 @@ inline int parse_joint_arms(
             // integration; a negative entry removes curvature from the Newton
             // system and makes the cell's log-marginal NaN. Neither is a
             // spelling of "leave this coefficient unpenalized" -- omitting the
-            // vector is, and that applies the weak DEFAULT_TAU_BETA ridge.
+            // vector is, and that applies the default DEFAULT_TAU_BETA prior.
             for (int j = 0; j < pa.p; j++) {
                 const double prec = pa.beta_prior_prec[j];
                 if (!R_finite(prec) || prec <= 0.0) {
@@ -267,7 +267,7 @@ void make_single_arm(
 
 // Per-arm Gaussian beta + RE priors. Identical across all backends.
 // `tau_beta` is the weak default precision applied to any arm carrying no
-// per-coefficient `beta_prior_prec` (DEFAULT_TAU_BETA, i.e. sd 100).
+// per-coefficient `beta_prior_prec` (DEFAULT_TAU_BETA, the engine default).
 // `add_diag(i, prec)` is the only thing that separates the dense Hessian sink
 // from the sparse one, so one body serves both.
 template<typename AddDiag>

@@ -10,9 +10,9 @@
 # rule was met.
 
 # One random-intercept dataset plus the pieces needed to rebuild its joint
-# penalized score by hand. The kernel carries a weak fixed-effect ridge
-# (data.sigma_beta = 100 in laplace_core.cpp, tau = DEFAULT_TAU_BETA = 1e-4);
-# omitting it puts a spurious ~5e-05 floor under every residual measured here.
+# penalized score by hand. The kernel carries its default fixed-effect prior
+# (tau = DEFAULT_TAU_BETA, read off the compiled default); omitting it puts a
+# spurious floor under every residual measured here.
 .stn_sim <- function(fam, phi, seed = 5L, G = 12L, per = 8L, theta = log(0.7),
                      sd_true = NULL) {
   set.seed(seed)
@@ -28,7 +28,8 @@
   L0 <- matrix(exp(theta), 1, 1)
   list(y = y, X = X, grp = grp, G = G, n = n, n_trials = n_trials, fam = fam,
        layout = layout, L0 = L0, re_list = .re_cov_build_re_list(list(L0), layout),
-       sig2 = exp(2 * theta), tau_beta = 1 / 100^2)
+       sig2 = exp(2 * theta),
+       tau_beta = 1 / tulpa:::cpp_test_default_sigma_beta()^2)
 }
 
 .stn_fit <- function(d, phi, max_iter = 600L, joint = TRUE) {

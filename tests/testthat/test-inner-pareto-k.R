@@ -212,7 +212,9 @@ test_that("the inner k-hat tracks gamma_3 across a binomial-intercept skewness l
   # Both scores read the same misfit off the same curve, so on a fixture where
   # both compute they must order the same way. The ladder runs from a balanced
   # binomial intercept (the inner Laplace is essentially exact) to a
-  # one-success-in-fifteen fit (a textbook Wald-CI failure).
+  # one-success-in-fifteen fit (a textbook Wald-CI failure). The rungs are
+  # skewness levels of the likelihood, so the intercept carries a vague
+  # N(0, 100^2) prior that leaves them where the ladder puts them.
   cases <- list(c(N = 500, S = 230), c(N = 500, S = 60), c(N = 100, S = 3),
                 c(N = 20, S = 2), c(N = 15, S = 1))
   got <- lapply(cases, function(cs) {
@@ -221,7 +223,7 @@ test_that("the inner k-hat tracks gamma_3 across a binomial-intercept skewness l
     fit <- ref_laplace_fit_single(
       y = as.numeric(y), n = rep(1L, N), X = matrix(1, N, 1),
       re_idx = numeric(0), n_re_groups = 0L, sigma_re = 1.0,
-      family = "binomial", compute_skew = TRUE, skew_idx = 1L)
+      family = "binomial", compute_skew = TRUE, skew_idx = 1L, beta_sd = 100)
     res <- tulpa:::.inner_k_attach(list(), fit)
     s <- tulpa:::.tulpa_inner_k_summary(res[["inner_pareto_k"]],
                                         res[["inner_pareto_k_is_ess"]],

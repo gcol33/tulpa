@@ -77,7 +77,7 @@ test_that("the per-node field variance is the exact Gaussian posterior variance"
   Q <- tulpa_spde_precision_Q(sp, kappa, 1 / (sqrt(4 * pi) * kappa * s))
   D <- cbind(X, as.matrix(sp$A))
   P <- crossprod(D) / phi
-  P[1:2, 1:2] <- P[1:2, 1:2] + diag(1e-4, 2)
+  P[1:2, 1:2] <- P[1:2, 1:2] + diag(1 / tulpa:::cpp_test_default_sigma_beta()^2, 2)
   P[-(1:2), -(1:2)] <- P[-(1:2), -(1:2)] + as.matrix(Q)
   expect_equal(rec$grid_field_var[1, ], unname(diag(solve(P))[-(1:2)]),
                tolerance = 1e-6)

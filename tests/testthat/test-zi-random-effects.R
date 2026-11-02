@@ -305,7 +305,7 @@ test_that("H_joint is the observed curvature of the two-process log posterior", 
                        return_hessian = FALSE, return_joint_hessian = TRUE,
                        max_iter = 300L, tol = 1e-12)
 
-  tau_beta <- tulpa:::.LAPLACE_DEFAULT_TAU_BETA
+  tau_beta <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
   nlp <- function(par) {
     beta <- par[1:2]; bzi <- par[3:4]; u <- par[-(1:4)]
     eta <- as.numeric(d$X %*% beta) + u[d$g]

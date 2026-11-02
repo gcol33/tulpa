@@ -1602,7 +1602,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'   `hyperprior` entirely. Default `NULL`, which defers to `hyperprior`.
 #' @param beta_prior Optional Gaussian prior on the fixed effects, threaded into
 #'   every inner [tulpa_laplace()] solve (`list(mean, sd)`).
-#'   `NULL` (default) keeps the weak built-in prior.
+#'   `NULL` (default) takes the engine default `N(0, 2.5^2)`.
 #' @param offset Optional observation-level offset on the linear predictor
 #'   (length `length(y)`), e.g. `log(exposure)` for a rate model. Not supported
 #'   with `n_quad > 1`, which errors rather than dropping it.

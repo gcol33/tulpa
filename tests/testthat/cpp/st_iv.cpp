@@ -25,6 +25,7 @@
 // reach are scored by the same fixture (test-st-ar1-gp-density.R).
 
 #include <Rcpp.h>
+#include "fixed_effect_prior.h"
 
 #include <cmath>
 #include <string>
@@ -261,17 +262,19 @@ Rcpp::List cpp_test_st_iv_nuts(
     int max_treedepth = 10,
     double adapt_delta = 0.8,
     int seed = 1,
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     bool verbose = false,
     std::string st_type = "iv"
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
   StIvData sd;
   tulpa::LikelihoodSpec spec;
   ModelData data;
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
                     family, temporal, temporal_cyclic,
-                    st_parameterization, sigma_beta, st_type,
+                    st_parameterization, sigma_beta_value, st_type,
                     sd, spec, data, layout);
 
   const int n_params = layout.total_params;
@@ -327,16 +330,18 @@ Rcpp::List cpp_test_st_iv_layout(
     std::string temporal = "rw1",
     bool temporal_cyclic = false,
     int st_parameterization = 0,
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     std::string st_type = "iv"
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
   StIvData sd;
   tulpa::LikelihoodSpec spec;
   ModelData data;
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
                     family, temporal, temporal_cyclic,
-                    st_parameterization, sigma_beta, st_type,
+                    st_parameterization, sigma_beta_value, st_type,
                     sd, spec, data, layout);
   return Rcpp::List::create(
       Rcpp::Named("n_params") = layout.total_params,
@@ -366,17 +371,19 @@ Rcpp::List cpp_test_st_iv_gmrf_mass(
     std::string temporal = "rw1",
     bool temporal_cyclic = false,
     int st_parameterization = 0,
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     bool with_eta_weights = true,
     std::string st_type = "iv"
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
   StIvData sd;
   tulpa::LikelihoodSpec spec;
   ModelData data;
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
                     family, temporal, temporal_cyclic,
-                    st_parameterization, sigma_beta, st_type,
+                    st_parameterization, sigma_beta_value, st_type,
                     sd, spec, data, layout);
   // A spec shipping no IRLS callback is the decline path the generic
   // interface has to handle, so the fixture can drop it on request.
@@ -429,16 +436,18 @@ double cpp_test_st_iv_log_post(
     std::string temporal = "rw1",
     bool temporal_cyclic = false,
     int st_parameterization = 0,
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     std::string st_type = "iv"
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
   StIvData sd;
   tulpa::LikelihoodSpec spec;
   ModelData data;
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
                     family, temporal, temporal_cyclic,
-                    st_parameterization, sigma_beta, st_type,
+                    st_parameterization, sigma_beta_value, st_type,
                     sd, spec, data, layout);
   if ((int)q.size() != layout.total_params) {
     Rcpp::stop("q has %d entries; the layout has %d parameters",
@@ -466,16 +475,18 @@ double cpp_test_st_iv_log_prior(
     std::string temporal = "rw1",
     bool temporal_cyclic = false,
     int st_parameterization = 0,
-    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
     std::string st_type = "iv"
 ) {
+    const double sigma_beta_value =
+        tulpa::read_sigma_beta(sigma_beta);
   StIvData sd;
   tulpa::LikelihoodSpec spec;
   ModelData data;
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
                     family, temporal, temporal_cyclic,
-                    st_parameterization, sigma_beta, st_type,
+                    st_parameterization, sigma_beta_value, st_type,
                     sd, spec, data, layout);
   if ((int)q.size() != layout.total_params) {
     Rcpp::stop("q has %d entries; the layout has %d parameters",

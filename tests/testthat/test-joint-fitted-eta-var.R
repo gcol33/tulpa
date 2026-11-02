@@ -43,8 +43,11 @@ skip_on_cran()
        nn_order = as.integer(ord - 1L), nn = k)
 }
 
-# diag(A Q_k^{-1} A') for every stored cell precision.
-.jev_reference <- function(fit, A) {
+# diag(A Q_k^{-1} A') for every stored cell precision. `fold` adds back a pin
+# the sparse driver keeps off the stored precision whatever its size (an RW
+# chain's, S2ZStorage::Fold): `idx` its latent coordinates, `coef` the per-cell
+# coefficient tau_k / n of its 11'.
+.jev_reference <- function(fit, A, fold = NULL) {
   n_x <- fit$Q_csc_n
   t(vapply(seq_along(fit$Q_csc_p_per_grid), function(k) {
     L <- Matrix::sparseMatrix(i = fit$Q_csc_i_per_grid[[k]],
@@ -52,6 +55,10 @@ skip_on_cran()
                               x = fit$Q_csc_x_per_grid[[k]],
                               dims = c(n_x, n_x), index1 = FALSE)
     Q <- L + Matrix::t(L) - Matrix::Diagonal(n_x, Matrix::diag(L))
+    if (!is.null(fold)) {
+      Q <- as.matrix(Q)
+      Q[fold$idx, fold$idx] <- Q[fold$idx, fold$idx] + fold$coef[k]
+    }
     V <- as.matrix(Matrix::solve(Q, t(A)))
     rowSums(A * t(V))
   }, numeric(nrow(A))))
@@ -76,7 +83,10 @@ skip_on_cran()
   A <- cbind(X,
              outer(s_idx, seq_len(n_s), `==`) * 1,
              outer(t_idx, seq_len(n_t), `==`) * 1)
-  list(args = args, A = A)
+  # The RW1 chain's pin, which the sparse driver always folds.
+  rw_fold <- list(idx = ncol(X) + n_s + seq_len(n_t),
+                  coef = args$tau_temporal_grid / n_t)
+  list(args = args, A = A, rw_fold = rw_fold)
 }
 
 test_that("st_icar reports the variance its dense precision implies", {
@@ -98,11 +108,11 @@ test_that("a folded sum-to-zero pin gives the variance of the stored one", {
 
   withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "100000")
   stored <- do.call(cpp_nested_laplace_st_icar, args)
-  # The intercept and the two intrinsic fields' levels are aliased in eta and
-  # separated only by the fixed-effect ridge, so this precision's condition
-  # number is about 1e8 and a relative error near eps * 1e8 = 2e-8 is what any
-  # factorization of it carries.
-  expect_equal(stored$fitted_eta_var, .jev_reference(stored, fx$A),
+  # Even densified, the RW1 chain's pin stays off the stored precision (an RW
+  # block always folds), so the reference adds it back; the variance is then
+  # the inverse of the full precision to 1e-15.
+  expect_equal(stored$fitted_eta_var,
+               .jev_reference(stored, fx$A, fold = fx$rw_fold),
                tolerance = 1e-6)
 
   withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "0")

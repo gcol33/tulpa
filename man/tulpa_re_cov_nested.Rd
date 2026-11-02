@@ -65,7 +65,7 @@ prior density on the full stacked parameter vector, overriding
 
 \item{beta_prior}{Optional Gaussian prior on the fixed effects, threaded into
 every inner \code{\link[=tulpa_laplace]{tulpa_laplace()}} solve (\code{list(mean, sd)}).
-\code{NULL} (default) keeps the weak built-in prior.}
+\code{NULL} (default) takes the engine default \code{N(0, 2.5^2)}.}
 
 \item{offset}{Optional observation-level offset on the linear predictor
 (length \code{length(y)}), e.g. \code{log(exposure)} for a rate model. Not supported

@@ -44,10 +44,14 @@ zip_e_step <- function(d) function(fits, ...) {
   list(weights = ifelse(d$y > 0, 1, num / (num + (1 - psi))))
 }
 
-em_zip <- function(d, max_iter = 200L, damping = 0) {
+em_zip <- function(d, max_iter = 200L, damping = 0, beta_prior = NULL) {
   tulpa_em_laplace(zip_e_step(d), zip_encode(d), max_iter = max_iter,
-                   tol = 1e-8, damping = damping, verbose = FALSE)
+                   tol = 1e-8, damping = damping, verbose = FALSE,
+                   beta_prior = beta_prior)
 }
+
+# A vague fixed-effect prior, for the checks against an unpenalized likelihood.
+VAGUE_BETA <- list(mean = 0, sd = 100)
 
 # Observed-data log-likelihood of the zero-inflated Poisson -- the quantity EM
 # increases. Written out here rather than read off the fit, so the monotonicity
@@ -131,7 +135,8 @@ test_that("the M-step's binomial arm reproduces glm(family = binomial, weights =
   blk <- tulpa_laplace(y = rep(c(1, 0), each = d$n),
                        n_trials = rep(1L, 2L * d$n),
                        X = rbind(d$Xo, d$Xo), weights = c(w, 1 - w),
-                       family = "binomial", tol = 1e-12, max_iter = 500L)
+                       family = "binomial", tol = 1e-12, max_iter = 500L,
+                       beta_prior = VAGUE_BETA)
   # glm warns "non-integer #successes" on a fractional prior weight: it is
   # noting that this is the weighted quasi-likelihood rather than an exact
   # binomial density, which is the same distinction the encoding rests on. The
@@ -140,8 +145,8 @@ test_that("the M-step's binomial arm reproduces glm(family = binomial, weights =
     stats::glm.fit(rbind(d$Xo, d$Xo), rep(c(1, 0), each = d$n),
                    weights = c(w, 1 - w), family = stats::binomial(),
                    control = list(epsilon = 1e-12, maxit = 200L)))
-  # The residual gap is the engine's weak built-in fixed-effect ridge
-  # (sigma_beta = 100, tau = 1e-4), which glm does not carry; measured 3.4e-07.
+  # The residual gap is the vague fixed-effect ridge stated above
+  # (sd = 100, tau = 1e-4), which glm does not carry; measured 3.4e-07.
   expect_equal(blk$mode, unname(ref$coefficients), tolerance = 1e-5)
 
   # Same arm through the cbind(successes, failures) form on the original rows:
@@ -160,7 +165,8 @@ test_that("the M-step's binomial arm reproduces glm(family = binomial, weights =
 
   # The abundance arm rides the same channel.
   pa <- tulpa_laplace(y = d$y, n_trials = rep(1L, d$n), X = d$Xa, weights = w,
-                      family = "poisson", tol = 1e-12, max_iter = 500L)
+                      family = "poisson", tol = 1e-12, max_iter = 500L,
+                      beta_prior = VAGUE_BETA)
   refp <- stats::glm.fit(d$Xa, d$y, weights = w, family = stats::poisson(),
                          control = list(epsilon = 1e-12, maxit = 200L))
   expect_equal(pa$mode, unname(refp$coefficients), tolerance = 1e-5)
@@ -183,9 +189,10 @@ test_that("EM does not decrease the observed-data log-likelihood", {
   d <- sim_zip(301L, n = 800L)
   K <- 20L
   # The driver is deterministic, so refitting at max_iter = k reproduces
-  # iteration k of one run.
+  # iteration k of one run. EM climbs the observed-data log POSTERIOR, which is
+  # the log-likelihood read here only under a vague fixed-effect prior.
   ll <- vapply(seq_len(K), function(k) {
-    r <- em_zip(d, max_iter = k, damping = 0)
+    r <- em_zip(d, max_iter = k, damping = 0, beta_prior = VAGUE_BETA)
     zip_loglik(d, r$fits$occ$mode, r$fits$abund$mode)
   }, numeric(1))
 

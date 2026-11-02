@@ -19,7 +19,7 @@
 
 # The penalized objective the ICAR kernel maximizes, from the definition:
 #   sum_i w_i * ll(y_i | eta_i)
-#   - 0.5 * tau_beta * ||beta||^2            (sigma_beta = 100 in the kernel)
+#   - 0.5 * tau_beta * ||beta||^2            (the kernel's default prior)
 #   - 0.5 * tau * u' (D - A) u               (ICAR structure, tau_spatial = 1)
 #   - 0.5 * (tau / J) * (sum_c u)^2          (sum-to-zero pin, J the component
 #                                             size; inst/include/tulpa/sum_to_zero.h)
@@ -28,7 +28,8 @@
   Q <- diag(rowSums(W)) - W + matrix(1 / n_units, n_units, n_units)
   Z <- matrix(0, N, n_units); Z[cbind(seq_len(N), unit)] <- 1
   M <- cbind(X, Z)
-  Qj <- as.matrix(Matrix::bdiag(Matrix::Diagonal(p, 1 / 100^2),
+  tau_b <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
+  Qj <- as.matrix(Matrix::bdiag(Matrix::Diagonal(p, tau_b),
                                 Matrix::Matrix(Q, sparse = TRUE)))
   score <- function(th) {
     e <- as.numeric(M %*% th)
@@ -246,8 +247,8 @@ test_that("the spatial mode and its H_beta describe the same weighted model", {
   Pinv_c <- Pinv - tcrossprod(a) / sum(a)
   schur <- H[idx_b, idx_b] -
     H[idx_b, idx_u] %*% Pinv_c %*% t(H[idx_b, idx_u])
-  # The engine's marginal omits the weak fixed-effect ridge the mode carries.
-  schur <- schur - diag(1 / 100^2, p)
+  # The engine's marginal omits the fixed-effect prior precision the mode carries.
+  schur <- schur - diag(1 / tulpa:::cpp_test_default_sigma_beta()^2, p)
 
   expect_lt(max(abs(fit$H_beta - schur)) / max(abs(schur)), 1e-6)
   expect_lt(max(abs(ref$score(fit$mode))), 1e-4)

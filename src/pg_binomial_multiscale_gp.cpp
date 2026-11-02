@@ -6,6 +6,7 @@
 #include "pg_rng.h"
 #include "linalg_fast.h"
 #include <Rcpp.h>
+#include "fixed_effect_prior.h"
 #include <cmath>
 #include <algorithm>
 #include <vector>
@@ -48,7 +49,7 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
     int n_iter = 2000,
     int n_warmup = 1000,
     int thin = 1,
-    double prior_beta_sd = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd = R_NilValue,
     double prior_sigma_re_scale = 2.5,
     double prior_sigma_local_U = 1.0,
     double prior_sigma_local_alpha = 0.01,
@@ -62,6 +63,8 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
     bool verbose = true,
     int n_threads = 1
 ) {
+    const double prior_beta_sd_value =
+        tulpa::read_sigma_beta(prior_beta_sd, "prior_beta_sd");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
   tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
                          prior_sigma_re_scale, n_threads, store_eta);
@@ -136,7 +139,7 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
     tulpa::pg_gibbs_core_step(
         N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
         combined_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
-        prior_beta_sd, prior_sigma_re_scale, C.n_threads_team);
+        prior_beta_sd_value, prior_sigma_re_scale, C.n_threads_team);
 
     // 5. Update the local scale, conditioning on the regional contribution.
     for (int i = 0; i < N; i++) {
@@ -153,7 +156,7 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
     {
       double prec_field = 0.0, lin_field = 0.0;
       tulpa::pg_nngp_level_terms(local, prec_field, lin_field);
-      const double c = tulpa::pg_draw_intercept_level(C.beta[0], prior_beta_sd,
+      const double c = tulpa::pg_draw_intercept_level(C.beta[0], prior_beta_sd_value,
                                                       prec_field, lin_field);
       for (int s = 0; s < n_spatial; s++) local.w[s] -= c;
       C.absorb_level(c);
@@ -175,7 +178,7 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
     {
       double prec_field = 0.0, lin_field = 0.0;
       tulpa::pg_nngp_level_terms(regional, prec_field, lin_field);
-      const double c = tulpa::pg_draw_intercept_level(C.beta[0], prior_beta_sd,
+      const double c = tulpa::pg_draw_intercept_level(C.beta[0], prior_beta_sd_value,
                                                       prec_field, lin_field);
       for (int s = 0; s < n_spatial; s++) regional.w[s] -= c;
       C.absorb_level(c);
@@ -197,7 +200,7 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
       sigma2_regional_draws[save_idx] = regional.sigma2;
       phi_regional_draws[save_idx] = regional.phi;
       C.log_prob_draws[save_idx] =
-          C.log_joint_common(y, n, combined_contrib.begin(), prior_beta_sd,
+          C.log_joint_common(y, n, combined_contrib.begin(), prior_beta_sd_value,
                              prior_sigma_re_scale) +
           tulpa::pg_log_nngp_scale(local, prior_sigma_local_U,
                                    prior_sigma_local_alpha,

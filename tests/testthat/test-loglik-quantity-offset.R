@@ -108,7 +108,8 @@ test_that("an offset() reaches the nested-Laplace inner solve", {
 
 test_that("a constant offset shifts the intercept on every nested driver", {
   # A Poisson log-link offset c is an intercept shift: the mode moves by -c in
-  # the intercept and nowhere else, up to the weak fixed-effect ridge.
+  # the intercept and nowhere else, up to the fixed-effect prior, which the
+  # direct calls state as vague.
   skip_on_cran()
   set.seed(2)
   S <- 12L; n <- 360L
@@ -124,12 +125,14 @@ test_that("a constant offset shifts the intercept on every nested driver", {
   rw1 <- list(type = "rw1", temporal_idx = as.integer(time), n_times = 8L,
               tau_grid = c(1, 10))
   ctl <- list(diagnose_k = FALSE, diagnose_skew = FALSE, auto_recenter = FALSE)
+  weak <- list(mean = 0, sd = 100)
   shift <- function(prior) {
     f0 <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
-                               family = "poisson", control = ctl)
+                               family = "poisson", beta_prior = weak,
+                               control = ctl)
     f1 <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                                family = "poisson", offset = rep(0.7, n),
-                               control = ctl)
+                               beta_prior = weak, control = ctl)
     c(intercept = coef(f1)[[1L]] - coef(f0)[[1L]],
       slope = coef(f1)[[2L]] - coef(f0)[[2L]])
   }
@@ -144,11 +147,10 @@ test_that("a constant offset shifts the intercept on every nested driver", {
                "offset")
 
   # The joint driver (HSGP), reached through the front door, under the same
-  # weak fixed-effect prior the direct calls above take: a proper prior on the
+  # vague fixed-effect prior the direct calls above state: a proper prior on the
   # intercept moves with the fold itself.
   dd <- data.frame(y = y, x = x, lon = site / S, lat = (site %% 3) / 3,
                    c0 = 0, c1 = 0.7)
-  weak <- list(mean = 0, sd = 100)
   g0 <- tulpa(y ~ x + offset(c0), data = dd, family = "poisson",
               spatial = spatial_gp(coords = ~ lon + lat, approx = "hsgp"),
               mode = "nested_laplace", beta_prior = weak)

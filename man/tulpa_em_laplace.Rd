@@ -110,7 +110,7 @@ Gaussian sigma). When \code{NULL} (default), behavior is unchanged.}
 
 \item{beta_prior}{Optional Gaussian prior on the fixed effects, applied to
 every block fit via \code{\link[=tulpa_laplace]{tulpa_laplace()}} (i.e. blocks without a \code{prior}
-field). \code{NULL} (default) keeps the weak built-in prior. Otherwise a list
+field). \code{NULL} (default) takes the engine default \code{N(0, 2.5^2)}. Otherwise a list
 with \code{sd} (required) and optional \code{mean}; see \code{\link[=tulpa_laplace]{tulpa_laplace()}}. The same
 prior flows into the MI / Gibbs correction refits, so penalized
 corrections come for free. A block may override the default by setting its

@@ -8,6 +8,7 @@
 #include "pg_rng.h"
 #include "linalg_fast.h"
 #include <Rcpp.h>
+#include "fixed_effect_prior.h"
 #include <cmath>
 #include <algorithm>
 #include <vector>
@@ -38,7 +39,7 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
     int n_iter = 2000,
     int n_warmup = 1000,
     int thin = 1,
-    double prior_beta_sd = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd = R_NilValue,
     double prior_sigma_re_scale = 2.5,
     double prior_sigma_spatial_scale = 2.5,
     double prior_rho_alpha = 0.5,
@@ -48,6 +49,8 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
     int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> node_prec_nullable = R_NilValue
 ) {
+    const double prior_beta_sd_value =
+        tulpa::read_sigma_beta(prior_beta_sd, "prior_beta_sd");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
   tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
                          prior_sigma_re_scale, n_threads, store_eta);
@@ -89,7 +92,7 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
     tulpa::pg_gibbs_core_step(
         N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
         spatial_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
-        prior_beta_sd, prior_sigma_re_scale, C.n_threads_team);
+        prior_beta_sd_value, prior_sigma_re_scale, C.n_threads_team);
 
     // 6. Update BYM2 spatial effects | omega, beta, re, sigma_spatial, rho
     // Offset for spatial update = X*beta + re
@@ -99,7 +102,7 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
     double bym2_removed = 0.0;
     tulpa::update_spatial_bym2(C.kappa, C.omega, C.offset, spatial_group, icar,
                                phi_scaled, theta, sigma_spatial, rho,
-                               scale_factor, C.beta[0], prior_beta_sd, u,
+                               scale_factor, C.beta[0], prior_beta_sd_value, u,
                                bym2_removed);
     // Absorb the field level removed by centering phi into the intercept so eta
     // is unchanged (posterior-invariant), and refresh the cached X_beta /
@@ -153,7 +156,7 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
       sigma_spatial_draws[save_idx] = sigma_spatial;
       rho_draws[save_idx] = rho;
       C.log_prob_draws[save_idx] =
-          C.log_joint_common(y, n, spatial_contrib.begin(), prior_beta_sd,
+          C.log_joint_common(y, n, spatial_contrib.begin(), prior_beta_sd_value,
                              prior_sigma_re_scale) +
           tulpa::pg_log_icar(phi_scaled.begin(), icar, 1.0) +
           tulpa::pg_log_normal_iid(theta.begin(), n_spatial_units, 1.0) +

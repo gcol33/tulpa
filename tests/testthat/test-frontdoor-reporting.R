@@ -48,10 +48,10 @@ test_that("mode = 'eb' estimates the dispersion of a fixed-effect gaussian", {
   n <- 300; x <- rnorm(n)
   d <- data.frame(y = 1 + 2 * x + rnorm(n, sd = 3), x = x)
   X <- cbind(1, x)
-  # Without a fixed-effect prior the marginal integrates beta under a flat
+  # Under a flat fixed-effect prior the marginal integrates beta under a flat
   # measure, and its maximizer is the REML residual variance RSS / (n - p).
   f_flat <- tulpa_eb(y = d$y, X = X, re_terms = list(), family = "gaussian",
-                     estimate_phi = TRUE)
+                     estimate_phi = TRUE, beta_prior = list(mean = 0, sd = Inf))
   expect_equal(f_flat$phi, summary(stats::lm(y ~ x, d))$sigma^2,
                tolerance = 1e-5)
   # Through tulpa() the default N(0, 2.5^2) prior is on beta; the exact

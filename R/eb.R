@@ -45,7 +45,7 @@
 #'
 #' The marginal likelihood is marginal over the fixed effects too: the inner
 #' Laplace approximation integrates `beta` out together with the random
-#' effects (under `beta_prior`, or the inner solve's vague `N(0, 100^2)` default)
+#' effects (under `beta_prior`, or the engine default `N(0, 2.5^2)`)
 #' rather than profiling it. `hyperprior = "flat"` is therefore a RESTRICTED,
 #' REML-type estimate, not maximum likelihood: for a gaussian response it is
 #' REML, and for a non-gaussian one it agrees with

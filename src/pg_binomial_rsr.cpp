@@ -8,6 +8,7 @@
 #include "pg_rng.h"
 #include "linalg_fast.h"
 #include <Rcpp.h>
+#include "fixed_effect_prior.h"
 #include <cmath>
 #include <algorithm>
 #include <vector>
@@ -51,7 +52,7 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
     int n_iter = 2000,
     int n_warmup = 1000,
     int thin = 1,
-    double prior_beta_sd = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd = R_NilValue,
     double prior_sigma_re_scale = 2.5,
     double prior_tau_shape = 1.0,
     double prior_tau_rate = 0.01,
@@ -59,6 +60,8 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
     bool verbose = true,
     int n_threads = 1
 ) {
+    const double prior_beta_sd_value =
+        tulpa::read_sigma_beta(prior_beta_sd, "prior_beta_sd");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
   tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
                          prior_sigma_re_scale, n_threads, store_eta);
@@ -105,7 +108,7 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
     tulpa::pg_gibbs_core_step(
         N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
         spatial_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
-        prior_beta_sd, prior_sigma_re_scale, C.n_threads_team);
+        prior_beta_sd_value, prior_sigma_re_scale, C.n_threads_team);
 
     // 7. Update the raw field from its own full conditional.
     tulpa_parallel_for(C.n_threads_team, N, [&](int i) {
@@ -168,7 +171,7 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
       }
       tau_draws[save_idx] = tau;
       C.log_prob_draws[save_idx] =
-          C.log_joint_common(y, n, spatial_contrib.begin(), prior_beta_sd,
+          C.log_joint_common(y, n, spatial_contrib.begin(), prior_beta_sd_value,
                              prior_sigma_re_scale) +
           tulpa::pg_log_icar(phi.begin(), icar, tau) +
           tulpa::pg_log_gamma(tau, prior_tau_shape, prior_tau_rate);
