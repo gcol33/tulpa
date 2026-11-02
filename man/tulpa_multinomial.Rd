@@ -9,6 +9,7 @@ tulpa_multinomial(
   formula,
   data,
   beta_prior = .tulpa_default_beta_prior("multinomial"),
+  baseline = NULL,
   control = list()
 )
 
@@ -16,7 +17,7 @@ tulpa_multinomial(
 }
 \arguments{
 \item{formula}{Model formula; the response must be a factor (or coercible to
-one) with >= 3 levels. The baseline is the last level.}
+one) with >= 3 levels.}
 
 \item{data}{A data frame.}
 
@@ -24,6 +25,14 @@ one) with >= 3 levels. The baseline is the last level.}
 (\code{mean = 0}) Gaussian ridge on every coefficient with scalar SD \code{sd}
 (default the engine default, \code{prior_normal(0, 2.5)}). A finite SD keeps the mode finite
 under separation.}
+
+\item{baseline}{The reference class, one level of the response given as a
+string; \code{NULL} (default) takes the last level. The other classes each get
+a linear predictor on the log-odds against it. The ridge prior sits on
+those contrasts, so the choice changes the prior and, slightly, the
+posterior, not only the labelling. The fit lists its classes in the order
+it used, the baseline last (\verb{$classes}), and the probability columns of
+\code{\link[=fitted]{fitted()}} and \code{\link[=predict]{predict()}} follow that order.}
 
 \item{control}{List of numerical knobs: \code{max_iter} (default 100), \code{tol}
 (default 1e-8), \code{n_draws} (posterior draws, default 2000), \code{seed}.}

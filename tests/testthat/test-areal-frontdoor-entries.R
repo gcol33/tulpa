@@ -73,9 +73,16 @@ test_that("an outer-grid knob a fitter does not read stops the call", {
                                        ks$nested_laplace), "`integration`")
   expect_error(tulpa:::.control_subset(list(n_per_axis = 3), ks$gibbs, "gibbs"),
                "integrates no outer grid")
-  expect_identical(tulpa:::.control_subset(list(adaptive_grid = TRUE, n_iter = 5),
+  expect_identical(tulpa:::.control_subset(list(adaptive_grid = TRUE),
                                            ks$nested_laplace),
                    list(adaptive_grid = TRUE))
+  expect_error(tulpa:::.control_subset(list(adaptive_grid = TRUE, n_iter = 5),
+                                       ks$nested_laplace, "nested_laplace"),
+               "Unknown control knob.*nested_laplace.*n_iter")
+  expect_identical(tulpa:::.control_subset(list(re_cov = "gibbs", seed = 1L),
+                                           ks$re_cov_gibbs, "re_cov_gibbs",
+                                           reads = "re_cov"),
+                   list(seed = 1L))
   expect_identical(tulpa:::.control_subset(list(integration = "ccd"),
                                            ks$re_cov_nested),
                    list(integration = "ccd"))

@@ -23,12 +23,19 @@
 #' summarized by a Laplace approximation, reusing the native multinomial kernel.
 #'
 #' @param formula Model formula; the response must be a factor (or coercible to
-#'   one) with >= 3 levels. The baseline is the last level.
+#'   one) with >= 3 levels.
 #' @param data A data frame.
 #' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
 #'   (`mean = 0`) Gaussian ridge on every coefficient with scalar SD `sd`
 #'   (default the engine default, `prior_normal(0, 2.5)`). A finite SD keeps the mode finite
 #'   under separation.
+#' @param baseline The reference class, one level of the response given as a
+#'   string; `NULL` (default) takes the last level. The other classes each get
+#'   a linear predictor on the log-odds against it. The ridge prior sits on
+#'   those contrasts, so the choice changes the prior and, slightly, the
+#'   posterior, not only the labelling. The fit lists its classes in the order
+#'   it used, the baseline last (`$classes`), and the probability columns of
+#'   [fitted()] and [predict()] follow that order.
 #' @param control List of numerical knobs: `max_iter` (default 100), `tol`
 #'   (default 1e-8), `n_draws` (posterior draws, default 2000), `seed`.
 #'
@@ -52,6 +59,7 @@
 #' @export
 tulpa_multinomial <- function(formula, data,
                               beta_prior = .tulpa_default_beta_prior("multinomial"),
+                              baseline = NULL,
                               control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$multinomial, "tulpa_multinomial")
   beta_prior_sd <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("multinomial"))
@@ -67,6 +75,7 @@ tulpa_multinomial <- function(formula, data,
     stop("tulpa_multinomial() needs a response with >= 3 levels; for 2 use ",
          "family = \"binomial\".", call. = FALSE)
   }
+  y   <- .multinomial_set_baseline(y, baseline)
   K1  <- K - 1L
   cls <- as.integer(y)                       # 1..K, K = baseline
   X   <- cm$X
@@ -77,6 +86,7 @@ tulpa_multinomial <- function(formula, data,
   dim_b <- p * K1
   H <- matrix(0, dim_b, dim_b)
   loglik <- -Inf
+  converged <- FALSE
 
   for (it in seq_len(max_iter)) {
     eta <- X %*% beta                        # [n x K1]
@@ -104,7 +114,7 @@ tulpa_multinomial <- function(formula, data,
     step <- tryCatch(solve(H, as.numeric(G)),
                      error = function(e) solve(H + diag(1e-6, dim_b), as.numeric(G)))
     beta <- beta + matrix(step, p, K1)
-    if (max(abs(step)) < tol) { loglik <- ll; break }
+    if (max(abs(step)) < tol) { loglik <- ll; converged <- TRUE; break }
     loglik <- ll
   }
 
@@ -131,7 +141,7 @@ tulpa_multinomial <- function(formula, data,
   fit <- list(
     means = bhat, cov = V, reported_posterior = "gaussian", draws = draws,
     param_names = pn,
-    log_marginal = log_marginal, converged = it < max_iter,
+    log_marginal = log_marginal, converged = converged, n_iter = it,
     classes = lev, baseline = lev[K], n_classes = K,
     family = "multinomial", formula = formula,
     model_matrix = X, y = y, N = n, backend = "multinomial_laplace",
@@ -139,7 +149,26 @@ tulpa_multinomial <- function(formula, data,
     draws_kind = "iid"
   )
   class(fit) <- c("tulpa_multinomial", "tulpa_categorical", "tulpa_fit")
-  fit
+  .tulpa_check_mode_convergence(fit, "tulpa_multinomial()")
+}
+
+# The response re-levelled so `baseline` is its last level, which is the class
+# the driver and every accessor treat as the reference (its logit is 0). The
+# other levels keep their order. NULL keeps the last level as the baseline.
+#' @keywords internal
+.multinomial_set_baseline <- function(y, baseline) {
+  if (is.null(baseline)) return(y)
+  lev <- levels(y)
+  if (!is.character(baseline) && !is.factor(baseline)) {
+    stop("`baseline` must be one level of the response, given as a string.",
+         call. = FALSE)
+  }
+  baseline <- as.character(baseline)
+  if (length(baseline) != 1L || is.na(baseline) || !baseline %in% lev) {
+    stop(sprintf("`baseline` must be one level of the response: one of %s.",
+                 paste0("'", lev, "'", collapse = ", ")), call. = FALSE)
+  }
+  factor(y, levels = c(setdiff(lev, baseline), baseline))
 }
 
 # Class probabilities [n x K] of the baseline-category logit at the K - 1

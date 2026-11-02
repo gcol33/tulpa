@@ -78,18 +78,26 @@
   invisible(NULL)
 }
 
-# Subset a validated front-door control list to the keys an inner fitter
-# accepts, so wholesale forwarding does not carry front-door-only knobs
-# (grid shape, backend selection) into the inner fitter's narrower check.
+# Cut a validated front-door control list down to the keys an inner fitter
+# accepts. It is the one place a front-door control list is narrowed to one
+# fitter's own, so every route that forwards a subset passes through it, and a
+# knob the target does not read is refused here rather than dropped: the
+# front door's whitelist is the union over every backend it dispatches, and a
+# knob outside the backend the call reached would otherwise pass that check
+# and do nothing.
 #
-# An outer-grid knob (`.OUTER_GRID_KNOBS`) the fitter does not read is refused
-# here rather than dropped: it is the one place a front-door control list is
-# cut down to a fitter's own, so every route that subsets passes through it.
-# `backend` names the fitter in the message.
+# `allowed` is the fitter's key set (what is forwarded); `reads` names the
+# knobs the calling route consumes itself on that backend's behalf (a backend
+# selector such as `re_cov`, or a knob lifted onto a formal argument) and so
+# accepts without forwarding. An outer-grid knob (`.OUTER_GRID_KNOBS`) gets the
+# message naming the grid the fitter does lay; any other unread knob the
+# generic name check's. `backend` names the fitter in both.
 #' @keywords internal
-.control_subset <- function(control, allowed, backend = NULL) {
+.control_subset <- function(control, allowed, backend = NULL,
+                            reads = character()) {
   if (is.null(control) || length(control) == 0L) return(list())
-  .check_outer_grid_knobs(control, allowed, backend)
+  accepted <- union(allowed, reads)
+  .check_outer_grid_knobs(control, accepted, backend)
 
   nm <- names(control)
   for (from in names(.CONTROL_ALIASES)) {
@@ -107,6 +115,9 @@
     }
   }
   names(control) <- nm
+  tulpa_check_control(control, accepted,
+                      if (is.null(backend)) "tulpa"
+                      else sprintf("tulpa[backend = '%s']", backend))
 
   control[intersect(names(control), allowed)]
 }

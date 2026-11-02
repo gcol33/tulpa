@@ -161,7 +161,7 @@ tulpa_ordinal <- function(formula, data, link = c("logit", "probit"),
     inference_tier = 2L, inference_mode = "structured", draws_kind = "iid"
   )
   class(fit) <- c("tulpa_ordinal", "tulpa_categorical", "tulpa_fit")
-  fit
+  .tulpa_check_mode_convergence(fit, "tulpa_ordinal()")
 }
 
 # The covariate effects of the fixed-effect table, cutpoints omitted as

@@ -1056,7 +1056,9 @@
           # would switch the correction on.
           marginal     = isTRUE(control[["marginal"]]),
           control      = .control_subset(control,
-                                         setdiff(.CONTROL_KEYS$eb, "marginal"))
+                                         setdiff(.CONTROL_KEYS$eb, "marginal"),
+                                         backend,
+                                         reads = c("marginal", "n_quad"))
         )))
       }
       if (backend == "re_cov_nested") {
@@ -1074,7 +1076,8 @@
           hyperprior  = hyperprior,
           n_quad      = n_quad,
           control     = .control_subset(control, .CONTROL_KEYS$re_cov_nested,
-                                        backend)
+                                        backend,
+                                        reads = c("re_cov", "n_quad"))
         )))
       }
       # re_cov_gibbs: exact Metropolis-within-Gibbs debias.
@@ -1083,7 +1086,7 @@
         prior_scale     = rp$prior_scale,
         beta_prior      = beta_prior_default,
         control         = .control_subset(control, .CONTROL_KEYS$re_cov_gibbs,
-                                          backend)
+                                          backend, reads = "re_cov")
       )))
     }
     if (backend == "laplace") {
@@ -1813,6 +1816,9 @@
 #'   single-block temporal kernel; a `group_var` panel spec fits a separate walk
 #'   per group sharing one hyperparameter; combined with an areal `spatial`
 #'   field it forms an additive space-time joint prior.
+#' @param baseline `family = "multinomial"` only: the reference class, one
+#'   level of the response as a string (default `NULL`, the last level). See
+#'   [tulpa_multinomial()]. Any other family refuses it.
 #' @param control Optional list of backend tuning arguments. Each backend
 #'   accepts its own set, checked at the door: `n_iter` / `warmup` / `epsilon`
 #'   (`mala`), `n_draws` (`pathfinder`), `n_chains` / `max_treedepth` /
@@ -1899,6 +1905,7 @@ tulpa <- function(formula, data,
                   warm_start = NULL,
                   spatial = NULL,
                   temporal = NULL,
+                  baseline = NULL,
                   control = list(),
                   ...) {
   # Whether the DISPERSION was the caller's or the signature's, recorded before
@@ -1978,6 +1985,12 @@ tulpa <- function(formula, data,
   # rides the family string ("ordinal_probit"), matching the engine's
   # family_<link> convention. Fixed-effect models only for now -- latent
   # structure under a categorical response is tracked engine work (C6).
+  if (!is.null(baseline) && !identical(family, "multinomial")) {
+    stop(sprintf(paste0(
+      "`baseline` names the reference class of family = 'multinomial'; ",
+      "family = '%s' has no reference class to choose."), family),
+      call. = FALSE)
+  }
   if (family %in% c("multinomial", "ordinal", "ordinal_probit")) {
     pf <- tulpa_parse_formula(formula)
     if (pf$n_re_terms > 0L || pf$n_latent_blocks > 0L ||
@@ -1998,17 +2011,21 @@ tulpa <- function(formula, data,
         "family = '%s' is fit by its Laplace driver; mode = '%s' is not ",
         "available. Use mode = 'auto'."), family, mode), call. = FALSE)
     }
+    # The driver is fixed by the family, so the control list is held to the
+    # driver's own key set: a knob only another backend reads is refused.
+    driver <- if (family == "multinomial") "multinomial" else "ordinal"
+    control <- .control_subset(control, .CONTROL_KEYS[[driver]], driver)
     fit <- if (family == "multinomial") {
       tulpa_multinomial(formula, data,
                         beta_prior = beta_prior %||% .tulpa_default_beta_prior(),
-                        control = .control_subset(control,
-                                                  .CONTROL_KEYS$multinomial))
+                        baseline = baseline,
+                        control = control)
     } else {
       tulpa_ordinal(formula, data,
                     link = if (family == "ordinal_probit") "probit" else "logit",
                     beta_prior = beta_prior %||% .tulpa_default_beta_prior(),
-                    control = .control_subset(control, .CONTROL_KEYS$ordinal,
-                                              "ordinal"))
+                    control = control)
+
     }
     fit$call <- match.call()
     return(fit)

@@ -23,6 +23,7 @@ tulpa(
   warm_start = NULL,
   spatial = NULL,
   temporal = NULL,
+  baseline = NULL,
   control = list(),
   ...
 )
@@ -218,6 +219,10 @@ routes them to the exact ModelData sampler. A plain field routes the
 single-block temporal kernel; a \code{group_var} panel spec fits a separate walk
 per group sharing one hyperparameter; combined with an areal \code{spatial}
 field it forms an additive space-time joint prior.}
+
+\item{baseline}{\code{family = "multinomial"} only: the reference class, one
+level of the response as a string (default \code{NULL}, the last level). See
+\code{\link[=tulpa_multinomial]{tulpa_multinomial()}}. Any other family refuses it.}
 
 \item{control}{Optional list of backend tuning arguments. Each backend
 accepts its own set, checked at the door: \code{n_iter} / \code{warmup} / \code{epsilon}

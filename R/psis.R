@@ -84,6 +84,13 @@
     paste0(x$declined, ": ", paste(as.character(x$detail), collapse = ", "))
 }
 
+# The reason code of a label .k_decline_label() wrote: the part before the
+# detail. NA for NA.
+.k_decline_label_code <- function(label) {
+    if (length(label) != 1L || is.na(label)) return(NA_character_)
+    sub(": .*$", "", as.character(label))
+}
+
 # The reason carried by either shape a decline can arrive in: the sentinel
 # above (where a helper used to return NULL) or a result list that already
 # returns NA fields and carries the reason alongside them (`$declined`, the

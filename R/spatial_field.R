@@ -599,7 +599,8 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   # accepts (matching every other backend route in .tulpa_fitter_args()).
   ctrl_in <- control %||% list()
   n_draws <- as.integer(ctrl_in$n_draws %||% 1000L)
-  ctrl <- .control_subset(ctrl_in, .CONTROL_KEYS$nested_laplace_joint)
+  ctrl <- .control_subset(ctrl_in, .CONTROL_KEYS$nested_laplace_joint,
+                          "nested_laplace_joint", reads = "n_draws")
   ctrl$store_Q <- TRUE
   ctrl$progress <- ctrl$progress %||% FALSE
   # Two or more fields make the tensor outer grid blow up multiplicatively;

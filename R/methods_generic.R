@@ -1018,10 +1018,33 @@ print.summary.tulpa_fit <- function(x, digits = max(3L, getOption("digits") - 3L
   }
   b <- r$band
   if (is.data.frame(b) && nrow(b)) {
-    body <- c(body, paste0(
-      "outer pareto_k ", fmt(b$pareto_k), " (", b$pareto_k_band, ")",
-      "; grid ESS ", fmt(b$ess_grid), " of ", b$n_grid, " cells",
-      "; inner skew ", fmt(b$inner_skew_max), " (", b$inner_skew_band, ")"))
+    # Each band quantity is printed only when the backend computed it, or
+    # declined it with a stated reason: a fit with no outer grid and no
+    # inner-skew layer (a fixed-effect Laplace driver) has none of the three,
+    # and a line of NAs would read as a failed computation. A k-hat declined as
+    # not applicable is one the fit's shape does not define, so it is omitted
+    # rather than reported as missing.
+    k_why <- b$pareto_k_declined
+    if (identical(.k_decline_label_code(k_why[1L]), "not_applicable")) {
+      k_why <- NULL
+    }
+    finite1 <- function(v) length(v) && is.finite(v[[1L]])
+    reason1 <- function(v) if (length(v) && !is.na(v[[1L]])) as.character(v[[1L]])
+    part <- function(label, value, shown, declined) {
+      if (finite1(value)) return(paste(label, shown))
+      why <- reason1(declined)
+      if (!is.null(why)) paste0(label, " not computed (", why, ")")
+    }
+    parts <- c(
+      part("outer pareto_k", b$pareto_k,
+           paste0(fmt(b$pareto_k), " (", b$pareto_k_band, ")"),
+           k_why),
+      part("grid ESS", b$ess_grid,
+           paste0(fmt(b$ess_grid), " of ", b$n_grid, " cells"), NULL),
+      part("inner skew", b$inner_skew_max,
+           paste0(fmt(b$inner_skew_max), " (", b$inner_skew_band, ")"),
+           b$inner_skew_declined))
+    if (length(parts)) body <- c(body, paste(parts, collapse = "; "))
   }
   if (length(r$moment_source)) {
     body <- c(body, paste("moments read from:",
