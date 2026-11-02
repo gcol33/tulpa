@@ -1538,13 +1538,16 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #' mode's posterior covariance (`solve(Hessian)`), so points track the posterior
 #' ridge. Two node layouts are available via `integration`:
 #' \itemize{
-#'   \item `"ccd"` (default): a central-composite design ([ccd_grid()]) of
+#'   \item `"ccd"` (default above two parameters): a central-composite design ([ccd_grid()]) of
 #'     `1 + 2k + 2^(k-q)` points for the total `k = sum_blocks` parameters, with
 #'     the corrected R-INLA design weights ([ccd_weights()]). Scales polynomially
 #'     in `k`, where the tensor grid is exponential.
-#'   \item `"grid"`: the full `n_per_axis^k` tensor product with uniform cell
-#'     weights -- denser and more robust to a non-Gaussian whitened posterior,
-#'     but only tractable for small `k`.
+#'   \item `"grid"` (default for one or two parameters): the full
+#'     `n_per_axis^k` tensor product with uniform cell weights -- denser and
+#'     more robust to a non-Gaussian whitened posterior, but only tractable for
+#'     small `k`. A scale's posterior on its log coordinate reaches several
+#'     standard deviations of the mode's Gaussian into its left tail, which a
+#'     three- or nine-node CCD does not place a node in.
 #' }
 #' Each node `k` contributes integration weight proportional to
 #' `Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`, following
@@ -1648,13 +1651,14 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #' @param control A named list of numerical / tuning knobs (statistical
 #'   arguments stay in the signature above). Recognized entries:
 #'   \itemize{
-#'     \item `integration`: node layout, `"ccd"` (default, central-composite
-#'       design, scales to larger total parameter count) or `"grid"` (full
-#'       tensor product).
+#'     \item `integration`: node layout, `"grid"` (full tensor product,
+#'       the default for one or two covariance parameters) or `"ccd"`
+#'       (central-composite design, the default above two).
 #'     \item `n_per_axis`: points per parameter axis in the tensor grid
-#'       (default 5); used only when `integration = "grid"`.
+#'       (default 61 for one parameter, 21 for two, 5 above); grid only.
 #'     \item `span`: half-width of the tensor grid in posterior standard
-#'       deviations per whitened axis (default 3); grid only.
+#'       deviations per whitened axis (default 8 for one parameter, 6 for two,
+#'       3 above); grid only.
 #'     \item `n_draws`: posterior draws of the fixed effects synthesized from the
 #'       node mixture (default 2000), exposed as `draws` for the generic
 #'       `tulpa_fit` methods. The `Sigma` posterior is summarized directly from
@@ -1794,9 +1798,6 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   hyperprior <- .hp_choice(match.arg(hyperprior))
   prior_proper <- !is.null(log_prior_theta) || identical(hyperprior, "proper")
   log_prior_theta <- .re_cov_resolve_hyperprior(hyperprior, log_prior_theta)
-  integration <- match.arg(control$integration %||% "ccd", c("ccd", "grid"))
-  n_per_axis  <- as.integer(control$n_per_axis %||% 5L)
-  span        <- control$span %||% 3
   n_draws     <- as.integer(control$n_draws %||% 2000L)
   seed        <- control$seed
   diagnose_k  <- isTRUE(control$diagnose_k %||% TRUE)
@@ -1841,6 +1842,12 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   inner_fit       <- core$inner_fit
   theta_hat       <- core$theta_hat
   L_scale         <- core$L_scale
+  # The node layout follows the number of covariance coordinates
+  # (`.re_cov_outer_design()`, defaults in `.RE_COV_DESIGN`).
+  design      <- .re_cov_outer_design(k, control)
+  integration <- design$integration
+  n_per_axis  <- design$n_per_axis
+  span        <- design$span
 
   # --- subspace debias: which latent directions need the exact sampler? -----
   # One probe solve at the fitted MAP covariance, scored by the inner-layer

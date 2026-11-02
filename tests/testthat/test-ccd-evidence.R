@@ -57,7 +57,7 @@ test_that("logLik() of a CCD re_cov fit matches a dense tensor grid", {
   expect_null(attr(logLik(slope_ccd), "declined"))
   expect_lt(abs(as.numeric(logLik(slope_ccd)) - as.numeric(logLik(slope_ref))),
             0.1)
-  int_ccd <- fit(y ~ x + (1 | g), list(re_cov = "nested"))
+  int_ccd <- fit(y ~ x + (1 | g), list(re_cov = "nested", integration = "ccd"))
   int_ref <- fit(y ~ x + (1 | g), list(re_cov = "nested", integration = "grid",
                                        n_per_axis = 81L, span = 8))
   expect_lt(abs(as.numeric(logLik(int_ccd)) - as.numeric(logLik(int_ref))),

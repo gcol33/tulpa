@@ -322,7 +322,7 @@ test_that("tulpa_re_cov_nested integrates a diagonal (uncorrelated) block", {
   rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z,
              correlated = FALSE)
   res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
-                             control = .rcn_ctl())
+                             control = .rcn_ctl(integration = "ccd"))
 
   # diagonal block: k = c = 2 -> CCD 1 + 2k + 2^k = 9 nodes
   expect_equal(res$n_grid, 1L + 2L * 2L + 2L^2L)

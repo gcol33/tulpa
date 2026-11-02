@@ -1769,3 +1769,36 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     }
     .CCD_PLACEMENT[[par]]
 }
+
+# Default outer design of the random-effect covariance integrator
+# (`tulpa_re_cov_nested()`), by the number k of covariance coordinates. Up to
+# `length(tensor_n)` coordinates the default is a tensor grid of `tensor_n[k]`
+# nodes per axis over +/- `tensor_span[k]` whitened SDs; above it, the CCD.
+# Measured on (1 | g) and (1 | g) + (1 | h) binomial fits (40 groups x 8):
+# the 3- and 9-node CCDs put the lower 2.5% bound of a scale at 0.495 and
+# 0.564 / 0.329 against 0.358 and 0.461 / 0.202 from dense references (201
+# nodes over +/- 8 SDs; 61^2 over +/- 8), and 61 x 8 / 21^2 x 6 reproduce the
+# references to 0.001 / 0.013. The left tail of a log-scale posterior reaches
+# past 6 SDs of the Gaussian at the mode, which is what the spans cover. A
+# caller-chosen `integration = "grid"` without `n_per_axis` / `span` takes the
+# same per-k values, and `grid_n` / `grid_span` above them.
+.RE_COV_DESIGN <- list(
+    tensor_n    = c(61L, 21L),
+    tensor_span = c(8, 6),
+    grid_n      = 5L,
+    grid_span   = 3
+)
+
+# The outer design `tulpa_re_cov_nested()` lays over k coordinates: the
+# caller's `integration` / `n_per_axis` / `span` where set, the defaults of
+# `.RE_COV_DESIGN` otherwise.
+.re_cov_outer_design <- function(k, control = list()) {
+    d <- .RE_COV_DESIGN
+    small <- k <= length(d$tensor_n)
+    integration <- control$integration %||% (if (small) "grid" else "ccd")
+    integration <- match.arg(integration, c("ccd", "grid"))
+    list(integration = integration,
+         n_per_axis = as.integer(control$n_per_axis %||%
+                                   (if (small) d$tensor_n[k] else d$grid_n)),
+         span = control$span %||% (if (small) d$tensor_span[k] else d$grid_span))
+}
