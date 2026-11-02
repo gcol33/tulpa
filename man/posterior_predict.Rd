@@ -70,7 +70,9 @@ over-disperses the linear predictor wherever the intercept is aliased
 with them; an SPDE field enters at its posterior mean.
 }
 At \code{newdata} the prediction is population level (random effects at zero),
-matching \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}}.
+matching \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}}; a spatially or temporally varying
+coefficient enters at the \code{newdata} coordinates / times, drawn per replicate
+from its conditional given that posterior draw.
 
 A zero-inflated fit (\code{ziformula}) draws the structural-zero logit from the
 same posterior draw as the count predictor; each replicate observation is a

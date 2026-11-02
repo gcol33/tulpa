@@ -180,6 +180,29 @@ inline void solve_upper(const std::vector<T>& L, int n, const std::vector<T>& y,
   }
 }
 
+// Kriging weights for one location given its neighbour covariance C and the
+// cross-covariance c_vec: alpha = C^-1 c and cond_var = floor(sigma2 - c' alpha),
+// so the conditional mean given any neighbour values w_nb is alpha' w_nb. A
+// caller conditioning several value vectors on the same neighbours factors once.
+// Returns false if C could not be factorized.
+template <typename T>
+inline bool cond_weights(const std::vector<T>& C, const std::vector<T>& c_vec,
+                         int n, const T& sigma2, double nugget,
+                         double var_floor, VarFloor floor_mode,
+                         std::vector<T>& alpha, T& cond_var) {
+  std::vector<T> L;
+  if (!chol_decomp(C, n, L, nugget)) return false;
+
+  std::vector<T> y;
+  solve_lower(L, n, c_vec, y);
+  solve_upper(L, n, y, alpha);
+
+  T c_Cinv_c = T(0.0);
+  for (int j = 0; j < n; j++) c_Cinv_c = c_Cinv_c + c_vec[j] * alpha[j];
+  cond_var = apply_var_floor(sigma2 - c_Cinv_c, var_floor, floor_mode);
+  return true;
+}
+
 // Kriging moments for one location given its neighbour covariance C, the
 // cross-covariance c_vec, and the neighbour values w_nb (in c_vec order):
 //   cond_mean = c' C^-1 w_nb,  cond_var = floor(sigma2 - c' C^-1 c).
@@ -189,21 +212,14 @@ inline bool cond_moments(const std::vector<T>& C, const std::vector<T>& c_vec,
                          const std::vector<T>& w_nb, int n, const T& sigma2,
                          double nugget, double var_floor, VarFloor floor_mode,
                          T& cond_mean, T& cond_var) {
-  std::vector<T> L;
-  if (!chol_decomp(C, n, L, nugget)) return false;
-
-  std::vector<T> y, alpha;
-  solve_lower(L, n, c_vec, y);
-  solve_upper(L, n, y, alpha);
-
-  T cm = T(0.0);
-  T c_Cinv_c = T(0.0);
-  for (int j = 0; j < n; j++) {
-    cm = cm + alpha[j] * w_nb[j];
-    c_Cinv_c = c_Cinv_c + c_vec[j] * alpha[j];
+  std::vector<T> alpha;
+  if (!cond_weights(C, c_vec, n, sigma2, nugget, var_floor, floor_mode,
+                    alpha, cond_var)) {
+    return false;
   }
+  T cm = T(0.0);
+  for (int j = 0; j < n; j++) cm = cm + alpha[j] * w_nb[j];
   cond_mean = cm;
-  cond_var = apply_var_floor(sigma2 - c_Cinv_c, var_floor, floor_mode);
   return true;
 }
 

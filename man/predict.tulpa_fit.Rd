@@ -18,7 +18,8 @@
 \item{object}{A \code{tulpa_fit} object.}
 
 \item{newdata}{Data frame of covariates (and, for an SPDE fit, the coordinate
-columns named in the spec's coordinate formula). If \code{NULL}, predicts at the
+columns named in the spec's coordinate formula; for a varying-coefficient
+fit, its coordinate / time and group columns). If \code{NULL}, predicts at the
 training design (requires \verb{$model_matrix}).}
 
 \item{type}{\code{"link"} (linear predictor) or \code{"response"} (mean scale,
@@ -44,8 +45,9 @@ coefficients jointly (pinned, so repeated calls agree).}
 \item{level}{Credible-interval level (default 0.95).}
 
 \item{include_field}{For a continuous-spatial fit (SPDE, HSGP, or GP/NNGP),
-add the kriged field to the prediction (default \code{TRUE}). \code{FALSE} gives the
-fixed-effect (population) prediction. Ignored for fits with no continuous
+add the kriged field to the prediction (default \code{TRUE}), and for a
+varying-coefficient fit the coefficient field at the \code{newdata} coordinates
+/ times. \code{FALSE} gives the fixed-effect (population) prediction. Ignored for fits with no continuous
 field. For an HSGP or GP/NNGP fit the field is added to the point
 prediction but its uncertainty is not yet propagated into \code{se.fit} (the
 interval reflects the fixed-effect covariance only).}
@@ -76,4 +78,19 @@ when needed. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field
 is held at zero in the same way, at the training design too; the in-sample
 linear predictor with every fitted component is what \code{\link[=posterior_predict]{posterior_predict()}}
 draws and what \code{compare_models(criterion = "waic")} / \code{"loo"} score.
+
+A spatially or temporally varying coefficient (\code{\link[=spatial_svc]{spatial_svc()}},
+\code{\link[=temporal_tvc]{temporal_tvc()}}) is predicted at the \code{newdata} coordinates / times from
+every posterior draw: an NNGP field by the NNGP predictive at the nearest
+fitted locations, an HSGP field by its basis evaluated there (inside the
+basis domain only); a \code{"gp"} time path by the GP conditional at any time, an
+\code{"rw1"} path by a Brownian bridge between fitted levels and Brownian steps
+past them, \code{"rw2"} and \code{"ar1"} paths by their recursion at whole grid steps
+past the fitted levels. Uncertainty grows with distance from the data and
+with the forecast horizon, and the bounds are pointwise. A time between the levels of an \code{"rw2"} / \code{"ar1"}
+fit, a time off its step lattice, a time beyond unequally spaced levels on
+any grid structure, a factor level the fit did not see, and a group without
+a fitted path are refused with the reason. \code{fit} is then the posterior mean
+of the linear predictor and \code{se.fit} / \code{lower} / \code{upper} are its posterior
+SD and quantiles.
 }

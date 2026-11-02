@@ -23,9 +23,38 @@ using namespace math;
 // 8. SVC (Spatially-Varying Coefficients) prior
 // ============================================================================
 
+// The value of HSGP-SVC term j at every row, f_j(s_i) = sum_k phi_k(s_i)
+// sqrt(S(omega_k; sigma2_j, ls_j)) beta_jk, for any basis evaluated at the rows
+// of interest: `phi_flat` is row-major [n_rows x m_total] and `beta` points at
+// the term's m_total coefficients. The sampler's own field and the field read at
+// new coordinates both go through here, so they are one function of the basis.
+template<typename T>
+inline void svc_hsgp_term_field(const std::vector<double>& phi_flat,
+                                const std::vector<double>& eigenvalues,
+                                int n_rows, int m_total,
+                                const T& sigma2, const T& lengthscale,
+                                const T* beta, T* f_out)
+{
+    for (int i = 0; i < n_rows; i++) f_out[i] = T(0.0);
+    for (int k = 0; k < m_total; k++) {
+        const T sqrt_S_k = safe_sqrt(
+            hsgp_spectral_density_2d(sigma2, lengthscale, eigenvalues[k]));
+        const T scaled = sqrt_S_k * beta[k];
+        for (int i = 0; i < n_rows; i++) {
+            f_out[i] = f_out[i] +
+                T(phi_flat[(std::size_t)i * m_total + k]) * scaled;
+        }
+    }
+}
+
+// `svc_w` receives the field the likelihood reads, flat term-major: on the
+// HSGP basis the value at every row, on the centered NNGP path the centred
+// field at every location. The non-centered NNGP path reconstructs its field
+// outside this function and leaves `svc_w` empty here.
 template<typename T>
 T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
-                     const ParamLayout& layout, std::vector<T>& svc_eta)
+                     const ParamLayout& layout, std::vector<T>& svc_eta,
+                     std::vector<T>& svc_w)
 {
     T log_post = T(0.0);
 
@@ -38,7 +67,7 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
             int m_total = data.svc_hsgp_data.m_total;
 
             // Per-term: sigma2, lengthscale, beta[m_total]
-            svc_eta.resize(n_obs, T(0.0));
+            svc_w.assign((std::size_t)n_svc * n_obs, T(0.0));
             for (int j = 0; j < n_svc; j++) {
                 T log_sigma2 = params[layout.log_sigma2_svc_start + j];
                 T sigma2_j = safe_exp(log_sigma2);
@@ -58,25 +87,18 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                 // LogNormal(0,1) on lengthscale
                 log_post = log_post - T(0.5) * log_ls * log_ls;
 
-                // Extract beta_j and compute f_j = Phi * (sqrt(S_j) * beta_j)
-                // N(0, I) prior on beta
+                // N(0, I) prior on the basis coefficients beta_j
+                const T* beta_j = &params[layout.svc_w_start + j * m_total];
                 for (int k = 0; k < m_total; k++) {
-                    T beta_jk = params[layout.svc_w_start + j * m_total + k];
-                    log_post = log_post - T(0.5) * beta_jk * beta_jk;
-
-                    // Compute scaled beta: sqrt(S(eigenvalue_k, sigma2_j, ls_j)) * beta_jk
-                    double omega_sq = data.svc_hsgp_data.eigenvalues[k];
-                    T S_k = hsgp_spectral_density_2d(sigma2_j, ls_j, omega_sq);
-                    T sqrt_S_k = safe_sqrt(S_k);
-
-                    // Accumulate f_j[i] = sum_k phi[i,k] * sqrt_S_k * beta_jk
-                    for (int i = 0; i < n_obs; i++) {
-                        double phi_ik = data.svc_hsgp_data.phi_flat[i * m_total + k];
-                        svc_eta[i] = svc_eta[i] + T(phi_ik) * sqrt_S_k * beta_jk *
-                                     T(data.svc_data.X_svc[i * n_svc + j]);
-                    }
+                    log_post = log_post - T(0.5) * beta_j[k] * beta_j[k];
                 }
+
+                svc_hsgp_term_field(data.svc_hsgp_data.phi_flat,
+                                    data.svc_hsgp_data.eigenvalues,
+                                    n_obs, m_total, sigma2_j, ls_j, beta_j,
+                                    svc_w.data() + (std::size_t)j * n_obs);
             }
+            tulpa_svc_ad::compute_svc_eta(svc_w, data.svc_data, svc_eta);
         } else {
             // NNGP-based SVC (original path)
 
@@ -131,19 +153,20 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                     log_post = log_post - T(0.5) * zk * zk;
                 }
                 svc_eta.clear();  // filled by apply_svc_nc_transform_* on w
+                svc_w.clear();
             } else {
                 // Centered: params[svc_w_start ..] ARE the fields w_j, and the
                 // NNGP density is placed on them directly.
-                std::vector<T> svc_w_flat(n_svc_params);
+                svc_w.resize(n_svc_params);
                 for (int k = 0; k < n_svc_params; k++) {
-                    svc_w_flat[k] = params[layout.svc_w_start + k];
+                    svc_w[k] = params[layout.svc_w_start + k];
                 }
 
                 // NNGP prior on each SVC term
                 for (int j = 0; j < n_svc; j++) {
                     std::vector<T> w_j(n_obs);
                     for (int k = 0; k < n_obs; k++) {
-                        w_j[k] = svc_w_flat[j * n_obs + k];
+                        w_j[k] = svc_w[j * n_obs + k];
                     }
                     log_post = log_post + tulpa_svc_ad::nngp_log_lik(w_j, svc_sigma2[j], svc_phi[j], data.svc_data);
                 }
@@ -153,7 +176,7 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                 // prior above is already proper on the constant direction, so
                 // what the alias with beta_j needs is that direction removed
                 // from the likelihood, not a second prior stiffening it.
-                tulpa_svc_ad::svc_center_eta(svc_w_flat, data.svc_data, svc_eta);
+                tulpa_svc_ad::svc_center_eta(svc_w, data.svc_data, svc_eta);
             }
         }
     }

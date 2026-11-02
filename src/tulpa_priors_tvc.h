@@ -22,9 +22,27 @@ using namespace math;
 // 9. TVC (Temporally-Varying Coefficients) prior
 // ============================================================================
 
+// The AR1 correlation and the GP lengthscale on the scale the density reads
+// them, from the unconstrained coordinates the sampler carries. The prior below
+// and every reader of a stored draw map through these, so the two cannot place a
+// coordinate differently.
+template<typename T>
+inline T tvc_ar1_rho_from(const T& logit_rho) {
+    return T(2.0) * inv_logit(logit_rho) - T(1.0);
+}
+
+template<typename T>
+inline T tvc_gp_phi_from(const T& logit_phi, const ModelData& data) {
+    return bounded_from_logit(logit_phi, data.tvc_gp_phi_prior_lower,
+                              data.tvc_gp_phi_prior_upper);
+}
+
+// `tvc_w` receives the field the likelihood reads: every (group, term) block,
+// centred, in the flat layout tvc_block_offset() addresses.
 template<typename T>
 T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
-                     const ParamLayout& layout, std::vector<T>& tvc_eta)
+                     const ParamLayout& layout, std::vector<T>& tvc_eta,
+                     std::vector<T>& tvc_w)
 {
     T log_post = T(0.0);
 
@@ -54,9 +72,8 @@ T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
                     log_sigma2, data.tvc_sigma_prior_U,
                     data.tvc_sigma_prior_alpha);
 
-                tvc_phi[j] = bounded_from_logit(
-                    params[layout.logit_phi_tvc_gp_start + j],
-                    data.tvc_gp_phi_prior_lower, data.tvc_gp_phi_prior_upper);
+                tvc_phi[j] = tvc_gp_phi_from(
+                    params[layout.logit_phi_tvc_gp_start + j], data);
                 // Uniform on (lower, upper); the bounded map holds the
                 // interval, so only its Jacobian is contributed here, exactly
                 // as on temporal_gp()'s lengthscale.
@@ -80,7 +97,7 @@ T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
                     T logit_rho = params[layout.logit_rho_tvc_start + j];
                     // Map logit to (-1, 1): rho = 2*invlogit(logit) - 1
                     T u = inv_logit(logit_rho);
-                    tvc_rho[j] = T(2.0) * u - T(1.0);
+                    tvc_rho[j] = tvc_ar1_rho_from(logit_rho);
 
                     // Uniform(-1, 1) prior on rho
                     // Jacobian for logit((rho+1)/2) transform
@@ -91,7 +108,8 @@ T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
 
         // Extract TVC values
         int n_tvc_params = n_groups * n_tvc * n_times;
-        std::vector<T> tvc_w_flat(n_tvc_params);
+        std::vector<T>& tvc_w_flat = tvc_w;
+        tvc_w_flat.resize(n_tvc_params);
         for (int k = 0; k < n_tvc_params; k++) {
             tvc_w_flat[k] = params[layout.tvc_w_start + k];
         }

@@ -13,3 +13,4 @@
 #include "tulpa_glmm_eta_draws.cpp"
 #include "tulpa_glmm_layout_probe.cpp"
 #include "tulpa_sample_glmm.cpp"
+#include "varying_coef_draws.cpp"

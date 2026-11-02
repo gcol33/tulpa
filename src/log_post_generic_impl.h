@@ -64,6 +64,11 @@ struct GenericLogPostState {
     std::vector<T> ms_temporal_eta;
     std::vector<T> svc_eta;
     std::vector<T> tvc_eta;
+    // The varying-coefficient fields as the likelihood reads them, flat
+    // term-major (SVC) and (group, term)-major over time (TVC), after every
+    // reconstruction and centring.
+    std::vector<T> svc_w;
+    std::vector<T> tvc_w;
     std::vector<T> latent_eta;
     std::vector<T> st_delta;
     std::vector<T> beta_zi;
@@ -269,7 +274,7 @@ static T initialize_generic_state(
 
     if (layout.has_svc && data.has_svc) {
         log_post = log_post + priors::compute_svc_prior(
-            params, data, layout, state.svc_eta);
+            params, data, layout, state.svc_eta, state.svc_w);
 
         // Non-centered NNGP: compute_svc_prior added each term's N(0, I) z
         // prior and left state.svc_eta empty; reconstruct every term's field
@@ -284,7 +289,7 @@ static T initialize_generic_state(
         // resolved on T, same as the GP block above.
         if (data.svc_parameterization == 1 && !data.svc_is_hsgp &&
             data.svc_data.n_svc > 0) {
-            std::vector<T> svc_w_flat;
+            std::vector<T>& svc_w_flat = state.svc_w;
             dispatch_nc_transform<T>("SVC", params, data, layout, svc_w_flat,
                                      &apply_svc_nc_transform_double,
                                      &apply_svc_nc_transform_arena);
@@ -304,7 +309,7 @@ static T initialize_generic_state(
 
     if (layout.has_tvc && data.has_tvc) {
         log_post = log_post + priors::compute_tvc_prior(
-            params, data, layout, state.tvc_eta);
+            params, data, layout, state.tvc_eta, state.tvc_w);
     }
 
     if (layout.has_latent && data.has_latent) {

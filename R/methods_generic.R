@@ -2278,9 +2278,25 @@ nobs.tulpa_fit <- function(object, ...) {
 #' linear predictor with every fitted component is what [posterior_predict()]
 #' draws and what `compare_models(criterion = "waic")` / `"loo"` score.
 #'
+#' A spatially or temporally varying coefficient ([spatial_svc()],
+#' [temporal_tvc()]) is predicted at the `newdata` coordinates / times from
+#' every posterior draw: an NNGP field by the NNGP predictive at the nearest
+#' fitted locations, an HSGP field by its basis evaluated there (inside the
+#' basis domain only); a `"gp"` time path by the GP conditional at any time, an
+#' `"rw1"` path by a Brownian bridge between fitted levels and Brownian steps
+#' past them, `"rw2"` and `"ar1"` paths by their recursion at whole grid steps
+#' past the fitted levels. Uncertainty grows with distance from the data and
+#' with the forecast horizon, and the bounds are pointwise. A time between the levels of an `"rw2"` / `"ar1"`
+#' fit, a time off its step lattice, a time beyond unequally spaced levels on
+#' any grid structure, a factor level the fit did not see, and a group without
+#' a fitted path are refused with the reason. `fit` is then the posterior mean
+#' of the linear predictor and `se.fit` / `lower` / `upper` are its posterior
+#' SD and quantiles.
+#'
 #' @param object A `tulpa_fit` object.
 #' @param newdata Data frame of covariates (and, for an SPDE fit, the coordinate
-#'   columns named in the spec's coordinate formula). If `NULL`, predicts at the
+#'   columns named in the spec's coordinate formula; for a varying-coefficient
+#'   fit, its coordinate / time and group columns). If `NULL`, predicts at the
 #'   training design (requires `$model_matrix`).
 #' @param type `"link"` (linear predictor) or `"response"` (mean scale,
 #'   `E[y]`). For a binomial fit the `"response"` scale here is the per-trial
@@ -2302,8 +2318,9 @@ nobs.tulpa_fit <- function(object, ...) {
 #'   coefficients jointly (pinned, so repeated calls agree).
 #' @param level Credible-interval level (default 0.95).
 #' @param include_field For a continuous-spatial fit (SPDE, HSGP, or GP/NNGP),
-#'   add the kriged field to the prediction (default `TRUE`). `FALSE` gives the
-#'   fixed-effect (population) prediction. Ignored for fits with no continuous
+#'   add the kriged field to the prediction (default `TRUE`), and for a
+#'   varying-coefficient fit the coefficient field at the `newdata` coordinates
+#'   / times. `FALSE` gives the fixed-effect (population) prediction. Ignored for fits with no continuous
 #'   field. For an HSGP or GP/NNGP fit the field is added to the point
 #'   prediction but its uncertainty is not yet propagated into `se.fit` (the
 #'   interval reflects the fixed-effect covariance only).
@@ -2360,10 +2377,40 @@ predict.tulpa_fit <- function(object, newdata = NULL,
     if (!is.null(gp_fld)) eta <- eta + gp_fld
   }
 
+  # Spatially / temporally varying coefficients: each posterior draw's
+  # coefficient field at the newdata coordinates / times (the fitted rows when
+  # newdata is NULL), so the prediction, its SE and its bounds are read over the
+  # joint draws of the fixed effects and the field.
+  vc_eta <- if (isTRUE(include_field)) .predict_varying_coef_eta(object, newdata, lp)
+  if (!is.null(vc_eta)) eta <- colMeans(vc_eta)
+
   ph <- object$phi %||% 1.0
   response_mean <- function(e, z) .response_mean(e, z, object$family, phi = ph)
   if (!se.fit) {
     return(if (type == "response") response_mean(eta, lp$logit_zi) else eta)
+  }
+
+  z  <- stats::qnorm(1 - (1 - level) / 2)
+  if (!is.null(vc_eta)) {
+    a  <- (1 - level) / 2
+    se <- apply(vc_eta, 2L, stats::sd)
+    lo <- apply(vc_eta, 2L, stats::quantile, probs = a, names = FALSE)
+    hi <- apply(vc_eta, 2L, stats::quantile, probs = 1 - a, names = FALSE)
+    if (type == "response") {
+      if (!is.null(lp$logit_zi)) {
+        q <- .predict_zi_mean_quantiles(object, lp, eta - lp$eta + lp$offset,
+                                        level)
+        lo <- q$lower
+        hi <- q$upper
+      } else {
+        m_lo <- response_mean(lo, NULL)
+        m_hi <- response_mean(hi, NULL)
+        lo <- pmin(m_lo, m_hi)
+        hi <- pmax(m_lo, m_hi)
+      }
+      eta <- response_mean(eta, lp$logit_zi)
+    }
+    return(data.frame(fit = eta, se.fit = se, lower = lo, upper = hi))
   }
 
   se <- if (!is.null(spde_se)) {
@@ -2372,7 +2419,6 @@ predict.tulpa_fit <- function(object, newdata = NULL,
     V <- vcov(object)[lp$count_names, lp$count_names, drop = FALSE]
     sqrt(pmax(rowSums((X %*% V) * X), 0))
   }
-  z  <- stats::qnorm(1 - (1 - level) / 2)
   lo <- eta - z * se
   hi <- eta + z * se
   if (type == "response") {

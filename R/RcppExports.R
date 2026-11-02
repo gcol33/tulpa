@@ -1165,6 +1165,10 @@ cpp_test_funnel_nuts <- function(K = 9L, gamma = 3.0, n_iter = 3000L, n_warmup =
     .Call(`_tulpa_cpp_test_funnel_nuts`, K, gamma, n_iter, n_warmup, max_treedepth, adapt_delta, seed, walnuts, max_step_halvings, max_error, neck, verbose)
 }
 
+cpp_varying_coef_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sigma_beta = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL, svc_coords_new = NULL, tvc_new = NULL, svc_nn = 15L) {
+    .Call(`_tulpa_cpp_varying_coef_draws`, draws, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, phi2, svc_spec, tvc_spec, zi_spec, svc_coords_new, tvc_new, svc_nn)
+}
+
 cpp_vi_convergence_replay <- function(elbo, grad, tol_grad = 1e-4, tol_rel_elbo = 0.01, patience = 50L) {
     .Call(`_tulpa_cpp_vi_convergence_replay`, elbo, grad, tol_grad, tol_rel_elbo, patience)
 }

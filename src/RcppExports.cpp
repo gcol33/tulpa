@@ -5145,6 +5145,35 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_varying_coef_draws
+Rcpp::List cpp_varying_coef_draws(Rcpp::NumericMatrix draws, Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, double sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, double phi2, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec, Rcpp::Nullable<Rcpp::NumericMatrix> svc_coords_new, Rcpp::Nullable<Rcpp::List> tvc_new, int svc_nn);
+RcppExport SEXP _tulpa_cpp_varying_coef_draws(SEXP drawsSEXP, SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP sigma_betaSEXP, SEXP offset_nullableSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP, SEXP phi2SEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP zi_specSEXP, SEXP svc_coords_newSEXP, SEXP tvc_newSEXP, SEXP svc_nnSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type draws(drawsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type re_spec(re_specSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type spatial_spec(spatial_specSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type temporal_spec(temporal_specSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_re_scale(sigma_re_scaleSEXP);
+    Rcpp::traits::input_parameter< double >::type phi2(phi2SEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type svc_spec(svc_specSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type tvc_spec(tvc_specSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type zi_spec(zi_specSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type svc_coords_new(svc_coords_newSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type tvc_new(tvc_newSEXP);
+    Rcpp::traits::input_parameter< int >::type svc_nn(svc_nnSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_varying_coef_draws(draws, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, phi2, svc_spec, tvc_spec, zi_spec, svc_coords_new, tvc_new, svc_nn));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_vi_convergence_replay
 Rcpp::List cpp_vi_convergence_replay(const Rcpp::NumericVector& elbo, const Rcpp::NumericMatrix& grad, double tol_grad, double tol_rel_elbo, int patience);
 RcppExport SEXP _tulpa_cpp_vi_convergence_replay(SEXP elboSEXP, SEXP gradSEXP, SEXP tol_gradSEXP, SEXP tol_rel_elboSEXP, SEXP patienceSEXP) {
@@ -5453,6 +5482,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_spde_hyper_prior_probe", (DL_FUNC) &_tulpa_cpp_spde_hyper_prior_probe, 8},
     {"_tulpa_cpp_tulpa_fit_spde_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_spde_nuts, 40},
     {"_tulpa_cpp_test_funnel_nuts", (DL_FUNC) &_tulpa_cpp_test_funnel_nuts, 12},
+    {"_tulpa_cpp_varying_coef_draws", (DL_FUNC) &_tulpa_cpp_varying_coef_draws, 19},
     {"_tulpa_cpp_vi_convergence_replay", (DL_FUNC) &_tulpa_cpp_vi_convergence_replay, 5},
     {NULL, NULL, 0}
 };

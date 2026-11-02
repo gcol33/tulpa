@@ -435,7 +435,8 @@
 # nested-Laplace fit, and otherwise the fixed effects plus the offset, the
 # formula random effects and a posterior-mean SPDE field. Fixed effects on that
 # last source come from `.fixed_coef_draws()`. At `newdata` the prediction is
-# population-level (fixed effects and the offset only), matching predict().
+# population-level (fixed effects and the offset), matching predict(), plus a
+# varying coefficient's field at the newdata coordinates / times.
 #
 # On a zero-inflated fit the structural-zero logit is drawn from the same rows
 # and returned as the `"logit_zi"` attribute (S x n_obs), so the two predictors
@@ -482,6 +483,13 @@
   }
   if (any(D$offset != 0)) {
     eta <- sweep(eta, 2, rep_len(D$offset, ncol(eta)), "+")
+  }
+
+  # A varying coefficient is a field at the newdata coordinates / times, drawn
+  # from the same stored rows as the fixed effects.
+  if (!is.null(newdata)) {
+    vc <- .varying_coef_eta_contrib(object, newdata, rows = keep)
+    if (!is.null(vc)) eta <- eta + vc
   }
 
   if (is.null(newdata)) {
@@ -596,15 +604,26 @@
 # observation offset to add (NULL for none).
 #' @keywords internal
 .sampler_engine_eta <- function(object, D, offset) {
+  args <- .sampler_model_args(object)
+  args$offset_nullable <- offset
+  do.call(cpp_tulpa_glmm_eta_draws, c(list(draws = D), args))
+}
+
+# The model a ModelData sampler fit was run on, as the argument list every
+# compiled reader of its `$draws` takes (`cpp_tulpa_glmm_eta_draws()`,
+# `cpp_varying_coef_draws()`): the inputs the sampler received, with the
+# stored-draw field specs, so each reader rebuilds the one layout the draws were
+# written on.
+#' @keywords internal
+.sampler_model_args <- function(object) {
   mi <- object$model_inputs
   fs <- .stored_draw_field_specs(object, mi)
-  cpp_tulpa_glmm_eta_draws(
-    draws = D, y = mi$y, n_trials = mi$n_trials, X = mi$X,
-    family = mi$family, phi = mi$phi, sigma_beta = mi$sigma_beta,
-    offset_nullable = offset, re_spec = mi$re_spec,
-    spatial_spec = fs$spatial_spec, temporal_spec = mi$temporal_spec,
-    sigma_re_scale = mi$sigma_re_scale, phi2 = mi$phi2,
-    svc_spec = fs$svc_spec, tvc_spec = mi$tvc_spec, zi_spec = mi$zi_spec)
+  list(y = mi$y, n_trials = mi$n_trials, X = mi$X,
+       family = mi$family, phi = mi$phi, sigma_beta = mi$sigma_beta,
+       offset_nullable = mi$offset, re_spec = mi$re_spec,
+       spatial_spec = fs$spatial_spec, temporal_spec = mi$temporal_spec,
+       sigma_re_scale = mi$sigma_re_scale, phi2 = mi$phi2,
+       svc_spec = fs$svc_spec, tvc_spec = mi$tvc_spec, zi_spec = mi$zi_spec)
 }
 
 # Engine eta at each sampler draw (the "sampler_model" source). The
@@ -758,7 +777,9 @@
 #'     with them; an SPDE field enters at its posterior mean.
 #' }
 #' At `newdata` the prediction is population level (random effects at zero),
-#' matching [predict.tulpa_fit()].
+#' matching [predict.tulpa_fit()]; a spatially or temporally varying
+#' coefficient enters at the `newdata` coordinates / times, drawn per replicate
+#' from its conditional given that posterior draw.
 #'
 #' A zero-inflated fit (`ziformula`) draws the structural-zero logit from the
 #' same posterior draw as the count predictor; each replicate observation is a

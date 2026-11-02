@@ -227,6 +227,9 @@ validate_tvc <- function(tvc, data, X) {
   tvc$n_times <- nlevels(time_factor)
   tvc$time_index <- as.integer(time_factor)
   tvc$time_levels <- levels(time_factor)
+  # Where the levels sit, in the time variable's own units (NULL for a factor),
+  # which is what places a new time against them at prediction.
+  tvc$level_values <- if (is.null(unique_times)) NULL else as.numeric(unique_times)
 
   # A GP-evolving coefficient is a continuous-time field over the distinct
   # instants, so it needs WHERE they sit and not only their order --
@@ -247,12 +250,14 @@ validate_tvc <- function(tvc, data, X) {
     # LAG stated in the raw units and makes the same trip; centring cancels in a
     # lag, the divisor does not (gcol33/tulpa#687).
     tvc$time_scale <- 1
+    tvc$time_center <- 0
     if (isTRUE(tvc$scale_coords) && length(tvals) > 1L) {
       obs_num <- as.numeric(time_vals)   # Date / POSIXt reach numeric here too
       s <- stats::sd(obs_num)
       if (is.finite(s) && s > 0) {
         tvc$time_scale <- s
-        tvals <- (tvals - mean(obs_num)) / s
+        tvc$time_center <- mean(obs_num)
+        tvals <- (tvals - tvc$time_center) / s
       }
     }
     tvc$time_values <- tvals
@@ -399,8 +404,7 @@ tvc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
     draws_field = "tvc_draws",
     names_field = "tvc_names",
     field_slot = "temporal",
-    draws_prefix = "tvc_w",
-    n_units_field = "n_times",
+    engine_slot = "tvc",
     build_result = function(info, draws, term_names) {
       structure(
         list(

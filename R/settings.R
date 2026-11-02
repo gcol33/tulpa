@@ -1586,6 +1586,14 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     ndraws = 4000L
 )
 
+# `predict()` on a varying-coefficient fit draws the coefficient field at the
+# new coordinates / times from its conditional given each posterior draw. The
+# seed is pinned (and restored afterwards) for the same reason: the prediction
+# and its interval are a function of the fit alone.
+.PREDICT_VARYING_COEF <- list(
+    seed = 285604L
+)
+
 # Which setting each front door reads. A fitter names itself here rather than
 # restating a number, so a backend that genuinely needs a different scale
 # becomes a visible entry in this table instead of a literal in its own

@@ -60,7 +60,8 @@ unity_glmm.o: \
   re_cov_grad_export.cpp \
   tulpa_glmm_eta_draws.cpp \
   tulpa_glmm_layout_probe.cpp \
-  tulpa_sample_glmm.cpp
+  tulpa_sample_glmm.cpp \
+  varying_coef_draws.cpp
 unity_hmc.o: \
   unity_hmc.cpp \
   ess_sampler.cpp \

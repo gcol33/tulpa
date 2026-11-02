@@ -69,27 +69,47 @@
   as.matrix(draws[, hit[order(k)], drop = FALSE])
 }
 
-# Read the flattened field out of the fit's own draw matrix.
+# The varying-coefficient fields at every stored draw of a ModelData sampler
+# fit, as the likelihood read them: `cpp_varying_coef_draws()` rebuilds the
+# model the sampler ran on and reconstructs each draw's fields through the
+# engine's own log-posterior state (the HSGP basis expansion, the non-centered
+# NNGP transform, the centring that removes each block's level). Reading the
+# draw columns directly would reshape whatever a backend stored there -- basis
+# coefficients, a whitened z, an uncentred field -- as though it were the
+# field.
 #
-# The flat layout the eta assembly indexes is observation-fastest within a term
-# for SVC (`w_flat[j * n_obs + i]`, src/hmc_svc.h) and time-fastest within a
-# (group, term) for TVC (`w_flat[(g * n_tvc + j) * n_times + t]`,
-# src/hmc_tvc.h). Units vary fastest and terms next in both, which is exactly
-# the fill order of an [n_draws, n_units, n_terms] array, so the leading
-# n_units * n_terms columns are reshaped rather than permuted. Returns NULL
-# when the fit does not carry that many.
-.varying_coef_draws <- function(object, prefix, n_units, n_terms) {
-  m <- .draws_by_prefix(object$draws, prefix)
-  n <- n_units * n_terms
-  if (is.null(m) || ncol(m) < n) return(NULL)
-  array(m[, seq_len(n), drop = FALSE], dim = c(nrow(m), n_units, n_terms))
+# With no `svc_coords` / `tvc_query` the fields are returned at the training
+# design: `$svc` is S x (n_svc * n_units), term-major, over the fitted
+# locations (NNGP) or rows (HSGP), and `$tvc` is S x (n_groups * n_tvc *
+# n_times), (group, term)-major over time. `svc_coords` (n_new x 2, on the
+# fitted coordinate scale) and `tvc_query` (from `.tvc_query()`) ask for the
+# fields at new coordinates / times instead, S x (n_terms * n_new). `rows`
+# selects stored draws. NULL when the fit carries no sampler model.
+#' @keywords internal
+.varying_coef_field_draws <- function(object, svc_coords = NULL,
+                                      tvc_query = NULL, rows = NULL) {
+  if (!is.list(object$model_inputs) || !is.matrix(object$draws) ||
+      nrow(object$draws) == 0L) {
+    return(NULL)
+  }
+  D <- object$draws
+  if (!is.null(rows)) D <- D[rows, , drop = FALSE]
+  nn <- as.integer(object$model_inputs$svc_spec$nn %||% 15L)
+  do.call(cpp_varying_coef_draws,
+          c(list(draws = unname(as.matrix(D))), .sampler_model_args(object),
+            list(svc_coords_new = svc_coords, tvc_new = tvc_query,
+                 svc_nn = nn)))
 }
 
+# `engine_slot` names the element of `.varying_coef_field_draws()` this
+# accessor reads ("svc" / "tvc"); its units run fastest and its terms next,
+# which is exactly the fill order of an [n_draws, n_units, n_terms] array. A
+# model package that assembles its own fit supplies the array itself at
+# `.internal[[draws_field]]`.
 .extract_varying_coef <- function(object, terms, summary, probs,
                                   slot, info_class, not_fitted_msg,
                                   draws_field, names_field, build_result,
-                                  field_slot = NULL, draws_prefix = NULL,
-                                  n_units_field = NULL) {
+                                  field_slot = NULL, engine_slot = NULL) {
   info <- .varying_coef_info(object, c(slot, field_slot), info_class)
   if (is.null(info)) {
     stop(not_fitted_msg, call. = FALSE)
@@ -97,9 +117,12 @@
 
   term_names <- info[[names_field]]
   draws <- object$.internal[[draws_field]]
-  if (is.null(draws) && !is.null(draws_prefix)) {
-    draws <- .varying_coef_draws(object, draws_prefix,
-                                 info[[n_units_field]], length(term_names))
+  if (is.null(draws) && !is.null(engine_slot)) {
+    m <- .varying_coef_field_draws(object)[[engine_slot]]
+    if (!is.null(m)) {
+      draws <- array(m, dim = c(nrow(m), ncol(m) / length(term_names),
+                                length(term_names)))
+    }
   }
   if (is.null(draws)) {
     stop(toupper(slot), " draws not found in model output", call. = FALSE)
