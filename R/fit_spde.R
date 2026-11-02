@@ -220,7 +220,8 @@ fit_spde <- function(y, X, spatial,
   y <- as.numeric(y)
   n_obs <- length(y)
   X <- as.matrix(X)
-  n_trials <- .validate_glm_design(y, X, n_trials, "fit_spde()")$n_trials
+  n_trials <- .validate_glm_design(y, X, n_trials, "fit_spde()",
+                             missing_response = TRUE)$n_trials
 
   sp <- spatial  # shorthand
 

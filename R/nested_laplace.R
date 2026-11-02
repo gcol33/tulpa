@@ -578,7 +578,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   if (!is.null(likelihood) && !is.null(prior$type)) {
     prior <- list(prior)
   }
-  vd <- .validate_glm_design(y, X, n_trials, "tulpa_nested_laplace")
+  vd <- .validate_glm_design(y, X, n_trials, "tulpa_nested_laplace",
+                             missing_response = TRUE)
   N  <- vd$N
   n_trials <- vd$n_trials
   if (is.null(re_idx)) re_idx <- rep(0L, N)

@@ -121,14 +121,17 @@ test_that("tulpa_nested_laplace() refuses a non-finite response (#613)", {
   }
 
   # The issue's own repro: an all-NA response.
-  expect_error(call_nl(rep(NA_real_, N), X),
-               "Non-finite value\\(s\\) in the response")
+  expect_error(call_nl(rep(NA_real_, N), X), "Every response is NA")
   # It errors rather than warning about a missing Q, which is what sent the
   # reporter looking for a package defect.
   expect_error(call_nl(rep(NA_real_, N), X), "tulpa_nested_laplace")
 
-  # One bad row, and the message names it.
+  # One NA row is a row with no response, whose likelihood term the kernel
+  # masks (test-missing-response-forecast.R); a NaN or an Inf is a value and
+  # is refused, and the message names the row.
   y1 <- rnorm(N); y1[7L] <- NA_real_
+  expect_no_error(call_nl(y1, X))
+  y1[7L] <- NaN
   expect_error(call_nl(y1, X), "first at row 7")
   y2 <- rnorm(N); y2[3L] <- Inf
   expect_error(call_nl(y2, X), "first at row 3")

@@ -311,7 +311,8 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   family <- .canonical_family(family)
   .family_or_stop(family)
   X <- as.matrix(X)
-  vd <- .validate_glm_design(y, X, n_trials, "fit_st_nested")
+  vd <- .validate_glm_design(y, X, n_trials, "fit_st_nested",
+                             missing_response = TRUE)
   N  <- vd$N
   n_trials <- vd$n_trials
   y <- as.numeric(y)

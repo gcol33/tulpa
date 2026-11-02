@@ -2123,14 +2123,21 @@ tulpa <- function(formula, data,
     .validate_family_zi_compiled(family)
     bundle$X_zi <- X_zi
   }
-  .validate_family_support(family, bundle$y, n_trials = n_trials,
+  # An NA response marks a row whose linear predictor the fit reads but whose
+  # likelihood term is absent (a forecast or held-out row). The nested-Laplace
+  # kernels mask it (builtin_row_missing); every other backend is refused it
+  # below, once the backend is known.
+  y_missing <- is.na(bundle$y) & !is.nan(bundle$y)
+  .validate_family_support(family, bundle$y[!y_missing],
+                           n_trials = if (length(n_trials) == bundle$n_obs)
+                             n_trials[!y_missing] else n_trials,
                            zi = !is.null(X_zi))
   # The model is built with na.action = na.pass (prior_predict() allows an NA
   # response), so tulpa() must reject non-finite fitting inputs itself: unlike
   # glm()/lm() it does not drop incomplete cases, and an NA/NaN/Inf would flow
   # silently into the C++ kernels as a NaN estimate.
   .assert_finite_model_inputs(bundle$X, bundle$y, n_trials = n_trials,
-                              offset = bundle$offset)
+                              offset = bundle$offset, missing_response = TRUE)
   bundle$X <- .drop_aliased_fixed(bundle$X)
   bundle$n_fixed <- ncol(bundle$X)
   bundle$fixed_names <- colnames(bundle$X)
@@ -2507,6 +2514,15 @@ tulpa <- function(formula, data,
     spatial_type = spatial_type, temporal = temporal_spec, has_re = has_re,
     feat = call_feat
   )
+  if (any(y_missing) &&
+      !identical(BACKEND_REGISTRY[[sel$backend]]$input, "nested")) {
+    stop(sprintf(paste0(
+      "The response has %d NA row(s). A row with no response is read for its ",
+      "linear predictor (a forecast) on the nested-Laplace path, which masks ",
+      "its likelihood term; mode resolved to backend '%s'. Use mode = ",
+      "'nested_laplace', or drop the rows."), sum(y_missing), sel$backend),
+      call. = FALSE)
+  }
   if (!is.null(st_block) &&
       !identical(BACKEND_REGISTRY[[sel$backend]]$input, "nested")) {
     stop(sprintf(paste0(

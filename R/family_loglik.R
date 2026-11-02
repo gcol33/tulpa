@@ -952,7 +952,7 @@ family_names <- function() names(.FAMILY_OPS)
 #' @param where Caller name for the message prefix, or `NULL` for none.
 #' @noRd
 .assert_finite_model_inputs <- function(X, y, n_trials = NULL, offset = NULL,
-                                        where = NULL) {
+                                        where = NULL, missing_response = FALSE) {
   pre <- if (is.null(where)) "" else paste0(where, ": ")
   if (!is.null(X)) {
     ok_row <- if (is.matrix(X)) .all_finite_rows(X) else is.finite(X)
@@ -967,12 +967,27 @@ family_names <- function() names(.FAMILY_OPS)
     }
   }
   if (!is.null(y)) {
-    bad <- which(!is.finite(as.numeric(y)))
+    yv <- as.numeric(y)
+    # On a door whose kernel masks a missing response (`missing_response`), an
+    # NA marks a row whose linear predictor is read but whose likelihood term is
+    # absent -- a forecast or held-out row. NaN and +-Inf are refused either
+    # way: they are values, not a missing one.
+    bad <- if (isTRUE(missing_response)) {
+      which(is.nan(yv) | is.infinite(yv))
+    } else {
+      which(!is.finite(yv))
+    }
     if (length(bad)) {
       stop(sprintf(paste0(
         "%sNon-finite value(s) in the response (%d, first at row %d). Remove ",
-        "or impute NA/NaN/Inf in the response before fitting."),
-        pre, length(bad), bad[1L]), call. = FALSE)
+        "or impute %s in the response before fitting."),
+        pre, length(bad), bad[1L],
+        if (isTRUE(missing_response)) "NaN/Inf" else "NA/NaN/Inf"),
+        call. = FALSE)
+    }
+    if (isTRUE(missing_response) && all(is.na(yv))) {
+      stop(sprintf("%sEvery response is NA; there is nothing to fit.", pre),
+           call. = FALSE)
     }
   }
   for (arm in list(list(v = n_trials, nm = "n_trials"),

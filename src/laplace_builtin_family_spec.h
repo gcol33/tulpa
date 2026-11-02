@@ -144,11 +144,23 @@ struct BuiltinFamilyResponse {
         ll_const.resize((size_t)N);
         for (int i = 0; i < N; i++) {
             const int nt = n_trials ? n_trials[i] : 1;
-            ll_const[(size_t)i] = log_lik_const_for_kind(y[i], nt, fam.kind);
+            ll_const[(size_t)i] = std::isnan(y[i])
+                ? 0.0 : log_lik_const_for_kind(y[i], nt, fam.kind);
         }
         prepared = true;
     }
 };
+
+// Whether row i carries no response. A missing response (NaN, which is how R
+// hands over NA) has no likelihood term: the row adds nothing to the
+// log-likelihood, the score or the curvature, while its linear predictor is
+// still formed from the latent, so the fit reads the row's eta -- a forecast
+// or a held-out cell -- off the posterior of everything else. One test, read
+// by every callback below, so each nested kernel that takes the built-in
+// family masks the same rows.
+inline bool builtin_row_missing(const BuiltinFamilyResponse* r, int i) {
+    return r->y && std::isnan(r->y[i]);
+}
 
 // LikelihoodFn<double>: per-obs log-likelihood for the built-in family.
 //
@@ -167,6 +179,7 @@ inline double builtin_family_ll_double(
     const void* model_data
 ) {
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
+    if (builtin_row_missing(r, i)) return 0.0;
     const int nt = r->n_trials ? r->n_trials[i] : 1;
     const double w = r->weights ? r->weights[i] : 1.0;
     if (data.zi_type != ZIType::NONE) {
@@ -205,6 +218,11 @@ inline void builtin_family_eta_weights(
     double* grad_eta, double* neg_hess_eta
 ) {
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
+    if (builtin_row_missing(r, i)) {
+        grad_eta[0] = 0.0;
+        neg_hess_eta[0] = 0.0;
+        return;
+    }
     const int nt = r->n_trials ? r->n_trials[i] : 1;
     const GradHess gh =
         (r->trunc_upper && r->family == "truncated_gaussian")
@@ -240,6 +258,7 @@ inline double builtin_family_zi_ll_double(
     const void* model_data
 ) {
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
+    if (builtin_row_missing(r, i)) return 0.0;
     const int nt = r->n_trials ? r->n_trials[i] : 1;
     const double w = r->weights ? r->weights[i] : 1.0;
     return w * zi::mixture_ll_double(r->y[i], nt, eta[0], eta[1],
@@ -253,6 +272,11 @@ inline void builtin_family_zi_eta_weights(
     double* grad_eta, double* neg_hess_eta
 ) {
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
+    if (builtin_row_missing(r, i)) {
+        grad_eta[0] = grad_eta[1] = 0.0;
+        for (int k = 0; k < 4; k++) neg_hess_eta[k] = 0.0;
+        return;
+    }
     const int nt = r->n_trials ? r->n_trials[i] : 1;
     zi::mixture_eta_weights_double(r->y[i], nt, eta[0], eta[1],
                                    r->family, r->phi, r->phi2,
@@ -276,6 +300,11 @@ inline double builtin_family_ll_eta_weights(
     double* grad_eta, double* neg_hess_eta
 ) {
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
+    if (builtin_row_missing(r, i)) {
+        grad_eta[0] = 0.0;
+        neg_hess_eta[0] = 0.0;
+        return 0.0;
+    }
     const bool plain =
         r->prepared && data.zi_type == ZIType::NONE &&
         !(r->trunc_upper && r->family == "truncated_gaussian") &&

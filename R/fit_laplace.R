@@ -707,13 +707,20 @@ tulpa_laplace <- function(y, n_trials, X,
 #' user's own missing data to them as a package defect
 #' (gcol33/tulpa#613).
 #'
+#' `missing_response = TRUE` is for the nested-Laplace doors, whose kernels
+#' mask a row with an NA response (`builtin_row_missing`): the row's linear
+#' predictor is read, its likelihood term is absent. NaN and Inf are refused
+#' there too, and so is a response that is NA on every row.
+#'
 #' @param y,X Response vector and design matrix.
 #' @param n_trials Binomial denominators, or `NULL` (defaults to 1 per row).
 #' @param where Caller name for the error message.
+#' @param missing_response Whether an NA response marks a masked row.
 #' @return List `list(N, n_trials)` with `n_trials` coerced to a length-`N`
 #'   integer vector.
 #' @noRd
-.validate_glm_design <- function(y, X, n_trials, where) {
+.validate_glm_design <- function(y, X, n_trials, where,
+                                 missing_response = FALSE) {
   N <- length(y)
   if (N == 0L) stop(where, ": `y` is empty.", call. = FALSE)
   if (!is.matrix(X)) {
@@ -731,7 +738,8 @@ tulpa_laplace <- function(y, n_trials, X,
   if (anyNA(n_trials)) {
     stop(where, ": `n_trials` must be non-NA integers.", call. = FALSE)
   }
-  .assert_finite_model_inputs(X, y, n_trials = n_trials, where = where)
+  .assert_finite_model_inputs(X, y, n_trials = n_trials, where = where,
+                              missing_response = missing_response)
   list(N = N, n_trials = n_trials)
 }
 

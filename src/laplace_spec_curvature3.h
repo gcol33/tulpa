@@ -142,6 +142,7 @@ inline Curvature3Oracle build_spec_curvature3_oracle(
         if (is_builtin_family_spec(spec.name)) {
             const auto* r = static_cast<const BuiltinFamilyResponse*>(response_data);
             out.scalar = [r](int j, double eta_j) -> double {
+                if (builtin_row_missing(r, j)) return 0.0;
                 double w = r->weights ? r->weights[j] : 1.0;
                 int nt = r->n_trials ? r->n_trials[j] : 1;
                 return w * curvature3_obs_for_family(r->y[j], nt, eta_j, r->family,

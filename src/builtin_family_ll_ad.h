@@ -182,6 +182,7 @@ inline T builtin_family_ll_ad(
     const ParamLayout& /*layout*/, const void* model_data
 ) {
     const auto* r   = static_cast<const BuiltinFamilyResponse*>(model_data);
+    if (builtin_row_missing(r, i)) return T(0.0);
     const double yv = r->y[i];
     const int    nt = r->n_trials ? r->n_trials[i] : 1;
     // Per-obs likelihood weight, matching builtin_family_ll_double / the score /
