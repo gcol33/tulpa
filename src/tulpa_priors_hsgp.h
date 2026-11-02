@@ -74,6 +74,14 @@ T compute_hsgp_spatial_prior(const std::vector<T>& params, const ModelData& data
     return log_post;
 }
 
+// The constant compute_hsgp_spatial_prior leaves out: -0.5 log(2 pi) for the
+// N(0, 1) on log(lengthscale) and for each N(0, 1) basis coefficient (the PC
+// prior on sigma is normalized).
+inline double hsgp_spatial_prior_log_normalizer(const ModelData& data,
+                                                const ParamLayout& layout) {
+    if (!(layout.is_hsgp && data.has_hsgp)) return 0.0;
+    return (data.hsgp_data.m_total + 1) * log_prior_normal_log_normalizer(1.0);
+}
 
 } // namespace priors
 } // namespace tulpa

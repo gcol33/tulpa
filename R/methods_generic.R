@@ -1257,14 +1257,19 @@ vcov.tulpa_fit <- function(object, ...) {
 #' attribute: the square root of the sum over steps of `1 / ESS_t - 1 / N`,
 #' the variance of each step's log mean weight over `N` independent particles
 #' (Chopin 2004). Correlation the mutations leave between particles is not in
-#' it, so it is a floor on the error: where they mix slowly (a random-effect
-#' scale at the default `n_mcmc_steps = 5`) the estimate also sits low by more
-#' than it, and more mutation steps remove both. The fit reports no evidence, and
-#' `logLik()` falls back to `"log_posterior_mean"`, when a normalizing constant
-#' is unknown: a spatial, temporal, varying-coefficient, latent-factor or
-#' space-time block (whose prior the sampler evaluates up to a constant), or
-#' a likelihood that is not a built-in family's; the fit's
-#' `log_evidence_declined` names which.
+#' it, which is why the sampler moves its population after every tempering
+#' step until each coordinate has decorrelated from where the step started
+#' (Buchholz, Chopin and Jacob 2021); a run capped below that
+#' (`control$smc_max_moves`) can sit low by more than the SE reports. Every
+#' latent block the sampler fits carries its prior's normalizing constant
+#' (areal, temporal, continuous and multi-scale GP, HSGP, varying-coefficient
+#' and multi-scale temporal fields included). The fit reports no evidence, and
+#' `logLik()` falls back to `"log_posterior_mean"`, when the prior has no
+#' normalizing constant because it is improper (an acyclic RW2, or an RW1 /
+#' RW2 over several groups, whose group contrasts are left free), when a
+#' restricted (RSR) field is evaluated at its projection, or when the
+#' likelihood is not a built-in family's; the fit's `log_evidence_declined`
+#' names which.
 #'
 #' A sampler fit whose producer kept no per-draw log posterior reports `NA`
 #' with `quantity = "log_posterior_mean"` and

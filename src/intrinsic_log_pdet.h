@@ -26,6 +26,7 @@
 #include <Rcpp.h>
 #include <cmath>
 #include <vector>
+#include "tulpa/graph_components.h"   // GraphPartition
 
 namespace tulpa {
 
@@ -104,6 +105,41 @@ inline double rw_log_pdet(int n_times, int order, bool cyclic) {
         if (r == 2) N(t, 1) = t - 0.5 * (n_times - 1);
     }
     return intrinsic_log_pdet(Q, N);
+}
+
+// log|Q_aug| of the unit-precision augmented ICAR precision
+// Q_aug = Q + sum_c 1_c 1_c' / J_c, Q = D - W the graph Laplacian of the CSR
+// adjacency (adj_row_ptr, adj_col_idx) with degrees n_neighbors. Q_aug acts as
+// Q on each component's sum-zero subspace and as the identity on its constant
+// direction (Q 1_c = 0, (1_c 1_c' / J_c) 1_c = 1_c), so |Q_aug| is the
+// generalized determinant prod_c |Q_c|_+, one sparse Cholesky per component.
+// The value carries no hyperparameter: compute it once per field.
+inline double icar_log_pdet(int n_spatial_units, const int* adj_row_ptr,
+                            const int* adj_col_idx, const int* n_neighbors,
+                            const GraphPartition& partition) {
+    double out = 0.0;
+    std::vector<int> pos(n_spatial_units, -1);
+    const int L = partition.n_components();
+    for (int comp = 0; comp < L; comp++) {
+        const int* idx = partition.nodes(comp);
+        const int csize = partition.size(comp);
+        if (csize <= 1) continue;
+        for (int a = 0; a < csize; a++) pos[idx ? idx[a] : a] = a;
+        std::vector<Eigen::Triplet<double>> trip;
+        for (int a = 0; a < csize; a++) {
+            const int s = idx ? idx[a] : a;
+            trip.emplace_back(a, a, static_cast<double>(n_neighbors[s]));
+            for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
+                const int c = pos[adj_col_idx[k]];
+                if (c >= 0) trip.emplace_back(a, c, -1.0);
+            }
+        }
+        Eigen::SparseMatrix<double> Qc(csize, csize);
+        Qc.setFromTriplets(trip.begin(), trip.end());
+        out += intrinsic_log_pdet(Qc, Eigen::MatrixXd::Ones(csize, 1));
+        for (int a = 0; a < csize; a++) pos[idx ? idx[a] : a] = -1;
+    }
+    return out;
 }
 
 } // namespace tulpa

@@ -217,35 +217,6 @@ double log_prior_icar_structured(
     return -0.5 * tau_spatial * quad_form - 0.5 * s2z;
 }
 
-double icar_log_pdet(
-    int n_spatial_units,
-    const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors, const GraphPartition& partition
-) {
-    // One graph Laplacian per connected component, null space its constant.
-    double out = 0.0;
-    std::vector<int> pos(n_spatial_units, -1);
-    for_each_icar_component(0, partition,
-        [&](int /*start*/, const int* idx, int csize) {
-            if (csize <= 1) return;
-            for (int a = 0; a < csize; a++) pos[idx ? idx[a] : a] = a;
-            std::vector<Eigen::Triplet<double>> trip;
-            for (int a = 0; a < csize; a++) {
-                const int s = idx ? idx[a] : a;
-                trip.emplace_back(a, a, static_cast<double>(n_neighbors[s]));
-                for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
-                    const int c = pos[adj_col_idx[k]];
-                    if (c >= 0) trip.emplace_back(a, c, -1.0);
-                }
-            }
-            Eigen::SparseMatrix<double> Qc(csize, csize);
-            Qc.setFromTriplets(trip.begin(), trip.end());
-            out += intrinsic_log_pdet(Qc, Eigen::MatrixXd::Ones(csize, 1));
-            for (int a = 0; a < csize; a++) pos[idx ? idx[a] : a] = -1;
-        });
-    return out;
-}
-
 double log_prior_icar(
     const NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,

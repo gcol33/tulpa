@@ -11,6 +11,9 @@
 #include <cmath>
 #include "autodiff_utils.h"
 #include "hmc_temporal_multiscale.h"
+#include "intrinsic_log_pdet.h"  // rw_log_pdet
+#include <limits>
+#include <string>
 
 namespace tulpa {
 namespace priors {
@@ -115,6 +118,43 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
     return log_post;
 }
 
+// The constant compute_multiscale_temporal_prior leaves out, or NaN with the
+// reason appended to `declined`. The PC priors, the AR1 / IID short-term
+// densities and every walk's 0.5 rank log(tau / 2 pi) are carried. Left out:
+// the Beta(2, 2) normalizer of the short-term (rho + 1) / 2, and the
+// 0.5 log|R|_+ of an RW1 trend and of the cyclic RW1 seasonal walk, each
+// augmented on its constant null direction with eigenvalue 1. An RW2 trend
+// keeps its linear null direction, and a walk too short to carry a quadratic
+// form (rw1_log_lik / rw2_log_lik return 0 there) leaves its values under a
+// flat prior; either is improper.
+inline double multiscale_temporal_prior_log_normalizer(
+    const ModelData& data, const ParamLayout& layout,
+    std::vector<std::string>* declined) {
+    if (!layout.has_multiscale_temporal) return 0.0;
+    const auto& ms = data.multiscale_temporal_data;
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    double c = 0.0;
+    if (layout.log_sigma2_trend_idx >= 0) {
+        const int n = layout.trend_end - layout.trend_start;
+        if (ms.trend_type != TemporalType::RW1 || n < 2) {
+            if (declined) declined->push_back("multiscale_temporal:trend_improper");
+            return nan;
+        }
+        c += 0.5 * rw_log_pdet(n, 1, false);
+    }
+    if (layout.log_sigma2_seasonal_idx >= 0) {
+        const int n = layout.seasonal_end - layout.seasonal_start;
+        if (n < 2) {
+            if (declined) declined->push_back("multiscale_temporal:seasonal_improper");
+            return nan;
+        }
+        c += 0.5 * rw_log_pdet(n, 1, true);
+    }
+    if (layout.logit_rho_short_idx >= 0) {
+        c += log_prior_beta_logit_log_normalizer(2.0, 2.0);
+    }
+    return c;
+}
 
 } // namespace priors
 } // namespace tulpa

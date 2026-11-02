@@ -346,19 +346,21 @@ inline double generic_prior_log_normalizer(
     c += priors::zi_oi_prior_log_normalizer(data, layout);
 
     std::vector<std::string> missing;
-    if (layout.has_spatial) missing.push_back("spatial");
-    if (layout.is_gp && data.has_gp) missing.push_back("gp");
-    if (layout.is_multiscale_gp && data.has_multiscale_gp) {
-        missing.push_back("multiscale_gp");
-    }
-    if (layout.is_hsgp && data.has_hsgp) missing.push_back("hsgp");
+    c += priors::spatial_icar_bym2_prior_log_normalizer(data, layout);
+    c += priors::gp_spatial_prior_log_normalizer(data, layout, &missing);
+    c += priors::multiscale_gp_prior_log_normalizer(data, layout, &missing);
+    c += priors::hsgp_spatial_prior_log_normalizer(data, layout);
     if (layout.is_spde && data.has_spde) missing.push_back("spde");
-    if (layout.has_temporal) missing.push_back("temporal");
+    c += priors::temporal_prior_log_normalizer(data, layout, &missing);
     if (layout.has_multiscale_temporal && data.has_multiscale_temporal) {
-        missing.push_back("multiscale_temporal");
+        c += priors::multiscale_temporal_prior_log_normalizer(data, layout, &missing);
     }
-    if (layout.has_svc && data.has_svc) missing.push_back("svc");
-    if (layout.has_tvc && data.has_tvc) missing.push_back("tvc");
+    if (layout.has_svc && data.has_svc) {
+        c += priors::svc_prior_log_normalizer(data, layout);
+    }
+    if (layout.has_tvc && data.has_tvc) {
+        c += priors::tvc_prior_log_normalizer(data, layout, &missing);
+    }
     if (layout.has_latent && data.has_latent) missing.push_back("latent");
     if (layout.has_spatiotemporal && data.has_spatiotemporal) {
         missing.push_back("spatiotemporal");

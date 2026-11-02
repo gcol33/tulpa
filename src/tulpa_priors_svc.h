@@ -186,6 +186,26 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
     return log_post;
 }
 
+// The constant compute_svc_prior leaves out: per term, the half-Cauchy
+// normalizer of the marginal SD, and -0.5 log(2 pi) for each N(0, 1) the term
+// carries -- the Gaussian on log(lengthscale) and the basis coefficients of an
+// HSGP term, the z of a non-centered NNGP term. The PC range prior and the
+// centered NNGP density are normalized.
+inline double svc_prior_log_normalizer(const ModelData& data,
+                                       const ParamLayout& layout) {
+    if (!layout.has_svc || data.svc_data.n_svc <= 0) return 0.0;
+    const int n_svc = data.svc_data.n_svc;
+    const double unit_normal = log_prior_normal_log_normalizer(1.0);
+    double c = n_svc * math::log_prior_half_cauchy_log_normalizer(
+        data.svc_sigma2_prior_scale);
+    if (data.svc_is_hsgp) {
+        c += n_svc * (data.svc_hsgp_data.m_total + 1) * unit_normal;
+    } else if (data.svc_parameterization == 1) {
+        c += static_cast<double>(n_svc) * data.svc_data.n_obs * unit_normal;
+    }
+    return c;
+}
+
 
 } // namespace priors
 } // namespace tulpa

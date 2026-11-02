@@ -53,8 +53,9 @@ inline void set_icar_block_priors(
     GraphPartition partition,
     std::vector<double> node_prec = std::vector<double>()
 ) {
-    const double log_pdet = icar_log_pdet(size, adj_row_ptr, adj_col_idx,
-                                          n_neighbors, partition);
+    const double log_pdet = icar_log_pdet(size, adj_row_ptr.begin(),
+                                          adj_col_idx.begin(),
+                                          n_neighbors.begin(), partition);
     block.add_prior = [start, size, tau_at, adj_row_ptr, adj_col_idx,
                        n_neighbors, partition, node_prec](
         DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x, int k) {

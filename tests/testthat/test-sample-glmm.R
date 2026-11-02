@@ -413,16 +413,16 @@ test_that("the SMC mutation count is bounded by smc_min_moves / smc_max_moves", 
                "1 <= min <= max")
 })
 
-# A block whose prior the sampler evaluates only up to a constant leaves the
-# evidence unknown; the fit says which block, and logLik() falls back to the
-# mean log posterior.
-test_that("the SMC backend declines the evidence where a prior constant is unknown", {
+# An improper prior has no normalizing constant, so the evidence relative to it
+# is not defined: an acyclic RW2 keeps its linear null direction. The fit says
+# which block and why, and logLik() falls back to the mean log posterior.
+test_that("the SMC backend declines the evidence under an improper prior", {
   skip_on_cran()
   set.seed(4)
   Tn <- 40L
   xt <- rnorm(Tn); X <- cbind(1, xt)
   y <- 1 - 0.5 * xt + cumsum(rnorm(Tn, 0, 0.2)) + rnorm(Tn, 0, 0.3)
-  tp <- list(type = "rw1", time_idx = seq_len(Tn), n_times = Tn,
+  tp <- list(type = "rw2", time_idx = seq_len(Tn), n_times = Tn,
              n_groups = 1L, group_idx = NULL, cyclic = FALSE)
   fit <- tulpa_sample_glmm(y, NULL, X, "gaussian", "smc", phi = 0.09,
                            temporal_spec = tp,
@@ -430,6 +430,6 @@ test_that("the SMC backend declines the evidence where a prior constant is unkno
                                           smc_max_moves = 2L, seed = 8L))
   expect_true(is.na(fit$log_evidence))
   expect_identical(fit$log_evidence_declined,
-                   "prior_normalizer_not_carried:temporal")
+                   "prior_normalizer_not_carried:temporal:rw2_improper")
   expect_identical(attr(logLik(fit), "quantity"), "log_posterior_mean")
 })

@@ -95,7 +95,8 @@ Rcpp::List cpp_laplace_fit_spatial(
                                n_neighbors, sp_part);
     };
     const double log_pdet = tulpa::icar_log_pdet(
-        n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sp_part);
+        n_spatial_units, adj_row_ptr.begin(), adj_col_idx.begin(),
+        n_neighbors.begin(), sp_part);
     block.log_prior = [&, log_pdet](const Rcpp::NumericVector& x, int /*k*/) {
         return tulpa::log_prior_icar(x, block_start, n_spatial_units, tau_spatial,
                                        adj_row_ptr, adj_col_idx, n_neighbors,
@@ -203,7 +204,8 @@ Rcpp::List cpp_laplace_fit_bym2(
                                tulpa::node_prec_ptr(node_prec));
     };
     const double log_pdet = tulpa::icar_log_pdet(
-        n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sp_part);
+        n_spatial_units, adj_row_ptr.begin(), adj_col_idx.begin(),
+        n_neighbors.begin(), sp_part);
     phi_block.log_prior = [&, log_pdet](const Rcpp::NumericVector& x, int /*k*/) {
         // Structured ICAR component at unit precision, normalized like the
         // plain field; shares the quadratic form and the augmentation with

@@ -152,6 +152,12 @@ inline T log_jacobian_bounded(const T& phi, double lower, double upper) {
          - T(std::log(upper - lower));
 }
 
+// -log(upper - lower): the Uniform(lower, upper) density a caller places on
+// phi when it adds log_jacobian_bounded alone.
+inline double log_prior_uniform_log_normalizer(double lower, double upper) {
+    return -std::log(upper - lower);
+}
+
 // log1p - double version
 template<typename T>
 inline typename std::enable_if<!is_autodiff<T>::value, T>::type
@@ -632,6 +638,20 @@ template<typename T>
 inline T log_prior_gamma(const T& log_phi, double shape, double rate) {
     T phi = safe_exp(log_phi);
     return (shape - 1.0) * log_phi - rate * phi + log_phi;
+}
+
+// shape log(rate) - lgamma(shape): what log_prior_gamma leaves out of the
+// Gamma(shape, rate) density rate^shape phi^(shape - 1) e^(-rate phi) /
+// Gamma(shape), carried to log(phi).
+inline double log_prior_gamma_log_normalizer(double shape, double rate) {
+    return shape * std::log(rate) - std::lgamma(shape);
+}
+
+// -log B(a, b): what a log(u) + b log(1 - u) leaves out of a Beta(a, b)
+// density on u carried to logit(u), whose Jacobian u (1 - u) raises each
+// exponent by one.
+inline double log_prior_beta_logit_log_normalizer(double a, double b) {
+    return std::lgamma(a + b) - std::lgamma(a) - std::lgamma(b);
 }
 
 // Capped Normal log-prior — single source of truth lives in

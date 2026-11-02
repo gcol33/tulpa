@@ -178,6 +178,9 @@ inline T log_prior_range_pc(const T& range, double U, double alpha) {
 // by the likelihood. Included, the density integrates to the half-Cauchy
 // normalizer s * pi / 2, whatever coordinate it is integrated in (asserted in
 // test-pc-prior.R over scale in c(0.5, 1.0, 2.5)).
+//
+// The constant it leaves out is math::log_prior_half_cauchy_log_normalizer
+// (ad_scalar_math.h), log(2 / (pi s)), on every coordinate alike.
 template <typename T>
 inline T log_prior_sigma_half_cauchy(const T& sigma, double scale) {
   return -math::safe_log(T(1.0) + sigma * sigma / T(scale * scale));

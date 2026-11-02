@@ -13,6 +13,9 @@
 #include "hmc_temporal.h"  // single-source RW1/RW2/AR1 kernels
 #include "temporal_gp_kernel.h"  // temporal GP covariance + dense factorization
 #include "tulpa/sum_to_zero.h"  // s2z_aug_coef / s2z_aug_rank
+#include "intrinsic_log_pdet.h"  // rw_log_pdet
+#include <limits>
+#include <string>
 
 namespace tulpa {
 namespace priors {
@@ -256,6 +259,56 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
     return log_post;
 }
 
+// The constant compute_temporal_prior leaves out, or NaN with the reason
+// appended to `declined` when the prior has none because it is improper.
+//   GP  : the Uniform normalizer of the lengthscale (the PC prior on sigma2 and
+//         the centered field densities are normalized), and -0.5 log(2 pi) per
+//         non-centered z.
+//   RW1 / cyclic RW2, one group: the Gamma normalizer of tau, and the
+//         0.5 log|R|_+ of the walk's structure R that its gmrf_log_norm omits;
+//         the global sum-to-zero augmentation fills R's constant null
+//         direction with eigenvalue 1, so |R_aug| = |R|_+.
+//   AR1 : the Gamma normalizer of tau and the Beta normalizer of (rho + 1) / 2;
+//         the stationary AR1 density is normalized.
+// An acyclic RW2 keeps its linear null direction, and RW1 / RW2 over several
+// groups keep the G - 1 group contrasts free; either leaves the prior improper,
+// and the evidence relative to an improper prior is not defined.
+inline double temporal_prior_log_normalizer(const ModelData& data,
+                                            const ParamLayout& layout,
+                                            std::vector<std::string>* declined) {
+    if (!layout.has_temporal) return 0.0;
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    if (layout.is_temporal_gp) {
+        double c = log_prior_uniform_log_normalizer(
+            data.temporal_gp_phi_prior_lower, data.temporal_gp_phi_prior_upper);
+        if (data.temporal_gp_parameterization == 1) {
+            c += (layout.temporal_end - layout.temporal_start)
+                 * log_prior_normal_log_normalizer(1.0);
+        }
+        return c;
+    }
+    const double gamma_c = log_prior_gamma_log_normalizer(
+        data.tau_temporal_shape, data.tau_temporal_rate);
+    if (data.temporal_type == TemporalType::AR1) {
+        return gamma_c + log_prior_beta_logit_log_normalizer(
+            data.ar1_rho_prior_a, data.ar1_rho_prior_b);
+    }
+    const bool rw2 = data.temporal_type == TemporalType::RW2;
+    if (data.temporal_type != TemporalType::RW1 && !rw2) {
+        if (declined) declined->push_back("temporal");
+        return nan;
+    }
+    if (rw2 && !data.temporal_cyclic) {
+        if (declined) declined->push_back("temporal:rw2_improper");
+        return nan;
+    }
+    if (data.n_temporal_groups > 1) {
+        if (declined) declined->push_back("temporal:group_contrasts_improper");
+        return nan;
+    }
+    return gamma_c + 0.5 * rw_log_pdet(data.n_times, rw2 ? 2 : 1,
+                                       data.temporal_cyclic);
+}
 
 } // namespace priors
 } // namespace tulpa

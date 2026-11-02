@@ -12,6 +12,7 @@
 #include "autodiff_utils.h"
 #include "icar_kernel.h"                  // for_each_icar_component
 #include "tulpa/sum_to_zero.h"            // s2z_aug_coef / s2z_aug_rank
+#include "intrinsic_log_pdet.h"           // icar_log_pdet
 
 namespace tulpa {
 namespace priors {
@@ -218,6 +219,42 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
     return log_post;
 }
 
+// The constant compute_spatial_icar_bym2_prior leaves out, so that the two
+// together are a normalized density on the block's parameters.
+//   ICAR       : the Gamma normalizer of tau, and of phi ~ N(0, (tau Q_aug)^-1)
+//                the 0.5 log|Q_aug| - 0.5 J log(2 pi) its 0.5 J log tau omits.
+//   BYM2       : the half-Cauchy normalizer of sigma (the Uniform on rho
+//                carried to its logit is already normalized), of phi ~ N(0,
+//                (diag(w) Q_aug)^-1) the 0.5 (sum_i log w_i + log|Q_aug|) -
+//                0.5 J log(2 pi), and of theta ~ N(0, I) the -0.5 J log(2 pi).
+//   proper CAR : the Gamma normalizer of tau, and the 0.5 log|D| - 0.5 J
+//                log(2 pi) of log|tau (D - rho W)| = J log tau + log|D| +
+//                sum_k log(1 - rho mu_k) that the density omits.
+inline double spatial_icar_bym2_prior_log_normalizer(const ModelData& data,
+                                                     const ParamLayout& layout) {
+    if (!layout.has_spatial) return 0.0;
+    const int J = data.n_spatial_units;
+    const double unit_normal = log_prior_normal_log_normalizer(1.0);
+    if (layout.is_car_proper) {
+        double log_det_d = 0.0;
+        for (int i = 0; i < J; i++) log_det_d += std::log(double(data.n_neighbors[i]));
+        return log_prior_gamma_log_normalizer(data.tau_spatial_shape,
+                                              data.tau_spatial_rate)
+             + 0.5 * log_det_d + J * unit_normal;
+    }
+    const double log_pdet = icar_log_pdet(
+        J, data.adj_row_ptr.data(), data.adj_col_idx.data(),
+        data.n_neighbors.data(), data.spatial_partition);
+    if (layout.is_bym2) {
+        double sum_log_w = 0.0;
+        for (double w : data.bym2_node_prec) sum_log_w += std::log(w);
+        return log_prior_half_cauchy_log_normalizer(data.sigma_re_scale)
+             + 0.5 * (sum_log_w + log_pdet) + 2.0 * J * unit_normal;
+    }
+    return log_prior_gamma_log_normalizer(data.tau_spatial_shape,
+                                          data.tau_spatial_rate)
+         + 0.5 * log_pdet + J * unit_normal;
+}
 
 } // namespace priors
 } // namespace tulpa

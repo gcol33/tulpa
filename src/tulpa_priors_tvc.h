@@ -12,6 +12,9 @@
 #include "autodiff_utils.h"
 #include "hmc_tvc.h"
 #include "pc_prior.h"
+#include "intrinsic_log_pdet.h"  // rw_log_pdet
+#include <limits>
+#include <string>
 
 namespace tulpa {
 namespace priors {
@@ -141,6 +144,38 @@ T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
     }
 
     return log_post;
+}
+
+// The constant compute_tvc_prior leaves out, or NaN with the reason appended to
+// `declined`. The PC priors, the Uniform(-1, 1) on an AR1 rho carried to its
+// logit, the AR1 and GP field densities are normalized; a GP lengthscale omits
+// its Uniform normalizer. An RW1 / cyclic RW2 block (one per group and term)
+// omits the 0.5 log|R|_+ of its walk, the augmentation filling the constant
+// null direction with eigenvalue 1; an acyclic RW2 block keeps its linear null
+// direction, which leaves the prior improper.
+inline double tvc_prior_log_normalizer(const ModelData& data,
+                                       const ParamLayout& layout,
+                                       std::vector<std::string>* declined) {
+    if (!layout.has_tvc || data.tvc_data.n_tvc <= 0) return 0.0;
+    const auto& tv = data.tvc_data;
+    switch (tv.structure) {
+    case tulpa_temporal::TemporalType::GP:
+        return tv.n_tvc * log_prior_uniform_log_normalizer(
+            data.tvc_gp_phi_prior_lower, data.tvc_gp_phi_prior_upper);
+    case tulpa_temporal::TemporalType::AR1:
+        return 0.0;
+    case tulpa_temporal::TemporalType::RW1:
+        return 0.5 * tv.n_groups * tv.n_tvc * rw_log_pdet(tv.n_times, 1, tv.cyclic);
+    case tulpa_temporal::TemporalType::RW2:
+        if (tv.cyclic) {
+            return 0.5 * tv.n_groups * tv.n_tvc * rw_log_pdet(tv.n_times, 2, true);
+        }
+        if (declined) declined->push_back("tvc:rw2_improper");
+        return std::numeric_limits<double>::quiet_NaN();
+    default:
+        if (declined) declined->push_back("tvc");
+        return std::numeric_limits<double>::quiet_NaN();
+    }
 }
 
 

@@ -16,6 +16,8 @@
 #include "hsgp_spectral.h"
 #include "hmc_gp_autodiff.h"
 #include "pc_prior.h"
+#include <limits>
+#include <string>
 
 namespace tulpa {
 namespace priors {
@@ -262,6 +264,30 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
     return log_post;
 }
 
+// The constant compute_multiscale_gp_prior leaves out, or NaN with the reason
+// appended to `declined`. The PC priors and the centered NNGP densities are
+// normalized. The HSGP basis omits -0.5 log(2 pi) for each scale's Gaussian on
+// log(lengthscale) and for each of the two scales' N(0, 1) coefficients; a
+// non-centered NNGP omits it for each z. A restricted (RSR) field is evaluated
+// at its projection, which is not a density on the sampled field.
+inline double multiscale_gp_prior_log_normalizer(const ModelData& data,
+                                                 const ParamLayout& layout,
+                                                 std::vector<std::string>* declined) {
+    if (!(layout.is_multiscale_gp && data.has_multiscale_gp)) return 0.0;
+    const double unit_normal = log_prior_normal_log_normalizer(1.0);
+    if (data.msgp_is_hsgp) {
+        return (2 * data.msgp_hsgp_data.m_total + 2) * unit_normal;
+    }
+    if (data.msgp_parameterization == 1) {
+        return ((layout.gp_local_end - layout.gp_local_start) +
+                (layout.gp_regional_end - layout.gp_regional_start)) * unit_normal;
+    }
+    if (data.has_rsr && !data.rsr_projection.empty()) {
+        if (declined) declined->push_back("multiscale_gp:rsr_projection");
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    return 0.0;
+}
 
 } // namespace priors
 } // namespace tulpa

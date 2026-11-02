@@ -159,7 +159,8 @@ LatentBlock make_mcar_block(
     // the augmented P_aug = Sigma^-1 (x) Q_aug having |P_aug| =
     // |Sigma^-1|^n |Q_aug|^p. log|Q_aug| is the graph's generalized
     // determinant (icar_log_pdet), the same constant a plain ICAR field carries.
-    const double log_pdet_Q = tulpa::icar_log_pdet(n, adj_rp, adj_ci, nnbr,
+    const double log_pdet_Q = tulpa::icar_log_pdet(n, adj_rp.begin(),
+                                                   adj_ci.begin(), nnbr.begin(),
                                                    partition);
     block.log_prior = [start, n, p, axis0, theta_grid,
                        adj_rp, adj_ci, nnbr, partition, log_pdet_Q](

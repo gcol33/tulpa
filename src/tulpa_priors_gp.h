@@ -14,6 +14,8 @@
 #include "autodiff_utils.h"
 #include "pc_prior.h"
 #include "hmc_gp_autodiff.h"
+#include <limits>
+#include <string>
 
 namespace tulpa {
 namespace priors {
@@ -112,6 +114,24 @@ T compute_gp_spatial_prior(const std::vector<T>& params, const ModelData& data,
     return log_post;
 }
 
+// The constant compute_gp_spatial_prior leaves out, or NaN with the reason
+// appended to `declined`. The PC priors and the NNGP density on a centered
+// field are normalized; a non-centered field's N(0, I) z omits -0.5 log(2 pi)
+// per coordinate. A restricted (RSR) field evaluates the NNGP density at the
+// projected field, which is not a density on the sampled one.
+inline double gp_spatial_prior_log_normalizer(const ModelData& data,
+                                              const ParamLayout& layout,
+                                              std::vector<std::string>* declined) {
+    if (!(layout.is_gp && data.has_gp)) return 0.0;
+    if (data.gp_parameterization != 1 && data.has_rsr &&
+        !data.rsr_projection.empty()) {
+        if (declined) declined->push_back("gp:rsr_projection");
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    if (data.gp_parameterization != 1) return 0.0;
+    return (layout.gp_w_end - layout.gp_w_start)
+           * log_prior_normal_log_normalizer(1.0);
+}
 
 } // namespace priors
 } // namespace tulpa
