@@ -127,3 +127,45 @@ test_that("the precomputed C++ SPDE fit recovers a fractional-Matern field", {
   u_hat <- as.numeric(asm$Pr %*% x_hat)
   expect_gt(cor(u_hat, u_true), 0.85)
 })
+
+test_that("the precomputed gaussian solve reaches the exact conjugate mode in one Newton step", {
+  skip_on_cran()
+  # A gaussian response makes the inner problem quadratic, so a well-posed
+  # latent is solved by one Newton step (the second confirms the stop). The
+  # stacked components are each a proper GMRF of degree at most m + 1 in L, so
+  # the joint Hessian is conditioned like an integer-order SPDE's and the mode
+  # is the dense conjugate solution under the default fixed-effect prior.
+  set.seed(20)
+  n <- 100L; h <- 1 / n; kappa <- 8
+  C0 <- rep(h, n)
+  G <- Matrix::bandSparse(n, n, c(-1, 0, 1),
+                          list(rep(-1 / h, n - 1), rep(2 / h, n), rep(-1 / h, n - 1)))
+  G <- as(G, "CsparseMatrix"); G[1, n] <- -1 / h; G[n, 1] <- -1 / h
+  asm <- tulpa:::.spde_rational_assemble(C0, G, kappa = kappa, tau = 1,
+                                         nu = 0.5, order = 4L, d = 2,
+                                         l_max = kappa^2 + 4 / h^2)
+  y <- 0.2 + as.numeric(scale(cumsum(rnorm(n)))) + rnorm(n, 0, 0.3)
+  sd_e <- 0.3
+  Qg  <- as(asm$Q, "generalMatrix")
+  Prg <- as(asm$Pr, "CsparseMatrix")
+  fit <- tulpa:::cpp_laplace_fit_spde_precomputed(
+    y = y, n_trials = rep(1L, n), X = matrix(1, n, 1),
+    re_idx = rep(0, n), n_re_groups = 0L, sigma_re = 1.0,
+    n_obs = n, n_mesh = ncol(asm$Q),
+    Q_p = Qg@p, Q_i = Qg@i, Q_x = Qg@x,
+    Aeff_x = Prg@x, Aeff_i = Prg@i, Aeff_p = Prg@p,
+    family = "gaussian", phi = sd_e, tol = 1e-10)
+
+  sb <- tulpa:::cpp_test_default_sigma_beta()
+  S  <- as.matrix(asm$Pr %*% Matrix::solve(asm$Q, Matrix::t(asm$Pr)))
+  V  <- sb^2 + S + diag(sd_e^2, n)
+  Viy <- solve(V, y)
+  expect_true(fit$converged)
+  expect_lte(fit$n_iter, 3L)
+  expect_equal(fit$mode[1], sb^2 * sum(Viy), tolerance = 1e-8)
+  expect_equal(as.numeric(asm$Pr %*% fit$mode[-1]), as.numeric(S %*% Viy),
+               tolerance = 1e-8)
+  expect_equal(fit$log_marginal,
+               as.numeric(-0.5 * determinant(V)$modulus - 0.5 * sum(y * Viy) -
+                            n / 2 * log(2 * pi)), tolerance = 1e-8)
+})
