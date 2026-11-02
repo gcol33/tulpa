@@ -102,7 +102,7 @@ test_that("a folded sum-to-zero pin gives the variance of the stored one", {
   expect_equal(folded$fitted_eta_var, stored$fitted_eta_var, tolerance = 1e-10)
 })
 
-test_that("two folded intrinsic pins read the exact pinned variance and constrained block", {
+test_that("two folded intrinsic pins read the exact constrained variance and block", {
   skip_on_cran()
   n_s <- 60L; n_t <- 10L
   fx <- .st_icar_fixture(n_s = n_s, n_t = n_t, N = 400L, seed = 13L)
@@ -128,18 +128,18 @@ test_that("two folded intrinsic pins read the exact pinned variance and constrai
     shift <- shift / sqrt(sum(shift^2))
     expect_lt(drop(crossprod(shift, H %*% shift)), 1e-9)
 
-    Q <- H
-    Q[icar, icar] <- Q[icar, icar] + args$tau_spatial_grid[k] / n_s
-    Q[rw, rw] <- Q[rw, rw] + args$tau_temporal_grid[k] / n_t
-    exact <- rowSums(fx$A * t(solve(Q, t(fx$A))))
-    expect_equal(fit$fitted_eta_var[k, ], exact, tolerance = 1e-12)
-
-    # The hard constraint on the same stored precision: the fixed-effect block
-    # of the covariance restricted to sum-to-zero fields, N (N' H N)^{-1} N'
-    # with N a basis of the constraint's null space.
+    # The fields' levels are hard constraints of the inner solve
+    # (gcol33/tulpa#1053), so the covariance is the stored precision's
+    # restricted to sum-to-zero fields, N (N' H N)^{-1} N' with N a basis of
+    # the constraint's null space; a pin on a level the constraint fixes adds
+    # nothing to it.
     U <- matrix(0, n_x, 2L); U[icar, 1L] <- 1; U[rw, 2L] <- 1
     N <- qr.Q(qr(U), complete = TRUE)[, -(1:2)]
     V_exact <- N %*% solve(crossprod(N, H %*% N), t(N))
+    exact <- rowSums((fx$A %*% V_exact) * fx$A)
+    expect_equal(fit$fitted_eta_var[k, ], exact, tolerance = 1e-12)
+
+    # The fixed-effect block of the same constrained covariance.
     blk <- cpp_joint_inner_vcov_blocks(
       list(fit$Q_csc_p_per_grid[[k]]), list(fit$Q_csc_i_per_grid[[k]]),
       list(fit$Q_csc_x_per_grid[[k]]), n_x, seq_len(p), p,
