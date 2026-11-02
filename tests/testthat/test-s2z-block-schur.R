@@ -339,3 +339,46 @@ test_that("the inertia route is exact for two pins and a coupled capacitance", {
     }
   }
 })
+
+test_that("two intrinsic fields on the same rows give the exact log-determinant and step", {
+  skip_on_cran()
+  # A space + time additive fit with both pins folded: the stored Hessian's
+  # field block holds the opposite shift of the two fields (+c on every ICAR
+  # node, -c on every RW1 node, eta unchanged) through the uniform ridge alone.
+  n_s <- 60L; n_t <- 10L
+  fx <- .st_icar_fixture(n_s = n_s, n_t = n_t, N = 400L, seed = 13L)
+  args <- modifyList(fx$args, list(store_Q = TRUE, force_sparse = TRUE))
+  withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "0")
+  folded <- do.call(cpp_nested_laplace_st_icar, args)
+  withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "100000")
+  stored <- do.call(cpp_nested_laplace_st_icar, args)
+  # The densified ICAR pin is factored with the precision, so the two log
+  # marginals differ only by how the pins enter the determinant.
+  expect_equal(folded$log_marginal, stored$log_marginal, tolerance = 1e-12)
+
+  p <- ncol(fx$args$X)
+  n_x <- folded$Q_csc_n
+  set.seed(3L)
+  for (k in seq_along(folded$Q_csc_p_per_grid)) {
+    L <- Matrix::sparseMatrix(i = folded$Q_csc_i_per_grid[[k]],
+                              p = folded$Q_csc_p_per_grid[[k]],
+                              x = folded$Q_csc_x_per_grid[[k]],
+                              dims = c(n_x, n_x), index1 = FALSE)
+    H <- as.matrix(L + Matrix::t(L) - Matrix::Diagonal(n_x, Matrix::diag(L)))
+    coef <- c(args$tau_spatial_grid[k] / n_s, args$tau_temporal_grid[k] / n_t)
+    g <- rnorm(n_x)
+    r <- cpp_test_s2z_block_schur(H, c(p, p + n_s), c(n_s, n_t), coef, g)
+    expect_true(r$ok)
+    expect_false(r$field_indefinite)
+    expect_lt(abs(r$ld_block_schur - r$ld_dense), 1e-10)
+    expect_lt(abs(r$ld_block_schur_step - r$ld_dense), 1e-10)
+    icar <- p + seq_len(n_s); rw <- p + n_s + seq_len(n_t)
+    B <- H
+    B[icar, icar] <- B[icar, icar] + coef[1L]
+    B[rw, rw] <- B[rw, rw] + coef[2L]
+    scale <- max(abs(solve(B, g)))
+    expect_lt(r$max_dstep, 1e-10 * scale)
+    expect_true(r$newton_block_schur)
+    expect_lt(r$max_dstep_newton, 1e-10 * scale)
+  }
+})

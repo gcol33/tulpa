@@ -535,27 +535,31 @@ void build_s2z_block_schur_cache(
 // Block-Schur log-determinant for B = A + sum_k coef_k 1_k 1_k'. Partitions the
 // latent into the field indices F (the union of the s2z block ranges) and the
 // scalar complement S (intercepts, betas, REs). Factors the sparse field
-// sub-block A_FF (PD at a converged mode -- pinned off the constant by per-cell
-// data curvature at low tau and by the ICAR at high tau, verified across the
-// grid), folds the K rank-1 pins via the matrix-determinant lemma, and closes
-// the field<->scalar coupling with a small dense Schur complement:
-//   log|B| = log|A_FF| + log|C| + log|C^-1 + U' A_FF^-1 U|      (= log|B_FF|)
-//          + log|A_ss - A_sf B_FF^-1 A_fs|.                     (Schur, n_s x n_s)
-// U = [1_k] in local field coords, C = diag(coef_k). All sparse + O(K^3) +
-// O(n_s^3); no dense field block, no uniform ridge. Exact and well-conditioned:
-// A_FF is PD, so U'A_FF^-1 U is bounded -- the catastrophic cancellation would
-// need the UNPINNED full A, which this never factors.
+// sub-block anchored at one node per pin, A_a = A_FF + E C_a E'
+// (InvBlockConstraint), folds the K rank-1 pins and the anchors back out by the
+// matrix-determinant lemma, and closes the field<->scalar coupling with a small
+// dense Schur complement:
+//   log|B| = log|A_a| + log|C| + sum log c_a + log|cap|          (= log|B_FF|)
+//          + log|A_ss - A_sf B_FF^-1 A_fs|,                      (Schur, n_s x n_s)
+//   cap = diag(C^-1, -C_a^-1) + Vb' A_a^-1 Vb,   Vb = [U E],
+// U = [1_k] in local field coords, C = diag(coef_k) (or the coupling D). All
+// sparse + O((2K)^3) + O(n_s^3); no dense field block, and no factor of the
+// unpinned full A. The anchor is what keeps it well-conditioned: A_FF alone is
+// PD at a converged mode for one intrinsic field, but two intrinsic fields
+// loading the same rows (an additive space + time model) leave their opposite
+// shift in A_FF with the uniform ridge as its only curvature, and a fold read
+// off A_FF^-1 is then the difference of O(1 / ridge) terms.
 //
-// `field_inertia` extends this to an A_FF that is not PD, which happens away
-// from the mode (a screen's two-step solve, an iteration cap). B_FF = A_FF +
-// U C U' can still be PD when A_FF's negative directions lie in the span of the
-// pins. A_FF is then factored as LDL', and with M = [[A_FF, U], [U', -C^-1]]
-// Haynsworth's inertia additivity on its two Schur complements gives
-//   neg(B_FF) = neg(A_FF) - neg(cap),   cap = C^-1 + U' A_FF^-1 U,
-// so B_FF is PD exactly when the two counts agree, and the determinant identity
-// above holds with absolute values (the signs of |A_FF| and |cap| cancel). The
-// LDL' factor is accepted only within S2Z_LDL_BACKWARD_TOL on the W solves.
-// `field_indefinite`, when given, reports whether A_FF failed its Cholesky
+// `field_inertia` extends this to an A_a that is not PD, which happens away
+// from the mode (a screen's two-step solve, an iteration cap). B_FF can still
+// be PD when A_a's negative directions lie in the span of the pins. A_a is then
+// factored as LDL', and Haynsworth's inertia additivity on
+// [[A_a, Vb], [Vb', -diag(C^-1, -C_a^-1)]] gives
+//   neg(B_FF) = neg(A_a) + pos(cap) - K,
+// so B_FF is PD exactly when neg(cap) = (number of anchors) + neg(A_a), and the
+// determinant identity above holds with absolute values. The LDL' factor is
+// accepted only within S2Z_LDL_BACKWARD_TOL on the W solves.
+// `field_indefinite`, when given, reports whether A_a failed its Cholesky
 // factorization, whether or not the inertia route then carried the call.
 //
 // Returns false on any non-PD / allocation failure, and on K == 0, where there

@@ -3,6 +3,7 @@
 
 #include <RcppEigen.h>
 #include "sparse_hessian.h"
+#include "inv_block_extract.h"  // InvBlockConstraint
 
 namespace tulpa {
 
@@ -100,6 +101,28 @@ bool s2z_block_schur(
             }
     }
 
+    // The pins are folded against the field block anchored at one node per pin
+    // (InvBlockConstraint): A_FF alone holds a direction the pins identify only
+    // through the uniform ridge whenever two intrinsic fields load the same
+    // rows, and a fold read off it is the difference of O(1 / ridge) terms.
+    InvBlockConstraint constr;
+    {
+        std::vector<std::vector<int>> groups(K);
+        for (int k = 0; k < K; ++k) {
+            groups[k].resize(r1[k].n);
+            for (int i = 0; i < r1[k].n; ++i) groups[k][i] = floc[r1[k].node(i)];
+        }
+        constr.anchor(nf, indicator_rows(groups, nf), [&](int j) {
+            const int slot = cc.aff.lookup(j, j);
+            return slot >= 0 ? affv[slot]
+                             : std::numeric_limits<double>::quiet_NaN();
+        });
+        for (std::size_t a = 0; a < constr.anchor_node.size(); ++a) {
+            const int j = constr.anchor_node[a];
+            affv[cc.aff.lookup(j, j)] += constr.anchor_weight[a];
+        }
+    }
+
     cholmod_sparse vff = cc.aff.as_cholmod(&cc.aff_solver.common());
     if (!cc.aff_solver.analyzed()) cc.aff_solver.analyze(&vff);
     double logAFF = 0.0;
@@ -120,32 +143,29 @@ bool s2z_block_schur(
     }
     const bool indefinite = (sfp == &cc.aff_ldl);
     SparseCholeskySolver& sf = *sfp;
+    auto solve_ff = [&](const double* rhs, double* out) { sf.solve(rhs, out, nf); };
 
-    // W = A_FF^-1 U (U = [1_k] local). cap = C^-1 + U'A_FF^-1 U (K x K, SPD).
-    std::vector<std::vector<double>> W(K, std::vector<double>(nf, 0.0));
-    {
-        std::vector<double> uk(nf, 0.0);
-        for (int k = 0; k < K; ++k) {
-            std::fill(uk.begin(), uk.end(), 0.0);
-            for (int i = 0; i < r1[k].n; ++i) uk[floc[r1[k].node(i)]] = 1.0;
-            sf.solve(uk.data(), W[k].data(), nf);
-        }
-    }
+    // D enters only as D^{-1} in the capacitance and log|D| in the
+    // determinant, so a Kronecker-coupled field costs nothing here beyond a
+    // dense K x K inverse: no cross-block fill, no extra factorization.
+    std::vector<double> Dinv; double logC = 0.0;
+    if (!s2z_build_Dinv(r1, A.s2z_coupling, Dinv, logC)) return false;
+    constr.build(solve_ff, nf, &Dinv, neg_aff);
     if (indefinite) {
-        // Relative backward error of A_FF W_k = 1_k, componentwise against
-        // |A_FF| |W_k| + |1_k|, over the stored lower triangle.
+        // Relative backward error of the anchored A_FF W_i = Vb_i,
+        // componentwise against |A_FF| |W_i| + |Vb_i|, over the stored lower
+        // triangle.
         const std::vector<int>& cp = cc.aff.col_ptr;
         const std::vector<int>& ri = cc.aff.row_idx;
         const std::vector<double>& av = cc.aff.values;
         std::vector<double> r(nf), mag(nf);
-        for (int k = 0; k < K; ++k) {
-            const std::vector<double>& wk = W[k];
+        for (std::size_t i = 0; i < constr.W.size(); ++i) {
+            const std::vector<double>& wk = constr.W[i];
             std::fill(r.begin(), r.end(), 0.0);
             std::fill(mag.begin(), mag.end(), 0.0);
-            for (int i = 0; i < r1[k].n; ++i) {
-                const int f = floc[r1[k].node(i)];
+            constr.for_each_vb_node(static_cast<int>(i), [&](int f) {
                 r[f] = -1.0; mag[f] = 1.0;
-            }
+            });
             for (int c = 0; c < nf; ++c)
                 for (int p = cp[c]; p < cp[c + 1]; ++p) {
                     const int rr = ri[p];
@@ -154,64 +174,33 @@ bool s2z_block_schur(
                     if (rr != c) { r[c] += v * wk[rr]; mag[c] += std::fabs(v * wk[rr]); }
                 }
             double num = 0.0, den = 0.0;
-            for (int i = 0; i < nf; ++i) {
-                num = std::max(num, std::fabs(r[i]));
-                den = std::max(den, mag[i]);
+            for (int t = 0; t < nf; ++t) {
+                num = std::max(num, std::fabs(r[t]));
+                den = std::max(den, mag[t]);
             }
             if (!(num <= S2Z_LDL_BACKWARD_TOL * den)) return false;
         }
     }
-    // D enters only as D^{-1} in the cap and log|D| in the determinant, so a
-    // Kronecker-coupled field costs nothing here beyond a dense K x K inverse:
-    // no cross-block fill, no extra factorization.
-    std::vector<double> Dinv; double logC = 0.0;
-    if (!s2z_build_Dinv(r1, A.s2z_coupling, Dinv, logC)) return false;
-    std::vector<double> cap((std::size_t) K * K, 0.0);
-    for (int a = 0; a < K; ++a)
-        for (int b = 0; b < K; ++b) {
-            double m = 0.0;   // 1_a' W_b
-            for (int i = 0; i < r1[a].n; ++i) m += W[b][floc[r1[a].node(i)]];
-            cap[(std::size_t) a*K + b] = m + Dinv[(std::size_t) a * K + b];
-        }
-    // A PD field block gives an SPD cap; an indefinite one a cap whose negative
-    // count has to match A_FF's for B_FF to be PD.
-    SmallChol capL;
-    SmallSymEig capE;
-    double logcap = 0.0;
-    if (!indefinite) {
-        capL.factor(cap, K);
-        if (!capL.ok) return false;
-        logcap = capL.logdet();
-    } else {
-        capE.factor(cap, K);
-        if (!capE.ok || capE.n_neg() != neg_aff) return false;
-        logcap = capE.logabsdet();
-    }
-    auto cap_solve = [&](const double* b, double* x) {
-        if (indefinite) capE.solve(b, x); else capL.solve(b, x);
-    };
-    const double logBFF = logAFF + logC + logcap;
+    // B_FF is PD exactly when the capacitance's inertia matches (build()).
+    if (!constr.usable) return false;
+    const double logBFF = logAFF + logC + constr.log_det_fold();
 
-    // Schur S = A_ss - A_sf B_FF^-1 A_fs, with B_FF^-1 y = A_FF^-1 y - W cap^-1 (W'y).
-    // Z[j] = B_FF^-1 A_fs[:,j] is reused for the step's field back-substitution.
+    // B_FF^-1 y = A_a^-1 y - W Cap^-1 (W' y), A_a the anchored field block.
+    std::vector<double> ainv_buf(nf);
+    auto bff_solve = [&](const double* y, double* out) {
+        sf.solve(y, ainv_buf.data(), nf);
+        constr.apply(y, ainv_buf.data(), out, nf);
+    };
+
+    // Schur S = A_ss - A_sf B_FF^-1 A_fs. Z[j] = B_FF^-1 A_fs[:,j] is reused for
+    // the step's field back-substitution.
     std::vector<std::vector<double>> Z(ns, std::vector<double>(nf, 0.0));
     std::vector<double> S = Ass;
     {
-        std::vector<double> col(nf), ainv(nf), wty(K), capy(K);
+        std::vector<double> col(nf);
         for (int j = 0; j < ns; ++j) {
             for (int i = 0; i < nf; ++i) col[i] = Afs[(std::size_t) i*ns + j];
-            sf.solve(col.data(), ainv.data(), nf);                 // A_FF^-1 A_fs[:,j]
-            for (int k = 0; k < K; ++k) {                           // W' col = U' A_FF^-1 col
-                double s = 0.0;
-                for (int i = 0; i < nf; ++i) s += W[k][i] * col[i];
-                wty[k] = s;
-            }
-            cap_solve(wty.data(), capy.data());
-            for (int i = 0; i < nf; ++i) {
-                double corr = 0.0;
-                for (int k = 0; k < K; ++k) corr += W[k][i] * capy[k];
-                Z[j][i] = ainv[i] - corr;
-            }
+            bff_solve(col.data(), Z[j].data());
         }
         for (int i = 0; i < ns; ++i)
             for (int j = 0; j < ns; ++j) {
@@ -241,19 +230,8 @@ bool s2z_block_schur(
             if (floc[g] >= 0) gf[floc[g]] = grad[g];
             else              gs[sloc[g]] = grad[g];
         }
-        std::vector<double> ainv(nf, 0.0), bf_g(nf, 0.0), wty(K), capy(K);
-        sf.solve(gf.data(), ainv.data(), nf);
-        for (int k = 0; k < K; ++k) {
-            double s = 0.0;
-            for (int i = 0; i < nf; ++i) s += W[k][i] * gf[i];
-            wty[k] = s;
-        }
-        cap_solve(wty.data(), capy.data());
-        for (int i = 0; i < nf; ++i) {
-            double corr = 0.0;
-            for (int k = 0; k < K; ++k) corr += W[k][i] * capy[k];
-            bf_g[i] = ainv[i] - corr;
-        }
+        std::vector<double> bf_g(nf, 0.0);
+        bff_solve(gf.data(), bf_g.data());
         std::vector<double> svec(ns, 0.0);
         if (ns > 0) {
             std::vector<double> rhs(ns, 0.0);

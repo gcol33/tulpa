@@ -17,15 +17,6 @@
 
 skip_on_cran()
 
-.jev_chain_adj <- function(n_s) {
-  nbr <- lapply(seq_len(n_s),
-                function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
-  list(adj_row_ptr = as.integer(c(0L, cumsum(lengths(nbr)))),
-       adj_col_idx = as.integer(unlist(nbr)) - 1L,
-       n_neighbors = as.integer(lengths(nbr)),
-       n_spatial_units = n_s)
-}
-
 .jev_nn <- function(coords, k) {
   n <- nrow(coords)
   ord <- order(coords[, 1], coords[, 2])
@@ -64,34 +55,9 @@ skip_on_cran()
   }, numeric(nrow(A))))
 }
 
-.jev_st_icar <- function(n_s, n_t, N, seed) {
-  set.seed(seed)
-  adj <- .jev_chain_adj(n_s)
-  s_idx <- sample.int(n_s, N, replace = TRUE)
-  t_idx <- sample.int(n_t, N, replace = TRUE)
-  X <- cbind(1, rnorm(N))
-  eta <- 0.3 + 0.5 * X[, 2] + sin(s_idx / 3) + cos(t_idx / 2)
-  args <- c(list(
-    y = as.numeric(rpois(N, exp(eta))), n = rep(1L, N), X = X,
-    re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1,
-    spatial_idx = as.integer(s_idx),
-    temporal_idx = as.integer(t_idx), n_times = n_t,
-    tau_spatial_grid = c(1, 3), temporal_type = "rw1",
-    tau_temporal_grid = c(2, 4), rho_temporal_grid = NULL, cyclic = FALSE,
-    family = "poisson", phi = 1, max_iter = 100L, tol = 1e-10, n_threads = 1L),
-    adj)
-  A <- cbind(X,
-             outer(s_idx, seq_len(n_s), `==`) * 1,
-             outer(t_idx, seq_len(n_t), `==`) * 1)
-  # The RW1 chain's pin, which the sparse driver always folds.
-  rw_fold <- list(idx = ncol(X) + n_s + seq_len(n_t),
-                  coef = args$tau_temporal_grid / n_t)
-  list(args = args, A = A, rw_fold = rw_fold)
-}
-
 test_that("st_icar reports the variance its dense precision implies", {
   skip_on_cran()
-  fx <- .jev_st_icar(n_s = 12L, n_t = 6L, N = 150L, seed = 7L)
+  fx <- .st_icar_fixture(n_s = 12L, n_t = 6L, N = 150L, seed = 7L)
   fit <- do.call(cpp_nested_laplace_st_icar,
                  modifyList(fx$args, list(store_Q = TRUE)))
   V <- fit$fitted_eta_var
@@ -103,7 +69,7 @@ test_that("st_icar reports the variance its dense precision implies", {
 
 test_that("a folded sum-to-zero pin gives the variance of the stored one", {
   skip_on_cran()
-  fx <- .jev_st_icar(n_s = 60L, n_t = 10L, N = 400L, seed = 13L)
+  fx <- .st_icar_fixture(n_s = 60L, n_t = 10L, N = 400L, seed = 13L)
   args <- modifyList(fx$args, list(store_Q = TRUE, force_sparse = TRUE))
 
   withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "100000")
@@ -127,7 +93,7 @@ test_that("a folded sum-to-zero pin gives the variance of the stored one", {
 test_that("two folded intrinsic pins read the exact pinned variance and constrained block", {
   skip_on_cran()
   n_s <- 60L; n_t <- 10L
-  fx <- .jev_st_icar(n_s = n_s, n_t = n_t, N = 400L, seed = 13L)
+  fx <- .st_icar_fixture(n_s = n_s, n_t = n_t, N = 400L, seed = 13L)
   args <- modifyList(fx$args, list(store_Q = TRUE, force_sparse = TRUE))
   withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "0")
   fit <- do.call(cpp_nested_laplace_st_icar, args)
