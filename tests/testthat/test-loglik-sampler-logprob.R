@@ -52,7 +52,7 @@ backend_controls <- list(
   sghmc = list(n_iter = 200L, warmup = 100L, seed = 5L),
   sgld  = list(n_iter = 200L, warmup = 100L, seed = 5L),
   mclmc = list(n_iter = 200L, warmup = 100L, seed = 5L),
-  smc   = list(n_particles = 200L, n_mcmc_steps = 3L, seed = 5L),
+  smc   = list(n_particles = 200L, smc_max_moves = 3L, seed = 5L),
   vi    = list(vi_max_iter = 300L, n_draws = 200L, seed = 5L)
 )
 

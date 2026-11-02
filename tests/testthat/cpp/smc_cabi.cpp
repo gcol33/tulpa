@@ -62,7 +62,7 @@ Rcpp::List cpp_test_smc_cabi(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials
 
     tulpa::SmcFitFn fit = tulpa::get_smc_fit_fn();
     tulpa::SMCShimResult r;
-    fit(&in.data, &in.layout, init.data(), D, n_particles, 5, 0.5, sigma_beta,
+    fit(&in.data, &in.layout, init.data(), D, n_particles, 1, 50, 0.5, sigma_beta,
         nullptr, nullptr, (unsigned int)seed, 0, bridge_end, &r);
     if (!r.success) {
         std::string msg(r.error_msg);

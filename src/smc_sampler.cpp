@@ -17,11 +17,12 @@ namespace tulpa_smc {
 SMCResult smc_sample(
     const std::vector<std::function<double(const std::vector<double>&)>>& legs,
     const std::function<void(std::vector<double>&, std::mt19937&, double)>& initial_sample,
-    const std::function<void(std::vector<double>&, double, std::mt19937&)>& mcmc_mutation,
+    const std::function<void(std::vector<double>&, double, std::mt19937&, int)>& mcmc_mutation,
     int dim,
     int n_particles,
     double ess_threshold,
-    int n_mcmc_steps,
+    int min_moves,
+    int max_moves,
     unsigned int seed,
     const std::function<double(const std::vector<double>&)>& initial_log_weight,
     const std::function<void(const std::vector<std::vector<double>>&, double)>&
@@ -31,6 +32,12 @@ SMCResult smc_sample(
     const int n_legs = static_cast<int>(legs.size());
     if (n_legs < 1) {
         throw std::invalid_argument("tulpa SMC: the path needs at least one leg.");
+    }
+    if (min_moves < 1 || max_moves < min_moves) {
+        throw std::invalid_argument(
+            "tulpa SMC: the move steps per tempering step need 1 <= min <= max "
+            "(min = " + std::to_string(min_moves) + ", max = " +
+            std::to_string(max_moves) + ").");
     }
 
     SMCResult result;
@@ -93,13 +100,18 @@ SMCResult smc_sample(
 
     auto mutate = [&]() {
         if (prepare_mutation) prepare_mutation(particles, tau);
-        for (int n = 0; n < N; n++) {
-            for (int k = 0; k < n_mcmc_steps; k++) {
-                mcmc_mutation(particles[n], tau, rng);
-            }
-            incr[n] = legs[leg](particles[n]);
+        MoveDecorrelation rule(particles);
+        int k = 0;
+        while (true) {
+            for (int n = 0; n < N; n++) mcmc_mutation(particles[n], tau, rng, n);
+            k++;
+            const bool decorrelated = rule.decorrelated(particles);
+            if (k >= max_moves || (k >= min_moves && decorrelated)) break;
+            Rcpp::checkUserInterrupt();
         }
-        result.n_mutations += N * n_mcmc_steps;
+        for (int n = 0; n < N; n++) incr[n] = legs[leg](particles[n]);
+        result.n_mutations += N * k;
+        result.moves_history.push_back(k);
     };
 
     // A population drawn from q but meant to represent pi_0 != q is corrected
@@ -218,7 +230,7 @@ SMCDriverResult run_smc_sampler(
     using IncrementFn = std::function<double(const std::vector<double>&)>;
     std::vector<IncrementFn> legs;
     std::function<double(const std::vector<double>&)> initial_log_weight;
-    std::function<void(std::vector<double>&, double, std::mt19937&)> mutation;
+    std::function<void(std::vector<double>&, double, std::mt19937&, int)> mutation;
     std::function<void(const std::vector<std::vector<double>>&, double)> prepare;
 
     SmcPopulationHmc hmc(dim);
@@ -227,7 +239,7 @@ SMCDriverResult run_smc_sampler(
         const ModelData* data_ptr = &data;
         const ParamLayout* layout_ptr = &layout;
         mutation = [mutation_fn, data_ptr, layout_ptr, user_data, dim, b](
-            std::vector<double>& theta, double tau, std::mt19937& rng
+            std::vector<double>& theta, double tau, std::mt19937& rng, int /*particle*/
         ) {
             // Generate a per-call seed from the rng so the user kernel
             // sees independent randomness across calls but stays
@@ -288,9 +300,9 @@ SMCDriverResult run_smc_sampler(
             return (1.0 - s) * lq + s * lpath;
         };
         mutation = [&hmc, log_target](
-            std::vector<double>& theta, double tau, std::mt19937& rng
+            std::vector<double>& theta, double tau, std::mt19937& rng, int particle
         ) {
-            hmc.step(theta, tau, rng, log_target);
+            hmc.step(theta, tau, rng, log_target, particle);
         };
         prepare = [&hmc](const std::vector<std::vector<double>>& particles,
                          double tau) {
@@ -312,7 +324,8 @@ SMCDriverResult run_smc_sampler(
             dim,
             cfg.n_particles,
             cfg.ess_threshold,
-            cfg.n_mcmc_steps,
+            cfg.min_moves,
+            cfg.max_moves,
             cfg.seed,
             initial_log_weight,
             prepare
@@ -347,6 +360,7 @@ SMCDriverResult run_smc_sampler(
             out.log_evidence_se = std::sqrt(res.log_marginal_likelihood_var);
             out.log_evidence_valid = true;
         }
+        out.moves_history = std::move(res.moves_history);
         out.success = true;
     } catch (Rcpp::internal::InterruptedException&) {
         throw;

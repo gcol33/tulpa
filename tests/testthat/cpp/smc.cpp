@@ -15,7 +15,8 @@ Rcpp::List cpp_smc_test(
     Rcpp::NumericVector mu_target,
     Rcpp::NumericVector sigma_target,
     int n_particles = 500,
-    int n_mcmc_steps = 5,
+    int min_moves = 1,
+    int max_moves = 50,
     int seed = 42,
     double bridge_end = 1.0
 ) {
@@ -65,7 +66,7 @@ Rcpp::List cpp_smc_test(
     // Proposal SD is set analytically from the tempered posterior variance:
     //   v_i = sp^2 * st_i^2 / (st_i^2 + beta * sp^2)
     // Optimal RWM scaling: prop_sd_i = 2.38 * sqrt(v_i) / sqrt(d)
-    auto mutation = [&](std::vector<double>& x, double tau, std::mt19937& rng) {
+    auto mutation = [&](std::vector<double>& x, double tau, std::mt19937& rng, int) {
         const double beta = tulpa_smc::prior_path_power(tau, bridge_end);
         std::uniform_real_distribution<double> unif(0.0, 1.0);
         double lp_curr = log_prior(x) + beta * log_lik(x);
@@ -97,7 +98,7 @@ Rcpp::List cpp_smc_test(
     }
     auto result = tulpa_smc::smc_sample(
         legs, prior_sample, mutation,
-        dim, n_particles, 0.5, n_mcmc_steps,
+        dim, n_particles, 0.5, min_moves, max_moves,
         static_cast<unsigned int>(seed)
     );
 
@@ -141,6 +142,9 @@ Rcpp::List cpp_smc_test(
         Rcpp::Named("n_particles") = N,
         Rcpp::Named("n_resamples") = result.n_resamples,
         Rcpp::Named("n_mutations") = result.n_mutations,
+        Rcpp::Named("moves_history") = Rcpp::IntegerVector(
+            result.moves_history.begin(), result.moves_history.end()
+        ),
         Rcpp::Named("temperatures") = Rcpp::NumericVector(
             result.temperatures.begin(), result.temperatures.end()
         ),

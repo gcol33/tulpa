@@ -56,10 +56,18 @@
 #'   any other backend errors rather than sampling from the default start.
 #' @param control List of kernel tuning knobs (`n_iter`, `warmup`, `seed`,
 #'   `sigma_beta`, `n_chains`, `max_treedepth`, `adapt_delta`, `epsilon`, `L`,
-#'   `batch_size`, `alpha`, `n_particles`, `n_mcmc_steps`, `ess_threshold`,
-#'   `vi_variant`, `vi_mc_samples`, `vi_max_iter`, `vi_max_grad_norm`,
-#'   `vi_tol_grad`, `vi_tol_rel_elbo`, `vi_patience`,
+#'   `batch_size`, `alpha`, `n_particles`, `smc_min_moves`, `smc_max_moves`,
+#'   `ess_threshold`, `vi_variant`, `vi_mc_samples`, `vi_max_iter`,
+#'   `vi_max_grad_norm`, `vi_tol_grad`, `vi_tol_rel_elbo`, `vi_patience`,
 #'   `n_draws`, `verbose`, `mass_matrix`, `checkpoint`, `wbic`).
+#'
+#'   The SMC kernel moves its population after every tempering step until the
+#'   particles have decorrelated from the resampled start: the population
+#'   autocorrelation rule of Buchholz, Chopin and Jacob (2021, Algorithm 3),
+#'   which stops once fewer than 10% of the coordinates keep a product of
+#'   lag-one autocorrelations (of `x + x^2`) above 0.1. `smc_min_moves`
+#'   (default 1) and `smc_max_moves` (default 50) bound the count it chooses;
+#'   equal values fix it. The count each step ran is returned as `$n_moves`.
 #'
 #'   `wbic = TRUE` (SMC only) routes the tempering path through the posterior
 #'   tempered at `1 / log(n)`, `p(theta) L(theta)^(1 / log n)`, and stores the
@@ -283,7 +291,8 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     alpha         = as.numeric(control$alpha %||% 0.1),
     mclmc_adjusted = as.integer(control$mclmc_adjusted %||% 0L),
     n_particles   = as.integer(control$n_particles %||% 1000L),
-    n_mcmc_steps  = as.integer(control$n_mcmc_steps %||% 5L),
+    smc_min_moves = as.integer(control$smc_min_moves %||% NA_integer_),
+    smc_max_moves = as.integer(control$smc_max_moves %||% NA_integer_),
     ess_threshold = as.numeric(control$ess_threshold %||% 0.5),
     vi_variant    = as.integer(control$vi_variant %||% 3L),
     vi_mc_samples = vi_mc_samples,

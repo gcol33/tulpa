@@ -100,7 +100,7 @@ test_that("every sampler backend recovers the binomial-GLM fixed effects", {
     sghmc = list(tol = 0.25, ctrl = list(n_iter = 2000L, warmup = 1000L)),
     sgld  = list(tol = 0.30, ctrl = list(n_iter = 2000L, warmup = 1000L)),
     mclmc = list(tol = 0.15, ctrl = list(n_iter = 1500L, warmup = 750L)),
-    smc   = list(tol = 0.20, ctrl = list(n_particles = 2000L, n_mcmc_steps = 8L)),
+    smc   = list(tol = 0.20, ctrl = list(n_particles = 2000L)),
     vi    = list(tol = 0.25, ctrl = list(vi_max_iter = 8000L, n_draws = 3000L))
   )
   for (backend in names(cfg)) {
@@ -373,12 +373,44 @@ test_that("the SMC evidence integrates a random-effect SD (gcol33/tulpa#1061)", 
 
   re_spec <- list(idx = list(as.integer(gi)), ngroups = J, ncoefs = 1L,
                   correlated = FALSE, Z = list(NULL))
-  fit <- suppressWarnings(tulpa_sample_glmm(
+  fits <- lapply(1:6, function(s) suppressWarnings(tulpa_sample_glmm(
     y, NULL, X, "gaussian", "smc", phi = phi, sigma_beta = sdb,
     re_spec = re_spec, sigma_re_scale = s_hc,
-    control = list(n_particles = 1000L, seed = 3L)))
-  expect_true(is.finite(fit$log_evidence))
-  expect_lt(abs(fit$log_evidence - exact), 0.5)
+    control = list(n_particles = 1000L, seed = s))))
+  err <- vapply(fits, function(f) f$log_evidence - exact, 0)
+  se <- vapply(fits, function(f) f$log_evidence_se, 0)
+  expect_true(all(is.finite(err)))
+  # The move count adapts until the resampled copies have decorrelated, so the
+  # estimate is centred on the quadrature value and scattered by its own SE:
+  # over 20 seeds the mean error is -0.06 (MC SE 0.02) with SD 0.11 against a
+  # reported SE of 0.12, where a fixed 5 moves per temperature sat at -0.16
+  # with SD 0.25.
+  expect_lt(abs(mean(err)), 3 * mean(se) / sqrt(length(err)) + 0.06)
+  expect_lt(sd(err), 1.8 * mean(se))
+  # Each temperature ran at least one move and no more than the cap.
+  expect_true(all(vapply(fits, function(f)
+    all(f$n_moves >= 1L & f$n_moves <= 50L), TRUE)))
+})
+
+# The move count is a range now, not a number: the old knob is refused rather
+# than read as one bound of it.
+test_that("the SMC mutation count is bounded by smc_min_moves / smc_max_moves", {
+  skip_on_cran()
+  set.seed(5)
+  n <- 40L; x <- rnorm(n); X <- cbind(1, x); y <- rnorm(n)
+  expect_error(tulpa_sample_glmm(y, NULL, X, "gaussian", "smc", phi = 1,
+                                 control = list(n_mcmc_steps = 5L)),
+               "n_mcmc_steps")
+  fit <- tulpa_sample_glmm(y, NULL, X, "gaussian", "smc", phi = 1,
+                           control = list(n_particles = 200L, seed = 1L,
+                                          smc_min_moves = 3L,
+                                          smc_max_moves = 3L))
+  expect_true(all(fit$n_moves == 3L))
+  expect_error(tulpa_sample_glmm(y, NULL, X, "gaussian", "smc", phi = 1,
+                                 control = list(n_particles = 200L,
+                                                smc_min_moves = 4L,
+                                                smc_max_moves = 2L)),
+               "1 <= min <= max")
 })
 
 # A block whose prior the sampler evaluates only up to a constant leaves the
@@ -395,7 +427,7 @@ test_that("the SMC backend declines the evidence where a prior constant is unkno
   fit <- tulpa_sample_glmm(y, NULL, X, "gaussian", "smc", phi = 0.09,
                            temporal_spec = tp,
                            control = list(n_particles = 200L,
-                                          n_mcmc_steps = 2L, seed = 8L))
+                                          smc_max_moves = 2L, seed = 8L))
   expect_true(is.na(fit$log_evidence))
   expect_identical(fit$log_evidence_declined,
                    "prior_normalizer_not_carried:temporal")

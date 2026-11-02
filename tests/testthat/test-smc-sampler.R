@@ -35,7 +35,7 @@ test_that("SMC recovers Gaussian-Gaussian posterior moments and log Z (1-D)", {
   truth <- gauss_gauss_truth(mu_t, sigma_t)
 
   res <- cpp_smc_test(mu_target = mu_t, sigma_target = sigma_t,
-                      n_particles = 2000, n_mcmc_steps = 8, seed = 1L)
+                      n_particles = 2000, seed = 1L)
 
   expect_equal(res$means[1], truth$mean, tolerance = 0.1)
   expect_equal(res$sds[1],   truth$sd,   tolerance = 0.1)
@@ -50,7 +50,7 @@ test_that("SMC recovers a 3-D Gaussian-Gaussian posterior", {
   truth <- gauss_gauss_truth(mu_t, sigma_t)
 
   res <- cpp_smc_test(mu_target = mu_t, sigma_target = sigma_t,
-                      n_particles = 2000, n_mcmc_steps = 8, seed = 2L)
+                      n_particles = 2000, seed = 2L)
 
   expect_equal(as.numeric(res$means), truth$mean, tolerance = 0.15)
   expect_equal(as.numeric(res$sds),   truth$sd,   tolerance = 0.15)
@@ -60,7 +60,8 @@ test_that("SMC recovers a 3-D Gaussian-Gaussian posterior", {
 test_that("SMC diagnostic invariants hold", {
   load_cpp_fixture("smc")
   res <- cpp_smc_test(mu_target = c(1, -1), sigma_target = c(1, 1),
-                      n_particles = 500, n_mcmc_steps = 4, seed = 3L)
+                      n_particles = 500, min_moves = 4, max_moves = 4,
+                      seed = 3L)
 
   # Temperatures start at 0, end at exactly 1, and are non-decreasing
   temps <- res$temperatures
@@ -77,16 +78,39 @@ test_that("SMC diagnostic invariants hold", {
   expect_true(all(res$ess_history > 0))
   expect_true(all(res$ess_history <= res$n_particles + 1e-9))
 
-  # Mutation count is N * n_mcmc_steps * n_temperatures
+  # A fixed count (min_moves == max_moves) moves every particle that many
+  # steps per temperature.
+  expect_equal(res$moves_history, rep(4L, res$n_temperatures))
   expect_equal(res$n_mutations, res$n_particles * 4L * res$n_temperatures)
+})
+
+# The move count adapts per temperature (Buchholz, Chopin and Jacob 2021,
+# Algorithm 3): the population is moved until every coordinate's correlation
+# with where the phase started is at most 0.1, within [min_moves, max_moves].
+test_that("the adaptive move count stays in its bounds and decorrelates the start", {
+  load_cpp_fixture("smc")
+  res <- cpp_smc_test(mu_target = c(1, -1, 0.5), sigma_target = c(1, 0.3, 2),
+                      n_particles = 1000, seed = 4L)
+  expect_length(res$moves_history, res$n_temperatures)
+  expect_true(all(res$moves_history >= 1L & res$moves_history <= 50L))
+  expect_equal(res$n_mutations, res$n_particles * sum(res$moves_history))
+  # A random walk at the optimal scale needs several steps per temperature to
+  # forget its start; a rule that stopped at one would not.
+  expect_gt(mean(res$moves_history), 2)
+  capped <- cpp_smc_test(mu_target = c(1, -1, 0.5), sigma_target = c(1, 0.3, 2),
+                         n_particles = 1000, min_moves = 2, max_moves = 3,
+                         seed = 4L)
+  expect_true(all(capped$moves_history %in% 2:3))
+  expect_error(cpp_smc_test(mu_target = 1, sigma_target = 1, min_moves = 3,
+                            max_moves = 2), "1 <= min <= max")
 })
 
 test_that("Different seeds give different particle realisations", {
   load_cpp_fixture("smc")
   a <- cpp_smc_test(mu_target = 1.0, sigma_target = 1.0,
-                    n_particles = 200, n_mcmc_steps = 3, seed = 11L)
+                    n_particles = 200, seed = 11L)
   b <- cpp_smc_test(mu_target = 1.0, sigma_target = 1.0,
-                    n_particles = 200, n_mcmc_steps = 3, seed = 22L)
+                    n_particles = 200, seed = 22L)
   # Means differ at least a little
   expect_false(isTRUE(all.equal(a$means, b$means, tolerance = 1e-6)))
 })
@@ -94,9 +118,9 @@ test_that("Different seeds give different particle realisations", {
 test_that("Identical seeds give identical results (deterministic)", {
   load_cpp_fixture("smc")
   a <- cpp_smc_test(mu_target = c(0, 1), sigma_target = c(1, 1),
-                    n_particles = 200, n_mcmc_steps = 3, seed = 7L)
+                    n_particles = 200, seed = 7L)
   b <- cpp_smc_test(mu_target = c(0, 1), sigma_target = c(1, 1),
-                    n_particles = 200, n_mcmc_steps = 3, seed = 7L)
+                    n_particles = 200, seed = 7L)
   expect_equal(a$means, b$means)
   expect_equal(a$sds,   b$sds)
   expect_equal(a$log_marginal_likelihood, b$log_marginal_likelihood)

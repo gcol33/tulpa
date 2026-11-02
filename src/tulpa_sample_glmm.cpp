@@ -277,7 +277,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
     double alpha = 0.1,
     int mclmc_adjusted = 0,
     int n_particles = 1000,
-    int n_mcmc_steps = 5,
+    int smc_min_moves = NA_INTEGER,
+    int smc_max_moves = NA_INTEGER,
     double ess_threshold = 0.5,
     int vi_variant = 3,
     int vi_mc_samples = 10,
@@ -315,9 +316,10 @@ Rcpp::List cpp_tulpa_sample_glmm(
     //   SGHMC/SGLD/MCLMC: epsilon (0 => kernel default/adaptation), L,
     //       batch_size (0 => full-data gradient), alpha (SGHMC friction),
     //       mclmc_adjusted
-    //   SMC:   n_particles, n_mcmc_steps, ess_threshold, smc_bridge_end (the
-    //       likelihood power the path passes through and records the
-    //       population at; 1 = none)
+    //   SMC:   n_particles, smc_min_moves / smc_max_moves (bounds on the
+    //       adaptive move steps per temperature; NA = the SMCConfig default),
+    //       ess_threshold, smc_bridge_end (the likelihood power the path
+    //       passes through and records the population at; 1 = none)
     //   VI:    vi_variant (0=meanfield,1=lowrank,2=fullrank,3=auto),
     //       vi_mc_samples, vi_max_iter, vi_n_draws, vi_max_grad_norm,
     //       vi_tol_grad / vi_tol_rel_elbo / vi_patience (the stopping rule --
@@ -556,7 +558,9 @@ Rcpp::List cpp_tulpa_sample_glmm(
 
     if (backend == "smc") {
         tulpa::SMCConfig cfg;
-        cfg.n_particles = n_particles; cfg.n_mcmc_steps = n_mcmc_steps;
+        cfg.n_particles = n_particles;
+        if (smc_min_moves != NA_INTEGER) cfg.min_moves = smc_min_moves;
+        if (smc_max_moves != NA_INTEGER) cfg.max_moves = smc_max_moves;
         cfg.ess_threshold = ess_threshold; cfg.prior_sigma = sigma_beta_value;
         cfg.seed = (unsigned int)seed; cfg.verbose = verbose;
         cfg.bridge_end = smc_bridge_end;
@@ -594,6 +598,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
             Rcpp::Named("tempered_draws") = tempered_draws,
             Rcpp::Named("tempered_beta") =
                 res.tempered_particles.empty() ? NA_REAL : res.tempered_beta,
+            Rcpp::Named("n_moves") = Rcpp::wrap(res.moves_history),
             Rcpp::Named("sampler") = "smc");
         return out;
     }

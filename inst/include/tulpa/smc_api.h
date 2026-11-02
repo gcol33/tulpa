@@ -84,8 +84,12 @@ typedef void (*SmcMutationFn)(
 // ----------------------------------------------------------------------------
 // SMC fit signature:
 //   - n_particles   : population size (e.g. 500-2000).
-//   - n_mcmc_steps  : MCMC mutation steps applied per particle per
-//                     temperature change.
+//   - min_moves,
+//     max_moves     : bounds on the move steps applied to the population per
+//                     temperature change; in between, the count is set by
+//                     the population autocorrelation rule of Buchholz,
+//                     Chopin and Jacob (2021, Algorithm 3). min_moves ==
+//                     max_moves is a fixed count.
 //   - ess_threshold : each temperature step is sized so the reweighted ESS
 //                     is threshold * n_particles (e.g. 0.5).
 //   - prior_sigma   : SD of the Gaussian reference q around `init`.
@@ -101,7 +105,8 @@ typedef void (*SmcFitFn)(
     const double* init,
     int n_params,
     int n_particles,
-    int n_mcmc_steps,
+    int min_moves,
+    int max_moves,
     double ess_threshold,
     double prior_sigma,
     SmcMutationFn mutation,

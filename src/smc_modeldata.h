@@ -67,7 +67,10 @@ typedef void (*SmcMutationFn)(
 // ----------------------------------------------------------------------------
 struct SMCConfig {
     int n_particles    = 500;
-    int n_mcmc_steps   = 5;
+    // Bounds on the move steps per tempering step; in between, the count is
+    // set by the population autocorrelation rule (tulpa_smc::MoveDecorrelation).
+    int min_moves      = 1;
+    int max_moves      = 50;
     double ess_threshold = 0.5;   // ESS target for the adaptive temperature
     double prior_sigma   = 1.0;   // SD of the Gaussian reference q
     unsigned int seed    = 42;
@@ -96,6 +99,9 @@ struct SMCDriverResult {
     double log_evidence_se = std::numeric_limits<double>::quiet_NaN();
     bool log_evidence_valid = false;
     std::string log_evidence_declined;
+
+    // Move steps each mutation phase ran (SMCResult::moves_history).
+    std::vector<int> moves_history;
 
     bool success = true;
     std::string error_msg;
@@ -154,12 +160,17 @@ struct SmcPopulationHmc {
     double sum_acc = 0.0;
     bool adapted = false;
     bool verbose = false;
-    // Cache of the last target evaluation: consecutive steps on one particle
-    // start where the previous step ended, so its density and gradient are
-    // not re-evaluated.
-    std::vector<double> last_theta, last_grad;
-    double last_lp = 0.0;
-    double last_beta = -1.0;
+    // Per-particle cache of the last target evaluation, valid within one
+    // mutation phase: a particle's next step starts where its previous step
+    // ended, so its density and gradient are not re-evaluated. adapt() runs
+    // once per phase, after resampling has reordered the particles, and
+    // clears it.
+    struct Cached {
+        std::vector<double> theta, grad;
+        double lp = 0.0;
+        bool valid = false;
+    };
+    std::vector<Cached> cache;
 
     explicit SmcPopulationHmc(int dim)
         : d(dim), full(dim <= kSmcFullCovMaxDim),
@@ -190,7 +201,7 @@ struct SmcPopulationHmc {
         n_prop = 0;
         sum_acc = 0.0;
         adapted = true;
-        last_beta = -1.0;
+        cache.assign(N, Cached());
 
         Eigen::VectorXd mean = Eigen::VectorXd::Zero(d);
         for (int n = 0; n < N; n++)
@@ -228,27 +239,30 @@ struct SmcPopulationHmc {
         }
     }
 
-    // One HMC transition. `target(theta, beta, grad)` returns the tempered log
-    // density and writes its theta-gradient; a non-finite value rejects.
+    // One HMC transition of particle `slot`. `target(theta, beta, grad)`
+    // returns the tempered log density and writes its theta-gradient; a
+    // non-finite value rejects.
     template <class TargetFn>
     void step(std::vector<double>& theta, double beta, std::mt19937& rng,
-              const TargetFn& target) {
+              const TargetFn& target, int slot) {
         std::normal_distribution<double> normal(0.0, 1.0);
         std::uniform_real_distribution<double> unif(0.0, 1.0);
 
+        if (slot >= static_cast<int>(cache.size())) cache.resize(slot + 1);
+        Cached& c = cache[slot];
         std::vector<double> grad0(d);
         double lp0;
-        if (beta == last_beta && theta == last_theta) {
-            lp0 = last_lp;
-            grad0 = last_grad;
+        if (c.valid && theta == c.theta) {
+            lp0 = c.lp;
+            grad0 = c.grad;
         } else {
             lp0 = target(theta, beta, grad0);
+            c.theta = theta;
+            c.lp = lp0;
+            c.grad = grad0;
+            c.valid = true;
         }
         n_prop++;
-        last_theta = theta;
-        last_lp = lp0;
-        last_grad = grad0;
-        last_beta = beta;
         if (!std::isfinite(lp0)) return;
 
         // Jittered step, trajectory length ~1 in whitened units.
@@ -284,9 +298,9 @@ struct SmcPopulationHmc {
         sum_acc += acc;
         if (ok && unif(rng) < acc) {
             theta = prop;
-            last_theta = prop;
-            last_lp = lp;
-            last_grad = grad;
+            c.theta = prop;
+            c.lp = lp;
+            c.grad = grad;
         }
     }
 };

@@ -53,7 +53,7 @@ test_that("SMC and VI return finite full-latent draws on a binomial RE model", {
     fit <- tulpa_sample_glmm(y, rep(1L, N), X, "binomial", backend,
                              re_spec = re_spec,
                              fixed_names = c("(Intercept)", "x"),
-                             control = list(n_particles = 1500L, n_mcmc_steps = 8L,
+                             control = list(n_particles = 1500L,
                                             vi_max_iter = 8000L, n_draws = 2000L,
                                             seed = 5L))
     expect_equal(ncol(fit$draws), ncol(X) + 1L + G, info = backend)

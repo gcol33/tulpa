@@ -207,7 +207,8 @@ extern "C" void tulpa_smc_fit_impl(
     const double* init,
     int n_params,
     int n_particles,
-    int n_mcmc_steps,
+    int min_moves,
+    int max_moves,
     double ess_threshold,
     double prior_sigma,
     tulpa::SmcMutationFn mutation,
@@ -227,7 +228,8 @@ extern "C" void tulpa_smc_fit_impl(
 
     tulpa::SMCConfig cfg;
     cfg.n_particles    = n_particles;
-    cfg.n_mcmc_steps   = n_mcmc_steps;
+    cfg.min_moves      = min_moves;
+    cfg.max_moves      = max_moves;
     cfg.ess_threshold  = ess_threshold;
     cfg.prior_sigma    = prior_sigma;
     cfg.seed           = seed;

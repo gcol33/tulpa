@@ -176,8 +176,12 @@ namespace tulpa {
 // per-observation log-likelihood + IRLS weights the spec-driven Laplace path
 // reads when a spec supplies it, so every package building a LikelihoodSpec
 // rebuilds.
+//
+// 47 -> 48: `SmcFitFn` takes `min_moves, max_moves` in place of
+// `n_mcmc_steps`: the move steps per temperature are set adaptively between
+// the two bounds, so a package calling `tulpa_smc_fit` rebuilds.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 47;
+constexpr int TULPA_ABI_VERSION = 48;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

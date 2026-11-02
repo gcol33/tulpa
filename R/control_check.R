@@ -256,7 +256,8 @@ tulpa_check_control <- function(control, allowed, where) {
                     "epsilon", "L", "adapt_delta", "max_treedepth",
                     "mass_matrix",
                     "n_draws", "alpha", "batch_size", "ess_threshold",
-                    "n_particles", "n_mcmc_steps", "mclmc_adjusted",
+                    "n_particles", "smc_min_moves", "smc_max_moves",
+                    "mclmc_adjusted",
                     # SMC: record the population at the WBIC temperature.
                     "wbic",
                     "vi_variant", "vi_mc_samples", "vi_max_iter",

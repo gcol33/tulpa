@@ -52,6 +52,9 @@ struct SMCResult {
     std::vector<double> ess_history;              // ESS at each step
     int n_resamples;                              // how many times resampling triggered
     int n_mutations;                              // total MCMC mutation steps applied
+    // Move steps each mutation phase ran (one entry per phase: the beta = 0
+    // move of an importance-corrected start, then one per tempering step).
+    std::vector<int> moves_history;
 };
 
 // ============================================================================
@@ -167,6 +170,115 @@ inline double find_next_temperature(
 }
 
 // ============================================================================
+// When to stop moving: the population autocorrelation rule
+// ============================================================================
+//
+// Buchholz, Chopin and Jacob (2021, Bayesian Analysis 16(3), Section 2.1 (b)
+// and Algorithm 3): after each move step, measure for every coordinate j the
+// correlation, across particles, between f(x_i(j)) where the move phase
+// started and f(x_i(j)) now, with f(x) = x + x^2 so that the first two
+// moments are both tracked, and apply the kernel again while it is above
+// kSmcMoveCorrelationThreshold (their 0.1). The population has just been
+// resampled, so each surviving ancestor appears as several identical copies;
+// the moves are what make them distinct, and the rule asks for enough of them
+// that the copies no longer remember their common start.
+//
+// Three choices within that rule, each because the alternative stops early on
+// a hierarchical posterior:
+//   * f reads each coordinate standardized by the population's mean and SD at
+//     the start. x + x^2 is not location-invariant: its slope 1 + 2x vanishes
+//     at x = -1/2, and a coordinate sitting there stops being seen to move.
+//   * The correlation with the start is measured directly. The paper
+//     approximates it by the product of the lag-one correlations, which equals
+//     it when a coordinate decorrelates geometrically. A random-effect scale
+//     moved along the funnel of its non-centered effects does not: its lag-one
+//     correlation drops fast while its correlation with the start lingers, and
+//     the product reads 0.1 when the start correlation is still near 0.4.
+//   * Every coordinate has to pass. The paper continues while at least 10% of
+//     them are above the threshold, which by construction lets a minority
+//     through, and in a hierarchical model the slowest coordinate is one
+//     scale among many latent values.
+// On a gaussian random-intercept model (15 groups, 1000 particles, 20 seeds)
+// the log evidence sat 0.30 nats below quadrature with the paper's product
+// and 10% rule, 0.17 with the product over every coordinate, 0.15 with the
+// direct correlation and the 10% rule, and 0.06 with both changes, its SD then
+// matching the reported Monte Carlo SE.
+const double kSmcMoveCorrelationThreshold = 0.1;
+
+class MoveDecorrelation {
+public:
+    explicit MoveDecorrelation(const std::vector<std::vector<double>>& particles)
+        : N_(static_cast<int>(particles.size())),
+          d_(particles.empty() ? 0 : static_cast<int>(particles[0].size())),
+          mu_(d_, 0.0), sd_(d_, 1.0) {
+        for (int j = 0; j < d_; j++) {
+            double m = 0.0, ss = 0.0;
+            for (int i = 0; i < N_; i++) m += particles[i][j];
+            m /= N_;
+            for (int i = 0; i < N_; i++) {
+                const double r = particles[i][j] - m;
+                ss += r * r;
+            }
+            mu_[j] = m;
+            if (ss > 0.0) sd_[j] = std::sqrt(ss / N_);
+        }
+        start_ = stat(particles);
+    }
+
+    // True once every coordinate's correlation with the start is at or below
+    // the threshold. A coordinate whose statistic carries no spread across the
+    // population, at the start or now, has no defined correlation and counts
+    // as not yet decorrelated.
+    bool decorrelated(const std::vector<std::vector<double>>& particles) const {
+        const std::vector<double> cur = stat(particles);
+        for (int j = 0; j < d_; j++) {
+            if (correlation(start_, cur, j) > kSmcMoveCorrelationThreshold) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+private:
+    int N_, d_;
+    std::vector<double> mu_, sd_;
+    std::vector<double> start_;  // [N * d], particle-major
+
+    std::vector<double> stat(const std::vector<std::vector<double>>& particles) const {
+        std::vector<double> f(static_cast<size_t>(N_) * d_);
+        for (int i = 0; i < N_; i++)
+            for (int j = 0; j < d_; j++) {
+                const double z = (particles[i][j] - mu_[j]) / sd_[j];
+                f[static_cast<size_t>(i) * d_ + j] = z + z * z;
+            }
+        return f;
+    }
+
+    double correlation(const std::vector<double>& a, const std::vector<double>& b,
+                       int j) const {
+        double ma = 0.0, mb = 0.0;
+        for (int i = 0; i < N_; i++) {
+            ma += a[static_cast<size_t>(i) * d_ + j];
+            mb += b[static_cast<size_t>(i) * d_ + j];
+        }
+        ma /= N_;
+        mb /= N_;
+        double saa = 0.0, sbb = 0.0, sab = 0.0;
+        for (int i = 0; i < N_; i++) {
+            const double da = a[static_cast<size_t>(i) * d_ + j] - ma;
+            const double db = b[static_cast<size_t>(i) * d_ + j] - mb;
+            saa += da * da;
+            sbb += db * db;
+            sab += da * db;
+        }
+        if (!(saa > 0.0 && sbb > 0.0)) return 1.0;
+        const double r = sab / std::sqrt(saa * sbb);
+        return std::isfinite(r) ? r : 1.0;
+    }
+};
+
+
+// ============================================================================
 // The two-leg path through a tempered posterior
 // ============================================================================
 //
@@ -208,13 +320,20 @@ inline double prior_path_power(double tau, double b) {
 // path with tau = beta. Callbacks:
 //   legs[k](theta)                   -> h_k(theta), leg k's tempering direction
 //   initial_sample(theta, rng, tau)  -> fill theta with a draw from q
-//   mcmc_mutation(theta, tau, rng)   -> one MCMC step invariant for pi at tau
+//   mcmc_mutation(theta, tau, rng, i) -> one MCMC step invariant for pi at
+//                                       tau on particle i (the index lets a
+//                                       kernel keep per-particle state)
 //   initial_log_weight(theta)        -> optional log(pi_0 / q); empty means
 //                                       the draws already represent pi_0
 //   prepare_mutation(particles, tau) -> optional hook fired once per
 //                                       temperature, after resampling and
 //                                       before the mutations, so a kernel can
 //                                       adapt to the current population
+//
+// Every mutation phase moves the whole population one step at a time, at
+// least min_moves and at most max_moves steps, and stops in between once
+// MoveDecorrelation says the resampled copies have decorrelated from their
+// start (min_moves == max_moves is a fixed count).
 //
 // The two paths a caller composes from these:
 //   * prior path   : q = pi_0 = p(theta), h = log L. Needs exact prior draws.
@@ -234,12 +353,13 @@ inline double prior_path_power(double tau, double b) {
 SMCResult smc_sample(
     const std::vector<std::function<double(const std::vector<double>&)>>& legs,
     const std::function<void(std::vector<double>&, std::mt19937&, double)>& initial_sample,
-    const std::function<void(std::vector<double>&, double, std::mt19937&)>& mcmc_mutation,
+    const std::function<void(std::vector<double>&, double, std::mt19937&, int)>& mcmc_mutation,
     int dim,
-    int n_particles = 1000,
-    double ess_threshold = 0.5,
-    int n_mcmc_steps = 5,
-    unsigned int seed = 42,
+    int n_particles,
+    double ess_threshold,
+    int min_moves,
+    int max_moves,
+    unsigned int seed,
     const std::function<double(const std::vector<double>&)>& initial_log_weight = nullptr,
     const std::function<void(const std::vector<std::vector<double>>&, double)>&
         prepare_mutation = nullptr

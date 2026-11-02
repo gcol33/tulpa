@@ -46,7 +46,7 @@ test_that("the two-leg SMC path records the tempered posterior exactly", {
   st <- c(0.8, 1.2, 0.6)
   b  <- 0.3
   res <- cpp_smc_test(mu_target = mu, sigma_target = st, n_particles = 4000L,
-                      n_mcmc_steps = 8L, seed = 3L, bridge_end = b)
+                      seed = 3L, bridge_end = b)
   tr <- tempered_gauss(mu, st, b)
   expect_equal(as.numeric(res$tempered_means), tr$mean, tolerance = 0.05)
   expect_equal(as.numeric(res$tempered_sds), tr$sd, tolerance = 0.05)
@@ -67,10 +67,9 @@ test_that("the two-leg SMC path records the tempered posterior exactly", {
 test_that("bridge_end = 1 is the one-leg path and records nothing", {
   load_cpp_fixture("smc")
   a <- cpp_smc_test(mu_target = c(0, 1), sigma_target = c(1, 1),
-                    n_particles = 300L, n_mcmc_steps = 3L, seed = 7L)
+                    n_particles = 300L, seed = 7L)
   b <- cpp_smc_test(mu_target = c(0, 1), sigma_target = c(1, 1),
-                    n_particles = 300L, n_mcmc_steps = 3L, seed = 7L,
-                    bridge_end = 1)
+                    n_particles = 300L, seed = 7L, bridge_end = 1)
   expect_identical(a, b)
   expect_length(a$tempered_means, 0L)
   expect_true(is.na(a$tempered_mean_loglik))
@@ -167,7 +166,7 @@ test_that("the tulpa_smc_fit C entry returns the tempered population", {
   direct <- tulpa:::cpp_tulpa_sample_glmm(
     y = y, n_trials = rep(1L, n), X = X, family = "poisson", backend = "smc",
     phi = 1, sigma_beta = 2.5, seed = 4L, n_particles = 300L,
-    n_mcmc_steps = 5L, ess_threshold = 0.5, smc_bridge_end = b)
+    ess_threshold = 0.5, smc_bridge_end = b)
   expect_equal(cabi$tempered_beta, b)
   expect_identical(unname(cabi$tempered_draws), unname(direct$tempered_draws))
   expect_identical(unname(cabi$draws), unname(direct$draws))
