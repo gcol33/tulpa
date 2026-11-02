@@ -38,12 +38,12 @@
   ref_grad <- -as.numeric(P_aug %*% x)
   expect_lt(max(abs(r$grad - ref_grad)), 1e-8)
 
-  # (3) log_prior closed form: -0.5 x' (Sigma^-1 (x) Q_aug) x + Sigma normalizer.
-  # Q_aug is full rank n per field, so the normalizer takes the full
-  # n log|Sigma^-1| (not (n - 1)) and the constant is -0.5 p n log(2 pi).
+  # (3) log_prior closed form: the normalized Gaussian density at precision
+  # Sigma^-1 (x) Q_aug, which is full rank p n, so its normalizer is
+  # 0.5 log|P_aug| = 0.5 n log|Sigma^-1| + 0.5 p log|Q_aug|.
   quad_aug <- as.numeric(t(x) %*% P_aug %*% x)
-  ld_sinv  <- -r$log_det_Sigma
-  ref_lp   <- -0.5 * quad_aug + 0.5 * n * ld_sinv - 0.5 * p * n * log(2 * pi)
+  ref_lp   <- -0.5 * quad_aug +
+    0.5 * as.numeric(determinant(P_aug)$modulus) - 0.5 * p * n * log(2 * pi)
   expect_lt(abs(r$log_prior - ref_lp), 1e-7)
 
   invisible(r)

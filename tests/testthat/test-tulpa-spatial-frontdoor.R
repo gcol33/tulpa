@@ -241,7 +241,8 @@ test_that("a non-binomial RSR field is fit by nested Laplace through A = S P", {
                  n_spatial_units = s$n_units,
                  adj_row_ptr = as.integer(csr$row_ptr),
                  adj_col_idx = as.integer(csr$col_idx),
-                 n_neighbors = as.integer(csr$n_neighbors)))
+                 n_neighbors = as.integer(csr$n_neighbors)),
+    beta_prior = tulpa:::.tulpa_default_beta_prior())
   expect_equal(via$log_marginal, direct$log_marginal, tolerance = 1e-8)
   expect_equal(unname(coef(via)), unname(coef(direct)), tolerance = 1e-8)
   # The conditional Laplace path reads the underlying icar field and would fit
@@ -316,7 +317,8 @@ test_that("the nested spatial route is numerically identical to a direct call", 
   direct <- tulpa_nested_laplace(
     y = s$data$y, n_trials = s$data$ntrials,
     X = model.matrix(y ~ x, s$data),
-    prior = prior, family = "binomial"
+    prior = prior, family = "binomial",
+    beta_prior = tulpa:::.tulpa_default_beta_prior()
   )
   expect_equal(via$theta_grid,   direct$theta_grid)
   expect_equal(via$log_marginal, direct$log_marginal)

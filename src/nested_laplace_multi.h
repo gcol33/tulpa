@@ -185,7 +185,8 @@ inline Rcpp::List run_single_arm_block_joint(
     const SubspaceDebiasOptions* debias, const CilaOptions* cila,
     int screen_iters, bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> offset,
-    const ScreenOffset& screen_log_offset
+    const ScreenOffset& screen_log_offset,
+    const BetaPrior* beta_prior = nullptr
 ) {
     std::vector<ParsedArm> parsed;
     std::vector<JointArm> arms;
@@ -201,6 +202,7 @@ inline Rcpp::List run_single_arm_block_joint(
         arms[0].spec          = ext_spec;
         arms[0].response_data = ext_response;
     }
+    if (beta_prior) apply_beta_prior(parsed[0], *beta_prior);
 
     Rcpp::List out = run_multi_block_nested_laplace_joint(
         n_grid, arms, parsed, blocks, /*n_x_after_re=*/p + n_re_groups,
@@ -286,7 +288,9 @@ inline Rcpp::List run_multi_block_nested_laplace(
     const std::vector<double>& offset = std::vector<double>(),
     // Per-cell log hyperprior + log cell measure the cheap screen ranks with
     // (run_nested_laplace_grid); empty ranks on the log-marginal alone.
-    const ScreenOffset& screen_log_offset = ScreenOffset()
+    const ScreenOffset& screen_log_offset = ScreenOffset(),
+    // The fixed-effect prior; nullptr is the kernel default (DEFAULT_SIGMA_BETA).
+    const BetaPrior* beta_prior = nullptr
 ) {
     int n_x = p + n_re_groups;
     for (const auto& b : blocks) {
@@ -307,9 +311,9 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // `phi` / `y` / `n_trials` are unused here and the likelihood -- including any
     // per-observation scaling, e.g. the marginalized occupancy state -- lives
     // wholly in the model's spec. Built once; read-only inside the (possibly
-    // parallel) grid. sigma_beta = 100 makes the spec's beta ridge tau_beta =
-    // 1e-4, identical to the nested kernel's DEFAULT_TAU_BETA; the spec also
-    // folds the beta-prior log-density into the log-marginal.
+    // parallel) grid. sigma_beta = DEFAULT_SIGMA_BETA is the kernel's default
+    // prior, which a caller's `beta_prior` replaces per coefficient; the spec
+    // also folds the beta-prior log-density into the log-marginal.
     // n_re_groups > 0 with an re_idx of the wrong length is a caller error, not
     // a configuration: silently dropping the block would fit a model with no
     // random effect and still return a log-marginal for it, and the per-row
@@ -335,7 +339,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
             x_init, store_Q, /*force_sparse=*/true, n_threads_outer,
             prune_tol, ext_spec, ext_response, progress, ckpt, compute_skew,
             skew_probe_idx, debias, cila, screen_iters, compute_fitted_var,
-            arm_offset, screen_log_offset);
+            arm_offset, screen_log_offset, beta_prior);
     }
 
     ProcessData proc;
@@ -502,7 +506,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
             data, layout, &blocks, k, *spec_ptr, resp_ptr, re_group_1based,
             max_iter_use, tol, n_inner, base_params,
             scratch, solver, store_Q, /*inv_block_layout=*/nullptr,
-            /*beta_prior=*/nullptr, /*sparse_override=*/0,
+            beta_prior, /*sparse_override=*/0,
             allow_probe && compute_skew, skew_probe_idx,
             allow_probe ? debias : nullptr,
             allow_probe ? cila : nullptr,

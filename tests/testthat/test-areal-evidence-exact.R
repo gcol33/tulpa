@@ -3,8 +3,11 @@
 # augmented one, precision tau * (Q + 1 1' / J), whose normalizer carries the
 # graph's generalized determinant |Q|_+ (matrix-tree: J * det of any principal
 # (J - 1)-minor); BYM2's structured component carries the same at unit
-# precision. With a fixed effect prior N(0, 100^2 I) the evidence is the
-# density of y under N(0, phi I + X S_b X' + Z C Z'), C the field covariance.
+# precision. With the kernels' default fixed-effect prior N(0, s^2 I)
+# (DEFAULT_SIGMA_BETA), the evidence is the density of y under
+# N(0, phi I + s^2 X X' + Z C Z'), C the field covariance.
+
+.ae_sb <- tulpa:::cpp_test_default_sigma_beta()
 
 .ae_graph <- function() {
   K <- 30L
@@ -24,7 +27,8 @@
 }
 
 .ae_exact <- function(fx, C) {
-  S <- diag(fx$n) + fx$X %*% diag(100^2, 2) %*% t(fx$X) + fx$Z %*% C %*% t(fx$Z)
+  S <- diag(fx$n) + fx$X %*% diag(.ae_sb^2, 2) %*% t(fx$X) +
+    fx$Z %*% C %*% t(fx$Z)
   -0.5 * (fx$n * log(2 * pi) + as.numeric(determinant(S)$modulus) +
             sum(fx$y * solve(S, fx$y)))
 }
@@ -39,7 +43,10 @@
          n_neighbors = fx$csr$n_neighbors), list(...))
 }
 
-.ae_lap_pinv <- function(A) MASS::ginv(diag(rowSums(A)) - A)
+# The field covariance at unit precision: the inverse of the augmented
+# precision Q + 1 1' / J, i.e. Q^+ + 1 1' / J -- the level carries its own unit
+# variance and the intercept's prior is not touched by the field.
+.ae_lap_pinv <- function(A) solve(diag(rowSums(A)) - A + 1 / nrow(A))
 
 test_that("the ICAR normalizer carries the graph's generalized determinant", {
   # Path, cycle and a disconnected pair: |Q|_+ = J * (spanning trees) per
@@ -92,7 +99,7 @@ test_that("the multi-block driver's areal log marginal is the exact evidence", {
   f <- tulpa_nested_laplace(fx$y, rep(1L, fx$n), fx$X,
     prior = list(.ae_block(fx, type = "icar", tau_grid = 2), iid),
     family = "gaussian", phi = 1, hyperprior = "flat", control = .ae_ctl)
-  S <- diag(fx$n) + fx$X %*% diag(100^2, 2) %*% t(fx$X) +
+  S <- diag(fx$n) + fx$X %*% diag(.ae_sb^2, 2) %*% t(fx$X) +
     fx$Z %*% (Qp / 2) %*% t(fx$Z) + 0.49 * Zr %*% t(Zr)
   ex <- -0.5 * (fx$n * log(2 * pi) + as.numeric(determinant(S)$modulus) +
                   sum(fx$y * solve(S, fx$y)))
@@ -103,7 +110,7 @@ test_that("the multi-block driver's areal log marginal is the exact evidence", {
                            sigma_grid = 0.8, rho_grid = 0.5), iid),
     family = "gaussian", phi = 1, hyperprior = "flat", control = .ae_ctl)
   C <- 0.64 * (0.5 * sf^2 * Qp + 0.5 * diag(fx$K))
-  S <- diag(fx$n) + fx$X %*% diag(100^2, 2) %*% t(fx$X) +
+  S <- diag(fx$n) + fx$X %*% diag(.ae_sb^2, 2) %*% t(fx$X) +
     fx$Z %*% C %*% t(fx$Z) + 0.49 * Zr %*% t(Zr)
   ex <- -0.5 * (fx$n * log(2 * pi) + as.numeric(determinant(S)$modulus) +
                   sum(fx$y * solve(S, fx$y)))
@@ -126,7 +133,8 @@ test_that("field_effects() on a nested ICAR / BYM2 fit is the exact posterior", 
   skip_on_cran()
   # One outer cell, Gaussian response: the per-unit field's posterior is the
   # Gaussian conditional of the field given y with the ICAR level constrained
-  # to zero (the intercept carries it). x = (beta, phi[, theta]).
+  # to zero (the intercept carries it). x = (beta, phi[, theta]); tulpa()
+  # solves under its own fixed-effect default.
   fx <- .ae_fixture(5)
   Lap <- diag(rowSums(fx$A)) - fx$A
   K <- fx$K; p <- 2L
@@ -147,7 +155,8 @@ test_that("field_effects() on a nested ICAR / BYM2 fit is the exact posterior", 
              spatial = list(type = "icar", adjacency = fx$A, tau_grid = 3),
              mode = "nested_laplace", control = .ae_ctl)
   fe <- field_effects(f)
-  Pprior <- as.matrix(Matrix::bdiag(diag(1e-4, p), 3 * (Lap + 1 / K)))
+  tau_b <- 1 / tulpa:::.tulpa_prior_sd()^2
+  Pprior <- as.matrix(Matrix::bdiag(diag(tau_b, p), 3 * (Lap + 1 / K)))
   I_K <- diag(K)
   ex <- post_field(Pprior, list(eta = cbind(I_K), field = rbind(matrix(0, p, K), I_K)), p)
   expect_identical(unique(fe$source), "mixture")
@@ -161,11 +170,14 @@ test_that("field_effects() on a nested ICAR / BYM2 fit is the exact posterior", 
               mode = "nested_laplace", control = .ae_ctl)
   fe2 <- field_effects(f2)
   a <- 0.9 * sqrt(0.6) * sf; b <- 0.9 * sqrt(0.4)
-  Pprior <- as.matrix(Matrix::bdiag(diag(1e-4, p), Lap + 1 / K, I_K))
+  Pprior <- as.matrix(Matrix::bdiag(diag(tau_b, p), Lap + 1 / K, I_K))
   load <- list(eta = cbind(a * I_K, b * I_K),
                field = rbind(matrix(0, p, K), a * I_K, b * I_K))
   ex2 <- post_field(Pprior, load, p)
   expect_identical(unique(fe2$source), "mixture")
-  expect_equal(fe2$estimate, ex2$mean, tolerance = 1e-6)
+  # The engine moves the structured level into the intercept by centring the
+  # augmented mode, which differs from conditioning it on the constraint by the
+  # level's prior variance against the intercept's, here ~1e-6.
+  expect_equal(fe2$estimate, ex2$mean, tolerance = 1e-5)
   expect_equal(fe2$sd, ex2$sd, tolerance = 1e-6)
 })

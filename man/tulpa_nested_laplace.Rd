@@ -22,6 +22,7 @@ tulpa_nested_laplace(
   offset = NULL,
   likelihood = NULL,
   hyperprior = c("proper", "flat"),
+  beta_prior = NULL,
   control = list()
 )
 }
@@ -146,6 +147,13 @@ states -- a \verb{prior_*} argument, a block's \code{rho_prior}, \code{prior_ran
 applies under either choice. The same two choices, under the same names,
 are offered by \code{\link[=tulpa]{tulpa()}}, \code{\link[=tulpa_eb]{tulpa_eb()}}, \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} and
 \code{\link[=fit_spde]{fit_spde()}}.}
+
+\item{beta_prior}{Optional Gaussian prior on the fixed effects,
+\code{list(mean = , sd = )} (or \code{\link[=prior_normal]{prior_normal()}}), each scalar or of length
+\code{ncol(X)}; \code{sd = Inf} leaves a coefficient unpenalized. Every grid cell
+is solved under it. \code{NULL} (default) keeps the kernels' weak built-in
+prior \code{N(0, 100^2)}, as in \code{\link[=tulpa_laplace]{tulpa_laplace()}}; \code{\link[=tulpa]{tulpa()}} always states its
+own default, \code{N(0, 2.5^2)}, here as on every other backend.}
 
 \item{control}{Optional list of perf/numerical tuning knobs (statistical
 arguments stay top-level), following the \code{control} convention of

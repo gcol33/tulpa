@@ -77,6 +77,9 @@ struct NlEntryInputs {
     // grid's cell order (see run_nested_laplace_grid); NULL ranks on the
     // kernel's log-marginal alone.
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue;
+    // The fixed-effect prior (`list(mean =, sd =)` at the entry); empty is the
+    // kernel default, DEFAULT_SIGMA_BETA.
+    BetaPrior beta_prior;
 
     int N() const { return static_cast<int>(y.size()); }
     ScreenOffset screen_offset() const {
@@ -138,7 +141,7 @@ inline Rcpp::List nl_run_multi_block_entry(
         run.debias_req.ptr, run.cila_req.ptr,
         in.screen_iters, in.compute_fitted_var,
         tulpa::as_offset_vec(in.offset, in.N()),
-        in.screen_offset()
+        in.screen_offset(), &in.beta_prior
     );
     nl_attach_axes(out, out_axes);
     return out;
@@ -153,7 +156,7 @@ Rcpp::List nl_run_joint_sparse_entry(
     std::uint64_t struct_seed,
     const std::vector<Rcpp::NumericVector>& ckpt_axes,
     std::vector<JointArm>& arms,
-    const std::vector<ParsedArm>& parsed,
+    std::vector<ParsedArm>& parsed,
     const std::vector<LatentBlock>& blocks,
     int n_x,
     const NlAxisOut& out_axes
@@ -190,7 +193,9 @@ Rcpp::List nl_run_joint_sparse_entry(
         nl_in_.prune_tol          = prune_tol;                             \
         nl_in_.screen_iters       = screen_iters;                          \
         nl_in_.compute_fitted_var = compute_fitted_var;                    \
-        nl_in_.offset             = offset_nullable;                               nl_in_.screen_log_offset  = screen_log_offset;                     \
+        nl_in_.offset             = offset_nullable;                       \
+        nl_in_.screen_log_offset  = screen_log_offset;                     \
+        nl_in_.beta_prior = tulpa::read_beta_prior(beta_prior, X.ncol());  \
         return nl_in_;                                                     \
     }())
 

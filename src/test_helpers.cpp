@@ -28,6 +28,8 @@
 #include "gpu_nngp_laplace.h"
 #include "laplace_spatial_priors.h"
 #include "mem_budget.h"
+#include "intrinsic_log_pdet.h"
+#include "laplace_re_priors.h"
 #include "hmc_sampler.h"           // require_spatial_partition
 
 using namespace Rcpp;
@@ -2391,4 +2393,18 @@ Rcpp::List cpp_test_tgmrf_block_pattern(Rcpp::List bs) {
   }
   return Rcpp::List::create(Rcpp::Named("row") = row,
                             Rcpp::Named("col") = col);
+}
+
+
+// The compiled default fixed-effect prior SD, which R's `.TULPA_PRIOR$beta_sd`
+// states for every front door.
+// [[Rcpp::export]]
+double cpp_test_default_sigma_beta() {
+  return tulpa::DEFAULT_SIGMA_BETA;
+}
+
+// One random walk's generalized log-determinant, as the RW field densities add.
+// [[Rcpp::export]]
+double cpp_test_rw_log_pdet(int n_times, int order, bool cyclic) {
+  return tulpa::rw_log_pdet(n_times, order, cyclic);
 }

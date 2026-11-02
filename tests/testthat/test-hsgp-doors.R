@@ -87,7 +87,9 @@ test_that("an HSGP field + (1 | g) through tulpa() equals a direct multi-block c
     y = dat$y, n_trials = rep(1L, n), X = stats::model.matrix(~ x, dat),
     family = "poisson",
     prior = list(tulpa:::.spatial_spec_to_nl_prior(
-                   tulpa:::validate_hsgp(sp, dat)), re_blk)))
+                   tulpa:::validate_hsgp(sp, dat)), re_blk),
+    # tulpa() states its fixed-effect default to the nested driver.
+    beta_prior = tulpa:::.tulpa_default_beta_prior()))
   expect_equal(via$backend, "nested_laplace")
   expect_equal(via$log_marginal, direct$log_marginal, tolerance = 1e-8)
   expect_equal(unname(coef(via)), unname(coef(direct)), tolerance = 1e-8)

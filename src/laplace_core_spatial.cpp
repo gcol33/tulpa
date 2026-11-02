@@ -74,7 +74,7 @@ Rcpp::List cpp_laplace_fit_spatial(
     tulpa::SpecFamilyInputs in;
     tulpa::build_spec_family_inputs(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
-        /*sigma_beta=*/100.0, /*n_block_latent=*/n_spatial_units,
+        /*sigma_beta=*/tulpa::DEFAULT_SIGMA_BETA, /*n_block_latent=*/n_spatial_units,
         weights.empty() ? nullptr : weights.data(),
         offset.empty() ? nullptr : offset.data());
 
@@ -184,7 +184,7 @@ Rcpp::List cpp_laplace_fit_bym2(
     tulpa::SpecFamilyInputs in;
     tulpa::build_spec_family_inputs(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
-        /*sigma_beta=*/100.0, /*n_block_latent=*/2 * n_spatial_units,
+        /*sigma_beta=*/tulpa::DEFAULT_SIGMA_BETA, /*n_block_latent=*/2 * n_spatial_units,
         weights.empty() ? nullptr : weights.data(),
         offset.empty() ? nullptr : offset.data());
 

@@ -397,6 +397,12 @@
 #'   likelihood (a scaled Bernoulli, with the latent occupancy state integrated
 #'   out) through this. Multi-block `prior` only. Default `NULL` (use `family`).
 #' @template hyperprior
+#' @param beta_prior Optional Gaussian prior on the fixed effects,
+#'   `list(mean = , sd = )` (or [prior_normal()]), each scalar or of length
+#'   `ncol(X)`; `sd = Inf` leaves a coefficient unpenalized. Every grid cell
+#'   is solved under it. `NULL` (default) keeps the kernels' weak built-in
+#'   prior `N(0, 100^2)`, as in [tulpa_laplace()]; [tulpa()] always states its
+#'   own default, `N(0, 2.5^2)`, here as on every other backend.
 #'
 #' @references
 #' Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
@@ -425,6 +431,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             family = "binomial", phi = 1.0, offset = NULL,
                             likelihood = NULL,
                             hyperprior = c("proper", "flat"),
+                            beta_prior = NULL,
                             control = list()) {
 
   tulpa_check_control(control, .CONTROL_KEYS$nested_laplace, "tulpa_nested_laplace")
@@ -599,6 +606,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     prune_tol = prune_tol_eff,
     screen_iters = screen_iters,
     compute_fitted_var = fitted_var,
+    # The fixed-effect prior every kernel solves under: the caller's, or (NULL)
+    # the kernels' own weak default.
+    beta_prior = .normalize_beta_prior(beta_prior, ncol(X)),
     # Read by the dispatchers, which fold the outer hyperprior in R; never
     # handed to a kernel.
     hyperprior = hyperprior
@@ -1384,7 +1394,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       temporal_type = "rw2",
       tau_grid      = as.numeric(p$tau_grid),
       rho_grid      = numeric(0),
-      cyclic        = FALSE,
+      cyclic        = isTRUE(p$cyclic),
       n_groups      = as.integer(p$n_groups %||% 1L)
     ),
     theta = function(p) list(grid = as.numeric(p$tau_grid), names = "tau")
@@ -2659,7 +2669,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     offset_nullable   = cargs$offset_nullable,
     screen_log_offset = if (prune_tol > 0)
                           .nl_screen_log_offset(joint_grid, hp_parts,
-                                                screen = cargs$screen_refine)
+                                                screen = cargs$screen_refine),
+    beta_prior        = cargs$beta_prior
   )
   if (!is.null(grid_warn_remedy)) {
     .nl_multi_grid_warn(proc.time()[["elapsed"]] - grid_solve_start,

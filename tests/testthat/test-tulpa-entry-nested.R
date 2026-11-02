@@ -129,7 +129,8 @@ test_that("the formula route is numerically identical to a direct call", {
   direct <- tulpa_nested_laplace(
     y = d$y, n_trials = rep(1L, 60L),
     X = model.matrix(y ~ x, d),
-    prior = blk, family = "poisson"
+    prior = blk, family = "poisson",
+    beta_prior = tulpa:::.tulpa_default_beta_prior()
   )
 
   expect_equal(via_formula$theta_grid,   direct$theta_grid)
@@ -157,7 +158,8 @@ test_that("a single random-intercept term threads through the nested path", {
   direct <- tulpa_nested_laplace(
     y = d$y, n_trials = rep(1L, n), X = model.matrix(y ~ 1, d),
     prior = blk, re_idx = as.integer(g), n_re_groups = nlevels(g),
-    sigma_re = 0.4, family = "poisson"
+    sigma_re = 0.4, family = "poisson",
+    beta_prior = tulpa:::.tulpa_default_beta_prior()
   )
   expect_equal(fit$log_marginal, direct$log_marginal)
 })
@@ -188,7 +190,8 @@ test_that("more than one random-intercept term alongside a block each become the
                       n_units = nlevels(g), sigma_grid = 0.4),
                  list(type = "iid", obs_idx = as.integer(g2),
                       n_units = nlevels(g2), sigma_grid = 0.4)),
-    family = "poisson"
+    family = "poisson",
+    beta_prior = tulpa:::.tulpa_default_beta_prior()
   )
   expect_equal(fit$log_marginal, direct$log_marginal)
 })

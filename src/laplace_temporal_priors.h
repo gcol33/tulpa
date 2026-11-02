@@ -129,6 +129,10 @@ void add_ar1_pattern(
 // tridiagonal (RW1) / pentadiagonal (RW2) and the block keeps the ADJACENCY
 // fill kind it declares; the solver folds the rank-1 in exactly.
 //
+// The log-densities are normalized: `log_pdet` is one walk's generalized
+// log-determinant (rw_log_pdet(), intrinsic_log_pdet.h), carried once per
+// group, and the pinned global constant contributes its unit eigenvalue.
+//
 // AR1 is proper (full rank), needs no pin, and keeps the per-group helpers.
 void add_rw1_field(
     DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
@@ -147,7 +151,8 @@ void add_rw1_field_pattern(
 
 double log_prior_rw1_field(
     const Rcpp::NumericVector& x,
-    int start, int n_groups, int n_times, double tau, bool cyclic
+    int start, int n_groups, int n_times, double tau, bool cyclic,
+    double log_pdet
 );
 
 void add_rw2_field(
@@ -167,7 +172,8 @@ void add_rw2_field_pattern(
 
 double log_prior_rw2_field(
     const Rcpp::NumericVector& x,
-    int start, int n_groups, int n_times, double tau, bool cyclic
+    int start, int n_groups, int n_times, double tau, bool cyclic,
+    double log_pdet
 );
 
 } // namespace tulpa

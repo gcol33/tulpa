@@ -12,12 +12,13 @@ Rcpp::List nl_run_joint_sparse_entry(
     std::uint64_t struct_seed,
     const std::vector<Rcpp::NumericVector>& ckpt_axes,
     std::vector<JointArm>& arms,
-    const std::vector<ParsedArm>& parsed,
+    std::vector<ParsedArm>& parsed,
     const std::vector<LatentBlock>& blocks,
     int n_x,
     const NlAxisOut& out_axes
 ) {
     NlEntryRun run(in, struct_seed, ckpt_axes);
+    for (auto& pa : parsed) apply_beta_prior(pa, in.beta_prior);
     Rcpp::List out = run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, arms, parsed, blocks, n_x,
         in.max_iter, in.tol, in.n_threads,

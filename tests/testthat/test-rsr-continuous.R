@@ -206,8 +206,10 @@ test_that("a non-binomial restricted NNGP field is fit by nested Laplace through
   P <- tulpa:::.rsr_unit_projection(X, blk$spatial_idx, blk$n_spatial)
   blk$projector <- P[blk$spatial_idx, , drop = FALSE]
   blk$spatial_idx <- NULL
+  # tulpa() states its fixed-effect default to the nested driver.
   direct <- tulpa_nested_laplace(y = d$count, n_trials = rep(1L, nrow(d)),
-                                 X = X, family = "poisson", prior = blk)
+                                 X = X, family = "poisson", prior = blk,
+                                 beta_prior = tulpa:::.tulpa_default_beta_prior())
   expect_equal(via$log_marginal, direct$log_marginal, tolerance = 1e-8)
   expect_equal(unname(coef(via)), unname(coef(direct)), tolerance = 1e-8)
 })

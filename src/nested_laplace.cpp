@@ -222,7 +222,8 @@ Rcpp::List cpp_nested_laplace_icar(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -282,7 +283,8 @@ Rcpp::List cpp_nested_laplace_bym2(
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> node_prec = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> node_prec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -338,7 +340,8 @@ Rcpp::List cpp_nested_laplace_car_proper(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -480,7 +483,8 @@ Rcpp::List cpp_nested_laplace_nngp(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma2_grid", sigma2_grid, {{"phi_gp_grid", &phi_gp_grid}});
@@ -567,7 +571,8 @@ Rcpp::List cpp_nested_laplace_hsgp(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma2_grid", sigma2_grid, {{"lengthscale_grid", &lengthscale_grid}});
@@ -838,7 +843,7 @@ inline Rcpp::List run_st_spatial_entry(
         in.compute_skew, run.skew_idx_ptr,
         run.debias_req.ptr, run.cila_req.ptr,
         in.screen_iters, in.compute_fitted_var, in.offset,
-        in.screen_offset());
+        in.screen_offset(), &in.beta_prior);
     tulpa::nl_attach_axes(out, out_axes);
     nl_attach_temporal_grids(out, temporal_type, tau_temporal_grid, rho_t);
     return out;
@@ -894,7 +899,8 @@ Rcpp::List cpp_nested_laplace_temporal(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     tulpa::nl_grid_axes_positive({{"tau_grid", &tau_grid}});
     int n_grid = tau_grid.size();
@@ -951,7 +957,8 @@ Rcpp::List cpp_nested_laplace_st_icar(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -1014,7 +1021,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -1082,7 +1090,8 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> node_prec = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> node_prec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -1150,7 +1159,8 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma2_spatial_grid", sigma2_spatial_grid,
@@ -1234,7 +1244,8 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma2_spatial_grid", sigma2_spatial_grid,

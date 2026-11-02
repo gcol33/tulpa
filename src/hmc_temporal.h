@@ -142,11 +142,11 @@ inline double ar1_one_minus_rho2_slope(double rho) {
 // `rank` non-null eigenvalues: 0.5 * rank * (log tau - log 2pi). Taken on the
 // log-precision, which is the coordinate every sampler carries.
 //
-// The pseudo-determinant 0.5 * log|Q0|_+ is deliberately NOT included. It is
-// constant in the hyperparameters, so every quantity within one model is on a
-// common scale and the Laplace and sampler tiers agree; it differs between RW1
-// and RW2 and between cyclic and acyclic, so a marginal likelihood from this
-// normalizer is NOT comparable across temporal structures.
+// The pseudo-determinant 0.5 * log|Q0|_+ is not included here. It is constant
+// in the hyperparameters, so no sampler or gradient reads it; the nested-Laplace
+// field densities that report a log marginal likelihood add it on top
+// (log_prior_rw1_field / log_prior_rw2_field, intrinsic_log_pdet.h), which is
+// what makes their evidence comparable across temporal structures.
 template <typename T>
 inline T gmrf_log_norm(int rank, const T& log_tau) {
   return T(0.5 * rank) * (log_tau - T(kLogTwoPi));

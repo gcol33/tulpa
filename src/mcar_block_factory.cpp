@@ -3,6 +3,7 @@
 
 #include <RcppEigen.h>
 #include "mcar_block_factory.h"
+#include "laplace_spatial_priors.h"     // icar_log_pdet
 
 namespace tulpa {
 
@@ -154,13 +155,14 @@ LatentBlock make_mcar_block(
     };
 
     // log p(u | Sigma): -0.5 u'Pu - 0.5 sum_a sum_c lambda_c (sum_{i in c} u_a)^2
-    //   + 0.5 (n-L) log|Sigma^-1|  - 0.5 p (n-L) log(2 pi).
-    // The constant p logpdet(Q) term (Sigma-independent) is dropped, mirroring
-    // log_prior_icar; the Sigma-dependent (n-L) log|Sigma^-1| is exact (P =
-    // Sigma^-1 (x) Q has rank p(n-L) when Q has L components: logpdet(P) =
-    // (n-L) log|Sigma^-1| + p logpdet(Q)).
+    //   + 0.5 n log|Sigma^-1| + 0.5 p log|Q_aug| - 0.5 p n log(2 pi),
+    // the augmented P_aug = Sigma^-1 (x) Q_aug having |P_aug| =
+    // |Sigma^-1|^n |Q_aug|^p. log|Q_aug| is the graph's generalized
+    // determinant (icar_log_pdet), the same constant a plain ICAR field carries.
+    const double log_pdet_Q = tulpa::icar_log_pdet(n, adj_rp, adj_ci, nnbr,
+                                                   partition);
     block.log_prior = [start, n, p, axis0, theta_grid,
-                       adj_rp, adj_ci, nnbr, partition](
+                       adj_rp, adj_ci, nnbr, partition, log_pdet_Q](
         const Rcpp::NumericVector& x, int k_grid
     ) -> double {
         std::vector<double> Sinv; double log_det_Sigma;
@@ -196,10 +198,9 @@ LatentBlock make_mcar_block(
         const double log_det_Sinv = -log_det_Sigma;
         // P_aug = Sigma^-1 (x) Q_aug is full rank p*n (Q_aug fills all L per-field
         // constant directions), so the Sigma-dependent normalizer takes the full
-        // n log|Sigma^-1| per field (not (n - L)); the constant p log|Q_aug| is
-        // dropped as before.
+        // n log|Sigma^-1| per field (not (n - L)).
         return -0.5 * quad - 0.5 * aug
-               + 0.5 * n * log_det_Sinv
+               + 0.5 * n * log_det_Sinv + 0.5 * p * log_pdet_Q
                - 0.5 * p * n * std::log(2.0 * M_PI);
     };
 

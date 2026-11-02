@@ -272,14 +272,16 @@ void add_rw1_field_pattern(
 
 double log_prior_rw1_field(
     const NumericVector& x,
-    int start, int n_groups, int n_times, double tau, bool cyclic
+    int start, int n_groups, int n_times, double tau, bool cyclic,
+    double log_pdet
 ) {
     double lp = 0.0;
     for_each_temporal_group(start, n_groups, n_times, [&](int s) {
         lp += log_prior_rw1(x, s, n_times, tau, cyclic);
     });
     return lp + s2z_pin_log_norm(tau)
-         - 0.5 * s2z_pin_quad(x, start, n_groups * n_times, tau);
+         - 0.5 * s2z_pin_quad(x, start, n_groups * n_times, tau)
+         + 0.5 * n_groups * log_pdet;
 }
 
 void add_rw2_field(
@@ -318,14 +320,16 @@ void add_rw2_field_pattern(
 // log_prior_rw2 already carries the per-group rank that reflects it.
 double log_prior_rw2_field(
     const NumericVector& x,
-    int start, int n_groups, int n_times, double tau, bool cyclic
+    int start, int n_groups, int n_times, double tau, bool cyclic,
+    double log_pdet
 ) {
     double lp = 0.0;
     for_each_temporal_group(start, n_groups, n_times, [&](int s) {
         lp += log_prior_rw2(x, s, n_times, tau, cyclic);
     });
     return lp + s2z_pin_log_norm(tau)
-         - 0.5 * s2z_pin_quad(x, start, n_groups * n_times, tau);
+         - 0.5 * s2z_pin_quad(x, start, n_groups * n_times, tau)
+         + 0.5 * n_groups * log_pdet;
 }
 
 } // namespace tulpa

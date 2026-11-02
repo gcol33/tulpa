@@ -192,7 +192,7 @@ public:
         data_.processes.push_back(proc);
         if (has_zi) data_.processes.push_back(proc_zi);
         data_.N                   = N;
-        data_.sigma_beta          = 100.0;   // default ridge (tau = 1e-4); overridden by bp
+        data_.sigma_beta          = DEFAULT_SIGMA_BETA;   // overridden by bp
         data_.likelihood_spec     = &spec_;
         data_.model_response_data = &resp_;
         data_.sharing.init(data_.n_processes);

@@ -45,6 +45,15 @@ struct ParsedArm {
     Rcpp::NumericVector offset;
 };
 
+// A fixed-effect prior written onto an arm in the per-coefficient form the
+// joint drivers read (`beta_prior_mean` / `beta_prior_prec`). An empty prior
+// leaves the arm on the default.
+inline void apply_beta_prior(ParsedArm& pa, const BetaPrior& bp) {
+    if (bp.tau.empty()) return;
+    pa.beta_prior_mean = Rcpp::NumericVector(bp.mean.begin(), bp.mean.end());
+    pa.beta_prior_prec = Rcpp::NumericVector(bp.tau.begin(), bp.tau.end());
+}
+
 // Parse the R-side arms_list into ParsedArm + JointArm vectors and assign
 // (beta_start, re_start) offsets. Returns the running latent dimension
 // after all per-arm blocks; the caller appends the spatial block(s).

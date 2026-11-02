@@ -840,12 +840,6 @@
            "s(...) smoother, spatial(col) field, or temporal field. For a ",
            "plain GLMM use mode = 'laplace' / 'mala' / 'auto'.", call. = FALSE)
     }
-    if (!is.null(beta_prior)) {
-      stop("`beta_prior` is not threaded through tulpa()'s nested-Laplace path. ",
-           "Rather than silently drop it, this errors: call ",
-           "tulpa_nested_laplace() directly if you need a fixed-effect prior on ",
-           "this path.", call. = FALSE)
-    }
     # Each random-effect term becomes an `iid` latent block, so its SD is
     # integrated on the outer grid alongside the other blocks' hyperparameters
     # rather than conditioned at a scalar. The driver's native
@@ -915,6 +909,7 @@
       phi         = phi,
       offset      = bundle$offset,
       hyperprior  = hyperprior,
+      beta_prior  = beta_prior %||% beta_prior_default,
       # Forward only the keys the inner fitter reads: front-door-only knobs
       # (grid shape, backend selection) were consumed above and would trip
       # tulpa_nested_laplace()'s own whitelist.
@@ -1724,9 +1719,10 @@
 #'   effects. `NULL` takes the engine default, `prior_normal(0, 2.5)`, on every
 #'   backend that carries a fixed-effect prior -- the prior is a modelling
 #'   statement, so the backend `mode = "auto"` selects does not change it. The
-#'   nested-Laplace and SPDE paths hold their own field-conditional prior and
-#'   reject a supplied `beta_prior`. The resolved prior is reported on the fit
-#'   as `$beta_prior`.
+#'   nested-Laplace path solves every outer cell under it; the SPDE and the
+#'   conditional spatial-Laplace paths hold their own weak fixed-effect prior
+#'   and refuse a supplied `beta_prior`. The resolved prior is reported on the fit as
+#'   `$beta_prior`.
 #' @param re_prior Optional `list()` of random-effect / variance-component
 #'   hyperpriors (statistical, so they live in the signature rather than in
 #'   `control`). Recognised entries, each consumed by the backend that needs it:

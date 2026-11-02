@@ -1,7 +1,8 @@
 // laplace_spatial_priors.cpp
 // Spatial prior gradient/Hessian and log-prior helpers for Laplace engines.
 
-#include <RcppEigen.h>                   // Eigen::SimplicialLLT (icar_log_pdet)
+#include <RcppEigen.h>
+#include "intrinsic_log_pdet.h"
 #include "laplace_spatial_priors.h"
 #include "sparse_hessian.h"
 #include "icar_kernel.h"                  // for_each_icar_component
@@ -221,38 +222,26 @@ double icar_log_pdet(
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
     const IntegerVector& n_neighbors, const GraphPartition& partition
 ) {
-    typedef Eigen::SparseMatrix<double> SpMat;
+    // One graph Laplacian per connected component, null space its constant.
     double out = 0.0;
     std::vector<int> pos(n_spatial_units, -1);
-    std::vector<Eigen::Triplet<double>> trip;
     for_each_icar_component(0, partition,
         [&](int /*start*/, const int* idx, int csize) {
             if (csize <= 1) return;
-            // Delete the component's first node; the others index the minor.
-            for (int a = 1; a < csize; a++) pos[idx ? idx[a] : a] = a - 1;
-            trip.clear();
-            for (int a = 1; a < csize; a++) {
+            for (int a = 0; a < csize; a++) pos[idx ? idx[a] : a] = a;
+            std::vector<Eigen::Triplet<double>> trip;
+            for (int a = 0; a < csize; a++) {
                 const int s = idx ? idx[a] : a;
-                const int r = pos[s];
-                trip.emplace_back(r, r, static_cast<double>(n_neighbors[s]));
+                trip.emplace_back(a, a, static_cast<double>(n_neighbors[s]));
                 for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
                     const int c = pos[adj_col_idx[k]];
-                    if (c >= 0) trip.emplace_back(r, c, -1.0);
+                    if (c >= 0) trip.emplace_back(a, c, -1.0);
                 }
             }
-            SpMat M(csize - 1, csize - 1);
-            M.setFromTriplets(trip.begin(), trip.end());
-            Eigen::SimplicialLLT<SpMat> llt(M);
-            if (llt.info() != Eigen::Success) {
-                Rcpp::stop("icar_log_pdet: the reduced graph Laplacian of a "
-                           "connected component is not positive definite.");
-            }
-            const SpMat& L = llt.matrixL();
-            double ld = 0.0;
-            for (int j = 0; j < L.outerSize(); j++)
-                ld += std::log(L.coeff(j, j));
-            out += 2.0 * ld + std::log(static_cast<double>(csize));
-            for (int a = 1; a < csize; a++) pos[idx ? idx[a] : a] = -1;
+            Eigen::SparseMatrix<double> Qc(csize, csize);
+            Qc.setFromTriplets(trip.begin(), trip.end());
+            out += intrinsic_log_pdet(Qc, Eigen::MatrixXd::Ones(csize, 1));
+            for (int a = 0; a < csize; a++) pos[idx ? idx[a] : a] = -1;
         });
     return out;
 }

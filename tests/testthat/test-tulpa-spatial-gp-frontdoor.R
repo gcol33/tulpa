@@ -253,7 +253,8 @@ test_that("the NNGP front-door route is numerically identical to a direct call",
   prior  <- tulpa:::.spatial_spec_to_nl_prior(vspec)
   direct <- tulpa_nested_laplace(
     s$data$y, s$data$ntrials, model.matrix(y ~ x, s$data),
-    prior = prior, family = "binomial"
+    prior = prior, family = "binomial",
+    beta_prior = tulpa:::.tulpa_default_beta_prior()
   )
   expect_equal(via$theta_grid,   direct$theta_grid)
   expect_equal(via$log_marginal, direct$log_marginal)
@@ -324,7 +325,8 @@ test_that("the HSGP front-door route is numerically identical to a direct call",
   prior  <- tulpa:::.spatial_spec_to_nl_prior(vspec)
   direct <- tulpa_nested_laplace(
     s$data$y, s$data$ntrials, model.matrix(y ~ x, s$data),
-    prior = prior, family = "binomial"
+    prior = prior, family = "binomial",
+    beta_prior = tulpa:::.tulpa_default_beta_prior()
   )
   expect_equal(via$theta_grid,   direct$theta_grid)
   expect_equal(via$log_marginal, direct$log_marginal)

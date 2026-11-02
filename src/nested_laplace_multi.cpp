@@ -553,7 +553,8 @@ Rcpp::List cpp_nested_laplace_multi(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
 ) {
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
@@ -662,6 +663,7 @@ Rcpp::List cpp_nested_laplace_multi(
     const std::vector<int>* skew_idx_ptr =
         tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
+    const tulpa::BetaPrior bp = tulpa::read_beta_prior(beta_prior, p);
     Rcpp::List out = tulpa::run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
         blocks,
@@ -677,7 +679,8 @@ Rcpp::List cpp_nested_laplace_multi(
         tulpa::CilaRequest(cila).ptr,
         tulpa::CHEAP_SCREEN_ITERS, /*compute_fitted_var=*/true,
         tulpa::as_offset_vec(offset_nullable, N),
-        tulpa::read_screen_offset(screen_log_offset)
+        tulpa::read_screen_offset(screen_log_offset),
+        &bp
     );
     out["theta_grid"]     = theta_grid;
     out["axis_offsets"]   = axis_offsets;

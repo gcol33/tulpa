@@ -268,7 +268,8 @@ test_that("a continuous field shares the nested stack with a temporal field, a s
     family = "poisson",
     prior = list(tulpa:::.spatial_spec_to_nl_prior(sp),
                  tulpa:::.temporal_spec_to_nl_prior(tm)),
-    control = ctl))
+    control = ctl,
+    beta_prior = tulpa:::.tulpa_default_beta_prior()))
   expect_equal(fit_t$backend, "nested_laplace")
   expect_equal(fit_t$log_marginal, direct$log_marginal, tolerance = 1e-8)
   expect_equal(unname(coef(fit_t)), unname(coef(direct)), tolerance = 1e-8)
@@ -301,7 +302,8 @@ test_that("a continuous field shares the nested stack with a temporal field, a s
     family = "poisson",
     prior = list(tulpa:::.spatial_spec_to_nl_prior(sh),
                  tulpa:::.temporal_spec_to_nl_prior(tm)),
-    control = ctl))
+    control = ctl,
+    beta_prior = tulpa:::.tulpa_default_beta_prior()))
   expect_equal(fit_h$backend, "nested_laplace")
   expect_equal(fit_h$log_marginal, direct_h$log_marginal, tolerance = 1e-8)
   expect_equal(unname(coef(fit_h)), unname(coef(direct_h)), tolerance = 1e-8)

@@ -143,15 +143,18 @@ test_that("a constant offset shifts the intercept on every nested driver", {
                                     control = ctl),
                "offset")
 
-  # The joint driver (HSGP), reached through the front door.
+  # The joint driver (HSGP), reached through the front door, under the same
+  # weak fixed-effect prior the direct calls above take: a proper prior on the
+  # intercept moves with the fold itself.
   dd <- data.frame(y = y, x = x, lon = site / S, lat = (site %% 3) / 3,
                    c0 = 0, c1 = 0.7)
+  weak <- list(mean = 0, sd = 100)
   g0 <- tulpa(y ~ x + offset(c0), data = dd, family = "poisson",
               spatial = spatial_gp(coords = ~ lon + lat, approx = "hsgp"),
-              mode = "nested_laplace")
+              mode = "nested_laplace", beta_prior = weak)
   g1 <- tulpa(y ~ x + offset(c1), data = dd, family = "poisson",
               spatial = spatial_gp(coords = ~ lon + lat, approx = "hsgp"),
-              mode = "nested_laplace")
+              mode = "nested_laplace", beta_prior = weak)
   expect_equal(coef(g1)[[1L]] - coef(g0)[[1L]], -0.7, tolerance = 1e-3)
   expect_equal(g1$fitted_eta, g0$fitted_eta, tolerance = 1e-5)
 })

@@ -24,6 +24,7 @@
 #ifndef TULPA_FIELD_BLOCK_PRIORS_H
 #define TULPA_FIELD_BLOCK_PRIORS_H
 
+#include "intrinsic_log_pdet.h"   // rw_log_pdet
 #include "latent_block.h"
 #include "laplace_spatial_priors.h"
 #include "laplace_temporal_priors.h"
@@ -116,12 +117,14 @@ inline void set_temporal_block_priors(
             if (rw2) add_rw2_field_pattern(out, start, n_groups, n_times, cyclic);
             else     add_rw1_field_pattern(out, start, n_groups, n_times, cyclic);
         };
-        block.log_prior = [start, n_groups, n_times, tau_at, cyclic, rw2](
+        const double log_pdet = rw_log_pdet(n_times, rw2 ? 2 : 1, cyclic);
+        block.log_prior = [start, n_groups, n_times, tau_at, cyclic, rw2,
+                           log_pdet](
             const Rcpp::NumericVector& x, int k) -> double {
             return rw2 ? log_prior_rw2_field(x, start, n_groups, n_times,
-                                             tau_at(k), cyclic)
+                                             tau_at(k), cyclic, log_pdet)
                        : log_prior_rw1_field(x, start, n_groups, n_times,
-                                             tau_at(k), cyclic);
+                                             tau_at(k), cyclic, log_pdet);
         };
     } else if (type == "ar1") {
         block.add_prior = [start, n_groups, n_times, tau_at, rho_at](

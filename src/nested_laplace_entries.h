@@ -45,7 +45,8 @@ Rcpp::List cpp_nested_laplace_icar(
     int screen_iters,
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
-);
+,
+    Rcpp::Nullable<Rcpp::List> beta_prior);
 
 Rcpp::List cpp_nested_laplace_bym2(
     Rcpp::NumericVector y,
@@ -80,7 +81,8 @@ Rcpp::List cpp_nested_laplace_bym2(
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset,
     Rcpp::Nullable<Rcpp::NumericVector> node_prec
-);
+,
+    Rcpp::Nullable<Rcpp::List> beta_prior);
 
 Rcpp::List cpp_nested_laplace_car_proper(
     Rcpp::NumericVector y,
@@ -113,7 +115,8 @@ Rcpp::List cpp_nested_laplace_car_proper(
     int screen_iters,
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
-);
+,
+    Rcpp::Nullable<Rcpp::List> beta_prior);
 
 Rcpp::List cpp_nested_laplace_temporal(
     Rcpp::NumericVector y,
@@ -146,7 +149,8 @@ Rcpp::List cpp_nested_laplace_temporal(
     int screen_iters,
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
-);
+,
+    Rcpp::Nullable<Rcpp::List> beta_prior);
 
 Rcpp::List cpp_nested_laplace_nngp(
     Rcpp::NumericVector y,
@@ -182,7 +186,8 @@ Rcpp::List cpp_nested_laplace_nngp(
     int screen_iters,
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
-);
+,
+    Rcpp::Nullable<Rcpp::List> beta_prior);
 
 Rcpp::List cpp_nested_laplace_hsgp(
     Rcpp::NumericVector y,
@@ -212,7 +217,8 @@ Rcpp::List cpp_nested_laplace_hsgp(
     int screen_iters,
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
-);
+,
+    Rcpp::Nullable<Rcpp::List> beta_prior);
 
 Rcpp::List cpp_nested_laplace_st_icar(
     Rcpp::NumericVector y,
@@ -251,7 +257,8 @@ Rcpp::List cpp_nested_laplace_st_icar(
     int screen_iters,
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
-);
+,
+    Rcpp::Nullable<Rcpp::List> beta_prior);
 
 Rcpp::List cpp_nested_laplace_st_car_proper(
     Rcpp::NumericVector y,
@@ -291,7 +298,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     int screen_iters,
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
-);
+,
+    Rcpp::Nullable<Rcpp::List> beta_prior);
 
 Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::NumericVector y,
@@ -333,7 +341,8 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset,
     Rcpp::Nullable<Rcpp::NumericVector> node_prec
-);
+,
+    Rcpp::Nullable<Rcpp::List> beta_prior);
 
 Rcpp::List cpp_nested_laplace_st_hsgp(
     Rcpp::NumericVector y,
@@ -369,7 +378,8 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     int screen_iters,
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
-);
+,
+    Rcpp::Nullable<Rcpp::List> beta_prior);
 
 Rcpp::List cpp_nested_laplace_st_nngp(
     Rcpp::NumericVector y,
@@ -411,7 +421,8 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     int screen_iters,
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
-);
+,
+    Rcpp::Nullable<Rcpp::List> beta_prior);
 
 Rcpp::List cpp_nested_laplace_spde(
     Rcpp::NumericVector y,
@@ -451,6 +462,7 @@ Rcpp::List cpp_nested_laplace_spde(
     int screen_iters,
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
-);
+,
+    Rcpp::Nullable<Rcpp::List> beta_prior);
 
 #endif // TULPA_NESTED_LAPLACE_ENTRIES_H

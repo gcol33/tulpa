@@ -98,10 +98,8 @@ test_that("tulpa() routes (1 | g) + an SPDE field to the nested driver", {
   expect_identical(fit$backend, "nested_laplace")
   expect_lt(abs(coef(fit)[["x"]] - 0.8), 0.25)
 
-  # beta_prior stays unsupported on either SPDE route.
-  expect_error(
-    tulpa(y ~ x + (1 | g), data = df, family = "poisson", spatial = sp,
-          beta_prior = list(mean = 0, sd = 5)),
-    "beta_prior"
-  )
+  # The nested driver solves every cell under a supplied fixed-effect prior.
+  fb <- tulpa(y ~ x + (1 | g), data = df, family = "poisson", spatial = sp,
+              beta_prior = list(mean = 0, sd = 5))
+  expect_identical(fb$beta_prior$sd, 5)
 })
