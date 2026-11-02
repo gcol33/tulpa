@@ -1822,6 +1822,43 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
   X
 }
 
+# The fixed-effect design at `newdata` for a fit made from a design matrix
+# rather than a formula (fit_spde(), tulpa_nested_laplace(), ...). The design's
+# columns are named, and those names are what the coefficients are matched by,
+# so `newdata` supplies each column under its name; an `(Intercept)` column is
+# the constant 1. A design with unnamed columns, a column `newdata` does not
+# carry, or a fit with an offset (which no column of `newdata` states) is
+# refused, naming what is missing.
+#' @keywords internal
+.tulpa_design_by_columns <- function(object, newdata, accessor) {
+  X0 <- object$model_matrix
+  nm <- colnames(X0)
+  if (!is.matrix(X0) || is.null(nm) || any(!nzchar(nm))) {
+    .accessor_unavailable(accessor, object, paste0(
+      "a model formula, and its design matrix has unnamed columns, so ",
+      "`newdata` cannot be matched to it; name the columns of X (e.g. ",
+      "model.matrix(~ x, data)) or fit through tulpa()"))
+  }
+  off <- object$offset
+  if (length(off) && any(off != 0)) {
+    .accessor_unavailable(accessor, object, paste0(
+      "a model formula, and its offset was passed as a vector, which has no ",
+      "value at `newdata`; fit through tulpa() with an offset() term"))
+  }
+  newdata <- as.data.frame(newdata)
+  miss <- setdiff(nm[nm != "(Intercept)"], names(newdata))
+  if (length(miss)) {
+    stop(accessor, "(): the fit was made from a design matrix, so `newdata` ",
+         "supplies its columns by name; missing: ",
+         paste(miss, collapse = ", "), call. = FALSE)
+  }
+  n <- nrow(newdata)
+  X <- vapply(nm, function(v) {
+    if (identical(v, "(Intercept)")) rep(1, n) else as.numeric(newdata[[v]])
+  }, numeric(n))
+  matrix(X, nrow = n, dimnames = list(NULL, nm))
+}
+
 # Stop an observation-level accessor on a fit that does not carry what the
 # accessor reads, naming the fit's class and the missing piece.
 #' @keywords internal
@@ -1863,8 +1900,8 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
                 offset = object$offset %||% arm$offset %||% 0))
   }
   if (is.null(object$formula)) {
-    .accessor_unavailable(accessor, object,
-                          "the model formula that rebuilds the design at `newdata`")
+    return(list(X = .tulpa_design_by_columns(object, newdata, accessor),
+                X_zi = NULL, offset = 0))
   }
   X <- .tulpa_fixed_design(object, newdata)
   X_zi <- if (!is.null(object$ziformula)) {
