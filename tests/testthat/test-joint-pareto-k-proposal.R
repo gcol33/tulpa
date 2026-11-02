@@ -382,13 +382,11 @@ test_that("the grid-mixture proposal beats the single Gaussian on a skewed grid"
     expect_lt(mx$pareto_k, 0.7)              # ... into the usable band
     expect_gt(mx$is_ess, g$is_ess)           # ... with a better effective sample
 
-    # The mixture beats the single Gaussian above, but the dispatcher ADOPTS it
-    # only when the single Gaussian is unreliable (the grid-width-deficiency test
-    # below covers that adoption). Post-#221 the outer target carries no spurious
-    # log-axis volume element, so this within-grid skew leaves the grid-moment k
-    # in the good band and the #121 skip keeps it -- the reported k stays usable.
+    # The dispatcher scores the mixture whatever the grid-moment k reads, and
+    # adopts it here because the grid covers the posterior and the mixture
+    # improves on the grid-moment Gaussian.
     set.seed(1); kd <- tulpa:::.joint_pareto_k(res, refit, 600L, NULL)
-    expect_identical(kd$proposal_source, "grid_moment")
+    expect_identical(kd$proposal_source, "grid_mixture")
     expect_lt(kd$pareto_k, 0.7)
 })
 
@@ -578,4 +576,69 @@ test_that("diagnose_k = 'by_arm' adds per-arm k and leaves the joint k unchanged
     expect_named(fit_arm$pareto_k_by_arm, c("occ", "pos"))
     expect_true(all(is.finite(fit_arm$pareto_k_by_arm)))
     expect_match(fit_arm$pareto_k_by_arm_scope, "per-arm")
+})
+
+# A binary + Gaussian arm sharing a 25-unit chain ICAR field on a 7-node sigma
+# grid. Its grid-moment k-hat sits near 0.5 and the grid mixture's near -1.5, so
+# a proposal choice that reads the grid-moment k against a cut flips between the
+# two with the RNG state.
+.pk_chain_fixture <- function() {
+    set.seed(20260619)
+    S  <- 25L
+    nb <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+    nn <- lengths(nb)
+    field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4))))
+    mk_arm <- function(m, fam) {
+        si  <- sample(S, m, replace = TRUE); x <- rnorm(m)
+        lin <- 0.2 + 0.5 * x + 0.8 * field[si]
+        y   <- if (fam == "binomial") rbinom(m, 1L, plogis(lin)) else lin + rnorm(m, 0, 0.5)
+        list(y = as.numeric(y), n_trials = rep(1L, m), X = cbind(1, x),
+             spatial_idx = si, family = fam,
+             phi = if (fam == "gaussian") 0.5^2 else 1)
+    }
+    list(responses = list(occ = mk_arm(200L, "binomial"), pos = mk_arm(200L, "gaussian")),
+         prior = list(type = "icar", n_spatial_units = S,
+                      adj_row_ptr = c(0L, cumsum(nn)), adj_col_idx = unlist(nb) - 1L,
+                      n_neighbors = nn, sigma_grid = seq(0.2, 1.6, length.out = 7)))
+}
+
+test_that("the outer k-hat reads one proposal across seed-only redraws", {
+    skip_on_cran()
+    fx <- .pk_chain_fixture()
+    r <- t(vapply(1:12, function(s) {
+        set.seed(s)
+        f <- tulpa_nested_laplace_joint(responses = fx$responses, prior = fx$prior,
+                                        control = list(k_samples = 400L, progress = FALSE))
+        c(k = f$pareto_k, lo = f$pareto_k_ci_low, hi = f$pareto_k_ci_high,
+          src = match(f$pareto_k_proposal_source,
+                      c("grid_moment", "moment_matched", "grid_mixture", "skew_normal")))
+    }, numeric(4)))
+    expect_true(all(r[, "src"] == 3))
+    # Every redraw's bootstrap interval covers the redraws' median: the
+    # reported k-hat is one estimand, not a choice between two.
+    med <- stats::median(r[, "k"])
+    expect_gte(mean(r[, "lo"] <= med & med <= r[, "hi"]), 10 / 12)
+    expect_lt(diff(range(r[, "k"])), 1)
+})
+
+test_that("the grid mixture scores no draw outside its coverage hull", {
+    skip_on_cran()
+    sig <- c(0.2, 0.9, 1.6)
+    tg  <- matrix(sig, ncol = 1L, dimnames = list(NULL, "sigma"))
+    # A log-scale target with a PC-type exponential tail toward sigma = 0:
+    # past the outermost bump the ratio against the Gaussian bumps is unbounded.
+    target <- function(u) u - 1.5 * exp(u) - 0.5 * ((u - 0.2) / 0.5)^2
+    w   <- exp(target(log(sig))); w <- w / sum(w)
+    res <- list(theta_grid = tg, weights = w, prior = list(type = "icar"))
+    seen <- new.env(); seen$u <- numeric(0)
+    refit <- function(tm) { u <- log(tm[, "sigma"]); seen$u <- c(seen$u, u); target(u) }
+    prep <- tulpa:::.joint_pareto_prepare(res, refit, 4000L, NULL)
+    spec <- tulpa:::.joint_cand_spec(prep, tulpa:::.joint_pareto_vary_axes(prep$Su), refit)
+    seen$u <- numeric(0)
+    set.seed(3); mx <- tulpa:::.k_score_mixture(spec, 4000L)
+    expect_false(is.null(mx))
+    expect_true(all(seen$u >= mx$hull_lo - 1e-12 & seen$u <= mx$hull_hi + 1e-12))
+    expect_equal(mx$hull_lo, min(log(sig)) - tulpa:::.K_DIAG_HULL_PAD * mx$s)
+    expect_equal(mx$hull_hi, max(log(sig)) + tulpa:::.K_DIAG_HULL_PAD * mx$s)
+    expect_lt(length(mx$lr), 4000L)
 })

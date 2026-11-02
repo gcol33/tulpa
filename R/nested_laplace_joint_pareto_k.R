@@ -44,10 +44,10 @@
 # (the number itself lives in `.NL_DIAG`, R/settings.R -- read at use time,
 # since a top-level value here would evaluate before that file is collated).
 
-# Internal proposal-loop threshold for the grid-mixture skip: a
-# single-Gaussian k-hat below this is already good, so the mixture rescue (which
-# can only LOWER an inflated k) is skipped. A fixed loop control, distinct from
-# the reported sample-size-dependent bands (`.ps_conf_bands` in R/psis.R).
+# Internal proposal-loop threshold for the skew-normal rescue: a chosen
+# proposal whose k-hat is at or below this is already good, so the rescue is
+# not run. A fixed loop control, distinct from the reported sample-size-dependent
+# bands (`.ps_conf_bands` in R/psis.R).
 .K_DIAG_GOOD <- 0.5
 
 # Grid-mixture (basin) proposal for the outer Pareto-k on a spread tensor grid

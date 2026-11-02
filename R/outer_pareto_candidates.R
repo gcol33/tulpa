@@ -31,10 +31,12 @@
 #                     the node spread
 #   names             axis labels for the reported `outer_skew`
 #
-# The four candidates, cheapest first, each gated on the previous one still
-# missing the good band: the grid-moment Gaussian, that Gaussian after
-# moment-matching refinement, the grid mixture, the skew-normal rescue. The
-# minimum is kept, so adding a candidate can never make a fit read worse.
+# The four candidates, cheapest first: the grid-moment Gaussian, that Gaussian
+# after moment-matching refinement (run while it misses the usable band), the
+# grid mixture (scored on every spread grid-moment grid), the skew-normal rescue
+# (run while the choice misses the good band and the target is measurably
+# skewed). The minimum is kept, so adding a candidate can never make a fit read
+# worse.
 
 # Build the candidate contract. `Su` is coerced to a matrix so a one-axis spec
 # behaves like any other, and `u_grid` to a matrix with the same column count,
@@ -258,6 +260,24 @@
     U_v  <- cu[comp, , drop = FALSE] +
             sweep(matrix(stats::rnorm(n_mix * p), n_mix, p), 2L, s, `*`)
 
+    # The mixture's coverage hull: the kept-cell node range widened by
+    # `.K_DIAG_HULL_PAD` bump SDs per axis. The k-hat scores the mixture over
+    # the region the grid represents, as the Gaussian scorer's radius cap does
+    # for its own draws; target mass past the hull is what the dispatcher's
+    # coverage check (`.k_hull_weight()`) and the edge-mass diagnostics read.
+    # The draws outside are not scored. Past the outermost bump the proposal
+    # falls off as a Gaussian, while a scale axis's target falls off only
+    # exponentially in its log coordinate toward zero (a PC prior has a finite
+    # density there), so the ratio is unbounded beyond the hull and a single
+    # draw there (0.13% of an edge bump's draws) sets the whole tail fit.
+    hull_lo <- apply(cu, 2L, min) - .K_DIAG_HULL_PAD * s
+    hull_hi <- apply(cu, 2L, max) + .K_DIAG_HULL_PAD * s
+    inside  <- rowSums(sweep(U_v, 2L, hull_lo, `<`) |
+                       sweep(U_v, 2L, hull_hi, `>`)) == 0
+    U_v   <- U_v[inside, , drop = FALSE]
+    n_mix <- nrow(U_v)
+    if (n_mix < .PSIS_MIN_EVAL) return(NULL)
+
     # log q(u) up to the per-component-common diagonal normalizer (the SAME `s`
     # for every component, so it cancels under PSIS): logsumexp over components of
     # log w_k - 0.5 sum_j ((u_j - u_kj) / s_j)^2.
@@ -276,7 +296,7 @@
     ps <- tulpa_psis(lr[fin], tail_points = tail_points)
     if (!is.finite(ps$pareto_k)) return(NULL)
     list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, refined = FALSE,
-         lr = lr[fin], s = s, lo = apply(cu, 2L, min), hi = apply(cu, 2L, max))
+         lr = lr[fin], s = s, hull_lo = hull_lo, hull_hi = hull_hi)
 }
 
 # Fraction of the single-Gaussian importance weight that falls OUTSIDE the
@@ -448,26 +468,25 @@
     gm_k   <- if (is.list(gm)) gm$pareto_k %||% NA_real_ else NA_real_
     gm_out <- if (is.list(gm)) list(best = gm, source = "grid_moment") else g_out
 
-    # The skip is judged on the GRID-MOMENT k (what the engine samples), not the
-    # moment-matching-widened single Gaussian: when the
-    # grid-moment proposal is already good the verdict cannot improve, so skip the
-    # mixture's `diagnose_draws`-draw evaluation. The rescue still runs for any
-    # grid-moment k in the ok / unreliable band.
-    if (is.finite(gm_k) && gm_k < .K_DIAG_GOOD) return(g_out)
-
+    # The mixture is scored whatever the grid-moment k reads. A skip below a
+    # fixed cut on that k would make the reported proposal a function of the
+    # draw: a grid-moment k whose sampling spread straddles the cut adopts the
+    # mixture on some RNG states and keeps the Gaussian on others, the two
+    # proposals can read k-hats several units apart, and the bootstrap of
+    # either one's ratios, being conditional on its proposal, cannot cover the
+    # other. The mixture's draws stay near the grid cells, so its inner solves
+    # are the cheap ones of the diagnostic.
     mix <- .k_score_mixture(spec, n_samples, tail_points = tail_points)
     if (is.null(mix)) return(gm_out)
     if (is.null(g))   return(list(best = mix, source = "grid_mixture"))
 
-    # The mixture's coverage hull: the kept-cell node range expanded by a few bump
-    # SDs. The check reads the first-pass GRID-MOMENT draws (`gm_U`), whose spread
-    # is the posterior's, so the decision does not depend on how moment matching
-    # happened to widen the single Gaussian on a given seed.
+    # The check reads the first-pass GRID-MOMENT draws (`gm_U`), whose spread
+    # is the posterior's, against the mixture's coverage hull, so the decision
+    # does not depend on how moment matching happened to widen the single
+    # Gaussian on a given seed.
     gm_U  <- g$gm_U %||% g$U
     gm_lw <- g$gm_lw %||% g$log_weights
-    out_frac <- .k_hull_weight(
-        gm_U, gm_lw,
-        mix$lo - .K_DIAG_HULL_PAD * mix$s, mix$hi + .K_DIAG_HULL_PAD * mix$s)
+    out_frac <- .k_hull_weight(gm_U, gm_lw, mix$hull_lo, mix$hull_hi)
     covered  <- is.finite(out_frac) && out_frac <= .K_DIAG_HULL_TOL
 
     # Compare the mixture to the GRID-MOMENT single Gaussian (`gm_k`), not the
