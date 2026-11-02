@@ -383,7 +383,7 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
   # Extract CSC components for C++ interface
   A_csc <- as(fem$A, "CsparseMatrix")
   G1_csc <- as(fem$G, "CsparseMatrix")
-  C0_diag <- Matrix::diag(fem$C)
+  C0_diag <- .spde_lumped_mass(fem$C)
 
   structure(
     list(
@@ -414,7 +414,10 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
 #' Specify a continuous Matern spatial field using externally-provided FEM
 #' matrices. Use this with meshes from fmesher, rSPDE, or any other source.
 #'
-#' @param C Mass matrix (n_mesh x n_mesh sparse matrix, e.g. from `fmesher::fm_fem()$c0`).
+#' @param C Mass matrix (n_mesh x n_mesh sparse matrix), either the lumped
+#'   diagonal one (e.g. `fmesher::fm_fem()$c0`) or the consistent one
+#'   (e.g. `tulpaMesh::fem_matrices()$C`). The precision uses the lumped mass,
+#'   which is the row sum of either.
 #' @param G Stiffness matrix (n_mesh x n_mesh sparse matrix, e.g. from `fmesher::fm_fem()$g1`).
 #' @param A Projection matrix (n_obs x n_mesh sparse matrix, e.g. from `fmesher::fm_basis()`).
 #' @param nu Matern smoothness parameter. A positive number; integer values
@@ -469,7 +472,7 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
 
   A_csc <- as(A, "CsparseMatrix")
   G1_csc <- as(G, "CsparseMatrix")
-  C0_diag <- Matrix::diag(C)
+  C0_diag <- .spde_lumped_mass(C)
 
   structure(
     list(
@@ -489,6 +492,19 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
     ),
     class = c("tulpa_spatial", "list")
   )
+}
+
+# The lumped mass C-tilde of the FEM construction (Lindgren, Rue & Lindstrom
+# 2011): C-tilde_ii = <psi_i, 1>, the integral of
+# basis function i, which is the ROW SUM of the consistent mass matrix
+# C_ij = <psi_i, psi_j> because the piecewise-linear basis is a partition of
+# unity. The diagonal of the consistent matrix is not that quantity: on a
+# triangle it carries area/6 per vertex against the lumped area/3, so reading
+# it halves the mass and stretches the field's correlation length by sqrt(2).
+# A mass matrix that is already lumped (fmesher's `c0`) is diagonal and its row
+# sum is its diagonal, so both inputs reach the same C-tilde.
+.spde_lumped_mass <- function(C) {
+  as.numeric(Matrix::rowSums(C))
 }
 
 # A stated SPDE anchor pair is checked where the user set it, so a range or

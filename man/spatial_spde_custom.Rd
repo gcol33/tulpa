@@ -15,7 +15,10 @@ spatial_spde_custom(
 )
 }
 \arguments{
-\item{C}{Mass matrix (n_mesh x n_mesh sparse matrix, e.g. from \code{fmesher::fm_fem()$c0}).}
+\item{C}{Mass matrix (n_mesh x n_mesh sparse matrix), either the lumped
+diagonal one (e.g. \code{fmesher::fm_fem()$c0}) or the consistent one
+(e.g. \code{tulpaMesh::fem_matrices()$C}). The precision uses the lumped mass,
+which is the row sum of either.}
 
 \item{G}{Stiffness matrix (n_mesh x n_mesh sparse matrix, e.g. from \code{fmesher::fm_fem()$g1}).}
 

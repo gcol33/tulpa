@@ -54,9 +54,11 @@ test_that("the variance normalization reports a Q it could not factor", {
   expect_false(ok$singular)
   expect_true(is.finite(ok$value) && ok$value > 0)
 
-  # The mode search's box corner, 100x the initial range: declined, and the
-  # CHOLMOD warning is consumed here rather than reaching the caller.
-  bad <- expect_no_warning(at(275.625))
+  # Far outside the integrated range (the mode search's box reaches 100x the
+  # initial range): rcond(Q) is ~1e-18 there and CHOLMOD declines the factor at
+  # range 100 on this mesh. Declined, and the CHOLMOD warning is consumed here
+  # rather than reaching the caller.
+  bad <- expect_no_warning(at(100))
   expect_true(bad$singular)
 })
 
@@ -79,7 +81,7 @@ test_that("a coordinate with no field scale takes the -Inf zero-weight path", {
   # weight it, by a stated decision rather than by CHOLMOD's own recovery.
   gone <- expect_no_warning(
     do.call(tulpa:::.spde_nested_logmarginal_at,
-            c(args, list(range = 275.625, sigma = 0.03))))
+            c(args, list(range = 100, sigma = 0.03))))
   expect_identical(gone$log_marginal, -Inf)
   expect_identical(gone$n_iter, 0L)
   expect_false(gone$converged)
