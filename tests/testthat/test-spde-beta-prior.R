@@ -81,7 +81,7 @@ test_that("a supplied beta_prior is the prior of the single-point SPDE solve", {
     expect_equal(fit$log_marginal, ex$log_marginal, tolerance = 1e-6)
 
     # NULL is the engine default, N(0, 2.5^2) on every coefficient.
-    sb <- tulpa:::cpp_test_default_sigma_beta()
+    sb <- default_sigma_beta()
     f0 <- fit_spde(fx$y, fx$X, sp, family = "gaussian", phi = fx$phi,
                    range = 0.25, sigma = 0.7, nested_laplace = FALSE,
                    control = list(tol = 1e-10))

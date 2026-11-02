@@ -156,7 +156,7 @@ test_that("the precomputed gaussian solve reaches the exact conjugate mode in on
     Aeff_x = Prg@x, Aeff_i = Prg@i, Aeff_p = Prg@p,
     family = "gaussian", phi = sd_e, tol = 1e-10)
 
-  sb <- tulpa:::cpp_test_default_sigma_beta()
+  sb <- default_sigma_beta()
   S  <- as.matrix(asm$Pr %*% Matrix::solve(asm$Q, Matrix::t(asm$Pr)))
   V  <- sb^2 + S + diag(sd_e^2, n)
   Viy <- solve(V, y)

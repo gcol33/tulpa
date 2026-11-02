@@ -342,6 +342,7 @@ test_that("the inertia route is exact for two pins and a coupled capacitance", {
 
 test_that("two intrinsic fields on the same rows give the exact log-determinant and step", {
   skip_on_cran()
+  load_cpp_fixture("helpers")
   # A space + time additive fit with both pins folded: the stored Hessian's
   # field block holds the opposite shift of the two fields (+c on every ICAR
   # node, -c on every RW1 node, eta unchanged) through the uniform ridge alone.

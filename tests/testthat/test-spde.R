@@ -668,7 +668,7 @@ test_that("fit_spde absorbs a constant offset into the intercept (gcol33/tulpa#7
   # on the shifted intercept, a property of the prior, not of the solver.
   base <- fit(NULL)
   con  <- fit(rep(cc, ss$n_obs),
-              list(mean = -cc, sd = tulpa:::cpp_test_default_sigma_beta()))
+              list(mean = -cc, sd = default_sigma_beta()))
   expect_equal(con$beta[1], base$beta[1] - cc, tolerance = 1e-8)
   expect_equal(con$spatial_effects, base$spatial_effects, tolerance = 1e-8)
   expect_equal(con$log_marginal, base$log_marginal, tolerance = 1e-8)
