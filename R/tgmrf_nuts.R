@@ -30,7 +30,11 @@
 #'   then discarded. Must satisfy `1 <= warmup < n_iter`. Default `n_iter %/% 2L`.
 #'
 #' @return A list with class `c("tulpa_tgmrf_nuts", "tulpa_fit")`:
-#'   * `draws`, `means`, `sds` -- posterior draws of `theta` and moments.
+#'   * `draws`, `means`, `sds` -- posterior draws of `(beta, theta)`, fixed
+#'     effects first, and their moments. Each `beta` row is one draw from the
+#'     Laplace body's conditional `N(beta_hat(theta), V(theta))` at that row's
+#'     `theta`; `draws_beta` / `draws_theta` (with `means_*` / `sds_*`) split
+#'     them by block.
 #'   * `mean_accept` -- mean Metropolis acceptance probability across the
 #'     post-warmup tree expansion steps.
 #'   * `tree_depth` -- depth of the NUTS tree at each iteration.
@@ -320,7 +324,10 @@
     inference_tier = 1L,
     backend        = "tgmrf_nuts"
   )
+  fit <- .tgmrf_with_fixed(fit, draws, .lm, X)
   .finalize_fit(fit, draws_kind = "chain",
+               n_fixed = fit$n_fixed, fixed_names = fit$fixed_names,
+               param_names = fit$param_names,
                data = list(y = y, n_trials = n_trials, model_matrix = X,
                           family = family, phi = phi))
 }

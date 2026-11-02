@@ -33,7 +33,14 @@
 #' they are merged into `control` (a named argument here wins over the same
 #' name inside `control`).
 #' @return A `tulpa_fit` object; `$backend` and `$mode` record
-#' the engine used.
+#' the engine used. Every mode reports the fixed effects: `$draws` holds the
+#' `beta` columns first, then `theta` (`"nuts_joint"` also the latent `z`), so
+#' `coef()`, `summary()` and `posterior_sample()` read them as on any other
+#' fit. Under `"imh"`, `"nuts"` and `"vi"`, which sample `theta` alone, each
+#' `beta` row is one draw from the Laplace body's conditional
+#' `N(beta_hat(theta), V(theta))` at that row's `theta`, so the `beta` columns
+#' are its marginal posterior. `$draws_beta` / `$draws_theta` split the draws
+#' by block.
 #' @seealso [tgmrf()] for the block, [tgmrf_cpp()] for the compiled-block form.
 #' @examples
 #' \donttest{
@@ -130,9 +137,14 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
 #' @param n_threads OpenMP threads inside each inner Laplace solve.
 #'
 #' @return A list with class `c("tulpa_tgmrf_imh", "tulpa_fit")`:
-#'   * `draws`: posterior draws of `theta` (rows = post-warmup samples,
-#'     cols = `theta_dim`).
-#'   * `means`, `sds`: posterior moments.
+#'   * `draws`: posterior draws of `(beta, theta)` (rows = post-warmup
+#'     samples), fixed effects first. Each `beta` row is one draw from the
+#'     Laplace body's conditional `N(beta_hat(theta), V(theta))` at that row's
+#'     `theta`, so the `beta` columns are the marginal posterior of the fixed
+#'     effects.
+#'   * `draws_beta`, `draws_theta`: the same draws split by block.
+#'   * `means`, `sds` (all columns), `means_beta` / `sds_beta`,
+#'     `means_theta` / `sds_theta`: posterior moments.
 #'   * `mean_accept`: post-warmup acceptance rate.
 #'   * `pilot`: the pilot `tulpa_nested_laplace` object (for diagnostics).
 #'   * `mode_theta`, `hessian_theta`: pilot-derived mode + FD Hessian.
@@ -260,7 +272,10 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
     inference_tier = 1L,
     backend        = "tgmrf_imh"
   )
+  fit <- .tgmrf_with_fixed(fit, draws, .lm, X)
   .finalize_fit(fit, draws_kind = "chain",
+               n_fixed = fit$n_fixed, fixed_names = fit$fixed_names,
+               param_names = fit$param_names,
                data = list(y = y, n_trials = n_trials, model_matrix = X,
                           family = family, phi = phi))
 }

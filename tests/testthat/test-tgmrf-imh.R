@@ -43,8 +43,8 @@ test_that("tulpa_tgmrf_imh produces finite draws + healthy acceptance", {
     pilot_axis_points = 5L
   )
   expect_s3_class(fit, "tulpa_fit")
-  expect_equal(ncol(fit$draws), 2L)
-  expect_equal(colnames(fit$draws), c("log_tau", "atanh_rho"))
+  expect_equal(ncol(fit$draws_theta), 2L)
+  expect_equal(colnames(fit$draws_theta), c("log_tau", "atanh_rho"))
   expect_true(all(is.finite(fit$draws)))
   expect_true(all(is.finite(fit$log_prob)))
   # Acceptance should not collapse — the Laplace proposal is well-matched
@@ -84,7 +84,7 @@ test_that("tulpa_tgmrf_imh posterior means agree with grid Laplace within MC err
   # SAME quantity by grid-spacing artefacts, so this isn't an asymptotic
   # bound — just a sanity that the two estimators land in the same band).
   grid_mean <- as.numeric(grid$theta_mean)
-  imh_mean  <- as.numeric(fit$means)
+  imh_mean  <- as.numeric(fit$means_theta)
   expect_lt(abs(grid_mean[1] - imh_mean[1]), 0.5)
   expect_lt(abs(grid_mean[2] - imh_mean[2]), 0.5)
 })

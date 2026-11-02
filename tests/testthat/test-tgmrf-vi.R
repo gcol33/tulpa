@@ -59,8 +59,8 @@ test_that("tulpa_tgmrf_vi returns Gaussian draws with sensible moments", {
   )
 
   expect_s3_class(fit, "tulpa_fit")
-  expect_equal(ncol(fit$draws), 2L)
-  expect_equal(colnames(fit$draws), c("log_tau", "atanh_rho"))
+  expect_equal(ncol(fit$draws_theta), 2L)
+  expect_equal(colnames(fit$draws_theta), c("log_tau", "atanh_rho"))
   expect_true(all(is.finite(fit$draws)))
   expect_equal(fit$inference_mode, "structured")
   expect_equal(fit$inference_tier, 2L)
@@ -71,10 +71,10 @@ test_that("tulpa_tgmrf_vi returns Gaussian draws with sensible moments", {
   expect_equal(dim(fit$cov), c(2L, 2L))
   # Variational SDs come from the inverse Hessian -- positive, finite,
   # and not absurdly large.
-  expect_true(all(fit$sds > 0))
-  expect_true(all(fit$sds < 5))
-  expect_lt(abs(fit$means[1]), 3)
-  expect_lt(abs(fit$means[2]), 3)
+  expect_true(all(fit$sds_theta > 0))
+  expect_true(all(fit$sds_theta < 5))
+  expect_lt(abs(fit$means_theta[1]), 3)
+  expect_lt(abs(fit$means_theta[2]), 3)
 })
 
 test_that("VI mode and IMH posterior mean agree up to the structured-tier gap", {
@@ -100,6 +100,6 @@ test_that("VI mode and IMH posterior mean agree up to the structured-tier gap", 
   # VI mode should land near IMH posterior mean for a near-Gaussian
   # target. Tolerance covers (a) IMH MC error and (b) VI underdispersion
   # bias.
-  expect_lt(abs(fit_imh$means[1] - fit_vi$mode_theta[1]), 0.8)
-  expect_lt(abs(fit_imh$means[2] - fit_vi$mode_theta[2]), 1.8)
+  expect_lt(abs(fit_imh$means_theta[1] - fit_vi$mode_theta[1]), 0.8)
+  expect_lt(abs(fit_imh$means_theta[2] - fit_vi$mode_theta[2]), 1.8)
 })

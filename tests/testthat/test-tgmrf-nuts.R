@@ -50,8 +50,8 @@ test_that("tulpa_tgmrf_nuts runs end-to-end and returns sensible posterior momen
   )
 
   expect_s3_class(fit, "tulpa_fit")
-  expect_equal(ncol(fit$draws), 2L)
-  expect_equal(colnames(fit$draws), c("log_tau", "atanh_rho"))
+  expect_equal(ncol(fit$draws_theta), 2L)
+  expect_equal(colnames(fit$draws_theta), c("log_tau", "atanh_rho"))
   expect_true(all(is.finite(fit$draws)))
   expect_gt(fit$mean_accept, 0.05)        # collapse guard
   expect_lt(fit$mean_accept, 0.999)       # not stuck
@@ -65,8 +65,8 @@ test_that("tulpa_tgmrf_nuts runs end-to-end and returns sensible posterior momen
   expect_equal(fit$inference_mode, "exact")
   expect_equal(fit$inference_tier, 1L)
   # Posterior means in the (log_tau, atanh_rho) band consistent with the sim.
-  expect_lt(abs(fit$means[1]), 3)
-  expect_lt(abs(fit$means[2]), 3)
+  expect_lt(abs(fit$means_theta[1]), 3)
+  expect_lt(abs(fit$means_theta[2]), 3)
 })
 
 test_that("NUTS and IMH on the same tgmrf agree on posterior means up to MC error", {
@@ -92,6 +92,6 @@ test_that("NUTS and IMH on the same tgmrf agree on posterior means up to MC erro
   # Means should land in the same band up to MC error of either chain.
   # NUTS at n_iter = 200 has higher MC noise than IMH at n_iter = 1500;
   # the tolerance is set against that, not against asymptotic agreement.
-  expect_lt(abs(fit_imh$means[1] - fit_nuts$means[1]), 0.8)
-  expect_lt(abs(fit_imh$means[2] - fit_nuts$means[2]), 1.8)
+  expect_lt(abs(fit_imh$means_theta[1] - fit_nuts$means_theta[1]), 0.8)
+  expect_lt(abs(fit_imh$means_theta[2] - fit_nuts$means_theta[2]), 1.8)
 })

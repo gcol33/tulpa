@@ -140,7 +140,7 @@ test_that("tgmrf IMH sampler recovers theta against a simulated truth", {
     fit <- tulpa_tgmrf(y = sim$y, n_trials = rep(1L, n), X = sim$X, block = blk,
                        family = "poisson", mode = "imh",
                        n_iter = 1500L, warmup = 500L, pilot_axis_points = 5L)
-    hat[s, ] <- as.numeric(fit$means)
+    hat[s, ] <- as.numeric(fit$means_theta)
   }
   expect_lt(abs(stats::median(hat[, "log_sigma"]) - log_sigma_truth), 0.55)
   expect_lt(abs(stats::median(hat[, "atanh_rho"]) - atanh_rho_truth), 0.60)

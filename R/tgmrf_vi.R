@@ -29,8 +29,12 @@
 #' @param lbfgs_tol L-BFGS gradient-norm tolerance (default 1e-6).
 #'
 #' @return A list with class `c("tulpa_tgmrf_vi", "tulpa_fit")`:
-#'   * `draws` -- `n_draws x theta_dim` matrix of variational draws.
-#'   * `means`, `sds` -- variational moments.
+#'   * `draws` -- `n_draws x (p + theta_dim)` matrix: the variational draws of
+#'     `theta`, preceded by one fixed-effect draw from the Laplace body's
+#'     conditional `N(beta_hat(theta), V(theta))` at each of them.
+#'   * `draws_beta`, `draws_theta` -- the same draws split by block.
+#'   * `means`, `sds` (all columns), `means_beta` / `sds_beta`,
+#'     `means_theta` / `sds_theta` -- moments.
 #'   * `mode_theta` -- L-BFGS mode in `theta`.
 #'   * `cov` -- variational covariance (`solve(-hessian)`).
 #'   * `elbo` -- MC estimate of `E_q[log_marginal(theta) - log q(theta)]`.
@@ -136,7 +140,10 @@
     inference_tier = 2L,
     backend        = "tgmrf_vi"
   )
+  fit <- .tgmrf_with_fixed(fit, draws, .lm, X)
   .finalize_fit(fit, draws_kind = "iid",
+               n_fixed = fit$n_fixed, fixed_names = fit$fixed_names,
+               param_names = fit$param_names,
                data = list(y = y, n_trials = n_trials, model_matrix = X,
                           family = family, phi = phi))
 }

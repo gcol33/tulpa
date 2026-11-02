@@ -44,7 +44,14 @@ name inside \code{control}).}
 }
 \value{
 A \code{tulpa_fit} object; \verb{$backend} and \verb{$mode} record
-the engine used.
+the engine used. Every mode reports the fixed effects: \verb{$draws} holds the
+\code{beta} columns first, then \code{theta} (\code{"nuts_joint"} also the latent \code{z}), so
+\code{coef()}, \code{summary()} and \code{posterior_sample()} read them as on any other
+fit. Under \code{"imh"}, \code{"nuts"} and \code{"vi"}, which sample \code{theta} alone, each
+\code{beta} row is one draw from the Laplace body's conditional
+\code{N(beta_hat(theta), V(theta))} at that row's \code{theta}, so the \code{beta} columns
+are its marginal posterior. \verb{$draws_beta} / \verb{$draws_theta} split the draws
+by block.
 }
 \description{
 One front door for inference over a user-defined \code{\link[=tgmrf]{tgmrf()}} latent block's

@@ -159,8 +159,8 @@ test_that("joint NUTS and outer-theta NUTS agree on theta means within MC error"
   # (the spec target). log_sigma posterior SDs tend to be ~0.15-0.25 here;
   # 100 post-warmup samples gives ~ SD / sqrt(50) ~ 0.03 per chain so 0.4
   # is loose.
-  expect_lt(abs(fit_joint$means_theta[1] - fit_outer$means[1]), 0.4)
-  expect_lt(abs(fit_joint$means_theta[2] - fit_outer$means[2]), 0.4)
+  expect_lt(abs(fit_joint$means_theta[1] - fit_outer$means_theta[1]), 0.4)
+  expect_lt(abs(fit_joint$means_theta[2] - fit_outer$means_theta[2]), 0.4)
 })
 
 # ---------------------------------------------------------------------------
