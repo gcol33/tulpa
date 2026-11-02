@@ -14,7 +14,7 @@
 #       (return_re_cov) and a per-term adapted scale. MH against the exact group
 #       likelihood + Gaussian RE prior corrects the non-Gaussianity.
 #   * beta | b, Sigma, y    -- random-walk Metropolis, proposal shape from the
-#       Laplace fixed-effect Hessian block (H_beta).
+#       fixed-effect block of the joint Laplace precision.
 #   * Sigma_m | b_m         -- EXACT conjugate draw. For a CORRELATED term, under
 #       an inverse-Wishart prior IW(nu0, Lambda0) and b_{m,g} ~ N(0, Sigma_m)
 #       i.i.d. over G_m groups, Sigma_m | b_m ~ IW(nu0 + G_m, Lambda0 + sum_g
@@ -152,7 +152,8 @@
 #'   log-prior, which corrects the non-Gaussianity the Laplace approximation
 #'   misses. The linear predictor holds every other term's contribution fixed.
 #' - **`beta | b, Sigma, y`** -- random-walk Metropolis, proposal shape from the
-#'   Laplace fixed-effect Hessian block `H_beta`.
+#'   fixed-effect block of the joint Laplace precision (the conditional of
+#'   `beta` given the random effects).
 #' - **`Sigma_m | b_m`** -- exact conjugate draw. A correlated block draws the
 #'   full matrix from `IW(prior_df + G_m, prior_scale + sum_g b_{m,g} b_{m,g}')`;
 #'   an uncorrelated (diagonal) block draws each variance from its scalar
@@ -316,23 +317,35 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   bsd   <- bp$sd
 
   # --- pilot Laplace solve: starting values + proposal shapes ---------------
-  # Sigma_m = I init for every block; mode gives beta and per-term b; H_beta and
-  # cov_blocks (term-major then group order) give the proposal shapes.
+  # Sigma_m = I init for every block; mode gives beta and per-term b; the joint
+  # precision and cov_blocks (term-major then group order) give the proposal
+  # shapes.
   pilot <- tulpa_laplace(
     y = y, n_trials = n_trials, X = X,
     re_list = .re_cov_build_re_list(lapply(layout, function(bl) diag(bl$nc)),
                                     layout),
     family = family, phi = phi, return_hessian = TRUE, return_re_cov = TRUE,
+    return_joint_hessian = TRUE,
     max_iter = max_iter, tol = tol, n_threads = n_threads
   )
   beta <- pilot$mode[seq_len(p)]
   re_vals <- pilot$mode[-seq_len(p)]
 
+  # The beta update targets beta | b, Sigma, y, so its proposal takes the shape
+  # of that conditional: the inverse of the fixed-effect block of the joint
+  # precision. The marginal block (the Schur complement H_beta) adds the random
+  # effects' uncertainty along the directions they alias, which a move with b
+  # held fixed cannot take; with one scale tuned for the whole block, that
+  # spread holds the other coordinates' steps short. The aliased directions
+  # are moved by the alias step of the sweep instead.
   # An indefinite pilot Hessian still inverts here: `.re_chol_spd()` floors the
   # negative eigenvalues of the inverse, so only those directions shrink to the
   # floor and the rest of the block keeps the pilot's curvature.
-  L_beta <- if (!is.null(pilot$H_beta)) {
-    .re_chol_spd(tryCatch(solve(pilot$H_beta), error = function(e) {
+  H_cond <- if (!is.null(pilot$H_latent)) {
+    as.matrix(pilot$H_latent)[seq_len(p), seq_len(p), drop = FALSE]
+  } else pilot$H_beta
+  L_beta <- if (!is.null(H_cond)) {
+    .re_chol_spd(tryCatch(solve(H_cond), error = function(e) {
       warning("tulpa_re_cov_gibbs(): pilot fixed-effect Hessian not ",
               "invertible (", conditionMessage(e), "); using an identity ",
               "proposal scale for the beta block.", call. = FALSE)

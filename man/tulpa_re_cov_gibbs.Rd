@@ -101,7 +101,8 @@ computed against the exact group log-likelihood plus the Gaussian RE
 log-prior, which corrects the non-Gaussianity the Laplace approximation
 misses. The linear predictor holds every other term's contribution fixed.
 \item \strong{\verb{beta | b, Sigma, y}} -- random-walk Metropolis, proposal shape from the
-Laplace fixed-effect Hessian block \code{H_beta}.
+fixed-effect block of the joint Laplace precision (the conditional of
+\code{beta} given the random effects).
 \item \strong{\code{Sigma_m | b_m}} -- exact conjugate draw. A correlated block draws the
 full matrix from \verb{IW(prior_df + G_m, prior_scale + sum_g b_\{m,g\} b_\{m,g\}')};
 an uncorrelated (diagonal) block draws each variance from its scalar
