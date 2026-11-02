@@ -198,6 +198,9 @@ public:
         // A^{-1}_{ij} in original ordering. Returns 0.0 if (i, j) is off the
         // computed pattern (which never happens for (i, j) on A's pattern).
         double at(int i_orig, int j_orig) const;
+        // The same entry, and whether (i, j) lies on the computed pattern: a
+        // false return says the entry was not computed, where at() reads 0.0.
+        bool find(int i_orig, int j_orig, double* value) const;
     };
     SelectedInverse selected_inversion_full();
 

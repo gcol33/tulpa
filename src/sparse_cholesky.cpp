@@ -545,22 +545,28 @@ bool takahashi_partial_inverse_dense(
     return true;
 }
 
-double SparseCholeskySolver::SelectedInverse::at(int i_orig, int j_orig) const {
+bool SparseCholeskySolver::SelectedInverse::find(int i_orig, int j_orig,
+                                                  double* value) const {
     // An unfactorized solve returns a default-constructed SelectedInverse
     // (n == 0, every array empty); an index outside the factored dimension has
-    // no entry either. Both read 0.0 rather than dereferencing out of range.
+    // no entry either. Neither dereferences out of range.
     if (n == 0 || i_orig < 0 || i_orig >= n || j_orig < 0 || j_orig >= n) {
-        return 0.0;
+        return false;
     }
     int pi = perm_inv[i_orig];
     int pj = perm_inv[j_orig];
     int lo = std::min(pi, pj);
     int hi = std::max(pi, pj);
     for (int s = Lp[lo]; s < Lp[lo + 1]; s++) {
-        if (Li[s] == hi) return Zx[s];
+        if (Li[s] == hi) { *value = Zx[s]; return true; }
         if (Li[s] > hi) break;
     }
-    return 0.0;
+    return false;
+}
+
+double SparseCholeskySolver::SelectedInverse::at(int i_orig, int j_orig) const {
+    double v = 0.0;
+    return find(i_orig, j_orig, &v) ? v : 0.0;
 }
 
 SparseCholeskySolver::SelectedInverse SparseCholeskySolver::selected_inversion_full() {

@@ -323,9 +323,34 @@ bool extract_joint_eta_var(
     const RowClasses classes = row_classes_from_loadings(L);
     std::vector<double> a(n_x, 0.0), z(n_x, 0.0);
     std::vector<double> class_var(classes.size(), failed);
+    // a' H_a^-1 a reads the entries of H_a^-1 at the pairs of a row's loading.
+    // A row's coordinates load the same observation, so the data term couples
+    // them and every pair lies on the precision's pattern, which the one
+    // Takahashi selected inversion of the cell's factor holds: one pass costs
+    // about one factorization, where a solve per distinct row costs one pass
+    // over the factor each: 640 of them on an 8 x 8 x 10 space-time
+    // interaction, 72% of its cells' solve time. A row with a pair off the
+    // computed pattern (a loading the data term does not couple) is solved.
+    const SparseCholeskySolver::SelectedInverse si =
+        classes.size() > 1 ? solver.selected_inversion_full()
+                           : SparseCholeskySolver::SelectedInverse();
     for (std::size_t c = 0; c < classes.size(); c++) {
         const int r = classes.class_rep[c];
         const std::size_t first = L.off[r], last = L.off[r + 1];
+        bool on_pattern = si.n == n_x;
+        double vq = 0.0;
+        for (std::size_t e = first; e < last && on_pattern; e++) {
+            for (std::size_t f = first; f < last && on_pattern; f++) {
+                double sij = 0.0;
+                on_pattern = si.find(L.idx[e], L.idx[f], &sij);
+                vq += L.w[e] * L.w[f] * sij;
+            }
+        }
+        if (on_pattern) {
+            vq -= pins.quad_correction(L.idx.data(), L.w.data(), first, last);
+            class_var[c] = (std::isfinite(vq) && vq >= 0.0) ? vq : failed;
+            continue;
+        }
         for (std::size_t e = first; e < last; e++) a[L.idx[e]] += L.w[e];
         const bool ok = solver.solve(a.data(), z.data(), n_x);
         double v = 0.0;
