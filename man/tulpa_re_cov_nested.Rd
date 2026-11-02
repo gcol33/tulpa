@@ -105,9 +105,9 @@ Ignored when \code{X_zi} is \code{NULL}.}
 \item{control}{A named list of numerical / tuning knobs (statistical
 arguments stay in the signature above). Recognized entries:
 \itemize{
-\item \code{integration}: node layout, \code{"grid"} (full tensor product,
-the default for one or two covariance parameters) or \code{"ccd"}
-(central-composite design, the default above two).
+\item \code{integration}: node layout, \code{"auto"} (the default: the tensor
+grid for one or two covariance parameters, the CCD above), \code{"grid"}
+(full tensor product) or \code{"ccd"} (central-composite design).
 \item \code{n_per_axis}: points per parameter axis in the tensor grid
 (default 61 for one parameter, 21 for two, 5 above); grid only.
 \item \code{span}: half-width of the tensor grid in posterior standard

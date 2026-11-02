@@ -58,12 +58,11 @@ test_that("the SPDE front-door route is numerically identical to a direct fit_sp
     mode = "nested_laplace"
   )))
   # The front door builds X = model.matrix(~ x) and calls fit_spde() with the
-  # default (ccd) backend -- so a direct call on the same spec must agree
+  # default (auto) backend -- so a direct call on the same spec must agree
   # bit-for-bit (fit_spde() is deterministic: no RNG in the integration).
   X <- model.matrix(~ x, data = s$data)
   direct <- suppressWarnings(fit_spde(
-    y = s$data$y, X = X, spatial = s$spec, family = "poisson",
-    control = list(method = "ccd")
+    y = s$data$y, X = X, spatial = s$spec, family = "poisson"
   ))
   expect_equal(via$nested$method, direct$nested$method)
   expect_equal(via$nested$range_mean, direct$nested$range_mean)
@@ -99,8 +98,7 @@ test_that("the SPDE front door routes a gaussian (geostatistical) response to fi
   )))
   X <- model.matrix(~ x, data = dat)
   direct <- suppressWarnings(fit_spde(
-    y = dat$yc, X = X, spatial = s$spec, family = "gaussian",
-    control = list(method = "ccd")
+    y = dat$yc, X = X, spatial = s$spec, family = "gaussian"
   ))
   # Continuous-field geostatistics: gaussian routes through the same fit_spde()
   # engine, so the front door is numerically identical to a direct call.
@@ -202,7 +200,7 @@ test_that("mode = nested_laplace integrates an SPDE field through tulpa()", {
   expect_equal(fit$inference_tier, 2L)
   expect_s3_class(fit, "tulpa_fit")
   # (range, sigma) were integrated, not conditioned on.
-  expect_true(fit$nested$method %in% c("ccd", "grid"))
+  expect_true(fit$nested$method %in% c("aligned_grid", "ccd", "grid"))
   expect_equal(sum(fit$nested$weights), 1, tolerance = 1e-8)
   expect_true(is.finite(fit$nested$range_mean) && fit$nested$range_mean > 0)
   expect_true(is.finite(fit$nested$sigma_mean) && fit$nested$sigma_mean > 0)

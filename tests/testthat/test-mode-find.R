@@ -142,11 +142,11 @@ test_that("both mode-find consumers reach optim only through the shared helper",
   # is the copy this replaced. all.names() walks the parse tree, so this holds
   # against the installed package and needs no source files.
   expect_true("optim" %in% all.names(body(tulpa:::.nl_lbfgsb_mode_find)))
-  expect_false("optim" %in% all.names(body(tulpa:::fit_spde_nested_ccd)))
+  expect_false("optim" %in% all.names(body(tulpa:::fit_spde_nested_mode)))
   expect_false("optim" %in% all.names(body(tulpa:::.st_auto_grid_rescue)))
 
   # ... and each reaches the helper.
-  expect_true(".nl_lbfgsb_mode_find" %in% all.names(body(tulpa:::fit_spde_nested_ccd)))
+  expect_true(".nl_lbfgsb_mode_find" %in% all.names(body(tulpa:::fit_spde_nested_mode)))
   expect_true(".nl_lbfgsb_mode_find" %in% all.names(body(tulpa:::.st_auto_grid_rescue)))
 })
 

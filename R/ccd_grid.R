@@ -206,3 +206,24 @@ ccd_weights <- function(ccd) {
   ld - log_norm + 0.5 * k * log(2 * pi) +
     as.numeric(determinant(as.matrix(L), logarithm = TRUE)$modulus)
 }
+
+# The ALIGNED TENSOR: `n_per_axis` nodes per axis over +/- `span` on the
+# whitened coordinates z, mapped to the outer coordinates as
+# `theta = theta_hat + L z` with `L` the Cholesky factor of the inverse mode
+# Hessian -- the orientation the CCD is laid in, so the nodes follow the outer
+# mode's correlation, but a tensor whose uniform cells discretize the density
+# (`.nl_node_support("grid")`) rather than a moment rule. The default design for
+# up to two outer coordinates (`.nl_outer_design()`).
+.nl_aligned_tensor <- function(k, n_per_axis, span) {
+  n_per_axis <- as.integer(n_per_axis)
+  ax <- seq(-span, span, length.out = n_per_axis)
+  z <- as.matrix(expand.grid(rep(list(ax), k)))
+  dimnames(z) <- NULL
+  list(z = z, k = as.integer(k), h = 2 * span / (n_per_axis - 1L))
+}
+
+# Absolute log measure of each aligned-tensor node on the coordinate
+# `theta = theta_hat + L z`: the whitened cell volume `h^k` times `|det L|`.
+.nl_aligned_tensor_log_measure <- function(tens, L) {
+  rep(tens$k * log(tens$h) + sum(log(abs(diag(as.matrix(L))))), nrow(tens$z))
+}

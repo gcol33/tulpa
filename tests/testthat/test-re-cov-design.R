@@ -1,21 +1,21 @@
 # The default outer design of the random-effect covariance integrator follows
-# the number of covariance coordinates (`.re_cov_outer_design()`): a tensor
+# the number of covariance coordinates (`.nl_outer_design()`): a tensor
 # grid up to two, the CCD above. A scale's posterior on its log coordinate
 # reaches several SDs of the mode's Gaussian into its left tail, where a 3- or
 # 9-node CCD places no node.
 
-test_that(".re_cov_outer_design picks the layout by coordinate count", {
-  d1 <- tulpa:::.re_cov_outer_design(1L)
-  d2 <- tulpa:::.re_cov_outer_design(2L)
-  d3 <- tulpa:::.re_cov_outer_design(3L)
+test_that(".nl_outer_design picks the layout by coordinate count", {
+  d1 <- tulpa:::.nl_outer_design(1L)
+  d2 <- tulpa:::.nl_outer_design(2L)
+  d3 <- tulpa:::.nl_outer_design(3L)
   expect_identical(c(d1$integration, d2$integration, d3$integration),
                    c("grid", "grid", "ccd"))
   expect_identical(c(d1$n_per_axis, d2$n_per_axis),
-                   tulpa:::.RE_COV_DESIGN$tensor_n)
-  expect_identical(tulpa:::.re_cov_outer_design(3L, list(integration = "grid"))$n_per_axis,
-                   tulpa:::.RE_COV_DESIGN$grid_n)
-  expect_identical(tulpa:::.re_cov_outer_design(1L, list(n_per_axis = 7L))$n_per_axis, 7L)
-  expect_error(tulpa:::.re_cov_outer_design(1L, list(integration = "tensor")))
+                   tulpa:::.NL_OUTER_DESIGN$tensor_n)
+  expect_identical(tulpa:::.nl_outer_design(3L, list(integration = "grid"))$n_per_axis,
+                   tulpa:::.NL_OUTER_DESIGN$grid_n)
+  expect_identical(tulpa:::.nl_outer_design(1L, list(n_per_axis = 7L))$n_per_axis, 7L)
+  expect_error(tulpa:::.nl_outer_design(1L, list(integration = "tensor")))
 })
 
 skip_on_cran()

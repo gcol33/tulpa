@@ -1297,7 +1297,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # different objectives, so they are recorded separately rather than averaged
 # into one number that serves neither:
 #
-#  * `spde` -- `fit_spde_nested_ccd()` over (log range, log sigma). `factr`
+#  * `spde` -- `fit_spde_nested_mode()` over (log range, log sigma). `factr`
 #    1e5 rather than the 1e7 default, which accepted the prior mode unchanged
 #    on weakly informative problems. `ndeps` 1e-2 measured across 1e-4 to 5e-2
 #    on both the analytic fixture and a real inner-Laplace marginal: every step
@@ -1795,33 +1795,43 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     .CCD_PLACEMENT[[par]]
 }
 
-# Default outer design of the random-effect covariance integrator
-# (`tulpa_re_cov_nested()`), by the number k of covariance coordinates. Up to
-# `length(tensor_n)` coordinates the default is a tensor grid of `tensor_n[k]`
-# nodes per axis over +/- `tensor_span[k]` whitened SDs; above it, the CCD.
+# Default outer design of every door that lays its hyperparameter nodes from the
+# outer mode and the Cholesky factor of the mode Hessian's inverse
+# (`tulpa_re_cov_nested()`, `fit_spde()`), by the number k of outer
+# coordinates. Up to `length(tensor_n)` coordinates the default is the aligned
+# tensor (`.nl_aligned_tensor()`): `tensor_n[k]` nodes per whitened axis over
+# +/- `tensor_span[k]` SDs. Above it the default is the CCD.
+# `integration = "ccd"` is the explicit opt-in to the CCD at any k.
+#
 # Measured on (1 | g) and (1 | g) + (1 | h) binomial fits (40 groups x 8):
 # the 3- and 9-node CCDs put the lower 2.5% bound of a scale at 0.495 and
 # 0.564 / 0.329 against 0.358 and 0.461 / 0.202 from dense references (201
 # nodes over +/- 8 SDs; 61^2 over +/- 8), and 61 x 8 / 21^2 x 6 reproduce the
 # references to 0.001 / 0.013. The left tail of a log-scale posterior reaches
-# past 6 SDs of the Gaussian at the mode, which is what the spans cover. A
-# caller-chosen `integration = "grid"` without `n_per_axis` / `span` takes the
-# same per-k values, and `grid_n` / `grid_span` above them.
-.RE_COV_DESIGN <- list(
+# past 6 SDs of the Gaussian at the mode, which is what the spans cover. On the
+# SPDE door's (log range, log sigma) the 9-node CCD read the 97.5% bound of
+# range 2.72 and of sigma 0.84 against 4.83 and 1.51 from a 61^2 quadrature
+# over +/- 6 marginal SDs: the posterior runs along a curved ridge the CCD's
+# nine nodes cannot carry; the 21^2 tensor reads 4.79 and 1.52.
+#
+# A caller-chosen `integration = "grid"` without `n_per_axis` / `span` takes
+# the same per-k values, and `grid_n` / `grid_span` above them.
+.NL_OUTER_DESIGN <- list(
     tensor_n    = c(61L, 21L),
     tensor_span = c(8, 6),
     grid_n      = 5L,
     grid_span   = 3
 )
 
-# The outer design `tulpa_re_cov_nested()` lays over k coordinates: the
+# The outer design a Hessian-oriented door lays over k coordinates: the
 # caller's `integration` / `n_per_axis` / `span` where set, the defaults of
-# `.RE_COV_DESIGN` otherwise.
-.re_cov_outer_design <- function(k, control = list()) {
-    d <- .RE_COV_DESIGN
+# `.NL_OUTER_DESIGN` otherwise. `integration = "auto"` is the default rule.
+.nl_outer_design <- function(k, control = list()) {
+    d <- .NL_OUTER_DESIGN
     small <- k <= length(d$tensor_n)
-    integration <- control$integration %||% (if (small) "grid" else "ccd")
-    integration <- match.arg(integration, c("ccd", "grid"))
+    integration <- control$integration %||% "auto"
+    integration <- match.arg(integration, c("auto", "ccd", "grid"))
+    if (identical(integration, "auto")) integration <- if (small) "grid" else "ccd"
     list(integration = integration,
          n_per_axis = as.integer(control$n_per_axis %||%
                                    (if (small) d$tensor_n[k] else d$grid_n)),

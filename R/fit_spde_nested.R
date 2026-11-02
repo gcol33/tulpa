@@ -1,15 +1,16 @@
 # Nested-Laplace integration backends for fit_spde().
 #
-# Two methods are supported:
+# Three methods are supported:
 #   * "grid" -- rectangular grid in log(range) x log(sigma) around the
 #     prior modes. Cheap, defensible, but burns most of its budget on
 #     points that the data have already ruled out.
-#   * "ccd"  -- Central composite design centered on the joint posterior
-#     mode of (range, sigma), oriented by the local Hessian. Mirrors
-#     R-INLA's hyperparameter integration recipe; for k = 2 it uses
-#     1 + 2*2 + 2^2 = 9 design points instead of n_grid^2 = 25 (default).
+#   * "auto" -- the aligned tensor (`.nl_aligned_tensor()`) centered on the
+#     joint posterior mode of (range, sigma) and oriented by the local
+#     Hessian: 21^2 nodes over +/- 6 whitened SDs (default).
+#   * "ccd"  -- Central composite design in the same orientation, R-INLA's
+#     hyperparameter integration recipe: 1 + 2*2 + 2^2 = 9 design points.
 #
-# Both backends return the same shape so the user-facing fit_spde()
+# All three return the same shape so the user-facing fit_spde()
 # return contract is unchanged across methods.
 
 # Outer Pareto-k-hat for the SPDE (range, sigma) integration: importance-sample
@@ -115,7 +116,7 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
   # already centred on the PC-prior mode (mode * 0.3 to mode * 3), unlike
   # the other families' universal fixed ceiling, but a data mode far from
   # the prior's can still rail it -- and `method = "grid"` is an explicit
-  # opt-in (fit_spde()'s default `control$method` is already `"ccd"`, the
+  # opt-in (fit_spde()'s default `control$method` is `"auto"`, the
   # mode-Hessian path the auto-recenter uses), so this attaches the diagnostic
   # rather than silently overriding the user's chosen method with a refit.
   regime <- .joint_attach_pareto_k_regime(
@@ -210,11 +211,12 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
 }
 
 # ---------------------------------------------------------------------
-# Method = "ccd": find the joint posterior mode of (log_range, log_sigma),
-# build a CCD grid oriented by the local negative-Hessian inverse, and
-# integrate. Refits at the best grid point so `mode` is non-NULL.
+# Method = "auto" / "ccd": find the joint posterior mode of (log_range,
+# log_sigma), lay the outer design `design` (`.nl_outer_design()`: the aligned
+# tensor by default, the CCD on request) oriented by the local negative-Hessian
+# inverse, and integrate. Refits at the mode so `mode` is non-NULL.
 # ---------------------------------------------------------------------
-fit_spde_nested_ccd <- function(spde_log_marginal,
+fit_spde_nested_mode <- function(spde_log_marginal,
                                 fit_spde_single,
                                 sp, spatial,
                                 diagnose_k = TRUE,
@@ -222,7 +224,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
                                 k_tail_points = NULL,
                                 mode_find = .nl_mode_find_tuning("spde"),
                                 hyperprior = "proper",
-                                spde_log_marginal_grad = NULL) {
+                                spde_log_marginal_grad = NULL,
+                                design = .nl_outer_design(2L)) {
   range_mode <- sp$prior_range[1]
   sigma_mode <- sp$prior_sigma[1]
 
@@ -362,45 +365,65 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   }
   L <- t(chol(sigma_post))   # sigma_post = L L^T
 
-  # CCD design (k = 2 -> 1 + 4 + 4 = 9 points). Sphere radius sqrt(2)*1.1
-  # places the factorial corners at +/- 1.1 per axis -- INLA's standardized
-  # scaling (f0 = 1.1) -- and `ccd_weights()` gives the matching corrected
-  # R-INLA design weights (single source of truth with re_cov; see ccd_grid.R).
-  # Map z to physical (log_range, log_sigma), then exponentiate. Cap log-scale
-  # excursions at the optimisation box so a CCD axial that exceeds the prior
-  # support snaps back to the boundary instead of overflowing to 1e+200.
-  ccd <- ccd_grid(k = 2L, f_0 = sqrt(2) * 1.1)
-  dnode <- ccd_weights(ccd)
-  theta_grid <- ccd_to_theta(ccd$z, theta_hat, L, log_scale = FALSE)
+  # The outer design (`.nl_outer_design()`), laid in the orientation of the
+  # mode's Gaussian. The default is the aligned tensor (`.nl_aligned_tensor()`):
+  # uniform cells on the whitened coordinates, read as a density. The opt-in CCD
+  # (k = 2 -> 1 + 4 + 4 = 9 points) has radius sqrt(2)*1.1, placing the
+  # factorial corners at +/- 1.1 per axis -- INLA's standardized scaling (f0 =
+  # 1.1) -- with the corrected R-INLA design weights `ccd_weights()`. Either is
+  # mapped to (log_range, log_sigma), then exponentiated. A CCD's log-scale
+  # excursions are capped at the optimisation box so an axial node past the
+  # prior support snaps back to the boundary instead of overflowing to 1e+200.
+  # The tensor's nodes are not moved: a cell is measured where it lies, the
+  # box is only where the mode-find searched, and a node whose inner solve
+  # fails carries no weight.
+  is_ccd <- identical(design$integration, "ccd")
+  if (is_ccd) {
+    ccd <- ccd_grid(k = 2L, f_0 = sqrt(2) * 1.1)
+    z <- ccd$z
+    dnode <- ccd_weights(ccd)
+    design_log_measure <- .ccd_log_measure(ccd, L)
+  } else {
+    tens <- .nl_aligned_tensor(2L, design$n_per_axis, design$span)
+    z <- tens$z
+    dnode <- rep(1, nrow(z))
+    design_log_measure <- .nl_aligned_tensor_log_measure(tens, L)
+  }
+  theta_grid <- ccd_to_theta(z, theta_hat, L, log_scale = FALSE)
   theta_free <- theta_grid
-  theta_grid[, 1] <- pmin(pmax(theta_grid[, 1], lower[1]), upper[1])
-  theta_grid[, 2] <- pmin(pmax(theta_grid[, 2], lower[2]), upper[2])
+  if (is_ccd) {
+    theta_grid[, 1] <- pmin(pmax(theta_grid[, 1], lower[1]), upper[1])
+    theta_grid[, 2] <- pmin(pmax(theta_grid[, 2], lower[2]), upper[2])
+  }
   range_grid <- exp(theta_grid[, 1])
   sigma_grid <- exp(theta_grid[, 2])
 
   result <- spde_log_marginal(range_grid, sigma_grid, keep_Q = TRUE)
   hp <- .spde_hyperprior_record(range_grid, sigma_grid, sp, hyperprior)
   log_post <- result$log_marginal + hp$lp
-  # CCD quadrature: node weight = design weight (Delta_k) times exp(log_post),
-  # the INLA convention int ~ sum_k Delta_k pi(theta_k).
-  log_max <- max(log_post)
+  # Node weight = design weight (Delta_k; 1 on the tensor) times
+  # exp(log_post), the INLA convention int ~ sum_k Delta_k pi(theta_k). A node
+  # whose inner solve failed carries no weight.
+  log_max <- max(log_post[is.finite(log_post)])
   weights <- dnode * exp(log_post - log_max)
+  weights[!is.finite(weights)] <- 0
   weights <- weights / sum(weights)
 
   best <- which.max(log_post)
 
   # The evidence on (log range, log sigma), the coordinate the hyperprior
-  # density and the design both live on: each node's moment-rule weight
-  # calibrated against the Gaussian it was laid on (`.ccd_log_measure()`). A
-  # node the box moved is no longer where the rule placed it, and then the
-  # design carries no measure.
+  # density and the design both live on: each node's absolute measure there,
+  # the tensor's cell volume or the CCD's moment-rule weight calibrated against
+  # the Gaussian it was laid on (`.ccd_log_measure()`). A node the box moved is
+  # no longer where the rule placed it, and then the design carries no
+  # measure.
   ev <- if (identical(theta_grid, theta_free)) {
     tg <- cbind(range = range_grid, sigma = sigma_grid)
     .nl_attach_evidence(
       list(log_marginal = log_post, log_hyperprior_axes = hp$axes,
            log_hyperprior_declined = hp$declined), tg,
       .joint_axis_specs_from_grid(tg, folded_axes = hp$axes),
-      log_measure = .ccd_log_measure(ccd, L))
+      log_measure = design_log_measure)
   } else {
     list(log_evidence = NA_real_, log_evidence_declined = "moment_rule_design")
   }
@@ -441,13 +464,13 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
     pareto_k_tail_points = kd$tail_points %||% NA_integer_,
     pareto_k_scope   = "outer (range, sigma) Gaussian proposal",
     nested = c(list(
-      method        = "ccd",
+      method        = if (is_ccd) "ccd" else "aligned_grid",
       range_grid    = range_grid,
       sigma_grid    = sigma_grid,
       weights       = weights,
       pareto_k      = kd$pareto_k,
       n_iter        = result$n_iter,
-      kind          = ccd$kind,
+      kind          = if (is_ccd) ccd$kind else rep("tensor", nrow(z)),
       best_idx      = best,
       range_mode    = range_hat,
       sigma_mode    = sigma_hat,
@@ -456,9 +479,9 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
       range_best    = range_grid[best],
       sigma_best    = sigma_grid[best],
       hessian_logsc = H,
-      f_0           = ccd$f_0,
-      n_points      = ccd$n_points
+      f_0           = if (is_ccd) ccd$f_0,
+      n_points      = nrow(z)
     ), .spde_nested_record(result, range_grid, sigma_grid, log_post, sp,
-                         integration = "ccd"))
+                         integration = if (is_ccd) "ccd" else "grid"))
   )
 }

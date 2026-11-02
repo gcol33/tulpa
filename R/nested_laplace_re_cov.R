@@ -1636,9 +1636,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #' @param control A named list of numerical / tuning knobs (statistical
 #'   arguments stay in the signature above). Recognized entries:
 #'   \itemize{
-#'     \item `integration`: node layout, `"grid"` (full tensor product,
-#'       the default for one or two covariance parameters) or `"ccd"`
-#'       (central-composite design, the default above two).
+#'     \item `integration`: node layout, `"auto"` (the default: the tensor
+#'       grid for one or two covariance parameters, the CCD above), `"grid"`
+#'       (full tensor product) or `"ccd"` (central-composite design).
 #'     \item `n_per_axis`: points per parameter axis in the tensor grid
 #'       (default 61 for one parameter, 21 for two, 5 above); grid only.
 #'     \item `span`: half-width of the tensor grid in posterior standard
@@ -1842,8 +1842,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   theta_hat       <- core$theta_hat
   L_scale         <- core$L_scale
   # The node layout follows the number of covariance coordinates
-  # (`.re_cov_outer_design()`, defaults in `.RE_COV_DESIGN`).
-  design      <- .re_cov_outer_design(k, control)
+  # (`.nl_outer_design()`, defaults in `.NL_OUTER_DESIGN`).
+  design      <- .nl_outer_design(k, control)
   integration <- design$integration
   n_per_axis  <- design$n_per_axis
   span        <- design$span
@@ -1887,9 +1887,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     z     <- ccd$z
     dnode <- ccd_weights(ccd)
   } else {
-    ax    <- seq(-span, span, length.out = as.integer(n_per_axis))
-    z     <- as.matrix(expand.grid(rep(list(ax), k)))
-    dimnames(z) <- NULL
+    tens  <- .nl_aligned_tensor(k, n_per_axis, span)
+    z     <- tens$z
     dnode <- rep(1, nrow(z))                # uniform tensor-cell weight
   }
   theta_grid <- ccd_to_theta(z, theta_hat, L_scale)   # n_grid x k
@@ -1899,8 +1898,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # determinant. The CCD's is its moment-rule weight calibrated against the
   # Gaussian it was laid on (`.ccd_log_measure()`).
   re_cov_log_measure <- if (identical(integration, "grid")) {
-    log(dnode) + k * log(2 * span / (as.integer(n_per_axis) - 1)) +
-      sum(log(abs(diag(as.matrix(L_scale)))))
+    .nl_aligned_tensor_log_measure(tens, L_scale)
   } else .ccd_log_measure(ccd, L_scale)
 
   # --- node checkpoint/resume -----------------------------

@@ -255,7 +255,7 @@ test_that("the analytic gradient is not offered outside its scope", {
 
 skip_on_cran_budget()
 
-test_that("fit_spde_nested_ccd builds the CCD design at a clean interior mode", {
+test_that("fit_spde_nested_mode builds the CCD design at a clean interior mode", {
   skip_on_cran_budget()
   # A textbook-concave log-marginal in (log range, log sigma) with an interior
   # maximum; combined with the PC prior, obj has a clean interior minimum, so
@@ -272,8 +272,10 @@ test_that("fit_spde_nested_ccd builds the CCD design at a clean interior mode", 
     list(mode = NULL, beta = NULL, spatial_effects = NULL, log_det_Q = NA_real_)
   sp <- list(prior_range = c(0.3, 0.5), prior_sigma = c(0.6, 0.05))
 
-  res <- fit_spde_nested_ccd(spde_log_marginal, fit_spde_single, sp,
-                             spatial = list(), diagnose_k = FALSE)
+  res <- fit_spde_nested_mode(spde_log_marginal, fit_spde_single, sp,
+                              spatial = list(), diagnose_k = FALSE,
+                              design = .nl_outer_design(
+                                2L, list(integration = "ccd")))
 
   expect_identical(res$nested$method, "ccd")
   expect_equal(res$nested$n_points, 9L)
@@ -371,8 +373,9 @@ test_that("a line-search abort at a stationary point is taken as the mode", {
                                      upper = init + log(100),
                                      tuning = tulpa:::.nl_mode_find_tuning("spde"))
   expect_identical(op$convergence, 52L)
-  res <- expect_no_warning(fit_spde_nested_ccd(
+  res <- expect_no_warning(fit_spde_nested_mode(
     spde_log_marginal, function(range, sigma) list(mode = NULL), sp,
-    spatial = list(), diagnose_k = FALSE))
+    spatial = list(), diagnose_k = FALSE,
+    design = .nl_outer_design(2L, list(integration = "ccd"))))
   expect_identical(res$nested$method, "ccd")
 })

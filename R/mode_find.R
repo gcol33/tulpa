@@ -1,6 +1,6 @@
 # Outer hyperparameter mode-find.
 #
-# `fit_spde_nested_ccd()` and `fit_st_nested()`'s auto-grid both locate an outer
+# `fit_spde_nested_mode()` and `fit_st_nested()`'s auto-grid both locate an outer
 # mode the same way: box-constrained L-BFGS-B on a marginal that arrives from a
 # compiled kernel with no analytic gradient, so both depend on `optim()`'s
 # central-difference step and both treat a failed call as "no usable mode".

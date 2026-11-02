@@ -87,13 +87,19 @@ evidence declines. Not read by \code{mode = "nuts"}, where \code{"flat"} errors.
 arguments stay in the signature above). Recognized entries:
 \itemize{
 \item \code{method}: hyperparameter integration backend when nested Laplace is
-active. \code{"ccd"} (default) uses a central composite design centered on
-the joint posterior mode of \verb{(range, sigma)}, oriented by the local
-Hessian (9 design points instead of \code{n_grid^2}), folding the PC priors
-from \code{spatial$prior_range} / \code{spatial$prior_sigma} into the integrated
-marginal and falling back to \code{"grid"} if the surface is too flat for a
-Hessian-based design. \code{"grid"} uses a rectangular grid in
-\verb{log(range) x log(sigma)} around the prior modes.
+active. \code{"auto"} (default) finds the joint posterior mode of
+\verb{(log range, log sigma)} and lays the aligned tensor there: 21 x 21
+nodes over +/- 6 SDs of the whitened coordinates, oriented by the
+Cholesky factor of the inverse mode Hessian so the nodes follow the
+posterior's correlation, with the PC priors from
+\code{spatial$prior_range} / \code{spatial$prior_sigma} folded into the
+integrated marginal. \code{"ccd"} lays the 9-point central composite design
+in the same orientation instead: 9 inner solves against 441, and a
+95\\% interval read off its moments, which on a curved (range, sigma)
+ridge falls well short of the upper tail. Either falls back to
+\code{"grid"} if the surface is too flat for a Hessian-based design.
+\code{"grid"} uses a rectangular grid in \verb{log(range) x log(sigma)} around
+the prior modes.
 \item \code{n_grid}: grid points per hyperparameter dimension for
 \code{method = "grid"} (ignored under \code{"ccd"}). Default 5.
 \item \code{diagnose_k}: if TRUE (default), compute the outer
@@ -109,7 +115,7 @@ deeper quantile of the weight distribution (gcol33/tulpa#631).
 order statistics. Silently capped at 20\% of the draws, beyond which
 body ratios enter the tail and bias the shape.
 \item \code{mode_find}: tuning for the outer \verb{(range, sigma)} mode-find under
-\code{method = "ccd"}, as \code{list(factr =, ndeps =, maxit =)}; supply any
+\code{method = "auto"} or \code{"ccd"}, as \code{list(factr =, ndeps =, maxit =)}; supply any
 subset. \code{ndeps} is the central-difference step for \code{optim()}'s
 numerical gradient on the log scale (default 1e-2): it must clear the
 inner solver's convergence tolerance, and a step wide enough that its

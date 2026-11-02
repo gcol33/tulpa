@@ -84,12 +84,13 @@ test_that("the per-node field variance is the exact Gaussian posterior variance"
 })
 
 
-test_that("spatial_range() reads a fit_spde() CCD as a moment rule", {
+test_that("spatial_range() reads a fit_spde() outer grid through the nested summary", {
   skip_on_cran()
   fx <- .spde_record_fixture()
   fit <- fx$fit
   rec <- fit$nested
-  expect_identical(rec$integration, rec$method)
+  expect_identical(rec$integration,
+                   if (identical(rec$method, "ccd")) "ccd" else "grid")
   sr <- spatial_range(fit)
   ref <- tulpa:::.nested_hyper_summary(rec, c(0.025, 0.975),
                                        transform = tulpa:::.SPATIAL_HYPER_TRANSFORM)

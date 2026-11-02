@@ -44,13 +44,19 @@
 #'   arguments stay in the signature above). Recognized entries:
 #'   \itemize{
 #'     \item `method`: hyperparameter integration backend when nested Laplace is
-#'       active. `"ccd"` (default) uses a central composite design centered on
-#'       the joint posterior mode of `(range, sigma)`, oriented by the local
-#'       Hessian (9 design points instead of `n_grid^2`), folding the PC priors
-#'       from `spatial$prior_range` / `spatial$prior_sigma` into the integrated
-#'       marginal and falling back to `"grid"` if the surface is too flat for a
-#'       Hessian-based design. `"grid"` uses a rectangular grid in
-#'       `log(range) x log(sigma)` around the prior modes.
+#'       active. `"auto"` (default) finds the joint posterior mode of
+#'       `(log range, log sigma)` and lays the aligned tensor there: 21 x 21
+#'       nodes over +/- 6 SDs of the whitened coordinates, oriented by the
+#'       Cholesky factor of the inverse mode Hessian so the nodes follow the
+#'       posterior's correlation, with the PC priors from
+#'       `spatial$prior_range` / `spatial$prior_sigma` folded into the
+#'       integrated marginal. `"ccd"` lays the 9-point central composite design
+#'       in the same orientation instead: 9 inner solves against 441, and a
+#'       95\% interval read off its moments, which on a curved (range, sigma)
+#'       ridge falls well short of the upper tail. Either falls back to
+#'       `"grid"` if the surface is too flat for a Hessian-based design.
+#'       `"grid"` uses a rectangular grid in `log(range) x log(sigma)` around
+#'       the prior modes.
 #'     \item `n_grid`: grid points per hyperparameter dimension for
 #'       `method = "grid"` (ignored under `"ccd"`). Default 5.
 #'     \item `diagnose_k`: if TRUE (default), compute the outer
@@ -66,7 +72,7 @@
 #'       order statistics. Silently capped at 20% of the draws, beyond which
 #'       body ratios enter the tail and bias the shape.
 #'     \item `mode_find`: tuning for the outer `(range, sigma)` mode-find under
-#'       `method = "ccd"`, as `list(factr =, ndeps =, maxit =)`; supply any
+#'       `method = "auto"` or `"ccd"`, as `list(factr =, ndeps =, maxit =)`; supply any
 #'       subset. `ndeps` is the central-difference step for `optim()`'s
 #'       numerical gradient on the log scale (default 1e-2): it must clear the
 #'       inner solver's convergence tolerance, and a step wide enough that its
@@ -172,7 +178,7 @@ fit_spde <- function(y, X, spatial,
 
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.
-  method     <- match.arg(control$method %||% "ccd", c("ccd", "grid"))
+  method     <- match.arg(control$method %||% "auto", c("auto", "ccd", "grid"))
   n_grid     <- as.integer(control$n_grid %||% 5L)
   diagnose_k <- isTRUE(control$diagnose_k %||% TRUE)
   k_samples  <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
@@ -317,7 +323,7 @@ fit_spde <- function(y, X, spatial,
   }
 
   # Analytic (log range, log sigma) gradient of the log-marginal, for the CCD
-  # outer mode-find's L-BFGS-B (fit_spde_nested_ccd() -> .nl_lbfgsb_mode_find()).
+  # outer mode-find's L-BFGS-B (fit_spde_nested_mode() -> .nl_lbfgsb_mode_find()).
   # cpp_spde_laplace_gradient() implements exactly the alpha = 2 (nu = 1)
   # operator with no offset and no random-effect term (gcol33/tulpa#809);
   # outside that scope the mode-find keeps its central-difference gradient.
@@ -345,7 +351,7 @@ fit_spde <- function(y, X, spatial,
                            k_tail_points = k_tail_pts,
                            hyperprior = hyperprior)
     } else {
-      fit_spde_nested_ccd(spde_log_marginal,
+      fit_spde_nested_mode(spde_log_marginal,
                                  fit_spde_single = function(r, s) {
                                    laplace_spde_at(
                                      y = y, n_trials = n_trials, X = X,
@@ -363,7 +369,9 @@ fit_spde <- function(y, X, spatial,
                           k_tail_points = k_tail_pts,
                           mode_find = mode_find,
                           hyperprior = hyperprior,
-                          spde_log_marginal_grad = spde_log_marginal_grad)
+                          spde_log_marginal_grad = spde_log_marginal_grad,
+                          design = .nl_outer_design(
+                            2L, list(integration = method)))
     }
   } else {
     # --- Single-point Laplace at fixed hyperparameters ---
