@@ -9,21 +9,13 @@
 
 namespace tulpa_hmc {
 
-// Bounds on an adapted inverse-mass diagonal entry, i.e. on the posterior
-// variance the sampler credits a coordinate with. A variance estimated from
-// a short warmup window can come back near zero (a coordinate the chain has
-// not moved on yet) or enormous (one it has just escaped a bad start along),
-// and either drives the shared step size off the whole trajectory. The
-// window is six orders of magnitude wide, so it binds only on those two
-// pathologies and never on an estimate the window can support.
-constexpr double INV_MASS_MIN = 1e-3;
-constexpr double INV_MASS_MAX = 1e3;
-
-// One clamp, read off the diagonal of a column-major n x n source.
+// The diagonal of a column-major n x n source, through the one inverse-mass
+// guard (clamp_inv_mass, hmc_sampler_adapt.h). The dense metric itself is
+// bounded relatively, by the eigenvalue clip in update_from_covariance().
 void DenseMassMatrix::set_diag_from(const double* diag_source) {
   for (int i = 0; i < n; i++) {
     double var_i = diag_source[static_cast<size_t>(i) * n + i];
-    inv_mass_diag[i] = std::max(INV_MASS_MIN, std::min(var_i, INV_MASS_MAX));
+    inv_mass_diag[i] = clamp_inv_mass(var_i);
     sqrt_mass_diag[i] = 1.0 / std::sqrt(inv_mass_diag[i]);
   }
 }

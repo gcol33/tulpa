@@ -52,12 +52,10 @@
 # an order statistic over parameters; anything measured here needs replication
 # before it means anything.
 #
-# The kernel clamps whatever inverse mass it is handed to [1e-3, 1e3]
-# (hmc_nuts_chain_setup.h), the same clamp it applies to its own structural
-# metric, so a sharply identified coefficient whose posterior variance falls
-# below 1e-3 starts from the clamp rather than from its true scale. That costs
-# accuracy in the starting metric, not correctness: warmup adaptation runs from
-# this point and converges to the same metric it would have found cold.
+# The kernel passes whatever inverse mass it is handed through the one guard
+# it applies to every metric entry (`clamp_inv_mass()`,
+# src/hmc_sampler_adapt.h), which replaces only a non-positive or non-finite
+# entry, so a sharply identified coefficient starts at its own posterior scale.
 # ============================================================================
 
 

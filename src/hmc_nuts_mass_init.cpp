@@ -304,6 +304,39 @@ MassMatrixConfig select_and_init_mass_matrix(
           st_gmrf, st_gmrf_margin, st_gmrf_declined};
 }
 
+FixedEffectScales fixed_effect_scales(const ModelData& data,
+                                      const ParamLayout& layout,
+                                      int n_params) {
+  FixedEffectScales s;
+  s.unit_var.assign(n_params, 0.0);
+  s.eta_sd.assign(n_params, 1.0);
+  const int n_proc = std::min<int>((int)data.processes.size(),
+                                   (int)layout.process_beta_start.size());
+  for (int k = 0; k < n_proc; k++) {
+    const ProcessData& pd = data.processes[k];
+    const int p = pd.p;
+    const int start = layout.process_beta_start[k];
+    if (p < 1 || start < 0 || start + p > n_params ||
+        (int)layout.process_beta_count.size() <= k ||
+        layout.process_beta_count[k] != p) {
+      continue;
+    }
+    const size_t n_rows = pd.X_flat.size() / static_cast<size_t>(p);
+    if (n_rows == 0) continue;
+    for (int j = 0; j < p; j++) {
+      double ss = 0.0;
+      for (size_t i = 0; i < n_rows; i++) {
+        const double x = pd.X_flat[i * static_cast<size_t>(p) + j];
+        ss += x * x;
+      }
+      if (!(ss > 0.0) || !std::isfinite(ss)) continue;
+      s.unit_var[start + j] = 1.0 / ss;
+      s.eta_sd[start + j] = std::sqrt(static_cast<double>(n_rows) / ss);
+    }
+  }
+  return s;
+}
+
 // Warm-start mass matrix diagonal from model structure.
 // Sets informed diagonal entries for parameter groups with known posterior scale,
 // giving the step size tuner a reasonable starting point even before warmup
@@ -320,6 +353,21 @@ void warm_start_mass_matrix(
   std::vector<double> inv_m(n_params, 1.0);
   std::vector<double> sqrt_m(n_params, 1.0);
   bool any_informed = false;
+
+  // Fixed effects: the unit-information variance of each coefficient, which
+  // carries the units of its covariate. An identity start credits a
+  // coefficient on an elevation-in-metres column with a variance about 1e8
+  // times its posterior one, and the step size the first windows tune against
+  // it is that much too small along the other coordinates.
+  {
+    const FixedEffectScales fs = fixed_effect_scales(data, layout, n_params);
+    for (int j = 0; j < n_params; j++) {
+      if (fs.unit_var[j] > 0.0) {
+        inv_m[j] = fs.unit_var[j];
+        any_informed = true;
+      }
+    }
+  }
 
   // HSGP basis coefficients: beta_j ~ N(0, 1), so posterior variance ~ 1
   // Hyperparameters: log_sigma2 ~ prior with moderate variance,

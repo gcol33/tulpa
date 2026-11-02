@@ -45,16 +45,6 @@ struct MassMatrixConfig {
   const char* st_gmrf_declined = "";
 };
 
-// One clamp on an inverse-mass diagonal, shared by the structural warm start,
-// a caller-supplied metric and the Type-IV override. Outside this band the
-// metric is either singular or so wide that find_reasonable_epsilon cannot
-// recover, and the three sites disagreeing on where that band sits is the
-// copy-paste this replaces.
-inline double clamp_inv_mass(double v) {
-  if (!(v > 0.0) || !std::isfinite(v)) return 1.0;
-  return std::max(1e-3, std::min(v, 1e3));
-}
-
 // Select mass matrix type (AUTO resolution, block detection, DENSE override)
 // and initialize the DenseMassMatrix object.
 MassMatrixConfig select_and_init_mass_matrix(
@@ -65,6 +55,20 @@ MassMatrixConfig select_and_init_mass_matrix(
     MassMatrixType metric_type,
     bool verbose
 );
+
+// The scale a fixed-effect coefficient carries from the units of its design
+// column x_j, per sampler coordinate. `unit_var` is the unit-information
+// posterior variance 1 / sum_i x_ij^2 (the inverse Fisher information of the
+// coefficient at unit observation weight), 0 on every coordinate that is not
+// a fixed effect. `eta_sd` is 1 / rms(x_j), the coefficient change that moves
+// the linear predictor by one, and 1 elsewhere.
+struct FixedEffectScales {
+  std::vector<double> unit_var;
+  std::vector<double> eta_sd;
+};
+FixedEffectScales fixed_effect_scales(const ModelData& data,
+                                      const ParamLayout& layout,
+                                      int n_params);
 
 // Warm-start mass matrix diagonal from model structure
 void warm_start_mass_matrix(

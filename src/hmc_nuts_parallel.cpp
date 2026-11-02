@@ -146,11 +146,16 @@ bool fold_target_identity(tulpa::Fingerprint& fp,
 // entry funnels through. Chain 0 keeps the caller's position exactly, so a warm
 // start is not thrown away; every other chain is offset per coordinate by
 // Uniform(-2, 2) times that coordinate's own scale. The scale is the posterior
-// SD implied by a caller-supplied inverse-mass diagonal (which is a variance),
-// and 1 otherwise: a fixed absolute offset would be wrong across a layout that
-// mixes coefficients, log-variances and field coordinates, and every coordinate
-// here is on the sampler's unconstrained scale. The stream is keyed on
-// (seed, chain), so a run stays reproducible under a fixed seed.
+// SD implied by a caller-supplied inverse-mass diagonal (which is a variance).
+// Without one, a fixed-effect coefficient's scale is the one on which it moves
+// the linear predictor, 1 / rms(x_j) for its design column x_j, so the offset
+// is Uniform(-2, 2) on eta whatever units the covariate is in: a unit offset on
+// the coefficient of a column with rms 15 (a calendar year, an elevation)
+// moves eta by 30 and starts the chain where exp(eta) overflows the
+// likelihood. Every other coordinate is on a unit-scale unconstrained
+// parameterization (log-variances, logits, non-centered fields) and takes 1.
+// The stream is keyed on (seed, chain), so a run stays reproducible under a
+// fixed seed.
 //
 // A caller who supplied distinct rows is left alone, and so is a run with no
 // warmup: there the reported draws start at the first iteration, and an
@@ -158,6 +163,8 @@ bool fold_target_identity(tulpa::Fingerprint& fp,
 static void disperse_broadcast_inits(
     std::vector<std::vector<double>>& q_init_per_chain,
     const std::vector<std::vector<double>>& inv_metric_per_chain,
+    const ModelData& data,
+    const ParamLayout& layout,
     int n_chains,
     int n_warmup,
     unsigned int seed
@@ -172,12 +179,13 @@ static void disperse_broadcast_inits(
   }
 
   const bool have_metric = ((int)inv_metric_per_chain.size() == n_chains);
+  const std::vector<double> structural = fixed_effect_scales(data, layout, n).eta_sd;
   for (int c = 1; c < n_chains; c++) {
     std::mt19937 jitter_rng(seed + 7919u * static_cast<unsigned int>(c + 1));
     std::uniform_real_distribution<double> jitter(-2.0, 2.0);
     const bool scaled = have_metric && (int)inv_metric_per_chain[c].size() == n;
     for (int j = 0; j < n; j++) {
-      double sd = 1.0;
+      double sd = structural[j];
       if (scaled && inv_metric_per_chain[c][j] > 0.0) {
         sd = std::sqrt(inv_metric_per_chain[c][j]);
       }
@@ -217,7 +225,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   }
 
   std::vector<std::vector<double>> q_init_per_chain = q_init_broadcast;
-  disperse_broadcast_inits(q_init_per_chain, inv_metric_per_chain,
+  disperse_broadcast_inits(q_init_per_chain, inv_metric_per_chain, data, layout,
                            n_chains, n_warmup, seed);
 
   static const std::vector<double> kNoMetric;

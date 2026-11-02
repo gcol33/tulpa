@@ -100,14 +100,21 @@
     }
   }
 
-  // Recompute epsilon with warm-start mass (if informed)
-  // This gives the dual averaging a better starting point when mass is pre-set
-  if ((mass.type != MassMatrixType::DIAG || caller_inv_metric)
-      && !mass.inv_mass_diag.empty()) {
+  // Recompute epsilon under the starting metric the chain runs with (the
+  // structural warm start or a caller-supplied one), so the dual averaging
+  // starts from a step size tuned for it rather than for the identity.
+  if (!mass.inv_mass_diag.empty()) {
     epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);
   }
 
   WelfordStats mass_stats(n_params);              // Always track diagonal
+  {
+    const FixedEffectScales fs = fixed_effect_scales(data, layout, n_params);
+    mass_stats.target.assign(n_params, 1e-3);
+    for (int j = 0; j < n_params; j++) {
+      if (fs.unit_var[j] > 0.0) mass_stats.target[j] = fs.unit_var[j];
+    }
+  }
   // The dense covariance accumulator holds n_params^2 doubles and is read only
   // while the metric is DENSE. The warmup-end recovery paths can only move the
   // metric TOWARD the diagonal (DENSE -> DIAG, BLOCK_DIAG -> DIAG) or install a

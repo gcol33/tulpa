@@ -12,6 +12,22 @@
 
 namespace tulpa_hmc {
 
+// One guard on an inverse-mass diagonal entry, shared by the adapted
+// diagonal, the structural warm start, a caller-supplied metric and the
+// Type-IV override: the entry is the posterior variance the sampler credits a
+// coordinate with, so it has to be positive and finite. No absolute band is
+// imposed. A fixed-effect coefficient's posterior variance scales as
+// 1 / (n var(x_j)) and is set by the units of its covariate: a calendar-year
+// slope or an elevation-in-metres slope sits orders of magnitude below 1e-3,
+// and a floor there leaves that coordinate's metric too wide by the square
+// root of the gap, which the shared step size then pays for on every
+// trajectory. A window estimate near zero is kept off zero by the shrinkage
+// in WelfordStats::inv_mass(), as in Stan's adaptation.
+inline double clamp_inv_mass(double v) {
+  if (!(v > 0.0) || !std::isfinite(v)) return 1.0;
+  return v;
+}
+
 // =====================================================================
 // Online full covariance estimator (Welford's algorithm for outer products)
 // =====================================================================
@@ -169,6 +185,13 @@ public:
   std::vector<double> mean;
   std::vector<double> M2;  // Sum of squared differences from mean
 
+  // Per-coordinate value the window variance is shrunk toward (empty: 1e-3
+  // for every coordinate, Stan's target). A fixed-effect coefficient's target
+  // is its unit-information variance (fixed_effect_scales()), which carries
+  // the units of its covariate, so the shrinkage moves an estimate within its
+  // own order of magnitude instead of toward an absolute 1e-3.
+  std::vector<double> target;
+
   WelfordStats(int dim) : n(0), mean(dim, 0.0), M2(dim, 0.0) {}
 
   void update(const std::vector<double>& x) {
@@ -188,9 +211,7 @@ public:
       std::fill(var.begin(), var.end(), 1.0);
     } else {
       for (size_t i = 0; i < mean.size(); i++) {
-        var[i] = M2[i] / (n - 1);
-        // Ensure minimum variance to avoid numerical issues
-        if (var[i] < 1e-6) var[i] = 1e-6;
+        var[i] = std::max(0.0, M2[i] / (n - 1));
       }
     }
     return var;
@@ -199,15 +220,14 @@ public:
   // Get inverse mass matrix (= variance, regularized for stability)
   // For HMC: M = diag(1/var), so M^{-1} = diag(var)
   // High variance parameters should move faster in position space
-  // Uses Stan-style Bayesian shrinkage toward unit variance to prevent
-  // extreme mass matrix entries from small sample sizes
+  // Uses Stan-style shrinkage toward `target` (weight 5 / (n + 5)) to keep a
+  // short window's estimate off zero
   std::vector<double> inv_mass() const {
     auto var = variance();
     double shrink = (n < 2) ? 0.0 : (double)n / (n + 5.0);
     for (size_t i = 0; i < var.size(); i++) {
-      var[i] = shrink * var[i] + 1e-3 * (5.0 / (n + 5.0));
-      // Safety clamp for extreme values
-      var[i] = std::max(1e-3, std::min(var[i], 1e3));
+      const double t = (i < target.size() && target[i] > 0.0) ? target[i] : 1e-3;
+      var[i] = clamp_inv_mass(shrink * var[i] + t * (5.0 / (n + 5.0)));
     }
     return var;
   }
