@@ -41,9 +41,22 @@ R users fitting models with grouped, spatial, or temporal observations. The READ
 - home: vignettes/tgmrf.Rmd
 - also: README
 
+### A4 Check, compare and trust a fit
+
+- question: Does the model fit the data, which model is better, and does the result agree with established packages?
+- answer: Residual, sampler and approximation diagnostics, model comparison, and matched fits against lme4, glmmTMB, brms and INLA.
+- evidence: vignettes/articles/diagnostics.Rmd; vignettes/articles/model-comparison.Rmd; vignettes/articles/compatibility.Rmd; vignettes/articles/identifiability.Rmd
+- limits: Diagnostics on a field model depend on whether residuals condition on the field.
+- home: vignettes/articles/diagnostics.Rmd
+- also: vignettes/articles/troubleshooting.Rmd, vignettes/articles/case-study-sids.Rmd
+
 ## Documents
 
 - README.Rmd / README.md: overview, installation, first model, routing, help, and citation.
-- vignettes/tulpa.Rmd: a tutorial through model fitting.
-- Topic articles: complete workflows, methods, and limitations.
+- vignettes/tulpa.Rmd: Get started, a tutorial through model fitting with a taste of each feature.
+- Concepts (articles/concepts): the vocabulary and the fitted object.
+- Models: random-slopes, spatial-models, temporal-models, space-time, varying-coefficients, spde, spatial-confounding, joint-models, latent-factors, categorical-responses; one model type each, simulate to compare.
+- Workflows: data-formatting, priors, diagnostics, model-comparison, troubleshooting, checkpoint, tgmrf, em-laplace; one task each.
+- Case studies: case-study-sids, real county data end to end.
+- Background: inference-modes, identifiability, reliability-pareto-k, sbc, compatibility.
 - Help pages: argument and return-value contracts.
