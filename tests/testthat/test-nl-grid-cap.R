@@ -2,10 +2,19 @@
 test_that("the guard refuses past a set ceiling and names the axes", {
   expect_silent(.nl_check_grid_cap(1e6, Inf, "Reduce it."))
   expect_silent(.nl_check_grid_cap(2401, 2401, "Reduce it."))
-  expect_error(
+  msg <- tryCatch(
     .nl_check_grid_cap(24, 4, "Reduce it.", " It crosses b1 (x) x phi_b 4."),
-    "24 cells, past control$max_grid_cells = 4. It crosses b1 (x) x phi_b 4. Reduce it.",
-    fixed = TRUE)
+    error = conditionMessage)
+  expect_match(msg, "24 cells, past control$max_grid_cells = 4. It crosses b1 (x) x phi_b 4.",
+               fixed = TRUE)
+  expect_match(msg, "Reduce it.$")
+})
+
+test_that("the refusal says which grid it counted", {
+  msg <- tryCatch(.nl_check_grid_cap(81, 50, "Reduce it."), error = conditionMessage)
+  expect_match(msg, "the grid each pass is about to solve, the declared grid first",
+               fixed = TRUE)
+  expect_match(msg, "a fitted grid can hold a different number of cells", fixed = TRUE)
 })
 
 test_that("the crossing names the dispersion axes crossed on top", {

@@ -2601,7 +2601,10 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   fmt <- function(x) format(x, scientific = FALSE, trim = TRUE)
   stop(sprintf(
     paste0("Multi-block outer grid has %s cells, past control$max_grid_cells ",
-           "= %s.%s %s"),
+           "= %s.%s The cap is read on the grid each pass is about to solve, ",
+           "the declared grid first; a placement or refinement pass that runs ",
+           "afterwards can re-lay the axes, so a fitted grid can hold a ",
+           "different number of cells. %s"),
     fmt(n_cells), fmt(max_cells), layout, remedy
   ), call. = FALSE)
 }
