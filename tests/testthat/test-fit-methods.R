@@ -182,7 +182,8 @@ test_that("Gibbs fit (one chain in $draws) supports the contract", {
   expect_equal(dim(vcov(fit)), c(2L, 2L))
   expect_gt(nrow(ranef(fit)), 0L)
   # predict reuses coef()/vcov(), so it must work here too
-  expect_length(predict(fit, newdata = data.frame(x = c(-1, 1))), 2L)
+  expect_length(predict(fit, newdata = data.frame(x = c(-1, 1)), re_form = NA),
+                2L)
 })
 
 test_that("sampler fit reports named fixed effects and separate random effects", {
