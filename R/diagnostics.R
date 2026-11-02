@@ -127,9 +127,9 @@
 #' simulated data sets by [sbc()], and the two disagree in both directions -- a
 #' fit whose reliability band is clean on both layers can still fail
 #' calibration, and one whose outer k-hat is well past the escalation threshold
-#' can pass. So the band is a screen, not a verdict. Pass an `sbc` result as
+#' can pass. So the band is a screen, not a verdict. Pass an [sbc()] result as
 #' `sbc =` and the calibration verdict is attached to the table and printed
-#' underneath it; `diagnostics()` called on the `sbc` result itself returns its
+#' underneath it; `diagnostics()` called on the [sbc()] result itself returns its
 #' report table.
 #'
 #' @section Approximation reliability (i.i.d. draws):
@@ -398,8 +398,8 @@ diagnostics.default <- function(fit, pars = NULL,
                                 measures = c("rhat", "ess_bulk", "ess_tail"),
                                 probs = c(0.05, 0.95), sbc = NULL, ...) {
   measures <- match.arg(measures, names(.tulpa_diag_measures), several.ok = TRUE)
-  if (!is.null(sbc) && !inherits(sbc, "sbc")) {
-    stop("sbc = takes an `sbc` result from sbc().", call. = FALSE)
+  if (!is.null(sbc) && !inherits(sbc, "tulpa_sbc")) {
+    stop("sbc = takes a `tulpa_sbc` result from sbc().", call. = FALSE)
   }
 
   kind <- .tulpa_draws_kind(fit)

@@ -347,7 +347,7 @@ test_that("breaking either premise of the factorization breaks the calibration",
   # labels came from, which is inside the callback and not observable from
   # outside it. That is why `fresh_groups` reads "verified (disjoint group
   # labels)" and never "premise verified".
-  expect_s3_class(sbc("posterior", model = m2, n_sim = 4L), "sbc")
+  expect_s3_class(sbc("posterior", model = m2, n_sim = 4L), "tulpa_sbc")
 })
 
 # ---------------------------------------------------------------------------

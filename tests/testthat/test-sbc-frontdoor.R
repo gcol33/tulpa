@@ -115,7 +115,7 @@ test_that("a pool that drops the observed data is refused", {
   m3 <- fd_model(pool = function(obs, rep)
     list(y = c(obs$y, rep$y), g = c(obs$g, rep$g + length(obs$g)),
          parts = list(obs = obs, rep = rep)))
-  expect_s3_class(sbc("posterior", model = m3, n_sim = 5L), "sbc")
+  expect_s3_class(sbc("posterior", model = m3, n_sim = 5L), "tulpa_sbc")
 })
 
 test_that("the two experiments do not accept each other's arguments", {
@@ -207,7 +207,7 @@ test_that("the front door reproduces the driver bit for bit", {
   skip_on_cran()
   res <- sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
              n_sim = 40L, seed = 11L)
-  expect_s3_class(res, "sbc")
+  expect_s3_class(res, "tulpa_sbc")
   expect_identical(res$pit,
                    recov_sbc(fd_sim, fd_fitter, n_seed = 40L, seed_off = 11L,
                              truth = "prior_draw"))
@@ -310,7 +310,7 @@ test_that("print, summary, plot and diagnostics read the result", {
   expect_true(any(grepl("inside the band", out)))
 
   s <- summary(res, baseline = "exact")
-  expect_s3_class(s, "sbc_summary")
+  expect_s3_class(s, "tulpa_sbc_summary")
   sout <- utils::capture.output(print(s))
   expect_true(any(grepl("Paired CRPS against arm", sout)))
 
@@ -369,5 +369,6 @@ test_that("a fit's reliability table carries the calibration verdict alongside",
   expect_identical(plain, stripped)
   out <- utils::capture.output(print(both))
   expect_true(any(grepl("calibration \\(SBC", out)))
-  expect_error(diagnostics(fit, sbc = "not an sbc result"), "takes an `sbc`")
+  expect_error(diagnostics(fit, sbc = "not an sbc result"),
+               "takes a `tulpa_sbc`")
 })

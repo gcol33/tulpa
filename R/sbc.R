@@ -1107,7 +1107,7 @@ recov_posterior_sbc <- function(model, n_seed, quantities = NULL,
 #'   the pinned stream the within-atom randomizing uniforms come from (default
 #'   the driver's own, so a result is reproducible and the fits are not
 #'   perturbed by asking for the diagnostic).
-#' @return An object of class `sbc`:
+#' @return An object of class `tulpa_sbc`:
 #' \describe{
 #'   \item{`pit`}{one row per (simulation, arm, quantity): the truth, the raw
 #'     and folded PIT, the CRPS and the predictive kind.}
@@ -1244,7 +1244,7 @@ sbc.character <- function(object = c("prior_predictive", "posterior"),
                  quantities = quantities,
                  crps_role = attr(res, "crps_role"),
                  premises = premises, call = match.call()),
-            class = "sbc")
+            class = "tulpa_sbc")
 }
 
 # One verdict line over the whole result. A read outside the band is the strong
@@ -1270,7 +1270,7 @@ sbc.character <- function(object = c("prior_predictive", "posterior"),
 
 #' @rdname sbc
 #' @export
-print.sbc <- function(x, ...) {
+print.tulpa_sbc <- function(x, ...) {
   cat(sprintf("Simulation-based calibration -- %s, %d simulations\n",
               x$experiment, x$n_sim))
   cat(sprintf("  band: %.4g simultaneous (equal local levels, exact crossing probability)\n",
@@ -1304,7 +1304,7 @@ print.sbc <- function(x, ...) {
   invisible(x)
 }
 
-#' @param object An `sbc` result.
+#' @param object A `tulpa_sbc` result from [sbc()].
 #' @param baseline Optional arm name. When given, the summary also carries the
 #'   PAIRED CRPS differences of every other arm against it, seed by seed. A
 #'   negative `delta` is the arm scoring better. This is refused on an
@@ -1312,7 +1312,7 @@ print.sbc <- function(x, ...) {
 #' @param ... Ignored.
 #' @rdname sbc
 #' @export
-summary.sbc <- function(object, baseline = NULL, ...) {
+summary.tulpa_sbc <- function(object, baseline = NULL, ...) {
   out <- list(experiment = object$experiment, n_sim = object$n_sim,
               level = object$level, report = object$report,
               crps_role = object$crps_role, premises = object$premises)
@@ -1325,12 +1325,12 @@ summary.sbc <- function(object, baseline = NULL, ...) {
     out$compare <- sbc_crps_compare(object$pit, baseline)
     out$baseline <- baseline
   }
-  structure(out, class = "sbc_summary")
+  structure(out, class = "tulpa_sbc_summary")
 }
 
 #' @rdname sbc
 #' @export
-print.sbc_summary <- function(x, ...) {
+print.tulpa_sbc_summary <- function(x, ...) {
   cat(sprintf("Simulation-based calibration -- %s, %d simulations\n",
               x$experiment, x$n_sim))
   cat("  CRPS: ", x$crps_role, "\n\n", sep = "")
@@ -1362,13 +1362,13 @@ print.sbc_summary <- function(x, ...) {
   sprintf("p = %.3g%s", p, if (ok) "" else ", outside band")
 }
 
-#' @param x An `sbc` result.
+#' @param x A `tulpa_sbc` result from [sbc()].
 #' @param arm,quantity Optional character vectors selecting which panels to
 #'   draw. Default draws every (arm, quantity).
 #' @param folded Plot the folded PIT instead of the raw one.
 #' @rdname sbc
 #' @export
-plot.sbc <- function(x, arm = NULL, quantity = NULL, folded = FALSE, ...) {
+plot.tulpa_sbc <- function(x, arm = NULL, quantity = NULL, folded = FALSE, ...) {
   r <- x$report
   if (!is.null(arm)) r <- r[r$arm %in% arm, , drop = FALSE]
   if (!is.null(quantity)) r <- r[r$quantity %in% quantity, , drop = FALSE]
@@ -1408,7 +1408,7 @@ plot.sbc <- function(x, arm = NULL, quantity = NULL, folded = FALSE, ...) {
 
 #' @rdname diagnostics
 #' @export
-diagnostics.sbc <- function(fit, ...) {
+diagnostics.tulpa_sbc <- function(fit, ...) {
   out <- fit$report
   attr(out, "experiment") <- fit$experiment
   attr(out, "crps_role") <- fit$crps_role

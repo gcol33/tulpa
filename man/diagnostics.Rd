@@ -5,7 +5,7 @@
 \alias{diagnostics}
 \alias{diagnostics.default}
 \alias{print.laplace_diagnostics}
-\alias{diagnostics.sbc}
+\alias{diagnostics.tulpa_sbc}
 \title{Posterior diagnostics for a fitted model}
 \usage{
 diagnostics(fit, ...)
@@ -21,7 +21,7 @@ diagnostics(fit, ...)
 
 \method{print}{laplace_diagnostics}(x, ...)
 
-\method{diagnostics}{sbc}(fit, ...)
+\method{diagnostics}{tulpa_sbc}(fit, ...)
 }
 \arguments{
 \item{fit}{A \code{tulpa_fit} (or subclass) carrying posterior \verb{$draws}. Multiple
@@ -101,9 +101,9 @@ backend's posterior is CALIBRATED is a different question, answered over many
 simulated data sets by \code{\link[=sbc]{sbc()}}, and the two disagree in both directions -- a
 fit whose reliability band is clean on both layers can still fail
 calibration, and one whose outer k-hat is well past the escalation threshold
-can pass. So the band is a screen, not a verdict. Pass an \code{sbc} result as
+can pass. So the band is a screen, not a verdict. Pass an \code{\link[=sbc]{sbc()}} result as
 \verb{sbc =} and the calibration verdict is attached to the table and printed
-underneath it; \code{diagnostics()} called on the \code{sbc} result itself returns its
+underneath it; \code{diagnostics()} called on the \code{\link[=sbc]{sbc()}} result itself returns its
 report table.
 }
 

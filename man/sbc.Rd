@@ -4,10 +4,10 @@
 \alias{sbc}
 \alias{sbc.default}
 \alias{sbc.character}
-\alias{print.sbc}
-\alias{summary.sbc}
-\alias{print.sbc_summary}
-\alias{plot.sbc}
+\alias{print.tulpa_sbc}
+\alias{summary.tulpa_sbc}
+\alias{print.tulpa_sbc_summary}
+\alias{plot.tulpa_sbc}
 \title{Simulation-based calibration}
 \usage{
 sbc(object, ...)
@@ -29,16 +29,16 @@ sbc(object, ...)
   ...
 )
 
-\method{print}{sbc}(x, ...)
+\method{print}{tulpa_sbc}(x, ...)
 
-\method{summary}{sbc}(object, baseline = NULL, ...)
+\method{summary}{tulpa_sbc}(object, baseline = NULL, ...)
 
-\method{print}{sbc_summary}(x, ...)
+\method{print}{tulpa_sbc_summary}(x, ...)
 
-\method{plot}{sbc}(x, arm = NULL, quantity = NULL, folded = FALSE, ...)
+\method{plot}{tulpa_sbc}(x, arm = NULL, quantity = NULL, folded = FALSE, ...)
 }
 \arguments{
-\item{object}{An \code{sbc} result.}
+\item{object}{A \code{tulpa_sbc} result from \code{\link[=sbc]{sbc()}}.}
 
 \item{...}{Ignored.}
 
@@ -71,7 +71,7 @@ the pinned stream the within-atom randomizing uniforms come from (default
 the driver's own, so a result is reproducible and the fits are not
 perturbed by asking for the diagnostic).}
 
-\item{x}{An \code{sbc} result.}
+\item{x}{A \code{tulpa_sbc} result from \code{\link[=sbc]{sbc()}}.}
 
 \item{baseline}{Optional arm name. When given, the summary also carries the
 PAIRED CRPS differences of every other arm against it, seed by seed. A
@@ -84,7 +84,7 @@ draw. Default draws every (arm, quantity).}
 \item{folded}{Plot the folded PIT instead of the raw one.}
 }
 \value{
-An object of class \code{sbc}:
+An object of class \code{tulpa_sbc}:
 \describe{
 \item{\code{pit}}{one row per (simulation, arm, quantity): the truth, the raw
 and folded PIT, the CRPS and the predictive kind.}
