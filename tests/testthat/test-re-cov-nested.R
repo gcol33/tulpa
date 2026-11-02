@@ -236,8 +236,13 @@ test_that("tulpa_re_cov_nested returns a well-formed marginalized posterior", {
   fx <- .rcn_cover_fits()[[1L]]
   d <- fx$d; re_term <- fx$re_term; res <- fx$res
 
-  # default CCD layout: k = c(c+1)/2 = 3 -> 1 centre + 2k axial + 2^k factorial
-  expect_equal(res$n_grid, 1L + 2L * 3L + 2L^3L)  # = 15
+  # default layout at k = c(c+1)/2 = 3: the aligned tensor (`.nl_outer_design()`)
+  expect_equal(res$n_grid, .nl_outer_design(3L)$n_per_axis^3L)
+  res_ccd <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
+                                 family = "binomial",
+                                 control = .rcn_ctl(integration = "ccd"))
+  # the CCD opt-in: 1 centre + 2k axial + 2^k factorial
+  expect_equal(res_ccd$n_grid, 1L + 2L * 3L + 2L^3L)  # = 15
   expect_equal(sum(res$weights), 1, tolerance = 1e-10)
   expect_true(all(res$weights >= 0))
 
@@ -415,7 +420,8 @@ test_that("a CCD fit reports a scale interval that is not the node extent", {
   # The design this reads is the one the marginal likelihood alone places, so
   # the prior is stated flat.
   res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
-                             hyperprior = "flat", control = .rcn_ctl())
+                             hyperprior = "flat",
+                             control = .rcn_ctl(integration = "ccd"))
   # theta axis 1 is log(L_11) = log(sigma_1), so the design's extent on sigma_1
   # is exp(range(theta_grid[, 1])). The reported interval covers strictly more.
   # Measured on log(sigma_1): nodes [-0.32935, 0.26114], interval [-0.33464,

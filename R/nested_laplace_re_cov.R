@@ -1523,16 +1523,16 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #' mode's posterior covariance (`solve(Hessian)`), so points track the posterior
 #' ridge. Two node layouts are available via `integration`:
 #' \itemize{
-#'   \item `"ccd"` (default above two parameters): a central-composite design ([ccd_grid()]) of
+#'   \item `"ccd"` (default above three parameters): a central-composite design ([ccd_grid()]) of
 #'     `1 + 2k + 2^(k-q)` points for the total `k = sum_blocks` parameters, with
 #'     the corrected R-INLA design weights ([ccd_weights()]). Scales polynomially
 #'     in `k`, where the tensor grid is exponential.
-#'   \item `"grid"` (default for one or two parameters): the full
+#'   \item `"grid"` (default for one to three parameters): the full
 #'     `n_per_axis^k` tensor product with uniform cell weights -- denser and
 #'     more robust to a non-Gaussian whitened posterior, but only tractable for
 #'     small `k`. A scale's posterior on its log coordinate reaches several
 #'     standard deviations of the mode's Gaussian into its left tail, which a
-#'     three- or nine-node CCD does not place a node in.
+#'     three-, nine- or fifteen-node CCD does not place a node in.
 #' }
 #' Each node `k` contributes integration weight proportional to
 #' `Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`, following
@@ -1637,13 +1637,14 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'   arguments stay in the signature above). Recognized entries:
 #'   \itemize{
 #'     \item `integration`: node layout, `"auto"` (the default: the tensor
-#'       grid for one or two covariance parameters, the CCD above), `"grid"`
+#'       grid for one to three covariance parameters, the CCD above), `"grid"`
 #'       (full tensor product) or `"ccd"` (central-composite design).
 #'     \item `n_per_axis`: points per parameter axis in the tensor grid
-#'       (default 61 for one parameter, 21 for two, 5 above); grid only.
+#'       (default 61 for one parameter, 21 for two, 9 for three, 5 above);
+#'       grid only.
 #'     \item `span`: half-width of the tensor grid in posterior standard
 #'       deviations per whitened axis (default 8 for one parameter, 6 for two,
-#'       3 above); grid only.
+#'       4.5 for three, 3 above); grid only.
 #'     \item `n_draws`: posterior draws of the fixed effects synthesized from the
 #'       node mixture (default 2000), exposed as `draws` for the generic
 #'       `tulpa_fit` methods. The `Sigma` posterior is summarized directly from

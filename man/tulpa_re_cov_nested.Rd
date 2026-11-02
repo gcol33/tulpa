@@ -106,13 +106,14 @@ Ignored when \code{X_zi} is \code{NULL}.}
 arguments stay in the signature above). Recognized entries:
 \itemize{
 \item \code{integration}: node layout, \code{"auto"} (the default: the tensor
-grid for one or two covariance parameters, the CCD above), \code{"grid"}
+grid for one to three covariance parameters, the CCD above), \code{"grid"}
 (full tensor product) or \code{"ccd"} (central-composite design).
 \item \code{n_per_axis}: points per parameter axis in the tensor grid
-(default 61 for one parameter, 21 for two, 5 above); grid only.
+(default 61 for one parameter, 21 for two, 9 for three, 5 above);
+grid only.
 \item \code{span}: half-width of the tensor grid in posterior standard
 deviations per whitened axis (default 8 for one parameter, 6 for two,
-3 above); grid only.
+4.5 for three, 3 above); grid only.
 \item \code{n_draws}: posterior draws of the fixed effects synthesized from the
 node mixture (default 2000), exposed as \code{draws} for the generic
 \code{tulpa_fit} methods. The \code{Sigma} posterior is summarized directly from
@@ -252,16 +253,16 @@ the joint marginal-likelihood mode and rotated/scaled by the Cholesky of the
 mode's posterior covariance (\code{solve(Hessian)}), so points track the posterior
 ridge. Two node layouts are available via \code{integration}:
 \itemize{
-\item \code{"ccd"} (default above two parameters): a central-composite design (\code{\link[=ccd_grid]{ccd_grid()}}) of
+\item \code{"ccd"} (default above three parameters): a central-composite design (\code{\link[=ccd_grid]{ccd_grid()}}) of
 \verb{1 + 2k + 2^(k-q)} points for the total \code{k = sum_blocks} parameters, with
 the corrected R-INLA design weights (\code{\link[=ccd_weights]{ccd_weights()}}). Scales polynomially
 in \code{k}, where the tensor grid is exponential.
-\item \code{"grid"} (default for one or two parameters): the full
+\item \code{"grid"} (default for one to three parameters): the full
 \code{n_per_axis^k} tensor product with uniform cell weights -- denser and
 more robust to a non-Gaussian whitened posterior, but only tractable for
 small \code{k}. A scale's posterior on its log coordinate reaches several
 standard deviations of the mode's Gaussian into its left tail, which a
-three- or nine-node CCD does not place a node in.
+three-, nine- or fifteen-node CCD does not place a node in.
 }
 Each node \code{k} contributes integration weight proportional to
 \code{Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))}, following

@@ -1812,13 +1812,18 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # SPDE door's (log range, log sigma) the 9-node CCD read the 97.5% bound of
 # range 2.72 and of sigma 0.84 against 4.83 and 1.51 from a 61^2 quadrature
 # over +/- 6 marginal SDs: the posterior runs along a curved ridge the CCD's
-# nine nodes cannot carry; the 21^2 tensor reads 4.79 and 1.52.
+# nine nodes cannot carry; the 21^2 tensor reads 4.79 and 1.52. On a
+# correlated random slope (1 + x | g), k = 3, 30 binary groups x 10, the
+# 15-node CCD read the 97.5% bound of the slope SD 11-29% above a 15^3 tensor
+# over +/- 4.5 SDs and the correlation's 0-9% below it; the 9^3 tensor reads
+# the slope SD within 4% and the correlation within 0.02, at 729 inner solves
+# against 15.
 #
 # A caller-chosen `integration = "grid"` without `n_per_axis` / `span` takes
 # the same per-k values, and `grid_n` / `grid_span` above them.
 .NL_OUTER_DESIGN <- list(
-    tensor_n    = c(61L, 21L),
-    tensor_span = c(8, 6),
+    tensor_n    = c(61L, 21L, 9L),
+    tensor_span = c(8, 6, 4.5),
     grid_n      = 5L,
     grid_span   = 3
 )
