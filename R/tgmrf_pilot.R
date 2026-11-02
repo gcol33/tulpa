@@ -82,3 +82,46 @@
   list(fit = fit, k_star = k_star, theta_init = theta_init,
        block = pilot_block)
 }
+
+
+# The outer mode of `log p(theta | y)` and the curvature there, found from the
+# pilot.
+#
+# The pilot's argmax is a node of a coarse lattice: on a 5-point axis it can sit
+# a node spacing from the mode, and the curvature read there is the curvature
+# of the wrong point. The mode is found instead by the outer mode-find the
+# nested doors place their axes with (`.nl_placement_mode()`), started at the
+# pilot's heaviest cell and searching a box padded past the pilot's span. The
+# block's `theta` is already the unconstrained coordinate its `prior()` is
+# written in, so every axis is searched on the identity and the density
+# maximised is `lm$eval`, the one the adapters sample.
+#
+# `pl` is `.tgmrf_pilot()`'s result, `lm` `.tgmrf_make_log_marginal()`'s.
+# Returns `list(mode, cov, status, evals)`: `mode` named by `block$theta_names`,
+# `cov` the inverse negative Hessian of the log-posterior at `mode`, `status`
+# as `.nl_placement_mode()` reports it. Errors when the mode-find finds no
+# usable curvature: a Gaussian centred anywhere else is not a proposal for
+# this posterior.
+.tgmrf_outer_mode <- function(pl, lm, block) {
+  d  <- block$theta_dim
+  tg <- matrix(pl$fit$theta_grid, ncol = d,
+               dimnames = list(NULL, block$theta_names))
+  eval_logpost <- function(theta_mat) {
+    vapply(seq_len(nrow(theta_mat)),
+           function(i) lm$eval(as.numeric(theta_mat[i, ])), numeric(1))
+  }
+  tags <- rep("identity", d)
+  pm <- .nl_placement_mode(tg, pl$fit$weights, tags, eval_logpost,
+                           coord_tags = tags)
+  if (!is.null(pm$declined) || length(pm$mode_u) != d ||
+      any(diag(pm$cov_u) <= 0)) {
+    stop("The outer mode-find over theta found no usable curvature (",
+         pm$declined %||% "an axis held fixed", "); widen the block's ",
+         "`bounds` or raise `pilot_axis_points` so the pilot spans the ",
+         "posterior.", call. = FALSE)
+  }
+  list(mode = stats::setNames(pm$mode_u, block$theta_names),
+       cov = matrix(pm$cov_u, d, d,
+                    dimnames = list(block$theta_names, block$theta_names)),
+       status = pm$status, evals = pm$evals)
+}

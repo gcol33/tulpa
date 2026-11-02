@@ -518,8 +518,8 @@ mode and Hessian estimates. Raise it when the default grid is too coarse
 to locate the mode. `tulpa_tgmrf_imh()` adds `n_iter` (default `2000L`),
 `warmup` (default `n_iter %/% 2L`), `thin`, `scale` (the proposal scale
 multiplier, default `1.0`, lower it if acceptance is too high, raise it
-if too low), and `fd_step` (default `0.05`, the finite-difference step
-for the mode Hessian). `tulpa_tgmrf_vi()` adds `n_draws` (default `1000L`,
+if too low); its proposal is centred on the outer mode found from the
+pilot's best cell and scaled by the curvature there. `tulpa_tgmrf_vi()` adds `n_draws` (default `1000L`,
 the variational draws returned), `max_lbfgs` (default `100L`), and
 `lbfgs_tol` (default `1e-6`). `tulpa_tgmrf_nuts()` adds `epsilon` (default
 `0.2 / sqrt(theta_dim)`, the initial leapfrog step), `max_depth` (default

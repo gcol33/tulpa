@@ -63,6 +63,11 @@
 # one node, so it would be held fixed at that node, receive no curvature, and
 # stay integrated at that one node with posterior SD 0 whatever the data say.
 #
+# `coord_tags`, one per column, is the coordinate each axis is searched in. It
+# defaults to the joint grid's design coordinate (`.joint_ccd_coord_tags()`,
+# which reads a bare `alpha` as the copy scale); a caller whose axes are not
+# named by that convention states its own.
+#
 # Returns `list(mode_u, cov_u, tags, names, status, rounds, evals, value)`, the
 # mode and covariance over every axis in the placement coordinate (an axis held
 # fixed has zero rows and columns), or `list(declined = <reason>)`. `status` is
@@ -70,7 +75,9 @@
 # (the mode ran to the search box, which is past the axis's own range by 1.5
 # spans: a mode the data do not bound).
 .nl_placement_mode <- function(tg, w, tags, eval_logpost, set_warm = NULL,
-                               axis_nodes = NULL) {
+                               axis_nodes = NULL,
+                               coord_tags = .joint_ccd_coord_tags(colnames(tg),
+                                                                  tags)) {
     if (is.null(tg) || !is.matrix(tg) || is.null(w) || length(w) != nrow(tg) ||
         length(tags) != ncol(tg) || anyNA(tags) ||
         !any(is.finite(w) & w > 0)) {
@@ -80,7 +87,7 @@
     d  <- ncol(tg)
     w[!is.finite(w)] <- 0
     x0 <- as.numeric(tg[which.max(w), ])
-    ptag <- .joint_ccd_coord_tags(cn, tags)
+    ptag <- coord_tags
 
     cont <- lapply(seq_len(d), function(j) {
         v <- c(as.numeric(tg[, j]),

@@ -101,8 +101,9 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
 #' The pipeline is the canonical "Laplace body + MH bias correction" used
 #' throughout tulpa's debias philosophy:
 #'   1. Pilot grid fit to get a coarse `log_marginal(theta_k)` landscape.
-#'   2. Localise the mode in theta-space (grid argmax) and estimate a
-#'      finite-difference Hessian around it.
+#'   2. Find the outer mode in theta-space with the nested doors' placement
+#'      mode-find, started at the pilot argmax, and read the curvature
+#'      `H` of the log-posterior there.
 #'   3. Run IMH-Laplace with proposals
 #'      `theta' ~ N(mode, scale^2 * H^{-1})` and exact MH accept/reject
 #'      against the target
@@ -130,8 +131,6 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
 #'   [imh_laplace()].
 #' @param pilot_axis_points Per-axis grid resolution for the pilot fit
 #'   (default 5).
-#' @param fd_step Step size for the finite-difference Hessian on
-#'   `log_marginal(theta)` (default 0.05; in the block's theta units).
 #' @param max_iter,tol Inner-Newton budget per proposal.
 #' @param verbose Forwarded to [imh_laplace()].
 #' @param n_threads OpenMP threads inside each inner Laplace solve.
@@ -147,7 +146,10 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
 #'     `means_theta` / `sds_theta`: posterior moments.
 #'   * `mean_accept`: post-warmup acceptance rate.
 #'   * `pilot`: the pilot `tulpa_nested_laplace` object (for diagnostics).
-#'   * `mode_theta`, `hessian_theta`: pilot-derived mode + FD Hessian.
+#'   * `mode_theta`, `hessian_theta`: the outer mode the proposal is centred
+#'     on and the negative Hessian of the log-posterior there;
+#'     `mode_status` is the mode-find's status (`"ok"`, `"not_converged"`,
+#'     or `"boundary"` when the mode ran to the search box).
 #'   * `inference_mode`: `"exact"`.
 #'   * `inference_tier`: `1L` (MH-corrected).
 #'   * `backend`: `"tgmrf_imh"`.
@@ -162,7 +164,6 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
                             n_iter = 2000L, warmup = n_iter %/% 2L,
                             thin = 1L, scale = 1.0,
                             pilot_axis_points = 5L,
-                            fd_step = 0.05,
                             max_iter = 50L, tol = 1e-7,
                             n_threads = 1L,
                             verbose = FALSE) {
@@ -185,14 +186,14 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
     family = family, phi = phi,
     max_iter = max_iter, tol = tol, n_threads = n_threads
   )
-  pilot      <- pl$fit
-  theta_mode <- pl$theta_init
+  pilot <- pl$fit
 
-  # --- 2. FD Hessian on log_marginal(theta) ---------------------------------
-  # Evaluate log_marginal at theta_mode +/- fd_step * e_j and cross-terms.
-  # log_marginal at a single theta is one inner Laplace solve. Shared builder
-  # (see .tgmrf_make_log_marginal); no bounds wall here -- the +/- fd_step
-  # steps stay near the interior pilot mode.
+  # --- 2. Outer mode and curvature ------------------------------------------
+  # One inner Laplace solve per theta (shared builder, see
+  # .tgmrf_make_log_marginal); no bounds wall, the IMH target is the
+  # unbounded posterior over theta. The proposal is centred on the mode the
+  # outer mode-find reaches from the pilot argmax and scaled by the inverse
+  # curvature there.
   .lm <- .tgmrf_make_log_marginal(
     y = y, n_trials = n_trials, X = X, block = block, obs_idx = obs_idx,
     re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
@@ -200,47 +201,16 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
     max_iter = max_iter, tol = tol, n_threads = n_threads
   )
   log_marginal_at <- .lm$eval
-
-  H_theta <- matrix(0, nrow = d, ncol = d,
-                    dimnames = list(block$theta_names, block$theta_names))
-  # Eager structural check at the feasible pilot mode (non-swallowing): a
-  # failure here is a bug, not numerical infeasibility -- surface it.
-  lm_centre <- .lm$raw(theta_mode)
-  if (!is.finite(lm_centre)) {
+  # Eager structural check at the feasible pilot argmax (non-swallowing): a
+  # failure here is a bug, not numerical infeasibility, so it surfaces.
+  if (!is.finite(.lm$raw(pl$theta_init))) {
     stop("Pilot log_marginal at the grid argmax is not finite -- ",
          "tighten `bounds` or check the user `Q()`/`prior()`.", call. = FALSE)
   }
-
-  for (j in seq_len(d)) {
-    e_j <- numeric(d); e_j[j] <- fd_step
-    lm_p <- log_marginal_at(theta_mode + e_j)
-    lm_m <- log_marginal_at(theta_mode - e_j)
-    # -log_marginal'' = -(lm_p - 2 lm_centre + lm_m) / h^2
-    H_theta[j, j] <- -(lm_p - 2 * lm_centre + lm_m) / fd_step^2
-  }
-  for (j in seq_len(d - 1L)) {
-    for (k in (j + 1L):d) {
-      e_j <- numeric(d); e_j[j] <- fd_step
-      e_k <- numeric(d); e_k[k] <- fd_step
-      lm_pp <- log_marginal_at(theta_mode + e_j + e_k)
-      lm_pm <- log_marginal_at(theta_mode + e_j - e_k)
-      lm_mp <- log_marginal_at(theta_mode - e_j + e_k)
-      lm_mm <- log_marginal_at(theta_mode - e_j - e_k)
-      # Mixed second derivative.
-      mixed <- (lm_pp - lm_pm - lm_mp + lm_mm) / (4 * fd_step^2)
-      H_theta[j, k] <- -mixed
-      H_theta[k, j] <- -mixed
-    }
-  }
-  H_theta <- 0.5 * (H_theta + t(H_theta))   # numerically symmetrise
-
-  # If the FD Hessian is not PD, ridge-regularise. Small positive jitter on
-  # the diagonal; for tgmrf the typical issue is grid coarseness, not the
-  # Hessian itself being non-existent.
-  ev <- eigen(H_theta, symmetric = TRUE, only.values = TRUE)$values
-  if (min(ev) < 1e-6) {
-    H_theta <- H_theta + diag(max(1e-3, 1e-3 - min(ev)), d)
-  }
+  om <- .tgmrf_outer_mode(pl, .lm, block)
+  theta_mode <- om$mode
+  H_theta <- .spd_inverse(om$cov)
+  dimnames(H_theta) <- dimnames(om$cov)
 
   # --- 3. IMH-Laplace over theta -------------------------------------------
   mh <- imh_laplace(
@@ -268,6 +238,7 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
     pilot          = pilot,
     mode_theta     = theta_mode,
     hessian_theta  = H_theta,
+    mode_status    = om$status,
     inference_mode = "exact",
     inference_tier = 1L,
     backend        = "tgmrf_imh"

@@ -49,6 +49,13 @@ test_that("tgmrf vi / imh report fixed-effect draws matching dense quadrature", 
   fi <- tulpa_tgmrf(y = y, n_trials = rep(1L, n), X = X, block = blk,
                     family = "poisson", mode = "imh", n_iter = 3000L,
                     warmup = 500L)
+  # The IMH proposal is centred on the outer mode, not on a pilot node: it
+  # sits within one spacing of the dense grid's best cell on either axis.
+  expect_identical(fi$mode_status, "ok")
+  k_dense <- which.max(dense$log_marginal)
+  spacing <- c(log(3) - log(0.3), atanh(0.9)) / 40
+  expect_lt(max(abs(fi$mode_theta - dense$theta_grid[k_dense, ]) / spacing),
+            1)
   for (f in list(fv, fi)) {
     expect_identical(colnames(f$draws), c("beta_1", "log_sigma", "atanh_rho"))
     expect_identical(f$fixed_names, "beta_1")
