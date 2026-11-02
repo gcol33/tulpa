@@ -1829,6 +1829,31 @@
 #'   single-block temporal kernel; a `group_var` panel spec fits a separate walk
 #'   per group sharing one hyperparameter; combined with an areal `spatial`
 #'   field it forms an additive space-time joint prior.
+#' @param factors Optional [latent_factor()] specification naming the `unit`
+#'   and `response` columns of a long-format `data` (one row per unit and
+#'   response level, e.g. per site and species). Each response level gets its
+#'   own coefficients for the fixed effects of `formula`, and the `n_factors`
+#'   latent factors over the units load on every level:
+#'   \deqn{\eta_i = X_i \beta_{s(i)} + \sum_f \lambda_{s(i) f} u_{l(i) f},
+#'   \quad u_{l f} \sim N(0, 1),}
+#'   with \eqn{s(i)} the response level and \eqn{l(i)} the unit of row `i`.
+#'   Factor `f` does not load on the first `f - 1` response levels and loads
+#'   positively on the `f`-th (the levels' order, `levels(factor(...))`), so
+#'   the loading matrix is lower-triangular with a positive diagonal; order
+#'   the levels so that the first `n_factors` are ones the factors load on.
+#'   \eqn{\Lambda \Lambda^\top}, the factors' covariance between response
+#'   levels on the link scale, does not depend on that choice. The fit is a
+#'   joint nested Laplace with one arm per response level and the scores
+#'   integrated out unit by unit by a Laplace approximation; the loading prior
+#'   is `factors$prior` (`prior_normal(0, sd)`, default `sd = 1`). The formula
+#'   carries fixed effects only (no offset), the dispersion of each level is
+#'   held at `phi`, and `mode` is `"auto"`, `"laplace"` or `"nested_laplace"`.
+#'   The fit (class `tulpa_factor_fit`) carries `$loadings` (posterior mean,
+#'   levels x factors, also read by [stats::loadings()]), `$loadings_draws`,
+#'   `$factor_cov` (posterior mean of \eqn{\Lambda \Lambda^\top}), and the
+#'   per-unit scores through [latent_factors()]; `coef()`, `summary()`,
+#'   `fitted()` (conditional on the scores) and `predict()` (fixed effects,
+#'   `newdata` carrying the response column) read it as any other fit.
 #' @param baseline `family = "multinomial"` only: the reference class, one
 #'   level of the response as a string (default `NULL`, the last level). See
 #'   [tulpa_multinomial()]. Any other family refuses it.
@@ -1918,6 +1943,7 @@ tulpa <- function(formula, data,
                   warm_start = NULL,
                   spatial = NULL,
                   temporal = NULL,
+                  factors = NULL,
                   baseline = NULL,
                   control = list(),
                   ...) {
@@ -2011,7 +2037,7 @@ tulpa <- function(formula, data,
         (pf$n_spatial_field_blocks %||% 0L) > 0L ||
         (pf$n_temporal_field_blocks %||% 0L) > 0L ||
         !is.null(pf$spatial_var) || !is.null(pf$temporal_var) ||
-        !is.null(spatial) || !is.null(temporal) ||
+        !is.null(spatial) || !is.null(temporal) || !is.null(factors) ||
         !is.null(sigma_re) || !is.null(n_trials) || !is.null(weights) ||
         !is.null(phi2)) {
       stop(sprintf(paste0(
@@ -2103,6 +2129,18 @@ tulpa <- function(formula, data,
     }
   }
   K <- length(bundle$re_terms %||% list())
+
+  # Long-format latent-factor model: one joint arm per response level, the
+  # factors as the driver's lf blocks over the units.
+  if (!is.null(factors)) {
+    .lf_check_frontdoor_args(parsed, bundle, mode, list(
+      sigma_re = sigma_re, weights = weights, estimate_phi = estimate_phi,
+      phi2 = phi2, beta_prior = beta_prior, re_prior = re_prior,
+      ziformula = ziformula, zi_prior = zi_prior, warm_start = warm_start,
+      spatial = spatial, temporal = temporal))
+    return(.tulpa_fit_factors(factors, parsed, bundle, data, family, phi,
+                              n_trials, control, formula, sys.call()))
+  }
 
   has_latent <- (parsed$n_latent_blocks %||% 0L) > 0L
 

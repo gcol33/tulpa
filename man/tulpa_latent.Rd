@@ -2,18 +2,16 @@
 % Please edit documentation in R/latent.R
 \name{tulpa_latent}
 \alias{tulpa_latent}
-\title{Latent factor specification for unmeasured confounders}
+\title{Latent factor specification}
 \value{
-The constructor documented in this family (\code{\link[=latent_factor]{latent_factor()}})
-returns a \code{tulpa_latent} specification object consumed by ratio /
-multi-arm model packages built on tulpa (e.g. tulpaRatio), where the
-shared factor enters two or more linear predictors and cancels in the
-derived ratio. It is a multi-arm construct: the single-response \code{\link[=tulpa]{tulpa()}}
-front door does not read it (for an in-formula latent Gaussian block on a
-single response, use \code{latent(tgmrf(...))}).
+\code{\link[=latent_factor]{latent_factor()}} returns a \code{tulpa_latent} specification.
 }
 \description{
-Specify latent factors to capture shared unmeasured confounders between
-model processes. Latent factors are particularly useful
-when you suspect that both processes are driven by common unmeasured variables.
+Latent factors are unmeasured drivers shared by the responses of a model:
+each unit carries a score on every factor and each response carries its own
+loading on it. The specification built by \code{\link[=latent_factor]{latent_factor()}} is read by
+\code{\link[=tulpa]{tulpa()}} through its \verb{factors =} argument (a long-format joint model, one
+response level per row) and by model packages built on tulpa, such as
+tulpaRatio, whose two-process models load the factors on the numerator and
+the denominator.
 }

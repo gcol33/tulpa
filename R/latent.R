@@ -1,17 +1,15 @@
-#' Latent factor specification for unmeasured confounders
+#' Latent factor specification
 #'
 #' @description
-#' Specify latent factors to capture shared unmeasured confounders between
-#' model processes. Latent factors are particularly useful
-#' when you suspect that both processes are driven by common unmeasured variables.
+#' Latent factors are unmeasured drivers shared by the responses of a model:
+#' each unit carries a score on every factor and each response carries its own
+#' loading on it. The specification built by [latent_factor()] is read by
+#' [tulpa()] through its `factors =` argument (a long-format joint model, one
+#' response level per row) and by model packages built on tulpa, such as
+#' tulpaRatio, whose two-process models load the factors on the numerator and
+#' the denominator.
 #'
-#' @return The constructor documented in this family ([latent_factor()])
-#'   returns a `tulpa_latent` specification object consumed by ratio /
-#'   multi-arm model packages built on tulpa (e.g. tulpaRatio), where the
-#'   shared factor enters two or more linear predictors and cancels in the
-#'   derived ratio. It is a multi-arm construct: the single-response [tulpa()]
-#'   front door does not read it (for an in-formula latent Gaussian block on a
-#'   single response, use `latent(tgmrf(...))`).
+#' @return [latent_factor()] returns a `tulpa_latent` specification.
 #'
 #' @name tulpa_latent
 NULL
@@ -20,150 +18,134 @@ NULL
 #' Create a latent factor specification
 #'
 #' @description
-#' Define latent factors for capturing unmeasured structure shared by the
-#' processes of a model. Factors are observation-level random effects that
-#' enter every process's linear predictor when `shared = TRUE` (default).
+#' Define latent factors for unmeasured structure shared by the responses of a
+#' model. A unit `l` carries scores \eqn{u_{l f} \sim N(0, 1)} on factors
+#' \eqn{f = 1, \ldots, K}, and response `s` loads on them with loadings
+#' \eqn{\lambda_{s f}}, so its linear predictor gains
+#' \eqn{\sum_f \lambda_{s f} u_{l f}}. The factors add the covariance
+#' \eqn{\Lambda \Lambda^\top} between the linear predictors of the responses
+#' of one unit.
 #'
 #' @param n_factors Integer; number of latent factors. Default is 1.
-#'   More factors capture more complex unmeasured structure but increase
-#'   computational cost and risk overfitting.
-#' @param prior Prior for factor standard deviations. Default is a PC prior
-#'   with P(sigma > 1) = 0.01, which shrinks toward simpler models.
-#' @param shared Logical; if TRUE (default), latent factors enter the linear
-#'   predictors of all processes identically. If FALSE, factors only affect the
-#'   first process.
-#' @param constraint Identifiability constraint for factors:
-#'   - `"sum_to_zero"` (default): Factors sum to zero across observations
-#'   - `"first_zero"`: First observation's factor is fixed to zero
-#' @param scale Logical; if TRUE (default), factor loadings are standardized
-#'   to have unit variance before applying sigma.
+#' @param unit For [tulpa()]'s `factors =` argument: the name of the column of
+#'   `data` holding the unit that carries the scores (e.g. `"site"`).
+#' @param response For [tulpa()]'s `factors =` argument: the name of the
+#'   column of `data` holding the response level each row belongs to (e.g.
+#'   `"species"`). Each level has its own fixed effects and loadings.
+#' @param prior Prior of the factor loadings, or `NULL` for the fitter's
+#'   default. [tulpa()] carries a normal prior centred at zero on every
+#'   loading, folded onto the positive half-line on the diagonal, and takes
+#'   `prior_normal(0, sd)` (default `sd = 1`); a model package may read other
+#'   priors (tulpaRatio defaults to a PC prior with P(loading > 1) = 0.01 on
+#'   the diagonal loadings).
+#' @param shared Logical; if TRUE (default), the factors load on every
+#'   process of the model. If FALSE, they load on the first process only (a
+#'   two-process model package's numerator); [tulpa()] requires TRUE.
+#' @param constraint `NULL` (default) or the identifiability constraint a
+#'   sampling fitter pins the scores with: `"sum_to_zero"` (each factor's
+#'   scores sum to zero across units) or `"first_zero"` (the first unit's
+#'   scores are zero). [tulpa()] requires `NULL`: its scores carry a proper
+#'   N(0, 1) prior and each response's intercept absorbs their level.
 #'
-#' @return A `tulpa_latent` object consumed by ratio / multi-arm model
-#'   packages built on tulpa (e.g. tulpaRatio); not read by the single-response
-#'   [tulpa()] front door (use `latent(tgmrf(...))` for a single-response
-#'   latent Gaussian block).
+#' @return A `tulpa_latent` object.
 #'
 #' @details
 #'
-#' ## Why Use Latent Factors?
+#' ## Identification
 #'
-#' When modeling multiple processes, they often share unmeasured
-#' confounders. For example, in relative abundance data, both the focal species
-#' count and total count might be affected by:
-#' - Observer skill (unmeasured)
-#' - Local microhabitat conditions (unmeasured)
-#' - Weather on sampling day (unmeasured)
-#'
-#' Without accounting for these shared drivers, estimates can be biased.
-#' Latent factors capture this shared structure without requiring the
-#' confounders to be measured.
-#'
-#' ## Mathematical Model
-#'
-#' For observation i with K latent factors, on each of two model arms
-#' (processes 1 and 2):
-#'
-#' \deqn{\eta^{(1)}_i = X^{(1)}_i \beta^{(1)} + \sum_{k=1}^{K} f_{ik} \sigma_k + \ldots}
-#' \deqn{\eta^{(2)}_i = X^{(2)}_i \beta^{(2)} + \sum_{k=1}^{K} f_{ik} \sigma_k + \ldots}
-#'
-#' where:
-#' - \eqn{f_{ik} \sim N(0, 1)} are standardized factor scores
-#' - \eqn{\sigma_k} are factor standard deviations with PC prior
-#' - Identifiability: \eqn{\sum_i f_{ik} = 0} for each k
-#'
-#' Because factors enter both linear predictors identically (when shared),
-#' they cancel in derived quantities (e.g., ratios, differences):
-#'
-#' \deqn{\eta^{(1)}_i - \eta^{(2)}_i}
-#'
-#' This means factors capture shared effects that would
-#' otherwise bias derived quantities.
+#' The product \eqn{\lambda_{s f} u_{l f}} is unchanged by a rescaling, a sign
+#' flip and, for several factors, a rotation of the scores against the
+#' loadings. The unit variance of the scores fixes the scale; a loading matrix
+#' that is lower-triangular with a positive diagonal fixes the sign and the
+#' rotation. \eqn{\Lambda \Lambda^\top} is invariant to all three, so it is
+#' the quantity to compare across fits.
 #'
 #' ## Choosing n_factors
 #'
-#' - Start with `n_factors = 1` for simple unmeasured confounding
-#' - Use `n_factors = 2-3` if you suspect multiple independent confounders
-#' - More than 3 factors is rarely needed and risks overfitting
-#' - The PC prior provides regularization, shrinking unneeded factors toward zero
+#' With `S` responses, \eqn{\Lambda} lower-triangular has
+#' \eqn{S K - K (K - 1) / 2} free loadings against the \eqn{S (S + 1) / 2}
+#' entries of a covariance between the responses, so at most `S` factors fit.
+#' A two-process model is full rank at `n_factors = 2`.
 #'
 #' ## Relationship to Random Effects
 #'
-#' Latent factors differ from random effects in several ways:
-#' - Random effects are grouped (e.g., site-level), factors are observation-level
-#' - Random effects require grouping structure, factors don't
-#' - Factors capture residual correlation not explained by observed predictors
-#'
-#' You can use both together: random effects for known grouping, factors for
-#' residual unmeasured confounding.
+#' A random intercept is one response's deviation per group; a factor is a
+#' deviation per unit that every response reads with its own loading, so it
+#' carries the residual correlation between responses that the covariates do
+#' not explain.
 #'
 #' @examples
-#' # Basic latent factor (single shared factor)
-#' latent_factor()
+#' # Two factors over sites, one response level per species
+#' latent_factor(n_factors = 2, unit = "site", response = "species")
 #'
-#' # Two latent factors
-#' latent_factor(n_factors = 2)
+#' # A tighter loading prior
+#' latent_factor(unit = "site", response = "species",
+#'               prior = prior_normal(0, 0.5))
 #'
-#' # Custom prior (more regularization)
-#' latent_factor(n_factors = 1, prior = prior_pc(U = 0.5, alpha = 0.01))
+#' \donttest{
+#' set.seed(1)
+#' n_site <- 60; n_sp <- 4
+#' u <- rnorm(n_site)
+#' lambda <- c(0.8, 0.5, -0.6, 0.3)
+#' d <- expand.grid(site = factor(seq_len(n_site)),
+#'                  species = factor(paste0("sp", seq_len(n_sp))))
+#' d$x <- rnorm(n_site)[d$site]
+#' d$y <- rpois(nrow(d), exp(0.5 + 0.3 * d$x +
+#'                           lambda[d$species] * u[d$site]))
+#' fit <- tulpa(y ~ x, data = d, family = "poisson",
+#'              factors = latent_factor(unit = "site", response = "species"))
+#' fit$loadings
+#' }
 #'
-#' # Numerator-only factor (not shared)
-#' latent_factor(n_factors = 1, shared = FALSE)
-#'
-#' # The spec is consumed by a ratio / multi-arm model package (tulpaRatio owns
-#' # the two-arm `species | total ~ ...` formula and the negbin/negbin ratio
-#' # family); it is that package's fitter, not the single-response tulpa() front
-#' # door, that reads the `latent_factor()` object.
-#'
-#' @seealso [prior_pc()] for prior specification; `latent()` / [tgmrf()] for a
-#'   single-response in-formula latent Gaussian block
+#' @seealso [tulpa()] (`factors =`), [latent_factors()] for the scores,
+#'   [prior_normal()]
 #'
 #' @export
 latent_factor <- function(
     n_factors = 1L,
+    unit = NULL,
+    response = NULL,
     prior = NULL,
     shared = TRUE,
-    constraint = c("sum_to_zero", "first_zero"),
-    scale = TRUE
+    constraint = NULL
 ) {
 
-  # Validate n_factors
-  if (length(n_factors) != 1 || !is.numeric(n_factors) || n_factors < 1 ||
-      n_factors != as.integer(n_factors)) {
+  if (length(n_factors) != 1 || !is.numeric(n_factors) || is.na(n_factors) ||
+      n_factors < 1 || n_factors != as.integer(n_factors)) {
     stop("`n_factors` must be a positive integer", call. = FALSE)
   }
   n_factors <- as.integer(n_factors)
 
-  # Default prior
-  if (is.null(prior)) {
-    prior <- prior_pc(U = 1.0, alpha = 0.01)
+  for (nm in c("unit", "response")) {
+    v <- get(nm)
+    if (!is.null(v) && (!is.character(v) || length(v) != 1L || is.na(v) ||
+                        !nzchar(v))) {
+      stop("`", nm, "` must be NULL or the name of one column of `data`.",
+           call. = FALSE)
+    }
   }
 
-
-  # Validate prior
-  if (!inherits(prior, "tulpa_prior")) {
-    stop("`prior` must be a prior object (use prior_*() functions)", call. = FALSE)
+  if (!is.null(prior) && !inherits(prior, "tulpa_prior")) {
+    stop("`prior` must be NULL or a prior object (use prior_*() functions)",
+         call. = FALSE)
   }
 
-  # Validate shared
-  if (!is.logical(shared) || length(shared) != 1) {
+  if (!is.logical(shared) || length(shared) != 1 || is.na(shared)) {
     stop("`shared` must be TRUE or FALSE", call. = FALSE)
   }
 
-  # Validate constraint
-  constraint <- match.arg(constraint)
-
-  # Validate scale
-  if (!is.logical(scale) || length(scale) != 1) {
-    stop("`scale` must be TRUE or FALSE", call. = FALSE)
+  if (!is.null(constraint)) {
+    constraint <- match.arg(constraint, c("sum_to_zero", "first_zero"))
   }
 
   structure(
     list(
       n_factors = n_factors,
+      unit = unit,
+      response = response,
       prior = prior,
       shared = shared,
-      constraint = constraint,
-      scale = scale
+      constraint = constraint
     ),
     class = c("tulpa_latent", "list")
   )
@@ -179,16 +161,21 @@ print.tulpa_latent <- function(x, ...) {
   cat("===========================\n\n")
 
   cat("Number of factors:", x$n_factors, "\n")
-  cat("Shared:", ifelse(x$shared, "Yes (enters all processes)", "No (first process only)"), "\n")
-  cat("Constraint:", x$constraint, "\n")
-  cat("Scale:", ifelse(x$scale, "Yes", "No"), "\n\n")
+  if (!is.null(x$unit)) cat("Unit column:", x$unit, "\n")
+  if (!is.null(x$response)) cat("Response column:", x$response, "\n")
+  cat("Shared:", ifelse(x$shared, "Yes (loads on all processes)",
+                        "No (first process only)"), "\n")
+  cat("Constraint:", x$constraint %||% "none (proper score prior)", "\n\n")
 
-  cat("Factor SD prior:\n")
-  print_prior(x$prior, indent = "  ")
+  cat("Loading prior:\n")
+  if (is.null(x$prior)) {
+    cat("  the fitter's default\n")
+  } else {
+    print_prior(x$prior, indent = "  ")
+  }
 
   invisible(x)
 }
-
 
 #' Extract latent factor posteriors from fit
 #'

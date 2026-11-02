@@ -1906,6 +1906,7 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
                 X_zi = NULL, offset = 0))
   }
   X <- .tulpa_fixed_design(object, newdata)
+  if (!is.null(object$factor_spec)) X <- .lf_newdata_design(object, X, newdata)
   X_zi <- if (!is.null(object$ziformula)) {
     .zi_design(object$ziformula, newdata, nrow(X))
   }
