@@ -3,6 +3,7 @@
 
 #include "laplace_likelihoods.h"
 #include "linalg_fast.h"
+#include "autodiff_utils.h"  // tulpa::math::log_lik_negbin_log
 #include <Rcpp.h>
 #include <cmath>
 
@@ -35,11 +36,8 @@ double log_lik_binomial(int y, int n, double eta) {
 }
 
 double log_lik_negbin(int y, double eta, double phi) {
-  double mu = tulpa_linalg::safe_exp(eta);
-  double log_p = R::lgammafn(y + phi) - R::lgammafn(phi) - R::lgammafn(y + 1.0)
-               + phi * std::log(phi / (mu + phi))
-               + y * std::log(mu / (mu + phi));
-  return log_p;
+  return tulpa::math::log_lik_negbin_log(
+      y, tulpa::math::clamp_exp_arg(eta), std::log(phi));
 }
 
 double grad_log_lik_negbin(int y, double eta, double phi) {

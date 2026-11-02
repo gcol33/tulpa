@@ -305,3 +305,24 @@ test_that("the sampler path carries the new families through its AD density", {
                tolerance = 0.06)
   expect_equal(unname(smp[["x"]]), unname(lap[["x"]]), tolerance = 0.06)
 })
+
+test_that("the neg_binomial_2 density holds its digits as the size grows", {
+  # The density reaches the Poisson one as the size phi grows. Formed as
+  # phi log(phi / (mu + phi)) and a difference of two lgammas it cancelled:
+  # at log phi = 40 it read +5.2 for a Poisson -1.65 (y = 4, eta = 1.3), a
+  # likelihood a sampler on log phi climbs without bound.
+  eta <- 1.3; mu <- exp(eta)
+  for (y in c(0, 1, 4, 37)) for (lphi in c(0, 3, log(999), log(1001), 10, 20, 40, 61)) {
+    phi <- exp(lphi)
+    ll <- c(double = unname(tulpa:::cpp_family_terms(y, 1L, eta, "neg_binomial_2",
+                                                      phi)["log_lik"]),
+            ad = unname(tulpa:::cpp_family_ad_terms(y, 1L, eta, "neg_binomial_2",
+                                                     phi)["log_lik"]))
+    ref <- if (lphi <= 10) stats::dnbinom(y, size = phi, mu = mu, log = TRUE)
+           else stats::dpois(y, mu, log = TRUE)
+    # Past log phi = 10 the reference is the Poisson limit, which the density
+    # leaves by (y (y - 1) / 2 - y mu + mu^2 / 2) / phi.
+    tol <- if (lphi <= 10) 1e-10 else (y^2 + mu^2) / phi + 1e-12
+    expect_lt(max(abs(ll - ref)), tol)
+  }
+})

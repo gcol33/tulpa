@@ -127,19 +127,9 @@ T spde_glm_likelihood(
                  - phi * T(sd->y[i]) * exp(neg_eta);
         }
         case SpdeFamily::NEGBIN: {
-            T log_phi = params[layout.extra_offset];
-            T phi     = exp(log_phi);
-            T y_i     = T(sd->y[i]);
-            // log(exp(eta) + phi) = eta + softplus(log phi - eta), which is
-            // finite for every eta and reduces to log phi as eta -> -Inf and to
-            // eta as eta -> +Inf. Forming exp(eta) first overflows above
-            // eta = 709.78 and takes the term to log(Inf).
-            T log_mu_phi = eta_i + tulpa::math::softplus(log_phi - eta_i);
-            return lgamma(y_i + phi) - lgamma(phi)
-                 - T(sd->log_y_fact[i])
-                 + phi * log_phi
-                 - (y_i + phi) * log_mu_phi
-                 + y_i * eta_i;
+            return tulpa::math::log_lik_negbin_log(
+                static_cast<int>(sd->y[i]), eta_i,
+                T(params[layout.extra_offset]));
         }
         case SpdeFamily::BETA: {
             T log_phi = params[layout.extra_offset];
