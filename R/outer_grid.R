@@ -18,7 +18,9 @@
 #' @return A list:
 #'   \describe{
 #'     \item{`nodes`}{numeric matrix `[n_cells x n_axes]`, the hyperparameter
-#'       value of each cell, with the axis names as column names.}
+#'       value of each cell, with the axis names as column names. A spatial
+#'       lengthscale is in the units of the coordinates as supplied, also when
+#'       the field was fitted on standardized coordinates.}
 #'     \item{`weights`}{the cells' integration weights, normalized to sum to
 #'       one.}
 #'     \item{`log_marginal`}{each cell's log marginal likelihood, hyperprior
@@ -69,12 +71,21 @@ tulpa_outer_grid <- function(fit) {
          "cells (", nrow(nodes), ") do not match.", call. = FALSE)
   }
   modes <- src[["modes"]]
+  # A spatial lengthscale is reported in the coordinates' own units.
+  ks <- .hyper_axis_data_scale(fit, colnames(nodes))
+  nodes <- sweep(nodes, 2L, ks, "*")
+  support <- src[["axis_support"]]
+  if (is.list(support)) {
+    for (j in which(ks != 1 & colnames(nodes) %in% names(support))) {
+      support[[colnames(nodes)[j]]] <- support[[colnames(nodes)[j]]] * ks[j]
+    }
+  }
   list(
     nodes        = nodes,
     weights      = w / sum(w),
     log_marginal = if (length(src[["log_marginal"]]) == length(w))
                      as.numeric(src[["log_marginal"]]),
-    support      = src[["axis_support"]],
+    support      = support,
     modes        = if (is.matrix(modes) && nrow(modes) == length(w)) modes,
     n_fixed      = as.integer(src[["n_fixed"]] %||% fit[["n_fixed"]] %||% 0L)
   )

@@ -515,6 +515,28 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
   s
 }
 
+# Outer-grid axes that measure a distance on a spatial field's coordinates: the
+# GP / NNGP lengthscale, the HSGP lengthscale and a range. Every one is a
+# positive length, so standardized coordinates divided it by the same common
+# factor the coordinates were divided by.
+.SPATIAL_LENGTH_AXES <- c("phi_gp", "lengthscale", "range")
+
+# Per-axis factor taking an outer-grid axis from the units the kernel measured
+# it in to the units of the coordinates as supplied: `.coord_scale()` on a
+# spatial length axis of a field fitted on standardized coordinates
+# (`scale_coords = TRUE`), 1 on every other axis. The grid itself stays in
+# kernel units, which is what the kernels and the predictor re-read it in; the
+# reporting doors (`summary()$hyperparameters`, `tulpa_outer_grid()`,
+# `tulpa_hyper_draws()`, `spatial_range()`) apply this one factor.
+.hyper_axis_data_scale <- function(object, axes) {
+  out <- rep(1, length(axes))
+  k <- .coord_scale(object$spatial)
+  if (identical(k, 1) || !length(axes)) return(out)
+  amap <- .nested_axis_map(object, axes)
+  out[amap$bare %in% .SPATIAL_LENGTH_AXES & amap$role == "spatial"] <- k
+  out
+}
+
 # The empty-draws message of spatial_range() / temporal_corr(). A fit that
 # carries the field (`what` names it) but no hyperparameter posterior is one
 # that conditioned on the hyperparameters -- `mode = "laplace"` -- which is what

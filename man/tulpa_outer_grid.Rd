@@ -15,7 +15,9 @@ tulpa_outer_grid(fit)
 A list:
 \describe{
 \item{\code{nodes}}{numeric matrix \verb{[n_cells x n_axes]}, the hyperparameter
-value of each cell, with the axis names as column names.}
+value of each cell, with the axis names as column names. A spatial
+lengthscale is in the units of the coordinates as supplied, also when
+the field was fitted on standardized coordinates.}
 \item{\code{weights}}{the cells' integration weights, normalized to sum to
 one.}
 \item{\code{log_marginal}}{each cell's log marginal likelihood, hyperprior

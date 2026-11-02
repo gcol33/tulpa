@@ -27,7 +27,9 @@ mass owns, so the draws in one cell stay around it.
 }
 \value{
 A numeric matrix \verb{[n x n_axes]} with the outer grid's axis names as
-columns, or \code{NULL} when the fit carries no outer-grid axis. Carries
+columns, or \code{NULL} when the fit carries no outer-grid axis. A spatial
+lengthscale is in the units of the coordinates as supplied, also when the
+field was fitted on standardized coordinates. Carries
 \code{attr(., "cells")} -- the cell each row's coordinates were drawn in --
 plus \code{attr(., "within_cell")} and \code{attr(., "within_cell_declined")}, the
 per-axis construction that ran and why a requested one did not, and

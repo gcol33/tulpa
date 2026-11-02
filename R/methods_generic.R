@@ -895,11 +895,13 @@ coef.summary.tulpa_fit <- function(object, ...) object$coefficients
   k  <- length(tm)
   nm <- object$theta_names %||% names(tm)
   if (length(nm) != k) nm <- paste0("theta", seq_len(k))
+  # A spatial lengthscale is reported in the coordinates' own units.
+  ks <- .hyper_axis_data_scale(object, nm)
   axis <- function(v) {
     v <- as.numeric(v)
-    if (length(v) == k) v else rep(NA_real_, k)
+    if (length(v) == k) v * ks else rep(NA_real_, k)
   }
-  data.frame(parameter = nm, mean = as.numeric(tm),
+  data.frame(parameter = nm, mean = as.numeric(tm) * ks,
              sd = axis(object$theta_sd), median = axis(object$theta_median),
              ci_lo = axis(object$theta_ci_lo), ci_hi = axis(object$theta_ci_hi),
              row.names = NULL, stringsAsFactors = FALSE)

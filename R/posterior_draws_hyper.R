@@ -422,7 +422,9 @@
 #'   (`fit$within_cell_requested`).
 #'
 #' @return A numeric matrix `[n x n_axes]` with the outer grid's axis names as
-#'   columns, or `NULL` when the fit carries no outer-grid axis. Carries
+#'   columns, or `NULL` when the fit carries no outer-grid axis. A spatial
+#'   lengthscale is in the units of the coordinates as supplied, also when the
+#'   field was fitted on standardized coordinates. Carries
 #'   `attr(., "cells")` -- the cell each row's coordinates were drawn in --
 #'   plus `attr(., "within_cell")` and `attr(., "within_cell_declined")`, the
 #'   per-axis construction that ran and why a requested one did not, and
@@ -517,6 +519,8 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
     used[j] <- if (identical(g$kind, "none")) NA_character_ else g$kind
     decl[j] <- if (is.na(g$declined)) fell else g$declined
   }
+  # A spatial lengthscale is reported in the coordinates' own units.
+  out <- sweep(out, 2L, .hyper_axis_data_scale(fit, nms), "*")
   attr(out, "cells") <- cells
   attr(out, "within_cell") <- used
   attr(out, "within_cell_declined") <- decl
