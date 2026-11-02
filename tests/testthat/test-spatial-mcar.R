@@ -192,3 +192,33 @@ test_that("MCAR fixed-effect SEs match the uncorrelated (||) fit, not the singul
   expect_true(all(se_mcar < 5 * se_iid))
   expect_true(all(se_mcar < 1))
 })
+
+test_that("an MCAR block's logchol_grid without column names takes the layout's", {
+  skip_on_cran()
+  expect_identical(tulpa:::.mcar_logchol_names(3L),
+                   c("L11", "L21", "L31", "L22", "L32", "L33"))
+  expect_identical(colnames(tulpa:::.mcar_default_logchol_grid(3L)),
+                   tulpa:::.mcar_logchol_names(3L))
+  set.seed(10534)
+  W <- .mcar_grid_adj(2L, 4L); n <- nrow(W); N <- 160L
+  cell <- sample.int(n, N, TRUE); x <- rnorm(N)
+  y <- as.numeric(rbinom(N, 1, plogis(0.2 + 0.4 * x + rnorm(n, 0, 0.6)[cell])))
+  adj <- tulpa:::adjacency_to_csr_tulpa(W)
+  th <- c(log(0.9), 0.3, log(0.6))
+  arm <- list(y = y, n_trials = rep(1L, N), X = cbind(1, x),
+              family = "binomial", phi = 1)
+  blk <- function(g) list(type = "mcar", spatial_idx = list(cell),
+                          n_spatial_units = n, n_fields = 2L,
+                          adj_row_ptr = adj$row_ptr, adj_col_idx = adj$col_idx,
+                          n_neighbors = adj$n_neighbors,
+                          field_weight = list(list(rep(1, N)), list(x)),
+                          logchol_grid = g)
+  fit <- function(g) suppressWarnings(tulpa_nested_laplace_joint(
+    responses = list(a = arm), prior = list(blk(g)),
+    control = list(progress = FALSE, axis_refine = "none")))
+  unnamed <- fit(matrix(th, 1))
+  named <- fit(matrix(th, 1, dimnames = list(NULL, c("L11", "L21", "L22"))))
+  expect_identical(colnames(unnamed$theta_grid), colnames(named$theta_grid))
+  expect_equal(unnamed$log_marginal, named$log_marginal)
+  expect_error(fit(matrix(th[1:2], 1)), "3 log-Cholesky coordinates")
+})

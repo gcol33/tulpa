@@ -1108,6 +1108,30 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # correlations and can miss the mode under sharp likelihoods). For p > 2 a raw
 # log-Cholesky tensor is used (coarser; the off-diagonal correlations are not
 # separately interpretable).
+# The log-Cholesky coordinate names of a p x p Sigma, in the order the grid
+# columns run: column by column down the lower triangle (L11, L21, ..., Lp1,
+# L22, ...).
+.mcar_logchol_names <- function(p) {
+  unlist(lapply(seq_len(p), function(j) sprintf("L%d%d", j:p, j)))
+}
+
+# A block's `logchol_grid`, the default one where none is given; a supplied
+# grid without column names takes the layout's names, so every reader of the
+# outer grid finds its axes by name.
+.mcar_logchol_grid <- function(p) {
+  n_fields <- as.integer(p$n_fields)
+  g <- p$logchol_grid
+  if (is.null(g)) return(.mcar_default_logchol_grid(n_fields))
+  nm <- .mcar_logchol_names(n_fields)
+  if (!is.matrix(g) || ncol(g) != length(nm)) {
+    stop("`logchol_grid` has ", NCOL(g), " column(s); ", n_fields,
+         " coupled fields have ", length(nm), " log-Cholesky coordinates (",
+         paste(nm, collapse = ", "), ").", call. = FALSE)
+  }
+  if (is.null(colnames(g))) colnames(g) <- nm
+  g
+}
+
 .mcar_default_logchol_grid <- function(p) {
   if (p == 2L) {
     sig <- .nl_grid_axis("mcar_sd")
@@ -1119,22 +1143,16 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     out <- cbind(L11 = log(g$s1),
                  L21 = g$rho * g$s2,
                  L22 = log(g$s2 * sqrt(1 - g$rho^2)))
-    colnames(out) <- c("L11", "L21", "L22")
+    colnames(out) <- .mcar_logchol_names(2L)
     return(out)
   }
   diag_nodes <- log(.nl_grid_axis("mcar_logchol_diag"))
   off_nodes  <- .nl_grid_axis("mcar_logchol_off")
-  m <- p * (p + 1L) / 2L
-  axes <- vector("list", m)
-  nm <- character(m)
-  t <- 1L
-  for (j in seq_len(p)) for (i in j:p) {
-    axes[[t]] <- if (i == j) diag_nodes else off_nodes
-    nm[t] <- sprintf("L%d%d", i, j)
-    t <- t + 1L
-  }
+  axes <- unlist(lapply(seq_len(p), function(j)
+    lapply(j:p, function(i) if (i == j) diag_nodes else off_nodes)),
+    recursive = FALSE)
   g <- as.matrix(do.call(expand.grid, c(axes, list(KEEP.OUT.ATTRS = FALSE))))
-  colnames(g) <- nm
+  colnames(g) <- .mcar_logchol_names(p)
   g
 }
 
@@ -1220,9 +1238,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     required = list(axis = "n_fields",
                     joint = c(.NL_REQ_AREAL, "n_fields", "field_weight")),
     defaults = function(p, a) {
-      if (is.null(p$logchol_grid)) {
-        p$logchol_grid <- .mcar_default_logchol_grid(as.integer(p$n_fields))
-      }
+      p$logchol_grid <- .mcar_logchol_grid(p)
       p
     },
     pack = function(p) stop(
@@ -1247,9 +1263,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     required = list(axis = "n_fields",
                     joint = c("obs_idx", "n_groups", "n_fields", "field_weight")),
     defaults = function(p, a) {
-      if (is.null(p$logchol_grid)) {
-        p$logchol_grid <- .mcar_default_logchol_grid(as.integer(p$n_fields))
-      }
+      p$logchol_grid <- .mcar_logchol_grid(p)
       p
     },
     pack = function(p) stop(
