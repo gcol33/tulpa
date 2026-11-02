@@ -318,7 +318,10 @@ LaplaceResult laplace_newton_solve_ll(
         double obj_start = 0.0;
         if (!make_start_feasible(x, *feasible_start_coords, n_x, eval_objective,
                                  obj_start)) {
+            // No point of the model was reached, so the cell carries no
+            // mass: a log-marginal of zero would outweigh every solved cell.
             result.start_infeasible = true;
+            result.log_marginal = -std::numeric_limits<double>::infinity();
             for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
             return result;
         }

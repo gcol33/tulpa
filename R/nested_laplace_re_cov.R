@@ -508,6 +508,25 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   do.call(rbind, parts)
 }
 
+# One warning per fit for the integration nodes whose solve ran but whose
+# marginal fixed-effect precision could not be formed (tulpa_laplace() signals
+# each as a `tulpa_hbeta_unformed` condition). Such a node is dropped from the
+# fixed-effect mixture and its weight redistributed
+# (.re_cov_nested_beta_draws()), so the count travels with the share of the
+# posterior weight it held.
+.re_cov_report_hbeta <- function(unformed, w, caller) {
+  n_bad <- sum(unformed)
+  if (!n_bad) return(invisible(NULL))
+  warning(sprintf(paste0(
+    "%s(): the marginal fixed-effect precision could not be formed from the ",
+    "joint curvature at %d of %d integration nodes (a singular random-effect ",
+    "block is the usual cause). They held %s of the posterior weight and are ",
+    "left out of the fixed-effect mixture."),
+    caller, n_bad, length(unformed),
+    format(signif(sum(w[unformed]), 3))), call. = FALSE)
+  invisible(NULL)
+}
+
 # Posterior beta draws for the nested-Laplace mixture. Each grid node k carries
 # a Gaussian fixed-effect block N(beta_k, Vb_k) from its inner Laplace solve;
 # the node weights w summarize the joint Sigma posterior. Drawing node ~
@@ -1996,6 +2015,9 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # start their inner Newton iterations.
   i_centre <- which.min(rowSums(z^2))
   x_centre <- NULL
+  # Nodes whose solve ran but whose marginal fixed-effect precision did not
+  # form, collected and reported once for the fit below.
+  hbeta_unformed <- logical(ng)
   for (i in seq_len(ng)) {
     th     <- theta_grid[i, ]
     L_list <- .re_cov_theta_to_L_list(th, layout)
@@ -2004,10 +2026,15 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     if (!is.null(ckpt) && ckpt$has(key)) {
       fit_i <- ckpt$get(key)
     } else {
-      fit_i <- inner_fit(L_list, re_cov = re_cond, debias = debias_arg,
-                         joint_hessian = re_cond,
-                         compute_skew = mean_shift_on,
-                         skew_idx = if (mean_shift_on) seq_len(p_fix))
+      fit_i <- withCallingHandlers(
+        inner_fit(L_list, re_cov = re_cond, debias = debias_arg,
+                  joint_hessian = re_cond,
+                  compute_skew = mean_shift_on,
+                  skew_idx = if (mean_shift_on) seq_len(p_fix)),
+        tulpa_hbeta_unformed = function(w) {
+          hbeta_unformed[i] <<- TRUE
+          invokeRestart("muffleWarning")
+        })
       if (!is.null(ckpt) && !is.null(fit_i) && !is.null(fit_i$mode) &&
           length(fit_i$log_marginal) == 1L && is.finite(fit_i$log_marginal)) {
         ckpt$save(key, fit_i)
@@ -2029,11 +2056,15 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     lp_theta_nodes[i]  <- log_prior_theta(th)
     logm[i]            <- fit_i$log_marginal + lp_theta_nodes[i]
     beta_nodes[i, ]    <- fit_i$mode[seq_len(p_fix)]
-    beta_cov_nodes[[i]] <-
+    # Single-bracket assignment: `x[[i]] <- NULL` deletes element i, so a run
+    # of trailing nodes with no covariance leaves the list shorter than the
+    # grid, and the mixture's read of their slots is out of bounds. A node with
+    # no covariance keeps its NULL slot.
+    beta_cov_nodes[i] <- list(
       if (is.null(fit_i$H_beta)) NULL
-      else tryCatch(.spd_inverse(fit_i$H_beta), error = function(e) NULL)
+      else tryCatch(.spd_inverse(fit_i$H_beta), error = function(e) NULL))
     if (!is.null(debias_arg)) {
-      debias_nodes[[i]]  <- fit_i$debias_draws
+      debias_nodes[i]    <- list(fit_i$debias_draws)
       debias_accept[i]   <- fit_i$debias_accept %||% NA_real_
     }
     if (re_cond && length(fit_i$mode) == p_fix + n_re) {
@@ -2062,6 +2093,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   lw <- lw - max(finite_lw)
   w  <- exp(lw); w[!is.finite(w)] <- 0
   w  <- w / sum(w)
+  .re_cov_report_hbeta(hbeta_unformed, w, "tulpa_re_cov_nested")
 
   # A weighted node whose latent tail was the wrong width, or whose covariance
   # blocks did not describe the layout, leaves NA in that row and the mixture

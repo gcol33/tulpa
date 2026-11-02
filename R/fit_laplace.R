@@ -299,8 +299,15 @@ tulpa_laplace <- function(y, n_trials, X,
   # the Schur complement here and, under `return_joint_hessian`, as the fit's
   # `H_latent`, which posterior_predict() draws the random effects from
   # jointly with the fixed effects (gcol33/tulpa#871).
+  # A solve that never started (`start_infeasible`: the penalized log posterior
+  # is not finite at the latent start, which a covariance far past the data's
+  # scale reaches whatever the link) has no mode and no curvature, so it has no
+  # marginal precision to form either; its log-marginal is -Inf and the flag
+  # says why. Only a solve that ran and still has no Schur complement is a
+  # condition about H_beta.
+  solved <- !isTRUE(result$start_infeasible)
   H_obs <- NULL
-  if (return_hessian && !is.null(result$mode) && !is_spatial_field) {
+  if (return_hessian && !is.null(result$mode) && !is_spatial_field && solved) {
     H_obs <- .laplace_observed_H_joint(
       H_joint = result$H_joint, mode = result$mode, y = y,
       n_trials = n_trials, X = X, X_zi = X_zi, re_list = re_list,
@@ -312,9 +319,15 @@ tulpa_laplace <- function(y, n_trials, X,
       family = family, phi = phi, phi2 = phi2,
       weights = weights, offset = offset, H_obs = H_obs)
     if (is.null(H_fixed)) {
-      warning("The marginal fixed-effect precision could not be formed from ",
-              "the joint curvature (a singular random-effect block is the ",
-              "usual cause). Returning H_beta = NULL.", call. = FALSE)
+      # Classed so a driver that solves many cells can collect these and
+      # report once per fit (see .with_hbeta_report), while a single direct
+      # call still says what happened.
+      warning(structure(
+        class = c("tulpa_hbeta_unformed", "warning", "condition"),
+        list(call = NULL, message = paste0(
+          "The marginal fixed-effect precision could not be formed from ",
+          "the joint curvature (a singular random-effect block is the ",
+          "usual cause). Returning H_beta = NULL."))))
     }
     result$H_beta <- H_fixed
   }
