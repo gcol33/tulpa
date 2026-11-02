@@ -10,7 +10,8 @@ moran_i(
   weights = c("inverse", "knn"),
   k = 10L,
   resid_type = "pearson",
-  alternative = c("two.sided", "greater", "less")
+  alternative = c("two.sided", "greater", "less"),
+  effects = c("conditional", "population")
 )
 }
 \arguments{
@@ -25,6 +26,12 @@ moran_i(
 \item{resid_type}{Residual type if extracting from model (default \code{"pearson"})}
 
 \item{alternative}{\code{"two.sided"}, \code{"greater"}, or \code{"less"}}
+
+\item{effects}{For a tulpa fit, the linear predictor the residuals are read
+against (\code{\link[=residuals.tulpa_fit]{residuals.tulpa_fit()}}): \code{"conditional"} (default) includes the
+fitted random effects and spatial / temporal fields, so the test asks
+whether structure remains after the model's own field; \code{"population"}
+holds them at zero and tests what the fixed effects alone leave.}
 }
 \value{
 An \code{htest} object with Moran's I, expected I, and p-value

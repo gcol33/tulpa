@@ -7,7 +7,14 @@
 \usage{
 check_model(object, ...)
 
-\method{check_model}{default}(object, coords = NULL, nsim = 250L, seed = 123L, ...)
+\method{check_model}{default}(
+  object,
+  coords = NULL,
+  nsim = 250L,
+  seed = 123L,
+  effects = c("conditional", "population"),
+  ...
+)
 }
 \arguments{
 \item{object}{A fitted model with \code{simulate()}, \code{fitted()}, \code{residuals()}}
@@ -19,6 +26,13 @@ check_model(object, ...)
 \item{nsim}{Number of simulations (default 250)}
 
 \item{seed}{Random seed (default 123)}
+
+\item{effects}{For a tulpa fit, the linear predictor the residuals-vs-fitted
+and correlogram panels read (\code{\link[=residuals.tulpa_fit]{residuals.tulpa_fit()}}): \code{"conditional"}
+(default) includes the fitted random effects and fields, matching the
+posterior predictive replicates the QQ and dispersion panels compare
+against, so all four panels check one model; \code{"population"} holds them at
+zero.}
 }
 \value{
 Invisible list with \code{ks_p}, \code{disp_ratio}, \code{moran} (if spatial)

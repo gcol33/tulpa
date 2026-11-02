@@ -8,7 +8,8 @@ durbin_watson(
   object,
   alternative = c("two.sided", "greater", "less"),
   time = NULL,
-  resid_type = "pearson"
+  resid_type = "pearson",
+  effects = c("conditional", "population")
 )
 }
 \arguments{
@@ -24,6 +25,9 @@ takes them in the order given.}
 
 \item{resid_type}{Residual type if extracting from a model (default
 \code{"pearson"}), as for \code{\link[=moran_i]{moran_i()}}.}
+
+\item{effects}{\code{"conditional"} (default) or \code{"population"}, as for
+\code{\link[=moran_i]{moran_i()}}.}
 }
 \value{
 An \code{htest} object with DW statistic, lag-1 r, and p-value

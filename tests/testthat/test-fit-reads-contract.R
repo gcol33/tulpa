@@ -210,10 +210,16 @@ test_that("a sampler fit with random effects and zero inflation reads beta_zi wh
   expect_equal(unname(colMeans(attr(es, "logit_zi"))),
                tulpa:::.tulpa_point_linpred(fit, NULL, "fitted")$logit_zi,
                tolerance = 1e-12)
-  # fitted() is the population-level mean at the posterior-mean coefficients;
-  # the per-draw population-level mean averages to it up to the Jensen gap of
-  # a coefficient SE near 0.2 and Monte-Carlo error.
+  # The population-level fitted mean is the one at the posterior-mean
+  # coefficients; the per-draw population-level mean averages to it up to the
+  # Jensen gap of a coefficient SE near 0.2 and Monte-Carlo error.
   ed <- tulpa:::.tulpa_eta_draws(fit, newdata = d)
   mu <- colMeans((1 - plogis(attr(ed, "logit_zi"))) * exp(ed))
-  expect_lt(max(abs(fitted(fit) / mu - 1)), 0.1)
+  expect_lt(max(abs(fitted(fit, effects = "population") / mu - 1)), 0.1)
+  # The conditional one reads both predictors at the posterior mean of the
+  # engine's own eta draws.
+  lz <- colMeans(attr(es, "logit_zi"))
+  expect_equal(fitted(fit),
+               as.numeric((1 - plogis(lz)) * exp(colMeans(es))),
+               tolerance = 1e-10)
 })

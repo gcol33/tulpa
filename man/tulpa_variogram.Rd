@@ -11,7 +11,8 @@ tulpa_variogram(
   coords,
   n_bins = 15L,
   max_dist = NULL,
-  resid_type = "pearson"
+  resid_type = "pearson",
+  effects = c("conditional", "population")
 )
 
 \method{plot}{tulpa_variogram}(x, ...)
@@ -28,6 +29,9 @@ tulpa_variogram(
 \item{max_dist}{Maximum distance (default: half the maximum pairwise distance)}
 
 \item{resid_type}{Residual type if extracting from model (default \code{"pearson"})}
+
+\item{effects}{\code{"conditional"} (default) or \code{"population"}, as for
+\code{\link[=moran_i]{moran_i()}}.}
 
 \item{x}{A \code{tulpa_variogram} table.}
 

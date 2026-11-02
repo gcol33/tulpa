@@ -2,12 +2,15 @@
 % Please edit documentation in R/methods_generic.R
 \name{fitted.tulpa_fit}
 \alias{fitted.tulpa_fit}
-\title{Fitted values (population level)}
+\title{Fitted values}
 \usage{
-\method{fitted}{tulpa_fit}(object, ...)
+\method{fitted}{tulpa_fit}(object, effects = c("conditional", "population"), ...)
 }
 \arguments{
 \item{object}{A \code{tulpa_fit} object (must carry \verb{$model_matrix}).}
+
+\item{effects}{\code{"conditional"} (default) or \code{"population"}, as described
+above.}
 
 \item{...}{Ignored.}
 }
@@ -15,12 +18,17 @@
 Numeric vector of fitted mean responses, length \code{nobs}.
 }
 \description{
-In-sample mean response from the fixed effects and the observation offset
-(\verb{E[y] = g^\{-1\}(X beta + offset)}, trial-scaled for binomial). Random
-effects are held at their prior mean of zero; group-level effects are in
-\code{\link[=ranef]{ranef()}}. \code{y - fitted(object)} equals
-\code{residuals(object, type = "response")}. On a zero-inflated fit
-(\code{ziformula}) the mean is the mixture's, \verb{(1 - pi) E[y | eta]} with
-\verb{pi = plogis(X_zi beta_zi)}; over a zero-truncated family that is the hurdle
-mean.
+In-sample mean response \code{E[y] = g^{-1}(eta)} (trial-scaled for binomial)
+at a point linear predictor \code{eta}. With \code{effects = "conditional"} (default)
+\code{eta} is the posterior mean of the in-sample linear predictor with every
+component the fit estimated -- fixed effects, the offset, formula random
+effects and any spatial, temporal or varying-coefficient field -- read from
+the same source \code{\link[=posterior_predict]{posterior_predict()}} and \code{\link[=simulate]{simulate()}} draw their replicates
+from. With \code{effects = "population"} the random effects and latent fields are
+held at their prior mean of zero and \verb{eta = X beta + offset} at \code{\link[=coef]{coef()}};
+group-level effects are in \code{\link[=ranef]{ranef()}}. \code{y - fitted(object)} equals
+\code{residuals(object, type = "response")} at the same \code{effects}. On a
+zero-inflated fit (\code{ziformula}) the mean is the mixture's,
+\verb{(1 - pi) E[y | eta]} with \verb{pi = plogis(X_zi beta_zi)}; over a
+zero-truncated family that is the hurdle mean.
 }

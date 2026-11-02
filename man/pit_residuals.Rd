@@ -33,6 +33,12 @@ residuals follow Uniform(0, 1).
 For integer-valued responses, a randomisation step avoids discrete
 artefacts: the residual is drawn uniformly between P(sim < obs) and
 P(sim <= obs).
+
+On a tulpa fit the replicates are the posterior predictive ones of
+\code{\link[=simulate.tulpa_fit]{simulate.tulpa_fit()}}, whose linear predictor carries every fitted
+component (random effects and spatial / temporal fields included), so PIT
+residuals are conditional on them, as the default \code{effects = "conditional"}
+residuals of \code{\link[=residuals.tulpa_fit]{residuals.tulpa_fit()}} are.
 }
 \examples{
 # From a matrix of replicates (n_obs x nsim) and the observed response:

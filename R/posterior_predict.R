@@ -40,11 +40,25 @@
                        dims = c(offset, n_obs))
 }
 
-# Point estimate of the RE coefficient vector (length n_re) for fits without
-# RE draws: the tail of the Laplace $mode or the $means vector past the fixed
-# block. NULL when neither carries the RE block.
+# Posterior-mean estimate of the RE coefficient vector (length n_re), in the
+# group-major / coef-within-group layout of `.tulpa_re_map()`: the mean of the
+# fit's own RE draws; on an RE-covariance integrator fit the weighted mean of
+# the per-node conditional means `re_nodes` (the exact mean of the mixture
+# `ranef()` reports); else the tail of the Laplace `$mode` or the `$means`
+# vector past the fixed block. NULL when none carries the RE block.
 #' @keywords internal
 .tulpa_re_point <- function(object, n_re) {
+  rd <- .re_coef_draws(object)
+  if (!is.null(rd) && ncol(rd) == n_re) return(as.numeric(colMeans(rd)))
+  rn <- object$re_nodes
+  if (is.matrix(rn) && ncol(rn) == n_re && !is.null(object$weights) &&
+      length(object$weights) == nrow(rn)) {
+    w <- as.numeric(object$weights)
+    ok <- is.finite(w) & w > 0 & is.finite(rowSums(rn))
+    if (any(ok)) {
+      return(as.numeric(colSums(w[ok] * rn[ok, , drop = FALSE]) / sum(w[ok])))
+    }
+  }
   nf <- object$n_fixed %||% 0L
   for (v in list(object$mode, object$means)) {
     if (is.numeric(v) && length(v) >= nf + n_re) {
@@ -434,53 +448,72 @@
 
   if (is.null(newdata)) {
     M <- .tulpa_re_map(object)
+    rd <- NULL
     if (!is.null(M)) {
       rd <- .tulpa_re_coef_draws(object, beta, keep, nrow(M))
-      if (!is.null(rd)) {
-        eta <- eta + as.matrix(rd %*% M)
-      } else {
+      if (is.null(rd)) {
         message("posterior_predict(): no random-effect draws or point ",
                 "values available; replicates are population-level.")
       }
     }
-
-    if (identical(object$spatial$type, "spde") &&
-        !is.null(object$spatial_effects) && !is.null(object$spatial$A)) {
-      eta <- sweep(eta, 2,
-                   as.numeric(object$spatial$A %*% object$spatial_effects), "+")
-    } else if (!is.null(object$spatial) && !is.null(object$mode)) {
-      # Conditional-Laplace areal fit (icar / car / car_proper / bym2): the
-      # field's raw latent is the block of the fit's own mode after the fixed
-      # and random effects (`[beta, re, field]`, matching every
-      # `.marginal_H_beta_*` areal helper's own layout,
-      # `R/marginal_se_spatial.R`), so it is read off exactly as it entered
-      # eta at the mode -- a posterior-mean field, like the SPDE branch above
-      # (gcol33/tulpa#795).
-      lf <- .laplace_areal_field(object, nrow(D$X))
-      if (!is.null(lf)) {
-        eta <- sweep(eta, 2, as.numeric(lf$design$Z_field %*% lf$u), "+")
-      }
-    } else if (is.matrix(object$draws) && !is.null(object$spatial)) {
-      # Polya-Gamma Gibbs fit: the field is actually SAMPLED (a
-      # `phi_spatial[k]` / `theta_spatial[k]` column per unit alongside the
-      # fixed effects in `$draws`), so every draw gets its own field value
-      # instead of a posterior mean (gcol33/tulpa#795).
-      fc <- .gibbs_field_eta_contrib(object, keep %||% seq_len(nrow(object$draws)),
-                                     nrow(D$X))
-      if (!is.null(fc)) eta <- eta + fc
-    } else if (!is.null(object$field_eta_contrib)) {
-      # Inline spatial() / temporal() joint field fit: the field's own
-      # weighted-mode posterior mean, read back per observation at fit time
-      # (`.bar_field_fit_core()`, `R/spatial_field.R`), since the joint
-      # multi-block driver behind these fits carries no single-cell
-      # `fitted_eta` for `.tulpa_linpred_source()` to read (gcol33/tulpa#795).
-      eta <- sweep(eta, 2, object$field_eta_contrib, "+")
-    }
+    eta <- .tulpa_add_latent_eta(object, eta, rd, keep, point = FALSE)
   }
 
   if (!is.null(zi_nm)) {
     attr(eta, "logit_zi") <- beta[, zi_nm, drop = FALSE] %*%
       t(D$X_zi[, zi_nm, drop = FALSE])
+  }
+  eta
+}
+
+# Add the random-effect and latent-field contributions to in-sample linear
+# predictor rows `eta` (rows x n_obs) on the "coefficients" source. `re` is the
+# RE coefficient matrix paired row for row with `eta` (NULL for none), mapped
+# through `.tulpa_re_map()`. `keep` indexes the stored draw rows a sampled
+# Polya-Gamma field is read at. With `point = TRUE`, `eta` is the one row of the
+# posterior-mean predictor and a sampled field enters at its posterior mean over
+# every stored draw; every other component is already a point value. The
+# predictor is linear in each component, so the point row is exactly the mean
+# of the rows the draw path assembles.
+#' @keywords internal
+.tulpa_add_latent_eta <- function(object, eta, re, keep, point = FALSE) {
+  n_obs <- ncol(eta)
+  if (!is.null(re)) {
+    eta <- eta + as.matrix(re %*% .tulpa_re_map(object))
+  }
+  if (identical(object$spatial$type, "spde") &&
+      !is.null(object$spatial_effects) && !is.null(object$spatial$A)) {
+    eta <- sweep(eta, 2,
+                 as.numeric(object$spatial$A %*% object$spatial_effects), "+")
+  } else if (!is.null(object$spatial) && !is.null(object$mode)) {
+    # Conditional-Laplace areal fit (icar / car / car_proper / bym2): the
+    # field's raw latent is the block of the fit's own mode after the fixed
+    # and random effects (`[beta, re, field]`, matching every
+    # `.marginal_H_beta_*` areal helper's own layout,
+    # `R/marginal_se_spatial.R`), so it is read off exactly as it entered
+    # eta at the mode -- a posterior-mean field, like the SPDE branch above
+    # (gcol33/tulpa#795).
+    lf <- .laplace_areal_field(object, n_obs)
+    if (!is.null(lf)) {
+      eta <- sweep(eta, 2, as.numeric(lf$design$Z_field %*% lf$u), "+")
+    }
+  } else if (is.matrix(object$draws) && !is.null(object$spatial)) {
+    # Polya-Gamma Gibbs fit: the field is actually SAMPLED (a
+    # `phi_spatial[k]` / `theta_spatial[k]` column per unit alongside the
+    # fixed effects in `$draws`), so every draw gets its own field value
+    # instead of a posterior mean (gcol33/tulpa#795).
+    rows <- if (point || is.null(keep)) seq_len(nrow(object$draws)) else keep
+    fc <- .gibbs_field_eta_contrib(object, rows, n_obs)
+    if (!is.null(fc)) {
+      eta <- if (point) sweep(eta, 2, colMeans(fc), "+") else eta + fc
+    }
+  } else if (!is.null(object$field_eta_contrib)) {
+    # Inline spatial() / temporal() joint field fit: the field's own
+    # weighted-mode posterior mean, read back per observation at fit time
+    # (`.bar_field_fit_core()`, `R/spatial_field.R`), since the joint
+    # multi-block driver behind these fits carries no single-cell
+    # `fitted_eta` for `.tulpa_linpred_source()` to read (gcol33/tulpa#795).
+    eta <- sweep(eta, 2, object$field_eta_contrib, "+")
   }
   eta
 }
@@ -585,6 +618,70 @@
   # the mixture and getting a different one (gcol33/tulpa#825).
   attr(eta, "cells") <- cells
   eta
+}
+
+# The point in-sample linear predictor a fit's fitted values and residuals are
+# read at, `list(eta, logit_zi)` over the training rows.
+#
+# `"population"`: the fixed effects and the offset at coef(), every random
+# effect and latent field held at zero (`.tulpa_point_linpred()`).
+#
+# `"conditional"`: the posterior mean of the in-sample linear predictor with
+# every component the fit estimated, from the same source the replicates of
+# posterior_predict() / simulate() are drawn from (`.tulpa_linpred_source()`):
+# the mean over the stored draws of the engine's own eta on a sampler fit, the
+# weight-averaged per-cell `fitted_eta` on a nested-Laplace grid, and otherwise
+# coef() plus the posterior-mean random effects (`.tulpa_re_point()`) and field
+# (`.tulpa_add_latent_eta(point = TRUE)`). Residuals read against this
+# predictor are the ones the replicates are checked against, so a structure the
+# model's field or group effects absorbed is absent from them.
+#' @keywords internal
+.tulpa_fitted_linpred <- function(object, effects = c("conditional", "population"),
+                                  accessor) {
+  effects <- match.arg(effects)
+  if (identical(effects, "population")) {
+    lp <- .tulpa_point_linpred(object, NULL, accessor)
+    return(list(eta = lp$eta, logit_zi = lp$logit_zi))
+  }
+  source <- .tulpa_linpred_source(object)
+  if (identical(source, "sampler_model")) {
+    eta <- .tulpa_eta_draws_sampler(object)
+    lz <- attr(eta, "logit_zi")
+    return(list(eta = as.numeric(colMeans(eta)),
+                logit_zi = if (!is.null(lz)) as.numeric(colMeans(lz))))
+  }
+  if (identical(source, "grid_mixture")) {
+    if (!is.null(object$zi_model_matrix)) {
+      .accessor_unavailable(accessor, object,
+                            "a zero-inflation predictor on the nested-Laplace grid")
+    }
+    # A cell the screen dropped carries zero weight and no solved eta (NA), so
+    # the mean runs over the cells that carry weight.
+    w <- as.numeric(object$weights)
+    w[!is.finite(w)] <- 0
+    on <- w > 0
+    if (!any(on)) {
+      .accessor_unavailable(accessor, object, "an outer-grid cell carrying weight")
+    }
+    M <- object$fitted_eta[on, , drop = FALSE]
+    return(list(eta = as.numeric(colSums(w[on] * M) / sum(w[on])),
+                logit_zi = NULL))
+  }
+  lp <- .tulpa_point_linpred(object, NULL, accessor)
+  M <- .tulpa_re_map(object)
+  re <- NULL
+  if (!is.null(M)) {
+    b <- .tulpa_re_point(object, nrow(M))
+    if (is.null(b)) {
+      .accessor_unavailable(accessor, object, paste0(
+        "a posterior estimate of its random effects for the conditional ",
+        "predictor; effects = \"population\" holds them at zero"))
+    }
+    re <- matrix(b, nrow = 1L)
+  }
+  eta <- .tulpa_add_latent_eta(object, matrix(lp$eta, nrow = 1L), re,
+                               keep = NULL, point = TRUE)
+  list(eta = as.numeric(eta), logit_zi = lp$logit_zi)
 }
 
 #' Posterior predictive replicates

@@ -4,12 +4,19 @@
 \alias{residuals.tulpa_fit}
 \title{Residuals from a tulpa fit}
 \usage{
-\method{residuals}{tulpa_fit}(object, type = c("pearson", "response"), ...)
+\method{residuals}{tulpa_fit}(
+  object,
+  type = c("pearson", "response"),
+  effects = c("conditional", "population"),
+  ...
+)
 }
 \arguments{
 \item{object}{A \code{tulpa_fit} object carrying \verb{$y} and \verb{$model_matrix}.}
 
 \item{type}{\code{"pearson"} (default) or \code{"response"}.}
+
+\item{effects}{\code{"conditional"} (default) or \code{"population"}.}
 
 \item{...}{Ignored.}
 }
@@ -17,10 +24,18 @@
 Numeric vector of length \code{nobs(object)}.
 }
 \description{
-Population-level residuals from the fixed-effect fitted mean: \code{"response"}
-is \code{y - E[y | eta]} on the response scale (trial-scaled for binomial,
-offset included); \code{"pearson"} additionally scales by the family standard
-deviation \code{sqrt(Var(y | eta))} at the fitted linear predictor. Random
-effects are held at zero, matching \code{\link[=fitted]{fitted()}}. On a zero-inflated fit both
-the mean and the variance are the mixture's.
+Residuals from the fitted mean of \code{\link[=fitted.tulpa_fit]{fitted.tulpa_fit()}}: \code{"response"} is
+\code{y - E[y | eta]} on the response scale (trial-scaled for binomial, offset
+included); \code{"pearson"} additionally scales by the family standard deviation
+\code{sqrt(Var(y | eta))} at the same linear predictor. On a zero-inflated fit
+both the mean and the variance are the mixture's.
+
+\code{effects = "conditional"} (default) reads them against the posterior-mean
+linear predictor with every fitted component, random effects and latent
+fields included: these are the residuals a structure diagnostic
+(\code{\link[=moran_i]{moran_i()}}, \code{\link[=tulpa_variogram]{tulpa_variogram()}}, \code{\link[=durbin_watson]{durbin_watson()}}, \code{\link[=check_model]{check_model()}}) has
+to see, because a spatial or temporal pattern the model's field absorbed is
+gone from them and one it left behind is not. \code{effects = "population"}
+holds random effects and fields at zero, so the residuals carry everything
+the fixed effects do not explain, including what the field fitted.
 }

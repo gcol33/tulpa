@@ -2121,25 +2121,34 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
   )
 }
 
-#' Fitted values (population level)
+#' Fitted values
 #'
 #' @description
-#' In-sample mean response from the fixed effects and the observation offset
-#' (`E[y] = g^{-1}(X beta + offset)`, trial-scaled for binomial). Random
-#' effects are held at their prior mean of zero; group-level effects are in
-#' [ranef()]. `y - fitted(object)` equals
-#' `residuals(object, type = "response")`. On a zero-inflated fit
-#' (`ziformula`) the mean is the mixture's, `(1 - pi) E[y | eta]` with
-#' `pi = plogis(X_zi beta_zi)`; over a zero-truncated family that is the hurdle
-#' mean.
+#' In-sample mean response `E[y] = g^{-1}(eta)` (trial-scaled for binomial)
+#' at a point linear predictor `eta`. With `effects = "conditional"` (default)
+#' `eta` is the posterior mean of the in-sample linear predictor with every
+#' component the fit estimated -- fixed effects, the offset, formula random
+#' effects and any spatial, temporal or varying-coefficient field -- read from
+#' the same source [posterior_predict()] and [simulate()] draw their replicates
+#' from. With `effects = "population"` the random effects and latent fields are
+#' held at their prior mean of zero and `eta = X beta + offset` at [coef()];
+#' group-level effects are in [ranef()]. `y - fitted(object)` equals
+#' `residuals(object, type = "response")` at the same `effects`. On a
+#' zero-inflated fit (`ziformula`) the mean is the mixture's,
+#' `(1 - pi) E[y | eta]` with `pi = plogis(X_zi beta_zi)`; over a
+#' zero-truncated family that is the hurdle mean.
 #'
 #' @param object A `tulpa_fit` object (must carry `$model_matrix`).
+#' @param effects `"conditional"` (default) or `"population"`, as described
+#'   above.
 #' @param ... Ignored.
 #' @return Numeric vector of fitted mean responses, length `nobs`.
 #' @export
-fitted.tulpa_fit <- function(object, ...) {
+fitted.tulpa_fit <- function(object, effects = c("conditional", "population"),
+                             ...) {
+  effects <- match.arg(effects)
   proc <- .tulpa_response_process(object, "fitted")
-  lp <- .tulpa_point_linpred(object, NULL, "fitted")
+  lp <- .tulpa_fitted_linpred(object, effects, "fitted")
   .response_mean(lp$eta, lp$logit_zi, proc$family,
                  n_trials = proc$n_trials, phi = proc$phi %||% 1.0)
 }
@@ -2147,24 +2156,35 @@ fitted.tulpa_fit <- function(object, ...) {
 #' Residuals from a tulpa fit
 #'
 #' @description
-#' Population-level residuals from the fixed-effect fitted mean: `"response"`
-#' is `y - E[y | eta]` on the response scale (trial-scaled for binomial,
-#' offset included); `"pearson"` additionally scales by the family standard
-#' deviation `sqrt(Var(y | eta))` at the fitted linear predictor. Random
-#' effects are held at zero, matching [fitted()]. On a zero-inflated fit both
-#' the mean and the variance are the mixture's.
+#' Residuals from the fitted mean of [fitted.tulpa_fit()]: `"response"` is
+#' `y - E[y | eta]` on the response scale (trial-scaled for binomial, offset
+#' included); `"pearson"` additionally scales by the family standard deviation
+#' `sqrt(Var(y | eta))` at the same linear predictor. On a zero-inflated fit
+#' both the mean and the variance are the mixture's.
+#'
+#' `effects = "conditional"` (default) reads them against the posterior-mean
+#' linear predictor with every fitted component, random effects and latent
+#' fields included: these are the residuals a structure diagnostic
+#' ([moran_i()], [tulpa_variogram()], [durbin_watson()], [check_model()]) has
+#' to see, because a spatial or temporal pattern the model's field absorbed is
+#' gone from them and one it left behind is not. `effects = "population"`
+#' holds random effects and fields at zero, so the residuals carry everything
+#' the fixed effects do not explain, including what the field fitted.
 #'
 #' @param object A `tulpa_fit` object carrying `$y` and `$model_matrix`.
 #' @param type `"pearson"` (default) or `"response"`.
+#' @param effects `"conditional"` (default) or `"population"`.
 #' @param ... Ignored.
 #' @return Numeric vector of length `nobs(object)`.
 #' @export
-residuals.tulpa_fit <- function(object, type = c("pearson", "response"), ...) {
+residuals.tulpa_fit <- function(object, type = c("pearson", "response"),
+                                effects = c("conditional", "population"), ...) {
   type <- match.arg(type)
+  effects <- match.arg(effects)
   proc <- .tulpa_response_process(object, "residuals")
   y <- proc$y
   if (is.null(y)) .accessor_unavailable("residuals", object, "the response ($y)")
-  lp  <- .tulpa_point_linpred(object, NULL, "residuals")
+  lp  <- .tulpa_fitted_linpred(object, effects, "residuals")
   phi <- proc$phi %||% 1.0
   mu  <- .response_mean(lp$eta, lp$logit_zi, proc$family,
                         n_trials = proc$n_trials, phi = phi)

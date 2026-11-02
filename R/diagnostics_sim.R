@@ -61,6 +61,12 @@ NULL
 #' artefacts: the residual is drawn uniformly between P(sim < obs) and
 #' P(sim <= obs).
 #'
+#' On a tulpa fit the replicates are the posterior predictive ones of
+#' [simulate.tulpa_fit()], whose linear predictor carries every fitted
+#' component (random effects and spatial / temporal fields included), so PIT
+#' residuals are conditional on them, as the default `effects = "conditional"`
+#' residuals of [residuals.tulpa_fit()] are.
+#'
 #' @param object A fitted model with a `simulate()` method, or a matrix
 #'   of simulated values (n_obs x nsim)
 #' @param observed Observed response vector (required if `object` is a matrix)
@@ -102,10 +108,7 @@ pit_residuals.default <- function(object, observed = NULL, nsim = 250L,
   } else {
     .require_scalar_response(object, "pit_residuals()")
     sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
-    obs <- observed %||% object$y %||% object$.internal$fit_args$y
-    if (is.null(obs)) {
-      stop("Cannot extract observed data. Provide `observed` argument.", call. = FALSE)
-    }
+    obs <- .resolve_obs(object, observed)
   }
 
   n <- length(obs)
@@ -368,6 +371,33 @@ test_zero_inflation.default <- function(object, observed = NULL, nsim = 250L,
 
 
 # ==============================================================================
+# Residuals read by the structure diagnostics
+# ==============================================================================
+
+# The residual vector moran_i(), durbin_watson(), tulpa_variogram() and
+# check_model() test: a numeric vector is taken as the residuals themselves; a
+# tulpa fit is read through residuals() at `effects`, conditional on its
+# random effects and latent fields by default, so a pattern the model's field
+# absorbed is absent and one it left behind is present; any other object with
+# a residuals() method is read through that method.
+#' @keywords internal
+.diag_residuals <- function(object, type, effects, caller) {
+  if (is.numeric(object) && is.null(dim(object))) return(as.numeric(object))
+  if (inherits(object, "tulpa_fit")) {
+    return(as.numeric(residuals(object, type = type, effects = effects)))
+  }
+  has_method <- vapply(class(object), function(cl) {
+    !is.null(utils::getS3method("residuals", cl, optional = TRUE))
+  }, logical(1L))
+  if (any(has_method)) {
+    return(as.numeric(residuals(object, type = type)))
+  }
+  stop(sprintf(paste0("%s: `object` must be a fitted model or a numeric ",
+                      "vector of residuals; got an object of class '%s'."),
+               caller, class(object)[1L]), call. = FALSE)
+}
+
+# ==============================================================================
 # Moran's I
 # ==============================================================================
 
@@ -401,6 +431,11 @@ test_zero_inflation.default <- function(object, observed = NULL, nsim = 250L,
 #' @param k Number of neighbours for knn (default 10)
 #' @param resid_type Residual type if extracting from model (default `"pearson"`)
 #' @param alternative `"two.sided"`, `"greater"`, or `"less"`
+#' @param effects For a tulpa fit, the linear predictor the residuals are read
+#'   against ([residuals.tulpa_fit()]): `"conditional"` (default) includes the
+#'   fitted random effects and spatial / temporal fields, so the test asks
+#'   whether structure remains after the model's own field; `"population"`
+#'   holds them at zero and tests what the fixed effects alone leave.
 #'
 #' @return An `htest` object with Moran's I, expected I, and p-value
 #'
@@ -414,15 +449,12 @@ test_zero_inflation.default <- function(object, observed = NULL, nsim = 250L,
 moran_i <- function(object, coords,
                     weights = c("inverse", "knn"), k = 10L,
                     resid_type = "pearson",
-                    alternative = c("two.sided", "greater", "less")) {
+                    alternative = c("two.sided", "greater", "less"),
+                    effects = c("conditional", "population")) {
   alternative <- match.arg(alternative)
   weights <- match.arg(weights)
-
-  if (is.numeric(object) && is.null(dim(object))) {
-    x <- object
-  } else {
-    x <- residuals(object, type = resid_type)
-  }
+  effects <- match.arg(effects)
+  x <- .diag_residuals(object, resid_type, effects, "moran_i()")
 
   N <- length(x)
   coords <- .check_coords_rows(coords, N, "moran_i()")
@@ -500,6 +532,8 @@ moran_i <- function(object, coords,
 #'   takes them in the order given.
 #' @param resid_type Residual type if extracting from a model (default
 #'   `"pearson"`), as for [moran_i()].
+#' @param effects `"conditional"` (default) or `"population"`, as for
+#'   [moran_i()].
 #'
 #' @return An `htest` object with DW statistic, lag-1 r, and p-value
 #'
@@ -513,20 +547,11 @@ moran_i <- function(object, coords,
 #'
 #' @export
 durbin_watson <- function(object, alternative = c("two.sided", "greater", "less"),
-                          time = NULL, resid_type = "pearson") {
+                          time = NULL, resid_type = "pearson",
+                          effects = c("conditional", "population")) {
   alternative <- match.arg(alternative)
-  # A fit is read through its residuals, as moran_i() and tulpa_variogram()
-  # read one (gcol33/tulpa#899); anything else must already be the residuals.
-  x <- if (is.numeric(object) && is.null(dim(object))) {
-    as.numeric(object)
-  } else if (inherits(object, "tulpa_fit") ||
-             !is.null(utils::getS3method("residuals", class(object)[1L],
-                                         optional = TRUE))) {
-    as.numeric(residuals(object, type = resid_type))
-  } else {
-    stop("`object` must be a fitted model or a numeric vector of residuals; ",
-         "got an object of class '", class(object)[1L], "'.", call. = FALSE)
-  }
+  effects <- match.arg(effects)
+  x <- .diag_residuals(object, resid_type, effects, "durbin_watson()")
   if (!is.null(time)) {
     if (length(time) != length(x) || anyNA(time)) {
       stop(sprintf(paste0("`time` must give one non-missing time per residual ",
@@ -577,6 +602,8 @@ durbin_watson <- function(object, alternative = c("two.sided", "greater", "less"
 #' @param n_bins Number of distance bins (default 15)
 #' @param max_dist Maximum distance (default: half the maximum pairwise distance)
 #' @param resid_type Residual type if extracting from model (default `"pearson"`)
+#' @param effects `"conditional"` (default) or `"population"`, as for
+#'   [moran_i()].
 #'
 #' @return A `tulpa_variogram` data.frame with columns `dist`, `gamma`, `n_pairs`
 #'
@@ -586,13 +613,10 @@ durbin_watson <- function(object, alternative = c("two.sided", "greater", "less"
 #' tulpa_variogram(rnorm(60), coords, n_bins = 5)
 #' @export
 tulpa_variogram <- function(object, coords, n_bins = 15L, max_dist = NULL,
-                            resid_type = "pearson") {
-
-  if (is.numeric(object) && is.null(dim(object))) {
-    x <- object
-  } else {
-    x <- residuals(object, type = resid_type)
-  }
+                            resid_type = "pearson",
+                            effects = c("conditional", "population")) {
+  effects <- match.arg(effects)
+  x <- .diag_residuals(object, resid_type, effects, "tulpa_variogram()")
 
   N <- length(x)
   coords <- .check_coords_rows(coords, N, "tulpa_variogram()")
@@ -668,6 +692,12 @@ print.tulpa_variogram <- function(x, ...) {
 #' @param coords Optional N x 2 coordinate matrix for spatial panel
 #' @param nsim Number of simulations (default 250)
 #' @param seed Random seed (default 123)
+#' @param effects For a tulpa fit, the linear predictor the residuals-vs-fitted
+#'   and correlogram panels read ([residuals.tulpa_fit()]): `"conditional"`
+#'   (default) includes the fitted random effects and fields, matching the
+#'   posterior predictive replicates the QQ and dispersion panels compare
+#'   against, so all four panels check one model; `"population"` holds them at
+#'   zero.
 #' @param ... Passed to methods.
 #'
 #' @return Invisible list with `ks_p`, `disp_ratio`, `moran` (if spatial)
@@ -688,7 +718,9 @@ check_model <- function(object, ...) {
 #' @rdname check_model
 #' @export
 check_model.default <- function(object, coords = NULL, nsim = 250L,
-                                seed = 123L, ...) {
+                                seed = 123L,
+                                effects = c("conditional", "population"), ...) {
+  effects <- match.arg(effects)
   .require_scalar_response(object, "check_model()")
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
   obs <- .resolve_obs(object)
@@ -710,8 +742,9 @@ check_model.default <- function(object, coords = NULL, nsim = 250L,
   abline(0, 1, col = "red", lty = 2, lwd = 1.5)
 
   # Panel 2: Residuals vs fitted
-  fv <- fitted(object)
-  r <- residuals(object, type = "pearson")
+  fv <- if (inherits(object, "tulpa_fit")) fitted(object, effects = effects)
+        else fitted(object)
+  r <- .diag_residuals(object, "pearson", effects, "check_model()")
   plot(fv, r,
        xlab = "Fitted", ylab = "Pearson residuals",
        main = "Residuals vs Fitted",
