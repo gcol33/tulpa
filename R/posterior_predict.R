@@ -681,6 +681,86 @@ posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
   yrep
 }
 
+#' Posterior of the linear predictor
+#'
+#' @description
+#' The posterior of the linear predictor `eta` at the training data with every
+#' component the fit estimated: fixed effects, the offset, formula random
+#' effects, spatial and temporal fields and `latent()` blocks. It is the
+#' quantity [posterior_predict()] pushes through the family, read here on the
+#' link scale; [predict.tulpa_fit()] and [fitted.tulpa_fit()] are population
+#' level instead.
+#'
+#' On a nested-Laplace fit the posterior of each `eta_i` is the grid mixture
+#' `sum_k w_k N(fitted_eta[k, i], fitted_eta_var[k, i])`, and `summary = TRUE`
+#' reports its exact mean, SD and quantiles. A fit run with
+#' `control$fitted_var = FALSE` carries no within-cell variance, and its summary
+#' reports the mixture mean alone (`source = "mode"`, `sd` and bounds `NA`).
+#' Every other fit summarizes its draws.
+#'
+#' @param object A `tulpa_fit` object.
+#' @param ... Passed to methods.
+#' @return With `summary = FALSE`, an `ndraws x n_obs` matrix of draws. With
+#'   `summary = TRUE`, a data frame with one row per observation: `estimate`,
+#'   `sd`, `conf.low`, `conf.high` (at `probs`) and `source` (`"mixture"` for
+#'   the exact grid mixture, `"mode"` for its mean alone, `"sampled"` for a
+#'   draw summary).
+#' @seealso [posterior_predict()], [predict.tulpa_fit()].
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' d <- data.frame(y = rpois(100, 4), x = rnorm(100), g = gl(10, 10))
+#' fit <- tulpa(y ~ x + (1 | g), data = d, family = "poisson", mode = "laplace")
+#' head(posterior_linpred(fit, summary = TRUE))
+#' }
+#' @export
+posterior_linpred <- function(object, ...) {
+  UseMethod("posterior_linpred")
+}
+
+#' @param newdata Optional data frame of covariates; population level, as for
+#'   [posterior_predict()]. `NULL` (default) reads the training data.
+#' @param ndraws Number of draws (`summary = FALSE`, or a draw-based summary).
+#' @param summary Logical; return a per-observation summary instead of draws.
+#' @param probs The two probabilities of the reported interval.
+#' @param seed Optional integer seed (RNG state is restored on exit).
+#' @rdname posterior_linpred
+#' @export
+posterior_linpred.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
+                                        summary = FALSE,
+                                        probs = c(0.025, 0.975),
+                                        seed = NULL, ...) {
+  .seed_scoped(seed)
+  if (isTRUE(summary) && is.null(newdata) &&
+      identical(.tulpa_linpred_source(object), "grid_mixture")) {
+    M <- object$fitted_eta
+    V <- object$fitted_eta_var
+    if (!is.matrix(V) || !identical(dim(V), dim(M))) V <- NULL
+    w <- as.numeric(object$weights)
+    keep <- is.finite(w) & w > 0 & is.finite(rowSums(M))
+    if (!is.null(V)) keep <- keep & is.finite(rowSums(V))
+    mx <- .nl_gauss_mixture_summary(
+      M[keep, , drop = FALSE], if (!is.null(V)) pmax(V[keep, , drop = FALSE], 0),
+      w[keep] / sum(w[keep]), probs = probs)
+    return(data.frame(estimate = mx$mean, sd = mx$sd,
+                      conf.low = mx$quantiles[, 1L],
+                      conf.high = mx$quantiles[, 2L],
+                      source = if (is.null(V)) "mode" else "mixture",
+                      row.names = NULL,
+                      stringsAsFactors = FALSE))
+  }
+  eta <- .tulpa_eta_draws(object, newdata = newdata, ndraws = ndraws)
+  attr(eta, "cells") <- NULL
+  attr(eta, "logit_zi") <- NULL
+  if (!isTRUE(summary)) return(eta)
+  data.frame(
+    estimate  = colMeans(eta),
+    sd        = apply(eta, 2L, stats::sd),
+    conf.low  = apply(eta, 2L, stats::quantile, probs = probs[1L], names = FALSE),
+    conf.high = apply(eta, 2L, stats::quantile, probs = probs[2L], names = FALSE),
+    source    = "sampled", row.names = NULL, stringsAsFactors = FALSE)
+}
+
 #' Simulate responses from a fitted tulpa model
 #'
 #' @description

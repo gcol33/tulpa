@@ -133,6 +133,7 @@ reference:
   - tulpa_powerscale_sensitivity
   - compare_models
   - model_average
+  - posterior_linpred
   - posterior_predict
   - pp_check
   - prior_predict
