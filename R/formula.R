@@ -759,6 +759,29 @@ tulpa_parse_formula <- function(formula) {
 }
 
 
+# Every variable a formula names has to resolve where model.frame() looks for
+# it: a column of `data`, else a binding visible from the formula's
+# environment. One that resolves in neither is named here, with the columns
+# `data` does have, rather than surfacing as "object 'z' not found" from inside
+# model.frame().
+#' @keywords internal
+.check_formula_vars <- function(formula, data, env) {
+  vars <- all.vars(formula)
+  cols <- names(data)
+  missing <- vars[!vars %in% cols &
+                    !vapply(vars, exists, logical(1), envir = env)]
+  if (length(missing)) {
+    shown <- utils::head(cols, 20L)
+    stop(sprintf(paste0(
+      "variable(s) %s in the formula are not columns of `data` and are not ",
+      "defined in the formula's environment. `data` has: %s%s."),
+      paste0("'", missing, "'", collapse = ", "),
+      paste(shown, collapse = ", "),
+      if (length(cols) > length(shown)) ", ..." else ""), call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 #' Build model matrices from a parsed formula
 #'
 #' Takes a parsed formula and data frame, and constructs:
@@ -816,6 +839,7 @@ tulpa_build_model_data <- function(parsed, data) {
   # Fixed-effects design matrix + offset extraction.
   # model.frame parses offset() terms and exposes them via model.offset();
   # model.matrix excludes them from the design.
+  .check_formula_vars(parsed$fixed_formula, data, formula_env)
   mf <- model.frame(parsed$fixed_formula, data, na.action = na.pass)
   .check_contrast_levels(mf, "the fixed-effects formula")
   X <- model.matrix(parsed$fixed_formula, mf)
