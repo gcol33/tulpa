@@ -108,6 +108,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     theta_grid   = tg,
     axis_offsets = res$axis_offsets,
     blocks       = res$blocks,
+    axis_support = res$axis_support,
     prior        = if (is.null(type)) res$prior else list(type = type)))
 }
 
@@ -440,7 +441,9 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   if (!is.null(tr)) {
     if (all(tr$in_domain(v))) {
       e <- tr$from(mirror(tr$to(v)))
-      if (all(is.finite(e)) && all(tr$in_domain(e))) {
+      fl <- !is.null(tr$floor)
+      if (fl) e[1L] <- tr$floor
+      if (all(is.finite(e)) && all(tr$in_domain(e[if (fl) 2L else 1:2]))) {
         return(part(tr, domain, e))
       }
       # The declaration stands and the mirror does not: the extreme coordinates
@@ -768,9 +771,17 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # `in_domain` is the map's own support, checked before it is applied so a
 # degenerate node (a collapsed scale, a correlation on the boundary) is reported
 # as unsummarizable rather than reaching `log` / `atanh` as a NaN.
+#
+# `positive_atom` is the positive half-line of a continuum whose measure runs
+# down to a point mass at zero (`.hyper_continuum_reaches_atom()`). Its
+# coordinates map as `positive`'s do; `floor` is where its lowest cell starts,
+# the atom, rather than a mirrored half step, and that cell is read on the
+# natural scale, the only one on which it has a finite width.
 .NL_DOMAIN_TRANSFORM <- list(
   positive    = list(to = log,      from = exp,
                      in_domain = function(x) x > 0),
+  positive_atom = list(to = log,    from = exp,
+                       in_domain = function(x) x > 0, floor = 0),
   correlation = list(to = atanh,    from = tanh,
                      in_domain = function(x) abs(x) < 1),
   unit        = list(to = stats::qlogis, from = stats::plogis,

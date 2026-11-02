@@ -51,7 +51,8 @@
 # A quantity that is not a grid axis -- an entry of a covariance assembled from
 # several axes -- has no rows to read, and declines as `"not_a_grid_axis"`; a
 # caller with no `log_marginal` to hand (a summary taken off weights alone) has
-# no node density, and declines as `"no_node_density"`.
+# no node density, and declines as `"no_node_density"`. A continuum whose lowest
+# cell reaches down to a point mass at zero declines as `"floor_cell"`.
 #
 # THE RECONSTRUCTION IS TABULATED. Each row's density is evaluated on one grid
 # over the axis's coordinate and integrated by the trapezoid rule; the axis's
@@ -88,6 +89,10 @@
   if (length(uv) < 2L) return(list(declined = "single_node"))
   le <- .nl_level_edges(uv, domain, declared)
   if (is.null(le)) return(list(declined = "boxes_do_not_tile"))
+  # A lowest cell reaching down to a point mass at zero has no finite width on
+  # the log coordinate the rows are interpolated on, so the axis is read by
+  # boxes on the natural scale instead.
+  if (!is.finite(le$pt$tr$to(le$e[1L]))) return(list(declined = "floor_cell"))
   k <- match(v, uv)
   bx <- list(lo = le$e[k], hi = le$e[k + 1L], tr = le$pt$tr,
              coord = le$pt$coord, declined = le$pt$declined)

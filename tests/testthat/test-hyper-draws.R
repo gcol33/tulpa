@@ -947,7 +947,16 @@ test_that("the draws still reproduce the fit's own interval on the level's axis"
     q <- unname(stats::quantile(a, c(0.025, 0.5, 0.975)))
     rep_q <- c(fit$theta_ci_lo[["alpha"]], fit$theta_median[["alpha"]],
                fit$theta_ci_hi[["alpha"]])
-    expect_lt(max(abs(q - rep_q)), 5e-3)
+    # The level: both read it exactly.
+    on_level <- rep_q == 0
+    expect_identical(q[on_level], rep_q[on_level])
+    # The continuum: the draws' CDF at each reported bound is its probability,
+    # to within four binomial SEs. Compared on the probability scale, since a
+    # bound in a box of low density moves far in value for a little Monte Carlo
+    # error in probability.
+    p <- c(0.025, 0.5, 0.975)[!on_level]
+    Fd <- vapply(rep_q[!on_level], function(x) mean(a <= x), numeric(1))
+    expect_true(all(abs(Fd - p) < 4 * sqrt(p * (1 - p) / length(a))))
   }
 })
 

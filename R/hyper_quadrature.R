@@ -300,9 +300,20 @@
   # reads, which must not weaken because the axis's support happens to close
   # where it is looking (`.nl_axis_marginal_w(measure = "span")`).
   if (close_domain) bd <- .hyper_domain_clamp(bd, u, spec)
+  dens <- spec$slab_log_density
+  # A proper continuum beside a point mass at zero lives on the whole of
+  # (0, Inf), and the atom is its limit there, so the lowest continuum cell
+  # reaches down to the atom rather than stopping half a node step below its
+  # node. Its width on the log coordinate is infinite; its prior mass is not,
+  # and it is integrated exactly (`.hyper_floor_cell_mass()`). Closing it at
+  # the half step instead drops the prior mass of (0, edge), which is where the
+  # likelihood of an uncoupled field is highest: on an 8 x 8 ICAR fit with the
+  # copy scale truly zero the atom read 0.90 of the posterior against 0.83 on a
+  # grid laid down to 1e-4.
+  floor_cell <- .hyper_continuum_reaches_atom(levels, spec, atom_mass)
+  if (floor_cell) bd[1L] <- -Inf
   width <- .hyper_cell_widths(u, bd[1L], bd[2L])
 
-  dens <- spec$slab_log_density
   if (is.null(dens)) {
     # Flat over the declared span: the widths themselves are the shape. As an
     # absolute measure a declared span is a uniform prior on it, unless the axis
@@ -319,6 +330,10 @@
     ld <- .hyper_prior_carry(x, dens, spec$log_scale,
                              spec$slab_log_density_coord %||% "natural")
     cw <- width * exp(ld)
+    if (floor_cell) {
+      cw[1L] <- .hyper_floor_cell_mass(
+        if (length(u) > 1L) (u[1L] + u[2L]) / 2 else bd[2L], dens, spec)
+    }
     cw[!is.finite(cw)] <- 0
     per_width <- function(xx) {
       d <- exp(.hyper_prior_carry(xx, dens, spec$log_scale,
@@ -364,6 +379,37 @@
   list(w = stats::setNames(w, nm), levels = levels, x = x,
        edges = c(bd[1L], (u[-length(u)] + u[-1L]) / 2, bd[2L]),
        unit = function(xx) scale * per_width(xx), slab = slab)
+}
+
+# Does the continuum of this axis reach down to its point mass? The rule
+# `.hyper_axis_measure()` applies: a log-scale axis with a zero level and a
+# declared atom mass, whose continuum carries a proper density and no declared
+# span. One predicate, read by the measure and by the reported support.
+.hyper_continuum_reaches_atom <- function(levels, spec,
+                                         atom_mass = spec$atom_mass) {
+  isTRUE(spec$log_scale) && !is.null(atom_mass) &&
+    any(as.numeric(levels) == 0) &&
+    is.null(spec$slab_bounds) && !is.null(spec$slab_log_density)
+}
+
+# Prior mass of the lowest continuum cell of an axis whose continuum reaches its
+# atom: the declared density integrated from zero to the cell's upper edge
+# `edge_u` (on the integration coordinate). Integrated on the coordinate the
+# density is declared on -- the natural scale from 0, or the log coordinate from
+# -Inf -- where the cell is a finite interval or an integrable tail.
+.hyper_floor_cell_mass <- function(edge_u, dens, spec) {
+  coord <- spec$slab_log_density_coord %||% "natural"
+  f <- function(x) exp(.hyper_prior_carry(x, dens, FALSE))
+  if (identical(coord, "natural")) {
+    hi <- if (isTRUE(spec$log_scale)) exp(edge_u) else edge_u
+    lo <- 0
+  } else {
+    hi <- edge_u
+    lo <- -Inf
+  }
+  m <- tryCatch(stats::integrate(f, lo, hi, rel.tol = 1e-10)$value,
+                error = function(e) NA_real_)
+  if (!is.finite(m) || m < 0) NA_real_ else m
 }
 
 # Scale the atom is weighed against the continuum on.
@@ -464,9 +510,10 @@ tulpa_hyper_copy_slab_density <- function(upper) .hyper_copy_slab_density(upper)
 
 # Natural-scale support of one axis's continuum: the interval its levels tile on
 # the integration coordinate. `slab_bounds` where the axis declares a span, half
-# a node step beyond the outermost levels otherwise. This is the region the outer
-# quadrature actually reaches, so a sampler asked to target the same measure is
-# bounded here and not at the outermost node.
+# a node step beyond the outermost levels otherwise, and from zero where the
+# continuum reaches its atom (`.hyper_continuum_reaches_atom()`). This is the
+# region the outer quadrature actually reaches, so a sampler asked to target the
+# same measure is bounded here and not at the outermost node.
 #
 # Either rule is closed inside the axis's declared domain, so a bounded axis --
 # a correlation, a mixing weight, a probability -- never reports a support
@@ -494,6 +541,9 @@ tulpa_hyper_copy_slab_density <- function(upper) .hyper_copy_slab_density(upper)
     return(if (isTRUE(spec$log_scale)) exp(cl) else cl)
   }
   bd <- .hyper_axis_coord_bounds(u, spec, declared)
+  # A continuum reaching its atom integrates down to zero, so that is where its
+  # support starts.
+  if (.hyper_continuum_reaches_atom(levels, spec)) bd[1L] <- -Inf
   if (isTRUE(spec$log_scale)) exp(bd) else bd
 }
 

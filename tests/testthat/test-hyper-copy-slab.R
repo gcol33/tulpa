@@ -80,6 +80,9 @@ test_that("copy_slab = 'exponential' is the default and is unchanged by it", {
   edges <- c(u[1L] - diff(u[1:2]) / 2, (u[-length(u)] + u[-1L]) / 2,
              u[length(u)] + diff(u[(length(u) - 1L):length(u)]) / 2)
   expected <- diff(edges) * lambda * exp(-lambda * pos) * pos
+  # The lowest cell reaches down to the atom: its mass is the exponential's
+  # own probability of (0, upper edge).
+  expected[1L] <- 1 - exp(-lambda * exp(edges[2L]))
   expected <- expected / sum(expected)
   w <- .hyper_axis_level_weights(GEO_ALPHA, ax, .TULPA_COPY_ATOM_MASS)
   expect_equal(unname(w[-1L]), (1 - .TULPA_COPY_ATOM_MASS) * expected)
@@ -189,4 +192,81 @@ test_that("control_check admits copy_slab on the joint method", {
   expect_true("copy_slab" %in% allowed)
   expect_silent(tulpa_check_control(list(copy_slab = "flat"), allowed,
                                     "tulpa_nested_laplace_joint"))
+})
+
+test_that("the exponential continuum reaches down to its atom", {
+  skip_on_cran_budget()
+  ax  <- alpha_axis(.joint_axis_specs(list(alpha = GEO_ALPHA), CP))
+  pos <- GEO_ALPHA[GEO_ALPHA > 0]
+  lambda <- -log(0.05) / max(pos)
+  u <- log(pos)
+  hi <- u[length(u)] + diff(u[(length(u) - 1L):length(u)]) / 2
+  # As an absolute prior mass the lowest continuum cell holds the exponential's
+  # exact probability of (0, its upper edge): nothing below the lowest node is
+  # left out. The cells above it are midpoint cells.
+  w <- .hyper_axis_level_weights(GEO_ALPHA, ax, .TULPA_COPY_ATOM_MASS,
+                                 absolute = TRUE)
+  e1 <- exp((u[1L] + u[2L]) / 2)
+  expect_equal(unname(w[2L]), (1 - .TULPA_COPY_ATOM_MASS) * (1 - exp(-lambda * e1)),
+               tolerance = 1e-8)
+  expect_equal(sum(w[-1L]), (1 - .TULPA_COPY_ATOM_MASS) * (1 - exp(-lambda * exp(hi))),
+               tolerance = 0.02)
+  # The reported support starts at zero.
+  sup <- .hyper_axis_support(GEO_ALPHA, ax)
+  expect_identical(sup[1L], 0)
+  expect_equal(sup[2L], exp(hi))
+  # A declared flat span keeps its own lower end.
+  axf <- alpha_axis(.joint_axis_specs(list(alpha = GEO_ALPHA), CP, copy_slab = "flat"))
+  expect_gt(.hyper_axis_support(GEO_ALPHA, axf)[1L], 0)
+})
+
+test_that("a continuum reaching its atom is partitioned from the atom up", {
+  skip_on_cran_budget()
+  v <- c(0.1, 0.2, 0.4)
+  e <- .nl_box_edges(v, "positive_atom")
+  expect_identical(e[1L], 0)
+  expect_equal(e[-1L], .nl_box_edges(v, "positive")[-1L])
+  # Its lowest box is uniform on the natural scale from the atom.
+  q <- .nl_box_quantile(c(0, v), c(0.5, 0.3, 0.15, 0.05), c(0.5, 0.65),
+                        domain = "positive_atom", atom = 0)
+  expect_true(is.na(q$declined))
+  expect_equal(q$q, c(0, 0.5 * sqrt(0.1 * 0.2)))
+  # The log-quadratic read has no finite log width for that box and hands the
+  # axis to the box read.
+  rd <- .nl_lq_quantile(v, c(0.6, 0.3, 0.1), 0.5, domain = "positive_atom",
+                        row_id = rep(1L, 3L), log_density = log(c(0.6, 0.3, 0.1)))
+  expect_identical(rd$declined, "floor_cell")
+})
+
+test_that("a copy scale truly zero reads the atom mass a grid laid toward zero reads", {
+  skip_if_not_slow()
+  nr <- 8L; nc <- 8L; S <- nr * nc
+  rc <- expand.grid(r = seq_len(nr), c = seq_len(nc))
+  nb <- lapply(seq_len(S), function(s) which(abs(rc$r - rc$r[s]) + abs(rc$c - rc$c[s]) == 1))
+  nn <- lengths(nb)
+  icar <- list(type = "icar", n_spatial_units = S, adj_row_ptr = c(0L, cumsum(nn)),
+               adj_col_idx = unlist(nb) - 1L, n_neighbors = nn)
+  set.seed(1)
+  w <- 0.8 * as.numeric(scale(sin(rc$r / 2) + cos(rc$c / 2.5)))
+  s1 <- rep(seq_len(S), each = 3L); x1 <- rnorm(length(s1))
+  y1 <- rpois(length(s1), exp(0.5 + 0.4 * x1 + w[s1]))
+  visited <- sort(sample(S, 40L))
+  s2 <- rep(visited, each = 4L); x2 <- rnorm(length(s2))
+  counts <- list(y = y1, n_trials = rep(1L, length(y1)), X = cbind(1, x = x1),
+                 spatial_idx = s1, family = "poisson")
+  set.seed(4)
+  det <- list(y = rbinom(length(s2), 10L, plogis(-0.3 + 0.8 * x2)), n_trials = rep(10L, length(s2)),
+              X = cbind(1, x = x2), spatial_idx = s2, family = "binomial", field_coef = "alpha")
+  ctl <- list(n_threads = 2L, progress = FALSE)
+  fz <- tulpa_nested_laplace_joint(list(counts = counts, detect = det), prior = icar, control = ctl)
+  expect_length(fz$outer_grid_railed_axes, 0L)
+  sg <- sort(unique(tulpa_outer_grid(fz)$nodes[, "sigma"]))
+  pr <- icar; pr$sigma_grid <- sg
+  dz <- det; dz$field_coef <- list(name = "alpha",
+                                   grid = c(0, exp(seq(log(1e-3), log(3), length.out = 29))))
+  fd <- suppressWarnings(tulpa_nested_laplace_joint(
+    list(counts = counts, detect = dz), prior = pr,
+    control = c(ctl, list(axis_refine = "none", auto_recenter = FALSE, diagnose_k = FALSE))))
+  # 0.900 against a reference of 0.828 when the continuum stopped at 0.081.
+  expect_equal(fz$copy_atom$posterior_mass, fd$copy_atom$posterior_mass, tolerance = 0.01)
 })

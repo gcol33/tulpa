@@ -2548,7 +2548,8 @@
     # inside the quantity's own support.
     geo <- .joint_axis_geometry(list(theta_grid = joint_grid,
                                      axis_offsets = axis_offsets,
-                                     blocks = prepared))
+                                     blocks = prepared,
+                                     axis_support = res$axis_support))
     qs <- .nl_axis_quantiles(joint_grid, res$log_marginal,
                               res$refining_axis, weights = int_weights,
                               log_quad = if (is.null(int_weights)) res$log_quad,

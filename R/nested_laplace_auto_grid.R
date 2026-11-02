@@ -1030,19 +1030,23 @@ auto_grid_place <- function(x)
 #
 # A declared point mass is not a boundary node: the copy scale's zero level
 # carries the "no coupling" model's own mass, so the read is taken on the
-# continuum. The continuum's lowest node stays a boundary there, since the
-# measure leaves the stretch between it and the atom to no cell.
+# continuum. The continuum's lowest node is a boundary there only where the
+# measure stops short of the atom (`.hyper_continuum_reaches_atom()`, recorded
+# as a support starting at zero): a continuum reaching down to it leaves no
+# stretch below that node to any cell but its own.
 .nl_axis_edge_mass <- function(res, axis,
                                lift_mult = .nl_diag("edge_mass_lift")) {
     mw <- .nl_axis_marginal_w(res, axis, measure = "span")
+    sides <- c(1L, 2L)
     if (!is.null(mw) && isTRUE(.hyper_axis_scale(sub("^b[0-9]+[.]", "", axis)))) {
         mw <- .nl_axis_continuum(mw, "log")
         if (!is.null(mw) && length(mw$w) < 2L) mw <- NULL
+        if (isTRUE(.nl_axes_reach_atom(res, axis))) sides <- 2L
     }
     if (is.null(mw)) return(list())
     m <- length(mw$w)
     out <- list()
-    for (k in c(1L, m)) {
+    for (k in c(1L, m)[sides]) {
         lift <- m * mw$w[k]
         if (!is.finite(lift) || lift < lift_mult) next
         out[[length(out) + 1L]] <- list(

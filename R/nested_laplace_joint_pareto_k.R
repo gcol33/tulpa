@@ -577,7 +577,22 @@
                   function(b) isTRUE(.hyper_axis_scale(b)), logical(1),
                   USE.NAMES = FALSE)
     doms[scl] <- "positive"
+    # A continuum the measure integrated down to its atom
+    # (`.hyper_continuum_reaches_atom()`, recorded as a support starting at zero)
+    # is partitioned the same way: its lowest cell runs from the atom up.
+    doms[scl & .nl_axes_reach_atom(res, cn)] <- "positive_atom"
     list(domain = doms, atom = ifelse(scl, 0, NA_real_))
+}
+
+# Which of the axes `cn` carry a continuum the measure closed at its atom, read
+# off the support the fit recorded (`axis_support`, `.hyper_grid_supports()`):
+# a log-scale continuum's support starts at zero exactly when it does.
+.nl_axes_reach_atom <- function(res, cn) {
+    sup <- res$axis_support
+    vapply(cn, function(a) {
+        s <- sup[[a]]
+        !is.null(s) && length(s) == 2L && isTRUE(s[1L] == 0)
+    }, logical(1), USE.NAMES = FALSE)
 }
 
 .joint_axis_domains <- function(res) .joint_axis_geometry(res)$domain

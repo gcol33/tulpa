@@ -1152,8 +1152,11 @@
 #'      `theta_within_cell_declined` (`"support_<kind>"`, `"single_node"`,
 #'      `"boxes_do_not_tile"`, `"no_usable_node"`). A `"log_quadratic"` request
 #'      falls back to `"box_uniform"` first, with `"unresolved"` (no row
-#'      resolves its own conditional), `"not_a_grid_axis"` or
-#'      `"no_node_density"` as the reason.
+#'      resolves its own conditional), `"not_a_grid_axis"`,
+#'      `"no_node_density"` or `"floor_cell"` (a copy scale whose lowest
+#'      continuum cell runs down to its point mass at zero, which has no finite
+#'      width on the log coordinate the interpolation is taken on) as the
+#'      reason.
 #'   * `theta_cell_edge_coord`, `theta_cell_edge_declined` -- per axis, the
 #'      COORDINATE that axis's outer cell edges were mirrored in, and why the
 #'      support the axis declares did not produce them. A

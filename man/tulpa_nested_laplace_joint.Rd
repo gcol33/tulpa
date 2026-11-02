@@ -1170,8 +1170,11 @@ not be built falls back to \code{"chord"} on its own with the reason in
 \code{theta_within_cell_declined} (\code{"support_<kind>"}, \code{"single_node"},
 \code{"boxes_do_not_tile"}, \code{"no_usable_node"}). A \code{"log_quadratic"} request
 falls back to \code{"box_uniform"} first, with \code{"unresolved"} (no row
-resolves its own conditional), \code{"not_a_grid_axis"} or
-\code{"no_node_density"} as the reason.
+resolves its own conditional), \code{"not_a_grid_axis"},
+\code{"no_node_density"} or \code{"floor_cell"} (a copy scale whose lowest
+continuum cell runs down to its point mass at zero, which has no finite
+width on the log coordinate the interpolation is taken on) as the
+reason.
 \item \code{theta_cell_edge_coord}, \code{theta_cell_edge_declined} -- per axis, the
 COORDINATE that axis's outer cell edges were mirrored in, and why the
 support the axis declares did not produce them. A
