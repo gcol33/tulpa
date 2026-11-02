@@ -1,5 +1,6 @@
 ---
 title: "Get started"
+description: "From installation to a first fitted model: fit, add a random effect, compare, predict, and a short look at each headline feature."
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Get started}
