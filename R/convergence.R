@@ -299,13 +299,18 @@
   worst <- diag[bad_r | bad_e, , drop = FALSE]
   worst <- worst[order(worst$ess_bulk), , drop = FALSE]
   shown <- utils::head(worst, 5L)
+  backend <- fit$backend %||% "sampler"
+  # NUTS is the alternative offered to every other chain; a NUTS chain is
+  # already on it.
+  switch_hint <- if (identical(backend, "hmc")) "" else ", or use mode = 'hmc'"
   warning(sprintf(paste0(
     "%s: the '%s' chain has not converged -- %s. Its estimates and intervals ",
-    "are not yet the posterior. Run longer (control$n_iter / control$warmup), ",
-    "or use mode = 'hmc'; see check_diagnostics()."),
-    caller, fit$backend %||% "sampler",
+    "are not yet the posterior. Run longer (control$n_iter / control$warmup)%s; ",
+    "see check_diagnostics()."),
+    caller, backend,
     paste(sprintf("%s: Rhat %.2f, bulk-ESS %.0f", shown$parameter, shown$rhat,
-                  shown$ess_bulk), collapse = "; ")),
+                  shown$ess_bulk), collapse = "; "),
+    switch_hint),
     call. = FALSE)
   fit
 }
