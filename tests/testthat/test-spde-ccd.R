@@ -350,3 +350,29 @@ test_that("SPDE CCD recovers (range, sigma) on a genuine field (#98)", {
   expect_gte(sum(cov_r[used_ccd]), ceiling(0.70 * n_ccd))
   expect_gte(sum(cov_s[used_ccd]), ceiling(0.70 * n_ccd))
 })
+
+test_that("a line-search abort at a stationary point is taken as the mode", {
+  skip_on_cran_budget()
+  # A concave log-marginal carrying a 1e-5 nat ripple: L-BFGS-B ends with
+  # ABNORMAL_TERMINATION_IN_LNSRCH at its optimum, as on a fractional-nu cell's
+  # marginal. The point is stationary on the posterior's scale, so the CCD
+  # design engages there rather than declining to the rectangular grid.
+  r0 <- 0.3; s0 <- 0.6
+  spde_log_marginal <- function(r, s, keep_Q = FALSE) {
+    lm <- -0.5 * ((log(r) - log(r0))^2 / 0.25 + (log(s) - log(s0))^2 / 0.25) +
+      1e-5 * sin(1e7 * log(r)) * cos(1e7 * log(s))
+    list(log_marginal = lm, n_iter = rep(5L, length(r)))
+  }
+  sp <- list(prior_range = c(0.3, 0.5), prior_sigma = c(0.6, 0.05))
+  obj <- function(th) -(spde_log_marginal(exp(th[1]), exp(th[2]))$log_marginal +
+                          tulpa:::.spde_log_hyperprior(exp(th[1]), exp(th[2]), sp))
+  init <- log(c(0.3, 0.6))
+  op <- tulpa:::.nl_lbfgsb_mode_find(init, obj, lower = init - log(100),
+                                     upper = init + log(100),
+                                     tuning = tulpa:::.nl_mode_find_tuning("spde"))
+  expect_identical(op$convergence, 52L)
+  res <- expect_no_warning(fit_spde_nested_ccd(
+    spde_log_marginal, function(range, sigma) list(mode = NULL), sp,
+    spatial = list(), diagnose_k = FALSE))
+  expect_identical(res$nested$method, "ccd")
+})

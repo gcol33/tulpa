@@ -284,10 +284,33 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
                              lower = lower, upper = upper,
                              tuning = mode_find)
 
+  # L-BFGS-B ends with ABNORMAL_TERMINATION_IN_LNSRCH (code 52) when its line
+  # search cannot buy the relative reduction `factr` asks for, which is what
+  # happens AT the optimum of an objective with a resolution floor above it: a
+  # fractional-nu cell's marginal moves by a few 1e-6 nats under a 1e-7 step in
+  # log range, where `factr` asks for 1e-8. Such an end is a mode when the point is
+  # stationary on the posterior's own scale: the Newton step H^-1 g left to
+  # take is under `stationary_sd` of each axis's posterior SD sqrt(diag H^-1),
+  # far below what the 1.1-SD CCD design resolves.
+  stationary_sd <- 0.05
+  stationary <- function(par) {
+    h <- mode_find$ndeps
+    g <- vapply(seq_along(par), function(j) {
+      tp <- par; tp[j] <- tp[j] + h
+      tm <- par; tm[j] <- tm[j] - h
+      (obj(tp) - obj(tm)) / (2 * h)
+    }, numeric(1))
+    Hs <- stats::optimHess(par = par, fn = obj)
+    Hs <- 0.5 * (Hs + t(Hs))
+    V <- tryCatch(.spd_inverse(Hs), error = function(e) NULL)
+    if (is.null(V) || any(!is.finite(g))) return(FALSE)
+    all(abs(V %*% g) < stationary_sd * sqrt(diag(V)))
+  }
   bad_mode <- function(op) {
     if (is.null(op)) return(TRUE)
-    if (op$convergence != 0) return(TRUE)
     if (any(!is.finite(op$par))) return(TRUE)
+    if (op$convergence != 0 &&
+        !(op$convergence == 52L && stationary(op$par))) return(TRUE)
     # Mode pinned to the optimisation box -> data are uninformative for
     # this hyper; fall back to the rectangular grid.
     eps <- 1e-3
