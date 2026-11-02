@@ -54,9 +54,6 @@ test_that("tulpa(factors =) refuses what its arms do not carry", {
   expect_error(fit_with(weights = rep(1, nrow(d))), "`weights`")
   expect_error(fit_with(ziformula = ~ 1), "`ziformula`")
   expect_error(fit_with(spatiotemporal = list()), "`spatiotemporal`")
-  d_na <- d; d_na$y[c(2L, 5L)] <- NA
-  expect_error(tulpa(y ~ x, data = d_na, family = "poisson",
-                     factors = .fac_spec()), "2 NA row")
   expect_error(fit_with(spec = .fac_spec(shared = FALSE)), "shared")
   expect_error(fit_with(spec = .fac_spec(constraint = "sum_to_zero")),
                "constraint")
@@ -130,6 +127,29 @@ test_that("tulpa(factors =) is the joint lf fit of its arms, row order kept", {
   sc <- latent_factors(fit)
   expect_identical(nrow(sc), 120L)
   expect_identical(levels(d$site)[sc$observation], sc$unit)
+})
+
+test_that("tulpa(factors =) masks an NA response row: the fit of the observed rows", {
+  skip_if_fast()
+  d <- .fac_sim(5L, S = 30L, .fac_Lam, .fac_b0, .fac_b1)
+  na <- c(4L, 57L, 101L)
+  d_na <- d; d_na$y[na] <- NA
+  set.seed(11)
+  fit_na <- tulpa(y ~ x, data = d_na, family = "poisson",
+                  factors = .fac_spec(), control = list(n_threads = 1L))
+  set.seed(11)
+  fit_drop <- tulpa(y ~ x, data = d[-na, ], family = "poisson",
+                    factors = .fac_spec(), control = list(n_threads = 1L))
+  # The masked rows add no likelihood term and no Hessian entry, so the
+  # stored precision, and with it every seeded draw, is the dropped fit's.
+  expect_equal(fit_na$log_marginal, fit_drop$log_marginal, tolerance = 1e-8)
+  expect_equal(unname(fit_na$modes), unname(fit_drop$modes), tolerance = 1e-8)
+  expect_equal(fit_na$loadings, fit_drop$loadings, tolerance = 1e-8)
+  expect_equal(coef(fit_na), coef(fit_drop), tolerance = 1e-8)
+  expect_equal(fit_na$fitted_eta[, -na, drop = FALSE], fit_drop$fitted_eta,
+               tolerance = 1e-8)
+  # The masked rows still read their linear predictor off the posterior.
+  expect_true(all(is.finite(fit_na$fitted_eta[, na])))
 })
 
 test_that("tulpa(factors =) recovers Lambda Lambda' of a two-factor model", {

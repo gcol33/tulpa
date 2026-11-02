@@ -158,8 +158,10 @@ struct BuiltinFamilyResponse {
 // or a held-out cell -- off the posterior of everything else. One test, read
 // by every callback below, so each nested kernel that takes the built-in
 // family masks the same rows.
+inline bool response_is_missing(double y) { return std::isnan(y); }
+
 inline bool builtin_row_missing(const BuiltinFamilyResponse* r, int i) {
-    return r->y && std::isnan(r->y[i]);
+    return r->y && response_is_missing(r->y[i]);
 }
 
 // LikelihoodFn<double>: per-obs log-likelihood for the built-in family.

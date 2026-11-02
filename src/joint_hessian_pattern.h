@@ -31,6 +31,7 @@
 #ifndef TULPA_JOINT_HESSIAN_PATTERN_H
 #define TULPA_JOINT_HESSIAN_PATTERN_H
 
+#include "laplace_builtin_family_spec.h"  // response_is_missing
 #include "latent_block.h"
 #include "nested_laplace_joint_core.h"
 #include "sparse_hessian.h"
@@ -214,6 +215,19 @@ inline std::vector<int> factor_curvature_coords(
     return out;
 }
 
+// Whether row i of a built-in, per-observation arm carries no response. Such
+// a row has no likelihood term (builtin_row_missing), so it adds no
+// data-induced entry to the pattern: a fit with masked rows then stores the
+// precision of the fit of its observed rows, entry for entry. A model-supplied
+// spec owns its response, and a coupled arm is scattered per cell, so neither
+// is read here.
+inline bool joint_row_masked(const JointArm& a, int i) {
+    return a.spec == nullptr && !a.coupled && i < a.y.size() &&
+           response_is_missing(a.y[i]);
+}
+
+// `mask_missing = false` keeps every row, for a caller whose responses change
+// after the pattern is built (the batched driver).
 inline void build_joint_hessian_pattern(
     const std::vector<ParsedArm>&    parsed,
     const std::vector<JointArm>&     arms,
@@ -222,7 +236,8 @@ inline void build_joint_hessian_pattern(
     SparseHessianBuilder&            out_builder,
     const std::vector<int>&          coupled_arms = std::vector<int>(),
     const std::vector<std::vector<std::vector<int>>>& cell_rows = {},
-    int                              n_cells = 0
+    int                              n_cells = 0,
+    bool                             mask_missing = true
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -317,6 +332,7 @@ inline void build_joint_hessian_pattern(
 
             // INDEXED_SINGLE / INDEXED_MULTI: per-obs enumeration.
             for (int i = 0; i < N_k; i++) {
+                if (mask_missing && joint_row_masked(arms[k], i)) continue;
                 detail::resolve_indexed_dofs(blk, i, k, dof_scratch);
                 if (dof_scratch.empty()) continue;
 
@@ -374,6 +390,7 @@ inline void build_joint_hessian_pattern(
 
                 // Both indexed: per-obs enumeration.
                 for (int i = 0; i < N_k; i++) {
+                    if (mask_missing && joint_row_masked(arms[k], i)) continue;
                     detail::resolve_indexed_dofs(blk1, i, k, dof_scratch);
                     if (dof_scratch.empty()) continue;
                     detail::resolve_indexed_dofs(blk2, i, k, dof_scratch2);
