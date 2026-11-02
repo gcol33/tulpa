@@ -2070,23 +2070,14 @@ Rcpp::List cpp_test_joint_logpost_grad(
         tulpa::add_per_arm_beta_re_priors(grad, H, x, parsed);
     }
 
-    // Scalar objective: log_lik + the joint log-prior + the weak default beta
-    // ridge. log_prior_joint_blocks already carries an arm's INFORMATIVE
-    // per-coefficient beta prior, which the scatter also writes into the
-    // gradient, so only the arms falling back to DEFAULT_TAU_BETA take a term
-    // here. Adding the default on top of a per-coefficient prior, or leaving a
-    // per-coefficient prior out of the objective, would put `logpost` and
-    // `grad` on different functions over exactly the coefficients carrying one.
+    // Scalar objective: log_lik + the joint log-prior. log_prior_joint_blocks
+    // carries every per-arm beta prior term add_per_arm_beta_re_priors writes
+    // into the gradient (log_prior_per_arm_re): the consumer's per-coefficient
+    // prior where it supplied one, DEFAULT_TAU_BETA otherwise. Any further beta
+    // term here would put `logpost` and `grad` on different functions.
     double log_lik = tulpa::compute_total_log_lik_joint(specs.views, etas, 1);
     double logpost = log_lik +
                      tulpa::log_prior_joint_blocks(x, blocks, parsed, k_grid);
-    for (const auto& pa : parsed) {
-        if (static_cast<int>(pa.beta_prior_prec.size()) == pa.p) continue;
-        for (int j = 0; j < pa.p; j++) {
-            const double v = x[pa.beta_start + j];
-            logpost -= 0.5 * tulpa::DEFAULT_TAU_BETA * v * v;
-        }
-    }
 
     Rcpp::NumericVector grad_out(n_x);
     for (int j = 0; j < n_x; j++) grad_out[j] = grad[j];
