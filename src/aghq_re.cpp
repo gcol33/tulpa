@@ -12,6 +12,12 @@
 
 #include "aghq_re_core.h"
 #include "aghq_re_oracles.h"
+#include "aghq_re_profile.h"
+#include "glmm_oracle.h"
+#include <memory>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #include <Rcpp.h>
 #include <vector>
 
@@ -182,4 +188,101 @@ List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVec
                         _["bcross"] = BCROSS, _["bcross_available"] = cross_ok,
                         _["group_ok"] = GOK,
                         _["sigma_jitter_floored"] = JIT);
+}
+
+// The fixed-effect profile of the AGHQ marginal (aghq_re_profile.h) at each row
+// of `eta_pts` (one covariance point per row, log-Cholesky coordinates): the
+// inner solve of tulpa_re_cov_nested() at n_quad > 1, for one point (a node or
+// an optimizer step) or a batch (the outer Pareto-k proposal draws). Every
+// point starts from `beta_init`, so a point's value does not depend on which
+// thread solved it.
+//
+// The oracle's beta binding is per-solve state, so the points run across
+// `n_threads` threads only on an oracle that can be copied per thread (the
+// native single-arm GLMM oracle); any other oracle runs them in order.
+//
+// Returns `log_marginal` (-Inf where a solve failed), `beta` (one row per
+// point) and `H` (an S x p x p array, the profile curvature).
+// [[Rcpp::export]]
+List cpp_aghq_profile_batch(NumericMatrix eta_pts, SEXP oracle,
+                            IntegerVector nc, LogicalVector full,
+                            IntegerVector n_quad, NumericVector beta_init,
+                            Nullable<NumericVector> prior_mean = R_NilValue,
+                            Nullable<NumericVector> prior_sd = R_NilValue,
+                            int n_threads = 1, int max_iter = 100,
+                            double hess_step = 1e-3) {
+    XPtr<REGroupOracle> orc(oracle);
+    int d; std::vector<ReCovBlock> blocks = parse_blocks(nc, full, d);
+    std::vector<int> nqb(n_quad.begin(), n_quad.end());
+    const AghqGrid grid = aghq_build_grid(aghq_nq_per_axis(blocks, nqb));
+    const int S = eta_pts.nrow(), K = eta_pts.ncol();
+    const int p = beta_init.size();
+    if (K != recov_total_k(blocks))
+        stop("cpp_aghq_profile_batch: eta_pts has %d columns, the blocks carry %d "
+             "covariance coordinates.", K, recov_total_k(blocks));
+    if (p != orc->n_theta)
+        stop("cpp_aghq_profile_batch: beta_init has length %d, the oracle %d.",
+             p, orc->n_theta);
+
+    AghqBetaPrior prior;
+    if (prior_mean.isNotNull() && prior_sd.isNotNull()) {
+        prior.on = true;
+        prior.mean = as<Eigen::VectorXd>(NumericVector(prior_mean));
+        prior.sd   = as<Eigen::VectorXd>(NumericVector(prior_sd));
+        if (prior.mean.size() != p || prior.sd.size() != p)
+            stop("cpp_aghq_profile_batch: the fixed-effect prior has length %d / "
+                 "%d, expected %d.", (int)prior.mean.size(),
+                 (int)prior.sd.size(), p);
+    }
+    const Eigen::VectorXd b0 = as<Eigen::VectorXd>(beta_init);
+    std::vector<Eigen::VectorXd> etas(S, Eigen::VectorXd(K));
+    for (int s = 0; s < S; ++s)
+        for (int k = 0; k < K; ++k) etas[s](k) = eta_pts(s, k);
+
+    const SingleArmGLMMOracle* native =
+        dynamic_cast<const SingleArmGLMMOracle*>(orc.get());
+    const int n_outer = (native != nullptr)
+        ? std::max(1, std::min(n_threads, S)) : 1;
+    std::vector<std::unique_ptr<SingleArmGLMMOracle>> copies;
+    if (n_outer > 1)
+        for (int t = 0; t < n_outer; ++t)
+            copies.emplace_back(new SingleArmGLMMOracle(*native));
+
+    std::vector<AghqProfile> res(S);
+    #ifdef _OPENMP
+    #pragma omp parallel for schedule(dynamic, 1) num_threads(n_outer) \
+        if (n_outer > 1)
+    #endif
+    for (int s = 0; s < S; ++s) {
+        int tid = 0;
+        #ifdef _OPENMP
+        tid = omp_in_parallel() ? omp_get_thread_num() : 0;
+        #endif
+        REGroupOracle& o = (n_outer > 1)
+            ? static_cast<REGroupOracle&>(*copies[tid]) : *orc;
+        try {
+            res[s] = aghq_profile_beta(o, etas[s], blocks, grid, b0, prior,
+                                       max_iter, hess_step);
+        } catch (...) {
+            res[s] = AghqProfile();
+        }
+    }
+
+    NumericVector LM(S, R_NegInf);
+    NumericMatrix BETA(S, p);
+    NumericVector HH((std::size_t)S * p * p, NA_REAL);
+    HH.attr("dim") = IntegerVector::create(S, p, p);
+    for (int s = 0; s < S; ++s) {
+        if (!res[s].ok) {
+            for (int j = 0; j < p; ++j) BETA(s, j) = NA_REAL;
+            continue;
+        }
+        LM[s] = res[s].log_marginal;
+        for (int j = 0; j < p; ++j) {
+            BETA(s, j) = res[s].beta(j);
+            for (int k = 0; k < p; ++k)
+                HH[s + (std::size_t)S * (j + (std::size_t)p * k)] = res[s].H(j, k);
+        }
+    }
+    return List::create(_["log_marginal"] = LM, _["beta"] = BETA, _["H"] = HH);
 }

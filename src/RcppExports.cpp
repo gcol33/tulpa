@@ -81,6 +81,27 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_aghq_profile_batch
+List cpp_aghq_profile_batch(NumericMatrix eta_pts, SEXP oracle, IntegerVector nc, LogicalVector full, IntegerVector n_quad, NumericVector beta_init, Nullable<NumericVector> prior_mean, Nullable<NumericVector> prior_sd, int n_threads, int max_iter, double hess_step);
+RcppExport SEXP _tulpa_cpp_aghq_profile_batch(SEXP eta_ptsSEXP, SEXP oracleSEXP, SEXP ncSEXP, SEXP fullSEXP, SEXP n_quadSEXP, SEXP beta_initSEXP, SEXP prior_meanSEXP, SEXP prior_sdSEXP, SEXP n_threadsSEXP, SEXP max_iterSEXP, SEXP hess_stepSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericMatrix >::type eta_pts(eta_ptsSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type oracle(oracleSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type nc(ncSEXP);
+    Rcpp::traits::input_parameter< LogicalVector >::type full(fullSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type n_quad(n_quadSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type beta_init(beta_initSEXP);
+    Rcpp::traits::input_parameter< Nullable<NumericVector> >::type prior_mean(prior_meanSEXP);
+    Rcpp::traits::input_parameter< Nullable<NumericVector> >::type prior_sd(prior_sdSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    Rcpp::traits::input_parameter< double >::type hess_step(hess_stepSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_aghq_profile_batch(eta_pts, oracle, nc, full, n_quad, beta_init, prior_mean, prior_sd, n_threads, max_iter, hess_step));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_flatten_3d_rowmajor
 Rcpp::NumericVector cpp_flatten_3d_rowmajor(Rcpp::NumericVector arr, int d1, int d2, int d3);
 RcppExport SEXP _tulpa_cpp_flatten_3d_rowmajor(SEXP arrSEXP, SEXP d1SEXP, SEXP d2SEXP, SEXP d3SEXP) {
@@ -5196,6 +5217,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_aghq_objective", (DL_FUNC) &_tulpa_cpp_aghq_objective, 6},
     {"_tulpa_cpp_aghq_objective_grad", (DL_FUNC) &_tulpa_cpp_aghq_objective_grad, 6},
     {"_tulpa_cpp_aghq_blups", (DL_FUNC) &_tulpa_cpp_aghq_blups, 4},
+    {"_tulpa_cpp_aghq_profile_batch", (DL_FUNC) &_tulpa_cpp_aghq_profile_batch, 11},
     {"_tulpa_cpp_flatten_3d_rowmajor", (DL_FUNC) &_tulpa_cpp_flatten_3d_rowmajor, 4},
     {"_tulpa_cpp_spde_rational_roots", (DL_FUNC) &_tulpa_cpp_spde_rational_roots, 4},
     {"_tulpa_cpp_brasil_approx", (DL_FUNC) &_tulpa_cpp_brasil_approx, 6},

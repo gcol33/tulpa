@@ -21,6 +21,10 @@ cpp_aghq_blups <- function(par, oracle, nc, full) {
     .Call(`_tulpa_cpp_aghq_blups`, par, oracle, nc, full)
 }
 
+cpp_aghq_profile_batch <- function(eta_pts, oracle, nc, full, n_quad, beta_init, prior_mean = NULL, prior_sd = NULL, n_threads = 1L, max_iter = 100L, hess_step = 1e-3) {
+    .Call(`_tulpa_cpp_aghq_profile_batch`, eta_pts, oracle, nc, full, n_quad, beta_init, prior_mean, prior_sd, n_threads, max_iter, hess_step)
+}
+
 cpp_flatten_3d_rowmajor <- function(arr, d1, d2, d3) {
     .Call(`_tulpa_cpp_flatten_3d_rowmajor`, arr, d1, d2, d3)
 }

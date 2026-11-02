@@ -1015,46 +1015,30 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     orc <- cpp_glmm_oracle_make(family, phi, as.numeric(y), as.numeric(n_trials),
                                 as.matrix(X), as.matrix(Zc), as.integer(idx1), ng1)
     bp  <- .normalize_beta_prior(beta_prior, p_fix)
-    log_prior_beta_at <- if (is.null(bp)) function(b) 0 else
-      function(b) sum(stats::dnorm(b, bp$mean, bp$sd, log = TRUE))
-    # Gradient of the fixed-effect Gaussian prior (0 when absent), for the
-    # analytic beta-gradient of the inner profile.
-    dlog_prior_beta <- if (is.null(bp)) function(b) rep(0, p_fix) else
-      function(b) -(b - bp$mean) / bp$sd^2
     beta_warm <- if (!is.null(pilot) && !is.null(pilot$mode))
       pilot$mode[seq_len(p_fix)] else rep(0, p_fix)
 
-    # n_quad > 1 here (the AGHQ inner path), so the analytic Fisher-identity
-    # gradient is consistent with the objective. Profiling beta at a fixed Sigma
-    # only needs the theta-block (first p_fix entries) of the joint gradient plus
-    # the beta-prior gradient; the cached eval serves fn and gr in one sweep.
+    # The fixed-effect profile at each covariance point, compiled
+    # (`cpp_aghq_profile_batch()`, src/aghq_re_profile.h): Newton steps on the
+    # analytic beta-gradient of sum_g log M_g + log prior(beta), the curvature a
+    # central difference of that gradient, and the Laplace-integrated value
+    # F(beta_hat) + (p / 2) log 2 pi - (1 / 2) log |H|. One point is a node or
+    # an optimizer step; a batch is the outer proposal's draws, spread over
+    # `n_threads_outer` threads, each point starting from `beta_warm` so its
+    # value does not depend on the thread that solved it.
+    profile <- function(sc_rows, n_threads_outer = 1L) {
+      cpp_aghq_profile_batch(
+        eta_pts = sc_rows, oracle = orc, nc = nc_terms, full = full_vec,
+        n_quad = as.integer(n_quad), beta_init = beta_warm,
+        prior_mean = bp$mean, prior_sd = bp$sd,
+        n_threads = as.integer(n_threads_outer))
+    }
     core_solve <- function(L_list) {
-      sc   <- .re_cov_L_list_to_theta(L_list, layout)
-      eval_at <- .aghq_grad_cache(orc, nc_terms, full_vec, n_quad, 1.0)
-      negf <- function(b) {
-        v <- eval_at(c(b, sc))$f
-        if (!is.finite(v) || v <= -1e9) return(.Machine$double.xmax)
-        -(v + log_prior_beta_at(b))
-      }
-      negg <- function(b) {
-        r <- eval_at(c(b, sc))
-        if (!isTRUE(r$ok)) return(rep(0, p_fix))
-        -(r$grad[seq_len(p_fix)] + dlog_prior_beta(b))
-      }
-      opt <- tryCatch(stats::optim(beta_warm, negf, negg, method = "BFGS",
-                                   hessian = TRUE,
-                                   control = list(reltol = 1e-10, maxit = 300L)),
-                      error = function(e) NULL)
-      if (is.null(opt) || !all(is.finite(opt$par))) return(NULL)
-      logMb <- cpp_aghq_objective(c(opt$par, sc), orc, nc_terms, full_vec,
-                                  n_quad, 1.0)
-      ld <- tryCatch(as.numeric(determinant(opt$hessian,
-                                            logarithm = TRUE)$modulus),
-                     error = function(e) NA_real_)
-      if (!is.finite(logMb) || !is.finite(ld)) return(NULL)
-      lm <- logMb + log_prior_beta_at(opt$par) +
-        0.5 * p_fix * log(2 * pi) - 0.5 * ld
-      list(log_marginal = lm, mode = opt$par, H_beta = opt$hessian)
+      sc <- .re_cov_L_list_to_theta(L_list, layout)
+      r  <- profile(matrix(sc, nrow = 1L))
+      if (!is.finite(r$log_marginal[1L])) return(NULL)
+      list(log_marginal = r$log_marginal[1L], mode = r$beta[1L, ],
+           H_beta = matrix(r$H[1L, , ], p_fix, p_fix))
     }
     # Same signature as the joint-field pair above: the outer objective always
     # passes the dispersion, so both inner solves have to take it. `phi_` is
@@ -1066,13 +1050,14 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     inner_logmarg <- function(L_list, phi_ = phi) {
       r <- core_solve(L_list); if (is.null(r)) -Inf else r$log_marginal
     }
-    # Each point is a beta profile optimized in R against the compiled oracle,
-    # so the batch is that profile per point. There is no latent mode to warm
-    # start from (`x_init` is the joint-field solve's) and the profile's optim
-    # runs on the R thread, so `n_threads_outer` has nothing to spread.
+    # There is no latent mode to warm start from (`x_init` is the joint-field
+    # solve's); every point starts from `beta_warm`.
     inner_logmarg_batch <- function(L_lists, x_init = NULL,
                                     n_threads_outer = 1L) {
-      vapply(L_lists, inner_logmarg, numeric(1))
+      if (!length(L_lists)) return(numeric(0))
+      sc_rows <- do.call(rbind, lapply(L_lists, .re_cov_L_list_to_theta,
+                                       layout = layout))
+      profile(sc_rows, n_threads_outer)$log_marginal
     }
     # `re_cov` is accepted and ignored: this inner solve integrates each group's
     # random effects out by quadrature rather than conditioning at their mode, so
