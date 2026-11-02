@@ -47,11 +47,9 @@ Unlike separable models where the covariance factors as \eqn{C_s \otimes C_t},
 non-separable models allow for direct space-time interaction in the covariance.
 
 No tulpa backend fits a joint space-time covariance, so this constructor
-errors. A spatial GP alongside a temporal field is fitted directly by
-\code{\link[=fit_st_nested]{fit_st_nested()}} (\code{spatial_type = "hsgp"} or \code{"nngp"}); \code{tulpa()}'s
-formula front door does not yet route a continuous spatial field together
-with a temporal field (it does for an areal one -- icar/bym2/car_proper --
-via \code{tulpa(spatial = , temporal = )}; gcol33/tulpa#812).
+errors. A separable additive model, a spatial GP plus a temporal field, is
+fitted by \code{tulpa(spatial = spatial_gp(...), temporal = )} (NNGP or HSGP)
+and by \code{\link[=fit_st_nested]{fit_st_nested()}} (\code{spatial_type = "hsgp"} or \code{"nngp"}).
 }
 \details{
 The non-separable covariance functions allow for more flexible space-time

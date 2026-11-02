@@ -169,10 +169,9 @@ honest position when the background is something you never measured.
 The matrix $R$ has rank $T - 1$. The walk fixes increments, not levels, so the
 whole trend can slide up or down by a constant without changing any increment.
 That constant is the unidentified direction, and it collides with the intercept
-$\beta_0$. tulpa resolves it with a sum-to-zero constraint on $\phi$, which has a
-consequence we return to when reading the intercept: under an intrinsic field
-the intercept absorbs the free level and its standard error sits near the prior
-width by design.
+$\beta_0$. tulpa resolves it with a hard sum-to-zero constraint on $\phi$, so
+the intercept carries the overall level, a point we return to when reading the
+intercept.
 
 One switch changes the geometry. With `cyclic = TRUE` the chain closes into a
 ring, so time $T$ becomes a neighbour of time $1$ and the increment $\phi_1 -
@@ -395,38 +394,29 @@ understate the interval, sometimes badly when the trend is hard to pin down.
 The coverage of the marginalized interval is tested at its nominal rate, so the
 ninety-five percent bounds mean what they say.
 
-Second, the intercept. Under an intrinsic field the level of the trend is not
-separately identified from $\beta_0$, so the sum-to-zero constraint hands the
-intercept a near-flat posterior and its standard error sits at roughly the prior
-width.
+Second, the intercept. The random walk constrains increments, so on its own it
+says nothing about the level of the trend, and $\beta_0$ and $\bar\phi$ could
+trade a constant without changing the linear predictor. The sum-to-zero
+constraint removes that direction: $\bar\phi$ is held at zero, so the intercept
+is the overall level and the trend carries only the departures from it. The
+data inform that level directly, and its standard error is of the size a
+model with the trend as fixed effects under sum-to-zero contrasts would give.
 
 ```{r intercept-se}
 coef(summary(fit))["(Intercept)", c("estimate", "std.error")]
 ```
 
-That large standard error is a feature of the parameterisation, not a sign the
-fit failed. Interpret slopes, which are identified and marginalized; do not read
-the intercept as an estimate of the overall level. If you need a level, it lives
-in the trend $\phi$, which you extract and centre as shown above.
-
-The reason traces straight back to the intrinsic prior. The random walk
-constrains increments, so the data inform the shape of $\phi$ and the height of
-$\beta_0 + \bar\phi$ taken together, but not the split between them. tulpa pins
-$\phi$ to sum to zero and lets $\beta_0$ float, which is one valid way to break
-the tie, and under that choice the intercept inherits the unidentified level.
-A different software might pin the intercept and let the trend float; the slopes,
-which depend on neither convention, come out the same. The lesson is to anchor
-interpretation on quantities that do not depend on how the tie was broken.
-Slopes qualify. Differences in the trend between two time points qualify too,
-since the shared level cancels. The bare intercept stands apart, tied to a
-convention rather than to the data.
+What the intercept means does depend on the constraint. It is the level at the
+average of the time points, not the level at any one of them, and a model that
+centred the trend differently (on its first time point, say) would report a
+different intercept with the same slopes. Differences in the trend between two
+time points do not depend on that choice either, since the shared level cancels.
 
 ## Prediction
 
 `predict()` gives the fixed-effect prediction at new covariate values, with the
-field held at its population average. On the link scale the intercept's wide
-posterior flows straight into the standard error, so a raw link-scale band is
-dominated by that unidentified level rather than by covariate uncertainty.
+field held at its population average. On the link scale the band carries the
+intercept's uncertainty as well as the slope's.
 
 ```{r predict-link}
 nd <- data.frame(x = seq(-2, 2, length.out = 50))
@@ -434,11 +424,8 @@ pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE)
 round(head(pr, 2), 3)
 ```
 
-The informative quantity is how the prediction *changes* with $x$, which is the
-slope and its tight interval, not the absolute height of the line. To show the
-covariate effect cleanly, plot the link-scale prediction centred at its own
-mean, so the intercept's free level drops out and the slope's uncertainty is
-what remains.
+To show how the prediction *changes* with $x$, plot the link-scale prediction
+centred at its own mean.
 
 ```{r predict-plot, fig.alt = "Centred link-scale prediction across x with the covariate slope and its credible band"}
 ctr <- pr$fit - mean(pr$fit)
@@ -451,13 +438,9 @@ polygon(c(nd$x, rev(nd$x)),
 lines(nd$x, ctr, lwd = 2)
 ```
 
-The band is narrow because the slope is well identified, even though the line's
-absolute position is not. Centring is the right move precisely because the
-quantity of interest is a contrast: the difference in linear predictor between
-two covariate values, which the slope controls and the intercept cancels out of.
-The raw `se.fit` is not wrong, it is answering a different question, namely how
-uncertain the absolute height of the line is, and under an intrinsic field that
-height is barely identified.
+The band drawn is the half-width of the raw interval, so it still includes the
+intercept's share; the contrast between two covariate values depends on the
+slope alone.
 
 `predict()` holds the temporal field at its population average. What you see is
 the covariate effect with the trend marginalised out, not a forecast at a
@@ -585,9 +568,9 @@ coef(fit_rw2)
 `temporal_ar1()` is a stationary, full-rank alternative with an estimated
 correlation parameter rather than an intrinsic walk. Panel trends through
 `group_var=` fit a separate walk per group sharing one hyperparameter, and a
-temporal field combined with an **areal** (`icar`/`car`/`bym2`/`car_proper`)
-spatial field forms an additive space-time joint prior over the
-`[spatial, temporal]` block stack:
+temporal field combined with an areal (`icar`/`car`/`bym2`/`car_proper`) or a
+continuous `spatial_gp()` field (NNGP or HSGP) forms an additive space-time
+joint prior over the `[spatial, temporal]` block stack:
 
 ```{r ar1-panel, eval = FALSE}
 # AR1 temporal trend
@@ -605,9 +588,11 @@ tulpa(y ~ x + spatial(region), data = st_df, family = "binomial",
 ```
 
 Still off the front door: a panel temporal field alongside a spatial or
-`latent()` block, and continuous (`gp`/`nngp`/`hsgp`) or SPDE space-time. Those
-report a clear error rather than dropping the term; the dedicated `cpp_nested_laplace_st_*`
-kernels exist for later wiring.
+`latent()` block, a temporal field alongside an SPDE or a restricted
+(`spatial_rsr()`) field, and a `temporal_gp()` or `temporal_tvc()` field
+alongside any other field. Each reports an error naming the combination rather
+than dropping a term. `fit_st_nested()` fits the same additive model directly
+through its own kernels, for an areal, HSGP or NNGP spatial field.
 
 ## See also
 

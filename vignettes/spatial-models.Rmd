@@ -402,25 +402,20 @@ rank-deficiency of the ICAR precision. Under an intrinsic field the
 overall level of $\phi$ and the intercept $\beta_0$ are confounded:
 shifting every $\phi_r$ up by a constant and the intercept down by the
 same constant leaves the linear predictor, and therefore the likelihood,
-unchanged. The two parameters trade off along a flat ridge, and no amount
-of data can pin them both. tulpa handles this by letting the intercept
-float against a near-flat prior, which shows up as a very wide intercept
-standard error in the summary above. The slopes are unaffected, because a
-covariate's effect does not live on that ridge. Read the slopes, which are
-identified, and treat the intercept as a nuisance level rather than a
-quantity to interpret.
+unchanged. tulpa removes that direction with a hard sum-to-zero
+constraint on $\phi$: the field's mean is held at zero, so the intercept
+is the overall level and the field carries only the departures from it.
+The data inform that level directly, and its standard error is of the
+size a model with one fixed effect per region under sum-to-zero contrasts
+would give.
 
 ```{r intercept-se}
 coef(summary(fit))["(Intercept)", "std.error"]
 ```
 
-The wide value here is by design, not a fitting failure. A proper CAR or a
-BYM2 field with its IID part tamed will narrow it, at the cost of an extra
-estimated parameter. Whenever you report results from an intrinsic model,
-say so plainly: the intercept is a floating reference, the slopes are the
-inferential payload, and a reader who treats the intercept as an absolute
-baseline rate will be misled. This caveat travels with every disease-map
-or species-distribution table that smooths over an adjacency graph.
+What the intercept means follows from the constraint: it is the level at
+the average over regions, not a baseline rate of any one region. A table
+reporting it from an intrinsic model says which average it refers to.
 
 ## Prediction
 

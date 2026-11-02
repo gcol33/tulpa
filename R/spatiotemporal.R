@@ -412,11 +412,9 @@ plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
 #' non-separable models allow for direct space-time interaction in the covariance.
 #'
 #' No tulpa backend fits a joint space-time covariance, so this constructor
-#' errors. A spatial GP alongside a temporal field is fitted directly by
-#' [fit_st_nested()] (`spatial_type = "hsgp"` or `"nngp"`); `tulpa()`'s
-#' formula front door does not yet route a continuous spatial field together
-#' with a temporal field (it does for an areal one -- icar/bym2/car_proper --
-#' via `tulpa(spatial = , temporal = )`; gcol33/tulpa#812).
+#' errors. A separable additive model, a spatial GP plus a temporal field, is
+#' fitted by `tulpa(spatial = spatial_gp(...), temporal = )` (NNGP or HSGP)
+#' and by [fit_st_nested()] (`spatial_type = "hsgp"` or `"nngp"`).
 #'
 #' @param coords A one-sided formula specifying coordinate columns (e.g.,
 #'   `~ lon + lat`), or a character vector of length 2.
@@ -467,12 +465,9 @@ spatiotemporal_gp <- function(coords,
                               nonsep_type = c("product", "sum", "gneiting", "cressie_huang"),
                               nn = 15,
                               shared = NULL) {
-  # gcol33/tulpa#812: same front-door gap as spatiotemporal() above.
   stop("Non-separable spatiotemporal GP fields are not fitted by any tulpa ",
-       "backend: no solver carries a joint space-time covariance, and tulpa() ",
-       "has no `spatiotemporal =` argument. A spatial GP alongside a temporal ",
-       "field is fitted directly by fit_st_nested(spatial_type = 'hsgp' or ",
-       "'nngp', ...); tulpa()'s formula front door routes spatial + temporal ",
-       "jointly only for an areal spatial field (icar/bym2/car_proper) via ",
-       "tulpa(spatial = , temporal = ).", call. = FALSE)
+       "backend: no solver carries a joint space-time covariance. The additive ",
+       "model, a spatial GP plus a temporal field, is fitted by ",
+       "tulpa(spatial = spatial_gp(...), temporal = ) (NNGP or HSGP) and by ",
+       "fit_st_nested(spatial_type = 'hsgp' or 'nngp', ...).", call. = FALSE)
 }
