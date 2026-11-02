@@ -83,6 +83,37 @@ bool factorize_cell(
     return ok;
 }
 
+// Diagonal entry H_jj of a lower-triangle CSC, NaN where column j stores none.
+double csc_lower_diag(const int* Qp, const int* Qi, const double* Qx, int j) {
+    for (int e = Qp[j]; e < Qp[j + 1]; e++)
+        if (Qi[e] == j) return Qx[e];
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+// Anchor `constr` on the constraint rows and factorize the anchored
+// precision H_a = H + E C E' it folds against (InvBlockConstraint), leaving
+// `solver` holding that factor. With no rows, or no node that can carry an
+// anchor, this is factorize_cell on H itself.
+bool factorize_constrained_cell(
+    SparseCholeskySolver& solver,
+    const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
+    const std::vector<LinearConstraintRow>& groups,
+    InvBlockConstraint& constr
+) {
+    constr.anchor(n_x, groups, [&](int j) {
+        return csc_lower_diag(Qp, Qi, Qx, j);
+    });
+    if (constr.anchor_node.empty())
+        return factorize_cell(solver, Qp, Qi, Qx, n_x, nnz);
+    std::vector<double> Qx_a(Qx, Qx + nnz);
+    for (std::size_t a = 0; a < constr.anchor_node.size(); a++) {
+        const int j = constr.anchor_node[a];
+        for (int e = Qp[j]; e < Qp[j + 1]; e++)
+            if (Qi[e] == j) { Qx_a[e] += constr.anchor_weight[a]; break; }
+    }
+    return factorize_cell(solver, Qp, Qi, Qx_a.data(), n_x, nnz);
+}
+
 // Visit every entry of one cell's constrained block the extraction computes,
 // as emit(a, b, value) with a >= b (positions into idx0). That is the whole
 // lower triangle, less the field x field off-diagonal under field_marginal,
@@ -103,10 +134,13 @@ bool visit_inner_vcov_cell(
     if (n_dense > p) n_dense = p;
     const int n_field = p - n_dense;
 
-    if (!factorize_cell(solver, Qp, Qi, Qx, n_x, nnz)) return false;
+    InvBlockConstraint constr;
+    if (!factorize_constrained_cell(solver, Qp, Qi, Qx, n_x, nnz, A_cols,
+                                    constr)) return false;
 
-    // Columns of C = Qk^{-1} to solve: the dense (fixed-effect) block in the
-    // cheap recipe; every idx column in full mode. Each solve reuses the factor.
+    // Columns of C = Qk^{-1} to solve (of the anchored Qk under a constraint):
+    // the dense (fixed-effect) block in the cheap recipe; every idx column in
+    // full mode. Each solve reuses the factor.
     const int n_solve = field_marginal ? n_dense : p;
     std::vector<std::vector<double>> C_cols(n_solve);
     std::vector<double> e(n_x, 0.0), v(n_x, 0.0);
@@ -118,15 +152,15 @@ bool visit_inner_vcov_cell(
         C_cols[t] = v;
     }
 
-    // Constraint columns W = C A' (one solve per sum-to-zero group) and the
-    // Cholesky of M = A C A'. Shared with the Newton-loop extraction and with
-    // laplace_newton.h's diagonal-block path through inv_block_extract.h, so
-    // the conditioning-by-kriging algebra is written once.
+    // Constraint columns W = C Vb (one solve per sum-to-zero group and per
+    // anchor) and the factored capacitance. Shared with the Newton-loop
+    // extraction and with laplace_newton.h's diagonal-block path through
+    // inv_block_extract.h, so the conditioning-by-kriging algebra is written
+    // once.
     auto solve_cell = [&](const double* rhs, double* out) {
         solver.solve(rhs, out, n_x);
     };
-    InvBlockConstraint constr;
-    constr.build(solve_cell, n_x, A_cols);
+    constr.build(solve_cell, n_x);
 
     // Field marginal variances via one Takahashi selected-inversion pass (only
     // needed in the cheap recipe; full mode reads field diagonals off C_cols).
@@ -136,8 +170,8 @@ bool visit_inner_vcov_cell(
         if (static_cast<int>(diag_inv.size()) != n_x) return false;
     }
 
-    // Constraint correction corr(a,b) = G_a' M^{-1} G_b, G_a = W[idx0[a], :].
-    // Precompute y_a = M^{-1} G_a for every idx position touched.
+    // Constraint correction corr(a,b) = G_a' Cap^{-1} G_b, G_a = W[idx0[a], :].
+    // Precompute y_a = Cap^{-1} G_a for every idx position touched.
     std::vector<std::vector<double>> yvec;
     if (constr.usable) {
         yvec.resize(p);
@@ -239,13 +273,14 @@ bool extract_joint_fixed_block(
         sizes_out.push_back(static_cast<int>(idx0.size()));
         return true;
     }
-    if (!factorize_cell(solver, Qp, Qi, Qx, n_x, nnz)) return false;
+    InvBlockConstraint constr;
+    if (!factorize_constrained_cell(solver, Qp, Qi, Qx, n_x, nnz, req.A_cols,
+                                    constr)) return false;
 
     auto solve_cell = [&](const double* rhs, double* out) {
         solver.solve(rhs, out, n_x);
     };
-    InvBlockConstraint constr;
-    constr.build(solve_cell, n_x, req.A_cols);
+    constr.build(solve_cell, n_x);
 
     const std::size_t before = sizes_out.size();
     // MirrorLower + the leading (0, p) range reproduce
@@ -270,14 +305,15 @@ bool extract_joint_eta_var(
     const double failed = std::numeric_limits<double>::quiet_NaN();
     var_out.assign(N > 0 ? static_cast<std::size_t>(N) : 0, failed);
     if (N <= 0 || n_x <= 0 || nnz <= 0) return false;
-    if (!factorize_cell(solver, Qp, Qi, Qx, n_x, nnz)) return false;
+    InvBlockConstraint pins;
+    if (!factorize_constrained_cell(solver, Qp, Qi, Qx, n_x, nnz, pin_groups,
+                                    pins)) return false;
 
     auto solve_cell = [&](const double* rhs, double* out) {
         solver.solve(rhs, out, n_x);
     };
-    InvBlockConstraint pins;
     if (!pin_groups.empty()) {
-        pins.build(solve_cell, n_x, pin_groups, &pin_Dinv);
+        pins.build(solve_cell, n_x, &pin_Dinv);
         // A pin set whose Woodbury capacitance does not factor would leave the
         // variance of the unpinned precision, which along the pinned direction
         // is not the approximation's.
@@ -472,9 +508,10 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
 // vector, a_j = sum_e w[k, e] e_{idx[e]} over column j's entries, under each
 // cell's constrained inverse precision:
 //
-//   Var(a_j' x | theta_k) = a_j' Q_k^{-1} a_j - G_j' M^{-1} G_j,
+//   Var(a_j' x | theta_k) = a_j' C a_j - G_j' Cap^{-1} G_j,
 //
-// the second term the sum-to-zero conditioning (InvBlockConstraint). The
+// C the inverse of the cell's anchored precision and the second term the
+// sum-to-zero conditioning (InvBlockConstraint). The
 // quadratic form is read off one Takahashi selected inversion per cell, so a
 // loading's entries must lie on the precision's pattern pairwise -- true of
 // coordinates that load the same observations (a BYM2 unit's two components),
@@ -526,13 +563,14 @@ Rcpp::NumericMatrix cpp_loading_marginal_var(
     for (int k = 0; k < n_grid; k++) {
         if (!in.has_cell[k]) continue;
         tulpa::SparseCholeskySolver& solver = *pool[omp_tid()];
-        if (!tulpa::factorize_cell(solver, in.Qp[k].data(), in.Qi[k].data(),
-                            in.Qx[k].data(), n_x, in.nnz(k))) continue;
+        tulpa::InvBlockConstraint constr;
+        if (!tulpa::factorize_constrained_cell(
+                solver, in.Qp[k].data(), in.Qi[k].data(), in.Qx[k].data(),
+                n_x, in.nnz(k), in.A_cols, constr)) continue;
         auto solve_cell = [&](const double* rhs, double* o) {
             solver.solve(rhs, o, n_x);
         };
-        tulpa::InvBlockConstraint constr;
-        constr.build(solve_cell, n_x, in.A_cols);
+        constr.build(solve_cell, n_x);
         const tulpa::SparseCholeskySolver::SelectedInverse si =
             solver.selected_inversion_full();
         if (si.n != n_x) continue;

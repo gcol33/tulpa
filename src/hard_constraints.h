@@ -134,9 +134,10 @@ struct HardConstraintState {
         n_x = nx;
         rows = std::move(r);
         if (rows.empty()) return;
+        gram.set_rows(n_x, rows);
         gram.build([nx](const double* rhs, double* out) {
                        std::copy(rhs, rhs + nx, out);
-                   }, n_x, rows);
+                   }, n_x);
         if (!gram.usable) {
             Rcpp::stop("The hard linear constraints of the latent blocks are "
                        "linearly dependent (A A' is singular); each block has "
@@ -144,7 +145,7 @@ struct HardConstraintState {
         }
     }
 
-    double log_det_gram() const { return gram.log_det_M(); }
+    double log_det_gram() const { return gram.log_det_fold(); }
 
     // A v for the r rows.
     void apply_A(const double* v, std::vector<double>& out) const {
@@ -169,9 +170,10 @@ struct HardConstraintState {
     // W = M^{-1} A' and the factor of C = A W, against the solver's current
     // factor of M.
     bool factor_cap() {
+        cap.set_rows(n_x, rows);
         cap.build([this](const double* rhs, double* out) {
                       solver.solve(rhs, out, n_x);
-                  }, n_x, rows);
+                  }, n_x);
         return cap.usable;
     }
 
@@ -190,7 +192,7 @@ struct HardConstraintState {
 
     // log|B' M B| - log|M| = log|C| - log|A A'|.
     double log_det_subspace_correction() const {
-        return cap.log_det_M() - log_det_gram();
+        return cap.log_det_fold() - log_det_gram();
     }
 };
 

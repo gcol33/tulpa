@@ -12,8 +12,10 @@
 // or the predict path).
 //
 // The constrained block is
-//   C[idx,idx] - G' M^{-1} G,  C = Qk^{-1},  W = C A',  G = W[idx,:]',  M = A C A'
-// (conditioning by kriging, Rue & Held 2005). The cheap recipe avoids the
+//   C[idx,idx] - G' Cap^{-1} G,  W = C Vb,  G = W[idx,:]',  Cap = Psi^{-1} + Vb' W
+// (conditioning by kriging, Rue & Held 2005), with C the inverse of the
+// cell's precision anchored at one node per constraint group and Vb, Psi the
+// constraint and anchor terms that undo the anchor (InvBlockConstraint). The cheap recipe avoids the
 // ~|idx|-column inverse: it solves only the |D| dense columns of C plus the
 // k_constr constraint columns W, and gets diag(C[F,F]) from one Takahashi
 // selected-inversion pass (sparse_cholesky.h). field_marginal = false instead
@@ -145,7 +147,9 @@ struct JointEtaVarRequest {
 // uses: the CSC `(Qp, Qi, Qx)` plus the soft sum-to-zero pins the scatter
 // registered on the side (`pin_groups`, 0-based latent indices per pin, with
 // `pin_Dinv` the row-major inverse of their k x k precision; both empty when the
-// CSC already holds every pin), folded by Woodbury (InvBlockConstraint). Rows
+// CSC already holds every pin), folded by Woodbury against the CSC anchored at
+// one node per pin, so a direction the stored precision holds only through the
+// uniform ridge never enters the fold (InvBlockConstraint). Rows
 // sharing a loading vector share one solve (row_classes.h). Returns false, with
 // `var_out` all NaN, when the precision does not factor; a row whose solve loses
 // positivity reads NaN on its own.

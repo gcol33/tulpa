@@ -25,12 +25,12 @@
 #ifndef TULPA_INV_BLOCK_EXTRACT_H
 #define TULPA_INV_BLOCK_EXTRACT_H
 
-#include "linalg_fast.h"
 #include "linear_constraint_rows.h"
+#include "small_dense_sym.h"  // SmallSymEig
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <cstddef>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -46,145 +46,266 @@ enum class InvBlockSymmetry { Average, MirrorLower };
 
 // Linear-constraint correction for a factorized precision H.
 //
-// With A the k_constr x n_x constraint matrix (row g a LinearConstraintRow: a
+// With A the kc x n_x constraint matrix (row g a LinearConstraintRow: a
 // sum-to-zero group's indicator, or any weighted row), conditioning by kriging
 // gives
 //
-//   V = H^{-1} - H^{-1} A' (A H^{-1} A')^{-1} A H^{-1}
+//   V = H^{-1} - H^{-1} A' (A H^{-1} A')^{-1} A H^{-1},
 //
-// so the correction at latent indices (a, b) is G_a' M^{-1} G_b with
-// W = H^{-1} A' (one solve per row), M = A W, and G_a = W[a, ].
+// and a SOFT rank-kc penalty -- a sum-to-zero pin the scatter left off the
+// stored H, D the pins' kc x kc precision -- has the Woodbury inverse
 //
-// The same algebra covers a SOFT rank-k penalty. The precision
-// H + A' D A (a sum-to-zero pin the scatter left off the stored H, D the pins'
-// k x k precision) has inverse
+//   (H + A' D A)^{-1} = H^{-1} - H^{-1} A' (D^{-1} + A H^{-1} A')^{-1} A H^{-1},
 //
-//   (H + A' D A)^{-1} = H^{-1} - H^{-1} A' (D^{-1} + A H^{-1} A')^{-1} A H^{-1}
+// of which the hard constraint is the D^{-1} = 0 limit.
 //
-// by Woodbury, which is the constrained V with M = D^{-1} + A W. The hard
-// constraint is the D^{-1} = 0 limit, so a set mixing soft pins and hard rows
-// is one build with D^{-1} zero on the hard rows' block.
+// Read off H itself, both lose digits wherever H is near singular along a
+// direction only the constraint identifies. A folded pin leaves an intrinsic
+// field's constant direction to the uniform Laplace ridge, and two intrinsic
+// fields loading the same rows (an additive space + time model) leave their
+// opposite shift, +c on one field and -c on the other, with no curvature but
+// the ridge. H^{-1} is then of order 1 / ridge along it, A H^{-1} A' is that
+// large in one direction, and the O(1) part the answer is made of is the
+// difference of such terms. The fold is therefore taken against an ANCHORED
+// precision
+//
+//   H_a = H + E C E',
+//
+// E the unit columns of one anchor node per row and C = diag(c) their
+// weights, each the anchor's own diagonal entry H_jj. The directions at issue
+// lie in the span of the rows' supports (constant on a group's nodes, or a
+// null-space direction of a structure), and each row anchors at a node of its
+// own support that no earlier row took, so the anchors identify what the rows
+// do, at the curvature scale of H itself. The target is
+// H_a plus a symmetric indefinite term of rank m = kc + (number of anchors),
+//
+//   H + A' D A = H_a + Vb Psi Vb',   Vb = [A' E],   Psi = diag(D, -C),
+//
+// folded by the same identity with the m x m capacitance
+//
+//   Cap = Psi^{-1} + Vb' H_a^{-1} Vb,   Psi^{-1} = diag(D^{-1}, -C^{-1}),
+//
+// D^{-1} = 0 for the hard constraint, now formed from a well-conditioned
+// solve. Cap is symmetric indefinite and is factored by its eigendecomposition.
+// Haynsworth inertia additivity on [[H_a, Vb], [Vb', -Psi^{-1}]] gives
+// neg(H + A' D A) = neg(H_a) + pos(Cap) - kc, so the target is positive
+// definite exactly when neg(Cap) = (number of anchors) + neg(H_a); with H_a
+// positive definite, when Cap has kc positive eigenvalues. The determinant
+// lemma gives |H + A' D A| = |H_a| |D| prod(c) |Cap| in absolute value.
+//
+// Use: anchor() takes the rows and picks the anchors and their weights; the
+// caller factors H_a (H with each anchor weight added to its diagonal entry)
+// and hands build() the solve against that factor. Every unconstrained solve
+// the caller then makes is against H_a, and correction / quad_correction
+// subtract the matching term, so the pair gives V. set_rows() takes the rows
+// with no anchors, for a precision that needs none (H_a = H): Cap is then
+// D^{-1} + A H^{-1} A' itself, which log_det_fold() and solve_cap() read.
 struct InvBlockConstraint {
-    int kc = 0;
-    std::vector<std::vector<double>> W;   // kc columns of H^{-1} A', length n_x
-    std::vector<double> Lm;               // kc x kc row-major lower Cholesky of M
-    bool usable = false;                  // false when M is not PD (degenerate)
+    int kc = 0;                              // constraint rows
+    std::vector<LinearConstraintRow> rows;   // in-range entries of each row
+    std::vector<int> anchor_node;            // one per anchored row
+    std::vector<double> anchor_weight;       // H_jj at the anchor
+    std::vector<std::vector<double>> W;      // m columns of H_a^{-1} Vb, length n_x
+    SmallSymEig cap;                         // eigendecomposition of Cap
+    bool usable = false;                     // false when the target is not PD
 
-    // Solve W_g and factor M. Row entries outside [0, n_x) are ignored.
-    // `Dinv`, when given, is the row-major kc x kc inverse penalty precision
-    // added to M (the soft form above); nullptr imposes the hard constraint. An
-    // M that does not factor leaves `usable = false`, and the caller then skips
-    // the correction rather than subtracting a wrong one.
-    //
-    // The right-hand side A' e_g and the Gram entries a_g' W_h are read off the
-    // rows in their own entry order, so an indicator row built by
-    // indicator_row() sums in the caller's order.
-    template <typename SolveFn>
-    void build(SolveFn solve, int n_x,
-               const std::vector<LinearConstraintRow>& rows,
-               const std::vector<double>* Dinv = nullptr) {
-        kc = static_cast<int>(rows.size());
+    // Take the rows with no anchors. Entries outside [0, n_x) are dropped; the
+    // rest keep the caller's order, so the right-hand side and the Gram entries
+    // sum in it (an indicator row built by indicator_row() already holds each
+    // index once).
+    void set_rows(int n_x, const std::vector<LinearConstraintRow>& A) {
+        kc = static_cast<int>(A.size());
         usable = false;
+        rows.assign(kc > 0 ? kc : 0, LinearConstraintRow());
+        anchor_node.clear();
+        anchor_weight.clear();
         W.clear();
-        Lm.clear();
-        if (kc <= 0) return;
-
-        auto in_range = [n_x](int latent) { return latent >= 0 && latent < n_x; };
-        std::vector<double> e(n_x, 0.0), v(n_x, 0.0);
-        W.resize(kc);
         for (int g = 0; g < kc; g++) {
-            std::fill(e.begin(), e.end(), 0.0);
-            const LinearConstraintRow& r = rows[g];
-            for (std::size_t t = 0; t < r.cols.size(); t++)
-                if (in_range(r.cols[t])) e[r.cols[t]] += r.weight(t);
-            solve(e.data(), v.data());
-            W[g] = v;
-        }
-
-        std::vector<double> M(static_cast<std::size_t>(kc) * kc, 0.0);
-        for (int g1 = 0; g1 < kc; g1++) {
-            const LinearConstraintRow& r = rows[g1];
-            for (int g2 = 0; g2 < kc; g2++) {
-                double s = 0.0;
-                for (std::size_t t = 0; t < r.cols.size(); t++)
-                    if (in_range(r.cols[t])) s += r.weight(t) * W[g2][r.cols[t]];
-                M[static_cast<std::size_t>(g1) * kc + g2] = s;
+            const LinearConstraintRow& a = A[g];
+            LinearConstraintRow& r = rows[g];
+            r.cols.reserve(a.cols.size());
+            if (!a.w.empty()) r.w.reserve(a.cols.size());
+            for (std::size_t e = 0; e < a.cols.size(); e++) {
+                const int latent = a.cols[e];
+                if (latent < 0 || latent >= n_x) continue;
+                r.cols.push_back(latent);
+                if (!a.w.empty()) r.w.push_back(a.w[e]);
             }
         }
-        if (Dinv) {
-            if (Dinv->size() != M.size()) return;
-            for (std::size_t e = 0; e < M.size(); e++) M[e] += (*Dinv)[e];
+    }
+
+    // Take the rows and choose the anchors. `diag(j)` returns H_jj, or a value
+    // that is not positive and finite where node j has no usable diagonal
+    // entry. A row anchors at its first node with a nonzero weight and a
+    // positive diagonal that no earlier row anchors at; a row with none carries
+    // no anchor.
+    template <typename DiagFn>
+    void anchor(int n_x, const std::vector<LinearConstraintRow>& A,
+                DiagFn diag) {
+        set_rows(n_x, A);
+        std::vector<char> anchored(n_x > 0 ? n_x : 1, 0);
+        for (int g = 0; g < kc; g++) {
+            const LinearConstraintRow& r = rows[g];
+            for (std::size_t e = 0; e < r.cols.size(); e++) {
+                const int latent = r.cols[e];
+                if (anchored[latent] || r.weight(e) == 0.0) continue;
+                const double c = diag(latent);
+                if (!(c > 0.0) || !std::isfinite(c)) continue;
+                anchored[latent] = 1;
+                anchor_node.push_back(latent);
+                anchor_weight.push_back(c);
+                break;
+            }
+        }
+    }
+
+    // Solve W = H_a^{-1} Vb and factor Cap. `solve` is the solve against the
+    // ANCHORED precision. `Dinv`, when given, is the row-major kc x kc inverse
+    // penalty precision (the soft form); nullptr imposes the hard constraint.
+    // `neg_base` is the number of negative eigenvalues of H_a (0 when its
+    // Cholesky factor exists; an LDL' factor's count otherwise). A target that
+    // is not positive definite leaves `usable = false`, and the caller then
+    // skips the correction rather than subtracting a wrong one.
+    template <typename SolveFn>
+    void build(SolveFn solve, int n_x, const std::vector<double>* Dinv = nullptr,
+               int neg_base = 0) {
+        usable = false;
+        W.clear();
+        if (kc <= 0) return;
+        const int na = static_cast<int>(anchor_node.size());
+        const int m = kc + na;
+
+        std::vector<double> e(n_x, 0.0), v(n_x, 0.0);
+        W.resize(m);
+        for (int i = 0; i < m; i++) {
+            std::fill(e.begin(), e.end(), 0.0);
+            if (i < kc) {
+                const LinearConstraintRow& r = rows[i];
+                for (std::size_t t = 0; t < r.cols.size(); t++)
+                    e[r.cols[t]] += r.weight(t);
+            } else {
+                e[anchor_node[i - kc]] = 1.0;
+            }
+            solve(e.data(), v.data());
+            W[i] = v;
         }
 
-        Lm.assign(static_cast<std::size_t>(kc) * kc, 0.0);
-        usable = tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
-            M.data(), Lm.data(), kc, kc, /*nugget=*/0.0);
-        if (!usable) Lm.clear();
+        // Vb_i' w for column i of Vb.
+        auto vb_dot = [&](int i, const std::vector<double>& w) {
+            if (i >= kc) return w[anchor_node[i - kc]];
+            return constraint_row_dot(rows[i], w.data());
+        };
+        std::vector<double> C(static_cast<std::size_t>(m) * m, 0.0);
+        for (int i = 0; i < m; i++)
+            for (int j = 0; j <= i; j++) {
+                const double s = 0.5 * (vb_dot(i, W[j]) + vb_dot(j, W[i]));
+                C[static_cast<std::size_t>(i) * m + j] = s;
+                C[static_cast<std::size_t>(j) * m + i] = s;
+            }
+        if (Dinv) {
+            if (Dinv->size() != static_cast<std::size_t>(kc) * kc) {
+                W.clear();
+                return;
+            }
+            for (int i = 0; i < kc; i++)
+                for (int j = 0; j < kc; j++)
+                    C[static_cast<std::size_t>(i) * m + j] +=
+                        (*Dinv)[static_cast<std::size_t>(i) * kc + j];
+        }
+        for (int a = 0; a < na; a++)
+            C[static_cast<std::size_t>(kc + a) * m + (kc + a)] -=
+                1.0 / anchor_weight[a];
+
+        cap.factor(C, m);
+        usable = cap.ok && cap.n_neg() == na + neg_base;
+        if (!usable) W.clear();
     }
 
-    // log|M|, the capacitance's log-determinant; NaN when M did not factor.
-    double log_det_M() const {
+    // log|Cap| + sum_a log c_a: what the fold adds to log|H_a| + log|D| to give
+    // the log-determinant of the target; NaN when the target is not PD.
+    double log_det_fold() const {
         if (!usable) return std::numeric_limits<double>::quiet_NaN();
-        double s = 0.0;
-        for (int g = 0; g < kc; g++)
-            s += 2.0 * std::log(Lm[static_cast<std::size_t>(g) * kc + g]);
-        return s;
+        double ld = cap.logabsdet();
+        for (double c : anchor_weight) ld += std::log(c);
+        return ld;
     }
 
-    // y = M^{-1} b for a kc-vector b (no-op zeros when M did not factor).
+    // out = (H + A' D A)^{-1} y given ainv_y = H_a^{-1} y, both of length n_x:
+    // ainv_y - W Cap^{-1} (W' y).
+    void apply(const double* y, const double* ainv_y, double* out,
+               int n_x) const {
+        const int m = static_cast<int>(W.size());
+        std::vector<double> wty(m, 0.0), z(m, 0.0);
+        for (int i = 0; i < m; i++) {
+            double s = 0.0;
+            for (int t = 0; t < n_x; t++) s += W[i][t] * y[t];
+            wty[i] = s;
+        }
+        if (usable && m > 0) cap.solve(wty.data(), z.data());
+        for (int t = 0; t < n_x; t++) {
+            double corr = 0.0;
+            for (int i = 0; i < m; i++) corr += W[i][t] * z[i];
+            out[t] = ainv_y[t] - corr;
+        }
+    }
+
+    // Node list of column i of Vb: row i's indices for i < kc, the anchor
+    // node otherwise.
+    template <typename Fn>
+    void for_each_vb_node(int i, Fn fn) const {
+        if (i < kc) { for (int latent : rows[i].cols) fn(latent); }
+        else fn(anchor_node[i - kc]);
+    }
+
+    // y = Cap^{-1} b for an m-vector b (zeros when the target is not PD).
     void solve_cap(const double* b, double* y) const {
-        if (!usable) { std::fill(y, y + kc, 0.0); return; }
-        std::vector<double> tmp(kc);
-        tulpa_linalg::tri_solve_lower<tulpa_linalg::TriLayout::RowMajor>(
-            Lm.data(), kc, kc, b, tmp.data());
-        tulpa_linalg::tri_solve_lower_transpose<tulpa_linalg::TriLayout::RowMajor>(
-            Lm.data(), kc, kc, tmp.data(), y);
+        const int m = kc + static_cast<int>(anchor_node.size());
+        if (!usable) { std::fill(y, y + m, 0.0); return; }
+        cap.solve(b, y);
     }
 
-    // y = M^{-1} G_latent, with G_latent[g] = W[g][latent]. `y` is resized to kc.
+    // y = Cap^{-1} G_latent, with G_latent[i] = W[i][latent]. `y` is resized to
+    // the capacitance's order.
     void solve_y(int latent, std::vector<double>& y) const {
-        y.assign(kc, 0.0);
+        const int m = static_cast<int>(W.size());
+        y.assign(m, 0.0);
         if (!usable) return;
-        std::vector<double> g_a(kc), tmp(kc);
-        for (int g = 0; g < kc; g++) g_a[g] = W[g][latent];
-        tulpa_linalg::tri_solve_lower<tulpa_linalg::TriLayout::RowMajor>(
-            Lm.data(), kc, kc, g_a.data(), tmp.data());
-        tulpa_linalg::tri_solve_lower_transpose<tulpa_linalg::TriLayout::RowMajor>(
-            Lm.data(), kc, kc, tmp.data(), y.data());
+        std::vector<double> g_a(m);
+        for (int i = 0; i < m; i++) g_a[i] = W[i][latent];
+        cap.solve(g_a.data(), y.data());
     }
 
     // G_latent' y for a y produced by solve_y at the other index.
     double correction(int latent, const std::vector<double>& y) const {
         if (!usable) return 0.0;
         double corr = 0.0;
-        for (int g = 0; g < kc; g++) corr += W[g][latent] * y[g];
+        for (std::size_t i = 0; i < W.size(); i++) corr += W[i][latent] * y[i];
         return corr;
     }
 
-    // The correction to the quadratic form a' H^{-1} a for a sparse vector
-    // a = sum_s w[s] e_{idx[s]} over [first, last): G' M^{-1} G with
-    // G_g = sum_s w[s] W[g][idx[s]].
+    // The correction to the quadratic form a' H_a^{-1} a for a sparse vector
+    // a = sum_s w[s] e_{idx[s]} over [first, last): G' Cap^{-1} G with
+    // G_i = sum_s w[s] W[i][idx[s]].
     double quad_correction(const int* idx, const double* w,
                            std::size_t first, std::size_t last) const {
-        if (!usable || kc <= 0) return 0.0;
-        std::vector<double> G(kc, 0.0), tmp(kc), y(kc);
-        for (int g = 0; g < kc; g++) {
+        if (!usable || W.empty()) return 0.0;
+        const int m = static_cast<int>(W.size());
+        std::vector<double> G(m, 0.0), y(m);
+        for (int i = 0; i < m; i++) {
             double s = 0.0;
-            for (std::size_t e = first; e < last; e++) s += w[e] * W[g][idx[e]];
-            G[g] = s;
+            for (std::size_t e = first; e < last; e++) s += w[e] * W[i][idx[e]];
+            G[i] = s;
         }
-        tulpa_linalg::tri_solve_lower<tulpa_linalg::TriLayout::RowMajor>(
-            Lm.data(), kc, kc, G.data(), tmp.data());
-        tulpa_linalg::tri_solve_lower_transpose<tulpa_linalg::TriLayout::RowMajor>(
-            Lm.data(), kc, kc, tmp.data(), y.data());
+        cap.solve(G.data(), y.data());
         double corr = 0.0;
-        for (int g = 0; g < kc; g++) corr += G[g] * y[g];
+        for (int i = 0; i < m; i++) corr += G[i] * y[i];
         return corr;
     }
 };
 
 // Diagonal blocks of H^{-1} (or of the constrained V when `constr` is a built,
-// usable correction) for the requested (offset, size) ranges.
+// usable correction) for the requested (offset, size) ranges. With `constr`,
+// `solve` is the solve against the anchored precision it was built on.
 //
 // Each block costs one solve per column and no refactorization. Blocks are
 // appended to `flat_out` column-major, with the side length appended to
