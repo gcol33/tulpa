@@ -733,6 +733,26 @@ print.tulpa_wbic <- function(x, digits = 2, ...) {
                caller, paste(class(object), collapse = "/")), call. = FALSE)
 }
 
+# A criterion is an average over posterior draws, so it estimates the
+# predictive density only when the draws are the posterior. A chain the fit
+# recorded as not converged (`$convergence`, `.tulpa_check_fit_convergence()`)
+# has draws that are not, and the average can sit on a stuck chain's start:
+# one chain at eta ~ 50 on a Poisson fit puts elpd near -1e71. Classed, so a
+# caller that reports per model (compare_models()) can name the models itself.
+.warn_unconverged_criterion <- function(object, caller) {
+  cv <- if (is.list(object)) object[["convergence"]]
+  if (!is.list(cv) || !isFALSE(cv$ok)) return(invisible(NULL))
+  warning(structure(class = c("tulpa_unconverged_criterion", "warning",
+                              "condition"), list(
+    message = sprintf(paste0(
+      "%s: the fit's chain has not converged (max Rhat %.2f, min bulk-ESS ",
+      "%.0f), so its draws are not posterior draws and the criterion does ",
+      "not estimate the predictive density. Refit with a longer run before ",
+      "comparing."), caller, cv$rhat_max, cv$ess_bulk_min),
+    call = NULL)))
+  invisible(NULL)
+}
+
 # The pointwise log-likelihood of a fit, [n_draws x n_obs], with the
 # log-likelihood at the posterior-mean predictors DIC reads (NULL where the
 # backend stored its `log_lik` directly). A stored `log_lik` wins, then the
@@ -744,6 +764,7 @@ print.tulpa_wbic <- function(x, digits = 2, ...) {
 # refused, naming its class and the reason.
 .tulpa_loglik_parts <- function(object, ndraws = NULL,
                                 caller = "pointwise log-likelihood") {
+  .warn_unconverged_criterion(object, caller)
   refuse <- function(why) {
     backend <- if (is.list(object)) object[["backend"]]
     stop(sprintf("%s: the fit of class %s%s has no pointwise log-likelihood: %s.",

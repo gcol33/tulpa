@@ -27,7 +27,9 @@
 # so a model package's own method (e.g. tobs_fit) is reached, not just the
 # engine's tulpa_fit layout.
 .compare_fit_loglik <- function(fit) {
-  tryCatch(pointwise_loglik(fit), error = function(e) NULL)
+  withCallingHandlers(
+    tryCatch(pointwise_loglik(fit), error = function(e) NULL),
+    tulpa_unconverged_criterion = function(w) invokeRestart("muffleWarning"))
 }
 
 # Per-model criterion summary (elpd, its SE, the effective number of parameters,
@@ -165,6 +167,19 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
            "tier.", call. = FALSE)
     }
     return(out)
+  }
+
+  unconverged <- names(models)[vapply(models, function(fit) {
+    is.list(fit) && is.list(fit[["convergence"]]) &&
+      isFALSE(fit[["convergence"]]$ok)
+  }, logical(1))]
+  if (length(unconverged)) {
+    warning(sprintf(paste0(
+      "compare_models(): the chain(s) behind %s have not converged, so their ",
+      "%s rows do not estimate the predictive density and the ranking is not ",
+      "a model comparison. Refit them with a longer run."),
+      paste(sprintf("'%s'", unconverged), collapse = ", "), criterion),
+      call. = FALSE)
   }
 
   per     <- lapply(models, .model_criterion, criterion = criterion)
