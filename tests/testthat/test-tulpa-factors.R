@@ -53,6 +53,10 @@ test_that("tulpa(factors =) refuses what its arms do not carry", {
   expect_error(fit_with(formula = y ~ x + offset(log(x^2))), "an offset")
   expect_error(fit_with(weights = rep(1, nrow(d))), "`weights`")
   expect_error(fit_with(ziformula = ~ 1), "`ziformula`")
+  expect_error(fit_with(spatiotemporal = list()), "`spatiotemporal`")
+  d_na <- d; d_na$y[c(2L, 5L)] <- NA
+  expect_error(tulpa(y ~ x, data = d_na, family = "poisson",
+                     factors = .fac_spec()), "2 NA row")
   expect_error(fit_with(spec = .fac_spec(shared = FALSE)), "shared")
   expect_error(fit_with(spec = .fac_spec(constraint = "sum_to_zero")),
                "constraint")

@@ -21,7 +21,7 @@
     abund = list(y = y, X = X, weights = weights, family = "poisson"))
   # Observed-data negative log posterior, with the engine's default
   # fixed-effect prior N(0, s^2).
-  s_b <- tulpa:::cpp_test_default_sigma_beta()
+  s_b <- default_sigma_beta()
   nlp <- function(th) {
     psi <- plogis(drop(Z %*% th[1:2])); lam <- exp(drop(X %*% th[3:4]))
     ll <- ifelse(y == 0, log(1 - psi + psi * exp(-lam)),

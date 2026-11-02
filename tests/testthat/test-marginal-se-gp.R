@@ -43,7 +43,7 @@ gp_marginal_reference <- function(y, ntr, X, coords, sigma2, phi) {
   Q <- solve(K)
   Z <- diag(n); M <- cbind(X, Z)
   Qjoint <- rbind(
-    cbind(diag(p) / tulpa:::cpp_test_default_sigma_beta()^2, matrix(0, p, n)),
+    cbind(diag(p) / default_sigma_beta()^2, matrix(0, p, n)),
     cbind(matrix(0, n, p), Q))
   th <- rep(0, p + n)
   for (it in seq_len(200)) {

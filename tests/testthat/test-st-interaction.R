@@ -63,7 +63,7 @@ test_that("the constraint rows span the structure's null space, independently", 
 
 test_that("an interaction's log marginal and mode are the exact Gaussian ones", {
   skip_on_cran()
-  sb <- tulpa:::cpp_test_default_sigma_beta()
+  sb <- default_sigma_beta()
   A <- .kh_graph(); S <- nrow(A); n_t <- 4L
   csr <- tulpa:::adjacency_to_csr_tulpa(A)
   set.seed(2)

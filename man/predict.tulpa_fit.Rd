@@ -58,6 +58,7 @@ interval reflects the fixed-effect covariance only).}
 \code{re.form}: \code{NULL} (default) every term, \code{NA} or \code{~0} none (the population
 level), or a one-sided formula naming a subset, e.g. \code{~ (1 | site)}.
 \code{newdata} then carries the grouping columns of the terms kept.}
+
 \item{arm}{For a \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} fit, the response arm to
 predict (its name or index); may be left \code{NULL} on a one-arm fit.}
 

@@ -28,7 +28,7 @@
   Q <- diag(rowSums(W)) - W + matrix(1 / n_units, n_units, n_units)
   Z <- matrix(0, N, n_units); Z[cbind(seq_len(N), unit)] <- 1
   M <- cbind(X, Z)
-  tau_b <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
+  tau_b <- 1 / default_sigma_beta()^2
   Qj <- as.matrix(Matrix::bdiag(Matrix::Diagonal(p, tau_b),
                                 Matrix::Matrix(Q, sparse = TRUE)))
   score <- function(th) {
@@ -248,7 +248,7 @@ test_that("the spatial mode and its H_beta describe the same weighted model", {
   schur <- H[idx_b, idx_b] -
     H[idx_b, idx_u] %*% Pinv_c %*% t(H[idx_b, idx_u])
   # The engine's marginal omits the fixed-effect prior precision the mode carries.
-  schur <- schur - diag(1 / tulpa:::cpp_test_default_sigma_beta()^2, p)
+  schur <- schur - diag(1 / default_sigma_beta()^2, p)
 
   expect_lt(max(abs(fit$H_beta - schur)) / max(abs(schur)), 1e-6)
   expect_lt(max(abs(ref$score(fit$mode))), 1e-4)

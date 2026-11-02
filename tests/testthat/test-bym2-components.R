@@ -147,7 +147,7 @@ test_that("the kernels read the per-node multipliers: exact gaussian check", {
   X <- cbind(1, d$x)
   W <- cbind(X, sqrt(0.5) * sp$scale_factor * Z, sqrt(0.5) * Z)
   # The conditional spatial kernel solves under the engine default N(0, s^2).
-  tau_b <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
+  tau_b <- 1 / default_sigma_beta()^2
   P <- as.matrix(Matrix::bdiag(diag(tau_b, 2), Q, diag(n)))
   post_mean <- solve(crossprod(W) / 0.25 + P, crossprod(W, d$y) / 0.25)
   eta_exact <- as.numeric(W %*% post_mean)

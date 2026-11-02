@@ -393,35 +393,35 @@ cpp_nl_lq_group_cdf <- function(is_lq, u, lg, d1, d2, lt, lo_b, hi_b, lo, hi, x)
     .Call(`_tulpa_cpp_nl_lq_group_cdf`, is_lq, u, lg, d1, d2, lt, lo_b, hi_b, lo, hi, x)
 }
 
-cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
+cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs`, y, n, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, store_eta, verbose, n_threads)
 }
 
-cpp_pg_binomial_gibbs_spatial <- function(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_re_scale = 2.5, prior_tau_shape = 1.0, prior_tau_rate = 0.01, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
+cpp_pg_binomial_gibbs_spatial <- function(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_tau_shape = 1.0, prior_tau_rate = 0.01, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs_spatial`, y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_tau_shape, prior_tau_rate, store_eta, verbose, n_threads)
 }
 
-cpp_pg_binomial_gibbs_bym2 <- function(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, scale_factor, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_re_scale = 2.5, prior_sigma_spatial_scale = 2.5, prior_rho_alpha = 0.5, prior_rho_beta = 0.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L, node_prec_nullable = NULL) {
+cpp_pg_binomial_gibbs_bym2 <- function(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, scale_factor, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_sigma_spatial_scale = 2.5, prior_rho_alpha = 0.5, prior_rho_beta = 0.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L, node_prec_nullable = NULL) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs_bym2`, y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, scale_factor, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_spatial_scale, prior_rho_alpha, prior_rho_beta, store_eta, verbose, n_threads, node_prec_nullable)
 }
 
-cpp_pg_binomial_gibbs_gp <- function(y, n, X, re_group, n_re_groups, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp_init, phi_gp_init, cov_type, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_re_scale = 2.5, prior_sigma_gp_U = 1.0, prior_sigma_gp_alpha = 0.01, prior_phi_lower = 0.01, prior_phi_upper = 10.0, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
+cpp_pg_binomial_gibbs_gp <- function(y, n, X, re_group, n_re_groups, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp_init, phi_gp_init, cov_type, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_sigma_gp_U = 1.0, prior_sigma_gp_alpha = 0.01, prior_phi_lower = 0.01, prior_phi_upper = 10.0, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs_gp`, y, n, X, re_group, n_re_groups, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp_init, phi_gp_init, cov_type, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_gp_U, prior_sigma_gp_alpha, prior_phi_lower, prior_phi_upper, store_eta, verbose, n_threads)
 }
 
-cpp_pg_binomial_gibbs_gp_rsr <- function(y, n, X, re_group, n_re_groups, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, rsr_projection, rsr_n, sigma2_gp_init, phi_gp_init, cov_type, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_re_scale = 2.5, prior_sigma_gp_U = 1.0, prior_sigma_gp_alpha = 0.01, prior_phi_lower = 0.01, prior_phi_upper = 10.0, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
+cpp_pg_binomial_gibbs_gp_rsr <- function(y, n, X, re_group, n_re_groups, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, rsr_projection, rsr_n, sigma2_gp_init, phi_gp_init, cov_type, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_sigma_gp_U = 1.0, prior_sigma_gp_alpha = 0.01, prior_phi_lower = 0.01, prior_phi_upper = 10.0, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs_gp_rsr`, y, n, X, re_group, n_re_groups, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, rsr_projection, rsr_n, sigma2_gp_init, phi_gp_init, cov_type, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_gp_U, prior_sigma_gp_alpha, prior_phi_lower, prior_phi_upper, store_eta, verbose, n_threads)
 }
 
-cpp_pg_binomial_gibbs_multiscale_gp <- function(y, n, X, re_group, n_re_groups, coords, nn_idx_local, nn_dist_local, nn_order_local, nn_local, nn_idx_regional, nn_dist_regional, nn_order_regional, nn_regional, n_spatial, sigma2_local_init, phi_local_init, sigma2_regional_init, phi_regional_init, cov_type, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_re_scale = 2.5, prior_sigma_local_U = 1.0, prior_sigma_local_alpha = 0.01, prior_phi_local_lower = 0.01, prior_phi_local_upper = 5.0, prior_sigma_regional_U = 1.0, prior_sigma_regional_alpha = 0.01, prior_phi_regional_lower = 0.1, prior_phi_regional_upper = 20.0, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
+cpp_pg_binomial_gibbs_multiscale_gp <- function(y, n, X, re_group, n_re_groups, coords, nn_idx_local, nn_dist_local, nn_order_local, nn_local, nn_idx_regional, nn_dist_regional, nn_order_regional, nn_regional, n_spatial, sigma2_local_init, phi_local_init, sigma2_regional_init, phi_regional_init, cov_type, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_sigma_local_U = 1.0, prior_sigma_local_alpha = 0.01, prior_phi_local_lower = 0.01, prior_phi_local_upper = 5.0, prior_sigma_regional_U = 1.0, prior_sigma_regional_alpha = 0.01, prior_phi_regional_lower = 0.1, prior_phi_regional_upper = 20.0, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs_multiscale_gp`, y, n, X, re_group, n_re_groups, coords, nn_idx_local, nn_dist_local, nn_order_local, nn_local, nn_idx_regional, nn_dist_regional, nn_order_regional, nn_regional, n_spatial, sigma2_local_init, phi_local_init, sigma2_regional_init, phi_regional_init, cov_type, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_local_U, prior_sigma_local_alpha, prior_phi_local_lower, prior_phi_local_upper, prior_sigma_regional_U, prior_sigma_regional_alpha, prior_phi_regional_lower, prior_phi_regional_upper, store_eta, verbose, n_threads)
 }
 
-cpp_pg_binomial_gibbs_rsr <- function(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, rsr_projection, rsr_n, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_re_scale = 2.5, prior_tau_shape = 1.0, prior_tau_rate = 0.01, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
+cpp_pg_binomial_gibbs_rsr <- function(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, rsr_projection, rsr_n, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_tau_shape = 1.0, prior_tau_rate = 0.01, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs_rsr`, y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, rsr_projection, rsr_n, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_tau_shape, prior_tau_rate, store_eta, verbose, n_threads)
 }
 
-cpp_pg_binomial_gibbs_temporal <- function(y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_re_scale = 2.5, prior_sigma_trend_scale = 1.0, prior_sigma_seasonal_scale = 1.0, prior_sigma_short_scale = 1.0, rho_short_init = 0.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
+cpp_pg_binomial_gibbs_temporal <- function(y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_sigma_trend_scale = 1.0, prior_sigma_seasonal_scale = 1.0, prior_sigma_short_scale = 1.0, rho_short_init = 0.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs_temporal`, y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_trend_scale, prior_sigma_seasonal_scale, prior_sigma_short_scale, rho_short_init, store_eta, verbose, n_threads)
 }
 
@@ -521,15 +521,15 @@ cpp_tgmrf_eval_mu <- function(id, theta) {
     .Call(`_tulpa_cpp_tgmrf_eval_mu`, id, theta)
 }
 
-cpp_tulpa_fit_beta_nuts <- function(y_r, X_r, sigma_beta = 10.0, log_phi_prior_sd = 3.0, log_phi_init = 0.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE) {
+cpp_tulpa_fit_beta_nuts <- function(y_r, X_r, sigma_beta = NULL, log_phi_prior_sd = 3.0, log_phi_init = 0.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE) {
     .Call(`_tulpa_cpp_tulpa_fit_beta_nuts`, y_r, X_r, sigma_beta, log_phi_prior_sd, log_phi_init, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose)
 }
 
-cpp_tulpa_fit_generic <- function(y_r, X_r, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = TRUE, init = NULL, inv_metric_init = NULL) {
+cpp_tulpa_fit_generic <- function(y_r, X_r, sigma_beta = NULL, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = TRUE, init = NULL, inv_metric_init = NULL) {
     .Call(`_tulpa_cpp_tulpa_fit_generic`, y_r, X_r, sigma_beta, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, init, inv_metric_init)
 }
 
-cpp_tulpa_fit_generic_chains <- function(y_r, X_r, n_chains = 4L, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE, init = NULL, inv_metric_init = NULL, checkpoint_path = "") {
+cpp_tulpa_fit_generic_chains <- function(y_r, X_r, n_chains = 4L, sigma_beta = NULL, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE, init = NULL, inv_metric_init = NULL, checkpoint_path = "") {
     .Call(`_tulpa_cpp_tulpa_fit_generic_chains`, y_r, X_r, n_chains, sigma_beta, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, init, inv_metric_init, checkpoint_path)
 }
 
@@ -541,23 +541,23 @@ cpp_test_c_abi_chains_roundtrip <- function(y_r, X_r, n_chains = 3L, n_iter = 60
     .Call(`_tulpa_cpp_test_c_abi_chains_roundtrip`, y_r, X_r, n_chains, n_iter, n_warmup, max_treedepth, adapt_delta, seed, init, inv_metric_init)
 }
 
-cpp_tulpa_glmm_eta_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sigma_beta = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
+cpp_tulpa_glmm_eta_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sigma_beta = NULL, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
     .Call(`_tulpa_cpp_tulpa_glmm_eta_draws`, draws, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, phi2, svc_spec, tvc_spec, zi_spec)
 }
 
-cpp_tulpa_glmm_log_prob_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sigma_beta = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
+cpp_tulpa_glmm_log_prob_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sigma_beta = NULL, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
     .Call(`_tulpa_cpp_tulpa_glmm_log_prob_draws`, draws, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, phi2, svc_spec, tvc_spec, zi_spec)
 }
 
-cpp_tulpa_glmm_layout <- function(y, n_trials, X, family, phi = 1.0, phi2 = NA_real_, sigma_beta = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
+cpp_tulpa_glmm_layout <- function(y, n_trials, X, family, phi = 1.0, phi2 = NA_real_, sigma_beta = NULL, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
     .Call(`_tulpa_cpp_tulpa_glmm_layout`, y, n_trials, X, family, phi, phi2, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, svc_spec, tvc_spec, zi_spec)
 }
 
-cpp_vi_elbo_grad <- function(y, n_trials, X, family, variant, mc_samples, seed, rank = 2L, x = NULL, phi = 1.0, sigma_beta = 10.0, offset_nullable = NULL) {
+cpp_vi_elbo_grad <- function(y, n_trials, X, family, variant, mc_samples, seed, rank = 2L, x = NULL, phi = 1.0, sigma_beta = NULL, offset_nullable = NULL) {
     .Call(`_tulpa_cpp_vi_elbo_grad`, y, n_trials, X, family, variant, mc_samples, seed, rank, x, phi, sigma_beta, offset_nullable)
 }
 
-cpp_tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, seed = 42L, verbose = FALSE, n_chains = 4L, max_treedepth = 10L, adapt_delta = 0.8, epsilon = 0.0, L = 10L, batch_size = 0L, alpha = 0.1, mclmc_adjusted = 0L, n_particles = 1000L, n_mcmc_steps = 5L, ess_threshold = 0.5, vi_variant = 3L, vi_mc_samples = 10L, vi_max_iter = 10000L, vi_n_draws = 2000L, vi_max_grad_norm = 10.0, vi_tol_grad = 1e-4, vi_tol_rel_elbo = 0.01, vi_patience = 50L, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL, init_nullable = NULL, inv_metric_diag_nullable = NULL, mass_matrix = "diag", ess_adapt_during_warmup = TRUE, ess_adapt_interval = 50L, ess_joint_sigma_re = -1L, ess_joint_proposal_sd = 0.1, checkpoint_path = "", smc_bridge_end = 1.0) {
+cpp_tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0, sigma_beta = NULL, n_iter = 2000L, n_warmup = 1000L, seed = 42L, verbose = FALSE, n_chains = 4L, max_treedepth = 10L, adapt_delta = 0.8, epsilon = 0.0, L = 10L, batch_size = 0L, alpha = 0.1, mclmc_adjusted = 0L, n_particles = 1000L, n_mcmc_steps = 5L, ess_threshold = 0.5, vi_variant = 3L, vi_mc_samples = 10L, vi_max_iter = 10000L, vi_n_draws = 2000L, vi_max_grad_norm = 10.0, vi_tol_grad = 1e-4, vi_tol_rel_elbo = 0.01, vi_patience = 50L, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL, init_nullable = NULL, inv_metric_diag_nullable = NULL, mass_matrix = "diag", ess_adapt_during_warmup = TRUE, ess_adapt_interval = 50L, ess_joint_sigma_re = -1L, ess_joint_proposal_sd = 0.1, checkpoint_path = "", smc_bridge_end = 1.0) {
     .Call(`_tulpa_cpp_tulpa_sample_glmm`, y, n_trials, X, family, backend, phi, sigma_beta, n_iter, n_warmup, seed, verbose, n_chains, max_treedepth, adapt_delta, epsilon, L, batch_size, alpha, mclmc_adjusted, n_particles, n_mcmc_steps, ess_threshold, vi_variant, vi_mc_samples, vi_max_iter, vi_n_draws, vi_max_grad_norm, vi_tol_grad, vi_tol_rel_elbo, vi_patience, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, phi2, svc_spec, tvc_spec, zi_spec, init_nullable, inv_metric_diag_nullable, mass_matrix, ess_adapt_during_warmup, ess_adapt_interval, ess_joint_sigma_re, ess_joint_proposal_sd, checkpoint_path, smc_bridge_end)
 }
 
@@ -577,11 +577,11 @@ cpp_spde_hyper_prior_probe <- function(log_kappa, log_tau, nu = 1.0, prior_range
     .Call(`_tulpa_cpp_spde_hyper_prior_probe`, log_kappa, log_tau, nu, prior_range_0, prior_range_alpha, prior_sigma_0, prior_sigma_alpha, n_mesh)
 }
 
-cpp_tulpa_fit_spde_nuts <- function(y_r, n_trials_r, X_r, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, alpha = 2L, nu = -1.0, sigma_beta = 10.0, log_phi_prior_sd = 3.0, log_phi_init = 0.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE, rational_poles_nullable = NULL, rational_weights_nullable = NULL, joint_hypers = FALSE, prior_range_0 = -1.0, prior_range_alpha = -1.0, prior_sigma_0 = -1.0, prior_sigma_alpha = -1.0, log_kappa_init = 0.0, log_tau_init = 0.0, Q_precomp_x = NULL, Q_precomp_i = NULL, Q_precomp_p = NULL, noncenter = TRUE, mass_matrix = "diag") {
+cpp_tulpa_fit_spde_nuts <- function(y_r, n_trials_r, X_r, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, alpha = 2L, nu = -1.0, sigma_beta = NULL, log_phi_prior_sd = 3.0, log_phi_init = 0.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE, rational_poles_nullable = NULL, rational_weights_nullable = NULL, joint_hypers = FALSE, prior_range_0 = -1.0, prior_range_alpha = -1.0, prior_sigma_0 = -1.0, prior_sigma_alpha = -1.0, log_kappa_init = 0.0, log_tau_init = 0.0, Q_precomp_x = NULL, Q_precomp_i = NULL, Q_precomp_p = NULL, noncenter = TRUE, mass_matrix = "diag") {
     .Call(`_tulpa_cpp_tulpa_fit_spde_nuts`, y_r, n_trials_r, X_r, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, alpha, nu, sigma_beta, log_phi_prior_sd, log_phi_init, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, rational_poles_nullable, rational_weights_nullable, joint_hypers, prior_range_0, prior_range_alpha, prior_sigma_0, prior_sigma_alpha, log_kappa_init, log_tau_init, Q_precomp_x, Q_precomp_i, Q_precomp_p, noncenter, mass_matrix)
 }
 
-cpp_varying_coef_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sigma_beta = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL, svc_coords_new = NULL, tvc_new = NULL, svc_nn = 15L) {
+cpp_varying_coef_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sigma_beta = NULL, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL, svc_coords_new = NULL, tvc_new = NULL, svc_nn = 15L) {
     .Call(`_tulpa_cpp_varying_coef_draws`, draws, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, phi2, svc_spec, tvc_spec, zi_spec, svc_coords_new, tvc_new, svc_nn)
 }
 

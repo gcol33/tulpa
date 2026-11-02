@@ -115,7 +115,7 @@ test_that("the disconnected-graph evidence is exact on the single and multi-bloc
   skip_on_cran()
   g <- .dc_graph(); A <- g$A; K <- nrow(A)
   csr <- tulpa:::adjacency_to_csr_tulpa(A)
-  sb <- tulpa:::cpp_test_default_sigma_beta()
+  sb <- default_sigma_beta()
   set.seed(11)
   idx <- rep(seq_len(K), each = 3L); n <- length(idx); x <- rnorm(n)
   y <- 0.3 + 0.5 * x + c(0, 1.2, -1, 2)[g$comp][idx] + rnorm(n, sd = 0.4)

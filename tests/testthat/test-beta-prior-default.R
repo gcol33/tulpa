@@ -11,7 +11,7 @@ test_that("there is one default fixed-effect prior, at the documented scale", {
   expect_equal(tulpa:::.TULPA_PRIOR$beta_sd, prior_normal()$sd)
   # The compiled kernels' default is the same prior, so a direct engine call
   # that states none solves under what every front door states.
-  expect_equal(tulpa:::cpp_test_default_sigma_beta(), tulpa:::.TULPA_PRIOR$beta_sd)
+  expect_equal(default_sigma_beta(), tulpa:::.TULPA_PRIOR$beta_sd)
 })
 
 test_that("no compiled entry restates the default fixed-effect prior", {

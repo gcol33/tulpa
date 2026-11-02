@@ -104,7 +104,7 @@ test_that("the marginal SE uses the off-diagonal precision (tulpa#28)", {
   XtWZ <- crossprod(d$X, as.matrix(W * Zs))
   # H_beta is the marginal precision of beta, so it carries the kernel's
   # default fixed-effect prior precision on its diagonal.
-  tau_b <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
+  tau_b <- 1 / default_sigma_beta()^2
   H_indep <- crossprod(d$X, W * d$X) + diag(tau_b, 2L) -
     XtWZ %*% solve(as.matrix(ZtWZ + Dinv)) %*% t(XtWZ)
 
@@ -121,7 +121,7 @@ test_that("the marginal SE uses the off-diagonal precision (tulpa#28)", {
 # inverse block (fixed effects + other groups marginalized out), which is what
 # the kernel returns.
 ref_cov_blocks <- function(d, Sigma, fit) {
-  DEFAULT_TAU_BETA <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
+  DEFAULT_TAU_BETA <- 1 / default_sigma_beta()^2
   UNIFORM_RIDGE    <- 1e-10  # LAPLACE_UNIFORM_RIDGE (laplace_cholesky.h)
   p <- ncol(d$X)
 

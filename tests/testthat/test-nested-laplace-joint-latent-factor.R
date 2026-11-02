@@ -38,7 +38,7 @@ skip_on_cran()
     h <- as.numeric(exp(E) %*% lam^2) + 1
     sum(rowSums(d$Y * E - exp(E) - lgamma(d$Y + 1)) - u^2 / 2 - 0.5 * log(h)) +
         sum(dnorm(lam, 0, 1, log = TRUE)) +
-        sum(dnorm(c(b0, b1), 0, tulpa:::cpp_test_default_sigma_beta(), log = TRUE))
+        sum(dnorm(c(b0, b1), 0, default_sigma_beta(), log = TRUE))
 }
 
 .lf_ref_fit <- function(d) {
@@ -181,7 +181,7 @@ test_that("two lf blocks: lower-triangular loadings, converged, stationary for t
         }
         lv <- th[-(1:(2 * K))]
         tot - sum(lv^2) / 2 -
-            sum(th[1:(2 * K)]^2) / (2 * tulpa:::cpp_test_default_sigma_beta()^2)
+            sum(th[1:(2 * K)]^2) / (2 * default_sigma_beta()^2)
     }
     th <- c(beta[c(TRUE, FALSE)], beta[c(FALSE, TRUE)], L[, 1], L[2:K, 2])
     g <- vapply(seq_along(th), function(j) {

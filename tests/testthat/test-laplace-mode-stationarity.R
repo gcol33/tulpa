@@ -29,7 +29,7 @@
   list(y = y, X = X, grp = grp, G = G, n = n, n_trials = n_trials, fam = fam,
        layout = layout, L0 = L0, re_list = .re_cov_build_re_list(list(L0), layout),
        sig2 = exp(2 * theta),
-       tau_beta = 1 / tulpa:::cpp_test_default_sigma_beta()^2)
+       tau_beta = 1 / default_sigma_beta()^2)
 }
 
 .stn_fit <- function(d, phi, max_iter = 600L, joint = TRUE) {

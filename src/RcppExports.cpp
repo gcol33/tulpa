@@ -1937,7 +1937,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_pg_binomial_gibbs
-Rcpp::List cpp_pg_binomial_gibbs(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector group, int n_groups, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_scale, bool store_eta, bool verbose, int n_threads);
+Rcpp::List cpp_pg_binomial_gibbs(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector group, int n_groups, int n_iter, int n_warmup, int thin, Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd, double prior_sigma_scale, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP groupSEXP, SEXP n_groupsSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_scaleSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -1950,7 +1950,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_beta_sd(prior_beta_sdSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type prior_beta_sd(prior_beta_sdSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_scale(prior_sigma_scaleSEXP);
     Rcpp::traits::input_parameter< bool >::type store_eta(store_etaSEXP);
     Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
@@ -1960,7 +1960,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_pg_binomial_gibbs_spatial
-Rcpp::List cpp_pg_binomial_gibbs_spatial(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::IntegerVector spatial_group, int n_spatial_units, Rcpp::List adj_list, Rcpp::IntegerVector n_neighbors, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_re_scale, double prior_tau_shape, double prior_tau_rate, bool store_eta, bool verbose, int n_threads);
+Rcpp::List cpp_pg_binomial_gibbs_spatial(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::IntegerVector spatial_group, int n_spatial_units, Rcpp::List adj_list, Rcpp::IntegerVector n_neighbors, int n_iter, int n_warmup, int thin, Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd, double prior_sigma_re_scale, double prior_tau_shape, double prior_tau_rate, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs_spatial(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_groupSEXP, SEXP n_re_groupsSEXP, SEXP spatial_groupSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_listSEXP, SEXP n_neighborsSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_re_scaleSEXP, SEXP prior_tau_shapeSEXP, SEXP prior_tau_rateSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -1977,7 +1977,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_beta_sd(prior_beta_sdSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type prior_beta_sd(prior_beta_sdSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_re_scale(prior_sigma_re_scaleSEXP);
     Rcpp::traits::input_parameter< double >::type prior_tau_shape(prior_tau_shapeSEXP);
     Rcpp::traits::input_parameter< double >::type prior_tau_rate(prior_tau_rateSEXP);
@@ -1989,7 +1989,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_pg_binomial_gibbs_bym2
-Rcpp::List cpp_pg_binomial_gibbs_bym2(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::IntegerVector spatial_group, int n_spatial_units, Rcpp::List adj_list, Rcpp::IntegerVector n_neighbors, double scale_factor, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_spatial_scale, double prior_rho_alpha, double prior_rho_beta, bool store_eta, bool verbose, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> node_prec_nullable);
+Rcpp::List cpp_pg_binomial_gibbs_bym2(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::IntegerVector spatial_group, int n_spatial_units, Rcpp::List adj_list, Rcpp::IntegerVector n_neighbors, double scale_factor, int n_iter, int n_warmup, int thin, Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_spatial_scale, double prior_rho_alpha, double prior_rho_beta, bool store_eta, bool verbose, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> node_prec_nullable);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs_bym2(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_groupSEXP, SEXP n_re_groupsSEXP, SEXP spatial_groupSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_listSEXP, SEXP n_neighborsSEXP, SEXP scale_factorSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_re_scaleSEXP, SEXP prior_sigma_spatial_scaleSEXP, SEXP prior_rho_alphaSEXP, SEXP prior_rho_betaSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP, SEXP node_prec_nullableSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -2007,7 +2007,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_beta_sd(prior_beta_sdSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type prior_beta_sd(prior_beta_sdSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_re_scale(prior_sigma_re_scaleSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_spatial_scale(prior_sigma_spatial_scaleSEXP);
     Rcpp::traits::input_parameter< double >::type prior_rho_alpha(prior_rho_alphaSEXP);
@@ -2021,7 +2021,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_pg_binomial_gibbs_gp
-Rcpp::List cpp_pg_binomial_gibbs_gp(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int n_spatial, int nn, double sigma2_gp_init, double phi_gp_init, int cov_type, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_gp_U, double prior_sigma_gp_alpha, double prior_phi_lower, double prior_phi_upper, bool store_eta, bool verbose, int n_threads);
+Rcpp::List cpp_pg_binomial_gibbs_gp(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int n_spatial, int nn, double sigma2_gp_init, double phi_gp_init, int cov_type, int n_iter, int n_warmup, int thin, Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_gp_U, double prior_sigma_gp_alpha, double prior_phi_lower, double prior_phi_upper, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs_gp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_groupSEXP, SEXP n_re_groupsSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP n_spatialSEXP, SEXP nnSEXP, SEXP sigma2_gp_initSEXP, SEXP phi_gp_initSEXP, SEXP cov_typeSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_re_scaleSEXP, SEXP prior_sigma_gp_USEXP, SEXP prior_sigma_gp_alphaSEXP, SEXP prior_phi_lowerSEXP, SEXP prior_phi_upperSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -2043,7 +2043,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_beta_sd(prior_beta_sdSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type prior_beta_sd(prior_beta_sdSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_re_scale(prior_sigma_re_scaleSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_gp_U(prior_sigma_gp_USEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_gp_alpha(prior_sigma_gp_alphaSEXP);
@@ -2057,7 +2057,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_pg_binomial_gibbs_gp_rsr
-Rcpp::List cpp_pg_binomial_gibbs_gp_rsr(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int n_spatial, int nn, Rcpp::NumericVector rsr_projection, int rsr_n, double sigma2_gp_init, double phi_gp_init, int cov_type, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_gp_U, double prior_sigma_gp_alpha, double prior_phi_lower, double prior_phi_upper, bool store_eta, bool verbose, int n_threads);
+Rcpp::List cpp_pg_binomial_gibbs_gp_rsr(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int n_spatial, int nn, Rcpp::NumericVector rsr_projection, int rsr_n, double sigma2_gp_init, double phi_gp_init, int cov_type, int n_iter, int n_warmup, int thin, Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_gp_U, double prior_sigma_gp_alpha, double prior_phi_lower, double prior_phi_upper, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs_gp_rsr(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_groupSEXP, SEXP n_re_groupsSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP n_spatialSEXP, SEXP nnSEXP, SEXP rsr_projectionSEXP, SEXP rsr_nSEXP, SEXP sigma2_gp_initSEXP, SEXP phi_gp_initSEXP, SEXP cov_typeSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_re_scaleSEXP, SEXP prior_sigma_gp_USEXP, SEXP prior_sigma_gp_alphaSEXP, SEXP prior_phi_lowerSEXP, SEXP prior_phi_upperSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -2081,7 +2081,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_beta_sd(prior_beta_sdSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type prior_beta_sd(prior_beta_sdSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_re_scale(prior_sigma_re_scaleSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_gp_U(prior_sigma_gp_USEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_gp_alpha(prior_sigma_gp_alphaSEXP);
@@ -2095,7 +2095,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_pg_binomial_gibbs_multiscale_gp
-Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx_local, Rcpp::NumericMatrix nn_dist_local, Rcpp::IntegerVector nn_order_local, int nn_local, Rcpp::IntegerMatrix nn_idx_regional, Rcpp::NumericMatrix nn_dist_regional, Rcpp::IntegerVector nn_order_regional, int nn_regional, int n_spatial, double sigma2_local_init, double phi_local_init, double sigma2_regional_init, double phi_regional_init, int cov_type, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_local_U, double prior_sigma_local_alpha, double prior_phi_local_lower, double prior_phi_local_upper, double prior_sigma_regional_U, double prior_sigma_regional_alpha, double prior_phi_regional_lower, double prior_phi_regional_upper, bool store_eta, bool verbose, int n_threads);
+Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx_local, Rcpp::NumericMatrix nn_dist_local, Rcpp::IntegerVector nn_order_local, int nn_local, Rcpp::IntegerMatrix nn_idx_regional, Rcpp::NumericMatrix nn_dist_regional, Rcpp::IntegerVector nn_order_regional, int nn_regional, int n_spatial, double sigma2_local_init, double phi_local_init, double sigma2_regional_init, double phi_regional_init, int cov_type, int n_iter, int n_warmup, int thin, Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_local_U, double prior_sigma_local_alpha, double prior_phi_local_lower, double prior_phi_local_upper, double prior_sigma_regional_U, double prior_sigma_regional_alpha, double prior_phi_regional_lower, double prior_phi_regional_upper, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs_multiscale_gp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_groupSEXP, SEXP n_re_groupsSEXP, SEXP coordsSEXP, SEXP nn_idx_localSEXP, SEXP nn_dist_localSEXP, SEXP nn_order_localSEXP, SEXP nn_localSEXP, SEXP nn_idx_regionalSEXP, SEXP nn_dist_regionalSEXP, SEXP nn_order_regionalSEXP, SEXP nn_regionalSEXP, SEXP n_spatialSEXP, SEXP sigma2_local_initSEXP, SEXP phi_local_initSEXP, SEXP sigma2_regional_initSEXP, SEXP phi_regional_initSEXP, SEXP cov_typeSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_re_scaleSEXP, SEXP prior_sigma_local_USEXP, SEXP prior_sigma_local_alphaSEXP, SEXP prior_phi_local_lowerSEXP, SEXP prior_phi_local_upperSEXP, SEXP prior_sigma_regional_USEXP, SEXP prior_sigma_regional_alphaSEXP, SEXP prior_phi_regional_lowerSEXP, SEXP prior_phi_regional_upperSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -2123,7 +2123,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_beta_sd(prior_beta_sdSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type prior_beta_sd(prior_beta_sdSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_re_scale(prior_sigma_re_scaleSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_local_U(prior_sigma_local_USEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_local_alpha(prior_sigma_local_alphaSEXP);
@@ -2141,7 +2141,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_pg_binomial_gibbs_rsr
-Rcpp::List cpp_pg_binomial_gibbs_rsr(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::IntegerVector spatial_group, int n_spatial_units, Rcpp::List adj_list, Rcpp::IntegerVector n_neighbors, Rcpp::NumericVector rsr_projection, int rsr_n, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_re_scale, double prior_tau_shape, double prior_tau_rate, bool store_eta, bool verbose, int n_threads);
+Rcpp::List cpp_pg_binomial_gibbs_rsr(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::IntegerVector spatial_group, int n_spatial_units, Rcpp::List adj_list, Rcpp::IntegerVector n_neighbors, Rcpp::NumericVector rsr_projection, int rsr_n, int n_iter, int n_warmup, int thin, Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd, double prior_sigma_re_scale, double prior_tau_shape, double prior_tau_rate, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs_rsr(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_groupSEXP, SEXP n_re_groupsSEXP, SEXP spatial_groupSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_listSEXP, SEXP n_neighborsSEXP, SEXP rsr_projectionSEXP, SEXP rsr_nSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_re_scaleSEXP, SEXP prior_tau_shapeSEXP, SEXP prior_tau_rateSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -2160,7 +2160,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_beta_sd(prior_beta_sdSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type prior_beta_sd(prior_beta_sdSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_re_scale(prior_sigma_re_scaleSEXP);
     Rcpp::traits::input_parameter< double >::type prior_tau_shape(prior_tau_shapeSEXP);
     Rcpp::traits::input_parameter< double >::type prior_tau_rate(prior_tau_rateSEXP);
@@ -2172,7 +2172,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_pg_binomial_gibbs_temporal
-Rcpp::List cpp_pg_binomial_gibbs_temporal(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::IntegerVector time_idx, int n_times, int seasonal_period, int trend_type, int short_type, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_trend_scale, double prior_sigma_seasonal_scale, double prior_sigma_short_scale, double rho_short_init, bool store_eta, bool verbose, int n_threads);
+Rcpp::List cpp_pg_binomial_gibbs_temporal(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::IntegerVector time_idx, int n_times, int seasonal_period, int trend_type, int short_type, int n_iter, int n_warmup, int thin, Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_trend_scale, double prior_sigma_seasonal_scale, double prior_sigma_short_scale, double rho_short_init, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs_temporal(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_groupSEXP, SEXP n_re_groupsSEXP, SEXP time_idxSEXP, SEXP n_timesSEXP, SEXP seasonal_periodSEXP, SEXP trend_typeSEXP, SEXP short_typeSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_re_scaleSEXP, SEXP prior_sigma_trend_scaleSEXP, SEXP prior_sigma_seasonal_scaleSEXP, SEXP prior_sigma_short_scaleSEXP, SEXP rho_short_initSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -2190,7 +2190,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_beta_sd(prior_beta_sdSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type prior_beta_sd(prior_beta_sdSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_re_scale(prior_sigma_re_scaleSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_trend_scale(prior_sigma_trend_scaleSEXP);
     Rcpp::traits::input_parameter< double >::type prior_sigma_seasonal_scale(prior_sigma_seasonal_scaleSEXP);
@@ -2658,14 +2658,14 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_tulpa_fit_beta_nuts
-Rcpp::List cpp_tulpa_fit_beta_nuts(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, double sigma_beta, double log_phi_prior_sd, double log_phi_init, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose);
+Rcpp::List cpp_tulpa_fit_beta_nuts(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, double log_phi_prior_sd, double log_phi_init, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_beta_nuts(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP log_phi_prior_sdSEXP, SEXP log_phi_initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y_r(y_rSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_r(X_rSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type sigma_beta(sigma_betaSEXP);
     Rcpp::traits::input_parameter< double >::type log_phi_prior_sd(log_phi_prior_sdSEXP);
     Rcpp::traits::input_parameter< double >::type log_phi_init(log_phi_initSEXP);
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
@@ -2679,14 +2679,14 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_tulpa_fit_generic
-Rcpp::List cpp_tulpa_fit_generic(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, double sigma_beta, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericVector> init, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init);
+Rcpp::List cpp_tulpa_fit_generic(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericVector> init, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_generic(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y_r(y_rSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_r(X_rSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type sigma_beta(sigma_betaSEXP);
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type max_treedepth(max_treedepthSEXP);
@@ -2700,7 +2700,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_tulpa_fit_generic_chains
-Rcpp::List cpp_tulpa_fit_generic_chains(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, int n_chains, double sigma_beta, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericMatrix> init, Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init, std::string checkpoint_path);
+Rcpp::List cpp_tulpa_fit_generic_chains(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, int n_chains, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericMatrix> init, Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init, std::string checkpoint_path);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_generic_chains(SEXP y_rSEXP, SEXP X_rSEXP, SEXP n_chainsSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP, SEXP checkpoint_pathSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -2708,7 +2708,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y_r(y_rSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_r(X_rSEXP);
     Rcpp::traits::input_parameter< int >::type n_chains(n_chainsSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type sigma_beta(sigma_betaSEXP);
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type max_treedepth(max_treedepthSEXP);
@@ -2762,7 +2762,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_tulpa_glmm_eta_draws
-Rcpp::NumericMatrix cpp_tulpa_glmm_eta_draws(Rcpp::NumericMatrix draws, Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, double sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, double phi2, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec);
+Rcpp::NumericMatrix cpp_tulpa_glmm_eta_draws(Rcpp::NumericMatrix draws, Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, double phi2, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec);
 RcppExport SEXP _tulpa_cpp_tulpa_glmm_eta_draws(SEXP drawsSEXP, SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP sigma_betaSEXP, SEXP offset_nullableSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP, SEXP phi2SEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP zi_specSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -2773,7 +2773,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
     Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
     Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type sigma_beta(sigma_betaSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type re_spec(re_specSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type spatial_spec(spatial_specSEXP);
@@ -2788,7 +2788,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_tulpa_glmm_log_prob_draws
-Rcpp::NumericVector cpp_tulpa_glmm_log_prob_draws(Rcpp::NumericMatrix draws, Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, double sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, double phi2, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec);
+Rcpp::NumericVector cpp_tulpa_glmm_log_prob_draws(Rcpp::NumericMatrix draws, Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, double phi2, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec);
 RcppExport SEXP _tulpa_cpp_tulpa_glmm_log_prob_draws(SEXP drawsSEXP, SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP sigma_betaSEXP, SEXP offset_nullableSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP, SEXP phi2SEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP zi_specSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -2799,7 +2799,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
     Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
     Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type sigma_beta(sigma_betaSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type re_spec(re_specSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type spatial_spec(spatial_specSEXP);
@@ -2814,7 +2814,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_tulpa_glmm_layout
-Rcpp::List cpp_tulpa_glmm_layout(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, double phi2, double sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, Rcpp::Nullable<Rcpp::CharacterVector> fixed_names, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec);
+Rcpp::List cpp_tulpa_glmm_layout(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, double phi2, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, Rcpp::Nullable<Rcpp::CharacterVector> fixed_names, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec);
 RcppExport SEXP _tulpa_cpp_tulpa_glmm_layout(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP, SEXP sigma_betaSEXP, SEXP offset_nullableSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP, SEXP fixed_namesSEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP zi_specSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -2825,7 +2825,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
     Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
     Rcpp::traits::input_parameter< double >::type phi2(phi2SEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type sigma_beta(sigma_betaSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type re_spec(re_specSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type spatial_spec(spatial_specSEXP);
@@ -2840,7 +2840,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_vi_elbo_grad
-Rcpp::List cpp_vi_elbo_grad(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, int variant, int mc_samples, int seed, int rank, Rcpp::Nullable<Rcpp::NumericVector> x, double phi, double sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable);
+Rcpp::List cpp_vi_elbo_grad(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, int variant, int mc_samples, int seed, int rank, Rcpp::Nullable<Rcpp::NumericVector> x, double phi, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable);
 RcppExport SEXP _tulpa_cpp_vi_elbo_grad(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP variantSEXP, SEXP mc_samplesSEXP, SEXP seedSEXP, SEXP rankSEXP, SEXP xSEXP, SEXP phiSEXP, SEXP sigma_betaSEXP, SEXP offset_nullableSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -2855,14 +2855,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type rank(rankSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x(xSEXP);
     Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type sigma_beta(sigma_betaSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_vi_elbo_grad(y, n_trials, X, family, variant, mc_samples, seed, rank, x, phi, sigma_beta, offset_nullable));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_tulpa_sample_glmm
-Rcpp::List cpp_tulpa_sample_glmm(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, std::string backend, double phi, double sigma_beta, int n_iter, int n_warmup, int seed, bool verbose, int n_chains, int max_treedepth, double adapt_delta, double epsilon, int L, int batch_size, double alpha, int mclmc_adjusted, int n_particles, int n_mcmc_steps, double ess_threshold, int vi_variant, int vi_mc_samples, int vi_max_iter, int vi_n_draws, double vi_max_grad_norm, double vi_tol_grad, double vi_tol_rel_elbo, int vi_patience, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, Rcpp::Nullable<Rcpp::CharacterVector> fixed_names, double phi2, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec, Rcpp::Nullable<Rcpp::NumericMatrix> init_nullable, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_diag_nullable, std::string mass_matrix, bool ess_adapt_during_warmup, int ess_adapt_interval, int ess_joint_sigma_re, double ess_joint_proposal_sd, std::string checkpoint_path, double smc_bridge_end);
+Rcpp::List cpp_tulpa_sample_glmm(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, std::string backend, double phi, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, int n_iter, int n_warmup, int seed, bool verbose, int n_chains, int max_treedepth, double adapt_delta, double epsilon, int L, int batch_size, double alpha, int mclmc_adjusted, int n_particles, int n_mcmc_steps, double ess_threshold, int vi_variant, int vi_mc_samples, int vi_max_iter, int vi_n_draws, double vi_max_grad_norm, double vi_tol_grad, double vi_tol_rel_elbo, int vi_patience, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, Rcpp::Nullable<Rcpp::CharacterVector> fixed_names, double phi2, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec, Rcpp::Nullable<Rcpp::NumericMatrix> init_nullable, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_diag_nullable, std::string mass_matrix, bool ess_adapt_during_warmup, int ess_adapt_interval, int ess_joint_sigma_re, double ess_joint_proposal_sd, std::string checkpoint_path, double smc_bridge_end);
 RcppExport SEXP _tulpa_cpp_tulpa_sample_glmm(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP backendSEXP, SEXP phiSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP n_chainsSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP epsilonSEXP, SEXP LSEXP, SEXP batch_sizeSEXP, SEXP alphaSEXP, SEXP mclmc_adjustedSEXP, SEXP n_particlesSEXP, SEXP n_mcmc_stepsSEXP, SEXP ess_thresholdSEXP, SEXP vi_variantSEXP, SEXP vi_mc_samplesSEXP, SEXP vi_max_iterSEXP, SEXP vi_n_drawsSEXP, SEXP vi_max_grad_normSEXP, SEXP vi_tol_gradSEXP, SEXP vi_tol_rel_elboSEXP, SEXP vi_patienceSEXP, SEXP offset_nullableSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP, SEXP fixed_namesSEXP, SEXP phi2SEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP zi_specSEXP, SEXP init_nullableSEXP, SEXP inv_metric_diag_nullableSEXP, SEXP mass_matrixSEXP, SEXP ess_adapt_during_warmupSEXP, SEXP ess_adapt_intervalSEXP, SEXP ess_joint_sigma_reSEXP, SEXP ess_joint_proposal_sdSEXP, SEXP checkpoint_pathSEXP, SEXP smc_bridge_endSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -2873,7 +2873,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
     Rcpp::traits::input_parameter< std::string >::type backend(backendSEXP);
     Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type sigma_beta(sigma_betaSEXP);
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
@@ -2989,7 +2989,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_tulpa_fit_spde_nuts
-Rcpp::List cpp_tulpa_fit_spde_nuts(Rcpp::NumericVector y_r, Rcpp::IntegerVector n_trials_r, Rcpp::NumericMatrix X_r, Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p, int n_obs, int n_mesh, Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, double kappa, double tau_spde, std::string family, int alpha, double nu, double sigma_beta, double log_phi_prior_sd, double log_phi_init, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable, bool joint_hypers, double prior_range_0, double prior_range_alpha, double prior_sigma_0, double prior_sigma_alpha, double log_kappa_init, double log_tau_init, Rcpp::Nullable<Rcpp::NumericVector> Q_precomp_x, Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_i, Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_p, bool noncenter, std::string mass_matrix);
+Rcpp::List cpp_tulpa_fit_spde_nuts(Rcpp::NumericVector y_r, Rcpp::IntegerVector n_trials_r, Rcpp::NumericMatrix X_r, Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p, int n_obs, int n_mesh, Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, double kappa, double tau_spde, std::string family, int alpha, double nu, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, double log_phi_prior_sd, double log_phi_init, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable, bool joint_hypers, double prior_range_0, double prior_range_alpha, double prior_sigma_0, double prior_sigma_alpha, double log_kappa_init, double log_tau_init, Rcpp::Nullable<Rcpp::NumericVector> Q_precomp_x, Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_i, Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_p, bool noncenter, std::string mass_matrix);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_spde_nuts(SEXP y_rSEXP, SEXP n_trials_rSEXP, SEXP X_rSEXP, SEXP A_xSEXP, SEXP A_iSEXP, SEXP A_pSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP kappaSEXP, SEXP tau_spdeSEXP, SEXP familySEXP, SEXP alphaSEXP, SEXP nuSEXP, SEXP sigma_betaSEXP, SEXP log_phi_prior_sdSEXP, SEXP log_phi_initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP rational_poles_nullableSEXP, SEXP rational_weights_nullableSEXP, SEXP joint_hypersSEXP, SEXP prior_range_0SEXP, SEXP prior_range_alphaSEXP, SEXP prior_sigma_0SEXP, SEXP prior_sigma_alphaSEXP, SEXP log_kappa_initSEXP, SEXP log_tau_initSEXP, SEXP Q_precomp_xSEXP, SEXP Q_precomp_iSEXP, SEXP Q_precomp_pSEXP, SEXP noncenterSEXP, SEXP mass_matrixSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -3011,7 +3011,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
     Rcpp::traits::input_parameter< int >::type alpha(alphaSEXP);
     Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type sigma_beta(sigma_betaSEXP);
     Rcpp::traits::input_parameter< double >::type log_phi_prior_sd(log_phi_prior_sdSEXP);
     Rcpp::traits::input_parameter< double >::type log_phi_init(log_phi_initSEXP);
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
@@ -3039,7 +3039,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_varying_coef_draws
-Rcpp::List cpp_varying_coef_draws(Rcpp::NumericMatrix draws, Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, double sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, double phi2, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec, Rcpp::Nullable<Rcpp::NumericMatrix> svc_coords_new, Rcpp::Nullable<Rcpp::List> tvc_new, int svc_nn);
+Rcpp::List cpp_varying_coef_draws(Rcpp::NumericMatrix draws, Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, double phi2, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec, Rcpp::Nullable<Rcpp::NumericMatrix> svc_coords_new, Rcpp::Nullable<Rcpp::List> tvc_new, int svc_nn);
 RcppExport SEXP _tulpa_cpp_varying_coef_draws(SEXP drawsSEXP, SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP sigma_betaSEXP, SEXP offset_nullableSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP, SEXP phi2SEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP zi_specSEXP, SEXP svc_coords_newSEXP, SEXP tvc_newSEXP, SEXP svc_nnSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -3050,7 +3050,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
     Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
     Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type sigma_beta(sigma_betaSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type re_spec(re_specSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type spatial_spec(spatial_specSEXP);

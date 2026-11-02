@@ -188,3 +188,11 @@ load_cpp_fixture <- function(name, env = parent.frame()) {
   list2env(fns, envir = env)
   invisible(names(fns))
 }
+
+# The compiled kernels' default fixed-effect prior SD (DEFAULT_SIGMA_BETA,
+# tulpa/model_data.h), read from the helpers fixture: the prior a direct engine
+# call that states none solves under.
+default_sigma_beta <- function() {
+  load_cpp_fixture("helpers")
+  cpp_test_default_sigma_beta()
+}

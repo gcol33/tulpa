@@ -78,7 +78,7 @@ test_that("the joint hsgp-svc prediction at new coordinates is the exact Gaussia
   sS <- sqrt(sigma2 * 2 * pi * ell^2 * exp(-0.5 * ell^2 * b_tr$lam))
   A <- cbind(fx$X, sweep(b_tr$phi * fx$X[, 2], 2, sS, `*`))
   a <- cbind(fx$X_new, sweep(b_new$phi * fx$X_new[, 2], 2, sS, `*`))
-  tau_beta <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
+  tau_beta <- 1 / default_sigma_beta()^2
   H <- crossprod(A) / fx$phi + diag(c(tau_beta, tau_beta, rep(1, m * m)))
   mean_x <- solve(H, crossprod(A, fx$y) / fx$phi)
   mu <- as.numeric(a %*% mean_x)

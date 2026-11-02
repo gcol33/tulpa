@@ -54,7 +54,7 @@ areal_reference <- function(spatial_type, y, ntr, X, W, unit) {
   # Mode-find with the kernel's default beta prior so the modes line up; the
   # marginal itself omits that prior precision, as the engine's H_beta does.
   Qjoint <- Matrix::bdiag(
-    Matrix::Diagonal(p, 1 / tulpa:::cpp_test_default_sigma_beta()^2), Qlat)
+    Matrix::Diagonal(p, 1 / default_sigma_beta()^2), Qlat)
   # The structured field's sum is held at zero as a hard constraint
   # (gcol33/tulpa#901), so the mode is the constrained one: Newton on the KKT
   # system of the objective and the linear constraint c' th = 0. Under a proper

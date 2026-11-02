@@ -54,6 +54,11 @@
          paste(names(terms_used)[terms_used], collapse = ", "),
          ", which the latent-factor arms do not carry.", call. = FALSE)
   }
+  n_missing <- sum(is.na(bundle$y) & !is.nan(bundle$y))
+  if (n_missing > 0L) {
+    stop("The response has ", n_missing, " NA row(s). A `factors =` model ",
+         "fits observed rows only; drop the rows before fitting.", call. = FALSE)
+  }
   set <- vapply(args, function(a) !is.null(a) && !isFALSE(a), logical(1))
   if (any(set)) {
     stop("A `factors =` model does not read ",

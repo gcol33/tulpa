@@ -494,7 +494,7 @@ test_that("gamma_3 scores a zero-inflated (multi-process) fit and tracks its exa
   ypos <- y[y > 0]
   n_zero <- sum(y == 0); n_pos <- length(ypos); s_pos <- sum(ypos)
   lg_pos <- sum(lgamma(ypos + 1))
-  tau_b <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
+  tau_b <- 1 / default_sigma_beta()^2
   zi_lp <- function(a, b) {
     mu <- exp(a); p <- plogis(b)
     n_zero * log(p + (1 - p) * exp(-mu)) +

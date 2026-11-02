@@ -216,7 +216,7 @@ test_that("the SPDE single fit returns a mode its own score confirms", {
   # separates a settled mode from the uncompensated centring, which left this
   # same quantity at ~0.47 -- five orders of magnitude up.
   g_beta <- as.numeric(crossprod(a$X, a$y - plogis(eta))) -
-    sp$mode[seq_len(p)] / tulpa:::cpp_test_default_sigma_beta()^2
+    sp$mode[seq_len(p)] / default_sigma_beta()^2
   expect_lt(max(abs(g_beta)), 1e-4)
 })
 
@@ -290,7 +290,7 @@ test_that("the precomputed SPDE fit returns a mode its own score confirms", {
   resid <- fx$args$y - plogis(eta)
   # DEFAULT_TAU_BETA is the kernel's default prior precision on the fixed effects.
   g_beta <- as.numeric(crossprod(fx$args$X, resid)) -
-    fit$mode[seq_len(p)] / tulpa:::cpp_test_default_sigma_beta()^2
+    fit$mode[seq_len(p)] / default_sigma_beta()^2
   g_mesh <- as.numeric(Matrix::crossprod(fx$Aeff, resid)) -
     as.numeric(fx$Q %*% xm)
   expect_lt(max(abs(g_beta)), 1e-6)
@@ -348,7 +348,7 @@ test_that("the precomputed SPDE latent is not sum-to-zero centred", {
       0.5 * fx$n_re_groups * (log(tau_re) - log(2 * pi))
   }
   # The default fixed-effect prior, at the precision DEFAULT_TAU_BETA states.
-  tau_beta <- 1 / tulpa:::cpp_test_default_sigma_beta()^2
+  tau_beta <- 1 / default_sigma_beta()^2
   bcoef <- fit$mode[seq_len(p)]
   log_prior <- log_prior - 0.5 * tau_beta * sum(bcoef^2) +
     0.5 * p * (log(tau_beta) - log(2 * pi))

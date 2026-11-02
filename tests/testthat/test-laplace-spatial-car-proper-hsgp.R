@@ -58,7 +58,7 @@ test_that("HSGP single-point matches nested mode and a brute-force Laplace", {
 
   # Brute-force Laplace log p(y | theta) at the fitted mode, under the kernel's
   # default intercept prior N(0, s_b^2).
-  s_b <- tulpa:::cpp_test_default_sigma_beta()
+  s_b <- default_sigma_beta()
   S <- sig2 * (2 * pi) * ell^2 * exp(-0.5 * ell^2 * basis$lambda_eig)
   D <- cbind(X, sweep(basis$phi_basis, 2, sqrt(S), `*`))
   eta <- as.numeric(D %*% sp$mode); pr <- plogis(eta)
