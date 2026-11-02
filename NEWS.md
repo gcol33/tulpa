@@ -1,3 +1,138 @@
+# tulpa 0.7.6
+
+## Models and inference
+
+* ICAR and BYM2 field densities carry the graph's generalized log-determinant,
+  and RW1 / RW2 / cyclic / MCAR fields one shared `intrinsic_log_pdet()`, so
+  every areal and temporal log marginal is the exact Gaussian evidence. On data
+  simulated without a field, ICAR minus non-spatial moved from -73.7 to about
+  -1.5 nats. A cyclic RW2 is no longer fitted as acyclic (#983).
+
+* `tulpa_nested_laplace()` takes `beta_prior`; `tulpa()` passes one
+  fixed-effect prior on the nested path.
+
+* A field spec's grid axes and PC anchor reach its nested block, and a
+  list-form BYM2 is scaled (#986, #988, #994, #1034, #1039, #1041).
+
+* SPDE: the precision is built on the lumped mass `rowSums(C)`, so the range is
+  no longer read sqrt(2) times its nominal value (#1020). The default mesh is
+  widened by the data-anchored range. The fractional rSPDE normalisation sits
+  on the latent, so its inner Newton converges. A CCD mode-find that ends in a
+  line-search abort at a stationary point is accepted (#1022).
+
+* AR(1) rho is reported on (-1, 1). It is laid on atanh for the outer k-hat,
+  the CCD design and recentring, and ar1 joins the registry recentring table
+  (#1025, #1028).
+
+* The `lf` block integrates its scores out with a Laplace step, and several
+  factors are lower-triangular. Against the exact marginal the loading slope
+  is 1.00, where it was 1.26. `sigma_u` and `anchor_eps` are removed (#1001,
+  #1002, #1004).
+
+* Random-effect covariance:
+  * one or two coordinates get a tensor grid;
+  * group effects are drawn from each node's joint Gaussian, so
+    `posterior_predict()` and WAIC see them, and the slope model ranks first on
+    data with true slopes (#1013, #1014, #1015, #1042);
+  * the Gibbs fixed-effect proposal is shaped by the conditional precision
+    (#1018).
+
+* `agq_fit()` stops on the Newton decrement, with `tol` in nats, and matches
+  glmmTMB and `glmer(nAGQ = 7)` (#1040).
+
+* NUTS starts its chains dispersed and adapts a per-coefficient metric. The
+  [1e-3, 1e3] inverse-mass band is gone, so a raw-unit interaction such as
+  `x * year` mixes (#1011).
+
+* EM:
+  * `tulpa_em_mc()` uses the Booth-Hobert convergence rule;
+  * `tulpa_em_laplace()` reports Louis observed-information SEs;
+  * `e_step_sample` receives the pooled estimate (#1006, #1007, #1008).
+
+* SVC and TVC fields are read through the engine, and `predict()` evaluates
+  them at new coordinates and times. The HSGP SVC field is centred, and
+  `tvc()` takes a group dimension (#1010, #1012).
+
+## Reporting and accessors
+
+* `field_effects()` reports the grid mixture for nested ICAR, BYM2,
+  space-time and SPDE fields. New `latent_effects()` and
+  `posterior_linpred()` (#984, #985, #1024, #1029).
+
+* `ranef()` on a Laplace fit reports marginal SDs and intervals, and nested
+  iid blocks are reported on their own scale (#996).
+
+* `fitted()` and `residuals()` take `effects = c("conditional",
+  "population")`, defaulting to conditional. `moran_i()`, `durbin_watson()`,
+  `tulpa_variogram()` and `check_model()` read the conditional residuals: on an
+  ICAR fit Moran's I went from 0.400 to -0.058 (#977, #1016, #1038).
+
+* `logLik()` reads the evidence off a CCD design on the `re_cov`, SPDE and
+  joint multi-block doors. Every NA evidence names why. `tgmrf()` takes
+  `n_grid` (#1026, #1031).
+
+* GP, NNGP and HSGP lengthscales are reported in coordinate units at every
+  door (#1036).
+
+* `fit_spde()` keeps its outer-grid record, so `tulpa_outer_grid()` and
+  `spatial_range()` work on it, and `predict(newdata)` works on it too (#1021,
+  #1035).
+
+* Pareto-k:
+  * the outer k-hat draws on its own fixed stream, so a repeated fit reads the
+    same value;
+  * the grid mixture is scored on every spread grid;
+  * copy-scale placement and the lowest continuum cell reach the atom at zero
+    (#989, #991, #999, #1003).
+
+* A mode-find that stopped early warns and is reported, and the warning names
+  the knob that controls it. WAIC, LOO, DIC and `compare_models()` warn on an
+  unconverged chain (#993, #979).
+
+* Smaller reporting fixes:
+  * the nested checkpoint reports `checkpoint_n_loaded`;
+  * `posterior_sample()` names its columns;
+  * `sbc()` returns class `tulpa_sbc`, so it no longer collides with brms;
+  * `tulpa_tgmrf()` returns fixed-effect draws on every adapter;
+  * `predict(newdata)` works on a fit made from a design matrix
+    (#1009, #997, #1043, #992).
+
+## Front door
+
+* A `control` knob the reached backend does not read is refused by name
+  instead of dropped. An outer-grid knob error names the grid the backend does
+  lay (#974, #994, #1034).
+
+* Other front-door changes:
+  * multinomial fits take `baseline`;
+  * `estimate_phi` works on fixed-effect models;
+  * `VarCorr()` reports the residual;
+  * a missing formula variable is named;
+  * the categorical summaries leave out the empty reliability block
+    (#973, #975, #976, #995, #1000).
+
+* The multi-block wall-clock grid warning is removed; the warning past 2048
+  cells stays.
+
+* Smaller front-door fixes:
+  * `adjacency()` names its matrix by unit identifiers, and a factor with
+    numeric-looking labels is read as labels;
+  * `check_adjacency()` returns visibly;
+  * `plot.tulpa_variogram()` honours `...`;
+  * `?spatial_rsr` no longer names the unexported `spatial_icar()`;
+  * `plot_diagnostics()` is documented and its energy panel centred;
+  * `mode = "nested_laplace"` with `(1 | g)` names `mode = "structured"`
+    (#987, #990, #978, #1023, #980, #981, #982, #1037).
+
+## Documentation
+
+* New articles: Concepts, Diagnostics, Troubleshooting, Identifiability,
+  Compatibility with lme4 / glmmTMB / brms / INLA, a NC SIDS case study, and
+  model articles for space-time, varying coefficients, SPDE, spatial
+  confounding, joint models, latent factors and categorical responses. The
+  em-laplace and checkpoint articles now run, and random-slopes is a full
+  article. The space-time docs state what `tulpa()` routes (#1027, #1033).
+
 # tulpa 0.7.5
 
 * Three vignettes ship with the package (quickstart, inference modes, spatial
