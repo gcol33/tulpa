@@ -1943,7 +1943,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
                                      var_cols = c(
                                        .nl_role_cols(res$blocks,
                                                      res$block_latent_offsets,
-                                                     res$Q_csc_n, "temporal"),
+                                                     res$Q_csc_n, "temporal",
+                                                     all = TRUE),
                                        .nl_temporal_latent_block(res)$cols),
                                      units = .nl_unit_loads(
                                        res$blocks, res$block_latent_offsets,
@@ -2225,17 +2226,28 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # reports where each block starts (`block_latent_offsets`, from the C++ block
 # builders, which are what decide a block's width); a single-block solve lays
 # out [fixed, RE, field], so its field is the tail. `blocks` is the fit's block
-# list (or single block), `n_x` the latent length.
-.nl_role_cols <- function(blocks, offsets, n_x, role) {
+# list (or single block), `n_x` the latent length. `all = TRUE` returns the
+# columns of every block of that role, in block order (the components of a
+# multi-scale field share one role).
+.nl_role_cols <- function(blocks, offsets, n_x, role, all = FALSE) {
   roles <- .nl_block_roles(blocks)
-  k <- which(roles == role)[1L]
-  if (is.na(k) || is.null(n_x)) return(NULL)
+  ks <- which(roles == role)
+  if (!length(ks) || is.null(n_x)) return(NULL)
   if (length(roles) == 1L && !is.null(blocks$type)) {
     w <- .nl_single_block_width(blocks)
     if (is.null(w) || w < 1L || w > n_x) return(NULL)
     return(as.integer(seq.int(n_x - w + 1L, n_x)))
   }
-  if (length(offsets) != length(roles) + 1L) return(NULL)
+  if (!isTRUE(all)) ks <- ks[1L]
+  cols <- lapply(ks, function(k) .nl_block_cols(offsets, n_x, k, length(roles)))
+  if (any(vapply(cols, is.null, logical(1)))) return(NULL)
+  unlist(cols)
+}
+
+# Columns of block `k` of an `n_blocks`-block multi-block fit, read off the
+# offsets the solve reported; NULL when they do not locate it.
+.nl_block_cols <- function(offsets, n_x, k, n_blocks) {
+  if (length(offsets) != n_blocks + 1L || is.null(n_x)) return(NULL)
   lo <- offsets[k]; hi <- offsets[k + 1L]
   if (!is.finite(lo) || !is.finite(hi) || hi <= lo || hi > n_x) return(NULL)
   as.integer(seq.int(lo + 1L, hi))
@@ -2259,8 +2271,11 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # at cell k. An ICAR / proper-CAR block's coordinate IS the unit's field
 # (weight 1). A BYM2 block's unit field is
 #   sigma_k * (sqrt(rho_k) * s * phi_s + sqrt(1 - rho_k) * theta_s),
-# s the scale factor, so its weights move with the cell's (sigma, rho). NULL
-# when the fit carries no such block or its columns cannot be located.
+# s the scale factor, so its weights move with the cell's (sigma, rho). The
+# unit field of a multi-scale field (two or more spatial NNGP blocks) is the
+# SUM of its scales at a distinct location, each block's coordinate being its
+# field there: a loading on every block at once, weight 1 each. NULL when the
+# fit carries no such field or its columns cannot be located.
 .nl_spatial_field_load <- function(blocks, offsets, n_x, theta_grid) {
   cols <- .nl_role_cols(blocks, offsets, n_x, "spatial")
   if (is.null(cols)) return(NULL)
@@ -2270,6 +2285,18 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   blk <- if (single) blocks else blocks[[kb]]
   if (!is.null(blk$projector)) return(NULL)
   type <- tolower(blk$type %||% "")
+  if (type == "nngp") {
+    ks <- which(roles == "spatial")
+    if (single || length(ks) < 2L) return(NULL)
+    sp <- blocks[ks]
+    if (!all(vapply(sp, function(b) identical(tolower(b$type %||% ""), "nngp") &&
+                      is.null(b$projector), logical(1)))) return(NULL)
+    n_u <- as.integer(blk$n_spatial %||% NA_integer_)
+    cl <- lapply(ks, function(k) .nl_block_cols(offsets, n_x, k, length(roles)))
+    if (is.na(n_u) || any(vapply(cl, length, integer(1)) != n_u)) return(NULL)
+    return(list(type = "nngp", n_units = n_u, cols = cl,
+                weights = function(k) as.list(rep(1, length(cl)))))
+  }
   n_u <- as.integer(blk$n_spatial_units %||% NA_integer_)
   if (is.na(n_u)) return(NULL)
   if (type %in% c("icar", "car", "car_proper")) {
@@ -2302,8 +2329,12 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   tg <- if (!is.null(theta_grid)) as.matrix(theta_grid)
   cols <- integer(0)
   sig <- list()
+  # An iid block tagged as a field (the short-term component of a multi-scale
+  # temporal field) is that field's, not a random effect.
+  roles <- .nl_block_roles(blocks)
   for (b in seq_along(blocks)) {
-    if (!identical(tolower(blocks[[b]]$type %||% ""), "iid")) next
+    if (!identical(tolower(blocks[[b]]$type %||% ""), "iid") ||
+        roles[b] != "other") next
     if (offsets[b + 1L] <= offsets[b] || offsets[b + 1L] > n_x) return(NULL)
     cb <- seq.int(offsets[b] + 1L, offsets[b + 1L])
     nm <- paste0("b", b, ".sigma")
@@ -2347,13 +2378,38 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 
 # The per-unit fields a nested fit retains as loadings of each cell's latent
 # Gaussian, by role: the areal spatial field, the random effects, the
-# latent() blocks and the Knorr-Held interactions.
+# latent() blocks and the Knorr-Held interactions, and each named scale of a
+# multi-scale spatial field on its own (`spatial_<name>`).
 .nl_unit_loads <- function(blocks, offsets, n_x, theta_grid) {
-  list(spatial = .nl_spatial_field_load(blocks, offsets, n_x, theta_grid),
-       re      = .nl_re_field_load(blocks, offsets, n_x, theta_grid),
-       latent  = .nl_coord_field_load(blocks, offsets, n_x, "tgmrf"),
-       spatiotemporal = .nl_coord_field_load(blocks, offsets, n_x,
-                                             "st_interaction"))
+  c(list(spatial = .nl_spatial_field_load(blocks, offsets, n_x, theta_grid),
+         re      = .nl_re_field_load(blocks, offsets, n_x, theta_grid),
+         latent  = .nl_coord_field_load(blocks, offsets, n_x, "tgmrf"),
+         spatiotemporal = .nl_coord_field_load(blocks, offsets, n_x,
+                                               "st_interaction")),
+    .nl_spatial_component_loads(blocks, offsets, n_x))
+}
+
+# One loading per named NNGP scale of a multi-scale spatial field, keyed
+# `spatial_<name>`: the block's coordinate at each distinct location. Empty
+# unless the fit carries more than one spatial-role NNGP block.
+.nl_spatial_component_loads <- function(blocks, offsets, n_x) {
+  if (!is.list(blocks) || !is.null(blocks$type)) return(list())
+  roles <- .nl_block_roles(blocks)
+  ks <- which(roles == "spatial")
+  if (length(ks) < 2L) return(list())
+  out <- list()
+  for (k in ks) {
+    b <- blocks[[k]]
+    nm <- b$name
+    if (!identical(tolower(b$type %||% ""), "nngp") || !is.character(nm) ||
+        !is.null(b$projector)) next
+    cols <- .nl_block_cols(offsets, n_x, k, length(blocks))
+    if (is.null(cols) || length(cols) != as.integer(b$n_spatial)) next
+    out[[paste0("spatial_", nm)]] <- list(type = "nngp", n_units = length(cols),
+                                          cols = list(cols),
+                                          weights = function(k) 1)
+  }
+  out
 }
 
 # Per-cell mean and variance of every unit loading in `units`

@@ -51,6 +51,23 @@ modelled jointly.
 }
 \details{
 At least one of \code{trend}, \code{seasonal}, or \code{short_term} must be active.
+
+\code{mode = "auto"}, \code{"structured"} and \code{"nested_laplace"} fit the field by
+nested Laplace, one block per component: the trend an RW1 / RW2 walk over
+the time points, the seasonal cycle a cyclic RW1 over the period (time point
+\code{t} reads position \verb{(t - 1) mod seasonal + 1}), the short-term component an AR1
+or iid block. Each component's SD (and the AR1 correlation) is its own axis
+of the outer grid. The walks carry a sum-to-zero restriction, so the
+intercept holds the level; the trend is told apart from the short-term
+component by its structure, since a walk leaves a smooth path unpenalised
+where an AR1 or iid block shrinks every time point to zero. Every route uses
+the same priors: a PC prior with \code{P(sigma > 1) = 0.01} on each component's
+SD and a Beta(2, 2) on \code{(rho + 1) / 2}. \code{\link[=temporal]{temporal()}} returns each
+component's posterior. The exact sampler (\code{mode = "hmc"}) samples the
+components centred; with a small trend SD this is a funnel, and its
+divergent transitions concentrate at the smallest trend variances.
+\code{mode = "gibbs"} runs the binomial Polya-Gamma sampler for a field with an
+RW1 trend (or none). \code{group_var} is not routed through the nested path.
 }
 \examples{
 # Trend + annual seasonal cycle + AR1 short-term component on monthly data

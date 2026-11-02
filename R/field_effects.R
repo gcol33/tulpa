@@ -54,12 +54,24 @@
 #'     (`source = "mixture"`); at fixed hyperparameters, and for a
 #'     fractional-`nu` field, its mode.
 #' }
-#' A fit whose field cannot be located this way (a continuous GP / NNGP /
-#' HSGP field, a restricted field, an inline `spatial()` varying-coefficient
-#' field) errors naming the field and the backend, as does a fit with no
-#' spatial field. A temporal field is read by [temporal()].
+#' A multi-scale field ([spatial_multiscale()]) is reported per distinct
+#' location (one row per row of `fit$spatial$unique_coords`). By default the
+#' row is the field's whole contribution to the linear predictor, the sum of
+#' its two scales; `component = "local"` or `"regional"` reads one scale. On
+#' the nested-Laplace path the sum is the loading of both scales' coordinates
+#' on each cell's latent Gaussian, so its spread carries their posterior
+#' correlation; on the sampler path it is summed draw by draw.
+#'
+#' A fit whose field cannot be located this way (a single-scale continuous
+#' GP / NNGP / HSGP field, a multi-scale HSGP field, a restricted field, an
+#' inline `spatial()` varying-coefficient field) errors naming the field and
+#' the backend, as does a fit with no spatial field. A temporal field is read
+#' by [temporal()].
 #'
 #' @param object A `tulpa_fit` carrying a spatial field.
+#' @param component For a multi-scale field, `NULL` (default) for the sum of
+#'   its scales, or `"local"` / `"regional"` for one scale. Must be `NULL` for
+#'   every other field.
 #' @return A data frame with one row per spatial unit: `unit` (the node
 #'   index), `label` (the adjacency row name where it has one, else the index),
 #'   `estimate`, `sd`, the 2.5% / 97.5% bounds `conf.low` / `conf.high`, and
@@ -83,8 +95,8 @@
 #' plot(fe$unit, fe$estimate, type = "b")
 #' }
 #' @export
-field_effects <- function(object) {
-  read <- .field_effects_read(object)
+field_effects <- function(object, component = NULL) {
+  read <- .field_effects_read(object, component)
   n <- nrow(read$stats)
   out <- data.frame(
     unit   = seq_len(n),
@@ -149,11 +161,19 @@ field_effects <- function(object) {
                field, backend, why), call. = FALSE)
 }
 
-.field_effects_read <- function(object) {
+.field_effects_read <- function(object, component = NULL) {
   if (!inherits(object, "tulpa_fit")) {
     stop("field_effects() needs a `tulpa_fit` object.", call. = FALSE)
   }
   type <- .field_type(object)
+  if (identical(type, .FRONTDOOR_MULTISCALE)) {
+    return(.field_effects_multiscale(object, component))
+  }
+  if (!is.null(component)) {
+    stop("field_effects(): `component` reads one scale of a multi-scale field ",
+         "(spatial_multiscale()); this fit's spatial field is '", type, "'.",
+         call. = FALSE)
+  }
   nl <- .nl_spatial_field_layout(object)
   if (!nzchar(type) && !is.null(nl)) type <- nl$type
   if (!nzchar(type)) {
@@ -341,12 +361,18 @@ field_effects <- function(object) {
 }
 
 # The per-unit field a nested fit retained as a loading of each cell's latent
-# Gaussian (`grid_spatial_mean`, `grid_spatial_var`; `.nl_attach_grid_hessians()`),
+# Gaussian (`grid_<load>_mean`, `grid_<load>_var`; `.nl_attach_grid_hessians()`),
 # mixed over the outer grid by the cell weights. Without the per-cell variances
 # (a field too large to retain them) the cell means are mixed with no spread.
-.field_effects_nested_load <- function(object, type) {
-  mu <- object$grid_spatial_mean
-  V  <- object$grid_spatial_var
+# `load` is the loading's key in `.nl_unit_loads()`: the spatial field, or one
+# scale of a multi-scale field (`spatial_local` / `spatial_regional`).
+.field_effects_nested_load <- function(object, type, load = "spatial") {
+  mu <- object[[paste0("grid_", load, "_mean")]]
+  V  <- object[[paste0("grid_", load, "_var")]]
+  if (!is.matrix(mu)) {
+    .field_effects_unavailable(object, type,
+      "the fit retained no per-cell loading of this field.")
+  }
   w  <- as.numeric(object$weights)
   keep <- is.finite(w) & w > 0 & is.finite(rowSums(mu))
   if (is.matrix(V)) keep <- keep & is.finite(rowSums(V))
@@ -362,4 +388,48 @@ field_effects <- function(object) {
                       conf.low = mx$quantiles[, 1L],
                       conf.high = mx$quantiles[, 2L])
   .field_read(stats, if (is.null(var)) "mode" else "mixture", type)
+}
+
+
+# The scales a multi-scale field is made of, as its draws and nested blocks
+# name them.
+.MULTISCALE_COMPONENTS <- c("local", "regional")
+
+# A multi-scale spatial field per distinct location: the sum of its scales, or
+# one of them. A sampler fit stores each scale's field at the distinct
+# locations (`gp_local[k]` / `gp_regional[k]`), so the sum is taken draw by
+# draw; a nested fit retains the sum and each scale as loadings of every cell's
+# latent Gaussian (`.nl_unit_loads()`).
+.field_effects_multiscale <- function(object, component) {
+  if (!is.null(component)) {
+    if (!is.character(component) || length(component) != 1L ||
+        !component %in% .MULTISCALE_COMPONENTS) {
+      stop("field_effects(): `component` must be one of ",
+           paste0('"', .MULTISCALE_COMPONENTS, '"', collapse = ", "),
+           " for a multi-scale field.", call. = FALSE)
+    }
+  }
+  type <- .FRONTDOOR_MULTISCALE
+  if (identical(tolower(object$spatial$approx %||% "nngp"), "hsgp")) {
+    .field_effects_unavailable(object, type, paste0(
+      "an HSGP multi-scale field is a basis expansion evaluated at the ",
+      "observations, with no coordinate per location."))
+  }
+  D <- object$draws
+  dn <- colnames(D)
+  if (is.matrix(D) && nrow(D) > 0L && !is.null(dn) &&
+      any(startsWith(dn, "gp_local["))) {
+    cmp <- component %||% .MULTISCALE_COMPONENTS
+    U <- Reduce(`+`, lapply(cmp, function(cc) {
+      .draws_by_prefix(D, paste0("gp_", cc))
+    }))
+    return(.field_read(.field_draws_stats(U), "sampled", type))
+  }
+  if (is.matrix(object$modes) && !is.null(object$weights)) {
+    load <- if (is.null(component)) "spatial" else paste0("spatial_", component)
+    return(.field_effects_nested_load(object, type, load))
+  }
+  .field_effects_unavailable(object, type, paste0(
+    "the multi-scale field is read on the exact-sampler and nested-Laplace ",
+    "paths."))
 }

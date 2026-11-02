@@ -12,7 +12,8 @@
 # calling the log-prior kernel directly. These exercise it through the actual
 # construction and fitting path instead.
 #
-# Multiscale is sampler-only: there is no multiscale nested-Laplace kernel.
+# The nested-Laplace path fits the same spec as one block per component
+# (test-multiscale-nested.R).
 
 make_ms_binom <- function(n_t = 36L, reps = 8L, seed = 3L) {
   set.seed(seed)
@@ -25,14 +26,14 @@ make_ms_binom <- function(n_t = 36L, reps = 8L, seed = 3L) {
        trend = trend, n_t = n_t, b1 = -0.6)
 }
 
-test_that("multiscale temporal is refused by the nested-Laplace modes", {
+test_that("multiscale temporal reaches the nested-Laplace path as blocks", {
   s <- make_ms_binom(n_t = 6L, reps = 4L)
-  expect_error(
-    tulpa(y ~ x, data = s$d, family = "binomial", n_trials = s$d$ntrials,
-          temporal = temporal_multiscale("t", trend = "rw1", short_term = "none"),
-          mode = "nested_laplace"),
-    "multiscale"
-  )
+  spec <- validate_temporal_multiscale(
+    temporal_multiscale("t", trend = "rw1", short_term = "none"), s$d)
+  blocks <- tulpa:::.temporal_spec_to_nl_blocks(spec)
+  expect_length(blocks, 1L)
+  expect_identical(blocks[[1L]]$type, "rw1")
+  expect_identical(blocks[[1L]]$name, "trend")
 })
 
 skip_on_cran_budget()

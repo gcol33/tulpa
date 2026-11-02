@@ -431,13 +431,12 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 # `spde` backend (redirected from nested_laplace in tulpa()) drives fit_spde().
 .NL_FRONTDOOR_SPDE <- "spde"
 
-# The multi-scale (local + regional) NNGP field is coordinate-addressed like
+# The multi-scale (local + regional) field is coordinate-addressed like
 # .NL_FRONTDOOR_CONTINUOUS and derives its two neighbour structures through the
-# same validate_gp(), but it has no nested-Laplace kernel: the exact-NUTS
-# sampler (compute_multiscale_gp_prior + the msgp_nc_apply transform) is its
-# only front-door integrator. Kept out of .NL_FRONTDOOR_NESTED so auto /
-# structured leave it on the conditional Laplace path instead of routing it to
-# a nested kernel that does not exist.
+# same validate_gp(). On the nested-Laplace path it is the sum of two field
+# blocks of the multi-block driver (`.multiscale_nl_blocks()`), each with its
+# own SD and range axes; the exact sampler carries it as one block
+# (compute_multiscale_gp_prior + the msgp_nc_apply transform).
 .FRONTDOOR_MULTISCALE <- "multiscale"
 
 # Spatial field types tulpa() routes to a nested-Laplace integrator (areal +
@@ -447,24 +446,27 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 # converter .spatial_spec_to_nl_prior); SPDE is redirected to the `spde` backend.
 # Types outside this set stay on the conditional Laplace path under auto/structured.
 .NL_FRONTDOOR_NESTED <- c(.NL_FRONTDOOR_AREAL, .NL_FRONTDOOR_CONTINUOUS,
-                          .NL_FRONTDOOR_SPDE, "rsr", "gp_rsr")
+                          .NL_FRONTDOOR_SPDE, .FRONTDOOR_MULTISCALE,
+                          "rsr", "gp_rsr")
 
 # Spatial types that can share the nested-Laplace multi-block stack with a
 # random-effect term, a temporal field, smoothers or latent blocks: the areal
-# and continuous fields, restricted or not.
+# and continuous fields, restricted or not, and the multi-scale field, whose
+# two scales are blocks of that stack already.
 .NL_FRONTDOOR_STACKABLE <- c(.NL_FRONTDOOR_AREAL, .NL_FRONTDOOR_CONTINUOUS,
-                             "rsr", "gp_rsr")
+                             .FRONTDOOR_MULTISCALE, "rsr", "gp_rsr")
 
 # The subset of .NL_FRONTDOOR_NESTED the exact ModelData NUTS sampler (`hmc`
 # and its siblings) also threads directly -- read off dispatch_glmm_modeldata()
 # (R/tulpa.R): icar / bym2 / car_proper via the areal spec, gp / nngp / hsgp via
-# .gp_sampler_spec() / .hsgp_sampler_spec(). Plain intrinsic 'car' and 'spde'
+# .gp_sampler_spec() / .hsgp_sampler_spec(), and the multi-scale NNGP field via
+# .msgp_sampler_spec(). Plain intrinsic 'car' and 'spde'
 # are NOT in this set -- the modeldata dispatch refuses 'car' by name (areal
 # there is icar/bym2 only) and has no SPDE spec builder at all -- so auto must
 # not offer either as a fallback when nested_laplace cannot carry a call
 # (gcol33/tulpa#769).
 .NL_FRONTDOOR_HMC_SPATIAL <- c("icar", "bym2", "car_proper",
-                               .NL_FRONTDOOR_CONTINUOUS)
+                               .NL_FRONTDOOR_CONTINUOUS, .FRONTDOOR_MULTISCALE)
 
 
 #' Test whether a backend supports the given family
@@ -1016,14 +1018,14 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     ))
   }
 
-  # A continuous-time temporal GP and the multi-scale temporal field are
-  # sampler-path only: their hyperparameters are sampled jointly with the field
-  # and there is no nested-Laplace kernel laying a grid over a dense T x T
-  # Gaussian. auto used to fall through to the temporal branch below, which has
-  # arms for rw1 / rw2 / ar1 only, and tulpa() then redirected to nested Laplace
-  # -- the one door that refuses them (gcol33/tulpa#672).
+  # A continuous-time temporal GP is sampler-path only: its hyperparameters are
+  # sampled jointly with the field and there is no nested-Laplace kernel laying
+  # a grid over a dense T x T Gaussian. auto used to fall through to the
+  # temporal branch below, which then redirected to nested Laplace -- the one
+  # door that refuses it (gcol33/tulpa#672). The multi-scale temporal field is
+  # a stack of rw / ar1 / iid blocks there, so it takes the branch below.
   t_type <- tolower((temporal$type %||% "")[1])
-  if (t_type %in% c("gp", "multiscale", "temporal_multiscale")) {
+  if (t_type %in% c("gp")) {
     return(list(
       mode = "exact", backend = "hmc", tier = 1L, tier_name = "Exact",
       reason = sprintf("continuous-time temporal field (%s); exact ModelData NUTS",
@@ -1031,8 +1033,8 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     ))
   }
 
-  # A plain temporal field (rw1 / rw2 / ar1; gp / multiscale are the sampler-
-  # path-only arm just above) integrates through the nested-Laplace temporal
+  # A plain or multi-scale temporal field (rw1 / rw2 / ar1 and their stacks;
+  # gp is the sampler-path-only arm just above) integrates through the nested-Laplace temporal
   # kernel, same as an areal spatial field below. With no arm here, auto fell
   # through unconditionally to the gradient-sampler default (picked on family
   # and dataset size alone) and relied on a redirect further downstream in
@@ -1059,18 +1061,6 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
           "ModelData NUTS instead"), t_type)
       ))
     }
-  }
-
-  # The multi-scale (local + regional) field is carried only by the exact
-  # ModelData NUTS backend too: it has no nested-Laplace kernel, and
-  # dispatch_laplace_spatial() rejects it, so the same rule applies -- pick the
-  # sampler that fits it rather than fall through to a Laplace heuristic whose
-  # dispatch errors.
-  if (identical(tolower(spatial_type %||% ""), .FRONTDOOR_MULTISCALE)) {
-    return(list(
-      mode = "exact", backend = "hmc", tier = 1L, tier_name = "Exact",
-      reason = "multi-scale spatial field (exact ModelData NUTS)"
-    ))
   }
 
   # Spatial latent Gaussian field. Like a latent block, its hyperparameter
@@ -1300,11 +1290,9 @@ select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_tempor
     # structured routes the nested-wired types (.NL_FRONTDOOR_NESTED: areal +
     # gp/nngp/hsgp + spde) to nested_laplace too (conditioning at a fixed scale
     # is the explicit mode = "laplace"). SPDE is redirected from nested_laplace
-    # to the `spde` backend in tulpa() (its own fit_spde engine). Field types
-    # with no nested kernel (multiscale) stay on the conditional Laplace path;
-    # `auto` routes those to exact NUTS instead, but an explicit
-    # mode = "structured" is honoured as asked. Otherwise Laplace is the Tier 2
-    # default.
+    # to the `spde` backend in tulpa() (its own fit_spde engine), and a
+    # multi-scale field rides the multi-block driver as two blocks. Otherwise
+    # Laplace is the Tier 2 default.
     if (has_latent) return("nested_laplace")
     if (has_spatial && !is.null(spatial_type) && spatial_type %in% .NL_FRONTDOOR_NESTED) {
       return("nested_laplace")
@@ -1315,7 +1303,7 @@ select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_tempor
     # and the Structured tier carries the deterministic (nested-Laplace) half
     # of that pair. Conditioning at sigma_re = 1 is the explicit
     # mode = "laplace" (gcol33/tulpa#787). Guarded on !has_spatial: a spatial
-    # field reaching here is one of the non-nested types (multiscale, plain
+    # field reaching here is one of the non-nested types (plain
     # 'car', ...) that the Structured tier deliberately keeps on conditional
     # Laplace -- re_cov_nested carries no spatial field at all.
     if (!has_spatial && has_re && .auto_backend_ok("re_cov_nested", family, feat)) {

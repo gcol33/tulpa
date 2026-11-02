@@ -236,15 +236,6 @@ test_that("unsupported temporal configurations error clearly", {
           temporal = temporal_rw1("time", group_var = "region")),
     "panel"
   )
-  # A multiscale field has no nested-Laplace kernel, so it cannot host a
-  # temporal block through the front door.
-  d$df$lon <- rnorm(nrow(d$df)); d$df$lat <- rnorm(nrow(d$df))
-  expect_error(
-    tulpa(y ~ x, data = d$df, family = "binomial",
-          spatial = spatial_multiscale(~ lon + lat),
-          temporal = temporal_rw1("time")),
-    "areal"
-  )
 })
 
 test_that("a continuous field shares the nested stack with a temporal field, a smoother and a latent block", {

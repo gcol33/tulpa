@@ -179,15 +179,8 @@
            "tulpa() validates it via validate_hsgp(); pass spatial_gp(~x+y, approx = 'hsgp').",
            call. = FALSE)
     }
-    basis <- cpp_hsgp_basis_2d(as.matrix(cm), as.integer(spatial$m),
-                               as.numeric(spatial$c))
-    # The basis does not carry the coordinates, so their extent travels with
-    # the block: it anchors the lengthscale's default prior.
-    return(c(list(
-      type       = "hsgp",
-      phi_basis  = basis$phi_basis,
-      lambda_eig = basis$lambda_eig
-    ), .hp_coord_fields(cm), .nl_spec_grid_entries(spatial, "hsgp")))
+    return(c(.hsgp_nl_block(cm, spatial$m, spatial$c),
+             .nl_spec_grid_entries(spatial, "hsgp")))
   }
 
   if (type %in% c("gp", "nngp")) {
@@ -197,18 +190,7 @@
            "NULL). tulpa() validates it via validate_gp(); pass spatial_gp(~x+y).",
            call. = FALSE)
     }
-    n_spatial <- spatial$n_spatial %||% nrow(spatial$unique_coords)
-    prior <- list(
-      type        = "nngp",
-      coords      = as.matrix(spatial$unique_coords),
-      nn_idx      = as.matrix(ni$nn_idx),
-      nn_dist     = as.matrix(ni$nn_dist),
-      nn_order    = as.integer(ni$nn_order %||% seq_len(n_spatial)),
-      n_spatial   = as.integer(n_spatial),
-      nn          = as.integer(spatial$nn %||% ncol(ni$nn_idx)),
-      cov_type    = gp_cov_type(spatial),
-      spatial_idx = as.integer(spatial$obs_to_loc %||% seq_len(n_spatial))
-    )
+    prior <- .nngp_nl_block(spatial, ni, spatial$nn)
     if (isTRUE(spatial$rsr)) {
       # Restricted continuous field: observation i receives (P w)[loc_i], with
       # P the location-level projector the Gibbs kernel applies, so the block
@@ -272,6 +254,94 @@
 }
 
 
+# An HSGP block of the nested-Laplace path: the Laplacian basis evaluated at
+# every observation (`cpp_hsgp_basis_2d`, over setup_hsgp_2d) and its
+# eigenvalues. The basis does not carry the coordinates, so their extent
+# travels with the block: it anchors the lengthscale's default prior.
+.hsgp_nl_block <- function(coords, m, c_boundary) {
+  basis <- cpp_hsgp_basis_2d(as.matrix(coords), as.integer(m),
+                             as.numeric(c_boundary))
+  c(list(type       = "hsgp",
+         phi_basis  = basis$phi_basis,
+         lambda_eig = basis$lambda_eig),
+    .hp_coord_fields(coords))
+}
+
+# An NNGP block of the nested-Laplace path over a validated continuous spec's
+# unique locations, from one neighbour structure `ni` (validate_gp()): the
+# field lives at the unique locations and observation i reads it at
+# `obs_to_loc[i]`.
+.nngp_nl_block <- function(spatial, ni, nn) {
+  n_spatial <- spatial$n_spatial %||% nrow(spatial$unique_coords)
+  list(
+    type        = "nngp",
+    coords      = as.matrix(spatial$unique_coords),
+    nn_idx      = as.matrix(ni$nn_idx),
+    nn_dist     = as.matrix(ni$nn_dist),
+    nn_order    = as.integer(ni$nn_order %||% seq_len(n_spatial)),
+    n_spatial   = as.integer(n_spatial),
+    nn          = as.integer(nn %||% ncol(ni$nn_idx)),
+    cov_type    = gp_cov_type(spatial),
+    spatial_idx = as.integer(spatial$obs_to_loc %||% seq_len(n_spatial))
+  )
+}
+
+# The hyperpriors of the multi-scale spatial field, read by every route that
+# fits it -- the exact sampler (`.msgp_sampler_spec()`) and the nested-Laplace
+# blocks (`.multiscale_nl_blocks()`) -- so a route is a computational choice
+# and never a different model. Each scale carries a PC prior on its SD,
+# P(sigma > U) = alpha, and a PC prior on its range anchored at that scale's
+# own declared lower bound, P(range < lower) = `.MSGP_RANGE_ALPHA`.
+.MSGP_SIGMA_PRIOR <- c(U = 2, alpha = 0.05)
+.MSGP_RANGE_ALPHA <- 0.05
+
+# The two scales of a validated spatial_multiscale() spec as two blocks of the
+# nested-Laplace multi-block driver, local then regional. The field is their
+# sum, so each block is a field of its own with its own SD and range axes,
+# placed and refined like every other field axis. NNGP blocks read each
+# scale's own neighbour structure; HSGP blocks share one basis and differ in
+# their (sigma2, lengthscale). Both fields are proper, so neither needs a
+# level constraint: the sum's constant direction carries the prior precision
+# of both fields, against the intercept's. What tells the two scales apart is
+# their range priors, each anchored at its own interval's lower bound, which
+# puts the regional field's mass above `range_regional[1]`.
+.multiscale_nl_blocks <- function(spatial) {
+  hsgp <- identical(spatial$approx %||% "nngp", "hsgp")
+  lapply(c("local", "regional"), function(sc) {
+    blk <- if (hsgp) {
+      if (is.null(spatial$coords_matrix)) {
+        stop("Internal: multiscale spatial spec is unvalidated ",
+             "(coords_matrix is NULL); tulpa() validates it via validate_gp().",
+             call. = FALSE)
+      }
+      .hsgp_nl_block(spatial$coords_matrix, spatial$m, spatial$c_boundary)
+    } else {
+      ni <- spatial[[paste0("neighbor_info_", sc)]]
+      if (is.null(ni)) {
+        stop("Internal: multiscale spatial spec is unvalidated (neighbor_info_",
+             sc, " is NULL); tulpa() validates it via validate_gp().",
+             call. = FALSE)
+      }
+      .nngp_nl_block(spatial, ni, spatial[[paste0("nn_", sc)]])
+    }
+    blk$prior_sigma <- unname(.MSGP_SIGMA_PRIOR)
+    blk$prior_range <- c(as.numeric(spatial[[paste0("range_", sc)]])[1L],
+                         .MSGP_RANGE_ALPHA)
+    blk$name <- sc
+    blk
+  })
+}
+
+# The nested-Laplace blocks of a validated `spatial =` spec: the two scales of
+# a multi-scale field, one block for every other field.
+.spatial_spec_to_nl_blocks <- function(spatial) {
+  if (identical(tolower(spatial$type %||% ""), .FRONTDOOR_MULTISCALE)) {
+    return(.multiscale_nl_blocks(spatial))
+  }
+  list(.spatial_spec_to_nl_prior(spatial))
+}
+
+
 # Pack a validated tulpa_gp (nngp) spec into the ModelData sampler's GP
 # spatial_spec (mode = "exact" continuous-field NUTS). The sampler's GP prior
 # requires a PC RANGE anchor, which spatial_gp() does not expose, so a
@@ -328,11 +398,10 @@
 # neighbour structure computed by validate_gp() (same compute_nngp_neighbors()
 # helper spatial_gp() uses, so the field/index conventions match
 # .gp_sampler_spec() exactly: field at unique-location order, nn_order
-# 0-based, nn_neighbor_dist row-major [i, j1, j2]). The sigma2 PC-prior
-# anchors are not yet exposed by spatial_multiscale(), so this uses the same
-# fixed weakly-informative default .gp_sampler_spec() does rather than
-# inventing a data-driven one; the range bounds are the ones the user already
-# set via range_local / range_regional.
+# 0-based, nn_neighbor_dist row-major [i, j1, j2]). The hyperpriors are the
+# field's one statement of them (`.MSGP_SIGMA_PRIOR`, `.MSGP_RANGE_ALPHA`),
+# the same the nested-Laplace blocks carry; the range anchors are the lower
+# bounds the user set via range_local / range_regional.
 #' @keywords internal
 .msgp_sampler_spec <- function(spatial) {
   nil <- spatial$neighbor_info_local
@@ -383,12 +452,12 @@
     # bounds are no longer a hard box; they state the
     # plausible interval, the lower end anchors the prior, and the pair places
     # the sampler's starting range.
-    range_local_prior_alpha    = 0.05,
-    range_regional_prior_alpha = 0.05,
-    sigma2_local_prior_U        = 2.0,
-    sigma2_local_prior_alpha    = 0.05,
-    sigma2_regional_prior_U     = 2.0,
-    sigma2_regional_prior_alpha = 0.05,
+    range_local_prior_alpha    = .MSGP_RANGE_ALPHA,
+    range_regional_prior_alpha = .MSGP_RANGE_ALPHA,
+    sigma2_local_prior_U        = .MSGP_SIGMA_PRIOR[["U"]],
+    sigma2_local_prior_alpha    = .MSGP_SIGMA_PRIOR[["alpha"]],
+    sigma2_regional_prior_U     = .MSGP_SIGMA_PRIOR[["U"]],
+    sigma2_regional_prior_alpha = .MSGP_SIGMA_PRIOR[["alpha"]],
     # Non-centered (z ~ N(0, I) per scale, each field reconstructed as
     # w = f(z, sigma2, phi)) avoids the field/hyperparameter funnel
     # gp_parameterization / svc_parameterization document, independently per
@@ -671,9 +740,8 @@
   }
   type <- tolower(temporal$type %||% "")
   if (identical(type, "multiscale")) {
-    stop("The multiscale temporal block (trend + seasonal + short-term) is fit ",
-         "by the sampler; there is no multiscale nested-Laplace kernel. Use ",
-         "mode = 'hmc'.", call. = FALSE)
+    stop("Internal: a temporal_multiscale() spec is several nested blocks; ",
+         "build them with .temporal_spec_to_nl_blocks().", call. = FALSE)
   }
   if (!type %in% c("rw1", "rw2", "ar1")) {
     stop("tulpa() routes temporal types rw1, rw2, ar1 through nested Laplace; ",
@@ -709,6 +777,68 @@
   nl <- .nl_spec_grid_entries(temporal, type)
   out[names(nl)] <- nl
   out
+}
+
+
+# The hyperpriors of the multi-scale temporal field, read by every route that
+# fits it (the exact sampler's temporal spec and the nested-Laplace blocks): a
+# PC prior on each component's SD, P(sigma > U) = alpha, and a Beta(2, 2) on
+# u = (rho + 1) / 2 for an AR1 short-term component.
+.MS_TEMPORAL_SIGMA_PRIOR <- c(U = 1, alpha = 0.01)
+.MS_TEMPORAL_RHO_BETA <- c(alpha = 2, beta = 2)
+
+# The components of a validated temporal_multiscale() spec as blocks of the
+# nested-Laplace multi-block driver, each a temporal field of its own with its
+# own scale (and AR1 correlation) axes: the trend an RW1 / RW2 walk over the
+# time points, the seasonal cycle a cyclic RW1 over the period read at
+# `(t - 1) %% period + 1`, the short-term component an AR1 or an iid block over
+# the time points. The intrinsic walks carry the engine's sum-to-zero
+# restriction, so the intercept holds the level; the short-term block is
+# proper. The trend is told apart from the short-term component by its
+# structure: a walk penalises differences and so leaves a smooth path
+# unpenalised, where an AR1 or iid block shrinks every time point to zero.
+.multiscale_temporal_nl_blocks <- function(temporal) {
+  if (!is.null(temporal$group_var)) {
+    stop("temporal_multiscale(group_var = ) is not routed through the ",
+         "nested-Laplace path: its components would need a per-group layout ",
+         "on the multi-block driver, which carries one walk per block.",
+         call. = FALSE)
+  }
+  tidx <- as.integer(temporal$time_index)
+  n_t  <- as.integer(temporal$n_times)
+  sig  <- unname(.MS_TEMPORAL_SIGMA_PRIOR)
+  out <- list()
+  if (!identical(temporal$trend, "none")) {
+    out$trend <- list(type = temporal$trend, temporal_idx = tidx,
+                      n_times = n_t, n_groups = 1L, cyclic = FALSE)
+  }
+  if (!is.null(temporal$seasonal)) {
+    s <- as.integer(temporal$seasonal)
+    out$seasonal <- list(type = "rw1", temporal_idx = (tidx - 1L) %% s + 1L,
+                         n_times = s, n_groups = 1L, cyclic = TRUE)
+  }
+  if (identical(temporal$short_term, "ar1")) {
+    out$short_term <- list(type = "ar1", temporal_idx = tidx, n_times = n_t,
+                           n_groups = 1L,
+                           rho_prior = prior_beta(.MS_TEMPORAL_RHO_BETA[["alpha"]],
+                                                  .MS_TEMPORAL_RHO_BETA[["beta"]]))
+  } else if (identical(temporal$short_term, "iid")) {
+    out$short_term <- list(type = "iid", obs_idx = tidx, n_units = n_t)
+  }
+  unname(Map(function(blk, nm) {
+    blk$prior_sigma <- sig
+    blk$name <- nm
+    blk
+  }, out, names(out)))
+}
+
+# The nested-Laplace blocks of a validated `temporal =` spec: the components of
+# a multi-scale field, one block for every other field.
+.temporal_spec_to_nl_blocks <- function(temporal) {
+  if (identical(tolower(temporal$type %||% ""), "multiscale")) {
+    return(.multiscale_temporal_nl_blocks(temporal))
+  }
+  list(.temporal_spec_to_nl_prior(temporal))
 }
 
 
@@ -874,9 +1004,11 @@
     with_role <- function(blk, role) { blk$role <- role; blk }
     field_blocks <- c(
       if (!is.null(spatial))
-        list(with_role(.spatial_spec_to_nl_prior(spatial), "spatial")) else list(),
+        lapply(.spatial_spec_to_nl_blocks(spatial), with_role, "spatial")
+      else list(),
       if (!is.null(temporal))
-        list(with_role(.temporal_spec_to_nl_prior(temporal), "temporal")) else list(),
+        lapply(.temporal_spec_to_nl_blocks(temporal), with_role, "temporal")
+      else list(),
       if (!is.null(spatiotemporal))
         list(with_role(spatiotemporal, "spatiotemporal")) else list(),
       smoothers
@@ -1463,10 +1595,10 @@
       if (isTRUE((spatial$approx %||% "nngp") == "hsgp")) {
         stop(sprintf(paste0(
           "Backend '%s' samples the multi-scale field via NNGP; ",
-          "spatial_multiscale(approx = \"hsgp\") is not threaded through this ",
-          "path, or through nested-Laplace (the multi-scale field has no ",
-          "nested-Laplace kernel at all -- see .FRONTDOOR_MULTISCALE). Use ",
-          "approx = \"nngp\"."), backend),
+          "spatial_multiscale(approx = \"hsgp\") is fitted by the ",
+          "nested-Laplace path (mode = \"auto\" or \"nested_laplace\"), ",
+          "as two HSGP blocks. Use one of those modes, or approx = \"nngp\" ",
+          "for a sampler."), backend),
           call. = FALSE)
       }
       spatial_spec_arg <- .msgp_sampler_spec(spatial)
@@ -1527,7 +1659,15 @@
         seasonal    = if (!is.null(temporal$seasonal))
                         as.integer(temporal$seasonal) else NULL,
         short_term  = tolower(temporal$short_term %||% "none"),
-        shared      = isTRUE(temporal$shared %||% TRUE)
+        shared      = isTRUE(temporal$shared %||% TRUE),
+        sigma2_trend_prior_U        = .MS_TEMPORAL_SIGMA_PRIOR[["U"]],
+        sigma2_trend_prior_alpha    = .MS_TEMPORAL_SIGMA_PRIOR[["alpha"]],
+        sigma2_seasonal_prior_U     = .MS_TEMPORAL_SIGMA_PRIOR[["U"]],
+        sigma2_seasonal_prior_alpha = .MS_TEMPORAL_SIGMA_PRIOR[["alpha"]],
+        sigma2_short_prior_U        = .MS_TEMPORAL_SIGMA_PRIOR[["U"]],
+        sigma2_short_prior_alpha    = .MS_TEMPORAL_SIGMA_PRIOR[["alpha"]],
+        rho_prior_a = .MS_TEMPORAL_RHO_BETA[["alpha"]],
+        rho_prior_b = .MS_TEMPORAL_RHO_BETA[["beta"]]
       )
     } else if (!is.null(temporal) &&
                tolower(temporal$type %||% "") == "gp") {
@@ -1850,7 +1990,8 @@
 #'     per-observation unit column. Term and spec must be supplied together.
 #'   * **Continuous** (`spatial_gp(~ lon + lat)` for an NNGP field,
 #'     `spatial_gp(~ lon + lat, approx = 'hsgp')` for a Hilbert-space GP, `spatial_spde(~ lon +
-#'     lat, data)` for a Matern SPDE field): the spec object carries the
+#'     lat, data)` for a Matern SPDE field, [spatial_multiscale()] for the sum
+#'     of a local and a regional field): the spec object carries the
 #'     coordinate columns (the SPDE spec also carries the mesh + FEM matrices),
 #'     so **no** `spatial(col)` term is used -- observations are mapped to
 #'     locations from their coordinates.
@@ -1860,7 +2001,8 @@
 #'     binomial Gibbs case below) **integrate** the hyperparameter -- the
 #'     designed Tier 2 path, mirroring `latent(...)` blocks. Areal `icar`/`car`/
 #'     `bym2`/`car_proper` and continuous `gp`/`nngp`/`hsgp` go through
-#'     [tulpa_nested_laplace()]; SPDE is redirected to [fit_spde()], which
+#'     [tulpa_nested_laplace()], and a multi-scale field goes there as two
+#'     field blocks, one per scale; SPDE is redirected to [fit_spde()], which
 #'     integrates `(range, sigma)` with its own CCD / grid design.
 #'   * `mode = "laplace"` **conditions** on a fixed hyperparameter via
 #'     [tulpa_laplace()] (the cheap explicit fit).
@@ -1869,10 +2011,11 @@
 #'     binomial `icar`/`bym2` field.
 #' @param temporal Optional temporal field spec, integrated by nested Laplace
 #'   for the discrete walks and sampled for the continuous ones:
-#'   [temporal_rw1()], [temporal_rw2()], [temporal_ar1()] (nested Laplace);
-#'   [temporal_gp()] and [temporal_multiscale()], which are sampler-path only --
-#'   their hyperparameters are sampled jointly with the field, so `mode = "auto"`
-#'   routes them to the exact ModelData sampler. A plain field routes the
+#'   [temporal_rw1()], [temporal_rw2()], [temporal_ar1()] and
+#'   [temporal_multiscale()], whose components are integrated as one block
+#'   each (nested Laplace); [temporal_gp()], which is sampler-path only --
+#'   its hyperparameters are sampled jointly with the field, so `mode = "auto"`
+#'   routes it to the exact ModelData sampler. A plain field routes the
 #'   single-block temporal kernel; a `group_var` panel spec fits a separate walk
 #'   per group sharing one hyperparameter; combined with an areal `spatial`
 #'   field it forms an additive space-time joint prior.
@@ -2457,9 +2600,8 @@ tulpa <- function(formula, data,
       }
       temporal_spec <- validate_tvc(temporal_spec, data, bundle$X)
     } else {
-    # multiscale rides the sampler path only; the nested-Laplace entry
-    # (.temporal_spec_to_nl_prior) rejects it with its own message, since there
-    # is no multiscale nested-Laplace kernel.
+    # A multi-scale spec becomes one nested block per component
+    # (.temporal_spec_to_nl_blocks()).
     if (!tolower(temporal_spec$type %||% "") %in%
         c("rw1", "rw2", "ar1", "multiscale")) {
       stop("tulpa() routes temporal_rw1() / temporal_rw2() / temporal_ar1() / ",

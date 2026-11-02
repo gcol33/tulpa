@@ -31,7 +31,9 @@ spatial_multiscale(
 \item{scales}{Character vector specifying scale names. Default: \code{c("local", "regional")}.}
 
 \item{approx}{Approximation method: \code{"nngp"} (default) for Nearest Neighbor
-GP; \code{"hsgp"} for Hilbert Space GP (faster for smooth fields).}
+GP; \code{"hsgp"} for a Hilbert-space basis shared by both scales, which is
+fitted by the nested-Laplace path only (\code{mode = "auto"} or
+\code{"nested_laplace"}); the samplers carry the NNGP form.}
 
 \item{m}{Number of HSGP basis functions per dimension (default 6). Only
 used when \code{approx = "hsgp"}. Total basis functions will be m^2.}
@@ -41,10 +43,13 @@ Only used when \code{approx = "hsgp"}.}
 
 \item{range_local}{Plausible range interval for the local scale as
 \code{c(lower, upper)} in coordinate units. Default: \code{c(0.01, 1)} (after
-scaling). Under exact NUTS this is not a hard box: \code{lower} anchors a PC
-prior on that scale's range (\code{P(range < lower) = 0.05}, the same prior
-\code{\link[=spatial_gp]{spatial_gp()}} uses), and the pair places the sampler's starting range at
-their geometric mean. The range itself is free on \verb{(0, Inf)}.}
+scaling). This is not a hard box: \code{lower} anchors a PC prior on that
+scale's range (\code{P(range < lower) = 0.05}, the same prior \code{\link[=spatial_gp]{spatial_gp()}}
+uses), on every route that fits the field; a sampler starts the range at
+the pair's geometric mean. The range itself is free on \verb{(0, Inf)}. The
+range is the lengthscale \code{phi} of the kernel, \code{exp(-d / phi)} for the
+exponential one; with \code{approx = "hsgp"} it is the lengthscale of the
+squared-exponential kernel the basis approximates.}
 
 \item{range_regional}{Plausible range interval for the regional scale, read
 the same way. Default: \code{c(1, 10)} (after scaling). Keeping the two
@@ -83,9 +88,6 @@ A \code{tulpa_multiscale} object
 Specify a multi-scale spatial random effect that decomposes spatial
 variation into local (fine-scale) and regional (broad-scale) components.
 Each scale has its own range and variance parameters.
-
-This is particularly useful for large datasets (>100k observations) where
-spatial patterns exist at multiple scales.
 }
 \details{
 The multi-scale model decomposes spatial variation additively:
@@ -96,12 +98,38 @@ where each component follows an independent Gaussian process:
 \deqn{w_{local}(s) \sim GP(0, \sigma^2_{local} C(\phi_{local}))}
 \deqn{w_{regional}(s) \sim GP(0, \sigma^2_{regional} C(\phi_{regional}))}
 
-\strong{Identifiability}: With sufficient data (>500 locations), the two scales
-are typically well-identified when prior ranges are non-overlapping.
-PC priors on variance components help prevent overfitting.
+\strong{Fitting.} \code{mode = "auto"}, \code{"structured"} and \code{"nested_laplace"} fit the
+field by nested Laplace, as two field blocks of the multi-block driver (two
+NNGP blocks, each on its own neighbour structure, or two HSGP blocks on one
+basis). Each scale carries its own SD and range axes on the outer grid,
+placed and refined like any other field axis, so both scales' variances and
+ranges are integrated. The exact samplers (\code{mode = "exact"} and its
+siblings) sample the NNGP form with the same priors. \code{\link[=spatial_range]{spatial_range()}}
+reports each scale's \code{sigma} and \code{range} (\code{3 * phi}), tagged \verb{[local]} /
+\verb{[regional]}; \code{\link[=field_effects]{field_effects()}} reports the summed field per distinct
+location, or one scale with \verb{component =}.
 
-\strong{Computational cost}: Approximately 1.5-2x the cost of single-scale GP,
-as two NNGP likelihoods must be evaluated.
+\strong{Identifiability.} Both fields are proper, so neither needs a level
+constraint; the constant they share with the intercept is held by their
+priors. What tells the scales apart is the range priors: the regional
+field's PC prior puts 5\% of its mass below \code{range_regional[1]}, and the
+local field's below \code{range_local[1]}, while neither range is bounded above.
+Where the data do not separate the scales, the local range can therefore
+reach into the regional interval and the two scales share the variance,
+which widens both intervals rather than switching the labels. On simulated
+Poisson data with 300 locations on a 10 x 10 square (local SD 0.63 and
+range 0.5, regional SD 1 and range 3, \code{range_local = c(0.2, 1.5)},
+\code{range_regional = c(1.5, 10)}), the nested 95\% intervals of all four
+hyperparameters covered the truth on each of 5 data sets, with posterior
+means 0.66 / 1.1 (local SD / range) and 1.03 / 7.3 (regional); the
+component maps correlated with the simulated fields at 0.49 (local), 0.79
+(regional) and 0.85 (sum).
+
+\strong{Computational cost.} On those data sets the nested fit took 97-125 s
+(100 locations: 29 s). Exact NUTS on 100 locations took 453 s for 4 chains
+of 1000 iterations and had not converged (R-hat 1.14 and bulk ESS 13 on the
+local log-variance), its chains disagreeing on how the variance splits
+between the scales.
 }
 \examples{
 # Create multi-scale spatial structure
@@ -123,8 +151,7 @@ df <- data.frame(
 )
 df$count <- rpois(n, exp(1 + 0.2 * df$depth))
 
-# Both scales are sampled by exact NUTS (mode = "exact"); the field is
-# returned as gp_local[i] / gp_regional[i] draws.
+# Both scales' variances and ranges are integrated by nested Laplace.
 fit <- tulpa(
   count ~ depth + temp,
   data = df,
@@ -135,11 +162,10 @@ fit <- tulpa(
     range_regional = c(1, 5),
     nn_local = 5L,
     nn_regional = 8L
-  ),
-  mode = "exact",
-  control = list(n_iter = 60L, n_warmup = 30L, seed = 1L)
+  )
 )
-summary(fit)
+spatial_range(fit)
+head(field_effects(fit, component = "regional"))
 }
 
 }

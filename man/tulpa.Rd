@@ -202,7 +202,8 @@ field family:
 and \code{adjacency}, paired with a \code{spatial(col)} term in \code{formula} naming the
 per-observation unit column. Term and spec must be supplied together.
 \item \strong{Continuous} (\code{spatial_gp(~ lon + lat)} for an NNGP field,
-\code{spatial_gp(~ lon + lat, approx = 'hsgp')} for a Hilbert-space GP, \code{spatial_spde(~ lon + lat, data)} for a Matern SPDE field): the spec object carries the
+\code{spatial_gp(~ lon + lat, approx = 'hsgp')} for a Hilbert-space GP, \code{spatial_spde(~ lon + lat, data)} for a Matern SPDE field, \code{\link[=spatial_multiscale]{spatial_multiscale()}} for the sum
+of a local and a regional field): the spec object carries the
 coordinate columns (the SPDE spec also carries the mesh + FEM matrices),
 so \strong{no} \code{spatial(col)} term is used -- observations are mapped to
 locations from their coordinates.
@@ -214,7 +215,8 @@ The mode selects how the spatial hyperparameter is handled:
 binomial Gibbs case below) \strong{integrate} the hyperparameter -- the
 designed Tier 2 path, mirroring \code{latent(...)} blocks. Areal \code{icar}/\code{car}/
 \code{bym2}/\code{car_proper} and continuous \code{gp}/\code{nngp}/\code{hsgp} go through
-\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}; SPDE is redirected to \code{\link[=fit_spde]{fit_spde()}}, which
+\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}, and a multi-scale field goes there as two
+field blocks, one per scale; SPDE is redirected to \code{\link[=fit_spde]{fit_spde()}}, which
 integrates \verb{(range, sigma)} with its own CCD / grid design.
 \item \code{mode = "laplace"} \strong{conditions} on a fixed hyperparameter via
 \code{\link[=tulpa_laplace]{tulpa_laplace()}} (the cheap explicit fit).
@@ -225,10 +227,11 @@ binomial \code{icar}/\code{bym2} field.
 
 \item{temporal}{Optional temporal field spec, integrated by nested Laplace
 for the discrete walks and sampled for the continuous ones:
-\code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_rw2]{temporal_rw2()}}, \code{\link[=temporal_ar1]{temporal_ar1()}} (nested Laplace);
-\code{\link[=temporal_gp]{temporal_gp()}} and \code{\link[=temporal_multiscale]{temporal_multiscale()}}, which are sampler-path only --
-their hyperparameters are sampled jointly with the field, so \code{mode = "auto"}
-routes them to the exact ModelData sampler. A plain field routes the
+\code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_rw2]{temporal_rw2()}}, \code{\link[=temporal_ar1]{temporal_ar1()}} and
+\code{\link[=temporal_multiscale]{temporal_multiscale()}}, whose components are integrated as one block
+each (nested Laplace); \code{\link[=temporal_gp]{temporal_gp()}}, which is sampler-path only --
+its hyperparameters are sampled jointly with the field, so \code{mode = "auto"}
+routes it to the exact ModelData sampler. A plain field routes the
 single-block temporal kernel; a \code{group_var} panel spec fits a separate walk
 per group sharing one hyperparameter; combined with an areal \code{spatial}
 field it forms an additive space-time joint prior.}

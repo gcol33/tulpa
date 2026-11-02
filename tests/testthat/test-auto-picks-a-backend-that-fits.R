@@ -52,10 +52,12 @@ test_that("auto routes a temporal GP to the sampler that fits it", {
     n_obs = n, has_temporal = TRUE, temporal = list(type = "gp"))
   expect_identical(sel$backend, "hmc")
 
+  # A multi-scale temporal field is a stack of rw / ar1 / iid blocks on the
+  # nested-Laplace path.
   sel2 <- tulpa:::select_inference_mode(
     "auto", family = list(name = "gaussian", distribution = "gaussian"),
     n_obs = n, has_temporal = TRUE, temporal = list(type = "multiscale"))
-  expect_identical(sel2$backend, "hmc")
+  expect_identical(sel2$backend, "nested_laplace")
 
   # The discrete temporal fields are unchanged: they keep the nested path.
   sel3 <- tulpa:::select_inference_mode(

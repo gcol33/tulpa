@@ -513,6 +513,25 @@ void build_sampler_model_inputs(
 
         ms.shared = !tp.containsElementNamed("shared") ||
                     Rf_isNull(tp["shared"]) || Rcpp::as<bool>(tp["shared"]);
+        read_pc_anchors(tp, "sigma2_trend_prior_U", "sigma2_trend_prior_alpha",
+                        in.data.ms_sigma2_trend_prior_U,
+                        in.data.ms_sigma2_trend_prior_alpha,
+                        "multiscale trend");
+        read_pc_anchors(tp, "sigma2_seasonal_prior_U",
+                        "sigma2_seasonal_prior_alpha",
+                        in.data.ms_sigma2_seasonal_prior_U,
+                        in.data.ms_sigma2_seasonal_prior_alpha,
+                        "multiscale seasonal");
+        read_pc_anchors(tp, "sigma2_short_prior_U", "sigma2_short_prior_alpha",
+                        in.data.ms_sigma2_short_prior_U,
+                        in.data.ms_sigma2_short_prior_alpha,
+                        "multiscale short-term");
+        // The short-term AR1 correlation's Beta(a, b) on u = (rho + 1) / 2,
+        // the same pair a single AR1 field reads.
+        if (tp.containsElementNamed("rho_prior_a"))
+            in.data.ar1_rho_prior_a = Rcpp::as<double>(tp["rho_prior_a"]);
+        if (tp.containsElementNamed("rho_prior_b"))
+            in.data.ar1_rho_prior_b = Rcpp::as<double>(tp["rho_prior_b"]);
         in.data.has_multiscale_temporal = true;
     }
     // --- Temporal field (RW1 / RW2 / AR1 / GP). ---

@@ -285,7 +285,46 @@ temporal <- function(object, component = "all", summary = FALSE,
   list(mu = M[keep, cols, drop = FALSE],
        var = if (is.null(var)) NULL else pmax(var[keep, , drop = FALSE], 0),
        cov = if (!is.null(cov)) cov[keep],
-       w = w[keep] / sum(w[keep]))
+       w = w[keep] / sum(w[keep]),
+       cells = which(keep))
+}
+
+# The components of a multi-scale temporal field on a nested-Laplace fit, one
+# draw matrix per component, named as `info$components` names them: each
+# component is the temporal-role block carrying its name, read as the per-cell
+# Gaussian mixture of that block's coordinates. An `iid` short-term block is
+# non-centred (its coordinate enters eta times the cell's SD, as a random
+# effect's does), so its mixture is scaled by that SD cell by cell. NULL when
+# any component cannot be located.
+.nl_multiscale_temporal_draws <- function(object, info) {
+  blocks <- object$prior
+  if (is.null(blocks)) return(NULL)
+  single <- !is.null(blocks$type)
+  bl <- if (single) list(blocks) else blocks
+  roles <- .nl_block_roles(blocks)
+  n_x <- if (is.matrix(object$modes)) ncol(object$modes)
+  tg <- as.matrix(object$theta_grid)
+  out <- lapply(info$components, function(cmp) {
+    k <- which(roles == "temporal" &
+                 vapply(bl, function(b) identical(b$name, cmp), logical(1)))
+    if (length(k) != 1L) return(NULL)
+    cols <- if (single) .nl_role_cols(blocks, NULL, n_x, "temporal")
+            else .nl_block_cols(object$block_latent_offsets, n_x, k, length(bl))
+    mix <- if (length(cols)) .nl_field_mixture(object, cols)
+    if (is.null(mix)) return(NULL)
+    if (identical(tolower(bl[[k]]$type %||% ""), "iid")) {
+      sc <- paste0(if (single) "" else paste0("b", k, "."), "sigma")
+      if (!sc %in% colnames(tg)) return(NULL)
+      sg <- tg[mix$cells, sc]
+      mix$mu <- mix$mu * sg
+      if (!is.null(mix$var)) mix$var <- mix$var * sg^2
+      if (!is.null(mix$cov)) mix$cov <- Map(`*`, mix$cov, sg^2)
+    }
+    .nl_field_mixture_draws(mix)
+  })
+  names(out) <- info$components
+  if (!length(out) || any(vapply(out, is.null, logical(1)))) return(NULL)
+  out
 }
 
 # The mixture of a linear map P of a field: a restricted temporal field
@@ -432,6 +471,10 @@ temporal.tulpa_fit <- function(object, component = "all", summary = FALSE,
       }
       temp_draws <- .nl_field_mixture_draws(mixture)
     }
+  }
+
+  if (is.null(temp_draws) && inherits(temp_info, "tulpa_temporal_multiscale")) {
+    temp_draws <- .nl_multiscale_temporal_draws(object, temp_info)
   }
 
   if (is.null(temp_draws)) {

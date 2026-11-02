@@ -238,18 +238,18 @@ validate_hsgp <- function(spatial, data) {
 #' variation into local (fine-scale) and regional (broad-scale) components.
 #' Each scale has its own range and variance parameters.
 #'
-#' This is particularly useful for large datasets (>100k observations) where
-#' spatial patterns exist at multiple scales.
-#'
 #' @param coords A one-sided formula specifying coordinate columns (e.g.,
 #'   `~ lon + lat`), or a character vector of length 2 with column names.
 #' @param scales Character vector specifying scale names. Default: `c("local", "regional")`.
 #' @param range_local Plausible range interval for the local scale as
 #'   `c(lower, upper)` in coordinate units. Default: `c(0.01, 1)` (after
-#'   scaling). Under exact NUTS this is not a hard box: `lower` anchors a PC
-#'   prior on that scale's range (`P(range < lower) = 0.05`, the same prior
-#'   [spatial_gp()] uses), and the pair places the sampler's starting range at
-#'   their geometric mean. The range itself is free on `(0, Inf)`.
+#'   scaling). This is not a hard box: `lower` anchors a PC prior on that
+#'   scale's range (`P(range < lower) = 0.05`, the same prior [spatial_gp()]
+#'   uses), on every route that fits the field; a sampler starts the range at
+#'   the pair's geometric mean. The range itself is free on `(0, Inf)`. The
+#'   range is the lengthscale `phi` of the kernel, `exp(-d / phi)` for the
+#'   exponential one; with `approx = "hsgp"` it is the lengthscale of the
+#'   squared-exponential kernel the basis approximates.
 #' @param range_regional Plausible range interval for the regional scale, read
 #'   the same way. Default: `c(1, 10)` (after scaling). Keeping the two
 #'   intervals separated is what identifies the scales against each other.
@@ -263,7 +263,9 @@ validate_hsgp <- function(spatial, data) {
 #'   and divided by one common factor before computing distances (see
 #'   [spatial_gp()]).
 #' @param approx Approximation method: `"nngp"` (default) for Nearest Neighbor
-#'   GP; `"hsgp"` for Hilbert Space GP (faster for smooth fields).
+#'   GP; `"hsgp"` for a Hilbert-space basis shared by both scales, which is
+#'   fitted by the nested-Laplace path only (`mode = "auto"` or
+#'   `"nested_laplace"`); the samplers carry the NNGP form.
 #' @param m Number of HSGP basis functions per dimension (default 6). Only
 #'   used when `approx = "hsgp"`. Total basis functions will be m^2.
 #' @param c_boundary Boundary factor for HSGP domain extension (default 1.5).
@@ -286,12 +288,38 @@ validate_hsgp <- function(spatial, data) {
 #' \deqn{w_{local}(s) \sim GP(0, \sigma^2_{local} C(\phi_{local}))}
 #' \deqn{w_{regional}(s) \sim GP(0, \sigma^2_{regional} C(\phi_{regional}))}
 #'
-#' **Identifiability**: With sufficient data (>500 locations), the two scales
-#' are typically well-identified when prior ranges are non-overlapping.
-#' PC priors on variance components help prevent overfitting.
+#' **Fitting.** `mode = "auto"`, `"structured"` and `"nested_laplace"` fit the
+#' field by nested Laplace, as two field blocks of the multi-block driver (two
+#' NNGP blocks, each on its own neighbour structure, or two HSGP blocks on one
+#' basis). Each scale carries its own SD and range axes on the outer grid,
+#' placed and refined like any other field axis, so both scales' variances and
+#' ranges are integrated. The exact samplers (`mode = "exact"` and its
+#' siblings) sample the NNGP form with the same priors. [spatial_range()]
+#' reports each scale's `sigma` and `range` (`3 * phi`), tagged `[local]` /
+#' `[regional]`; [field_effects()] reports the summed field per distinct
+#' location, or one scale with `component =`.
 #'
-#' **Computational cost**: Approximately 1.5-2x the cost of single-scale GP,
-#' as two NNGP likelihoods must be evaluated.
+#' **Identifiability.** Both fields are proper, so neither needs a level
+#' constraint; the constant they share with the intercept is held by their
+#' priors. What tells the scales apart is the range priors: the regional
+#' field's PC prior puts 5% of its mass below `range_regional[1]`, and the
+#' local field's below `range_local[1]`, while neither range is bounded above.
+#' Where the data do not separate the scales, the local range can therefore
+#' reach into the regional interval and the two scales share the variance,
+#' which widens both intervals rather than switching the labels. On simulated
+#' Poisson data with 300 locations on a 10 x 10 square (local SD 0.63 and
+#' range 0.5, regional SD 1 and range 3, `range_local = c(0.2, 1.5)`,
+#' `range_regional = c(1.5, 10)`), the nested 95% intervals of all four
+#' hyperparameters covered the truth on each of 5 data sets, with posterior
+#' means 0.66 / 1.1 (local SD / range) and 1.03 / 7.3 (regional); the
+#' component maps correlated with the simulated fields at 0.49 (local), 0.79
+#' (regional) and 0.85 (sum).
+#'
+#' **Computational cost.** On those data sets the nested fit took 97-125 s
+#' (100 locations: 29 s). Exact NUTS on 100 locations took 453 s for 4 chains
+#' of 1000 iterations and had not converged (R-hat 1.14 and bulk ESS 13 on the
+#' local log-variance), its chains disagreeing on how the variance splits
+#' between the scales.
 #'
 #' @examples
 #' # Create multi-scale spatial structure
@@ -313,8 +341,7 @@ validate_hsgp <- function(spatial, data) {
 #' )
 #' df$count <- rpois(n, exp(1 + 0.2 * df$depth))
 #'
-#' # Both scales are sampled by exact NUTS (mode = "exact"); the field is
-#' # returned as gp_local[i] / gp_regional[i] draws.
+#' # Both scales' variances and ranges are integrated by nested Laplace.
 #' fit <- tulpa(
 #'   count ~ depth + temp,
 #'   data = df,
@@ -325,11 +352,10 @@ validate_hsgp <- function(spatial, data) {
 #'     range_regional = c(1, 5),
 #'     nn_local = 5L,
 #'     nn_regional = 8L
-#'   ),
-#'   mode = "exact",
-#'   control = list(n_iter = 60L, n_warmup = 30L, seed = 1L)
+#'   )
 #' )
-#' summary(fit)
+#' spatial_range(fit)
+#' head(field_effects(fit, component = "regional"))
 #' }
 #'
 #' @seealso [spatial_gp()] for single-scale GP, [temporal_multiscale()] for

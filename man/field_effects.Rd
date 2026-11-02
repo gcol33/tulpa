@@ -4,10 +4,14 @@
 \alias{field_effects}
 \title{Spatial field effects per unit}
 \usage{
-field_effects(object)
+field_effects(object, component = NULL)
 }
 \arguments{
 \item{object}{A \code{tulpa_fit} carrying a spatial field.}
+
+\item{component}{For a multi-scale field, \code{NULL} (default) for the sum of
+its scales, or \code{"local"} / \code{"regional"} for one scale. Must be \code{NULL} for
+every other field.}
 }
 \value{
 A data frame with one row per spatial unit: \code{unit} (the node
@@ -59,10 +63,19 @@ per-node marginal variance weighted by the cell's posterior weight
 (\code{source = "mixture"}); at fixed hyperparameters, and for a
 fractional-\code{nu} field, its mode.
 }
-A fit whose field cannot be located this way (a continuous GP / NNGP /
-HSGP field, a restricted field, an inline \code{spatial()} varying-coefficient
-field) errors naming the field and the backend, as does a fit with no
-spatial field. A temporal field is read by \code{\link[=temporal]{temporal()}}.
+A multi-scale field (\code{\link[=spatial_multiscale]{spatial_multiscale()}}) is reported per distinct
+location (one row per row of \code{fit$spatial$unique_coords}). By default the
+row is the field's whole contribution to the linear predictor, the sum of
+its two scales; \code{component = "local"} or \code{"regional"} reads one scale. On
+the nested-Laplace path the sum is the loading of both scales' coordinates
+on each cell's latent Gaussian, so its spread carries their posterior
+correlation; on the sampler path it is summed draw by draw.
+
+A fit whose field cannot be located this way (a single-scale continuous
+GP / NNGP / HSGP field, a multi-scale HSGP field, a restricted field, an
+inline \code{spatial()} varying-coefficient field) errors naming the field and
+the backend, as does a fit with no spatial field. A temporal field is read
+by \code{\link[=temporal]{temporal()}}.
 }
 \examples{
 \donttest{

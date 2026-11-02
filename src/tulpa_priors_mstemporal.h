@@ -98,9 +98,11 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
                 T u = inv_logit(logit_rho_short);
                 ms_rho_short = T(2.0) * u - T(1.0);
 
-                // Beta(2,2) prior on u + Jacobian for logit transform
-                log_post = log_post + safe_log(u) + safe_log(T(1.0) - u);  // Beta(2,2)
-                log_post = log_post + safe_log(u) + safe_log(T(1.0) - u);  // Jacobian
+                // Beta(a, b) on u: with the logit change of variables the
+                // density and its Jacobian combine to a*log(u) + b*log(1-u).
+                log_post = log_post
+                    + T(data.ar1_rho_prior_a) * safe_log(u)
+                    + T(data.ar1_rho_prior_b) * safe_log(T(1.0) - u);
             }
         }
 
