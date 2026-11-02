@@ -20,10 +20,11 @@
 # cell coupling a front-door fit then looks up -- goes through the registered
 # C callables, as a consumer package does.
 #
-# Compiling is not cheap, so a fixture is a tier-2 dependency: the loader
-# skips on CRAN and in fast mode, without a C++ toolchain, and where the
-# package sources are not on disk. A test file calls it after its top-level
-# skip_on_cran(), or inside the block that needs it.
+# Compiling is not cheap, so the loader skips in fast mode and under the CRAN
+# profile (skip_on_cran_budget(): TULPA_CRAN_BUDGET=off opens it, which is how
+# the CI check matrix runs the fixture blocks on every platform), and also
+# without a C++ toolchain and where the package sources are not on disk. A
+# test file calls it inside the block or helper that needs it.
 
 # Package source root: the source tree under devtools::test(), the unpacked
 # tarball under R CMD check.
@@ -155,7 +156,8 @@
 # Compile tests/testthat/cpp/<name>.cpp against the engine and assign its
 # exported functions into `env` (the calling test file or block by default).
 load_cpp_fixture <- function(name, env = parent.frame()) {
-  skip_on_cran()
+  skip_if_fast()
+  skip_on_cran_budget()
   testthat::skip_if_not_installed("RcppEigen")
   testthat::skip_if_not(.cpp_fixture_has_toolchain(), "no C++ toolchain")
   root <- .tulpa_source_root()

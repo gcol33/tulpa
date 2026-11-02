@@ -70,9 +70,11 @@
 # matrix (TULPA_CRAN_BUDGET=off) and every other profile run all files.
 #
 # A block that drives the engine through a C++ test fixture (load_cpp_fixture(),
-# helper-cpp-fixtures.R) is tier 2 whatever its own cost, because the fixture
-# has to be compiled: the loader carries the skip_on_cran() gate. A smoke file's
-# CRAN part therefore reaches the engine through R-level doors only.
+# helper-cpp-fixtures.R) never runs on CRAN or in fast mode, whatever its own
+# cost, because the fixture has to be compiled: the loader carries the
+# skip_if_fast() and skip_on_cran_budget() gates, so the CI check matrix
+# (TULPA_CRAN_BUDGET=off) still runs it. A smoke file's CRAN part therefore
+# reaches the engine through R-level doors only.
 #
 # A skipped block is not free: test_that() sets up its test context (a temporary
 # directory, the locale, the reproducible-output options) before the gate in the
