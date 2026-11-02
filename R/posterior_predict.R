@@ -447,26 +447,25 @@
   list(u = as.numeric(mode[lead + seq_len(fd$n_field)]), design = fd)
 }
 
-# Per-unit draws (S x n_units) of a Polya-Gamma Gibbs field, read off the
+# Per-unit draws (S x n_units) of a Polya-Gamma Gibbs areal field, read off the
 # columns `.pg_as_chain()` (`R/fit_gibbs.R`) stores in `$draws` alongside the
 # fixed effects, so each row is the field value every observation of that unit
-# receives. An icar / car field is `phi_spatial[k]` itself. A bym2 field's
-# `phi_spatial[k]` / `theta_spatial[k]` are the kernel's unit-scale components,
-# combined per draw into `sigma * (sqrt(rho) * scale_factor * phi +
-# sqrt(1 - rho) * theta)` at that draw's `log_sigma_spatial` /
-# `logit_rho_bym2`, as the kernel builds its eta (gcol33/tulpa#964). `keep`
-# subsets rows. NULL for any
-# spatial type the Gibbs sampler does not carry a field column for (gp /
-# multiscale_gp are sampled but not covered here), and on a ModelData sampler
-# fit, whose `phi_spatial[k]` columns are the raw coordinates its density
-# centres and scales on the way into eta.
+# receives. An icar / car field is `phi_spatial[k]` itself, and a restricted
+# (rsr) field's `phi_spatial[k]` is the projected field the kernel adds to eta.
+# A bym2 field's `phi_spatial[k]` / `theta_spatial[k]` are the kernel's
+# unit-scale components, combined per draw into `sigma * (sqrt(rho) *
+# scale_factor * phi + sqrt(1 - rho) * theta)` at that draw's
+# `log_sigma_spatial` / `logit_rho_bym2`, as the kernel builds its eta
+# (gcol33/tulpa#964). `keep` subsets rows. NULL for a non-areal field, and on a
+# ModelData sampler fit, whose `phi_spatial[k]` columns are the raw coordinates
+# its density centres and scales on the way into eta.
 #' @keywords internal
 .gibbs_field_unit_draws <- function(object, keep) {
   spatial <- object$spatial
   if (is.null(spatial) || is.list(object$model_inputs)) return(NULL)
   type <- tolower(spatial$type %||% "")
   dn <- colnames(object$draws)
-  if (!type %in% c("icar", "car", "bym2") || is.null(dn)) return(NULL)
+  if (!type %in% c("icar", "car", "rsr", "bym2") || is.null(dn)) return(NULL)
 
   phi_cols <- grep("^phi_spatial\\[", dn)
   if (!length(phi_cols)) return(NULL)
@@ -487,19 +486,109 @@
   U
 }
 
-# Per-draw eta contribution of a Polya-Gamma Gibbs field: the per-unit draws
-# of `.gibbs_field_unit_draws()` gathered to the observations. `keep` subsets
-# rows to match whatever subsample `.fixed_coef_draws()` took of the same
-# chain. NULL where the unit draws are.
+# The continuous fields of a Polya-Gamma Gibbs chain, one entry per sampled
+# NNGP field: the column stem of its values at the fitted locations, the
+# suffix of its `log_sigma2_<suffix>` / `log_phi_<suffix>` columns, and the
+# neighbour count it was sampled under. A gp / nngp / gp_rsr field is `gp_w`;
+# a multiscale field is the sum of its local and regional scales. NULL for any
+# other field.
 #' @keywords internal
-.gibbs_field_eta_contrib <- function(object, keep, n_obs) {
-  U <- .gibbs_field_unit_draws(object, keep)
-  if (is.null(U)) return(NULL)
-  Z <- .field_design_Z(object$spatial$spatial_idx, ncol(U), n_obs)
-  # Coerce back to a base matrix: Matrix is an Imports, not attached for a
-  # caller of the package, and `eta` downstream (and every plain colMeans() /
-  # arithmetic a user runs on a posterior_predict() draws matrix) expects one.
-  as.matrix(U %*% Matrix::t(Z))
+.gibbs_gp_fields <- function(spatial) {
+  type <- tolower(spatial$type %||% "")
+  nn_of <- function(info) {
+    as.integer(if (is.matrix(info$nn_idx)) ncol(info$nn_idx) else spatial$nn %||% 10L)
+  }
+  if (type %in% c("gp", "nngp", "gp_rsr")) {
+    return(list(list(stem = "gp_w", suffix = "gp",
+                     nn = nn_of(spatial$neighbor_info))))
+  }
+  if (type %in% c("multiscale", "multiscale_gp")) {
+    return(list(
+      list(stem = "gp_local", suffix = "gp_local",
+           nn = nn_of(spatial$neighbor_info_local)),
+      list(stem = "gp_regional", suffix = "gp_regional",
+           nn = nn_of(spatial$neighbor_info_regional))))
+  }
+  NULL
+}
+
+# Per-draw eta contribution (S x n) of every field a Polya-Gamma Gibbs chain
+# samples, at the training rows or at `newdata`, for the stored draw rows
+# `keep` (the rows `.fixed_coef_draws()` took of the same chain). Each term is
+# the field the kernel adds to eta:
+#
+#   * areal (icar / car / rsr / bym2): the per-unit draws of
+#     `.gibbs_field_unit_draws()` gathered through `spatial_idx`;
+#   * continuous (gp / nngp / gp_rsr / multiscale): `gp_w[i]`, or
+#     `gp_local[i] + gp_regional[i]`, at observation i's location (the
+#     samplers fit one observation per location, in coordinate order);
+#   * temporal (temporal_multiscale): `trend[t] + seasonal[(t - 1) %% period +
+#     1] + short_term[t]` at the row's time index t.
+#
+# At `newdata` a continuous field is drawn from its NNGP predictive given the
+# draw's field and the draw's own `(sigma2, phi)` (`cpp_gp_field_rows()`); a
+# restricted field is refused, since its projection is defined on the fitted
+# locations only; an areal or temporal field is held at zero, as on every other
+# backend. NULL when the fit is not a Gibbs chain or samples no field.
+#' @keywords internal
+.gibbs_field_eta_contrib <- function(object, keep, n_obs, newdata = NULL) {
+  dr <- object$draws
+  if (is.list(object$model_inputs) || !is.matrix(dr) || is.null(colnames(dr))) {
+    return(NULL)
+  }
+  dn <- colnames(dr)
+  cols_of <- function(stem) grep(paste0("^", stem, "\\["), dn)
+  out <- NULL
+  add <- function(C) out <<- if (is.null(out)) C else out + C
+  sp <- object$spatial
+  if (!is.null(sp)) {
+    U <- if (is.null(newdata)) .gibbs_field_unit_draws(object, keep)
+    if (!is.null(U)) {
+      Z <- .field_design_Z(sp$spatial_idx, ncol(U), n_obs)
+      add(as.matrix(U %*% Matrix::t(Z)))
+    }
+    gpf <- .gibbs_gp_fields(sp)
+    if (!is.null(gpf) && !is.null(newdata) &&
+        (isTRUE(sp$rsr) || identical(tolower(sp$type %||% ""), "gp_rsr"))) {
+      stop("A restricted (gp_rsr) field is defined on the fitted locations ",
+           "only: its projection removes the covariates' span there and has ",
+           "no value at a new location.", call. = FALSE)
+    }
+    for (g in gpf) {
+      cw <- cols_of(g$stem)
+      if (!length(cw)) next
+      W <- dr[keep, cw, drop = FALSE]
+      if (is.null(newdata)) {
+        add(W[, as.integer(sp$obs_to_loc %||% seq_len(n_obs)), drop = FALSE])
+        next
+      }
+      pars <- paste0(c("log_sigma2_", "log_phi_"), g$suffix)
+      if (!all(pars %in% dn)) {
+        stop("The Gibbs chain carries no `", pars[!pars %in% dn][1L],
+             "` column for its `", g$stem, "` field.", call. = FALSE)
+      }
+      nc <- .field_coords_at(object, newdata)
+      S <- nrow(W)
+      add(cpp_gp_field_rows(
+        nc, .coords_plain(sp$unique_coords), W, seq_len(S) - 1L,
+        exp(dr[keep, pars[1L]]), exp(dr[keep, pars[2L]]), g$nn,
+        gp_cov_type(sp), matrix(stats::rnorm(S * nrow(nc)), S)))
+    }
+  }
+  tp <- object$temporal
+  if (!is.null(tp) && is.null(newdata) && !is.null(tp$time_index)) {
+    t_idx <- as.integer(tp$time_index)
+    period <- as.integer(tp$seasonal %||% 0L)
+    idx <- list(trend = t_idx, short_term = t_idx,
+                seasonal = if (period > 0L) (t_idx - 1L) %% period + 1L)
+    for (stem in names(idx)) {
+      cs <- cols_of(stem)
+      if (!length(cs) || is.null(idx[[stem]])) next
+      add(dr[keep, cs, drop = FALSE][, idx[[stem]], drop = FALSE])
+    }
+  }
+  if (!is.null(out)) dimnames(out) <- NULL
+  out
 }
 
 # The one arm of a joint nested-Laplace fit, or NULL.
@@ -734,6 +823,10 @@
   if (!is.null(newdata)) {
     vc <- .varying_coef_eta_contrib(object, newdata, rows = keep)
     if (!is.null(vc)) eta <- eta + vc
+    gf <- if (latent && !is.null(keep)) {
+      .gibbs_field_eta_contrib(object, keep, ncol(eta), newdata)
+    }
+    if (!is.null(gf)) eta <- eta + gf
   }
 
   # The formula random effects `re_form` keeps: a fitted group's effect drawn
@@ -807,11 +900,11 @@
     if (!is.null(lf)) {
       eta <- sweep(eta, 2, as.numeric(lf$design$Z_field %*% lf$u), "+")
     }
-  } else if (is.matrix(object$draws) && !is.null(object$spatial)) {
-    # Polya-Gamma Gibbs fit: the field is actually SAMPLED (a
-    # `phi_spatial[k]` / `theta_spatial[k]` column per unit alongside the
-    # fixed effects in `$draws`), so every draw gets its own field value
-    # instead of a posterior mean (gcol33/tulpa#795).
+  } else if (is.matrix(object$draws) &&
+             (!is.null(object$spatial) || !is.null(object$temporal))) {
+    # Polya-Gamma Gibbs fit: the field is actually SAMPLED (its columns sit
+    # alongside the fixed effects in `$draws`), so every draw gets its own
+    # field value instead of a posterior mean (gcol33/tulpa#795).
     rows <- if (point || is.null(keep)) seq_len(nrow(object$draws)) else keep
     fc <- .gibbs_field_eta_contrib(object, rows, n_obs)
     if (!is.null(fc)) {
@@ -1159,7 +1252,8 @@ posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
 #'
 #' At `newdata`, a continuous spatial field (SPDE, GP / NNGP, HSGP) is drawn at
 #' the new locations from its conditional distribution given the fitted field,
-#' within each hyperparameter cell and mixed over the cells; these are the
+#' within each hyperparameter cell and mixed over the cells, and a field
+#' sampled by a Gibbs chain from its predictive given each draw; these are the
 #' draws [predict.tulpa_fit()] summarizes, so the two agree to Monte Carlo
 #' error.
 #'

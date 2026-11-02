@@ -2239,6 +2239,24 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   if (!is.null(src)) {
     eta <- .field_point_eta(object, src, newdata, sel)
   }
+  # A continuous field sampled by a Polya-Gamma Gibbs chain: each stored draw's
+  # field, at new locations its NNGP predictive given that draw
+  # (`.gibbs_field_eta_contrib()`), so the prediction is the mean of those
+  # draws and the interval their quantiles.
+  pinned_draws <- function() {
+    .tulpa_eta_draws(object, newdata = newdata,
+                     ndraws = .PREDICT_DRAWS$ndraws,
+                     synth_seed = .PREDICT_DRAWS$seed,
+                     re_form = re_form, latent = !is.null(src) || gibbs_gp)
+  }
+  gibbs_gp <- is.null(src) && isTRUE(include_field) &&
+    is.matrix(object$draws) && !is.list(object$model_inputs) &&
+    !is.null(object$spatial) && !is.null(.gibbs_gp_fields(object$spatial))
+  D <- NULL
+  if (gibbs_gp) {
+    D <- pinned_draws()
+    eta <- unname(colMeans(D))
+  }
 
   # Spatially / temporally varying coefficients: each posterior draw's
   # coefficient field at the newdata coordinates / times (the fitted rows when
@@ -2251,7 +2269,7 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   # mean of its effect, a new group at its prior mean, zero -- the conditional
   # point read fitted() uses (`.tulpa_re_point_eta()`).
   eta_fixed_fields <- eta
-  if (re_on && is.null(src)) {
+  if (re_on && is.null(src) && !gibbs_gp) {
     des <- if (is.null(newdata)) object$re_design
            else .tulpa_re_design_at(object, newdata)
     re_pt <- .tulpa_re_point_eta(object, des, sel, accessor = "predict")
@@ -2265,18 +2283,15 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   }
 
   z  <- stats::qnorm(1 - (1 - level) / 2)
-  if (re_on || !is.null(src)) {
+  if (re_on || !is.null(src) || gibbs_gp) {
     # The interval is read over pinned, RNG-neutral draws: on a continuous-field
     # fit the field at the rows with the coefficients, otherwise the fixed
     # effects with each row's group effects -- a fitted group's from its
     # conditional given the row's fixed effects, a new group's from the term's
     # covariance -- so a new group's band carries the between-group spread.
-    D <- .tulpa_eta_draws(object, newdata = newdata,
-                          ndraws = .PREDICT_DRAWS$ndraws,
-                          synth_seed = .PREDICT_DRAWS$seed,
-                          re_form = re_form, latent = !is.null(src))
+    if (is.null(D)) D <- pinned_draws()
     lz <- attr(D, "logit_zi")
-    if (is.null(src)) {
+    if (is.null(src) && !gibbs_gp) {
       in_draws <- if (!is.null(newdata) && !is.null(vc_eta)) colMeans(vc_eta)
                   else lp$eta
       D <- sweep(D, 2L, eta_fixed_fields - in_draws, "+")

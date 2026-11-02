@@ -61,7 +61,8 @@ Every other fit summarizes its draws.
 
 At \code{newdata}, a continuous spatial field (SPDE, GP / NNGP, HSGP) is drawn at
 the new locations from its conditional distribution given the fitted field,
-within each hyperparameter cell and mixed over the cells; these are the
+within each hyperparameter cell and mixed over the cells, and a field
+sampled by a Gibbs chain from its predictive given each draw; these are the
 draws \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}} summarizes, so the two agree to Monte Carlo
 error.
 }

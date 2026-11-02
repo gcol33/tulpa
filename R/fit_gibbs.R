@@ -722,6 +722,10 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
     ), call. = FALSE)
   }
 
+  # The field spec travels with the chain, so the linear-predictor readers map
+  # its sampled columns to the observations (`.gibbs_field_eta_contrib()`).
+  res$spatial  <- res$spatial %||% spatial
+  res$temporal <- res$temporal %||% temporal
   # Finalize so direct callers get a real tulpa_fit (print/coef/summary
   # dispatch) instead of the raw draw list; tulpa_dispatch re-finalizing the
   # routed path is a no-op (every field fills with %||%).
