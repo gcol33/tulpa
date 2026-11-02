@@ -228,7 +228,7 @@ tulpa_check_control <- function(control, allowed, where) {
              # entry bundle (gcol33/tulpa#699); it hand-rolled its driver call
              # and hardcoded prune_tol = 0 before that.
              "prune", "prune_tol", "prune_log_gap", "screen_iters",
-             "fitted_var", "subspace_debias", "cila"),
+             "fitted_var", "subspace_debias", "cila", progress),
     re_cov_nested = c("integration", "n_per_axis", "span", "n_draws", "seed",
                       "max_iter", "tol", "n_threads", "diagnose_k",
                       "k_samples", "k_threads", "k_tail_points", "checkpoint",

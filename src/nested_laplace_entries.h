@@ -46,7 +46,11 @@ Rcpp::List cpp_nested_laplace_icar(
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 ,
-    Rcpp::Nullable<Rcpp::List> beta_prior);
+    Rcpp::Nullable<Rcpp::List> beta_prior,
+    bool progress,
+    int progress_every,
+    double progress_throttle,
+    std::string progress_file);
 
 Rcpp::List cpp_nested_laplace_bym2(
     Rcpp::NumericVector y,
@@ -82,7 +86,11 @@ Rcpp::List cpp_nested_laplace_bym2(
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset,
     Rcpp::Nullable<Rcpp::NumericVector> node_prec
 ,
-    Rcpp::Nullable<Rcpp::List> beta_prior);
+    Rcpp::Nullable<Rcpp::List> beta_prior,
+    bool progress,
+    int progress_every,
+    double progress_throttle,
+    std::string progress_file);
 
 Rcpp::List cpp_nested_laplace_car_proper(
     Rcpp::NumericVector y,
@@ -116,7 +124,11 @@ Rcpp::List cpp_nested_laplace_car_proper(
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 ,
-    Rcpp::Nullable<Rcpp::List> beta_prior);
+    Rcpp::Nullable<Rcpp::List> beta_prior,
+    bool progress,
+    int progress_every,
+    double progress_throttle,
+    std::string progress_file);
 
 Rcpp::List cpp_nested_laplace_temporal(
     Rcpp::NumericVector y,
@@ -150,7 +162,11 @@ Rcpp::List cpp_nested_laplace_temporal(
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 ,
-    Rcpp::Nullable<Rcpp::List> beta_prior);
+    Rcpp::Nullable<Rcpp::List> beta_prior,
+    bool progress,
+    int progress_every,
+    double progress_throttle,
+    std::string progress_file);
 
 Rcpp::List cpp_nested_laplace_nngp(
     Rcpp::NumericVector y,
@@ -187,7 +203,11 @@ Rcpp::List cpp_nested_laplace_nngp(
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 ,
-    Rcpp::Nullable<Rcpp::List> beta_prior);
+    Rcpp::Nullable<Rcpp::List> beta_prior,
+    bool progress,
+    int progress_every,
+    double progress_throttle,
+    std::string progress_file);
 
 Rcpp::List cpp_nested_laplace_hsgp(
     Rcpp::NumericVector y,
@@ -218,7 +238,11 @@ Rcpp::List cpp_nested_laplace_hsgp(
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 ,
-    Rcpp::Nullable<Rcpp::List> beta_prior);
+    Rcpp::Nullable<Rcpp::List> beta_prior,
+    bool progress,
+    int progress_every,
+    double progress_throttle,
+    std::string progress_file);
 
 Rcpp::List cpp_nested_laplace_st_icar(
     Rcpp::NumericVector y,
@@ -258,7 +282,11 @@ Rcpp::List cpp_nested_laplace_st_icar(
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 ,
-    Rcpp::Nullable<Rcpp::List> beta_prior);
+    Rcpp::Nullable<Rcpp::List> beta_prior,
+    bool progress,
+    int progress_every,
+    double progress_throttle,
+    std::string progress_file);
 
 Rcpp::List cpp_nested_laplace_st_car_proper(
     Rcpp::NumericVector y,
@@ -299,7 +327,11 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 ,
-    Rcpp::Nullable<Rcpp::List> beta_prior);
+    Rcpp::Nullable<Rcpp::List> beta_prior,
+    bool progress,
+    int progress_every,
+    double progress_throttle,
+    std::string progress_file);
 
 Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::NumericVector y,
@@ -342,7 +374,11 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset,
     Rcpp::Nullable<Rcpp::NumericVector> node_prec
 ,
-    Rcpp::Nullable<Rcpp::List> beta_prior);
+    Rcpp::Nullable<Rcpp::List> beta_prior,
+    bool progress,
+    int progress_every,
+    double progress_throttle,
+    std::string progress_file);
 
 Rcpp::List cpp_nested_laplace_st_hsgp(
     Rcpp::NumericVector y,
@@ -379,7 +415,11 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 ,
-    Rcpp::Nullable<Rcpp::List> beta_prior);
+    Rcpp::Nullable<Rcpp::List> beta_prior,
+    bool progress,
+    int progress_every,
+    double progress_throttle,
+    std::string progress_file);
 
 Rcpp::List cpp_nested_laplace_st_nngp(
     Rcpp::NumericVector y,
@@ -422,7 +462,11 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 ,
-    Rcpp::Nullable<Rcpp::List> beta_prior);
+    Rcpp::Nullable<Rcpp::List> beta_prior,
+    bool progress,
+    int progress_every,
+    double progress_throttle,
+    std::string progress_file);
 
 Rcpp::List cpp_nested_laplace_spde(
     Rcpp::NumericVector y,
@@ -463,6 +507,10 @@ Rcpp::List cpp_nested_laplace_spde(
     bool compute_fitted_var,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 ,
-    Rcpp::Nullable<Rcpp::List> beta_prior);
+    Rcpp::Nullable<Rcpp::List> beta_prior,
+    bool progress,
+    int progress_every,
+    double progress_throttle,
+    std::string progress_file);
 
 #endif // TULPA_NESTED_LAPLACE_ENTRIES_H

@@ -18,6 +18,7 @@
 #include "nested_laplace_joint_core.h" // ParsedArm, JointArm
 #include "nested_laplace_joint_multi.h"
 #include "nested_laplace_multi.h"
+#include <tulpa/nested_progress.h>
 #include <Rcpp.h>
 #include <cstdint>
 #include <memory>
@@ -80,6 +81,12 @@ struct NlEntryInputs {
     // The fixed-effect prior (`list(mean =, sd =)` at the entry); empty is the
     // kernel default, DEFAULT_SIGMA_BETA.
     BetaPrior beta_prior;
+    // The outer-grid progress reporter (tulpa/nested_progress.h): the console
+    // line under `progress`, the heartbeat file whenever `progress_file` is set.
+    bool        progress          = false;
+    int         progress_every    = 0;
+    double      progress_throttle = 2.0;
+    std::string progress_file;
 
     int N() const { return static_cast<int>(y.size()); }
     ScreenOffset screen_offset() const {
@@ -95,17 +102,18 @@ inline void nl_attach_axes(Rcpp::List& out, const NlAxisOut& axes) {
     for (const auto& a : axes) out[a.first] = a.second;
 }
 
-// Checkpoint, probe indices and the two options unwraps, held together for the
-// duration of one driver call: the driver takes borrowed pointers into all of
-// them.
+// Checkpoint, progress reporter, probe indices and the two options unwraps,
+// held together for the duration of one driver call: the driver takes borrowed
+// pointers into all of them.
 struct NlEntryRun {
     std::unique_ptr<GridCheckpoint> ckpt;
+    std::unique_ptr<tulpa_progress::GridProgress> progress;
     std::vector<int>                skew_idx_vec;
     const std::vector<int>*         skew_idx_ptr = nullptr;
     DebiasRequest                   debias_req;
     CilaRequest                     cila_req;
 
-    NlEntryRun(const NlEntryInputs& in, std::uint64_t struct_seed,
+    NlEntryRun(const NlEntryInputs& in, int n_grid, std::uint64_t struct_seed,
                const std::vector<Rcpp::NumericVector>& ckpt_axes)
         : ckpt(make_nl_grid_checkpoint(
               in.checkpoint_path, struct_seed, in.max_iter, in.tol,
@@ -115,7 +123,14 @@ struct NlEntryRun {
                                        skew_idx_vec)),
           debias_req(in.debias),
           cila_req(in.cila)
-    {}
+    {
+        if (in.progress || !in.progress_file.empty()) {
+            progress.reset(new tulpa_progress::GridProgress(
+                "nested-laplace", n_grid, in.progress_every,
+                in.progress_throttle, in.progress_file,
+                /*emit_console=*/in.progress));
+        }
+    }
 };
 
 // LatentBlock outer-grid driver (icar / bym2 / car_proper / temporal).
@@ -127,7 +142,7 @@ inline Rcpp::List nl_run_multi_block_entry(
     const std::vector<LatentBlock>& blocks,
     const NlAxisOut& out_axes
 ) {
-    NlEntryRun run(in, struct_seed, ckpt_axes);
+    NlEntryRun run(in, n_grid, struct_seed, ckpt_axes);
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, in.y, in.n_trials, in.X, in.re_idx,
         in.N(), in.p(), in.n_re_groups, in.sigma_re,
@@ -136,7 +151,7 @@ inline Rcpp::List nl_run_multi_block_entry(
         /*store_modes=*/true, in.x_init,
         in.store_Q, /*n_threads_outer=*/1, in.prune_tol,
         /*ext_spec=*/nullptr, /*ext_response=*/nullptr,
-        /*progress=*/nullptr, run.ckpt.get(),
+        run.progress.get(), run.ckpt.get(),
         in.compute_skew, run.skew_idx_ptr,
         run.debias_req.ptr, run.cila_req.ptr,
         in.screen_iters, in.compute_fitted_var,
@@ -196,6 +211,10 @@ Rcpp::List nl_run_joint_sparse_entry(
         nl_in_.offset             = offset_nullable;                       \
         nl_in_.screen_log_offset  = screen_log_offset;                     \
         nl_in_.beta_prior = tulpa::read_beta_prior(beta_prior, X.ncol());  \
+        nl_in_.progress          = progress;                               \
+        nl_in_.progress_every    = progress_every;                         \
+        nl_in_.progress_throttle = progress_throttle;                      \
+        nl_in_.progress_file     = progress_file;                          \
         return nl_in_;                                                     \
     }())
 

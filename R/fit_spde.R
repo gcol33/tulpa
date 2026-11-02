@@ -95,6 +95,11 @@
 #'       to `path`; a `resume = TRUE` run loads the finished cells and re-solves
 #'       only the rest, so a killed or rebooted fit resumes instead of
 #'       restarting. `resume = FALSE` starts a fresh file. Default `NULL` (off).
+#'     \item `progress`, `progress.every`, `progress.file`,
+#'       `progress.throttle`: the integration grid's progress reporter, as on
+#'       [tulpa_nested_laplace()]: whether to print (default `TRUE`), every how
+#'       many cells, a heartbeat file to overwrite, and the minimum seconds
+#'       between lines. The mode-find and Pareto-k solves do not report.
 #'   }
 #'
 #' @return A list with:
@@ -298,6 +303,10 @@ fit_spde <- function(y, X, spatial,
   # `keep_Q = TRUE` retains each cell's joint precision, which the final
   # integration grid reads its per-node field variances from
   # (`.spde_nested_record()`); the mode-find and diagnostic calls do not need it.
+  # The same call is the fit's integration grid, so it is the one that reports
+  # progress; the mode-find and k-hat solves stay quiet.
+  progress_grid <- .nl_progress_args(control)
+  progress_off  <- .nl_progress_args(list(progress = FALSE))
   spde_log_marginal <- function(range_vec, sigma_vec, keep_Q = FALSE) {
     if (is_frac) {
       K  <- length(range_vec)
@@ -327,7 +336,11 @@ fit_spde <- function(y, X, spatial,
         # prior on (log range, log sigma), so a screened solve ranks with both.
         screen_log_offset = if (prune_tol_eff > 0)
                               .spde_log_hyperprior(range_vec, sigma_vec, sp,
-                                                   hyperprior)))
+                                                   hyperprior),
+        progress = (if (keep_Q) progress_grid else progress_off)$progress,
+        progress_every = progress_grid$progress_every,
+        progress_throttle = progress_grid$progress_throttle,
+        progress_file = (if (keep_Q) progress_grid else progress_off)$progress_file))
   }
 
   # Analytic (log range, log sigma) gradient of the log-marginal, for the CCD

@@ -17,7 +17,7 @@ Rcpp::List nl_run_joint_sparse_entry(
     int n_x,
     const NlAxisOut& out_axes
 ) {
-    NlEntryRun run(in, struct_seed, ckpt_axes);
+    NlEntryRun run(in, n_grid, struct_seed, ckpt_axes);
     for (auto& pa : parsed) apply_beta_prior(pa, in.beta_prior);
     Rcpp::List out = run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, arms, parsed, blocks, n_x,
@@ -33,7 +33,7 @@ Rcpp::List nl_run_joint_sparse_entry(
         /*n_cells=*/0,
         JointPDMode::LM, StepCurvature::Observed,
         /*hessian_refresh=*/1, /*n_threads_outer=*/1,
-        /*progress=*/nullptr, run.ckpt.get(),
+        run.progress.get(), run.ckpt.get(),
         /*x_init_per_cell=*/std::vector<double>(),
         in.compute_skew, run.skew_idx_ptr,
         /*fixed_block=*/nullptr, run.debias_req.ptr, run.cila_req.ptr,

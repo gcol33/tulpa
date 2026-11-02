@@ -751,11 +751,15 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # Every full-grid solve of this fit -- the first one and the placement pass's
   # refit -- is screened at the same tolerance and gated the same way, so no
   # reported grid is a pruned one whose screen ranking was unreliable.
+  # The grid solves report progress; the refinement, stencil and k-hat
+  # re-dispatches below run on `cargs` alone and stay quiet.
+  cargs_grid <- c(cargs, .nl_progress_args(control))
   solve_grid <- function(prior_i) {
     out <- .nl_prune_gate(
-      .nl_dispatch(type, cargs, prior_i, prior_i),
+      .nl_dispatch(type, cargs_grid, prior_i, prior_i),
       prune_tol_eff,
-      function() .nl_dispatch(type, utils::modifyList(cargs, list(prune_tol = 0)),
+      function() .nl_dispatch(type,
+                              utils::modifyList(cargs_grid, list(prune_tol = 0)),
                               prior_i, prior_i))
     .nl_refine_registry(
       out, function(theta_mat, screen = NULL) {

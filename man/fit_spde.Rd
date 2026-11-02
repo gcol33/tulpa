@@ -140,6 +140,11 @@ the relative-reduction stop in units of \code{.Machine$double.eps} (default
 to \code{path}; a \code{resume = TRUE} run loads the finished cells and re-solves
 only the rest, so a killed or rebooted fit resumes instead of
 restarting. \code{resume = FALSE} starts a fresh file. Default \code{NULL} (off).
+\item \code{progress}, \code{progress.every}, \code{progress.file},
+\code{progress.throttle}: the integration grid's progress reporter, as on
+\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}: whether to print (default \code{TRUE}), every how
+many cells, a heartbeat file to overwrite, and the minimum seconds
+between lines. The mode-find and Pareto-k solves do not report.
 }}
 }
 \value{
