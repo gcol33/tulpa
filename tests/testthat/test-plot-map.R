@@ -38,5 +38,39 @@ test_that("plot_map and plot_map_panel build maps from a spatial fit", {
 
   # A fit without stored coordinates and no `coords` errors clearly rather than
   # failing deep inside a data.frame() row-mismatch.
-  expect_error(plot_map(fit), "no point coordinates")
+  expect_error(plot_map(fit), "records no coordinate columns")
+})
+
+test_that("plot_map reads the fit's own coordinate columns, not a column named x", {
+  skip_on_cran()
+  skip_if_not_installed("ggplot2")
+  set.seed(5)
+  n <- 120L
+  d <- data.frame(lon = runif(n), lat = runif(n), x = rnorm(n))
+  d$y <- rpois(n, exp(0.3 + 0.4 * d$x + sin(3 * d$lon)))
+  fit <- tulpa(y ~ x, data = d, family = "poisson",
+               spatial = spatial_gp(~ lon + lat, approx = "hsgp", m = 6))
+  g <- expand.grid(lon = seq(0.1, 0.9, length.out = 5),
+                   lat = seq(0.1, 0.9, length.out = 4))
+  nd <- data.frame(g, x = 0)
+
+  pd <- tulpa:::prepare_map_data_from_fit(fit, "fitted", "mean", nd)
+  expect_equal(pd$x, nd$lon)
+  expect_equal(pd$y, nd$lat)
+  expect_equal(pd$value, predict(fit, newdata = nd, type = "response"))
+
+  # At the training rows the map sits at the coordinates the data gave, the
+  # field's standardization undone.
+  pt <- tulpa:::prepare_map_data_from_fit(fit, "fitted", "mean", NULL)
+  expect_equal(pt$x, d$lon, tolerance = 1e-10)
+  expect_equal(pt$y, d$lat, tolerance = 1e-10)
+
+  p <- plot_map(fit, newdata = nd)
+  expect_s3_class(p, "ggplot")
+  legend <- vapply(p$scales$scales, function(sc) as.character(sc$name)[1L],
+                   character(1))
+  expect_true("Mean" %in% legend)
+  expect_error(plot_map(fit, newdata = nd, summary = "median"),
+               "no posterior median")
+  expect_error(plot_map(fit, newdata = nd[, c("lon", "x")]), "lat")
 })

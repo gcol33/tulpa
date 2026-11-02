@@ -8,7 +8,7 @@ plot_map(
   x,
   coords = NULL,
   what = c("fitted", "uncertainty"),
-  summary = c("median", "mean", "q2.5", "q97.5", "sd"),
+  summary = c("mean", "median", "q2.5", "q97.5", "sd"),
   newdata = NULL,
   title = NULL,
   palette = "viridis",
@@ -27,14 +27,19 @@ containing predictions with coordinate columns.}
 
 \item{coords}{A data frame or matrix with spatial coordinates (columns
 named 'x'/'y', 'X'/'Y', 'lon'/'lat', 'longitude'/'latitude', or
-'Easting'/'Northing'). Required if \code{x} is a data frame.}
+'Easting'/'Northing'). Required if \code{x} is a data frame, and for a fit
+whose spatial field records no coordinate columns (an areal field). A fit
+with a continuous field is mapped at the coordinate columns it was fitted
+with, read from \code{newdata} or, at the training rows, from the fit.}
 
 \item{what}{What to plot: "fitted" (default, the response-scale point
 prediction) or "uncertainty" (the 95\% credible-interval width).}
 
-\item{summary}{Which summary statistic for \code{what = "fitted"}: "median"
-(default) / "mean" (both the point prediction), "q2.5" / "q97.5" (the
-credible bounds), or "sd" (the link-scale standard error).}
+\item{summary}{Which summary statistic for \code{what = "fitted"}: "mean"
+(default; for a fit, the point prediction of \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}}, the
+inverse link at the posterior mean of the linear predictor), "q2.5" /
+"q97.5" (the credible bounds), "sd" (the link-scale standard error), or
+"median" (a data frame's \code{median} column; a fit reports no median).}
 
 \item{newdata}{Optional data frame with prediction locations and covariates.
 If NULL and \code{x} is a tulpa_fit, uses fitted values at observed locations.}

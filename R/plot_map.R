@@ -9,12 +9,17 @@
 #'   containing predictions with coordinate columns.
 #' @param coords A data frame or matrix with spatial coordinates (columns
 #'   named 'x'/'y', 'X'/'Y', 'lon'/'lat', 'longitude'/'latitude', or
-#'   'Easting'/'Northing'). Required if `x` is a data frame.
+#'   'Easting'/'Northing'). Required if `x` is a data frame, and for a fit
+#'   whose spatial field records no coordinate columns (an areal field). A fit
+#'   with a continuous field is mapped at the coordinate columns it was fitted
+#'   with, read from `newdata` or, at the training rows, from the fit.
 #' @param what What to plot: "fitted" (default, the response-scale point
 #'   prediction) or "uncertainty" (the 95% credible-interval width).
-#' @param summary Which summary statistic for `what = "fitted"`: "median"
-#'   (default) / "mean" (both the point prediction), "q2.5" / "q97.5" (the
-#'   credible bounds), or "sd" (the link-scale standard error).
+#' @param summary Which summary statistic for `what = "fitted"`: "mean"
+#'   (default; for a fit, the point prediction of [predict.tulpa_fit()], the
+#'   inverse link at the posterior mean of the linear predictor), "q2.5" /
+#'   "q97.5" (the credible bounds), "sd" (the link-scale standard error), or
+#'   "median" (a data frame's `median` column; a fit reports no median).
 #' @param newdata Optional data frame with prediction locations and covariates.
 #'   If NULL and `x` is a tulpa_fit, uses fitted values at observed locations.
 #' @param title Plot title. If NULL, auto-generated based on `what`.
@@ -86,7 +91,7 @@
 plot_map <- function(x,
                      coords = NULL,
                      what = c("fitted", "uncertainty"),
-                     summary = c("median", "mean", "q2.5", "q97.5", "sd"),
+                     summary = c("mean", "median", "q2.5", "q97.5", "sd"),
                      newdata = NULL,
                      title = NULL,
                      palette = "viridis",
@@ -113,7 +118,7 @@ plot_map <- function(x,
   if (inherits(x, "tulpa_fit")) {
     plot_data <- prepare_map_data_from_fit(x, what, summary, newdata, coords)
     obs_coords <- if (!is.null(coords)) extract_coords(coords)
-                  else extract_coords_from_fit(x)
+                  else fit_map_coords(x, NULL)
   } else if (is.data.frame(x)) {
     if (is.null(coords)) {
       stop("'coords' must be provided when 'x' is a data frame", call. = FALSE)
@@ -168,29 +173,36 @@ plot_map <- function(x,
 prepare_map_data_from_fit <- function(fit, what, summary, newdata, coords = NULL) {
 
   # Response-scale prediction with credible bounds from the generic engine:
-  # data.frame(fit, se.fit, lower, upper). Includes the spatial field for a
-  # mesh-backed SPDE fit and the fixed-effect prediction otherwise. Coordinates
-  # come from `newdata`, then an explicit `coords`, then the fit itself (many
-  # areal fits, e.g. ICAR/CAR, carry no point coordinates -- pass `coords`).
-  if (!is.null(newdata)) {
-    pred   <- predict(fit, newdata = newdata, se.fit = TRUE, type = "response")
-    coords <- extract_coords(newdata)
-  } else {
-    pred   <- predict(fit, se.fit = TRUE, type = "response")
-    coords <- if (!is.null(coords)) extract_coords(coords)
-              else extract_coords_from_fit(fit)
+  # data.frame(fit, se.fit, lower, upper). The map's coordinates are an
+  # explicit `coords`, else the coordinate columns of the fit's own spatial
+  # field (`fit_map_coords()`): many areal fits, e.g. ICAR/CAR, carry no point
+  # coordinates, and then `coords` is required.
+  if (identical(summary, "median")) {
+    stop("plot_map(): predict() reports no posterior median for a fit; use ",
+         "summary = \"mean\" for its point prediction.", call. = FALSE)
   }
+  pred <- if (!is.null(newdata)) {
+    predict(fit, newdata = newdata, se.fit = TRUE, type = "response")
+  } else {
+    predict(fit, se.fit = TRUE, type = "response")
+  }
+  coords <- if (!is.null(coords)) extract_coords(coords)
+            else fit_map_coords(fit, newdata)
   if (is.null(coords)) {
-    stop("plot_map(): the fit carries no point coordinates; pass `coords` ",
-         "(a data frame / matrix of x-y locations, one row per observation).",
+    stop("plot_map(): the fit's spatial field records no coordinate columns; ",
+         "pass `coords` (a data frame / matrix of x-y locations, one row per ",
+         if (is.null(newdata)) "observation" else "row of `newdata`", ").",
          call. = FALSE)
+  }
+  if (nrow(coords) != nrow(pred)) {
+    stop("plot_map(): `coords` has ", nrow(coords), " row(s) for ",
+         nrow(pred), " prediction(s).", call. = FALSE)
   }
 
   value <- if (what == "uncertainty") {
     pred$upper - pred$lower           # 95% credible-interval width
   } else {
     switch(summary,
-      median = pred$fit,              # point prediction (posterior mean)
       mean   = pred$fit,
       q2.5   = pred$lower,
       q97.5  = pred$upper,
@@ -286,47 +298,42 @@ extract_coords <- function(x) {
 }
 
 
-#' Extract coordinates from tulpa_fit object
+#' The map coordinates of a fit's rows
+#'
+#' The coordinate columns the fit's spatial field was fitted with: at `newdata`
+#' those columns of `newdata`, at the training rows (`newdata = NULL`) the
+#' field's own per-observation coordinates on the scale they were given in
+#' (the training standardization undone). NULL for a field that records no
+#' coordinate columns.
 #'
 #' @noRd
-extract_coords_from_fit <- function(fit) {
-
-  # Check various locations where coords might be stored
-  if (!is.null(fit$coords)) {
-    return(extract_coords(fit$coords))
-  }
-
-  # Continuous-field spatial specs (gp, hsgp, multiscale, svc, spde) carry
-  # per-observation point coordinates on the validated spec itself:
-  # `coords_matrix` for gp/hsgp/multiscale/svc, `obs_coords` for spde, and
-  # `unique_coords[obs_to_loc, ]` as the gp fallback when only the
-  # deduplicated locations were kept.
+fit_map_coords <- function(fit, newdata) {
   sp <- fit$spatial
-  if (!is.null(sp)) {
-    sp_coords <- sp$coords_matrix %||% sp$obs_coords %||%
-      (if (!is.null(sp$unique_coords) && !is.null(sp$obs_to_loc)) {
-        sp$unique_coords[sp$obs_to_loc, , drop = FALSE]
-      })
-    if (!is.null(sp_coords)) {
-      coords <- tryCatch(extract_coords(sp_coords), error = function(e) NULL)
-      if (!is.null(coords)) return(coords)
+  vars <- sp$coord_vars %||%
+    (if (inherits(sp$coord_formula, "formula")) all.vars(sp$coord_formula))
+  if (!is.null(newdata)) {
+    if (length(vars) != 2L) return(NULL)
+    miss <- setdiff(vars, names(newdata))
+    if (length(miss)) {
+      stop("plot_map(): newdata is missing the coordinate column(s) the ",
+           "spatial field was fitted on: ", paste(miss, collapse = ", "),
+           call. = FALSE)
     }
+    return(data.frame(x = newdata[[vars[1L]]], y = newdata[[vars[2L]]]))
   }
-
-  if (!is.null(fit$data)) {
-    coords <- tryCatch(
-      extract_coords(fit$data),
-      error = function(e) NULL
-    )
-    if (!is.null(coords)) return(coords)
+  if (is.null(sp)) return(NULL)
+  cm <- sp$obs_coords %||% sp$coords_matrix %||%
+    (if (!is.null(sp$unique_coords) && !is.null(sp$obs_to_loc)) {
+      sp$unique_coords[sp$obs_to_loc, , drop = FALSE]
+    })
+  if (is.null(cm) || NCOL(cm) != 2L) return(NULL)
+  ctr <- attr(sp$coords_matrix, "scaled:center")
+  scl <- attr(sp$coords_matrix, "scaled:scale")
+  cm <- as.matrix(cm)
+  if (is.null(sp$obs_coords) && !is.null(ctr) && !is.null(scl)) {
+    cm <- sweep(sweep(cm, 2, scl, "*"), 2, ctr, "+")
   }
-
-  if (!is.null(fit$stan_data$coords)) {
-    return(extract_coords(fit$stan_data$coords))
-  }
-
-  # Return NULL if no coords found (will skip point overlay)
-  NULL
+  data.frame(x = as.numeric(cm[, 1L]), y = as.numeric(cm[, 2L]))
 }
 
 
