@@ -85,9 +85,14 @@
 # a corrected marginal (EB's `cov_marginal`) it keeps that correction on beta.
 #' @keywords internal
 .laplace_re_conditional_draws <- function(object, beta, n_re) {
-  H <- object$H_latent
-  mode <- object$mode
-  nf <- object$n_fixed %||% 0L
+  .gaussian_re_conditional_draws(object$H_latent, object$mode,
+                                 object$n_fixed %||% 0L, beta, n_re)
+}
+
+# The conditional draw of `.laplace_re_conditional_draws()` for one Gaussian
+# latent posterior N(mode, H^-1) over [fixed (nf) | random effects (n_re)].
+#' @keywords internal
+.gaussian_re_conditional_draws <- function(H, mode, nf, beta, n_re) {
   if (is.null(H) || !is.numeric(mode) || nf < 1L || n_re < 1L ||
       !is.matrix(beta) || ncol(beta) != nf ||
       nrow(H) != nf + n_re || length(mode) != nrow(H)) {
@@ -111,13 +116,44 @@
   t(b)
 }
 
+# Random-effect draws (S x n_re) on a node mixture: a nested fit over the
+# random-effect covariance (`tulpa_re_cov_nested()`) draws each fixed-effect row
+# from one integration node (`draw_nodes`, aligned with the rows of `$draws`),
+# and that node's inner Laplace solve is a joint Gaussian over [beta | b]
+# (`latent_nodes[[k]]`: its mode and observed-curvature precision). Each row's
+# random effects are drawn from the Gaussian conditional given its beta at the
+# node it came from, so the pair is a draw from that node's joint posterior and
+# the rows together sample the mixture over Sigma. `keep` indexes the stored
+# rows `beta` was taken from. NULL when the fit carries no node mixture, or a
+# picked node carries no precision.
+#' @keywords internal
+.node_re_conditional_draws <- function(object, beta, keep, n_re) {
+  nodes <- object$latent_nodes
+  picks <- object$draw_nodes
+  if (!is.list(nodes) || is.null(picks) || is.null(keep)) return(NULL)
+  picks <- picks[keep]
+  if (length(picks) != nrow(beta) || anyNA(picks)) return(NULL)
+  out <- matrix(NA_real_, nrow(beta), n_re)
+  for (k in unique(picks)) {
+    rows <- which(picks == k)
+    nd <- nodes[[k]]
+    if (!is.list(nd)) return(NULL)
+    b <- .gaussian_re_conditional_draws(nd$H, nd$mode, length(nd$mode) - n_re,
+                                        beta[rows, , drop = FALSE], n_re)
+    if (is.null(b)) return(NULL)
+    out[rows, ] <- b
+  }
+  out
+}
+
 # Random-effect coefficient draws (S x n_re, group-major / coef-within-group)
 # paired row for row with the fixed-effect draws `beta` that
 # `.fixed_coef_draws()` returned alongside `keep`. The one resolution order
 # posterior_predict() and tulpa_simulate(theta = fit) share: the fit's own RE
-# draws (rows `keep`), else a Laplace / EB conditional draw given `beta`, else
+# draws (rows `keep`), else the conditional draw at each row's integration node
+# on a node-mixture fit, else a Laplace / EB conditional draw given `beta`, else
 # the point value repeated on every row. NULL when the fit carries none of the
-# three, so a caller decides what a missing RE block means rather than reading
+# four, so a caller decides what a missing RE block means rather than reading
 # it as zero (gcol33/tulpa#891).
 #' @keywords internal
 .tulpa_re_coef_draws <- function(object, beta, keep, n_re) {
@@ -126,6 +162,8 @@
     if (!is.null(keep)) rd <- rd[keep, , drop = FALSE]
     return(rd)
   }
+  rd <- .node_re_conditional_draws(object, beta, keep, n_re)
+  if (!is.null(rd)) return(rd)
   rd <- .laplace_re_conditional_draws(object, beta, n_re)
   if (!is.null(rd)) return(rd)
   b <- .tulpa_re_point(object, n_re)

@@ -1738,6 +1738,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'     positions within the random-effect block. [ranef()] reports those rows
 #'     empirically and the rest from the Gaussian mixture, recording which in
 #'     its `source` column.
+#'   - `latent_nodes`, `draw_nodes`: each integration node's joint Gaussian
+#'     over the fixed and random effects (`mode`, observed-curvature precision
+#'     `H`), and the node each row of `draws` was taken from.
+#'     [posterior_predict()] and the WAIC / LOO criteria draw each row's random
+#'     effects from that node's conditional given the row's fixed effects.
+#'     `NULL` at `n_quad > 1`.
 #'   - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`, `layout`,
 #'     `n_blocks`, `n_coefs` (vector of per-block `c`).
 #'   - `subspace_debias`: present only when `control$subspace_debias` was set.
@@ -1906,7 +1912,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     layout = lapply(layout, function(b) b[c("k", "nc", "full")]),
     theta_grid = theta_grid, max_iter = max_iter, tol = tol,
     beta_prior = beta_prior, n_quad = n_quad, re_cov = re_cond,
-    debias = debias_arg))
+    latent_precision = re_cond, debias = debias_arg))
 
   # --- evaluate inner marginal + derived quantities per cell ----------------
   # One FULL Laplace solve per node: the log-marginal feeds the integration
@@ -1929,6 +1935,11 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   debias_accept  <- rep(NA_real_, ng)
   re_nodes     <- if (re_cond) matrix(NA_real_, ng, n_re) else NULL
   re_var_nodes <- if (re_cond) matrix(NA_real_, ng, n_re) else NULL
+  # Each node's joint Gaussian over [beta | b]: its mode and its observed-
+  # curvature precision, whose Schur complement is the H_beta the fixed-effect
+  # draws are taken under. posterior_predict() draws a row's random effects
+  # from the conditional given its beta at the node the row came from.
+  latent_nodes <- if (re_cond) vector("list", ng) else NULL
   # The latent mode at the node nearest the proposal centre (the centre itself
   # on a CCD or an odd tensor), where the outer Pareto-k's importance draws
   # start their inner Newton iterations.
@@ -1942,7 +1953,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     if (!is.null(ckpt) && ckpt$has(key)) {
       fit_i <- ckpt$get(key)
     } else {
-      fit_i <- inner_fit(L_list, re_cov = re_cond, debias = debias_arg)
+      fit_i <- inner_fit(L_list, re_cov = re_cond, debias = debias_arg,
+                         joint_hessian = re_cond)
       if (!is.null(ckpt) && !is.null(fit_i) && !is.null(fit_i$mode) &&
           length(fit_i$log_marginal) == 1L && is.finite(fit_i$log_marginal)) {
         ckpt$save(key, fit_i)
@@ -1968,6 +1980,9 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
       # coefficient at this node.
       v <- .re_cov_block_variances(fit_i$cov_blocks, layout)
       if (!is.null(v)) re_var_nodes[i, ] <- v
+      if (!is.null(fit_i$H_latent)) {
+        latent_nodes[[i]] <- list(mode = fit_i$mode, H = fit_i$H_latent)
+      }
     }
   }
   # Cell weight = design weight (CCD: corrected INLA; grid: uniform) times the
@@ -2125,6 +2140,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     # which it used. Absent when the selected set contains no random effect.
     re_debias_draws = re_debias_draws,
     re_debias_idx   = re_debias_idx,
+    latent_nodes = latent_nodes,
+    draw_nodes   = if (is.null(ds)) NULL else ds$picks,
     ranef_unavailable = if (!re_cond) paste0(
       "the adaptive Gauss-Hermite inner marginal (n_quad > 1) integrates each ",
       "group's random effects out by quadrature instead of conditioning at ",

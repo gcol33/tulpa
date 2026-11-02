@@ -196,6 +196,12 @@ coordinates on the node mixture the fixed-effect draws use, and their
 positions within the random-effect block. \code{\link[=ranef]{ranef()}} reports those rows
 empirically and the rest from the Gaussian mixture, recording which in
 its \code{source} column.
+\item \code{latent_nodes}, \code{draw_nodes}: each integration node's joint Gaussian
+over the fixed and random effects (\code{mode}, observed-curvature precision
+\code{H}), and the node each row of \code{draws} was taken from.
+\code{\link[=posterior_predict]{posterior_predict()}} and the WAIC / LOO criteria draw each row's random
+effects from that node's conditional given the row's fixed effects.
+\code{NULL} at \code{n_quad > 1}.
 \item \code{theta_hat}, \code{theta_grid}, \code{weights}, \code{log_marginal}, \code{n_grid}, \code{layout},
 \code{n_blocks}, \code{n_coefs} (vector of per-block \code{c}).
 \item \code{subspace_debias}: present only when \code{control$subspace_debias} was set.
