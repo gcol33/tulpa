@@ -50,7 +50,9 @@ set it to a known / pre-estimated residual SD rather than the default.}
 
 \item{max_iter}{Optimiser iteration cap (default \code{200}).}
 
-\item{tol}{Convergence tolerance (default \code{1e-6}).}
+\item{tol}{Convergence tolerance: the fit stops once the Newton decrement of
+the negative log marginal likelihood, its estimated distance above the
+maximum in nats, is at most \code{tol} (default \code{1e-6}).}
 
 \item{verbose}{Print optimiser summary (default \code{FALSE}).}
 }

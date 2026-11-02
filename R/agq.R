@@ -40,7 +40,9 @@
 #' @param beta_init Initial fixed-effects (default zeros).
 #' @param sigma_init Initial RE SD (default `1`).
 #' @param max_iter Optimiser iteration cap (default `200`).
-#' @param tol Convergence tolerance (default `1e-6`).
+#' @param tol Convergence tolerance: the fit stops once the Newton decrement of
+#'   the negative log marginal likelihood, its estimated distance above the
+#'   maximum in nats, is at most `tol` (default `1e-6`).
 #' @param verbose Print optimiser summary (default `FALSE`).
 #'
 #' @return A list with class `tulpa_fit` carrying:
@@ -177,15 +179,18 @@ agq_fit <- function(y, X, group,
   # omits the curvature term and disagrees with the objective, so fall back to
   # optim's finite difference. The RE block is the scalar intercept (nc = 1,
   # diagonal), no theta ridge.
+  # The fit stops where the Newton decrement on the negative log marginal is at
+  # most `tol` (`.optim_to_stationary()`), a test in nats rather than relative
+  # to the likelihood's size.
   if (n_quad > 1L) {
     fns <- .aghq_analytic_optim_fns(orc, 1L, FALSE, n_quad, 1.0)
-    opt <- stats::optim(par = par_init, fn = fns$fn, gr = fns$gr, method = "BFGS",
-                        hessian = TRUE, control = list(maxit = max_iter, reltol = tol))
+    opt <- .optim_to_stationary(par_init, fns$fn, fns$gr, tol = tol,
+                                maxit = max_iter)
   } else {
     negf <- function(par)
       -cpp_aghq_objective(par, orc, 1L, FALSE, as.integer(n_quad), 1.0)
-    opt <- stats::optim(par = par_init, fn = negf, method = "BFGS", hessian = TRUE,
-                        control = list(maxit = max_iter, reltol = tol))
+    opt <- .optim_to_stationary(par_init, negf, NULL, tol = tol,
+                                maxit = max_iter)
   }
 
   # The objective reports a finite failure sentinel where a group's solve did
