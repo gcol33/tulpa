@@ -1702,6 +1702,16 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'       only the rest. `resume = FALSE` starts fresh. A file written for
 #'       different data, layout, or grid is rejected (fingerprint mismatch).
 #'       Default `NULL` (off).
+#'     \item `skew_correct`: `TRUE` (default) centres each integration node's
+#'       joint Gaussian over the fixed and random effects at the leading-order
+#'       posterior mean, `mode + Sigma A' (l''' * s) / 2` (the simplified-Laplace
+#'       location term of Rue, Martino & Chopin 2009, Sec 3.2.3), instead of at
+#'       the mode. A log-link count or a logit with few observations per group
+#'       has a skewed latent conditional whose mean sits off its mode, and the
+#'       fixed effects, [ranef()], [posterior_predict()] and the WAIC / LOO
+#'       criteria all read the node centres. `FALSE` keeps the mode. Off at
+#'       `n_quad > 1` and whenever the subspace debias runs. Which nodes were
+#'       centred is recorded in `mean_shift` on the returned fit.
 #'     \item `subspace_debias`: subspace debias, `FALSE` by
 #'       default. `TRUE` takes every default; a list overrides `band` (the
 #'       inner-reliability floor a coordinate is selected at, default `"ok"`),
@@ -1748,6 +1758,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'     [posterior_predict()] and the WAIC / LOO criteria draw each row's random
 #'     effects from that node's conditional given the row's fixed effects.
 #'     `NULL` at `n_quad > 1`.
+#'   - `mean_shift`: per node, `"applied"` where `control$skew_correct`
+#'     centred the node at the leading-order mean, otherwise the reason it
+#'     stayed at the mode. `NULL` when the centring was not requested.
 #'   - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`, `layout`,
 #'     `n_blocks`, `n_coefs` (vector of per-block `c`).
 #'   - `subspace_debias`: present only when `control$subspace_debias` was set.
@@ -1810,6 +1823,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                          control$k_threads)
   checkpoint  <- control$checkpoint
   sd_cfg      <- .subspace_debias_config(control$subspace_debias)
+  skew_correct <- isTRUE(control$skew_correct %||% .nl_diag("skew_correct"))
   n_quad <- .check_n_quad(n_quad)
   .seed_scoped(seed)
   # The stream the outer Pareto-k diagnostic draws its proposal sample from:
@@ -1915,13 +1929,24 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # posterior, which is what the per-group summary is marginalized from; it is a
   # node payload, so the fingerprint records it alongside the rest.
   re_cond <- isTRUE(core$re_conditional)
+  # The inner Laplace is a Gaussian at the joint MODE of [beta | b]. A skewed
+  # latent conditional (a log-link count, a logit with few observations per
+  # group) has its posterior mean off that mode, and every draw of the node
+  # mixture inherits the offset. Each node is therefore centred at the
+  # leading-order mean, mode + Sigma A' (l3 * s) / 2 (`inner_mean_shift`,
+  # src/inner_laplace_skew.h), the centre the `skew_correct` read of the
+  # nested-Laplace doors uses. A subspace-debiased coordinate is already drawn
+  # from the exact conditional about the mode, so the centring stays off when
+  # the debias runs.
+  mean_shift_on <- skew_correct && re_cond && is.null(debias_arg)
   ckpt <- .re_cov_node_checkpoint(checkpoint, fingerprint = list(
     y = as.numeric(y), n_trials = as.integer(n_trials), X = X,
     family = family, phi = phi, weights = weights,
     layout = lapply(layout, function(b) b[c("k", "nc", "full")]),
     theta_grid = theta_grid, max_iter = max_iter, tol = tol,
     beta_prior = beta_prior, n_quad = n_quad, re_cov = re_cond,
-    latent_precision = re_cond, debias = debias_arg))
+    latent_precision = re_cond, debias = debias_arg,
+    mean_shift = mean_shift_on))
 
   # --- evaluate inner marginal + derived quantities per cell ----------------
   # One FULL Laplace solve per node: the log-marginal feeds the integration
@@ -1949,6 +1974,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # draws are taken under. posterior_predict() draws a row's random effects
   # from the conditional given its beta at the node the row came from.
   latent_nodes <- if (re_cond) vector("list", ng) else NULL
+  mean_shift_node <- rep(NA_character_, ng)
   # The latent mode at the node nearest the proposal centre (the centre itself
   # on a CCD or an odd tensor), where the outer Pareto-k's importance draws
   # start their inner Newton iterations.
@@ -1963,7 +1989,9 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
       fit_i <- ckpt$get(key)
     } else {
       fit_i <- inner_fit(L_list, re_cov = re_cond, debias = debias_arg,
-                         joint_hessian = re_cond)
+                         joint_hessian = re_cond,
+                         compute_skew = mean_shift_on,
+                         skew_idx = if (mean_shift_on) seq_len(p_fix))
       if (!is.null(ckpt) && !is.null(fit_i) && !is.null(fit_i$mode) &&
           length(fit_i$log_marginal) == 1L && is.finite(fit_i$log_marginal)) {
         ckpt$save(key, fit_i)
@@ -1972,6 +2000,16 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     if (is.null(fit_i) || is.null(fit_i$mode) ||
         length(fit_i$log_marginal) != 1L || !is.finite(fit_i$log_marginal)) next
     if (i == i_centre && re_cond) x_centre <- fit_i$mode
+    if (mean_shift_on) {
+      ms <- fit_i$inner_mean_shift
+      if (is.numeric(ms) && length(ms) == length(fit_i$mode) &&
+          all(is.finite(ms))) {
+        fit_i$mode <- fit_i$mode + ms
+        mean_shift_node[i] <- "applied"
+      } else {
+        mean_shift_node[i] <- fit_i$inner_mean_shift_declined %||% "not_formed"
+      }
+    }
     lp_theta_nodes[i]  <- log_prior_theta(th)
     logm[i]            <- fit_i$log_marginal + lp_theta_nodes[i]
     beta_nodes[i, ]    <- fit_i$mode[seq_len(p_fix)]
@@ -2151,6 +2189,10 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     re_debias_idx   = re_debias_idx,
     latent_nodes = latent_nodes,
     draw_nodes   = if (is.null(ds)) NULL else ds$picks,
+    # Per node: "applied" where the latent Gaussian was centred at the
+    # leading-order mean, else the reason it stayed at the mode. NULL when the
+    # centring was not requested.
+    mean_shift  = if (mean_shift_on) mean_shift_node,
     ranef_unavailable = if (!re_cond) paste0(
       "the adaptive Gauss-Hermite inner marginal (n_quad > 1) integrates each ",
       "group's random effects out by quadrature instead of conditioning at ",

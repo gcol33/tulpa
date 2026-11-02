@@ -237,9 +237,16 @@ test_that("the RE-covariance backends agree with the EB mode on the group effect
 
   # Three independently written paths (grid mixture, plug-in mode, MCMC). A
   # per-group ordering error in any one breaks this, whatever the labels say.
-  # nested and eb both condition at a mode, so they agree outright.
+  # The nested nodes are centred at the leading-order posterior mean and eb
+  # reports the mode, so the two differ by the skewness offset of each group's
+  # conditional (0.023 at most here); held at the mode, nested agrees outright.
   expect_gt(cor(nested$estimate, eb$estimate), 0.999)
-  expect_lt(max(abs(nested$estimate - eb$estimate)), 0.02)
+  expect_lt(max(abs(nested$estimate - eb$estimate)), 0.05)
+  at_mode <- ranef(tulpa(y ~ x + (1 + x | site), data = sim$d,
+                         family = "poisson", mode = "re_cov_nested",
+                         control = c(.rrc_nested_ctl,
+                                     list(skew_correct = FALSE))))
+  expect_lt(max(abs(at_mode$estimate - eb$estimate)), 0.02)
 
   # The sampler does not pin the group-mean direction the mode-based paths fix at
   # zero -- it samples it, and that direction is confounded with the intercept.

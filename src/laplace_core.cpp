@@ -279,6 +279,11 @@ Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
       out["inner_skew_arms_declined"] = arms_r;
     }
   }
+  if (!result.inner_mean_shift.empty()) {
+    out["inner_mean_shift"] = result.inner_mean_shift;
+  } else if (!result.inner_mean_shift_declined.empty()) {
+    out["inner_mean_shift_declined"] = result.inner_mean_shift_declined;
+  }
   attach_inner_is_fields(out, result);
   attach_debias_fields(out, result);
   attach_cila_fields(out, result);

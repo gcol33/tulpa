@@ -30,9 +30,30 @@
 
 namespace tulpa {
 
-// Solve H v = e_i against the LIVE factor (dense scratch.chol, or the sparse
+// Solve H v = rhs against the LIVE factor (dense scratch.chol, or the sparse
 // solver when use_sparse) without refactorizing -- the same pattern the
-// inv_block_layout diagonal-block extraction in laplace_newton.h uses.
+// inv_block_layout diagonal-block extraction in laplace_newton.h uses. `v` and
+// `z_work` are caller scratch sized n_x (z_work is read only on the dense path).
+// Returns false when the solve fails or produces a non-finite entry.
+inline bool inner_solve(int n_x,
+                        DenseCholeskyScratch& chol,
+                        SparseCholeskySolver& sparse_solver,
+                        bool use_sparse,
+                        std::vector<double>& rhs,
+                        std::vector<double>& v,
+                        std::vector<double>& z_work) {
+  if (use_sparse) {
+    if (!sparse_solver.solve(rhs.data(), v.data(), n_x)) return false;
+    for (int k = 0; k < n_x; k++) {
+      if (!std::isfinite(v[k])) return false;
+    }
+    return true;
+  }
+  return chol_substitute_raw(chol.L.data(), n_x, rhs.data(), v.data(),
+                             z_work.data());
+}
+
+// Solve H v = e_i through inner_solve().
 //
 // rhs / v / z_work are caller-supplied scratch sized n_x (z_work is read only
 // on the dense path). On success `v` holds Sigma e_i and `sigma_i` its
@@ -53,13 +74,7 @@ inline bool inner_probe_column(int n_x, int i,
 
   std::fill(rhs.begin(), rhs.end(), 0.0);
   rhs[i] = 1.0;
-  if (use_sparse) {
-    if (!sparse_solver.solve(rhs.data(), v.data(), n_x)) return false;
-    for (int k = 0; k < n_x; k++) {
-      if (!std::isfinite(v[k])) return false;
-    }
-  } else if (!chol_substitute_raw(chol.L.data(), n_x, rhs.data(), v.data(),
-                                  z_work.data())) {
+  if (!inner_solve(n_x, chol, sparse_solver, use_sparse, rhs, v, z_work)) {
     return false;
   }
 

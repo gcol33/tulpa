@@ -195,6 +195,14 @@ struct LaplaceResult {
   int                 inner_skew_dropped = 0;
   std::string         inner_skew_declined;
   std::vector<int>    inner_skew_arms_declined;
+  // The leading-order offset of the latent posterior mean from the reported
+  // mode, one entry per latent coordinate, in the coordinates `mode` is
+  // presented in (inner_laplace_skew.h, THE MEAN SHIFT). Formed alongside the
+  // skewness diagnostic on the single-arm loop; empty otherwise, with
+  // `inner_mean_shift_declined` naming why when the pass ran and could not
+  // form it.
+  std::vector<double> inner_mean_shift;
+  std::string         inner_mean_shift_declined;
 
   // Inner-Laplace importance k-hat raw material (see
   // src/inner_laplace_is.h). Populated alongside the skewness diagnostic, from

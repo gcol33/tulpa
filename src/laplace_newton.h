@@ -459,6 +459,22 @@ LaplaceResult laplace_newton_solve_ll(
                     result.inner_skew_idx = probe;
                     result.inner_skew_dropped = sk.n_nonfinite_dropped;
                     result.inner_skew_declined = sk.declined;
+                    result.inner_mean_shift_declined = sk.mean_shift_declined;
+                    if (!sk.mean_shift.empty()) {
+                        // Carried into the presented coordinates through the
+                        // loop's own (affine) centering fold.
+                        Rcpp::NumericVector x0(n_x), x1(n_x);
+                        for (int j = 0; j < n_x; j++) {
+                            x0[j] = pre_center_x[j];
+                            x1[j] = pre_center_x[j] + sk.mean_shift[j];
+                        }
+                        center_effects_fn(x0);
+                        center_effects_fn(x1);
+                        result.inner_mean_shift.assign(n_x, 0.0);
+                        for (int j = 0; j < n_x; j++) {
+                            result.inner_mean_shift[j] = x1[j] - x0[j];
+                        }
+                    }
 
                     // The likelihood-agnostic inner k-hat over the same probed subspace,
                     // along the same conditional-mean curve the cubic term just walked.

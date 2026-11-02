@@ -157,6 +157,25 @@
 // limits the coupled case is gamma_3 itself, pinned in test-inner-skew.R at
 // 0.4-0.7 of the exact skewness on that coordinate.
 //
+// THE MEAN SHIFT OF THE WHOLE LATENT VECTOR. The two terms place the mean of
+// the standardized coordinate at gamma_1 + gamma_3 / 2 (expanding
+// exp(-z^2/2 + gamma_1 z + (gamma_3/6) z^3) to the order kept), so the mean of
+// x_i sits sigma_i (gamma_1(i) + gamma_3(i) / 2) from the mode. Substituting the
+// two sums above, the gamma_3 halves cancel and
+//
+//   sigma_i (gamma_1(i) + gamma_3(i) / 2) = (1/2) sum_j l_j'''(eta_j) s_j u_{i,j},
+//
+// and since u_{i,j} = (A Sigma e_i)_j this is coordinate i of
+//
+//   delta = (1/2) Sigma A' (l''' * s),
+//
+// the leading-order mean of a latent Gaussian model with a log-concave
+// likelihood (the Tierney-Kadane expansion of the posterior mean). It needs
+// the same s_j, the vector g = A' (l''' * s) -- one eta difference per latent
+// coordinate, g_k = sum_j (A e_k)_j l_j''' s_j -- and ONE solve, so every
+// coordinate's centre costs what one probed index's gamma_3 costs. The per-index
+// identity is what test-inner-skew.R checks it against.
+//
 // A closed-form quartic (kurtosis) term is not part of the paper's
 // simplified-Laplace method: Sec 3.2.3's own discussion of symmetric
 // heavy-tailed cases (Student-t) routes to a different, more expensive
@@ -203,7 +222,13 @@ struct InnerSkewOutcome {
   // eta_var_solve_failed, multi_eta_unit } on top of whatever declined gamma_3.
   std::vector<double> gamma1;
   std::string         gamma1_declined;
-  int n_nonfinite_dropped = 0;     // (i, j) contributions skipped for a non-finite l'''_j
+  // delta = (1/2) Sigma A' (l''' * s), the leading-order offset of the latent
+  // posterior mean from the mode, one entry per latent coordinate (see THE MEAN
+  // SHIFT above). Empty when it was not formed, `mean_shift_declined` then
+  // carrying the reason (gamma_1's vocabulary plus `nonfinite_curvature3`).
+  std::vector<double> mean_shift;
+  std::string         mean_shift_declined;
+  int n_nonfinite_dropped = 0;    // (i, j) contributions skipped for a non-finite l'''_j
   // Why NOTHING was computable, when nothing was. Empty
   // when at least one index scored. A NaN says only "not computable"; the
   // reasons behind it are not interchangeable -- a coupled multi-process
@@ -310,6 +335,57 @@ inline std::string inner_eta_var_scan(
     accumulate();
     for (int t = 0; t < n_x; t++) x_buf[t] = mode[t];
   }
+  return std::string();
+}
+
+// delta = (1/2) Sigma A' (l''' * s) for a separable likelihood, given l''' and
+// the eta marginal variance s at the mode. g_k = (A e_k)' (l''' * s) is read off
+// the affine eta difference eta(mode + e_k) - eta(mode), then one solve against
+// the live factor gives delta. A coordinate j with s_j > 0 and a non-finite
+// l_j''' declines the whole vector: dropping its term would move every
+// coordinate's centre by an unstated amount.
+//
+// `fill_eta1()` writes eta at the current x_buf into `eta_buf1`; `eta_buf0`
+// holds eta at the mode. x_buf must hold `mode` on entry and is restored to it.
+// Returns an empty string on success, or the decline reason.
+template <typename FillEta1Fn>
+inline std::string inner_mean_shift(
+    int n_x, int n_eta,
+    const std::vector<double>& mode,
+    DenseCholeskyScratch& chol,
+    SparseCholeskySolver& sparse_solver,
+    bool use_sparse,
+    Rcpp::NumericVector& x_buf,
+    FillEta1Fn fill_eta1,
+    const Rcpp::NumericVector& eta_buf0,
+    const Rcpp::NumericVector& eta_buf1,
+    const std::vector<double>& l3,
+    const std::vector<double>& eta_var,
+    std::vector<double>& delta
+) {
+  std::vector<double> c(n_eta, 0.0);
+  for (int j = 0; j < n_eta; j++) {
+    if (eta_var[j] == 0.0) continue;
+    if (!std::isfinite(l3[j])) return "nonfinite_curvature3";
+    c[j] = l3[j] * eta_var[j];
+  }
+  std::vector<double> g(n_x, 0.0);
+  for (int k = 0; k < n_x; k++) {
+    x_buf[k] = mode[k] + 1.0;
+    fill_eta1();
+    x_buf[k] = mode[k];
+    double acc = 0.0;
+    for (int j = 0; j < n_eta; j++) {
+      if (c[j] != 0.0) acc += (eta_buf1[j] - eta_buf0[j]) * c[j];
+    }
+    g[k] = 0.5 * acc;
+  }
+  std::vector<double> v(n_x, 0.0), z_work;
+  if (!use_sparse) z_work.assign(n_x, 0.0);
+  if (!inner_solve(n_x, chol, sparse_solver, use_sparse, g, v, z_work)) {
+    return "mean_shift_solve_failed";
+  }
+  delta = std::move(v);
   return std::string();
 }
 
@@ -453,6 +529,7 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
     out.gamma3.assign(probe_idx.size(), std::numeric_limits<double>::quiet_NaN());
     out.declined = "no_probe_indices";
     out.gamma1_declined = out.declined;
+    out.mean_shift_declined = out.declined;
     return out;
   }
   if (!oracle.any()) {
@@ -461,6 +538,7 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
     out.declined = oracle.declined.empty() ? std::string("no_oracle")
                                            : oracle.declined;
     out.gamma1_declined = out.declined;
+    out.mean_shift_declined = out.declined;
     return out;
   }
 
@@ -502,6 +580,14 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
   }
   const bool have_var = !eta_var.empty();
 
+  std::vector<double> mean_shift;
+  std::string mean_shift_declined = var_declined;
+  if (have_var) {
+    mean_shift_declined = inner_mean_shift(
+        n_x, n_eta, mode, chol, sparse_solver, use_sparse, x_buf, fill_eta1,
+        eta_buf0, eta_buf1, l3, eta_var, mean_shift);
+  }
+
   auto accumulate = [&](int& dropped, bool& any_finite,
                         double& cross, bool& cross_ok) -> double {
     double acc = 0.0;
@@ -541,6 +627,8 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
                             x_buf, probe_idx, fill_eta1,
                             accumulate, have_var);
   out.gamma1_declined = var_declined;
+  out.mean_shift = std::move(mean_shift);
+  out.mean_shift_declined = mean_shift_declined;
   return out;
 }
 

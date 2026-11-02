@@ -81,5 +81,8 @@ test_that("WAIC on nested fits scores the conditional model and agrees with the 
   e <- function(f) cmp_elpd(compare_models(intercept = int, m = f,
                                             criterion = "waic"))
   cmp_elpd <- function(tab) tab$elpd[tab$model == "m"]
-  expect_lt(abs(e(slp) - e(gib)), 5)
+  # Nodes centred at the leading-order latent mean: 0.7 nats from the exact
+  # sampler's elpd. Centred at the joint mode the mixture read 4.8 nats low,
+  # every eta shifted up by 0.063 on average.
+  expect_lt(abs(e(slp) - e(gib)), 1.5)
 })

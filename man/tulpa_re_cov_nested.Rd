@@ -156,6 +156,16 @@ Each completed CCD / grid node (one inner Laplace solve) is cached to
 only the rest. \code{resume = FALSE} starts fresh. A file written for
 different data, layout, or grid is rejected (fingerprint mismatch).
 Default \code{NULL} (off).
+\item \code{skew_correct}: \code{TRUE} (default) centres each integration node's
+joint Gaussian over the fixed and random effects at the leading-order
+posterior mean, \verb{mode + Sigma A' (l''' * s) / 2} (the simplified-Laplace
+location term of Rue, Martino & Chopin 2009, Sec 3.2.3), instead of at
+the mode. A log-link count or a logit with few observations per group
+has a skewed latent conditional whose mean sits off its mode, and the
+fixed effects, \code{\link[=ranef]{ranef()}}, \code{\link[=posterior_predict]{posterior_predict()}} and the WAIC / LOO
+criteria all read the node centres. \code{FALSE} keeps the mode. Off at
+\code{n_quad > 1} and whenever the subspace debias runs. Which nodes were
+centred is recorded in \code{mean_shift} on the returned fit.
 \item \code{subspace_debias}: subspace debias, \code{FALSE} by
 default. \code{TRUE} takes every default; a list overrides \code{band} (the
 inner-reliability floor a coordinate is selected at, default \code{"ok"}),
@@ -203,6 +213,9 @@ over the fixed and random effects (\code{mode}, observed-curvature precision
 \code{\link[=posterior_predict]{posterior_predict()}} and the WAIC / LOO criteria draw each row's random
 effects from that node's conditional given the row's fixed effects.
 \code{NULL} at \code{n_quad > 1}.
+\item \code{mean_shift}: per node, \code{"applied"} where \code{control$skew_correct}
+centred the node at the leading-order mean, otherwise the reason it
+stayed at the mode. \code{NULL} when the centring was not requested.
 \item \code{theta_hat}, \code{theta_grid}, \code{weights}, \code{log_marginal}, \code{n_grid}, \code{layout},
 \code{n_blocks}, \code{n_coefs} (vector of per-block \code{c}).
 \item \code{subspace_debias}: present only when \code{control$subspace_debias} was set.
