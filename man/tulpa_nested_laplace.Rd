@@ -330,7 +330,7 @@ axes already resolve their posterior, where it takes 50\% coverage to
 0.135 against a nominal 0.5.
 
 Which families carry movable axes is \code{.NL_REGISTRY_AXIS_FIELD}: icar,
-rw1, rw2, iid, bym2, nngp, hsgp and spde. car_proper, ar1 and hsgp_mo
+rw1, rw2, ar1, iid, bym2, nngp, hsgp and spde. car_proper and hsgp_mo
 each carry a correlation axis with no guessable coordinate, and mcar /
 miid / tgmrf hold their axes in one matrix field; a fit of any of them
 records which through \code{outer_grid_recenter_declined} rather than passing
