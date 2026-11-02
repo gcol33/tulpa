@@ -61,4 +61,12 @@ double compute_log_lik_only(
       params, data, layout, /*skip_obs_loop=*/false, /*skip_prior=*/true);
 }
 
+double compute_log_prior_normalizer(
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<std::string>* uncarried
+) {
+  return tulpa::compute_log_prior_normalizer_generic_spec(data, layout, uncarried);
+}
+
 } // namespace tulpa_hmc

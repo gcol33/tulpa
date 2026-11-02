@@ -326,6 +326,47 @@ static T initialize_generic_state(
         params, data, layout, state.beta_zi, state.beta_oi);
 }
 
+// The parameter-independent constant initialize_generic_state's prior leaves
+// out, so that the prior plus this is a normalized density on the parameter
+// vector. Every block is listed in the order initialize_generic_state walks
+// it. A block whose constant is not carried here appends its name to
+// `uncarried` and the result is NaN: the prior is then known only up to a
+// constant, which a sampler does not need and an evidence does.
+inline double generic_prior_log_normalizer(
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<std::string>* uncarried
+) {
+    double c = 0.0;
+    const double tau_beta = 1.0 / (data.sigma_beta * data.sigma_beta);
+    for (int k = 0; k < data.n_processes; k++) {
+        c += layout.process_beta_count[k] * log_prior_normal_log_normalizer(tau_beta);
+    }
+    c += priors::re_prior_log_normalizer(data, layout);
+    c += priors::zi_oi_prior_log_normalizer(data, layout);
+
+    std::vector<std::string> missing;
+    if (layout.has_spatial) missing.push_back("spatial");
+    if (layout.is_gp && data.has_gp) missing.push_back("gp");
+    if (layout.is_multiscale_gp && data.has_multiscale_gp) {
+        missing.push_back("multiscale_gp");
+    }
+    if (layout.is_hsgp && data.has_hsgp) missing.push_back("hsgp");
+    if (layout.is_spde && data.has_spde) missing.push_back("spde");
+    if (layout.has_temporal) missing.push_back("temporal");
+    if (layout.has_multiscale_temporal && data.has_multiscale_temporal) {
+        missing.push_back("multiscale_temporal");
+    }
+    if (layout.has_svc && data.has_svc) missing.push_back("svc");
+    if (layout.has_tvc && data.has_tvc) missing.push_back("tvc");
+    if (layout.has_latent && data.has_latent) missing.push_back("latent");
+    if (layout.has_spatiotemporal && data.has_spatiotemporal) {
+        missing.push_back("spatiotemporal");
+    }
+    if (uncarried) uncarried->insert(uncarried->end(), missing.begin(), missing.end());
+    return missing.empty() ? c : std::numeric_limits<double>::quiet_NaN();
+}
+
 template<typename T>
 static void precompute_generic_fixed_eta(
     const ModelData& data,
@@ -711,6 +752,14 @@ double compute_log_post_generic_spec_double(
     const ParamLayout& layout,
     bool skip_obs_loop = false,
     bool skip_prior = false);
+
+// generic_prior_log_normalizer plus the LikelihoodSpec's own extra prior,
+// whose constant the engine cannot read: a spec carrying one is listed in
+// `uncarried` and the result is NaN.
+double compute_log_prior_normalizer_generic_spec(
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<std::string>* uncarried);
 
 extern template double compute_log_post_generic<double>(
     const std::vector<double>&,

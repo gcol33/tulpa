@@ -105,6 +105,19 @@ T compute_re_prior(const std::vector<T>& params, const ModelData& data,
     return log_post;
 }
 
+// The constant compute_re_prior leaves out, summed over the terms in the
+// order compute_re_prior walks them.
+inline double re_prior_log_normalizer(const ModelData& data,
+                                      const ParamLayout& layout) {
+    if (!layout.has_re) return 0.0;
+    double c = 0.0;
+    for (int t = 0; t < re_n_terms(data); t++) {
+        const ReTermView v = re_term_view(data, layout, t);
+        c += re_term_log_prior_normalizer(v.n_coefs, v.chol_start, v.n_groups,
+                                          data.sigma_re_scale);
+    }
+    return c;
+}
 
 } // namespace priors
 } // namespace tulpa

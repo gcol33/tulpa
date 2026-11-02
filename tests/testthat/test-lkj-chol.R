@@ -383,3 +383,26 @@ test_that("n = 2 reduces to the direct tanh map", {
     expect_equal(res$log_jac, log(1 - z^2), tolerance = 1e-12)
   }
 })
+
+test_that("the LKJ normalizer is the log reciprocal volume det(R)^(eta - 1) integrates to", {
+  skip_on_cran_budget()
+  load_cpp_fixture("lkj_chol")
+  # n = 2: the integral of (1 - rho^2)^(eta - 1) over (-1, 1) is B(1/2, eta).
+  for (eta in c(1, 2, 3.5)) {
+    expect_equal(cpp_test_lkj_log_normalizer(2L, eta), -lbeta(0.5, eta),
+                 tolerance = 1e-12, info = sprintf("eta = %g", eta))
+  }
+  # n = 3, eta = 1: the set of 3 x 3 correlation matrices has volume pi^2 / 2.
+  expect_equal(cpp_test_lkj_log_normalizer(3L, 1), -log(pi^2 / 2),
+               tolerance = 1e-12)
+  # n = 3, eta = 2: E[det(R) 1{R positive definite}] over the uniform cube of
+  # off-diagonals, times its volume 8; Monte Carlo standard error ~ 0.2%.
+  set.seed(1)
+  M <- 1e6
+  r <- matrix(runif(3 * M, -1, 1), M)
+  det3 <- 1 + 2 * r[, 1] * r[, 2] * r[, 3] - rowSums(r^2)
+  vol <- 8 * mean(pmax(det3, 0))
+  expect_equal(cpp_test_lkj_log_normalizer(3L, 2), -log(vol), tolerance = 0.01)
+  # n = 1 carries no correlation.
+  expect_equal(cpp_test_lkj_log_normalizer(1L, 2), 0)
+})

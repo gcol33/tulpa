@@ -123,6 +123,22 @@ inline void re_term_log_prior_add(const T* params, const int* log_sigma_idx,
     }
 }
 
+// The constant re_term_log_prior_add leaves out of the term's prior, so the
+// two together are a normalized density on the term's parameters: the
+// half-Cauchy normalizer of each SD, the LKJ(2) normalizer of a correlated
+// term, and -0.5 log(2 pi) for each of the n_groups * n_coefs Gaussian latent
+// values (the centered and the non-centered form alike carry everything else).
+inline double re_term_log_prior_normalizer(int n_coefs, int chol_start,
+                                           int n_groups, double sigma_scale) {
+    double c = n_coefs * math::log_prior_half_cauchy_log_normalizer(sigma_scale);
+    if (re_term_correlated(chol_start, n_coefs)) {
+        c += lkj_log_normalizer(n_coefs, 2.0);
+    }
+    c -= 0.5 * static_cast<double>(n_groups) * n_coefs
+         * std::log(2.0 * 3.14159265358979323846);
+    return c;
+}
+
 }  // namespace priors
 }  // namespace tulpa
 

@@ -47,6 +47,20 @@ double compute_log_post_generic_spec_double(
     return log_post;
 }
 
+double compute_log_prior_normalizer_generic_spec(
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<std::string>* uncarried
+) {
+    double c = generic_prior_log_normalizer(data, layout, uncarried);
+    const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
+    if (spec != nullptr && spec->extra_prior != nullptr) {
+        if (uncarried) uncarried->push_back("extra_prior");
+        c = std::numeric_limits<double>::quiet_NaN();
+    }
+    return c;
+}
+
 template double compute_log_post_generic<double>(
     const std::vector<double>&,
     const ModelData&,

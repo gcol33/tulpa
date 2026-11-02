@@ -151,7 +151,9 @@
 #'
 #' @return A `tulpa_fit` with `draws`, `means`, `param_names`, the kernel's
 #'   diagnostics, and (for `"hmc"`) `chain_id` / `n_chains` so chain diagnostics
-#'   apply.
+#'   apply. An `"smc"` fit also carries `log_evidence` and its Monte Carlo
+#'   standard error `log_evidence_se`, or `NA` with `log_evidence_declined`
+#'   naming the normalizing constant the engine does not know.
 #' @noRd
 tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
                               phi2 = NULL,

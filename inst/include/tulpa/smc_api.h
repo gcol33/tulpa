@@ -17,9 +17,12 @@
 //     population is first importance-corrected from q to the prior (weights
 //     p / q, resampled, then mutated at beta = 0) and tempered in L alone.
 //     That correction is exact but degrades when q is far from the prior.
-// The log-Z accumulator does not carry every normalizing constant of the
-// ModelData prior and likelihood, so SMCShimResult::log_evidence comes back
-// NaN and must not be read as a model-comparison number.
+// SMCShimResult::log_evidence is log p(y): the path's running log Z plus the
+// normalizing constants the tempered prior and likelihood leave out. It comes
+// back NaN whenever one of those constants is not known to the engine: a
+// consumer-package likelihood (only the built-in families' log-likelihood is
+// known to be a full log-density), a spec's extra_prior, or a latent block
+// whose prior normalizer the engine does not carry.
 //
 // With bridge_end = b < 1 either path passes through the tempered posterior
 // p L^b exactly, and the equally weighted population there comes back in
@@ -48,7 +51,7 @@ struct SMCShimResult {
     int n_params;
     double* particles;     // [n_particles * n_params] row-major
     double* log_weights;   // [n_particles]
-    double  log_evidence;  // NaN (see above)
+    double  log_evidence;  // log p(y), or NaN (see above)
     int     success;       // 0 / 1
     char    error_msg[256];
     // The population at the tempered posterior p L^tempered_beta, row-major

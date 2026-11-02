@@ -13,7 +13,8 @@
 }
 \value{
 A \code{logLik} object with \code{quantity} and \code{conditioned_on} attributes,
-and a \code{declined} attribute naming the reason when no value could be read.
+a \code{declined} attribute naming the reason when no value could be read, and
+an \code{mc_se} attribute on a Monte Carlo evidence.
 }
 \description{
 What this returns depends on what the fit computed, and the returned object
@@ -27,11 +28,12 @@ parameterization: the unconstrained coordinates with their Jacobians
 for the ModelData samplers (\code{hmc}, \code{ess}, \code{sghmc}, \code{sgld}, \code{mclmc},
 \code{smc}, \code{vi}), and the natural scale each quantity is sampled on for the
 RE-covariance and Polya-Gamma Gibbs samplers. Values are therefore
-comparable across fits of the same backend only.}
+comparable across fits of the same backend only. An \code{smc} fit reports
+this only when it estimated no evidence (see below).}
 \item{\code{"log_evidence"}}{a deterministic fit that estimated no
-hyperparameter from the data: the log marginal probability of the data
-under the model as specified. A hyperparameter the fit integrated counts,
-and so does one the caller supplied (a \code{phi}, a \code{sigma_re}, an outer grid
+hyperparameter from the data, or an \code{smc} fit: the log marginal
+probability of the data under the model as specified. A hyperparameter
+the fit integrated counts, and so does one the caller supplied (a \code{phi}, a \code{sigma_re}, an outer grid
 laid at one value), which is part of the model rather than an estimate. A
 Laplace fit of a model with nothing to integrate reports its log marginal
 likelihood here, which already is that quantity.}
@@ -62,6 +64,23 @@ the design was laid on, which makes the evidence exact when the ratio of the
 hyperparameter posterior to that Gaussian is a cubic in the whitened
 coordinates; the other nested doors report \code{NA} on a CCD design with a
 \code{declined} attribute.
+
+An \code{smc} fit (\code{mode = "smc"}) estimates the evidence directly: its
+tempered path runs from a normalized reference to the posterior, and the
+sum over tempering steps of the log mean incremental weight, plus the
+normalizing constants of the prior and likelihood it tempered, is
+\verb{log p(y)}. The Monte Carlo standard error rides along as an \code{mc_se}
+attribute: the square root of the sum over steps of \code{1 / ESS_t - 1 / N},
+the variance of each step's log mean weight over \code{N} independent particles
+(Chopin 2004). Correlation the mutations leave between particles is not in
+it, so it is a floor on the error: where they mix slowly (a random-effect
+scale at the default \code{n_mcmc_steps = 5}) the estimate also sits low by more
+than it, and more mutation steps remove both. The fit reports no evidence, and
+\code{logLik()} falls back to \code{"log_posterior_mean"}, when a normalizing constant
+is unknown: a spatial, temporal, varying-coefficient, latent-factor or
+space-time block (whose prior the sampler evaluates up to a constant), or
+a likelihood that is not a built-in family's; the fit's
+\code{log_evidence_declined} names which.
 
 A sampler fit whose producer kept no per-draw log posterior reports \code{NA}
 with \code{quantity = "log_posterior_mean"} and

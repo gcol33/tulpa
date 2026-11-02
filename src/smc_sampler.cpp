@@ -8,6 +8,7 @@
 #include <random>
 #include "smc_sampler.h"
 #include "smc_modeldata.h"
+#include "laplace_builtin_family_spec.h"  // builtin_family_ll_is_normalized
 
 using namespace Rcpp;
 
@@ -34,6 +35,7 @@ SMCResult smc_sample(
 
     SMCResult result;
     result.log_marginal_likelihood = 0.0;
+    result.log_marginal_likelihood_var = 0.0;
     result.n_resamples = 0;
     result.n_mutations = 0;
     result.temperatures.push_back(0.0);
@@ -75,7 +77,9 @@ SMCResult smc_sample(
         for (int n = 0; n < N; n++) {
             weights[n] = std::exp(log_w[n] - max_lw) / sum_w;
         }
-        result.ess_history.push_back(compute_ess(log_w));
+        const double ess = compute_ess(log_w);
+        result.ess_history.push_back(ess);
+        result.log_marginal_likelihood_var += 1.0 / ess - 1.0 / N;
 
         auto ancestors = systematic_resample(weights, N, rng);
         auto old_particles = particles;
@@ -325,9 +329,24 @@ SMCDriverResult run_smc_sampler(
                 ? std::log(res.weights[i])
                 : -std::numeric_limits<double>::infinity();
         }
-        // Not res.log_marginal_likelihood: see SMCDriverResult::log_evidence.
-        out.log_evidence = std::numeric_limits<double>::quiet_NaN();
-        out.log_evidence_valid = false;
+        std::vector<std::string> uncarried;
+        const double prior_norm =
+            tulpa_hmc::compute_log_prior_normalizer(data, layout, &uncarried);
+        const bool lik_normalized = builtin_family_ll_is_normalized(data);
+        if (!lik_normalized) {
+            out.log_evidence_declined = "likelihood_not_normalized";
+        } else if (!std::isfinite(prior_norm)) {
+            out.log_evidence_declined = "prior_normalizer_not_carried:";
+            for (size_t k = 0; k < uncarried.size(); k++) {
+                out.log_evidence_declined += (k ? "," : "") + uncarried[k];
+            }
+        } else if (!std::isfinite(res.log_marginal_likelihood)) {
+            out.log_evidence_declined = "non_finite_path_estimate";
+        } else {
+            out.log_evidence = res.log_marginal_likelihood + prior_norm;
+            out.log_evidence_se = std::sqrt(res.log_marginal_likelihood_var);
+            out.log_evidence_valid = true;
+        }
         out.success = true;
     } catch (Rcpp::internal::InterruptedException&) {
         throw;

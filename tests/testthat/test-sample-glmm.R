@@ -318,21 +318,86 @@ test_that("SGHMC samples the posterior spread, not a tempered one (gcol33/tulpa#
                             paste(round(ratio, 3), collapse = ", ")))
 })
 
-# The SMC driver initializes its particles from a Gaussian perturbation of
-# `init`, not from p(theta), and carries no p / q correction in the weights, so
-# the log-Z accumulator estimates a different integral than the marginal
-# likelihood. It reports no evidence rather than that number; the draws recover
-# because the mutations target p(theta) L(theta)^beta.
-test_that("the SMC backend reports no evidence under its stand-in prior draw (gcol33/tulpa#445)", {
+# The SMC path runs from a normalized Gaussian reference to the posterior, so
+# its running log Z plus the normalizing constants of the prior and likelihood
+# it tempered is log p(y). On a Gaussian linear model with a known residual
+# variance and a N(0, sd^2) prior on every coefficient the evidence is closed
+# form: y ~ N(0, phi I + sd^2 X X').
+test_that("the SMC backend reports the log evidence with its Monte Carlo SE (gcol33/tulpa#1061)", {
   skip_on_cran()
-  set.seed(52)
-  n <- 200L
+  set.seed(1060)
+  n <- 60L
   x <- rnorm(n); X <- cbind(1, x)
-  y <- as.numeric(rbinom(n, 1L, plogis(0.2 + 0.5 * x)))
+  y <- 0.5 + 0.8 * x + rnorm(n, 0, 0.8)
+  phi <- 0.64; sdb <- 2
+  S <- phi * diag(n) + sdb^2 * tcrossprod(X)
+  R <- chol(S)
+  z <- backsolve(R, y, transpose = TRUE)
+  exact <- -0.5 * n * log(2 * pi) - sum(log(diag(R))) - 0.5 * sum(z^2)
+
   fit <- tulpa_sample_glmm(
-    y, rep(1L, n), X, "binomial", "smc",
-    control = list(n_particles = 300L, n_mcmc_steps = 2L, seed = 8L))
+    y, NULL, X, "gaussian", "smc", phi = phi, sigma_beta = sdb,
+    control = list(n_particles = 1000L, seed = 8L))
+  expect_true(is.finite(fit$log_evidence))
+  expect_gt(fit$log_evidence_se, 0)
+  expect_lt(fit$log_evidence_se, 0.2)
+  expect_null(fit$log_evidence_declined)
+  expect_lt(abs(fit$log_evidence - exact), 0.25)
+
+  ll <- logLik(fit)
+  expect_identical(attr(ll, "quantity"), "log_evidence")
+  expect_equal(as.numeric(ll), fit$log_evidence)
+  expect_equal(attr(ll, "mc_se"), fit$log_evidence_se)
+})
+
+# A random intercept's prior is normalized too (half-Cauchy on its SD, N(0, 1)
+# on the non-centered effects): the evidence integrates sigma_re out, here by
+# quadrature over log sigma_re of the Gaussian marginal.
+test_that("the SMC evidence integrates a random-effect SD (gcol33/tulpa#1061)", {
+  skip_if_not_slow()
+  set.seed(11)
+  J <- 15; n <- 120; gi <- sample(J, n, TRUE); u <- rnorm(J, 0, 0.7)
+  x <- rnorm(n); X <- cbind(1, x); Z <- outer(gi, seq_len(J), "==") * 1
+  y <- 1 + .5 * x + u[gi] + rnorm(n, 0, .5)
+  phi <- 0.25; sdb <- 2; s_hc <- 2.5
+  lmarg <- function(sig) {
+    S <- phi * diag(n) + sdb^2 * tcrossprod(X) + sig^2 * tcrossprod(Z)
+    R <- chol(S); zz <- backsolve(R, y, transpose = TRUE)
+    -0.5 * n * log(2 * pi) - sum(log(diag(R))) - 0.5 * sum(zz^2)
+  }
+  lg <- seq(-6, 4, length.out = 2001)
+  lv <- vapply(exp(lg), lmarg, 0) +
+    log(2 / (pi * s_hc)) - log1p((exp(lg) / s_hc)^2) + lg
+  m <- max(lv)
+  exact <- m + log(sum(exp(lv - m)) * diff(lg)[1])
+
+  re_spec <- list(idx = list(as.integer(gi)), ngroups = J, ncoefs = 1L,
+                  correlated = FALSE, Z = list(NULL))
+  fit <- suppressWarnings(tulpa_sample_glmm(
+    y, NULL, X, "gaussian", "smc", phi = phi, sigma_beta = sdb,
+    re_spec = re_spec, sigma_re_scale = s_hc,
+    control = list(n_particles = 1000L, seed = 3L)))
+  expect_true(is.finite(fit$log_evidence))
+  expect_lt(abs(fit$log_evidence - exact), 0.5)
+})
+
+# A block whose prior the sampler evaluates only up to a constant leaves the
+# evidence unknown; the fit says which block, and logLik() falls back to the
+# mean log posterior.
+test_that("the SMC backend declines the evidence where a prior constant is unknown", {
+  skip_on_cran()
+  set.seed(4)
+  Tn <- 40L
+  xt <- rnorm(Tn); X <- cbind(1, xt)
+  y <- 1 - 0.5 * xt + cumsum(rnorm(Tn, 0, 0.2)) + rnorm(Tn, 0, 0.3)
+  tp <- list(type = "rw1", time_idx = seq_len(Tn), n_times = Tn,
+             n_groups = 1L, group_idx = NULL, cyclic = FALSE)
+  fit <- tulpa_sample_glmm(y, NULL, X, "gaussian", "smc", phi = 0.09,
+                           temporal_spec = tp,
+                           control = list(n_particles = 200L,
+                                          n_mcmc_steps = 2L, seed = 8L))
   expect_true(is.na(fit$log_evidence))
-  expect_gt(nrow(fit$draws), 0L)
-  expect_equal(ncol(fit$draws), 2L)
+  expect_identical(fit$log_evidence_declined,
+                   "prior_normalizer_not_carried:temporal")
+  expect_identical(attr(logLik(fit), "quantity"), "log_posterior_mean")
 })

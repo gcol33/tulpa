@@ -1,6 +1,9 @@
 # Every sampler backend records a per-draw log posterior, so logLik() reports
 # `log_posterior_mean` on it instead of declining (gcol33/tulpa#750).
 #
+# The SMC backend records one as well; its logLik() is the evidence it
+# estimates (gcol33/tulpa#1061).
+#
 # Three arbiters, none of them the recording code:
 #   * the ModelData samplers (ess, sghmc, sgld, mclmc, smc, vi) report the
 #     helper's value, and that helper evaluated on a NUTS fit's own draws has
@@ -60,7 +63,13 @@ for (backend in names(backend_controls)) {
       skip_on_cran()
       d <- lp_poisson_fixture()
       fit <- lp_sample(d, b, backend_controls[[b]])
-      expect_log_posterior_mean(fit)
+      if (identical(b, "smc")) {
+        # SMC also estimates the evidence, which logLik() reports instead.
+        expect_true(all(is.finite(fit$log_prob)))
+        expect_identical(attr(logLik(fit), "quantity"), "log_evidence")
+      } else {
+        expect_log_posterior_mean(fit)
+      }
       expect_lt(max(abs(lp_helper_at(fit) - fit$log_prob)), 1e-10)
       # A kernel that also keeps a running log posterior per stored draw agrees
       # with the one definition.

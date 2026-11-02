@@ -54,6 +54,21 @@ T compute_zi_oi_prior(const std::vector<T>& params, const ModelData& data,
     return log_post;
 }
 
+// The constant compute_zi_oi_prior leaves out of its Gaussian priors.
+inline double zi_oi_prior_log_normalizer(const ModelData& data,
+                                         const ParamLayout& layout) {
+    double c = 0.0;
+    if (layout.has_zi && data.p_zi > 0) {
+        c += data.p_zi * log_prior_normal_log_normalizer(
+            1.0 / (data.zi_prior_sd * data.zi_prior_sd));
+    }
+    if (layout.has_oi && data.p_oi > 0) {
+        c += data.p_oi * log_prior_normal_log_normalizer(
+            1.0 / (data.oi_prior_sd * data.oi_prior_sd));
+    }
+    return c;
+}
+
 } // namespace priors
 } // namespace tulpa
 

@@ -586,6 +586,11 @@ Rcpp::List cpp_tulpa_sample_glmm(
             Rcpp::Named("log_weights") = Rcpp::wrap(res.log_weights),
             Rcpp::Named("log_evidence") =
                 res.log_evidence_valid ? res.log_evidence : NA_REAL,
+            Rcpp::Named("log_evidence_se") =
+                res.log_evidence_valid ? res.log_evidence_se : NA_REAL,
+            Rcpp::Named("log_evidence_declined") =
+                res.log_evidence_valid ? Rcpp::RObject(R_NilValue)
+                                       : Rcpp::RObject(Rcpp::wrap(res.log_evidence_declined)),
             Rcpp::Named("tempered_draws") = tempered_draws,
             Rcpp::Named("tempered_beta") =
                 res.tempered_particles.empty() ? NA_REAL : res.tempered_beta,

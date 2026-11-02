@@ -405,6 +405,19 @@ inline bool is_builtin_family_spec(const std::string& spec_name) {
            is_builtin_zi_family_spec(spec_name);
 }
 
+// Whether the ModelData's per-observation log-likelihood sums to the full
+// log-density of the response: a built-in family spec (each family's
+// log_lik_for_family carries its combinatorial and dispersion constants, the
+// zero-inflated mixture its base density's) with no per-observation weights,
+// since a weighted log-likelihood is not the log of a density.
+inline bool builtin_family_ll_is_normalized(const ModelData& data) {
+    const auto* spec = static_cast<const LikelihoodSpec*>(data.likelihood_spec);
+    if (spec == nullptr || !is_builtin_family_spec(spec->name)) return false;
+    const auto* r =
+        static_cast<const BuiltinFamilyResponse*>(data.model_response_data);
+    return r != nullptr && r->weights == nullptr;
+}
+
 } // namespace tulpa
 
 #endif // TULPA_LAPLACE_BUILTIN_FAMILY_SPEC_H

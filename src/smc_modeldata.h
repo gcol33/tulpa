@@ -11,9 +11,19 @@
 // start valid is the path it is tempered along (run_smc_sampler below), never
 // the mutations alone -- a population that starts from q and is tempered in
 // the likelihood as if it were a prior draw converges to neither q L nor
-// p L (gcol33/tulpa#876). The constants in compute_log_prior /
-// compute_log_lik_only are not all carried, so no evidence is reported and
-// SMCDriverResult::log_evidence is NaN.
+// p L (gcol33/tulpa#876).
+//
+// The densities tempered are compute_log_prior and compute_log_lik_only, each
+// a normalized log-density up to a parameter-independent constant. The path's
+// running log Z is therefore the log evidence less those constants, and they
+// are added back once at the end (compute_log_prior_normalizer for the prior;
+// the built-in families' log-likelihood already carries all of its own),
+// rather than inside the tempered densities: there a constant moves no draw in
+// exact arithmetic but shifts the rounding of the weights and acceptance
+// ratios the draws are computed from. Where
+// a constant is not known -- a latent block whose normalizer the engine does
+// not carry, a consumer spec's likelihood or extra prior -- no evidence is
+// reported and SMCDriverResult::log_evidence_declined says why.
 //
 // The mutation kernel is pluggable via a user-supplied SmcMutationFn
 // function pointer, targeting compute_log_prior + beta * compute_log_lik_only.
@@ -77,13 +87,15 @@ struct SMCDriverResult {
     std::vector<std::vector<double>> tempered_particles;
     double tempered_beta = std::numeric_limits<double>::quiet_NaN();
 
-    // log Z. The accumulator estimates the integral of pi_0 exp(h) along the
-    // path it ran, which is the evidence only when both carry every
-    // normalizing constant; compute_log_prior / compute_log_lik_only drop
-    // some, so no evidence is available: the field is NaN and
-    // log_evidence_valid is false.
+    // log p(y): the path's running log Z plus the normalizing constants the
+    // tempered densities leave out, with its Monte Carlo standard error
+    // (SMCResult::log_marginal_likelihood_var). NaN, with
+    // log_evidence_valid false and log_evidence_declined naming the reason,
+    // when a constant is not known.
     double log_evidence = std::numeric_limits<double>::quiet_NaN();
+    double log_evidence_se = std::numeric_limits<double>::quiet_NaN();
     bool log_evidence_valid = false;
+    std::string log_evidence_declined;
 
     bool success = true;
     std::string error_msg;

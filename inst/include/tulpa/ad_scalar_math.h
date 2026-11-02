@@ -199,6 +199,12 @@ inline T log_prior_half_cauchy(const T& log_sigma, double scale) {
     return -safe_log(T(1.0) + ratio * ratio) + log_sigma;
 }
 
+// log(2 / (pi scale)), the constant log_prior_half_cauchy leaves out: the
+// half-Cauchy(0, scale) density on sigma is 2 / (pi scale (1 + (sigma/scale)^2)).
+inline double log_prior_half_cauchy_log_normalizer(double scale) {
+    return std::log(2.0 / (3.14159265358979323846 * scale));
+}
+
 }  // namespace math
 }  // namespace tulpa
 

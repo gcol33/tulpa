@@ -293,6 +293,15 @@ double compute_log_lik_only(
     const ModelData& data,
     const ParamLayout& layout
 );
+// The parameter-independent constant compute_log_prior leaves out:
+// compute_log_prior + this is the normalized log prior density. NaN when a
+// block's constant is not carried, with the block names appended to
+// `uncarried`.
+double compute_log_prior_normalizer(
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<std::string>* uncarried = nullptr
+);
 
 // Gradient computation (with optional fused log-posterior)
 // When log_post_out is non-null, the log-posterior is computed alongside

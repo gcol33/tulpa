@@ -187,3 +187,9 @@ NumericMatrix cpp_test_correlation_from_L(NumericMatrix L) {
   }
   return R;
 }
+
+// [[Rcpp::export]]
+double cpp_test_lkj_log_normalizer(int n, double eta) {
+  check_dim(n, "n");
+  return tulpa::lkj_log_normalizer(n, eta);
+}

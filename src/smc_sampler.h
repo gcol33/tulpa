@@ -38,6 +38,12 @@ struct SMCResult {
     std::vector<std::vector<double>> particles;  // final N particles x dim
     std::vector<double> weights;                  // final normalized weights
     double log_marginal_likelihood;               // log Z estimate
+    // Monte Carlo variance of log_marginal_likelihood: the sum over
+    // reweighting steps of 1 / ESS_t - 1 / N, the variance each step's log
+    // mean incremental weight carries when the particles it is averaged over
+    // are independent draws (Chopin 2004, Theorem 1, at perfectly mixing
+    // kernels).
+    double log_marginal_likelihood_var;
     std::vector<double> temperatures;             // path coordinate schedule (0 .. n_legs)
     int n_temperatures;                           // number of tempering steps
     // The equally weighted population at the end of every leg but the last,
@@ -220,9 +226,10 @@ inline double prior_path_power(double tau, double b) {
 // is invariant for another distribution, and what comes out is neither
 // (gcol33/tulpa#876 -- the RE scale collapsed 3-10x that way).
 //
-// log_marginal_likelihood estimates log(integral pi_0 exp(sum_k h_k)) and is
-// the evidence only when pi_0 and every exp(h_k) carry every normalizing
-// constant.
+// log_marginal_likelihood estimates log(integral pi_0 exp(sum_k h_k)), the
+// evidence up to whatever parameter-independent constants pi_0 and the h_k
+// leave out (a constant c in a leg's h scales that leg's integral by exp(c)
+// and moves nothing else).
 
 SMCResult smc_sample(
     const std::vector<std::function<double(const std::vector<double>&)>>& legs,

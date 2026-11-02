@@ -108,6 +108,24 @@ inline void lkj_cholesky_log_density_add(const T* L_flat, int n, const T& eta,
     }
 }
 
+// log of 1 / c_n(eta), the constant lkj_cholesky_log_density_add leaves out.
+// The LKJ(eta) density on an n x n correlation matrix is det(R)^(eta - 1) /
+// c_n(eta) with (Lewandowski, Kurowicka and Joe 2009, from the C-vine whose
+// level-k partial correlations are independent Beta(b_k, b_k) on (-1, 1),
+// b_k = eta + (n - 1 - k) / 2)
+//   c_n(eta) = prod_{k=1}^{n-1} [2^(2 b_k - 1) B(b_k, b_k)]^(n - k).
+// The density above integrates to c_n(eta) over raw space with the raw -> L
+// Jacobian, so adding this makes it a normalized density there.
+inline double lkj_log_normalizer(int n, double eta) {
+    double log_c = 0.0;
+    for (int k = 1; k < n; k++) {
+        const double b = eta + 0.5 * (n - 1 - k);
+        const double log_beta = 2.0 * std::lgamma(b) - std::lgamma(2.0 * b);
+        log_c += (n - k) * ((2.0 * b - 1.0) * std::log(2.0) + log_beta);
+    }
+    return -log_c;
+}
+
 }  // namespace tulpa
 
 #endif  // TULPA_LKJ_CHOL_H
