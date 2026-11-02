@@ -116,18 +116,12 @@ spatiotemporal <- function(spatial,
                            temporal,
                            type = c("I", "II", "III", "IV", "iid", "separable"),
                            shared = NULL) {
-  # gcol33/tulpa#812: tulpa()'s formula front door routes spatial + temporal
-  # jointly for an areal spatial field only; a continuous one is not yet
-  # routed there (though fit_st_nested() fits it directly).
-  stop("Spatiotemporal interaction terms are not fitted by any tulpa backend: ",
-       "no solver carries a Knorr-Held type I-IV interaction, and tulpa() has ",
-       "no `spatiotemporal =` argument. The additive space-time model ",
-       "`X beta + u_spatial + v_temporal` is fitted directly by ",
-       "fit_st_nested(); tulpa(spatial = , temporal = ) reaches the same ",
-       "joint nested-Laplace path only for an AREAL spatial field ",
-       "(icar/bym2/car_proper) -- a continuous one (hsgp/nngp) is not yet ",
-       "routed through tulpa()'s formula front door.",
-       call. = FALSE)
+  stop("Spatiotemporal interaction terms are not fitted through tulpa(): it ",
+       "has no `spatiotemporal =` argument, and no front-door solver carries a ",
+       "Knorr-Held type I-IV interaction. The additive space-time model ",
+       "`X beta + u_spatial + v_temporal` is fitted by tulpa(spatial = , ",
+       "temporal = ) for an areal or spatial_gp() field, and by ",
+       "fit_st_nested().", call. = FALSE)
 }
 
 
