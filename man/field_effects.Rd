@@ -39,15 +39,15 @@ samples (\code{phi_spatial[k]}); for BYM2 each draw's two unit-scale
 components are combined into the same
 \code{sigma * (sqrt(rho) * s * phi + sqrt(1 - rho) * theta)} the sampler
 path reports. The rows summarize those draws.
-\item A nested-Laplace fit with an ICAR or proper-CAR field: each outer
-cell contributes its conditional mode, and its marginal variance where
-the fit retained one, weighted by the cell's posterior weight. With the
-variances the summary is the exact mean, SD and quantiles of that
-Gaussian mixture (\code{source = "mixture"}); without them the weighted mean
-of the cell modes, with no spread (\code{source = "mode"}). A BYM2 field is
-reported where the fit stores its grid-weighted combined field
-(\code{fit_st_nested()}); a \code{tulpa()} nested BYM2 fit carries its two
-components with cell-dependent mixing and errors.
+\item A nested-Laplace fit with an ICAR, proper-CAR or BYM2 field: each
+outer cell contributes the per-unit field's conditional mean, and its
+marginal variance under the cell's latent Gaussian, weighted by the
+cell's posterior weight; for BYM2 the field is the combined
+\code{sigma * (sqrt(rho) * s * phi + sqrt(1 - rho) * theta)} at that cell's
+\code{sigma} and \code{rho}. With the variances the summary is the exact mean, SD
+and quantiles of that Gaussian mixture (\code{source = "mixture"}); without
+them (a field whose per-unit variances were not retained) the weighted
+mean of the cell means, with no spread (\code{source = "mode"}).
 \item A conditional-Laplace areal fit (\code{mode = "laplace"} / \code{"eb"})
 reports the field at its mode, with no spread. For BYM2 this is the
 combined field at the \code{sigma = 1}, \code{rho = 0.5} the conditional kernel

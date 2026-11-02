@@ -34,15 +34,15 @@
 #'     components are combined into the same
 #'     `sigma * (sqrt(rho) * s * phi + sqrt(1 - rho) * theta)` the sampler
 #'     path reports. The rows summarize those draws.
-#'   \item A nested-Laplace fit with an ICAR or proper-CAR field: each outer
-#'     cell contributes its conditional mode, and its marginal variance where
-#'     the fit retained one, weighted by the cell's posterior weight. With the
-#'     variances the summary is the exact mean, SD and quantiles of that
-#'     Gaussian mixture (`source = "mixture"`); without them the weighted mean
-#'     of the cell modes, with no spread (`source = "mode"`). A BYM2 field is
-#'     reported where the fit stores its grid-weighted combined field
-#'     (`fit_st_nested()`); a `tulpa()` nested BYM2 fit carries its two
-#'     components with cell-dependent mixing and errors.
+#'   \item A nested-Laplace fit with an ICAR, proper-CAR or BYM2 field: each
+#'     outer cell contributes the per-unit field's conditional mean, and its
+#'     marginal variance under the cell's latent Gaussian, weighted by the
+#'     cell's posterior weight; for BYM2 the field is the combined
+#'     `sigma * (sqrt(rho) * s * phi + sqrt(1 - rho) * theta)` at that cell's
+#'     `sigma` and `rho`. With the variances the summary is the exact mean, SD
+#'     and quantiles of that Gaussian mixture (`source = "mixture"`); without
+#'     them (a field whose per-unit variances were not retained) the weighted
+#'     mean of the cell means, with no spread (`source = "mode"`).
 #'   \item A conditional-Laplace areal fit (`mode = "laplace"` / `"eb"`)
 #'     reports the field at its mode, with no spread. For BYM2 this is the
 #'     combined field at the `sigma = 1`, `rho = 0.5` the conditional kernel
@@ -285,6 +285,10 @@ field_effects <- function(object) {
   if (isTRUE(nl$projected)) {
     .field_effects_unavailable(object, nl$type, .FIELD_RESTRICTED_WHY)
   }
+  if (nl$type %in% c("icar", "car", "car_proper", "bym2") &&
+      is.matrix(object$grid_spatial_mean)) {
+    return(.field_effects_nested_load(object, nl$type))
+  }
   if (nl$type %in% c("icar", "car", "car_proper")) {
     if (is.null(nl$cols) || length(nl$cols) != nl$n_units) {
       .field_effects_unavailable(object, nl$type,
@@ -317,4 +321,28 @@ field_effects <- function(object) {
   }
   .field_effects_unavailable(object, nl$type,
     "the nested-Laplace path reads an ICAR, proper-CAR or BYM2 field only.")
+}
+
+# The per-unit field a nested fit retained as a loading of each cell's latent
+# Gaussian (`grid_spatial_mean`, `grid_spatial_var`; `.nl_attach_grid_hessians()`),
+# mixed over the outer grid by the cell weights. Without the per-cell variances
+# (a field too large to retain them) the cell means are mixed with no spread.
+.field_effects_nested_load <- function(object, type) {
+  mu <- object$grid_spatial_mean
+  V  <- object$grid_spatial_var
+  w  <- as.numeric(object$weights)
+  keep <- is.finite(w) & w > 0 & is.finite(rowSums(mu))
+  if (is.matrix(V)) keep <- keep & is.finite(rowSums(V))
+  if (!any(keep)) {
+    .field_effects_unavailable(object, type,
+      "no outer-grid cell carries a finite field and a positive weight.")
+  }
+  var <- if (is.matrix(V)) pmax(V[keep, , drop = FALSE], 0)
+  mx <- .nl_gauss_mixture_summary(mu[keep, , drop = FALSE], var,
+                                  w[keep] / sum(w[keep]),
+                                  probs = .FIELD_EFFECTS_PROBS)
+  stats <- data.frame(estimate = mx$mean, sd = mx$sd,
+                      conf.low = mx$quantiles[, 1L],
+                      conf.high = mx$quantiles[, 2L])
+  .field_read(stats, if (is.null(var)) "mode" else "mixture", type)
 }

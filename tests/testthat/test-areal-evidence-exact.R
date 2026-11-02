@@ -121,3 +121,51 @@ test_that("an ICAR field at a vanishing scale has the non-spatial evidence", {
   expect_equal(f$log_marginal, .ae_exact(fx, matrix(0, fx$K, fx$K)),
                tolerance = 1e-4)
 })
+
+test_that("field_effects() on a nested ICAR / BYM2 fit is the exact posterior", {
+  skip_on_cran()
+  # One outer cell, Gaussian response: the per-unit field's posterior is the
+  # Gaussian conditional of the field given y with the ICAR level constrained
+  # to zero (the intercept carries it). x = (beta, phi[, theta]).
+  fx <- .ae_fixture(5)
+  Lap <- diag(rowSums(fx$A)) - fx$A
+  K <- fx$K; p <- 2L
+  post_field <- function(Pprior, load, n_icar_start) {
+    D <- cbind(fx$X, fx$Z %*% load$eta)
+    P <- Pprior + crossprod(D)
+    Cx <- solve(P)
+    m <- Cx %*% crossprod(D, fx$y)
+    a <- numeric(ncol(P)); a[n_icar_start + seq_len(K)] <- 1
+    Ca <- Cx %*% a
+    m <- m - Ca * sum(a * m) / sum(a * Ca)
+    Cx <- Cx - Ca %*% t(Ca) / sum(a * Ca)
+    list(mean = as.numeric(t(load$field) %*% m),
+         sd = sqrt(diag(t(load$field) %*% Cx %*% load$field)))
+  }
+  d <- data.frame(y = fx$y, x = fx$X[, 2], region = fx$idx)
+  f <- tulpa(y ~ x + spatial(region), d, family = "gaussian", phi = 1,
+             spatial = list(type = "icar", adjacency = fx$A, tau_grid = 3),
+             mode = "nested_laplace", control = .ae_ctl)
+  fe <- field_effects(f)
+  Pprior <- as.matrix(Matrix::bdiag(diag(1e-4, p), 3 * (Lap + 1 / K)))
+  I_K <- diag(K)
+  ex <- post_field(Pprior, list(eta = cbind(I_K), field = rbind(matrix(0, p, K), I_K)), p)
+  expect_identical(unique(fe$source), "mixture")
+  expect_equal(fe$estimate, ex$mean, tolerance = 1e-6)
+  expect_equal(fe$sd, ex$sd, tolerance = 1e-6)
+
+  sf <- tulpa:::.bym2_component_scaling(fx$A)$scale_factor
+  f2 <- tulpa(y ~ x + spatial(region), d, family = "gaussian", phi = 1,
+              spatial = list(type = "bym2", adjacency = fx$A,
+                             sigma_grid = 0.9, rho_grid = 0.6),
+              mode = "nested_laplace", control = .ae_ctl)
+  fe2 <- field_effects(f2)
+  a <- 0.9 * sqrt(0.6) * sf; b <- 0.9 * sqrt(0.4)
+  Pprior <- as.matrix(Matrix::bdiag(diag(1e-4, p), Lap + 1 / K, I_K))
+  load <- list(eta = cbind(a * I_K, b * I_K),
+               field = rbind(matrix(0, p, K), a * I_K, b * I_K))
+  ex2 <- post_field(Pprior, load, p)
+  expect_identical(unique(fe2$source), "mixture")
+  expect_equal(fe2$estimate, ex2$mean, tolerance = 1e-6)
+  expect_equal(fe2$sd, ex2$sd, tolerance = 1e-6)
+})

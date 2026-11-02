@@ -768,7 +768,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   if (isTRUE(keep_grid_hessians)) {
     res <- .nl_attach_grid_hessians(
       res, p_fixed, keep_joint_prec,
-      var_cols = .nl_role_cols(prior, NULL, res$Q_csc_n, "temporal"))
+      var_cols = .nl_role_cols(prior, NULL, res$Q_csc_n, "temporal"),
+      spatial = .nl_spatial_field_load(prior, NULL, res$Q_csc_n,
+                                       .nl_theta_matrix(res)))
   }
   tm$mark("postproc")
   res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
@@ -792,7 +794,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       if (isTRUE(keep_grid_hessians)) {
         r <- .nl_attach_grid_hessians(
           r, p_fixed, keep_joint_prec,
-          var_cols = .nl_role_cols(prior_i, NULL, r$Q_csc_n, "temporal"))
+          var_cols = .nl_role_cols(prior_i, NULL, r$Q_csc_n, "temporal"),
+          spatial = .nl_spatial_field_load(prior_i, NULL, r$Q_csc_n,
+                                           .nl_theta_matrix(r)))
       }
       .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "single", type, NULL,
                           k_samples, compute = diagnose_k,
@@ -1787,7 +1791,10 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
                                        .nl_role_cols(res$blocks,
                                                      res$block_latent_offsets,
                                                      res$Q_csc_n, "temporal"),
-                                       .nl_temporal_latent_block(res)$cols)) {
+                                       .nl_temporal_latent_block(res)$cols),
+                                     spatial = .nl_spatial_field_load(
+                                       res$blocks, res$block_latent_offsets,
+                                       res$Q_csc_n, res$theta_grid)) {
   Q_p <- res$Q_csc_p_per_grid
   Q_i <- res$Q_csc_i_per_grid
   Q_x <- res$Q_csc_x_per_grid
@@ -1819,6 +1826,26 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 
   modes_mat <- res$modes  # n_grid x n_x
 
+  # The areal spatial field's per-unit value at each cell is a loading of the
+  # latent vector (`.nl_spatial_field_load()`): its mean is the loading of the
+  # cell mode, its variance the loading's quadratic form in the cell's
+  # (constrained) inverse precision, read off the same solve as one more column
+  # of E per unit. The transient solve holds n_x doubles per unit, so a field
+  # past `.NL_FIELD_COV_MAX` of them keeps its per-cell means only.
+  n_sp <- if (!is.null(spatial)) spatial$n_units else 0L
+  sp_var <- n_sp > 0L && as.numeric(n_x) * n_sp <= .NL_FIELD_COV_MAX
+  sp_mean <- if (n_sp) matrix(NA_real_, n_grid, n_sp)
+  sp_v    <- if (sp_var) matrix(NA_real_, n_grid, n_sp)
+  sp_load <- function(k) {
+    w <- spatial$weights(k)
+    Lk <- matrix(0, n_x, n_sp)
+    for (b in seq_along(spatial$cols)) {
+      Lk[cbind(spatial$cols[[b]], seq_len(n_sp))] <- w[b]
+    }
+    Lk
+  }
+  if (sp_var) E <- cbind(E, matrix(0, n_x, n_sp))
+
   # An intrinsic block (ICAR, BYM2's structured part, RW1 / RW2) stands for a
   # field whose constant is a HARD sum-to-zero constraint. The inner solve
   # augments that direction so the Hessian inverts, and centres it into the
@@ -1842,9 +1869,16 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
       a
     }, numeric(n_x)))
   }
-  sel <- seq_len(p_fixed + n_var)
+  sel <- seq_len(p_fixed + n_var + if (sp_var) n_sp else 0L)
+  sp_sel <- if (sp_var) p_fixed + n_var + seq_len(n_sp)
+  con_sel <- length(sel) + seq_len(n_con)
 
   for (k in seq_len(n_grid)) {
+    if (n_sp && !is.null(modes_mat) && all(is.finite(modes_mat[k, ]))) {
+      Lk <- sp_load(k)
+      sp_mean[k, ] <- as.numeric(crossprod(Lk, modes_mat[k, ]))
+      if (sp_var) E[, sp_sel] <- Lk
+    }
     # A cell the cheap screen pruned is never solved, so it holds no precision
     # to retain and its CSC slot is empty. Skip the write and the slot stays
     # blank, which is what `.nested_fixed_moments()` already reads: it drops any
@@ -1879,12 +1913,12 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
         as.matrix(Matrix::solve(Qk + Matrix::Diagonal(n_x, jit), E))
       }
     )
-    rows <- c(seq_len(p_fixed), var_cols)
-    S <- V[rows, sel, drop = FALSE]
+    Es <- E[, sel, drop = FALSE]
+    S <- crossprod(Es, V[, sel, drop = FALSE])
     if (n_con) {
-      W  <- V[, p_fixed + n_var + seq_len(n_con), drop = FALSE]
-      AW <- crossprod(E[, p_fixed + n_var + seq_len(n_con), drop = FALSE], W)
-      Wr <- W[rows, , drop = FALSE]
+      W  <- V[, con_sel, drop = FALSE]
+      AW <- crossprod(E[, con_sel, drop = FALSE], W)
+      Wr <- crossprod(Es, W)
       S  <- S - Wr %*% solve((AW + t(AW)) / 2, t(Wr))
     }
     Sigma_bb <- S[seq_len(p_fixed), seq_len(p_fixed), drop = FALSE]
@@ -1897,6 +1931,11 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
         field_cov[[k]] <- (Sf + t(Sf)) / 2
       }
     }
+    if (sp_var) sp_v[k, ] <- diag(S)[sp_sel]
+  }
+  if (n_sp) {
+    res$grid_spatial_mean <- sp_mean
+    res$grid_spatial_var  <- sp_v
   }
 
   res$grid_hessians <- grid_hessians
@@ -2069,13 +2108,54 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   as.integer(seq.int(lo + 1L, hi))
 }
 
-# Width of a single temporal block's field (the only single-block field whose
-# coefficients a read-back slices; the rest report through their own
-# accessors). NULL when the block does not say.
+# Width of a single block's field in the latent vector, for the fields a
+# read-back slices: a temporal block (n_times per group) and an areal one (one
+# coordinate per unit; BYM2 lays its structured then its unstructured
+# component, two per unit). NULL when the block does not say.
 .nl_single_block_width <- function(p) {
   nt <- p$n_times
-  if (is.null(nt)) return(NULL)
-  as.integer(nt) * max(as.integer(p$n_groups %||% 1L), 1L)
+  if (!is.null(nt)) return(as.integer(nt) * max(as.integer(p$n_groups %||% 1L), 1L))
+  nu <- p$n_spatial_units
+  type <- tolower(p$type %||% "")
+  if (is.null(nu) || !type %in% c("icar", "car", "car_proper", "bym2")) return(NULL)
+  as.integer(nu) * if (type == "bym2") 2L else 1L
+}
+
+# The per-unit loading of a fit's areal spatial field on its latent vector:
+# which coordinates make up unit s's contribution to eta, and with what weight
+# at cell k. An ICAR / proper-CAR block's coordinate IS the unit's field
+# (weight 1). A BYM2 block's unit field is
+#   sigma_k * (sqrt(rho_k) * s * phi_s + sqrt(1 - rho_k) * theta_s),
+# s the scale factor, so its weights move with the cell's (sigma, rho). NULL
+# when the fit carries no such block or its columns cannot be located.
+.nl_spatial_field_load <- function(blocks, offsets, n_x, theta_grid) {
+  cols <- .nl_role_cols(blocks, offsets, n_x, "spatial")
+  if (is.null(cols)) return(NULL)
+  roles <- .nl_block_roles(blocks)
+  kb <- which(roles == "spatial")[1L]
+  single <- !is.null(blocks$type)
+  blk <- if (single) blocks else blocks[[kb]]
+  if (!is.null(blk$projector)) return(NULL)
+  type <- tolower(blk$type %||% "")
+  n_u <- as.integer(blk$n_spatial_units %||% NA_integer_)
+  if (is.na(n_u)) return(NULL)
+  if (type %in% c("icar", "car", "car_proper")) {
+    if (length(cols) != n_u) return(NULL)
+    return(list(type = type, n_units = n_u, cols = list(cols),
+                weights = function(k) 1))
+  }
+  if (type != "bym2" || length(cols) != 2L * n_u) return(NULL)
+  tg <- as.matrix(theta_grid)
+  pre <- if (single) "" else paste0("b", kb, ".")
+  cs <- paste0(pre, c("sigma", "rho"))
+  if (is.null(colnames(tg)) || !all(cs %in% colnames(tg))) return(NULL)
+  sf <- as.numeric(blk$scale_factor %||% 1)
+  list(type = "bym2", n_units = n_u,
+       cols = list(cols[seq_len(n_u)], cols[n_u + seq_len(n_u)]),
+       weights = function(k) {
+         sg <- tg[k, cs[1L]]; rh <- tg[k, cs[2L]]
+         c(sg * sqrt(rh) * sf, sg * sqrt(1 - rh))
+       })
 }
 
 # Structural spec for one block sent to cpp_nested_laplace_multi. Grid values
