@@ -158,6 +158,32 @@ test_that("the runtime gradient check passes on every kernel", {
 })
 
 
+test_that("the runtime check does not read rounding noise as a mismatch", {
+  skip_on_cran()
+  # Uniform instants on (0, 100) put some pairs a fraction of a day apart, so
+  # the Matern 5/2 correlation at the starting lengthscale has eigenvalues down
+  # to 1e-13 and its Cholesky runs at the 1e-8 nugget. The log posterior then
+  # carries rounding noise that a central difference at step 1e-6 divides by
+  # the step: on this fixture it read d/d log_sigma2 as -13.28058 against the
+  # converged difference -13.28311 (steps 1e-2 to 1e-4) that the AD gradient
+  # matches, a relative gap of 1.9e-4 over the 1e-4 tolerance.
+  set.seed(303); n_t <- 30; reps <- 8
+  tt <- sort(runif(n_t, 0, 100))
+  h <- abs(outer(tt, tt, "-")); u <- sqrt(5) * h / 15
+  K <- 0.2 * (1 + u + u^2 / 3) * exp(-u)
+  wt <- as.numeric(t(chol(K + diag(1e-9, n_t))) %*% rnorm(n_t))
+  idx <- rep(seq_len(n_t), each = reps); x <- rnorm(length(idx))
+  d <- data.frame(day = tt[idx], x = x,
+                  y = rpois(length(idx), exp(0.3 + (0.5 + wt[idx]) * x)))
+  fell_back <- .tvcgp_grad_fallback(
+    .tvcgp_fit(list(d = d[!idx %in% round(seq(4, 27, length.out = 6)), ]),
+               temporal_tvc("day", terms = ~ x - 1, structure = "gp",
+                            cov = "matern", nu = 2.5),
+               n_chains = 2L, seed = 1L))
+  expect_false(fell_back)
+})
+
+
 test_that("on irregular instants the GP beats the grid the rw1 assumes", {
   skip_if_not_slow()
   # The claim the structure exists to make. `rw1` penalises first differences of

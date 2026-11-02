@@ -38,18 +38,18 @@ bool g_gradient_verified = false;
 // does not ship an arena-AD log-lik.
 // =====================================================================
 
-// Central-difference gradient of a scalar function of the parameter vector.
-// The step is scaled by the coordinate's own magnitude: with a fixed absolute
-// step, a coordinate that lives far from the origin loses the low-order bits of
-// params[j] + h to rounding, and the difference quotient reports that rounding
-// rather than the derivative.
+// Central-difference gradient of a scalar function of the parameter vector, at
+// relative step `eps`. The step is scaled by the coordinate's own magnitude:
+// with a fixed absolute step, a coordinate that lives far from the origin loses
+// the low-order bits of params[j] + h to rounding, and the difference quotient
+// reports that rounding rather than the derivative.
 template <typename F>
 static void central_difference_gradient(
     F&& f,
     const std::vector<double>& params,
-    std::vector<double>& grad
+    std::vector<double>& grad,
+    double eps = 1e-6
 ) {
-    const double eps = 1e-6;
     const int n = static_cast<int>(params.size());
     grad.assign(n, 0.0);
     std::vector<double> pw = params;
@@ -62,6 +62,30 @@ static void central_difference_gradient(
         double fm = f(pw);
         pw[j] = params[j];
         grad[j] = (fp - fm) / (2.0 * h);
+    }
+}
+
+// Richardson-extrapolated central difference: with D(h) the central quotient,
+// D(h/2) + (D(h/2) - D(h)) / 3 cancels the h^2 term of the truncation error, so
+// the step can be large enough that rounding noise in the evaluated function
+// stays negligible after division by it. A target whose value carries noise of
+// relative size eps * cond -- a dense covariance factorized near its nugget, a
+// smooth Matern kernel over closely spaced times -- puts an error of
+// ~ eps * cond * |f| / h on a central difference; at h = 1e-6 that error
+// reaches 1e-4 of the derivative while the AD gradient is exact.
+template <typename F>
+static void richardson_difference_gradient(
+    F&& f,
+    const std::vector<double>& params,
+    std::vector<double>& grad,
+    double eps = 1e-3
+) {
+    std::vector<double> d_h, d_half;
+    central_difference_gradient(f, params, d_h, eps);
+    central_difference_gradient(f, params, d_half, 0.5 * eps);
+    grad.resize(params.size());
+    for (size_t j = 0; j < params.size(); j++) {
+        grad[j] = d_half[j] + (d_half[j] - d_h[j]) / 3.0;
     }
 }
 
@@ -190,6 +214,20 @@ bool verify_gradient_runtime(
 
   compute_gradient_generic_numerical(params, data, layout, grad_numerical, nullptr);
 
+  // A second reference at a large step with the h^2 error extrapolated away.
+  // The two references fail in opposite regimes -- the small step on a target
+  // whose evaluation carries rounding noise, the large one where the target
+  // varies on a scale below its step -- so the active gradient is accepted
+  // when it agrees with either. A wrong derivative (a sign, a scale, a missing
+  // term) disagrees with both.
+  std::vector<double> grad_richardson;
+  {
+    auto log_post_fn = [&](const std::vector<double>& p) -> double {
+      return tulpa::compute_log_post_generic_spec_double(p, data, layout);
+    };
+    richardson_difference_gradient(log_post_fn, params, grad_richardson);
+  }
+
   if (grad_numerical.size() != grad_active.size()) {
     REprintf("[tulpa] WARNING: the active gradient returned %d entries for %d "
              "parameters.\n  Falling back to numerical gradients for safety.\n",
@@ -211,13 +249,18 @@ bool verify_gradient_runtime(
     }
   }
 
+  auto rel_gap = [](double ref, double act) {
+    const double scale = std::max(1.0, std::max(std::abs(act), std::abs(ref)));
+    return std::abs(act - ref) / scale;
+  };
+
   double max_diff = 0.0;
   int worst_idx = -1;
   for (size_t i = 0; i < grad_active.size(); i++) {
-    double diff = std::abs(grad_active[i] - grad_numerical[i]);
-    double scale = std::max(1.0, std::max(std::abs(grad_active[i]),
-                                           std::abs(grad_numerical[i])));
-    double rel_diff = diff / scale;
+    double rel_diff = rel_gap(grad_numerical[i], grad_active[i]);
+    if (std::isfinite(grad_richardson[i])) {
+      rel_diff = std::min(rel_diff, rel_gap(grad_richardson[i], grad_active[i]));
+    }
     if (!std::isfinite(rel_diff)) {
       max_diff = rel_diff;
       worst_idx = static_cast<int>(i);
@@ -232,11 +275,11 @@ bool verify_gradient_runtime(
   if (worst_idx >= 0 && (!std::isfinite(max_diff) || max_diff > tol)) {
     REprintf("[tulpa] WARNING: gradient mismatch detected at param %d!\n"
              "  max |active - numerical| / scale = %.6e (tol = %.1e)\n"
-             "  active[%d] = %.8e, numerical[%d] = %.8e\n"
+             "  active[%d] = %.8e, numerical[%d] = %.8e (Richardson %.8e)\n"
              "  Falling back to numerical gradients for safety.\n",
              worst_idx, max_diff, tol,
              worst_idx, grad_active[worst_idx],
-             worst_idx, grad_numerical[worst_idx]);
+             worst_idx, grad_numerical[worst_idx], grad_richardson[worst_idx]);
     return false;
   }
   return true;
