@@ -10,34 +10,246 @@
 # Sparse map from the random-effect coefficient vector (group-major,
 # coef-within-group -- the layout .tulpa_param_layout names and the draws tail
 # uses) to the per-observation RE contribution: eta_re = b' M with M (n_re x
-# n_obs). Built from the $re_design rows tulpa() attaches. NULL when the fit
-# carries no formula RE terms or no design.
+# n_obs). Built from a term design: the $re_design rows tulpa() attaches (the
+# training rows), or `.tulpa_re_design_at()` at new data, where a row whose
+# group the fit did not see has no fitted coefficient and gets no entry. NULL
+# when the fit carries no formula RE terms or no design.
 #' @keywords internal
-.tulpa_re_map <- function(object) {
-  des <- object$re_design
+.tulpa_re_map <- function(object, des = object$re_design) {
   if (is.null(des) || !length(des)) return(NULL)
-  X <- object$model_matrix
-  if (is.null(X)) return(NULL)
-  n_obs <- nrow(X)
+  if (identical(des, object$re_design) && is.null(object$model_matrix)) {
+    return(NULL)
+  }
+  n_obs <- length(des[[1L]]$group_idx)
 
   i_idx <- integer(0); j_idx <- integer(0); x_val <- numeric(0)
   offset <- 0L
   for (rt in des) {
     nc <- rt$n_coefs %||% 1L
-    Z  <- cbind(
-      if (isTRUE(rt$has_intercept)) rep(1, n_obs),
-      rt$slope_matrix
-    )
+    Z  <- .re_term_Z(rt, n_obs)
     if (is.null(Z) || ncol(Z) != nc) return(NULL)
+    seen <- which(!is.na(rt$group_idx))
     for (cc in seq_len(nc)) {
-      i_idx <- c(i_idx, offset + (rt$group_idx - 1L) * nc + cc)
-      j_idx <- c(j_idx, seq_len(n_obs))
-      x_val <- c(x_val, Z[, cc])
+      i_idx <- c(i_idx, offset + (rt$group_idx[seen] - 1L) * nc + cc)
+      j_idx <- c(j_idx, seen)
+      x_val <- c(x_val, Z[seen, cc])
     }
-    offset <- offset + (rt$n_groups %||% max(rt$group_idx)) * nc
+    offset <- offset + (rt$n_groups %||% max(rt$group_idx, na.rm = TRUE)) * nc
   }
   Matrix::sparseMatrix(i = i_idx, j = j_idx, x = x_val,
                        dims = c(offset, n_obs))
+}
+
+# A term's per-observation design (n_obs x n_coefs): the intercept column and
+# the slope columns, in the order its coefficients are laid out.
+#' @keywords internal
+.re_term_Z <- function(rt, n_obs) {
+  cbind(if (isTRUE(rt$has_intercept)) rep(1, n_obs), rt$slope_matrix)
+}
+
+# The rows of the stacked RE coefficient vector (`.tulpa_re_map()` layout) that
+# belong to each term, as a list of integer vectors.
+#' @keywords internal
+.re_term_rows <- function(des) {
+  pos <- 0L
+  lapply(des, function(rt) {
+    k <- (rt$n_groups %||% max(rt$group_idx, na.rm = TRUE)) * (rt$n_coefs %||% 1L)
+    r <- pos + seq_len(k)
+    pos <<- pos + k
+    r
+  })
+}
+
+# The random-effect term designs at `newdata`, rebuilt from the fit's formula
+# with `.re_term_design()` against the groups and slope factor levels the fit
+# recorded: a group label the fit saw gets its fitted index, any other gets NA
+# (a new group). NULL when the fit has no formula random effects.
+#' @keywords internal
+.tulpa_re_design_at <- function(object, newdata) {
+  des <- object$re_design
+  if (is.null(des) || !length(des)) return(NULL)
+  if (is.null(object$formula)) {
+    stop("predict(): the fit carries random-effect terms but no model formula ",
+         "to rebuild their design at `newdata` from.", call. = FALSE)
+  }
+  specs <- tulpa_parse_formula(object$formula)$random_effects
+  if (length(specs) != length(des) || any(vapply(des, function(rt)
+        is.null(rt$levels), logical(1)))) {
+    stop("predict(): the fit does not record the groups of its random-effect ",
+         "terms, so `newdata` cannot be matched to them; refit it with this ",
+         "version of tulpa, or use re_form = NA for the population prediction.",
+         call. = FALSE)
+  }
+  env <- environment(object$formula) %||% parent.frame()
+  lapply(seq_along(des), function(m) {
+    rt <- des[[m]]
+    miss <- setdiff(specs[[m]]$group_vars, names(newdata))
+    if (length(miss)) {
+      stop(sprintf(paste0(
+        "`newdata` has no column %s for the random-effect term (... | %s). ",
+        "Add it to predict for those groups, or pass re_form = NA for the ",
+        "population prediction."),
+        paste(shQuote(miss), collapse = ", "), rt$group_var), call. = FALSE)
+    }
+    td <- .re_term_design(specs[[m]], newdata, env, levels = rt$levels,
+                          xlevels = rt$slope_xlevels %||% list())
+    if (!identical(td$slope_names, rt$slope_names %||% character(0))) {
+      stop(sprintf(paste0(
+        "predict(): `newdata` gives the random-slope columns %s for the term ",
+        "(... | %s); the fit has %s."),
+        paste(td$slope_names, collapse = ", "), rt$group_var,
+        paste(rt$slope_names, collapse = ", ")), call. = FALSE)
+    }
+    c(td[c("group_idx", "group_label", "slope_matrix", "slope_names")],
+      rt[c("group_var", "has_intercept", "n_groups", "n_coefs", "levels")])
+  })
+}
+
+# Which formula random-effect terms a prediction conditions on, from `re_form`
+# (lme4's `re.form`): NULL all of them, NA or `~ 0` none (the population
+# level), a one-sided formula of bar terms those terms. Returns a logical vector
+# over the fit's terms, or NULL when the fit has none.
+#' @keywords internal
+.re_form_select <- function(object, re_form = NULL) {
+  des <- object$re_design
+  if (is.null(des) || !length(des)) return(NULL)
+  n <- length(des)
+  if (is.null(re_form)) return(rep(TRUE, n))
+  if (length(re_form) == 1L && !inherits(re_form, "formula") && is.na(re_form)) {
+    return(rep(FALSE, n))
+  }
+  if (!inherits(re_form, "formula")) {
+    stop("`re_form` must be NULL (every random-effect term), NA or ~0 ",
+         "(none: the population level), or a one-sided formula of ",
+         "random-effect terms.", call. = FALSE)
+  }
+  bars <- findbars(re_form[[length(re_form)]])
+  if (!length(bars)) return(rep(FALSE, n))
+  want <- unlist(lapply(bars, function(b)
+    vapply(parse_bar_term(b), `[[`, character(1), "group_var")))
+  have <- vapply(des, function(rt) rt$group_var %||% NA_character_, character(1))
+  unknown <- setdiff(want, have)
+  if (length(unknown)) {
+    stop(sprintf("`re_form` names the grouping %s, which the fit has no term for (it has %s).",
+                 paste(shQuote(unknown), collapse = ", "),
+                 paste(shQuote(have), collapse = ", ")), call. = FALSE)
+  }
+  have %in% want
+}
+
+# The random-effect part of the linear predictor (rows x n_obs) on a term
+# design `des`: `re` the coefficient rows (rows x n_re) on the fitted groups,
+# the terms `sel` leaves out held at zero. A row whose group the fit did not see
+# gets zero here; its effect is drawn by `.re_new_group_eta()`.
+#' @keywords internal
+.tulpa_re_eta <- function(object, des, re, sel = NULL) {
+  M <- .tulpa_re_map(object, des)
+  if (is.null(M) || is.null(re)) return(NULL)
+  if (!is.null(sel) && !all(sel)) {
+    rows <- unlist(.re_term_rows(des)[!sel])
+    re[, rows] <- 0
+  }
+  as.matrix(re %*% M)
+}
+
+# The random-effect covariance of each term at each of `S` rows, as a list over
+# terms of a list of S matrices. Where the fit carries the covariance per draw
+# the rows read it at the draw they belong to (`keep`): a Gibbs fit's sampled
+# Sigma, a nested fit's integration node, a sampler's `log_sigma_re` / `L_re`
+# columns. Any other fit carries one covariance -- an estimate, or the value it
+# conditioned on -- and every row reads that one ([VarCorr()]'s).
+#' @keywords internal
+.re_sigma_rows <- function(object, keep, S) {
+  des <- object$re_design
+  nc <- vapply(des, function(rt) as.integer(rt$n_coefs %||% 1L), integer(1))
+  M <- length(des)
+  per_row <- NULL
+
+  sd <- object[["Sigma_draws"]]
+  if (is.list(sd) && length(sd)) {
+    rows <- keep %||% seq_len(length(sd))
+    per_row <- lapply(sd[rows], function(s) if (is.matrix(s)) list(s) else s)
+  } else if (!is.null(object$draw_nodes) && is.matrix(object$theta_grid) &&
+             is.list(object$layout)) {
+    picks <- object$draw_nodes[keep %||% seq_along(object$draw_nodes)]
+    node_sig <- lapply(seq_len(nrow(object$theta_grid)), function(k)
+      lapply(.re_cov_theta_to_L_list(object$theta_grid[k, ], object$layout),
+             function(L) L %*% t(L)))
+    per_row <- node_sig[picks]
+  } else if (is.list(object$model_inputs)) {
+    per_row <- .sampler_re_sigma_rows(object, keep, nc)
+  }
+  if (!is.null(per_row) && length(per_row) == S &&
+      all(vapply(per_row, length, integer(1)) == M)) {
+    return(lapply(seq_len(M), function(m) lapply(per_row, `[[`, m)))
+  }
+  vc <- .varcorr_cov_list(object)$cov_list
+  if (is.null(vc) || length(vc) != M) {
+    stop("posterior_predict(): a new group's effect needs the random-effect ",
+         "covariance, which this fit does not report.", call. = FALSE)
+  }
+  lapply(vc, function(Sm) rep(list(as.matrix(Sm)), S))
+}
+
+# Per-draw covariances of a ModelData sampler fit's terms, from its
+# `log_sigma_re[...]` and (correlated terms) `L_re[...]` columns, in the layout
+# `.re_noncentered_effects()` reads. NULL when a column the map needs is absent.
+#' @keywords internal
+.sampler_re_sigma_rows <- function(object, keep, nc) {
+  dm <- tryCatch(.re_draws_mat(object), error = function(e) NULL)
+  if (is.null(dm) || is.null(colnames(dm))) return(NULL)
+  if (!is.null(keep)) dm <- dm[keep, , drop = FALSE]
+  nm <- colnames(dm)
+  M <- length(nc)
+  slopes <- any(nc > 1L)
+  sig_cols <- lapply(seq_len(M), function(m) {
+    if (slopes) sprintf("log_sigma_re[t%d.c%d]", m, seq_len(nc[m]))
+    else if (M > 1L) sprintf("log_sigma_re[t%d]", m) else "log_sigma_re"
+  })
+  if (!all(unlist(sig_cols) %in% nm)) return(NULL)
+  L_terms <- lapply(seq_len(M), function(m) {
+    cols <- grep(sprintf("^L_re\\[t%d\\.", m), nm)
+    if (nc[m] > 1L && length(cols)) .re_chol_from_raw(dm[, cols, drop = FALSE], nc[m])
+  })
+  lapply(seq_len(nrow(dm)), function(s) lapply(seq_len(M), function(m) {
+    sg <- exp(dm[s, sig_cols[[m]]])
+    R <- if (is.null(L_terms[[m]])) diag(nc[m]) else {
+      L <- matrix(L_terms[[m]][s, , ], nc[m], nc[m]); L %*% t(L)
+    }
+    diag(sg, nrow = nc[m]) %*% R %*% diag(sg, nrow = nc[m])
+  }))
+}
+
+# The effect of each group the fit did not see, drawn per row from that row's
+# covariance (`.re_sigma_rows()`), on the linear predictor (S x n_obs) of the
+# term design `des`. Rows of one new group share its draw. Zero where every
+# group was fitted, and for the terms `sel` leaves out.
+#' @keywords internal
+.re_new_group_eta <- function(object, des, keep, S, sel = NULL) {
+  n_obs <- length(des[[1L]]$group_idx)
+  out <- matrix(0, S, n_obs)
+  fresh <- vapply(seq_along(des), function(m)
+    (is.null(sel) || sel[m]) && anyNA(des[[m]]$group_idx), logical(1))
+  if (!any(fresh)) return(out)
+  sig <- .re_sigma_rows(object, keep, S)
+  for (m in which(fresh)) {
+    rt <- des[[m]]
+    nc <- rt$n_coefs %||% 1L
+    Z  <- .re_term_Z(rt, n_obs)
+    rows <- which(is.na(rt$group_idx))
+    lab  <- factor(rt$group_label[rows])
+    G    <- nlevels(lab)
+    L <- NULL
+    for (s in seq_len(S)) {
+      if (is.null(L) || !identical(sig[[m]][[s]], sig[[m]][[s - 1L]])) {
+        L <- .re_chol_spd(sig[[m]][[s]])                    # lower, L L' = Sigma
+      }
+      b <- matrix(stats::rnorm(G * nc), G, nc) %*% t(L)    # G x nc
+      out[s, rows] <- out[s, rows] +
+        rowSums(Z[rows, , drop = FALSE] * b[as.integer(lab), , drop = FALSE])
+    }
+  }
+  out
 }
 
 # Posterior-mean estimate of the RE coefficient vector (length n_re), in the
@@ -434,9 +646,14 @@
 # engine's own eta at each sampler draw, the per-cell grid mixture on a
 # nested-Laplace fit, and otherwise the fixed effects plus the offset, the
 # formula random effects and a posterior-mean SPDE field. Fixed effects on that
-# last source come from `.fixed_coef_draws()`. At `newdata` the prediction is
-# population-level (fixed effects and the offset), matching predict(), plus a
-# varying coefficient's field at the newdata coordinates / times.
+# last source come from `.fixed_coef_draws()`. At `newdata` the draws carry the
+# fixed effects and the offset, a varying coefficient's field at the newdata
+# coordinates / times, and the formula random effects: a fitted group's effect
+# from the same row as the fixed effects, a group the fit did not see drawn
+# from the term's covariance (`.re_new_group_eta()`). `re_form` selects the
+# random-effect terms (`.re_form_select()`); leaving any out reads the
+# coefficients source at the training data too. `latent = FALSE` reads that
+# source at the training data with the random effects and no latent field.
 #
 # On a zero-inflated fit the structural-zero logit is drawn from the same rows
 # and returned as the `"logit_zi"` attribute (S x n_obs), so the two predictors
@@ -448,12 +665,16 @@
 # session stream untouched; predictive callers leave it NULL for fresh draws.
 #' @keywords internal
 .tulpa_eta_draws <- function(object, newdata = NULL, ndraws = NULL,
-                             synth_seed = NULL) {
+                             synth_seed = NULL, re_form = NULL,
+                             latent = TRUE) {
   if (!is.null(synth_seed)) {
     .preserve_seed_in_frame()
     set.seed(as.integer(synth_seed))
   }
-  source <- if (is.null(newdata)) .tulpa_linpred_source(object) else "coefficients"
+  sel <- .re_form_select(object, re_form)
+  source <- if (is.null(newdata) && latent && (is.null(sel) || all(sel))) {
+    .tulpa_linpred_source(object)
+  } else "coefficients"
   if (identical(source, "sampler_model")) {
     return(.tulpa_eta_draws_sampler(object, ndraws))
   }
@@ -492,17 +713,35 @@
     if (!is.null(vc)) eta <- eta + vc
   }
 
-  if (is.null(newdata)) {
-    M <- .tulpa_re_map(object)
-    rd <- NULL
-    if (!is.null(M)) {
+  # The formula random effects `re_form` keeps: a fitted group's effect drawn
+  # with the fixed effects of its row, a group the fit did not see drawn from
+  # the term's covariance.
+  des <- if (is.null(newdata)) object$re_design
+         else .tulpa_re_design_at(object, newdata)
+  rd <- NULL
+  if (!is.null(sel) && any(sel)) {
+    M <- .tulpa_re_map(object, des)
+    if (!is.null(M) && length(M@x)) {
       rd <- .tulpa_re_coef_draws(object, beta, keep, nrow(M))
+      if (is.null(rd) && !is.null(newdata)) {
+        .re_estimate_unavailable(object, "posterior_predict")
+      }
       if (is.null(rd)) {
         message("posterior_predict(): no random-effect draws or point ",
                 "values available; replicates are population-level.")
       }
     }
-    eta <- .tulpa_add_latent_eta(object, eta, rd, keep, point = FALSE)
+  }
+  if (is.null(newdata) && latent) {
+    eta <- .tulpa_add_latent_eta(object, eta, rd, keep, point = FALSE,
+                                 sel = sel)
+  } else if (is.null(newdata)) {
+    re_eta <- .tulpa_re_eta(object, des, rd, sel)
+    if (!is.null(re_eta)) eta <- eta + re_eta
+  } else if (!is.null(sel) && any(sel)) {
+    re_eta <- .tulpa_re_eta(object, des, rd, sel)
+    if (!is.null(re_eta)) eta <- eta + re_eta
+    eta <- eta + .re_new_group_eta(object, des, keep, nrow(eta), sel)
   }
 
   if (!is.null(zi_nm)) {
@@ -515,17 +754,19 @@
 # Add the random-effect and latent-field contributions to in-sample linear
 # predictor rows `eta` (rows x n_obs) on the "coefficients" source. `re` is the
 # RE coefficient matrix paired row for row with `eta` (NULL for none), mapped
-# through `.tulpa_re_map()`. `keep` indexes the stored draw rows a sampled
-# Polya-Gamma field is read at. With `point = TRUE`, `eta` is the one row of the
+# through `.tulpa_re_map()`, the terms `sel` leaves out held at zero. `keep`
+# indexes the stored draw rows a sampled Polya-Gamma field is read at. With `point = TRUE`, `eta` is the one row of the
 # posterior-mean predictor and a sampled field enters at its posterior mean over
 # every stored draw; every other component is already a point value. The
 # predictor is linear in each component, so the point row is exactly the mean
 # of the rows the draw path assembles.
 #' @keywords internal
-.tulpa_add_latent_eta <- function(object, eta, re, keep, point = FALSE) {
+.tulpa_add_latent_eta <- function(object, eta, re, keep, point = FALSE,
+                                  sel = NULL) {
   n_obs <- ncol(eta)
   if (!is.null(re)) {
-    eta <- eta + as.matrix(re %*% .tulpa_re_map(object))
+    re_eta <- .tulpa_re_eta(object, object$re_design, re, sel)
+    if (!is.null(re_eta)) eta <- eta + re_eta
   }
   if (identical(object$spatial$type, "spde") &&
       !is.null(object$spatial_effects) && !is.null(object$spatial$A)) {
@@ -725,20 +966,39 @@
                 logit_zi = NULL))
   }
   lp <- .tulpa_point_linpred(object, NULL, accessor)
-  M <- .tulpa_re_map(object)
-  re <- NULL
-  if (!is.null(M)) {
-    b <- .tulpa_re_point(object, nrow(M))
-    if (is.null(b)) {
-      .accessor_unavailable(accessor, object, paste0(
-        "a posterior estimate of its random effects for the conditional ",
-        "predictor; effects = \"population\" holds them at zero"))
-    }
-    re <- matrix(b, nrow = 1L)
-  }
-  eta <- .tulpa_add_latent_eta(object, matrix(lp$eta, nrow = 1L), re,
+  eta <- .tulpa_add_latent_eta(object, matrix(lp$eta, nrow = 1L), NULL,
                                keep = NULL, point = TRUE)
+  re <- .tulpa_re_point_eta(object, object$re_design, accessor = accessor)
+  if (!is.null(re)) eta <- eta + re
   list(eta = as.numeric(eta), logit_zi = lp$logit_zi)
+}
+
+# The posterior-mean random-effect part of the linear predictor on a term design
+# `des` (the training rows, or `.tulpa_re_design_at()` at new data): each
+# fitted group at the posterior mean of its effect (`.tulpa_re_point()`), a
+# group the fit did not see at its prior mean, zero, and the terms `sel` leaves
+# out at zero. The one point read fitted(), residuals() and predict() share.
+# NULL when the fit has no formula random effects; a fit that has them but
+# carries no estimate of them is refused through `accessor`.
+#' @keywords internal
+.tulpa_re_point_eta <- function(object, des, sel = NULL, accessor) {
+  M <- .tulpa_re_map(object, des)
+  if (is.null(M)) return(NULL)
+  if (!length(M@x)) return(rep(0, ncol(M)))   # every row a new group
+  b <- .tulpa_re_point(object, nrow(M))
+  if (is.null(b)) .re_estimate_unavailable(object, accessor)
+  as.numeric(.tulpa_re_eta(object, des, matrix(b, nrow = 1L), sel))
+}
+
+# Refuse a conditional read on a fit that carries no estimate of its group
+# effects, with the fit's own reason where it states one.
+#' @keywords internal
+.re_estimate_unavailable <- function(object, accessor) {
+  why <- object$ranef_unavailable
+  .accessor_unavailable(accessor, object, paste0(
+    "a posterior estimate of its random effects for the conditional ",
+    "predictor", if (is.character(why)) paste0(" (", why, ")"),
+    "; re_form = NA gives the population level"))
 }
 
 #' Posterior predictive replicates
@@ -776,8 +1036,14 @@
 #'     over-disperses the linear predictor wherever the intercept is aliased
 #'     with them; an SPDE field enters at its posterior mean.
 #' }
-#' At `newdata` the prediction is population level (random effects at zero),
-#' matching [predict.tulpa_fit()]; a spatially or temporally varying
+#' At `newdata` each replicate carries the formula random effects, as
+#' [predict.tulpa_fit()] does: a row of a group the fit saw takes that group's
+#' effect, drawn jointly with the fixed effects of the replicate, and a row of a
+#' group it did not see takes a new effect drawn from the term's covariance --
+#' at the replicate's own draw of it where the fit samples or integrates the
+#' covariance (`re_cov = "gibbs"`, `"nested"`, the samplers), at its estimate or
+#' conditioned value otherwise. Rows of one new group share its effect. `re_form
+#' = NA` drops them (the population level). A spatially or temporally varying
 #' coefficient enters at the `newdata` coordinates / times, drawn per replicate
 #' from its conditional given that posterior draw.
 #'
@@ -803,22 +1069,28 @@ posterior_predict <- function(object, ...) {
   UseMethod("posterior_predict")
 }
 
-#' @param newdata Optional data frame of covariates to predict at. Population
-#'   level (fixed effects only); `NULL` (default) replicates at the training
-#'   data with every fitted component included.
+#' @param newdata Optional data frame of covariates to predict at, with the
+#'   grouping columns of the random-effect terms `re_form` keeps. `NULL`
+#'   (default) replicates at the training data with every fitted component
+#'   included.
 #' @param ndraws Number of posterior draws to use. Defaults to all stored
 #'   draws, or 400 on the draw-free Laplace tier.
 #' @param n_trials Binomial / beta-binomial trial counts for the replicates.
 #'   Defaults to the training trials when `newdata` is `NULL`, else 1.
 #' @param seed Optional integer seed (RNG state is restored on exit).
+#' @param re_form Which formula random-effect terms to condition on, as lme4's
+#'   `re.form`: `NULL` (default) every term, `NA` or `~0` none (the population
+#'   level), or a one-sided formula naming a subset, e.g. `~ (1 | site)`.
 #' @rdname posterior_predict
 #' @export
 posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
-                                        n_trials = NULL, seed = NULL, ...) {
+                                        n_trials = NULL, seed = NULL,
+                                        re_form = NULL, ...) {
   proc <- .tulpa_response_process(object, "posterior_predict")
   .seed_scoped(seed)
 
-  eta <- .tulpa_eta_draws(object, newdata = newdata, ndraws = ndraws)
+  eta <- .tulpa_eta_draws(object, newdata = newdata, ndraws = ndraws,
+                          re_form = re_form)
   logit_zi <- attr(eta, "logit_zi")
   if (is.null(n_trials)) {
     n_trials <- if (is.null(newdata)) proc$n_trials else NULL
@@ -844,8 +1116,8 @@ posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
 #' component the fit estimated: fixed effects, the offset, formula random
 #' effects, spatial and temporal fields and `latent()` blocks. It is the
 #' quantity [posterior_predict()] pushes through the family, read here on the
-#' link scale; [predict.tulpa_fit()] and [fitted.tulpa_fit()] are population
-#' level instead.
+#' link scale; [fitted.tulpa_fit()] is its posterior mean at the training data
+#' and [predict.tulpa_fit()] summarizes it at new data.
 #'
 #' On a nested-Laplace fit the posterior of each `eta_i` is the grid mixture
 #' `sum_k w_k N(fitted_eta[k, i], fitted_eta_var[k, i])`, and `summary = TRUE`
@@ -874,20 +1146,22 @@ posterior_linpred <- function(object, ...) {
   UseMethod("posterior_linpred")
 }
 
-#' @param newdata Optional data frame of covariates; population level, as for
+#' @param newdata Optional data frame of covariates, read as in
 #'   [posterior_predict()]. `NULL` (default) reads the training data.
 #' @param ndraws Number of draws (`summary = FALSE`, or a draw-based summary).
 #' @param summary Logical; return a per-observation summary instead of draws.
 #' @param probs The two probabilities of the reported interval.
 #' @param seed Optional integer seed (RNG state is restored on exit).
+#' @param re_form Which formula random-effect terms to condition on, as in
+#'   [posterior_predict()].
 #' @rdname posterior_linpred
 #' @export
 posterior_linpred.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
                                         summary = FALSE,
                                         probs = c(0.025, 0.975),
-                                        seed = NULL, ...) {
+                                        seed = NULL, re_form = NULL, ...) {
   .seed_scoped(seed)
-  if (isTRUE(summary) && is.null(newdata) &&
+  if (isTRUE(summary) && is.null(newdata) && is.null(re_form) &&
       identical(.tulpa_linpred_source(object), "grid_mixture")) {
     M <- object$fitted_eta
     V <- object$fitted_eta_var
@@ -905,7 +1179,8 @@ posterior_linpred.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
                       row.names = NULL,
                       stringsAsFactors = FALSE))
   }
-  eta <- .tulpa_eta_draws(object, newdata = newdata, ndraws = ndraws)
+  eta <- .tulpa_eta_draws(object, newdata = newdata, ndraws = ndraws,
+                          re_form = re_form)
   attr(eta, "cells") <- NULL
   attr(eta, "logit_zi") <- NULL
   if (!isTRUE(summary)) return(eta)

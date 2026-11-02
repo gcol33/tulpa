@@ -40,8 +40,10 @@ unreliable.
 
 Fixed-effect / GLMM fits only: subsetting the observations breaks a spatial or
 temporal field, so those fits are rejected (use PSIS-LOO via
-\code{\link[=tulpa_criteria]{tulpa_criteria()}}). Held-out random-effect groups contribute at their prior
-mean (population-level held-out prediction), matching \code{\link[stats:predict]{stats::predict()}}.
+\code{\link[=tulpa_criteria]{tulpa_criteria()}}). A held-out row of a random-effect group the training
+rows saw is scored at that group's effect, and one of a group they did not
+see integrates a new effect over the term's covariance, as
+\code{\link[=posterior_predict]{posterior_predict()}} does at new data.
 }
 \examples{
 \donttest{

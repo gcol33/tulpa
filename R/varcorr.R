@@ -224,19 +224,14 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 }
 
 
-#' @rdname VarCorr
-#' @export
-VarCorr.tulpa_fit <- function(x, sigma = 1, ...) {
+# The per-term covariance matrices a fit reports and where they came from
+# (`source`: "sampled", "estimated" or "conditioned"), read from the first of
+# the backend sources below that the fit carries. VarCorr() reports them, and a
+# prediction for a group the fit did not see draws its effect from them where
+# the fit carries no covariance per draw.
+#' @keywords internal
+.varcorr_cov_list <- function(x) {
   layout <- x$re_layout
-  if (is.null(layout) || length(layout) == 0L) {
-    # A fixed-effect gaussian fit still has its residual SD to report.
-    res <- .varcorr_residual(x)
-    if (!is.null(res)) return(res)
-    return(data.frame(term = character(0), coef = character(0),
-                      sd = numeric(0), source = character(0),
-                      stringsAsFactors = FALSE))
-  }
-
   # Order matters: a fit that estimated Sigma also has a conditioning fallback
   # available, and reporting the fallback would understate what it did.
   cov_list <- .varcorr_from_sigma(x)
@@ -262,6 +257,26 @@ VarCorr.tulpa_fit <- function(x, sigma = 1, ...) {
     cov_list <- .varcorr_from_conditioned(x, layout)
     src <- "conditioned"
   }
+  list(cov_list = cov_list, source = src)
+}
+
+
+#' @rdname VarCorr
+#' @export
+VarCorr.tulpa_fit <- function(x, sigma = 1, ...) {
+  layout <- x$re_layout
+  if (is.null(layout) || length(layout) == 0L) {
+    # A fixed-effect gaussian fit still has its residual SD to report.
+    res <- .varcorr_residual(x)
+    if (!is.null(res)) return(res)
+    return(data.frame(term = character(0), coef = character(0),
+                      sd = numeric(0), source = character(0),
+                      stringsAsFactors = FALSE))
+  }
+
+  vcl <- .varcorr_cov_list(x)
+  cov_list <- vcl$cov_list
+  src <- vcl$source
   if (is.null(cov_list) || length(cov_list) != length(layout)) {
     return(data.frame(term = character(0), coef = character(0),
                       sd = numeric(0), source = character(0),

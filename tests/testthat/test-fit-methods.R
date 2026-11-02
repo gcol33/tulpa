@@ -123,14 +123,17 @@ test_that("predict and fitted work on a Laplace fit", {
   fv <- fitted(fit)
   expect_length(fv, nrow(d$df))
 
-  # Predict at new covariates, link scale, with intervals
+  # Predict at new covariates, link scale, with intervals: the population
+  # level, so `newdata` needs no grouping column.
   nd <- data.frame(x = c(-1, 0, 1))
-  p_link <- predict(fit, newdata = nd)
+  expect_error(predict(fit, newdata = nd), "re_form = NA")
+  p_link <- predict(fit, newdata = nd, re_form = NA)
   expect_length(p_link, 3L)
   # gaussian: response == link
-  expect_equal(predict(fit, newdata = nd, type = "response"), p_link)
+  expect_equal(predict(fit, newdata = nd, type = "response", re_form = NA),
+               p_link)
 
-  ci <- predict(fit, newdata = nd, se.fit = TRUE, type = "link")
+  ci <- predict(fit, newdata = nd, se.fit = TRUE, type = "link", re_form = NA)
   expect_setequal(names(ci), c("fit", "se.fit", "lower", "upper"))
   expect_true(all(ci$lower < ci$upper))
   # prediction tracks the slope
@@ -145,7 +148,8 @@ test_that("predict response scale respects the family range (binomial)", {
   fit <- tulpa(y ~ x + (1 | g), data = d$df, family = "binomial",
                mode = "laplace", sigma_re = 0.6)
   nd <- data.frame(x = seq(-2, 2, by = 1))
-  pr <- predict(fit, newdata = nd, type = "response", se.fit = TRUE)
+  pr <- predict(fit, newdata = nd, type = "response", se.fit = TRUE,
+                re_form = NA)
   expect_true(all(pr$fit > 0 & pr$fit < 1))
   expect_true(all(pr$lower >= 0 & pr$upper <= 1))
 })

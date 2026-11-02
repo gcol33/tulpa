@@ -14,6 +14,7 @@ posterior_linpred(object, ...)
   summary = FALSE,
   probs = c(0.025, 0.975),
   seed = NULL,
+  re_form = NULL,
   ...
 )
 }
@@ -22,7 +23,7 @@ posterior_linpred(object, ...)
 
 \item{...}{Passed to methods.}
 
-\item{newdata}{Optional data frame of covariates; population level, as for
+\item{newdata}{Optional data frame of covariates, read as in
 \code{\link[=posterior_predict]{posterior_predict()}}. \code{NULL} (default) reads the training data.}
 
 \item{ndraws}{Number of draws (\code{summary = FALSE}, or a draw-based summary).}
@@ -32,6 +33,9 @@ posterior_linpred(object, ...)
 \item{probs}{The two probabilities of the reported interval.}
 
 \item{seed}{Optional integer seed (RNG state is restored on exit).}
+
+\item{re_form}{Which formula random-effect terms to condition on, as in
+\code{\link[=posterior_predict]{posterior_predict()}}.}
 }
 \value{
 With \code{summary = FALSE}, an \verb{ndraws x n_obs} matrix of draws. With
@@ -45,8 +49,8 @@ The posterior of the linear predictor \code{eta} at the training data with every
 component the fit estimated: fixed effects, the offset, formula random
 effects, spatial and temporal fields and \code{latent()} blocks. It is the
 quantity \code{\link[=posterior_predict]{posterior_predict()}} pushes through the family, read here on the
-link scale; \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}} and \code{\link[=fitted.tulpa_fit]{fitted.tulpa_fit()}} are population
-level instead.
+link scale; \code{\link[=fitted.tulpa_fit]{fitted.tulpa_fit()}} is its posterior mean at the training data
+and \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}} summarizes it at new data.
 
 On a nested-Laplace fit the posterior of each \code{eta_i} is the grid mixture
 \verb{sum_k w_k N(fitted_eta[k, i], fitted_eta_var[k, i])}, and \code{summary = TRUE}

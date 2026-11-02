@@ -849,51 +849,19 @@ tulpa_build_model_data <- function(parsed, data) {
   re_terms <- list()
   for (i in seq_along(parsed$random_effects)) {
     re_spec <- parsed$random_effects[[i]]
-
-    # A level with no rows has no likelihood, so its effect would be the prior
-    # alone, reported by ranef() beside the estimated ones; lme4 drops such
-    # levels and so does this (gcol33/tulpa#881). An NA group stays NA here
-    # and is refused by the fitting doors (`.assert_complete_groups()`).
-    group_factor <- droplevels(resolve_group_factor(re_spec, data, formula_env))
-    group_idx <- as.integer(group_factor)
-    n_groups <- nlevels(group_factor)
-
-    n_coefs <- if (re_spec$has_intercept) 1L else 0L
-    slope_matrix <- NULL
-    slope_names <- character(0)
-
-    slope_lang <- re_spec$slope_terms
-    if (length(slope_lang) > 0) {
-      slope_rhs <- slope_lang[[1]]
-      if (length(slope_lang) > 1) {
-        for (s in slope_lang[-1]) slope_rhs <- call("+", slope_rhs, s)
-      }
-      slope_formula <- as.formula(call("~", slope_rhs), env = formula_env)
-      slope_mf <- model.frame(slope_formula, data, na.action = na.pass)
-      .check_contrast_levels(slope_mf, "a random-slope term")
-      slope_mat <- model.matrix(slope_formula, slope_mf)
-      intercept_col <- which(colnames(slope_mat) == "(Intercept)")
-      if (length(intercept_col) > 0) {
-        slope_mat <- slope_mat[, -intercept_col, drop = FALSE]
-      }
-      if (ncol(slope_mat) > 0) {
-        slope_matrix <- slope_mat
-        slope_names <- colnames(slope_mat)
-        n_coefs <- n_coefs + ncol(slope_mat)
-      }
-    }
-
+    td <- .re_term_design(re_spec, data, formula_env)
     re_terms[[i]] <- list(
       group_var     = re_spec$group_var,
       group_vars    = re_spec$group_vars,
-      group_idx     = group_idx,
-      n_groups      = n_groups,
-      n_coefs       = n_coefs,
+      group_idx     = td$group_idx,
+      n_groups      = length(td$levels),
+      n_coefs       = td$n_coefs,
       has_intercept = re_spec$has_intercept,
-      slope_matrix  = slope_matrix,
-      slope_names   = slope_names,
+      slope_matrix  = td$slope_matrix,
+      slope_names   = td$slope_names,
+      slope_xlevels = td$slope_xlevels,
       correlated    = re_spec$correlated,
-      levels        = levels(group_factor)
+      levels        = td$levels
     )
   }
 
@@ -997,6 +965,67 @@ tulpa_build_model_data <- function(parsed, data) {
 #'   - language expression: evaluate against `data` (e.g., `factor(g)`).
 #'
 #' @noRd
+# One random-effect term's design on `data`: each row's group index and the
+# slope columns.
+#
+# On the training data (`levels = NULL`) the groups are the levels present: a
+# level with no rows has no likelihood, so its effect would be the prior alone,
+# reported by ranef() beside the estimated ones; lme4 drops such levels and so
+# does this (gcol33/tulpa#881). An NA group stays NA and is refused by the
+# fitting doors (`.assert_complete_groups()`). The levels of any factor in the
+# slope design are recorded (`slope_xlevels`).
+#
+# At new data `levels` are the fitted groups, matched by label: a row whose
+# group the fit did not see gets index NA, and its label is kept in
+# `group_label` so rows of one new group share one effect. The slope design is
+# rebuilt on the recorded factor levels, so its columns are the fitted ones
+# whatever subset of a factor's levels the new data holds.
+#' @keywords internal
+.re_term_design <- function(re_spec, data, formula_env, levels = NULL,
+                            xlevels = NULL) {
+  gf <- resolve_group_factor(re_spec, data, formula_env)
+  if (is.null(levels)) {
+    gf <- droplevels(gf)
+    levels <- base::levels(gf)
+    group_idx <- as.integer(gf)
+  } else {
+    group_idx <- match(as.character(gf), levels)
+  }
+
+  n_coefs <- if (re_spec$has_intercept) 1L else 0L
+  slope_matrix <- NULL
+  slope_names <- character(0)
+  slope_xlevels <- NULL
+  slope_lang <- re_spec$slope_terms
+  if (length(slope_lang) > 0) {
+    slope_rhs <- slope_lang[[1]]
+    if (length(slope_lang) > 1) {
+      for (s in slope_lang[-1]) slope_rhs <- call("+", slope_rhs, s)
+    }
+    slope_formula <- as.formula(call("~", slope_rhs), env = formula_env)
+    training <- is.null(xlevels)
+    slope_mf <- model.frame(slope_formula, data, na.action = na.pass,
+                            xlev = xlevels)
+    if (training) {
+      .check_contrast_levels(slope_mf, "a random-slope term")
+      slope_xlevels <- stats::.getXlevels(stats::terms(slope_mf), slope_mf)
+    }
+    slope_mat <- model.matrix(slope_formula, slope_mf)
+    intercept_col <- which(colnames(slope_mat) == "(Intercept)")
+    if (length(intercept_col) > 0) {
+      slope_mat <- slope_mat[, -intercept_col, drop = FALSE]
+    }
+    if (ncol(slope_mat) > 0) {
+      slope_matrix <- slope_mat
+      slope_names <- colnames(slope_mat)
+      n_coefs <- n_coefs + ncol(slope_mat)
+    }
+  }
+  list(group_idx = group_idx, group_label = as.character(gf),
+       levels = levels, n_coefs = n_coefs, slope_matrix = slope_matrix,
+       slope_names = slope_names, slope_xlevels = slope_xlevels)
+}
+
 resolve_group_factor <- function(re_spec, data, env) {
   if (!is.null(re_spec$group_expr)) {
     val <- eval(re_spec$group_expr, envir = data, enclos = env)

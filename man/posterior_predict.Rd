@@ -13,6 +13,7 @@ posterior_predict(object, ...)
   ndraws = NULL,
   n_trials = NULL,
   seed = NULL,
+  re_form = NULL,
   ...
 )
 }
@@ -21,9 +22,10 @@ posterior_predict(object, ...)
 
 \item{...}{Passed to methods.}
 
-\item{newdata}{Optional data frame of covariates to predict at. Population
-level (fixed effects only); \code{NULL} (default) replicates at the training
-data with every fitted component included.}
+\item{newdata}{Optional data frame of covariates to predict at, with the
+grouping columns of the random-effect terms \code{re_form} keeps. \code{NULL}
+(default) replicates at the training data with every fitted component
+included.}
 
 \item{ndraws}{Number of posterior draws to use. Defaults to all stored
 draws, or 400 on the draw-free Laplace tier.}
@@ -32,6 +34,10 @@ draws, or 400 on the draw-free Laplace tier.}
 Defaults to the training trials when \code{newdata} is \code{NULL}, else 1.}
 
 \item{seed}{Optional integer seed (RNG state is restored on exit).}
+
+\item{re_form}{Which formula random-effect terms to condition on, as lme4's
+\code{re.form}: \code{NULL} (default) every term, \code{NA} or \code{~0} none (the population
+level), or a one-sided formula naming a subset, e.g. \code{~ (1 | site)}.}
 }
 \value{
 A \verb{ndraws x n_obs} numeric matrix of replicated responses.
@@ -69,8 +75,13 @@ its random effects and areal field at their posterior mode, which
 over-disperses the linear predictor wherever the intercept is aliased
 with them; an SPDE field enters at its posterior mean.
 }
-At \code{newdata} the prediction is population level (random effects at zero),
-matching \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}}; a spatially or temporally varying
+At \code{newdata} each replicate carries the formula random effects, as
+\code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}} does: a row of a group the fit saw takes that group's
+effect, drawn jointly with the fixed effects of the replicate, and a row of a
+group it did not see takes a new effect drawn from the term's covariance --
+at the replicate's own draw of it where the fit samples or integrates the
+covariance (\code{re_cov = "gibbs"}, \code{"nested"}, the samplers), at its estimate or
+conditioned value otherwise. Rows of one new group share its effect. \code{re_form = NA} drops them (the population level). A spatially or temporally varying
 coefficient enters at the \code{newdata} coordinates / times, drawn per replicate
 from its conditional given that posterior draw.
 

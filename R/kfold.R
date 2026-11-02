@@ -23,8 +23,10 @@
 #'
 #' Fixed-effect / GLMM fits only: subsetting the observations breaks a spatial or
 #' temporal field, so those fits are rejected (use PSIS-LOO via
-#' [tulpa_criteria()]). Held-out random-effect groups contribute at their prior
-#' mean (population-level held-out prediction), matching [stats::predict()].
+#' [tulpa_criteria()]). A held-out row of a random-effect group the training
+#' rows saw is scored at that group's effect, and one of a group they did not
+#' see integrates a new effect over the term's covariance, as
+#' [posterior_predict()] does at new data.
 #'
 #' @param object A `tulpa_fit` fitted through [tulpa()] (must carry `$call`).
 #' @param data The data frame the model was fit to.
@@ -174,48 +176,27 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 }
 
 # Exact held-out log predictive density log 1/S sum_s p(y_i | eta_i^(s)) at
-# the rows `test`, under a training refit's fixed-effect posterior. Held-out
-# random-effect groups contribute at their prior mean (population level).
+# the rows `test`, over the training refit's posterior draws of the linear
+# predictor there (`.tulpa_eta_draws()`): the fixed effects and, for a
+# random-effect term, the effect of a group the training rows saw drawn with
+# them, and the effect of a group they did not see drawn from the term's
+# covariance. The draws are pinned, so a fold scores the same on every call.
 .cv_heldout_lpd <- function(fit_k, data, test, y, nt, fam, phi, label,
                             phi2 = NULL) {
-  beta <- stats::coef(fit_k)
-  D    <- .tulpa_designs(fit_k, data[test, , drop = FALSE], label)
-  zi_nm <- colnames(D$X_zi)
-  miss <- setdiff(names(beta), c(colnames(D$X), zi_nm))
-  if (length(miss)) {
-    stop(label, ": held-out data cannot reproduce fixed-effect column(s): ",
-         paste(miss, collapse = ", "), call. = FALSE)
-  }
-  count_nm <- setdiff(names(beta), zi_nm)
-
-  # Posterior draws of the fixed effects on the training refit; fall back to
-  # the point estimate (a single-draw plug-in) when a fit carries no draws.
-  B <- .kfold_fixed_draws(fit_k, names(beta))
-  eta <- D$X[, count_nm, drop = FALSE] %*% t(B[, count_nm, drop = FALSE]) +
-    D$offset                                   # [n_test x S]
-  logit_zi <- if (!is.null(zi_nm)) {
-    D$X_zi[, zi_nm, drop = FALSE] %*% t(B[, zi_nm, drop = FALSE])
-  }
+  eta <- tryCatch(
+    .tulpa_eta_draws(fit_k, newdata = data[test, , drop = FALSE],
+                     synth_seed = .DIAGNOSTIC_SEED$criteria),
+    error = function(e) stop(label, ": ", conditionMessage(e), call. = FALSE))
+  logit_zi <- attr(eta, "logit_zi")
 
   yte <- y[test]; ntte <- nt[test]
-  ll <- vapply(seq_len(ncol(eta)), function(s) {
-    .response_loglik(eta[, s], if (!is.null(logit_zi)) logit_zi[, s], yte, fam,
+  ll <- vapply(seq_len(nrow(eta)), function(s) {
+    .response_loglik(eta[s, ], if (!is.null(logit_zi)) logit_zi[s, ], yte, fam,
                      n_trials = ntte, phi = phi, phi2 = phi2)
   }, numeric(length(test)))                    # [n_test x S]
   if (is.null(dim(ll))) ll <- matrix(ll, nrow = length(test))
 
   apply(ll, 1L, logmeanexp)
-}
-
-# Fixed-effect posterior draws (`[S x p]`, columns ordered by `bnm`) from a fit,
-# via the provenance-agnostic accessor; a point fit yields a single-row plug-in.
-.kfold_fixed_draws <- function(fit, bnm) {
-  dr <- tryCatch(.fit_draws(fit), error = function(e) NULL)
-  if (!is.null(dr) && is.matrix(dr) && all(bnm %in% colnames(dr))) {
-    return(dr[, bnm, drop = FALSE])
-  }
-  matrix(stats::coef(fit)[bnm], nrow = 1L,
-         dimnames = list(NULL, bnm))
 }
 
 #' Selective refit of high-Pareto-k observations (reloo)
@@ -229,8 +210,8 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 #' so the cost is one refit per flagged observation rather than per fold.
 #'
 #' The same restrictions as [tulpa_kfold()] apply: fixed-effect / GLMM fits
-#' only (subsetting breaks a spatial / temporal field), and held-out
-#' random-effect groups contribute at their prior mean.
+#' only (subsetting breaks a spatial / temporal field), and a held-out row is
+#' scored at its group's effect as there.
 #'
 #' @param object A `tulpa_fit` fitted through [tulpa()] (must carry `$call`).
 #' @param data The data frame the model was fit to.

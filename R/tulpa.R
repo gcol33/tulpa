@@ -3031,7 +3031,8 @@ tulpa <- function(formula, data,
     fit$phi          <- fit$phi %||% phi
     fit$phi2         <- phi2
     fit$re_design    <- lapply(bundle$re_terms %||% list(), function(rt) {
-      rt[c("group_idx", "has_intercept", "slope_matrix", "n_groups", "n_coefs")]
+      rt[c("group_var", "group_idx", "has_intercept", "slope_matrix",
+           "slope_names", "slope_xlevels", "n_groups", "n_coefs", "levels")]
     })
     # Attach the validated spatial spec so predict() can krige the field to new
     # coordinates (HSGP basis / GP-NNGP conditional mean). fit_spde already sets

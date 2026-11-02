@@ -2,7 +2,7 @@
 % Please edit documentation in R/methods_generic.R
 \name{predict.tulpa_fit}
 \alias{predict.tulpa_fit}
-\title{Predict at new covariate values (population level)}
+\title{Predict at new covariate values}
 \usage{
 \method{predict}{tulpa_fit}(
   object,
@@ -11,6 +11,7 @@
   se.fit = FALSE,
   level = 0.95,
   include_field = TRUE,
+  re_form = NULL,
   ...
 )
 }
@@ -52,6 +53,11 @@ field. For an HSGP or GP/NNGP fit the field is added to the point
 prediction but its uncertainty is not yet propagated into \code{se.fit} (the
 interval reflects the fixed-effect covariance only).}
 
+\item{re_form}{Which formula random-effect terms to condition on, as lme4's
+\code{re.form}: \code{NULL} (default) every term, \code{NA} or \code{~0} none (the population
+level), or a one-sided formula naming a subset, e.g. \code{~ (1 | site)}.
+\code{newdata} then carries the grouping columns of the terms kept.}
+
 \item{...}{Ignored.}
 }
 \value{
@@ -62,7 +68,19 @@ scale.
 \description{
 Prediction of the linear predictor at \code{newdata}, on the link or response
 scale. The fixed-effect part is \verb{X beta} with credible bounds from the
-fixed-effect covariance (\code{\link[=vcov]{vcov()}}). For a fit carrying a continuous spatial
+fixed-effect covariance (\code{\link[=vcov]{vcov()}}).
+
+Formula random effects are conditioned on, as lme4 does: a row of a group
+the fit saw takes the posterior mean of that group's effect, and a row of a
+group it did not see takes the prior mean, zero, with an interval that
+carries the between-group spread -- its effect is drawn from the term's
+covariance, at each posterior draw of it where the fit samples or integrates
+the covariance and at its estimate or conditioned value otherwise.
+\code{re_form = NA} gives the population prediction (every random effect at
+zero); a one-sided formula such as \code{~ (1 | site)} conditions on that term
+alone. With random effects the interval is read over 4000 pinned draws of
+the fixed and random effects jointly (the same on every call), and
+\code{se.fit} is the SD of those draws. For a fit carrying a continuous spatial
 field, the posterior-mean field is interpolated (kriged) to the \code{newdata}
 coordinates and added to the linear predictor by default, so \code{predict()}
 gives the conditional (location-specific) prediction. Three continuous field
@@ -72,10 +90,9 @@ where the Laplacian basis is re-evaluated at the new coordinates (with the
 training centring / boundary); and a GP / NNGP field (\code{spatial_gp()}),
 interpolated by the NNGP conditional mean at each new location's nearest
 training locations. The HSGP and GP/NNGP fields are marginalised over the
-hyperparameter grid (not plugged in at the posterior mean). Ordinary random
-effects are held at zero (population level); add group effects from \code{\link[=ranef]{ranef()}}
-when needed. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field
-is held at zero in the same way, at the training design too; the in-sample
+hyperparameter grid (not plugged in at the posterior mean). An areal (ICAR /
+BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field is held at zero, at the
+training design too; the in-sample
 linear predictor with every fitted component is what \code{\link[=posterior_predict]{posterior_predict()}}
 draws and what \code{compare_models(criterion = "waic")} / \code{"loo"} score.
 

@@ -2257,12 +2257,24 @@ nobs.tulpa_fit <- function(object, ...) {
   as.integer(n)
 }
 
-#' Predict at new covariate values (population level)
+#' Predict at new covariate values
 #'
 #' @description
 #' Prediction of the linear predictor at `newdata`, on the link or response
 #' scale. The fixed-effect part is `X beta` with credible bounds from the
-#' fixed-effect covariance ([vcov()]). For a fit carrying a continuous spatial
+#' fixed-effect covariance ([vcov()]).
+#'
+#' Formula random effects are conditioned on, as lme4 does: a row of a group
+#' the fit saw takes the posterior mean of that group's effect, and a row of a
+#' group it did not see takes the prior mean, zero, with an interval that
+#' carries the between-group spread -- its effect is drawn from the term's
+#' covariance, at each posterior draw of it where the fit samples or integrates
+#' the covariance and at its estimate or conditioned value otherwise.
+#' `re_form = NA` gives the population prediction (every random effect at
+#' zero); a one-sided formula such as `~ (1 | site)` conditions on that term
+#' alone. With random effects the interval is read over 4000 pinned draws of
+#' the fixed and random effects jointly (the same on every call), and
+#' `se.fit` is the SD of those draws. For a fit carrying a continuous spatial
 #' field, the posterior-mean field is interpolated (kriged) to the `newdata`
 #' coordinates and added to the linear predictor by default, so `predict()`
 #' gives the conditional (location-specific) prediction. Three continuous field
@@ -2272,10 +2284,9 @@ nobs.tulpa_fit <- function(object, ...) {
 #' training centring / boundary); and a GP / NNGP field (`spatial_gp()`),
 #' interpolated by the NNGP conditional mean at each new location's nearest
 #' training locations. The HSGP and GP/NNGP fields are marginalised over the
-#' hyperparameter grid (not plugged in at the posterior mean). Ordinary random
-#' effects are held at zero (population level); add group effects from [ranef()]
-#' when needed. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field
-#' is held at zero in the same way, at the training design too; the in-sample
+#' hyperparameter grid (not plugged in at the posterior mean). An areal (ICAR /
+#' BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field is held at zero, at the
+#' training design too; the in-sample
 #' linear predictor with every fitted component is what [posterior_predict()]
 #' draws and what `compare_models(criterion = "waic")` / `"loo"` score.
 #'
@@ -2325,6 +2336,10 @@ nobs.tulpa_fit <- function(object, ...) {
 #'   field. For an HSGP or GP/NNGP fit the field is added to the point
 #'   prediction but its uncertainty is not yet propagated into `se.fit` (the
 #'   interval reflects the fixed-effect covariance only).
+#' @param re_form Which formula random-effect terms to condition on, as lme4's
+#'   `re.form`: `NULL` (default) every term, `NA` or `~0` none (the population
+#'   level), or a one-sided formula naming a subset, e.g. `~ (1 | site)`.
+#'   `newdata` then carries the grouping columns of the terms kept.
 #' @param ... Ignored.
 #' @return If `se.fit = FALSE`, a numeric vector. If `se.fit = TRUE`, a data
 #'   frame with `fit`, `se.fit` (link scale), `lower`, `upper` on the requested
@@ -2333,7 +2348,7 @@ nobs.tulpa_fit <- function(object, ...) {
 predict.tulpa_fit <- function(object, newdata = NULL,
                               type = c("link", "response"),
                               se.fit = FALSE, level = 0.95,
-                              include_field = TRUE, ...) {
+                              include_field = TRUE, re_form = NULL, ...) {
   type <- match.arg(type)
   # Count design and linear predictor (offset included, matching
   # fitted()/residuals()), plus the structural-zero logit on a zero-inflated fit.
@@ -2385,6 +2400,19 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   vc_eta <- if (isTRUE(include_field)) .predict_varying_coef_eta(object, newdata, lp)
   if (!is.null(vc_eta)) eta <- unname(colMeans(vc_eta))
 
+  # Formula random effects (`re_form`): a group the fit saw at the posterior
+  # mean of its effect, a new group at its prior mean, zero -- the conditional
+  # point read fitted() uses (`.tulpa_re_point_eta()`).
+  sel   <- .re_form_select(object, re_form)
+  re_on <- !is.null(sel) && any(sel)
+  eta_fixed_fields <- eta
+  if (re_on) {
+    des <- if (is.null(newdata)) object$re_design
+           else .tulpa_re_design_at(object, newdata)
+    re_pt <- .tulpa_re_point_eta(object, des, sel, accessor = "predict")
+    if (!is.null(re_pt)) eta <- eta + re_pt
+  }
+
   ph <- object$phi %||% 1.0
   response_mean <- function(e, z) .response_mean(e, z, object$family, phi = ph)
   if (!se.fit) {
@@ -2392,6 +2420,30 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   }
 
   z  <- stats::qnorm(1 - (1 - level) / 2)
+  if (re_on) {
+    # The interval is read over pinned, RNG-neutral draws of the fixed effects
+    # with each row's group effects -- a fitted group's from its conditional
+    # given the row's fixed effects, a new group's from the term's covariance
+    # -- so a new group's band carries the between-group spread. A field the
+    # draws do not carry (a kriged spatial field) enters at its point value.
+    D <- .tulpa_eta_draws(object, newdata = newdata,
+                          ndraws = .PREDICT_DRAWS$ndraws,
+                          synth_seed = .PREDICT_DRAWS$seed,
+                          re_form = re_form, latent = FALSE)
+    lz <- attr(D, "logit_zi")
+    in_draws <- if (!is.null(newdata) && !is.null(vc_eta)) colMeans(vc_eta)
+                else lp$eta
+    D <- sweep(D, 2L, eta_fixed_fields - in_draws, "+")
+    a  <- (1 - level) / 2
+    se <- apply(D, 2L, stats::sd)
+    if (type == "response") {
+      D <- matrix(response_mean(D, lz), nrow(D))
+      eta <- response_mean(eta, lp$logit_zi)
+    }
+    lo <- apply(D, 2L, stats::quantile, probs = a, names = FALSE)
+    hi <- apply(D, 2L, stats::quantile, probs = 1 - a, names = FALSE)
+    return(data.frame(fit = eta, se.fit = se, lower = lo, upper = hi))
+  }
   if (!is.null(vc_eta)) {
     a  <- (1 - level) / 2
     se <- apply(vc_eta, 2L, stats::sd)
@@ -2451,8 +2503,8 @@ predict.tulpa_fit <- function(object, newdata = NULL,
 #' @keywords internal
 .predict_zi_mean_quantiles <- function(object, lp, shift, level) {
   .preserve_seed_in_frame()
-  set.seed(.PREDICT_ZI$seed)
-  beta <- .fixed_coef_draws(object, .PREDICT_ZI$ndraws)$beta
+  set.seed(.PREDICT_DRAWS$seed)
+  beta <- .fixed_coef_draws(object, .PREDICT_DRAWS$ndraws)$beta
   eta  <- sweep(beta[, lp$count_names, drop = FALSE] %*% t(lp$X), 2,
                 rep_len(shift, nrow(lp$X)), "+")
   zlog <- beta[, lp$zi_names, drop = FALSE] %*% t(lp$X_zi)

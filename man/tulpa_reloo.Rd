@@ -41,8 +41,8 @@ log predictive density. All other observations keep their PSIS-LOO value,
 so the cost is one refit per flagged observation rather than per fold.
 
 The same restrictions as \code{\link[=tulpa_kfold]{tulpa_kfold()}} apply: fixed-effect / GLMM fits
-only (subsetting breaks a spatial / temporal field), and held-out
-random-effect groups contribute at their prior mean.
+only (subsetting breaks a spatial / temporal field), and a held-out row is
+scored at its group's effect as there.
 }
 \examples{
 \donttest{

@@ -1573,15 +1573,17 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     beta_sd = 2.5
 )
 
-# --- response-scale prediction intervals read over draws ---------------------
+# --- prediction intervals read over draws -----------------------------------
 #
-# `predict(type = "response", se.fit = TRUE)` on a zero-inflated fit reads its
-# bounds as quantiles of the mixture mean over draws of the fixed block, because
-# the mean moves with the count and the zero-inflation predictors at once and no
-# endpoint map exists. The seed is pinned (and restored afterwards) so the
-# interval is a function of the fit alone; `ndraws` bounds the Monte Carlo error
-# of a 2.5% quantile at roughly 0.25 percentage points of tail probability.
-.PREDICT_ZI <- list(
+# `predict(se.fit = TRUE)` reads its bounds as quantiles over draws where no
+# closed form gives them: on a zero-inflated fit's response scale, because the
+# mixture mean moves with the count and the zero-inflation predictors at once
+# and no endpoint map exists; and on a fit with random effects, whose group
+# effects (a new group's drawn from the term's covariance) are drawn with the
+# fixed effects. The seed is pinned (and restored afterwards) so the interval is
+# a function of the fit alone; `ndraws` bounds the Monte Carlo error of a 2.5%
+# quantile at roughly 0.25 percentage points of tail probability.
+.PREDICT_DRAWS <- list(
     seed   = 285603L,
     ndraws = 4000L
 )
