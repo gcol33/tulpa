@@ -705,10 +705,15 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   p_zi <- if (is.null(X_zi)) 0L else ncol(X_zi)
   has_zi <- p_zi > 0L
   layout <- .re_cov_block_layout(re_terms, length(y))
-  if (length(layout) == 0L) {
-    stop(caller, "(): no random-effect terms. The outer objective is over the ",
-         "random-effect covariances, so there is nothing to fit; use ",
-         "tulpa_laplace() for a fixed-effect-only model.", call. = FALSE)
+  # Without random-effect terms the outer objective has no covariance
+  # coordinate; it still has one when the dispersion is estimated, the log phi
+  # of a fixed-effect model, which is then the whole outer vector.
+  if (length(layout) == 0L && !isTRUE(estimate_phi)) {
+    stop(caller, "(): no random-effect terms and no dispersion to estimate. ",
+         "The outer objective is over the random-effect covariances (and, ",
+         "with `estimate_phi = TRUE`, the dispersion), so there is nothing to ",
+         "fit; use tulpa_laplace() for a fixed-effect-only model at a given ",
+         "phi.", call. = FALSE)
   }
   k <- sum(vapply(layout, `[[`, integer(1), "k"))
   if (is.null(log_prior_theta)) {
@@ -770,8 +775,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   # per-group integral only factorizes over ONE shared grouping factor, so AGHQ
   # is available only then; crossed RE terms keep the joint-field Laplace inner
   # solve (n_quad = 1).
-  idx1 <- layout[[1L]]$idx
-  ng1  <- layout[[1L]]$n_groups
+  idx1 <- if (length(layout)) layout[[1L]]$idx
+  ng1  <- if (length(layout)) layout[[1L]]$n_groups
   single_factor <- !is.null(idx1) && all(vapply(layout, function(b)
     identical(b$idx, idx1) && identical(b$n_groups, ng1), logical(1)))
   if (n_quad > 1L && !single_factor) {

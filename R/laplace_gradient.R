@@ -497,8 +497,6 @@
   p_zi    <- if (has_zi) ncol(X_zi) else 0L
   p_fixed <- p_fix + p_zi
   n_x     <- length(x)
-  Z <- .re_design_matrix(re_list, n_obs)
-  if (is.null(Z)) return(NULL)
   # A is the COUNT predictor's design. With zero inflation the latent vector
   # also carries beta_zi, whose columns are zero here and carry the second
   # predictor in A_zi instead.

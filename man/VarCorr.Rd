@@ -24,7 +24,11 @@ A data frame with one row per random-effect coefficient: \code{term},
 under \code{estimate_phi = TRUE} and \code{"conditioned"} otherwise; it has no entry
 in \code{"cov"}. Correlated terms additionally carry the covariance
 matrices in the \code{"cov"} attribute, one per term, each with a \code{"correlation"}
-attribute. Returns an empty data frame when the fit has no random effects.
+attribute. A fit with no random effects returns the gaussian residual row
+alone, or an empty data frame for any other family. The hyperparameters of
+a spatial or temporal field (its SD, range, autocorrelation) are not
+random-effect covariances and are not listed here; \code{\link[=summary.tulpa_fit]{summary.tulpa_fit()}}
+reports them in its \code{hyperparameters} table.
 }
 \description{
 Summarize the random-effect covariance of a fit: the standard deviation of

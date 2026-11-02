@@ -44,7 +44,11 @@
 #'   under `estimate_phi = TRUE` and `"conditioned"` otherwise; it has no entry
 #'   in `"cov"`. Correlated terms additionally carry the covariance
 #'   matrices in the `"cov"` attribute, one per term, each with a `"correlation"`
-#'   attribute. Returns an empty data frame when the fit has no random effects.
+#'   attribute. A fit with no random effects returns the gaussian residual row
+#'   alone, or an empty data frame for any other family. The hyperparameters of
+#'   a spatial or temporal field (its SD, range, autocorrelation) are not
+#'   random-effect covariances and are not listed here; [summary.tulpa_fit()]
+#'   reports them in its `hyperparameters` table.
 #'
 #' @seealso [ranef()] for the per-level deviations, [tulpa_eb()] to estimate the
 #'   covariance rather than condition on it.
@@ -225,6 +229,9 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 VarCorr.tulpa_fit <- function(x, sigma = 1, ...) {
   layout <- x$re_layout
   if (is.null(layout) || length(layout) == 0L) {
+    # A fixed-effect gaussian fit still has its residual SD to report.
+    res <- .varcorr_residual(x)
+    if (!is.null(res)) return(res)
     return(data.frame(term = character(0), coef = character(0),
                       sd = numeric(0), source = character(0),
                       stringsAsFactors = FALSE))
