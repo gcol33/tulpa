@@ -44,13 +44,31 @@
 #'                     `n_re_groups == 0`.
 #'   * `family`      -- one of `"binomial"`, `"gaussian"`, `"poisson"`,
 #'                     `"neg_binomial_2"`, `"beta"`, `"lognormal"`,
-#'                     `"gamma"`, `"inverse_gaussian"`. For `"lognormal"`,
-#'                     `y` is on the natural scale and the linear
-#'                     predictor `eta = E[log y]` (identity link on the
-#'                     log scale); the `-log(y)` Jacobian is included in
-#'                     the kernel's `log_lik`.
-#'   * `phi`         -- numeric dispersion (gaussian/lognormal residual
-#'                     SD, negbin size, beta precision); default `1`.
+#'                     `"gamma"`, `"inverse_gaussian"`,
+#'                     `"interval_gaussian"`, `"truncated_gaussian"`. For
+#'                     `"lognormal"`, `y` is on the natural scale and the
+#'                     linear predictor `eta = E[log y]` (identity link on
+#'                     the log scale); the `-log(y)` Jacobian is included in
+#'                     the kernel's `log_lik`. `"interval_gaussian"` is an
+#'                     interval-censored Gaussian latent: row `i` records
+#'                     only that a `Normal(eta_i, phi^2)` value fell in
+#'                     `(lower[i], upper[i]]`, and contributes that
+#'                     probability. `"truncated_gaussian"` is a Gaussian
+#'                     `Normal(eta_i, phi^2)` response conditioned on
+#'                     `y[i] <= trunc_upper[i]`.
+#'   * `lower`, `upper` -- numeric `[N_arm]`, the interval bounds of an
+#'                     `"interval_gaussian"` arm on the linear-predictor
+#'                     scale, read in place of `y`; `-Inf` / `Inf` are the
+#'                     open outer classes, and each `lower` lies strictly
+#'                     below its `upper`. Supplied together.
+#'   * `trunc_upper` -- numeric `[N_arm]`, the upper truncation point of a
+#'                     `"truncated_gaussian"` arm on the scale of `y`; `Inf`
+#'                     leaves a row untruncated.
+#'   * `phi`         -- numeric dispersion, default `1`: the residual
+#'                     VARIANCE for `"gaussian"` and `"lognormal"` (on the
+#'                     log scale), the residual SD for `"interval_gaussian"`
+#'                     and `"truncated_gaussian"`, the size for
+#'                     `"neg_binomial_2"`, the precision for `"beta"`.
 #'   * `field_coef`  -- optional per-arm field coefficient controlling
 #'                     this arm's multiplier on the shared latent field's
 #'                     amplitude. One of:
@@ -203,6 +221,12 @@
 #'   summarized over the cell weights, in the hyperparameter table of
 #'   `summary()`.
 #'
+#'   A block type the single-block path does not list above (`iid`, `mcar`,
+#'   `miid`, `lf`, `hsgp`, ...) is read on the list-of-blocks path only, so a
+#'   single such block is passed as a one-block list,
+#'   `prior = list(list(type = "iid", n_units = , obs_idx = ))`; passed
+#'   unwrapped it is read as a single-block prior and refused.
+#'
 #'   An empty `prior = list()` is a list of zero blocks: the model carries no
 #'   latent field, each arm's predictor is its fixed effects, and the outer
 #'   grid is spanned by the per-arm dispersion axes of `phi_grid` alone (one
@@ -246,6 +270,8 @@
 #'   * `gaussian` -- residual VARIANCE, the one engine convention (the SD is
 #'     `sqrt(phi)`). Use `phi_grid` to estimate it as a hyperparameter
 #'     instead of pinning it pre-fit.
+#'   * `interval_gaussian`, `truncated_gaussian` -- residual SD of the latent
+#'     Gaussian.
 #'   * `lognormal` -- residual variance on the log scale; identical kernel
 #'     parameterization as `gaussian` plus the `-log(y)` Jacobian.
 #'   * `neg_binomial_2` -- dispersion (variance is `mu + mu^2/phi`).
@@ -341,7 +367,7 @@
 #'
 #' @param prior_phi Optional regularizing hyperprior on the per-arm
 #'   dispersion axes declared through `phi_grid` (e.g. a Beta precision on a
-#'   cover arm, a negbin dispersion, a Gaussian residual SD). Same families
+#'   cover arm, a negbin dispersion, a Gaussian residual variance). Same families
 #'   as `prior_sigma` -- `NULL` (default: the axis carries what `hyperprior`
 #'   gives it), `list("pc.prec", c(U, alpha))`, or `list("half_normal", scale)`.
 #'   A single spec re-weights every `phi_<arm>` axis on the grid, the way

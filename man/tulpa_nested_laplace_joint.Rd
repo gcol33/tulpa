@@ -41,13 +41,31 @@ defaults to \code{rep(0, N_arm)} (no RE).
 \code{n_re_groups == 0}.
 \item \code{family}      -- one of \code{"binomial"}, \code{"gaussian"}, \code{"poisson"},
 \code{"neg_binomial_2"}, \code{"beta"}, \code{"lognormal"},
-\code{"gamma"}, \code{"inverse_gaussian"}. For \code{"lognormal"},
-\code{y} is on the natural scale and the linear
-predictor \verb{eta = E[log y]} (identity link on the
-log scale); the \code{-log(y)} Jacobian is included in
-the kernel's \code{log_lik}.
-\item \code{phi}         -- numeric dispersion (gaussian/lognormal residual
-SD, negbin size, beta precision); default \code{1}.
+\code{"gamma"}, \code{"inverse_gaussian"},
+\code{"interval_gaussian"}, \code{"truncated_gaussian"}. For
+\code{"lognormal"}, \code{y} is on the natural scale and the
+linear predictor \verb{eta = E[log y]} (identity link on
+the log scale); the \code{-log(y)} Jacobian is included in
+the kernel's \code{log_lik}. \code{"interval_gaussian"} is an
+interval-censored Gaussian latent: row \code{i} records
+only that a \code{Normal(eta_i, phi^2)} value fell in
+\verb{(lower[i], upper[i]]}, and contributes that
+probability. \code{"truncated_gaussian"} is a Gaussian
+\code{Normal(eta_i, phi^2)} response conditioned on
+\code{y[i] <= trunc_upper[i]}.
+\item \code{lower}, \code{upper} -- numeric \verb{[N_arm]}, the interval bounds of an
+\code{"interval_gaussian"} arm on the linear-predictor
+scale, read in place of \code{y}; \code{-Inf} / \code{Inf} are the
+open outer classes, and each \code{lower} lies strictly
+below its \code{upper}. Supplied together.
+\item \code{trunc_upper} -- numeric \verb{[N_arm]}, the upper truncation point of a
+\code{"truncated_gaussian"} arm on the scale of \code{y}; \code{Inf}
+leaves a row untruncated.
+\item \code{phi}         -- numeric dispersion, default \code{1}: the residual
+VARIANCE for \code{"gaussian"} and \code{"lognormal"} (on the
+log scale), the residual SD for \code{"interval_gaussian"}
+and \code{"truncated_gaussian"}, the size for
+\code{"neg_binomial_2"}, the precision for \code{"beta"}.
 \item \code{field_coef}  -- optional per-arm field coefficient controlling
 this arm's multiplier on the shared latent field's
 amplitude. One of:
@@ -204,6 +222,12 @@ each field's standard deviation \verb{b<k>.sigma_i}, each correlation
 summarized over the cell weights, in the hyperparameter table of
 \code{summary()}.
 
+A block type the single-block path does not list above (\code{iid}, \code{mcar},
+\code{miid}, \code{lf}, \code{hsgp}, ...) is read on the list-of-blocks path only, so a
+single such block is passed as a one-block list,
+\code{prior = list(list(type = "iid", n_units = , obs_idx = ))}; passed
+unwrapped it is read as a single-block prior and refused.
+
 An empty \code{prior = list()} is a list of zero blocks: the model carries no
 latent field, each arm's predictor is its fixed effects, and the outer
 grid is spanned by the per-arm dispersion axes of \code{phi_grid} alone (one
@@ -250,6 +274,8 @@ and the grid values):
 \item \code{gaussian} -- residual VARIANCE, the one engine convention (the SD is
 \code{sqrt(phi)}). Use \code{phi_grid} to estimate it as a hyperparameter
 instead of pinning it pre-fit.
+\item \code{interval_gaussian}, \code{truncated_gaussian} -- residual SD of the latent
+Gaussian.
 \item \code{lognormal} -- residual variance on the log scale; identical kernel
 parameterization as \code{gaussian} plus the \code{-log(y)} Jacobian.
 \item \code{neg_binomial_2} -- dispersion (variance is \code{mu + mu^2/phi}).
@@ -348,7 +374,7 @@ full escalation.}
 
 \item{prior_phi}{Optional regularizing hyperprior on the per-arm
 dispersion axes declared through \code{phi_grid} (e.g. a Beta precision on a
-cover arm, a negbin dispersion, a Gaussian residual SD). Same families
+cover arm, a negbin dispersion, a Gaussian residual variance). Same families
 as \code{prior_sigma} -- \code{NULL} (default: the axis carries what \code{hyperprior}
 gives it), \code{list("pc.prec", c(U, alpha))}, or \code{list("half_normal", scale)}.
 A single spec re-weights every \verb{phi_<arm>} axis on the grid, the way
