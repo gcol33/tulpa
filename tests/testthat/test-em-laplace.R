@@ -194,6 +194,7 @@ test_that("smoke: two homogeneous binomial submodels converge in one step", {
     m_step_encode = m_step_encode,
     max_iter      = 5L,
     tol           = 1e-4,
+    n_louis       = 0L,
     verbose       = FALSE
   )
 
@@ -377,6 +378,7 @@ test_that("correction = 'mi' invokes a user-supplied draw_z", {
     draw_z        = draw_z_custom,
     max_iter      = 1L,
     tol           = 1e-12,
+    n_louis       = 0L,
     verbose       = FALSE
   )
 

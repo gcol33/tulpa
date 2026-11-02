@@ -451,6 +451,42 @@
 #' response, whose normalizer `lchoose(n, y)` is not zero there and depends on
 #' `w`. On the weighted encoding the block's `log_marginal` is the Laplace
 #' marginal of `Q`, an EM objective that increases across iterations.
+#' @section Standard errors:
+#' Each entry of `fits` carries `beta` (the fixed effects) and `se`, read off
+#' that block's M-step curvature `H_beta`. That curvature is the
+#' complete-data information at the converged weights: it treats the latent
+#' labels as known, so these `se` understate the uncertainty by the
+#' information the latent variable withholds.
+#'
+#' The observed-data information follows from Louis' (1982) identity,
+#' \deqn{I_{obs}(\theta) = E[-\nabla^2 \ell_c(\theta; z) \mid y] -
+#'   \mathrm{Var}[\nabla \ell_c(\theta; z) \mid y],}
+#' evaluated at the EM estimate. The first term is the blocks' `H_beta` (the
+#' M-step objective is the expected complete-data log-likelihood when the
+#' weights enter linearly, as in the weighted encoding below); the second,
+#' the missing information, is estimated from `n_louis` hard draws
+#' `z ~ draw_z(weights)`, each encoded by `m_step_encode()` and scored at
+#' the estimate. The score covariance couples the blocks that share the
+#' latent variable, so `vcov` is one joint matrix across blocks. The result
+#' carries `vcov` (named `"<block>:<coef>"`), `se` (a named list per block)
+#' and `louis` (`n_draws`, and `missing_fraction`, the share of each
+#' coefficient's variance owed to the latent variable,
+#' `1 - se_complete^2 / se^2`). It needs blocks without latent structure
+#' (`re_list`, `spatial`, `prior`), whose fixed effects are the whole
+#' parameter; otherwise, or when the estimated observed information is not
+#' positive definite, `vcov` and `se` are `NULL` and `louis$unavailable`
+#' says why. Dispersions set on a block (`phi`) are held at their values.
+#' The draws consume the random-number stream.
+#'
+#' `correction = "mi"` targets the same quantity by refitting each draw and
+#' pooling with Rubin's rules. Its draws are taken at the fixed estimate, an
+#' improper imputation that leaves out the estimate's own uncertainty, so its
+#' pooled SE can run below the observed-information one.
+#'
+#' @references
+#' Louis, T. A. (1982). Finding the observed information matrix when using
+#' the EM algorithm. *JRSS B*, 44(2), 226-233.
+#'
 #' @param spatial,re_list Not consumed at the driver level -- latent structure
 #'   is per-submodel, set as a `spatial` / `re_list` field on each block
 #'   `m_step_encode()` returns. Supplying either here is an error (rather than a
@@ -473,9 +509,14 @@
 #'   `correction = "mi"`.
 #' @param n_gibbs Length of the Gibbs chain (default `10L`). Used when
 #'   `correction = "gibbs"`.
+#' @param n_louis Number of hard latent draws for the Monte Carlo estimate of
+#'   the missing information in Louis' observed-information standard errors
+#'   (default `1000L`; `0` skips them). Each draw costs one `m_step_encode()`
+#'   call and a score evaluation, no refit. See the section below.
 #' @param draw_z Optional function `function(weights) -> hard_z` that
 #'   turns the E-step's continuous weights into a hard latent draw. Used
-#'   only by `correction %in% c("mi", "gibbs")`. The default treats
+#'   by `correction %in% c("mi", "gibbs")` and by the Louis standard
+#'   errors (`n_louis`). The default treats
 #'   `weights` as a numeric vector of Bernoulli probabilities and draws
 #'   per-observation. Multi-class / matrix-valued latent structures must
 #'   supply their own callback.
@@ -503,7 +544,10 @@
 #'
 #' @return A list with:
 #' \itemize{
-#'   \item `fits` -- named list of [tulpa_laplace()] results, one per block.
+#'   \item `fits` -- named list of [tulpa_laplace()] results, one per block,
+#'     each with `beta` and its complete-data `se` attached.
+#'   \item `vcov`, `se`, `louis` -- observed-information covariance and
+#'     standard errors by Louis' method (see the section above).
 #'   \item `weights` -- final E-step weights.
 #'   \item `n_iter` -- number of EM iterations actually run.
 #'   \item `converged` -- logical.
@@ -555,6 +599,7 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
                               max_iter = 50L, tol = 1e-4, damping = 0.3,
                               correction = c("auto", "mi", "gibbs", "none"),
                               n_imputations = 20L, n_gibbs = 10L,
+                              n_louis = 1000L,
                               draw_z = NULL,
                               m_step_extra = NULL,
                               beta_prior = NULL,
@@ -587,6 +632,12 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
     }
   }
   draw_z_fn <- if (is.null(draw_z)) .draw_z_default else draw_z
+  n_louis <- as.integer(n_louis)
+  if (length(n_louis) != 1L || is.na(n_louis) || n_louis == 1L ||
+      n_louis < 0L) {
+    stop("`n_louis` must be 0 (no observed-information standard errors) or ",
+         "an integer >= 2.", call. = FALSE)
+  }
 
   if (!is.function(e_step)) {
     stop("`e_step` must be a function", call. = FALSE)
@@ -665,8 +716,9 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
       # is a fresh fit on the damped weights, so we don't need to mix beta
       # vectors directly. A block with `$prior` set routes through
       # tulpa_nested_laplace(); otherwise tulpa_laplace().
-      new_fits[[k]] <- .fit_em_block(blocks[[k]], n_threads = 1L,
-                                     beta_prior = beta_prior)
+      new_fits[[k]] <- .attach_beta_se(
+        .fit_em_block(blocks[[k]], n_threads = 1L, beta_prior = beta_prior),
+        n_fixed = ncol(blocks[[k]]$X))
     }
 
     fits <- new_fits
@@ -709,6 +761,14 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
     history    = history,
     correction = correction
   )
+
+  if (n_louis > 0L) {
+    louis <- .em_louis_information(fits, blocks, weights, m_step_encode,
+                                   draw_z_fn, n_louis, ...)
+    result$vcov  <- louis$vcov
+    result$se    <- louis$se
+    result$louis <- louis$info
+  }
 
   if (correction == "mi") {
     if (verbose) {

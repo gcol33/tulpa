@@ -15,6 +15,7 @@ tulpa_em_laplace(
   correction = c("auto", "mi", "gibbs", "none"),
   n_imputations = 20L,
   n_gibbs = 10L,
+  n_louis = 1000L,
   draw_z = NULL,
   m_step_extra = NULL,
   beta_prior = NULL,
@@ -83,9 +84,15 @@ resolves to \code{"none"}.}
 \item{n_gibbs}{Length of the Gibbs chain (default \code{10L}). Used when
 \code{correction = "gibbs"}.}
 
+\item{n_louis}{Number of hard latent draws for the Monte Carlo estimate of
+the missing information in Louis' observed-information standard errors
+(default \code{1000L}; \code{0} skips them). Each draw costs one \code{m_step_encode()}
+call and a score evaluation, no refit. See the section below.}
+
 \item{draw_z}{Optional function \verb{function(weights) -> hard_z} that
 turns the E-step's continuous weights into a hard latent draw. Used
-only by \code{correction \%in\% c("mi", "gibbs")}. The default treats
+by \code{correction \%in\% c("mi", "gibbs")} and by the Louis standard
+errors (\code{n_louis}). The default treats
 \code{weights} as a numeric vector of Bernoulli probabilities and draws
 per-observation. Multi-class / matrix-valued latent structures must
 supply their own callback.}
@@ -118,7 +125,10 @@ blocks differ in width; per-coefficient vectors belong on the block.}
 \value{
 A list with:
 \itemize{
-\item \code{fits} -- named list of \code{\link[=tulpa_laplace]{tulpa_laplace()}} results, one per block.
+\item \code{fits} -- named list of \code{\link[=tulpa_laplace]{tulpa_laplace()}} results, one per block,
+each with \code{beta} and its complete-data \code{se} attached.
+\item \code{vcov}, \code{se}, \code{louis} -- observed-information covariance and
+standard errors by Louis' method (see the section above).
 \item \code{weights} -- final E-step weights.
 \item \code{n_iter} -- number of EM iterations actually run.
 \item \code{converged} -- logical.
@@ -165,6 +175,40 @@ response, whose normalizer \code{lchoose(n, y)} is not zero there and depends on
 marginal of \code{Q}, an EM objective that increases across iterations.
 }
 
+\section{Standard errors}{
+
+Each entry of \code{fits} carries \code{beta} (the fixed effects) and \code{se}, read off
+that block's M-step curvature \code{H_beta}. That curvature is the
+complete-data information at the converged weights: it treats the latent
+labels as known, so these \code{se} understate the uncertainty by the
+information the latent variable withholds.
+
+The observed-data information follows from Louis' (1982) identity,
+\deqn{I_{obs}(\theta) = E[-\nabla^2 \ell_c(\theta; z) \mid y] -
+  \mathrm{Var}[\nabla \ell_c(\theta; z) \mid y],}
+evaluated at the EM estimate. The first term is the blocks' \code{H_beta} (the
+M-step objective is the expected complete-data log-likelihood when the
+weights enter linearly, as in the weighted encoding below); the second,
+the missing information, is estimated from \code{n_louis} hard draws
+\code{z ~ draw_z(weights)}, each encoded by \code{m_step_encode()} and scored at
+the estimate. The score covariance couples the blocks that share the
+latent variable, so \code{vcov} is one joint matrix across blocks. The result
+carries \code{vcov} (named \code{"<block>:<coef>"}), \code{se} (a named list per block)
+and \code{louis} (\code{n_draws}, and \code{missing_fraction}, the share of each
+coefficient's variance owed to the latent variable,
+\code{1 - se_complete^2 / se^2}). It needs blocks without latent structure
+(\code{re_list}, \code{spatial}, \code{prior}), whose fixed effects are the whole
+parameter; otherwise, or when the estimated observed information is not
+positive definite, \code{vcov} and \code{se} are \code{NULL} and \code{louis$unavailable}
+says why. Dispersions set on a block (\code{phi}) are held at their values.
+The draws consume the random-number stream.
+
+\code{correction = "mi"} targets the same quantity by refitting each draw and
+pooling with Rubin's rules. Its draws are taken at the fixed estimate, an
+improper imputation that leaves out the estimate's own uncertainty, so its
+pooled SE can run below the observed-information one.
+}
+
 \examples{
 \donttest{
 # Zero-inflated Poisson via EM: the E-step scores the posterior probability
@@ -197,4 +241,8 @@ res$converged
 plogis(res$fits$occ$mode[1])    # P(non-structural), truth 0.7
 exp(res$fits$abund$mode[1])     # abundance mean, truth 4
 }
+}
+\references{
+Louis, T. A. (1982). Finding the observed information matrix when using
+the EM algorithm. \emph{JRSS B}, 44(2), 226-233.
 }

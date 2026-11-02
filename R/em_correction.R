@@ -171,3 +171,107 @@
   }
   list(pooled = rubins_pool(draws), draws = draws, final_fits = fits)
 }
+
+
+# ----------------------------------------------------------------------------
+# Louis' (1982) observed information at the EM estimate:
+#   I_obs = E[-d2 l_c | y] - Var[d l_c | y].
+# The first term is the block-diagonal M-step curvature H_beta at the
+# converged weights; the second is the covariance of the complete-data
+# fixed-effect score over hard draws z ~ draw_z(weights), each encoded by
+# m_step_encode and scored at the estimate (no refit). The scores of blocks
+# sharing a latent variable covary, so the result is one joint matrix.
+# Defined for blocks whose fixed effects are their whole parameter.
+# ----------------------------------------------------------------------------
+.em_louis_information <- function(fits, blocks, weights, m_step_encode,
+                                  draw_z, n_draws, ...) {
+  decline <- function(reason) {
+    list(vcov = NULL, se = NULL,
+         info = list(n_draws = as.integer(n_draws), unavailable = reason))
+  }
+  nms <- names(fits)
+  latent <- vapply(blocks, function(b) {
+    !is.null(b$prior) || !is.null(b$spatial) || length(b$re_list) > 0L
+  }, logical(1))
+  if (any(latent)) {
+    return(decline(paste0(
+      "block(s) ", paste(nms[latent], collapse = ", "), " carry latent ",
+      "structure (re_list / spatial / prior); the observed information is ",
+      "computed for fixed-effect-only blocks")))
+  }
+  p <- vapply(blocks, function(b) ncol(b$X), integer(1))
+  beta <- lapply(fits, `[[`, "beta")
+  H <- lapply(seq_along(fits), function(k) fits[[k]]$H_beta)
+  ok <- vapply(seq_along(fits), function(k) {
+    length(beta[[k]]) == p[k] && is.matrix(H[[k]]) &&
+      all(dim(H[[k]]) == p[k]) && all(is.finite(H[[k]]))
+  }, logical(1))
+  if (!all(ok)) {
+    return(decline(paste0("block(s) ", paste(nms[!ok], collapse = ", "),
+                          " returned no fixed-effect curvature H_beta")))
+  }
+  block_coefs <- lapply(seq_along(fits), function(k) {
+    cn <- colnames(blocks[[k]]$X)
+    if (is.null(cn)) cn <- character(p[k])
+    unnamed <- !nzchar(cn)
+    cn[unnamed] <- paste0("beta", seq_len(p[k]))[unnamed]
+    cn
+  })
+  coef_names <- unlist(lapply(seq_along(fits), function(k) {
+    paste0(nms[k], ":", block_coefs[[k]])
+  }), use.names = FALSE)
+  off <- c(0L, cumsum(p))
+  P <- off[length(off)]
+
+  score_draws <- matrix(NA_real_, n_draws, P)
+  for (s in seq_len(n_draws)) {
+    bl <- m_step_encode(draw_z(weights), ...)
+    if (!identical(names(bl), names(blocks)) ||
+        !all(vapply(bl, function(b) ncol(b$X), integer(1)) == p)) {
+      return(decline(paste0("m_step_encode() returned a different block ",
+                            "layout for a hard latent draw")))
+    }
+    for (k in seq_along(bl)) {
+      b <- bl[[k]]
+      eta <- drop(b$X %*% beta[[k]])
+      if (!is.null(b$offset)) eta <- eta + b$offset
+      n_tr <- if (is.null(b$n_trials)) rep(1, length(b$y)) else b$n_trials
+      sc <- family_score_eta(eta, b$y, .canonical_family(b$family),
+                             n_trials = n_tr, phi = b$phi %||% 1.0)
+      w <- if (is.null(b$weights)) 1 else b$weights
+      score_draws[s, (off[k] + 1L):off[k + 1L]] <- drop(crossprod(b$X, w * sc))
+    }
+  }
+  if (!all(is.finite(score_draws))) {
+    return(decline("a complete-data score was not finite at the estimate"))
+  }
+
+  I_complete <- matrix(0, P, P)
+  for (k in seq_along(fits)) {
+    idx <- (off[k] + 1L):off[k + 1L]
+    I_complete[idx, idx] <- H[[k]]
+  }
+  I_missing <- stats::cov(score_draws)
+  I_obs <- I_complete - I_missing
+  I_obs <- (I_obs + t(I_obs)) / 2
+  ev <- eigen(I_obs, symmetric = TRUE, only.values = TRUE)$values
+  if (min(ev) <= 0) {
+    return(decline(sprintf(paste0(
+      "the estimated observed information is not positive definite ",
+      "(smallest eigenvalue %.3g); raise n_louis or use correction = \"mi\""),
+      min(ev))))
+  }
+  V <- .spd_inverse(I_obs)
+  dimnames(V) <- list(coef_names, coef_names)
+  se_all <- sqrt(diag(V))
+  se_complete <- sqrt(diag(.spd_inverse(I_complete)))
+  se <- lapply(seq_along(fits), function(k) {
+    stats::setNames(unname(se_all[(off[k] + 1L):off[k + 1L]]),
+                    block_coefs[[k]])
+  })
+  names(se) <- nms
+  mf <- 1 - se_complete^2 / se_all^2
+  names(mf) <- coef_names
+  list(vcov = V, se = se,
+       info = list(n_draws = as.integer(n_draws), missing_fraction = mf))
+}
