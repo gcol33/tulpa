@@ -75,21 +75,40 @@ void add_icar_pattern(
     const GraphPartition& partition
 );
 
+// log|Q_aug| of the unit-precision augmented ICAR precision
+// Q_aug = Q + sum_c 1_c 1_c' / J_c, Q = D - W the graph Laplacian. Q_aug acts as
+// Q on each component's sum-zero subspace and as the identity on its constant
+// direction (Q 1_c = 0, (1_c 1_c' / J_c) 1_c = 1_c), so |Q_aug| is the
+// generalized determinant prod_c |Q_c|_+. By the matrix-tree theorem
+// |Q_c|_+ = J_c * det(Q_c with one node deleted), and that minor is SPD, so
+// each component costs one sparse Cholesky. The value carries no
+// hyperparameter: compute it once per field and hand it to log_prior_icar.
+double icar_log_pdet(
+    int n_spatial_units,
+    const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
+    const Rcpp::IntegerVector& n_neighbors, const GraphPartition& partition
+);
+
+// Normalized log-density of the augmented ICAR field at precision
+// tau * W (Q + sum_c 1_c 1_c' / J_c), W = diag(node_prec):
+//   structured part + 0.5 n log(tau / 2pi) + 0.5 sum_i log w_i + 0.5 log_pdet,
+// with log_pdet = icar_log_pdet(...) of the same graph. Every term is needed
+// for the log marginal likelihood to be a density of the data; the last two
+// carry no hyperparameter but differ between graphs and between models.
 double log_prior_icar(
     const Rcpp::NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
     const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
     const Rcpp::IntegerVector& n_neighbors, const GraphPartition& partition,
+    double log_pdet,
     const double* node_prec = nullptr
 );
 
 // Structured intrinsic (ICAR, rank-deficient) field log-prior contribution,
-// WITHOUT the rank-deficient normalization constant:
+// WITHOUT the normalization constant:
 //   -0.5 * tau * phi'Q phi  -  0.5 * tau_s2z * (sum phi)^2
 // The sum-to-zero penalty matches the one `add_icar_prior[_sparse]` fold into
-// the gradient/Hessian. `log_prior_icar` is this plus the normalization; the
-// BYM2 structured component calls it directly (tau = 1) so its objective is a
-// single shared derivation rather than an inline copy of the quadratic form.
+// the gradient/Hessian. `log_prior_icar` is this plus the normalization.
 double log_prior_icar_structured(
     const Rcpp::NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,

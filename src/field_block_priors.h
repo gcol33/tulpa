@@ -39,10 +39,10 @@ namespace tulpa {
 // Intrinsic CAR over [start, start + size) at precision tau_at(k).
 //
 // `node_prec` is the per-node precision multiplier (empty: none), the
-// per-component BYM2 scaling (gcol33/tulpa#902). `structured` selects the
-// density without the rank-deficient normalizer (log_prior_icar_structured),
-// which is the one BYM2's structured component carries; a plain ICAR field
-// carries log_prior_icar.
+// per-component BYM2 scaling (gcol33/tulpa#902). The log-density is the
+// normalized one at every block, BYM2's structured component (tau_at = 1)
+// included: the graph's generalized determinant is computed here once, since
+// it carries no hyperparameter, and every cell's log_prior adds it.
 template <class TauAt>
 inline void set_icar_block_priors(
     LatentBlock& block, int start, int size, TauAt tau_at,
@@ -50,9 +50,10 @@ inline void set_icar_block_priors(
     Rcpp::IntegerVector adj_col_idx,
     Rcpp::IntegerVector n_neighbors,
     GraphPartition partition,
-    std::vector<double> node_prec = std::vector<double>(),
-    bool structured = false
+    std::vector<double> node_prec = std::vector<double>()
 ) {
+    const double log_pdet = icar_log_pdet(size, adj_row_ptr, adj_col_idx,
+                                          n_neighbors, partition);
     block.add_prior = [start, size, tau_at, adj_row_ptr, adj_col_idx,
                        n_neighbors, partition, node_prec](
         DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x, int k) {
@@ -73,16 +74,10 @@ inline void set_icar_block_priors(
         add_icar_pattern(out, start, size, adj_row_ptr, adj_col_idx, partition);
     };
     block.log_prior = [start, size, tau_at, adj_row_ptr, adj_col_idx,
-                       n_neighbors, partition, node_prec, structured](
+                       n_neighbors, partition, node_prec, log_pdet](
         const Rcpp::NumericVector& x, int k) -> double {
-        if (structured) {
-            return log_prior_icar_structured(x, start, size, tau_at(k),
-                                             adj_row_ptr, adj_col_idx,
-                                             n_neighbors, partition,
-                                             node_prec_ptr(node_prec));
-        }
         return log_prior_icar(x, start, size, tau_at(k), adj_row_ptr,
-                              adj_col_idx, n_neighbors, partition,
+                              adj_col_idx, n_neighbors, partition, log_pdet,
                               node_prec_ptr(node_prec));
     };
     block.prior_kind = PriorFillKind::ADJACENCY;

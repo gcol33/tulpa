@@ -94,10 +94,12 @@ Rcpp::List cpp_laplace_fit_spatial(
                                tau_spatial, adj_row_ptr, adj_col_idx,
                                n_neighbors, sp_part);
     };
-    block.log_prior = [&](const Rcpp::NumericVector& x, int /*k*/) {
+    const double log_pdet = tulpa::icar_log_pdet(
+        n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sp_part);
+    block.log_prior = [&, log_pdet](const Rcpp::NumericVector& x, int /*k*/) {
         return tulpa::log_prior_icar(x, block_start, n_spatial_units, tau_spatial,
                                        adj_row_ptr, adj_col_idx, n_neighbors,
-                                       sp_part);
+                                       sp_part, log_pdet);
     };
     tulpa::centre_intrinsic_level(block);
     std::vector<tulpa::LatentBlock> blocks{ block };
@@ -200,15 +202,16 @@ Rcpp::List cpp_laplace_fit_bym2(
                                adj_row_ptr, adj_col_idx, n_neighbors, sp_part,
                                tulpa::node_prec_ptr(node_prec));
     };
-    phi_block.log_prior = [&](const Rcpp::NumericVector& x, int /*k*/) {
-        // Structured ICAR component (tau = 1); shares the quadratic form and the
-        // augmentation with add_icar_prior so the objective stays consistent
-        // with the gradient, instead of re-deriving them inline.
-        return tulpa::log_prior_icar_structured(x, phi_start, n_spatial_units,
-                                                /*tau=*/1.0, adj_row_ptr,
-                                                adj_col_idx, n_neighbors,
-                                                sp_part,
-                                                tulpa::node_prec_ptr(node_prec));
+    const double log_pdet = tulpa::icar_log_pdet(
+        n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sp_part);
+    phi_block.log_prior = [&, log_pdet](const Rcpp::NumericVector& x, int /*k*/) {
+        // Structured ICAR component at unit precision, normalized like the
+        // plain field; shares the quadratic form and the augmentation with
+        // add_icar_prior so the objective stays consistent with the gradient.
+        return tulpa::log_prior_icar(x, phi_start, n_spatial_units,
+                                     /*tau=*/1.0, adj_row_ptr, adj_col_idx,
+                                     n_neighbors, sp_part, log_pdet,
+                                     tulpa::node_prec_ptr(node_prec));
     };
     tulpa::centre_intrinsic_level(phi_block);
 

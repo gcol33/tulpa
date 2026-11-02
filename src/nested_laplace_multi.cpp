@@ -227,7 +227,7 @@ int build_blocks_of_type(
         };
         tulpa::set_icar_block_priors(
             phi_block, phi_start, size, [](int) { return 1.0; },
-            adj_rp, adj_ci, n_nbr, sp_part, node_prec, /*structured=*/true);
+            adj_rp, adj_ci, n_nbr, sp_part, node_prec);
         if (projector) {
             tulpa::apply_block_projector(phi_block, projector);
             centre_projected_intrinsic_level(phi_block, *projector, X);

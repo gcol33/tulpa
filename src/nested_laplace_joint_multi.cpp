@@ -752,7 +752,7 @@ int build_joint_blocks_from_spec(
         phi_block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
         tulpa::set_icar_block_priors(
             phi_block, phi_start, size, [](int) { return 1.0; },
-            adj_rp, adj_ci, n_nbr, sp_part, node_prec, /*structured=*/true);
+            adj_rp, adj_ci, n_nbr, sp_part, node_prec);
         // BYM2's structured component aliases like a plain ICAR (uniform: arm
         // intercept; weighted areal SVC: the covariate coefficient). The
         // unstructured theta component below stays uncentred (proper N(0, I)).

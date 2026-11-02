@@ -1,6 +1,7 @@
 // laplace_spatial_priors.cpp
 // Spatial prior gradient/Hessian and log-prior helpers for Laplace engines.
 
+#include <RcppEigen.h>                   // Eigen::SimplicialLLT (icar_log_pdet)
 #include "laplace_spatial_priors.h"
 #include "sparse_hessian.h"
 #include "icar_kernel.h"                  // for_each_icar_component
@@ -215,11 +216,53 @@ double log_prior_icar_structured(
     return -0.5 * tau_spatial * quad_form - 0.5 * s2z;
 }
 
+double icar_log_pdet(
+    int n_spatial_units,
+    const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
+    const IntegerVector& n_neighbors, const GraphPartition& partition
+) {
+    typedef Eigen::SparseMatrix<double> SpMat;
+    double out = 0.0;
+    std::vector<int> pos(n_spatial_units, -1);
+    std::vector<Eigen::Triplet<double>> trip;
+    for_each_icar_component(0, partition,
+        [&](int /*start*/, const int* idx, int csize) {
+            if (csize <= 1) return;
+            // Delete the component's first node; the others index the minor.
+            for (int a = 1; a < csize; a++) pos[idx ? idx[a] : a] = a - 1;
+            trip.clear();
+            for (int a = 1; a < csize; a++) {
+                const int s = idx ? idx[a] : a;
+                const int r = pos[s];
+                trip.emplace_back(r, r, static_cast<double>(n_neighbors[s]));
+                for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
+                    const int c = pos[adj_col_idx[k]];
+                    if (c >= 0) trip.emplace_back(r, c, -1.0);
+                }
+            }
+            SpMat M(csize - 1, csize - 1);
+            M.setFromTriplets(trip.begin(), trip.end());
+            Eigen::SimplicialLLT<SpMat> llt(M);
+            if (llt.info() != Eigen::Success) {
+                Rcpp::stop("icar_log_pdet: the reduced graph Laplacian of a "
+                           "connected component is not positive definite.");
+            }
+            const SpMat& L = llt.matrixL();
+            double ld = 0.0;
+            for (int j = 0; j < L.outerSize(); j++)
+                ld += std::log(L.coeff(j, j));
+            out += 2.0 * ld + std::log(static_cast<double>(csize));
+            for (int a = 1; a < csize; a++) pos[idx ? idx[a] : a] = -1;
+        });
+    return out;
+}
+
 double log_prior_icar(
     const NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
     const IntegerVector& n_neighbors, const GraphPartition& partition,
+    double log_pdet,
     const double* node_prec
 ) {
     // Q is rank (n - n_components), and ICAR's null space is exactly those
@@ -228,7 +271,8 @@ double log_prior_icar(
     // contribute to log|tau Q_aug|. Keeping the deficient rank here while the
     // quadratic carries the augmentation would make the tau-marginal wrong and
     // bias the variance component low.
-    // The per-node multipliers scale the determinant by prod_i w_i.
+    // The per-node multipliers scale the determinant by prod_i w_i, and the
+    // graph's own generalized determinant is log_pdet (icar_log_pdet).
     const int L = partition.n_components();
     double log_w = 0.0;
     if (node_prec) {
@@ -239,7 +283,8 @@ double log_prior_icar(
                                      n_neighbors, partition, node_prec)
          + 0.5 * s2z_aug_rank(n_spatial_units - L, L)
                * std::log(tau_spatial / (2.0 * M_PI))
-         + 0.5 * log_w;
+         + 0.5 * log_w
+         + 0.5 * log_pdet;
 }
 
 void add_car_proper_prior(
