@@ -357,15 +357,17 @@ test_that("the GP / HSGP / SVC / TVC normalizers make the prior a density", {
   }
 })
 
-test_that("the non-centered NNGP posterior is the dense GP posterior (#1091)", {
+test_that("the non-centered NNGP posterior is the dense GP posterior", {
   skip_on_cran()
   # Every earlier location a neighbour: the non-centered field is
-  # w[ord] = chol(K[ord, ord]) z[ord] with z ~ N(0, I), and the target the
-  # sampler reads at (beta, log sigma2, log range, z) is the gaussian
-  # likelihood at w plus the priors. Written out here with dense matrices, it
-  # differs from the engine's per-draw log posterior by the normalizing
-  # constants the engine leaves out, the same at every row; and the gradient
-  # pass reports the value the value-only evaluator does.
+  # w[ord] = chol(K[ord, ord]) z[ord] with z ~ N(0, I), K carrying the engine's
+  # 1e-8 nugget on every diagonal entry, and the target the sampler reads at
+  # (beta, log sigma2, log range, z) is the gaussian likelihood at w plus the
+  # priors. Written out here with dense matrices, it differs from the engine's
+  # per-draw log posterior by the normalizing constants the engine leaves out,
+  # the same at every row, to rounding: the Vecchia conditionals with every
+  # earlier location a neighbour are the Cholesky factor of K + 1e-8 I. The
+  # gradient pass reports the value the value-only evaluator does.
   sdb <- 2; sd_eps <- 0.5
   set.seed(20)
   n_loc <- 12L; n <- 72L
@@ -389,7 +391,7 @@ test_that("the non-centered NNGP posterior is the dense GP posterior (#1091)", {
               matrix(rnorm(40 * n_loc), 40))
   colnames(th) <- nm
   dense <- apply(th, 1, function(r) {
-    K <- exp(r[[3]]) * exp(-D / exp(r[[4]]))
+    K <- exp(r[[3]]) * exp(-D / exp(r[[4]])) + diag(1e-8, n_loc)
     w <- numeric(n_loc)
     w[ord] <- as.numeric(t(chol(K[ord, ord])) %*% r[4L + ord])
     sum(dnorm(d$y, as.numeric(X %*% r[1:2] + A %*% w), sd_eps, log = TRUE)) +
@@ -401,7 +403,7 @@ test_that("the non-centered NNGP posterior is the dense GP posterior (#1091)", {
                family = "gaussian", phi = sd_eps, sigma_beta = sdb,
                spatial_spec = sp)
   engine <- do.call(tulpa:::cpp_tulpa_glmm_log_prob_draws, args)
-  expect_lt(diff(range(dense - engine)), 1e-5)
+  expect_lt(diff(range(dense - engine)), 1e-10)
   paths <- do.call(tulpa:::cpp_test_sampler_log_post_paths, args)
   expect_equal(paths[, 1L], paths[, 2L], tolerance = 1e-12)
   expect_equal(paths[, 2L], engine, tolerance = 1e-12)

@@ -379,10 +379,14 @@ inline void pg_nngp_factors(double phi_gp, int cov_type,
                             const PgNngpTopology& top,
                             PgNngpFactors& out) {
   const int n = top.n, nn = top.nn;
+  // Unit marginal variance: the sweep scales by sigma2 itself. The nugget
+  // the neighbour correlations are factorized with sits on every diagonal
+  // entry, a location's own included, so a location conditioned on nothing
+  // has variance 1 + nugget and the factors are those of R + nugget I.
+  const double own_var = 1.0 + tulpa_linalg::kNngpNugget;
   out.B.assign(static_cast<size_t>(n) * nn, 0.0);
-  out.F.assign(n, 1.0);
+  out.F.assign(n, own_var);
 
-  // Unit marginal variance: the sweep scales by sigma2 itself.
   auto compute_cov = [phi_gp, cov_type](double d) {
     if (d < 1e-10) return 1.0;
     return cov_value(d, 1.0, phi_gp, static_cast<CovType>(cov_type));
@@ -392,7 +396,7 @@ inline void pg_nngp_factors(double phi_gp, int cov_type,
   for (int i = 0; i < n; i++) {
     const int m = top.cnt[i];
     if (m == 0) {
-      out.F[i] = 1.0;
+      out.F[i] = own_var;
       continue;
     }
     c_vec.assign(m, 0.0);
@@ -413,14 +417,14 @@ inline void pg_nngp_factors(double phi_gp, int cov_type,
             C_mat.data(), L.data(), m, m, tulpa_linalg::kNngpNugget)) {
       // Neighbour correlation not positive definite: condition this location
       // on nothing rather than krige it against an unusable factor. Its B row
-      // stays zero and its conditional variance is the marginal 1.0.
-      out.F[i] = 1.0;
+      // stays zero and its conditional variance is the marginal.
+      out.F[i] = own_var;
       continue;
     }
     zeros.assign(m, 0.0);
     double cm = 0.0, cv = 1.0;
     tulpa_linalg::nngp_moments_from_chol<tulpa_linalg::TriLayout::RowMajor>(
-        L.data(), m, m, c_vec.data(), zeros.data(), 1.0,
+        L.data(), m, m, c_vec.data(), zeros.data(), own_var,
         tulpa_linalg::kNngpVarFloor, cm, cv,
         out.B.data() + static_cast<size_t>(i) * nn);
     out.F[i] = cv;

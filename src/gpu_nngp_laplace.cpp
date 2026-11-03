@@ -60,7 +60,9 @@ void batch_nngp_scatter(
     }
 
     cond_mean_out.assign(n_spatial, 0.0);
-    cond_var_out.assign(n_spatial, sigma2);
+    // A location conditioned on nothing has the marginal variance, with the
+    // nugget the neighbour blocks carry on every diagonal entry.
+    cond_var_out.assign(n_spatial, sigma2 + tulpa_linalg::kNngpNugget);
     if (alpha_out) alpha_out->assign(static_cast<size_t>(n_spatial) * nn, 0.0);
     gpu_used = false;
 
@@ -244,8 +246,8 @@ void batch_nngp_scatter(
 
         std::vector<double> alpha(n_nb);
         tulpa_linalg::nngp_moments_from_chol<tulpa_linalg::TriLayout::RowMajor>(
-            L.data(), n_nb, nn, c.data(), w_nb.data(), sigma2,
-            tulpa_linalg::kNngpVarFloor,
+            L.data(), n_nb, nn, c.data(), w_nb.data(),
+            sigma2 + tulpa_linalg::kNngpNugget, tulpa_linalg::kNngpVarFloor,
             cond_mean_out[obs_idx], cond_var_out[obs_idx], alpha.data());
 
         if (alpha_out) {

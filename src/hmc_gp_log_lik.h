@@ -30,7 +30,7 @@ inline double gp_nngp_log_lik(
   // First observation: marginal N(0, sigma2)
   int first_idx = gp_data.nn_order[0];
 
-  log_lik += tulpa_nngp::marginal_log_density(w[first_idx], sigma2);
+  log_lik += tulpa_nngp::marginal_log_density(w[first_idx], sigma2, kGpJitter);
 
   // Pre-allocate Eigen matrices/vectors for Cholesky/CG solve
   // Using Eigen avoids hand-rolled linear algebra bugs and leverages SIMD
@@ -56,7 +56,7 @@ inline double gp_nngp_log_lik(
 
     if (n_neighbors == 0) {
       // No neighbors: marginal
-      log_lik += tulpa_nngp::marginal_log_density(w[obs_idx], sigma2);
+      log_lik += tulpa_nngp::marginal_log_density(w[obs_idx], sigma2, kGpJitter);
       continue;
     }
 
@@ -134,7 +134,8 @@ inline double gp_nngp_log_lik(
     // autodiff twin hands cond_moments. The two are the same function, and the
     // analytic gradients are finite-differenced from this copy.
     double cond_var = tulpa_nngp::apply_var_floor(
-        sigma2 - c_Cinv_c, kGpVarFloor, tulpa_nngp::VarFloor::Clamp);
+        sigma2 + kGpJitter - c_Cinv_c, kGpVarFloor,
+        tulpa_nngp::VarFloor::Clamp);
     log_lik += tulpa_nngp::cond_log_density(w[obs_idx], cond_mean, cond_var);
   }
 

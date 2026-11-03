@@ -98,7 +98,7 @@ T nngp_log_lik_arrays_t(
     // First observation: marginal N(0, sigma2), through the same shared arm the
     // double twin uses so the two floor a degenerate sigma2 identically.
     int first_idx = v_nn_order[0];
-    log_lik = log_lik + tulpa_nngp::marginal_log_density(w[first_idx], sigma2);
+    log_lik = log_lik + tulpa_nngp::marginal_log_density(w[first_idx], sigma2, kGpJitter);
 
     // Pre-allocate work vectors
     std::vector<T> c_vec(nn);
@@ -128,7 +128,7 @@ T nngp_log_lik_arrays_t(
 
         if (n_neighbors == 0) {
             // No neighbors: marginal
-            log_lik = log_lik + tulpa_nngp::marginal_log_density(w[obs_idx], sigma2);
+            log_lik = log_lik + tulpa_nngp::marginal_log_density(w[obs_idx], sigma2, kGpJitter);
             continue;
         }
 

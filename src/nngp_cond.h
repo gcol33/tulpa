@@ -181,10 +181,14 @@ inline void solve_upper(const std::vector<T>& L, int n, const std::vector<T>& y,
 }
 
 // Kriging weights for one location given its neighbour covariance C and the
-// cross-covariance c_vec: alpha = C^-1 c and cond_var = floor(sigma2 - c' alpha),
-// so the conditional mean given any neighbour values w_nb is alpha' w_nb. A
-// caller conditioning several value vectors on the same neighbours factors once.
-// Returns false if C could not be factorized.
+// cross-covariance c_vec: alpha = (C + nugget I)^-1 c and
+// cond_var = floor(sigma2 + nugget - c' alpha), so the conditional mean given
+// any neighbour values w_nb is alpha' w_nb. The nugget sits on every diagonal
+// entry of the covariance, the location's own included, so the conditionals
+// are those of K + nugget I: with every earlier location a neighbour, their
+// product is that matrix's Gaussian density exactly. A caller conditioning
+// several value vectors on the same neighbours factors once. Returns false if
+// C could not be factorized.
 template <typename T>
 inline bool cond_weights(const std::vector<T>& C, const std::vector<T>& c_vec,
                          int n, const T& sigma2, double nugget,
@@ -199,13 +203,15 @@ inline bool cond_weights(const std::vector<T>& C, const std::vector<T>& c_vec,
 
   T c_Cinv_c = T(0.0);
   for (int j = 0; j < n; j++) c_Cinv_c = c_Cinv_c + c_vec[j] * alpha[j];
-  cond_var = apply_var_floor(sigma2 - c_Cinv_c, var_floor, floor_mode);
+  cond_var = apply_var_floor(sigma2 + T(nugget) - c_Cinv_c, var_floor,
+                             floor_mode);
   return true;
 }
 
 // Kriging moments for one location given its neighbour covariance C, the
 // cross-covariance c_vec, and the neighbour values w_nb (in c_vec order):
-//   cond_mean = c' C^-1 w_nb,  cond_var = floor(sigma2 - c' C^-1 c).
+//   cond_mean = c' C^-1 w_nb,  cond_var = floor(sigma2 + nugget - c' C^-1 c),
+// C carrying the nugget on its diagonal.
 // Returns false if C could not be factorized; the caller decides the penalty.
 template <typename T>
 inline bool cond_moments(const std::vector<T>& C, const std::vector<T>& c_vec,
@@ -231,12 +237,13 @@ inline T cond_log_density(const T& w_i, const T& cond_mean, const T& cond_var) {
        - T(0.5) * resid * resid / cond_var;
 }
 
-// log N(w_i; 0, sigma2) -- the marginal arm, used for the first location in the
-// Vecchia order and for any location left with no neighbours.
+// log N(w_i; 0, sigma2 + nugget) -- the marginal arm, used for the first
+// location in the Vecchia order and for any location left with no neighbours,
+// with the nugget the conditional arms carry on every diagonal entry.
 template <typename T>
-inline T marginal_log_density(const T& w_i, const T& sigma2) {
-  return T(-0.5) * safe_log(T(2.0 * M_PI) * sigma2)
-       - T(0.5) * w_i * w_i / sigma2;
+inline T marginal_log_density(const T& w_i, const T& sigma2, double nugget) {
+  const T v = sigma2 + T(nugget);
+  return T(-0.5) * safe_log(T(2.0 * M_PI) * v) - T(0.5) * w_i * w_i / v;
 }
 
 // Per-location Vecchia conditional-gradient assembly (double path). A caller
@@ -250,8 +257,8 @@ inline T marginal_log_density(const T& w_i, const T& sigma2) {
 // `alpha[j] * r_over_v` to each neighbour's grad_w, and add `dlog_sigma2` /
 // `dlog_phi` to the corresponding hyperparameter gradients.
 //
-// `var_floor` / `floor_mode` must be the ones the VALUE kernel ran, so this
-// differentiates the variance the density actually reported.
+// `nugget`, `var_floor` and `floor_mode` must be the ones the VALUE kernel
+// ran, so this differentiates the variance the density actually reported.
 struct VecchiaGrad {
   double grad_w_obs;
   double r_over_v;
@@ -263,11 +270,12 @@ inline VecchiaGrad vecchia_cond_grad(
     int n_nb, const double* alpha, const double* beta,
     const double* c, const double* dc, const double* dC,
     const double* w_nb, double w_obs, double sigma2, double phi,
-    double var_floor, VarFloor floor_mode) {
-  double mu = 0.0, c_alpha = 0.0;
+    double nugget, double var_floor, VarFloor floor_mode) {
+  double mu = 0.0, c_alpha = 0.0, alpha_sq = 0.0;
   for (int j = 0; j < n_nb; j++) {
     mu += alpha[j] * w_nb[j];
     c_alpha += c[j] * alpha[j];
+    alpha_sq += alpha[j] * alpha[j];
   }
   // The value kernel reports the FLOORED variance, so the hyperparameter
   // derivatives are of the floored quantity: where the floor binds, v no longer
@@ -275,12 +283,15 @@ inline VecchiaGrad vecchia_cond_grad(
   // under Blend. `floor_slope` carries that factor, and the value path's own
   // policy is an argument so the two cannot disagree about which one ran.
   double floor_slope = 1.0;
-  double v = apply_var_floor(sigma2 - c_alpha, var_floor, floor_mode,
+  double v = apply_var_floor(sigma2 + nugget - c_alpha, var_floor, floor_mode,
                              &floor_slope);
   double r = w_obs - mu;
   double r_over_v = r / v;
   double dll_dv = 0.5 * (r * r / v - 1.0) / v;
-  double dlog_sigma2 = dll_dv * floor_slope * (1.0 - c_alpha / sigma2) * sigma2;
+  // v = sigma2 + nugget - c' (sigma2 R + nugget I)^-1 c with c = sigma2 r, so
+  // dv / d log sigma2 = sigma2 - c' alpha - nugget ||alpha||^2.
+  double dlog_sigma2 =
+      dll_dv * floor_slope * (sigma2 - c_alpha - nugget * alpha_sq);
 
   double alpha_dc = 0.0, dc_beta = 0.0;
   for (int j = 0; j < n_nb; j++) {

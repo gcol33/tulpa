@@ -111,7 +111,8 @@ test_that("the NNGP prior gradient is -Lambda w", {
 # the eighth digit (gcol33/tulpa#578).
 .nngp_ref_cond_var <- function(fx, sigma2, phi_gp, nugget) {
   cov_exp <- function(d) ifelse(d < 1e-10, sigma2, sigma2 * exp(-d / phi_gp))
-  v <- rep(sigma2, fx$ng)
+  # The nugget sits on every diagonal entry, a location's own included.
+  v <- rep(sigma2 + nugget, fx$ng)
   for (i in seq_len(fx$ng)) {
     act <- which(fx$nn_idx[i, ] > 0L)
     if (!length(act)) next
@@ -119,7 +120,7 @@ test_that("the NNGP prior gradient is -Lambda w", {
     cc <- cov_exp(fx$nn_dist[i, act])
     C <- cov_exp(as.matrix(dist(fx$coords[nb, , drop = FALSE])))
     diag(C) <- sigma2 + nugget
-    v[fx$nn_order[i] + 1L] <- sigma2 - sum(cc * solve(C, cc))
+    v[fx$nn_order[i] + 1L] <- sigma2 + nugget - sum(cc * solve(C, cc))
   }
   v
 }

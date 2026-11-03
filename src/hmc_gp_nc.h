@@ -11,10 +11,12 @@
 #include "omp_threads.h"
 // Instead of sampling w ~ NNGP(0, sigma2, phi) directly (centered),
 // sample z ~ N(0, I) and transform z -> w via the NNGP autoregressive structure:
-//   w[order[0]] = sqrt(sigma2) * z[0]
+//   w[order[0]] = sqrt(sigma2 + jitter) * z[0]
 //   w[order[i]] = sum_j B[i,j] * w[nb_j(i)] + sqrt(d_i) * z[i]
 // where B[i,:] = C_nb^{-1} c_i (regression coefficients) and
-//       d_i = sigma2 - c_i' C_nb^{-1} c_i (conditional variance).
+//       d_i = sigma2 + jitter - c_i' C_nb^{-1} c_i (conditional variance),
+// C_nb carrying the jitter on its diagonal: the nugget sits on every diagonal
+// entry, a location's own included, so w is the NNGP of K + jitter I.
 //
 // This improves posterior geometry for large N, reducing NUTS treedepth.
 // The prior on z is N(0,I), and no Jacobian is needed since we sample in z-space.
@@ -200,12 +202,16 @@ inline void nngp_nc_forward(
     Eigen::VectorXd c_eigen(nn);
     Eigen::LLT<Eigen::MatrixXd> llt(nn);
 
-    // First observation: marginal N(0, sigma2). Guard the location index: a
+    // A location conditioned on nothing has the marginal variance, with the
+    // nugget every diagonal entry carries.
+    const double own_var = sigma2 + view.jitter;
+
+    // First observation: marginal N(0, own_var). Guard the location index: a
     // malformed nn_order (e.g. a 1-based ordering leaking through) would make
     // ws.w[first_loc] / z[first_loc] an out-of-bounds access.
     int first_loc = view.nn_order[0];
-    ws.sqrt_d[0] = std::sqrt(sigma2);
-    ws.d_raw[0] = sigma2;
+    ws.sqrt_d[0] = std::sqrt(own_var);
+    ws.d_raw[0] = own_var;
     ws.d_slope[0] = 1.0;
     ws.B_n_nb[0] = 0;
     if (first_loc >= 0 && first_loc < N) {
@@ -217,8 +223,8 @@ inline void nngp_nc_forward(
         if (obs_loc < 0 || obs_loc >= N) {
             // obs_loc is out of range; set only the i-indexed fields and skip
             // the ws.w[obs_loc] / z[obs_loc] write (matches the gradient path).
-            ws.sqrt_d[i] = std::sqrt(sigma2);
-            ws.d_raw[i] = sigma2;
+            ws.sqrt_d[i] = std::sqrt(own_var);
+            ws.d_raw[i] = own_var;
             ws.d_slope[i] = 1.0;
             ws.B_n_nb[i] = 0;
             continue;
@@ -230,8 +236,8 @@ inline void nngp_nc_forward(
             view.nn_idx + (std::size_t)i * nn, /*stride=*/1, nn, view.n_obs);
 
         if (n_nb == 0) {
-            ws.sqrt_d[i] = std::sqrt(sigma2);
-            ws.d_raw[i] = sigma2;
+            ws.sqrt_d[i] = std::sqrt(own_var);
+            ws.d_raw[i] = own_var;
             ws.d_slope[i] = 1.0;
             ws.w[obs_loc] = ws.sqrt_d[i] * z[obs_loc];
             ws.B_n_nb[i] = 0;
@@ -253,8 +259,8 @@ inline void nngp_nc_forward(
             ws.nb_idx_flat[i * nn + j] = loc;
         }
         if (!ok) {
-            ws.sqrt_d[i] = std::sqrt(sigma2);
-            ws.d_raw[i] = sigma2;
+            ws.sqrt_d[i] = std::sqrt(own_var);
+            ws.d_raw[i] = own_var;
             ws.d_slope[i] = 1.0;
             ws.w[obs_loc] = ws.sqrt_d[i] * z[obs_loc];
             ws.B_n_nb[i] = 0;
@@ -277,8 +283,8 @@ inline void nngp_nc_forward(
         // Eigen Cholesky: C = LL', alpha = C^{-1}c
         llt.compute(C_eigen.topLeftCorner(n_nb, n_nb));
         if (llt.info() != Eigen::Success) {
-            ws.sqrt_d[i] = std::sqrt(sigma2);
-            ws.d_raw[i] = sigma2;
+            ws.sqrt_d[i] = std::sqrt(own_var);
+            ws.d_raw[i] = own_var;
             ws.d_slope[i] = 1.0;
             ws.w[obs_loc] = ws.sqrt_d[i] * z[obs_loc];
             ws.B_n_nb[i] = 0;
@@ -307,10 +313,10 @@ inline void nngp_nc_forward(
         // Its slope through the floor is kept so the backward pass reports the
         // derivative of the variance that was USED, not of the one it replaced.
         double slope = 1.0;
-        double d_i = tulpa_nngp::apply_var_floor(sigma2 - c_alpha,
+        double d_i = tulpa_nngp::apply_var_floor(own_var - c_alpha,
                                                  view.var_floor,
                                                  view.floor_mode, &slope);
-        ws.d_raw[i] = sigma2 - c_alpha;
+        ws.d_raw[i] = own_var - c_alpha;
         ws.d_slope[i] = slope;
         ws.sqrt_d[i] = std::sqrt(d_i);
 
@@ -396,7 +402,7 @@ inline void nngp_nc_backward(
     // The conditional variance is NOT homogeneous of degree 1 in sigma2 once
     // the neighbour covariance carries a diagonal nugget: the forward builds
     // C = sigma2 R + jitter I against c = sigma2 r, so alpha = C^{-1} c moves
-    // with sigma2 as well. Differentiating d = sigma2 - c'alpha gives
+    // with sigma2 as well. Differentiating d = sigma2 + jitter - c'alpha gives
     //
     //     dd/dsigma2 = 1 - 2 r'alpha + alpha' R alpha,
     //
@@ -404,7 +410,7 @@ inline void nngp_nc_backward(
     // C alpha = c, collapses the whole expression to
     //
     //     dd/d log sigma2 = (sigma2 - c'alpha) - jitter * ||alpha||^2
-    //                     = d_raw - jitter * ||alpha||^2.
+    //                     = (d_raw - jitter) - jitter * ||alpha||^2.
     //
     // At jitter = 0 the correction vanishes and d_raw is recovered, which is
     // the homogeneous case. It is 1e-8 on the GP / multiscale-GP views and
@@ -428,7 +434,7 @@ inline void nngp_nc_backward(
             alpha_sq += a_j * a_j;
         }
         const double dd_dlog_sigma2 =
-            ws.d_slope[i] * (ws.d_raw[i] - view.jitter * alpha_sq);
+            ws.d_slope[i] * (ws.d_raw[i] - view.jitter - view.jitter * alpha_sq);
         grad_log_sigma2_lik +=
             adj[i] * dd_dlog_sigma2 / (2.0 * ws.sqrt_d[i]) * z[loc];
     }

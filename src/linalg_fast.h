@@ -246,14 +246,16 @@ inline double chol_log_det(const double* L, int n, int ld) {
 }
 
 // NNGP kriging moments from an already-factored neighbor covariance:
-// cond_mean = c' C^{-1} w_nb, cond_var = max(var_floor, sigma2 - c' C^{-1} c).
+// cond_mean = c' C^{-1} w_nb, cond_var = max(var_floor, own_var - c' C^{-1} c),
+// `own_var` the location's own diagonal entry of the covariance the factor was
+// taken of (sigma2 plus the nugget the factor carries).
 // `w_nb` holds the neighbor values gathered in the same order as `c_vec`.
 // If `alpha_out` is non-null the kriging weights C^{-1} c are written there
 // (length n).
 template <TriLayout LO>
 inline void nngp_moments_from_chol(const double* L, int n, int ld,
                                    const double* c_vec, const double* w_nb,
-                                   double sigma2, double var_floor,
+                                   double own_var, double var_floor,
                                    double& cond_mean, double& cond_var,
                                    double* alpha_out = nullptr) {
   std::vector<double> y(n), alpha_local;
@@ -280,7 +282,7 @@ inline void nngp_moments_from_chol(const double* L, int n, int ld,
   // while usually meaning the factor is wrong: a column-major cuSOLVER factor
   // consumed row-major floored 47 of 150
   // nodes on a fixture whose true minimum conditional variance is 2.5e-02.
-  cond_var = std::max(var_floor, sigma2 - c_Cinv_c);
+  cond_var = std::max(var_floor, own_var - c_Cinv_c);
 }
 
 // Full NNGP conditional-moments core: factorize the neighbor covariance
@@ -289,9 +291,11 @@ inline void nngp_moments_from_chol(const double* L, int n, int ld,
 // detail here.
 //
 // Returns false when C + nugget*I is not positive definite. The location is
-// then reported as conditioned on NOTHING -- cond_mean 0, cond_var sigma2, the
-// same moments a location with no neighbours gets -- rather than kriged
-// against an unusable factor.
+// then reported as conditioned on NOTHING -- cond_mean 0, cond_var
+// sigma2 + nugget, the same moments a location with no neighbours gets --
+// rather than kriged against an unusable factor. The nugget sits on the
+// location's own variance as on the neighbours', so the conditionals are those
+// of K + nugget I.
 inline bool nngp_conditional_moments(const double* C, const double* c_vec,
                                      const double* w_nb, int n, double sigma2,
                                      double nugget, double var_floor,
@@ -299,12 +303,12 @@ inline bool nngp_conditional_moments(const double* C, const double* c_vec,
   std::vector<double> L(static_cast<size_t>(n) * n, 0.0);
   if (!chol_factor_lower<TriLayout::RowMajor>(C, L.data(), n, n, nugget)) {
     cond_mean = 0.0;
-    cond_var = sigma2;
+    cond_var = sigma2 + nugget;
     return false;
   }
   nngp_moments_from_chol<TriLayout::RowMajor>(L.data(), n, n, c_vec, w_nb,
-                                              sigma2, var_floor, cond_mean,
-                                              cond_var);
+                                              sigma2 + nugget, var_floor,
+                                              cond_mean, cond_var);
   return true;
 }
 

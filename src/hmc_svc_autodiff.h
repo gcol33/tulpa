@@ -140,7 +140,7 @@ T nngp_log_lik(
     // First observation: marginal N(0, sigma2)
     int first_idx = svc_data.nn_order[0];
     if (first_idx < 0 || first_idx >= N) return T(-INFINITY);
-    log_lik = log_lik + tulpa_nngp::marginal_log_density(w[first_idx], sigma2);
+    log_lik = log_lik + tulpa_nngp::marginal_log_density(w[first_idx], sigma2, kSvcJitter);
 
     // Remaining observations: conditional on neighbors
     for (int i = 1; i < N; i++) {
@@ -156,7 +156,7 @@ T nngp_log_lik(
 
         if (n_neighbors == 0) {
             // No neighbors: marginal
-            log_lik = log_lik + tulpa_nngp::marginal_log_density(w[obs_idx], sigma2);
+            log_lik = log_lik + tulpa_nngp::marginal_log_density(w[obs_idx], sigma2, kSvcJitter);
             continue;
         }
 

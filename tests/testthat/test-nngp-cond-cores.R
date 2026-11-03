@@ -50,13 +50,15 @@ test_that("jitter is a nugget in both cores, not a pivot floor", {
   expect_false(isTRUE(all.equal(base$templated_mean, big$templated_mean,
                                 tolerance = 1e-12)))
 
-  # And what each core factorizes is C + jitter*I: check against R's own
-  # solve of that matrix, which is the definition rather than either core.
+  # And what each core conditions on is the covariance with jitter on every
+  # diagonal entry, the location's own unit variance included: check against
+  # R's own solve of that matrix, which is the definition rather than either
+  # core.
   n <- nrow(f$C)
   ref <- solve(f$C + diag(1e-3, n), f$c_vec)
   expect_equal(big$plain_mean, sum(ref * f$w_nb), tolerance = 1e-10)
   expect_equal(big$templated_mean, sum(ref * f$w_nb), tolerance = 1e-10)
-  expect_equal(big$plain_var, max(1e-8, 1 - sum(f$c_vec * ref)),
+  expect_equal(big$plain_var, max(1e-8, 1 + 1e-3 - sum(f$c_vec * ref)),
                tolerance = 1e-10)
 })
 

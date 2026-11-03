@@ -32,9 +32,12 @@ inline double dcov_dphi(double d, double phi, double cov_val, double sigma2,
 // refusal.
 static inline void nngp_marginal_contrib(double wi, double sigma2,
                                          double& grad_w_i, double& grad_sigma2) {
-  const double s2 = (sigma2 > kGpVarFloor) ? sigma2 : kGpVarFloor;
+  // The marginal carries the nugget every diagonal entry does, so its
+  // variance is sigma2 + kGpJitter and d v / d log sigma2 = sigma2.
+  const double v = sigma2 + kGpJitter;
+  const double s2 = (v > kGpVarFloor) ? v : kGpVarFloor;
   grad_w_i += -wi / s2;
-  grad_sigma2 += 0.5 * (wi * wi / s2 - 1.0);
+  grad_sigma2 += 0.5 * (wi * wi / s2 - 1.0) * (v > kGpVarFloor ? sigma2 / s2 : 0.0);
 }
 
 // Fully analytical NNGP gradients: Eigen LLT + OpenMP parallelized. Reads the
@@ -203,7 +206,7 @@ inline void gp_nngp_gradients(
       tulpa_nngp::VecchiaGrad g = tulpa_nngp::vecchia_cond_grad(
           n_nb, alpha_vec.data(), beta_vec.data(), c_eigen.data(),
           dc_eigen.data(), dC.data(), w_nb_eigen.data(), w[obs_idx],
-          sigma2, phi, kGpVarFloor, tulpa_nngp::VarFloor::Clamp);
+          sigma2, phi, kGpJitter, kGpVarFloor, tulpa_nngp::VarFloor::Clamp);
       my_grad_w[obs_idx] += g.grad_w_obs;
       for (int j = 0; j < n_nb; j++) my_grad_w[nb_idx[j]] += alpha_vec(j) * g.r_over_v;
       tl_sigma2[t] += g.dlog_sigma2;

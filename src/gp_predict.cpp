@@ -8,7 +8,8 @@
 // predictive given the row's field at that location's nearest fitted
 // locations (Datta et al. 2016, section 2.2):
 //
-//   w* | w ~ N(alpha' w_nb, sigma2 - c' C^-1 c),  alpha = C^-1 c,
+//   w* | w ~ N(alpha' w_nb, sigma2 + jitter - c' alpha),
+//   alpha = (C + jitter I)^-1 c,
 //
 // under the covariance kernel (tulpa_svc::compute_cov) and the conditional
 // solver (tulpa_nngp::cond_weights) the density uses. New locations are

@@ -407,7 +407,7 @@ inline void temporal_gp_path_predict(const TemporalGpKernel& kg,
             for (int a = 0; a < m; a++)
                 for (int b = 0; b < m; b++)
                     C[(std::size_t)a * m + b] = kern(std::abs(tt[nb[a]] - tt[nb[b]]));
-            if (!tulpa_nngp::cond_weights(C, c_vec, m, sigma2 + kTvcGpNugget,
+            if (!tulpa_nngp::cond_weights(C, c_vec, m, sigma2,
                                           kTvcGpNugget, 0.0,
                                           tulpa_nngp::VarFloor::Clamp, alpha, v)) {
                 Rcpp::stop("tvc prediction: a bracketing GP covariance is not "
