@@ -2291,7 +2291,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
       lw_now <- vapply(recs, rec_logm, numeric(1)) + node_log_jac
       grown <- .nl_tensor_edge_cells(z, lw_now, tens$h)
       if (is.null(grown) || !any(grown$solve)) break
-      if (extend_rounds >= .NL_OUTER_DESIGN$tensor_extend_max) {
+      if (extend_rounds >= .nl_diag("edge_extend_max")) {
         extend_capped <- TRUE
         break
       }
@@ -2311,7 +2311,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     if (extend_capped) {
       warning("tulpa_re_cov_nested(): the integration tensor still carries ",
               "posterior mass on its outermost level after ",
-              .NL_OUTER_DESIGN$tensor_extend_max, " extensions per side; ",
+              .nl_diag("edge_extend_max"), " extensions per side; ",
               "the interval ends of a scale whose tail runs past it are cut. ",
               "Check the hyperprior.", call. = FALSE)
     }

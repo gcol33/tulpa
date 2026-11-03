@@ -120,14 +120,18 @@ test_that("the consistency pass fires on the ESS, not on an SD comparison", {
   expect_identical(out$info$axes, "sigma")
   expect_lt(out$info$ess_before, .nl_diag("axis_sd_ess"))
 
-  # A resolved axis is left alone, and costs no kernel call: at an SD of 0.8
-  # the end nodes sit 2.9 SDs out and 0.4% of the axis lies past them, under
-  # the edge rounds' 1% (`edge_tail_mass`).
+  # A resolved axis is left alone, and costs no kernel call: on nine nodes over
+  # the same span at an SD of 0.6, the end nodes sit 3.8 SDs out and 0.007% of
+  # the axis lies past each, under the edge rounds' `edge_tail_mass`.
   called <- 0L
-  lm_wide <- -0.5 * ((log(lev) - log(1)) / 0.8)^2
+  lev9 <- exp(seq(log(0.1), log(10), length.out = 9L))
+  tg9 <- matrix(lev9, ncol = 1L, dimnames = list(NULL, "sigma"))
+  specs9 <- list(hyper_axis_spec("sigma", grid = lev9, log_scale = TRUE,
+                                 bounds = c(0, Inf), refinable = TRUE))
+  lm_wide <- -0.5 * ((log(lev9) - log(1)) / 0.6)^2
   out2 <- .hyper_consistency_pass(
-    theta_grid = tg, log_marginal = lm_wide, extras = NULL,
-    refining_axis = rep("", nrow(tg)), specs = specs,
+    theta_grid = tg9, log_marginal = lm_wide, extras = NULL,
+    refining_axis = rep("", nrow(tg9)), specs = specs9,
     kernel_fn = kernel_fn)
   expect_identical(out2$n_added, 0L)
   expect_null(out2$info)

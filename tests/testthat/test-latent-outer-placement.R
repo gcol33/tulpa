@@ -136,10 +136,12 @@ test_that("a skewed latent AR(1) axis is followed past the end node its placemen
     expect_lt(max(ref[, "edge"]), 1e-3)
     # summary() names an axis by its block's name; the reference by position.
     got <- .hp_table(fit)[tulpa:::.hyper_axis_labels(fit, rownames(ref)), ]
-    # Each interval end within a quarter of the reference posterior SD; the
-    # upper end of atanh(psi) read 0.37 SDs short on the placed span alone.
-    expect_true(all(abs(got[, "ci_lo"] - ref[, "ci_lo"]) < 0.25 * ref[, "sd"]))
-    expect_true(all(abs(got[, "ci_hi"] - ref[, "ci_hi"]) < 0.25 * ref[, "sd"]))
+    # Each interval end within a tenth of the reference posterior SD; the
+    # upper end of atanh(psi) read 0.37 SDs short on the placed span alone,
+    # and 0.17 SDs short while the read could leave 1% of the axis past its
+    # outermost level (gcol33/tulpa#1113).
+    expect_true(all(abs(got[, "ci_lo"] - ref[, "ci_lo"]) < 0.1 * ref[, "sd"]))
+    expect_true(all(abs(got[, "ci_hi"] - ref[, "ci_hi"]) < 0.1 * ref[, "sd"]))
 })
 
 test_that("a tgmrf block with a bounds box keeps its declared span", {

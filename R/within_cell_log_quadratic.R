@@ -42,8 +42,14 @@
 # summed |coverage - 0.95| was 2.20 against the box read's 0.34, the failure
 # `cell_normal_read.patch` showed in gcol33/tulpa#925. So a row is interpolated
 # only where it resolves its own conditional, `h / sd <=
-# .nl_diag("lq_max_h_over_sd")`, with `h` the median node spacing of the row and
-# `sd` the three-point parabola at its modal node; a row above it, one whose
+# .nl_diag("lq_max_h_over_sd")`, with `h` the row's node spacing where its mass
+# sits (the mass-weighted median of its cells' box widths, the spacing itself on
+# an evenly spaced row) and `sd` the three-point parabola at its modal node.
+# Read as the median spacing over every node, the levels a refinement pass laid
+# down a slowly decaying tail -- light, and spaced at the tail's own scale --
+# took the gate past 2 on a row whose core is laid at 1 SD, and the whole axis
+# fell back to boxes that under-read the exponential tail by 4% a cell. A row
+# above the gate, one whose
 # mode is an end node, and one with fewer than three positive-mass nodes are
 # read as their cells' boxes. An axis on which no row qualifies declines to the
 # box read as `"unresolved"`.
@@ -210,7 +216,13 @@
   im <- which.max(p$lg)
   if (im == 1L || im == n || p$d2[im - 1L] >= 0) return(as_box(p))
   sd_r <- sqrt(-1 / (2 * p$d2[im - 1L]))
-  p$h_sd <- stats::median(diff(uv)) / sd_r
+  # The row's spacing where its mass sits: the mass-weighted median of its
+  # nodes' box widths. On an evenly spaced row it is the spacing; the levels a
+  # refinement pass lays out along a tail carry little mass and leave it where
+  # the posterior is.
+  bw <- hi_b - lo_b
+  o <- order(bw)
+  p$h_sd <- bw[o][which(cumsum(mk[o]) >= sum(mk) / 2)[1L]] / sd_r
   if (!is.finite(p$h_sd) || p$h_sd > .nl_diag("lq_max_h_over_sd")) {
     return(as_box(p))
   }

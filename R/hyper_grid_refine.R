@@ -978,6 +978,18 @@
        extras = extras, refining_axis = refining_axis, info = info)
 }
 
+# Where each proposed level `pts` lies against an axis's current continuum
+# levels `vals`: 0 inside their span, 1 below it, 2 above it. A level past an
+# end extends the axis into a tail no node measures, and is bounded by the tail
+# mass rule (`edge_tail_mass`, `edge_extend_max`); one inside it resolves the
+# span and is bounded by `axis_refine_nodes`.
+.hyper_level_side <- function(pts, vals, spec) {
+  vals <- as.numeric(vals)
+  cont <- vals[is.finite(vals) & !.hyper_is_atom_level(vals, spec)]
+  if (!length(cont)) return(integer(length(pts)))
+  ifelse(pts < min(cont), 1L, ifelse(pts > max(cont), 2L, 0L))
+}
+
 # Repopulate an axis whose marginal has collapsed onto too few nodes to carry a
 # spread, by bisecting the gaps its mass sits across
 # (`.hyper_propose_mass_bisection()`).
@@ -1001,7 +1013,9 @@
 # posterior's.
 #
 # The pass re-reads the ESS after every round and bisects again until the axis
-# reaches `min_ess` or has taken `max_nodes` new levels. A single round cannot
+# reaches `min_ess` or has taken `max_nodes` new levels inside its span; a level
+# laid past an end is bounded instead by the tail it reads there, at most
+# `ext_max` per side (`.hyper_level_side()`). A single round cannot
 # certify what it produced: bisecting two heavy nodes can leave the mass on the
 # new midpoint and one of them, and a marginal is only resolved once the ESS it
 # ends on says so (gcol33/tulpa#858).
@@ -1014,9 +1028,12 @@
 # ESS is met, and bisects as above while the ESS is short. An axis whose at-mode
 # proposal comes back empty already has a node within half a mode SD of every
 # point of the ladder -- a placement laid it at 1.25 SDs -- so it resolves the
-# posterior it was laid from and is left as it is: its ESS (2.8 for a 5-node
+# posterior it was laid from and is never bisected: its ESS (2.8 for a 5-node
 # ladder at 1.25 SDs) is under `min_ess` by construction, and bisecting it
-# would only spend cells.
+# would only spend cells. Its ends are read all the same, since a span laid
+# symmetrically about the mode cuts a skewed marginal's longer tail: the
+# gaussian HSGP fit of gcol33/tulpa#1122 read the field variance's 97.5% end
+# 0.11 in log short with its placed span alone.
 #
 # A new point is a new LEVEL of the base tensor, laid in every row of the other
 # axes that holds the posterior (`.hyper_tensor_level_cells()`,
@@ -1034,6 +1051,7 @@
                                     refining_axis, specs, kernel_fn,
                                     min_ess = .nl_diag("axis_sd_ess"),
                                     max_nodes = .nl_diag("axis_refine_nodes"),
+                                    ext_max = .nl_diag("edge_extend_max"),
                                     hp_fn = NULL, axis_modes = NULL) {
   refinable <- .hyper_refinable_names(specs)
   info <- list(axes = character(0), n_added = integer(0),
@@ -1082,8 +1100,10 @@
                                       refining_axis, axis, spec))
     }
     added <- 0L
-    ladder <- 0L
+    n_inner <- 0L
+    n_ext <- c(0L, 0L)
     first <- !is.null(at_mode)
+    laid <- FALSE
     if (ess_before >= min_ess) {
       # A resolved axis can still misread a gap: an outer node holding a share
       # of the axis spreads it across its whole half-cell. It takes the
@@ -1092,19 +1112,36 @@
       if (!length(edge_close(rd))) next
       first <- FALSE
     }
-    while (added - ladder < max_nodes && is.finite(rd$ess)) {
-      collapsed <- rd$ess < min_ess
+    while (is.finite(rd$ess)) {
       new_pts <- if (first) .hyper_propose_at_mode(spec, rd$marg$vals, at_mode)
         else edge_close(rd)
-      if (first && !length(new_pts)) break
-      is_ladder <- first && length(new_pts) > 0L
+      # An empty at-mode proposal is an axis a placement laid at its mode: its
+      # nodes resolve the posterior they were laid from, so it is never
+      # bisected, but its ends are still read, since a skewed marginal runs
+      # past a span laid symmetrically about the mode.
+      if (first && !length(new_pts)) {
+        laid <- TRUE
+        new_pts <- edge_close(rd)
+      }
+      is_ladder <- first && !laid && length(new_pts) > 0L
       first <- FALSE
+      collapsed <- rd$ess < min_ess && !laid
       if (length(new_pts) == 0L && collapsed) {
         new_pts <- .hyper_propose_mass_bisection(spec, rd$marg$vals,
                                                  rd$marg$log_marg, min_ess)
       }
       if (length(new_pts) == 0L) break
-      if (!is_ladder) new_pts <- utils::head(new_pts, max_nodes - (added - ladder))
+      side <- integer(length(new_pts))
+      if (!is_ladder) {
+        side <- .hyper_level_side(new_pts, rd$marg$vals, spec)
+        inner <- which(side == 0L)
+        keep <- c(utils::head(inner, max(0L, max_nodes - n_inner)),
+                  which(side > 0L & n_ext[pmax(side, 1L)] < ext_max))
+        keep <- sort(keep)
+        new_pts <- new_pts[keep]
+        side <- side[keep]
+        if (length(new_pts) == 0L) break
+      }
       pack <- .hyper_tensor_level_cells(theta_grid, log_marginal, axis,
                                         new_pts, log_weight = rd$lm_eff)
       if (is.null(pack)) break
@@ -1117,7 +1154,8 @@
       extras        <- step$extras
       refining_axis <- step$refining_axis
       added <- added + step$n_levels
-      if (is_ladder) ladder <- step$n_levels
+      n_inner <- n_inner + sum(side == 0L) * !is_ladder
+      n_ext <- n_ext + c(sum(side == 1L), sum(side == 2L))
       rd <- axis_ess(axis, spec)
     }
     if (added == 0L) next

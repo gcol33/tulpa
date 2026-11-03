@@ -1384,10 +1384,11 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # at 512.
 #
 # `axis_refine_nodes` caps the nodes the consistency pass
-# (`.hyper_consistency_pass()`) adds to one axis while bisecting it towards
-# `axis_sd_ess`. It counts levels, each laid in the rows of the other axes: 8
-# is one bisection of every gap of a declared 9-node slab, the resolution the
-# default outer axes are declared at.
+# (`.hyper_consistency_pass()`) adds inside one axis's span while bisecting it
+# towards `axis_sd_ess` or closing its gaps. It counts levels, each laid in the
+# rows of the other axes: 8 is one bisection of every gap of a declared 9-node
+# slab, the resolution the default outer axes are declared at. Levels past an
+# end are `edge_extend_max`'s.
 # `at_mode_gap_var` is the share of an axis's posterior variance, about the
 # mode and in its SDs, that a node the consistency pass laid at the mode may
 # read into the gap beyond it, where the box rule hands it half the gap
@@ -1454,17 +1455,54 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # lays (1.25 SDs), so an axis past it carries no spread across nodes for the
 # grid to report: its value is that node.
 #
-# `edge_tail_mass` is the share of an axis's posterior the fit's read may place
-# past its outermost level before the consistency pass lays a level one SD
-# beyond it (`.hyper_axis_tail_mass()`, `.hyper_propose_edge_close()`): no node
-# measures that region, and the read there continues its end triple. A Gaussian
-# marginal laid at +/- 2.5 SDs reads 0.62% past each end, which the end
-# triple's quadratic continues exactly, so a placed Gaussian axis takes no
-# level. A right-skewed one does: the AR(1) coefficient of gcol33/tulpa#1071,
-# laid at +/- 2.5 SDs of the curvature at its mode, read 4% past its upper end
-# and its 97.5% end at 1.571 against 1.647 on a dense 81 x 141 grid; followed
-# out it reads 1.606. An end whose log density is convex has no triple to
-# continue and is bounded geometrically instead (`.hyper_convex_tail_mass()`).
+# `edge_tail_mass` is the share of an axis's posterior an integration grid may
+# leave past its outermost level, on every door that grows a grid past its
+# ends: the consistency pass of the joint and registry doors lays a level
+# beyond an end whose read places more than this past it
+# (`.hyper_axis_tail_mass()`, `.hyper_propose_edge_close()`), and the random-
+# effect covariance door grows its tensor past an end whose box read does
+# (half the outermost level's mass, `.nl_tensor_edge_cells()`). No node
+# measures that region; the read there is an extrapolation, so what it places
+# there moves an interval end directly, by up to that share of probability. It
+# is therefore sized against the 2.5% tail an interval end cuts: 5e-4 is 2% of
+# it. An end whose log density is convex has no triple to continue and is
+# bounded geometrically instead (`.hyper_convex_tail_mass()`). Against dense
+# references, at 1e-2 / 5e-4:
+#
+#   AR(1) atanh(psi), gcol33/tulpa#1071, 97.5% end (dense 81 x 141: 1.6473)
+#                                      1.6163 / 1.6408     70 / 125 cells
+#   gaussian HSGP, phi integrated, gcol33/tulpa#1122, worst |log error| of the
+#   nine 2.5/50/97.5% ends (dense 56 x 56 x 30)
+#                                      0.030 / 0.030      176 / 332 cells
+#   two-arm multi-scale field, gcol33/tulpa#1093, summed |log error| of the
+#   eight 2.5/97.5% ends (exact 2.1M-cell quadrature)
+#                                      1.46 / 1.37       3513 / 6808 cells
+#
+# The last is an L-shaped posterior a tensor of levels does not follow well
+# either way: its local variance's 2.5% end reads +0.54 / -0.26 in log.
+# and on (1 + x | g), 50 binary groups x 6, the random-effect covariance
+# door's slope-SD 2.5% end on three seeds whose left tail is a long shoulder,
+# against 0.0449 / 0.1972 / 0.1300 from a dense (log sigma_1, log sigma_2,
+# atanh rho) tensor of about a million cells:
+#
+#   no growth (9^3 at +/- 4.5 SDs)   0.1772 / 0.3087 / 0.2657    729 cells
+#   tail mass 1e-2                   0.0998 / 0.3103 / 0.2657   ~840
+#   tail mass 2e-3                   0.0506 / 0.2420 / 0.1690  ~1270
+#   tail mass 1e-3                   0.0470 / 0.2200 / 0.1480  ~1740
+#   tail mass 5e-4                   0.0464 / 0.2038 / 0.1350  ~2410
+#
+# (those counts solve every cell of each new slab; only the rows holding all
+# but `level_row_tail` of the edge level's mass are solved, which leaves the
+# ends as they are). Over 30 seeds of that fixture at 5e-4 the mean |log
+# error| of the slope SD's 2.5% end is 0.051 (max 0.134) against 0.727 (max
+# 1.459) without growth, the intercept SD's 0.035 against 0.390, at 1364
+# solved cells on average and the same wall time.
+# `edge_extend_max` bounds the levels laid past each end of an axis, one per
+# round (the random-effect door warns when it is reached). The levels past an
+# end are bounded by the tail they read, not by `axis_refine_nodes`, which
+# counts the levels laid inside an axis's span: a skewed end followed out one
+# tail scale at a time can need more than eight. The most rounds any seed of
+# the fixture above took is 10.
 #
 # `within_points` is the number of lattice points at which a quantity of
 # several axes is evaluated inside each cell (`.nl_within_cell_points()`), a
@@ -1484,7 +1522,8 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     read_sd_nodes        = 512L,
     axis_refine_nodes    = 8L,
     at_mode_gap_var      = 0.01,
-    edge_tail_mass       = 0.01,
+    edge_tail_mass       = 5e-4,
+    edge_extend_max      = 24L,
     within_points        = 127L,
     within_lattice_a     = 26L,
     level_row_tail       = 1e-3,
@@ -1890,36 +1929,15 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # A caller-chosen `integration = "grid"` without `n_per_axis` / `span` takes
 # the same per-k values, and `grid_n` / `grid_span` above them.
 #
-# The random-effect covariance door grows its tensor past an end whose
-# outermost level still carries more than `2 * tensor_tail_mass` of the axis's
-# marginal (`.nl_tensor_edge_cells()`), at most `tensor_extend_max` rounds. The
-# mass a tensor leaves outside moves a 2.5% bound directly, so the threshold is
-# set against that bound rather than against the joint door's at-mode gap rule
-# (`edge_tail_mass`, 0.01). On (1 + x | g), 50 binary groups x 6, the slope
-# SD's 2.5% bound on three seeds whose left tail is a long shoulder, against
-# 0.0449 / 0.1972 / 0.1300 from a dense (log sigma_1, log sigma_2, atanh rho)
-# tensor of about a million cells:
-#
-#   no growth (9^3 at +/- 4.5 SDs)   0.1772 / 0.3087 / 0.2657    729 cells
-#   tail mass 1e-2                   0.0998 / 0.3103 / 0.2657   ~840
-#   tail mass 2e-3                   0.0506 / 0.2420 / 0.1690  ~1270
-#   tail mass 1e-3                   0.0470 / 0.2200 / 0.1480  ~1740
-#   tail mass 5e-4                   0.0464 / 0.2038 / 0.1350  ~2410
-#
-# (those counts solve every cell of each new slab; only the rows holding all
-# but `level_row_tail` of the edge level's mass are solved, which leaves the
-# bounds as they are). Over 30 seeds of that fixture at 5e-4 the mean |log
-# error| of the slope SD's 2.5% bound is 0.051 (max 0.134) against 0.727 (max
-# 1.459) without growth, the intercept SD's 0.035 against 0.390, at 1364
-# solved cells on average and the same wall time; the most rounds any seed
-# took is 10, and `tensor_extend_max` caps them at 24.
+# The random-effect covariance door grows its tensor past an end that still
+# carries more than `.NL_DIAG$edge_tail_mass` of the axis's marginal past its
+# outermost level, at most `.NL_DIAG$edge_extend_max` rounds; the measurements
+# behind that threshold are written beside it.
 .NL_OUTER_DESIGN <- list(
     tensor_n    = c(61L, 21L, 9L),
     tensor_span = c(8, 6, 4.5),
     grid_n      = 5L,
-    grid_span   = 3,
-    tensor_tail_mass  = 5e-4,
-    tensor_extend_max = 24L
+    grid_span   = 3
 )
 
 # The outer design a Hessian-oriented door lays over k coordinates: the

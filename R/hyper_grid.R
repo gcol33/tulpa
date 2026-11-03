@@ -182,8 +182,10 @@
 #'     too few nodes to carry a spread, bisect the gaps between adjacent nodes
 #'     that carry the axis's mass, each new point a level laid in every row of
 #'     the other axes that holds the posterior, and repeat until the axis reaches `var_of_means_min_ess`
-#'     or has taken `.nl_diag("axis_refine_nodes")` new levels. One kernel call
-#'     per round.
+#'     or has taken `.nl_diag("axis_refine_nodes")` new levels inside its
+#'     span. An end whose read places more than `.nl_diag("edge_tail_mass")`
+#'     of the axis past it gains a level beyond it, at most
+#'     `.nl_diag("edge_extend_max")` per end. One kernel call per round.
 #'   * `var_of_means_min_ess` (`.nl_diag("axis_sd_ess")`) -- the quadrature
 #'     effective sample size an axis marginal has to reach for the pass to
 #'     leave it alone. Read off the weights, so the trigger is not one SD

@@ -75,7 +75,7 @@ test_that("a transported mode leaves out an axis the mode-find did not resolve",
     sqrt(sum(w * x^2) - sum(w * x)^2)
 }
 
-test_that("an axis a placement laid at the mode is left as it is", {
+test_that("an axis a placement laid at the mode is not bisected", {
     sd <- 0.04
     grid <- exp(log(2) + c(-2, -1, 0, 1, 2) * 1.25 * sd)
     spec <- hyper_axis_spec("sigma", grid = grid, log_scale = TRUE,
@@ -88,18 +88,24 @@ test_that("an axis a placement laid at the mode is left as it is", {
         calls <<- calls + 1L
         list(log_marginal = -0.5 * ((log(new_cells[, 1]) - log(2)) / sd)^2)
     }
-    # Its ESS is 2.8, under the floor, by construction of a 1.25-SD ladder.
+    inside <- function(fit) {
+        u <- log(fit$theta_grid[-seq_along(grid), 1L])
+        sum(u > min(log(grid)) & u < max(log(grid)))
+    }
+    # Its ESS is 2.8, under the floor, by construction of a 1.25-SD ladder. Its
+    # ends are still read: a Gaussian laid at +/- 2.5 SDs leaves 0.62% past
+    # each, over `edge_tail_mass`, so each gains a level beyond it.
     out <- .hyper_consistency_pass(tg, lm, NULL, rep("", 5L), list(spec),
                                    kernel_fn,
                                    axis_modes = list(sigma = list(
                                        mode_u = log(2), sd_u = sd, tag = "log")))
-    expect_identical(calls, 0L)
-    expect_null(out$info)
+    expect_identical(inside(out), 0L)
+    expect_lte(out$n_added, 2L * tulpa:::.nl_diag("edge_extend_max"))
     # Without a mode the pass has nothing to read the ladder against and
     # bisects it.
     blind <- .hyper_consistency_pass(tg, lm, NULL, rep("", 5L), list(spec),
                                      kernel_fn)
-    expect_gt(calls, 0L)
+    expect_gt(inside(blind), 0L)
 })
 
 skip_on_cran_budget()

@@ -115,3 +115,62 @@ test_that("the pass re-reads the ESS and bisects until the axis is resolved", {
     expect_true(all(added > min(lev) & added < max(lev)))
     expect_true(all(out$refining_axis[-seq_along(lev)] == "alpha"))
 })
+
+# A right-skewed axis: a Gaussian core of SD 0.3 in log alpha and an
+# exponential shelf above it, decaying at one nat per unit. Laid at 1.25 core
+# SDs about the mode, the read places more than `edge_tail_mass` past the
+# upper end.
+skew_target <- function(a) {
+    u <- log(a)
+    log(0.9 * stats::dnorm(u, 0, 0.3) + 0.1 * exp(-pmax(u, 0)) * (u > 0))
+}
+
+skew_pass <- function(max_nodes = tulpa:::.nl_diag("axis_refine_nodes"),
+                      ext_max = tulpa:::.nl_diag("edge_extend_max")) {
+    lev <- exp(seq(-0.75, 0.75, by = 0.375))
+    tg <- matrix(lev, ncol = 1L, dimnames = list(NULL, "alpha"))
+    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                          screen = NULL) {
+        list(log_marginal = skew_target(new_cells[, "alpha"]), extras = NULL)
+    }
+    out <- tulpa:::.hyper_consistency_pass(
+        theta_grid = tg, log_marginal = skew_target(lev), extras = NULL,
+        refining_axis = rep("", nrow(tg)), specs = list(log_axis_spec(lev)),
+        kernel_fn = kernel_fn, max_nodes = max_nodes, ext_max = ext_max,
+        axis_modes = list(alpha = list(mode_u = 0, sd_u = 0.3, tag = "log")))
+    lm <- skew_target(out$theta_grid[, "alpha"])
+    lq <- tulpa:::.hyper_log_quad_weights(out$theta_grid, list(log_axis_spec(lev)),
+                                          refining = out$refining_axis,
+                                          log_marginal = lm)
+    out$tails <- tulpa:::.hyper_axis_tail_mass(
+        out$theta_grid, lm, lm + lq, out$refining_axis, "alpha",
+        log_axis_spec(lev))
+    out$lev <- lev
+    out
+}
+
+test_that("an axis laid at its mode still has its ends followed out", {
+    out <- skew_pass()
+    u <- log(out$theta_grid[, "alpha"])
+    expect_gt(max(u), 0.75 + 1)
+    expect_lte(out$tails[2L], tulpa:::.nl_diag("edge_tail_mass"))
+    # Laid at its mode, the axis is never bisected inside its declared span.
+    inside <- u[-seq_along(out$lev)]
+    expect_false(any(inside > -0.75 & inside < 0.75))
+})
+
+test_that("levels past an end are bounded by the tail rule, not the level budget", {
+    out <- skew_pass(max_nodes = 1L)
+    above <- sum(log(out$theta_grid[, "alpha"]) > 0.75 + 1e-9)
+    expect_gt(above, 1L)
+    expect_lte(out$tails[2L], tulpa:::.nl_diag("edge_tail_mass"))
+    capped <- skew_pass(max_nodes = 1L, ext_max = 2L)
+    expect_lte(sum(log(capped$theta_grid[, "alpha"]) > 0.75 + 1e-9), 2L + 1L)
+})
+
+test_that("a level's side is read against the continuum span", {
+    lev <- c(0, exp(c(-1, 0, 1)))
+    sp <- log_axis_spec(lev, atom = TRUE)
+    expect_identical(tulpa:::.hyper_level_side(c(exp(-2), 1.5, exp(2)), lev, sp),
+                     c(1L, 0L, 2L))
+})

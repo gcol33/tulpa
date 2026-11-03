@@ -230,7 +230,7 @@ ccd_weights <- function(ccd) {
 # axes grown in the same round. Returns `list(z, solve)` for the new rows of
 # `z`, NULL when no end qualifies.
 .nl_tensor_edge_cells <- function(z, lw, h,
-                                  tail_mass = .NL_OUTER_DESIGN$tensor_tail_mass,
+                                  tail_mass = .nl_diag("edge_tail_mass"),
                                   row_tail = .nl_diag("level_row_tail")) {
   ok <- is.finite(lw)
   if (!any(ok)) return(NULL)
