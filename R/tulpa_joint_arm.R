@@ -336,7 +336,7 @@
   n_x <- ncol(M)
   r <- .nl_attach_unit_loads(list(modes = M), list(re = load), Q_p,
                              fit$Q_csc_i_per_grid, fit$Q_csc_x_per_grid, n_x,
-                             .joint_constraint_cols(fit$arm_layout, n_x))
+                             .inner_constraint(fit))
   list(mean = r$grid_re_mean, var = r$grid_re_var)
 }
 

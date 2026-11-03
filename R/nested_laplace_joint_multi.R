@@ -1222,7 +1222,6 @@
                                       hessian_pd_mode, step_curvature_mode,
                                       max_iter, tol, inner_refresh,
                                       fixed_block_p = 0L,
-                                      fixed_block_constraints = NULL,
                                       fixed_block_extra = NULL,
                                       inner_sparse_override = 0L) {
     force(arms); force(cp); force(blocks_spec); force(axis_offsets); force(B)
@@ -1230,7 +1229,7 @@
     force(inner_sparse_override)
     force(hessian_pd_mode); force(step_curvature_mode)
     force(max_iter); force(tol); force(inner_refresh)
-    force(fixed_block_p); force(fixed_block_constraints)
+    force(fixed_block_p)
     force(fixed_block_extra)
 
     function(theta_mat,
@@ -1294,7 +1293,6 @@
             skew_idx            = skew_idx,
             fixed_block_p       = if (isTRUE(fixed_block))
                                       as.integer(fixed_block_p) else 0L,
-            fixed_block_constraints = fixed_block_constraints,
             fixed_block_extra   = if (isTRUE(fixed_block)) fixed_block_extra,
             debias              = debias,
             cila                = cila,
@@ -1628,11 +1626,11 @@
         .joint_multi_layout(arms, prepared)$n_x
     })
 
-    # Per-cell fixed-effect covariance retention. Both the
-    # block size and the field sum-to-zero groups are fixed by the latent layout,
-    # which is known before the first solve, so the request is built here and the
-    # kernel extracts each cell's block inside that cell's own solve
-    # instead of the grid keeping every precision.
+    # Per-cell fixed-effect covariance retention. The block size is fixed by
+    # the latent layout, which is known before the first solve, so the request
+    # is built here and the kernel extracts each cell's block inside that
+    # cell's own solve, under the constraint that solve carries, instead of the
+    # grid keeping every precision.
     fixed_layout <- .joint_fixed_layout(responses)
     fb_layout    <- .joint_multi_layout(arms, prepared)
     # A block carrying a basis builder is predicted at new coordinates from its
@@ -1641,7 +1639,6 @@
     fixed_block_extra <- .joint_basis_block_idx(prepared, fb_layout)
     fixed_block_p <- if (isTRUE(keep_grid_hessians) || length(fixed_block_extra))
         as.integer(fixed_layout$n_fixed) else 0L
-    fixed_block_constraints <- .joint_constraint_cols(fb_layout, fb_layout$n_x)
 
     call_kernel <- .joint_multi_call_factory(
         arms = arms, cp = cp, blocks_spec = blocks_spec,
@@ -1651,7 +1648,6 @@
         step_curvature_mode = step_curvature_mode,
         max_iter = max_iter, tol = tol, inner_refresh = inner_refresh,
         fixed_block_p = fixed_block_p,
-        fixed_block_constraints = fixed_block_constraints,
         fixed_block_extra = fixed_block_extra,
         inner_sparse_override = inner_sparse_override)
 

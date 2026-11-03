@@ -127,6 +127,14 @@ struct LaplaceResult {
   std::vector<int>    Q_csc_i;
   std::vector<double> Q_csc_x;
   int                 Q_csc_n = 0;
+  // The sum-to-zero pins the stored Q leaves off (folded at solve time), as
+  // the soft rows of the cell's CellConstraintRows: row g holds the 0-based
+  // latent indices Q_soft_idx[Q_soft_ptr[g] .. Q_soft_ptr[g + 1]), each with
+  // weight 1, and Q_soft_D is their k x k precision, row-major. Empty when
+  // the stored Q holds every pin.
+  std::vector<int>    Q_soft_ptr;
+  std::vector<int>    Q_soft_idx;
+  std::vector<double> Q_soft_D;
 
   // Marginal posterior-covariance blocks of the latent field: each block is a
   // diagonal block of H^{-1} (the FULL inverse, so cross-coupling with the

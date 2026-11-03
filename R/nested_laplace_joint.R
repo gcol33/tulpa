@@ -2287,17 +2287,13 @@ tulpa_nested_laplace_joint <- function(responses,
         lay <- if (is.function(backend$layout)) backend$layout(arms, prior)
         if (is.list(lay)) lay$n_x else NULL
     })
-    # Per-cell fixed-effect covariance retention. The block
-    # size and the field sum-to-zero groups follow from the latent layout, which
-    # is fixed before the first solve, so the request goes in with the kernel
-    # call and each cell's block is extracted inside that cell's own solve
-    # rather than off a grid-wide store of every precision.
-    fb_layout <- if (is.function(backend$layout)) backend$layout(arms, prior)
-                 else NULL
+    # Per-cell fixed-effect covariance retention. The block size follows from
+    # the latent layout, which is fixed before the first solve, so the request
+    # goes in with the kernel call and each cell's block is extracted inside
+    # that cell's own solve, under the constraint that solve carries, rather
+    # than off a grid-wide store of every precision.
     fixed_block_p <- if (isTRUE(keep_grid_hessians))
         as.integer(.joint_fixed_layout(responses)$n_fixed) else 0L
-    fixed_block_constraints <- if (is.list(fb_layout))
-        .joint_constraint_cols(fb_layout, fb_layout$n_x) else list()
     tm$mark("setup")
 
     # The hyperprior folded into log_marginal at the kernel-call boundary: the
@@ -2336,7 +2332,6 @@ tulpa_nested_laplace_joint <- function(responses,
         backend$call_kernel(arms, prior, cp, grids, max_iter, tol,
                             n_threads, x_init, isTRUE(store_Q),
                             fixed_block_p = fixed_block_p,
-                            fixed_block_constraints = fixed_block_constraints,
                             arm_names = arm_names,
                             n_threads_outer = n_threads_outer,
                             tile_warm = tile_warm,
@@ -2383,8 +2378,6 @@ tulpa_nested_laplace_joint <- function(responses,
                                         tol, n_threads, x_init, store_Q,
                                         arm_names,
                                         fixed_block_p = fixed_block_p,
-                                        fixed_block_constraints =
-                                            fixed_block_constraints,
                                         cell_coupling = cell_coupling,
                                         hessian_pd_mode = hessian_pd_mode,
                                         step_curvature_mode = step_curvature_mode,
@@ -2518,6 +2511,8 @@ tulpa_nested_laplace_joint <- function(responses,
       res$Q_csc_i_per_grid <- NULL
       res$Q_csc_x_per_grid <- NULL
       res$Q_csc_n          <- NULL
+      res$Q_soft_cols       <- NULL
+      res$Q_soft_D_per_grid <- NULL
     }
     # Subspace debias, after the per-cell fixed-effect pieces
     # are in place: the correction reports draws recombined from them, so it has

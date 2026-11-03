@@ -57,30 +57,6 @@ inline double constraint_row_dot(const LinearConstraintRow& a, const double* v) 
     return s;
 }
 
-// Whether two rows state the same constraint entry for entry: the same latent
-// indices in the same order, with weights equal to a relative 1e-12.
-inline bool same_constraint_row(const LinearConstraintRow& a,
-                                const LinearConstraintRow& b) {
-    if (a.cols != b.cols) return false;
-    for (std::size_t e = 0; e < a.cols.size(); e++) {
-        const double wa = a.weight(e), wb = b.weight(e);
-        if (std::abs(wa - wb) > 1e-12 * (std::abs(wa) + std::abs(wb))) return false;
-    }
-    return true;
-}
-
-// Append each row of `more` that `dst` does not already state, so a set read
-// from two sources (a caller's sum-to-zero groups and the blocks' hard rows)
-// holds no constraint twice and its capacitance stays non-singular.
-inline void append_new_constraint_rows(std::vector<LinearConstraintRow>& dst,
-                                       const std::vector<LinearConstraintRow>& more) {
-    for (const auto& r : more) {
-        bool seen = false;
-        for (const auto& d : dst) if (same_constraint_row(d, r)) { seen = true; break; }
-        if (!seen) dst.push_back(r);
-    }
-}
-
 // Read a list of constraint rows handed over from R. Element g is either an
 // integer vector of 1-based latent indices (a sum-to-zero group, every weight
 // 1) or a list(cols = <1-based indices>, w = <weights>). `n_x` > 0 bounds the
@@ -132,6 +108,44 @@ inline std::vector<LinearConstraintRow> read_constraint_rows(
     }
     return rows;
 }
+
+// The rows as R takes them back: an all-ones row is the integer vector of its
+// 1-based indices, any other row list(cols = <1-based indices>, w = <weights>),
+// the form read_constraint_rows() reads.
+inline Rcpp::List write_constraint_rows(const std::vector<LinearConstraintRow>& rows) {
+    Rcpp::List out(rows.size());
+    for (std::size_t g = 0; g < rows.size(); g++) {
+        const LinearConstraintRow& r = rows[g];
+        Rcpp::IntegerVector cols(r.cols.size());
+        for (std::size_t e = 0; e < r.cols.size(); e++) cols[e] = r.cols[e] + 1;
+        bool ones = true;
+        for (std::size_t e = 0; e < r.cols.size() && ones; e++)
+            ones = r.weight(e) == 1.0;
+        if (ones) {
+            out[g] = cols;
+        } else {
+            Rcpp::NumericVector w(r.cols.size());
+            for (std::size_t e = 0; e < r.cols.size(); e++) w[e] = r.weight(e);
+            out[g] = Rcpp::List::create(Rcpp::Named("cols") = cols,
+                                        Rcpp::Named("w") = w);
+        }
+    }
+    return out;
+}
+
+// The constraints a cell's inner Gaussian carries, as a read of its stored
+// precision Q needs them: the Gaussian has precision M = Q + S' D S, S the
+// SOFT rows (the sum-to-zero pins a sparse solve folds at solve time and
+// leaves off the stored Q, D their k x k precision, row-major), and is
+// conditioned on the HARD rows A x = 0 (every block's level rows and
+// structural rows). A pin the solve wrote into Q itself is not a soft row
+// here: Q already holds it.
+struct CellConstraintRows {
+    std::vector<LinearConstraintRow> hard;
+    std::vector<LinearConstraintRow> soft;
+    std::vector<double> soft_D;
+    bool empty() const { return hard.empty() && soft.empty(); }
+};
 
 }  // namespace tulpa
 

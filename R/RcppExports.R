@@ -253,16 +253,16 @@ cpp_spde_laplace_gradient <- function(y, n_trials, X, A_x, A_i, A_p, n_obs, n_me
     .Call(`_tulpa_cpp_spde_laplace_gradient`, y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, log_range, log_sigma, nu, family, phi, max_iter, tol, n_threads, x_init_nullable)
 }
 
-cpp_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal = TRUE, n_threads = 1L) {
-    .Call(`_tulpa_cpp_joint_inner_vcov_blocks`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads)
+cpp_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal = TRUE, n_threads = 1L, soft_cols_list = NULL, soft_D_per_grid = NULL) {
+    .Call(`_tulpa_cpp_joint_inner_vcov_blocks`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads, soft_cols_list, soft_D_per_grid)
 }
 
-cpp_loading_marginal_var <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, load_idx, load_ptr, load_w, A_cols_list, n_threads = 1L) {
-    .Call(`_tulpa_cpp_loading_marginal_var`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, load_idx, load_ptr, load_w, A_cols_list, n_threads)
+cpp_loading_marginal_var <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, load_idx, load_ptr, load_w, A_cols_list, n_threads = 1L, soft_cols_list = NULL, soft_D_per_grid = NULL) {
+    .Call(`_tulpa_cpp_loading_marginal_var`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, load_idx, load_ptr, load_w, A_cols_list, n_threads, soft_cols_list, soft_D_per_grid)
 }
 
-cpp_joint_inner_vcov_mixture <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, weights, modes = NULL, field_marginal = TRUE, n_threads = 1L) {
-    .Call(`_tulpa_cpp_joint_inner_vcov_mixture`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, weights, modes, field_marginal, n_threads)
+cpp_joint_inner_vcov_mixture <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, weights, modes = NULL, field_marginal = TRUE, n_threads = 1L, soft_cols_list = NULL, soft_D_per_grid = NULL) {
+    .Call(`_tulpa_cpp_joint_inner_vcov_mixture`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, weights, modes, field_marginal, n_threads, soft_cols_list, soft_D_per_grid)
 }
 
 cpp_constrained_cell_draw <- function(Q_p, Q_i, Q_x, n_x, A_cols_list, eps, soft_cols_list = NULL, soft_D = NULL) {
@@ -373,12 +373,12 @@ cpp_nl_checkpoint_loaded_total <- function() {
     .Call(`_tulpa_cpp_nl_checkpoint_loaded_total`)
 }
 
-cpp_nested_laplace_joint_multi <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, phi_grid_per_arm = NULL, n_threads_outer = 1L, tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0, force_sparse = FALSE, cell_coupling_name = "separable", hessian_pd_mode = 0L, step_curvature_mode = 0L, inner_refresh = 1L, progress = FALSE, progress_every = 0L, progress_throttle = 0.0, progress_file = "", checkpoint_path = "", x_init_per_cell = NULL, compute_skew = FALSE, skew_idx = NULL, fixed_block_p = 0L, fixed_block_constraints = NULL, fixed_block_extra = NULL, debias = NULL, cila = NULL, inner_sparse_override = 0L, screen_iters = 2L, screen_log_offset = NULL, compute_fitted_var = TRUE, screen_only = FALSE) {
-    .Call(`_tulpa_cpp_nested_laplace_joint_multi`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse, cell_coupling_name, hessian_pd_mode, step_curvature_mode, inner_refresh, progress, progress_every, progress_throttle, progress_file, checkpoint_path, x_init_per_cell, compute_skew, skew_idx, fixed_block_p, fixed_block_constraints, fixed_block_extra, debias, cila, inner_sparse_override, screen_iters, screen_log_offset, compute_fitted_var, screen_only)
+cpp_nested_laplace_joint_multi <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, phi_grid_per_arm = NULL, n_threads_outer = 1L, tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0, force_sparse = FALSE, cell_coupling_name = "separable", hessian_pd_mode = 0L, step_curvature_mode = 0L, inner_refresh = 1L, progress = FALSE, progress_every = 0L, progress_throttle = 0.0, progress_file = "", checkpoint_path = "", x_init_per_cell = NULL, compute_skew = FALSE, skew_idx = NULL, fixed_block_p = 0L, fixed_block_extra = NULL, debias = NULL, cila = NULL, inner_sparse_override = 0L, screen_iters = 2L, screen_log_offset = NULL, compute_fitted_var = TRUE, screen_only = FALSE) {
+    .Call(`_tulpa_cpp_nested_laplace_joint_multi`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse, cell_coupling_name, hessian_pd_mode, step_curvature_mode, inner_refresh, progress, progress_every, progress_throttle, progress_file, checkpoint_path, x_init_per_cell, compute_skew, skew_idx, fixed_block_p, fixed_block_extra, debias, cila, inner_sparse_override, screen_iters, screen_log_offset, compute_fitted_var, screen_only)
 }
 
-cpp_nested_laplace_joint_multi_batch <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter = 200L, tol = 1e-6, cell_coupling_name = "separable", store_Q = TRUE, phi_grid_per_arm = NULL, hessian_pd_mode = 0L, step_curvature_mode = 0L, force_sparse = FALSE, fixed_block_p = 0L, fixed_block_constraints = NULL, compute_fitted_var = TRUE, fixed_block_extra = NULL) {
-    .Call(`_tulpa_cpp_nested_laplace_joint_multi_batch`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter, tol, cell_coupling_name, store_Q, phi_grid_per_arm, hessian_pd_mode, step_curvature_mode, force_sparse, fixed_block_p, fixed_block_constraints, compute_fitted_var, fixed_block_extra)
+cpp_nested_laplace_joint_multi_batch <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter = 200L, tol = 1e-6, cell_coupling_name = "separable", store_Q = TRUE, phi_grid_per_arm = NULL, hessian_pd_mode = 0L, step_curvature_mode = 0L, force_sparse = FALSE, fixed_block_p = 0L, compute_fitted_var = TRUE, fixed_block_extra = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_joint_multi_batch`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter, tol, cell_coupling_name, store_Q, phi_grid_per_arm, hessian_pd_mode, step_curvature_mode, force_sparse, fixed_block_p, compute_fitted_var, fixed_block_extra)
 }
 
 cpp_test_joint_pattern <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets) {

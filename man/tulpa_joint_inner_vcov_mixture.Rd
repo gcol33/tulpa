@@ -15,7 +15,9 @@ tulpa_joint_inner_vcov_mixture(
   weights,
   modes = NULL,
   field_marginal = TRUE,
-  n_threads = 1L
+  n_threads = 1L,
+  soft_cols_list = NULL,
+  soft_D_per_grid = NULL
 )
 }
 \arguments{
@@ -32,9 +34,10 @@ sub-block for.}
 \item{n_dense}{Integer, the number of leading \code{idx} entries that are
 dense fixed effects rather than field coordinates (see Details).}
 
-\item{A_cols_list}{A list of integer vectors, one per sum-to-zero
-constraint group, each the (1-based) latent coordinates that group
-averages to zero.}
+\item{A_cols_list}{The hard constraint rows the covariance is
+conditioned on: a list whose elements are integer vectors (a group of
+1-based latent coordinates summing to zero) or \code{list(cols, w)} (a
+weighted row). A joint fit's own rows are \code{fit$constraint_cols}.}
 
 \item{weights}{Numeric, one non-negative weight per outer-grid cell
 (normalized here). A cell of zero weight is never extracted.}
@@ -48,6 +51,14 @@ are computed (a single Takahashi pass) rather than their full dense
 sub-block.}
 
 \item{n_threads}{Integer, grid cells processed concurrently.}
+
+\item{soft_cols_list, soft_D_per_grid}{Optional soft rows added to every
+cell's precision as \verb{S' D_k S}, in \code{A_cols_list}'s form, and one
+\verb{k x k} precision \code{D_k} per cell (\code{NULL} for a cell without them). A
+sparse joint fit folds an intrinsic field's sum-to-zero pin at solve time
+and leaves it off the stored \code{Q}; its rows and per-cell precisions are
+\code{fit$Q_soft_cols} and \code{fit$Q_soft_D_per_grid}, so the covariance of the
+fit's own inner Gaussian is read with both.}
 }
 \value{
 A list: \code{vcov}, the mixture covariance; \code{mean}, the weighted mean

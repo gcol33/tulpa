@@ -1067,6 +1067,39 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   })
 }
 
+# The constraint every cell's inner Gaussian carries, as the engine solved it,
+# read off a fit or a kernel result `src`: the hard rows `constraint_cols` the
+# Gaussian is conditioned on (shared by every cell), and the sum-to-zero pins
+# the stored precision leaves off (`Q_soft_cols`, folded at solve time), with
+# each cell's precision for them (`Q_soft_D_per_grid[[k]]`, NULL where the
+# cell's precision holds every pin). The Gaussian of cell k has precision
+# Q_k + S' D_k S, conditioned on the hard rows. `cells` subsets the per-cell
+# part to the precisions a caller holds.
+.inner_constraint <- function(src, cells = NULL) {
+  D <- src$Q_soft_D_per_grid
+  if (!is.null(D) && !is.null(cells)) D <- D[cells]
+  list(hard = src$constraint_cols %||% list(),
+       soft = if (!is.null(D)) src$Q_soft_cols,
+       soft_D = D)
+}
+
+# Cell k of an `.inner_constraint()`.
+.inner_constraint_cell <- function(cons, k) {
+  Dk <- if (!is.null(cons$soft_D)) cons$soft_D[[k]]
+  list(hard = cons$hard, soft = if (!is.null(Dk)) cons$soft, soft_D = Dk,
+       soft_D_per_grid = list(Dk))
+}
+
+# The constraint arguments every stored-precision entry takes
+# (read_vcov_grid_inputs): the hard rows, the soft rows and the per-cell
+# precision list aligned with the precisions handed over.
+.inner_constraint_cpp <- function(cons) {
+  list(A_cols_list = .constraint_rows_for_cpp(cons$hard),
+       soft_cols_list = if (!is.null(cons$soft_D))
+         .constraint_rows_for_cpp(cons$soft),
+       soft_D_per_grid = cons$soft_D)
+}
+
 # --- Per-prior registry & dispatcher ---
 #
 # Each entry describes one supported prior `type`. To add a new prior:
@@ -2061,9 +2094,11 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   # the engine's own extraction (cpp_joint_inner_vcov_blocks), which folds the
   # conditioning against a precision anchored on the constraint rows' own
   # nodes (InvBlockConstraint, inv_block_extract.h) and is the read a joint
-  # fit's retained block uses. The mode needs no correction: the centring
-  # already put it on the constraint.
-  constr <- res$constraint_cols
+  # fit's retained block uses, and it adds the pins the stored Q leaves off as
+  # their soft precision (`.inner_constraint()`). The mode needs no
+  # correction: the centring already put it on the constraint.
+  cons <- .inner_constraint(res)
+  ccpp <- .inner_constraint_cpp(cons)
   sel_idx <- c(seq_len(p_fixed), var_cols)
   n_sel <- length(sel_idx)
   solved <- vapply(Q_p, function(qp) length(qp) == n_x + 1L, logical(1))
@@ -2073,9 +2108,12 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
       Q_p_per_grid = Q_p[solved], Q_i_per_grid = Q_i[solved],
       Q_x_per_grid = Q_x[solved], n_x = as.integer(n_x),
       idx = as.integer(sel_idx), n_dense = n_sel,
-      A_cols_list = .constraint_rows_for_cpp(constr),
+      A_cols_list = ccpp$A_cols_list,
       field_marginal = FALSE,
-      n_threads = 1L)
+      n_threads = 1L,
+      soft_cols_list = ccpp$soft_cols_list,
+      soft_D_per_grid = if (!is.null(ccpp$soft_D_per_grid))
+        ccpp$soft_D_per_grid[solved])
   }
 
   for (k in seq_len(n_grid)) {
@@ -2109,7 +2147,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
       }
     }
   }
-  res <- .nl_attach_unit_loads(res, units, Q_p, Q_i, Q_x, n_x, constr)
+  res <- .nl_attach_unit_loads(res, units, Q_p, Q_i, Q_x, n_x, cons)
 
   res$grid_hessians <- grid_hessians
   res$grid_modes    <- grid_modes
@@ -2127,6 +2165,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     res$Q_csc_i_per_grid <- NULL
     res$Q_csc_x_per_grid <- NULL
     res$Q_csc_n          <- NULL
+    res$Q_soft_cols       <- NULL
+    res$Q_soft_D_per_grid <- NULL
   }
   res
 }
@@ -2471,7 +2511,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # the sum-to-zero groups `constr`, read off one selected inversion per cell
 # (`cpp_loading_marginal_var()`), so it costs nothing per unit beyond the
 # loading itself and needs no dense solve against the units' columns.
-.nl_attach_unit_loads <- function(res, units, Q_p, Q_i, Q_x, n_x, constr) {
+.nl_attach_unit_loads <- function(res, units, Q_p, Q_i, Q_x, n_x, cons) {
+  ccpp <- .inner_constraint_cpp(cons)
   M <- res$modes
   n_grid <- length(Q_p)
   for (role in names(units)) {
@@ -2495,8 +2536,9 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
       Q_p_per_grid = Q_p, Q_i_per_grid = Q_i, Q_x_per_grid = Q_x,
       n_x = as.integer(n_x), load_idx = idx,
       load_ptr = as.integer(seq(0L, n_u * n_c, by = n_c)),
-      load_w = W, A_cols_list = .constraint_rows_for_cpp(constr),
-      n_threads = 1L)
+      load_w = W, A_cols_list = ccpp$A_cols_list,
+      n_threads = 1L, soft_cols_list = ccpp$soft_cols_list,
+      soft_D_per_grid = ccpp$soft_D_per_grid)
     res[[paste0("grid_", role, "_mean")]] <- mu
     res[[paste0("grid_", role, "_var")]]  <- v
     if (!is.null(ld$sizes)) res[[paste0("grid_", role, "_sizes")]] <- ld$sizes

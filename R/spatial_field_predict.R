@@ -1214,7 +1214,7 @@
     n_j <- al$counts[match(need[j], which(on))]
     rows <- pos + seq_len(n_j)
     Z <- .joint_draw_cell(sol$Q_p[[j]], sol$Q_i[[j]], sol$Q_x[[j]], n_x,
-                          sol$constraint_cols, n_j)
+                          .inner_constraint_cell(sol$constraint, j), n_j)
     L[rows, ] <- t(Z + src$modes[need[j], ])
     row_cells[rows] <- need[j]
     pos <- pos + n_j
@@ -1227,8 +1227,8 @@
 # fit's cells `cells`, solved again with the inputs the fit was solved with by
 # the kernel that solved it: the SPDE grid kernel, the registry kernel of a
 # single block, or the multi-block driver; a fit that kept every cell's
-# precision (`door = "stored"`) reads it. `constraint_cols` are the
-# sum-to-zero groups the precision is conditioned on.
+# precision (`door = "stored"`) reads it. `constraint` is the cells' inner
+# Gaussian constraint (`.inner_constraint()`), aligned with the precisions.
 #' @keywords internal
 .field_cell_solve <- function(object, src, cells) {
   rec <- src$solve
@@ -1240,12 +1240,11 @@
          "prediction, predict(se.fit = FALSE), is available.", call. = FALSE)
   }
   if (identical(rec$door, "stored")) {
-    n_x <- ncol(src$modes)
     return(list(Q_p = object$Q_csc_p_per_grid[cells],
                 Q_i = object$Q_csc_i_per_grid[cells],
                 Q_x = object$Q_csc_x_per_grid[cells],
                 modes = src$modes[cells, , drop = FALSE],
-                constraint_cols = .joint_constraint_cols(object$arm_layout, n_x)))
+                constraint = .inner_constraint(object, cells)))
   }
   theta <- src$theta[cells, , drop = FALSE]
   prior <- rec$prior %||% object$prior
@@ -1285,7 +1284,7 @@
   list(Q_p = res$Q_csc_p_per_grid, Q_i = res$Q_csc_i_per_grid,
        Q_x = res$Q_csc_x_per_grid,
        modes = matrix(res$modes, nrow = length(cells)),
-       constraint_cols = res$constraint_cols)
+       constraint = .inner_constraint(res))
 }
 
 # Linear-predictor draws (S x n) at the prediction rows of a field fit, with

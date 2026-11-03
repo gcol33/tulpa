@@ -99,8 +99,8 @@ test_that("a direct joint fit reports its iid, miid and arm random effects", {
     Z <- tulpa:::.joint_draw_cell(fi$Q_csc_p_per_grid[[k]],
                                   fi$Q_csc_i_per_grid[[k]],
                                   fi$Q_csc_x_per_grid[[k]], n_x,
-                                  tulpa:::.joint_constraint_cols(
-                                    fi$arm_layout, n_x), n_k)
+                                  tulpa:::.inner_constraint_cell(
+                                    tulpa:::.inner_constraint(fi), k), n_k)
     t(Z[st + seq_len(G), , drop = FALSE] + fi$modes[k, st + seq_len(G)]) *
       fi$theta_grid[k, "b1.sigma"]
   }))

@@ -1308,14 +1308,12 @@ inline void apply_phi_overrides_multi(
 
 // Per-cell fixed-effect covariance retention, extracted inside each cell's own
 // solve. `fixed_block_p` is the leading latent block size; zero extracts
-// nothing. `fixed_block_constraints` is a list of constraint rows
-// (read_constraint_rows), one per field sum-to-zero group or hard constraint, so the retained block is the constrained
-// covariance the fit's own posterior draws are generated from.
-// `fixed_block_extra` (1-based latent indices past the fixed effects) widens the
+// nothing. The block is read under the cell's own constraint, which the solve
+// supplies (stored_precision_constraint), so it is the covariance the fit's own
+// posterior draws are generated from. `fixed_block_extra` (1-based latent indices past the fixed effects) widens the
 // block to those coordinates as well.
 inline tulpa::JointFixedBlockRequest parse_joint_fixed_block_request(
-    int fixed_block_p, Rcpp::Nullable<Rcpp::List> fixed_block_constraints,
-    Rcpp::Nullable<Rcpp::IntegerVector> fixed_block_extra
+    int fixed_block_p, Rcpp::Nullable<Rcpp::IntegerVector> fixed_block_extra
 ) {
     tulpa::JointFixedBlockRequest req;
     if (fixed_block_p > 0) {
@@ -1331,18 +1329,16 @@ inline tulpa::JointFixedBlockRequest parse_joint_fixed_block_request(
                 req.extra_idx.push_back(ex[e] - 1);
             }
         }
-        if (fixed_block_constraints.isNotNull()) {
-            req.A_cols = tulpa::read_constraint_rows(
-                Rcpp::List(fixed_block_constraints), /*n_x=*/-1,
-                "fixed_block_constraints");
-        }
     }
     return req;
 }
 
 // The outer-grid layout fields every joint multi-block entry attaches to a grid
-// result: the grid it was solved on, its per-block axis offsets and which
-// blocks the reported modes were centred on.
+// result: the grid it was solved on, its per-block axis offsets, which blocks
+// the reported modes were centred on, and the hard rows every cell's inner
+// Gaussian is conditioned on (`constraint_cols`, read_constraint_rows' form),
+// which a read of a stored precision takes with the cell's soft pins
+// (`Q_soft_cols`, `Q_soft_D_per_grid`).
 inline void attach_joint_grid_layout(
     Rcpp::List& out, const Rcpp::NumericMatrix& theta_grid,
     const Rcpp::IntegerVector& axis_offsets,
@@ -1351,6 +1347,8 @@ inline void attach_joint_grid_layout(
     out["theta_grid"]      = theta_grid;
     out["axis_offsets"]    = axis_offsets;
     out["block_centered"]  = tulpa::block_center_flags(blocks);
+    out["constraint_cols"] =
+        tulpa::write_constraint_rows(tulpa::collect_hard_constraints(blocks));
 }
 
 // Resolve the parallel (copy_blocks, copy_arms) vectors into a per-block map:
@@ -1431,7 +1429,6 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     bool                compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     int                 fixed_block_p = 0,
-    Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue,
     Rcpp::Nullable<Rcpp::IntegerVector> fixed_block_extra = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
@@ -1442,8 +1439,7 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     bool                screen_only = false  // return the screened surface, no full pass (run_nested_laplace_grid)
 ) {
     const tulpa::JointFixedBlockRequest fixed_block_req =
-        parse_joint_fixed_block_request(fixed_block_p, fixed_block_constraints,
-                                        fixed_block_extra);
+        parse_joint_fixed_block_request(fixed_block_p, fixed_block_extra);
     const tulpa::JointFixedBlockRequest* fixed_block_ptr =
         fixed_block_req.active() ? &fixed_block_req : nullptr;
 
@@ -1712,8 +1708,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
 // axes crossed onto the outer grid: entry k is NULL (arm k keeps phi_batch) or
 // an [n_grid x B] matrix, species s's dispersion at each outer-grid cell, so
 // every species integrates its own dispersion nodes over the shared cell
-// layout. hessian_pd_mode, step_curvature_mode, force_sparse, fixed_block_p and
-// fixed_block_constraints mean what they mean on the single-species entry.
+// layout. hessian_pd_mode, step_curvature_mode, force_sparse and fixed_block_p
+// mean what they mean on the single-species entry.
 // Returns a length-B list; element s is what cpp_nested_laplace_joint_multi
 // returns for species s's responses on the same grid. All-coupled families
 // (occu_cover).
@@ -1739,13 +1735,11 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
     int                 step_curvature_mode = 0,
     bool                force_sparse = false,
     int                 fixed_block_p = 0,
-    Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue,
     bool                compute_fitted_var = true,
     Rcpp::Nullable<Rcpp::IntegerVector> fixed_block_extra = R_NilValue
 ) {
     const tulpa::JointFixedBlockRequest fixed_block_req =
-        parse_joint_fixed_block_request(fixed_block_p, fixed_block_constraints,
-                                        fixed_block_extra);
+        parse_joint_fixed_block_request(fixed_block_p, fixed_block_extra);
     int n_arms = arms_list.size();
     int Bspec  = blocks_spec.size();
     if (axis_offsets.size() != Bspec + 1)

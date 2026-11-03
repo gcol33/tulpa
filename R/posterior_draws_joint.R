@@ -7,10 +7,10 @@
 #   x ~ sum_k w_k * N(m_k, V_k)
 #
 # where k ranges over the outer hyperparameter grid, w_k are the normalized
-# grid weights, m_k is the per-cell inner mode, and V_k is the constrained
-# inner-Laplace covariance at cell k (the inverse of the per-grid sparse
-# precision Q block, with the ICAR / BYM2 sum-to-zero constraint imposed via
-# conditioning by kriging, Rue & Held 2005). Sampling the mixture -- rather
+# grid weights, m_k is the per-cell inner mode, and V_k is the covariance of
+# the cell's inner Gaussian: the stored precision plus the sum-to-zero pins it
+# leaves off, conditioned on the hard rows the inner solve carried
+# (`.inner_constraint()`). Sampling the mixture -- rather
 # than collapsing the grid to a single moment-matched Gaussian -- is the
 # correct primitive for marginalizing nonlinear derived quantities (change in
 # occupancy, expected-cover products) per the "Marginalize Derived Quantities"
@@ -22,10 +22,9 @@
 #' The [tulpa_posterior_draws()] method for a joint nested-Laplace fit
 #' ([tulpa_nested_laplace_joint()]). Each draw picks an outer-grid cell
 #' `k ~ Categorical(weights)` and then samples the inner latent vector from the
-#' constrained Gaussian `N(m_k, V_k)` at that cell, where `m_k` is the cell's
-#' inner mode and `V_k` is the inner-Laplace covariance with the ICAR / BYM2
-#' sum-to-zero field constraint imposed (conditioning by kriging). The draws
-#' are i.i.d. samples from `sum_k weights_k * N(m_k, V_k)`.
+#' inner Gaussian `N(m_k, V_k)` at that cell, where `m_k` is the cell's inner
+#' mode and `V_k` the covariance the cell's log-marginal was read off. The
+#' draws are i.i.d. samples from `sum_k weights_k * N(m_k, V_k)`.
 #'
 #' @param fit A `tulpa_nested_laplace_joint` fit (single-block or multi-block).
 #'   The fit must have been produced with `control$store_Q = TRUE` so the
@@ -46,16 +45,16 @@
 #'   ([tulpa_hyper_draws()]) -- and `attr(., "scope") = "latent"`.
 #'
 #' @details
-#' The constrained draw at cell `k` uses the sparse Cholesky of the stored
-#' precision `Q_k` and the conditioning-by-kriging correction
-#' \deqn{z_c = z - Q_k^{-1} A^\top (A Q_k^{-1} A^\top)^{-1} A z,}
-#' where `z ~ N(0, Q_k^{-1})` and `A` stacks the field sum-to-zero rows (one for
-#' an ICAR / CAR field; two -- structured and unstructured -- for a BYM2 field;
-#' one per spatial block in a multi-block fit). The returned draw is
-#' `m_k + z_c`, restricted to `idx`. Because `m_k` already satisfies the
-#' constraint (the inner solve centres the field), the mean is left unchanged
-#' and only the covariance is constrained, so the per-cell marginal matches the
-#' inner-Laplace constrained covariance exactly.
+#' The inner Gaussian at cell `k` has precision
+#' \eqn{M_k = Q_k + S^\top D_k S}, the stored precision `Q_k` plus the
+#' sum-to-zero pins `S` the sparse inner solve folds at solve time (an
+#' intrinsic field's augmented prior, precision `D_k`), conditioned on the hard
+#' rows `A x = 0` the inner solve carried (an intrinsic field's level row where
+#' a fixed effect absorbs its level, a Knorr-Held interaction's null space):
+#' \eqn{V_k = B (B^\top M_k B)^{-1} B^\top}, `B` a basis of the null space of
+#' `A`. A pinned field with no level row keeps its level, at the pin's
+#' precision. The returned draw is `m_k` plus a draw of `N(0, V_k)`,
+#' restricted to `idx`; `m_k` already satisfies the hard rows.
 #'
 #' Cells with zero outer-grid weight (e.g. pruned cells) or no stored `Q` are
 #' dropped and the remaining weights renormalized. A degenerate single-cell
@@ -125,9 +124,7 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
     w_valid <- w[cells]
     w_valid <- w_valid / sum(w_valid)
 
-    # Field sum-to-zero constraint over the FULL latent vector. Shared across
-    # cells (the constraint structure is grid-constant); only Q changes per cell.
-    A_cols <- .joint_constraint_cols(fit$arm_layout, n_x)
+    cons <- .inner_constraint(fit)
 
     # Each cell draws its share i.i.d. from the constrained N(m_k, V_k); the
     # allocation across cells is the shared `.nl_mixture_draw()`.
@@ -135,7 +132,8 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
         w = w_valid, cell_id = cells, n = n, p = p_out,
         draw_cell = function(kk, n_k) {
             k <- cells[kk]
-            Z <- .joint_draw_cell(Qp[[k]], Qi[[k]], Qx[[k]], n_x, A_cols, n_k)
+            Z <- .joint_draw_cell(Qp[[k]], Qi[[k]], Qx[[k]], n_x,
+                                  .inner_constraint_cell(cons, k), n_k)
             # Z is n_x x n_k draws of the zero-mean constrained Gaussian; add
             # the cell mode and subset to idx.
             m_k <- modes[k, ]
@@ -148,108 +146,36 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
     .nl_attach_hyper_draws(out, fit)
 }
 
-# Field sum-to-zero constraint columns for a joint latent layout. Returns a
-# list of 1-based index vectors, one per sum-to-zero constraint, over the
-# full n_x latent vector. Handles BOTH layout shapes:
-#   * multi-block (`.joint_multi_layout`): `field_starts` + `block_start` /
-#     `block_size` + `field_block_types`; a BYM2 block contributes two
-#     constraints (structured phi + unstructured theta), every other spatial
-#     block one.
-#   * single-block (`.joint_layout`): `phi_start` [, `theta_start`] without
-#     block sizes; phi spans [phi_start, theta_start) (or to n_x when there is
-#     no theta), theta spans [theta_start, n_x).
-# A non-spatial fit returns an empty list (unconstrained draw).
-.joint_constraint_cols <- function(layout, n_x) {
-    cols <- list()
-    if (is.null(layout)) return(cols)
-
-    fs <- layout$field_starts
-    if (!is.null(fs) && !is.null(layout$block_start) &&
-        !is.null(layout$block_size)) {
-        types  <- layout$field_block_types %||% rep("icar", length(fs))
-        nflds  <- layout$field_n_fields %||% rep(1L, length(fs))
-        bstart <- layout$block_start
-        bsize  <- layout$block_size
-        for (i in seq_along(fs)) {
-            s0   <- fs[i]
-            type <- tolower(types[i])
-            b    <- match(s0, bstart)
-            sz   <- if (is.na(b)) NA_integer_ else bsize[b]
-            if (is.na(sz)) next
-            if (type == "bym2") {
-                # Only the structured (ICAR) component phi is rank-deficient and
-                # sum-to-zero constrained (matching its inner-solve centerer).
-                # The unstructured theta has a proper N(0,1) prior and no
-                # centerer, so constraining it removes a genuine degree of
-                # freedom and under-disperses the field draws.
-                nu <- as.integer(sz / 2L)
-                lw <- layout$field_level_w[[i]]
-                cols[[length(cols) + 1L]] <- if (length(lw) == nu) {
-                    list(cols = s0 + seq_len(nu), w = lw)
-                } else {
-                    s0 + seq_len(nu)
-                }
-            } else if (type == "mcar") {
-                # A separable MCAR block stores p coupled fields field-major
-                # (field a at offset a * n_units); each field has its own
-                # near-null constant direction, so each gets its own
-                # sum-to-zero group rather than one group over the whole
-                # p * n_units block (gcol33/tulpa#797).
-                p_fields <- as.integer(nflds[i])
-                n_units  <- as.integer(sz) %/% p_fields
-                for (a in seq_len(p_fields)) {
-                    off <- s0 + (a - 1L) * n_units
-                    cols[[length(cols) + 1L]] <- off + seq_len(n_units)
-                }
-            } else {
-                cols[[length(cols) + 1L]] <- s0 + seq_len(as.integer(sz))
-            }
-        }
-        return(cols)
-    }
-
-    # Single-block: derive field extents from phi_start / theta_start. Only the
-    # structured phi is constrained; theta_start marks the BYM2 unstructured
-    # component, which has a proper N(0,1) prior and is NOT sum-to-zero (see the
-    # multi-block branch above).
-    if (!is.null(layout$phi_start)) {
-        n_phi <- (layout$theta_start %||% n_x) - layout$phi_start
-        lw <- layout$phi_level_w
-        if (n_phi > 0L) cols[[length(cols) + 1L]] <- if (length(lw) == n_phi) {
-            list(cols = layout$phi_start + seq_len(n_phi), w = lw)
-        } else {
-            layout$phi_start + seq_len(n_phi)
-        }
-    }
-    cols
-}
-
-# Draw `n_k` zero-mean samples of the constrained Gaussian N(0, V_k) for one
-# outer-grid cell, returned as an n_x x n_k matrix. `Qp` / `Qi` / `Qx` are the
-# stored lower-triangle CSC triplets (0-based) of the cell precision Q_k;
-# `constr` the constraint rows (1-based index vectors, or list(cols, w) for a
-# weighted row; empty or NULL for an unconstrained block).
+# Draw `n_k` zero-mean samples of cell k's inner Gaussian N(0, V_k), returned
+# as an n_x x n_k matrix. `Qp` / `Qi` / `Qx` are the stored lower-triangle CSC
+# triplets (0-based) of the cell precision Q_k; `constr` the cell's constraint,
+# `.inner_constraint_cell()`.
 #
-# V = B (B' Q B)^{-1} B' for B a basis of null(A), Q^{-1} with no rows. The
-# draw is the engine's (cpp_constrained_cell_draw): it factors Q with one
-# anchor per row on its diagonal, the factor every covariance read of the cell
-# uses (InvBlockConstraint), and maps the factor's draws onto N(0, V). Q is
-# never inverted along the constraint, so it need carry no curvature on a
-# direction only the constraint identifies -- the sum-to-zero pins the sparse
-# joint Newton folds at solve time, a Knorr-Held interaction's null space.
+# V = B (B' M B)^{-1} B' with M = Q + S' D S (the soft pins S, precision D)
+# and B a basis of null(A) (the hard rows A). The draw is the engine's
+# (cpp_constrained_cell_draw): it factors Q with one anchor per row on its
+# diagonal, the factor every covariance read of the cell uses
+# (InvBlockConstraint), and maps the factor's draws onto N(0, V). Q is never
+# inverted along a row, so it need carry no curvature on a direction only a
+# row identifies -- a pin the sparse joint Newton folds at solve time, a
+# Knorr-Held interaction's null space.
 .joint_draw_cell <- function(Qp, Qi, Qx, n_x, constr, n_k) {
     U <- matrix(stats::rnorm(n_x * n_k), n_x, n_k)
     cpp_constrained_cell_draw(as.integer(Qp), as.integer(Qi), as.numeric(Qx),
-                              as.integer(n_x), .constraint_rows_for_cpp(constr),
-                              U)
+                              as.integer(n_x), .constraint_rows_for_cpp(constr$hard),
+                              U,
+                              soft_cols_list = if (!is.null(constr$soft_D))
+                                  .constraint_rows_for_cpp(constr$soft),
+                              soft_D = constr$soft_D)
 }
 
 # Law-of-total-covariance moments of the joint mixture restricted to `idx`:
 #   mean  = sum_k w_k m_k[idx]
 #   Sigma = sum_k w_k ( V_k[idx, idx] + (m_k[idx] - mean)(m_k[idx] - mean)' )
-# This is the analytic target the mixture draws reproduce to MC error; it also
-# serves as the moment-matched-Gaussian fallback. Returns NULL when the fit
-# carries no stored precision.
+# with V_k the covariance of cell k's inner Gaussian, read by the engine's
+# extraction (cpp_joint_inner_vcov_blocks) under the same constraint the draws
+# take. This is the analytic target the mixture draws reproduce to MC error.
+# Returns NULL when the fit carries no stored precision.
 .joint_mixture_moments <- function(fit, idx = NULL) {
     Qp  <- fit$Q_csc_p_per_grid
     Qi  <- fit$Q_csc_i_per_grid
@@ -259,7 +185,6 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
     n_x <- as.integer(n_x)
     modes <- fit$modes
     if (is.null(idx)) idx <- seq_len(n_x) else idx <- as.integer(idx)
-    p_out <- length(idx)
 
     w <- fit$weights
     n_grid <- length(Qp)
@@ -269,47 +194,23 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
     cells <- which(valid)
     w_valid <- w[cells] / sum(w[cells])
 
-    A_cols <- .joint_constraint_cols(fit$arm_layout, n_x)
-    k_constr <- length(A_cols)
-    A_t <- if (k_constr > 0L) .constraint_rows_matrix(A_cols, n_x) else NULL
-
-    # Selector for idx columns of Q^{-1}.
-    E <- Matrix::sparseMatrix(i = idx, j = seq_len(p_out), x = 1,
-                              dims = c(n_x, p_out))
+    ccpp <- .inner_constraint_cpp(.inner_constraint(fit, cells))
+    blocks <- cpp_joint_inner_vcov_blocks(
+        Q_p_per_grid = Qp[cells], Q_i_per_grid = Qi[cells],
+        Q_x_per_grid = Qx[cells], n_x = n_x, idx = idx,
+        n_dense = length(idx), A_cols_list = ccpp$A_cols_list,
+        field_marginal = FALSE, n_threads = 1L,
+        soft_cols_list = ccpp$soft_cols_list,
+        soft_D_per_grid = ccpp$soft_D_per_grid)
 
     mbar <- as.numeric(crossprod(w_valid, modes[cells, idx, drop = FALSE]))
-    Sigma <- matrix(0.0, p_out, p_out)
+    Sigma <- matrix(0.0, length(idx), length(idx))
     for (kk in seq_along(cells)) {
-        k <- cells[kk]
-        V_block <- .joint_inner_vcov_block_one(Qp[[k]], Qi[[k]], Qx[[k]], n_x,
-                                               idx, E, A_t)
+        V_block <- blocks[[kk]]
         if (is.null(V_block)) next
-        dk <- modes[k, idx] - mbar
+        dk <- modes[cells[kk], idx] - mbar
         Sigma <- Sigma + w_valid[kk] * (V_block + tcrossprod(dk))
     }
     Sigma <- (Sigma + t(Sigma)) / 2
     list(mean = mbar, Sigma = Sigma)
-}
-
-# Constrained inner-Laplace covariance of the `idx` block at one cell:
-#   V = Q^{-1}[idx, idx] - (Q^{-1} A')[idx]' (A Q^{-1} A')^{-1} (A Q^{-1})[, idx]
-# `E` selects the idx columns; `A_t` is the shared constraint matrix (or NULL).
-.joint_inner_vcov_block_one <- function(Qp, Qi, Qx, n_x, idx, E, A_t) {
-    Qk_lt <- Matrix::sparseMatrix(
-        i = as.integer(Qi) + 1L, p = as.integer(Qp), x = as.numeric(Qx),
-        dims = c(n_x, n_x), symmetric = FALSE, index1 = TRUE
-    )
-    Qk <- Matrix::forceSymmetric(Qk_lt, uplo = "L")
-    V <- tryCatch(Matrix::solve(Qk, E), error = function(e) NULL)
-    if (is.null(V)) return(NULL)
-    V_block <- as.matrix(V[idx, , drop = FALSE])
-    if (!is.null(A_t)) {
-        W <- tryCatch(Matrix::solve(Qk, A_t), error = function(e) NULL)
-        if (!is.null(W)) {
-            AV <- as.matrix(Matrix::crossprod(A_t, V))
-            M  <- as.matrix(Matrix::crossprod(A_t, W))
-            V_block <- V_block - crossprod(AV, solve(M, AV))
-        }
-    }
-    V_block
 }

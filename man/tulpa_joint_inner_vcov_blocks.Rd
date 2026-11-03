@@ -13,7 +13,9 @@ tulpa_joint_inner_vcov_blocks(
   n_dense,
   A_cols_list,
   field_marginal = TRUE,
-  n_threads = 1L
+  n_threads = 1L,
+  soft_cols_list = NULL,
+  soft_D_per_grid = NULL
 )
 }
 \arguments{
@@ -30,9 +32,10 @@ sub-block for.}
 \item{n_dense}{Integer, the number of leading \code{idx} entries that are
 dense fixed effects rather than field coordinates (see Details).}
 
-\item{A_cols_list}{A list of integer vectors, one per sum-to-zero
-constraint group, each the (1-based) latent coordinates that group
-averages to zero.}
+\item{A_cols_list}{The hard constraint rows the covariance is
+conditioned on: a list whose elements are integer vectors (a group of
+1-based latent coordinates summing to zero) or \code{list(cols, w)} (a
+weighted row). A joint fit's own rows are \code{fit$constraint_cols}.}
 
 \item{field_marginal}{Logical; if \code{TRUE} (default) and
 \code{n_dense < length(idx)}, only the field coordinates' marginal variances
@@ -40,14 +43,22 @@ are computed (a single Takahashi pass) rather than their full dense
 sub-block.}
 
 \item{n_threads}{Integer, grid cells processed concurrently.}
+
+\item{soft_cols_list, soft_D_per_grid}{Optional soft rows added to every
+cell's precision as \verb{S' D_k S}, in \code{A_cols_list}'s form, and one
+\verb{k x k} precision \code{D_k} per cell (\code{NULL} for a cell without them). A
+sparse joint fit folds an intrinsic field's sum-to-zero pin at solve time
+and leaves it off the stored \code{Q}; its rows and per-cell precisions are
+\code{fit$Q_soft_cols} and \code{fit$Q_soft_D_per_grid}, so the covariance of the
+fit's own inner Gaussian is read with both.}
 }
 \value{
 A list of length \code{n_grid} (one per outer-grid cell), each element
 either \code{NULL} (the cell stored no \code{Q}, or its sparse Cholesky failed)
 or a dense \verb{length(idx) x length(idx)} matrix: the constrained
-covariance sub-block for \code{idx}, with the sum-to-zero constraints in
-\code{A_cols_list} conditioned out by the same kriging correction the fit's
-own posterior draws use.
+covariance sub-block for \code{idx} of the Gaussian with precision
+\verb{Q + S' D S} conditioned on the rows in \code{A_cols_list}, by the same
+kriging correction the fit's own posterior draws use.
 }
 \description{
 Runs the same per-outer-grid-cell selected-inversion the joint

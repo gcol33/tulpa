@@ -708,32 +708,22 @@ inline void joint_newton_finalize_dense(
         std::vector<double> csc_x;
         dense_to_csc_lower_drop_raw(H, n_x, SPARSE_DROP_TOL_DISPATCH,
                                     csc_p, csc_i, csc_x);
+        // The dense scatter writes every sum-to-zero pin into H itself, so the
+        // stored precision is the whole one and nothing is folded on the side:
+        // the cell's constraint is its hard rows alone.
+        CellConstraintRows cell_cons;
+        if (hard_on) cell_cons.hard = hard->rows;
         if (want_block) {
-            // Conditioned on the caller's sum-to-zero groups and the blocks'
-            // hard rows.
-            JointFixedBlockRequest req_hard;
-            const JointFixedBlockRequest* req = fixed_block;
-            if (hard_on) {
-                req_hard = *fixed_block;
-                append_new_constraint_rows(req_hard.A_cols, hard->rows);
-                req = &req_hard;
-            }
             extract_joint_fixed_block(
                 csc_p.data(), csc_i.data(), csc_x.data(), n_x,
-                static_cast<int>(csc_x.size()), *req,
+                static_cast<int>(csc_x.size()), *fixed_block, cell_cons,
                 *scratch.extract_solver,
                 result.re_cov_flat, result.re_cov_block_sizes);
         }
-        // The dense scatter writes every sum-to-zero pin into H itself, so the
-        // stored precision is the whole one and nothing is folded on the side;
-        // the hard rows enter as the D^{-1} = 0 limit of the Woodbury fold.
         if (want_eta_var) {
-            const std::size_t r = hard_on ? static_cast<std::size_t>(hard->rank()) : 0;
             extract_joint_eta_var(
                 csc_p.data(), csc_i.data(), csc_x.data(), n_x,
-                static_cast<int>(csc_x.size()), loadings,
-                hard_on ? hard->rows : std::vector<LinearConstraintRow>(),
-                std::vector<double>(r * r, 0.0),
+                static_cast<int>(csc_x.size()), loadings, cell_cons,
                 *scratch.extract_solver, result.eta_var);
         }
         if (store_Q) {

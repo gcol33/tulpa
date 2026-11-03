@@ -320,6 +320,36 @@ inline bool pinned_inner_gaussian(
     return true;
 }
 
+// The constraint of the cell's inner Gaussian as a read of the stored
+// precision (the builder's values, which leave the folded pins off) needs it:
+// every hard row the solve carries, and the registered pins as soft rows with
+// their precision D (the coupling where one is registered, diag(coef)
+// otherwise). False when the pins' precision is not positive definite.
+inline bool stored_precision_constraint(const SparseHessianBuilder& H,
+                                        const HardConstraintState* hard,
+                                        CellConstraintRows& out) {
+    out = CellConstraintRows();
+    if (hard && hard->active()) out.hard = hard->rows;
+    const auto& r1 = H.s2z_rank1;
+    const std::size_t K = r1.size();
+    if (K == 0) return true;
+    std::vector<double> Dinv;
+    double log_det_D = 0.0;
+    if (!s2z_build_Dinv(r1, H.s2z_coupling, Dinv, log_det_D)) return false;
+    out.soft.resize(K);
+    for (std::size_t k = 0; k < K; k++) {
+        out.soft[k].cols.resize(r1[k].n);
+        for (int i = 0; i < r1[k].n; i++) out.soft[k].cols[i] = r1[k].node(i);
+    }
+    if (!H.s2z_coupling.empty()) {
+        out.soft_D = H.s2z_coupling;
+    } else {
+        out.soft_D.assign(K * K, 0.0);
+        for (std::size_t k = 0; k < K; k++) out.soft_D[k * K + k] = r1[k].coef;
+    }
+    return true;
+}
+
 // The final pass of the sparse joint Newton solve, from the gradient and the
 // Hessian builder the likelihood + prior scatter filled at the returned iterate
 // `scratch.x` (etas already at that point, no base ridge loaded): the
@@ -621,21 +651,17 @@ inline void joint_newton_finalize_sparse(
     // precision the caller gets is the one the scatter built and the block is a
     // covariance of that rather than of a ridge-inflated matrix. The pattern is
     // fit-level and untouched by the escalation, so only the values are held.
-    if (want_block) {
+    // Every read of the stored precision below, and the stored precision
+    // itself, carries the one constraint the inner Gaussian was solved under.
+    CellConstraintRows cell_cons;
+    const bool cons_ok = stored_precision_constraint(
+        H_builder, hard_on ? hard : nullptr, cell_cons);
+    if (want_block && cons_ok) {
         TULPA_PROFILE_PHASE(PHASE_HESSIAN_EXTRACT);
-        // The block is conditioned on every constraint the model carries: the
-        // caller's sum-to-zero groups and the blocks' hard rows.
-        JointFixedBlockRequest req_hard;
-        const JointFixedBlockRequest* req = fixed_block;
-        if (hard_on) {
-            req_hard = *fixed_block;
-            append_new_constraint_rows(req_hard.A_cols, hard->rows);
-            req = &req_hard;
-        }
         extract_joint_fixed_block(
             H_builder.col_ptr.data(), H_builder.row_idx.data(),
             H_values_at_mode.data(), n_x,
-            static_cast<int>(H_values_at_mode.size()), *req,
+            static_cast<int>(H_values_at_mode.size()), *fixed_block, cell_cons,
             *scratch.extract_solver,
             result.re_cov_flat, result.re_cov_block_sizes);
     }
@@ -646,35 +672,12 @@ inline void joint_newton_finalize_sparse(
         eta_var->loadings(pre_center_x.data(), loadings);
         result.eta_var.assign(static_cast<std::size_t>(loadings.n_rows()),
                               std::numeric_limits<double>::quiet_NaN());
-        // The pins the scatter registered on the side enter as their soft
-        // precision and the hard rows as the D^{-1} = 0 limit of the same
-        // Woodbury fold.
-        const auto& r1 = H_builder.s2z_rank1;
-        std::vector<LinearConstraintRow> pin_groups(r1.size());
-        for (std::size_t k = 0; k < r1.size(); k++) {
-            pin_groups[k].cols.resize(r1[k].n);
-            for (int i = 0; i < r1[k].n; i++) pin_groups[k].cols[i] = r1[k].node(i);
-        }
-        std::vector<double> pin_Dinv;
-        double pin_log_det = 0.0;
-        if (result.hessian_pd_at_mode &&
-            s2z_build_Dinv(r1, H_builder.s2z_coupling, pin_Dinv, pin_log_det)) {
-            if (hard_on) {
-                const std::size_t K = pin_groups.size();
-                const std::size_t KR = K + static_cast<std::size_t>(hard->rank());
-                std::vector<double> D(KR * KR, 0.0);
-                for (std::size_t a = 0; a < K; a++)
-                    for (std::size_t b = 0; b < K; b++)
-                        D[a * KR + b] = pin_Dinv[a * K + b];
-                pin_Dinv = std::move(D);
-                pin_groups.insert(pin_groups.end(), hard->rows.begin(),
-                                  hard->rows.end());
-            }
+        if (result.hessian_pd_at_mode && cons_ok) {
             extract_joint_eta_var(
                 H_builder.col_ptr.data(), H_builder.row_idx.data(),
                 H_values_at_mode.data(), n_x,
                 static_cast<int>(H_values_at_mode.size()), loadings,
-                pin_groups, pin_Dinv, *scratch.extract_solver, result.eta_var);
+                cell_cons, *scratch.extract_solver, result.eta_var);
         }
     }
 
@@ -685,6 +688,16 @@ inline void joint_newton_finalize_sparse(
         result.Q_csc_i = H_builder.row_idx;
         result.Q_csc_x = std::move(H_values_at_mode);
         result.Q_csc_n = n_x;
+        if (cons_ok && !cell_cons.soft.empty()) {
+            result.Q_soft_ptr.assign(1, 0);
+            for (const LinearConstraintRow& r : cell_cons.soft) {
+                result.Q_soft_idx.insert(result.Q_soft_idx.end(),
+                                         r.cols.begin(), r.cols.end());
+                result.Q_soft_ptr.push_back(
+                    static_cast<int>(result.Q_soft_idx.size()));
+            }
+            result.Q_soft_D = cell_cons.soft_D;
+        }
     }
 
 }

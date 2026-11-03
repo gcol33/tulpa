@@ -177,7 +177,7 @@ test_that("the joint door centres and conditions a per-component BYM2 on its wei
     responses = list(a = arm), prior = prior, control = list(progress = FALSE)))
   phi <- f$modes[which.max(f$weights), f$arm_layout$phi_start + seq_len(K)]
   expect_lt(abs(sum(w * phi)), 1e-8)
-  cc <- tulpa:::.joint_constraint_cols(f$arm_layout, f$arm_layout$n_x)
+  cc <- f$constraint_cols
   expect_identical(length(cc), 1L)
   expect_equal(cc[[1L]]$w, w)
 })

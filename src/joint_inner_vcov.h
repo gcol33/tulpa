@@ -48,10 +48,9 @@ namespace tulpa {
 //   idx0     : 0-based latent indices, length p = n_dense + n_field. The first
 //              n_dense are the dense (fixed-effect) block; the remaining are the
 //              field block (diagonal only when field_marginal).
-//   A_cols   : constraint rows (linear_constraint_rows.h): sum-to-zero groups
-//              and hard linear constraints, over 0-based latent
-//              indices summed to zero (one group per ICAR/CAR field, two per
-//              BYM2 field). Empty => unconstrained block.
+//   cons     : the cell's constraint (CellConstraintRows): the hard rows its
+//              Gaussian is conditioned on and the soft pins the stored Q
+//              leaves off. Empty => the unconstrained inverse of Q.
 //   field_marginal : true => cheap recipe (dense columns + field diagonal);
 //                    false => full p x p block (all idx columns solved).
 //   solver   : caller-owned CHOLMOD context (reset() + analyze() + factorize()
@@ -60,7 +59,7 @@ namespace tulpa {
 bool extract_inner_vcov_block_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const std::vector<int>& idx0, int n_dense,
-    const std::vector<LinearConstraintRow>& A_cols,
+    const CellConstraintRows& cons,
     bool field_marginal,
     SparseCholeskySolver& solver,
     std::vector<double>& out_block
@@ -87,7 +86,7 @@ inline int inner_vcov_strip_width(int p, int n_dense, bool field_marginal) {
 bool extract_inner_vcov_strip_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const std::vector<int>& idx0, int n_dense,
-    const std::vector<LinearConstraintRow>& A_cols,
+    const CellConstraintRows& cons,
     bool field_marginal,
     SparseCholeskySolver& solver,
     InnerVcovStrip& out
@@ -99,9 +98,9 @@ bool extract_inner_vcov_strip_cell(
 //
 // `p` is the leading latent block -- both joint layouts stack every arm's
 // coefficients as a contiguous prefix, so the fixed effects are latent indices
-// [0, p). `A_cols` are the field sum-to-zero groups (0-based), so the block is
-// the CONSTRAINED covariance the fit's own posterior draws are generated from;
-// leave it empty for an unconstrained fit.
+// [0, p). The block is read under the cell's own constraint (the one the solve
+// carries, handed to extract_joint_fixed_block), so it is the covariance the
+// fit's own posterior draws are generated from.
 //
 // `extra_idx` (0-based, each >= p) widens the block to the latent indices
 // [0, p) followed by `extra_idx`, so a block whose prediction needs its own
@@ -111,7 +110,6 @@ bool extract_inner_vcov_strip_cell(
 struct JointFixedBlockRequest {
     int p = 0;
     std::vector<int> extra_idx;
-    std::vector<LinearConstraintRow> A_cols;
     bool active() const { return p > 0; }
 };
 
@@ -127,6 +125,7 @@ struct JointFixedBlockRequest {
 bool extract_joint_fixed_block(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const JointFixedBlockRequest& req,
+    const CellConstraintRows& cons,
     SparseCholeskySolver& solver,
     std::vector<double>& flat_out,
     std::vector<int>& sizes_out
@@ -143,29 +142,26 @@ struct JointEtaVarRequest {
     bool active() const { return static_cast<bool>(loadings); }
 };
 
-// Sigma_k is the inverse of the precision the Laplace approximation at the cell
-// uses: the CSC `(Qp, Qi, Qx)` plus the soft sum-to-zero pins the scatter
-// registered on the side (`pin_groups`, 0-based latent indices per pin, with
-// `pin_Dinv` the row-major inverse of their k x k precision; both empty when the
-// CSC already holds every pin), folded by Woodbury against the CSC anchored at
-// one node per pin, so a direction the stored precision holds only through the
-// uniform ridge never enters the fold (InvBlockConstraint). Rows
+// Sigma_k is the covariance of the cell's Gaussian: the CSC `(Qp, Qi, Qx)` plus
+// the soft pins of `cons`, conditioned on its hard rows, folded by Woodbury
+// against the CSC anchored at one node per row, so a direction the stored
+// precision holds only through the uniform ridge never enters the fold
+// (InvBlockConstraint). Rows
 // sharing a loading vector share one solve (row_classes.h). Returns false, with
 // `var_out` all NaN, when the precision does not factor; a row whose solve loses
 // positivity reads NaN on its own.
 bool extract_joint_eta_var(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const RowLoadings& L,
-    const std::vector<LinearConstraintRow>& pin_groups,
-    const std::vector<double>& pin_Dinv,
+    const CellConstraintRows& cons,
     SparseCholeskySolver& solver,
     std::vector<double>& var_out
 );
 
 // Draws of N(0, V) for one cell, V = B (B' M B)^{-1} B' the covariance of the
-// cell's Gaussian on null(A) (B a basis of it, A the rows `A_cols`; V = M^{-1}
-// with no rows), M = Q + S' D S with the soft rows S (`soft_rows`, penalty
-// precision `soft_D`, row-major; none when empty), from the anchored factor
+// cell's Gaussian on null(A) (B a basis of it, A the hard rows of `cons`;
+// V = M^{-1} with none), M = Q + S' D S with its soft rows S and their
+// precision D, from the anchored factor
 // every other read of the cell uses (InvBlockConstraint::condition_draw):
 // column c of the n_x x n_draws column-major `eps` (standard normals) gives
 // column c of `out`. M need be positive definite on null(A) only and Q
@@ -173,13 +169,24 @@ bool extract_joint_eta_var(
 // when the cell does not factor or M is indefinite off the constraint set.
 bool draw_constrained_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
-    const std::vector<LinearConstraintRow>& A_cols,
+    const CellConstraintRows& cons,
     const double* eps, int n_draws,
     SparseCholeskySolver& solver,
-    std::vector<double>& out, const char** why,
-    const std::vector<LinearConstraintRow>& soft_rows =
-        std::vector<LinearConstraintRow>(),
-    const std::vector<double>& soft_D = std::vector<double>()
+    std::vector<double>& out, const char** why
+);
+
+// The fold of `cons` over the cell's stored precision: factors Q anchored at
+// one node per row (`solver` keeps that factor) and builds `constr` over the
+// rows [soft; hard], D^{-1} on the soft block and the hard limit on the rest.
+// False, with `why` set when given, when Q does not factor or D is not
+// positive definite; a fold whose target is not positive definite is built
+// with `constr.usable = false`, which the caller reads.
+struct InvBlockConstraint;
+bool fold_cell_constraint(
+    SparseCholeskySolver& solver,
+    const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
+    const CellConstraintRows& cons, InvBlockConstraint& constr,
+    const char** why = nullptr
 );
 
 } // namespace tulpa

@@ -84,7 +84,8 @@ test_that("a constrained cell draw has the conditional covariance", {
   expect_lt(max(abs(tcrossprod(X) - ref)) / max(abs(ref)), 1e-10)
   expect_lt(max(abs(A %*% X)), 1e-10)
   set.seed(1)
-  z <- tulpa:::.joint_draw_cell(cs$p, cs$i, cs$x, n_x, constr, 20000L)
+  z <- tulpa:::.joint_draw_cell(cs$p, cs$i, cs$x, n_x, list(hard = constr),
+                                20000L)
   expect_lt(max(abs(A %*% z)), 1e-10)
   ok <- diag(ref) > 1e-8
   expect_lt(max(abs(apply(z, 1, var)[ok] / diag(ref)[ok] - 1)), 0.05)

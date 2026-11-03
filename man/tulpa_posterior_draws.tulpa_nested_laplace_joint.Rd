@@ -33,22 +33,21 @@ hyperparameter half of the same rows continuized within each row's own cell
 The \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}} method for a joint nested-Laplace fit
 (\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}). Each draw picks an outer-grid cell
 \code{k ~ Categorical(weights)} and then samples the inner latent vector from the
-constrained Gaussian \code{N(m_k, V_k)} at that cell, where \code{m_k} is the cell's
-inner mode and \code{V_k} is the inner-Laplace covariance with the ICAR / BYM2
-sum-to-zero field constraint imposed (conditioning by kriging). The draws
-are i.i.d. samples from \verb{sum_k weights_k * N(m_k, V_k)}.
+inner Gaussian \code{N(m_k, V_k)} at that cell, where \code{m_k} is the cell's inner
+mode and \code{V_k} the covariance the cell's log-marginal was read off. The
+draws are i.i.d. samples from \verb{sum_k weights_k * N(m_k, V_k)}.
 }
 \details{
-The constrained draw at cell \code{k} uses the sparse Cholesky of the stored
-precision \code{Q_k} and the conditioning-by-kriging correction
-\deqn{z_c = z - Q_k^{-1} A^\top (A Q_k^{-1} A^\top)^{-1} A z,}
-where \code{z ~ N(0, Q_k^{-1})} and \code{A} stacks the field sum-to-zero rows (one for
-an ICAR / CAR field; two -- structured and unstructured -- for a BYM2 field;
-one per spatial block in a multi-block fit). The returned draw is
-\code{m_k + z_c}, restricted to \code{idx}. Because \code{m_k} already satisfies the
-constraint (the inner solve centres the field), the mean is left unchanged
-and only the covariance is constrained, so the per-cell marginal matches the
-inner-Laplace constrained covariance exactly.
+The inner Gaussian at cell \code{k} has precision
+\eqn{M_k = Q_k + S^\top D_k S}, the stored precision \code{Q_k} plus the
+sum-to-zero pins \code{S} the sparse inner solve folds at solve time (an
+intrinsic field's augmented prior, precision \code{D_k}), conditioned on the hard
+rows \verb{A x = 0} the inner solve carried (an intrinsic field's level row where
+a fixed effect absorbs its level, a Knorr-Held interaction's null space):
+\eqn{V_k = B (B^\top M_k B)^{-1} B^\top}, \code{B} a basis of the null space of
+\code{A}. A pinned field with no level row keeps its level, at the pin's
+precision. The returned draw is \code{m_k} plus a draw of \code{N(0, V_k)},
+restricted to \code{idx}; \code{m_k} already satisfies the hard rows.
 
 Cells with zero outer-grid weight (e.g. pruned cells) or no stored \code{Q} are
 dropped and the remaining weights renormalized. A degenerate single-cell

@@ -56,6 +56,9 @@ inline std::string ckpt_serialize(const LaplaceResult& r) {
     ckpt_put_span(buf, r.Q_csc_p);
     ckpt_put_span(buf, r.Q_csc_i);
     ckpt_put_span(buf, r.Q_csc_x);
+    ckpt_put_span(buf, r.Q_soft_ptr);
+    ckpt_put_span(buf, r.Q_soft_idx);
+    ckpt_put_span(buf, r.Q_soft_D);
     ckpt_put_span(buf, r.re_cov_flat);
     ckpt_put_span(buf, r.re_cov_block_sizes);
     ckpt_put_span(buf, r.eta_var);
@@ -109,6 +112,9 @@ inline bool ckpt_deserialize(CkptReader& rd, LaplaceResult& r) {
     r.Q_csc_p            = rd.get_span<int>();
     r.Q_csc_i            = rd.get_span<int>();
     r.Q_csc_x            = rd.get_span<double>();
+    r.Q_soft_ptr         = rd.get_span<int>();
+    r.Q_soft_idx         = rd.get_span<int>();
+    r.Q_soft_D           = rd.get_span<double>();
     r.re_cov_flat        = rd.get_span<double>();
     r.re_cov_block_sizes = rd.get_span<int>();
     r.eta_var            = rd.get_span<double>();

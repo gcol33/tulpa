@@ -114,6 +114,57 @@ bool factorize_constrained_cell(
     return factorize_cell(solver, Qp, Qi, Qx_a.data(), n_x, nnz);
 }
 
+} // namespace
+
+bool fold_cell_constraint(
+    SparseCholeskySolver& solver,
+    const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
+    const CellConstraintRows& cons, InvBlockConstraint& constr,
+    const char** why
+) {
+    static const char* unused = "";
+    const char** w = why ? why : &unused;
+    // The soft rows lead, with D^{-1} on their block of the capacitance and
+    // zero (the hard limit) on the rest.
+    const int ns = static_cast<int>(cons.soft.size());
+    std::vector<LinearConstraintRow> rows = cons.soft;
+    rows.insert(rows.end(), cons.hard.begin(), cons.hard.end());
+    const int kc = static_cast<int>(rows.size());
+    std::vector<double> Dinv;
+    if (ns > 0) {
+        if (cons.soft_D.size() != static_cast<std::size_t>(ns) * ns) {
+            *w = "the soft rows' precision is not a square matrix of their count";
+            return false;
+        }
+        SmallChol cd;
+        cd.factor(cons.soft_D, ns);
+        if (!cd.ok) {
+            *w = "the soft rows' precision is not positive definite";
+            return false;
+        }
+        Dinv.assign(static_cast<std::size_t>(kc) * kc, 0.0);
+        std::vector<double> e(ns), col(ns);
+        for (int j = 0; j < ns; j++) {
+            std::fill(e.begin(), e.end(), 0.0);
+            e[j] = 1.0;
+            cd.solve(e.data(), col.data());
+            for (int i = 0; i < ns; i++)
+                Dinv[static_cast<std::size_t>(i) * kc + j] = col[i];
+        }
+    }
+    if (!factorize_constrained_cell(solver, Qp, Qi, Qx, n_x, nnz, rows, constr)) {
+        *w = "the cell precision does not factor";
+        return false;
+    }
+    if (rows.empty()) return true;
+    constr.build([&](const double* rhs, double* o, int ncol) {
+                     solver.solve(rhs, o, n_x, ncol);
+                 }, n_x, ns > 0 ? &Dinv : nullptr);
+    return true;
+}
+
+namespace {
+
 // Visit every entry of one cell's constrained block the extraction computes,
 // as emit(a, b, value) with a >= b (positions into idx0). That is the whole
 // lower triangle, less the field x field off-diagonal under field_marginal,
@@ -123,7 +174,7 @@ template <class Emit>
 bool visit_inner_vcov_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const std::vector<int>& idx0, int n_dense,
-    const std::vector<LinearConstraintRow>& A_cols,
+    const CellConstraintRows& cons,
     bool field_marginal,
     SparseCholeskySolver& solver,
     Emit&& emit
@@ -134,9 +185,13 @@ bool visit_inner_vcov_cell(
     if (n_dense > p) n_dense = p;
     const int n_field = p - n_dense;
 
+    // The fold W = C Vb (one column per constraint row and per anchor) and its
+    // factored capacitance, shared through inv_block_extract.h with the
+    // Newton-loop extraction and laplace_newton.h's diagonal-block path, so
+    // the conditioning-by-kriging algebra is written once.
     InvBlockConstraint constr;
-    if (!factorize_constrained_cell(solver, Qp, Qi, Qx, n_x, nnz, A_cols,
-                                    constr)) return false;
+    if (!fold_cell_constraint(solver, Qp, Qi, Qx, n_x, nnz, cons, constr))
+        return false;
 
     // Columns of C = Qk^{-1} to solve (of the anchored Qk under a constraint):
     // the dense (fixed-effect) block in the cheap recipe; every idx column in
@@ -153,16 +208,6 @@ bool visit_inner_vcov_cell(
         for (int t = 0; t < n_solve; t++)
             C_cols[t].assign(V.begin() + n * t, V.begin() + n * (t + 1));
     }
-
-    // Constraint columns W = C Vb (one solve per sum-to-zero group and per
-    // anchor) and the factored capacitance. Shared with the Newton-loop
-    // extraction and with laplace_newton.h's diagonal-block path through
-    // inv_block_extract.h, so the conditioning-by-kriging algebra is written
-    // once.
-    auto solve_cell = [&](const double* rhs, double* out, int ncol) {
-        solver.solve(rhs, out, n_x, ncol);
-    };
-    constr.build(solve_cell, n_x);
 
     // Field marginal variances via one Takahashi selected-inversion pass (only
     // needed in the cheap recipe; full mode reads field diagonals off C_cols).
@@ -210,7 +255,7 @@ bool visit_inner_vcov_cell(
 bool extract_inner_vcov_block_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const std::vector<int>& idx0, int n_dense,
-    const std::vector<LinearConstraintRow>& A_cols,
+    const CellConstraintRows& cons,
     bool field_marginal,
     SparseCholeskySolver& solver,
     std::vector<double>& out_block
@@ -218,7 +263,7 @@ bool extract_inner_vcov_block_cell(
     const std::size_t p = idx0.size();
     out_block.assign(p * p, 0.0);
     return visit_inner_vcov_cell(
-        Qp, Qi, Qx, n_x, nnz, idx0, n_dense, A_cols, field_marginal, solver,
+        Qp, Qi, Qx, n_x, nnz, idx0, n_dense, cons, field_marginal, solver,
         [&](int a, int b, double val) {
             out_block[static_cast<std::size_t>(a) + static_cast<std::size_t>(b) * p] = val;
             out_block[static_cast<std::size_t>(b) + static_cast<std::size_t>(a) * p] = val;
@@ -228,7 +273,7 @@ bool extract_inner_vcov_block_cell(
 bool extract_inner_vcov_strip_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const std::vector<int>& idx0, int n_dense,
-    const std::vector<LinearConstraintRow>& A_cols,
+    const CellConstraintRows& cons,
     bool field_marginal,
     SparseCholeskySolver& solver,
     InnerVcovStrip& out
@@ -240,7 +285,7 @@ bool extract_inner_vcov_strip_cell(
     out.strip.assign(static_cast<std::size_t>(p) * s, 0.0);
     out.diag.assign(static_cast<std::size_t>(p - s), 0.0);
     return visit_inner_vcov_cell(
-        Qp, Qi, Qx, n_x, nnz, idx0, n_dense, A_cols, field_marginal, solver,
+        Qp, Qi, Qx, n_x, nnz, idx0, n_dense, cons, field_marginal, solver,
         [&](int a, int b, double val) {
             if (b < s)
                 out.strip[static_cast<std::size_t>(a) + static_cast<std::size_t>(b) * p] = val;
@@ -252,6 +297,7 @@ bool extract_inner_vcov_strip_cell(
 bool extract_joint_fixed_block(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const JointFixedBlockRequest& req,
+    const CellConstraintRows& cons,
     SparseCholeskySolver& solver,
     std::vector<double>& flat_out,
     std::vector<int>& sizes_out
@@ -268,7 +314,7 @@ bool extract_joint_fixed_block(
         std::vector<double> block;
         if (!extract_inner_vcov_block_cell(
                 Qp, Qi, Qx, n_x, nnz, idx0, static_cast<int>(idx0.size()),
-                req.A_cols, /*field_marginal=*/false, solver, block)) {
+                cons, /*field_marginal=*/false, solver, block)) {
             return false;
         }
         flat_out.insert(flat_out.end(), block.begin(), block.end());
@@ -276,13 +322,11 @@ bool extract_joint_fixed_block(
         return true;
     }
     InvBlockConstraint constr;
-    if (!factorize_constrained_cell(solver, Qp, Qi, Qx, n_x, nnz, req.A_cols,
-                                    constr)) return false;
-
+    if (!fold_cell_constraint(solver, Qp, Qi, Qx, n_x, nnz, cons, constr))
+        return false;
     auto solve_cell = [&](const double* rhs, double* out, int ncol) {
         solver.solve(rhs, out, n_x, ncol);
     };
-    constr.build(solve_cell, n_x);
 
     const std::size_t before = sizes_out.size();
     // MirrorLower + the leading (0, p) range reproduce
@@ -298,8 +342,7 @@ bool extract_joint_fixed_block(
 bool extract_joint_eta_var(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const RowLoadings& L,
-    const std::vector<LinearConstraintRow>& pin_groups,
-    const std::vector<double>& pin_Dinv,
+    const CellConstraintRows& cons,
     SparseCholeskySolver& solver,
     std::vector<double>& var_out
 ) {
@@ -308,19 +351,11 @@ bool extract_joint_eta_var(
     var_out.assign(N > 0 ? static_cast<std::size_t>(N) : 0, failed);
     if (N <= 0 || n_x <= 0 || nnz <= 0) return false;
     InvBlockConstraint pins;
-    if (!factorize_constrained_cell(solver, Qp, Qi, Qx, n_x, nnz, pin_groups,
-                                    pins)) return false;
-
-    auto solve_cell = [&](const double* rhs, double* out, int ncol) {
-        solver.solve(rhs, out, n_x, ncol);
-    };
-    if (!pin_groups.empty()) {
-        pins.build(solve_cell, n_x, &pin_Dinv);
-        // A pin set whose Woodbury capacitance does not factor would leave the
-        // variance of the unpinned precision, which along the pinned direction
-        // is not the approximation's.
-        if (!pins.usable) return false;
-    }
+    if (!fold_cell_constraint(solver, Qp, Qi, Qx, n_x, nnz, cons, pins))
+        return false;
+    // A fold whose capacitance does not factor would leave the variance of
+    // the unconditioned, unpinned precision, which is not the approximation's.
+    if (!cons.empty() && !pins.usable) return false;
 
     const RowClasses classes = row_classes_from_loadings(L);
     std::vector<double> a(n_x, 0.0), z(n_x, 0.0);
@@ -372,59 +407,22 @@ bool extract_joint_eta_var(
 
 bool draw_constrained_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
-    const std::vector<LinearConstraintRow>& A_cols,
+    const CellConstraintRows& cons,
     const double* eps, int n_draws,
     SparseCholeskySolver& solver,
-    std::vector<double>& out, const char** why,
-    const std::vector<LinearConstraintRow>& soft_rows,
-    const std::vector<double>& soft_D
+    std::vector<double>& out, const char** why
 ) {
     out.assign(static_cast<std::size_t>(n_x) * n_draws, 0.0);
-    // The soft rows lead, with D^{-1} on their block of the capacitance and
-    // zero (the hard limit) on the rest.
-    const int ns = static_cast<int>(soft_rows.size());
-    std::vector<LinearConstraintRow> rows = soft_rows;
-    rows.insert(rows.end(), A_cols.begin(), A_cols.end());
-    const int kc = static_cast<int>(rows.size());
-    std::vector<double> Dinv;
-    if (ns > 0) {
-        if (soft_D.size() != static_cast<std::size_t>(ns) * ns) {
-            *why = "the soft rows' precision is not a square matrix of their count";
-            return false;
-        }
-        SmallChol cd;
-        cd.factor(soft_D, ns);
-        if (!cd.ok) {
-            *why = "the soft rows' precision is not positive definite";
-            return false;
-        }
-        Dinv.assign(static_cast<std::size_t>(kc) * kc, 0.0);
-        std::vector<double> e(ns), col(ns);
-        for (int j = 0; j < ns; j++) {
-            std::fill(e.begin(), e.end(), 0.0);
-            e[j] = 1.0;
-            cd.solve(e.data(), col.data());
-            for (int i = 0; i < ns; i++)
-                Dinv[static_cast<std::size_t>(i) * kc + j] = col[i];
-        }
-    }
     InvBlockConstraint constr;
-    if (!factorize_constrained_cell(solver, Qp, Qi, Qx, n_x, nnz, rows,
-                                    constr)) {
-        *why = "the cell precision does not factor";
+    if (!fold_cell_constraint(solver, Qp, Qi, Qx, n_x, nnz, cons, constr, why))
         return false;
-    }
     // z = P' L^{-T} eps: a draw with precision H_a, the anchored Q.
     if (n_draws > 0 &&
         !solver.apply_inv_chol_factor(eps, out.data(), n_x, n_draws)) {
         *why = "the cell factor has no LL' square root";
         return false;
     }
-    if (rows.empty()) return true;
-    auto solve_cell = [&](const double* rhs, double* o, int ncol) {
-        solver.solve(rhs, o, n_x, ncol);
-    };
-    constr.build(solve_cell, n_x, ns > 0 ? &Dinv : nullptr);
+    if (cons.empty()) return true;
     if (!constr.usable) {
         *why = "the cell precision is not positive definite on the constraint set";
         return false;
@@ -450,7 +448,7 @@ struct VcovGridInputs {
     int n_grid = 0;
     int p = 0;
     std::vector<int> idx0;
-    std::vector<tulpa::LinearConstraintRow> A_cols;
+    std::vector<tulpa::CellConstraintRows> cons;   // per cell
     std::vector<std::vector<int>> Qp, Qi;
     std::vector<std::vector<double>> Qx;
     std::vector<char> has_cell;
@@ -463,9 +461,17 @@ struct VcovGridInputs {
 // malformed cell is marked absent rather than refused: CHOLMOD and the ridge
 // fallback both index Qi / Qx off the pointer array, so a malformed cell would
 // read outside the extraction rather than fail to factor.
+//
+// The constraint of cell k (tulpa::CellConstraintRows) is the hard rows
+// `A_cols_list`, shared by every cell, and the soft rows `soft_cols_list`
+// with that cell's precision `soft_D_per_grid[[k]]` (a k x k matrix; NULL for a
+// cell whose stored precision already holds every pin). The soft rows are read
+// only where a cell carries a precision for them.
 VcovGridInputs read_vcov_grid_inputs(
     Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid,
-    int n_x, Rcpp::IntegerVector idx, Rcpp::List A_cols_list
+    int n_x, Rcpp::IntegerVector idx, Rcpp::List A_cols_list,
+    Rcpp::Nullable<Rcpp::List> soft_cols_list = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> soft_D_per_grid = R_NilValue
 ) {
     VcovGridInputs in;
     in.n_grid = Q_p_per_grid.size();
@@ -489,7 +495,35 @@ VcovGridInputs read_vcov_grid_inputs(
             Rcpp::stop("idx[%d] is not a latent index in [1, %d].", t + 1, n_x);
         in.idx0[t] = v - 1;
     }
-    in.A_cols = tulpa::read_constraint_rows(A_cols_list, n_x, "A_cols_list");
+    const std::vector<tulpa::LinearConstraintRow> hard =
+        tulpa::read_constraint_rows(A_cols_list, n_x, "A_cols_list");
+    const std::vector<tulpa::LinearConstraintRow> soft =
+        soft_cols_list.isNotNull()
+            ? tulpa::read_constraint_rows(Rcpp::List(soft_cols_list), n_x,
+                                          "soft_cols_list")
+            : std::vector<tulpa::LinearConstraintRow>();
+    const int ns = static_cast<int>(soft.size());
+    Rcpp::List soft_D;
+    if (soft_D_per_grid.isNotNull()) {
+        soft_D = Rcpp::List(soft_D_per_grid);
+        if (soft_D.size() != (R_xlen_t)n_grid)
+            Rcpp::stop("soft_D_per_grid has %d entries, the grid has %d cells.",
+                       (int)soft_D.size(), n_grid);
+    }
+    in.cons.resize(n_grid);
+    for (int k = 0; k < n_grid; k++) {
+        tulpa::CellConstraintRows& c = in.cons[k];
+        c.hard = hard;
+        if (ns == 0 || soft_D.size() == 0 || Rf_isNull(soft_D[k])) continue;
+        Rcpp::NumericMatrix Dk(soft_D[k]);
+        if (Dk.nrow() != ns || Dk.ncol() != ns)
+            Rcpp::stop("soft_D_per_grid[[%d]] is not %d x %d.", k + 1, ns, ns);
+        c.soft = soft;
+        c.soft_D.resize(static_cast<std::size_t>(ns) * ns);
+        for (int i = 0; i < ns; i++)
+            for (int j = 0; j < ns; j++)
+                c.soft_D[static_cast<std::size_t>(i) * ns + j] = Dk(i, j);
+    }
 
     in.Qp.resize(n_grid);
     in.Qi.resize(n_grid);
@@ -551,8 +585,10 @@ inline int omp_tid() {
 // n_dense      : number of leading dense (fixed-effect) indices; the remaining
 //                p - n_dense are field. With field_marginal the field block is
 //                returned diagonal-only (off-diagonal 0).
-// A_cols_list  : list of 1-based latent-index vectors, one per sum-to-zero
-//                constraint group (empty list => unconstrained).
+// A_cols_list  : the hard constraint rows (read_constraint_rows; empty list
+//                => unconstrained).
+// soft_cols_list, soft_D_per_grid : the soft rows and each cell's precision
+//                for them (read_vcov_grid_inputs); NULL for none.
 // field_marginal : cheap recipe (TRUE, the default) vs full p x p block (FALSE).
 // Returns a list of length n_grid: each element NULL or a p x p NumericMatrix.
 //
@@ -560,10 +596,13 @@ inline int omp_tid() {
 Rcpp::List cpp_joint_inner_vcov_blocks(
     Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid,
     int n_x, Rcpp::IntegerVector idx, int n_dense,
-    Rcpp::List A_cols_list, bool field_marginal = true, int n_threads = 1
+    Rcpp::List A_cols_list, bool field_marginal = true, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::List> soft_cols_list = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> soft_D_per_grid = R_NilValue
 ) {
     const VcovGridInputs in = read_vcov_grid_inputs(
-        Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, A_cols_list);
+        Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, A_cols_list,
+        soft_cols_list, soft_D_per_grid);
     const int n_grid = in.n_grid, p = in.p;
 
     // Shared resolver: the requested count clamped by OMP_THREAD_LIMIT, the
@@ -581,7 +620,7 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
         if (!in.has_cell[k]) continue;
         bool good = tulpa::extract_inner_vcov_block_cell(
             in.Qp[k].data(), in.Qi[k].data(), in.Qx[k].data(), n_x, in.nnz(k),
-            in.idx0, n_dense, in.A_cols, field_marginal,
+            in.idx0, n_dense, in.cons[k], field_marginal,
             *pool[omp_tid()], results[k]);
         ok[k] = good ? 1 : 0;
     }
@@ -621,11 +660,13 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
 Rcpp::NumericMatrix cpp_loading_marginal_var(
     Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid,
     int n_x, Rcpp::IntegerVector load_idx, Rcpp::IntegerVector load_ptr,
-    Rcpp::NumericMatrix load_w, Rcpp::List A_cols_list, int n_threads = 1
+    Rcpp::NumericMatrix load_w, Rcpp::List A_cols_list, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::List> soft_cols_list = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> soft_D_per_grid = R_NilValue
 ) {
     const VcovGridInputs in = read_vcov_grid_inputs(
         Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, Rcpp::IntegerVector(0),
-        A_cols_list);
+        A_cols_list, soft_cols_list, soft_D_per_grid);
     const int n_grid = in.n_grid;
     const int n_e = load_idx.size();
     const int m = load_ptr.size() - 1;
@@ -657,13 +698,9 @@ Rcpp::NumericMatrix cpp_loading_marginal_var(
         if (!in.has_cell[k]) continue;
         tulpa::SparseCholeskySolver& solver = *pool[omp_tid()];
         tulpa::InvBlockConstraint constr;
-        if (!tulpa::factorize_constrained_cell(
+        if (!tulpa::fold_cell_constraint(
                 solver, in.Qp[k].data(), in.Qi[k].data(), in.Qx[k].data(),
-                n_x, in.nnz(k), in.A_cols, constr)) continue;
-        auto solve_cell = [&](const double* rhs, double* o, int ncol) {
-            solver.solve(rhs, o, n_x, ncol);
-        };
-        constr.build(solve_cell, n_x);
+                n_x, in.nnz(k), in.cons[k], constr)) continue;
         const tulpa::SparseCholeskySolver::SelectedInverse si =
             solver.selected_inversion_full();
         if (si.n != n_x) continue;
@@ -715,10 +752,13 @@ Rcpp::List cpp_joint_inner_vcov_mixture(
     int n_x, Rcpp::IntegerVector idx, int n_dense,
     Rcpp::List A_cols_list, Rcpp::NumericVector weights,
     Rcpp::Nullable<Rcpp::NumericMatrix> modes = R_NilValue,
-    bool field_marginal = true, int n_threads = 1
+    bool field_marginal = true, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::List> soft_cols_list = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> soft_D_per_grid = R_NilValue
 ) {
     const VcovGridInputs in = read_vcov_grid_inputs(
-        Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, A_cols_list);
+        Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, A_cols_list,
+        soft_cols_list, soft_D_per_grid);
     const int n_grid = in.n_grid, p = in.p;
     const int nd = std::max(0, std::min(n_dense, p));
     const int s = tulpa::inner_vcov_strip_width(p, n_dense, field_marginal);
@@ -778,7 +818,7 @@ Rcpp::List cpp_joint_inner_vcov_mixture(
             if (!in.has_cell[k]) continue;
             slot_ok[j] = tulpa::extract_inner_vcov_strip_cell(
                 in.Qp[k].data(), in.Qi[k].data(), in.Qx[k].data(), n_x,
-                in.nnz(k), in.idx0, n_dense, in.A_cols, field_marginal,
+                in.nnz(k), in.idx0, n_dense, in.cons[k], field_marginal,
                 *pool[omp_tid()], slot[j]) ? 1 : 0;
         }
         for (int j = 0; j < nb; j++) {
@@ -862,42 +902,31 @@ Rcpp::List cpp_joint_inner_vcov_mixture(
 Rcpp::NumericMatrix cpp_constrained_cell_draw(
     Rcpp::IntegerVector Q_p, Rcpp::IntegerVector Q_i, Rcpp::NumericVector Q_x,
     int n_x, Rcpp::List A_cols_list, Rcpp::NumericMatrix eps,
-    Rcpp::List soft_cols_list = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> soft_cols_list = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericMatrix> soft_D = R_NilValue
 ) {
+    Rcpp::List soft_D_list = Rcpp::List::create(
+        soft_D.isNull() ? R_NilValue : SEXP(soft_D.get()));
     const VcovGridInputs in = read_vcov_grid_inputs(
         Rcpp::List::create(Q_p), Rcpp::List::create(Q_i), Rcpp::List::create(Q_x),
-        n_x, Rcpp::IntegerVector(0), A_cols_list);
+        n_x, Rcpp::IntegerVector(0), A_cols_list, soft_cols_list, soft_D_list);
     if (!in.has_cell[0])
         Rcpp::stop("cpp_constrained_cell_draw(): the cell precision is not a "
                    "well-formed %d x %d lower-triangle CSC.", n_x, n_x);
     if (eps.nrow() != n_x)
         Rcpp::stop("cpp_constrained_cell_draw(): `eps` has %d rows, not n_x = %d.",
                    static_cast<int>(eps.nrow()), n_x);
+    if (soft_D.isNull() && soft_cols_list.isNotNull() &&
+        Rcpp::List(soft_cols_list).size() > 0)
+        Rcpp::stop("cpp_constrained_cell_draw(): soft rows need `soft_D`.");
     const int n_draws = eps.ncol();
-    const std::vector<tulpa::LinearConstraintRow> soft =
-        tulpa::read_constraint_rows(soft_cols_list, n_x, "soft_cols_list");
-    std::vector<double> D;
-    if (!soft.empty()) {
-        const int ns = static_cast<int>(soft.size());
-        if (soft_D.isNull())
-            Rcpp::stop("cpp_constrained_cell_draw(): soft rows need `soft_D`.");
-        Rcpp::NumericMatrix Dm(soft_D.get());
-        if (Dm.nrow() != ns || Dm.ncol() != ns)
-            Rcpp::stop("cpp_constrained_cell_draw(): `soft_D` is not %d x %d.",
-                       ns, ns);
-        D.resize(static_cast<std::size_t>(ns) * ns);
-        for (int i = 0; i < ns; i++)
-            for (int j = 0; j < ns; j++)
-                D[static_cast<std::size_t>(i) * ns + j] = Dm(i, j);
-    }
     tulpa::SparseCholeskySolver solver;
     std::vector<double> draws;
     const char* why = "";
     if (!tulpa::draw_constrained_cell(in.Qp[0].data(), in.Qi[0].data(),
                                       in.Qx[0].data(), n_x, in.nnz(0),
-                                      in.A_cols, eps.begin(), n_draws, solver,
-                                      draws, &why, soft, D))
+                                      in.cons[0], eps.begin(), n_draws, solver,
+                                      draws, &why))
         Rcpp::stop("cpp_constrained_cell_draw(): %s.", why);
     Rcpp::NumericMatrix out(n_x, n_draws);
     std::copy(draws.begin(), draws.end(), out.begin());

@@ -3,6 +3,7 @@
 
 #include <RcppEigen.h>
 #include "nested_laplace_grid.h"
+#include "linear_constraint_rows.h"
 
 namespace tulpa {
 
@@ -62,6 +63,12 @@ Rcpp::List nl_pack_grid_results(
     // grid's worth of precisions. Every current requester asks for exactly one
     // block, so slot k holds that block as an m x m matrix.
     Rcpp::List cov_block_per_grid(n_grid);
+    // The pins each stored Q leaves off: their k x k precision per cell (NULL
+    // where the cell's Q holds every pin) and the rows, which the pattern fixes
+    // for the whole fit.
+    Rcpp::List Q_soft_D_per_grid(n_grid);
+    Rcpp::List Q_soft_cols;
+    bool any_soft = false;
 
     bool any_Q = false;
     bool any_cov_block = false;
@@ -113,6 +120,22 @@ Rcpp::List nl_pack_grid_results(
                 res.Q_csc_i.begin(), res.Q_csc_i.end());
             Q_x_per_grid[k] = Rcpp::NumericVector(
                 res.Q_csc_x.begin(), res.Q_csc_x.end());
+            const int ks = static_cast<int>(res.Q_soft_ptr.size()) - 1;
+            if (ks > 0 && res.Q_soft_D.size() == static_cast<std::size_t>(ks) * ks) {
+                Rcpp::NumericMatrix Dk(ks, ks);
+                for (int i = 0; i < ks; i++)
+                    for (int j = 0; j < ks; j++)
+                        Dk(i, j) = res.Q_soft_D[static_cast<std::size_t>(i) * ks + j];
+                Q_soft_D_per_grid[k] = Dk;
+                if (!any_soft) {
+                    std::vector<LinearConstraintRow> rows(ks);
+                    for (int g = 0; g < ks; g++)
+                        rows[g].cols.assign(res.Q_soft_idx.begin() + res.Q_soft_ptr[g],
+                                            res.Q_soft_idx.begin() + res.Q_soft_ptr[g + 1]);
+                    Q_soft_cols = write_constraint_rows(rows);
+                    any_soft = true;
+                }
+            }
         }
         if (!res.re_cov_block_sizes.empty()) {
             const int m = res.re_cov_block_sizes[0];
@@ -187,6 +210,10 @@ Rcpp::List nl_pack_grid_results(
         out["Q_csc_i_per_grid"] = Q_i_per_grid;
         out["Q_csc_x_per_grid"] = Q_x_per_grid;
         out["Q_csc_n"] = n_x;
+        if (any_soft) {
+            out["Q_soft_cols"] = Q_soft_cols;
+            out["Q_soft_D_per_grid"] = Q_soft_D_per_grid;
+        }
     }
     if (any_cov_block) out["cov_block_per_grid"] = cov_block_per_grid;
     if (eta_var_rows > 0) {

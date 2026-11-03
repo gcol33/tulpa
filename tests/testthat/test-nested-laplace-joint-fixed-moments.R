@@ -91,11 +91,13 @@
 .j307_reference_blocks <- function(fq) {
   p <- fq$n_fixed
   n_x <- as.integer(fq$Q_csc_n)
+  cc <- tulpa:::.inner_constraint_cpp(tulpa:::.inner_constraint(fq))
   cpp_joint_inner_vcov_blocks(
     fq$Q_csc_p_per_grid, fq$Q_csc_i_per_grid, fq$Q_csc_x_per_grid,
     n_x = n_x, idx = seq_len(p), n_dense = p,
-    A_cols_list = tulpa:::.joint_constraint_cols(fq$arm_layout, n_x),
-    field_marginal = FALSE, n_threads = 1L)
+    A_cols_list = cc$A_cols_list,
+    field_marginal = FALSE, n_threads = 1L,
+    soft_cols_list = cc$soft_cols_list, soft_D_per_grid = cc$soft_D_per_grid)
 }
 
 skip_on_cran_budget()
@@ -168,10 +170,9 @@ test_that("the single-block joint mixture matches the independent law-of-total-c
   expect_gt(length(fit$weights), 1L)
   expect_gt(sort(fit$weights, decreasing = TRUE)[2L], 0.01)
 
-  # `.joint_mixture_moments()` is a separate R implementation of the same
-  # mixture (Matrix sparse solves rather than the compiled per-cell extraction),
-  # so agreeing with it exercises both the constrained-block extraction and the
-  # marginalization against code that shares none of it.
+  # `.joint_mixture_moments()` reads the same mixture off the stored
+  # precisions after the fit, through the R-level extraction entry and an R
+  # marginalization, where vcov() reads the blocks the loop retained.
   fq <- .j305_icar_fit(d, store_Q = TRUE)
   p <- fit$n_fixed
   mm <- tulpa:::.joint_mixture_moments(fq, idx = seq_len(p))
@@ -416,8 +417,9 @@ test_that("tulpa_joint_inner_vcov_blocks() is an exported door onto the same ker
   got <- tulpa_joint_inner_vcov_blocks(
     fq$Q_csc_p_per_grid, fq$Q_csc_i_per_grid, fq$Q_csc_x_per_grid,
     n_x = n_x, idx = seq_len(fq$n_fixed), n_dense = fq$n_fixed,
-    A_cols_list = tulpa:::.joint_constraint_cols(fq$arm_layout, n_x),
-    field_marginal = FALSE, n_threads = 1L)
+    A_cols_list = fq$constraint_cols,
+    field_marginal = FALSE, n_threads = 1L,
+    soft_cols_list = fq$Q_soft_cols, soft_D_per_grid = fq$Q_soft_D_per_grid)
   expect_identical(got, ref)
 })
 
