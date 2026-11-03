@@ -106,16 +106,51 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 .varcorr_from_nested_re_blocks <- function(object, layout) {
   bi <- object$re_block_index
   if (is.null(bi) || isTRUE(object$re_block_conditioned)) return(NULL)
+  # One block per term on the registry path; the one-arm joint path records
+  # the blocks of each term, an uncorrelated slope term being one `iid` block
+  # per coefficient and a correlated one a single `miid` block.
+  if (!is.list(bi)) bi <- as.list(bi)
   if (length(bi) != length(layout)) return(NULL)
   nm  <- object$theta_names
   med <- object$theta_median
   if (is.null(nm) || is.null(med) || length(nm) != length(med)) return(NULL)
-  sds <- vapply(bi, function(b) {
-    j <- which(nm == sprintf("b%d.sigma", b))
-    if (length(j) != 1L) NA_real_ else as.numeric(med[j])
-  }, numeric(1))
-  if (anyNA(sds) || any(!is.finite(sds))) return(NULL)
-  lapply(sds, function(s) matrix(s^2, 1L, 1L))
+  out <- lapply(seq_along(bi), function(m) {
+    b <- bi[[m]]
+    p <- as.integer(layout[[m]]$n_coefs %||% 1L)
+    if (length(b) == 1L && p > 1L) return(.varcorr_logchol_block(object, b, p))
+    sds <- vapply(b, function(k) {
+      j <- which(nm == sprintf("b%d.sigma", k))
+      if (length(j) != 1L) NA_real_ else as.numeric(med[j])
+    }, numeric(1))
+    if (anyNA(sds) || any(!is.finite(sds))) return(NULL)
+    diag(sds^2, length(sds))
+  })
+  if (any(vapply(out, is.null, logical(1)))) return(NULL)
+  out
+}
+
+# The posterior-mean covariance of a free-covariance (`miid`) block, whose
+# outer axes are the log-Cholesky coordinates of Sigma = L L': Sigma per cell,
+# averaged over the cell weights -- the derived quantity marginalized over the
+# grid rather than read off its modal cell.
+#' @keywords internal
+.varcorr_logchol_block <- function(object, b, p) {
+  tg <- object$theta_grid
+  w  <- as.numeric(object$weights)
+  ax <- character(0)
+  for (j in seq_len(p)) for (i in j:p) ax <- c(ax, sprintf("b%d.L%d%d", b, i, j))
+  if (!is.matrix(tg) || !all(ax %in% colnames(tg)) || length(w) != nrow(tg)) {
+    return(NULL)
+  }
+  keep <- is.finite(w) & w > 0
+  w <- w[keep] / sum(w[keep])
+  S <- matrix(0, p, p)
+  rows <- which(keep)
+  for (r in seq_along(rows)) {
+    L <- .re_logchol_to_L(as.numeric(tg[rows[r], ax]), p)
+    S <- S + w[r] * tcrossprod(L)
+  }
+  S
 }
 
 
@@ -212,7 +247,8 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 # `estimate_phi = TRUE`; anything else is the `phi` the fit was handed.
 #' @keywords internal
 .varcorr_residual <- function(object) {
-  if (!identical(object$family, "gaussian")) return(NULL)
+  if (!identical(object$family, "gaussian") &&
+      !.family_reads_bounds(object$family)) return(NULL)
   phi <- object$phi
   if (!is.numeric(phi) || length(phi) != 1L || !is.finite(phi) || phi < 0) {
     return(NULL)

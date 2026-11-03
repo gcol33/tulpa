@@ -45,7 +45,36 @@ or a tuning knob that belongs in \code{control}.}
 random effects, and \code{offset(...)} terms are recognised. As in \code{\link[stats:lm]{stats::lm()}} and
 lme4, aliased fixed-effect columns of a rank-deficient design are dropped
 with a warning, and unused levels of a grouping factor are dropped. A
-binomial response may be logical (\code{TRUE} a success).}
+binomial response may be logical (\code{TRUE} a success).
+
+A gaussian response may carry a bound term after a \code{|}:
+\itemize{
+\item \code{y | cens(lower, upper)} -- each row records that the latent value fell
+in \verb{(lower, upper]}. \code{NA} (or \code{-Inf} / \code{Inf}) leaves a side open, so
+\code{cens(NA, L)} is left-censored at \code{L} and \code{cens(U, NA)} right-censored
+at \code{U}; equal bounds record the value exactly. The bounds are what the
+likelihood reads: \code{y} may be \code{NA} on a censored row and, where present,
+lies in its interval. This is the gaussian Tobit / interval-censored
+likelihood, the one \code{\link[survival:survreg]{survival::survreg()}} fits with \code{dist = "gaussian"}
+and \code{Surv(lower, upper, type = "interval2")}.
+\item \code{y | trunc(lb, ub)} -- \code{y} is observed only inside \verb{[lb, ub]}, and its
+density is the gaussian one renormalized to that range. Either bound
+may be left out (\code{trunc(ub = 10)}) or be infinite.
+}
+
+Bounds are columns of \code{data} or expressions of them, or scalars. Both
+take \code{family = "gaussian"} (identity link) and every random-effect and
+field term the joint nested-Laplace door carries (areal, NNGP / GP and
+HSGP spatial fields; RW1 / RW2 / AR1 temporal fields; smoothers), and are
+fitted on that door with \code{mode = "auto"}, \code{"structured"}, \code{"laplace"} or
+\code{"nested_laplace"}: a scale the call supplies is conditioned on and one it
+leaves out is integrated. \code{fit$family} is then \code{"interval_gaussian"} or
+\code{"truncated_gaussian"}. \code{\link[=fitted]{fitted()}} and \code{\link[=predict]{predict()}} report the latent
+gaussian mean; \code{\link[=posterior_predict]{posterior_predict()}} draws the latent value for a
+censored response and a draw inside its row's bounds for a truncated
+one; the pointwise log-likelihood behind WAIC and LOO is the censored /
+truncated one. Survival responses with a censoring indicator (Weibull,
+exponential AFT) belong to tulpaObs.}
 
 \item{data}{A data frame. Incomplete rows (an \code{NA} in the response, a
 predictor or a grouping variable) are refused, not dropped.}
@@ -59,14 +88,7 @@ predictor or a grouping variable) are refused, not dropped.}
 
 \item{mode}{Inference mode or backend. \code{"auto"} (default) picks the most
 reliable Tier 1/Tier 2 method expected to finish; a tier (\code{"exact"},
-\code{"structured"}) or a backend name (\code{"laplace"}, \code{"mala"}, ...) forces it.
-\code{"eb"} estimates the random-effect covariance(s) by empirical Bayes instead
-of conditioning on \code{sigma_re} (see \code{\link[=tulpa_eb]{tulpa_eb()}}); it is opt-in by name,
-because its intervals are conditional on that estimate rather than marginal
-over it. The maximized likelihood integrates the fixed effects out rather
-than profiling them, so with \code{hyperprior = "flat"} the estimate is
-restricted (REML-type) -- it matches \code{glmmTMB(..., REML = TRUE)}, not the
-ML fit of \code{lme4::glmer()}.}
+\code{"structured"}) or a backend name (\code{"laplace"}, \code{"mala"}, ...) forces it.}
 
 \item{sigma_re}{Random-effect SDs to condition on: length 1 (recycled) or one
 per RE term. Defaults to 1 per term with a warning. Ignored by every
@@ -88,11 +110,12 @@ so its scale is still integrated) and the log-posterior samplers (\code{mala},
 \code{imh_laplace}, \code{pathfinder}); other backends reject weights loudly.}
 
 \item{phi}{Dispersion passed to the family, held fixed. One convention at
-every door: for \code{gaussian} / \code{lognormal} this is the residual VARIANCE
-(the SD is \code{sqrt(phi)}), for \code{neg_binomial_2} the size, \code{gamma} the
-shape, \code{beta} the precision, \code{t} the scale; \code{binomial} and \code{poisson}
-ignore it. The compiled kernels parameterize the two variance families by
-the residual SD and are handed \code{sqrt(phi)} at the boundary.
+every door: for \code{gaussian} / \code{lognormal}, and for a censored or truncated
+gaussian response (\code{y | cens()}, \code{y | trunc()} in \code{\link[=tulpa]{tulpa()}}), this is the
+residual VARIANCE (the SD is \code{sqrt(phi)}), for \code{neg_binomial_2} the size,
+\code{gamma} the shape, \code{beta} the precision, \code{t} the scale; \code{binomial} and
+\code{poisson} ignore it. The compiled kernels parameterize the variance
+families by the residual SD and are handed \code{sqrt(phi)} at the boundary.
 
 Defaulted, it conditions at 1 and says so with a warning, since for a
 family that reads a dispersion that is a modelling choice rather than a

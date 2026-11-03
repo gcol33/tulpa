@@ -272,8 +272,14 @@ zi_sample <- function(eta, logit_zi, family, n_trials = NULL, phi = 1.0,
 # residuals, predict, posterior_predict, the pointwise log-likelihood) reads the
 # response through these four, so a zero-inflated fit cannot be scored by one
 # accessor as a mixture and by another as its base family.
+#
+# A censored / truncated Gaussian response (`.family_reads_bounds()`) reads
+# its per-observation `bounds` here too. Its mean and variance are the latent
+# Gaussian's, `eta` and the residual variance `phi`, the quantity the bounds
+# are recorded on.
 #' @keywords internal
 .response_mean <- function(eta, logit_zi, family, n_trials = NULL, phi = 1.0) {
+  if (.family_reads_bounds(family)) return(eta)
   if (is.null(logit_zi)) {
     return(family_response_mean(eta, family, n_trials = n_trials, phi = phi))
   }
@@ -283,6 +289,7 @@ zi_sample <- function(eta, logit_zi, family, n_trials = NULL, phi = 1.0,
 #' @keywords internal
 .response_variance <- function(eta, logit_zi, family, n_trials = NULL,
                                phi = 1.0, phi2 = NULL) {
+  if (.family_reads_bounds(family)) return(rep_len(as.numeric(phi), length(eta)))
   if (is.null(logit_zi)) {
     return(family_variance(eta, family, n_trials = n_trials, phi = phi,
                            phi2 = phi2))
@@ -293,7 +300,15 @@ zi_sample <- function(eta, logit_zi, family, n_trials = NULL, phi = 1.0,
 
 #' @keywords internal
 .response_sample <- function(eta, logit_zi, family, n_trials = NULL,
-                             phi = 1.0, phi2 = NULL) {
+                             phi = 1.0, phi2 = NULL, bounds = NULL) {
+  if (.family_reads_bounds(family)) {
+    # A censored response is drawn as the latent value, which no bound
+    # shapes; a truncated one is drawn inside its row's bounds.
+    if (identical(family, "truncated_gaussian")) {
+      bounds <- .bounds_or_stop(family, bounds)
+    }
+    return(.bound_sample(eta, family, bounds, phi))
+  }
   if (is.null(logit_zi)) {
     return(family_sample(eta, family, n_trials = n_trials, phi = phi,
                          phi2 = phi2))
@@ -303,7 +318,10 @@ zi_sample <- function(eta, logit_zi, family, n_trials = NULL, phi = 1.0,
 
 #' @keywords internal
 .response_loglik <- function(eta, logit_zi, y, family, n_trials = NULL,
-                             phi = 1.0, phi2 = NULL) {
+                             phi = 1.0, phi2 = NULL, bounds = NULL) {
+  if (.family_reads_bounds(family)) {
+    return(.bound_loglik(eta, y, family, .bounds_or_stop(family, bounds), phi))
+  }
   if (is.null(logit_zi)) {
     return(family_loglik(eta, y, family, n_trials = n_trials, phi = phi,
                          phi2 = phi2))

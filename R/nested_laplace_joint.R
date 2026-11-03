@@ -51,24 +51,30 @@
 #'                     the log scale); the `-log(y)` Jacobian is included in
 #'                     the kernel's `log_lik`. `"interval_gaussian"` is an
 #'                     interval-censored Gaussian latent: row `i` records
-#'                     only that a `Normal(eta_i, phi^2)` value fell in
+#'                     only that a `Normal(eta_i, phi)` value fell in
 #'                     `(lower[i], upper[i]]`, and contributes that
-#'                     probability. `"truncated_gaussian"` is a Gaussian
-#'                     `Normal(eta_i, phi^2)` response conditioned on
-#'                     `y[i] <= trunc_upper[i]`.
+#'                     probability; equal finite bounds record the value
+#'                     itself, and the row contributes its density.
+#'                     `"truncated_gaussian"` is a Gaussian
+#'                     `Normal(eta_i, phi)` response conditioned on
+#'                     `trunc_lower[i] <= y[i] <= trunc_upper[i]`.
 #'   * `lower`, `upper` -- numeric `[N_arm]`, the interval bounds of an
 #'                     `"interval_gaussian"` arm on the linear-predictor
 #'                     scale, read in place of `y`; `-Inf` / `Inf` are the
-#'                     open outer classes, and each `lower` lies strictly
-#'                     below its `upper`. Supplied together.
-#'   * `trunc_upper` -- numeric `[N_arm]`, the upper truncation point of a
-#'                     `"truncated_gaussian"` arm on the scale of `y`; `Inf`
-#'                     leaves a row untruncated.
+#'                     open outer classes, each `lower` lies at or below its
+#'                     `upper`, and equal bounds are finite. Supplied
+#'                     together.
+#'   * `trunc_lower`, `trunc_upper` -- numeric `[N_arm]`, the truncation
+#'                     points of a `"truncated_gaussian"` arm on the scale of
+#'                     `y`, either one alone; an absent side or an infinite
+#'                     entry leaves that side of a row untruncated.
 #'   * `phi`         -- numeric dispersion, default `1`: the residual
-#'                     VARIANCE for `"gaussian"` and `"lognormal"` (on the
-#'                     log scale), the residual SD for `"interval_gaussian"`
-#'                     and `"truncated_gaussian"`, the size for
-#'                     `"neg_binomial_2"`, the precision for `"beta"`.
+#'                     VARIANCE for `"gaussian"`, `"lognormal"` (on the log
+#'                     scale), `"interval_gaussian"` and
+#'                     `"truncated_gaussian"` -- the last two are the
+#'                     gaussian read through a bound, and keep its
+#'                     convention -- the size for `"neg_binomial_2"`, the
+#'                     precision for `"beta"`.
 #'   * `field_coef`  -- optional per-arm field coefficient controlling
 #'                     this arm's multiplier on the shared latent field's
 #'                     amplitude. One of:
@@ -270,8 +276,8 @@
 #'   * `gaussian` -- residual VARIANCE, the one engine convention (the SD is
 #'     `sqrt(phi)`). Use `phi_grid` to estimate it as a hyperparameter
 #'     instead of pinning it pre-fit.
-#'   * `interval_gaussian`, `truncated_gaussian` -- residual SD of the latent
-#'     Gaussian.
+#'   * `interval_gaussian`, `truncated_gaussian` -- residual VARIANCE of the
+#'     latent Gaussian, as for `gaussian`.
 #'   * `lognormal` -- residual variance on the log scale; identical kernel
 #'     parameterization as `gaussian` plus the `-log(y)` Jacobian.
 #'   * `neg_binomial_2` -- dispersion (variance is `mu + mu^2/phi`).

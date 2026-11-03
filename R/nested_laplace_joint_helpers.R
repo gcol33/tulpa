@@ -210,38 +210,30 @@
     }
     # Optional interval-censored Gaussian bounds (family == "interval_gaussian"):
     # row i records the latent value fell in (lower[i], upper[i]] on the predictor
-    # scale, with -Inf / +Inf the open outer classes. The built-in interval spec
+    # scale, with -Inf / +Inf the open outer classes and a finite
+    # lower[i] == upper[i] the value observed exactly. The built-in interval spec
     # reads (lower, upper) in place of the point response y.
     if (!is.null(a$lower) || !is.null(a$upper)) {
         if (is.null(a$lower) || is.null(a$upper)) {
             stop("Arm ", k, ": `lower` and `upper` must be supplied together.",
                  call. = FALSE)
         }
-        a$lower <- as.numeric(a$lower)
-        a$upper <- as.numeric(a$upper)
-        if (length(a$lower) != N || length(a$upper) != N) {
-            stop("Arm ", k, ": length(lower)/length(upper) must equal ",
-                 "length(y) (", N, ").", call. = FALSE)
-        }
-        if (any(is.na(a$lower)) || any(is.na(a$upper)) || any(a$lower >= a$upper)) {
-            stop("Arm ", k, ": each `lower` must be finite-or-(-Inf), non-NA, ",
-                 "and strictly below its `upper`.", call. = FALSE)
-        }
+        b <- .check_response_bounds(a$lower, a$upper, N, "cens",
+                                    sprintf("Arm %d: ", k), c("lower", "upper"))
+        a$lower <- b$lower
+        a$upper <- b$upper
     }
-    # Optional upper-truncated Gaussian ceiling (family == "truncated_gaussian"):
-    # row i's latent log-response is truncated to <= trunc_upper[i] on the predictor
-    # scale; +Inf => no truncation on that row. The built-in truncated spec reads
-    # (y, trunc_upper).
-    if (!is.null(a$trunc_upper)) {
-        a$trunc_upper <- as.numeric(a$trunc_upper)
-        if (length(a$trunc_upper) != N) {
-            stop("Arm ", k, ": length(trunc_upper) (", length(a$trunc_upper),
-                 ") must equal length(y) (", N, ").", call. = FALSE)
-        }
-        if (any(is.na(a$trunc_upper))) {
-            stop("Arm ", k, ": `trunc_upper` must be non-NA (use +Inf for an ",
-                 "untruncated row).", call. = FALSE)
-        }
+    # Optional truncation bounds (family == "truncated_gaussian"): row i's
+    # response is truncated to [trunc_lower[i], trunc_upper[i]] on the predictor
+    # scale; an absent side or an infinite entry leaves that side untruncated.
+    # The built-in truncated spec reads (y, trunc_lower, trunc_upper).
+    if (!is.null(a$trunc_lower) || !is.null(a$trunc_upper)) {
+        b <- .check_response_bounds(a$trunc_lower %||% rep(-Inf, N),
+                                    a$trunc_upper %||% rep(Inf, N), N, "trunc",
+                                    sprintf("Arm %d: ", k),
+                                    c("trunc_lower", "trunc_upper"), y = a$y)
+        if (!is.null(a$trunc_lower)) a$trunc_lower <- b$lower
+        if (!is.null(a$trunc_upper)) a$trunc_upper <- b$upper
     }
     a$re_idx <- if (is.null(a$re_idx)) rep(0, N) else as.numeric(a$re_idx)
     if (length(a$re_idx) != N) {

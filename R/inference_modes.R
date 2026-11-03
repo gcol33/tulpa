@@ -305,15 +305,14 @@ BACKEND_REGISTRY <- list(
     # callable, and no callable backs the joint multi-block driver at all
     # (gcol33/tulpa#775).
     cabi = NULL, hyperprior = TRUE,
-    # Has an R-level fitter (reachable, callable directly) but is NOT one
-    # `tulpa(mode =)` can dispatch to: it needs multiple response arms, which
-    # a single tulpa() formula cannot express (gcol33/tulpa#786). Read by the
-    # `input == "nested"` dispatch in tulpa() and by inference_mode_info()'s
-    # printed backend list, so the two cannot drift apart the way the
-    # hardcoded `backend != "nested_laplace"` check and the `[R]` tag did.
-    dispatchable = FALSE,
-    note = paste("Joint multi-arm nested Laplace; driven by model packages, not the",
-                 "single-response tulpa() formula (cannot express multiple arms)")
+    # A tulpa() formula is one response, so the front door reaches this
+    # driver as a ONE-arm fit (R/tulpa_joint_arm.R): the door whose arm
+    # carries a censored / truncated response's bounds and whose outer grid
+    # carries the dispersion axis an unsupplied residual variance is
+    # integrated on. Several arms are a model package's call.
+    note = paste("Joint multi-arm nested Laplace; tulpa() fits one arm here",
+                 "(censored / truncated responses, an integrated residual",
+                 "variance); several arms are driven by model packages")
   ),
   spde = list(
     emits = "iid",

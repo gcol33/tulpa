@@ -164,16 +164,19 @@ inline int parse_joint_arms(
                            "length(y) (%d).", k + 1, arms_out[k].N);
             }
         }
-        // Optional upper-truncated Gaussian ceiling (truncated lognormal
-        // cover). When supplied it must match this arm's N; the built-in
-        // truncated_gaussian spec reads (y, trunc_upper). +Inf entries => no
-        // truncation on that row.
-        if (a.containsElementNamed("trunc_upper") && !Rf_isNull(a["trunc_upper"])) {
-            arms_out[k].trunc_upper = Rcpp::as<Rcpp::NumericVector>(a["trunc_upper"]);
-            if ((int)arms_out[k].trunc_upper.size() != arms_out[k].N) {
-                Rcpp::stop("Arm %d: length(trunc_upper) must equal "
-                           "length(y) (%d).", k + 1, arms_out[k].N);
+        // Optional truncation bounds (truncated_gaussian; e.g. a truncated
+        // lognormal cover arm). Each supplied one must match this arm's N; the
+        // built-in truncated_gaussian spec reads (y, trunc_lower, trunc_upper),
+        // an absent side or an infinite entry leaving that side untruncated.
+        for (const char* nm : {"trunc_lower", "trunc_upper"}) {
+            if (!a.containsElementNamed(nm) || Rf_isNull(a[nm])) continue;
+            Rcpp::NumericVector v = Rcpp::as<Rcpp::NumericVector>(a[nm]);
+            if ((int)v.size() != arms_out[k].N) {
+                Rcpp::stop("Arm %d: length(%s) must equal length(y) (%d).",
+                           k + 1, nm, arms_out[k].N);
             }
+            if (std::string(nm) == "trunc_lower") arms_out[k].trunc_lower = v;
+            else                                  arms_out[k].trunc_upper = v;
         }
         if (pa.offset.size() != 0 && (int)pa.offset.size() != arms_out[k].N) {
             Rcpp::stop("Arm %d: length(offset) (%d) != N (%d).",

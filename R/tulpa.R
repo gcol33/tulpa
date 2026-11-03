@@ -902,7 +902,7 @@
                                re_prior = NULL, zi_prior = NULL,
                                hyperprior = "proper",
                                warm_start = NULL, estimate_phi = FALSE,
-                               beta_prior_default = NULL) {
+                               beta_prior_default = NULL, phi_axis = NULL) {
   if (identical(hyperprior, "flat") && !backend %in% .hyperprior_backends()) {
     stop(sprintf(paste0(
       "`hyperprior = \"flat\"` is not read by backend '%s', which carries ",
@@ -1024,6 +1024,14 @@
       smoothers
     )
     all_blocks <- c(field_blocks, latent_blocks)
+    # The one-arm joint door: the same field / smoother / latent blocks, every
+    # random-effect term as a block of its own shape, and the arm's dispersion
+    # axis. It takes a model with no block, whose outer grid is that axis.
+    if (identical(backend, "nested_laplace_joint")) {
+      return(.joint_arm_args(bundle, family, all_blocks, sigma_re, n_trials,
+                             phi, phi_axis, beta_prior %||% beta_prior_default,
+                             hyperprior, control))
+    }
     if (length(all_blocks) == 0L) {
       # An `iid` block for a `(1 | g)` term rides the multi-block driver only,
       # so random effects alone are not a nested-Laplace model; the scale they
@@ -1070,24 +1078,11 @@
           "mode = 're_cov_nested' / 're_cov_gibbs' (which cannot carry the\n",
           "smoother / field blocks in this formula)."), call. = FALSE)
       }
-      # One value per term is the front door's contract; recycle it here because
-      # the nested backend is exempt from tulpa()'s own recycling (it does not
-      # condition by default).
-      s_re <- if (re_conditioned) {
-        s <- as.numeric(sigma_re)
-        if (length(s) == 1L) rep(s, length(re)) else s
-      } else NULL
-      if (!is.null(s_re) && length(s_re) != length(re)) {
-        stop(sprintf("`sigma_re` must have length 1 or %d (one per RE term).",
-                     length(re)), call. = FALSE)
-      }
-      re_blocks <- lapply(seq_along(re), function(m) {
-        blk <- list(type = "iid",
-                    obs_idx = as.integer(re[[m]]$group_idx),
-                    n_units = as.integer(re[[m]]$n_groups))
-        if (!is.null(s_re)) blk$sigma_grid <- s_re[m]
-        blk
-      })
+      # One value per term is the front door's contract, recycled by the
+      # converter because the nested backend is exempt from tulpa()'s own
+      # recycling (it does not condition by default).
+      re_blocks <- unlist(.re_terms_to_nl_blocks(re, bundle$n_obs, sigma_re),
+                          recursive = FALSE)
     }
     all_blocks <- c(all_blocks, re_blocks)
     # A length-1 list routes the single-block path; length > 1 the multi-block
@@ -1874,6 +1869,33 @@
 #'   lme4, aliased fixed-effect columns of a rank-deficient design are dropped
 #'   with a warning, and unused levels of a grouping factor are dropped. A
 #'   binomial response may be logical (`TRUE` a success).
+#'
+#'   A gaussian response may carry a bound term after a `|`:
+#'   * `y | cens(lower, upper)` -- each row records that the latent value fell
+#'     in `(lower, upper]`. `NA` (or `-Inf` / `Inf`) leaves a side open, so
+#'     `cens(NA, L)` is left-censored at `L` and `cens(U, NA)` right-censored
+#'     at `U`; equal bounds record the value exactly. The bounds are what the
+#'     likelihood reads: `y` may be `NA` on a censored row and, where present,
+#'     lies in its interval. This is the gaussian Tobit / interval-censored
+#'     likelihood, the one [survival::survreg()] fits with `dist = "gaussian"`
+#'     and `Surv(lower, upper, type = "interval2")`.
+#'   * `y | trunc(lb, ub)` -- `y` is observed only inside `[lb, ub]`, and its
+#'     density is the gaussian one renormalized to that range. Either bound
+#'     may be left out (`trunc(ub = 10)`) or be infinite.
+#'
+#'   Bounds are columns of `data` or expressions of them, or scalars. Both
+#'   take `family = "gaussian"` (identity link) and every random-effect and
+#'   field term the joint nested-Laplace door carries (areal, NNGP / GP and
+#'   HSGP spatial fields; RW1 / RW2 / AR1 temporal fields; smoothers), and are
+#'   fitted on that door with `mode = "auto"`, `"structured"`, `"laplace"` or
+#'   `"nested_laplace"`: a scale the call supplies is conditioned on and one it
+#'   leaves out is integrated. `fit$family` is then `"interval_gaussian"` or
+#'   `"truncated_gaussian"`. [fitted()] and [predict()] report the latent
+#'   gaussian mean; [posterior_predict()] draws the latent value for a
+#'   censored response and a draw inside its row's bounds for a truncated
+#'   one; the pointwise log-likelihood behind WAIC and LOO is the censored /
+#'   truncated one. Survival responses with a censoring indicator (Weibull,
+#'   exponential AFT) belong to tulpaObs.
 #' @param data A data frame. Incomplete rows (an `NA` in the response, a
 #'   predictor or a grouping variable) are refused, not dropped.
 #' @param family Character family name: one of [family_names()]
@@ -1885,13 +1907,6 @@
 #' @param mode Inference mode or backend. `"auto"` (default) picks the most
 #'   reliable Tier 1/Tier 2 method expected to finish; a tier (`"exact"`,
 #'   `"structured"`) or a backend name (`"laplace"`, `"mala"`, ...) forces it.
-#'   `"eb"` estimates the random-effect covariance(s) by empirical Bayes instead
-#'   of conditioning on `sigma_re` (see [tulpa_eb()]); it is opt-in by name,
-#'   because its intervals are conditional on that estimate rather than marginal
-#'   over it. The maximized likelihood integrates the fixed effects out rather
-#'   than profiling them, so with `hyperprior = "flat"` the estimate is
-#'   restricted (REML-type) -- it matches `glmmTMB(..., REML = TRUE)`, not the
-#'   ML fit of `lme4::glmer()`.
 #' @param sigma_re Random-effect SDs to condition on: length 1 (recycled) or one
 #'   per RE term. Defaults to 1 per term with a warning. Ignored by every
 #'   backend that DETERMINES the RE scale itself -- by integrating it
@@ -2242,6 +2257,12 @@ tulpa <- function(formula, data,
   }
   if (family %in% c("multinomial", "ordinal", "ordinal_probit")) {
     pf <- tulpa_parse_formula(formula)
+    if (!is.null(pf$response_bounds)) {
+      stop(sprintf(paste0(
+        "`%s()` in the response is the censored / truncated Gaussian; ",
+        "family = '%s' is a categorical response."),
+        pf$response_bounds$kind, family), call. = FALSE)
+    }
     if (pf$n_re_terms > 0L || pf$n_latent_blocks > 0L ||
         (pf$n_smooth_terms %||% 0L) > 0L ||
         (pf$n_spatial_field_blocks %||% 0L) > 0L ||
@@ -2294,6 +2315,18 @@ tulpa <- function(formula, data,
   bundle$y <- .numeric_response(family, bundle$y)
   .assert_complete_groups(bundle$re_terms)
 
+  # A censored / truncated response: the gaussian family read through the
+  # per-observation bounds the response term carries. `y_observed` is the
+  # response as the caller wrote it; what the kernel reads is the bound pair,
+  # plus, for `cens()`, a finite placeholder on every row an interval informs
+  # (an NA there would mark the row missing).
+  y_observed <- bundle$y
+  if (!is.null(bundle$response_bounds)) {
+    family <- .bounded_family(family, bundle$response_bounds)
+    bundle$y <- bundle$response_bounds$y_kernel
+    bundle$y_observed <- y_observed
+  }
+
   # A cbind(successes, failures) response carries its own denominators.
   n_trials <- .resolve_pair_trials(family, bundle$n_trials, n_trials)
 
@@ -2325,7 +2358,8 @@ tulpa <- function(formula, data,
   # kernels mask it (builtin_row_missing); every other backend is refused it
   # below, once the backend is known.
   y_missing <- is.na(bundle$y) & !is.nan(bundle$y)
-  .validate_family_support(family, bundle$y[!y_missing],
+  .validate_family_support(if (.family_reads_bounds(family)) "gaussian"
+                           else family, bundle$y[!y_missing],
                            n_trials = if (length(n_trials) == bundle$n_obs)
                              n_trials[!y_missing] else n_trials,
                            zi = !is.null(X_zi))
@@ -2348,8 +2382,20 @@ tulpa <- function(formula, data,
   }
   K <- length(bundle$re_terms %||% list())
 
+  # The outer axis an unsupplied Gaussian residual variance is integrated on,
+  # where the route reached carries one (NULL: `phi` is conditioned on).
+  phi_axis <- if (!is.null(bundle$response_bounds) &&
+                   .phi_axis_wanted(family, phi_supplied, estimate_phi)) {
+    .phi_axis_default(family, bundle$y, bundle$X, bundle$offset)
+  }
+
   # Long-format latent-factor model: one joint arm per response level, the
   # factors as the driver's lf blocks over the units.
+  if (!is.null(factors) && !is.null(bundle$response_bounds)) {
+    stop("A censored / truncated response is not carried by the ",
+         "latent-factor model, whose response levels are one formula.",
+         call. = FALSE)
+  }
   if (!is.null(factors)) {
     .lf_check_frontdoor_args(parsed, bundle, mode, list(
       sigma_re = sigma_re, weights = weights, estimate_phi = estimate_phi,
@@ -2382,7 +2428,7 @@ tulpa <- function(formula, data,
     }
     return(.tulpa_fit_spatial_field(parsed, bundle, data, family, mode, phi,
                                     sigma_re, n_trials, control, formula,
-                                    sys.call()))
+                                    sys.call(), phi_axis = phi_axis))
   }
 
   # Inline temporal varying-coefficient field(s): temporal(formula = ~ ... ||
@@ -2397,7 +2443,7 @@ tulpa <- function(formula, data,
     }
     return(.tulpa_fit_temporal_field(parsed, bundle, data, family, mode, phi,
                                      sigma_re, n_trials, control, formula,
-                                     sys.call()))
+                                     sys.call(), phi_axis = phi_axis))
   }
 
   # Spatial field. The structure arrives via the `spatial=` argument; how it is
@@ -2722,7 +2768,15 @@ tulpa <- function(formula, data,
     spatial_type = spatial_type, temporal = temporal_spec, has_re = has_re,
     feat = call_feat
   )
-  if (any(y_missing) &&
+  # Whether the joint door could carry this call (NULL), else what it lacks;
+  # read by the one-arm joint route below.
+  joint_unfit <- .joint_arm_unfit(
+    spatial_type = spatial_type, temporal_spec = temporal_spec,
+    st_block = st_block, has_latent = has_latent,
+    zi = !is.null(bundle$X_zi), weights = !is.null(weights),
+    phi2 = !is.null(phi2))
+  joint_planned <- !is.null(bundle$response_bounds)
+  if (any(y_missing) && !joint_planned &&
       !identical(BACKEND_REGISTRY[[sel$backend]]$input, "nested")) {
     stop(sprintf(paste0(
       "The response has %d NA row(s). A row with no response is read for its ",
@@ -3177,10 +3231,41 @@ tulpa <- function(formula, data,
   # VarCorr() / print() report the value the fit conditioned on rather than
   # re-evaluating the call in a frame that is not the caller's
   # (gcol33/tulpa#868).
+  # The one-arm joint nested-Laplace route. A censored / truncated response
+  # has no other door, and a Gaussian residual variance the caller left out is
+  # integrated there as an outer axis on the modes that integrate what the
+  # caller did not state (gcol33/tulpa#1068, #1092). Where the joint door cannot
+  # carry the call, the bounded response is refused and the dispersion keeps
+  # the selection it had.
+  requested <- sel$requested %||% mode
+  if (!is.null(bundle$response_bounds)) {
+    kind <- bundle$response_bounds$kind
+    if (!requested %in% .JOINT_ARM_BOUND_MODES) {
+      stop(sprintf(paste0(
+        "`%s()` in the response is fitted by nested Laplace on the joint ",
+        "door, whose kernels read the bounds; mode = '%s' does not carry ",
+        "them. Use mode = %s."), kind, mode,
+        paste0("'", .JOINT_ARM_BOUND_MODES, "'", collapse = ", ")),
+        call. = FALSE)
+    }
+    if (!is.null(joint_unfit)) {
+      stop(sprintf(paste0(
+        "`%s()` in the response is fitted on the one-arm joint ",
+        "nested-Laplace door, which does not carry %s."), kind, joint_unfit),
+        call. = FALSE)
+    }
+    sel <- .sel_redirect(sel, "nested_laplace_joint", sprintf(paste0(
+      "`%s()` response; the %s kernel on the one-arm joint nested-Laplace ",
+      "door%s"), kind, family,
+      if (!is.null(phi_axis)) ", the residual variance an outer-grid axis"
+      else ""), notify = FALSE)
+  }
+  joint_arm <- identical(sel$backend, "nested_laplace_joint")
+
   sigma_re_conditioned <- NULL
   if (K > 0L &&
       !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs", "eb", "agq",
-                          "nested_laplace") &&
+                          "nested_laplace", "nested_laplace_joint") &&
       BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
     if (is.null(sigma_re)) {
       sigma_re <- rep(1, K)
@@ -3211,7 +3296,8 @@ tulpa <- function(formula, data,
            call. = FALSE)
     }
     sigma_re_conditioned <- sigma_re
-  } else if (K > 0L && identical(sel$backend, "nested_laplace") &&
+  } else if (K > 0L &&
+             sel$backend %in% c("nested_laplace", "nested_laplace_joint") &&
              !is.null(sigma_re)) {
     # An explicit sigma_re conditions the nested path too (a one-point grid).
     sigma_re_conditioned <- if (length(sigma_re) == 1L) rep(sigma_re, K)
@@ -3226,7 +3312,9 @@ tulpa <- function(formula, data,
   # a choice. Raised only for the families that READ a dispersion, so binomial
   # and poisson stay quiet, and not when `estimate_phi` is on, where the value
   # is a starting point rather than a conditioning one.
-  if (!phi_supplied && !isTRUE(estimate_phi) &&
+  # A bounded response's residual variance is integrated on the joint route
+  # instead.
+  if (!phi_supplied && !isTRUE(estimate_phi) && !joint_arm &&
       .family_base(family) %in% .PHI_FAMILIES) {
     warning("tulpa(): `phi` not supplied; conditioning on phi = 1 for ",
             "family = '", family, "'. Pass `phi` to override, or ",
@@ -3260,7 +3348,8 @@ tulpa <- function(formula, data,
                                hyperprior = hyperprior,
                                warm_start = warm_start,
                                estimate_phi = estimate_phi,
-                               beta_prior_default = beta_prior_resolved)
+                               beta_prior_default = beta_prior_resolved,
+                               phi_axis = phi_axis)
 
     # sel$backend is itself a valid mode, so dispatch resolves to the same
     # backend.
@@ -3320,6 +3409,10 @@ tulpa <- function(formula, data,
     # blocks having been appended last). Absent on every other backend.
     fit$re_block_index       <- attr(args, "re_block_index")
     fit$re_block_conditioned <- attr(args, "re_block_conditioned")
+    if (joint_arm) {
+      fit <- .joint_arm_attach_re(fit, args$prior, fit$re_block_index,
+                                  bundle$re_terms %||% list())
+    }
     fit$N           <- fit$N %||% bundle$n_obs
     # Fixed-effect design for fitted()/predict(newdata = NULL), plus the pieces
     # posterior_predict() needs to rebuild the in-sample linear predictor and
@@ -3331,11 +3424,18 @@ tulpa <- function(formula, data,
     fit$ziformula        <- if (!is.null(bundle$X_zi)) ziformula
     fit$zi_model_matrix  <- bundle$X_zi
     fit$offset       <- fit$offset %||% bundle$offset
-    fit$y            <- fit$y %||% bundle$y
+    # A joint fit's own `$y` is its per-arm response list; the flat response is
+    # the one the caller wrote.
+    fit$y            <- if (joint_arm) y_observed else fit$y %||% bundle$y
+    fit$response_bounds <- bundle$response_bounds
     fit$n_trials     <- fit$n_trials %||% n_trials
     # Named obs_weights: nested fits already carry grid `$weights`.
     fit$obs_weights  <- weights
-    fit$phi          <- fit$phi %||% phi
+    fit$phi          <- if (joint_arm) .joint_arm_dispersion(fit, phi)$phi
+                        else fit$phi %||% phi
+    if (joint_arm && isTRUE(.joint_arm_dispersion(fit, phi)$phi_estimated)) {
+      fit$phi_estimated <- TRUE
+    }
     fit$phi2         <- phi2
     fit$re_design    <- .re_design_of(bundle)
     # Attach the validated spatial spec so predict() can krige the field to new

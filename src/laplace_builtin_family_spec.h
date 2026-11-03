@@ -77,14 +77,16 @@ struct BuiltinFamilyResponse {
     // Interval-censored Gaussian bounds (interval_gaussian family). When non-null
     // and family == "interval_gaussian", row i records that the latent value fell
     // in (lower[i], upper[i]] on the linear-predictor scale; -Inf / +Inf are the
-    // open outer classes and phi is the latent SD. Null => not an interval arm.
+    // open outer classes, a finite lower[i] == upper[i] is the value observed
+    // exactly, and phi is the latent SD. Null => not an interval arm.
     const double* lower = nullptr;
     const double* upper = nullptr;
-    // Upper-truncated Gaussian ceiling (truncated_gaussian family).
-    // When non-null and family == "truncated_gaussian", row i's latent log-response
-    // is Normal(eta, phi^2) truncated to <= trunc_upper[i] on the predictor scale
-    // (+Inf => no truncation). The point response y[i] is still read (the density is
-    // evaluated at it); only the upper bound is added. Null => not a truncated arm.
+    // Truncation bounds (truncated_gaussian family). When either is non-null
+    // and family == "truncated_gaussian", row i's response is Normal(eta, phi^2)
+    // truncated to [trunc_lower[i], trunc_upper[i]] on the predictor scale; a
+    // null array or an infinite entry leaves that side untruncated. The point
+    // response y[i] is still read (the density is evaluated at it).
+    const double* trunc_lower = nullptr;
     const double* trunc_upper = nullptr;
     // Second dispersion channel: the Student-t degrees of freedom (and any
     // future two-parameter family's extra parameter, e.g. the Tweedie power).
@@ -127,13 +129,14 @@ struct BuiltinFamilyResponse {
         // as an unrelated dispatch failure.
         if (family_reads_response_bounds(family)) {
             const bool have = (family == "truncated_gaussian")
-                ? (trunc_upper != nullptr)
+                ? (trunc_lower != nullptr || trunc_upper != nullptr)
                 : (lower != nullptr && upper != nullptr);
             if (!have) {
                 Rcpp::stop("family '%s' needs its per-observation bound(s) on "
-                           "the response (`trunc_upper` for truncated_gaussian, "
-                           "`lower` / `upper` for interval_gaussian); the "
-                           "likelihood carries none.", family.c_str());
+                           "the response (`trunc_lower` / `trunc_upper` for "
+                           "truncated_gaussian, `lower` / `upper` for "
+                           "interval_gaussian); the likelihood carries none.",
+                           family.c_str());
             }
         }
         // Ahead of the early return: the AD ladder dispatches on ad_kind for
@@ -164,6 +167,19 @@ inline bool builtin_row_missing(const BuiltinFamilyResponse* r, int i) {
     return r->y && response_is_missing(r->y[i]);
 }
 
+// Whether the payload carries a truncated arm's bounds, and row i's bounds
+// with an absent side read as open.
+inline bool builtin_is_truncated(const BuiltinFamilyResponse* r) {
+    return (r->trunc_lower || r->trunc_upper) &&
+           r->family == "truncated_gaussian";
+}
+inline double builtin_trunc_lower(const BuiltinFamilyResponse* r, int i) {
+    return r->trunc_lower ? r->trunc_lower[i] : R_NegInf;
+}
+inline double builtin_trunc_upper(const BuiltinFamilyResponse* r, int i) {
+    return r->trunc_upper ? r->trunc_upper[i] : R_PosInf;
+}
+
 // LikelihoodFn<double>: per-obs log-likelihood for the built-in family.
 //
 // `data.zi_type` selects the zero-inflation channel used by the SAMPLER paths,
@@ -189,8 +205,9 @@ inline double builtin_family_ll_double(
                                          r->family, r->phi, r->phi2);
     }
     const double ll =
-        (r->trunc_upper && r->family == "truncated_gaussian")
-        ? log_lik_truncated_gaussian(r->y[i], r->trunc_upper[i], eta[0], r->phi)
+        builtin_is_truncated(r)
+        ? log_lik_truncated_gaussian(r->y[i], builtin_trunc_lower(r, i),
+                                     builtin_trunc_upper(r, i), eta[0], r->phi)
         : (r->lower && r->family == "interval_gaussian")
         ? log_lik_interval_gaussian(r->lower[i], r->upper[i], eta[0], r->phi)
         : (r->slog_y && r->family == "beta")
@@ -227,8 +244,10 @@ inline void builtin_family_eta_weights(
     }
     const int nt = r->n_trials ? r->n_trials[i] : 1;
     const GradHess gh =
-        (r->trunc_upper && r->family == "truncated_gaussian")
-        ? grad_hess_truncated_gaussian(r->y[i], r->trunc_upper[i], eta[0], r->phi)
+        builtin_is_truncated(r)
+        ? grad_hess_truncated_gaussian(r->y[i], builtin_trunc_lower(r, i),
+                                       builtin_trunc_upper(r, i), eta[0],
+                                       r->phi)
         : (r->lower && r->family == "interval_gaussian")
         ? grad_hess_interval_gaussian(r->lower[i], r->upper[i], eta[0], r->phi)
         : (r->slog_y && r->family == "beta")
@@ -309,7 +328,7 @@ inline double builtin_family_ll_eta_weights(
     }
     const bool plain =
         r->prepared && data.zi_type == ZIType::NONE &&
-        !(r->trunc_upper && r->family == "truncated_gaussian") &&
+        !builtin_is_truncated(r) &&
         !(r->lower && r->family == "interval_gaussian") &&
         !(r->slog_y && r->family == "beta");
     if (!plain) {

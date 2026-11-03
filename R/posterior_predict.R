@@ -596,16 +596,20 @@
 #' @keywords internal
 .tulpa_response_process <- function(object, accessor) {
   arms <- object$responses
+  one <- .tulpa_single_arm(object)
+  # A tulpa() fit routed through the one-arm joint door carries the process
+  # flat AND its arm, whose name locates an integrated dispersion axis.
   if (is.character(object$family) && length(object$family) == 1L) {
     return(list(family = object$family, n_trials = object$n_trials,
-                phi = object$phi, phi2 = object$phi2, y = object$y, arm = NULL))
+                phi = object$phi, phi2 = object$phi2, y = object$y,
+                arm = one$arm, bounds = object$response_bounds))
   }
-  one <- .tulpa_single_arm(object)
   if (!is.null(one) && is.character(one$spec$family) &&
       length(one$spec$family) == 1L) {
     a <- one$spec
     return(list(family = a$family, n_trials = a$n_trials,
-                phi = a$phi, phi2 = a$phi2, y = a$y, arm = one$arm))
+                phi = a$phi, phi2 = a$phi2, y = a$y, arm = one$arm,
+                bounds = .joint_arm_bounds(a)))
   }
   what <- if (is.list(arms) && length(arms) > 1L) {
     sprintf(paste0("a single response process to sample from: it has %d arms, ",
@@ -1209,13 +1213,16 @@ posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
   # One dispersion per replicate: the cell's own where the fit integrated a
   # dispersion axis, the fit's scalar repeated otherwise.
   phi <- .tulpa_phi_draws(object, proc, attr(eta, "cells"), nrow(eta))
+  bounds <- if (is.null(newdata)) proc$bounds
+            else .response_bounds_at(object, newdata)
 
   yrep <- matrix(NA_real_, nrow(eta), ncol(eta))
   for (s in seq_len(nrow(eta))) {
     yrep[s, ] <- .response_sample(eta[s, ],
                                   if (!is.null(logit_zi)) logit_zi[s, ],
                                   proc$family, n_trials = n_trials,
-                                  phi = phi[s], phi2 = proc$phi2)
+                                  phi = phi[s], phi2 = proc$phi2,
+                                  bounds = bounds)
   }
   yrep
 }

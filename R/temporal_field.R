@@ -134,7 +134,7 @@
 # joint nested-Laplace model through the shared .bar_field_fit_core.
 .tulpa_fit_temporal_field <- function(parsed, bundle, data, family, mode, phi,
                                       sigma_re, n_trials, control, formula,
-                                      call = NULL) {
+                                      call = NULL, phi_axis = NULL) {
   .bar_field_check_mode(mode, "temporal")
   if (!is.null(parsed$temporal_var)) {
     stop("Cannot combine an inline temporal(formula = ) field with a ",
@@ -149,7 +149,8 @@
   core <- .bar_field_fit_core(
     blocks = blocks, block_names = block_names, bundle = bundle,
     parsed = parsed, family = family, phi = phi, n_trials = n_trials,
-    sigma_re = sigma_re, control = control, arm_spatial_idx = NULL)
+    sigma_re = sigma_re, control = control, arm_spatial_idx = NULL,
+    phi_axis = phi_axis)
   jfit <- core$jfit
 
   # The second outer axis of an AR1 field is the AR1 correlation rho; rw1 / rw2

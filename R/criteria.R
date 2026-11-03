@@ -856,7 +856,7 @@ print.tulpa_wbic <- function(x, digits = 2, ...) {
   phi <- .tulpa_phi_draws(object, proc, attr(eta, "cells"), S)
   PHI <- if (length(unique(phi)) == 1L) phi[1L] else matrix(phi, S, n)
   ll <- .response_loglik(eta, logit_zi, Y, proc$family, n_trials = NT,
-                         phi = PHI, phi2 = proc$phi2)
+                         phi = PHI, phi2 = proc$phi2, bounds = proc$bounds)
   dim(ll) <- dim(eta)
   ll
 }

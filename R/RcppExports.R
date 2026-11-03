@@ -189,6 +189,10 @@ cpp_link_ladder <- function(eta, link) {
     .Call(`_tulpa_cpp_link_ladder`, eta, link)
 }
 
+cpp_bound_gaussian_loglik <- function(y, a, b, eta, sigma, family) {
+    .Call(`_tulpa_cpp_bound_gaussian_loglik`, y, a, b, eta, sigma, family)
+}
+
 cpp_gp_field_rows <- function(new_coords, unique_coords, field_rows, cell, sigma2_cell, phi_cell, nn, cov_type, noise) {
     .Call(`_tulpa_cpp_gp_field_rows`, new_coords, unique_coords, field_rows, cell, sigma2_cell, phi_cell, nn, cov_type, noise)
 }

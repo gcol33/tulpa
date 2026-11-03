@@ -1292,7 +1292,10 @@ inline GradHess grad_hess_beta_grouped(double slog_y, double slog_1my, int n,
 // Interval-censored Gaussian latent (ordered-probit with KNOWN thresholds). The
 // latent value is Normal(eta, sigma^2) and the observation records only that it
 // fell in the half-open interval (lower, upper]; lower = -Inf / upper = +Inf are
-// the open outer classes. With phi = sigma this is the discrete-class sibling of
+// the open outer classes. A finite lower == upper records the value itself: the
+// row contributes the Gaussian DENSITY there, so one response vector carries
+// exact, left-, right- and interval-censored rows (the Tobit / survreg
+// gaussian likelihood). With phi = sigma this is the discrete-class sibling of
 // the gaussian arm: the log-density is the probability MASS of the observed
 // class, P = Phi((upper - eta)/sigma) - Phi((lower - eta)/sigma), so the score is
 // a genuine PMF over classes with no change-of-variable Jacobian. P(eta) is
@@ -1352,6 +1355,17 @@ inline IntervalGaussian interval_gaussian_core(double lower, double upper,
     const double inv_s = 1.0 / sigma;
     const bool lo_open = !R_finite(lower);   // -Inf
     const bool hi_open = !R_finite(upper);   // +Inf
+    // An interval carrying no mass -- upper below lower -- is outside the
+    // support: -Inf is what the line search refuses, so the solve backtracks
+    // off it instead of reporting it as a mode.
+    if (upper < lower) return { R_NegInf, 0.0, kCensoredCurvFloor };
+    if (!lo_open && !hi_open && lower == upper) {
+        // An exactly observed value: the density, with the -log(sigma) the
+        // mass of a censored row does not carry.
+        const double z = (lower - eta) * inv_s;
+        return { portable_dnorm_log(z) - std::log(sigma), z * inv_s,
+                 inv_s * inv_s };
+    }
     const double zl = lo_open ? R_NegInf : (lower - eta) * inv_s;
     const double zu = hi_open ? R_PosInf : (upper - eta) * inv_s;
 
@@ -1381,9 +1395,7 @@ inline IntervalGaussian interval_gaussian_core(double lower, double upper,
         logP = P > 0.0 ? std::log(P) : R_NegInf;
     }
 
-    // An interval carrying no mass -- upper <= lower -- is outside the support.
-    // -Inf is what the line search refuses, so the solve backtracks off it
-    // instead of reporting it as a mode.
+    // Mass that underflows to zero is outside the support the same way.
     if (!(logP > R_NegInf)) return { R_NegInf, 0.0, kCensoredCurvFloor };
 
     const double lpl = lo_open ? R_NegInf : portable_dnorm_log(zl);
@@ -1427,73 +1439,60 @@ inline GradHess grad_hess_interval_gaussian(double lower, double upper,
     return { r.grad, r.neg_hess };
 }
 
-// Upper-truncated Gaussian latent. The latent response is
-// Normal(eta, sigma^2) CONDITIONED on y <= u, a known upper bound on the response
-// scale (+Inf => no truncation). This is a truncated GAUSSIAN: it operates on the
-// response it is given, exactly as the plain gaussian family does, so a consumer
-// gets a truncated-LOGNORMAL by feeding it log(cover) with u = log(ceiling) (the
-// same way the cover hurdle already fits its lognormal arm with family="gaussian"
-// on log-cover; the -log y Jacobian is the consumer's, added outside the engine).
-// It is the continuous-density counterpart of interval_gaussian: the interval
-// family scores the probability MASS of a censored class, this scores a truncated
-// DENSITY -- the Gaussian density divided by the retained mass Phi((u - eta)/sigma).
-// Distinct objects: truncation conditions the sampling law, censoring records an
-// interval.
+// Truncated Gaussian latent. The latent response is Normal(eta, sigma^2)
+// CONDITIONED on t_lower <= y <= t_upper, known bounds on the response scale
+// (-Inf / +Inf => that side untruncated). This is a truncated GAUSSIAN: it
+// operates on the response it is given, exactly as the plain gaussian family
+// does, so a consumer gets a truncated-LOGNORMAL by feeding it log(cover) with
+// t_upper = log(ceiling) (the -log y Jacobian is the consumer's, added outside
+// the engine). Truncation conditions the sampling law, where censoring records
+// an interval, and the two share one quantity: the retained mass is the
+// interval mass P(eta) = Phi(b) - Phi(a), a = (t_lower - eta)/sigma,
+// b = (t_upper - eta)/sigma, which interval_gaussian_core already forms in log
+// space with its score and curvature. So
 //
-//   z = (y - eta)/sigma, a = (u - eta)/sigma, lambda = phi(a)/Phi(a)
-//   ll            = -0.5 log(2 pi sigma^2) - 0.5 z^2 - log Phi(a)
-//   d logf/d eta  = (z + lambda) / sigma
-//   -d2/d eta2    = (1 - lambda (a + lambda)) / sigma^2
+//   ll           = log N(y; eta, sigma^2) - log P(eta)
+//   d ll/d eta   = z / sigma - d log P / d eta
+//   -d2/d eta2   = 1 / sigma^2 - (-d2 log P / d eta2)
 //
-// As u -> +Inf (a -> +Inf, lambda -> 0) this reduces EXACTLY to the gaussian arm.
-// 0 < lambda(a + lambda) < 1 for finite a (the truncated-normal variance factor),
-// so -d2 logf/d eta2 > 0 and Newton needs no Fisher fallback -- the same
-// log-concavity interval_gaussian relies on. lambda is formed in log space so it
-// stays finite in deep truncation (a -> -Inf, predicted mean far above the
-// bound); the curvature is floored at the flat far tail, mirroring
-// interval_gaussian_core.
+// with z = (y - eta)/sigma. The curvature is Var(truncated normal) / sigma^4,
+// positive for any bounds with t_lower < t_upper, so Newton needs no Fisher
+// fallback; it is floored at the flat far tail, mirroring the interval core.
+// With both bounds open this is the gaussian arm exactly.
 struct TruncatedGaussian {
     double ll;        // log density of the truncated Gaussian (no response Jacobian)
     double grad;      // d logf / d eta
     double neg_hess;  // -d2 logf / d eta2  (>= 0)
 };
 
-inline TruncatedGaussian truncated_gaussian_core(double y, double u_upper,
-                                                 double eta, double sigma) {
+inline TruncatedGaussian truncated_gaussian_core(double y, double t_lower,
+                                                 double t_upper, double eta,
+                                                 double sigma) {
     const double inv_s = 1.0 / sigma;
     const double z = (y - eta) * inv_s;
-
-    double a, logPhi_a, lambda;
-    if (!R_finite(u_upper)) {            // +Inf bound => untruncated gaussian
-        a = R_PosInf;
-        logPhi_a = 0.0;
-        lambda   = 0.0;
-    } else {
-        a = (u_upper - eta) * inv_s;
-        logPhi_a = tulpa::math::portable_pnorm_log(a);            // log Phi(a)
-        lambda   = std::exp(tulpa::math::portable_dnorm_log(a)
-                            - logPhi_a);                          // phi(a)/Phi(a), stable
+    const double ll_gauss = -0.5 * std::log(2.0 * M_PI * sigma * sigma)
+                            - 0.5 * z * z;
+    if (!R_finite(t_lower) && !R_finite(t_upper)) {
+        return { ll_gauss, z * inv_s, inv_s * inv_s };
     }
-
-    const double ll = -0.5 * std::log(2.0 * M_PI * sigma * sigma)
-                      - 0.5 * z * z - logPhi_a;
-    const double grad = (z + lambda) * inv_s;
-    // lambda * (a + lambda): guard the 0 * Inf at a = +Inf (lambda = 0 there).
-    const double curv_term = (lambda == 0.0) ? 0.0 : lambda * (a + lambda);
-    double nh = (1.0 - curv_term) * inv_s * inv_s;
+    const IntervalGaussian m =
+        interval_gaussian_core(t_lower, t_upper, eta, sigma);
+    double nh = inv_s * inv_s - m.neg_hess;
     if (nh < kCensoredCurvFloor) nh = kCensoredCurvFloor;
-
-    return { ll, grad, nh };
+    return { ll_gauss - m.ll, z * inv_s - m.grad, nh };
 }
 
-inline double log_lik_truncated_gaussian(double y, double u_upper,
-                                         double eta, double sigma) {
-    return truncated_gaussian_core(y, u_upper, eta, sigma).ll;
+inline double log_lik_truncated_gaussian(double y, double t_lower,
+                                         double t_upper, double eta,
+                                         double sigma) {
+    return truncated_gaussian_core(y, t_lower, t_upper, eta, sigma).ll;
 }
 
-inline GradHess grad_hess_truncated_gaussian(double y, double u_upper,
-                                             double eta, double sigma) {
-    const TruncatedGaussian r = truncated_gaussian_core(y, u_upper, eta, sigma);
+inline GradHess grad_hess_truncated_gaussian(double y, double t_lower,
+                                             double t_upper, double eta,
+                                             double sigma) {
+    const TruncatedGaussian r =
+        truncated_gaussian_core(y, t_lower, t_upper, eta, sigma);
     return { r.grad, r.neg_hess };
 }
 

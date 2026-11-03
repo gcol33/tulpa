@@ -48,24 +48,30 @@ linear predictor \verb{eta = E[log y]} (identity link on
 the log scale); the \code{-log(y)} Jacobian is included in
 the kernel's \code{log_lik}. \code{"interval_gaussian"} is an
 interval-censored Gaussian latent: row \code{i} records
-only that a \code{Normal(eta_i, phi^2)} value fell in
+only that a \code{Normal(eta_i, phi)} value fell in
 \verb{(lower[i], upper[i]]}, and contributes that
-probability. \code{"truncated_gaussian"} is a Gaussian
-\code{Normal(eta_i, phi^2)} response conditioned on
-\code{y[i] <= trunc_upper[i]}.
+probability; equal finite bounds record the value
+itself, and the row contributes its density.
+\code{"truncated_gaussian"} is a Gaussian
+\code{Normal(eta_i, phi)} response conditioned on
+\verb{trunc_lower[i] <= y[i] <= trunc_upper[i]}.
 \item \code{lower}, \code{upper} -- numeric \verb{[N_arm]}, the interval bounds of an
 \code{"interval_gaussian"} arm on the linear-predictor
 scale, read in place of \code{y}; \code{-Inf} / \code{Inf} are the
-open outer classes, and each \code{lower} lies strictly
-below its \code{upper}. Supplied together.
-\item \code{trunc_upper} -- numeric \verb{[N_arm]}, the upper truncation point of a
-\code{"truncated_gaussian"} arm on the scale of \code{y}; \code{Inf}
-leaves a row untruncated.
+open outer classes, each \code{lower} lies at or below its
+\code{upper}, and equal bounds are finite. Supplied
+together.
+\item \code{trunc_lower}, \code{trunc_upper} -- numeric \verb{[N_arm]}, the truncation
+points of a \code{"truncated_gaussian"} arm on the scale of
+\code{y}, either one alone; an absent side or an infinite
+entry leaves that side of a row untruncated.
 \item \code{phi}         -- numeric dispersion, default \code{1}: the residual
-VARIANCE for \code{"gaussian"} and \code{"lognormal"} (on the
-log scale), the residual SD for \code{"interval_gaussian"}
-and \code{"truncated_gaussian"}, the size for
-\code{"neg_binomial_2"}, the precision for \code{"beta"}.
+VARIANCE for \code{"gaussian"}, \code{"lognormal"} (on the log
+scale), \code{"interval_gaussian"} and
+\code{"truncated_gaussian"} -- the last two are the
+gaussian read through a bound, and keep its
+convention -- the size for \code{"neg_binomial_2"}, the
+precision for \code{"beta"}.
 \item \code{field_coef}  -- optional per-arm field coefficient controlling
 this arm's multiplier on the shared latent field's
 amplitude. One of:
@@ -274,8 +280,8 @@ and the grid values):
 \item \code{gaussian} -- residual VARIANCE, the one engine convention (the SD is
 \code{sqrt(phi)}). Use \code{phi_grid} to estimate it as a hyperparameter
 instead of pinning it pre-fit.
-\item \code{interval_gaussian}, \code{truncated_gaussian} -- residual SD of the latent
-Gaussian.
+\item \code{interval_gaussian}, \code{truncated_gaussian} -- residual VARIANCE of the
+latent Gaussian, as for \code{gaussian}.
 \item \code{lognormal} -- residual variance on the log scale; identical kernel
 parameterization as \code{gaussian} plus the \code{-log(y)} Jacobian.
 \item \code{neg_binomial_2} -- dispersion (variance is \code{mu + mu^2/phi}).

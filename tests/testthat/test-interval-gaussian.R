@@ -22,12 +22,23 @@
 }
 
 test_that("an empty interval is refused rather than floored", {
-    # upper <= lower carries no mass: -Inf is what the line search backtracks
+    # upper < lower carries no mass: -Inf is what the line search backtracks
     # off, where a floored finite value would be accepted as a trial point.
     load_cpp_fixture("interval_gaussian")
-    out <- cpp_interval_gaussian_terms(1.0, 1.0, 0.0, 1.0)
+    out <- cpp_interval_gaussian_terms(1.0, 0.5, 0.0, 1.0)
     expect_equal(out[["ll"]], -Inf)
     expect_equal(out[["grad"]], 0)
+})
+
+test_that("equal finite bounds are the value observed exactly", {
+    # lower == upper records the latent value itself, so the row carries the
+    # Gaussian density and its exact score and curvature.
+    load_cpp_fixture("interval_gaussian")
+    out <- cpp_interval_gaussian_terms(1.0, 1.0, 0.2, 0.7)
+    expect_equal(out[["ll"]], stats::dnorm(1.0, 0.2, 0.7, log = TRUE),
+                 tolerance = 1e-12)
+    expect_equal(out[["grad"]], (1.0 - 0.2) / 0.7^2, tolerance = 1e-12)
+    expect_equal(out[["neg_hess"]], 1 / 0.7^2, tolerance = 1e-12)
 })
 
 skip_on_cran_budget()

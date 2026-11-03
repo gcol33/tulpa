@@ -75,10 +75,12 @@ struct JointArm {
     // open outer classes. Empty => not an interval arm.
     Rcpp::NumericVector lower;
     Rcpp::NumericVector upper;
-    // Upper-truncated Gaussian ceiling. Optional; when present
-    // (and family == "truncated_gaussian") row i's latent log-response is truncated
-    // to <= trunc_upper[i] on the predictor scale (+Inf => no truncation). The point
-    // response y[i] is still read. Empty => not a truncated arm.
+    // Truncation bounds. Optional; when either is present (and family ==
+    // "truncated_gaussian") row i's response is truncated to
+    // [trunc_lower[i], trunc_upper[i]] on the predictor scale (an empty vector
+    // or an infinite entry => that side untruncated). The point response y[i]
+    // is still read. Both empty => not a truncated arm.
+    Rcpp::NumericVector trunc_lower;
     Rcpp::NumericVector trunc_upper;
     // Per-arm field coefficient: multiplied into the field amplitude this
     // arm sees on each shared latent block (sigma_arm = field_coef * sigma).
@@ -220,6 +222,7 @@ inline void build_joint_arm_specs_into(const std::vector<JointArm>& arms,
             r.slog_1my = (a.slog_1my.size() > 0) ? REAL(a.slog_1my) : nullptr;
             r.lower    = (a.lower.size()    > 0) ? REAL(a.lower)    : nullptr;
             r.upper    = (a.upper.size()    > 0) ? REAL(a.upper)    : nullptr;
+            r.trunc_lower = (a.trunc_lower.size() > 0) ? REAL(a.trunc_lower) : nullptr;
             r.trunc_upper = (a.trunc_upper.size() > 0) ? REAL(a.trunc_upper) : nullptr;
             r.prepare();
             s.builtin_responses.push_back(r);

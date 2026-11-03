@@ -506,7 +506,10 @@ format_re_lhs <- function(re) {
 #' @param formula A formula object (e.g., `y ~ x + (1 | group)`)
 #' @return A list with:
 #'   - `response`: character, the response variable label (`NULL` if none)
-#'   - `response_expr`: language object, the LHS of `~` (`NULL` if none)
+#'   - `response_expr`: language object, the response (`NULL` if none); for
+#'     `y | cens(lower, upper)` / `y | trunc(lb, ub)` the `y`
+#'   - `response_bounds`: for a censored / truncated response, its kind and
+#'     unevaluated bound expressions; `NULL` otherwise
 #'   - `fixed_formula`: formula, the fixed-effects-only formula
 #'   - `random_effects`: list of parsed RE specifications
 #'   - `n_re_terms`: integer, number of RE terms
@@ -534,6 +537,11 @@ tulpa_parse_formula <- function(formula) {
     response_expr <- NULL
     rhs <- formula[[2]]
   }
+  # A censored / truncated response, `y | cens(lower, upper)` or
+  # `y | trunc(lb, ub)`: the response is the left operand of the `|`, and the
+  # bound term rides alongside it, evaluated against the data with the rest.
+  response_bounds <- .parse_response_bounds(response_expr)
+  if (!is.null(response_bounds)) response_expr <- response_bounds$response_expr
   response <- if (is.null(response_expr)) NULL else paste(deparse(response_expr, width.cutoff = 500L), collapse = "")
 
   # Inline areal varying-coefficient fields: spatial(graph = , formula =
@@ -662,6 +670,7 @@ tulpa_parse_formula <- function(formula) {
     list(
       response        = response,
       response_expr   = response_expr,
+      response_bounds = response_bounds,
       fixed_formula   = fixed_formula,
       random_effects  = random_effects,
       n_re_terms      = length(random_effects),
@@ -799,6 +808,8 @@ tulpa_parse_formula <- function(formula) {
 #'   - `X`: fixed-effects design matrix
 #'   - `offset`: numeric vector or NULL
 #'   - `re_terms`: list of RE data structures (group indices, slope matrices)
+#'   - `response_bounds`: for `y | cens()` / `y | trunc()`, the evaluated
+#'     bounds (`lower`, `upper`, open sides infinite); `NULL` otherwise
 #'
 #' @keywords internal
 #' @examples
@@ -840,6 +851,11 @@ tulpa_build_model_data <- function(parsed, data) {
   off <- stats::model.offset(mf)
 
   # Random effects
+  # Bounds of a censored / truncated response, evaluated on the same rows.
+  response_bounds <- if (!is.null(parsed$response_bounds)) {
+    .eval_response_bounds(parsed$response_bounds, data, formula_env, nrow(X), y)
+  }
+
   re_terms <- list()
   for (i in seq_along(parsed$random_effects)) {
     re_spec <- parsed$random_effects[[i]]
@@ -868,7 +884,8 @@ tulpa_build_model_data <- function(parsed, data) {
     n_obs       = nrow(X),
     n_fixed     = ncol(X),
     n_re_terms  = length(re_terms),
-    fixed_names = colnames(X)
+    fixed_names = colnames(X),
+    response_bounds = response_bounds
   )
 }
 

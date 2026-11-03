@@ -675,6 +675,22 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_bound_gaussian_loglik
+Rcpp::NumericVector cpp_bound_gaussian_loglik(const Rcpp::NumericVector& y, const Rcpp::NumericVector& a, const Rcpp::NumericVector& b, const Rcpp::NumericVector& eta, const Rcpp::NumericVector& sigma, std::string family);
+RcppExport SEXP _tulpa_cpp_bound_gaussian_loglik(SEXP ySEXP, SEXP aSEXP, SEXP bSEXP, SEXP etaSEXP, SEXP sigmaSEXP, SEXP familySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type a(aSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type b(bSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type sigma(sigmaSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_bound_gaussian_loglik(y, a, b, eta, sigma, family));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_gp_field_rows
 Rcpp::NumericMatrix cpp_gp_field_rows(const Rcpp::NumericMatrix& new_coords, const Rcpp::NumericMatrix& unique_coords, const Rcpp::NumericMatrix& field_rows, const Rcpp::IntegerVector& cell, const Rcpp::NumericVector& sigma2_cell, const Rcpp::NumericVector& phi_cell, int nn, int cov_type, const Rcpp::NumericMatrix& noise);
 RcppExport SEXP _tulpa_cpp_gp_field_rows(SEXP new_coordsSEXP, SEXP unique_coordsSEXP, SEXP field_rowsSEXP, SEXP cellSEXP, SEXP sigma2_cellSEXP, SEXP phi_cellSEXP, SEXP nnSEXP, SEXP cov_typeSEXP, SEXP noiseSEXP) {
@@ -3180,6 +3196,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_family_ad_terms", (DL_FUNC) &_tulpa_cpp_family_ad_terms, 6},
     {"_tulpa_cpp_glmm_elt_terms", (DL_FUNC) &_tulpa_cpp_glmm_elt_terms, 5},
     {"_tulpa_cpp_link_ladder", (DL_FUNC) &_tulpa_cpp_link_ladder, 2},
+    {"_tulpa_cpp_bound_gaussian_loglik", (DL_FUNC) &_tulpa_cpp_bound_gaussian_loglik, 6},
     {"_tulpa_cpp_gp_field_rows", (DL_FUNC) &_tulpa_cpp_gp_field_rows, 9},
     {"_tulpa_cpp_gpu_available", (DL_FUNC) &_tulpa_cpp_gpu_available, 0},
     {"_tulpa_cpp_gpu_backend_kind", (DL_FUNC) &_tulpa_cpp_gpu_backend_kind, 0},

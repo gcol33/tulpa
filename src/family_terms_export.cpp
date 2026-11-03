@@ -518,3 +518,38 @@ Rcpp::NumericMatrix cpp_link_ladder(Rcpp::NumericVector eta, std::string link) {
   }
   return out;
 }
+
+// Per-observation log-likelihood of the two Gaussian families whose density
+// reads a bound rather than only the point response, from the closed forms the
+// Laplace kernels solve under: `interval_gaussian` reads (a, b) as the class
+// interval (lower == upper finite: the value observed exactly), and
+// `truncated_gaussian` reads them as the truncation bounds of a density
+// evaluated at `y`. `sigma` is the residual SD, recycled when length 1, so a
+// draw-by-observation matrix is read one row at a time.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_bound_gaussian_loglik(const Rcpp::NumericVector& y,
+                                              const Rcpp::NumericVector& a,
+                                              const Rcpp::NumericVector& b,
+                                              const Rcpp::NumericVector& eta,
+                                              const Rcpp::NumericVector& sigma,
+                                              std::string family) {
+  const R_xlen_t n = eta.size();
+  if (y.size() != n || a.size() != n || b.size() != n ||
+      (sigma.size() != 1 && sigma.size() != n)) {
+    Rcpp::stop("cpp_bound_gaussian_loglik(): y, a, b and eta must have the "
+               "same length, and sigma length 1 or that length.");
+  }
+  const bool interval = family == "interval_gaussian";
+  if (!interval && family != "truncated_gaussian") {
+    Rcpp::stop("cpp_bound_gaussian_loglik(): family '%s' reads no bound.",
+               family.c_str());
+  }
+  Rcpp::NumericVector out(n);
+  for (R_xlen_t i = 0; i < n; ++i) {
+    const double s = sigma[sigma.size() == 1 ? 0 : i];
+    out[i] = interval
+        ? tulpa::log_lik_interval_gaussian(a[i], b[i], eta[i], s)
+        : tulpa::log_lik_truncated_gaussian(y[i], a[i], b[i], eta[i], s);
+  }
+  return out;
+}

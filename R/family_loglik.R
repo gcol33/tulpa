@@ -679,8 +679,12 @@ family_names <- function() names(.FAMILY_OPS)
 # directly fitted `gaussian_log` at variance `phi^2` when the caller asked for
 # `phi`, and the error was invisible under the canonical link, where the
 # observed-minus-working curvature is identically zero and a wrong dispersion
-# cancels out of the mode motion.
-.VARIANCE_PHI_FAMILIES <- c("gaussian", "lognormal")
+# cancels out of the mode motion. The censored and truncated Gaussians are the
+# gaussian family read through a bound, so their `phi` is the same residual
+# variance: a model keeps the meaning of `phi` when a `cens()` / `trunc()` is
+# added to its response.
+.VARIANCE_PHI_FAMILIES <- c("gaussian", "lognormal", "interval_gaussian",
+                            "truncated_gaussian")
 
 # Does this family's R-side `phi` denote a variance whose kernel takes the SD?
 #' @keywords internal

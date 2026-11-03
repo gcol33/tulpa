@@ -543,9 +543,10 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 .bar_field_fit_finalize <- function(fit, core, bundle, phi, n_trials, family,
                                     formula, call, backend, selection_reason) {
   layout <- .tulpa_param_layout(bundle)
-  fit$y <- bundle$y
+  fit$y <- bundle$y_observed %||% bundle$y
   fit$n_trials <- n_trials %||% rep(1L, bundle$n_obs)
-  fit$phi <- phi
+  fit <- .joint_arm_dispersion(fit, phi)
+  fit$response_bounds <- bundle$response_bounds
   fit$draws <- core$beta_draws
   fit$draws_kind <- "iid"
   fit$means <- colMeans(core$beta_draws)
@@ -579,7 +580,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 # per grid cell then weighted-quantiled, never a plug-in of the modal value.
 .bar_field_fit_core <- function(blocks, block_names, bundle, parsed, family,
                                 phi, n_trials, sigma_re, control,
-                                arm_spatial_idx = NULL) {
+                                arm_spatial_idx = NULL, phi_axis = NULL) {
   N <- bundle$n_obs
 
   # Single random intercept (1 | g) is conditioned on at sigma_re, as on the
@@ -607,8 +608,9 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     n_re_groups = n_re_groups,
     sigma_re    = sigma_re_scalar,
     family      = family,
-    phi         = phi
+    phi         = if (is.null(phi_axis)) phi else stats::median(phi_axis)
   )
+  arm <- c(arm, .response_bound_arm_fields(bundle$response_bounds))
   # Spatial fields pin the arm's spatial_idx (legacy-kernel compatibility);
   # temporal fields carry their index on the block and leave the arm placeholder.
   if (!is.null(arm_spatial_idx)) arm$spatial_idx <- arm_spatial_idx
@@ -639,9 +641,11 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 
   jfit <- withCallingHandlers(
     tulpa_nested_laplace_joint(
-      responses = stats::setNames(list(arm), parsed$response %||% "y"),
+      responses = stats::setNames(list(arm), .JOINT_ARM_NAME),
       prior     = blocks,
       copy      = NULL,
+      phi_grid  = if (!is.null(phi_axis))
+                    stats::setNames(list(phi_axis), .JOINT_ARM_NAME),
       control   = ctrl
     ),
     warning = function(w) {
@@ -770,7 +774,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 # svc_weight. Returns a tulpa_fit.
 .tulpa_fit_spatial_field <- function(parsed, bundle, data, family, mode, phi,
                                      sigma_re, n_trials, control, formula,
-                                     call = NULL) {
+                                     call = NULL, phi_axis = NULL) {
   .bar_field_check_mode(mode, "spatial")
   if (!is.null(parsed$spatial_var)) {
     stop("Cannot combine an inline spatial(graph = , formula = ) field with a ",
@@ -789,7 +793,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     block_names = if (is_mcar) blocks[[1L]]$name else block_names,
     bundle = bundle, parsed = parsed, family = family, phi = phi,
     n_trials = n_trials, sigma_re = sigma_re, control = control,
-    arm_spatial_idx = blocks[[1L]]$spatial_idx[[1L]])
+    arm_spatial_idx = blocks[[1L]]$spatial_idx[[1L]], phi_axis = phi_axis)
   jfit <- core$jfit
 
   if (is_mcar) {

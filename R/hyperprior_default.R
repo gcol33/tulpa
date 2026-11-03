@@ -48,10 +48,6 @@
   reason
 }
 
-# Families whose dispersion `phi` is a residual VARIANCE, the one dispersion the
-# SD PC prior describes by change of variables.
-.HP_VARIANCE_DISPERSION <- c("gaussian", "lognormal")
-
 # Families whose dispersion `phi` is the negative-binomial SIZE, which carries
 # the PC prior on its overdispersion 1 / size (`.NL_HYPERPRIOR$nb_size_lambda`).
 .HP_NB_SIZE_DISPERSION <- c("neg_binomial_2", "truncated_neg_binomial_2")
@@ -240,7 +236,9 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   }
   if (startsWith(bare, "phi_")) {
     fam <- tolower(family %||% "")
-    if (fam %in% .HP_VARIANCE_DISPERSION) return(scale("variance"))
+    # A residual VARIANCE (`.phi_is_variance()`) carries the SD PC prior by
+    # change of variables.
+    if (nzchar(fam) && .phi_is_variance(fam)) return(scale("variance"))
     base <- if (nzchar(fam)) .family_base(fam) else ""
     if (base %in% names(.HP_EXP_DISPERSION)) {
       rate <- .nl_hyperprior(.HP_EXP_DISPERSION[[base]])

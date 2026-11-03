@@ -21,6 +21,8 @@ is resolved to the successes column.
 \item \code{X}: fixed-effects design matrix
 \item \code{offset}: numeric vector or NULL
 \item \code{re_terms}: list of RE data structures (group indices, slope matrices)
+\item \code{response_bounds}: for \code{y | cens()} / \code{y | trunc()}, the evaluated
+bounds (\code{lower}, \code{upper}, open sides infinite); \code{NULL} otherwise
 }
 }
 \description{

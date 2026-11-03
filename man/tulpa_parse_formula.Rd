@@ -20,7 +20,10 @@ tulpa_parse_formula(formula)
 A list with:
 \itemize{
 \item \code{response}: character, the response variable label (\code{NULL} if none)
-\item \code{response_expr}: language object, the LHS of \code{~} (\code{NULL} if none)
+\item \code{response_expr}: language object, the response (\code{NULL} if none); for
+\code{y | cens(lower, upper)} / \code{y | trunc(lb, ub)} the \code{y}
+\item \code{response_bounds}: for a censored / truncated response, its kind and
+unevaluated bound expressions; \code{NULL} otherwise
 \item \code{fixed_formula}: formula, the fixed-effects-only formula
 \item \code{random_effects}: list of parsed RE specifications
 \item \code{n_re_terms}: integer, number of RE terms
