@@ -48,6 +48,46 @@
 * The runtime gradient check also compares against a Richardson estimate before
   falling back to numerical gradients (#1050).
 
+* A `latent()` block's precision axis is placed and refined like a field SD
+  axis; on an AR(2) block the log-precision posterior SD moved from 0.117 to
+  0.195 against a dense 0.210 (#1059).
+
+* `temporal_rtr()` fits the restricted temporal regression on nested Laplace
+  (#1060).
+
+* SMC: the reported evidence carries every prior normaliser, latent fields
+  included, its standard error follows Chopin (2004), and the move count adapts
+  per step (`control$smc_min_moves`, `control$smc_max_moves`, replacing
+  `n_mcmc_steps`) (#1061, #1069, #1070).
+
+* MCAR on the joint door integrates the cross-covariance; the marginal SD
+  posterior is no longer a point mass (#1062, #1063).
+
+* `posterior_predict()`, `posterior_linpred()` and `predict()` at new data draw
+  a continuous field (SPDE, NNGP, HSGP, multi-scale) through one path from the
+  grid fit; `mode = "gibbs"` keeps the field in its draws, and `plot_map()`
+  takes `x =` (#1064, #1065, #1066, #1072).
+
+* `spatial_multiscale()` and `temporal_multiscale()` fit by nested Laplace, the
+  route `mode = "auto"` picks: the spatial field is two NNGP or HSGP blocks,
+  the temporal one a block per component, each with its own axes.
+  `field_effects(component =)`, `temporal()` and `spatial_range()` read each
+  scale; `mode = "gibbs"` runs the temporal Polya-Gamma sampler for a binomial
+  field with an RW1 trend (#1073).
+
+* A nested fit with ICAR, RW1 and a type IV interaction no longer stops with a
+  singular solve: the per-cell covariances are read through the constrained
+  extraction, and `spatiotemporal_effects()` draws satisfy the constraints
+  exactly (#1074).
+
+* An inner solve that cannot start returns `log_marginal = -Inf`;
+  `tulpa_re_cov_nested()` reports unformed fixed-effect precisions once per fit
+  (#1075).
+
+* `print(<tulpa_sbc>)`'s count agrees with its list, `diagnostics()` states a
+  boundary-weight note once, and single-block nested fits and the SPDE door
+  honour `control$progress` (#1076).
+
 ## Package
 
 * C++ test fixtures live in `tests/testthat/cpp` and compile per test file;
