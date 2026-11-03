@@ -1889,11 +1889,37 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 #
 # A caller-chosen `integration = "grid"` without `n_per_axis` / `span` takes
 # the same per-k values, and `grid_n` / `grid_span` above them.
+#
+# The random-effect covariance door grows its tensor past an end whose
+# outermost level still carries more than `2 * tensor_tail_mass` of the axis's
+# marginal (`.nl_tensor_edge_cells()`), at most `tensor_extend_max` rounds. The
+# mass a tensor leaves outside moves a 2.5% bound directly, so the threshold is
+# set against that bound rather than against the joint door's at-mode gap rule
+# (`edge_tail_mass`, 0.01). On (1 + x | g), 50 binary groups x 6, the slope
+# SD's 2.5% bound on three seeds whose left tail is a long shoulder, against
+# 0.0449 / 0.1972 / 0.1300 from a dense (log sigma_1, log sigma_2, atanh rho)
+# tensor of about a million cells:
+#
+#   no growth (9^3 at +/- 4.5 SDs)   0.1772 / 0.3087 / 0.2657    729 cells
+#   tail mass 1e-2                   0.0998 / 0.3103 / 0.2657   ~840
+#   tail mass 2e-3                   0.0506 / 0.2420 / 0.1690  ~1270
+#   tail mass 1e-3                   0.0470 / 0.2200 / 0.1480  ~1740
+#   tail mass 5e-4                   0.0464 / 0.2038 / 0.1350  ~2410
+#
+# (those counts solve every cell of each new slab; only the rows holding all
+# but `level_row_tail` of the edge level's mass are solved, which leaves the
+# bounds as they are). Over 30 seeds of that fixture at 5e-4 the mean |log
+# error| of the slope SD's 2.5% bound is 0.051 (max 0.134) against 0.727 (max
+# 1.459) without growth, the intercept SD's 0.035 against 0.390, at 1364
+# solved cells on average and the same wall time; the most rounds any seed
+# took is 10, and `tensor_extend_max` caps them at 24.
 .NL_OUTER_DESIGN <- list(
     tensor_n    = c(61L, 21L, 9L),
     tensor_span = c(8, 6, 4.5),
     grid_n      = 5L,
-    grid_span   = 3
+    grid_span   = 3,
+    tensor_tail_mass  = 5e-4,
+    tensor_extend_max = 24L
 )
 
 # The outer design a Hessian-oriented door lays over k coordinates: the

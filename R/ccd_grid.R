@@ -214,6 +214,62 @@ ccd_weights <- function(ccd) {
   list(z = z, k = as.integer(k), h = 2 * span / (n_per_axis - 1L))
 }
 
+# The cells an aligned tensor `z` (spacing `h`) adds past its ends. A tensor
+# laid at +/- `span` SDs of the mode's Gaussian cuts a marginal whose tail is
+# heavier than that Gaussian's: the left tail of a log-scale posterior reaches
+# several SDs past it. Per whitened axis and side, while the outermost level
+# carries more than `2 * tail_mass` of the axis's marginal -- the box read
+# leaves half of it, the half-cell past the node, to a region no node measures
+# -- the axis gains one level `h` beyond, laid across every level of the other
+# axes so the tensor stays a tensor of uniform cells. `lw` is each cell's log
+# mass.
+#
+# Only the new cells beyond the rows of the edge level that hold all but
+# `row_tail` of its mass are solved (`solve`); the rest carry no mass, as the
+# rows they continue carry none to speak of, and so does a corner cell past two
+# axes grown in the same round. Returns `list(z, solve)` for the new rows of
+# `z`, NULL when no end qualifies.
+.nl_tensor_edge_cells <- function(z, lw, h,
+                                  tail_mass = .NL_OUTER_DESIGN$tensor_tail_mass,
+                                  row_tail = .nl_diag("level_row_tail")) {
+  ok <- is.finite(lw)
+  if (!any(ok)) return(NULL)
+  w <- numeric(length(lw))
+  w[ok] <- exp(lw[ok] - max(lw[ok]))
+  w <- w / sum(w)
+  key <- round(2 * z / h)
+  key_id <- function(K) do.call(paste, as.data.frame(K))
+  lev <- lapply(seq_len(ncol(z)), function(j) sort(unique(key[, j])))
+  grow <- list()
+  for (j in seq_len(ncol(z))) {
+    l <- lev[[j]]
+    p <- vapply(l, function(v) sum(w[key[, j] == v]), numeric(1))
+    if (p[1L] / 2 > tail_mass) {
+      grow[[length(grow) + 1L]] <- list(j = j, edge = l[1L], step = -2)
+      lev[[j]] <- c(l[1L] - 2, lev[[j]])
+    }
+    if (p[length(p)] / 2 > tail_mass) {
+      grow[[length(grow) + 1L]] <- list(j = j, edge = l[length(l)], step = 2)
+      lev[[j]] <- c(lev[[j]], l[length(l)] + 2)
+    }
+  }
+  if (!length(grow)) return(NULL)
+  full <- as.matrix(expand.grid(lev, KEEP.OUT.ATTRS = FALSE))
+  dimnames(full) <- NULL
+  full <- full[!(key_id(full) %in% key_id(key)), , drop = FALSE]
+  held <- character(0)
+  for (g in grow) {
+    idx <- which(key[, g$j] == g$edge & w > 0)
+    o <- idx[order(w[idx], decreasing = TRUE)]
+    share <- cumsum(w[o]) / sum(w[o])
+    keep <- o[c(TRUE, share[-length(share)] < 1 - row_tail)]
+    nxt <- key[keep, , drop = FALSE]
+    nxt[, g$j] <- nxt[, g$j] + g$step
+    held <- c(held, key_id(nxt))
+  }
+  list(z = full * h / 2, solve = key_id(full) %in% held)
+}
+
 # Absolute log measure of each aligned-tensor node on the coordinate
 # `theta = theta_hat + L z`: the whitened cell volume `h^k` times `|det L|`.
 .nl_aligned_tensor_log_measure <- function(tens, L) {

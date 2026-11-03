@@ -359,8 +359,13 @@
   diag(flip) <- FALSE
   if (any(flip)) {
     Qu[flip] <- 0
-    Qu <- .nl_nearest_correlation(Qu, cor = FALSE)
-    Ru <- .nl_nearest_correlation(stats::cov2cor(.spd_inverse(Qu)))
+    # The zeroed precision's eigenvalues clipped at the floor, inverted on the
+    # same eigenvectors: a Cholesky of the clipped matrix fails in floating
+    # point once its condition number reaches 1 / floor.
+    ev <- eigen(Qu, symmetric = TRUE)
+    Su <- ev$vectors %*% (t(ev$vectors) /
+                          pmax(ev$values, formals(.nl_nearest_correlation)$floor))
+    Ru <- .nl_nearest_correlation(stats::cov2cor((Su + t(Su)) / 2))
   }
   R[act, act] <- Ru
   R

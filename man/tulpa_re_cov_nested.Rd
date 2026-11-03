@@ -113,7 +113,11 @@ grid for one to three covariance parameters, the CCD above), \code{"grid"}
 grid only.
 \item \code{span}: half-width of the tensor grid in posterior standard
 deviations per whitened axis (default 8 for one parameter, 6 for two,
-4.5 for three, 3 above); grid only.
+4.5 for three, 3 above); grid only. Where the outermost level of an
+axis still carries more than 0.1\\% of its marginal, the tensor gains
+a level past it, laid in the rows of the other axes that hold that
+level's mass, until no end does: the left tail of a log-scale
+posterior runs past the span of the Gaussian at the mode.
 \item \code{n_draws}: posterior draws of the fixed effects synthesized from the
 node mixture (default 2000), exposed as \code{draws} for the generic
 \code{tulpa_fit} methods. The \code{Sigma} posterior is summarized directly from
@@ -222,6 +226,7 @@ stayed at the mode. \code{NULL} when the centring was not requested.
 \item \code{placement}: the coordinates the nodes were laid in (\code{coordinate},
 \code{"log_cholesky"} or \code{"sd_partial_correlation"}) and the Gaussian there
 (\code{center}, \code{cov}).
+\item \code{tensor_extended}: the rounds in which the tensor grew past its ends.
 \item \code{subspace_debias}: present only when \code{control$subspace_debias} was set.
 \code{idx} are the corrected latent coordinates, \code{bands} the per-probed-index
 reliability table they were read from, \code{closure_added} what the coupling

@@ -1907,7 +1907,11 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'       grid only.
 #'     \item `span`: half-width of the tensor grid in posterior standard
 #'       deviations per whitened axis (default 8 for one parameter, 6 for two,
-#'       4.5 for three, 3 above); grid only.
+#'       4.5 for three, 3 above); grid only. Where the outermost level of an
+#'       axis still carries more than 0.1\% of its marginal, the tensor gains
+#'       a level past it, laid in the rows of the other axes that hold that
+#'       level's mass, until no end does: the left tail of a log-scale
+#'       posterior runs past the span of the Gaussian at the mode.
 #'     \item `n_draws`: posterior draws of the fixed effects synthesized from the
 #'       node mixture (default 2000), exposed as `draws` for the generic
 #'       `tulpa_fit` methods. The `Sigma` posterior is summarized directly from
@@ -2015,6 +2019,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'   - `placement`: the coordinates the nodes were laid in (`coordinate`,
 #'     `"log_cholesky"` or `"sd_partial_correlation"`) and the Gaussian there
 #'     (`center`, `cov`).
+#'   - `tensor_extended`: the rounds in which the tensor grew past its ends.
 #'   - `subspace_debias`: present only when `control$subspace_debias` was set.
 #'     `idx` are the corrected latent coordinates, `bands` the per-probed-index
 #'     reliability table they were read from, `closure_added` what the coupling
@@ -2165,19 +2170,11 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     z     <- tens$z
     dnode <- rep(1, nrow(z))                # uniform tensor-cell weight
   }
-  v_grid     <- ccd_to_theta(z, place$center, L_scale)   # n_grid x k
-  node_map   <- place$to_theta(v_grid)
-  theta_grid <- node_map$theta
+  place_nodes <- function(z) place$to_theta(ccd_to_theta(z, place$center, L_scale))
+  node_map     <- place_nodes(z)
+  theta_grid   <- node_map$theta
   node_log_jac <- node_map$log_jac
   ng <- nrow(theta_grid)
-  # Each node's absolute measure in theta. The tensor's is its cell volume: the
-  # whitened spacing to the k-th power, scaled by the whitening map's
-  # determinant. The CCD's is its moment-rule weight calibrated against the
-  # Gaussian it was laid on (`.ccd_log_measure()`). Both are measures in the
-  # placement coordinates; the map to theta multiplies each by its Jacobian.
-  re_cov_log_measure <- node_log_jac + if (identical(integration, "grid")) {
-    .nl_aligned_tensor_log_measure(tens, L_scale)
-  } else .ccd_log_measure(ccd, L_scale)
 
   # --- node checkpoint/resume -----------------------------
   # Each CCD / grid node is one full inner Laplace solve. `checkpoint =
@@ -2185,7 +2182,9 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # The node grid is deterministic given the fingerprint (which includes
   # theta_grid), so nodes are keyed by their integer index; the store is an
   # atomically-rewritten RDS, fingerprint-guarded against resuming onto a file
-  # written for different data / layout / grid.
+  # written for different data / layout / grid. The cells a tensor adds past its
+  # ends follow from the declared grid's own solves, so they are appended under
+  # the indices after it.
   # The joint-field inner solve also carries the per-group random-effect
   # posterior, which is what the per-group summary is marginalized from; it is a
   # node payload, so the fingerprint records it alongside the rest.
@@ -2212,7 +2211,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # --- evaluate inner marginal + derived quantities per cell ----------------
   # One FULL Laplace solve per node: the log-marginal feeds the integration
   # weight; the fixed-effect mode + marginal covariance feed the posterior-draw
-  # synthesis. A failed / non-finite node keeps logm = -Inf (weight 0).
+  # synthesis. A failed / non-finite node returns NULL (weight 0).
   #
   # The latent tail of each node's mode is E(b | y, Sigma_i) and its covariance
   # blocks are Var(b | y, Sigma_i), so the two together are the node's Gaussian
@@ -2221,10 +2220,121 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # each node first and averaging the summaries is the plug-in error the nested
   # path exists to avoid.
   n_re <- .re_cov_n_re(layout)
-  logm           <- rep(-Inf, ng)
-  lp_theta_nodes <- rep(NA_real_, ng)   # hyperparameter log-prior per node
-  Sig_node_list  <- vector("list", ng)
-  beta_nodes     <- matrix(NA_real_, ng, p_fix)
+  solve_node <- function(i, th) {
+    L_list <- .re_cov_theta_to_L_list(th, layout)
+    unformed <- FALSE
+    key <- as.character(i)
+    if (!is.null(ckpt) && ckpt$has(key)) {
+      fit_i <- ckpt$get(key)
+    } else {
+      fit_i <- withCallingHandlers(
+        inner_fit(L_list, re_cov = re_cond, debias = debias_arg,
+                  joint_hessian = re_cond,
+                  compute_skew = mean_shift_on,
+                  skew_idx = if (mean_shift_on) seq_len(p_fix)),
+        tulpa_hbeta_unformed = function(w) {
+          unformed <<- TRUE
+          invokeRestart("muffleWarning")
+        })
+      if (!is.null(ckpt) && !is.null(fit_i) && !is.null(fit_i$mode) &&
+          length(fit_i$log_marginal) == 1L && is.finite(fit_i$log_marginal)) {
+        ckpt$save(key, fit_i)
+      }
+    }
+    if (is.null(fit_i) || is.null(fit_i$mode) ||
+        length(fit_i$log_marginal) != 1L || !is.finite(fit_i$log_marginal)) {
+      return(list(unformed = unformed))
+    }
+    rec <- list(unformed = unformed, mode_raw = fit_i$mode)
+    if (mean_shift_on) {
+      ms <- fit_i$inner_mean_shift
+      if (is.numeric(ms) && length(ms) == length(fit_i$mode) &&
+          all(is.finite(ms))) {
+        fit_i$mode <- fit_i$mode + ms
+        rec$mean_shift <- "applied"
+      } else {
+        rec$mean_shift <- fit_i$inner_mean_shift_declined %||% "not_formed"
+      }
+    }
+    rec$lp_theta <- log_prior_theta(th)
+    rec$logm     <- fit_i$log_marginal + rec$lp_theta
+    rec$beta     <- fit_i$mode[seq_len(p_fix)]
+    rec$beta_cov <- if (is.null(fit_i$H_beta)) NULL
+                    else tryCatch(.spd_inverse(fit_i$H_beta), error = function(e) NULL)
+    if (!is.null(debias_arg)) {
+      rec$debias_draws  <- fit_i$debias_draws
+      rec$debias_accept <- fit_i$debias_accept %||% NA_real_
+    }
+    if (re_cond && length(fit_i$mode) == p_fix + n_re) {
+      rec$re <- fit_i$mode[p_fix + seq_len(n_re)]
+      # Diagonals of the per-(term, group) covariance blocks, concatenated in the
+      # block layout's own order -- the marginal variance of each random-effect
+      # coefficient at this node.
+      rec$re_var <- .re_cov_block_variances(fit_i$cov_blocks, layout)
+      if (!is.null(fit_i$H_latent)) {
+        rec$latent <- list(mode = fit_i$mode, H = fit_i$H_latent)
+      }
+    }
+    rec
+  }
+  recs <- lapply(seq_len(ng), function(i) solve_node(i, theta_grid[i, ]))
+  rec_logm <- function(r) r$logm %||% -Inf
+
+  # A tensor whose outermost level still carries mass grows past it
+  # (`.nl_tensor_edge_cells()`), one level per side and round, until no end
+  # does. The CCD is a moment rule calibrated against the Gaussian it was laid
+  # on, so it keeps its nodes.
+  extend_rounds <- 0L
+  extend_capped <- FALSE
+  if (identical(integration, "grid")) {
+    repeat {
+      lw_now <- vapply(recs, rec_logm, numeric(1)) + node_log_jac
+      grown <- .nl_tensor_edge_cells(z, lw_now, tens$h)
+      if (is.null(grown) || !any(grown$solve)) break
+      if (extend_rounds >= .NL_OUTER_DESIGN$tensor_extend_max) {
+        extend_capped <- TRUE
+        break
+      }
+      extend_rounds <- extend_rounds + 1L
+      # A cell the rule leaves unsolved carries no mass and is left out of the
+      # grid, as a screened cell is.
+      z_new <- grown$z[grown$solve, , drop = FALSE]
+      map_new <- place_nodes(z_new)
+      idx <- ng + seq_len(nrow(z_new))
+      recs <- c(recs, lapply(seq_along(idx), function(m)
+        solve_node(idx[m], map_new$theta[m, ])))
+      z <- rbind(z, z_new)
+      theta_grid <- rbind(theta_grid, map_new$theta)
+      node_log_jac <- c(node_log_jac, map_new$log_jac)
+      ng <- nrow(theta_grid)
+    }
+    if (extend_capped) {
+      warning("tulpa_re_cov_nested(): the integration tensor still carries ",
+              "posterior mass on its outermost level after ",
+              .NL_OUTER_DESIGN$tensor_extend_max, " extensions per side; ",
+              "the interval ends of a scale whose tail runs past it are cut. ",
+              "Check the hyperprior.", call. = FALSE)
+    }
+    tens$z <- z
+    dnode <- rep(1, ng)
+  }
+  # Each node's absolute measure in theta. The tensor's is its cell volume: the
+  # whitened spacing to the k-th power, scaled by the whitening map's
+  # determinant. The CCD's is its moment-rule weight calibrated against the
+  # Gaussian it was laid on (`.ccd_log_measure()`). Both are measures in the
+  # placement coordinates; the map to theta multiplies each by its Jacobian.
+  re_cov_log_measure <- node_log_jac + if (identical(integration, "grid")) {
+    .nl_aligned_tensor_log_measure(tens, L_scale)
+  } else .ccd_log_measure(ccd, L_scale)
+
+  logm           <- vapply(recs, rec_logm, numeric(1))
+  lp_theta_nodes <- vapply(recs, function(r) r$lp_theta %||% NA_real_, numeric(1))
+  hbeta_unformed <- vapply(recs, function(r) isTRUE(r$unformed), logical(1))
+  Sig_node_list  <- lapply(seq_len(ng), function(i)
+    lapply(.re_cov_theta_to_L_list(theta_grid[i, ], layout), tcrossprod))
+  beta_nodes <- matrix(NA_real_, ng, p_fix)
+  # Single-bracket assignment: `x[[i]] <- NULL` deletes element i, so a node
+  # with no covariance keeps its NULL slot.
   beta_cov_nodes <- vector("list", ng)
   debias_nodes   <- vector("list", ng)
   debias_accept  <- rep(NA_real_, ng)
@@ -2236,75 +2346,27 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # from the conditional given its beta at the node the row came from.
   latent_nodes <- if (re_cond) vector("list", ng) else NULL
   mean_shift_node <- rep(NA_character_, ng)
+  for (i in seq_len(ng)) {
+    r <- recs[[i]]
+    if (is.null(r$logm)) next
+    beta_nodes[i, ] <- r$beta
+    beta_cov_nodes[i] <- list(r$beta_cov)
+    if (!is.null(r$mean_shift)) mean_shift_node[i] <- r$mean_shift
+    if (!is.null(debias_arg)) {
+      debias_nodes[i]  <- list(r$debias_draws)
+      debias_accept[i] <- r$debias_accept
+    }
+    if (re_cond && !is.null(r$re)) {
+      re_nodes[i, ] <- r$re
+      if (!is.null(r$re_var)) re_var_nodes[i, ] <- r$re_var
+      if (!is.null(r$latent)) latent_nodes[[i]] <- r$latent
+    }
+  }
   # The latent mode at the node nearest the proposal centre (the centre itself
   # on a CCD or an odd tensor), where the outer Pareto-k's importance draws
   # start their inner Newton iterations.
   i_centre <- which.min(rowSums(z^2))
-  x_centre <- NULL
-  # Nodes whose solve ran but whose marginal fixed-effect precision did not
-  # form, collected and reported once for the fit below.
-  hbeta_unformed <- logical(ng)
-  for (i in seq_len(ng)) {
-    th     <- theta_grid[i, ]
-    L_list <- .re_cov_theta_to_L_list(th, layout)
-    Sig_node_list[[i]] <- lapply(L_list, function(L) L %*% t(L))
-    key <- as.character(i)
-    if (!is.null(ckpt) && ckpt$has(key)) {
-      fit_i <- ckpt$get(key)
-    } else {
-      fit_i <- withCallingHandlers(
-        inner_fit(L_list, re_cov = re_cond, debias = debias_arg,
-                  joint_hessian = re_cond,
-                  compute_skew = mean_shift_on,
-                  skew_idx = if (mean_shift_on) seq_len(p_fix)),
-        tulpa_hbeta_unformed = function(w) {
-          hbeta_unformed[i] <<- TRUE
-          invokeRestart("muffleWarning")
-        })
-      if (!is.null(ckpt) && !is.null(fit_i) && !is.null(fit_i$mode) &&
-          length(fit_i$log_marginal) == 1L && is.finite(fit_i$log_marginal)) {
-        ckpt$save(key, fit_i)
-      }
-    }
-    if (is.null(fit_i) || is.null(fit_i$mode) ||
-        length(fit_i$log_marginal) != 1L || !is.finite(fit_i$log_marginal)) next
-    if (i == i_centre && re_cond) x_centre <- fit_i$mode
-    if (mean_shift_on) {
-      ms <- fit_i$inner_mean_shift
-      if (is.numeric(ms) && length(ms) == length(fit_i$mode) &&
-          all(is.finite(ms))) {
-        fit_i$mode <- fit_i$mode + ms
-        mean_shift_node[i] <- "applied"
-      } else {
-        mean_shift_node[i] <- fit_i$inner_mean_shift_declined %||% "not_formed"
-      }
-    }
-    lp_theta_nodes[i]  <- log_prior_theta(th)
-    logm[i]            <- fit_i$log_marginal + lp_theta_nodes[i]
-    beta_nodes[i, ]    <- fit_i$mode[seq_len(p_fix)]
-    # Single-bracket assignment: `x[[i]] <- NULL` deletes element i, so a run
-    # of trailing nodes with no covariance leaves the list shorter than the
-    # grid, and the mixture's read of their slots is out of bounds. A node with
-    # no covariance keeps its NULL slot.
-    beta_cov_nodes[i] <- list(
-      if (is.null(fit_i$H_beta)) NULL
-      else tryCatch(.spd_inverse(fit_i$H_beta), error = function(e) NULL))
-    if (!is.null(debias_arg)) {
-      debias_nodes[i]    <- list(fit_i$debias_draws)
-      debias_accept[i]   <- fit_i$debias_accept %||% NA_real_
-    }
-    if (re_cond && length(fit_i$mode) == p_fix + n_re) {
-      re_nodes[i, ] <- fit_i$mode[p_fix + seq_len(n_re)]
-      # Diagonals of the per-(term, group) covariance blocks, concatenated in the
-      # block layout's own order -- the marginal variance of each random-effect
-      # coefficient at this node.
-      v <- .re_cov_block_variances(fit_i$cov_blocks, layout)
-      if (!is.null(v)) re_var_nodes[i, ] <- v
-      if (!is.null(fit_i$H_latent)) {
-        latent_nodes[[i]] <- list(mode = fit_i$mode, H = fit_i$H_latent)
-      }
-    }
-  }
+  x_centre <- if (re_cond) recs[[i_centre]]$mode_raw else NULL
   # Cell weight = design weight (CCD: corrected INLA; grid: uniform) times the
   # evaluated joint exp(logm); log-sum-exp shift for stability. Every failed /
   # non-finite node carries logm = -Inf; if all nodes fail, max(logm) = -Inf
@@ -2513,6 +2575,9 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     # there: its centre and covariance.
     placement   = list(coordinate = place$coordinate, center = place$center,
                        cov = place$post_cov),
+    # Rounds in which the tensor grew past its ends (`.nl_tensor_edge_cells()`);
+    # 0 for a CCD and for a tensor whose ends hold no mass.
+    tensor_extended = extend_rounds,
     weights     = w,
     log_marginal = logm,
     # The node log-marginals already carry the hyperparameter log-prior, so the

@@ -18,10 +18,10 @@ test_that("a weakly held slope SD is placed where the posterior mass is", {
   # Binary (1 + x | g), 50 groups of 6, slope SD 0.7. The log-Cholesky mode is
   # at log L22 = -9.96; a grid laid from it spanned log L22 -552..532 with 162
   # of 729 nodes unsolvable and read sigma_2 at 0.0019 / [4.7e-5, 0.067].
-  # Reference: a dense 41 x 61 x 41 tensor over (log sigma_1 in [-6, 2],
-  # log sigma_2 in [-8, 2], atanh rho in [-3.5, 3.5]) with the same inner
-  # Laplace marginal and PC + LKJ prior; weighted quantiles of sigma_2
-  # 0.0111 / 0.223 / 0.717.
+  # Reference: a dense tensor over (log sigma_1, log sigma_2, atanh rho),
+  # 0.05 / 0.15 / 0.15 apart over the box holding all but 1e-9 of each
+  # marginal, with the same inner Laplace marginal and PC + LKJ prior; sigma_2
+  # read off its marginal's CDF at 0.0103 / 0.238 / 0.737.
   set.seed(2)
   gg <- rep(1:50, each = 6)
   xx <- rnorm(300)

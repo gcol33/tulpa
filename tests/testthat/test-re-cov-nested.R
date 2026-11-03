@@ -236,8 +236,11 @@ test_that("tulpa_re_cov_nested returns a well-formed marginalized posterior", {
   fx <- .rcn_cover_fits()[[1L]]
   d <- fx$d; re_term <- fx$re_term; res <- fx$res
 
-  # default layout at k = c(c+1)/2 = 3: the aligned tensor (`.nl_outer_design()`)
-  expect_equal(res$n_grid, .nl_outer_design(3L)$n_per_axis^3L)
+  # default layout at k = c(c+1)/2 = 3: the aligned tensor (`.nl_outer_design()`),
+  # grown past any end that still carries mass
+  n3 <- .nl_outer_design(3L)$n_per_axis
+  expect_gte(res$n_grid, n3^3L)
+  expect_identical(res$n_grid == n3^3L, res$tensor_extended == 0L)
   res_ccd <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
                                  family = "binomial",
                                  control = .rcn_ctl(integration = "ccd"))
@@ -246,13 +249,16 @@ test_that("tulpa_re_cov_nested returns a well-formed marginalized posterior", {
   expect_equal(sum(res$weights), 1, tolerance = 1e-10)
   expect_true(all(res$weights >= 0))
 
-  # tensor grid is opt-in via integration = "grid": n_per_axis^k cells. Three
-  # points per axis already make the count distinguishable from the CCD's 15.
+  # tensor grid is opt-in via integration = "grid": n_per_axis^k cells, and
+  # three points per axis over +/- 3 SDs leave mass on their ends, so the
+  # tensor grows past them; the CCD keeps its 15.
   res_grid <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
                                   family = "binomial",
                                   control = .rcn_ctl(integration = "grid",
                                                      n_per_axis = 3L, span = 3))
-  expect_equal(res_grid$n_grid, 3L^3L)
+  expect_gt(res_grid$tensor_extended, 0L)
+  expect_gt(res_grid$n_grid, 3L^3L)
+  expect_identical(res_ccd$tensor_extended, 0L)
   expect_equal(sum(res_grid$weights), 1, tolerance = 1e-10)
 
   # posterior table shape: sigma_1, sigma_2, rho_12, Sigma_11/12/22
