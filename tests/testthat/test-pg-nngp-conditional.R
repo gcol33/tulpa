@@ -59,10 +59,11 @@ test_that("sigma2 scales the conditional the way the factorization says", {
 })
 
 test_that("a location with no parents and no children keeps its marginal", {
-  # nn = 0 makes every factor marginal: Lambda is diagonal at 1 / sigma2 and the
-  # mean numerator is zero everywhere.
+  # nn = 0 makes every factor marginal: Lambda is diagonal at
+  # 1 / (sigma2 (1 + nugget)), the unit correlation carrying the 1e-8 nugget on
+  # every diagonal entry, and the mean numerator is zero everywhere.
   r <- .pgnngp_probe(nn = 0L)
-  expect_equal(r$prec, rep(1 / r$sigma2, r$N), tolerance = 1e-12)
+  expect_equal(r$prec, rep(1 / (r$sigma2 * (1 + 1e-8)), r$N), tolerance = 1e-12)
   expect_equal(r$mean_num, rep(0, r$N), tolerance = 1e-12)
 })
 

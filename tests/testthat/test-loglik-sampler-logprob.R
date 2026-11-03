@@ -180,11 +180,13 @@ pg_nngp_chain <- function(seed, n) {
 ref_log_nngp_chain <- function(w, s2, phi, g, U, alpha, lo, hi) {
   nug <- 1e-8
   o <- g$ord
-  lp <- dnorm(w[o[1]], 0, sqrt(s2), log = TRUE)
+  # The nugget sits on every diagonal entry of the unit correlation, the
+  # location's own included.
+  lp <- dnorm(w[o[1]], 0, sqrt(s2 * (1 + nug)), log = TRUE)
   for (i in 2:length(o)) {
     rho <- exp(-g$nn_dist[i, 1] / phi)
     B <- rho / (1 + nug)
-    F <- max(1 - rho^2 / (1 + nug), 1e-10)
+    F <- max(1 + nug - rho^2 / (1 + nug), 1e-10)
     lp <- lp + dnorm(w[o[i]], B * w[o[i - 1]], sqrt(s2 * F), log = TRUE)
   }
   lam <- -log(alpha) / U
