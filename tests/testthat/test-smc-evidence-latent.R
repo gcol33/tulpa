@@ -348,6 +348,56 @@ test_that("the GP / HSGP / SVC / TVC normalizers make the prior a density", {
   }
 })
 
+test_that("the non-centered NNGP posterior is the dense GP posterior (#1091)", {
+  skip_on_cran()
+  # Every earlier location a neighbour: the non-centered field is
+  # w[ord] = chol(K[ord, ord]) z[ord] with z ~ N(0, I), and the target the
+  # sampler reads at (beta, log sigma2, log range, z) is the gaussian
+  # likelihood at w plus the priors. Written out here with dense matrices, it
+  # differs from the engine's per-draw log posterior by the normalizing
+  # constants the engine leaves out, the same at every row; and the gradient
+  # pass reports the value the value-only evaluator does.
+  sdb <- 2; sd_eps <- 0.5
+  set.seed(20)
+  n_loc <- 12L; n <- 72L
+  loc <- rep_len(seq_len(n_loc), n)
+  xy <- data.frame(lon = runif(n_loc), lat = runif(n_loc))
+  d <- data.frame(lon = xy$lon[loc], lat = xy$lat[loc], x = rnorm(n))
+  d$y <- 1 + 0.5 * d$x + rnorm(n)
+  X <- cbind(1, d$x)
+  sp <- tulpa:::.gp_sampler_spec(validate_gp(
+    spatial_gp(~ lon + lat, nn = n_loc - 1L, parameterization = "noncentered"),
+    d))
+  D <- as.matrix(dist(sp$coords))
+  ord <- sp$nn_order + 1L
+  A <- outer(sp$obs_to_loc + 1L, seq_len(n_loc), "==") * 1
+
+  nm <- c("(Intercept)", "x", "log_sigma2_gp", "log_phi_gp",
+          sprintf("gp_w[%d]", seq_len(n_loc)))
+  set.seed(4)
+  th <- cbind(matrix(rnorm(40 * 2, c(1, 0.5), 0.5), 40, byrow = TRUE),
+              runif(40, -3, 1.5), runif(40, -3, 3),
+              matrix(rnorm(40 * n_loc), 40))
+  colnames(th) <- nm
+  dense <- apply(th, 1, function(r) {
+    K <- exp(r[[3]]) * exp(-D / exp(r[[4]]))
+    w <- numeric(n_loc)
+    w[ord] <- as.numeric(t(chol(K[ord, ord])) %*% r[4L + ord])
+    sum(dnorm(d$y, as.numeric(X %*% r[1:2] + A %*% w), sd_eps, log = TRUE)) +
+      lp_beta(r[1:2], sdb) + sum(dnorm(r[-(1:4)], log = TRUE)) +
+      lp_pc_log_sigma2(r[[3]], sp$sigma2_prior_U, sp$sigma2_prior_alpha) +
+      lp_pc_log_range(r[[4]], sp$phi_prior_U, sp$phi_prior_alpha)
+  })
+  args <- list(draws = th, y = d$y, n_trials = rep(1L, n), X = X,
+               family = "gaussian", phi = sd_eps, sigma_beta = sdb,
+               spatial_spec = sp)
+  engine <- do.call(tulpa:::cpp_tulpa_glmm_log_prob_draws, args)
+  expect_lt(diff(range(dense - engine)), 1e-5)
+  paths <- do.call(tulpa:::cpp_test_sampler_log_post_paths, args)
+  expect_equal(paths[, 1L], paths[, 2L], tolerance = 1e-12)
+  expect_equal(paths[, 2L], engine, tolerance = 1e-12)
+})
+
 test_that("an improper latent prior leaves the evidence declined, by name", {
   load_cpp_fixture("smc_normalizer")
   f <- prior_check_fixture()

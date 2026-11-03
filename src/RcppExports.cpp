@@ -2894,6 +2894,27 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_sampler_log_post_paths
+Rcpp::NumericMatrix cpp_test_sampler_log_post_paths(Rcpp::NumericMatrix draws, Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale);
+RcppExport SEXP _tulpa_cpp_test_sampler_log_post_paths(SEXP drawsSEXP, SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP sigma_betaSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type draws(drawsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type re_spec(re_specSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type spatial_spec(spatial_specSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type temporal_spec(temporal_specSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_re_scale(sigma_re_scaleSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_sampler_log_post_paths(draws, y, n_trials, X, family, phi, sigma_beta, re_spec, spatial_spec, temporal_spec, sigma_re_scale));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tulpa_glmm_layout
 Rcpp::List cpp_tulpa_glmm_layout(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, double phi2, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, Rcpp::Nullable<Rcpp::CharacterVector> fixed_names, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec);
 RcppExport SEXP _tulpa_cpp_tulpa_glmm_layout(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP, SEXP sigma_betaSEXP, SEXP offset_nullableSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP, SEXP fixed_namesSEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP zi_specSEXP) {
@@ -3289,6 +3310,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_tulpa_glmm_eta_draws", (DL_FUNC) &_tulpa_cpp_tulpa_glmm_eta_draws, 16},
     {"_tulpa_cpp_tulpa_glmm_log_prob_draws", (DL_FUNC) &_tulpa_cpp_tulpa_glmm_log_prob_draws, 16},
     {"_tulpa_cpp_sampler_field_draws", (DL_FUNC) &_tulpa_cpp_sampler_field_draws, 16},
+    {"_tulpa_cpp_test_sampler_log_post_paths", (DL_FUNC) &_tulpa_cpp_test_sampler_log_post_paths, 11},
     {"_tulpa_cpp_tulpa_glmm_layout", (DL_FUNC) &_tulpa_cpp_tulpa_glmm_layout, 16},
     {"_tulpa_cpp_vi_elbo_grad", (DL_FUNC) &_tulpa_cpp_vi_elbo_grad, 12},
     {"_tulpa_cpp_tulpa_sample_glmm", (DL_FUNC) &_tulpa_cpp_tulpa_sample_glmm, 50},
