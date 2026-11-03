@@ -100,6 +100,7 @@ skip_on_cran()
 .mo_block <- function(sim, sigma_1_grid, sigma_2_grid, rho_grid, ell_grid) {
     list(
         type             = "hsgp_mo",
+        cov              = "squared_exponential",
         m_total          = sim$M,
         phi              = list(sim$phi1, sim$phi2),
         n_obs_per_arm    = c(sim$N1, sim$N2),
@@ -161,7 +162,8 @@ test_that("hsgp_mo H pattern: M independent K x K precision blocks (K = 2)", {
         m_total        = M,
         phi            = list(phi_1, phi_2),
         n_obs_per_arm  = c(N, N),
-        eigenvalues    = rep(0.5, M)
+        eigenvalues    = rep(0.5, M),
+        kernel         = 0L
     )
     # Theta grid must have 4 columns (sigma_1, sigma_2, rho, ell). Pattern
     # builder doesn't index theta_grid except via block.prep — and we don't

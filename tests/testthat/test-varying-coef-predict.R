@@ -91,7 +91,8 @@ test_that("svc() reads an HSGP fit through its basis, and it is the field eta re
   skip_on_cran()
   d <- .vcp_data()
   fit <- .vcp_fit(d, spatial = spatial_svc(~ lon + lat, terms = ~ x - 1,
-                                           approx = "hsgp", m = 4L))
+                                           approx = "hsgp", m = 4L,
+                                           cov = "squared_exponential"))
   post <- svc(fit)
   expect_identical(dim(post$draws), c(nrow(fit$draws), nrow(d), 1L))
 

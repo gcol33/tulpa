@@ -88,6 +88,15 @@
   x$cov %||% "exponential"
 }
 
+# The kernel of a nested-Laplace HSGP block, given by its basis or by its
+# coordinates: the `kernel` a door already resolved, else the block's `cov` /
+# `nu` read as spatial_gp() reads them.
+.hsgp_block_kernel <- function(p) {
+  p$kernel %||% .hsgp_kernel(p$cov, p$nu %||% 1.5,
+                             paste0("an HSGP block (type '", p$type %||% "hsgp",
+                                    "')"))
+}
+
 # The integer code the C++ side reads (`HSGPData::kernel`, a block spec's
 # `kernel` element).
 .hsgp_kernel_code <- function(kernel = .HSGP_DEFAULT_KERNEL) {
@@ -369,9 +378,12 @@
 # Riutort-Mayol et al. (2023, Sect. 4.5.1, Phase B), entered once every basis
 # left to the data holds its lengthscale (Phase A). Each step adds five basis
 # functions per dimension to every basis whose `m` is left to the data (step
-# B2), with `c` from the boundary relation at the latest estimate (B3) and
-# never fewer functions than the basis-size relation asks for at it, and fits
-# again (B5). The procedure ends when the refitted model passes the lengthscale
+# B2), never fewer than the basis-size relation asks for at the latest
+# estimate, and fits again (B5). The boundary factor stays where Phase A left
+# it: step B3 would move it with the estimate, and an estimate the data barely
+# inform has a posterior mean that follows the boundary factor up (see
+# `.hsgp_refit_spec()`), so the steps would chase it; Phase A has already set
+# the factor its diagnostic needs. The procedure ends when the refitted model passes the lengthscale
 # diagnostic and is stable against the previous fit (B6); otherwise it adds
 # five more. `m` is bounded (`.HSGP_M_BOUNDS`), so the steps stop.
 #
@@ -395,8 +407,11 @@
   if (m_now >= .HSGP_M_BOUNDS[2L]) return(keep)
   post <- .hsgp_lengthscale_posterior(fit, axes)
   if (is.null(post)) return(keep)
-  nxt <- .hsgp_resolve_basis(spec, post[, "mean"], "phase B",
+  held <- spec
+  held$basis_rule$auto[["c"]] <- FALSE
+  nxt <- .hsgp_resolve_basis(held, post[, "mean"], "phase B",
                              m_min = m_now + 5L)
+  nxt$basis_rule$auto <- br$auto
   list(spec = nxt, refit = nxt[["m"]] > m_now)
 }
 

@@ -481,7 +481,7 @@
             phi            = phi,
             n_obs_per_arm  = as.integer(p$n_obs_per_arm),
             eigenvalues    = as.numeric(p$eigenvalues),
-            kernel         = .hsgp_kernel_code(p$kernel)
+            kernel         = .hsgp_kernel_code(.hsgp_block_kernel(p))
         )
     } else if (type == "hsgp_mo") {
         # Multi-output (co-regionalization) HSGP block. K = n_arms
@@ -508,7 +508,7 @@
             phi            = phi,
             n_obs_per_arm  = as.integer(p$n_obs_per_arm),
             eigenvalues    = as.numeric(p$eigenvalues),
-            kernel         = .hsgp_kernel_code(p$kernel)
+            kernel         = .hsgp_kernel_code(.hsgp_block_kernel(p))
         )
     } else if (type == "spde") {
         # SPDE block: per-arm sparse barycentric projector A and shared FEM
@@ -2510,7 +2510,7 @@
                                                 m, domain)$lambda_eig
     p$m_total       <- M
     p$n_obs_per_arm <- as.integer(arm_n_obs)
-    p$kernel <- .hsgp_kernel(p$cov, p$nu %||% 1.5, lab)
+    p$kernel <- .hsgp_block_kernel(p)
     p$cov <- NULL
     p$nu <- NULL
     p$basis <- list(m = m, c = cc, domain = as.numeric(domain),
