@@ -238,6 +238,53 @@ test_that("nested multi-scale temporal intervals match the model's dense grid", 
   expect_true(all(abs(got[, 2L] - ref[, 2L]) < 0.15 * ref[, 3L]))
 })
 
+test_that("temporal() draws the components of a row from one latent draw", {
+  skip_on_cran()
+  s <- ms_sim_temporal()
+  fit <- suppressMessages(tulpa(
+    y ~ x, data = s$d, family = "poisson",
+    temporal = temporal_multiscale("time", trend = "rw2", short_term = "ar1"),
+    control = list(progress = FALSE)))
+  # 160 field columns over a few hundred cells: past the retained-covariance
+  # limit, so the within-cell covariance is not kept on the fit.
+  expect_null(fit$grid_field_cov)
+  set.seed(3)
+  tp <- temporal(fit)
+  S <- tp$draws$trend + tp$draws$short_term
+  # The exact moments of the fit's own posterior: each cell's constrained
+  # covariance over both blocks, from its precision solved again.
+  src <- tulpa:::.field_cells(fit)
+  w <- fit$weights / sum(fit$weights)
+  on <- which(w > 0)
+  sol <- tulpa:::.field_cell_solve(fit, src, on)
+  n_x <- ncol(fit$modes)
+  idx <- c(tulpa:::.nl_block_cols(fit$block_latent_offsets, n_x, 1L, 2L),
+           tulpa:::.nl_block_cols(fit$block_latent_offsets, n_x, 2L, 2L))
+  V <- tulpa:::cpp_joint_inner_vcov_blocks(
+    Q_p_per_grid = sol$Q_p, Q_i_per_grid = sol$Q_i, Q_x_per_grid = sol$Q_x,
+    n_x = as.integer(n_x), idx = as.integer(idx), n_dense = length(idx),
+    A_cols_list = tulpa:::.constraint_rows_for_cpp(sol$constraint_cols),
+    field_marginal = FALSE, n_threads = 1L)
+  ww <- w[on] / sum(w[on])
+  M <- fit$modes[on, idx, drop = FALSE]
+  lin_sd <- function(A) {
+    mk <- M %*% A
+    v <- Reduce(`+`, lapply(seq_along(on), function(i)
+      ww[i] * (diag(t(A) %*% V[[i]] %*% A) + mk[i, ]^2)))
+    sqrt(v - colSums(ww * mk)^2)
+  }
+  n_t <- ncol(S)
+  # trend[t] + short[t] at each t, and the change between the first and the
+  # last time point. Drawn per component with independent cells and
+  # independent coordinates the first read 1.54x its exact SD on these data
+  # and the second 1.48x; one latent draw per row reads 1.00 and 0.97.
+  ex_t <- lin_sd(rbind(diag(n_t), diag(n_t)))
+  expect_lt(abs(mean(apply(S, 2, sd) / ex_t) - 1), 0.04)
+  a <- c(-1, rep(0, n_t - 2L), 1)
+  ex_d <- lin_sd(matrix(c(a, a), ncol = 1L))
+  expect_lt(abs(sd(S[, n_t] - S[, 1L]) / ex_d - 1), 0.1)
+})
+
 test_that("an iid short-term component is the field's, not a random effect", {
   skip_on_cran()
   set.seed(4)

@@ -253,13 +253,12 @@ temporal <- function(object, component = "all", summary = FALSE,
 # covered the truth 57% of the time (gcol33/tulpa#904).
 #
 # `.nl_field_mixture()` returns the components (mu, var: n_cell x width; w);
-# summary() reads them exactly through `.nl_gauss_mixture_summary()`, and the
-# draws print / plot / a user's own derived quantity go through are sampled
-# from the same mixture -- a cell by its weight, then the whole field from that
-# cell's joint Gaussian (`object$grid_field_cov`), so a draw carries the
-# correlation between time points as well as each one's marginal. A field too
-# large for `.NL_FIELD_COV_MAX` retains only the marginals, and its draws then
-# take the coordinates independently within a cell.
+# summary() reads them exactly through `.nl_gauss_mixture_summary()`. The
+# draws print / plot / a user's own derived quantity go through are the latent
+# draws `.nl_temporal_joint_draws()` takes: a cell by its weight, then the
+# whole latent vector from that cell's Gaussian, so a draw carries the
+# correlation between time points and between the components of a multi-scale
+# field as well as each coordinate's marginal, whatever the field's width.
 .NL_TEMPORAL_DRAW_N <- 2000L
 
 .nl_field_mixture <- function(object, cols) {
@@ -291,11 +290,13 @@ temporal <- function(object, component = "all", summary = FALSE,
 
 # The components of a multi-scale temporal field on a nested-Laplace fit, one
 # draw matrix per component, named as `info$components` names them: each
-# component is the temporal-role block carrying its name, read as the per-cell
-# Gaussian mixture of that block's coordinates. An `iid` short-term block is
+# component is the temporal-role block carrying its name. Every component of a
+# row is read off ONE latent draw (`.nl_temporal_joint_draws()`), so the sum of
+# the components and any contrast between them carry the cell's covariance
+# between blocks as well as within each. An `iid` short-term block is
 # non-centred (its coordinate enters eta times the cell's SD, as a random
-# effect's does), so its mixture is scaled by that SD cell by cell. NULL when
-# any component cannot be located.
+# effect's does), so its draws are scaled by the SD of the cell each row came
+# from. NULL when any component cannot be located.
 .nl_multiscale_temporal_draws <- function(object, info) {
   blocks <- object$prior
   if (is.null(blocks)) return(NULL)
@@ -304,26 +305,57 @@ temporal <- function(object, component = "all", summary = FALSE,
   roles <- .nl_block_roles(blocks)
   n_x <- if (is.matrix(object$modes)) ncol(object$modes)
   tg <- as.matrix(object$theta_grid)
-  out <- lapply(info$components, function(cmp) {
+  comp <- lapply(info$components, function(cmp) {
     k <- which(roles == "temporal" &
                  vapply(bl, function(b) identical(b$name, cmp), logical(1)))
     if (length(k) != 1L) return(NULL)
     cols <- if (single) .nl_role_cols(blocks, NULL, n_x, "temporal")
             else .nl_block_cols(object$block_latent_offsets, n_x, k, length(bl))
-    mix <- if (length(cols)) .nl_field_mixture(object, cols)
-    if (is.null(mix)) return(NULL)
-    if (identical(tolower(bl[[k]]$type %||% ""), "iid")) {
-      sc <- paste0(if (single) "" else paste0("b", k, "."), "sigma")
-      if (!sc %in% colnames(tg)) return(NULL)
-      sg <- tg[mix$cells, sc]
-      mix$mu <- mix$mu * sg
-      if (!is.null(mix$var)) mix$var <- mix$var * sg^2
-      if (!is.null(mix$cov)) mix$cov <- Map(`*`, mix$cov, sg^2)
+    if (!length(cols)) return(NULL)
+    sc <- if (identical(tolower(bl[[k]]$type %||% ""), "iid")) {
+      paste0(if (single) "" else paste0("b", k, "."), "sigma")
     }
-    .nl_field_mixture_draws(mix)
+    if (!is.null(sc) && !sc %in% colnames(tg)) return(NULL)
+    list(cols = cols, scale_axis = sc)
+  })
+  if (!length(comp) || any(vapply(comp, is.null, logical(1)))) return(NULL)
+  dr <- .nl_temporal_joint_draws(object, lapply(comp, function(cp) cp$cols))
+  if (is.null(dr)) return(NULL)
+  cells <- attr(dr, "cells")
+  out <- lapply(seq_along(comp), function(i) {
+    sc <- comp[[i]]$scale_axis
+    if (is.null(sc)) dr[[i]] else dr[[i]] * tg[cells, sc]
   })
   names(out) <- info$components
-  if (!length(out) || any(vapply(out, is.null, logical(1)))) return(NULL)
+  out
+}
+
+# Joint draws of a nested fit's temporal coordinates: `cols_list` names the
+# latent columns of each component, and the result holds one draw matrix per
+# entry, with the grid cell of each row as `"cells"`. Each row is a cell drawn
+# by its weight and the latent vector drawn from that cell's Gaussian
+# N(mode_k, Q_k^-1) conditioned on the fit's constraint rows, by
+# `.field_latent_draws()` -- the draw predict() takes, off the cell's precision
+# solved again (or stored), so every row carries the cell's whole covariance
+# whatever the field's width. A fit that keeps no record of its inner solve is
+# drawn from the Gaussian components it retained (`.nl_field_mixture()` over
+# all the columns at once, one cell per row).
+.nl_temporal_joint_draws <- function(object, cols_list) {
+  src <- .field_cells(object)
+  if (!is.null(src) && !is.null(src$solve)) {
+    src$point <- FALSE
+    L <- .field_latent_draws(object, src, .NL_TEMPORAL_DRAW_N)
+    out <- lapply(cols_list, function(cc) L[, cc, drop = FALSE])
+    attr(out, "cells") <- attr(L, "cells")
+    return(out)
+  }
+  mix <- .nl_field_mixture(object, unlist(cols_list))
+  if (is.null(mix)) return(NULL)
+  D <- .nl_field_mixture_draws(mix)
+  pos <- cumsum(c(0L, lengths(cols_list)))
+  out <- lapply(seq_along(cols_list), function(i)
+    D[, pos[i] + seq_len(lengths(cols_list)[i]), drop = FALSE])
+  attr(out, "cells") <- mix$cells[attr(D, "cells")]
   out
 }
 
@@ -360,19 +392,26 @@ temporal <- function(object, component = "all", summary = FALSE,
   sqrt(pmax(e$values, 0)) * t(e$vectors)
 }
 
+# Draws from a retained Gaussian mixture `mix` (`.nl_field_mixture()`), with
+# the mixture component of each row as `"cells"`.
 .nl_field_mixture_draws <- function(mix) {
   idx <- sample.int(nrow(mix$mu), size = .NL_TEMPORAL_DRAW_N, replace = TRUE,
                     prob = mix$w)
   mu <- mix$mu[idx, , drop = FALSE]
-  if (is.null(mix$var)) return(mu)
-  z <- matrix(stats::rnorm(length(mu)), nrow(mu), ncol(mu))
-  if (is.null(mix$cov)) return(mu + sqrt(mix$var[idx, , drop = FALSE]) * z)
-  # Each cell's draws from its own joint Gaussian, factored once per cell drawn.
-  for (k in unique(idx)) {
-    r <- which(idx == k)
-    mu[r, ] <- mu[r, , drop = FALSE] +
-      z[r, , drop = FALSE] %*% .nl_cov_factor(mix$cov[[k]])
+  if (!is.null(mix$var)) {
+    z <- matrix(stats::rnorm(length(mu)), nrow(mu), ncol(mu))
+    if (is.null(mix$cov)) {
+      mu <- mu + sqrt(mix$var[idx, , drop = FALSE]) * z
+    } else {
+      # Each cell's draws from its own joint Gaussian, factored once per cell.
+      for (k in unique(idx)) {
+        r <- which(idx == k)
+        mu[r, ] <- mu[r, , drop = FALSE] +
+          z[r, , drop = FALSE] %*% .nl_cov_factor(mix$cov[[k]])
+      }
+    }
   }
+  attr(mu, "cells") <- idx
   mu
 }
 
@@ -462,14 +501,17 @@ temporal.tulpa_fit <- function(object, component = "all", summary = FALSE,
       mixture <- .nl_mixture_project(mixture, temp_info$rtr_projection)
     }
     if (!is.null(mixture)) {
-      if (is.null(mixture$var)) {
+      if (is.null(mixture$var) && is.null(.field_cells(object)$solve)) {
         warning("This nested-Laplace fit retained no per-cell variance for ",
                 "the temporal field (refit with the default ",
                 "`control$keep_grid_hessians = TRUE`), so its temporal() ",
                 "intervals carry only the spread between grid cells and are ",
                 "too narrow.", call. = FALSE)
       }
-      temp_draws <- .nl_field_mixture_draws(mixture)
+      temp_draws <- .nl_temporal_joint_draws(object, list(cols))[[1L]]
+      if (isTRUE(temp_info$rtr)) {
+        temp_draws <- temp_draws %*% t(temp_info$rtr_projection)
+      }
     }
   }
 
