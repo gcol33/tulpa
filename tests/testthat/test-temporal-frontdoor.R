@@ -288,7 +288,9 @@ test_that("a continuous field shares the nested stack with a temporal field, a s
     count ~ x, data = d, family = "poisson", mode = "nested_laplace",
     spatial = spatial_gp(~ lon + lat, approx = "hsgp"),
     temporal = temporal_rw1("time"), control = ctl))
-  sh <- tulpa:::validate_hsgp(spatial_gp(~ lon + lat, approx = "hsgp"), d)
+  # The basis tulpa() settled on: an unset `m` / `c` is chosen from the data
+  # and recorded on the fitted spec.
+  sh <- fit_h$spatial
   direct_h <- suppressWarnings(tulpa_nested_laplace(
     y = d$count, n_trials = rep(1L, n), X = stats::model.matrix(~ x, d),
     family = "poisson",

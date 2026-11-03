@@ -39,8 +39,11 @@
 #' @param nu Matern smoothness parameter, one of `1.5` or `2.5`. Used only when
 #'   `cov = "matern"` (`nu = 0.5` is `cov = "exponential"`).
 #' @param nn Number of nearest neighbours used in the NNGP approximation.
-#' @param m Number of HSGP basis functions per dimension (`approx = "hsgp"`).
-#' @param c HSGP boundary factor, `>= 1` (`approx = "hsgp"`).
+#' @param m Number of HSGP basis functions per dimension (`approx = "hsgp"`),
+#'   between 3 and 50. `NULL` (default) chooses it from the data; see Details.
+#' @param c HSGP boundary factor, `>= 1` (`approx = "hsgp"`): the basis lives
+#'   on the coordinates' bounding box widened by `c`. `NULL` (default) chooses
+#'   it from the data; see Details.
 #' @param sigma_prior_U,sigma_prior_alpha Penalized-complexity prior on the
 #'   field's marginal standard deviation (`approx = "hsgp"`), calibrated so that
 #'   `P(sigma > sigma_prior_U) = sigma_prior_alpha`. Defaults to
@@ -62,6 +65,30 @@
 #'
 #' @return A `tulpa_gp` object (also of class `tulpa_spatial`).
 #'
+#' @details
+#' **HSGP basis size.** A Hilbert-space basis of `m` functions per dimension on
+#' a domain widened by `c` approximates the squared-exponential covariance
+#' accurately only for lengthscales between `1.75 c S / m` and `c S / 3.2`, `S`
+#' the half-width of the coordinates' bounding box (Riutort-Mayol et al. 2023,
+#' Eqs. 19-20, with `c >= 1.2`). A rough field asks for a short lengthscale,
+#' and a basis too small for it smooths the field and narrows its intervals.
+#' Left unset, `m` and `c` follow the iterative procedure of the paper's
+#' Section 4.5.1: the first fit takes them from the prior median of the
+#' lengthscale, and while the posterior mean lengthscale falls below the
+#' smallest one the fitted basis represents (the paper's diagnostic, with its
+#' slack of 0.01 on the lengthscale divided by `S`), the field is fitted again
+#' with the `m` and `c` that estimate asks for. `m` never shrinks below a size
+#' already fitted and stops at 50. A supplied `m` or `c` is kept as given.
+#' [diagnostics()] reports when the posterior mean lengthscale lies outside
+#' the window of the fitted basis at either end; above it, the field is
+#' smoother than the boundary factor allows for, and a larger `c` covers it.
+#'
+#' @references
+#' Riutort-Mayol, G., Buerkner, P.-C., Andersen, M. R., Solin, A. and Vehtari,
+#' A. (2023). Practical Hilbert space approximate Bayesian Gaussian processes
+#' for probabilistic programming. *Statistics and Computing* 33, 17.
+#' \doi{10.1007/s11222-022-10167-2}
+#'
 #' @seealso [spatial_car()], [spatial_bym2()] for areal spatial effects.
 #'
 #' @examples
@@ -76,8 +103,8 @@ spatial_gp <- function(coords,
                        cov = c("exponential", "matern"),
                        nu = 1.5,
                        nn = 15,
-                       m = 6,
-                       c = 1.5,
+                       m = NULL,
+                       c = NULL,
                        sigma_prior_U = 1,
                        sigma_prior_alpha = 0.01,
                        shared = NULL,
@@ -111,12 +138,19 @@ spatial_gp <- function(coords,
            "(x, y); got ", length(coord_vars), ". The NNGP approximation ",
            "accepts any number.", call. = FALSE)
     }
-    if (!is.numeric(m) || length(m) != 1 || m < 3 || m > 50) {
-      stop("`m` must be an integer between 3 and 50", call. = FALSE)
+    if (!is.null(m)) {
+      if (!is.numeric(m) || length(m) != 1 || is.na(m) ||
+          m < .HSGP_M_BOUNDS[1L] || m > .HSGP_M_BOUNDS[2L]) {
+        stop(sprintf(paste0("`m` must be an integer between %d and %d, or ",
+                            "NULL to choose it from the data"),
+                     .HSGP_M_BOUNDS[1L], .HSGP_M_BOUNDS[2L]), call. = FALSE)
+      }
+      m <- as.integer(m)
     }
-    m <- as.integer(m)
-    if (!is.numeric(c) || length(c) != 1 || c < 1) {
-      stop("`c` (boundary factor) must be >= 1", call. = FALSE)
+    if (!is.null(c) &&
+        (!is.numeric(c) || length(c) != 1 || is.na(c) || c < 1)) {
+      stop("`c` (boundary factor) must be >= 1, or NULL to choose it from ",
+           "the data", call. = FALSE)
     }
     .check_pc_anchors(sigma_prior_U, sigma_prior_alpha,
                       "sigma_prior_U", "sigma_prior_alpha",
@@ -124,6 +158,7 @@ spatial_gp <- function(coords,
     if (isFALSE(shared)) .warn_nonshared("spatial effects")
     return(structure(
       list(type = "hsgp", coord_vars = coord_vars, m = m, c = c,
+           basis_rule = list(auto = c(m = is.null(m), c = is.null(c))),
            sigma2_prior_U = as.numeric(sigma_prior_U),
            sigma2_prior_alpha = as.numeric(sigma_prior_alpha),
            shared = shared, scale_coords = scale_coords,
@@ -203,8 +238,10 @@ print.tulpa_hsgp <- function(x, ...) {
   cat("=====================================================\n\n")
 
   cat("Coordinates:", paste(x$coord_vars, collapse = ", "), "\n")
-  cat("Basis functions:", x$m, "per dim (", x$m^2, "total )\n")
-  cat("Boundary factor:", x$c, "\n")
+  if (is.null(x$m)) cat("Basis functions: chosen from the data\n")
+  else cat("Basis functions:", x$m, "per dim (", x$m^2, "total )\n")
+  if (is.null(x[["c"]])) cat("Boundary factor: chosen from the data\n")
+  else cat("Boundary factor:", format(x[["c"]], digits = 3), "\n")
   cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$n_obs)) {
@@ -227,6 +264,19 @@ validate_hsgp <- function(spatial, data) {
   coords <- prepare_coords(spatial$coord_vars, data, spatial$scale_coords)
   spatial$n_obs <- nrow(coords)
   spatial$coords_matrix <- coords
+  br <- spatial$basis_rule %||%
+    list(auto = c(m = is.null(spatial$m), c = is.null(spatial[["c"]])))
+  br$half_width <- .hsgp_half_widths(coords)
+  spatial$basis_rule <- br
+  if (is.null(spatial$m) || is.null(spatial[["c"]])) {
+    ell0 <- .hsgp_prior_lengthscale(coords)
+    if (!is.finite(ell0) || any(br$half_width <= 0)) {
+      stop("spatial_gp(approx = \"hsgp\"): the coordinates span no area, so ",
+           "the basis size cannot be chosen from them; supply `m` and `c`.",
+           call. = FALSE)
+    }
+    spatial <- .hsgp_resolve_basis(spatial, ell0, "prior")
+  }
   spatial
 }
 

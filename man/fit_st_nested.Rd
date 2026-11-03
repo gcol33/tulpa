@@ -164,7 +164,9 @@ only. Default 10 (clamped to \code{nrow(coords) - 1}).}
 
 \item{hsgp_m, hsgp_c}{Hilbert-space GP basis size (per dimension, default 6)
 and boundary factor (default 1.5), \code{spatial_type = "hsgp"} only -- the
-same parameterisation and defaults as \code{spatial_gp(approx = "hsgp")}.}
+parameterisation of \code{spatial_gp(approx = "hsgp")}. They are held as
+given here; see \code{\link[=spatial_gp]{spatial_gp()}} for the lengthscale window a basis
+represents.}
 
 \item{x}{A \code{fit_st_nested()} fit.}
 

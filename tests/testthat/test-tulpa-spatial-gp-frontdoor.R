@@ -319,9 +319,10 @@ test_that("the HSGP front-door route is numerically identical to a direct call",
     y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
     spatial = spec, mode = "nested_laplace"
   ))
-  # Build the same prior the front door builds (validate_hsgp then the spec ->
-  # prior converter), then call the fitter directly: the routing adds no math.
-  vspec  <- tulpa:::validate_hsgp(spec, s$data)
+  # Build the same prior the front door builds (the validated spec, carrying
+  # the boundary factor tulpa() chose from the data, then the spec -> prior
+  # converter), then call the fitter directly: the routing adds no math.
+  vspec  <- via$spatial
   prior  <- tulpa:::.spatial_spec_to_nl_prior(vspec)
   direct <- tulpa_nested_laplace(
     s$data$y, s$data$ntrials, model.matrix(y ~ x, s$data),

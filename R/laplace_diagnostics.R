@@ -2088,7 +2088,8 @@ print.laplace_diagnostics <- function(x, ...) {
   for (rnote in c(attr(x, "interval_read_note"),
                   attr(x, "grid_resolution_note"),
                   attr(x, "unconverged_cells_note"),
-                  attr(x, "inner_debias_note"))) {
+                  attr(x, "inner_debias_note"),
+                  attr(x, "hsgp_basis_note"))) {
     cat("  note: ", rnote, "\n", sep = "")
   }
   if (has_skew) {

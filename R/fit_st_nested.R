@@ -191,7 +191,9 @@
 #'   0 = exponential, 1 = Matern 3/2, 2 = Matern 5/2 (default), 3 = Gaussian.
 #' @param hsgp_m,hsgp_c Hilbert-space GP basis size (per dimension, default 6)
 #'   and boundary factor (default 1.5), `spatial_type = "hsgp"` only -- the
-#'   same parameterisation and defaults as `spatial_gp(approx = "hsgp")`.
+#'   parameterisation of `spatial_gp(approx = "hsgp")`. They are held as
+#'   given here; see [spatial_gp()] for the lengthscale window a basis
+#'   represents.
 #' @param control A list of numerical / grid knobs: `n_grid_spatial`,
 #'   `n_grid_temporal` (default 4 each), `n_grid_rho` (ar1 only, default 3),
 #'   `tau_lower` / `tau_upper` (icar / car_proper precision grid bounds,

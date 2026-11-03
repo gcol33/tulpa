@@ -416,6 +416,16 @@ diagnostics.default <- function(fit, pars = NULL,
   }
 
   out <- entry$fn(fit, pars = pars, measures = measures, probs = probs)
+  hsgp <- .hsgp_basis_check(fit)
+  if (!is.null(hsgp) && !is.null(out)) {
+    attr(out, "hsgp_basis") <- hsgp
+    note <- .hsgp_basis_note(hsgp)
+    attr(out, "hsgp_basis_note") <- note
+    # A chain table prints as a plain data frame, which shows no attribute.
+    if (!is.null(note) && !inherits(out, "laplace_diagnostics")) {
+      message("note: ", note)
+    }
+  }
   if (!is.null(sbc) && !is.null(out)) {
     attr(out, "sbc_report") <- sbc$report
     attr(out, "sbc_experiment") <- sbc$experiment

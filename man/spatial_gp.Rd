@@ -12,8 +12,8 @@ spatial_gp(
   cov = c("exponential", "matern"),
   nu = 1.5,
   nn = 15,
-  m = 6,
-  c = 1.5,
+  m = NULL,
+  c = NULL,
   sigma_prior_U = 1,
   sigma_prior_alpha = 0.01,
   shared = NULL,
@@ -46,9 +46,12 @@ basis GP with \code{m} functions per dimension and boundary factor \code{c}).}
 
 \item{nn}{Number of nearest neighbours used in the NNGP approximation.}
 
-\item{m}{Number of HSGP basis functions per dimension (\code{approx = "hsgp"}).}
+\item{m}{Number of HSGP basis functions per dimension (\code{approx = "hsgp"}),
+between 3 and 50. \code{NULL} (default) chooses it from the data; see Details.}
 
-\item{c}{HSGP boundary factor, \verb{>= 1} (\code{approx = "hsgp"}).}
+\item{c}{HSGP boundary factor, \verb{>= 1} (\code{approx = "hsgp"}): the basis lives
+on the coordinates' bounding box widened by \code{c}. \code{NULL} (default) chooses
+it from the data; see Details.}
 
 \item{sigma_prior_U, sigma_prior_alpha}{Penalized-complexity prior on the
 field's marginal standard deviation (\code{approx = "hsgp"}), calibrated so that
@@ -84,11 +87,35 @@ Specify a Gaussian-process spatial random effect, approximated with a
 nearest-neighbour GP (NNGP) for scalability. Captures smooth spatial
 variation from point-referenced coordinates.
 }
+\details{
+\strong{HSGP basis size.} A Hilbert-space basis of \code{m} functions per dimension on
+a domain widened by \code{c} approximates the squared-exponential covariance
+accurately only for lengthscales between \verb{1.75 c S / m} and \verb{c S / 3.2}, \code{S}
+the half-width of the coordinates' bounding box (Riutort-Mayol et al. 2023,
+Eqs. 19-20, with \code{c >= 1.2}). A rough field asks for a short lengthscale,
+and a basis too small for it smooths the field and narrows its intervals.
+Left unset, \code{m} and \code{c} follow the iterative procedure of the paper's
+Section 4.5.1: the first fit takes them from the prior median of the
+lengthscale, and while the posterior mean lengthscale falls below the
+smallest one the fitted basis represents (the paper's diagnostic, with its
+slack of 0.01 on the lengthscale divided by \code{S}), the field is fitted again
+with the \code{m} and \code{c} that estimate asks for. \code{m} never shrinks below a size
+already fitted and stops at 50. A supplied \code{m} or \code{c} is kept as given.
+\code{\link[=diagnostics]{diagnostics()}} reports when the posterior mean lengthscale lies outside
+the window of the fitted basis at either end; above it, the field is
+smoother than the boundary factor allows for, and a larger \code{c} covers it.
+}
 \examples{
 # GP spatial specification from coordinate columns
 spatial_gp(~ lon + lat)
 spatial_gp(~ lon + lat, cov = "matern", nu = 1.5)
 
+}
+\references{
+Riutort-Mayol, G., Buerkner, P.-C., Andersen, M. R., Solin, A. and Vehtari,
+A. (2023). Practical Hilbert space approximate Bayesian Gaussian processes
+for probabilistic programming. \emph{Statistics and Computing} 33, 17.
+\doi{10.1007/s11222-022-10167-2}
 }
 \seealso{
 \code{\link[=spatial_car]{spatial_car()}}, \code{\link[=spatial_bym2]{spatial_bym2()}} for areal spatial effects.

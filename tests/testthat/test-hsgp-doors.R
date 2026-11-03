@@ -86,8 +86,9 @@ test_that("an HSGP field + (1 | g) through tulpa() equals a direct multi-block c
   direct <- suppressWarnings(tulpa_nested_laplace(
     y = dat$y, n_trials = rep(1L, n), X = stats::model.matrix(~ x, dat),
     family = "poisson",
-    prior = list(tulpa:::.spatial_spec_to_nl_prior(
-                   tulpa:::validate_hsgp(sp, dat)), re_blk),
+    # The basis tulpa() settled on: an unset `m` / `c` is chosen from the data
+    # and recorded on the fitted spec.
+    prior = list(tulpa:::.spatial_spec_to_nl_prior(via$spatial), re_blk),
     # tulpa() states its fixed-effect default to the nested driver.
     beta_prior = tulpa:::.tulpa_default_beta_prior()))
   expect_equal(via$backend, "nested_laplace")

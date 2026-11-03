@@ -3256,26 +3256,49 @@ tulpa <- function(formula, data,
 
   control <- .auto_drop_unread_threads(control, sel)
 
-  args <- .tulpa_fitter_args(sel$backend, bundle, family, sigma_re,
-                             n_trials, phi, beta_prior, control,
-                             latent_blocks = parsed$latent_blocks,
-                             spatial = spatial_spec, temporal = temporal_spec,
-                             spatiotemporal = st_block,
-                             weights = weights, phi2 = phi2,
-                             smoothers = lapply(smooth_specs, `[[`, "block"),
-                             re_prior = re_prior, zi_prior = zi_prior,
-                             hyperprior = hyperprior,
-                             warm_start = warm_start,
-                             estimate_phi = estimate_phi,
-                             beta_prior_default = beta_prior_resolved)
+  # An HSGP field whose basis is left to the data is fitted, its lengthscale
+  # posterior read against the basis, and fitted again on the basis that
+  # posterior asks for, until the basis holds it (`.hsgp_refit_spec()`). Every
+  # other fit runs once. The warnings of a fit that is replaced describe a fit
+  # the caller does not receive, so only the returned fit's are raised.
+  hsgp_auto <- inherits(spatial_spec, "tulpa_hsgp") &&
+    any(spatial_spec$basis_rule$auto)
+  repeat {
+    fit_warnings <- list()
+    args <- .tulpa_fitter_args(sel$backend, bundle, family, sigma_re,
+                               n_trials, phi, beta_prior, control,
+                               latent_blocks = parsed$latent_blocks,
+                               spatial = spatial_spec, temporal = temporal_spec,
+                               spatiotemporal = st_block,
+                               weights = weights, phi2 = phi2,
+                               smoothers = lapply(smooth_specs, `[[`, "block"),
+                               re_prior = re_prior, zi_prior = zi_prior,
+                               hyperprior = hyperprior,
+                               warm_start = warm_start,
+                               estimate_phi = estimate_phi,
+                               beta_prior_default = beta_prior_resolved)
 
-  # sel$backend is itself a valid mode, so dispatch resolves to the same backend.
-  fit <- tulpa_dispatch(
-    sel$backend, fitter_args = args,
-    family = fam_obj, n_obs = bundle$n_obs,
-    has_spatial = has_spatial, has_latent = has_latent,
-    spatial_type = spatial_type
-  )
+    # sel$backend is itself a valid mode, so dispatch resolves to the same
+    # backend.
+    fit <- withCallingHandlers(
+      tulpa_dispatch(
+        sel$backend, fitter_args = args,
+        family = fam_obj, n_obs = bundle$n_obs,
+        has_spatial = has_spatial, has_latent = has_latent,
+        spatial_type = spatial_type
+      ),
+      warning = function(w) {
+        if (hsgp_auto) {
+          fit_warnings[[length(fit_warnings) + 1L]] <<- w
+          invokeRestart("muffleWarning")
+        }
+      })
+    if (!hsgp_auto || !is.list(fit)) break
+    step <- .hsgp_refit_spec(spatial_spec, fit)
+    spatial_spec <- step$spec
+    if (!step$refit) break
+  }
+  for (w in fit_warnings) warning(w)
 
   if (is.list(fit)) {
     # Honour the front-door selection (including the correlated-RE redirect) over
