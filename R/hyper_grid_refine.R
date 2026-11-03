@@ -542,10 +542,15 @@
   dens <- p / diff(edges)
   k <- numeric(0)
   # Past each outermost node the read has no node to read: an end whose tail
-  # carries more than `tail_mass` of the axis gets a point one SD out.
+  # carries more than `tail_mass` of the axis gets a point laid out past it,
+  # `.hyper_edge_step()` SDs.
   if (is.null(tails)) tails <- c(p[1L], p[n]) / 2
-  if (n >= 2L && isTRUE(tails[1L] > tail_mass)) k <- c(k, x[1L] - 1)
-  if (n >= 2L && isTRUE(tails[2L] > tail_mass)) k <- c(k, x[n] + 1)
+  if (n >= 2L && isTRUE(tails[1L] > tail_mass)) {
+    k <- c(k, x[1L] - .hyper_edge_step(dens[1L], dens[2L], x[2L] - x[1L]))
+  }
+  if (n >= 2L && isTRUE(tails[2L] > tail_mass)) {
+    k <- c(k, x[n] + .hyper_edge_step(dens[n], dens[n - 1L], x[n] - x[n - 1L]))
+  }
   for (j in seq_len(n - 1L)) {
     L <- x[j + 1L] - x[j]
     if (L <= 1.5) next
@@ -560,6 +565,30 @@
   }
   if (!length(k)) return(numeric(0))
   .hyper_mode_points(spec, vals[cont], u, mode, unique(k[order(abs(k))]))
+}
+
+# How far past an outermost node, in the mode's SDs, the next node is laid:
+# one tail scale of the end, the distance over which its log density, continued
+# from the outermost two nodes (`d_end` at the end, `d_in` one node in, `h`
+# apart), falls by one nat. A Gaussian end at `x` SDs from the mode decays with
+# slope `x`, so past one SD its tail scale is under one SD and the step is one
+# SD, the at-mode ladder's spacing. A tail that decays more slowly -- a variance
+# whose posterior runs out along its prior, exponentially in the log scale --
+# has a tail scale of several SDs, and one-SD steps leave most of it unread
+# once the level budget is spent: on a two-arm multi-scale spatial field the
+# local log variance's tail decays at half a nat per unit against a core SD of
+# 0.4. The step is at most twice the spacing of the
+# outermost two nodes, so an end whose density does not fall at all is followed
+# out geometrically rather than in one unbounded jump.
+.hyper_edge_step <- function(d_end, d_in, h) {
+  cap <- max(1, 2 * h)
+  if (!is.finite(d_end) || !is.finite(d_in) || d_end <= 0 || d_in <= 0 ||
+      !is.finite(h) || h <= 0) {
+    return(1)
+  }
+  beta <- (log(d_in) - log(d_end)) / h
+  if (beta <= 0) return(cap)
+  min(max(1, 1 / beta), cap)
 }
 
 # What the box rule misreads in the half of a gap of length `L` a node at `x0`

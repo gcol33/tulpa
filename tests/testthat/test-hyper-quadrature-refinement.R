@@ -446,3 +446,48 @@ test_that("a refined grid reports the posterior its own cell weights define", {
   expect_true(all(closer("theta_sd")))
   expect_true(closer("theta_ci_hi")[["sigma"]])
 })
+
+test_that("an end whose density decays slowly is followed out at its tail scale", {
+  skip_on_cran_budget()
+  # A Gaussian core with an exponential shelf to the left in log sigma, the
+  # shape a variance takes when its posterior runs out along its prior: the
+  # shelf decays at half a nat per unit against a core SD of 0.3. Declared over
+  # the core alone, the axis has to be followed several core SDs out before
+  # the read is left with under 1% past its outermost node.
+  ld <- function(u) {
+    log(0.9 * stats::dnorm(u, 0, 0.3) + 0.05 * exp(0.5 * pmin(u, 0)) * (u < 0))
+  }
+  inner <- function(h) list(log_marginal = ld(log(as.numeric(h[["sigma"]]))))
+  uu <- seq(-14, 3, length.out = 200001)
+  pd <- exp(ld(uu)); pd <- pd / sum(pd)
+  m_ex <- sum(pd * uu)
+  s_ex <- sqrt(sum(pd * (uu - m_ex)^2))
+  q_ex <- stats::approx(cumsum(pd), uu, 0.025, ties = "ordered")$y
+  spec <- list(hyper_axis_spec("sigma", grid = exp(seq(-0.9, 0.9, length.out = 7)),
+                               log_scale = TRUE, bounds = c(0, Inf),
+                               refinable = TRUE, slab_bounds = exp(c(-14, 3))))
+  fit <- tulpa_hyper_grid(spec, inner, combine = "none", n_draws = 0L,
+                          control = list(adaptive_grid = FALSE,
+                                         var_of_means_consistency = TRUE))
+  u <- log(fit$theta_grid[, "sigma"])
+  w <- fit$weights / sum(fit$weights)
+  m <- sum(w * u)
+  expect_lt(abs(m - m_ex), 0.02)
+  expect_lt(abs(sqrt(sum(w * (u - m)^2)) / s_ex - 1), 0.05)
+  expect_lt(abs(log(fit$theta_ci_lo[["sigma"]]) - q_ex), 0.15)
+})
+
+test_that("the edge step is one SD on a Gaussian end and a tail scale on a slow one", {
+  # Densities read at nodes 1 SD apart on a Gaussian end 2.5 SDs out: slope
+  # 2.5 nats per SD, a tail scale under one SD, so one SD.
+  d <- stats::dnorm(c(2.5, 1.5))
+  expect_equal(.hyper_edge_step(d[1], d[2], 1), 1)
+  # Half a nat per SD: two SDs, inside the cap of twice the spacing.
+  expect_equal(.hyper_edge_step(exp(-0.5), 1, 1), 2)
+  # A tenth of a nat per SD would be ten SDs; the cap holds it at twice the
+  # outermost spacing.
+  expect_equal(.hyper_edge_step(exp(-0.1), 1, 1), 2)
+  expect_equal(.hyper_edge_step(exp(-0.1), 1, 3), 6)
+  # A density that does not fall is followed out at the cap.
+  expect_equal(.hyper_edge_step(1, 1, 1.5), 3)
+})
