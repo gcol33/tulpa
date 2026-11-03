@@ -45,6 +45,60 @@
   ld
 }
 
+# Log of the prior measure one unit of integration-coordinate width carries at
+# the natural-scale points `x`, up to the axis's normalising constant: the
+# declared continuum density (`slab_log_density`) carried to that coordinate,
+# flat where the axis declares none, and `-Inf` outside a declared support
+# (`slab_bounds`), where the prior puts no mass. A level's quadrature weight is
+# its cell width times this, so the posterior density the outer grid integrates
+# is the log marginal plus this term on every axis.
+.hyper_axis_log_unit <- function(x, spec) {
+  x <- as.numeric(x)
+  dens <- spec$slab_log_density
+  out <- if (is.null(dens)) rep(0, length(x)) else
+    .hyper_prior_carry(x, dens, spec$log_scale,
+                       spec$slab_log_density_coord %||% "natural")
+  slab <- spec$slab_bounds
+  if (!is.null(slab)) out[!(x >= slab[1L] & x <= slab[2L])] <- -Inf
+  out
+}
+
+# Log posterior density of an outer grid, per unit of a proposal coordinate `u`,
+# up to a constant, at the natural-scale points `theta` (one column per axis)
+# whose log marginal (with any folded hyperprior) is `lm`. `tags` name each
+# axis's proposal coordinate (`.joint_pareto_fwd()`), `u` the points on it, and
+# `specs` the axes' measures by column name. The density on the integration
+# coordinate `v` is the log marginal plus the measure per unit width
+# (`.hyper_axis_log_unit()`), and the change to `u` adds `log |dv / du|`:
+# zero on a log-scale axis read in log and on a natural one read as itself, the
+# transform's own Jacobian on a natural axis read on logit or atanh, and
+# `log |d log theta / du|` on a log-scale axis read on another coordinate, as
+# the copy scale is on `identity`. An axis `specs` does not describe is read as
+# integrated flat on the coordinate its tag names (log for `log`, natural
+# otherwise).
+.hyper_outer_log_density_u <- function(lm, theta, u, tags, specs = NULL) {
+  out <- as.numeric(lm)
+  cn <- colnames(theta)
+  if (length(specs)) {
+    names(specs) <- vapply(specs, function(s) s$name %||% "", character(1))
+  }
+  for (j in seq_len(ncol(theta))) {
+    th <- as.numeric(theta[, j])
+    sp <- if (!is.null(cn) && cn[j] %in% names(specs)) specs[[cn[j]]] else
+      list(name = cn[j], log_scale = identical(tags[j], "log"))
+    # `.joint_pareto_inv()`'s Jacobian is the one onto the coordinate the tag
+    # names (log for `log`), so `d theta / du` adds `u` on a log tag.
+    log_dth_du <- .joint_pareto_inv(tags[j], u[, j])$log_jac +
+      if (identical(tags[j], "log")) u[, j] else 0
+    log_dv_dth <- if (isTRUE(sp$log_scale)) {
+      suppressWarnings(ifelse(th > 0, -log(th), -Inf))
+    } else 0
+    out <- out + .hyper_axis_log_unit(th, sp) + log_dv_dth + log_dth_du
+  }
+  out[is.na(out)] <- -Inf
+  out
+}
+
 # Is this level the axis's point mass rather than a point of its continuum?
 # A zero on a log-scale axis that declares an `atom_mass`; nothing otherwise.
 .hyper_is_atom_level <- function(x, spec) {
@@ -327,20 +381,17 @@
     }
   } else {
     # Declared density, carried to the coordinate the widths are measured on.
-    ld <- .hyper_prior_carry(x, dens, spec$log_scale,
-                             spec$slab_log_density_coord %||% "natural")
-    cw <- width * exp(ld)
+    per_width <- function(xx) {
+      d <- exp(.hyper_axis_log_unit(xx, spec))
+      d[!is.finite(d)] <- 0
+      d
+    }
+    cw <- width * per_width(x)
     if (floor_cell) {
       cw[1L] <- .hyper_floor_cell_mass(
         if (length(u) > 1L) (u[1L] + u[2L]) / 2 else bd[2L], dens, spec)
     }
     cw[!is.finite(cw)] <- 0
-    per_width <- function(xx) {
-      d <- exp(.hyper_prior_carry(xx, dens, spec$log_scale,
-                                  spec$slab_log_density_coord %||% "natural"))
-      d[!is.finite(d)] <- 0
-      d
-    }
   }
   # The density shapes the continuum; it does not set how much of the axis the
   # continuum holds. That is `1 - atom_mass`, declared before the fit, so the

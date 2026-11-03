@@ -873,11 +873,14 @@ test_that("k_refine = 'grid' refines the integration grid driven by bad k and lo
     # A grid that sits below the field's posterior support: the first fit does not
     # reach the good band, so the k_quality ladder must REFINE THE INTEGRATION GRID
     # (not spend more diagnostic draws) and re-integrate, driven by the bad k.
+    # A dense 91 x 92 grid on this fixture puts log(sigma) at mean -1.25,
+    # SD 0.35 (sigma near 0.29), so the declared nodes sit 2.5 to 5 posterior
+    # SDs below it.
     sim <- .jpk_sim(seed = 21, sigma = 1.2)
     adj <- .jpk_chain_adj(sim$n_s)
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.2, 0.35, 0.5))
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.05, 0.08, 0.12))
     arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0))
     # Both grids are stated, and a stated axis is a bound that refinement
     # densifies inside; `axis_refine = "extend"` is the per-axis opt-in to
@@ -915,4 +918,57 @@ test_that("k_refine = 'grid' refines the integration grid driven by bad k and lo
     expect_identical(fit1$k_quality_k_trace[[fit1$k_quality_rounds + 1L]],
                      fit1$pareto_k)
     expect_identical(fit0$k_quality_k_trace, fit0$pareto_k)
+
+    # The refined grid integrates the posterior the dense grid reads.
+    w <- fit1$weights
+    ls <- log(fit1$theta_grid[, "sigma"])
+    m <- sum(w * ls)
+    expect_lt(abs(m - (-1.247)), 0.1)
+    expect_lt(abs(sqrt(sum(w * (ls - m)^2)) - 0.349), 0.05)
+})
+
+test_that("the outer k-hat target is the density the grid integrates, copy slab included", {
+    skip_on_cran()
+    # On a fine grid every interior cell's weight is its density on the
+    # proposal coordinate times its box there, so the target read at the nodes
+    # minus log(weight / box) is one constant. The copy scale carries an
+    # exponential slab in its quadrature weights and is read on `identity`, so
+    # a target without that measure drifts linearly in alpha.
+    sim <- .jpk_sim(seed = 21, sigma = 1.2)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors,
+                  sigma_grid = exp(seq(log(0.12), log(0.7), length.out = 13)))
+    arms <- .jpk_arms_alpha(sim, c(0, exp(seq(log(0.35), log(2.2), length.out = 13))))
+    fit <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
+               control = list(diagnose_k = FALSE, prune = FALSE,
+                              var_of_means_consistency = FALSE,
+                              axis_refine = c(sigma = "none", alpha = "none")))
+    tg <- fit$theta_grid
+    expect_false(is.null(fit$outer_axis_specs))
+    tags <- tulpa:::.joint_pareto_axis_tags(fit)
+    U <- vapply(seq_len(ncol(tg)), function(j)
+        tulpa:::.joint_pareto_fwd(tags[j], tg[, j]), numeric(nrow(tg)))
+    ld <- tulpa:::.hyper_outer_log_density_u(fit$log_marginal, tg, U, tags,
+                                             fit$outer_axis_specs)
+    box <- function(u) {
+        lev <- sort(unique(u)); h <- diff(lev)
+        (c(h[1], h) + c(h, h[length(h)]))[match(u, lev)] / 2
+    }
+    cont <- tg[, "alpha"] > 0
+    a_pos <- tg[cont, "alpha"]
+    keep <- cont & tg[, "sigma"] > min(tg[, "sigma"]) &
+        tg[, "sigma"] < max(tg[, "sigma"]) &
+        tg[, "alpha"] > min(a_pos) & tg[, "alpha"] < max(a_pos) &
+        fit$weights > 0
+    bu <- matrix(NA_real_, nrow(tg), 2)
+    bu[, 1] <- box(U[, 1])
+    bu[cont, 2] <- box(U[cont, 2])
+    gap <- ld - (log(fit$weights) - log(bu[, 1]) - log(bu[, 2]))
+    gap <- gap[keep]
+    expect_gt(length(gap), 50L)
+    expect_lt(stats::sd(gap), 0.02)
+    # The same read on alpha alone: no trend left along the copy scale.
+    expect_lt(abs(stats::coef(stats::lm(gap ~ tg[keep, "alpha"]))[2]), 0.02)
 })

@@ -467,10 +467,11 @@ test_that("a split CCD keeps a usable outer Pareto-k on its grid proposal", {
     expect_identical(fit$integration, "ccd")
     # The mode-Hessian splice is withheld on a split design, so the diagnostic
     # reports the grid-built proposal it actually used rather than one that
-    # silently did not take.
+    # silently did not take: the grid-moment Gaussian, its moment-matched
+    # refinement, or the grid mixture.
     expect_false(identical(fit$pareto_k_proposal_source, "mode_hessian"))
     expect_true(fit$pareto_k_proposal_source %in%
-                c("grid_moment", "grid_mixture"))
+                c("grid_moment", "moment_matched", "grid_mixture"))
     expect_true(is.finite(fit$pareto_k))
 })
 

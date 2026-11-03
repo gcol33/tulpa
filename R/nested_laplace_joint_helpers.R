@@ -1093,7 +1093,9 @@ tulpa_joint_axis_specs_from_grid <- function(
 # The measure reads the solved marginals -- a copy scale's lowest continuum cell
 # is scored from both of its ends (`.hyper_floor_cell_log_tilt()`), a pruned
 # end read off the cheap-pass screen -- so it is taken again when the record
-# takes an indefinite cell out of the marginals.
+# takes an indefinite cell out of the marginals. The axis specs the measure was
+# built from ride along as `outer_axis_specs`, so the outer Pareto-k scores the
+# grid against the density it integrates (`.joint_pareto_target()`).
 # The one attach both joint doors use before their weights.
 .joint_attach_cell_measure <- function(res, specs, refining) {
     measure <- function() {
@@ -1105,6 +1107,7 @@ tulpa_joint_axis_specs_from_grid <- function(
                                 log_marginal = lm)
     }
     res$log_quad <- measure()
+    res$outer_axis_specs <- specs
     lm0 <- res$log_marginal
     res <- .nl_record_unconverged(res)
     if (!identical(res$log_marginal, lm0)) res$log_quad <- measure()

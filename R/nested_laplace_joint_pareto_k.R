@@ -777,24 +777,11 @@
 # grid-weighted estimate) or when every axis is pinned.
 .joint_pareto_mode_cov <- function(u_center, tags, col_names,
                                    refit_log_marginal, d, vary = NULL,
-                                   h = 0.1) {
+                                   h = 0.1, specs = NULL) {
     if (is.null(vary)) vary <- seq_len(d)
     if (length(vary) == 0L) return(NULL)
 
-    # Full-d outer target: back-transform + summed per-axis log-Jacobian.
-    target <- function(U) {
-        theta_mat <- matrix(0, nrow(U), d)
-        log_jac   <- numeric(nrow(U))
-        for (j in seq_len(d)) {
-            iv <- .joint_pareto_inv(tags[j], U[, j])
-            theta_mat[, j] <- iv$theta
-            log_jac <- log_jac + iv$log_jac
-        }
-        colnames(theta_mat) <- col_names
-        lm <- refit_log_marginal(theta_mat)
-        if (length(lm) != nrow(U)) return(rep(-Inf, nrow(U)))
-        lm + log_jac
-    }
+    target <- .joint_pareto_target(tags, col_names, refit_log_marginal, specs)
     # Reduced target over the varying axes: embed an [S x |vary|] block into the
     # full d-space at u_center (pinned axes held fixed), then call the full
     # target. The stencil thus differences only the varying subspace.
@@ -860,13 +847,29 @@
 # `.joint_pareto_mode_cov()`. Returns `list(u_mode=, cov=)` or NULL when the FD
 # curvature is unusable.
 .joint_pareto_grid_mode_cov <- function(tg, w, u_grid, tags, cn, d,
-                                        refit_log_marginal) {
+                                        refit_log_marginal, specs = NULL) {
     vary_g <- .joint_pareto_grid_vary_axes(tg)
     u_mode <- as.numeric(u_grid[which.max(w), ])
     cov_h  <- .joint_pareto_mode_cov(u_mode, tags, cn, refit_log_marginal, d,
-                                     vary = vary_g)
+                                     vary = vary_g, specs = specs)
     if (is.null(cov_h)) return(NULL)
     list(u_mode = u_mode, cov = cov_h)
+}
+
+# The coordinate the outer Pareto-k reads a copy scale on. The proposal has to
+# reach the copy scale's point mass at zero, which no log transform does, so a
+# grid carrying that level reads the axis on `identity`. A grid with no zero
+# level holds only the positive continuum, which is a scale: it is read on log,
+# the coordinate its measure is declared on and the joint CCD designs it in, so
+# a CCD mode-Hessian proposal carries over to the diagnostic rather than being
+# refused for naming another coordinate.
+.joint_pareto_copy_tags <- function(tags, theta_grid) {
+    cn <- colnames(theta_grid)
+    if (is.null(cn)) return(tags)
+    for (j in which(.hyper_axis_bare(cn) == "alpha" & tags == "identity")) {
+        if (all(as.numeric(theta_grid[, j]) > 0)) tags[j] <- "log"
+    }
+    tags
 }
 
 # Shared preparation for the outer Pareto-k-hat of a joint nested-Laplace
@@ -885,6 +888,7 @@
 .joint_pareto_prepare <- function(res, refit_log_marginal, n_samples, proposal) {
     tags <- .joint_pareto_axis_tags(res)
     if (.k_is_decline(tags)) return(tags)
+    tags <- .joint_pareto_copy_tags(tags, res$theta_grid)
 
     # Decline before any inner solve when the sample budget cannot reach the
     # GPD-fit floor: a sub-floor `n_samples` would run every
@@ -951,7 +955,8 @@
     # integration is well resolved on that axis.
     if (!used_mode_hessian && length(.joint_pareto_vary_axes(Su)) == 0L) {
         gmc <- .joint_pareto_grid_mode_cov(tg, w, u_grid, tags, cn, d,
-                                           refit_log_marginal)
+                                           refit_log_marginal,
+                                           specs = res$outer_axis_specs)
         if (!is.null(gmc)) {
             u_hat <- gmc$u_mode
             Su    <- gmc$cov
@@ -963,7 +968,7 @@
     }
 
     list(tags = tags, u_grid = u_grid, u_hat = u_hat, Su = Su, cn = cn, d = d,
-         w = w, proposal_source = proposal_source)
+         w = w, proposal_source = proposal_source, specs = res$outer_axis_specs)
 }
 
 # The outer target on the varying subspace `vary`: embed an [S x |vary|] block
@@ -972,22 +977,34 @@
 # and call the inner re-solve. It is the joint path's `spec$lt`, so every
 # candidate in `R/outer_pareto_candidates.R` evaluates the identical target.
 .joint_pareto_make_lt <- function(prep, vary, refit_log_marginal) {
-    u_hat <- prep$u_hat; tags <- prep$tags; cn <- prep$cn; d <- prep$d
+    u_hat <- prep$u_hat
+    target <- .joint_pareto_target(prep$tags, prep$cn, refit_log_marginal,
+                                   prep$specs)
     function(U_v) {
-        S <- nrow(U_v)
-        U <- matrix(u_hat, S, d, byrow = TRUE)
+        U <- matrix(u_hat, nrow(U_v), prep$d, byrow = TRUE)
         U[, vary] <- U_v
-        theta_mat <- matrix(0, S, d)
-        log_jac   <- numeric(S)
-        for (j in seq_len(d)) {
-            iv <- .joint_pareto_inv(tags[j], U[, j])
-            theta_mat[, j] <- iv$theta
-            log_jac <- log_jac + iv$log_jac
+        target(U)
+    }
+}
+
+# The outer target on the full `u` space: each row back-transformed to
+# user-facing theta, re-solved by `refit_log_marginal`, and read as the density
+# the grid integrates, per unit of `u` (`.hyper_outer_log_density_u()`): the
+# log marginal plus each axis's prior measure (`specs`, the fit's
+# `outer_axis_specs`) and the change of coordinate. A measure the quadrature
+# weights carry and the target did not -- the copy scale's exponential slab --
+# would score the grid against a posterior other than the one it integrates.
+.joint_pareto_target <- function(tags, cn, refit_log_marginal, specs = NULL) {
+    function(U) {
+        S <- nrow(U)
+        theta_mat <- matrix(0, S, length(tags))
+        for (j in seq_along(tags)) {
+            theta_mat[, j] <- .joint_pareto_inv(tags[j], U[, j])$theta
         }
         colnames(theta_mat) <- cn
         lm <- refit_log_marginal(theta_mat)
         if (length(lm) != S) return(rep(-Inf, S))
-        lm + log_jac
+        .hyper_outer_log_density_u(lm, theta_mat, U, tags, specs)
     }
 }
 
