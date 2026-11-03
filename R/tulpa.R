@@ -3431,14 +3431,14 @@ tulpa <- function(formula, data,
     # the outer grid integrated, so VarCorr() reads those blocks' posterior and
     # ranef() slices their latent segment (the LAST sum(n_groups) columns, the RE
     # blocks having been appended last). Absent on every other backend.
-    fit$re_block_index       <- attr(args, "re_block_index")
-    fit$re_block_conditioned <- attr(args, "re_block_conditioned")
     if (joint_arm) {
-      fit <- .joint_arm_attach_re(fit, args$prior, fit$re_block_index,
-                                  bundle$re_terms %||% list())
-      fit <- .joint_arm_attach_field_read(
-        fit, .joint_arm_re_map(fit, args$prior, fit$re_block_index,
-                               bundle$re_terms %||% list()))
+      fit <- .joint_arm_attach_re_record(fit, args$prior,
+                                         attr(args, "re_block_index"),
+                                         attr(args, "re_block_conditioned"),
+                                         bundle$re_terms %||% list())
+    } else {
+      fit$re_block_index       <- attr(args, "re_block_index")
+      fit$re_block_conditioned <- attr(args, "re_block_conditioned")
     }
     fit$N           <- fit$N %||% bundle$n_obs
     # Fixed-effect design for fitted()/predict(newdata = NULL), plus the pieces

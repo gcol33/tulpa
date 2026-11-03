@@ -170,3 +170,54 @@ test_that("inline temporal() fit's $y is the response vector, so diagnostics run
   expect_false(is.null(ft$n_trials))
   expect_no_error(residuals(ft))
 })
+
+# A temporal field with a random intercept on site; poisson counts.
+.tf_re_fixture <- function(seed, sigma_re = 0.4, n_groups = 12L) {
+  set.seed(seed)
+  n_t <- 20L; n <- 360L
+  time <- rep(seq_len(n_t), length.out = n)
+  g <- sample(n_groups, n, TRUE)
+  lvl <- cumsum(rnorm(n_t, 0, 0.3)); lvl <- lvl - mean(lvl)
+  u <- rnorm(n_groups, 0, sigma_re)
+  d <- data.frame(time = time, g = factor(g), x = rnorm(n))
+  d$y <- rpois(n, exp(0.3 + 0.4 * d$x + lvl[time] + u[d$g]))
+  list(d = d, u = u)
+}
+.tf_re_formula <- y ~ x + temporal(formula = ~ 1 || time, structure = "rw1") +
+  (1 | g)
+
+test_that("an inline field integrates an unsupplied (1 | g) scale (#1119)", {
+  skip_on_cran()
+  fx <- .tf_re_fixture(1L)
+  fit <- suppressWarnings(tulpa(.tf_re_formula, data = fx$d,
+                                family = "poisson"))
+  # The term is a latent block after the field, its SD an outer axis.
+  expect_identical(fit$re_block_index, list(2L))
+  expect_false(fit$re_block_conditioned)
+  expect_true("b2.sigma" %in% colnames(fit$theta_grid))
+  expect_gt(length(unique(fit$theta_grid[, "b2.sigma"])), 1L)
+  expect_lt(fit$theta_ci_lo[["b2.sigma"]], 0.4)
+  expect_gt(fit$theta_ci_hi[["b2.sigma"]], 0.4)
+  vc <- VarCorr(fit)
+  expect_identical(vc$source, "estimated")
+  expect_equal(vc$sd, fit$theta_median[["b2.sigma"]])
+  re <- ranef(fit)
+  expect_identical(nrow(re), 12L)
+  expect_gt(cor(re$estimate, fx$u), 0.7)
+
+  # A supplied scale is conditioned on: a one-point axis.
+  fit_c <- suppressWarnings(tulpa(.tf_re_formula, data = fx$d,
+                                  family = "poisson", sigma_re = 0.4))
+  expect_true(fit_c$re_block_conditioned)
+  expect_identical(unique(fit_c$theta_grid[, "b2.sigma"]), 0.4)
+})
+
+test_that("an inline field's integrated (1 | g) scale covers the truth over seeds (#1119)", {
+  skip_if_not_slow()
+  hit <- vapply(seq_len(20L), function(s) {
+    fit <- suppressWarnings(tulpa(.tf_re_formula, data = .tf_re_fixture(s)$d,
+                                  family = "poisson"))
+    fit$theta_ci_lo[["b2.sigma"]] <= 0.4 && 0.4 <= fit$theta_ci_hi[["b2.sigma"]]
+  }, logical(1))
+  expect_gte(mean(hit), 0.85)
+})

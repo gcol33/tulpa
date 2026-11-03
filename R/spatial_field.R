@@ -583,30 +583,20 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
                                 arm_spatial_idx = NULL, phi_axis = NULL) {
   N <- bundle$n_obs
 
-  # Single random intercept (1 | g) is conditioned on at sigma_re, as on the
-  # other front-door nested paths; richer RE structure is out of scope here.
-  re <- bundle$re_terms %||% list()
-  re_idx <- rep(0L, N)
-  n_re_groups <- 0L
-  sigma_re_scalar <- 1.0
-  if (length(re) > 0L) {
-    if (length(re) > 1L || (re[[1]]$n_coefs %||% 1L) != 1L) {
-      stop("Inline bar fields support at most one random-intercept term ",
-           "(1 | g) alongside the field(s). Model richer random effects ",
-           "separately.", call. = FALSE)
-    }
-    re_idx <- as.integer(re[[1]]$group_idx)
-    n_re_groups <- as.integer(re[[1]]$n_groups)
-    sigma_re_scalar <- if (is.null(sigma_re)) 1.0 else sigma_re[1]
-  }
+  # The formula's random-effect terms are latent blocks of their own after the
+  # fields, each scale an outer axis next to the field scales and the
+  # dispersion, as on the one-arm joint door (`.re_terms_to_nl_blocks()`): a
+  # scale the caller supplied in `sigma_re` is a one-point axis, conditioned
+  # on; one left out is integrated.
+  re_terms <- bundle$re_terms %||% list()
+  by_term <- .re_terms_to_nl_blocks(re_terms, N, sigma_re)
+  re_blocks <- unlist(by_term, recursive = FALSE)
+  all_blocks <- c(blocks, re_blocks)
 
   arm <- list(
     y           = bundle$y,
     n_trials    = n_trials %||% rep(1L, N),
     X           = bundle$X,
-    re_idx      = re_idx,
-    n_re_groups = n_re_groups,
-    sigma_re    = sigma_re_scalar,
     family      = family,
     phi         = if (is.null(phi_axis)) phi else stats::median(phi_axis)
   )
@@ -642,7 +632,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   jfit <- withCallingHandlers(
     tulpa_nested_laplace_joint(
       responses = stats::setNames(list(arm), .JOINT_ARM_NAME),
-      prior     = blocks,
+      prior     = all_blocks,
       copy      = NULL,
       phi_grid  = if (!is.null(phi_axis))
                     stats::setNames(list(phi_axis), .JOINT_ARM_NAME),
@@ -745,6 +735,12 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   draws_full <- tulpa_posterior_draws(jfit, idx = NULL, n = n_draws)
   beta_draws <- draws_full[, beta_cols, drop = FALSE]
   colnames(beta_draws) <- colnames(bundle$X)
+
+  if (length(re_blocks)) {
+    jfit <- .joint_arm_attach_re_record(
+      jfit, all_blocks, .re_block_index(length(blocks), by_term),
+      !is.null(sigma_re), re_terms)
+  }
 
   list(jfit = jfit, fields = fields, hypers = hypers, beta_draws = beta_draws,
        field_eta_contrib = field_eta_contrib)

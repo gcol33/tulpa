@@ -169,14 +169,35 @@
   # new rows (`.joint_arm_attach_field_read()`).
   if (length(all_blocks)) out$control$store_Q <- TRUE
   if (length(re_blocks)) {
-    # Which blocks each term became: one per term except an uncorrelated
-    # slope term, which is one per coefficient.
-    first <- length(blocks) + cumsum(c(0L, lengths(by_term)))[seq_along(by_term)]
-    attr(out, "re_block_index") <- lapply(seq_along(by_term), function(m)
-      first[m] + seq_along(by_term[[m]]))
+    attr(out, "re_block_index") <- .re_block_index(length(blocks), by_term)
     attr(out, "re_block_conditioned") <- !is.null(sigma_re)
   }
   out
+}
+
+# Which blocks each random-effect term became when the terms' blocks
+# (`.re_terms_to_nl_blocks()`, one list per term) follow `n_before` other
+# blocks: one per term, except an uncorrelated slope term, which is one per
+# coefficient.
+#' @keywords internal
+.re_block_index <- function(n_before, by_term) {
+  first <- n_before + cumsum(c(0L, lengths(by_term)))[seq_along(by_term)]
+  lapply(seq_along(by_term), function(m) first[m] + seq_along(by_term[[m]]))
+}
+
+# The random-effect record of a one-arm joint fit whose last blocks are the
+# formula's random-effect terms: where each term's blocks sit, whether the
+# scales were conditioned, the per-group effects retained per cell
+# (`.joint_arm_attach_re()`) and the map the draw path at new rows reads them
+# by (`.joint_arm_attach_field_read()`).
+#' @keywords internal
+.joint_arm_attach_re_record <- function(fit, blocks, re_block_index,
+                                        re_block_conditioned, re_terms) {
+  fit$re_block_index       <- re_block_index
+  fit$re_block_conditioned <- re_block_conditioned
+  fit <- .joint_arm_attach_re(fit, blocks, re_block_index, re_terms)
+  .joint_arm_attach_field_read(
+    fit, .joint_arm_re_map(fit, blocks, re_block_index, re_terms))
 }
 
 # An HSGP block of the registry path (the basis at every observation and its

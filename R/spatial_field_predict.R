@@ -130,15 +130,25 @@
       }
     }
   }
-  n_re <- as.integer(al$n_re[1L] %||% 0L)
-  re <- if (n_re > 0L) {
-    list(cols = as.integer(al$re_start[1L] + seq_len(n_re)),
-         sd_per_cell = FALSE, scale = function(k) 1)
+  theta <- .nl_theta_matrix(object)
+  # The formula's random-effect terms are blocks after the fields, located by
+  # the fit's random-effect map as on every one-arm joint fit.
+  re <- if (!is.null(object$re_effect_map)) {
+    .field_re_from_map(object$re_effect_map, theta)
   }
-  list(modes = modes, weights = as.numeric(w), theta = .nl_theta_matrix(object),
+  list(modes = modes, weights = as.numeric(w), theta = theta,
        solve = list(door = "stored"), point = FALSE,
        layout = list(beta = as.integer(al$beta_start[1L] + seq_len(p)),
                      beta_names = object$fixed_names, fields = fields, re = re))
+}
+
+# The random-effect layout a one-arm joint fit's map (`.joint_arm_re_map()`)
+# gives: where each effect sits, and the factor turning cell k's coordinates
+# into effects (the cell's SD for an `iid` coordinate, 1 for an `miid` one).
+#' @keywords internal
+.field_re_from_map <- function(jm, theta) {
+  list(cols = jm$cols, sd_per_cell = all(jm$scale_block > 0L),
+       scale = function(k) .joint_arm_re_scale(jm, theta, k))
 }
 
 # One field of an inline bar block: its latent columns, its unit (or time) at
@@ -299,8 +309,7 @@
       .nl_re_field_load(prior, object$block_latent_offsets, n_x, cells$theta)
     }
     re <- if (!is.null(jm)) {
-      list(cols = jm$cols, sd_per_cell = all(jm$scale_block > 0L),
-           scale = function(k) .joint_arm_re_scale(jm, cells$theta, k))
+      .field_re_from_map(jm, cells$theta)
     } else if (!is.null(rl)) {
       list(cols = rl$cols[[1L]], sd_per_cell = TRUE,
            scale = function(k) as.numeric(rl$weights(k)[[1L]]))
