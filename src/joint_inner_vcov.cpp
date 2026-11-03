@@ -140,16 +140,18 @@ bool visit_inner_vcov_cell(
 
     // Columns of C = Qk^{-1} to solve (of the anchored Qk under a constraint):
     // the dense (fixed-effect) block in the cheap recipe; every idx column in
-    // full mode. Each solve reuses the factor.
+    // full mode. The columns reach the factor in one multi-column solve, the
+    // call extract_inv_diag_blocks() makes for the same unit columns, so the
+    // Newton-loop extraction of a leading block reads the same numbers.
     const int n_solve = field_marginal ? n_dense : p;
     std::vector<std::vector<double>> C_cols(n_solve);
-    std::vector<double> e(n_x, 0.0), v(n_x, 0.0);
-    for (int t = 0; t < n_solve; t++) {
-        const int c = idx0[t];
-        std::fill(e.begin(), e.end(), 0.0);
-        e[c] = 1.0;
-        solver.solve(e.data(), v.data(), n_x);
-        C_cols[t] = v;
+    if (n_solve > 0) {
+        const std::size_t n = static_cast<std::size_t>(n_x);
+        std::vector<double> E(n * n_solve, 0.0), V(n * n_solve, 0.0);
+        for (int t = 0; t < n_solve; t++) E[n * t + idx0[t]] = 1.0;
+        solver.solve(E.data(), V.data(), n_x, n_solve);
+        for (int t = 0; t < n_solve; t++)
+            C_cols[t].assign(V.begin() + n * t, V.begin() + n * (t + 1));
     }
 
     // Constraint columns W = C Vb (one solve per sum-to-zero group and per
