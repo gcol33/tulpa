@@ -2342,16 +2342,22 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # `.nl_node_support()` is the one place that reads a producer name into a
   # support kind, here and on every grid consumer.
   #
-  # The tensor's cells are boxes of the whitened coordinate `z`, so each derived
-  # quantity is read across them (`.nl_within_cell_points()`) as the joint
-  # door's free-covariance block is, rather than at the cell centres.
+  # The tensor's cells are boxes of the whitened coordinate `z` of the placement
+  # Gaussian, so each derived quantity is read across them
+  # (`.nl_within_cell_points()`) as the joint door's free-covariance block is,
+  # rather than at the cell centres. The node density the within-cell read is
+  # shaped by is the density in `z`: the posterior in theta times the Jacobian
+  # of the placement map, and every lattice point goes back to theta through
+  # that map.
   summ <- if (identical(integration, "grid")) {
     zc <- z
     colnames(zc) <- paste0("z", seq_len(ncol(z)))
-    wc <- .nl_within_cell_setup(zc, w, logm, NULL, rep("unbounded", ncol(z)),
+    wc <- .nl_within_cell_setup(zc, w, logm + node_log_jac, NULL,
+                                rep("unbounded", ncol(z)),
                                 rep(NA_real_, ncol(z)), NULL, "density")
     pts <- .nl_within_cell_points(wc, zc, w)
-    th_pts <- ccd_to_theta(pts$theta, theta_hat, L_scale)
+    th_pts <- place$to_theta(ccd_to_theta(pts$theta, place$center,
+                                          L_scale))$theta
     Sig_pts <- lapply(seq_len(nrow(th_pts)), function(i)
       lapply(.re_cov_theta_to_L_list(th_pts[i, ], layout), tcrossprod))
     .re_cov_derived_summary(Sig_pts, pts$w, layout, support = "sample")
