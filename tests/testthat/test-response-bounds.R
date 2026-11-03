@@ -166,7 +166,11 @@ test_that("the accessors read the censored likelihood and its bounds", {
   eta <- fitted(f)
   phi <- f$phi
   ref <- stats::dnorm(d$y[exact], eta[exact], sqrt(phi), log = TRUE)
-  expect_equal(mean(colMeans(ll)[exact] - ref), 0, tolerance = 0.05)
+  # The draw average of a Gaussian log density sits below its value at the
+  # mean predictor by the predictor's posterior variance over 2 phi.
+  E <- tulpa:::.tulpa_eta_draws(f, ndraws = 400L, synth_seed = 1L)
+  jensen <- -mean(apply(E[, exact, drop = FALSE], 2L, stats::var)) / (2 * phi)
+  expect_lt(abs(mean(colMeans(ll)[exact] - ref) - jensen), 0.01)
   w <- suppressWarnings(loo::waic(f))
   expect_true(all(is.finite(w$pointwise[, "elpd_waic"])))
 
