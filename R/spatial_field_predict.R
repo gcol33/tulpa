@@ -426,6 +426,11 @@
   }
   if (ncol(fd$spatial_unit)) add_comp("unit", "spatial", fd$spatial_unit, sp)
   if (ncol(fd$temporal)) add_comp("unit", "temporal", fd$temporal, tp)
+  # A multi-scale temporal field enters as its total at each time point, the
+  # sum of its centred components the likelihood read.
+  if (ncol(fd$ms_temporal)) {
+    add_comp("unit", "temporal", fd$ms_temporal, tp)
+  }
   if (ncol(fd$gp_w)) {
     add_comp("nngp", "spatial", fd$gp_w, sp,
              hyper = list(sigma2 = fd$gp_sigma2, phi_gp = fd$gp_phi))

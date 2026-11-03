@@ -62,6 +62,7 @@ struct GenericLogPostState {
     T sigma2_temporal_gp = T(1.0);
     T phi_temporal_gp = T(1.0);
     std::vector<T> ms_temporal_eta;
+    std::vector<T> ms_temporal_by_time;
     std::vector<T> svc_eta;
     std::vector<T> tvc_eta;
     // The varying-coefficient fields as the likelihood reads them, flat
@@ -269,7 +270,8 @@ static T initialize_generic_state(
 
     if (layout.has_multiscale_temporal && data.has_multiscale_temporal) {
         log_post = log_post + priors::compute_multiscale_temporal_prior(
-            params, data, layout, state.ms_temporal_eta);
+            params, data, layout, state.ms_temporal_eta,
+            state.ms_temporal_by_time);
     }
 
     if (layout.has_svc && data.has_svc) {

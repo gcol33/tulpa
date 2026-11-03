@@ -61,7 +61,8 @@ T multiscale_trend_values(const std::vector<T>& params, const ModelData& data,
 
 template<typename T>
 T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelData& data,
-                                     const ParamLayout& layout, std::vector<T>& ms_temporal_eta)
+                                     const ParamLayout& layout, std::vector<T>& ms_temporal_eta,
+                                     std::vector<T>& ms_temporal_by_time)
 {
     T log_post = T(0.0);
 
@@ -150,9 +151,12 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
             ms_sigma2_trend, ms_sigma2_seasonal, ms_sigma2_short, ms_rho_short,
             ms_data);
 
-        // Precompute multiscale temporal contribution to linear predictor
-        tulpa_temporal::compute_temporal_eta(
-            ms_trend, ms_seasonal, ms_short_term, ms_data, ms_temporal_eta);
+        // The field at each time point, and each observation's share of it in
+        // the linear predictor
+        tulpa_temporal::temporal_effects_by_time(
+            ms_trend, ms_seasonal, ms_short_term, ms_data, ms_temporal_by_time);
+        tulpa_temporal::gather_temporal_eta(ms_temporal_by_time, ms_data,
+                                            ms_temporal_eta);
     }
 
     return log_post;

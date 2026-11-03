@@ -511,8 +511,8 @@ void build_sampler_model_inputs(
             Rcpp::stop("build_sampler_model_inputs: multiscale n_times (%d) "
                        "must be at least 1.", ms.n_times);
         }
-        // compute_temporal_eta indexes the three fields at time_index[i] - 1
-        // and guards each read, so an out-of-range entry would contribute zero
+        // gather_temporal_eta reads the field at time_index[i] - 1 and guards
+        // each read, so an out-of-range entry would contribute zero
         // instead of erroring. It is rejected here, where the value came in.
         for (int i = 0; i < ms.n_obs; i++) {
             if (ms.time_index[i] < 1 || ms.time_index[i] > ms.n_times) {
@@ -521,7 +521,7 @@ void build_sampler_model_inputs(
                            "= [1, %d].", i + 1, ms.time_index[i], ms.n_times);
             }
         }
-        // The layout carries one walk per component and compute_temporal_eta
+        // The layout carries one walk per component and gather_temporal_eta
         // reads the time index alone, so a per-group field has nowhere to go.
         ms.n_groups = tp.containsElementNamed("n_groups") &&
                       !Rf_isNull(tp["n_groups"])

@@ -86,6 +86,32 @@ test_that("a sampler fit's fields map to the eta its engine assembled, draw by d
   }
 })
 
+test_that("a sampler's multi-scale temporal field reaches every row at its time", {
+  skip_on_cran()
+  ar <- .fpb_areal(n_t = 12L)
+  ctl <- list(n_chains = 1, n_iter = 200, warmup = 100, seed = 1)
+  for (par in c("noncentered", "centered")) {
+    fit <- suppressWarnings(tulpa(
+      y ~ x, data = ar$d, family = "poisson",
+      temporal = temporal_multiscale("t", trend = "rw1", seasonal = 4,
+                                     short_term = "iid",
+                                     parameterization = par),
+      mode = "hmc", control = ctl))
+    E <- .fpb_map_train(fit)
+    ref <- tulpa:::.tulpa_eta_draws_sampler(fit)
+    expect_lt(max(abs(E - ref)), 1e-10, label = par)
+    expect_lt(max(abs(predict(fit) - colMeans(ref))), 1e-10, label = par)
+    # A new row at a fitted time carries the field at that time: two rows at
+    # the same x differ by the difference of the field's posterior means.
+    nd <- data.frame(x = 0, t = sort(unique(ar$d$t)))
+    p <- predict(fit, newdata = nd)
+    i <- match(nd$t, ar$d$t)
+    fe <- colMeans(ref)[i] - coef(fit)[["x"]] * ar$d$x[i]
+    expect_lt(max(abs((p - p[1]) - (fe - fe[1]))), 1e-8, label = par)
+    expect_gt(sd(p), 0.05, label = par)
+  }
+})
+
 test_that("a grid or one-cell fit's areal and temporal fields map to its own eta", {
   skip_on_cran()
   ar <- .fpb_areal()

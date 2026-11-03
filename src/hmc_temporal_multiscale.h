@@ -126,7 +126,7 @@ inline int rw_walk_order(TemporalType type) {
 // coordinates is close to diagonal too: a diagonal mass matrix reaches it,
 // where the walk's own innovations (cumulative sums of u) couple every
 // coordinate to every later time point. u_0 stands for the level, which
-// compute_temporal_eta centres out of the linear predictor: it carries a proper
+// temporal_effects_by_time centres out of the linear predictor: it carries a proper
 // N(0, 1) and enters no field value. The RW2 slope u_1 is flat, as the linear
 // null direction is under the centred density.
 //
@@ -218,7 +218,7 @@ inline T multiscale_temporal_log_lik(
   // Trend and seasonal are both intrinsic and both enter the SAME linear
   // predictor, so each carries a constant null direction that is unidentified
   // against the intercept and against the other component. Both are augmented
-  // -- Q -> Q + 11'/n, with compute_temporal_eta centring
+  // -- Q -> Q + 11'/n, with temporal_effects_by_time centring
   // each arm before it reaches eta -- so the direction is removed rather than
   // penalised. The short-term arm is proper (AR1/IID), identifies its own
   // level, and is left alone.
@@ -246,28 +246,24 @@ inline T multiscale_temporal_log_lik(
 }
 
 // -----------------------------------------------------------------------------
-// Compute total temporal effect at each observation
+// Total temporal effect at each time point, and at each observation
 // -----------------------------------------------------------------------------
 
-// eta_temporal[i] = trend[time_idx[i]] + seasonal[time_idx[i] % period] + short[time_idx[i]]
+// effect[t] = trend[t] + seasonal[t % period] + short[t], each intrinsic arm
+// centred, for t = 0 .. n_times - 1. This is the field the linear predictor
+// reads: an observation's effect is the effect at its time
+// (`gather_temporal_eta()`), and a prediction at a fitted time reads the same
+// value.
 template <typename T>
-inline void compute_temporal_eta(
+inline void temporal_effects_by_time(
     const std::vector<T>& trend,
     const std::vector<T>& seasonal,
     const std::vector<T>& short_term,
     const MultiscaleTemporalData& temp_data,
-    std::vector<T>& eta_temporal  // Output: length n_obs
+    std::vector<T>& effect  // Output: length n_times
 ) {
-  int N = temp_data.n_obs;
-  // n_obs and time_index are separate fields of MultiscaleTemporalData, which
-  // ships under inst/include: a LinkingTo caller can declare more observations
-  // than it supplied indices for, and the loop below reads time_index[i] for
-  // every one of them.
-  if (temp_data.time_index.size() < static_cast<std::size_t>(N)) {
-    throw std::invalid_argument(
-        "tulpa: MultiscaleTemporalData.time_index is shorter than n_obs.");
-  }
-  eta_temporal.resize(N);
+  const int n_t = temp_data.n_times;
+  effect.assign(n_t > 0 ? n_t : 0, T(0.0));
 
   // The intrinsic arms are centred on their way in. Their augmented prior gives
   // each constant direction the arm's own precision (order 1) rather than the
@@ -286,31 +282,53 @@ inline void compute_temporal_eta(
                              seasonal.data(), 0,
                              static_cast<int>(seasonal.size()));
 
-  for (int i = 0; i < N; i++) {
-    T effect = T(0.0);
-    int t_idx = temp_data.time_index[i] - 1;  // Convert to 0-based
+  for (int t_idx = 0; t_idx < n_t; t_idx++) {
+    T e = T(0.0);
 
     // Trend contribution
-    if (!trend.empty() && t_idx >= 0 &&
-        t_idx < static_cast<int>(trend.size())) {
-      effect = effect + (trend[t_idx] - trend_mean);
+    if (t_idx < static_cast<int>(trend.size())) {
+      e = e + (trend[t_idx] - trend_mean);
     }
 
     // Seasonal contribution (wrap around using modulo)
     if (temp_data.seasonal_period > 0 && !seasonal.empty()) {
       int s_idx = t_idx % temp_data.seasonal_period;
-      if (s_idx >= 0 && s_idx < static_cast<int>(seasonal.size())) {
-        effect = effect + (seasonal[s_idx] - seasonal_mean);
+      if (s_idx < static_cast<int>(seasonal.size())) {
+        e = e + (seasonal[s_idx] - seasonal_mean);
       }
     }
 
     // Short-term contribution
-    if (!short_term.empty() && t_idx >= 0 &&
-        t_idx < static_cast<int>(short_term.size())) {
-      effect = effect + short_term[t_idx];
+    if (t_idx < static_cast<int>(short_term.size())) {
+      e = e + short_term[t_idx];
     }
 
-    eta_temporal[i] = effect;
+    effect[t_idx] = e;
+  }
+}
+
+// eta_temporal[i] = effect[time_idx[i] - 1]; an index outside the time points
+// contributes nothing.
+template <typename T>
+inline void gather_temporal_eta(
+    const std::vector<T>& effect,
+    const MultiscaleTemporalData& temp_data,
+    std::vector<T>& eta_temporal  // Output: length n_obs
+) {
+  int N = temp_data.n_obs;
+  // n_obs and time_index are separate fields of MultiscaleTemporalData, which
+  // ships under inst/include: a LinkingTo caller can declare more observations
+  // than it supplied indices for, and the loop below reads time_index[i] for
+  // every one of them.
+  if (temp_data.time_index.size() < static_cast<std::size_t>(N)) {
+    throw std::invalid_argument(
+        "tulpa: MultiscaleTemporalData.time_index is shorter than n_obs.");
+  }
+  eta_temporal.resize(N);
+  const int n_t = static_cast<int>(effect.size());
+  for (int i = 0; i < N; i++) {
+    const int t_idx = temp_data.time_index[i] - 1;  // Convert to 0-based
+    eta_temporal[i] = (t_idx >= 0 && t_idx < n_t) ? effect[t_idx] : T(0.0);
   }
 }
 

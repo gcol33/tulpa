@@ -1,6 +1,6 @@
 # Boundary checks on the multiscale temporal inputs (gcol33/tulpa#546).
 #
-# compute_temporal_eta reads the three arms at time_index[i] - 1 and guards each
+# gather_temporal_eta reads the field at time_index[i] - 1 and guards each
 # read, so an out-of-range index used to contribute zero rather than error --
 # a mismatch between the index vector and the field length showed up as a
 # quietly weaker temporal effect. The index is validated where it comes in

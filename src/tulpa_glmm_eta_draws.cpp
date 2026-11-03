@@ -194,10 +194,13 @@ Rcpp::List cpp_sampler_field_draws(
     const int n_ms = ms ? layout.gp_local_end - layout.gp_local_start : 0;
     const bool ms_nc = ms && data.msgp_parameterization == 1 &&
                        !data.msgp_is_hsgp;
+    const bool mst = layout.has_multiscale_temporal &&
+                     data.has_multiscale_temporal;
+    const int n_mst = mst ? data.multiscale_temporal_data.n_times : 0;
 
     Rcpp::NumericMatrix spatial_unit(S, n_units), temporal_out(S, n_temp),
         gp_w(S, n_gp), hsgp_z(S, n_hsgp), ms_local(S, n_ms),
-        ms_regional(S, n_ms);
+        ms_regional(S, n_ms), ms_temporal(S, n_mst);
     Rcpp::NumericVector gp_s2(gp ? S : 0), gp_ph(gp ? S : 0),
         hs_s2(hsgp ? S : 0), hs_ls(hsgp ? S : 0),
         ms_s2l(ms ? S : 0), ms_phl(ms ? S : 0),
@@ -215,6 +218,15 @@ Rcpp::List cpp_sampler_field_draws(
         if (temporal && (int)state.phi_temporal.size() == n_temp) {
             for (int t = 0; t < n_temp; t++) {
                 temporal_out(s, t) = tulpa::generic_temporal_effect(t, state);
+            }
+        }
+        if (mst) {
+            if ((int)state.ms_temporal_by_time.size() != n_mst) {
+                Rcpp::stop("cpp_sampler_field_draws: the multi-scale temporal "
+                           "field was not assembled at draw %d.", s + 1);
+            }
+            for (int t = 0; t < n_mst; t++) {
+                ms_temporal(s, t) = state.ms_temporal_by_time[t];
             }
         }
         if (gp) {
@@ -274,5 +286,6 @@ Rcpp::List cpp_sampler_field_draws(
         Rcpp::Named("ms_sigma2_local") = ms_s2l,
         Rcpp::Named("ms_phi_local") = ms_phl,
         Rcpp::Named("ms_sigma2_regional") = ms_s2r,
-        Rcpp::Named("ms_phi_regional") = ms_phr);
+        Rcpp::Named("ms_phi_regional") = ms_phr,
+        Rcpp::Named("ms_temporal") = ms_temporal);
 }

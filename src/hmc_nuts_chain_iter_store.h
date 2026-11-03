@@ -97,7 +97,7 @@
       // Non-centred multiscale trend: the sampled slice is the walk's level,
       // slope and standardized innovations. The stored draw is the walk
       // multiscale_trend_values() hands the likelihood, centred as
-      // compute_temporal_eta centres it on its way into eta.
+      // temporal_effects_by_time centres it on its way into eta.
       if (data.has_multiscale_temporal && layout.has_multiscale_temporal &&
           tulpa::priors::multiscale_trend_noncentered(data, layout)) {
           std::vector<double> trend_store;
