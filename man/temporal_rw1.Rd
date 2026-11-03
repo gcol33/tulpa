@@ -34,6 +34,9 @@ first differences, so adjacent time points are smoothed toward each other:
 The precision matrix is rank \code{T - 1} (one constraint needed). RW1 is the
 least smooth of the random-walk priors; for smoother trends see
 \code{\link[=temporal_rw2]{temporal_rw2()}}, and for a stationary alternative see \code{\link[=temporal_ar1]{temporal_ar1()}}.
+
+The SD sigma of the walk's increments carries a PC prior with
+\code{P(sigma > 3) = 0.01}, the same on the nested-Laplace and the sampler routes.
 }
 \examples{
 # Create temporal RW1 specification

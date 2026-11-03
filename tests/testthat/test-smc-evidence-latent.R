@@ -29,6 +29,21 @@ adj_csr <- function(W) {
        n_neighbors = as.integer(lengths(cols)))
 }
 
+# PC prior on a standard deviation, carried to log(sigma2) and to log(tau).
+lp_pc_log_sigma2 <- function(ls2, U, a) {
+  lam <- -log(a) / U
+  log(lam) - lam * exp(ls2 / 2) - log(2) + ls2 / 2
+}
+lp_pc_log_tau <- function(lt, U, a) {
+  lam <- -log(a) / U
+  log(lam) - lam * exp(-lt / 2) - log(2) - lt / 2
+}
+# PC prior on a d = 2 range, carried to log(range).
+lp_pc_log_range <- function(lr, U, a) {
+  lam <- -log(a) * U
+  log(lam) - 2 * lr - lam * exp(-lr) + lr
+}
+
 # The prior on the fixed effects, in every model below.
 lp_beta <- function(b, sdb) sum(dnorm(b, 0, sdb, log = TRUE))
 
@@ -172,18 +187,18 @@ test_that("the temporal normalizers make the prior a density", {
     R <- rw_structure(Tn, cfg[[2]], cfg[[3]])
     Raug <- R + 1 / Tn
     run(c(base, list(type = cfg[[1]], cyclic = cfg[[3]])), function(r, x) {
-      tau <- exp(r[["log_tau_temporal"]])
-      dgamma(tau, 1, 0.01, log = TRUE) + log(tau) + lmvn_prec(x, tau * Raug)
+      lt <- r[["log_tau_temporal"]]
+      lp_pc_log_tau(lt, 3, 0.01) + lmvn_prec(x, exp(lt) * Raug)
     })
   }
   # AR1 under a Beta(2, 3) on (rho + 1) / 2
   run(c(base, list(type = "ar1", cyclic = FALSE, rho_prior_a = 2,
                    rho_prior_b = 3)), function(r, x) {
-    tau <- exp(r[["log_tau_temporal"]])
+    lt <- r[["log_tau_temporal"]]; tau <- exp(lt)
     u <- plogis(r[["logit_rho_ar1"]]); rho <- 2 * u - 1
     P <- diag(c(1, rep(1 + rho^2, Tn - 2), 1))
     P[cbind(1:(Tn - 1), 2:Tn)] <- P[cbind(2:Tn, 1:(Tn - 1))] <- -rho
-    dgamma(tau, 1, 0.01, log = TRUE) + log(tau) +
+    lp_pc_log_tau(lt, 3, 0.01) +
       dbeta(u, 2, 3, log = TRUE) + log(u) + log1p(-u) +
       lmvn_prec(x, tau * P)
   })
@@ -217,20 +232,6 @@ test_that("the temporal normalizers make the prior a density", {
   }
 })
 
-# PC prior on a standard deviation, carried to log(sigma2) and to log(tau).
-lp_pc_log_sigma2 <- function(ls2, U, a) {
-  lam <- -log(a) / U
-  log(lam) - lam * exp(ls2 / 2) - log(2) + ls2 / 2
-}
-lp_pc_log_tau <- function(lt, U, a) {
-  lam <- -log(a) / U
-  log(lam) - lam * exp(-lt / 2) - log(2) - lt / 2
-}
-# PC prior on a d = 2 range, carried to log(range).
-lp_pc_log_range <- function(lr, U, a) {
-  lam <- -log(a) * U
-  log(lam) - 2 * lr - lam * exp(-lr) + lr
-}
 
 test_that("the GP / HSGP / SVC / TVC normalizers make the prior a density", {
   load_cpp_fixture("smc_normalizer")
@@ -536,7 +537,8 @@ test_that("the SMC evidence of an ICAR model matches quadrature", {
 # against quadrature sits within its Monte Carlo error, and the spread of the
 # errors matches the standard error the fit reports. An AR1 field on 15 times,
 # its precision and correlation integrated on a grid over (log tau, logit u),
-# rho = 2u - 1, Gamma(1, 0.01) on tau and a uniform u.
+# rho = 2u - 1, the PC prior P(sigma > 3) = 0.01 on sigma = 1 / sqrt(tau) and a
+# uniform u.
 test_that("the SMC evidence of an AR1 model is calibrated across seeds", {
   skip_if_not_slow()
   set.seed(20)
@@ -552,7 +554,7 @@ test_that("the SMC evidence of an AR1 model is calibrated across seeds", {
     P <- diag(c(1, rep(1 + rho^2, Tn - 2), 1))
     P[cbind(1:(Tn - 1), 2:Tn)] <- P[cbind(2:Tn, 1:(Tn - 1))] <- -rho
     lmvn_cov(y, base + A %*% solve(exp(lt) * P) %*% t(A)) +
-      dgamma(exp(lt), 1, 0.01, log = TRUE) + lt + log(u) + log1p(-u)
+      lp_pc_log_tau(lt, 3, 0.01) + log(u) + log1p(-u)
   }))
   m <- max(lv)
   exact <- m + log(sum(exp(lv - m)) * diff(lg)[1] * diff(lr)[1])

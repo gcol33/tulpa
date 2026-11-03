@@ -522,8 +522,13 @@ struct ModelData {
     int n_temporal_params = 0;
     bool temporal_cyclic = false;
     bool temporal_shared = true;            // shared across processes
-    double tau_temporal_shape = 1.0;
-    double tau_temporal_rate = 0.01;
+    // PC prior on an RW1 / RW2 / AR1 field's SD sigma = 1 / sqrt(tau), carried
+    // to the sampled log-precision: P(sigma > U) = alpha. The default is the
+    // anchor the nested-Laplace route puts on the same field's precision axis
+    // (`.NL_HYPERPRIOR$scale_U` / `scale_alpha`), so both routes sample one
+    // model.
+    double temporal_sigma_prior_U = 3.0;
+    double temporal_sigma_prior_alpha = 0.01;
 
     // Temporal GP (irregularly-spaced)
     TemporalGPData temporal_gp_data;

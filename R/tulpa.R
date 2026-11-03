@@ -1729,7 +1729,11 @@
         n_times   = as.integer(temporal$n_times),
         n_groups  = n_groups,
         group_idx = if (n_groups > 1L) as.integer(temporal$group_index) else NULL,
-        cyclic    = isTRUE(temporal$cyclic)
+        cyclic    = isTRUE(temporal$cyclic),
+        # The PC prior on the field SD the nested-Laplace route puts on the
+        # same field's precision axis.
+        sigma_prior_U     = .nl_scale_anchor()[1L],
+        sigma_prior_alpha = .nl_scale_anchor()[2L]
       )
       if (ttype == "ar1") {
         ab <- .ar1_rho_beta_ab(temporal$rho_prior)

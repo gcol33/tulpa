@@ -24,6 +24,9 @@
 #' least smooth of the random-walk priors; for smoother trends see
 #' [temporal_rw2()], and for a stationary alternative see [temporal_ar1()].
 #'
+#' The SD sigma of the walk's increments carries a PC prior with
+#' `P(sigma > 3) = 0.01`, the same on the nested-Laplace and the sampler routes.
+#'
 #' @examples
 #' # Create temporal RW1 specification
 #' temporal_rw1("year")
@@ -79,6 +82,9 @@ temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #' It requires at least 3 time points.
 #'
 #' The precision matrix is rank T-2 (two constraints needed).
+#'
+#' The SD sigma of the walk's second differences carries a PC prior with
+#' `P(sigma > 3) = 0.01`, the same on the nested-Laplace and the sampler routes.
 #'
 #' @examples
 #' # Create temporal RW2 specification
@@ -159,6 +165,9 @@ temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #'
 #' The precision matrix is tridiagonal and full rank, so no constraints
 #' are needed.
+#'
+#' The innovation SD sigma carries a PC prior with `P(sigma > 3) = 0.01`, the
+#' same on the nested-Laplace and the sampler routes.
 #'
 #' @examples
 #' # Create temporal AR1 specification

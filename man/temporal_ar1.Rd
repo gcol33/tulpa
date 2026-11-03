@@ -41,6 +41,9 @@ correlation between time points t and s of rho^|t-s|.
 
 The precision matrix is tridiagonal and full rank, so no constraints
 are needed.
+
+The innovation SD sigma carries a PC prior with \code{P(sigma > 3) = 0.01}, the
+same on the nested-Laplace and the sampler routes.
 }
 \examples{
 # Create temporal AR1 specification

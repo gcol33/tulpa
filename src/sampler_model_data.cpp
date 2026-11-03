@@ -641,6 +641,12 @@ void build_sampler_model_inputs(
         if (tp.containsElementNamed("rho_prior_b"))
             in.data.ar1_rho_prior_b = Rcpp::as<double>(tp["rho_prior_b"]);
         in.data.n_temporal_params = in.data.n_times * in.data.n_temporal_groups;
+        if (ttype == "rw1" || ttype == "rw2" || ttype == "ar1") {
+            read_pc_anchors(tp, "sigma_prior_U", "sigma_prior_alpha",
+                            in.data.temporal_sigma_prior_U,
+                            in.data.temporal_sigma_prior_alpha,
+                            "temporal field scale");
+        }
         if (ttype == "rw1")      in.data.temporal_type = TemporalType::RW1;
         else if (ttype == "rw2") in.data.temporal_type = TemporalType::RW2;
         else if (ttype == "ar1") in.data.temporal_type = TemporalType::AR1;

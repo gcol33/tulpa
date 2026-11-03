@@ -178,7 +178,12 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
         } else {
             // RW1/RW2/AR1: tau-based parameterization
             T log_tau = params[layout.log_tau_temporal_idx];
-            log_post = log_post + log_prior_gamma(log_tau, data.tau_temporal_shape, data.tau_temporal_rate);
+            // PC prior on the field SD 1 / sqrt(tau), on the sampled
+            // log-precision: the prior the nested-Laplace route puts on the
+            // same field's precision axis.
+            log_post = log_post + log_prior_log_tau_pc(
+                log_tau, data.temporal_sigma_prior_U,
+                data.temporal_sigma_prior_alpha);
 
             // RW1 and RW2 are intrinsic, and this path carried no sum-to-zero
             // term at all, so the field level would be free to wander
@@ -264,12 +269,12 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
 //   GP  : the Uniform normalizer of the lengthscale (the PC prior on sigma2 and
 //         the centered field densities are normalized), and -0.5 log(2 pi) per
 //         non-centered z.
-//   RW1 / cyclic RW2, one group: the Gamma normalizer of tau, and the
-//         0.5 log|R|_+ of the walk's structure R that its gmrf_log_norm omits;
-//         the global sum-to-zero augmentation fills R's constant null
-//         direction with eigenvalue 1, so |R_aug| = |R|_+.
-//   AR1 : the Gamma normalizer of tau and the Beta normalizer of (rho + 1) / 2;
-//         the stationary AR1 density is normalized.
+//   RW1 / cyclic RW2, one group: the 0.5 log|R|_+ of the walk's structure R
+//         that its gmrf_log_norm omits; the global sum-to-zero augmentation
+//         fills R's constant null direction with eigenvalue 1, so
+//         |R_aug| = |R|_+. The PC prior on tau is normalized.
+//   AR1 : the Beta normalizer of (rho + 1) / 2; the PC prior on tau and the
+//         stationary AR1 density are normalized.
 // An acyclic RW2 keeps its linear null direction, and RW1 / RW2 over several
 // groups keep the G - 1 group contrasts free; either leaves the prior improper,
 // and the evidence relative to an improper prior is not defined.
@@ -287,10 +292,8 @@ inline double temporal_prior_log_normalizer(const ModelData& data,
         }
         return c;
     }
-    const double gamma_c = log_prior_gamma_log_normalizer(
-        data.tau_temporal_shape, data.tau_temporal_rate);
     if (data.temporal_type == TemporalType::AR1) {
-        return gamma_c + log_prior_beta_logit_log_normalizer(
+        return log_prior_beta_logit_log_normalizer(
             data.ar1_rho_prior_a, data.ar1_rho_prior_b);
     }
     const bool rw2 = data.temporal_type == TemporalType::RW2;
@@ -306,7 +309,7 @@ inline double temporal_prior_log_normalizer(const ModelData& data,
         if (declined) declined->push_back("temporal:group_contrasts_improper");
         return nan;
     }
-    return gamma_c + 0.5 * rw_log_pdet(data.n_times, rw2 ? 2 : 1,
+    return 0.5 * rw_log_pdet(data.n_times, rw2 ? 2 : 1,
                                        data.temporal_cyclic);
 }
 

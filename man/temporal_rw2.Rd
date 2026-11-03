@@ -36,6 +36,9 @@ derivative (curvature) rather than the first derivative (slope).
 It requires at least 3 time points.
 
 The precision matrix is rank T-2 (two constraints needed).
+
+The SD sigma of the walk's second differences carries a PC prior with
+\code{P(sigma > 3) = 0.01}, the same on the nested-Laplace and the sampler routes.
 }
 \examples{
 # Create temporal RW2 specification
