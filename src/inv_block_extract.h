@@ -17,10 +17,11 @@
 //     block under the field sum-to-zero constraint, so the covariance it
 //     reports is the one the fit's own posterior draws are generated from.
 //
-// Solve oracle contract: `solve(const double* rhs, double* out)` writes
-// H^{-1} rhs into `out`; both buffers have length n_x. The oracle owns whatever
-// factor it reads (sparse CHOLMOD factor, dense back-substitution) and is called
-// once per extracted column -- never a refactorization.
+// Solve oracle contract: `solve(const double* rhs, double* out, int ncol)`
+// writes H^{-1} rhs into `out`, both column-major [n_x x ncol]. The oracle owns
+// whatever factor it reads (sparse CHOLMOD factor, dense back-substitution) and
+// is called once per block of columns -- never a refactorization -- so the
+// columns of a block reach the factor in one pass.
 
 #ifndef TULPA_INV_BLOCK_EXTRACT_H
 #define TULPA_INV_BLOCK_EXTRACT_H
@@ -213,18 +214,28 @@ struct InvBlockConstraint {
     // Cholesky factor exists; an LDL' factor's count otherwise). A target that
     // is not positive definite leaves `usable = false`, and the caller then
     // skips the correction rather than subtracting a wrong one.
-    template <typename SolveFn>
-    void build(SolveFn solve, int n_x, const std::vector<double>* Dinv = nullptr,
+    // `solve(rhs, out, ncol)` solves the m columns of Vb in one call.
+    template <typename SolveCols>
+    void build(SolveCols solve, int n_x, const std::vector<double>* Dinv = nullptr,
                int neg_base = 0) {
         usable = false;
         W.clear();
         if (kc <= 0) return;
-        const int m = order();
+        std::vector<double> rhs;
+        vb_columns(n_x, rhs);
+        std::vector<double> sol(rhs.size(), 0.0);
+        solve(rhs.data(), sol.data(), order());
+        build_from_columns(sol.data(), n_x, Dinv, neg_base);
+    }
 
-        std::vector<double> e(n_x, 0.0), v(n_x, 0.0);
-        W.resize(m);
+    // Vb = [A' E] as m = kc + (number of anchors) columns back to back, each of
+    // length n_x, rows first and anchors after, in order.
+    void vb_columns(int n_x, std::vector<double>& out) const {
+        const int m = order();
+        const std::size_t n = static_cast<std::size_t>(n_x);
+        out.assign(n * static_cast<std::size_t>(m > 0 ? m : 0), 0.0);
         for (int i = 0; i < m; i++) {
-            std::fill(e.begin(), e.end(), 0.0);
+            double* e = out.data() + n * static_cast<std::size_t>(i);
             if (i < kc) {
                 const LinearConstraintRow& r = rows[i];
                 for (std::size_t t = 0; t < r.cols.size(); t++)
@@ -232,17 +243,14 @@ struct InvBlockConstraint {
             } else {
                 e[anchor_node[i - kc]] = 1.0;
             }
-            solve(e.data(), v.data());
-            W[i] = v;
         }
-        factor_cap(Dinv, neg_base);
     }
 
     // The same build from the columns W = H_a^{-1} Vb already solved: `cols`
-    // holds the m = kc + (number of anchors) columns back to back, each of
-    // length n_x, rows first and anchors after, in order.
+    // holds them in vb_columns()'s layout.
     void build_from_columns(const double* cols, int n_x,
-                            const std::vector<double>* Dinv = nullptr) {
+                            const std::vector<double>* Dinv = nullptr,
+                            int neg_base = 0) {
         usable = false;
         W.clear();
         if (kc <= 0) return;
@@ -251,7 +259,7 @@ struct InvBlockConstraint {
         for (int i = 0; i < m; i++)
             W[i].assign(cols + static_cast<std::size_t>(i) * n_x,
                         cols + static_cast<std::size_t>(i + 1) * n_x);
-        factor_cap(Dinv, 0);
+        factor_cap(Dinv, neg_base);
     }
 
     // Vb_i' w for column i of Vb.
@@ -552,7 +560,7 @@ struct InvBlockConstraint {
 // usable correction) for the requested (offset, size) ranges. With `constr`,
 // `solve` is the solve against the anchored precision it was built on.
 //
-// Each block costs one solve per column and no refactorization. Blocks are
+// Each block costs one block solve and no refactorization. Blocks are
 // appended to `flat_out` column-major, with the side length appended to
 // `sizes_out`, so a caller reads block b at the running offset sum of
 // sizes_out[0..b-1] squared -- the LaplaceResult re_cov_flat contract.
@@ -566,19 +574,17 @@ void extract_inv_diag_blocks(SolveFn solve, int n_x,
     if (layout.empty()) return;
     const bool have_corr = constr && constr->usable && constr->kc > 0;
 
-    std::vector<double> rhs(n_x, 0.0), col(n_x, 0.0);
-
+    const std::size_t n = static_cast<std::size_t>(n_x);
     for (const auto& blk : layout) {
         const int s = blk.first, m = blk.second;
         if (m <= 0 || s < 0 || s + m > n_x) continue;
         std::vector<double> block(static_cast<std::size_t>(m) * m, 0.0);
 
-        for (int c = 0; c < m; c++) {
-            std::fill(rhs.begin(), rhs.end(), 0.0);
-            rhs[s + c] = 1.0;
-            solve(rhs.data(), col.data());
-            for (int r = 0; r < m; r++) block[r * m + c] = col[s + r];
-        }
+        std::vector<double> rhs(n * m, 0.0), col(n * m, 0.0);
+        for (int c = 0; c < m; c++) rhs[n * c + s + c] = 1.0;
+        solve(rhs.data(), col.data(), m);
+        for (int c = 0; c < m; c++)
+            for (int r = 0; r < m; r++) block[r * m + c] = col[n * c + s + r];
 
         // M^{-1} G_a once per block index, not once per (row, column) pair.
         std::vector<std::vector<double>> yv;

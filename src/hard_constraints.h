@@ -208,9 +208,6 @@ struct HardConstraintState {
     InvBlockConstraint cap;    // W = M_a^{-1} Vb, the anchored fold
     std::vector<int> anchor_node;       // one per structural row that has one
     std::vector<double> anchor_weight;  // the weights last loaded
-    // Every node some row reaches, sorted: the coordinates a solver has to
-    // treat as structured field, never as dense scalars (s2z_block_schur).
-    std::vector<int> row_nodes;
     bool anchors_loaded = false;
     std::vector<double> rhs;   // [g | Vb_1 | ... | Vb_m], each length n_x
     std::vector<double> sol;   // M_a^{-1} applied to rhs, same layout
@@ -241,23 +238,18 @@ struct HardConstraintState {
         anchors_loaded = false;
         anchor_node.clear();
         anchor_weight.clear();
-        row_nodes.clear();
         rhs.clear();
         sol.clear();
         if (rows.empty()) return;
         gram.set_rows(n_x, rows);
-        gram.build([nx](const double* in, double* out) {
-                       std::copy(in, in + nx, out);
+        gram.build([nx](const double* in, double* out, int ncol) {
+                       std::copy(in, in + static_cast<std::size_t>(nx) * ncol, out);
                    }, n_x);
         if (!gram.usable) {
             Rcpp::stop("The hard linear constraints of the latent blocks are "
                        "linearly dependent (A A' is singular); each block has "
                        "to declare an independent set.");
         }
-        std::vector<char> reached(static_cast<std::size_t>(n_x), 0);
-        for (const auto& row : rows)
-            for (int j : row.cols) if (j >= 0 && j < n_x) reached[j] = 1;
-        for (int j = 0; j < n_x; j++) if (reached[j]) row_nodes.push_back(j);
         std::vector<char> taken(static_cast<std::size_t>(n_x), 0);
         for (std::size_t g = 0; g < rows.size() && g < anchored.size(); g++) {
             if (!anchored[g]) continue;
@@ -361,8 +353,8 @@ struct HardConstraintState {
         return cap.usable;
     }
 
-    // W = M_a^{-1} Vb through a per-column solve with M_a, and the factored
-    // capacitance.
+    // W = M_a^{-1} Vb through one block solve with M_a
+    // (`solve(rhs, out, ncol)`), and the factored capacitance.
     template <typename SolveFn>
     bool factor_cap(SolveFn solve) {
         if (!take_anchors()) return false;

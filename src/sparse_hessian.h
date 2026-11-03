@@ -393,50 +393,41 @@ inline bool s2z_build_Dinv(
     return true;
 }
 
+// `delta` holds `ncol` columns of length n_x, each corrected against the same
+// W = A^{-1} U, solved in one call.
 inline bool apply_s2z_rank1_correction(
     SparseCholeskySolver& solver, int n_x,
     const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
     double* delta,
-    const std::vector<double>& coupling
+    const std::vector<double>& coupling,
+    int ncol = 1
 ) {
     const int K = static_cast<int>(r1.size());
-    if (K == 0) return true;
+    if (K == 0 || ncol <= 0) return true;
+    const std::size_t n = static_cast<std::size_t>(n_x);
 
-    std::vector<std::vector<double>> W(K, std::vector<double>(n_x, 0.0));
-    std::vector<double> rhs(n_x, 0.0);
-    for (int k = 0; k < K; ++k) {
-        std::fill(rhs.begin(), rhs.end(), 0.0);
-        for (int i = 0; i < r1[k].n; ++i) rhs[r1[k].node(i)] = 1.0;
-        solver.solve(rhs.data(), W[k].data(), n_x);          // W_k = A^{-1} 1_k
-        for (int i = 0; i < n_x; ++i)
-            if (!std::isfinite(W[k][i])) return false;
-    }
+    std::vector<double> U(n * K, 0.0), W(n * K, 0.0);
+    for (int k = 0; k < K; ++k)
+        for (int i = 0; i < r1[k].n; ++i) U[n * k + r1[k].node(i)] = 1.0;
+    solver.solve(U.data(), W.data(), n_x, K);                  // W_k = A^{-1} 1_k
+    for (double w : W) if (!std::isfinite(w)) return false;
 
-    // b_k = 1_k' delta = 1_k' A^{-1} grad;  M_{jk} = 1_j' W_k = (U'A^{-1}U)_{jk}.
-    std::vector<double> b(K, 0.0);
+    // M_{jk} = 1_j' W_k = (U'A^{-1}U)_{jk}.
     std::vector<double> M(K * K, 0.0);
-    for (int k = 0; k < K; ++k) {
-        double bk = 0.0;
-        for (int i = 0; i < r1[k].n; ++i) bk += delta[r1[k].node(i)];
-        b[k] = bk;
+    for (int k = 0; k < K; ++k)
         for (int j = 0; j < K; ++j) {
             double m = 0.0;
-            for (int i = 0; i < r1[j].n; ++i) m += W[k][r1[j].node(i)];
+            for (int i = 0; i < r1[j].n; ++i) m += W[n * k + r1[j].node(i)];
             M[j * K + k] = m;
         }
-    }
 
     // Cap = D^{-1} + M (SPD). Dense Cholesky Cap = L L'.
     std::vector<double> Dinv; double log_det_D = 0.0;
     if (!s2z_build_Dinv(r1, coupling, Dinv, log_det_D)) return false;
-    std::vector<double> Cap(K * K, 0.0);
-    for (int j = 0; j < K; ++j)
-        for (int k = 0; k < K; ++k)
-            Cap[j * K + k] = M[j * K + k] + Dinv[(std::size_t) j * K + k];
     std::vector<double> L(K * K, 0.0);
     for (int j = 0; j < K; ++j) {
         for (int k = 0; k <= j; ++k) {
-            double sum = Cap[j * K + k];
+            double sum = M[j * K + k] + Dinv[(std::size_t) j * K + k];
             for (int p = 0; p < k; ++p) sum -= L[j * K + p] * L[k * K + p];
             if (j == k) {
                 if (sum <= 0.0) return false;   // not SPD: keep uncorrected
@@ -447,24 +438,27 @@ inline bool apply_s2z_rank1_correction(
         }
     }
 
-    // Solve Cap y = b via L L' y = b (forward then back substitution).
     std::vector<double> y(K, 0.0);
-    for (int j = 0; j < K; ++j) {
-        double sum = b[j];
-        for (int p = 0; p < j; ++p) sum -= L[j * K + p] * y[p];
-        y[j] = sum / L[j * K + j];
+    for (int c = 0; c < ncol; ++c) {
+        double* d = delta + n * c;
+        // b_k = 1_k' delta = 1_k' A^{-1} grad; Cap y = b via L L' y = b.
+        for (int j = 0; j < K; ++j) {
+            double sum = 0.0;
+            for (int i = 0; i < r1[j].n; ++i) sum += d[r1[j].node(i)];
+            for (int p = 0; p < j; ++p) sum -= L[j * K + p] * y[p];
+            y[j] = sum / L[j * K + j];
+        }
+        for (int j = K - 1; j >= 0; --j) {
+            double sum = y[j];
+            for (int p = j + 1; p < K; ++p) sum -= L[p * K + j] * y[p];
+            y[j] = sum / L[j * K + j];
+        }
+        // delta -= sum_k y_k W_k  (Woodbury step correction).
+        for (int k = 0; k < K; ++k) {
+            const double* wk = W.data() + n * k;
+            for (std::size_t i = 0; i < n; ++i) d[i] -= y[k] * wk[i];
+        }
     }
-    for (int j = K - 1; j >= 0; --j) {
-        double sum = y[j];
-        for (int p = j + 1; p < K; ++p) sum -= L[p * K + j] * y[p];
-        y[j] = sum / L[j * K + j];
-    }
-
-    // delta -= sum_k y_k W_k  (Woodbury step correction).
-    for (int k = 0; k < K; ++k)
-        for (int i = 0; i < n_x; ++i)
-            delta[i] -= y[k] * W[k][i];
-
     return true;
 }
 
@@ -516,34 +510,42 @@ struct S2ZBlockSchurCache {
     SparseHessianBuilder aff;          // A_FF pattern + values (zeroed/scattered per call)
     SparseCholeskySolver aff_solver;   // symbolic factor once, numeric per call
     SparseCholeskySolver aff_ldl;      // simplicial LDL' of A_FF, analyzed on first need
-    std::vector<int> extra_field;      // field nodes beyond the pins' (sorted)
+    unsigned long long pattern_generation = 0;   // A's pattern the partition read
 
     bool matches(const SparseHessianBuilder& A,
-                 const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
-                 const std::vector<int>* extra) const {
-        if (!built || n_x != A.n || a_nnz != A.nnz) return false;
-        if (extra ? (*extra != extra_field) : !extra_field.empty()) return false;
+                 const std::vector<SparseHessianBuilder::S2ZRank1>& r1) const {
+        if (!built || n_x != A.n || a_nnz != A.nnz ||
+            pattern_generation != A.pattern_generation) return false;
         return s2z_layout_matches(block_layout, r1);
     }
 };
 
+// Row degree above which a coordinate of the block-Schur step is a dense
+// scalar: AMD's own dense-row rule (CHOLMOD's default ordering), a row with
+// more than max(16, 10 sqrt(n)) off-diagonal entries. Such a row would close
+// the sparse factor as a dense trailing block anyway; the Schur complement
+// carries it there without the fill.
+inline int s2z_dense_degree(int n_x) {
+    return std::max(16, static_cast<int>(10.0 * std::sqrt(static_cast<double>(n_x))));
+}
+
 // (Re)build the pattern-invariant block-Schur cache: field/scalar partition, the
 // A_FF CSC pattern + its symbolic factor, and each A nonzero's scatter target.
-// `extra`, when given, is a sorted list of nodes that join the field set.
 void build_s2z_block_schur_cache(
     const SparseHessianBuilder& A,
     const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
-    S2ZBlockSchurCache& cache,
-    const std::vector<int>* extra = nullptr
+    S2ZBlockSchurCache& cache
 );
 
 // Block-Schur log-determinant for B = A + sum_k coef_k 1_k 1_k'. Partitions the
-// latent into the field indices F (the union of the s2z block ranges, and the
-// caller's `extra_field` nodes) and the scalar complement S (intercepts, betas,
-// REs). The complement is closed by a DENSE Schur complement, so a structured
-// block that carries no pin of its own belongs in F: left in S, a Knorr-Held
-// interaction's S x T coordinates make an S T x S T dense factorization of
-// every step. Factors the sparse field
+// latent by the sparsity of A: the dense scalars S are the coordinates whose
+// row of A exceeds s2z_dense_degree() (intercepts and coefficients loading
+// every observation, a dense basis), the field F is every other coordinate and
+// every pinned node. A pin decides nothing else: a block without one -- an
+// NNGP or HSGP neighbour of an ICAR field, a random effect, a Knorr-Held
+// interaction -- is sparse and factored as such, where a pin-based partition
+// put its coordinates in the dense Schur complement (an n x n dense
+// factorization per step for an n-node block). Factors the sparse field
 // sub-block anchored at one node per pin, A_a = A_FF + E C_a E'
 // (InvBlockConstraint), folds the K rank-1 pins and the anchors back out by the
 // matrix-determinant lemma, and closes the field<->scalar coupling with a small
@@ -585,8 +587,7 @@ bool s2z_block_schur(
     S2ZBlockSchurCache* cache = nullptr,
     bool field_inertia = false,
     bool* field_indefinite = nullptr,
-    int n_rhs = 1,             // grad / delta hold n_rhs columns of length n_x
-    const std::vector<int>* extra_field = nullptr   // sorted nodes joining F
+    int n_rhs = 1              // grad / delta hold n_rhs columns of length n_x
 );
 
 // Determinant-only convenience wrapper over s2z_block_schur.

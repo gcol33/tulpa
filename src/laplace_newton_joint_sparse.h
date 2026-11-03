@@ -166,23 +166,21 @@ inline bool lm_solve_further_columns(
     SparseHessianBuilder& H, SparseCholeskySolver& solver, int n_x,
     const double* rhs, double* out, int n_rhs
 ) {
-    for (int c = 1; c < n_rhs; c++) {
-        const std::size_t off = static_cast<std::size_t>(c) * n_x;
-        if (!solver.solve(rhs + off, out + off, n_x)) return false;
-        if (!apply_s2z_rank1_correction(solver, n_x, H.s2z_rank1, out + off,
-                                        H.s2z_coupling))
-            return false;
-        for (int j = 0; j < n_x; j++)
-            if (!std::isfinite(out[off + j])) return false;
-    }
+    if (n_rhs <= 1) return true;
+    const std::size_t off = static_cast<std::size_t>(n_x);
+    const int ncol = n_rhs - 1;
+    if (!solver.solve(rhs + off, out + off, n_x, ncol)) return false;
+    if (!apply_s2z_rank1_correction(solver, n_x, H.s2z_rank1, out + off,
+                                    H.s2z_coupling, ncol))
+        return false;
+    for (std::size_t j = off; j < off * n_rhs; j++)
+        if (!std::isfinite(out[j])) return false;
     return true;
 }
 
 // `grad` / `delta` hold n_rhs columns of length n_x; column 0 is the Newton
 // step, the others are further solves against the same matrix (a hard
 // constraint's A' columns), which the PSD branch cannot supply.
-// `extra_field` names the nodes the block-Schur step treats as field beyond the
-// pins' own (a hard constraint's support; s2z_block_schur).
 inline bool s2z_newton_step(
     SparseHessianBuilder& H, SparseCholeskySolver& solver,
     int n_x, JointPDMode pd_mode,
@@ -190,15 +188,13 @@ inline bool s2z_newton_step(
     bool& used_block_schur,
     S2ZBlockSchurCache* bs_cache = nullptr,
     bool guarded = true,
-    int n_rhs = 1,
-    const std::vector<int>* extra_field = nullptr
+    int n_rhs = 1
 ) {
     used_block_schur = false;
     if (n_rhs > 1 && pd_mode != JointPDMode::LM) return false;
     const bool pinned = pd_mode == JointPDMode::LM && !H.s2z_rank1.empty();
     if (pinned && s2z_block_schur(H, H.s2z_rank1, grad, delta, nullptr, bs_cache,
-                                  /*field_inertia=*/true, nullptr, n_rhs,
-                                  extra_field)) {
+                                  /*field_inertia=*/true, nullptr, n_rhs)) {
         used_block_schur = true;
         return true;
     }
@@ -238,7 +234,7 @@ inline bool hard_kkt_step_sparse(
     const bool ok = s2z_newton_step(H, solver, n_x, JointPDMode::LM,
                                     hard.load_rhs(grad), hard.sol.data(),
                                     used_block_schur, bs_cache, guarded,
-                                    hard.n_rhs(), &hard.row_nodes);
+                                    hard.n_rhs());
     if (!ok || !hard.factor_cap_from_sol()) return false;
     std::copy(hard.sol.begin(), hard.sol.begin() + n_x, delta);
     hard.project_step(x, delta);
@@ -342,8 +338,7 @@ inline void joint_newton_finalize_sparse(
                                       &scratch.s2z_block_schur_cache,
                                       /*field_inertia=*/true,
                                       &result.s2z_field_indefinite,
-                                      hard_on ? hard->n_rhs() : 1,
-                                      hard_on ? &hard->row_nodes : nullptr);
+                                      hard_on ? hard->n_rhs() : 1);
         if (s2z_step_ok && hard_on)
             std::copy(sol, sol + n_x, scratch.delta.begin());
         s2z_log_det = ld;
@@ -463,8 +458,7 @@ inline void joint_newton_finalize_sparse(
         pinned_solve = [&](const double* rhs, double* out) {
             return s2z_block_schur(H_builder, H_builder.s2z_rank1, rhs, out,
                                    nullptr, &scratch.s2z_block_schur_cache,
-                                   /*field_inertia=*/true, nullptr, 1,
-                                   hard_on ? &hard->row_nodes : nullptr);
+                                   /*field_inertia=*/true, nullptr, 1);
         };
     }
     const InnerPinnedSolve* probe_solve = s2z_direct ? &pinned_solve : nullptr;

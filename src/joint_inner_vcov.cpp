@@ -157,8 +157,8 @@ bool visit_inner_vcov_cell(
     // extraction and with laplace_newton.h's diagonal-block path through
     // inv_block_extract.h, so the conditioning-by-kriging algebra is written
     // once.
-    auto solve_cell = [&](const double* rhs, double* out) {
-        solver.solve(rhs, out, n_x);
+    auto solve_cell = [&](const double* rhs, double* out, int ncol) {
+        solver.solve(rhs, out, n_x, ncol);
     };
     constr.build(solve_cell, n_x);
 
@@ -277,8 +277,8 @@ bool extract_joint_fixed_block(
     if (!factorize_constrained_cell(solver, Qp, Qi, Qx, n_x, nnz, req.A_cols,
                                     constr)) return false;
 
-    auto solve_cell = [&](const double* rhs, double* out) {
-        solver.solve(rhs, out, n_x);
+    auto solve_cell = [&](const double* rhs, double* out, int ncol) {
+        solver.solve(rhs, out, n_x, ncol);
     };
     constr.build(solve_cell, n_x);
 
@@ -309,8 +309,8 @@ bool extract_joint_eta_var(
     if (!factorize_constrained_cell(solver, Qp, Qi, Qx, n_x, nnz, pin_groups,
                                     pins)) return false;
 
-    auto solve_cell = [&](const double* rhs, double* out) {
-        solver.solve(rhs, out, n_x);
+    auto solve_cell = [&](const double* rhs, double* out, int ncol) {
+        solver.solve(rhs, out, n_x, ncol);
     };
     if (!pin_groups.empty()) {
         pins.build(solve_cell, n_x, &pin_Dinv);
@@ -393,8 +393,8 @@ bool draw_constrained_cell(
         return false;
     }
     if (A_cols.empty()) return true;
-    auto solve_cell = [&](const double* rhs, double* o) {
-        solver.solve(rhs, o, n_x);
+    auto solve_cell = [&](const double* rhs, double* o, int ncol) {
+        solver.solve(rhs, o, n_x, ncol);
     };
     constr.build(solve_cell, n_x);
     if (!constr.usable) {
@@ -632,8 +632,8 @@ Rcpp::NumericMatrix cpp_loading_marginal_var(
         if (!tulpa::factorize_constrained_cell(
                 solver, in.Qp[k].data(), in.Qi[k].data(), in.Qx[k].data(),
                 n_x, in.nnz(k), in.A_cols, constr)) continue;
-        auto solve_cell = [&](const double* rhs, double* o) {
-            solver.solve(rhs, o, n_x);
+        auto solve_cell = [&](const double* rhs, double* o, int ncol) {
+            solver.solve(rhs, o, n_x, ncol);
         };
         constr.build(solve_cell, n_x);
         const tulpa::SparseCholeskySolver::SelectedInverse si =

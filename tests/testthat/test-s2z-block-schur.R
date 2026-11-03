@@ -283,6 +283,39 @@ test_that("a cross-block coupling matches the dense U D U' reference", {
   }
 })
 
+test_that("the step partitions by sparsity and solves many right-hand sides exactly", {
+  skip_on_cran()
+  load_cpp_fixture("helpers")
+  # A pinned chain field, a sparse block with no pin of its own (a banded
+  # neighbour structure, as an NNGP block next to an ICAR field) and three
+  # coefficients loading every coordinate. Only the coefficients' rows are
+  # dense, so they alone close the step as the Schur complement.
+  set.seed(21)
+  nf <- 150L; nb <- 250L; ns <- 3L; n <- nf + nb + ns
+  A <- matrix(0, n, n)
+  for (i in seq_len(nf - 1L)) A[i, i + 1L] <- A[i + 1L, i] <- -1
+  blk <- nf + seq_len(nb)
+  for (k in 1:4) for (i in blk[seq_len(nb - k)]) {
+    v <- stats::rnorm(1) * 0.2; A[i, i + k] <- A[i + k, i] <- v
+  }
+  for (i in seq_len(nf)) if (stats::runif(1) < 0.05) {
+    j <- sample(blk, 1L); v <- stats::rnorm(1) * 0.1; A[i, j] <- A[j, i] <- v
+  }
+  sc <- nf + nb + seq_len(ns)
+  A[sc, ] <- stats::rnorm(ns * n) * 0.05; A[, sc] <- t(A[sc, ])
+  diag(A) <- rowSums(abs(A)) + stats::runif(n, 1, 2)
+  G <- matrix(stats::rnorm(n * 7L), n, 7L)
+  r <- cpp_test_s2z_block_schur(A, 0L, nf, 2.0, G)
+  expect_identical(r$n_scalar, ns)
+  expect_identical(r$n_field, nf + nb)
+  expect_true(r$ok)
+  expect_lt(.rel(r$ld_block_schur, r$ld_dense), 1e-10)
+  expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-10)
+  expect_lt(r$max_dstep, 1e-10)
+  expect_true(r$newton_block_schur)
+  expect_lt(r$max_dstep_newton, 1e-10)
+})
+
 test_that("block-Schur is exact at the large-field / large-coef sum-to-zero regime", {
   skip_on_cran()
   # n_x past the densify boundary, with the strong sum-to-zero pin the intrinsic

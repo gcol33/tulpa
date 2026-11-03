@@ -1509,7 +1509,11 @@ List cpp_test_spde_nc_transform_fwd(
 //                        whether through the block-Schur factor, and its error
 //                        against the same dense solve.
 // `A` is read as a full symmetric matrix; its lower-triangle nonzeros seed the
-// SparseHessianBuilder pattern. Field membership is the union of the pin ranges.
+// SparseHessianBuilder pattern. `grad` holds one or more right-hand sides
+// (an n x m matrix, column-major), solved together as the hard-constraint
+// columns are; max_dstep is over all of them. `n_field` / `n_scalar` report
+// the partition the step factored: the field block (every pinned node and
+// every coordinate whose row of A is sparse) and the dense scalar complement.
 //
 // When `pin_idx` is supplied it is a length-K list of 0-based ABSOLUTE node
 // vectors, one per pin (pin_start / pin_n are then ignored). This drives the
@@ -1586,24 +1590,29 @@ List cpp_test_s2z_block_schur(
   const double ld_direct =
       tulpa::s2z_log_det_direct(H, H.s2z_rank1, NA_REAL);
 
+  const int n_rhs = static_cast<int>(grad.size()) / n;
+  if (n_rhs < 1 || static_cast<int>(grad.size()) != n_rhs * n)
+    Rcpp::stop("grad must hold a whole number of columns of length nrow(A)");
   std::vector<double> g(grad.begin(), grad.end());
-  std::vector<double> delta_bs(n, 0.0);
+  std::vector<double> delta_bs((std::size_t) n * n_rhs, 0.0);
   double ld_bs_step = NA_REAL;
   bool field_indefinite = false;
+  tulpa::S2ZBlockSchurCache bs_cache;
   const bool ok =
       tulpa::s2z_block_schur(H, H.s2z_rank1, g.data(), delta_bs.data(), &ld_bs_step,
-                             nullptr, /*field_inertia=*/true, &field_indefinite);
+                             &bs_cache, /*field_inertia=*/true, &field_indefinite,
+                             n_rhs);
 
   // The inner Newton step on the same matrix, unguarded: the test the auto
   // curvature rule runs of whether H gives a Newton step as it stands. Without
   // the ridge ladder a pinned H leaves the builder untouched.
-  std::vector<double> delta_nt(n, 0.0);
+  std::vector<double> delta_nt((std::size_t) n * n_rhs, 0.0);
   bool nt_used_block_schur = false;
   tulpa::SparseCholeskySolver nt_solver;
   const bool nt_ok = tulpa::s2z_newton_step(H, nt_solver, n, tulpa::JointPDMode::LM,
                                             g.data(), delta_nt.data(),
                                             nt_used_block_schur, nullptr,
-                                            /*guarded=*/false);
+                                            /*guarded=*/false, n_rhs);
 
   // Independent dense reference: B = A + sum_k coef_k 1_k 1_k', Eigen LLT.
   Eigen::MatrixXd B(n, n);
@@ -1630,19 +1639,19 @@ List cpp_test_s2z_block_schur(
     double ld = 0.0;
     for (int i = 0; i < n; ++i) ld += 2.0 * std::log(L(i, i));
     ld_dense = ld;
-    Eigen::VectorXd gv(n);
-    for (int i = 0; i < n; ++i) gv[i] = grad[i];
-    const Eigen::VectorXd dd = llt.solve(gv);
-    double md = 0.0;
-    for (int i = 0; i < n; ++i)
-      md = std::max(md, std::fabs(delta_bs[i] - dd[i]));
+    Eigen::MatrixXd gv(n, n_rhs);
+    for (int c = 0; c < n_rhs; ++c)
+      for (int i = 0; i < n; ++i) gv(i, c) = grad[(std::size_t) c * n + i];
+    const Eigen::MatrixXd dd = llt.solve(gv);
+    double md = 0.0, mn = 0.0;
+    for (int c = 0; c < n_rhs; ++c)
+      for (int i = 0; i < n; ++i) {
+        const std::size_t t = (std::size_t) c * n + i;
+        md = std::max(md, std::fabs(delta_bs[t] - dd(i, c)));
+        mn = std::max(mn, std::fabs(delta_nt[t] - dd(i, c)));
+      }
     max_dstep = md;
-    if (nt_ok) {
-      double mn = 0.0;
-      for (int i = 0; i < n; ++i)
-        mn = std::max(mn, std::fabs(delta_nt[i] - dd[i]));
-      max_dstep_newton = mn;
-    }
+    if (nt_ok) max_dstep_newton = mn;
   }
 
   return List::create(
@@ -1655,7 +1664,9 @@ List cpp_test_s2z_block_schur(
     _["max_dstep"]           = max_dstep,
     _["newton_ok"]           = nt_ok,
     _["newton_block_schur"]  = nt_used_block_schur,
-    _["max_dstep_newton"]    = max_dstep_newton
+    _["max_dstep_newton"]    = max_dstep_newton,
+    _["n_field"]             = bs_cache.nf,
+    _["n_scalar"]            = bs_cache.ns
   );
 }
 

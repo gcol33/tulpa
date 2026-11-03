@@ -10,21 +10,27 @@ namespace tulpa {
 void build_s2z_block_schur_cache(
     const SparseHessianBuilder& A,
     const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
-    S2ZBlockSchurCache& cache,
-    const std::vector<int>* extra
+    S2ZBlockSchurCache& cache
 ) {
     const int n_x = A.n;
     const int K = static_cast<int>(r1.size());
     cache.floc.assign(n_x, -1);
     cache.sloc.assign(n_x, -1);
+
+    // A coordinate is a dense scalar when its row of A couples to more nodes
+    // than s2z_dense_degree(); every other coordinate, and every pinned node
+    // (the fold anchors the pins inside A_FF), is factored sparsely.
+    std::vector<int> degree(n_x, 0);
+    for (int c = 0; c < n_x; ++c)
+        for (int p = A.col_ptr[c]; p < A.col_ptr[c + 1]; ++p) {
+            const int r = A.row_idx[p];
+            if (r != c) { ++degree[r]; ++degree[c]; }
+        }
+    const int dense_deg = s2z_dense_degree(n_x);
     std::vector<char> is_field(n_x, 0);
+    for (int g = 0; g < n_x; ++g) is_field[g] = degree[g] <= dense_deg;
     for (int k = 0; k < K; ++k)
         for (int i = 0; i < r1[k].n; ++i) is_field[r1[k].node(i)] = 1;
-    cache.extra_field.clear();
-    if (extra) {
-        cache.extra_field = *extra;
-        for (int g : *extra) if (g >= 0 && g < n_x) is_field[g] = 1;
-    }
     int nf = 0;
     for (int g = 0; g < n_x; ++g) if (is_field[g]) cache.floc[g] = nf++;
     int ns = 0;
@@ -43,8 +49,8 @@ void build_s2z_block_schur_cache(
             if (fr >= 0 && fc >= 0)      { cache.dest_kind[t] = 0; ffpat.emplace_back(fr, fc); }
             else if (sr >= 0 && sc >= 0) { cache.dest_kind[t] = 1; cache.dest_a[t] = sr*ns+sc;
                                            cache.dest_b[t] = (sr != sc) ? sc*ns+sr : -1; }
-            else if (fr >= 0 && sc >= 0) { cache.dest_kind[t] = 2; cache.dest_a[t] = fr*ns + sc; }
-            else                          { cache.dest_kind[t] = 2; cache.dest_a[t] = fc*ns + sr; }
+            else if (fr >= 0 && sc >= 0) { cache.dest_kind[t] = 2; cache.dest_a[t] = sc*nf + fr; }
+            else                          { cache.dest_kind[t] = 2; cache.dest_a[t] = sr*nf + fc; }
         }
     cache.aff.init(nf, ffpat);
     // Resolve field-field value slots now the A_FF pattern (entry_map) exists.
@@ -61,6 +67,7 @@ void build_s2z_block_schur_cache(
     cache.aff_solver.analyze(&view);
 
     cache.n_x = n_x; cache.a_nnz = A.nnz;
+    cache.pattern_generation = A.pattern_generation;
     cache.block_layout.clear(); cache.block_layout.reserve(K);
     for (int k = 0; k < K; ++k) cache.block_layout.emplace_back(s2z_block_nodes(r1[k]));
     cache.built = true;
@@ -75,8 +82,7 @@ bool s2z_block_schur(
     S2ZBlockSchurCache* cache,
     bool field_inertia,
     bool* field_indefinite,
-    int n_rhs,
-    const std::vector<int>* extra_field) {
+    int n_rhs) {
     if (field_indefinite) *field_indefinite = false;
     const int K = static_cast<int>(r1.size());
     if (K == 0) return false;
@@ -84,18 +90,20 @@ bool s2z_block_schur(
 
     S2ZBlockSchurCache local_cache;
     S2ZBlockSchurCache& cc = cache ? *cache : local_cache;
-    if (!cc.matches(A, r1, extra_field))
-        build_s2z_block_schur_cache(A, r1, cc, extra_field);
+    if (!cc.matches(A, r1))
+        build_s2z_block_schur_cache(A, r1, cc);
     const int nf = cc.nf, ns = cc.ns;
+    const std::size_t NF = static_cast<std::size_t>(nf);
     const std::vector<int>& floc = cc.floc;
     const std::vector<int>& sloc = cc.sloc;
 
-    // Scatter A's values into the cached A_FF pattern + dense A_ss / A_fs via the
-    // precomputed per-nonzero destinations (no membership recompute, no re-sort).
+    // Scatter A's values into the cached A_FF pattern, the dense A_ss and the
+    // column-major nf x ns A_fs via the precomputed per-nonzero destinations
+    // (no membership recompute, no re-sort).
     cc.aff.zero();
     double* __restrict__ affv = cc.aff.values.data();
     std::vector<double> Ass((std::size_t) ns * ns, 0.0);
-    std::vector<double> Afs((std::size_t) nf * ns, 0.0);
+    std::vector<double> Afs(NF * ns, 0.0);
     {
         int t = 0;
         for (int c = 0; c < n_x; ++c)
@@ -152,7 +160,9 @@ bool s2z_block_schur(
     }
     const bool indefinite = (sfp == &cc.aff_ldl);
     SparseCholeskySolver& sf = *sfp;
-    auto solve_ff = [&](const double* rhs, double* out) { sf.solve(rhs, out, nf); };
+    auto solve_ff = [&](const double* rhs, double* out, int ncol) {
+        sf.solve(rhs, out, nf, ncol);
+    };
 
     // D enters only as D^{-1} in the capacitance and log|D| in the
     // determinant, so a Kronecker-coupled field costs nothing here beyond a
@@ -194,29 +204,31 @@ bool s2z_block_schur(
     if (!constr.usable) return false;
     const double logBFF = logAFF + logC + constr.log_det_fold();
 
-    // B_FF^-1 y = A_a^-1 y - W Cap^-1 (W' y), A_a the anchored field block.
-    std::vector<double> ainv_buf(nf);
-    auto bff_solve = [&](const double* y, double* out) {
-        sf.solve(y, ainv_buf.data(), nf);
-        constr.apply(y, ainv_buf.data(), out, nf);
+    // B_FF^-1 Y = A_a^-1 Y - W Cap^-1 (W' Y), A_a the anchored field block,
+    // for the ncol columns of Y in one solve against A_a.
+    auto bff_solve = [&](const double* Y, double* X, int ncol) {
+        if (ncol <= 0) return;
+        std::vector<double> ainv(NF * ncol);
+        sf.solve(Y, ainv.data(), nf, ncol);
+        for (int c = 0; c < ncol; ++c)
+            constr.apply(Y + NF * c, ainv.data() + NF * c, X + NF * c, nf);
     };
 
-    // Schur S = A_ss - A_sf B_FF^-1 A_fs. Z[j] = B_FF^-1 A_fs[:,j] is reused for
-    // the step's field back-substitution.
-    std::vector<std::vector<double>> Z(ns, std::vector<double>(nf, 0.0));
+    // Schur S = A_ss - A_sf B_FF^-1 A_fs. Z = B_FF^-1 A_fs (column-major
+    // nf x ns) is reused for the step's field back-substitution.
+    std::vector<double> Z(NF * ns, 0.0);
     std::vector<double> S = Ass;
-    {
-        std::vector<double> col(nf);
-        for (int j = 0; j < ns; ++j) {
-            for (int i = 0; i < nf; ++i) col[i] = Afs[(std::size_t) i*ns + j];
-            bff_solve(col.data(), Z[j].data());
-        }
-        for (int i = 0; i < ns; ++i)
+    if (ns > 0) {
+        bff_solve(Afs.data(), Z.data(), ns);
+        for (int i = 0; i < ns; ++i) {
+            const double* ai = Afs.data() + NF * i;
             for (int j = 0; j < ns; ++j) {
-                double m = 0.0;                                    // A_fs[:,i]' Z[j]
-                for (int t = 0; t < nf; ++t) m += Afs[(std::size_t) t*ns + i] * Z[j][t];
+                const double* zj = Z.data() + NF * j;
+                double m = 0.0;                                    // A_fs[:,i]' Z[:,j]
+                for (std::size_t t = 0; t < NF; ++t) m += ai[t] * zj[t];
                 S[(std::size_t) i*ns + j] -= m;
             }
+        }
     }
     SmallChol SL;
     double logS = 0.0;
@@ -230,26 +242,30 @@ bool s2z_block_schur(
         if (!std::isfinite(ld)) return false;
         *logdet_out = ld;
     }
+    if (!grad || !delta || n_rhs <= 0) return true;
 
-    // Step: delta = B^-1 grad via block elimination, once per right-hand side.
-    //   bf_g = B_FF^-1 g_f ;  S s = g_s - A_fs' bf_g ;  f = bf_g - sum_j Z[j] s_j.
-    for (int rh = 0; grad && delta && rh < n_rhs; ++rh) {
+    // Step: delta = B^-1 grad by block elimination, every right-hand side
+    // through one solve against the field block:
+    //   bf_g = B_FF^-1 g_f ;  S s = g_s - A_fs' bf_g ;  f = bf_g - Z s.
+    std::vector<double> GF(NF * n_rhs, 0.0), BF(NF * n_rhs, 0.0);
+    for (int rh = 0; rh < n_rhs; ++rh) {
+        const double* grad_r = grad + (std::size_t) rh * n_x;
+        double* gf = GF.data() + NF * rh;
+        for (int g = 0; g < n_x; ++g) if (floc[g] >= 0) gf[floc[g]] = grad_r[g];
+    }
+    bff_solve(GF.data(), BF.data(), n_rhs);
+    std::vector<double> rhs(ns, 0.0), svec(ns, 0.0);
+    for (int rh = 0; rh < n_rhs; ++rh) {
         const double* grad_r = grad + (std::size_t) rh * n_x;
         double* delta_r = delta + (std::size_t) rh * n_x;
-        std::vector<double> gf(nf, 0.0), gs(ns, 0.0);
-        for (int g = 0; g < n_x; ++g) {
-            if (floc[g] >= 0) gf[floc[g]] = grad_r[g];
-            else              gs[sloc[g]] = grad_r[g];
-        }
-        std::vector<double> bf_g(nf, 0.0);
-        bff_solve(gf.data(), bf_g.data());
-        std::vector<double> svec(ns, 0.0);
+        const double* bf_g = BF.data() + NF * rh;
         if (ns > 0) {
-            std::vector<double> rhs(ns, 0.0);
+            for (int g = 0; g < n_x; ++g) if (sloc[g] >= 0) rhs[sloc[g]] = grad_r[g];
             for (int j = 0; j < ns; ++j) {
+                const double* aj = Afs.data() + NF * j;
                 double m = 0.0;
-                for (int t = 0; t < nf; ++t) m += Afs[(std::size_t) t*ns + j] * bf_g[t];
-                rhs[j] = gs[j] - m;
+                for (std::size_t t = 0; t < NF; ++t) m += aj[t] * bf_g[t];
+                rhs[j] -= m;
             }
             SL.solve(rhs.data(), svec.data());
         }
@@ -257,7 +273,7 @@ bool s2z_block_schur(
             if (floc[g] >= 0) {
                 const int i = floc[g];
                 double acc = bf_g[i];
-                for (int j = 0; j < ns; ++j) acc -= Z[j][i] * svec[j];
+                for (int j = 0; j < ns; ++j) acc -= Z[NF * j + i] * svec[j];
                 delta_r[g] = acc;
             } else {
                 delta_r[g] = svec[sloc[g]];

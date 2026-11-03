@@ -137,14 +137,21 @@ inline bool dispatch_factor_log_det_ridged(
 
 // out = H^-1 rhs off the factor a dispatch above left live: the CHOLMOD factor
 // when `sparse_live`, the dense lower factor in `dense_scratch` otherwise.
+// `rhs` / `out` are column-major [n_x x ncol].
 inline bool live_factor_solve(const double* rhs, double* out, int n_x,
                               bool sparse_live,
                               SparseCholeskySolver& sparse_solver,
-                              DenseCholeskyScratch& dense_scratch) {
-    if (sparse_live) return sparse_solver.solve(rhs, out, n_x);
+                              DenseCholeskyScratch& dense_scratch,
+                              int ncol = 1) {
+    if (sparse_live) return sparse_solver.solve(rhs, out, n_x, ncol);
     std::vector<double> z_work(n_x, 0.0);
-    return chol_substitute_raw(dense_scratch.L.data(), n_x, rhs, out,
-                               z_work.data());
+    bool ok = true;
+    for (int c = 0; c < ncol; c++) {
+        const std::size_t off = static_cast<std::size_t>(c) * n_x;
+        ok = chol_substitute_raw(dense_scratch.L.data(), n_x, rhs + off,
+                                 out + off, z_work.data()) && ok;
+    }
+    return ok;
 }
 
 // g' H^-1 g off the live factor (live_factor_solve). It is the Newton

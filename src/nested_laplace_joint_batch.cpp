@@ -403,10 +403,10 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
             if (!ok || !hard_on) return ok;
             return st[s].hard.kkt_project(
                 v.x.begin(), v.delta.data(),
-                [&](const double* rhs, double* out) {
+                [&](const double* rhs, double* out, int ncol) {
                     live_factor_solve(rhs, out, n_x,
                                       dense_factor_sparse && st[s].solver.factored(),
-                                      st[s].solver, st[s].dense.chol);
+                                      st[s].solver, st[s].dense.chol, ncol);
                 });
         };
 

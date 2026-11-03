@@ -547,9 +547,9 @@ inline void joint_newton_finalize_dense(
     // scatter built. A PD Hessian never reaches this, so every fit that
     // factorizes on the first attempt is unchanged.
     // A solve against the factor just built for the log-determinant.
-    auto solve_live = [&](const double* rhs, double* out) {
+    auto solve_live = [&](const double* rhs, double* out, int ncol) {
         live_factor_solve(rhs, out, n_x, use_sparse && sparse_solver.factored(),
-                          sparse_solver, scratch.chol);
+                          sparse_solver, scratch.chol, ncol);
     };
     // On the constraint set the expansion is over the subspace:
     // log|B' H B| = log|H| + log|A H^-1 A'| - log|A A'|.
@@ -853,9 +853,9 @@ LaplaceResult laplace_newton_solve_joint_ll(
         hard->project_point(x.begin());
         pd_mode = JointPDMode::LM;
     }
-    auto solve_live = [&](const double* rhs, double* out) {
+    auto solve_live = [&](const double* rhs, double* out, int ncol) {
         live_factor_solve(rhs, out, n_x, use_sparse && sparse_solver.factored(),
-                          sparse_solver, scratch.chol);
+                          sparse_solver, scratch.chol, ncol);
     };
 
     auto eval_objective = [&](const Rcpp::NumericVector& xv) -> double {

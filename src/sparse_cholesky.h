@@ -94,8 +94,9 @@ public:
     // pivot is zero or not finite.
     bool ldl_inertia(int& n_neg, double& log_abs_det) const;
 
-    // Solve Ax = b using the current factorization.
-    // b and x are dense vectors of length n.
+    // Solve AX = B using the current factorization. B and X are column-major
+    // [n x ncol]; the columns are solved in one CHOLMOD call, which walks the
+    // factor once for the whole block rather than once per column.
     //
     // Returns false when there is no usable factorization (factorize() has not
     // run, or did not succeed) or CHOLMOD's solve fails, and fills x with NaN
@@ -104,7 +105,7 @@ public:
     // failed solve filled with zeros is reported as a converged fit. NaN trips
     // the finiteness checks the callers already run, and the return value makes
     // the failure readable without one.
-    bool solve(const double* b, double* x, int n);
+    bool solve(const double* b, double* x, int n, int ncol = 1);
 
     // Reusable scratch for the workspace-holding solve below.
     //

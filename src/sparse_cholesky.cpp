@@ -271,35 +271,38 @@ std::size_t SparseCholeskySolver::analyzed_factor_bytes() const {
     return x_bytes + i_bytes + p_bytes;
 }
 
-bool SparseCholeskySolver::solve(const double* b, double* x, int n) {
+bool SparseCholeskySolver::solve(const double* b, double* x, int n, int ncol) {
     // A failed solve fills NaN, never zero: zero is a valid step and reads as
     // convergence to a caller testing max|delta| < tol. See the header.
     const double failed = std::numeric_limits<double>::quiet_NaN();
+    const std::size_t total = static_cast<std::size_t>(n) *
+                              static_cast<std::size_t>(ncol > 0 ? ncol : 0);
+    if (ncol <= 0) return ncol == 0;
     if (!factored_ || !factor_) {
-        for (int i = 0; i < n; i++) x[i] = failed;
+        for (std::size_t i = 0; i < total; i++) x[i] = failed;
         return false;
     }
 
     // Create dense RHS from raw pointer (stack-allocated, no CHOLMOD alloc)
     cholmod_dense b_dense;
     b_dense.nrow = n;
-    b_dense.ncol = 1;
-    b_dense.nzmax = n;
+    b_dense.ncol = ncol;
+    b_dense.nzmax = total;
     b_dense.d = n;
     b_dense.x = const_cast<double*>(b);
     b_dense.z = nullptr;
     b_dense.xtype = CHOLMOD_REAL;
     b_dense.dtype = CHOLMOD_DOUBLE;
 
-    // Solve Ax = b (CHOLMOD_A = 0: full solve using LL' or LDL')
+    // Solve AX = B (CHOLMOD_A = 0: full solve using LL' or LDL')
     cholmod_dense* x_dense = M_cholmod_solve(CHOLMOD_A, factor_, &b_dense, &common_);
 
     if (!x_dense) {
-        for (int i = 0; i < n; i++) x[i] = failed;
+        for (std::size_t i = 0; i < total; i++) x[i] = failed;
         return false;
     }
     double* xp = static_cast<double*>(x_dense->x);
-    for (int i = 0; i < n; i++) x[i] = xp[i];
+    for (std::size_t i = 0; i < total; i++) x[i] = xp[i];
     M_cholmod_free_dense(&x_dense, &common_);
     return true;
 }

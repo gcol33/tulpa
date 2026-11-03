@@ -341,9 +341,9 @@ LaplaceResult laplace_newton_solve_ll(
               scatter_grad_hess(x, scratch.eta, scratch.grad, store.hessian()); }
         };
         // A solve against the live factor of the Hessian just factored.
-        auto solve_live = [&](const double* rhs, double* out) {
+        auto solve_live = [&](const double* rhs, double* out, int ncol) {
             live_factor_solve(rhs, out, n_x, store.sparse_live(), sparse_solver,
-                              scratch.chol);
+                              scratch.chol, ncol);
         };
         auto cholesky_solve = [&]() -> bool {
             if (!store.factor_solve()) return false;
@@ -429,15 +429,9 @@ LaplaceResult laplace_newton_solve_ll(
         if (inv_block_layout && !inv_block_layout->empty() &&
             result.hessian_pd_at_mode) {
             TULPA_PROFILE_PHASE(PHASE_HESSIAN_EXTRACT);
-            std::vector<double> z_work;
-            if (!used_sparse_factor) z_work.assign(n_x, 0.0);
-            auto solve_live = [&](const double* rhs, double* out) {
-                if (used_sparse_factor) {
-                    sparse_solver.solve(rhs, out, n_x);
-                } else {
-                    chol_substitute_raw(scratch.chol.L.data(), n_x, rhs, out,
-                                        z_work.data());
-                }
+            auto solve_live = [&](const double* rhs, double* out, int ncol) {
+                live_factor_solve(rhs, out, n_x, used_sparse_factor,
+                                  sparse_solver, scratch.chol, ncol);
             };
             extract_inv_diag_blocks(solve_live, n_x, *inv_block_layout,
                                     hard_on ? &hard->cap : nullptr,
