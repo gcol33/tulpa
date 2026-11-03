@@ -3170,6 +3170,29 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_temporal_field_rows
+Rcpp::NumericMatrix cpp_temporal_field_rows(Rcpp::NumericMatrix field, int n_times, std::string structure, Rcpp::NumericVector tau, Rcpp::NumericVector rho, Rcpp::NumericVector sigma2, Rcpp::NumericVector phi, Rcpp::NumericVector time_values, int cov_type, double nu, double period, Rcpp::List query, bool draw);
+RcppExport SEXP _tulpa_cpp_temporal_field_rows(SEXP fieldSEXP, SEXP n_timesSEXP, SEXP structureSEXP, SEXP tauSEXP, SEXP rhoSEXP, SEXP sigma2SEXP, SEXP phiSEXP, SEXP time_valuesSEXP, SEXP cov_typeSEXP, SEXP nuSEXP, SEXP periodSEXP, SEXP querySEXP, SEXP drawSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type field(fieldSEXP);
+    Rcpp::traits::input_parameter< int >::type n_times(n_timesSEXP);
+    Rcpp::traits::input_parameter< std::string >::type structure(structureSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type tau(tauSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type rho(rhoSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type time_values(time_valuesSEXP);
+    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
+    Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
+    Rcpp::traits::input_parameter< double >::type period(periodSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type query(querySEXP);
+    Rcpp::traits::input_parameter< bool >::type draw(drawSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_temporal_field_rows(field, n_times, structure, tau, rho, sigma2, phi, time_values, cov_type, nu, period, query, draw));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_aghq_make_rclosure_oracle", (DL_FUNC) &_tulpa_cpp_aghq_make_rclosure_oracle, 4},
@@ -3320,6 +3343,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_spde_hyper_prior_probe", (DL_FUNC) &_tulpa_cpp_spde_hyper_prior_probe, 8},
     {"_tulpa_cpp_tulpa_fit_spde_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_spde_nuts, 40},
     {"_tulpa_cpp_varying_coef_draws", (DL_FUNC) &_tulpa_cpp_varying_coef_draws, 19},
+    {"_tulpa_cpp_temporal_field_rows", (DL_FUNC) &_tulpa_cpp_temporal_field_rows, 13},
     {NULL, NULL, 0}
 };
 

@@ -14,7 +14,11 @@
 #     draw's covariance; new locations are conditionally independent given w;
 #   * a field indexed by a unit (an areal ICAR / CAR / BYM2 field, a temporal
 #     RW1 / RW2 / AR1 field): the row's own unit or time, which has to be one
-#     the field is defined on;
+#     the field is defined on -- except a temporal walk or GP at a time it was
+#     not fitted at, which is drawn from its conditional given the fitted path
+#     (`.field_temporal_rows()`): the recursion run past the fitted times for
+#     RW1 / RW2 / AR1, the Brownian bridge between them for RW1, the GP
+#     conditional at any time;
 #   * a multi-scale field: its components, each mapped with its own
 #     hyperparameters, summed.
 #
@@ -72,10 +76,26 @@
 # (cells x n_x), `weights`, `theta` (cells x axes, named), `solve` (the
 # inner-solve record a grid cell is solved again from; NULL where there is
 # none), `point` (TRUE when every cell is a stored draw with no spread) and
-# `layout` (`.field_layout()`). NULL for a fit without a field the map knows,
-# or one whose fields cannot all be located.
+# `layout` (`.field_layout()`). NULL for a fit without a latent term; a fit
+# carrying a latent term the read does not map is refused, naming the term,
+# since a linear predictor read without it would be another model's.
 #' @keywords internal
 .field_source <- function(object) {
+  src <- .field_source_read(object)
+  miss <- if (is.null(src)) .field_latent_terms(object) else src$layout$unmapped
+  if (length(miss)) {
+    stop(sprintf(paste0(
+      "The fit carries %s, which the linear predictor at the prediction rows ",
+      "cannot be read for, so predict(), posterior_linpred() and ",
+      "posterior_predict() would report a predictor without it. Pass ",
+      "include_field = FALSE (predict()) for the prediction without the ",
+      "latent terms."), paste(unique(miss), collapse = ", ")), call. = FALSE)
+  }
+  src
+}
+
+#' @keywords internal
+.field_source_read <- function(object) {
   if (is.list(object$model_inputs) && is.matrix(object$draws) &&
       nrow(object$draws) > 0L) {
     return(.field_source_sampler(object))
@@ -86,6 +106,71 @@
   }
   if (!is.null(object$bar_fields)) return(.field_source_bar(object))
   .field_source_grid(object)
+}
+
+# The latent terms a fit's linear predictor carries beyond its fixed effects
+# and formula random effects, by name: an inline spatial() / temporal() field,
+# every non-random-effect block of a nested-Laplace block list (a field, an
+# s() smoother, a spatiotemporal() interaction, a latent() block), and the
+# spatial / temporal field of any other backend. A varying coefficient is
+# read by its own path (`.varying_coef_eta_contrib()`) and a latent-factor
+# fit's factors enter through its design (`.lf_newdata_design()`), so neither
+# is listed.
+#' @keywords internal
+.field_latent_terms <- function(object) {
+  out <- vapply(object$bar_fields %||% list(), function(rec)
+    sprintf("%s(%s)", rec$space, rec$spec$group_var %||% ""), character(1))
+  blocks <- .field_block_list(object$prior)
+  re_b <- unlist(object$re_block_index)
+  roles <- .nl_block_roles(blocks)
+  for (k in seq_along(blocks)) {
+    blk <- blocks[[k]]
+    type <- tolower(blk$type %||% "")
+    if (k %in% re_b || (type == "iid" && roles[k] == "other") ||
+        (type == "lf" && !is.null(object$factor_spec))) next
+    out <- c(out, .field_term_label(object, blk, roles[k], k))
+  }
+  sp <- object$spatial
+  if (is.list(sp) && !inherits(sp, "tulpa_svc")) {
+    out <- c(out, .field_term_label(object, sp, "spatial"))
+  }
+  tp <- object$temporal
+  if (is.list(tp) && !inherits(tp, "tulpa_tvc")) {
+    out <- c(out, .field_term_label(object, tp, "temporal"))
+  }
+  unique(out)
+}
+
+# A fit's latent blocks as a list of blocks: its block list, a single block
+# wrapped, and NULL for anything else (a random-effect covariance fit's `prior`
+# is its hyperprior, not a block).
+#' @keywords internal
+.field_block_list <- function(prior) {
+  if (!is.list(prior) || !length(prior)) return(NULL)
+  if (!is.null(prior$type)) return(list(prior))
+  ok <- vapply(prior, function(b) is.list(b) && !is.null(b$type), logical(1))
+  if (all(ok)) prior else NULL
+}
+
+# How a latent term is named to the user: a field by its space and type, a
+# smoother as s(<covariate>), the interaction and a latent() block by their
+# constructors.
+#' @keywords internal
+.field_term_label <- function(object, blk, role, k = NULL) {
+  type <- tolower(blk$type %||% "")
+  if (identical(role, "smooth")) {
+    roles <- .nl_block_roles(.field_block_list(object$prior))
+    j <- sum(roles[seq_len(k %||% 1L)] == "smooth")
+    return(sprintf("s(%s)", object$smooth_terms[[j]]$var %||% "?"))
+  }
+  if (identical(role, "spatiotemporal") || type == "st_interaction") {
+    return("the spatiotemporal() interaction")
+  }
+  if (type == "tgmrf") return(sprintf("latent(%s)", blk$name %||% "tgmrf"))
+  if (role %in% c("spatial", "temporal")) {
+    return(sprintf("the %s field (%s)", role, type))
+  }
+  sprintf("latent block %s (%s)", k %||% "", type)
 }
 
 # ---- inline bar fields -----------------------------------------------------------
@@ -124,9 +209,12 @@
             blk$field_weight[[a]][[1L]])
         }
       } else {
-        fields[[length(fields) + 1L]] <- .field_bar_comp(
+        comp <- .field_bar_comp(
           rec, j, start + seq_len(n_u), idx,
           if (!is.null(blk$svc_weight)) blk$svc_weight[[1L]])
+        comp$path <- .field_bar_path(rec, blk, paste0("b", b, "."),
+                                     .nl_theta_matrix(object))
+        fields[[length(fields) + 1L]] <- comp
       }
     }
   }
@@ -151,6 +239,24 @@
        scale = function(k) .joint_arm_re_scale(jm, theta, k))
 }
 
+# How an inline temporal() field's block `blk` (axes prefixed `prefix` on the
+# outer grid `theta`) is read at a time it was not fitted at
+# (`.field_temporal_path()`); NULL for a spatial field.
+#' @keywords internal
+.field_bar_path <- function(rec, blk, prefix, theta) {
+  type <- tolower(blk$type %||% "")
+  if (!identical(rec$space, "temporal") || !type %in% c("rw1", "rw2", "ar1")) {
+    return(NULL)
+  }
+  tau <- .field_axis_or(theta, "tau", prefix, blk$tau_grid)
+  rho <- if (type == "ar1") .field_axis_or(theta, "rho", prefix, blk$rho_grid)
+  if (is.null(tau) || (type == "ar1" && is.null(rho))) return(NULL)
+  spec <- list(time_var = rec$spec$group_var, time_levels = rec$time_levels)
+  .field_temporal_path(spec, type, n_times = length(rec$time_levels),
+                       hyper = function(cells) list(
+                         tau = tau[cells], rho = if (!is.null(rho)) rho[cells]))
+}
+
 # One field of an inline bar block: its latent columns, its unit (or time) at
 # each training row and its per-row design weight there (NULL for the
 # intercept field, whose weight is one).
@@ -163,23 +269,21 @@
 }
 
 # The unit (or time) and the design weight of each prediction row for an
-# inline bar field: at the training rows the ones the block was built with,
-# at `newdata` the node column resolved against the graph (the one resolver the
-# fit used) or the time column matched to the fitted times, and the field's
-# design column evaluated on `newdata`.
+# inline bar field: at the training rows the ones the block was built with, at
+# `newdata` the node column resolved against the graph (the one resolver the
+# fit used), in the copy of the row's `by` level for a replicated field, or the
+# time column matched to the fitted times, and the field's design column
+# evaluated on `newdata`. `index = FALSE` leaves the unit out, for a temporal
+# field read at new times through its path.
 #' @keywords internal
-.field_bar_rows <- function(comp, newdata) {
+.field_bar_rows <- function(comp, newdata, index = TRUE) {
   bar <- comp$bar
   if (is.null(newdata)) return(list(idx = bar$idx, weight = bar$weight))
   spec <- bar$rec$spec
   gv <- spec$group_var
-  if (identical(bar$rec$space, "spatial")) {
-    if (!is.null(spec$by_var)) {
-      stop("The inline spatial() field is replicated by `", spec$by_var,
-           "`, whose levels the fit does not record, so a new row cannot be ",
-           "placed in its copy of the field. Pass include_field = FALSE for ",
-           "the prediction without it.", call. = FALSE)
-    }
+  if (!index) {
+    idx <- NULL
+  } else if (identical(bar$rec$space, "spatial")) {
     if (is.null(newdata[[gv]])) {
       stop("newdata has no column `", gv, "` naming the graph node of each ",
            "row. Add it, or pass include_field = FALSE for the prediction ",
@@ -187,6 +291,12 @@
     }
     adj <- as.matrix(spec$adjacency)
     idx <- .resolve_spatial_idx(newdata[[gv]], nrow(adj), adj, gv)
+    # A replicated field: the row's node in the copy of its `by` level.
+    if (!is.null(spec$by_var)) {
+      lev <- .field_level_at(newdata, spec$by_var, bar$rec$by_levels,
+                             paste0("`", spec$by_var, "` level"))
+      idx <- idx + (lev - 1L) * as.integer(bar$rec$n_nodes)
+    }
   } else {
     idx <- .field_level_at(newdata, gv, bar$rec$time_levels, "time")
   }
@@ -292,15 +402,27 @@
   p <- as.integer(object$n_fixed %||% ncol(object$model_matrix))
   prior <- cells$prior
   multi <- is.list(prior) && is.null(prior$type) && length(prior)
+  unmapped <- character(0)
   if (multi) {
     roles <- .nl_block_roles(prior)
-    ks <- which(roles %in% c("spatial", "temporal"))
+    re_b <- unlist(object$re_block_index)
+    types <- vapply(prior, function(b) tolower(b$type %||% ""), character(1))
+    ks <- which(!(seq_along(prior) %in% re_b) &
+                  !(types == "iid" & roles == "other") &
+                  !(types == "lf" & !is.null(object$factor_spec)))
     fields <- lapply(ks, function(k) {
       cols <- .nl_block_cols(object$block_latent_offsets, n_x, k, length(roles))
-      if (is.null(cols)) return(NULL)
-      .field_comp(object, prior[[k]], cols, paste0("b", k, "."), roles[k],
-                  cells$theta)
+      comp <- if (!is.null(cols)) {
+        .field_comp(object, prior[[k]], cols, paste0("b", k, "."), roles[k],
+                    cells$theta, spec = .field_block_spec(object, prior, k))
+      }
+      if (is.null(comp)) {
+        unmapped <<- c(unmapped,
+                       .field_term_label(object, prior[[k]], roles[k], k))
+      }
+      comp
     })
+    fields <- Filter(Negate(is.null), fields)
     # A one-arm joint fit records where each random effect sits and what
     # scales it (`.joint_arm_re_map()`), its slope terms included; a registry
     # multi-block fit carries intercept `iid` blocks only.
@@ -317,25 +439,43 @@
   } else {
     role <- if (is.list(prior) && !is.null(prior$type)) .nl_block_roles(prior)
             else "spatial"
-    if (!role %in% c("spatial", "temporal")) return(NULL)
     width <- .field_block_width(object, prior, role)
     if (is.null(width) || width > n_x - p) return(NULL)
+    spec <- if (is.list(prior) && !is.null(prior$type)) {
+      .field_block_spec(object, list(prior), 1L)
+    }
     fields <- list(.field_comp(object, prior, seq.int(n_x - width + 1L, n_x),
-                               "", role, cells$theta))
+                               "", role, cells$theta, spec = spec))
+    if (is.null(fields[[1L]])) return(NULL)
     n_re <- n_x - width - p
     re <- if (n_re > 0L) {
       list(cols = p + seq_len(n_re), sd_per_cell = FALSE, scale = function(k) 1)
     }
   }
-  if (!length(fields) || any(vapply(fields, is.null, logical(1)))) return(NULL)
+  if (!length(fields)) return(NULL)
   list(beta = seq_len(p), beta_names = object$fixed_names, fields = fields,
-       re = re)
+       re = re, unmapped = unmapped)
+}
+
+# The front-door spec block `k` of `blocks` is read at rows with: the fit's
+# spatial or temporal spec for a field, the smoother's metadata for an s()
+# block (the smoothers follow the fit's `smooth_terms` in block order), and
+# NULL for a block that carries its own index.
+#' @keywords internal
+.field_block_spec <- function(object, blocks, k) {
+  roles <- .nl_block_roles(blocks)
+  switch(roles[k],
+    smooth = object$smooth_terms[[sum(roles[seq_len(k)] == "smooth")]],
+    temporal = object$temporal,
+    spatial = object$spatial,
+    NULL)
 }
 
 # Width in the latent vector of a single-block fit's field: the mesh, the
 # distinct locations, the basis, or the units / times a block is laid over.
 #' @keywords internal
 .field_block_width <- function(object, prior, role) {
+  if (!role %in% c("spatial", "temporal")) return(.nl_single_block_width(prior))
   sp <- if (identical(role, "temporal")) object$temporal else object$spatial
   type <- tolower((if (is.list(prior)) prior$type) %||% sp$type %||% "")
   kind <- .field_block_kind(type)
@@ -356,15 +496,25 @@
 # restriction design of a projected field, `.field_restriction()`).
 # NULL for a block no map is defined for.
 #' @keywords internal
-.field_comp <- function(object, blk, cols, prefix, role, theta) {
-  spec <- if (identical(role, "temporal")) object$temporal else object$spatial
+.field_comp <- function(object, blk, cols, prefix, role, theta, spec = NULL) {
+  if (is.null(spec) && role %in% c("spatial", "temporal")) {
+    spec <- if (identical(role, "temporal")) object$temporal else object$spatial
+  }
   type <- tolower((if (is.list(blk)) blk$type) %||% spec$type %||% "")
   # The short-term component of a multi-scale temporal field is an `iid`
   # block over the times, non-centred: the field at a time is the coordinate
   # times the cell's SD.
   iid_time <- type == "iid" && identical(role, "temporal")
-  kind <- if (iid_time) "unit" else .field_block_kind(type)
+  # A smoother is a walk over its covariate's nodes; a spatiotemporal()
+  # interaction and a latent() block enter eta at their coordinate
+  # `x[obs_idx[i]]`.
+  own_index <- type %in% c("st_interaction", "tgmrf")
+  if (own_index && is.null(blk$obs_idx)) return(NULL)
+  if (identical(role, "smooth") && is.null(spec)) return(NULL)
+  if (!role %in% c("spatial", "temporal", "smooth") && !own_index) return(NULL)
+  kind <- if (iid_time || own_index) "unit" else .field_block_kind(type)
   if (is.null(kind)) return(NULL)
+  if (own_index) role <- if (type == "tgmrf") "latent" else "spatiotemporal"
   cols <- as.integer(cols)
   comp <- list(kind = kind, space = role, cols = list(cols), load = NULL,
                block = blk, prefix = prefix, spec = spec, restrict = NULL)
@@ -390,7 +540,80 @@
   if (is.list(blk) && !is.null(blk$projector)) {
     comp$restrict <- .field_restriction(spec)
   }
+  if (identical(role, "temporal") && is.null(comp$index) && !iid_time &&
+      type %in% c("rw1", "rw2", "ar1")) {
+    tau <- .field_axis_or(theta, "tau", prefix, blk$tau_grid)
+    sg <- if (is.null(tau)) .field_axis_or(theta, "sigma", prefix, blk$sigma_grid)
+    rho <- if (type == "ar1") .field_axis_or(theta, "rho", prefix, blk$rho_grid)
+    if (is.null(tau) && !is.null(sg)) tau <- 1 / sg^2
+    if (!is.null(tau) && (type != "ar1" || !is.null(rho))) {
+      comp$path <- .field_temporal_path(
+        spec, type, n_times = as.integer(blk$n_times %||% spec$n_times),
+        hyper = function(cells) list(tau = tau[cells],
+                                     rho = if (!is.null(rho)) rho[cells]))
+    }
+  }
   comp
+}
+
+# A hyperparameter of every cell by its bare axis name and prefix, the block's
+# own fixed value where the grid carries no such axis, NULL where neither is
+# there.
+#' @keywords internal
+.field_axis_or <- function(theta, axis, prefix, fixed) {
+  nm <- paste0(prefix, axis)
+  if (!is.null(colnames(theta)) && nm %in% colnames(theta)) {
+    return(as.numeric(theta[, nm]))
+  }
+  if (length(fixed) == 1L && is.finite(fixed)) {
+    return(rep(as.numeric(fixed), NROW(theta)))
+  }
+  NULL
+}
+
+# How a temporal walk or GP over `n_times` fitted times is read at a time it
+# was not fitted at: the placement of new times on its levels
+# (`.temporal_query()`, from the time and group columns of `spec`), its
+# `structure`, `hyper(cells)` (each prediction row's `tau` / `rho`, or GP
+# `sigma2` / `phi`, at its cell) and, for a GP, its kernel.
+#' @keywords internal
+.field_temporal_path <- function(spec, structure, n_times, hyper,
+                                 kernel = NULL) {
+  lv <- spec$time_levels
+  num <- suppressWarnings(as.numeric(as.character(lv)))
+  info <- list(time_var = spec$time_var,
+               group_var = spec$group_var,
+               group_levels = as.character(spec$group_levels),
+               time_levels = as.character(lv),
+               level_values = if (!anyNA(num)) num,
+               n_times = as.integer(n_times), structure = structure,
+               time_center = spec$time_center, time_scale = spec$time_scale,
+               label = sprintf("The temporal field (%s)", structure),
+               noun = "temporal field")
+  list(info = info, structure = structure, n_times = as.integer(n_times),
+       hyper = hyper, kernel = kernel)
+}
+
+# A temporal component's values at the rows of `newdata` (R x n) for its
+# support `Fr` drawn in cells `cells`: a fitted time reads the path there, any
+# other time the path's conditional given it (`cpp_temporal_field_rows()`),
+# drawn when `draw` and its mean otherwise.
+#' @keywords internal
+.field_temporal_rows <- function(comp, Fr, cells, newdata, draw) {
+  path <- comp$path
+  q <- .temporal_query(path$info, newdata)
+  hy <- path$hyper(cells)
+  kg <- path$kernel
+  R <- nrow(Fr)
+  cpp_temporal_field_rows(
+    unname(as.matrix(Fr)), path$n_times, path$structure,
+    tau = as.numeric(hy$tau %||% numeric(0)),
+    rho = as.numeric(hy$rho %||% rep(0, if (is.null(hy$tau)) 0L else R)),
+    sigma2 = as.numeric(hy$sigma2 %||% numeric(0)),
+    phi = as.numeric(hy$phi %||% numeric(0)),
+    time_values = as.numeric(kg$time_values %||% numeric(0)),
+    cov_type = as.integer(kg$cov_type %||% 0L), nu = as.numeric(kg$nu %||% 0.5),
+    period = as.numeric(kg$period %||% 1), query = q, draw = isTRUE(draw))
 }
 
 # The restriction a projected field carries: the restriction design at the
@@ -456,7 +679,10 @@
     for (h in names(hyper)) theta[[paste0(prefix, h)]] <<- hyper[[h]]
   }
   if (ncol(fd$spatial_unit)) add_comp("unit", "spatial", fd$spatial_unit, sp)
-  if (ncol(fd$temporal)) add_comp("unit", "temporal", fd$temporal, tp)
+  if (ncol(fd$temporal)) {
+    add_comp("unit", "temporal", fd$temporal, tp)
+    fields[[length(fields)]]$path <- .field_sampler_temporal_path(fd, tp)
+  }
   # A multi-scale temporal field enters as its total at each time point, the
   # sum of its centred components the likelihood read.
   if (ncol(fd$ms_temporal)) {
@@ -495,6 +721,33 @@
                       list(beta = beta_cols, beta_names = b_names,
                            zi = if (length(zcols)) zi_cols, zi_names = z_names,
                            fields = fields, re = re))
+}
+
+# How a sampler's temporal walk or GP (spec `tp`) is read at a time it was
+# not fitted at: each stored draw's own `tau` / `rho` or GP `sigma2` / `phi`
+# and the GP's kernel, as the engine read them (`cpp_sampler_field_draws()`).
+# NULL for a cyclic walk, which a step past its season does not continue.
+#' @keywords internal
+.field_sampler_temporal_path <- function(fd, tp) {
+  th <- fd$temporal_hyper
+  st <- th$temporal_structure
+  if (!st %in% c("rw1", "rw2", "ar1", "gp") || isTRUE(th$temporal_cyclic)) {
+    return(NULL)
+  }
+  gp <- identical(st, "gp")
+  .field_temporal_path(
+    tp, st, n_times = as.integer(fd$n_times),
+    hyper = function(cells) if (gp) {
+      list(sigma2 = th$temporal_gp_sigma2[cells],
+           phi = th$temporal_gp_phi[cells])
+    } else {
+      list(tau = th$temporal_tau[cells],
+           rho = if (st == "ar1") th$temporal_rho[cells])
+    },
+    kernel = if (gp) list(time_values = th$temporal_gp_time_values,
+                          cov_type = th$temporal_gp_cov_type,
+                          nu = th$temporal_gp_nu,
+                          period = th$temporal_gp_period))
 }
 
 # A Polya-Gamma Gibbs chain's draws as point cells. Its field columns are the
@@ -663,6 +916,25 @@
 #' @keywords internal
 .field_row_index <- function(object, comp, newdata) {
   spec <- comp$spec
+  if (identical(comp$space, "smooth")) {
+    return(if (is.null(newdata)) as.integer(spec$idx)
+           else .smooth_node_at(spec, newdata))
+  }
+  if (identical(comp$space, "latent")) {
+    if (is.null(newdata)) return(as.integer(comp$block$obs_idx))
+    stop("The latent(", comp$block$name %||% "tgmrf", ") block is indexed by ",
+         "the vector it was built with, which names no column of newdata, so ",
+         "a new row cannot be placed in it. Pass include_field = FALSE for ",
+         "the prediction without the latent terms.", call. = FALSE)
+  }
+  if (identical(comp$space, "spatiotemporal")) {
+    blk <- comp$block
+    if (is.null(newdata)) return(as.integer(blk$obs_idx))
+    s_idx <- .field_row_index(object, list(space = "spatial",
+                                           spec = object$spatial), newdata)
+    t_idx <- .field_time_at(object$temporal, newdata)
+    return((t_idx - 1L) * as.integer(blk$n_spatial) + s_idx)
+  }
   if (identical(comp$space, "temporal")) {
     t_idx <- if (is.null(newdata)) as.integer(spec$time_index)
              else .field_time_at(spec, newdata)
@@ -739,9 +1011,13 @@
 .field_at <- function(object, src, newdata, Fr, cells, draw, comp) {
   sp <- comp$spec
   v <- if (!is.null(comp$bar)) {
-    br <- .field_bar_rows(comp, newdata)
-    g <- Fr[, br$idx, drop = FALSE]
+    path <- !is.null(newdata) && !is.null(comp$path)
+    br <- .field_bar_rows(comp, newdata, index = !path)
+    g <- if (path) .field_temporal_rows(comp, Fr, cells, newdata, draw)
+         else Fr[, br$idx, drop = FALSE]
     if (is.null(br$weight)) g else sweep(g, 2L, br$weight, "*")
+  } else if (!is.null(newdata) && !is.null(comp$path)) {
+    .field_temporal_rows(comp, Fr, cells, newdata, draw)
   } else if (identical(comp$kind, "unit")) {
     Fr[, .field_row_index(object, comp, newdata), drop = FALSE]
   } else switch(comp$kind,

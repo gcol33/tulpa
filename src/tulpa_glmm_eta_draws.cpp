@@ -134,7 +134,10 @@ Rcpp::NumericVector cpp_tulpa_glmm_log_prob_draws(
 //     intrinsic branches, the BYM2 combination at the draw's scales);
 //   * `temporal` (S x n_groups * n_times, group-major): the temporal field's
 //     contribution at each block position (`generic_temporal_effect()`), after
-//     a non-centered temporal GP's forward transform;
+//     a non-centered temporal GP's forward transform, with the draw's
+//     `temporal_tau` / `temporal_rho` (a walk) or `temporal_gp_sigma2` /
+//     `temporal_gp_phi` (a GP), the field's `temporal_structure` and the GP's
+//     kernel (`temporal_gp_time_values`, `_cov_type`, `_nu`, `_period`);
 //   * `gp_w` (S x n_loc) with `gp_sigma2`, `gp_phi`: the NNGP field at the
 //     fitted locations, reconstructed from z on the non-centered path;
 //   * `hsgp_z` (S x M) with `hsgp_sigma2`, `hsgp_lengthscale`: the N(0, 1)
@@ -201,6 +204,9 @@ Rcpp::List cpp_sampler_field_draws(
     Rcpp::NumericMatrix spatial_unit(S, n_units), temporal_out(S, n_temp),
         gp_w(S, n_gp), hsgp_z(S, n_hsgp), ms_local(S, n_ms),
         ms_regional(S, n_ms), ms_temporal(S, n_mst);
+    const bool tgp = temporal && layout.is_temporal_gp;
+    Rcpp::NumericVector t_tau(temporal && !tgp ? S : 0),
+        t_rho(temporal && !tgp ? S : 0), t_s2(tgp ? S : 0), t_ph(tgp ? S : 0);
     Rcpp::NumericVector gp_s2(gp ? S : 0), gp_ph(gp ? S : 0),
         hs_s2(hsgp ? S : 0), hs_ls(hsgp ? S : 0),
         ms_s2l(ms ? S : 0), ms_phl(ms ? S : 0),
@@ -219,6 +225,13 @@ Rcpp::List cpp_sampler_field_draws(
             for (int t = 0; t < n_temp; t++) {
                 temporal_out(s, t) = tulpa::generic_temporal_effect(t, state);
             }
+        }
+        if (temporal && tgp) {
+            t_s2[s] = state.sigma2_temporal_gp;
+            t_ph[s] = state.phi_temporal_gp;
+        } else if (temporal) {
+            t_tau[s] = state.tau_temporal;
+            t_rho[s] = state.rho_ar1;
         }
         if (mst) {
             if ((int)state.ms_temporal_by_time.size() != n_mst) {
@@ -270,9 +283,31 @@ Rcpp::List cpp_sampler_field_draws(
             ms_phr[s] = tulpa::math::safe_exp(params[layout.log_phi_gp_regional_idx]);
         }
     }
+    std::string t_structure;
+    if (temporal) {
+        t_structure = tgp ? "gp"
+            : data.temporal_type == tulpa_temporal::TemporalType::RW2 ? "rw2"
+            : data.temporal_type == tulpa_temporal::TemporalType::AR1 ? "ar1"
+            : data.temporal_type == tulpa_temporal::TemporalType::RW1 ? "rw1"
+            : "";
+    }
+    const auto& tgd = data.temporal_gp_data;
+    Rcpp::List temporal_hyper = Rcpp::List::create(
+        Rcpp::Named("temporal_tau") = t_tau,
+        Rcpp::Named("temporal_rho") = t_rho,
+        Rcpp::Named("temporal_gp_sigma2") = t_s2,
+        Rcpp::Named("temporal_gp_phi") = t_ph,
+        Rcpp::Named("temporal_structure") = t_structure,
+        Rcpp::Named("temporal_cyclic") = data.temporal_cyclic,
+        Rcpp::Named("temporal_gp_time_values") =
+            Rcpp::NumericVector(tgd.time_values.begin(), tgd.time_values.end()),
+        Rcpp::Named("temporal_gp_cov_type") = static_cast<int>(tgd.cov_type),
+        Rcpp::Named("temporal_gp_nu") = tgd.nu,
+        Rcpp::Named("temporal_gp_period") = tgd.period);
     return Rcpp::List::create(
         Rcpp::Named("spatial_unit") = spatial_unit,
         Rcpp::Named("temporal") = temporal_out,
+        Rcpp::Named("temporal_hyper") = temporal_hyper,
         Rcpp::Named("n_times") = data.n_times,
         Rcpp::Named("gp_w") = gp_w,
         Rcpp::Named("gp_sigma2") = gp_s2,

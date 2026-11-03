@@ -30,32 +30,32 @@
 }
 
 test_that("new times are placed on the grid of the fitted levels", {
-  q <- tulpa:::.tvc_query(.tvcq_info("rw1"),
+  q <- tulpa:::.temporal_query(.tvcq_info("rw1"),
                           data.frame(year = c(2, 3.25, 8, 0)))
   expect_identical(q$exact, c(1L, -1L, -1L, -1L))
   expect_equal(q$pos, c(1, 2.25, 7, -1))
   expect_identical(q$group, rep(0L, 4))
 
   # rw2 / ar1 have no value between grid positions, nor off the step lattice.
-  expect_error(tulpa:::.tvc_query(.tvcq_info("rw2"), data.frame(year = 3.5)),
+  expect_error(tulpa:::.temporal_query(.tvcq_info("rw2"), data.frame(year = 3.5)),
                "between two fitted levels")
-  expect_error(tulpa:::.tvc_query(.tvcq_info("ar1"), data.frame(year = 7.5)),
+  expect_error(tulpa:::.temporal_query(.tvcq_info("ar1"), data.frame(year = 7.5)),
                "fall off it")
-  expect_equal(tulpa:::.tvc_query(.tvcq_info("ar1"), data.frame(year = 9))$pos, 8)
+  expect_equal(tulpa:::.temporal_query(.tvcq_info("ar1"), data.frame(year = 9))$pos, 8)
 
   # Unequal spacing: a gap is one step, so beyond the levels there is no
   # step count; between them rw1 still has a position.
   uneq <- .tvcq_info("rw1", levels = c(1, 2, 4, 7))
-  expect_equal(tulpa:::.tvc_query(uneq, data.frame(year = 5.5))$pos, 2.5)
-  expect_error(tulpa:::.tvc_query(uneq, data.frame(year = 8)), "not uniform")
+  expect_equal(tulpa:::.temporal_query(uneq, data.frame(year = 5.5))$pos, 2.5)
+  expect_error(tulpa:::.temporal_query(uneq, data.frame(year = 8)), "not uniform")
 
   # A group without a fitted path, and a missing time column, are refused.
   grp <- .tvcq_info("rw1", group_var = "site", group_levels = c("a", "b"))
   expect_identical(
-    tulpa:::.tvc_query(grp, data.frame(year = 1, site = "b"))$group, 1L)
-  expect_error(tulpa:::.tvc_query(grp, data.frame(year = 1, site = "c")),
+    tulpa:::.temporal_query(grp, data.frame(year = 1, site = "b"))$group, 1L)
+  expect_error(tulpa:::.temporal_query(grp, data.frame(year = 1, site = "c")),
                "no field for: c")
-  expect_error(tulpa:::.tvc_query(.tvcq_info(), data.frame(x = 1)),
+  expect_error(tulpa:::.temporal_query(.tvcq_info(), data.frame(x = 1)),
                "missing the time variable")
 })
 
@@ -319,7 +319,7 @@ test_that("rw1 / rw2 / ar1 / gp coefficients are predicted from their conditiona
   f <- fit_of(structure = "rw1"); r <- nrow(f$draws)
   tau <- exp(f$draws[r, "log_tau_tvc[1]"]); w <- tvc(f)$draws[r, , 1L]
   P <- tulpa:::.varying_coef_field_draws(
-    .vcp_replicate(f), tvc_query = tulpa:::.tvc_query(f$temporal, new_years))$tvc
+    .vcp_replicate(f), tvc_query = tulpa:::.temporal_query(f$temporal, new_years))$tvc
   .vcp_expect_moments(P[, 1L], 0.5 * (w[4] + w[5]), 0.25 / tau, "rw1 bridge")
   .vcp_expect_moments(P[, 2L], w[T_n], 2 / tau, "rw1 forecast")
   .vcp_expect_moments(P[, 3L], w[1], 2 / tau, "rw1 backcast")
@@ -329,7 +329,7 @@ test_that("rw1 / rw2 / ar1 / gp coefficients are predicted from their conditiona
   tau <- exp(f$draws[r, "log_tau_tvc[1]"]); w <- tvc(f)$draws[r, , 1L]
   P <- tulpa:::.varying_coef_field_draws(
     .vcp_replicate(f),
-    tvc_query = tulpa:::.tvc_query(f$temporal, data.frame(year = 12)))$tvc
+    tvc_query = tulpa:::.temporal_query(f$temporal, data.frame(year = 12)))$tvc
   .vcp_expect_moments(P[, 1L], w[T_n] + 2 * (w[T_n] - w[T_n - 1L]), 5 / tau,
                       "rw2 forecast")
 
@@ -342,7 +342,7 @@ test_that("rw1 / rw2 / ar1 / gp coefficients are predicted from their conditiona
   K <- v * rho^abs(outer(seq_len(T_n), seq_len(T_n), "-"))
   P <- tulpa:::.varying_coef_field_draws(
     .vcp_replicate(f),
-    tvc_query = tulpa:::.tvc_query(f$temporal, data.frame(year = c(13, -1))))$tvc
+    tvc_query = tulpa:::.temporal_query(f$temporal, data.frame(year = c(13, -1))))$tvc
   for (k in 1:2) {
     pos <- c(13, -1)[k]
     ref <- .vcp_proper_ref(K, w, seq_len(T_n),
@@ -366,7 +366,7 @@ test_that("rw1 / rw2 / ar1 / gp coefficients are predicted from their conditiona
     tt <- tv$time_values
     w <- tvc(f)$draws[r, , 1L]
     K <- kfun(abs(outer(tt, tt, "-"))) + diag(1e-8, T_n)
-    q <- tulpa:::.tvc_query(tv, new_years)
+    q <- tulpa:::.temporal_query(tv, new_years)
     P <- tulpa:::.varying_coef_field_draws(.vcp_replicate(f), tvc_query = q)$tvc
     for (k in seq_len(nrow(new_years))) {
       ref <- .vcp_proper_ref(K, w, seq_len(T_n), kfun(abs(q$pos[k] - tt)),

@@ -95,9 +95,20 @@ nearest fitted locations for a GP / NNGP field (\code{\link[=spatial_gp]{spatial
 its scales for \code{\link[=spatial_multiscale]{spatial_multiscale()}}, and the value of the row's own unit
 or time for an areal (ICAR / CAR / BYM2) or temporal (RW1 / RW2 / AR1)
 field. \code{newdata} then carries the field's unit column (the one named in
-\code{spatial(...)}), time column and group column; a unit or time the fit was
-not fitted at is refused, since the field carries no value there. A
-restricted field (\code{\link[=spatial_rsr]{spatial_rsr()}}) is the field less its projection on the
+\code{spatial(...)}), time column and group column; a unit the fit was not
+fitted at is refused, since the field carries no value there. A temporal
+walk or GP (\code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_rw2]{temporal_rw2()}}, \code{\link[=temporal_ar1]{temporal_ar1()}},
+\code{\link[=temporal_gp]{temporal_gp()}}) at a time it was not fitted at is drawn from its
+conditional given the fitted path: the recursion run past the fitted times
+(whole steps of their equal spacing), the Brownian bridge between them for
+RW1, the GP conditional at any time; RW2 / AR1 between fitted times or off
+the step lattice are refused. An \code{s()} smoother is read at the node the fit
+binned the row's covariate value into (a value outside the fitted range is
+refused), a \code{\link[=spatiotemporal]{spatiotemporal()}} interaction at the row's area and time, an
+inline field replicated by a factor (\code{spatial(..., by =)}) in the copy of
+the row's level, and a \code{latent()} block at the training rows only. A fit
+carrying a latent term the prediction cannot be read for is refused, naming
+the term, rather than predicted without it. A restricted field (\code{\link[=spatial_rsr]{spatial_rsr()}}) is the field less its projection on the
 restriction design fitted at the support, \verb{w - x' (X_u' X_u)^-1 X_u' w},
 with \code{x} the design of the fitted unit or location a row sits at and
 otherwise the restriction formula evaluated on \code{newdata}. \code{fit} is the exact

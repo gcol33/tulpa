@@ -254,23 +254,29 @@ struct TvcQuery {
     std::vector<int> group;
 };
 
-// rw1 / rw2 / ar1: one draw of every query of group g, term j, from the
-// block's centred field `wc` (length T). Positions past either end are walked
-// in order, so queries of one draw lie on one path.
-inline void tvc_grid_predict(TemporalType st, const double* wc, int T,
-                             double tau, double rho, const TvcQuery& q, int g,
-                             double* out_row) {
+// rw1 / rw2 / ar1: one draw of every query of group g from the path `wc`
+// (length T) of one group. Positions past either end are walked in order, so
+// queries of one draw lie on one path. `centred` marks a path stored with its
+// level removed (a varying coefficient's), whose proper (AR1) level is drawn
+// from its conditional before the walk and removed again after; an additive
+// field's path is stored as it is. With `noise` false every innovation is
+// zero, which is the conditional mean of the draw.
+inline void temporal_path_predict(TemporalType st, const double* wc, int T,
+                                  double tau, double rho, const TvcQuery& q,
+                                  int g, bool centred, bool noise,
+                                  double* out_row) {
     const int n_new = (int)q.exact.size();
     const double sd_step = 1.0 / std::sqrt(tau);
+    auto z = [noise]() { return noise ? R::norm_rand() : 0.0; };
     double mbar = 0.0;
     std::vector<double> w(wc, wc + T);
-    if (st == TemporalType::AR1) {
+    if (centred && st == TemporalType::AR1) {
         std::vector<double> ones(T, 1.0);
         const double one_Q_one = tau * tulpa_temporal::ar1_cross_form(
             ones.data(), ones.data(), T, rho);
         const double one_Q_w = tau * tulpa_temporal::ar1_cross_form(
             ones.data(), wc, T, rho);
-        mbar = draw_level(one_Q_one, one_Q_w);
+        mbar = noise ? draw_level(one_Q_one, one_Q_w) : -one_Q_w / one_Q_one;
         for (double& v : w) v += mbar;
     }
 
@@ -288,7 +294,7 @@ inline void tvc_grid_predict(TemporalType st, const double* wc, int T,
             const int k = (int)std::floor(s);
             const double u = s - k;
             const double mean = (1.0 - u) * w[k] + u * w[k + 1];
-            out_row[p] = mean + std::sqrt(u * (1.0 - u)) * sd_step * R::norm_rand();
+            out_row[p] = mean + std::sqrt(u * (1.0 - u)) * sd_step * z();
         }
     }
 
@@ -300,13 +306,13 @@ inline void tvc_grid_predict(TemporalType st, const double* wc, int T,
         for (const auto& hq : qs) {
             const double h = hq.first;
             if (st == TemporalType::RW1) {
-                x1 += std::sqrt(h - h_done) * sd_step * R::norm_rand();
+                x1 += std::sqrt(h - h_done) * sd_step * z();
                 h_done = h;
             } else {
                 while (h_done + 0.5 < h) {
                     const double next = (st == TemporalType::RW2)
-                        ? 2.0 * x1 - x0 + sd_step * R::norm_rand()
-                        : rho * x1 + sd_step * R::norm_rand();
+                        ? 2.0 * x1 - x0 + sd_step * z()
+                        : rho * x1 + sd_step * z();
                     x0 = x1;
                     x1 = next;
                     h_done += 1.0;
@@ -319,19 +325,32 @@ inline void tvc_grid_predict(TemporalType st, const double* wc, int T,
     if (!bwd.empty()) walk(bwd, w[0], T > 1 ? w[1] : w[0]);
 }
 
-// gp: one draw of every query of group g, term j. The exponential kernel is
-// Markov, so a new instant conditions on the fitted instants bracketing it and
-// the level forms read the chain's tridiagonal precision; any other kernel
-// conditions on every fitted instant through the dense factor.
-inline void tvc_gp_predict(const tulpa::TVCData& tv, const double* wc,
-                           double sigma2, double phi, const TvcQuery& q, int g,
-                           double* out_row) {
-    const int T = tv.n_times, n_new = (int)q.exact.size();
-    const std::vector<double>& tt = tv.time_values;
-    const bool markov = tulpa_temporal_gp::cov_is_markov(tv.cov_type, tv.nu);
+// The kernel of a continuous-time GP path: its fitted instants (on the scale
+// the kernel measures) and covariance.
+struct TemporalGpKernel {
+    const std::vector<double>* tt;
+    int T;
+    tulpa::TemporalCovType cov_type;
+    double nu;
+    double period;
+};
+
+// gp: one draw of every query of group g from the path `wc` of one group. The
+// exponential kernel is Markov, so a new instant conditions on the fitted
+// instants bracketing it and the level forms read the chain's tridiagonal
+// precision; any other kernel conditions on every fitted instant through the
+// dense factor. `centred` and `noise` as in temporal_path_predict().
+inline void temporal_gp_path_predict(const TemporalGpKernel& kg,
+                                     const double* wc, double sigma2,
+                                     double phi, const TvcQuery& q, int g,
+                                     bool centred, bool noise,
+                                     double* out_row) {
+    const int T = kg.T, n_new = (int)q.exact.size();
+    const std::vector<double>& tt = *kg.tt;
+    const bool markov = tulpa_temporal_gp::cov_is_markov(kg.cov_type, kg.nu);
     auto kern = [&](double d) {
-        return tulpa_temporal_gp::temporal_cov(d, sigma2, phi, tv.cov_type, tv.nu,
-                                               tv.period);
+        return tulpa_temporal_gp::temporal_cov(d, sigma2, phi, kg.cov_type, kg.nu,
+                                               kg.period);
     };
 
     double one_Q_one = 0.0, one_Q_w = 0.0;
@@ -348,8 +367,8 @@ inline void tvc_gp_predict(const tulpa::TVCData& tv, const double* wc,
             one_Q_w += r1 * (wc[t] - rho[t - 1] * wc[t - 1]) / v;
         }
     } else {
-        if (!tulpa_temporal_gp::temporal_cov_chol(tt, T, sigma2, phi, tv.cov_type,
-                                                  tv.nu, tv.period, L)) {
+        if (!tulpa_temporal_gp::temporal_cov_chol(tt, T, sigma2, phi, kg.cov_type,
+                                                  kg.nu, kg.period, L)) {
             Rcpp::stop("tvc prediction: the fitted GP covariance is not positive "
                        "definite at this draw.");
         }
@@ -361,7 +380,8 @@ inline void tvc_gp_predict(const tulpa::TVCData& tv, const double* wc,
             one_Q_w += Kinv1[t] * wc[t];
         }
     }
-    const double mbar = draw_level(one_Q_one, one_Q_w);
+    const double mbar = !centred ? 0.0
+        : (noise ? draw_level(one_Q_one, one_Q_w) : -one_Q_w / one_Q_one);
 
     std::vector<double> C, c_vec, alpha, y;
     std::vector<int> nb;
@@ -402,7 +422,7 @@ inline void tvc_gp_predict(const tulpa::TVCData& tv, const double* wc,
         }
         double mean = 0.0;
         for (int a = 0; a < m; a++) mean += alpha[a] * (wc[nb[a]] + mbar);
-        out_row[p] = mean + std::sqrt(v) * R::norm_rand() - mbar;
+        out_row[p] = mean + std::sqrt(v) * (noise ? R::norm_rand() : 0.0) - mbar;
     }
 }
 
@@ -573,7 +593,10 @@ Rcpp::List cpp_varying_coef_draws(
                                 params[layout.log_sigma2_tvc_gp_start + j]);
                             const double phj = tulpa::priors::tvc_gp_phi_from(
                                 params[layout.logit_phi_tvc_gp_start + j], data);
-                            tvc_gp_predict(tv, wc, sg2, phj, tq, g, out_j);
+                            const TemporalGpKernel kg{&tv.time_values, tv.n_times,
+                                                      tv.cov_type, tv.nu, tv.period};
+                            temporal_gp_path_predict(kg, wc, sg2, phj, tq, g,
+                                                     true, true, out_j);
                         } else {
                             const double tau = safe_exp(
                                 params[layout.log_tau_tvc_start + j]);
@@ -581,8 +604,9 @@ Rcpp::List cpp_varying_coef_draws(
                                 ? tulpa::priors::tvc_ar1_rho_from(
                                       params[layout.logit_rho_tvc_start + j])
                                 : 0.0;
-                            tvc_grid_predict(tv.structure, wc, tv.n_times, tau, rho,
-                                             tq, g, out_j);
+                            temporal_path_predict(tv.structure, wc, tv.n_times,
+                                                  tau, rho, tq, g, true, true,
+                                                  out_j);
                         }
                     }
                 }
@@ -594,4 +618,81 @@ Rcpp::List cpp_varying_coef_draws(
     return Rcpp::List::create(
         Rcpp::_["svc"] = has_svc ? Rcpp::wrap(svc_out) : R_NilValue,
         Rcpp::_["tvc"] = has_tvc ? Rcpp::wrap(tvc_out) : R_NilValue);
+}
+
+// An additive temporal field (rw1 / rw2 / ar1 / gp) at new times, per row of
+// `field` (R x n_groups * n_times, group-major, the field at its fitted
+// instants under one posterior draw or one cell's latent draw), with that
+// row's hyperparameters: `tau` / `rho` for a walk, `sigma2` / `phi` for a GP
+// (on `time_values` with kernel `cov_type`, `nu`, `period`). `query` is the
+// list .temporal_query() builds (exact, pos, group; 0-based). A row's field is
+// read as stored -- an additive field is not centred -- and `draw` false gives
+// the conditional mean.
+// [[Rcpp::export]]
+Rcpp::NumericMatrix cpp_temporal_field_rows(
+    Rcpp::NumericMatrix field, int n_times, std::string structure,
+    Rcpp::NumericVector tau, Rcpp::NumericVector rho,
+    Rcpp::NumericVector sigma2, Rcpp::NumericVector phi,
+    Rcpp::NumericVector time_values, int cov_type, double nu, double period,
+    Rcpp::List query, bool draw) {
+    using namespace tulpa_vc;
+    TvcQuery q;
+    q.exact = Rcpp::as<std::vector<int>>(query["exact"]);
+    q.pos = Rcpp::as<std::vector<double>>(query["pos"]);
+    q.group = Rcpp::as<std::vector<int>>(query["group"]);
+    const int R = field.nrow(), n_new = (int)q.exact.size();
+    if (n_times < 1 || field.ncol() % n_times != 0) {
+        Rcpp::stop("cpp_temporal_field_rows: the field's %d columns are not "
+                   "whole groups of %d times.", field.ncol(), n_times);
+    }
+    const int G = field.ncol() / n_times;
+    for (int p = 0; p < n_new; p++) {
+        if (q.group[p] < 0 || q.group[p] >= G || q.exact[p] >= n_times) {
+            Rcpp::stop("cpp_temporal_field_rows: new row %d addresses no "
+                       "fitted block.", p + 1);
+        }
+    }
+    const bool gp = (structure == "gp");
+    TemporalType st = TemporalType::RW1;
+    if (structure == "rw2") st = TemporalType::RW2;
+    else if (structure == "ar1") st = TemporalType::AR1;
+    else if (!gp && structure != "rw1") {
+        Rcpp::stop("cpp_temporal_field_rows: unknown structure '%s'.",
+                   structure.c_str());
+    }
+    const int n_hyper = gp ? sigma2.size() : tau.size();
+    if (n_hyper != R || (!gp && st == TemporalType::AR1 && rho.size() != R)) {
+        Rcpp::stop("cpp_temporal_field_rows: one hyperparameter value per row "
+                   "is needed.");
+    }
+    std::vector<double> tt(time_values.begin(), time_values.end());
+    if (gp && (int)tt.size() != n_times) {
+        Rcpp::stop("cpp_temporal_field_rows: %d time values for %d times.",
+                   (int)tt.size(), n_times);
+    }
+    const TemporalGpKernel kg{&tt, n_times,
+                              static_cast<tulpa::TemporalCovType>(cov_type),
+                              nu, period};
+    std::vector<char> group_used(G, 0);
+    for (int g : q.group) group_used[g] = 1;
+    Rcpp::NumericMatrix out(R, n_new);
+    std::vector<double> row(field.ncol()), out_row(n_new);
+    for (int r = 0; r < R; r++) {
+        for (int k = 0; k < field.ncol(); k++) row[k] = field(r, k);
+        std::fill(out_row.begin(), out_row.end(), 0.0);
+        for (int g = 0; g < G; g++) {
+            if (!group_used[g]) continue;
+            const double* wc = row.data() + (std::size_t)g * n_times;
+            if (gp) {
+                temporal_gp_path_predict(kg, wc, sigma2[r], phi[r], q, g,
+                                         false, draw, out_row.data());
+            } else {
+                temporal_path_predict(st, wc, n_times, tau[r],
+                                      st == TemporalType::AR1 ? rho[r] : 0.0,
+                                      q, g, false, draw, out_row.data());
+            }
+        }
+        for (int p = 0; p < n_new; p++) out(r, p) = out_row[p];
+    }
+    return out;
 }

@@ -257,7 +257,12 @@ test_that("a new row's area or time is matched to the fitted ones; an unseen one
   expect_equal(p[2] - p[1], unname(b["x"]), tolerance = 1e-10)
   fe <- field_effects(fit)
   expect_equal(p[3] - p[1], fe$estimate[7] - fe$estimate[3], tolerance = 1e-6)
-  expect_error(predict(fit, newdata = data.frame(region = 3, t = 99, x = 0)),
+  # A time past the fitted ones is forecast from the walk, with more spread
+  # than at a fitted time.
+  pf <- predict(fit, newdata = data.frame(region = 3, t = c(10, 99), x = 0),
+                se.fit = TRUE)
+  expect_lt(pf$se.fit[1], pf$se.fit[2])
+  expect_error(predict(fit, newdata = data.frame(region = 3, t = "b", x = 0)),
                "time")
   expect_error(predict(fit, newdata = data.frame(region = 99, t = 2, x = 0)),
                "region")
@@ -374,4 +379,120 @@ test_that("inline spatial() / temporal() fields reach newdata, MCAR included", {
     expect_lt(max(abs(p$fit - pl$estimate) / pl$sd), 0.15, label = nm)
     expect_lt(max(abs(p$se.fit / pl$sd - 1)), 0.15, label = nm)
   }
+})
+
+test_that("every latent block is mapped or refused by name; a fit with none is unaffected", {
+  skip_on_cran()
+  ar <- .fpb_areal()
+  d <- ar$d
+  d$y <- stats::rpois(nrow(d), exp(0.2 + sin(2 * d$x) + 0.3 * (d$region %% 3)))
+  fits <- suppressWarnings(list(
+    smooth = tulpa(y ~ s(x, k = 8) + spatial(region), data = d,
+                   family = "poisson",
+                   spatial = spatial_car(ar$W, group_var = "region")),
+    smooth_only = tulpa(y ~ s(x, k = 8), data = d, family = "poisson"),
+    interaction = tulpa(y ~ x + spatial(region), data = d, family = "poisson",
+                        spatial = list(type = "icar", adjacency = ar$W),
+                        temporal = temporal_rw1("t"),
+                        spatiotemporal = spatiotemporal(type = "IV"),
+                        mode = "nested_laplace")))
+  for (nm in names(fits)) {
+    fit <- fits[[nm]]
+    k <- which(fit$weights > 0)
+    expect_lt(max(abs(.fpb_map_train(fit) - fit$fitted_eta[k, ])), 1e-8,
+              label = nm)
+    expect_lt(max(abs(predict(fit, newdata = d) - predict(fit))), 1e-10,
+              label = nm)
+    p <- predict(fit, newdata = d[1:30, ], se.fit = TRUE)
+    pl <- posterior_linpred(fit, summary = TRUE)[1:30, ]
+    expect_lt(max(abs(p$fit - pl$estimate) / pl$sd), 0.15, label = nm)
+    expect_lt(max(abs(p$se.fit / pl$sd - 1)), 0.15, label = nm)
+  }
+  # A smoother is read at its nodes only.
+  expect_error(predict(fits$smooth_only, newdata = data.frame(x = 99)),
+               "outside the range")
+  # A latent() block indexed by a vector is mapped at the training rows and
+  # refused, by name, at rows it has no index for.
+  t_idx <- d$t
+  fl <- suppressWarnings(tulpa(y ~ x + latent(temporal_ar2(t_idx)), data = d,
+                               family = "poisson"))
+  k <- which(fl$weights > 0)
+  expect_lt(max(abs(.fpb_map_train(fl) - fl$fitted_eta[k, ])), 1e-8)
+  expect_error(predict(fl, newdata = d[1:5, ]), "latent(ar2)", fixed = TRUE)
+  expect_error(posterior_linpred(fl, newdata = d[1:5, ]), "latent(ar2)", fixed = TRUE)
+  expect_length(predict(fl, newdata = d[1:5, ], include_field = FALSE), 5L)
+  # A source that cannot be read names the fit's latent terms.
+  fl2 <- fl
+  fl2$block_latent_offsets <- NULL
+  expect_error(predict(fl2), "latent(ar2)", fixed = TRUE)
+  # No latent term: no field read, no refusal.
+  fr <- suppressWarnings(tulpa(y ~ x + (1 | g), data = d, family = "poisson"))
+  expect_null(tulpa:::.field_source(fr))
+  expect_length(predict(fr, newdata = d[1:5, ]), 5L)
+})
+
+test_that("an inline field replicated by a factor reaches newdata in its level's copy", {
+  skip_on_cran()
+  ar <- .fpb_areal()
+  fit <- suppressWarnings(tulpa(
+    y ~ x + spatial(graph = ar$W, formula = ~ 1 | region, by = g),
+    data = ar$d, family = "poisson"))
+  k <- which(fit$weights > 0)
+  expect_lt(max(abs(.fpb_map_train(fit) - fit$fitted_eta[k, ])), 1e-8)
+  expect_lt(max(abs(predict(fit, newdata = ar$d) - predict(fit))), 1e-10)
+  # One area in two replicates differs by the two copies' values there.
+  nd <- data.frame(region = c(3, 3), g = factor(c(1, 2), levels = 1:4), x = 0)
+  p <- predict(fit, newdata = nd)
+  on <- fit$weights > 0
+  w <- colSums(fit$weights[on] * fit$modes[on, , drop = FALSE]) /
+    sum(fit$weights[on])
+  st <- fit$arm_layout$block_start[1L]
+  expect_equal(p[2] - p[1], unname(w[st + 16L + 3L] - w[st + 3L]),
+               tolerance = 1e-8)
+  expect_error(predict(fit, newdata = data.frame(region = 3, g = "9", x = 0)),
+               "did not see")
+})
+
+test_that("a temporal walk or GP is forecast past its fitted times", {
+  skip_on_cran()
+  set.seed(8)
+  n_t <- 30L
+  tr <- cumsum(stats::rnorm(n_t, 0, 0.25))
+  t <- rep(seq_len(n_t), each = 8L)
+  x <- stats::rnorm(length(t))
+  d <- data.frame(t = t, x = x, y = stats::rpois(length(t),
+                                                exp(0.5 + 0.4 * x + tr[t])))
+  fit_rows <- d$t <= 24L
+  nd <- data.frame(t = 25:30, x = 0)
+  for (tp in list(temporal_rw1("t"), temporal_ar1("t"))) {
+    fit <- suppressWarnings(tulpa(y ~ x, data = d[fit_rows, ],
+                                  family = "poisson", temporal = tp))
+    # The exact reference: the same model with the future times in the field
+    # and their responses missing.
+    dna <- rbind(d[fit_rows, ], data.frame(t = 25:30, x = 0, y = NA))
+    ref <- suppressWarnings(tulpa(y ~ x, data = dna, family = "poisson",
+                                  temporal = tp))
+    p <- predict(fit, newdata = nd, se.fit = TRUE)
+    pr <- posterior_linpred(ref, summary = TRUE)[sum(fit_rows) + 1:6, ]
+    expect_lt(max(abs(p$fit - pr$estimate) / pr$sd), 0.05, label = tp$type)
+    expect_lt(max(abs(p$se.fit / pr$sd - 1)), 0.06, label = tp$type)
+    expect_lt(max(abs(predict(fit, newdata = d[fit_rows, ]) - predict(fit))),
+              1e-10, label = tp$type)
+  }
+  # rw2 and ar1 have no value between, or off the step lattice past, their
+  # fitted times.
+  fa <- suppressWarnings(tulpa(y ~ x, data = d[fit_rows, ], family = "poisson",
+                               temporal = temporal_ar1("t")))
+  expect_error(predict(fa, newdata = data.frame(t = 25.5, x = 0)), "fall off")
+  # A sampler's draws continue their own path, each at its own hyperparameters.
+  fh <- suppressWarnings(tulpa(y ~ x, data = d[fit_rows, ], family = "poisson",
+                               temporal = temporal_gp("t"), mode = "hmc",
+                               control = list(n_chains = 1, n_iter = 400,
+                                              warmup = 200, seed = 1)))
+  ph <- predict(fh, newdata = data.frame(t = c(24, 27, 30), x = 0),
+                se.fit = TRUE)
+  expect_true(all(is.finite(ph$se.fit)))
+  expect_lt(ph$se.fit[1], ph$se.fit[3])
+  expect_lt(max(abs(predict(fh, newdata = d[fit_rows, ]) - predict(fh))),
+            1e-10)
 })

@@ -28,9 +28,10 @@
   .coords_plain(nc)
 }
 
-# The new-time argument of `.varying_coef_field_draws()` for a TVC spec: for
-# each row of `newdata`, the fitted level it sits on (0-based, -1 for none), its
-# position, and its group (0-based).
+# The new times of a temporal path -- a time-varying coefficient's
+# (`.varying_coef_field_draws()`) or an additive temporal field's
+# (`.field_temporal_rows()`): for each row of `newdata`, the fitted level it
+# sits on (0-based, -1 for none), its position, and its group (0-based).
 #
 # `gp` is a field over time VALUES, so any time is a position, on the scale the
 # kernel measured. `rw1` / `rw2` / `ar1` read the levels as consecutive grid
@@ -38,16 +39,20 @@
 # when the levels are equally spaced, and a time strictly between two levels is
 # a position only for `rw1`, whose walk is a Brownian motion read at the grid
 # (the bridge between two levels is its value there). `rw2` and `ar1` define the
-# coefficient at grid positions alone, so they are refused between levels and
-# off the step lattice past them.
+# path at grid positions alone, so they are refused between levels and off the
+# step lattice past them. `info$label` names the term in a refusal (a
+# varying coefficient's `temporal_tvc()` by default) and `info$noun` what it
+# defines.
 #' @keywords internal
-.tvc_query <- function(info, newdata) {
+.temporal_query <- function(info, newdata) {
   tv <- info$time_var
+  st <- info$structure
+  label <- info$label %||% sprintf('temporal_tvc(structure = "%s")', st)
+  noun <- info$noun %||% "coefficient"
   if (!tv %in% names(newdata)) {
-    stop("newdata is missing the time variable '", tv, "' the time-varying ",
-         "coefficient evolves over. Pass include_field = FALSE for the ",
-         "prediction at the average time (the fixed effects alone).",
-         call. = FALSE)
+    stop("newdata is missing the time variable '", tv, "' the ", noun,
+         " evolves over. Pass include_field = FALSE for the prediction ",
+         "without it.", call. = FALSE)
   }
   tn <- newdata[[tv]]
   if (anyNA(tn)) {
@@ -60,13 +65,13 @@
     gv <- info$group_var
     if (!gv %in% names(newdata)) {
       stop("newdata is missing the group variable '", gv, "' of the ",
-           "group-specific time-varying coefficient.", call. = FALSE)
+           "group-specific ", noun, ".", call. = FALSE)
     }
     g <- match(as.character(newdata[[gv]]), info$group_levels)
     if (anyNA(g)) {
       stop("newdata names group level(s) the fit has no field for: ",
            paste(unique(as.character(newdata[[gv]])[is.na(g)]), collapse = ", "),
-           ". The coefficient is a field per group, and a group the data never ",
+           ". The ", noun, " is a path per group, and a group the data never ",
            "held has no fitted path to condition on.", call. = FALSE)
     }
     group <- g - 1L
@@ -74,7 +79,6 @@
 
   lv <- info$level_values
   n_t <- info$n_times
-  st <- info$structure
   if (is.null(lv)) {
     ex <- match(as.character(tn), info$time_levels)
     if (anyNA(ex)) {
@@ -86,7 +90,14 @@
     return(list(exact = ex - 1L, pos = as.numeric(ex - 1L), group = group))
   }
 
-  t <- as.numeric(tn)
+  t <- if (is.factor(tn) || is.character(tn)) {
+    suppressWarnings(as.numeric(as.character(tn)))
+  } else as.numeric(tn)
+  if (anyNA(t)) {
+    stop("newdata has value(s) of the time variable '", tv, "' that are not ",
+         "numbers: ", paste(utils::head(unique(as.character(tn[is.na(t)])), 5L),
+                            collapse = ", "), ".", call. = FALSE)
+  }
   tol <- 1e-8 * max(1, diff(range(lv)))
   ex <- vapply(t, function(x) {
     k <- which(abs(lv - x) <= tol)
@@ -104,11 +115,11 @@
   if (any(inside)) {
     if (!identical(st, "rw1")) {
       stop(sprintf(paste0(
-        "temporal_tvc(structure = \"%s\") defines the coefficient at its ",
-        "fitted grid positions only, and %d new time(s) fall between two ",
-        "fitted levels. Predict at fitted levels, or refit with structure = ",
-        "\"rw1\" (a Brownian walk, which has a value between levels) or ",
-        "\"gp\" (a field over time values)."), st, sum(inside)), call. = FALSE)
+        "%s defines the %s at its fitted grid positions only, and %d new ",
+        "time(s) fall between two fitted levels. Predict at fitted levels, or ",
+        "refit with a first-order random walk (a Brownian walk, which has a ",
+        "value between levels) or a Gaussian process over time values."),
+        label, noun, sum(inside)), call. = FALSE)
     }
     k <- findInterval(t[inside], lv)
     pos[inside] <- (k - 1) + (t[inside] - lv[k]) / (lv[k + 1L] - lv[k])
@@ -120,9 +131,9 @@
       stop(sprintf(paste0(
         "%d new time(s) lie beyond the fitted levels of '%s', whose spacing ",
         "is not uniform, so they are no whole number of grid steps from them: ",
-        "temporal_tvc(structure = \"%s\") reads each gap between levels as one ",
-        "step. Refit with structure = \"gp\", a field over time values, to ",
-        "predict there."), sum(outside), tv, st), call. = FALSE)
+        "%s reads each gap between levels as one step. Refit with a Gaussian ",
+        "process over time values to predict there."), sum(outside), tv,
+        label), call. = FALSE)
     }
     to <- t[outside]
     steps <- ifelse(to > lv[n_t], (n_t - 1) + (to - lv[n_t]) / dd[1L],
@@ -131,10 +142,10 @@
       off <- abs(steps - round(steps)) > 1e-8
       if (any(off)) {
         stop(sprintf(paste0(
-          "temporal_tvc(structure = \"%s\") steps on the grid of the fitted ",
-          "levels (spacing %g), and %d new time(s) beyond them fall off it. ",
-          "Predict at whole steps, or refit with structure = \"rw1\" or ",
-          "\"gp\"."), st, dd[1L], sum(off)), call. = FALSE)
+          "%s steps on the grid of the fitted levels (spacing %g), and %d new ",
+          "time(s) beyond them fall off it. Predict at whole steps, or refit ",
+          "with a first-order random walk or a Gaussian process over time ",
+          "values."), label, dd[1L], sum(off)), call. = FALSE)
       }
       steps <- round(steps)
     }
@@ -159,7 +170,7 @@
   vc <- .varying_coef_field_draws(
     object,
     svc_coords = if (!is.null(sv) && new) .svc_query_coords(sv, newdata),
-    tvc_query  = if (!is.null(tv) && new) .tvc_query(tv, newdata),
+    tvc_query  = if (!is.null(tv) && new) .temporal_query(tv, newdata),
     rows = rows)
   if (is.null(vc)) {
     stop("This fit carries a varying coefficient but not the sampler model ",

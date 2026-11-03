@@ -534,13 +534,16 @@ validate_temporal_gp <- function(temporal, data) {
   # `period_scaled` is that period in the units time_values now carries, and is
   # what every fit path reads.
   time_scale <- 1
+  time_center <- 0
   if (temporal$scale_coords) {
     scaled <- scale(time_vals)
     time_scale <- as.numeric(attr(scaled, "scaled:scale"))
     if (!is.finite(time_scale) || time_scale <= 0) time_scale <- 1
-    time_vals <- as.vector(scaled)
+    time_center <- as.numeric(attr(scaled, "scaled:center"))
+    time_vals <- (time_vals - time_center) / time_scale
   }
   temporal$time_scale <- time_scale
+  temporal$time_center <- time_center
   # The lengthscale support, laid out on the spread of the times the kernel
   # sees: 1 once scaled, sd(time) in raw units (gcol33/tulpa#907).
   phi_b <- .gp_phi_bounds(stats::sd(time_vals))

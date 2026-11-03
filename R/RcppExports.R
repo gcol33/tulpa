@@ -593,3 +593,7 @@ cpp_varying_coef_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sig
     .Call(`_tulpa_cpp_varying_coef_draws`, draws, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, phi2, svc_spec, tvc_spec, zi_spec, svc_coords_new, tvc_new, svc_nn)
 }
 
+cpp_temporal_field_rows <- function(field, n_times, structure, tau, rho, sigma2, phi, time_values, cov_type, nu, period, query, draw) {
+    .Call(`_tulpa_cpp_temporal_field_rows`, field, n_times, structure, tau, rho, sigma2, phi, time_values, cov_type, nu, period, query, draw)
+}
+

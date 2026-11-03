@@ -154,3 +154,16 @@ test_that("a smoother shares the nested stack with a spatial_gp() field", {
   sm <- smooth_effects(fit)
   expect_gt(stats::cor(sm$estimate, f(sm$x)), 0.9)
 })
+
+test_that("smooth_effects() reads the smoother's block when random effects follow it", {
+  skip_on_cran()
+  set.seed(3)
+  d <- data.frame(x = runif(400, -2, 2), g = factor(sample(1:8, 400, TRUE)))
+  b <- rnorm(8) * 0.7
+  d$y <- rpois(400, exp(0.3 + sin(2 * d$x) + b[d$g]))
+  fit <- suppressWarnings(tulpa(y ~ s(x, k = 10) + (1 | g), data = d,
+                                family = "poisson"))
+  sm <- smooth_effects(fit)
+  # Measured: 0.99 at the smoother's block, -0.32 at the random effects'.
+  expect_gt(cor(sm$estimate, sin(2 * sm$x)), 0.95)
+})

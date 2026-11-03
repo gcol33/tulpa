@@ -50,6 +50,7 @@
     stop("s(", var, "): needs at least 3 distinct covariate values.",
          call. = FALSE)
   }
+  breaks <- NULL
   if (length(ux) <= k) {
     nodes <- ux
     idx   <- match(x, ux)
@@ -62,17 +63,65 @@
     k_eff  <- k
   }
 
+  # The smoother's role tag tells it apart from a temporal field of the same
+  # walk type (`.nl_block_roles()`).
   block <- list(
     type         = type,
     temporal_idx = as.integer(idx),
     n_times      = as.integer(k_eff),
-    n_groups     = 1L
+    n_groups     = 1L,
+    role         = "smooth"
   )
   if (type == "rw1") block$cyclic <- FALSE
 
   list(block = block,
        meta  = list(var = var, nodes = nodes, k = as.integer(k_eff),
-                    type = type, idx = as.integer(idx)))
+                    type = type, idx = as.integer(idx), breaks = breaks))
+}
+
+# The node of the smoother `meta` (an entry of a fit's `smooth_terms`) each row
+# of `newdata` falls on, by the rule the fit binned its covariate with: the
+# bin of the equally spaced breaks, or the matching value where the nodes are
+# the covariate's distinct values. A value beyond the fitted range, or between
+# two distinct fitted values, is refused: the smooth carries a value at its
+# nodes only.
+#' @keywords internal
+.smooth_node_at <- function(meta, newdata) {
+  x <- tryCatch(eval(str2lang(meta$var), envir = newdata,
+                     enclos = globalenv()),
+                error = function(e) {
+                  stop("newdata cannot evaluate the covariate of s(", meta$var,
+                       "): ", conditionMessage(e), call. = FALSE)
+                })
+  x <- as.numeric(x)
+  if (length(x) != nrow(newdata) || anyNA(x)) {
+    stop("s(", meta$var, ") needs a finite covariate value on every row of ",
+         "newdata.", call. = FALSE)
+  }
+  br <- meta$breaks
+  if (is.null(br)) {
+    tol <- 1e-8 * max(1, diff(range(meta$nodes)))
+    idx <- vapply(x, function(v) {
+      j <- which(abs(meta$nodes - v) <= tol)
+      if (length(j)) j[1L] else NA_integer_
+    }, integer(1))
+    if (anyNA(idx)) {
+      stop("s(", meta$var, ") was fitted at the covariate's ", length(meta$nodes),
+           " distinct values, and ", sum(is.na(idx)), " newdata value(s) are ",
+           "none of them; the smooth carries a value at those values only.",
+           call. = FALSE)
+    }
+    return(as.integer(idx))
+  }
+  tol <- 1e-8 * max(1, diff(range(br)))
+  out <- x < br[1L] - tol | x > br[length(br)] + tol
+  if (any(out)) {
+    stop(sum(out), " newdata value(s) of ", meta$var, " lie outside the range ",
+         "s(", meta$var, ") was fitted over [", signif(br[1L], 6), ", ",
+         signif(br[length(br)], 6), "], where the smooth carries no value.",
+         call. = FALSE)
+  }
+  as.integer(findInterval(x, br, rightmost.closed = TRUE, all.inside = TRUE))
 }
 
 #' Extract fitted covariate smooths
@@ -123,23 +172,29 @@ smooth_effects <- function(object, term = 1L) {
     stop("The fit carries no per-grid modes to read the smooth from.",
          call. = FALSE)
   }
-  # Smoother blocks are appended LAST in the latent stack (beta, RE, blocks...),
-  # so term j's values are indexed from the tail of the joint mode vector.
-  # A latent(...) block would sit after them, making tail indexing wrong.
-  if ((object$n_latent_blocks %||% 0L) > 0L) {
-    stop("smooth_effects() cannot locate the smoother blocks when latent(...) ",
-         "blocks are present; read fit$modes directly.", call. = FALSE)
+  # A smoother's block is found by its role, the smoothers in the order of
+  # `smooth_terms`, at the columns the solve reported for it (a single block
+  # is the tail of [fixed effects, random effects, block]).
+  blocks <- .field_block_list(object$prior)
+  ks <- which(.nl_block_roles(blocks) == "smooth")
+  if (length(ks) != length(sm)) {
+    stop("The fit's latent blocks do not carry its ", length(sm),
+         " smoother(s).", call. = FALSE)
   }
-  end <- ncol(modes)
-  cols <- NULL
-  for (j in rev(seq_along(sm))) {
-    kj <- sm[[j]]$k
-    if (j == term) cols <- (end - kj + 1L):end
-    end <- end - kj
+  cols <- if (length(blocks) == 1L) {
+    seq.int(ncol(modes) - sm[[term]]$k + 1L, ncol(modes))
+  } else {
+    .nl_block_cols(object$block_latent_offsets, ncol(modes), ks[term],
+                   length(blocks))
+  }
+  if (length(cols) != sm[[term]]$k) {
+    stop("The fit does not locate the latent block of s(", sm[[term]]$var,
+         ").", call. = FALSE)
   }
 
-  wn  <- w / sum(w)
-  est <- as.numeric(crossprod(wn, modes[, cols, drop = FALSE]))
+  on  <- is.finite(w) & w > 0
+  wn  <- w[on] / sum(w[on])
+  est <- as.numeric(crossprod(wn, modes[on, cols, drop = FALSE]))
   out <- data.frame(x = sm[[term]]$nodes, estimate = est)
   attr(out, "var") <- sm[[term]]$var
   out

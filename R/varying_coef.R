@@ -82,7 +82,7 @@
 # design: `$svc` is S x (n_svc * n_units), term-major, over the fitted
 # locations (NNGP) or rows (HSGP), and `$tvc` is S x (n_groups * n_tvc *
 # n_times), (group, term)-major over time. `svc_coords` (n_new x 2, on the
-# fitted coordinate scale) and `tvc_query` (from `.tvc_query()`) ask for the
+# fitted coordinate scale) and `tvc_query` (from `.temporal_query()`) ask for the
 # fields at new coordinates / times instead, S x (n_terms * n_new). `rows`
 # selects stored draws. NULL when the fit carries no sampler model.
 #' @keywords internal

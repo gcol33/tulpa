@@ -505,9 +505,10 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 
 
 # What an inline bar field's blocks are read at new rows with: per spec, the
-# spec itself, the field's space, the number of design columns it expands to
-# and, for a temporal field, the time levels its index was laid over (the order
-# `.resolve_time_index()` gave the training times). The blocks follow the specs
+# spec itself, the field's space, the number of design columns it expands to,
+# for a temporal field the time levels its index was laid over (the order
+# `.resolve_time_index()` gave the training times), and for a field replicated
+# by a factor the factor's levels in replicate order and the graph's size. The blocks follow the specs
 # in order: one per design column, or one coupled block for a correlated
 # (MCAR) spatial field.
 .bar_field_record <- function(specs, data, space) {
@@ -518,6 +519,12 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     if (identical(space, "temporal")) {
       rec$time_levels <- levels(.resolve_time_index(data[[spec$group_var]],
                                                     spec$group_var))
+    }
+    # A replicated field's copies follow the levels of its `by` factor
+    # (`.bar_field_replicate()`), each a copy of the graph's nodes.
+    if (!is.null(spec$by_var)) {
+      rec$by_levels <- levels(factor(data[[spec$by_var]]))
+      rec$n_nodes <- nrow(as.matrix(spec$adjacency))
     }
     rec
   })
