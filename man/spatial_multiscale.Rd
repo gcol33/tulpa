@@ -47,8 +47,12 @@ used when \code{approx = "hsgp"}. A value given applies to both scales; \code{NU
 (default) chooses each scale's from the data.}
 
 \item{range_local}{Plausible range interval for the local scale as
-\code{c(lower, upper)} in coordinate units. Default: \code{c(0.01, 1)} (after
-scaling). This is not a hard box: \code{lower} anchors a PC prior on that
+\code{c(lower, upper)} in coordinate units. \code{NULL} (default) takes the upper
+bound 1 (after scaling) and the lower bound from the data: the median, over
+the distinct locations, of the distance to the nearest other location. A
+range below the spacing of the locations is one the data do not inform,
+and with \code{approx = "hsgp"} a lower bound there asks the basis rule for
+more functions than the data can use. This is not a hard box: \code{lower} anchors a PC prior on that
 scale's range (\code{P(range < lower) = 0.05}, the same prior \code{\link[=spatial_gp]{spatial_gp()}}
 uses), on every route that fits the field; a sampler starts the range at
 the pair's geometric mean. The range itself is free on \verb{(0, Inf)}. The

@@ -64,6 +64,32 @@ test_that("spatial_multiscale(approx = 'hsgp') sizes each scale's basis from its
   expect_false(any(given$scale_basis$local$basis_rule$auto))
 })
 
+test_that("an unset local range interval starts at the locations' spacing", {
+  d <- .bd_sites(200L, 2L)
+  v <- suppressMessages(validate_gp(
+    spatial_multiscale(~ lon + lat, approx = "hsgp",
+                       range_regional = c(1, 10)), d))
+  # The median distance to the nearest other location, on the scaled
+  # coordinates the field is fitted on, against a direct computation.
+  D <- as.matrix(dist(v$unique_coords))
+  diag(D) <- Inf
+  expect_equal(v$range_local, c(stats::median(apply(D, 1L, min)), 1))
+  expect_equal(tulpa:::.nn_spacing(v$unique_coords),
+               stats::median(apply(D, 1L, min)))
+  # The basis the rule picks for the local scale then stays within the bound
+  # the constructors accept, where a lower bound of 0.01 asked for more.
+  expect_false(isTRUE(v$scale_basis$local$basis_rule$capped))
+  expect_lt(v$scale_basis$local$basis_rule$history$m[1L], 50L)
+  old <- suppressMessages(validate_gp(
+    spatial_multiscale(~ lon + lat, approx = "hsgp",
+                       range_local = c(0.01, 1), range_regional = c(1, 10)), d))
+  expect_true(old$scale_basis$local$basis_rule$capped)
+  # The NNGP branch takes the same default.
+  vn <- suppressMessages(validate_gp(
+    spatial_multiscale(~ lon + lat, range_regional = c(1, 10)), d))
+  expect_equal(vn$range_local, v$range_local)
+})
+
 test_that("a refit step reads the smallest lengthscale of the fields on a basis", {
   d <- .bd_sites()
   sp <- validate_hsgp(spatial_gp(~ lon + lat, approx = "hsgp"), d)

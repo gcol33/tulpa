@@ -293,8 +293,12 @@ validate_hsgp <- function(spatial, data) {
 #'   `~ lon + lat`), or a character vector of length 2 with column names.
 #' @param scales Character vector specifying scale names. Default: `c("local", "regional")`.
 #' @param range_local Plausible range interval for the local scale as
-#'   `c(lower, upper)` in coordinate units. Default: `c(0.01, 1)` (after
-#'   scaling). This is not a hard box: `lower` anchors a PC prior on that
+#'   `c(lower, upper)` in coordinate units. `NULL` (default) takes the upper
+#'   bound 1 (after scaling) and the lower bound from the data: the median, over
+#'   the distinct locations, of the distance to the nearest other location. A
+#'   range below the spacing of the locations is one the data do not inform,
+#'   and with `approx = "hsgp"` a lower bound there asks the basis rule for
+#'   more functions than the data can use. This is not a hard box: `lower` anchors a PC prior on that
 #'   scale's range (`P(range < lower) = 0.05`, the same prior [spatial_gp()]
 #'   uses), on every route that fits the field; a sampler starts the range at
 #'   the pair's geometric mean. The range itself is free on `(0, Inf)`. The
@@ -425,7 +429,7 @@ spatial_multiscale <- function(coords,
                                approx = c("nngp", "hsgp"),
                                m = NULL,
                                c_boundary = NULL,
-                               range_local = c(0.01, 1),
+                               range_local = NULL,
                                range_regional = c(1, 10),
                                cov = NULL,
                                nu = 1.5,
@@ -455,16 +459,20 @@ spatial_multiscale <- function(coords,
 
   # The range-prior bounds set the scale separation and are unit-dependent;
   # surface the defaults so an unset call does not silently anchor them.
-  if (missing(range_local) || missing(range_regional)) {
+  if (is.null(range_local) || missing(range_regional)) {
     message(sprintf(paste0(
       "spatial_multiscale(): using default range-prior bounds ",
-      "range_local = c(%g, %g), range_regional = c(%g, %g) (coordinate units). ",
+      "range_local = %s, range_regional = c(%g, %g) (coordinate units). ",
       "Set them to match your coordinate scale."),
-      range_local[1], range_local[2], range_regional[1], range_regional[2]))
+      if (is.null(range_local)) {
+        sprintf("c(<nearest-neighbour spacing>, %g)", .MSGP_RANGE_LOCAL_UPPER)
+      } else sprintf("c(%g, %g)", range_local[1], range_local[2]),
+      range_regional[1], range_regional[2]))
   }
 
   # Validate range specifications
-  if (length(range_local) != 2 || range_local[1] >= range_local[2]) {
+  if (!is.null(range_local) &&
+      (length(range_local) != 2 || range_local[1] >= range_local[2])) {
     stop("`range_local` must be c(lower, upper) with lower < upper", call. = FALSE)
   }
   if (length(range_regional) != 2 || range_regional[1] >= range_regional[2]) {
@@ -472,7 +480,7 @@ spatial_multiscale <- function(coords,
   }
 
   # Check range separation
-  if (range_local[2] > range_regional[1]) {
+  if ((range_local[2] %||% .MSGP_RANGE_LOCAL_UPPER) > range_regional[1]) {
     warning(
       "Local and regional range priors overlap.\n",
       "This may cause identifiability issues. Consider separating the ranges:\n",
@@ -538,7 +546,9 @@ print.tulpa_multiscale <- function(x, ...) {
   cat("Scales:", paste(x$scales, collapse = " + "), "\n\n")
 
   cat("Local scale:\n")
-  cat("  Range prior: [", x$range_local[1], ", ", x$range_local[2], "]\n", sep = "")
+  rl <- x$range_local %||%
+    c("nearest-neighbour spacing", .MSGP_RANGE_LOCAL_UPPER)
+  cat("  Range prior: [", rl[1], ", ", rl[2], "]\n", sep = "")
   cat("  Neighbors:", x$nn_local, "\n")
 
   cat("\nRegional scale:\n")
@@ -638,6 +648,18 @@ validate_gp <- function(gp, data) {
 
     gp$neighbor_info_local <- compute_nngp_neighbors(unique_coords, nn_local)
     gp$neighbor_info_regional <- compute_nngp_neighbors(unique_coords, nn_regional)
+    # The local range interval left unset starts at the spacing of the
+    # locations, the shortest range the data inform.
+    if (is.null(gp$range_local)) {
+      lo <- .nn_spacing(unique_coords)
+      if (!is.finite(lo) || lo >= .MSGP_RANGE_LOCAL_UPPER) {
+        stop("spatial_multiscale(): the locations' nearest-neighbour spacing (",
+             format(lo, digits = 3), ") leaves no default local range interval ",
+             "below ", .MSGP_RANGE_LOCAL_UPPER, "; set `range_local`.",
+             call. = FALSE)
+      }
+      gp$range_local <- c(lo, .MSGP_RANGE_LOCAL_UPPER)
+    }
     # Each scale carries its own HSGP basis, sized by the rule from the median
     # of its own lengthscale prior (the PC range prior anchored at the scale's
     # lower bound, `.multiscale_nl_blocks()`) and refitted on its own
@@ -662,6 +684,30 @@ validate_gp <- function(gp, data) {
   gp
 }
 
+
+# The spacing of a set of locations: the median, over the distinct locations,
+# of the distance to the nearest other one. NA for fewer than two locations.
+# Computed in blocks of rows, so memory stays linear in the number of
+# locations.
+.nn_spacing <- function(coords) {
+  xy <- unique(as.matrix(coords))
+  n <- nrow(xy)
+  if (n < 2L) return(NA_real_)
+  sq <- rowSums(xy^2)
+  d_min <- numeric(n)
+  for (s in seq(1L, n, by = 512L)) {
+    i <- s:min(n, s + 511L)
+    d2 <- outer(sq[i], sq, `+`) - 2 * xy[i, , drop = FALSE] %*% t(xy)
+    d2[cbind(seq_along(i), i)] <- Inf
+    d_min[i] <- sqrt(pmax(apply(d2, 1L, min), 0))
+  }
+  stats::median(d_min)
+}
+
+# The upper bound of the default local range interval of spatial_multiscale(),
+# in scaled coordinate units; its lower bound is the locations' spacing
+# (`.nn_spacing()`).
+.MSGP_RANGE_LOCAL_UPPER <- 1
 
 # The distinct locations of a coordinate matrix and each row's one, in order of
 # first appearance. An NNGP field lives on locations, not rows: two rows at one
