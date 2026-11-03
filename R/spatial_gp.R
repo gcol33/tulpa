@@ -324,8 +324,7 @@ validate_hsgp <- function(spatial, data) {
 #'   (default) and `"noncentered"` sample `z ~ N(0, I)` per scale and
 #'   reconstruct each field as `w = f(z, sigma2, phi)`, avoiding the
 #'   field/hyperparameter funnel; `"centered"` places the NNGP density on each
-#'   field directly. `"interweaved"` alternates between parameterizations and
-#'   is not implemented on the exact-NUTS path.
+#'   field directly.
 #'
 #' @return A `tulpa_multiscale` object
 #'
@@ -425,8 +424,7 @@ spatial_multiscale <- function(coords,
                                nn_regional = 30,
                                shared = NULL,
                                scale_coords = TRUE,
-                               sampler = c("auto", "noncentered", "centered",
-                                          "interweaved")) {
+                               sampler = c("auto", "noncentered", "centered")) {
 
   approx <- match.arg(approx)
   cov <- match.arg(cov)

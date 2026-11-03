@@ -14,10 +14,11 @@ test_that("spatial_multiscale sampler rejects undocumented modes (#205)", {
   # match.arg rejects the undocumented modes before `coords` is even touched.
   expect_error(spatial_multiscale(sampler = "riemannian"), "should be one of")
   expect_error(spatial_multiscale(sampler = "lbfgs"), "should be one of")
-  # The accepted set is exactly the documented four.
+  # The accepted set is exactly the documented three, each a parameterization
+  # the exact sampler runs.
+  expect_error(spatial_multiscale(sampler = "interweaved"), "should be one of")
   accepted <- eval(formals(spatial_multiscale)$sampler)
-  expect_setequal(accepted,
-                  c("auto", "noncentered", "centered", "interweaved"))
+  expect_setequal(accepted, c("auto", "noncentered", "centered"))
 })
 
 skip_on_cran_budget()

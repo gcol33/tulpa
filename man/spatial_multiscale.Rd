@@ -19,7 +19,7 @@ spatial_multiscale(
   nn_regional = 30,
   shared = NULL,
   scale_coords = TRUE,
-  sampler = c("auto", "noncentered", "centered", "interweaved")
+  sampler = c("auto", "noncentered", "centered")
 )
 
 \method{print}{tulpa_multiscale}(x, ...)
@@ -74,8 +74,7 @@ and divided by one common factor before computing distances (see
 (default) and \code{"noncentered"} sample \code{z ~ N(0, I)} per scale and
 reconstruct each field as \code{w = f(z, sigma2, phi)}, avoiding the
 field/hyperparameter funnel; \code{"centered"} places the NNGP density on each
-field directly. \code{"interweaved"} alternates between parameterizations and
-is not implemented on the exact-NUTS path.}
+field directly.}
 
 \item{x}{A \code{tulpa_multiscale} specification.}
 

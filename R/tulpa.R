@@ -415,17 +415,8 @@
   n_loc <- nrow(uc)
   nn_local <- as.integer(spatial$nn_local %||% ncol(nil$nn_idx))
   nn_regional <- as.integer(spatial$nn_regional %||% ncol(nir$nn_idx))
-  # "auto" resolves to non-centered, matching spatial_gp()'s default. The
-  # remaining spatial_multiscale(sampler=) modes name strategies the exact-NUTS
-  # path does not implement; surface that rather than silently sampling a
-  # different parameterization than the one asked for.
-  sampler <- spatial$sampler %||% "auto"
-  if (!sampler %in% c("auto", "noncentered", "centered")) {
-    stop("spatial_multiscale(sampler = \"", sampler, "\") is not implemented on ",
-         "the exact-NUTS path; it samples the two scales as \"noncentered\" ",
-         "(the default) or \"centered\".", call. = FALSE)
-  }
-  noncentered <- !identical(sampler, "centered")
+  # "auto" resolves to non-centered, matching spatial_gp()'s default.
+  noncentered <- !identical(spatial$sampler %||% "auto", "centered")
   list(
     type                      = "multiscale",
     coords                    = .coords_2col(uc, "the multiscale GP sampler spec"),
