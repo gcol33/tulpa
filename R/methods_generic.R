@@ -1673,9 +1673,35 @@ ranef <- function(object, ...) UseMethod("ranef")
   tab
 }
 
+# The random effects of a fit made through tulpa_nested_laplace_joint()
+# directly (`.joint_direct_re_map()`): the per-cell Gaussian of each effect
+# (`.joint_re_cells()`) mixed over the outer weights -- exact moments and
+# CDF-inverted quantiles; the spread is NA where the fit kept no per-cell
+# precision (`control$store_Q = FALSE`).
+#' @keywords internal
+.ranef_joint_direct <- function(object) {
+  map <- .joint_direct_re_map(object)
+  rc <- .joint_re_cells(object, map)
+  if (is.null(rc)) return(data.frame())
+  w <- as.numeric(object$weights)
+  keep <- is.finite(w) & w > 0 & is.finite(rowSums(rc$mean))
+  if (!is.null(rc$var)) keep <- keep & is.finite(rowSums(rc$var))
+  var <- if (!is.null(rc$var)) pmax(rc$var[keep, , drop = FALSE], 0)
+  mx <- .nl_gauss_mixture_summary(rc$mean[keep, , drop = FALSE], var,
+                                  w[keep] / sum(w[keep]),
+                                  probs = c(0.025, 0.975))
+  data.frame(term = map$names, estimate = mx$mean, sd = mx$sd,
+             conf.low = mx$quantiles[, 1L], conf.high = mx$quantiles[, 2L],
+             source = if (is.null(var)) "mode" else "mixture",
+             row.names = NULL, stringsAsFactors = FALSE)
+}
+
 #' @rdname ranef
 #' @export
 ranef.tulpa_fit <- function(object, ...) {
+  if (inherits(object, "tulpa_nested_laplace_joint") && is.null(object$formula)) {
+    return(.ranef_joint_direct(object))
+  }
   layout <- object$re_layout
   n_fixed <- object$n_fixed %||% 0L
   if (is.null(layout) || length(layout) == 0L) return(data.frame())
@@ -2214,7 +2240,9 @@ nobs.tulpa_fit <- function(object, ...) {
 #' its covariance over the fixed effects and the builder blocks' coefficients
 #' (retained per cell by the fit as `basis_block_cov`); the prediction is the
 #' weighted mixture of those Gaussians over the cells, so `lower` / `upper` are
-#' the mixture's quantiles. Blocks without a basis builder are held at zero.
+#' the mixture's quantiles. An arm reached by a block without a basis builder,
+#' or by its own random intercepts, is refused: their value at a new row is not
+#' read here.
 #'
 #' @param object A `tulpa_fit` object.
 #' @param newdata Data frame of covariates (and, for a field fit, the field's

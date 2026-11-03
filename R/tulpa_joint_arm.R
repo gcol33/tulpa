@@ -296,20 +296,101 @@
 # groups of the first coefficient, then the second, ...).
 #' @keywords internal
 .joint_arm_attach_re <- function(fit, blocks, re_block_index, re_terms) {
-  map <- .joint_arm_re_map(fit, blocks, re_block_index, re_terms)
-  Q_p <- fit$Q_csc_p_per_grid
-  if (is.null(map) || is.null(Q_p) || !is.matrix(fit$modes)) return(fit)
+  .joint_attach_re_cells(fit, .joint_arm_re_map(fit, blocks, re_block_index,
+                                                re_terms))
+}
+
+# A joint fit's per-cell random-effect Gaussian under `map`, retained as
+# `grid_re_mean` / `grid_re_var` and, under the names the group-level
+# predictions read it by on every nested random-effect fit, `re_nodes` /
+# `re_var_nodes`.
+#' @keywords internal
+.joint_attach_re_cells <- function(fit, map) {
+  rc <- .joint_re_cells(fit, map)
+  if (is.null(rc)) return(fit)
+  fit$grid_re_mean <- fit$re_nodes <- rc$mean
+  fit$grid_re_var <- fit$re_var_nodes <- rc$var
+  fit
+}
+
+# The random effects a map locates (`cols`, the latent column of each effect;
+# `.joint_arm_re_scale()` the factor turning a cell's coordinate into the
+# effect) as one Gaussian per outer cell: `mean` and `var` (cells x effects).
+# The variance is the cell's precision read along the effect's loading and
+# conditioned on the fit's sum-to-zero groups, as its latent draws are
+# (`.field_cell_solve()`); a fit that kept no precision carries the means
+# alone (`var` NULL). NULL for a fit without such effects.
+#' @keywords internal
+.joint_re_cells <- function(fit, map) {
+  M <- fit$modes
+  if (is.null(map) || !length(map$cols) || !is.matrix(M)) return(NULL)
   tg <- fit$theta_grid
   load <- list(type = "iid", n_units = length(map$cols), cols = list(map$cols),
                weights = function(k) list(.joint_arm_re_scale(map, tg, k)))
-  fit <- .nl_attach_unit_loads(fit, list(re = load), Q_p, fit$Q_csc_i_per_grid,
-                               fit$Q_csc_x_per_grid, fit$Q_csc_n,
-                               fit$constraint_cols)
-  # The per-node Gaussian of the group effects, under the names the
-  # group-level predictions read it by on every nested random-effect fit.
-  fit$re_nodes     <- fit$grid_re_mean
-  fit$re_var_nodes <- fit$grid_re_var
-  fit
+  Q_p <- fit$Q_csc_p_per_grid
+  if (is.null(Q_p)) {
+    mu <- t(vapply(seq_len(nrow(M)), function(k)
+      load$weights(k)[[1L]] * M[k, map$cols], numeric(length(map$cols))))
+    return(list(mean = mu, var = NULL))
+  }
+  n_x <- ncol(M)
+  r <- .nl_attach_unit_loads(list(modes = M), list(re = load), Q_p,
+                             fit$Q_csc_i_per_grid, fit$Q_csc_x_per_grid, n_x,
+                             .joint_constraint_cols(fit$arm_layout, n_x))
+  list(mean = r$grid_re_mean, var = r$grid_re_var)
+}
+
+# The random effects of a fit made through tulpa_nested_laplace_joint()
+# directly, in latent order with their names: each `iid` block's units
+# (`<block>[<unit>]`, non-centred, the coordinate times the cell's
+# `b<k>.sigma`), each `miid` block's coefficients (`<block>.<field>[<group>]`,
+# field-major, the coefficients themselves), and each arm's own random
+# intercepts (`<arm>.re[<group>]`, conditioned at the arm's `sigma_re`, the
+# coordinates themselves). A block is named by its `name`, else `b<k>`. NULL
+# when the fit carries none.
+#' @keywords internal
+.joint_direct_re_map <- function(fit) {
+  al <- fit$arm_layout
+  blocks <- .field_block_list(fit$prior)
+  starts <- al$block_start
+  roles <- .nl_block_roles(blocks)
+  cols <- integer(0); scale_block <- integer(0); sigma_fixed <- numeric(0)
+  nm <- character(0)
+  add <- function(c, b, s, n) {
+    cols <<- c(cols, as.integer(c)); scale_block <<- c(scale_block, rep(b, length(c)))
+    sigma_fixed <<- c(sigma_fixed, rep(s, length(c))); nm <<- c(nm, n)
+  }
+  if (length(starts) == length(blocks)) {
+    for (k in seq_along(blocks)) {
+      blk <- blocks[[k]]
+      type <- tolower(blk$type %||% "")
+      lab <- blk$name %||% paste0("b", k)
+      if (type == "iid" && roles[k] == "other") {
+        n <- as.integer(blk$n_units)
+        add(starts[k] + seq_len(n), k,
+            as.numeric(blk$sigma_grid %||% NA_real_)[1L],
+            sprintf("%s[%d]", lab, seq_len(n)))
+      } else if (type == "miid") {
+        G <- as.integer(blk$n_groups); nf <- as.integer(blk$n_fields)
+        fn <- blk$field_names %||% paste0("f", seq_len(nf))
+        for (j in seq_len(nf)) {
+          add(starts[k] + (j - 1L) * G + seq_len(G), 0L, 1,
+              sprintf("%s.%s[%d]", lab, fn[j], seq_len(G)))
+        }
+      }
+    }
+  }
+  arms <- names(fit$responses) %||% paste0("arm", seq_along(fit$responses))
+  for (a in seq_along(al$n_re)) {
+    n <- as.integer(al$n_re[a])
+    if (n > 0L) {
+      add(al$re_start[a] + seq_len(n), 0L, 1, sprintf("%s.re[%d]", arms[a],
+                                                      seq_len(n)))
+    }
+  }
+  if (!length(cols)) return(NULL)
+  list(cols = cols, scale_block = scale_block, sigma_fixed = sigma_fixed,
+       names = nm)
 }
 
 # The dispersion a one-arm joint fit reports flat, as every tulpa() fit does:
