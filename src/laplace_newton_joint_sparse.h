@@ -181,6 +181,8 @@ inline bool lm_solve_further_columns(
 // `grad` / `delta` hold n_rhs columns of length n_x; column 0 is the Newton
 // step, the others are further solves against the same matrix (a hard
 // constraint's A' columns), which the PSD branch cannot supply.
+// `extra_field` names the nodes the block-Schur step treats as field beyond the
+// pins' own (a hard constraint's support; s2z_block_schur).
 inline bool s2z_newton_step(
     SparseHessianBuilder& H, SparseCholeskySolver& solver,
     int n_x, JointPDMode pd_mode,
@@ -188,13 +190,15 @@ inline bool s2z_newton_step(
     bool& used_block_schur,
     S2ZBlockSchurCache* bs_cache = nullptr,
     bool guarded = true,
-    int n_rhs = 1
+    int n_rhs = 1,
+    const std::vector<int>* extra_field = nullptr
 ) {
     used_block_schur = false;
     if (n_rhs > 1 && pd_mode != JointPDMode::LM) return false;
     const bool pinned = pd_mode == JointPDMode::LM && !H.s2z_rank1.empty();
     if (pinned && s2z_block_schur(H, H.s2z_rank1, grad, delta, nullptr, bs_cache,
-                                  /*field_inertia=*/true, nullptr, n_rhs)) {
+                                  /*field_inertia=*/true, nullptr, n_rhs,
+                                  extra_field)) {
         used_block_schur = true;
         return true;
     }
@@ -213,9 +217,16 @@ inline bool s2z_newton_step(
     return ok;
 }
 
+// The structural rows' anchors onto the builder about to be factored, whose
+// lower-triangle CSC keeps each column's diagonal first
+// (SparseHessianBuilder::add_uniform_ridge).
+inline void load_hard_anchors(HardConstraintState& hard, SparseHessianBuilder& H) {
+    hard.load_anchors([&H](int j) -> double& { return H.values[H.col_ptr[j]]; });
+}
+
 // The KKT step of a sparse joint solve under hard constraints: the step and
-// the A' columns solved against the same matrix (pins folded in), then the step
-// projected onto the constraint set. LM: the multi-column solve needs the
+// the Vb columns solved against the same anchored matrix (pins folded in),
+// then folded onto the constraint set. LM: the multi-column solve needs the
 // factor that branch leaves.
 inline bool hard_kkt_step_sparse(
     SparseHessianBuilder& H, SparseCholeskySolver& solver, int n_x,
@@ -223,10 +234,11 @@ inline bool hard_kkt_step_sparse(
     double* delta, bool& used_block_schur, S2ZBlockSchurCache* bs_cache,
     bool guarded
 ) {
+    load_hard_anchors(hard, H);
     const bool ok = s2z_newton_step(H, solver, n_x, JointPDMode::LM,
                                     hard.load_rhs(grad), hard.sol.data(),
                                     used_block_schur, bs_cache, guarded,
-                                    hard.n_rhs());
+                                    hard.n_rhs(), &hard.row_nodes);
     if (!ok || !hard.factor_cap_from_sol()) return false;
     std::copy(hard.sol.begin(), hard.sol.begin() + n_x, delta);
     hard.project_step(x, delta);
@@ -287,6 +299,24 @@ inline void joint_newton_finalize_sparse(
     // which would inflate the determinant. Factoring H + 1 1' matches the dense
     // full-1 1' path. LM only (the PSD path densifies the small
     // Hessian and registers no rank-1).
+    // The values as the scatter left them, plus the base ridge: the precision
+    // at the mode. Everything below loads the diagonal further -- the hard
+    // rows' anchors, and joint_pd_step_solve's ridge on every failed
+    // factorization, which it never takes back off -- so the builder
+    // afterwards holds H_a + lambda I. A covariance read off that is smaller
+    // than the one read off H, so the block and the exported precision are
+    // both taken from this snapshot instead. On the sum-to-zero path the
+    // escalation is the normal case rather than the exception, which is why the
+    // snapshot is taken unconditionally rather than the export being gated on a
+    // clean factor.
+    const bool want_block =
+        fixed_block && fixed_block->active() && scratch.extract_solver;
+    const bool want_eta_var =
+        eta_var && eta_var->active() && scratch.extract_solver;
+    std::vector<double> H_values_at_mode;
+    if (store_Q || want_block || want_eta_var) H_values_at_mode = H_builder.values;
+    if (hard_on) load_hard_anchors(*hard, H_builder);
+
     const bool s2z_direct =
         (pd_mode == JointPDMode::LM) && !H_builder.s2z_rank1.empty();
     const double S2Z_NA = std::numeric_limits<double>::quiet_NaN();
@@ -312,7 +342,8 @@ inline void joint_newton_finalize_sparse(
                                       &scratch.s2z_block_schur_cache,
                                       /*field_inertia=*/true,
                                       &result.s2z_field_indefinite,
-                                      hard_on ? hard->n_rhs() : 1);
+                                      hard_on ? hard->n_rhs() : 1,
+                                      hard_on ? &hard->row_nodes : nullptr);
         if (s2z_step_ok && hard_on)
             std::copy(sol, sol + n_x, scratch.delta.begin());
         s2z_log_det = ld;
@@ -321,20 +352,6 @@ inline void joint_newton_finalize_sparse(
         result.s2z_log_det_fallback = !std::isfinite(s2z_log_det);
     }
     const bool run_pd_solve = !s2z_step_ok || (cila && cila->active());
-    // The values as the scatter left them, plus the base ridge. joint_pd_step_solve
-    // below loads the diagonal further on every failed factorization and never
-    // takes the load back off, so the builder afterwards holds H + lambda I --
-    // not the precision at the mode. A covariance read off that is smaller than
-    // the one read off H, so the block and the exported precision are both taken
-    // from this snapshot instead. On the sum-to-zero path the escalation is the
-    // normal case rather than the exception, which is why the snapshot is taken
-    // unconditionally rather than the export being gated on a clean factor.
-    const bool want_block =
-        fixed_block && fixed_block->active() && scratch.extract_solver;
-    const bool want_eta_var =
-        eta_var && eta_var->active() && scratch.extract_solver;
-    std::vector<double> H_values_at_mode;
-    if (store_Q || want_block || want_eta_var) H_values_at_mode = H_builder.values;
 
     bool pd_conditioned = false;
     bool step_ok = s2z_step_ok;
@@ -446,7 +463,8 @@ inline void joint_newton_finalize_sparse(
         pinned_solve = [&](const double* rhs, double* out) {
             return s2z_block_schur(H_builder, H_builder.s2z_rank1, rhs, out,
                                    nullptr, &scratch.s2z_block_schur_cache,
-                                   /*field_inertia=*/true);
+                                   /*field_inertia=*/true, nullptr, 1,
+                                   hard_on ? &hard->row_nodes : nullptr);
         };
     }
     const InnerPinnedSolve* probe_solve = s2z_direct ? &pinned_solve : nullptr;

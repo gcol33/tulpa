@@ -55,11 +55,12 @@ test_that("the constraint rows span the structure's null space, independently", 
         expect_identical(qr(Am)$rank, nul)
       }
       expect_equal(st$log_pdet, sum(log(ev[ev > 1e-9])), tolerance = 1e-8)
-      # The kernel's matrix R + A'A is positive definite.
+      # The kernel's matrix is R itself, with R's pattern: the constraint is
+      # solved by the inner Newton, not carried by an A'A term in the prior.
       Sa <- Matrix::sparseMatrix(i = st$S_i, p = st$S_p, x = st$S_x,
-                                 index1 = FALSE)
-      expect_gt(min(eigen(as.matrix(Sa), symmetric = TRUE,
-                          only.values = TRUE)$values), 1e-8)
+                                 dims = rep(st$n_latent, 2L), index1 = FALSE)
+      expect_equal(as.matrix(Sa), R, tolerance = 1e-14)
+      expect_identical(length(st$S_x), as.integer(sum(R != 0)))
     }
   }
 })
@@ -106,6 +107,53 @@ test_that("an interaction's log marginal and mode are the exact Gaussian ones", 
     expect_equal(as.numeric(f$modes[1, (off[3] + 1):off[4]]), md,
                  tolerance = 1e-8)
   }
+})
+
+test_that("a time no observation reaches is identified by the constraint alone", {
+  # With no row at time 2, the interaction's slice there has neither data nor
+  # prior curvature along its sum over the areas: R_t (x) R_s is null on
+  # e_2 (x) 1_S. Only the constraint row of that time identifies it, which the
+  # inner Newton reaches through the bordered system on the factored
+  # precision, no A'A term in it.
+  skip_on_cran()
+  sb <- default_sigma_beta()
+  A <- .kh_graph(); S <- nrow(A); n_t <- 4L
+  csr <- tulpa:::adjacency_to_csr_tulpa(A)
+  set.seed(7)
+  d <- expand.grid(s = 1:S, t = c(1L, 3L, 4L))
+  d <- d[rep(seq_len(nrow(d)), 2), ]
+  n <- nrow(d); x <- rnorm(n); X <- cbind(1, x); phi <- 0.3
+  y <- 0.2 + 0.5 * x + 0.5 * sin(d$s) + 0.2 * d$t + rnorm(n, sd = 0.4)
+  Zs <- outer(d$s, 1:S, "==") * 1; Zt <- outer(d$t, 1:n_t, "==") * 1
+  Zd <- outer((d$t - 1) * S + d$s, 1:(S * n_t), "==") * 1
+  tau_s <- 2; tau_t <- 3; tau_d <- 4
+  Cs <- .kh_cond1(solve(tau_s * (diag(rowSums(A)) - A + 1 / S)))
+  Ct <- .kh_cond1(solve(tau_t * (crossprod(diff(diag(n_t))) + 1 / n_t)))
+  icar <- list(type = "icar", spatial_idx = d$s, n_spatial_units = S,
+               adj_row_ptr = csr$row_ptr, adj_col_idx = csr$col_idx,
+               n_neighbors = csr$n_neighbors, tau_grid = tau_s)
+  rw <- list(type = "rw1", temporal_idx = d$t, n_times = n_t, tau_grid = tau_t)
+  st <- tulpa:::.st_interaction_structure("IV", A, n_t, "rw1", FALSE)
+  blk <- c(list(type = "st_interaction", obs_idx = (d$t - 1L) * S + d$s,
+                tau_grid = tau_d),
+           st[c("n_latent", "S_p", "S_i", "S_x", "log_pdet", "constr")])
+  f <- tulpa_nested_laplace(y, rep(1L, n), X, prior = list(icar, rw, blk),
+                            family = "gaussian", phi = phi,
+                            hyperprior = "flat",
+                            control = .kh_ctl)
+  Cd <- .kh_cov(st, tau_d)
+  Sig <- phi * diag(n) + sb^2 * X %*% t(X) + Zs %*% Cs %*% t(Zs) +
+    Zt %*% Ct %*% t(Zt) + Zd %*% Cd %*% t(Zd)
+  ev <- -0.5 * (n * log(2 * pi) + as.numeric(determinant(Sig)$modulus) +
+                  sum(y * solve(Sig, y)))
+  expect_equal(f$log_marginal, ev, tolerance = 1e-8)
+  off <- f$block_latent_offsets
+  md <- as.numeric(Cd %*% t(Zd) %*% solve(Sig, y))
+  expect_equal(as.numeric(f$modes[1, (off[3] + 1):off[4]]), md,
+               tolerance = 1e-8)
+  K <- Sig - phi * diag(n)
+  ve <- diag(K - K %*% solve(Sig, K))
+  expect_equal(as.numeric(f$fitted_eta_var), ve, tolerance = 1e-8)
 })
 
 .kh_front_data <- function(seed = 3) {

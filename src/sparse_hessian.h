@@ -516,25 +516,34 @@ struct S2ZBlockSchurCache {
     SparseHessianBuilder aff;          // A_FF pattern + values (zeroed/scattered per call)
     SparseCholeskySolver aff_solver;   // symbolic factor once, numeric per call
     SparseCholeskySolver aff_ldl;      // simplicial LDL' of A_FF, analyzed on first need
+    std::vector<int> extra_field;      // field nodes beyond the pins' (sorted)
 
     bool matches(const SparseHessianBuilder& A,
-                 const std::vector<SparseHessianBuilder::S2ZRank1>& r1) const {
+                 const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
+                 const std::vector<int>* extra) const {
         if (!built || n_x != A.n || a_nnz != A.nnz) return false;
+        if (extra ? (*extra != extra_field) : !extra_field.empty()) return false;
         return s2z_layout_matches(block_layout, r1);
     }
 };
 
 // (Re)build the pattern-invariant block-Schur cache: field/scalar partition, the
 // A_FF CSC pattern + its symbolic factor, and each A nonzero's scatter target.
+// `extra`, when given, is a sorted list of nodes that join the field set.
 void build_s2z_block_schur_cache(
     const SparseHessianBuilder& A,
     const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
-    S2ZBlockSchurCache& cache
+    S2ZBlockSchurCache& cache,
+    const std::vector<int>* extra = nullptr
 );
 
 // Block-Schur log-determinant for B = A + sum_k coef_k 1_k 1_k'. Partitions the
-// latent into the field indices F (the union of the s2z block ranges) and the
-// scalar complement S (intercepts, betas, REs). Factors the sparse field
+// latent into the field indices F (the union of the s2z block ranges, and the
+// caller's `extra_field` nodes) and the scalar complement S (intercepts, betas,
+// REs). The complement is closed by a DENSE Schur complement, so a structured
+// block that carries no pin of its own belongs in F: left in S, a Knorr-Held
+// interaction's S x T coordinates make an S T x S T dense factorization of
+// every step. Factors the sparse field
 // sub-block anchored at one node per pin, A_a = A_FF + E C_a E'
 // (InvBlockConstraint), folds the K rank-1 pins and the anchors back out by the
 // matrix-determinant lemma, and closes the field<->scalar coupling with a small
@@ -576,7 +585,8 @@ bool s2z_block_schur(
     S2ZBlockSchurCache* cache = nullptr,
     bool field_inertia = false,
     bool* field_indefinite = nullptr,
-    int n_rhs = 1              // grad / delta hold n_rhs columns of length n_x
+    int n_rhs = 1,             // grad / delta hold n_rhs columns of length n_x
+    const std::vector<int>* extra_field = nullptr   // sorted nodes joining F
 );
 
 // Determinant-only convenience wrapper over s2z_block_schur.

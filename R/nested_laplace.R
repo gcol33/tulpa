@@ -2511,7 +2511,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(p$cyclic)
     .with_svc(out)
   } else if (type == "st_interaction") {
-    # A Knorr-Held interaction (.st_interaction_structure()): the structure R + A'A
+    # A Knorr-Held interaction (.st_interaction_structure()): the structure R
     # as a full symmetric CSC, its generalized log-determinant, and the hard
     # null-space rows A the driver solves under.
     .with_svc(list(

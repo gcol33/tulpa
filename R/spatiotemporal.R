@@ -146,8 +146,10 @@ print.tulpa_spatiotemporal <- function(x, ...) {
 # column-pivoted QR of the rows' Gram matrix picks it, and its size is checked
 # against S T - rank(R).
 #
-# The matrix handed to the kernel is R + A'A: zero on the constraint set, and
-# positive definite along the null directions the constraint removes.
+# The matrix handed to the kernel is R itself: the driver solves on A x = 0
+# (hard_constraints.h), so R need carry no curvature along null(R). An A'A term
+# would, but its rows span whole time slices and whole series and fill the
+# factor of the inner precision.
 .st_interaction_structure <- function(type, adjacency, n_times, walk = "rw1",
                                       cyclic = FALSE) {
   W <- as.matrix(adjacency)
@@ -210,10 +212,9 @@ print.tulpa_spatiotemporal <- function(x, ...) {
     II  = S * log_pdet_t,
     III = n_t * log_pdet_s,
     IV  = (S - n_c) * log_pdet_t + (n_t - k_t) * log_pdet_s)
-  S_aug <- if (!is.null(A)) R + Matrix::crossprod(A) else R
-  S_aug <- methods::as(methods::as(Matrix::forceSymmetric(S_aug),
+  S_csc <- methods::as(methods::as(Matrix::forceSymmetric(R),
                                    "generalMatrix"), "CsparseMatrix")
-  list(S_p = S_aug@p, S_i = S_aug@i, S_x = S_aug@x, R = R,
+  list(S_p = S_csc@p, S_i = S_csc@i, S_x = S_csc@x, R = R,
        log_pdet = log_pdet, constr = rows, n_latent = n, n_spatial = S,
        n_times = n_t, rank = rank_R)
 }
@@ -483,9 +484,6 @@ spatiotemporal_effects.tulpa_fit <- function(object,
   off <- fit$block_latent_offsets
   cols <- seq.int(off[b] + 1L, off[b + 1L])
   constr <- fit$constraint_cols %||% list()
-  A_t <- if (length(constr)) {
-    vapply(constr, .constraint_row_dense, numeric(n_x), n_x = n_x)
-  }
   w <- as.numeric(fit$weights)
   ok <- which(is.finite(w) & w > 0 &
                 vapply(seq_along(Qp), function(k) length(Qp[[k]]) == n_x + 1L,
@@ -497,7 +495,7 @@ spatiotemporal_effects.tulpa_fit <- function(object,
   out <- .nl_mixture_draw(w[ok] / sum(w[ok]), ok, ndraws, length(cols),
     function(i, n_i) {
       k <- ok[i]
-      z <- .joint_draw_cell(Qp[[k]], Qi[[k]], Qx[[k]], n_x, A_t, n_i)
+      z <- .joint_draw_cell(Qp[[k]], Qi[[k]], Qx[[k]], n_x, constr, n_i)
       t(fit$modes[k, cols] + z[cols, , drop = FALSE])
     })
   attr(out, "cells") <- NULL

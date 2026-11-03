@@ -485,8 +485,8 @@ int build_blocks_of_type(
     }
 
     if (type == "st_interaction") {
-        // Knorr-Held space-time interaction: tau (R + A'A) over the S x T
-        // cells, conditioned on the null-space rows A (constrained_structure_
+        // Knorr-Held space-time interaction: tau R over the S x T cells,
+        // conditioned on the null-space rows A (constrained_structure_
         // block.h). One axis, tau.
         require_axes(1);
         tulpa::nl_grid_axis_positive("st_interaction tau axis", theta_grid, axis0);

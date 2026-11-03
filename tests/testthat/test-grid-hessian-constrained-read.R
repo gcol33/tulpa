@@ -69,14 +69,32 @@ test_that("a constrained cell draw has the conditional covariance", {
   P[1 + n_a + seq_len(n_b), 1 + n_a + seq_len(n_b)] <-
     crossprod(diff(diag(n_b)))
   Q <- crossprod(Xt, Xt) + P
+  # Singular along the opposite shift of the two levels.
+  v <- c(0, rep(1, n_a), rep(-1, n_b))
+  expect_lt(max(abs(Q %*% v)), 1e-10)
   constr <- list(1L + seq_len(n_a), 1L + n_a + seq_len(n_b))
-  A_t <- vapply(constr, tulpa:::.constraint_row_dense, numeric(n_x),
-                n_x = n_x)
+  A <- t(vapply(constr, tulpa:::.constraint_row_dense, numeric(n_x),
+                n_x = n_x))
   cs <- .gh_csc(Q)
+  ref <- .gh_null_cov(Q, A)
+  # The draw map on the identity: X X' is the covariance the draws carry.
+  X <- tulpa:::cpp_constrained_cell_draw(cs$p, cs$i, cs$x, n_x,
+                                         tulpa:::.constraint_rows_for_cpp(constr),
+                                         diag(n_x))
+  expect_lt(max(abs(tcrossprod(X) - ref)) / max(abs(ref)), 1e-10)
+  expect_lt(max(abs(A %*% X)), 1e-10)
   set.seed(1)
-  z <- tulpa:::.joint_draw_cell(cs$p, cs$i, cs$x, n_x, A_t, 20000L)
-  expect_lt(max(abs(crossprod(A_t, z))), 1e-10)
-  ref <- .gh_null_cov(Q, t(A_t))
+  z <- tulpa:::.joint_draw_cell(cs$p, cs$i, cs$x, n_x, constr, 20000L)
+  expect_lt(max(abs(A %*% z)), 1e-10)
   ok <- diag(ref) > 1e-8
   expect_lt(max(abs(apply(z, 1, var)[ok] / diag(ref)[ok] - 1)), 0.05)
+})
+
+test_that("an unconstrained cell draw has the inverse precision", {
+  set.seed(6)
+  M <- matrix(rnorm(36), 6, 6)
+  Q <- crossprod(M) + diag(6)
+  cs <- .gh_csc(Q)
+  X <- tulpa:::cpp_constrained_cell_draw(cs$p, cs$i, cs$x, 6L, list(), diag(6))
+  expect_lt(max(abs(tcrossprod(X) - solve(Q))), 1e-12)
 })

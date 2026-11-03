@@ -10,7 +10,8 @@ namespace tulpa {
 void build_s2z_block_schur_cache(
     const SparseHessianBuilder& A,
     const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
-    S2ZBlockSchurCache& cache
+    S2ZBlockSchurCache& cache,
+    const std::vector<int>* extra
 ) {
     const int n_x = A.n;
     const int K = static_cast<int>(r1.size());
@@ -19,6 +20,11 @@ void build_s2z_block_schur_cache(
     std::vector<char> is_field(n_x, 0);
     for (int k = 0; k < K; ++k)
         for (int i = 0; i < r1[k].n; ++i) is_field[r1[k].node(i)] = 1;
+    cache.extra_field.clear();
+    if (extra) {
+        cache.extra_field = *extra;
+        for (int g : *extra) if (g >= 0 && g < n_x) is_field[g] = 1;
+    }
     int nf = 0;
     for (int g = 0; g < n_x; ++g) if (is_field[g]) cache.floc[g] = nf++;
     int ns = 0;
@@ -69,7 +75,8 @@ bool s2z_block_schur(
     S2ZBlockSchurCache* cache,
     bool field_inertia,
     bool* field_indefinite,
-    int n_rhs) {
+    int n_rhs,
+    const std::vector<int>* extra_field) {
     if (field_indefinite) *field_indefinite = false;
     const int K = static_cast<int>(r1.size());
     if (K == 0) return false;
@@ -77,7 +84,8 @@ bool s2z_block_schur(
 
     S2ZBlockSchurCache local_cache;
     S2ZBlockSchurCache& cc = cache ? *cache : local_cache;
-    if (!cc.matches(A, r1)) build_s2z_block_schur_cache(A, r1, cc);
+    if (!cc.matches(A, r1, extra_field))
+        build_s2z_block_schur_cache(A, r1, cc, extra_field);
     const int nf = cc.nf, ns = cc.ns;
     const std::vector<int>& floc = cc.floc;
     const std::vector<int>& sloc = cc.sloc;

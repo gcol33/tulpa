@@ -320,17 +320,14 @@
          "modes (largest difference ", signif(dev, 3), "), so the precision ",
          "it returned is not the fit's.", call. = FALSE)
   }
-  A_t <- if (length(sol$constraint_cols)) {
-    .constraint_rows_matrix(sol$constraint_cols, n_x)
-  }
   L <- matrix(0, S, n_x)
   row_cells <- integer(S)
   pos <- 0L
   for (j in seq_along(need)) {
     n_j <- al$counts[match(need[j], which(on))]
     rows <- pos + seq_len(n_j)
-    Z <- .joint_draw_cell(sol$Q_p[[j]], sol$Q_i[[j]], sol$Q_x[[j]], n_x, A_t,
-                          n_j)
+    Z <- .joint_draw_cell(sol$Q_p[[j]], sol$Q_i[[j]], sol$Q_x[[j]], n_x,
+                          sol$constraint_cols, n_j)
     L[rows, ] <- t(Z + src$modes[need[j], ])
     row_cells[rows] <- need[j]
     pos <- pos + n_j

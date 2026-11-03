@@ -128,8 +128,6 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
     # Field sum-to-zero constraint over the FULL latent vector. Shared across
     # cells (the constraint structure is grid-constant); only Q changes per cell.
     A_cols <- .joint_constraint_cols(fit$arm_layout, n_x)
-    k_constr <- length(A_cols)
-    A_t <- if (k_constr > 0L) .constraint_rows_matrix(A_cols, n_x) else NULL
 
     # Each cell draws its share i.i.d. from the constrained N(m_k, V_k); the
     # allocation across cells is the shared `.nl_mixture_draw()`.
@@ -137,7 +135,7 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
         w = w_valid, cell_id = cells, n = n, p = p_out,
         draw_cell = function(kk, n_k) {
             k <- cells[kk]
-            Z <- .joint_draw_cell(Qp[[k]], Qi[[k]], Qx[[k]], n_x, A_t, n_k)
+            Z <- .joint_draw_cell(Qp[[k]], Qi[[k]], Qx[[k]], n_x, A_cols, n_k)
             # Z is n_x x n_k draws of the zero-mean constrained Gaussian; add
             # the cell mode and subset to idx.
             m_k <- modes[k, ]
@@ -228,63 +226,22 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
 
 # Draw `n_k` zero-mean samples of the constrained Gaussian N(0, V_k) for one
 # outer-grid cell, returned as an n_x x n_k matrix. `Qp` / `Qi` / `Qx` are the
-# stored lower-triangle CSC triplets (0-based) of the cell precision Q_k; `A_t`
-# is the shared n_x x k_constr constraint matrix (or NULL for an unconstrained
-# block).
+# stored lower-triangle CSC triplets (0-based) of the cell precision Q_k;
+# `constr` the constraint rows (1-based index vectors, or list(cols, w) for a
+# weighted row; empty or NULL for an unconstrained block).
 #
-# Unconstrained: z ~ N(0, Q^{-1}) via the sparse Cholesky factor
-#   P Q P' = L L'  =>  z = P' L'^{-1} u,  u ~ N(0, I).
-# Constrained: V = B (B' Q B)^{-1} B' for B a basis of null(A), the solution
-# operator of the KKT system
-#   [Q  A'] [x     ]   [e]
-#   [A  0 ] [lambda] = [0],
-# so x = V e. With e = Q z ~ N(0, Q), Cov(x) = V Q V = V. Q is never
-# inverted along the constraint: the stored precision may carry no curvature
-# on a direction only the constraint identifies (the sum-to-zero pins the
-# sparse joint Newton folds at solve time and leaves off the stored Q, which
-# leave two intrinsic fields loading the same rows free to trade a constant),
-# and the kriging form z - Q^{-1} A' (A Q^{-1} A')^{-1} A z reads its answer
-# as the difference of terms of order 1 / round-off there. The KKT matrix is
-# nonsingular whenever Q is positive definite on null(A) and A has full row
-# rank, which is what the constrained model needs anyway.
-.joint_draw_cell <- function(Qp, Qi, Qx, n_x, A_t, n_k) {
-    Qk_lt <- Matrix::sparseMatrix(
-        i = as.integer(Qi) + 1L,
-        p = as.integer(Qp),
-        x = as.numeric(Qx),
-        dims = c(n_x, n_x),
-        symmetric = FALSE,
-        index1 = TRUE
-    )
-    Qk <- Matrix::forceSymmetric(Qk_lt, uplo = "L")
-
-    Ch <- tryCatch(Matrix::Cholesky(Qk, perm = TRUE, LDL = FALSE),
-                   error = function(e) NULL)
-    Qf <- Qk
-    if (is.null(Ch)) {
-        # A precision with no curvature along a constrained direction need not
-        # factor; a ridge at 1e-8 of its scale does, and only perturbs the
-        # noise covariance below by that relative amount.
-        jit <- 1e-8 * (mean(Matrix::diag(Qk)) + 1e-8)
-        Qf <- Qk + Matrix::Diagonal(n_x, jit)
-        Ch <- Matrix::Cholesky(Qf, perm = TRUE, LDL = FALSE)
-    }
-
+# V = B (B' Q B)^{-1} B' for B a basis of null(A), Q^{-1} with no rows. The
+# draw is the engine's (cpp_constrained_cell_draw): it factors Q with one
+# anchor per row on its diagonal, the factor every covariance read of the cell
+# uses (InvBlockConstraint), and maps the factor's draws onto N(0, V). Q is
+# never inverted along the constraint, so it need carry no curvature on a
+# direction only the constraint identifies -- the sum-to-zero pins the sparse
+# joint Newton folds at solve time, a Knorr-Held interaction's null space.
+.joint_draw_cell <- function(Qp, Qi, Qx, n_x, constr, n_k) {
     U <- matrix(stats::rnorm(n_x * n_k), n_x, n_k)
-    # z = P' L'^{-1} U
-    z <- as.matrix(Matrix::solve(Ch, Matrix::solve(Ch, U, system = "Lt"),
-                                 system = "Pt"))
-    if (is.null(A_t)) return(z)
-
-    A_s <- methods::as(Matrix::Matrix(A_t, sparse = TRUE), "CsparseMatrix")
-    k_c <- ncol(A_s)
-    e <- as.matrix(Qf %*% z)
-    K <- rbind(cbind(methods::as(Qk, "generalMatrix"), A_s),
-               cbind(Matrix::t(A_s),
-                     Matrix::sparseMatrix(i = integer(0), j = integer(0),
-                                          x = numeric(0), dims = c(k_c, k_c))))
-    x <- Matrix::solve(K, rbind(e, matrix(0, k_c, n_k)))
-    as.matrix(x[seq_len(n_x), , drop = FALSE])
+    cpp_constrained_cell_draw(as.integer(Qp), as.integer(Qi), as.numeric(Qx),
+                              as.integer(n_x), .constraint_rows_for_cpp(constr),
+                              U)
 }
 
 # Law-of-total-covariance moments of the joint mixture restricted to `idx`:

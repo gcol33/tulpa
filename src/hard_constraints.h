@@ -15,21 +15,31 @@
 // The model is the prior CONDITIONED on A x = 0, so the inner problem is an
 // equality-constrained maximisation:
 //
-//   * each Newton step is the KKT step
-//       delta_c = delta - W C^{-1} A (x + delta),  W = M^{-1} A',  C = A W,
-//     with delta = M^{-1} grad, which keeps every iterate on the constraint
-//     set and converges to the constrained mode;
+//   * each Newton step solves the bordered (KKT) system
+//       [ M  A' ] [ delta  ]   [ grad   ]
+//       [ A  0  ] [ lambda ] = [ -A x   ],
+//     which keeps every iterate on the constraint set and converges to the
+//     constrained mode;
 //   * the Laplace approximation integrates over the (n_x - r)-dimensional
-//     subspace B spanned by null(A), and
-//       log|B' M B| = log|M| + log|C| - log|A A'|
-//     is the log-determinant it needs (B orthonormal).
+//     subspace B spanned by null(A) (B orthonormal), and log|B' M B| is the
+//     log-determinant it needs.
 //
-// M is the full precision the loop factors (the stored Hessian with every
-// sum-to-zero pin, written in or folded in by the solver). A block's prior may
-// add any multiple of A'A to make M positive definite along the constrained
-// directions: on the subspace it is zero, so neither the step nor
-// log|B' M B| sees it. That is what the precision augmentation of an intrinsic
-// field does along its level row.
+// M is the full precision of the model (the stored Hessian with every
+// sum-to-zero pin, written in or folded in by the solver). It need be positive
+// definite on null(A) only. A level row's block carries curvature along the
+// row (the precision augmentation of an intrinsic field: its prior adds a
+// multiple of A'A, zero on the subspace), so M is positive definite as it
+// stands and the system is solved through the factor of M:
+//   delta = M^{-1} grad - W C^{-1} A (x + M^{-1} grad),  W = M^{-1} A',
+//   C = A W,  log|B' M B| = log|M| + log|C| - log|A A'|.
+// A STRUCTURAL row (a Knorr-Held interaction's null-space direction) carries
+// none: the interaction's prior is tau R alone, and an A'A term spanning a
+// whole time slice or a whole series would fill the factor of M. Each
+// structural row is ANCHORED instead (InvBlockConstraint): one node of its
+// support takes a weight c_j on M's diagonal, the loop factors
+// M_a = M + E C E', which has M's sparsity, and the same system is solved
+// through the anchored fold, with
+//   log|B' M B| = log|M_a| + log|Cap| + sum_j log c_j - log|A A'|.
 //
 // A level-constrained block carries the AUGMENTED density as its log-prior, a
 // proper Gaussian with precision P on the whole block. The density of the field
@@ -179,15 +189,31 @@ inline double level_prior_conditioning(const std::vector<LatentBlock>& blocks,
 }
 
 // The constraint state a Newton loop carries: A, the Gram factor of A A', the
-// columns A' e_g as right-hand sides, and, once the loop has solved them
-// against its M, W = M^{-1} A' with the factor of C = A W.
+// anchors of the structural rows, the columns Vb = [A' E] as right-hand sides,
+// and, once the loop has solved them against its M_a, W = M_a^{-1} Vb with the
+// factored capacitance (`cap`).
+//
+// A loop that factors M_a loads the anchors onto the matrix it is about to
+// factor (load_anchors), every time it factors: the weight is the diagonal
+// entry there, so the anchor sits at the curvature scale of M. The fold
+// refuses (factor_cap returns false) when anchors exist and were not loaded,
+// since its W would then be solved against a matrix without them. Structural
+// rows come only from a block with a sparse-only prior
+// (constrained_structure_block.h), which routes the fit to the sparse joint
+// Newton (blocks_have_sparse_only_prior); the dense loops see level rows only.
 struct HardConstraintState {
     int n_x = 0;
     std::vector<LinearConstraintRow> rows;
     InvBlockConstraint gram;   // W = A', capacitance A A'
-    InvBlockConstraint cap;    // W = M^{-1} A', capacitance A M^{-1} A'
-    std::vector<double> rhs;   // [g | A' e_1 | ... | A' e_r], each length n_x
-    std::vector<double> sol;   // M^{-1} applied to rhs, same layout
+    InvBlockConstraint cap;    // W = M_a^{-1} Vb, the anchored fold
+    std::vector<int> anchor_node;       // one per structural row that has one
+    std::vector<double> anchor_weight;  // the weights last loaded
+    // Every node some row reaches, sorted: the coordinates a solver has to
+    // treat as structured field, never as dense scalars (s2z_block_schur).
+    std::vector<int> row_nodes;
+    bool anchors_loaded = false;
+    std::vector<double> rhs;   // [g | Vb_1 | ... | Vb_m], each length n_x
+    std::vector<double> sol;   // M_a^{-1} applied to rhs, same layout
     // The level rows' log-density conditioning at the cell being solved
     // (level_prior_conditioning), set by the driver before the solve.
     double prior_conditioning = 0.0;
@@ -195,19 +221,27 @@ struct HardConstraintState {
     // then the augmented model's own posterior approximation (the pin carries
     // the field precision along the row), so the skewness and importance-curve
     // probes, which walk coordinate curves of M's factor, stay meaningful; a
-    // structural row's A'A term is arbitrary and they do not.
+    // structural row's anchor is arbitrary and they do not.
     bool augmented_probes = false;
 
     bool active() const { return !rows.empty(); }
     int rank() const { return static_cast<int>(rows.size()); }
+    int n_anchor() const { return static_cast<int>(anchor_node.size()); }
 
     // Rows must be linearly independent; a Gram matrix that does not factor
     // says they are not, and the block that declared them is at fault.
-    void init(int nx, std::vector<LinearConstraintRow> r) {
+    // `anchored[g]` marks the rows to anchor; each anchors at the first node
+    // of its support with a nonzero weight that no earlier row took.
+    void init(int nx, std::vector<LinearConstraintRow> r,
+              const std::vector<char>& anchored = std::vector<char>()) {
         n_x = nx;
         rows = std::move(r);
         prior_conditioning = 0.0;
         augmented_probes = false;
+        anchors_loaded = false;
+        anchor_node.clear();
+        anchor_weight.clear();
+        row_nodes.clear();
         rhs.clear();
         sol.clear();
         if (rows.empty()) return;
@@ -220,26 +254,63 @@ struct HardConstraintState {
                        "linearly dependent (A A' is singular); each block has "
                        "to declare an independent set.");
         }
+        std::vector<char> reached(static_cast<std::size_t>(n_x), 0);
+        for (const auto& row : rows)
+            for (int j : row.cols) if (j >= 0 && j < n_x) reached[j] = 1;
+        for (int j = 0; j < n_x; j++) if (reached[j]) row_nodes.push_back(j);
+        std::vector<char> taken(static_cast<std::size_t>(n_x), 0);
+        for (std::size_t g = 0; g < rows.size() && g < anchored.size(); g++) {
+            if (!anchored[g]) continue;
+            const LinearConstraintRow& row = rows[g];
+            for (std::size_t e = 0; e < row.cols.size(); e++) {
+                const int j = row.cols[e];
+                if (j < 0 || j >= n_x || taken[j] || row.weight(e) == 0.0) continue;
+                taken[j] = 1;
+                anchor_node.push_back(j);
+                break;
+            }
+        }
+        anchor_weight.assign(anchor_node.size(), 1.0);
         const std::size_t n = static_cast<std::size_t>(n_x);
-        rhs.assign(n * (rows.size() + 1), 0.0);
+        rhs.assign(n * (rows.size() + anchor_node.size() + 1), 0.0);
         sol.assign(rhs.size(), 0.0);
         for (std::size_t g = 0; g < rows.size(); g++) {
             const LinearConstraintRow& row = rows[g];
             for (std::size_t e = 0; e < row.cols.size(); e++)
                 rhs[n * (g + 1) + row.cols[e]] += row.weight(e);
         }
+        for (std::size_t a = 0; a < anchor_node.size(); a++)
+            rhs[n * (rows.size() + a + 1) + anchor_node[a]] = 1.0;
     }
 
-    // The rows every block of the list declares, and whether they are all
-    // level rows.
+    // The rows every block of the list declares, whether they are all level
+    // rows, and the structural ones anchored.
     void init(int nx, const std::vector<LatentBlock>& blocks) {
         bool all_level = true;
+        std::vector<char> anchored;
         for (const auto& b : blocks) {
             const std::size_t n_level = static_cast<std::size_t>(b.n_level_rows);
             if (b.hard_constraints.size() > n_level) all_level = false;
+            for (std::size_t g = 0; g < b.hard_constraints.size(); g++)
+                anchored.push_back(g >= n_level ? 1 : 0);
         }
-        init(nx, collect_hard_constraints(blocks));
+        init(nx, collect_hard_constraints(blocks), anchored);
         augmented_probes = all_level;
+    }
+
+    // Load the anchors onto the matrix about to be factored: `diag(j)` is a
+    // reference to its diagonal entry j. The weight is that entry where it is
+    // positive and finite, and 1 otherwise; any positive weight gives the same
+    // constrained solution, the diagonal only puts it at M's scale.
+    template <typename DiagRef>
+    void load_anchors(DiagRef diag) {
+        for (std::size_t a = 0; a < anchor_node.size(); a++) {
+            double& h = diag(anchor_node[a]);
+            const double c = (h > 0.0 && std::isfinite(h)) ? h : 1.0;
+            anchor_weight[a] = c;
+            h += c;
+        }
+        anchors_loaded = true;
     }
 
     double log_det_gram() const { return gram.log_det_fold(); }
@@ -275,31 +346,33 @@ struct HardConstraintState {
         return m;
     }
 
-    // Load g as the first right-hand side; the A' columns follow it.
+    // Load g as the first right-hand side; the Vb columns follow it.
     double* load_rhs(const double* g) {
         std::copy(g, g + n_x, rhs.begin());
         return rhs.data();
     }
-    int n_rhs() const { return rank() + 1; }
+    int n_rhs() const { return rank() + n_anchor() + 1; }
 
-    // W = M^{-1} A' from the solved right-hand sides `sol` (columns 1..r), and
-    // the factor of C = A W.
+    // W = M_a^{-1} Vb from the solved right-hand sides `sol` (columns 1..m),
+    // and the factored capacitance.
     bool factor_cap_from_sol() {
-        cap.set_rows(n_x, rows);
+        if (!take_anchors()) return false;
         cap.build_from_columns(sol.data() + n_x, n_x);
         return cap.usable;
     }
 
-    // W = M^{-1} A' through a per-column solve with M, and the factor of C.
+    // W = M_a^{-1} Vb through a per-column solve with M_a, and the factored
+    // capacitance.
     template <typename SolveFn>
     bool factor_cap(SolveFn solve) {
-        cap.set_rows(n_x, rows);
+        if (!take_anchors()) return false;
         cap.build(solve, n_x);
         return cap.usable;
     }
 
-    // The KKT step from a step `delta` = M^{-1} g solved by the loop: W and C
-    // through `solve` against the same factor, then the projection below.
+    // The KKT step from a step `delta` = M_a^{-1} g solved by the loop: W and
+    // the capacitance through `solve` against the same factor, then the fold
+    // below.
     template <typename SolveFn>
     bool kkt_project(const double* x, double* delta, SolveFn solve) {
         if (!factor_cap(solve)) return false;
@@ -307,20 +380,15 @@ struct HardConstraintState {
         return true;
     }
 
-    // delta <- delta - W C^{-1} A (x + delta).
+    // delta <- the KKT solution of the header from delta = M_a^{-1} g at the
+    // iterate x: the fold with constraint right-hand side -A x.
     void project_step(const double* x, double* delta) const {
-        std::vector<double> xd(static_cast<std::size_t>(n_x));
-        for (int j = 0; j < n_x; j++) xd[j] = x[j] + delta[j];
-        std::vector<double> b, y(rows.size());
-        apply_A(xd.data(), b);
-        cap.solve_cap(b.data(), y.data());
-        for (std::size_t g = 0; g < rows.size(); g++) {
-            const std::vector<double>& wg = cap.W[g];
-            for (int j = 0; j < n_x; j++) delta[j] -= wg[j] * y[g];
-        }
+        std::vector<double> ax;
+        apply_A(x, ax);
+        cap.fold(delta, n_x, ax.data());
     }
 
-    // log|B' M B| - log|M| = log|C| - log|A A'|.
+    // log|B' M B| - log|M_a|.
     double log_det_subspace_correction() const {
         return cap.log_det_fold() - log_det_gram();
     }
@@ -333,6 +401,19 @@ struct HardConstraintState {
                         double log_det_sub) const {
         return finalize_log_marginal(log_lik, log_prior, log_det_sub,
                                      n_x - rank()) + prior_conditioning;
+    }
+
+private:
+    // The rows and the anchors as loaded for this factorization into `cap`;
+    // false when anchors exist and were not loaded onto the factored matrix.
+    bool take_anchors() {
+        cap.set_rows(n_x, rows);
+        if (!anchor_node.empty()) {
+            if (!anchors_loaded) return false;
+            cap.set_anchors(anchor_node, anchor_weight);
+        }
+        anchors_loaded = false;
+        return true;
     }
 };
 

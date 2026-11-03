@@ -138,19 +138,15 @@ inline SubspaceDebiasOutcome compute_subspace_debias(
     for (int k = 0; k < n_x; k++) V[static_cast<std::size_t>(b) * n_x + k] = v[k];
   }
   // Under hard constraints A x = 0 the inner Gaussian is the one conditioned
-  // on the constraint set, Sigma_c = Sigma - W C^-1 W' (W = Sigma A', C = A W,
-  // the state's factor of the same H), so each column is kriged,
-  // V_c = V - W C^-1 (A V), and the surface stays on the set.
+  // on the constraint set, Sigma_c = B (B' H B)^-1 B'. Each column above is
+  // solved against the live factor (of the anchored H_a where the state
+  // anchors its structural rows), and the state's fold of the same factor
+  // turns it into the column of Sigma_c, so the surface stays on the set.
   if (hard && hard->active()) {
-    const int r = hard->rank();
-    std::vector<double> sA, y(static_cast<std::size_t>(r));
     for (int b = 0; b < q; b++) {
-      double* col = V.data() + static_cast<std::size_t>(b) * n_x;
-      hard->apply_A(col, sA);
-      hard->cap.solve_cap(sA.data(), y.data());
-      for (int g = 0; g < r; g++) {
-        const std::vector<double>& wg = hard->cap.W[g];
-        for (int k = 0; k < n_x; k++) col[k] -= wg[k] * y[g];
+      if (!hard->cap.fold(V.data() + static_cast<std::size_t>(b) * n_x, n_x)) {
+        out.declined = "degenerate_proposal";
+        return out;
       }
     }
   }

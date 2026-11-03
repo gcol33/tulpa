@@ -372,6 +372,46 @@ bool extract_joint_eta_var(
     return true;
 }
 
+bool draw_constrained_cell(
+    const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
+    const std::vector<LinearConstraintRow>& A_cols,
+    const double* eps, int n_draws,
+    SparseCholeskySolver& solver,
+    std::vector<double>& out, const char** why
+) {
+    out.assign(static_cast<std::size_t>(n_x) * n_draws, 0.0);
+    InvBlockConstraint constr;
+    if (!factorize_constrained_cell(solver, Qp, Qi, Qx, n_x, nnz, A_cols,
+                                    constr)) {
+        *why = "the cell precision does not factor";
+        return false;
+    }
+    // z = P' L^{-T} eps: a draw with precision H_a, the anchored Q.
+    if (n_draws > 0 &&
+        !solver.apply_inv_chol_factor(eps, out.data(), n_x, n_draws)) {
+        *why = "the cell factor has no LL' square root";
+        return false;
+    }
+    if (A_cols.empty()) return true;
+    auto solve_cell = [&](const double* rhs, double* o) {
+        solver.solve(rhs, o, n_x);
+    };
+    constr.build(solve_cell, n_x);
+    if (!constr.usable) {
+        *why = "the cell precision is not positive definite on the constraint set";
+        return false;
+    }
+    const InvBlockConstraint::DrawTransform T = constr.draw_transform();
+    if (!T.ok) {
+        *why = "the cell precision is indefinite off the constraint set";
+        return false;
+    }
+    for (int c = 0; c < n_draws; c++)
+        constr.condition_draw(out.data() + static_cast<std::size_t>(c) * n_x,
+                              n_x, T);
+    return true;
+}
+
 } // namespace tulpa
 
 namespace {
@@ -780,4 +820,38 @@ Rcpp::List cpp_joint_inner_vcov_mixture(
         Rcpp::Named("mean") = mean_out,
         Rcpp::Named("dense_blocks") = dense_out,
         Rcpp::Named("failed") = Rcpp::wrap(failed));
+}
+
+// Rcpp entry: draws of one cell's Gaussian conditioned on the constraint rows
+// (tulpa::draw_constrained_cell). Q_p / Q_i / Q_x: the cell's lower-triangle
+// CSC (Q_i 0-based); A_cols_list: the rows, as cpp_joint_inner_vcov_blocks
+// takes them; eps: an n_x x n_draws matrix of standard normals, drawn by the
+// caller so R's RNG stream decides the draws. Returns the n_x x n_draws draws.
+//
+// [[Rcpp::export]]
+Rcpp::NumericMatrix cpp_constrained_cell_draw(
+    Rcpp::IntegerVector Q_p, Rcpp::IntegerVector Q_i, Rcpp::NumericVector Q_x,
+    int n_x, Rcpp::List A_cols_list, Rcpp::NumericMatrix eps
+) {
+    const VcovGridInputs in = read_vcov_grid_inputs(
+        Rcpp::List::create(Q_p), Rcpp::List::create(Q_i), Rcpp::List::create(Q_x),
+        n_x, Rcpp::IntegerVector(0), A_cols_list);
+    if (!in.has_cell[0])
+        Rcpp::stop("cpp_constrained_cell_draw(): the cell precision is not a "
+                   "well-formed %d x %d lower-triangle CSC.", n_x, n_x);
+    if (eps.nrow() != n_x)
+        Rcpp::stop("cpp_constrained_cell_draw(): `eps` has %d rows, not n_x = %d.",
+                   static_cast<int>(eps.nrow()), n_x);
+    const int n_draws = eps.ncol();
+    tulpa::SparseCholeskySolver solver;
+    std::vector<double> draws;
+    const char* why = "";
+    if (!tulpa::draw_constrained_cell(in.Qp[0].data(), in.Qi[0].data(),
+                                      in.Qx[0].data(), n_x, in.nnz(0),
+                                      in.A_cols, eps.begin(), n_draws, solver,
+                                      draws, &why))
+        Rcpp::stop("cpp_constrained_cell_draw(): %s.", why);
+    Rcpp::NumericMatrix out(n_x, n_draws);
+    std::copy(draws.begin(), draws.end(), out.begin());
+    return out;
 }

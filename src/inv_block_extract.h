@@ -26,7 +26,7 @@
 #define TULPA_INV_BLOCK_EXTRACT_H
 
 #include "linear_constraint_rows.h"
-#include "small_dense_sym.h"  // SmallSymEig
+#include "small_dense_sym.h"  // SmallChol, SmallSymEig
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -86,12 +86,42 @@ enum class InvBlockSymmetry { Average, MirrorLower };
 //   Cap = Psi^{-1} + Vb' H_a^{-1} Vb,   Psi^{-1} = diag(D^{-1}, -C^{-1}),
 //
 // D^{-1} = 0 for the hard constraint, now formed from a well-conditioned
-// solve. Cap is symmetric indefinite and is factored by its eigendecomposition.
-// Haynsworth inertia additivity on [[H_a, Vb], [Vb', -Psi^{-1}]] gives
+// solve. Haynsworth inertia additivity on [[H_a, Vb], [Vb', -Psi^{-1}]] gives
 // neg(H + A' D A) = neg(H_a) + pos(Cap) - kc, so the target is positive
 // definite exactly when neg(Cap) = (number of anchors) + neg(H_a); with H_a
 // positive definite, when Cap has kc positive eigenvalues. The determinant
 // lemma gives |H + A' D A| = |H_a| |D| prod(c) |Cap| in absolute value.
+//
+// Over a positive definite H_a that inertia is a block sign pattern. With
+// W = H_a^{-1} Vb split as [W_A W_E],
+//
+//   Cap = [ P   Q ],   P = D^{-1} + A W_A,  Q = A W_E,  R = E' W_E - C^{-1},
+//         [ Q'  R ]
+//
+// (D^{-1} = 0 on the hard rows). P is positive definite (A has full row rank,
+// D^{-1} is positive semi-definite), and the Schur complement
+// R - Q' P^{-1} Q = E' V_A E - C^{-1}, V_A the inverse of H_a + A' D A taken
+// to the hard limit on its hard rows, is negative definite exactly when the
+// target is positive definite (on null of the hard rows, B a basis of it):
+// B' (H + A' D A) B = B' (H_a + A' D A) B - B' E C E' B, and by Woodbury its
+// inverse exists and is positive definite iff C^{-1} - E' V_A E is. So the
+// fold is factored as two Cholesky factors, of P and of N = Q' P^{-1} Q - R,
+// and it is usable when both exist; log|Cap| = log|P| + log|N|. An
+// indefinite H_a (an LDL' factor, `neg_base` > 0) has no such sign pattern
+// and is factored by the eigendecomposition of Cap.
+//
+// For the hard constraint the fold is the solution operator of the KKT system
+//
+//   [ H  A' ] [ x      ]   [ y ]
+//   [ A  0  ] [ lambda ] = [ b ],
+//
+// x = H_a^{-1} y - W Cap^{-1} (W' y - [b; 0]): fold() applies it to a column
+// already solved against H_a (b = -A x0 moves an infeasible iterate x0 back on
+// the constraint set), and with b = 0 it is V = B (B' H B)^{-1} B', the
+// constrained covariance. H itself is never factored, so it need not be
+// positive definite along a direction only the constraint identifies, and
+// the factored matrix H_a has the sparsity of H: the anchors sit on its
+// diagonal.
 //
 // Use: anchor() takes the rows and picks the anchors and their weights; the
 // caller factors H_a (H with each anchor weight added to its diagonal entry)
@@ -100,14 +130,23 @@ enum class InvBlockSymmetry { Average, MirrorLower };
 // subtract the matching term, so the pair gives V. set_rows() takes the rows
 // with no anchors, for a precision that needs none (H_a = H): Cap is then
 // D^{-1} + A H^{-1} A' itself, which log_det_fold() and solve_cap() read.
+// set_anchors() places anchors chosen elsewhere (a Newton loop that loads them
+// onto the matrix it factors).
 struct InvBlockConstraint {
     int kc = 0;                              // constraint rows
     std::vector<LinearConstraintRow> rows;   // in-range entries of each row
     std::vector<int> anchor_node;            // one per anchored row
     std::vector<double> anchor_weight;       // H_jj at the anchor
     std::vector<std::vector<double>> W;      // m columns of H_a^{-1} Vb, length n_x
-    SmallSymEig cap;                         // eigendecomposition of Cap
+    SmallSymEig cap;                         // eigendecomposition of Cap (eigen form)
+    bool block_form = false;                 // Cap factored as P, N
+    bool soft = false;                       // built with a finite D
+    SmallChol cap_P, cap_N;                  // factors of P and N (block form)
+    std::vector<double> cap_Q, cap_Z;        // Q and P^{-1} Q, kc x na row-major
     bool usable = false;                     // false when the target is not PD
+
+    int n_anchor() const { return static_cast<int>(anchor_node.size()); }
+    int order() const { return kc + n_anchor(); }
 
     // Take the rows with no anchors. Entries outside [0, n_x) are dropped; the
     // rest keep the caller's order, so the right-hand side and the Gram entries
@@ -159,6 +198,14 @@ struct InvBlockConstraint {
         }
     }
 
+    // Anchors chosen by the caller, after set_rows(): node j carries weight
+    // c_j, which the caller has added to the diagonal of the matrix it factors.
+    void set_anchors(const std::vector<int>& nodes,
+                     const std::vector<double>& weights) {
+        anchor_node = nodes;
+        anchor_weight = weights;
+    }
+
     // Solve W = H_a^{-1} Vb and factor Cap. `solve` is the solve against the
     // ANCHORED precision. `Dinv`, when given, is the row-major kc x kc inverse
     // penalty precision (the soft form); nullptr imposes the hard constraint.
@@ -172,8 +219,7 @@ struct InvBlockConstraint {
         usable = false;
         W.clear();
         if (kc <= 0) return;
-        const int na = static_cast<int>(anchor_node.size());
-        const int m = kc + na;
+        const int m = order();
 
         std::vector<double> e(n_x, 0.0), v(n_x, 0.0);
         W.resize(m);
@@ -192,35 +238,39 @@ struct InvBlockConstraint {
         factor_cap(Dinv, neg_base);
     }
 
-    // The same build from the rows' columns W = H^{-1} A' already solved, for
-    // rows taken by set_rows() (no anchors): `cols` holds the kc columns back
-    // to back, each of length n_x, in row order.
+    // The same build from the columns W = H_a^{-1} Vb already solved: `cols`
+    // holds the m = kc + (number of anchors) columns back to back, each of
+    // length n_x, rows first and anchors after, in order.
     void build_from_columns(const double* cols, int n_x,
                             const std::vector<double>* Dinv = nullptr) {
         usable = false;
         W.clear();
-        if (kc <= 0 || !anchor_node.empty()) return;
-        W.resize(kc);
-        for (int g = 0; g < kc; g++)
-            W[g].assign(cols + static_cast<std::size_t>(g) * n_x,
-                        cols + static_cast<std::size_t>(g + 1) * n_x);
+        if (kc <= 0) return;
+        const int m = order();
+        W.resize(m);
+        for (int i = 0; i < m; i++)
+            W[i].assign(cols + static_cast<std::size_t>(i) * n_x,
+                        cols + static_cast<std::size_t>(i + 1) * n_x);
         factor_cap(Dinv, 0);
     }
 
-    // Cap = Psi^{-1} + Vb' W from the solved W, and its eigendecomposition.
-    void factor_cap(const std::vector<double>* Dinv, int neg_base) {
-        const int na = static_cast<int>(anchor_node.size());
-        const int m = kc + na;
+    // Vb_i' w for column i of Vb.
+    double vb_dot(int i, const double* w) const {
+        if (i >= kc) return w[anchor_node[i - kc]];
+        return constraint_row_dot(rows[i], w);
+    }
 
-        // Vb_i' w for column i of Vb.
-        auto vb_dot = [&](int i, const std::vector<double>& w) {
-            if (i >= kc) return w[anchor_node[i - kc]];
-            return constraint_row_dot(rows[i], w.data());
-        };
+    // Cap = Psi^{-1} + Vb' W from the solved W, and its factorization.
+    void factor_cap(const std::vector<double>* Dinv, int neg_base) {
+        const int na = n_anchor();
+        const int m = kc + na;
+        block_form = false;
+        soft = (Dinv != nullptr);
+
         std::vector<double> C(static_cast<std::size_t>(m) * m, 0.0);
         for (int i = 0; i < m; i++)
             for (int j = 0; j <= i; j++) {
-                const double s = 0.5 * (vb_dot(i, W[j]) + vb_dot(j, W[i]));
+                const double s = 0.5 * (vb_dot(i, W[j].data()) + vb_dot(j, W[i].data()));
                 C[static_cast<std::size_t>(i) * m + j] = s;
                 C[static_cast<std::size_t>(j) * m + i] = s;
             }
@@ -238,16 +288,81 @@ struct InvBlockConstraint {
             C[static_cast<std::size_t>(kc + a) * m + (kc + a)] -=
                 1.0 / anchor_weight[a];
 
-        cap.factor(C, m);
-        usable = cap.ok && cap.n_neg() == na + neg_base;
+        if (neg_base == 0) {
+            block_form = true;
+            usable = factor_block(C, m);
+        } else {
+            cap.factor(C, m);
+            usable = cap.ok && cap.n_neg() == na + neg_base;
+        }
         if (!usable) W.clear();
+    }
+
+    // P, Q, R from the row-major m x m Cap, then the factors of P and of N.
+    bool factor_block(const std::vector<double>& C, int m) {
+        const int na = m - kc;
+        std::vector<double> P(static_cast<std::size_t>(kc) * kc);
+        for (int i = 0; i < kc; i++)
+            for (int j = 0; j < kc; j++)
+                P[static_cast<std::size_t>(i) * kc + j] = C[static_cast<std::size_t>(i) * m + j];
+        cap_P.factor(P, kc);
+        if (!cap_P.ok) return false;
+        cap_Q.assign(static_cast<std::size_t>(kc) * na, 0.0);
+        cap_Z.assign(static_cast<std::size_t>(kc) * na, 0.0);
+        if (na == 0) return true;
+        std::vector<double> q(kc), z(kc);
+        for (int a = 0; a < na; a++) {
+            for (int i = 0; i < kc; i++) q[i] = C[static_cast<std::size_t>(i) * m + kc + a];
+            cap_P.solve(q.data(), z.data());
+            for (int i = 0; i < kc; i++) {
+                cap_Q[static_cast<std::size_t>(i) * na + a] = q[i];
+                cap_Z[static_cast<std::size_t>(i) * na + a] = z[i];
+            }
+        }
+        std::vector<double> N(static_cast<std::size_t>(na) * na);
+        for (int a = 0; a < na; a++)
+            for (int b = 0; b <= a; b++) {
+                double s = -C[static_cast<std::size_t>(kc + a) * m + kc + b];
+                for (int i = 0; i < kc; i++)
+                    s += cap_Q[static_cast<std::size_t>(i) * na + a] *
+                         cap_Z[static_cast<std::size_t>(i) * na + b];
+                N[static_cast<std::size_t>(a) * na + b] = s;
+                N[static_cast<std::size_t>(b) * na + a] = s;
+            }
+        cap_N.factor(N, na);
+        return cap_N.ok;
+    }
+
+    // y = Cap^{-1} b for the factored Cap.
+    void cap_solve(const double* b, double* y) const {
+        if (!block_form) { cap.solve(b, y); return; }
+        const int na = n_anchor();
+        std::vector<double> t(kc);
+        cap_P.solve(b, t.data());
+        if (na == 0) { std::copy(t.begin(), t.end(), y); return; }
+        // [P Q; Q' R] [u; v] = [f; g]:  N v = Q' P^{-1} f - g,  u = P^{-1} f - Z v.
+        std::vector<double> r(na), v(na);
+        for (int a = 0; a < na; a++) {
+            double s = -b[kc + a];
+            for (int i = 0; i < kc; i++) s += cap_Q[static_cast<std::size_t>(i) * na + a] * t[i];
+            r[a] = s;
+        }
+        cap_N.solve(r.data(), v.data());
+        for (int i = 0; i < kc; i++) {
+            double s = t[i];
+            for (int a = 0; a < na; a++) s -= cap_Z[static_cast<std::size_t>(i) * na + a] * v[a];
+            y[i] = s;
+        }
+        for (int a = 0; a < na; a++) y[kc + a] = v[a];
     }
 
     // log|Cap| + sum_a log c_a: what the fold adds to log|H_a| + log|D| to give
     // the log-determinant of the target; NaN when the target is not PD.
     double log_det_fold() const {
         if (!usable) return std::numeric_limits<double>::quiet_NaN();
-        double ld = cap.logabsdet();
+        double ld = block_form
+            ? cap_P.logdet() + (n_anchor() > 0 ? cap_N.logdet() : 0.0)
+            : cap.logabsdet();
         for (double c : anchor_weight) ld += std::log(c);
         return ld;
     }
@@ -263,12 +378,120 @@ struct InvBlockConstraint {
             for (int t = 0; t < n_x; t++) s += W[i][t] * y[t];
             wty[i] = s;
         }
-        if (usable && m > 0) cap.solve(wty.data(), z.data());
+        if (usable && m > 0) cap_solve(wty.data(), z.data());
         for (int t = 0; t < n_x; t++) {
             double corr = 0.0;
             for (int i = 0; i < m; i++) corr += W[i][t] * z[i];
             out[t] = ainv_y[t] - corr;
         }
+    }
+
+    // In place, col <- col - W Cap^{-1} b with b_i = Vb_i' col, plus `shift_A`
+    // (length kc) on the row entries when given: for col = H_a^{-1} y this is
+    // the KKT solution x of the header with constraint right-hand side
+    // -shift_A. Returns false when the fold is not usable.
+    bool fold(double* col, int n_x, const double* shift_A = nullptr) const {
+        if (!usable) return false;
+        const int m = static_cast<int>(W.size());
+        if (m == 0) return true;
+        std::vector<double> b(m), y(m);
+        for (int i = 0; i < m; i++)
+            b[i] = vb_dot(i, col) + (shift_A && i < kc ? shift_A[i] : 0.0);
+        cap_solve(b.data(), y.data());
+        for (int i = 0; i < m; i++) {
+            const std::vector<double>& wi = W[i];
+            for (int t = 0; t < n_x; t++) col[t] -= wi[t] * y[i];
+        }
+        return true;
+    }
+
+    // The map from a draw z ~ N(0, H_a^{-1}) to a draw of the hard-constrained
+    // Gaussian N(0, V), V = B (B' H B)^{-1} B'. x = V e has covariance
+    // V H V = V for any e ~ N(0, H), and with H = H_a - E C E',
+    //
+    //   e = H_a z - E G E' z,   G S G - 2 G + C = 0,   S = E' H_a^{-1} E,
+    //
+    // has covariance H_a - E (2 G - G S G) E' = H. With K = C^{1/2} S C^{1/2}
+    // = U diag(lambda) U', G = C^{1/2} U diag(1 / (1 + sqrt(1 - lambda))) U'
+    // C^{1/2} is the root that stays bounded as lambda -> 0. lambda <= 1 is
+    // H >= 0 (the Schur complement of [[H_a, E C^{1/2}], [C^{1/2} E', I]]), so
+    // a precision indefinite off the constraint set has no such e and the
+    // transform reports `ok = false`. Without anchors G is empty and x is the
+    // conditioning by kriging z - W Cap^{-1} A z. The map is the hard fold's: a
+    // soft one (finite D) reports `ok = false`.
+    struct DrawTransform {
+        std::vector<double> G;   // na x na row-major
+        bool ok = false;
+    };
+
+    DrawTransform draw_transform() const {
+        DrawTransform T;
+        if (!usable || !block_form || soft) return T;
+        const int na = n_anchor();
+        if (na == 0) { T.ok = true; return T; }
+        std::vector<double> K(static_cast<std::size_t>(na) * na);
+        for (int a = 0; a < na; a++)
+            for (int b = 0; b <= a; b++) {
+                const double s = 0.5 * (W[kc + a][anchor_node[b]] +
+                                        W[kc + b][anchor_node[a]]);
+                const double k = std::sqrt(anchor_weight[a] * anchor_weight[b]) * s;
+                K[static_cast<std::size_t>(a) * na + b] = k;
+                K[static_cast<std::size_t>(b) * na + a] = k;
+            }
+        SmallSymEig eg;
+        eg.factor(K, na);
+        if (!eg.ok) return T;
+        std::vector<double> gam(na);
+        for (int j = 0; j < na; j++) {
+            const double lam = eg.w[j];
+            if (!(lam > 0.0) || lam > 1.0 + 1e-8) return T;
+            gam[j] = 1.0 / (1.0 + std::sqrt(std::max(0.0, 1.0 - lam)));
+        }
+        T.G.assign(static_cast<std::size_t>(na) * na, 0.0);
+        for (int a = 0; a < na; a++)
+            for (int b = 0; b < na; b++) {
+                double s = 0.0;
+                for (int j = 0; j < na; j++)
+                    s += eg.V[static_cast<std::size_t>(a) * na + j] * gam[j] *
+                         eg.V[static_cast<std::size_t>(b) * na + j];
+                T.G[static_cast<std::size_t>(a) * na + b] =
+                    std::sqrt(anchor_weight[a] * anchor_weight[b]) * s;
+            }
+        T.ok = true;
+        return T;
+    }
+
+    // In place, d (a draw L^{-T} eps against the factor of H_a, so
+    // d' H_a d = eps' eps) becomes x ~ N(0, V). Returns eps' eps - x' H x,
+    // what the quadratic form of the constrained Gaussian loses against the
+    // draw's: u' C u + b' Cap^{-1} b with u = E' d and b = Vb' H_a^{-1} e.
+    double condition_draw(double* d, int n_x, const DrawTransform& T) const {
+        const int na = n_anchor();
+        double reduce = 0.0;
+        if (na > 0) {
+            std::vector<double> u(na), gu(na, 0.0);
+            for (int a = 0; a < na; a++) {
+                u[a] = d[anchor_node[a]];
+                reduce += anchor_weight[a] * u[a] * u[a];
+            }
+            for (int a = 0; a < na; a++)
+                for (int b = 0; b < na; b++)
+                    gu[a] += T.G[static_cast<std::size_t>(a) * na + b] * u[b];
+            for (int a = 0; a < na; a++) {
+                const std::vector<double>& wa = W[kc + a];
+                for (int t = 0; t < n_x; t++) d[t] -= wa[t] * gu[a];
+            }
+        }
+        const int m = static_cast<int>(W.size());
+        std::vector<double> b(m), y(m);
+        for (int i = 0; i < m; i++) b[i] = vb_dot(i, d);
+        cap_solve(b.data(), y.data());
+        for (int i = 0; i < m; i++) {
+            reduce += b[i] * y[i];
+            const std::vector<double>& wi = W[i];
+            for (int t = 0; t < n_x; t++) d[t] -= wi[t] * y[i];
+        }
+        return reduce;
     }
 
     // Node list of column i of Vb: row i's indices for i < kc, the anchor
@@ -281,9 +504,9 @@ struct InvBlockConstraint {
 
     // y = Cap^{-1} b for an m-vector b (zeros when the target is not PD).
     void solve_cap(const double* b, double* y) const {
-        const int m = kc + static_cast<int>(anchor_node.size());
+        const int m = order();
         if (!usable) { std::fill(y, y + m, 0.0); return; }
-        cap.solve(b, y);
+        cap_solve(b, y);
     }
 
     // y = Cap^{-1} G_latent, with G_latent[i] = W[i][latent]. `y` is resized to
@@ -294,7 +517,7 @@ struct InvBlockConstraint {
         if (!usable) return;
         std::vector<double> g_a(m);
         for (int i = 0; i < m; i++) g_a[i] = W[i][latent];
-        cap.solve(g_a.data(), y.data());
+        cap_solve(g_a.data(), y.data());
     }
 
     // G_latent' y for a y produced by solve_y at the other index.
@@ -318,7 +541,7 @@ struct InvBlockConstraint {
             for (std::size_t e = first; e < last; e++) s += w[e] * W[i][idx[e]];
             G[i] = s;
         }
-        cap.solve(G.data(), y.data());
+        cap_solve(G.data(), y.data());
         double corr = 0.0;
         for (int i = 0; i < m; i++) corr += G[i] * y[i];
         return corr;

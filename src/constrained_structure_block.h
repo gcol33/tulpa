@@ -11,13 +11,14 @@
 // effects already do.
 //
 // The constraint is HARD: the rows go to LatentBlock::hard_constraints and the
-// sparse joint Newton solves on A x = 0 (hard_constraints.h). The stored
-// precision is tau (R + A'A): on the constraint subspace the A'A term is zero,
-// so neither the constrained step nor the subspace log-determinant sees it,
-// and off the subspace it makes the factored matrix positive definite along
-// directions only the constraint identifies (a time no observation reaches,
-// an area aliased with its main effect). The log-density is the constrained
-// one,
+// sparse joint Newton solves the bordered system on A x = 0
+// (hard_constraints.h). The stored precision is tau R, which carries no
+// curvature along null(R): a direction only the constraint identifies (a time
+// no observation reaches, an area aliased with its main effect) is identified
+// by the KKT system, through one anchor per row on the factored matrix's
+// diagonal, not by a term in the prior. An A'A term would do it too, but its
+// rows span whole time slices and whole series and fill the factor. The
+// log-density is the constrained one,
 //
 //   log p(x | tau) = 0.5 (n - r) log(tau / (2 pi)) + 0.5 log|R|_+
 //                    - 0.5 tau x' R x,
@@ -26,8 +27,9 @@
 // supplied by the caller, who builds R.
 //
 // The structure arrives as a FULL symmetric CSC (both triangles, 0-based row
-// indices) holding R + A'A. The quadratic form read off it equals x' R x on
-// every feasible x, since A x = 0 there.
+// indices). It may be R or R plus any term zero on the constraint set (a
+// multiple of A'A): the quadratic form read off it is x' R x on every feasible
+// x either way.
 //
 // No dense scatter is set: the block reaches the sparse joint Newton only
 // (blocks_have_sparse_only_prior), which is the one carrying the constraint.

@@ -288,12 +288,14 @@ inline CilaOutcome compute_inner_cila(
   // because z = mode + L^-T eps carries (z - mode)' H (z - mode) = eps' eps.
   //
   // Under hard constraints A x = 0 the proposal is the inner Gaussian
-  // conditioned on the constraint set: a draw d = L^-T eps is moved by kriging,
-  // d_c = d - W C^-1 s with s = A d (W = H^-1 A', C = A W, the state's factor
-  // of the same H), which leaves d_c' H d_c = eps' eps - s' C^-1 s. Its density
-  // on the (n_x - r)-dimensional subspace carries 0.5 log|B' H B| and the
-  // target carries the level rows' conditioning, so at eps = 0 the estimator
-  // is the constrained log_marginal term for term.
+  // conditioned on the constraint set, N(0, B (B' H B)^-1 B'): a draw
+  // d = L^-T eps against the live factor (of the anchored H_a where the state
+  // anchors its structural rows) is moved onto it by the state's fold
+  // (InvBlockConstraint::condition_draw), which also returns what
+  // d_c' H d_c loses against eps' eps. Its density on the (n_x - r)-dimensional
+  // subspace carries 0.5 log|B' H B| and the target carries the level rows'
+  // conditioning, so at eps = 0 the estimator is the constrained log_marginal
+  // term for term.
   const bool hard_on = hard && hard->active();
   const int r_hard = hard_on ? hard->rank() : 0;
   const double half_log_det_sub =
@@ -301,7 +303,14 @@ inline CilaOutcome compute_inner_cila(
   const double log_q_const =
       -0.5 * (n_x - r_hard) * 1.8378770664093453 + half_log_det_sub;
   const double target_shift = hard_on ? hard->prior_conditioning : 0.0;
-  std::vector<double> s_hard, y_hard(static_cast<std::size_t>(r_hard));
+  InvBlockConstraint::DrawTransform hard_draw;
+  if (hard_on) {
+    hard_draw = hard->cap.draw_transform();
+    if (!hard_draw.ok) {
+      out.declined = "degenerate_proposal";
+      return out;
+    }
+  }
 
   // Draws are produced a CHUNK at a time rather than one at a time. On the
   // sparse path that is what makes the correction affordable at all: CHOLMOD
@@ -356,15 +365,7 @@ inline CilaOutcome compute_inner_cila(
         const double e = eps[static_cast<std::size_t>(j) * M + i];
         quad += e * e;
       }
-      if (hard_on) {
-        hard->apply_A(draw, s_hard);
-        hard->cap.solve_cap(s_hard.data(), y_hard.data());
-        for (int g = 0; g < r_hard; g++) {
-          quad -= s_hard[g] * y_hard[g];
-          const std::vector<double>& wg = hard->cap.W[g];
-          for (int j = 0; j < n_x; j++) draw[j] -= wg[j] * y_hard[g];
-        }
-      }
+      if (hard_on) quad -= hard->cap.condition_draw(draw, n_x, hard_draw);
       for (int j = 0; j < n_x; j++) x_buf[j] = mode[j] + draw[j];
       const double lp = eval_log_joint(x_buf) + target_shift;
       out.log_w[i] = lp - (log_q_const - 0.5 * quad);
