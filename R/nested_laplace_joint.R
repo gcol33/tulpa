@@ -1557,11 +1557,20 @@ tulpa_nested_laplace_joint <- function(responses,
         copy_blocks = as.integer(state$cp$copy_blocks_zero %||% integer(0)) + 1L,
         n = .nl_pilot_n(control), enabled = auto_recenter)
 
+    # The detecting fit leaves its grid unrefined when the placement pass will
+    # lay it again (`.nl_refine_deferred()`): the refit at the placed axes
+    # refines its own grid.
+    detect_fit <- function() {
+        if (!isTRUE(auto_recenter)) return(fit_once(prior, prior_sigma))
+        .nl_with_refine_deferred(
+            function(r) .joint_placement_moves(r, state, families),
+            fit_once(prior, prior_sigma))
+    }
     res <- if (isTRUE(pilot$active)) {
         fit_once(pilot$prior, prior_sigma, .nl_pilot_control(ctrl),
                  pilot$phi_grid, pilot$copy, pilot$responses)
     } else {
-        fit_once(prior, prior_sigma)
+        detect_fit()
     }
     # What the pilot DETECTED on, kept before its fit is replaced: the trigger
     # is read off a grid nothing downstream will hold, so without this a fit
@@ -1606,6 +1615,19 @@ tulpa_nested_laplace_joint <- function(responses,
     }
 
     res <- adopt(place(res, state))
+
+    # A detecting fit the placement pass could not lay again (no usable
+    # curvature, a clamp) still holds the grid it left unrefined. It is solved
+    # again with its refinement, handed the mode the placement read, and the
+    # pass reads that fit as it reads any other.
+    if (isTRUE(res$outer_refine_deferred)) {
+        op <- options(tulpa.nl_outer_mode = .nl_fit_outer_mode(res))
+        res <- fit_state(state)
+        options(op)
+        res$k_quality_rounds     <- 0L
+        res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
+        res <- adopt(place(res, state))
+    }
 
     # The pilot's other half. A placement that fired has already produced a full
     # fit at the placed axes; one that DECLINED has left `res` on the pilot's own
@@ -2410,15 +2432,16 @@ tulpa_nested_laplace_joint <- function(responses,
                               ...)
         kernel_fn(new_cells, warm_start = warm_start, store_extras = store_extras,
                   n_threads_outer = n_threads_outer, ...)
+    deferred <- .nl_refine_deferred(res, theta_grid_M, log_marginal)
     ref <- .joint_refine_outer_grid(
         theta_grid_M, log_marginal, extras_list,
         .hyper_specs_with_tags(specs, .joint_axis_tags_raw(
             list(theta_grid = theta_grid_M, prior = prior))),
         refine_kernel, hp_fn,
-        adaptive_grid = adaptive_grid,
+        adaptive_grid = isTRUE(adaptive_grid) && !deferred,
         edge_thresh   = adaptive_grid_edge_thresh,
         max_passes    = adaptive_grid_max_passes,
-        consistency   = var_of_means_consistency,
+        consistency   = isTRUE(var_of_means_consistency) && !deferred,
         axis_modes    = .nl_outer_mode_axes(getOption("tulpa.nl_outer_mode")))
     theta_grid_M  <- ref$theta_grid
     refining_axis <- ref$refining_axis
@@ -2433,6 +2456,7 @@ tulpa_nested_laplace_joint <- function(responses,
     res <- .joint_glue_extras_to_res(res, theta_grid_M, log_marginal,
                                       extras_list, refining_axis)
     res$nonconverged_resolve <- rs$info
+    res$outer_refine_deferred <- deferred
     tm$mark("grid")                          # refinement inner solves
 
     res$theta_grid  <- theta_grid_M

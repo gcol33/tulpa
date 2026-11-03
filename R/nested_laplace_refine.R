@@ -145,8 +145,10 @@
 # axis is stated is read off the nodes the caller declared, so a placement
 # refit, which solves `prior` at the nodes it laid, refines them as the
 # engine's. Returns `res` unchanged when no axis is refinable, no pass is asked
-# for or none added a node; otherwise the grid with the nodes appended, the
-# per-cell side data bound, the `refining_axis` tags and the passes' records.
+# for or none added a node, and flagged `outer_refine_deferred` when the fit is
+# one its placement pass will lay again (`.nl_refine_deferred()`); otherwise
+# the grid with the nodes appended, the per-cell side data bound, the
+# `refining_axis` tags and the passes' records.
 .nl_refine_registry <- function(res, solve, prior, multi, auto,
                                 consistency = TRUE, adaptive_grid = FALSE,
                                 edge_thresh = 0.02, max_passes = 1L,
@@ -172,6 +174,10 @@
     }
     if ((!isTRUE(consistency) && !isTRUE(adaptive_grid)) || nrow(tg) < 2L ||
         !length(refinable)) return(res)
+    if (.nl_refine_deferred(res, tg, res$log_marginal)) {
+        res$outer_refine_deferred <- TRUE
+        return(res)
+    }
     modes <- .nl_registry_refine_modes(colnames(tg), refinable, declared, multi,
                                        auto, user)
     specs <- .joint_axis_specs_from_grid(

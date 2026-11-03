@@ -192,6 +192,32 @@
     if (length(out)) out
 }
 
+# Does the fit being solved leave its grid unrefined? Each door's front door
+# evaluates the fit it detects a placement on inside
+# `.nl_with_refine_deferred()`, which sets `tulpa.nl_defer_refine` to a
+# predicate on that fit's declared grid (`.joint_placement_moves()`,
+# `.nl_registry_rescue_moves()`): a fit the placement pass will lay again is
+# refit on the placed axes, and refining it first would spend its passes on a
+# grid the refit replaces -- bisecting a collapsed axis level by level with no
+# mode to lay it at. Read on `res` with the declared grid `theta_grid` and its
+# log marginal.
+.nl_refine_deferred <- function(res, theta_grid, log_marginal) {
+    defer <- getOption("tulpa.nl_defer_refine")
+    if (!is.function(defer)) return(FALSE)
+    res$theta_grid <- theta_grid
+    res$log_marginal <- log_marginal
+    res$refining_axis <- NULL
+    isTRUE(defer(res))
+}
+
+# `expr`, evaluated with `tulpa.nl_defer_refine` set to `moves(res)`, the
+# predicate `.nl_refine_deferred()` reads.
+.nl_with_refine_deferred <- function(moves, expr) {
+    op <- options(tulpa.nl_defer_refine = moves)
+    on.exit(options(op), add = TRUE)
+    expr
+}
+
 # A fit's placement mode, as the record `.nl_outer_mode_axes()` reads and a
 # placement refit is handed, or NULL when it carries none.
 .nl_fit_outer_mode <- function(res) {

@@ -128,6 +128,13 @@
                 st
             },
             together = FALSE, escalate = FALSE, idle = "grid_resolves_posterior"),
+        field = list(
+            slots = function(res, st) .joint_field_slots(res, st),
+            hold = function(s, st)
+                .nl_slot_hold(st$prior, s$slot, .nl_auto_fields_at(auto, s$block)),
+            fires = function(res, s) .nl_axis_placement_fires(res, s$label, s$tag),
+            write = function(st, s, nodes) .joint_field_write(st, s, nodes, auto),
+            together = FALSE, escalate = FALSE, idle = "grid_resolves_posterior"),
         logchol = list(
             slots = function(res, st) .joint_logchol_slots(res, st),
             hold = function(s, st)
@@ -240,6 +247,93 @@
         }
     }
     out
+}
+
+# --- a block's registry field axes ------------------------------------------
+#
+# Every other axis a non-copy block lays on a grid field of its own, as the
+# registry door binds it (`.NL_REGISTRY_AXIS_FIELD`): a Gaussian-process field's
+# variance and lengthscale (`b<k>.sigma2`, `b<k>.lengthscale`, `b<k>.phi_gp`),
+# an AR(1) block's correlation. Each is laid from the outer mode in the
+# coordinate the transform registry gives it (`tag`), as the registry rescue
+# lays it; an axis the registry gives none is not placed.
+# An axis another family lists first (a block's own scale, a BYM2 mixing weight)
+# stays that family's (`.joint_placement_slots()`); a matrix field (tgmrf) holds
+# every axis of its block in one field and is not addressed per axis here.
+.joint_field_slots <- function(res, st) {
+    cn <- colnames(res$theta_grid) %||% character(0)
+    out <- list()
+    for (sl in .joint_field_registry_slots(st)) {
+        if (!sl$label %in% cn) next
+        out[[length(out) + 1L]] <- list(
+            label = sl$label, axis = sl$axis, block = sl$block, slot = sl,
+            tag = sl$tag, ref = .joint_declared_axis_ref(sl$label),
+            cross = .joint_block_declared_nodes(res, st, sl$block))
+    }
+    out
+}
+
+# The registry slots (`.nl_registry_axis_slots()`) the field family walks, read
+# off the call state alone: the vector-field axes of every non-copy block of a
+# multi-block prior that the transform registry gives a coordinate (`tag`),
+# each labelled as the grid names it.
+.joint_field_registry_slots <- function(st) {
+    if (!.is_multi_block_prior(st$prior)) return(list())
+    copied <- if (!is.null(st$cp) && isTRUE(st$cp$has_copy))
+        as.integer(st$cp$copy_blocks_zero) + 1L else integer(0)
+    out <- list()
+    for (sl in .nl_registry_axis_slots(st$prior)) {
+        if (sl$block %in% copied || !is.null(sl$column)) next
+        tag <- tryCatch(.joint_pareto_block_tags(sl$type, sl$axis,
+                                                 st$prior[[sl$block]]),
+                        error = function(e) NA_character_)
+        if (length(tag) != 1L || is.na(tag)) next
+        sl$tag <- tag
+        sl$label <- paste0("b", sl$block, ".", sl$axis)
+        out[[length(out) + 1L]] <- sl
+    }
+    out
+}
+
+# The nodes each vector-field axis of block `b` was declared on in `res`, named
+# by axis: what a placement re-crosses an axis it does not move with.
+.joint_block_declared_nodes <- function(res, st, b) {
+    out <- list()
+    for (sl in .nl_registry_axis_slots(st$prior[b])) {
+        if (!is.null(sl$column)) next
+        out[[sl$axis]] <- .joint_declared_axis_ref(paste0("b", b, ".", sl$axis))(res)
+    }
+    out
+}
+
+# The call state with one registry field axis laid on `nodes`. The block's
+# vector fields are paired cells (the i-th entries of each form one cell), so
+# the block is re-crossed as the tensor of every axis's levels: the placed one
+# on its new nodes, the rest on the levels the block's field carries, or, for a
+# field the block leaves to its default, on the nodes the fit declared it on.
+# A field the caller did not state is written marked (`auto_grid()`): a default
+# the engine placed, which refinement may follow past its ends.
+.joint_field_write <- function(st, s, nodes, auto = logical(0)) {
+    b <- s$block
+    blk <- st$prior[[b]]
+    bs <- Filter(function(x) is.null(x$column), .nl_registry_axis_slots(list(blk)))
+    lev <- lapply(bs, function(x) {
+        if (identical(x$axis, s$axis)) return(sort(unique(as.numeric(nodes))))
+        g <- .nl_strip_auto(blk[[x$field]])
+        if (!is.null(g)) sort(unique(signif(as.numeric(g), 12L)))
+        else s$cross[[x$axis]]
+    })
+    if (any(vapply(lev, function(v) !length(v), logical(1)))) return(st)
+    gr <- expand.grid(lev, KEEP.OUT.ATTRS = FALSE)
+    out <- .nl_registry_write_slots(list(blk), bs, unname(as.list(gr)))[[1L]]
+    for (x in bs) {
+        if (is.null(.nl_axis_hold(blk, x$field, .nl_auto_fields_at(auto, b),
+                                  type = x$type))) {
+            out[[x$field]] <- auto_grid(out[[x$field]])
+        }
+    }
+    st$prior[[b]] <- out
+    st
 }
 
 # An axis's incoming nodes on a fit: the ones its kept cells carry together
@@ -387,7 +481,22 @@
         k <- .joint_copy_arm_index(st$responses)
         if (!is.na(k) && movable(list(block = NULL, arm = k))) alpha <- "alpha"
     }
-    c(phi, alpha, scale, .joint_movable_mixing_axes(st, auto))
+    unique(c(phi, alpha, scale, .joint_movable_mixing_axes(st, auto),
+             .joint_movable_field_axes(st, auto)))
+}
+
+# The registry field axes the pass may move (`.joint_field_registry_slots()`), named as
+# the grid names them: every vector-field axis of a non-copy block of a
+# multi-block prior, unless the caller stated its nodes.
+.joint_movable_field_axes <- function(st, auto = logical(0)) {
+    out <- character(0)
+    for (sl in .joint_field_registry_slots(st)) {
+        if (is.null(.nl_slot_hold(st$prior, sl,
+                                  .nl_auto_fields_at(auto, sl$block)))) {
+            out <- c(out, sl$label)
+        }
+    }
+    out
 }
 
 # The BYM2 mixing weights the pass may move (`.joint_mixing_slots()`), named as
@@ -409,15 +518,48 @@
 
 # --- the pass ----------------------------------------------------------------
 
+# Every family's slots, in table order. An axis belongs to the first family
+# that lists it, so a family that walks a whole binding table (`field`) leaves
+# the axes an earlier family places to that family.
 .joint_placement_slots <- function(res, st, families) {
     out <- list()
+    seen <- character(0)
     for (f in names(families)) {
         for (s in families[[f]]$slots(res, st)) {
+            if (s$label %in% seen) next
+            seen <- c(seen, s$label)
             s$family <- f
             out[[length(out) + 1L]] <- s
         }
     }
     out
+}
+
+# Which of `slots` fire on `res`, each family's `together` applied: one firing
+# axis of such a family fires every axis of it. `skip` marks a slot read as
+# not firing whatever its family says.
+.joint_placement_fire <- function(res, slots, families,
+                                  skip = logical(length(slots))) {
+    fam_of <- vapply(slots, `[[`, character(1), "family")
+    fire <- vapply(seq_along(slots), function(i) !skip[[i]] &&
+        isTRUE(families[[fam_of[i]]]$fires(res, slots[[i]])), logical(1))
+    for (f in unique(fam_of)) {
+        idx <- fam_of == f
+        if (isTRUE(families[[f]]$together) && any(fire[idx])) fire[idx] <- TRUE
+    }
+    fire
+}
+
+# Would the placement pass move an axis of `res` at call state `st`: does a
+# slot the caller left movable fire? Read before a fit refines its grid, so a
+# fit that will be laid again skips the refinement its refit replaces
+# (`tulpa.nl_defer_refine`).
+.joint_placement_moves <- function(res, st, families) {
+    slots <- .joint_placement_slots(res, st, families)
+    if (!length(slots)) return(FALSE)
+    movable <- vapply(slots, function(s)
+        is.null(families[[s$family]]$hold(s, st)), logical(1))
+    any(.joint_placement_fire(res, slots, families) & movable)
 }
 
 # `refit(st, from)` reruns the fit at the call state `st` and returns its
@@ -463,17 +605,15 @@
     # pass's to take, at the mode (`.hyper_propose_at_mode()`). It fires again
     # only on a rail, which says the mode left the span it was laid on.
     floored <- stats::setNames(logical(length(slots)), labels)
+    held_floor <- function() vapply(seq_along(slots), function(i)
+        floored[[i]] && !.nl_axis_railed(out$res, slots[[i]]$label), logical(1))
     fires_now <- function(i) {
         s <- slots[[i]]
         if (floored[[i]] && !.nl_axis_railed(out$res, s$label)) return(FALSE)
         isTRUE(families[[s$family]]$fires(out$res, s))
     }
     repeat {
-        fire <- vapply(seq_along(slots), fires_now, logical(1))
-        for (f in unique(fam_of)) {
-            idx <- fam_of == f
-            if (isTRUE(families[[f]]$together) && any(fire[idx])) fire[idx] <- TRUE
-        }
+        fire <- .joint_placement_fire(out$res, slots, families, skip = held_floor())
         fired <- fired | fire
         move <- fire & movable
         if (!any(move)) break

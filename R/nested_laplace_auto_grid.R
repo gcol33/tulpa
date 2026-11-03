@@ -947,20 +947,54 @@ auto_grid_place <- function(x)
     list(vals = mw$vals[keep], w = mw$w[keep] / s, col = mw$col)
 }
 
+# Does an axis's grid fail to resolve its own posterior? `h / sd` past
+# `.NL_RECENTER$resolve_mult`, or unreadable (`.nl_axis_h_over_sd()`).
+.nl_axis_unresolved <- function(res, axis, tag) {
+    hs <- .nl_axis_h_over_sd(res, axis, tag)
+    !is.finite(hs) || hs > .nl_recenter("resolve_mult")
+}
+
+# The fit as its declared grid alone: the cells no refinement pass added
+# (`refining_axis == ""`), measured as that grid measures them. Placement asks
+# whether an axis was LAID where its posterior is, and the levels the
+# consistency pass adds answer a different question: they repair a mislaid
+# axis inside the fit, bisecting a collapsed one level by level when no mode
+# is known, so read on the refined grid a collapsed axis looks resolved and
+# is never placed. On a gaussian HSGP fit with the noise variance integrated,
+# the noise axis held all its weight on one declared node and its eight
+# bisected levels, 545 of the fit's 885 cells, read `h / sd` 1.65.
+.nl_declared_fit <- function(res) {
+    ref <- res$refining_axis
+    tg <- res$theta_grid
+    if (is.null(ref) || !any(nzchar(ref)) || !is.matrix(tg) ||
+        length(ref) != nrow(tg) || length(res$log_marginal) != nrow(tg)) {
+        return(res)
+    }
+    keep <- !nzchar(ref)
+    res$theta_grid <- tg[keep, , drop = FALSE]
+    res$log_marginal <- res$log_marginal[keep]
+    res$refining_axis <- ref[keep]
+    if (!is.null(res$log_quad)) {
+        res$log_quad <- .nl_grid_log_quad(res$theta_grid,
+                                          folded_axes = res$log_hyperprior_axes)
+    }
+    res
+}
+
 # Does a MOVABLE axis need placing on this fit? It does when it rails, or when
-# its own grid does not resolve its own posterior (`h / sd` past
-# `.NL_RECENTER$resolve_mult`, or unreadable). An axis whose heaviest level is a
-# declared point mass does not: the mode-find holds the point where it is
-# (`.nl_placement_mode()`), so a placement asked for there would pay a
-# mode-find and lay nothing. The one predicate every family of the joint
-# placement pass and the mode-find's own trigger read.
+# its own grid does not resolve its own posterior (`.nl_axis_unresolved()`),
+# both read on the grid the fit was declared on (`.nl_declared_fit()`). An axis
+# whose heaviest level is a declared point mass does not: the mode-find holds
+# the point where it is (`.nl_placement_mode()`), so a placement asked for
+# there would pay a mode-find and lay nothing. The one predicate every family
+# of the joint placement pass, the registry rescue and the mode-find's own
+# trigger read.
 .nl_axis_placement_fires <- function(res, axis, tag = "log") {
+    res <- .nl_declared_fit(res)
     mw <- .nl_axis_marginal_w(res, axis, measure = "posterior")
     if (!is.null(mw) && identical(tag, "log") &&
         mw$vals[which.max(mw$w)] <= 0) return(FALSE)
-    if (.nl_axis_railed(res, axis)) return(TRUE)
-    hs <- .nl_axis_h_over_sd(res, axis, tag)
-    !is.finite(hs) || hs > .nl_recenter("resolve_mult")
+    .nl_axis_railed(res, axis) || .nl_axis_unresolved(res, axis, tag)
 }
 
 # Every axis of a fit that is railed, as `axis:side`, whether or not any rescue
@@ -1787,16 +1821,73 @@ auto_grid_place <- function(x)
         res, .nl_axis_colname(res, .nl_axis_alias(axis, block_index, n_blocks)))
 }
 
-# The nodes a fit carried on one axis, for an axis the rescue re-crosses
-# unchanged.
+# The nodes a fit's declared grid carried on one axis (`.nl_declared_fit()`),
+# for an axis the rescue re-crosses unchanged: the levels refinement added are
+# laid again by the refit's own pass.
 .nl_rescue_axis_nodes <- function(res, axis) {
-    tg <- res$theta_grid
+    tg <- .nl_declared_fit(res)$theta_grid
     if (is.null(tg)) return(NULL)
     if (!is.matrix(tg)) return(sort(unique(as.numeric(tg))))
     if (is.na(axis)) return(NULL)
     j <- match(axis, colnames(tg) %||% character(0))
     if (is.na(j)) return(NULL)
     sort(unique(as.numeric(tg[, j])))
+}
+
+# Does the registry rescue fire on `res`, and on which slots: `fire` and `sel`,
+# the indices of `slots` a firing pass re-places; `n_blocks` is the block
+# count of a multi-block prior, 0 for one block. Every policy reads the
+# declared grid (`.nl_declared_fit()`), as `.nl_axis_placement_fires()` does.
+#
+#   "rail"     fire on a railed axis, and move the railed axes alone -- the
+#              placement half alone.
+#   "resolve"  fire on a railed OR an under-resolved axis, and move all of
+#              them: the stencil and the refit are paid once per fit, not once
+#              per axis, so the question the trigger asks is whether the FIT's
+#              grid is worth re-placing at all.
+#   "always"   fire unconditionally, and move all of them.
+.nl_registry_fire <- function(res, slots, tags, policy, n_blocks = 0L) {
+    bidx <- function(s) if (n_blocks > 0L) s$block else NULL
+    alias_of <- function(s) .nl_axis_alias(s$axis, bidx(s), n_blocks)
+    declared <- .nl_declared_fit(res)
+    railed <- vapply(slots, function(s) {
+        .nl_axis_railed(declared, s$axis, bidx(s), n_blocks)
+    }, logical(1))
+    coarse <- if (!identical(policy, "resolve")) rep(FALSE, length(slots)) else
+        vapply(slots, function(s) {
+            nm <- .nl_axis_colname(declared, alias_of(s))
+            j  <- .nl_axis_index(names(tags), alias_of(s), tags)
+            is.na(j) || .nl_axis_unresolved(declared, nm, tags[[j]])
+        }, logical(1))
+    fire <- switch(policy,
+                   always  = TRUE,
+                   resolve = any(railed) || any(coarse),
+                   any(railed))
+    list(fire = fire,
+         sel = if (identical(policy, "rail")) which(railed) else seq_along(slots))
+}
+
+# Would the registry rescue move an axis of `res`: is the prior in its scope,
+# does the policy fire, and is a slot it would re-place one the caller left
+# movable? Read before the fit refines its grid (`tulpa.nl_defer_refine`).
+.nl_registry_rescue_moves <- function(res, type, prior, auto = character(0),
+                                      policy = .nl_recenter_mode(NULL),
+                                      multi = FALSE) {
+    if (identical(policy, "off")) return(FALSE)
+    blocks <- if (isTRUE(multi)) prior else {
+        b <- if (is.list(prior)) prior else list()
+        if (is.null(b$type)) b$type <- type
+        list(b)
+    }
+    slots <- .nl_registry_axis_slots(blocks)
+    tags  <- .nl_registry_axis_tags(res, blocks, multi)
+    if (!length(slots) || is.null(tags) || anyNA(tags)) return(FALSE)
+    pinned <- vapply(slots, function(s) !is.null(.nl_slot_hold(
+        blocks, s, .nl_auto_fields_at(auto, if (isTRUE(multi)) s$block))),
+        logical(1))
+    fr <- .nl_registry_fire(res, slots, tags, policy,
+                            if (isTRUE(multi)) length(blocks) else 0L)
+    fr$fire && any(!pinned[fr$sel])
 }
 
 # Standalone (non-joint) `tulpa_nested_laplace()` registry rescue -- the
@@ -1880,32 +1971,10 @@ auto_grid_place <- function(x)
         # Every policy shares the placement mode-find, the `mode +/- span *
         # sd` node layout, the provenance gate and the attempt budget; they
         # differ only in WHEN the pass fires and, once it does, in HOW MANY of
-        # the family's axes it re-places.
-        #
-        #   "rail"     fire on a railed axis, and move the railed axes alone --
-        #              the placement half alone.
-        #   "resolve"  fire on a railed OR an under-resolved axis, and move all
-        #              of them: the stencil and the refit are paid once per fit,
-        #              not once per axis, so the question the trigger asks is
-        #              whether the FIT's grid is worth re-placing at all.
-        #   "always"   fire unconditionally, and move all of them.
-        railed <- vapply(slots, function(s) {
-            .nl_axis_railed(res, s$axis, bidx(s), n_blocks)
-        }, logical(1))
-        coarse <- if (!identical(policy, "resolve")) rep(FALSE, length(slots)) else
-            vapply(slots, function(s) {
-                nm <- .nl_axis_colname(res, alias_of(s))
-                j  <- .nl_axis_index(names(tags), alias_of(s), tags)
-                hs <- if (is.na(j)) NA_real_ else
-                    .nl_axis_h_over_sd(res, nm, tags[[j]])
-                !is.finite(hs) || hs > .nl_recenter("resolve_mult")
-            }, logical(1))
-        fire <- switch(policy,
-                       always  = TRUE,
-                       resolve = any(railed) || any(coarse),
-                       any(railed))
-        if (!fire) break
-        sel <- if (identical(policy, "rail")) which(railed) else seq_along(slots)
+        # the family's axes it re-places (`.nl_registry_fire()`).
+        fr <- .nl_registry_fire(res, slots, tags, policy, n_blocks)
+        if (!fr$fire) break
+        sel <- fr$sel
         movable <- sel[!pinned[sel]]
         if (!length(movable)) {
             reason <- .nl_reduce_decline(held[sel])

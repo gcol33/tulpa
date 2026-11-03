@@ -679,7 +679,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       .nl_posterior_moments_multi(refined, refined$blocks, refined$axis_offsets,
                                   refined$theta_grid, within = within_cell)
     }
-    res <- solve_grid_multi(prior)
+    # The first solve leaves its grid unrefined when the placement pass below
+    # will lay it again (`.nl_refine_deferred()`).
+    recenter_policy <- .nl_recenter_mode(control$auto_recenter)
+    res <- .nl_with_refine_deferred(
+      function(r) .nl_registry_rescue_moves(r, NULL, prior, .prov$auto,
+                                            recenter_policy, multi = TRUE),
+      solve_grid_multi(prior))
     tm$mark("grid")
     if (isTRUE(keep_grid_hessians)) {
       res <- .nl_attach_grid_hessians(res, p_fixed, keep_joint_prec)
@@ -696,21 +702,28 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # own fields and its neighbours keep theirs; a prior whose blocks the
     # family table does not cover declines with a reason rather than leaving
     # the fit with no placement record at all.
-    multi_rescue <- .nl_registry_grid_rescue(
-      res, NULL, prior,
-      refit = function(prior_i) {
-        r <- solve_grid_multi(prior_i)
-        if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed, keep_joint_prec)
-        .nl_attach_pareto_k(r, prior_i, cargs_lm, "multi", NULL,
-                            likelihood, k_samples, compute = FALSE,
-                            tail_points = k_tail_points)
-      },
+    refit_multi <- function(prior_i) {
+      r <- solve_grid_multi(prior_i)
+      if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed, keep_joint_prec)
+      .nl_attach_pareto_k(r, prior_i, cargs_lm, "multi", NULL,
+                          likelihood, k_samples, compute = FALSE,
+                          tail_points = k_tail_points)
+    }
+    rescue_multi <- function(res_i) .nl_registry_grid_rescue(
+      res_i, NULL, prior,
+      refit = refit_multi,
       refit_log_marginal = function(prior_i, theta_mat) {
         .nl_dispatch_multi(cargs_lm, prior_i, likelihood = likelihood,
                            theta_grid_override = theta_mat)$log_marginal
       },
       auto = .prov$auto, multi = TRUE,
-      policy = .nl_recenter_mode(control$auto_recenter))
+      policy = recenter_policy)
+    multi_rescue <- rescue_multi(res)
+    # A first solve the pass could not lay again still holds the grid it left
+    # unrefined: it is solved again with its refinement and read as any other.
+    if (isTRUE(multi_rescue$res$outer_refine_deferred)) {
+      multi_rescue <- rescue_multi(refit_multi(prior))
+    }
     res   <- multi_rescue$res
     prior <- multi_rescue$prior
     res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
@@ -793,7 +806,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       max_passes = adaptive_grid_max_passes,
       user = control$axis_refine)
   }
-  res <- solve_grid(prior)
+  # The first solve leaves its grid unrefined when the placement pass below
+  # will lay it again (`.nl_refine_deferred()`).
+  recenter_policy <- .nl_recenter_mode(control$auto_recenter)
+  res <- .nl_with_refine_deferred(
+    function(r) .nl_registry_rescue_moves(r, type, prior, .prov$auto,
+                                          recenter_policy),
+    solve_grid(prior))
   tm$mark("grid")
 
   # Integrate exp(log_marginal) over the outer grid. `log_marginal` is the
@@ -827,30 +846,37 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # named and neither marked with `auto_grid()` nor equal to the engine's own
   # default axis). Which families are covered, and why each of the rest
   # declines, is `.NL_REGISTRY_AXIS_FIELD`.
-  registry_rescue <- .nl_registry_grid_rescue(
-    res, type, prior,
-    refit = function(prior_i) {
-      r <- solve_grid(prior_i)
-      r <- .nl_attach_outer_integration(r, "outer grid")
-      r <- .nl_posterior_moments(r, type, within = within_cell)
-      if (isTRUE(keep_grid_hessians)) {
-        r <- .nl_attach_grid_hessians(
-          r, p_fixed, keep_joint_prec,
-          var_cols = .nl_role_cols(prior_i, NULL, r$Q_csc_n, "temporal"),
-          units = list(spatial = .nl_spatial_field_load(prior_i, NULL, r$Q_csc_n,
-                                           .nl_theta_matrix(r))))
-      }
-      .nl_attach_pareto_k(r, prior_i, cargs_lm, "single", type, NULL,
-                          k_samples, compute = FALSE,
-                          tail_points = k_tail_points)
-    },
+  refit_single <- function(prior_i) {
+    r <- solve_grid(prior_i)
+    r <- .nl_attach_outer_integration(r, "outer grid")
+    r <- .nl_posterior_moments(r, type, within = within_cell)
+    if (isTRUE(keep_grid_hessians)) {
+      r <- .nl_attach_grid_hessians(
+        r, p_fixed, keep_joint_prec,
+        var_cols = .nl_role_cols(prior_i, NULL, r$Q_csc_n, "temporal"),
+        units = list(spatial = .nl_spatial_field_load(prior_i, NULL, r$Q_csc_n,
+                                         .nl_theta_matrix(r))))
+    }
+    .nl_attach_pareto_k(r, prior_i, cargs_lm, "single", type, NULL,
+                        k_samples, compute = FALSE,
+                        tail_points = k_tail_points)
+  }
+  rescue_single <- function(res_i) .nl_registry_grid_rescue(
+    res_i, type, prior,
+    refit = refit_single,
     refit_log_marginal = function(prior_i, theta_mat) {
       blk2 <- .nl_registry_write_theta(
         list(prior_i), theta_mat, colnames(theta_mat))[[1L]]
       .nl_dispatch(type, cargs_lm, blk2, prior_i)$log_marginal
     },
     auto = .prov$auto,
-    policy = .nl_recenter_mode(control$auto_recenter))
+    policy = recenter_policy)
+  registry_rescue <- rescue_single(res)
+  # A first solve the pass could not lay again still holds the grid it left
+  # unrefined: it is solved again with its refinement and read as any other.
+  if (isTRUE(registry_rescue$res$outer_refine_deferred)) {
+    registry_rescue <- rescue_single(refit_single(prior))
+  }
   res   <- registry_rescue$res
   prior <- registry_rescue$prior
   res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"

@@ -120,3 +120,76 @@ test_that("coverage of beta and sigma at noise SD 0.3 and 3 holds over seeds", {
     expect_gte(mean(cov[, "s"]), 0.85, label = paste("sigma at", s_eps))
   }
 })
+
+# gcol33/tulpa#1122: a gaussian HSGP fit with phi left out routes to the joint
+# door with phi as an axis. The noise variance and the field's variance and
+# lengthscale each held their weight on one or two declared nodes; read on
+# that declared grid they fire the placement pass, which lays all three at
+# the outer mode, so the consistency pass does not bisect them level by level
+# (885 cells before, 225 of them declared).
+.hsgp_phi_fixture <- function() {
+  set.seed(11)
+  n <- 200
+  d <- data.frame(lon = stats::runif(n), lat = stats::runif(n), x = stats::rnorm(n))
+  D <- as.matrix(stats::dist(d[, c("lon", "lat")]))
+  w <- as.numeric(t(chol(0.5 * exp(-D / 0.3) + diag(1e-8, n))) %*% stats::rnorm(n))
+  d$y <- 1 + 0.5 * d$x + w + stats::rnorm(n, 0, 0.4)
+  d
+}
+
+test_that("a collapsed noise axis and field axes are placed, not bisected", {
+  skip_on_cran()
+  d <- .hsgp_phi_fixture()
+  sp <- spatial_gp(~ lon + lat, approx = "hsgp", m = 6)
+  fit <- suppressWarnings(tulpa(y ~ x, data = d, family = "gaussian",
+                                spatial = sp, mode = "auto",
+                                control = list(diagnose_k = FALSE)))
+  expect_identical(fit$outer_grid_placement, "auto_recentered")
+  expect_setequal(fit$outer_grid_recenter_axes,
+                  c("b1.sigma2", "b1.lengthscale", "phi_y"))
+  expect_lt(nrow(fit$theta_grid), 450L)
+  expect_false(isTRUE(fit$outer_refine_deferred))
+})
+
+test_that("the placed HSGP noise and field axes read a dense grid's interval ends", {
+  skip_if_not_slow()
+  d <- .hsgp_phi_fixture()
+  sp <- spatial_gp(~ lon + lat, approx = "hsgp", m = 6)
+  calls <- list()
+  trace("tulpa_nested_laplace_joint", where = asNamespace("tulpa"), print = FALSE,
+        tracer = quote(calls[[length(calls) + 1L]] <<- mget(
+          c("responses", "prior", "copy", "phi_grid", "prior_sigma",
+            "hyperprior", "control"))))
+  fit <- suppressWarnings(tulpa(y ~ x, data = d, family = "gaussian",
+                                spatial = sp, mode = "auto",
+                                control = list(diagnose_k = FALSE)))
+  untrace("tulpa_nested_laplace_joint", where = asNamespace("tulpa"))
+  a <- calls[[length(calls)]]
+  ls <- function(lo, hi, k) exp(seq(log(lo), log(hi), length.out = k))
+  eg <- expand.grid(s = ls(0.05, 30, 32), l = ls(0.15, 10, 32))
+  pr <- a$prior
+  pr[[1]]$sigma2_grid <- eg$s
+  pr[[1]]$lengthscale_grid <- eg$l
+  dense <- suppressWarnings(tulpa_nested_laplace_joint(
+    a$responses, pr, copy = a$copy, phi_grid = list(y = ls(0.13, 0.42, 20)),
+    prior_sigma = a$prior_sigma, hyperprior = a$hyperprior,
+    control = utils::modifyList(a$control, list(
+      axis_refine = "none", var_of_means_consistency = FALSE,
+      auto_recenter = FALSE, prune = FALSE, store_Q = FALSE))))
+  tg <- as.matrix(dense$theta_grid)
+  w <- exp(dense$log_marginal + dense$log_quad - max(dense$log_marginal + dense$log_quad))
+  w <- w / sum(w)
+  got <- summary(fit)$hyperparameters
+  for (j in seq_len(ncol(tg))) {
+    v <- log(tg[, j]); m <- tapply(w, v, sum); u <- as.numeric(names(m))
+    h <- u[2] - u[1]
+    q <- stats::approx(c(0, cumsum(m)), c(u - h / 2, max(u) + h / 2),
+                       xout = c(0.025, 0.975), ties = "ordered")$y
+    expect_lt(max(m[1], m[length(m)]), 1e-3)
+    # summary() reports a spatial length in the coordinates' own units; the
+    # grid carries it on the standardized coordinates the kernel reads.
+    q <- q + log(tulpa:::.hyper_axis_data_scale(fit, colnames(tg)[j]))
+    ref <- log(unlist(got[got$parameter == colnames(tg)[j], c("ci_lo", "ci_hi")]))
+    expect_lt(max(abs(ref - q)), 0.06)
+  }
+})

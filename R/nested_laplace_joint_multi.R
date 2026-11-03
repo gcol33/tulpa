@@ -2176,7 +2176,8 @@
     grid_lm     <- res$log_marginal
     grid_extras <- .joint_init_extras_from_res(res)
     n_added <- 0L
-    if (refine_on) {
+    deferred <- refine_on && .nl_refine_deferred(res, joint_grid, grid_lm)
+    if (refine_on && !deferred) {
         refine_specs <- .joint_multi_measure_specs(
             joint_grid, hp_base$axes, joint_grid, axis_offsets, B,
             fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass,
@@ -2214,6 +2215,7 @@
     }
     res$refining_axis <- refining_axis
     res$nonconverged_resolve <- rs$info
+    res$outer_refine_deferred <- deferred
     tm$mark("grid")
 
     res$theta_grid   <- joint_grid

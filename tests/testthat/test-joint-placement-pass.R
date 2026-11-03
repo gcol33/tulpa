@@ -359,3 +359,33 @@ test_that("a collapsed axis with a known mode is resolved without bisecting to i
     expect_gt(calls, 1L)
     expect_lt(blind$info$ess_after, .nl_diag("axis_sd_ess"))
 })
+
+# --- the trigger reads the declared grid -------------------------------------
+
+# A fit whose noise axis held all its weight on one declared node, and whose
+# consistency pass then bisected the axis around it: on the refined grid the
+# axis reads resolved, on the grid it was laid on it is collapsed.
+.pp_refined_stub <- function() {
+    decl <- exp(seq(log(0.01), log(2), length.out = 9))
+    added <- exp(log(0.25) + 0.08 * c(-4, -3, -2, -1, 1, 2, 3, 4))
+    v <- c(decl, added)
+    list(theta_grid = matrix(v, ncol = 1L, dimnames = list(NULL, "phi_y")),
+         log_marginal = -0.5 * ((log(v) - log(0.25)) / 0.11)^2,
+         refining_axis = c(rep("", length(decl)), rep("phi_y", length(added))))
+}
+
+test_that("placement fires on an axis collapsed on its declared grid", {
+    res <- .pp_refined_stub()
+    refined <- tulpa:::.nl_axis_h_over_sd(res, "phi_y", "log")
+    expect_lt(refined, tulpa:::.nl_recenter("resolve_mult"))
+    expect_true(tulpa:::.nl_axis_placement_fires(res, "phi_y", "log"))
+    declared <- tulpa:::.nl_declared_fit(res)
+    expect_identical(nrow(declared$theta_grid), 9L)
+    expect_true(all(!nzchar(declared$refining_axis)))
+    expect_true(tulpa:::.nl_axis_unresolved(declared, "phi_y", "log"))
+})
+
+test_that("a fit no pass refined is its own declared grid", {
+    res <- .pp_alpha_stub()
+    expect_identical(tulpa:::.nl_declared_fit(res), res)
+})
