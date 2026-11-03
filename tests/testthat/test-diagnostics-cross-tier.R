@@ -126,21 +126,26 @@ test_that("temporal_corr covers multiscale, tvc and a latent AR(p) block", {
   fit_ms <- tulpa(y ~ x, data = Tm, family = "poisson", mode = "hmc",
                   control = ctl, temporal = ms_spec)
   tc_ms <- temporal_corr(fit_ms)
-  expect_setequal(rownames(tc_ms),
-                  c("sigma_trend", "sigma_seasonal", "sigma_short", "rho_short"))
+  ms_rows <- c("sigma[trend]", "sigma[seasonal]", "sigma[short_term]",
+               "rho[short_term]")
+  expect_setequal(rownames(tc_ms), ms_rows)
   expect_true(all(is.finite(as.matrix(tc_ms))))
-  expect_true(tc_ms["rho_short", "mean"] >= -1 && tc_ms["rho_short", "mean"] <= 1)
+  expect_true(tc_ms["rho[short_term]", "mean"] >= -1 &&
+                tc_ms["rho[short_term]", "mean"] <= 1)
 
   # The default route fits the same field as one nested-Laplace block per
-  # component, and reports each block's own hyperparameters.
+  # component, and reports the same rows on the same (SD) scale.
   fit_ms_nl <- tulpa(y ~ x, data = Tm, family = "poisson",
                      control = list(progress = FALSE), temporal = ms_spec)
   expect_identical(fit_ms_nl$backend, "nested_laplace")
   tc_nl <- temporal_corr(fit_ms_nl)
-  expect_setequal(rownames(tc_nl),
-                  c("precision[trend]", "precision[seasonal]",
-                    "precision[short_term]", "rho_ar1"))
+  expect_setequal(rownames(tc_nl), ms_rows)
   expect_true(all(is.finite(as.matrix(tc_nl))))
+  # The SD rows are the precision axes read per cell: 1 / sqrt(tau).
+  tg <- fit_ms_nl$theta_grid
+  w <- fit_ms_nl$weights / sum(fit_ms_nl$weights)
+  expect_equal(tc_nl["sigma[trend]", "mean"], sum(w / sqrt(tg[, "b1.tau"])),
+               tolerance = 1e-10)
 
   fit_tvc <- tulpa(y ~ x, data = Tm, family = "poisson", mode = "hmc", control = ctl,
                    temporal = temporal_tvc("tidx", terms = "x", structure = "rw1"))

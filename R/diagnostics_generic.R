@@ -365,15 +365,26 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
   sigma       = list(name = "sigma_temporal", fn = .hyper_nat$identity),
   lengthscale = list(name = "lengthscale",    fn = .hyper_nat$identity)
 )
+# A multi-scale temporal field states its priors on each component's SD, and
+# both routes report it there: `sigma[<component>]` for every component and
+# `rho[short_term]` for an AR1 short-term one, whichever axis (an RW / AR1
+# block's precision, an iid block's SD) the nested grid laid.
+.MS_TEMPORAL_HYPER_TRANSFORM <- list(
+  tau   = list(name = "sigma", fn = .hyper_nat$sigma_from_precision,
+               domain = "positive"),
+  sigma = list(name = "sigma", fn = .hyper_nat$identity),
+  rho   = list(name = "rho",   fn = .hyper_nat$identity)
+)
 
 # Weighted per-axis mean / sd / `probs`-quantile summary of a nested-Laplace
 # fit's hyperparameter posterior, read from the outer grid + weights. With
 # `transform` (an axis-name -> list(name, fn) map) each axis is mapped to its
 # interpretable quantity PER CELL before the weighted summary, and the row is
-# renamed; axes absent from the map are summarized raw. NULL when the grid is
-# not retained.
+# renamed; axes absent from the map are summarized raw. Two rows reporting the
+# same quantity are tagged with their block's name, and with `tag_blocks` every
+# row is. NULL when the grid is not retained.
 .nested_hyper_summary <- function(object, probs, transform = NULL,
-                                  keep_role = NULL) {
+                                  keep_role = NULL, tag_blocks = FALSE) {
   tg <- object$theta_grid
   w  <- object$weights
   if (is.null(tg) || is.null(w)) return(NULL)
@@ -451,7 +462,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
   # spatial() / temporal() field, each with its own `sigma`) are told apart by
   # the block they came from, not by a positional suffix.
   nms <- vapply(rows, `[[`, character(1), "name")
-  dup <- nms %in% nms[duplicated(nms)]
+  dup <- if (tag_blocks) rep(TRUE, length(nms)) else nms %in% nms[duplicated(nms)]
   if (any(dup)) {
     tag <- vapply(keep, function(j) {
       b <- amap$block[j]
@@ -581,14 +592,16 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
   # correlation as `logit_rho_car`. The BYM2 SD and the proper-CAR correlation
   # were missing from this table, so those fits reported one hyperparameter of
   # two (gcol33/tulpa#906).
+  # A multi-scale field's rows carry the scale as a tag, `sigma[local]`, the
+  # label the nested route gives the same axis.
   patterns <- c(
-    range = "^(log_phi_gp|log_phi_gp_local|phi_gp)$",
+    range = "^(log_phi_gp|phi_gp)$",
     sigma = "^(log_sigma2_gp|log_sigma_bym2|log_sigma_spatial|log_tau_spatial)$",
     rho   = "^(logit_rho_bym2|logit_rho_car)$",
-    sigma_local  = "^(log_sigma2_gp_local)$",
-    sigma_regional = "^(log_sigma2_gp_regional)$",
-    range_local  = "^(log_phi_gp_local)$",
-    range_regional = "^(log_phi_gp_regional)$",
+    "sigma[local]"    = "^(log_sigma2_gp_local)$",
+    "sigma[regional]" = "^(log_sigma2_gp_regional)$",
+    "range[local]"    = "^(log_phi_gp_local)$",
+    "range[regional]" = "^(log_phi_gp_regional)$",
     # HSGP squared-exponential basis: src/tulpa_priors_hsgp.h.
     sigma_hsgp = "^log_sigma2_hsgp$",
     range_hsgp = "^log_lengthscale_hsgp$",
@@ -612,8 +625,7 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
     } else if (grepl("^log_phi_gp", label)) {
       # phi is the range: every kernel is exp(-d / phi), so correlation decays
       # to ~0.05 at d = -phi * log(0.05) ~= 3 * phi.
-      list(vals = .hyper_nat$range_from_lengthscale(exp(raw)),
-           row = sub("phi", "range", nm))
+      list(vals = .hyper_nat$range_from_lengthscale(exp(raw)), row = nm)
     } else if (grepl("^log_sigma2", label)) {
       list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = nm)
     } else if (grepl("^log_tau", label)) {
@@ -718,12 +730,15 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
 #' }
 #' @export
 temporal_corr <- function(object, probs = c(0.025, 0.975)) {
+  multiscale <- inherits(object$temporal, "tulpa_temporal_multiscale")
   # Nested-Laplace fits carry the hyperparameter posterior on the outer grid,
   # not as draw columns; summarize the grid for a pure-temporal nested fit.
   if (!is.null(object$theta_grid)) {
     s <- .nested_hyper_summary(object, probs,
-                               transform = .TEMPORAL_HYPER_TRANSFORM,
-                               keep_role = "temporal")
+                               transform = if (multiscale)
+                                 .MS_TEMPORAL_HYPER_TRANSFORM
+                               else .TEMPORAL_HYPER_TRANSFORM,
+                               keep_role = "temporal", tag_blocks = multiscale)
     if (!is.null(s)) return(s)
     # latent(temporal_ar2()) / latent(temporal_ar()): a user-defined tgmrf
     # block tagged tulpa_temporal_latent_block (R/temporal_ar2.R) rather than
@@ -737,11 +752,12 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
     rho   = "^logit_rho_ar1$",
     sigma = "^log_sigma2_temporal_gp$",
     lengthscale = "^logit_phi_temporal_gp$",
-    # temporal_multiscale(): src/tulpa_priors_mstemporal.h.
-    sigma_trend    = "^log_sigma2_trend$",
-    sigma_seasonal = "^log_sigma2_seasonal$",
-    sigma_short    = "^log_sigma2_short$",
-    rho_short      = "^logit_rho_short$",
+    # temporal_multiscale(): src/tulpa_priors_mstemporal.h, reported as the
+    # nested route reports it (.MS_TEMPORAL_HYPER_TRANSFORM).
+    "sigma[trend]"      = "^log_sigma2_trend$",
+    "sigma[seasonal]"   = "^log_sigma2_seasonal$",
+    "sigma[short_term]" = "^log_sigma2_short$",
+    "rho[short_term]"   = "^logit_rho_short$",
     # temporal_tvc(): src/tulpa_priors_tvc.h. The discrete structures sample a
     # log-precision (+ AR1's correlation); a GP-evolving coefficient samples an
     # amplitude and a lengthscale per coefficient instead (gcol33/tulpa#847).
@@ -765,10 +781,10 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
       list(vals = .gp_phi_from_logit(raw, object$temporal), row = nm)
     } else if (grepl("^log_sigma2_(trend|seasonal|short)$", label)) {
       list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = nm)
-    } else if (nm == "rho_short") {
+    } else if (identical(label, "logit_rho_short")) {
       # rho = 2 * invlogit(logit_rho_short) - 1, mapped to (-1, 1)
       # (src/tulpa_priors_mstemporal.h), not the (0, 1) of logit_rho_ar1 above.
-      list(vals = 2 / (1 + exp(-raw)) - 1, row = "rho_short")
+      list(vals = 2 / (1 + exp(-raw)) - 1, row = nm)
     } else if (grepl("^log_tau_tvc", label)) {
       list(vals = exp(raw), row = nm)                   # log_tau -> tau (precision)
     } else if (grepl("^logit_rho_tvc", label)) {

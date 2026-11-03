@@ -163,7 +163,8 @@ test_that("nested multi-scale temporal fit recovers each component", {
   expect_gt(cor(colMeans(tp$draws$trend), s$trend), 0.95)
   expect_gt(cor(colMeans(tp$draws$short_term), s$short), 0.4)
   tc <- temporal_corr(fit)
-  expect_true(all(c("precision[trend]", "precision[short_term]") %in% rownames(tc)))
+  expect_true(all(c("sigma[trend]", "sigma[short_term]", "rho[short_term]") %in%
+                    rownames(tc)))
 })
 
 test_that("nested multi-scale temporal intervals match the model's dense grid", {
