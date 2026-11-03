@@ -84,8 +84,12 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                 T log_ls = params[layout.log_phi_svc_start + j];
                 T ls_j = safe_exp(log_ls);
 
-                // LogNormal(0,1) on lengthscale
-                log_post = log_post - T(0.5) * log_ls * log_ls;
+                // PC prior on the lengthscale as a range in two dimensions,
+                // P(ell < U) = alpha, the prior an HSGP field's lengthscale
+                // carries on every route; sampled on log(ell).
+                log_post = log_post + log_prior_range_pc_at_log(
+                    log_ls, data.svc_phi_prior_U, data.svc_phi_prior_alpha)
+                    + log_ls;
 
                 // N(0, I) prior on the basis coefficients beta_j
                 const T* beta_j = &params[layout.svc_w_start + j * m_total];
@@ -188,9 +192,8 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
 
 // The constant compute_svc_prior leaves out: per term, the half-Cauchy
 // normalizer of the marginal SD, and -0.5 log(2 pi) for each N(0, 1) the term
-// carries -- the Gaussian on log(lengthscale) and the basis coefficients of an
-// HSGP term, the z of a non-centered NNGP term. The PC range prior and the
-// centered NNGP density are normalized.
+// carries -- the basis coefficients of an HSGP term, the z of a non-centered
+// NNGP term. The PC range prior and the centered NNGP density are normalized.
 inline double svc_prior_log_normalizer(const ModelData& data,
                                        const ParamLayout& layout) {
     if (!layout.has_svc || data.svc_data.n_svc <= 0) return 0.0;
@@ -199,7 +202,7 @@ inline double svc_prior_log_normalizer(const ModelData& data,
     double c = n_svc * math::log_prior_half_cauchy_log_normalizer(
         data.svc_sigma2_prior_scale);
     if (data.svc_is_hsgp) {
-        c += n_svc * (data.svc_hsgp_data.m_total + 1) * unit_normal;
+        c += n_svc * data.svc_hsgp_data.m_total * unit_normal;
     } else if (data.svc_parameterization == 1) {
         c += static_cast<double>(n_svc) * data.svc_data.n_obs * unit_normal;
     }

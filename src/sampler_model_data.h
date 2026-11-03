@@ -67,6 +67,18 @@ inline void read_pc_anchors(const Rcpp::List& spec,
     }
 }
 
+// read_pc_anchors() for a pair with no default: the spec must carry both.
+inline void require_pc_anchors(const Rcpp::List& spec,
+                               const char* key_U, const char* key_alpha,
+                               double& U, double& alpha, const char* what) {
+    if (!spec.containsElementNamed(key_U) ||
+        !spec.containsElementNamed(key_alpha)) {
+        Rcpp::stop("build_sampler_model_inputs: the %s prior needs `%s` and "
+                   "`%s` on the spec.", what, key_U, key_alpha);
+    }
+    read_pc_anchors(spec, key_U, key_alpha, U, alpha, what);
+}
+
 // The per-observation field-node map for a sampler-side GP spec is 0-based:
 // the R layer passes `obs_to_loc - 1`, and the log-posterior reads
 // `w[obs_to_loc[i]]` with no bound of its own.

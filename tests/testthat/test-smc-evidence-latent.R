@@ -296,12 +296,18 @@ test_that("the GP / HSGP / SVC / TVC normalizers make the prior a density", {
     }, tol = 1e-6, info = paste("multiscale", smp))
   }
 
-  # HSGP
+  # HSGP: the lengthscale carries the PC range prior the nested block's
+  # default hyperprior puts on its `lengthscale` axis, at the same anchor.
   v <- validate_hsgp(spatial_gp(~ lon + lat, approx = "hsgp", m = 3), d)
   sp <- tulpa:::.hsgp_sampler_spec(v)
+  nl_anchor <- tulpa:::.hp_range_anchor(tulpa:::.spatial_spec_to_nl_prior(v))
+  expect_equal(c(sp$lengthscale_prior_U, sp$lengthscale_prior_alpha),
+               nl_anchor$anchor)
+  expect_identical(nl_anchor$dim, 2)
   check(list(spatial_spec = sp), function(r) {
     lp_pc_log_sigma2(r[["log_sigma2_hsgp"]], 1, 0.01) +
-      dnorm(r[["log_lengthscale_hsgp"]], log = TRUE) +
+      lp_pc_log_range(r[["log_lengthscale_hsgp"]], sp$lengthscale_prior_U,
+                      sp$lengthscale_prior_alpha) +
       sum(dnorm(r[grep("^hsgp_beta", names(r))], log = TRUE))
   }, info = "hsgp")
 
@@ -314,10 +320,13 @@ test_that("the GP / HSGP / SVC / TVC normalizers make the prior a density", {
       ls2 <- r[["log_sigma2_svc[1]"]]
       lp <- log(2 / pi) - log1p(exp(ls2)) - log(2) + ls2 / 2 +
         sum(dnorm(r[grep("^svc_w", names(r))], log = TRUE))
-      lp + if (approx == "nngp")
-        lp_pc_log_range(r[["log_phi_svc[1]"]], sp$phi_prior_U, sp$phi_prior_alpha)
-      else dnorm(r[["log_phi_svc[1]"]], log = TRUE)
+      lp + lp_pc_log_range(r[["log_phi_svc[1]"]], sp$phi_prior_U,
+                           sp$phi_prior_alpha)
     }, info = paste("svc", approx))
+    if (approx == "hsgp") {
+      expect_equal(c(sp$phi_prior_U, sp$phi_prior_alpha),
+                   tulpa:::.hsgp_lengthscale_prior(v$coords_matrix))
+    }
   }
 
   # TVC: RW1, AR1 and GP coefficients over three instants

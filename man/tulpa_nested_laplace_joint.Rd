@@ -174,7 +174,10 @@ given either by its basis (\code{phi}, a list of \code{n_arms} \verb{N_k x m_tot
 matrices, with \code{eigenvalues}, \code{m_total} and \code{n_obs_per_arm}) or by its
 coordinates: \code{coords}, a list of \code{n_arms} \verb{N_k x 2} coordinate matrices
 (\code{NULL} for an arm the field does not reach), \code{m} basis functions per
-dimension (default \code{6}) and the boundary factor \code{c} (default \code{1.5}). Given
+dimension and the boundary factor \code{c}. Either left unset is chosen from
+the data by the rule and the refit loop \code{\link[=spatial_gp]{spatial_gp()}} describes, over the
+pooled coordinates and the block's lengthscale posterior; the fit records
+the bases it went through as \code{hsgp_basis} (one such block). Given
 by its coordinates, the basis is built on the domain the pooled
 coordinates imply (the rule of \code{\link[=spatial_gp]{spatial_gp()}}'s \code{approx = "hsgp"}) and the
 fit keeps that builder, so \code{\link[stats:predict]{stats::predict()}} rebuilds the basis at new

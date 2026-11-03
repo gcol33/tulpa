@@ -189,11 +189,12 @@
 #'   only. Default 10 (clamped to `nrow(coords) - 1`).
 #' @param cov_type Integer NNGP covariance code (`spatial_type = "nngp"` only):
 #'   0 = exponential, 1 = Matern 3/2, 2 = Matern 5/2 (default), 3 = Gaussian.
-#' @param hsgp_m,hsgp_c Hilbert-space GP basis size (per dimension, default 6)
-#'   and boundary factor (default 1.5), `spatial_type = "hsgp"` only -- the
-#'   parameterisation of `spatial_gp(approx = "hsgp")`. They are held as
-#'   given here; see [spatial_gp()] for the lengthscale window a basis
-#'   represents.
+#' @param hsgp_m,hsgp_c Hilbert-space GP basis size per dimension (3 to 50)
+#'   and boundary factor (`>= 1`), `spatial_type = "hsgp"` only -- the
+#'   parameterisation of `spatial_gp(approx = "hsgp")`. A value given is held
+#'   as given; `NULL` (default) leaves it to the data by the rule and the
+#'   refit loop [spatial_gp()] describes, and the fit records the bases it
+#'   went through as `hsgp_basis`.
 #' @param control A list of numerical / grid knobs: `n_grid_spatial`,
 #'   `n_grid_temporal` (default 4 each), `n_grid_rho` (ar1 only, default 3),
 #'   `tau_lower` / `tau_upper` (icar / car_proper precision grid bounds,
@@ -302,12 +303,34 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
                           hyperprior = c("proper", "flat"),
                           control = list(),
                           coords = NULL, nn = 10L, cov_type = 2L,
-                          hsgp_m = 6L, hsgp_c = 1.5) {
+                          hsgp_m = NULL, hsgp_c = NULL) {
   # Every other nested door checks its control keys; this one did not, so a
   # misspelling (`rho_spatail`, `n_thread`) was accepted in silence and the fit
   # ran at the default (gcol33/tulpa#673).
   tulpa_check_control(control, .CONTROL_KEYS$st_nested, "fit_st_nested")
   spatial_type  <- match.arg(spatial_type)
+  if (spatial_type == "hsgp" && (is.null(hsgp_m) || is.null(hsgp_c))) {
+    # A basis left to the data: the fit below runs at a given basis, through
+    # the HSGP basis loop that sizes it.
+    if (is.null(coords)) {
+      stop("`coords` is required for spatial_type = 'hsgp' (an N x 2 matrix, ",
+           "one row per observation).", call. = FALSE)
+    }
+    cm <- .coords_2col(as.matrix(coords), "fit_st_nested(spatial_type = 'hsgp')")
+    spec <- .hsgp_basis_init(list(m = .hsgp_check_m(hsgp_m, "hsgp_m"),
+                                  c = .hsgp_check_c(hsgp_c, "hsgp_c")),
+                             cm, .hsgp_prior_lengthscale(cm), "c",
+                             "fit_st_nested(spatial_type = 'hsgp')")
+    cl <- match.call()
+    env <- parent.frame()
+    run <- .hsgp_fit_basis_loop(spec, function(s) {
+      cl$hsgp_m <- s[["m"]]
+      cl$hsgp_c <- s[["c"]]
+      eval(cl, env)
+    })
+    run$fit$hsgp_basis <- run$spec
+    return(run$fit)
+  }
   temporal_type <- match.arg(temporal_type)
   hyperprior    <- .hp_choice(match.arg(hyperprior))
   family <- .canonical_family(family)
@@ -482,7 +505,7 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
     kargs$lambda_eig <- as.numeric(basis$lambda_eig)
     kargs$sigma2_spatial_grid      <- as.numeric(grid$sigma2)
     kargs$lengthscale_spatial_grid <- as.numeric(grid$lengthscale)
-    hp_block <- list(coords = coords)
+    hp_block <- .hsgp_coord_fields(coords)
   } else {
     # nngp: coords in ORIGINAL unique-location order, nn_idx/nn_dist as
     # compute_nngp_neighbors() returns them (1-based ordering positions), and

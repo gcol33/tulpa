@@ -139,7 +139,7 @@ test_that("a two-arm builder block shares one domain and predicts either arm", {
                               phi = fx$phi),
                      b = list(y = y2, X = X2, family = "poisson")),
     prior = list(list(type = "hsgp", coords = list(fx$xy, xy2), m = 3L,
-                      svc_column = 2L, sigma2_grid = 0.4,
+                      c = 1.5, svc_column = 2L, sigma2_grid = 0.4,
                       lengthscale_grid = 0.3)),
     control = list(axis_refine = "none", diagnose_k = FALSE))
   ext <- apply(rbind(fx$xy, xy2), 2, range)

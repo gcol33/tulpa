@@ -48,9 +48,12 @@ T compute_hsgp_spatial_prior(const std::vector<T>& params, const ModelData& data
             log_sigma2_hsgp, data.hsgp_sigma2_prior_U,
             data.hsgp_sigma2_prior_alpha);
 
-        // LogNormal(0, 1) prior on lengthscale
-        // log p(ell) = -0.5 * log(ell)^2  (Jacobian cancels)
-        log_post = log_post - T(0.5) * log_lengthscale_hsgp * log_lengthscale_hsgp;
+        // PC prior on the lengthscale as a range in two dimensions,
+        // P(ell < U) = alpha, the prior the nested route puts on the same
+        // field's `lengthscale` axis; sampled on log(ell), hence the Jacobian.
+        log_post = log_post + log_prior_range_pc_at_log(
+            log_lengthscale_hsgp, data.hsgp_lengthscale_prior_U,
+            data.hsgp_lengthscale_prior_alpha) + log_lengthscale_hsgp;
 
         // N(0, I) prior on beta
         for (int j = 0; j < m_total; j++) {
@@ -74,13 +77,13 @@ T compute_hsgp_spatial_prior(const std::vector<T>& params, const ModelData& data
     return log_post;
 }
 
-// The constant compute_hsgp_spatial_prior leaves out: -0.5 log(2 pi) for the
-// N(0, 1) on log(lengthscale) and for each N(0, 1) basis coefficient (the PC
-// prior on sigma is normalized).
+// The constant compute_hsgp_spatial_prior leaves out: -0.5 log(2 pi) for each
+// N(0, 1) basis coefficient (the PC priors on sigma and on the lengthscale are
+// normalized).
 inline double hsgp_spatial_prior_log_normalizer(const ModelData& data,
                                                 const ParamLayout& layout) {
     if (!(layout.is_hsgp && data.has_hsgp)) return 0.0;
-    return (data.hsgp_data.m_total + 1) * log_prior_normal_log_normalizer(1.0);
+    return data.hsgp_data.m_total * log_prior_normal_log_normalizer(1.0);
 }
 
 } // namespace priors

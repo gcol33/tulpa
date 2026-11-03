@@ -138,10 +138,12 @@ inline double pc_range_rate(double U, double alpha) {
 }
 
 // Density on the range in dimension d, evaluated from log(range). Carries no
-// Jacobian: the caller adds the one for its own coordinate.
+// Jacobian: the caller adds the one for its own coordinate. Invalid anchors
+// give the flat prior on the range, as log_prior_sigma_pc does on sigma.
 template <typename T>
 inline T log_prior_range_pc_d_at_log(const T& log_range, double U, double alpha,
                                      double d) {
+  if (!pc_anchors_valid(U, alpha)) return T(0.0);
   const double half   = 0.5 * d;
   const double lambda = pc_range_rate_d(U, alpha, d);
   return T(std::log(lambda) + std::log(half))

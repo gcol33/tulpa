@@ -532,6 +532,23 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     if (is.null(data)) {
       stop("`data` is required when `spec` is supplied.", call. = FALSE)
     }
+    # An HSGP spec whose basis is left to the data is fitted through the HSGP
+    # basis loop; the fit records the basis it was made at as `hsgp_basis`.
+    if (inherits(spec, "tulpa_hsgp")) {
+      v <- validate_hsgp(spec, data)
+      if (.hsgp_basis_auto(v)) {
+        cl <- match.call()
+        env <- parent.frame()
+        run <- .hsgp_fit_basis_loop(v, function(s) {
+          cl$spec <- NULL
+          cl$data <- NULL
+          cl$prior <- .spatial_spec_to_nl_prior(s)
+          eval(cl, env)
+        })
+        run$fit$hsgp_basis <- run$spec
+        return(run$fit)
+      }
+    }
     prior <- prior_from_spec(spec, data)
   }
   # Allow passing a single tgmrf S3 object directly: wrap it in a length-1

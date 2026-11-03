@@ -483,6 +483,11 @@ void build_sampler_model_inputs(
                             in.data.hsgp_sigma2_prior_U,
                             in.data.hsgp_sigma2_prior_alpha,
                             "gp(approx = \"hsgp\") scale");
+            require_pc_anchors(sp, "lengthscale_prior_U",
+                               "lengthscale_prior_alpha",
+                               in.data.hsgp_lengthscale_prior_U,
+                               in.data.hsgp_lengthscale_prior_alpha,
+                               "gp(approx = \"hsgp\") lengthscale");
         } else {
             Rcpp::stop("build_sampler_model_inputs: spatial type '%s' is not "
                        "supported on the sampler path (use 'icar'/'bym2'/"
@@ -723,6 +728,10 @@ void build_sampler_model_inputs(
             in.data.svc_hsgp_boundary_factor = cc;
             tulpa_hsgp::setup_hsgp_2d(s.coords, n_obs, m, cc, /*shared=*/true,
                                       in.data.svc_hsgp_data);
+            require_pc_anchors(sv, "phi_prior_U", "phi_prior_alpha",
+                               in.data.svc_phi_prior_U,
+                               in.data.svc_phi_prior_alpha,
+                               "spatial_svc(approx = \"hsgp\") lengthscale");
         } else {
             in.data.svc_is_hsgp = false;
             s.nn = Rcpp::as<int>(sv["nn"]);

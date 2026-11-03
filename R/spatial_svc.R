@@ -22,9 +22,12 @@
 #' @param approx Spatial approximation. `"nngp"` (nearest-neighbour GP) or
 #'   `"hsgp"` (Hilbert-space GP).
 #' @param m Number of basis functions per dimension for the HSGP approximation
-#'   (`approx = "hsgp"`).
+#'   (`approx = "hsgp"`), between 3 and 50. `NULL` (default) chooses it from
+#'   the data by the rule [spatial_gp()] describes, read at the smallest
+#'   lengthscale of the varying coefficients, which share one basis.
 #' @param c_boundary Boundary-extension factor for the HSGP domain
-#'   (`approx = "hsgp"`).
+#'   (`approx = "hsgp"`), `>= 1`. `NULL` (default) chooses it from the data,
+#'   at the largest lengthscale of the varying coefficients.
 #' @param parameterization Latent parameterization for the exact-NUTS field
 #'   (`approx = "nngp"` only; HSGP is already non-centered by construction).
 #'   `"noncentered"` (default) samples `z_j ~ N(0, I)` per term and
@@ -52,8 +55,8 @@ spatial_svc <- function(coords,
                         shared = NULL,
                         scale_coords = TRUE,
                         approx = c("nngp", "hsgp"),
-                        m = 6,
-                        c_boundary = 1.5,
+                        m = NULL,
+                        c_boundary = NULL,
                         parameterization = c("noncentered", "centered")) {
 
   cov <- match.arg(cov)
@@ -85,13 +88,8 @@ spatial_svc <- function(coords,
 
   # Validate HSGP parameters
   if (approx == "hsgp") {
-    if (!is.numeric(m) || length(m) != 1 || m < 3 || m > 50) {
-      stop("`m` must be an integer between 3 and 50", call. = FALSE)
-    }
-    m <- as.integer(m)
-    if (!is.numeric(c_boundary) || length(c_boundary) != 1 || c_boundary < 1.0) {
-      stop("`c_boundary` must be a number >= 1.0", call. = FALSE)
-    }
+    m <- .hsgp_check_m(m)
+    c_boundary <- .hsgp_check_c(c_boundary, "c_boundary")
   }
 
   if (isFALSE(shared)) .warn_nonshared("SVCs", "spatially-varying effects")
@@ -260,12 +258,15 @@ validate_svc <- function(svc, data, X) {
   svc$coords_matrix <- coords
   svc$neighbor_info <- neighbor_info
 
-  # Set spatial parameters for parameter layout
+  # The HSGP basis is shared by every term; left to the data, it is sized
+  # from the lengthscale prior every term carries (`.hsgp_basis_init()`) and
+  # refitted by the front door's basis loop. An NNGP field has one effect per
+  # location per term.
   if (approx == "hsgp") {
-    m <- svc$m %||% 6L
-    svc$n_spatial <- length(svc_indices) * as.integer(m)^2  # m^2 basis per SVC term
+    svc <- .hsgp_basis_init(svc, coords, .hsgp_prior_lengthscale(coords),
+                            "c_boundary", "spatial_svc(approx = \"hsgp\")")
   } else {
-    svc$n_spatial <- n_loc * svc$n_svc  # one effect per location per SVC term
+    svc$n_spatial <- n_loc * svc$n_svc
   }
 
   svc

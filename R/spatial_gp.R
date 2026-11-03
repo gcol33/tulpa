@@ -138,20 +138,8 @@ spatial_gp <- function(coords,
            "(x, y); got ", length(coord_vars), ". The NNGP approximation ",
            "accepts any number.", call. = FALSE)
     }
-    if (!is.null(m)) {
-      if (!is.numeric(m) || length(m) != 1 || is.na(m) ||
-          m < .HSGP_M_BOUNDS[1L] || m > .HSGP_M_BOUNDS[2L]) {
-        stop(sprintf(paste0("`m` must be an integer between %d and %d, or ",
-                            "NULL to choose it from the data"),
-                     .HSGP_M_BOUNDS[1L], .HSGP_M_BOUNDS[2L]), call. = FALSE)
-      }
-      m <- as.integer(m)
-    }
-    if (!is.null(c) &&
-        (!is.numeric(c) || length(c) != 1 || is.na(c) || c < 1)) {
-      stop("`c` (boundary factor) must be >= 1, or NULL to choose it from ",
-           "the data", call. = FALSE)
-    }
+    m <- .hsgp_check_m(m)
+    c <- .hsgp_check_c(c)
     .check_pc_anchors(sigma_prior_U, sigma_prior_alpha,
                       "sigma_prior_U", "sigma_prior_alpha",
                       "gp(approx = \"hsgp\")")
@@ -264,20 +252,8 @@ validate_hsgp <- function(spatial, data) {
   coords <- prepare_coords(spatial$coord_vars, data, spatial$scale_coords)
   spatial$n_obs <- nrow(coords)
   spatial$coords_matrix <- coords
-  br <- spatial$basis_rule %||%
-    list(auto = c(m = is.null(spatial$m), c = is.null(spatial[["c"]])))
-  br$half_width <- .hsgp_half_widths(coords)
-  spatial$basis_rule <- br
-  if (is.null(spatial$m) || is.null(spatial[["c"]])) {
-    ell0 <- .hsgp_prior_lengthscale(coords)
-    if (!is.finite(ell0) || any(br$half_width <= 0)) {
-      stop("spatial_gp(approx = \"hsgp\"): the coordinates span no area, so ",
-           "the basis size cannot be chosen from them; supply `m` and `c`.",
-           call. = FALSE)
-    }
-    spatial <- .hsgp_resolve_basis(spatial, ell0, "prior")
-  }
-  spatial
+  .hsgp_basis_init(spatial, coords, .hsgp_prior_lengthscale(coords), "c",
+                   "spatial_gp(approx = \"hsgp\")")
 }
 
 
@@ -316,10 +292,15 @@ validate_hsgp <- function(spatial, data) {
 #'   GP; `"hsgp"` for a Hilbert-space basis shared by both scales, which is
 #'   fitted by the nested-Laplace path only (`mode = "auto"` or
 #'   `"nested_laplace"`); the samplers carry the NNGP form.
-#' @param m Number of HSGP basis functions per dimension (default 6). Only
-#'   used when `approx = "hsgp"`. Total basis functions will be m^2.
-#' @param c_boundary Boundary factor for HSGP domain extension (default 1.5).
-#'   Only used when `approx = "hsgp"`.
+#' @param m Number of HSGP basis functions per dimension, between 3 and 50;
+#'   only used when `approx = "hsgp"`, where each scale carries its own basis
+#'   of m^2 functions. A value given applies to both scales. `NULL` (default)
+#'   chooses each scale's from the data by the rule [spatial_gp()] describes:
+#'   first at the median of that scale's range prior, then at its posterior
+#'   mean lengthscale while the basis does not represent it.
+#' @param c_boundary Boundary factor for HSGP domain extension, `>= 1`; only
+#'   used when `approx = "hsgp"`. A value given applies to both scales; `NULL`
+#'   (default) chooses each scale's from the data.
 #' @param sampler Latent parameterization for the exact-NUTS field. `"auto"`
 #'   (default) and `"noncentered"` sample `z ~ N(0, I)` per scale and
 #'   reconstruct each field as `w = f(z, sigma2, phi)`, avoiding the
@@ -414,8 +395,8 @@ validate_hsgp <- function(spatial, data) {
 spatial_multiscale <- function(coords,
                                scales = c("local", "regional"),
                                approx = c("nngp", "hsgp"),
-                               m = 6L,
-                               c_boundary = 1.5,
+                               m = NULL,
+                               c_boundary = NULL,
                                range_local = c(0.01, 1),
                                range_regional = c(1, 10),
                                cov = c("exponential", "matern"),
@@ -476,12 +457,16 @@ spatial_multiscale <- function(coords,
   }
 
   if (isFALSE(shared)) .warn_nonshared("multi-scale spatial effects")
+  if (approx == "hsgp") {
+    m <- .hsgp_check_m(m)
+    c_boundary <- .hsgp_check_c(c_boundary, "c_boundary")
+  }
 
   structure(
     list(
       type = "multiscale",
       approx = approx,
-      m = as.integer(m),
+      m = m,
       c_boundary = c_boundary,
       coord_vars = coord_vars,
       scales = scales,
@@ -622,6 +607,25 @@ validate_gp <- function(gp, data) {
 
     gp$neighbor_info_local <- compute_nngp_neighbors(unique_coords, nn_local)
     gp$neighbor_info_regional <- compute_nngp_neighbors(unique_coords, nn_regional)
+    # Each scale carries its own HSGP basis, sized by the rule from the median
+    # of its own lengthscale prior (the PC range prior anchored at the scale's
+    # lower bound, `.multiscale_nl_blocks()`) and refitted on its own
+    # lengthscale posterior (`b1.lengthscale` local, `b2.lengthscale`
+    # regional). One shared basis would have to reach the local scale's
+    # lengthscale with the boundary factor the regional one needs.
+    if (identical(gp$approx, "hsgp")) {
+      scs <- c("local", "regional")
+      gp$scale_basis <- stats::setNames(lapply(seq_along(scs), function(b) {
+        ell0 <- .pc_range_quantile(
+          0.5, as.numeric(gp[[paste0("range_", scs[b])]])[1L],
+          .MSGP_RANGE_ALPHA, .HSGP_LENGTHSCALE_PRIOR_DIM)
+        .hsgp_basis_init(
+          list(m = gp$m, c = gp$c_boundary,
+               basis_rule = list(axes = paste0("b", b, ".lengthscale"))),
+          coords, ell0, "c",
+          sprintf("spatial_multiscale(approx = \"hsgp\"), %s scale", scs[b]))
+      }), scs)
+    }
   }
 
   gp

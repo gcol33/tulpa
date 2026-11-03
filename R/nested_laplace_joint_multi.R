@@ -2467,12 +2467,12 @@
              "two-column coordinate matrices, NULL for an arm the field does ",
              "not reach.", call. = FALSE)
     }
-    m <- p[["m"]] %||% 6L
+    m <- p[["m"]]
     if (length(m) != 1L || !is.finite(m) || m < 1 || m != round(m)) {
         stop(lab, ": `m` must be a positive integer.", call. = FALSE)
     }
     m <- as.integer(m)
-    cc <- as.numeric(p[["c"]] %||% 1.5)
+    cc <- as.numeric(p[["c"]])
     if (length(cc) != 1L || !is.finite(cc) || cc < 1) {
         stop(lab, ": `c` (boundary factor) must be a number >= 1.", call. = FALSE)
     }
@@ -2506,8 +2506,52 @@
     p$n_obs_per_arm <- as.integer(arm_n_obs)
     p$basis <- list(m = m, c = cc, domain = as.numeric(domain),
                     coord_names = colnames(mats[[first]]), reached = reached)
+    # The pooled coordinates' extent anchors the lengthscale prior
+    # (`.hsgp_lengthscale_prior()`) once the coordinates are dropped.
+    cf <- .hsgp_coord_fields(do.call(rbind, mats[reached]))
+    p[names(cf)] <- cf
     p$coords <- NULL
     p
+}
+
+# The basis specs of the `hsgp` coordinate blocks of a list-of-blocks prior
+# whose `m` or `c` is left to the data, one per such block: the rule's state
+# (`.hsgp_basis_init()`) over the pooled coordinates of the arms the block
+# reaches, sized from the median of the block's lengthscale prior (its own
+# `prior_range`, else the default anchor on those coordinates), with the
+# block's lengthscale column as `axes`. Empty when there is none.
+.joint_hsgp_basis_specs <- function(prior) {
+    if (!is.list(prior) || !is.null(prior$type)) return(list())
+    out <- list()
+    for (b in seq_along(prior)) {
+        p <- prior[[b]]
+        if (!is.list(p) || !identical(tolower(p$type %||% ""), "hsgp") ||
+            is.null(p$coords) || (!is.null(p[["m"]]) && !is.null(p[["c"]]))) {
+            next
+        }
+        lab <- paste0("tulpa_nested_laplace_joint(): block ", b, " (type 'hsgp')")
+        mats <- Filter(Negate(is.null), as.list(p$coords))
+        pooled <- do.call(rbind, lapply(mats, function(xy)
+            .coords_2col(as.matrix(xy), lab)))
+        anchor <- .hp_range_anchor(c(list(prior_range = p$prior_range),
+                                     .hsgp_coord_fields(pooled)))$anchor
+        spec <- list(m = .hsgp_check_m(p[["m"]]), c = .hsgp_check_c(p[["c"]]),
+                     basis_rule = list(axes = paste0("b", b, ".lengthscale"),
+                                       block = b))
+        out[[length(out) + 1L]] <- .hsgp_basis_init(
+            spec, pooled, .hsgp_prior_median(anchor), "c", lab)
+    }
+    out
+}
+
+# The prior with each basis spec's `m` and `c` written onto its block.
+.joint_hsgp_set_basis <- function(prior, specs) {
+    for (s in specs) {
+        b <- s$basis_rule$block
+        prior[[b]][["m"]] <- s[["m"]]
+        prior[[b]][["c"]] <- s[["c"]]
+    }
+    prior
 }
 
 # 1-based latent indices of every block carrying a basis builder, in block

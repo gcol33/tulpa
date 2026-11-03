@@ -13,8 +13,8 @@ spatial_svc(
   shared = NULL,
   scale_coords = TRUE,
   approx = c("nngp", "hsgp"),
-  m = 6,
-  c_boundary = 1.5,
+  m = NULL,
+  c_boundary = NULL,
   parameterization = c("noncentered", "centered")
 )
 
@@ -45,10 +45,13 @@ the coordinates \code{\link[=svc]{svc()}} reports are in the original units eith
 \code{"hsgp"} (Hilbert-space GP).}
 
 \item{m}{Number of basis functions per dimension for the HSGP approximation
-(\code{approx = "hsgp"}).}
+(\code{approx = "hsgp"}), between 3 and 50. \code{NULL} (default) chooses it from
+the data by the rule \code{\link[=spatial_gp]{spatial_gp()}} describes, read at the smallest
+lengthscale of the varying coefficients, which share one basis.}
 
 \item{c_boundary}{Boundary-extension factor for the HSGP domain
-(\code{approx = "hsgp"}).}
+(\code{approx = "hsgp"}), \verb{>= 1}. \code{NULL} (default) chooses it from the data,
+at the largest lengthscale of the varying coefficients.}
 
 \item{parameterization}{Latent parameterization for the exact-NUTS field
 (\code{approx = "nngp"} only; HSGP is already non-centered by construction).

@@ -257,14 +257,15 @@
 # An HSGP block of the nested-Laplace path: the Laplacian basis evaluated at
 # every observation (`cpp_hsgp_basis_2d`, over setup_hsgp_2d) and its
 # eigenvalues. The basis does not carry the coordinates, so their extent
-# travels with the block: it anchors the lengthscale's default prior.
+# travels with the block: it anchors the lengthscale prior
+# (`.hsgp_lengthscale_prior()`).
 .hsgp_nl_block <- function(coords, m, c_boundary) {
   basis <- cpp_hsgp_basis_2d(as.matrix(coords), as.integer(m),
                              as.numeric(c_boundary))
   c(list(type       = "hsgp",
          phi_basis  = basis$phi_basis,
          lambda_eig = basis$lambda_eig),
-    .hp_coord_fields(coords))
+    .hsgp_coord_fields(coords))
 }
 
 # An NNGP block of the nested-Laplace path over a validated continuous spec's
@@ -299,8 +300,8 @@
 # nested-Laplace multi-block driver, local then regional. The field is their
 # sum, so each block is a field of its own with its own SD and range axes,
 # placed and refined like every other field axis. NNGP blocks read each
-# scale's own neighbour structure; HSGP blocks share one basis and differ in
-# their (sigma2, lengthscale). Both fields are proper, so neither needs a
+# scale's own neighbour structure; HSGP blocks each read their scale's own
+# basis (`scale_basis`). Both fields are proper, so neither needs a
 # level constraint: the sum's constant direction carries the prior precision
 # of both fields, against the intercept's. What tells the two scales apart is
 # their range priors, each anchored at its own interval's lower bound, which
@@ -314,7 +315,8 @@
              "(coords_matrix is NULL); tulpa() validates it via validate_gp().",
              call. = FALSE)
       }
-      .hsgp_nl_block(spatial$coords_matrix, spatial$m, spatial$c_boundary)
+      bs <- .hsgp_block_basis(spatial, sc)
+      .hsgp_nl_block(spatial$coords_matrix, bs$m, bs$c)
     } else {
       ni <- spatial[[paste0("neighbor_info_", sc)]]
       if (is.null(ni)) {
@@ -464,7 +466,8 @@
 # per-observation coordinate matrix, so only (coords, m, c) cross the boundary;
 # the field is evaluated per observation, no obs->location map. The PC prior on
 # sigma carries the spec's own anchors, defaulting to P(sigma > 1) = 0.01; the
-# LogNormal on the lengthscale is fixed in compute_hsgp_spatial_prior.
+# lengthscale carries the field's one lengthscale prior
+# (`.hsgp_lengthscale_prior()`), the one its nested blocks carry.
 #' @keywords internal
 .hsgp_sampler_spec <- function(spatial) {
   cm <- spatial$coords_matrix
@@ -479,6 +482,9 @@
     m      = as.integer(spatial$m),
     c      = as.numeric(spatial$c)
   )
+  lp <- .hsgp_lengthscale_prior(cm)
+  out$lengthscale_prior_U     <- lp[1L]
+  out$lengthscale_prior_alpha <- lp[2L]
   if (!is.null(spatial$sigma2_prior_U)) {
     out$sigma2_prior_U     <- as.numeric(spatial$sigma2_prior_U)
     out$sigma2_prior_alpha <- as.numeric(spatial$sigma2_prior_alpha)
@@ -539,9 +545,9 @@
 #    spatial field), so only per-observation coords + (m, c_boundary) cross
 #    the boundary -- build_sampler_model_inputs() builds the shared basis via
 #    setup_hsgp_2d() and keys the block on `data.svc_is_hsgp`
-#    (gcol33/tulpa#813). There is no obs->location map and no NNGP range
-#    anchor (the HSGP path puts LogNormal(0, 1) on the log-lengthscale
-#    directly; see compute_svc_prior()).
+#    (gcol33/tulpa#813). There is no obs->location map; each term's
+#    lengthscale carries the HSGP lengthscale prior
+#    (`.hsgp_lengthscale_prior()`) in the range-prior slot.
 #' @keywords internal
 .svc_sampler_spec <- function(spatial, X) {
   idx <- as.integer(spatial$svc_indices)
@@ -560,7 +566,9 @@
       svc_indices = idx,
       X_svc       = as.numeric(t(Xs)),               # row-major [n_obs x n_svc]
       m           = as.integer(spatial$m),
-      c           = as.numeric(spatial$c_boundary)
+      c           = as.numeric(spatial$c_boundary),
+      phi_prior_U     = .hsgp_lengthscale_prior(cm)[1L],
+      phi_prior_alpha = .hsgp_lengthscale_prior(cm)[2L]
     ))
   }
 
@@ -3352,16 +3360,13 @@ tulpa <- function(formula, data,
 
   control <- .auto_drop_unread_threads(control, sel)
 
-  # An HSGP field whose basis is left to the data is fitted, its lengthscale
-  # posterior read against the basis, and fitted again on the basis that
-  # posterior asks for, until the basis holds it (`.hsgp_refit_spec()`). Every
-  # other fit runs once. The warnings of a fit that is replaced describe a fit
-  # the caller does not receive, so only the returned fit's are raised.
-  hsgp_auto <- inherits(spatial_spec, "tulpa_hsgp") &&
-    any(spatial_spec$basis_rule$auto)
-  repeat {
-    fit_warnings <- list()
-    args <- .tulpa_fitter_args(sel$backend, bundle, family, sigma_re,
+  # An HSGP basis left to the data (a spatial_gp(), spatial_svc() or
+  # spatial_multiscale() field) is fitted, its lengthscale posterior read
+  # against the basis, and fitted again on the basis that posterior asks for,
+  # until the basis holds it (`.hsgp_fit_basis_loop()`). Every other fit runs
+  # once.
+  fit_at <- function(spatial_spec) {
+    args <<- .tulpa_fitter_args(sel$backend, bundle, family, sigma_re,
                                n_trials, phi, beta_prior, control,
                                latent_blocks = parsed$latent_blocks,
                                spatial = spatial_spec, temporal = temporal_spec,
@@ -3377,25 +3382,17 @@ tulpa <- function(formula, data,
 
     # sel$backend is itself a valid mode, so dispatch resolves to the same
     # backend.
-    fit <- withCallingHandlers(
-      tulpa_dispatch(
-        sel$backend, fitter_args = args,
-        family = fam_obj, n_obs = bundle$n_obs,
-        has_spatial = has_spatial, has_latent = has_latent,
-        spatial_type = spatial_type
-      ),
-      warning = function(w) {
-        if (hsgp_auto) {
-          fit_warnings[[length(fit_warnings) + 1L]] <<- w
-          invokeRestart("muffleWarning")
-        }
-      })
-    if (!hsgp_auto || !is.list(fit)) break
-    step <- .hsgp_refit_spec(spatial_spec, fit)
-    spatial_spec <- step$spec
-    if (!step$refit) break
+    tulpa_dispatch(
+      sel$backend, fitter_args = args,
+      family = fam_obj, n_obs = bundle$n_obs,
+      has_spatial = has_spatial, has_latent = has_latent,
+      spatial_type = spatial_type
+    )
   }
-  for (w in fit_warnings) warning(w)
+  args <- NULL
+  run <- .hsgp_fit_basis_loop(spatial_spec, fit_at)
+  fit <- run$fit
+  spatial_spec <- run$spec
 
   if (is.list(fit)) {
     # Honour the front-door selection (including the correlated-RE redirect) over

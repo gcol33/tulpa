@@ -475,7 +475,7 @@
     kind <- if (isTRUE(fd$ms_is_hsgp)) "hsgp" else "nngp"
     ax <- if (kind == "hsgp") "lengthscale" else "phi_gp"
     for (sc in c("local", "regional")) {
-      blk <- list(nn = sp[[paste0("nn_", sc)]] %||% sp$nn)
+      blk <- list(nn = sp[[paste0("nn_", sc)]] %||% sp$nn, name = sc)
       add_comp(kind, "spatial", fd[[paste0("ms_", sc)]], sp,
                prefix = paste0(sc, "."), block = blk,
                hyper = stats::setNames(
@@ -752,8 +752,8 @@
     hsgp = {
       ct <- .coords_2col(.coords_plain(sp$coords_matrix), "hsgp() prediction")
       cn <- .coords_2col(.field_coords_at(object, newdata), "hsgp() prediction")
-      cc <- as.numeric(if (identical(sp$type, .FRONTDOOR_MULTISCALE))
-                         sp$c_boundary else sp[["c"]])
+      bs <- .hsgp_block_basis(sp, comp$block$name)
+      cc <- bs$c
       dom <- cpp_hsgp_domain_2d(ct, cc)
       out <- abs(cn[, 1L] - dom[1L]) > dom[3L] | abs(cn[, 2L] - dom[2L]) > dom[4L]
       if (any(out)) {
@@ -763,7 +763,7 @@
              "a larger `c` in spatial_gp(approx = \"hsgp\"), or use the NNGP ",
              "field.", call. = FALSE)
       }
-      basis <- cpp_hsgp_basis_2d_domain(cn, as.integer(sp[["m"]]), dom)
+      basis <- cpp_hsgp_basis_2d_domain(cn, bs$m, dom)
       s2 <- .field_theta(src$theta, "sigma2", comp$prefix)
       ls <- .field_theta(src$theta, "lengthscale", comp$prefix)
       u <- unique(cells)

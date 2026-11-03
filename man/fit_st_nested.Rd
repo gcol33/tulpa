@@ -26,8 +26,8 @@ fit_st_nested(
   coords = NULL,
   nn = 10L,
   cov_type = 2L,
-  hsgp_m = 6L,
-  hsgp_c = 1.5
+  hsgp_m = NULL,
+  hsgp_c = NULL
 )
 
 \method{print}{tulpa_st_nested}(x, ...)
@@ -166,11 +166,12 @@ only. Default 10 (clamped to \code{nrow(coords) - 1}).}
 \item{cov_type}{Integer NNGP covariance code (\code{spatial_type = "nngp"} only):
 0 = exponential, 1 = Matern 3/2, 2 = Matern 5/2 (default), 3 = Gaussian.}
 
-\item{hsgp_m, hsgp_c}{Hilbert-space GP basis size (per dimension, default 6)
-and boundary factor (default 1.5), \code{spatial_type = "hsgp"} only -- the
-parameterisation of \code{spatial_gp(approx = "hsgp")}. They are held as
-given here; see \code{\link[=spatial_gp]{spatial_gp()}} for the lengthscale window a basis
-represents.}
+\item{hsgp_m, hsgp_c}{Hilbert-space GP basis size per dimension (3 to 50)
+and boundary factor (\verb{>= 1}), \code{spatial_type = "hsgp"} only -- the
+parameterisation of \code{spatial_gp(approx = "hsgp")}. A value given is held
+as given; \code{NULL} (default) leaves it to the data by the rule and the
+refit loop \code{\link[=spatial_gp]{spatial_gp()}} describes, and the fit records the bases it
+went through as \code{hsgp_basis}.}
 
 \item{x}{A \code{fit_st_nested()} fit.}
 

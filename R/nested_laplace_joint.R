@@ -175,7 +175,10 @@
 #'   matrices, with `eigenvalues`, `m_total` and `n_obs_per_arm`) or by its
 #'   coordinates: `coords`, a list of `n_arms` `N_k x 2` coordinate matrices
 #'   (`NULL` for an arm the field does not reach), `m` basis functions per
-#'   dimension (default `6`) and the boundary factor `c` (default `1.5`). Given
+#'   dimension and the boundary factor `c`. Either left unset is chosen from
+#'   the data by the rule and the refit loop [spatial_gp()] describes, over the
+#'   pooled coordinates and the block's lengthscale posterior; the fit records
+#'   the bases it went through as `hsgp_basis` (one such block). Given
 #'   by its coordinates, the basis is built on the domain the pooled
 #'   coordinates imply (the rule of [spatial_gp()]'s `approx = "hsgp"`) and the
 #'   fit keeps that builder, so [stats::predict()] rebuilds the basis at new
@@ -1396,6 +1399,20 @@ tulpa_nested_laplace_joint <- function(responses,
     tulpa_check_control(control, .CONTROL_KEYS$nested_laplace_joint,
                    "tulpa_nested_laplace_joint")
     hyperprior <- .hp_choice(match.arg(hyperprior))
+    # An `hsgp` block given by its coordinates with `m` or `c` unset takes its
+    # basis from the data: the fit runs at given bases, through the HSGP basis
+    # loop that sizes them.
+    hb <- .joint_hsgp_basis_specs(prior)
+    if (length(hb)) {
+        cl <- match.call()
+        env <- parent.frame()
+        run <- .hsgp_fit_basis_loop(hb, function(specs) {
+            cl$prior <- .joint_hsgp_set_basis(prior, specs)
+            eval(cl, env)
+        }, parts = identity, set_parts = function(spec, parts) parts)
+        if (length(run$spec) == 1L) run$fit$hsgp_basis <- run$spec[[1L]]
+        return(run$fit)
+    }
     # k_quality reliability front door + escalation. The
     # single fit lives in .tulpa_nl_joint_once(); this wrapper resolves the
     # reliability intent, attaches the honest verdict (for BOTH the single- and

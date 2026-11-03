@@ -52,8 +52,8 @@ test_that("a refit step follows the lower end of the window only", {
   win <- tulpa:::.hsgp_lengthscale_window(sp$m, sp[["c"]], S)
   post_at <- function(ell) {
     local_mocked_bindings(
-      .hsgp_lengthscale_posterior = function(fit) c(mean = ell, lo = ell,
-                                                    hi = ell),
+      .hsgp_lengthscale_posterior = function(fit, axes = NULL)
+        rbind(c(mean = ell, lo = ell, hi = ell)),
       .package = "tulpa")
     tulpa:::.hsgp_refit_spec(sp, list())
   }

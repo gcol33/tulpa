@@ -25,6 +25,28 @@
 # every inner solve as dense columns.
 .HSGP_M_BOUNDS <- c(3L, 50L)
 
+# A basis size or boundary factor as an HSGP door accepts it: NULL leaves it to
+# the data, anything else is checked and returned in its stored type.
+.hsgp_check_m <- function(m, arg = "m") {
+  if (is.null(m)) return(NULL)
+  if (!is.numeric(m) || length(m) != 1L || is.na(m) ||
+      m < .HSGP_M_BOUNDS[1L] || m > .HSGP_M_BOUNDS[2L]) {
+    stop(sprintf(paste0("`%s` must be an integer between %d and %d, or NULL ",
+                        "to choose it from the data"), arg,
+                 .HSGP_M_BOUNDS[1L], .HSGP_M_BOUNDS[2L]), call. = FALSE)
+  }
+  as.integer(m)
+}
+
+.hsgp_check_c <- function(c, arg = "c") {
+  if (is.null(c)) return(NULL)
+  if (!is.numeric(c) || length(c) != 1L || is.na(c) || c < 1) {
+    stop(sprintf(paste0("`%s` (boundary factor) must be >= 1, or NULL to ",
+                        "choose it from the data"), arg), call. = FALSE)
+  }
+  as.numeric(c)
+}
+
 # Half-widths S of the domain a coordinate matrix spans, per column: the
 # bounding box `hsgp_center_L_2d()` (src/hmc_hsgp.h) centres the basis on.
 .hsgp_half_widths <- function(coords) {
@@ -58,14 +80,39 @@
   (lambda / -log(p))^(2 / d)
 }
 
-# The lengthscale prior of an HSGP field over `coords`, as the default
-# hyperprior binds it to the nested `lengthscale` axis (`.hp_range_anchor()`
-# on the block's coordinate extent), and its median: the initial lengthscale
-# guess of the paper's procedure (Sect. 4.5.1, step A1).
+# The lengthscale prior of an HSGP field over `coords`, read by every route
+# that fits one -- the nested blocks (`.hsgp_nl_block()`, the joint door's
+# coordinate block) and the samplers (`.hsgp_sampler_spec()`,
+# `.svc_sampler_spec()`) -- so a route is a computational choice and never a
+# different model. It is the PC prior on a range (Fuglstad et al. 2019),
+# P(ell < U) = alpha with U the default fraction of the coordinates' extent,
+# in the two dimensions the basis spans. The PC range prior holds for any
+# Matern smoothness, so for the squared-exponential limit the basis
+# approximates. NULL when the coordinates span nothing.
+.HSGP_LENGTHSCALE_PRIOR_DIM <- 2
+
+.hsgp_lengthscale_prior <- function(coords) {
+  .hp_range_anchor(.hsgp_coord_fields(coords))$anchor
+}
+
+# The coordinate extent an HSGP block carries for its lengthscale prior
+# (`.hp_range_anchor()`), in the two dimensions the basis spans.
+.hsgp_coord_fields <- function(coords) {
+  f <- .hp_coord_fields(coords)
+  if (length(f)) f$coord_dim <- .HSGP_LENGTHSCALE_PRIOR_DIM
+  f
+}
+
+# The median of that prior, or of the PC range prior at the anchor `c(U,
+# alpha)`: the initial lengthscale guess of the paper's procedure
+# (Sect. 4.5.1, step A1).
 .hsgp_prior_lengthscale <- function(coords) {
-  ra <- .hp_range_anchor(.hp_coord_fields(coords))
-  if (is.null(ra)) return(NA_real_)
-  .pc_range_quantile(0.5, ra$anchor[1L], ra$anchor[2L], ra$dim)
+  .hsgp_prior_median(.hsgp_lengthscale_prior(coords))
+}
+
+.hsgp_prior_median <- function(anchor) {
+  if (is.null(anchor)) return(NA_real_)
+  .pc_range_quantile(0.5, anchor[1L], anchor[2L], .HSGP_LENGTHSCALE_PRIOR_DIM)
 }
 
 # The slack of the paper's lengthscale diagnostic (Sect. 4.5.1, steps A5 and
@@ -85,52 +132,109 @@
     upper = ell - .HSGP_DIAG_SLACK * min(S) <= win[["hi"]])
 }
 
-# Set the automatic entries of an HSGP spec's basis (`basis_rule$auto`) from a
-# lengthscale estimate `ell` (kernel units), the paper's steps A2-A3: `c` from
-# Eq. (20) at `ell`, then `m` from Eq. (19) at `ell` and that `c`. `m` never
-# shrinks below a size already fitted. Records the step in
+# The basis rule an HSGP spec carries (`basis_rule`): which of `m` and the
+# boundary factor are left to the data (`auto`), the name the spec stores the
+# boundary factor under (`c_key`: `c` on spatial_gp() and the joint door's
+# coordinate block, `c_boundary` on spatial_svc() and spatial_multiscale()),
+# the half-widths S of the coordinates, and the bases fitted so far
+# (`history`). Every HSGP door sizes its basis through it, so one rule chooses
+# `m` and `c` wherever an HSGP field is fitted.
+#
+# `.hsgp_basis_init()` attaches the rule and, for an entry left to the data,
+# sizes the first basis from the lengthscale prior medians `ell_prior` of the
+# fields the basis carries (one per field: two scales of a multi-scale field,
+# one per varying coefficient on a shared basis); the paper's step A1. A spec
+# whose `m` and boundary factor are both given keeps them.
+.hsgp_basis_init <- function(spec, coords, ell_prior, c_key = "c",
+                             door = "the HSGP field") {
+  br <- spec$basis_rule %||% list()
+  br$auto <- br$auto %||%
+    c(m = is.null(spec[["m"]]), c = is.null(spec[[c_key]]))
+  br$c_key <- c_key
+  br$half_width <- .hsgp_half_widths(coords)
+  spec$basis_rule <- br
+  if (!any(br$auto)) return(spec)
+  if (!length(ell_prior) || !all(is.finite(ell_prior)) ||
+      any(br$half_width <= 0)) {
+    stop(door, ": the coordinates span no area, so the basis size cannot be ",
+         "chosen from them; supply `m` and the boundary factor.", call. = FALSE)
+  }
+  .hsgp_resolve_basis(spec, ell_prior, "prior")
+}
+
+# Whether a spec carries a basis left (partly) to the data.
+.hsgp_basis_auto <- function(spec) {
+  is.list(spec) && any(spec$basis_rule$auto %||% FALSE)
+}
+
+# The boundary factor of a spec, under the name its rule stores it.
+.hsgp_spec_c <- function(spec) {
+  spec[[spec$basis_rule$c_key %||% "c"]]
+}
+
+# Set the automatic entries of an HSGP spec's basis from lengthscale estimates
+# `ell` (kernel units, one per field on the basis), the paper's steps A2-A3:
+# `c` from Eq. (20) at the largest, then `m` from Eq. (19) at the smallest and
+# that `c`. `m` never shrinks below a size already fitted. Records the step in
 # `basis_rule$history`.
 .hsgp_resolve_basis <- function(spec, ell, source) {
   br <- spec$basis_rule
   S <- br$half_width
-  if (br$auto[["c"]]) spec[["c"]] <- .hsgp_basis_size(S, ell)$c
-  sz <- .hsgp_basis_size(S, ell, c = spec[["c"]])
+  ck <- br$c_key %||% "c"
+  ell_lo <- min(ell); ell_hi <- max(ell)
+  if (br$auto[["c"]]) spec[[ck]] <- .hsgp_basis_size(S, ell_lo, ell_hi)$c
+  sz <- .hsgp_basis_size(S, ell_lo, ell_hi, c = spec[[ck]])
   if (br$auto[["m"]]) spec[["m"]] <- max(sz$m, spec[["m"]] %||% sz$m)
   br$history <- rbind(br$history, data.frame(
-    source = source, lengthscale = ell, m = spec[["m"]], c = spec[["c"]],
+    source = source, lengthscale = ell_lo, m = spec[["m"]], c = spec[[ck]],
     stringsAsFactors = FALSE))
   br$capped <- br$auto[["m"]] && sz$m_req > .HSGP_M_BOUNDS[2L]
   spec$basis_rule <- br
   spec
 }
 
-# The posterior mean and 95% interval of an HSGP field's lengthscale, in kernel
-# units, off whichever posterior the fit carries: the outer grid of a nested
-# fit or the `log_lengthscale_hsgp` draws of a sampler fit. NULL when the fit
-# carries no posterior over the lengthscale (a fit conditioned on it).
-.hsgp_lengthscale_posterior <- function(fit) {
+# The posterior mean and 95% interval of every HSGP lengthscale a fit carries,
+# in kernel units, one row per field: off the outer grid of a nested fit (each
+# `lengthscale` axis, or the columns named in `axes`), or off the draws of a
+# sampler fit (`log_lengthscale_hsgp`, or one `log_phi_svc[j]` per term of an
+# HSGP varying-coefficient field). NULL when the fit carries no posterior over
+# a lengthscale (a fit conditioned on it).
+.hsgp_lengthscale_posterior <- function(fit, axes = NULL) {
   probs <- c(0.025, 0.975)
   if (!is.null(fit$theta_grid)) {
-    s <- tryCatch(.nested_hyper_summary(fit, probs, keep_role = "spatial"),
-                  error = function(e) NULL)
-    if (is.null(s) || !"lengthscale" %in% rownames(s)) return(NULL)
-    v <- as.numeric(s["lengthscale", c("mean", .quantile_colnames(probs))])
+    tg <- fit$theta_grid
+    cn <- colnames(tg) %||% fit$theta_names
+    j <- if (is.null(axes)) which(sub("^b[0-9]+\\.", "", cn) == "lengthscale")
+         else match(axes, cn)
+    if (!length(j) || anyNA(j)) return(NULL)
+    s <- tryCatch(.nested_hyper_summary(fit, probs), error = function(e) NULL)
+    if (is.null(s) || nrow(s) != length(cn)) return(NULL)
+    v <- as.matrix(s[j, c("mean", .quantile_colnames(probs)), drop = FALSE])
+    rownames(v) <- cn[j]
   } else {
     dr <- tryCatch(.fit_draws(fit), error = function(e) NULL)
-    if (is.null(dr) || !"log_lengthscale_hsgp" %in% colnames(dr)) return(NULL)
-    ell <- exp(dr[, "log_lengthscale_hsgp"])
-    v <- c(mean(ell), stats::quantile(ell, probs))
+    if (is.null(dr)) return(NULL)
+    cols <- grep("^log_lengthscale_hsgp$|^log_phi_svc\\[[0-9]+\\]$",
+                 colnames(dr), value = TRUE)
+    if (!length(cols)) return(NULL)
+    v <- t(vapply(cols, function(k) {
+      ell <- exp(dr[, k])
+      c(mean(ell), stats::quantile(ell, probs, names = FALSE))
+    }, numeric(3)))
   }
   if (!all(is.finite(v)) || any(v <= 0)) return(NULL)
-  stats::setNames(v, c("mean", "lo", "hi"))
+  colnames(v) <- c("mean", "lo", "hi")
+  v
 }
 
 # One iteration of Riutort-Mayol et al. (2023, Sect. 4.5.1, Phase A) on a
-# fitted HSGP field whose basis is left to the data: when the posterior mean
-# lengthscale fails the paper's diagnostic, the basis it asks for (steps A2-A3,
-# with the estimate as the new guess). Returns `list(spec, refit)`: the spec to
-# fit next and TRUE, or the fitted spec and FALSE when the diagnostic holds or
-# no basis within reach represents a smaller lengthscale.
+# fitted HSGP basis left to the data: when the smallest posterior mean
+# lengthscale on the basis fails the paper's diagnostic, the basis it asks for
+# (steps A2-A3, with the estimates as the new guess). Returns
+# `list(spec, refit)`: the spec to fit next and TRUE, or the fitted spec and
+# FALSE when the diagnostic holds or no basis within reach represents a
+# smaller lengthscale. The basis rule's `axes` names the fit's lengthscale
+# columns that sit on this basis (all of them when NULL).
 #
 # The refit follows the lower end of the window only, as the paper's diagnostic
 # does, and is taken only when it lowers the basis's smallest lengthscale by
@@ -143,41 +247,108 @@
 # no such ordering: a lengthscale the data barely inform has a posterior mean
 # that follows the boundary factor up, so chasing it with `c` need not stop,
 # and it is reported by diagnostics() instead.
-.hsgp_refit_spec <- function(spec, fit) {
+.hsgp_refit_spec <- function(spec, fit, axes = spec$basis_rule$axes) {
   br <- spec$basis_rule
   keep <- list(spec = spec, refit = FALSE)
-  if (is.null(br) || !any(br$auto) || isTRUE(br$capped)) return(keep)
-  post <- .hsgp_lengthscale_posterior(fit)
+  if (!.hsgp_basis_auto(spec) || isTRUE(br$capped)) return(keep)
+  post <- .hsgp_lengthscale_posterior(fit, axes)
   if (is.null(post)) return(keep)
   S <- br$half_width
-  if (.hsgp_basis_holds(spec[["m"]], spec[["c"]], S,
-                        post[["mean"]])[["lower"]]) return(keep)
-  nxt <- .hsgp_resolve_basis(spec, post[["mean"]], "posterior")
-  lo_now <- .hsgp_lengthscale_window(spec[["m"]], spec[["c"]], S)[["lo"]]
-  lo_nxt <- .hsgp_lengthscale_window(nxt[["m"]], nxt[["c"]], S)[["lo"]]
+  cc <- .hsgp_spec_c(spec)
+  if (.hsgp_basis_holds(spec[["m"]], cc, S,
+                        min(post[, "mean"]))[["lower"]]) return(keep)
+  nxt <- .hsgp_resolve_basis(spec, post[, "mean"], "posterior")
+  lo_now <- .hsgp_lengthscale_window(spec[["m"]], cc, S)[["lo"]]
+  lo_nxt <- .hsgp_lengthscale_window(nxt[["m"]], .hsgp_spec_c(nxt), S)[["lo"]]
   if (lo_nxt >= lo_now - .HSGP_DIAG_SLACK * max(S)) return(keep)
   list(spec = nxt, refit = TRUE)
 }
 
-# The basis check of an HSGP fit: the posterior mean lengthscale against both
-# ends of the window the fitted basis represents. NULL for a fit without an
-# HSGP field or without a lengthscale posterior.
-.hsgp_basis_check <- function(fit) {
-  sp <- fit$spatial
-  if (!identical(tolower(sp$type %||% ""), "hsgp")) return(NULL)
-  m <- sp[["m"]]; cc <- sp[["c"]]
-  if (is.null(m) || is.null(cc) || is.null(sp$coords_matrix)) return(NULL)
-  post <- .hsgp_lengthscale_posterior(fit)
-  if (is.null(post)) return(NULL)
-  S <- .hsgp_half_widths(sp$coords_matrix)
-  k <- .coord_scale(sp)
-  list(m = as.integer(m), c = cc,
-       window = .hsgp_lengthscale_window(m, cc, S) * k,
-       lengthscale = post * k,
-       holds = .hsgp_basis_holds(m, cc, S, post[["mean"]]),
-       auto = sp$basis_rule$auto %||% c(m = FALSE, c = FALSE),
-       capped = isTRUE(sp$basis_rule$capped),
-       history = sp$basis_rule$history)
+# The bases a spec carries, as a list of basis specs: one per scale of a
+# multi-scale field (`scale_basis`, each scale on its own basis), the spec
+# itself otherwise. `.hsgp_basis_set_parts()` writes them back.
+.hsgp_basis_parts <- function(spec) {
+  spec$scale_basis %||% list(spec)
+}
+
+.hsgp_basis_set_parts <- function(spec, parts) {
+  if (!is.null(spec$scale_basis)) {
+    spec$scale_basis[] <- parts
+    return(spec)
+  }
+  parts[[1L]]
+}
+
+# The basis (m, c) an HSGP block is built on: its scale's own basis on a
+# multi-scale field (`block_name` the scale), the spec's otherwise.
+.hsgp_block_basis <- function(spec, block_name = NULL) {
+  b <- if (!is.null(spec$scale_basis)) spec$scale_basis[[block_name]] else spec
+  list(m = as.integer(b[["m"]]), c = as.numeric(.hsgp_spec_c(b)))
+}
+
+# Fit an HSGP model through the paper's Phase A: `fit_once(spec)` fits at the
+# spec's bases, and every basis left to the data is refitted on the basis its
+# lengthscale posterior asks for (`.hsgp_refit_spec()`) until each holds its
+# own. A spec whose bases are given is fitted once. `parts` / `set_parts` read
+# and write the bases a spec carries (`.hsgp_basis_parts()`); the joint door,
+# whose spec is the list of its coordinate blocks' bases, passes identities.
+# The warnings of a fit that is replaced describe a fit the caller does not
+# receive, so only the returned fit's are raised. Returns `list(fit, spec)`,
+# the spec the fit was made at.
+.hsgp_fit_basis_loop <- function(spec, fit_once,
+                                 parts = .hsgp_basis_parts,
+                                 set_parts = .hsgp_basis_set_parts) {
+  auto <- is.list(spec) &&
+    any(vapply(parts(spec), .hsgp_basis_auto, logical(1)))
+  repeat {
+    fit_warnings <- list()
+    fit <- withCallingHandlers(
+      fit_once(spec),
+      warning = function(w) {
+        if (auto) {
+          fit_warnings[[length(fit_warnings) + 1L]] <<- w
+          invokeRestart("muffleWarning")
+        }
+      })
+    if (!auto || !is.list(fit)) break
+    steps <- lapply(parts(spec), .hsgp_refit_spec, fit = fit)
+    spec <- set_parts(spec, lapply(steps, `[[`, "spec"))
+    if (!any(vapply(steps, `[[`, logical(1), "refit"))) break
+  }
+  for (w in fit_warnings) warning(w)
+  list(fit = fit, spec = spec)
+}
+
+# The basis check of an HSGP fit: the smallest and the largest posterior mean
+# lengthscale on a basis against the two ends of the window it represents, in
+# the units of the coordinates as supplied. `spec` carries the bases: the one a
+# door that fits outside the formula front door records as `hsgp_basis`, else
+# the fit's spatial spec. Of several bases (a multi-scale field's) the first
+# whose window misses its lengthscales is reported, else the first. NULL for a
+# fit without an HSGP basis rule or without a lengthscale posterior.
+.hsgp_basis_check <- function(fit, spec = fit$hsgp_basis %||% fit$spatial) {
+  if (!is.list(spec)) return(NULL)
+  k <- .coord_scale(spec)
+  chks <- Filter(Negate(is.null), lapply(.hsgp_basis_parts(spec), function(b) {
+    br <- b$basis_rule
+    if (is.null(br) || is.null(br$half_width)) return(NULL)
+    m <- b[["m"]]; cc <- .hsgp_spec_c(b)
+    if (is.null(m) || is.null(cc)) return(NULL)
+    post <- .hsgp_lengthscale_posterior(fit, br$axes)
+    if (is.null(post)) return(NULL)
+    S <- br$half_width
+    lo <- post[which.min(post[, "mean"]), ]
+    hi <- post[which.max(post[, "mean"]), ]
+    list(m = as.integer(m), c = cc,
+         window = .hsgp_lengthscale_window(m, cc, S) * k,
+         lengthscale = lo * k, lengthscale_hi = hi * k,
+         holds = c(lower = .hsgp_basis_holds(m, cc, S, lo[["mean"]])[["lower"]],
+                   upper = .hsgp_basis_holds(m, cc, S, hi[["mean"]])[["upper"]]),
+         auto = br$auto, capped = isTRUE(br$capped), history = br$history)
+  }))
+  if (!length(chks)) return(NULL)
+  bad <- Filter(function(ch) !all(ch$holds), chks)
+  if (length(bad)) bad[[1L]] else chks[[1L]]
 }
 
 .hsgp_basis_note <- function(chk) {
@@ -190,14 +361,14 @@
   } else {
     sprintf(paste0("represents lengthscales up to %.3g (Riutort-Mayol et al. ",
                    "2023, Eq. 20), but the posterior mean lengthscale is %.3g"),
-            chk$window[["hi"]], chk$lengthscale[["mean"]])
+            chk$window[["hi"]], chk$lengthscale_hi[["mean"]])
   }
   fix <- if (low && chk$capped) {
     paste0("; the basis size it needs exceeds m = ", .HSGP_M_BOUNDS[2L])
   } else if (low && !chk$auto[["m"]]) {
     "; refit with a larger `m`, or leave it unset so the fit chooses it"
   } else if (!low) {
-    "; a larger `c` (with the `m` Eq. 19 asks for) covers it"
+    "; a larger boundary factor (with the `m` Eq. 19 asks for) covers it"
   } else ""
   sprintf("HSGP basis (m = %d per dimension, c = %.2f) %s%s.", chk$m, chk$c,
           what, fix)

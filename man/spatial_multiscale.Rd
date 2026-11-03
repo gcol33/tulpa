@@ -9,8 +9,8 @@ spatial_multiscale(
   coords,
   scales = c("local", "regional"),
   approx = c("nngp", "hsgp"),
-  m = 6L,
-  c_boundary = 1.5,
+  m = NULL,
+  c_boundary = NULL,
   range_local = c(0.01, 1),
   range_regional = c(1, 10),
   cov = c("exponential", "matern"),
@@ -35,11 +35,16 @@ GP; \code{"hsgp"} for a Hilbert-space basis shared by both scales, which is
 fitted by the nested-Laplace path only (\code{mode = "auto"} or
 \code{"nested_laplace"}); the samplers carry the NNGP form.}
 
-\item{m}{Number of HSGP basis functions per dimension (default 6). Only
-used when \code{approx = "hsgp"}. Total basis functions will be m^2.}
+\item{m}{Number of HSGP basis functions per dimension, between 3 and 50;
+only used when \code{approx = "hsgp"}, where each scale carries its own basis
+of m^2 functions. A value given applies to both scales. \code{NULL} (default)
+chooses each scale's from the data by the rule \code{\link[=spatial_gp]{spatial_gp()}} describes:
+first at the median of that scale's range prior, then at its posterior
+mean lengthscale while the basis does not represent it.}
 
-\item{c_boundary}{Boundary factor for HSGP domain extension (default 1.5).
-Only used when \code{approx = "hsgp"}.}
+\item{c_boundary}{Boundary factor for HSGP domain extension, \verb{>= 1}; only
+used when \code{approx = "hsgp"}. A value given applies to both scales; \code{NULL}
+(default) chooses each scale's from the data.}
 
 \item{range_local}{Plausible range interval for the local scale as
 \code{c(lower, upper)} in coordinate units. Default: \code{c(0.01, 1)} (after

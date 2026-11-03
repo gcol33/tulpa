@@ -184,8 +184,14 @@ namespace tulpa {
 // 48 -> 49: ModelData gained `ms_trend_parameterization`, `ms_trend_basis`
 // and `ms_trend_slope` in the multi-scale temporal section, the non-centred
 // multiscale trend, so every field after them moves.
+//
+// 49 -> 50: ModelData gained `hsgp_lengthscale_prior_U` / `_alpha` in the HSGP
+// section: the spatial HSGP lengthscale carries the PC range prior the nested
+// route puts on it, in place of a LogNormal(0, 1) on the standardized
+// lengthscale, and the HSGP SVC term reads `svc_phi_prior_U` / `_alpha` for
+// the same prior. Every field after the HSGP section moves.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 49;
+constexpr int TULPA_ABI_VERSION = 50;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -447,6 +453,12 @@ struct ModelData {
     // used to hardcode, so an unset spec is unchanged.
     double hsgp_sigma2_prior_U = 1.0;
     double hsgp_sigma2_prior_alpha = 0.01;
+    // PC prior on the lengthscale as a range in two dimensions:
+    // P(ell < hsgp_lengthscale_prior_U) = hsgp_lengthscale_prior_alpha. The
+    // anchor carries the coordinates' units, so it has no default: the sampler
+    // entry requires it, and invalid anchors give the flat prior.
+    double hsgp_lengthscale_prior_U = -1.0;
+    double hsgp_lengthscale_prior_alpha = -1.0;
 
     // SPDE (Stochastic PDE Matern, Lindgren–Rue 2011). Active when
     // spatial_type == SpatialType::SPDE. Holds the FEM topology, per-obs
@@ -474,9 +486,9 @@ struct ModelData {
     // and the HSGP basis: the basis fixes how the field is represented, not
     // what its marginal variance means.
     double svc_sigma2_prior_scale = 1.0;
-    // PC prior on the range, NNGP path only; see gp_phi_prior_U. The HSGP path
-    // reuses the same layout slot for an unbounded log-lengthscale under a
-    // LogNormal(0, 1) prior and does not read these.
+    // PC prior on each term's range, P(range < U) = alpha; see
+    // gp_phi_prior_U. On the HSGP path the range is the squared-exponential
+    // lengthscale, sampled in the same layout slot.
     double svc_phi_prior_U = -1.0;
     double svc_phi_prior_alpha = -1.0;
     // 0 = centered: the SVC NNGP prior places the density on params directly
