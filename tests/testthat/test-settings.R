@@ -170,7 +170,7 @@ test_that("the default axes are exactly these values", {
     # Cheap-pass grid screening. `iters` is a cost-against-ranking-fidelity
     # trade paid on every cell of the grid, so it is a number the engine's
     # throughput rests on and a change to it has to be deliberate.
-    expect_equal(tulpa:::.nl_screen("prune_tol"), 1e-3)
+    expect_equal(tulpa:::.nl_screen("prune_tol"), 1e-4)
     expect_identical(tulpa:::.nl_screen("iters"), 2L)
 
     expect_error(tulpa:::.nl_diag("nope"), "Unknown diagnostic setting")

@@ -439,7 +439,7 @@
 #'     single-tier path when no copy block / single tile / `n_threads_outer
 #'     <= 1L`. `FALSE` recovers the pre-tiling behaviour (e.g. regression
 #'     testing).
-#'   * `prune` (`TRUE`), `prune_tol` (`1e-3`) -- cheap-pass screening. The
+#'   * `prune` (`TRUE`), `prune_tol` (`1e-4`) -- cheap-pass screening. The
 #'     driver sweeps the outer lattice running a short inner Newton per cell,
 #'     each warm-started from the previous screened cell's quasi-mode
 #'     (lattice-adjacent), computes a screening Laplace log-marginal,

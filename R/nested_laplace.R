@@ -268,7 +268,7 @@
 #'   * `progress`, `progress.every`, `progress.file`, `progress.throttle` --
 #'     the outer-grid progress reporter: whether to print, how often (in
 #'     cells), where to, and the minimum seconds between lines.
-#'   * `prune` (`TRUE`), `prune_tol` (`1e-3`), `screen_iters`
+#'   * `prune` (`TRUE`), `prune_tol` (`1e-4`), `screen_iters`
 #'     (`.NL_SCREEN$iters`, 2 -- the depth gcol33/tulpa#640 measured the screen
 #'     down to) -- cheap-pass screening of the outer grid. The driver first
 #'     sweeps the lattice running a `screen_iters`-step inner Newton per cell,
@@ -663,6 +663,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
           .nl_refine_cargs(cargs_no_ckpt, screen, prune_tol_eff), prior_i,
           likelihood = likelihood, theta_grid_override = theta_mat),
         prior_i, TRUE, .prov$auto,
+        declared = prior_declared,
         consistency = var_of_means_consistency,
         adaptive_grid = adaptive_grid,
         edge_thresh = adaptive_grid_edge_thresh,

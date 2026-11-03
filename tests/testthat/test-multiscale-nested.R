@@ -166,6 +166,32 @@ test_that("nested multi-scale temporal fit recovers each component", {
   expect_true(all(c("precision[trend]", "precision[short_term]") %in% rownames(tc)))
 })
 
+test_that("nested multi-scale temporal intervals match the model's dense grid", {
+  skip_on_cran()
+  s <- ms_sim_temporal()
+  fit <- suppressMessages(tulpa(
+    y ~ x, data = s$d, family = "poisson",
+    temporal = temporal_multiscale("time", trend = "rw2", short_term = "ar1"),
+    control = list(progress = FALSE)))
+  h <- summary(fit)$hyperparameters
+  rownames(h) <- h$parameter
+  got <- rbind(
+    sigma_trend = 1 / sqrt(unlist(h["b1.tau", c("ci_hi", "ci_lo")])),
+    sigma_short = 1 / sqrt(unlist(h["b2.tau", c("ci_hi", "ci_lo")])),
+    rho = unlist(h["b2.rho", c("ci_lo", "ci_hi")]))
+  # Reference: the same blocks and priors on a 31^3 tensor over log tau_trend
+  # [3.5, 12], log tau_short [0.6, 3.6] and rho [-0.7, 0.985] (outer-node
+  # masses at most 2e-4), each axis read by its cells' boxes; columns 95%
+  # lower end, upper end and posterior SD. The cheap screen at a tolerance of
+  # 1e-3 per cell dropped the tail cells of this grid and left rho's lower end
+  # at 0.094.
+  ref <- rbind(sigma_trend = c(0.0086, 0.0523, 0.0117),
+               sigma_short = c(0.2561, 0.4593, 0.0519),
+               rho         = c(0.0607, 0.7843, 0.1846))
+  expect_true(all(abs(got[, 1L] - ref[, 1L]) < 0.15 * ref[, 3L]))
+  expect_true(all(abs(got[, 2L] - ref[, 2L]) < 0.15 * ref[, 3L]))
+})
+
 test_that("an iid short-term component is the field's, not a random effect", {
   skip_on_cran()
   set.seed(4)

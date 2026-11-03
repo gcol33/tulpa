@@ -1552,13 +1552,22 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 #
 # `gate_mass` is how much posterior mass the prune may, at worst, have dropped
 # before the gate refuses it and solves the full grid
-# (`.nl_prune_dropped_mass()`): one per cent, ten times the default tolerance
-# a single dropped cell may carry. A fit that wants the prune held tighter
+# (`.nl_prune_dropped_mass()`): one per cent, a hundred times the default
+# tolerance a single dropped cell may carry. A fit that wants the prune held tighter
 # lowers `prune_tol`: the cut widens, fewer cells are dropped, and less mass is
 # left for the gate to bound.
+#
+# `prune_tol` is 1e-4 because the dropped cells sit in the tails, where an
+# interval end is read. A dropped cell holds no mass and its level stops the
+# log-quadratic tail of its row (`.nl_lq_group()`), so on a three-axis grid of
+# several hundred cells the drops at 1e-3 each added up in the 2.5% tails: on
+# the multi-scale temporal fixture (rw2 trend + AR1, seed 21) they left the
+# trend SD's upper end at 0.0490 and the AR1 correlation's lower end at 0.094,
+# against 0.0523 and 0.061 on a dense 31^3 grid; at 1e-4 the fit reads 0.0518
+# and 0.063, within 0.002 of the same fit with no screen at all.
 .NL_SCREEN <- list(
     prune     = c(joint = TRUE, registry = TRUE, spde = FALSE),
-    prune_tol = 1e-3,
+    prune_tol = 1e-4,
     iters     = 2L,
     min_keep  = 5L,
     gate_mass = 0.01

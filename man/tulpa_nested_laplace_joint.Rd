@@ -462,7 +462,7 @@ coefficient \code{alpha}, solve one warm Tier-2 per tile from the centre
 pilot, and warm-start the rest from their tile pilot. Falls back to the
 single-tier path when no copy block / single tile / \code{n_threads_outer <= 1L}. \code{FALSE} recovers the pre-tiling behaviour (e.g. regression
 testing).
-\item \code{prune} (\code{TRUE}), \code{prune_tol} (\code{1e-3}) -- cheap-pass screening. The
+\item \code{prune} (\code{TRUE}), \code{prune_tol} (\code{1e-4}) -- cheap-pass screening. The
 driver sweeps the outer lattice running a short inner Newton per cell,
 each warm-started from the previous screened cell's quasi-mode
 (lattice-adjacent), computes a screening Laplace log-marginal,

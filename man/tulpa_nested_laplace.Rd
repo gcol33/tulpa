@@ -350,7 +350,7 @@ settings or grid) errors rather than resuming onto a stale result. See
 \item \code{progress}, \code{progress.every}, \code{progress.file}, \code{progress.throttle} --
 the outer-grid progress reporter: whether to print, how often (in
 cells), where to, and the minimum seconds between lines.
-\item \code{prune} (\code{TRUE}), \code{prune_tol} (\code{1e-3}), \code{screen_iters}
+\item \code{prune} (\code{TRUE}), \code{prune_tol} (\code{1e-4}), \code{screen_iters}
 (\code{.NL_SCREEN$iters}, 2 -- the depth gcol33/tulpa#640 measured the screen
 down to) -- cheap-pass screening of the outer grid. The driver first
 sweeps the lattice running a \code{screen_iters}-step inner Newton per cell,
