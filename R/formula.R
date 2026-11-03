@@ -278,11 +278,6 @@ no_special_terms <- function(term, fname, pred = NULL) {
 # ============================================================================
 
 # Is `x` a `|` or `||` call?
-.is_bar_call <- function(x) {
-  is.call(x) &&
-    (identical(x[[1]], as.name("|")) || identical(x[[1]], as.name("||")))
-}
-
 #' Recognize an inline varying-coefficient bar
 #'
 #' @description
