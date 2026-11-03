@@ -112,6 +112,59 @@ test_that("a sampler's multi-scale temporal field reaches every row at its time"
   }
 })
 
+test_that("a one-arm joint fit's fields map to its own eta and reach newdata", {
+  skip_on_cran()
+  # A gaussian fit with phi left out integrates the residual variance on the
+  # one-arm joint door; its fields are read through the same map, from the
+  # precision each cell kept.
+  ar <- .fpb_areal()
+  cd <- .fpb_cont()
+  ar$d$yg <- 0.2 + 0.5 * ar$d$x + log1p(ar$d$y) + stats::rnorm(nrow(ar$d), 0, 0.3)
+  cd$yg <- 0.4 + 0.5 * cd$x + cd$w + stats::rnorm(nrow(cd), 0, 0.3)
+  sp <- spatial_car(ar$W, group_var = "region")
+  fits <- suppressWarnings(list(
+    icar_re_rw1 = tulpa(yg ~ x + spatial(region) + (1 | g), data = ar$d,
+                        family = "gaussian", spatial = sp,
+                        temporal = temporal_rw1("t")),
+    nngp_re = tulpa(yg ~ x + (1 | g), data = cd, family = "gaussian",
+                    spatial = spatial_gp(~ lon + lat, nn = 8)),
+    hsgp = tulpa(yg ~ x, data = cd, family = "gaussian",
+                 spatial = spatial_gp(~ lon + lat, approx = "hsgp", m = 5)),
+    ms = tulpa(yg ~ x, data = ar$d, family = "gaussian",
+               temporal = temporal_multiscale("t", trend = "rw1", seasonal = 4,
+                                              short_term = "iid"))))
+  for (nm in names(fits)) {
+    fit <- fits[[nm]]
+    expect_identical(fit$backend, "nested_laplace_joint", label = nm)
+    expect_true(isTRUE(fit$phi_estimated), label = nm)
+    k <- which(fit$weights > 0)
+    expect_lt(max(abs(.fpb_map_train(fit) - fit$fitted_eta[k, ])), 1e-8,
+              label = nm)
+    nd <- if (nm %in% c("nngp_re", "hsgp")) cd else ar$d
+    expect_lt(max(abs(predict(fit, newdata = nd) - predict(fit))), 1e-10,
+              label = nm)
+    pf <- predict(fit, newdata = nd[1:20, ], include_field = FALSE)
+    expect_gt(max(abs(predict(fit, newdata = nd[1:20, ]) - pf)), 0.05, label = nm)
+  }
+  # The NNGP field's block is located at its distinct locations: the random
+  # effects after it read the columns ranef() reports.
+  al <- fits$nngp_re$arm_layout
+  expect_identical(al$block_size[1L], nrow(fits$nngp_re$spatial$unique_coords))
+})
+
+test_that("a grid's multi-scale temporal components map to its own eta", {
+  skip_on_cran()
+  ar <- .fpb_areal(n_t = 12L)
+  fit <- suppressWarnings(tulpa(
+    y ~ x, data = ar$d, family = "poisson",
+    temporal = temporal_multiscale("t", trend = "rw1", seasonal = 4,
+                                   short_term = "iid")))
+  k <- which(fit$weights > 0)
+  expect_lt(max(abs(.fpb_map_train(fit) - fit$fitted_eta[k, ])), 1e-8)
+  nd <- data.frame(x = 0, t = 1:12)
+  expect_gt(stats::sd(predict(fit, newdata = nd)), 0.01)
+})
+
 test_that("a grid or one-cell fit's areal and temporal fields map to its own eta", {
   skip_on_cran()
   ar <- .fpb_areal()

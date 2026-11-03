@@ -291,9 +291,17 @@
       .field_comp(object, prior[[k]], cols, paste0("b", k, "."), roles[k],
                   cells$theta)
     })
-    rl <- .nl_re_field_load(prior, object$block_latent_offsets, n_x,
-                            cells$theta)
-    re <- if (!is.null(rl)) {
+    # A one-arm joint fit records where each random effect sits and what
+    # scales it (`.joint_arm_re_map()`), its slope terms included; a registry
+    # multi-block fit carries intercept `iid` blocks only.
+    jm <- object$re_effect_map
+    rl <- if (is.null(jm)) {
+      .nl_re_field_load(prior, object$block_latent_offsets, n_x, cells$theta)
+    }
+    re <- if (!is.null(jm)) {
+      list(cols = jm$cols, sd_per_cell = all(jm$scale_block > 0L),
+           scale = function(k) .joint_arm_re_scale(jm, cells$theta, k))
+    } else if (!is.null(rl)) {
       list(cols = rl$cols[[1L]], sd_per_cell = TRUE,
            scale = function(k) as.numeric(rl$weights(k)[[1L]]))
     }
@@ -342,11 +350,25 @@
 .field_comp <- function(object, blk, cols, prefix, role, theta) {
   spec <- if (identical(role, "temporal")) object$temporal else object$spatial
   type <- tolower((if (is.list(blk)) blk$type) %||% spec$type %||% "")
-  kind <- .field_block_kind(type)
+  # The short-term component of a multi-scale temporal field is an `iid`
+  # block over the times, non-centred: the field at a time is the coordinate
+  # times the cell's SD.
+  iid_time <- type == "iid" && identical(role, "temporal")
+  kind <- if (iid_time) "unit" else .field_block_kind(type)
   if (is.null(kind)) return(NULL)
   cols <- as.integer(cols)
   comp <- list(kind = kind, space = role, cols = list(cols), load = NULL,
                block = blk, prefix = prefix, spec = spec, restrict = NULL)
+  # A cyclic walk (a multi-scale field's seasonal component) is laid over one
+  # season: a row reads it at its time's position in the season.
+  if (is.list(blk) && isTRUE(blk$cyclic)) comp$index <- as.integer(blk$n_times)
+  if (iid_time) {
+    nm <- paste0(prefix, "sigma")
+    sg <- if (!is.null(colnames(theta)) && nm %in% colnames(theta)) {
+      as.numeric(theta[, nm])
+    } else rep(as.numeric(blk$sigma_grid %||% NA_real_)[1L], NROW(theta))
+    comp$load <- function(k) sg[k]
+  }
   if (type == "bym2") {
     n_u <- length(cols) %/% 2L
     if (2L * n_u != length(cols)) return(NULL)

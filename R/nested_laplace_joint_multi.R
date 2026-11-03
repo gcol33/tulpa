@@ -2609,8 +2609,10 @@
         type <- tolower(prepared[[b]]$type %||% "")
         # Latent size per block. BYM2 is length-2 (phi ICAR + theta IID)
         # on n_spatial_units; all other blocks are length-1 on the
-        # block's `n_spatial_units` / `n_times` / `n_units`.
+        # block's `n_spatial_units` / `n_spatial` (an NNGP field's distinct
+        # locations) / `n_times` / `n_units`.
         n_units <- prepared[[b]]$n_spatial_units %||%
+                   prepared[[b]]$n_spatial       %||%
                    prepared[[b]]$n_times         %||%
                    prepared[[b]]$n_units         %||%
                    prepared[[b]]$n_groups        %||%

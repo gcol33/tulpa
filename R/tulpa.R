@@ -3436,6 +3436,9 @@ tulpa <- function(formula, data,
     if (joint_arm) {
       fit <- .joint_arm_attach_re(fit, args$prior, fit$re_block_index,
                                   bundle$re_terms %||% list())
+      fit <- .joint_arm_attach_field_read(
+        fit, .joint_arm_re_map(fit, args$prior, fit$re_block_index,
+                               bundle$re_terms %||% list()))
     }
     fit$N           <- fit$N %||% bundle$n_obs
     # Fixed-effect design for fitted()/predict(newdata = NULL), plus the pieces

@@ -142,7 +142,7 @@
   N <- bundle$n_obs
   by_term <- .re_terms_to_nl_blocks(bundle$re_terms %||% list(), N, sigma_re)
   re_blocks <- unlist(by_term, recursive = FALSE)
-  all_blocks <- c(blocks, re_blocks)
+  all_blocks <- c(lapply(blocks, .joint_arm_hsgp_block, n_obs = N), re_blocks)
   bp <- .normalize_beta_prior(beta_prior, ncol(bundle$X))
   arm <- c(list(
     y        = bundle$y,
@@ -164,9 +164,10 @@
                                  "nested_laplace_joint")
   )
   out$control$progress <- out$control$progress %||% FALSE
-  # Each cell's precision is kept, which the per-group random effects are read
-  # off (`.joint_arm_attach_re()`).
-  if (length(re_blocks)) out$control$store_Q <- TRUE
+  # Each cell's precision is kept: the per-group random effects are read off it
+  # (`.joint_arm_attach_re()`), and the latent posterior is drawn from it at
+  # new rows (`.joint_arm_attach_field_read()`).
+  if (length(all_blocks)) out$control$store_Q <- TRUE
   if (length(re_blocks)) {
     # Which blocks each term became: one per term except an uncorrelated
     # slope term, which is one per coefficient.
@@ -178,22 +179,36 @@
   out
 }
 
-# The per-group random effects of a one-arm joint fit, retained per outer cell
-# as `grid_re_mean` / `grid_re_var` (cells x effects), the shape ranef() and the
-# group-level predictions read. Effects are ordered as the fit's random-effect
-# layout names them: term by term, group by group, coefficient by coefficient.
-# An `iid` block is non-centred, its effect the coordinate times the cell's
-# `sigma`; an `miid` block holds the coefficients themselves, field-major (all
-# groups of the first coefficient, then the second, ...).
+# An HSGP block of the registry path (the basis at every observation and its
+# eigenvalues) in the form the joint door reads, the basis of its one arm; the
+# coordinate extent the lengthscale prior is anchored on rides along. Every
+# other block is returned as it is.
 #' @keywords internal
-.joint_arm_attach_re <- function(fit, blocks, re_block_index, re_terms) {
-  if (!length(re_block_index)) return(fit)
+.joint_arm_hsgp_block <- function(blk, n_obs) {
+  if (!identical(tolower(blk$type %||% ""), "hsgp") || is.null(blk$phi_basis)) {
+    return(blk)
+  }
+  B <- as.matrix(blk$phi_basis)
+  blk$phi <- list(B)
+  blk$eigenvalues <- as.numeric(blk$lambda_eig)
+  blk$m_total <- ncol(B)
+  blk$n_obs_per_arm <- as.integer(n_obs)
+  blk$phi_basis <- NULL
+  blk$lambda_eig <- NULL
+  blk
+}
+
+# Where each random effect of a one-arm joint fit sits in its latent vector, in
+# the order the fit's random-effect layout names them (term by term, group by
+# group, coefficient by coefficient), and the `iid` block whose cell `sigma`
+# scales it (0 for an `miid` coefficient, which is the effect itself). NULL for
+# a fit without random-effect blocks.
+#' @keywords internal
+.joint_arm_re_map <- function(fit, blocks, re_block_index, re_terms) {
   starts <- fit$arm_layout$block_start
-  tg <- fit$theta_grid
-  Q_p <- fit$Q_csc_p_per_grid
-  if (is.null(starts) || is.null(Q_p) || !is.matrix(fit$modes)) return(fit)
+  if (!length(re_block_index) || is.null(starts)) return(NULL)
   cols <- integer(0)
-  scale_block <- integer(0)   # the iid block whose sigma loads the effect, 0 = none
+  scale_block <- integer(0)
   for (m in seq_along(re_terms)) {
     rt <- re_terms[[m]]
     bi <- re_block_index[[m]]
@@ -210,16 +225,62 @@
       }
     }
   }
-  sigma_at <- function(k) {
-    vapply(scale_block, function(b) {
-      if (b == 0L) return(1)
-      nm <- sprintf("b%d.sigma", b)
-      if (is.matrix(tg) && nm %in% colnames(tg)) return(tg[k, nm])
-      as.numeric(blocks[[b]]$sigma_grid)[1L]
-    }, numeric(1))
+  sigma_fixed <- vapply(scale_block, function(b)
+    if (b == 0L) 1 else as.numeric(blocks[[b]]$sigma_grid %||% NA_real_)[1L],
+    numeric(1))
+  list(cols = as.integer(cols), scale_block = as.integer(scale_block),
+       sigma_fixed = sigma_fixed)
+}
+
+# The factor turning cell k's random-effect coordinates into effects under a
+# map from `.joint_arm_re_map()`: the cell's `b<j>.sigma` for an `iid`
+# coordinate (its block's fixed SD where the grid carries no such axis), 1 for
+# an `miid` one.
+#' @keywords internal
+.joint_arm_re_scale <- function(map, theta_grid, k) {
+  tg <- theta_grid
+  vapply(seq_along(map$scale_block), function(i) {
+    b <- map$scale_block[i]
+    if (b == 0L) return(1)
+    nm <- sprintf("b%d.sigma", b)
+    if (is.matrix(tg) && nm %in% colnames(tg)) return(tg[k, nm])
+    map$sigma_fixed[i]
+  }, numeric(1))
+}
+
+# The record the one draw path at new rows reads a one-arm joint fit through
+# (`.field_source_grid()`): where each latent block starts (the multi-block
+# offsets `.field_layout()` locates a field by), the stored per-cell precision
+# as the solve to draw from, and the random effects' map.
+#' @keywords internal
+.joint_arm_attach_field_read <- function(fit, re_map) {
+  al <- fit$arm_layout
+  if (is.null(al$block_start) || is.null(fit$Q_csc_p_per_grid)) return(fit)
+  st <- as.integer(al$block_start)
+  sz <- as.integer(al$block_size)
+  if (length(st) && all(utils::head(st, -1L) + utils::head(sz, -1L) == st[-1L])) {
+    fit$block_latent_offsets <- c(st, st[length(st)] + sz[length(sz)])
   }
-  load <- list(type = "iid", n_units = length(cols), cols = list(cols),
-               weights = function(k) list(sigma_at(k)))
+  fit$field_solve <- list(door = "stored")
+  fit$re_effect_map <- re_map
+  fit
+}
+
+# The per-group random effects of a one-arm joint fit, retained per outer cell
+# as `grid_re_mean` / `grid_re_var` (cells x effects), the shape ranef() and the
+# group-level predictions read. Effects are ordered as the fit's random-effect
+# layout names them: term by term, group by group, coefficient by coefficient.
+# An `iid` block is non-centred, its effect the coordinate times the cell's
+# `sigma`; an `miid` block holds the coefficients themselves, field-major (all
+# groups of the first coefficient, then the second, ...).
+#' @keywords internal
+.joint_arm_attach_re <- function(fit, blocks, re_block_index, re_terms) {
+  map <- .joint_arm_re_map(fit, blocks, re_block_index, re_terms)
+  Q_p <- fit$Q_csc_p_per_grid
+  if (is.null(map) || is.null(Q_p) || !is.matrix(fit$modes)) return(fit)
+  tg <- fit$theta_grid
+  load <- list(type = "iid", n_units = length(map$cols), cols = list(map$cols),
+               weights = function(k) list(.joint_arm_re_scale(map, tg, k)))
   fit <- .nl_attach_unit_loads(fit, list(re = load), Q_p, fit$Q_csc_i_per_grid,
                                fit$Q_csc_x_per_grid, fit$Q_csc_n,
                                fit$constraint_cols)
