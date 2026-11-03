@@ -41,14 +41,16 @@ test_that("nested_laplace without a latent block errors", {
   expect_match(conditionMessage(err), "at least one .latent")
 })
 
-test_that("inference_mode_info() does not claim nested_laplace_joint dispatches via tulpa(mode =) (#786)", {
-  expect_false(isTRUE(BACKEND_REGISTRY$nested_laplace_joint$dispatchable))
+test_that("inference_mode_info() lists nested_laplace_joint as a tulpa(mode =) backend (#786, #1092)", {
+  # tulpa() reaches the joint driver as a one-arm fit (R/tulpa_joint_arm.R),
+  # so the printed tag and the dispatch guard read the same registry entry.
+  expect_true(isTRUE(BACKEND_REGISTRY$nested_laplace_joint$dispatchable %||% TRUE))
   out <- capture.output(inference_mode_info())
   line <- grep("^\\s*\\[", out, value = TRUE)
   line <- grep("nested_laplace_joint", line, value = TRUE)
   expect_length(line, 1L)
-  expect_match(line, "^\\s*\\[direct\\]")
-  expect_match(line, "tulpa_nested_laplace_joint\\(\\)")
+  expect_match(line, "^\\s*\\[R\\]")
+  expect_match(line, "mode = 'nested_laplace_joint'")
 })
 
 skip_on_cran_budget()
@@ -64,17 +66,15 @@ test_that("latent blocks fail loudly on a non-nested backend", {
   }
 })
 
-test_that("the joint engine cannot be driven from a single-response formula", {
+test_that("a one-arm joint fit refuses a block the joint door does not carry (#1136)", {
   skip_on_cran_budget()
   d   <- sim_ar1_pois(106, 40L)
   blk <- make_ar1_block(40L)
   err <- expect_error(
     tulpa(y ~ x + latent(blk), d, family = "poisson",
           mode = "nested_laplace_joint"))
-  expect_match(conditionMessage(err), "multiple response arms")
-  # The redirect must name the REAL fitter (gcol33/tulpa#786): the function
-  # does not exist under the bare backend name.
-  expect_match(conditionMessage(err), "Call tulpa_nested_laplace_joint\\(\\) directly")
+  expect_match(conditionMessage(err), "does not carry latent\\(\\) blocks")
+  expect_match(conditionMessage(err), "tulpa_nested_laplace_joint\\(\\) directly")
   expect_false(exists("nested_laplace_joint", envir = asNamespace("tulpa")))
 })
 

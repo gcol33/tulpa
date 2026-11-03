@@ -3301,6 +3301,16 @@ tulpa <- function(formula, data,
       notify = FALSE)
   }
   joint_arm <- identical(sel$backend, "nested_laplace_joint")
+  # Named by the caller, the one-arm joint door still carries only what it has
+  # a channel for; several response arms are tulpa_nested_laplace_joint()'s.
+  if (joint_arm && !is.null(joint_unfit)) {
+    stop(sprintf(paste0(
+      "mode = 'nested_laplace_joint' fits the formula as one response arm on ",
+      "the joint nested-Laplace door, which does not carry %s. Use mode = ",
+      "'nested_laplace' (or 'auto'), or call tulpa_nested_laplace_joint() ",
+      "directly for a model with multiple response arms."), joint_unfit),
+      call. = FALSE)
+  }
 
   sigma_re_conditioned <- NULL
   if (K > 0L &&
