@@ -43,6 +43,11 @@ struct ParsedArm {
     // (eta = offset + X beta + RE + blocks). Length N_arm when set; empty ->
     // no offset (treated as zero). Read by every joint compute_eta site.
     Rcpp::NumericVector offset;
+    // True for an arm of rows the predictor is only read at (predict() at new
+    // rows, `predict_rows` on the R arm): no fit runs on it, so no centering
+    // constant is folded into its design and its columns are not checked
+    // against a block's alias weight.
+    bool predict_rows = false;
 };
 
 // A fixed-effect prior written onto an arm in the per-coefficient form the
@@ -83,6 +88,9 @@ inline int parse_joint_arms(
                          : 0.0;
         pa.beta_start  = n_x_running;
         n_x_running   += pa.p;
+        if (a.containsElementNamed("predict_rows")) {
+            pa.predict_rows = Rcpp::as<bool>(a["predict_rows"]);
+        }
 
         // Optional per-coefficient beta prior (mean + precision). Length must
         // match pa.p when supplied; absence leaves the empty vectors that the

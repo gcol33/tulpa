@@ -222,10 +222,10 @@ test_that("keep_grid_hessians leaves modes, weights and log_marginal bit-for-bit
   expect_null(tulpa:::.nested_fixed_moments(off))
 })
 
-test_that("the cell precision is not carried home unless store_Q asked for it", {
+test_that("the cell precision is not carried home with store_Q off", {
   skip_on_cran()
   d <- .j305_icar_data()
-  fit <- .j305_icar_fit(d)
+  fit <- .j305_icar_fit(d, store_Q = FALSE)
   expect_null(fit$Q_csc_p_per_grid)
   expect_null(fit$Q_csc_n)
   # The retained pieces are the fixed-effect block only, one per cell.
@@ -236,7 +236,8 @@ test_that("the cell precision is not carried home unless store_Q asked for it", 
                      c(fit$n_fixed, fit$n_fixed))
     expect_length(fit$grid_modes[[k]], fit$n_fixed)
   }
-  expect_true(!is.null(.j305_icar_fit(d, store_Q = TRUE)$Q_csc_p_per_grid))
+  # A fit carrying a block keeps it by default: predict() reads it (#1102).
+  expect_true(!is.null(.j305_icar_fit(d)$Q_csc_p_per_grid))
 })
 
 # --------------------------------------------------------------------------- #
@@ -441,7 +442,7 @@ test_that("a coupled multi-block joint fit extracts the same block in the loop",
 test_that("the retention no longer needs the precision materialised at all", {
   skip_on_cran()
   d <- .j305_icar_data()
-  fit <- .j305_icar_fit(d)
+  fit <- .j305_icar_fit(d, store_Q = FALSE)
   # Nothing anywhere in the pipeline stored a precision, and the block is still
   # there: before #307 the kernel had to keep every cell's precision to reach it.
   expect_null(fit$Q_csc_p_per_grid)

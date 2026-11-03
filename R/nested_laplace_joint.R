@@ -509,11 +509,15 @@
 #'   * `verbose` (`FALSE`) -- when `TRUE`, announce the engaged outer integrator
 #'     for a multi-block prior in one line at selection time (see `integration`),
 #'     and report each CCD decline reason.
-#'   * `store_Q` (`FALSE`) -- also return the per-grid joint precision Q (lower
-#'     triangle, CSC) as `Q_csc_p_per_grid`, `Q_csc_i_per_grid`,
-#'     `Q_csc_x_per_grid`, `Q_csc_n`, letting callers compute INLA-style
+#'   * `store_Q` (`TRUE` when `prior` carries a block or an arm carries
+#'     random intercepts, else `FALSE`) -- also return the per-grid joint precision Q
+#'     (lower triangle, CSC) as `Q_csc_p_per_grid`, `Q_csc_i_per_grid`,
+#'     `Q_csc_x_per_grid`, `Q_csc_n`. [predict()] reads it for the uncertainty
+#'     of a new row's linear predictor, and callers can compute INLA-style
 #'     total-variance posterior moments (`Var-of-means + Mean-of-Var`) on inner
-#'     latent coordinates such as fixed-effect betas.
+#'     latent coordinates such as fixed-effect betas. `FALSE` keeps the fit
+#'     smaller and leaves predict() the point prediction only (or the
+#'     fixed-effect and basis-builder blocks it keeps per cell).
 #'   * `keep_grid_hessians` (`TRUE`) -- retain the per-grid-point fixed-effect
 #'     mode and marginal precision as `$grid_modes` / `$grid_hessians`, which is
 #'     what lets [summary.tulpa_fit()], [confint.tulpa_fit()] and
@@ -1894,7 +1898,13 @@ tulpa_nested_laplace_joint <- function(responses,
     screen_iters              <- control$screen_iters %||% .nl_screen("iters")
     x_init                    <- control$x_init
     verbose                   <- control$verbose %||% FALSE
-    store_Q                   <- control$store_Q %||% FALSE
+    # Each cell's precision is kept by default whenever the predictor carries
+    # a latent term beyond the fixed effects (a block, or an arm's random
+    # intercepts): predict() reads it for a new row's uncertainty
+    # (`.joint_predict()`), which a fixed-effect block alone does not carry.
+    store_Q_wanted            <- control$store_Q %||%
+        .joint_carries_latent(prior, responses)
+    store_Q                   <- store_Q_wanted
     keep_grid_hessians        <- isTRUE(control$keep_grid_hessians %||% TRUE)
     # The subspace-debias coupling closure reads the modal cell's joint
     # precision, which only `store_Q` produces. Requesting the closure
@@ -2495,6 +2505,9 @@ tulpa_nested_laplace_joint <- function(responses,
     res$responses   <- responses
     res             <- .joint_attach_observations(res, responses)
     res$copy        <- copy
+    # What predict() rebuilds the kernel's inputs from at new rows
+    # (`.joint_eta_inputs()`): the block type and the resolved copy map.
+    res$eta_layout  <- list(door = "single", type = type, cp = cp)
     res$cell_coupling      <- cell_coupling
     res$adaptive_grid_info <- refine_info
     # Every axis's declared nodes, whatever subset of the tensor a pilot
@@ -2532,7 +2545,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # `store_Q` was turned on for the closure, not by the caller: hand back the
     # one assembled precision, not the per-cell CSC scratch the caller never
     # asked for and would have to carry through every downstream object.
-    if (keep_joint_prec && !isTRUE(control$store_Q)) {
+    if (keep_joint_prec && !isTRUE(store_Q_wanted)) {
       res$Q_csc_p_per_grid <- NULL
       res$Q_csc_i_per_grid <- NULL
       res$Q_csc_x_per_grid <- NULL

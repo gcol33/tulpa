@@ -532,11 +532,15 @@ linear predictor to report.
 \item \code{verbose} (\code{FALSE}) -- when \code{TRUE}, announce the engaged outer integrator
 for a multi-block prior in one line at selection time (see \code{integration}),
 and report each CCD decline reason.
-\item \code{store_Q} (\code{FALSE}) -- also return the per-grid joint precision Q (lower
-triangle, CSC) as \code{Q_csc_p_per_grid}, \code{Q_csc_i_per_grid},
-\code{Q_csc_x_per_grid}, \code{Q_csc_n}, letting callers compute INLA-style
+\item \code{store_Q} (\code{TRUE} when \code{prior} carries a block or an arm carries
+random intercepts, else \code{FALSE}) -- also return the per-grid joint precision Q
+(lower triangle, CSC) as \code{Q_csc_p_per_grid}, \code{Q_csc_i_per_grid},
+\code{Q_csc_x_per_grid}, \code{Q_csc_n}. \code{\link[=predict]{predict()}} reads it for the uncertainty
+of a new row's linear predictor, and callers can compute INLA-style
 total-variance posterior moments (\code{Var-of-means + Mean-of-Var}) on inner
-latent coordinates such as fixed-effect betas.
+latent coordinates such as fixed-effect betas. \code{FALSE} keeps the fit
+smaller and leaves predict() the point prediction only (or the
+fixed-effect and basis-builder blocks it keeps per cell).
 \item \code{keep_grid_hessians} (\code{TRUE}) -- retain the per-grid-point fixed-effect
 mode and marginal precision as \verb{$grid_modes} / \verb{$grid_hessians}, which is
 what lets \code{\link[=summary.tulpa_fit]{summary.tulpa_fit()}}, \code{\link[=confint.tulpa_fit]{confint.tulpa_fit()}} and

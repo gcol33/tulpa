@@ -136,17 +136,25 @@ of the linear predictor and \code{se.fit} / \code{lower} / \code{upper} are its 
 SD and quantiles.
 
 A \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} fit (no model formula) is predicted for one
-response \code{arm} at \code{newdata = list(X = , coords = )}: \code{X} is the arm's design
-at the new rows, with the columns of the arm's fitted \code{X} in their order,
-and \code{coords} the rows' coordinates, needed where an \code{hsgp} block given by its
-coordinates (a basis builder: \code{coords}, \code{m}, \code{c}) reaches the arm. The basis
-is rebuilt at \code{coords} on the domain the block was fitted on and, for a
-block with \code{svc_column}, scaled by that column of \code{X}. Within each
-outer-grid cell the linear predictor is Gaussian, with the cell's mode and
-its covariance over the fixed effects and the builder blocks' coefficients
-(retained per cell by the fit as \code{basis_block_cov}); the prediction is the
-weighted mixture of those Gaussians over the cells, so \code{lower} / \code{upper} are
-the mixture's quantiles. An arm reached by a block without a basis builder,
-or by its own random intercepts, is refused: their value at a new row is not
-read here.
+response \code{arm} at \code{newdata}, a list: \code{X} is the arm's design at the new
+rows, with the columns of the arm's fitted \code{X} in their order, and each
+latent term reaching the arm is placed by the entry it needs --
+\code{index}, each row's unit (areal unit, time, group, location) per block, a
+list of integer vectors by block position, by \verb{b<k>} or by the block's
+\code{name}; \code{coords}, the rows' coordinates, for an \code{hsgp} block given by its
+coordinates (a basis builder: \code{coords}, \code{m}, \code{c}), whose basis is rebuilt
+there on the fitted domain; \code{basis} for an \code{hsgp} block given by its basis;
+\code{weight} for a block's per-row design weight (\code{svc_weight}, or one per field
+for \code{field_weight}); \code{projector} for a projected block; \code{re_idx}, each row's
+group for the arm's random intercepts (\code{NA} for a group the fit did not
+see, whose effect is drawn from its \code{sigma_re}); and \code{offset}. Each block
+enters at its amplitude on the arm -- a copy arm's \code{alpha} times the field
+SD, a \code{field_coef}, an \code{iid} block's SD -- as the fit's own linear predictor
+takes it. Within each outer-grid cell the linear predictor is Gaussian, with
+the cell's mode and covariance (read off the cell's precision, which the fit
+keeps by default when it carries a latent term, \code{control$store_Q}); the
+prediction is the weighted mixture of those Gaussians over the cells, so
+\code{lower} / \code{upper} are the mixture's quantiles. A fit with \code{store_Q = FALSE}
+reports the uncertainty only for rows that load on the fixed effects and
+basis-builder blocks alone.
 }

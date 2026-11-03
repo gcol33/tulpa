@@ -1538,6 +1538,80 @@ inline void scatter_arm_obs_joint_multi_sparse(
     }
 }
 
+// The linear predictor of row i of arm k_arm, term by term: `lin(col, coef)`
+// for every latent coordinate the row loads on linearly (its fixed effects,
+// its random intercept, and each block's coordinates at the block's per-arm
+// amplitude d_eff[b][k_arm] times the row's design weight), and
+// `bil(u_slot, lambda_slot, coef)` for a bilinear factor term. The row's
+// offset is not visited. The eta accumulator and the loading export
+// (cpp_joint_arm_loadings) both walk a row through this one function, so a
+// row's predictor and its loadings cannot describe different models.
+template <class Lin, class Bil>
+inline void visit_joint_arm_row(
+    const ParsedArm&                        pa,
+    int                                     k_arm,
+    int                                     i,
+    const std::vector<LatentBlock>&         blocks,
+    int                                     k_grid,
+    const std::vector<std::vector<double>>& d_eff,
+    std::vector<double>&                    basis_scratch,
+    std::vector<std::pair<int,double>>&     multi_scratch,
+    Lin&&                                   lin,
+    Bil&&                                   bil
+) {
+    for (int j = 0; j < pa.p; j++) lin(pa.beta_start + j, pa.X(i, j));
+    if (pa.n_re_groups > 0) {
+        int g = static_cast<int>(pa.re_idx[i]) - 1;
+        if (g >= 0 && g < pa.n_re_groups) lin(pa.re_start + g, 1.0);
+    }
+    const int B = static_cast<int>(blocks.size());
+    for (int b = 0; b < B; b++) {
+        const LatentBlock& blk = blocks[b];
+        // The per-row SVC weight rides the block amplitude on every kind, as
+        // in the scatter walkers, and is 1.0 where the block declares none.
+        const double d_e = d_eff[b][k_arm] * block_row_weight(blk, i, k_arm);
+        if (d_e == 0.0) continue;
+        switch (blk.contrib_kind) {
+        case BlockContribKind::INDEXED_SINGLE: {
+            if (!blk.idx) break;
+            int l = blk.idx(i, k_arm);
+            if (l > 0 && l <= blk.size) lin(blk.start + l - 1, d_e);
+            break;
+        }
+        case BlockContribKind::INDEXED_MULTI: {
+            if (!blk.obs_indices) break;
+            blk.fill_obs_indices(i, k_arm, multi_scratch);
+            for (const auto& jw : multi_scratch) {
+                int l = jw.first;
+                if (l > 0 && l <= blk.size) {
+                    lin(blk.start + l - 1, d_e * jw.second);
+                }
+            }
+            break;
+        }
+        case BlockContribKind::DENSE_BASIS: {
+            if (!blk.basis_eval) break;
+            if (static_cast<int>(basis_scratch.size()) < blk.size) {
+                basis_scratch.assign(blk.size, 0.0);
+            }
+            blk.basis_eval(i, k_arm, k_grid, basis_scratch.data());
+            for (int j = 0; j < blk.size; j++) {
+                lin(blk.start + j, d_e * basis_scratch[j]);
+            }
+            break;
+        }
+        case BlockContribKind::BILINEAR_FACTOR: {
+            if (!blk.obs_factor_lambda) break;
+            // Both slots are bounded by obs_factor_lambda itself, which
+            // returns {-1, -1} outside the factor's latent range.
+            auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
+            if (u_slot >= 0 && lambda_slot >= 0) bil(u_slot, lambda_slot, d_e);
+            break;
+        }
+        }
+    }
+}
+
 // Sparse-path joint compute_eta accumulator. Dispatches on each block's
 // contrib_kind so INDEXED_SINGLE / INDEXED_MULTI / DENSE_BASIS all flow
 // through the same per-arm obs loop.

@@ -2362,6 +2362,9 @@
     res$responses     <- responses
     res               <- .joint_attach_observations(res, responses)
     res$copy          <- copy
+    # What predict() rebuilds the kernel's inputs from at new rows
+    # (`.joint_eta_inputs()`): the resolved copy map and the axis layout.
+    res$eta_layout    <- list(door = "multi", cp = cp, axis_offsets = axis_offsets)
     res$cell_coupling <- cell_coupling
     res$local_ccd_info <- local_ccd_info
     res$adaptive_grid_info <- adaptive_info

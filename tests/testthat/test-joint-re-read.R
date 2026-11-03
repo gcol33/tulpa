@@ -106,12 +106,12 @@ test_that("a direct joint fit reports its iid, miid and arm random effects", {
   }))
   expect_lt(max(abs(apply(E, 2, stats::sd) / ri$sd - 1)), 0.08)
   expect_lt(max(abs(colMeans(E) - ri$estimate) / ri$sd), 0.1)
-  # Without the per-cell precision the mixture mean is reported, its spread
-  # is not.
+  # Without the per-cell precision (kept by default on a fit with a block)
+  # the mixture mean is reported, its spread is not.
   f0 <- suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(arm = ap),
     prior = list(list(type = "iid", n_units = G, obs_idx = list(grp))),
-    control = list(diagnose_k = FALSE)))
+    control = list(diagnose_k = FALSE, store_Q = FALSE)))
   r0 <- ranef(f0)
   expect_equal(r0$estimate, ri$estimate, tolerance = 1e-8)
   expect_true(all(is.na(r0$sd)) && all(r0$source == "mode"))

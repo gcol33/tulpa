@@ -2230,19 +2230,27 @@ nobs.tulpa_fit <- function(object, ...) {
 #' SD and quantiles.
 #'
 #' A [tulpa_nested_laplace_joint()] fit (no model formula) is predicted for one
-#' response `arm` at `newdata = list(X = , coords = )`: `X` is the arm's design
-#' at the new rows, with the columns of the arm's fitted `X` in their order,
-#' and `coords` the rows' coordinates, needed where an `hsgp` block given by its
-#' coordinates (a basis builder: `coords`, `m`, `c`) reaches the arm. The basis
-#' is rebuilt at `coords` on the domain the block was fitted on and, for a
-#' block with `svc_column`, scaled by that column of `X`. Within each
-#' outer-grid cell the linear predictor is Gaussian, with the cell's mode and
-#' its covariance over the fixed effects and the builder blocks' coefficients
-#' (retained per cell by the fit as `basis_block_cov`); the prediction is the
-#' weighted mixture of those Gaussians over the cells, so `lower` / `upper` are
-#' the mixture's quantiles. An arm reached by a block without a basis builder,
-#' or by its own random intercepts, is refused: their value at a new row is not
-#' read here.
+#' response `arm` at `newdata`, a list: `X` is the arm's design at the new
+#' rows, with the columns of the arm's fitted `X` in their order, and each
+#' latent term reaching the arm is placed by the entry it needs --
+#' `index`, each row's unit (areal unit, time, group, location) per block, a
+#' list of integer vectors by block position, by `b<k>` or by the block's
+#' `name`; `coords`, the rows' coordinates, for an `hsgp` block given by its
+#' coordinates (a basis builder: `coords`, `m`, `c`), whose basis is rebuilt
+#' there on the fitted domain; `basis` for an `hsgp` block given by its basis;
+#' `weight` for a block's per-row design weight (`svc_weight`, or one per field
+#' for `field_weight`); `projector` for a projected block; `re_idx`, each row's
+#' group for the arm's random intercepts (`NA` for a group the fit did not
+#' see, whose effect is drawn from its `sigma_re`); and `offset`. Each block
+#' enters at its amplitude on the arm -- a copy arm's `alpha` times the field
+#' SD, a `field_coef`, an `iid` block's SD -- as the fit's own linear predictor
+#' takes it. Within each outer-grid cell the linear predictor is Gaussian, with
+#' the cell's mode and covariance (read off the cell's precision, which the fit
+#' keeps by default when it carries a latent term, `control$store_Q`); the
+#' prediction is the weighted mixture of those Gaussians over the cells, so
+#' `lower` / `upper` are the mixture's quantiles. A fit with `store_Q = FALSE`
+#' reports the uncertainty only for rows that load on the fixed effects and
+#' basis-builder blocks alone.
 #'
 #' @param object A `tulpa_fit` object.
 #' @param newdata Data frame of covariates (and, for a field fit, the field's
@@ -2287,8 +2295,9 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   if (inherits(object, "tulpa_nested_laplace_joint") && is.null(object$formula)) {
     if (is.null(newdata)) {
       stop("predict() on a tulpa_nested_laplace_joint() fit needs `newdata`: ",
-           "list(X = <the arm's design at the new rows>, coords = <their ",
-           "coordinates, where a field with a basis builder reaches the arm>).",
+           "list(X = <the arm's design at the new rows>, and for the latent ",
+           "terms reaching the arm index = <each row's unit per block>, ",
+           "coords = <coordinates, for a basis builder>, re_idx = <groups>).",
            call. = FALSE)
     }
     return(.joint_predict(object, newdata, arm, type, se.fit, level))

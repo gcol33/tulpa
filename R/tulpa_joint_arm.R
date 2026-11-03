@@ -164,10 +164,10 @@
                                  "nested_laplace_joint")
   )
   out$control$progress <- out$control$progress %||% FALSE
-  # Each cell's precision is kept: the per-group random effects are read off it
-  # (`.joint_arm_attach_re()`), and the latent posterior is drawn from it at
-  # new rows (`.joint_arm_attach_field_read()`).
-  if (length(all_blocks)) out$control$store_Q <- TRUE
+  # With a block, the joint door keeps each cell's precision by default: the
+  # per-group random effects are read off it (`.joint_arm_attach_re()`), and
+  # the latent posterior is drawn from it at new rows
+  # (`.joint_arm_attach_field_read()`).
   if (length(re_blocks)) {
     attr(out, "re_block_index") <- .re_block_index(length(blocks), by_term)
     attr(out, "re_block_conditioned") <- !is.null(sigma_re)

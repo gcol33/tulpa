@@ -381,6 +381,10 @@ cpp_nested_laplace_joint_multi_batch <- function(arms_list, copy_arms, copy_bloc
     .Call(`_tulpa_cpp_nested_laplace_joint_multi_batch`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter, tol, cell_coupling_name, store_Q, phi_grid_per_arm, hessian_pd_mode, step_curvature_mode, force_sparse, fixed_block_p, compute_fitted_var, fixed_block_extra)
 }
 
+cpp_joint_arm_loadings <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, arm, cells) {
+    .Call(`_tulpa_cpp_joint_arm_loadings`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, arm, cells)
+}
+
 cpp_test_joint_pattern <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets) {
     .Call(`_tulpa_cpp_test_joint_pattern`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets)
 }

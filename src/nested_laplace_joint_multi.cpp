@@ -324,6 +324,7 @@ inline void check_alias_column(
     for (int k = 0; k < n_arms; ++k) {
         const tulpa::ParsedArm& pa = parsed[k];
         if (pa.p == 0) continue;                      // arm takes no fold
+        if (pa.predict_rows) continue;                // rows read, not fitted
         if (beta_offset >= pa.p) continue;            // arm lacks that column
         Rcpp::NumericVector w;
         int m = pa.X.nrow();
@@ -1897,6 +1898,86 @@ static int build_joint_layout(
     return latent_offset;
 }
 
+// The linear predictor of arm `arm` (0-based) as a linear map of the latent
+// vector at each outer-grid cell in `cells` (0-based rows of `theta_grid`):
+// eta = offset + A_k x, A_k returned as 1-based triplets (row, col, value),
+// one list entry per cell. The arms and blocks are built from the inputs the
+// fit was solved with, so `arms_list[[arm + 1]]` may be a pseudo-arm carrying
+// new rows (its design, offset and random-effect index, and each block's
+// per-arm entries for it); every row is walked by visit_joint_arm_row(), the
+// walk the eta accumulator takes. A bilinear factor term is not a linear map
+// of the latent vector and is refused.
+// [[Rcpp::export]]
+Rcpp::List cpp_joint_arm_loadings(
+    Rcpp::List          arms_list,
+    Rcpp::IntegerVector copy_arms,
+    Rcpp::IntegerVector copy_blocks,
+    Rcpp::List          blocks_spec,
+    Rcpp::NumericMatrix theta_grid,
+    Rcpp::IntegerVector axis_offsets,
+    int                 arm,
+    Rcpp::IntegerVector cells
+) {
+    const int n_arms = arms_list.size();
+    const int B = blocks_spec.size();
+    if (axis_offsets.size() != B + 1) {
+        Rcpp::stop("axis_offsets must have length B+1 (got %d for B=%d)",
+                   static_cast<int>(axis_offsets.size()), B);
+    }
+    if (arm < 0 || arm >= n_arms) Rcpp::stop("`arm` out of range.");
+    std::vector<tulpa::ParsedArm>   parsed;
+    std::vector<tulpa::JointArm>    arms;
+    std::vector<tulpa::LatentBlock> blocks;
+    int n_x_after_re = 0;
+    const int n_x = build_joint_layout(arms_list, blocks_spec, theta_grid,
+                                       copy_arms, copy_blocks, axis_offsets,
+                                       B, n_arms, parsed, arms, blocks,
+                                       n_x_after_re);
+    const int Bn = static_cast<int>(blocks.size());
+    const tulpa::ParsedArm& pa = parsed[arm];
+    const int N = arms[arm].N;
+    Rcpp::NumericVector offset(N, 0.0);
+    if (pa.offset.size() == N) {
+        for (int i = 0; i < N; i++) offset[i] = pa.offset[i];
+    }
+    std::vector<std::vector<double>> d_eff(Bn, std::vector<double>(n_arms, 0.0));
+    std::vector<double>                basis_scratch;
+    std::vector<std::pair<int,double>> multi_scratch;
+    Rcpp::List out(cells.size());
+    for (int c = 0; c < cells.size(); c++) {
+        const int k = cells[c];
+        if (k < 0 || k >= theta_grid.nrow()) Rcpp::stop("cell out of range.");
+        for (int b = 0; b < Bn; b++) {
+            if (blocks[b].prep && !blocks[b].prep(k)) {
+                Rcpp::stop("Block %d is infeasible at cell %d.", b + 1, k + 1);
+            }
+            const double s = blocks[b].arm_scale
+                             ? blocks[b].arm_scale(arm, k) : 1.0;
+            d_eff[b][arm] = s * blocks[b].d_fac_at(k);
+        }
+        std::vector<int> ri, ci;
+        std::vector<double> vx;
+        for (int i = 0; i < N; i++) {
+            visit_joint_arm_row(
+                pa, arm, i, blocks, k, d_eff, basis_scratch, multi_scratch,
+                [&](int col, double v) {
+                    if (v == 0.0) return;
+                    ri.push_back(i + 1); ci.push_back(col + 1); vx.push_back(v);
+                },
+                [&](int, int, double) {
+                    Rcpp::stop("A latent-factor block enters the predictor "
+                               "bilinearly and has no linear loading.");
+                });
+        }
+        out[c] = Rcpp::List::create(
+            Rcpp::Named("i") = Rcpp::wrap(ri), Rcpp::Named("j") = Rcpp::wrap(ci),
+            Rcpp::Named("x") = Rcpp::wrap(vx));
+    }
+    return Rcpp::List::create(Rcpp::Named("loadings") = out,
+                              Rcpp::Named("offset") = offset,
+                              Rcpp::Named("n_x") = n_x);
+}
+
 // [[Rcpp::export]]
 Rcpp::List cpp_test_joint_pattern(
     Rcpp::List          arms_list,
@@ -3166,75 +3247,16 @@ void compute_eta_joint_sparse_dispatch(
     std::vector<std::pair<int,double>>& multi_scratch
 ) {
     const int n_arms = static_cast<int>(arms.size());
-    const int B      = static_cast<int>(blocks.size());
     for (int k_arm = 0; k_arm < n_arms; k_arm++) {
         const ParsedArm& pa = parsed[k_arm];
-        const int N_k    = arms[k_arm].N;
-        const int p_k    = pa.p;
-        const int n_re_k = pa.n_re_groups;
-        const int bstart = pa.beta_start;
-        const int rstart = pa.re_start;
-
+        const int N_k = arms[k_arm].N;
         for (int i = 0; i < N_k; i++) {
             double e = (pa.offset.size() != 0) ? pa.offset[i] : 0.0;
-            for (int j = 0; j < p_k; j++) e += pa.X(i, j) * x[bstart + j];
-            if (n_re_k > 0) {
-                int g = static_cast<int>(pa.re_idx[i]) - 1;
-                if (g >= 0 && g < n_re_k) e += x[rstart + g];
-            }
-            for (int b = 0; b < B; b++) {
-                const LatentBlock& blk = blocks[b];
-                // Same fold as the scatter walkers: the per-row SVC weight
-                // rides the block amplitude on every kind, and is 1.0 where
-                // the block declares none.
-                const double d_e = d_eff[b][k_arm]
-                                 * block_row_weight(blk, i, k_arm);
-                if (d_e == 0.0) continue;
-                switch (blk.contrib_kind) {
-                case BlockContribKind::INDEXED_SINGLE: {
-                    if (!blk.idx) break;
-                    int l = blk.idx(i, k_arm);
-                    if (l > 0 && l <= blk.size) {
-                        e += d_e * x[blk.start + l - 1];
-                    }
-                    break;
-                }
-                case BlockContribKind::INDEXED_MULTI: {
-                    if (!blk.obs_indices) break;
-                    blk.fill_obs_indices(i, k_arm, multi_scratch);
-                    for (const auto& jw : multi_scratch) {
-                        int l = jw.first;
-                        if (l > 0 && l <= blk.size) {
-                            e += d_e * jw.second * x[blk.start + l - 1];
-                        }
-                    }
-                    break;
-                }
-                case BlockContribKind::DENSE_BASIS: {
-                    if (!blk.basis_eval) break;
-                    if (static_cast<int>(basis_scratch.size()) < blk.size) {
-                        basis_scratch.assign(blk.size, 0.0);
-                    }
-                    blk.basis_eval(i, k_arm, k_grid, basis_scratch.data());
-                    double acc = 0.0;
-                    for (int j = 0; j < blk.size; j++) {
-                        acc += basis_scratch[j] * x[blk.start + j];
-                    }
-                    e += d_e * acc;
-                    break;
-                }
-                case BlockContribKind::BILINEAR_FACTOR: {
-                    if (!blk.obs_factor_lambda) break;
-                    // Both slots are bounded by obs_factor_lambda itself, which
-                    // returns {-1, -1} outside the factor's latent range.
-                    auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
-                    if (u_slot >= 0 && lambda_slot >= 0) {
-                        e += d_e * x[u_slot] * x[lambda_slot];
-                    }
-                    break;
-                }
-                }
-            }
+            visit_joint_arm_row(
+                pa, k_arm, i, blocks, k_grid, d_eff, basis_scratch,
+                multi_scratch,
+                [&](int col, double c) { e += c * x[col]; },
+                [&](int u, int l, double c) { e += c * x[u] * x[l]; });
             etas[k_arm][i] = e;
         }
     }

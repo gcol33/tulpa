@@ -1909,6 +1909,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_joint_arm_loadings
+Rcpp::List cpp_joint_arm_loadings(Rcpp::List arms_list, Rcpp::IntegerVector copy_arms, Rcpp::IntegerVector copy_blocks, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, int arm, Rcpp::IntegerVector cells);
+RcppExport SEXP _tulpa_cpp_joint_arm_loadings(SEXP arms_listSEXP, SEXP copy_armsSEXP, SEXP copy_blocksSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP armSEXP, SEXP cellsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type arms_list(arms_listSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type copy_arms(copy_armsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type copy_blocks(copy_blocksSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type blocks_spec(blocks_specSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type theta_grid(theta_gridSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type axis_offsets(axis_offsetsSEXP);
+    Rcpp::traits::input_parameter< int >::type arm(armSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type cells(cellsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_joint_arm_loadings(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, arm, cells));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_joint_pattern
 Rcpp::List cpp_test_joint_pattern(Rcpp::List arms_list, Rcpp::IntegerVector copy_arms, Rcpp::IntegerVector copy_blocks, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets);
 RcppExport SEXP _tulpa_cpp_test_joint_pattern(SEXP arms_listSEXP, SEXP copy_armsSEXP, SEXP copy_blocksSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP) {
@@ -3298,6 +3316,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nl_checkpoint_loaded_total", (DL_FUNC) &_tulpa_cpp_nl_checkpoint_loaded_total, 0},
     {"_tulpa_cpp_nested_laplace_joint_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi, 38},
     {"_tulpa_cpp_nested_laplace_joint_multi_batch", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi_batch, 20},
+    {"_tulpa_cpp_joint_arm_loadings", (DL_FUNC) &_tulpa_cpp_joint_arm_loadings, 8},
     {"_tulpa_cpp_test_joint_pattern", (DL_FUNC) &_tulpa_cpp_test_joint_pattern, 6},
     {"_tulpa_cpp_test_joint_logpost_grad", (DL_FUNC) &_tulpa_cpp_test_joint_logpost_grad, 9},
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 30},

@@ -142,51 +142,13 @@
     )
 )
 
-# Single-block call_kernel: route through cpp_nested_laplace_joint_multi by
-# packing the legacy prior + per-arm spatial_idx into a length-1
-# blocks_spec list and a theta_grid matrix matching the C++ side's axis
-# conventions:
-#
-#   bym2  +copy: axes = (sigma_occ, sigma_pos, rho)   -- unit-precision
-#                latent. R side feeds sigma_occ = sigma, sigma_pos =
-#                alpha * sigma from the (sigma, alpha) outer grid; the
-#                C++ reads two named columns and uses them as per-arm
-#                scaling factors. Mathematically identical to the legacy
-#                (sigma_occ, sigma_pos) layout cell-by-cell, but the SET
-#                of cells covers alpha evenly instead of forming a
-#                Cartesian product in sigma_pos.
-#   bym2  -copy: axes = (sigma, rho)                  -- sigma rolled into
-#                d_fac directly (no copy block).
-#   icar  +copy: axes = (sigma_occ, sigma_pos)        -- as above.
-#   icar  -copy: axes = (tau,)                        -- tau on prior;
-#                grid$sigma is translated to tau = 1 / sigma^2.
-#   car_proper +copy: (sigma_occ, sigma_pos, rho_car) -- as above.
-#   car_proper -copy: (sigma, rho_car)                -- sigma in d_fac.
-#
-# The legacy backends used `grid$sigma` for both the donor amplitude
-# (copy case) and the prior scale (no-copy case). The C++ kernel is
-# unchanged after the reparameterization; only the physical cells it
-# visits change.
-.joint_call_kernel_via_multi <- function(type, arms, prior, cp, grids,
-                                          max_iter, tol, n_threads,
-                                          x_init, store_Q, arm_names,
-                                          n_threads_outer = 1L,
-                                          tile_warm = TRUE,
-                                          prune_tol = 0.0,
-                                          force_sparse = FALSE,
-                                          cell_coupling = "separable",
-                                          hessian_pd_mode = 0L,
-                                          step_curvature_mode = 0L,
-                                          inner_refresh = 1L,
-                                          x_init_per_cell = NULL,
-                                          compute_skew = FALSE,
-                                          skew_idx = NULL,
-                                          fixed_block_p = 0L,
-                                          debias = NULL,
-                                          cila = NULL,
-                                          screen_log_offset = NULL,
-                                          screen_only = FALSE) {
-    n_arms <- length(arms)
+# The single-block kernel inputs `.joint_call_kernel_via_multi()` hands the
+# multi-block kernel: the legacy prior with each arm's `spatial_idx` packed
+# into a length-1 block spec, the outer grid `grids` (a list of axis columns)
+# in the kernel's axis convention, its axis offsets, and the copy block
+# (0-based; -1 without a copy). predict() builds a fit's loadings at new rows
+# from the same inputs (`.joint_eta_inputs()`).
+.joint_single_kernel_inputs <- function(type, arms, prior, cp, grids) {
     blk <- prior; blk$type <- type
     .nl_check_block_fields(blk, "joint_single")
     missing_spi <- which(vapply(arms, function(a) length(a$spatial_idx) == 0L,
@@ -246,6 +208,60 @@
     theta_grid <- do.call(cbind, lapply(cols, as.numeric))
     colnames(theta_grid) <- names(cols)
     axis_offsets <- as.integer(c(0L, length(cols)))
+    list(block_spec = block_spec, theta_grid = theta_grid,
+         axis_offsets = axis_offsets, copy_block = copy_block)
+}
+
+# Single-block call_kernel: route through cpp_nested_laplace_joint_multi by
+# packing the legacy prior + per-arm spatial_idx into a length-1
+# blocks_spec list and a theta_grid matrix matching the C++ side's axis
+# conventions:
+#
+#   bym2  +copy: axes = (sigma_occ, sigma_pos, rho)   -- unit-precision
+#                latent. R side feeds sigma_occ = sigma, sigma_pos =
+#                alpha * sigma from the (sigma, alpha) outer grid; the
+#                C++ reads two named columns and uses them as per-arm
+#                scaling factors. Mathematically identical to the legacy
+#                (sigma_occ, sigma_pos) layout cell-by-cell, but the SET
+#                of cells covers alpha evenly instead of forming a
+#                Cartesian product in sigma_pos.
+#   bym2  -copy: axes = (sigma, rho)                  -- sigma rolled into
+#                d_fac directly (no copy block).
+#   icar  +copy: axes = (sigma_occ, sigma_pos)        -- as above.
+#   icar  -copy: axes = (tau,)                        -- tau on prior;
+#                grid$sigma is translated to tau = 1 / sigma^2.
+#   car_proper +copy: (sigma_occ, sigma_pos, rho_car) -- as above.
+#   car_proper -copy: (sigma, rho_car)                -- sigma in d_fac.
+#
+# The legacy backends used `grid$sigma` for both the donor amplitude
+# (copy case) and the prior scale (no-copy case). The C++ kernel is
+# unchanged after the reparameterization; only the physical cells it
+# visits change.
+.joint_call_kernel_via_multi <- function(type, arms, prior, cp, grids,
+                                          max_iter, tol, n_threads,
+                                          x_init, store_Q, arm_names,
+                                          n_threads_outer = 1L,
+                                          tile_warm = TRUE,
+                                          prune_tol = 0.0,
+                                          force_sparse = FALSE,
+                                          cell_coupling = "separable",
+                                          hessian_pd_mode = 0L,
+                                          step_curvature_mode = 0L,
+                                          inner_refresh = 1L,
+                                          x_init_per_cell = NULL,
+                                          compute_skew = FALSE,
+                                          skew_idx = NULL,
+                                          fixed_block_p = 0L,
+                                          debias = NULL,
+                                          cila = NULL,
+                                          screen_log_offset = NULL,
+                                          screen_only = FALSE) {
+    n_arms <- length(arms)
+    ki <- .joint_single_kernel_inputs(type, arms, prior, cp, grids)
+    block_spec   <- ki$block_spec
+    theta_grid   <- ki$theta_grid
+    axis_offsets <- ki$axis_offsets
+    copy_block   <- ki$copy_block
 
     phi_grid_per_arm <- .joint_phi_grid_per_arm(grids, arm_names)
 
