@@ -118,6 +118,7 @@ skip_on_cran()
     n_re_groups = 0L, sigma_re = 1,
     phi_basis = matrix(rnorm(Nh * Mh), Nh, Mh),
     lambda_eig = sort(abs(rnorm(Mh)) + 0.1, decreasing = TRUE),
+    kernel = 0L,
     sigma2_grid = c(0.5, 1), lengthscale_grid = c(0.5, 1),
     family = "binomial", phi = 1, max_iter = 50L, tol = 1e-9, n_threads = 1L)
 
@@ -146,6 +147,7 @@ skip_on_cran()
     n_re_groups = 0L, sigma_re = 1,
     phi_basis = matrix(rnorm(Nh * Mh), Nh, Mh),
     lambda_eig = sort(abs(rnorm(Mh)) + 0.1, decreasing = TRUE),
+    kernel = 0L,
     temporal_idx = as.integer(sample(seq_len(nts), Nh, replace = TRUE)),
     n_times = nts,
     sigma2_spatial_grid = c(0.5, 1), lengthscale_spatial_grid = c(0.5, 1),

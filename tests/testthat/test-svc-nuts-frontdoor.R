@@ -45,7 +45,9 @@ test_that("svc requires an exact mode (nested/laplace refuse)", {
   dom <- cpp_hsgp_domain_2d(cm, as.numeric(spatial$c_boundary))
   basis <- cpp_hsgp_basis_2d_domain(cm, m, dom)
   scaled <- t(vapply(seq_len(nrow(beta_grid)), function(d) beta_grid[d, ] *
-    as.numeric(cpp_hsgp_sqrt_spectral(basis$lambda_eig, sigma2[d], ls[d])),
+    as.numeric(cpp_hsgp_sqrt_spectral(
+      basis$lambda_eig, sigma2[d], ls[d],
+      tulpa:::.hsgp_kernel_code(tulpa:::.hsgp_spec_kernel(spatial)))),
     numeric(Mtot)))
   as.numeric(basis$phi_basis %*% colMeans(scaled))
 }

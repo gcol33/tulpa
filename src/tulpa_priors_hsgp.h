@@ -63,9 +63,11 @@ T compute_hsgp_spatial_prior(const std::vector<T>& params, const ModelData& data
         // Evaluate HSGP spatial effect: f = Phi * (sqrt(S) .* beta)
         // Phi and eigenvalues are double (precomputed data), but sigma2/lengthscale/beta are T
         hsgp_f.resize(data.N, T(0.0));
+        const HsgpKernel kernel =
+            static_cast<HsgpKernel>(data.hsgp_data.kernel);
         for (int j = 0; j < m_total; j++) {
             T S_j = hsgp_spectral_density_2d(
-                sigma2_hsgp, lengthscale_hsgp, data.hsgp_data.eigenvalues[j]);
+                kernel, sigma2_hsgp, lengthscale_hsgp, data.hsgp_data.eigenvalues[j]);
             T scaled_beta_j = safe_sqrt(S_j) * hsgp_beta[j];
             for (int i = 0; i < data.N; i++) {
                 hsgp_f[i] = hsgp_f[i]

@@ -480,7 +480,8 @@
             m_total        = as.integer(p$m_total),
             phi            = phi,
             n_obs_per_arm  = as.integer(p$n_obs_per_arm),
-            eigenvalues    = as.numeric(p$eigenvalues)
+            eigenvalues    = as.numeric(p$eigenvalues),
+            kernel         = .hsgp_kernel_code(p$kernel)
         )
     } else if (type == "hsgp_mo") {
         # Multi-output (co-regionalization) HSGP block. K = n_arms
@@ -506,7 +507,8 @@
             m_total        = as.integer(p$m_total),
             phi            = phi,
             n_obs_per_arm  = as.integer(p$n_obs_per_arm),
-            eigenvalues    = as.numeric(p$eigenvalues)
+            eigenvalues    = as.numeric(p$eigenvalues),
+            kernel         = .hsgp_kernel_code(p$kernel)
         )
     } else if (type == "spde") {
         # SPDE block: per-arm sparse barycentric projector A and shared FEM
@@ -2449,7 +2451,9 @@
 
 # An `hsgp` block given by its coordinates instead of its basis: `coords`, a
 # list of n_arms two-column matrices (NULL for an arm the field does not reach),
-# `m` basis functions per dimension and the boundary factor `c`. The domain is
+# `m` basis functions per dimension, the boundary factor `c`, and the kernel
+# the basis approximates as `cov` / `nu`, read as [spatial_gp()] reads them
+# (`.hsgp_kernel()`). The domain is
 # the one setup_hsgp_2d derives from the pooled coordinates of every arm the
 # block reaches, so all arms read the basis on one spectrum. The block keeps the
 # builder as `basis` (m, c, domain, coordinate names, the arms it reaches) so a
@@ -2506,8 +2510,12 @@
                                                 m, domain)$lambda_eig
     p$m_total       <- M
     p$n_obs_per_arm <- as.integer(arm_n_obs)
+    p$kernel <- .hsgp_kernel(p$cov, p$nu %||% 1.5, lab)
+    p$cov <- NULL
+    p$nu <- NULL
     p$basis <- list(m = m, c = cc, domain = as.numeric(domain),
-                    coord_names = colnames(mats[[first]]), reached = reached)
+                    coord_names = colnames(mats[[first]]), reached = reached,
+                    kernel = p$kernel)
     # The pooled coordinates' extent anchors the lengthscale prior
     # (`.hsgp_lengthscale_prior()`) once the coordinates are dropped.
     cf <- .hsgp_coord_fields(do.call(rbind, mats[reached]))
@@ -2538,6 +2546,7 @@
         anchor <- .hp_range_anchor(c(list(prior_range = p$prior_range),
                                      .hsgp_coord_fields(pooled)))$anchor
         spec <- list(m = .hsgp_check_m(p[["m"]]), c = .hsgp_check_c(p[["c"]]),
+                     kernel = .hsgp_kernel(p$cov, p$nu %||% 1.5, lab),
                      basis_rule = list(axes = paste0("b", b, ".lengthscale"),
                                        block = b))
         out[[length(out) + 1L]] <- .hsgp_basis_init(

@@ -342,7 +342,8 @@ int build_blocks_of_type(
             latent_offset, m_total, Rcpp::List::create(phi_basis),
             Rcpp::IntegerVector::create(n_obs), /*n_arms=*/1, block_index,
             lambda_eig, /*axis_sigma2=*/axis0, /*axis_ell=*/axis0 + 1,
-            theta_grid));
+            theta_grid,
+            tulpa::priors::hsgp_kernel_from_spec(bs, "hsgp block")));
         return latent_offset + m_total;
     }
 

@@ -8,7 +8,8 @@
 spatial_svc(
   coords,
   terms = 1,
-  cov = c("exponential", "matern"),
+  cov = NULL,
+  nu = 1.5,
   nn = 15,
   shared = NULL,
   scale_coords = TRUE,
@@ -28,7 +29,13 @@ naming the two coordinate variables in the data.}
 of design-matrix column indices, or a character vector of term names.
 Default \code{1} (the intercept).}
 
-\item{cov}{Covariance function. One of \code{"exponential"} or \code{"matern"}.}
+\item{cov}{Covariance function, read as \code{\link[=spatial_gp]{spatial_gp()}} reads it: with
+\code{approx = "nngp"}, \code{"exponential"} (default) or \code{"matern"}; with
+\code{approx = "hsgp"}, \code{"matern"} (default, at \code{nu = 1.5}) or
+\code{"squared_exponential"}.}
+
+\item{nu}{Matern smoothness, \code{1.5} (default) or \code{2.5}, used when
+\code{cov = "matern"}.}
 
 \item{nn}{Number of nearest neighbours used in the NNGP approximation
 (\code{approx = "nngp"}).}

@@ -10,7 +10,12 @@
 #' @param terms Which coefficients vary over space. A formula, an integer vector
 #'   of design-matrix column indices, or a character vector of term names.
 #'   Default `1` (the intercept).
-#' @param cov Covariance function. One of `"exponential"` or `"matern"`.
+#' @param cov Covariance function, read as [spatial_gp()] reads it: with
+#'   `approx = "nngp"`, `"exponential"` (default) or `"matern"`; with
+#'   `approx = "hsgp"`, `"matern"` (default, at `nu = 1.5`) or
+#'   `"squared_exponential"`.
+#' @param nu Matern smoothness, `1.5` (default) or `2.5`, used when
+#'   `cov = "matern"`.
 #' @param nn Number of nearest neighbours used in the NNGP approximation
 #'   (`approx = "nngp"`).
 #' @param shared Whether the effect is shared across processes in a
@@ -50,7 +55,8 @@
 #' @export
 spatial_svc <- function(coords,
                         terms = 1,
-                        cov = c("exponential", "matern"),
+                        cov = NULL,
+                        nu = 1.5,
                         nn = 15,
                         shared = NULL,
                         scale_coords = TRUE,
@@ -59,9 +65,17 @@ spatial_svc <- function(coords,
                         c_boundary = NULL,
                         parameterization = c("noncentered", "centered")) {
 
-  cov <- match.arg(cov)
   approx <- match.arg(approx)
   parameterization <- match.arg(parameterization)
+  kernel <- NULL
+  if (approx == "hsgp") {
+    kernel <- .hsgp_kernel(cov, nu, "svc(approx = \"hsgp\")")
+    cov <- NULL
+    nu <- NULL
+  } else {
+    cov <- match.arg(cov %||% "exponential", c("exponential", "matern"))
+    if (cov == "matern") .check_matern_nu(nu, "Matern SVC") else nu <- NULL
+  }
 
   coord_vars <- .parse_coord_spec(coords, "svc()")
 
@@ -100,6 +114,8 @@ spatial_svc <- function(coords,
       coord_vars = coord_vars,
       terms_spec = terms_spec,
       cov = cov,
+      nu = nu,
+      kernel = kernel,
       nn = nn,
       shared = shared,
       scale_coords = scale_coords,
@@ -131,7 +147,7 @@ print.tulpa_svc <- function(x, ...) {
   cat("=====================================\n\n")
 
   cat("Coordinates:", paste(x$coord_vars, collapse = ", "), "\n")
-  cat("Covariance:", x$cov, "\n")
+  cat("Covariance:", .spatial_cov_label(x), "\n")
   cat("Neighbors (NNGP):", x$nn, "\n")
   cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
@@ -489,7 +505,7 @@ print.tulpa_svc_posterior <- function(x, ...) {
   .print_varying_coef(
     x, "Spatially-varying",
     axis_label = "Locations", axis_value = x$n_obs,
-    meta_label = "Covariance function", meta_value = x$cov,
+    meta_label = "Covariance function", meta_value = .spatial_cov_label(x),
     viz = "spatial"
   )
 }

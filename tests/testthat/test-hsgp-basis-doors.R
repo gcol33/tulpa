@@ -1,5 +1,5 @@
 # Every HSGP door sizes its basis by the one rule of R/hsgp_basis.R
-# (Riutort-Mayol et al. 2023, Eqs. 19-20): a basis left unset is chosen from
+# (Riutort-Mayol et al. 2023, Eqs. 19-24): a basis left unset is chosen from
 # the lengthscale priors of the fields it carries, and refitted while the
 # lengthscale posterior falls below what it represents. Every door's
 # lengthscale prior is the one `.hsgp_lengthscale_prior()` states.
@@ -46,7 +46,8 @@ test_that("spatial_multiscale(approx = 'hsgp') sizes each scale's basis from its
     b <- v$scale_basis[[sc]]
     expect_identical(b$m, sz$m)
     expect_equal(b[["c"]], sz$c)
-    expect_identical(tulpa:::.hsgp_block_basis(v, sc), list(m = sz$m, c = sz$c))
+    expect_identical(tulpa:::.hsgp_block_basis(v, sc),
+                     list(m = sz$m, c = sz$c, kernel = "matern32"))
   }
   expect_identical(v$scale_basis$local$basis_rule$axes, "b1.lengthscale")
   expect_identical(v$scale_basis$regional$basis_rule$axes, "b2.lengthscale")
@@ -59,7 +60,7 @@ test_that("spatial_multiscale(approx = 'hsgp') sizes each scale's basis from its
     spatial_multiscale(~ lon + lat, approx = "hsgp", m = 7, c_boundary = 2,
                        range_local = c(0.3, 1), range_regional = c(1, 10)), d))
   expect_identical(tulpa:::.hsgp_block_basis(given, "regional"),
-                   list(m = 7L, c = 2))
+                   list(m = 7L, c = 2, kernel = "matern32"))
   expect_false(any(given$scale_basis$local$basis_rule$auto))
 })
 
@@ -70,13 +71,14 @@ test_that("a refit step reads the smallest lengthscale of the fields on a basis"
   win <- tulpa:::.hsgp_lengthscale_window(sp$m, sp[["c"]], S)
   local_mocked_bindings(
     .hsgp_lengthscale_posterior = function(fit, axes = NULL)
-      rbind(c(mean = 0.5 * win[["lo"]], lo = 0, hi = 1),
+      rbind(c(mean = 0.8 * win[["lo"]], lo = 0, hi = 1),
             c(mean = 2 * win[["hi"]], lo = 0, hi = 1)),
     .package = "tulpa")
   step <- tulpa:::.hsgp_refit_spec(sp, list())
   expect_true(step$refit)
   expect_lte(tulpa:::.hsgp_lengthscale_window(step$spec$m, step$spec[["c"]],
-                                              S)[["lo"]], 0.5 * win[["lo"]])
+                                              S)[["lo"]], 0.8 * win[["lo"]])
+  expect_false(isTRUE(step$spec$basis_rule$capped))
 })
 
 test_that("the joint door's coordinate block sizes its basis and carries the lengthscale prior", {

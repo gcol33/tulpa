@@ -17,6 +17,7 @@
 
 #include "linalg_fast.h"  // require_coords_2col
 #include "hmc_hsgp.h"   // tulpa_hsgp::setup_hsgp_2d, tulpa::HSGPData
+#include "hsgp_spectral.h"
 #include <Rcpp.h>
 #include <vector>
 
@@ -134,17 +135,17 @@ Rcpp::List cpp_hsgp_basis_2d_domain(const Rcpp::NumericMatrix& coords, int m,
                                                     data.eigenvalues.end()));
 }
 
-// sqrt of the squared-exponential spectral density at each eigenvalue, the
-// per-coefficient loading scale of an HSGP latent z ~ N(0, I) at
-// (sigma2, lengthscale): f(s) = sum_j phi_j(s) sqrt(S(lambda_j)) z_j.
+// sqrt of the spectral density of `kernel` (0 squared exponential, 1 Matern
+// 3/2, 2 Matern 5/2) at each eigenvalue, the per-coefficient loading scale of
+// an HSGP latent z ~ N(0, I) at (sigma2, lengthscale):
+// f(s) = sum_j phi_j(s) sqrt(S(lambda_j)) z_j.
 // [[Rcpp::export]]
 Rcpp::NumericVector cpp_hsgp_sqrt_spectral(const Rcpp::NumericVector& lambda_eig,
-                                           double sigma2, double lengthscale) {
+                                           double sigma2, double lengthscale,
+                                           int kernel) {
     Rcpp::NumericVector out(lambda_eig.size());
-    for (int j = 0; j < lambda_eig.size(); ++j) {
-        const double S = tulpa_hsgp::spectral_density_se(lambda_eig[j], sigma2,
-                                                         lengthscale);
-        out[j] = std::sqrt(S > 0.0 ? S : 0.0);
-    }
+    tulpa::priors::hsgp_sqrt_spectral_2d(
+        tulpa::priors::hsgp_kernel_from_code(kernel, "cpp_hsgp_sqrt_spectral"),
+        sigma2, lengthscale, lambda_eig.begin(), lambda_eig.size(), out.begin());
     return out;
 }

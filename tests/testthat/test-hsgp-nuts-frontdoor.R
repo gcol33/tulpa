@@ -48,8 +48,9 @@ test_that("hsgp exact NUTS recovers the latent field", {
   Phi <- basis$phi_basis; lam <- basis$lambda_eig
   fld <- t(apply(fit$draws, 1, function(row) {
     s2 <- exp(row["log_sigma2_hsgp"]); ell <- exp(row["log_lengthscale_hsgp"])
-    S  <- s2 * 2 * pi * ell^2 * exp(-0.5 * ell^2 * lam)
-    as.numeric(Phi %*% (sqrt(S) * row[bcol]))
+    sS <- cpp_hsgp_sqrt_spectral(lam, s2, ell,
+                                 tulpa:::.hsgp_kernel_code(spv$kernel))
+    as.numeric(Phi %*% (sS * row[bcol]))
   }))
   fm <- colMeans(fld)
   tru <- sim$truef(sim$lon, sim$lat)

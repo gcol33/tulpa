@@ -37,11 +37,13 @@
        xy_new = xy_new, X_new = cbind(1, c(-1, 0.5, 2, 1.2)))
 }
 
-.jp_fit <- function(fx, sigma2 = 0.4, lengthscale = 0.3, m = 4L) {
+.jp_fit <- function(fx, sigma2 = 0.4, lengthscale = 0.3, m = 4L,
+                    cov = NULL, nu = 1.5) {
   tulpa_nested_laplace_joint(
     responses = list(a = list(y = fx$y, X = fx$X, family = "gaussian",
                               phi = fx$phi)),
     prior = list(list(type = "hsgp", coords = list(fx$xy), m = m, c = 1.5,
+                      cov = cov, nu = nu,
                       svc_column = 2L, sigma2_grid = sigma2,
                       lengthscale_grid = lengthscale)),
     control = list(axis_refine = "none", tol = 1e-10, max_iter = 100L,
@@ -64,18 +66,30 @@ test_that("a joint hsgp block built from coordinates keeps its builder", {
                fit$basis_block_cov$cov[[1]][1:2, 1:2], tolerance = 1e-8)
 })
 
-test_that("the joint hsgp-svc prediction at new coordinates is the exact Gaussian one", {
+# The two-dimensional spectral densities, written out from Riutort-Mayol et
+# al. (2023, Eqs. 1-2) at D = 2.
+.jp_spectral <- list(
+  squared_exponential = function(s2, ell, lam)
+    s2 * 2 * pi * ell^2 * exp(-0.5 * ell^2 * lam),
+  matern = function(s2, ell, lam)
+    s2 * 4 * pi * gamma(2.5) * 3^1.5 / (gamma(1.5) * ell^3) *
+      (3 / ell^2 + lam)^(-2.5))
+
+for (.kern in names(.jp_spectral)) local({
+kern <- .kern
+test_that(paste("the joint hsgp-svc prediction at new coordinates is the",
+                "exact Gaussian one,", kern), {
   skip_on_cran()
   fx <- .jp_fixture()
   sigma2 <- 0.4; ell <- 0.3; m <- 4L
-  fit <- .jp_fit(fx, sigma2, ell, m)
+  fit <- .jp_fit(fx, sigma2, ell, m, cov = kern)
   pr <- predict(fit, newdata = list(X = fx$X_new, coords = fx$xy_new),
                 se.fit = TRUE, level = 0.9)
 
   domain <- fit$blocks[[1]]$basis$domain
   b_tr <- .jp_basis(fx$xy, m, domain)
   b_new <- .jp_basis(fx$xy_new, m, domain)
-  sS <- sqrt(sigma2 * 2 * pi * ell^2 * exp(-0.5 * ell^2 * b_tr$lam))
+  sS <- sqrt(.jp_spectral[[kern]](sigma2, ell, b_tr$lam))
   A <- cbind(fx$X, sweep(b_tr$phi * fx$X[, 2], 2, sS, `*`))
   a <- cbind(fx$X_new, sweep(b_new$phi * fx$X_new[, 2], 2, sS, `*`))
   tau_beta <- 1 / default_sigma_beta()^2
@@ -89,6 +103,7 @@ test_that("the joint hsgp-svc prediction at new coordinates is the exact Gaussia
   expect_equal(pr$upper, mu + qnorm(0.95) * se, tolerance = 1e-5)
   expect_equal(pr$lower, mu - qnorm(0.95) * se, tolerance = 1e-5)
 })
+})
 
 test_that("a joint prediction at the fitted rows reproduces the fitted predictor", {
   skip_on_cran()
@@ -97,7 +112,9 @@ test_that("a joint prediction at the fitted rows reproduces the fitted predictor
   eta <- predict(fit, newdata = list(X = fx$X, coords = fx$xy))
   mode <- fit$modes[1, ]
   b <- tulpa:::cpp_hsgp_basis_2d_domain(fx$xy, 4L, fit$blocks[[1]]$basis$domain)
-  sS <- tulpa:::cpp_hsgp_sqrt_spectral(b$lambda_eig, 0.4, 0.3)
+  sS <- tulpa:::cpp_hsgp_sqrt_spectral(
+    b$lambda_eig, 0.4, 0.3,
+    tulpa:::.hsgp_kernel_code(fit$blocks[[1]]$basis$kernel))
   expect_equal(eta, as.numeric(fx$X %*% mode[1:2] +
                                  fx$X[, 2] * (b$phi_basis %*% (sS * mode[3:18]))),
                tolerance = 1e-10)

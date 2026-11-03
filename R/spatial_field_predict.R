@@ -1044,7 +1044,8 @@
       ls <- .field_theta(src$theta, "lengthscale", comp$prefix)
       u <- unique(cells)
       sq <- do.call(rbind, lapply(u, function(k) as.numeric(
-        cpp_hsgp_sqrt_spectral(basis$lambda_eig, s2[k], ls[k]))))
+        cpp_hsgp_sqrt_spectral(basis$lambda_eig, s2[k], ls[k],
+                               .hsgp_kernel_code(bs$kernel)))))
       (Fr * sq[match(cells, u), , drop = FALSE]) %*% t(basis$phi_basis)
     },
     nngp = {

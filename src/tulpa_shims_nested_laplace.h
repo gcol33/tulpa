@@ -462,7 +462,7 @@ extern "C" void tulpa_nested_laplace_hsgp_impl(
     const double* X_flat, const double* re_idx,
     int N, int p, int n_re_groups, double sigma_re,
     const double* phi_basis_flat, int n_basis,
-    const double* lambda_eig,
+    const double* lambda_eig, int kernel,
     const double* sigma2_grid, const double* lengthscale_grid, int n_grid,
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
@@ -481,7 +481,7 @@ extern "C" void tulpa_nested_laplace_hsgp_impl(
         [&](LaplaceShimInputs& in, Rcpp::Nullable<Rcpp::NumericVector> x0) {
             return cpp_nested_laplace_hsgp(
                 in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
-                pb, le, s2g, lsg,
+                pb, le, kernel, s2g, lsg,
                 in.fam, phi, max_iter, tol, n_threads,
                 x0, store_Q != 0,
                 "" /* checkpoint_path */,
@@ -688,7 +688,7 @@ extern "C" void tulpa_nested_laplace_st_hsgp_impl(
     const double* X_flat, const double* re_idx,
     int N, int p, int n_re_groups, double sigma_re,
     const double* phi_basis_flat, int n_basis,
-    const double* lambda_eig,
+    const double* lambda_eig, int kernel,
     const int* temporal_idx, int n_times,
     const double* sigma2_spatial_grid, const double* lengthscale_spatial_grid,
     const char* temporal_type,
@@ -714,7 +714,7 @@ extern "C" void tulpa_nested_laplace_st_hsgp_impl(
         [&](LaplaceShimInputs& in, Rcpp::Nullable<Rcpp::NumericVector> x0) {
             return cpp_nested_laplace_st_hsgp(
                 in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
-                pb, le,
+                pb, le, kernel,
                 tv, n_times,
                 s2g, lsg,
                 std::string(temporal_type), ttg, rtg, (cyclic != 0),

@@ -198,6 +198,10 @@ namespace tulpa {
 // multiscale seasonal arm, so every field after them moves. The Gamma
 // `tau_temporal_shape` / `tau_temporal_rate` on an RW1 / RW2 / AR1 field's
 // precision became the PC anchors `temporal_sigma_prior_U` / `_alpha`.
+// HSGPData gained `kernel` (squared exponential, Matern 3/2 or 5/2), the
+// kernel whose spectral density an HSGP basis carries; HSGPData sits in
+// ModelData four times, and the nested-Laplace HSGP shims take the kernel code
+// as an argument.
 // ============================================================================
 constexpr int TULPA_ABI_VERSION = 51;
 

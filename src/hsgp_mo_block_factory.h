@@ -38,7 +38,8 @@
 // Lifecycle.
 //   prep(k_grid) reads (sigma_1, sigma_2, rho, ell) — raw, no log
 //   transform — from theta_grid and refreshes:
-//     * sqrt_S_norm_cache[m] = sqrt((2*pi) * ell^2 * exp(-0.5*ell^2*lambda_m))
+//     * sqrt_S_norm_cache[m] = sqrt(S(lambda_m; 1, ell)), the unit-variance
+//       spectral density of the block's kernel (hsgp_spectral.h)
 //     * Sigma_inv (K x K row-major, closed form for K = 2)
 //     * log_det_Sigma scalar
 //   Returns false when sigma_1, sigma_2 <= 0, |rho| >= 1, or ell <= 0.
@@ -67,6 +68,7 @@
 #include "latent_block.h"
 #include "nl_cell_cache.h"
 #include "sparse_hessian.h"
+#include "hsgp_spectral.h"
 #include <Rcpp.h>
 #include <cmath>
 #include <memory>
@@ -91,7 +93,8 @@ inline LatentBlock make_hsgp_mo_block(
     int                            axis_sigma_2,
     int                            axis_rho,
     int                            axis_ell,
-    const Rcpp::NumericMatrix&     theta_grid
+    const Rcpp::NumericMatrix&     theta_grid,
+    priors::HsgpKernel             kernel
 ) {
     const int K = n_arms;
     if (K != 2) {
@@ -159,7 +162,7 @@ inline LatentBlock make_hsgp_mo_block(
     // arm_scale left empty (copy not supported on multi-output HSGP).
     // idx / obs_indices left empty — DENSE_BASIS uses basis_eval.
 
-    block.prep = [cell_cache, eig, m_total, K,
+    block.prep = [cell_cache, eig, m_total, K, kernel,
                    axis_sigma_1, axis_sigma_2, axis_rho, axis_ell,
                    theta_grid](int k_grid) -> bool {
         const double sigma_1 = theta_grid(k_grid, axis_sigma_1);
@@ -175,14 +178,9 @@ inline LatentBlock make_hsgp_mo_block(
 
         // sqrt_S — sigma absorbed into Sigma; basis spectral density carries
         // only the lengthscale.
-        const double pref = (2.0 * M_PI) * ell * ell;
-        const double e_coef = -0.5 * ell * ell;
-        const auto& evs = *eig;
         st.sqrt_S.assign(m_total, 0.0);
-        for (int m = 0; m < m_total; m++) {
-            const double S_m = pref * std::exp(e_coef * evs[m]);
-            st.sqrt_S[m] = std::sqrt(S_m > 0.0 ? S_m : 0.0);
-        }
+        priors::hsgp_sqrt_spectral_2d(kernel, 1.0, ell, eig->data(), m_total,
+                                      st.sqrt_S.data());
 
         // Sigma_inv (K = 2 closed form).
         //   det(Sigma) = sigma_1^2 * sigma_2^2 * (1 - rho^2)

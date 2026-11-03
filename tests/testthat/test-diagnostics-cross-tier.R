@@ -40,10 +40,15 @@ test_that("the nested transform maps mirror the sampler's interpretable formulas
   expect_equal(sm$tau$fn(4), 0.5)         # 1/sqrt(4)  -> sigma
   expect_equal(sm$sigma2$fn(9), 3)        # sqrt(9)    -> sigma
   expect_equal(sm$phi_gp$fn(2), 6)        # 3 * 2      -> range
-  # The HSGP axis converts as the sampler converts `log_lengthscale_hsgp`.
-  expect_equal(sm$lengthscale$fn(2), 2 * sqrt(-2 * log(0.05)))
-  expect_equal(sm$lengthscale$fn(2),
-               tulpa:::.hyper_nat$range_from_se_lengthscale(2))
+  # The HSGP axis converts as the sampler converts `log_lengthscale_hsgp`: the
+  # distance at which the basis's kernel falls to correlation 0.05.
+  rng <- function(k) tulpa:::.hyper_nat$range_from_hsgp_lengthscale(2, k)
+  expect_equal(rng("squared_exponential"), 2 * sqrt(-2 * log(0.05)))
+  x32 <- rng("matern32") / 2
+  expect_equal((1 + sqrt(3) * x32) * exp(-sqrt(3) * x32), 0.05)
+  x52 <- sqrt(5) * rng("matern52") / 2
+  expect_equal((1 + x52 + x52^2 / 3) * exp(-x52), 0.05)
+  expect_equal(sm$lengthscale$fn(2), rng("matern32"))
   expect_identical(sm$tau$name, "sigma")
   expect_identical(sm$phi_gp$name, "range")
 

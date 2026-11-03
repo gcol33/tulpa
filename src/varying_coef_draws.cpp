@@ -552,11 +552,13 @@ Rcpp::List cpp_varying_coef_draws(
                     // the fitted rows, which the centred field the likelihood
                     // read has removed.
                     const int M = data.svc_hsgp_data.m_total;
+                    const auto kernel = static_cast<tulpa::priors::HsgpKernel>(
+                        data.svc_hsgp_data.kernel);
                     std::vector<double> f_train(sv.n_obs);
                     for (int j = 0; j < sv.n_svc; j++) {
                         const double* beta_j = &params[layout.svc_w_start + j * M];
                         tulpa::priors::svc_hsgp_term_field(
-                            data.svc_hsgp_data.phi_flat,
+                            kernel, data.svc_hsgp_data.phi_flat,
                             data.svc_hsgp_data.eigenvalues, sv.n_obs, M,
                             s2[j], ph[j], beta_j, f_train.data());
                         double level = 0.0;
@@ -564,7 +566,7 @@ Rcpp::List cpp_varying_coef_draws(
                         level /= sv.n_obs;
                         double* out_j = row_svc.data() + (std::size_t)j * n_svc_new;
                         tulpa::priors::svc_hsgp_term_field(
-                            new_basis.phi_flat, new_basis.eigenvalues, n_svc_new, M,
+                            kernel, new_basis.phi_flat, new_basis.eigenvalues, n_svc_new, M,
                             s2[j], ph[j], beta_j, out_j);
                         for (int p = 0; p < n_svc_new; p++) out_j[p] -= level;
                     }

@@ -29,7 +29,8 @@ using namespace math;
 // the term's m_total coefficients. The sampler's own field and the field read at
 // new coordinates both go through here, so they are one function of the basis.
 template<typename T>
-inline void svc_hsgp_term_field(const std::vector<double>& phi_flat,
+inline void svc_hsgp_term_field(HsgpKernel kernel,
+                                const std::vector<double>& phi_flat,
                                 const std::vector<double>& eigenvalues,
                                 int n_rows, int m_total,
                                 const T& sigma2, const T& lengthscale,
@@ -38,7 +39,8 @@ inline void svc_hsgp_term_field(const std::vector<double>& phi_flat,
     for (int i = 0; i < n_rows; i++) f_out[i] = T(0.0);
     for (int k = 0; k < m_total; k++) {
         const T sqrt_S_k = safe_sqrt(
-            hsgp_spectral_density_2d(sigma2, lengthscale, eigenvalues[k]));
+            hsgp_spectral_density_2d(kernel, sigma2, lengthscale,
+                                     eigenvalues[k]));
         const T scaled = sqrt_S_k * beta[k];
         for (int i = 0; i < n_rows; i++) {
             f_out[i] = f_out[i] +
@@ -97,7 +99,9 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                     log_post = log_post - T(0.5) * beta_j[k] * beta_j[k];
                 }
 
-                svc_hsgp_term_field(data.svc_hsgp_data.phi_flat,
+                svc_hsgp_term_field(static_cast<HsgpKernel>(
+                                        data.svc_hsgp_data.kernel),
+                                    data.svc_hsgp_data.phi_flat,
                                     data.svc_hsgp_data.eigenvalues,
                                     n_obs, m_total, sigma2_j, ls_j, beta_j,
                                     svc_w.data() + (std::size_t)j * n_obs);

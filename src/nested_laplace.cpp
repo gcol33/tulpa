@@ -555,8 +555,8 @@ Rcpp::List cpp_nested_laplace_nngp(
 // with beta ~ N(0, I_M). Phi (basis) and lambda_j (eigenvalues) are FIXED
 // across the grid; only the spectral diagonal sqrt(S) varies per grid
 // point. Inner solve reduces to a fixed-design regression on the
-// rescaled basis B = Phi * diag(sqrt(S)). spectral_density_se comes from
-// hmc_hsgp_kernels.h (Eigen-free split out of hmc_hsgp.h).
+// rescaled basis B = Phi * diag(sqrt(S)), S the spectral density of the
+// field's kernel (hsgp_spectral.h).
 
 // [[Rcpp::export]]
 Rcpp::List cpp_nested_laplace_hsgp(
@@ -565,6 +565,7 @@ Rcpp::List cpp_nested_laplace_hsgp(
     int n_re_groups, double sigma_re,
     Rcpp::NumericMatrix phi_basis,
     Rcpp::NumericVector lambda_eig,
+    int kernel,
     Rcpp::NumericVector sigma2_grid,
     Rcpp::NumericVector lengthscale_grid,
     std::string family, double phi = 1.0,
@@ -627,7 +628,8 @@ Rcpp::List cpp_nested_laplace_hsgp(
         /*start=*/beta_gp_start, /*m_total=*/M,
         phi_per_arm, n_obs_per_arm, /*n_arms=*/1, /*block_index=*/0,
         lambda_eig,
-        /*axis_sigma2=*/0, /*axis_ell=*/1, theta_grid
+        /*axis_sigma2=*/0, /*axis_ell=*/1, theta_grid,
+        tulpa::priors::hsgp_kernel_from_code(kernel, "cpp_nested_laplace_hsgp")
     ));
 
     return tulpa::nl_run_joint_sparse_entry(
@@ -652,6 +654,7 @@ Rcpp::List cpp_laplace_fit_hsgp(
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
     Rcpp::NumericMatrix phi_basis, Rcpp::NumericVector lambda_eig,
+    int kernel,
     double sigma2, double lengthscale,
     std::string family, double phi = 1.0,
     int max_iter = 100, double tol = 1e-6, int n_threads = 1,
@@ -687,7 +690,8 @@ Rcpp::List cpp_laplace_fit_hsgp(
     blocks.push_back(tulpa::make_hsgp_block(
         block_start, M, phi_per_arm, n_obs_per_arm, /*n_arms=*/1,
         /*block_index=*/0, lambda_eig,
-        /*axis_sigma2=*/0, /*axis_ell=*/1, theta_grid));
+        /*axis_sigma2=*/0, /*axis_ell=*/1, theta_grid,
+        tulpa::priors::hsgp_kernel_from_code(kernel, "cpp_laplace_fit_hsgp")));
 
     tulpa::SpecFamilyInputs in;
     tulpa::build_spec_family_inputs(
@@ -1158,6 +1162,7 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     int n_re_groups, double sigma_re,
     Rcpp::NumericMatrix phi_basis,
     Rcpp::NumericVector lambda_eig,
+    int kernel,
     Rcpp::IntegerVector temporal_idx, int n_times,
     Rcpp::NumericVector sigma2_spatial_grid,
     Rcpp::NumericVector lengthscale_spatial_grid,
@@ -1214,7 +1219,9 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
         /*start=*/s_start, /*m_total=*/M,
         phi_per_arm, n_obs_per_arm, /*n_arms=*/1, /*block_index=*/0,
         lambda_eig,
-        /*axis_sigma2=*/0, /*axis_ell=*/1, theta_grid));
+        /*axis_sigma2=*/0, /*axis_ell=*/1, theta_grid,
+        tulpa::priors::hsgp_kernel_from_code(kernel,
+                                             "cpp_nested_laplace_st_hsgp")));
 
     // A DENSE_BASIS block takes the joint sparse path by the driver's own
     // blocks_require_sparse rule, whatever n_x.

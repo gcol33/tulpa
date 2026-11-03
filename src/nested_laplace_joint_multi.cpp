@@ -1167,7 +1167,8 @@ int build_joint_blocks_from_spec(
             eigenvalues,
             /*axis_sigma2=*/axis0,
             /*axis_ell=*/axis0 + 1,
-            theta_grid
+            theta_grid,
+            tulpa::priors::hsgp_kernel_from_spec(bs, "hsgp block")
         );
         blocks.push_back(block);
         return latent_offset + m_total;
@@ -1205,7 +1206,8 @@ int build_joint_blocks_from_spec(
             /*axis_sigma_2=*/axis0 + 1,
             /*axis_rho=*/axis0 + 2,
             /*axis_ell=*/axis0 + 3,
-            theta_grid
+            theta_grid,
+            tulpa::priors::hsgp_kernel_from_spec(bs, "hsgp_mo block")
         );
         blocks.push_back(block);
         return latent_offset + n_arms * m_total;

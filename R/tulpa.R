@@ -179,7 +179,8 @@
            "tulpa() validates it via validate_hsgp(); pass spatial_gp(~x+y, approx = 'hsgp').",
            call. = FALSE)
     }
-    return(c(.hsgp_nl_block(cm, spatial$m, spatial$c),
+    return(c(.hsgp_nl_block(cm, spatial$m, spatial$c,
+                            .hsgp_spec_kernel(spatial)),
              .nl_spec_grid_entries(spatial, "hsgp")))
   }
 
@@ -255,16 +256,17 @@
 
 
 # An HSGP block of the nested-Laplace path: the Laplacian basis evaluated at
-# every observation (`cpp_hsgp_basis_2d`, over setup_hsgp_2d) and its
-# eigenvalues. The basis does not carry the coordinates, so their extent
-# travels with the block: it anchors the lengthscale prior
-# (`.hsgp_lengthscale_prior()`).
-.hsgp_nl_block <- function(coords, m, c_boundary) {
+# every observation (`cpp_hsgp_basis_2d`, over setup_hsgp_2d), its eigenvalues
+# and the kernel whose spectral density weights them. The basis does not carry
+# the coordinates, so their extent travels with the block: it anchors the
+# lengthscale prior (`.hsgp_lengthscale_prior()`).
+.hsgp_nl_block <- function(coords, m, c_boundary, kernel) {
   basis <- cpp_hsgp_basis_2d(as.matrix(coords), as.integer(m),
                              as.numeric(c_boundary))
   c(list(type       = "hsgp",
          phi_basis  = basis$phi_basis,
-         lambda_eig = basis$lambda_eig),
+         lambda_eig = basis$lambda_eig,
+         kernel     = kernel),
     .hsgp_coord_fields(coords))
 }
 
@@ -316,7 +318,7 @@
              call. = FALSE)
       }
       bs <- .hsgp_block_basis(spatial, sc)
-      .hsgp_nl_block(spatial$coords_matrix, bs$m, bs$c)
+      .hsgp_nl_block(spatial$coords_matrix, bs$m, bs$c, bs$kernel)
     } else {
       ni <- spatial[[paste0("neighbor_info_", sc)]]
       if (is.null(ni)) {
@@ -480,7 +482,8 @@
     type   = "hsgp",
     coords = .coords_2col(cm, "hsgp() under a sampler mode"),
     m      = as.integer(spatial$m),
-    c      = as.numeric(spatial$c)
+    c      = as.numeric(spatial$c),
+    kernel = .hsgp_kernel_code(.hsgp_spec_kernel(spatial))
   )
   lp <- .hsgp_lengthscale_prior(cm)
   out$lengthscale_prior_U     <- lp[1L]
@@ -567,6 +570,7 @@
       X_svc       = as.numeric(t(Xs)),               # row-major [n_obs x n_svc]
       m           = as.integer(spatial$m),
       c           = as.numeric(spatial$c_boundary),
+      kernel      = .hsgp_kernel_code(.hsgp_spec_kernel(spatial)),
       phi_prior_U     = .hsgp_lengthscale_prior(cm)[1L],
       phi_prior_alpha = .hsgp_lengthscale_prior(cm)[2L]
     ))

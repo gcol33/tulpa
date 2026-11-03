@@ -114,7 +114,7 @@ test_that("HSGP rejects mismatched basis dimensions", {
       y = as.integer(y), n = rep(1L, N), X = matrix(1, N, 1),
       re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
       phi_basis = matrix(0, N - 1L, 4L),  # wrong N
-      lambda_eig = c(1, 2, 3, 4),
+      lambda_eig = c(1, 2, 3, 4), kernel = 0L,
       sigma2_grid = c(1), lengthscale_grid = c(1),
       family = "binomial"
     ),
@@ -126,7 +126,7 @@ test_that("HSGP rejects mismatched basis dimensions", {
       y = as.integer(y), n = rep(1L, N), X = matrix(1, N, 1),
       re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
       phi_basis = matrix(0, N, 4L),
-      lambda_eig = c(1, 2, 3),  # wrong M
+      lambda_eig = c(1, 2, 3), kernel = 0L,  # wrong M
       sigma2_grid = c(1), lengthscale_grid = c(1),
       family = "binomial"
     ),
@@ -206,7 +206,7 @@ test_that("nested_laplace HSGP runs on a 2D (sigma2, lengthscale) grid", {
   res <- cpp_nested_laplace_hsgp(
     y = as.integer(y), n = rep(1L, N), X = matrix(1, N, 1),
     re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
-    phi_basis = basis$phi_basis, lambda_eig = basis$lambda_eig,
+    phi_basis = basis$phi_basis, lambda_eig = basis$lambda_eig, kernel = 0L,
     sigma2_grid = gr$sigma2, lengthscale_grid = gr$ell,
     family = "binomial", phi = 1.0,
     max_iter = 50L, tol = 1e-6, n_threads = 1L

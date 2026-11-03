@@ -629,13 +629,13 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
                                   sigma_re = 1.0, y) {
   M <- ncol(phi_basis)
 
-  # The latent coefficients carry an N(0, I) prior; the spectral density
-  # sqrt(S_j) is folded into the design (matching make_hsgp_block.basis_eval /
-  # .prep). 2-D SE spectral density on the 2-D basis:
-  # S_j = sigma2 * (2 pi) * ell^2 * exp(-0.5 ell^2 lambda_j).
-  S    <- sigma2 * (2 * pi) * lengthscale^2 *
-          exp(-0.5 * lengthscale^2 * lambda_eig)
-  PhiS <- sweep(phi_basis, 2, sqrt(pmax(S, 0)), `*`)
+  # The latent coefficients carry an N(0, I) prior; the square root of the
+  # field kernel's spectral density is folded into the design, the loading
+  # make_hsgp_block's basis_eval applies.
+  sqrt_S <- cpp_hsgp_sqrt_spectral(
+    as.numeric(lambda_eig), sigma2, lengthscale,
+    .hsgp_kernel_code(.hsgp_spec_kernel(spatial)))
+  PhiS <- sweep(phi_basis, 2, sqrt_S, `*`)
 
   .marginal_H_beta_field(
     mode, X, family, phi, n_trials, weights, offset,

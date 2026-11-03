@@ -22,7 +22,7 @@ namespace tulpa_hsgp {
 
 using tulpa::HSGPData;
 
-// spectral_density_se, phi_1d and lambda_1d are declared in
+// phi_1d and lambda_1d are declared in
 // hmc_hsgp_kernels.h (Eigen-free).
 
 // Fill the eigenvalues + basis matrix for a GIVEN centering (x_center, y_center)

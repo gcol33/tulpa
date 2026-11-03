@@ -27,7 +27,9 @@ fit_st_nested(
   nn = 10L,
   cov_type = 2L,
   hsgp_m = NULL,
-  hsgp_c = NULL
+  hsgp_c = NULL,
+  hsgp_cov = NULL,
+  hsgp_nu = 1.5
 )
 
 \method{print}{tulpa_st_nested}(x, ...)
@@ -172,6 +174,11 @@ parameterisation of \code{spatial_gp(approx = "hsgp")}. A value given is held
 as given; \code{NULL} (default) leaves it to the data by the rule and the
 refit loop \code{\link[=spatial_gp]{spatial_gp()}} describes, and the fit records the bases it
 went through as \code{hsgp_basis}.}
+
+\item{hsgp_cov, hsgp_nu}{The kernel the HSGP basis approximates,
+\code{spatial_type = "hsgp"} only, read as \code{\link[=spatial_gp]{spatial_gp()}} reads \code{cov} / \code{nu}:
+\code{"matern"} (\code{nu} 1.5 or 2.5) or \code{"squared_exponential"}; \code{NULL} (default)
+is Matern 3/2.}
 
 \item{x}{A \code{fit_st_nested()} fit.}
 

@@ -82,18 +82,20 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
             // (matching compute_log_post's separate evaluation order for float precision)
             std::vector<T> f_local(data.N, T(0.0));
             std::vector<T> f_regional(data.N, T(0.0));
+            const HsgpKernel kernel =
+                static_cast<HsgpKernel>(data.msgp_hsgp_data.kernel);
             for (int j = 0; j < m_total; j++) {
                 double omega_sq = data.msgp_hsgp_data.eigenvalues[j];
                 T beta_local_j = params[layout.gp_local_start + j];
                 T beta_regional_j = params[layout.gp_regional_start + j];
 
                 // Spectral density for local scale
-                T S_local_j = hsgp_spectral_density_2d(sigma2_local_h, ls_local,
+                T S_local_j = hsgp_spectral_density_2d(kernel, sigma2_local_h, ls_local,
                                                        omega_sq);
                 T scaled_local_j = safe_sqrt(S_local_j) * beta_local_j;
 
                 // Spectral density for regional scale
-                T S_regional_j = hsgp_spectral_density_2d(sigma2_regional_h,
+                T S_regional_j = hsgp_spectral_density_2d(kernel, sigma2_regional_h,
                                                           ls_regional, omega_sq);
                 T scaled_regional_j = safe_sqrt(S_regional_j) * beta_regional_j;
 

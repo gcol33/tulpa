@@ -199,7 +199,7 @@ test_that("hsgp carries a per-row variance that follows the basis row", {
   fit <- cpp_nested_laplace_hsgp(
     y = as.numeric(rbinom(N, 1L, 0.5)), n = rep(1L, N), X = X,
     re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1,
-    phi_basis = phi_basis, lambda_eig = lambda_eig,
+    phi_basis = phi_basis, lambda_eig = lambda_eig, kernel = 0L,
     sigma2_grid = c(0.5, 1), lengthscale_grid = c(0.5, 1),
     family = "binomial", phi = 1, max_iter = 100L, tol = 1e-10,
     n_threads = 1L, store_Q = TRUE)

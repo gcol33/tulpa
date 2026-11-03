@@ -49,7 +49,8 @@ test_that("HSGP single-point matches nested mode and a brute-force Laplace", {
   sig2 <- 0.8; ell <- 0.5
   args <- list(y = as.numeric(y), n = rep(1L, ng), X = X, re_idx = rep(0, ng),
                n_re_groups = 0L, sigma_re = 1.0, phi_basis = basis$phi_basis,
-               lambda_eig = basis$lambda_eig, family = "binomial")
+               lambda_eig = basis$lambda_eig, kernel = 0L,
+               family = "binomial")
   sp <- do.call(tulpa:::cpp_laplace_fit_hsgp,
                 c(args, list(sigma2 = sig2, lengthscale = ell)))
   ns <- do.call(tulpa:::cpp_nested_laplace_hsgp,

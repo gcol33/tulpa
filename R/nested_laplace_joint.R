@@ -175,7 +175,9 @@
 #'   matrices, with `eigenvalues`, `m_total` and `n_obs_per_arm`) or by its
 #'   coordinates: `coords`, a list of `n_arms` `N_k x 2` coordinate matrices
 #'   (`NULL` for an arm the field does not reach), `m` basis functions per
-#'   dimension and the boundary factor `c`. Either left unset is chosen from
+#'   dimension, the boundary factor `c` and the kernel the basis approximates
+#'   as `cov` / `nu` (read as [spatial_gp()] reads them; Matern 3/2 when
+#'   unset). Either of `m` and `c` left unset is chosen from
 #'   the data by the rule and the refit loop [spatial_gp()] describes, over the
 #'   pooled coordinates and the block's lengthscale posterior; the fit records
 #'   the bases it went through as `hsgp_basis` (one such block). Given

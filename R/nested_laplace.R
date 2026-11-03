@@ -1487,6 +1487,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     pack = function(p) list(
       phi_basis        = as.matrix(p$phi_basis),
       lambda_eig       = as.numeric(p$lambda_eig),
+      kernel           = .hsgp_kernel_code(p$kernel),
       sigma2_grid      = as.numeric(p$sigma2_grid),
       lengthscale_grid = as.numeric(p$lengthscale_grid)
     ),
@@ -2614,7 +2615,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     .with_svc(list(
       type       = "hsgp",
       phi_basis  = as.matrix(p$phi_basis),
-      lambda_eig = as.numeric(p$lambda_eig)
+      lambda_eig = as.numeric(p$lambda_eig),
+      kernel     = .hsgp_kernel_code(p$kernel)
     ))
   } else if (type %in% .NL_PROJECTABLE_TEMPORAL) {
     out <- list(

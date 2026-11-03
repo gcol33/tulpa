@@ -290,6 +290,8 @@ inline NestedLaplaceNngpFn get_nested_laplace_nngp_fn() {
 //                  the observation locations).
 // lambda_eig     : [n_basis] eigenvalues λ_j (used to evaluate the
 //                  spectral density per grid point).
+// kernel         : the kernel whose spectral density S is: 0 squared
+//                  exponential, 1 Matern 3/2, 2 Matern 5/2.
 //
 // The structured-effect block is the basis coefficient vector β_M; the
 // observation-level spatial effect per draw is
@@ -302,7 +304,7 @@ typedef void (*NestedLaplaceHsgpFn)(
     const double* X_flat, const double* re_idx,
     int N, int p, int n_re_groups, double sigma_re,
     const double* phi_basis_flat, int n_basis,
-    const double* lambda_eig,
+    const double* lambda_eig, int kernel,
     const double* sigma2_grid, const double* lengthscale_grid, int n_grid,
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
@@ -422,7 +424,7 @@ typedef void (*NestedLaplaceStHsgpFn)(
     const double* X_flat, const double* re_idx,
     int N, int p, int n_re_groups, double sigma_re,
     const double* phi_basis_flat, int n_basis,
-    const double* lambda_eig,
+    const double* lambda_eig, int kernel,
     const int* temporal_idx, int n_times,
     const double* sigma2_spatial_grid, const double* lengthscale_spatial_grid,
     const char* temporal_type,

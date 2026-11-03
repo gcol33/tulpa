@@ -9,7 +9,7 @@
 spatial_gp(
   coords,
   approx = c("nngp", "hsgp"),
-  cov = c("exponential", "matern"),
+  cov = NULL,
   nu = 1.5,
   nn = 15,
   m = NULL,
@@ -36,10 +36,13 @@ sampler mode, because both store coordinates at a fixed 2-D stride.}
 
 \item{approx}{GP approximation: \code{"nngp"} (default, a nearest-neighbour GP with
 the \code{cov} / \code{nu} / \code{nn} arguments) or \code{"hsgp"} (a Hilbert-space
-basis GP with \code{m} functions per dimension and boundary factor \code{c}).}
+basis GP with \code{m} functions per dimension and boundary factor \code{c}, which
+approximates the kernel \code{cov} / \code{nu} name).}
 
-\item{cov}{Covariance function (NNGP only). One of \code{"exponential"} or
-\code{"matern"}.}
+\item{cov}{Covariance function. With \code{approx = "nngp"}, \code{"exponential"}
+(the default) or \code{"matern"}. With \code{approx = "hsgp"}, \code{"matern"} (the
+default, at \code{nu = 1.5}) or \code{"squared_exponential"}; the exponential kernel
+has no HSGP basis rule. \code{NULL} takes the approximation's default.}
 
 \item{nu}{Matern smoothness parameter, one of \code{1.5} or \code{2.5}. Used only when
 \code{cov = "matern"} (\code{nu = 0.5} is \code{cov = "exponential"}).}
@@ -88,19 +91,37 @@ nearest-neighbour GP (NNGP) for scalability. Captures smooth spatial
 variation from point-referenced coordinates.
 }
 \details{
+\strong{HSGP kernel.} The basis approximates a Matern kernel of smoothness 3/2
+(the default) or 5/2, \verb{sigma^2 (1 + sqrt(3) d / ell) exp(-sqrt(3) d / ell)}
+and \verb{sigma^2 (1 + sqrt(5) d / ell + 5 d^2 / (3 ell^2)) exp(-sqrt(5) d / ell)}
+at distance \code{d}, or the squared-exponential kernel
+\verb{sigma^2 exp(-d^2 / (2 ell^2))}, through each kernel's spectral density
+(Riutort-Mayol et al. 2023, Eqs. 1-3). The squared-exponential kernel draws
+fields smoother than any Matern one, and a field rougher than the kernel
+assumes is smoothed and its intervals narrowed.
+
 \strong{HSGP basis size.} A Hilbert-space basis of \code{m} functions per dimension on
-a domain widened by \code{c} approximates the squared-exponential covariance
-accurately only for lengthscales between \verb{1.75 c S / m} and \verb{c S / 3.2}, \code{S}
-the half-width of the coordinates' bounding box (Riutort-Mayol et al. 2023,
-Eqs. 19-20, with \code{c >= 1.2}). A rough field asks for a short lengthscale,
-and a basis too small for it smooths the field and narrows its intervals.
-Left unset, \code{m} and \code{c} follow the iterative procedure of the paper's
-Section 4.5.1: the first fit takes them from the prior median of the
-lengthscale, and while the posterior mean lengthscale falls below the
-smallest one the fitted basis represents (the paper's diagnostic, with its
-slack of 0.01 on the lengthscale divided by \code{S}), the field is fitted again
-with the \code{m} and \code{c} that estimate asks for. \code{m} never shrinks below a size
-already fitted and stops at 50. A supplied \code{m} or \code{c} is kept as given.
+a domain widened by \code{c} approximates the kernel accurately only for
+lengthscales between \verb{a c S / m} and \verb{c S / b}, \code{S} the half-width of the
+coordinates' bounding box and \code{c >= 1.2}, with \verb{(a, b) = (3.42, 4.5)} for
+Matern 3/2, \verb{(2.65, 4.1)} for Matern 5/2 and \verb{(1.75, 3.2)} for the
+squared-exponential kernel (Riutort-Mayol et al. 2023, Eqs. 19-24). A rough
+field asks for a short lengthscale, and a basis too small for it smooths the
+field and narrows its intervals. Left unset, \code{m} and \code{c} follow the
+iterative procedure of the paper's Section 4.5.1. In its Phase A the first
+fit takes them from the prior median of the lengthscale, and while the
+posterior mean lengthscale falls below the smallest one the fitted basis
+represents (the paper's diagnostic, with its slack of 0.01 on the
+lengthscale divided by \code{S}), the field is fitted again with the \code{m} and \code{c}
+that estimate asks for. In its Phase B five functions per dimension are
+added and the field fitted again until the refit passes the diagnostic and
+is stable against the fit before it: the paper names the lengthscale
+estimate and the predictive accuracy as what has to be stable and gives no
+threshold, and stable is read here as the refitted posterior mean of the
+lengthscale, and of the linear predictor at every observation, lying inside
+the previous fit's 95\% interval. \code{m} never shrinks below a size already
+fitted and stops at 50. A supplied \code{m} or \code{c} is kept as given, and a
+supplied \code{m} ends the procedure after Phase A.
 \code{\link[=diagnostics]{diagnostics()}} reports when the posterior mean lengthscale lies outside
 the window of the fitted basis at either end; above it, the field is
 smoother than the boundary factor allows for, and a larger \code{c} covers it.
@@ -109,6 +130,7 @@ smoother than the boundary factor allows for, and a larger \code{c} covers it.
 # GP spatial specification from coordinate columns
 spatial_gp(~ lon + lat)
 spatial_gp(~ lon + lat, cov = "matern", nu = 1.5)
+spatial_gp(~ lon + lat, approx = "hsgp", cov = "squared_exponential")
 
 }
 \references{

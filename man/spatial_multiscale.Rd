@@ -11,9 +11,9 @@ spatial_multiscale(
   approx = c("nngp", "hsgp"),
   m = NULL,
   c_boundary = NULL,
-  range_local = c(0.01, 1),
+  range_local = NULL,
   range_regional = c(1, 10),
-  cov = c("exponential", "matern"),
+  cov = NULL,
   nu = 1.5,
   nn_local = 10,
   nn_regional = 30,
@@ -54,13 +54,16 @@ uses), on every route that fits the field; a sampler starts the range at
 the pair's geometric mean. The range itself is free on \verb{(0, Inf)}. The
 range is the lengthscale \code{phi} of the kernel, \code{exp(-d / phi)} for the
 exponential one; with \code{approx = "hsgp"} it is the lengthscale of the
-squared-exponential kernel the basis approximates.}
+kernel the basis approximates (\code{cov}, \code{nu}).}
 
 \item{range_regional}{Plausible range interval for the regional scale, read
 the same way. Default: \code{c(1, 10)} (after scaling). Keeping the two
 intervals separated is what identifies the scales against each other.}
 
-\item{cov}{Covariance function: \code{"exponential"} (default) or \code{"matern"}.}
+\item{cov}{Covariance function, read as \code{\link[=spatial_gp]{spatial_gp()}} reads it: with
+\code{approx = "nngp"}, \code{"exponential"} (default) or \code{"matern"}; with
+\code{approx = "hsgp"}, \code{"matern"} (default, at \code{nu = 1.5}) or
+\code{"squared_exponential"}.}
 
 \item{nu}{Smoothness parameter for Matern covariance, one of \code{1.5} or \code{2.5}.}
 

@@ -33,9 +33,12 @@
 #'   sampler mode, because both store coordinates at a fixed 2-D stride.
 #' @param approx GP approximation: `"nngp"` (default, a nearest-neighbour GP with
 #'   the `cov` / `nu` / `nn` arguments) or `"hsgp"` (a Hilbert-space
-#'   basis GP with `m` functions per dimension and boundary factor `c`).
-#' @param cov Covariance function (NNGP only). One of `"exponential"` or
-#'   `"matern"`.
+#'   basis GP with `m` functions per dimension and boundary factor `c`, which
+#'   approximates the kernel `cov` / `nu` name).
+#' @param cov Covariance function. With `approx = "nngp"`, `"exponential"`
+#'   (the default) or `"matern"`. With `approx = "hsgp"`, `"matern"` (the
+#'   default, at `nu = 1.5`) or `"squared_exponential"`; the exponential kernel
+#'   has no HSGP basis rule. `NULL` takes the approximation's default.
 #' @param nu Matern smoothness parameter, one of `1.5` or `2.5`. Used only when
 #'   `cov = "matern"` (`nu = 0.5` is `cov = "exponential"`).
 #' @param nn Number of nearest neighbours used in the NNGP approximation.
@@ -66,19 +69,37 @@
 #' @return A `tulpa_gp` object (also of class `tulpa_spatial`).
 #'
 #' @details
+#' **HSGP kernel.** The basis approximates a Matern kernel of smoothness 3/2
+#' (the default) or 5/2, `sigma^2 (1 + sqrt(3) d / ell) exp(-sqrt(3) d / ell)`
+#' and `sigma^2 (1 + sqrt(5) d / ell + 5 d^2 / (3 ell^2)) exp(-sqrt(5) d / ell)`
+#' at distance `d`, or the squared-exponential kernel
+#' `sigma^2 exp(-d^2 / (2 ell^2))`, through each kernel's spectral density
+#' (Riutort-Mayol et al. 2023, Eqs. 1-3). The squared-exponential kernel draws
+#' fields smoother than any Matern one, and a field rougher than the kernel
+#' assumes is smoothed and its intervals narrowed.
+#'
 #' **HSGP basis size.** A Hilbert-space basis of `m` functions per dimension on
-#' a domain widened by `c` approximates the squared-exponential covariance
-#' accurately only for lengthscales between `1.75 c S / m` and `c S / 3.2`, `S`
-#' the half-width of the coordinates' bounding box (Riutort-Mayol et al. 2023,
-#' Eqs. 19-20, with `c >= 1.2`). A rough field asks for a short lengthscale,
-#' and a basis too small for it smooths the field and narrows its intervals.
-#' Left unset, `m` and `c` follow the iterative procedure of the paper's
-#' Section 4.5.1: the first fit takes them from the prior median of the
-#' lengthscale, and while the posterior mean lengthscale falls below the
-#' smallest one the fitted basis represents (the paper's diagnostic, with its
-#' slack of 0.01 on the lengthscale divided by `S`), the field is fitted again
-#' with the `m` and `c` that estimate asks for. `m` never shrinks below a size
-#' already fitted and stops at 50. A supplied `m` or `c` is kept as given.
+#' a domain widened by `c` approximates the kernel accurately only for
+#' lengthscales between `a c S / m` and `c S / b`, `S` the half-width of the
+#' coordinates' bounding box and `c >= 1.2`, with `(a, b) = (3.42, 4.5)` for
+#' Matern 3/2, `(2.65, 4.1)` for Matern 5/2 and `(1.75, 3.2)` for the
+#' squared-exponential kernel (Riutort-Mayol et al. 2023, Eqs. 19-24). A rough
+#' field asks for a short lengthscale, and a basis too small for it smooths the
+#' field and narrows its intervals. Left unset, `m` and `c` follow the
+#' iterative procedure of the paper's Section 4.5.1. In its Phase A the first
+#' fit takes them from the prior median of the lengthscale, and while the
+#' posterior mean lengthscale falls below the smallest one the fitted basis
+#' represents (the paper's diagnostic, with its slack of 0.01 on the
+#' lengthscale divided by `S`), the field is fitted again with the `m` and `c`
+#' that estimate asks for. In its Phase B five functions per dimension are
+#' added and the field fitted again until the refit passes the diagnostic and
+#' is stable against the fit before it: the paper names the lengthscale
+#' estimate and the predictive accuracy as what has to be stable and gives no
+#' threshold, and stable is read here as the refitted posterior mean of the
+#' lengthscale, and of the linear predictor at every observation, lying inside
+#' the previous fit's 95% interval. `m` never shrinks below a size already
+#' fitted and stops at 50. A supplied `m` or `c` is kept as given, and a
+#' supplied `m` ends the procedure after Phase A.
 #' [diagnostics()] reports when the posterior mean lengthscale lies outside
 #' the window of the fitted basis at either end; above it, the field is
 #' smoother than the boundary factor allows for, and a larger `c` covers it.
@@ -95,12 +116,13 @@
 #' # GP spatial specification from coordinate columns
 #' spatial_gp(~ lon + lat)
 #' spatial_gp(~ lon + lat, cov = "matern", nu = 1.5)
+#' spatial_gp(~ lon + lat, approx = "hsgp", cov = "squared_exponential")
 #'
 #' @export
 
 spatial_gp <- function(coords,
                        approx = c("nngp", "hsgp"),
-                       cov = c("exponential", "matern"),
+                       cov = NULL,
                        nu = 1.5,
                        nn = 15,
                        m = NULL,
@@ -112,7 +134,6 @@ spatial_gp <- function(coords,
                        parameterization = c("noncentered", "centered", "collapsed")) {
 
   approx <- match.arg(approx)
-  cov <- match.arg(cov)
   parameterization <- match.arg(parameterization)
 
   # Collapsed parameterization is deprecated (archived 2026-03-10)
@@ -140,12 +161,14 @@ spatial_gp <- function(coords,
     }
     m <- .hsgp_check_m(m)
     c <- .hsgp_check_c(c)
+    kernel <- .hsgp_kernel(cov, nu, "gp(approx = \"hsgp\")")
     .check_pc_anchors(sigma_prior_U, sigma_prior_alpha,
                       "sigma_prior_U", "sigma_prior_alpha",
                       "gp(approx = \"hsgp\")")
     if (isFALSE(shared)) .warn_nonshared("spatial effects")
     return(structure(
       list(type = "hsgp", coord_vars = coord_vars, m = m, c = c,
+           kernel = kernel,
            basis_rule = list(auto = c(m = is.null(m), c = is.null(c))),
            sigma2_prior_U = as.numeric(sigma_prior_U),
            sigma2_prior_alpha = as.numeric(sigma_prior_alpha),
@@ -154,6 +177,7 @@ spatial_gp <- function(coords,
       class = c("tulpa_hsgp", "tulpa_spatial", "list")))
   }
 
+  cov <- match.arg(cov %||% "exponential", c("exponential", "matern"))
   if (cov == "matern") .check_matern_nu(nu)
 
   # Validate nn
@@ -226,6 +250,7 @@ print.tulpa_hsgp <- function(x, ...) {
   cat("=====================================================\n\n")
 
   cat("Coordinates:", paste(x$coord_vars, collapse = ", "), "\n")
+  cat("Kernel:", .hsgp_kernel_info(.hsgp_spec_kernel(x))$label, "\n")
   if (is.null(x$m)) cat("Basis functions: chosen from the data\n")
   else cat("Basis functions:", x$m, "per dim (", x$m^2, "total )\n")
   if (is.null(x[["c"]])) cat("Boundary factor: chosen from the data\n")
@@ -275,11 +300,14 @@ validate_hsgp <- function(spatial, data) {
 #'   the pair's geometric mean. The range itself is free on `(0, Inf)`. The
 #'   range is the lengthscale `phi` of the kernel, `exp(-d / phi)` for the
 #'   exponential one; with `approx = "hsgp"` it is the lengthscale of the
-#'   squared-exponential kernel the basis approximates.
+#'   kernel the basis approximates (`cov`, `nu`).
 #' @param range_regional Plausible range interval for the regional scale, read
 #'   the same way. Default: `c(1, 10)` (after scaling). Keeping the two
 #'   intervals separated is what identifies the scales against each other.
-#' @param cov Covariance function: `"exponential"` (default) or `"matern"`.
+#' @param cov Covariance function, read as [spatial_gp()] reads it: with
+#'   `approx = "nngp"`, `"exponential"` (default) or `"matern"`; with
+#'   `approx = "hsgp"`, `"matern"` (default, at `nu = 1.5`) or
+#'   `"squared_exponential"`.
 #' @param nu Smoothness parameter for Matern covariance, one of `1.5` or `2.5`.
 #' @param nn_local Number of nearest neighbors for local scale. Default 10.
 #' @param nn_regional Number of nearest neighbors for regional scale. Default 30.
@@ -399,7 +427,7 @@ spatial_multiscale <- function(coords,
                                c_boundary = NULL,
                                range_local = c(0.01, 1),
                                range_regional = c(1, 10),
-                               cov = c("exponential", "matern"),
+                               cov = NULL,
                                nu = 1.5,
                                nn_local = 10,
                                nn_regional = 30,
@@ -408,8 +436,14 @@ spatial_multiscale <- function(coords,
                                sampler = c("auto", "noncentered", "centered")) {
 
   approx <- match.arg(approx)
-  cov <- match.arg(cov)
-  if (cov == "matern") .check_matern_nu(nu, "Matern multi-scale NNGP")
+  kernel <- NULL
+  if (approx == "hsgp") {
+    kernel <- .hsgp_kernel(cov, nu, "multiscale(approx = \"hsgp\")")
+    cov <- NULL
+  } else {
+    cov <- match.arg(cov %||% "exponential", c("exponential", "matern"))
+    if (cov == "matern") .check_matern_nu(nu, "Matern multi-scale NNGP")
+  }
   sampler <- match.arg(sampler)
 
   coord_vars <- .parse_coord_spec(coords, "multiscale()")
@@ -473,7 +507,8 @@ spatial_multiscale <- function(coords,
       range_local = range_local,
       range_regional = range_regional,
       cov = cov,
-      nu = if (cov == "matern") nu else NULL,
+      nu = if (identical(cov, "matern")) nu else NULL,
+      kernel = kernel,
       nn_local = as.integer(nn_local),
       nn_regional = as.integer(nn_regional),
       shared = shared,
@@ -510,11 +545,7 @@ print.tulpa_multiscale <- function(x, ...) {
   cat("  Range prior: [", x$range_regional[1], ", ", x$range_regional[2], "]\n", sep = "")
   cat("  Neighbors:", x$nn_regional, "\n")
 
-  cov_str <- x$cov
-  if (x$cov == "matern" && !is.null(x$nu)) {
-    cov_str <- sprintf("%s (nu = %.1f)", x$cov, x$nu)
-  }
-  cat("\nCovariance:", cov_str, "\n")
+  cat("\nCovariance:", .spatial_cov_label(x), "\n")
   cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$n_obs)) {
@@ -620,7 +651,7 @@ validate_gp <- function(gp, data) {
           0.5, as.numeric(gp[[paste0("range_", scs[b])]])[1L],
           .MSGP_RANGE_ALPHA, .HSGP_LENGTHSCALE_PRIOR_DIM)
         .hsgp_basis_init(
-          list(m = gp$m, c = gp$c_boundary,
+          list(m = gp$m, c = gp$c_boundary, kernel = gp$kernel,
                basis_rule = list(axes = paste0("b", b, ".lengthscale"))),
           coords, ell0, "c",
           sprintf("spatial_multiscale(approx = \"hsgp\"), %s scale", scs[b]))

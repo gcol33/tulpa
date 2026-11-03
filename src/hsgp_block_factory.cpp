@@ -3,7 +3,6 @@
 
 #include <RcppEigen.h>
 #include "hsgp_block_factory.h"
-#include "hmc_hsgp_kernels.h"  // spectral_density_se
 
 namespace tulpa {
 
@@ -17,7 +16,8 @@ LatentBlock make_hsgp_block(
     const Rcpp::NumericVector&     eigenvalues,
     int                            axis_sigma2,
     int                            axis_ell,
-    const Rcpp::NumericMatrix&     theta_grid
+    const Rcpp::NumericMatrix&     theta_grid,
+    priors::HsgpKernel             kernel
 ) {
     if (eigenvalues.size() != m_total) {
         Rcpp::stop("Block %d (type 'hsgp'): length(eigenvalues) must equal "
@@ -73,7 +73,7 @@ LatentBlock make_hsgp_block(
     // arm_scale left empty — copy not supported.
     // idx / obs_indices left empty — DENSE_BASIS uses basis_eval.
 
-    block.prep = [sqrt_S_cache, eig, m_total,
+    block.prep = [sqrt_S_cache, eig, m_total, kernel,
                    axis_sigma2, axis_ell, theta_grid](
         int k_grid) -> bool {
         const double sigma2 = theta_grid(k_grid, axis_sigma2);
@@ -81,11 +81,8 @@ LatentBlock make_hsgp_block(
         if (!(sigma2 > 0.0) || !(ell > 0.0)) return false;
         auto& cache = sqrt_S_cache->claim();
         cache.assign(m_total, 0.0);
-        const auto& evs = *eig;
-        for (int j = 0; j < m_total; j++) {
-            const double S_j = tulpa_hsgp::spectral_density_se(evs[j], sigma2, ell);
-            cache[j] = std::sqrt(S_j > 0.0 ? S_j : 0.0);
-        }
+        priors::hsgp_sqrt_spectral_2d(kernel, sigma2, ell, eig->data(),
+                                      m_total, cache.data());
         sqrt_S_cache->publish(k_grid);
         return true;
     };

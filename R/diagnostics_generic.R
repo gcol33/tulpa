@@ -287,8 +287,8 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
 # and then weighted-summarized (marginalize the derived quantity, not the raw
 # axis). Spatial: tau (precision) -> sigma = 1/sqrt(tau); sigma2 -> sigma =
 # sqrt(sigma2); phi_gp (NNGP lengthscale) -> range = 3 * ell (the distance at
-# which exp(-d/ell) ~ 0.05); lengthscale (HSGP, squared-exponential) -> range =
-# sqrt(-2 log 0.05) * ell, the distance at which exp(-d^2 / (2 ell^2)) = 0.05.
+# which exp(-d/ell) ~ 0.05); lengthscale (HSGP) -> range = the distance at
+# which the kernel the basis approximates falls to correlation 0.05.
 # Temporal mirrors the temporal sampler (tau reported as precision, ar1 rho,
 # GP sigma / lengthscale).
 # Natural-scale maps from a hyperparameter to its interpretable quantity.
@@ -298,11 +298,12 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
 # strip a log/logit link.
 .hyper_nat <- list(
   range_from_lengthscale = function(v) 3 * v,   # exp(-d/ell) ~ 0.05 at d ~= 3*ell
-  # The HSGP / HSGP-SVC basis approximates a SQUARED-EXPONENTIAL kernel,
-  # k(d) = sigma^2 exp(-d^2 / (2 ell^2)) (src/hsgp_spectral.h), a different
-  # decay convention from the exponential kernel range_from_lengthscale()
-  # calibrates: exp(-d^2/(2 ell^2)) = 0.05 at d = ell * sqrt(-2 log(0.05)).
-  range_from_se_lengthscale = function(v) sqrt(-2 * log(0.05)) * v,
+  # The HSGP / HSGP-SVC basis approximates a Matern 3/2, Matern 5/2 or
+  # squared-exponential kernel (src/hsgp_spectral.h), each a different decay
+  # from the exponential one range_from_lengthscale() calibrates: the range is
+  # where the kernel's own correlation is 0.05.
+  range_from_hsgp_lengthscale = function(v, kernel)
+    .hsgp_kernel_range_factor(kernel, 0.05) * v,
   sigma_from_var         = function(v) sqrt(v),
   sigma_from_precision   = function(v) 1 / sqrt(v),
   identity               = function(v) v
@@ -355,10 +356,12 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
                      domain = "positive"),
   phi_gp      = list(name = "range", fn = .hyper_nat$range_from_lengthscale,
                      domain = "positive"),
-  # The `lengthscale` axis is an HSGP field's, whose basis approximates the
-  # squared-exponential kernel: the conversion the sampler route applies to the
-  # same field's `log_lengthscale_hsgp` draws.
-  lengthscale = list(name = "range", fn = .hyper_nat$range_from_se_lengthscale,
+  # The `lengthscale` axis is an HSGP field's: the conversion the sampler route
+  # applies to the same field's `log_lengthscale_hsgp` draws, at the kernel
+  # the fit's basis approximates (`.spatial_hyper_transform()`).
+  lengthscale = list(name = "range",
+                     fn = function(v) .hyper_nat$range_from_hsgp_lengthscale(
+                       v, .HSGP_DEFAULT_KERNEL),
                      domain = "positive"),
   sigma       = list(name = "sigma", fn = .hyper_nat$identity),
   range       = list(name = "range", fn = .hyper_nat$identity),
@@ -577,12 +580,29 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
     "(e.g. \"hmc\") to summarise them."), what)
 }
 
+# The kernel an HSGP fit's basis approximates: the basis spec the fit records
+# (`hsgp_basis`), else its spatial spec.
+.fit_hsgp_kernel <- function(object) {
+  sp <- object$hsgp_basis %||% object$spatial
+  if (!is.list(sp)) return(.HSGP_DEFAULT_KERNEL)
+  .hsgp_spec_kernel(.hsgp_basis_parts(sp)[[1L]])
+}
+
+# `.SPATIAL_HYPER_TRANSFORM` with the HSGP lengthscale read at the fit's own
+# kernel.
+.spatial_hyper_transform <- function(object) {
+  tr <- .SPATIAL_HYPER_TRANSFORM
+  kern <- .fit_hsgp_kernel(object)
+  tr$lengthscale$fn <- function(v) .hyper_nat$range_from_hsgp_lengthscale(v, kern)
+  tr
+}
+
 .spatial_range_kernel_units <- function(object, probs) {
   # Nested-Laplace fits carry the hyperparameter posterior on the outer grid,
   # not as draw columns; summarize the grid for a pure-spatial nested fit.
   if (!is.null(object$theta_grid)) {
     s <- .nested_hyper_summary(object, probs,
-                               transform = .SPATIAL_HYPER_TRANSFORM,
+                               transform = .spatial_hyper_transform(object),
                                keep_role = "spatial")
     if (!is.null(s)) return(s)
   }
@@ -615,12 +635,12 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
     "sigma[regional]" = "^(log_sigma2_gp_regional)$",
     "range[local]"    = "^(log_phi_gp_local)$",
     "range[regional]" = "^(log_phi_gp_regional)$",
-    # HSGP squared-exponential basis: src/tulpa_priors_hsgp.h.
+    # HSGP basis: src/tulpa_priors_hsgp.h.
     sigma_hsgp = "^log_sigma2_hsgp$",
     range_hsgp = "^log_lengthscale_hsgp$",
     # SVC: src/tulpa_priors_svc.h. The NNGP approximation's phi is a direct
-    # exponential-kernel range like log_phi_gp; the HSGP approximation's is a
-    # squared-exponential lengthscale like log_lengthscale_hsgp above -- same
+    # exponential-kernel range like log_phi_gp; the HSGP approximation's is the
+    # lengthscale of its basis's kernel like log_lengthscale_hsgp above -- same
     # draw-column name, different kernel, so the transform below reads
     # object$spatial$approx (spatial_svc()'s own spec, carried on every SVC
     # fit regardless of inference mode) to pick the right one.
@@ -629,12 +649,15 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
   )
   transform_fn <- function(nm, raw, label) {
     if (grepl("^log_lengthscale_hsgp$", label)) {
-      list(vals = .hyper_nat$range_from_se_lengthscale(exp(raw)), row = "range")
+      list(vals = .hyper_nat$range_from_hsgp_lengthscale(
+             exp(raw), .fit_hsgp_kernel(object)), row = "range")
     } else if (grepl("^log_phi_svc", label)) {
-      se <- identical(tolower(object$spatial$approx %||% "nngp"), "hsgp")
-      fn <- if (se) .hyper_nat$range_from_se_lengthscale
-            else .hyper_nat$range_from_lengthscale
-      list(vals = fn(exp(raw)), row = sub("phi", "range", nm))
+      hs <- identical(tolower(object$spatial$approx %||% "nngp"), "hsgp")
+      vals <- if (hs) {
+        .hyper_nat$range_from_hsgp_lengthscale(exp(raw),
+                                               .fit_hsgp_kernel(object))
+      } else .hyper_nat$range_from_lengthscale(exp(raw))
+      list(vals = vals, row = sub("phi", "range", nm))
     } else if (grepl("^log_phi_gp", label)) {
       # phi is the range: every kernel is exp(-d / phi), so correlation decays
       # to ~0.05 at d = -phi * log(0.05) ~= 3 * phi.

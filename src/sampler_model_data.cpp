@@ -4,6 +4,7 @@
 
 #include <RcppEigen.h>
 #include "sampler_model_data.h"
+#include "hsgp_spectral.h"
 
 namespace tulpa {
 
@@ -498,6 +499,8 @@ void build_sampler_model_inputs(
             const double cc = Rcpp::as<double>(sp["c"]);
             tulpa_hsgp::setup_hsgp_2d(flat, n_obs, m, cc, /*shared=*/true,
                                       in.data.hsgp_data);
+            in.data.hsgp_data.kernel = static_cast<int>(
+                tulpa::priors::hsgp_kernel_from_spec(sp, "gp(approx = \"hsgp\")"));
             in.data.has_hsgp = true;
             read_pc_anchors(sp, "sigma2_prior_U", "sigma2_prior_alpha",
                             in.data.hsgp_sigma2_prior_U,
@@ -761,6 +764,9 @@ void build_sampler_model_inputs(
             in.data.svc_hsgp_boundary_factor = cc;
             tulpa_hsgp::setup_hsgp_2d(s.coords, n_obs, m, cc, /*shared=*/true,
                                       in.data.svc_hsgp_data);
+            in.data.svc_hsgp_data.kernel = static_cast<int>(
+                tulpa::priors::hsgp_kernel_from_spec(
+                    sv, "spatial_svc(approx = \"hsgp\")"));
             require_pc_anchors(sv, "phi_prior_U", "phi_prior_alpha",
                                in.data.svc_phi_prior_U,
                                in.data.svc_phi_prior_alpha,

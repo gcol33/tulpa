@@ -48,6 +48,7 @@
     w <- if (is.null(blocks[[b]]$svc_column)) rep(1, n_new)
          else X_new[, as.integer(blocks[[b]]$svc_column)]
     list(phi = out$phi_basis * w, lambda = out$lambda_eig,
+         kernel = .hsgp_kernel_code(bs$kernel),
          pos = match(lay$block_start[b] + seq_len(lay$block_size[b]), idx),
          axes = paste0("b", b, ".", c("sigma2", "lengthscale")))
   })
@@ -69,7 +70,7 @@
     A[, pos_beta] <- X_new
     for (bn in basis_new) {
       s <- cpp_hsgp_sqrt_spectral(bn$lambda, tg[j, bn$axes[1L]],
-                                  tg[j, bn$axes[2L]])
+                                  tg[j, bn$axes[2L]], bn$kernel)
       A[, bn$pos] <- sweep(bn$phi, 2L, s, `*`)
     }
     mu[j, ] <- as.numeric(A %*% modes[j, idx])

@@ -46,6 +46,7 @@
 #include "laplace_re_priors.h"  // center_effects (unused — HSGP doesn't center beta)
 #include "nl_cell_cache.h"
 #include "sparse_hessian.h"
+#include "hsgp_spectral.h"
 #include <Rcpp.h>
 #include <cmath>
 #include <memory>
@@ -68,7 +69,8 @@ LatentBlock make_hsgp_block(
     const Rcpp::NumericVector&     eigenvalues,
     int                            axis_sigma2,
     int                            axis_ell,
-    const Rcpp::NumericMatrix&     theta_grid
+    const Rcpp::NumericMatrix&     theta_grid,
+    priors::HsgpKernel             kernel
 );
 
 } // namespace tulpa

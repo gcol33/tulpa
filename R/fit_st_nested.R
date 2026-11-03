@@ -195,6 +195,10 @@
 #'   as given; `NULL` (default) leaves it to the data by the rule and the
 #'   refit loop [spatial_gp()] describes, and the fit records the bases it
 #'   went through as `hsgp_basis`.
+#' @param hsgp_cov,hsgp_nu The kernel the HSGP basis approximates,
+#'   `spatial_type = "hsgp"` only, read as [spatial_gp()] reads `cov` / `nu`:
+#'   `"matern"` (`nu` 1.5 or 2.5) or `"squared_exponential"`; `NULL` (default)
+#'   is Matern 3/2.
 #' @param control A list of numerical / grid knobs: `n_grid_spatial`,
 #'   `n_grid_temporal` (default 4 each), `n_grid_rho` (ar1 only, default 3),
 #'   `tau_lower` / `tau_upper` (icar / car_proper precision grid bounds,
@@ -303,7 +307,8 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
                           hyperprior = c("proper", "flat"),
                           control = list(),
                           coords = NULL, nn = 10L, cov_type = 2L,
-                          hsgp_m = NULL, hsgp_c = NULL) {
+                          hsgp_m = NULL, hsgp_c = NULL,
+                          hsgp_cov = NULL, hsgp_nu = 1.5) {
   # Every other nested door checks its control keys; this one did not, so a
   # misspelling (`rho_spatail`, `n_thread`) was accepted in silence and the fit
   # ran at the default (gcol33/tulpa#673).
@@ -318,7 +323,10 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
     }
     cm <- .coords_2col(as.matrix(coords), "fit_st_nested(spatial_type = 'hsgp')")
     spec <- .hsgp_basis_init(list(m = .hsgp_check_m(hsgp_m, "hsgp_m"),
-                                  c = .hsgp_check_c(hsgp_c, "hsgp_c")),
+                                  c = .hsgp_check_c(hsgp_c, "hsgp_c"),
+                                  kernel = .hsgp_kernel(
+                                    hsgp_cov, hsgp_nu,
+                                    "fit_st_nested(spatial_type = 'hsgp')")),
                              cm, .hsgp_prior_lengthscale(cm), "c",
                              "fit_st_nested(spatial_type = 'hsgp')")
     cl <- match.call()
@@ -503,6 +511,8 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   } else if (spatial_type == "hsgp") {
     kargs$phi_basis  <- as.matrix(basis$phi_basis)
     kargs$lambda_eig <- as.numeric(basis$lambda_eig)
+    kargs$kernel     <- .hsgp_kernel_code(.hsgp_kernel(
+      hsgp_cov, hsgp_nu, "fit_st_nested(spatial_type = 'hsgp')"))
     kargs$sigma2_spatial_grid      <- as.numeric(grid$sigma2)
     kargs$lengthscale_spatial_grid <- as.numeric(grid$lengthscale)
     hp_block <- .hsgp_coord_fields(coords)

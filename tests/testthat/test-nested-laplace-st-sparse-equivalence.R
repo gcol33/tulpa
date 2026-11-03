@@ -355,7 +355,7 @@ test_that("ST: HSGP x AR1 runs through the joint sparse path (finite)", {
     fit <- cpp_nested_laplace_st_hsgp(
         y = as.numeric(y), n = rep(1L, N), X = X, re_idx = rep(0, N),
         n_re_groups = 0L, sigma_re = 1.0,
-        phi_basis = phi_basis, lambda_eig = lambda_eig,
+        phi_basis = phi_basis, lambda_eig = lambda_eig, kernel = 0L,
         temporal_idx = as.integer(t_idx), n_times = n_t,
         sigma2_spatial_grid      = c(0.5, 1.0),
         lengthscale_spatial_grid = c(0.5, 1.0),

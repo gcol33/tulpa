@@ -19,6 +19,9 @@ struct HSGPData {
     std::vector<double> eigenvalues;// Spectral eigenvalues [m_total]
     std::vector<double> coords_scaled; // Scaled coordinates [-1,1] [n_obs x n_dim]
     bool shared = true;             // shared across processes
+    // Kernel whose spectral density the basis weights carry: 0 squared
+    // exponential, 1 Matern 3/2, 2 Matern 5/2 (src/hsgp_spectral.h).
+    int kernel = 0;
 };
 
 } // namespace tulpa

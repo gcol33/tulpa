@@ -51,7 +51,8 @@ test_that("an HSGP field's range converts its lengthscale as the SE kernel's on 
   se <- sqrt(-2 * log(0.05))
 
   fit <- suppressWarnings(tulpa(y ~ x, data = d, family = "poisson",
-               spatial = spatial_gp(~ lon + lat, approx = "hsgp"),
+               spatial = spatial_gp(~ lon + lat, approx = "hsgp",
+                                    cov = "squared_exponential"),
                mode = "nested_laplace", control = list(progress = FALSE)))
   hp <- summary(fit)$hyperparameters
   ls_mean <- hp$mean[hp$parameter == "lengthscale"]
@@ -59,7 +60,8 @@ test_that("an HSGP field's range converts its lengthscale as the SE kernel's on 
                tolerance = 1e-8)
 
   fs <- suppressWarnings(tulpa(y ~ x, data = d, family = "poisson",
-              spatial = spatial_gp(~ lon + lat, approx = "hsgp"), mode = "hmc",
+              spatial = spatial_gp(~ lon + lat, approx = "hsgp",
+                                   cov = "squared_exponential"), mode = "hmc",
               control = list(n_iter = 200, warmup = 100, n_chains = 1,
                              seed = 1)))
   ell <- exp(tulpa:::.fit_draws(fs)[, "log_lengthscale_hsgp"]) *
