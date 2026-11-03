@@ -217,10 +217,14 @@ test_that("nested multi-scale temporal intervals match the model's dense grid", 
     control = list(progress = FALSE)))
   h <- summary(fit)$hyperparameters
   rownames(h) <- h$parameter
+  # summary() names an axis by its block's name (trend, short_term).
+  lab <- stats::setNames(
+    tulpa:::.hyper_axis_labels(fit, c("b1.tau", "b2.tau", "b2.rho")),
+    c("b1.tau", "b2.tau", "b2.rho"))
   got <- rbind(
-    sigma_trend = 1 / sqrt(unlist(h["b1.tau", c("ci_hi", "ci_lo")])),
-    sigma_short = 1 / sqrt(unlist(h["b2.tau", c("ci_hi", "ci_lo")])),
-    rho = unlist(h["b2.rho", c("ci_lo", "ci_hi")]))
+    sigma_trend = 1 / sqrt(unlist(h[lab[["b1.tau"]], c("ci_hi", "ci_lo")])),
+    sigma_short = 1 / sqrt(unlist(h[lab[["b2.tau"]], c("ci_hi", "ci_lo")])),
+    rho = unlist(h[lab[["b2.rho"]], c("ci_lo", "ci_hi")]))
   # Reference: the same blocks and priors on a 31^3 tensor over log tau_trend
   # [3.5, 12], log tau_short [0.6, 3.6] and rho [-0.7, 0.985] (outer-node
   # masses at most 2e-4), each axis read by its cells' boxes; columns 95%

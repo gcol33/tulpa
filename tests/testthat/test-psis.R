@@ -453,19 +453,16 @@ test_that("outer k-hat declines (NA) for a multi-block nested fit", {
 test_that("a tiny-binary RE-covariance k-hat is a proposal scale, not a skewed posterior", {
   skip_on_cran()
 
-  # hyperprior = "proper" stated explicitly: this test calibrates the k-hat
-  # SEPARATION between a well-identified and a pathological fit, which is the PC
-  # prior's shrinkage behavior at small G, not a flat-in-log prior's.
+  # hyperprior = "proper" stated explicitly: the tiny-binary fixture is the PC
+  # prior's shrinkage regime at small G.
   #
-  # This test used to assert that the two regimes separate by orders of
-  # magnitude, on the reading that a small-group binary variance-component
-  # posterior is genuinely skewed and its huge k-hat is therefore a correct
-  # signal. Measured per candidate layer (gcol33/tulpa#630,
-  # dev_notes/issue630/RESULTS630.md), it was not: the separation was the
-  # PROPOSAL, mis-scaled on the tiny side, and it disappears once the proposal
-  # is re-estimated from its own PSIS-weighted moments -- a candidate the joint
-  # path has always scored and this backend did not. So what is asserted here is
-  # the repair and its two limits, which is what a regression would undo.
+  # A small-group binary variance-component posterior is not what makes the
+  # outer k-hat large: the PROPOSAL is (gcol33/tulpa#630,
+  # dev_notes/issue630/RESULTS630.md). Laid at the log-Cholesky mode, whose
+  # slope SD runs down the funnel's neck, it is mis-scaled; laid at the mode
+  # and curvature in marginal-SD / partial-correlation coordinates, it fits on
+  # the first pass. What is asserted is that the first pass is usable on both
+  # fixtures, and the report's bookkeeping of which proposal a k-hat belongs to.
   #
   # (a) Well-identified: 30 groups x 25 gaussian obs each, correlated random
   # slope. The Sigma posterior is near-Gaussian, so the proposal as PLACED
@@ -501,30 +498,22 @@ test_that("a tiny-binary RE-covariance k-hat is a proposal scale, not a skewed p
   ka  <- get(fa, "pareto_k");            kb  <- get(fb, "pareto_k")
   fpa <- get(fa, "pareto_k_first_pass"); fpb <- get(fb, "pareto_k_first_pass")
 
-  # 1. The first pass reproduces the old reading: the placement IS bad on the
-  #    tiny side and fine on the well-identified one. That half was real.
-  expect_true(all(is.finite(fpa)))
+  # 1. Both correlated blocks are placed in marginal-SD / partial-correlation
+  #    coordinates, and the first pass is usable on each fit: the tiny-binary
+  #    first passes read 0.53-0.64 (they read 0.9-26 laid at the log-Cholesky
+  #    mode).
+  expect_true(all(vapply(c(fa, fb), function(f) f$placement$coordinate, "") ==
+                    "sd_partial_correlation"))
+  expect_true(all(is.finite(c(fpa, fpb))))
   expect_lt(median(fpa), 2.0)
-  expect_gt(median(fpb), 5 * median(fpa))
+  expect_true(all(fpb < .nl_diag("k_usable")))
 
-  # 2. Refinement repairs it. Every well-identified fit stays finite, and the
-  #    tiny-binary median falls by more than an order of magnitude off its own
-  #    first pass -- so the huge number was the proposal's scale, not the
-  #    posterior's shape.
-  expect_true(all(is.finite(ka)))
-  expect_lt(median(ka), 2.0)
-  expect_lt(median(kb), median(fpb) / 10)
+  # 2. The reported k-hat is never worse than the first pass.
+  expect_true(all(c(ka, kb) <= c(fpa, fpb)))
 
-  # 3. The report says which proposal each k-hat belongs to. Every tiny-binary
-  #    placement is past the escalation threshold; a fit whose k-hat comes from
-  #    the moment-matched proposal improved on its first pass, and one left on
-  #    the mode-Hessian proposal reports that first pass unchanged. Whether a
-  #    given seed's rescue succeeds is not asserted: these modes sit on a ridge
-  #    where the slope variance collapses (log sigma_2 near -11), and a
-  #    rounding-level change in the inner solve moves the stopping point along
-  #    it by ~0.4, enough to turn seed 203's rescue from failing (k 68) to
-  #    succeeding (k 0.66) with its per-draw log-marginals unchanged to 2e-12.
-  expect_true(all(fpb > .nl_diag("k_usable")))
+  # 3. The report says which proposal each k-hat belongs to: a fit whose k-hat
+  #    comes from a rescue proposal improved on its first pass, and one left on
+  #    the mode-Hessian proposal reports that first pass unchanged.
   src <- vapply(c(fa, fb), function(f) f$pareto_k_proposal_source, "")
   # A first pass just above the good band can also be taken over by the
   # skew-normal rescue, which is adopted only on a lower k-hat.
