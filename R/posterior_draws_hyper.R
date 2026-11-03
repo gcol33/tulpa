@@ -490,8 +490,13 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
   # `log_marginal` leaves that read to decline.
   lmd <- fit$log_marginal
   if (length(lmd) != nrow(tg)) lmd <- NULL
+  # A free-covariance block's cells are boxes of the coordinates its grid was
+  # declared a tensor in (`.hp_logchol_design()`), so the within-cell read runs
+  # there and each draw goes back to the log-Cholesky columns.
+  designs <- .hp_grid_designs(tg, fit$refining_axis)$designs
+  tg_d <- .hp_grid_design_coords(tg, designs)
   wc <- .nl_within_cell_setup(
-    tg, w, lmd, fit$refining_axis, geo$domain, geo$atom,
+    tg_d, w, lmd, fit$refining_axis, geo$domain, geo$atom,
     within %||% fit$within_cell_requested,
     .nl_node_support(fit$integration, fit$weight_kind))
 
@@ -499,7 +504,10 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
   # One uniform per draw and axis, tied across axes by the copula that keeps
   # the grid's own correlation (`.nl_hyper_copula()`).
   z <- matrix(stats::rnorm(length(cells) * ncol(tg)), length(cells), ncol(tg))
-  out <- .nl_within_cell_coords(wc, tg, cells, stats::pnorm(z %*% chol(wc$cop)))
+  out <- .nl_within_cell_coords(wc, tg_d, cells, stats::pnorm(z %*% chol(wc$cop)))
+  colnames(out) <- colnames(tg)
+  out <- .hp_grid_design_coords(out, designs, inverse = TRUE)
+  attr(out, "log_jac") <- NULL
   colnames(out) <- nms
   used <- stats::setNames(wc$used, nms)
   decl <- stats::setNames(wc$declined, nms)

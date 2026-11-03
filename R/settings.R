@@ -137,18 +137,15 @@
     # expected a priori), coarse for the same tensor-size reason as above.
     mo_rho         = list(nodes = c(-0.4, 0.0, 0.4)),
 
-    # MCAR / miid free Sigma, p = 2: nodes are placed in the interpretable
-    # (sigma_1, sigma_2, rho) space and converted to log-Cholesky, so the
-    # correlation axis is covered evenly (see `.mcar_default_logchol_grid()`).
+    # MCAR / miid free Sigma: nodes are placed in the marginal SDs and the
+    # canonical partial correlations and converted to log-Cholesky (see
+    # `.mcar_default_logchol_grid()`). p = 2 lays its one correlation finely;
+    # p > 2 a coarser ladder per partial correlation and a wider SD ladder,
+    # which keeps the tensor at 4^p 3^(p(p-1)/2) cells.
     mcar_sd        = list(nodes = c(0.4, 0.7, 1.1, 1.7)),
     mcar_rho       = list(nodes = c(-0.8, -0.4, 0.0, 0.4, 0.7, 0.9)),
-
-    # MCAR / miid free Sigma, p > 2: a raw log-Cholesky tensor (the individual
-    # off-diagonal coordinates are not separately interpretable at p > 2).
-    # `mcar_logchol_diag` nodes are SDs, logged by the builder; the
-    # off-diagonal nodes are already on the log-Cholesky scale.
-    mcar_logchol_diag = list(nodes = c(0.4, 0.8, 1.5, 2.5)),
-    mcar_logchol_off  = list(nodes = c(-1.2, 0.0, 1.2)),
+    mcar_sd_wide   = list(nodes = c(0.4, 0.8, 1.5, 2.5)),
+    mcar_pcor      = list(nodes = c(-0.6, 0.0, 0.6)),
 
     # Proper-CAR correlation. Support is the adjacency eigenvalue interval, so
     # the axis is built from `rho_bounds`: `margin` is the fraction of the
@@ -364,8 +361,8 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
                       sigma_2_grid = "mo_field_sd",
                       rho_grid = "mo_rho",
                       lengthscale_grid = "mo_lengthscale"),
-    mcar       = list(logchol_grid = "mcar_logchol_diag"),
-    miid       = list(logchol_grid = "mcar_logchol_diag"),
+    mcar       = list(logchol_grid = "mcar_sd_wide"),
+    miid       = list(logchol_grid = "mcar_sd_wide"),
     spde       = list(range_grid = "spde_registry",
                       sigma_grid = "spde_registry"),
     tgmrf      = list(theta_grid_built = "tgmrf_axis"),

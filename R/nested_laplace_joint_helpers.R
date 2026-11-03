@@ -476,17 +476,16 @@
 # The registry door refines its field SD axes only
 # (`.nl_refinable_registry_axes()`, `.JOINT_FIELD_SD_AXES`).
 #
-# A free-covariance block's log-Cholesky column takes levels only when the
-# block's declared grid is a tensor in those columns (`logchol`, the
-# `.hp_logchol_designs()` record of the fit): a level added to one column of
-# the (sigma_1, sigma_2, rho) default is a point of no tensor the block's
-# measure and prior are declared on.
+# A free-covariance block's column takes levels when the block's declared grid
+# is a tensor in some coordinates (`.hp_logchol_designs()` record of the fit):
+# the refinement runs on the grid in those coordinates (`.hp_design_view()`),
+# so a level is a level of the declared tensor, in its own measure.
 .joint_axis_refine_eligible <- function(axis, logchol = NULL) {
     if (grepl("^b[0-9]+[.]", axis)) {
         bare <- .hyper_axis_bare(axis)
         if (.hp_is_logchol_col(bare)) {
             d <- logchol[[.hp_logchol_key(.hp_col_prefix(axis))]]
-            return(identical(d$design, "logchol"))
+            return(!is.null(d$design))
         }
         return(bare %in% .JOINT_REFINABLE_BLOCK_AXES)
     }

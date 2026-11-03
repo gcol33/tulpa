@@ -228,7 +228,7 @@ test_that("an MCAR block's logchol_grid without column names takes the layout's"
 # A two-arm MCAR fit on the joint door: a 7 x 7 lattice, a Poisson count arm
 # carrying field 1 and a binomial arm carrying field 2, Sigma with sigma =
 # (1, 0.8) and rho = 0.6. The block states no `logchol_grid`, so the engine
-# starts from its default (sigma_1, sigma_2, rho) grid.
+# starts from its default grid, a tensor in (log sigma_1, atanh rho, log sigma_2).
 .mcar_joint_case <- fixture_once(function(seed) {
   set.seed(seed)
   W <- .mcar_grid_adj(7L, 7L); S <- nrow(W)
@@ -293,19 +293,15 @@ test_that("an MCAR block's sigma_i / rho_ij / Sigma_ij are marginalized across t
   expect_true(rho$ci_lo > -1 && rho$ci_hi < 1)
 })
 
-test_that("the default MCAR grid is placed at the outer mode, as a log-Cholesky tensor, against a dense reference", {
+test_that("the default MCAR grid is a tensor in (log sigma, atanh rho), refined there, against a dense reference", {
   skip_on_cran()
   case <- .mcar_joint_case(1062L)
   fit <- case$fit
   axes <- c("b1.L11", "b1.L21", "b1.L22")
-  expect_identical(fit$outer_grid_placement, "auto_recentered")
-  expect_setequal(fit$outer_grid_recenter_axes, axes)
   lc <- fit$theta_grid[, axes]
-  # The placed grid is the log-Cholesky tensor; the levels refinement lays past
-  # its ends go into the rows holding the posterior, and the measure is read
-  # off the declared cells.
-  declared <- lc[!nzchar(fit$refining_axis %||% rep("", nrow(lc))), ]
-  expect_identical(tulpa:::.hp_logchol_design(declared)$design, "logchol")
+  d <- tulpa:::.hp_grid_designs(fit$theta_grid, fit$refining_axis)
+  expect_true(d$complete)
+  expect_identical(d$designs[[1L]]$design, "cpc")
   # Placed by the engine, the axes may take levels past their nodes.
   expect_true(all(.mcar_refine_modes(fit, axes) == "extend"))
 
@@ -336,7 +332,7 @@ test_that("the default MCAR grid is placed at the outer mode, as a log-Cholesky 
   }
 })
 
-test_that("a stated log-Cholesky tensor is refined by levels; a (sigma, rho) grid is not", {
+test_that("a stated log-Cholesky tensor and a stated (sigma, rho) grid are each refined by levels of their own tensor", {
   skip_on_cran()
   case <- .mcar_joint_case(1062L)
   axes <- c("b1.L11", "b1.L21", "b1.L22")
@@ -361,8 +357,22 @@ test_that("a stated log-Cholesky tensor is refined by levels; a (sigma, rho) gri
   fit2 <- suppressWarnings(tulpa_nested_laplace_joint(
     case$arms, prior = list(c(case$blk, list(logchol_grid = G2))),
     control = list(progress = FALSE)))
-  expect_false(any(fit2$refining_axis %in% axes))
-  expect_identical(nrow(fit2$theta_grid), nrow(G2))
+  expect_true(any(fit2$refining_axis %in% axes))
+  expect_gt(nrow(fit2$theta_grid), nrow(G2))
+  # Every added cell is a level of the (log sigma, atanh rho) tensor: along
+  # each axis, every cell sits on a declared level or on a level that axis's
+  # refinement added, so no cell is off the lattice in those coordinates.
+  cpc <- list(design = "cpc", p = 2L)
+  C <- signif(tulpa:::.hp_logchol_coords(fit2$theta_grid[, axes], cpc), 10)
+  C0 <- signif(tulpa:::.hp_logchol_coords(G2, cpc), 10)
+  for (j in seq_along(axes)) {
+    lev <- union(C0[, j], C[fit2$refining_axis == axes[j], j])
+    expect_true(all(C[, j] %in% lev), info = axes[j])
+    expect_lt(length(unique(C[, j])), 20L)
+  }
+  expect_identical(
+    tulpa:::.hp_grid_designs(fit2$theta_grid, fit2$refining_axis)$designs[[1L]]$design,
+    "cpc")
 })
 
 test_that("diagnostics() grades the inner Laplace layer of an MCAR block, solving against the pinned Hessian", {
@@ -405,4 +415,58 @@ test_that("diagnostics() grades the inner Laplace layer of an MCAR block, solvin
   expect_equal(as.numeric(probe$inner_is_sigma),
                sqrt(diag(solve(Haug))[probe$inner_skew_idx]),
                tolerance = 1e-8)
+})
+
+# A field the data hold weakly: true sigma = (1, 0.05), rho = 0.5, on the same
+# 7 x 7 two-arm layout. In the log-Cholesky columns the posterior's width along
+# L21 shrinks with L22, so the joint mode runs down a funnel. The reference is a
+# dense 30 x 49 x 41 tensor in (log sigma_1, log sigma_2, atanh rho), 0.15 /
+# 0.3 / 0.2 apart over [-1.6, 1.3] x [-8, 1.6] x [-2.6, 2.6] (edge mass under
+# 6e-4 on every axis), each marginal's quantiles read off its CDF between level
+# midpoints. A 114k-cell tensor at half the spacing moves no end by more than
+# 0.03 on these scales.
+test_that("a weakly held MCAR field SD is placed and read in (log sigma, atanh rho), against a dense reference", {
+  skip_on_cran()
+  set.seed(1L)
+  W <- .mcar_grid_adj(7L, 7L); S <- nrow(W)
+  adj <- tulpa:::adjacency_to_csr_tulpa(W)
+  Sigma <- matrix(c(1, 0.025, 0.025, 0.0025), 2)
+  R <- chol(diag(rowSums(W)) - 0.99 * W)
+  f <- sapply(1:2, function(k) backsolve(R, rnorm(S))) %*% chol(Sigma)
+  f <- sweep(f, 2, colMeans(f))
+  s1 <- rep(seq_len(S), each = 4L); x1 <- rnorm(length(s1))
+  s2 <- rep(seq_len(S), each = 4L); x2 <- rnorm(length(s2))
+  n1 <- length(s1); n2 <- length(s2)
+  arms <- list(
+    a = list(y = rpois(n1, exp(0.5 + 0.4 * x1 + f[s1, 1])),
+             n_trials = rep(1L, n1), X = cbind(1, x = x1), family = "poisson"),
+    b = list(y = rbinom(n2, 10L, plogis(-0.3 + 0.8 * x2 + f[s2, 2])),
+             n_trials = rep(10L, n2), X = cbind(1, x = x2), family = "binomial"))
+  blk <- list(type = "mcar", n_spatial_units = S, n_fields = 2L,
+              adj_row_ptr = adj$row_ptr, adj_col_idx = adj$col_idx,
+              n_neighbors = adj$n_neighbors, spatial_idx = list(s1, s2),
+              field_weight = list(list(rep(1, n1), rep(0, n2)),
+                                  list(rep(0, n1), rep(1, n2))))
+  fit <- suppressWarnings(tulpa_nested_laplace_joint(
+    arms, prior = list(blk), control = list(progress = FALSE, n_threads = 2L)))
+
+  # The placement searched the block in its CPC coordinates and laid it there.
+  axes <- c("b1.L11", "b1.L21", "b1.L22")
+  expect_identical(fit$outer_grid_placement, "auto_recentered")
+  expect_true(all(fit$outer_mode_axis_tags[match(axes, fit$outer_mode_axis_names)] == "cpc"))
+  d <- tulpa:::.hp_grid_designs(fit$theta_grid, fit$refining_axis)
+  expect_identical(d$designs[[1L]]$design, "cpc")
+
+  ref <- rbind(sigma_1 = c(0.5433, 0.7629, 1.074),
+               sigma_2 = c(0.004732, 0.1029, 0.3724),
+               rho_12  = c(-0.7473, 0.007147, 0.7622))
+  h <- fit$hyper_derived
+  got <- as.matrix(h[match(paste0("b1.", rownames(ref)), h$parameter),
+                     c("ci_lo", "median", "ci_hi")])
+  # Read on log for the SDs and atanh for the correlation. In log-Cholesky
+  # placement the correlation's upper end read 0.965 (atanh error 1.0) and
+  # sigma_2's lower end 0.0074 (log error 0.45).
+  expect_lt(max(abs(log(got[1L, ]) - log(ref[1L, ]))), 0.05)
+  expect_lt(max(abs(log(got[2L, ]) - log(ref[2L, ]))), 0.1)
+  expect_lt(max(abs(atanh(got[3L, ]) - atanh(ref[3L, ]))), 0.05)
 })

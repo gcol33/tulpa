@@ -494,15 +494,18 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 # takes only a handful of distinct values at the cell centres, and its interval
 # ends then sit where those values fall: on the two-arm MCAR fixture the
 # correlation's lower end read 0.098 off a 5^3 grid against -0.025 on a dense
-# one.
+# one. `within` is built on the grid in the coordinates of `designs` (a
+# `.hp_logchol_designs()` record, `.hp_grid_design_coords()`), the coordinates
+# whose boxes the cells are; its points are mapped back to the log-Cholesky
+# columns before any Sigma is formed.
 .logchol_grid_derived_summary <- function(theta_grid, w,
                                           support = .NL_SUPPORT_KINDS,
-                                          within = NULL) {
+                                          within = NULL, designs = list()) {
   if (is.null(theta_grid) || !length(w)) return(NULL)
   tg <- as.matrix(theta_grid)
   if (!is.null(within)) {
-    pts <- .nl_within_cell_points(within, tg, w)
-    tg <- pts$theta
+    pts <- .nl_within_cell_points(within, .hp_grid_design_coords(tg, designs), w)
+    tg <- .hp_grid_design_coords(pts$theta, designs, inverse = TRUE)
     w <- pts$w
     support <- "sample"
   }

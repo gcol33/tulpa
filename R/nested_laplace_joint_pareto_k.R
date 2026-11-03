@@ -607,7 +607,8 @@
         log      = log(theta),
         logit01  = stats::qlogis(theta),
         atanh    = atanh(theta),
-        identity = theta)
+        identity = theta,
+        cpc      = theta)
 }
 
 # Inverse (unconstrained -> constrained) transform plus the log-Jacobian that
@@ -623,7 +624,9 @@
 # rho, so mapping rho -> logit(rho) DOES carry the logit Jacobian
 # log(rho (1 - rho)). An `atanh` axis (an AR(1) autocorrelation on (-1, 1)) is
 # laid uniform in the natural rho too, and carries log(1 - tanh(u)^2).
-# `identity` (a copy alpha) is uniform in u already.
+# `identity` (a copy alpha) is uniform in u already. `cpc` is a
+# free-covariance column whose value is already its block's CPC coordinate
+# (`.hp_logchol_coords()`), the coordinate a placement mode-find reports it in.
 .joint_pareto_inv <- function(tag, u) {
     switch(tag,
         log = list(theta = exp(u), log_jac = rep(0, length(u))),
@@ -637,7 +640,8 @@
         atanh = list(theta = tanh(u),
                      log_jac = log(4) - 2 * abs(u) -
                                2 * log1p(exp(-2 * abs(u)))),
-        identity = list(theta = u, log_jac = rep(0, length(u))))
+        identity = list(theta = u, log_jac = rep(0, length(u))),
+        cpc = list(theta = u, log_jac = rep(0, length(u))))
 }
 
 # Axes carrying posterior spread under a hyperparameter covariance: those with

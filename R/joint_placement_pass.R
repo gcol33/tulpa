@@ -141,8 +141,7 @@
                 .nl_axis_hold(st$prior[[s$block]], "logchol_grid",
                               .nl_auto_fields_at(auto, s$block),
                               type = tolower(st$prior[[s$block]]$type %||% "")),
-            fires = function(res, s)
-                .nl_axis_placement_fires(res, s$label, "identity"),
+            fires = function(res, s) .joint_logchol_fires(res, s$label),
             write = function(st, s, nodes) .joint_logchol_write(st, s, nodes),
             together = TRUE, escalate = FALSE, idle = "grid_resolves_posterior")
     )
@@ -151,15 +150,16 @@
 # --- a free-covariance block's log-Cholesky axes -----------------------------
 #
 # An `mcar` / `miid` block integrates its Sigma = L L' on the p(p + 1) / 2
-# log-Cholesky columns `b<k>.L<i><j>` (`.mcar_logchol_names()`), each on its own
-# coordinate (`identity`: `log L_ii` and the raw `L_ij` are already
-# unconstrained). The axes are coupled through the one `logchol_grid` matrix the
-# block carries, so the family moves them together and writes the placed axes
-# back as a TENSOR in those columns -- the "logchol" design
-# (`.hp_logchol_design()`), whose prior and cell measure are the PC + LKJ
-# density and the product of widths in the same coordinates. The default grid
-# is laid in (sigma_1, sigma_2, rho) instead, and its levels are fixed whatever
-# the data say.
+# log-Cholesky columns `b<k>.L<i><j>` (`.mcar_logchol_names()`), and is placed
+# in its CPC coordinates -- the marginal log SDs and the atanh canonical partial
+# correlations, column `L<i><i>` holding log sigma_i and `L<i><j>` atanh z_ij
+# (`.hp_logchol_coords()`). The placement mode-find searches the block there
+# (`.nl_placement_mode()`, tag `"cpc"`), the family reads each axis's rail and
+# resolution there, and it writes the placed axes back as a TENSOR in those
+# coordinates -- the "cpc" design (`.hp_logchol_design()`), whose prior and
+# cell measure are the PC + LKJ density and the product of widths in the same
+# coordinates. The axes are coupled through the one `logchol_grid` matrix the
+# block carries, so the family moves them together.
 .joint_logchol_slots <- function(res, st) {
     if (!.is_multi_block_prior(st$prior)) return(list())
     cn <- colnames(res$theta_grid) %||% character(0)
@@ -170,24 +170,65 @@
         for (lbl in cols) {
             out[[length(out) + 1L]] <- list(
                 label = lbl, axis = .hyper_axis_bare(lbl), block = b,
-                ref = .joint_declared_axis_ref(lbl))
+                ref = .joint_cpc_axis_ref(lbl))
         }
     }
     out
 }
 
-# The block's grid with one log-Cholesky column laid on `nodes`, as the tensor
-# over every column's levels. A column not yet written keeps the distinct
-# values the block's current grid gives it; the family moves its axes together,
-# so within one attempt every placed column is written before the refit reads
-# the grid.
+# A fit read in its free-covariance blocks' CPC coordinates: the same cells,
+# weights and log densities, with each block's columns carried by
+# `.hp_grid_design_coords()`. What the family's rail and resolution reads take.
+.joint_fit_in_cpc <- function(res) {
+    tg <- res$theta_grid
+    if (is.null(tg) || !is.matrix(tg)) return(res)
+    blocks <- .hp_cpc_blocks(colnames(tg) %||% character(0))
+    if (length(blocks)) {
+        res$theta_grid <- .hp_grid_design_coords(tg, lapply(blocks, `[[`, "design"))
+    }
+    res
+}
+
+# Does a free-covariance column need placing? Its rail and resolution, read in
+# its block's CPC coordinates, the coordinates it is placed in.
+.joint_logchol_fires <- function(res, label) {
+    .nl_axis_placement_fires(.joint_fit_in_cpc(res), label, "cpc")
+}
+
+# An axis's incoming nodes in its CPC coordinate, off the fit's own cells.
+.joint_cpc_axis_ref <- function(label) {
+    force(label)
+    function(r) {
+        tg <- .joint_fit_in_cpc(r)$theta_grid
+        if (is.null(tg) || !label %in% colnames(tg)) return(numeric(0))
+        sort(unique(signif(as.numeric(tg[, label]), 12L)))
+    }
+}
+
+# The block's grid with one axis laid on `nodes` (CPC coordinates), as the
+# tensor in those coordinates over every axis's levels, mapped to the
+# log-Cholesky columns. An axis not written keeps the levels the block's current
+# grid gives it when that grid is a "cpc" tensor; on any other grid its
+# coordinate takes no level set, so it keeps its range at the placement's node
+# count. The family moves its axes together, so within one attempt every placed
+# axis is written before the refit reads the grid.
 .joint_logchol_write <- function(st, s, nodes) {
     blk <- st$prior[[s$block]]
     G <- .nl_strip_auto(.mcar_logchol_grid(blk))
-    lev <- lapply(colnames(G), function(c) sort(unique(signif(G[, c], 12L))))
-    names(lev) <- colnames(G)
+    p <- as.integer(blk$n_fields)
+    design <- list(design = "cpc", p = p)
+    C <- signif(.hp_logchol_coords(G, design), 12L)
+    is_cpc <- identical(.hp_logchol_design(G)$design, "cpc")
+    lev <- lapply(colnames(C), function(c) {
+        v <- sort(unique(C[, c]))
+        if (is_cpc) v else seq(min(v), max(v), length.out = .nl_recenter("n_pts"))
+    })
+    names(lev) <- colnames(C)
     lev[[s$axis]] <- sort(unique(as.numeric(nodes)))
-    out <- as.matrix(expand.grid(lev, KEEP.OUT.ATTRS = FALSE))
+    out <- .hp_logchol_from_coords(
+        as.matrix(expand.grid(lev, KEEP.OUT.ATTRS = FALSE)), design)
+    attr(out, "log_jac") <- NULL
+    colnames(out) <- colnames(G)
     st$prior[[s$block]]$logchol_grid <- auto_grid(out)
     st
 }

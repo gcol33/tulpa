@@ -1192,15 +1192,6 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   n_neighbors     = as.integer(p$n_neighbors)
 )
 
-# Default outer grid for a p-field separable MCAR, returned in column-major
-# lower-triangle log-Cholesky coordinates of Sigma = L L' (the columns the
-# integrator reads). For the common p = 2 case the nodes are placed in the
-# interpretable (sigma_1, sigma_2, rho) space -- with nodes AT sensible
-# correlation values -- and converted to log-Cholesky, so the rho axis is
-# covered evenly (raw log-Cholesky off-diagonal nodes map to awkward, uneven
-# correlations and can miss the mode under sharp likelihoods). For p > 2 a raw
-# log-Cholesky tensor is used (coarser; the off-diagonal correlations are not
-# separately interpretable).
 # The log-Cholesky coordinate names of a p x p Sigma, in the order the grid
 # columns run: column by column down the lower triangle (L11, L21, ..., Lp1,
 # L22, ...).
@@ -1225,28 +1216,26 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   g
 }
 
+# Default outer grid for a p-field separable MCAR, returned in column-major
+# lower-triangle log-Cholesky coordinates of Sigma = L L' (the columns the
+# integrator reads). The nodes are laid as a tensor in the marginal SDs and the
+# canonical partial correlations -- the "cpc" design (`.hp_logchol_design()`),
+# where the correlation nodes sit at sensible correlation values and a field SD
+# the data hold weakly has no log-Cholesky funnel to run down -- and mapped to
+# the columns by `.hp_logchol_from_coords()`. At p = 2 the one partial
+# correlation is the correlation itself.
 .mcar_default_logchol_grid <- function(p) {
-  if (p == 2L) {
-    sig <- .nl_grid_axis("mcar_sd")
-    rho <- .nl_grid_axis("mcar_rho")
-    g <- expand.grid(s1 = sig, s2 = sig, rho = rho,
-                     KEEP.OUT.ATTRS = FALSE)
-    # Sigma = [[s1^2, rho s1 s2], [rho s1 s2, s2^2]] -> lower Cholesky L:
-    # L11 = s1, L21 = rho s2, L22 = s2 sqrt(1 - rho^2).
-    out <- cbind(L11 = log(g$s1),
-                 L21 = g$rho * g$s2,
-                 L22 = log(g$s2 * sqrt(1 - g$rho^2)))
-    colnames(out) <- .mcar_logchol_names(2L)
-    return(out)
-  }
-  diag_nodes <- log(.nl_grid_axis("mcar_logchol_diag"))
-  off_nodes  <- .nl_grid_axis("mcar_logchol_off")
-  axes <- unlist(lapply(seq_len(p), function(j)
-    lapply(j:p, function(i) if (i == j) diag_nodes else off_nodes)),
-    recursive = FALSE)
-  g <- as.matrix(do.call(expand.grid, c(axes, list(KEEP.OUT.ATTRS = FALSE))))
-  colnames(g) <- .mcar_logchol_names(p)
-  g
+  p <- as.integer(p)
+  sig <- .nl_grid_axis(if (p == 2L) "mcar_sd" else "mcar_sd_wide")
+  cor <- .nl_grid_axis(if (p == 2L) "mcar_rho" else "mcar_pcor")
+  nm <- .mcar_logchol_names(p)
+  is_diag <- unlist(lapply(seq_len(p), function(j) (j:p) == j))
+  axes <- lapply(is_diag, function(d) if (d) log(sig) else atanh(cor))
+  C <- as.matrix(do.call(expand.grid, c(axes, list(KEEP.OUT.ATTRS = FALSE))))
+  out <- .hp_logchol_from_coords(C, list(design = "cpc", p = p))
+  attr(out, "log_jac") <- NULL
+  dimnames(out) <- list(NULL, nm)
+  out
 }
 
 .NL_REGISTRY <- list(

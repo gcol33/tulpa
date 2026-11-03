@@ -31,8 +31,8 @@
   # A per-arm dispersion whose family has no prior sourced yet.
   "dispersion_prior_unsourced",
   # A free-covariance block's log-Cholesky columns form a tensor neither in
-  # those coordinates nor, for two fields, in (log sigma_1, log sigma_2, rho),
-  # so its cells have no measure the grid itself defines.
+  # those coordinates nor in the marginal log SDs and atanh partial
+  # correlations, so its cells have no measure the grid itself defines.
   "logchol_design_measure",
   # A free-covariance block with some of its log-Cholesky columns held fixed:
   # the joint density on Sigma is not a density on the axes that remain.
@@ -407,11 +407,13 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 # once per row of every other block, and that is still the block's own tensor.
 # Returns `list(design, p)` with `design` one of
 #   "logchol"  a tensor in the log-Cholesky columns themselves;
-#   "sd_rho"   two fields laid as a tensor in (log sigma_1, log sigma_2, rho),
-#              the default grid (`.mcar_default_logchol_grid()`);
-# or `list(reason)`. The two cannot both hold on a grid whose three columns are
-# all integrated: rho levels fix the (L21, L22) pairs along s2, and s2 levels fix
-# them along rho.
+#   "cpc"      a tensor in the marginal log SDs and the atanh canonical partial
+#              correlations (`.hp_logchol_coords()`), the coordinates the
+#              default grid (`.mcar_default_logchol_grid()`) and a placement
+#              (`.joint_logchol_write()`) lay a block in;
+# or `list(reason)`. The two cannot both hold on a grid whose columns are all
+# integrated: the partial-correlation levels fix the (L_ij, L_ii) pairs along
+# each SD, and the SD levels fix them along each correlation.
 .hp_logchol_design <- function(M) {
   M <- as.matrix(M)
   m <- ncol(M)
@@ -422,22 +424,139 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
                    logical(1))
   if (!all(varies)) return(list(reason = .hp_decline("logchol_partial_block")))
   if (.hp_is_tensor(M)) return(list(design = "logchol", p = as.integer(p)))
-  if (p == 2) {
-    sd_rho <- list(design = "sd_rho", p = 2L)
-    if (.hp_is_tensor(.hp_logchol_coords(M, sd_rho))) return(sd_rho)
+  if (p >= 2) {
+    cpc <- list(design = "cpc", p = as.integer(p))
+    if (.hp_is_tensor(.hp_logchol_coords(M, cpc))) return(cpc)
   }
   list(reason = .hp_decline("logchol_design_measure"))
 }
 
-# A block's rows in the coordinates of `design`: the log-Cholesky columns
-# themselves, or (log sigma_1, log sigma_2, rho) for "sd_rho". Both are
-# pointwise maps, so they carry any rows, not only the design's own nodes.
+# Where each placement coordinate of `.re_cpc_block_to_logchol()` sits among a
+# block's log-Cholesky columns (`.mcar_logchol_names()` order): its first p
+# entries are the log SDs, which take the diagonal columns `L<i><i>`, and the
+# rest are the atanh partial correlations in column-major lower-triangle order,
+# which take the strictly-lower columns `L<i><j>` in the same order.
+.hp_cpc_order <- function(p) {
+  diag <- unlist(lapply(seq_len(p), function(j) (j:p) == j))
+  c(which(diag), which(!diag))
+}
+
+# A block's rows in the coordinates of `design`, one column per log-Cholesky
+# column: the columns themselves for "logchol"; for "cpc", `log sigma_i` in
+# column `L<i><i>` and atanh of the canonical partial correlation z_ij in column
+# `L<i><j>` (Lewandowski, Kurowicka & Joe 2009; `.re_logchol_block_to_cpc()`).
+# Both are pointwise maps, so they carry any rows, not only the design's nodes.
 .hp_logchol_coords <- function(M, design) {
   M <- as.matrix(M)
-  if (identical(design$design, "logchol")) return(M)
-  s1 <- exp(M[, 1L])
-  s2 <- sqrt(M[, 2L]^2 + exp(2 * M[, 3L]))
-  cbind(log(s1), log(s2), M[, 2L] / s2)
+  if (!identical(design$design, "cpc")) return(M)
+  p <- design$p
+  ord <- .hp_cpc_order(p)
+  C <- M
+  for (r in seq_len(nrow(M))) C[r, ord] <- .re_logchol_block_to_cpc(M[r, ], p)
+  C
+}
+
+# The inverse of `.hp_logchol_coords()`: rows in the coordinates of `design`
+# back to the log-Cholesky columns, with the log-Jacobian
+# log |d(log-Cholesky) / d(design coordinates)| per row as attribute
+# `"log_jac"` (0 on "logchol").
+.hp_logchol_from_coords <- function(C, design) {
+  C <- as.matrix(C)
+  if (!identical(design$design, "cpc")) {
+    attr(C, "log_jac") <- numeric(nrow(C))
+    return(C)
+  }
+  p <- design$p
+  ord <- .hp_cpc_order(p)
+  M <- C
+  lj <- numeric(nrow(C))
+  for (r in seq_len(nrow(C))) {
+    b <- .re_cpc_block_to_logchol(as.numeric(C[r, ord]), p)
+    M[r, ] <- b$theta
+    lj[r] <- b$log_jac
+  }
+  attr(M, "log_jac") <- lj
+  M
+}
+
+# The designs of the free-covariance blocks a fit's grid declares, read off the
+# cells laid as declared (`refining` tags the cells a refinement pass added),
+# keyed by `.hp_logchol_key()`. `complete` is FALSE when some block among the
+# grid's columns has no design, so its cells are boxes of no coordinates.
+.hp_grid_designs <- function(tg, refining = NULL) {
+  tg <- as.matrix(tg)
+  declared <- if (length(refining) == nrow(tg)) !nzchar(refining)
+              else rep(TRUE, nrow(tg))
+  d <- .hp_logchol_designs(tg[declared, , drop = FALSE])
+  ok <- vapply(d, function(x) !is.null(x$design), logical(1))
+  list(designs = d[ok], complete = all(ok))
+}
+
+# A grid seen in its free-covariance blocks' design coordinates, for a pass
+# that lays levels of the declared tensor (the joint driver's refinement). Each
+# "cpc" block of `logchol` (a `.hp_logchol_designs()` record) is carried by
+# `.hp_grid_design_coords()`, where it is a tensor in its own columns, and so
+# is declared "logchol" there: its measure is the product of the widths in
+# those columns. `to_columns()` maps cells of the view back to the log-Cholesky
+# columns the kernel and the hyperprior read; the density the hyperprior folds
+# is already the one in the design coordinates, so no Jacobian enters.
+# `cols` are the columns carried.
+.hp_design_view <- function(grid, logchol) {
+  cpc <- Filter(function(d) identical(d$design, "cpc"), logchol)
+  grid <- as.matrix(grid)
+  cols <- unlist(lapply(names(cpc), function(k)
+    .hp_logchol_block_cols(colnames(grid), .hp_logchol_key_pre(k))))
+  list(grid = .hp_grid_design_coords(grid, cpc),
+       logchol = lapply(logchol, function(d) {
+         if (identical(d$design, "cpc")) d$design <- "logchol"
+         d
+       }),
+       cols = cols,
+       to_columns = function(cells) {
+         out <- .hp_grid_design_coords(cells, cpc, inverse = TRUE)
+         attr(out, "log_jac") <- NULL
+         out
+       })
+}
+
+# Every complete free-covariance block among the columns `cn` with a
+# correlation (p >= 2), as `list(cols, design)`: the block's column positions in
+# `.hp_logchol_block_cols()` order and its "cpc" design record, keyed by
+# `.hp_logchol_key()`. These are the blocks a placement searches and lays in the
+# CPC coordinates.
+.hp_cpc_blocks <- function(cn) {
+  out <- list()
+  lc <- cn[.hp_is_logchol_col(sub("^b[0-9]+[.]", "", cn))]
+  for (pre in unique(.hp_col_prefix_vec(lc))) {
+    cols <- .hp_logchol_block_cols(cn, pre)
+    if (is.null(cols) || length(cols) < 3L) next
+    p <- as.integer(round((sqrt(8 * length(cols) + 1) - 1) / 2))
+    out[[.hp_logchol_key(pre)]] <- list(cols = match(cols, cn),
+                                        design = list(design = "cpc", p = p))
+  }
+  out
+}
+
+# A grid with every free-covariance block that has a design (`designs`, a
+# `.hp_logchol_designs()` record) carried into the coordinates that design is a
+# tensor in -- the coordinates its cells are boxes of -- or, with
+# `inverse = TRUE`, back. Every other column is left as it is. The forward map
+# is read at the 12 significant digits `.hp_is_tensor()` compares levels at, so
+# a level recovered through `exp` / `sqrt` in different rows is one level.
+.hp_grid_design_coords <- function(tg, designs, inverse = FALSE) {
+  tg <- as.matrix(tg)
+  cn <- colnames(tg)
+  for (key in names(designs)) {
+    d <- designs[[key]]
+    if (is.null(d$design)) next
+    cols <- .hp_logchol_block_cols(cn, .hp_logchol_key_pre(key))
+    if (is.null(cols)) next
+    M <- tg[, cols, drop = FALSE]
+    out <- if (inverse) .hp_logchol_from_coords(M, d)
+           else signif(.hp_logchol_coords(M, d), 12L)
+    tg[, cols] <- out[, seq_along(cols), drop = FALSE]
+  }
+  tg
 }
 
 # Each free-covariance block among `axes` with the design its grid declares,
@@ -464,9 +583,9 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 # The declaration for points laid in the grid's COLUMN coordinates -- a CCD
 # design and its mode-find, importance draws on the identity transform a
 # free-covariance axis takes: every block with a design takes the log-Cholesky
-# one. On a two-field block that is the "sd_rho" density carried by the map's
-# Jacobian, so the density over those points is a density in the coordinates
-# they were laid in.
+# one. On a "cpc" block that is the same density without the map's Jacobian, so
+# the density over those points is a density in the coordinates they were laid
+# in.
 .hp_declare_on_columns <- function(declared) {
   declared$logchol <- lapply(declared$logchol, function(d) {
     if (!is.null(d$design)) d$design <- "logchol"
@@ -478,24 +597,19 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 # Per-cell log prior density of a free-covariance block at the rows of `M`, in
 # the coordinates of `design` (a `.hp_logchol_design()` record): independent PC
 # priors on the marginal standard deviations and an LKJ prior on the
-# correlation, the `re_cov_pc_lkj_prior()` default at the engine's anchor. On a
-# log-Cholesky design that is the PC + LKJ density pushed to the log-Cholesky
-# coordinates; on the two-field default it is the same prior on
-# (log sigma_1, log sigma_2, rho) directly, where the LKJ(eta) density at d = 2
-# is (1 - rho^2)^(eta - 1) / c_2(eta).
+# correlation matrix, the `re_cov_pc_lkj_prior()` default at the engine's anchor
+# (`.re_cov_block_logprior()`, a density in the log-Cholesky coordinates). On a
+# "cpc" design it is that density carried to the log SDs and atanh partial
+# correlations by the map's log-Jacobian.
 .hp_logchol_log_density <- function(M, design) {
   if (is.null(design$design)) return(list(reason = design$reason))
-  anchor <- .nl_scale_anchor()
-  eta <- .nl_hyperprior("lkj_eta")
-  if (identical(design$design, "sd_rho")) {
-    C <- .hp_logchol_coords(M, design)
-    rho <- C[, 3L]
-    lp <- .hp_log_scale_density(exp(C[, 1L]), "sd", anchor) +
-      .hp_log_scale_density(exp(C[, 2L]), "sd", anchor) +
-      (eta - 1) * log1p(-rho^2) - .lkj_log_normaliser(2L, eta)
-  } else {
-    f <- .re_cov_block_logprior(design$p, TRUE, anchor, eta)
-    lp <- apply(as.matrix(M), 1L, f)
+  M <- as.matrix(M)
+  f <- .re_cov_block_logprior(design$p, TRUE, .nl_scale_anchor(),
+                              .nl_hyperprior("lkj_eta"))
+  lp <- apply(M, 1L, f)
+  if (identical(design$design, "cpc")) {
+    lp <- lp + attr(.hp_logchol_from_coords(.hp_logchol_coords(M, design),
+                                            design), "log_jac")
   }
   list(lp = as.numeric(lp))
 }

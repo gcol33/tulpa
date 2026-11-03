@@ -33,6 +33,21 @@
 # centred on a different density and read as railed again at its refit. A copy
 # scale whose heaviest cell is its "no coupling" point mass is held there: the
 # continuum a Newton step moves along does not reach it.
+#
+# A free-covariance block's log-Cholesky columns are searched together, in its
+# marginal log SDs and atanh canonical partial correlations
+# (`.hp_logchol_coords()`, design "cpc"), and the density searched is the one
+# in those coordinates: the column density plus the map's log-Jacobian. In the
+# log-Cholesky columns a field SD the data hold weakly puts the joint mode down
+# a funnel -- at fixed log L_ii the posterior's width along L_ij is of the order
+# of L_ii -- where the curvature along log L_ii is near zero and along L_ij near
+# infinite, so a placement laid from it spans the neck and misses the mass. In
+# the CPC coordinates the log-Jacobian makes the density decay as a scale
+# shrinks, the mode is interior, and the curvature there measures the posterior
+# a "cpc" tensor laid from it integrates (`.joint_logchol_write()`). Those
+# columns are reported with tag `"cpc"`: their `mode_u` / `cov_u` are in the
+# block's CPC coordinates, column `L<i><i>` holding log sigma_i and `L<i><j>`
+# atanh z_ij.
 
 # Search box and step, per axis, in the placement coordinate: the axis's own
 # node range, padded the way the CCD pads its box (so a mode past a coarse
@@ -86,12 +101,17 @@
     cn <- colnames(tg)
     d  <- ncol(tg)
     w[!is.finite(w)] <- 0
+    cpc <- .hp_cpc_blocks(cn %||% character(0))
+    cpc_cols <- unlist(lapply(cpc, `[[`, "cols"))
+    tg <- .hp_grid_design_coords(tg, lapply(cpc, `[[`, "design"))
     x0 <- as.numeric(tg[which.max(w), ])
     ptag <- coord_tags
+    ptag[cpc_cols] <- "identity"
 
     cont <- lapply(seq_len(d), function(j) {
         v <- c(as.numeric(tg[, j]),
-               if (!is.null(cn)) as.numeric(axis_nodes[[cn[j]]]))
+               if (!is.null(cn) && !j %in% cpc_cols)
+                   as.numeric(axis_nodes[[cn[j]]]))
         v <- sort(unique(v[is.finite(v)]))
         if (identical(ptag[j], "log")) v[v > 0] else v
     })
@@ -116,8 +136,14 @@
         for (i in seq_along(vary)) {
             theta[, vary[i]] <- .joint_pareto_inv(ptag[vary[i]], U[, i])$theta
         }
+        log_jac <- numeric(nrow(U))
+        for (b in cpc) {
+            M <- .hp_logchol_from_coords(theta[, b$cols, drop = FALSE], b$design)
+            theta[, b$cols] <- M
+            log_jac <- log_jac + attr(M, "log_jac")
+        }
         out <- eval_logpost(theta)
-        lp  <- as.numeric(out)
+        lp  <- as.numeric(out) + log_jac
         lp[!is.finite(lp)] <- -1e10
         md <- attr(out, "modes")
         if (!is.null(md)) attr(lp, "modes") <- md
@@ -145,6 +171,7 @@
 
     out_tag <- tags
     out_tag[vary] <- ptag[vary]
+    out_tag[cpc_cols] <- "cpc"
     mode_u <- vapply(seq_len(d), function(j)
         .joint_pareto_fwd(out_tag[j], x0[j]), numeric(1))
     mode_u[vary] <- mf$par
@@ -178,16 +205,25 @@
 # (`.NL_RECENTER$max_sd_u`): a curvature that flat did not resolve the
 # direction, and points laid from it land orders of magnitude off either side.
 # An SD under the placement's FLOOR is kept as measured: resolving a posterior
-# sharper than the floor lets a placement lay it is what the pass is for.
-.nl_outer_mode_axes <- function(mode) {
+# sharper than the floor lets a placement lay it is what the pass is for. A
+# free-covariance column (tag `"cpc"`) was searched in its block's CPC
+# coordinates, so it is laid at only by a caller reading the grid in those
+# coordinates (`.hp_design_view()`), which names it in `cpc_cols`; there it is
+# an `identity` axis.
+.nl_outer_mode_axes <- function(mode, cpc_cols = character(0)) {
     if (is.null(mode) || is.null(mode$names) || is.null(mode$cov_u)) return(NULL)
     out <- list()
     for (j in seq_along(mode$names)) {
         v <- mode$cov_u[j, j]
         if (!is.finite(v) || v <= 0 || !is.finite(mode$mode_u[j])) next
         if (sqrt(v) > .nl_recenter("max_sd_u")) next
+        tag <- mode$tags[j]
+        if (identical(tag, "cpc")) {
+            if (!mode$names[j] %in% cpc_cols) next
+            tag <- "identity"
+        }
         out[[mode$names[j]]] <- list(mode_u = mode$mode_u[j], sd_u = sqrt(v),
-                                     tag = mode$tags[j])
+                                     tag = tag)
     }
     if (length(out)) out
 }

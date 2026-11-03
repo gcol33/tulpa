@@ -1293,7 +1293,7 @@ auto_grid_place <- function(x)
              reason = reason)
     }
     if (length(tag) != 1L || is.na(tag) ||
-        !tag %in% c("log", "logit01", "atanh", "identity")) {
+        !tag %in% c("log", "logit01", "atanh", "identity", "cpc")) {
         return(bad("no_usable_curvature"))
     }
     if (length(mode_u) != 1L || length(sd_u) != 1L) return(bad("no_usable_curvature"))
@@ -1504,12 +1504,13 @@ auto_grid_place <- function(x)
     cn <- colnames(res$theta_grid) %||% character(0)
     for (a in intersect(axes, cn)) {
         # A mixing weight is read on its logit, a free-covariance block's
-        # log-Cholesky column on its own (already unconstrained) coordinate,
+        # column in its block's CPC coordinates (`.joint_logchol_fires()`),
         # every other movable axis on log.
         bare <- .hyper_axis_bare(a)
-        tag <- if (identical(bare, "rho")) "logit01"
-               else if (.hp_is_logchol_col(bare)) "identity" else "log"
-        if (.nl_axis_placement_fires(res, a, tag)) return(TRUE)
+        fires <- if (.hp_is_logchol_col(bare)) .joint_logchol_fires(res, a)
+                 else .nl_axis_placement_fires(
+                     res, a, if (identical(bare, "rho")) "logit01" else "log")
+        if (fires) return(TRUE)
     }
     FALSE
 }

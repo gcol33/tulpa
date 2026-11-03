@@ -2178,24 +2178,28 @@
     n_added <- 0L
     deferred <- refine_on && .nl_refine_deferred(res, joint_grid, grid_lm)
     if (refine_on && !deferred) {
+        # The passes lay levels of the declared tensor, so they read each
+        # free-covariance block in the coordinates it was declared a tensor in.
+        view <- .hp_design_view(joint_grid, hp_declared$logchol)
         refine_specs <- .joint_multi_measure_specs(
-            joint_grid, hp_base$axes, joint_grid, axis_offsets, B,
+            view$grid, hp_base$axes, view$grid, axis_offsets, B,
             fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass,
-            logchol = hp_declared$logchol, axis_refine = axis_refine_modes)
+            logchol = view$logchol, axis_refine = axis_refine_modes)
         refine_specs <- .hyper_specs_with_tags(refine_specs, .joint_axis_tags_raw(
-            list(theta_grid = joint_grid, axis_offsets = axis_offsets,
+            list(theta_grid = view$grid, axis_offsets = axis_offsets,
                  blocks = prepared)))
         ref <- .joint_refine_outer_grid(
-            joint_grid, grid_lm, grid_extras, refine_specs, refine_kernel,
-            refine_hp,
+            view$grid, grid_lm, grid_extras, refine_specs,
+            function(new_cells, ...) refine_kernel(view$to_columns(new_cells), ...),
+            function(cells) refine_hp(view$to_columns(cells)),
             adaptive_grid = adaptive_grid,
             edge_thresh   = adaptive_grid_edge_thresh,
             max_passes    = adaptive_grid_max_passes,
             consistency   = var_of_means_consistency,
             axis_modes    = .nl_outer_mode_axes(
-                getOption("tulpa.nl_outer_mode")))
+                getOption("tulpa.nl_outer_mode"), cpc_cols = view$cols))
         refining_axis <- ref$refining_axis
-        joint_grid    <- ref$theta_grid
+        joint_grid    <- view$to_columns(ref$theta_grid)
         grid_lm       <- ref$log_marginal
         grid_extras   <- ref$extras
         n_added       <- ref$n_added
@@ -2814,18 +2818,18 @@
     res$within_cell_requested <- within
     # A free-covariance block's standard deviations, correlations and
     # covariances, each computed per cell and read off the same weights.
-    # Read across the cells where they are boxes of the grid's own columns: a
-    # density support whose every free-covariance block was declared a tensor
-    # in its log-Cholesky columns.
-    declared <- !nzchar(res$refining_axis %||% rep("", nrow(joint_grid)))
-    lc_designs <- .hp_logchol_designs(joint_grid[declared, , drop = FALSE])
-    lc_tensor <- length(lc_designs) > 0L && all(vapply(lc_designs, function(d)
-        identical(d$design, "logchol"), logical(1)))
+    # Read across the cells on a density support whose every free-covariance
+    # block was declared a tensor in some coordinates (`.hp_logchol_design()`):
+    # the cells are boxes of those coordinates, so the within-cell read runs
+    # there and each point goes back to the log-Cholesky columns.
+    lc <- .hp_grid_designs(joint_grid, res$refining_axis)
+    lc_tensor <- length(lc$designs) > 0L && lc$complete
     res$hyper_derived <- .logchol_grid_derived_summary(
         joint_grid, w, support,
         within = if (identical(support, "density") && lc_tensor)
-            .nl_within_cell_setup(joint_grid, w, res$log_marginal,
-                                  res$refining_axis, geo$domain, geo$atom,
-                                  within, support))
+            .nl_within_cell_setup(.hp_grid_design_coords(joint_grid, lc$designs),
+                                  w, res$log_marginal, res$refining_axis,
+                                  geo$domain, geo$atom, within, support),
+        designs = lc$designs)
     .nl_attach_interval_provenance(res, qs, joint_grid, geo$domain, geo$atom)
 }

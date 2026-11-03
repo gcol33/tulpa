@@ -898,9 +898,9 @@ tulpa_hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
 
 # Per-cell log measure of one free-covariance block: the product of its cell
 # widths in the coordinates of its declared `design` (`.hp_logchol_design()`),
-# log sigma on each standard deviation and the natural value on the correlation
-# for the two-field default, the log-Cholesky columns themselves otherwise --
-# the coordinates `.hp_logchol_log_density()` puts the prior on. The widths are
+# log sigma on each standard deviation and atanh on each partial correlation for
+# a "cpc" design, the log-Cholesky columns themselves otherwise -- the
+# coordinates `.hp_logchol_log_density()` puts the prior on. The widths are
 # read off the levels the rows of `M` take in those coordinates, so a subset of
 # the declared tensor is measured on its own levels as every other axis is.
 # NULL when the block has no design.
@@ -908,14 +908,11 @@ tulpa_hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
                                        absolute = FALSE) {
   if (is.null(design$design)) return(NULL)
   C <- signif(.hp_logchol_coords(M, design), 12L)
-  axes <- if (identical(design$design, "sd_rho")) {
-    list(list(spec = list(name = "sigma", log_scale = TRUE), nat = exp),
-         list(spec = list(name = "sigma", log_scale = TRUE), nat = exp),
-         list(spec = list(name = "logchol_rho", log_scale = FALSE,
-                          bounds = c(-1, 1)), nat = identity))
-  } else {
-    rep(list(list(spec = list(name = "logchol", log_scale = FALSE),
-                  nat = identity)), ncol(C))
+  on_R <- list(spec = list(name = "logchol", log_scale = FALSE), nat = identity)
+  axes <- rep(list(on_R), ncol(C))
+  if (identical(design$design, "cpc")) {
+    sd_axis <- list(spec = list(name = "sigma", log_scale = TRUE), nat = exp)
+    axes[.hp_cpc_order(design$p)[seq_len(design$p)]] <- list(sd_axis)
   }
   out <- numeric(nrow(C))
   for (j in seq_len(ncol(C))) {

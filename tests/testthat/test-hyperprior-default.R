@@ -49,8 +49,10 @@ test_that("a subset of the declared tensor is measured under the declared design
 
 test_that("points laid in column coordinates read the density carried by the Jacobian", {
   # A CCD design and importance draws are laid in the log-Cholesky columns; the
-  # column declaration is the sd_rho density plus log|d(sd_rho)/dL|, so a density
-  # over those points is one in the coordinates they were laid in.
+  # column declaration is the cpc density plus log|d(cpc)/dL| = -log sigma_2
+  # (L21 = tanh(y) s2, L22 = log s2 + log sech(y) has determinant s2 in
+  # (y, log s2)), so a density over those points is one in the coordinates they
+  # were laid in.
   g <- tulpa:::.mcar_default_logchol_grid(2L)
   colnames(g) <- paste0("b1.", colnames(g))
   bl <- list(list(type = "mcar"))
@@ -60,8 +62,8 @@ test_that("points laid in column coordinates read the density carried by the Jac
   pts <- cbind(b1.L11 = rnorm(9), b1.L21 = rnorm(9), b1.L22 = rnorm(9))
   a <- tulpa:::.joint_hyperprior(pts, bl, declared = declared)$lp
   b <- tulpa:::.joint_hyperprior(pts, bl, declared = cols)$lp
-  C <- tulpa:::.hp_logchol_coords(pts, list(design = "sd_rho"))
-  expect_equal(b, a - log(exp(C[, 2L]) / (1 - C[, 3L]^2)), tolerance = 1e-10)
+  C <- tulpa:::.hp_logchol_coords(pts, list(design = "cpc", p = 2L))
+  expect_equal(b, a - C[, "b1.L22"], tolerance = 1e-10)
 })
 
 skip_on_cran_budget()
@@ -287,7 +289,7 @@ test_that("a joint tensor with a free-covariance block beside another folds and 
   expect_length(hp$declined, 0L)
 
   dg <- tulpa:::.hp_logchol_design(g)
-  expect_identical(dg$design, "sd_rho")
+  expect_identical(dg$design, "cpc")
   lp_block <- tulpa:::.hp_logchol_log_density(g, dg)$lp
   lp_sigma <- tulpa:::.joint_hyperprior(
     tg[, "b2.sigma", drop = FALSE], blocks[2L],
@@ -399,17 +401,20 @@ test_that("the two-field default grid carries PC x PC x LKJ on its own coordinat
   skip_on_cran()
   g <- tulpa:::.mcar_default_logchol_grid(2L)
   d <- tulpa:::.hp_logchol_design(g)
-  expect_identical(d$design, "sd_rho")
+  expect_identical(d$design, "cpc")
   lp <- tulpa:::.hp_logchol_log_density(g, d)$lp
-  # The same PC + LKJ prior re_cov_pc_lkj_prior() puts on the log-Cholesky
-  # coordinates, carried to (log sigma_1, log sigma_2, rho) by the Jacobian of
-  # L11 = log s1, L21 = rho s2, L22 = log s2 + log(1 - rho^2) / 2, whose
-  # determinant is s2 / (1 - rho^2).
-  f <- tulpa:::.re_cov_block_logprior(2L, TRUE, tulpa:::.nl_scale_anchor(),
-                                      tulpa:::.nl_hyperprior("lkj_eta"))
+  # PC on each SD in log sigma, LKJ(eta) on rho at d = 2,
+  # (1 - rho^2)^(eta - 1) / c_2(eta), and the atanh Jacobian 1 - rho^2.
   C <- tulpa:::.hp_logchol_coords(g, d)
-  s2 <- exp(C[, 2L]); rho <- C[, 3L]
-  expect_equal(lp, apply(g, 1L, f) + log(s2 / (1 - rho^2)), tolerance = 1e-12)
+  s1 <- exp(C[, "L11"]); s2 <- exp(C[, "L22"]); rho <- tanh(C[, "L21"])
+  anchor <- tulpa:::.nl_scale_anchor(); eta <- tulpa:::.nl_hyperprior("lkj_eta")
+  lambda <- -log(anchor[2L]) / anchor[1L]
+  pc <- function(s) log(lambda) - lambda * s + log(s)
+  closed <- pc(s1) + pc(s2) + (eta - 1) * log1p(-rho^2) -
+    tulpa:::.lkj_log_normaliser(2L, eta) + log1p(-rho^2)
+  expect_equal(lp, closed, tolerance = 1e-12)
+  # The default grid's correlation levels are the declared ladder.
+  expect_equal(sort(unique(round(rho, 10))), tulpa:::.nl_grid_axis("mcar_rho"))
 
   # A proper prior: on a tensor wide enough to hold it, the density times the
   # absolute cell measure sums to one. The resolution only sets the quadrature
@@ -553,4 +558,52 @@ test_that("both doors apply a stated density under hyperprior = \"flat\"", {
   expect_true("sigma" %in% jf$log_hyperprior_axes)
   expect_equal(jf$log_hyperprior, jp$log_hyperprior, tolerance = 1e-12)
   expect_equal(jf$log_marginal, jp$log_marginal, tolerance = 1e-12)
+})
+
+test_that("the CPC coordinates of a free-covariance block invert, with the map's log-Jacobian", {
+  for (p in 2:3) {
+    d <- list(design = "cpc", p = p)
+    set.seed(p)
+    C <- matrix(rnorm(5 * p * (p + 1) / 2, sd = 0.7), 5)
+    M <- tulpa:::.hp_logchol_from_coords(C, d)
+    expect_equal(unclass(tulpa:::.hp_logchol_coords(M, d)), C,
+                 tolerance = 1e-10, ignore_attr = TRUE)
+    # The log-Jacobian against a central difference of the map.
+    to_M <- function(v) as.numeric(tulpa:::.hp_logchol_from_coords(
+      matrix(v, 1), d))
+    for (r in 1:2) {
+      J <- vapply(seq_len(ncol(C)), function(j) {
+        e <- numeric(ncol(C)); e[j] <- 1e-6
+        (to_M(C[r, ] + e) - to_M(C[r, ] - e)) / 2e-6
+      }, numeric(ncol(C)))
+      expect_equal(attr(M, "log_jac")[r], log(abs(det(J))), tolerance = 1e-6)
+    }
+    # Column L<i><i> holds log sigma_i.
+    L <- tulpa:::.re_logchol_to_L(as.numeric(M[1, ]), p)
+    diag_pos <- tulpa:::.hp_cpc_order(p)[seq_len(p)]
+    expect_equal(C[1, diag_pos], 0.5 * log(rowSums(L^2)), tolerance = 1e-10)
+  }
+})
+
+test_that("the p = 3 default grid is a tensor in the marginal SDs and partial correlations", {
+  g <- tulpa:::.mcar_default_logchol_grid(3L)
+  d <- tulpa:::.hp_logchol_design(g)
+  expect_identical(d$design, "cpc")
+  expect_identical(nrow(g), 1728L)
+  C <- tulpa:::.hp_logchol_coords(g, d)
+  diag_pos <- tulpa:::.hp_cpc_order(3L)[1:3]
+  for (j in diag_pos) {
+    expect_equal(sort(unique(round(exp(C[, j]), 10))),
+                 tulpa:::.nl_grid_axis("mcar_sd_wide"))
+  }
+  for (j in setdiff(seq_len(ncol(C)), diag_pos)) {
+    expect_equal(sort(unique(round(tanh(C[, j]), 10))),
+                 tulpa:::.nl_grid_axis("mcar_pcor"))
+  }
+  # Its density is the log-Cholesky prior carried by the map's log-Jacobian.
+  f <- tulpa:::.re_cov_block_logprior(3L, TRUE, tulpa:::.nl_scale_anchor(),
+                                      tulpa:::.nl_hyperprior("lkj_eta"))
+  lj <- attr(tulpa:::.hp_logchol_from_coords(C, d), "log_jac")
+  expect_equal(tulpa:::.hp_logchol_log_density(g, d)$lp,
+               apply(g, 1L, f) + lj, tolerance = 1e-10)
 })
