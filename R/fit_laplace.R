@@ -557,8 +557,8 @@ tulpa_laplace <- function(y, n_trials, X,
 #' Resolve a supplied fixed-effect prior to its Gaussian `(mean, sd)` fields
 #'
 #' The one place that decides whether a `beta_prior` argument can be expressed
-#' as a Gaussian prior on the fixed effects at all. [.normalize_beta_prior()]
-#' (per-coefficient) and [.beta_prior_ridge_sd()] (scalar ridge) both resolve
+#' as a Gaussian prior on the fixed effects at all. `.normalize_beta_prior()`
+#' (per-coefficient) and `.beta_prior_ridge_sd()` (scalar ridge) both resolve
 #' through it and differ only in the shape they recycle the fields to, so a
 #' prior one accepts is a prior the other accepts.
 #'
@@ -683,13 +683,13 @@ tulpa_laplace <- function(y, n_trials, X,
 #' object, enforces a mean of 0, and returns the positive scalar SD. Keeps the
 #' shared prior interface (`beta_prior = list(mean, sd)`) while rejecting the
 #' options those fitters do not implement (a non-zero mean, a per-coefficient
-#' SD). Validation of the supplied object itself is [.beta_prior_fields()],
-#' shared with [.normalize_beta_prior()].
+#' SD). Validation of the supplied object itself is `.beta_prior_fields()`,
+#' shared with `.normalize_beta_prior()`.
 #'
 #' @param beta_prior `list(mean, sd)`; `mean` must be 0, `sd` a positive scalar.
 #'   `NULL` takes the engine default.
 #' @param default_sd SD used when `beta_prior` is `NULL`. A supplied prior is
-#'   resolved through [.beta_prior_fields()] and never falls back to this.
+#'   resolved through `.beta_prior_fields()` and never falls back to this.
 #' @noRd
 .beta_prior_ridge_sd <- function(beta_prior,
                                  default_sd = .tulpa_prior_sd("ridge")) {

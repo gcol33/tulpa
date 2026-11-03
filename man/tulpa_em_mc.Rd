@@ -42,7 +42,7 @@ keep one latent layout (the length of its mode vector) across draws.}
 
 \item{n_mc_growth}{Factor by which \code{n_mc} grows after an iteration whose
 step is swamped by Monte Carlo error (default \code{4 / 3}, Booth and
-Hobert's \code{1 + 1/r} at \code{r = 3}). \code{1} keeps \code{n_mc} constant.}
+Hobert's \code{1 + 1/r} with \code{r} set to 3). \code{1} keeps \code{n_mc} constant.}
 
 \item{n_mc_max}{Cap on \code{n_mc} (default \code{200L}).}
 

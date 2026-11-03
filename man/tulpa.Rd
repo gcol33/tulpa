@@ -69,7 +69,7 @@ HSGP spatial fields; RW1 / RW2 / AR1 temporal fields; smoothers), and are
 fitted on that door with \code{mode = "auto"}, \code{"structured"}, \code{"laplace"} or
 \code{"nested_laplace"}: a scale the call supplies is conditioned on and one it
 leaves out is integrated. \code{fit$family} is then \code{"interval_gaussian"} or
-\code{"truncated_gaussian"}. \code{\link[=fitted]{fitted()}} and \code{\link[=predict]{predict()}} report the latent
+\code{"truncated_gaussian"}. \code{\link[=fitted]{fitted()}} and \code{\link[stats:predict]{stats::predict()}} report the latent
 gaussian mean; \code{\link[=posterior_predict]{posterior_predict()}} draws the latent value for a
 censored response and a draw inside its row's bounds for a truncated
 one; the pointwise log-likelihood behind WAIC and LOO is the censored /

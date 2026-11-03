@@ -32,7 +32,7 @@ a linear predictor on the log-odds against it. The ridge prior sits on
 those contrasts, so the choice changes the prior and, slightly, the
 posterior, not only the labelling. The fit lists its classes in the order
 it used, the baseline last (\verb{$classes}), and the probability columns of
-\code{\link[=fitted]{fitted()}} and \code{\link[=predict]{predict()}} follow that order.}
+\code{\link[=fitted]{fitted()}} and \code{\link[stats:predict]{stats::predict()}} follow that order.}
 
 \item{control}{List of numerical knobs: \code{max_iter} (default 100), \code{tol}
 (default 1e-8), \code{n_draws} (posterior draws, default 2000), \code{seed}.}

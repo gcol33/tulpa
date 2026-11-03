@@ -178,7 +178,7 @@
 #'   dimension (default `6`) and the boundary factor `c` (default `1.5`). Given
 #'   by its coordinates, the basis is built on the domain the pooled
 #'   coordinates imply (the rule of [spatial_gp()]'s `approx = "hsgp"`) and the
-#'   fit keeps that builder, so [predict()] rebuilds the basis at new
+#'   fit keeps that builder, so [stats::predict()] rebuilds the basis at new
 #'   coordinates on the same domain. `svc_column` (a column index into every
 #'   arm's `X`) makes the field a spatially varying coefficient on that column:
 #'   arm `k`'s predictor receives `X_k[i, svc_column] f(s_i)`. A fit with a

@@ -90,7 +90,7 @@
 #'   (default `10L`).
 #' @param n_mc_growth Factor by which `n_mc` grows after an iteration whose
 #'   step is swamped by Monte Carlo error (default `4 / 3`, Booth and
-#'   Hobert's `1 + 1/r` at `r = 3`). `1` keeps `n_mc` constant.
+#'   Hobert's `1 + 1/r` with `r` set to 3). `1` keeps `n_mc` constant.
 #' @param n_mc_max Cap on `n_mc` (default `200L`).
 #' @param max_iter Maximum EM iterations (default `30L`).
 #' @param tol Convergence tolerance on the largest change between iterations

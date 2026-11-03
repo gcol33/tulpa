@@ -252,7 +252,7 @@ adjacency_to_list_tulpa <- function(adj) {
 
 #' Dispatch a spatial Polya-Gamma Gibbs fit to the correct sampler
 #'
-#' The Gibbs analogue of [dispatch_laplace_spatial()]: routes on `spatial$type`
+#' The Gibbs analogue of `dispatch_laplace_spatial()`: routes on `spatial$type`
 #' to the matching `cpp_pg_<family>_gibbs_<structure>` sampler, building the
 #' neighbour-list / coordinate inputs each one needs. The binomial Polya-Gamma
 #' augmentation backs the full areal (icar/bym2/rsr) + continuous (gp/nngp/
@@ -454,7 +454,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
 
 #' Dispatch a temporal Polya-Gamma Gibbs fit
 #'
-#' The temporal analogue of [dispatch_gibbs_spatial()]: maps a validated
+#' The temporal analogue of `dispatch_gibbs_spatial()`: maps a validated
 #' [temporal_multiscale()] spec onto the multiscale temporal Polya-Gamma
 #' sampler (`cpp_pg_binomial_gibbs_temporal`), which composes an additive
 #' RW1 trend + cyclic-RW1 seasonal + AR1/IID short-term decomposition. Binomial

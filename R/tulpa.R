@@ -1890,7 +1890,7 @@
 #'   fitted on that door with `mode = "auto"`, `"structured"`, `"laplace"` or
 #'   `"nested_laplace"`: a scale the call supplies is conditioned on and one it
 #'   leaves out is integrated. `fit$family` is then `"interval_gaussian"` or
-#'   `"truncated_gaussian"`. [fitted()] and [predict()] report the latent
+#'   `"truncated_gaussian"`. [fitted()] and [stats::predict()] report the latent
 #'   gaussian mean; [posterior_predict()] draws the latent value for a
 #'   censored response and a draw inside its row's bounds for a truncated
 #'   one; the pointwise log-likelihood behind WAIC and LOO is the censored /

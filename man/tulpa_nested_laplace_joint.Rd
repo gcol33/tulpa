@@ -177,7 +177,7 @@ coordinates: \code{coords}, a list of \code{n_arms} \verb{N_k x 2} coordinate ma
 dimension (default \code{6}) and the boundary factor \code{c} (default \code{1.5}). Given
 by its coordinates, the basis is built on the domain the pooled
 coordinates imply (the rule of \code{\link[=spatial_gp]{spatial_gp()}}'s \code{approx = "hsgp"}) and the
-fit keeps that builder, so \code{\link[=predict]{predict()}} rebuilds the basis at new
+fit keeps that builder, so \code{\link[stats:predict]{stats::predict()}} rebuilds the basis at new
 coordinates on the same domain. \code{svc_column} (a column index into every
 arm's \code{X}) makes the field a spatially varying coefficient on that column:
 arm \code{k}'s predictor receives \verb{X_k[i, svc_column] f(s_i)}. A fit with a

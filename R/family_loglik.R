@@ -863,7 +863,7 @@ family_names <- function() names(.FAMILY_OPS)
 #' per-fitter copy is only as good as the set of fitters that carry it, and
 #' `tulpa()` reaches beta-with-RE through a sampler that carried none.
 #'
-#' Counts delegate to [.validate_family_counts()]; the continuous families and
+#' Counts delegate to `.validate_family_counts()`; the continuous families and
 #' the binomial denominator add their rules here.
 #'
 #' @param family Family identifier, canonical or aliased.
@@ -942,7 +942,7 @@ family_names <- function() names(.FAMILY_OPS)
 #' loudly with the offending row instead.
 #'
 #' Reached from [tulpa()], from the direct beta-only doors, and from
-#' [.validate_glm_design()], which is what carries it to every fitter taking a
+#' `.validate_glm_design()`, which is what carries it to every fitter taking a
 #' `(y, X, n_trials)` bundle.
 #'
 #' Every per-observation numeric the kernels index is checked here, not only

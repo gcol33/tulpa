@@ -123,7 +123,7 @@ TIER_META <- list(
 #' * `fitter`   -- name of the R function implementing the backend, or `NULL`
 #'     when only a C++ kernel exists with no R entry point yet. Stored as a
 #'     *string* (not the function object) so the registry is independent of
-#'     source-load order; resolved lazily via [resolve_backend_fitter()].
+#'     source-load order; resolved lazily via `resolve_backend_fitter()`.
 #'     `NULL` => not selectable from R; dispatch fails loudly.
 #' * `families` -- character vector of supported family identifiers, or `NULL`
 #'     for an unrestricted backend.
@@ -613,7 +613,7 @@ resolve_backend_fitter <- function(backend) {
 #'
 #' @description
 #' The routing spine. Resolves `mode` to a concrete backend via
-#' [select_inference_mode()], asserts the backend is R-reachable (fails loudly
+#' `select_inference_mode()`, asserts the backend is R-reachable (fails loudly
 #' otherwise), then calls its fitter with `fitter_args`. The caller supplies
 #' `fitter_args` matching the backend's input contract
 #' (`BACKEND_REGISTRY$<backend>$input`).
@@ -625,7 +625,7 @@ resolve_backend_fitter <- function(backend) {
 #' @param mode User-specified mode (`"auto"`, a tier, or a backend name).
 #' @param fitter_args Named list of arguments forwarded to the backend fitter.
 #' @param family,n_obs,has_spatial,has_temporal,has_latent,spatial_type,temporal
-#'   Model characteristics forwarded to [select_inference_mode()].
+#'   Model characteristics forwarded to `select_inference_mode()`.
 #' @return The fitter's result, with `inference_mode`, `inference_tier`,
 #'   `backend`, and `selection_reason` ensured.
 #' @noRd

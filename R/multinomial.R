@@ -35,7 +35,7 @@
 #'   those contrasts, so the choice changes the prior and, slightly, the
 #'   posterior, not only the labelling. The fit lists its classes in the order
 #'   it used, the baseline last (`$classes`), and the probability columns of
-#'   [fitted()] and [predict()] follow that order.
+#'   [fitted()] and [stats::predict()] follow that order.
 #' @param control List of numerical knobs: `max_iter` (default 100), `tol`
 #'   (default 1e-8), `n_draws` (posterior draws, default 2000), `seed`.
 #'
