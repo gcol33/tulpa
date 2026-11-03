@@ -301,7 +301,11 @@ test_that("the default MCAR grid is placed at the outer mode, as a log-Cholesky 
   expect_identical(fit$outer_grid_placement, "auto_recentered")
   expect_setequal(fit$outer_grid_recenter_axes, axes)
   lc <- fit$theta_grid[, axes]
-  expect_identical(tulpa:::.hp_logchol_design(lc)$design, "logchol")
+  # The placed grid is the log-Cholesky tensor; the levels refinement lays past
+  # its ends go into the rows holding the posterior, and the measure is read
+  # off the declared cells.
+  declared <- lc[!nzchar(fit$refining_axis %||% rep("", nrow(lc))), ]
+  expect_identical(tulpa:::.hp_logchol_design(declared)$design, "logchol")
   # Placed by the engine, the axes may take levels past their nodes.
   expect_true(all(.mcar_refine_modes(fit, axes) == "extend"))
 

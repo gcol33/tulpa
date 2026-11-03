@@ -155,16 +155,17 @@ test_that("the placed HSGP noise and field axes read a dense grid's interval end
   skip_if_not_slow()
   d <- .hsgp_phi_fixture()
   sp <- spatial_gp(~ lon + lat, approx = "hsgp", m = 6)
-  calls <- list()
+  # The last call the HSGP basis loop makes is the fit's own basis.
+  cap <- new.env()
   trace("tulpa_nested_laplace_joint", where = asNamespace("tulpa"), print = FALSE,
-        tracer = quote(calls[[length(calls) + 1L]] <<- mget(
+        tracer = bquote(assign("a", mget(
           c("responses", "prior", "copy", "phi_grid", "prior_sigma",
-            "hyperprior", "control"))))
+            "hyperprior", "control")), envir = .(cap))))
   fit <- suppressWarnings(tulpa(y ~ x, data = d, family = "gaussian",
                                 spatial = sp, mode = "auto",
                                 control = list(diagnose_k = FALSE)))
   untrace("tulpa_nested_laplace_joint", where = asNamespace("tulpa"))
-  a <- calls[[length(calls)]]
+  a <- cap$a
   ls <- function(lo, hi, k) exp(seq(log(lo), log(hi), length.out = k))
   eg <- expand.grid(s = ls(0.05, 30, 32), l = ls(0.15, 10, 32))
   pr <- a$prior

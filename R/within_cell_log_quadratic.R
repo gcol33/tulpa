@@ -43,8 +43,9 @@
 # `cell_normal_read.patch` showed in gcol33/tulpa#925. So a row is interpolated
 # only where it resolves its own conditional, `h / sd <=
 # .nl_diag("lq_max_h_over_sd")`, with `h` the row's node spacing where its mass
-# sits (the mass-weighted median of its cells' box widths, the spacing itself on
-# an evenly spaced row) and `sd` the three-point parabola at its modal node.
+# sits (the median of its node gaps, each weighted by the mass of the two nodes
+# bounding it: the spacing itself on an evenly spaced row) and `sd` the
+# three-point parabola at its modal node.
 # Read as the median spacing over every node, the levels a refinement pass laid
 # down a slowly decaying tail -- light, and spaced at the tail's own scale --
 # took the gate past 2 on a row whose core is laid at 1 SD, and the whole axis
@@ -216,13 +217,14 @@
   im <- which.max(p$lg)
   if (im == 1L || im == n || p$d2[im - 1L] >= 0) return(as_box(p))
   sd_r <- sqrt(-1 / (2 * p$d2[im - 1L]))
-  # The row's spacing where its mass sits: the mass-weighted median of its
-  # nodes' box widths. On an evenly spaced row it is the spacing; the levels a
-  # refinement pass lays out along a tail carry little mass and leave it where
-  # the posterior is.
-  bw <- hi_b - lo_b
-  o <- order(bw)
-  p$h_sd <- bw[o][which(cumsum(mk[o]) >= sum(mk) / 2)[1L]] / sd_r
+  # The row's spacing where its mass sits: the median of its node gaps, each
+  # weighted by the mass of the two nodes bounding it. On an evenly spaced row
+  # it is the spacing; the levels a refinement pass lays out along a tail carry
+  # little mass and leave it where the posterior is.
+  gap <- diff(uv)
+  gw <- mk[-1L] + mk[-n]
+  o <- order(gap)
+  p$h_sd <- gap[o][which(cumsum(gw[o]) >= sum(gw) / 2)[1L]] / sd_r
   if (!is.finite(p$h_sd) || p$h_sd > .nl_diag("lq_max_h_over_sd")) {
     return(as_box(p))
   }
