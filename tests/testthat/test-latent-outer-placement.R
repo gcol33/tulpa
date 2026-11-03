@@ -102,6 +102,44 @@ test_that("latent(temporal_ar2()) is placed at the outer mode and integrates its
     expect_true(all(abs(got[, "ci_hi"] - ref[, 4L]) < tol))
 })
 
+test_that("a skewed latent AR(1) axis is followed past the end node its placement laid", {
+    skip_on_cran()
+    # The gcol33/tulpa#1071 fixture: AR(1) psi = 0.8, innovation sd 0.5, noise
+    # sd 0.3. The placement lays atanh(psi) at +/- 2.5 SDs of the curvature at
+    # its mode; the posterior is right-skewed and read 4% past that upper end.
+    set.seed(21)
+    Tt <- 150L
+    w <- numeric(Tt + 100)
+    for (t in 2:(Tt + 100)) w[t] <- 0.8 * w[t - 1] + stats::rnorm(1, 0, 0.5)
+    w <- w[101:(Tt + 100)]
+    x <- stats::rnorm(Tt)
+    d <- data.frame(t = seq_len(Tt), x = x,
+                    y = 1 + 0.5 * x + w + stats::rnorm(Tt, 0, 0.3))
+    fit_with <- function(b, control = list()) suppressWarnings(tulpa(
+        y ~ x + latent(b), data = d, family = "gaussian", phi = 0.3^2,
+        mode = "nested_laplace", control = control))
+    fit <- fit_with(temporal_ar(d$t, p = 1))
+    expect_identical(fit$outer_grid_placement, "auto_recentered")
+    # The placed axes keep their engine provenance on the refit, so the pass
+    # may lay levels past the nodes the placement laid.
+    psi <- tulpa_outer_grid(fit)$nodes[, "b1.atanh_psi1"]
+    placed <- psi[!nzchar(fit$refining_axis)]
+    expect_gt(max(psi), max(placed))
+
+    dense <- temporal_ar(d$t, p = 1)
+    dense$theta_grid_built <- as.matrix(expand.grid(
+        log_tau = seq(1.0, 2.6, length.out = 33L),
+        atanh_psi1 = seq(0.4, 2.8, length.out = 49L)))
+    ref <- .dense_axis_summary(fit_with(dense, list(
+        axis_refine = "none", prune = FALSE, diagnose_k = FALSE)))
+    expect_lt(max(ref[, "edge"]), 1e-3)
+    got <- .hp_table(fit)[rownames(ref), ]
+    # Each interval end within a quarter of the reference posterior SD; the
+    # upper end of atanh(psi) read 0.37 SDs short on the placed span alone.
+    expect_true(all(abs(got[, "ci_lo"] - ref[, "ci_lo"]) < 0.25 * ref[, "sd"]))
+    expect_true(all(abs(got[, "ci_hi"] - ref[, "ci_hi"]) < 0.25 * ref[, "sd"]))
+})
+
 test_that("a tgmrf block with a bounds box keeps its declared span", {
     skip_on_cran()
     set.seed(7)

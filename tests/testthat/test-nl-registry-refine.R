@@ -30,17 +30,25 @@
 
 skip_on_cran_budget()
 
-test_that("only a field SD the dispatcher can write a cell onto is refinable", {
+test_that("an axis the dispatcher can write and the registry tags is refinable", {
     skip_on_cran_budget()
     ref <- tulpa:::.nl_refinable_registry_axes
     expect_identical(ref(list(type = "icar"), FALSE), "tau")
     expect_identical(ref(list(type = "bym2"), FALSE), "sigma")
     expect_identical(ref(list(list(type = "icar"), list(type = "iid")), TRUE),
                      c("b1.tau", "b2.sigma"))
-    # The GP variance and lengthscale are not field SDs, and a bare `phi_gp` is
-    # not a dispersion here.
+    # Untagged, a GP variance and lengthscale are not field SDs; tagged with
+    # the coordinate the placement pass moves them on, they are refinable as
+    # well, and so is an AR(1) correlation.
     expect_length(ref(list(type = "nngp"), FALSE), 0L)
     expect_length(ref(list(type = "hsgp"), FALSE), 0L)
+    expect_identical(ref(list(type = "hsgp"), FALSE,
+                         c(sigma2 = "log", lengthscale = "log")),
+                     c("sigma2", "lengthscale"))
+    expect_identical(ref(list(type = "ar1"), FALSE,
+                         c(tau = "log", rho = "atanh")), c("tau", "rho"))
+    expect_identical(ref(list(type = "ar1"), FALSE, c(tau = "log", rho = NA)),
+                     "tau")
 })
 
 test_that("per-cell fields are bound by shape, constants left alone", {

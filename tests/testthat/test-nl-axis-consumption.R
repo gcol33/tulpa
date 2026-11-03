@@ -361,7 +361,8 @@ test_that("an unread ENGINE DEFAULT is dropped with a reason, not refused", {
     fit <- tulpa_nested_laplace(
         y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
         prior = .axc_icar_block(sim, spatial_idx = sim$sidx, sigma_grid = fsd),
-        family = "binomial", control = list(diagnose_k = FALSE))
+        family = "binomial",
+        control = list(diagnose_k = FALSE, axis_refine = "none"))
     rec <- fit$axis_fields_dropped
     expect_s3_class(rec, "data.frame")
     expect_identical(nrow(rec), 1L)

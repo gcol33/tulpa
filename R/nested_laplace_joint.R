@@ -2395,7 +2395,10 @@ tulpa_nested_laplace_joint <- function(responses,
         kernel_fn(new_cells, warm_start = warm_start, store_extras = store_extras,
                   n_threads_outer = n_threads_outer, ...)
     ref <- .joint_refine_outer_grid(
-        theta_grid_M, log_marginal, extras_list, specs, refine_kernel, hp_fn,
+        theta_grid_M, log_marginal, extras_list,
+        .hyper_specs_with_tags(specs, .joint_axis_tags_raw(
+            list(theta_grid = theta_grid_M, prior = prior))),
+        refine_kernel, hp_fn,
         adaptive_grid = adaptive_grid,
         edge_thresh   = adaptive_grid_edge_thresh,
         max_passes    = adaptive_grid_max_passes,

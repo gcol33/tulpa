@@ -357,16 +357,76 @@
   }
 }
 
+# The coordinate an axis's points are laid on when no placement mode names one
+# (`.joint_pareto_fwd()` tags): the one the door's transform registry gives the
+# axis (`spec$tag`, as the placement pass lays it), else log on a log-scale or a
+# positive axis, logit on a unit interval, atanh on a correlation, the natural
+# value otherwise. Every point laid on it maps back inside the axis's open
+# domain.
+.hyper_axis_tag <- function(spec) {
+  if (is.character(spec$tag) && length(spec$tag) == 1L && !is.na(spec$tag)) {
+    return(spec$tag)
+  }
+  if (.hyper_axis_is_log_scale(spec)) return("log")
+  dom <- .hyper_axis_domain(spec)
+  if (is.null(dom)) return("identity")
+  b <- dom$bounds
+  if (identical(b, c(0, 1))) return("logit01")
+  if (identical(b, c(-1, 1))) return("atanh")
+  if (identical(b, c(0, Inf))) return("log")
+  "identity"
+}
+
+# Attach each axis's coordinate (`spec$tag`, read by `.hyper_axis_tag()`) from
+# a door's per-column transform tags, named by axis. An axis the door's
+# registry leaves NA, and a door that declined to tag its grid at all, keep the
+# spec's own reading.
+.hyper_specs_with_tags <- function(specs, tags) {
+  if (is.null(tags) || .k_is_decline(tags) || is.null(names(tags))) return(specs)
+  lapply(specs, function(sp) {
+    t <- if (sp$name %in% names(tags)) tags[[sp$name]] else NA_character_
+    if (!is.na(t)) sp$tag <- t
+    sp
+  })
+}
+
+# The grid's own reading of an axis's location and spread, in the shape a
+# placement mode carries (`list(mode_u, sd_u, tag)`): the mean and SD of the
+# axis's marginal `marg` (`vals`, `log_marg`, the quadrature weight folded in)
+# on the coordinate `.hyper_axis_tag()` names. A declared point mass is left
+# out, as it is of every proposal. What the edge-closing rounds read a solved
+# row against when the fit carries no placement mode; NULL where the marginal
+# holds fewer than two continuum levels with mass.
+.hyper_marginal_mode <- function(spec, marg) {
+  vals <- as.numeric(marg$vals)
+  lm <- as.numeric(marg$log_marg)
+  tag <- .hyper_axis_tag(spec)
+  cont <- is.finite(vals) & !.hyper_is_atom_level(vals, spec) & is.finite(lm)
+  u <- suppressWarnings(.joint_pareto_fwd(tag, vals[cont]))
+  lm <- lm[cont]
+  ok <- is.finite(u)
+  u <- u[ok]; lm <- lm[ok]
+  if (length(u) < 2L) return(NULL)
+  p <- exp(lm - max(lm)); p <- p / sum(p)
+  m <- sum(p * u)
+  s <- sqrt(sum(p * (u - m)^2))
+  if (!is.finite(s) || s <= 0) return(NULL)
+  list(mode_u = m, sd_u = s, tag = tag)
+}
+
 # Points `k` SDs from a mode, on the natural scale, that an axis admits: inside
-# its bounds and, on an axis the caller stated (`extend = FALSE`), inside its
-# declared span `cont`, with none within half an SD of a node `u_nodes` already
-# holds. Kept in the order `k` gives them.
+# its bounds and its declared prior support (`slab_bounds`, where a node would
+# carry no weight) and, on an axis the caller stated (`extend = FALSE`), inside
+# its declared span `cont`, with none within half an SD of a node `u_nodes`
+# already holds. Kept in the order `k` gives them.
 .hyper_mode_points <- function(spec, cont, u_nodes, mode, k) {
   pts <- .joint_pareto_inv(mode$tag, mode$mode_u + k * mode$sd_u)$theta
   pts <- pts[is.finite(pts)]
   if (.hyper_axis_is_log_scale(spec)) pts <- pts[pts > 0]
   bounds <- .hyper_axis_bounds(spec)
   if (!is.null(bounds)) pts <- pts[pts > bounds[1L] & pts < bounds[2L]]
+  slab <- spec$slab_bounds
+  if (!is.null(slab)) pts <- pts[pts >= slab[1L] & pts <= slab[2L]]
   if (!isTRUE(spec$extend) && length(cont)) {
     pts <- pts[pts >= min(cont) & pts <= max(cont)]
   }
@@ -374,6 +434,71 @@
   keep <- vapply(u_pts, function(u)
     all(abs(u_nodes - u) > (0.5 + 1e-6) * mode$sd_u), logical(1))
   pts[keep]
+}
+
+# The share of an axis's posterior the fit's own read places past its outermost
+# continuum level on each side, `c(lower, upper)`: the region no node measured,
+# where the read is an extrapolation. Under the log-quadratic read
+# (`.nl_lq_reconstruct()`) that is the tail each row continues from its end
+# triple; where that read declines, the box read's outer half-cell, half the
+# outermost level's mass. An end whose marginal log density is convex over its
+# three outermost levels -- a decay that slows outward, as an arm of the
+# posterior running off the grid makes it -- has no concave triple to continue,
+# and the read holds it flat to the box edge; such a tail is at least the
+# geometric continuation of its last two levels' masses, `p_n / 2 + p_n r /
+# (1 - r)` with `r = p_n / p_{n-1}`, which is what is reported for it. `lm_eff`
+# is each cell's log mass (log marginal plus log quadrature weight), the node
+# density `log_marginal` alone; the coordinate is the one `.hyper_axis_tag()`
+# lays the axis's points on.
+.hyper_axis_tail_mass <- function(theta_grid, log_marginal, lm_eff, refining,
+                                  axis, spec) {
+  j <- match(axis, colnames(theta_grid))
+  v <- as.numeric(theta_grid[, j])
+  cont <- is.finite(v) & !.hyper_is_atom_level(v, spec)
+  if (.hyper_axis_is_log_scale(spec)) cont <- cont & v > 0
+  ok <- cont & is.finite(lm_eff)
+  if (!any(ok)) return(c(0, 0))
+  w <- numeric(length(v))
+  w[ok] <- exp(lm_eff[ok] - max(lm_eff[ok]))
+  w <- w / sum(w)
+  lev <- sort(unique(v[cont]))
+  box <- c(sum(w[v == lev[1L]]), sum(w[v == lev[length(lev)]])) / 2
+  dom <- .JOINT_AXIS_DOMAIN[[.hyper_axis_tag(spec)]] %||% NA_character_
+  ld <- as.numeric(log_marginal)
+  ld[!is.finite(ld)] <- -Inf
+  rc <- .nl_lq_reconstruct(v[cont], w[cont], dom,
+                           .nl_axis_declared_levels(theta_grid, j, refining),
+                           .nl_axis_row_id(theta_grid, j)[cont], ld[cont])
+  read <- if (!is.na(rc$declined)) box else {
+    Fe <- stats::approx(rc$x, rc$F, xout = rc$tr$to(range(lev)), rule = 2,
+                        ties = "ordered")$y
+    c(Fe[1L], 1 - Fe[2L])
+  }
+  pmax(read, .hyper_convex_tail_mass(lev, w, v, spec))
+}
+
+# The geometric bound `.hyper_axis_tail_mass()` reports for an end whose
+# marginal log density is convex over its three outermost levels, per side;
+# 0 for a concave end or an axis of fewer than three levels.
+.hyper_convex_tail_mass <- function(lev, w, v, spec) {
+  out <- c(0, 0)
+  n <- length(lev)
+  if (n < 3L) return(out)
+  p <- vapply(lev, function(l) sum(w[v == l]), numeric(1))
+  u <- .hyper_axis_coord(lev, spec)
+  lw <- .nl_level_log_width(u)
+  ld <- log(p) - if (is.null(lw)) 0 else lw
+  ends <- list(c(1L, 2L, 3L), c(n, n - 1L, n - 2L))
+  for (s in 1:2) {
+    i <- ends[[s]]
+    if (!all(is.finite(ld[i])) || p[i[1L]] <= 0) next
+    outer <- (ld[i[1L]] - ld[i[2L]]) / abs(u[i[1L]] - u[i[2L]])
+    inner <- (ld[i[2L]] - ld[i[3L]]) / abs(u[i[2L]] - u[i[3L]])
+    if (outer < inner) next
+    r <- p[i[1L]] / p[i[2L]]
+    out[s] <- if (r >= 1) Inf else p[i[1L]] / 2 + p[i[1L]] * r / (1 - r)
+  }
+  out
 }
 
 # The points that close a solved row where its nodes still read across a gap.
@@ -386,10 +511,16 @@
 # log-linear run to its neighbour's (`.hyper_gap_misread()`), and a node
 # misreading more than `gap_var` of the axis's variance into a gap more than
 # 1.5 SDs wide gets a point one SD out into it; so does the outermost node on
-# a side while it carries more than `gap_var` of the row at all. `marg` is the
-# row's marginal along the axis (`vals`, `log_marg`).
+# a side while the read places more than `tail_mass` of the axis past it
+# (`tails`, `.hyper_axis_tail_mass()`; half the outermost level's mass, its
+# box read's outer half-cell, when not given). `marg` is the row's marginal
+# along the axis (`vals`, `log_marg`), and `mode` the placement mode or, on a
+# fit that carries none, the grid's own reading of the axis
+# (`.hyper_marginal_mode()`).
 .hyper_propose_edge_close <- function(spec, marg, mode,
-                                      gap_var = .nl_diag("at_mode_gap_var")) {
+                                      gap_var = .nl_diag("at_mode_gap_var"),
+                                      tails = NULL,
+                                      tail_mass = .nl_diag("edge_tail_mass")) {
   if (is.null(mode) || !is.finite(mode$sd_u) || mode$sd_u <= 0) return(numeric(0))
   vals <- as.numeric(marg$vals)
   cont <- is.finite(vals) & !.hyper_is_atom_level(vals, spec)
@@ -410,8 +541,11 @@
   } else c(x - 0.5, x + 0.5)
   dens <- p / diff(edges)
   k <- numeric(0)
-  if (n >= 1L && p[1L] > gap_var) k <- c(k, x[1L] - 1)
-  if (n >= 2L && p[n] > gap_var)  k <- c(k, x[n] + 1)
+  # Past each outermost node the read has no node to read: an end whose tail
+  # carries more than `tail_mass` of the axis gets a point one SD out.
+  if (is.null(tails)) tails <- c(p[1L], p[n]) / 2
+  if (n >= 2L && isTRUE(tails[1L] > tail_mass)) k <- c(k, x[1L] - 1)
+  if (n >= 2L && isTRUE(tails[2L] > tail_mass)) k <- c(k, x[n] + 1)
   for (j in seq_len(n - 1L)) {
     L <- x[j + 1L] - x[j]
     if (L <= 1.5) next
@@ -828,10 +962,14 @@
 # comparison would have been the estimator against itself and the pass would
 # never fire. The ESS answers the question the pass is actually asking -- how
 # many nodes the marginal spreads over. An axis whose ESS is met but which still
-# reads mass across a gap (`.hyper_propose_edge_close()`, read from its outer
-# mode) enters too, for the edge-closing rounds only: on a BYM2 mixing weight
-# laid on the default ladder, its lowest node holding 11% of the axis spread it
-# over a half-cell and read the 2.5% bound at 0.124 against 0.177.
+# reads mass across a gap, or past an outermost node
+# (`.hyper_propose_edge_close()`, read from its outer mode, or from the grid's
+# own marginal on a fit that carries no mode) enters too, for the edge-closing
+# rounds only: on a BYM2 mixing weight laid on the default ladder, its lowest
+# node holding 11% of the axis spread it over a half-cell and read the 2.5%
+# bound at 0.124 against 0.177. Without a mode those rounds wait until the axis
+# is resolved: a collapsed axis's grid spread is its node spacing, not the
+# posterior's.
 #
 # The pass re-reads the ESS after every round and bisects again until the axis
 # reaches `min_ess` or has taken `max_nodes` new levels. A single round cannot
@@ -899,24 +1037,37 @@
     ess_before <- rd$ess
     if (!is.finite(ess_before)) next
     at_mode <- axis_modes[[axis]]
+    # The edge-closing rounds read a solved row against the placement mode when
+    # the fit carries one and against the grid's own marginal otherwise, so an
+    # outer node holding a share of the axis is followed out on every door,
+    # not only after a placement refit.
+    # Without a mode, a collapsed axis's grid spread is the node spacing rather
+    # than the posterior's, so it is bisected first and followed out only once
+    # its marginal spreads over `min_ess` levels.
+    edge_close <- function(rd) {
+      m <- at_mode %||% if (rd$ess >= min_ess) .hyper_marginal_mode(spec, rd$marg)
+      if (is.null(m)) return(numeric(0))
+      .hyper_propose_edge_close(
+        spec, rd$marg, m,
+        tails = .hyper_axis_tail_mass(theta_grid, log_marginal, rd$lm_eff,
+                                      refining_axis, axis, spec))
+    }
     added <- 0L
     ladder <- 0L
-    first <- TRUE
+    first <- !is.null(at_mode)
     if (ess_before >= min_ess) {
       # A resolved axis can still misread a gap: an outer node holding a share
       # of the axis spreads it across its whole half-cell. It takes the
       # edge-closing rounds alone, never the at-mode ladder a collapsed axis
       # is laid by.
-      if (is.null(at_mode) ||
-          !length(.hyper_propose_edge_close(spec, rd$marg, at_mode))) next
+      if (!length(edge_close(rd))) next
       first <- FALSE
     }
     while (added - ladder < max_nodes && is.finite(rd$ess)) {
       collapsed <- rd$ess < min_ess
-      new_pts <- if (is.null(at_mode)) numeric(0)
-        else if (first) .hyper_propose_at_mode(spec, rd$marg$vals, at_mode)
-        else .hyper_propose_edge_close(spec, rd$marg, at_mode)
-      if (first && !is.null(at_mode) && !length(new_pts)) break
+      new_pts <- if (first) .hyper_propose_at_mode(spec, rd$marg$vals, at_mode)
+        else edge_close(rd)
+      if (first && !length(new_pts)) break
       is_ladder <- first && length(new_pts) > 0L
       first <- FALSE
       if (length(new_pts) == 0L && collapsed) {

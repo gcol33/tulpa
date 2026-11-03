@@ -29,16 +29,20 @@
 
 # The axes of a registry grid the passes may refine, among those the dispatcher
 # can write a cell onto (`.nl_registry_axis_slots()`, the families
-# `.NL_REGISTRY_AXIS_FIELD` binds): a field SD (`sigma`, or the precision `tau`),
-# and an axis a block declares on its own natural coordinate
-# (`.NL_LINEAR_AXIS_BLOCKS`, a tgmrf() block's theta), which the passes lay their
-# points on linearly. Named as the grid names them.
-.nl_refinable_registry_axes <- function(prior, multi) {
+# `.NL_REGISTRY_AXIS_FIELD` binds): every axis the transform registry names a
+# coordinate for (`tags`, `.nl_registry_axis_tags()`) -- the same membership
+# the placement pass moves an axis by, so an axis the engine lays at its mode
+# is also one refinement follows out past an end node holding mass -- and an
+# axis a block declares on its own natural coordinate (`.NL_LINEAR_AXIS_BLOCKS`,
+# a tgmrf() block's theta), which the passes lay their points on linearly.
+# Named as the grid names them.
+.nl_refinable_registry_axes <- function(prior, multi, tags = NULL) {
     slots <- .nl_registry_named_slots(prior, multi)
     nm <- names(slots) %||% character(0)
     linear <- vapply(slots, function(s) s$type %in% .NL_LINEAR_AXIS_BLOCKS,
                      logical(1))
-    nm[.hyper_axis_bare(nm) %in% .JOINT_FIELD_SD_AXES | linear]
+    tagged <- !is.na(tags[nm] %||% rep(NA_character_, length(nm)))
+    nm[.hyper_axis_bare(nm) %in% .JOINT_FIELD_SD_AXES | linear | tagged]
 }
 
 # The refinement mode of each refinable axis of one registry grid, from who wrote
@@ -137,16 +141,22 @@
 # Refine a registry result's outer grid. `solve(theta_mat)` is the dispatcher's
 # result for those rows; `prior` is the declared block (single) or block list
 # (multi), `auto` the provenance record of the markers `.nl_grid_provenance()`
-# stripped. Returns `res` unchanged when no axis is refinable, no pass is asked
+# stripped, and `declared` the prior as the front door received it: whether an
+# axis is stated is read off the nodes the caller declared, so a placement
+# refit, which solves `prior` at the nodes it laid, refines them as the
+# engine's. Returns `res` unchanged when no axis is refinable, no pass is asked
 # for or none added a node; otherwise the grid with the nodes appended, the
 # per-cell side data bound, the `refining_axis` tags and the passes' records.
 .nl_refine_registry <- function(res, solve, prior, multi, auto,
                                 consistency = TRUE, adaptive_grid = FALSE,
                                 edge_thresh = 0.02, max_passes = 1L,
-                                user = NULL) {
+                                user = NULL, declared = prior) {
     tg <- .nl_theta_matrix(res)
     if (is.null(tg) || is.null(colnames(tg))) return(res)
-    refinable <- intersect(.nl_refinable_registry_axes(prior, multi),
+    blocks <- if (isTRUE(multi)) prior else list(prior)
+    tags <- .nl_registry_axis_tags(res, blocks, multi)
+    tags <- if (length(tags) == ncol(tg)) stats::setNames(unname(tags), colnames(tg))
+    refinable <- intersect(.nl_refinable_registry_axes(prior, multi, tags),
                            colnames(tg))
     # A mis-named axis is refused whatever the grid turns out to need, so the
     # knob never reads as applied where it was not.
@@ -161,12 +171,13 @@
     }
     if ((!isTRUE(consistency) && !isTRUE(adaptive_grid)) || nrow(tg) < 2L ||
         !length(refinable)) return(res)
-    modes <- .nl_registry_refine_modes(colnames(tg), refinable, prior, multi,
+    modes <- .nl_registry_refine_modes(colnames(tg), refinable, declared, multi,
                                        auto, user)
     specs <- .joint_axis_specs_from_grid(
         tg, folded_axes = res$log_hyperprior_axes, axis_refine = modes,
         linear_axes = .nl_linear_axes(res))
     if (is.null(specs)) return(res)
+    specs <- .hyper_specs_with_tags(specs, tags)
     n_base <- nrow(tg)
     ck <- .nl_chunked_kernel(solve, n_base)
     ref <- .joint_refine_outer_grid(

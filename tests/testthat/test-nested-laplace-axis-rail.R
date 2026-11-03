@@ -262,8 +262,12 @@ test_that("a BYM2 fit whose mixing weight rails is moved off its ceiling", {
                     scale_factor = 1,
                     sigma_grid = auto_grid(gr$sigma),
                     rho_grid   = auto_grid(gr$rho)), .rail_chain_adj(S))
+    # The grids are held as placed (`axis_refine = "none"`): refinement follows
+    # a mixing weight out past an end node holding mass on its own, and the
+    # statements here are about what the placement pass does.
     ctrl <- list(max_iter = 200L, tol = 1e-9, n_threads = 1L,
-                 diagnose_k = FALSE, diagnose_skew = FALSE)
+                 diagnose_k = FALSE, diagnose_skew = FALSE,
+                 axis_refine = "none")
     fit_held <- suppressWarnings(tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X, prior = prior,
         family = "gaussian", phi = 0.5,

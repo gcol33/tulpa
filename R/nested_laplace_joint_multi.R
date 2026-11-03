@@ -2184,6 +2184,9 @@
             joint_grid, hp_base$axes, joint_grid, axis_offsets, B,
             fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass,
             logchol = hp_declared$logchol, axis_refine = axis_refine_modes)
+        refine_specs <- .hyper_specs_with_tags(refine_specs, .joint_axis_tags_raw(
+            list(theta_grid = joint_grid, axis_offsets = axis_offsets,
+                 blocks = prepared)))
         ref <- .joint_refine_outer_grid(
             joint_grid, grid_lm, grid_extras, refine_specs, refine_kernel,
             refine_hp,

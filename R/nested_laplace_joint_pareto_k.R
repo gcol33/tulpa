@@ -386,12 +386,6 @@
     as.integer(min(w, ks))
 }
 
-# Positive-scale axes integrated on the log scale (theta = exp(u), Jacobian
-# d theta / d u = theta, log-Jacobian u). Per-arm dispersion axes carry the
-# `phi_` prefix and join this set by name.
-.JOINT_POS_AXES <- c("sigma", "tau", "sigma2", "phi_gp", "ell", "lengthscale",
-                     "range", "sigma_spatial", "sigma_occ", "sigma_pos",
-                     "sigma_1", "sigma_2")
 
 # Per-axis transform tag for one block. `type` is the (lower-case) block type,
 # `axes` the bare axis names (block prefix already stripped). Returns one tag

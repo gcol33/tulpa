@@ -1453,6 +1453,18 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # its SD falls under about `h / 5`, a fifth of the spacing the placement pass
 # lays (1.25 SDs), so an axis past it carries no spread across nodes for the
 # grid to report: its value is that node.
+#
+# `edge_tail_mass` is the share of an axis's posterior the fit's read may place
+# past its outermost level before the consistency pass lays a level one SD
+# beyond it (`.hyper_axis_tail_mass()`, `.hyper_propose_edge_close()`): no node
+# measures that region, and the read there continues its end triple. A Gaussian
+# marginal laid at +/- 2.5 SDs reads 0.62% past each end, which the end
+# triple's quadratic continues exactly, so a placed Gaussian axis takes no
+# level. A right-skewed one does: the AR(1) coefficient of gcol33/tulpa#1071,
+# laid at +/- 2.5 SDs of the curvature at its mode, read 4% past its upper end
+# and its 97.5% end at 1.571 against 1.647 on a dense 81 x 141 grid; followed
+# out it reads 1.606. An end whose log density is convex has no triple to
+# continue and is bounded geometrically instead (`.hyper_convex_tail_mass()`).
 .NL_DIAG <- list(
     within_cell          = "log_quadratic",
     lq_max_h_over_sd     = 2,
@@ -1464,6 +1476,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     read_sd_nodes        = 512L,
     axis_refine_nodes    = 8L,
     at_mode_gap_var      = 0.01,
+    edge_tail_mass       = 0.01,
     level_row_tail       = 1e-3,
     edge_mass_lift       = 1,
     single_node_mass     = 0.99,

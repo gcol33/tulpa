@@ -34,7 +34,8 @@ test_that("AR1 keeps a lone supplied axis and refuses a bad or unpaired rho_grid
   skip_on_cran()
   res <- tulpa_nested_laplace(d$y, d$n_trials, d$X,
                               prior = c(base, list(tau_grid = c(1, 2, 4, 8))),
-                              family = "binomial")
+                              family = "binomial",
+                              control = list(axis_refine = "none"))
   expect_equal(sort(unique(res$theta_grid[, "tau"])), c(1, 2, 4, 8))
   expect_equal(nrow(res$theta_grid),
                4L * length(tulpa:::.nl_grid_axis("ar1_rho")))

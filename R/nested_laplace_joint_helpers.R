@@ -450,9 +450,11 @@
 }
 
 # Which axes the joint refinement machinery can place nodes on at all. This is
-# a property of the DRIVER -- the field SD, the copy coefficient and the per-arm
-# dispersions are the axes its passes know how to propose on -- not of where the
-# nodes came from, which is the separate question `.joint_axis_is_stated()`
+# a property of the DRIVER -- a block's positive scales (`.JOINT_POS_AXES`: the
+# field SD, a GP variance, lengthscale or range), its correlation, the copy
+# coefficient and the per-arm dispersions are the axes its passes know how to
+# propose on, each on a coordinate the transform registry names -- not of where
+# the nodes came from, which is the separate question `.joint_axis_is_stated()`
 # answers.
 #
 # A multi-block grid prefixes the axes a block owns (`b2.sigma`) and leaves the
@@ -464,7 +466,13 @@
 # passes' points on the coordinate its mode is tagged with, logit or atanh,
 # which keeps every point inside its open interval.
 .JOINT_FIELD_SD_AXES <- c("sigma", "tau")
-.JOINT_REFINABLE_BLOCK_AXES <- c(.JOINT_FIELD_SD_AXES, "alpha", "rho")
+# Positive-scale axes integrated on the log scale (theta = exp(u), Jacobian
+# d theta / d u = theta, log-Jacobian u). Per-arm dispersion axes carry the
+# `phi_` prefix and join this set by name.
+.JOINT_POS_AXES <- c("sigma", "tau", "sigma2", "phi_gp", "ell", "lengthscale",
+                     "range", "sigma_spatial", "sigma_occ", "sigma_pos",
+                     "sigma_1", "sigma_2")
+.JOINT_REFINABLE_BLOCK_AXES <- c(.JOINT_POS_AXES, "alpha", "rho")
 
 # Is `axis` a per-arm dispersion (`phi_<arm>`)? Only an unprefixed name is:
 # `b1.phi_gp` is a block's own NNGP lengthscale.

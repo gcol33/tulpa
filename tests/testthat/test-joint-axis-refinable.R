@@ -466,9 +466,12 @@ test_that("a multi-block axis is eligible by its bare name, a dispersion by its 
     elig <- tulpa:::.joint_axis_refine_eligible
     expect_true(all(vapply(c("b1.sigma", "b2.tau", "b2.alpha", "sigma", "tau",
                              "alpha", "phi_y"), elig, logical(1))))
-    # `phi_gp` is a block's own lengthscale; only a bare `phi_<arm>` is a
-    # dispersion.
-    expect_false(elig("b1.phi_gp"))
+    # `phi_gp` is a block's own lengthscale, a positive scale refined on log
+    # like the GP variance and an HSGP lengthscale; only a bare `phi_<arm>` is
+    # a dispersion.
+    expect_true(all(vapply(c("b1.phi_gp", "b1.sigma2", "b1.lengthscale",
+                             "b1.range"), elig, logical(1))))
+    expect_false(tulpa:::.joint_axis_is_dispersion("b1.phi_gp"))
     # A field's `rho` takes points on the coordinate its mode is tagged with; a
     # proper-CAR `rho_car` has no such coordinate.
     expect_true(all(vapply(c("b1.rho", "rho"), elig, logical(1))))
