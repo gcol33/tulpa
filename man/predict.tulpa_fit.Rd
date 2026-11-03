@@ -19,10 +19,10 @@
 \arguments{
 \item{object}{A \code{tulpa_fit} object.}
 
-\item{newdata}{Data frame of covariates (and, for an SPDE fit, the coordinate
-columns named in the spec's coordinate formula; for a varying-coefficient
-fit, its coordinate / time and group columns). If \code{NULL}, predicts at the
-training design (requires \verb{$model_matrix}).}
+\item{newdata}{Data frame of covariates (and, for a field fit, the field's
+coordinate columns, unit column or time and group columns; for a
+varying-coefficient fit, its coordinate / time and group columns). If
+\code{NULL}, predicts at the training design (requires \verb{$model_matrix}).}
 
 \item{type}{\code{"link"} (linear predictor) or \code{"response"} (mean scale,
 \code{E[y]}). For a binomial fit the \code{"response"} scale here is the per-trial
@@ -41,11 +41,11 @@ calls agree).}
 
 \item{level}{Credible-interval level (default 0.95).}
 
-\item{include_field}{For a continuous-spatial fit (SPDE, HSGP, or GP/NNGP),
-add the field to the prediction (default \code{TRUE}), and for a
+\item{include_field}{For a fit with a latent field (continuous, areal or
+temporal), add the field to the prediction (default \code{TRUE}), and for a
 varying-coefficient fit the coefficient field at the \code{newdata} coordinates
-/ times. \code{FALSE} gives the fixed-effect (population) prediction. Ignored
-for fits with no continuous field.}
+/ times. \code{FALSE} gives the prediction without them. Ignored for fits with
+no field.}
 
 \item{re_form}{Which formula random-effect terms to condition on, as lme4's
 \code{re.form}: \code{NULL} (default) every term, \code{NA} or \code{~0} none (the population
@@ -79,27 +79,35 @@ alone. With random effects the interval is read over 4000 pinned draws of
 the fixed and random effects jointly (the same on every call), and
 \code{se.fit} is the SD of those draws.
 
-A fit carrying a continuous spatial field -- an SPDE Matern field
-(\code{\link[=spatial_spde]{spatial_spde()}}), a GP / NNGP field (\code{\link[=spatial_gp]{spatial_gp()}}) or a Hilbert-space GP
-field (\code{spatial_gp(approx = "hsgp")}) -- adds the field at the \code{newdata}
-coordinates by default. The fit's latent posterior is a mixture over its
-hyperparameter cells of Gaussians in the coefficients and the field at its
-fitted support (the mesh nodes, the fitted locations, the basis
-coefficients), and the field at a new location is its conditional
-distribution given that fitted field: the mesh projector there for the SPDE
-field, the basis re-evaluated there (on the domain the fit was built on)
-for the HSGP field, and the NNGP predictive given the field at the nearest
-fitted locations for the GP / NNGP field. \code{fit} is the exact posterior mean
-of the linear predictor, and \code{se.fit} / \code{lower} / \code{upper} are read over 4000
-pinned draws of the cell, the coefficients, the field and its conditional
-at the new locations, so the interval carries the uncertainty of the
-coefficients and the field, the field's conditional (kriging) variance away
-from the data, and the spread of the hyperparameters. These are the draws
-\code{\link[=posterior_linpred]{posterior_linpred()}} and \code{\link[=posterior_predict]{posterior_predict()}} return at the same
-\code{newdata}. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field
-is held at zero, at the training design too; the in-sample linear predictor
-with every fitted component is what \code{\link[=posterior_predict]{posterior_predict()}} draws and what
-\code{compare_models(criterion = "waic")} / \code{"loo"} score.
+A fit carrying a latent field adds it to the prediction by default
+(\code{include_field = TRUE}), on every backend and at the training design as at
+\code{newdata}. The fit's latent posterior is a mixture of Gaussians in the
+coefficients and the fields at their fitted support (the mesh nodes, the
+fitted locations, the basis coefficients, the areal units, the fitted
+times): one per hyperparameter cell on a nested-Laplace grid, the one cell
+of a fit at fixed hyperparameters (\code{mode = "laplace"}), and one point per
+stored draw on a sampler fit (\code{mode = "hmc"} and its siblings, \code{"gibbs"}).
+The field at a row is its conditional distribution given that fitted field:
+the mesh projector there for an SPDE field (\code{\link[=spatial_spde]{spatial_spde()}}), the basis
+re-evaluated there (on the domain the fit was built on) for an HSGP field
+(\code{spatial_gp(approx = "hsgp")}), the NNGP predictive given the field at the
+nearest fitted locations for a GP / NNGP field (\code{\link[=spatial_gp]{spatial_gp()}}), the sum of
+its scales for \code{\link[=spatial_multiscale]{spatial_multiscale()}}, and the value of the row's own unit
+or time for an areal (ICAR / CAR / BYM2) or temporal (RW1 / RW2 / AR1)
+field. \code{newdata} then carries the field's unit column (the one named in
+\code{spatial(...)}), time column and group column; a unit or time the fit was
+not fitted at is refused, since the field carries no value there. A
+restricted field (\code{\link[=spatial_rsr]{spatial_rsr()}}) is the field less its projection on the
+restriction design fitted at the support, \verb{w - x' (X_u' X_u)^-1 X_u' w},
+with \code{x} the design of the fitted unit or location a row sits at and
+otherwise the restriction formula evaluated on \code{newdata}. \code{fit} is the exact
+posterior mean of the linear predictor, and \code{se.fit} / \code{lower} / \code{upper} are
+read over 4000 pinned draws of the cell, the coefficients, the field and its
+conditional at the rows, so the interval carries the uncertainty of the
+coefficients and the field, an NNGP field's conditional (kriging) variance
+away from the data, and the spread of the hyperparameters. These are the
+draws \code{\link[=posterior_linpred]{posterior_linpred()}} and \code{\link[=posterior_predict]{posterior_predict()}} return at the same
+\code{newdata}.
 
 A spatially or temporally varying coefficient (\code{\link[=spatial_svc]{spatial_svc()}},
 \code{\link[=temporal_tvc]{temporal_tvc()}}) is predicted at the \code{newdata} coordinates / times from

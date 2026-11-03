@@ -1,124 +1,295 @@
 # spatial_field_predict.R
 # ------------------------------------------------------------------------------
-# The linear predictor of a fit carrying a continuous spatial field (an SPDE
-# Matern field, a GP / NNGP field, a Hilbert-space GP field, or a multi-scale
-# field, the sum of two NNGP or two HSGP components) at any set of locations:
-# the training rows or the rows of `newdata`.
+# The linear predictor of a fit carrying latent fields at any set of rows: the
+# training rows or the rows of `newdata`. One map serves every backend and
+# every field the map knows:
 #
-# The fit's posterior over its latent vector x = [fixed effects, random
-# effects, field] is the outer-grid mixture sum_k w_k N(m_k, Q_k^-1), one
-# inner-Laplace Gaussian per hyperparameter cell. The field at a location is a
-# function of the field at the fitted support and of the cell's
-# hyperparameters:
+#   * an SPDE Matern field: w(s) = A(s) w_mesh, the finite-element projector at
+#     s applied to the field at the mesh nodes;
+#   * an HSGP field: f(s) = Phi(s) diag(sqrt(S)) z, the Laplacian basis at s on
+#     the domain the fit was built on, with the spectral scales of the draw's
+#     (sigma2, lengthscale);
+#   * an NNGP field: w(s) | w ~ N(alpha' w_nb, sigma2 - c' C^-1 c), the NNGP
+#     predictive given the field at the nearest fitted locations under the
+#     draw's covariance; new locations are conditionally independent given w;
+#   * a field indexed by a unit (an areal ICAR / CAR / BYM2 field, a temporal
+#     RW1 / RW2 / AR1 field): the row's own unit or time, which has to be one
+#     the field is defined on;
+#   * a multi-scale field: its components, each mapped with its own
+#     hyperparameters, summed.
 #
-#   * SPDE: w(s) = A(s) w_mesh, the finite-element projector at s, so the
-#     field anywhere is a linear map of the mesh-node field.
-#   * HSGP: f(s) = Phi(s) diag(sqrt(S_k)) z, the Laplacian basis at s on the
-#     domain the fit was built on, with the spectral scales of cell k.
-#   * NNGP: w(s) | w ~ N(alpha' w_nb, sigma2 - c' C^-1 c), the NNGP predictive
-#     given the field at the nearest fitted locations, under cell k's
-#     covariance; new locations are conditionally independent given w.
+# A restricted field (`spatial_rsr()`) enters eta as P w, P the projector
+# orthogonal to the restriction design X_u at the field's own support, so its
+# value at unit u is w_u - x_u' delta with delta = (X_u' X_u)^-1 X_u' w. At a
+# row the field is not fitted at, the same coefficient delta removes the
+# restriction design's span from the field there: w(s) - x(s)' delta, x(s) the
+# restriction design at the row. At the fitted support this is P w exactly.
 #
-# One draw of eta at the locations picks a cell by its weight, draws x from
-# that cell's Gaussian and maps it; the draws are therefore draws from the
-# posterior predictive of eta, carrying the within-cell uncertainty of the
-# coefficients and the field, the field's conditional (kriging) variance away
-# from the data, and the spread over the hyperparameter cells. The point
-# prediction is the exact posterior mean, the weighted mean of the same map at
-# the cell modes. A multi-scale field is mapped component by component, each
-# with its own block's hyperparameters, and the components summed.
-# predict(), posterior_linpred() and posterior_predict() all read these two
-# functions.
+# The posterior the map is applied to is a mixture over "cells" of Gaussians
+# in [fixed effects, random effects, the fields at their support]:
 #
-# A cell's precision is not kept on the fit: it is as large as the latent
-# vector's sparse graph and a grid can carry hundreds of cells. The cells a
-# set of draws lands in are solved again, with the fit's own inputs, by the
-# kernel that solved them during the fit (`.field_cell_solve()`), and the
-# re-solved modes are checked against the stored ones.
+#   * a grid fit (nested Laplace, the SPDE grid, a fit at fixed
+#     hyperparameters as one cell): one inner-Laplace Gaussian N(m_k, Q_k^-1)
+#     per hyperparameter cell, weighted by the cell's posterior weight;
+#   * a sampler fit (the ModelData samplers, a Polya-Gamma Gibbs chain): each
+#     stored draw is a cell of weight one with no spread, its hyperparameters
+#     the draw's own.
+#
+# One draw of eta picks a cell by its weight, draws the latent vector from the
+# cell's Gaussian (a stored draw is its own value) and maps it; the draws are
+# therefore draws from the posterior predictive of eta, carrying the
+# uncertainty of the coefficients and the fields, an NNGP field's conditional
+# (kriging) variance away from the data and the spread over the
+# hyperparameters. The point prediction is the exact posterior mean, the
+# weighted mean of the same map at every cell's mode. predict(),
+# posterior_linpred() and posterior_predict() all read these functions.
+#
+# A grid cell's precision is not kept on the fit: it is as large as the latent
+# vector's sparse graph and a grid can carry hundreds of cells. The cells a set
+# of draws lands in are solved again, with the fit's own inputs, by the kernel
+# that solved them (`.field_cell_solve()`), and the re-solved modes are checked
+# against the stored ones. An inline `spatial()` / `temporal()` field fit keeps
+# its cells' precisions, and they are read as kept.
 # ------------------------------------------------------------------------------
 
-# The kind of map a fit's continuous field takes to a location ("spde",
-# "nngp", "hsgp"), NULL for any other field. A multi-scale field takes the map
-# of its components' approximation.
+# Field block types by the map they take to a row.
+.FIELD_UNIT_SPATIAL  <- c("icar", "car", "car_proper", "bym2", "rsr")
+.FIELD_UNIT_TEMPORAL <- c("rw1", "rw2", "ar1")
+
+# The map a field of type `type` takes to a row ("spde", "nngp", "hsgp",
+# "unit"), NULL for a type no map is defined for.
 #' @keywords internal
-.field_kind <- function(sp) {
-  type <- sp$type %||% ""
-  if (identical(type, .FRONTDOOR_MULTISCALE)) {
-    return(if (identical(sp$approx %||% "nngp", "hsgp")) "hsgp" else "nngp")
-  }
-  switch(type, spde = "spde", gp = , nngp = "nngp", hsgp = "hsgp", NULL)
+.field_block_kind <- function(type) {
+  type <- tolower(type %||% "")
+  if (type == "spde") return("spde")
+  if (type %in% c("gp", "nngp", "gp_rsr")) return("nngp")
+  if (type == "hsgp") return("hsgp")
+  if (type %in% c(.FIELD_UNIT_SPATIAL, .FIELD_UNIT_TEMPORAL)) return("unit")
+  NULL
 }
 
-# The continuous field a fit carries and the outer cells its latent posterior
-# is mixed over: `kind` ("spde", "nngp", "hsgp"), `modes` (cells x n_x),
-# `weights`, `theta` (cells x axes, named), `solve` (the inner-solve record a
-# cell is solved again from; NULL where the fit keeps none) and `layout`
-# (`.field_layout()`). NULL for a fit without such a field, or one whose cells
-# were not retained.
+# The fit's latent posterior as cells, with the layout the map reads: `modes`
+# (cells x n_x), `weights`, `theta` (cells x axes, named), `solve` (the
+# inner-solve record a grid cell is solved again from; NULL where there is
+# none), `point` (TRUE when every cell is a stored draw with no spread) and
+# `layout` (`.field_layout()`). NULL for a fit without a field the map knows,
+# or one whose fields cannot all be located.
 #' @keywords internal
 .field_source <- function(object) {
-  sp <- object$spatial
-  kind <- .field_kind(sp)
-  if (is.null(kind) || !is.null(sp$projector) || isTRUE(sp$rsr)) return(NULL)
-  cells <- .field_cells(object, kind)
+  if (is.list(object$model_inputs) && is.matrix(object$draws) &&
+      nrow(object$draws) > 0L) {
+    return(.field_source_sampler(object))
+  }
+  if (identical(object$backend, "gibbs") && is.matrix(object$draws) &&
+      nrow(object$draws) > 0L) {
+    return(.field_source_gibbs(object))
+  }
+  if (!is.null(object$bar_fields)) return(.field_source_bar(object))
+  .field_source_grid(object)
+}
+
+# ---- inline bar fields -----------------------------------------------------------
+
+# An inline `spatial(graph =, formula =)` / `temporal(formula =)` fit: a
+# one-arm joint nested-Laplace grid that keeps each cell's precision, so its
+# cells are drawn from the stored precision (`solve$door = "stored"`). Each
+# block is one field per design column -- the intercept field, or a slope field
+# entering as the row's column value times the field at its unit -- and a
+# correlated (MCAR) spatial block is field-major over its columns.
+#' @keywords internal
+.field_source_bar <- function(object) {
+  modes <- object$modes
+  w <- object$weights
+  al <- object$arm_layout
+  blocks <- object$prior
+  if (!is.matrix(modes) || length(w) != nrow(modes) || is.null(al) ||
+      !is.list(blocks) || length(al$block_start) != length(blocks)) {
+    return(NULL)
+  }
+  p <- as.integer(object$n_fixed %||% ncol(object$model_matrix))
+  fields <- list()
+  b <- 0L
+  for (rec in object$bar_fields) {
+    n_blk <- if (isTRUE(rec$coupled)) 1L else rec$n_cols
+    for (j in seq_len(n_blk)) {
+      b <- b + 1L
+      blk <- blocks[[b]]
+      n_u <- as.integer(blk$n_spatial_units %||% blk$n_times)
+      idx <- (blk$spatial_idx %||% blk$temporal_idx)[[1L]]
+      start <- al$block_start[b]
+      if (isTRUE(rec$coupled)) {
+        for (a in seq_len(rec$n_cols)) {
+          fields[[length(fields) + 1L]] <- .field_bar_comp(
+            rec, a, start + (a - 1L) * n_u + seq_len(n_u), idx,
+            blk$field_weight[[a]][[1L]])
+        }
+      } else {
+        fields[[length(fields) + 1L]] <- .field_bar_comp(
+          rec, j, start + seq_len(n_u), idx,
+          if (!is.null(blk$svc_weight)) blk$svc_weight[[1L]])
+      }
+    }
+  }
+  n_re <- as.integer(al$n_re[1L] %||% 0L)
+  re <- if (n_re > 0L) {
+    list(cols = as.integer(al$re_start[1L] + seq_len(n_re)),
+         sd_per_cell = FALSE, scale = function(k) 1)
+  }
+  list(modes = modes, weights = as.numeric(w), theta = .nl_theta_matrix(object),
+       solve = list(door = "stored"), point = FALSE,
+       layout = list(beta = as.integer(al$beta_start[1L] + seq_len(p)),
+                     beta_names = object$fixed_names, fields = fields, re = re))
+}
+
+# One field of an inline bar block: its latent columns, its unit (or time) at
+# each training row and its per-row design weight there (NULL for the
+# intercept field, whose weight is one).
+#' @keywords internal
+.field_bar_comp <- function(rec, column, cols, idx, weight) {
+  list(kind = "unit", space = rec$space, cols = list(as.integer(cols)),
+       load = NULL, block = NULL, prefix = "", spec = NULL, restrict = NULL,
+       bar = list(rec = rec, column = column, idx = as.integer(idx),
+                  weight = if (!is.null(weight)) as.numeric(weight)))
+}
+
+# The unit (or time) and the design weight of each prediction row for an
+# inline bar field: at the training rows the ones the block was built with,
+# at `newdata` the node column resolved against the graph (the one resolver the
+# fit used) or the time column matched to the fitted times, and the field's
+# design column evaluated on `newdata`.
+#' @keywords internal
+.field_bar_rows <- function(comp, newdata) {
+  bar <- comp$bar
+  if (is.null(newdata)) return(list(idx = bar$idx, weight = bar$weight))
+  spec <- bar$rec$spec
+  gv <- spec$group_var
+  if (identical(bar$rec$space, "spatial")) {
+    if (!is.null(spec$by_var)) {
+      stop("The inline spatial() field is replicated by `", spec$by_var,
+           "`, whose levels the fit does not record, so a new row cannot be ",
+           "placed in its copy of the field. Pass include_field = FALSE for ",
+           "the prediction without it.", call. = FALSE)
+    }
+    if (is.null(newdata[[gv]])) {
+      stop("newdata has no column `", gv, "` naming the graph node of each ",
+           "row. Add it, or pass include_field = FALSE for the prediction ",
+           "without the field.", call. = FALSE)
+    }
+    adj <- as.matrix(spec$adjacency)
+    idx <- .resolve_spatial_idx(newdata[[gv]], nrow(adj), adj, gv)
+  } else {
+    idx <- .field_level_at(newdata, gv, bar$rec$time_levels, "time")
+  }
+  cols <- .bar_field_columns(spec, newdata, fname = bar$rec$space)
+  if (length(cols) != bar$rec$n_cols) {
+    stop("The inline ", bar$rec$space, "() field's formula expands to ",
+         length(cols), " design column(s) at newdata; the fit has ",
+         bar$rec$n_cols, ".", call. = FALSE)
+  }
+  col <- cols[[bar$column]]
+  list(idx = idx, weight = if (!isTRUE(col$is_intercept)) col$weight)
+}
+
+# ---- grid fits ---------------------------------------------------------------
+
+#' @keywords internal
+.field_source_grid <- function(object) {
+  cells <- .field_cells(object)
   if (is.null(cells)) return(NULL)
-  cells$kind <- kind
-  cells$layout <- .field_layout(object, kind, cells)
+  cells$point <- FALSE
+  cells$layout <- .field_layout(object, cells)
   if (is.null(cells$layout)) return(NULL)
   cells
 }
 
 # Where the cells sit on each door: a nested-Laplace grid on the fit itself, an
-# SPDE grid in `$nested`, and a fit at fixed hyperparameters as one cell.
+# SPDE grid in `$nested`, and a fit at fixed hyperparameters as one cell
+# (`.field_fixed_cell()`). `prior` is the latent block list the layout is read
+# from (the fit's own, or the block a one-cell fit is solved again with).
 #' @keywords internal
-.field_cells <- function(object, kind) {
+.field_cells <- function(object) {
   modes <- object$modes
   if (is.matrix(modes) && length(object$weights) == nrow(modes)) {
     return(list(modes = modes, weights = as.numeric(object$weights),
-                theta = .nl_theta_matrix(object), solve = object$field_solve))
+                theta = .nl_theta_matrix(object), solve = object$field_solve,
+                prior = object$prior))
   }
-  if (!identical(kind, "spde")) return(NULL)
-  nst <- object$nested
-  if (is.list(nst) && is.matrix(nst$modes) &&
-      length(nst$weights) == nrow(nst$modes)) {
-    return(list(modes = nst$modes, weights = as.numeric(nst$weights),
-                theta = nst$theta_grid, solve = object$field_solve))
+  sp <- object$spatial
+  if (identical(tolower(sp$type %||% ""), "spde")) {
+    nst <- object$nested
+    if (is.list(nst) && is.matrix(nst$modes) &&
+        length(nst$weights) == nrow(nst$modes)) {
+      return(list(modes = nst$modes, weights = as.numeric(nst$weights),
+                  theta = nst$theta_grid, solve = object$field_solve,
+                  prior = NULL))
+    }
+    if (is.numeric(object$mode) && is.numeric(object$range) &&
+        is.numeric(object$sigma)) {
+      return(list(modes = matrix(object$mode, nrow = 1L), weights = 1,
+                  theta = cbind(range = object$range, sigma = object$sigma),
+                  solve = object$field_solve, prior = NULL))
+    }
+    return(NULL)
   }
-  if (is.numeric(object$mode) && is.numeric(object$range) &&
-      is.numeric(object$sigma)) {
-    return(list(modes = matrix(object$mode, nrow = 1L), weights = 1,
-                theta = cbind(range = object$range, sigma = object$sigma),
-                solve = object$field_solve))
-  }
-  NULL
+  .field_fixed_cell(object)
 }
 
-# The latent columns of each component: `beta` (the fixed effects), `fields`
-# (one entry per field component: its `cols`, the component at its fitted
-# support, its prior `block`, and the `prefix` its hyperparameter axes carry on
-# the outer grid; a multi-scale field has two), and `re` (the formula random
-# effects, with
-# `scale(k)` the factor turning cell k's coordinates into effects: the cell's
-# random-effect SD on a multi-block grid, whose iid block is non-centred, and 1
-# where the coordinates are the effects; `sd_per_cell` marks the first, where a
-# new group's effect is drawn at the row's cell SD). NULL when the columns
-# cannot be located.
+# A conditional-Laplace fit (`mode = "laplace"`) of an NNGP, HSGP or areal
+# field: one cell at the hyperparameters its kernel was run at. That kernel
+# is the registry block's at the same values (each `laplace_*_at()` builds the
+# block the nested integrator builds), so the cell is solved again by the
+# registry kernel on a one-row grid, which returns its precision, and its mode
+# is checked against the fit's. NULL for any other fit.
 #' @keywords internal
-.field_layout <- function(object, kind, cells) {
+.field_fixed_cell <- function(object) {
+  sp <- object$spatial
+  if (!identical(object$backend, "laplace") || is.null(sp) ||
+      !is.numeric(object$mode) || isTRUE(sp$rsr)) {
+    return(NULL)
+  }
+  type <- tolower(sp$type %||% "")
+  theta <- switch(type,
+    gp   = c(sigma2 = object$sigma2_gp %||% sp$sigma2_gp %||% 1,
+             phi_gp = object$phi_gp %||% sp$phi_gp %||% 1),
+    hsgp = c(sigma2 = object$sigma2 %||% sp[["sigma2"]] %||% 1,
+             lengthscale = object$lengthscale %||% sp[["lengthscale"]] %||% 1),
+    icar = , car = c(tau = 1),
+    bym2 = c(sigma = 1, rho = 0.5),
+    car_proper = c(tau = object$tau %||% sp[["tau"]] %||% 1,
+                   rho = object$rho %||% sp[["rho"]] %||%
+                     mean(sp[["rho_bounds"]] %||% c(0, 1))),
+    NULL)
+  if (is.null(theta)) return(NULL)
+  rec <- object$field_solve
+  blk <- rec$prior
+  if (is.null(blk)) blk <- .spatial_spec_to_nl_prior(sp)
+  list(modes = matrix(object$mode, nrow = 1L), weights = 1,
+       theta = matrix(theta, nrow = 1L, dimnames = list(NULL, names(theta))),
+       solve = rec, prior = blk)
+}
+
+# The latent columns of each component: `beta` (the fixed effects, named by
+# `beta_names`), `fields` (one entry per field component, `.field_comp()`),
+# and `re` (the formula random effects, with `scale(k)` the factor turning
+# cell k's coordinates into effects: the cell's random-effect SD on a
+# multi-block grid, whose iid block is non-centred, and 1 where the
+# coordinates are the effects; `sd_per_cell` marks the first, where a new
+# group's effect is drawn at the row's cell SD). NULL when a field block
+# cannot be located or no map is defined for it.
+#' @keywords internal
+.field_layout <- function(object, cells) {
   n_x <- ncol(cells$modes)
   p <- as.integer(object$n_fixed %||% ncol(object$model_matrix))
-  sp <- object$spatial
-  width <- switch(kind,
-    spde = as.integer(sp$n_mesh),
-    nngp = as.integer(sp$n_unique %||% nrow(sp$unique_coords)),
-    hsgp = as.integer(sp[["m"]])^2L)
-  prior <- object$prior
-  if (is.list(prior) && is.null(prior$type) && length(prior)) {
+  prior <- cells$prior
+  multi <- is.list(prior) && is.null(prior$type) && length(prior)
+  if (multi) {
     roles <- .nl_block_roles(prior)
-    fields <- lapply(which(roles == "spatial"), function(k) {
-      list(cols = .nl_block_cols(object$block_latent_offsets, n_x, k,
-                                 length(roles)),
-           block = prior[[k]], prefix = paste0("b", k, "."))
+    ks <- which(roles %in% c("spatial", "temporal"))
+    fields <- lapply(ks, function(k) {
+      cols <- .nl_block_cols(object$block_latent_offsets, n_x, k, length(roles))
+      if (is.null(cols)) return(NULL)
+      .field_comp(object, prior[[k]], cols, paste0("b", k, "."), roles[k],
+                  cells$theta)
     })
     rl <- .nl_re_field_load(prior, object$block_latent_offsets, n_x,
                             cells$theta)
@@ -127,22 +298,274 @@
            scale = function(k) as.numeric(rl$weights(k)[[1L]]))
     }
   } else {
-    fields <- if (width <= n_x - p) {
-      list(list(cols = seq.int(n_x - width + 1L, n_x), block = prior,
-                prefix = ""))
-    }
+    role <- if (is.list(prior) && !is.null(prior$type)) .nl_block_roles(prior)
+            else "spatial"
+    if (!role %in% c("spatial", "temporal")) return(NULL)
+    width <- .field_block_width(object, prior, role)
+    if (is.null(width) || width > n_x - p) return(NULL)
+    fields <- list(.field_comp(object, prior, seq.int(n_x - width + 1L, n_x),
+                               "", role, cells$theta))
     n_re <- n_x - width - p
     re <- if (n_re > 0L) {
       list(cols = p + seq_len(n_re), sd_per_cell = FALSE, scale = function(k) 1)
     }
   }
-  if (!length(fields) ||
-      any(vapply(fields, function(f) length(f$cols) != width, logical(1)))) {
+  if (!length(fields) || any(vapply(fields, is.null, logical(1)))) return(NULL)
+  list(beta = seq_len(p), beta_names = object$fixed_names, fields = fields,
+       re = re)
+}
+
+# Width in the latent vector of a single-block fit's field: the mesh, the
+# distinct locations, the basis, or the units / times a block is laid over.
+#' @keywords internal
+.field_block_width <- function(object, prior, role) {
+  sp <- if (identical(role, "temporal")) object$temporal else object$spatial
+  type <- tolower((if (is.list(prior)) prior$type) %||% sp$type %||% "")
+  kind <- .field_block_kind(type)
+  if (is.null(kind)) return(NULL)
+  switch(kind,
+    spde = as.integer(sp$n_mesh),
+    nngp = as.integer(sp$n_unique %||% nrow(sp$unique_coords)),
+    hsgp = as.integer(sp[["m"]])^2L,
+    unit = .nl_single_block_width(prior))
+}
+
+# One field component: `kind` (the map), `space` ("spatial" / "temporal"),
+# `cols` (one latent column set, or two for BYM2's structured and
+# unstructured parts), `load(k)` (each set's weight at cell k; NULL for one
+# set at weight 1), `block` (its latent block), `prefix` (what its
+# hyperparameter axes carry on the outer grid, `""` on a single-block grid),
+# `spec` (the front-door spec the row index is read from) and `restrict` (the
+# restriction design of a projected field, `.field_restriction()`).
+# NULL for a block no map is defined for.
+#' @keywords internal
+.field_comp <- function(object, blk, cols, prefix, role, theta) {
+  spec <- if (identical(role, "temporal")) object$temporal else object$spatial
+  type <- tolower((if (is.list(blk)) blk$type) %||% spec$type %||% "")
+  kind <- .field_block_kind(type)
+  if (is.null(kind)) return(NULL)
+  cols <- as.integer(cols)
+  comp <- list(kind = kind, space = role, cols = list(cols), load = NULL,
+               block = blk, prefix = prefix, spec = spec, restrict = NULL)
+  if (type == "bym2") {
+    n_u <- length(cols) %/% 2L
+    if (2L * n_u != length(cols)) return(NULL)
+    comp$cols <- list(cols[seq_len(n_u)], cols[n_u + seq_len(n_u)])
+    sf <- as.numeric(blk$scale_factor %||% spec$scale_factor %||% 1)
+    sg <- .field_theta(theta, "sigma", prefix)
+    rh <- .field_theta(theta, "rho", prefix)
+    comp$load <- function(k) cbind(sg[k] * sqrt(rh[k]) * sf, sg[k] * sqrt(1 - rh[k]))
+  }
+  if (is.list(blk) && !is.null(blk$projector)) {
+    comp$restrict <- .field_restriction(spec)
+  }
+  comp
+}
+
+# The restriction a projected field carries: the restriction design at the
+# field's own support (`rsr_design`, one row per unit or location) and the
+# formula it is evaluated with at new rows.
+#' @keywords internal
+.field_restriction <- function(spec) {
+  Xu <- spec$rsr_design
+  if (!is.matrix(Xu)) {
+    stop("The restricted field carries no restriction design at its support ",
+         "($spatial$rsr_design), so it cannot be evaluated at other rows; ",
+         "refit it with this version of tulpa.", call. = FALSE)
+  }
+  list(design = Xu, formula = spec$rsr_formula)
+}
+
+# ---- sampler fits --------------------------------------------------------------
+
+# A ModelData sampler fit's draws as point cells: the fixed effects, the random
+# effects and every field at its support per draw, read through the engine's
+# own state (`cpp_sampler_field_draws()`), so a field is the one the
+# likelihood read at that draw. NULL when the fit carries no field the map
+# knows.
+#' @keywords internal
+.field_source_sampler <- function(object) {
+  mi <- object$model_inputs
+  if (is.null(mi$spatial_spec) && is.null(mi$temporal_spec)) return(NULL)
+  fd <- do.call(cpp_sampler_field_draws,
+                c(list(draws = object$draws), .sampler_model_args(object)))
+  lay <- .tulpa_sampler_layout(object)
+  D <- object$draws
+  S <- nrow(D)
+  bcols <- unlist(lapply(lay$beta, .layout_span_cols), use.names = FALSE)
+  zcols <- .layout_span_cols(lay$beta_zi)
+  nm <- object$fixed_names
+  b_names <- if (length(nm) == length(bcols) + length(zcols)) {
+    nm[seq_along(bcols)]
+  } else colnames(D)[bcols]
+  z_names <- if (length(zcols)) nm[length(bcols) + seq_along(zcols)]
+  acc <- .field_cell_builder(D[, c(bcols, zcols), drop = FALSE])
+  beta_cols <- seq_along(bcols)
+  zi_cols <- length(bcols) + seq_along(zcols)
+
+  des <- object$re_design
+  M <- if (length(des)) .tulpa_re_map(object, des)
+  re <- NULL
+  if (!is.null(M) && nrow(M) > 0L) {
+    rd <- .tulpa_re_coef_draws(object, D[, bcols, drop = FALSE], NULL, nrow(M))
+    if (!is.null(rd)) {
+      re <- list(cols = acc$add(rd), sd_per_cell = FALSE, scale = function(k) 1)
+    }
+  }
+
+  sp <- object$spatial
+  tp <- object$temporal
+  fields <- list()
+  theta <- list()
+  add_comp <- function(kind, space, values, spec, prefix = "", block = NULL,
+                       hyper = NULL) {
+    fields[[length(fields) + 1L]] <<- list(
+      kind = kind, space = space, cols = list(acc$add(values)), load = NULL,
+      block = block, prefix = prefix, spec = spec, restrict = NULL)
+    for (h in names(hyper)) theta[[paste0(prefix, h)]] <<- hyper[[h]]
+  }
+  if (ncol(fd$spatial_unit)) add_comp("unit", "spatial", fd$spatial_unit, sp)
+  if (ncol(fd$temporal)) add_comp("unit", "temporal", fd$temporal, tp)
+  if (ncol(fd$gp_w)) {
+    add_comp("nngp", "spatial", fd$gp_w, sp,
+             hyper = list(sigma2 = fd$gp_sigma2, phi_gp = fd$gp_phi))
+  }
+  if (ncol(fd$hsgp_z)) {
+    add_comp("hsgp", "spatial", fd$hsgp_z, sp,
+             hyper = list(sigma2 = fd$hsgp_sigma2,
+                          lengthscale = fd$hsgp_lengthscale))
+  }
+  if (ncol(fd$ms_local)) {
+    kind <- if (isTRUE(fd$ms_is_hsgp)) "hsgp" else "nngp"
+    ax <- if (kind == "hsgp") "lengthscale" else "phi_gp"
+    for (sc in c("local", "regional")) {
+      blk <- list(nn = sp[[paste0("nn_", sc)]] %||% sp$nn)
+      add_comp(kind, "spatial", fd[[paste0("ms_", sc)]], sp,
+               prefix = paste0(sc, "."), block = blk,
+               hyper = stats::setNames(
+                 list(fd[[paste0("ms_sigma2_", sc)]], fd[[paste0("ms_phi_", sc)]]),
+                 c("sigma2", ax)))
+    }
+  }
+  # Every field the model carries has to be mapped, or the source would report
+  # a predictor missing one of them.
+  spaces <- vapply(fields, `[[`, character(1), "space")
+  if (!is.null(mi$spatial_spec) && !"spatial" %in% spaces) return(NULL)
+  if (!is.null(mi$temporal_spec) &&
+      (!"temporal" %in% spaces || is.null(tp$time_index))) {
     return(NULL)
   }
-  for (j in seq_along(fields)) fields[[j]]$cols <- as.integer(fields[[j]]$cols)
-  list(beta = seq_len(p), fields = fields, re = re)
+  .field_point_source(acc$matrix(), theta, S,
+                      list(beta = beta_cols, beta_names = b_names,
+                           zi = if (length(zcols)) zi_cols, zi_names = z_names,
+                           fields = fields, re = re))
 }
+
+# A Polya-Gamma Gibbs chain's draws as point cells. Its field columns are the
+# field the kernel added to eta: an areal field per unit
+# (`.gibbs_field_unit_draws()`), an NNGP field per location with its
+# `log_sigma2_<suffix>` / `log_phi_<suffix>` (`.gibbs_gp_fields()`), and a
+# multi-scale temporal field per component. A restricted continuous field is
+# read before its projection (`gp_raw_w`) and carries its restriction, so it is
+# projected at every row as the nested fit's is.
+#' @keywords internal
+.field_source_gibbs <- function(object) {
+  D <- object$draws
+  dn <- colnames(D)
+  if (is.null(dn)) return(NULL)
+  S <- nrow(D)
+  fx <- .fixed_draws_mat(object)
+  if (is.null(fx) || nrow(fx) != S) return(NULL)
+  acc <- .field_cell_builder(fx)
+  des <- object$re_design
+  M <- if (length(des)) .tulpa_re_map(object, des)
+  re <- NULL
+  if (!is.null(M) && nrow(M) > 0L) {
+    rd <- .tulpa_re_coef_draws(object, fx, NULL, nrow(M))
+    if (!is.null(rd)) {
+      re <- list(cols = acc$add(rd), sd_per_cell = FALSE, scale = function(k) 1)
+    }
+  }
+  sp <- object$spatial
+  tp <- object$temporal
+  fields <- list()
+  theta <- list()
+  add_comp <- function(kind, space, values, spec, prefix = "", block = NULL,
+                       hyper = NULL, index = NULL) {
+    fields[[length(fields) + 1L]] <<- list(
+      kind = kind, space = space, cols = list(acc$add(values)), load = NULL,
+      block = block, prefix = prefix, spec = spec, restrict = NULL,
+      index = index)
+    for (h in names(hyper)) theta[[paste0(prefix, h)]] <<- hyper[[h]]
+  }
+  U <- .gibbs_field_unit_draws(object, seq_len(S))
+  if (!is.null(U)) add_comp("unit", "spatial", U, sp)
+  gpf <- if (!is.null(sp)) .gibbs_gp_fields(sp)
+  restricted <- !is.null(sp) &&
+    (isTRUE(sp$rsr) || identical(tolower(sp$type %||% ""), "gp_rsr"))
+  for (g in gpf) {
+    stem <- if (restricted) "gp_raw_w" else g$stem
+    cw <- grep(paste0("^", stem, "\\["), dn)
+    if (!length(cw)) {
+      stop("The Gibbs chain carries no `", stem, "` columns for its field.",
+           call. = FALSE)
+    }
+    pars <- paste0(c("log_sigma2_", "log_phi_"), g$suffix)
+    if (!all(pars %in% dn)) {
+      stop("The Gibbs chain carries no `", pars[!pars %in% dn][1L],
+           "` column for its `", g$stem, "` field.", call. = FALSE)
+    }
+    add_comp("nngp", "spatial", D[, cw, drop = FALSE], sp,
+             prefix = if (length(gpf) > 1L) paste0(g$suffix, ".") else "",
+             block = list(nn = g$nn),
+             hyper = list(sigma2 = exp(D[, pars[1L]]), phi_gp = exp(D[, pars[2L]])))
+    if (restricted) {
+      fields[[length(fields)]]$restrict <- .field_restriction(sp)
+    }
+  }
+  if (!is.null(tp) && !is.null(tp$time_index)) {
+    period <- as.integer(tp$seasonal %||% 0L)
+    for (stem in c("trend", "seasonal", "short_term")) {
+      cs <- grep(paste0("^", stem, "\\["), dn)
+      if (!length(cs) || (stem == "seasonal" && period < 1L)) next
+      add_comp("unit", "temporal", D[, cs, drop = FALSE], tp,
+               index = if (stem == "seasonal") period)
+    }
+  }
+  if (!length(fields)) return(NULL)
+  .field_point_source(acc$matrix(), theta, S,
+                      list(beta = seq_len(ncol(fx)), beta_names = colnames(fx),
+                           fields = fields, re = re))
+}
+
+# Accumulates draw columns into one latent matrix: `add(V)` appends V's
+# columns and returns their positions, `matrix()` the matrix.
+#' @keywords internal
+.field_cell_builder <- function(first) {
+  parts <- list(unname(as.matrix(first)))
+  width <- ncol(first)
+  list(add = function(V) {
+         V <- unname(as.matrix(V))
+         parts[[length(parts) + 1L]] <<- V
+         cols <- width + seq_len(ncol(V))
+         width <<- width + ncol(V)
+         cols
+       },
+       matrix = function() do.call(cbind, parts))
+}
+
+# The point-cell source of a sampler fit: every draw a cell of weight one.
+#' @keywords internal
+.field_point_source <- function(L, theta, S, layout) {
+  th <- if (length(theta)) {
+    do.call(cbind, lapply(theta, as.numeric))
+  } else matrix(numeric(0), S, 0L)
+  if (length(theta)) colnames(th) <- names(theta)
+  list(modes = L, weights = rep(1, S), theta = th, solve = NULL, point = TRUE,
+       layout = layout)
+}
+
+# ---- the map -------------------------------------------------------------------
 
 # A field hyperparameter of every cell, by its bare axis name and the prefix
 # its component's block carries on the outer grid (`""` on a single-block
@@ -182,15 +605,110 @@
   .coords_plain(nc)
 }
 
+# The fitted location of each prediction row whose coordinates are those of a
+# fitted location (to within 1e-10 of the coordinates' scale), NA for every
+# other row.
+#' @keywords internal
+.field_fitted_location <- function(nc, uc) {
+  tol <- 1e-10 * max(1, max(abs(uc)))
+  vapply(seq_len(nrow(nc)), function(i) {
+    d <- sqrt(colSums((t(uc) - nc[i, ])^2))
+    j <- which.min(d)
+    if (length(j) && d[j] <= tol) j else NA_integer_
+  }, integer(1))
+}
+
+# The support position each prediction row reads a unit-indexed component at:
+# the fitted unit of an areal field (by the field's unit column), the fitted
+# block position `(g - 1) * n_times + t` of a temporal field (by its time and
+# group columns; `comp$index` a season length reads `(t - 1) %% period + 1`).
+# At the training rows (`newdata` NULL) each row's own. A row the field is not
+# defined at is refused.
+#' @keywords internal
+.field_row_index <- function(object, comp, newdata) {
+  spec <- comp$spec
+  if (identical(comp$space, "temporal")) {
+    t_idx <- if (is.null(newdata)) as.integer(spec$time_index)
+             else .field_time_at(spec, newdata)
+    if (!is.null(comp$index)) return((t_idx - 1L) %% as.integer(comp$index) + 1L)
+    g_idx <- if (is.null(spec$group_var)) rep(1L, length(t_idx))
+             else if (is.null(newdata)) as.integer(spec$group_index)
+             else .field_level_at(newdata, spec$group_var, spec$group_levels,
+                                  "temporal group")
+    return((g_idx - 1L) * as.integer(spec$n_times) + t_idx)
+  }
+  if (is.null(newdata)) return(as.integer(spec$spatial_idx))
+  uv <- spec$unit_var %||% spec$group_var
+  if (identical(spec$level, "obs") || is.null(uv)) {
+    stop("The areal field is defined per observation (level = \"obs\"), so a ",
+         "new row is a unit the field was not fitted at. Pass include_field = ",
+         "FALSE for the prediction without it.", call. = FALSE)
+  }
+  if (!uv %in% names(newdata)) {
+    stop("newdata has no column `", uv, "` naming the areal unit of each row. ",
+         "Add it, or pass include_field = FALSE for the prediction without ",
+         "the field.", call. = FALSE)
+  }
+  adj <- as.matrix(spec$adjacency)
+  .resolve_spatial_idx(newdata[[uv]], nrow(adj), adj, uv)
+}
+
+# The fitted time index of each row of `newdata`, matched to the time levels
+# the fit recorded. A time the fit did not see is refused: the temporal field
+# carries a value at its fitted times only.
+#' @keywords internal
+.field_time_at <- function(spec, newdata) {
+  .field_level_at(newdata, spec$time_var, spec$time_levels, "time")
+}
+
+#' @keywords internal
+.field_level_at <- function(newdata, var, levels, what) {
+  if (is.null(var) || !var %in% names(newdata)) {
+    stop("newdata has no column `", var %||% "<none>", "` giving the ", what,
+         " of each row. Add it, or pass include_field = FALSE for the ",
+         "prediction without the field.", call. = FALSE)
+  }
+  v <- newdata[[var]]
+  idx <- match(as.character(v), as.character(levels))
+  if (anyNA(idx)) {
+    bad <- unique(as.character(v[is.na(idx)]))
+    stop(sprintf(paste0(
+      "newdata has %s value(s) the fit did not see (%s); the field carries a ",
+      "value at its fitted %ss only. Pass include_field = FALSE for the ",
+      "prediction without it."), what,
+      paste(utils::head(bad, 5L), collapse = ", "), what), call. = FALSE)
+  }
+  as.integer(idx)
+}
+
+# The component at its support (R x width) for latent rows `L` drawn in cells
+# `cells`: its one column set, or its sets weighted by each row's cell load.
+#' @keywords internal
+.field_support <- function(comp, L, cells) {
+  if (is.null(comp$load)) return(L[, comp$cols[[1L]], drop = FALSE])
+  W <- do.call(rbind, lapply(cells, comp$load))
+  out <- 0
+  for (j in seq_along(comp$cols)) {
+    out <- out + L[, comp$cols[[j]], drop = FALSE] * W[, j]
+  }
+  out
+}
+
 # The field component `comp` (an entry of the layout's `fields`) as R x n rows
-# at the prediction rows, for its rows `Fr` (R x width, the component at its
-# fitted support) drawn in cells `cells` (indices into the fit's grid).
-# `draw = TRUE` adds the NNGP conditional deviation; `FALSE` gives the
-# conditional mean, which for the SPDE and HSGP maps is the map itself.
+# at the prediction rows, for its support `Fr` (R x width) drawn in cells
+# `cells` (indices into the source's cells). `draw = TRUE` adds the NNGP
+# conditional deviation; `FALSE` gives the conditional mean, which for every
+# other map is the map itself.
 #' @keywords internal
 .field_at <- function(object, src, newdata, Fr, cells, draw, comp) {
-  sp <- object$spatial
-  switch(src$kind,
+  sp <- comp$spec
+  v <- if (!is.null(comp$bar)) {
+    br <- .field_bar_rows(comp, newdata)
+    g <- Fr[, br$idx, drop = FALSE]
+    if (is.null(br$weight)) g else sweep(g, 2L, br$weight, "*")
+  } else if (identical(comp$kind, "unit")) {
+    Fr[, .field_row_index(object, comp, newdata), drop = FALSE]
+  } else switch(comp$kind,
     spde = {
       A <- if (is.null(newdata)) sp$A else .spde_A_at(object, newdata)
       as.matrix(Fr %*% Matrix::t(A))
@@ -224,36 +742,78 @@
           stop("The fit records no map from its observations to the field's ",
                "locations ($spatial$obs_to_loc).", call. = FALSE)
         }
-        return(Fr[, otl, drop = FALSE])
+        Fr[, otl, drop = FALSE]
+      } else {
+        blk <- comp$block
+        nn  <- as.integer(blk$nn %||% sp$nn %||% 10L)
+        cty <- as.integer(blk$cov_type %||% gp_cov_type(sp))
+        nc <- .field_coords_at(object, newdata)
+        u <- unique(cells)
+        noise <- if (draw) matrix(stats::rnorm(nrow(Fr) * nrow(nc)), nrow(Fr))
+                 else matrix(0, nrow(Fr), nrow(nc))
+        cpp_gp_field_rows(nc, .coords_plain(sp$unique_coords), Fr,
+                          as.integer(match(cells, u) - 1L),
+                          .field_theta(src$theta, "sigma2", comp$prefix)[u],
+                          .field_theta(src$theta, "phi_gp", comp$prefix)[u],
+                          nn, cty, noise)
       }
-      blk <- comp$block
-      nn  <- as.integer(blk$nn %||% sp$nn %||% 10L)
-      cty <- as.integer(blk$cov_type %||% gp_cov_type(sp))
-      nc <- .field_coords_at(object, newdata)
-      u <- unique(cells)
-      noise <- if (draw) matrix(stats::rnorm(nrow(Fr) * nrow(nc)), nrow(Fr))
-               else matrix(0, nrow(Fr), nrow(nc))
-      cpp_gp_field_rows(nc, .coords_plain(sp$unique_coords), Fr,
-                        as.integer(match(cells, u) - 1L),
-                        .field_theta(src$theta, "sigma2", comp$prefix)[u],
-                        .field_theta(src$theta, "phi_gp", comp$prefix)[u],
-                        nn, cty, noise)
     })
+  if (!is.null(comp$restrict)) {
+    v <- v - .field_restriction_shift(object, comp, newdata, Fr)
+  }
+  v
+}
+
+# The part of a restricted field's support values `Fr` (R x n_u) that lies in
+# the span of the restriction design, at the prediction rows: x_r' delta per
+# row, delta = (X_u' X_u)^-1 X_u' w for each draw, x_r the design row of the
+# fitted unit / location a row sits at, and at any other row the restriction
+# formula evaluated on `newdata`.
+#' @keywords internal
+.field_restriction_shift <- function(object, comp, newdata, Fr) {
+  Xu <- comp$restrict$design
+  delta <- qr.coef(qr(Xu), t(Fr))                          # q x R
+  delta[is.na(delta)] <- 0
+  if (identical(comp$kind, "unit")) {
+    Z <- Xu[.field_row_index(object, comp, newdata), , drop = FALSE]
+  } else if (is.null(newdata)) {
+    Z <- Xu[as.integer(comp$spec$obs_to_loc), , drop = FALSE]
+  } else {
+    loc <- .field_fitted_location(.field_coords_at(object, newdata),
+                                  .coords_plain(comp$spec$unique_coords))
+    Z <- matrix(0, nrow(newdata), ncol(Xu))
+    on <- !is.na(loc)
+    Z[on, ] <- Xu[loc[on], , drop = FALSE]
+    if (any(!on)) {
+      nd <- newdata[!on, , drop = FALSE]
+      Zn <- if (is.null(comp$restrict$formula)) .tulpa_fixed_design(object, nd)
+            else stats::model.matrix(comp$restrict$formula, nd)
+      if (!identical(colnames(Zn), colnames(Xu))) {
+        stop("The restriction formula gives the columns ",
+             paste(colnames(Zn), collapse = ", "), " at newdata; the fit's ",
+             "restriction design has ", paste(colnames(Xu), collapse = ", "),
+             ".", call. = FALSE)
+      }
+      Z[!on, ] <- Zn
+    }
+  }
+  t(Z %*% delta)
 }
 
 # The linear predictor (R x n) at the prediction rows for latent rows `L`
 # (R x n_x) drawn in cells `cells`: the fixed effects and the offset of design
-# `D`, the field (`.field_at()`, summed over its components), and the fitted
-# groups' random effects of the terms `sel` keeps on term design `des`. The
-# random-effect coefficient rows travel as the `"re"` attribute.
+# `D`, every field component (`.field_at()`), and the fitted groups' random
+# effects of the terms `sel` keeps on term design `des`. The random-effect
+# coefficient rows travel as the `"re"` attribute.
 #' @keywords internal
 .field_eta_rows <- function(object, src, D, newdata, L, cells, draw, des,
                             sel = NULL) {
   lay <- src$layout
   beta <- L[, lay$beta, drop = FALSE]
-  nm <- object$fixed_names
+  nm <- lay$beta_names %||% object$fixed_names
+  nm <- if (length(nm) >= ncol(beta)) nm[seq_len(ncol(beta))]
   X <- D$X
-  if (!is.null(nm) && length(nm) == ncol(beta) && all(nm %in% colnames(X))) {
+  if (!is.null(nm) && all(nm %in% colnames(X))) {
     X <- X[, nm, drop = FALSE]
   } else if (ncol(X) != ncol(beta)) {
     stop("The prediction design does not match the fit's fixed effects.",
@@ -262,7 +822,7 @@
   eta <- beta %*% t(X)
   if (any(D$offset != 0)) eta <- sweep(eta, 2, rep_len(D$offset, ncol(eta)), "+")
   for (comp in lay$fields) {
-    eta <- eta + .field_at(object, src, newdata, L[, comp$cols, drop = FALSE],
+    eta <- eta + .field_at(object, src, newdata, .field_support(comp, L, cells),
                            cells, draw, comp)
   }
   B <- NULL
@@ -274,6 +834,10 @@
       re_eta <- .tulpa_re_eta(object, des, B, sel)
       if (!is.null(re_eta)) eta <- eta + re_eta
     }
+  }
+  if (src$point && !is.null(newdata)) {
+    vc <- .varying_coef_eta_contrib(object, newdata, rows = cells)
+    if (!is.null(vc)) eta <- eta + vc
   }
   dimnames(eta) <- NULL
   attr(eta, "re") <- B
@@ -301,13 +865,24 @@
   as.numeric(colSums(w[cells] * E) / sum(w[cells]))
 }
 
-# `S` draws of the latent vector from the outer-grid mixture: the rows are
+# `S` draws of the latent vector from the cell mixture. On a grid the rows are
 # allocated over the cells by their weights (`.nl_mixture_cells()`), the cells
 # drawn in are solved again for their precision, and each row is drawn from
 # its cell's Gaussian N(m_k, Q_k^-1), conditioned on the cell's sum-to-zero
-# groups. Returns the S x n_x rows with the cell of each row as `"cells"`.
+# groups. On a sampler fit the rows are stored draws: every stored draw once
+# when `S` reaches their number, the rest resampled, so a field's conditional
+# at new rows is drawn afresh for each. Returns the S x n_x rows with the cell
+# of each row as `"cells"`.
 #' @keywords internal
 .field_latent_draws <- function(object, src, S) {
+  if (isTRUE(src$point)) {
+    n <- nrow(src$modes)
+    rows <- if (S <= n) sample.int(n, S)
+            else c(seq_len(n), sample.int(n, S - n, replace = TRUE))
+    L <- src$modes[rows, , drop = FALSE]
+    attr(L, "cells") <- rows
+    return(L)
+  }
   w <- src$weights
   on <- is.finite(w) & w > 0 & is.finite(rowSums(src$modes))
   al <- .nl_mixture_cells(w[on] / sum(w[on]), which(on), S)
@@ -339,18 +914,29 @@
 # The precision (lower-triangle CSC, one list entry per cell) and mode of the
 # fit's cells `cells`, solved again with the inputs the fit was solved with by
 # the kernel that solved it: the SPDE grid kernel, the registry kernel of a
-# single block, or the multi-block driver. `constraint_cols` are the
+# single block, or the multi-block driver; a fit that kept every cell's
+# precision (`door = "stored"`) reads it. `constraint_cols` are the
 # sum-to-zero groups the precision is conditioned on.
 #' @keywords internal
 .field_cell_solve <- function(object, src, cells) {
   rec <- src$solve
   if (is.null(rec)) {
     stop("This fit keeps no record of its inner solve, so its latent ",
-         "posterior cannot be drawn at new locations (a fractional-nu SPDE ",
-         "field, or a fit through a model-supplied likelihood). The point ",
+         "posterior cannot be drawn at new rows (a fractional-nu SPDE ",
+         "field, a fit through a model-supplied likelihood, or a ",
+         "conditional-Laplace fit with observation weights). The point ",
          "prediction, predict(se.fit = FALSE), is available.", call. = FALSE)
   }
+  if (identical(rec$door, "stored")) {
+    n_x <- ncol(src$modes)
+    return(list(Q_p = object$Q_csc_p_per_grid[cells],
+                Q_i = object$Q_csc_i_per_grid[cells],
+                Q_x = object$Q_csc_x_per_grid[cells],
+                modes = src$modes[cells, , drop = FALSE],
+                constraint_cols = .joint_constraint_cols(object$arm_layout, n_x)))
+  }
   theta <- src$theta[cells, , drop = FALSE]
+  prior <- rec$prior %||% object$prior
   res <- switch(rec$door,
     spde = .spde_grid_solve(
       object$spatial, y = as.numeric(object$y),
@@ -368,11 +954,15 @@
       a$prune_tol <- 0
       a$compute_fitted_var <- FALSE
       if (identical(rec$door, "multi")) {
-        .nl_dispatch_multi(a, object$prior, theta_grid_override = theta)
+        .nl_dispatch_multi(a, prior, theta_grid_override = theta)
       } else {
-        blk <- .nl_registry_write_theta(list(object$prior), theta,
-                                        colnames(theta))[[1L]]
-        .nl_dispatch(rec$type, a, blk, object$prior)
+        # A field block's axis `<name>` is its `<name>_grid` entry; the cells
+        # are written as one paired grid.
+        blk <- prior
+        for (nm in colnames(theta)) {
+          blk[[paste0(nm, "_grid")]] <- as.numeric(theta[, nm])
+        }
+        .nl_dispatch(rec$type, a, blk, prior)
       }
     })
   if (!is.list(res$Q_csc_x_per_grid) ||
@@ -386,10 +976,12 @@
        constraint_cols = res$constraint_cols)
 }
 
-# Linear-predictor draws (S x n) at the prediction rows of a continuous-field
-# fit, with the random effects of the terms `sel` keeps: a fitted group's from
-# the same latent draw, a group the fit did not see from its covariance at the
-# row's cell. The cell of each row travels as `"cells"`.
+# Linear-predictor draws (S x n) at the prediction rows of a field fit, with
+# the random effects of the terms `sel` keeps: a fitted group's from the same
+# latent draw, a group the fit did not see from its covariance at the row's
+# cell. The grid cell of each row travels as `"cells"`, and on a
+# zero-inflated sampler fit the structural-zero logit of the same draws as
+# `"logit_zi"`.
 #' @keywords internal
 .field_eta_draws <- function(object, src, newdata, S, sel = NULL) {
   L <- .field_latent_draws(object, src, S)
@@ -404,8 +996,15 @@
     sig <- if (isTRUE(src$layout$re$sd_per_cell) && length(des) == 1L) {
       list(lapply(cells, function(k) matrix(src$layout$re$scale(k)[1L]^2)))
     }
-    eta <- eta + .re_new_group_eta(object, des, NULL, S, sel, sig = sig)
+    eta <- eta + .re_new_group_eta(object, des,
+                                   if (isTRUE(src$point)) cells, S = nrow(eta),
+                                   sel, sig = sig)
   }
-  attr(eta, "cells") <- cells
+  zi <- src$layout$zi
+  if (length(zi)) {
+    X_zi <- D$X_zi[, src$layout$zi_names, drop = FALSE]
+    attr(eta, "logit_zi") <- L[, zi, drop = FALSE] %*% t(X_zi)
+  }
+  if (!isTRUE(src$point)) attr(eta, "cells") <- cells
   eta
 }

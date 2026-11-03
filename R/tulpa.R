@@ -2531,12 +2531,14 @@ tulpa <- function(formula, data,
         # A restricted continuous field: the projector is built at the unique
         # locations the field is indexed by, which validate_gp() has just
         # resolved (gcol33/tulpa#848).
-        spatial_spec$rsr_projection <- .restriction_projection(
+        spatial_spec$rsr_design <- .restriction_design(
           spatial_spec$rsr_formula, data,
           obs_to_field = as.integer(spatial_spec$obs_to_loc),
           n_field = as.integer(spatial_spec$n_spatial %||%
                                  nrow(spatial_spec$unique_coords)),
           X_default = bundle$X)
+        spatial_spec$rsr_projection <-
+          compute_rsr_projection(spatial_spec$rsr_design)
       }
     } else if (sp_lc %in% c(.NL_FRONTDOOR_AREAL, "rsr")) {
       # Areal field: spatial(col) names the per-observation unit. RSR is areal
@@ -2561,6 +2563,8 @@ tulpa <- function(formula, data,
       # never by their sort order (gcol33/tulpa#900).
       spatial_spec$spatial_idx <- .resolve_spatial_idx(
         data[[parsed$spatial_var]], n_units, adj_mat, parsed$spatial_var)
+      # The column a row's unit is read from, at new data as here.
+      spatial_spec$unit_var <- parsed$spatial_var
       # A BYM2 field is the scaled one (Riebler et al. 2016) whichever way the
       # spec arrived: a bare list carries no scale, so it takes the one
       # spatial_bym2() computes, per connected component.
@@ -2574,10 +2578,12 @@ tulpa <- function(formula, data,
         # whole point of the modifier. dispatch_gibbs_spatial() consumes the
         # precomputed n_units x n_units projection, and the nested path reads
         # it through the block's projector (.spatial_spec_to_nl_prior()).
-        spatial_spec$rsr_projection <- .restriction_projection(
+        spatial_spec$rsr_design <- .restriction_design(
           spatial_spec$rsr_formula, data,
           obs_to_field = spatial_spec$spatial_idx,
           n_field = n_units, X_default = bundle$X)
+        spatial_spec$rsr_projection <-
+          compute_rsr_projection(spatial_spec$rsr_design)
       }
     } else {
       stop("Unknown spatial type '", spatial_type, "'. `spatial$type` must be one ",
@@ -3324,10 +3330,7 @@ tulpa <- function(formula, data,
     fit$obs_weights  <- weights
     fit$phi          <- fit$phi %||% phi
     fit$phi2         <- phi2
-    fit$re_design    <- lapply(bundle$re_terms %||% list(), function(rt) {
-      rt[c("group_var", "group_idx", "has_intercept", "slope_matrix",
-           "slope_names", "slope_xlevels", "n_groups", "n_coefs", "levels")]
-    })
+    fit$re_design    <- .re_design_of(bundle)
     # Attach the validated spatial spec so predict() can krige the field to new
     # coordinates (HSGP basis / GP-NNGP conditional mean). fit_spde already sets
     # $spatial; the nested gp/nngp/hsgp path does not, so fill it here.
@@ -3348,4 +3351,15 @@ tulpa <- function(formula, data,
   # returns, rather than only by a diagnostic the caller has to think to run
   # (gcol33/tulpa#875, #878).
   .tulpa_check_fit_convergence(fit)
+}
+
+
+# The per-term random-effect row design a fit keeps for its accessors: the
+# group index and slope columns of every formula RE term of the bundle it was
+# fitted from, and what rebuilds them at new data (`.tulpa_re_design_at()`).
+.re_design_of <- function(bundle) {
+  lapply(bundle$re_terms %||% list(), function(rt) {
+    rt[c("group_var", "group_idx", "has_intercept", "slope_matrix",
+         "slope_names", "slope_xlevels", "n_groups", "n_coefs", "levels")]
+  })
 }

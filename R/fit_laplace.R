@@ -238,6 +238,23 @@ tulpa_laplace <- function(y, n_trials, X,
       spatial, family, phi, max_iter, tol, n_threads, offset = offset,
       weights = weights, beta_prior = bp
     )
+    # The record this one cell is solved again from when its latent posterior
+    # is drawn (`.field_cell_solve()`): the registry kernel of the block the
+    # conditional kernel builds, on a one-row grid at the hyperparameters it
+    # fixed. The registry kernels take no observation weights.
+    if (is.null(weights) && !identical(spatial$type, "spde") &&
+        !isTRUE(spatial$rsr) &&
+        spatial$type %in% c(.NL_FRONTDOOR_AREAL, "gp", "hsgp")) {
+      blk <- .spatial_spec_to_nl_prior(spatial)
+      result$field_solve <- .nl_field_solve_record(
+        "registry",
+        .nl_kernel_args(y = y, n_trials = n_trials, X = X, offset = offset,
+                        re_idx = re_idx, n_re_groups = n_re_groups,
+                        sigma_re = sigma_re, family = family, phi = phi,
+                        max_iter = max_iter, tol = tol, n_threads = 1L,
+                        fitted_var = FALSE),
+        blk, type = tolower(blk$type), keep_prior = TRUE)
+    }
   } else {
     # All non-spatial paths: use cpp_laplace_fit_multi_re
     # (handles single RE, multiple RE, slopes, weights, offset)

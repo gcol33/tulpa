@@ -26,6 +26,8 @@
 #include "log_post_impl.h"         // GenericLogPostState, generic_eta_at
 #include "sampler_model_data.h"    // build_sampler_model_inputs
 #include "sampler_log_prob.h"      // sampler_log_prob_rows
+#include "hmc_gp.h"                // make_msgp_nc_view_{local,regional}
+#include "nngp_nc_term_apply.h"    // apply_nngp_nc_term_double
 
 // [[Rcpp::export]]
 Rcpp::NumericMatrix cpp_tulpa_glmm_eta_draws(
@@ -120,4 +122,157 @@ Rcpp::NumericVector cpp_tulpa_glmm_log_prob_draws(
         sigma_re_scale, re_spec, spatial_spec, temporal_spec, svc_spec,
         tvc_spec, zi_spec);
     return tulpa::sampler_log_prob_rows(draws, in.data, in.layout);
+}
+
+// The latent fields of a ModelData sampler fit at their own support, at each
+// posterior draw: what every observation of a unit, a time or a location
+// receives, so a reader at new rows gathers or maps them rather than
+// reassembling them.
+//
+//   * `spatial_unit` (S x n_units): the areal field's contribution at each
+//     unit (`generic_spatial_unit_effect()`: centred per component on the
+//     intrinsic branches, the BYM2 combination at the draw's scales);
+//   * `temporal` (S x n_groups * n_times, group-major): the temporal field's
+//     contribution at each block position (`generic_temporal_effect()`), after
+//     a non-centered temporal GP's forward transform;
+//   * `gp_w` (S x n_loc) with `gp_sigma2`, `gp_phi`: the NNGP field at the
+//     fitted locations, reconstructed from z on the non-centered path;
+//   * `hsgp_z` (S x M) with `hsgp_sigma2`, `hsgp_lengthscale`: the N(0, 1)
+//     basis coefficients, the field being Phi diag(sqrt(S)) z;
+//   * `ms_local`, `ms_regional` with `ms_sigma2_local`, `ms_phi_local`,
+//     `ms_sigma2_regional`, `ms_phi_regional`: each scale of a multi-scale
+//     field, the field at the fitted locations (NNGP; reconstructed on the
+//     non-centered path) or the basis coefficients (HSGP, `ms_is_hsgp`), the
+//     `phi` entries then being lengthscales.
+//
+// An absent field is a zero-column matrix and empty scales.
+// [[Rcpp::export]]
+Rcpp::List cpp_sampler_field_draws(
+    Rcpp::NumericMatrix draws,
+    Rcpp::NumericVector y,
+    Rcpp::IntegerVector n_trials,
+    Rcpp::NumericMatrix X,
+    std::string family,
+    double phi = 1.0,
+    Rcpp::Nullable<Rcpp::NumericVector> sigma_beta = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> re_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> spatial_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> temporal_spec = R_NilValue,
+    double sigma_re_scale = 2.5,
+    double phi2 = NA_REAL,
+    Rcpp::Nullable<Rcpp::List> svc_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> tvc_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> zi_spec = R_NilValue
+) {
+    const double sigma_beta_value = tulpa::read_sigma_beta(sigma_beta);
+    const int N = y.size();
+    tulpa::SamplerModelInputs in;
+    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    tulpa::build_sampler_model_inputs(
+        in, y, n_trials, X, family, phi, phi2, sigma_beta_value, offset,
+        sigma_re_scale, re_spec, spatial_spec, temporal_spec, svc_spec,
+        tvc_spec, zi_spec);
+    const tulpa_hmc::ModelData& data = in.data;
+    const tulpa_hmc::ParamLayout& layout = in.layout;
+    const int D = layout.total_params;
+    if (draws.ncol() != D) {
+        Rcpp::stop("cpp_sampler_field_draws: the draws carry %d columns but "
+                   "the model lays out %d parameters.", draws.ncol(), D);
+    }
+    const int S = draws.nrow();
+
+    const bool areal = layout.has_spatial && layout.spatial_start >= 0;
+    const int n_units = areal ? data.n_spatial_units : 0;
+    const bool temporal = layout.has_temporal && layout.temporal_start >= 0;
+    const int n_temp = temporal ? layout.temporal_end - layout.temporal_start : 0;
+    const bool gp = layout.is_gp && data.has_gp;
+    const int n_gp = gp ? layout.gp_w_end - layout.gp_w_start : 0;
+    const bool hsgp = layout.is_hsgp && data.has_hsgp;
+    const int n_hsgp = hsgp ? layout.hsgp_beta_end - layout.hsgp_beta_start : 0;
+    const bool ms = layout.is_multiscale_gp && data.has_multiscale_gp;
+    const int n_ms = ms ? layout.gp_local_end - layout.gp_local_start : 0;
+    const bool ms_nc = ms && data.msgp_parameterization == 1 &&
+                       !data.msgp_is_hsgp;
+
+    Rcpp::NumericMatrix spatial_unit(S, n_units), temporal_out(S, n_temp),
+        gp_w(S, n_gp), hsgp_z(S, n_hsgp), ms_local(S, n_ms),
+        ms_regional(S, n_ms);
+    Rcpp::NumericVector gp_s2(gp ? S : 0), gp_ph(gp ? S : 0),
+        hs_s2(hsgp ? S : 0), hs_ls(hsgp ? S : 0),
+        ms_s2l(ms ? S : 0), ms_phl(ms ? S : 0),
+        ms_s2r(ms ? S : 0), ms_phr(ms ? S : 0);
+
+    std::vector<double> params(D), w_loc, w_reg;
+    for (int s = 0; s < S; s++) {
+        for (int j = 0; j < D; j++) params[j] = draws(s, j);
+        tulpa::GenericLogPostState<double> state;
+        tulpa::initialize_generic_state(params, data, layout, state);
+        for (int u = 0; u < n_units; u++) {
+            spatial_unit(s, u) =
+                tulpa::generic_spatial_unit_effect(u, data, layout, state);
+        }
+        if (temporal && (int)state.phi_temporal.size() == n_temp) {
+            for (int t = 0; t < n_temp; t++) {
+                temporal_out(s, t) = tulpa::generic_temporal_effect(t, state);
+            }
+        }
+        if (gp) {
+            if ((int)state.gp_w.size() < n_gp) {
+                Rcpp::stop("cpp_sampler_field_draws: the GP field was not "
+                           "reconstructed at draw %d.", s + 1);
+            }
+            for (int k = 0; k < n_gp; k++) gp_w(s, k) = state.gp_w[k];
+            gp_s2[s] = tulpa::math::safe_exp(params[layout.log_sigma2_gp_idx]);
+            gp_ph[s] = tulpa::math::safe_exp(params[layout.log_phi_gp_idx]);
+        }
+        if (hsgp) {
+            for (int k = 0; k < n_hsgp; k++) {
+                hsgp_z(s, k) = params[layout.hsgp_beta_start + k];
+            }
+            hs_s2[s] = tulpa::math::safe_exp(params[layout.log_sigma2_hsgp_idx]);
+            hs_ls[s] = tulpa::math::safe_exp(params[layout.log_lengthscale_hsgp_idx]);
+        }
+        if (ms) {
+            if (ms_nc) {
+                const auto& msd = data.multiscale_gp_data;
+                tulpa::apply_nngp_nc_term_double(
+                    params, layout.gp_local_start, layout.log_sigma2_gp_local_idx,
+                    layout.log_phi_gp_local_idx, n_ms,
+                    tulpa_gp::make_msgp_nc_view_local(msd), w_loc);
+                tulpa::apply_nngp_nc_term_double(
+                    params, layout.gp_regional_start,
+                    layout.log_sigma2_gp_regional_idx,
+                    layout.log_phi_gp_regional_idx, n_ms,
+                    tulpa_gp::make_msgp_nc_view_regional(msd), w_reg);
+            }
+            for (int k = 0; k < n_ms; k++) {
+                ms_local(s, k) = ms_nc ? w_loc[k]
+                                       : params[layout.gp_local_start + k];
+                ms_regional(s, k) = ms_nc ? w_reg[k]
+                                          : params[layout.gp_regional_start + k];
+            }
+            ms_s2l[s] = tulpa::math::safe_exp(params[layout.log_sigma2_gp_local_idx]);
+            ms_phl[s] = tulpa::math::safe_exp(params[layout.log_phi_gp_local_idx]);
+            ms_s2r[s] = tulpa::math::safe_exp(params[layout.log_sigma2_gp_regional_idx]);
+            ms_phr[s] = tulpa::math::safe_exp(params[layout.log_phi_gp_regional_idx]);
+        }
+    }
+    return Rcpp::List::create(
+        Rcpp::Named("spatial_unit") = spatial_unit,
+        Rcpp::Named("temporal") = temporal_out,
+        Rcpp::Named("n_times") = data.n_times,
+        Rcpp::Named("gp_w") = gp_w,
+        Rcpp::Named("gp_sigma2") = gp_s2,
+        Rcpp::Named("gp_phi") = gp_ph,
+        Rcpp::Named("hsgp_z") = hsgp_z,
+        Rcpp::Named("hsgp_sigma2") = hs_s2,
+        Rcpp::Named("hsgp_lengthscale") = hs_ls,
+        Rcpp::Named("ms_is_hsgp") = ms && data.msgp_is_hsgp,
+        Rcpp::Named("ms_local") = ms_local,
+        Rcpp::Named("ms_regional") = ms_regional,
+        Rcpp::Named("ms_sigma2_local") = ms_s2l,
+        Rcpp::Named("ms_phi_local") = ms_phl,
+        Rcpp::Named("ms_sigma2_regional") = ms_s2r,
+        Rcpp::Named("ms_phi_regional") = ms_phr);
 }

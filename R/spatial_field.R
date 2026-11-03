@@ -504,6 +504,25 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 }
 
 
+# What an inline bar field's blocks are read at new rows with: per spec, the
+# spec itself, the field's space, the number of design columns it expands to
+# and, for a temporal field, the time levels its index was laid over (the order
+# `.resolve_time_index()` gave the training times). The blocks follow the specs
+# in order: one per design column, or one coupled block for a correlated
+# (MCAR) spatial field.
+.bar_field_record <- function(specs, data, space) {
+  lapply(specs, function(spec) {
+    n_cols <- length(.bar_field_columns(spec, data, fname = space))
+    rec <- list(spec = spec, space = space, n_cols = n_cols,
+                coupled = identical(space, "spatial") && isTRUE(spec$correlated))
+    if (identical(space, "temporal")) {
+      rec$time_levels <- levels(.resolve_time_index(data[[spec$group_var]],
+                                                    spec$group_var))
+    }
+    rec
+  })
+}
+
 # Shared fit engine for an inline bar field (spatial or temporal). Given the
 # already-built block list (icar / car_proper / rw1 / rw2 / ar1, each optionally
 # carrying a per-row svc_weight), fit the one-arm joint nested-Laplace model and
@@ -543,6 +562,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   fit$re_layout <- layout$re_layout
   fit$N <- bundle$n_obs
   fit$model_matrix <- bundle$X
+  fit$re_design <- .re_design_of(bundle)
   fit$field_eta_contrib <- core$field_eta_contrib
   fit
 }
@@ -834,6 +854,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   fit$spatial_field_hypers <- spatial_field_hypers
   fit$mcar_summary <- mcar_summary
   fit$correlated <- is_mcar
+  fit$bar_fields <- .bar_field_record(specs, data, "spatial")
   class(fit) <- c("tulpa_spatial_field_fit", "tulpa_fit", oldClass(fit))
   fit
 }

@@ -68,8 +68,8 @@ adjacency_to_list_tulpa <- function(adj) {
 # never sampled, so it contributes no column.
 #
 # A kernel block absent from its route's layouts (the BYM2 combined field, the
-# RSR field before projection, the linear predictor) is a deterministic function
-# of the columns kept and is not part of the sampled state.
+# linear predictor) is a deterministic function of the columns kept and is not
+# part of the sampled state.
 .PG_DRAW_LAYOUT <- list(
   re = list(
     sigma_re = list(stem = "log_sigma_re", map = log, with = "re"),
@@ -89,6 +89,12 @@ adjacency_to_list_tulpa <- function(adj) {
     sigma2_gp = list(stem = "log_sigma2_gp", map = log),
     phi_gp    = list(stem = "log_phi_gp", map = log),
     gp        = list(stem = "gp_w")
+  ),
+  # A restricted continuous field: `gp_w` is the projection eta reads, and the
+  # field before projection is what the projection is applied to at any other
+  # row (`R/spatial_field_predict.R`).
+  gp_raw = list(
+    gp_raw = list(stem = "gp_raw_w")
   ),
   multiscale_gp = list(
     sigma2_local    = list(stem = "log_sigma2_gp_local", map = log),
@@ -203,8 +209,16 @@ adjacency_to_list_tulpa <- function(adj) {
 # `n_field` the number of coordinates. The projector is the same construction
 # either way; only the map differs (gcol33/tulpa#848).
 .rsr_unit_projection <- function(X, obs_to_field, n_field) {
+  compute_rsr_projection(.rsr_unit_design(X, obs_to_field, n_field))
+}
+
+# The restriction design at the field's own resolution: one row per field
+# coordinate, the mean of the design rows of its observations (a coordinate no
+# observation falls in keeps a zero row). The projector is built from it, and
+# a restricted field is evaluated at rows off its support against it.
+.rsr_unit_design <- function(X, obs_to_field, n_field) {
   X <- as.matrix(X)
-  X_unit <- matrix(0.0, n_field, ncol(X))
+  X_unit <- matrix(0.0, n_field, ncol(X), dimnames = list(NULL, colnames(X)))
   cnt    <- integer(n_field)
   for (i in seq_len(nrow(X))) {
     u <- obs_to_field[i]
@@ -213,7 +227,7 @@ adjacency_to_list_tulpa <- function(adj) {
   }
   pos <- cnt > 0
   X_unit[pos, ] <- X_unit[pos, ] / cnt[pos]
-  compute_rsr_projection(X_unit)
+  X_unit
 }
 
 # The projection a restriction modifier declares (`spatial_rsr()`,
@@ -221,12 +235,19 @@ adjacency_to_list_tulpa <- function(adj) {
 # shape and every backend that applies it: `restrict_to` is the formula of the
 # design it orthogonalises against -- the modifier's own, not the full model
 # design. A spec without one (a bare `type = "rsr"` list) is restricted against
-# `X_default`, the model design.
+# `X_default`, the model design. `.restriction_design()` is that design at the
+# field's resolution.
 .restriction_projection <- function(restrict_to, data, obs_to_field, n_field,
                                     X_default) {
+  compute_rsr_projection(.restriction_design(restrict_to, data, obs_to_field,
+                                             n_field, X_default))
+}
+
+.restriction_design <- function(restrict_to, data, obs_to_field, n_field,
+                                X_default) {
   X_r <- if (is.null(restrict_to)) X_default
          else stats::model.matrix(restrict_to, data = data)
-  .rsr_unit_projection(X_r, obs_to_field, n_field)
+  .rsr_unit_design(X_r, obs_to_field, n_field)
 }
 
 #' Dispatch a spatial Polya-Gamma Gibbs fit to the correct sampler
@@ -384,7 +405,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
         # convention explicit.
         rsr_projection = as.numeric(t(P_perp)),
         rsr_n          = as.integer(n_spatial)
-      ))), "gp", X)
+      ))), c("gp", "gp_raw"), X)
     } else {
       .pg_as_chain(do.call(cpp_pg_binomial_gibbs_gp, gp_args), "gp", X)
     }

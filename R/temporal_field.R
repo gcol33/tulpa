@@ -169,6 +169,7 @@
   fit$temporal_fields <- core$fields
   fit$temporal_field_names <- block_names
   fit$temporal_field_hypers <- temporal_field_hypers
+  fit$bar_fields <- .bar_field_record(specs, data, "temporal")
   class(fit) <- c("tulpa_temporal_field_fit", "tulpa_fit", oldClass(fit))
   fit
 }

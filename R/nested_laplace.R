@@ -592,32 +592,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     }
   }
 
-  cargs <- list(
-    y = as.numeric(y),
-    n = as.integer(n_trials),
-    offset_nullable = offset,
-    X = X,
-    re_idx = as.numeric(re_idx),
-    n_re_groups = as.integer(n_re_groups),
-    sigma_re = as.numeric(sigma_re),
-    family = family,
-    phi = .phi_to_kernel(family, as.numeric(phi)),
-    max_iter = as.integer(max_iter),
-    tol = as.numeric(tol),
-    n_threads = as.integer(n_threads),
-    x_init_nullable = x_init,
-    store_Q = isTRUE(keep_grid_hessians),
-    checkpoint_path = .ckpt$path,
-    prune_tol = prune_tol_eff,
-    screen_iters = screen_iters,
-    compute_fitted_var = fitted_var,
-    # The fixed-effect prior every kernel solves under: the caller's, or (NULL)
-    # the kernels' own weak default.
-    beta_prior = .normalize_beta_prior(beta_prior, ncol(X)),
-    # Read by the dispatchers, which fold the outer hyperprior in R; never
-    # handed to a kernel.
-    hyperprior = hyperprior
-  )
+  cargs <- .nl_kernel_args(
+    y = y, n_trials = n_trials, X = X, offset = offset, re_idx = re_idx,
+    n_re_groups = n_re_groups, sigma_re = sigma_re, family = family,
+    phi = phi, max_iter = max_iter, tol = tol, n_threads = n_threads,
+    x_init = x_init, store_Q = isTRUE(keep_grid_hessians),
+    checkpoint_path = .ckpt$path, prune_tol = prune_tol_eff,
+    screen_iters = screen_iters, fitted_var = fitted_var,
+    beta_prior = beta_prior, hyperprior = hyperprior)
 
   # cargs without the checkpoint, for the k-hat diagnostic re-evaluations, and
   # without the prune: a screened cell carries `log_marginal = -Inf`, which is
@@ -1857,22 +1839,56 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
-# The record a cell of a grid fit is solved again from when the latent
-# posterior of a continuous spatial field is drawn (`.field_cell_solve()`): the
-# dispatcher arguments the grid ran under, less the response and the design
-# the fit carries itself, and the door (`"registry"`, a single block's kernel,
-# with its `type`; `"multi"`, the multi-block driver). NULL for a fit with no
-# continuous field block, and for one through a model-supplied likelihood,
-# whose spec is not kept.
+# The arguments every registry kernel and the multi-block driver are called
+# with: the response and design, the conditioned random-intercept block, the
+# family on the kernel's dispersion scale, the inner-solve controls and the
+# fixed-effect prior (the caller's, or NULL for the kernels' own weak default).
+# `hyperprior` is read by the dispatchers, which fold the outer hyperprior in
+# R, and is never handed to a kernel.
+.nl_kernel_args <- function(y, n_trials, X, offset, re_idx, n_re_groups,
+                            sigma_re, family, phi, max_iter, tol, n_threads,
+                            x_init = NULL, store_Q = FALSE,
+                            checkpoint_path = "", prune_tol = 0,
+                            screen_iters = .nl_screen("iters"),
+                            fitted_var = TRUE, beta_prior = NULL,
+                            hyperprior = .hp_choice("proper")) {
+  list(
+    y = as.numeric(y),
+    n = as.integer(n_trials),
+    offset_nullable = offset,
+    X = X,
+    re_idx = as.numeric(re_idx),
+    n_re_groups = as.integer(n_re_groups),
+    sigma_re = as.numeric(sigma_re),
+    family = family,
+    phi = .phi_to_kernel(family, as.numeric(phi)),
+    max_iter = as.integer(max_iter),
+    tol = as.numeric(tol),
+    n_threads = as.integer(n_threads),
+    x_init_nullable = x_init,
+    store_Q = isTRUE(store_Q),
+    checkpoint_path = checkpoint_path,
+    prune_tol = prune_tol,
+    screen_iters = screen_iters,
+    compute_fitted_var = fitted_var,
+    beta_prior = .normalize_beta_prior(beta_prior, ncol(X)),
+    hyperprior = hyperprior
+  )
+}
+
+# The record a cell of a grid fit is solved again from when its latent
+# posterior is drawn (`.field_cell_solve()`): the dispatcher arguments the grid
+# ran under, less the response and the design the fit carries itself, and the
+# door (`"registry"`, a single block's kernel, with its `type`; `"multi"`, the
+# multi-block driver). `prior` is kept on the record when the fit does not
+# carry its block itself (a conditional-Laplace fit). NULL for a fit through a
+# model-supplied likelihood, whose spec is not kept.
 .nl_field_solve_record <- function(door, cargs, prior, likelihood = NULL,
-                                   type = NULL) {
-  blocks <- if (is.list(prior) && is.null(prior$type)) prior else list(prior)
-  types <- vapply(blocks, function(b) tolower(b$type %||% ""), character(1))
-  if (!is.null(likelihood) || !any(types %in% c("spde", "gp", "nngp", "hsgp"))) {
-    return(NULL)
-  }
+                                   type = NULL, keep_prior = FALSE) {
+  if (!is.null(likelihood)) return(NULL)
   cargs[c("y", "X", "checkpoint_path", "screen_refine")] <- NULL
-  list(door = door, type = type, args = cargs)
+  list(door = door, type = type, args = cargs,
+       prior = if (isTRUE(keep_prior)) prior)
 }
 
 # ----------------------------------------------------------------------------

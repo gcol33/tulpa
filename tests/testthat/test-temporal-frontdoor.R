@@ -64,8 +64,9 @@ test_that("nested temporal fit reports a marginalized fixed-effect SE", {
   expect_lt(ci[1], d$b1)
   expect_gt(ci[2], d$b1)
 
-  # se.fit prediction now works (uses the marginalized vcov)
-  pr <- predict(fit, newdata = data.frame(x = c(-1, 1)), se.fit = TRUE)
+  # The population-level prediction's se.fit uses the marginalized vcov.
+  pr <- predict(fit, newdata = data.frame(x = c(-1, 1)), se.fit = TRUE,
+                include_field = FALSE)
   expect_true(all(is.finite(pr$se.fit)))
 })
 

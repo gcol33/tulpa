@@ -57,7 +57,7 @@ test_that("gp and multiscale Gibbs fields enter eta, WAIC and predictions", {
   }
 })
 
-test_that("a restricted Gibbs field is refused at new locations", {
+test_that("a restricted Gibbs field at its fitted locations is the projection eta read", {
   skip_on_cran()
   d <- .gfl_data()
   fit <- suppressWarnings(tulpa(
@@ -69,7 +69,8 @@ test_that("a restricted Gibbs field is refused at new locations", {
   eta <- dr[, "(Intercept)"] + outer(dr[, "x"], d$x) +
     dr[, grep("^gp_w\\[", colnames(dr))]
   expect_equal(unname(posterior_linpred(fit)), unname(eta), tolerance = 1e-12)
-  expect_error(posterior_linpred(fit, newdata = d[1:3, ]), "fitted locations")
+  expect_equal(unname(predict(fit, newdata = d[1:3, ])),
+               unname(colMeans(eta)[1:3]), tolerance = 1e-10)
 })
 
 test_that("a temporal Gibbs chain adds its trend at each row's time", {

@@ -512,10 +512,10 @@
   NULL
 }
 
-# Per-draw eta contribution (S x n) of every field a Polya-Gamma Gibbs chain
-# samples, at the training rows or at `newdata`, for the stored draw rows
-# `keep` (the rows `.fixed_coef_draws()` took of the same chain). Each term is
-# the field the kernel adds to eta:
+# Per-draw eta contribution (S x n_obs) of every field a Polya-Gamma Gibbs
+# chain samples, at the training rows, for the stored draw rows `keep` (the
+# rows `.fixed_coef_draws()` took of the same chain). Each term is the field
+# the kernel adds to eta:
 #
 #   * areal (icar / car / rsr / bym2): the per-unit draws of
 #     `.gibbs_field_unit_draws()` gathered through `spatial_idx`;
@@ -525,13 +525,11 @@
 #   * temporal (temporal_multiscale): `trend[t] + seasonal[(t - 1) %% period +
 #     1] + short_term[t]` at the row's time index t.
 #
-# At `newdata` a continuous field is drawn from its NNGP predictive given the
-# draw's field and the draw's own `(sigma2, phi)` (`cpp_gp_field_rows()`); a
-# restricted field is refused, since its projection is defined on the fitted
-# locations only; an areal or temporal field is held at zero, as on every other
-# backend. NULL when the fit is not a Gibbs chain or samples no field.
+# At new rows the same fields are mapped by the one field draw path
+# (`.field_source()`, `R/spatial_field_predict.R`). NULL when the fit is not a
+# Gibbs chain or samples no field.
 #' @keywords internal
-.gibbs_field_eta_contrib <- function(object, keep, n_obs, newdata = NULL) {
+.gibbs_field_eta_contrib <- function(object, keep, n_obs) {
   dr <- object$draws
   if (is.list(object$model_inputs) || !is.matrix(dr) || is.null(colnames(dr))) {
     return(NULL)
@@ -542,41 +540,20 @@
   add <- function(C) out <<- if (is.null(out)) C else out + C
   sp <- object$spatial
   if (!is.null(sp)) {
-    U <- if (is.null(newdata)) .gibbs_field_unit_draws(object, keep)
+    U <- .gibbs_field_unit_draws(object, keep)
     if (!is.null(U)) {
       Z <- .field_design_Z(sp$spatial_idx, ncol(U), n_obs)
       add(as.matrix(U %*% Matrix::t(Z)))
     }
-    gpf <- .gibbs_gp_fields(sp)
-    if (!is.null(gpf) && !is.null(newdata) &&
-        (isTRUE(sp$rsr) || identical(tolower(sp$type %||% ""), "gp_rsr"))) {
-      stop("A restricted (gp_rsr) field is defined on the fitted locations ",
-           "only: its projection removes the covariates' span there and has ",
-           "no value at a new location.", call. = FALSE)
-    }
-    for (g in gpf) {
+    for (g in .gibbs_gp_fields(sp)) {
       cw <- cols_of(g$stem)
       if (!length(cw)) next
       W <- dr[keep, cw, drop = FALSE]
-      if (is.null(newdata)) {
-        add(W[, as.integer(sp$obs_to_loc %||% seq_len(n_obs)), drop = FALSE])
-        next
-      }
-      pars <- paste0(c("log_sigma2_", "log_phi_"), g$suffix)
-      if (!all(pars %in% dn)) {
-        stop("The Gibbs chain carries no `", pars[!pars %in% dn][1L],
-             "` column for its `", g$stem, "` field.", call. = FALSE)
-      }
-      nc <- .field_coords_at(object, newdata)
-      S <- nrow(W)
-      add(cpp_gp_field_rows(
-        nc, .coords_plain(sp$unique_coords), W, seq_len(S) - 1L,
-        exp(dr[keep, pars[1L]]), exp(dr[keep, pars[2L]]), g$nn,
-        gp_cov_type(sp), matrix(stats::rnorm(S * nrow(nc)), S)))
+      add(W[, as.integer(sp$obs_to_loc %||% seq_len(n_obs)), drop = FALSE])
     }
   }
   tp <- object$temporal
-  if (!is.null(tp) && is.null(newdata) && !is.null(tp$time_index)) {
+  if (!is.null(tp) && !is.null(tp$time_index)) {
     t_idx <- as.integer(tp$time_index)
     period <- as.integer(tp$seasonal %||% 0L)
     idx <- list(trend = t_idx, short_term = t_idx,
@@ -679,11 +656,11 @@
 }
 
 
-# `"field_mixture"`: a fit carrying a continuous spatial field (SPDE, GP /
-# NNGP, HSGP) with its outer cells and the record its cells are solved again
-# from, and no per-cell `fitted_eta` (`.field_source()`). Its linear predictor
-# is the field's latent mixture mapped to the training rows
-# (`.field_eta_draws()`).
+# `"field_mixture"`: a grid fit (a nested-Laplace grid, the SPDE grid, a fit
+# at fixed hyperparameters as one cell) carrying a latent field with its cells
+# and the record its cells are solved again from, and no per-cell
+# `fitted_eta` (`.field_source()`). Its linear predictor is the field's latent
+# mixture mapped to the training rows (`.field_eta_draws()`).
 #
 # `"coefficients"`: everything else. The fit carries its fixed effects (and at
 # most the formula random effects and an SPDE field) rather than its linear
@@ -698,7 +675,7 @@
       length(object$weights) == nrow(object$fitted_eta)) {
     return("grid_mixture")
   }
-  src <- .field_source(object)
+  src <- .field_source_grid(object)
   if (!is.null(src) && !is.null(src$solve)) return("field_mixture")
   "coefficients"
 }
@@ -742,20 +719,22 @@
 # At the training design (newdata = NULL) the draws carry every component the
 # fit estimated, read from the source `.tulpa_linpred_source()` names: the
 # engine's own eta at each sampler draw, the per-cell grid mixture on a
-# nested-Laplace fit, the latent mixture of a continuous spatial field, and
-# otherwise the fixed effects plus the offset, the formula random effects and a
-# posterior-mean field. A continuous spatial field is drawn the same way at
-# `newdata` and at the training rows when `re_form` keeps a subset of the terms
-# (`.field_eta_draws()`): the field at the new locations given the fitted
-# field, per outer cell. Fixed effects on that
-# last source come from `.fixed_coef_draws()`. At `newdata` the draws carry the
-# fixed effects and the offset, a varying coefficient's field at the newdata
-# coordinates / times, and the formula random effects: a fitted group's effect
-# from the same row as the fixed effects, a group the fit did not see drawn
-# from the term's covariance (`.re_new_group_eta()`). `re_form` selects the
-# random-effect terms (`.re_form_select()`); leaving any out reads the
-# coefficients source at the training data too. `latent = FALSE` reads that
-# source at the training data with the random effects and no latent field.
+# nested-Laplace fit, the latent mixture of a grid fit's field, and otherwise
+# the fixed effects plus the offset, the formula random effects and a
+# posterior-mean field. A fit carrying a latent field the one field draw path
+# maps (`.field_source()`: a continuous, areal or temporal field on any
+# backend) is drawn through it at `newdata` and at the training rows when
+# `re_form` keeps a subset of the terms (`.field_eta_draws()`): the field at
+# the rows given the fitted field, per cell (a grid's hyperparameter cell, a
+# sampler's stored draw), with the fitted groups' effects from the same latent
+# draw and a group the fit did not see drawn from the term's covariance. Every
+# other fit reads the coefficients source: fixed effects from
+# `.fixed_coef_draws()` and the offset, at `newdata` a varying coefficient's
+# field at the newdata coordinates / times, and the formula random effects (a
+# fitted group's effect from the same row as the fixed effects, a new group's
+# from `.re_new_group_eta()`). `re_form` selects the random-effect terms
+# (`.re_form_select()`). `latent = FALSE` reads the coefficients source with
+# the random effects and no latent field.
 #
 # On a zero-inflated fit the structural-zero logit is drawn from the same rows
 # and returned as the `"logit_zi"` attribute (S x n_obs), so the two predictors
@@ -774,18 +753,20 @@
     set.seed(as.integer(synth_seed))
   }
   sel <- .re_form_select(object, re_form)
+  src <- NULL
   source <- if (is.null(newdata) && latent && (is.null(sel) || all(sel))) {
     .tulpa_linpred_source(object)
-  } else if (latent && !is.null(.field_source(object))) {
+  } else if (latent && !is.null(src <- .field_source(object))) {
     "field_mixture"
   } else "coefficients"
   if (identical(source, "field_mixture")) {
-    if (!is.null(object$zi_model_matrix)) {
-      stop("posterior_predict(): a continuous-field fit carries no ",
+    if (is.null(src)) src <- .field_source(object)
+    if (!is.null(object$zi_model_matrix) && !length(src$layout$zi)) {
+      stop("posterior_predict(): a grid fit with a latent field carries no ",
            "zero-inflation predictor to draw.", call. = FALSE)
     }
-    return(.field_eta_draws(object, .field_source(object), newdata,
-                            as.integer(ndraws %||% 400L), sel))
+    S <- as.integer(ndraws %||% if (isTRUE(src$point)) nrow(src$modes) else 400L)
+    return(.field_eta_draws(object, src, newdata, S, sel))
   }
   if (identical(source, "sampler_model")) {
     return(.tulpa_eta_draws_sampler(object, ndraws))
@@ -823,10 +804,6 @@
   if (!is.null(newdata)) {
     vc <- .varying_coef_eta_contrib(object, newdata, rows = keep)
     if (!is.null(vc)) eta <- eta + vc
-    gf <- if (latent && !is.null(keep)) {
-      .gibbs_field_eta_contrib(object, keep, ncol(eta), newdata)
-    }
-    if (!is.null(gf)) eta <- eta + gf
   }
 
   # The formula random effects `re_form` keeps: a fitted group's effect drawn
@@ -1155,10 +1132,11 @@
 #'     effects under the joint Laplace precision of `[beta | b]` at the mode,
 #'     so the two carry their posterior correlation (on a conditional Laplace
 #'     fit this is the joint Gaussian draw; an EB fit is conditional on the
-#'     estimated variance components). A conditional-Laplace spatial fit holds
-#'     its random effects and areal field at their posterior mode, which
-#'     over-disperses the linear predictor wherever the intercept is aliased
-#'     with them; an SPDE field enters at its posterior mean.
+#'     estimated variance components). A conditional-Laplace fit with an
+#'     NNGP, HSGP, SPDE or areal field draws the coefficients, the group
+#'     effects and the field jointly from the Laplace Gaussian of its one
+#'     cell (`.field_eta_draws()`), the cell solved again by the kernel of
+#'     its block.
 #' }
 #' At `newdata` each replicate carries the formula random effects, as
 #' [predict.tulpa_fit()] does: a row of a group the fit saw takes that group's
@@ -1250,12 +1228,12 @@ posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
 #' reports the mixture mean alone (`source = "mode"`, `sd` and bounds `NA`).
 #' Every other fit summarizes its draws.
 #'
-#' At `newdata`, a continuous spatial field (SPDE, GP / NNGP, HSGP) is drawn at
-#' the new locations from its conditional distribution given the fitted field,
-#' within each hyperparameter cell and mixed over the cells, and a field
-#' sampled by a Gibbs chain from its predictive given each draw; these are the
-#' draws [predict.tulpa_fit()] summarizes, so the two agree to Monte Carlo
-#' error.
+#' At `newdata`, a latent field is drawn at the new rows from its conditional
+#' distribution given the fitted field (within each hyperparameter cell and
+#' mixed over the cells, or given each stored draw of a sampler): a continuous
+#' field at the new locations, an areal or temporal field at the row's fitted
+#' unit or time (see [predict.tulpa_fit()]); these are the draws
+#' [predict.tulpa_fit()] summarizes, so the two agree to Monte Carlo error.
 #'
 #' @param object A `tulpa_fit` object.
 #' @param ... Passed to methods.

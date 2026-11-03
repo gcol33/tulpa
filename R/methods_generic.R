@@ -2122,27 +2122,35 @@ nobs.tulpa_fit <- function(object, ...) {
 #' the fixed and random effects jointly (the same on every call), and
 #' `se.fit` is the SD of those draws.
 #'
-#' A fit carrying a continuous spatial field -- an SPDE Matern field
-#' ([spatial_spde()]), a GP / NNGP field ([spatial_gp()]) or a Hilbert-space GP
-#' field (`spatial_gp(approx = "hsgp")`) -- adds the field at the `newdata`
-#' coordinates by default. The fit's latent posterior is a mixture over its
-#' hyperparameter cells of Gaussians in the coefficients and the field at its
-#' fitted support (the mesh nodes, the fitted locations, the basis
-#' coefficients), and the field at a new location is its conditional
-#' distribution given that fitted field: the mesh projector there for the SPDE
-#' field, the basis re-evaluated there (on the domain the fit was built on)
-#' for the HSGP field, and the NNGP predictive given the field at the nearest
-#' fitted locations for the GP / NNGP field. `fit` is the exact posterior mean
-#' of the linear predictor, and `se.fit` / `lower` / `upper` are read over 4000
-#' pinned draws of the cell, the coefficients, the field and its conditional
-#' at the new locations, so the interval carries the uncertainty of the
-#' coefficients and the field, the field's conditional (kriging) variance away
-#' from the data, and the spread of the hyperparameters. These are the draws
-#' [posterior_linpred()] and [posterior_predict()] return at the same
-#' `newdata`. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field
-#' is held at zero, at the training design too; the in-sample linear predictor
-#' with every fitted component is what [posterior_predict()] draws and what
-#' `compare_models(criterion = "waic")` / `"loo"` score.
+#' A fit carrying a latent field adds it to the prediction by default
+#' (`include_field = TRUE`), on every backend and at the training design as at
+#' `newdata`. The fit's latent posterior is a mixture of Gaussians in the
+#' coefficients and the fields at their fitted support (the mesh nodes, the
+#' fitted locations, the basis coefficients, the areal units, the fitted
+#' times): one per hyperparameter cell on a nested-Laplace grid, the one cell
+#' of a fit at fixed hyperparameters (`mode = "laplace"`), and one point per
+#' stored draw on a sampler fit (`mode = "hmc"` and its siblings, `"gibbs"`).
+#' The field at a row is its conditional distribution given that fitted field:
+#' the mesh projector there for an SPDE field ([spatial_spde()]), the basis
+#' re-evaluated there (on the domain the fit was built on) for an HSGP field
+#' (`spatial_gp(approx = "hsgp")`), the NNGP predictive given the field at the
+#' nearest fitted locations for a GP / NNGP field ([spatial_gp()]), the sum of
+#' its scales for [spatial_multiscale()], and the value of the row's own unit
+#' or time for an areal (ICAR / CAR / BYM2) or temporal (RW1 / RW2 / AR1)
+#' field. `newdata` then carries the field's unit column (the one named in
+#' `spatial(...)`), time column and group column; a unit or time the fit was
+#' not fitted at is refused, since the field carries no value there. A
+#' restricted field ([spatial_rsr()]) is the field less its projection on the
+#' restriction design fitted at the support, `w - x' (X_u' X_u)^-1 X_u' w`,
+#' with `x` the design of the fitted unit or location a row sits at and
+#' otherwise the restriction formula evaluated on `newdata`. `fit` is the exact
+#' posterior mean of the linear predictor, and `se.fit` / `lower` / `upper` are
+#' read over 4000 pinned draws of the cell, the coefficients, the field and its
+#' conditional at the rows, so the interval carries the uncertainty of the
+#' coefficients and the field, an NNGP field's conditional (kriging) variance
+#' away from the data, and the spread of the hyperparameters. These are the
+#' draws [posterior_linpred()] and [posterior_predict()] return at the same
+#' `newdata`.
 #'
 #' A spatially or temporally varying coefficient ([spatial_svc()],
 #' [temporal_tvc()]) is predicted at the `newdata` coordinates / times from
@@ -2173,10 +2181,10 @@ nobs.tulpa_fit <- function(object, ...) {
 #' the mixture's quantiles. Blocks without a basis builder are held at zero.
 #'
 #' @param object A `tulpa_fit` object.
-#' @param newdata Data frame of covariates (and, for an SPDE fit, the coordinate
-#'   columns named in the spec's coordinate formula; for a varying-coefficient
-#'   fit, its coordinate / time and group columns). If `NULL`, predicts at the
-#'   training design (requires `$model_matrix`).
+#' @param newdata Data frame of covariates (and, for a field fit, the field's
+#'   coordinate columns, unit column or time and group columns; for a
+#'   varying-coefficient fit, its coordinate / time and group columns). If
+#'   `NULL`, predicts at the training design (requires `$model_matrix`).
 #' @param type `"link"` (linear predictor) or `"response"` (mean scale,
 #'   `E[y]`). For a binomial fit the `"response"` scale here is the per-trial
 #'   success probability `g^{-1}(eta)` (there is no `n_trials` at `newdata`);
@@ -2191,11 +2199,11 @@ nobs.tulpa_fit <- function(object, ...) {
 #'   of the count and zero-inflation coefficients jointly (pinned, so repeated
 #'   calls agree).
 #' @param level Credible-interval level (default 0.95).
-#' @param include_field For a continuous-spatial fit (SPDE, HSGP, or GP/NNGP),
-#'   add the field to the prediction (default `TRUE`), and for a
+#' @param include_field For a fit with a latent field (continuous, areal or
+#'   temporal), add the field to the prediction (default `TRUE`), and for a
 #'   varying-coefficient fit the coefficient field at the `newdata` coordinates
-#'   / times. `FALSE` gives the fixed-effect (population) prediction. Ignored
-#'   for fits with no continuous field.
+#'   / times. `FALSE` gives the prediction without them. Ignored for fits with
+#'   no field.
 #' @param re_form Which formula random-effect terms to condition on, as lme4's
 #'   `re.form`: `NULL` (default) every term, `NA` or `~0` none (the population
 #'   level), or a one-sided formula naming a subset, e.g. `~ (1 | site)`.
@@ -2230,46 +2238,38 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   sel   <- .re_form_select(object, re_form)
   re_on <- !is.null(sel) && any(sel)
 
-  # A continuous spatial field (SPDE, GP / NNGP, HSGP): the point prediction is
-  # the exact posterior mean of the linear predictor at the rows, every outer
-  # cell's mode mapped there (`.field_point_eta()`), with the fitted groups'
-  # effects at their cell values and a new group's at zero; the interval is
-  # read over the draws posterior_linpred() returns (`.field_eta_draws()`).
+  # A latent field (continuous, areal or temporal) on any backend: the point
+  # prediction is the exact posterior mean of the linear predictor at the rows,
+  # every cell's mode (a grid's hyperparameter cells, a sampler's stored draws)
+  # mapped there (`.field_point_eta()`), with the fitted groups' effects at
+  # their cell values and a new group's at zero; the interval is read over the
+  # draws posterior_linpred() returns (`.field_eta_draws()`).
   src <- if (isTRUE(include_field)) .field_source(object)
   if (!is.null(src)) {
     eta <- .field_point_eta(object, src, newdata, sel)
   }
-  # A continuous field sampled by a Polya-Gamma Gibbs chain: each stored draw's
-  # field, at new locations its NNGP predictive given that draw
-  # (`.gibbs_field_eta_contrib()`), so the prediction is the mean of those
-  # draws and the interval their quantiles.
   pinned_draws <- function() {
     .tulpa_eta_draws(object, newdata = newdata,
                      ndraws = .PREDICT_DRAWS$ndraws,
                      synth_seed = .PREDICT_DRAWS$seed,
-                     re_form = re_form, latent = !is.null(src) || gibbs_gp)
-  }
-  gibbs_gp <- is.null(src) && isTRUE(include_field) &&
-    is.matrix(object$draws) && !is.list(object$model_inputs) &&
-    !is.null(object$spatial) && !is.null(.gibbs_gp_fields(object$spatial))
-  D <- NULL
-  if (gibbs_gp) {
-    D <- pinned_draws()
-    eta <- unname(colMeans(D))
+                     re_form = re_form, latent = !is.null(src))
   }
 
   # Spatially / temporally varying coefficients: each posterior draw's
   # coefficient field at the newdata coordinates / times (the fitted rows when
   # newdata is NULL), so the prediction, its SE and its bounds are read over the
-  # joint draws of the fixed effects and the field.
-  vc_eta <- if (isTRUE(include_field)) .predict_varying_coef_eta(object, newdata, lp)
+  # joint draws of the fixed effects and the field. A field source carries them
+  # in its own draws.
+  vc_eta <- if (isTRUE(include_field) && is.null(src)) {
+    .predict_varying_coef_eta(object, newdata, lp)
+  }
   if (!is.null(vc_eta)) eta <- unname(colMeans(vc_eta))
 
   # Formula random effects (`re_form`): a group the fit saw at the posterior
   # mean of its effect, a new group at its prior mean, zero -- the conditional
   # point read fitted() uses (`.tulpa_re_point_eta()`).
   eta_fixed_fields <- eta
-  if (re_on && is.null(src) && !gibbs_gp) {
+  if (re_on && is.null(src)) {
     des <- if (is.null(newdata)) object$re_design
            else .tulpa_re_design_at(object, newdata)
     re_pt <- .tulpa_re_point_eta(object, des, sel, accessor = "predict")
@@ -2283,15 +2283,15 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   }
 
   z  <- stats::qnorm(1 - (1 - level) / 2)
-  if (re_on || !is.null(src) || gibbs_gp) {
+  if (re_on || !is.null(src)) {
     # The interval is read over pinned, RNG-neutral draws: on a continuous-field
     # fit the field at the rows with the coefficients, otherwise the fixed
     # effects with each row's group effects -- a fitted group's from its
     # conditional given the row's fixed effects, a new group's from the term's
     # covariance -- so a new group's band carries the between-group spread.
-    if (is.null(D)) D <- pinned_draws()
+    D <- pinned_draws()
     lz <- attr(D, "logit_zi")
-    if (is.null(src) && !gibbs_gp) {
+    if (is.null(src)) {
       in_draws <- if (!is.null(newdata) && !is.null(vc_eta)) colMeans(vc_eta)
                   else lp$eta
       D <- sweep(D, 2L, eta_fixed_fields - in_draws, "+")

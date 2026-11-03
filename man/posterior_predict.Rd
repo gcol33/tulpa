@@ -70,10 +70,11 @@ draw's random effects from their Gaussian conditional given those fixed
 effects under the joint Laplace precision of \verb{[beta | b]} at the mode,
 so the two carry their posterior correlation (on a conditional Laplace
 fit this is the joint Gaussian draw; an EB fit is conditional on the
-estimated variance components). A conditional-Laplace spatial fit holds
-its random effects and areal field at their posterior mode, which
-over-disperses the linear predictor wherever the intercept is aliased
-with them; an SPDE field enters at its posterior mean.
+estimated variance components). A conditional-Laplace fit with an
+NNGP, HSGP, SPDE or areal field draws the coefficients, the group
+effects and the field jointly from the Laplace Gaussian of its one
+cell (\code{.field_eta_draws()}), the cell solved again by the kernel of
+its block.
 }
 At \code{newdata} each replicate carries the formula random effects, as
 \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}} does: a row of a group the fit saw takes that group's

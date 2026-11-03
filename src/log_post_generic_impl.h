@@ -472,6 +472,41 @@ static T generic_re_effect(
     return effect;
 }
 
+// The areal field's contribution to eta at spatial unit `s` (0-based): the
+// field centred per connected component on the intrinsic branches (CAR_proper
+// is full rank and keeps its own identified level), and for BYM2 the
+// structured and unstructured components at the draw's scales. Every
+// observation of unit s receives this value, and the per-unit field readers
+// read it here, so a unit and its observations carry one value.
+template<typename T>
+static inline T generic_spatial_unit_effect(
+    int s,
+    const ModelData& data,
+    const ParamLayout& layout,
+    const GenericLogPostState<T>& state
+) {
+    const T* phi = state.phi_spatial_centered.empty()
+        ? state.phi_spatial : state.phi_spatial_centered.data();
+    return layout.is_bym2
+        ? state.sigma_s_bym2 * phi[s] * T(data.bym2_scale_factor)
+            + state.sigma_u_bym2 * state.theta_bym2[s]
+        : phi[s];
+}
+
+// The temporal field's contribution to eta at block position `idx_t`
+// (group-major, `g * n_times + t`). Intrinsic walks (RW1/RW2) are centred on
+// the way in; their augmented constant carries tau, so leaving it in eta would
+// free the level. AR1 and the temporal GP are proper and keep their own.
+template<typename T>
+static inline T generic_temporal_effect(
+    int idx_t,
+    const GenericLogPostState<T>& state
+) {
+    return state.phi_temporal_center_all
+        ? state.phi_temporal[idx_t] - state.phi_temporal_mean
+        : state.phi_temporal[idx_t];
+}
+
 template<typename T>
 static void add_generic_spatial_effect(
     int i,
@@ -481,16 +516,10 @@ static void add_generic_spatial_effect(
     const GenericLogPostState<T>& state
 ) {
     if (layout.has_spatial && !data.spatial_group.empty() && data.spatial_group[i] > 0) {
-        const int s = data.spatial_group[i] - 1;
-        // Intrinsic branches read the centred field; CAR_proper is full rank and
-        // keeps its own identified level.
-        const T* phi = state.phi_spatial_centered.empty()
-            ? state.phi_spatial : state.phi_spatial_centered.data();
-        const T effect = layout.is_bym2
-            ? state.sigma_s_bym2 * phi[s] * T(data.bym2_scale_factor)
-                + state.sigma_u_bym2 * state.theta_bym2[s]
-            : phi[s];
-        add_to_shared_processes(eta, data.sharing.spatial, data.n_processes, effect);
+        add_to_shared_processes(
+            eta, data.sharing.spatial, data.n_processes,
+            generic_spatial_unit_effect(data.spatial_group[i] - 1, data, layout,
+                                        state));
     }
 
     if (layout.is_gp && !state.gp_w.empty()) {
@@ -543,14 +572,9 @@ static void add_generic_temporal_effect(
             ? (data.temporal_group_idx[i] - 1) : 0;
         const int idx_t = g * data.n_times + t;
         if (idx_t >= 0 && idx_t < (int)state.phi_temporal.size()) {
-            // Intrinsic walks (RW1/RW2) are centred on the way in; their
-            // augmented constant carries tau, so leaving it in eta would free
-            // the level. AR1 is proper and keeps its own.
-            const T eff = state.phi_temporal_center_all
-                ? state.phi_temporal[idx_t] - state.phi_temporal_mean
-                : state.phi_temporal[idx_t];
             add_to_shared_processes(
-                eta, data.sharing.temporal, data.n_processes, eff);
+                eta, data.sharing.temporal, data.n_processes,
+                generic_temporal_effect(idx_t, state));
         }
     }
 

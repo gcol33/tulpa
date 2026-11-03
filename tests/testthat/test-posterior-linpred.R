@@ -27,8 +27,10 @@ test_that("posterior_linpred() reads the nested grid mixture with the fields", {
   expect_equal(pl$estimate, m, tolerance = 1e-10)
   expect_equal(pl$sd, sqrt(as.numeric(crossprod(w, V + M^2)) - m^2),
                tolerance = 1e-10)
-  # The fields are in it: predict() is population level and is not.
-  pop <- predict(fit, type = "link")
+  # The fields are in it, as they are in predict(); without them the
+  # prediction is the population level.
+  expect_equal(predict(fit, type = "link"), m, tolerance = 1e-10)
+  pop <- predict(fit, type = "link", include_field = FALSE)
   expect_gt(stats::sd(pl$estimate - pop), 0.3)
   expect_gt(stats::cor(pl$estimate - pop, u[d$region] + v[d$time]), 0.9)
   dr <- posterior_linpred(fit, ndraws = 50, seed = 3)

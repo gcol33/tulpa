@@ -545,6 +545,10 @@ cpp_tulpa_glmm_log_prob_draws <- function(draws, y, n_trials, X, family, phi = 1
     .Call(`_tulpa_cpp_tulpa_glmm_log_prob_draws`, draws, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, phi2, svc_spec, tvc_spec, zi_spec)
 }
 
+cpp_sampler_field_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sigma_beta = NULL, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
+    .Call(`_tulpa_cpp_sampler_field_draws`, draws, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, phi2, svc_spec, tvc_spec, zi_spec)
+}
+
 cpp_tulpa_glmm_layout <- function(y, n_trials, X, family, phi = 1.0, phi2 = NA_real_, sigma_beta = NULL, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
     .Call(`_tulpa_cpp_tulpa_glmm_layout`, y, n_trials, X, family, phi, phi2, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, svc_spec, tvc_spec, zi_spec)
 }
