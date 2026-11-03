@@ -34,7 +34,11 @@ test_that("an inline field fit reports its random intercepts", {
   # The table is the latent posterior the predictions are drawn from.
   src <- tulpa:::.field_source(fit)
   L <- tulpa:::.field_latent_draws(fit, src, 4000L)
-  B <- L[, src$layout$re$cols, drop = FALSE]
+  # The (1 | g) term is an `iid` block, non-centred: each effect is its
+  # coordinate times the SD of the cell the row was drawn from.
+  re <- src$layout$re
+  S <- t(vapply(attr(L, "cells"), re$scale, numeric(length(re$cols))))
+  B <- L[, re$cols, drop = FALSE] * S
   expect_lt(max(abs(apply(B, 2, stats::sd) / r$sd - 1)), 0.08)
 })
 
