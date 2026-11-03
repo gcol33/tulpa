@@ -60,6 +60,13 @@
   per step (`control$smc_min_moves`, `control$smc_max_moves`, replacing
   `n_mcmc_steps`) (#1061, #1069, #1070).
 
+* SMC starts from a reference fitted to the posterior: a Pathfinder normal
+  approximation starts a first pass on a quarter of the particles, and a
+  multivariate t (3 df) on that pass's final moments is the reference of the run
+  that reports. Latent-field log evidence now matches quadrature to within Monte
+  Carlo error (ICAR -0.18 to -0.01, RW1 -0.12 to -0.01, AR1 -0.09 to -0.01
+  nats), with 2-3 tempering steps instead of 14-19 (#1080).
+
 * MCAR on the joint door integrates the cross-covariance; the marginal SD
   posterior is no longer a point mass (#1062, #1063).
 
