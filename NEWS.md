@@ -128,6 +128,19 @@
   hyperparameters are labelled by block name, and Pareto-k is computed once
   (#1082, #1084, #1087, #1090).
 
+* `tulpa()` takes censored and truncated gaussian responses:
+  `y | cens(lower, upper)` (an NA or infinite bound leaves that side open,
+  equal bounds record an exact value; the likelihood matches
+  `survival::survreg(dist = "gaussian")`) and `y | trunc(lb, ub)`, with random
+  effects and fields, through nested Laplace. `phi` of `interval_gaussian` and
+  `truncated_gaussian` is now the residual variance, as for gaussian (#1092).
+
+* A gaussian, lognormal, censored or truncated fit with `phi` left out is
+  integrated over its residual variance under `mode = "auto"`, `"structured"`
+  and the nested modes instead of being conditioned at 1; `fit$phi` is the
+  posterior mean. `mode = "auto"` on such a fit now selects the joint nested
+  Laplace door (#1068).
+
 ## Package
 
 * C++ test fixtures live in `tests/testthat/cpp` and compile per test file;
