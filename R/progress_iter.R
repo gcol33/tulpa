@@ -35,10 +35,10 @@
 #' per-species outer loop, ...) -- the R-side counterpart of the C++
 #' `tulpa_progress::GridProgress` reporter, sharing its wire format so a
 #' detached reader sees the same heartbeat file regardless of which kind of
-#' loop produced it. Config comes from the scoped `tulpa.nl_progress` option
-#' (`progress`, `progress_file`, `progress_every`, `progress_throttle`); a
-#' caller outside tulpa's own `control$progress` machinery sets the same
-#' option to opt in.
+#' loop produced it. Config is a list with `progress`, `progress_file`,
+#' `progress_every` and `progress_throttle`; by default it is the scoped
+#' `tulpa.nl_progress` option, which a caller outside tulpa's own
+#' `control$progress` machinery sets to opt in.
 #'
 #' Two independently gated channels: a console bar, emitted when `progress`
 #' is set on the option, and a heartbeat file, written whenever
@@ -55,6 +55,8 @@
 #'   console line as `"| N threads"` so the parallelism is visible live and in
 #'   detached-run logs; a serial loop leaves it at 1 and the field is
 #'   omitted, mirroring the C++ `GridProgress` reporter.
+#' @param config The reporter's settings, as described above. Default: the
+#'   `tulpa.nl_progress` option.
 #'
 #' @return A list of two closures: `tick()`, called once per completed step,
 #'   and `finish()`, called once after the loop (forces a final
@@ -63,8 +65,9 @@
 #'
 #' @keywords internal
 #' @export
-tulpa_iter_progress <- function(label, total, unit = "iter", threads = 1L) {
-  opt <- getOption("tulpa.nl_progress", NULL)
+tulpa_iter_progress <- function(label, total, unit = "iter", threads = 1L,
+                                config = getOption("tulpa.nl_progress", NULL)) {
+  opt <- config
   on       <- isTRUE(opt$progress)
   file     <- if (is.character(opt$progress_file)) opt$progress_file else ""
   every    <- if (length(opt$progress_every))    as.integer(opt$progress_every) else 0L

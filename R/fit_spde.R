@@ -311,6 +311,11 @@ fit_spde <- function(y, X, spatial,
     if (is_frac) {
       K  <- length(range_vec)
       lm <- numeric(K); ni <- integer(K)
+      # The cells are solved here in R, so the grid's reporter is the R-side
+      # one, on the same settings and wire format as the C++ grid's.
+      prog <- tulpa_iter_progress("nested-laplace", K, unit = "cells",
+                                  config = if (keep_Q) progress_grid
+                                           else progress_off)
       for (k in seq_len(K)) {
         f <- .spde_nested_logmarginal_at(
           spatial = sp, range = range_vec[k], sigma = sigma_vec[k],
@@ -320,7 +325,9 @@ fit_spde <- function(y, X, spatial,
         )
         lm[k] <- f$log_marginal
         ni[k] <- f$n_iter
+        prog$tick()
       }
+      prog$finish()
       return(list(log_marginal = lm, n_iter = ni))
     }
     .spde_grid_solve(

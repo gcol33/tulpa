@@ -4,7 +4,13 @@
 \alias{tulpa_iter_progress}
 \title{Progress reporter for a counted R-side fitting loop}
 \usage{
-tulpa_iter_progress(label, total, unit = "iter", threads = 1L)
+tulpa_iter_progress(
+  label,
+  total,
+  unit = "iter",
+  threads = 1L,
+  config = getOption("tulpa.nl_progress", NULL)
+)
 }
 \arguments{
 \item{label}{Short name for the loop, shown in the console line.}
@@ -18,6 +24,9 @@ tulpa_iter_progress(label, total, unit = "iter", threads = 1L)
 console line as \code{"| N threads"} so the parallelism is visible live and in
 detached-run logs; a serial loop leaves it at 1 and the field is
 omitted, mirroring the C++ \code{GridProgress} reporter.}
+
+\item{config}{The reporter's settings, as described above. Default: the
+\code{tulpa.nl_progress} option.}
 }
 \value{
 A list of two closures: \code{tick()}, called once per completed step,
@@ -30,10 +39,10 @@ Build a progress reporter for a counted R loop (an EM iteration, a
 per-species outer loop, ...) -- the R-side counterpart of the C++
 \code{tulpa_progress::GridProgress} reporter, sharing its wire format so a
 detached reader sees the same heartbeat file regardless of which kind of
-loop produced it. Config comes from the scoped \code{tulpa.nl_progress} option
-(\code{progress}, \code{progress_file}, \code{progress_every}, \code{progress_throttle}); a
-caller outside tulpa's own \code{control$progress} machinery sets the same
-option to opt in.
+loop produced it. Config is a list with \code{progress}, \code{progress_file},
+\code{progress_every} and \code{progress_throttle}; by default it is the scoped
+\code{tulpa.nl_progress} option, which a caller outside tulpa's own
+\code{control$progress} machinery sets to opt in.
 
 Two independently gated channels: a console bar, emitted when \code{progress}
 is set on the option, and a heartbeat file, written whenever
