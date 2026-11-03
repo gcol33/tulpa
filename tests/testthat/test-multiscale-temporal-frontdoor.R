@@ -105,6 +105,50 @@ ms_short_eta <- function(n_t, short_term, rows, par = "noncentered") {
   do.call(tulpa:::cpp_tulpa_glmm_eta_draws, c(list(draws = D), args))
 }
 
+# The seasonal spec build_sampler_model_inputs() reads: one observation per
+# time point over one period, no trend, so eta is the centred seasonal walk.
+ms_seasonal_eta <- function(period, rows, par = "noncentered") {
+  spec <- list(type = "multiscale", time_index = seq_len(period),
+               n_times = period, trend = "none", parameterization = par,
+               seasonal = period, short_term = "none", shared = TRUE)
+  X <- matrix(1, period, 1, dimnames = list(NULL, "(Intercept)"))
+  args <- list(y = rnorm(period), n_trials = rep(1L, period), X = X,
+               family = "gaussian", phi = 1, temporal_spec = spec)
+  pn <- do.call(tulpa:::cpp_tulpa_glmm_layout, args)$param_names
+  D <- matrix(0, length(rows), length(pn), dimnames = list(NULL, pn))
+  for (r in seq_along(rows)) D[r, names(rows[[r]])] <- rows[[r]]
+  do.call(tulpa:::cpp_tulpa_glmm_eta_draws, c(list(draws = D), args))
+}
+
+test_that("the non-centred seasonal arm is the cyclic walk's prior covariance in its spectral basis", {
+  # A unit coordinate j puts the j-th column of the cyclic RW1 basis into eta,
+  # and the columns' outer products sum to the pseudo-inverse of the cyclic
+  # structure matrix at sigma = 1.
+  per <- 7L
+  unit <- lapply(seq_len(per - 1L), function(j) {
+    v <- c(0, 1)
+    names(v) <- c("log_sigma2_seasonal", sprintf("seasonal[%d]", j + 1L))
+    v
+  })
+  B <- t(ms_seasonal_eta(per, unit))
+  Dc <- diag(per) - diag(per)[c(per, seq_len(per - 1L)), ]
+  e <- eigen(crossprod(Dc), symmetric = TRUE)
+  pos <- e$values > 1e-9
+  R_pinv <- e$vectors[, pos] %*% (t(e$vectors[, pos]) / e$values[pos])
+  expect_equal(B %*% t(B), R_pinv, tolerance = 1e-8)
+  expect_equal(colSums(B), rep(0, per - 1L), tolerance = 1e-10)
+
+  two <- lapply(unit, function(v) { v["log_sigma2_seasonal"] <- 2 * log(2); v })
+  expect_equal(t(ms_seasonal_eta(per, two)), 2 * B, tolerance = 1e-10)
+  lvl <- list(c(log_sigma2_seasonal = 0, "seasonal[1]" = 3))
+  expect_equal(max(abs(ms_seasonal_eta(per, lvl))), 0, tolerance = 1e-12)
+
+  # Centred, the coordinates are the walk's values, centred into eta.
+  cen <- list(c(log_sigma2_seasonal = 0, "seasonal[2]" = 1))
+  expect_equal(as.numeric(ms_seasonal_eta(per, cen, par = "centered")),
+               (seq_len(per) == 2L) - 1 / per, tolerance = 1e-12)
+})
+
 test_that("the non-centred short-term arm is its innovations scaled", {
   n_t <- 6L
   # IID: the field is sigma times the coordinates.
@@ -336,6 +380,62 @@ test_that("the non-centred short-term arm samples the exact scale posterior", {
   expect_gt(posterior::ess_bulk(lss), 500)
   expect_lt(abs(mean(lss) - ex$mean), 0.25 * ex$sd)
   expect_lt(max(abs(stats::quantile(lss, c(0.05, 0.5, 0.95)) - ex$q)),
+            0.3 * ex$sd)
+})
+
+# The exact posterior of log(sigma2_seasonal) for a gaussian response with
+# known noise variance and a seasonal arm alone: the fixed effects and the
+# centred seasonal values (covariance sigma2 R^+, R the cyclic RW1 structure
+# matrix, whose constant direction is centred out of eta) integrated in closed
+# form, on a dense grid in the scale.
+ms_seasonal_exact <- function(d, per, phi, sigma_beta = 2.5, U = 1,
+                              alpha = 0.01) {
+  N <- nrow(d)
+  X <- cbind(1, d$x)
+  A <- matrix(0, N, per); A[cbind(seq_len(N), (d$t - 1L) %% per + 1L)] <- 1
+  Dc <- diag(per) - diag(per)[c(per, seq_len(per - 1L)), ]
+  e <- eigen(crossprod(Dc), symmetric = TRUE); pos <- e$values > 1e-9
+  M <- A %*% e$vectors[, pos] %*% (t(e$vectors[, pos]) / e$values[pos]) %*% t(A)
+  lam <- -log(alpha) / U
+  th <- seq(-16, 3, length.out = 1501)
+  lp <- vapply(th, function(t1) {
+    Rc <- chol(sigma_beta^2 * tcrossprod(X) + exp(t1) * M + diag(phi, N))
+    -sum(log(diag(Rc))) - 0.5 * sum(backsolve(Rc, d$y, transpose = TRUE)^2) +
+      log(lam) - lam * exp(t1 / 2) - log(2) + 0.5 * t1
+  }, 0)
+  w <- exp(lp - max(lp)); w <- w / sum(w)
+  m <- sum(w * th)
+  list(mean = m, sd = sqrt(sum(w * th^2) - m^2),
+       q = stats::approx(cumsum(w), th, xout = c(0.05, 0.5, 0.95),
+                         ties = "ordered")$y)
+}
+
+test_that("the non-centred seasonal arm samples the exact scale posterior", {
+  skip_if_not_slow()
+  set.seed(501)
+  per <- 12L; n_t <- 48L; phi <- 0.5
+  seas <- cumsum(rnorm(per, 0, 0.05)); seas <- seas - mean(seas)
+  t <- rep(seq_len(n_t), each = 2L); x <- rnorm(length(t))
+  d <- data.frame(t = t, x = x, y = 0.3 + 0.5 * x + seas[(t - 1L) %% per + 1L] +
+                    rnorm(length(t), 0, sqrt(phi)))
+  ex <- ms_seasonal_exact(d, per, phi)
+  fit <- suppressWarnings(tulpa(
+    y ~ x, data = d, family = "gaussian", phi = phi, mode = "hmc",
+    temporal = temporal_multiscale("t", trend = "none", seasonal = per,
+                                   short_term = "none"),
+    control = list(n_iter = 3000L, n_warmup = 1000L, n_chains = 4L, seed = 1L,
+                   verbose = FALSE)))
+  ls <- matrix(fit$draws[, "log_sigma2_seasonal"], ncol = 4L)
+  # Measured on six such data sets x two seeds: Rhat <= 1.004, bulk ESS
+  # 1585-3000, mean within 0.06 posterior SD of the exact one. The centred
+  # arm reached Rhat up to 1.13 and bulk ESS 21-330, its mean 0.08-0.36 SD
+  # above the exact one and its 5% quantile about 2 log units above it, with
+  # its divergent transitions four times as frequent in the lowest quartile
+  # of the scale.
+  expect_lt(posterior::rhat(ls), 1.02)
+  expect_gt(posterior::ess_bulk(ls), 800)
+  expect_lt(abs(mean(ls) - ex$mean), 0.25 * ex$sd)
+  expect_lt(max(abs(stats::quantile(ls, c(0.05, 0.5, 0.95)) - ex$q)),
             0.3 * ex$sd)
 })
 

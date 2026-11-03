@@ -192,8 +192,14 @@ namespace tulpa {
 // the same prior. It also gained `ms_short_parameterization` after
 // `ms_trend_slope`, the non-centred multiscale short-term arm. Every field
 // after either moves.
+//
+// 50 -> 51: ModelData gained `ms_seasonal_parameterization` and
+// `ms_seasonal_basis` after `ms_short_parameterization`, the non-centred
+// multiscale seasonal arm, so every field after them moves. The Gamma
+// `tau_temporal_shape` / `tau_temporal_rate` on an RW1 / RW2 / AR1 field's
+// precision became the PC anchors `temporal_sigma_prior_U` / `_alpha`.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 50;
+constexpr int TULPA_ABI_VERSION = 51;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -550,6 +556,12 @@ struct ModelData {
     // (its standardized innovations are sampled and the AR1 / IID field is
     // built from them by short_term_noncentered).
     int ms_short_parameterization = 0;
+    // 0 = centred seasonal arm (its values are sampled), 1 = non-centred (its
+    // level and standardized coordinates in the spectral basis of the cyclic
+    // RW1 structure matrix are sampled). The basis is period x (period - 1)
+    // column-major, as ms_trend_basis. Set by set_multiscale_seasonal_noncentered.
+    int ms_seasonal_parameterization = 0;
+    std::vector<double> ms_seasonal_basis;
 
     // ================================================================
     // TVC (Temporally-Varying Coefficients)

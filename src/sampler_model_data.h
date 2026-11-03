@@ -37,7 +37,9 @@
 #include "linalg_fast.h"                    // require_coords_2col
 #include "hmc_hsgp.h"                      // tulpa_hsgp::setup_hsgp_2d (HSGP basis)
 #include "hmc_sampler.h"                  // tulpa_hmc::compute_param_layout
-#include "pc_prior.h"                     // tulpa::pc_anchors_valid
+#include "pc_prior.h"                     // tulpa::pc_anchors_valid, pc_rate
+#include "tulpa_priors_re.h"               // re_term_view
+#include "tulpa_priors_mstemporal.h"        // multiscale_*_noncentered
 #include <Rcpp.h>
 #include <string>
 #include <vector>
@@ -326,43 +328,119 @@ inline void init_gp_lengthscales(std::vector<double>& q,
     }
 }
 
-// The PC prior's median SD, log(2) U / -log(alpha), as a log-variance; NaN for
-// an anchor pair outside the prior's domain.
-inline double pc_median_log_sigma2(double U, double alpha) {
-    if (!(U > 0.0) || !(alpha > 0.0 && alpha < 1.0)) {
+// The log of a scale prior's median SD: Exponential(rate) on the SD (the PC
+// prior, rate -log(alpha) / U, and the latent factors' prior) has median
+// log(2) / rate, Half-Cauchy(0, s) has median s. NaN outside the prior's domain.
+inline double exponential_median_log_sd(double rate) {
+    if (!(rate > 0.0) || !std::isfinite(rate)) {
         return std::numeric_limits<double>::quiet_NaN();
     }
-    return 2.0 * std::log(std::log(2.0) * U / -std::log(alpha));
+    return std::log(std::log(2.0) / rate);
+}
+inline double pc_median_log_sd(double U, double alpha) {
+    if (!pc_anchors_valid(U, alpha)) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    return exponential_median_log_sd(pc_rate(U, alpha));
+}
+inline double half_cauchy_median_log_sd(double scale) {
+    if (!(scale > 0.0) || !std::isfinite(scale)) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    return std::log(scale);
 }
 
-// A non-centred multiscale arm starts at the median of its PC prior on the SD
-// rather than at sigma = 1. Its field is the scale times the sampled
-// coordinates, so at a large scale a coordinate moves the linear predictor
-// far: the trend's walk is built from the innovations by cumulative sums, a
-// unit innovation moving f_t by up to sigma t (RW1) or sigma t^2 / 2 (RW2),
-// and a short-term coordinate moves its time point by sigma. A chain the
-// multi-chain start disperses by Uniform(-2, 2) per coordinate then starts
-// where the likelihood pays for a field of that size, and the steepest way
-// down is to shrink the scale. With the short-term arm started at sigma = 1,
-// 6 of 18 gaussian RW2 + iid fits (six data sets, three seeds) had a chain
-// whose log-variances reached -21 to -265 in the first warmup iteration and
-// stayed there through warmup (Rhat up to 1.58); started at the median, 0 of
-// 18, with Rhat at most 1.01.
-inline void init_multiscale_noncentered_scales(std::vector<double>& q,
-                                               const ModelData& data,
-                                               const ParamLayout& layout) {
-    if (!layout.has_multiscale_temporal) return;
-    auto set_median = [&q](int idx, double U, double alpha) {
-        const double v = pc_median_log_sigma2(U, alpha);
-        if (idx >= 0 && std::isfinite(v)) q[idx] = v;
+// Every non-centred field -- one whose values are its scale times sampled
+// coordinates of unit prior scale -- starts with its scale at the median of
+// that scale's prior rather than at the coordinate 0 (sigma = 1). The
+// multi-chain start disperses each coordinate by Uniform(-2, 2), so a chain
+// starts with its field moved by the scale times that offset: at a scale far
+// above the posterior's, the likelihood pays for a field of that size, and
+// the energy of a trajectory started there is spent along the scale, whose
+// prior falls off only linearly in its log as the scale shrinks. A chain
+// carried far down that direction in its first iteration stays there through
+// warmup. On a gaussian RW2 + iid multiscale fit (six data sets, three seeds)
+// with the short-term scale started at sigma = 1, 6 of 18 fits had a chain
+// whose log-variance reached -21 to -217 (Rhat up to 1.6); at the PC median,
+// 0 of 18. A log-variance coordinate starts at 2 log(median), a log-SD
+// coordinate at log(median).
+inline void init_noncentered_scales(std::vector<double>& q,
+                                    const ModelData& data,
+                                    const ParamLayout& layout) {
+    const int D = static_cast<int>(q.size());
+    auto set = [&q, D](int idx, double log_sd, double per_log_sd) {
+        if (idx >= 0 && idx < D && std::isfinite(log_sd)) {
+            q[idx] = per_log_sd * log_sd;
+        }
     };
-    if (data.ms_trend_parameterization == 1) {
-        set_median(layout.log_sigma2_trend_idx, data.ms_sigma2_trend_prior_U,
-                   data.ms_sigma2_trend_prior_alpha);
+    auto set_span = [&set](int lo, int hi, double log_sd, double per_log_sd) {
+        if (lo < 0) return;
+        for (int j = lo; j < hi; j++) set(j, log_sd, per_log_sd);
+    };
+
+    if (layout.has_re) {
+        const double m = half_cauchy_median_log_sd(data.sigma_re_scale);
+        for (int t = 0; t < priors::re_n_terms(data); t++) {
+            const priors::ReTermView v = priors::re_term_view(data, layout, t);
+            if (data.re_parameterization != 1 &&
+                !priors::re_term_correlated(v.chol_start, v.n_coefs)) {
+                continue;
+            }
+            for (int c = 0; c < v.n_coefs; c++) set(v.log_sigma_idx[c], m, 1.0);
+        }
     }
-    if (data.ms_short_parameterization == 1) {
-        set_median(layout.log_sigma2_short_idx, data.ms_sigma2_short_prior_U,
-                   data.ms_sigma2_short_prior_alpha);
+    if (layout.is_bym2 && !layout.is_bym2_collapsed) {
+        set(layout.log_sigma_bym2_idx,
+            half_cauchy_median_log_sd(data.sigma_re_scale), 1.0);
+    }
+    if (layout.is_gp && !layout.is_gp_collapsed && data.gp_parameterization == 1) {
+        set(layout.log_sigma2_gp_idx,
+            pc_median_log_sd(data.gp_sigma2_prior_U, data.gp_sigma2_prior_alpha),
+            2.0);
+    }
+    if (layout.is_hsgp) {
+        set(layout.log_sigma2_hsgp_idx,
+            pc_median_log_sd(data.hsgp_sigma2_prior_U,
+                             data.hsgp_sigma2_prior_alpha), 2.0);
+    }
+    if (layout.is_multiscale_gp &&
+        (data.msgp_parameterization == 1 || data.msgp_is_hsgp)) {
+        set(layout.log_sigma2_gp_local_idx,
+            pc_median_log_sd(data.ms_sigma2_local_prior_U,
+                             data.ms_sigma2_local_prior_alpha), 2.0);
+        set(layout.log_sigma2_gp_regional_idx,
+            pc_median_log_sd(data.ms_sigma2_regional_prior_U,
+                             data.ms_sigma2_regional_prior_alpha), 2.0);
+    }
+    if (layout.has_svc && (data.svc_parameterization == 1 || data.svc_is_hsgp)) {
+        set_span(layout.log_sigma2_svc_start, layout.log_sigma2_svc_end,
+                 half_cauchy_median_log_sd(data.svc_sigma2_prior_scale), 2.0);
+    }
+    if (layout.is_temporal_gp && data.temporal_gp_parameterization == 1) {
+        set(layout.log_sigma2_temporal_gp_idx,
+            pc_median_log_sd(data.temporal_gp_sigma2_prior_U,
+                             data.temporal_gp_sigma2_prior_alpha), 2.0);
+    }
+    if (layout.has_multiscale_temporal) {
+        if (priors::multiscale_trend_noncentered(data, layout)) {
+            set(layout.log_sigma2_trend_idx,
+                pc_median_log_sd(data.ms_sigma2_trend_prior_U,
+                                 data.ms_sigma2_trend_prior_alpha), 2.0);
+        }
+        if (priors::multiscale_seasonal_noncentered(data, layout)) {
+            set(layout.log_sigma2_seasonal_idx,
+                pc_median_log_sd(data.ms_sigma2_seasonal_prior_U,
+                                 data.ms_sigma2_seasonal_prior_alpha), 2.0);
+        }
+        if (priors::multiscale_short_noncentered(data, layout)) {
+            set(layout.log_sigma2_short_idx,
+                pc_median_log_sd(data.ms_sigma2_short_prior_U,
+                                 data.ms_sigma2_short_prior_alpha), 2.0);
+        }
+    }
+    if (layout.has_latent && data.latent_n_factors > 0) {
+        set_span(layout.log_sigma_latent_start, layout.log_sigma_latent_end,
+                 exponential_median_log_sd(data.latent_sigma_prior_rate), 1.0);
     }
 }
 
@@ -370,7 +448,7 @@ inline void init_bounded_support_params(std::vector<double>& q,
                                         const ModelData& data,
                                         const ParamLayout& layout) {
     init_gp_lengthscales(q, data, layout);
-    init_multiscale_noncentered_scales(q, data, layout);
+    init_noncentered_scales(q, data, layout);
 
     if (!layout.is_multiscale_gp || !data.has_multiscale_gp || data.msgp_is_hsgp) {
         return;

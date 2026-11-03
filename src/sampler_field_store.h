@@ -6,10 +6,10 @@
 // for a non-centered block is the standardized coordinate z, not the field.
 // The stored draw carries the field the likelihood read at that position
 // instead: each non-centered GP / SVC / multiscale-GP / temporal-GP block, the
-// non-centered multiscale trend and short-term arm is replaced by its forward
-// transform, and
-// every block whose level is removed on its way into eta (SVC, TVC, the
-// multiscale trend) is stored centred. Every reader of `$draws` therefore sees
+// non-centered multiscale trend, seasonal and short-term arm is replaced by its
+// forward transform, and every block whose level is removed on its way into eta
+// (SVC, TVC, the non-centred multiscale trend and seasonal arm) is stored
+// centred. Every reader of `$draws` therefore sees
 // one convention whatever backend produced them, and reads them back at the
 // centered parameterization, on which the forward transform is the identity.
 //
@@ -122,6 +122,21 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
         const int n_trend = layout.trend_end - layout.trend_start;
         for (int t = 0; t < n_trend; t++) row[layout.trend_start + t] = trend[t];
         (void)tulpa::s2z_centre_component(row, layout.trend_start, n_trend);
+    }
+
+    // Non-centred multiscale seasonal arm: the sampled slice is the cyclic
+    // walk's level and standardized coordinates; the stored draw is the walk
+    // multiscale_seasonal_values() hands the likelihood, centred as
+    // temporal_effects_by_time centres it on its way into eta.
+    if (data.has_multiscale_temporal && layout.has_multiscale_temporal &&
+        tulpa::priors::multiscale_seasonal_noncentered(data, layout)) {
+        std::vector<double> seasonal;
+        (void)tulpa::priors::multiscale_seasonal_values<double>(q, data, layout,
+                                                                seasonal);
+        const int n_seasonal = layout.seasonal_end - layout.seasonal_start;
+        for (int t = 0; t < n_seasonal; t++)
+            row[layout.seasonal_start + t] = seasonal[t];
+        (void)tulpa::s2z_centre_component(row, layout.seasonal_start, n_seasonal);
     }
 
     // Non-centred multiscale short-term arm: the sampled slice is its

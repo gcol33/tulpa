@@ -154,6 +154,9 @@ bool fold_target_identity(tulpa::Fingerprint& fp,
 // moves eta by 30 and starts the chain where exp(eta) overflows the
 // likelihood. Every other coordinate is on a unit-scale unconstrained
 // parameterization (log-variances, logits, non-centered fields) and takes 1.
+// A non-centered field's coordinate moves the field by its scale times the
+// offset, so each such scale starts at its prior's median
+// (init_noncentered_scales) rather than at sigma = 1.
 // The stream is keyed on (seed, chain), so a run stays reproducible under a
 // fixed seed.
 //

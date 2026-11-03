@@ -59,6 +59,41 @@ T multiscale_trend_values(const std::vector<T>& params, const ModelData& data,
         data.ms_trend_basis, data.ms_trend_slope, sigma2, trend);
 }
 
+// Whether the seasonal arm's sampled coordinates are its level and its
+// standardized coordinates in the cyclic walk's spectral basis (non-centred)
+// rather than its values.
+inline bool multiscale_seasonal_noncentered(const ModelData& data,
+                                            const ParamLayout& layout) {
+    return data.ms_seasonal_parameterization == 1 &&
+           layout.log_sigma2_seasonal_idx >= 0;
+}
+
+// The seasonal values the linear predictor reads, off the sampled
+// coordinates: the coordinates themselves under the centred parameterization,
+// the cyclic RW1 walk rw_walk_noncentered builds from them in the spectral
+// basis (set_multiscale_seasonal_noncentered) under the non-centred one. The
+// cyclic walk's null space is the constant alone, so it is the open RW1's
+// construction in another basis. Returns the log density of the coordinates
+// the non-centred parameterization carries (0 under the centred one, whose
+// density multiscale_temporal_log_lik adds).
+template<typename T>
+T multiscale_seasonal_values(const std::vector<T>& params, const ModelData& data,
+                             const ParamLayout& layout, std::vector<T>& seasonal)
+{
+    const int n_seasonal = layout.seasonal_end - layout.seasonal_start;
+    std::vector<T> coords(params.begin() + layout.seasonal_start,
+                          params.begin() + layout.seasonal_start + n_seasonal);
+    if (!multiscale_seasonal_noncentered(data, layout)) {
+        seasonal.swap(coords);
+        return T(0.0);
+    }
+    const T sigma2 = safe_exp(params[layout.log_sigma2_seasonal_idx]);
+    static const std::vector<double> kNoSlope;
+    return tulpa_temporal::rw_walk_noncentered(
+        coords, TemporalType::RW1, data.ms_seasonal_basis, kNoSlope, sigma2,
+        seasonal);
+}
+
 // Whether the short-term arm's sampled coordinates are its standardized
 // innovations (non-centred) rather than its values.
 inline bool multiscale_short_noncentered(const ModelData& data,
@@ -121,6 +156,9 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
         // non-centred parameterization, whose density is the coordinates'.
         std::vector<T> ms_trend_density;
         std::vector<T> ms_seasonal;
+        // The seasonal walk the centred density is evaluated on; empty under
+        // the non-centred parameterization, as for the trend.
+        std::vector<T> ms_seasonal_density;
         std::vector<T> ms_short_term;
         // The short-term field the centred density is evaluated on; empty
         // under the non-centred parameterization, as for the trend.
@@ -152,10 +190,10 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
             T log_sigma2_seasonal = params[layout.log_sigma2_seasonal_idx];
             ms_sigma2_seasonal = safe_exp(log_sigma2_seasonal);
 
-            int n_seasonal = layout.seasonal_end - layout.seasonal_start;
-            ms_seasonal.resize(n_seasonal);
-            for (int t = 0; t < n_seasonal; t++) {
-                ms_seasonal[t] = params[layout.seasonal_start + t];
+            log_post = log_post +
+                multiscale_seasonal_values(params, data, layout, ms_seasonal);
+            if (!multiscale_seasonal_noncentered(data, layout)) {
+                ms_seasonal_density = ms_seasonal;
             }
 
             // PC prior on sigma2_seasonal + Jacobian
@@ -195,7 +233,7 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
 
         // GMRF log-likelihood for all components
         log_post = log_post + tulpa_temporal::multiscale_temporal_log_lik(
-            ms_trend_density, ms_seasonal, ms_short_density,
+            ms_trend_density, ms_seasonal_density, ms_short_density,
             ms_sigma2_trend, ms_sigma2_seasonal, ms_sigma2_short, ms_rho_short,
             ms_data);
 
@@ -221,8 +259,9 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
 // form (rw1_log_lik / rw2_log_lik return 0 there) leaves its values under a
 // flat prior; either is improper. A non-centred trend carries standard normal
 // densities on its level and innovations, normalized as they stand, and a flat
-// slope under RW2; a non-centred short-term arm carries standard normal
-// densities on its innovations, normalized as they stand.
+// slope under RW2; a non-centred seasonal arm carries standard normal
+// densities on its level and coordinates, and a non-centred short-term arm on
+// its innovations, each normalized as they stand.
 inline double multiscale_temporal_prior_log_normalizer(
     const ModelData& data, const ParamLayout& layout,
     std::vector<std::string>* declined) {
@@ -243,7 +282,8 @@ inline double multiscale_temporal_prior_log_normalizer(
         }
         c += 0.5 * rw_log_pdet(n, 1, false);
     }
-    if (layout.log_sigma2_seasonal_idx >= 0) {
+    if (layout.log_sigma2_seasonal_idx >= 0 &&
+        !multiscale_seasonal_noncentered(data, layout)) {
         const int n = layout.seasonal_end - layout.seasonal_start;
         if (n < 2) {
             if (declined) declined->push_back("multiscale_temporal:seasonal_improper");

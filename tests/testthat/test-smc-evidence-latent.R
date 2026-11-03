@@ -475,6 +475,27 @@ test_that("the multi-scale temporal normalizer makes the prior a density", {
   tp$trend <- "rw2"
   expect_identical(call_fx(matrix(0, 0, 0))$declined,
                    "multiscale_temporal:trend_improper")
+
+  # Non-centred, every arm's coordinates -- the trend's level and spectral
+  # coordinates, the seasonal walk's, the short-term innovations -- carry a
+  # standard normal density, normalized as it stands.
+  tp$trend <- "rw1"; tp$parameterization <- "noncentered"
+  tp$rho_prior_a <- 2; tp$rho_prior_b <- 2
+  th <- theta_rows(call_fx(matrix(0, 0, 0))$names)
+  got <- call_fx(th)
+  expect_length(got$declined, 0L)
+  want <- apply(th, 1, function(r) {
+    u <- plogis(r[["logit_rho_short"]])
+    coords <- r[grep("^(trend|seasonal|short_term)\\[", names(r))]
+    expect_length(coords, 2L * Tn + per)
+    lp_beta(r[1:2], sdb) +
+      lp_pc_log_sigma2(r[["log_sigma2_trend"]], 1, 0.01) +
+      lp_pc_log_sigma2(r[["log_sigma2_seasonal"]], 1, 0.01) +
+      lp_pc_log_sigma2(r[["log_sigma2_short"]], 1, 0.01) +
+      dbeta(u, 2, 2, log = TRUE) + log(u) + log1p(-u) +
+      sum(dnorm(coords, log = TRUE))
+  })
+  expect_equal(got$log_prior, unname(want), tolerance = 1e-10)
 })
 
 # End to end: an ICAR field on a gaussian response, its precision integrated by

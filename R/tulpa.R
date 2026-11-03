@@ -1668,7 +1668,7 @@
         time_index  = as.integer(temporal$time_index),
         n_times     = as.integer(temporal$n_times),
         trend       = tolower(temporal$trend %||% "none"),
-        # Sampling the trend and the short-term arm non-centred is the NUTS
+        # Sampling the multiscale arms non-centred is the NUTS
         # kernel's parameterization; the other ModelData backends sample the
         # fields' values. Either way the stored draw holds the fields
         # (`src/sampler_field_store.h`).

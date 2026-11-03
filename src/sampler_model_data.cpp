@@ -7,61 +7,81 @@
 
 namespace tulpa {
 
-// Sample the multiscale trend non-centred: fill the spectral basis
-// rw_walk_noncentered reads and set the flag. The structure matrix R = D'D of
-// an order-k walk vanishes on the constant (and, for RW2, the linear trend),
-// so its eigenproblem is solved on the orthogonal complement of that null
-// space -- an orthonormal basis Q of it from the Householder QR of the null
-// vectors -- where every eigenvalue is positive. Separating the null space by
-// construction rather than by thresholding small eigenvalues matters for RW2,
-// whose smallest positive eigenvalue falls as (pi / n)^4.
-void set_multiscale_trend_noncentered(ModelData& data) {
-    const auto& ms = data.multiscale_temporal_data;
-    const int n = ms.n_times;
-    const int k = tulpa_temporal::rw_walk_order(ms.trend_type);
-    if (k == 0 || n <= k) {
-        data.ms_trend_parameterization = 1;
-        data.ms_trend_basis.clear();
-        data.ms_trend_slope.clear();
-        return;
-    }
-    Eigen::MatrixXd D = Eigen::MatrixXd::Zero(n - k, n);
-    for (int i = 0; i < n - k; i++) {
+// The spectral basis a non-centred intrinsic walk is built in
+// (rw_walk_noncentered): the columns v_j / sqrt(lambda_j) over the positive
+// eigenpairs of the structure matrix R = D'D of an order-k walk over n points,
+// n x (n - n_null) column-major. A cyclic walk (RW1 only) wraps its last
+// difference from the last point to the first, so its null space is the
+// constant alone; an open walk's is the constant and, for RW2, the linear
+// trend, whose unit centred direction is written to `slope`. The eigenproblem
+// is solved on the orthogonal complement of that null space -- an orthonormal
+// basis Q of it from the Householder QR of the null vectors -- where every
+// eigenvalue is positive. Separating the null space by construction rather
+// than by thresholding small eigenvalues matters for RW2, whose smallest
+// positive eigenvalue falls as (pi / n)^4.
+static std::vector<double> rw_spectral_basis(int n, int k, bool cyclic,
+                                             std::vector<double>& slope,
+                                             const char* what) {
+    slope.clear();
+    const int n_null = cyclic ? 1 : k;
+    const int n_diff = cyclic ? n : n - k;
+    Eigen::MatrixXd D = Eigen::MatrixXd::Zero(n_diff, n);
+    for (int i = 0; i < n_diff; i++) {
         if (k == 1) {
-            D(i, i) = -1.0; D(i, i + 1) = 1.0;
+            D(i, i) = -1.0; D(i, (i + 1) % n) += 1.0;
         } else {
             D(i, i) = 1.0; D(i, i + 1) = -2.0; D(i, i + 2) = 1.0;
         }
     }
     const Eigen::MatrixXd R = D.transpose() * D;
 
-    Eigen::MatrixXd N(n, k);
+    Eigen::MatrixXd N(n, n_null);
     N.col(0).setOnes();
     Eigen::VectorXd lin(n);
-    if (k == 2) {
+    if (n_null == 2) {
         for (int i = 0; i < n; i++) lin(i) = i - 0.5 * (n - 1);
         lin /= lin.norm();
         N.col(1) = lin;
+        slope.assign(lin.data(), lin.data() + n);
     }
     Eigen::HouseholderQR<Eigen::MatrixXd> qr(N);
     const Eigen::MatrixXd Q = qr.householderQ();
-    const Eigen::MatrixXd Qc = Q.rightCols(n - k);
+    const Eigen::MatrixXd Qc = Q.rightCols(n - n_null);
     Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(Qc.transpose() * R * Qc);
     if (es.info() != Eigen::Success || !(es.eigenvalues().minCoeff() > 0.0)) {
-        Rcpp::stop("build_sampler_model_inputs: the multiscale trend's "
+        Rcpp::stop("build_sampler_model_inputs: the multiscale %s's "
                    "structure matrix has no positive spectrum on the "
-                   "complement of its null space (n_times = %d).", n);
+                   "complement of its null space (n = %d).", what, n);
     }
     const Eigen::MatrixXd B = Qc * es.eigenvectors() *
         es.eigenvalues().cwiseSqrt().cwiseInverse().asDiagonal();
+    return std::vector<double>(B.data(), B.data() + B.size());
+}
 
-    data.ms_trend_basis.assign(B.data(), B.data() + B.size());
-    if (k == 2) {
-        data.ms_trend_slope.assign(lin.data(), lin.data() + n);
-    } else {
-        data.ms_trend_slope.clear();
-    }
+// Sample the multiscale trend non-centred: fill the spectral basis
+// rw_walk_noncentered reads and set the flag.
+void set_multiscale_trend_noncentered(ModelData& data) {
+    const auto& ms = data.multiscale_temporal_data;
+    const int n = ms.n_times;
+    const int k = tulpa_temporal::rw_walk_order(ms.trend_type);
     data.ms_trend_parameterization = 1;
+    data.ms_trend_basis.clear();
+    data.ms_trend_slope.clear();
+    if (k == 0 || n <= k) return;
+    data.ms_trend_basis = rw_spectral_basis(n, k, false, data.ms_trend_slope,
+                                            "trend");
+}
+
+// Sample the multiscale seasonal arm non-centred: its cyclic RW1 walk over one
+// period, in the spectral basis of the cyclic structure matrix.
+void set_multiscale_seasonal_noncentered(ModelData& data) {
+    const int n = data.multiscale_temporal_data.seasonal_period;
+    data.ms_seasonal_parameterization = 1;
+    data.ms_seasonal_basis.clear();
+    if (n < 2) return;
+    std::vector<double> no_slope;
+    data.ms_seasonal_basis = rw_spectral_basis(n, 1, true, no_slope,
+                                               "seasonal arm");
 }
 
 void build_sampler_model_inputs(
@@ -559,13 +579,16 @@ void build_sampler_model_inputs(
         else Rcpp::stop("build_sampler_model_inputs: multiscale short_term '%s' "
                         "is not supported (use 'ar1'/'iid'/'none').", st.c_str());
 
-        // One parameterization for the trend and the short-term arm. The
-        // seasonal arm is sampled centred.
+        // One parameterization for the trend, the seasonal and the
+        // short-term arm.
         const bool centered =
             tp.containsElementNamed("parameterization") &&
             Rcpp::as<std::string>(tp["parameterization"]) == "centered";
         if (!centered && ms.trend_type != TemporalType::NONE) {
             set_multiscale_trend_noncentered(in.data);
+        }
+        if (!centered && ms.seasonal_period > 0) {
+            set_multiscale_seasonal_noncentered(in.data);
         }
         in.data.ms_short_parameterization =
             (!centered && ms.short_term_type != TemporalType::NONE) ? 1 : 0;

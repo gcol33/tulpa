@@ -47,3 +47,26 @@ Rcpp::List cpp_test_log_prior_normalized(
         Rcpp::Named("names") = tulpa::sampler_param_names(in.data, in.layout,
                                                           R_NilValue));
 }
+
+// The position every sampler backend starts from (init_bounded_support_params
+// on a zero vector), named by the layout.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_test_sampler_init(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X,
+    std::string family, double phi, double sigma_beta, double sigma_re_scale,
+    Rcpp::Nullable<Rcpp::List> re_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> spatial_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> temporal_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> svc_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> tvc_spec = R_NilValue) {
+    tulpa::SamplerModelInputs in;
+    std::vector<double> offset = tulpa::as_offset_vec(R_NilValue, y.size());
+    tulpa::build_sampler_model_inputs(
+        in, y, n_trials, X, family, phi, NA_REAL, sigma_beta, offset,
+        sigma_re_scale, re_spec, spatial_spec, temporal_spec, svc_spec, tvc_spec);
+    std::vector<double> init(in.layout.total_params, 0.0);
+    tulpa::init_bounded_support_params(init, in.data, in.layout);
+    Rcpp::NumericVector out(init.begin(), init.end());
+    out.names() = tulpa::sampler_param_names(in.data, in.layout, R_NilValue);
+    return out;
+}
