@@ -441,9 +441,47 @@ test_that("the SMC evidence of an ICAR model matches quadrature", {
           adj_csr(W))
   fit <- tulpa_sample_glmm(y, NULL, X, "gaussian", "smc", phi = phi,
                            sigma_beta = sdb, spatial_spec = sp,
-                           control = list(n_particles = 1000L, seed = 1L,
-                                          smc_min_moves = 10L,
-                                          smc_max_moves = 10L))
+                           control = list(n_particles = 1000L, seed = 1L))
   expect_null(fit$log_evidence_declined)
-  expect_lt(abs(fit$log_evidence - exact), 4 * fit$log_evidence_se + 0.1)
+  expect_lt(abs(fit$log_evidence - exact), 4 * fit$log_evidence_se)
+  expect_true(length(fit$n_moves_reference) >= 1L)
+})
+
+# At the default settings, across seeds: the mean error of the log evidence
+# against quadrature sits within its Monte Carlo error, and the spread of the
+# errors matches the standard error the fit reports. An AR1 field on 15 times,
+# its precision and correlation integrated on a grid over (log tau, logit u),
+# rho = 2u - 1, Gamma(1, 0.01) on tau and a uniform u.
+test_that("the SMC evidence of an AR1 model is calibrated across seeds", {
+  skip_if_not_slow()
+  set.seed(20)
+  Tn <- 15; n <- 90; x <- rnorm(n); X <- cbind(1, x); tt <- rep_len(1:Tn, n)
+  f <- as.numeric(arima.sim(list(ar = 0.6), Tn, sd = 0.4))
+  phi <- 0.25; sdb <- 2
+  y <- 1 + 0.5 * x + f[tt] + rnorm(n, 0, 0.5)
+  A <- outer(tt, 1:Tn, "==") * 1
+  base <- phi * diag(n) + sdb^2 * tcrossprod(X)
+  lg <- seq(-4, 10, length.out = 141); lr <- seq(-8, 8, length.out = 161)
+  lv <- outer(lg, lr, Vectorize(function(lt, l) {
+    u <- plogis(l); rho <- 2 * u - 1
+    P <- diag(c(1, rep(1 + rho^2, Tn - 2), 1))
+    P[cbind(1:(Tn - 1), 2:Tn)] <- P[cbind(2:Tn, 1:(Tn - 1))] <- -rho
+    lmvn_cov(y, base + A %*% solve(exp(lt) * P) %*% t(A)) +
+      dgamma(exp(lt), 1, 0.01, log = TRUE) + lt + log(u) + log1p(-u)
+  }))
+  m <- max(lv)
+  exact <- m + log(sum(exp(lv - m)) * diff(lg)[1] * diff(lr)[1])
+  tp <- list(type = "ar1", time_idx = as.integer(tt), n_times = Tn,
+             n_groups = 1L, group_idx = NULL, cyclic = FALSE)
+  res <- t(vapply(1:12, function(s) {
+    fit <- tulpa_sample_glmm(y, NULL, X, "gaussian", "smc", phi = phi,
+                             sigma_beta = sdb, temporal_spec = tp,
+                             control = list(n_particles = 1000L, seed = s))
+    c(fit$log_evidence - exact, fit$log_evidence_se)
+  }, numeric(2)))
+  err <- res[, 1]
+  expect_lt(abs(mean(err)), 3 * sd(err) / sqrt(length(err)))
+  ratio <- sd(err) / mean(res[, 2])
+  expect_gt(ratio, 0.5)
+  expect_lt(ratio, 1.6)
 })

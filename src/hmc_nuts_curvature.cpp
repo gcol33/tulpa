@@ -10,6 +10,34 @@
 
 namespace tulpa_hmc {
 
+namespace {
+
+// Forward differences of the gradient, one coordinate at a time: column i of
+// the Hessian is (grad(q + h_i e_i) - grad(q)) / h_i, with a step relative to
+// the coordinate's magnitude. `column(i, dgrad)` receives each column; the
+// (p + 1) gradient evaluations are the whole cost.
+template <class ColumnFn>
+void finite_diff_hessian_columns(const std::vector<double>& params,
+                                 const ModelData& data, const ParamLayout& layout,
+                                 double h, const ColumnFn& column) {
+  const int p = static_cast<int>(params.size());
+  std::vector<double> grad_base(p);
+  compute_gradient(params, data, layout, grad_base);
+  std::vector<double> params_pert = params;
+  std::vector<double> grad_pert(p), dgrad(p);
+  for (int i = 0; i < p; i++) {
+    const double orig = params_pert[i];
+    const double hi = std::max(h, h * std::abs(orig));
+    params_pert[i] = orig + hi;
+    compute_gradient(params_pert, data, layout, grad_pert);
+    for (int j = 0; j < p; j++) dgrad[j] = (grad_pert[j] - grad_base[j]) / hi;
+    column(i, dgrad);
+    params_pert[i] = orig;
+  }
+}
+
+}  // namespace
+
 void compute_hessian_finite_diff(
     const std::vector<double>& params,
     const ModelData& data,
@@ -17,26 +45,12 @@ void compute_hessian_finite_diff(
     std::vector<double>& hessian,
     double h
 ) {
-  int p = static_cast<int>(params.size());
+  const int p = static_cast<int>(params.size());
   hessian.resize(static_cast<size_t>(p) * p);
-
-  // Base gradient
-  std::vector<double> grad_base(p);
-  compute_gradient(params, data, layout, grad_base);
-
-  // Perturb each parameter and compute column of Hessian
-  std::vector<double> params_pert = params;
-  std::vector<double> grad_pert(p);
-  for (int i = 0; i < p; i++) {
-    double orig = params_pert[i];
-    double hi = std::max(h, h * std::abs(orig));  // relative step for large params
-    params_pert[i] = orig + hi;
-    compute_gradient(params_pert, data, layout, grad_pert);
-    for (int j = 0; j < p; j++) {
-      hessian[static_cast<size_t>(i) * p + j] = (grad_pert[j] - grad_base[j]) / hi;
-    }
-    params_pert[i] = orig;
-  }
+  finite_diff_hessian_columns(params, data, layout, h,
+      [&hessian, p](int i, const std::vector<double>& dgrad) {
+        for (int j = 0; j < p; j++) hessian[static_cast<size_t>(i) * p + j] = dgrad[j];
+      });
 
   // Symmetrize: H = 0.5 * (H + H^T)
   for (int i = 0; i < p; i++) {
@@ -47,6 +61,18 @@ void compute_hessian_finite_diff(
       hessian[static_cast<size_t>(j) * p + i] = avg;
     }
   }
+}
+
+void compute_hessian_diag_finite_diff(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& diag,
+    double h
+) {
+  diag.resize(params.size());
+  finite_diff_hessian_columns(params, data, layout, h,
+      [&diag](int i, const std::vector<double>& dgrad) { diag[i] = dgrad[i]; });
 }
 
 double compute_adaptive_nu_max(

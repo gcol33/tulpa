@@ -86,7 +86,7 @@ SMCResult smc_sample(
         }
         const double ess = compute_ess(log_w);
         result.ess_history.push_back(ess);
-        result.log_marginal_likelihood_var += 1.0 / ess - 1.0 / N;
+        result.log_marginal_likelihood_var += std::max(0.0, 1.0 / ess - 1.0 / N);
 
         auto ancestors = systematic_resample(weights, N, rng);
         auto old_particles = particles;
@@ -182,6 +182,165 @@ SMCResult smc_sample(
 
 namespace tulpa {
 
+namespace {
+
+// The normal approximation at a point x of the log posterior with gradient g:
+// precision the finite-difference curvature -H(x) with its eigenvalues
+// (diagonal entries) floored at `min_precision`, mean the Newton step
+// x + P^-1 g, which at a mode is the mode itself.
+SmcReference smc_normal_at(const std::vector<double>& x,
+                           const std::vector<double>& g,
+                           const ModelData& data, const ParamLayout& layout,
+                           double min_precision, bool full) {
+    const int d = static_cast<int>(x.size());
+    SmcReference q;
+    q.d = d;
+    q.full = full;
+    Eigen::Map<const Eigen::VectorXd> xv(x.data(), d), gv(g.data(), d);
+    if (full) {
+        std::vector<double> H;
+        tulpa_hmc::compute_hessian_finite_diff(x, data, layout, H);
+        Eigen::MatrixXd C(d, d);
+        for (int i = 0; i < d; i++)
+            for (int j = 0; j < d; j++) C(i, j) = -H[static_cast<size_t>(i) * d + j];
+        if (!C.allFinite()) C.setZero();
+        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(C);
+        const Eigen::VectorXd lam = es.eigenvalues().cwiseMax(min_precision);
+        const Eigen::MatrixXd& V = es.eigenvectors();
+        q.P = V * lam.asDiagonal() * V.transpose();
+        q.P = 0.5 * (q.P + q.P.transpose());
+        q.mean = xv + V * (V.transpose() * gv).cwiseQuotient(lam);
+    } else {
+        std::vector<double> Hd;
+        tulpa_hmc::compute_hessian_diag_finite_diff(x, data, layout, Hd);
+        q.prec = Eigen::VectorXd(d);
+        for (int j = 0; j < d; j++) {
+            const double c = -Hd[j];
+            q.prec(j) = (std::isfinite(c) && c > min_precision) ? c : min_precision;
+        }
+        q.mean = xv + gv.cwiseQuotient(q.prec);
+    }
+    if (!q.mean.allFinite()) q.mean = xv;
+    q.finalize();
+    return q;
+}
+
+}  // namespace
+
+SmcReference smc_pathfinder_reference(
+    const std::vector<double>& init,
+    const ModelData& data,
+    const ParamLayout& layout,
+    double min_precision,
+    bool full,
+    unsigned int seed,
+    bool verbose
+) {
+    const int d = static_cast<int>(init.size());
+
+    // L-BFGS on F = -log posterior with a backtracking (Armijo) line search;
+    // a trial point whose density or gradient is not finite shortens the step.
+    // Every accepted iterate, the start included, is a candidate.
+    const int kMaxIter = 500;
+    const int kMaxHalvings = 40;
+    auto eval = [&data, &layout](const std::vector<double>& x,
+                                 std::vector<double>& G) -> double {
+        double lp = 0.0;
+        tulpa_hmc::compute_gradient(x, data, layout, G, &lp);
+        for (double& g : G) g = -g;
+        bool ok = std::isfinite(lp);
+        for (double g : G) ok = ok && std::isfinite(g);
+        return ok ? -lp : std::numeric_limits<double>::infinity();
+    };
+    std::vector<double> x = init, G(d), xn(d), Gn(d), dir(d), sv(d), yv(d);
+    double F = eval(x, G);
+    std::vector<std::vector<double>> path_x, path_g;
+    auto record = [&path_x, &path_g](const std::vector<double>& xr,
+                                     const std::vector<double>& Gr) {
+        path_x.push_back(xr);
+        std::vector<double> gr(Gr.size());
+        for (size_t j = 0; j < Gr.size(); j++) gr[j] = -Gr[j];
+        path_g.push_back(std::move(gr));
+    };
+    tulpa_gp::LBFGSState lbfgs(10, d);
+    int it = 0;
+    if (std::isfinite(F)) {
+        record(x, G);
+        for (; it < kMaxIter; it++) {
+            double gnorm = 0.0, ginf = 0.0;
+            for (double g : G) { gnorm += g * g; ginf = std::max(ginf, std::abs(g)); }
+            gnorm = std::sqrt(gnorm);
+            if (ginf <= 1e-6 * std::max(1.0, std::abs(F))) break;
+            lbfgs.multiply_H(G, dir);
+            double dd = 0.0;
+            for (int j = 0; j < d; j++) { dir[j] = -dir[j]; dd += dir[j] * G[j]; }
+            double t = 1.0;
+            if (!(dd < 0.0) || lbfgs.k == 0) {
+                for (int j = 0; j < d; j++) dir[j] = -G[j];
+                dd = -gnorm * gnorm;
+                t = std::min(1.0, 1.0 / gnorm);
+            }
+            double Fn = std::numeric_limits<double>::infinity();
+            bool accepted = false;
+            for (int h = 0; h < kMaxHalvings; h++, t *= 0.5) {
+                for (int j = 0; j < d; j++) xn[j] = x[j] + t * dir[j];
+                Fn = eval(xn, Gn);
+                if (std::isfinite(Fn) && Fn <= F + 1e-4 * t * dd) { accepted = true; break; }
+            }
+            if (!accepted) break;
+            for (int j = 0; j < d; j++) { sv[j] = xn[j] - x[j]; yv[j] = Gn[j] - G[j]; }
+            lbfgs.add_pair(sv, yv);
+            const double dF = F - Fn;
+            x = xn; G = Gn; F = Fn;
+            record(x, G);
+            if (dF <= 1e-12 * std::max(1.0, std::abs(F))) { it++; break; }
+        }
+    }
+    if (path_x.empty()) {
+        // No finite start: the floor-width normal at init, which the path
+        // corrects like any other reference.
+        return smc_isotropic_reference(init, 1.0 / std::sqrt(min_precision));
+    }
+
+    // Score each candidate by its ELBO, E_q[log p L - log q], over common
+    // standard-normal draws so that candidates differ by their own geometry
+    // rather than by their draws, and keep the best (Zhang, Carpenter, Gelman
+    // and Vehtari 2022, Pathfinder, Algorithm 1). A draw outside the support
+    // makes the candidate's ELBO -Inf.
+    const int kElboDraws = 32;
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> normal(0.0, 1.0);
+    std::vector<Eigen::VectorXd> Z(kElboDraws, Eigen::VectorXd(d));
+    for (auto& z : Z) for (int j = 0; j < d; j++) z(j) = normal(rng);
+    SmcReference best;
+    double best_elbo = -std::numeric_limits<double>::infinity();
+    int best_l = -1;
+    std::vector<double> th(d);
+    for (size_t l = 0; l < path_x.size(); l++) {
+        SmcReference q = smc_normal_at(path_x[l], path_g[l], data, layout,
+                                       min_precision, full);
+        double elbo = 0.0;
+        for (int k = 0; k < kElboDraws && std::isfinite(elbo); k++) {
+            const Eigen::VectorXd xk = q.scale_draw(Z[k]);
+            for (int j = 0; j < d; j++) th[j] = q.mean(j) + xk(j);
+            const double lp = tulpa_hmc::compute_log_post(th, data, layout);
+            elbo += std::isfinite(lp) ? (lp - q.log_density(th)) / kElboDraws
+                                      : -std::numeric_limits<double>::infinity();
+        }
+        if (elbo > best_elbo || best_l < 0) {
+            best_elbo = elbo;
+            best_l = static_cast<int>(l);
+            best = std::move(q);
+        }
+    }
+    if (verbose) {
+        Rcpp::Rcout << "SMC reference: L-BFGS " << it << " iterations, normal "
+                    << "approximation at iterate " << best_l << " of "
+                    << path_x.size() - 1 << " (ELBO " << best_elbo << ")" << std::endl;
+    }
+    return best;
+}
+
 SMCDriverResult run_smc_sampler(
     const std::vector<double>& init,
     const ModelData& data,
@@ -214,17 +373,26 @@ SMCDriverResult run_smc_sampler(
         return smc_finite_or_neg_inf(tulpa_hmc::compute_log_lik_only(theta, data, layout));
     };
 
+    // The reference q. A user kernel's prior path importance-corrects q to
+    // the prior, so q stands in for the prior there. The built-in path
+    // bridges q to the posterior and starts from Pathfinder; before the run
+    // that reports, one pass of the same path from that start fits q afresh to
+    // the moments of the population it ends with (smc_moment_reference
+    // below). Every closure reads q by reference, so the second pass runs from
+    // the fitted q.
     const double sigma_ref = (cfg.prior_sigma > 0.0) ? cfg.prior_sigma : 1.0;
-    auto log_ref_fn = [&init, sigma_ref](const std::vector<double>& theta) -> double {
-        return smc_gaussian_reference_log_density(theta, init, sigma_ref);
+    const bool full = dim <= kSmcFullCovMaxDim;
+    SmcReference ref = (mutation_fn != nullptr)
+        ? smc_isotropic_reference(init, sigma_ref)
+        : smc_pathfinder_reference(init, data, layout, 1.0 / (sigma_ref * sigma_ref),
+                                   full, cfg.seed, cfg.verbose);
+    auto log_ref_fn = [&ref](const std::vector<double>& theta) -> double {
+        return ref.log_density(theta);
     };
-    auto ref_sample = [&init, sigma_ref, dim](
+    auto ref_sample = [&ref](
         std::vector<double>& theta, std::mt19937& rng, double /*beta*/
     ) {
-        std::normal_distribution<double> normal(0.0, sigma_ref);
-        for (int i = 0; i < dim; i++) {
-            theta[i] = init[i] + normal(rng);
-        }
+        ref.sample(theta, rng);
     };
 
     using IncrementFn = std::function<double(const std::vector<double>&)>;
@@ -272,14 +440,14 @@ SMCDriverResult run_smc_sampler(
             ? tulpa_hmc::resolve_prior_gradient_fn(tulpa_hmc::get_gradient_mode(),
                                                    data, layout)
             : nullptr;
-        auto log_target = [&data, &layout, &init, sigma_ref, b, prior_grad_fn](
+        auto log_target = [&data, &layout, &ref, b, prior_grad_fn](
             const std::vector<double>& theta, double tau,
             std::vector<double>& grad
         ) -> double {
             const tulpa_smc::PathPoint pt = tulpa_smc::path_point(tau, b);
             const double s = pt.s;
             const double lambda = pt.lambda;
-            const double lq = smc_gaussian_reference_log_density(theta, init, sigma_ref);
+            const double lq = ref.log_density(theta);
             double lpost = 0.0;
             tulpa_hmc::compute_gradient(theta, data, layout, grad, &lpost);
             double lpath = lpost;
@@ -292,10 +460,8 @@ SMCDriverResult run_smc_sampler(
                     grad[j] = (1.0 - lambda) * gprior[j] + lambda * grad[j];
                 }
             }
-            const double inv_s2 = 1.0 / (sigma_ref * sigma_ref);
-            for (size_t j = 0; j < theta.size(); j++) {
-                grad[j] = s * grad[j] - (1.0 - s) * (theta[j] - init[j]) * inv_s2;
-            }
+            for (size_t j = 0; j < theta.size(); j++) grad[j] *= s;
+            ref.add_gradient(theta, 1.0 - s, grad);
             if (!std::isfinite(lpath)) return -std::numeric_limits<double>::infinity();
             return (1.0 - s) * lq + s * lpath;
         };
@@ -319,6 +485,31 @@ SMCDriverResult run_smc_sampler(
     }
 
     try {
+        if (mutation_fn == nullptr) {
+            // The fitting pass runs leg 1, so q is matched to the distribution
+            // that leg ends at: the posterior, or p L^b on the two-leg path.
+            // Its evidence estimate is discarded; the reported run's q is
+            // fixed before that run draws anything, so the bridge identity
+            // holds for it as for any normalized q.
+            std::seed_seq seq{cfg.seed, 1u};
+            unsigned int fit_seed = 0;
+            seq.generate(&fit_seed, &fit_seed + 1);
+            const int n_fit = std::max(1, cfg.n_particles / kSmcReferencePassShare);
+            const auto fit_pass = tulpa_smc::smc_sample(
+                std::vector<IncrementFn>(legs.begin(), legs.begin() + 1),
+                ref_sample, mutation, dim, n_fit, cfg.ess_threshold,
+                cfg.min_moves, cfg.max_moves, fit_seed, nullptr, prepare);
+            ref = smc_moment_reference(
+                fit_pass.particles,
+                full && n_fit >= kSmcReferenceParticlesPerDim * dim,
+                kSmcReferenceDf);
+            out.reference_moves_history = fit_pass.moves_history;
+            if (cfg.verbose) {
+                Rcpp::Rcout << "SMC reference fitted to the first pass ("
+                            << fit_pass.n_temperatures << " tempering steps)"
+                            << std::endl;
+            }
+        }
         auto res = tulpa_smc::smc_sample(
             legs, ref_sample, mutation,
             dim,

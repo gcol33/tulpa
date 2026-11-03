@@ -3,9 +3,9 @@
 //
 // SMC runs a particle population through a tempering schedule to the
 // posterior. The model package builds a populated ModelData and ParamLayout,
-// supplies an `init` vector (the centre of the Gaussian reference
-// q = N(init, prior_sigma^2 I) the population is drawn from), and optionally
-// supplies a domain-specific `SmcMutationFn` mutation kernel.
+// supplies an `init` vector (where the reference q the population is drawn
+// from is built: see below), and optionally supplies a domain-specific
+// `SmcMutationFn` mutation kernel.
 //
 // q is not the prior -- proper prior draws need per-prior closed-form
 // samplers tulpa lacks generically -- and a population drawn from it cannot
@@ -13,10 +13,15 @@
 //   * Without a kernel (nullptr), the population tempers along the bridge
 //     q^(1 - beta) (p L)^beta, mutated by a built-in HMC kernel preconditioned
 //     by the population covariance, so beta = 1 is the posterior whatever q is.
-//   * With a kernel, whose target is log_prior + beta * log_lik, the
-//     population is first importance-corrected from q to the prior (weights
-//     p / q, resampled, then mutated at beta = 0) and tempered in L alone.
-//     That correction is exact but degrades when q is far from the prior.
+//     q is fitted to the posterior first: a Pathfinder normal approximation
+//     climbed from `init` starts a pass on a quarter of the particles, and a
+//     multivariate t on the moments of that pass's final population is the q
+//     of the run that reports.
+//   * With a kernel, whose target is log_prior + beta * log_lik, q is
+//     N(init, prior_sigma^2 I) and the population is first importance-
+//     corrected from it to the prior (weights p / q, resampled, then mutated
+//     at beta = 0) and tempered in L alone. That correction is exact but
+//     degrades when q is far from the prior.
 // SMCShimResult::log_evidence is log p(y): the path's running log Z plus the
 // normalizing constants the tempered prior and likelihood leave out. It comes
 // back NaN whenever one of those constants is not known to the engine: a
@@ -92,7 +97,9 @@ typedef void (*SmcMutationFn)(
 //                     max_moves is a fixed count.
 //   - ess_threshold : each temperature step is sized so the reweighted ESS
 //                     is threshold * n_particles (e.g. 0.5).
-//   - prior_sigma   : SD of the Gaussian reference q around `init`.
+//   - prior_sigma   : with a kernel, the SD of the reference q around
+//                     `init`; without one, 1 / prior_sigma^2 floors the
+//                     curvature of the Pathfinder approximation.
 //   - mutation      : optional pluggable mutation kernel. Pass nullptr
 //                     to use the built-in HMC kernel on the bridge.
 //   - user_data     : opaque pointer forwarded to `mutation`.

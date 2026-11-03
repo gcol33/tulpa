@@ -599,6 +599,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
             Rcpp::Named("tempered_beta") =
                 res.tempered_particles.empty() ? NA_REAL : res.tempered_beta,
             Rcpp::Named("n_moves") = Rcpp::wrap(res.moves_history),
+            Rcpp::Named("n_moves_reference") = Rcpp::wrap(res.reference_moves_history),
             Rcpp::Named("sampler") = "smc");
         return out;
     }

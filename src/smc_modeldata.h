@@ -5,13 +5,13 @@
 // compute_log_prior + compute_log_lik_only (defined in hmc_sampler.h)
 // and dispatches to tulpa_smc::smc_sample (see smc_sampler.h).
 //
-// The initial population is drawn from a Gaussian reference
-// q = N(init, prior_sigma^2 I), not from the prior: proper prior draws need
-// per-prior closed-form samplers tulpa lacks generically. What makes that
-// start valid is the path it is tempered along (run_smc_sampler below), never
-// the mutations alone -- a population that starts from q and is tempered in
-// the likelihood as if it were a prior draw converges to neither q L nor
-// p L (gcol33/tulpa#876).
+// The initial population is drawn from a normalized reference q
+// (SmcReference), not from the prior: proper prior draws need per-prior
+// closed-form samplers tulpa lacks generically. What makes that start valid is
+// the path it is tempered along (run_smc_sampler below), never the mutations
+// alone -- a population that starts from q and is tempered in the likelihood
+// as if it were a prior draw converges to neither q L nor p L
+// (gcol33/tulpa#876).
 //
 // The densities tempered are compute_log_prior and compute_log_lik_only, each
 // a normalized log-density up to a parameter-independent constant. The path's
@@ -72,7 +72,11 @@ struct SMCConfig {
     int min_moves      = 1;
     int max_moves      = 50;
     double ess_threshold = 0.5;   // ESS target for the adaptive temperature
-    double prior_sigma   = 1.0;   // SD of the Gaussian reference q
+    // Scale of the reference: on the built-in path the floor 1 / prior_sigma^2
+    // of the Pathfinder curvature (smc_pathfinder_reference), on a user
+    // kernel's prior path the SD of the isotropic reference
+    // (smc_isotropic_reference).
+    double prior_sigma   = 1.0;
     unsigned int seed    = 42;
     bool verbose         = false;
     // Likelihood power b in (0, 1] at which the path passes through the
@@ -100,28 +104,238 @@ struct SMCDriverResult {
     bool log_evidence_valid = false;
     std::string log_evidence_declined;
 
-    // Move steps each mutation phase ran (SMCResult::moves_history).
+    // Move steps each mutation phase ran (SMCResult::moves_history), in the
+    // reported run and in the pass the built-in path fits its reference from
+    // (empty on a user kernel's path, which has no such pass).
     std::vector<int> moves_history;
+    std::vector<int> reference_moves_history;
 
     bool success = true;
     std::string error_msg;
 };
 
+// Full covariance up to this many coordinates, per-coordinate scales above it,
+// for both the reference below and the mutation kernel: the O(d^2) apply and
+// O(d^3) factor would otherwise outgrow the gradient they ride on.
+const int kSmcFullCovMaxDim = 400;
+
 // ----------------------------------------------------------------------------
-// Gaussian reference q = N(init, prior_sigma^2 I): the initial population.
-// Normalized, so pi_0 = q is a valid start for the reference path.
+// Mean and covariance (`full`) or per-coordinate variances (`var`) of an
+// equally weighted population, each variance carrying a ridge scaled to the
+// population's own spread. A resampled population can be rank-deficient
+// (fewer distinct ancestors than coordinates, or a coordinate collapsed onto
+// one value); the ridge keeps the factor and lets a collapsed coordinate move
+// at all.
 // ----------------------------------------------------------------------------
-inline double smc_gaussian_reference_log_density(
-    const std::vector<double>& theta, const std::vector<double>& mu, double sd
+struct SmcPopulationMoments {
+    Eigen::VectorXd mean;
+    Eigen::MatrixXd cov;   // full
+    Eigen::VectorXd var;   // diagonal
+};
+
+inline SmcPopulationMoments smc_population_moments(
+    const std::vector<std::vector<double>>& particles, bool full
 ) {
-    const double d = static_cast<double>(theta.size());
-    double ss = 0.0;
-    for (size_t i = 0; i < theta.size(); i++) {
-        const double z = (theta[i] - mu[i]) / sd;
-        ss += z * z;
+    const int N = static_cast<int>(particles.size());
+    const int d = N > 0 ? static_cast<int>(particles[0].size()) : 0;
+    SmcPopulationMoments m;
+    m.mean = Eigen::VectorXd::Zero(d);
+    for (int n = 0; n < N; n++)
+        for (int j = 0; j < d; j++) m.mean(j) += particles[n][j];
+    m.mean /= std::max(N, 1);
+    Eigen::VectorXd r(d);
+    if (full) {
+        m.cov = Eigen::MatrixXd::Zero(d, d);
+        for (int n = 0; n < N; n++) {
+            for (int j = 0; j < d; j++) r(j) = particles[n][j] - m.mean(j);
+            m.cov.selfadjointView<Eigen::Lower>().rankUpdate(r);
+        }
+        m.cov = m.cov.selfadjointView<Eigen::Lower>();
+        m.cov /= std::max(N - 1, 1);
+        const double ridge = 1e-8 * std::max(m.cov.trace() / d, 1e-12) + 1e-12;
+        m.cov.diagonal().array() += ridge;
+    } else {
+        m.var = Eigen::VectorXd::Zero(d);
+        for (int n = 0; n < N; n++)
+            for (int j = 0; j < d; j++) {
+                const double e = particles[n][j] - m.mean(j);
+                m.var(j) += e * e;
+            }
+        m.var /= std::max(N - 1, 1);
+        const double ridge = 1e-8 * std::max(m.var.mean(), 1e-12) + 1e-12;
+        m.var.array() += ridge;
     }
-    return -0.5 * ss - d * std::log(sd) - 0.5 * d * std::log(2.0 * M_PI);
+    return m;
 }
+
+// ----------------------------------------------------------------------------
+// The reference q the population starts from: a normalized multivariate
+// Student-t with location `mean`, scale matrix P^-1 and `df` degrees of
+// freedom, the Gaussian N(mean, P^-1) at df = Inf. Normalized, so pi_0 = q is
+// a valid start for the reference path whatever its parameters, and the path's
+// log Z is the log evidence for any of them. What they decide is how far the
+// path has to carry the population, and whether the incremental weights that
+// carry it have a variance: a step of size delta near the end reweights by
+// (p L / q)^delta, whose second moment under the tempered target needs
+// integral (p L)^(1 + delta) q^(-delta) finite, which holds at every delta
+// when q's tails are at least as heavy as the posterior's and only below a
+// bound when they are lighter (a Gaussian q at a third of the posterior's
+// SD: delta < 1/8).
+// ----------------------------------------------------------------------------
+struct SmcReference {
+    int d = 0;
+    bool full = true;
+    double df = std::numeric_limits<double>::infinity();
+    Eigen::VectorXd mean;
+    Eigen::MatrixXd P;      // precision of the scale matrix (full)
+    Eigen::MatrixXd R;      // lower Cholesky factor, P = R R'
+    Eigen::VectorXd prec;   // per-coordinate precision (diagonal)
+    double log_norm = 0.0;
+
+    bool gaussian() const { return !std::isfinite(df); }
+
+    void finalize() {
+        double half_logdet = 0.0;
+        if (full) {
+            Eigen::LLT<Eigen::MatrixXd> llt(P);
+            R = llt.matrixL();
+            half_logdet = R.diagonal().array().log().sum();
+        } else {
+            half_logdet = 0.5 * prec.array().log().sum();
+        }
+        log_norm = gaussian()
+            ? half_logdet - 0.5 * d * std::log(2.0 * M_PI)
+            : half_logdet + std::lgamma(0.5 * (df + d)) - std::lgamma(0.5 * df) -
+                  0.5 * d * std::log(df * M_PI);
+    }
+
+    double log_density(const std::vector<double>& theta) const {
+        Eigen::Map<const Eigen::VectorXd> t(theta.data(), d);
+        const Eigen::VectorXd r = t - mean;
+        const double q = full ? (R.transpose() * r).squaredNorm()
+                              : r.cwiseAbs2().dot(prec);
+        return gaussian() ? log_norm - 0.5 * q
+                          : log_norm - 0.5 * (df + d) * std::log1p(q / df);
+    }
+
+    // grad[j] += w * d log q / d theta_j = -w c (P (theta - mean))_j, with
+    // c = 1 for the Gaussian and (df + d) / (df + quad) for the t.
+    void add_gradient(const std::vector<double>& theta, double w,
+                      std::vector<double>& grad) const {
+        Eigen::Map<const Eigen::VectorXd> t(theta.data(), d);
+        const Eigen::VectorXd r = t - mean;
+        const Eigen::VectorXd g = full ? Eigen::VectorXd(P * r)
+                                       : Eigen::VectorXd(prec.cwiseProduct(r));
+        const double c = gaussian() ? 1.0 : (df + d) / (df + r.dot(g));
+        for (int j = 0; j < d; j++) grad[j] -= w * c * g(j);
+    }
+
+    // R'^-1 z (diagonal: z / sqrt(prec)), a N(0, P^-1) draw from z ~ N(0, I).
+    Eigen::VectorXd scale_draw(const Eigen::VectorXd& z) const {
+        return full ? Eigen::VectorXd(R.transpose().triangularView<Eigen::Upper>().solve(z))
+                    : Eigen::VectorXd(z.cwiseQuotient(prec.cwiseSqrt()));
+    }
+
+    // theta = mean + R'^-1 z / sqrt(w / df), w ~ chi^2_df (w / df = 1 for the
+    // Gaussian): the t as a scale mixture of the Gaussian.
+    void sample(std::vector<double>& theta, std::mt19937& rng) const {
+        std::normal_distribution<double> normal(0.0, 1.0);
+        Eigen::VectorXd z(d);
+        for (int j = 0; j < d; j++) z(j) = normal(rng);
+        double s = 1.0;
+        if (!gaussian()) {
+            std::chi_squared_distribution<double> chi2(df);
+            s = std::sqrt(df / chi2(rng));
+        }
+        const Eigen::VectorXd x = scale_draw(z);
+        for (int j = 0; j < d; j++) theta[j] = mean(j) + s * x(j);
+    }
+};
+
+// Degrees of freedom of the reference the built-in path runs from
+// (smc_moment_reference): tails polynomial, so heavier than those of any
+// posterior whose log density falls at least linearly in its coordinates,
+// which a Gaussian reference is not (Owen, Monte Carlo theory, methods and
+// examples, Ch. 9: q should have tails at least as heavy as p, and the
+// multivariate t at a posterior approximation is the common choice).
+const double kSmcReferenceDf = 3.0;
+
+// The pass the reference is fitted from runs 1 / kSmcReferencePassShare of the
+// particles: it estimates two moments, not an integral. Measured against
+// quadrature on the random-intercept, ICAR, RW1 and AR1 fixtures (20 seeds),
+// a quarter matched the full count's accuracy at a quarter of its cost.
+const int kSmcReferencePassShare = 4;
+
+// The fitted reference carries the full covariance only when the pass has at
+// least this many particles per coordinate. The sample covariance of M draws
+// in d dimensions reads its smallest eigenvalue low by up to (1 - sqrt(d/M))^2
+// (Marchenko-Pastur), 0.47 at M = 10 d, which the t's covariance
+// df / (df - 2) = 3 times its scale still covers; with fewer the reference
+// takes the per-coordinate variances, whose estimates need no such ratio.
+const int kSmcReferenceParticlesPerDim = 10;
+
+// N(init, sigma^2 I): the reference of a user kernel's prior path, where the
+// population is importance-corrected to the prior p rather than bridged to
+// the posterior, so q stands in for the prior.
+inline SmcReference smc_isotropic_reference(const std::vector<double>& init,
+                                            double sigma) {
+    SmcReference q;
+    q.d = static_cast<int>(init.size());
+    q.full = false;
+    q.mean = Eigen::Map<const Eigen::VectorXd>(init.data(), q.d);
+    q.prec = Eigen::VectorXd::Constant(q.d, 1.0 / (sigma * sigma));
+    q.finalize();
+    return q;
+}
+
+// The t with location the population mean and scale matrix the population
+// covariance (full) or variances (diagonal): the generalized stepping-stone
+// reference, matched to the moments of a posterior sample (Fan, Wu, Chen, Kuo
+// and Lewis 2011; reviewed in Oaks, Cobb, Minin and Leache 2019,
+// arXiv:1805.04072, Section 3.1.3), with t tails in place of Gaussian ones.
+inline SmcReference smc_moment_reference(
+    const std::vector<std::vector<double>>& particles, bool full, double df
+) {
+    const SmcPopulationMoments m = smc_population_moments(particles, full);
+    SmcReference q;
+    q.d = static_cast<int>(m.mean.size());
+    q.full = full;
+    q.df = df;
+    q.mean = m.mean;
+    if (full) {
+        Eigen::LLT<Eigen::MatrixXd> llt(m.cov);
+        if (llt.info() == Eigen::Success) {
+            q.P = llt.solve(Eigen::MatrixXd::Identity(q.d, q.d));
+            q.P = 0.5 * (q.P + q.P.transpose());
+        } else {
+            q.P = Eigen::MatrixXd(m.cov.diagonal().cwiseInverse().asDiagonal());
+        }
+    } else {
+        q.prec = m.var.cwiseInverse();
+    }
+    q.finalize();
+    return q;
+}
+
+// The reference the built-in path's first pass starts from: single-path
+// Pathfinder (Zhang, Carpenter, Gelman and Vehtari 2022, JMLR 23(306)). L-BFGS
+// climbs the log posterior from `init`; at every iterate the normal
+// approximation is the second-order expansion there, and the one with the
+// largest ELBO is kept. At a mode that is the Laplace approximation (Dai, Heng,
+// Jacob and Whiteley 2022, arXiv:2007.11936, Appendix G, start an SMC sampler
+// from it); on a hierarchical posterior the joint mode sits in the neck of the
+// funnel, with the field shrunk onto its mean and its scale far out, and the
+// ELBO picks an iterate before the climb reaches it. Curvature is the
+// finite-difference Hessian, full when `full` and its diagonal otherwise, each
+// eigenvalue floored at `min_precision`.
+SmcReference smc_pathfinder_reference(
+    const std::vector<double>& init,
+    const ModelData& data,
+    const ParamLayout& layout,
+    double min_precision,
+    bool full,
+    unsigned int seed,
+    bool verbose);
 
 // A non-finite density (a draw outside a bounded support, an overflowing
 // scale) is a zero-weight particle, never a NaN that poisons the ESS search.
@@ -146,7 +360,6 @@ inline double smc_finite_or_neg_inf(double v) {
 // kSmcFullCovMaxDim coordinates, the per-coordinate SDs above it, where the
 // O(d^2) apply and O(d^3) factor would outgrow the gradient they ride on.
 // ----------------------------------------------------------------------------
-const int kSmcFullCovMaxDim = 400;
 const double kSmcHmcTargetAccept = 0.7;
 const int kSmcHmcMaxLeapfrog = 32;
 
@@ -203,39 +416,16 @@ struct SmcPopulationHmc {
         adapted = true;
         cache.assign(N, Cached());
 
-        Eigen::VectorXd mean = Eigen::VectorXd::Zero(d);
-        for (int n = 0; n < N; n++)
-            for (int j = 0; j < d; j++) mean(j) += particles[n][j];
-        mean /= std::max(N, 1);
+        const SmcPopulationMoments m = smc_population_moments(particles, full);
         if (full) {
-            Eigen::MatrixXd C = Eigen::MatrixXd::Zero(d, d);
-            Eigen::VectorXd r(d);
-            for (int n = 0; n < N; n++) {
-                for (int j = 0; j < d; j++) r(j) = particles[n][j] - mean(j);
-                C.selfadjointView<Eigen::Lower>().rankUpdate(r);
-            }
-            C = C.selfadjointView<Eigen::Lower>();
-            C /= std::max(N - 1, 1);
-            // A resampled population can be rank-deficient (fewer distinct
-            // ancestors than coordinates, or a coordinate collapsed onto one
-            // value); a ridge scaled to the population's own spread keeps the
-            // factor and lets a collapsed coordinate move at all.
-            const double ridge = 1e-8 * std::max(C.trace() / d, 1e-12) + 1e-12;
-            C.diagonal().array() += ridge;
-            Eigen::LLT<Eigen::MatrixXd> llt(C);
+            Eigen::LLT<Eigen::MatrixXd> llt(m.cov);
             if (llt.info() == Eigen::Success) {
                 L = llt.matrixL();
             } else {
-                L = Eigen::MatrixXd(C.diagonal().cwiseSqrt().asDiagonal());
+                L = Eigen::MatrixXd(m.cov.diagonal().cwiseSqrt().asDiagonal());
             }
         } else {
-            sd = Eigen::VectorXd::Zero(d);
-            for (int n = 0; n < N; n++)
-                for (int j = 0; j < d; j++) {
-                    const double r = particles[n][j] - mean(j);
-                    sd(j) += r * r;
-                }
-            sd = (sd / std::max(N - 1, 1)).cwiseSqrt().array() + 1e-6;
+            sd = m.var.cwiseSqrt();
         }
     }
 
@@ -313,7 +503,9 @@ struct SmcPopulationHmc {
 //   * built-in kernel : the REFERENCE path. pi_0 = q, and the population
 //     bridges to p L^b along q^(1 - s) (p L^b)^s (tulpa_smc::path_point), so the
 //     endpoint is the tempered posterior whatever q is; for b < 1 a second
-//     leg then tempers L from b to 1.
+//     leg then tempers L from b to 1. q is fitted before the reported run:
+//     a pass of leg 1 on a share of the particles from the Pathfinder
+//     reference, whose final population gives smc_moment_reference.
 //   * user kernel     : its documented target is p L^beta, so the population
 //     is corrected to pi_0 = p once, by importance weights p / q, and then
 //     tempered in L alone, to b and on to 1 (tulpa_smc::prior_path_power).

@@ -172,6 +172,16 @@ void compute_hessian_finite_diff(
     double h = 1e-5
 );
 
+// The diagonal of the same finite-difference Hessian, in O(p) storage: the
+// same (p + 1) gradient evaluations, keeping only H[i,i].
+void compute_hessian_diag_finite_diff(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& diag,
+    double h = 1e-5
+);
+
 }  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_SAMPLER_FUNCS_H
