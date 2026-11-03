@@ -36,8 +36,9 @@ process-specific effects and emits a warning.}
 \item{parameterization}{How the exact sampler (\code{mode = "hmc"}) samples the
 trend. \code{"noncentered"} (default) samples the walk's level, its slope (RW2)
 and its innovations divided by the trend SD, and builds the walk from them;
-\code{"centered"} samples the walk's values. Both are the same model; the
-nested-Laplace and Gibbs routes do not read it.}
+\code{"centered"} samples the walk's values. Both are the same model. The
+nested-Laplace and Gibbs routes do not read it, and the other sampler
+backends sample the walk's values.}
 
 \item{x}{A \code{tulpa_temporal_multiscale} specification.}
 
