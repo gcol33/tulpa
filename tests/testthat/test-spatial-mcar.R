@@ -265,21 +265,26 @@ test_that("an MCAR block's logchol_grid without column names takes the layout's"
   vapply(fit$axis_span[axes], function(a) a$refine, character(1))
 }
 
-test_that("an MCAR block's sigma_i / rho_ij / Sigma_ij are marginalized over the cell weights", {
+test_that("an MCAR block's sigma_i / rho_ij / Sigma_ij are marginalized across the cells", {
   skip_on_cran()
   fit <- .mcar_joint_case(1062L)$fit
   h <- summary(fit)$hyperparameters
   expect_true(all(c("b1.sigma_1", "b1.sigma_2", "b1.rho_12", "b1.Sigma_11",
                     "b1.Sigma_12", "b1.Sigma_22") %in% h$parameter))
-  og <- tulpa_outer_grid(fit)
+  # Each quantity is read across the cells, off the within-cell distribution
+  # the fit's hyperparameter draws sample: the summary and the derived values
+  # of the draws describe one distribution.
   set.seed(7)
-  pick <- sample.int(nrow(og$nodes), 2e5, replace = TRUE, prob = og$weights)
-  D <- .mcar_cell_sigma_rho(og$nodes[pick, , drop = FALSE])
+  th <- tulpa_hyper_draws(fit, n = 2e5)
+  D <- .mcar_cell_sigma_rho(th)
   for (nm in colnames(D)) {
     row <- h[h$parameter == paste0("b1.", nm), ]
-    mc_se <- stats::sd(D[, nm]) / sqrt(nrow(D))
-    expect_lt(abs(row$mean - mean(D[, nm])), 5 * mc_se)
-    expect_lt(abs(row$sd / stats::sd(D[, nm]) - 1), 0.01)
+    s <- stats::sd(D[, nm])
+    expect_lt(abs(row$mean - mean(D[, nm])), 5 * s / sqrt(nrow(D)))
+    expect_lt(abs(row$sd / s - 1), 0.02)
+    q <- stats::quantile(D[, nm], c(0.025, 0.975), names = FALSE)
+    expect_lt(abs(row$ci_lo - q[1L]), 0.05 * s)
+    expect_lt(abs(row$ci_hi - q[2L]), 0.05 * s)
     expect_true(row$ci_lo < row$median && row$median < row$ci_hi)
   }
   rho <- h[h$parameter == "b1.rho_12", ]
@@ -313,10 +318,15 @@ test_that("the default MCAR grid is placed at the outer mode, as a log-Cholesky 
                    diagnose_skew = FALSE)))
   hf <- summary(fit)$hyperparameters
   hr <- summary(ref)$hyperparameters
-  for (nm in c("b1.sigma_1", "b1.sigma_2", "b1.rho_12")) {
+  for (nm in c("b1.sigma_1", "b1.sigma_2", "b1.rho_12", "b1.Sigma_11",
+               "b1.Sigma_12", "b1.Sigma_22")) {
     a <- hf[hf$parameter == nm, ]; b <- hr[hr$parameter == nm, ]
     expect_lt(abs(a$mean - b$mean), 0.1 * b$sd)
     expect_lt(abs(a$sd / b$sd - 1), 0.1)
+    # The interval ends too: read at the cell centres, the correlation's lower
+    # end sat 0.58 reference SDs above the dense grid's (0.098 against -0.013).
+    expect_lt(abs(a$ci_lo - b$ci_lo), 0.15 * b$sd)
+    expect_lt(abs(a$ci_hi - b$ci_hi), 0.15 * b$sd)
   }
 })
 

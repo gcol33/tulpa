@@ -484,10 +484,28 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 # `rho_ij` and `Sigma_ij` read off that one matrix before any weighting. Rows
 # carry the block's column prefix (`b1.sigma_1`). NULL when the grid holds no
 # complete block.
+#
+# `within` is the grid's within-cell construction (`.nl_within_cell_setup()`).
+# Given it, each quantity is read ACROSS the cells rather than at their
+# centres: the cells are expanded into the stratified points of
+# `.nl_within_cell_points()`, the quantity is evaluated at every point and the
+# points' weights are read as a sample of the distribution the axes' own
+# intervals are read off. A nonlinear map of several axes laid at 1.25 SDs
+# takes only a handful of distinct values at the cell centres, and its interval
+# ends then sit where those values fall: on the two-arm MCAR fixture the
+# correlation's lower end read 0.098 off a 5^3 grid against -0.025 on a dense
+# one.
 .logchol_grid_derived_summary <- function(theta_grid, w,
-                                          support = .NL_SUPPORT_KINDS) {
+                                          support = .NL_SUPPORT_KINDS,
+                                          within = NULL) {
   if (is.null(theta_grid) || !length(w)) return(NULL)
   tg <- as.matrix(theta_grid)
+  if (!is.null(within)) {
+    pts <- .nl_within_cell_points(within, tg, w)
+    tg <- pts$theta
+    w <- pts$w
+    support <- "sample"
+  }
   cn <- colnames(tg) %||% character(0)
   lc <- cn[.hp_is_logchol_col(.hyper_axis_bare(cn))]
   parts <- list()
@@ -2323,8 +2341,24 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # its cumulative weights are a CDF and the weighted quantile is the summary.
   # `.nl_node_support()` is the one place that reads a producer name into a
   # support kind, here and on every grid consumer.
-  summ <- .re_cov_derived_summary(Sig_node_list, w, layout,
-                                  support = .nl_node_support(integration))
+  #
+  # The tensor's cells are boxes of the whitened coordinate `z`, so each derived
+  # quantity is read across them (`.nl_within_cell_points()`) as the joint
+  # door's free-covariance block is, rather than at the cell centres.
+  summ <- if (identical(integration, "grid")) {
+    zc <- z
+    colnames(zc) <- paste0("z", seq_len(ncol(z)))
+    wc <- .nl_within_cell_setup(zc, w, logm, NULL, rep("unbounded", ncol(z)),
+                                rep(NA_real_, ncol(z)), NULL, "density")
+    pts <- .nl_within_cell_points(wc, zc, w)
+    th_pts <- ccd_to_theta(pts$theta, theta_hat, L_scale)
+    Sig_pts <- lapply(seq_len(nrow(th_pts)), function(i)
+      lapply(.re_cov_theta_to_L_list(th_pts[i, ], layout), tcrossprod))
+    .re_cov_derived_summary(Sig_pts, pts$w, layout, support = "sample")
+  } else {
+    .re_cov_derived_summary(Sig_node_list, w, layout,
+                            support = .nl_node_support(integration))
+  }
   posterior <- summ$posterior
 
   # --- plug-in MAP summary (for comparison) ---------------------------------

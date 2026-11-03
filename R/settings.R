@@ -1465,6 +1465,14 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # and its 97.5% end at 1.571 against 1.647 on a dense 81 x 141 grid; followed
 # out it reads 1.606. An end whose log density is convex has no triple to
 # continue and is bounded geometrically instead (`.hyper_convex_tail_mass()`).
+#
+# `within_points` is the number of lattice points at which a quantity of
+# several axes is evaluated inside each cell (`.nl_within_cell_points()`), a
+# prime so every axis is resolved at that many strata of its cell-conditional,
+# and `within_lattice_a` the lattice's Korobov generator. On the two-arm MCAR
+# fixture the correlation and SD interval ends read within 0.004 of the axis
+# read's own at 127 points, where a 4^3 tensor of stratum midpoints was 0.024
+# off on the lower SD end.
 .NL_DIAG <- list(
     within_cell          = "log_quadratic",
     lq_max_h_over_sd     = 2,
@@ -1477,6 +1485,8 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     axis_refine_nodes    = 8L,
     at_mode_gap_var      = 0.01,
     edge_tail_mass       = 0.01,
+    within_points        = 127L,
+    within_lattice_a     = 26L,
     level_row_tail       = 1e-3,
     edge_mass_lift       = 1,
     single_node_mass     = 0.99,

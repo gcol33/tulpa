@@ -476,56 +476,113 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
     }
   }
 
-  within  <- .nl_within_cell_mode(within %||% fit$within_cell_requested)
-  support <- .nl_node_support(fit$integration, fit$weight_kind)
+  # An axis whose support the registry will not name carries NA and mirrors its
+  # outer edge in the coordinate the guess picks, exactly as the interval read
+  # does; a fit the registry cannot read at all leaves every axis undeclared
+  # rather than taking the draw down.
+  geo <- tryCatch(.nl_axis_geometry(fit), error = function(e) NULL)
+  # The node density the log-quadratic read is built from; a fit carrying no
+  # `log_marginal` leaves that read to decline.
+  lmd <- fit$log_marginal
+  if (length(lmd) != nrow(tg)) lmd <- NULL
+  wc <- .nl_within_cell_setup(
+    tg, w, lmd, fit$refining_axis, geo$domain, geo$atom,
+    within %||% fit$within_cell_requested,
+    .nl_node_support(fit$integration, fit$weight_kind))
+
+  nms <- .nl_axis_names(tg)
+  # One uniform per draw and axis, tied across axes by the copula that keeps
+  # the grid's own correlation (`.nl_hyper_copula()`).
+  z <- matrix(stats::rnorm(length(cells) * ncol(tg)), length(cells), ncol(tg))
+  out <- .nl_within_cell_coords(wc, tg, cells, stats::pnorm(z %*% chol(wc$cop)))
+  colnames(out) <- nms
+  used <- stats::setNames(wc$used, nms)
+  decl <- stats::setNames(wc$declined, nms)
+  # A spatial lengthscale is reported in the coordinates' own units.
+  out <- sweep(out, 2L, .hyper_axis_data_scale(fit, nms), "*")
+  attr(out, "cells") <- cells
+  attr(out, "within_cell") <- used
+  attr(out, "within_cell_declined") <- decl
+  attr(out, "within_cell_copula") <- wc$cop
+  out
+}
+
+# The within-cell construction of every axis of a grid, as one object: each
+# axis's geometry (`.nl_hyper_axis_geometry()`), the copula tying the axes'
+# within-cell uniforms (`.nl_hyper_copula()`), and per axis the construction
+# that ran (`used`, NA where none did) and why a requested one did not
+# (`declined`). `tg` is the cell matrix, `w` the cells' weights, `lmd` their
+# node log density (NULL leaves the log-quadratic read to decline),
+# `refining` the cells' refinement tags, `domains` / `atoms` the per-axis
+# reporting geometry (`.nl_axis_geometry()`), `within` the requested read and
+# `support` the kind of node set (`.nl_node_support()`). The draws and every
+# quantity read within the cells go through it, so they describe one
+# distribution.
+.nl_within_cell_setup <- function(tg, w, lmd, refining, domains, atoms, within,
+                                  support) {
+  within  <- .nl_within_cell_mode(within)
   outside <- .NL_SUPPORT[[support]]$outside
   # A support that does not admit the requested construction falls back to the
   # chord read exactly as the interval does, and says so per axis.
   req <- if (within %in% .NL_SUPPORT[[support]]$within) within else "chord"
   fell <- if (identical(req, within)) NA_character_ else
     paste0("support_", support)
-  # An axis whose support the registry will not name carries NA and mirrors its
-  # outer edge in the coordinate the guess picks, exactly as the interval read
-  # does; a fit the registry cannot read at all leaves every axis undeclared
-  # rather than taking the draw down.
-  geo <- tryCatch(.nl_axis_geometry(fit), error = function(e) NULL)
-  doms <- geo$domain
-  atoms <- geo$atom
-
-  # The node density the log-quadratic read is built from; a fit carrying no
-  # `log_marginal` leaves that read to decline.
-  lmd <- fit$log_marginal
-  if (length(lmd) != nrow(tg)) lmd <- NULL
-
-  nms <- .nl_axis_names(tg)
-  out <- matrix(0.0, length(cells), ncol(tg), dimnames = list(NULL, nms))
-  used <- stats::setNames(rep(NA_character_, ncol(tg)), nms)
-  decl <- stats::setNames(rep(NA_character_, ncol(tg)), nms)
   geoms <- lapply(seq_len(ncol(tg)), function(j) {
-    dm <- if (length(doms) < j) NA_character_ else doms[[j]]
+    dm <- if (length(domains) < j) NA_character_ else domains[[j]]
     at <- if (length(atoms) < j) NA_real_ else atoms[[j]]
     .nl_hyper_axis_geometry(as.numeric(tg[, j]), w, dm, req, outside, at,
-                            .nl_axis_declared_levels(tg, j, fit$refining_axis),
+                            .nl_axis_declared_levels(tg, j, refining),
                             .nl_axis_row_id(tg, j), lmd)
   })
-  # One uniform per draw and axis, tied across axes by the copula that keeps
-  # the grid's own correlation (`.nl_hyper_copula()`).
-  cop <- .nl_hyper_copula(tg, w, geoms, doms)
-  z <- matrix(stats::rnorm(length(cells) * ncol(tg)), length(cells), ncol(tg))
-  u <- stats::pnorm(z %*% chol(cop))
+  used <- vapply(geoms, function(g)
+    if (identical(g$kind, "none")) NA_character_ else g$kind, character(1))
+  decl <- vapply(geoms, function(g)
+    if (is.na(g$declined)) fell else g$declined, character(1))
+  list(geoms = geoms, cop = .nl_hyper_copula(tg, w, geoms, domains),
+       used = used, declined = decl)
+}
+
+# Coordinates inside the cells `cells` at the uniforms `u` (one row per point,
+# one column per axis): each axis's cell value carried through that cell's
+# within-cell conditional (`.nl_hyper_axis_draw()`).
+.nl_within_cell_coords <- function(wc, tg, cells, u) {
+  out <- matrix(0.0, length(cells), ncol(tg))
   for (j in seq_len(ncol(tg))) {
-    g <- geoms[[j]]
-    out[, j] <- .nl_hyper_axis_draw(g, as.numeric(tg[cells, j]), cells, u[, j])
-    used[j] <- if (identical(g$kind, "none")) NA_character_ else g$kind
-    decl[j] <- if (is.na(g$declined)) fell else g$declined
+    out[, j] <- .nl_hyper_axis_draw(wc$geoms[[j]], as.numeric(tg[cells, j]),
+                                    cells, u[, j])
   }
-  # A spatial lengthscale is reported in the coordinates' own units.
-  out <- sweep(out, 2L, .hyper_axis_data_scale(fit, nms), "*")
-  attr(out, "cells") <- cells
-  attr(out, "within_cell") <- used
-  attr(out, "within_cell_declined") <- decl
-  attr(out, "within_cell_copula") <- cop
   out
+}
+
+# A deterministic quadrature of the within-cell distribution: every cell with
+# weight carries the same `n` points, a centred rank-1 lattice on the unit cube
+# (Korobov generator `(1, a, a^2, ...) mod n`, `n` prime) mapped through the
+# copula's Gaussian scores, each point holding `1 / n` of its cell's weight.
+# With `n` prime every axis's projection is the `n` midpoints of `n`
+# equal-probability strata, so each axis's within-cell conditional is resolved
+# at `n` levels while the points still fill the cube jointly. A quantity
+# evaluated at the points and read off their weights is the quantity read
+# ACROSS each cell rather than at its centre -- the cell-conditional the fit's
+# own interval and draws take, with the lattice in place of random uniforms.
+# Returns the points (`theta`, columns as `tg`) and their weights (`w`, summing
+# to one).
+.nl_within_cell_points <- function(wc, tg, w, n = .nl_diag("within_points"),
+                                   a = .nl_diag("within_lattice_a")) {
+  d <- ncol(tg)
+  # A cell under 1e-12 of the heaviest carries nothing a read can see.
+  keep <- which(is.finite(w) & w > 1e-12 * max(w[is.finite(w)]))
+  gen <- numeric(d)
+  gen[1L] <- 1
+  if (d > 1L) for (j in 2:d) gen[j] <- (gen[j - 1L] * a) %% n
+  i <- 0:(n - 1L)
+  U0 <- (outer(i, gen) %% n + 0.5) / n
+  U <- stats::pnorm(stats::qnorm(U0) %*% chol(wc$cop))
+  cells <- rep(keep, each = n)
+  th <- .nl_within_cell_coords(wc, tg, cells,
+                               U[rep(seq_len(n), length(keep)), , drop = FALSE])
+  colnames(th) <- colnames(tg)
+  pw <- rep(w[keep] / sum(w[keep]), each = n) / n
+  list(theta = th, w = pw, cells = cells)
 }
 
 # The `"theta"` attribute both `tulpa_posterior_draws()` methods carry: the

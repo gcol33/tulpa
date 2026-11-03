@@ -2769,6 +2769,18 @@
     res$within_cell_requested <- within
     # A free-covariance block's standard deviations, correlations and
     # covariances, each computed per cell and read off the same weights.
-    res$hyper_derived <- .logchol_grid_derived_summary(joint_grid, w, support)
+    # Read across the cells where they are boxes of the grid's own columns: a
+    # density support whose every free-covariance block was declared a tensor
+    # in its log-Cholesky columns.
+    declared <- !nzchar(res$refining_axis %||% rep("", nrow(joint_grid)))
+    lc_designs <- .hp_logchol_designs(joint_grid[declared, , drop = FALSE])
+    lc_tensor <- length(lc_designs) > 0L && all(vapply(lc_designs, function(d)
+        identical(d$design, "logchol"), logical(1)))
+    res$hyper_derived <- .logchol_grid_derived_summary(
+        joint_grid, w, support,
+        within = if (identical(support, "density") && lc_tensor)
+            .nl_within_cell_setup(joint_grid, w, res$log_marginal,
+                                  res$refining_axis, geo$domain, geo$atom,
+                                  within, support))
     .nl_attach_interval_provenance(res, qs, joint_grid, geo$domain, geo$atom)
 }
