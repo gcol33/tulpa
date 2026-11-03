@@ -88,7 +88,23 @@ predictor or a grouping variable) are refused, not dropped.}
 
 \item{mode}{Inference mode or backend. \code{"auto"} (default) picks the most
 reliable Tier 1/Tier 2 method expected to finish; a tier (\code{"exact"},
-\code{"structured"}) or a backend name (\code{"laplace"}, \code{"mala"}, ...) forces it.}
+\code{"structured"}) or a backend name (\code{"laplace"}, \code{"mala"}, ...) forces it.
+A model whose \code{phi} is a gaussian residual variance, fitted with \code{phi}
+left out, resolves under \code{"auto"}, \code{"structured"} and the nested-Laplace
+modes to the one-arm joint nested-Laplace backend
+(\code{"nested_laplace_joint"}), whose outer grid integrates that variance
+beside the random-effect and field scales, the axis laid at its posterior
+mode; \code{fit$phi} is then its posterior mean and \code{fit$phi_estimated} is
+\code{TRUE}. Where that backend cannot carry the call (observation weights,
+zero inflation, \code{phi2}, a sampler-only field) the selection stands and
+\code{phi} is conditioned on, with a warning.
+\code{"eb"} estimates the random-effect covariance(s) by empirical Bayes instead
+of conditioning on \code{sigma_re} (see \code{\link[=tulpa_eb]{tulpa_eb()}}); it is opt-in by name,
+because its intervals are conditional on that estimate rather than marginal
+over it. The maximized likelihood integrates the fixed effects out rather
+than profiling them, so with \code{hyperprior = "flat"} the estimate is
+restricted (REML-type) -- it matches \code{glmmTMB(..., REML = TRUE)}, not the
+ML fit of \code{lme4::glmer()}.}
 
 \item{sigma_re}{Random-effect SDs to condition on: length 1 (recycled) or one
 per RE term. Defaults to 1 per term with a warning. Ignored by every
@@ -117,10 +133,13 @@ residual VARIANCE (the SD is \code{sqrt(phi)}), for \code{neg_binomial_2} the si
 \code{poisson} ignore it. The compiled kernels parameterize the variance
 families by the residual SD and are handed \code{sqrt(phi)} at the boundary.
 
-Defaulted, it conditions at 1 and says so with a warning, since for a
-family that reads a dispersion that is a modelling choice rather than a
-neutral value. \code{fit$phi_estimated} records whether the value on the fit
-was estimated or conditioned on.}
+Left out of a \code{\link[=tulpa]{tulpa()}} call whose \code{phi} is a gaussian residual variance,
+on \code{mode = "auto"}, \code{"structured"} or a nested-Laplace mode, it is
+integrated as an outer-grid axis rather than set (see \code{\link[=tulpa]{tulpa()}}).
+Defaulted anywhere else, it conditions at 1 and says so with a warning,
+since for a family that reads a dispersion that is a modelling choice
+rather than a neutral value. \code{fit$phi_estimated} records whether the value
+on the fit was estimated or conditioned on.}
 
 \item{estimate_phi}{Estimate the dispersion from the data instead of
 conditioning on \code{phi}, which then supplies the starting value. \code{log(phi)}

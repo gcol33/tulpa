@@ -146,10 +146,12 @@ test_that("MCAR mode-centred CCD scales to p = 3 (general p > 2)", {
     family = "gaussian", mode = "laplace", control = list(n_draws = 200L)))
 
   expect_s3_class(fit, "tulpa_spatial_field_fit")
-  # CCD over the 6 log-Cholesky axes -- a polynomial node count where the fixed
+  # CCD over the 6 log-Cholesky axes and the residual variance, which `phi`
+  # left out makes an axis too -- a polynomial node count where the fixed
   # tensor would be thousands of cells.
   expect_identical(fit$integration, "ccd")
-  expect_identical(ncol(fit$theta_grid), 6L)
+  expect_identical(ncol(fit$theta_grid), 7L)
+  expect_true("phi_y" %in% colnames(fit$theta_grid))
   # All three cross-correlations recover with a CI covering the truth.
   for (ij in list(c(1L, 2L), c(1L, 3L), c(2L, 3L))) {
     nm <- sprintf("rho_%d%d", ij[1L], ij[2L])

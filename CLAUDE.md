@@ -638,6 +638,13 @@ on the scale I supplied". The TIER modes do not -- `mode = "structured"` and
 `mode = "auto"` integrate an unsupplied RE scale for a scalar `(1 | g)` as much
 as for a slope (gcol33/tulpa#787), because neither has a dataset-implied
 `sigma_re` to condition on.
+An unsupplied residual VARIANCE takes the same rule (gcol33/tulpa#1068): a
+gaussian, lognormal, censored or truncated response fitted with `phi` left out
+under `auto` / `structured` / a nested-Laplace mode routes to the one-arm joint
+door (`nested_laplace_joint`, `R/tulpa_joint_arm.R`), whose `phi_y` axis is
+placed and refined like a field SD axis; `mode = "laplace"`, the samplers and
+any call the joint door cannot carry (weights, zero inflation, `phi2`, a
+sampler-only field) still condition at 1 with a warning.
 
 ### Generic S3 Methods and Diagnostics
 

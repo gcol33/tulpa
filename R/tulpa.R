@@ -1907,6 +1907,22 @@
 #' @param mode Inference mode or backend. `"auto"` (default) picks the most
 #'   reliable Tier 1/Tier 2 method expected to finish; a tier (`"exact"`,
 #'   `"structured"`) or a backend name (`"laplace"`, `"mala"`, ...) forces it.
+#'   A model whose `phi` is a gaussian residual variance, fitted with `phi`
+#'   left out, resolves under `"auto"`, `"structured"` and the nested-Laplace
+#'   modes to the one-arm joint nested-Laplace backend
+#'   (`"nested_laplace_joint"`), whose outer grid integrates that variance
+#'   beside the random-effect and field scales, the axis laid at its posterior
+#'   mode; `fit$phi` is then its posterior mean and `fit$phi_estimated` is
+#'   `TRUE`. Where that backend cannot carry the call (observation weights,
+#'   zero inflation, `phi2`, a sampler-only field) the selection stands and
+#'   `phi` is conditioned on, with a warning.
+#'   `"eb"` estimates the random-effect covariance(s) by empirical Bayes instead
+#'   of conditioning on `sigma_re` (see [tulpa_eb()]); it is opt-in by name,
+#'   because its intervals are conditional on that estimate rather than marginal
+#'   over it. The maximized likelihood integrates the fixed effects out rather
+#'   than profiling them, so with `hyperprior = "flat"` the estimate is
+#'   restricted (REML-type) -- it matches `glmmTMB(..., REML = TRUE)`, not the
+#'   ML fit of `lme4::glmer()`.
 #' @param sigma_re Random-effect SDs to condition on: length 1 (recycled) or one
 #'   per RE term. Defaults to 1 per term with a warning. Ignored by every
 #'   backend that DETERMINES the RE scale itself -- by integrating it
@@ -2384,8 +2400,7 @@ tulpa <- function(formula, data,
 
   # The outer axis an unsupplied Gaussian residual variance is integrated on,
   # where the route reached carries one (NULL: `phi` is conditioned on).
-  phi_axis <- if (!is.null(bundle$response_bounds) &&
-                   .phi_axis_wanted(family, phi_supplied, estimate_phi)) {
+  phi_axis <- if (.phi_axis_wanted(family, phi_supplied, estimate_phi)) {
     .phi_axis_default(family, bundle$y, bundle$X, bundle$offset)
   }
 
@@ -2775,7 +2790,9 @@ tulpa <- function(formula, data,
     st_block = st_block, has_latent = has_latent,
     zi = !is.null(bundle$X_zi), weights = !is.null(weights),
     phi2 = !is.null(phi2))
-  joint_planned <- !is.null(bundle$response_bounds)
+  joint_planned <- !is.null(bundle$response_bounds) ||
+    (!is.null(phi_axis) && is.null(joint_unfit) &&
+       (sel$requested %||% mode) %in% .JOINT_ARM_PHI_MODES)
   if (any(y_missing) && !joint_planned &&
       !identical(BACKEND_REGISTRY[[sel$backend]]$input, "nested")) {
     stop(sprintf(paste0(
@@ -3259,6 +3276,12 @@ tulpa <- function(formula, data,
       "door%s"), kind, family,
       if (!is.null(phi_axis)) ", the residual variance an outer-grid axis"
       else ""), notify = FALSE)
+  } else if (!is.null(phi_axis) && is.null(joint_unfit) &&
+             requested %in% .JOINT_ARM_PHI_MODES) {
+    sel <- .sel_redirect(sel, "nested_laplace_joint", sprintf(paste0(
+      "`phi` not supplied; the %s residual variance integrated as an ",
+      "outer-grid axis on the one-arm joint nested-Laplace door"), family),
+      notify = FALSE)
   }
   joint_arm <- identical(sel$backend, "nested_laplace_joint")
 
@@ -3312,14 +3335,15 @@ tulpa <- function(formula, data,
   # a choice. Raised only for the families that READ a dispersion, so binomial
   # and poisson stay quiet, and not when `estimate_phi` is on, where the value
   # is a starting point rather than a conditioning one.
-  # A bounded response's residual variance is integrated on the joint route
-  # instead.
+  # A Gaussian residual variance on the joint route is integrated instead
+  # (gcol33/tulpa#1068); every other door still conditions on the 1.0.
   if (!phi_supplied && !isTRUE(estimate_phi) && !joint_arm &&
       .family_base(family) %in% .PHI_FAMILIES) {
     warning("tulpa(): `phi` not supplied; conditioning on phi = 1 for ",
-            "family = '", family, "'. Pass `phi` to override, or ",
-            "`estimate_phi = TRUE` with mode = 'eb' to estimate it.",
-            call. = FALSE)
+            "family = '", family, "' on backend '", sel$backend, "'. Pass ",
+            "`phi` to override, `estimate_phi = TRUE` with mode = 'eb' to ",
+            "estimate it, or mode = 'auto' / 'structured' to integrate it ",
+            "where the call allows.", call. = FALSE)
   }
 
   # Resolved before backend dispatch; `beta_prior` itself stays as supplied, so

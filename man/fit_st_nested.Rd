@@ -68,10 +68,13 @@ residual VARIANCE (the SD is \code{sqrt(phi)}), for \code{neg_binomial_2} the si
 \code{poisson} ignore it. The compiled kernels parameterize the variance
 families by the residual SD and are handed \code{sqrt(phi)} at the boundary.
 
-Defaulted, it conditions at 1 and says so with a warning, since for a
-family that reads a dispersion that is a modelling choice rather than a
-neutral value. \code{fit$phi_estimated} records whether the value on the fit
-was estimated or conditioned on.}
+Left out of a \code{\link[=tulpa]{tulpa()}} call whose \code{phi} is a gaussian residual variance,
+on \code{mode = "auto"}, \code{"structured"} or a nested-Laplace mode, it is
+integrated as an outer-grid axis rather than set (see \code{\link[=tulpa]{tulpa()}}).
+Defaulted anywhere else, it conditions at 1 and says so with a warning,
+since for a family that reads a dispersion that is a modelling choice
+rather than a neutral value. \code{fit$phi_estimated} records whether the value
+on the fit was estimated or conditioned on.}
 
 \item{cyclic}{Logical; wrap the temporal field (seasonal). Default \code{FALSE}.}
 
