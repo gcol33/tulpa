@@ -334,21 +334,14 @@ bool extract_joint_eta_var(
     const SparseCholeskySolver::SelectedInverse si =
         classes.size() > 1 ? solver.selected_inversion_full()
                            : SparseCholeskySolver::SelectedInverse();
-    // The pairs are read column by column off the selected inverse
-    // (`quad_form`), a pass over the factor columns the row touches: a row
-    // loading k coordinates costs those columns' stored entries, where a
-    // lookup per pair walks a column for each of its k^2 pairs (a dense basis
-    // row loads every coefficient).
-    std::vector<double> mark(si.n == n_x ? n_x : 0, 0.0);
-    std::vector<char> in_support(mark.size(), 0);
-    std::vector<int> touched;
+    std::vector<std::pair<int, double>> qf_work;
     for (std::size_t c = 0; c < classes.size(); c++) {
         const int r = classes.class_rep[c];
         const std::size_t first = L.off[r], last = L.off[r + 1];
         double vq = 0.0;
         const bool on_pattern = si.n == n_x &&
-            si.quad_form(L.idx.data(), L.w.data(), first, last, mark,
-                         in_support, touched, &vq);
+            si.quad_form(L.idx.data() + first, L.w.data() + first,
+                         last - first, &vq, qf_work);
         if (on_pattern) {
             vq -= pins.quad_correction(L.idx.data(), L.w.data(), first, last);
             class_var[c] = (std::isfinite(vq) && vq >= 0.0) ? vq : failed;

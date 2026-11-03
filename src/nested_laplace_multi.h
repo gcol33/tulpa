@@ -526,8 +526,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
             static_cast<std::size_t>(k + 1) * N <= fitted_var_buf.size()) {
             const bool used_sparse_factor =
                 res.sparse_factor_live && solver != nullptr;
-            std::vector<double> a(n_x, 0.0), z(n_x, 0.0), zwork;
-            if (!used_sparse_factor) zwork.assign(n_x, 0.0);
+            std::vector<double> a(n_x, 0.0), z(n_x, 0.0);
             std::vector<std::pair<int,double>> a_multi;
             std::vector<double> a_basis;
             // CHOLMOD workspace for the back-solves, local to this cell: the
@@ -546,31 +545,42 @@ inline Rcpp::List run_multi_block_nested_laplace(
             const double failed = std::numeric_limits<double>::quiet_NaN();
             std::vector<double> class_var(n_class, failed);
             const std::size_t base = static_cast<std::size_t>(k) * N;
-            for (std::size_t c = 0; c < n_class; c++) {
-                const int i = classes.class_rep[c];
-                std::fill(a.begin(), a.end(), 0.0);
+            auto loading = [&](std::size_t c, double* dst) {
+                std::fill(dst, dst + n_x, 0.0);
                 nl_multi_obs_contribs(
-                    i, p, has_re, n_re_groups, X, re_idx, blocks,
-                    d_fac_cache, k, a_multi, a_basis,
-                    [&](int idx, double w) { a[idx] += w; });
-                bool ok = true;
-                if (used_sparse_factor) {
-                    ok = solver->solve(a.data(), z.data(), n_x, ws);
-                } else {
-                    ok = chol_substitute_raw(scratch.chol.L.data(), n_x,
-                                             a.data(), z.data(), zwork.data());
+                    classes.class_rep[c], p, has_re, n_re_groups, X, re_idx,
+                    blocks, d_fac_cache, k, a_multi, a_basis,
+                    [&](int idx, double w) { dst[idx] += w; });
+            };
+            if (used_sparse_factor) {
+                for (std::size_t c = 0; c < n_class; c++) {
+                    loading(c, a.data());
+                    const bool ok = solver->solve(a.data(), z.data(), n_x, ws);
+                    double v = 0.0;
+                    if (ok) for (int j = 0; j < n_x; j++) v += a[j] * z[j];
+                    // H is positive definite, so a' H^-1 a is negative only
+                    // when the solve lost accuracy; reporting 0 there gives a
+                    // downstream interval zero width and no way to tell that
+                    // apart from a genuinely zero loading vector (which does
+                    // give exactly 0).
+                    class_var[c] = (ok && v >= 0.0) ? v : failed;
                 }
-                double v = 0.0;
-                if (ok) for (int j = 0; j < n_x; j++) v += a[j] * z[j];
-                // H is positive definite, so a' H^-1 a is negative only when
-                // the back-substitution lost accuracy; reporting 0 there gives
-                // a downstream interval zero width and no way to tell that
-                // apart from a genuinely zero loading vector (which does give
-                // exactly 0).
-                const double var = (ok && v >= 0.0) ? v : failed;
-                class_var[c] = var;
-                fitted_var_buf[base + i] = var;
+            } else {
+                // Dense factor: a' H^-1 a = ||L^-1 a||^2 for a block of
+                // classes at a time, every column of L read once per block.
+                const std::size_t blk = 64;
+                std::vector<double> A_blk(static_cast<std::size_t>(n_x) * blk);
+                for (std::size_t c0 = 0; c0 < n_class; c0 += blk) {
+                    const std::size_t nb = std::min(blk, n_class - c0);
+                    for (std::size_t c = 0; c < nb; c++)
+                        loading(c0 + c, A_blk.data() + c * n_x);
+                    chol_inverse_quadforms(scratch.chol.L.data(), n_x,
+                                           A_blk.data(), static_cast<int>(nb),
+                                           class_var.data() + c0);
+                }
             }
+            for (std::size_t c = 0; c < n_class; c++)
+                fitted_var_buf[base + classes.class_rep[c]] = class_var[c];
             // The rows that are not their class representative read what that
             // single back-solve produced, a failed solve's NaN included: their
             // loading vector is bit-identical, so an individual solve would

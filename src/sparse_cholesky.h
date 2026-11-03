@@ -11,6 +11,9 @@
 #define TULPA_SPARSE_CHOLESKY_H
 
 #include <Rcpp.h>
+#include <algorithm>
+#include <cstddef>
+#include <utility>
 #include <vector>
 #include <cmath>
 #include "laplace_types.h"  // for tulpa::DenseMat
@@ -202,16 +205,16 @@ public:
         // The same entry, and whether (i, j) lies on the computed pattern: a
         // false return says the entry was not computed, where at() reads 0.0.
         bool find(int i_orig, int j_orig, double* value) const;
-        // a' A^{-1} a for a = sum_e w[e] unit(idx[e]), e in [first, last),
-        // read in one pass over the factor columns a touches, each column's
-        // stored entries matched against a's support. False when a pair of
-        // a's support lies off the computed pattern. `mark` (length n, all
-        // zero) and `in_support` (length n, all false) are scratch the call
-        // returns as it found them.
-        bool quad_form(const int* idx, const double* w, std::size_t first,
-                       std::size_t last, std::vector<double>& mark,
-                       std::vector<char>& in_support, std::vector<int>& touched,
-                       double* value) const;
+        // The quadratic form w' A^{-1} w of a sparse vector with entries
+        // w[e] at original indices idx[e] (repeats summed), read off the
+        // computed pattern in one merge pass over each touched factor column:
+        // what find() over every pair gives, at a cost linear in the columns
+        // touched rather than in the pairs times the column length. Returns
+        // false when a pair lies off the computed pattern. `work` is caller
+        // scratch.
+        bool quad_form(const int* idx, const double* w, std::size_t k,
+                       double* value,
+                       std::vector<std::pair<int, double>>& work) const;
     };
     SelectedInverse selected_inversion_full();
 

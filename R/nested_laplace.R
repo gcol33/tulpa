@@ -607,6 +607,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # They evaluate the grid they are handed, so every cell of it has to be solved.
   cargs_no_ckpt <- utils::modifyList(
     cargs, list(checkpoint_path = "", prune_tol = 0))
+  # The same, for a re-evaluation that reads the inner log marginals and nothing
+  # else -- the placement stencil and the k-hat proposal draws: no per-row
+  # predictive variance pass, which on a dense basis costs several inner solves.
+  cargs_lm <- utils::modifyList(cargs_no_ckpt, list(compute_fitted_var = FALSE))
 
   p_fixed <- ncol(X)
 
@@ -666,7 +670,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     tm$mark("postproc")
     # The rescue reads the grid's outer-integration regime, attached here; the
     # k-hat itself is read once, on the grid the placement pass leaves.
-    res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "multi", NULL,
+    res <- .nl_attach_pareto_k(res, prior, cargs_lm, "multi", NULL,
                                likelihood, k_samples, compute = FALSE,
                                tail_points = k_tail_points)
 
@@ -680,12 +684,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       refit = function(prior_i) {
         r <- solve_grid_multi(prior_i)
         if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed, keep_joint_prec)
-        .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "multi", NULL,
+        .nl_attach_pareto_k(r, prior_i, cargs_lm, "multi", NULL,
                             likelihood, k_samples, compute = FALSE,
                             tail_points = k_tail_points)
       },
       refit_log_marginal = function(prior_i, theta_mat) {
-        .nl_dispatch_multi(cargs_no_ckpt, prior_i, likelihood = likelihood,
+        .nl_dispatch_multi(cargs_lm, prior_i, likelihood = likelihood,
                            theta_grid_override = theta_mat)$log_marginal
       },
       auto = .prov$auto, multi = TRUE,
@@ -696,7 +700,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # The placement pass's mode-find and refit are grid work: they lay the grid
     # the fit reports.
     tm$mark("grid")
-    res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "multi", NULL,
+    res <- .nl_attach_pareto_k(res, prior, cargs_lm, "multi", NULL,
                                likelihood, k_samples, compute = diagnose_k,
                                tail_points = k_tail_points)
 
@@ -794,7 +798,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   tm$mark("postproc")
   # The rescue reads the grid's outer-integration regime, attached here; the
   # k-hat itself is read once, on the grid the placement pass leaves.
-  res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
+  res <- .nl_attach_pareto_k(res, prior, cargs_lm, "single", type, NULL,
                              k_samples, compute = FALSE,
                              tail_points = k_tail_points)
 
@@ -819,14 +823,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
           units = list(spatial = .nl_spatial_field_load(prior_i, NULL, r$Q_csc_n,
                                            .nl_theta_matrix(r))))
       }
-      .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "single", type, NULL,
+      .nl_attach_pareto_k(r, prior_i, cargs_lm, "single", type, NULL,
                           k_samples, compute = FALSE,
                           tail_points = k_tail_points)
     },
     refit_log_marginal = function(prior_i, theta_mat) {
       blk2 <- .nl_registry_write_theta(
         list(prior_i), theta_mat, colnames(theta_mat))[[1L]]
-      .nl_dispatch(type, cargs_no_ckpt, blk2, prior_i)$log_marginal
+      .nl_dispatch(type, cargs_lm, blk2, prior_i)$log_marginal
     },
     auto = .prov$auto,
     policy = .nl_recenter_mode(control$auto_recenter))
@@ -836,7 +840,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # The placement pass's mode-find and refit are grid work: they lay the grid
   # the fit reports.
   tm$mark("grid")
-  res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
+  res <- .nl_attach_pareto_k(res, prior, cargs_lm, "single", type, NULL,
                              k_samples, compute = diagnose_k,
                              tail_points = k_tail_points)
 

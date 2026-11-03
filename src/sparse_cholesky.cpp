@@ -568,40 +568,43 @@ bool SparseCholeskySolver::SelectedInverse::find(int i_orig, int j_orig,
 }
 
 bool SparseCholeskySolver::SelectedInverse::quad_form(
-    const int* idx, const double* w, std::size_t first, std::size_t last,
-    std::vector<double>& mark, std::vector<char>& in_support,
-    std::vector<int>& touched, double* value) const {
-    if (n == 0) return false;
-    touched.clear();
-    bool in_range = true;
-    for (std::size_t e = first; e < last; e++) {
-        const int i = idx[e];
-        if (i < 0 || i >= n) { in_range = false; break; }
-        const int p = perm_inv[i];
-        if (!in_support[p]) { in_support[p] = 1; touched.push_back(p); }
-        mark[p] += w[e];
+    const int* idx, const double* w, std::size_t k, double* value,
+    std::vector<std::pair<int, double>>& work) const {
+    work.clear();
+    for (std::size_t e = 0; e < k; e++) {
+        if (n == 0 || idx[e] < 0 || idx[e] >= n) return false;
+        work.emplace_back(perm_inv[idx[e]], w[e]);
     }
-    // Column p of the stored pattern holds rows below p, its diagonal first;
-    // every pair of the support is read once, from the column of its smaller
-    // permuted index.
-    double v = 0.0;
-    std::size_t pairs = 0;
-    if (in_range) {
-        for (int p : touched) {
-            const double ap = mark[p];
-            v += ap * ap * Zx[Lp[p]];
-            for (int s = Lp[p] + 1; s < Lp[p + 1]; s++) {
-                const int i = Li[s];
-                if (in_support[i]) {
-                    v += 2.0 * ap * mark[i] * Zx[s];
-                    pairs++;
-                }
-            }
+    std::sort(work.begin(), work.end(),
+              [](const std::pair<int, double>& a,
+                 const std::pair<int, double>& b) { return a.first < b.first; });
+    // Sum the weights of a repeated index: the form reads each entry once.
+    std::size_t m = 0;
+    for (std::size_t e = 0; e < work.size(); e++) {
+        if (m > 0 && work[m - 1].first == work[e].first) {
+            work[m - 1].second += work[e].second;
+        } else {
+            work[m++] = work[e];
         }
     }
-    const std::size_t K = touched.size();
-    for (int p : touched) { mark[p] = 0.0; in_support[p] = 0; }
-    if (!in_range || pairs != K * (K - 1) / 2) return false;
+    work.resize(m);
+    // A^{-1} is symmetric and the pattern of L holds (lo, hi) in column lo, so
+    // each pair is read once from the column of its smaller permuted index,
+    // the off-diagonal ones twice over.
+    double v = 0.0;
+    for (std::size_t e = 0; e < m; e++) {
+        const int col = work[e].first;
+        const double we = work[e].second;
+        std::size_t f = e;
+        for (int s = Lp[col]; s < Lp[col + 1] && f < m; s++) {
+            if (Li[s] < work[f].first) continue;
+            if (Li[s] > work[f].first) return false;
+            const double z = Zx[s];
+            v += (f == e ? 1.0 : 2.0) * we * work[f].second * z;
+            f++;
+        }
+        if (f < m) return false;
+    }
     *value = v;
     return true;
 }

@@ -7,6 +7,8 @@
 #include "laplace_types.h"
 #include <Rcpp.h>
 #include <cmath>
+#include <cstddef>
+#include <limits>
 #include <vector>
 
 namespace tulpa {
@@ -157,11 +159,14 @@ inline bool chol_substitute_raw(
     const double* L_data, int n,
     const double* rhs, double* out, double* z_work
 ) {
-    // Forward substitution: L z = rhs
+    // Forward substitution: L z = rhs, column by column so each step reads
+    // one contiguous column of the column-major factor.
+    for (int j = 0; j < n; j++) z_work[j] = rhs[j];
     for (int j = 0; j < n; j++) {
-        double sum = rhs[j];
-        for (int k = 0; k < j; k++) sum -= L_data[j + k * n] * z_work[k];
-        z_work[j] = sum / L_data[j + j * n];
+        const double* Lj = L_data + static_cast<std::size_t>(j) * n;
+        const double zj = z_work[j] / Lj[j];
+        z_work[j] = zj;
+        for (int i = j + 1; i < n; i++) z_work[i] -= Lj[i] * zj;
     }
     // Back substitution: L' out = z
     for (int j = n - 1; j >= 0; j--) {
@@ -173,6 +178,35 @@ inline bool chol_substitute_raw(
         if (!std::isfinite(out[j])) return false;
     }
     return true;
+}
+
+// The quadratic forms a_c' H^{-1} a_c of the n_rhs columns of A (column-major,
+// n x n_rhs) against H = L L', L the column-major lower factor of
+// chol_substitute_raw: a' H^{-1} a = ||L^{-1} a||^2, so one forward
+// substitution per column and no back substitution. The columns share every
+// pass over a column of L. A is overwritten with L^{-1} A; out[c] is NaN when
+// column c's substitution lost finiteness.
+inline void chol_inverse_quadforms(
+    const double* L_data, int n, double* A, int n_rhs, double* out
+) {
+    for (int j = 0; j < n; j++) {
+        const double* Lj = L_data + static_cast<std::size_t>(j) * n;
+        const double ljj = Lj[j];
+        for (int c = 0; c < n_rhs; c++) {
+            double* a = A + static_cast<std::size_t>(c) * n;
+            const double zj = a[j] / ljj;
+            a[j] = zj;
+            if (zj != 0.0) {
+                for (int i = j + 1; i < n; i++) a[i] -= Lj[i] * zj;
+            }
+        }
+    }
+    for (int c = 0; c < n_rhs; c++) {
+        const double* a = A + static_cast<std::size_t>(c) * n;
+        double v = 0.0;
+        for (int i = 0; i < n; i++) v += a[i] * a[i];
+        out[c] = std::isfinite(v) ? v : std::numeric_limits<double>::quiet_NaN();
+    }
 }
 
 inline CholeskyResult dense_cholesky_solve(
