@@ -2,7 +2,9 @@
 # and row label on a nested-Laplace (Tier 2) fit as on a sampler (Tier 1) fit
 # (#199). The nested path used to return the raw grid axes (tau, phi_gp, sigma2)
 # with raw names; it now maps each axis to the sampler's interpretable quantity
-# (sigma = 1/sqrt(tau) or sqrt(sigma2); range = 3 * lengthscale; rho identity),
+# (sigma = 1/sqrt(tau) or sqrt(sigma2); range = 3 * phi_gp for the NNGP's
+# exponential kernel and sqrt(-2 log 0.05) * lengthscale for the HSGP's
+# squared-exponential one; rho identity),
 # marginalizing the DERIVED quantity per grid cell.
 
 rook_ct <- function(nr, nc) {
@@ -38,7 +40,10 @@ test_that("the nested transform maps mirror the sampler's interpretable formulas
   expect_equal(sm$tau$fn(4), 0.5)         # 1/sqrt(4)  -> sigma
   expect_equal(sm$sigma2$fn(9), 3)        # sqrt(9)    -> sigma
   expect_equal(sm$phi_gp$fn(2), 6)        # 3 * 2      -> range
-  expect_equal(sm$lengthscale$fn(2), 6)   # 3 * 2      -> range
+  # The HSGP axis converts as the sampler converts `log_lengthscale_hsgp`.
+  expect_equal(sm$lengthscale$fn(2), 2 * sqrt(-2 * log(0.05)))
+  expect_equal(sm$lengthscale$fn(2),
+               tulpa:::.hyper_nat$range_from_se_lengthscale(2))
   expect_identical(sm$tau$name, "sigma")
   expect_identical(sm$phi_gp$name, "range")
 

@@ -286,9 +286,11 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
 # on the natural-scale grid axis. The derived quantity is computed PER GRID CELL
 # and then weighted-summarized (marginalize the derived quantity, not the raw
 # axis). Spatial: tau (precision) -> sigma = 1/sqrt(tau); sigma2 -> sigma =
-# sqrt(sigma2); phi_gp / lengthscale (GP lengthscale) -> range = 3 * ell (the
-# distance at which exp(-d/ell) ~ 0.05). Temporal mirrors the temporal sampler
-# (tau reported as precision, ar1 rho, GP sigma / lengthscale).
+# sqrt(sigma2); phi_gp (NNGP lengthscale) -> range = 3 * ell (the distance at
+# which exp(-d/ell) ~ 0.05); lengthscale (HSGP, squared-exponential) -> range =
+# sqrt(-2 log 0.05) * ell, the distance at which exp(-d^2 / (2 ell^2)) = 0.05.
+# Temporal mirrors the temporal sampler (tau reported as precision, ar1 rho,
+# GP sigma / lengthscale).
 # Natural-scale maps from a hyperparameter to its interpretable quantity.
 # Single-sourced so the nested-grid path (the registries below) and the
 # sampler-draw path (the transform_fn closures in spatial_range/temporal_corr)
@@ -353,7 +355,10 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
                      domain = "positive"),
   phi_gp      = list(name = "range", fn = .hyper_nat$range_from_lengthscale,
                      domain = "positive"),
-  lengthscale = list(name = "range", fn = .hyper_nat$range_from_lengthscale,
+  # The `lengthscale` axis is an HSGP field's, whose basis approximates the
+  # squared-exponential kernel: the conversion the sampler route applies to the
+  # same field's `log_lengthscale_hsgp` draws.
+  lengthscale = list(name = "range", fn = .hyper_nat$range_from_se_lengthscale,
                      domain = "positive"),
   sigma       = list(name = "sigma", fn = .hyper_nat$identity),
   range       = list(name = "range", fn = .hyper_nat$identity),

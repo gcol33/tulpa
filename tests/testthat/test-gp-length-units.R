@@ -39,3 +39,31 @@ test_that("GP lengthscale is reported in coordinate units at every door", {
   sr <- spatial_range(fit)
   expect_equal(sr["range", "mean"], 3 * row$mean, tolerance = 1e-8)
 })
+
+test_that("an HSGP field's range converts its lengthscale as the SE kernel's on every route", {
+  skip_on_cran()
+  set.seed(4)
+  n <- 120
+  d <- data.frame(lon = runif(n, 0, 10), lat = runif(n, 0, 10), x = rnorm(n))
+  D <- as.matrix(dist(d[, c("lon", "lat")]))
+  w <- as.numeric(t(chol(exp(-D^2 / (2 * 2^2)) + diag(1e-6, n))) %*% rnorm(n))
+  d$y <- rpois(n, exp(0.5 + 0.4 * d$x + 0.8 * w))
+  se <- sqrt(-2 * log(0.05))
+
+  fit <- suppressWarnings(tulpa(y ~ x, data = d, family = "poisson",
+               spatial = spatial_gp(~ lon + lat, approx = "hsgp"),
+               mode = "nested_laplace", control = list(progress = FALSE)))
+  hp <- summary(fit)$hyperparameters
+  ls_mean <- hp$mean[hp$parameter == "lengthscale"]
+  expect_equal(spatial_range(fit)["range", "mean"], se * ls_mean,
+               tolerance = 1e-8)
+
+  fs <- suppressWarnings(tulpa(y ~ x, data = d, family = "poisson",
+              spatial = spatial_gp(~ lon + lat, approx = "hsgp"), mode = "hmc",
+              control = list(n_iter = 200, warmup = 100, n_chains = 1,
+                             seed = 1)))
+  ell <- exp(tulpa:::.fit_draws(fs)[, "log_lengthscale_hsgp"]) *
+    tulpa:::.coord_scale(fs$spatial)
+  expect_equal(spatial_range(fs)["range", "mean"], se * mean(ell),
+               tolerance = 1e-8)
+})
