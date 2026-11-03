@@ -62,6 +62,35 @@ test_that("icar auto-recenters a collapsed tau axis away from the fixed ceiling"
     expect_lt(min(fit_auto$theta_grid), 0.3)
 })
 
+test_that("a recentred fit reads its k-hat once, on the grid it reports", {
+    skip_on_cran()
+    set.seed(11)
+    n_s <- 20L; n_per <- 6L
+    spatial_idx <- rep(seq_len(n_s), each = n_per)
+    base_p <- rep(0.02, n_s); base_p[1:5] <- 0.95
+    y <- rbinom(length(spatial_idx), 1, base_p[spatial_idx])
+    X <- cbind(1, rnorm(length(y), 0, 0.05))
+    adj <- .chain_adj_reg(n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, spatial_idx = spatial_idx)
+    rec <- new.env()
+    rec$grids <- list()
+    trace(".nested_grid_pareto_k", print = FALSE, where = asNamespace("tulpa"),
+          tracer = bquote(assign("grids", c(get("grids", envir = .(rec)),
+                                            list(exp(as.numeric(u_grid)))),
+                                 envir = .(rec))))
+    on.exit(untrace(".nested_grid_pareto_k", where = asNamespace("tulpa")),
+            add = TRUE)
+    fit <- tulpa_nested_laplace(y = y, n_trials = rep(1L, length(y)), X = X,
+                                prior = prior, family = "binomial")
+    expect_identical(fit$outer_grid_placement, "auto_recentered")
+    # The grid the rescue replaced is never scored; the reported one is.
+    expect_length(rec$grids, 1L)
+    expect_equal(rec$grids[[1L]], as.numeric(fit$theta_grid))
+    expect_true(is.finite(fit$pareto_k))
+})
+
 test_that("an explicit tau_grid on icar is never touched by the rescue", {
     skip_on_cran()
     set.seed(11)

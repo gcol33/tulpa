@@ -664,8 +664,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       res <- .nl_attach_grid_hessians(res, p_fixed, keep_joint_prec)
     }
     tm$mark("postproc")
+    # The rescue reads the grid's outer-integration regime, attached here; the
+    # k-hat itself is read once, on the grid the placement pass leaves.
     res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "multi", NULL,
-                               likelihood, k_samples, compute = diagnose_k,
+                               likelihood, k_samples, compute = FALSE,
                                tail_points = k_tail_points)
 
     # The same placement pass the single-block path runs, over the block list.
@@ -679,7 +681,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         r <- solve_grid_multi(prior_i)
         if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed, keep_joint_prec)
         .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "multi", NULL,
-                            likelihood, k_samples, compute = diagnose_k,
+                            likelihood, k_samples, compute = FALSE,
                             tail_points = k_tail_points)
       },
       refit_log_marginal = function(prior_i, theta_mat) {
@@ -691,6 +693,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res   <- multi_rescue$res
     prior <- multi_rescue$prior
     res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
+    # The placement pass's mode-find and refit are grid work: they lay the grid
+    # the fit reports.
+    tm$mark("grid")
+    res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "multi", NULL,
+                               likelihood, k_samples, compute = diagnose_k,
+                               tail_points = k_tail_points)
 
     res <- .nl_inner_skew_at_theta(res, prior, cargs_no_ckpt, "multi", NULL,
                                    likelihood, p_fixed, skew_idx,
@@ -784,8 +792,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                                        .nl_theta_matrix(res))))
   }
   tm$mark("postproc")
+  # The rescue reads the grid's outer-integration regime, attached here; the
+  # k-hat itself is read once, on the grid the placement pass leaves.
   res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
-                             k_samples, compute = diagnose_k,
+                             k_samples, compute = FALSE,
                              tail_points = k_tail_points)
 
   # Auto-recenter a railed default outer axis (the registry
@@ -810,7 +820,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                                            .nl_theta_matrix(r))))
       }
       .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "single", type, NULL,
-                          k_samples, compute = diagnose_k,
+                          k_samples, compute = FALSE,
                           tail_points = k_tail_points)
     },
     refit_log_marginal = function(prior_i, theta_mat) {
@@ -823,6 +833,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res   <- registry_rescue$res
   prior <- registry_rescue$prior
   res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
+  # The placement pass's mode-find and refit are grid work: they lay the grid
+  # the fit reports.
+  tm$mark("grid")
+  res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
+                             k_samples, compute = diagnose_k,
+                             tail_points = k_tail_points)
 
   res <- .nl_inner_skew_at_theta(res, prior, cargs_no_ckpt, "single", type,
                                  NULL, p_fixed, skew_idx,
