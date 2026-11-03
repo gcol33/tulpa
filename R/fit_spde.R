@@ -439,7 +439,7 @@ fit_spde <- function(y, X, spatial,
   # The record a cell of the fit is solved again from when its latent
   # posterior is drawn (`.field_cell_solve()`). The fractional-nu operator is
   # assembled per cell in R and keeps no precision, so it has none.
-  if (!is_frac) fit$field_solve <- list(door = "spde", args = solve)
+  if (!is_frac) fit$field_solve <- .nl_field_solve_record("spde", solve)
 
   # Fixed-effect mode + marginal curvature so the generic accessors (coef /
   # summary / confint / vcov / predict) work on a direct or auto-mode SPDE

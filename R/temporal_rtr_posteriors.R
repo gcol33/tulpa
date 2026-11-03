@@ -359,11 +359,35 @@ temporal <- function(object, component = "all", summary = FALSE,
   out
 }
 
+# The mixture `mix` of the latent columns `cols` (`.nl_field_mixture()`) with
+# each cell's full covariance C_k over them, constrained as the cell's draws
+# are: read off the cell's precision solved again (`.field_cell_solve()`, the
+# precision predict() and temporal() draw from), so it is available whatever
+# the field's width. A fit that keeps no record of its inner solve carries the
+# covariances it retained, if any.
+.nl_mixture_cell_cov <- function(object, mix, cols) {
+  src <- .field_cells(object)
+  if (is.null(src) || is.null(src$solve)) return(mix)
+  sol <- .field_cell_solve(object, src, mix$cells)
+  ccpp <- .inner_constraint_cpp(sol$constraint)
+  C <- cpp_joint_inner_vcov_blocks(
+    Q_p_per_grid = sol$Q_p, Q_i_per_grid = sol$Q_i, Q_x_per_grid = sol$Q_x,
+    n_x = as.integer(ncol(src$modes)), idx = as.integer(cols),
+    n_dense = length(cols),
+    A_cols_list = ccpp$A_cols_list,
+    field_marginal = FALSE, n_threads = 1L,
+    soft_cols_list = ccpp$soft_cols_list, soft_D_per_grid = ccpp$soft_D_per_grid)
+  mix$cov <- C
+  mix$var <- do.call(rbind, lapply(C, function(Ck) pmax(diag(Ck), 0)))
+  mix
+}
+
 # The mixture of a linear map P of a field: a restricted temporal field
 # (temporal_rtr()) enters the linear predictor as P z, z the block's
 # coordinates, so each cell's Gaussian maps to mean P mu_k and covariance
-# P C_k P'. Its marginal variances need each cell's full covariance; a field
-# that retained only the marginals cannot report P z's spread, and is refused.
+# P C_k P'. Its marginal variances need each cell's full covariance
+# (`.nl_mixture_cell_cov()`); a fit that keeps neither a solve record nor the
+# covariances cannot report P z's spread, and is refused.
 .nl_mixture_project <- function(mix, P) {
   if (!is.matrix(P) || ncol(P) != ncol(mix$mu)) {
     stop("Internal: the restricted temporal field carries no projection ",
@@ -374,8 +398,8 @@ temporal <- function(object, component = "all", summary = FALSE,
   if (is.null(mix$var)) return(out)
   if (is.null(mix$cov)) {
     stop("temporal(): the restricted field P z mixes every time point, so its ",
-         "spread needs each grid cell's covariance, which this fit did not ",
-         "retain (a field wider than the retained-covariance limit).",
+         "spread needs each grid cell's covariance, which this fit neither ",
+         "retained nor can solve again (it keeps no record of its inner solve).",
          call. = FALSE)
   }
   out$cov <- lapply(mix$cov, function(Ck) P %*% Ck %*% t(P))
@@ -498,7 +522,8 @@ temporal.tulpa_fit <- function(object, component = "all", summary = FALSE,
     if (is.null(latent_blk) && length(cols) != width) cols <- NULL
     mixture <- if (length(cols)) .nl_field_mixture(object, cols)
     if (!is.null(mixture) && isTRUE(temp_info$rtr)) {
-      mixture <- .nl_mixture_project(mixture, temp_info$rtr_projection)
+      mixture <- .nl_mixture_project(.nl_mixture_cell_cov(object, mixture, cols),
+                                     temp_info$rtr_projection)
     }
     if (!is.null(mixture)) {
       if (is.null(mixture$var) && is.null(.field_cells(object)$solve)) {

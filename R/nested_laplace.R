@@ -1966,15 +1966,17 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # posterior is drawn (`.field_cell_solve()`): the dispatcher arguments the grid
 # ran under, less the response and the design the fit carries itself, and the
 # door (`"registry"`, a single block's kernel, with its `type`; `"multi"`, the
-# multi-block driver). `prior` is kept on the record when the fit does not
-# carry its block itself (a conditional-Laplace fit). NULL for a fit through a
-# model-supplied likelihood, whose spec is not kept.
-.nl_field_solve_record <- function(door, cargs, prior, likelihood = NULL,
+# multi-block driver; `"spde"`, the SPDE grid kernel). `prior` is kept on the
+# record when the fit does not carry its block itself (a conditional-Laplace
+# fit). `key` names the record in the session's cache of solved cells
+# (`.field_cell_solve()`). NULL for a fit through a model-supplied likelihood,
+# whose spec is not kept.
+.nl_field_solve_record <- function(door, cargs, prior = NULL, likelihood = NULL,
                                    type = NULL, keep_prior = FALSE) {
   if (!is.null(likelihood)) return(NULL)
   cargs[c("y", "X", "checkpoint_path", "screen_refine")] <- NULL
   list(door = door, type = type, args = cargs,
-       prior = if (isTRUE(keep_prior)) prior)
+       prior = if (isTRUE(keep_prior)) prior, key = .field_solve_key())
 }
 
 # ----------------------------------------------------------------------------

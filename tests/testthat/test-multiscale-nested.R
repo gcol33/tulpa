@@ -380,3 +380,30 @@ test_that("mode = 'gibbs' runs the temporal Polya-Gamma sampler where it carries
           mode = "gibbs"),
     "rw2 trend")
 })
+
+
+test_that("a nested fit's solved cells are kept for the next accessor call (#1125)", {
+  skip_on_cran()
+  s <- ms_sim_temporal()
+  fit <- suppressMessages(tulpa(
+    y ~ x, data = s$d, family = "poisson",
+    temporal = temporal_multiscale("time", trend = "rw2", short_term = "ar1"),
+    control = list(progress = FALSE)))
+  src <- tulpa:::.field_cells(fit)
+  on <- which(fit$weights > 0)
+  sol1 <- tulpa:::.field_cell_solve(fit, src, on)
+  # Every cell is now solved: a further read does not reach the kernel, and
+  # returns the precisions it solved.
+  local_mocked_bindings(.field_cell_resolve = function(...) {
+    stop("the kernel was reached")
+  })
+  sol2 <- tulpa:::.field_cell_solve(fit, src, rev(on))
+  expect_identical(sol2$Q_x, rev(sol1$Q_x))
+  expect_identical(sol2$constraint_cols, sol1$constraint_cols)
+  expect_silent(temporal(fit))
+  # A cell whose mode is no longer the one it was solved at is solved again.
+  fit2 <- fit
+  fit2$modes[on[1L], 1L] <- fit2$modes[on[1L], 1L] + 1e-3
+  expect_error(tulpa:::.field_cell_solve(fit2, tulpa:::.field_cells(fit2), on),
+               "the kernel was reached")
+})

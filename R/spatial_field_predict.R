@@ -1202,12 +1202,6 @@
   need <- which(on)[al$counts > 0L]
   sol <- .field_cell_solve(object, src, need)
   n_x <- ncol(src$modes)
-  dev <- max(abs(sol$modes - src$modes[need, , drop = FALSE]))
-  if (!is.finite(dev) || dev > 1e-3 * (1 + max(abs(src$modes[need, ])))) {
-    stop("Solving the fit's outer cells again did not reproduce their stored ",
-         "modes (largest difference ", signif(dev, 3), "), so the precision ",
-         "it returned is not the fit's.", call. = FALSE)
-  }
   L <- matrix(0, S, n_x)
   row_cells <- integer(S)
   pos <- 0L
@@ -1226,10 +1220,14 @@
 
 # The precision (lower-triangle CSC, one list entry per cell) and mode of the
 # fit's cells `cells`, solved again with the inputs the fit was solved with by
-# the kernel that solved it: the SPDE grid kernel, the registry kernel of a
-# single block, or the multi-block driver; a fit that kept every cell's
-# precision (`door = "stored"`) reads it. `constraint` is the cells' inner
-# Gaussian constraint (`.inner_constraint()`), aligned with the precisions.
+# the kernel that solved it (`.field_cell_resolve()`); a fit that kept every
+# cell's precision (`door = "stored"`) reads it. `constraint` is the cells'
+# inner Gaussian constraint (`.inner_constraint()`), aligned with the
+# precisions. A solved cell is kept in the session's cache under the record's
+# `key` (`.field_solve_cache_get()`), so a fit read again -- another predict(),
+# temporal() or summary() call -- solves only the cells it has not solved yet.
+# The re-solved modes are checked against the stored ones, since a precision
+# solved at another mode is not the fit's.
 #' @keywords internal
 .field_cell_solve <- function(object, src, cells) {
   rec <- src$solve
@@ -1240,6 +1238,7 @@
          "conditional-Laplace fit with observation weights). The point ",
          "prediction, predict(se.fit = FALSE), is available.", call. = FALSE)
   }
+  n_x <- ncol(src$modes)
   if (identical(rec$door, "stored")) {
     return(list(Q_p = object$Q_csc_p_per_grid[cells],
                 Q_i = object$Q_csc_i_per_grid[cells],
@@ -1247,6 +1246,38 @@
                 modes = src$modes[cells, , drop = FALSE],
                 constraint = .inner_constraint(object, cells)))
   }
+  out <- .field_solve_cache_get(rec$key, cells, src$modes)
+  miss <- which(!out$found)
+  if (length(miss)) {
+    res <- .field_cell_resolve(object, src, rec, cells[miss])
+    M <- src$modes[cells[miss], , drop = FALSE]
+    dev <- max(abs(res$modes - M))
+    if (!is.finite(dev) || dev > 1e-3 * (1 + max(abs(M)))) {
+      stop("Solving the fit's outer cells again did not reproduce their ",
+           "stored modes (largest difference ", signif(dev, 3), "), so the ",
+           "precision it returned is not the fit's.", call. = FALSE)
+    }
+    .field_solve_cache_put(rec$key, cells[miss], res, M)
+    out$Q_p[miss] <- res$Q_p
+    out$Q_i[miss] <- res$Q_i
+    out$Q_x[miss] <- res$Q_x
+    out$soft_D[miss] <- res$constraint$soft_D %||% vector("list", length(miss))
+    out$hard <- res$constraint$hard
+    out$soft <- res$constraint$soft
+  }
+  soft_D <- if (!all(vapply(out$soft_D, is.null, logical(1)))) out$soft_D
+  list(Q_p = out$Q_p, Q_i = out$Q_i, Q_x = out$Q_x,
+       modes = src$modes[cells, , drop = FALSE],
+       constraint = list(hard = out$hard %||% list(),
+                         soft = if (!is.null(soft_D)) out$soft,
+                         soft_D = soft_D))
+}
+
+# The cells `cells` of a grid fit solved by the kernel that solved them -- the
+# SPDE grid kernel, the registry kernel of a single block, or the multi-block
+# driver -- at the cells' own hyperparameters, keeping each precision.
+#' @keywords internal
+.field_cell_resolve <- function(object, src, rec, cells) {
   theta <- src$theta[cells, , drop = FALSE]
   prior <- rec$prior %||% object$prior
   res <- switch(rec$door,
@@ -1286,6 +1317,83 @@
        Q_x = res$Q_csc_x_per_grid,
        modes = matrix(res$modes, nrow = length(cells)),
        constraint = .inner_constraint(res))
+}
+
+# ---- the session cache of solved cells -----------------------------------------
+
+# Solved cells by record key: each entry holds the cells' precisions, the modes
+# they were solved at and the constraint groups. Entries are dropped oldest
+# first past `.FIELD_SOLVE_CACHE_MAX` stored values (the precisions' indices
+# and entries, at most 200 MB as doubles); a record whose cells alone exceed it
+# is not cached.
+.FIELD_SOLVE_CACHE <- new.env(parent = emptyenv())
+.FIELD_SOLVE_CACHE_MAX <- 2.5e7
+
+# A key naming one fit's solve record within and across sessions: the process,
+# the clock to the microsecond and a per-session counter.
+#' @keywords internal
+.field_solve_key <- function() {
+  n <- (.FIELD_SOLVE_CACHE$counter %||% 0) + 1
+  assign("counter", n, envir = .FIELD_SOLVE_CACHE)
+  sprintf("%d-%s-%d", Sys.getpid(), format(Sys.time(), "%Y%m%d%H%M%OS6"), n)
+}
+
+# The cached precisions of `cells` under `key`: `found` marks the cells whose
+# entry exists and was solved at the mode `modes` carries for the cell now, so
+# a record whose fit was changed after it was cached is solved again. The
+# constraint's hard and soft rows are the fit's (`hard`, `soft`); the soft
+# rows' precision is per cell (`soft_D`).
+#' @keywords internal
+.field_solve_cache_get <- function(key, cells, modes) {
+  e <- if (is.character(key)) .FIELD_SOLVE_CACHE$entries[[key]]
+  n <- length(cells)
+  out <- list(found = logical(n), Q_p = vector("list", n),
+              Q_i = vector("list", n), Q_x = vector("list", n),
+              soft_D = vector("list", n), hard = e$hard, soft = e$soft)
+  if (is.null(e)) return(out)
+  j <- match(cells, e$cells)
+  for (i in which(!is.na(j))) {
+    if (identical(as.numeric(e$modes[j[i], ]), as.numeric(modes[cells[i], ]))) {
+      out$found[i] <- TRUE
+      out$Q_p[[i]] <- e$Q_p[[j[i]]]
+      out$Q_i[[i]] <- e$Q_i[[j[i]]]
+      out$Q_x[[i]] <- e$Q_x[[j[i]]]
+      if (!is.null(e$soft_D[[j[i]]])) out$soft_D[[i]] <- e$soft_D[[j[i]]]
+    }
+  }
+  out
+}
+
+# Adds the solved cells `cells` (`res`, solved at the fit's modes `M`) to the
+# entry of `key`, replacing any it held for them; the entry becomes the newest,
+# and the oldest entries are dropped until the cache is within its size.
+#' @keywords internal
+.field_solve_cache_put <- function(key, cells, res, M) {
+  if (!is.character(key)) return(invisible())
+  size <- function(e) {
+    2 * sum(lengths(e$Q_x)) + sum(lengths(e$Q_p)) + length(e$modes)
+  }
+  ent <- .FIELD_SOLVE_CACHE$entries %||% list()
+  e <- ent[[key]] %||% list(cells = integer(0), Q_p = list(), Q_i = list(),
+                            Q_x = list(), soft_D = list(), modes = NULL)
+  keep <- !(e$cells %in% cells)
+  e$cells <- c(e$cells[keep], as.integer(cells))
+  e$Q_p <- c(e$Q_p[keep], res$Q_p)
+  e$Q_i <- c(e$Q_i[keep], res$Q_i)
+  e$Q_x <- c(e$Q_x[keep], res$Q_x)
+  e$soft_D <- c(e$soft_D[keep],
+                res$constraint$soft_D %||% vector("list", length(cells)))
+  e$modes <- rbind(e$modes[keep, , drop = FALSE], unname(M))
+  e$hard <- res$constraint$hard
+  e$soft <- res$constraint$soft
+  ent[[key]] <- NULL
+  if (size(e) <= .FIELD_SOLVE_CACHE_MAX) ent[[key]] <- e
+  while (length(ent) > 1L &&
+         sum(vapply(ent, size, numeric(1))) > .FIELD_SOLVE_CACHE_MAX) {
+    ent[[1L]] <- NULL
+  }
+  assign("entries", ent, envir = .FIELD_SOLVE_CACHE)
+  invisible()
 }
 
 # Linear-predictor draws (S x n) at the prediction rows of a field fit, with

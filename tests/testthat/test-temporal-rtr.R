@@ -177,3 +177,48 @@ test_that("a temporal projector equal to the time incidence fits the gathered wa
     expect_equal(vcov(joint_p), vcov(joint_g), tolerance = 1e-6, info = type)
   }
 })
+
+
+test_that("temporal() summarizes a restricted field past the retained-covariance limit against its dense posterior (#1125)", {
+  skip_on_cran()
+  # The limit at zero keeps no per-cell covariance on the fit, as a wide field
+  # does; the summary reads each cell's covariance off its solved precision.
+  old <- tulpa:::.NL_FIELD_COV_MAX
+  assignInNamespace(".NL_FIELD_COV_MAX", 0, "tulpa")
+  on.exit(assignInNamespace(".NL_FIELD_COV_MAX", old, "tulpa"), add = TRUE)
+  sm <- .rtr_sim(7L, n_t = 30L)
+  fr <- tulpa(y ~ x, data = sm$d, family = "gaussian", phi = 0.09,
+              temporal = temporal_rtr(temporal_rw1("year"), ~ x),
+              control = list(progress = FALSE))
+  expect_null(fr$grid_field_cov)
+  tp <- temporal(fr, summary = TRUE)
+  # Dense reference: each cell's precision written out, inverted, conditioned
+  # on the fit's sum-to-zero rows, mapped by P and mixed over the weights.
+  src <- tulpa:::.field_cells(fr)
+  on <- which(fr$weights > 0)
+  sol <- tulpa:::.field_cell_solve(fr, src, on)
+  n_x <- ncol(fr$modes)
+  cols <- tulpa:::.nl_temporal_field_cols(fr)
+  P <- fr$temporal$rtr_projection
+  w <- fr$weights[on] / sum(fr$weights[on])
+  A <- if (length(sol$constraint_cols)) {
+    as.matrix(tulpa:::.constraint_rows_matrix(sol$constraint_cols, n_x))
+  }
+  mus <- vars <- NULL
+  for (i in seq_along(on)) {
+    Q <- Matrix::sparseMatrix(i = sol$Q_i[[i]] + 1L, p = sol$Q_p[[i]],
+                              x = sol$Q_x[[i]], dims = c(n_x, n_x),
+                              symmetric = TRUE)
+    S <- as.matrix(solve(Q))
+    if (!is.null(A)) {
+      SA <- S %*% A
+      S <- S - SA %*% solve(t(A) %*% SA, t(SA))
+    }
+    mus <- rbind(mus, as.numeric(P %*% fr$modes[on[i], cols]))
+    vars <- rbind(vars, diag(P %*% S[cols, cols] %*% t(P)))
+  }
+  m <- colSums(w * mus)
+  ref_sd <- sqrt(colSums(w * (vars + mus^2)) - m^2)
+  expect_equal(tp$mean, m, tolerance = 1e-8)
+  expect_equal(tp$sd, ref_sd, tolerance = 1e-8)
+})
