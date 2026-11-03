@@ -79,29 +79,13 @@ static std::vector<std::pair<int,int>> detect_mass_blocks(
     }
   }
   if (layout.has_multiscale_temporal) {
-    // Multiscale temporal hyperparams form a natural block (3-4 params):
-    // log_sigma2_trend, log_sigma2_seasonal, log_sigma2_short [, logit_rho_short]
-    // These are correlated but the temporal effects themselves (phi) are not
-    // strongly correlated with the hyperparams -> BLOCK_DIAG, not full DENSE.
-    int ms_block_start = -1;
-    int ms_block_size = 0;
-    if (layout.log_sigma2_trend_idx >= 0) {
-      ms_block_start = layout.log_sigma2_trend_idx;
-      ms_block_size = 1;
-    }
-    if (layout.log_sigma2_seasonal_idx >= 0) {
-      if (ms_block_start < 0) ms_block_start = layout.log_sigma2_seasonal_idx;
-      ms_block_size++;
-    }
-    if (layout.log_sigma2_short_idx >= 0) {
-      if (ms_block_start < 0) ms_block_start = layout.log_sigma2_short_idx;
-      ms_block_size++;
-    }
-    if (layout.logit_rho_short_idx >= 0) {
-      ms_block_size++;
-    }
-    if (ms_block_start >= 0 && ms_block_size >= 2 && ms_block_size <= 4) {
-      block_specs.push_back({ms_block_start, ms_block_size});
+    // The layout interleaves each multiscale arm's scale with its own field
+    // (log_sigma2_trend, trend[], log_sigma2_seasonal, seasonal[], ...), so the
+    // only contiguous hyperparameter pair is the short-term AR1's
+    // (log_sigma2_short, logit_rho_short).
+    if (layout.log_sigma2_short_idx >= 0 &&
+        layout.logit_rho_short_idx == layout.log_sigma2_short_idx + 1) {
+      block_specs.push_back({layout.log_sigma2_short_idx, 2});
     }
   }
   // Correlated slopes: the per-term Cholesky params form a contiguous,
