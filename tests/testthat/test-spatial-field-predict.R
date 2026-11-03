@@ -129,3 +129,37 @@ test_that("a fit at fixed SPDE hyperparameters is one cell, solved again exactly
                           seed = 1)
   expect_lt(max(abs(p$fit - lp$estimate) / p$se.fit), 0.15)
 })
+
+test_that("a multi-scale field reaches newdata as the sum of its two components", {
+  skip_on_cran()
+  dd <- .sfp_data(33, n = 120L, m = 30L)
+  specs <- list(
+    nngp = spatial_multiscale(~ lon + lat, range_local = c(0.02, 0.15),
+                              range_regional = c(0.15, 1), nn_local = 8L,
+                              nn_regional = 10L, scale_coords = FALSE),
+    hsgp = spatial_multiscale(~ lon + lat, range_local = c(0.02, 0.15),
+                              range_regional = c(0.15, 1), approx = "hsgp",
+                              m = 6L, scale_coords = FALSE))
+  for (nm in names(specs)) {
+    fit <- tulpa(y ~ x, data = dd$obs, family = "poisson",
+                 spatial = specs[[nm]], control = list(progress = FALSE))
+    expect_identical(fit$backend, "nested_laplace", label = nm)
+    src <- tulpa:::.field_source(fit)
+    expect_length(src$layout$fields, 2L)
+    # Each cell's mode, mapped component by component and summed, is the eta
+    # the multi-block driver assembled at that cell.
+    on <- which(fit$weights > 0)
+    E <- tulpa:::.field_eta_rows(
+      fit, src, tulpa:::.tulpa_designs(fit, NULL, "test"), NULL,
+      src$modes[on, , drop = FALSE], on, draw = FALSE,
+      des = fit$re_design, sel = tulpa:::.re_form_select(fit, NULL))
+    expect_lt(max(abs(E - fit$fitted_eta[on, ])), 1e-8, label = nm)
+    p  <- predict(fit, newdata = dd$out, se.fit = TRUE)
+    pf <- predict(fit, newdata = dd$out, include_field = FALSE)
+    lp <- posterior_linpred(fit, newdata = dd$out, summary = TRUE,
+                            ndraws = 4000, seed = 1)
+    expect_lt(max(abs(p$fit - lp$estimate) / p$se.fit), 0.15, label = nm)
+    expect_gt(max(abs(lp$estimate - pf)), 0.2, label = nm)
+    expect_gt(cor(lp$estimate, dd$out$eta), cor(pf, dd$out$eta), label = nm)
+  }
+})

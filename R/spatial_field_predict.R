@@ -1,8 +1,9 @@
 # spatial_field_predict.R
 # ------------------------------------------------------------------------------
 # The linear predictor of a fit carrying a continuous spatial field (an SPDE
-# Matern field, a GP / NNGP field, a Hilbert-space GP field) at any set of
-# locations: the training rows or the rows of `newdata`.
+# Matern field, a GP / NNGP field, a Hilbert-space GP field, or a multi-scale
+# field, the sum of two NNGP or two HSGP components) at any set of locations:
+# the training rows or the rows of `newdata`.
 #
 # The fit's posterior over its latent vector x = [fixed effects, random
 # effects, field] is the outer-grid mixture sum_k w_k N(m_k, Q_k^-1), one
@@ -24,8 +25,10 @@
 # coefficients and the field, the field's conditional (kriging) variance away
 # from the data, and the spread over the hyperparameter cells. The point
 # prediction is the exact posterior mean, the weighted mean of the same map at
-# the cell modes. predict(), posterior_linpred() and posterior_predict() all
-# read these two functions.
+# the cell modes. A multi-scale field is mapped component by component, each
+# with its own block's hyperparameters, and the components summed.
+# predict(), posterior_linpred() and posterior_predict() all read these two
+# functions.
 #
 # A cell's precision is not kept on the fit: it is as large as the latent
 # vector's sparse graph and a grid can carry hundreds of cells. The cells a
@@ -33,6 +36,18 @@
 # kernel that solved them during the fit (`.field_cell_solve()`), and the
 # re-solved modes are checked against the stored ones.
 # ------------------------------------------------------------------------------
+
+# The kind of map a fit's continuous field takes to a location ("spde",
+# "nngp", "hsgp"), NULL for any other field. A multi-scale field takes the map
+# of its components' approximation.
+#' @keywords internal
+.field_kind <- function(sp) {
+  type <- sp$type %||% ""
+  if (identical(type, .FRONTDOOR_MULTISCALE)) {
+    return(if (identical(sp$approx %||% "nngp", "hsgp")) "hsgp" else "nngp")
+  }
+  switch(type, spde = "spde", gp = , nngp = "nngp", hsgp = "hsgp", NULL)
+}
 
 # The continuous field a fit carries and the outer cells its latent posterior
 # is mixed over: `kind` ("spde", "nngp", "hsgp"), `modes` (cells x n_x),
@@ -43,8 +58,7 @@
 #' @keywords internal
 .field_source <- function(object) {
   sp <- object$spatial
-  kind <- switch(sp$type %||% "", spde = "spde", gp = , nngp = "nngp",
-                 hsgp = "hsgp", NULL)
+  kind <- .field_kind(sp)
   if (is.null(kind) || !is.null(sp$projector) || isTRUE(sp$rsr)) return(NULL)
   cells <- .field_cells(object, kind)
   if (is.null(cells)) return(NULL)
@@ -79,8 +93,11 @@
   NULL
 }
 
-# The latent columns of each component: `beta` (the fixed effects), `field`
-# (the field at its fitted support), and `re` (the formula random effects, with
+# The latent columns of each component: `beta` (the fixed effects), `fields`
+# (one entry per field component: its `cols`, the component at its fitted
+# support, its prior `block`, and the `prefix` its hyperparameter axes carry on
+# the outer grid; a multi-scale field has two), and `re` (the formula random
+# effects, with
 # `scale(k)` the factor turning cell k's coordinates into effects: the cell's
 # random-effect SD on a multi-block grid, whose iid block is non-centred, and 1
 # where the coordinates are the effects; `sd_per_cell` marks the first, where a
@@ -97,7 +114,12 @@
     hsgp = as.integer(sp[["m"]])^2L)
   prior <- object$prior
   if (is.list(prior) && is.null(prior$type) && length(prior)) {
-    field <- .nl_role_cols(prior, object$block_latent_offsets, n_x, "spatial")
+    roles <- .nl_block_roles(prior)
+    fields <- lapply(which(roles == "spatial"), function(k) {
+      list(cols = .nl_block_cols(object$block_latent_offsets, n_x, k,
+                                 length(roles)),
+           block = prior[[k]], prefix = paste0("b", k, "."))
+    })
     rl <- .nl_re_field_load(prior, object$block_latent_offsets, n_x,
                             cells$theta)
     re <- if (!is.null(rl)) {
@@ -105,32 +127,29 @@
            scale = function(k) as.numeric(rl$weights(k)[[1L]]))
     }
   } else {
-    field <- if (width <= n_x - p) seq.int(n_x - width + 1L, n_x)
+    fields <- if (width <= n_x - p) {
+      list(list(cols = seq.int(n_x - width + 1L, n_x), block = prior,
+                prefix = ""))
+    }
     n_re <- n_x - width - p
     re <- if (n_re > 0L) {
       list(cols = p + seq_len(n_re), sd_per_cell = FALSE, scale = function(k) 1)
     }
   }
-  if (is.null(field) || length(field) != width) return(NULL)
-  list(beta = seq_len(p), field = as.integer(field), re = re)
+  if (!length(fields) ||
+      any(vapply(fields, function(f) length(f$cols) != width, logical(1)))) {
+    return(NULL)
+  }
+  for (j in seq_along(fields)) fields[[j]]$cols <- as.integer(fields[[j]]$cols)
+  list(beta = seq_len(p), fields = fields, re = re)
 }
 
-# The prior block of the field: the fit's single block, or the spatial block of
-# a block list.
+# A field hyperparameter of every cell, by its bare axis name and the prefix
+# its component's block carries on the outer grid (`""` on a single-block
+# grid).
 #' @keywords internal
-.field_block <- function(object) {
-  prior <- object$prior
-  if (!is.list(prior) || !is.null(prior$type)) return(prior)
-  k <- which(.nl_block_roles(prior) == "spatial")[1L]
-  if (is.na(k)) NULL else prior[[k]]
-}
-
-# A field hyperparameter of every cell, by its bare axis name: the column
-# itself on a single-block grid, its block-prefixed column on a block list.
-#' @keywords internal
-.field_theta <- function(theta, axis) {
-  cn <- colnames(theta)
-  j <- which(cn == axis | grepl(paste0("^b[0-9]+\\.", axis, "$"), cn))
+.field_theta <- function(theta, axis, prefix = "") {
+  j <- which(colnames(theta) == paste0(prefix, axis))
   if (length(j) != 1L) {
     stop("The fit's outer grid carries no single `", axis, "` axis for its ",
          "spatial field.", call. = FALSE)
@@ -163,12 +182,13 @@
   .coords_plain(nc)
 }
 
-# The field (R x n) at the prediction rows for field rows `Fr` (R x width, the
-# field at its fitted support) drawn in cells `cells` (indices into the fit's
-# grid). `draw = TRUE` adds the NNGP conditional deviation; `FALSE` gives the
+# The field component `comp` (an entry of the layout's `fields`) as R x n rows
+# at the prediction rows, for its rows `Fr` (R x width, the component at its
+# fitted support) drawn in cells `cells` (indices into the fit's grid).
+# `draw = TRUE` adds the NNGP conditional deviation; `FALSE` gives the
 # conditional mean, which for the SPDE and HSGP maps is the map itself.
 #' @keywords internal
-.field_at <- function(object, src, newdata, Fr, cells, draw) {
+.field_at <- function(object, src, newdata, Fr, cells, draw, comp) {
   sp <- object$spatial
   switch(src$kind,
     spde = {
@@ -178,7 +198,8 @@
     hsgp = {
       ct <- .coords_2col(.coords_plain(sp$coords_matrix), "hsgp() prediction")
       cn <- .coords_2col(.field_coords_at(object, newdata), "hsgp() prediction")
-      cc <- as.numeric(sp[["c"]])
+      cc <- as.numeric(if (identical(sp$type, .FRONTDOOR_MULTISCALE))
+                         sp$c_boundary else sp[["c"]])
       dom <- cpp_hsgp_domain_2d(ct, cc)
       out <- abs(cn[, 1L] - dom[1L]) > dom[3L] | abs(cn[, 2L] - dom[2L]) > dom[4L]
       if (any(out)) {
@@ -189,8 +210,8 @@
              "field.", call. = FALSE)
       }
       basis <- cpp_hsgp_basis_2d_domain(cn, as.integer(sp[["m"]]), dom)
-      s2 <- .field_theta(src$theta, "sigma2")
-      ls <- .field_theta(src$theta, "lengthscale")
+      s2 <- .field_theta(src$theta, "sigma2", comp$prefix)
+      ls <- .field_theta(src$theta, "lengthscale", comp$prefix)
       u <- unique(cells)
       sq <- do.call(rbind, lapply(u, function(k) as.numeric(
         cpp_hsgp_sqrt_spectral(basis$lambda_eig, s2[k], ls[k]))))
@@ -205,7 +226,7 @@
         }
         return(Fr[, otl, drop = FALSE])
       }
-      blk <- .field_block(object)
+      blk <- comp$block
       nn  <- as.integer(blk$nn %||% sp$nn %||% 10L)
       cty <- as.integer(blk$cov_type %||% gp_cov_type(sp))
       nc <- .field_coords_at(object, newdata)
@@ -214,17 +235,17 @@
                else matrix(0, nrow(Fr), nrow(nc))
       cpp_gp_field_rows(nc, .coords_plain(sp$unique_coords), Fr,
                         as.integer(match(cells, u) - 1L),
-                        .field_theta(src$theta, "sigma2")[u],
-                        .field_theta(src$theta, "phi_gp")[u],
+                        .field_theta(src$theta, "sigma2", comp$prefix)[u],
+                        .field_theta(src$theta, "phi_gp", comp$prefix)[u],
                         nn, cty, noise)
     })
 }
 
 # The linear predictor (R x n) at the prediction rows for latent rows `L`
 # (R x n_x) drawn in cells `cells`: the fixed effects and the offset of design
-# `D`, the field (`.field_at()`), and the fitted groups' random effects of the
-# terms `sel` keeps on term design `des`. The random-effect coefficient rows
-# travel as the `"re"` attribute.
+# `D`, the field (`.field_at()`, summed over its components), and the fitted
+# groups' random effects of the terms `sel` keeps on term design `des`. The
+# random-effect coefficient rows travel as the `"re"` attribute.
 #' @keywords internal
 .field_eta_rows <- function(object, src, D, newdata, L, cells, draw, des,
                             sel = NULL) {
@@ -240,8 +261,10 @@
   }
   eta <- beta %*% t(X)
   if (any(D$offset != 0)) eta <- sweep(eta, 2, rep_len(D$offset, ncol(eta)), "+")
-  eta <- eta + .field_at(object, src, newdata,
-                         L[, lay$field, drop = FALSE], cells, draw)
+  for (comp in lay$fields) {
+    eta <- eta + .field_at(object, src, newdata, L[, comp$cols, drop = FALSE],
+                           cells, draw, comp)
+  }
   B <- NULL
   if (!is.null(lay$re)) {
     nr <- length(lay$re$cols)
