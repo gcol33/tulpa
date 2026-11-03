@@ -912,6 +912,31 @@ coef.summary.tulpa_fit <- function(object, ...) object$coefficients
     out <- rbind(out, der[, cols, drop = FALSE])
     rownames(out) <- NULL
   }
+  out$parameter <- .hyper_axis_labels(object, out$parameter)
+  out
+}
+
+
+# The reported label of each outer-grid axis. A multi-block fit names an axis
+# `b<k>.<axis>` after its block's position, which is how the driver and every
+# reader address it; a block that carries a name of its own (a scale of a
+# multi-scale field, a component of a multi-scale temporal one, a column of an
+# inline field) is reported as `<axis>[<name>]`, the label spatial_range() and
+# temporal_corr() give the same axis.
+#' @keywords internal
+.hyper_axis_labels <- function(object, axes) {
+  pref <- grepl("^b[0-9]+\\.", axes)
+  if (!any(pref) || inherits(object, "tulpa_st_nested")) return(axes)
+  pr <- object$prior
+  blocks <- if (is.null(pr)) list() else if (!is.null(pr$type)) list(pr) else pr
+  am <- .nested_axis_map(object, axes)
+  out <- axes
+  for (j in which(pref & !is.na(am$block))) {
+    bn <- blocks[[am$block[j]]]$name
+    if (is.character(bn) && length(bn) == 1L && nzchar(bn)) {
+      out[j] <- paste0(am$bare[j], "[", bn, "]")
+    }
+  }
   out
 }
 

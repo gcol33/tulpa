@@ -106,6 +106,47 @@ test_that("field_effects() refuses a component on a single-scale field", {
   expect_error(field_effects(fit, component = "local"), "multi-scale")
 })
 
+test_that("summary() labels a named block's axes by the block's name", {
+  # The driver addresses an axis by its block's position (`b1.sigma`); the
+  # report names the scale, as spatial_range() does.
+  blk <- function(nm) list(type = "nngp", name = nm)
+  fit <- structure(list(
+    prior = list(blk("local"), blk("regional")),
+    theta_names = c("b1.sigma", "b1.phi_gp", "b2.sigma", "b2.phi_gp"),
+    theta_mean = c(0.6, 0.5, 1, 3), theta_sd = rep(0.1, 4),
+    theta_median = c(0.6, 0.5, 1, 3), theta_ci_lo = c(0.4, 0.3, 0.7, 2),
+    theta_ci_hi = c(0.8, 0.7, 1.3, 4)), class = "tulpa_fit")
+  expect_identical(tulpa:::.fit_hyper_table(fit)$parameter,
+                   c("sigma[local]", "phi_gp[local]", "sigma[regional]",
+                     "phi_gp[regional]"))
+  # A block without a name keeps the positional label.
+  fit$prior[[2L]]$name <- NULL
+  expect_identical(tulpa:::.fit_hyper_table(fit)$parameter[3:4],
+                   c("b2.sigma", "b2.phi_gp"))
+})
+
+test_that("the sampler route names a multi-scale field's rows as the nested one does", {
+  set.seed(1)
+  dr <- matrix(rnorm(400, -1, 0.3), 100, 4,
+               dimnames = list(NULL, c("log_sigma2_gp_local", "log_phi_gp_local",
+                                       "log_sigma2_gp_regional",
+                                       "log_phi_gp_regional")))
+  sr <- spatial_range(structure(list(draws = dr, spatial = list(type = "multiscale")),
+                                class = "tulpa_fit"))
+  expect_setequal(rownames(sr), c("sigma[local]", "range[local]",
+                                  "sigma[regional]", "range[regional]"))
+  expect_equal(sr["range[local]", "mean"], mean(3 * exp(dr[, 2])))
+  dt <- matrix(rnorm(500, -1, 0.3), 100, 5,
+               dimnames = list(NULL, c("log_sigma2_trend", "log_sigma2_seasonal",
+                                       "log_sigma2_short", "logit_rho_short",
+                                       "trend[1]")))
+  tc <- temporal_corr(structure(list(draws = dt), class = "tulpa_fit"))
+  expect_setequal(rownames(tc), c("sigma[trend]", "sigma[seasonal]",
+                                  "sigma[short_term]", "rho[short_term]"))
+  expect_equal(tc["sigma[trend]", "mean"], mean(exp(dt[, 1] / 2)))
+  expect_equal(tc["rho[short_term]", "mean"], mean(2 * plogis(dt[, 4]) - 1))
+})
+
 skip_on_cran()
 
 test_that("nested multi-scale spatial fit recovers both scales against the truth", {

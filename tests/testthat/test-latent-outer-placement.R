@@ -94,7 +94,8 @@ test_that("latent(temporal_ar2()) is placed at the outer mode and integrates its
         b1.log_tau    = c( 1.3792, 0.2097,  0.9646,  1.7901),
         b1.atanh_psi1 = c( 1.3845, 0.0804,  1.2363,  1.5540),
         b1.atanh_psi2 = c(-0.9082, 0.1580, -1.2509, -0.6280))
-    got <- .hp_table(fit)[rownames(ref), ]
+    # summary() names an axis by its block's name; the reference by position.
+    got <- .hp_table(fit)[tulpa:::.hyper_axis_labels(fit, rownames(ref)), ]
     tol <- 0.25 * ref[, 2L]
     expect_true(all(abs(got[, "mean"] - ref[, 1L]) < tol))
     expect_true(all(abs(got[, "sd"] - ref[, 2L]) < tol))
