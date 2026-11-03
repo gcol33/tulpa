@@ -721,8 +721,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 # instead of a value: the EB path re-solves at theta_hat through the SAME closure
 # the optimizer drove, so no second inner-solve configuration can drift from it.
 #
-# Returns the closures and the geometry (post_cov / L_scale) the nested path
-# needs for node placement, so nothing downstream has to rebuild them.
+# Returns the closures and the optimizer result; with `need_scale` its
+# `opt$hessian` is the mode's numerical curvature, which the nested path's
+# placement (`.re_cov_placement()`) reads.
 .re_cov_theta_fit <- function(y, n_trials, X, re_terms,
                               family, phi, phi2 = NULL,
                               prior_sigma, eta, log_prior_theta,
@@ -1451,28 +1452,6 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     }
   }
 
-  # Posterior covariance of theta ~ solve(Hessian of negg). Regularize to PD;
-  # fall back to a diagonal scale if the numerical Hessian is unusable. Only the
-  # nested path needs this (it places nodes with it); EB reports the plug-in and
-  # skips the numerical Hessian entirely.
-  post_cov <- NULL; L_scale <- NULL
-  if (need_scale) {
-    Hn <- opt$hessian
-    post_cov <- tryCatch({
-      Hs <- (Hn + t(Hn)) / 2
-      ev <- eigen(Hs, symmetric = TRUE, only.values = TRUE)$values
-      if (min(ev) <= 1e-8) stop("non-PD Hessian")
-      .spd_inverse(Hs)
-    }, error = function(e) {
-      warning(caller, "(): outer theta-Hessian not usable (",
-              conditionMessage(e), "); falling back to a diagonal proposal ",
-              "scale. Integration nodes may be mis-placed -- check the outer ",
-              "Pareto-k (fit$pareto_k).", call. = FALSE)
-      diag(0.5^2, k)
-    })
-    L_scale <- t(chol(post_cov))
-  }
-
   # No `log_marginal` here on purpose: backing it out of opt$value would be a
   # second, differently-derived copy of a number both callers already read off an
   # actual fit -- and one that goes NaN whenever the optimizer's last step hit
@@ -1539,8 +1518,213 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
        theta0 = theta0, theta_hat = sp_hat$re, opt = opt,
        theta_hat_full = theta_hat,
        phi_hat = if (is.na(phi_idx)) NULL else sp_hat$phi,
-       estimate_phi = isTRUE(estimate_phi),
-       post_cov = post_cov, L_scale = L_scale)
+       estimate_phi = isTRUE(estimate_phi))
+}
+
+
+# Placement coordinates --------------------------------------------------------
+#
+# A full block's log-Cholesky coordinates carry a funnel. For c = 2 the slope
+# block is (L21, u = log L22): at fixed L22 the posterior's width along L21 is
+# of the order of L22 itself, so the joint density along L21 = 0 does not decay
+# as u -> -Inf, while the MARGINAL of u carries the factor L22 that the L21
+# width contributes and does. Where the data hold a slope SD weakly the joint
+# mode runs down the neck (u around -10), its curvature along u is close to
+# zero and along L21 close to infinite, and a Gaussian laid at that mode places
+# its nodes nowhere near the mass: its u axis spans hundreds of units and its
+# L21 axis a few thousandths.
+#
+# The marginal SDs and the canonical partial correlations (Lewandowski,
+# Kurowicka & Joe 2009) parameterize the same Sigma without the neck: on
+# `log sigma_i` the change of variables contributes `sigma_i^(i - 1)`, so the
+# density decays as a scale shrinks, and on `atanh` of each partial correlation
+# the LKJ factor holds it off +/-1. The mode found there is interior and its
+# curvature measures the posterior, so the nested door places a full block's
+# nodes in these coordinates, at the mode and the SD that mode-find measured;
+# every node is mapped back to the log-Cholesky coordinates the inner solve, the
+# prior and the summaries read. A diagonal or scalar block is already on its
+# log-SDs and keeps them.
+#
+# Per full block the coordinates are `log sigma_1..c`, then `atanh z_ij` for the
+# strictly-lower entries in the column-major order of the log-Cholesky packing.
+# With W the Cholesky factor of the correlation matrix,
+#   W_ij = z_ij * sqrt(r_ij),  r_ij = 1 - sum_{k<j} W_ik^2,  W_ii = sqrt(r_ii),
+# and L = diag(sigma) W. Row i maps (log sigma_i, atanh z_i.) to
+# (L_i., log L_ii) with log-Jacobian (i - 1) log sigma_i + (1/2) sum_{j<i} log
+# r_ij; row 1 is the identity on log sigma_1.
+
+# log(1 - tanh(y)^2) without cancellation at large |y|.
+.log1m_tanh2 <- function(y) {
+  a <- abs(y)
+  2 * (log(2) - a - log1p(exp(-2 * a)))
+}
+
+# One full block: placement coordinates -> log-Cholesky coordinates and the
+# log-Jacobian of that map.
+.re_cpc_block_to_logchol <- function(v, nc) {
+  logsig <- v[seq_len(nc)]
+  y <- v[-seq_len(nc)]
+  yidx <- matrix(0L, nc, nc)
+  pos <- 0L
+  for (j in seq_len(nc - 1L)) for (i in (j + 1L):nc) {
+    pos <- pos + 1L
+    yidx[i, j] <- pos
+  }
+  L_off <- matrix(0, nc, nc)
+  log_Lii <- numeric(nc)
+  log_jac <- 0
+  for (i in seq_len(nc)) {
+    log_r <- 0
+    for (j in seq_len(i - 1L)) {
+      yy <- y[yidx[i, j]]
+      L_off[i, j] <- exp(logsig[i] + 0.5 * log_r) * tanh(yy)
+      log_jac <- log_jac + 0.5 * log_r
+      log_r <- log_r + .log1m_tanh2(yy)
+    }
+    log_Lii[i] <- logsig[i] + 0.5 * log_r
+    log_jac <- log_jac + (i - 1L) * logsig[i]
+  }
+  theta <- numeric(length(v))
+  idx <- 1L
+  for (j in seq_len(nc)) for (i in j:nc) {
+    theta[idx] <- if (i == j) log_Lii[i] else L_off[i, j]
+    idx <- idx + 1L
+  }
+  list(theta = theta, log_jac = log_jac)
+}
+
+# Inverse of .re_cpc_block_to_logchol().
+.re_logchol_block_to_cpc <- function(theta, nc) {
+  L <- .re_logchol_to_L(theta, nc)
+  logsig <- 0.5 * log(rowSums(L^2))
+  W <- L / exp(logsig)
+  y <- numeric(0)
+  for (j in seq_len(nc - 1L)) for (i in (j + 1L):nc) {
+    r <- 1 - sum(W[i, seq_len(j - 1L)]^2)
+    z <- W[i, j] / sqrt(max(r, .Machine$double.xmin))
+    z <- max(min(z, 1 - .Machine$double.eps), -1 + .Machine$double.eps)
+    y <- c(y, atanh(z))
+  }
+  c(logsig, y)
+}
+
+# Does any block integrate in log-Cholesky coordinates (a full block with a
+# correlation)? Only those are placed in the marginal-SD / partial-correlation
+# coordinates.
+.re_cov_has_full_block <- function(layout) {
+  any(vapply(layout, function(bl) isTRUE(bl$full), logical(1)))
+}
+
+# Stacked placement coordinates (one row per point) -> stacked log-Cholesky /
+# log-SD theta and the log-Jacobian of the map, per row.
+.re_cov_place_to_theta <- function(V, layout) {
+  V <- matrix(V, ncol = sum(vapply(layout, `[[`, integer(1), "k")))
+  theta <- V
+  log_jac <- numeric(nrow(V))
+  pos <- 0L
+  for (bl in layout) {
+    cols <- pos + seq_len(bl$k)
+    pos <- pos + bl$k
+    if (!isTRUE(bl$full)) next
+    for (r in seq_len(nrow(V))) {
+      b <- .re_cpc_block_to_logchol(V[r, cols], bl$nc)
+      theta[r, cols] <- b$theta
+      log_jac[r] <- log_jac[r] + b$log_jac
+    }
+  }
+  list(theta = theta, log_jac = log_jac)
+}
+
+.re_cov_theta_to_place <- function(theta, layout) {
+  out <- theta
+  pos <- 0L
+  for (bl in layout) {
+    cols <- pos + seq_len(bl$k)
+    pos <- pos + bl$k
+    if (isTRUE(bl$full)) out[cols] <- .re_logchol_block_to_cpc(theta[cols], bl$nc)
+  }
+  out
+}
+
+# Posterior covariance of the outer coordinates from the negative log-posterior
+# Hessian at the mode, regularized to PD; a diagonal scale when the Hessian is
+# unusable, said in a warning.
+.re_cov_proposal_scale <- function(H, k, caller) {
+  post_cov <- tryCatch({
+    if (is.null(H) || any(!is.finite(H))) stop("non-finite Hessian")
+    Hs <- (H + t(H)) / 2
+    ev <- eigen(Hs, symmetric = TRUE, only.values = TRUE)$values
+    if (min(ev) <= 1e-8) stop("non-PD Hessian")
+    .spd_inverse(Hs)
+  }, error = function(e) {
+    warning(caller, "(): outer theta-Hessian not usable (",
+            conditionMessage(e), "); falling back to a diagonal proposal ",
+            "scale. Integration nodes may be mis-placed -- check the outer ",
+            "Pareto-k (fit$pareto_k).", call. = FALSE)
+    diag(0.5^2, k)
+  })
+  list(post_cov = post_cov, L_scale = t(chol(post_cov)))
+}
+
+# Where the nested door lays its nodes: a Gaussian `center + L_scale z` in the
+# placement coordinates, mapped to theta by `to_theta(V)` (theta rows and the
+# per-row log-Jacobian the node weights carry). Without a full block the
+# placement coordinates ARE theta and the Gaussian is the shared mode-find's
+# own. With one, the mode is found again in the marginal-SD / partial-
+# correlation coordinates, from the shared mode mapped there, on the same
+# objective plus the map's log-Jacobian; the gradient is a central difference
+# whose 2k points go to the compiled batch in one call, and the curvature at
+# the mode is optim's differenced gradient.
+.re_cov_placement <- function(core, layout, n_threads, outer_maxit, caller) {
+  k <- core$k
+  if (!.re_cov_has_full_block(layout)) {
+    sc <- .re_cov_proposal_scale(core$opt$hessian, k, caller)
+    return(list(coordinate = "log_cholesky", center = core$theta_hat,
+                post_cov = sc$post_cov, L_scale = sc$L_scale,
+                to_theta = function(V) list(theta = matrix(V, ncol = k),
+                                            log_jac = numeric(NROW(V)))))
+  }
+  to_theta <- function(V) .re_cov_place_to_theta(V, layout)
+  log_post <- function(V) {
+    tr <- to_theta(V)
+    L_lists <- lapply(seq_len(nrow(tr$theta)), function(i)
+      .re_cov_theta_to_L_list(tr$theta[i, ], layout))
+    lp <- core$inner_logmarg_batch(L_lists, n_threads_outer = n_threads) +
+      apply(tr$theta, 1L, core$log_prior_theta) + tr$log_jac
+    lp[!is.finite(lp)] <- -Inf
+    lp
+  }
+  h <- 1e-4
+  fn <- function(v) {
+    f <- log_post(matrix(v, 1L))
+    if (is.finite(f)) -f else .Machine$double.xmax
+  }
+  gr <- function(v) {
+    E <- diag(h, k)
+    lp <- log_post(rbind(sweep(E, 2L, v, "+"), sweep(-E, 2L, v, "+")))
+    g <- (lp[seq_len(k)] - lp[k + seq_len(k)]) / (2 * h)
+    if (any(!is.finite(g))) stop("non-finite placement gradient")
+    -g
+  }
+  v0 <- .re_cov_theta_to_place(core$theta_hat, layout)
+  opt <- tryCatch(
+    stats::optim(v0, fn, gr, method = "BFGS", hessian = TRUE,
+                 control = list(maxit = as.integer(outer_maxit), reltol = 1e-10)),
+    error = function(e) NULL)
+  if (is.null(opt) || !all(is.finite(opt$par))) {
+    opt <- stats::optim(v0, fn, method = "Nelder-Mead", hessian = TRUE,
+                        control = list(maxit = as.integer(outer_maxit),
+                                       reltol = 1e-8))
+  }
+  if (!identical(as.integer(opt$convergence), 0L)) {
+    warning(caller, "(): the mode-find that places the integration nodes in ",
+            "the marginal-SD / partial-correlation coordinates did not converge ",
+            "(optim code ", opt$convergence, "); the nodes are centred where it ",
+            "stopped.", call. = FALSE)
+  }
+  sc <- .re_cov_proposal_scale(opt$hessian, k, caller)
+  list(coordinate = "sd_partial_correlation", center = opt$par,
+       post_cov = sc$post_cov, L_scale = sc$L_scale, to_theta = to_theta)
 }
 
 
@@ -1572,7 +1756,17 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #' Integration nodes live in the whitened stacked-parameter space, centred at
 #' the joint marginal-likelihood mode and rotated/scaled by the Cholesky of the
 #' mode's posterior covariance (`solve(Hessian)`), so points track the posterior
-#' ridge. Two node layouts are available via `integration`:
+#' ridge. When a correlated block is present the nodes are laid in a second set
+#' of coordinates for that block, the log marginal SDs and the `atanh` of the
+#' canonical partial correlations, from a mode-find and a curvature read there,
+#' and mapped back to the log-Cholesky coordinates with the Jacobian of the map
+#' in each node's weight. In log-Cholesky coordinates a slope SD the data hold
+#' weakly makes a funnel: the joint mode runs to `log L_22` near `-10`, where
+#' the curvature along it is close to zero, and a Gaussian laid there spans
+#' hundreds of units on that axis and a few thousandths on `L_21`, away from
+#' the posterior mass. In the marginal-SD coordinates the mode is interior.
+#' `theta_hat` stays the log-Cholesky mode, the estimate [tulpa_eb()] reports.
+#' Two node layouts are available via `integration`:
 #' \itemize{
 #'   \item `"ccd"` (default above three parameters): a central-composite design ([ccd_grid()]) of
 #'     `1 + 2k + 2^(k-q)` points for the total `k = sum_blocks` parameters, with
@@ -1800,6 +1994,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'     stayed at the mode. `NULL` when the centring was not requested.
 #'   - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`, `layout`,
 #'     `n_blocks`, `n_coefs` (vector of per-block `c`).
+#'   - `placement`: the coordinates the nodes were laid in (`coordinate`,
+#'     `"log_cholesky"` or `"sd_partial_correlation"`) and the Gaussian there
+#'     (`center`, `cov`).
 #'   - `subspace_debias`: present only when `control$subspace_debias` was set.
 #'     `idx` are the corrected latent coordinates, `bands` the per-probed-index
 #'     reliability table they were read from, `closure_added` what the coupling
@@ -1892,7 +2089,14 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   log_prior_theta <- core$log_prior_theta
   inner_fit       <- core$inner_fit
   theta_hat       <- core$theta_hat
-  L_scale         <- core$L_scale
+  # The Gaussian the nodes are laid from: the shared mode and its curvature, or,
+  # with a full block, the mode-find in the marginal-SD / partial-correlation
+  # coordinates (`.re_cov_placement()`).
+  place      <- .re_cov_placement(core, layout, n_threads,
+                                  as.integer(control$outer_maxit %||% 500L),
+                                  "tulpa_re_cov_nested")
+  L_scale    <- place$L_scale
+  theta_place <- as.numeric(place$to_theta(place$center)$theta)
   # The node layout follows the number of covariance coordinates
   # (`.nl_outer_design()`, defaults in `.NL_OUTER_DESIGN`).
   design      <- .nl_outer_design(k, control)
@@ -1917,7 +2121,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   }
   if (!is.null(sd_cfg)) {
     probe_idx <- sd_cfg$probe %||% seq_len(p_fix)
-    probe <- inner_fit(.re_cov_theta_to_L_list(theta_hat, layout),
+    probe <- inner_fit(.re_cov_theta_to_L_list(theta_place, layout),
                        compute_skew = is.null(sd_cfg$idx),
                        skew_idx = probe_idx,
                        joint_hessian = !identical(sd_cfg$closure, FALSE))
@@ -1943,13 +2147,17 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     z     <- tens$z
     dnode <- rep(1, nrow(z))                # uniform tensor-cell weight
   }
-  theta_grid <- ccd_to_theta(z, theta_hat, L_scale)   # n_grid x k
+  v_grid     <- ccd_to_theta(z, place$center, L_scale)   # n_grid x k
+  node_map   <- place$to_theta(v_grid)
+  theta_grid <- node_map$theta
+  node_log_jac <- node_map$log_jac
   ng <- nrow(theta_grid)
   # Each node's absolute measure in theta. The tensor's is its cell volume: the
   # whitened spacing to the k-th power, scaled by the whitening map's
   # determinant. The CCD's is its moment-rule weight calibrated against the
-  # Gaussian it was laid on (`.ccd_log_measure()`).
-  re_cov_log_measure <- if (identical(integration, "grid")) {
+  # Gaussian it was laid on (`.ccd_log_measure()`). Both are measures in the
+  # placement coordinates; the map to theta multiplies each by its Jacobian.
+  re_cov_log_measure <- node_log_jac + if (identical(integration, "grid")) {
     .nl_aligned_tensor_log_measure(tens, L_scale)
   } else .ccd_log_measure(ccd, L_scale)
 
@@ -2083,7 +2291,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # evaluated joint exp(logm); log-sum-exp shift for stability. Every failed /
   # non-finite node carries logm = -Inf; if all nodes fail, max(logm) = -Inf
   # would give NaN weights, so guard on the finite set and error loudly instead.
-  lw <- log(dnode) + logm
+  lw <- log(dnode) + logm + node_log_jac
   finite_lw <- lw[is.finite(lw)]
   if (length(finite_lw) == 0L) {
     stop("tulpa_re_cov_nested(): every integration node returned a non-finite ",
@@ -2162,7 +2370,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
 
   # --- outer Pareto-k-hat: is the Gaussian grid proposal correctable? --------
   # Importance-sample the hyperparameter posterior with the same Gaussian
-  # proposal (theta_hat, L_scale) the grid is placed with; k-hat gauges whether
+  # proposal (place$center, L_scale) the grid is placed with, in the
+  # placement coordinates; k-hat gauges whether
   # the nested integration is trustworthy (< 0.7) or the hyperparameter
   # posterior is too skewed / heavy-tailed for the grid (>= 0.7). Run after the
   # draw synthesis and with the RNG state restored, so existing draws are
@@ -2178,18 +2387,20 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                 else .k_decline_label(.k_decline("no_varying_axis",
                                                  "no free covariance coordinate"))
   if (isTRUE(diagnose_k) && k > 0L) {
-    log_target_batched <- function(Th) {
+    log_target_batched <- function(V) {
+      tr <- place$to_theta(V)
+      Th <- tr$theta
       L_lists <- lapply(seq_len(nrow(Th)), function(i)
         .re_cov_theta_to_L_list(Th[i, ], layout))
       core$inner_logmarg_batch(L_lists, x_init = x_centre,
                                n_threads_outer = k_width) +
-        apply(Th, 1L, log_prior_theta)
+        apply(Th, 1L, log_prior_theta) + tr$log_jac
     }
     kd <- .with_preserved_seed({
       if (!is.null(k_stream)) .make_seed_restore(k_stream)()
       tryCatch(
         .nested_outer_pareto_k(
-          log_target_batched, theta_hat = theta_hat, L_scale = L_scale,
+          log_target_batched, theta_hat = place$center, L_scale = L_scale,
           n_samples = k_samples, tail_points = k_tail_points),
         error = function(e) NULL)
     })
@@ -2257,6 +2468,11 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     N           = length(y),
     theta_hat   = theta_hat,
     theta_grid  = theta_grid,
+    # The coordinates the nodes were laid in ("log_cholesky", or
+    # "sd_partial_correlation" when a full block is present) and the Gaussian
+    # there: its centre and covariance.
+    placement   = list(coordinate = place$coordinate, center = place$center,
+                       cov = place$post_cov),
     weights     = w,
     log_marginal = logm,
     # The node log-marginals already carry the hyperparameter log-prior, so the

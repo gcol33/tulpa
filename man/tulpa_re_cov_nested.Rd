@@ -219,6 +219,9 @@ centred the node at the leading-order mean, otherwise the reason it
 stayed at the mode. \code{NULL} when the centring was not requested.
 \item \code{theta_hat}, \code{theta_grid}, \code{weights}, \code{log_marginal}, \code{n_grid}, \code{layout},
 \code{n_blocks}, \code{n_coefs} (vector of per-block \code{c}).
+\item \code{placement}: the coordinates the nodes were laid in (\code{coordinate},
+\code{"log_cholesky"} or \code{"sd_partial_correlation"}) and the Gaussian there
+(\code{center}, \code{cov}).
 \item \code{subspace_debias}: present only when \code{control$subspace_debias} was set.
 \code{idx} are the corrected latent coordinates, \code{bands} the per-probed-index
 reliability table they were read from, \code{closure_added} what the coupling
@@ -251,7 +254,17 @@ model is the length-1 case.
 Integration nodes live in the whitened stacked-parameter space, centred at
 the joint marginal-likelihood mode and rotated/scaled by the Cholesky of the
 mode's posterior covariance (\code{solve(Hessian)}), so points track the posterior
-ridge. Two node layouts are available via \code{integration}:
+ridge. When a correlated block is present the nodes are laid in a second set
+of coordinates for that block, the log marginal SDs and the \code{atanh} of the
+canonical partial correlations, from a mode-find and a curvature read there,
+and mapped back to the log-Cholesky coordinates with the Jacobian of the map
+in each node's weight. In log-Cholesky coordinates a slope SD the data hold
+weakly makes a funnel: the joint mode runs to \verb{log L_22} near \code{-10}, where
+the curvature along it is close to zero, and a Gaussian laid there spans
+hundreds of units on that axis and a few thousandths on \code{L_21}, away from
+the posterior mass. In the marginal-SD coordinates the mode is interior.
+\code{theta_hat} stays the log-Cholesky mode, the estimate \code{\link[=tulpa_eb]{tulpa_eb()}} reports.
+Two node layouts are available via \code{integration}:
 \itemize{
 \item \code{"ccd"} (default above three parameters): a central-composite design (\code{\link[=ccd_grid]{ccd_grid()}}) of
 \verb{1 + 2k + 2^(k-q)} points for the total \code{k = sum_blocks} parameters, with
