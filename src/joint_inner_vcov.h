@@ -162,20 +162,24 @@ bool extract_joint_eta_var(
     std::vector<double>& var_out
 );
 
-// Draws of N(0, V) for one cell, V = B (B' Q B)^{-1} B' the covariance of the
-// cell's Gaussian on null(A) (B a basis of it, A the rows `A_cols`; V = Q^{-1}
-// with no rows), from the anchored factor every other read of the cell uses
-// (InvBlockConstraint::condition_draw): column c of the n_x x n_draws
-// column-major `eps` (standard normals) gives column c of `out`. Q need be
-// positive definite on null(A) only and positive semi-definite on the whole
-// space. Returns false, with `why` set, when the cell does not factor or Q is
-// indefinite off the constraint set.
+// Draws of N(0, V) for one cell, V = B (B' M B)^{-1} B' the covariance of the
+// cell's Gaussian on null(A) (B a basis of it, A the rows `A_cols`; V = M^{-1}
+// with no rows), M = Q + S' D S with the soft rows S (`soft_rows`, penalty
+// precision `soft_D`, row-major; none when empty), from the anchored factor
+// every other read of the cell uses (InvBlockConstraint::condition_draw):
+// column c of the n_x x n_draws column-major `eps` (standard normals) gives
+// column c of `out`. M need be positive definite on null(A) only and Q
+// positive semi-definite on the whole space. Returns false, with `why` set,
+// when the cell does not factor or M is indefinite off the constraint set.
 bool draw_constrained_cell(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const std::vector<LinearConstraintRow>& A_cols,
     const double* eps, int n_draws,
     SparseCholeskySolver& solver,
-    std::vector<double>& out, const char** why
+    std::vector<double>& out, const char** why,
+    const std::vector<LinearConstraintRow>& soft_rows =
+        std::vector<LinearConstraintRow>(),
+    const std::vector<double>& soft_D = std::vector<double>()
 );
 
 } // namespace tulpa

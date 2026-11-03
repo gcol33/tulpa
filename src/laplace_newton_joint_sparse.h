@@ -241,6 +241,85 @@ inline bool hard_kkt_step_sparse(
     return true;
 }
 
+// The inner Gaussian of a cell whose sum-to-zero pins the stored H leaves off
+// (folded at solve time): M = H + U D U', conditioned on the hard rows. Its
+// draws need a square root, which the block-Schur fold does not have, so H is
+// factored whole in `solver` with one anchor per pin on top of the hard rows'
+// anchors already loaded on its diagonal, H_a = H + E C E' -- the anchors
+// identify each pinned field's level and each structural row's null
+// direction, so H_a is positive definite where M is on the constraint set and
+// keeps H's sparsity. `fold` is built over the rows [pins (penalty D); hard
+// rows] and every anchor, against that factor, and `out` reads it: the draw,
+// the fold and log|B' M B| = log|H_a| + log|D| + log|Cap| + sum log c
+// - log|A A'| all come from the one matrix. The pins' anchors are taken back
+// off the builder once factored. False when H_a does not factor or the fold
+// is not positive definite.
+inline bool pinned_inner_gaussian(
+    SparseHessianBuilder& H, SparseCholeskySolver& solver,
+    const HardConstraintState* hard, InvBlockConstraint& fold,
+    InnerGaussianConstraint& out
+) {
+    const int n_x = H.n;
+    const auto& r1 = H.s2z_rank1;
+    const int K = static_cast<int>(r1.size());
+    std::vector<double> Dinv_pins;
+    double log_det_D = 0.0;
+    if (K == 0 || !s2z_build_Dinv(r1, H.s2z_coupling, Dinv_pins, log_det_D))
+        return false;
+    const bool hard_on = hard && hard->active();
+
+    std::vector<std::vector<int>> groups(K);
+    for (int k = 0; k < K; k++) groups[k] = s2z_block_nodes(r1[k]);
+    std::vector<LinearConstraintRow> rows = indicator_rows(groups, n_x);
+    if (hard_on) rows.insert(rows.end(), hard->rows.begin(), hard->rows.end());
+    const int kc = static_cast<int>(rows.size());
+
+    std::vector<int> nodes;
+    std::vector<double> weights;
+    std::vector<char> taken(static_cast<std::size_t>(n_x), 0);
+    if (hard_on) {
+        nodes = hard->anchor_node;
+        weights = hard->anchor_weight;
+        for (int j : nodes) taken[j] = 1;
+    }
+    const std::size_t n_hard_anchor = nodes.size();
+    for (int k = 0; k < K; k++)
+        for (int j : groups[k]) {
+            const double c = H.values[H.col_ptr[j]];
+            if (taken[j] || !(c > 0.0) || !std::isfinite(c)) continue;
+            taken[j] = 1;
+            nodes.push_back(j);
+            weights.push_back(c);
+            break;
+        }
+    for (std::size_t a = n_hard_anchor; a < nodes.size(); a++)
+        H.values[H.col_ptr[nodes[a]]] += weights[a];
+    cholmod_sparse view = H.as_cholmod(&solver.common());
+    if (!solver.analyzed()) solver.analyze(&view);
+    const bool factored = solver.factorize(&view);
+    for (std::size_t a = n_hard_anchor; a < nodes.size(); a++)
+        H.values[H.col_ptr[nodes[a]]] -= weights[a];
+    if (!factored) return false;
+
+    std::vector<double> Dinv(static_cast<std::size_t>(kc) * kc, 0.0);
+    for (int i = 0; i < K; i++)
+        for (int j = 0; j < K; j++)
+            Dinv[static_cast<std::size_t>(i) * kc + j] =
+                Dinv_pins[static_cast<std::size_t>(i) * K + j];
+    fold.set_rows(n_x, rows);
+    fold.set_anchors(nodes, weights);
+    fold.build([&](const double* rhs, double* o, int ncol) {
+                   solver.solve(rhs, o, n_x, ncol);
+               }, n_x, &Dinv);
+    if (!fold.usable) return false;
+    out.fold = &fold;
+    out.rank = hard_on ? hard->rank() : 0;
+    out.log_det_shift = log_det_D + fold.log_det_fold() -
+                        (hard_on ? hard->log_det_gram() : 0.0);
+    out.target_shift = hard_on ? hard->prior_conditioning : 0.0;
+    return true;
+}
+
 // The final pass of the sparse joint Newton solve, from the gradient and the
 // Hessian builder the likelihood + prior scatter filled at the returned iterate
 // `scratch.x` (etas already at that point, no base ridge loaded): the
@@ -322,8 +401,7 @@ inline void joint_newton_finalize_sparse(
     // so where it holds, the decrement below is read off it and the PD-enforced
     // solve of the unpinned H -- whose constant direction the base ridge alone
     // has to carry, so its escalation ladder is the normal case here -- is not
-    // run. The corrected integrated Laplace reads the live CHOLMOD factor of
-    // that solve, so a cell it is requested on keeps the solve.
+    // run.
     bool s2z_step_ok = false;
     if (s2z_direct) {
         TULPA_PROFILE_PHASE(PHASE_LOG_DET);
@@ -346,7 +424,7 @@ inline void joint_newton_finalize_sparse(
         // value below stands in for it.
         result.s2z_log_det_fallback = !std::isfinite(s2z_log_det);
     }
-    const bool run_pd_solve = !s2z_step_ok || (cila && cila->active());
+    const bool run_pd_solve = !s2z_step_ok;
 
     bool pd_conditioned = false;
     bool step_ok = s2z_step_ok;
@@ -514,10 +592,25 @@ inline void joint_newton_finalize_sparse(
                             result.converged ? live_factor_declined : nullptr,
                             hard_on ? hard : nullptr);
 
+        // With sum-to-zero pins the live factor is not of the inner Gaussian's
+        // precision, so the correction draws through pinned_inner_gaussian(),
+        // which factors it; a cell whose pinned matrix the block-Schur pass
+        // could not factor has no inner Gaussian to draw from.
+        InvBlockConstraint pinned_fold;
+        InnerGaussianConstraint cila_cons =
+            inner_gaussian_constraint(hard_on ? hard : nullptr);
+        const char* cila_declined = nullptr;
+        if (cila && cila->active() && result.converged && s2z_direct) {
+            cila_cons = InnerGaussianConstraint();
+            if (!s2z_step_ok ||
+                !pinned_inner_gaussian(H_builder, solver, hard_on ? hard : nullptr,
+                                       pinned_fold, cila_cons))
+                cila_declined = "degenerate_proposal";
+        }
         run_inner_cila(result, n_x, pre_center_x, unused_dense_chol, solver,
                        /*use_sparse=*/true, eval_objective,
                        [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); },
-                       x, cila, cila_cell_key, hard_on ? hard : nullptr);
+                       x, cila, cila_cell_key, cila_cons, cila_declined);
     }
 
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);

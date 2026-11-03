@@ -142,6 +142,7 @@ struct InvBlockConstraint {
     SmallSymEig cap;                         // eigendecomposition of Cap (eigen form)
     bool block_form = false;                 // Cap factored as P, N
     bool soft = false;                       // built with a finite D
+    std::vector<double> soft_Dinv;           // that D^{-1}, kc x kc row-major
     SmallChol cap_P, cap_N;                  // factors of P and N (block form)
     std::vector<double> cap_Q, cap_Z;        // Q and P^{-1} Q, kc x na row-major
     bool usable = false;                     // false when the target is not PD
@@ -274,6 +275,7 @@ struct InvBlockConstraint {
         const int m = kc + na;
         block_form = false;
         soft = (Dinv != nullptr);
+        soft_Dinv.clear();
 
         std::vector<double> C(static_cast<std::size_t>(m) * m, 0.0);
         for (int i = 0; i < m; i++)
@@ -291,6 +293,7 @@ struct InvBlockConstraint {
                 for (int j = 0; j < kc; j++)
                     C[static_cast<std::size_t>(i) * m + j] +=
                         (*Dinv)[static_cast<std::size_t>(i) * kc + j];
+            soft_Dinv = *Dinv;
         }
         for (int a = 0; a < na; a++)
             C[static_cast<std::size_t>(kc + a) * m + (kc + a)] -=
@@ -413,81 +416,165 @@ struct InvBlockConstraint {
         return true;
     }
 
-    // The map from a draw z ~ N(0, H_a^{-1}) to a draw of the hard-constrained
-    // Gaussian N(0, V), V = B (B' H B)^{-1} B'. x = V e has covariance
-    // V H V = V for any e ~ N(0, H), and with H = H_a - E C E',
+    // The map from a draw z ~ N(0, H_a^{-1}) to a draw of the constrained
+    // Gaussian N(0, V), V = B (B' M B)^{-1} B', M = H + A_s' D A_s the target
+    // with its soft rows A_s (penalty precision D) and B a basis of null of the
+    // hard rows. x = V e has covariance V M V = V for any e ~ N(0, M), and with
+    // M = H_a + Vj Psi Vj', Vj = [A_s' E] the soft rows' and the anchors'
+    // columns, Psi = diag(D, -C),
     //
-    //   e = H_a z - E G E' z,   G S G - 2 G + C = 0,   S = E' H_a^{-1} E,
+    //   e = H_a z + Vj Gam Vj' z,   2 Gam + Gam S Gam = Psi,   S = Vj' H_a^{-1} Vj,
     //
-    // has covariance H_a - E (2 G - G S G) E' = H. With K = C^{1/2} S C^{1/2}
-    // = U diag(lambda) U', G = C^{1/2} U diag(1 / (1 + sqrt(1 - lambda))) U'
-    // C^{1/2} is the root that stays bounded as lambda -> 0. lambda <= 1 is
-    // H >= 0 (the Schur complement of [[H_a, E C^{1/2}], [C^{1/2} E', I]]), so
-    // a precision indefinite off the constraint set has no such e and the
-    // transform reports `ok = false`. Without anchors G is empty and x is the
-    // conditioning by kriging z - W Cap^{-1} A z. The map is the hard fold's: a
-    // soft one (finite D) reports `ok = false`.
+    // has covariance H_a + Vj (2 Gam + Gam S Gam) Vj' = M. With S = L L' and
+    // K = L' Psi L = Q diag(lambda) Q', Gam = L^{-T} Q diag(g) Q' L^{-1},
+    // g = lambda / (1 + sqrt(1 + lambda)), the root that stays bounded as
+    // lambda -> 0. lambda >= -1 is M >= 0 (I + L' Psi L is congruent to the
+    // Schur complement of [[H_a, Vj], [Vj', -Psi^{-1}]] that M is), so a target
+    // indefinite off the constraint set has no such e and the transform
+    // reports `ok = false`. Without soft rows and anchors Gam is empty and x is
+    // the conditioning by kriging z - W Cap^{-1} A z.
     struct DrawTransform {
-        std::vector<double> G;   // na x na row-major
+        std::vector<int> cols;      // Vb columns of Vj: soft rows, then anchors
+        std::vector<double> Gam;    // nj x nj row-major
+        std::vector<double> Psi;    // nj x nj row-major
         bool ok = false;
     };
 
+    // Rows [0, n_soft) carry a finite penalty and the rest none: the leading
+    // block of the Dinv the fold was built with is positive definite, every
+    // other entry of it is zero. -1 when the rows do not split that way.
+    int n_soft_rows() const {
+        if (!soft) return 0;
+        int ns = 0;
+        while (ns < kc && soft_Dinv[static_cast<std::size_t>(ns) * kc + ns] > 0.0) ns++;
+        for (int i = 0; i < kc; i++)
+            for (int j = 0; j < kc; j++)
+                if ((i >= ns || j >= ns) &&
+                    soft_Dinv[static_cast<std::size_t>(i) * kc + j] != 0.0)
+                    return -1;
+        return ns;
+    }
+
     DrawTransform draw_transform() const {
         DrawTransform T;
-        if (!usable || !block_form || soft) return T;
+        if (!usable || !block_form) return T;
+        const int ns = n_soft_rows();
+        if (ns < 0) return T;
         const int na = n_anchor();
-        if (na == 0) { T.ok = true; return T; }
-        std::vector<double> K(static_cast<std::size_t>(na) * na);
+        const int nj = ns + na;
+        if (nj == 0) { T.ok = true; return T; }
+        T.cols.resize(nj);
+        for (int i = 0; i < ns; i++) T.cols[i] = i;
+        for (int a = 0; a < na; a++) T.cols[ns + a] = kc + a;
+
+        T.Psi.assign(static_cast<std::size_t>(nj) * nj, 0.0);
+        if (ns > 0) {
+            std::vector<double> Dinv_s(static_cast<std::size_t>(ns) * ns);
+            for (int i = 0; i < ns; i++)
+                for (int j = 0; j < ns; j++)
+                    Dinv_s[static_cast<std::size_t>(i) * ns + j] =
+                        soft_Dinv[static_cast<std::size_t>(i) * kc + j];
+            SmallChol cd;
+            cd.factor(Dinv_s, ns);
+            if (!cd.ok) return T;
+            std::vector<double> e(ns), col(ns);
+            for (int j = 0; j < ns; j++) {
+                std::fill(e.begin(), e.end(), 0.0);
+                e[j] = 1.0;
+                cd.solve(e.data(), col.data());
+                for (int i = 0; i < ns; i++)
+                    T.Psi[static_cast<std::size_t>(i) * nj + j] = col[i];
+            }
+        }
         for (int a = 0; a < na; a++)
+            T.Psi[static_cast<std::size_t>(ns + a) * nj + ns + a] = -anchor_weight[a];
+
+        std::vector<double> S(static_cast<std::size_t>(nj) * nj);
+        for (int a = 0; a < nj; a++)
             for (int b = 0; b <= a; b++) {
-                const double s = 0.5 * (W[kc + a][anchor_node[b]] +
-                                        W[kc + b][anchor_node[a]]);
-                const double k = std::sqrt(anchor_weight[a] * anchor_weight[b]) * s;
-                K[static_cast<std::size_t>(a) * na + b] = k;
-                K[static_cast<std::size_t>(b) * na + a] = k;
+                const int ca = T.cols[a], cb = T.cols[b];
+                const double s = 0.5 * (vb_dot(ca, W[cb].data()) + vb_dot(cb, W[ca].data()));
+                S[static_cast<std::size_t>(a) * nj + b] = s;
+                S[static_cast<std::size_t>(b) * nj + a] = s;
+            }
+        SmallChol cs;
+        cs.factor(S, nj);
+        if (!cs.ok) return T;
+        const std::vector<double>& L = cs.L;
+        // K = L' Psi L.
+        std::vector<double> PL(static_cast<std::size_t>(nj) * nj, 0.0);
+        for (int i = 0; i < nj; i++)
+            for (int j = 0; j < nj; j++) {
+                double s = 0.0;
+                for (int k = j; k < nj; k++)
+                    s += T.Psi[static_cast<std::size_t>(i) * nj + k] *
+                         L[static_cast<std::size_t>(k) * nj + j];
+                PL[static_cast<std::size_t>(i) * nj + j] = s;
+            }
+        std::vector<double> K(static_cast<std::size_t>(nj) * nj);
+        for (int i = 0; i < nj; i++)
+            for (int j = 0; j <= i; j++) {
+                double s = 0.0;
+                for (int k = i; k < nj; k++)
+                    s += L[static_cast<std::size_t>(k) * nj + i] *
+                         PL[static_cast<std::size_t>(k) * nj + j];
+                K[static_cast<std::size_t>(i) * nj + j] = s;
+                K[static_cast<std::size_t>(j) * nj + i] = s;
             }
         SmallSymEig eg;
-        eg.factor(K, na);
+        eg.factor(K, nj);
         if (!eg.ok) return T;
-        std::vector<double> gam(na);
-        for (int j = 0; j < na; j++) {
+        std::vector<double> g(nj);
+        for (int j = 0; j < nj; j++) {
             const double lam = eg.w[j];
-            if (!(lam > 0.0) || lam > 1.0 + 1e-8) return T;
-            gam[j] = 1.0 / (1.0 + std::sqrt(std::max(0.0, 1.0 - lam)));
+            if (!(lam >= -1.0 - 1e-8) || !std::isfinite(lam)) return T;
+            g[j] = lam / (1.0 + std::sqrt(std::max(0.0, 1.0 + lam)));
         }
-        T.G.assign(static_cast<std::size_t>(na) * na, 0.0);
-        for (int a = 0; a < na; a++)
-            for (int b = 0; b < na; b++) {
+        // Y = L^{-T} Q, column by column (back substitution against L').
+        std::vector<double> Y(static_cast<std::size_t>(nj) * nj, 0.0);
+        for (int c = 0; c < nj; c++)
+            for (int i = nj - 1; i >= 0; i--) {
+                double s = eg.V[static_cast<std::size_t>(i) * nj + c];
+                for (int k = i + 1; k < nj; k++)
+                    s -= L[static_cast<std::size_t>(k) * nj + i] *
+                         Y[static_cast<std::size_t>(k) * nj + c];
+                Y[static_cast<std::size_t>(i) * nj + c] =
+                    s / L[static_cast<std::size_t>(i) * nj + i];
+            }
+        T.Gam.assign(static_cast<std::size_t>(nj) * nj, 0.0);
+        for (int a = 0; a < nj; a++)
+            for (int b = 0; b < nj; b++) {
                 double s = 0.0;
-                for (int j = 0; j < na; j++)
-                    s += eg.V[static_cast<std::size_t>(a) * na + j] * gam[j] *
-                         eg.V[static_cast<std::size_t>(b) * na + j];
-                T.G[static_cast<std::size_t>(a) * na + b] =
-                    std::sqrt(anchor_weight[a] * anchor_weight[b]) * s;
+                for (int j = 0; j < nj; j++)
+                    s += Y[static_cast<std::size_t>(a) * nj + j] * g[j] *
+                         Y[static_cast<std::size_t>(b) * nj + j];
+                T.Gam[static_cast<std::size_t>(a) * nj + b] = s;
             }
         T.ok = true;
         return T;
     }
 
     // In place, d (a draw L^{-T} eps against the factor of H_a, so
-    // d' H_a d = eps' eps) becomes x ~ N(0, V). Returns eps' eps - x' H x,
+    // d' H_a d = eps' eps) becomes x ~ N(0, V). Returns eps' eps - x' M x,
     // what the quadratic form of the constrained Gaussian loses against the
-    // draw's: u' C u + b' Cap^{-1} b with u = E' d and b = Vb' H_a^{-1} e.
+    // draw's: b' Cap^{-1} b - u' Psi u with u = Vj' d and b = Vb' H_a^{-1} e,
+    // since x' M x = e' V e = e' H_a^{-1} e - b' Cap^{-1} b and
+    // e' H_a^{-1} e = d' M d = eps' eps + u' Psi u.
     double condition_draw(double* d, int n_x, const DrawTransform& T) const {
-        const int na = n_anchor();
+        const int nj = static_cast<int>(T.cols.size());
         double reduce = 0.0;
-        if (na > 0) {
-            std::vector<double> u(na), gu(na, 0.0);
-            for (int a = 0; a < na; a++) {
-                u[a] = d[anchor_node[a]];
-                reduce += anchor_weight[a] * u[a] * u[a];
-            }
-            for (int a = 0; a < na; a++)
-                for (int b = 0; b < na; b++)
-                    gu[a] += T.G[static_cast<std::size_t>(a) * na + b] * u[b];
-            for (int a = 0; a < na; a++) {
-                const std::vector<double>& wa = W[kc + a];
-                for (int t = 0; t < n_x; t++) d[t] -= wa[t] * gu[a];
+        if (nj > 0) {
+            std::vector<double> u(nj), gu(nj, 0.0);
+            for (int a = 0; a < nj; a++) u[a] = vb_dot(T.cols[a], d);
+            for (int a = 0; a < nj; a++)
+                for (int b = 0; b < nj; b++) {
+                    const std::size_t ab = static_cast<std::size_t>(a) * nj + b;
+                    gu[a] += T.Gam[ab] * u[b];
+                    reduce -= u[a] * T.Psi[ab] * u[b];
+                }
+            for (int a = 0; a < nj; a++) {
+                const std::vector<double>& wa = W[T.cols[a]];
+                for (int t = 0; t < n_x; t++) d[t] += wa[t] * gu[a];
             }
         }
         const int m = static_cast<int>(W.size());

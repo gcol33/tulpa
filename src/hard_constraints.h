@@ -409,6 +409,35 @@ private:
     }
 };
 
+// The constraints the inner Gaussian of a cell is conditioned on, as a draw
+// reads them: the fold whose W was solved against the factor the draw is taken
+// through, the number of hard rows (the dimensions the expansion loses), what
+// the fold adds to that factor's log-determinant to give log|B' M B| for the
+// precision M the log-marginal was read off, and the level rows' log-density
+// conditioning. A draw and its density read this one object, so the fold, the
+// factor and the determinant cannot come from different matrices.
+struct InnerGaussianConstraint {
+    const InvBlockConstraint* fold = nullptr;
+    int rank = 0;
+    double log_det_shift = 0.0;
+    double target_shift = 0.0;
+    bool active() const { return fold != nullptr; }
+};
+
+// The hard rows alone, for a loop whose live factor is M_a itself (no
+// sum-to-zero pin left off it): the state's own fold.
+inline InnerGaussianConstraint inner_gaussian_constraint(
+    const HardConstraintState* hard
+) {
+    InnerGaussianConstraint c;
+    if (!hard || !hard->active()) return c;
+    c.fold = &hard->cap;
+    c.rank = hard->rank();
+    c.log_det_shift = hard->log_det_subspace_correction();
+    c.target_shift = hard->prior_conditioning;
+    return c;
+}
+
 }  // namespace tulpa
 
 #endif  // TULPA_HARD_CONSTRAINTS_H

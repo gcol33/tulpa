@@ -90,6 +90,47 @@ test_that("a constrained cell draw has the conditional covariance", {
   expect_lt(max(abs(apply(z, 1, var)[ok] / diag(ref)[ok] - 1)), 0.05)
 })
 
+test_that("a draw with soft and hard rows has the conditional covariance of Q + S'DS", {
+  # A sum-to-zero pin the stored Q leaves off is a soft row S with penalty
+  # precision D: the target is M = Q + S' D S, conditioned on the hard rows.
+  # Q is singular along each level (the pins identify them) and along a
+  # direction only the hard row identifies.
+  set.seed(8)
+  n_a <- 5L; n_b <- 4L; n <- 50L
+  ia <- sample(n_a, n, replace = TRUE); ib <- sample(n_b, n, replace = TRUE)
+  x <- rnorm(n)
+  Xt <- cbind(x, outer(ia, seq_len(n_a), "==") * 1,
+              outer(ib, seq_len(n_b), "==") * 1)
+  n_x <- ncol(Xt)
+  P <- matrix(0, n_x, n_x)
+  P[1, 1] <- 1 / 2.5^2
+  P[1 + seq_len(n_a), 1 + seq_len(n_a)] <- 2 * crossprod(diff(diag(n_a)))
+  P[1 + n_a + seq_len(n_b), 1 + n_a + seq_len(n_b)] <- crossprod(diff(diag(n_b)))
+  Q <- crossprod(Xt, runif(n, 0.5, 2) * Xt) + P
+  soft <- list(1L + seq_len(n_a), 1L + n_a + seq_len(n_b))
+  S <- t(vapply(soft, tulpa:::.constraint_row_dense, numeric(n_x), n_x = n_x))
+  D <- matrix(c(0.4, 0.1, 0.1, 0.3), 2, 2)
+  M <- Q + crossprod(S, D %*% S)
+  cs <- .gh_csc(Q)
+  soft_cpp <- tulpa:::.constraint_rows_for_cpp(soft)
+
+  # Soft rows alone: V = M^{-1}.
+  X <- tulpa:::cpp_constrained_cell_draw(cs$p, cs$i, cs$x, n_x, list(),
+                                         diag(n_x), soft_cpp, D)
+  ref <- solve(M)
+  expect_lt(max(abs(tcrossprod(X) - ref)) / max(abs(ref)), 1e-10)
+
+  # With a hard row on the second level's contrast: V = B (B' M B)^{-1} B'.
+  hard <- list(list(cols = 1L + n_a + seq_len(n_b), w = seq_len(n_b) - 2.5))
+  A <- t(vapply(hard, tulpa:::.constraint_row_dense, numeric(n_x), n_x = n_x))
+  X <- tulpa:::cpp_constrained_cell_draw(cs$p, cs$i, cs$x, n_x,
+                                         tulpa:::.constraint_rows_for_cpp(hard),
+                                         diag(n_x), soft_cpp, D)
+  ref <- .gh_null_cov(M, A)
+  expect_lt(max(abs(tcrossprod(X) - ref)) / max(abs(ref)), 1e-10)
+  expect_lt(max(abs(A %*% X)), 1e-12)
+})
+
 test_that("an unconstrained cell draw has the inverse precision", {
   set.seed(6)
   M <- matrix(rnorm(36), 6, 6)

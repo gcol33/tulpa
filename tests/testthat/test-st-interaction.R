@@ -156,6 +156,66 @@ test_that("a time no observation reaches is identified by the constraint alone",
   expect_equal(as.numeric(f$fitted_eta_var), ve, tolerance = 1e-8)
 })
 
+test_that("the corrected integrated Laplace draws the pinned, constrained inner Gaussian", {
+  # The RW1 main effect's sum-to-zero pin is folded at solve time, and with
+  # TULPA_S2Z_DENSIFY_MAX = 0 the ICAR's is too; the interaction carries hard
+  # rows. Against a Gaussian response the inner Gaussian is the exact cell
+  # posterior, so every importance ratio is the cell's evidence: the draws
+  # have to come from the precision WITH its pins, conditioned on the rows.
+  skip_on_cran()
+  sb <- default_sigma_beta()
+  A <- .kh_graph(); S <- nrow(A); n_t <- 4L
+  csr <- tulpa:::adjacency_to_csr_tulpa(A)
+  set.seed(2)
+  d <- expand.grid(s = 1:S, t = 1:n_t)
+  d <- d[rep(seq_len(nrow(d)), 2), ]
+  n <- nrow(d); x <- rnorm(n); X <- cbind(1, x); phi <- 0.3
+  y <- 0.2 + 0.5 * x + 0.5 * sin(d$s) + 0.2 * d$t + rnorm(n, sd = 0.4) +
+    rnorm(S * n_t, sd = 0.5)[(d$t - 1) * S + d$s]
+  tau_s <- 2; tau_t <- 3; tau_d <- 4
+  Zs <- outer(d$s, 1:S, "==") * 1; Zt <- outer(d$t, 1:n_t, "==") * 1
+  Zd <- outer((d$t - 1) * S + d$s, 1:(S * n_t), "==") * 1
+  Cs <- .kh_cond1(solve(tau_s * (diag(rowSums(A)) - A + 1 / S)))
+  Ct <- .kh_cond1(solve(tau_t * (crossprod(diff(diag(n_t))) + 1 / n_t)))
+  st <- tulpa:::.st_interaction_structure("IV", A, n_t, "rw1", FALSE)
+  Cd <- .kh_cov(st, tau_d)
+  Sig0 <- phi * diag(n) + Zs %*% Cs %*% t(Zs) + Zt %*% Ct %*% t(Zt) +
+    Zd %*% Cd %*% t(Zd)
+  Sig <- Sig0 + sb^2 * X %*% t(X)
+  ev <- -0.5 * (n * log(2 * pi) + as.numeric(determinant(Sig)$modulus) +
+                  sum(y * solve(Sig, y)))
+  V <- solve(crossprod(X, solve(Sig0, X)) + diag(1 / sb^2, 2))
+  m <- as.numeric(V %*% crossprod(X, solve(Sig0, y)))
+  icar <- list(type = "icar", spatial_idx = d$s, n_spatial_units = S,
+               adj_row_ptr = csr$row_ptr, adj_col_idx = csr$col_idx,
+               n_neighbors = csr$n_neighbors, tau_grid = tau_s)
+  rw <- list(type = "rw1", temporal_idx = d$t, n_times = n_t, tau_grid = tau_t)
+  blk <- c(list(type = "st_interaction", obs_idx = (d$t - 1L) * S + d$s,
+                tau_grid = tau_d),
+           st[c("n_latent", "S_p", "S_i", "S_x", "log_pdet", "constr")])
+  old <- Sys.getenv("TULPA_S2Z_DENSIFY_MAX", unset = NA)
+  on.exit(if (is.na(old)) Sys.unsetenv("TULPA_S2Z_DENSIFY_MAX") else
+    Sys.setenv(TULPA_S2Z_DENSIFY_MAX = old), add = TRUE)
+  M <- 4096L
+  for (cutoff in c("", "0")) {
+    Sys.setenv(TULPA_S2Z_DENSIFY_MAX = cutoff)
+    set.seed(1)
+    f <- tulpa_nested_laplace(y, rep(1L, n), X, prior = list(icar, rw, blk),
+                              family = "gaussian", phi = phi,
+                              hyperprior = "flat",
+                              control = c(.kh_ctl, list(cila = list(
+                                n_points = M, n_draws = 20000L))))
+    expect_true(is.na(f$cila$declined), info = cutoff)
+    expect_equal(f$cila$rel_ess, 1, tolerance = 1e-9, info = cutoff)
+    expect_equal(as.numeric(f$cila$cell_log_marginal), ev, tolerance = 1e-8,
+                 info = cutoff)
+    z <- (colMeans(f$draws[, 1:2]) - m) / sqrt(diag(V) / M)
+    expect_lt(max(abs(z)), 4, label = paste("mean z, cutoff", cutoff))
+    expect_lt(max(abs(apply(f$draws[, 1:2], 2, stats::sd) / sqrt(diag(V)) - 1)),
+              0.04, label = paste("sd ratio, cutoff", cutoff))
+  }
+})
+
 .kh_front_data <- function(seed = 3) {
   A <- .kh_graph(island = TRUE); S <- nrow(A); n_t <- 5L
   set.seed(seed)

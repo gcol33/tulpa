@@ -540,7 +540,8 @@ LaplaceResult laplace_newton_solve_ll(
             run_inner_cila(result, n_x, pre_center_x, scratch.chol, sparse_solver,
                            used_sparse_factor, eval_objective,
                            [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); },
-                           x, cila, cila_cell_key, hard_on ? hard : nullptr);
+                           x, cila, cila_cell_key,
+                           inner_gaussian_constraint(hard_on ? hard : nullptr));
         }
 
         center_effects_fn(x);

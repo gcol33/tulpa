@@ -235,7 +235,7 @@ inline CilaOutcome compute_inner_cila(
     Rcpp::NumericVector& x_buf,
     const CilaOptions& opts,
     std::uint64_t cell_key,
-    const HardConstraintState* hard = nullptr
+    const InnerGaussianConstraint& cons = InnerGaussianConstraint()
 ) {
   CilaOutcome out;
   out.n_fixed = std::max(0, std::min(opts.n_fixed, n_x));
@@ -287,26 +287,26 @@ inline CilaOutcome compute_inner_cila(
   // The proposal's log density is constant except for the standardized radius,
   // because z = mode + L^-T eps carries (z - mode)' H (z - mode) = eps' eps.
   //
-  // Under hard constraints A x = 0 the proposal is the inner Gaussian
-  // conditioned on the constraint set, N(0, B (B' H B)^-1 B'): a draw
-  // d = L^-T eps against the live factor (of the anchored H_a where the state
-  // anchors its structural rows) is moved onto it by the state's fold
-  // (InvBlockConstraint::condition_draw), which also returns what
-  // d_c' H d_c loses against eps' eps. Its density on the (n_x - r)-dimensional
-  // subspace carries 0.5 log|B' H B| and the target carries the level rows'
+  // Under constraints the proposal is the inner Gaussian the log-marginal was
+  // read off, conditioned on the hard rows: N(0, B (B' M B)^-1 B'), M the
+  // precision with its sum-to-zero pins. A draw d = L^-T eps against the live
+  // factor (of the anchored H_a) is moved onto it by the fold `cons` carries
+  // (InvBlockConstraint::condition_draw), which also returns what d_c' M d_c
+  // loses against eps' eps. Its density on the (n_x - r)-dimensional subspace
+  // carries 0.5 log|B' M B| and the target carries the level rows'
   // conditioning, so at eps = 0 the estimator is the constrained log_marginal
   // term for term.
-  const bool hard_on = hard && hard->active();
-  const int r_hard = hard_on ? hard->rank() : 0;
+  const bool cons_on = cons.active();
+  const int r_hard = cons_on ? cons.rank : 0;
   const double half_log_det_sub =
-      half_log_det + (hard_on ? 0.5 * hard->log_det_subspace_correction() : 0.0);
+      half_log_det + (cons_on ? 0.5 * cons.log_det_shift : 0.0);
   const double log_q_const =
       -0.5 * (n_x - r_hard) * 1.8378770664093453 + half_log_det_sub;
-  const double target_shift = hard_on ? hard->prior_conditioning : 0.0;
-  InvBlockConstraint::DrawTransform hard_draw;
-  if (hard_on) {
-    hard_draw = hard->cap.draw_transform();
-    if (!hard_draw.ok) {
+  const double target_shift = cons_on ? cons.target_shift : 0.0;
+  InvBlockConstraint::DrawTransform cons_draw;
+  if (cons_on) {
+    cons_draw = cons.fold->draw_transform();
+    if (!cons_draw.ok) {
       out.declined = "degenerate_proposal";
       return out;
     }
@@ -365,7 +365,7 @@ inline CilaOutcome compute_inner_cila(
         const double e = eps[static_cast<std::size_t>(j) * M + i];
         quad += e * e;
       }
-      if (hard_on) quad -= hard->cap.condition_draw(draw, n_x, hard_draw);
+      if (cons_on) quad -= cons.fold->condition_draw(draw, n_x, cons_draw);
       for (int j = 0; j < n_x; j++) x_buf[j] = mode[j] + draw[j];
       const double lp = eval_log_joint(x_buf) + target_shift;
       out.log_w[i] = lp - (log_q_const - 0.5 * quad);
@@ -419,17 +419,18 @@ inline void run_inner_cila(
     Rcpp::NumericVector& x_buf,
     const CilaOptions* opts,
     std::uint64_t cell_key,
-    const HardConstraintState* hard = nullptr
+    const InnerGaussianConstraint& cons = InnerGaussianConstraint(),
+    const char* declined = nullptr
 ) {
   if (!opts || !opts->active()) return;
-  if (!result.converged) {
-    result.cila_declined = "not_converged";
+  if (!result.converged || declined) {
+    result.cila_declined = result.converged ? declined : "not_converged";
     result.cila_requested = true;
     return;
   }
   CilaOutcome cl = compute_inner_cila(n_x, mode, chol, sparse_solver, use_sparse,
                                       eval_log_joint, present_draw, x_buf, *opts,
-                                      cell_key, hard);
+                                      cell_key, cons);
   result.cila_requested   = true;
   result.cila_log_w       = std::move(cl.log_w);
   result.cila_fixed       = std::move(cl.fixed);

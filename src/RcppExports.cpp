@@ -952,8 +952,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_constrained_cell_draw
-Rcpp::NumericMatrix cpp_constrained_cell_draw(Rcpp::IntegerVector Q_p, Rcpp::IntegerVector Q_i, Rcpp::NumericVector Q_x, int n_x, Rcpp::List A_cols_list, Rcpp::NumericMatrix eps);
-RcppExport SEXP _tulpa_cpp_constrained_cell_draw(SEXP Q_pSEXP, SEXP Q_iSEXP, SEXP Q_xSEXP, SEXP n_xSEXP, SEXP A_cols_listSEXP, SEXP epsSEXP) {
+Rcpp::NumericMatrix cpp_constrained_cell_draw(Rcpp::IntegerVector Q_p, Rcpp::IntegerVector Q_i, Rcpp::NumericVector Q_x, int n_x, Rcpp::List A_cols_list, Rcpp::NumericMatrix eps, Rcpp::List soft_cols_list, Rcpp::Nullable<Rcpp::NumericMatrix> soft_D);
+RcppExport SEXP _tulpa_cpp_constrained_cell_draw(SEXP Q_pSEXP, SEXP Q_iSEXP, SEXP Q_xSEXP, SEXP n_xSEXP, SEXP A_cols_listSEXP, SEXP epsSEXP, SEXP soft_cols_listSEXP, SEXP soft_DSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -963,7 +963,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_x(n_xSEXP);
     Rcpp::traits::input_parameter< Rcpp::List >::type A_cols_list(A_cols_listSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type eps(epsSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_constrained_cell_draw(Q_p, Q_i, Q_x, n_x, A_cols_list, eps));
+    Rcpp::traits::input_parameter< Rcpp::List >::type soft_cols_list(soft_cols_listSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type soft_D(soft_DSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_constrained_cell_draw(Q_p, Q_i, Q_x, n_x, A_cols_list, eps, soft_cols_list, soft_D));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3215,7 +3217,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_joint_inner_vcov_blocks", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_blocks, 9},
     {"_tulpa_cpp_loading_marginal_var", (DL_FUNC) &_tulpa_cpp_loading_marginal_var, 9},
     {"_tulpa_cpp_joint_inner_vcov_mixture", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_mixture, 11},
-    {"_tulpa_cpp_constrained_cell_draw", (DL_FUNC) &_tulpa_cpp_constrained_cell_draw, 6},
+    {"_tulpa_cpp_constrained_cell_draw", (DL_FUNC) &_tulpa_cpp_constrained_cell_draw, 8},
     {"_tulpa_cpp_laplace_fit_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_fit_multi_re, 26},
     {"_tulpa_cpp_laplace_log_marginal_multi_re_batch", (DL_FUNC) &_tulpa_cpp_laplace_log_marginal_multi_re_batch, 21},
     {"_tulpa_cpp_laplace_fit_gp", (DL_FUNC) &_tulpa_cpp_laplace_fit_gp, 25},
