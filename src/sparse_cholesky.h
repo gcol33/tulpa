@@ -202,6 +202,16 @@ public:
         // The same entry, and whether (i, j) lies on the computed pattern: a
         // false return says the entry was not computed, where at() reads 0.0.
         bool find(int i_orig, int j_orig, double* value) const;
+        // a' A^{-1} a for a = sum_e w[e] unit(idx[e]), e in [first, last),
+        // read in one pass over the factor columns a touches, each column's
+        // stored entries matched against a's support. False when a pair of
+        // a's support lies off the computed pattern. `mark` (length n, all
+        // zero) and `in_support` (length n, all false) are scratch the call
+        // returns as it found them.
+        bool quad_form(const int* idx, const double* w, std::size_t first,
+                       std::size_t last, std::vector<double>& mark,
+                       std::vector<char>& in_support, std::vector<int>& touched,
+                       double* value) const;
     };
     SelectedInverse selected_inversion_full();
 

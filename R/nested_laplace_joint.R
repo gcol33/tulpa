@@ -2593,6 +2593,15 @@ tulpa_nested_laplace_joint <- function(responses,
 # answer from the single-species fit it reproduces.
 .nl_want_fitted_var <- function() isTRUE(getOption("tulpa.nl_fitted_var", TRUE))
 
+# Evaluate `expr` with the per-row predictive variance off. A kernel call whose
+# per-cell side data is not kept (`store_extras` off) reads its cells'
+# log-marginals and modes only, so it does not pay for the variance sweep.
+.nl_without_fitted_var <- function(expr) {
+  op <- options(tulpa.nl_fitted_var = FALSE)
+  on.exit(options(op), add = TRUE)
+  force(expr)
+}
+
 # Thin wrapper over cpp_nested_laplace_joint_multi that injects the fit-scoped
 # knobs set by tulpa_nested_laplace_joint: the outer-grid progress reporter
 # (`tulpa.nl_progress`), the grid-cell checkpoint file (`tulpa.nl_checkpoint`),

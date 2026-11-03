@@ -61,7 +61,11 @@
         # warning is advice to whoever chose the count, and every call site of
         # this wrapper is an internal re-dispatch whose count the caller did not
         # choose (gcol33/tulpa#614).
-        tulpa.nl_internal_batch = TRUE)
+        tulpa.nl_internal_batch = TRUE,
+        # An internal re-dispatch reads its cells' log-marginals and modes; the
+        # per-row predictive variance is a per-cell solve sweep that only a
+        # cell kept on the fit's grid is read for.
+        tulpa.nl_fitted_var = FALSE)
     on.exit(options(op), add = TRUE)
     force(expr)
 }

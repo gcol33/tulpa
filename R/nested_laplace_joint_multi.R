@@ -1319,7 +1319,7 @@
         x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
                       as.numeric(warm_start$mode) else x_init_default
         scr <- .nl_refine_screen_offset(new_cells, screen, screen_tol, screen_hp)
-        res_x <- call_kernel(
+        solve <- function() call_kernel(
             new_cells, x_init = x_init,
             store_Q = isTRUE(store_Q) && isTRUE(store_extras),
             fixed_block = isTRUE(store_extras),
@@ -1329,6 +1329,7 @@
                                                          nrow(new_cells)),
             prune_tol = if (is.null(scr)) 0 else screen_tol,
             screen_log_offset = scr)
+        res_x <- if (isTRUE(store_extras)) solve() else .nl_without_fitted_var(solve())
         list(log_marginal = res_x$log_marginal,
              extras = if (isTRUE(store_extras))
                           .joint_extras_from_res(res_x, nrow(new_cells)),

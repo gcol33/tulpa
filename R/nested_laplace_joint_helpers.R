@@ -1287,11 +1287,12 @@ tulpa_joint_axis_specs_from_grid <- function(
         # run concurrently, each warm-started from the broadcast mode. Tiling is left off:
         # the IS batch is not a per-axis alpha lattice, so there is no tile
         # structure for the three-tier warm-start to exploit.
-        # Both the precision and the per-cell fixed-effect block leave this
-        # closure only inside `extras`, so a call that asks for no extras
-        # requests neither. That keeps the outer Pareto-k batch -- hundreds of
-        # cells, `store_extras` off -- from paying for either.
-        res_x <- backend$call_kernel(arms, prior, cp, new_grids,
+        # The precision, the per-cell fixed-effect block and the per-row
+        # predictive variance leave this closure only inside `extras`, so a
+        # call that asks for no extras requests none of them. That keeps the
+        # outer Pareto-k batch -- hundreds of cells, `store_extras` off -- from
+        # paying for any.
+        solve <- function() backend$call_kernel(arms, prior, cp, new_grids,
                                       mi, tl, n_threads,
                                       slice_x_init,
                                       isTRUE(store_Q) && isTRUE(store_extras),
@@ -1313,6 +1314,7 @@ tulpa_joint_axis_specs_from_grid <- function(
                                       cila = cila,
                                       prune_tol = if (is.null(scr)) 0 else screen_tol,
                                       screen_log_offset = scr)
+        res_x <- if (isTRUE(store_extras)) solve() else .nl_without_fitted_var(solve())
         extras <- NULL
         if (isTRUE(store_extras)) {
             extras <- .joint_extras_from_res(res_x, nrow(new_cells))

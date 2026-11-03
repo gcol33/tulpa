@@ -567,6 +567,45 @@ bool SparseCholeskySolver::SelectedInverse::find(int i_orig, int j_orig,
     return false;
 }
 
+bool SparseCholeskySolver::SelectedInverse::quad_form(
+    const int* idx, const double* w, std::size_t first, std::size_t last,
+    std::vector<double>& mark, std::vector<char>& in_support,
+    std::vector<int>& touched, double* value) const {
+    if (n == 0) return false;
+    touched.clear();
+    bool in_range = true;
+    for (std::size_t e = first; e < last; e++) {
+        const int i = idx[e];
+        if (i < 0 || i >= n) { in_range = false; break; }
+        const int p = perm_inv[i];
+        if (!in_support[p]) { in_support[p] = 1; touched.push_back(p); }
+        mark[p] += w[e];
+    }
+    // Column p of the stored pattern holds rows below p, its diagonal first;
+    // every pair of the support is read once, from the column of its smaller
+    // permuted index.
+    double v = 0.0;
+    std::size_t pairs = 0;
+    if (in_range) {
+        for (int p : touched) {
+            const double ap = mark[p];
+            v += ap * ap * Zx[Lp[p]];
+            for (int s = Lp[p] + 1; s < Lp[p + 1]; s++) {
+                const int i = Li[s];
+                if (in_support[i]) {
+                    v += 2.0 * ap * mark[i] * Zx[s];
+                    pairs++;
+                }
+            }
+        }
+    }
+    const std::size_t K = touched.size();
+    for (int p : touched) { mark[p] = 0.0; in_support[p] = 0; }
+    if (!in_range || pairs != K * (K - 1) / 2) return false;
+    *value = v;
+    return true;
+}
+
 double SparseCholeskySolver::SelectedInverse::at(int i_orig, int j_orig) const {
     double v = 0.0;
     return find(i_orig, j_orig, &v) ? v : 0.0;

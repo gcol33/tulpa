@@ -195,20 +195,34 @@ test_that("hsgp carries a per-row variance that follows the basis row", {
   phi_basis <- matrix(rnorm(N * M), N, M)
   phi_basis[31:60, ] <- phi_basis[1:30, ]
   X <- cbind(1, rep(rnorm(30), 2L))
+  lambda_eig <- sort(abs(rnorm(M)) + 0.1, decreasing = TRUE)
   fit <- cpp_nested_laplace_hsgp(
     y = as.numeric(rbinom(N, 1L, 0.5)), n = rep(1L, N), X = X,
     re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1,
-    phi_basis = phi_basis,
-    lambda_eig = sort(abs(rnorm(M)) + 0.1, decreasing = TRUE),
+    phi_basis = phi_basis, lambda_eig = lambda_eig,
     sigma2_grid = c(0.5, 1), lengthscale_grid = c(0.5, 1),
     family = "binomial", phi = 1, max_iter = 100L, tol = 1e-10,
-    n_threads = 1L)
+    n_threads = 1L, store_Q = TRUE)
   V <- fit$fitted_eta_var
   expect_equal(dim(V), c(2L, N))
   expect_true(all(is.finite(V)) && all(V > 0))
   expect_identical(V[, 1:30], V[, 31:60])
   # The variance moves with the cell's spectral scaling.
   expect_false(isTRUE(all.equal(V[1, ], V[2, ])))
+
+  # Every row loads every basis coefficient, scaled by the root of the
+  # squared-exponential spectral density at the cell's (sigma2, lengthscale):
+  # the dense-row case, against the cell's stored precision inverted here.
+  for (k in seq_len(2L)) {
+    s2 <- fit$sigma2_grid[k]; ell <- fit$lengthscale_grid[k]
+    S <- s2 * 2 * pi * ell^2 * exp(-0.5 * ell^2 * lambda_eig)
+    A <- cbind(X, sweep(phi_basis, 2L, sqrt(S), "*"))
+    cell <- fit
+    for (nm in c("Q_csc_p_per_grid", "Q_csc_i_per_grid", "Q_csc_x_per_grid")) {
+      cell[[nm]] <- fit[[nm]][k]
+    }
+    expect_equal(V[k, ], .jev_reference(cell, A)[1L, ], tolerance = 1e-10)
+  }
 })
 
 test_that("a resumed joint-driver grid reproduces fitted_eta_var", {
@@ -221,4 +235,31 @@ test_that("a resumed joint-driver grid reproduces fitted_eta_var", {
   resumed <- do.call(cpp_nested_laplace_nngp, args)
   expect_identical(resumed$fitted_eta_var, first$fitted_eta_var)
   expect_identical(resumed$log_marginal, first$log_marginal)
+})
+
+test_that("an internal re-dispatch reads no per-row variance; the fit keeps it", {
+  skip_on_cran()
+  # The variance is a per-cell solve sweep read only for cells kept on the
+  # fit's grid. The outer Pareto-k batch, the placement mode-find and the
+  # other internal re-solves read log-marginals and modes, so they run with
+  # the sweep off; the grid the fit reports still carries it.
+  expect_true(tulpa:::.nl_want_fitted_var())
+  expect_false(tulpa:::.joint_with_quiet_opts(tulpa:::.nl_want_fitted_var()))
+  expect_false(tulpa:::.nl_without_fitted_var(tulpa:::.nl_want_fitted_var()))
+  expect_true(tulpa:::.nl_want_fitted_var())
+
+  set.seed(11)
+  n <- 80
+  d <- data.frame(lon = runif(n), lat = runif(n), x = rnorm(n))
+  d$y <- 1 + 0.5 * d$x + sin(3 * d$lon) + rnorm(n, 0, 0.4)
+  fit <- suppressWarnings(tulpa(y ~ x, data = d, family = "gaussian",
+                                spatial = spatial_gp(~ lon + lat,
+                                                     approx = "hsgp", m = 4),
+                                mode = "auto"))
+  expect_identical(fit$backend, "nested_laplace_joint")
+  expect_true(is.finite(fit$pareto_k))
+  V <- fit$fitted_eta_var
+  kept <- fit$weights > 0 & !apply(is.na(V), 1L, all)
+  expect_true(any(kept))
+  expect_true(all(is.finite(V[kept, ]) & V[kept, ] > 0))
 })
