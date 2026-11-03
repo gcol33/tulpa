@@ -314,6 +314,9 @@ test_that("the step partitions by sparsity and solves many right-hand sides exac
   expect_lt(r$max_dstep, 1e-10)
   expect_true(r$newton_block_schur)
   expect_lt(r$max_dstep_newton, 1e-10)
+  expect_true(r$sqrt_ok)
+  expect_lt(r$max_dgram, 1e-10)
+  expect_lt(r$max_dsqrt, 1e-10)
 })
 
 test_that("block-Schur is exact at the large-field / large-coef sum-to-zero regime", {
@@ -414,5 +417,139 @@ test_that("two intrinsic fields on the same rows give the exact log-determinant 
     expect_lt(r$max_dstep, 1e-10 * scale)
     expect_true(r$newton_block_schur)
     expect_lt(r$max_dstep_newton, 1e-10 * scale)
+  }
+})
+
+# --- Dense coordinates beside a wide pinned field ----------------------------
+# A coordinate of the block-Schur step is a dense scalar only past AMD's
+# dense-row rule, a row coupling to more than max(16, 10 sqrt(n)) others. The
+# fixtures above keep their scalars under it, so their whole latent is factored
+# sparsely; these put `p` fixed effects loading every node of `blocks` chain
+# fields (each pinned) through the Schur complement: each node carries a
+# Gaussian observation's curvature `lik` and the design X (entries of size
+# `xs`), the coefficients X'X + `ridge` I. `eps` > 0 shifts each field block
+# down below its second eigenvalue, so with `lik` = 0 the field block holds one
+# negative eigenvalue per field, along its constant, and only the pins make B
+# positive definite.
+.s2z_make_wide <- function(blocks, p, seed, lik = 1, xs = 0.3, ridge = 0.2,
+                           eps = 0, scale = 1) {
+  set.seed(seed)
+  nf <- sum(blocks)
+  n <- nf + p
+  A <- matrix(0, n, n)
+  off <- 0L
+  for (nb in blocks) {
+    idx <- off + seq_len(nb)
+    for (i in idx[-nb]) {
+      A[i, i + 1L] <- A[i + 1L, i] <- -scale
+      A[i, i] <- A[i, i] + scale; A[i + 1L, i + 1L] <- A[i + 1L, i + 1L] + scale
+    }
+    off <- off + nb
+  }
+  ff <- seq_len(nf)
+  sc <- nf + seq_len(p)
+  X <- matrix(stats::rnorm(nf * p) * xs, nf, p)
+  X[, 1L] <- xs
+  diag(A)[ff] <- diag(A)[ff] + lik - eps
+  A[sc, sc] <- crossprod(X) + diag(ridge, p)
+  A[ff, sc] <- X
+  A[sc, ff] <- t(X)
+  A
+}
+
+.s2z_wide_pins <- function(blocks, coef) {
+  starts <- c(0L, cumsum(blocks)[-length(blocks)])
+  lapply(seq_along(blocks), function(k)
+    list(start = as.integer(starts[k]), n = as.integer(blocks[k]),
+         coef = coef[k]))
+}
+
+.s2z_check_dense <- function(A, pins, G, coupling = NULL, p) {
+  load_cpp_fixture("helpers")
+  r <- cpp_test_s2z_block_schur(
+    A            = A,
+    pin_start    = as.integer(vapply(pins, `[[`, integer(1), "start")),
+    pin_n        = as.integer(vapply(pins, `[[`, integer(1), "n")),
+    pin_coef     = as.numeric(vapply(pins, `[[`, numeric(1), "coef")),
+    grad         = G,
+    pin_coupling = coupling)
+  expect_identical(r$n_scalar, p)
+  expect_identical(r$n_field, nrow(A) - p)
+  expect_true(r$ok)
+  expect_true(is.finite(r$ld_dense))
+  expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-10)
+  expect_lt(.rel(r$ld_block_schur_step, r$ld_direct), 1e-10)
+  scale <- max(1, max(abs(G)))
+  expect_lt(r$max_dstep, 1e-9 * scale)
+  expect_true(r$newton_block_schur)
+  expect_lt(r$max_dstep_newton, 1e-9 * scale)
+  # A PD field block carries the square root the hard-row step forms its
+  # capacitance from; an indefinite one does not.
+  expect_identical(r$sqrt_ok, !r$field_indefinite)
+  if (r$sqrt_ok) {
+    expect_lt(r$max_dgram, 1e-10)
+    expect_lt(r$max_dsqrt, 1e-9 * scale)
+  }
+  r
+}
+
+test_that("fixed effects beside a wide pinned field close the step as a dense Schur complement", {
+  skip_on_cran()
+  # 600 field nodes: the dense-row rule is max(16, 10 sqrt(608)) = 246, so the
+  # eight coefficients (each coupling to all 607 others) are the scalars and
+  # every field node (degree at most 2 + 8) is sparse.
+  blocks <- 600L; p <- 8L
+  A <- .s2z_make_wide(blocks, p, seed = 81L)
+  G <- matrix(stats::rnorm(nrow(A) * 5L), nrow(A), 5L)
+  r <- .s2z_check_dense(A, .s2z_wide_pins(blocks, 1), G, p = p)
+  expect_false(r$field_indefinite)
+  expect_lt(.rel(r$ld_block_schur, r$ld_dense), 1e-10)
+})
+
+test_that("two coupled pins and dense coefficients over an indefinite field block", {
+  skip_on_cran()
+  # The field block carries one negative eigenvalue per field along its
+  # constant direction; the pins (coupled, as an MCAR field's) cover them, and
+  # the dense coefficients close through the Schur complement of the inertia
+  # route's factor.
+  # 116 coordinates: the rule is max(16, 10 sqrt(116)) = 107, and each
+  # coefficient couples to 115.
+  blocks <- c(60L, 50L); p <- 6L
+  Sinv <- matrix(c(2.0, 0.7, 0.7, 1.2), 2L, 2L)
+  A <- .s2z_make_wide(blocks, p, seed = 82L, lik = 0, xs = 0.02, ridge = 1,
+                      eps = 0.05, scale = 50)
+  ff <- seq_len(sum(blocks))
+  ev <- eigen(A[ff, ff], symmetric = TRUE, only.values = TRUE)$values
+  expect_identical(sum(ev < 0), 2L)
+  G <- matrix(stats::rnorm(nrow(A) * 4L), nrow(A), 4L)
+  for (cpl in list(NULL, Sinv)) {
+    r <- .s2z_check_dense(A, .s2z_wide_pins(blocks, c(1, 1)), G,
+                          coupling = cpl, p = p)
+    expect_true(r$field_indefinite)
+    expect_true(is.na(r$ld_block_schur))
+  }
+})
+
+test_that("a coordinate is a dense scalar exactly past the dense-row rule", {
+  skip_on_cran()
+  load_cpp_fixture("helpers")
+  # n = 400: the rule is max(16, 10 sqrt(400)) = 200. Coordinate 400 couples to
+  # `deg` field nodes; at 200 it stays in the sparse field block, at 201 it is
+  # a scalar. Both partitions are exact against the dense solve.
+  for (deg in c(200L, 201L)) {
+    set.seed(83L)
+    n <- 400L; nf <- n - 1L
+    A <- matrix(0, n, n)
+    for (i in seq_len(nf - 1L)) A[i, i + 1L] <- A[i + 1L, i] <- -1
+    hit <- sort(sample.int(nf, deg))
+    A[n, hit] <- A[hit, n] <- stats::rnorm(deg) * 0.1
+    diag(A) <- rowSums(abs(A)) + stats::runif(n, 0.5, 1)
+    G <- matrix(stats::rnorm(n * 3L), n, 3L)
+    r <- cpp_test_s2z_block_schur(A, 0L, nf, 2.0, G)
+    expect_identical(r$n_scalar, if (deg > 200L) 1L else 0L)
+    expect_true(r$ok)
+    expect_lt(.rel(r$ld_block_schur, r$ld_dense), 1e-10)
+    expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-10)
+    expect_lt(r$max_dstep, 1e-10 * max(abs(G)))
   }
 })

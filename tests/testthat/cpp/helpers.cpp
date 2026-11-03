@@ -1507,7 +1507,12 @@ List cpp_test_spde_nc_transform_fwd(
 //   * newton_ok / newton_block_schur / max_dstep_newton -- the unguarded inner
 //                        Newton step (s2z_newton_step), whether it was taken,
 //                        whether through the block-Schur factor, and its error
-//                        against the same dense solve.
+//                        against the same dense solve;
+//   * sqrt_ok / max_dgram / max_dsqrt -- the factor's square root B = R R'
+//                        (S2ZBlockSchurFactor::prepare_sqrt; none over an
+//                        indefinite field block): the relative error of
+//                        R^-T R^-1 against B^-1, and of R^-T R^-1 grad against
+//                        the dense step.
 // `A` is read as a full symmetric matrix; its lower-triangle nonzeros seed the
 // SparseHessianBuilder pattern. `grad` holds one or more right-hand sides
 // (an n x m matrix, column-major), solved together as the hard-constraint
@@ -1654,6 +1659,33 @@ List cpp_test_s2z_block_schur(
     if (nt_ok) max_dstep_newton = mn;
   }
 
+  // The square root B = R R' of the same factor, where the field block has a
+  // Cholesky factor: R^-T R^-1 against the dense inverse of B, through the
+  // forward images of the unit columns (their Gram is B^-1), and the solve
+  // R^-T (R^-1 g) against the dense step.
+  bool sqrt_ok = false;
+  double max_dgram = NA_REAL, max_dsqrt = NA_REAL;
+  {
+    tulpa::S2ZBlockSchurFactor F;
+    if (llt.info() == Eigen::Success &&
+        F.factor(H, H.s2z_rank1, nullptr, /*field_inertia=*/true, nullptr) &&
+        F.prepare_sqrt()) {
+      Eigen::MatrixXd I = Eigen::MatrixXd::Identity(n, n), Y(n, n);
+      Eigen::MatrixXd gv(n, n_rhs), X(n, n_rhs), Z(n, n_rhs);
+      for (int c = 0; c < n_rhs; ++c)
+        for (int i = 0; i < n; ++i) gv(i, c) = grad[(std::size_t) c * n + i];
+      sqrt_ok = F.forward(I.data(), Y.data(), n) &&
+                F.forward(gv.data(), Z.data(), n_rhs) &&
+                F.backward(Z.data(), X.data(), n_rhs);
+      if (sqrt_ok) {
+        const Eigen::MatrixXd Binv = llt.solve(I);
+        max_dgram = (Y.transpose() * Y - Binv).cwiseAbs().maxCoeff() /
+                    Binv.cwiseAbs().maxCoeff();
+        max_dsqrt = (X - llt.solve(gv)).cwiseAbs().maxCoeff();
+      }
+    }
+  }
+
   return List::create(
     _["ld_block_schur"]      = ld_block_schur,
     _["ld_direct"]           = ld_direct,
@@ -1666,7 +1698,10 @@ List cpp_test_s2z_block_schur(
     _["newton_block_schur"]  = nt_used_block_schur,
     _["max_dstep_newton"]    = max_dstep_newton,
     _["n_field"]             = bs_cache.nf,
-    _["n_scalar"]            = bs_cache.ns
+    _["n_scalar"]            = bs_cache.ns,
+    _["sqrt_ok"]             = sqrt_ok,
+    _["max_dgram"]           = max_dgram,
+    _["max_dsqrt"]           = max_dsqrt
   );
 }
 

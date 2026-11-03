@@ -15,6 +15,7 @@
 #include "hessian_pattern_guard.h" // scatter_slot, out-of-pattern drop counter
 #include "sparse_cholesky.h"
 #include "small_dense_sym.h"  // SmallChol, SmallSymEig
+#include "inv_block_extract.h"  // InvBlockConstraint
 #include <Rcpp.h>
 #include <vector>
 #include <map>
@@ -589,6 +590,64 @@ bool s2z_block_schur(
     bool* field_indefinite = nullptr,
     int n_rhs = 1              // grad / delta hold n_rhs columns of length n_x
 );
+
+// The factored pinned matrix of one block-Schur step (s2z_block_schur holds
+// one for the length of its call): the anchored field block's factor, the
+// pins' fold over it and the dense Schur complement. factor() returns what
+// s2z_block_schur returns and log_det() is log|B|; solve() is B^-1 on a block
+// of columns.
+//
+// Where the anchored field block A_a = P' L L' P has a Cholesky factor,
+// prepare_sqrt() also builds a square root B = R R'. With
+// Y = L^-1 P Vb the fold's columns forward-solved, the field block is
+//   B_FF = A_a + Vb Psi Vb' = (P' L T)(P' L T)',  T = I + Y Gam Y',
+// Gam the pins' draw transform (InvBlockConstraint::draw_transform:
+// 2 Gam + Gam S Gam = Psi, S = Y'Y), so R_F = P' L T and
+//   R_F^-1 v = T^-1 L^-1 P v,  T^-1 = I - Y Gam (I + S Gam)^-1 Y';
+// the scalars close it,
+//   R = [[R_F, 0], [Pz', L_S]],  Pz = R_F^-1 A_fs,  L_S L_S' = A_ss - Pz' Pz.
+// forward() applies R^-1 and backward() R^-T, each one triangular solve
+// against L per column where solve() takes two, so a quadratic form
+// c' B^-1 c is the squared norm of a forward column. An indefinite field
+// block (the inertia route's LDL' factor) has no such root.
+class S2ZBlockSchurFactor {
+public:
+    S2ZBlockSchurFactor() = default;
+    S2ZBlockSchurFactor(const S2ZBlockSchurFactor&) = delete;
+    S2ZBlockSchurFactor& operator=(const S2ZBlockSchurFactor&) = delete;
+
+    bool factor(const SparseHessianBuilder& A,
+                const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
+                S2ZBlockSchurCache* cache, bool field_inertia,
+                bool* field_indefinite);
+    double log_det() const { return logdet_; }
+    // B^-1 on `ncol` columns of length n_x; false on a non-finite entry.
+    bool solve(const double* rhs, double* out, int ncol);
+    bool prepare_sqrt();
+    bool has_sqrt() const { return sqrt_ok_; }
+    bool forward(const double* v, double* y, int ncol);
+    bool backward(const double* u, double* x, int ncol);
+
+private:
+    void bff_solve(const double* Y, double* X, int ncol);
+    bool rf_inv(double* v, int ncol);     // in place, field block
+    bool rf_inv_t(double* w, int ncol);   // in place, field block
+
+    S2ZBlockSchurCache own_;
+    S2ZBlockSchurCache* cc_ = nullptr;
+    SparseCholeskySolver* sf_ = nullptr;
+    InvBlockConstraint constr_;
+    int n_x_ = 0, nf_ = 0, ns_ = 0;
+    std::vector<double> Afs_, Z_;         // nf x ns, column-major
+    SmallChol SL_;
+    double logdet_ = std::numeric_limits<double>::quiet_NaN();
+    bool ok_ = false;
+    bool sqrt_ok_ = false;
+    int m_ = 0;                           // fold columns
+    std::vector<double> Yf_;              // nf x m, column-major
+    std::vector<double> Gm_;              // m x m, Gam (I + S Gam)^-1
+    std::vector<double> Pz_;              // nf x ns, column-major
+};
 
 // Determinant-only convenience wrapper over s2z_block_schur.
 inline double s2z_log_det_block_schur(

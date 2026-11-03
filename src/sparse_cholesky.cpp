@@ -396,6 +396,35 @@ bool SparseCholeskySolver::apply_inv_chol_factor(const double* eps, double* x,
     return true;
 }
 
+bool SparseCholeskySolver::apply_chol_factor_inv(const double* b, double* y,
+                                                 int n, int ncol) {
+    if (!factored_ || !factor_ || n <= 0 || ncol <= 0) return false;
+    if (!factor_->is_ll) return false;
+
+    cholmod_dense b_dense;
+    b_dense.nrow  = n;
+    b_dense.ncol  = ncol;
+    b_dense.nzmax = static_cast<std::size_t>(n) * ncol;
+    b_dense.d     = n;
+    b_dense.x     = const_cast<double*>(b);
+    b_dense.z     = nullptr;
+    b_dense.xtype = CHOLMOD_REAL;
+    b_dense.dtype = CHOLMOD_DOUBLE;
+
+    // Apply the fill-reducing permutation, then L z = P b.
+    cholmod_dense* pb = M_cholmod_solve(CHOLMOD_P, factor_, &b_dense, &common_);
+    if (!pb) return false;
+    cholmod_dense* z = M_cholmod_solve(CHOLMOD_L, factor_, pb, &common_);
+    M_cholmod_free_dense(&pb, &common_);
+    if (!z) return false;
+
+    const double* zp = static_cast<const double*>(z->x);
+    const std::size_t total = static_cast<std::size_t>(n) * ncol;
+    for (std::size_t i = 0; i < total; i++) y[i] = zp[i];
+    M_cholmod_free_dense(&z, &common_);
+    return true;
+}
+
 double SparseCholeskySolver::log_determinant() const {
     if (!factored_ || !factor_) return 0.0;
     return M_cholmod_factor_ldetA(factor_);

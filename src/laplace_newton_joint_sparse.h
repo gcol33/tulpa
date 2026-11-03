@@ -220,6 +220,48 @@ inline void load_hard_anchors(HardConstraintState& hard, SparseHessianBuilder& H
     hard.load_anchors([&H](int j) -> double& { return H.values[H.col_ptr[j]]; });
 }
 
+// The KKT step under hard constraints through the block-Schur factor of the
+// pinned matrix B (the hard rows' anchors already loaded on H), with log|B|
+// and whether the field block was indefinite when asked. The capacitance is
+// Vb' B^-1 Vb for the hard rows' columns Vb = [A' E]: with a square root
+// B = R R' (S2ZBlockSchurFactor::prepare_sqrt) it is the Gram of the forward
+// columns R^-1 Vb, and the step R^-T (z - Y Cap^-1 (Y' z + [A x; 0])),
+// z = R^-1 g, so each column costs one triangular solve where solving W =
+// B^-1 Vb costs two. An indefinite field block has no square root, and its
+// columns are solved in full. On success `delta` holds the step projected onto
+// the constraint set and `hard.cap` its fold.
+inline bool hard_kkt_block_schur(
+    SparseHessianBuilder& H, HardConstraintState& hard, const double* x,
+    const double* grad, double* delta, S2ZBlockSchurCache* bs_cache,
+    double* logdet = nullptr, bool* field_indefinite = nullptr
+) {
+    const int n_x = H.n;
+    S2ZBlockSchurFactor F;
+    if (!F.factor(H, H.s2z_rank1, bs_cache, /*field_inertia=*/true,
+                  field_indefinite))
+        return false;
+    if (logdet) {
+        if (!std::isfinite(F.log_det())) return false;
+        *logdet = F.log_det();
+    }
+    const double* rhs = hard.load_rhs(grad);
+    if (F.prepare_sqrt()) {
+        if (!F.forward(rhs, hard.sol.data(), hard.n_rhs())) return false;
+        std::vector<double> u(static_cast<std::size_t>(n_x));
+        if (hard.kkt_from_forward(x, hard.sol.data(), u.data()) &&
+            F.backward(u.data(), delta, 1))
+            return true;
+        // The anchors stay on H for the caller's fallback solve.
+        hard.anchors_loaded = true;
+        return false;
+    }
+    if (!F.solve(rhs, hard.sol.data(), hard.n_rhs())) return false;
+    if (!hard.factor_cap_from_sol()) return false;
+    std::copy(hard.sol.begin(), hard.sol.begin() + n_x, delta);
+    hard.project_step(x, delta);
+    return true;
+}
+
 // The KKT step of a sparse joint solve under hard constraints: the step and
 // the Vb columns solved against the same anchored matrix (pins folded in),
 // then folded onto the constraint set. LM: the multi-column solve needs the
@@ -231,6 +273,14 @@ inline bool hard_kkt_step_sparse(
     bool guarded
 ) {
     load_hard_anchors(hard, H);
+    used_block_schur = false;
+    if (!H.s2z_rank1.empty()) {
+        if (hard_kkt_block_schur(H, hard, x, grad, delta, bs_cache)) {
+            used_block_schur = true;
+            return true;
+        }
+        if (!guarded) return false;
+    }
     const bool ok = s2z_newton_step(H, solver, n_x, JointPDMode::LM,
                                     hard.load_rhs(grad), hard.sol.data(),
                                     used_block_schur, bs_cache, guarded,
@@ -438,17 +488,20 @@ inline void joint_newton_finalize_sparse(
         double ld = S2Z_NA;
         // The field block need not be PD here (an unconverged iterate), so the
         // inertia route reads the pinned matrix wherever it is PD.
-        // Under hard constraints the A' columns are solved with the step.
-        const double* rhs = hard_on ? hard->load_rhs(grad.data()) : grad.data();
-        double* sol = hard_on ? hard->sol.data() : scratch.delta.data();
-        s2z_step_ok = s2z_block_schur(H_builder, H_builder.s2z_rank1,
-                                      rhs, sol, &ld,
-                                      &scratch.s2z_block_schur_cache,
-                                      /*field_inertia=*/true,
-                                      &result.s2z_field_indefinite,
-                                      hard_on ? hard->n_rhs() : 1);
-        if (s2z_step_ok && hard_on)
-            std::copy(sol, sol + n_x, scratch.delta.begin());
+        // Under hard constraints the step is the constrained one, folded with
+        // the hard rows' columns against the same factor.
+        if (hard_on) {
+            s2z_step_ok = hard_kkt_block_schur(
+                H_builder, *hard, x.begin(), grad.data(), scratch.delta.data(),
+                &scratch.s2z_block_schur_cache, &ld,
+                &result.s2z_field_indefinite);
+        } else {
+            s2z_step_ok = s2z_block_schur(H_builder, H_builder.s2z_rank1,
+                                          grad.data(), scratch.delta.data(), &ld,
+                                          &scratch.s2z_block_schur_cache,
+                                          /*field_inertia=*/true,
+                                          &result.s2z_field_indefinite, 1);
+        }
         s2z_log_det = ld;
         // No factor of the pinned matrix could be formed, so the PD-enforced
         // value below stands in for it.
@@ -492,9 +545,12 @@ inline void joint_newton_finalize_sparse(
     // log|B' M B| on the (n_x - r)-dimensional subspace.
     bool hard_ok = false;
     if (hard_on) {
-        hard_ok = hard_cols_ok && folded && hard->factor_cap_from_sol();
+        // The block-Schur pass already folded the step onto the constraint
+        // set; the PD-enforced solve's columns are folded here.
+        hard_ok = s2z_step_ok ||
+                  (hard_cols_ok && folded && hard->factor_cap_from_sol());
         if (hard_ok) {
-            hard->project_step(x.begin(), scratch.delta.data());
+            if (!s2z_step_ok) hard->project_step(x.begin(), scratch.delta.data());
             result.log_det_Q += hard->log_det_subspace_correction();
         } else {
             result.log_det_Q = std::numeric_limits<double>::quiet_NaN();

@@ -66,6 +66,7 @@
 #ifndef TULPA_HARD_CONSTRAINTS_H
 #define TULPA_HARD_CONSTRAINTS_H
 
+#include <RcppEigen.h>
 #include "inv_block_extract.h"
 #include "latent_block.h"
 #include "laplace_newton_loop.h"   // finalize_log_marginal
@@ -360,6 +361,40 @@ struct HardConstraintState {
         if (!take_anchors()) return false;
         cap.build(solve, n_x);
         return cap.usable;
+    }
+
+    // The fold from columns forward-solved against a square root of M_a,
+    // M_a = R R': `Y` holds the n_rhs() columns R^{-1} [g | Vb], so
+    // Vb' M_a^{-1} Vb is the Gram of the Vb columns and the capacitance
+    // needs no W. On return `u` (length n_x) is z - Y_b Cap^{-1} (Y_b' z +
+    // [A x; 0]), z = R^{-1} g, and the KKT step of the header is R^{-T} u:
+    // with W = R^{-T} Y_b, M_a^{-1} g - W Cap^{-1} (W' g + [A x; 0]). The
+    // state then holds no W (cap.has_columns() is false).
+    bool kkt_from_forward(const double* x, const double* Y, double* u) {
+        if (!take_anchors()) return false;
+        const int m = rank() + n_anchor();
+        const std::size_t n = static_cast<std::size_t>(n_x);
+        // The Gram and the products below are dense (the forward columns
+        // fill in), so they go through Eigen's blocked kernels: m^2 n / 2
+        // flops for the Gram, the same order as the m triangular solves.
+        const Eigen::Map<const Eigen::VectorXd> z(Y, n_x);
+        const Eigen::Map<const Eigen::MatrixXd> Yb(Y + n, n_x, m);
+        Eigen::MatrixXd Gm = Eigen::MatrixXd::Zero(m, m);
+        Gm.selfadjointView<Eigen::Lower>().rankUpdate(Yb.transpose());
+        std::vector<double> G(static_cast<std::size_t>(m) * m, 0.0);
+        for (int i = 0; i < m; i++)
+            for (int j = 0; j <= i; j++)
+                G[static_cast<std::size_t>(i) * m + j] =
+                    G[static_cast<std::size_t>(j) * m + i] = Gm(i, j);
+        cap.build_from_gram(std::move(G));
+        if (!cap.usable) return false;
+        std::vector<double> ax;
+        apply_A(x, ax);
+        Eigen::VectorXd b = Yb.transpose() * z, y(m);
+        for (int i = 0; i < rank(); i++) b[i] += ax[i];
+        cap.solve_cap(b.data(), y.data());
+        Eigen::Map<Eigen::VectorXd>(u, n_x) = z - Yb * y;
+        return true;
     }
 
     // The KKT step from a step `delta` = M_a^{-1} g solved by the loop: W and

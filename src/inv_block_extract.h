@@ -149,6 +149,9 @@ struct InvBlockConstraint {
 
     int n_anchor() const { return static_cast<int>(anchor_node.size()); }
     int order() const { return kc + n_anchor(); }
+    // Whether W is held (build(), build_from_columns()); build_from_gram()
+    // factors the capacitance without it, and every read through W refuses.
+    bool has_columns() const { return static_cast<int>(W.size()) == order(); }
 
     // Take the rows with no anchors. Entries outside [0, n_x) are dropped; the
     // rest keep the caller's order, so the right-hand side and the Gram entries
@@ -269,14 +272,23 @@ struct InvBlockConstraint {
         return constraint_row_dot(rows[i], w);
     }
 
+    // The factorization from G = Vb' H_a^{-1} Vb formed elsewhere, as the Gram
+    // of the columns L^{-1} P Vb of a square root H_a = (P'L)(P'L)': row-major
+    // m x m. W is not held.
+    void build_from_gram(std::vector<double> G,
+                         const std::vector<double>* Dinv = nullptr,
+                         int neg_base = 0) {
+        usable = false;
+        W.clear();
+        if (kc <= 0) return;
+        const int m = order();
+        if (G.size() != static_cast<std::size_t>(m) * m) return;
+        factor_cap_matrix(std::move(G), Dinv, neg_base);
+    }
+
     // Cap = Psi^{-1} + Vb' W from the solved W, and its factorization.
     void factor_cap(const std::vector<double>* Dinv, int neg_base) {
-        const int na = n_anchor();
-        const int m = kc + na;
-        block_form = false;
-        soft = (Dinv != nullptr);
-        soft_Dinv.clear();
-
+        const int m = order();
         std::vector<double> C(static_cast<std::size_t>(m) * m, 0.0);
         for (int i = 0; i < m; i++)
             for (int j = 0; j <= i; j++) {
@@ -284,6 +296,17 @@ struct InvBlockConstraint {
                 C[static_cast<std::size_t>(i) * m + j] = s;
                 C[static_cast<std::size_t>(j) * m + i] = s;
             }
+        factor_cap_matrix(std::move(C), Dinv, neg_base);
+    }
+
+    // Cap = Psi^{-1} + C for C = Vb' H_a^{-1} Vb, and its factorization.
+    void factor_cap_matrix(std::vector<double> C,
+                           const std::vector<double>* Dinv, int neg_base) {
+        const int na = n_anchor();
+        const int m = kc + na;
+        block_form = false;
+        soft = (Dinv != nullptr);
+        soft_Dinv.clear();
         if (Dinv) {
             if (Dinv->size() != static_cast<std::size_t>(kc) * kc) {
                 W.clear();
@@ -402,7 +425,7 @@ struct InvBlockConstraint {
     // the KKT solution x of the header with constraint right-hand side
     // -shift_A. Returns false when the fold is not usable.
     bool fold(double* col, int n_x, const double* shift_A = nullptr) const {
-        if (!usable) return false;
+        if (!usable || !has_columns()) return false;
         const int m = static_cast<int>(W.size());
         if (m == 0) return true;
         std::vector<double> b(m), y(m);
@@ -457,7 +480,7 @@ struct InvBlockConstraint {
 
     DrawTransform draw_transform() const {
         DrawTransform T;
-        if (!usable || !block_form) return T;
+        if (!usable || !block_form || !has_columns()) return T;
         const int ns = n_soft_rows();
         if (ns < 0) return T;
         const int na = n_anchor();

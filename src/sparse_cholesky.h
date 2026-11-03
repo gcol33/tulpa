@@ -166,6 +166,13 @@ public:
     // always LL', so the refusal is the fallback path's, not the usual one's.
     bool apply_inv_chol_factor(const double* eps, double* x, int n, int ncol);
 
+    // The other half of a solve against A = P' L L' P: y = L^-1 P b for the
+    // `ncol` columns of `b`, so a quadratic form b' A^-1 c is the inner
+    // product of two such columns and costs one triangular solve each, half
+    // a full solve. LL' factors only, as above; `b` and `y` are column-major
+    // [n x ncol] and may alias.
+    bool apply_chol_factor_inv(const double* b, double* y, int n, int ncol);
+
     // Log-determinant of the factored matrix: log|A| = log|LL'| = 2*sum(log(diag(L))).
     // Uses Matrix package's M_cholmod_factor_ldetA which handles both
     // simplicial and supernodal factors correctly.
