@@ -190,7 +190,7 @@ test_that("the per-axis resolution is reported in the axis's own coordinate", {
   # it, and the ratio would be a different (and meaningless) number.
   expect_false(isTRUE(all.equal(
     unname(rs$sd[["sigma"]]),
-    .nl_laplace_at_mode_sd_axis(v, lm))))
+    as.numeric(.nl_laplace_at_mode_sd_axis(v, lm)))))
   # An axis whose mode sits on its own boundary has no 3-point parabola, so the
   # ratio is withheld rather than guessed.
   lm_rail <- seq(0, 5, length.out = 9)

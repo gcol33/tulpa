@@ -458,6 +458,14 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
       .nl_summary_quantile(v, w, probs, dm, support, within, at, dcl_j, rid_j,
                            lmd)
     }
+    # The SD is the one the fit reports for the axis (its estimator and its
+    # source), carried to the reported quantity when the row is derived.
+    fn <- if (!is.null(tr) && !identical(tr$fn, .hyper_nat$identity)) tr$fn
+    sr <- .nl_axis_reported_sd(
+      object, axes[j], fn, weighted = s,
+      read = if (!is.null(fn)) .nl_read_sd(v, w, dm, support, within, at,
+                                           dcl_j, rid_j, lmd))
+    if (is.numeric(sr) && length(sr) == 1L && is.finite(sr)) s <- sr
     out <- data.frame(mean = m, sd = s, stringsAsFactors = FALSE)
     out[.quantile_colnames(probs)] <- as.list(qs)
     list(row = out, name = nm)

@@ -1719,11 +1719,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     return(.nl_axis_sd_declined("curvature_not_negative"))
   }
   sd_u <- sqrt(-1 / (2 * a))
-  if (return_u_sd) {
-    sd_u
-  } else {
-    if (log_axis) vals[ix] * sd_u else sd_u
-  }
+  sd <- if (return_u_sd) sd_u else if (log_axis) vals[ix] * sd_u else sd_u
+  structure(sd, mode = vals[ix])
 }
 
 # Log width of the box each sorted level owns on coordinate `u`: interior edges
@@ -1832,6 +1829,54 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     out$declined <- .nl_axis_sd_reason(sd_sten)
   }
   out
+}
+
+# The SD of `fn(axis)` under the read the fit reported for the axis itself
+# (`theta_sd`, chosen by `.nl_axis_sd_choice()` and tagged `theta_sd_source`),
+# so every accessor of one axis -- summary() on the axis, spatial_range() /
+# temporal_corr() on a quantity derived from it -- reads one posterior.
+#
+#   * `weighted`: the spread of the nodes' weighted marginal, of `fn` of the
+#     nodes (`weighted`, supplied by the caller off the same weights).
+#   * `within_cell`: the SD of the within-cell read the interval comes off, of
+#     `fn` of the nodes (`read`, supplied by the caller): a quantile read maps
+#     through a monotone `fn` level by level.
+#   * `stencil`: a Gaussian at the marginal's modal level with SD `theta_sd`,
+#     carried to `fn` by the delta method, |fn'(mode)| theta_sd -- the map the
+#     stencil itself applies from its log coordinate onto a positive axis.
+#
+# `fn = NULL` is the axis itself, and returns `theta_sd` whatever its source.
+# NULL when the fit carries no reported SD for the axis.
+.nl_axis_reported_sd <- function(object, axis, fn = NULL, weighted = NULL,
+                                 read = NULL) {
+  sd <- object$theta_sd
+  if (is.null(sd) || !axis %in% names(sd) || !is.finite(sd[[axis]])) {
+    return(NULL)
+  }
+  if (is.null(fn)) return(as.numeric(sd[[axis]]))
+  src <- object$theta_sd_source
+  src <- if (!is.null(src) && axis %in% names(src)) src[[axis]] else "weighted"
+  if (is.na(src)) src <- "weighted"
+  if (identical(src, "within_cell")) return(read)
+  if (!identical(src, "stencil")) return(weighted)
+  tg <- object$theta_grid
+  lm <- object$log_marginal
+  if (!is.matrix(tg) || !axis %in% colnames(tg) || length(lm) != nrow(tg)) {
+    return(NULL)
+  }
+  measured <- length(object$log_quad) == length(lm)
+  if (measured) {
+    lm <- lm + object$log_quad
+    lm[is.na(lm)] <- -Inf
+  }
+  marg <- .nl_axis_marginal_logdensity(tg[, axis], lm)
+  st <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg, mass = measured)
+  mode <- attr(st, "mode", exact = TRUE)
+  if (is.null(mode) || !is.finite(mode)) return(NULL)
+  h <- 1e-6 * max(abs(mode), 1e-8)
+  d <- (fn(mode + h) - fn(mode - h)) / (2 * h)
+  if (!is.finite(d)) return(NULL)
+  abs(d) * as.numeric(sd[[axis]])
 }
 
 # Report `theta_sd` (and `block_moments[[b]]$sd` when present) per axis, each

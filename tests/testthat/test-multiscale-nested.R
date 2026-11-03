@@ -285,6 +285,44 @@ test_that("temporal() draws the components of a row from one latent draw", {
   expect_lt(abs(sd(S[, n_t] - S[, 1L]) / ex_d - 1), 0.1)
 })
 
+test_that("temporal_corr() reports the SD summary() reports for an axis", {
+  skip_on_cran()
+  s <- ms_sim_temporal(n_t = 40L)
+  fit <- suppressMessages(tulpa(
+    y ~ x, data = s$d, family = "poisson",
+    temporal = temporal_multiscale("time", trend = "rw2", short_term = "ar1"),
+    control = list(progress = FALSE)))
+  sd_of <- function(f) {
+    h <- summary(f)$hyperparameters
+    tc <- temporal_corr(f)
+    c(summary = h$sd[h$parameter == "rho[short_term]"],
+      corr = tc["rho[short_term]", "sd"])
+  }
+  r <- sd_of(fit)
+  expect_equal(r[["corr"]], r[["summary"]], tolerance = 1e-12)
+  # An axis whose marginal is read by the parabola at its modal level reports
+  # that SD (the stencil); temporal_corr() reported the nodes' weighted spread
+  # beside it, 0.452 against summary()'s 0.561 on a fit that took it.
+  st <- fit
+  st$theta_sd_source[["b2.rho"]] <- "stencil"
+  st$theta_sd[["b2.rho"]] <- 0.5
+  r <- sd_of(st)
+  expect_equal(r[["summary"]], 0.5)
+  expect_equal(r[["corr"]], 0.5, tolerance = 1e-12)
+  # A derived row carries the stencil's Gaussian to its own quantity: sigma =
+  # tau^(-1/2) at the modal precision, |d sigma / d tau| = tau^(-3/2) / 2.
+  st$theta_sd_source[["b2.tau"]] <- "stencil"
+  st$theta_sd[["b2.tau"]] <- 3
+  tg <- as.matrix(st$theta_grid)
+  lm <- st$log_marginal + if (length(st$log_quad) == length(st$log_marginal))
+    st$log_quad else 0
+  marg <- tulpa:::.nl_axis_marginal_logdensity(tg[, "b2.tau"], lm)
+  mode <- attr(tulpa:::.nl_laplace_at_mode_sd_axis(
+    marg$vals, marg$log_marg, mass = length(st$log_quad) == length(lm)), "mode")
+  expect_equal(temporal_corr(st)["sigma[short_term]", "sd"],
+               3 * mode^(-1.5) / 2, tolerance = 1e-6)
+})
+
 test_that("an iid short-term component is the field's, not a random effect", {
   skip_on_cran()
   set.seed(4)
