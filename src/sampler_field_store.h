@@ -5,8 +5,9 @@
 // A kernel samples on the parameterization the density is written in, which
 // for a non-centered block is the standardized coordinate z, not the field.
 // The stored draw carries the field the likelihood read at that position
-// instead: each non-centered GP / SVC / multiscale-GP / temporal-GP block and
-// the non-centered multiscale trend is replaced by its forward transform, and
+// instead: each non-centered GP / SVC / multiscale-GP / temporal-GP block, the
+// non-centered multiscale trend and short-term arm is replaced by its forward
+// transform, and
 // every block whose level is removed on its way into eta (SVC, TVC, the
 // multiscale trend) is stored centred. Every reader of `$draws` therefore sees
 // one convention whatever backend produced them, and reads them back at the
@@ -121,6 +122,20 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
         const int n_trend = layout.trend_end - layout.trend_start;
         for (int t = 0; t < n_trend; t++) row[layout.trend_start + t] = trend[t];
         (void)tulpa::s2z_centre_component(row, layout.trend_start, n_trend);
+    }
+
+    // Non-centred multiscale short-term arm: the sampled slice is its
+    // standardized innovations; the stored draw is the AR1 / IID field
+    // multiscale_short_values() hands the likelihood. The arm is proper and
+    // enters eta uncentred.
+    if (data.has_multiscale_temporal && layout.has_multiscale_temporal &&
+        tulpa::priors::multiscale_short_noncentered(data, layout)) {
+        std::vector<double> short_term;
+        (void)tulpa::priors::multiscale_short_values<double>(q, data, layout,
+                                                             short_term);
+        const int n_short = layout.short_term_end - layout.short_term_start;
+        for (int t = 0; t < n_short; t++)
+            row[layout.short_term_start + t] = short_term[t];
     }
 
     // Non-centered multiscale GP: the same transform, once per scale.

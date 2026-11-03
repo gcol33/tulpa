@@ -40,7 +40,7 @@ test_that("multiscale temporal reaches the nested-Laplace path as blocks", {
 # point so eta is the field itself.
 ms_trend_spec <- function(n_t, trend, par = "noncentered") {
   list(type = "multiscale", time_index = seq_len(n_t), n_times = n_t,
-       trend = trend, trend_parameterization = par, seasonal = NULL,
+       trend = trend, parameterization = par, seasonal = NULL,
        short_term = "none", shared = TRUE,
        sigma2_trend_prior_U = 1, sigma2_trend_prior_alpha = 0.01)
 }
@@ -88,6 +88,56 @@ test_that("the non-centred trend is the walk's prior covariance in its spectral 
   sl <- ms_trend_eta(7L, "rw2", list(c(log_sigma2_trend = -3, "trend[2]" = 1)))
   lin <- seq_len(7L) - 4
   expect_equal(as.numeric(sl), lin / sqrt(sum(lin^2)), tolerance = 1e-10)
+})
+
+# The short-term spec build_sampler_model_inputs() reads: one observation per
+# time point, no trend, so eta is the short-term field itself.
+ms_short_eta <- function(n_t, short_term, rows, par = "noncentered") {
+  spec <- list(type = "multiscale", time_index = seq_len(n_t), n_times = n_t,
+               trend = "none", parameterization = par, seasonal = NULL,
+               short_term = short_term, shared = TRUE)
+  X <- matrix(1, n_t, 1, dimnames = list(NULL, "(Intercept)"))
+  args <- list(y = rnorm(n_t), n_trials = rep(1L, n_t), X = X,
+               family = "gaussian", phi = 1, temporal_spec = spec)
+  pn <- do.call(tulpa:::cpp_tulpa_glmm_layout, args)$param_names
+  D <- matrix(0, length(rows), length(pn), dimnames = list(NULL, pn))
+  for (r in seq_along(rows)) D[r, names(rows[[r]])] <- rows[[r]]
+  do.call(tulpa:::cpp_tulpa_glmm_eta_draws, c(list(draws = D), args))
+}
+
+test_that("the non-centred short-term arm is its innovations scaled", {
+  n_t <- 6L
+  # IID: the field is sigma times the coordinates.
+  u <- c(0.3, -1.2, 0.8, 0, 2, -0.5)
+  row <- c(log_sigma2_short = 2 * log(0.4),
+           setNames(u, sprintf("short_term[%d]", seq_len(n_t))))
+  expect_equal(as.numeric(ms_short_eta(n_t, "iid", list(row))), 0.4 * u,
+               tolerance = 1e-12)
+  # AR1 at innovation SD sigma: s_1 = sigma u_1 / sqrt(1 - rho^2) and
+  # s_t = rho s_{t-1} + sigma u_t, the stationary chain the centred density
+  # describes. rho = 2 inv_logit(x) - 1.
+  sg <- 0.7; rho <- 0.6
+  row <- c(log_sigma2_short = 2 * log(sg),
+           logit_rho_short = qlogis((rho + 1) / 2),
+           setNames(u, sprintf("short_term[%d]", seq_len(n_t))))
+  f <- numeric(n_t); f[1] <- sg * u[1] / sqrt(1 - rho^2)
+  for (t in 2:n_t) f[t] <- rho * f[t - 1] + sg * u[t]
+  expect_equal(as.numeric(ms_short_eta(n_t, "ar1", list(row))), f,
+               tolerance = 1e-12)
+  # The coordinates' covariance at unit coordinates is the AR1 covariance
+  # sigma^2 rho^|i - j| / (1 - rho^2).
+  unit <- lapply(seq_len(n_t), function(j) {
+    r <- row; r[sprintf("short_term[%d]", seq_len(n_t))] <- 0
+    r[sprintf("short_term[%d]", j)] <- 1
+    r
+  })
+  B <- t(ms_short_eta(n_t, "ar1", unit))
+  expect_equal(B %*% t(B),
+               sg^2 / (1 - rho^2) * rho^abs(outer(seq_len(n_t), seq_len(n_t), "-")),
+               tolerance = 1e-10)
+  # Under the centred parameterization the coordinates are the field.
+  expect_equal(as.numeric(ms_short_eta(n_t, "ar1", list(row), "centered")), u,
+               tolerance = 1e-12)
 })
 
 test_that("the trend parameterization is an argument, non-centred by default", {
@@ -185,13 +235,16 @@ test_that("multiscale temporal recovers the trend through the front door", {
   expect_lt(abs(unname(coef(fit)["x"]) - s$b1), 0.2)
 })
 
-# The exact posterior of log(sigma2_trend) for a gaussian response with known
-# noise variance and an RW2 trend: conditional on the scale the response is
-# Gaussian with the fixed effects, the walk's innovations and its flat slope
-# integrated in closed form (the slope's flat prior is the limit of a wide
-# Gaussian, which leaves the profile terms below), on a dense grid in the
-# scale. The level is centred out of eta on every route, so it does not enter.
-ms_rw2_exact <- function(d, n_t, phi, sigma_beta = 2.5, U = 1, alpha = 0.01) {
+# The exact posterior of log(sigma2_trend) -- and, with `short_iid`, of the
+# log-variance of an iid short-term arm -- for a gaussian response with known
+# noise variance and an RW2 trend: conditional on the scales the response is
+# Gaussian with the fixed effects, the walk's innovations, the short-term
+# values and the walk's flat slope integrated in closed form (the slope's flat
+# prior is the limit of a wide Gaussian, which leaves the profile terms below),
+# on a dense grid in the scales. The level is centred out of eta on every
+# route, so it does not enter.
+ms_rw2_exact <- function(d, n_t, phi, sigma_beta = 2.5, U = 1, alpha = 0.01,
+                         short_iid = FALSE) {
   N <- nrow(d)
   X <- cbind(1, d$x)
   A <- matrix(0, N, n_t); A[cbind(seq_len(N), d$t)] <- 1
@@ -205,22 +258,30 @@ ms_rw2_exact <- function(d, n_t, phi, sigma_beta = 2.5, U = 1, alpha = 0.01) {
   M <- A %*% C %*% L
   a <- as.numeric(A %*% C %*% (seq_len(n_t) - 1))
   lam <- -log(alpha) / U
-  th <- seq(-14, 2, length.out = 801)
-  lp <- vapply(th, function(t) {
-    S <- sigma_beta^2 * tcrossprod(X) + exp(t) * tcrossprod(M) + diag(phi, N)
+  pc <- function(t) log(lam) - lam * exp(t / 2) - log(2) + 0.5 * t
+  th <- seq(-14, 2, length.out = if (short_iid) 97L else 801L)
+  G <- if (short_iid) expand.grid(t1 = th, t2 = th) else data.frame(t1 = th, t2 = -Inf)
+  lp <- mapply(function(t1, t2) {
+    S <- sigma_beta^2 * tcrossprod(X) + exp(t1) * tcrossprod(M) + diag(phi, N) +
+      exp(t2) * tcrossprod(A)
     R <- chol(S)
     Siy <- backsolve(R, forwardsolve(t(R), d$y))
     Sia <- backsolve(R, forwardsolve(t(R), a))
     q <- sum(a * Sia)
     -sum(log(diag(R))) - 0.5 * sum(d$y * Siy) - 0.5 * log(q) +
-      0.5 * sum(a * Siy)^2 / q +
-      log(lam) - lam * exp(t / 2) - log(2) + 0.5 * t
-  }, 0)
+      0.5 * sum(a * Siy)^2 / q + pc(t1) + if (short_iid) pc(t2) else 0
+  }, G$t1, G$t2)
   w <- exp(lp - max(lp)); w <- w / sum(w)
-  m <- sum(w * th)
-  list(mean = m, sd = sqrt(sum(w * th^2) - m^2),
-       q = stats::approx(cumsum(w), th, xout = c(0.05, 0.5, 0.95),
-                         ties = "ordered")$y)
+  marg <- function(v) {
+    m <- sum(w * v)
+    pm <- tapply(w, v, sum)
+    list(mean = m, sd = sqrt(sum(w * v^2) - m^2),
+         q = stats::approx(cumsum(pm), as.numeric(names(pm)),
+                           xout = c(0.05, 0.5, 0.95), ties = "ordered")$y)
+  }
+  out <- marg(G$t1)
+  if (short_iid) out$short <- marg(G$t2)
+  out
 }
 
 test_that("the non-centred RW2 trend samples the exact scale posterior", {
@@ -250,6 +311,34 @@ test_that("the non-centred RW2 trend samples the exact scale posterior", {
             0.3 * ex$sd)
 })
 
+test_that("the non-centred short-term arm samples the exact scale posterior", {
+  skip_if_not_slow()
+  set.seed(2)
+  n_t <- 24L; phi <- 0.25
+  tr <- cumsum(cumsum(rnorm(n_t, 0, 0.03))); tr <- tr - mean(tr)
+  sh <- rnorm(n_t, 0, 0.15)
+  t <- rep(seq_len(n_t), each = 3L)
+  x <- rnorm(length(t))
+  d <- data.frame(t = t, x = x, y = 0.3 + 0.5 * x + tr[t] + sh[t] +
+                    rnorm(length(t), 0, sqrt(phi)))
+  ex <- ms_rw2_exact(d, n_t, phi, short_iid = TRUE)$short
+  fit <- suppressWarnings(tulpa(
+    y ~ x, data = d, family = "gaussian", phi = phi, mode = "hmc",
+    temporal = temporal_multiscale("t", trend = "rw2", short_term = "iid"),
+    control = list(n_iter = 3000L, n_warmup = 1000L, n_chains = 4L, seed = 1L,
+                   verbose = FALSE)))
+  lss <- matrix(fit$draws[, "log_sigma2_short"], ncol = 4L)
+  # Measured at 4000 x 4 on three such data sets: Rhat <= 1.004 and bulk ESS
+  # 1600-2100 for the non-centred arm, mean within 0.05 posterior SD of the
+  # exact one; the centred arm reached Rhat 1.05 and ESS 94-166, its 5%
+  # quantile up to 1.25 log units above the exact one.
+  expect_lt(posterior::rhat(lss), 1.02)
+  expect_gt(posterior::ess_bulk(lss), 500)
+  expect_lt(abs(mean(lss) - ex$mean), 0.25 * ex$sd)
+  expect_lt(max(abs(stats::quantile(lss, c(0.05, 0.5, 0.95)) - ex$q)),
+            0.3 * ex$sd)
+})
+
 test_that("a smooth RW2 trend on a binomial response samples without a funnel", {
   skip_if_not_slow()
   set.seed(11)
@@ -272,6 +361,11 @@ test_that("a smooth RW2 trend on a binomial response samples without a funnel", 
   expect_lt(mean(fit$divergent), 0.02)
   expect_lt(mean(fit$divergent[low]), 0.02)
   expect_gt(posterior::ess_bulk(matrix(ls2, ncol = 4L)), 250)
+  # The short-term SD, centred: Rhat 1.10, bulk ESS 34; non-centred 1.001 and
+  # 1089.
+  lss <- matrix(fit$draws[, "log_sigma2_short"], ncol = 4L)
+  expect_lt(posterior::rhat(lss), 1.02)
+  expect_gt(posterior::ess_bulk(lss), 400)
   tr_hat <- colMeans(fit$draws[, grep("^trend[[]", colnames(fit$draws))])
   expect_gt(cor(tr_hat, tr), 0.95)
 })

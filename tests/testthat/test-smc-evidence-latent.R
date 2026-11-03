@@ -436,7 +436,7 @@ test_that("the multi-scale temporal normalizer makes the prior a density", {
              time_index = as.integer(rep_len(seq_len(Tn), f$n)),
              n_times = Tn, n_groups = 1L, group_index = NULL, trend = "rw1",
              seasonal = per, short_term = "ar1", shared = TRUE,
-             trend_parameterization = "centered")
+             parameterization = "centered")
   call_fx <- function(th) cpp_test_log_prior_normalized(
     th, f$y, integer(0), f$X, "gaussian", 1, sdb, 2.5, temporal_spec = tp)
   th <- theta_rows(call_fx(matrix(0, 0, 0))$names)

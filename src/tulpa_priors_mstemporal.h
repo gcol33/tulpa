@@ -59,6 +59,53 @@ T multiscale_trend_values(const std::vector<T>& params, const ModelData& data,
         data.ms_trend_basis, data.ms_trend_slope, sigma2, trend);
 }
 
+// Whether the short-term arm's sampled coordinates are its standardized
+// innovations (non-centred) rather than its values.
+inline bool multiscale_short_noncentered(const ModelData& data,
+                                         const ParamLayout& layout) {
+    const TemporalType st = data.multiscale_temporal_data.short_term_type;
+    return data.ms_short_parameterization == 1 &&
+           layout.log_sigma2_short_idx >= 0 &&
+           (st == TemporalType::AR1 || st == TemporalType::IID);
+}
+
+// The short-term AR1 correlation off its sampled logit coordinate:
+// rho = 2 inv_logit(x) - 1 on (-1, 1). `u` receives inv_logit(x), the
+// coordinate the Beta(a, b) prior is placed on.
+template<typename T>
+T multiscale_short_rho(const std::vector<T>& params, const ParamLayout& layout,
+                       T* u = nullptr)
+{
+    if (layout.logit_rho_short_idx < 0) return T(0.5);
+    const T v = inv_logit(params[layout.logit_rho_short_idx]);
+    if (u) *u = v;
+    return T(2.0) * v - T(1.0);
+}
+
+// The short-term values the linear predictor reads, off the sampled
+// coordinates: the coordinates themselves under the centred parameterization,
+// the field short_term_noncentered builds from them under the non-centred one.
+// Returns the log density of the coordinates the non-centred parameterization
+// carries (0 under the centred one, whose density multiscale_temporal_log_lik
+// adds). The log-posterior and the NUTS store both read the arm through here.
+template<typename T>
+T multiscale_short_values(const std::vector<T>& params, const ModelData& data,
+                          const ParamLayout& layout, std::vector<T>& short_term)
+{
+    const int n_short = layout.short_term_end - layout.short_term_start;
+    std::vector<T> coords(params.begin() + layout.short_term_start,
+                          params.begin() + layout.short_term_start + n_short);
+    if (!multiscale_short_noncentered(data, layout)) {
+        short_term.swap(coords);
+        return T(0.0);
+    }
+    const T sigma2 = safe_exp(params[layout.log_sigma2_short_idx]);
+    const T rho = multiscale_short_rho(params, layout);
+    return tulpa_temporal::short_term_noncentered(
+        coords, data.multiscale_temporal_data.short_term_type, sigma2, rho,
+        short_term);
+}
+
 template<typename T>
 T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelData& data,
                                      const ParamLayout& layout, std::vector<T>& ms_temporal_eta,
@@ -75,6 +122,9 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
         std::vector<T> ms_trend_density;
         std::vector<T> ms_seasonal;
         std::vector<T> ms_short_term;
+        // The short-term field the centred density is evaluated on; empty
+        // under the non-centred parameterization, as for the trend.
+        std::vector<T> ms_short_density;
         T ms_sigma2_trend = T(1.0);
         T ms_sigma2_seasonal = T(1.0);
         T ms_sigma2_short = T(1.0);
@@ -119,10 +169,10 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
             T log_sigma2_short = params[layout.log_sigma2_short_idx];
             ms_sigma2_short = safe_exp(log_sigma2_short);
 
-            int n_short = layout.short_term_end - layout.short_term_start;
-            ms_short_term.resize(n_short);
-            for (int t = 0; t < n_short; t++) {
-                ms_short_term[t] = params[layout.short_term_start + t];
+            log_post = log_post +
+                multiscale_short_values(params, data, layout, ms_short_term);
+            if (!multiscale_short_noncentered(data, layout)) {
+                ms_short_density = ms_short_term;
             }
 
             // PC prior on sigma2_short + Jacobian
@@ -132,10 +182,8 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
 
             // AR1 rho parameter
             if (layout.logit_rho_short_idx >= 0) {
-                T logit_rho_short = params[layout.logit_rho_short_idx];
-                // Map logit to (-1, 1): rho = 2*invlogit(logit) - 1
-                T u = inv_logit(logit_rho_short);
-                ms_rho_short = T(2.0) * u - T(1.0);
+                T u = T(0.5);
+                ms_rho_short = multiscale_short_rho(params, layout, &u);
 
                 // Beta(a, b) on u: with the logit change of variables the
                 // density and its Jacobian combine to a*log(u) + b*log(1-u).
@@ -147,7 +195,7 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
 
         // GMRF log-likelihood for all components
         log_post = log_post + tulpa_temporal::multiscale_temporal_log_lik(
-            ms_trend_density, ms_seasonal, ms_short_term,
+            ms_trend_density, ms_seasonal, ms_short_density,
             ms_sigma2_trend, ms_sigma2_seasonal, ms_sigma2_short, ms_rho_short,
             ms_data);
 
@@ -173,7 +221,8 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
 // form (rw1_log_lik / rw2_log_lik return 0 there) leaves its values under a
 // flat prior; either is improper. A non-centred trend carries standard normal
 // densities on its level and innovations, normalized as they stand, and a flat
-// slope under RW2.
+// slope under RW2; a non-centred short-term arm carries standard normal
+// densities on its innovations, normalized as they stand.
 inline double multiscale_temporal_prior_log_normalizer(
     const ModelData& data, const ParamLayout& layout,
     std::vector<std::string>* declined) {

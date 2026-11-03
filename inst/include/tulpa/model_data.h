@@ -189,7 +189,9 @@ namespace tulpa {
 // section: the spatial HSGP lengthscale carries the PC range prior the nested
 // route puts on it, in place of a LogNormal(0, 1) on the standardized
 // lengthscale, and the HSGP SVC term reads `svc_phi_prior_U` / `_alpha` for
-// the same prior. Every field after the HSGP section moves.
+// the same prior. It also gained `ms_short_parameterization` after
+// `ms_trend_slope`, the non-centred multiscale short-term arm. Every field
+// after either moves.
 // ============================================================================
 constexpr int TULPA_ABI_VERSION = 50;
 
@@ -544,6 +546,10 @@ struct ModelData {
     int ms_trend_parameterization = 0;
     std::vector<double> ms_trend_basis;
     std::vector<double> ms_trend_slope;
+    // 0 = centred short-term arm (its values are sampled), 1 = non-centred
+    // (its standardized innovations are sampled and the AR1 / IID field is
+    // built from them by short_term_noncentered).
+    int ms_short_parameterization = 0;
 
     // ================================================================
     // TVC (Temporally-Varying Coefficients)

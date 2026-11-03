@@ -34,11 +34,12 @@ multi-process model. \code{NULL} (default) shares it; \code{FALSE} fits
 process-specific effects and emits a warning.}
 
 \item{parameterization}{How the exact sampler (\code{mode = "hmc"}) samples the
-trend. \code{"noncentered"} (default) samples the walk's level, its slope (RW2)
-and its innovations divided by the trend SD, and builds the walk from them;
-\code{"centered"} samples the walk's values. Both are the same model. The
-nested-Laplace and Gibbs routes do not read it, and the other sampler
-backends sample the walk's values.}
+trend and the short-term component. \code{"noncentered"} (default) samples the
+walk's level, its slope (RW2) and its innovations divided by the trend
+SD, and the short-term component's innovations divided by its SD, and
+builds both fields from them; \code{"centered"} samples the fields' values.
+Both are the same model. The nested-Laplace and Gibbs routes do not read
+it, and the other sampler backends sample the fields' values.}
 
 \item{x}{A \code{tulpa_temporal_multiscale} specification.}
 
@@ -68,10 +69,11 @@ where an AR1 or iid block shrinks every time point to zero. Every route uses
 the same priors: a PC prior with \code{P(sigma > 1) = 0.01} on each component's
 SD and a Beta(2, 2) on \code{(rho + 1) / 2}. \code{\link[=temporal]{temporal()}} returns each
 component's posterior. The exact sampler (\code{mode = "hmc"}) samples the
-trend non-centred by default: under the centred parameterization the
-spread of the walk's differences follows the trend SD, a funnel whose
-divergent transitions concentrate at the smallest trend variances. The
-seasonal and short-term components are sampled centred.
+trend and the short-term component non-centred by default: under the
+centred parameterization the spread of the walk's differences follows the
+trend SD, and the spread of the short-term values the short-term SD, each a
+funnel whose divergent transitions concentrate at the smallest variances.
+The seasonal component is sampled centred.
 \code{mode = "gibbs"} runs the binomial Polya-Gamma sampler for a field with an
 RW1 trend (or none). The field is one walk per component shared by every
 observation.

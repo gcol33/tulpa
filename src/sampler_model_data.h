@@ -21,6 +21,8 @@
 #ifndef TULPA_SAMPLER_MODEL_DATA_H
 #define TULPA_SAMPLER_MODEL_DATA_H
 
+#include <cmath>
+#include <limits>
 #include "tulpa/likelihood.h"
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
@@ -324,31 +326,51 @@ inline void init_gp_lengthscales(std::vector<double>& q,
     }
 }
 
-// A non-centred multiscale trend starts at the median of its PC prior on the
-// SD, log(2) U / -log(alpha), rather than at sigma = 1. The walk is built from
-// the innovations by cumulative sums, so a unit innovation moves f_t by up to
-// sigma t (RW1) or sigma t^2 / 2 (RW2), and at sigma = 1 the likelihood's
-// curvature in the innovations is that factor squared: a first step sized to
-// the unit prior lands where the linear predictor is in the hundreds.
-inline void init_multiscale_trend_scale(std::vector<double>& q,
-                                        const ModelData& data,
-                                        const ParamLayout& layout) {
-    if (!layout.has_multiscale_temporal || layout.log_sigma2_trend_idx < 0 ||
-        data.ms_trend_parameterization != 1) {
-        return;
+// The PC prior's median SD, log(2) U / -log(alpha), as a log-variance; NaN for
+// an anchor pair outside the prior's domain.
+inline double pc_median_log_sigma2(double U, double alpha) {
+    if (!(U > 0.0) || !(alpha > 0.0 && alpha < 1.0)) {
+        return std::numeric_limits<double>::quiet_NaN();
     }
-    const double U = data.ms_sigma2_trend_prior_U;
-    const double alpha = data.ms_sigma2_trend_prior_alpha;
-    if (!(U > 0.0) || !(alpha > 0.0 && alpha < 1.0)) return;
-    const double sigma_median = std::log(2.0) * U / -std::log(alpha);
-    q[layout.log_sigma2_trend_idx] = 2.0 * std::log(sigma_median);
+    return 2.0 * std::log(std::log(2.0) * U / -std::log(alpha));
+}
+
+// A non-centred multiscale arm starts at the median of its PC prior on the SD
+// rather than at sigma = 1. Its field is the scale times the sampled
+// coordinates, so at a large scale a coordinate moves the linear predictor
+// far: the trend's walk is built from the innovations by cumulative sums, a
+// unit innovation moving f_t by up to sigma t (RW1) or sigma t^2 / 2 (RW2),
+// and a short-term coordinate moves its time point by sigma. A chain the
+// multi-chain start disperses by Uniform(-2, 2) per coordinate then starts
+// where the likelihood pays for a field of that size, and the steepest way
+// down is to shrink the scale. With the short-term arm started at sigma = 1,
+// 6 of 18 gaussian RW2 + iid fits (six data sets, three seeds) had a chain
+// whose log-variances reached -21 to -265 in the first warmup iteration and
+// stayed there through warmup (Rhat up to 1.58); started at the median, 0 of
+// 18, with Rhat at most 1.01.
+inline void init_multiscale_noncentered_scales(std::vector<double>& q,
+                                               const ModelData& data,
+                                               const ParamLayout& layout) {
+    if (!layout.has_multiscale_temporal) return;
+    auto set_median = [&q](int idx, double U, double alpha) {
+        const double v = pc_median_log_sigma2(U, alpha);
+        if (idx >= 0 && std::isfinite(v)) q[idx] = v;
+    };
+    if (data.ms_trend_parameterization == 1) {
+        set_median(layout.log_sigma2_trend_idx, data.ms_sigma2_trend_prior_U,
+                   data.ms_sigma2_trend_prior_alpha);
+    }
+    if (data.ms_short_parameterization == 1) {
+        set_median(layout.log_sigma2_short_idx, data.ms_sigma2_short_prior_U,
+                   data.ms_sigma2_short_prior_alpha);
+    }
 }
 
 inline void init_bounded_support_params(std::vector<double>& q,
                                         const ModelData& data,
                                         const ParamLayout& layout) {
     init_gp_lengthscales(q, data, layout);
-    init_multiscale_trend_scale(q, data, layout);
+    init_multiscale_noncentered_scales(q, data, layout);
 
     if (!layout.is_multiscale_gp || !data.has_multiscale_gp || data.msgp_is_hsgp) {
         return;

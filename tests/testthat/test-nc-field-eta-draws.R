@@ -134,7 +134,7 @@ test_that("eta at a non-centred multiscale trend's stored draws is the stored wa
                control = nc_ctl,
                temporal = temporal_multiscale("t", trend = "rw2",
                                               short_term = "none"))
-  expect_identical(fit$model_inputs$temporal_spec$trend_parameterization,
+  expect_identical(fit$model_inputs$temporal_spec$parameterization,
                    "noncentered")
   fixed <- fit$draws[, c("(Intercept)", "x"), drop = FALSE] %*%
     t(fit$model_inputs$X[, c("(Intercept)", "x"), drop = FALSE])

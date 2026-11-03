@@ -903,14 +903,14 @@
 }
 
 # Every ModelData sampler stores a draw in one form (`src/sampler_field_store.h`):
-# each non-centered GP / SVC / multiscale-GP / temporal-GP / multiscale-trend
-# block's slice holds the reconstructed field rather than the sampled
-# coordinates. Re-running such a draw through `initialize_generic_state()` at
-# the spec's own parameterization would apply the non-centered forward
-# transform a SECOND time, to a slice that is no longer the coordinates
-# (gcol33/tulpa#822). Reading the stored draws back as centered undoes exactly
-# that: the forward transform is the identity on an already-centered field,
-# matching what the store wrote.
+# each non-centered GP / SVC / multiscale-GP / temporal-GP / multiscale-trend /
+# multiscale short-term block's slice holds the reconstructed field rather than
+# the sampled coordinates. Re-running such a draw through
+# `initialize_generic_state()` at the spec's own parameterization would apply
+# the non-centered forward transform a SECOND time, to a slice that is no
+# longer the coordinates (gcol33/tulpa#822). Reading the stored draws back as
+# centered undoes exactly that: the forward transform is the identity on an
+# already-centered field, matching what the store wrote.
 #' @keywords internal
 .stored_draw_field_specs <- function(mi) {
   spatial_spec  <- mi$spatial_spec
@@ -928,11 +928,9 @@
       svc_spec$svc_parameterization == 1L) {
     svc_spec$svc_parameterization <- 0L
   }
-  if (identical(temporal_spec$type, "gp")) {
+  if (identical(temporal_spec$type, "gp") ||
+      identical(temporal_spec$type, "multiscale")) {
     temporal_spec$parameterization <- "centered"
-  }
-  if (identical(temporal_spec$type, "multiscale")) {
-    temporal_spec$trend_parameterization <- "centered"
   }
   list(spatial_spec = spatial_spec, svc_spec = svc_spec,
        temporal_spec = temporal_spec)

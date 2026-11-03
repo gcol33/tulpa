@@ -198,6 +198,44 @@ inline T iid_log_lik(
 }
 
 // -----------------------------------------------------------------------------
+// Non-centred short-term arm (AR1 / IID)
+// -----------------------------------------------------------------------------
+
+// The short-term field s as a function of sampled coordinates u:
+//
+//   IID:  s_t = sigma u_t
+//   AR1:  s_1 = sigma u_1 / sqrt(1 - rho^2),  s_t = rho s_{t-1} + sigma u_t,
+//
+// sigma the innovation SD. Returns the log density of u, standard normal in
+// every coordinate. This is the centred model exactly: tau Q(s) = sum u_t^2
+// for the AR1 quadratic form Q (ar1_cross_form) at tau = 1 / sigma^2, and the
+// Jacobian sigma^n / sqrt(1 - rho^2) of u -> s cancels the centred density's
+// normalizer, with 1 - rho^2 the same floored ar1_one_minus_rho2 the centred
+// density reads. The scale and the correlation enter the field rather than the
+// coordinates' density, so the field / scale funnel of the centred density,
+// whose curvature in s grows as sigma falls, is gone.
+template <typename T>
+inline T short_term_noncentered(const std::vector<T>& u, TemporalType type,
+                                const T& sigma2, const T& rho,
+                                std::vector<T>& s) {
+  const int n = static_cast<int>(u.size());
+  s.assign(n, T(0.0));
+  if (n == 0 || (type != TemporalType::AR1 && type != TemporalType::IID)) {
+    return T(0.0);
+  }
+  const T sigma = safe_sqrt(sigma2);
+  T log_dens = T(0.0);
+  for (int t = 0; t < n; t++) log_dens = log_dens - T(0.5) * u[t] * u[t];
+  if (type == TemporalType::IID) {
+    for (int t = 0; t < n; t++) s[t] = sigma * u[t];
+  } else {
+    s[0] = sigma * u[0] / safe_sqrt(ar1_one_minus_rho2(rho));
+    for (int t = 1; t < n; t++) s[t] = rho * s[t - 1] + sigma * u[t];
+  }
+  return log_dens - T(0.5 * kLogTwoPi * n);
+}
+
+// -----------------------------------------------------------------------------
 // Multi-scale temporal log-likelihood
 // -----------------------------------------------------------------------------
 

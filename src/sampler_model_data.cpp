@@ -559,12 +559,16 @@ void build_sampler_model_inputs(
         else Rcpp::stop("build_sampler_model_inputs: multiscale short_term '%s' "
                         "is not supported (use 'ar1'/'iid'/'none').", st.c_str());
 
-        const bool trend_centered =
-            tp.containsElementNamed("trend_parameterization") &&
-            Rcpp::as<std::string>(tp["trend_parameterization"]) == "centered";
-        if (!trend_centered && ms.trend_type != TemporalType::NONE) {
+        // One parameterization for the trend and the short-term arm. The
+        // seasonal arm is sampled centred.
+        const bool centered =
+            tp.containsElementNamed("parameterization") &&
+            Rcpp::as<std::string>(tp["parameterization"]) == "centered";
+        if (!centered && ms.trend_type != TemporalType::NONE) {
             set_multiscale_trend_noncentered(in.data);
         }
+        in.data.ms_short_parameterization =
+            (!centered && ms.short_term_type != TemporalType::NONE) ? 1 : 0;
 
         if (ms.trend_type == TemporalType::NONE && ms.seasonal_period == 0 &&
             ms.short_term_type == TemporalType::NONE)

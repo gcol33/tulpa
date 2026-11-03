@@ -1668,10 +1668,11 @@
         time_index  = as.integer(temporal$time_index),
         n_times     = as.integer(temporal$n_times),
         trend       = tolower(temporal$trend %||% "none"),
-        # The non-centred walk is the NUTS kernel's parameterization; the
-        # other ModelData backends sample the walk's values. Either way the
-        # stored draw holds the walk (`src/sampler_field_store.h`).
-        trend_parameterization = if (identical(backend, "hmc"))
+        # Sampling the trend and the short-term arm non-centred is the NUTS
+        # kernel's parameterization; the other ModelData backends sample the
+        # fields' values. Either way the stored draw holds the fields
+        # (`src/sampler_field_store.h`).
+        parameterization = if (identical(backend, "hmc"))
           temporal$parameterization %||% "noncentered" else "centered",
         seasonal    = if (!is.null(temporal$seasonal))
                         as.integer(temporal$seasonal) else NULL,
