@@ -141,13 +141,14 @@ test_that("svc() / tvc() read the field the likelihood read on every backend", {
     g <- .vcp_identity_gap(fits[[nm]])
     expect_lt(g[["gap"]], 1e-9 * max(1, g[["scale"]]), label = nm)
   }
-  # On VI the stored NNGP slice is the whitened z; the accessor's field is the
-  # reconstructed, centred w.
+  # On VI, as on every ModelData backend, the stored NNGP slice is the
+  # reconstructed, centred w (src/sampler_field_store.h), and the accessor's
+  # field is that slice.
   w <- svc(fits$nngp_vi)$draws[, , 1L]
   expect_lt(max(abs(rowMeans(w))), 1e-10)
-  z <- tulpa:::.draws_by_prefix(fits$nngp_vi$draws, "svc_w")
-  expect_gt(max(abs(w - z)), 1e-3)
-  # A VI TVC draw is stored uncentred; the accessor's field is centred.
+  stored <- tulpa:::.draws_by_prefix(fits$nngp_vi$draws, "svc_w")
+  expect_lt(max(abs(w - stored)), 1e-10)
+  # A VI TVC draw is stored centred, and the accessor's field with it.
   expect_lt(max(abs(apply(tvc(fits$tvc_ar1_vi)$draws[, , 1L], 1L, mean))), 1e-10)
 })
 
