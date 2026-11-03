@@ -141,6 +141,61 @@
   posterior mean. `mode = "auto"` on such a fit now selects the joint nested
   Laplace door (#1068).
 
+* `predict()`, `posterior_linpred()` and `posterior_predict()` refuse a fit
+  carrying a latent term they cannot read at the prediction rows, naming it,
+  instead of predicting without it; `s()` smoothers, `spatiotemporal()`
+  interactions and `latent()` blocks (training rows only) are now read (#1115).
+  A temporal RW1, RW2, AR1 or GP field is forecast past its fitted times
+  (#1100), an inline `spatial(..., by =)` field predicts in the copy of the
+  row's level (#1101), and a direct `tulpa_nested_laplace_joint()` fit refuses
+  a block it cannot read at new rows (#1102).
+
+* `ranef()` reports the random effects of inline field fits and of direct
+  `tulpa_nested_laplace_joint()` fits from the per-cell Gaussian mixture
+  (#1103, #1117). An inline `spatial()` / `temporal()` field integrates an
+  unsupplied random-effect scale as an outer axis and accepts any random-effect
+  term (#1119).
+
+* The sum-to-zero block-Schur step splits coordinates by the sparsity of the
+  Hessian rather than by whether they carry a pin: 360 to 25 ms per Newton step
+  for ICAR with a 1500-node NNGP (#1097). The inner Newton step solves all its
+  right-hand sides in one multi-column call (#1099). `control$cila` with folded
+  pins and hard constraint rows draws from the pinned inner Gaussian its
+  log-marginal is read off; on a Gaussian check fit its effective sample size
+  was 1/4096 and is now 1 (#1098).
+
+* The outer Pareto-k scores the grid against the density it integrates,
+  including each axis's prior and change of coordinate (#1121). Refinement
+  follows a slowly decaying end out at that tail's own scale: the
+  `spatial_multiscale()` local-variance 2.5% bound went from 0.128 to 0.041
+  against an exact 0.037 (#1093, #1113).
+
+* `tulpa_re_cov_nested()` grows its integration tensor past an end still
+  holding more than 0.1% of an axis's marginal: a slope SD's 2.5% bound mean
+  |log error| went from 0.73 to 0.05 against a dense reference over 30 seeds
+  (#1104).
+
+* An HSGP lengthscale carries one PC range prior on every route, and
+  `spatial_range()` converts it with the squared-exponential factor on every
+  route (ABI 50; #1108, #1109). `spatial_svc()`, `spatial_multiscale()` (one
+  basis per scale), `fit_st_nested()`, the joint door and
+  `tulpa_nested_laplace(spec =)` choose the HSGP basis by the Riutort-Mayol et
+  al. (2023) rule when `m` and `c` are unset (#1110). The per-row predictive
+  variance is read in one pass and skipped on internal re-solves: an HSGP fit at
+  n = 250, m = 16 runs in about 3 s instead of 49 s (#1107, #1122).
+
+* `temporal_multiscale(parameterization =)` non-centres the short-term AR1 or
+  iid arm on `mode = "hmc"` as well as the trend (#1094). On nested fits
+  `temporal()` draws every component from one latent draw of the cell's
+  precision, so sums and contrasts carry the full covariance (#1111, #1112), and
+  `temporal_corr()` / `spatial_range()` report the SD `summary()` reports
+  (#1096).
+
+* Every sampler backend stores the reconstructed non-centred GP, SVC or
+  temporal-GP field, as NUTS did (#1095). `tulpa_kfold()` and `tulpa_reloo()`
+  score a `cens()` / `trunc()` response through each held-out row's bounds
+  (#1118).
+
 ## Package
 
 * C++ test fixtures live in `tests/testthat/cpp` and compile per test file;
