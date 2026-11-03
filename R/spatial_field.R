@@ -572,15 +572,6 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   fit$model_matrix <- bundle$X
   fit$re_design <- .re_design_of(bundle)
   fit$field_eta_contrib <- core$field_eta_contrib
-  # The random intercept rides the arm's own channel, its coordinates the
-  # effects themselves, in the group order the layout names them.
-  al <- fit$arm_layout
-  n_re <- as.integer(al$n_re[1L] %||% 0L)
-  if (n_re > 0L) {
-    fit <- .joint_attach_re_cells(fit, list(
-      cols = as.integer(al$re_start[1L] + seq_len(n_re)),
-      scale_block = rep(0L, n_re), sigma_fixed = rep(1, n_re)))
-  }
   fit
 }
 
