@@ -100,6 +100,72 @@ inline T rw2_log_lik(
 }
 
 // -----------------------------------------------------------------------------
+// Non-centred intrinsic walk (the multiscale trend)
+// -----------------------------------------------------------------------------
+
+// Dimension of an intrinsic walk's null space: the constant for RW1, the
+// constant and the linear trend for RW2. Zero for any other type.
+inline int rw_walk_order(TemporalType type) {
+  if (type == TemporalType::RW1) return 1;
+  if (type == TemporalType::RW2) return 2;
+  return 0;
+}
+
+// The walk f as a function of sampled coordinates u, in the spectral basis of
+// its structure matrix R (R = D'D, D the first or second difference):
+//
+//   f = (RW2) u_1 l  +  sigma sum_j b_j u_{k + j},    b_j = v_j / sqrt(lambda_j),
+//
+// where (lambda_j, v_j) are the positive eigenpairs of R and l the unit
+// centred linear direction (`basis`: n x (n - k) column-major, the b_j;
+// `slope`: l, empty for RW1). Returns the log density of u. The coordinates
+// u_{k + j} are N(0, 1), so the scale enters the field rather than the
+// coordinates' density and the field/scale funnel of the centred density is
+// gone. In this basis the prior is diagonal, and so is a likelihood whose
+// precision is constant over time, so the conditional posterior of the
+// coordinates is close to diagonal too: a diagonal mass matrix reaches it,
+// where the walk's own innovations (cumulative sums of u) couple every
+// coordinate to every later time point. u_0 stands for the level, which
+// compute_temporal_eta centres out of the linear predictor: it carries a proper
+// N(0, 1) and enters no field value. The RW2 slope u_1 is flat, as the linear
+// null direction is under the centred density.
+//
+// This is the centred model exactly. The centred density is augmented on the
+// constant (rw1_log_lik / rw2_log_lik with `augment`); integrating the level
+// out of it leaves tau^{(n - k)/2} exp(-tau/2 f'Rf) on the centred walk, with
+// the slope flat for RW2, and f'Rf = sum_j lambda_j c_j^2 for the walk's
+// coordinates c_j = sigma u_{k + j} / sqrt(lambda_j) in the eigenbasis, whose
+// Jacobian sigma^{n - k} prod_j lambda_j^{-1/2} turns this into the standard
+// normal density of u up to a constant. Every quantity eta reads -- the centred
+// walk and sigma -- has the same joint distribution under both.
+template <typename T>
+inline T rw_walk_noncentered(const std::vector<T>& u, TemporalType type,
+                             const std::vector<double>& basis,
+                             const std::vector<double>& slope,
+                             const T& sigma2, std::vector<T>& f) {
+  const int n = static_cast<int>(u.size());
+  const int k = rw_walk_order(type);
+  f.assign(n, T(0.0));
+  if (n == 0 || k == 0) return T(0.0);
+  const int m = n - k;
+  const T sigma = safe_sqrt(sigma2);
+
+  T log_dens = T(-0.5) * u[0] * u[0];
+  std::vector<T> g(n, T(0.0));
+  for (int j = 0; j < m; j++) {
+    const T z = u[k + j];
+    log_dens = log_dens - T(0.5) * z * z;
+    const double* bj = basis.data() + static_cast<std::size_t>(j) * n;
+    for (int i = 0; i < n; i++) g[i] = g[i] + bj[i] * z;
+  }
+  for (int i = 0; i < n; i++) f[i] = sigma * g[i];
+  if (k == 2) {
+    for (int i = 0; i < n; i++) f[i] = f[i] + slope[i] * u[1];
+  }
+  return log_dens - T(0.5 * kLogTwoPi * (m + 1));
+}
+
+// -----------------------------------------------------------------------------
 // AR1 log-likelihood (stationary first-order autoregressive)
 // -----------------------------------------------------------------------------
 

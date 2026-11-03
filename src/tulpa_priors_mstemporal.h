@@ -24,6 +24,41 @@ using namespace math;
 // 7. Multiscale temporal prior
 // ============================================================================
 
+// Whether the trend's sampled coordinates are the walk's standardized
+// innovations (non-centred) rather than its values.
+inline bool multiscale_trend_noncentered(const ModelData& data,
+                                         const ParamLayout& layout) {
+    return data.ms_trend_parameterization == 1 &&
+           layout.log_sigma2_trend_idx >= 0 &&
+           tulpa_temporal::rw_walk_order(
+               data.multiscale_temporal_data.trend_type) > 0;
+}
+
+// The trend values the linear predictor reads, off the sampled coordinates:
+// the coordinates themselves under the centred parameterization, the walk
+// rw_walk_noncentered builds from them in the spectral basis
+// (set_multiscale_trend_noncentered) under the non-centred one. Returns the
+// log density of the coordinates the non-centred parameterization carries
+// (0 under the centred one, whose density multiscale_temporal_log_lik adds).
+// The log-posterior and the NUTS store both read the trend through here, so a
+// stored draw is the field the likelihood saw.
+template<typename T>
+T multiscale_trend_values(const std::vector<T>& params, const ModelData& data,
+                          const ParamLayout& layout, std::vector<T>& trend)
+{
+    const int n_trend = layout.trend_end - layout.trend_start;
+    std::vector<T> coords(params.begin() + layout.trend_start,
+                          params.begin() + layout.trend_start + n_trend);
+    if (!multiscale_trend_noncentered(data, layout)) {
+        trend.swap(coords);
+        return T(0.0);
+    }
+    const T sigma2 = safe_exp(params[layout.log_sigma2_trend_idx]);
+    return tulpa_temporal::rw_walk_noncentered(
+        coords, data.multiscale_temporal_data.trend_type,
+        data.ms_trend_basis, data.ms_trend_slope, sigma2, trend);
+}
+
 template<typename T>
 T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelData& data,
                                      const ParamLayout& layout, std::vector<T>& ms_temporal_eta)
@@ -34,6 +69,9 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
         const auto& ms_data = data.multiscale_temporal_data;
 
         std::vector<T> ms_trend;
+        // The trend the centred density is evaluated on; empty under the
+        // non-centred parameterization, whose density is the coordinates'.
+        std::vector<T> ms_trend_density;
         std::vector<T> ms_seasonal;
         std::vector<T> ms_short_term;
         T ms_sigma2_trend = T(1.0);
@@ -46,10 +84,10 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
             T log_sigma2_trend = params[layout.log_sigma2_trend_idx];
             ms_sigma2_trend = safe_exp(log_sigma2_trend);
 
-            int n_trend = layout.trend_end - layout.trend_start;
-            ms_trend.resize(n_trend);
-            for (int t = 0; t < n_trend; t++) {
-                ms_trend[t] = params[layout.trend_start + t];
+            log_post = log_post +
+                multiscale_trend_values(params, data, layout, ms_trend);
+            if (!multiscale_trend_noncentered(data, layout)) {
+                ms_trend_density = ms_trend;
             }
 
             // PC prior on sigma2_trend + Jacobian for log transform
@@ -108,7 +146,7 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
 
         // GMRF log-likelihood for all components
         log_post = log_post + tulpa_temporal::multiscale_temporal_log_lik(
-            ms_trend, ms_seasonal, ms_short_term,
+            ms_trend_density, ms_seasonal, ms_short_term,
             ms_sigma2_trend, ms_sigma2_seasonal, ms_sigma2_short, ms_rho_short,
             ms_data);
 
@@ -129,7 +167,9 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
 // augmented on its constant null direction with eigenvalue 1. An RW2 trend
 // keeps its linear null direction, and a walk too short to carry a quadratic
 // form (rw1_log_lik / rw2_log_lik return 0 there) leaves its values under a
-// flat prior; either is improper.
+// flat prior; either is improper. A non-centred trend carries standard normal
+// densities on its level and innovations, normalized as they stand, and a flat
+// slope under RW2.
 inline double multiscale_temporal_prior_log_normalizer(
     const ModelData& data, const ParamLayout& layout,
     std::vector<std::string>* declined) {
@@ -137,7 +177,12 @@ inline double multiscale_temporal_prior_log_normalizer(
     const auto& ms = data.multiscale_temporal_data;
     const double nan = std::numeric_limits<double>::quiet_NaN();
     double c = 0.0;
-    if (layout.log_sigma2_trend_idx >= 0) {
+    if (multiscale_trend_noncentered(data, layout)) {
+        if (ms.trend_type != TemporalType::RW1) {
+            if (declined) declined->push_back("multiscale_temporal:trend_improper");
+            return nan;
+        }
+    } else if (layout.log_sigma2_trend_idx >= 0) {
         const int n = layout.trend_end - layout.trend_start;
         if (ms.trend_type != TemporalType::RW1 || n < 2) {
             if (declined) declined->push_back("multiscale_temporal:trend_improper");

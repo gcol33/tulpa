@@ -94,6 +94,22 @@
           }
       }
 
+      // Non-centred multiscale trend: the sampled slice is the walk's level,
+      // slope and standardized innovations. The stored draw is the walk
+      // multiscale_trend_values() hands the likelihood, centred as
+      // compute_temporal_eta centres it on its way into eta.
+      if (data.has_multiscale_temporal && layout.has_multiscale_temporal &&
+          tulpa::priors::multiscale_trend_noncentered(data, layout)) {
+          std::vector<double> trend_store;
+          (void)tulpa::priors::multiscale_trend_values<double>(
+              q, data, layout, trend_store);
+          const int n_trend = layout.trend_end - layout.trend_start;
+          for (int t = 0; t < n_trend; t++) {
+              row[layout.trend_start + t] = trend_store[t];
+          }
+          (void)tulpa::s2z_centre_component(row, layout.trend_start, n_trend);
+      }
+
       // NC multiscale GP: same transform, once per scale.
       if (data.msgp_parameterization == 1 && data.has_multiscale_gp &&
           layout.is_multiscale_gp && !data.msgp_is_hsgp) {

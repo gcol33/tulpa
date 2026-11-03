@@ -14,11 +14,15 @@
 #'   seasonal component.
 #' @param short_term Prior for the short-term component. One of `"ar1"`,
 #'   `"iid"`, or `"none"`.
-#' @param group_var Optional character string naming a grouping variable for
-#'   group-specific temporal effects.
 #' @param shared Whether the effect is shared across processes in a
 #'   multi-process model. `NULL` (default) shares it; `FALSE` fits
 #'   process-specific effects and emits a warning.
+#' @param parameterization How the exact sampler (`mode = "hmc"`) samples the
+#'   trend. `"noncentered"` (default) samples the walk's level, its slope (RW2)
+#'   and its innovations divided by the trend SD, and builds the walk from them;
+#'   `"centered"` samples the walk's values. Both are the same model. The
+#'   nested-Laplace and Gibbs routes do not read it, and the other sampler
+#'   backends sample the walk's values.
 #'
 #' @return A `tulpa_temporal_multiscale` object.
 #'
@@ -37,10 +41,13 @@
 #' the same priors: a PC prior with `P(sigma > 1) = 0.01` on each component's
 #' SD and a Beta(2, 2) on `(rho + 1) / 2`. [temporal()] returns each
 #' component's posterior. The exact sampler (`mode = "hmc"`) samples the
-#' components centred; with a small trend SD this is a funnel, and its
-#' divergent transitions concentrate at the smallest trend variances.
+#' trend non-centred by default: under the centred parameterization the
+#' spread of the walk's differences follows the trend SD, a funnel whose
+#' divergent transitions concentrate at the smallest trend variances. The
+#' seasonal and short-term components are sampled centred.
 #' `mode = "gibbs"` runs the binomial Polya-Gamma sampler for a field with an
-#' RW1 trend (or none). `group_var` is not routed through the nested path.
+#' RW1 trend (or none). The field is one walk per component shared by every
+#' observation.
 #'
 #' @seealso [temporal_rw1()], [temporal_rw2()], [temporal_ar1()] for
 #'   single-scale temporal priors.
@@ -54,20 +61,16 @@ temporal_multiscale <- function(time_var,
                                 trend = c("rw2", "rw1", "none"),
                                 seasonal = NULL,
                                 short_term = c("ar1", "iid", "none"),
-                                group_var = NULL,
-                                shared = NULL) {
+                                shared = NULL,
+                                parameterization = c("noncentered",
+                                                     "centered")) {
 
   trend <- match.arg(trend)
   short_term <- match.arg(short_term)
+  parameterization <- match.arg(parameterization)
 
   if (!is.character(time_var) || length(time_var) != 1) {
     stop("`time_var` must be a single character string", call. = FALSE)
-  }
-
-  if (!is.null(group_var)) {
-    if (!is.character(group_var) || length(group_var) != 1) {
-      stop("`group_var` must be a single character string", call. = FALSE)
-    }
   }
 
   # Validate seasonal
@@ -93,10 +96,10 @@ temporal_multiscale <- function(time_var,
     list(
       type = "multiscale",
       time_var = time_var,
-      group_var = group_var,
       shared = shared,
       # Component specifications
       trend = trend,
+      parameterization = parameterization,
       seasonal = seasonal,
       short_term = short_term,
       components = components,
@@ -104,7 +107,6 @@ temporal_multiscale <- function(time_var,
       n_times = NULL,
       n_groups = NULL,
       time_index = NULL,
-      group_index = NULL,
       precision_structures = NULL
     ),
     class = c("tulpa_temporal_multiscale", "tulpa_temporal", "list")
@@ -121,9 +123,6 @@ print.tulpa_temporal_multiscale <- function(x, ...) {
   cat("=========================================\n\n")
 
   cat("Time variable:", x$time_var, "\n")
-  if (!is.null(x$group_var)) {
-    cat("Group variable:", x$group_var, "\n")
-  }
 
   cat("\nComponents:\n")
 
@@ -187,9 +186,6 @@ validate_temporal_multiscale <- function(temporal, data) {
   }
 
   assert_columns_exist(temporal$time_var, data, role = "Temporal")
-  if (!is.null(temporal$group_var)) {
-    assert_columns_exist(temporal$group_var, data, role = "Temporal group")
-  }
 
   time_factor <- .resolve_time_index(data[[temporal$time_var]],
                                      temporal$time_var)
@@ -210,17 +206,7 @@ validate_temporal_multiscale <- function(temporal, data) {
     ), "Seasonal component may not be well-identified.", call. = FALSE)
   }
 
-  # Handle grouping
-  if (!is.null(temporal$group_var)) {
-    group_vals <- data[[temporal$group_var]]
-    group_factor <- as.factor(group_vals)
-    temporal$n_groups <- nlevels(group_factor)
-    temporal$group_index <- as.integer(group_factor)
-    temporal$group_levels <- levels(group_factor)
-  } else {
-    temporal$n_groups <- 1L
-    temporal$group_index <- rep(1L, nrow(data))
-  }
+  temporal$n_groups <- 1L
 
   # Build precision structures for each component
   temporal$precision_structures <- list()

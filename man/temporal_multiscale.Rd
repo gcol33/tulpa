@@ -10,8 +10,8 @@ temporal_multiscale(
   trend = c("rw2", "rw1", "none"),
   seasonal = NULL,
   short_term = c("ar1", "iid", "none"),
-  group_var = NULL,
-  shared = NULL
+  shared = NULL,
+  parameterization = c("noncentered", "centered")
 )
 
 \method{print}{tulpa_temporal_multiscale}(x, ...)
@@ -29,12 +29,15 @@ seasonal component.}
 \item{short_term}{Prior for the short-term component. One of \code{"ar1"},
 \code{"iid"}, or \code{"none"}.}
 
-\item{group_var}{Optional character string naming a grouping variable for
-group-specific temporal effects.}
-
 \item{shared}{Whether the effect is shared across processes in a
 multi-process model. \code{NULL} (default) shares it; \code{FALSE} fits
 process-specific effects and emits a warning.}
+
+\item{parameterization}{How the exact sampler (\code{mode = "hmc"}) samples the
+trend. \code{"noncentered"} (default) samples the walk's level, its slope (RW2)
+and its innovations divided by the trend SD, and builds the walk from them;
+\code{"centered"} samples the walk's values. Both are the same model; the
+nested-Laplace and Gibbs routes do not read it.}
 
 \item{x}{A \code{tulpa_temporal_multiscale} specification.}
 
@@ -64,10 +67,13 @@ where an AR1 or iid block shrinks every time point to zero. Every route uses
 the same priors: a PC prior with \code{P(sigma > 1) = 0.01} on each component's
 SD and a Beta(2, 2) on \code{(rho + 1) / 2}. \code{\link[=temporal]{temporal()}} returns each
 component's posterior. The exact sampler (\code{mode = "hmc"}) samples the
-components centred; with a small trend SD this is a funnel, and its
-divergent transitions concentrate at the smallest trend variances.
+trend non-centred by default: under the centred parameterization the
+spread of the walk's differences follows the trend SD, a funnel whose
+divergent transitions concentrate at the smallest trend variances. The
+seasonal and short-term components are sampled centred.
 \code{mode = "gibbs"} runs the binomial Polya-Gamma sampler for a field with an
-RW1 trend (or none). \code{group_var} is not routed through the nested path.
+RW1 trend (or none). The field is one walk per component shared by every
+observation.
 }
 \examples{
 # Trend + annual seasonal cycle + AR1 short-term component on monthly data

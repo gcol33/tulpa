@@ -53,17 +53,15 @@ test_that("a valid multiscale spec still builds", {
 
 skip_on_cran_budget()
 
-test_that("group_index is checked for length and range", {
+test_that("a per-group field is refused, since the layout carries one walk", {
   skip_on_cran_budget()
   n <- 24L
   t_ok <- rep(seq_len(6L), each = 4L)
   expect_error(
-    .ms_fit(.ms_spec(t_ok, 6L, n_groups = 2L, group_index = rep(1L, n - 1L)), n),
-    "length\\(group_index\\)")
-  g_bad <- rep(1L, n); g_bad[7] <- 3L
-  expect_error(
-    .ms_fit(.ms_spec(t_ok, 6L, n_groups = 2L, group_index = g_bad), n),
-    "group_index\\[7\\]")
+    .ms_fit(.ms_spec(t_ok, 6L, n_groups = 2L, group_index = rep(1:2, n / 2L)), n),
+    "one walk per component")
+  expect_error(.ms_fit(.ms_spec(t_ok, 6L, n_groups = 2L), n),
+               "one walk per component")
 })
 
 # The AR1 arm's density is the stationary one, whose 1 - rho^2 factor is floored.

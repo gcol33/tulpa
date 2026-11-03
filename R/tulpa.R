@@ -798,12 +798,6 @@
 # structure: a walk penalises differences and so leaves a smooth path
 # unpenalised, where an AR1 or iid block shrinks every time point to zero.
 .multiscale_temporal_nl_blocks <- function(temporal) {
-  if (!is.null(temporal$group_var)) {
-    stop("temporal_multiscale(group_var = ) is not routed through the ",
-         "nested-Laplace path: its components would need a per-group layout ",
-         "on the multi-block driver, which carries one walk per block.",
-         call. = FALSE)
-  }
   tidx <- as.integer(temporal$time_index)
   n_t  <- as.integer(temporal$n_times)
   sig  <- unname(.MS_TEMPORAL_SIGMA_PRIOR)
@@ -862,9 +856,6 @@
   }
   if (isTRUE(has_spatial)) {
     return("no Gibbs sampler carries beside a spatial field")
-  }
-  if (!is.null(temporal$group_var)) {
-    return("the Polya-Gamma temporal sampler does not carry per group (one walk for every observation)")
   }
   NULL
 }
@@ -1678,14 +1669,16 @@
       # its own layout, so it rides temporal_spec under its own type rather than
       # being flattened into a single field. build_sampler_model_inputs() reads
       # these names directly onto MultiscaleTemporalData.
-      n_groups <- as.integer(temporal$n_groups %||% 1L)
       temporal_spec_arg <- list(
         type        = "multiscale",
         time_index  = as.integer(temporal$time_index),
         n_times     = as.integer(temporal$n_times),
-        n_groups    = n_groups,
-        group_index = if (n_groups > 1L) as.integer(temporal$group_index) else NULL,
         trend       = tolower(temporal$trend %||% "none"),
+        # The NUTS store writes the walk built from non-centred coordinates
+        # into the draws; every other ModelData backend stores the sampled
+        # coordinates as they are, so those sample the walk's values.
+        trend_parameterization = if (identical(backend, "hmc"))
+          temporal$parameterization %||% "noncentered" else "centered",
         seasonal    = if (!is.null(temporal$seasonal))
                         as.integer(temporal$seasonal) else NULL,
         short_term  = tolower(temporal$short_term %||% "none"),

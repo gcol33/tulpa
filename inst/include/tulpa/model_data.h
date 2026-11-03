@@ -180,8 +180,12 @@ namespace tulpa {
 // 47 -> 48: `SmcFitFn` takes `min_moves, max_moves` in place of
 // `n_mcmc_steps`: the move steps per temperature are set adaptively between
 // the two bounds, so a package calling `tulpa_smc_fit` rebuilds.
+//
+// 48 -> 49: ModelData gained `ms_trend_parameterization`, `ms_trend_basis`
+// and `ms_trend_slope` in the multi-scale temporal section, the non-centred
+// multiscale trend, so every field after them moves.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 48;
+constexpr int TULPA_ABI_VERSION = 49;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -519,6 +523,15 @@ struct ModelData {
     double ms_sigma2_seasonal_prior_alpha = 0.01;
     double ms_sigma2_short_prior_U = 1.0;
     double ms_sigma2_short_prior_alpha = 0.01;
+    // 0 = centred trend (the walk's values are sampled), 1 = non-centred (its
+    // level, RW2 slope and standardized coordinates in the spectral basis of
+    // the walk's structure matrix are sampled). The basis is n_times x
+    // (n_times - order) column-major, each column an eigenvector over the
+    // square root of its eigenvalue; the slope is the unit centred linear
+    // direction (RW2 only). Set together by set_multiscale_trend_noncentered.
+    int ms_trend_parameterization = 0;
+    std::vector<double> ms_trend_basis;
+    std::vector<double> ms_trend_slope;
 
     // ================================================================
     // TVC (Temporally-Varying Coefficients)

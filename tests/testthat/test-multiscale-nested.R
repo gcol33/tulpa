@@ -80,9 +80,9 @@ test_that("a multi-scale temporal spec becomes one named block per component", {
     temporal_multiscale("t", trend = "none", short_term = "iid"), d))
   expect_identical(iid[[1L]]$type, "iid")
   expect_identical(iid[[1L]]$n_units, 24L)
-  expect_error(tulpa:::.temporal_spec_to_nl_blocks(validate_temporal_multiscale(
-    temporal_multiscale("t", group_var = "g"), cbind(d, g = rep(1:2, 24)))),
-    "per-group")
+  # The field is one walk per component on every route; there is no per-group
+  # form to ask for.
+  expect_error(temporal_multiscale("t", group_var = "g"), "unused argument")
 })
 
 test_that("auto and structured route multi-scale fields to nested Laplace", {

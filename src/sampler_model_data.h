@@ -312,10 +312,31 @@ inline void init_gp_lengthscales(std::vector<double>& q,
     }
 }
 
+// A non-centred multiscale trend starts at the median of its PC prior on the
+// SD, log(2) U / -log(alpha), rather than at sigma = 1. The walk is built from
+// the innovations by cumulative sums, so a unit innovation moves f_t by up to
+// sigma t (RW1) or sigma t^2 / 2 (RW2), and at sigma = 1 the likelihood's
+// curvature in the innovations is that factor squared: a first step sized to
+// the unit prior lands where the linear predictor is in the hundreds.
+inline void init_multiscale_trend_scale(std::vector<double>& q,
+                                        const ModelData& data,
+                                        const ParamLayout& layout) {
+    if (!layout.has_multiscale_temporal || layout.log_sigma2_trend_idx < 0 ||
+        data.ms_trend_parameterization != 1) {
+        return;
+    }
+    const double U = data.ms_sigma2_trend_prior_U;
+    const double alpha = data.ms_sigma2_trend_prior_alpha;
+    if (!(U > 0.0) || !(alpha > 0.0 && alpha < 1.0)) return;
+    const double sigma_median = std::log(2.0) * U / -std::log(alpha);
+    q[layout.log_sigma2_trend_idx] = 2.0 * std::log(sigma_median);
+}
+
 inline void init_bounded_support_params(std::vector<double>& q,
                                         const ModelData& data,
                                         const ParamLayout& layout) {
     init_gp_lengthscales(q, data, layout);
+    init_multiscale_trend_scale(q, data, layout);
 
     if (!layout.is_multiscale_gp || !data.has_multiscale_gp || data.msgp_is_hsgp) {
         return;

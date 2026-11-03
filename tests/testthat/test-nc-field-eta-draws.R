@@ -119,3 +119,47 @@ test_that("a non-hmc sampler backend's stored field is read unchanged", {
   expect_identical(fs$svc_spec$svc_parameterization,
                    fit$model_inputs$svc_spec$svc_parameterization)
 })
+
+# The temporal fields the store reconstructs: a non-centred temporal GP's slice
+# is z and its stored draw f = sigma L z; a non-centred multiscale trend's
+# slice is its spectral coordinates and its stored draw the walk. Each is read
+# back as centred, so the stored field is the one eta is built from.
+nc_temporal_fixture <- function(n_t = 20L, reps = 3L, seed = 1L) {
+  set.seed(seed)
+  f <- cumsum(cumsum(rnorm(n_t, 0, 0.05))); f <- f - mean(f)
+  t <- rep(seq_len(n_t), each = reps)
+  x <- rnorm(length(t))
+  data.frame(t = t, x = x, y = 0.3 + 0.5 * x + f[t] + rnorm(length(t), 0, 0.3))
+}
+
+test_that("eta at a non-centred temporal GP NUTS fit's stored draws is the stored field", {
+  skip_if_not_slow()
+  d <- nc_temporal_fixture()
+  fit <- tulpa(y ~ x, data = d, family = "gaussian", phi = 0.09, mode = "hmc",
+               control = nc_ctl, temporal = temporal_gp("t"))
+  expect_identical(fit$model_inputs$temporal_spec$parameterization, "noncentered")
+  fixed <- fit$draws[, c("(Intercept)", "x"), drop = FALSE] %*%
+    t(fit$model_inputs$X[, c("(Intercept)", "x"), drop = FALSE])
+  f_cols <- grep("^phi_temporal[[]", colnames(fit$draws))
+  stored <- fit$draws[, f_cols, drop = FALSE][, d$t, drop = FALSE]
+  expect_equal(unname(tulpa:::.tulpa_eta_draws_sampler(fit) - fixed),
+               unname(stored), tolerance = 1e-8)
+})
+
+test_that("eta at a non-centred multiscale trend's stored draws is the stored walk", {
+  skip_if_not_slow()
+  d <- nc_temporal_fixture()
+  fit <- tulpa(y ~ x, data = d, family = "gaussian", phi = 0.09, mode = "hmc",
+               control = nc_ctl,
+               temporal = temporal_multiscale("t", trend = "rw2",
+                                              short_term = "none"))
+  expect_identical(fit$model_inputs$temporal_spec$trend_parameterization,
+                   "noncentered")
+  fixed <- fit$draws[, c("(Intercept)", "x"), drop = FALSE] %*%
+    t(fit$model_inputs$X[, c("(Intercept)", "x"), drop = FALSE])
+  tr <- fit$draws[, grep("^trend[[]", colnames(fit$draws)), drop = FALSE]
+  # The stored walk is the centred one the likelihood reads.
+  expect_lt(max(abs(rowMeans(tr))), 1e-10)
+  expect_equal(unname(tulpa:::.tulpa_eta_draws_sampler(fit) - fixed),
+               unname(tr[, d$t, drop = FALSE]), tolerance = 1e-8)
+})

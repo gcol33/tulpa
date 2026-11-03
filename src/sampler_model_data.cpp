@@ -7,6 +7,63 @@
 
 namespace tulpa {
 
+// Sample the multiscale trend non-centred: fill the spectral basis
+// rw_walk_noncentered reads and set the flag. The structure matrix R = D'D of
+// an order-k walk vanishes on the constant (and, for RW2, the linear trend),
+// so its eigenproblem is solved on the orthogonal complement of that null
+// space -- an orthonormal basis Q of it from the Householder QR of the null
+// vectors -- where every eigenvalue is positive. Separating the null space by
+// construction rather than by thresholding small eigenvalues matters for RW2,
+// whose smallest positive eigenvalue falls as (pi / n)^4.
+void set_multiscale_trend_noncentered(ModelData& data) {
+    const auto& ms = data.multiscale_temporal_data;
+    const int n = ms.n_times;
+    const int k = tulpa_temporal::rw_walk_order(ms.trend_type);
+    if (k == 0 || n <= k) {
+        data.ms_trend_parameterization = 1;
+        data.ms_trend_basis.clear();
+        data.ms_trend_slope.clear();
+        return;
+    }
+    Eigen::MatrixXd D = Eigen::MatrixXd::Zero(n - k, n);
+    for (int i = 0; i < n - k; i++) {
+        if (k == 1) {
+            D(i, i) = -1.0; D(i, i + 1) = 1.0;
+        } else {
+            D(i, i) = 1.0; D(i, i + 1) = -2.0; D(i, i + 2) = 1.0;
+        }
+    }
+    const Eigen::MatrixXd R = D.transpose() * D;
+
+    Eigen::MatrixXd N(n, k);
+    N.col(0).setOnes();
+    Eigen::VectorXd lin(n);
+    if (k == 2) {
+        for (int i = 0; i < n; i++) lin(i) = i - 0.5 * (n - 1);
+        lin /= lin.norm();
+        N.col(1) = lin;
+    }
+    Eigen::HouseholderQR<Eigen::MatrixXd> qr(N);
+    const Eigen::MatrixXd Q = qr.householderQ();
+    const Eigen::MatrixXd Qc = Q.rightCols(n - k);
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(Qc.transpose() * R * Qc);
+    if (es.info() != Eigen::Success || !(es.eigenvalues().minCoeff() > 0.0)) {
+        Rcpp::stop("build_sampler_model_inputs: the multiscale trend's "
+                   "structure matrix has no positive spectrum on the "
+                   "complement of its null space (n_times = %d).", n);
+    }
+    const Eigen::MatrixXd B = Qc * es.eigenvectors() *
+        es.eigenvalues().cwiseSqrt().cwiseInverse().asDiagonal();
+
+    data.ms_trend_basis.assign(B.data(), B.data() + B.size());
+    if (k == 2) {
+        data.ms_trend_slope.assign(lin.data(), lin.data() + n);
+    } else {
+        data.ms_trend_slope.clear();
+    }
+    data.ms_trend_parameterization = 1;
+}
+
 void build_sampler_model_inputs(
     SamplerModelInputs& in,
     const Rcpp::NumericVector& y,
@@ -464,29 +521,20 @@ void build_sampler_model_inputs(
                            "= [1, %d].", i + 1, ms.time_index[i], ms.n_times);
             }
         }
+        // The layout carries one walk per component and compute_temporal_eta
+        // reads the time index alone, so a per-group field has nowhere to go.
         ms.n_groups = tp.containsElementNamed("n_groups") &&
                       !Rf_isNull(tp["n_groups"])
                           ? Rcpp::as<int>(tp["n_groups"]) : 1;
-        if (tp.containsElementNamed("group_index") && !Rf_isNull(tp["group_index"])) {
-            Rcpp::IntegerVector gidx = Rcpp::as<Rcpp::IntegerVector>(tp["group_index"]);
-            if (static_cast<int>(gidx.size()) != ms.n_obs) {
-                Rcpp::stop("build_sampler_model_inputs: multiscale "
-                           "length(group_index) (%d) must equal "
-                           "length(time_index) (%d).",
-                           static_cast<int>(gidx.size()), ms.n_obs);
-            }
-            for (int i = 0; i < ms.n_obs; i++) {
-                if (gidx[i] < 1 || gidx[i] > ms.n_groups) {
-                    Rcpp::stop("build_sampler_model_inputs: multiscale "
-                               "group_index[%d] is %d; it must lie in "
-                               "[1, n_groups] = [1, %d].",
-                               i + 1, gidx[i], ms.n_groups);
-                }
-            }
-            ms.group_index.assign(gidx.begin(), gidx.end());
-        } else {
-            ms.group_index.assign(ms.n_obs, 1);
+        if (ms.n_groups != 1 ||
+            (tp.containsElementNamed("group_index") &&
+             !Rf_isNull(tp["group_index"]))) {
+            Rcpp::stop("build_sampler_model_inputs: a multiscale temporal "
+                       "field carries one walk per component for every "
+                       "observation; n_groups must be 1 and group_index "
+                       "absent (got n_groups = %d).", ms.n_groups);
         }
+        ms.group_index.assign(ms.n_obs, 1);
 
         const std::string trend = Rcpp::as<std::string>(tp["trend"]);
         if      (trend == "rw1")  ms.trend_type = TemporalType::RW1;
@@ -505,6 +553,13 @@ void build_sampler_model_inputs(
         else if (st == "none") ms.short_term_type = TemporalType::NONE;
         else Rcpp::stop("build_sampler_model_inputs: multiscale short_term '%s' "
                         "is not supported (use 'ar1'/'iid'/'none').", st.c_str());
+
+        const bool trend_centered =
+            tp.containsElementNamed("trend_parameterization") &&
+            Rcpp::as<std::string>(tp["trend_parameterization"]) == "centered";
+        if (!trend_centered && ms.trend_type != TemporalType::NONE) {
+            set_multiscale_trend_noncentered(in.data);
+        }
 
         if (ms.trend_type == TemporalType::NONE && ms.seasonal_period == 0 &&
             ms.short_term_type == TemporalType::NONE)
