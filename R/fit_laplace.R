@@ -243,7 +243,6 @@ tulpa_laplace <- function(y, n_trials, X,
     # conditional kernel builds, on a one-row grid at the hyperparameters it
     # fixed. The registry kernels take no observation weights.
     if (is.null(weights) && !identical(spatial$type, "spde") &&
-        !isTRUE(spatial$rsr) &&
         spatial$type %in% c(.NL_FRONTDOOR_AREAL, "gp", "hsgp")) {
       blk <- .spatial_spec_to_nl_prior(spatial)
       result$field_solve <- .nl_field_solve_record(
@@ -844,6 +843,16 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
                                      weights = NULL, beta_prior = NULL) {
 
   spatial_type <- spatial$type
+  # The conditional kernels gather the field at each row's unit or location;
+  # none applies a restriction's projector, so a restricted field would be
+  # fitted as the plain one while the spec still reports the restriction.
+  if (isTRUE(spatial$rsr) || identical(tolower(spatial_type %||% ""), "rsr")) {
+    stop("A restricted field (spatial_rsr()) is fit by nested Laplace, whose ",
+         "multi-block driver reads the field through its projector; the ",
+         "conditional Laplace kernels fit the unrestricted field. Use ",
+         "tulpa(..., mode = 'nested_laplace') or tulpa_nested_laplace().",
+         call. = FALSE)
+  }
   if (!is.null(beta_prior) && !identical(spatial_type, "spde")) {
     stop(sprintf(paste0(
       "`beta_prior` is not supported on the spatial Laplace path for a '%s' ",

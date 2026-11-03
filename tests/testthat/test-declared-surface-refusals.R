@@ -96,3 +96,42 @@ test_that("an areal RSR fit still runs and still projects", {
   expect_identical(fit$backend, "gibbs")
   expect_lt(abs(coef(fit)[["x"]] - 0.6), 0.4)
 })
+
+test_that("a restricted areal field is refused by the conditional Laplace kernels and read at new rows on the nested fit (#1134)", {
+  skip_on_cran()
+  set.seed(2)
+  nr <- 5L; nu <- nr * nr
+  W <- matrix(0, nu, nu)
+  for (i in seq_len(nu)) for (j in seq_len(nu)) {
+    if (abs((i - 1) %/% nr - (j - 1) %/% nr) +
+        abs((i - 1) %% nr - (j - 1) %% nr) == 1) W[i, j] <- 1
+  }
+  n <- 300L
+  unit <- sample(nu, n, TRUE)
+  x <- stats::rnorm(n)
+  z <- stats::rnorm(nu, 0, 0.5)
+  d <- data.frame(y = stats::rpois(n, exp(0.2 + 0.4 * x + z[unit] - mean(z))),
+                  x = x, unit = unit)
+  fit <- suppressWarnings(tulpa(
+    y ~ x + spatial(unit), data = d, family = "poisson",
+    spatial = spatial_rsr(spatial_car(W, level = "group", group_var = "unit"),
+                          ~ x)))
+  expect_identical(fit$backend, "nested_laplace")
+  # The conditional kernels gather the plain field; handed the restricted
+  # spec they would fit it unprojected.
+  expect_error(
+    tulpa_laplace(y = d$y, n_trials = rep(1L, n), X = cbind(1, d$x),
+                  family = "poisson", spatial = fit$spatial),
+    "nested Laplace")
+  # At new rows the field is P z at the row's unit: against the grid's own
+  # posterior mean, sum_k w_k (X beta_k + (P z_k)[unit]).
+  nd <- d[c(5, 50, 120, 200), ]
+  w <- fit$weights / sum(fit$weights)
+  P <- fit$spatial$rsr_projection
+  cols <- ncol(fit$modes) - nu + seq_len(nu)
+  ref <- colSums(w * t(vapply(seq_along(w), function(k) {
+    m <- fit$modes[k, ]
+    m[1L] + m[2L] * nd$x + as.numeric(P %*% m[cols])[nd$unit]
+  }, numeric(nrow(nd)))))
+  expect_equal(as.numeric(predict(fit, newdata = nd)), ref, tolerance = 1e-8)
+})

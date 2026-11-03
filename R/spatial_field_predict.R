@@ -364,7 +364,7 @@
 .field_fixed_cell <- function(object) {
   sp <- object$spatial
   if (!identical(object$backend, "laplace") || is.null(sp) ||
-      !is.numeric(object$mode) || isTRUE(sp$rsr)) {
+      !is.numeric(object$mode)) {
     return(NULL)
   }
   type <- tolower(sp$type %||% "")
