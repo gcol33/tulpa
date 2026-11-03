@@ -95,6 +95,39 @@
   boundary-weight note once, and single-block nested fits and the SPDE door
   honour `control$progress` (#1076).
 
+* Hard constraint rows are anchored in the inner Newton (bordered KKT solve)
+  instead of entering the prior as a stiff penalty, and constrained cell draws
+  go through one compiled draw. The fixture that took 635 s now takes 74 s
+  (#1085).
+
+* A collapsed random-effect covariance axis is placed in log marginal SDs and
+  atanh partial correlations, with the Jacobian, and the grid is read in those
+  coordinates. Coverage of the 30-seed sweep rose from 21/30 to 28/30 (#1086).
+
+* Outer-grid refinement extends an axis past its end node whenever more than 1%
+  of its mass lies beyond it, on every door, and every transform-tagged axis is
+  refinable. The cheap screen's tolerance is 1e-4. Derived quantities are read
+  across each cell rather than at its centre: the AR(1) rho interval moved from
+  [0.098, 0.704] to [-0.006, 0.720] against a dense [-0.013, 0.721], and the
+  trend-SD coverage from 0.85 to 0.95 over 20 seeds (#1071, #1079, #1081).
+
+* `predict()`, `posterior_linpred()` and `posterior_predict()` draw a field at
+  new rows through one path for every backend; a restricted field is projected
+  at the new location. Held-out coverage of the linear predictor went from 0.21
+  to 0.96 (restricted GP), 0.25 to 0.91 (ICAR) and 0.38 to 0.95 (RW1); a unit
+  the fit did not see is an error (#1077, #1088, #1089).
+
+* The HSGP basis size and boundary factor follow Riutort-Mayol et al. (2023),
+  Eqs. 19-20, from the data, with a refit when the fitted lengthscale needs a
+  larger basis; prediction rebuilds the basis with the fitted `m` and `c`.
+  Interval coverage on a Matern fixture went from 0.65 to 0.90 (#1078).
+
+* `temporal_multiscale(parameterization =)` selects a centred or a spectral
+  non-centred trend on the sampler (ABI 49); the multi-scale temporal field
+  reaches `predict()` at every row on both the sampler and the nested route,
+  hyperparameters are labelled by block name, and Pareto-k is computed once
+  (#1082, #1084, #1087, #1090).
+
 ## Package
 
 * C++ test fixtures live in `tests/testthat/cpp` and compile per test file;
