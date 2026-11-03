@@ -26,10 +26,11 @@
 
   lay <- object$arm_layout
   beta_idx <- lay$beta_start[k] + seq_len(ncol(X_fit))
-  blocks <- object$blocks %||% list()
+  blocks <- object$blocks %||% .field_block_list(object$prior) %||% list()
   builder <- which(vapply(blocks, function(p) {
     !is.null(p$basis) && isTRUE(p$basis$reached[k])
   }, logical(1)))
+  .joint_predict_unread(object, blocks, builder, k, arm_names[k])
   if (length(builder) && is.null(nd$coords)) {
     stop("This arm is reached by a field with a basis builder, so `newdata` ",
          "must carry `coords` (an n x 2 matrix of the new rows' coordinates).",
@@ -160,4 +161,36 @@
   Ck <- tryCatch(.spd_inverse(H[[j]]), error = function(e) NULL)
   if (is.null(Ck) || nrow(Ck) != q) return(NULL)
   Ck
+}
+
+# Refuse a prediction for arm `k` that a latent term reaches without a map to
+# the new rows: a block with no basis builder (its unit at a new row is not
+# given; a builder block whose coordinates leave the arm out carries none of
+# it), unless the arm carries no field (`field_coef = 0`), and the arm's
+# own random intercepts. Held at zero, they would leave a predictor of another
+# model.
+.joint_predict_unread <- function(object, blocks, builder, k, arm_name) {
+  fc <- object$responses[[k]]$field_coef
+  off <- is.numeric(fc) && length(fc) == 1L && fc == 0
+  unreached <- which(vapply(blocks, function(p) {
+    !is.null(p$basis) && !isTRUE(p$basis$reached[k])
+  }, logical(1)))
+  held <- if (!off) setdiff(seq_along(blocks), c(builder, unreached))
+          else integer(0)
+  lab <- vapply(held, function(b) sprintf("block %d (%s%s)", b,
+                                          blocks[[b]]$type %||% "?",
+                                          if (!is.null(blocks[[b]]$name))
+                                            paste0(" '", blocks[[b]]$name, "'")
+                                          else ""), character(1))
+  if (isTRUE((object$arm_layout$n_re[k] %||% 0L) > 0L)) {
+    lab <- c(lab, "the arm's random intercepts (`re_idx`)")
+  }
+  if (length(lab)) {
+    stop("Arm '", arm_name, "' is reached by ", paste(lab, collapse = ", "),
+         ", which predict() on a tulpa_nested_laplace_joint() fit reads at new ",
+         "rows only through a basis builder (an `hsgp` block given by its ",
+         "coordinates); a prediction without them would be another model's.",
+         call. = FALSE)
+  }
+  invisible(NULL)
 }

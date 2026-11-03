@@ -146,5 +146,7 @@ outer-grid cell the linear predictor is Gaussian, with the cell's mode and
 its covariance over the fixed effects and the builder blocks' coefficients
 (retained per cell by the fit as \code{basis_block_cov}); the prediction is the
 weighted mixture of those Gaussians over the cells, so \code{lower} / \code{upper} are
-the mixture's quantiles. Blocks without a basis builder are held at zero.
+the mixture's quantiles. An arm reached by a block without a basis builder,
+or by its own random intercepts, is refused: their value at a new row is not
+read here.
 }
