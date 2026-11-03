@@ -26,7 +26,10 @@
 #' [tulpa_criteria()]). A held-out row of a random-effect group the training
 #' rows saw is scored at that group's effect, and one of a group they did not
 #' see integrates a new effect over the term's covariance, as
-#' [posterior_predict()] does at new data.
+#' [posterior_predict()] does at new data. The held-out density is the
+#' training refit's own response process, at the dispersion each draw was taken
+#' at, and a `y | cens(lower, upper)` / `y | trunc(lb, ub)` response is scored
+#' through each held-out row's bounds.
 #'
 #' @param object A `tulpa_fit` fitted through [tulpa()] (must carry `$call`).
 #' @param data The data frame the model was fit to.
@@ -58,7 +61,7 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
                         n_trials = NULL, seed = NULL) {
   su <- .cv_refit_setup(object, data, n_trials, "Refit-based K-fold")
   cl <- su$cl; data <- su$data; n <- su$n
-  fam <- su$fam; phi <- su$phi; y <- su$y; nt <- su$nt
+  y <- su$y; nt <- su$nt; bounds <- su$bounds
 
   .seed_scoped(seed)
   if (is.null(folds)) {
@@ -73,7 +76,7 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
   K <- length(fold_ids)
 
   refit_env <- parent.frame()
-  inject_trials <- .family_reads_trials(fam)
+  inject_trials <- .family_reads_trials(su$fam)
   pointwise <- rep(NA_real_, n)
 
   for (k in fold_ids) {
@@ -82,9 +85,8 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
     fit_k <- .cv_refit(cl, data, train, nt, inject_trials, refit_env,
                        paste0("K-fold refit on fold ", k),
                        obs_w = object$obs_weights)
-    pointwise[test] <- .cv_heldout_lpd(fit_k, data, test, y, nt, fam, phi,
-                                       paste0("Fold ", k),
-                                       phi2 = object$phi2)
+    pointwise[test] <- .cv_heldout_lpd(fit_k, data, test, y, nt, bounds,
+                                       paste0("Fold ", k))
   }
 
   elpd <- sum(pointwise)
@@ -100,8 +102,10 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 # message; everything else is identical between them.
 #
 # Returns the pieces the caller works from: the stored call, the coerced data
-# and its row count, the family and dispersion, the response evaluated on
-# `data`, and the resolved trial counts.
+# and its row count, the family, the response evaluated on `data`, the
+# resolved trial counts, and for a `y | cens()` / `y | trunc()` response the
+# bounds evaluated on `data` (NULL otherwise). A bounded response is the value
+# its kernel reads (`y_kernel`), the one the fit itself was scored at.
 .cv_refit_setup <- function(object, data, n_trials, what) {
   if (!inherits(object, "tulpa_fit")) {
     stop("`object` must be a tulpa_fit.", call. = FALSE)
@@ -123,15 +127,21 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 
   data <- as.data.frame(data)
   n    <- nrow(data)
-  y    <- eval(object$formula[[2L]], envir = data)
+  env  <- environment(object$formula)
+  parsed <- tulpa_parse_formula(object$formula)
+  y    <- eval(parsed$response_expr, envir = data, enclos = env)
   if (length(y) != n) {
     stop("The response evaluated on `data` has length ", length(y),
          " but `data` has ", n, " rows.", call. = FALSE)
   }
+  bounds <- NULL
+  if (!is.null(parsed$response_bounds)) {
+    bounds <- .eval_response_bounds(parsed$response_bounds, data, env, n, y)
+    y <- bounds$y_kernel
+  }
 
-  list(cl = object$call, data = data, n = n,
-       fam = object$family, phi = object$phi %||% 1.0, y = y,
-       nt = .cv_trials(object, n_trials, n))
+  list(cl = object$call, data = data, n = n, fam = object$family, y = y,
+       nt = .cv_trials(object, n_trials, n), bounds = bounds)
 }
 
 # Resolve the full-data trial counts for a refit-CV verb: the caller's
@@ -181,18 +191,29 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 # random-effect term, the effect of a group the training rows saw drawn with
 # them, and the effect of a group they did not see drawn from the term's
 # covariance. The draws are pinned, so a fold scores the same on every call.
-.cv_heldout_lpd <- function(fit_k, data, test, y, nt, fam, phi, label,
-                            phi2 = NULL) {
+#
+# The response process is the training refit's own: its family, and the
+# dispersion each draw was taken at (`.tulpa_phi_draws()`, the cell's value
+# where the refit integrated a dispersion axis), so nothing estimated on the
+# held-out rows enters their score. A bounded response is read through each
+# held-out row's own bounds.
+.cv_heldout_lpd <- function(fit_k, data, test, y, nt, bounds, label) {
   eta <- tryCatch(
     .tulpa_eta_draws(fit_k, newdata = data[test, , drop = FALSE],
                      synth_seed = .DIAGNOSTIC_SEED$criteria),
     error = function(e) stop(label, ": ", conditionMessage(e), call. = FALSE))
   logit_zi <- attr(eta, "logit_zi")
+  proc <- .tulpa_response_process(fit_k, "held-out log predictive density")
+  phi  <- .tulpa_phi_draws(fit_k, proc, attr(eta, "cells"), nrow(eta))
+  bte  <- if (!is.null(bounds)) {
+    list(lower = bounds$lower[test], upper = bounds$upper[test])
+  }
 
   yte <- y[test]; ntte <- nt[test]
   ll <- vapply(seq_len(nrow(eta)), function(s) {
-    .response_loglik(eta[s, ], if (!is.null(logit_zi)) logit_zi[s, ], yte, fam,
-                     n_trials = ntte, phi = phi, phi2 = phi2)
+    .response_loglik(eta[s, ], if (!is.null(logit_zi)) logit_zi[s, ], yte,
+                     proc$family, n_trials = ntte, phi = phi[s],
+                     phi2 = proc$phi2, bounds = bte)
   }, numeric(length(test)))                    # [n_test x S]
   if (is.null(dim(ll))) ll <- matrix(ll, nrow = length(test))
 
@@ -243,7 +264,7 @@ tulpa_reloo <- function(object, data, k_threshold = .nl_diag("k_usable"),
                         n_trials = NULL, ndraws = NULL) {
   su <- .cv_refit_setup(object, data, n_trials, "reloo")
   cl <- su$cl; data <- su$data; n <- su$n
-  fam <- su$fam; phi <- su$phi; y <- su$y; nt <- su$nt
+  y <- su$y; nt <- su$nt
 
   # PSIS-LOO baseline from the fit's own pointwise log-likelihood.
   ll  <- .tulpa_pointwise_loglik(object, ndraws = ndraws,
@@ -254,15 +275,14 @@ tulpa_reloo <- function(object, data, k_threshold = .nl_diag("k_usable"),
 
   flagged <- which(is.finite(pareto_k) & pareto_k > k_threshold)
   refit_env <- parent.frame()
-  inject_trials <- .family_reads_trials(fam)
+  inject_trials <- .family_reads_trials(su$fam)
 
   for (i in flagged) {
     fit_i <- .cv_refit(cl, data, setdiff(seq_len(n), i), nt, inject_trials,
                        refit_env, paste0("reloo refit without observation ", i),
                        obs_w = object$obs_weights)
-    pointwise[i] <- .cv_heldout_lpd(fit_i, data, i, y, nt, fam, phi,
-                                    paste0("Observation ", i),
-                                    phi2 = object$phi2)
+    pointwise[i] <- .cv_heldout_lpd(fit_i, data, i, y, nt, su$bounds,
+                                    paste0("Observation ", i))
   }
 
   elpd <- sum(pointwise)

@@ -43,7 +43,10 @@ temporal field, so those fits are rejected (use PSIS-LOO via
 \code{\link[=tulpa_criteria]{tulpa_criteria()}}). A held-out row of a random-effect group the training
 rows saw is scored at that group's effect, and one of a group they did not
 see integrates a new effect over the term's covariance, as
-\code{\link[=posterior_predict]{posterior_predict()}} does at new data.
+\code{\link[=posterior_predict]{posterior_predict()}} does at new data. The held-out density is the
+training refit's own response process, at the dispersion each draw was taken
+at, and a \code{y | cens(lower, upper)} / \code{y | trunc(lb, ub)} response is scored
+through each held-out row's bounds.
 }
 \examples{
 \donttest{

@@ -95,3 +95,49 @@ test_that("a refit injects n_trials only where the family reads one", {
   expect_true(is.finite(cvb$elpd_kfold))
   expect_false(anyNA(cvb$pointwise))
 })
+
+test_that("a bounded response is scored through each held-out row's bounds", {
+  skip_on_cran()
+  set.seed(2)
+  n <- 100L
+  d <- data.frame(x = rnorm(n))
+  d$y <- 1 + 0.5 * d$x + rnorm(n, sd = 0.6)
+  folds <- rep(seq_len(4L), length.out = n)
+
+  # An interval whose bounds coincide is an exactly observed value, and a
+  # truncation range open on both sides keeps all the mass: either response
+  # is the gaussian model, fold for fold.
+  ref <- tulpa_kfold(tulpa(y ~ x, data = d, family = "gaussian",
+                           mode = "structured"), data = d, folds = folds)
+  ex  <- tulpa_kfold(tulpa(y | cens(y, y) ~ x, data = d, family = "gaussian",
+                           mode = "laplace"), data = d, folds = folds)
+  op  <- tulpa_kfold(tulpa(y | trunc() ~ x, data = d, family = "gaussian",
+                           mode = "laplace"), data = d, folds = folds)
+  expect_equal(ex$pointwise, ref$pointwise, tolerance = 1e-8)
+  expect_equal(op$pointwise, ref$pointwise, tolerance = 1e-8)
+
+  # Left-censored at 0.8: a censored row's held-out density is the predictive
+  # mass below its bound, over the training refit's draws and dispersions.
+  d$lo <- ifelse(d$y < 0.8, -Inf, d$y)
+  d$hi <- ifelse(d$y < 0.8, 0.8, d$y)
+  d$yc <- ifelse(d$y < 0.8, NA, d$y)
+  fit <- tulpa(yc | cens(lo, hi) ~ x, data = d, family = "gaussian",
+               mode = "laplace")
+  cv <- tulpa_kfold(fit, data = d, folds = folds)
+  expect_false(anyNA(cv$pointwise))
+
+  test <- which(folds == 1L)
+  fit1 <- tulpa(yc | cens(lo, hi) ~ x, data = d[-test, ], family = "gaussian",
+                mode = "laplace")
+  eta <- tulpa:::.tulpa_eta_draws(fit1, newdata = d[test, ],
+                                  synth_seed = tulpa:::.DIAGNOSTIC_SEED$criteria)
+  proc <- tulpa:::.tulpa_response_process(fit1, "test")
+  sd <- sqrt(tulpa:::.tulpa_phi_draws(fit1, proc, attr(eta, "cells"), nrow(eta)))
+  cen <- is.na(d$yc[test])
+  expect_true(any(cen))
+  by_hand <- vapply(seq_along(test), function(j) {
+    p <- if (cen[j]) pnorm(0.8, eta[, j], sd) else dnorm(d$y[test[j]], eta[, j], sd)
+    log(mean(p))
+  }, numeric(1))
+  expect_equal(cv$pointwise[test], by_hand, tolerance = 1e-8)
+})
