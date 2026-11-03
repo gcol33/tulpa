@@ -121,14 +121,26 @@ test_that("temporal_corr covers multiscale, tvc and a latent AR(p) block", {
   Tm$y <- rpois(160, exp(0.3 + 0.5 * Tm$x))
   ctl <- list(n_iter = 200, warmup = 100, n_chains = 2, seed = 1)
 
-  fit_ms <- tulpa(y ~ x, data = Tm, family = "poisson", control = ctl,
-                  temporal = temporal_multiscale("tidx", trend = "rw2",
-                                                 seasonal = 12, short_term = "ar1"))
+  ms_spec <- temporal_multiscale("tidx", trend = "rw2", seasonal = 12,
+                                 short_term = "ar1")
+  fit_ms <- tulpa(y ~ x, data = Tm, family = "poisson", mode = "hmc",
+                  control = ctl, temporal = ms_spec)
   tc_ms <- temporal_corr(fit_ms)
   expect_setequal(rownames(tc_ms),
                   c("sigma_trend", "sigma_seasonal", "sigma_short", "rho_short"))
   expect_true(all(is.finite(as.matrix(tc_ms))))
   expect_true(tc_ms["rho_short", "mean"] >= -1 && tc_ms["rho_short", "mean"] <= 1)
+
+  # The default route fits the same field as one nested-Laplace block per
+  # component, and reports each block's own hyperparameters.
+  fit_ms_nl <- tulpa(y ~ x, data = Tm, family = "poisson",
+                     control = list(progress = FALSE), temporal = ms_spec)
+  expect_identical(fit_ms_nl$backend, "nested_laplace")
+  tc_nl <- temporal_corr(fit_ms_nl)
+  expect_setequal(rownames(tc_nl),
+                  c("precision[trend]", "precision[seasonal]",
+                    "precision[short_term]", "rho_ar1"))
+  expect_true(all(is.finite(as.matrix(tc_nl))))
 
   fit_tvc <- tulpa(y ~ x, data = Tm, family = "poisson", mode = "hmc", control = ctl,
                    temporal = temporal_tvc("tidx", terms = "x", structure = "rw1"))
