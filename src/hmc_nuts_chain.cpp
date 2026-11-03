@@ -22,13 +22,12 @@
 #endif
 
 #include <tulpa/nested_progress.h>
-#include <tulpa/sum_to_zero.h>  // s2z_centre_component (NC field storage)
 
 #include "hmc_mass_st_gmrf.h"
 #include "hmc_sampler.h"
 #include "hmc_walnuts.h"
 #include "laplace_profile.h"  // TULPA_PROFILE_PHASE (nuts_warmup / nuts_sampling)
-#include "tulpa_priors_temporal.h"  // compute_temporal_prior (NC temporal GP storage)
+#include "sampler_field_store.h"  // store_field_draw
 #include "simp/adapt.h"  // step-adapted multistage constructors, resolved at
                          // warmup end (Eigen-heavy; kept out of the widely
                          // included hmc_sampler_decls.h, pulled into this TU).

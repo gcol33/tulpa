@@ -902,26 +902,20 @@
   eta
 }
 
-# The NUTS store (`src/hmc_nuts_chain_iter_store.h`) overwrites each
-# non-centered GP / SVC / multiscale-GP / temporal-GP / multiscale-trend
-# block's stored slice with the reconstructed field before the draw is written
-# out (`q` itself stays the sampled coordinates) -- no other ModelData kernel
-# does this, so a "hmc" fit's stored draws already hold the field where every
-# other backend's still hold the coordinates. Re-running such a draw through
-# `initialize_generic_state()` at the spec's own parameterization therefore
-# applies the non-centered forward transform a SECOND time, to a slice that is
-# no longer the coordinates (gcol33/tulpa#822). Reading the stored draws back
-# as centered undoes exactly that: the forward transform is the identity on an
-# already-centered field, matching what the store wrote.
+# Every ModelData sampler stores a draw in one form (`src/sampler_field_store.h`):
+# each non-centered GP / SVC / multiscale-GP / temporal-GP / multiscale-trend
+# block's slice holds the reconstructed field rather than the sampled
+# coordinates. Re-running such a draw through `initialize_generic_state()` at
+# the spec's own parameterization would apply the non-centered forward
+# transform a SECOND time, to a slice that is no longer the coordinates
+# (gcol33/tulpa#822). Reading the stored draws back as centered undoes exactly
+# that: the forward transform is the identity on an already-centered field,
+# matching what the store wrote.
 #' @keywords internal
-.stored_draw_field_specs <- function(object, mi) {
+.stored_draw_field_specs <- function(mi) {
   spatial_spec  <- mi$spatial_spec
   svc_spec      <- mi$svc_spec
   temporal_spec <- mi$temporal_spec
-  if (!identical(object$backend, "hmc")) {
-    return(list(spatial_spec = spatial_spec, svc_spec = svc_spec,
-                temporal_spec = temporal_spec))
-  }
   if (!is.null(spatial_spec$gp_parameterization) &&
       spatial_spec$gp_parameterization == 1L) {
     spatial_spec$gp_parameterization <- 0L
@@ -964,7 +958,7 @@
 #' @keywords internal
 .sampler_model_args <- function(object) {
   mi <- object$model_inputs
-  fs <- .stored_draw_field_specs(object, mi)
+  fs <- .stored_draw_field_specs(mi)
   list(y = mi$y, n_trials = mi$n_trials, X = mi$X,
        family = mi$family, phi = mi$phi, sigma_beta = mi$sigma_beta,
        offset_nullable = mi$offset, re_spec = mi$re_spec,

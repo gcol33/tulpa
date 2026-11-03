@@ -1660,9 +1660,9 @@
         time_index  = as.integer(temporal$time_index),
         n_times     = as.integer(temporal$n_times),
         trend       = tolower(temporal$trend %||% "none"),
-        # The NUTS store writes the walk built from non-centred coordinates
-        # into the draws; every other ModelData backend stores the sampled
-        # coordinates as they are, so those sample the walk's values.
+        # The non-centred walk is the NUTS kernel's parameterization; the
+        # other ModelData backends sample the walk's values. Either way the
+        # stored draw holds the walk (`src/sampler_field_store.h`).
         trend_parameterization = if (identical(backend, "hmc"))
           temporal$parameterization %||% "noncentered" else "centered",
         seasonal    = if (!is.null(temporal$seasonal))

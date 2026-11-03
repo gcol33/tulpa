@@ -38,6 +38,7 @@
 #include "vi_lowrank.h"            // compute_lowrank_elbo_grad + entropy grad
 #include "vi_fullrank.h"           // compute_fullrank_elbo_grad + entropy grad
 #include "sampler_log_prob.h"       // tulpa::sampler_log_prob_rows
+#include "sampler_field_store.h"    // tulpa::stored_draws, store_field_rows
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -472,12 +473,13 @@ Rcpp::List cpp_tulpa_sample_glmm(
         tulpa_ess::ESSResult res = tulpa_ess::run_ess_sampler(init, in.data, in.layout, cfg);
         if (!res.success) Rcpp::stop("ess sampler failed: %s", res.error_msg);
         Rcpp::NumericMatrix draws = eigen_draws_to_r(res.samples, D, cn);
+        const Rcpp::NumericVector log_prob = tulpa::stored_draws(draws, in.data, in.layout);
         out = Rcpp::List::create(
             Rcpp::Named("draws") = draws,
             Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = draws.nrow(),
             Rcpp::Named("n_params") = D,
-            Rcpp::Named("log_prob") = tulpa::sampler_log_prob_rows(draws, in.data, in.layout),
+            Rcpp::Named("log_prob") = log_prob,
             Rcpp::Named("log_prob_kernel") = Rcpp::wrap(res.log_lik),
             Rcpp::Named("avg_slice_evals") = res.avg_slice_evals,
             Rcpp::Named("n_slice_exhausted") = res.n_slice_exhausted,
@@ -503,10 +505,11 @@ Rcpp::List cpp_tulpa_sample_glmm(
         tulpa_sghmc::SGHMCResult res = tulpa_sghmc::run_sghmc_sampler(init, in.data, in.layout, cfg);
         if (!res.success) Rcpp::stop("sghmc sampler failed: %s", res.error_msg);
         Rcpp::NumericMatrix draws = eigen_draws_to_r(res.samples, D, cn);
+        const Rcpp::NumericVector log_prob = tulpa::stored_draws(draws, in.data, in.layout);
         out = Rcpp::List::create(
             Rcpp::Named("draws") = draws, Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = draws.nrow(), Rcpp::Named("n_params") = D,
-            Rcpp::Named("log_prob") = tulpa::sampler_log_prob_rows(draws, in.data, in.layout),
+            Rcpp::Named("log_prob") = log_prob,
             Rcpp::Named("log_prob_kernel") = Rcpp::wrap(res.log_lik),
             Rcpp::Named("final_epsilon") = res.epsilon_history.empty() ? 0.0
                                             : res.epsilon_history.back(),
@@ -528,10 +531,11 @@ Rcpp::List cpp_tulpa_sample_glmm(
         tulpa_sghmc::SGLDResult res = tulpa_sghmc::run_sgld_sampler(init, in.data, in.layout, cfg);
         if (!res.success) Rcpp::stop("sgld sampler failed: %s", res.error_msg);
         Rcpp::NumericMatrix draws = eigen_draws_to_r(res.samples, D, cn);
+        const Rcpp::NumericVector log_prob = tulpa::stored_draws(draws, in.data, in.layout);
         out = Rcpp::List::create(
             Rcpp::Named("draws") = draws, Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = draws.nrow(), Rcpp::Named("n_params") = D,
-            Rcpp::Named("log_prob") = tulpa::sampler_log_prob_rows(draws, in.data, in.layout),
+            Rcpp::Named("log_prob") = log_prob,
             Rcpp::Named("log_prob_kernel") = Rcpp::wrap(res.log_lik),
             Rcpp::Named("sampler") = "sgld");
         return out;
@@ -547,10 +551,11 @@ Rcpp::List cpp_tulpa_sample_glmm(
         tulpa_mclmc::MCLMCFitResult res = tulpa_mclmc::run_mclmc_sampler(init, in.data, in.layout, cfg);
         if (!res.success) Rcpp::stop("mclmc sampler failed: %s", res.error_msg);
         Rcpp::NumericMatrix draws = eigen_draws_to_r(res.samples, D, cn);
+        const Rcpp::NumericVector log_prob = tulpa::stored_draws(draws, in.data, in.layout);
         out = Rcpp::List::create(
             Rcpp::Named("draws") = draws, Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = draws.nrow(), Rcpp::Named("n_params") = D,
-            Rcpp::Named("log_prob") = tulpa::sampler_log_prob_rows(draws, in.data, in.layout),
+            Rcpp::Named("log_prob") = log_prob,
             Rcpp::Named("log_prob_kernel") = Rcpp::wrap(res.log_lik),
             Rcpp::Named("sampler") = mclmc_adjusted ? "mamclmc" : "mclmc");
         return out;
@@ -577,16 +582,19 @@ Rcpp::List cpp_tulpa_sample_glmm(
         };
         Rcpp::NumericMatrix draws = to_draws(res.particles);
         const int M = draws.nrow();
+        const Rcpp::NumericVector log_prob = tulpa::stored_draws(draws, in.data, in.layout);
         Rcpp::RObject tempered_draws = R_NilValue;
         if (!res.tempered_particles.empty()) {
-            tempered_draws = to_draws(res.tempered_particles);
+            Rcpp::NumericMatrix td = to_draws(res.tempered_particles);
+            tulpa::store_field_rows(td, in.data, in.layout);
+            tempered_draws = td;
         }
         out = Rcpp::List::create(
             Rcpp::Named("draws") = draws, Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = M, Rcpp::Named("n_params") = D,
             // The final particle set is resampled and equally weighted
             // (smc_sampler.h), so a plain mean of these is the posterior mean.
-            Rcpp::Named("log_prob") = tulpa::sampler_log_prob_rows(draws, in.data, in.layout),
+            Rcpp::Named("log_prob") = log_prob,
             Rcpp::Named("log_weights") = Rcpp::wrap(res.log_weights),
             Rcpp::Named("log_evidence") =
                 res.log_evidence_valid ? res.log_evidence : NA_REAL,
@@ -628,10 +636,11 @@ Rcpp::List cpp_tulpa_sample_glmm(
                 }
         }
         Rcpp::NumericMatrix draws = eigen_draws_to_r(S, D, cn);
+        const Rcpp::NumericVector log_prob = tulpa::stored_draws(draws, in.data, in.layout);
         out = Rcpp::List::create(
             Rcpp::Named("draws") = draws, Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = draws.nrow(), Rcpp::Named("n_params") = D,
-            Rcpp::Named("log_prob") = tulpa::sampler_log_prob_rows(draws, in.data, in.layout),
+            Rcpp::Named("log_prob") = log_prob,
             Rcpp::Named("elbo") = res.final_elbo,
             // -1 is the kernel's "not computed" sentinel (vi_types.h), and it
             // is FINITE: passed through, .tulpa_khat_band() read it as a k-hat

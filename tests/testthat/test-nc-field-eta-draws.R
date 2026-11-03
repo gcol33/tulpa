@@ -1,16 +1,14 @@
-# The NUTS store overwrites a non-centered GP / SVC / multiscale-GP block's
-# stored slice with the reconstructed field w (src/hmc_nuts_chain_iter_store.h),
-# keeping q itself as z for sampling. cpp_tulpa_glmm_eta_draws() re-evaluates a
-# stored draw through initialize_generic_state() at the spec's own
-# gp_parameterization / svc_parameterization, which for a non-centered spec
-# applies the forward transform a SECOND time to a slice that is no longer z
-# (gcol33/tulpa#822). .tulpa_eta_draws_sampler() -- posterior_predict() /
-# simulate() / WAIC / LOO's eta source for a "hmc" fit -- now reads the stored
-# draws back through .stored_draw_field_specs(), which reports the spec as
-# centered whenever the fit's own backend is "hmc": the forward transform is
-# the identity on an already-centered field, matching what the store wrote. No
-# other ModelData kernel (ess / sghmc / sgld / mclmc / smc / vi) applies this
-# store-side overwrite, so those fits keep their own spec unchanged.
+# Every ModelData sampler stores a non-centered GP / SVC / multiscale-GP /
+# temporal-GP block's slice as the reconstructed field w
+# (src/sampler_field_store.h), keeping its own position as z for sampling.
+# cpp_tulpa_glmm_eta_draws() re-evaluates a stored draw through
+# initialize_generic_state() at the spec's own parameterization, which for a
+# non-centered spec would apply the forward transform a SECOND time to a slice
+# that is no longer z (gcol33/tulpa#822). .tulpa_eta_draws_sampler() --
+# posterior_predict() / simulate() / WAIC / LOO's eta source -- reads the
+# stored draws back through .stored_draw_field_specs(), which reports the spec
+# as centered: the forward transform is the identity on an already-centered
+# field, matching what the store wrote.
 
 skip_on_cran()
 
@@ -103,23 +101,6 @@ test_that("eta at a noncentered GP NUTS fit's stored draws matches stored gp_w",
   expect_equal(unname(ppred_eta - fixed), unname(stored_w), tolerance = 1e-8)
 })
 
-test_that("a non-hmc sampler backend's stored field is read unchanged", {
-  skip_if_not_slow()
-  d <- nc_field_fixture(n = 40L, seed = 5L)
-  # sghmc carries the same store contract question as hmc but does not run
-  # through hmc_nuts_chain_iter_store.h, so its stored slice is whatever the
-  # kernel natively samples -- .stored_draw_field_specs() must leave a
-  # non-"hmc" fit's spec untouched.
-  fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "sghmc",
-              control = list(n_iter = 100L, warmup = 60L, seed = 1L),
-              spatial = spatial_svc(~ lon + lat, nn = 6L,
-                                   parameterization = "noncentered"))
-  expect_false(identical(fit$backend, "hmc"))
-  fs <- tulpa:::.stored_draw_field_specs(fit, fit$model_inputs)
-  expect_identical(fs$svc_spec$svc_parameterization,
-                   fit$model_inputs$svc_spec$svc_parameterization)
-})
-
 # The temporal fields the store reconstructs: a non-centred temporal GP's slice
 # is z and its stored draw f = sigma L z; a non-centred multiscale trend's
 # slice is its spectral coordinates and its stored draw the walk. Each is read
@@ -163,3 +144,57 @@ test_that("eta at a non-centred multiscale trend's stored draws is the stored wa
   expect_equal(unname(tulpa:::.tulpa_eta_draws_sampler(fit) - fixed),
                unname(tr[, d$t, drop = FALSE]), tolerance = 1e-8)
 })
+
+nc_backend_controls <- list(
+  sghmc = list(n_iter = 100L, warmup = 60L, seed = 1L),
+  mclmc = list(n_iter = 100L, warmup = 60L, seed = 1L),
+  smc   = list(n_particles = 100L, smc_max_moves = 3L, seed = 1L),
+  vi    = list(vi_max_iter = 200L, n_draws = 100L, seed = 1L)
+)
+
+for (backend in names(nc_backend_controls)) {
+  local({
+    b <- backend
+    test_that(sprintf("backend '%s' stores the non-centered fields, not z", b), {
+      skip_if_not_slow()
+      d <- nc_field_fixture(n = 40L, seed = 5L)
+      ctl <- nc_backend_controls[[b]]
+
+      fit <- tulpa(y ~ x, data = d, family = "poisson", mode = b,
+                   control = ctl,
+                   spatial = spatial_gp(~ lon + lat, nn = 6L,
+                                        parameterization = "noncentered"))
+      expect_identical(fit$model_inputs$spatial_spec$gp_parameterization, 1L)
+      fixed <- fit$draws[, c("(Intercept)", "x"), drop = FALSE] %*%
+        t(fit$model_inputs$X[, c("(Intercept)", "x"), drop = FALSE])
+      gp_w <- fit$draws[, grep("^gp_w", colnames(fit$draws)), drop = FALSE]
+      expect_equal(unname(tulpa:::.tulpa_eta_draws_sampler(fit) - fixed),
+                   unname(gp_w), tolerance = 1e-8)
+
+      fit <- tulpa(y ~ x, data = d, family = "poisson", mode = b,
+                   control = ctl,
+                   spatial = spatial_svc(~ lon + lat, nn = 6L,
+                                         parameterization = "noncentered"))
+      expect_identical(fit$model_inputs$svc_spec$svc_parameterization, 1L)
+      svc_w <- fit$draws[, grep("^svc_w", colnames(fit$draws)), drop = FALSE]
+      expect_lt(max(abs(rowMeans(svc_w))), 1e-10)
+      fixed <- fit$draws[, c("(Intercept)", "x"), drop = FALSE] %*%
+        t(fit$model_inputs$X[, c("(Intercept)", "x"), drop = FALSE])
+      expect_equal(unname(tulpa:::.tulpa_eta_draws_sampler(fit) - fixed),
+                   unname(svc_w), tolerance = 1e-8)
+
+      fit <- tulpa(y ~ x, data = nc_temporal_fixture(), family = "gaussian",
+                   phi = 0.09, mode = b, control = ctl,
+                   temporal = temporal_gp("t"))
+      expect_identical(fit$model_inputs$temporal_spec$parameterization,
+                       "noncentered")
+      dt <- nc_temporal_fixture()
+      fixed <- fit$draws[, c("(Intercept)", "x"), drop = FALSE] %*%
+        t(fit$model_inputs$X[, c("(Intercept)", "x"), drop = FALSE])
+      f <- fit$draws[, grep("^phi_temporal[[]", colnames(fit$draws)),
+                     drop = FALSE]
+      expect_equal(unname(tulpa:::.tulpa_eta_draws_sampler(fit) - fixed),
+                   unname(f[, dt$t, drop = FALSE]), tolerance = 1e-8)
+    })
+  })
+}
