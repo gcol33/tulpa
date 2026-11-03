@@ -380,27 +380,33 @@ test_that("the multi-scale temporal normalizer makes the prior a density", {
   call_fx <- function(th) cpp_test_log_prior_normalized(
     th, f$y, integer(0), f$X, "gaussian", 1, sdb, 2.5, temporal_spec = tp)
   th <- theta_rows(call_fx(matrix(0, 0, 0))$names)
-  got <- call_fx(th)
-  expect_length(got$declined, 0L)
-  want <- apply(th, 1, function(r) {
-    tr <- r[grep("^trend\\[", names(r))]
-    se <- r[grep("^seasonal\\[", names(r))]
-    sh <- r[grep("^short_term\\[", names(r))]
-    s2t <- exp(r[["log_sigma2_trend"]]); s2s <- exp(r[["log_sigma2_seasonal"]])
-    s2h <- exp(r[["log_sigma2_short"]])
-    u <- plogis(r[["logit_rho_short"]]); rho <- 2 * u - 1
-    P <- diag(c(1, rep(1 + rho^2, Tn - 2), 1))
-    P[cbind(1:(Tn - 1), 2:Tn)] <- P[cbind(2:Tn, 1:(Tn - 1))] <- -rho
-    lp_beta(r[1:2], sdb) +
-      lp_pc_log_sigma2(r[["log_sigma2_trend"]], 1, 0.01) +
-      lmvn_prec(tr, (rw_structure(Tn, 1, FALSE) + 1 / Tn) / s2t) +
-      lp_pc_log_sigma2(r[["log_sigma2_seasonal"]], 1, 0.01) +
-      lmvn_prec(se, (rw_structure(per, 1, TRUE) + 1 / per) / s2s) +
-      lp_pc_log_sigma2(r[["log_sigma2_short"]], 1, 0.01) +
-      dbeta(u, 2, 2, log = TRUE) + log(u) + log1p(-u) +
-      lmvn_prec(sh, P / s2h)
-  })
-  expect_equal(got$log_prior, unname(want), tolerance = 1e-10)
+  # The short-term correlation's Beta(a, b) on (rho + 1) / 2 is the front
+  # door's Beta(2, 2) and a skewed pair: the normalizer follows the pair the
+  # density reads.
+  for (ab in list(c(2, 2), c(3, 1.5))) {
+    tp$rho_prior_a <- ab[1L]; tp$rho_prior_b <- ab[2L]
+    got <- call_fx(th)
+    expect_length(got$declined, 0L)
+    want <- apply(th, 1, function(r) {
+      tr <- r[grep("^trend\\[", names(r))]
+      se <- r[grep("^seasonal\\[", names(r))]
+      sh <- r[grep("^short_term\\[", names(r))]
+      s2t <- exp(r[["log_sigma2_trend"]]); s2s <- exp(r[["log_sigma2_seasonal"]])
+      s2h <- exp(r[["log_sigma2_short"]])
+      u <- plogis(r[["logit_rho_short"]]); rho <- 2 * u - 1
+      P <- diag(c(1, rep(1 + rho^2, Tn - 2), 1))
+      P[cbind(1:(Tn - 1), 2:Tn)] <- P[cbind(2:Tn, 1:(Tn - 1))] <- -rho
+      lp_beta(r[1:2], sdb) +
+        lp_pc_log_sigma2(r[["log_sigma2_trend"]], 1, 0.01) +
+        lmvn_prec(tr, (rw_structure(Tn, 1, FALSE) + 1 / Tn) / s2t) +
+        lp_pc_log_sigma2(r[["log_sigma2_seasonal"]], 1, 0.01) +
+        lmvn_prec(se, (rw_structure(per, 1, TRUE) + 1 / per) / s2s) +
+        lp_pc_log_sigma2(r[["log_sigma2_short"]], 1, 0.01) +
+        dbeta(u, ab[1L], ab[2L], log = TRUE) + log(u) + log1p(-u) +
+        lmvn_prec(sh, P / s2h)
+    })
+    expect_equal(got$log_prior, unname(want), tolerance = 1e-10)
+  }
   # An RW2 trend keeps its linear null direction.
   tp$trend <- "rw2"
   expect_identical(call_fx(matrix(0, 0, 0))$declined,

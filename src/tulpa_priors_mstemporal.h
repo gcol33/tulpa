@@ -123,7 +123,8 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
 // The constant compute_multiscale_temporal_prior leaves out, or NaN with the
 // reason appended to `declined`. The PC priors, the AR1 / IID short-term
 // densities and every walk's 0.5 rank log(tau / 2 pi) are carried. Left out:
-// the Beta(2, 2) normalizer of the short-term (rho + 1) / 2, and the
+// the Beta(a, b) normalizer of the short-term (rho + 1) / 2, read off the
+// same ar1_rho_prior_a / ar1_rho_prior_b the density reads, and the
 // 0.5 log|R|_+ of an RW1 trend and of the cyclic RW1 seasonal walk, each
 // augmented on its constant null direction with eigenvalue 1. An RW2 trend
 // keeps its linear null direction, and a walk too short to carry a quadratic
@@ -153,7 +154,8 @@ inline double multiscale_temporal_prior_log_normalizer(
         c += 0.5 * rw_log_pdet(n, 1, true);
     }
     if (layout.logit_rho_short_idx >= 0) {
-        c += log_prior_beta_logit_log_normalizer(2.0, 2.0);
+        c += log_prior_beta_logit_log_normalizer(data.ar1_rho_prior_a,
+                                                 data.ar1_rho_prior_b);
     }
     return c;
 }
