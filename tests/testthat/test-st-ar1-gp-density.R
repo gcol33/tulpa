@@ -247,42 +247,6 @@ test_that("the log-posterior moves with logit_rho_st by the prior's own change",
   }
 })
 
-test_that("an HSGP-ST AR1 margin reads rho in its normalizer and its form", {
-  skip_on_cran_budget()
-  load_cpp_fixture("st_hsgp_prior")
-  EIG <- c(0.4, 1.1, 2.7)
-  M <- length(EIG)
-  T_st <- 6L
-  lp <- function(delta, logit_rho) {
-    cpp_test_st_hsgp_log_prior(delta = delta, eigenvalues = EIG, T = T_st,
-                               log_tau_st = 0.3, log_sigma2_hsgp = -0.2,
-                               log_lengthscale_hsgp = 0.1, temporal = "ar1",
-                               temporal_cyclic = FALSE, logit_rho_st = logit_rho)
-  }
-  zero <- numeric(M * T_st)
-  rho <- function(x) 2 * stats::plogis(x) - 1
-  hyper <- function(x) log(stats::plogis(x)) + log(1 - stats::plogis(x))
-
-  # At a zero field the only rho dependence is one 0.5 log|R(rho)| per basis
-  # function plus the rho hyperprior.
-  logdet <- function(x) as.numeric(determinant(ref_ar1_precision(T_st, rho(x)))$modulus)
-  expect_abs_equal(lp(zero, -0.7) - lp(zero, 1.1),
-                   0.5 * M * (logdet(-0.7) - logdet(1.1)) + hyper(-0.7) - hyper(1.1),
-                   1e-10)
-
-  # On one basis function the form is x' R(rho) x at that function's precision,
-  # so the ratio of two zero-sum series' contributions is free of the spectral
-  # density.
-  x <- c(1.2, -0.4, 0.9, -1.5, 0.3, -0.5)
-  y <- c(-0.8, 1.1, 0.2, 0.6, -1.9, 0.8)
-  on_basis <- function(v, j) { d <- zero; d[(j - 1) * T_st + seq_len(T_st)] <- v; d }
-  R <- ref_ar1_precision(T_st, rho(0.6))
-  ratio <- (lp(on_basis(x, 2), 0.6) - lp(zero, 0.6)) /
-           (lp(on_basis(y, 2), 0.6) - lp(zero, 0.6))
-  expect_equal(ratio, drop(crossprod(x, R %*% x)) / drop(crossprod(y, R %*% y)),
-               tolerance = 1e-8)
-})
-
 skip_on_cran()
 
 # ---------------------------------------------------------------------------

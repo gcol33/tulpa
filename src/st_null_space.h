@@ -43,22 +43,18 @@ using tulpa::STType;
 using tulpa::TemporalType;
 
 // Does the interaction's density read a temporal margin Q_t at all? Type II
-// applies Q_t within each spatial unit, Type IV carries it as a Kronecker
-// margin, and the HSGP-ST interaction applies it per spectral basis function.
-// Type I is iid over the whole grid and Type III's time margin is unstructured,
+// applies Q_t within each spatial unit and Type IV carries it as a Kronecker
+// margin. Type I is iid over the whole grid and Type III's time margin is unstructured,
 // so neither reads SpatiotemporalData::temporal_type, and a correlation for it
 // would be a parameter nothing scores.
-inline bool st_reads_time_margin(STType type, bool is_hsgp) {
-    return is_hsgp || type == STType::TYPE_II || type == STType::TYPE_IV;
+inline bool st_reads_time_margin(STType type) {
+    return type == STType::TYPE_II || type == STType::TYPE_IV;
 }
 
 // Is the interaction sampled on the non-centered scale z = delta sqrt(tau)?
-// The transform and its tau-free prior are the Kronecker Type IV form. The
-// HSGP-ST interaction's coordinates are basis weights at a per-basis precision
-// tau / S_j(sigma2, lengthscale), a different operator with no such map, so
-// compute_param_layout refuses the flag there and this reads false for it.
-inline bool st_non_centered(STType type, int parameterization, bool is_hsgp) {
-    return parameterization == 1 && type == STType::TYPE_IV && !is_hsgp;
+// The transform and its tau-free prior are the Kronecker Type IV form.
+inline bool st_non_centered(STType type, int parameterization) {
+    return parameterization == 1 && type == STType::TYPE_IV;
 }
 
 // The temporal margins the interaction density defines: the intrinsic RW1 and

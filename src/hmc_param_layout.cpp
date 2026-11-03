@@ -64,14 +64,11 @@ void require_spatial_partition(const ModelData& data) {
 // (Type II, Type IV, HSGP-ST) contributes no quadratic form, so the field would
 // be flat along time.
 static void check_st_interaction_supported(const SpatiotemporalData& st,
-                                           bool is_hsgp,
-                                           int parameterization) {
-  if (is_hsgp && parameterization == 1) {
-    Rcpp::stop("tulpa: the HSGP-ST interaction has no non-centered form "
-               "(st_parameterization = 1). Its coordinates are basis weights "
-               "at a per-basis precision tau / S_j; the non-centered transform "
-               "is the Knorr-Held Type IV Kronecker one. Use "
-               "st_parameterization = 0.");
+                                           bool is_hsgp) {
+  if (is_hsgp) {
+    Rcpp::stop("tulpa: the samplers carry no HSGP space-time interaction "
+               "(ModelData::st_is_hsgp); fit it by nested Laplace, "
+               "fit_st_nested(spatial_type = \"hsgp\").");
   }
   if (st.type == STType::SEPARABLE || st.type == STType::NONSEP_GP) {
     Rcpp::stop("tulpa: the %s spatiotemporal interaction has no density in "
@@ -80,7 +77,7 @@ static void check_st_interaction_supported(const SpatiotemporalData& st,
                "interaction or the HSGP-ST interaction.",
                st.type == STType::SEPARABLE ? "SEPARABLE" : "NONSEP_GP");
   }
-  if (tulpa_st::st_reads_time_margin(st.type, is_hsgp) &&
+  if (tulpa_st::st_reads_time_margin(st.type) &&
       !tulpa_st::st_time_margin_supported(st.temporal_type)) {
     Rcpp::stop("tulpa: the spatiotemporal interaction's temporal margin "
                "(TemporalType code %d) has no density; the interaction "
@@ -547,10 +544,8 @@ ParamLayout compute_param_layout(const ModelData& data) {
 
   if (layout.has_spatiotemporal && data.spatiotemporal_data.type != STType::NONE) {
     const auto& st = data.spatiotemporal_data;
-    check_st_interaction_supported(st, data.st_is_hsgp,
-                                   data.st_parameterization);
-    const bool reads_time_margin =
-        tulpa_st::st_reads_time_margin(st.type, data.st_is_hsgp);
+    check_st_interaction_supported(st, data.st_is_hsgp);
+    const bool reads_time_margin = tulpa_st::st_reads_time_margin(st.type);
 
     // log_tau for interaction precision
     layout.log_tau_st_idx = idx++;
@@ -568,15 +563,9 @@ ParamLayout compute_param_layout(const ModelData& data) {
     layout.log_phi_st_space_idx = -1;
     layout.log_phi_st_time_idx = -1;
 
-    // HSGP-ST: separate sigma2 and lengthscale for spectral basis interaction
-    layout.is_st_hsgp = data.st_is_hsgp;
-    if (data.st_is_hsgp) {
-      layout.log_sigma2_st_hsgp_idx = idx++;
-      layout.log_lengthscale_st_hsgp_idx = idx++;
-    } else {
-      layout.log_sigma2_st_hsgp_idx = -1;
-      layout.log_lengthscale_st_hsgp_idx = -1;
-    }
+    layout.is_st_hsgp = false;
+    layout.log_sigma2_st_hsgp_idx = -1;
+    layout.log_lengthscale_st_hsgp_idx = -1;
 
     // Spatiotemporal interaction effects
     layout.st_delta_start = idx;

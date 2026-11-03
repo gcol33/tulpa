@@ -1,14 +1,8 @@
 // st_hsgp_prior.cpp
-// The HSGP-ST interaction prior, driven directly.
-//
-// Nothing in tulpa sets ModelData::has_spatiotemporal -- spatiotemporal() errors
-// at the R door and the whole ST sampler path is a consumer-package
-// configuration -- so this fixture fills the ModelData a consumer would hand the
-// engine, exactly as st_iv.cpp does for the Kronecker Type-IV
-// branch. It is the only way an R test reaches the spectral branch.
-//
-// It evaluates the SHIPPED density (tulpa::priors::compute_st_prior), not a copy
-// of it: the fixture builds the ModelData and the layout and nothing else.
+// A ModelData carrying an HSGP space-time interaction (st_is_hsgp), as a
+// consumer would hand it to the engine, laid out by the engine's own
+// compute_param_layout. The samplers carry no density for that interaction,
+// so the layout refuses it.
 
 #include <Rcpp.h>
 
@@ -18,7 +12,6 @@
 #include "hmc_sampler.h"
 #include "tulpa/likelihood.h"
 #include "tulpa/autodiff_arena.h"
-#include "tulpa_priors_st.h"
 #include "st_fixture_parse.h"
 
 using tulpa_hmc::ModelData;
@@ -104,56 +97,17 @@ void build_st_hsgp_model(
 
 }  // namespace
 
-// The interaction prior at one parameter vector.
-//
-// `delta` is the M x T_st interaction, basis-major (the layout the branch reads:
-// st_delta[j * T_st + t]). The hyperparameters are given on their sampled log
-// scales, so a caller states exactly what the density sees.
+// Lay out the model; returns the parameter count when the layout accepts it.
 // [[Rcpp::export]]
-double cpp_test_st_hsgp_log_prior(
-    Rcpp::NumericVector delta,
-    Rcpp::NumericVector eigenvalues,
-    int T,
-    double log_tau_st,
-    double log_sigma2_hsgp,
-    double log_lengthscale_hsgp,
-    std::string temporal = "rw2",
-    bool temporal_cyclic = false,
-    double logit_rho_st = 0.0,
-    int st_parameterization = 0
-) {
-    const int M = eigenvalues.size();
+int cpp_test_st_hsgp_layout(int M = 3, int T = 7,
+                            std::string temporal = "rw2") {
     StHsgpData sd;
     tulpa::LikelihoodSpec spec;
     ModelData data;
     ParamLayout layout;
-    build_st_hsgp_model(M, T, temporal, temporal_cyclic,
-                        std::vector<double>(eigenvalues.begin(), eigenvalues.end()),
-                        st_parameterization, sd, spec, data, layout);
-
-    if ((int)delta.size() != M * T) {
-        Rcpp::stop("delta has %d entries; the layout holds %d",
-                   (int)delta.size(), M * T);
-    }
-
-    std::vector<double> params(layout.total_params, 0.0);
-    params[layout.log_tau_st_idx] = log_tau_st;
-    params[layout.log_sigma2_st_hsgp_idx] = log_sigma2_hsgp;
-    params[layout.log_lengthscale_st_hsgp_idx] = log_lengthscale_hsgp;
-    if (layout.logit_rho_st_idx >= 0) {
-        params[layout.logit_rho_st_idx] = logit_rho_st;
-    }
-    for (int k = 0; k < M * T; k++) {
-        params[layout.st_delta_start + k] = delta[k];
-    }
-
-    std::vector<double> st_delta;
-    return tulpa::priors::compute_st_prior(params, data, layout, st_delta);
-}
-
-// The precision the trend pin holds a per-basis ramp coefficient at, read from
-// the engine's own helper so the test does not restate the constant.
-// [[Rcpp::export]]
-double cpp_test_st_trend_precision(int T) {
-    return tulpa_st::st_trend_precision(T);
+    std::vector<double> eigenvalues(M);
+    for (int j = 0; j < M; ++j) eigenvalues[j] = 0.5 * (j + 1);
+    build_st_hsgp_model(M, T, temporal, false, eigenvalues, 0, sd, spec, data,
+                        layout);
+    return layout.total_params;
 }

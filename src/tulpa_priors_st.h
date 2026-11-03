@@ -11,7 +11,6 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
-#include "hsgp_spectral.h" // single-source 2-D HSGP spectral density
 #include "hmc_temporal.h"  // single-source RW1/RW2 quadratic / cross forms
 #include "icar_kernel.h"   // count_graph_components (spatial rank)
 #include "tulpa/soft_sum_to_zero.h"   // s2z_precision
@@ -216,8 +215,7 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
 
         // NC reparameterization for Type IV
         const bool st_use_nc = tulpa_st::st_non_centered(
-            data.spatiotemporal_data.type, data.st_parameterization,
-            data.st_is_hsgp);
+            data.spatiotemporal_data.type, data.st_parameterization);
 
         if (st_use_nc) {
             // Forward transform: delta = z / sqrt(tau_st)
@@ -254,87 +252,6 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
 
             // Replace st_delta with reconstructed delta for observation loop
             st_delta = std::move(st_delta_nc);
-
-        } else if (data.st_is_hsgp) {
-            // HSGP-ST: spectral basis interaction (centered)
-            int M = data.st_hsgp_data.m_total;
-
-            // The loop below reads st_delta[j * T_st + t] over M basis
-            // functions, while st_delta was sized from the LAYOUT span. The two
-            // are set independently, so a layout narrower than M * T_st reads
-            // past the vector on every remaining basis function; the eigenvalue
-            // read at the top of the loop has the same exposure.
-            if (M < 0 || T_st <= 0 ||
-                static_cast<std::size_t>(M) * static_cast<std::size_t>(T_st)
-                    > st_delta.size() ||
-                static_cast<std::size_t>(M) > data.st_hsgp_data.eigenvalues.size()) {
-                return T(-INFINITY);
-            }
-
-            // HSGP-ST hyperparameters
-            T sigma2_st_hsgp = safe_exp(params[layout.log_sigma2_st_hsgp_idx]);
-            T lengthscale_st_hsgp = safe_exp(params[layout.log_lengthscale_st_hsgp_idx]);
-
-            // PC prior on sigma_st_hsgp, on the sampled log-variance scale,
-            // at the spec's own anchors: P(sigma > U) = alpha.
-            log_post = log_post + log_prior_log_sigma2_pc(
-                params[layout.log_sigma2_st_hsgp_idx],
-                data.st_hsgp_sigma2_prior_U, data.st_hsgp_sigma2_prior_alpha);
-
-            // LogNormal(0,1) on lengthscale
-            T log_ls_st = params[layout.log_lengthscale_st_hsgp_idx];
-            log_post = log_post - T(0.5) * log_ls_st * log_ls_st;
-
-            // Per-basis-function temporal GMRF prior
-            const auto& st = data.spatiotemporal_data;
-            int rank_t = st_time_rank(st, T_st);
-            const T log_det_t = st_time_log_det(st, rho_st);
-
-            // The rank above and the operator below read the same cyclic
-            // flag: a cyclic RW2 puts rank_t = T - 1 powers of prec_j in the
-            // target, and against an ACYCLIC operator of rank T - 2 that is one
-            // power too many at every basis function (gcol33/tulpa#696, the
-            // same defect gcol33/tulpa#596 fixed in st_kronecker_temporal_quad).
-            const bool st_cyclic = data.spatiotemporal_data.temporal_cyclic;
-            // Each basis function is a standalone temporal field, so under a
-            // non-cyclic RW2 its kernel is {1_T, v} and the sum pin below
-            // reaches only the constant (gcol33/tulpa#697).
-            const bool add_trend = tulpa_st::temporal_has_trend_null(
-                data.spatiotemporal_data.temporal_type, st_cyclic);
-
-            for (int j = 0; j < M; j++) {
-                double omega_sq = data.st_hsgp_data.eigenvalues[j];
-                T S_j = hsgp_spectral_density_2d(sigma2_st_hsgp,
-                                                 lengthscale_st_hsgp, omega_sq);
-                T prec_j = tau_st / safe_max(S_j, T(1e-10));
-
-                // GMRF quadratic form: -0.5 * prec_j * delta_j' Q_t delta_j
-                const T* d_j = st_delta.data() + j * T_st;
-                T qf = st_time_cross_form(d_j, d_j, T_st, st, rho_st);
-                log_post = log_post + T(0.5 * rank_t) * safe_log(prec_j)
-                         + T(0.5) * log_det_t
-                         - T(0.5) * prec_j * qf;
-
-                // Soft sum-to-zero per basis function (a sum over T_st terms),
-                // plus that function's linear trend where the operator leaves
-                // one unpenalized.
-                T sum_j = T(0.0);
-                for (int t = 0; t < T_st; t++) sum_j = sum_j + st_delta[j * T_st + t];
-                log_post = log_post
-                    - T(0.5) * T(tulpa::s2z_precision(T_st)) * sum_j * sum_j;
-
-                if (add_trend) {
-                    T trend_j = T(0.0);
-                    for (int t = 0; t < T_st; t++) {
-                        trend_j = trend_j
-                            + T(tulpa_st::st_trend_weight(t, T_st))
-                              * st_delta[j * T_st + t];
-                    }
-                    log_post = log_post
-                        - T(0.5) * T(tulpa_st::st_trend_precision(T_st))
-                          * trend_j * trend_j;
-                }
-            }
 
         } else {
             // Centered parameterization (ICAR/BYM2 spatial: Types I-IV)

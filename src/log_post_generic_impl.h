@@ -631,32 +631,11 @@ static void add_generic_st_effect(
     // spatiotemporal effect. Anything outside the field's own extent leaves
     // the row at zero rather than reading past the delta vector.
     T effect = T(0.0);
-    if (data.st_is_hsgp) {
-        const std::vector<int>& t_index = data.spatiotemporal_data.t_idx;
-        if (i >= (int)t_index.size()) return;
-        const int t_st = t_index[i] - 1;
-        const int T_st = data.spatiotemporal_data.n_times;
-        if (t_st < 0 || t_st >= T_st) return;
-        const int M = data.st_hsgp_data.m_total;
-        const std::size_t phi_off = (std::size_t)i * (std::size_t)M;
-        if (phi_off + (std::size_t)M > data.st_hsgp_data.phi_flat.size()) return;
-        if (M > 0 &&
-            (std::size_t)(M - 1) * (std::size_t)T_st + (std::size_t)t_st
-                >= state.st_delta.size()) {
-            return;
-        }
-        for (int j = 0; j < M; j++) {
-            effect = effect
-                + T(data.st_hsgp_data.phi_flat[phi_off + (std::size_t)j])
-                * state.st_delta[(std::size_t)j * (std::size_t)T_st + (std::size_t)t_st];
-        }
-    } else {
-        const std::vector<int>& st_flat = data.spatiotemporal_data.st_flat;
-        if (i >= (int)st_flat.size()) return;
-        const int st_idx = st_flat[i];
-        if (st_idx > 0 && st_idx <= (int)state.st_delta.size()) {
-            effect = state.st_delta[st_idx - 1];
-        }
+    const std::vector<int>& st_flat = data.spatiotemporal_data.st_flat;
+    if (i >= (int)st_flat.size()) return;
+    const int st_idx = st_flat[i];
+    if (st_idx > 0 && st_idx <= (int)state.st_delta.size()) {
+        effect = state.st_delta[st_idx - 1];
     }
     add_to_shared_processes(eta, data.sharing.st, data.n_processes, effect);
 }
