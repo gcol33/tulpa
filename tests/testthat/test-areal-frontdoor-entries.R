@@ -163,14 +163,19 @@ test_that("a nested BYM2 fit scores its inner Laplace and its k-hat is reproduci
   expect_identical(k1, k2)
 })
 
-test_that("adaptive_grid on a grid with no field-SD axis stops the call", {
+test_that("adaptive_grid refines an NNGP grid's variance and range axes", {
   skip_on_cran()
+  # The GP variance and range carry transform tags, so the registry door
+  # refines them: the pass adds levels on both, recorded on the fit.
   set.seed(1)
   d <- data.frame(lon = runif(120), lat = runif(120), x = rnorm(120))
   d$y <- rpois(120, exp(0.5 + 0.3 * d$x))
-  expect_error(
+  fit <- suppressWarnings(
     tulpa(y ~ x, d, family = "poisson", spatial = spatial_gp(~ lon + lat),
           mode = "nested_laplace",
-          control = c(.fe_ctl, list(adaptive_grid = TRUE))),
-    "no field-SD axis|has none")
+          control = c(.fe_ctl, list(adaptive_grid = TRUE))))
+  info <- fit$adaptive_grid_info
+  expect_false(is.null(info))
+  expect_setequal(strsplit(info$triggered_axes, ",")[[1]], c("sigma2", "phi_gp"))
+  expect_true(all(c("sigma2", "phi_gp") %in% fit$refining_axis))
 })

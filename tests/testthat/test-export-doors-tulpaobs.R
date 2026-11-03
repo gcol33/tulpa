@@ -90,8 +90,14 @@ test_that("tulpa_theta_matrix / tulpa_grid_log_quad / tulpa_normalise_weights_sa
   M2 <- tulpa:::.nl_theta_matrix(fit)
   expect_identical(M1, M2)
 
-  lq1 <- tulpa_grid_log_quad(M1, refining = fit$refining_axis)
-  lq2 <- tulpa:::.nl_grid_log_quad(M1, refining = fit$refining_axis)
+  # The fit's grid carries refinement levels past its declared span, so the
+  # measure is read with the axes whose hyperprior the dispatch folded in, as
+  # the fit's own is.
+  expect_true(any(nzchar(fit$refining_axis)))
+  lq1 <- tulpa_grid_log_quad(M1, refining = fit$refining_axis,
+                             folded_axes = fit$log_hyperprior_axes)
+  lq2 <- tulpa:::.nl_grid_log_quad(M1, refining = fit$refining_axis,
+                                   folded_axes = fit$log_hyperprior_axes)
   expect_identical(lq1, lq2)
 
   w1 <- tulpa_normalise_weights_safe(fit$log_marginal, log_quad = lq1)

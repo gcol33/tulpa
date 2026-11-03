@@ -638,13 +638,21 @@ test_that("the outer k-hat interval covers re-scorings of its own proposal", {
                                     control = list(k_samples = 400L, progress = FALSE))
     expect_identical(seen$out$source, "grid_mixture")
     # The mixture is a function of the grid alone, so it can be re-scored on
-    # independent streams; the fit's interval is conditional on it and should
-    # hold most of those re-scorings.
+    # independent streams. The fit's k-hat is one of those scorings and its
+    # interval is centred on it, so how many re-scorings it holds depends on
+    # where that one draw fell (a draw at the 90th percentile of the re-scorings
+    # holds about 60%); what the interval itself carries is their spread: its
+    # bootstrap SE is the SD of the re-scorings, and the fit's k-hat lies among
+    # them.
     ks <- vapply(1:40, function(s) {
         set.seed(9000 + s)
         tulpa:::.k_score_mixture(seen$spec, 400L, tail_points = seen$tp)$pareto_k
     }, numeric(1))
-    expect_gte(mean(ks >= f$pareto_k_ci_low & ks <= f$pareto_k_ci_high), 0.8)
+    ratio <- f$pareto_k_se_boot / stats::sd(ks)
+    expect_gt(ratio, 2 / 3)
+    expect_lt(ratio, 3 / 2)
+    expect_gte(f$pareto_k, min(ks) - stats::sd(ks))
+    expect_lte(f$pareto_k, max(ks) + stats::sd(ks))
 })
 
 test_that("the grid mixture scores no draw outside its coverage hull", {

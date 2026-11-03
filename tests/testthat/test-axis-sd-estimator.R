@@ -120,9 +120,11 @@ test_that("the consistency pass fires on the ESS, not on an SD comparison", {
   expect_identical(out$info$axes, "sigma")
   expect_lt(out$info$ess_before, .nl_diag("axis_sd_ess"))
 
-  # A resolved axis is left alone, and costs no kernel call.
+  # A resolved axis is left alone, and costs no kernel call: at an SD of 0.8
+  # the end nodes sit 2.9 SDs out and 0.4% of the axis lies past them, under
+  # the edge rounds' 1% (`edge_tail_mass`).
   called <- 0L
-  lm_wide <- -0.5 * ((log(lev) - log(1)) / 1.2)^2
+  lm_wide <- -0.5 * ((log(lev) - log(1)) / 0.8)^2
   out2 <- .hyper_consistency_pass(
     theta_grid = tg, log_marginal = lm_wide, extras = NULL,
     refining_axis = rep("", nrow(tg)), specs = specs,
@@ -130,6 +132,22 @@ test_that("the consistency pass fires on the ESS, not on an SD comparison", {
   expect_identical(out2$n_added, 0L)
   expect_null(out2$info)
   expect_identical(called, 0L)
+
+  # At an SD of 1.2 the ESS is as high, but 5.5% of the axis lies past the end
+  # nodes, so the pass follows it out with levels beyond them.
+  lm_out <- -0.5 * ((log(lev) - log(1)) / 1.2)^2
+  kernel_out <- function(new_cells, warm_start = NULL, store_extras = FALSE,
+                         screen = NULL) {
+    list(log_marginal = -0.5 * ((log(new_cells[, "sigma"]) - log(1)) / 1.2)^2,
+         extras = NULL)
+  }
+  out3 <- .hyper_consistency_pass(
+    theta_grid = tg, log_marginal = lm_out, extras = NULL,
+    refining_axis = rep("", nrow(tg)), specs = specs,
+    kernel_fn = kernel_out)
+  expect_gt(out3$n_added, 0L)
+  added <- out3$theta_grid[-seq_len(nrow(tg)), "sigma"]
+  expect_true(any(added < min(lev) | added > max(lev)))
 })
 
 test_that("a design-weighted grid keeps the weighted read at any ESS", {

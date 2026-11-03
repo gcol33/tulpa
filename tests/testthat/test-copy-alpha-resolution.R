@@ -121,10 +121,12 @@ test_that("alpha_n reaches the fitted grid and raises its resolution", {
     block <- c(adj, list(type = "icar", spatial_idx = list(s, s),
                          sigma_grid = exp(seq(log(0.1), log(3), length.out = 4L))))
 
+    # The declared resolution is read on the declared tensor, which the
+    # refinement passes would otherwise extend.
     fit_of <- function(alpha_n) suppressWarnings(tulpa_nested_laplace_joint(
         responses = list(occ = arm1, pos = arm2), prior = list(block),
         copy = list(list(arm = "pos", block = 1L, alpha_n = alpha_n)),
-        control = list(diagnose_k = FALSE)))
+        control = list(diagnose_k = FALSE, axis_refine = "none")))
 
     n_alpha <- function(fit) length(unique(fit$theta_grid[, "b1.alpha"]))
     expect_identical(n_alpha(fit_of(NULL)),

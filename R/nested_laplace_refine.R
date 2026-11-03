@@ -164,8 +164,9 @@
         user, colnames(tg), eligible_fn = function(a) a %in% refinable)
     if (isTRUE(adaptive_grid) && !length(refinable)) {
         stop(sprintf(paste0(
-            "`control$adaptive_grid = TRUE` refines a field-SD axis, and this ",
-            "grid has none (axes: %s). Lay the axes' nodes on the block ",
+            "`control$adaptive_grid = TRUE` refines a field-SD axis or an axis ",
+            "the transform registry tags, and this grid has none (axes: %s). ",
+            "Lay the axes' nodes on the block ",
             "(its `*_grid` entries) instead."),
             paste0("`", colnames(tg), "`", collapse = ", ")), call. = FALSE)
     }

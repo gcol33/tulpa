@@ -134,7 +134,8 @@ test_that("a skewed latent AR(1) axis is followed past the end node its placemen
     ref <- .dense_axis_summary(fit_with(dense, list(
         axis_refine = "none", prune = FALSE, diagnose_k = FALSE)))
     expect_lt(max(ref[, "edge"]), 1e-3)
-    got <- .hp_table(fit)[rownames(ref), ]
+    # summary() names an axis by its block's name; the reference by position.
+    got <- .hp_table(fit)[tulpa:::.hyper_axis_labels(fit, rownames(ref)), ]
     # Each interval end within a quarter of the reference posterior SD; the
     # upper end of atanh(psi) read 0.37 SDs short on the placed span alone.
     expect_true(all(abs(got[, "ci_lo"] - ref[, "ci_lo"]) < 0.25 * ref[, "sd"]))
