@@ -1687,9 +1687,10 @@ double cpp_test_log_prior_icar(
 ) {
   const tulpa::GraphPartition sp =
       tulpa::graph_partition(n, adj_rp.begin(), adj_ci.begin());
-  return tulpa::log_prior_icar(x, /*spatial_start=*/0, n, tau,
-                                adj_rp, adj_ci, nnbr, sp,
-                                tulpa::icar_log_pdet(n, adj_rp, adj_ci, nnbr, sp));
+  return tulpa::log_prior_icar(
+      x, /*spatial_start=*/0, n, tau, adj_rp, adj_ci, nnbr, sp,
+      tulpa::icar_log_pdet(n, adj_rp.begin(), adj_ci.begin(), nnbr.begin(),
+                           sp));
 }
 
 // The Hessian densification, gradient read-back and Sigma^-1 unpacking shared
