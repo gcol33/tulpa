@@ -99,13 +99,13 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 # defect, and it is why the recovery test asserts coverage rather than a point
 # tolerance.
 #
-# Returns NULL when the terms were CONDITIONED instead (a `sigma_re` supplied,
-# carried as a one-point grid): the number would be right but the label would
-# claim the data produced it, so it falls through to the conditioning branch.
+# A term CONDITIONED instead (a `sigma_re` supplied) is the same axis laid as
+# one point, so its value is read the same way; `.varcorr_cov_list()` labels it
+# by `re_block_conditioned`.
 #' @keywords internal
 .varcorr_from_nested_re_blocks <- function(object, layout) {
   bi <- object$re_block_index
-  if (is.null(bi) || isTRUE(object$re_block_conditioned)) return(NULL)
+  if (is.null(bi)) return(NULL)
   # One block per term on the registry path; the one-arm joint path records
   # the blocks of each term, an uncorrelated slope term being one `iid` block
   # per coefficient and a correlated one a single `miid` block.
@@ -276,9 +276,10 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
   # label the documentation gives exactly that case (gcol33/tulpa#881).
   src <- if (!is.null(x[["Sigma_draws"]])) "sampled" else "estimated"
   if (is.null(cov_list)) {
-    src <- "estimated"
     # Also "estimated": the nested grid integrated the SD rather than maximizing
-    # it, which is the stronger of the two claims that share this label.
+    # it, which is the stronger of the two claims that share this label; a
+    # one-point axis is the supplied SD, conditioned on.
+    src <- if (isTRUE(x$re_block_conditioned)) "conditioned" else "estimated"
     cov_list <- .varcorr_from_nested_re_blocks(x, layout)
   }
   if (is.null(cov_list)) {

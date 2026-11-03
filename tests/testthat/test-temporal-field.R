@@ -210,6 +210,11 @@ test_that("an inline field integrates an unsupplied (1 | g) scale (#1119)", {
                                   family = "poisson", sigma_re = 0.4))
   expect_true(fit_c$re_block_conditioned)
   expect_identical(unique(fit_c$theta_grid[, "b2.sigma"]), 0.4)
+  # VarCorr() lists the term at the supplied SD, marked as conditioned (#1126).
+  vc_c <- VarCorr(fit_c)
+  expect_identical(vc_c$term, "g")
+  expect_equal(vc_c$sd, 0.4)
+  expect_identical(vc_c$source, "conditioned")
 })
 
 test_that("an inline field's integrated (1 | g) scale covers the truth over seeds (#1119)", {
