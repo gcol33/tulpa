@@ -11,3 +11,8 @@ test_that("the sampler layout refuses an HSGP space-time interaction", {
   expect_error(cpp_test_st_hsgp_layout(temporal = "rw1"),
                "fit_st_nested")
 })
+
+test_that("the sampler layout refuses a multiscale HSGP field", {
+  load_cpp_fixture("st_hsgp_prior")
+  expect_error(cpp_test_msgp_hsgp_layout(), "no multiscale HSGP density")
+})

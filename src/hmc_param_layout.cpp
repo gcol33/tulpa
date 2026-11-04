@@ -408,12 +408,14 @@ ParamLayout compute_param_layout(const ModelData& data) {
 
   // Multi-scale GP parameters
   if (layout.is_multiscale_gp && data.has_multiscale_gp) {
-    // Number of spatial effects per scale: m^2 for HSGP, n_obs for NNGP
-    int n_per_scale = data.msgp_is_hsgp ? data.msgp_hsgp_data.m_total
-                                        : data.multiscale_gp_data.n_obs;
+    if (data.msgp_is_hsgp) {
+      Rcpp::stop("tulpa: the sampler has no multiscale HSGP density; "
+                 "use spatial_multiscale(approx = \"hsgp\") with nested Laplace.");
+    }
+    int n_per_scale = data.multiscale_gp_data.n_obs;
     // Local scale
     layout.log_sigma2_gp_local_idx = idx++;
-    layout.log_phi_gp_local_idx = idx++;  // log_lengthscale for HSGP
+    layout.log_phi_gp_local_idx = idx++;
     layout.gp_local_start = idx;
     idx += n_per_scale;
     layout.gp_local_end = idx;

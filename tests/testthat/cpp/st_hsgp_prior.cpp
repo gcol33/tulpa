@@ -41,7 +41,7 @@ void build_st_hsgp_model(
     StHsgpData& sd,
     tulpa::LikelihoodSpec& spec,
     ModelData& data,
-    ParamLayout& layout
+    ParamLayout& layout, bool multiscale = false
 ) {
     if (M < 1 || T_st < 3) Rcpp::stop("need M >= 1 and T >= 3");
     if ((int)eigenvalues.size() != M) {
@@ -92,6 +92,12 @@ void build_st_hsgp_model(
     st.temporal_type = tulpa_test_st::parse_temporal(temporal);
     st.temporal_cyclic = temporal_cyclic;
 
+    if (multiscale) {
+        data.has_spatiotemporal = false;
+        data.has_multiscale_gp = true;
+        data.spatial_type = tulpa::SpatialType::MULTISCALE_GP;
+        data.msgp_is_hsgp = true;
+    }
     layout = tulpa_hmc::compute_param_layout(data);
 }
 
@@ -109,5 +115,16 @@ int cpp_test_st_hsgp_layout(int M = 3, int T = 7,
     for (int j = 0; j < M; ++j) eigenvalues[j] = 0.5 * (j + 1);
     build_st_hsgp_model(M, T, temporal, false, eigenvalues, 0, sd, spec, data,
                         layout);
+    return layout.total_params;
+}
+
+// [[Rcpp::export]]
+int cpp_test_msgp_hsgp_layout() {
+    StHsgpData sd;
+    tulpa::LikelihoodSpec spec;
+    ModelData data;
+    ParamLayout layout;
+    build_st_hsgp_model(3, 7, "rw2", false, {0.5, 1.0, 1.5}, 0,
+                        sd, spec, data, layout, true);
     return layout.total_params;
 }
