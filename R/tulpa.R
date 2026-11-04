@@ -239,7 +239,7 @@
            "supported yet; use an integer nu, or drop the random-effect term.",
            call. = FALSE)
     }
-    return(list(
+    return(c(list(
       type    = "spde",
       n_mesh  = as.integer(spatial$n_mesh),
       # The single-arm converter reads a scalar `n_obs` (the joint one a
@@ -253,7 +253,7 @@
       G1_i    = as.integer(spatial$G1_i),
       G1_p    = as.integer(spatial$G1_p),
       nu      = as.numeric(spatial$nu)
-    ))
+    ), .nl_spec_grid_entries(spatial, "spde")))
   }
 
   # Any other type is genuinely unsupported on this path.

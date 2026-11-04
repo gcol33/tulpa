@@ -540,11 +540,12 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
   nm[grepl("_grid$", nm) | nm == "prior_sigma"]
 }
 
-# The outer-grid entries of a field spec that the nested block of type
+# The outer-grid entries and PC anchors of a field spec that the nested block of type
 # `block_type` lays its axes from, validated: the axes a type accepts are its
 # `.NL_FAMILY_AXES` row, so an axis that row does not list, or a malformed
 # value, is refused rather than dropped. Returns the entries to write onto the
-# block, as numeric vectors.
+# block, as numeric vectors. Default anchors retain their provenance so a
+# flat hyperprior can omit them.
 .nl_spec_grid_entries <- function(spec, block_type) {
   ok <- names(.NL_FAMILY_AXES[[block_type]])
   grids <- grep("_grid$", names(spec), value = TRUE)
@@ -556,6 +557,13 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
       paste0("`", ok, "`", collapse = " and ")), call. = FALSE)
   }
   out <- list()
+  if (!is.null(spec$sigma2_prior_U)) {
+    anchor <- c(spec$sigma2_prior_U, spec$sigma2_prior_alpha)
+    .check_pc_anchor_pair(anchor, "sigma_prior_U / sigma_prior_alpha",
+                         sprintf("nested-Laplace '%s' field", block_type))
+    key <- if (isTRUE(spec$sigma_prior_stated)) "prior_sigma" else "default_sigma_prior"
+    out[[key]] <- as.numeric(anchor)
+  }
   for (g in grids) {
     v <- spec[[g]]
     if (!is.numeric(v) || !length(v) || anyNA(v) || any(!is.finite(v))) {
@@ -564,10 +572,15 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
     }
     out[[g]] <- as.numeric(v)
   }
-  if (!is.null(spec$prior_sigma)) {
-    .check_pc_anchor_pair(spec$prior_sigma, "prior_sigma",
-                          sprintf("nested-Laplace '%s' field", block_type))
-    out$prior_sigma <- as.numeric(spec$prior_sigma)
+  for (axis in c("sigma", "range")) {
+    name <- paste0("prior_", axis)
+    anchor <- spec[[name]]
+    if (is.null(anchor)) next
+    .check_pc_anchor_pair(anchor, name,
+                         sprintf("nested-Laplace '%s' field", block_type))
+    key <- if (!is.null(spec$prior_stated) && !isTRUE(spec$prior_stated[[axis]]))
+      paste0("default_", axis, "_prior") else name
+    out[[key]] <- as.numeric(anchor)
   }
   out
 }

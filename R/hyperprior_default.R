@@ -174,14 +174,19 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 # `prior_range` where the block carries one (a 2-D SPDE convention), the
 # extent-scaled default otherwise, NULL when neither is available.
 .hp_range_anchor <- function(p) {
-  if (!is.null(p$prior_range)) {
-    return(list(anchor = as.numeric(p$prior_range)[1:2], dim = 2))
+  anchor <- p$prior_range %||% p$default_range_prior
+  if (!is.null(anchor)) {
+    return(list(anchor = as.numeric(anchor)[1:2], dim = 2))
   }
   ex <- .hp_block_extent(p)
   if (is.null(ex)) return(NULL)
   list(anchor = c(.nl_hyperprior("range_extent_fraction") * ex$extent,
                   .nl_hyperprior("range_alpha")),
        dim = ex$dim)
+}
+
+.hp_scale_anchor <- function(p) {
+  as.numeric(p$prior_sigma %||% p$default_sigma_prior %||% .nl_scale_anchor())[1:2]
 }
 
 # The default density of ONE axis. `bare` is the axis name without a block
@@ -198,9 +203,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   type <- tolower(block$type %||% "")
   # A block's `prior_sigma = c(U, alpha)` anchors the PC prior on its field SD,
   # carried to whichever scale coordinate the axis is laid on.
-  scale <- function(kind,
-                    anchor = as.numeric(block$prior_sigma %||%
-                                          .nl_scale_anchor())[1:2]) {
+  scale <- function(kind, anchor = .hp_scale_anchor(block)) {
     force(kind); force(anchor)
     list(fn = function(x) .hp_log_scale_density(x, kind, anchor))
   }

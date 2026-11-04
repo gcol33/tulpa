@@ -1475,7 +1475,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         span <- as.numeric(p$grid_span %||% .nl_grid_par("spde_registry", "span"))
         rng_mode <- (.hp_range_anchor(p)$anchor %||%
                        .nl_grid_par("spde_registry", "centre_range"))[1]
-        sig_mode <- (p$prior_sigma %||% .nl_scale_anchor())[1]
+        sig_mode <- .hp_scale_anchor(p)[1]
         rg <- exp(seq(log(rng_mode / span), log(rng_mode * span), length.out = n_g))
         sg <- exp(seq(log(sig_mode / span), log(sig_mode * span), length.out = n_g))
         gr <- expand.grid(range = rg, sigma = sg)

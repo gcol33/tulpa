@@ -60,7 +60,9 @@ it from the data; see Details.}
 field's marginal standard deviation (\code{approx = "hsgp"}), calibrated so that
 \code{P(sigma > sigma_prior_U) = sigma_prior_alpha}. Defaults to
 \code{P(sigma > 1) = 0.01}. \code{sigma_prior_U} must be positive and
-\code{sigma_prior_alpha} must lie in \verb{(0, 1)}.}
+\code{sigma_prior_alpha} must lie in \verb{(0, 1)}.
+Sampler and nested-Laplace routes use these anchors. Under
+\code{hyperprior = "flat"}, nested Laplace retains explicitly supplied anchors.}
 
 \item{shared}{Whether the spatial effect is shared across processes in a
 multi-process model. \code{NULL} (default) shares the effect; \code{FALSE} fits

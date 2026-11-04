@@ -52,6 +52,8 @@
 #'   `P(sigma > sigma_prior_U) = sigma_prior_alpha`. Defaults to
 #'   `P(sigma > 1) = 0.01`. `sigma_prior_U` must be positive and
 #'   `sigma_prior_alpha` must lie in `(0, 1)`.
+#'   Sampler and nested-Laplace routes use these anchors. Under
+#'   `hyperprior = "flat"`, nested Laplace retains explicitly supplied anchors.
 #' @param shared Whether the spatial effect is shared across processes in a
 #'   multi-process model. `NULL` (default) shares the effect; `FALSE` fits
 #'   process-specific effects and emits a warning.
@@ -185,6 +187,7 @@ spatial_gp <- function(coords,
            basis_rule = list(auto = c(m = is.null(m), c = is.null(c))),
            sigma2_prior_U = as.numeric(sigma_prior_U),
            sigma2_prior_alpha = as.numeric(sigma_prior_alpha),
+           sigma_prior_stated = !missing(sigma_prior_U) || !missing(sigma_prior_alpha),
            shared = shared, scale_coords = scale_coords,
            n_obs = NULL, coords_matrix = NULL),
       class = c("tulpa_hsgp", "tulpa_spatial", "list")))
@@ -215,6 +218,7 @@ spatial_gp <- function(coords,
       nu = if (cov == "matern") nu else NULL,
       sigma2_prior_U = as.numeric(sigma_prior_U),
       sigma2_prior_alpha = as.numeric(sigma_prior_alpha),
+      sigma_prior_stated = !missing(sigma_prior_U) || !missing(sigma_prior_alpha),
       nn = nn,
       shared = shared,
       scale_coords = scale_coords,
