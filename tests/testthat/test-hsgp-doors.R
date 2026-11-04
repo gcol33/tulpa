@@ -78,7 +78,7 @@ test_that("an HSGP field + (1 | g) through tulpa() equals a direct multi-block c
   dat <- data.frame(lon = stats::runif(n), lat = stats::runif(n),
                     x = stats::rnorm(n), g = rep(1:5, 20))
   dat$y <- stats::rpois(n, exp(0.3 + 0.5 * dat$x + 0.4 * sin(3 * dat$lon)))
-  sp <- spatial_gp(~ lon + lat, approx = "hsgp")
+  sp <- spatial_gp(~ lon + lat, approx = "hsgp", cov = "squared_exponential")
   via <- suppressWarnings(tulpa(y ~ x + (1 | g), data = dat,
                                 family = "poisson", spatial = sp,
                                 mode = "nested_laplace"))
