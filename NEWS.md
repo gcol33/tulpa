@@ -196,6 +196,57 @@
   score a `cens()` / `trunc()` response through each held-out row's bounds
   (#1118).
 
+- Posterior draws, `vcov()` and every other read of a joint fit's per-cell precision now use the Gaussian the inner
+  solve built. An intrinsic field's sum-to-zero pin keeps its prior precision where no fixed effect absorbs the
+  field's level (a varying-coefficient ICAR without its covariate column, a replicated ICAR), instead of being
+  conditioned to zero. On such a fit the aliased coefficient's standard error was 0.29-0.33 of its exact value. The
+  constraint travels with the fit as `constraint_cols`, `Q_soft_cols` and `Q_soft_D_per_grid`, and
+  `tulpa_joint_inner_vcov_blocks()` / `tulpa_joint_inner_vcov_mixture()` take the soft rows (#1127).
+- The inner Newton step under hard constraints forms its constraint system from forward triangular solves of a square
+  root of the pinned block-Schur factor: 8.2 -> 5.9 ms per step on an 8 x 8 x 10 type IV fit (#1128).
+- The outer grid leaves at most 5e-4 of an axis's posterior past its outermost level on every door
+  (`edge_tail_mass`, one setting for the joint, registry and random-effect covariance doors), and levels laid past an
+  end no longer count against the 8-level refinement budget. The AR(1) coefficient's 97.5% end moves from 0.17 to
+  0.03 posterior SDs of a dense reference (#1113, #1133).
+- Outer-grid placement decides on the grid an axis was declared on, so an axis collapsed onto one node is placed at
+  the outer mode instead of bisected. A gaussian HSGP fit with phi integrated falls from 885 to 332 grid cells. The
+  joint door now places a Gaussian-process field's variance and lengthscale, and every axis the registry door places
+  (#1122).
+- An `mcar` / `miid` block on the joint door is placed, measured, read and refined in its marginal log SDs and atanh
+  canonical partial correlations, for every number of fields. On a two-arm MCAR fixture with true sigma_2 = 0.05 (20
+  seeds, dense reference), the mean error of the correlation's interval ends fell from 0.23 / 0.30 to 0.03 / 0.03
+  (atanh), and the error of sigma_2's median from 0.11 to 0.008 (log). The default p > 2 grid is laid in the same
+  coordinates (settings `mcar_sd_wide`, `mcar_pcor`) (#1105).
+- The exact sampler samples the `temporal_multiscale()` seasonal component non-centred, as it already did the trend
+  and short-term components. `parameterization` covers all three components (#1123).
+- Every sampler starts a non-centred field's scale at the median of its prior rather than at sigma = 1 (#1124).
+- The sampler route's RW1 / RW2 / AR1 temporal fields carry the PC prior P(sigma > 3) = 0.01 on the field SD, the
+  nested route's prior, in place of Gamma(1, 0.01) on the precision. An HMC AR1 forecast matches the exact posterior
+  and the nested forecast (#1135).
+- NNGP fields carry their numerical nugget on every diagonal entry of the covariance, so the field is exactly the
+  NNGP of K + nugget I (#1091).
+- HSGP fields approximate a Matern 3/2 (default), Matern 5/2 or squared-exponential kernel. The kernel is selected
+  with `cov` / `nu` on `spatial_gp(approx = "hsgp")`, `spatial_svc()`, `spatial_multiscale()`, the joint door's hsgp
+  blocks and `fit_st_nested(hsgp_cov =, hsgp_nu =)`, and basis sizes follow each kernel's rule (Riutort-Mayol et al.
+  2023). On a rough Matern field held-out coverage rose from 0.81 to 0.88 (#1067).
+- An HSGP basis left to the data also runs Phase B of Riutort-Mayol et al. (2023, Sect. 4.5.1) (#1131).
+- `spatial_multiscale(range_local = NULL)` anchors the local range prior at the locations' median nearest-neighbour
+  spacing instead of 0.01 (#1130).
+- The unreachable HSGP space-time sampler density is removed; a ModelData carrying `st_is_hsgp` is refused at
+  layout (#1132). ABI version 51 (one bump carrying #1123/#1135's ModelData fields and #1067's `HSGPData::kernel`).
+- `tulpa(mode = "nested_laplace_joint")` refuses a term the one-arm joint door does not carry, naming it (#1136).
+- `VarCorr()` lists a random-effect term whose SD was supplied in `sigma_re`, at that SD, with source
+  `"conditioned"` (#1126).
+- A nested fit's solved cells are kept for the session, so repeated `temporal()`, `predict()` and
+  `posterior_predict()` calls stop re-solving them. `temporal()` summarizes a `temporal_rtr()` field of any width from
+  each cell's precision (#1125).
+- `predict()` on a `tulpa_nested_laplace_joint()` fit reads every block and an arm's random intercepts at new rows
+  (`newdata$index`, `re_idx`, `weight`, `basis`, `projector`). `control$store_Q` defaults to `TRUE` for a fit with a
+  latent term (#1102). Local-CCD refinement now carries each node's precision, so it runs under that default.
+- `tulpa_laplace()` and `tulpa(mode = "laplace")` fit a `spatial_rsr()` field as the restricted model at the field's
+  fixed hyperparameters (the multi-block driver on a one-point grid, reading the projector). The conditional kernels
+  had fitted the unrestricted field (#1134).
+
 ## Package
 
 * C++ test fixtures live in `tests/testthat/cpp` and compile per test file;
