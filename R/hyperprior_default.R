@@ -389,10 +389,19 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 # compared at 12 significant digits, the resolution a coordinate recovered
 # through `exp` / `sqrt` keeps.
 .hp_is_tensor <- function(M) {
-  M <- signif(as.matrix(M), 12L)
+  M <- .hp_snap_coords(M)
   n_lev <- vapply(seq_len(ncol(M)), function(j) length(unique(M[, j])),
                   integer(1))
   nrow(unique(M)) == nrow(M) && nrow(M) == prod(n_lev)
+}
+
+.hp_snap_coords <- function(M) {
+  M <- as.matrix(M)
+  for (j in seq_len(ncol(M))) {
+    tol <- 64 * .Machine$double.eps
+    M[abs(M[, j]) < tol, j] <- 0
+  }
+  signif(M, 12L)
 }
 
 # Lists keyed by a free-covariance block's column prefix. An unprefixed
@@ -452,7 +461,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   p <- design$p
   ord <- .hp_cpc_order(p)
   C <- M
-  for (r in seq_len(nrow(M))) C[r, ord] <- .re_logchol_block_to_cpc(M[r, ], p)
+  C[, ord] <- .re_logchol_batch_to_cpc(M, p)
   C
 }
 
@@ -469,13 +478,9 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   p <- design$p
   ord <- .hp_cpc_order(p)
   M <- C
-  lj <- numeric(nrow(C))
-  for (r in seq_len(nrow(C))) {
-    b <- .re_cpc_block_to_logchol(as.numeric(C[r, ord]), p)
-    M[r, ] <- b$theta
-    lj[r] <- b$log_jac
-  }
-  attr(M, "log_jac") <- lj
+  b <- .re_cpc_batch_to_logchol(C[, ord, drop = FALSE], p)
+  M[, ] <- b$theta
+  attr(M, "log_jac") <- b$log_jac
   M
 }
 
@@ -553,7 +558,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     if (is.null(cols)) next
     M <- tg[, cols, drop = FALSE]
     out <- if (inverse) .hp_logchol_from_coords(M, d)
-           else signif(.hp_logchol_coords(M, d), 12L)
+           else .hp_snap_coords(.hp_logchol_coords(M, d))
     tg[, cols] <- out[, seq_along(cols), drop = FALSE]
   }
   tg

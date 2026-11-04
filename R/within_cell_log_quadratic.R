@@ -76,8 +76,8 @@
 # (`.nl_level_edges()`), `row_id` each cell's row (`.nl_axis_row_id()`) and
 # `log_density` each cell's `log_marginal`. Returns either
 # `list(declined = <reason>)` or the tables: `x` the grid on the coordinate
-# `tr`, `F` the axis CDF on it, `G` the per-row CDFs (one column per row, each
-# running 0 to 1), `mass` the rows' masses, `lq_mass` the share of the mass on
+# `tr`, `F` the axis CDF on it, `pieces` the rows' density parameters,
+# `mass` the rows' masses, `lq_mass` the share of the mass on
 # rows that were interpolated, `h_over_sd` the heaviest such row's resolution,
 # and per cell its row and the CDF interval `[c0, c1]` it owns inside that row
 # (NA for a cell that holds no mass).
@@ -112,10 +112,10 @@
         is.finite(ld_c)
   if (!any(ok)) return(list(declined = "no_usable_node"))
 
-  groups <- sort(unique(row_id[ok]))
   laid <- range(u[fin & is.finite(u)])
-  pieces <- lapply(groups, function(g) {
-    .nl_lq_group(which(ok & row_id == g), u, ulo, uhi, ld_c, w, laid = laid)
+  row_cells <- .nl_lq_group_cells(row_id, which(ok))
+  pieces <- lapply(row_cells, function(cells) {
+    .nl_lq_group(cells, u, ulo, uhi, ld_c, w, laid = laid)
   })
   mass <- vapply(pieces, `[[`, numeric(1), "mass")
   is_lq <- vapply(pieces, function(p) identical(p$kind, "lq"), logical(1))
@@ -138,21 +138,13 @@
   # outer boxes the outer cells' slabs carry the tails; a stretch between two of
   # the row's boxes that no cell of the row covers is held by other rows and is
   # zero here, as it is in the box read. Tabulated and integrated to the row's
-  # normalized CDF in C++ (src/nl_lq_density.cpp); NA where the row carries no
-  # mass on the grid.
-  G <- vapply(pieces, function(p) {
-    is_lq <- identical(p$kind, "lq")
-    cpp_nl_lq_group_cdf(is_lq, p$u, p$lg,
-                        if (is_lq) p$d1 else numeric(0),
-                        if (is_lq) p$d2 else numeric(0),
-                        if (is_lq) p$lt else numeric(0),
-                        p$lo_b, p$hi_b, p$lo, p$hi, x)
-  }, numeric(m))
-  G <- matrix(G, m)
-  bad <- is.na(G[m, ])
+  # normalized CDF in C++ (src/nl_lq_density.cpp), accumulated one row at a
+  # time into the axis's CDF slopes.
+  mixture <- cpp_nl_lq_mixture_cdf(pieces, mass, x)
+  bad <- !mixture$usable
   if (all(bad)) return(list(declined = "no_usable_node"))
   mass[bad] <- 0
-  Fax <- drop(G[, !bad, drop = FALSE] %*% (mass[!bad] / sum(mass[!bad])))
+  Fax <- mixture$F
 
   c0 <- c1 <- rep(NA_real_, length(v))
   cg <- rep(NA_integer_, length(v))
@@ -163,10 +155,14 @@
     c0[p$cells] <- p$c0
     c1[p$cells] <- p$c1
   }
-  list(declined = NA_character_, tr = tr, x = x, F = Fax, G = G, mass = mass,
+  list(declined = NA_character_, tr = tr, x = x, F = Fax, pieces = pieces, mass = mass,
        lq_mass = sum(mass[is_lq & !bad]) / sum(mass[!bad]),
        group = cg, c0 = c0, c1 = c1, lo = bx$lo, hi = bx$hi,
        h_over_sd = heavy, coord = bx$coord, edge_declined = bx$declined)
+}
+
+.nl_lq_group_cells <- function(group, cells = which(!is.na(group))) {
+  unname(split(cells, factor(group[cells], levels = sort(unique(group[cells])))))
 }
 
 # One row's nodes, its slabs, the quadratics through its log densities and the
@@ -262,10 +258,18 @@
 
 # Quantiles of the reconstruction at `probs`, back on the axis's own scale.
 .nl_lq_cdf_quantile <- function(rc, probs) {
-  keep <- c(TRUE, diff(rc$F) > 0)
-  xq <- stats::approx(rc$F[keep], rc$x[keep], xout = pmin(pmax(probs, 0), 1),
-                      ties = "ordered", rule = 2)$y
-  rc$tr$from(xq)
+  rc$tr$from(.nl_lq_inverse(rc$x, rc$F, probs))
+}
+
+.nl_lq_inverse <- function(x, F, probs) {
+  p <- pmin(pmax(probs, 0), 1)
+  out <- rep(NA_real_, length(p))
+  out[which(p == 0)] <- x[max(which(F == 0))]
+  out[which(p == 1)] <- x[which(F >= 1)[1L]]
+  use <- which(p > 0 & p < 1)
+  k <- findInterval(p[use], F)
+  out[use] <- x[k] + (p[use] - F[k]) / (F[k + 1L] - F[k]) * (x[k + 1L] - x[k])
+  out
 }
 
 # The read `.nl_summary_quantile_read()` dispatches to, with the box read's
@@ -322,7 +326,7 @@
   hi <- full(rc$hi, NA_real_)
   if (ia) { lo[!cont] <- atom; hi[!cont] <- atom }
   list(kind = "log_quadratic", per_cell = TRUE, values = v, lo = lo, hi = hi,
-       x = rc$x, G = rc$G, from = rc$tr$from,
+       x = rc$x, pieces = rc$pieces, from = rc$tr$from,
        group = full(rc$group, NA_integer_), c0 = full(rc$c0, NA_real_),
        c1 = full(rc$c1, NA_real_), declined = NA_character_)
 }
@@ -336,13 +340,12 @@
 .nl_lq_axis_draw <- function(geom, k, u) {
   out <- rep(NA_real_, length(k))
   g <- geom$group[k]
-  for (gi in unique(stats::na.omit(g))) {
-    s <- which(!is.na(g) & g == gi)
+  for (s in .nl_lq_group_cells(g)) {
+    gi <- g[s[1L]]
     p <- geom$c0[k[s]] + u[s] * (geom$c1[k[s]] - geom$c0[k[s]])
-    Fg <- geom$G[, gi]
-    keep <- c(TRUE, diff(Fg) > 0)
-    out[s] <- geom$from(stats::approx(Fg[keep], geom$x[keep], xout = p,
-                                      ties = "ordered", rule = 2)$y)
+    curve <- cpp_nl_lq_group_cdf(geom$pieces[[gi]], geom$x)
+    Fg <- curve$F
+    out[s] <- geom$from(.nl_lq_inverse(geom$x[curve$index], Fg, p))
   }
   out
 }

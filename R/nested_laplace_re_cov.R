@@ -368,32 +368,39 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 # so the domain is registered here beside the quantity it belongs to rather than
 # recovered from the column name downstream.
 .re_cov_derived_matrix <- function(Sig_list, nc, full = TRUE) {
+  .re_cov_derived_columns(nc, full, function(i, j)
+    vapply(Sig_list, function(S) S[i, j], numeric(1)))
+}
+
+.re_cov_derived_columns <- function(nc, full, entry) {
   cols <- list(); dom <- character(0)
-  put <- function(name, domain, fn) {
-    cols[[name]] <<- vapply(Sig_list, fn, numeric(1))
+  put <- function(name, domain, values) {
+    cols[[name]] <<- values
     dom[[name]]  <<- domain
   }
   for (i in seq_len(nc)) {
-    put(sprintf("sigma_%d", i), "positive", function(S) sqrt(S[i, i]))
+    put(sprintf("sigma_%d", i), "positive", sqrt(entry(i, i)))
   }
   if (full && nc > 1L) {
     for (i in seq_len(nc - 1L)) for (j in (i + 1L):nc) {
+        denom <- cols[[sprintf("sigma_%d", i)]] * cols[[sprintf("sigma_%d", j)]]
+        rho <- pmax(-1, pmin(1, entry(i, j) / denom))
       put(sprintf("rho_%d%d", i, j), "correlation",
-          function(S) S[i, j] / sqrt(S[i, i] * S[j, j]))
+          rho)
     }
   }
   if (full) {
     for (i in seq_len(nc)) for (j in i:nc) {
       put(sprintf("Sigma_%d%d", i, j),
           if (i == j) "positive" else "unbounded",
-          function(S) S[i, j])
+          entry(i, j))
     }
   } else {
     for (i in seq_len(nc)) {
-      put(sprintf("Sigma_%d%d", i, i), "positive", function(S) S[i, i])
+      put(sprintf("Sigma_%d%d", i, i), "positive", entry(i, i))
     }
   }
-  D <- do.call(cbind, cols)   # length(Sig_list) x n_derived, named columns
+  D <- do.call(cbind, cols)
   attr(D, "domain") <- unname(dom[colnames(D)])
   D
 }
@@ -440,6 +447,21 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
                                     support = .NL_SUPPORT_KINDS) {
   support <- match.arg(support)
   D   <- .re_cov_derived_matrix_multi(Sig_node_list, layout)
+  posterior <- .re_cov_summarize_columns(D, w, support)
+  M <- length(layout)
+  Sig_mean <- lapply(seq_len(M), function(m) {
+    Sig_m <- lapply(Sig_node_list, `[[`, m)
+    Reduce(`+`, Map(function(S, wi) S * wi, Sig_m, w))
+  })
+  Sigma_mean <- if (M == 1L) Sig_mean[[1L]] else
+    stats::setNames(Sig_mean,
+                    vapply(seq_len(M), function(m)
+                      .re_cov_block_label(layout[[m]], m), character(1)))
+  list(posterior = posterior, Sigma_mean = Sigma_mean)
+}
+
+.re_cov_summarize_columns <- function(D, w, support) {
+  support <- match.arg(support, .NL_SUPPORT_KINDS)
   dom <- attr(D, "domain")
   probs <- c(0.025, 0.5, 0.975)
 
@@ -461,27 +483,16 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   post <- t(vapply(seq_len(ncol(D)),
                    function(j) summarize(D[, j], dom[[j]]), numeric(5)))
   rownames(post) <- colnames(D)
-  posterior <- data.frame(parameter = rownames(post), post,
+  data.frame(parameter = rownames(post), post,
                           row.names = NULL, check.names = FALSE)
-
-  M <- length(layout)
-  Sig_mean <- lapply(seq_len(M), function(m) {
-    Sig_m <- lapply(Sig_node_list, `[[`, m)
-    Reduce(`+`, Map(function(S, wi) S * wi, Sig_m, w))
-  })
-  Sigma_mean <- if (M == 1L) Sig_mean[[1L]] else
-    stats::setNames(Sig_mean,
-                    vapply(seq_len(M), function(m)
-                      .re_cov_block_label(layout[[m]], m), character(1)))
-  list(posterior = posterior, Sigma_mean = Sigma_mean)
 }
 
 # The derived covariance quantities of every free-covariance block an outer grid
 # integrates (`mcar` / `miid`, whose Sigma = L L' is laid on the log-Cholesky
 # columns `.hp_logchol_block_cols()` finds), summarized by
-# `.re_cov_derived_summary()` over the grid's cells and weights: each cell's L
-# is unpacked by `.re_logchol_to_L()`, its Sigma formed, and `sigma_i`,
-# `rho_ij` and `Sigma_ij` read off that one matrix before any weighting. Rows
+# `.re_cov_summarize_columns()` over the grid's cells and weights: covariance
+# entries are formed from the Cholesky columns, and `sigma_i`, `rho_ij` and
+# `Sigma_ij` are read from those entries before any weighting. Rows
 # carry the block's column prefix (`b1.sigma_1`). NULL when the grid holds no
 # complete block.
 #
@@ -516,12 +527,16 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     cols <- .hp_logchol_block_cols(cn, pre)
     if (is.null(cols)) next
     p <- as.integer(round((sqrt(8 * length(cols) + 1) - 1) / 2))
-    Sig <- lapply(seq_len(nrow(tg)), function(k) {
-      L <- .re_logchol_to_L(as.numeric(tg[k, cols]), p)
-      list(tcrossprod(L))
-    })
-    layout <- list(list(nc = p, full = TRUE, label = sub("[.]$", "", pre)))
-    post <- .re_cov_derived_summary(Sig, w, layout, support = support)$posterior
+    idx <- .re_logchol_indices(p)
+    L <- tg[, cols, drop = FALSE]
+    for (i in seq_len(p)) L[, idx[i, i]] <- exp(L[, idx[i, i]])
+    entry <- function(i, j) {
+      v <- numeric(nrow(L))
+      for (k in seq_len(min(i, j))) v <- v + L[, idx[i, k]] * L[, idx[j, k]]
+      v
+    }
+    D <- .re_cov_derived_columns(p, TRUE, entry)
+    post <- .re_cov_summarize_columns(D, w, support)
     post$parameter <- paste0(pre, post$parameter)
     parts[[length(parts) + 1L]] <- post
   }
@@ -1583,50 +1598,67 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 # One full block: placement coordinates -> log-Cholesky coordinates and the
 # log-Jacobian of that map.
 .re_cpc_block_to_logchol <- function(v, nc) {
-  logsig <- v[seq_len(nc)]
-  y <- v[-seq_len(nc)]
+  b <- .re_cpc_batch_to_logchol(matrix(v, 1L), nc)
+  list(theta = as.numeric(b$theta), log_jac = b$log_jac[1L])
+}
+
+.re_logchol_indices <- function(nc) {
+  idx <- matrix(0L, nc, nc)
+  idx[lower.tri(idx, diag = TRUE)] <- seq_len(nc * (nc + 1L) / 2L)
+  idx
+}
+
+.re_cpc_batch_to_logchol <- function(V, nc) {
+  V <- as.matrix(V)
+  n <- nrow(V)
+  idx <- .re_logchol_indices(nc)
   yidx <- matrix(0L, nc, nc)
   pos <- 0L
   for (j in seq_len(nc - 1L)) for (i in (j + 1L):nc) {
     pos <- pos + 1L
-    yidx[i, j] <- pos
+    yidx[i, j] <- nc + pos
   }
-  L_off <- matrix(0, nc, nc)
-  log_Lii <- numeric(nc)
-  log_jac <- 0
+  theta <- matrix(0, n, ncol(V))
+  log_jac <- numeric(n)
   for (i in seq_len(nc)) {
-    log_r <- 0
+    log_r <- numeric(n)
     for (j in seq_len(i - 1L)) {
-      yy <- y[yidx[i, j]]
-      L_off[i, j] <- exp(logsig[i] + 0.5 * log_r) * tanh(yy)
-      log_jac <- log_jac + 0.5 * log_r
+      yy <- V[, yidx[i, j]]
+      theta[, idx[i, j]] <- exp(V[, i] + 0.5 * log_r) * tanh(yy)
+      log_jac <- log_jac + 0.5 * log_r + V[, i]
       log_r <- log_r + .log1m_tanh2(yy)
     }
-    log_Lii[i] <- logsig[i] + 0.5 * log_r
-    log_jac <- log_jac + (i - 1L) * logsig[i]
-  }
-  theta <- numeric(length(v))
-  idx <- 1L
-  for (j in seq_len(nc)) for (i in j:nc) {
-    theta[idx] <- if (i == j) log_Lii[i] else L_off[i, j]
-    idx <- idx + 1L
+    theta[, idx[i, i]] <- V[, i] + 0.5 * log_r
   }
   list(theta = theta, log_jac = log_jac)
 }
 
 # Inverse of .re_cpc_block_to_logchol().
 .re_logchol_block_to_cpc <- function(theta, nc) {
-  L <- .re_logchol_to_L(theta, nc)
-  logsig <- 0.5 * log(rowSums(L^2))
-  W <- L / exp(logsig)
-  y <- numeric(0)
-  for (j in seq_len(nc - 1L)) for (i in (j + 1L):nc) {
-    r <- 1 - sum(W[i, seq_len(j - 1L)]^2)
-    z <- W[i, j] / sqrt(max(r, .Machine$double.xmin))
-    z <- max(min(z, 1 - .Machine$double.eps), -1 + .Machine$double.eps)
-    y <- c(y, atanh(z))
+  as.numeric(.re_logchol_batch_to_cpc(matrix(theta, 1L), nc))
+}
+
+.re_logchol_batch_to_cpc <- function(theta, nc) {
+  theta <- as.matrix(theta)
+  n <- nrow(theta)
+  idx <- .re_logchol_indices(nc)
+  out <- matrix(0, n, ncol(theta))
+  W <- theta
+  for (i in seq_len(nc)) {
+    cols <- idx[i, seq_len(i)]
+    W[, idx[i, i]] <- exp(W[, idx[i, i]])
+    out[, i] <- .5 * log(rowSums(W[, cols, drop = FALSE]^2))
+    W[, cols] <- W[, cols, drop = FALSE] / exp(out[, i])
   }
-  c(logsig, y)
+  pos <- nc
+  for (j in seq_len(nc - 1L)) for (i in (j + 1L):nc) {
+    r <- 1 - rowSums(W[, idx[i, seq_len(j - 1L)], drop = FALSE]^2)
+    z <- W[, idx[i, j]] / sqrt(pmax(r, .Machine$double.xmin))
+    z <- pmax(pmin(z, 1 - .Machine$double.eps), -1 + .Machine$double.eps)
+    pos <- pos + 1L
+    out[, pos] <- atanh(z)
+  }
+  out
 }
 
 # Does any block integrate in log-Cholesky coordinates (a full block with a

@@ -2003,23 +2003,27 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nl_lq_group_cdf
-Rcpp::NumericVector cpp_nl_lq_group_cdf(bool is_lq, Rcpp::NumericVector u, Rcpp::NumericVector lg, Rcpp::NumericVector d1, Rcpp::NumericVector d2, Rcpp::NumericVector lt, Rcpp::NumericVector lo_b, Rcpp::NumericVector hi_b, double lo, double hi, Rcpp::NumericVector x);
-RcppExport SEXP _tulpa_cpp_nl_lq_group_cdf(SEXP is_lqSEXP, SEXP uSEXP, SEXP lgSEXP, SEXP d1SEXP, SEXP d2SEXP, SEXP ltSEXP, SEXP lo_bSEXP, SEXP hi_bSEXP, SEXP loSEXP, SEXP hiSEXP, SEXP xSEXP) {
+Rcpp::List cpp_nl_lq_group_cdf(Rcpp::List piece, Rcpp::NumericVector x);
+RcppExport SEXP _tulpa_cpp_nl_lq_group_cdf(SEXP pieceSEXP, SEXP xSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< bool >::type is_lq(is_lqSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type u(uSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type lg(lgSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type d1(d1SEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type d2(d2SEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type lt(ltSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type lo_b(lo_bSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type hi_b(hi_bSEXP);
-    Rcpp::traits::input_parameter< double >::type lo(loSEXP);
-    Rcpp::traits::input_parameter< double >::type hi(hiSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type piece(pieceSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type x(xSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nl_lq_group_cdf(is_lq, u, lg, d1, d2, lt, lo_b, hi_b, lo, hi, x));
+    rcpp_result_gen = Rcpp::wrap(cpp_nl_lq_group_cdf(piece, x));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_nl_lq_mixture_cdf
+Rcpp::List cpp_nl_lq_mixture_cdf(Rcpp::List pieces, Rcpp::NumericVector mass, Rcpp::NumericVector x);
+RcppExport SEXP _tulpa_cpp_nl_lq_mixture_cdf(SEXP piecesSEXP, SEXP massSEXP, SEXP xSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type pieces(piecesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type mass(massSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type x(xSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nl_lq_mixture_cdf(pieces, mass, x));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3320,7 +3324,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_joint_pattern", (DL_FUNC) &_tulpa_cpp_test_joint_pattern, 6},
     {"_tulpa_cpp_test_joint_logpost_grad", (DL_FUNC) &_tulpa_cpp_test_joint_logpost_grad, 9},
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 30},
-    {"_tulpa_cpp_nl_lq_group_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_group_cdf, 11},
+    {"_tulpa_cpp_nl_lq_group_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_group_cdf, 2},
+    {"_tulpa_cpp_nl_lq_mixture_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_mixture_cdf, 3},
     {"_tulpa_cpp_pg_binomial_gibbs", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs, 13},
     {"_tulpa_cpp_pg_binomial_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_spatial, 19},
     {"_tulpa_cpp_pg_binomial_gibbs_bym2", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_bym2, 22},

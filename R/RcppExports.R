@@ -397,8 +397,12 @@ cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blo
     .Call(`_tulpa_cpp_nested_laplace_multi`, y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood, progress, progress_every, progress_throttle, progress_file, checkpoint_path, compute_skew, skew_idx, debias, cila, offset_nullable, screen_log_offset, beta_prior)
 }
 
-cpp_nl_lq_group_cdf <- function(is_lq, u, lg, d1, d2, lt, lo_b, hi_b, lo, hi, x) {
-    .Call(`_tulpa_cpp_nl_lq_group_cdf`, is_lq, u, lg, d1, d2, lt, lo_b, hi_b, lo, hi, x)
+cpp_nl_lq_group_cdf <- function(piece, x) {
+    .Call(`_tulpa_cpp_nl_lq_group_cdf`, piece, x)
+}
+
+cpp_nl_lq_mixture_cdf <- function(pieces, mass, x) {
+    .Call(`_tulpa_cpp_nl_lq_mixture_cdf`, pieces, mass, x)
 }
 
 cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {

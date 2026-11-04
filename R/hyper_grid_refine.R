@@ -835,13 +835,18 @@
   key <- function(m) .hyper_row_key(m, others)
   by_row <- split(solved, key(theta_grid[solved, , drop = FALSE]))
   axis_dist <- function(a, b) {
-    pos <- a > 0 & b > 0
-    ifelse(pos, abs(log(a) - log(b)), abs(a - b))
+    distance <- abs(a - b)
+    if (b > 0) {
+      pos <- a > 0
+      distance[pos] <- abs(log(a[pos]) - log(b))
+    }
+    distance
   }
   modes <- matrix(NA_real_, nrow(cells), n_x)
   ck <- key(cells)
+  row_match <- match(ck, names(by_row))
   for (i in seq_len(nrow(cells))) {
-    cand <- by_row[[ck[i]]]
+    cand <- if (is.na(row_match[i])) integer(0) else by_row[[row_match[i]]]
     if (length(cand)) {
       d <- axis_dist(theta_grid[cand, axis], cells[i, axis])
       modes[i, ] <- extras[[cand[which.min(d)]]]$mode

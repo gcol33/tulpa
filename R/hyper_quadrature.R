@@ -907,7 +907,7 @@ tulpa_hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
 .hyper_logchol_log_measure <- function(M, design, close_domain = TRUE,
                                        absolute = FALSE) {
   if (is.null(design$design)) return(NULL)
-  C <- signif(.hp_logchol_coords(M, design), 12L)
+  C <- .hp_snap_coords(.hp_logchol_coords(M, design))
   on_R <- list(spec = list(name = "logchol", log_scale = FALSE), nat = identity)
   axes <- rep(list(on_R), ncol(C))
   if (identical(design$design, "cpc")) {
