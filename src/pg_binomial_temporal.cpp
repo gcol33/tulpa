@@ -18,9 +18,8 @@
 
 using namespace Rcpp;
 
-// The short-term AR1 correlation's support: proposals outside it are rejected,
-// so its Uniform prior lives on (-PG_AR1_RHO_BOUND, PG_AR1_RHO_BOUND).
-constexpr double PG_AR1_RHO_BOUND = 0.999;
+// The short-term AR1 correlation's open stationary support.
+constexpr double PG_AR1_RHO_BOUND = 1.0;
 
 // ---------------------------------------------------------------------
 // Multiscale Temporal Gibbs Sampler for Binomial Models
@@ -44,10 +43,15 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
     int thin = 1,
     Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd = R_NilValue,
     double prior_sigma_re_scale = 2.5,
-    double prior_sigma_trend_scale = 1.0,
-    double prior_sigma_seasonal_scale = 1.0,
-    double prior_sigma_short_scale = 1.0,
+    double prior_sigma_trend_U = 1.0,
+    double prior_sigma_trend_alpha = 0.01,
+    double prior_sigma_seasonal_U = 1.0,
+    double prior_sigma_seasonal_alpha = 0.01,
+    double prior_sigma_short_U = 1.0,
+    double prior_sigma_short_alpha = 0.01,
     double rho_short_init = 0.5,
+    double prior_rho_a = 2.0,
+    double prior_rho_b = 2.0,
     bool store_eta = false,
     bool verbose = true,
     int n_threads = 1
@@ -67,6 +71,11 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
   }
 
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
+  tulpa::pg_check_pc_prior(prior_sigma_trend_U, prior_sigma_trend_alpha, "trend");
+  tulpa::pg_check_pc_prior(prior_sigma_seasonal_U, prior_sigma_seasonal_alpha, "seasonal");
+  tulpa::pg_check_pc_prior(prior_sigma_short_U, prior_sigma_short_alpha, "short");
+  if (!(prior_rho_a > 0.0 && prior_rho_b > 0.0))
+    Rcpp::stop("AR1 Beta prior parameters must be positive.");
   tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
                          prior_sigma_re_scale, n_threads, store_eta);
   const int N = C.N;
@@ -92,9 +101,9 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
   Rcpp::NumericVector trend(n_trend, 0.0);
   Rcpp::NumericVector seasonal(n_seasonal, 0.0);
   Rcpp::NumericVector short_term(n_short, 0.0);
-  tulpa::PgScaleState sigma_trend = tulpa::pg_scale_state_init(prior_sigma_trend_scale);
-  tulpa::PgScaleState sigma_seasonal = tulpa::pg_scale_state_init(prior_sigma_seasonal_scale);
-  tulpa::PgScaleState sigma_short = tulpa::pg_scale_state_init(prior_sigma_short_scale);
+  double sigma_trend = std::log(2.0) / tulpa::pc_rate(prior_sigma_trend_U, prior_sigma_trend_alpha);
+  double sigma_seasonal = std::log(2.0) / tulpa::pc_rate(prior_sigma_seasonal_U, prior_sigma_seasonal_alpha);
+  double sigma_short = std::log(2.0) / tulpa::pc_rate(prior_sigma_short_U, prior_sigma_short_alpha);
   double rho_short = rho_short_init;
   Rcpp::NumericVector temp_contrib(N, 0.0);
 
@@ -150,7 +159,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
                                  C.kappa.begin(), arm_offset.data(),
                                  sum_omega_t.data(), sum_resid_t.data());
 
-      const double tau_trend = 1.0 / (sigma_trend.sigma * sigma_trend.sigma);
+      const double tau_trend = 1.0 / (sigma_trend * sigma_trend);
       // Both intrinsic arms share the intercept's level.
       tulpa::PgInterceptLevel level(
           C.beta[0],
@@ -184,8 +193,8 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
         const double diff = trend[t] - trend[t - 1];
         ss += diff * diff;
       }
-      tulpa::pg_update_scale_halfcauchy(ss, n_trend - 1,
-                                        prior_sigma_trend_scale, sigma_trend);
+      tulpa::pg_update_scale_pc(ss, n_trend - 1,
+                                        prior_sigma_trend_U, prior_sigma_trend_alpha, sigma_trend);
     }
 
     // Update seasonal (cyclic RW1)
@@ -203,7 +212,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
                                  sum_omega_s.data(), sum_resid_s.data());
 
       const double tau_seasonal_val =
-          1.0 / (sigma_seasonal.sigma * sigma_seasonal.sigma);
+          1.0 / (sigma_seasonal * sigma_seasonal);
       tulpa::PgInterceptLevel level(
           C.beta[0], n_trend > 0 ? tulpa::pg_mean(trend.begin(), n_trend) : 0.0,
           prior_beta_sd_value, 1.0, seasonal.begin(), n_seasonal);
@@ -230,8 +239,8 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
       }
       // Cyclic (ring) RW1 with a sum-to-zero constraint has rank
       // n_seasonal - 1 (one constant null vector).
-      tulpa::pg_update_scale_halfcauchy(ss, n_seasonal - 1,
-                                        prior_sigma_seasonal_scale,
+      tulpa::pg_update_scale_pc(ss, n_seasonal - 1,
+                                        prior_sigma_seasonal_U, prior_sigma_seasonal_alpha,
                                         sigma_seasonal);
     }
 
@@ -248,7 +257,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
                                  C.kappa.begin(), arm_offset.data(),
                                  sum_omega_t.data(), sum_resid_t.data());
 
-      const double tau_short_val = 1.0 / (sigma_short.sigma * sigma_short.sigma);
+      const double tau_short_val = 1.0 / (sigma_short * sigma_short);
 
       if (short_type == 1) {  // AR1
         const double omr2 = 1.0 + rho_short * rho_short;
@@ -258,7 +267,10 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
           // the endpoints keep the single available neighbour at precision tau.
           double tau_prior, mean_prior;
           const bool has_prev = (t > 0), has_next = (t < n_short - 1);
-          if (has_prev && has_next) {
+          if (!has_prev && !has_next) {
+            tau_prior = tau_short_val * (1.0 - rho_short * rho_short);
+            mean_prior = 0.0;
+          } else if (has_prev && has_next) {
             tau_prior  = tau_short_val * omr2;
             mean_prior = rho_short * (short_term[t - 1] + short_term[t + 1]) / omr2;
           } else if (has_next) {          // first
@@ -273,9 +285,8 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
           short_term[t] = R::rnorm(mean_post, 1.0 / std::sqrt(tau_post));
         }
 
-        // Sample rho_short: reflected-normal random-walk MH with a
-        // Uniform(-1, 1) prior; the AR1 log-density in rho is
-        // 0.5*log(1-rho^2) - 0.5*tau*ss(rho).
+        // Random-walk MH with a Beta prior on (rho + 1) / 2 and
+        // stationary AR1 log-density 0.5*log(1-rho^2) - 0.5*tau*ss(rho).
         auto ar1_ss = [&](double r) {
           double s = short_term[0] * short_term[0] * (1.0 - r * r);
           for (int t = 1; t < n_short; t++) {
@@ -286,9 +297,9 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
         };
         const double rho_prop = rho_short + R::rnorm(0, 0.08);
         if (rho_prop > -PG_AR1_RHO_BOUND && rho_prop < PG_AR1_RHO_BOUND) {
-          const double lp_c = 0.5 * std::log(1.0 - rho_short * rho_short)
+          const double lp_c = tulpa::pg_temporal_rho_log_prior(rho_short, prior_rho_a, prior_rho_b) + 0.5 * std::log(1.0 - rho_short * rho_short)
                               - 0.5 * tau_short_val * ar1_ss(rho_short);
-          const double lp_p = 0.5 * std::log(1.0 - rho_prop * rho_prop)
+          const double lp_p = tulpa::pg_temporal_rho_log_prior(rho_prop, prior_rho_a, prior_rho_b) + 0.5 * std::log(1.0 - rho_prop * rho_prop)
                               - 0.5 * tau_short_val * ar1_ss(rho_prop);
           if (std::log(R::runif(0, 1)) < lp_p - lp_c) rho_short = rho_prop;
         }
@@ -313,7 +324,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
         }
       }
       // Both the stationary AR1 and the IID quadratic forms are full rank.
-      tulpa::pg_update_scale_halfcauchy(ss, n_short, prior_sigma_short_scale,
+      tulpa::pg_update_scale_pc(ss, n_short, prior_sigma_short_U, prior_sigma_short_alpha,
                                         sigma_short);
     }
 
@@ -365,39 +376,38 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
       for (int t = 0; t < n_short; t++) {
         short_draws(save_idx, t) = short_term[t];
       }
-      sigma_trend_draws[save_idx] = sigma_trend.sigma;
-      sigma_seasonal_draws[save_idx] = sigma_seasonal.sigma;
-      sigma_short_draws[save_idx] = sigma_short.sigma;
+      sigma_trend_draws[save_idx] = sigma_trend;
+      sigma_seasonal_draws[save_idx] = sigma_seasonal;
+      sigma_short_draws[save_idx] = sigma_short;
       rho_short_draws[save_idx] = rho_short;
       double lp = C.log_joint_common(y, n, temp_contrib.begin(), prior_beta_sd_value,
                                      prior_sigma_re_scale);
-      // Each arm at precision 1 / sigma^2 under its own half-Cauchy.
-      auto arm_tau = [](const tulpa::PgScaleState& st) {
-        return 1.0 / (st.sigma * st.sigma);
+      // Each arm at precision 1 / sigma^2 under its PC prior.
+      auto arm_tau = [](double sigma) {
+        return 1.0 / (sigma * sigma);
       };
       if (n_trend > 0) {
         lp += tulpa::pg_log_gmrf(
                   tulpa_temporal::rw1_quadratic_form(trend.begin(), n_trend, false),
                   tulpa_temporal::rw1_rank(n_trend, false), arm_tau(sigma_trend)) +
-              tulpa::pg_log_halfcauchy(sigma_trend.sigma, prior_sigma_trend_scale);
+              tulpa::log_prior_sigma_pc<double>(sigma_trend, prior_sigma_trend_U, prior_sigma_trend_alpha);
       }
       if (n_seasonal > 0) {
         lp += tulpa::pg_log_gmrf(
                   tulpa_temporal::rw1_quadratic_form(seasonal.begin(), n_seasonal, true),
                   tulpa_temporal::rw1_rank(n_seasonal, true), arm_tau(sigma_seasonal)) +
-              tulpa::pg_log_halfcauchy(sigma_seasonal.sigma, prior_sigma_seasonal_scale);
+              tulpa::log_prior_sigma_pc<double>(sigma_seasonal, prior_sigma_seasonal_U, prior_sigma_seasonal_alpha);
       }
       if (n_short > 0) {
         if (short_type == 1) {
-          // Uniform prior on the correlation over the proposal's support.
           lp += tulpa_temporal::ar1_log_density(short_term.begin(), n_short,
-                                                rho_short, arm_tau(sigma_short)) -
-                std::log(2.0 * PG_AR1_RHO_BOUND);
+                                                rho_short, arm_tau(sigma_short)) +
+                tulpa::pg_temporal_rho_log_prior(rho_short, prior_rho_a, prior_rho_b);
         } else {
           lp += tulpa::pg_log_normal_iid(short_term.begin(), n_short,
-                                         sigma_short.sigma);
+                                         sigma_short);
         }
-        lp += tulpa::pg_log_halfcauchy(sigma_short.sigma, prior_sigma_short_scale);
+        lp += tulpa::log_prior_sigma_pc<double>(sigma_short, prior_sigma_short_U, prior_sigma_short_alpha);
       }
       C.log_prob_draws[save_idx] = lp;
       save_idx++;

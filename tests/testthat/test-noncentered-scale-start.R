@@ -19,6 +19,18 @@ start_of <- function(f, ...) {
 
 pc_median_log_sd <- function(U, alpha) log(log(2) * U / -log(alpha))
 
+test_that("a BYM2 total scale starts at its stated PC median", {
+  load_cpp_fixture("smc_normalizer")
+  f <- start_fixture()
+  sp <- list(type = "bym2", n_spatial_units = 2L,
+    spatial_idx = as.integer(rep_len(1:2, f$n)),
+    adj_row_ptr = c(0L, 1L, 2L), adj_col_idx = c(1L, 0L),
+    n_neighbors = c(1L, 1L), sigma_prior_U = 0.8, sigma_prior_alpha = 0.1)
+  s <- start_of(f, spatial_spec = sp)
+  expect_equal(unname(s["log_sigma_spatial"]), pc_median_log_sd(0.8, 0.1),
+               tolerance = 1e-12)
+})
+
 test_that("a non-centred random effect's scale starts at its half-Cauchy median", {
   load_cpp_fixture("smc_normalizer")
   f <- start_fixture()

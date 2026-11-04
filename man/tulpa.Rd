@@ -186,7 +186,7 @@ used when \code{hyperprior = "proper"}), \code{eta} (LKJ concentration for a
 correlated RE covariance, same condition), \code{prior_df} / \code{prior_scale}
 (inverse-Wishart on the RE covariance, \code{control$re_cov = "gibbs"}),
 \code{prior_sigma_scale} (half-Cauchy scale on the RE SD for \code{mode = "gibbs"}),
-and \code{sigma_re_scale} (half-Cauchy scale on the RE / BYM2 SD for the
+and \code{sigma_re_scale} (half-Cauchy scale on the RE SD for the
 ModelData samplers). An entry the resolved backend does not read is an
 error naming the backends that do.}
 

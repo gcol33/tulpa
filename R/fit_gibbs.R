@@ -317,8 +317,8 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       n_iter = as.integer(iter), n_warmup = as.integer(warmup),
       thin = as.integer(thin),
       prior_beta_sd = prior_beta_sd, prior_sigma_re_scale = prior_sigma_re_scale,
-      prior_tau_shape = spatial$prior_tau_shape %||% 1.0,
-      prior_tau_rate  = spatial$prior_tau_rate  %||% 0.01,
+      prior_sigma_spatial_U = .areal_scale_anchor(spatial)[1L],
+      prior_sigma_spatial_alpha = .areal_scale_anchor(spatial)[2L],
       prior_r_shape   = spatial$prior_r_shape %||% 1.0,
       prior_r_rate    = spatial$prior_r_rate  %||% 0.1,
       r_init          = spatial$r_init %||% 5.0,
@@ -335,16 +335,17 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
 
   if (spatial_type == "icar") {
     .pg_as_chain(do.call(cpp_pg_binomial_gibbs_spatial, c(common, areal, list(
-      prior_tau_shape = spatial$prior_tau_shape %||% 1.0,
-      prior_tau_rate  = spatial$prior_tau_rate  %||% 0.01
+      prior_sigma_spatial_U = .areal_scale_anchor(spatial)[1L],
+      prior_sigma_spatial_alpha = .areal_scale_anchor(spatial)[2L]
     ))), "icar", X)
   } else if (spatial_type == "bym2") {
     .pg_as_chain(do.call(cpp_pg_binomial_gibbs_bym2, c(common, areal, list(
       scale_factor              = spatial$scale_factor %||% 1.0,
       node_prec_nullable        = spatial$node_prec,
-      prior_sigma_spatial_scale = spatial$prior_sigma_spatial_scale %||% 2.5,
-      prior_rho_alpha           = spatial$prior_rho_alpha %||% 0.5,
-      prior_rho_beta            = spatial$prior_rho_beta  %||% 0.5
+      prior_sigma_spatial_U = .areal_scale_anchor(spatial)[1L],
+      prior_sigma_spatial_alpha = .areal_scale_anchor(spatial)[2L],
+      prior_rho_alpha           = spatial$prior_rho_alpha %||% 1.0,
+      prior_rho_beta            = spatial$prior_rho_beta  %||% 1.0
     ))), "bym2", X)
   } else if (spatial_type == "rsr") {
     # Restricted spatial regression: an ICAR field projected orthogonal to the
@@ -363,8 +364,8 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       # P_perp is symmetric so t() is a no-op but keeps the convention explicit.
       rsr_projection  = as.numeric(t(P_perp)),
       rsr_n           = as.integer(rsr_n),
-      prior_tau_shape = spatial$prior_tau_shape %||% 1.0,
-      prior_tau_rate  = spatial$prior_tau_rate  %||% 0.01
+      prior_sigma_spatial_U = .areal_scale_anchor(spatial)[1L],
+      prior_sigma_spatial_alpha = .areal_scale_anchor(spatial)[2L]
     ))), "icar", X)
   } else if (spatial_type %in% c("gp", "nngp", "gp_rsr")) {
     if (is.null(spatial$neighbor_info)) {
@@ -500,7 +501,15 @@ dispatch_gibbs_temporal <- function(y, n_trials, X, re_group, n_re_groups,
     n_times         = as.integer(temporal$n_times),
     seasonal_period = as.integer(temporal$seasonal %||% 0L),
     trend_type      = trend_type,
-    short_type      = short_type
+    short_type      = short_type,
+    prior_sigma_trend_U = .MS_TEMPORAL_SIGMA_PRIOR[["U"]],
+    prior_sigma_trend_alpha = .MS_TEMPORAL_SIGMA_PRIOR[["alpha"]],
+    prior_sigma_seasonal_U = .MS_TEMPORAL_SIGMA_PRIOR[["U"]],
+    prior_sigma_seasonal_alpha = .MS_TEMPORAL_SIGMA_PRIOR[["alpha"]],
+    prior_sigma_short_U = .MS_TEMPORAL_SIGMA_PRIOR[["U"]],
+    prior_sigma_short_alpha = .MS_TEMPORAL_SIGMA_PRIOR[["alpha"]],
+    prior_rho_a = .MS_TEMPORAL_RHO_BETA[["alpha"]],
+    prior_rho_b = .MS_TEMPORAL_RHO_BETA[["beta"]]
   ))), c("temporal", if (short_type == 1L) "ar1_short"), X)
 }
 

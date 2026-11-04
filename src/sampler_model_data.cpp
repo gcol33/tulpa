@@ -215,6 +215,11 @@ void build_sampler_model_inputs(
     if (spatial_spec.isNotNull()) {
         Rcpp::List sp = Rcpp::as<Rcpp::List>(spatial_spec);
         std::string stype = Rcpp::as<std::string>(sp["type"]);
+        if (stype == "icar" || stype == "bym2" || stype == "car_proper") {
+            read_pc_anchors(sp, "sigma_prior_U", "sigma_prior_alpha",
+                            in.data.spatial_sigma_prior_U,
+                            in.data.spatial_sigma_prior_alpha, "areal scale");
+        }
         if (stype == "icar" || stype == "bym2") {
             Rcpp::IntegerVector sidx = Rcpp::as<Rcpp::IntegerVector>(sp["spatial_idx"]);
             Rcpp::IntegerVector rp   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_row_ptr"]);

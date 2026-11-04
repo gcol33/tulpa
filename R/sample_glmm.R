@@ -41,10 +41,12 @@
 #' @param spatial_spec Optional areal spatial spec: a list with `type`
 #'   (`"icar"`/`"bym2"`), `spatial_idx`, `n_spatial_units`, `adj_row_ptr`,
 #'   `adj_col_idx`, `n_neighbors`, and `scale_factor` (BYM2). `NULL` -> none.
+#'   The PC prior on the field SD has anchors `sigma_prior_U` and
+#'   `sigma_prior_alpha`, defaulting to `P(sigma > 3) = 0.01`.
 #' @param temporal_spec Optional temporal spec: a list with `type`
 #'   (`"rw1"`/`"rw2"`/`"ar1"`), `time_idx`, `n_times`, `n_groups`, `group_idx`,
 #'   and `cyclic`. `NULL` -> none.
-#' @param sigma_re_scale Half-Cauchy scale for the RE / BYM2 standard-deviation
+#' @param sigma_re_scale Half-Cauchy scale for the RE standard-deviation
 #'   hyperprior (sampled jointly with the latent effects).
 #' @param warm_start Optional `list(init, inv_metric_diag)` seeding the NUTS
 #'   kernel: `init` an `n_chains x total_params` matrix of initial positions,

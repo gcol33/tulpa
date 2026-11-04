@@ -391,7 +391,8 @@ inline void init_noncentered_scales(std::vector<double>& q,
     }
     if (layout.is_bym2 && !layout.is_bym2_collapsed) {
         set(layout.log_sigma_bym2_idx,
-            half_cauchy_median_log_sd(data.sigma_re_scale), 1.0);
+            pc_median_log_sd(data.spatial_sigma_prior_U,
+                             data.spatial_sigma_prior_alpha), 1.0);
     }
     if (layout.is_gp && !layout.is_gp_collapsed && data.gp_parameterization == 1) {
         set(layout.log_sigma2_gp_idx,

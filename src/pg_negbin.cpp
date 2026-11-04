@@ -581,8 +581,8 @@ List pg_negbin_gibbs_spatial(
     int thin,
     double prior_beta_sd,
     double prior_sigma_re_scale,
-    double prior_tau_shape,
-    double prior_tau_rate,
+    double prior_sigma_spatial_U,
+    double prior_sigma_spatial_alpha,
     double prior_r_shape,
     double prior_r_rate,
     double r_init,
@@ -611,6 +611,7 @@ List pg_negbin_gibbs_spatial(
       tulpa::pg_build_adjacency(adj_list, n_neighbors, n_spatial_units);
   const tulpa::PgIcarPrior icar(adj);
   pg_require_intercept(X, "negative-binomial ICAR spatial");
+  tulpa::pg_check_pc_prior(prior_sigma_spatial_U, prior_sigma_spatial_alpha, "spatial");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
   // The X * beta recomputations are the same independent per-row work the
   // non-spatial negbin kernel parallelizes, and this kernel took n_threads and
@@ -739,8 +740,8 @@ List pg_negbin_gibbs_spatial(
       }
     });
 
-    tau = tulpa::update_tau_icar(spatial, icar, prior_tau_shape,
-                                 prior_tau_rate);
+    tau = tulpa::update_tau_icar(spatial, icar, tau, prior_sigma_spatial_U,
+                                 prior_sigma_spatial_alpha);
 
     // Update spatial_contrib
     for (int i = 0; i < N; i++) {
@@ -773,7 +774,7 @@ List pg_negbin_gibbs_spatial(
                  pg_log_halfcauchy(sigma_re, prior_sigma_re_scale)
                : 0.0) +
           pg_log_icar(spatial.begin(), icar, tau) +
-          pg_log_gamma(tau, prior_tau_shape, prior_tau_rate) +
+          log_prior_tau_pc<double>(tau, prior_sigma_spatial_U, prior_sigma_spatial_alpha) +
           negbin_log_prior_r(r, prior_r_shape, prior_r_rate);
 
       if (store_eta) {
@@ -855,8 +856,8 @@ Rcpp::List cpp_pg_negbin_gibbs_spatial(
     int thin,
     double prior_beta_sd,
     double prior_sigma_re_scale,
-    double prior_tau_shape,
-    double prior_tau_rate,
+    double prior_sigma_spatial_U,
+    double prior_sigma_spatial_alpha,
     double prior_r_shape,
     double prior_r_rate,
     double r_init,
@@ -867,7 +868,7 @@ Rcpp::List cpp_pg_negbin_gibbs_spatial(
   return tulpa::pg_negbin_gibbs_spatial(
     y, X, re_group, n_re_groups, spatial_group, n_spatial_units,
     adj_list, n_neighbors, n_iter, n_warmup, thin,
-    prior_beta_sd, prior_sigma_re_scale, prior_tau_shape, prior_tau_rate,
+    prior_beta_sd, prior_sigma_re_scale, prior_sigma_spatial_U, prior_sigma_spatial_alpha,
     prior_r_shape, prior_r_rate, r_init, store_eta, verbose, n_threads
   );
 }

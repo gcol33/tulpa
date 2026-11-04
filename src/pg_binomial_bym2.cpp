@@ -41,9 +41,10 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
     int thin = 1,
     Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd = R_NilValue,
     double prior_sigma_re_scale = 2.5,
-    double prior_sigma_spatial_scale = 2.5,
-    double prior_rho_alpha = 0.5,
-    double prior_rho_beta = 0.5,
+    double prior_sigma_spatial_U = 3.0,
+    double prior_sigma_spatial_alpha = 0.01,
+    double prior_rho_alpha = 1.0,
+    double prior_rho_beta = 1.0,
     bool store_eta = false,
     bool verbose = true,
     int n_threads = 1,
@@ -51,6 +52,9 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
 ) {
     const double prior_beta_sd_value =
         tulpa::read_sigma_beta(prior_beta_sd, "prior_beta_sd");
+  tulpa::pg_check_pc_prior(prior_sigma_spatial_U, prior_sigma_spatial_alpha, "spatial");
+  if (!(prior_rho_alpha > 0.0 && prior_rho_beta > 0.0))
+    Rcpp::stop("BYM2 Beta prior parameters must be positive.");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
   tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
                          prior_sigma_re_scale, n_threads, store_eta);
@@ -120,16 +124,15 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
                                C.offset.begin(),
                                sum_omega_s.begin(), sum_resid_s.begin());
 
-    // 7. Update sigma_spatial from its PG full conditional given the current rho
-    //    (a Gaussian in sigma via the standardized field), NOT the iid
-    //    half-Cauchy on the deterministic convolution u.
+    // 7. Update sigma_spatial from its positive Gaussian PG conditional
+    //    given the standardized field, current rho and PC scale prior.
     sigma_spatial = tulpa::update_sigma_spatial_bym2(
         phi_scaled, theta, rho, scale_factor,
-        sum_omega_s, sum_resid_s, prior_sigma_spatial_scale);
+        sum_omega_s, sum_resid_s, prior_sigma_spatial_U, prior_sigma_spatial_alpha);
 
     // 8. Update rho (mixing proportion) at the just-updated sigma.
     rho = tulpa::update_rho_bym2(phi_scaled, theta, sigma_spatial, scale_factor,
-                                  sum_omega_s, sum_resid_s, prior_rho_alpha, prior_rho_beta);
+                                  sum_omega_s, sum_resid_s, rho, prior_rho_alpha, prior_rho_beta);
 
     // Recompute the field at the updated (sigma, rho) so the stored draw and the
     // next iteration's offset use the current scale and mixing weight.
@@ -160,9 +163,8 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
                              prior_sigma_re_scale) +
           tulpa::pg_log_icar(phi_scaled.begin(), icar, 1.0) +
           tulpa::pg_log_normal_iid(theta.begin(), n_spatial_units, 1.0) +
-          (prior_sigma_spatial_scale > 0.0
-               ? tulpa::pg_log_halfnormal(sigma_spatial, prior_sigma_spatial_scale)
-               : 0.0) +
+          tulpa::log_prior_sigma_pc<double>(sigma_spatial, prior_sigma_spatial_U,
+                                               prior_sigma_spatial_alpha) +
           tulpa::pg_bym2_rho_log_prior(rho, prior_rho_alpha, prior_rho_beta);
       save_idx++;
     }

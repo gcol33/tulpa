@@ -38,15 +38,6 @@ inline double bym2_sd_unstructured(double rho) {
     return std::sqrt(1.0 - rho + BYM2_RHO_EPS);
 }
 
-// The same shift on the log scale, for the Beta(alpha, beta) prior on rho.
-inline double bym2_log_rho(double rho) {
-    return std::log(rho + BYM2_RHO_EPS);
-}
-
-inline double bym2_log1m_rho(double rho) {
-    return std::log(1.0 - rho + BYM2_RHO_EPS);
-}
-
 }  // namespace tulpa
 
 #endif  // TULPA_BYM2_MIXING_H

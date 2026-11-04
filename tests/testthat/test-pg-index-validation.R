@@ -154,7 +154,7 @@ test_that("the negative-binomial spatial kernel validates the same arguments", {
       adj_list = f$adj_list, n_neighbors = f$n_neighbors,
       n_iter = 20L, n_warmup = 10L, thin = 1L,
       prior_beta_sd = 2.5, prior_sigma_re_scale = 2.5,
-      prior_tau_shape = 1, prior_tau_rate = 1,
+      prior_sigma_spatial_U = 1, prior_sigma_spatial_alpha = 0.1,
       prior_r_shape = 1, prior_r_rate = 1, r_init = 2,
       store_eta = FALSE, verbose = FALSE, n_threads = 1L)
     a[names(ov)] <- ov
@@ -191,7 +191,7 @@ test_that("a design without an intercept column is rejected by the centring kern
       adj_list = f$adj_list, n_neighbors = f$n_neighbors,
       n_iter = 20L, n_warmup = 10L, thin = 1L,
       prior_beta_sd = 2.5, prior_sigma_re_scale = 2.5,
-      prior_tau_shape = 1, prior_tau_rate = 1,
+      prior_sigma_spatial_U = 1, prior_sigma_spatial_alpha = 0.1,
       prior_r_shape = 1, prior_r_rate = 1, r_init = 2,
       store_eta = FALSE, verbose = FALSE, n_threads = 1L)
   }

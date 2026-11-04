@@ -82,8 +82,8 @@ Rcpp::NumericMatrix cpp_gp_field_rows(
     const int m = std::min(nn, n_loc);
     if (m < 1) Rcpp::stop("cpp_gp_field_rows: need at least one neighbour.");
     const tulpa::CovType ct = static_cast<tulpa::CovType>(cov_type);
-    const double jitter    = 1e-6;
-    const double var_floor = 1e-8;
+    const double jitter    = tulpa_linalg::kNngpNugget;
+    const double var_floor = tulpa_linalg::kNngpVarFloor;
 
     // Rows grouped by cell, so each (location, cell) pair is solved once.
     std::vector<std::vector<int>> rows_of(K);

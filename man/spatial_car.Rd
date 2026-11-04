@@ -33,10 +33,9 @@ ICAR (\code{type = "car"}).}
 
 \item{prior_sigma}{Optional PC prior on the field's standard deviation,
 \code{c(U, alpha)} with \eqn{P(\sigma > U) = \alpha}, read by the
-nested-Laplace path (\code{mode = "nested_laplace"}, \code{"structured"} or
-\code{"auto"}), which carries it to the precision axis it integrates. \code{NULL}
-(default) keeps the engine's weakly-informative anchor. A backend that
-does not integrate the field's hyperparameters refuses it.}
+nested-Laplace and sampler paths, carried to the precision for CAR and
+ICAR fields. \code{NULL} uses the engine's default anchor
+\eqn{P(\sigma > 3) = 0.01}.}
 }
 \value{
 A \code{tulpa_spatial} object with \code{type = "car"} (or

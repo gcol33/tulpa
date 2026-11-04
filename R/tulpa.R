@@ -125,6 +125,17 @@
 # named as the block type's `.NL_FAMILY_AXES` row names them, and the PC anchor
 # `prior_sigma = c(U, alpha)`, P(sigma > U) = alpha on the field SD, which the
 # default hyperprior reads off the block (`.hp_axis_default()`).
+.areal_scale_anchor <- function(spatial) {
+  sig <- spatial$prior_sigma %||% .nl_scale_anchor()
+  .check_pc_anchor_pair(sig, "prior_sigma", "areal field")
+  as.numeric(sig)
+}
+
+.areal_sampler_anchors <- function(spatial) {
+  sig <- .areal_scale_anchor(spatial)
+  list(sigma_prior_U = sig[1L], sigma_prior_alpha = sig[2L])
+}
+
 .spatial_spec_to_nl_prior <- function(spatial) {
   type <- tolower(spatial$type)
 
@@ -519,7 +530,7 @@
   Wn  <- adjm * outer(dm, dm)               # D^{-1/2} W D^{-1/2}, symmetric
   eig <- eigen(Wn, symmetric = TRUE, only.values = TRUE)$values
   rb  <- spatial$rho_bounds %||% compute_car_rho_bounds(spatial$adjacency)
-  list(
+  c(list(
     type            = "car_proper",
     spatial_idx     = sp$spatial_idx,
     n_spatial_units = sp$n_spatial_units,
@@ -529,7 +540,7 @@
     adj_eigenvalues = as.numeric(eig),
     rho_lower       = as.numeric(rb["lower"]),
     rho_upper       = as.numeric(rb["upper"])
-  )
+  ), .areal_sampler_anchors(spatial))
 }
 
 
@@ -940,7 +951,12 @@
   if (!identical(input, "nested")) {
     # An SPDE spec's own prior anchors are read by its own integrators.
     sp_nl <- if (!identical(tolower(spatial$type %||% ""), "spde")) spatial
-    stated <- c(.nl_spec_entries_stated(sp_nl),
+    spatial_stated <- .nl_spec_entries_stated(sp_nl)
+    if ((identical(input, "modeldata") || identical(backend, "gibbs")) &&
+        tolower(sp_nl$type %||% "") %in% c("car", "icar", "bym2", "car_proper")) {
+      spatial_stated <- setdiff(spatial_stated, "prior_sigma")
+    }
+    stated <- c(spatial_stated,
                 .nl_spec_entries_stated(temporal))
     if (length(stated)) {
       stop(sprintf(paste0(
@@ -1628,7 +1644,7 @@
           "'nested_laplace'), or fit_spde() for SPDE."),
           backend, sp$type), call. = FALSE)
       }
-      spatial_spec_arg <- list(
+      spatial_spec_arg <- c(list(
         type            = sp$type,
         spatial_idx     = sp$spatial_idx,
         n_spatial_units = sp$n_spatial_units,
@@ -1642,7 +1658,7 @@
         # connected graph.
         node_prec       = if (identical(sp$type, "bym2") && !is.null(sp$node_prec))
           as.numeric(sp$node_prec)
-      )
+      ), .areal_sampler_anchors(spatial))
     }
 
     # Temporal spec (RW1 / RW2 / AR1). The generic eta assembler recombines the
@@ -1992,7 +2008,7 @@
 #'   correlated RE covariance, same condition), `prior_df` / `prior_scale`
 #'   (inverse-Wishart on the RE covariance, `control$re_cov = "gibbs"`),
 #'   `prior_sigma_scale` (half-Cauchy scale on the RE SD for `mode = "gibbs"`),
-#'   and `sigma_re_scale` (half-Cauchy scale on the RE / BYM2 SD for the
+#'   and `sigma_re_scale` (half-Cauchy scale on the RE SD for the
 #'   ModelData samplers). An entry the resolved backend does not read is an
 #'   error naming the backends that do.
 #' @param hyperprior The outer hyperparameter prior, `"proper"` (default) or

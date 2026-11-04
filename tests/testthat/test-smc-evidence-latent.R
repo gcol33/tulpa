@@ -95,7 +95,7 @@ test_that("the ICAR / BYM2 / proper-CAR normalizers make the prior a density", {
     tau <- exp(r[["log_tau_spatial"]])
     phi <- r[grep("^phi_spatial", names(r))]
     lp_beta(r[1:2], sdb) +
-      dgamma(tau, 1, 0.01, log = TRUE) + log(tau) +
+      lp_pc_log_tau(log(tau), 3, 0.01) +
       lmvn_prec(phi, tau * Qaug)
   })
   expect_equal(got$log_prior, unname(want), tolerance = 1e-10)
@@ -116,7 +116,7 @@ test_that("the ICAR / BYM2 / proper-CAR normalizers make the prior a density", {
     phi <- r[grep("^phi_spatial", names(r))]
     tht <- r[grep("^theta_spatial", names(r))]
     lp_beta(r[1:2], sdb) +
-      log(2 / (pi * s_hc)) - log1p((s / s_hc)^2) + ls +
+      log(-log(0.01) / 3) - (-log(0.01) / 3) * s + ls +
       log(rho) + log1p(-rho) +
       lmvn_prec(phi, diag(w) %*% Qaug) + sum(dnorm(tht, log = TRUE))
   })
@@ -146,7 +146,7 @@ test_that("the ICAR / BYM2 / proper-CAR normalizers make the prior a density", {
     rho <- bounds[1] + diff(bounds) * u
     phi <- r[grep("^phi_spatial", names(r))]
     lp_beta(r[1:2], sdb) +
-      dgamma(tau, 1, 0.01, log = TRUE) + log(tau) + log(u) + log1p(-u) +
+      lp_pc_log_tau(log(tau), 3, 0.01) + log(u) + log1p(-u) +
       lmvn_prec(phi, tau * (diag(d) - rho * Wc))
   })
   expect_equal(got$log_prior, unname(want), tolerance = 1e-10)
@@ -521,7 +521,7 @@ test_that("the SMC evidence of an ICAR model matches quadrature", {
   }
   lg <- seq(-6, 12, length.out = 1501)
   lv <- vapply(lg, function(lt) lmarg(phi * diag(n) + sdb^2 * tcrossprod(X) +
-    Sf / exp(lt)), 0) + dgamma(exp(lg), 1, 0.01, log = TRUE) + lg
+    Sf / exp(lt)), 0) + lp_pc_log_tau(lg, 3, 0.01)
   m <- max(lv); exact <- m + log(sum(exp(lv - m)) * diff(lg)[1])
   sp <- c(list(type = "icar", spatial_idx = as.integer(s), n_spatial_units = J),
           adj_csr(W))

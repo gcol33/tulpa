@@ -125,8 +125,8 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
 
             theta_bym2_out = &params[layout.theta_bym2_start];
 
-            // BYM2 Riebler: Half-Cauchy on sigma_total
-            log_post = log_post + log_prior_half_cauchy(log_sigma, data.sigma_re_scale);
+            log_post = log_post + log_prior_log_sigma_pc(
+                log_sigma, data.spatial_sigma_prior_U, data.spatial_sigma_prior_alpha);
 
             // Uniform(0,1) = Beta(1,1) on rho with logit Jacobian:
             // log p(logit_rho) = log(rho) + log(1-rho)
@@ -163,8 +163,8 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             // form is autodiff-differentiable in rho, unlike a per-eval Cholesky.
             T log_tau = params[layout.log_tau_spatial_idx];
             tau_spatial_out = safe_exp(log_tau);
-            log_post = log_post + log_prior_gamma(log_tau, data.tau_spatial_shape,
-                                                  data.tau_spatial_rate);
+            log_post = log_post + log_prior_log_tau_pc(
+                log_tau, data.spatial_sigma_prior_U, data.spatial_sigma_prior_alpha);
 
             // rho in (car_rho_lower, car_rho_upper) via the logit map, with the
             // Uniform-prior + logit Jacobian log p(logit_rho) = log u + log(1-u).
@@ -188,8 +188,8 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             T log_tau = params[layout.log_tau_spatial_idx];
             tau_spatial_out = safe_exp(log_tau);
 
-            // ICAR: Gamma prior on tau
-            log_post = log_post + log_prior_gamma(log_tau, data.tau_spatial_shape, data.tau_spatial_rate);
+            log_post = log_post + log_prior_log_tau_pc(
+                log_tau, data.spatial_sigma_prior_U, data.spatial_sigma_prior_alpha);
 
             // ICAR prior on phi_spatial
             T quad_form = icar_quad_form<T>(phi_spatial_out, data, nullptr);
@@ -221,13 +221,12 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
 
 // The constant compute_spatial_icar_bym2_prior leaves out, so that the two
 // together are a normalized density on the block's parameters.
-//   ICAR       : the Gamma normalizer of tau, and of phi ~ N(0, (tau Q_aug)^-1)
+//   ICAR       : of phi ~ N(0, (tau Q_aug)^-1),
 //                the 0.5 log|Q_aug| - 0.5 J log(2 pi) its 0.5 J log tau omits.
-//   BYM2       : the half-Cauchy normalizer of sigma (the Uniform on rho
-//                carried to its logit is already normalized), of phi ~ N(0,
+//   BYM2       : of phi ~ N(0,
 //                (diag(w) Q_aug)^-1) the 0.5 (sum_i log w_i + log|Q_aug|) -
 //                0.5 J log(2 pi), and of theta ~ N(0, I) the -0.5 J log(2 pi).
-//   proper CAR : the Gamma normalizer of tau, and the 0.5 log|D| - 0.5 J
+//   proper CAR : the 0.5 log|D| - 0.5 J
 //                log(2 pi) of log|tau (D - rho W)| = J log tau + log|D| +
 //                sum_k log(1 - rho mu_k) that the density omits.
 inline double spatial_icar_bym2_prior_log_normalizer(const ModelData& data,
@@ -238,9 +237,7 @@ inline double spatial_icar_bym2_prior_log_normalizer(const ModelData& data,
     if (layout.is_car_proper) {
         double log_det_d = 0.0;
         for (int i = 0; i < J; i++) log_det_d += std::log(double(data.n_neighbors[i]));
-        return log_prior_gamma_log_normalizer(data.tau_spatial_shape,
-                                              data.tau_spatial_rate)
-             + 0.5 * log_det_d + J * unit_normal;
+        return 0.5 * log_det_d + J * unit_normal;
     }
     const double log_pdet = icar_log_pdet(
         J, data.adj_row_ptr.data(), data.adj_col_idx.data(),
@@ -248,12 +245,9 @@ inline double spatial_icar_bym2_prior_log_normalizer(const ModelData& data,
     if (layout.is_bym2) {
         double sum_log_w = 0.0;
         for (double w : data.bym2_node_prec) sum_log_w += std::log(w);
-        return log_prior_half_cauchy_log_normalizer(data.sigma_re_scale)
-             + 0.5 * (sum_log_w + log_pdet) + 2.0 * J * unit_normal;
+        return 0.5 * (sum_log_w + log_pdet) + 2.0 * J * unit_normal;
     }
-    return log_prior_gamma_log_normalizer(data.tau_spatial_shape,
-                                          data.tau_spatial_rate)
-         + 0.5 * log_pdet + J * unit_normal;
+    return 0.5 * log_pdet + J * unit_normal;
 }
 
 } // namespace priors

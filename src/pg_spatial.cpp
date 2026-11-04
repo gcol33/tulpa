@@ -112,15 +112,16 @@ void update_spatial_icar(
 double update_tau_icar(
     const NumericVector& phi,
     const PgIcarPrior& prior,
-    double prior_shape,
-    double prior_rate
+    double tau,
+    double prior_sigma_U,
+    double prior_sigma_alpha
 ) {
   const double quad_form = prior.quad(phi.begin());
 
-  const double post_shape = prior_shape + prior.rank() / 2.0;
-  const double post_rate = prior_rate + quad_form / 2.0;
-
-  return R::rgamma(post_shape, 1.0 / post_rate);
+  double sigma = 1.0 / std::sqrt(tau);
+  pg_update_scale_pc(quad_form, prior.rank(), prior_sigma_U,
+                     prior_sigma_alpha, sigma);
+  return 1.0 / (sigma * sigma);
 }
 
 // ---------------------------------------------------------------------
@@ -238,8 +239,7 @@ void update_spatial_bym2(
   }
 }
 
-// Update rho (mixing proportion) with beta prior via a grid approximation of
-// the Polya-Gamma full conditional.
+// Continuous Beta-prior mixing-weight conditional, sampled on logit(rho).
 double update_rho_bym2(
     const NumericVector& phi_scaled,
     const NumericVector& theta,
@@ -247,85 +247,39 @@ double update_rho_bym2(
     double scale_factor,
     const NumericVector& sum_omega,
     const NumericVector& sum_resid,
+    double rho,
     double alpha,
     double beta
 ) {
-  int J = phi_scaled.size();
-
-  // Evaluate the log-posterior on a grid over rho in (0, 1) and sample.
-  const int n_grid = PG_BYM2_RHO_GRID;
-  NumericVector log_probs(n_grid);
-  NumericVector rho_vals(n_grid);
-
-  for (int k = 0; k < n_grid; k++) {
-    double rho = pg_bym2_rho_node(k);
-    rho_vals[k] = rho;
-
-    double sqrt_rho = bym2_sd_structured(rho);
-    double sqrt_1_rho = bym2_sd_unstructured(rho);
-
-    // Log-likelihood contribution
-    // Polya-Gamma full conditional for rho through u_j(rho): the quadratic
-    // data-precision term and the linear data-fit term. The phi_scaled (scaled
-    // ICAR) and theta (iid) priors do not depend on rho, so there is no
-    // log-determinant term.
-    double log_lik = 0.0;
-    for (int j = 0; j < J; j++) {
-      double u_j = sigma_spatial * (sqrt_rho * phi_scaled[j] * scale_factor + sqrt_1_rho * theta[j]);
-      log_lik += -0.5 * sum_omega[j] * u_j * u_j + sum_resid[j] * u_j;
+  auto log_density = [&](double x) {
+    const double r = x >= 0.0 ? 1.0 / (1.0 + std::exp(-x))
+                              : std::exp(x) / (1.0 + std::exp(x));
+    if (!(r > 0.0 && r < 1.0)) return R_NegInf;
+    double lp = pg_bym2_rho_log_prior(r, alpha, beta) + std::log(r) + std::log1p(-r);
+    const double sr = bym2_sd_structured(r);
+    const double si = bym2_sd_unstructured(r);
+    for (int j = 0; j < phi_scaled.size(); ++j) {
+      const double u = sigma_spatial * (sr * phi_scaled[j] * scale_factor + si * theta[j]);
+      lp += sum_resid[j] * u - 0.5 * sum_omega[j] * u * u;
     }
-
-    double log_prior = pg_bym2_rho_log_kernel(rho, alpha, beta);
-
-    log_probs[k] = log_lik + log_prior;
-  }
-
-  // Normalize and sample
-  double max_log_prob = log_probs[0];
-  for (int k = 1; k < n_grid; k++) {
-    if (log_probs[k] > max_log_prob) max_log_prob = log_probs[k];
-  }
-
-  NumericVector probs(n_grid);
-  double sum_probs = 0.0;
-  for (int k = 0; k < n_grid; k++) {
-    probs[k] = std::exp(log_probs[k] - max_log_prob);
-    sum_probs += probs[k];
-  }
-
-  // Sample from discrete distribution
-  double u = R::runif(0.0, sum_probs);
-  double cumsum = 0.0;
-  for (int k = 0; k < n_grid; k++) {
-    cumsum += probs[k];
-    if (u <= cumsum) {
-      return rho_vals[k];
-    }
-  }
-
-  return rho_vals[n_grid - 1];
+    return lp;
+  };
+  auto uniform = []() { return R::runif(0.0, 1.0); };
+  const double x = slice_univariate(std::log(rho) - std::log1p(-rho), log_density, uniform);
+  return x >= 0.0 ? 1.0 / (1.0 + std::exp(-x)) : std::exp(x) / (1.0 + std::exp(x));
 }
 
 double pg_bym2_rho_log_prior(double rho, double alpha, double beta) {
-  double m = R_NegInf;
-  for (int k = 0; k < PG_BYM2_RHO_GRID; k++) {
-    const double v = pg_bym2_rho_log_kernel(pg_bym2_rho_node(k), alpha, beta);
-    m = (m == R_NegInf) ? v : std::max(m, v) + std::log1p(std::exp(-std::abs(m - v)));
-  }
-  return pg_bym2_rho_log_kernel(rho, alpha, beta) - m;
+  return R::dbeta(rho, alpha, beta, 1);
 }
-
 // Update sigma_spatial from its Polya-Gamma full conditional given the
 // standardized BYM2 field v_j = sqrt(rho)*phi_scaled_j*scale_factor +
-// sqrt(1-rho)*theta_j, where u_j = sigma * v_j. The convolution u is
-// deterministic in (phi_scaled, theta, sigma, rho), so sigma's conditional
-// flows through the likelihood (as the rho update does), NOT through an iid
-// half-Cauchy on u. The PG likelihood is Gaussian in sigma:
+// sqrt(1-rho)*theta_j, where u_j = sigma * v_j. The standardized field is
+// fixed in this conditional. The PG likelihood is Gaussian in sigma:
 //   exp(sigma * A - 0.5 * sigma^2 * B),  A = sum_j sum_resid_j v_j,
 //                                        B = sum_j sum_omega_j v_j^2.
-// A half-normal N+(0, scale^2) prior adds precision 1/scale^2 and mean 0, so
-// the posterior is N(A/(B + 1/scale^2), 1/(B + 1/scale^2)) truncated to
-// sigma > 0.
+// The PC prior contributes -lambda sigma, giving a positive-truncated
+// N((A-lambda)/B, 1/B) conditional.
 double update_sigma_spatial_bym2(
     const NumericVector& phi_scaled,
     const NumericVector& theta,
@@ -333,7 +287,8 @@ double update_sigma_spatial_bym2(
     double scale_factor,
     const NumericVector& sum_omega,
     const NumericVector& sum_resid,
-    double prior_scale
+    double prior_sigma_U,
+    double prior_sigma_alpha
 ) {
   int J = phi_scaled.size();
   double sqrt_rho = bym2_sd_structured(rho);
@@ -346,13 +301,9 @@ double update_sigma_spatial_bym2(
     B += sum_omega[j] * v_j * v_j;
   }
 
-  double prior_prec = (prior_scale > 0.0) ? 1.0 / (prior_scale * prior_scale) : 0.0;
-  double post_prec = B + prior_prec;
-  if (post_prec <= 1e-12) post_prec = 1e-12;
-  double post_mean = A / post_prec;
-  double post_sd = 1.0 / std::sqrt(post_prec);
-
-  return rtruncnorm_pos(post_mean, post_sd);
+  const double lambda = pc_rate(prior_sigma_U, prior_sigma_alpha);
+  if (B == 0.0) return R::rexp(1.0 / lambda);
+  return rtruncnorm_pos(A - lambda, B);
 }
 
 } // namespace tulpa

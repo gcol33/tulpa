@@ -18,8 +18,6 @@ struct TemporalData {
     int n_temporal_params = 0;          // Total temporal parameters
     bool cyclic = false;                // Cyclic RW flag
     bool shared = true;                 // shared across processes
-    double tau_temporal_shape = 1.0;    // Gamma shape for temporal precision
-    double tau_temporal_rate = 0.01;    // Gamma rate for temporal precision
 };
 
 // ============================================================================

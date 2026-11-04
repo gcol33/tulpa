@@ -155,8 +155,8 @@ extern "C" void tulpa_pg_negbin_spatial_gibbs_impl(
     int thin,
     double prior_beta_sd,
     double prior_sigma_re_scale,
-    double prior_tau_shape,
-    double prior_tau_rate,
+    double prior_sigma_spatial_U,
+    double prior_sigma_spatial_alpha,
     double prior_r_shape,
     double prior_r_rate,
     double r_init,
@@ -187,7 +187,7 @@ extern "C" void tulpa_pg_negbin_spatial_gibbs_impl(
         adj_list, nn,
         n_iter, n_warmup, thin,
         prior_beta_sd, prior_sigma_re_scale,
-        prior_tau_shape, prior_tau_rate,
+        prior_sigma_spatial_U, prior_sigma_spatial_alpha,
         prior_r_shape, prior_r_rate, r_init,
         store_eta != 0, verbose != 0, n_threads
     );

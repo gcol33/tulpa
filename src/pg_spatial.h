@@ -57,14 +57,13 @@ void update_spatial_icar(
     double& removed_mean
 );
 
-// Update spatial precision tau with a gamma prior. The centred field's density
-// is tau^((J - 1)/2) exp(-tau phi'Qt phi / 2) (PgIcarPrior), so
-//   tau | phi ~ Gamma(shape + (J - 1)/2, rate + phi'Qt phi / 2).
+// Update spatial precision under the PC prior on sigma = 1/sqrt(tau).
 double update_tau_icar(
     const Rcpp::NumericVector& phi,
     const PgIcarPrior& prior,
-    double prior_shape,
-    double prior_rate
+    double tau,
+    double prior_sigma_U,
+    double prior_sigma_alpha
 );
 
 // ---------------------------------------------------------------------
@@ -98,26 +97,10 @@ void update_spatial_bym2(
     double& removed_mean              // out: field level removed by centering phi
 );
 
-// The BYM2 mixing weight is drawn on a fixed grid of cell midpoints over
-// (0, 1), so its prior is the Beta(alpha, beta) density restricted to those
-// nodes and renormalized there.
-constexpr int PG_BYM2_RHO_GRID = 20;
-
-inline double pg_bym2_rho_node(int k) {
-  return (k + 0.5) / PG_BYM2_RHO_GRID;
-}
-
-// Unnormalized Beta(alpha, beta) log kernel at rho.
-inline double pg_bym2_rho_log_kernel(double rho, double alpha, double beta) {
-  return (alpha - 1.0) * bym2_log_rho(rho) + (beta - 1.0) * bym2_log1m_rho(rho);
-}
-
-// Log prior mass of a grid node rho under that restricted Beta.
+// Log density of the continuous Beta prior on the mixing weight.
 double pg_bym2_rho_log_prior(double rho, double alpha, double beta);
 
-// Update rho (mixing proportion) with beta prior
-// Uses grid search approach
-// rho ~ Beta(alpha, beta)
+// Slice update of the Polya-Gamma full conditional on logit(rho).
 double update_rho_bym2(
     const Rcpp::NumericVector& phi_scaled,
     const Rcpp::NumericVector& theta,
@@ -125,12 +108,12 @@ double update_rho_bym2(
     double scale_factor,
     const Rcpp::NumericVector& sum_omega,
     const Rcpp::NumericVector& sum_resid,
+    double rho,
     double alpha,
     double beta
 );
-
 // Update sigma_spatial from the BYM2 Polya-Gamma full conditional (Gaussian in
-// sigma via the standardized field), half-normal prior.
+// sigma via the standardized field), PC prior on sigma.
 double update_sigma_spatial_bym2(
     const Rcpp::NumericVector& phi_scaled,
     const Rcpp::NumericVector& theta,
@@ -138,7 +121,8 @@ double update_sigma_spatial_bym2(
     double scale_factor,
     const Rcpp::NumericVector& sum_omega,
     const Rcpp::NumericVector& sum_resid,
-    double prior_scale
+    double prior_sigma_U,
+    double prior_sigma_alpha
 );
 
 } // namespace tulpa

@@ -15,6 +15,7 @@
 #include "linalg_fast.h"   // shared small-dense Cholesky / NNGP solve core
 #include "omp_threads.h"   // tulpa_omp_team_size_req, tulpa_parallel_for
 #include "pc_prior.h"      // tulpa::log_prior_sigma2_pc
+#include "slice_univariate.h"
 #include "tulpa/cov_kernel.h"  // cov_value: the one kernel per cov_type code
 #include "glmm_family_elt.h"     // glmm_elt: the one GLMM family density
 
@@ -562,7 +563,8 @@ inline void pg_update_scale_halfcauchy(const Rcpp::NumericVector& effects,
 // P(sigma > U) = alpha. Returns the log density of sigma2 = sigma^2 including
 // the change-of-variables Jacobian.
 inline void pg_check_pc_prior(double U, double alpha, const char* name) {
-  if (!(U > 0.0)) {
+  if (pc_anchors_valid(U, alpha)) return;
+  if (!std::isfinite(U) || !(U > 0.0)) {
     Rcpp::stop("`prior_sigma_%s_U` must be > 0; got %g.", name, U);
   }
   if (!(alpha > 0.0 && alpha < 1.0)) {
@@ -574,6 +576,23 @@ inline void pg_check_pc_prior(double U, double alpha, const char* name) {
 inline double pg_log_prior_sigma2_pc(double sigma2, double U, double alpha) {
   if (!(sigma2 > 0.0)) return R_NegInf;
   return log_prior_sigma2_pc<double>(sigma2, U, alpha);
+}
+
+// Full conditional of a Gaussian field's SD with an exponential PC prior,
+// on log(sigma): (1-rank) log(sigma) - quad/(2 sigma^2) - lambda sigma.
+inline void pg_update_scale_pc(double quad, int rank, double U, double alpha,
+                                double& sigma) {
+  auto log_density = [&](double x) {
+    return log_prior_log_sigma_pc<double>(x, U, alpha) - rank * x -
+        0.5 * quad * std::exp(-2.0 * x);
+  };
+  auto uniform = []() { return R::runif(0.0, 1.0); };
+  sigma = std::exp(slice_univariate(std::log(sigma), log_density, uniform));
+}
+
+inline double pg_temporal_rho_log_prior(double rho, double a, double b) {
+  if (!(rho > -1.0 && rho < 1.0)) return R_NegInf;
+  return R::dbeta(0.5 * (rho + 1.0), a, b, 1) - std::log(2.0);
 }
 
 // ============================================================================
@@ -920,24 +939,26 @@ inline void pg_nngp_level_terms(const PgNngpScale& sc, double& prec_field,
   }
 }
 
-// Draw from N(mean, sd^2) truncated to (0, inf) (Robert 1995). Used for the
-// Gaussian full conditional of a positive scale parameter.
-inline double rtruncnorm_pos(double mean, double sd) {
-  double alpha = -mean / sd;   // lower truncation on the standardized scale
-  double z;
-  if (alpha <= 0.0) {
-    // Naive rejection from the standard normal.
-    do { z = R::norm_rand(); } while (z < alpha);
-  } else {
-    // One-sided tail: shifted-exponential proposal with acceptance.
-    double lam = 0.5 * (alpha + std::sqrt(alpha * alpha + 4.0));
-    while (true) {
-      double zp = alpha - std::log(R::unif_rand()) / lam;
-      double acc = std::exp(-0.5 * (zp - lam) * (zp - lam));
-      if (R::unif_rand() <= acc) { z = zp; break; }
-    }
+// Positive Gaussian density exp(linear*x - precision*x^2/2). Robert (1995),
+// Proposition 2.3, in physical units: the exponential rate solves
+// rate*(rate+linear) = precision. This evaluates the positive tail without
+// subtracting its truncation point from a large standardized normal draw.
+inline double rtruncnorm_pos(double linear, double precision) {
+  const double root_precision = std::sqrt(precision);
+  if (linear >= 0.0) {
+    const double mean = linear / precision;
+    const double sd = 1.0 / root_precision;
+    double x;
+    do { x = R::rnorm(mean, sd); } while (x <= 0.0);
+    return x;
   }
-  return mean + sd * z;
+  const double a = -linear;
+  const double rate = 0.5 * a + 0.5 * std::hypot(a, 2.0 * root_precision);
+  for (;;) {
+    const double x = R::rexp(1.0 / rate);
+    const double d = root_precision * (x - 1.0 / rate);
+    if (std::log(R::unif_rand()) <= -0.5 * d * d) return x;
+  }
 }
 
 // Draw from N(M^{-1} b, M^{-1}) for a symmetric positive-definite M held

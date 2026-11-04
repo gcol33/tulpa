@@ -409,12 +409,12 @@ cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_wa
     .Call(`_tulpa_cpp_pg_binomial_gibbs`, y, n, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, store_eta, verbose, n_threads)
 }
 
-cpp_pg_binomial_gibbs_spatial <- function(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_tau_shape = 1.0, prior_tau_rate = 0.01, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
-    .Call(`_tulpa_cpp_pg_binomial_gibbs_spatial`, y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_tau_shape, prior_tau_rate, store_eta, verbose, n_threads)
+cpp_pg_binomial_gibbs_spatial <- function(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_sigma_spatial_U = 3.0, prior_sigma_spatial_alpha = 0.01, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
+    .Call(`_tulpa_cpp_pg_binomial_gibbs_spatial`, y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_spatial_U, prior_sigma_spatial_alpha, store_eta, verbose, n_threads)
 }
 
-cpp_pg_binomial_gibbs_bym2 <- function(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, scale_factor, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_sigma_spatial_scale = 2.5, prior_rho_alpha = 0.5, prior_rho_beta = 0.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L, node_prec_nullable = NULL) {
-    .Call(`_tulpa_cpp_pg_binomial_gibbs_bym2`, y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, scale_factor, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_spatial_scale, prior_rho_alpha, prior_rho_beta, store_eta, verbose, n_threads, node_prec_nullable)
+cpp_pg_binomial_gibbs_bym2 <- function(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, scale_factor, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_sigma_spatial_U = 3.0, prior_sigma_spatial_alpha = 0.01, prior_rho_alpha = 1.0, prior_rho_beta = 1.0, store_eta = FALSE, verbose = TRUE, n_threads = 1L, node_prec_nullable = NULL) {
+    .Call(`_tulpa_cpp_pg_binomial_gibbs_bym2`, y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, scale_factor, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_spatial_U, prior_sigma_spatial_alpha, prior_rho_alpha, prior_rho_beta, store_eta, verbose, n_threads, node_prec_nullable)
 }
 
 cpp_pg_binomial_gibbs_gp <- function(y, n, X, re_group, n_re_groups, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp_init, phi_gp_init, cov_type, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_sigma_gp_U = 1.0, prior_sigma_gp_alpha = 0.01, prior_phi_lower = 0.01, prior_phi_upper = 10.0, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
@@ -429,20 +429,20 @@ cpp_pg_binomial_gibbs_multiscale_gp <- function(y, n, X, re_group, n_re_groups, 
     .Call(`_tulpa_cpp_pg_binomial_gibbs_multiscale_gp`, y, n, X, re_group, n_re_groups, coords, nn_idx_local, nn_dist_local, nn_order_local, nn_local, nn_idx_regional, nn_dist_regional, nn_order_regional, nn_regional, n_spatial, sigma2_local_init, phi_local_init, sigma2_regional_init, phi_regional_init, cov_type, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_local_U, prior_sigma_local_alpha, prior_phi_local_lower, prior_phi_local_upper, prior_sigma_regional_U, prior_sigma_regional_alpha, prior_phi_regional_lower, prior_phi_regional_upper, store_eta, verbose, n_threads)
 }
 
-cpp_pg_binomial_gibbs_rsr <- function(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, rsr_projection, rsr_n, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_tau_shape = 1.0, prior_tau_rate = 0.01, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
-    .Call(`_tulpa_cpp_pg_binomial_gibbs_rsr`, y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, rsr_projection, rsr_n, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_tau_shape, prior_tau_rate, store_eta, verbose, n_threads)
+cpp_pg_binomial_gibbs_rsr <- function(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, rsr_projection, rsr_n, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_sigma_spatial_U = 3.0, prior_sigma_spatial_alpha = 0.01, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
+    .Call(`_tulpa_cpp_pg_binomial_gibbs_rsr`, y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, rsr_projection, rsr_n, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_spatial_U, prior_sigma_spatial_alpha, store_eta, verbose, n_threads)
 }
 
-cpp_pg_binomial_gibbs_temporal <- function(y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_sigma_trend_scale = 1.0, prior_sigma_seasonal_scale = 1.0, prior_sigma_short_scale = 1.0, rho_short_init = 0.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
-    .Call(`_tulpa_cpp_pg_binomial_gibbs_temporal`, y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_trend_scale, prior_sigma_seasonal_scale, prior_sigma_short_scale, rho_short_init, store_eta, verbose, n_threads)
+cpp_pg_binomial_gibbs_temporal <- function(y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_re_scale = 2.5, prior_sigma_trend_U = 1.0, prior_sigma_trend_alpha = 0.01, prior_sigma_seasonal_U = 1.0, prior_sigma_seasonal_alpha = 0.01, prior_sigma_short_U = 1.0, prior_sigma_short_alpha = 0.01, rho_short_init = 0.5, prior_rho_a = 2.0, prior_rho_b = 2.0, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
+    .Call(`_tulpa_cpp_pg_binomial_gibbs_temporal`, y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_trend_U, prior_sigma_trend_alpha, prior_sigma_seasonal_U, prior_sigma_seasonal_alpha, prior_sigma_short_U, prior_sigma_short_alpha, rho_short_init, prior_rho_a, prior_rho_b, store_eta, verbose, n_threads)
 }
 
 cpp_pg_negbin_gibbs <- function(y, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, prior_r_shape, prior_r_rate, r_init, store_eta, verbose, n_threads) {
     .Call(`_tulpa_cpp_pg_negbin_gibbs`, y, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, prior_r_shape, prior_r_rate, r_init, store_eta, verbose, n_threads)
 }
 
-cpp_pg_negbin_gibbs_spatial <- function(y, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_tau_shape, prior_tau_rate, prior_r_shape, prior_r_rate, r_init, store_eta, verbose, n_threads) {
-    .Call(`_tulpa_cpp_pg_negbin_gibbs_spatial`, y, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_tau_shape, prior_tau_rate, prior_r_shape, prior_r_rate, r_init, store_eta, verbose, n_threads)
+cpp_pg_negbin_gibbs_spatial <- function(y, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_spatial_U, prior_sigma_spatial_alpha, prior_r_shape, prior_r_rate, r_init, store_eta, verbose, n_threads) {
+    .Call(`_tulpa_cpp_pg_negbin_gibbs_spatial`, y, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_spatial_U, prior_sigma_spatial_alpha, prior_r_shape, prior_r_rate, r_init, store_eta, verbose, n_threads)
 }
 
 cpp_rpg1 <- function(z) {

@@ -216,14 +216,15 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
     int thin = 1,
     Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd = R_NilValue,
     double prior_sigma_re_scale = 2.5,
-    double prior_tau_shape = 1.0,
-    double prior_tau_rate = 0.01,
+    double prior_sigma_spatial_U = 3.0,
+    double prior_sigma_spatial_alpha = 0.01,
     bool store_eta = false,
     bool verbose = true,
     int n_threads = 1
 ) {
     const double prior_beta_sd_value =
         tulpa::read_sigma_beta(prior_beta_sd, "prior_beta_sd");
+  tulpa::pg_check_pc_prior(prior_sigma_spatial_U, prior_sigma_spatial_alpha, "spatial");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
   tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
                          prior_sigma_re_scale, n_threads, store_eta);
@@ -268,7 +269,7 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
     C.absorb_level(icar_mean);
 
     // 7. Update tau (spatial precision)
-    tau = tulpa::update_tau_icar(phi, icar, prior_tau_shape, prior_tau_rate);
+    tau = tulpa::update_tau_icar(phi, icar, tau, prior_sigma_spatial_U, prior_sigma_spatial_alpha);
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
@@ -284,7 +285,7 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
           C.log_joint_common(y, n, spatial_contrib.begin(), prior_beta_sd_value,
                              prior_sigma_re_scale) +
           tulpa::pg_log_icar(phi.begin(), icar, tau) +
-          tulpa::pg_log_gamma(tau, prior_tau_shape, prior_tau_rate);
+          tulpa::log_prior_tau_pc<double>(tau, prior_sigma_spatial_U, prior_sigma_spatial_alpha);
       save_idx++;
     }
 

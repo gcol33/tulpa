@@ -203,7 +203,7 @@ namespace tulpa {
 // ModelData four times, and the nested-Laplace HSGP shims take the kernel code
 // as an argument.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 51;
+constexpr int TULPA_ABI_VERSION = 52;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -655,8 +655,8 @@ struct ModelData {
     double sigma_re_scale = 1.0;
     double phi_prior_shape = 1.0;
     double phi_prior_rate = 0.01;
-    double tau_spatial_shape = 1.0;
-    double tau_spatial_rate = 0.01;
+    double spatial_sigma_prior_U = 3.0;
+    double spatial_sigma_prior_alpha = 0.01;
     // AR1 autocorrelation prior: a Beta(a, b) on u = (rho + 1)/2. The default
     // (1, 1) is the Uniform(-1, 1) prior; the kernel adds a*log(u) + b*log(1-u)
     // (the Beta density combined with the logit change-of-variables).
