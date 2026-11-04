@@ -1926,6 +1926,9 @@
 #'   `TRUE`. Where that backend cannot carry the call (observation weights,
 #'   zero inflation, `phi2`, a sampler-only field) the selection stands and
 #'   `phi` is conditioned on, with a warning.
+#'   Inline `spatial(graph =, formula =)` and `temporal(formula =)` fields
+#'   also use that joint backend under `mode = "laplace"`: an omitted `phi`
+#'   is integrated and a supplied `phi` is conditioned on.
 #'   `"eb"` estimates the random-effect covariance(s) by empirical Bayes instead
 #'   of conditioning on `sigma_re` (see [tulpa_eb()]); it is opt-in by name,
 #'   because its intervals are conditional on that estimate rather than marginal

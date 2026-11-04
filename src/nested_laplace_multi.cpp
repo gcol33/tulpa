@@ -84,19 +84,27 @@ std::shared_ptr<std::vector<tulpa::ARows>> read_single_arm_projector(
     return rows;
 }
 
-// Identification of a projected intrinsic field, placed where
-// tulpa::projected_level() reads its level: removed with no fold when the
+// Identification of an intrinsic field. A varying coefficient keeps its level
+// under the augmented prior because it has no declared fixed-effect fold.
+// For a projected field, tulpa::projected_level() reads its level: removed with no fold when the
 // projector annihilates the constant, folded into the intercept when the
 // constant reaches the predictor as the intercept column, otherwise left to
 // the precision augmentation. Either centring carries the level as the hard
 // constraint the gathered field's does.
-void centre_projected_intrinsic_level(tulpa::LatentBlock& blk,
-                                      const std::vector<tulpa::ARows>& rows,
-                                      const Rcpp::NumericMatrix& X,
-                                      const std::vector<double>& node_prec =
-                                          std::vector<double>()) {
+void centre_single_arm_intrinsic_level(
+    tulpa::LatentBlock& blk, const Rcpp::List& bs,
+    const std::shared_ptr<std::vector<tulpa::ARows>>& projector,
+    const Rcpp::NumericMatrix& X,
+    const std::vector<double>& node_prec = std::vector<double>()
+) {
+    if (bs.containsElementNamed("svc_weight") &&
+        !Rf_isNull(bs["svc_weight"])) return;
+    if (!projector) {
+        tulpa::centre_intrinsic_level(blk, node_prec);
+        return;
+    }
     const tulpa::ProjectedLevel level = tulpa::projected_level(
-        rows, [&X](int /*k*/, int i, double& x0) {
+        *projector, [&X](int /*k*/, int i, double& x0) {
             if (X.ncol() == 0 || i >= X.nrow()) return false;
             x0 = X(i, 0);
             return true;
@@ -181,12 +189,8 @@ int build_blocks_of_type(
             block, start, size,
             [theta_grid, axis0](int k) { return theta_grid(k, axis0); },
             adj_rp, adj_ci, n_nbr, sp_part);
-        if (projector) {
-            tulpa::apply_block_projector(block, projector);
-            centre_projected_intrinsic_level(block, *projector, X);
-        } else {
-            tulpa::centre_intrinsic_level(block);
-        }
+        if (projector) tulpa::apply_block_projector(block, projector);
+        centre_single_arm_intrinsic_level(block, bs, projector, X);
         blocks.push_back(block);
         return start + size;
     }
@@ -236,12 +240,8 @@ int build_blocks_of_type(
         tulpa::set_icar_block_priors(
             phi_block, phi_start, size, [](int) { return 1.0; },
             adj_rp, adj_ci, n_nbr, sp_part, node_prec);
-        if (projector) {
-            tulpa::apply_block_projector(phi_block, projector);
-            centre_projected_intrinsic_level(phi_block, *projector, X, node_prec);
-        } else {
-            tulpa::centre_intrinsic_level(phi_block, node_prec);
-        }
+        if (projector) tulpa::apply_block_projector(phi_block, projector);
+        centre_single_arm_intrinsic_level(phi_block, bs, projector, X, node_prec);
         blocks.push_back(phi_block);
 
         tulpa::LatentBlock theta_block;
@@ -421,12 +421,8 @@ int build_blocks_of_type(
             block, type, start, /*n_groups=*/1, size,
             [theta_grid, axis0](int k) { return theta_grid(k, axis0); },
             [](int) { return 0.0; }, cyclic);
-        if (projector) {
-            tulpa::apply_block_projector(block, projector);
-            centre_projected_intrinsic_level(block, *projector, X);
-        } else {
-            tulpa::centre_intrinsic_level(block);
-        }
+        if (projector) tulpa::apply_block_projector(block, projector);
+        centre_single_arm_intrinsic_level(block, bs, projector, X);
         blocks.push_back(block);
         return start + size;
     }

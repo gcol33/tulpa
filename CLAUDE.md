@@ -642,9 +642,13 @@ An unsupplied residual VARIANCE takes the same rule (gcol33/tulpa#1068): a
 gaussian, lognormal, censored or truncated response fitted with `phi` left out
 under `auto` / `structured` / a nested-Laplace mode routes to the one-arm joint
 door (`nested_laplace_joint`, `R/tulpa_joint_arm.R`), whose `phi_y` axis is
-placed and refined like a field SD axis; `mode = "laplace"`, the samplers and
-any call the joint door cannot carry (weights, zero inflation, `phi2`, a
-sampler-only field) still condition at 1 with a warning.
+placed and refined like a field SD axis. Inline `spatial(graph =, formula =)`
+and `temporal(formula =)` fields always use that joint nested-Laplace door,
+including under `mode = "laplace"`: they integrate an omitted `phi` and
+condition on a supplied one. Censored and truncated responses follow the same
+rule. A call that reaches the conditional Laplace backend, a sampler, or a
+call the joint door cannot carry (weights, zero inflation, `phi2`, a
+sampler-only field) conditions at 1 with a warning when `phi` is omitted.
 
 ### Generic S3 Methods and Diagnostics
 

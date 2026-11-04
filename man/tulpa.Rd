@@ -98,6 +98,9 @@ mode; \code{fit$phi} is then its posterior mean and \code{fit$phi_estimated} is
 \code{TRUE}. Where that backend cannot carry the call (observation weights,
 zero inflation, \code{phi2}, a sampler-only field) the selection stands and
 \code{phi} is conditioned on, with a warning.
+Inline \code{spatial(graph =, formula =)} and \code{temporal(formula =)} fields
+also use that joint backend under \code{mode = "laplace"}: an omitted \code{phi}
+is integrated and a supplied \code{phi} is conditioned on.
 \code{"eb"} estimates the random-effect covariance(s) by empirical Bayes instead
 of conditioning on \code{sigma_re} (see \code{\link[=tulpa_eb]{tulpa_eb()}}); it is opt-in by name,
 because its intervals are conditional on that estimate rather than marginal
