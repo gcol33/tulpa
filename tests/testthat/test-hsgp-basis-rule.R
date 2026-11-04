@@ -270,3 +270,18 @@ test_that("held-out coverage of a rough field reaches nominal", {
   }, numeric(1))
   expect_gte(mean(cov), 0.88)
 })
+.hsgp_upper_miss <- function(kernel) {
+  list(holds = c(lower = TRUE, upper = FALSE), kernel = kernel,
+       window = c(lo = .1, hi = 2), lengthscale = c(mean = 1),
+       lengthscale_hi = c(mean = 3), capped = FALSE,
+       auto = c(m = FALSE, c = FALSE), m = 10L, c = 2)
+}
+
+test_that("a fixed HSGP boundary miss has a readable basis diagnostic", {
+  for (kernel in c("squared_exponential", "matern32", "matern52")) {
+    note <- tulpa:::.hsgp_basis_note(.hsgp_upper_miss(kernel))
+    expect_type(note, "character")
+    expect_length(note, 1L)
+    expect_match(note, "2-D boundary variance criterion")
+  }
+})

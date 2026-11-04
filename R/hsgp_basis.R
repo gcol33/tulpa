@@ -595,8 +595,7 @@
   } else if (low && !chk$auto[["m"]]) {
     "; refit with a larger `m`, or leave it unset so the fit chooses it"
   } else if (!low) {
-    sprintf("; a larger boundary factor (with the `m` Eq. %d asks for) covers it",
-            eq[["m"]])
+    "; a larger boundary factor and corresponding basis size cover it"
   } else ""
   sprintf("HSGP basis (%s kernel, m = %d per dimension, c = %.2f) %s%s.",
           kinfo$label, chk$m, chk$c, what, fix)
