@@ -242,11 +242,12 @@ tulpa_laplace <- function(y, n_trials, X,
     # is drawn (`.field_cell_solve()`): the registry kernel of the block the
     # conditional kernel builds, on a one-row grid at the hyperparameters it
     # fixed. The registry kernels take no observation weights.
+    # A projected block is read by the multi-block driver alone.
     if (is.null(weights) && !identical(spatial$type, "spde") &&
         spatial$type %in% c(.NL_FRONTDOOR_AREAL, "gp", "hsgp")) {
       blk <- .spatial_spec_to_nl_prior(spatial)
       result$field_solve <- .nl_field_solve_record(
-        "registry",
+        if (.nl_block_is_projected(blk)) "multi" else "registry",
         .nl_kernel_args(y = y, n_trials = n_trials, X = X, offset = offset,
                         re_idx = re_idx, n_re_groups = n_re_groups,
                         sigma_re = sigma_re, family = family, phi = phi,
@@ -356,7 +357,9 @@ tulpa_laplace <- function(y, n_trials, X,
 
   # Marginal H_beta for spatial-field Laplace via Schur on the joint Hessian.
   # See .marginal_H_beta_spde() / .marginal_H_beta_gp().
-  if (return_hessian && !is.null(result$mode) && !is.null(spatial)) {
+  # A restricted field's H_beta comes with its multi-block cell.
+  if (return_hessian && !is.null(result$mode) && !is.null(spatial) &&
+      !isTRUE(spatial$rsr)) {
     if (identical(spatial$type, "spde")) {
       range_val <- result$range %||% spatial$prior_range[1]
       sigma_val <- result$sigma %||% spatial$prior_sigma[1]
@@ -843,16 +846,6 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
                                      weights = NULL, beta_prior = NULL) {
 
   spatial_type <- spatial$type
-  # The conditional kernels gather the field at each row's unit or location;
-  # none applies a restriction's projector, so a restricted field would be
-  # fitted as the plain one while the spec still reports the restriction.
-  if (isTRUE(spatial$rsr) || identical(tolower(spatial_type %||% ""), "rsr")) {
-    stop("A restricted field (spatial_rsr()) is fit by nested Laplace, whose ",
-         "multi-block driver reads the field through its projector; the ",
-         "conditional Laplace kernels fit the unrestricted field. Use ",
-         "tulpa(..., mode = 'nested_laplace') or tulpa_nested_laplace().",
-         call. = FALSE)
-  }
   if (!is.null(beta_prior) && !identical(spatial_type, "spde")) {
     stop(sprintf(paste0(
       "`beta_prior` is not supported on the spatial Laplace path for a '%s' ",
@@ -865,6 +858,22 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
   # The two kernels called directly below take the SD for the variance
   # families; the `laplace_*_at()` helpers convert at their own kernel call.
   phi_kernel <- .phi_to_kernel(family, phi)
+
+  # The conditional kernels gather the field at each row's unit or location;
+  # a restricted field enters through its projector, which the multi-block
+  # driver reads.
+  if (isTRUE(spatial$rsr)) {
+    if (!is.null(weights)) {
+      stop("Observation `weights` are not read by the multi-block driver a ",
+           "restricted field (spatial_rsr()) is solved by; drop `weights`.",
+           call. = FALSE)
+    }
+    return(laplace_rsr_at(
+      y = y, n_trials = n_trials, X = X, spatial = spatial,
+      family = family, phi = phi,
+      re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+      max_iter = max_iter, tol = tol, n_threads = n_threads, offset = offset))
+  }
 
   if (spatial_type %in% c("icar", "car")) {
     adj <- spatial$adjacency
@@ -957,6 +966,66 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
     stop(sprintf("Spatial type '%s' not yet supported in Laplace", spatial_type),
          call. = FALSE)
   }
+}
+
+
+# The hyperparameters a conditional-Laplace spatial fit holds its field at:
+# the values its kernel was run at (recorded on the fit `fit` where the kernel
+# takes them from the spec), named as the field block's outer-grid axes. NULL
+# for a field the conditional door does not fix this way.
+.laplace_field_theta <- function(sp, fit = list()) {
+  switch(tolower(sp$type %||% ""),
+    gp   = c(sigma2 = fit$sigma2_gp %||% sp$sigma2_gp %||% 1,
+             phi_gp = fit$phi_gp %||% sp$phi_gp %||% 1),
+    hsgp = c(sigma2 = fit$sigma2 %||% sp[["sigma2"]] %||% 1,
+             lengthscale = fit$lengthscale %||% sp[["lengthscale"]] %||% 1),
+    icar = , car = c(tau = 1),
+    bym2 = c(sigma = 1, rho = 0.5),
+    car_proper = c(tau = fit$tau %||% sp[["tau"]] %||% 1,
+                   rho = fit$rho %||% sp[["rho"]] %||%
+                     mean(sp[["rho_bounds"]] %||% c(0, 1))),
+    NULL)
+}
+
+# A restricted field (spatial_rsr()) at the conditional door's fixed
+# hyperparameters (`.laplace_field_theta()`). Observation i receives
+# (P z)[unit_i], P the projector orthogonal to the restricted design, and the
+# multi-block driver reads the field through that projector
+# (block_projector.h), so the fit is that driver's solve on a one-row grid at
+# those hyperparameters: the nested restricted fit evaluated at one point. The
+# mode is [beta | random effects | z]; H_beta is the marginal fixed-effect
+# precision of that cell under the inner Gaussian's constraint.
+laplace_rsr_at <- function(y, n_trials, X, spatial, family = "binomial",
+                           phi = 1.0, re_idx = NULL, n_re_groups = 0L,
+                           sigma_re = 1.0, max_iter = 100L, tol = 1e-6,
+                           n_threads = 1L, offset = NULL) {
+  theta <- .laplace_field_theta(spatial)
+  if (is.null(theta)) {
+    stop(sprintf("A restricted '%s' field is not fitted by conditional Laplace.",
+                 spatial$type), call. = FALSE)
+  }
+  blk <- .spatial_spec_to_nl_prior(spatial)
+  for (nm in names(theta)) blk[[paste0(nm, "_grid")]] <- theta[[nm]]
+  cargs <- .nl_kernel_args(
+    y = y, n_trials = n_trials, X = X, offset = offset,
+    re_idx = re_idx %||% rep(0L, length(y)), n_re_groups = n_re_groups,
+    sigma_re = sigma_re, family = family, phi = phi, max_iter = max_iter,
+    tol = tol, n_threads = n_threads, store_Q = TRUE, fitted_var = FALSE)
+  res <- .nl_dispatch_multi(cargs, list(blk),
+                            theta_grid_override = matrix(theta, nrow = 1L))
+  res <- .nl_attach_grid_hessians(res, ncol(X))
+  out <- list(mode = as.numeric(res$modes[1L, ]),
+              log_marginal = as.numeric(res$log_marginal[1L]),
+              converged = isTRUE(as.logical(res$converged[1L] %||% TRUE)),
+              n_iter = as.integer(res$n_iter[1L] %||% NA_integer_),
+              H_beta = res$grid_hessians[[1L]])
+  if (identical(tolower(spatial$type), "gp")) {
+    out$sigma2_gp <- theta[["sigma2"]]
+    out$phi_gp <- theta[["phi_gp"]]
+  } else if (identical(tolower(spatial$type), "car_proper")) {
+    out[names(theta)] <- as.list(theta)
+  }
+  out
 }
 
 

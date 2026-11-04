@@ -3187,18 +3187,21 @@ tulpa <- function(formula, data,
   # kernels that read $rsr_projection (cpp_pg_binomial_gibbs_rsr() on an
   # adjacency, cpp_pg_binomial_gibbs_gp_rsr() on an NNGP field) and by the
   # nested-Laplace multi-block driver, which reads it as the block's
-  # projector. The spec keeps its underlying $type for every other
-  # consumer, so the remaining backends would fit the PLAIN (unprojected) field
-  # while still reporting $spatial$rsr = TRUE (gcol33/tulpa#792). Checked after
-  # every redirect, on the backend that will run.
+  # projector -- on a grid, or at the conditional door's fixed
+  # hyperparameters (`laplace_rsr_at()`). The spec keeps its underlying $type
+  # for every other consumer, so the remaining backends would fit the PLAIN
+  # (unprojected) field while still reporting $spatial$rsr = TRUE
+  # (gcol33/tulpa#792). Checked after every redirect, on the backend that will
+  # run.
   if (isTRUE(spatial_type %in% c("rsr", "gp_rsr")) &&
-      !sel$backend %in% c("gibbs", "nested_laplace")) {
+      !sel$backend %in% c("gibbs", "nested_laplace", "laplace")) {
     stop(sprintf(paste0(
-      "A restricted %s field (spatial_rsr()) is fit by nested Laplace or, ",
-      "for family 'binomial', the Polya-Gamma Gibbs sampler; the selected ",
-      "backend '%s' (mode = '%s') reads the underlying '%s' field and would ",
-      "fit it unprojected. Use mode = 'auto', 'structured' or ",
-      "'nested_laplace' (or 'gibbs' for a binomial response)."),
+      "A restricted %s field (spatial_rsr()) is fit by nested Laplace, ",
+      "conditional Laplace or, for family 'binomial', the Polya-Gamma Gibbs ",
+      "sampler; the selected backend '%s' (mode = '%s') reads the underlying ",
+      "'%s' field and would fit it unprojected. Use mode = 'auto', ",
+      "'structured', 'nested_laplace' or 'laplace' (or 'gibbs' for a binomial ",
+      "response)."),
       if (identical(spatial_type, "rsr")) "areal" else "continuous",
       sel$backend, mode, spatial_spec$type), call. = FALSE)
   }

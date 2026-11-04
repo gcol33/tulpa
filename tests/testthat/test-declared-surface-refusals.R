@@ -97,7 +97,7 @@ test_that("an areal RSR fit still runs and still projects", {
   expect_lt(abs(coef(fit)[["x"]] - 0.6), 0.4)
 })
 
-test_that("a restricted areal field is refused by the conditional Laplace kernels and read at new rows on the nested fit (#1134)", {
+test_that("a restricted areal field on conditional Laplace is the nested restricted fit at one point, and read at new rows (#1134)", {
   skip_on_cran()
   set.seed(2)
   nr <- 5L; nu <- nr * nr
@@ -117,12 +117,45 @@ test_that("a restricted areal field is refused by the conditional Laplace kernel
     spatial = spatial_rsr(spatial_car(W, level = "group", group_var = "unit"),
                           ~ x)))
   expect_identical(fit$backend, "nested_laplace")
-  # The conditional kernels gather the plain field; handed the restricted
-  # spec they would fit it unprojected.
-  expect_error(
-    tulpa_laplace(y = d$y, n_trials = rep(1L, n), X = cbind(1, d$x),
-                  family = "poisson", spatial = fit$spatial),
-    "nested Laplace")
+  # Conditional Laplace holds the field precision at tau = 1 and reads the
+  # restricted field through the multi-block driver's projector: the nested
+  # restricted fit on the one-point grid tau = 1, to solver tolerance.
+  X <- cbind(`(Intercept)` = 1, x = d$x)
+  cond <- tulpa_laplace(y = d$y, n_trials = rep(1L, n), X = X,
+                        family = "poisson", spatial = fit$spatial)
+  blk <- tulpa:::.spatial_spec_to_nl_prior(fit$spatial)
+  blk$tau_grid <- 1
+  one <- suppressWarnings(tulpa_nested_laplace(
+    y = d$y, n_trials = rep(1L, n), X = X, family = "poisson", prior = blk,
+    control = list(axis_refine = "none", prune = FALSE, auto_recenter = FALSE,
+                   diagnose_k = FALSE, diagnose_skew = FALSE)))
+  expect_equal(nrow(one$modes), 1L)
+  expect_equal(cond$mode, as.numeric(one$modes[1L, ]), tolerance = 1e-8)
+  expect_equal(cond$log_marginal, one$log_marginal[1L], tolerance = 1e-8)
+  # The field the rows receive is P z: nothing of it lies outside the
+  # projector's range. The plain field's fit does not have that property, and
+  # its mode differs.
+  P <- fit$spatial$rsr_projection
+  u <- as.numeric(P %*% utils::tail(cond$mode, nu))
+  expect_lt(sqrt(sum((u - as.numeric(P %*% u))^2)), 1e-10)
+  sp_plain <- fit$spatial
+  sp_plain$rsr <- NULL
+  plain <- tulpa_laplace(y = d$y, n_trials = rep(1L, n), X = X,
+                         family = "poisson", spatial = sp_plain)
+  u_plain <- utils::tail(plain$mode, nu)
+  expect_gt(sqrt(sum((u_plain - as.numeric(P %*% u_plain))^2)), 0.1)
+  expect_gt(max(abs(cond$mode[1:2] - plain$mode[1:2])), 1e-3)
+  # The front door's conditional fit is the same cell, and at new rows it
+  # reads X beta + (P z)[unit].
+  fc <- suppressWarnings(tulpa(
+    y ~ x + spatial(unit), data = d, family = "poisson", mode = "laplace",
+    spatial = spatial_rsr(spatial_car(W, level = "group", group_var = "unit"),
+                          ~ x)))
+  expect_identical(fc$backend, "laplace")
+  expect_equal(fc$mode, cond$mode, tolerance = 1e-8)
+  nd0 <- d[c(5, 50, 120, 200), ]
+  ref0 <- cond$mode[1L] + cond$mode[2L] * nd0$x + u[nd0$unit]
+  expect_equal(as.numeric(predict(fc, newdata = nd0)), ref0, tolerance = 1e-8)
   # At new rows the field is P z at the row's unit: against the grid's own
   # posterior mean, sum_k w_k (X beta_k + (P z_k)[unit]).
   nd <- d[c(5, 50, 120, 200), ]

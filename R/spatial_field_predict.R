@@ -367,18 +367,7 @@
       !is.numeric(object$mode)) {
     return(NULL)
   }
-  type <- tolower(sp$type %||% "")
-  theta <- switch(type,
-    gp   = c(sigma2 = object$sigma2_gp %||% sp$sigma2_gp %||% 1,
-             phi_gp = object$phi_gp %||% sp$phi_gp %||% 1),
-    hsgp = c(sigma2 = object$sigma2 %||% sp[["sigma2"]] %||% 1,
-             lengthscale = object$lengthscale %||% sp[["lengthscale"]] %||% 1),
-    icar = , car = c(tau = 1),
-    bym2 = c(sigma = 1, rho = 0.5),
-    car_proper = c(tau = object$tau %||% sp[["tau"]] %||% 1,
-                   rho = object$rho %||% sp[["rho"]] %||%
-                     mean(sp[["rho_bounds"]] %||% c(0, 1))),
-    NULL)
+  theta <- .laplace_field_theta(sp, object)
   if (is.null(theta)) return(NULL)
   rec <- object$field_solve
   blk <- rec$prior
@@ -1297,7 +1286,9 @@
       a$prune_tol <- 0
       a$compute_fitted_var <- FALSE
       if (identical(rec$door, "multi")) {
-        .nl_dispatch_multi(a, prior, theta_grid_override = theta)
+        blocks <- if (is.list(prior) && !is.null(prior$type)) list(prior)
+                  else prior
+        .nl_dispatch_multi(a, blocks, theta_grid_override = theta)
       } else {
         # A field block's axis `<name>` is its `<name>_grid` entry; the cells
         # are written as one paired grid.

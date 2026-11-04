@@ -245,12 +245,22 @@ test_that("a non-binomial RSR field is fit by nested Laplace through A = S P", {
     beta_prior = tulpa:::.tulpa_default_beta_prior())
   expect_equal(via$log_marginal, direct$log_marginal, tolerance = 1e-8)
   expect_equal(unname(coef(via)), unname(coef(direct)), tolerance = 1e-8)
-  # The conditional Laplace path reads the underlying icar field and would fit
-  # it unprojected, so it refuses.
-  expect_error(
-    tulpa(count ~ x + spatial(region), data = s$data, family = "poisson",
-          spatial = sp, mode = "laplace"),
-    "would fit it unprojected")
+  # The conditional Laplace path is the same multi-block solve at its fixed
+  # precision tau = 1, a one-point grid of the registry door.
+  cond <- tulpa(count ~ x + spatial(region), data = s$data, family = "poisson",
+                spatial = sp, mode = "laplace")
+  expect_identical(cond$backend, "laplace")
+  one <- tulpa_nested_laplace(
+    y = s$data$count, n_trials = rep(1L, nrow(s$data)), X = X,
+    family = "poisson",
+    prior = list(type = "icar", projector = P[unit, ], tau_grid = 1,
+                 n_spatial_units = s$n_units,
+                 adj_row_ptr = as.integer(csr$row_ptr),
+                 adj_col_idx = as.integer(csr$col_idx),
+                 n_neighbors = as.integer(csr$n_neighbors)),
+    control = list(axis_refine = "none", prune = FALSE, auto_recenter = FALSE,
+                   diagnose_k = FALSE, diagnose_skew = FALSE))
+  expect_equal(cond$mode, as.numeric(one$modes[1L, ]), tolerance = 1e-8)
 })
 
 test_that("a binomial RSR field on nested Laplace recovers the slope", {

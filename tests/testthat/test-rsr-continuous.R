@@ -144,7 +144,8 @@ test_that("a restricted continuous fit reports an orthogonal field", {
 test_that("a backend without the projection refuses a restricted continuous field", {
   skip_on_cran()
   # The projection lives in the Polya-Gamma kernel and the nested-Laplace
-  # multi-block driver; every other backend reads the underlying $type and
+  # multi-block driver (on a grid, or at conditional Laplace's fixed
+  # hyperparameters); every other backend reads the underlying $type and
   # would fit the plain field while still reporting $spatial$rsr = TRUE
   # (gcol33/tulpa#792).
   sim <- .rsrc_sim(1L, n = 40L)
@@ -152,8 +153,25 @@ test_that("a backend without the projection refuses a restricted continuous fiel
     tulpa(y ~ x, data = sim$d, family = "binomial",
           n_trials = rep(25L, sim$n),
           spatial = spatial_rsr(spatial_gp(~ lon + lat), restrict_to = ~ x),
-          mode = "laplace"),
+          mode = "hmc"),
     "would fit it unprojected")
+})
+
+test_that("conditional Laplace fits a restricted continuous field through its projector", {
+  skip_on_cran()
+  sim <- .rsrc_sim(1L, n = 40L)
+  fit <- tulpa(y ~ x, data = sim$d, family = "binomial",
+               n_trials = rep(25L, sim$n),
+               spatial = spatial_rsr(spatial_gp(~ lon + lat), restrict_to = ~ x),
+               mode = "laplace")
+  expect_identical(fit$backend, "laplace")
+  # The field the observations receive is P w at each location, orthogonal to
+  # the restricted design.
+  P <- fit$spatial$rsr_projection
+  w <- utils::tail(fit$mode, ncol(P))
+  Xr <- stats::model.matrix(~ x, data = sim$d)
+  u <- as.numeric(P %*% w)
+  expect_lt(max(abs(crossprod(Xr, u))) / max(abs(u)), 1e-8)
 })
 
 
