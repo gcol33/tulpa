@@ -140,7 +140,7 @@ test_that("each engine axis resolves to its density or a named decline", {
   U <- tulpa:::.nl_hyperprior("range_extent_fraction") * 5
   a <- tulpa:::.nl_hyperprior("range_alpha")
   expect_equal(fn(c(0.4, 2)),
-               tulpa:::cpp_hyperprior_log_density(log(c(0.4, 2)), "range", "log",
+               tulpa:::cpp_hyperprior_log_density(log(2 * c(0.4, 2)), "range", "log",
                                                   U, a, 2),
                tolerance = 1e-12)
 

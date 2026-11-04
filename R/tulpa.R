@@ -270,7 +270,7 @@
 # every observation (`cpp_hsgp_basis_2d`, over setup_hsgp_2d), its eigenvalues
 # and the kernel whose spectral density weights them. The basis does not carry
 # the coordinates, so their extent travels with the block: it anchors the
-# lengthscale prior (`.hsgp_lengthscale_prior()`).
+# lengthscale prior (`.hsgp_range_prior()`).
 .hsgp_nl_block <- function(coords, m, c_boundary, kernel) {
   basis <- cpp_hsgp_basis_2d(as.matrix(coords), as.integer(m),
                              as.numeric(c_boundary))
@@ -378,9 +378,7 @@
   uc    <- as.matrix(spatial$unique_coords)
   n_loc <- nrow(uc)
   nn    <- as.integer(spatial$nn %||% ncol(ni$nn_idx))
-  pos_d <- ni$nn_dist[is.finite(ni$nn_dist) & ni$nn_dist > 0]
-  U     <- if (length(pos_d)) stats::median(pos_d) else 0.1
-  if (!is.finite(U) || U <= 0) U <- 0.1
+  lp <- .nl_default_range_prior(uc)
   list(
     type             = "nngp",
     coords           = .coords_2col(uc, "gp() / nngp() under a sampler mode"),
@@ -393,8 +391,8 @@
     obs_to_loc       = as.integer(spatial$obs_to_loc) - 1L,
     cov_type         = gp_cov_type(spatial),
     nu               = as.numeric(spatial$nu %||% 1.5),
-    phi_prior_U      = as.numeric(U),
-    phi_prior_alpha  = 0.05,
+    phi_prior_U      = lp[1L] / .SPATIAL_RANGE_FACTOR,
+    phi_prior_alpha  = lp[2L],
     sigma2_prior_U     = as.numeric(spatial$sigma2_prior_U %||% 1),
     sigma2_prior_alpha = as.numeric(spatial$sigma2_prior_alpha %||% 0.01),
     # Non-centered (z ~ N(0, I), field reconstructed as w = f(z, sigma2, phi))
@@ -449,10 +447,10 @@
     nn_order_inv_regional      = as.integer(nir$nn_order_inv %||% seq_len(n_loc)) - 1L,
     obs_to_loc                = as.integer(spatial$obs_to_loc) - 1L,
     cov_type                  = gp_cov_type(spatial),
-    range_local_lower         = as.numeric(spatial$range_local[1]),
-    range_local_upper         = as.numeric(spatial$range_local[2]),
-    range_regional_lower      = as.numeric(spatial$range_regional[1]),
-    range_regional_upper      = as.numeric(spatial$range_regional[2]),
+    range_local_lower         = as.numeric(spatial$range_local[1]) / .SPATIAL_RANGE_FACTOR,
+    range_local_upper         = as.numeric(spatial$range_local[2]) / .SPATIAL_RANGE_FACTOR,
+    range_regional_lower      = as.numeric(spatial$range_regional[1]) / .SPATIAL_RANGE_FACTOR,
+    range_regional_upper      = as.numeric(spatial$range_regional[2]) / .SPATIAL_RANGE_FACTOR,
     # Each scale's range carries the PC prior the GP path uses, anchored at
     # that scale's own declared lower bound: P(range < lower) = alpha. The
     # bounds are no longer a hard box; they state the
@@ -480,7 +478,7 @@
 # the field is evaluated per observation, no obs->location map. The PC prior on
 # sigma carries the spec's own anchors, defaulting to P(sigma > 1) = 0.01; the
 # lengthscale carries the field's one lengthscale prior
-# (`.hsgp_lengthscale_prior()`), the one its nested blocks carry.
+# (`.hsgp_range_prior()`), the one its nested blocks carry.
 #' @keywords internal
 .hsgp_sampler_spec <- function(spatial) {
   cm <- spatial$coords_matrix
@@ -496,8 +494,8 @@
     c      = as.numeric(spatial$c),
     kernel = .hsgp_kernel_code(.hsgp_spec_kernel(spatial))
   )
-  lp <- .hsgp_lengthscale_prior(cm)
-  out$lengthscale_prior_U     <- lp[1L]
+  lp <- .hsgp_range_prior(cm)
+  out$lengthscale_prior_U     <- lp[1L] / .SPATIAL_RANGE_FACTOR
   out$lengthscale_prior_alpha <- lp[2L]
   if (!is.null(spatial$sigma2_prior_U)) {
     out$sigma2_prior_U     <- as.numeric(spatial$sigma2_prior_U)
@@ -561,7 +559,7 @@
 #    setup_hsgp_2d() and keys the block on `data.svc_is_hsgp`
 #    (gcol33/tulpa#813). There is no obs->location map; each term's
 #    lengthscale carries the HSGP lengthscale prior
-#    (`.hsgp_lengthscale_prior()`) in the range-prior slot.
+#    (`.hsgp_range_prior()`) in the range-prior slot.
 #' @keywords internal
 .svc_sampler_spec <- function(spatial, X) {
   idx <- as.integer(spatial$svc_indices)
@@ -582,8 +580,8 @@
       m           = as.integer(spatial$m),
       c           = as.numeric(spatial$c_boundary),
       kernel      = .hsgp_kernel_code(.hsgp_spec_kernel(spatial)),
-      phi_prior_U     = .hsgp_lengthscale_prior(cm)[1L],
-      phi_prior_alpha = .hsgp_lengthscale_prior(cm)[2L]
+      phi_prior_U     = .hsgp_range_prior(cm)[1L] / .SPATIAL_RANGE_FACTOR,
+      phi_prior_alpha = .hsgp_range_prior(cm)[2L]
     ))
   }
 
@@ -597,9 +595,7 @@
   cm <- as.matrix(spatial$unique_coords %||% cm)
   n_obs <- nrow(cm)
   nn    <- as.integer(spatial$nn %||% ncol(ni$nn_idx))
-  pos_d <- ni$nn_dist[is.finite(ni$nn_dist) & ni$nn_dist > 0]
-  U     <- if (length(pos_d)) stats::median(pos_d) else 0.1
-  if (!is.finite(U) || U <= 0) U <- 0.1
+  lp <- .nl_default_range_prior(cm)
   list(
     approx          = "nngp",
     coords          = .coords_2col(cm, "svc() under a sampler mode"),
@@ -614,8 +610,8 @@
     obs_to_loc      = if (!is.null(spatial$obs_to_loc))
       as.integer(spatial$obs_to_loc) - 1L,
     cov_type        = gp_cov_type(spatial),
-    phi_prior_U     = as.numeric(U),
-    phi_prior_alpha = 0.05,
+    phi_prior_U     = lp[1L] / .SPATIAL_RANGE_FACTOR,
+    phi_prior_alpha = lp[2L],
     # Non-centered by default, matching .gp_sampler_spec()'s
     # gp_parameterization: each term's field is reconstructed as
     # w_j = f(z_j, sigma2_j, phi_j), which removes the funnel that attenuates a

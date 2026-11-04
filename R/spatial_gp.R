@@ -78,12 +78,25 @@
 #' fields smoother than any Matern one, and a field rougher than the kernel
 #' assumes is smoothed and its intervals narrowed.
 #'
+#' For nested Laplace and Hamiltonian inference, the default PC (penalised
+#' complexity) prior places half its probability
+#' below an effective range of one fifth of the coordinate bounding-box
+#' diagonal. The effective range is `rho = 2 * ell`, where `ell` is the kernel
+#' lengthscale (`phi` in the NNGP kernels). Both approximations use this
+#' anchor. [spatial_multiscale()] takes each scale's anchor
+#' from its declared range interval.
+#'
 #' **HSGP basis size.** A Hilbert-space basis of `m` functions per dimension on
-#' a domain widened by `c` approximates the kernel accurately only for
-#' lengthscales between `a c S / m` and `c S / b`, `S` the half-width of the
-#' coordinates' bounding box and `c >= 1.2`, with `(a, b) = (3.42, 4.5)` for
-#' Matern 3/2, `(2.65, 4.1)` for Matern 5/2 and `(1.75, 3.2)` for the
-#' squared-exponential kernel (Riutort-Mayol et al. 2023, Eqs. 19-24). A rough
+#' a domain widened by `c` has a lower lengthscale cutoff
+#' `a c max(S) / m`, where `S` contains the coordinate half-widths and
+#' `c >= 1.2`. The coefficient `a`
+#' retains 99% of the joint two-dimensional spectral variance using the
+#' tensor expansion and cumulative-variance recommendation of Riutort-Mayol
+#' et al. (2023, Eqs. 9-12, Section 4.2). It is at least their one-dimensional
+#' covariance-error coefficient (Eqs. 19, 21, 23). The boundary factor follows
+#' Eqs. 20, 22, 24 and bounds the variance removed by the Dirichlet boundary
+#' at the domain's corners by 1%, using the kernel correlations at twice the
+#' distance to each face. A rough
 #' field asks for a short lengthscale, and a basis too small for it smooths the
 #' field and narrows its intervals. Left unset, `m` and `c` follow the
 #' iterative procedure of the paper's Section 4.5.1. In its Phase A the first
@@ -302,9 +315,10 @@ validate_hsgp <- function(spatial, data) {
 #'   scale's range (`P(range < lower) = 0.05`, the same prior [spatial_gp()]
 #'   uses), on every route that fits the field; a sampler starts the range at
 #'   the pair's geometric mean. The range itself is free on `(0, Inf)`. The
-#'   range is the lengthscale `phi` of the kernel, `exp(-d / phi)` for the
-#'   exponential one; with `approx = "hsgp"` it is the lengthscale of the
-#'   kernel the basis approximates (`cov`, `nu`).
+#'   range is the Matern range `rho = 2 * ell`, matching [spatial_spde()],
+#'   on both approximations. Here `ell` is the kernel lengthscale (`phi` in
+#'   the NNGP kernels). The squared-exponential kernel uses the same
+#'   effective-range convention.
 #' @param range_regional Plausible range interval for the regional scale, read
 #'   the same way. Default: `c(1, 10)` (after scaling). Keeping the two
 #'   intervals separated is what identifies the scales against each other.
@@ -671,7 +685,7 @@ validate_gp <- function(gp, data) {
       gp$scale_basis <- stats::setNames(lapply(seq_along(scs), function(b) {
         ell0 <- .pc_range_quantile(
           0.5, as.numeric(gp[[paste0("range_", scs[b])]])[1L],
-          .MSGP_RANGE_ALPHA, .HSGP_LENGTHSCALE_PRIOR_DIM)
+          .MSGP_RANGE_ALPHA, .HSGP_LENGTHSCALE_PRIOR_DIM) / .SPATIAL_RANGE_FACTOR
         .hsgp_basis_init(
           list(m = gp$m, c = gp$c_boundary, kernel = gp$kernel,
                basis_rule = list(axes = paste0("b", b, ".lengthscale"))),

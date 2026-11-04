@@ -2,7 +2,7 @@
 # (Riutort-Mayol et al. 2023, Eqs. 19-24): a basis left unset is chosen from
 # the lengthscale priors of the fields it carries, and refitted while the
 # lengthscale posterior falls below what it represents. Every door's
-# lengthscale prior is the one `.hsgp_lengthscale_prior()` states.
+# lengthscale prior is the one `.hsgp_range_prior()` states.
 
 .bd_sites <- function(n = 60L, seed = 1L) {
   set.seed(seed)
@@ -38,7 +38,7 @@ test_that("spatial_multiscale(approx = 'hsgp') sizes each scale's basis from its
   v <- suppressMessages(validate_gp(
     spatial_multiscale(~ lon + lat, approx = "hsgp",
                        range_local = c(0.3, 1), range_regional = c(1, 10)), d))
-  med <- function(U) tulpa:::.pc_range_quantile(0.5, U, tulpa:::.MSGP_RANGE_ALPHA, 2)
+  med <- function(U) tulpa:::.pc_range_quantile(0.5, U, tulpa:::.MSGP_RANGE_ALPHA, 2) / 2
   S <- tulpa:::.hsgp_half_widths(v$coords_matrix)
   for (sc in c("local", "regional")) {
     U <- c(local = 0.3, regional = 1)[[sc]]

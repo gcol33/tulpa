@@ -424,8 +424,8 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
     n_spatial <- .gp_gibbs_require_one_obs_per_loc(spatial, length(y), "multiscale GP")
     loc <- .gp_gibbs_nn_inputs(spatial$neighbor_info_local, n_spatial)
     reg <- .gp_gibbs_nn_inputs(spatial$neighbor_info_regional, n_spatial)
-    rl  <- spatial$range_local
-    rr  <- spatial$range_regional %||% c(1, 10)
+    rl  <- spatial$range_local / .SPATIAL_RANGE_FACTOR
+    rr  <- (spatial$range_regional %||% c(1, 10)) / .SPATIAL_RANGE_FACTOR
     .pg_as_chain(do.call(cpp_pg_binomial_gibbs_multiscale_gp, c(common, list(
       coords               = as.matrix(spatial$unique_coords),
       nn_idx_local         = loc$nn_idx,

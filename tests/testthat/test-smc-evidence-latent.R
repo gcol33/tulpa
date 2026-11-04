@@ -303,7 +303,7 @@ test_that("the GP / HSGP / SVC / TVC normalizers make the prior a density", {
   sp <- tulpa:::.hsgp_sampler_spec(v)
   nl_anchor <- tulpa:::.hp_range_anchor(tulpa:::.spatial_spec_to_nl_prior(v))
   expect_equal(c(sp$lengthscale_prior_U, sp$lengthscale_prior_alpha),
-               nl_anchor$anchor)
+               nl_anchor$anchor / c(2, 1))
   expect_identical(nl_anchor$dim, 2)
   check(list(spatial_spec = sp), function(r) {
     lp_pc_log_sigma2(r[["log_sigma2_hsgp"]], 1, 0.01) +
@@ -326,7 +326,7 @@ test_that("the GP / HSGP / SVC / TVC normalizers make the prior a density", {
     }, info = paste("svc", approx))
     if (approx == "hsgp") {
       expect_equal(c(sp$phi_prior_U, sp$phi_prior_alpha),
-                   tulpa:::.hsgp_lengthscale_prior(v$coords_matrix))
+                   tulpa:::.hsgp_range_prior(v$coords_matrix) / c(2, 1))
     }
   }
 

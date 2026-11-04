@@ -2516,7 +2516,7 @@
                     coord_names = colnames(mats[[first]]), reached = reached,
                     kernel = p$kernel)
     # The pooled coordinates' extent anchors the lengthscale prior
-    # (`.hsgp_lengthscale_prior()`) once the coordinates are dropped.
+    # (`.hsgp_range_prior()`) once the coordinates are dropped.
     cf <- .hsgp_coord_fields(do.call(rbind, mats[reached]))
     p[names(cf)] <- cf
     p$coords <- NULL

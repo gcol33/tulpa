@@ -56,9 +56,10 @@ more functions than the data can use. This is not a hard box: \code{lower} ancho
 scale's range (\code{P(range < lower) = 0.05}, the same prior \code{\link[=spatial_gp]{spatial_gp()}}
 uses), on every route that fits the field; a sampler starts the range at
 the pair's geometric mean. The range itself is free on \verb{(0, Inf)}. The
-range is the lengthscale \code{phi} of the kernel, \code{exp(-d / phi)} for the
-exponential one; with \code{approx = "hsgp"} it is the lengthscale of the
-kernel the basis approximates (\code{cov}, \code{nu}).}
+range is the Matern range \code{rho = 2 * ell}, matching \code{\link[=spatial_spde]{spatial_spde()}},
+on both approximations. Here \code{ell} is the kernel lengthscale (\code{phi} in
+the NNGP kernels). The squared-exponential kernel uses the same
+effective-range convention.}
 
 \item{range_regional}{Plausible range interval for the regional scale, read
 the same way. Default: \code{c(1, 10)} (after scaling). Keeping the two

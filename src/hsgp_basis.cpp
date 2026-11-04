@@ -94,18 +94,20 @@ std::vector<double> hsgp_flat_coords(const Rcpp::NumericMatrix& coords,
 } // namespace
 
 // The HSGP domain a coordinate set implies: the centre of its bounding box and
-// the half-widths L = c * range / 2 (floored at 0.1), the rule setup_hsgp_2d
-// applies. Returns c(x_center, y_center, L1, L2). A basis built on this domain
+// the half-widths L = c * range / 2. Zero-width coordinates use a finite
+// auxiliary interval. With expanded=false the last two entries are the raw
+// coordinate half-widths. A basis on the expanded domain
 // at any other coordinates (cpp_hsgp_basis_2d_domain) is the same basis the
 // coordinate set was fitted with.
 // [[Rcpp::export]]
-Rcpp::NumericVector cpp_hsgp_domain_2d(const Rcpp::NumericMatrix& coords, double c) {
+Rcpp::NumericVector cpp_hsgp_domain_2d(const Rcpp::NumericMatrix& coords, double c,
+                                     bool expanded = true) {
     if (coords.nrow() < 1) Rcpp::stop("cpp_hsgp_domain_2d: coords must have at least one row.");
     if (!(c >= 1.0)) Rcpp::stop("cpp_hsgp_domain_2d: the boundary factor c must be >= 1.");
     const std::vector<double> flat = hsgp_flat_coords(coords, "cpp_hsgp_domain_2d");
-    double xc, yc, L1, L2;
-    tulpa_hsgp::hsgp_center_L_2d(flat, coords.nrow(), c, xc, yc, L1, L2);
-    return Rcpp::NumericVector::create(xc, yc, L1, L2);
+    double xc, yc, L1, L2, S1, S2;
+    tulpa_hsgp::hsgp_center_L_2d(flat, coords.nrow(), c, xc, yc, L1, L2, &S1, &S2);
+    return Rcpp::NumericVector::create(xc, yc, expanded ? L1 : S1, expanded ? L2 : S2);
 }
 
 // The 2D HSGP basis at `coords` on a GIVEN domain c(x_center, y_center, L1, L2)

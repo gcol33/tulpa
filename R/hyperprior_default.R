@@ -1,3 +1,6 @@
+# Fuglstad range rho = sqrt(8 nu) / kappa = 2 ell.
+.SPATIAL_RANGE_FACTOR <- 2
+
 # Default hyperpriors on the outer hyperparameter axes (gcol33/tulpa#730).
 #
 # Every outer axis carries a proper, normalised prior density when the caller
@@ -208,7 +211,9 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   range_pc <- function() {
     ra <- .hp_range_anchor(block)
     if (is.null(ra)) return(list(reason = .hp_decline("range_extent_unknown")))
-    list(fn = function(x) .hp_log_scale_density(x, "range", ra$anchor, ra$dim))
+    factor <- if (bare %in% c("lengthscale", "ell", "phi_gp")) .SPATIAL_RANGE_FACTOR else 1
+    list(fn = function(x)
+      .hp_log_scale_density(factor * x, "range", ra$anchor, ra$dim))
   }
 
   if (type %in% c("mcar", "miid") && .hp_is_logchol_col(bare)) {

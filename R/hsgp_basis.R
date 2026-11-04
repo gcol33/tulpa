@@ -17,22 +17,22 @@
 # (Eqs. 19-20), (2.65, 4.1) for Matern 5/2 (Eqs. 21-22) and (3.42, 4.5) for
 # Matern 3/2 (Eqs. 23-24). Read the other way, a basis (m, c) is accurate for
 # lengthscales in [m_coef c S / m, c S / c_coef], the smallest lengthscale the
-# first relation allows and the largest the second allows. In more than one
-# dimension the paper applies the one-dimensional relations to each dimension
-# (Sect. 4.3.1); tulpa's basis carries one `m` and one `c` for both
-# coordinates of an isotropic lengthscale, so `m` is read off the widest
-# dimension and `c` off the narrowest.
+# first relation allows and the largest the second allows. In two dimensions,
+# the tensor expansion also retains 99% of the joint spectral variance;
+# `.hsgp_m_coefficient()` integrates the spectrum over its frequency rectangle.
+# One m and c serve both coordinates of an isotropic lengthscale, so m uses
+# the widest dimension and c the narrowest.
 .HSGP_KERNELS <- list(
   squared_exponential = list(
-    code = 0L, m_coef = 1.75, c_coef = 3.2, eq = c(m = 19L, c = 20L),
+    code = 0L, nu = Inf, m_coef = 1.75, c_coef = 3.2,
     label = "squared exponential",
     corr = function(x) exp(-x^2 / 2)),
   matern32 = list(
-    code = 1L, m_coef = 3.42, c_coef = 4.5, eq = c(m = 23L, c = 24L),
+    code = 1L, nu = 1.5, m_coef = 3.42, c_coef = 4.5,
     label = "Matern 3/2",
     corr = function(x) (1 + sqrt(3) * x) * exp(-sqrt(3) * x)),
   matern52 = list(
-    code = 2L, m_coef = 2.65, c_coef = 4.1, eq = c(m = 21L, c = 22L),
+    code = 2L, nu = 2.5, m_coef = 2.65, c_coef = 4.1,
     label = "Matern 5/2",
     corr = function(x) {
       a <- sqrt(5) * x
@@ -141,15 +141,18 @@
 # Half-widths S of the domain a coordinate matrix spans, per column: the
 # bounding box `hsgp_center_L_2d()` (src/hmc_hsgp.h) centres the basis on.
 .hsgp_half_widths <- function(coords) {
-  rng <- apply(as.matrix(coords), 2L, range)
-  (rng[2L, ] - rng[1L, ]) / 2
+  xy <- as.matrix(coords)
+  domain <- cpp_hsgp_domain_2d(xy, 1, expanded = FALSE)
+  stats::setNames(as.numeric(domain[3:4]), colnames(xy))
 }
 
 # The lengthscale window a basis (m, c) on half-widths S represents accurately
 # for `kernel`.
 .hsgp_lengthscale_window <- function(m, c, S, kernel = .HSGP_DEFAULT_KERNEL) {
+  if (all(S == 0)) return(c(lo = 0, hi = 0))
   r <- .hsgp_kernel_info(kernel)
-  c(lo = r$m_coef * c * max(S) / m, hi = c * min(S) / r$c_coef)
+  c(lo = .hsgp_m_coefficient(S, kernel) * c * max(S) / m,
+    hi = .hsgp_boundary_lengthscale(c, S, c * min(S) / r$c_coef, kernel))
 }
 
 # The smallest (m, c) whose window holds [ell_lo, ell_hi] for `kernel`: `c`
@@ -160,8 +163,11 @@
 .hsgp_basis_size <- function(S, ell_lo, ell_hi = ell_lo, c = NULL,
                              kernel = .HSGP_DEFAULT_KERNEL) {
   r <- .hsgp_kernel_info(kernel)
-  if (is.null(c)) c <- max(.HSGP_C_MIN, r$c_coef * ell_hi / min(S))
-  m_req <- ceiling(r$m_coef * c * max(S) / ell_lo)
+  if (is.null(c)) {
+    c <- .hsgp_boundary_factor(max(.HSGP_C_MIN, r$c_coef * ell_hi / min(S)),
+                               S, ell_hi, kernel)
+  }
+  m_req <- ceiling(.hsgp_m_coefficient(S, kernel) * c * max(S) / ell_lo)
   list(m = as.integer(min(max(m_req, .HSGP_M_BOUNDS[1L]), .HSGP_M_BOUNDS[2L])),
        c = c, m_req = m_req)
 }
@@ -179,14 +185,15 @@
 # coordinate block) and the samplers (`.hsgp_sampler_spec()`,
 # `.svc_sampler_spec()`) -- so a route is a computational choice and never a
 # different model. It is the PC prior on a range (Fuglstad et al. 2019),
-# P(ell < U) = alpha with U the default fraction of the coordinates' extent,
+# P(2 ell < U) = alpha with U the default fraction of the coordinates' extent,
 # in the two dimensions the basis spans. The PC range prior holds for any
 # Matern smoothness, so for each kernel an HSGP basis approximates (Matern 3/2
 # and 5/2, and the squared-exponential limit). NULL when the coordinates span
 # nothing.
 .HSGP_LENGTHSCALE_PRIOR_DIM <- 2
 
-.hsgp_lengthscale_prior <- function(coords) {
+
+.hsgp_range_prior <- function(coords) {
   .hp_range_anchor(.hsgp_coord_fields(coords))$anchor
 }
 
@@ -202,12 +209,13 @@
 # alpha)`: the initial lengthscale guess of the paper's procedure
 # (Sect. 4.5.1, step A1).
 .hsgp_prior_lengthscale <- function(coords) {
-  .hsgp_prior_median(.hsgp_lengthscale_prior(coords))
+  .hsgp_prior_median(.hsgp_range_prior(coords))
 }
 
 .hsgp_prior_median <- function(anchor) {
   if (is.null(anchor)) return(NA_real_)
-  .pc_range_quantile(0.5, anchor[1L], anchor[2L], .HSGP_LENGTHSCALE_PRIOR_DIM)
+  .pc_range_quantile(0.5, anchor[1L], anchor[2L], .HSGP_LENGTHSCALE_PRIOR_DIM) /
+    .SPATIAL_RANGE_FACTOR
 }
 
 # The slack of the paper's lengthscale diagnostic (Sect. 4.5.1, steps A5 and
@@ -572,16 +580,15 @@
   if (is.null(chk) || all(chk$holds)) return(NULL)
   low <- !chk$holds[["lower"]]
   kinfo <- .hsgp_kernel_info(chk$kernel)
-  eq <- kinfo$eq
   what <- if (low) {
-    sprintf(paste0("represents lengthscales down to %.3g (Riutort-Mayol et ",
-                   "al. 2023, Eq. %d), but the posterior mean lengthscale is ",
-                   "%.3g"), chk$window[["lo"]], eq[["m"]],
+    sprintf(paste0("represents lengthscales down to %.3g (2-D spectral ",
+                   "variance criterion), posterior mean lengthscale ",
+                   "%.3g"), chk$window[["lo"]],
             chk$lengthscale[["mean"]])
   } else {
-    sprintf(paste0("represents lengthscales up to %.3g (Riutort-Mayol et al. ",
-                   "2023, Eq. %d), but the posterior mean lengthscale is %.3g"),
-            chk$window[["hi"]], eq[["c"]], chk$lengthscale_hi[["mean"]])
+    sprintf(paste0("represents lengthscales up to %.3g (2-D boundary ",
+                   "variance criterion), posterior mean lengthscale %.3g"),
+            chk$window[["hi"]], chk$lengthscale_hi[["mean"]])
   }
   fix <- if (low && chk$capped) {
     paste0("; the basis size it needs exceeds m = ", .HSGP_M_BOUNDS[2L])

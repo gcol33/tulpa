@@ -94,7 +94,9 @@ inline void hsgp_center_L_2d(
     double& x_center,
     double& y_center,
     double& L1,
-    double& L2
+    double& L2,
+    double* S1_out = nullptr,
+    double* S2_out = nullptr
 ) {
     double x_min = coords[0], x_max = coords[0];
     double y_min = coords[1], y_max = coords[1];
@@ -108,10 +110,14 @@ inline void hsgp_center_L_2d(
     }
     x_center = (x_max + x_min) / 2.0;
     y_center = (y_max + y_min) / 2.0;
-    L1 = c * (x_max - x_min) / 2.0;
-    L2 = c * (y_max - y_min) / 2.0;
-    if (L1 < 0.1) L1 = 0.1;
-    if (L2 < 0.1) L2 = 0.1;
+    const double S1 = (x_max - x_min) / 2.0;
+    const double S2 = (y_max - y_min) / 2.0;
+    if (S1_out) *S1_out = S1;
+    if (S2_out) *S2_out = S2;
+    L1 = c * S1;
+    L2 = c * S2;
+    if (S1 == 0.0) L1 = 0.1;
+    if (S2 == 0.0) L2 = 0.1;
 }
 
 // Setup HSGP for 2D coordinates

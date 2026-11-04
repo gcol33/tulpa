@@ -807,14 +807,15 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_hsgp_domain_2d
-Rcpp::NumericVector cpp_hsgp_domain_2d(const Rcpp::NumericMatrix& coords, double c);
-RcppExport SEXP _tulpa_cpp_hsgp_domain_2d(SEXP coordsSEXP, SEXP cSEXP) {
+Rcpp::NumericVector cpp_hsgp_domain_2d(const Rcpp::NumericMatrix& coords, double c, bool expanded);
+RcppExport SEXP _tulpa_cpp_hsgp_domain_2d(SEXP coordsSEXP, SEXP cSEXP, SEXP expandedSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type coords(coordsSEXP);
     Rcpp::traits::input_parameter< double >::type c(cSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_hsgp_domain_2d(coords, c));
+    Rcpp::traits::input_parameter< bool >::type expanded(expandedSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_hsgp_domain_2d(coords, c, expanded));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3289,7 +3290,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_available_ram_bytes", (DL_FUNC) &_tulpa_cpp_available_ram_bytes, 0},
     {"_tulpa_cpp_performance_core_count", (DL_FUNC) &_tulpa_cpp_performance_core_count, 0},
     {"_tulpa_cpp_hsgp_basis_2d", (DL_FUNC) &_tulpa_cpp_hsgp_basis_2d, 3},
-    {"_tulpa_cpp_hsgp_domain_2d", (DL_FUNC) &_tulpa_cpp_hsgp_domain_2d, 2},
+    {"_tulpa_cpp_hsgp_domain_2d", (DL_FUNC) &_tulpa_cpp_hsgp_domain_2d, 3},
     {"_tulpa_cpp_hsgp_basis_2d_domain", (DL_FUNC) &_tulpa_cpp_hsgp_basis_2d_domain, 3},
     {"_tulpa_cpp_hsgp_sqrt_spectral", (DL_FUNC) &_tulpa_cpp_hsgp_sqrt_spectral, 4},
     {"_tulpa_cpp_hyperprior_log_density", (DL_FUNC) &_tulpa_cpp_hyperprior_log_density, 7},

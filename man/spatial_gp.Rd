@@ -100,12 +100,25 @@ at distance \code{d}, or the squared-exponential kernel
 fields smoother than any Matern one, and a field rougher than the kernel
 assumes is smoothed and its intervals narrowed.
 
+For nested Laplace and Hamiltonian inference, the default PC (penalised
+complexity) prior places half its probability
+below an effective range of one fifth of the coordinate bounding-box
+diagonal. The effective range is \code{rho = 2 * ell}, where \code{ell} is the kernel
+lengthscale (\code{phi} in the NNGP kernels). Both approximations use this
+anchor. \code{\link[=spatial_multiscale]{spatial_multiscale()}} takes each scale's anchor
+from its declared range interval.
+
 \strong{HSGP basis size.} A Hilbert-space basis of \code{m} functions per dimension on
-a domain widened by \code{c} approximates the kernel accurately only for
-lengthscales between \verb{a c S / m} and \verb{c S / b}, \code{S} the half-width of the
-coordinates' bounding box and \code{c >= 1.2}, with \verb{(a, b) = (3.42, 4.5)} for
-Matern 3/2, \verb{(2.65, 4.1)} for Matern 5/2 and \verb{(1.75, 3.2)} for the
-squared-exponential kernel (Riutort-Mayol et al. 2023, Eqs. 19-24). A rough
+a domain widened by \code{c} has a lower lengthscale cutoff
+\verb{a c max(S) / m}, where \code{S} contains the coordinate half-widths and
+\code{c >= 1.2}. The coefficient \code{a}
+retains 99\% of the joint two-dimensional spectral variance using the
+tensor expansion and cumulative-variance recommendation of Riutort-Mayol
+et al. (2023, Eqs. 9-12, Section 4.2). It is at least their one-dimensional
+covariance-error coefficient (Eqs. 19, 21, 23). The boundary factor follows
+Eqs. 20, 22, 24 and bounds the variance removed by the Dirichlet boundary
+at the domain's corners by 1\%, using the kernel correlations at twice the
+distance to each face. A rough
 field asks for a short lengthscale, and a basis too small for it smooths the
 field and narrows its intervals. Left unset, \code{m} and \code{c} follow the
 iterative procedure of the paper's Section 4.5.1. In its Phase A the first

@@ -233,8 +233,8 @@ cpp_hsgp_basis_2d <- function(coords, m, c) {
     .Call(`_tulpa_cpp_hsgp_basis_2d`, coords, m, c)
 }
 
-cpp_hsgp_domain_2d <- function(coords, c) {
-    .Call(`_tulpa_cpp_hsgp_domain_2d`, coords, c)
+cpp_hsgp_domain_2d <- function(coords, c, expanded = TRUE) {
+    .Call(`_tulpa_cpp_hsgp_domain_2d`, coords, c, expanded)
 }
 
 cpp_hsgp_basis_2d_domain <- function(coords, m, domain) {
