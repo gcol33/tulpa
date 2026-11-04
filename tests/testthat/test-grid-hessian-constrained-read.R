@@ -43,7 +43,8 @@ test_that("the grid read conditions a precision singular along its constraints",
   cs <- .gh_csc(Q)
   res <- list(Q_csc_p_per_grid = list(cs$p), Q_csc_i_per_grid = list(cs$i),
               Q_csc_x_per_grid = list(cs$x), Q_csc_n = n_x,
-              modes = matrix(0, 1L, n_x), constraint_cols = constr)
+              modes = matrix(0, 1L, n_x), constraint_cols = constr,
+              log_marginal = 0)
   var_cols <- 2L + n_a + seq_len(n_b)
   out <- tulpa:::.nl_attach_grid_hessians(res, 2L, var_cols = var_cols,
                                           units = list())
@@ -54,6 +55,38 @@ test_that("the grid read conditions a precision singular along its constraints",
                tolerance = 1e-10)
   expect_equal(out$grid_field_cov[[1L]], ref[var_cols, var_cols],
                tolerance = 1e-10)
+})
+
+test_that("grid covariance retention preserves the finite-cell mixture", {
+  Q <- matrix(c(3, .4, .4, 2), 2L)
+  cs <- .gh_csc(Q)
+  overflow <- .gh_csc(diag(1e308, 2L))
+  cells <- list(cs, overflow, overflow, overflow, cs)
+  lm <- c(0, NaN, Inf, -Inf, log(2))
+  res <- list(Q_csc_p_per_grid = lapply(cells, `[[`, "p"),
+              Q_csc_i_per_grid = lapply(cells, `[[`, "i"),
+              Q_csc_x_per_grid = lapply(cells, `[[`, "x"), Q_csc_n = 2L,
+              log_marginal = lm, modes = matrix(seq_len(10L), 5L, 2L))
+  units <- list(latent = list(type = "tgmrf", n_units = 1L,
+                             cols = list(2L), weights = function(k) 1))
+  out <- tulpa:::.nl_attach_grid_hessians(res, 1L, var_cols = 2L,
+                                          units = units)
+  ref <- solve(Q)
+  expect_length(out$grid_hessians, 5L)
+  expect_length(out$grid_modes, 5L)
+  for (k in c(1L, 5L)) {
+    expect_equal(out$grid_hessians[[k]], matrix(1 / ref[1L, 1L]))
+    expect_equal(out$grid_field_var[k, 1L], ref[2L, 2L])
+    expect_equal(out$grid_latent_var[k, 1L], ref[2L, 2L])
+  }
+  for (k in 2:4) {
+    expect_null(out$grid_hessians[[k]])
+    expect_null(out$grid_modes[[k]])
+    expect_true(is.na(out$grid_field_var[k, 1L]))
+    expect_true(is.na(out$grid_latent_var[k, 1L]))
+  }
+  expect_identical(out$log_marginal, lm)
+  expect_equal(tulpa:::.nl_normalise_weights_safe(lm), c(1/3, 0, 0, 0, 2/3))
 })
 
 test_that("a constrained cell draw has the conditional covariance", {

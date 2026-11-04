@@ -2146,6 +2146,12 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   }
 
   n_grid <- length(Q_p)
+  # A non-finite marginal has zero integration weight and no conditional
+  # Gaussian to retain. Its Newton scratch precision can contain overflow.
+  unavailable <- !is.finite(res$log_marginal)
+  Q_p[unavailable] <- list(NULL)
+  Q_i[unavailable] <- list(NULL)
+  Q_x[unavailable] <- list(NULL)
   grid_hessians <- vector("list", n_grid)
   grid_modes    <- vector("list", n_grid)
 
