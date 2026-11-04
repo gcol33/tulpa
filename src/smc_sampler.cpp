@@ -8,6 +8,7 @@
 #include <random>
 #include "smc_sampler.h"
 #include "smc_modeldata.h"
+#include "smc_interweave.h"
 #include "laplace_builtin_family_spec.h"  // builtin_family_ll_is_normalized
 
 using namespace Rcpp;
@@ -402,6 +403,7 @@ SMCDriverResult run_smc_sampler(
     std::function<void(const std::vector<std::vector<double>>&, double)> prepare;
 
     SmcPopulationHmc hmc(dim);
+    SmcNngpFieldHmc field_hmc(data, layout);
     hmc.verbose = cfg.verbose;
     if (mutation_fn != nullptr) {
         const ModelData* data_ptr = &data;
@@ -465,14 +467,27 @@ SMCDriverResult run_smc_sampler(
             if (!std::isfinite(lpath)) return -std::numeric_limits<double>::infinity();
             return (1.0 - s) * lq + s * lpath;
         };
-        mutation = [&hmc, log_target](
+        auto log_value = [&data, &layout, &ref, b](
+            const std::vector<double>& theta, double tau) {
+            const auto pt = tulpa_smc::path_point(tau, b);
+            if (pt.s == 0.0) return ref.log_density(theta);
+            double lp = tulpa_hmc::compute_log_post(theta, data, layout);
+            if (pt.lambda != 1.0) lp += (pt.lambda - 1.0) *
+                tulpa_hmc::compute_log_lik_only(theta, data, layout);
+            return (1.0 - pt.s) * ref.log_density(theta) +
+                pt.s * lp;
+        };
+        mutation = [&hmc, &field_hmc, &data, &layout, log_target, log_value](
             std::vector<double>& theta, double tau, std::mt19937& rng, int particle
         ) {
             hmc.step(theta, tau, rng, log_target, particle);
+            field_hmc.step(theta, tau, rng, particle, data, layout, log_target);
+            smc_interweave_nngp(theta, tau, rng, data, layout, log_value);
         };
-        prepare = [&hmc](const std::vector<std::vector<double>>& particles,
+        prepare = [&hmc, &field_hmc, &data, &layout](const std::vector<std::vector<double>>& particles,
                          double tau) {
             hmc.adapt(particles);
+            field_hmc.adapt(particles, data, layout);
             if (hmc.verbose) Rcpp::Rcout << "SMC path coordinate " << tau << "\n";
         };
     }
