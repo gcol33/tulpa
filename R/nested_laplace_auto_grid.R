@@ -1004,14 +1004,36 @@ auto_grid_place <- function(x)
 .nl_railed_axes <- function(res) {
     tg <- res$theta_grid
     if (is.null(tg) || is.null(res$log_marginal)) return(character(0))
+    designs <- if (is.matrix(tg)) Filter(function(d) identical(d$design, "cpc"),
+        .hp_grid_designs(tg, res$refining_axis)$designs) else list()
+    res$theta_grid <- if (length(designs)) .hp_grid_design_coords(tg, designs) else tg
     cn <- if (is.matrix(tg)) colnames(tg) else (res$theta_names %||% "theta")
     if (is.null(cn)) return(character(0))
     hits <- character(0)
     for (a in cn) {
         r <- .nl_axis_rail(res, a)
-        if (!is.null(r)) hits <- c(hits, paste0(a, ":", r$side))
+        if (!is.null(r)) hits <- c(hits, paste0(.nl_axis_label(res, a, designs), ":", r$side))
     }
     hits
+}
+
+.nl_axis_label <- function(res, axes, designs = if (is.null(res$theta_grid))
+                            list() else .hp_grid_designs(
+                                res$theta_grid, res$refining_axis)$designs) {
+    labels <- axes
+    for (key in names(designs)) {
+        if (!identical(designs[[key]]$design, "cpc")) next
+        cols <- .hp_logchol_block_cols(colnames(res$theta_grid), .hp_logchol_key_pre(key))
+        for (i in seq_along(cols)) {
+            bare <- sub("^b[0-9]+[.]L", "", sub("^L", "", cols[i]))
+            ij <- as.integer(strsplit(bare, "", fixed = TRUE)[[1L]])
+            pre <- sub("L[0-9]+$", "", cols[i])
+            label <- if (ij[1L] == ij[2L]) paste0("log_sigma_", ij[1L])
+                     else paste0("atanh_pcor_", ij[1L], ij[2L])
+            labels[axes == cols[i]] <- paste0(pre, label)
+        }
+    }
+    labels
 }
 
 .nl_attach_railed_axes <- function(res) {
@@ -1528,6 +1550,7 @@ auto_grid_place <- function(x)
     railed <- res$outer_grid_railed_axes
     dec    <- res$outer_grid_axis_declined
     if (!length(railed) || !length(dec)) return(invisible(res))
+    names(dec) <- .nl_axis_label(res, names(dec))
     parts <- strsplit(railed, ":", fixed = TRUE)
     hits  <- character(0)
     for (p in parts) {
