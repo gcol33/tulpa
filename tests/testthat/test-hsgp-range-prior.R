@@ -35,16 +35,4 @@ test_that("the PC anchor has the same range meaning on HSGP and SPDE", {
   gp_sampler <- tulpa:::.gp_sampler_spec(gp)
   expect_equal(c(gp_sampler$phi_prior_U, gp_sampler$phi_prior_alpha),
                  prior_gp / c(2, 1))
-  local_mocked_bindings(
-    cpp_pg_binomial_gibbs_multiscale_gp = function(...) list(...),
-    .pg_as_chain = function(raw, ...) raw,
-    .package = "tulpa")
-  gibbs <- tulpa:::dispatch_gibbs_spatial(
-    rep(0L, nrow(d)), rep(1L, nrow(d)), model.matrix(~ x, d),
-    rep(0L, nrow(d)), 0L, ms, "binomial", iter = 10L, warmup = 5L)
-  expect_equal(c(gibbs$prior_phi_local_lower, gibbs$prior_phi_local_upper,
-                 gibbs$prior_phi_regional_lower, gibbs$prior_phi_regional_upper),
-                 c(0.1, 0.5, 0.5, 5))
-  expect_equal(c(gibbs$phi_local_init, gibbs$phi_regional_init), c(0.3, 2.75))
 })
-

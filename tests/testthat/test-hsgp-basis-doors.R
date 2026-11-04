@@ -95,16 +95,27 @@ test_that("a refit step reads the smallest lengthscale of the fields on a basis"
   sp <- validate_hsgp(spatial_gp(~ lon + lat, approx = "hsgp"), d)
   S <- sp$basis_rule$half_width
   win <- tulpa:::.hsgp_lengthscale_window(sp$m, sp[["c"]], S)
-  local_mocked_bindings(
-    .hsgp_lengthscale_posterior = function(fit, axes = NULL)
-      rbind(c(mean = 0.8 * win[["lo"]], lo = 0, hi = 1),
-            c(mean = 2 * win[["hi"]], lo = 0, hi = 1)),
-    .package = "tulpa")
-  step <- tulpa:::.hsgp_refit_spec(sp, list())
+  post_at <- function(target) {
+    local_mocked_bindings(
+      .hsgp_lengthscale_posterior = function(fit, axes = NULL)
+        rbind(c(mean = target, lo = 0, hi = 1),
+              c(mean = 2 * win[["hi"]], lo = 0, hi = 1)),
+      .package = "tulpa")
+    tulpa:::.hsgp_refit_spec(sp, list())
+  }
+  target <- 0.9 * win[["lo"]]
+  step <- post_at(target)
   expect_true(step$refit)
   expect_lte(tulpa:::.hsgp_lengthscale_window(step$spec$m, step$spec[["c"]],
-                                              S)[["lo"]], 0.8 * win[["lo"]])
+                                              S)[["lo"]], target)
   expect_false(isTRUE(step$spec$basis_rule$capped))
+  cap_target <- 0.5 * tulpa:::.hsgp_lengthscale_window(50L, sp[["c"]], S)[["lo"]]
+  capped <- post_at(cap_target)
+  expect_true(capped$refit)
+  expect_identical(capped$spec$m, 50L)
+  expect_true(capped$spec$basis_rule$capped)
+  expect_gt(tulpa:::.hsgp_lengthscale_window(50L, capped$spec[["c"]], S)[["lo"]],
+              cap_target)
 })
 
 test_that("the joint door's coordinate block sizes its basis and carries the lengthscale prior", {

@@ -77,7 +77,7 @@ test_that("the 2-D covariance variation meets the paper's target at a corner", {
   }
 })
 
-test_that("rough Gaussian fields have calibrated held-out basis intervals", {
+test_that("known-hyperparameter Gaussian fields retain held-out interval coverage", {
   skip_if_not_slow()
   coverage <- vapply(seq_len(20L), function(seed) {
     set.seed(1100L + seed)
@@ -103,4 +103,3 @@ test_that("rough Gaussian fields have calibrated held-out basis intervals", {
   }, numeric(1))
   expect_gte(mean(coverage), 0.9)
 })
-
