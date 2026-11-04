@@ -1357,13 +1357,11 @@ inline void scatter_arm_obs_joint_multi_sparse(
 
     const int n_db_total = n_db_with_batch + n_db_legacy;
     // basis_eval must run in the per-obs loop when there are cross terms
-    // to emit (DB x INDEXED, DB x DB inter-block) or when a legacy DB
-    // block lacks the batch hook. The pure-single-DB case (HSGP /
-    // HSGP-MO / HSGP-SVC alone) skips per-obs DB entirely; the batch
-    // helper handles every block-internal contribution.
+    // to emit against indexed blocks or a dense block without a batch hook.
+    // Batched dense blocks scatter their mutual cross-products together.
     const bool need_db_in_perobs =
         (n_db_total > 0) &&
-        ((n_indexed > 0) || (n_db_total >= 2) || (n_db_legacy > 0));
+        ((n_indexed > 0) || (n_db_legacy > 0));
 
     // Fast path: when no DENSE_BASIS block is present, the
     // per-obs scatter resolves to a (mostly) static (i, k_arm) ->
@@ -1482,13 +1480,11 @@ inline void scatter_arm_obs_joint_multi_sparse(
         //   * Gradient: skip when batch hook covers it (batch helper
         //     accumulates Phi^T g_obs). Emit when legacy (no batch hook).
         //   * DB × INDEXED cross: always emit (batch doesn't see INDEXED).
-        //   * DB × DB intra-block: skip when both have batch hook (SYRK
-        //     covers it). Emit when at least one is legacy or when the
-        //     pair is across different blocks (inter-block cross).
+        //   * DB × DB: batched pairs use matrix products. Other pairs
+        //     accumulate the observation's scalar cross-product here.
         for (int a = 0; a < A_db; a++) {
             const int    d_a       = active_db_scratch[a].dof;
             const double w_a       = active_db_scratch[a].weight;
-            const int    blk_a     = active_db_scratch[a].block_idx;
             const bool   a_batch   = active_db_scratch[a].has_batch;
 
             if (!a_batch) {
@@ -1505,13 +1501,9 @@ inline void scatter_arm_obs_joint_multi_sparse(
             for (int b = 0; b <= a; b++) {
                 const int    d_b     = active_db_scratch[b].dof;
                 const double w_b     = active_db_scratch[b].weight;
-                const int    blk_b   = active_db_scratch[b].block_idx;
                 const bool   b_batch = active_db_scratch[b].has_batch;
-                const bool   same    = (blk_a == blk_b);
-                // Skip the case the batch helper covers: both sides have
-                // a batch hook AND both live in the same block (intra-
-                // block SYRK output).
-                if (a_batch && b_batch && same) continue;
+                // Batched dense pairs use matrix products after this loop.
+                if (a_batch && b_batch) continue;
                 H.add(d_a, d_b, gh.neg_hess * w_a * w_b);
             }
         }
@@ -1534,6 +1526,17 @@ inline void scatter_arm_obs_joint_multi_sparse(
             scatter_dense_basis_block(blocks[b], k_arm, k_grid, pa, arm, view,
                                        eta, d_eff_cache[b], grad, H,
                                        db_buffers[static_cast<size_t>(k_arm) * B + b]);
+        }
+        for (int b = 0; b < B; ++b) {
+            if (!blocks[b].dense_basis_batch) continue;
+            for (int a = 0; a < b; ++a) {
+                if (!blocks[a].dense_basis_batch) continue;
+                scatter_dense_basis_cross(
+                    blocks[a], blocks[b], k_arm, k_grid,
+                    d_eff_cache[a], d_eff_cache[b],
+                    db_buffers[static_cast<size_t>(k_arm) * B + a],
+                    db_buffers[static_cast<size_t>(k_arm) * B + b], H);
+            }
         }
     }
 }
