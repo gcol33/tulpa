@@ -328,6 +328,20 @@
 #'   * `adaptive_grid` (`FALSE`), `adaptive_grid_edge_thresh` (`0.02`),
 #'     `adaptive_grid_max_passes` (`1L`) -- the opt-in boundary / interior pass,
 #'     on the same axes.
+#'   * `integration` (`"qmc"` for a local/regional multi-scale field, `"grid"`
+#'     otherwise) -- `"qmc"` integrates continuous hyperparameters with
+#'     quasi Monte Carlo importance quadrature in transformed coordinates.
+#'     Each free covariance block uses its declared grid coordinates for the proposal.
+#'     A mixture of product Student distributions is fitted to the placement grid and adapted in two
+#'     pilot rounds. The final points carry inverse-proposal-density weights.
+#'     `qmc_nodes` (`65536L`) sets the final proposal count; each pilot proposes
+#'     at most `8192L` points. This design follows separate variance arms without
+#'     crossing each new axis level with every other axis. Axes whose nodes
+#'     the caller supplied retain their integration bounds; points outside
+#'     those bounds carry zero mass and are discarded. The reported
+#'     `outer_qmc` contains the proposal, evaluation count and effective sample size.
+#'     The importance points receive full inner solves. The placement grid
+#'     uses the pruning controls.
 #'   * `axis_refine` (`NULL`) -- per-axis override of how far those axes may be
 #'     moved, named by the grid's axes (`"tau"`; `"b1.tau"` on a multi-block
 #'     prior): `"none"`, `"densify"` (inside the declared span) or `"extend"`.
@@ -578,6 +592,21 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # Outer-axis provenance: record which grid axes the caller
   # declared as defaults with `auto_grid()` -- the registry rescue below reads
   # it -- and strip the markers so every downstream consumer sees plain grids.
+  ms <- .is_multi_block_prior(prior) &&
+    all(c("local", "regional") %in%
+          vapply(prior, function(p)
+            if (tolower(p$type %||% "") %in% c("nngp", "hsgp"))
+              p$name %||% "" else "", character(1)))
+  integration <- match.arg(control$integration %||% if (ms) "qmc" else "grid",
+                           c("grid", "qmc"))
+  qmc_nodes <- control$qmc_nodes %||% .NL_QMC$nodes
+  if (!is.numeric(qmc_nodes) || length(qmc_nodes) != 1L || !is.finite(qmc_nodes) ||
+      qmc_nodes < 2L || qmc_nodes > .Machine$integer.max ||
+      qmc_nodes != floor(qmc_nodes)) {
+    stop("`control$qmc_nodes` must be an integer >= 2.", call. = FALSE)
+  }
+  use_qmc <- identical(integration, "qmc")
+  if (use_qmc && !.is_multi_block_prior(prior)) prior <- list(prior)
   .prov <- .nl_grid_provenance(prior)
   prior <- .prov$prior
   # And refuse an axis this path cannot read: a grid field
@@ -667,8 +696,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
           likelihood = likelihood, theta_grid_override = theta_mat),
         prior_i, TRUE, .prov$auto,
         declared = prior_declared,
-        consistency = var_of_means_consistency,
-        adaptive_grid = adaptive_grid,
+        consistency = var_of_means_consistency && !use_qmc,
+        adaptive_grid = adaptive_grid && !use_qmc,
         edge_thresh = adaptive_grid_edge_thresh,
         max_passes = adaptive_grid_max_passes,
         user = control$axis_refine)
@@ -727,6 +756,38 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res   <- multi_rescue$res
     prior <- multi_rescue$prior
     res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
+    if (use_qmc) {
+      tags <- .nl_registry_axis_tags(res, prior, TRUE)
+      qmc_view <- .hp_design_view(res$theta_grid,
+        .hp_grid_designs(res$theta_grid, res$refining_axis)$designs)
+      modes <- .nl_registry_refine_modes(colnames(res$theta_grid),
+        colnames(res$theta_grid), prior_declared, TRUE, .prov$auto,
+        user = control$axis_refine)
+      bounds <- vapply(seq_len(ncol(res$theta_grid)), function(j) {
+        if (identical(unname(modes[j]), "extend")) c(-Inf, Inf)
+        else range(.joint_pareto_fwd(tags[j], qmc_view$grid[, j]))
+      }, numeric(2))
+      res <- .nl_qmc_integrate(res, function(cells, retain) {
+        r <- .nl_dispatch_multi(if (retain) cargs_no_ckpt else
+          utils::modifyList(cargs_lm, list(store_Q = FALSE)),
+          prior, likelihood = likelihood, theta_grid_override = cells)
+        if (retain && isTRUE(keep_grid_hessians)) {
+          r <- .nl_attach_grid_hessians(r, p_fixed, budget_cells = qmc_nodes)
+        }
+        r
+      },
+        tags, n = qmc_nodes, bounds = bounds, view = qmc_view)
+      res <- .nl_posterior_moments_multi(res, res$blocks, res$axis_offsets,
+                                        res$theta_grid, within = within_cell)
+      if (keep_joint_prec) {
+        k <- which.max(replace(res$log_marginal, !is.finite(res$log_marginal), -Inf))
+        modal_args <- utils::modifyList(cargs_no_ckpt,
+          list(x_init_nullable = as.numeric(res$modes[k, ])))
+        r <- .nl_dispatch_multi(modal_args, prior, likelihood = likelihood,
+          theta_grid_override = res$theta_grid[k, , drop = FALSE])
+        res$H_joint <- .nl_modal_joint_precision(r)
+      }
+    }
     # The placement pass's mode-find and refit are grid work: they lay the grid
     # the fit reports.
     tm$mark("grid")
@@ -1772,6 +1833,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # clipped to the span the nodes were declared over.
 .nl_attach_outer_integration <- function(res, what = "outer grid") {
   tg    <- .nl_theta_matrix(res)
+  if (!is.null(res$outer_log_measure)) {
+    res$log_quad <- res$outer_log_measure
+    res$weights <- .nl_normalise_weights_safe(res$log_marginal, what,
+                                               log_quad = res$log_quad)
+    res$outer_qmc$ess <- 1 / sum(res$weights^2)
+    return(.nl_attach_evidence(res, tg, NULL, log_measure = res$log_quad))
+  }
   # A node a refinement pass appended was not declared, so the specs are read
   # off the base cells and the cells' tags carry the rest.
   refining <- res$refining_axis
@@ -2063,7 +2131,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
                                        .nl_temporal_latent_block(res)$cols),
                                      units = .nl_unit_loads(
                                        res$blocks, res$block_latent_offsets,
-                                       res$Q_csc_n, res$theta_grid)) {
+                                       res$Q_csc_n, res$theta_grid),
+                                     budget_cells = length(res$Q_csc_p_per_grid)) {
   Q_p <- res$Q_csc_p_per_grid
   Q_i <- res$Q_csc_i_per_grid
   Q_x <- res$Q_csc_x_per_grid
@@ -2087,7 +2156,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   # The field's whole within-cell covariance is the lower-right block of the
   # same S, so retaining it costs no further solve -- only the storage, which
   # grows as n_var^2 per cell and is capped by `.NL_FIELD_COV_MAX`.
-  keep_cov <- n_var > 0L && as.numeric(n_grid) * n_var^2 <= .NL_FIELD_COV_MAX
+  keep_cov <- n_var > 0L && as.numeric(budget_cells) * n_var^2 <= .NL_FIELD_COV_MAX
   field_cov <- if (keep_cov) vector("list", n_grid)
 
   modes_mat <- res$modes  # n_grid x n_x

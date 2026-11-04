@@ -1070,6 +1070,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   switch(integration %||% "grid",
          ccd    = "moment_rule",
          sample = "sample",
+         qmc    = "sample",
          "density")
 }
 
@@ -1893,7 +1894,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # reported SD is a property of the fit rather than of the reader's assumption.
 .nl_attach_axis_sd <- function(res) {
   # A design-weighted grid carries no per-axis lattice for a parabola to read.
-  stencil_ok <- !any(res$weight_kind %in% "design")
+  stencil_ok <- !any(res$weight_kind %in% c("design", "importance"))
   if (is.null(res$theta_grid) || is.null(res$log_marginal)) return(res)
   # The per-axis marginal is an integral against the outer prior measure, so the
   # node weights belong in it. Without them the curvature at the mode is read
@@ -1969,11 +1970,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
                               out$theta_mean^2))
   names(out$theta_sd) <- colnames(tg)
 
-  # Per-block marginals: for each block, sum weights over rows that share the
-  # same per-block axis values, then take weighted mean/sd within those rows.
-  # Because the joint grid is a Cartesian product, the "rows that share this
-  # block's values" form n_block_rows groups indexed by idx[, b]. The marginal
-  # weight for group g is sum of joint weights over its rows.
+  # Each block's moments use its columns and the joint integration weights.
   B <- length(prepared)
   per_block_moments <- vector("list", B)
   for (b in seq_len(B)) {
@@ -2006,7 +2003,9 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
                                    blocks = prepared))
   qs <- .nl_axis_quantiles(
     joint_grid, out$log_marginal, out$refining_axis, log_quad = out$log_quad,
-    domains = geo$domain, within = within, atoms = geo$atom, sd = TRUE)
+    domains = geo$domain, within = within, atoms = geo$atom, sd = TRUE,
+    support = .nl_node_support(out$integration),
+    weights = if (identical(out$integration, "qmc")) out$weights)
   out$theta_median <- qs$median
   out$theta_ci_lo  <- qs$ci_lo
   out$theta_ci_hi  <- qs$ci_hi

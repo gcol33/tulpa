@@ -1508,6 +1508,9 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # fixture the correlation and SD interval ends read within 0.004 of the axis
 # read's own at 127 points, where a 4^3 tensor of stratum midpoints was 0.024
 # off on the lower SD end.
+.NL_QMC <- list(nodes = 65536L, pilot_nodes = 8192L, adapt_rounds = 2L,
+                components = 4L, df = 5, chunk_nodes = 2048L)
+
 .NL_DIAG <- list(
     within_cell          = "log_quadratic",
     lq_max_h_over_sd     = 2,

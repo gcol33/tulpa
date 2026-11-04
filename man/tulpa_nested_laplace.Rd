@@ -414,6 +414,20 @@ records the pass). Other axes keep the nodes they were laid on.
 \item \code{adaptive_grid} (\code{FALSE}), \code{adaptive_grid_edge_thresh} (\code{0.02}),
 \code{adaptive_grid_max_passes} (\code{1L}) -- the opt-in boundary / interior pass,
 on the same axes.
+\item \code{integration} (\code{"qmc"} for a local/regional multi-scale field, \code{"grid"}
+otherwise) -- \code{"qmc"} integrates continuous hyperparameters with
+quasi Monte Carlo importance quadrature in transformed coordinates.
+Each free covariance block uses its declared grid coordinates for the proposal.
+A mixture of product Student distributions is fitted to the placement grid and adapted in two
+pilot rounds. The final points carry inverse-proposal-density weights.
+\code{qmc_nodes} (\code{65536L}) sets the final proposal count; each pilot proposes
+at most \code{8192L} points. This design follows separate variance arms without
+crossing each new axis level with every other axis. Axes whose nodes
+the caller supplied retain their integration bounds; points outside
+those bounds carry zero mass and are discarded. The reported
+\code{outer_qmc} contains the proposal, evaluation count and effective sample size.
+The importance points receive full inner solves. The placement grid
+uses the pruning controls.
 \item \code{axis_refine} (\code{NULL}) -- per-axis override of how far those axes may be
 moved, named by the grid's axes (\code{"tau"}; \code{"b1.tau"} on a multi-block
 prior): \code{"none"}, \code{"densify"} (inside the declared span) or \code{"extend"}.
