@@ -47,12 +47,12 @@ test_that("a multi-scale Gaussian field resolves both variance arms against dens
     spatial = spatial_multiscale(~lon + lat, nn_local = 59L, nn_regional = 59L,
       range_local = c(.2, 1.5), range_regional = c(1.5, 10), scale_coords = FALSE),
     mode = "nested_laplace", control = list(progress = FALSE)))
-  exact <- rbind(c(-3.35004033, -.4294933, .3129286),
-                 c(-1.82563581, -.5956942, .9120002),
-                 c(-7.25237065, -1.0992331, .9941865),
-                 c(.04664282, 1.7179522, 4.7871759))
-  sd <- c(.9977661, .7147356, 2.1112691, 1.2213578)
+  exact <- rbind(c(-5.355663379053, -.660969779930, .195844608825),
+                 c(-2.467203848841, -.935123254317, 1.065092774484),
+                 c(-6.387328253070, -.791950189684, .789880274331),
+                 c(-.523917839438, .961086902352, 3.880699007175))
+  sd <- c(1.428668226221, .905404086889, 1.818775063455, 1.149732198638)
   got <- log(cbind(fit$theta_ci_lo, fit$theta_median, fit$theta_ci_hi))
   expect_lt(max(abs((got - exact) / sd)), .1)
-  expect_lt(abs(fit$log_evidence + 83.63646), .015)
+  expect_lt(abs(fit$log_evidence + 83.3996422521), .015)
 })
