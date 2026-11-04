@@ -92,7 +92,10 @@ the field reaches the linear predictor through the projector \verb{S P_perp}
 (\code{S} the observation-to-unit or observation-to-location incidence), or, for
 a binomial response, by the Polya-Gamma Gibbs sampler (\code{mode = "gibbs"}).
 \code{mode = "auto"} selects Gibbs for a binomial response and nested Laplace
-otherwise. Areal and NNGP fields take both routes.
+otherwise. Areal and NNGP fields take both routes. \code{mode = "laplace"} fits
+the same restricted model at the field's fixed hyperparameters (the
+conditional door's), solved by the nested-Laplace driver on a one-point
+grid.
 }
 \examples{
 # Create RSR spatial structure on an areal field
