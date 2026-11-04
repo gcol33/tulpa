@@ -2086,17 +2086,13 @@
     # conserved (no double-count).
     local_ccd_info <- NULL
     weight_kind    <- NULL
-    # Local-CCD refinement changes the outer grid but not the stored per-cell Q
-    # (nor the tile partition / phi tensor), so combining it with store_Q would
-    # leave a Q that no longer aligns with the refined grid and crash
-    # tulpa_posterior_draws. Keeping Q valid for draws takes precedence: skip
-    # the refinement when store_Q is on.
-    if (!is.null(local_ccd) && isTRUE(store_Q) && !use_ccd && !use_adaptive &&
-        !has_phi && .joint_local_ccd_engage(d_axes) && isTRUE(verbose)) {
-        message("tulpa joint: local-CCD refinement skipped (store_Q = TRUE); ",
-                "keeping the per-cell Q aligned with the grid for posterior draws.")
-    }
-    if (!is.null(local_ccd) && !isTRUE(store_Q) && !use_ccd && !use_adaptive &&
+    # The per-cell lists the kernel returns, spliced with the grid so every
+    # per-cell read (fixed-effect retention, stored precision and its soft
+    # pins) indexes the refined cells.
+    lccd_lists <- c("cov_block_per_grid", "Q_csc_p_per_grid",
+                    "Q_csc_i_per_grid", "Q_csc_x_per_grid",
+                    "Q_soft_D_per_grid")
+    if (!is.null(local_ccd) && !use_ccd && !use_adaptive &&
         !has_phi && .joint_local_ccd_engage(d_axes)) {
         lc <- if (is.list(local_ccd)) local_ccd else list()
         lc_max_cells <- as.integer(lc$max_cells %||% 8L)
@@ -2119,11 +2115,12 @@
                      copy_atom_mass = copy_atom_mass,
                      hyperprior = hyperprior, declared = hp_declared),
                      modes = if (is.matrix(r$modes)) r$modes else NULL,
-                     cov_blocks = r$cov_block_per_grid)
+                     cell_lists = r[intersect(lccd_lists, names(r))])
             }
             ref <- .joint_local_ccd_refine(
                 joint_grid = joint_grid, log_marginal = res$log_marginal,
-                modes = res$modes, cov_blocks = res$cov_block_per_grid,
+                modes = res$modes,
+                cell_lists = res[intersect(lccd_lists, names(res))],
                 dnode = dnode, latent_axes = axis_names,
                 tags = tags_lc, eval_nodes = eval_nodes,
                 max_cells = lc_max_cells, f0 = lc_f0, verbose = verbose,
@@ -2135,12 +2132,11 @@
                 dnode            <- ref$dnode
                 local_ccd_info   <- ref$info
                 weight_kind      <- ref$weight_kind
-                # The node solves carry their own fixed-effect block, so the
-                # refined grid keeps the retention aligned with the weights it
-                # is integrated against. The per-cell
-                # precision is not carried, which is why refinement engages only
-                # when store_Q is off -- the gate above.
-                res$cov_block_per_grid <- ref$cov_blocks
+                # The node solves carry their own fixed-effect block and
+                # precision, so the refined grid keeps the retention and the
+                # stored precisions aligned with the weights they are
+                # integrated against.
+                res[names(ref$cell_lists)] <- ref$cell_lists
                 # The per-cell linear predictor is not carried either, and
                 # unlike the precision it is not gated: it still indexes the
                 # grid the fit had BEFORE this pass. Dropped rather than read

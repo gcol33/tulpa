@@ -95,22 +95,36 @@ test_that("k_refine validates and accepts the ccd rung", {
     "local_ccd")
 })
 
-test_that("local CCD splices per-cell covariance blocks alongside the modes", {
+test_that("local CCD splices every per-cell list alongside the modes", {
   mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
   gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
   n  <- nrow(gd$grid)
   blocks <- lapply(seq_len(n), function(k) diag(k, 2L))
+  qx <- lapply(seq_len(n), function(k) c(k, k))
   eval_with_blocks <- function(theta_mat, warm) {
+    m <- nrow(theta_mat)
     list(log_marginal = .lccd_true_lm(theta_mat, mu, s), modes = NULL,
-         cov_blocks = replicate(nrow(theta_mat), diag(-1, 2L), simplify = FALSE))
+         cell_lists = list(
+           cov_block_per_grid = replicate(m, diag(-1, 2L), simplify = FALSE),
+           Q_csc_x_per_grid = replicate(m, c(-1, -1), simplify = FALSE)))
   }
   out <- tulpa:::.joint_local_ccd_refine(
     gd$grid, gd$lm, modes = NULL, dnode = NULL,
     latent_axes = c("a", "b"), tags = c(a = "identity", b = "identity"),
-    eval_nodes = eval_with_blocks, max_cells = 4L, cov_blocks = blocks)
+    eval_nodes = eval_with_blocks, max_cells = 4L,
+    cell_lists = list(cov_block_per_grid = blocks, Q_csc_x_per_grid = qx))
   expect_false(is.null(out))
-  expect_length(out$cov_blocks, nrow(out$joint_grid))
-  expect_true(all(vapply(out$cov_blocks, is.matrix, logical(1))))
+  for (nm in c("cov_block_per_grid", "Q_csc_x_per_grid")) {
+    expect_length(out$cell_lists[[nm]], nrow(out$joint_grid))
+  }
+  expect_true(all(vapply(out$cell_lists$cov_block_per_grid, is.matrix,
+                         logical(1))))
+  # A carried cell keeps its own entry; a node takes the evaluator's.
+  kind <- out$weight_kind
+  expect_true(all(vapply(out$cell_lists$Q_csc_x_per_grid[kind == "mass"],
+                         function(v) all(v > 0), logical(1))))
+  expect_true(any(vapply(out$cell_lists$Q_csc_x_per_grid[kind == "design"],
+                         function(v) all(v < 0), logical(1))))
 })
 
 # --------------------------------------------------------------------------- #
@@ -1004,6 +1018,12 @@ test_that("local CCD engages on a 4-axis multi-block fit and conserves the integ
   expect_gte(fitl$local_ccd_info$n_cells_refined, 1L)
   expect_gt(fitl$local_ccd_info$n_nodes_added, 0L)
   expect_gt(length(fitl$log_marginal), length(fit$log_marginal))   # nodes appended
+  # The stored precisions follow the refined cells, so posterior draws read
+  # each node's own Gaussian.
+  if (!is.null(fitl$Q_csc_x_per_grid)) {
+    expect_length(fitl$Q_csc_x_per_grid, length(fitl$log_marginal))
+    expect_true(all(is.finite(tulpa_posterior_draws(fitl, n = 50L))))
+  }
 
   # Integration weight is conserved and the posterior stays well-formed.
   expect_true(abs(sum(fitl$weights) - 1) < 1e-8)

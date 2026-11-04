@@ -1323,7 +1323,7 @@
 #   tags         named character per latent axis ("log"/"logit01"/"identity"),
 #                or NULL to DECLINE (an unguessable-support axis, e.g. rho_car).
 #   eval_nodes   function(theta_mat, warm) -> list(log_marginal, modes,
-#                cov_blocks): evaluate the inner marginal at new node rows
+#                cell_lists): evaluate the inner marginal at new node rows
 #                (full-coordinate matrix, colnames = colnames(joint_grid)), warm-
 #                started from `warm` (the refined cell's inner mode, or NULL).
 #   max_cells    cap on refined cells (hard cap on extra solve fan-out).
@@ -1335,18 +1335,21 @@
 #                `mode_gain`, and the cell's coarse-vs-refined mass comparison,
 #                are recorded for every cell either way and gate nothing.
 #   verbose      announce the refinement summary.
-#   cov_blocks   length-n list of per-cell fixed-effect covariance blocks, or
-#                NULL. Carried cell-for-cell exactly like `modes`, so a refined
-#                grid keeps the retention aligned with the weights it is
-#                integrated against instead of declining.
+#   cell_lists   named list of length-n per-cell lists (the fixed-effect
+#                covariance blocks, the stored precisions and their soft-pin
+#                precisions), or NULL. Each is carried cell-for-cell exactly
+#                like `modes`, the nodes' entries taken from `eval_nodes()`'s
+#                `cell_lists` of the same names, so a refined grid keeps every
+#                per-cell read aligned with the weights it is integrated
+#                against.
 #
-# Returns list(joint_grid, log_marginal, modes, cov_blocks, dnode, info) with the
+# Returns list(joint_grid, log_marginal, modes, cell_lists, dnode, info) with the
 # refined cells replaced by their node clouds, or NULL when refinement declines
 # (NULL tags, no candidate peaked cells, or a degenerate layout).
 .joint_local_ccd_refine <- function(joint_grid, log_marginal, modes = NULL,
                                      dnode = NULL, latent_axes, tags,
                                      eval_nodes, max_cells = 8L, f0 = 1.1,
-                                     verbose = FALSE, cov_blocks = NULL,
+                                     verbose = FALSE, cell_lists = NULL,
                                      skew_max = .nl_diag("gamma3_ok"),
                                      rank = "weight") {
     if (is.null(tags)) return(NULL)
@@ -1396,11 +1399,12 @@
     delta_centre <- delta[is_centre][1L]
 
     n_x <- if (is.matrix(modes)) ncol(modes) else 0L
-    have_cov <- is.list(cov_blocks) && length(cov_blocks) == n
+    cell_lists <- Filter(function(v) is.list(v) && length(v) == n,
+                         cell_lists %||% list())
+    new_cell_lists <- lapply(cell_lists, function(v) list())
     new_grid_blocks <- list()
     new_lm_blocks   <- list()
     new_mode_blocks <- list()
-    new_cov_blocks  <- list()
     new_dn_blocks   <- list()
     n_nodes_added   <- 0L
     # Each refined cell's share of the BASE grid's integration weight, before
@@ -1528,12 +1532,12 @@
             mode_blk <- rbind(modes[c, , drop = FALSE], mode_off)
             new_mode_blocks[[length(new_mode_blocks) + 1L]] <- mode_blk
         }
-        if (have_cov) {
-            cov_off <- if (is.list(ev$cov_blocks) &&
-                           length(ev$cov_blocks) == nrow(theta_nodes))
-                ev$cov_blocks else vector("list", nrow(theta_nodes))
-            new_cov_blocks[[length(new_cov_blocks) + 1L]] <-
-                c(cov_blocks[c], cov_off)
+        for (nm in names(cell_lists)) {
+            off <- ev$cell_lists[[nm]]
+            if (!is.list(off) || length(off) != nrow(theta_nodes))
+                off <- vector("list", nrow(theta_nodes))
+            new_cell_lists[[nm]][[length(new_cell_lists[[nm]]) + 1L]] <-
+                c(cell_lists[[nm]][c], off)
         }
         new_grid_blocks[[length(new_grid_blocks) + 1L]] <- grid_blk
         new_lm_blocks[[length(new_lm_blocks) + 1L]]     <- lm_blk
@@ -1576,8 +1580,9 @@
     out_dn   <- c(dn_w[keep], unlist(new_dn_blocks, use.names = FALSE))
     out_modes <- if (n_x > 0L)
         rbind(modes[keep, , drop = FALSE], do.call(rbind, new_mode_blocks)) else NULL
-    out_cov <- if (have_cov)
-        c(cov_blocks[keep], unlist(new_cov_blocks, recursive = FALSE)) else NULL
+    out_cell_lists <- lapply(stats::setNames(nm = names(cell_lists)), function(nm)
+        c(cell_lists[[nm]][keep],
+          unlist(new_cell_lists[[nm]], recursive = FALSE)))
 
     if (isTRUE(verbose)) {
         message(sprintf(
@@ -1605,7 +1610,7 @@
     list(joint_grid   = out_grid,
          log_marginal = out_lm,
          modes        = out_modes,
-         cov_blocks   = out_cov,
+         cell_lists   = out_cell_lists,
          dnode        = out_dn,
          weight_kind  = out_kind,
          info         = list(n_cells_refined = length(refined),
