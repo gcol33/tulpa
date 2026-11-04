@@ -1001,13 +1001,6 @@
   }
 
   if (input == "nested") {
-    if (!isTRUE(BACKEND_REGISTRY[[backend]]$dispatchable %||% TRUE)) {
-      stop(sprintf(paste0(
-        "Backend '%s' is a nested engine driven by model packages, not the\n",
-        "single-response tulpa() formula -- it needs multiple response arms,\n",
-        "which a single formula cannot express. Call %s() directly."),
-        backend, BACKEND_REGISTRY[[backend]]$fitter %||% backend), call. = FALSE)
-    }
     # The nested driver integrates the hyperparameters of latent prior blocks
     # and/or field(s). A spatial(col) field becomes an areal / continuous prior
     # block (.spatial_spec_to_nl_prior); a temporal field becomes a temporal

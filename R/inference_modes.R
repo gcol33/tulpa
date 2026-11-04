@@ -1453,22 +1453,13 @@ inference_mode_info <- function() {
   cat("  tulpa(..., mode = 'optimized')  # Tier 3 (explicit opt-in)\n\n")
 
   cat(paste0(
-    "Backends ([R] = tulpa(mode =) dispatch, [direct] = has an R fitter but ",
-    "tulpa(mode =) refuses it -- call the fitter itself, [C-ABI] = ",
+    "Backends ([R] = tulpa(mode =) dispatch, [C-ABI] = ",
     "model-package kernel only):\n"))
   for (tk in c("exact", "structured", "optimized")) {
     for (b in .tier_backends(tk)) {
       entry <- BACKEND_REGISTRY[[b]]
-      if (is.null(entry$fitter)) {
-        tag <- "[C-ABI]"
-        usage <- sprintf("mode = '%s'", b)
-      } else if (isTRUE(entry$dispatchable %||% TRUE)) {
-        tag <- "[R]    "
-        usage <- sprintf("mode = '%s'", b)
-      } else {
-        tag <- "[direct]"
-        usage <- sprintf("%s()", entry$fitter)
-      }
+      tag <- if (is.null(entry$fitter)) "[C-ABI]" else "[R]    "
+      usage <- sprintf("mode = '%s'", b)
       cat(sprintf("  %s %-26s # Tier %d (%s)\n",
                   tag, usage, TIER_META[[tk]]$tier, TIER_META[[tk]]$name))
     }

@@ -42,9 +42,7 @@ test_that("nested_laplace without a latent block errors", {
 })
 
 test_that("inference_mode_info() lists nested_laplace_joint as a tulpa(mode =) backend (#786, #1092)", {
-  # tulpa() reaches the joint driver as a one-arm fit (R/tulpa_joint_arm.R),
-  # so the printed tag and the dispatch guard read the same registry entry.
-  expect_true(isTRUE(BACKEND_REGISTRY$nested_laplace_joint$dispatchable %||% TRUE))
+  # tulpa() reaches the joint driver as a one-arm fit (R/tulpa_joint_arm.R).
   out <- capture.output(inference_mode_info())
   line <- grep("^\\s*\\[", out, value = TRUE)
   line <- grep("nested_laplace_joint", line, value = TRUE)

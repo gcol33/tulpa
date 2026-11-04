@@ -22,6 +22,7 @@
 #ifndef TULPA_NESTED_LAPLACE_MULTI_H
 #define TULPA_NESTED_LAPLACE_MULTI_H
 
+#include "hard_constraints.h"             // collect_hard_constraints
 #include "hessian_pattern_guard.h"        // HessianPatternGuard (see its placement rule)
 #include "laplace_builtin_family_spec.h"  // builtin_family_spec, BuiltinFamilyResponse
 #include "laplace_core.h"
@@ -220,7 +221,7 @@ inline Rcpp::List run_single_arm_block_joint(
         /*inner_sparse_override=*/0, screen_iters,
         store_modes && compute_fitted_var, screen_log_offset);
     if (store_modes) nl_attach_fitted_eta_single_arm(out, arms, parsed, blocks);
-    Rcpp::List cc = intrinsic_constraint_cols(blocks);
+    Rcpp::List cc = write_constraint_rows(collect_hard_constraints(blocks));
     if (cc.size() > 0) out["constraint_cols"] = cc;
     return out;
 }
@@ -669,10 +670,10 @@ inline Rcpp::List run_multi_block_nested_laplace(
     );
     pattern_guard.check("the single-block nested-Laplace outer grid");
 
-    // The intrinsic blocks' sum-to-zero groups, for conditioning the
-    // fixed-effect covariance read off the stored precisions (#901).
+    // Every block's hard rows (an intrinsic block's level row among them), for
+    // conditioning the covariance read off the stored precisions.
     {
-        Rcpp::List cc = intrinsic_constraint_cols(blocks);
+        Rcpp::List cc = write_constraint_rows(collect_hard_constraints(blocks));
         if (cc.size() > 0) out["constraint_cols"] = cc;
     }
 
