@@ -1,7 +1,15 @@
 # Importance quadrature in transformed hyperparameters. A Student mixture has
 # positive density throughout the coordinate space, including variance arms
 # whose mass is small on the placement grid.
-.nl_qmc_uniform <- function(n, d) {
+.nl_qmc_uniform <- function(n, d, start = 0L, seed = NULL) {
+    if (!is.null(seed)) {
+        had_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+        if (had_seed) old_seed <- get(".Random.seed", envir = .GlobalEnv)
+        on.exit(if (had_seed) assign(".Random.seed", old_seed, .GlobalEnv)
+                else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE))
+                    rm(".Random.seed", envir = .GlobalEnv))
+        set.seed(seed)
+    }
     primes <- integer(0)
     p <- 2L
     while (length(primes) < d) {
@@ -10,13 +18,19 @@
     }
     out <- matrix(0, n, d)
     for (j in seq_len(d)) {
-        k <- seq_len(n)
+        k <- start + seq_len(n)
         f <- 1 / primes[j]
-        while (any(k > 0L)) {
-            out[, j] <- out[, j] + f * (k %% primes[j])
+        while (if (is.null(seed)) any(k > 0L) else f > .Machine$double.eps) {
+            digit <- k %% primes[j]
+            if (!is.null(seed)) {
+                perm <- sample.int(primes[j]) - 1L
+                digit <- perm[digit + 1L]
+            }
+            out[, j] <- out[, j] + f * digit
             k <- k %/% primes[j]
             f <- f / primes[j]
         }
+        if (!is.null(seed)) out[, j] <- (out[, j] + runif(1L)) %% 1
     }
     out
 }
@@ -66,10 +80,14 @@
     c(ans, tails, list(make(mu, 4 * variance, .15)))
 }
 
-.nl_qmc_nodes <- function(proposal, n) {
+.nl_qmc_nodes <- function(proposal, n, start = 0L, seed = 1729L) {
     d <- length(proposal[[1L]]$mu)
+    if (!n) return(list(u = matrix(numeric(0), 0L, d), log_q = numeric(0),
+                        proposal = proposal))
     mass <- vapply(proposal, `[[`, numeric(1), "mass")
-    counts <- diff(c(0L, round(cumsum(mass) * n)))
+    mass <- mass / sum(mass)
+    previous <- diff(c(0L, round(cumsum(mass) * start)))
+    counts <- diff(c(0L, round(cumsum(mass) * (start + n)))) - previous
     id <- rep(seq_along(proposal), counts)
     for (g in seq_along(proposal)) proposal[[g]]$mass <- counts[g] / n
     U <- matrix(0, n, d)
@@ -77,8 +95,7 @@
         ix <- which(id == g)
         if (!length(ix)) next
         p <- proposal[[g]]
-        v <- .nl_qmc_uniform(length(ix), d)
-        v <- sweep(v, 2L, (g * sqrt(seq_len(d) + 1L)) %% 1, "+") %% 1
+        v <- .nl_qmc_uniform(length(ix), d, previous[g], seed + 7919L * g)
         z <- matrix(0, length(ix), d)
         for (j in seq_len(d)) {
             z[, j] <- stats::qt(v[, j], p$df)
@@ -91,6 +108,72 @@
     }, numeric(n))
     mx <- apply(lp, 1L, max)
     list(u = U, log_q = mx + log(rowSums(exp(lp - mx))), proposal = proposal)
+}
+
+# Independent scrambles estimate the error of a self-normalized integral.
+# Quantile error uses the between-scramble quantiles, including the complete
+# conditional Gaussian mixture for each retained fixed effect.
+.nl_qmc_error <- function(u, log_weight, replicate, out, proposed_per_rep,
+                          probs = c(.025, .5, .975)) {
+    n <- nrow(u)
+    # A common normalization cancels in sd(z) / mean(z).
+    a <- .nl_normalise_weights_safe(log_weight)
+    keep <- which(is.finite(a) & a > 0)
+    if (!length(keep)) return(list(log_evidence = Inf,
+        hyper_quantiles = matrix(Inf, length(probs), ncol(u)),
+        fixed_quantiles = NULL, max = Inf))
+    if (length(keep) != n) {
+        u <- u[keep, , drop = FALSE]
+        a <- a[keep]
+        replicate <- replicate[keep]
+        for (field in c("grid_modes", "grid_hessians")) {
+            if (length(out[[field]]) == n) out[[field]] <- out[[field]][keep]
+        }
+    }
+    groups <- lapply(seq_along(proposed_per_rep), function(g) which(replicate == g))
+    z <- vapply(groups, function(ix) sum(a[ix]), numeric(1)) / proposed_per_rep
+    log_se <- stats::sd(z) / sqrt(length(z)) / mean(z)
+    w <- a
+    qse <- function(values, variance = NULL) {
+        if (is.null(variance)) {
+            mu <- sum(w * values)
+            sd <- sqrt(sum(w * (values - mu)^2))
+            qs <- vapply(groups, function(ix) {
+                if (!length(ix) || !any(a[ix] > 0)) return(rep(NA_real_, length(probs)))
+                .nl_wtd_quantile(values[ix], a[ix], probs, outside = "clamp")
+            }, numeric(length(probs)))
+        } else {
+            full <- .nl_gauss_mixture_summary(matrix(values, ncol = 1L),
+                matrix(variance, ncol = 1L), w, probs)
+            if (is.null(full)) return(rep(Inf, length(probs)))
+            sd <- full$sd
+            qs <- vapply(groups, function(ix) {
+                s <- .nl_gauss_mixture_summary(matrix(values[ix], ncol = 1L),
+                    matrix(variance[ix], ncol = 1L), a[ix], probs)
+                if (is.null(s)) rep(NA_real_, length(probs)) else as.numeric(s$quantiles)
+            }, numeric(length(probs)))
+        }
+        if (isTRUE(sd == 0)) return(rep(0, length(probs)))
+        apply(qs, 1L, stats::sd) / sqrt(length(groups)) / sd
+    }
+    hyper <- vapply(seq_len(ncol(u)), function(j) qse(u[, j]), numeric(length(probs)))
+    fixed <- NULL
+    if (length(out$grid_modes) == nrow(u) && length(out$grid_hessians) == nrow(u)) {
+        p <- max(lengths(out$grid_modes))
+        if (p) {
+            variance <- lapply(out$grid_hessians, function(h)
+                if (length(h)) diag(.spd_inverse(h)) else rep(NA_real_, p))
+            fixed <- vapply(seq_len(p), function(j) {
+                mu <- vapply(out$grid_modes, function(m)
+                    if (length(m)) m[j] else NA_real_, numeric(1))
+                vv <- vapply(variance, function(v) v[j], numeric(1))
+                qse(mu, vv)
+            }, numeric(length(probs)))
+        }
+    }
+    errors <- c(log_se, hyper, fixed)
+    list(log_evidence = log_se, hyper_quantiles = hyper, fixed_quantiles = fixed,
+         max = if (all(is.finite(errors))) max(errors) else Inf)
 }
 
 .nl_qmc_solve <- function(cells, solve, retain) {
@@ -106,7 +189,7 @@
 }
 
 .nl_qmc_integrate <- function(res, solve, tags, n = .NL_QMC$nodes,
-                               bounds = NULL, view = NULL) {
+                               bounds = NULL, view = NULL, tol = .NL_QMC$tol) {
     tg <- .nl_theta_matrix(res)
     if (nrow(tg) == 1L) return(res)
     if (is.null(view)) view <- .hp_design_view(tg,
@@ -134,7 +217,7 @@
     varying <- which(apply(U, 2L, function(v) diff(range(v))) > 0)
     if (!length(varying)) return(res)
     proposal <- .nl_qmc_proposal(U[keep, varying, drop = FALSE], res$weights[keep])
-    stages <- c(rep(min(n, .NL_QMC$pilot_nodes), .NL_QMC$adapt_rounds), n)
+    stages <- rep(min(n, .NL_QMC$pilot_nodes), .NL_QMC$adapt_rounds)
     n_evaluated <- 0L
     for (stage in seq_along(stages)) {
         size <- stages[stage]
@@ -155,15 +238,61 @@
         }
         colnames(cells) <- colnames(tg)
         n_evaluated <- n_evaluated + nrow(cells)
-        final <- stage == length(stages)
-        out <- .nl_qmc_solve(cells, solve, retain = final)
+        out <- .nl_qmc_solve(cells, solve, retain = FALSE)
         measure <- jac - nodes$log_q[valid] - log(size)
         w <- .nl_normalise_weights_safe(out$log_marginal, log_quad = measure)
-        if (!final) {
-            good <- is.finite(w) & w > 0
-            proposal <- .nl_qmc_proposal(u[good, varying, drop = FALSE], w[good])
-        }
+        good <- is.finite(w) & w > 0
+        proposal <- .nl_qmc_proposal(u[good, varying, drop = FALSE], w[good])
     }
+    out <- NULL
+    u <- cells <- matrix(numeric(0), 0L, ncol(tg))
+    log_weight <- measure <- numeric(0)
+    replicate <- integer(0)
+    proposed <- 0L
+    r <- min(.NL_QMC$replicates, n)
+    proposed_per_rep <- numeric(r)
+    proposal <- .nl_qmc_nodes(proposal, .NL_QMC$block_nodes %/% r)$proposal
+    history <- list()
+    repeat {
+        size <- min(.NL_QMC$block_nodes, n - proposed)
+        counts <- diff(floor(seq(0, size, length.out = r + 1L)))
+        parts <- lapply(seq_len(r), function(g) .nl_qmc_nodes(proposal, counts[g],
+            start = proposed_per_rep[g], seed = 104729L + g))
+        nodes <- list(u = do.call(rbind, lapply(parts, `[[`, "u")),
+                      log_q = unlist(lapply(parts, `[[`, "log_q")), proposal = proposal)
+        ub <- matrix(rep(U[1L, ], each = size), size, ncol(tg))
+        ub[, varying] <- nodes$u
+        valid <- rep(TRUE, size)
+        if (!is.null(bounds)) for (j in varying)
+            valid <- valid & ub[, j] >= bounds[1L, j] & ub[, j] <= bounds[2L, j]
+        cb <- ub
+        jac <- numeric(size)
+        for (j in seq_len(ncol(tg))) {
+            inv <- .joint_pareto_inv(tags[j], ub[, j])
+            cb[, j] <- inv$theta
+            if (j %in% varying) jac <- jac + inv$log_jac
+        }
+        colnames(cb) <- colnames(tg)
+        rb <- .nl_qmc_solve(cb[valid, , drop = FALSE], solve, retain = TRUE)
+        # Rejected bound points carry zero mass in the integral's denominator.
+        mb <- jac[valid] - nodes$log_q[valid]
+        lb <- rb$log_marginal + mb
+        if (is.null(out)) out <- rb else out <- .nl_bind_cell_results(out,
+            list(list(res = rb, n = sum(valid))), nrow(cells))
+        cells <- rbind(cells, cb[valid, , drop = FALSE])
+        u <- rbind(u, ub[valid, , drop = FALSE])
+        measure <- c(measure, mb)
+        log_weight <- c(log_weight, lb)
+        replicate <- c(replicate, rep(seq_len(r), counts)[valid])
+        proposed <- proposed + size
+        proposed_per_rep <- proposed_per_rep + counts
+        n_evaluated <- n_evaluated + sum(valid)
+        error <- .nl_qmc_error(u, log_weight, replicate, out, proposed_per_rep)
+        history[[length(history) + 1L]] <- c(n = proposed, error = error$max)
+        if (error$max <= tol || proposed >= n) break
+    }
+    measure <- measure - log(proposed)
+    if (!is.null(out$n_grid)) out$n_grid <- nrow(cells)
     out$theta_grid <- if (mapped) view$to_columns(cells) else cells
     out$theta_names <- colnames(cells)
     out$integration <- "qmc"
@@ -171,7 +300,9 @@
     out$refining_axis <- rep("qmc", nrow(cells))
     out$weight_kind <- rep("importance", nrow(cells))
     out$theta_interval_read <- "sample"
-    out$outer_qmc <- list(n = n, n_evaluated = n_evaluated, proposal = nodes$proposal)
+    out$outer_qmc <- list(n = proposed, n_evaluated = n_evaluated, proposal = proposal,
+                         error = error, tol = tol, converged = error$max <= tol,
+                         history = do.call(rbind, history))
     if (mapped) out$outer_qmc$design_columns <- view$cols
     fields <- c("outer_grid_placement", "outer_grid_axis_declined", "outer_grid_moved_axes",
                 "outer_grid_recenter_clamped", "outer_grid_recenter_declined")

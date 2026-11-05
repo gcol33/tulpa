@@ -14,6 +14,11 @@ test_that("importance point counts are validated before fitting", {
       prior = list(block), control = list(integration = "qmc", qmc_nodes = n)),
       "qmc_nodes.*integer")
   }
+  for (tol in list(0, -1, NA_real_, Inf, "0.01", c(.01, .02))) {
+    expect_error(tulpa_nested_laplace(c(0, 1), c(1L, 1L), matrix(1, 2L, 1L),
+      prior = list(block), control = list(integration = "qmc", qmc_tol = tol)),
+      "qmc_tol.*positive finite")
+  }
 })
 
 test_that("a point design retains its fixed hyperparameters", {
@@ -41,12 +46,13 @@ test_that("importance quadrature resolves both arms of a continuous posterior", 
               weights = tulpa:::.nl_normalise_weights_safe(lm))
   out <- tulpa:::.nl_qmc_integrate(res, function(cells, retain)
     list(log_marginal = .qmc_l_target(cells),
-         log_hyperprior_axes = colnames(U)), rep("identity", 4L), n = 32768L)
+         log_hyperprior_axes = colnames(U)), rep("identity", 4L), n = 32768L,
+    tol = .01)
   expect_identical(out$integration, "qmc")
-  expect_equal(nrow(out$theta_grid), 32768L)
+  expect_lte(nrow(out$theta_grid), 32768L)
   expect_equal(out$log_evidence, 0, tolerance = .015)
   mass <- vapply(out$outer_qmc$proposal, `[[`, numeric(1), "mass")
-  expect_equal(mass * 32768L, round(mass * 32768L), tolerance = 1e-10)
+  expect_equal(mass * out$outer_qmc$n, round(mass * out$outer_qmc$n), tolerance = 1e-10)
   expect_equal(sum(mass), 1, tolerance = 1e-15)
   for (j in 1:4) {
     means <- if (j %in% c(1L, 3L)) c(-4, 0) else c(0, 0)
@@ -56,6 +62,95 @@ test_that("importance quadrature resolves both arms of a continuous posterior", 
     got <- tulpa:::.nl_wtd_quantile(out$theta_grid[, j], out$weights,
                                    c(.025, .5, .975), outside = "clamp")
     expect_lt(max(abs(got - exact)), .06)
+  }
+})
+
+test_that("scrambled sequences extend exactly and preserve the caller's RNG", {
+  set.seed(8L)
+  rng <- .Random.seed
+  full <- tulpa:::.nl_qmc_uniform(1024L, 4L, seed = 19L)
+  parts <- rbind(tulpa:::.nl_qmc_uniform(512L, 4L, seed = 19L),
+    tulpa:::.nl_qmc_uniform(512L, 4L, start = 512L, seed = 19L))
+  expect_identical(parts, full)
+  expect_identical(.Random.seed, rng)
+  expect_false(identical(full, tulpa:::.nl_qmc_uniform(1024L, 4L, seed = 20L)))
+})
+
+test_that("Monte Carlo errors give nonfinite nodes zero mass in the original denominator", {
+  u <- cbind(a = seq(-2, 2, length.out = 64L), b = sin(seq_len(64L)))
+  lw <- rep(0, 64L)
+  group <- rep(1:8, each = 8L)
+  out <- list(grid_modes = lapply(seq_len(64L), function(i) u[i, ]),
+    grid_hessians = rep(list(diag(c(1, 2))), 64L))
+  bad <- 2:4
+  lw[bad] <- c(NA_real_, Inf, -Inf)
+  u[bad, ] <- NA_real_
+  out$grid_modes[bad] <- rep(list(rep(NA_real_, 2L)), length(bad))
+  out$grid_hessians[bad] <- rep(list(matrix(NA_real_, 2L, 2L)), length(bad))
+  keep <- setdiff(seq_len(64L), bad)
+  expected <- tulpa:::.nl_qmc_error(u[keep, ], lw[keep], group[keep],
+    lapply(out, function(x) x[keep]), rep(8, 8L))
+  got <- tulpa:::.nl_qmc_error(u, lw, group, out, rep(8, 8L))
+  expect_equal(got, expected, tolerance = 1e-14)
+  counts <- c(5, rep(8, 7L))
+  expect_equal(got$log_evidence, sd(counts) / sqrt(8) / mean(counts),
+               tolerance = 1e-14)
+  expect_true(is.finite(got$max))
+})
+
+test_that("stratified proposal blocks extend each component's scrambled sequence", {
+  proposal <- lapply(c(.35, .65), function(mass)
+    list(mu = c(0, 1), scale = c(1, 2),
+         mass = mass, df = 5, logdet = log(2)))
+  proposal <- tulpa:::.nl_qmc_nodes(proposal, 512L)$proposal
+  a <- tulpa:::.nl_qmc_nodes(proposal, 512L, seed = 4L)
+  b <- tulpa:::.nl_qmc_nodes(proposal, 512L, start = 512L, seed = 4L)
+  full <- tulpa:::.nl_qmc_nodes(proposal, 1024L, seed = 4L)
+  sort_rows <- function(x) x[order(x[, 1], x[, 2]), , drop = FALSE]
+  expect_identical(sort_rows(rbind(a$u, b$u)), sort_rows(full$u))
+  expect_identical(sort_rows(cbind(rbind(a$u, b$u), c(a$log_q, b$log_q))),
+                   sort_rows(cbind(full$u, full$log_q)))
+})
+
+test_that("an adaptive design stops at its error target and tighter targets grow it", {
+  skip_on_cran()
+  U <- as.matrix(expand.grid(a = seq(-4, 4, by = 1), b = seq(-4, 4, by = 1)))
+  density <- function(u) rowSums(dnorm(u, log = TRUE))
+  res <- list(theta_grid = U, log_marginal = density(U),
+              weights = tulpa:::.nl_normalise_weights_safe(density(U)))
+  solve <- function(cells, retain) list(log_marginal = density(cells),
+                                        log_hyperprior_axes = colnames(U))
+  loose <- tulpa:::.nl_qmc_integrate(res, solve, rep("identity", 2L), tol = .04)
+  tight <- tulpa:::.nl_qmc_integrate(res, solve, rep("identity", 2L), tol = .004)
+  expect_true(loose$outer_qmc$converged)
+  expect_lt(loose$outer_qmc$n, tight$outer_qmc$n)
+  expect_lte(loose$outer_qmc$error$max, .04)
+  expect_equal(loose$log_evidence, 0, tolerance = .015)
+  expect_equal(tight$log_evidence, 0, tolerance = .015)
+})
+
+test_that("a capped correlated design reports its remaining Monte Carlo error", {
+  skip_on_cran()
+  covariance <- diag(4L)
+  covariance[1, 2] <- covariance[2, 1] <- .98
+  covariance[3, 4] <- covariance[4, 3] <- -.98
+  R <- chol(covariance)
+  inverse <- backsolve(R, diag(4L))
+  density <- function(u) rowSums(dnorm(u %*% inverse, log = TRUE)) - sum(log(diag(R)))
+  U <- as.matrix(expand.grid(a = -3:3, b = -3:3, c = -3:3, d = -3:3))
+  res <- list(theta_grid = U, log_marginal = density(U),
+    weights = tulpa:::.nl_normalise_weights_safe(density(U)))
+  out <- tulpa:::.nl_qmc_integrate(res, function(cells, retain)
+    list(log_marginal = density(cells), log_hyperprior_axes = colnames(U)),
+    rep("identity", 4L), n = 65536L)
+  expect_false(out$outer_qmc$converged)
+  expect_gt(out$outer_qmc$error$max, out$outer_qmc$tol)
+  expect_equal(out$outer_qmc$n, 65536L)
+  expect_equal(out$log_evidence, 0, tolerance = .015)
+  for (j in 1:4) {
+    q <- tulpa:::.nl_wtd_quantile(out$theta_grid[, j], out$weights,
+      c(.025, .5, .975), outside = "clamp")
+    expect_lt(max(abs(q - qnorm(c(.025, .5, .975)))), .06)
   }
 })
 

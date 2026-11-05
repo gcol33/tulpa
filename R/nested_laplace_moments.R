@@ -243,10 +243,17 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   # at that resolution -- the underlying mass between the tied cells is
   # zero up to floating-point error. Suppress the noise.
   na_outside <- identical(outside, "na")
-  vapply(probs, function(q) {
+  inside <- which(probs > p[1L] & probs < p[n])
+  interpolated <- rep(NA_real_, length(probs))
+  if (length(inside)) interpolated[inside] <- suppressWarnings(
+    approx(p, v, xout = probs[inside], method = "linear")$y)
+  index <- seq_along(probs)
+  names(index) <- if (is.character(probs) && is.null(names(probs))) probs else names(probs)
+  vapply(index, function(i) {
+    q <- probs[[i]]
     if (q <= p[1L]) return(if (na_outside) NA_real_ else v[1L])
     if (q >= p[n])  return(if (na_outside) NA_real_ else v[n])
-    y <- suppressWarnings(approx(p, v, xout = q, method = "linear")$y)
+    y <- interpolated[i]
     if (is.finite(y)) return(y)
     .nl_interp_repair(p, v, q, y)
   }, numeric(1L))
@@ -1631,13 +1638,15 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   v <- vals[keep]; l <- log_marg[keep]
   uv <- sort(unique(v))
   if (length(uv) == 0L) return(list(vals = uv, log_marg = numeric(0)))
-  lm <- vapply(uv, function(u) {
-    li <- l[v == u]
+  groups <- split(l, factor(match(v, uv), levels = seq_along(uv)))
+  lm <- vapply(groups, function(li) {
     if (length(li) == 0L) return(-Inf)
     m <- max(li)
     if (!is.finite(m)) return(-Inf)
     m + log(sum(exp(li - m)))
   }, numeric(1))
+  names(lm) <- if (is.character(uv) && is.null(names(uv))) uv else names(uv)
+  if (anyNA(v)) lm[] <- -Inf
   list(vals = uv, log_marg = lm)
 }
 

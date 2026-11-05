@@ -418,14 +418,20 @@ on the same axes.
 otherwise) -- \code{"qmc"} integrates continuous hyperparameters with
 quasi Monte Carlo importance quadrature in transformed coordinates.
 Each free covariance block uses its declared grid coordinates for the proposal.
-A mixture of product Student distributions is fitted to the placement grid and adapted in two
+A mixture of diagonal product Student distributions is fitted to the
+placement grid and is adapted in two
 pilot rounds. The final points carry inverse-proposal-density weights.
-\code{qmc_nodes} (\code{65536L}) sets the final proposal count; each pilot proposes
-at most \code{8192L} points. This design follows separate variance arms without
+\code{qmc_nodes} (\code{65536L}) bounds the final proposal count; each pilot proposes
+at most \code{1024L} points. Independent scrambled sequences grow in blocks
+until the estimated error in log evidence (nats) and every reported
+hyperparameter and fixed-effect quantile (posterior SD units) is below
+\code{qmc_tol} (\code{0.05}). Hyperparameter errors use the proposal coordinates,
+so unbounded range axes use their finite log-coordinate SD. This design follows separate variance arms without
 crossing each new axis level with every other axis. Axes whose nodes
 the caller supplied retain their integration bounds; points outside
 those bounds carry zero mass and are discarded. The reported
-\code{outer_qmc} contains the proposal, evaluation count and effective sample size.
+\code{outer_qmc} contains the proposal, evaluation count, effective sample size,
+error estimates, stopping history and convergence flag.
 The importance points receive full inner solves. The placement grid
 uses the pruning controls.
 \item \code{axis_refine} (\code{NULL}) -- per-axis override of how far those axes may be

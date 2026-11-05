@@ -182,7 +182,7 @@ tulpa_check_control <- function(control, allowed, where) {
                 "progress.throttle")
   keys <- list(
     nested_laplace = c("max_iter", "tol", "n_threads", "x_init",
-                       "integration", "qmc_nodes",
+                       "integration", "qmc_nodes", "qmc_tol",
                        "keep_grid_hessians", "diagnose_k", "k_samples",
                        "k_tail_points",
                        "diagnose_skew", "skew_idx", "skew_correct",
@@ -334,7 +334,7 @@ tulpa_check_control <- function(control, allowed, where) {
 #' @keywords internal
 .OUTER_GRID_KNOBS <- c(
   "n_grid", "n_per_axis", "n_grid_spatial", "n_grid_temporal", "n_grid_rho",
-  "span", "integration", "qmc_nodes", "local_ccd", "ccd_budget", "ccd_budget_floor",
+  "span", "integration", "qmc_nodes", "qmc_tol", "local_ccd", "ccd_budget", "ccd_budget_floor",
   "max_grid_cells", "auto_recenter", "recenter_pilot", "axis_refine",
   "adaptive_grid", "adaptive_grid_cutoff", "adaptive_grid_edge_thresh",
   "adaptive_grid_max_frac", "adaptive_grid_max_passes",

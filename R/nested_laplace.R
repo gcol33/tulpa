@@ -332,14 +332,20 @@
 #'     otherwise) -- `"qmc"` integrates continuous hyperparameters with
 #'     quasi Monte Carlo importance quadrature in transformed coordinates.
 #'     Each free covariance block uses its declared grid coordinates for the proposal.
-#'     A mixture of product Student distributions is fitted to the placement grid and adapted in two
+#'     A mixture of diagonal product Student distributions is fitted to the
+#'     placement grid and is adapted in two
 #'     pilot rounds. The final points carry inverse-proposal-density weights.
-#'     `qmc_nodes` (`65536L`) sets the final proposal count; each pilot proposes
-#'     at most `8192L` points. This design follows separate variance arms without
+#'     `qmc_nodes` (`65536L`) bounds the final proposal count; each pilot proposes
+#'     at most `1024L` points. Independent scrambled sequences grow in blocks
+#'     until the estimated error in log evidence (nats) and every reported
+#'     hyperparameter and fixed-effect quantile (posterior SD units) is below
+#'     `qmc_tol` (`0.05`). Hyperparameter errors use the proposal coordinates,
+#'     so unbounded range axes use their finite log-coordinate SD. This design follows separate variance arms without
 #'     crossing each new axis level with every other axis. Axes whose nodes
 #'     the caller supplied retain their integration bounds; points outside
 #'     those bounds carry zero mass and are discarded. The reported
-#'     `outer_qmc` contains the proposal, evaluation count and effective sample size.
+#'     `outer_qmc` contains the proposal, evaluation count, effective sample size,
+#'     error estimates, stopping history and convergence flag.
 #'     The importance points receive full inner solves. The placement grid
 #'     uses the pruning controls.
 #'   * `axis_refine` (`NULL`) -- per-axis override of how far those axes may be
@@ -604,6 +610,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   integration <- match.arg(control$integration %||% if (ms) "qmc" else "grid",
                            c("grid", "qmc"))
   qmc_nodes <- control$qmc_nodes %||% .NL_QMC$nodes
+  qmc_tol <- control$qmc_tol %||% .NL_QMC$tol
+  if (!is.numeric(qmc_tol) || length(qmc_tol) != 1L ||
+      !is.finite(qmc_tol) || qmc_tol <= 0) {
+    stop("`control$qmc_tol` must be a positive finite number.", call. = FALSE)
+  }
   if (!is.numeric(qmc_nodes) || length(qmc_nodes) != 1L || !is.finite(qmc_nodes) ||
       qmc_nodes < 2L || qmc_nodes > .Machine$integer.max ||
       qmc_nodes != floor(qmc_nodes)) {
@@ -666,9 +677,6 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   p_fixed <- ncol(X)
 
   if (.is_multi_block_prior(prior)) {
-    # The multi-block entry takes the prune tolerance but declares neither the
-    # screening depth nor the per-row variance switch, so a pinned one is
-    # refused here rather than accepted and ignored.
     if (!is.null(control$screen_iters)) {
       stop("`control$screen_iters` applies to a single-block `prior`; ",
            "this fit takes the multi-block dispatch.", call. = FALSE)
@@ -773,15 +781,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         else range(.joint_pareto_fwd(tags[j], qmc_view$grid[, j]))
       }, numeric(2))
       res <- .nl_qmc_integrate(res, function(cells, retain) {
-        r <- .nl_dispatch_multi(if (retain) cargs_no_ckpt else
-          utils::modifyList(cargs_lm, list(store_Q = FALSE)),
+        r <- .nl_dispatch_multi(if (retain) cargs_no_ckpt else cargs_lm,
           prior, likelihood = likelihood, theta_grid_override = cells)
         if (retain && isTRUE(keep_grid_hessians)) {
           r <- .nl_attach_grid_hessians(r, p_fixed, budget_cells = qmc_nodes)
         }
         r
       },
-        tags, n = qmc_nodes, bounds = bounds, view = qmc_view)
+        tags, n = qmc_nodes, bounds = bounds, view = qmc_view, tol = qmc_tol)
       res <- .nl_posterior_moments_multi(res, res$blocks, res$axis_offsets,
                                         res$theta_grid, within = within_cell)
       if (keep_joint_prec) {

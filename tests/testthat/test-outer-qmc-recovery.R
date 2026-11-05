@@ -55,4 +55,5 @@ test_that("a multi-scale Gaussian field resolves both variance arms against dens
   got <- log(cbind(fit$theta_ci_lo, fit$theta_median, fit$theta_ci_hi))
   expect_lt(max(abs((got - exact) / sd)), .1)
   expect_lt(abs(fit$log_evidence + 83.3996422521), .015)
+  expect_true(fit$outer_qmc$converged)
 })
