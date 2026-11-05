@@ -220,8 +220,8 @@
         res$cila <- .cila_record(cfg, declined = "no_fixed_effects")
         return(res)
     }
-    lm <- as.numeric(res$log_marginal %||% numeric(0))
-    wt <- as.numeric(res$weights %||% numeric(0))
+    lm <- as.numeric(res[["log_marginal"]] %||% numeric(0))
+    wt <- as.numeric(res[["weights"]] %||% numeric(0))
     if (!length(lm) || length(lm) != length(wt)) {
         res$cila <- .cila_record(cfg, declined = "no_grid_weights")
         return(res)
