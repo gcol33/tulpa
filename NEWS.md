@@ -246,6 +246,34 @@
 - `tulpa_laplace()` and `tulpa(mode = "laplace")` fit a `spatial_rsr()` field as the restricted model at the field's
   fixed hyperparameters (the multi-block driver on a one-point grid, reading the projector). The conditional kernels
   had fitted the unrestricted field (#1134).
+- Single-arm nested Laplace keeps an intrinsic varying coefficient's level on its augmented prior when no fixed-effect
+  fold is declared. The level had been pinned hard, and the ICAR slope SD read 0.29 to 0.32 of the exact one; it now
+  agrees with an exact reference to 1e-10 (#1146). Joint, batched, prediction and debug entries build their latent
+  layout through one function (#1145).
+- A large stated covariance grid keeps its canonical partial correlation (CPC) measure. A transformed zero carried as
+  -5.55e-17 had split one axis level in two, so the tensor was not recognised and sigma_2's median read 0.0058
+  against a dense 0.103. Conditional CDFs are now streamed with bounded storage, which also removes a 30.8 GB
+  allocation on a 60,270-cell grid (#1143). Covariance rail diagnostics name the declared CPC axes (#1142).
+- Local/regional multiscale NNGP and HSGP registry fits integrate the outer hyperparameters by QMC importance sampling
+  over a Student mixture proposal. The worst quantile error against a dense reference fell from 0.34 to 0.026
+  posterior SD; `integration = "qmc"` selects it for other continuous registry models (#1144).
+- Areal ModelData and the Polya-Gamma samplers read the shared PC scale priors, including stated anchors; multiscale
+  temporal PG uses the shared PC scale and Beta correlation priors, and Gaussian-process prediction uses the fitted
+  covariance's nugget (#1141). ABI version 52.
+- Single-scale GP / HSGP blocks routed through the shared nested engine keep their constructor's SD anchors (they had
+  been replaced by `P(sigma > 3) = 0.01`, and stated anchors were dropped), and an SPDE block there keeps its range and
+  SD anchors.
+- Non-centred NNGP SMC interweaves standardized and physical field coordinates in its mutation step; the evidence of
+  every fixture lies within 2 SE of the exact value (#1091).
+- Two-dimensional HSGP basis selection integrates the joint spectral tail and checks the boundary variance at the
+  domain corners. Spatial PC range anchors use one physical-range convention across HSGP, NNGP and SPDE fields,
+  multiscale and varying-coefficient terms included (#1137, #1140). HSGP now matches the dense Matern field to an RMS
+  of 0.03 SD (#1067).
+- Multiscale HSGP Hessian assembly batches the cross-block products and keeps the signed observed curvature (#1139).
+  The unreachable multiscale HSGP sampler density is removed (#1138). Positive-area HSGP domains keep their
+  covariance under coordinate rescaling.
+- The conditional covariance kept per outer cell skips the cells whose log marginal is not finite, the same cells the
+  integration gives zero weight.
 
 ## Package
 
