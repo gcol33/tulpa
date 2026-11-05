@@ -66,6 +66,8 @@ test_that("an HSGP field's range converts its lengthscale as the SE kernel's on 
                              seed = 1)))
   ell <- exp(tulpa:::.fit_draws(fs)[, "log_lengthscale_hsgp"]) *
     tulpa:::.coord_scale(fs$spatial)
-  expect_equal(spatial_range(fs)["range", "mean"], se * mean(ell),
-               tolerance = 1e-8)
+  sr <- spatial_range(fs, probs = c(.025, .5, .975))
+  expect_identical(sr["range", "mean"], Inf)
+  expect_identical(sr["range", "sd"], Inf)
+  expect_equal(sr["range", "q50"], se * median(ell), tolerance = 1e-8)
 })

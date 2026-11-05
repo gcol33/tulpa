@@ -525,5 +525,5 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     var_of_means_consistency_info = consistency_info
   )
   class(out) <- c("tulpa_fit", "list")
-  out
+  .hyper_attach_moments(out)
 }

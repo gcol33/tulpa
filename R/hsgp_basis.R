@@ -310,14 +310,14 @@
   spec
 }
 
-# The posterior mean and 95% interval of every HSGP lengthscale a fit carries,
+# The posterior median and 95% interval of every HSGP lengthscale a fit carries,
 # in kernel units, one row per field: off the outer grid of a nested fit (each
 # `lengthscale` axis, or the columns named in `axes`), or off the draws of a
 # sampler fit (`log_lengthscale_hsgp`, or one `log_phi_svc[j]` per term of an
 # HSGP varying-coefficient field). NULL when the fit carries no posterior over
 # a lengthscale (a fit conditioned on it).
 .hsgp_lengthscale_posterior <- function(fit, axes = NULL) {
-  probs <- c(0.025, 0.975)
+  probs <- c(0.025, 0.5, 0.975)
   if (!is.null(fit$theta_grid)) {
     tg <- fit$theta_grid
     cn <- colnames(tg) %||% fit$theta_names
@@ -326,7 +326,7 @@
     if (!length(j) || anyNA(j)) return(NULL)
     s <- tryCatch(.nested_hyper_summary(fit, probs), error = function(e) NULL)
     if (is.null(s) || nrow(s) != length(cn)) return(NULL)
-    v <- as.matrix(s[j, c("mean", .quantile_colnames(probs)), drop = FALSE])
+    v <- as.matrix(s[j, .quantile_colnames(probs[c(2, 1, 3)]), drop = FALSE])
     rownames(v) <- cn[j]
   } else {
     dr <- tryCatch(.fit_draws(fit), error = function(e) NULL)
@@ -336,16 +336,16 @@
     if (!length(cols)) return(NULL)
     v <- t(vapply(cols, function(k) {
       ell <- exp(dr[, k])
-      c(mean(ell), stats::quantile(ell, probs, names = FALSE))
+      stats::quantile(ell, probs[c(2, 1, 3)], names = FALSE)
     }, numeric(3)))
   }
   if (!all(is.finite(v)) || any(v <= 0)) return(NULL)
-  colnames(v) <- c("mean", "lo", "hi")
+  colnames(v) <- c("median", "lo", "hi")
   v
 }
 
 # One iteration of Riutort-Mayol et al. (2023, Sect. 4.5.1, Phase A) on a
-# fitted HSGP basis left to the data: when the smallest posterior mean
+# fitted HSGP basis left to the data: when the smallest posterior median
 # lengthscale on the basis fails the paper's diagnostic, the basis it asks for
 # (steps A2-A3, with the estimates as the new guess). Returns
 # `list(spec, refit)`: the spec to fit next and TRUE, or the fitted spec and
@@ -361,7 +361,7 @@
 # basis's smallest lengthscale, and the next basis, sized by the basis-size
 # relation at ell_hat, reaches down to ell_hat itself. With `m` supplied, or at its bound,
 # it stops the loop once `c` can lower the window no further. The upper end has
-# no such ordering: a lengthscale the data barely inform has a posterior mean
+# no such ordering: a lengthscale the data barely inform has a posterior median
 # that follows the boundary factor up, so chasing it with `c` need not stop,
 # and it is reported by diagnostics() instead.
 .hsgp_refit_spec <- function(spec, fit, axes = spec$basis_rule$axes) {
@@ -373,9 +373,9 @@
   S <- br$half_width
   cc <- .hsgp_spec_c(spec)
   kern <- .hsgp_spec_kernel(spec)
-  if (.hsgp_basis_holds(spec[["m"]], cc, S, min(post[, "mean"]),
+  if (.hsgp_basis_holds(spec[["m"]], cc, S, min(post[, "median"]),
                         kern)[["lower"]]) return(keep)
-  nxt <- .hsgp_resolve_basis(spec, post[, "mean"], "posterior")
+  nxt <- .hsgp_resolve_basis(spec, post[, "median"], "posterior")
   lo_now <- .hsgp_lengthscale_window(spec[["m"]], cc, S, kern)[["lo"]]
   lo_nxt <- .hsgp_lengthscale_window(nxt[["m"]], .hsgp_spec_c(nxt), S,
                                      kern)[["lo"]]
@@ -389,7 +389,7 @@
 # B2), never fewer than the basis-size relation asks for at the latest
 # estimate, and fits again (B5). The boundary factor stays where Phase A left
 # it: step B3 would move it with the estimate, and an estimate the data barely
-# inform has a posterior mean that follows the boundary factor up (see
+# inform has a posterior median that follows the boundary factor up (see
 # `.hsgp_refit_spec()`), so the steps would chase it; Phase A has already set
 # the factor its diagnostic needs. The procedure ends when the refitted model passes the lengthscale
 # diagnostic and is stable against the previous fit (B6); otherwise it adds
@@ -398,7 +398,7 @@
 # The paper names what has to be stable, the lengthscale estimate and the
 # predictive accuracy, and gives no threshold for it. The one used here takes
 # its scale from the posterior: a quantity is stable when the refitted
-# posterior mean lies inside the previous fit's 95% posterior interval for it.
+# posterior median lies inside the reference fit's 95% posterior interval for it.
 # That is read for every lengthscale on every basis
 # (`.hsgp_lengthscale_posterior()`) and for the linear predictor at every
 # observation (`posterior_linpred(summary = TRUE)`), the in-sample predictive
@@ -417,7 +417,7 @@
   if (is.null(post)) return(keep)
   held <- spec
   held$basis_rule$auto[["c"]] <- FALSE
-  nxt <- .hsgp_resolve_basis(held, post[, "mean"], "phase B",
+  nxt <- .hsgp_resolve_basis(held, post[, "median"], "phase B",
                              m_min = m_now + 5L)
   nxt$basis_rule$auto <- br$auto
   list(spec = nxt, refit = nxt[["m"]] > m_now)
@@ -438,7 +438,7 @@
        linpred = lp)
 }
 
-# Whether `cur` is stable against `prev` (step B6): every posterior mean of
+# Whether `cur` is stable against `prev` (step B6): every posterior median of
 # `cur` inside the matching 95% interval of `prev`.
 .hsgp_fit_stable <- function(prev, cur) {
   inside <- function(x, lo, hi) {
@@ -448,7 +448,7 @@
     a <- prev$ell[[b]]
     z <- cur$ell[[b]]
     if (is.null(a) || is.null(z)) return(TRUE)
-    inside(z[, "mean"], a[, "lo"], a[, "hi"])
+    inside(z[, "median"], a[, "lo"], a[, "hi"])
   }, logical(1)))
   lp_ok <- is.null(prev$linpred) || is.null(cur$linpred) ||
     inside(cur$linpred$estimate, prev$linpred$conf.low,
@@ -464,7 +464,7 @@
     post <- .hsgp_lengthscale_posterior(fit, b$basis_rule$axes)
     if (is.null(post)) return(TRUE)
     .hsgp_basis_holds(b[["m"]], .hsgp_spec_c(b), b$basis_rule$half_width,
-                      min(post[, "mean"]), .hsgp_spec_kernel(b))[["lower"]]
+                      min(post[, "median"]), .hsgp_spec_kernel(b))[["lower"]]
   }, logical(1)))
 }
 
@@ -541,7 +541,7 @@
   list(fit = fit, spec = spec)
 }
 
-# The basis check of an HSGP fit: the smallest and the largest posterior mean
+# The basis check of an HSGP fit: the smallest and the largest posterior median
 # lengthscale on a basis against the two ends of the window it represents, in
 # the units of the coordinates as supplied. `spec` carries the bases: the one a
 # door that fits outside the formula front door records as `hsgp_basis`, else
@@ -560,14 +560,14 @@
     if (is.null(post)) return(NULL)
     S <- br$half_width
     kern <- .hsgp_spec_kernel(b)
-    lo <- post[which.min(post[, "mean"]), ]
-    hi <- post[which.max(post[, "mean"]), ]
+    lo <- post[which.min(post[, "median"]), ]
+    hi <- post[which.max(post[, "median"]), ]
     list(m = as.integer(m), c = cc, kernel = kern,
          window = .hsgp_lengthscale_window(m, cc, S, kern) * k,
          lengthscale = lo * k, lengthscale_hi = hi * k,
-         holds = c(lower = .hsgp_basis_holds(m, cc, S, lo[["mean"]],
+         holds = c(lower = .hsgp_basis_holds(m, cc, S, lo[["median"]],
                                              kern)[["lower"]],
-                   upper = .hsgp_basis_holds(m, cc, S, hi[["mean"]],
+                   upper = .hsgp_basis_holds(m, cc, S, hi[["median"]],
                                              kern)[["upper"]]),
          auto = br$auto, capped = isTRUE(br$capped), history = br$history)
   }))
@@ -582,13 +582,13 @@
   kinfo <- .hsgp_kernel_info(chk$kernel)
   what <- if (low) {
     sprintf(paste0("represents lengthscales down to %.3g (2-D spectral ",
-                   "variance criterion), posterior mean lengthscale ",
+                   "variance criterion), posterior median lengthscale ",
                    "%.3g"), chk$window[["lo"]],
-            chk$lengthscale[["mean"]])
+            chk$lengthscale[["median"]])
   } else {
     sprintf(paste0("represents lengthscales up to %.3g (2-D boundary ",
-                   "variance criterion), posterior mean lengthscale %.3g"),
-            chk$window[["hi"]], chk$lengthscale_hi[["mean"]])
+                   "variance criterion), posterior median lengthscale %.3g"),
+            chk$window[["hi"]], chk$lengthscale_hi[["median"]])
   }
   fix <- if (low && chk$capped) {
     paste0("; the basis size it needs exceeds m = ", .HSGP_M_BOUNDS[2L])

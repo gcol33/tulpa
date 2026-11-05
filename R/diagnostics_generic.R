@@ -427,6 +427,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
   # with, so a derived-axis summary and `theta_ci_lo` /
   # `theta_ci_hi` on the same fit cannot be built two different ways.
   within <- .nl_within_cell_mode(object$within_cell_requested)
+  moment_models <- .hyper_range_models(object)
   rows <- lapply(keep, function(j) {
     v   <- tg[, j]
     tr  <- if (!is.null(transform)) transform[[bare_axes[j]]] else NULL
@@ -469,9 +470,15 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
       read = if (!is.null(fn)) .nl_read_sd(v, w, dm, support, within, at,
                                            dcl_j, rid_j, lmd))
     if (is.numeric(sr) && length(sr) == 1L && is.finite(sr)) s <- sr
-    out <- data.frame(mean = m, sd = s, stringsAsFactors = FALSE)
+    mm <- .hyper_moment_read(moment_models[[axes[j]]], m, s,
+      power = tr$moment_power %||% 1, logarithm = isTRUE(tr$moment_log))
+    out <- data.frame(mean = mm$mean, sd = mm$sd, stringsAsFactors = FALSE)
     out[.quantile_colnames(probs)] <- as.list(qs)
-    list(row = out, name = nm)
+    log_moments <- if (!is.null(moment_models[[axes[j]]]) && !isTRUE(tr$moment_log)) {
+      z <- log(v); lm <- sum(w * z)
+      c(mean = lm, sd = sqrt(sum(w * (z - lm)^2)))
+    }
+    list(row = out, name = nm, existence = mm$existence, log_moments = log_moments)
   })
   out <- do.call(rbind, lapply(rows, `[[`, "row"))
   # Two fields reporting the same quantity (the per-column blocks of an inline
@@ -489,7 +496,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
     nms[dup] <- paste0(nms[dup], "[", tag[dup], "]")
   }
   rownames(out) <- make.unique(nms)
-  out
+  .hyper_summary_attributes(out, rows)
 }
 
 #' Extract spatial range and variance from a fitted spatial model
@@ -504,6 +511,11 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
 #' the default of [spatial_gp()] and [spatial_svc()]). A `mode = "laplace"` fit
 #' conditions on the field's hyperparameters rather than inferring them, so it
 #' carries no posterior for this function to summarise.
+#'
+#' Physical range moments are determined by the model's prior tail and
+#' likelihood limit. A divergent mean or SD is reported as `Inf`.
+#' `object$moment_existence` carries the reason. Quantiles remain available;
+#' the summary's `log_moments` attribute gives finite log-range means and SDs.
 #'
 #' @param object A `tulpa_fit` object fitted with a spatial component.
 #' @param probs Quantile probabilities for the summary (default 0.025, 0.975).
@@ -539,6 +551,11 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
   if (!is.data.frame(s) || identical(k, 1)) return(s)
   r <- startsWith(rownames(s), "range")
   s[r, ] <- s[r, , drop = FALSE] * k
+  lm <- attr(s, "log_moments")
+  for (a in rownames(s)[r]) {
+    if (!is.null(lm[[a]])) lm[[a]][["mean"]] <- lm[[a]][["mean"]] + log(k)
+  }
+  attr(s, "log_moments") <- lm
   s
 }
 
@@ -546,7 +563,7 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
 # GP / NNGP lengthscale, the HSGP lengthscale and a range. Every one is a
 # positive length, so standardized coordinates divided it by the same common
 # factor the coordinates were divided by.
-.SPATIAL_LENGTH_AXES <- c("phi_gp", "lengthscale", "range")
+.SPATIAL_LENGTH_AXES <- c("phi_gp", "lengthscale", "range", "ell")
 
 # Per-axis factor taking an outer-grid axis from the units the kernel measured
 # it in to the units of the coordinates as supplied: `.coord_scale()` on a
@@ -628,8 +645,8 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
   # A multi-scale field's rows carry the scale as a tag, `sigma[local]`, the
   # label the nested route gives the same axis.
   patterns <- c(
-    range = "^(log_phi_gp|phi_gp)$",
-    sigma = "^(log_sigma2_gp|log_sigma_bym2|log_sigma_spatial|log_tau_spatial)$",
+    range = "^(log_phi_gp|phi_gp|log_kappa)$",
+    sigma = "^(log_sigma2_gp|log_sigma_bym2|log_sigma_spatial|log_tau_spatial|log_tau)$",
     rho   = "^(logit_rho_bym2|logit_rho_car)$",
     "sigma[local]"    = "^(log_sigma2_gp_local)$",
     "sigma[regional]" = "^(log_sigma2_gp_regional)$",
@@ -648,7 +665,11 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
     range_svc = "^log_phi_svc\\[[0-9]+\\]$"
   )
   transform_fn <- function(nm, raw, label) {
-    if (grepl("^log_lengthscale_hsgp$", label)) {
+    if (identical(label, "log_kappa")) {
+      list(vals = object$range_draws, row = "range")
+    } else if (identical(label, "log_tau")) {
+      list(vals = object$sigma_draws, row = "sigma")
+    } else if (grepl("^log_lengthscale_hsgp$", label)) {
       list(vals = .hyper_nat$range_from_hsgp_lengthscale(
              exp(raw), .fit_hsgp_kernel(object)), row = "range")
     } else if (grepl("^log_phi_svc", label)) {
@@ -657,13 +678,16 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
         .hyper_nat$range_from_hsgp_lengthscale(exp(raw),
                                                .fit_hsgp_kernel(object))
       } else .hyper_nat$range_from_lengthscale(exp(raw))
-      list(vals = vals, row = sub("phi", "range", nm))
+      list(vals = vals, row = if ((object$spatial$n_svc %||% 1L) > 1L)
+        paste0("range_svc", sub("^log_phi_svc", "", label)) else "range_svc")
     } else if (grepl("^log_phi_gp", label)) {
       # phi is the range: every kernel is exp(-d / phi), so correlation decays
       # to ~0.05 at d = -phi * log(0.05) ~= 3 * phi.
       list(vals = .hyper_nat$range_from_lengthscale(exp(raw)), row = nm)
     } else if (grepl("^log_sigma2", label)) {
-      list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = nm)
+      list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = if (startsWith(label, "log_sigma2_svc") &&
+        (object$spatial$n_svc %||% 1L) > 1L)
+        sub("log_sigma2_svc", "sigma_svc", label) else nm)
     } else if (grepl("^log_tau", label)) {
       list(vals = .hyper_nat$sigma_from_precision(exp(raw)), row = "sigma")
     } else if (grepl("^log_sigma", label)) {
@@ -681,7 +705,7 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
     }
   }
   .hyperparam_summary(.fit_draws(object), patterns, transform_fn, probs,
-                      .hyper_empty_msg(object, "spatial", "spatial"))
+                      .hyper_empty_msg(object, "spatial", "spatial"), object)
 }
 
 # Column names for a set of quantile probabilities, e.g. c(0.025, 0.975) ->
@@ -697,23 +721,32 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
 # map its draws to the natural scale via `transform_fn(nm, raw, label)` (returns
 # `list(vals, row)`), and stack the per-parameter mean / sd / `probs`-quantile
 # summaries. Errors with `empty_msg` when no hyperparameter column is present.
-.hyperparam_summary <- function(draws, patterns, transform_fn, probs, empty_msg) {
+.hyperparam_summary <- function(draws, patterns, transform_fn, probs, empty_msg,
+                                object = NULL) {
   cn <- colnames(draws)
   found <- list()
   for (nm in names(patterns)) {
     idx <- grep(patterns[[nm]], cn)
-    if (length(idx) > 0) found[[nm]] <- idx[1]
+    if (length(idx) > 0) found[[nm]] <- idx
   }
   if (length(found) == 0) stop(empty_msg, call. = FALSE)
-  rows <- lapply(names(found), function(nm) {
-    tr  <- transform_fn(nm, draws[, found[[nm]]], cn[found[[nm]]])
+  models <- .hyper_range_models(object)
+  indices <- unlist(found, use.names = FALSE)
+  labels <- rep(names(found), lengths(found))
+  rows <- lapply(seq_along(indices), function(i) {
+    axis <- cn[indices[i]]
+    tr <- transform_fn(labels[i], draws[, indices[i]], axis)
     qs  <- stats::quantile(tr$vals, probs = probs)
-    out <- data.frame(mean = mean(tr$vals), sd = stats::sd(tr$vals),
+    mm <- .hyper_moment_read(models[[axis]], mean(tr$vals), stats::sd(tr$vals))
+    out <- data.frame(mean = mm$mean, sd = mm$sd,
                       row.names = tr$row, stringsAsFactors = FALSE)
     out[.quantile_colnames(probs)] <- as.list(qs)
-    out
+    list(row = out, existence = mm$existence,
+      log_moments = if (!is.null(models[[axis]]))
+        c(mean = mean(log(tr$vals)), sd = stats::sd(log(tr$vals))))
   })
-  do.call(rbind, rows)
+  out <- do.call(rbind, lapply(rows, `[[`, "row"))
+  .hyper_summary_attributes(out, rows)
 }
 
 # Weighted quantile by interpolated ECDF, for a weighted outer-grid posterior

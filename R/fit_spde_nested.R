@@ -165,7 +165,7 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
       range_best = grid$range[best],
       sigma_best = grid$sigma[best]
     ), .spde_nested_record(result, grid$range, grid$sigma, log_post, sp,
-                         integration = "grid"))
+                         integration = "grid", hyperprior = hyperprior))
   )
 }
 
@@ -183,13 +183,15 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
 # fractional-nu path solves its own operator and stores none) carries modes and
 # variances only where the kernel returned them.
 .spde_nested_record <- function(result, range_grid, sigma_grid, log_post, sp,
-                               integration) {
+                               integration, hyperprior = "proper") {
   rec <- list(
     integration  = integration,
     theta_grid   = cbind(range = as.numeric(range_grid),
                          sigma = as.numeric(sigma_grid)),
     log_marginal = as.numeric(log_post)
   )
+  rec$range_tail <- list(range = list(prior_power = if (hyperprior == "proper" ||
+    isTRUE(sp$prior_stated[["range"]])) 1 else 0, field = "spde", fixed = FALSE))
   M <- result$modes
   if (!is.matrix(M) || nrow(M) != length(log_post)) return(rec)
   rec$modes <- M
@@ -482,6 +484,7 @@ fit_spde_nested_mode <- function(spde_log_marginal,
       f_0           = if (is_ccd) ccd$f_0,
       n_points      = nrow(z)
     ), .spde_nested_record(result, range_grid, sigma_grid, log_post, sp,
-                         integration = if (is_ccd) "ccd" else "grid"))
+                         integration = if (is_ccd) "ccd" else "grid",
+                         hyperprior = hyperprior))
   )
 }

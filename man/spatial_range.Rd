@@ -28,6 +28,11 @@ the field was fitted on standardized coordinates (\code{scale_coords = TRUE},
 the default of \code{\link[=spatial_gp]{spatial_gp()}} and \code{\link[=spatial_svc]{spatial_svc()}}). A \code{mode = "laplace"} fit
 conditions on the field's hyperparameters rather than inferring them, so it
 carries no posterior for this function to summarise.
+
+Physical range moments are determined by the model's prior tail and
+likelihood limit. A divergent mean or SD is reported as \code{Inf}.
+\code{object$moment_existence} carries the reason. Quantiles remain available;
+the summary's \code{log_moments} attribute gives finite log-range means and SDs.
 }
 \examples{
 \donttest{

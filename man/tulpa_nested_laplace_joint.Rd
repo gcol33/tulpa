@@ -1000,6 +1000,9 @@ A list of class \code{c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "l
 weights (sum to 1).
 \item \code{theta_mean}, \code{theta_sd} -- posterior moments per hyperparameter,
 including \code{alpha} when \code{copy} is set.
+Divergent physical range moments are \code{Inf}; \code{moment_existence}
+records the prior tail, likelihood boundary decay and the reason.
+\code{theta_log_mean} and \code{theta_log_sd} retain finite log-range moments.
 \item \code{theta_median}, \code{theta_ci_lo}, \code{theta_ci_hi} -- weighted-quantile
 median and 2.5/97.5 empirical CI per hyperparameter axis (same
 names as \code{theta_mean}). Recommended summary for right-skewed
@@ -1012,7 +1015,7 @@ uncertainty.
 \code{"stencil"} (a parabola at the modal node) or \code{"within_cell"} (the
 modal node's mass spread over its cell, the read the interval of an
 unresolved axis comes from). \code{theta_sd_stencil_declined} says why a
-parabola was not formed.
+parabola was not formed. \code{"nonexistent"} identifies a divergent SD.
 \item \code{modes} -- \verb{[n_grid x n_x]} matrix of inner modes.
 \item \code{fitted_eta} -- \verb{[n_grid x N]} matrix of the linear predictor at each
 cell's own mode, offset and latent field included. Present on a

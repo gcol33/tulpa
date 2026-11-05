@@ -103,10 +103,8 @@ Rcpp::List cpp_pg_binomial_gibbs_gp_rsr(
     Rcpp::stop("`rsr_n` is %d but `n_spatial` is %d.", rsr_n, n_spatial);
   }
   tulpa::pg_check_pc_prior(prior_sigma_gp_U, prior_sigma_gp_alpha, "gp");
-  if (!(prior_phi_lower > 0.0) || !(prior_phi_upper > prior_phi_lower)) {
-    Rcpp::stop("The range prior needs 0 < prior_phi_lower < prior_phi_upper; "
-               "got [%g, %g].", prior_phi_lower, prior_phi_upper);
-  }
+  const Rcpp::List range_tail = Rcpp::List::create(Rcpp::Named("phi_gp") =
+    tulpa::pg_range_moment_model(prior_phi_lower, prior_phi_upper));
   const int J = n_spatial;
   tulpa::pg_check_rsr_projector(rsr_projection, J, /*require_constant=*/false);
 
@@ -224,7 +222,8 @@ Rcpp::List cpp_pg_binomial_gibbs_gp_rsr(
     Rcpp::Named("gp") = gp_proj_draws,
     Rcpp::Named("sigma2_gp") = sigma2_gp_draws,
     Rcpp::Named("phi_gp") = phi_gp_draws,
-    Rcpp::Named("log_prob") = C.log_prob_draws
+    Rcpp::Named("log_prob") = C.log_prob_draws,
+    Rcpp::Named("range_tail") = range_tail
   );
 
   if (store_eta) {

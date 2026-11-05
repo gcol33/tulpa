@@ -214,8 +214,8 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   range_pc <- function() {
     ra <- .hp_range_anchor(block)
     if (is.null(ra)) return(list(reason = .hp_decline("range_extent_unknown")))
-    factor <- if (bare %in% c("lengthscale", "ell", "phi_gp")) .SPATIAL_RANGE_FACTOR else 1
-    list(fn = function(x)
+    factor <- if (bare %in% setdiff(.SPATIAL_LENGTH_AXES, "range")) .SPATIAL_RANGE_FACTOR else 1
+    list(tail = list(prior_power = ra$dim / 2, field = type), fn = function(x)
       .hp_log_scale_density(factor * x, "range", ra$anchor, ra$dim))
   }
 
@@ -237,7 +237,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     },
     NULL
   )
-  if (bare %in% c("range", "phi_gp", "lengthscale", "ell")) return(range_pc())
+  if (bare %in% .SPATIAL_LENGTH_AXES) return(range_pc())
   if (identical(bare, "alpha")) return(list(spec = TRUE))
   if (identical(bare, "rho_car")) {
     return(uniform(.nl_grid_par("car_rho", "bounds")))
@@ -303,7 +303,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   stated <- identical(bare, "alpha") ||
     (identical(type, "ar1") && identical(bare, "rho") && !is.null(block$rho_prior)) ||
     (!is.null(block$prior_sigma) && .hp_is_scale_axis(bare)) ||
-    (bare %in% c("range", "phi_gp", "lengthscale", "ell") && !is.null(block$prior_range))
+    (bare %in% .SPATIAL_LENGTH_AXES && !is.null(block$prior_range))
   if (stated) return(.hp_axis_default(bare, block, family))
   list(reason = .hp_decline("flat_hyperprior"))
 }
@@ -322,6 +322,16 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   n <- nrow(tg)
   out <- list(lp = numeric(n), lp_in_kernel = numeric(n),
               axes = character(0), declined = character(0))
+  lengths <- colnames(tg)[sub("^b[0-9]+[.]", "", colnames(tg)) %in% .SPATIAL_LENGTH_AXES]
+  for (a in lengths) {
+    r <- resolve(a)
+    if (is.null(r$tail) && !a %in% axes) r$tail <- list(prior_power = NA_real_, field = "")
+    if (!is.null(r$tail)) {
+      scale_axes <- paste0(.hp_col_prefix(a), c("sigma", "sigma2"))
+      out$range_tail[[name(a)]] <- c(r$tail, list(fixed = !a %in% axes,
+        scale_fixed = !any(scale_axes %in% axes)))
+    }
+  }
   groups <- list()
   for (a in axes) {
     r <- resolve(a)
@@ -724,6 +734,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     res$log_hyperprior_axes <- union(res$log_hyperprior_axes %||% character(0),
                                      hp$axes)
     res$log_hyperprior_declined <- c(res$log_hyperprior_declined, hp$declined)
+    for (a in names(hp$range_tail)) res$range_tail[[a]] <- hp$range_tail[[a]]
   }
   res
 }
@@ -743,6 +754,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 .hp_prefix <- function(hp, prefix) {
   if (length(hp$axes)) hp$axes <- paste0(prefix, hp$axes)
   if (length(hp$declined)) names(hp$declined) <- paste0(prefix, names(hp$declined))
+  if (length(hp$range_tail)) names(hp$range_tail) <- paste0(prefix, names(hp$range_tail))
   hp
 }
 

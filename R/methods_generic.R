@@ -913,6 +913,11 @@ coef.summary.tulpa_fit <- function(object, ...) object$coefficients
     rownames(out) <- NULL
   }
   out$parameter <- .hyper_axis_labels(object, out$parameter)
+  if (length(object$moment_existence)) {
+    attr(out, "moment_existence") <- object$moment_existence
+    attr(out, "log_moments") <- list(mean = object$theta_log_mean,
+                                     sd = object$theta_log_sd)
+  }
   out
 }
 

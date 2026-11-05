@@ -137,3 +137,12 @@ void spde_validate_csc(int n_col, const Rcpp::IntegerVector& p_vec,
 }
 
 } // namespace tulpa
+
+// [[Rcpp::export(rng = false)]]
+Rcpp::LogicalVector cpp_spde_orphan_mass(Rcpp::NumericVector mass) {
+    Rcpp::LogicalVector out(mass.size());
+    for (R_xlen_t j = 0; j < mass.size(); ++j) {
+        out[j] = tulpa::spde_is_orphan_mass(mass[j]);
+    }
+    return out;
+}

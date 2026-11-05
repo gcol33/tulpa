@@ -481,6 +481,7 @@ fit_spde <- function(y, X, spatial,
   }
 
   fit <- .nl_attach_checkpoint_loaded(fit, .ckpt, ckpt_loaded0)
+  fit$beta_prior <- .normalize_beta_prior(beta_prior, ncol(X))
   .finalize_fit(fit, backend = "spde",
                 n_fixed = ncol(X), fixed_names = colnames(X),
                 data = list(y = y, n_trials = n_trials, model_matrix = X,

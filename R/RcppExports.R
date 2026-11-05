@@ -505,6 +505,10 @@ cpp_nested_laplace_spde <- function(y, n_trials, X, re_idx, n_re_groups, sigma_r
     .Call(`_tulpa_cpp_nested_laplace_spde`, y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, range_grid, sigma_grid, nu, family, phi, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable, store_Q, checkpoint_path, offset_nullable, compute_skew, skew_idx, debias, cila, prune_tol, screen_iters, compute_fitted_var, screen_log_offset, beta_prior, progress, progress_every, progress_throttle, progress_file)
 }
 
+cpp_spde_orphan_mass <- function(mass) {
+    .Call(`_tulpa_cpp_spde_orphan_mass`, mass)
+}
+
 cpp_stochastic_log_determinant <- function(Q_x, Q_i, Q_p, n, n_probes = 30L, n_lanczos = 50L, seed = 42L) {
     .Call(`_tulpa_cpp_stochastic_log_determinant`, Q_x, Q_i, Q_p, n, n_probes, n_lanczos, seed)
 }

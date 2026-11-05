@@ -777,6 +777,7 @@ tulpa_dispatch <- function(mode,
     }
   }
   fit <- .name_means_by_parameter(fit)
+  fit <- .hyper_attach_moments(fit)
 
   cls <- oldClass(fit)
   if (!is.null(extra_class)) cls <- c(setdiff(extra_class, cls), cls)

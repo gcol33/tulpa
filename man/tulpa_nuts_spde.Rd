@@ -101,7 +101,10 @@ A list with \code{draws} (matrix \verb{n_samples x n_params}), \code{means},
 spec. In \code{joint = TRUE} mode additionally:
 \code{w_draws} (transformed \code{z -> w} per draw), \code{range_draws},
 \code{sigma_draws}, \code{kappa_draws}, \code{tau_draws}, and \code{range_summary},
-\code{sigma_summary} (mean/median/5\%/95\% quantiles).
+\code{sigma_summary} (mean/median/5\%/95\% quantiles). \code{range_summary} also
+includes \code{sd}, reported as \code{Inf} when the model's range variance diverges.
+\code{moment_existence} records the model-based reason; \code{theta_log_mean} and
+\code{theta_log_sd} retain the log-range moments.
 }
 \description{
 Bayesian counterpart to \code{\link[=fit_spde]{fit_spde()}} / \code{laplace_spde_at()}. Routes the

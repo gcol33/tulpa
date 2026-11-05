@@ -442,6 +442,10 @@ A list with:
 \item \code{log_marginal}: log p(y, mode | theta_k) at each grid point.
 \item \code{weights}: integration weights normalising to sum 1.
 \item \code{theta_mean}, \code{theta_sd}: posterior moments per hyperparameter.
+A physical range moment that diverges is \code{Inf}. \code{moment_existence}
+records each range's prior tail, likelihood boundary decay, fixed or
+bounded support, and the reason for its moment-existence result.
+\code{theta_log_mean} and \code{theta_log_sd} retain the finite log-range moments.
 \item \code{n_iter}: inner Newton iterations per grid point.
 \item \code{modes}: matrix \verb{[n_grid x n_x]} of inner modes, when stored.
 \item \code{pareto_k}, \code{pareto_k_is_ess}: outer Pareto-\eqn{\hat{k}} and its

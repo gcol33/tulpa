@@ -125,7 +125,7 @@ field asks for a short lengthscale, and a basis too small for it smooths the
 field and narrows its intervals. Left unset, \code{m} and \code{c} follow the
 iterative procedure of the paper's Section 4.5.1. In its Phase A the first
 fit takes them from the prior median of the lengthscale, and while the
-posterior mean lengthscale falls below the smallest one the fitted basis
+posterior median lengthscale falls below the smallest one the fitted basis
 represents (the paper's diagnostic, with its slack of 0.01 on the
 lengthscale divided by \code{S}), the field is fitted again with the \code{m} and \code{c}
 that estimate asks for. In its Phase B five functions per dimension are
@@ -137,7 +137,7 @@ lengthscale, and of the linear predictor at every observation, lying inside
 the previous fit's 95\% interval. \code{m} never shrinks below a size already
 fitted and stops at 50. A supplied \code{m} or \code{c} is kept as given, and a
 supplied \code{m} ends the procedure after Phase A.
-\code{\link[=diagnostics]{diagnostics()}} reports when the posterior mean lengthscale lies outside
+\code{\link[=diagnostics]{diagnostics()}} reports when the posterior median lengthscale lies outside
 the window of the fitted basis at either end; above it, the field is
 smoother than the boundary factor allows for, and a larger \code{c} covers it.
 }

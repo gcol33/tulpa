@@ -353,6 +353,10 @@
 #'   * `log_marginal`: log p(y, mode | theta_k) at each grid point.
 #'   * `weights`: integration weights normalising to sum 1.
 #'   * `theta_mean`, `theta_sd`: posterior moments per hyperparameter.
+#'     A physical range moment that diverges is `Inf`. `moment_existence`
+#'     records each range's prior tail, likelihood boundary decay, fixed or
+#'     bounded support, and the reason for its moment-existence result.
+#'     `theta_log_mean` and `theta_log_sd` retain the finite log-range moments.
 #'   * `n_iter`: inner Newton iterations per grid point.
 #'   * `modes`: matrix `[n_grid x n_x]` of inner modes, when stored.
 #'   * `pareto_k`, `pareto_k_is_ess`: outer Pareto-\eqn{\hat{k}} and its
@@ -815,6 +819,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         r, r$blocks, r$axis_offsets, r$theta_grid, within = within_cell))
     tm$mark("diagnostics")
     res$prior <- prior
+    res$beta_prior <- cargs$beta_prior
     res$field_solve <- .nl_field_solve_record("multi", cargs_no_ckpt, prior,
                                               likelihood)
     res$timing <- tm$timing()
@@ -967,6 +972,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     remoments = function(r) .nl_posterior_moments(r, type, within = within_cell))
   tm$mark("diagnostics")
   res$prior <- prior
+  res$beta_prior <- cargs$beta_prior
   res$field_solve <- .nl_field_solve_record("registry", cargs_no_ckpt, prior,
                                             type = type)
   res$timing <- tm$timing()
@@ -1849,6 +1855,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     linear_axes = .nl_linear_axes(res))
   res$log_quad     <- .hyper_log_quad_weights(tg, specs, refining = refining)
   res$axis_support <- .hyper_grid_supports(tg, specs, refining = refining)
+  res$outer_axis_specs <- specs
   res$weights      <- .nl_normalise_weights_safe(res$log_marginal, what,
                                                  log_quad = res$log_quad)
   res <- .nl_prune_merged_record(res)

@@ -393,8 +393,8 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
   fem <- tulpaMesh::fem_matrices(mesh, obs_coords = obs_coords)
 
   # Extract CSC components for C++ interface
-  A_csc <- as(fem$A, "CsparseMatrix")
-  G1_csc <- as(fem$G, "CsparseMatrix")
+  A_csc <- .spde_csc(fem$A)
+  G1_csc <- .spde_csc(fem$G)
   C0_diag <- .spde_lumped_mass(fem$C)
 
   structure(
@@ -485,8 +485,8 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
   if (nrow(G) != n_mesh || ncol(G) != n_mesh) stop("G must have same dimensions as C", call. = FALSE)
   if (ncol(A) != n_mesh) stop("A must have n_mesh columns", call. = FALSE)
 
-  A_csc <- as(A, "CsparseMatrix")
-  G1_csc <- as(G, "CsparseMatrix")
+  A_csc <- .spde_csc(A)
+  G1_csc <- .spde_csc(G)
   C0_diag <- .spde_lumped_mass(C)
 
   structure(
@@ -510,6 +510,12 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
     ),
     class = c("tulpa_spatial", "list")
   )
+}
+
+# Native CSC readers consume every matrix entry, including both triangles
+# of a symmetric stiffness matrix or projector.
+.spde_csc <- function(x) {
+  as(as(as(as(x, "Matrix"), "dMatrix"), "generalMatrix"), "CsparseMatrix")
 }
 
 # The lumped mass C-tilde of the FEM construction (Lindgren, Rue & Lindstrom

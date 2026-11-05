@@ -105,20 +105,25 @@ test_that("spatial_range covers hsgp, svc and spde", {
                     control = ctl)
   sr_hsgp <- spatial_range(fit_hsgp)
   expect_setequal(rownames(sr_hsgp), c("sigma_hsgp", "range"))
-  expect_true(all(is.finite(as.matrix(sr_hsgp))))
-  expect_true(sr_hsgp["range", "mean"] > 0)
+  expect_true(all(is.finite(unlist(sr_hsgp["range", c("q2.5", "q97.5")]))))
+  expect_identical(sr_hsgp["range", "mean"], Inf)
+  expect_identical(sr_hsgp["range", "sd"], Inf)
 
   fit_spde <- tulpa(y ~ x, data = g, family = "poisson",
                     spatial = spatial_spde(~ lon + lat, data = g))
   sr_spde <- spatial_range(fit_spde)
   expect_setequal(rownames(sr_spde), c("range", "sigma"))
-  expect_true(all(is.finite(as.matrix(sr_spde))))
+  expect_true(is.finite(sr_spde["range", "mean"]))
+  expect_identical(sr_spde["range", "sd"], Inf)
+  expect_true(all(is.finite(as.matrix(sr_spde[, c("q2.5", "q97.5")]))))
 
   fit_svc <- tulpa(y ~ x, data = g, family = "poisson", mode = "hmc",
                    spatial = spatial_svc(~ lon + lat, terms = "x"), control = ctl)
   sr_svc <- spatial_range(fit_svc)
   expect_setequal(rownames(sr_svc), c("sigma_svc", "range_svc"))
-  expect_true(all(is.finite(as.matrix(sr_svc))))
+  expect_true(all(is.finite(unlist(sr_svc["range_svc", c("q2.5", "q97.5")]))))
+  expect_identical(sr_svc["range_svc", "mean"], Inf)
+  expect_identical(sr_svc["range_svc", "sd"], Inf)
   # Default approx = "nngp": phi_svc is a direct exponential-kernel range, the
   # same convention log_phi_gp uses, not the HSGP squared-exponential one.
   expect_identical(fit_svc$spatial$approx, "nngp")

@@ -3511,7 +3511,7 @@ tulpa <- function(formula, data,
   # A chain that has not mixed is flagged here, where every sampler door
   # returns, rather than only by a diagnostic the caller has to think to run
   # (gcol33/tulpa#875, #878).
-  .tulpa_check_fit_convergence(fit)
+  .tulpa_check_fit_convergence(.hyper_attach_moments(fit))
 }
 
 

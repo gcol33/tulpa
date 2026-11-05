@@ -157,6 +157,9 @@ adjacency_to_list_tulpa <- function(adj) {
               chain_id = rep(1L, nrow(draws)), n_chains = 1L,
               n_samples = nrow(draws), n_params = ncol(draws),
               param_names = colnames(draws))
+  for (b in names(res$range_tail)) {
+    out$range_tail[[spec[[b]]$stem]] <- res$range_tail[[b]]
+  }
   # The kernel's log joint density at each retained state, on the scale it
   # samples each quantity on. A kernel whose chain leaves no written density
   # invariant returns none, and the fit then carries none.

@@ -84,6 +84,11 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
   tulpa::pg_check_pc_prior(prior_sigma_local_U, prior_sigma_local_alpha, "local");
   tulpa::pg_check_pc_prior(prior_sigma_regional_U, prior_sigma_regional_alpha,
                            "regional");
+  const Rcpp::List range_tail = Rcpp::List::create(
+    Rcpp::Named("phi_local") = tulpa::pg_range_moment_model(
+      prior_phi_local_lower, prior_phi_local_upper),
+    Rcpp::Named("phi_regional") = tulpa::pg_range_moment_model(
+      prior_phi_regional_lower, prior_phi_regional_upper));
 
   if (verbose) {
     Rcpp::Rcout << "PG Binomial Gibbs sampler with multiscale GP spatial\n";
@@ -225,7 +230,8 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
     Rcpp::Named("phi_local") = phi_local_draws,
     Rcpp::Named("sigma2_regional") = sigma2_regional_draws,
     Rcpp::Named("phi_regional") = phi_regional_draws,
-    Rcpp::Named("log_prob") = C.log_prob_draws
+    Rcpp::Named("log_prob") = C.log_prob_draws,
+    Rcpp::Named("range_tail") = range_tail
   );
 
   if (store_eta) {

@@ -99,7 +99,7 @@ test_that("a refit step follows the lower end of the window only", {
   post_at <- function(ell) {
     local_mocked_bindings(
       .hsgp_lengthscale_posterior = function(fit, axes = NULL)
-        rbind(c(mean = ell, lo = ell, hi = ell)),
+        rbind(c(median = ell, lo = ell, hi = ell)),
       .package = "tulpa")
     tulpa:::.hsgp_refit_spec(sp, list())
   }
@@ -127,12 +127,12 @@ test_that("a refit step follows the lower end of the window only", {
 
 # A sequence of fits whose lengthscale posterior and linear-predictor summary
 # the test sets, read through mocked accessors: each element of `seq` is the
-# (lengthscale mean, interval half-width, linear-predictor shift) of one fit.
+# (lengthscale median, interval half-width, linear-predictor shift) of one fit.
 .phase_b_run <- function(spec, seq) {
   k <- 0L
   local_mocked_bindings(
     .hsgp_lengthscale_posterior = function(fit, axes = NULL)
-      rbind(c(mean = fit$ell, lo = fit$ell - fit$hw, hi = fit$ell + fit$hw)),
+      rbind(c(median = fit$ell, lo = fit$ell - fit$hw, hi = fit$ell + fit$hw)),
     posterior_linpred = function(object, ...)
       data.frame(estimate = object$shift + c(0, 1),
                  conf.low = object$shift + c(0, 1) - 0.5,
@@ -272,8 +272,8 @@ test_that("held-out coverage of a rough field reaches nominal", {
 })
 .hsgp_upper_miss <- function(kernel) {
   list(holds = c(lower = TRUE, upper = FALSE), kernel = kernel,
-       window = c(lo = .1, hi = 2), lengthscale = c(mean = 1),
-       lengthscale_hi = c(mean = 3), capped = FALSE,
+       window = c(lo = .1, hi = 2), lengthscale = c(median = 1),
+       lengthscale_hi = c(median = 3), capped = FALSE,
        auto = c(m = FALSE, c = FALSE), m = 10L, c = 2)
 }
 

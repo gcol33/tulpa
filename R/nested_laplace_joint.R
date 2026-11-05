@@ -979,6 +979,9 @@
 #'      weights (sum to 1).
 #'   * `theta_mean`, `theta_sd` -- posterior moments per hyperparameter,
 #'      including `alpha` when `copy` is set.
+#'      Divergent physical range moments are `Inf`; `moment_existence`
+#'      records the prior tail, likelihood boundary decay and the reason.
+#'      `theta_log_mean` and `theta_log_sd` retain finite log-range moments.
 #'   * `theta_median`, `theta_ci_lo`, `theta_ci_hi` -- weighted-quantile
 #'      median and 2.5/97.5 empirical CI per hyperparameter axis (same
 #'      names as `theta_mean`). Recommended summary for right-skewed
@@ -991,7 +994,7 @@
 #'      `"stencil"` (a parabola at the modal node) or `"within_cell"` (the
 #'      modal node's mass spread over its cell, the read the interval of an
 #'      unresolved axis comes from). `theta_sd_stencil_declined` says why a
-#'      parabola was not formed.
+#'      parabola was not formed. `"nonexistent"` identifies a divergent SD.
 #'   * `modes` -- `[n_grid x n_x]` matrix of inner modes.
 #'   * `fitted_eta` -- `[n_grid x N]` matrix of the linear predictor at each
 #'      cell's own mode, offset and latent field included. Present on a

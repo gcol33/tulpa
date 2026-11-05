@@ -91,11 +91,13 @@ test_that("a GP range is reported in data units whether or not coords are scaled
       y ~ x, data = d, phi = 0.09, mode = "nested_laplace",
       spatial = spatial_gp(~ lon + lat, approx = "nngp", scale_coords = sc),
       control = list(n_threads = 1)))
-    spatial_range(f)["range", ]
+    spatial_range(f, probs = c(.025, .5, .975))["range", ]
   }
   r_sc <- fit_range(TRUE); r_raw <- fit_range(FALSE)
   # Both in data units (true practical range 0.45), and the two agree.
-  expect_lt(abs(log(r_sc$mean / r_raw$mean)), log(1.6))
+  expect_identical(r_sc$mean, Inf)
+  expect_identical(r_raw$mean, Inf)
+  expect_lt(abs(log(r_sc$q50 / r_raw$q50)), log(1.6))
   expect_true(r_sc$q2.5 < 0.45 && r_sc$q97.5 > 0.45)
 })
 

@@ -809,6 +809,20 @@ inline double pg_log_icar(const double* phi, const PgIcarPrior& prior,
   return pg_log_gmrf(prior.quad(phi), prior.rank(), s);
 }
 
+inline Rcpp::List pg_range_moment_model(double lower, double upper) {
+  if (!std::isfinite(lower) || !std::isfinite(upper) ||
+      !(lower > 0.0) || !(upper > lower)) {
+    Rcpp::stop("The range prior needs finite 0 < lower < upper; got [%g, %g].",
+               lower, upper);
+  }
+  return Rcpp::List::create(
+    Rcpp::Named("prior_power") = NA_REAL,
+    Rcpp::Named("field") = "nngp",
+    Rcpp::Named("fixed") = false,
+    Rcpp::Named("bounded") = true,
+    Rcpp::Named("bounds") = Rcpp::NumericVector::create(lower, upper));
+}
+
 // The NNGP joint density of a scale's field at its (sigma2, phi), the PC prior
 // on sigma2 (on the variance, the scale it is sampled on) and the uniform prior
 // on phi over [lower, upper]. Reads `sc.fac`, which pg_nngp_scale_update leaves

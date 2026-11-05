@@ -103,7 +103,7 @@
 #' field and narrows its intervals. Left unset, `m` and `c` follow the
 #' iterative procedure of the paper's Section 4.5.1. In its Phase A the first
 #' fit takes them from the prior median of the lengthscale, and while the
-#' posterior mean lengthscale falls below the smallest one the fitted basis
+#' posterior median lengthscale falls below the smallest one the fitted basis
 #' represents (the paper's diagnostic, with its slack of 0.01 on the
 #' lengthscale divided by `S`), the field is fitted again with the `m` and `c`
 #' that estimate asks for. In its Phase B five functions per dimension are
@@ -115,7 +115,7 @@
 #' the previous fit's 95% interval. `m` never shrinks below a size already
 #' fitted and stops at 50. A supplied `m` or `c` is kept as given, and a
 #' supplied `m` ends the procedure after Phase A.
-#' [diagnostics()] reports when the posterior mean lengthscale lies outside
+#' [diagnostics()] reports when the posterior median lengthscale lies outside
 #' the window of the fitted basis at either end; above it, the field is
 #' smoother than the boundary factor allows for, and a larger `c` covers it.
 #'
@@ -347,7 +347,7 @@ validate_hsgp <- function(spatial, data) {
 #'   of m^2 functions. A value given applies to both scales. `NULL` (default)
 #'   chooses each scale's from the data by the rule [spatial_gp()] describes:
 #'   first at the median of that scale's range prior, then at its posterior
-#'   mean lengthscale while the basis does not represent it.
+#'   median lengthscale while the basis does not represent it.
 #' @param c_boundary Boundary factor for HSGP domain extension, `>= 1`; only
 #'   used when `approx = "hsgp"`. A value given applies to both scales; `NULL`
 #'   (default) chooses each scale's from the data.

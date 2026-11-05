@@ -40,7 +40,7 @@ only used when \code{approx = "hsgp"}, where each scale carries its own basis
 of m^2 functions. A value given applies to both scales. \code{NULL} (default)
 chooses each scale's from the data by the rule \code{\link[=spatial_gp]{spatial_gp()}} describes:
 first at the median of that scale's range prior, then at its posterior
-mean lengthscale while the basis does not represent it.}
+median lengthscale while the basis does not represent it.}
 
 \item{c_boundary}{Boundary factor for HSGP domain extension, \verb{>= 1}; only
 used when \code{approx = "hsgp"}. A value given applies to both scales; \code{NULL}

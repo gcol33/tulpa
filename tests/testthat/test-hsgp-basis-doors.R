@@ -98,8 +98,8 @@ test_that("a refit step reads the smallest lengthscale of the fields on a basis"
   post_at <- function(target) {
     local_mocked_bindings(
       .hsgp_lengthscale_posterior = function(fit, axes = NULL)
-        rbind(c(mean = target, lo = 0, hi = 1),
-              c(mean = 2 * win[["hi"]], lo = 0, hi = 1)),
+        rbind(c(median = target, lo = 0, hi = 1),
+              c(median = 2 * win[["hi"]], lo = 0, hi = 1)),
       .package = "tulpa")
     tulpa:::.hsgp_refit_spec(sp, list())
   }

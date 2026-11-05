@@ -74,7 +74,10 @@
 #'   spec. In `joint = TRUE` mode additionally:
 #'   `w_draws` (transformed `z -> w` per draw), `range_draws`,
 #'   `sigma_draws`, `kappa_draws`, `tau_draws`, and `range_summary`,
-#'   `sigma_summary` (mean/median/5%/95% quantiles).
+#'   `sigma_summary` (mean/median/5%/95% quantiles). `range_summary` also
+#'   includes `sd`, reported as `Inf` when the model's range variance diverges.
+#'   `moment_existence` records the model-based reason; `theta_log_mean` and
+#'   `theta_log_sd` retain the log-range moments.
 #'
 #' @seealso [fit_spde()] for the Laplace counterpart and the nested-Laplace
 #'   path over (range, sigma).
@@ -400,6 +403,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
     )
   }
 
+  res$beta_prior <- .normalize_beta_prior(beta_prior, p)
   .finalize_fit(res, backend = "hmc_spde_nuts", draws_kind = "chain",
                n_fixed = p, fixed_names = colnames(res$draws)[seq_len(p)],
                param_names = colnames(res$draws),

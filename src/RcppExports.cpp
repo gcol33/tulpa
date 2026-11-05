@@ -2653,6 +2653,16 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_spde_orphan_mass
+Rcpp::LogicalVector cpp_spde_orphan_mass(Rcpp::NumericVector mass);
+RcppExport SEXP _tulpa_cpp_spde_orphan_mass(SEXP massSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type mass(massSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_spde_orphan_mass(mass));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_stochastic_log_determinant
 double cpp_stochastic_log_determinant(Rcpp::NumericVector Q_x, Rcpp::IntegerVector Q_i, Rcpp::IntegerVector Q_p, int n, int n_probes, int n_lanczos, int seed);
 RcppExport SEXP _tulpa_cpp_stochastic_log_determinant(SEXP Q_xSEXP, SEXP Q_iSEXP, SEXP Q_pSEXP, SEXP nSEXP, SEXP n_probesSEXP, SEXP n_lanczosSEXP, SEXP seedSEXP) {
@@ -3358,6 +3368,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit_spde", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde, 31},
     {"_tulpa_cpp_laplace_fit_spde_precomputed", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde_precomputed, 25},
     {"_tulpa_cpp_nested_laplace_spde", (DL_FUNC) &_tulpa_cpp_nested_laplace_spde, 42},
+    {"_tulpa_cpp_spde_orphan_mass", (DL_FUNC) &_tulpa_cpp_spde_orphan_mass, 1},
     {"_tulpa_cpp_stochastic_log_determinant", (DL_FUNC) &_tulpa_cpp_stochastic_log_determinant, 7},
     {"_tulpa_cpp_tgmrf_nuts_joint", (DL_FUNC) &_tulpa_cpp_tgmrf_nuts_joint, 24},
     {"_tulpa_cpp_tgmrf_registry_has", (DL_FUNC) &_tulpa_cpp_tgmrf_registry_has, 1},
