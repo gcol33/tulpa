@@ -54,7 +54,9 @@ test_that("continuous gp/nngp spec routes through tulpa_nested_laplace()", {
                               data = dg, family = "binomial")
   expect_s3_class(fit, "tulpa_nested_laplace")
   expect_setequal(names(fit$theta_mean), c("sigma2", "phi_gp"))
-  expect_true(all(is.finite(fit$theta_mean)))
+  expect_true(is.finite(fit$theta_mean[["sigma2"]]))
+  expect_identical(fit$theta_mean[["phi_gp"]], Inf)
+  expect_true(all(is.finite(fit$theta_median)))
 })
 
 test_that("continuous hsgp spec routes through tulpa_nested_laplace()", {
@@ -70,5 +72,7 @@ test_that("continuous hsgp spec routes through tulpa_nested_laplace()", {
                               data = dg, family = "binomial")
   expect_s3_class(fit, "tulpa_nested_laplace")
   expect_setequal(names(fit$theta_mean), c("sigma2", "lengthscale"))
-  expect_true(all(is.finite(fit$theta_mean)))
+  expect_true(is.finite(fit$theta_mean[["sigma2"]]))
+  expect_identical(fit$theta_mean[["lengthscale"]], Inf)
+  expect_true(all(is.finite(fit$theta_median)))
 })

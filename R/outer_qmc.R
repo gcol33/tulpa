@@ -111,8 +111,9 @@
 }
 
 # Independent scrambles estimate the error of a self-normalized integral.
-# Quantile error uses the between-scramble quantiles, including the complete
-# conditional Gaussian mixture for each retained fixed effect.
+# Quantile error deletes one scramble from the pooled posterior, including the
+# complete conditional Gaussian mixture for each retained fixed effect. Student-t
+# bounds at 95% account for the finite number of independent scrambles.
 .nl_qmc_error <- function(u, log_weight, replicate, out, proposed_per_rep,
                           probs = c(.025, .5, .975)) {
     n <- nrow(u)
@@ -131,14 +132,20 @@
         }
     }
     groups <- lapply(seq_along(proposed_per_rep), function(g) which(replicate == g))
+    leave <- lapply(seq_along(groups), function(g) which(replicate != g))
+    critical <- stats::qt(.975, length(groups) - 1L)
+    jackknife <- function(q) {
+        critical * apply(q, 1L, stats::sd) *
+            (length(groups) - 1L) / sqrt(length(groups))
+    }
     z <- vapply(groups, function(ix) sum(a[ix]), numeric(1)) / proposed_per_rep
-    log_se <- stats::sd(z) / sqrt(length(z)) / mean(z)
+    log_se <- critical * stats::sd(z) / sqrt(length(z)) / mean(z)
     w <- a
     qse <- function(values, variance = NULL) {
         if (is.null(variance)) {
             mu <- sum(w * values)
             sd <- sqrt(sum(w * (values - mu)^2))
-            qs <- vapply(groups, function(ix) {
+            qs <- vapply(leave, function(ix) {
                 if (!length(ix) || !any(a[ix] > 0)) return(rep(NA_real_, length(probs)))
                 .nl_wtd_quantile(values[ix], a[ix], probs, outside = "clamp")
             }, numeric(length(probs)))
@@ -147,14 +154,14 @@
                 matrix(variance, ncol = 1L), w, probs)
             if (is.null(full)) return(rep(Inf, length(probs)))
             sd <- full$sd
-            qs <- vapply(groups, function(ix) {
+            qs <- vapply(leave, function(ix) {
                 s <- .nl_gauss_mixture_summary(matrix(values[ix], ncol = 1L),
                     matrix(variance[ix], ncol = 1L), a[ix], probs)
                 if (is.null(s)) rep(NA_real_, length(probs)) else as.numeric(s$quantiles)
             }, numeric(length(probs)))
         }
         if (isTRUE(sd == 0)) return(rep(0, length(probs)))
-        apply(qs, 1L, stats::sd) / sqrt(length(groups)) / sd
+        jackknife(qs) / sd
     }
     hyper <- vapply(seq_len(ncol(u)), function(j) qse(u[, j]), numeric(length(probs)))
     fixed <- NULL
@@ -302,10 +309,25 @@
     out$theta_interval_read <- "sample"
     out$outer_qmc <- list(n = proposed, n_evaluated = n_evaluated, proposal = proposal,
                          error = error, tol = tol, converged = error$max <= tol,
+                         error_method = "delete_scramble_jackknife",
+                         error_confidence = .95,
+                         error_scope = "pointwise",
                          history = do.call(rbind, history))
     if (mapped) out$outer_qmc$design_columns <- view$cols
     fields <- c("outer_grid_placement", "outer_grid_axis_declined", "outer_grid_moved_axes",
                 "outer_grid_recenter_clamped", "outer_grid_recenter_declined")
     out[fields] <- res[fields]
     .nl_attach_outer_integration(out, "importance quadrature")
+}
+
+.tulpa_qmc_state <- function(fit) {
+    fit[["outer_qmc"]] %||% fit[["joint_fit"]][["outer_qmc"]] %||%
+        fit[["nested"]][["outer_qmc"]]
+}
+
+.tulpa_qmc_note <- function(qmc) {
+    if (is.null(qmc)) return(NULL)
+    sprintf("Importance quadrature: estimated error %.3g, target %.3g, %d points (%s).",
+        qmc$error$max, qmc$tol, qmc$n,
+        if (isTRUE(qmc$converged)) "target attained" else "target unattained")
 }

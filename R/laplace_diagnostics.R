@@ -1792,6 +1792,7 @@
 # there is nothing to report at either layer, and an all-"not assessed" table
 # would be a report about the absence of a report.
 .tulpa_approx_diag_table <- function(fit, pars = NULL) {
+  qmc <- .tulpa_qmc_state(fit)
   grid  <- .tulpa_grid_reliability(fit)
   psis  <- .tulpa_psis_reliability(fit)
   inner <- .tulpa_inner_skew_reliability(fit)
@@ -1813,7 +1814,7 @@
   param_declined <- NA_character_
   if (is.null(draws)) {
     has_band <- !is.null(grid) || !is.null(inner) || !is.null(inner_k) ||
-      !is.null(regime) || is.finite(k)
+      !is.null(regime) || !is.null(qmc) || is.finite(k)
     if (!has_band) {
       nc <- .tulpa_not_converged_line(fit)
       message(.tulpa_no_draws_note(fit, "diagnostics"),
@@ -1952,6 +1953,7 @@
                                 inner_k_declined)
   } else NA_character_
   attr(tab, "reliability") <- reliability
+  attr(tab, "outer_qmc") <- qmc
   attr(tab, "inner_debias_note") <- .tulpa_inner_debias_note(fit, inner, inner_k)
   hshare <- .tulpa_hyper_share(fit)
   if (!is.null(hshare)) {
@@ -1979,6 +1981,9 @@
     hyper_share_max = if (is.null(hshare)) NA_real_ else hshare$max_share,
     ess_grid        = if (is.null(grid)) NA_real_ else grid$ess_grid,
     n_grid          = if (is.null(grid)) NA_integer_ else grid$n_grid,
+    qmc_converged   = if (is.null(qmc)) NA else isTRUE(qmc$converged),
+    qmc_error       = if (is.null(qmc)) NA_real_ else qmc$error$max,
+    qmc_tol         = if (is.null(qmc)) NA_real_ else qmc$tol,
     max_weight      = if (is.null(grid)) NA_real_ else grid$max_weight,
     inner_skew_max  = if (is.null(inner)) NA_real_ else inner$max_abs_gamma3,
     inner_skew_band = if (is.null(inner)) NA_character_ else inner$band,
@@ -2003,6 +2008,8 @@
 #' @param x A `laplace_diagnostics` table returned by `diagnostics()`.
 #' @export
 print.laplace_diagnostics <- function(x, ...) {
+  qmc_note <- .tulpa_qmc_note(attr(x, "outer_qmc"))
+  if (!is.null(qmc_note)) cat(qmc_note, "\n", sep = "")
   s <- attr(x, "summary")
   k <- attr(x, "pareto_k")
   band <- attr(x, "pareto_k_band")

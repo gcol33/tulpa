@@ -12,8 +12,8 @@
 #
 #   - Eight change what the RESULT carries: max_iter caps n_iter, x_init moves
 #     it, store_Q / compute_skew / debias / cila each add their own fields, and
-#     a positive prune_tol turns on the cheap-screen report that screen_iters
-#     then moves.
+#     a positive prune_tol turns on the cheap-screen report, including the
+#     effective screen_iters budget.
 #   - Twelve enter the CHECKPOINT FINGERPRINT (make_nl_grid_checkpoint): y, n,
 #     X, re_idx, n_re_groups, sigma_re, family, phi, max_iter, tol, the offset,
 #     and the grid axes. Writing a checkpoint and then re-running against the
@@ -186,7 +186,7 @@ skip_on_cran()
     list(name = "nngp", fn = cpp_nested_laplace_nngp,
          args = nngp, axis = "sigma2_grid"),
     list(name = "hsgp", fn = cpp_nested_laplace_hsgp,
-         args = hsgp, axis = "sigma2_grid"),
+         args = hsgp, axis = "sigma2_grid", screen_full = TRUE),
     list(name = "temporal", fn = cpp_nested_laplace_temporal,
          args = temporal, axis = "tau_grid"),
     list(name = "st_icar", fn = cpp_nested_laplace_st_icar,
@@ -202,7 +202,7 @@ skip_on_cran()
                                   rho_spatial_grid = c(0.3, 0.7))),
          axis = "sigma_spatial_grid"),
     list(name = "st_hsgp", fn = cpp_nested_laplace_st_hsgp,
-         args = st_hsgp, axis = "sigma2_spatial_grid"),
+         args = st_hsgp, axis = "sigma2_spatial_grid", screen_full = TRUE),
     list(name = "st_nngp", fn = cpp_nested_laplace_st_nngp,
          args = st_nngp, axis = "sigma2_spatial_grid")
   )
@@ -263,15 +263,27 @@ for (.case in .nlf_cases()) local({
     expect_equal(length(screened$prune_cheap_log_marginal),
                  length(base$log_marginal))
 
-    # The screen ranks cells by the Laplace log-marginal at the quasi-mode its
-    # own step budget reaches, so a one-step screen and a converged one do not
-    # report the same cheap log-marginals.
+    # Cell-dependent bases use at least the full inner solve budget; other
+    # blocks use the requested screening depth.
     shallow <- do.call(case$fn, modifyList(
       case$args, list(prune_tol = 1e-12, screen_iters = 1L)))
     deep <- do.call(case$fn, modifyList(
       case$args, list(prune_tol = 1e-12, screen_iters = 30L)))
-    expect_false(isTRUE(all.equal(shallow$prune_cheap_log_marginal,
-                                  deep$prune_cheap_log_marginal)))
+    screen_steps <- function(requested) {
+      if (isTRUE(case[["screen_full"]])) max(requested, case$args$max_iter)
+      else requested
+    }
+    expect_equal(shallow$prune_screen_iters, screen_steps(1L))
+    expect_equal(deep$prune_screen_iters, screen_steps(30L))
+    expect_identical(isTRUE(all.equal(shallow$prune_cheap_log_marginal,
+                                     deep$prune_cheap_log_marginal)),
+                     screen_steps(1L) == screen_steps(30L))
+    if (isTRUE(case[["screen_full"]])) {
+      requested <- case$args$max_iter + 1L
+      extended <- do.call(case$fn, modifyList(
+        case$args, list(prune_tol = 1e-12, screen_iters = requested)))
+      expect_equal(extended$prune_screen_iters, requested)
+    }
 
     # The per-row predictive variance is the LatentBlock driver's; where an
     # entry reports one, switching it off removes it and moves nothing else.

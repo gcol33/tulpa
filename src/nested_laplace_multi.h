@@ -112,6 +112,15 @@ inline bool nl_loadings_cell_invariant(const std::vector<LatentBlock>& blocks) {
     return true;
 }
 
+// Cell-dependent bases change the coordinates carried by a neighbour's warm
+// start. Their screening density uses the converged inner mode, so its ranking
+// is independent of that coordinate map.
+inline int nl_screen_iterations(const std::vector<LatentBlock>& blocks,
+                                 int requested, int max_iter) {
+    return nl_loadings_cell_invariant(blocks)
+        ? requested : std::max(requested, max_iter);
+}
+
 // The design's rows grouped by loading vector (row_classes.h), at cell
 // `k_grid`.
 //

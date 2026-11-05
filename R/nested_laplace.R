@@ -277,7 +277,10 @@
 #'     full inner Newton on every cell whose screened weight is below
 #'     `prune_tol`. The neighbour warm-start keeps each cheap mode near its
 #'     cell's own mode, so the cheap ranking tracks the full-solve ranking even
-#'     where the latent mode moves across the grid. Pruned cells get
+#'     where the latent mode moves across the grid. Cell-dependent basis
+#'     loadings use the full `max_iter` budget and the fit's ordinary inner
+#'     convergence tolerance, since their warm-start coordinates change between
+#'     cells. Pruned cells get
 #'     `log_marginal = -Inf`, `n_iter = 0` and inherit the pilot mode; the pilot
 #'     cell is never pruned, and at least `prune_min_keep` cells (5) are solved
 #'     in full whatever the tolerance says -- the highest-ranked dropped cells
@@ -345,7 +348,9 @@
 #'     the caller supplied retain their integration bounds; points outside
 #'     those bounds carry zero mass and are discarded. The reported
 #'     `outer_qmc` contains the proposal, evaluation count, effective sample size,
-#'     error estimates, stopping history and convergence flag.
+#'     error estimates, stopping history and convergence flag. Pointwise errors are 95%
+#'     Student-t bounds across independent scrambles; quantile bounds use
+#'     leave-one-scramble jackknife estimates on the pooled posterior.
 #'     The importance points receive full inner solves. The placement grid
 #'     uses the pruning controls.
 #'   * `axis_refine` (`NULL`) -- per-axis override of how far those axes may be

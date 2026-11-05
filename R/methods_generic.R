@@ -639,6 +639,8 @@ print.tulpa_fit <- function(x, ...) {
 #' @keywords internal
 .print_fit_body <- function(x) {
   .print_fit_call(x$call)
+  qmc_note <- .tulpa_qmc_note(.tulpa_qmc_state(x))
+  if (!is.null(qmc_note)) cat("  ", qmc_note, "\n", sep = "")
   n_obs <- x$N %||% x$n_obs
   if (!is.null(n_obs)) cat("  n_obs:", n_obs, "\n")
   tab <- tryCatch(.fit_fixed_table(x), error = function(e) NULL)

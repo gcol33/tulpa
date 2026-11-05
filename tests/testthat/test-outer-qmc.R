@@ -93,7 +93,7 @@ test_that("Monte Carlo errors give nonfinite nodes zero mass in the original den
   got <- tulpa:::.nl_qmc_error(u, lw, group, out, rep(8, 8L))
   expect_equal(got, expected, tolerance = 1e-14)
   counts <- c(5, rep(8, 7L))
-  expect_equal(got$log_evidence, sd(counts) / sqrt(8) / mean(counts),
+  expect_equal(got$log_evidence, qt(.975, 7) * sd(counts) / sqrt(8) / mean(counts),
                tolerance = 1e-14)
   expect_true(is.finite(got$max))
 })
@@ -213,5 +213,20 @@ test_that("importance points retain a covariance design's density measure", {
     q <- tulpa:::.nl_wtd_quantile(got[, j], out$weights, c(.025, .5, .975),
                                  outside = "clamp")
     expect_lt(max(abs(q - qnorm(c(.025, .5, .975), mu[j], sigma[j]))), .06)
+  }
+})
+
+test_that("unattained importance precision reaches diagnostics and print", {
+  qmc <- list(n = 4096L, error = list(max = .12), tol = .05, converged = FALSE)
+  fit <- tulpa:::.finalize_fit(list(draws = matrix(seq_len(20L), ncol = 1L,
+    dimnames = list(NULL, "beta")), outer_qmc = qmc), backend = "nested_laplace")
+  for (object in list(fit, tulpa:::.finalize_fit(list(draws = fit$draws,
+    joint_fit = fit), backend = "nested_laplace"))) {
+    d <- diagnostics(object)
+    expect_false(attr(d, "summary")$qmc_converged)
+    expect_equal(attr(d, "summary")$qmc_error, .12)
+    expect_equal(attr(d, "summary")$qmc_tol, .05)
+    expect_output(print(object), "target unattained")
+    expect_output(print(d), "target unattained")
   }
 })

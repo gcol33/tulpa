@@ -172,7 +172,9 @@ test_that("mode = nested_laplace integrates an NNGP field through tulpa()", {
   expect_s3_class(fit, "tulpa_nested_laplace")
   # The GP hyperparameters were integrated, not conditioned on.
   expect_named(fit$theta_mean, c("sigma2", "phi_gp"))
-  expect_true(all(is.finite(fit$theta_mean)))
+  expect_true(is.finite(fit$theta_mean[["sigma2"]]))
+  expect_identical(fit$theta_mean[["phi_gp"]], Inf)
+  expect_true(all(is.finite(fit$theta_median)))
   expect_true(abs(sum(fit$weights) - 1) < 1e-6)
 
   # Recovery: marginalize beta over the (sigma2, phi_gp) grid (grid modes
@@ -286,7 +288,9 @@ test_that("mode = nested_laplace integrates an HSGP field through tulpa()", {
   expect_s3_class(fit, "tulpa_nested_laplace")
   # The HSGP hyperparameters were integrated, not conditioned on.
   expect_named(fit$theta_mean, c("sigma2", "lengthscale"))
-  expect_true(all(is.finite(fit$theta_mean)))
+  expect_true(is.finite(fit$theta_mean[["sigma2"]]))
+  expect_identical(fit$theta_mean[["lengthscale"]], Inf)
+  expect_true(all(is.finite(fit$theta_median)))
   expect_true(abs(sum(fit$weights) - 1) < 1e-6)
 
   # Recovery: marginalize beta over the (sigma2, lengthscale) grid (grid modes

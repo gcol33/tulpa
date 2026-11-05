@@ -156,7 +156,7 @@ test_that("nested multi-scale spatial fit recovers both scales against the truth
                                 spatial = ms_spec(),
                                 control = list(progress = FALSE)))
   expect_identical(fit$backend, "nested_laplace")
-  sr <- spatial_range(fit)
+  sr <- spatial_range(fit, probs = c(.025, .5, .975))
   expect_setequal(rownames(sr), c("sigma[local]", "range[local]",
                                   "sigma[regional]", "range[regional]"))
   # Every interval covers its truth; a range row is 3 phi.
@@ -167,7 +167,7 @@ test_that("nested multi-scale spatial fit recovers both scales against the truth
     expect_lte(3 * s$phi[[sc]], sr[sprintf("range[%s]", sc), "q97.5"])
   }
   # The scales stay apart: the regional range sits above the local one.
-  expect_gt(sr["range[regional]", "mean"], sr["range[local]", "mean"])
+  expect_gt(sr["range[regional]", "q50"], sr["range[local]", "q50"])
   # Component maps against the simulated fields, and the summed field.
   fl <- field_effects(fit, "local")
   fr <- field_effects(fit, "regional")
