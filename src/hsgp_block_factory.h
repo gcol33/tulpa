@@ -10,10 +10,10 @@
 // exponential) kernel. beta_j ~ N(0, 1) i.i.d.; sigma2 and ell are the
 // outer-grid hyperparameters.
 //
-// HSGP uses DENSE_BASIS semantics: every obs touches every basis
-// coefficient through Phi[i, j]. The block size is m_total (number of
-// basis functions), and the latent vector at [start, start + m_total)
-// holds beta_j directly. eta_i += sum_j Phi[i, j] * sqrt_S_j * beta_j.
+// HSGP uses DENSE_BASIS semantics. When the basis is wider than the pooled
+// training rows, a QR factorization integrates its orthogonal Gaussian
+// coordinates exactly. The block then carries one standard-normal coordinate
+// per training row; prediction includes the independent orthogonal residual.
 //
 // Mesh data:
 //   * eigenvalues: length-m_total double vector (shared across arms)
@@ -70,7 +70,9 @@ LatentBlock make_hsgp_block(
     int                            axis_sigma2,
     int                            axis_ell,
     const Rcpp::NumericMatrix&     theta_grid,
-    priors::HsgpKernel             kernel
+    priors::HsgpKernel             kernel,
+    Rcpp::Nullable<Rcpp::List>      training_phi = R_NilValue,
+    bool                           observation_space = true
 );
 
 } // namespace tulpa

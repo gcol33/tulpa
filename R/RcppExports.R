@@ -245,6 +245,10 @@ cpp_hsgp_sqrt_spectral <- function(lambda_eig, sigma2, lengthscale, kernel) {
     .Call(`_tulpa_cpp_hsgp_sqrt_spectral`, lambda_eig, sigma2, lengthscale, kernel)
 }
 
+cpp_hsgp_observation_projection <- function(training, prediction, spectral) {
+    .Call(`_tulpa_cpp_hsgp_observation_projection`, training, prediction, spectral)
+}
+
 cpp_hyperprior_log_density <- function(x, kind, coordinate, U, alpha, d = 2.0, lambda = 7.0) {
     .Call(`_tulpa_cpp_hyperprior_log_density`, x, kind, coordinate, U, alpha, d, lambda)
 }
@@ -393,8 +397,8 @@ cpp_test_joint_logpost_grad <- function(arms_list, copy_arms, copy_blocks, block
     .Call(`_tulpa_cpp_test_joint_logpost_grad`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, x, k_grid, sparse)
 }
 
-cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, prune_tol = 0.0, likelihood = NULL, progress = FALSE, progress_every = 0L, progress_throttle = 0.0, progress_file = "", checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL, debias = NULL, cila = NULL, offset_nullable = NULL, screen_log_offset = NULL, beta_prior = NULL) {
-    .Call(`_tulpa_cpp_nested_laplace_multi`, y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood, progress, progress_every, progress_throttle, progress_file, checkpoint_path, compute_skew, skew_idx, debias, cila, offset_nullable, screen_log_offset, beta_prior)
+cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, prune_tol = 0.0, likelihood = NULL, progress = FALSE, progress_every = 0L, progress_throttle = 0.0, progress_file = "", checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL, debias = NULL, cila = NULL, offset_nullable = NULL, screen_log_offset = NULL, beta_prior = NULL, compute_fitted_var = TRUE) {
+    .Call(`_tulpa_cpp_nested_laplace_multi`, y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood, progress, progress_every, progress_throttle, progress_file, checkpoint_path, compute_skew, skew_idx, debias, cila, offset_nullable, screen_log_offset, beta_prior, compute_fitted_var)
 }
 
 cpp_nl_lq_group_cdf <- function(piece, x) {

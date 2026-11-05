@@ -567,7 +567,7 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   p <- ncol(X)
   lat0 <- p + as.integer(n_re_groups)
   n_sp_cols <- switch(spatial_type, bym2 = 2L * n_s,
-                      hsgp = ncol(basis$phi_basis), n_s)
+                      hsgp = min(ncol(basis$phi_basis), N), n_s)
   sp_block <- lat0 + seq_len(n_sp_cols)
   te_cols  <- lat0 + n_sp_cols + seq_len(n_times)
   # The per-unit spatial field as a loading of the latent vector, as
@@ -592,10 +592,8 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   # is the sigma/rho-weighted MIX of its two raw (standardized) sub-fields, not
   # either one alone (gcol33/tulpa#776; see bym2_mixing.h for the same
   # `sigma * (sqrt(rho) * scale_factor * phi + sqrt(1 - rho) * theta)`
-  # combination the kernel's own d_fac applies). hsgp's field has no
-  # per-location layout: the reported `spatial_effects` is the per-observation
-  # field `phi_basis %*% beta_bar`, projecting the weight-averaged basis
-  # coefficients through the same basis every observation shares.
+  # combination the kernel's own d_fac applies). HSGP projects each cell's
+  # Gaussian coordinates through its spectral loading at the observations.
   w <- out$weights
   if (spatial_type == "bym2") {
     phi_cols   <- sp_block[seq_len(n_s)]
@@ -607,8 +605,16 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
       out$modes[, theta_cols, drop = FALSE] * (sigma_k * sqrt(1 - rho_k))
     out$spatial_effects <- as.numeric(crossprod(w, combined))
   } else if (spatial_type == "hsgp") {
-    beta_bar <- as.numeric(crossprod(w, out$modes[, sp_block, drop = FALSE]))
-    out$spatial_effects <- as.numeric(basis$phi_basis %*% beta_bar)
+    out$spatial_effects <- numeric(N)
+    for (k in which(is.finite(w) & w > 0)) {
+      spectral <- cpp_hsgp_sqrt_spectral(basis$lambda_eig,
+        out$theta_grid[k, "sigma2"], out$theta_grid[k, "lengthscale"], kargs$kernel)
+      loading <- if (ncol(basis$phi_basis) > N)
+        cpp_hsgp_observation_projection(basis$phi_basis, basis$phi_basis, spectral)$basis
+        else sweep(basis$phi_basis, 2L, spectral, "*")
+      out$spatial_effects <- out$spatial_effects +
+        w[k] * as.numeric(loading %*% out$modes[k, sp_block])
+    }
   } else {
     out$spatial_effects <- as.numeric(crossprod(w, out$modes[, sp_block, drop = FALSE]))
   }

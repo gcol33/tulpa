@@ -190,6 +190,9 @@ builder block retains, per outer-grid cell, the posterior covariance of
 the fixed effects and the builder blocks' coefficients as
 \code{basis_block_cov} (\code{idx}, the latent indices; \code{cov}, one matrix per cell),
 extracted in the cell's own inner solve.
+A basis wider than the pooled training rows is integrated in observation
+coordinates using a QR factorization. New-location predictions include
+the conditional Gaussian covariance of the integrated coefficients.
 
 On the list-of-blocks path an \code{mcar} block is \code{n_fields} areal fields on
 one graph whose joint prior is \eqn{\Sigma \otimes Q^{-}}: \code{Q} the ICAR

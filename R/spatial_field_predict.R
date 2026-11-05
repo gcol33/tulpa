@@ -472,7 +472,7 @@
   switch(kind,
     spde = as.integer(sp$n_mesh),
     nngp = as.integer(sp$n_unique %||% nrow(sp$unique_coords)),
-    hsgp = as.integer(sp[["m"]])^2L,
+    hsgp = min(as.integer(sp[["m"]])^2L, nrow(sp$coords_matrix)),
     unit = .nl_single_block_width(prior))
 }
 
@@ -1035,6 +1035,21 @@
       sq <- do.call(rbind, lapply(u, function(k) as.numeric(
         cpp_hsgp_sqrt_spectral(basis$lambda_eig, s2[k], ls[k],
                                .hsgp_kernel_code(bs$kernel)))))
+      if (ncol(Fr) < ncol(basis$phi_basis)) {
+        train <- comp$block$phi_basis %||% if (is.list(comp$block$phi))
+          do.call(rbind, comp$block$phi) else
+          cpp_hsgp_basis_2d_domain(ct, bs$m, dom)$phi_basis
+        result <- matrix(0, nrow(Fr), nrow(cn))
+        for (j in seq_along(u)) {
+          ix <- which(cells == u[j])
+          projection <- cpp_hsgp_observation_projection(train, basis$phi_basis, sq[j, ])
+          result[ix, ] <- Fr[ix, , drop = FALSE] %*% t(projection$basis)
+          if (draw) result[ix, ] <- result[ix, , drop = FALSE] +
+            matrix(stats::rnorm(length(ix) * ncol(train)), length(ix)) %*%
+              t(projection$residual_basis)
+        }
+        return(result)
+      }
       (Fr * sq[match(cells, u), , drop = FALSE]) %*% t(basis$phi_basis)
     },
     nngp = {

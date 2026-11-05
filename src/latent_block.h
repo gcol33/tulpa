@@ -143,6 +143,9 @@ enum class PriorFillKind {
 struct LatentBlock {
     int start = 0;
     int size  = 0;
+    // Independent conditional variance after integrating Gaussian coordinates
+    // orthogonal to all training rows; arguments are arm, cell and row.
+    std::function<double(int, int, int)> prediction_residual;
 
     // (i, k_arm) -> latent index within block (1-based). Return -1 to skip
     // obs i. Single-arm callers pass k_arm = 0; single-arm factories ignore

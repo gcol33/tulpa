@@ -475,7 +475,7 @@
                 phi[[k]] <- phi[[k]] * as.numeric(Xk[, svc])
             }
         }
-        list(
+        out <- list(
             type           = "hsgp",
             m_total        = as.integer(p$m_total),
             phi            = phi,
@@ -483,6 +483,9 @@
             eigenvalues    = as.numeric(p$eigenvalues),
             kernel         = .hsgp_kernel_code(.hsgp_block_kernel(p))
         )
+        if (!is.null(p$training_phi)) out$training_phi <- p$training_phi
+        if (!is.null(p$observation_space)) out$observation_space <- p$observation_space
+        out
     } else if (type == "hsgp_mo") {
         # Multi-output (co-regionalization) HSGP block. K = n_arms
         # correlated latent fields share basis + eigenvalues; coefficients are
@@ -2675,6 +2678,10 @@
                    prepared[[b]]$n_mesh          %||%
                    prepared[[b]]$m_total         %||% 0L
         n_units <- as.integer(n_units)
+        if (type == "hsgp" && !identical(prepared[[b]]$observation_space, FALSE)) {
+            train <- prepared[[b]]$training_phi %||% prepared[[b]]$phi
+            n_units <- min(n_units, sum(vapply(train, nrow, integer(1))))
+        }
         if (type == "bym2") {
             block_size[b] <- 2L * n_units
             field_starts      <- c(field_starts, cur)

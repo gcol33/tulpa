@@ -17,6 +17,7 @@
 
 #include "linalg_fast.h"  // require_coords_2col
 #include "hmc_hsgp.h"   // tulpa_hsgp::setup_hsgp_2d, tulpa::HSGPData
+#include "hsgp_observation.h"
 #include "hsgp_spectral.h"
 #include <Rcpp.h>
 #include <vector>
@@ -150,4 +151,21 @@ Rcpp::NumericVector cpp_hsgp_sqrt_spectral(const Rcpp::NumericVector& lambda_eig
         tulpa::priors::hsgp_kernel_from_code(kernel, "cpp_hsgp_sqrt_spectral"),
         sigma2, lengthscale, lambda_eig.begin(), lambda_eig.size(), out.begin());
     return out;
+}
+
+// [[Rcpp::export]]
+Rcpp::List cpp_hsgp_observation_projection(Rcpp::NumericMatrix training,
+                                          Rcpp::NumericMatrix prediction,
+                                          Rcpp::NumericVector spectral) {
+    if (training.ncol() != spectral.size() || prediction.ncol() != spectral.size())
+        Rcpp::stop("HSGP basis and spectral widths differ.");
+    tulpa::HsgpObservation representation;
+    Eigen::Map<const Eigen::MatrixXd> train(training.begin(), training.nrow(), training.ncol());
+    Eigen::Map<const Eigen::MatrixXd> pred(prediction.begin(), prediction.nrow(), prediction.ncol());
+    Eigen::Map<const Eigen::VectorXd> s(spectral.begin(), spectral.size());
+    representation.compute(train, s);
+    Eigen::MatrixXd basis = representation.project(pred, s);
+    Eigen::MatrixXd residual = representation.residual_basis(pred, s);
+    return Rcpp::List::create(Rcpp::_["basis"] = basis,
+                              Rcpp::_["residual_basis"] = residual);
 }

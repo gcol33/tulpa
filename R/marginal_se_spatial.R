@@ -636,6 +636,10 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
     as.numeric(lambda_eig), sigma2, lengthscale,
     .hsgp_kernel_code(.hsgp_spec_kernel(spatial)))
   PhiS <- sweep(phi_basis, 2, sqrt_S, `*`)
+  if (M > nrow(phi_basis)) {
+    PhiS <- cpp_hsgp_observation_projection(phi_basis, phi_basis, sqrt_S)$basis
+    M <- ncol(PhiS)
+  }
 
   .marginal_H_beta_field(
     mode, X, family, phi, n_trials, weights, offset,

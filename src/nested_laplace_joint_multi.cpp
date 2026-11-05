@@ -1169,10 +1169,13 @@ int build_joint_blocks_from_spec(
             /*axis_sigma2=*/axis0,
             /*axis_ell=*/axis0 + 1,
             theta_grid,
-            tulpa::priors::hsgp_kernel_from_spec(bs, "hsgp block")
+            tulpa::priors::hsgp_kernel_from_spec(bs, "hsgp block"),
+            bs.containsElementNamed("training_phi") ? bs["training_phi"] : R_NilValue,
+            !bs.containsElementNamed("observation_space") || Rcpp::as<bool>(bs["observation_space"])
         );
+        const int size = block.size;
         blocks.push_back(block);
-        return latent_offset + m_total;
+        return latent_offset + size;
     }
 
     if (type == "hsgp_mo") {
@@ -1927,9 +1930,16 @@ Rcpp::List cpp_joint_arm_loadings(
                                "bilinearly and has no linear loading.");
                 });
         }
+        Rcpp::NumericVector residual(N);
+        for (int b = 0; b < Bn; ++b) if (blocks[b].prediction_residual) {
+            for (int i = 0; i < N; ++i) {
+                const double d = d_eff[b][arm] * tulpa::block_row_weight(blocks[b], i, arm);
+                residual[i] += d * d * blocks[b].prediction_residual(arm, k, i);
+            }
+        }
         out[c] = Rcpp::List::create(
             Rcpp::Named("i") = Rcpp::wrap(ri), Rcpp::Named("j") = Rcpp::wrap(ci),
-            Rcpp::Named("x") = Rcpp::wrap(vx));
+            Rcpp::Named("x") = Rcpp::wrap(vx), Rcpp::Named("residual") = residual);
     }
     return Rcpp::List::create(Rcpp::Named("loadings") = out,
                               Rcpp::Named("offset") = offset,

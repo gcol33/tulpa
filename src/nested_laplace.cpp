@@ -603,7 +603,7 @@ Rcpp::List cpp_nested_laplace_hsgp(
     // Phi[i, j] * sqrt(S_j) — so the LatentBlock factory exposes basis_eval
     // and the joint sparse impl handles the pattern and scatter via the
     // unified path.
-    const int n_x = p + n_re_groups + M;
+    const int n_x = p + n_re_groups + std::min(M, N);
     const int beta_gp_start = p + n_re_groups;
 
     std::vector<tulpa::ParsedArm> parsed;
@@ -696,7 +696,7 @@ Rcpp::List cpp_laplace_fit_hsgp(
     tulpa::SpecFamilyInputs in;
     tulpa::build_spec_family_inputs(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
-        /*sigma_beta=*/tulpa::DEFAULT_SIGMA_BETA, /*n_block_latent=*/M,
+        /*sigma_beta=*/tulpa::DEFAULT_SIGMA_BETA, /*n_block_latent=*/blocks.back().size,
         weights.empty() ? nullptr : weights.data(),
         offset.empty() ? nullptr : offset.data());
 
@@ -707,7 +707,7 @@ Rcpp::List cpp_laplace_fit_hsgp(
     }
     if (x_init_nullable.isNotNull()) {
         Rcpp::NumericVector xi = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
-        const int n_lat = block_start + M;
+        const int n_lat = block_start + blocks.back().size;
         for (int j = 0; j < n_lat && j < (int)xi.size(); j++) params[j] = xi[j];
     }
 
@@ -1232,7 +1232,7 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
             .temporal(temporal_type, n_times, cyclic, temporal_idx)
             .seed(),
         {sigma2_spatial_grid, lengthscale_spatial_grid, tau_temporal_grid, rho_t},
-        /*spatial_latent_dim=*/M, std::move(blocks),
+        /*spatial_latent_dim=*/std::min(M, N), std::move(blocks),
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         /*force_sparse=*/false,
         {{"sigma2_spatial_grid", sigma2_spatial_grid},

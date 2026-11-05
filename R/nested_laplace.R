@@ -660,7 +660,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # The same, for a re-evaluation that reads the inner log marginals and nothing
   # else -- the placement stencil and the k-hat proposal draws: no per-row
   # predictive variance pass, which on a dense basis costs several inner solves.
-  cargs_lm <- utils::modifyList(cargs_no_ckpt, list(compute_fitted_var = FALSE))
+  cargs_lm <- utils::modifyList(cargs_no_ckpt,
+    list(compute_fitted_var = FALSE, store_Q = FALSE))
 
   p_fixed <- ncol(X)
 
@@ -3140,7 +3141,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     screen_log_offset = if (prune_tol > 0)
                           .nl_screen_log_offset(joint_grid, hp_parts,
                                                 screen = cargs$screen_refine),
-    beta_prior        = cargs$beta_prior
+    beta_prior        = cargs$beta_prior,
+    compute_fitted_var = isTRUE(cargs$compute_fitted_var %||% TRUE)
   )
 
   out$theta_grid   <- joint_grid

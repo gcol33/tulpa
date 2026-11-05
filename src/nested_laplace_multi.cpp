@@ -344,7 +344,7 @@ int build_blocks_of_type(
             lambda_eig, /*axis_sigma2=*/axis0, /*axis_ell=*/axis0 + 1,
             theta_grid,
             tulpa::priors::hsgp_kernel_from_spec(bs, "hsgp block")));
-        return latent_offset + m_total;
+        return latent_offset + blocks.back().size;
     }
 
     if (type == "spde") {
@@ -601,7 +601,8 @@ Rcpp::List cpp_nested_laplace_multi(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
-    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue
+    Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
+    bool compute_fitted_var = true
 ) {
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
@@ -724,7 +725,7 @@ Rcpp::List cpp_nested_laplace_multi(
         compute_skew, skew_idx_ptr,
         tulpa::DebiasRequest(debias).ptr,
         tulpa::CilaRequest(cila).ptr,
-        tulpa::CHEAP_SCREEN_ITERS, /*compute_fitted_var=*/true,
+        tulpa::CHEAP_SCREEN_ITERS, compute_fitted_var,
         tulpa::as_offset_vec(offset_nullable, N),
         tulpa::read_screen_offset(screen_log_offset),
         &bp

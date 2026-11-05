@@ -56,7 +56,7 @@
     mu[j, ] <- ld$offset + as.numeric(A %*% modes[j, ])
     if (se.fit) {
       vv[j, ] <- .joint_predict_cell_var(object, cov_src, j, A) +
-        new_group$var
+        new_group$var + (L$residual %||% 0)
     }
   }
 
@@ -248,6 +248,14 @@
     }
   } else {
     n_arms <- length(inp$arms)
+    inp$blocks <- lapply(inp$blocks, function(p) {
+      if (identical(tolower(p$type %||% ""), "hsgp") && is.list(p$phi)) {
+        p$training_phi <- p$phi
+        if (!is.null(p$svc_column)) p$training_phi <- lapply(seq_len(n_arms),
+          function(j) p$phi[[j]] * as.numeric(inp$arms[[j]]$X[, p$svc_column]))
+      }
+      p
+    })
     inp$blocks <- lapply(seq_along(inp$blocks), function(b)
       .joint_block_at_rows(inp$blocks[[b]], b, k, n_arms, N, nd, off,
                            arm_name))
@@ -362,6 +370,7 @@
     done <- c(done, "projector")
   }
   if (identical(tolower(p$type %||% ""), "hsgp") && is.list(p$phi)) {
+    p$training_phi <- p$training_phi %||% p$phi
     M <- ncol(as.matrix(p$phi[[k]]))
     reached <- p$basis$reached %||% rep(TRUE, n_arms)
     p$phi[[k]] <- if (off || !isTRUE(reached[k])) {
@@ -376,7 +385,7 @@
     } else {
       as.matrix(need("basis", "a basis evaluated at the rows"))
     }
-    done <- c(done, "phi")
+    done <- c(done, "phi", "training_phi")
   }
   if (!is.null(p$n_obs_per_arm)) {
     p$n_obs_per_arm[k] <- n

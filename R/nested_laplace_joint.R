@@ -191,6 +191,9 @@
 #'   the fixed effects and the builder blocks' coefficients as
 #'   `basis_block_cov` (`idx`, the latent indices; `cov`, one matrix per cell),
 #'   extracted in the cell's own inner solve.
+#'   A basis wider than the pooled training rows is integrated in observation
+#'   coordinates using a QR factorization. New-location predictions include
+#'   the conditional Gaussian covariance of the integrated coefficients.
 #'
 #'   On the list-of-blocks path an `mcar` block is `n_fields` areal fields on
 #'   one graph whose joint prior is \eqn{\Sigma \otimes Q^{-}}: `Q` the ICAR
