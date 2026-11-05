@@ -17,11 +17,25 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <type_traits>
 #include <vector>
 
 namespace tulpa {
 
 constexpr int MAX_HALVING = 12;
+
+// Post-mode density probes consume no curvature. A likelihood that caches
+// Newton weights accepts a second argument to leave that work switched off.
+template<typename LogLik>
+inline double log_lik_value_only(LogLik& log_lik_fn,
+                                  const Rcpp::NumericVector& eta) {
+    if constexpr (std::is_invocable_r_v<double, LogLik,
+                                         const Rcpp::NumericVector&, bool>) {
+        return log_lik_fn(eta, false);
+    } else {
+        return log_lik_fn(eta);
+    }
+}
 
 // Penalized log-likelihood: log p(y|x,theta) + log p(x|theta), with the data
 // log-lik supplied as a functor of the current eta. This is the likelihood-

@@ -351,6 +351,29 @@ inline void build_term_precision(
     log_det_Q = -2.0 * s;
 }
 
+struct SpecRePrior {
+    std::vector<double> precision;
+    double log_det = 0.0;
+};
+
+// Covariance hyperparameters are pinned for one inner solve, including every
+// density evaluation along its subspace correction.
+inline std::vector<SpecRePrior> spec_re_priors(
+    const std::vector<double>& params, const SpecLatentLayout& L
+) {
+    std::vector<SpecRePrior> priors(L.re_terms.size());
+    std::vector<double> L_flat;
+    for (std::size_t t = 0; t < L.re_terms.size(); t++) {
+        const ReTermSlot& s = L.re_terms[t];
+        const bool correlated = s.correlated && s.n_coefs > 1;
+        if (correlated) build_chol_L(params, s, L_flat);
+        else L_flat.clear();
+        build_term_precision(term_sigmas(params, s), L_flat, s.n_coefs,
+                             correlated, priors[t].precision, priors[t].log_det);
+    }
+    return priors;
+}
+
 // Resolve the 1-based group index at obs i for term t. Reads the
 // multi-term flat layout when populated, else the legacy single-term
 // re_group field. Returns -1 if the obs has no group for this term.
@@ -629,6 +652,7 @@ inline void scatter_spec(
     Sink H,
     int /*n_threads*/,
     const BetaPrior* beta_prior,
+    const std::vector<SpecRePrior>& re_priors,
     // Per-observation weights already evaluated at exactly this eta
     // (SpecFusedWeights), N * np and N * np * np, or null to call
     // spec.eta_weights_fn.
@@ -977,22 +1001,12 @@ inline void scatter_spec(
         }
     }
 
-    // RE prior: per term build Q_t (q_t × q_t) and apply to each group.
+    // RE prior: apply the cell's Q_t to each group.
     if (!L.re_terms.empty()) {
-        std::vector<double> L_flat;
-        std::vector<double> Q_flat;
-        double log_det_Q_unused = 0.0;
         for (int t = 0; t < K; t++) {
             const ReTermSlot& s = L.re_terms[t];
             const int q = s.n_coefs;
-            std::vector<double> sigmas = term_sigmas(params, s);
-            if (s.correlated && q > 1) {
-                build_chol_L(params, s, L_flat);
-            } else {
-                L_flat.clear();
-            }
-            build_term_precision(sigmas, L_flat, q, s.correlated && q > 1,
-                                 Q_flat, log_det_Q_unused);
+            const std::vector<double>& Q_flat = re_priors[t].precision;
             for (int g = 0; g < s.n_groups; g++) {
                 const int base_lat   = s.latent_offset + g * q;
                 const int base_param = s.param_start  + g * q;
@@ -1202,6 +1216,7 @@ inline double total_log_lik_spec_fused(
 inline double log_prior_latent(
     const std::vector<double>& params,
     const SpecLatentLayout& L,
+    const std::vector<SpecRePrior>& re_priors,
     double sigma_beta,
     double /*tau_re_legacy*/,
     const Rcpp::NumericVector* x_latent = nullptr,
@@ -1229,19 +1244,11 @@ inline double log_prior_latent(
     }
 
     if (!L.re_terms.empty()) {
-        std::vector<double> L_flat, Q_flat;
-        double log_det_Q = 0.0;
         for (int t = 0; t < (int)L.re_terms.size(); t++) {
             const ReTermSlot& s = L.re_terms[t];
             const int q = s.n_coefs;
-            std::vector<double> sigmas = term_sigmas(params, s);
-            if (s.correlated && q > 1) {
-                build_chol_L(params, s, L_flat);
-            } else {
-                L_flat.clear();
-            }
-            build_term_precision(sigmas, L_flat, q, s.correlated && q > 1,
-                                 Q_flat, log_det_Q);
+            const std::vector<double>& Q_flat = re_priors[t].precision;
+            const double log_det_Q = re_priors[t].log_det;
             for (int g = 0; g < s.n_groups; g++) {
                 const int base = s.param_start + g * q;
                 // -0.5 b^T Q b
@@ -1361,6 +1368,7 @@ LaplaceResult spec_inner_solve(
     const int n_x = L.n_x;
 
     std::vector<double> params_work = base_params;   // pinned hyperparams + warm start
+    const std::vector<SpecRePrior> re_priors = spec_re_priors(base_params, L);
     std::vector<double> eta_flat((size_t)n_eta, 0.0);
     SpecFusedWeights fused_weights;
 
@@ -1381,7 +1389,7 @@ LaplaceResult spec_inner_solve(
         const bool cached = fused_weights.matches(eta_flat);
         scatter_spec(params_work, eta_flat, re_group_1based, L,
                      data, layout, spec, response_data, N, k_grid,
-                     &x, 1.0, grad, spec_sink(H), n_threads, beta_prior,
+                     &x, 1.0, grad, spec_sink(H), n_threads, beta_prior, re_priors,
                      cached ? fused_weights.grad.data() : nullptr,
                      cached ? fused_weights.neg_hess.data() : nullptr);
     };
@@ -1408,12 +1416,13 @@ LaplaceResult spec_inner_solve(
     auto compute_log_prior = [&](const Rcpp::NumericVector& x,
                                  const Rcpp::NumericVector& /*eta*/) -> double {
         scatter_compacted_latent(L, x.begin(), params_work);
-        return log_prior_latent(params_work, L, data.sigma_beta, 1.0, &x, k_grid,
+        return log_prior_latent(params_work, L, re_priors, data.sigma_beta, 1.0, &x, k_grid,
                                 beta_prior);
     };
-    auto log_lik_fn = [&](const Rcpp::NumericVector& eta) -> double {
+    auto log_lik_fn = [&](const Rcpp::NumericVector& eta,
+                          bool need_weights = true) -> double {
         for (int i = 0; i < n_eta; i++) eta_flat[i] = eta[i];
-        if (spec.ll_eta_weights_fn) {
+        if (need_weights && spec.ll_eta_weights_fn) {
             return total_log_lik_spec_fused(params_work, eta_flat, data, layout,
                                             spec, response_data, N, n_threads,
                                             fused_weights);

@@ -294,6 +294,14 @@ LaplaceResult laplace_newton_solve_ll(
         eta_memo_x.assign(xv.begin(), xv.end());
         return obj;
     };
+    auto eval_probe = [&](const Rcpp::NumericVector& xv) -> double {
+        auto density = [&](const Rcpp::NumericVector& eta) {
+            return log_lik_value_only(log_lik_fn, eta);
+        };
+        return eval_penalized_log_lik_ll(
+            xv, compute_eta, compute_log_prior, density, scratch.eta_tmp
+        );
+    };
     auto eta_from_memo = [&](const Rcpp::NumericVector& xv,
                              Rcpp::NumericVector& eta_out) -> bool {
         const std::size_t nx = static_cast<std::size_t>(xv.size());
@@ -520,7 +528,7 @@ LaplaceResult laplace_newton_solve_ll(
                     // and stands where gamma_3 declines.
                     InnerISOutcome is_out = compute_inner_is_curve(
                         n_x, pre_center_x, scratch.chol, sparse_solver,
-                        used_sparse_factor, eval_objective, x, probe
+                        used_sparse_factor, eval_probe, x, probe
                     );
                     result.inner_is_z          = std::move(is_out.z);
                     result.inner_is_log_joint  = std::move(is_out.log_joint);
@@ -531,14 +539,14 @@ LaplaceResult laplace_newton_solve_ll(
 
             run_subspace_debias(result, n_x, pre_center_x, scratch.chol,
                                 sparse_solver, used_sparse_factor,
-                                eval_objective, x, debias, nullptr,
+                                eval_probe, x, debias, nullptr,
                                 hard_on ? hard : nullptr);
 
             // The correction reads the same pre-centering iterate, and presents each
             // draw through the loop's own centering fold so a drawn coefficient is in
             // the coordinates the reported mode is in.
             run_inner_cila(result, n_x, pre_center_x, scratch.chol, sparse_solver,
-                           used_sparse_factor, eval_objective,
+                           used_sparse_factor, eval_probe,
                            [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); },
                            x, cila, cila_cell_key,
                            inner_gaussian_constraint(hard_on ? hard : nullptr));

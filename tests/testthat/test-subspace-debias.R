@@ -23,6 +23,18 @@ sd_laplace <- function(d, ...) {
 
 skip_on_cran_budget()
 
+test_that("subspace sweeps evaluate the density without Newton weights", {
+  skip_on_cran_budget()
+  load_cpp_fixture("subspace_density_work")
+  a <- cpp_subspace_density_work(40L)
+  b <- cpp_subspace_density_work(80L)
+  expect_true(a$converged && b$converged)
+  expect_identical(c(a$n_kept, b$n_kept), c(40L, 80L))
+  expect_identical(b$value_calls - a$value_calls, 40L)
+  expect_identical(b$weight_calls, a$weight_calls)
+  expect_gt(a$weight_calls, 0L)
+})
+
 
 test_that("an index whose cubic term declines is banded by its inner k-hat", {
   skip_on_cran_budget()
