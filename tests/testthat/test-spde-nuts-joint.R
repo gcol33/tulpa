@@ -230,7 +230,7 @@ test_that("joint NUTS round-trip: output structure matches contract", {
   expect_length(fit$sigma_draws, nrow(fit$draws))
   expect_true(all(fit$range_draws > 0))
   expect_true(all(fit$sigma_draws > 0))
-  expect_named(fit$range_summary, c("mean", "median", "q05", "q95"))
+  expect_named(fit$range_summary, c("mean", "median", "q05", "q95", "sd"))
   expect_named(fit$sigma_summary, c("mean", "median", "q05", "q95"))
 })
 
