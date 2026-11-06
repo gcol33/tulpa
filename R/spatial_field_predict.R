@@ -1355,7 +1355,7 @@
   n <- length(cells)
   out <- list(found = logical(n), Q_p = vector("list", n),
               Q_i = vector("list", n), Q_x = vector("list", n),
-              soft_D = vector("list", n), hard = e$hard, soft = e$soft)
+              soft_D = vector("list", n), hard = e$hard, soft = e[["soft"]])
   if (is.null(e)) return(out)
   j <- match(cells, e$cells)
   for (i in which(!is.na(j))) {
