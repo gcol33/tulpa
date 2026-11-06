@@ -351,6 +351,10 @@
 #'     error estimates, stopping history and convergence flag. Pointwise errors are 95%
 #'     Student-t bounds across independent scrambles; quantile bounds use
 #'     leave-one-scramble jackknife estimates on the pooled posterior.
+#'     A stopping candidate and the point ceiling receive the complete
+#'     fixed-effect check. Earlier history entries record `complete = 0` and
+#'     `error = Inf` when a failed hyperparameter or evidence criterion makes
+#'     that check unnecessary; `hyper_error` retains the hyperparameter result.
 #'     The importance points receive full inner solves. The placement grid
 #'     uses the pruning controls.
 #'   * `axis_refine` (`NULL`) -- per-axis override of how far those axes may be

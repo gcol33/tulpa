@@ -115,14 +115,14 @@
 # complete conditional Gaussian mixture for each retained fixed effect. Student-t
 # bounds at 95% account for the finite number of independent scrambles.
 .nl_qmc_error <- function(u, log_weight, replicate, out, proposed_per_rep,
-                          probs = c(.025, .5, .975)) {
+                          probs = c(.025, .5, .975), tol = Inf) {
     n <- nrow(u)
     # A common normalization cancels in sd(z) / mean(z).
     a <- .nl_normalise_weights_safe(log_weight)
     keep <- which(is.finite(a) & a > 0)
     if (!length(keep)) return(list(log_evidence = Inf,
         hyper_quantiles = matrix(Inf, length(probs), ncol(u)),
-        fixed_quantiles = NULL, max = Inf))
+        fixed_quantiles = NULL, max = Inf, complete = TRUE))
     if (length(keep) != n) {
         u <- u[keep, , drop = FALSE]
         a <- a[keep]
@@ -168,6 +168,13 @@
     if (length(out$grid_modes) == nrow(u) && length(out$grid_hessians) == nrow(u)) {
         p <- max(lengths(out$grid_modes))
         if (p) {
+            errors <- c(log_se, hyper)
+            # A failed criterion rules out stopping before fixed-effect CDF inversion.
+            if (is.finite(tol) && (any(!is.finite(errors)) || max(errors) > tol)) {
+                return(list(log_evidence = log_se, hyper_quantiles = hyper,
+                    fixed_quantiles = matrix(Inf, length(probs), p),
+                    max = Inf, complete = FALSE))
+            }
             variance <- lapply(out$grid_hessians, function(h)
                 if (length(h)) diag(.spd_inverse(h)) else rep(NA_real_, p))
             fixed <- vapply(seq_len(p), function(j) {
@@ -180,7 +187,7 @@
     }
     errors <- c(log_se, hyper, fixed)
     list(log_evidence = log_se, hyper_quantiles = hyper, fixed_quantiles = fixed,
-         max = if (all(is.finite(errors))) max(errors) else Inf)
+         max = if (all(is.finite(errors))) max(errors) else Inf, complete = TRUE)
 }
 
 .nl_qmc_solve <- function(cells, solve, retain) {
@@ -294,8 +301,10 @@
         proposed <- proposed + size
         proposed_per_rep <- proposed_per_rep + counts
         n_evaluated <- n_evaluated + sum(valid)
-        error <- .nl_qmc_error(u, log_weight, replicate, out, proposed_per_rep)
-        history[[length(history) + 1L]] <- c(n = proposed, error = error$max)
+        error <- .nl_qmc_error(u, log_weight, replicate, out, proposed_per_rep,
+            tol = if (proposed >= n) Inf else tol)
+        history[[length(history) + 1L]] <- c(n = proposed, error = error$max,
+            hyper_error = max(error$hyper_quantiles), complete = error$complete)
         if (error$max <= tol || proposed >= n) break
     }
     measure <- measure - log(proposed)
