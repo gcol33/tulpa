@@ -1888,7 +1888,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # that runs alone -- a grid's pilot, a refinement or consistency round, the
     # skew probe -- takes all of it (`nl_cell_solve_threads()`).
     n_threads                 <- .tulpa_inner_threads(
-        .tulpa_thread_grant(n_threads_outer, control$n_threads %||% 1L),
+        .tulpa_thread_grant(n_threads_outer, control[["n_threads"]] %||% 1L),
         control$n_threads_scatter)
     tile_warm                 <- control$tile_warm %||% TRUE
     # Local CCD refinement reads a finite-difference stencil off each refined
