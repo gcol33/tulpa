@@ -470,17 +470,20 @@ inline Rcpp::List run_multi_block_nested_laplace(
                                    bool want_var = false,
                                    bool allow_probe = false) -> LaplaceResult
     {
-        for (const auto& b : blocks) {
-            if (b.prep && !b.prep(k)) {
-                LaplaceResult bad;
-                bad.mode = (static_cast<int>(prev_mode.size()) == n_x)
-                           ? prev_mode
-                           : std::vector<double>(n_x, 0.0);
-                bad.log_marginal = -std::numeric_limits<double>::infinity();
-                bad.n_iter = 0;
-                bad.converged = false;
-                bad.log_det_Q = 0.0;
-                return bad;
+        {
+            TULPA_PROFILE_PHASE(PHASE_PREP);
+            for (const auto& b : blocks) {
+                if (b.prep && !b.prep(k)) {
+                    LaplaceResult bad;
+                    bad.mode = (static_cast<int>(prev_mode.size()) == n_x)
+                               ? prev_mode
+                               : std::vector<double>(n_x, 0.0);
+                    bad.log_marginal = -std::numeric_limits<double>::infinity();
+                    bad.n_iter = 0;
+                    bad.converged = false;
+                    bad.log_det_Q = 0.0;
+                    return bad;
+                }
             }
         }
 
@@ -604,6 +607,18 @@ inline Rcpp::List run_multi_block_nested_laplace(
             }
         }
 
+        if (store_modes && std::isfinite(res.log_marginal)) {
+            res.eta_mean.assign(N, 0.0);
+            std::vector<std::pair<int, double>> e_multi;
+            std::vector<double> e_basis;
+            for (int i = 0; i < N; ++i) {
+                double e = 0.0;
+                nl_multi_obs_contribs(i, p, has_re, n_re_groups, X, re_idx,
+                    blocks, d_fac_cache, k, e_multi, e_basis,
+                    [&](int idx, double w) { e += w * res.mode[idx]; });
+                res.eta_mean[i] = offset.empty() ? e : e + offset[i];
+            }
+        }
         return res;
     };
 
@@ -686,22 +701,24 @@ inline Rcpp::List run_multi_block_nested_laplace(
         if (cc.size() > 0) out["constraint_cols"] = cc;
     }
 
-    // Per-row fitted linear predictor at every grid cell, reconstructed from the
-    // stored modes with the SAME accumulation as the inner solve's compute_eta
-    // (beta + RE + sum_b d_fac_b(k) * x_block[idx_b(i)]). `run_nested_laplace_
-    // grid` stores modes row k for grid cell k, so d_fac(k) aligns. Returned as
-    // `fitted_eta` [n_grid x N] so callers can marginalise mu/psi over the
-    // hyperparameter grid for every prior -- including those whose predictor
-    // mixes components with hyperparameter-dependent scales (e.g. BYM2) -- and
-    // for held-out (n_trials = 0) rows, without re-deriving each prior's scales.
+    // Solved cells retain eta while their loadings are live. Checkpoint-loaded
+    // cells reconstruct it from their modes and cell-specific block scales.
+    // The rows include held-out observations (n_trials = 0), so predictive
+    // mixtures use the same predictor as the likelihood.
     if (store_modes && out.containsElementNamed("modes")) {
         Rcpp::NumericMatrix modes = out["modes"];
         int ng = modes.nrow();
-        Rcpp::NumericMatrix fitted_eta(ng, N);
+        const bool retained = out.containsElementNamed("fitted_eta");
+        Rcpp::NumericMatrix fitted_eta = retained
+            ? Rcpp::as<Rcpp::NumericMatrix>(out["fitted_eta"]) : Rcpp::NumericMatrix(ng, N);
         std::vector<double> dfac(blocks.size());
         std::vector<std::pair<int,double>> e_multi;
         std::vector<double> e_basis;
         for (int k = 0; k < ng; k++) {
+            bool ready = retained;
+            for (int i = 0; ready && i < N; ++i) ready = R_finite(fitted_eta(k, i));
+            if (ready) continue;
+
             // A basis row is read off its block's per-cell state, which the
             // grid's last prep has since replaced, so it is rebuilt for k.
             bool cell_ok = true;

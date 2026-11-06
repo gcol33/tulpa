@@ -17,6 +17,10 @@ struct HsgpObservation {
     void compute(const Eigen::MatrixXd& phi, const Eigen::VectorXd& spectral,
                  bool need_rotation = true) {
         Eigen::MatrixXd at = spectral.asDiagonal() * phi.transpose();
+        compute_loading(at, need_rotation);
+    }
+
+    void compute_loading(const Eigen::MatrixXd& at, bool need_rotation = true) {
         Eigen::HouseholderQR<Eigen::MatrixXd> qr(at);
         const int rank = std::min(at.rows(), at.cols());
         if (need_rotation)

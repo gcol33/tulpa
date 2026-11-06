@@ -481,7 +481,7 @@ spatiotemporal_effects.tulpa_fit <- function(object,
          "draw the interaction from.", call. = FALSE)
   }
   off <- fit$block_latent_offsets
-  cols <- seq.int(off[b] + 1L, off[b + 1L])
+  cols <- .nl_block_cols(off, n_x, b, length(off) - 1L)
   cons <- .inner_constraint(fit)
   w <- as.numeric(fit$weights)
   ok <- which(is.finite(w) & w > 0 &

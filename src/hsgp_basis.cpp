@@ -169,3 +169,44 @@ Rcpp::List cpp_hsgp_observation_projection(Rcpp::NumericMatrix training,
     return Rcpp::List::create(Rcpp::_["basis"] = basis,
                               Rcpp::_["residual_basis"] = residual);
 }
+
+// [[Rcpp::export]]
+Rcpp::List cpp_hsgp_sum_projection(Rcpp::List training, Rcpp::List prediction,
+                                  Rcpp::List spectral) {
+    const int count = training.size();
+    if (count == 0 || prediction.size() != count || spectral.size() != count)
+        Rcpp::stop("HSGP projections require matching nonempty component lists.");
+    int width = 0;
+    const int n = Rcpp::as<Rcpp::NumericMatrix>(training[0]).nrow();
+    std::vector<Eigen::MatrixXd> pred;
+    std::vector<int> offsets{0};
+    for (int b = 0; b < count; ++b) {
+        Rcpp::NumericMatrix t = training[b], p = prediction[b];
+        Rcpp::NumericVector s = spectral[b];
+        if (t.nrow() != n || t.ncol() != s.size() || p.ncol() != s.size())
+            Rcpp::stop("HSGP component training rows or spectral widths differ.");
+        width += s.size();
+        offsets.push_back(width);
+        pred.emplace_back(Eigen::Map<const Eigen::MatrixXd>(p.begin(), p.nrow(), p.ncol()) *
+            Eigen::Map<const Eigen::VectorXd>(s.begin(), s.size()).asDiagonal());
+    }
+    Eigen::MatrixXd at(width, n);
+    for (int b = 0; b < count; ++b) {
+        Rcpp::NumericMatrix t = training[b];
+        Rcpp::NumericVector s = spectral[b];
+        at.middleRows(offsets[b], s.size()).noalias() =
+            Eigen::Map<const Eigen::VectorXd>(s.begin(), s.size()).asDiagonal() *
+            Eigen::Map<const Eigen::MatrixXd>(t.begin(), t.nrow(), t.ncol()).transpose();
+    }
+    tulpa::HsgpObservation representation;
+    representation.compute_loading(at);
+    Rcpp::List out(count);
+    for (int b = 0; b < count; ++b) {
+        Eigen::MatrixXd basis = pred[b] * representation.rotation.middleRows(offsets[b], pred[b].cols());
+        Eigen::MatrixXd residual = -basis * representation.rotation.transpose();
+        residual.middleCols(offsets[b], pred[b].cols()) += pred[b];
+        out[b] = Rcpp::List::create(Rcpp::_["basis"] = basis,
+                                   Rcpp::_["residual_basis"] = residual);
+    }
+    return out;
+}

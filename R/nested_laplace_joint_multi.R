@@ -2572,8 +2572,8 @@
 .joint_basis_block_idx <- function(prepared, layout) {
     b_idx <- which(vapply(prepared, function(p) !is.null(p$basis), logical(1)))
     if (!length(b_idx)) return(NULL)
-    as.integer(unlist(lapply(b_idx, function(b)
-        layout$block_start[b] + seq_len(layout$block_size[b]))))
+    as.integer(unique(unlist(lapply(b_idx, function(b)
+        layout$block_start[b] + seq_len(layout$block_size[b])))))
 }
 
 # The per-cell covariance of the fixed effects and the basis-builder blocks'
@@ -2662,7 +2662,21 @@
     # carries its level along node_prec (LatentBlock::level_weights), keyed by
     # its field start; NULL where the level is the plain sum.
     field_level_w     <- list()
+    hsgp_sum <- .hsgp_sum_indices(prepared)
+    shared_start <- shared_size <- NULL
     for (b in seq_len(B)) {
+        if (b %in% hsgp_sum) {
+            if (b == hsgp_sum[1L]) {
+                shared_start <- cur
+                p <- prepared[[b]]
+                train <- p$training_phi %||% p$phi
+                shared_size <- sum(vapply(train, nrow, integer(1)))
+                cur <- cur + shared_size
+            }
+            block_start[b] <- shared_start
+            block_size[b] <- shared_size
+            next
+        }
         block_start[b] <- cur
         type <- tolower(prepared[[b]]$type %||% "")
         # Latent size per block. BYM2 is length-2 (phi ICAR + theta IID)

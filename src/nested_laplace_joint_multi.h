@@ -1786,6 +1786,13 @@ void nl_attach_fitted_eta_single_arm(
     const std::vector<LatentBlock>& blocks
 );
 
+void nl_retain_fitted_eta_single_arm(
+    LaplaceResult& result, int cell,
+    const std::vector<JointArm>& arms,
+    const std::vector<ParsedArm>& parsed,
+    const std::vector<LatentBlock>& blocks
+);
+
 } // namespace tulpa
 
 #endif // TULPA_NESTED_LAPLACE_JOINT_MULTI_H

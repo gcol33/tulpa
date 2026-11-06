@@ -859,6 +859,19 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_hsgp_sum_projection
+Rcpp::List cpp_hsgp_sum_projection(Rcpp::List training, Rcpp::List prediction, Rcpp::List spectral);
+RcppExport SEXP _tulpa_cpp_hsgp_sum_projection(SEXP trainingSEXP, SEXP predictionSEXP, SEXP spectralSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type training(trainingSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type prediction(predictionSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type spectral(spectralSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_hsgp_sum_projection(training, prediction, spectral));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_hyperprior_log_density
 Rcpp::NumericVector cpp_hyperprior_log_density(Rcpp::NumericVector x, std::string kind, std::string coordinate, double U, double alpha, double d, double lambda);
 RcppExport SEXP _tulpa_cpp_hyperprior_log_density(SEXP xSEXP, SEXP kindSEXP, SEXP coordinateSEXP, SEXP USEXP, SEXP alphaSEXP, SEXP dSEXP, SEXP lambdaSEXP) {
@@ -3318,6 +3331,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_hsgp_basis_2d_domain", (DL_FUNC) &_tulpa_cpp_hsgp_basis_2d_domain, 3},
     {"_tulpa_cpp_hsgp_sqrt_spectral", (DL_FUNC) &_tulpa_cpp_hsgp_sqrt_spectral, 4},
     {"_tulpa_cpp_hsgp_observation_projection", (DL_FUNC) &_tulpa_cpp_hsgp_observation_projection, 3},
+    {"_tulpa_cpp_hsgp_sum_projection", (DL_FUNC) &_tulpa_cpp_hsgp_sum_projection, 3},
     {"_tulpa_cpp_hyperprior_log_density", (DL_FUNC) &_tulpa_cpp_hyperprior_log_density, 7},
     {"_tulpa_cpp_spde_laplace_gradient", (DL_FUNC) &_tulpa_cpp_spde_laplace_gradient, 21},
     {"_tulpa_cpp_joint_inner_vcov_blocks", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_blocks, 11},

@@ -72,9 +72,6 @@ Rcpp::List nl_pack_grid_results(
 
     bool any_Q = false;
     bool any_cov_block = false;
-    // Per-row predictive variance: the row count of the first cell that
-    // reported one. A cell that did not (pruned, or declined) reads NaN.
-    std::size_t eta_var_rows = 0;
     int skew_cell = -1;  // first grid cell (if any) that computed inner_skew
     // Subspace-debias draws are PER CELL: the correction enters the reported
     // marginal as a mixture over the outer grid, so unlike the single-cell
@@ -146,7 +143,6 @@ Rcpp::List nl_pack_grid_results(
                 any_cov_block = true;
             }
         }
-        if (eta_var_rows == 0) eta_var_rows = res.eta_var.size();
         if (skew_cell < 0 && !res.inner_skew_idx.empty()) skew_cell = k;
         if (!res.debias_idx.empty()) {
             if (debias_cell < 0) debias_cell = k;
@@ -216,17 +212,23 @@ Rcpp::List nl_pack_grid_results(
         }
     }
     if (any_cov_block) out["cov_block_per_grid"] = cov_block_per_grid;
-    if (eta_var_rows > 0) {
-        const int n_rows = static_cast<int>(eta_var_rows);
-        Rcpp::NumericMatrix fitted_eta_var(n_grid, n_rows);
-        std::fill(fitted_eta_var.begin(), fitted_eta_var.end(), NA_REAL);
-        for (int k = 0; k < n_grid; k++) {
-            const std::vector<double>& v = cell_results[k].eta_var;
-            if (v.size() != eta_var_rows) continue;
-            for (int r = 0; r < n_rows; r++) fitted_eta_var(k, r) = v[r];
+    auto attach_eta = [&](const char* name, std::vector<double> LaplaceResult::* field) {
+        std::size_t n_rows = 0;
+        for (const auto& cell : cell_results) {
+            if (!(cell.*field).empty()) { n_rows = (cell.*field).size(); break; }
         }
-        out["fitted_eta_var"] = fitted_eta_var;
-    }
+        if (n_rows == 0) return;
+        Rcpp::NumericMatrix values(n_grid, n_rows);
+        std::fill(values.begin(), values.end(), NA_REAL);
+        for (int k = 0; k < n_grid; ++k) {
+            const auto& rows = cell_results[k].*field;
+            if (rows.size() != n_rows) continue;
+            for (std::size_t r = 0; r < n_rows; ++r) values(k, r) = rows[r];
+        }
+        out[name] = values;
+    };
+    if (store_modes) attach_eta("fitted_eta", &LaplaceResult::eta_mean);
+    attach_eta("fitted_eta_var", &LaplaceResult::eta_var);
     // Inner-Laplace skewness diagnostic (opt-in, computed on the full solve
     // of a single cell -- see the compute_skew doc on
     // run_multi_block_nested_laplace). Emits the FIRST cell that populated

@@ -74,6 +74,7 @@
 #include "nested_laplace_joint_batch.h"   // fused batched scatter
 #include "sparse_hessian.h"
 #include "hsgp_block_factory.h"
+#include "hsgp_sum.h"
 #include "nngp_block_factory.h"
 #include "hsgp_mo_block_factory.h"
 #include "latent_factor_block_factory.h"
@@ -1432,7 +1433,20 @@ static int build_joint_layout(
 
     blocks.reserve(B);
     int latent_offset = n_x_after_re;
+    const auto hsgp_sum = tulpa::hsgp_sum_indices(blocks_spec);
+    Rcpp::IntegerVector hsgp_n_obs(n_arms);
+    for (int k = 0; k < n_arms; ++k) hsgp_n_obs[k] = arms[k].N;
     for (int b = 0; b < B; b++) {
+        if (std::find(hsgp_sum.begin(), hsgp_sum.end(), b) != hsgp_sum.end()) {
+            if (copy_arm_of_block[b] >= 0)
+                Rcpp::stop("Copy semantics are not supported for HSGP blocks.");
+            if (b == hsgp_sum.front()) {
+                blocks.push_back(tulpa::make_hsgp_sum_block(latent_offset,
+                    blocks_spec, hsgp_sum, axis_offsets, theta_grid, hsgp_n_obs));
+                latent_offset += blocks.back().size;
+            }
+            continue;
+        }
         Rcpp::List bs = blocks_spec[b];
         int axis0 = axis_offsets[b];
         int axis_count = axis_offsets[b + 1] - axis0;
@@ -2538,8 +2552,10 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                               const std::vector<double>& prev_mode,
                               SparseCholeskySolver* shared_solver) -> LaplaceResult
     {
-        return solve_at_theta_impl(k_grid, prev_mode, shared_solver,
-                                    max_iter, nullptr);
+        LaplaceResult result = solve_at_theta_impl(k_grid, prev_mode, shared_solver,
+                                                   max_iter, nullptr);
+        if (store_modes) nl_retain_fitted_eta_single_arm(result, k_grid, arms, parsed, blocks);
+        return result;
     };
 
     // Cheap-pass screening: a short inner Newton run warm-started from the
@@ -3167,8 +3183,10 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                               const std::vector<double>& prev_mode,
                               SparseCholeskySolver* shared_solver) -> LaplaceResult
     {
-        return solve_at_theta_impl(k_grid, prev_mode, shared_solver,
-                                    max_iter, /*use_cheap_scratch=*/false);
+        LaplaceResult result = solve_at_theta_impl(k_grid, prev_mode, shared_solver,
+                                                   max_iter, /*use_cheap_scratch=*/false);
+        if (store_modes) nl_retain_fitted_eta_single_arm(result, k_grid, arms, parsed, blocks);
+        return result;
     };
 
     auto cheap_eval = [&](int k_grid,
@@ -3205,6 +3223,21 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
 
 namespace tulpa {
 
+template<class Vector>
+inline double joint_row_eta_value(
+    const Vector& x, const ParsedArm& pa, int arm, int row,
+    const std::vector<LatentBlock>& blocks, int cell,
+    const std::vector<std::vector<double>>& d_eff,
+    std::vector<double>& basis_scratch,
+    std::vector<std::pair<int, double>>& multi_scratch
+) {
+    double e = pa.offset.size() ? pa.offset[row] : 0.0;
+    visit_joint_arm_row(pa, arm, row, blocks, cell, d_eff, basis_scratch,
+        multi_scratch,
+        [&](int col, double c) { e += c * x[col]; },
+        [&](int u, int l, double c) { e += c * x[u] * x[l]; });
+    return e;
+}
 void compute_eta_joint_sparse_dispatch(
     const Rcpp::NumericVector&        x,
     std::vector<Rcpp::NumericVector>& etas,
@@ -3221,15 +3254,32 @@ void compute_eta_joint_sparse_dispatch(
         const ParsedArm& pa = parsed[k_arm];
         const int N_k = arms[k_arm].N;
         for (int i = 0; i < N_k; i++) {
-            double e = (pa.offset.size() != 0) ? pa.offset[i] : 0.0;
-            visit_joint_arm_row(
-                pa, k_arm, i, blocks, k_grid, d_eff, basis_scratch,
-                multi_scratch,
-                [&](int col, double c) { e += c * x[col]; },
-                [&](int u, int l, double c) { e += c * x[u] * x[l]; });
-            etas[k_arm][i] = e;
+            etas[k_arm][i] = joint_row_eta_value(x, pa, k_arm, i, blocks,
+                k_grid, d_eff, basis_scratch, multi_scratch);
         }
     }
+}
+
+void nl_retain_fitted_eta_single_arm(
+    LaplaceResult& result, int cell,
+    const std::vector<JointArm>& arms,
+    const std::vector<ParsedArm>& parsed,
+    const std::vector<LatentBlock>& blocks
+) {
+    if (arms.size() != 1 || !std::isfinite(result.log_marginal)) return;
+    TULPA_PROFILE_PHASE(PHASE_ETA);
+    const int N = arms[0].N;
+    std::vector<std::vector<double>> d_eff(blocks.size(), std::vector<double>(1));
+    for (std::size_t b = 0; b < blocks.size(); ++b) {
+        const double s = blocks[b].arm_scale ? blocks[b].arm_scale(0, cell) : 1.0;
+        d_eff[b][0] = s * blocks[b].d_fac_at(cell);
+    }
+    std::vector<double> basis_scratch;
+    std::vector<std::pair<int, double>> multi_scratch;
+    result.eta_mean.resize(N);
+    for (int i = 0; i < N; ++i)
+        result.eta_mean[i] = joint_row_eta_value(result.mode, parsed[0], 0, i,
+            blocks, cell, d_eff, basis_scratch, multi_scratch);
 }
 
 void nl_attach_fitted_eta_single_arm(
@@ -3248,26 +3298,27 @@ void nl_attach_fitted_eta_single_arm(
         ? Rcpp::as<Rcpp::NumericVector>(out["log_marginal"])
         : Rcpp::NumericVector();
     const bool have_lm = (log_marginal.size() == ng);
-    Rcpp::NumericMatrix fitted_eta(ng, N);
-    std::vector<Rcpp::NumericVector> etas(1, Rcpp::NumericVector(N));
-    std::vector<std::vector<double>> d_eff(B, std::vector<double>(1, 0.0));
-    std::vector<double> basis_scratch;
-    std::vector<std::pair<int, double>> multi_scratch;
+    const bool retained = out.containsElementNamed("fitted_eta");
+    Rcpp::NumericMatrix fitted_eta = retained
+        ? Rcpp::as<Rcpp::NumericMatrix>(out["fitted_eta"]) : Rcpp::NumericMatrix(ng, N);
     for (int k = 0; k < ng; k++) {
+        bool ready = retained;
+        for (int i = 0; ready && i < N; ++i) ready = R_finite(fitted_eta(k, i));
+        if (ready) continue;
         bool ok = !have_lm || R_finite(log_marginal[k]);
         for (int b = 0; ok && b < B; b++) {
             if (blocks[b].prep && !blocks[b].prep(k)) { ok = false; break; }
-            const double s = blocks[b].arm_scale ? blocks[b].arm_scale(0, k) : 1.0;
-            d_eff[b][0] = s * blocks[b].d_fac_at(k);
         }
         if (!ok) {
             for (int i = 0; i < N; i++) fitted_eta(k, i) = NA_REAL;
             continue;
         }
-        Rcpp::NumericVector x = modes(k, Rcpp::_);
-        compute_eta_joint_sparse_dispatch(x, etas, arms, parsed, blocks, k,
-                                          d_eff, basis_scratch, multi_scratch);
-        for (int i = 0; i < N; i++) fitted_eta(k, i) = etas[0][i];
+        LaplaceResult result;
+        result.mode.resize(modes.ncol());
+        for (int j = 0; j < modes.ncol(); ++j) result.mode[j] = modes(k, j);
+        result.log_marginal = have_lm ? log_marginal[k] : 0.0;
+        nl_retain_fitted_eta_single_arm(result, k, arms, parsed, blocks);
+        for (int i = 0; i < N; i++) fitted_eta(k, i) = result.eta_mean[i];
     }
     out["fitted_eta"] = fitted_eta;
 }

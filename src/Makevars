@@ -95,6 +95,7 @@ unity_nl.o: \
   block_projector.cpp \
   gpu_nngp_laplace.cpp \
   hsgp_block_factory.cpp \
+  hsgp_sum.cpp \
   laplace_spec_fit.cpp \
   mcar_block_factory.cpp \
   nested_laplace.cpp \

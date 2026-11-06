@@ -1015,31 +1015,13 @@
       as.matrix(Fr %*% Matrix::t(A))
     },
     hsgp = {
-      ct <- .coords_2col(.coords_plain(sp$coords_matrix), "hsgp() prediction")
-      cn <- .coords_2col(.field_coords_at(object, newdata), "hsgp() prediction")
-      bs <- .hsgp_block_basis(sp, comp$block$name)
-      cc <- bs$c
-      dom <- cpp_hsgp_domain_2d(ct, cc)
-      out <- abs(cn[, 1L] - dom[1L]) > dom[3L] | abs(cn[, 2L] - dom[2L]) > dom[4L]
-      if (any(out)) {
-        stop(sum(out), " of ", nrow(cn), " prediction coordinate(s) lie ",
-             "outside the HSGP domain (the fitted extent widened by c = ", cc,
-             "), where the basis approximates no Gaussian process. Refit with ",
-             "a larger `c` in spatial_gp(approx = \"hsgp\"), or use the NNGP ",
-             "field.", call. = FALSE)
-      }
-      basis <- cpp_hsgp_basis_2d_domain(cn, bs$m, dom)
-      s2 <- .field_theta(src$theta, "sigma2", comp$prefix)
-      ls <- .field_theta(src$theta, "lengthscale", comp$prefix)
+      inp <- .field_hsgp_inputs(object, src, newdata, comp, cells)
+      basis <- list(phi_basis = inp$prediction)
+      sq <- do.call(rbind, inp$spectral)
       u <- unique(cells)
-      sq <- do.call(rbind, lapply(u, function(k) as.numeric(
-        cpp_hsgp_sqrt_spectral(basis$lambda_eig, s2[k], ls[k],
-                               .hsgp_kernel_code(bs$kernel)))))
       if (ncol(Fr) < ncol(basis$phi_basis)) {
-        train <- comp$block$phi_basis %||% if (is.list(comp$block$phi))
-          do.call(rbind, comp$block$phi) else
-          cpp_hsgp_basis_2d_domain(ct, bs$m, dom)$phi_basis
-        result <- matrix(0, nrow(Fr), nrow(cn))
+        train <- inp$training
+        result <- matrix(0, nrow(Fr), nrow(inp$prediction))
         for (j in seq_along(u)) {
           ix <- which(cells == u[j])
           projection <- cpp_hsgp_observation_projection(train, basis$phi_basis, sq[j, ])
@@ -1138,7 +1120,14 @@
   }
   eta <- beta %*% t(X)
   if (any(D$offset != 0)) eta <- sweep(eta, 2, rep_len(D$offset, ncol(eta)), "+")
-  for (comp in lay$fields) {
+  grouped <- if (!is.null(object$blocks)) .hsgp_sum_indices(object$blocks)
+             else if (is.list(object$prior) && is.null(object$prior$type))
+               .hsgp_sum_indices(object$prior) else integer(0)
+  shared <- which(vapply(lay$fields, function(comp)
+    comp$prefix %in% paste0("b", grouped, "."), logical(1)))
+  if (length(shared)) eta <- eta + .field_hsgp_sum_at(
+    object, src, newdata, L, cells, draw, lay$fields[shared])
+  for (comp in lay$fields[setdiff(seq_along(lay$fields), shared)]) {
     eta <- eta + .field_at(object, src, newdata, .field_support(comp, L, cells),
                            cells, draw, comp)
   }

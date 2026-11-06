@@ -249,6 +249,10 @@ cpp_hsgp_observation_projection <- function(training, prediction, spectral) {
     .Call(`_tulpa_cpp_hsgp_observation_projection`, training, prediction, spectral)
 }
 
+cpp_hsgp_sum_projection <- function(training, prediction, spectral) {
+    .Call(`_tulpa_cpp_hsgp_sum_projection`, training, prediction, spectral)
+}
+
 cpp_hyperprior_log_density <- function(x, kind, coordinate, U, alpha, d = 2.0, lambda = 7.0) {
     .Call(`_tulpa_cpp_hyperprior_log_density`, x, kind, coordinate, U, alpha, d, lambda)
 }

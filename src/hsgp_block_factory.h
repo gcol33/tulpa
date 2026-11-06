@@ -59,6 +59,8 @@
 
 namespace tulpa {
 
+void set_hsgp_standard_normal_prior(LatentBlock& block);
+
 LatentBlock make_hsgp_block(
     int                            start,
     int                            m_total,

@@ -154,6 +154,8 @@ struct LaplaceResult {
   // NaN where the precision at the mode is not the covariance of anything (a
   // non-PD Hessian) or a solve failed.
   std::vector<double> eta_var;
+  // Linear predictor at the reported mode, retained while its cell loading is live.
+  std::vector<double> eta_mean;
 
   // Inner-Laplace skewness diagnostic (Rue, Martino & Chopin 2009, JRSSB
   // 71(2) Sec 3.2.3, eq. 21's cubic term, generalized to tulpa's eta =

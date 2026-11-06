@@ -39,6 +39,7 @@
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "field_block_priors.h"    // set_icar / set_temporal_block_priors
 #include "hsgp_block_factory.h"
+#include "hsgp_sum.h"
 #include "laplace_re_priors.h"
 #include "laplace_spatial_priors.h"
 #include "laplace_spec_fit.h"       // unwrap_skew_idx
@@ -343,7 +344,9 @@ int build_blocks_of_type(
             Rcpp::IntegerVector::create(n_obs), /*n_arms=*/1, block_index,
             lambda_eig, /*axis_sigma2=*/axis0, /*axis_ell=*/axis0 + 1,
             theta_grid,
-            tulpa::priors::hsgp_kernel_from_spec(bs, "hsgp block")));
+            tulpa::priors::hsgp_kernel_from_spec(bs, "hsgp block"), R_NilValue,
+            !bs.containsElementNamed("observation_space") ||
+                Rcpp::as<bool>(bs["observation_space"])));
         return latent_offset + blocks.back().size;
     }
 
@@ -626,9 +629,25 @@ Rcpp::List cpp_nested_laplace_multi(
     // layout is reported from here rather than re-derived in R, which is how an
     // accessor finds one field among several in `modes` (gcol33/tulpa#903).
     Rcpp::IntegerVector block_latent_offsets(B + 1);
+    Rcpp::IntegerVector block_latent_sizes(B);
+    const auto hsgp_sum = tulpa::hsgp_sum_indices(blocks_spec);
+    int shared_start = -1, shared_size = 0;
     std::vector<tulpa::LatentBlock> blocks;
     blocks.reserve(B + 2);
     for (int b = 0; b < B; b++) {
+        if (std::find(hsgp_sum.begin(), hsgp_sum.end(), b) != hsgp_sum.end()) {
+            if (b == hsgp_sum.front()) {
+                shared_start = latent_offset;
+                blocks.push_back(tulpa::make_hsgp_sum_block(latent_offset,
+                    blocks_spec, hsgp_sum, axis_offsets, theta_grid,
+                    Rcpp::IntegerVector::create(N)));
+                shared_size = blocks.back().size;
+                latent_offset += shared_size;
+            }
+            block_latent_offsets[b] = shared_start;
+            block_latent_sizes[b] = shared_size;
+            continue;
+        }
         Rcpp::List bs = blocks_spec[b];
         int axis0 = axis_offsets[b];
         int axis_count = axis_offsets[b + 1] - axis0;
@@ -636,8 +655,10 @@ Rcpp::List cpp_nested_laplace_multi(
         latent_offset = build_blocks_from_spec(
             bs, theta_grid, axis0, axis_count, latent_offset, N, X, b, blocks
         );
+        block_latent_sizes[b] = latent_offset - block_latent_offsets[b];
     }
     block_latent_offsets[B] = latent_offset;
+    block_latent_offsets.attr("sizes") = block_latent_sizes;
 
     Rcpp::NumericVector x_init;
     if (x_init_nullable.isNotNull()) {

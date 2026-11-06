@@ -2457,7 +2457,9 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # offsets the solve reported; NULL when they do not locate it.
 .nl_block_cols <- function(offsets, n_x, k, n_blocks) {
   if (length(offsets) != n_blocks + 1L || is.null(n_x)) return(NULL)
-  lo <- offsets[k]; hi <- offsets[k + 1L]
+  lo <- offsets[k]
+  size <- attr(offsets, "sizes", exact = TRUE)
+  hi <- if (length(size) == n_blocks) lo + size[k] else offsets[k + 1L]
   if (!is.finite(lo) || !is.finite(hi) || hi <= lo || hi > n_x) return(NULL)
   as.integer(seq.int(lo + 1L, hi))
 }
@@ -2544,8 +2546,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   for (b in seq_along(blocks)) {
     if (!identical(tolower(blocks[[b]]$type %||% ""), "iid") ||
         roles[b] != "other") next
-    if (offsets[b + 1L] <= offsets[b] || offsets[b + 1L] > n_x) return(NULL)
-    cb <- seq.int(offsets[b] + 1L, offsets[b + 1L])
+    cb <- .nl_block_cols(offsets, n_x, b, length(blocks))
+    if (is.null(cb)) return(NULL)
     nm <- paste0("b", b, ".sigma")
     s_fixed <- as.numeric(blocks[[b]]$sigma_grid)[1L]
     cols <- c(cols, cb)
@@ -2575,8 +2577,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   sizes <- integer(0)
   for (b in seq_along(blocks)) {
     if (!identical(tolower(blocks[[b]]$type %||% ""), type)) next
-    if (offsets[b + 1L] <= offsets[b] || offsets[b + 1L] > n_x) return(NULL)
-    cb <- seq.int(offsets[b] + 1L, offsets[b + 1L])
+    cb <- .nl_block_cols(offsets, n_x, b, length(blocks))
+    if (is.null(cb)) return(NULL)
     cols <- c(cols, cb)
     sizes <- c(sizes, stats::setNames(length(cb), as.character(b)))
   }
@@ -2717,7 +2719,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
       type       = "hsgp",
       phi_basis  = as.matrix(p$phi_basis),
       lambda_eig = as.numeric(p$lambda_eig),
-      kernel     = .hsgp_kernel_code(.hsgp_block_kernel(p))
+      kernel     = .hsgp_kernel_code(.hsgp_block_kernel(p)),
+      observation_space = !identical(p$observation_space, FALSE)
     ))
   } else if (type %in% .NL_PROJECTABLE_TEMPORAL) {
     out <- list(

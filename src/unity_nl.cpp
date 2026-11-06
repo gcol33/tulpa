@@ -11,6 +11,7 @@
 #include "block_projector.cpp"
 #include "gpu_nngp_laplace.cpp"
 #include "hsgp_block_factory.cpp"
+#include "hsgp_sum.cpp"
 #include "laplace_spec_fit.cpp"
 #include "mcar_block_factory.cpp"
 #include "nested_laplace.cpp"

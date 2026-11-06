@@ -1,4 +1,4 @@
-.obs_fixture <- function(family = "gaussian", reduced = TRUE, count = 2L) {
+.obs_fixture <- function(family = "gaussian", reduced = TRUE, count = 2L, store = TRUE) {
   set.seed(182L)
   n <- 9L
   xy <- cbind(runif(n), runif(n))
@@ -11,7 +11,7 @@
   fit <- tulpa_nested_laplace_joint(
     responses = list(a = list(y = y, X = X, family = family, phi = .16)),
     prior = blocks, control = list(progress = FALSE, tol = 1e-12,
-      axis_refine = "none", diagnose_k = FALSE, store_Q = TRUE))
+      axis_refine = "none", diagnose_k = FALSE, store_Q = store))
   list(fit = fit, xy = xy, X = X, y = y)
 }
 
@@ -19,7 +19,7 @@ test_that("observation coordinates preserve Gaussian evidence and prediction dis
   skip_on_cran()
   small <- .obs_fixture()
   full <- .obs_fixture(reduced = FALSE)
-  expect_equal(ncol(small$fit$modes), 20L)
+  expect_equal(ncol(small$fit$modes), 11L)
   expect_equal(ncol(full$fit$modes), 52L)
   arms <- list(list(X = small$X, n_re_groups = 0L))
   expect_equal(tulpa:::.joint_multi_layout(arms, small$fit$blocks)$n_x,
@@ -68,6 +68,17 @@ test_that("a single HSGP field preserves its basis-space prediction distribution
   }
 })
 
+test_that("summed HSGP predictions use the retained joint covariance block", {
+  skip_on_cran()
+  small <- .obs_fixture(store = FALSE)$fit
+  full <- .obs_fixture(reduced = FALSE, store = FALSE)$fit
+  nd <- list(X = cbind(1, c(-1, .2, 1)), coords = cbind(c(.2, .5, .8), c(.7, .4, .2)))
+  expect_null(small$Q_csc_x_per_grid)
+  expect_identical(small$basis_block_cov$idx, 1:11)
+  expect_equal(predict(small, newdata = nd, se.fit = TRUE),
+               predict(full, newdata = nd, se.fit = TRUE), tolerance = 1e-8)
+})
+
 test_that("Poisson observation coordinates preserve each component and their cross covariance", {
   skip_on_cran()
   small <- .obs_fixture("poisson")
@@ -79,17 +90,20 @@ test_that("Poisson observation coordinates preserve each component and their cro
                predict(f, newdata = nd, se.fit = TRUE), tolerance = 1e-8)
   C <- matrix(0, 6L, ncol(s$modes)); B <- matrix(0, 6L, ncol(f$modes))
   residual <- matrix(0, 6L, 6L)
+  training <- prediction <- spectral <- vector("list", 2L)
   for (b in 1:2) {
     p <- s$blocks[[b]]
     phi <- tulpa:::cpp_hsgp_basis_2d_domain(nd$coords, 5L, p$basis$domain)$phi_basis
-    spectral <- tulpa:::cpp_hsgp_sqrt_spectral(p$eigenvalues,
+    spectral[[b]] <- tulpa:::cpp_hsgp_sqrt_spectral(p$eigenvalues,
       c(.3, .7)[b], c(.15, .4)[b], tulpa:::.hsgp_kernel_code(p$kernel))
-    projection <- tulpa:::cpp_hsgp_observation_projection(p$phi[[1]], phi, spectral)
+    training[[b]] <- p$phi[[1]]
+    prediction[[b]] <- phi
     rows <- (b - 1L) * 3L + 1:3
-    C[rows, 2L + (b - 1L) * 9L + 1:9] <- projection$basis
-    B[rows, 2L + (b - 1L) * 25L + 1:25] <- sweep(phi, 2L, spectral, "*")
-    residual[rows, rows] <- tcrossprod(projection$residual_basis)
+    B[rows, 2L + (b - 1L) * 25L + 1:25] <- sweep(phi, 2L, spectral[[b]], "*")
   }
+  projection <- tulpa:::cpp_hsgp_sum_projection(training, prediction, spectral)
+  C[, 2L + 1:9] <- do.call(rbind, lapply(projection, `[[`, "basis"))
+  residual <- tcrossprod(do.call(rbind, lapply(projection, `[[`, "residual_basis")))
   expect_equal(as.numeric(C %*% s$modes[1, ]), as.numeric(B %*% f$modes[1, ]), tolerance = 1e-8)
   covariance <- function(fit) {
     n <- ncol(fit$modes)

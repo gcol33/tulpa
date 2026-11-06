@@ -7,6 +7,48 @@
 
 namespace tulpa {
 
+void set_hsgp_standard_normal_prior(LatentBlock& block) {
+    const int start = block.start, size = block.size;
+    block.add_prior_sparse = [start, size](
+        SparseHessianBuilder& H, DenseVec& grad,
+        const Rcpp::NumericVector& x, int /*k_grid*/
+    ) {
+        for (int j = 0; j < size; j++) {
+            int idx = start + j;
+            grad[idx] -= x[idx];
+            H.add(idx, idx, 1.0);
+        }
+    };
+
+    // add_prior_pattern left empty.
+    // Dense prior on beta is N(0, I): identity precision, matching
+    // add_prior_sparse value-for-value (latent_block.h: both must agree). Used
+    // by the dense spec solver (laplace_mode_spec_dense_solve), e.g. the
+    // single-point cpp_laplace_fit_hsgp fixed-hyper fit.
+    block.add_prior = [start, size](
+        DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x, int /*k_grid*/
+    ) {
+        for (int j = 0; j < size; j++) {
+            int idx = start + j;
+            grad[idx] -= x[idx];
+            H[idx][idx] += 1.0;
+        }
+    };
+
+    block.log_prior = [start, size](
+        const Rcpp::NumericVector& x, int /*k_grid*/
+    ) -> double {
+        double lp = 0.0;
+        for (int j = 0; j < size; j++) {
+            double v = x[start + j];
+            lp -= 0.5 * v * v;
+        }
+        lp -= 0.5 * size * std::log(2.0 * M_PI);
+        return lp;
+    };
+
+}
+
 LatentBlock make_hsgp_block(
     int                            start,
     int                            m_total,
@@ -186,45 +228,7 @@ LatentBlock make_hsgp_block(
         return b;
     };
 
-    // Prior on beta is N(0, I): diagonal precision. No off-diagonal pattern
-    // entries (pattern builder adds the diagonal unconditionally).
-    block.add_prior_sparse = [start, latent_size](
-        SparseHessianBuilder& H, DenseVec& grad,
-        const Rcpp::NumericVector& x, int /*k_grid*/
-    ) {
-        for (int j = 0; j < latent_size; j++) {
-            int idx = start + j;
-            grad[idx] -= x[idx];
-            H.add(idx, idx, 1.0);
-        }
-    };
-
-    // add_prior_pattern left empty.
-    // Dense prior on beta is N(0, I): identity precision, matching
-    // add_prior_sparse value-for-value (latent_block.h: both must agree). Used
-    // by the dense spec solver (laplace_mode_spec_dense_solve), e.g. the
-    // single-point cpp_laplace_fit_hsgp fixed-hyper fit.
-    block.add_prior = [start, latent_size](
-        DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x, int /*k_grid*/
-    ) {
-        for (int j = 0; j < latent_size; j++) {
-            int idx = start + j;
-            grad[idx] -= x[idx];
-            H[idx][idx] += 1.0;
-        }
-    };
-
-    block.log_prior = [start, latent_size](
-        const Rcpp::NumericVector& x, int /*k_grid*/
-    ) -> double {
-        double lp = 0.0;
-        for (int j = 0; j < latent_size; j++) {
-            double v = x[start + j];
-            lp -= 0.5 * v * v;
-        }
-        lp -= 0.5 * latent_size * std::log(2.0 * M_PI);
-        return lp;
-    };
+    set_hsgp_standard_normal_prior(block);
 
     // No centering — beta is already anchored by its N(0, I) prior.
 

@@ -279,8 +279,9 @@
   if (is.null(al$block_start) || is.null(fit$Q_csc_p_per_grid)) return(fit)
   st <- as.integer(al$block_start)
   sz <- as.integer(al$block_size)
-  if (length(st) && all(utils::head(st, -1L) + utils::head(sz, -1L) == st[-1L])) {
-    fit$block_latent_offsets <- c(st, st[length(st)] + sz[length(sz)])
+  if (length(st)) {
+    fit$block_latent_offsets <- c(st, ncol(fit$modes))
+    attr(fit$block_latent_offsets, "sizes") <- sz
   }
   fit$field_solve <- list(door = "stored")
   fit$re_effect_map <- re_map
