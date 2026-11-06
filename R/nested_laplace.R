@@ -486,7 +486,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # tolerance and the screening depth are validated whatever `prune` says, so a
   # misspecified value is reported where the user set it rather than at the next
   # fit that happens to switch pruning on.
-  prune              <- isTRUE(control$prune %||% .nl_screen("prune")[["registry"]])
+  prune              <- isTRUE(control[["prune"]] %||% .nl_screen("prune")[["registry"]])
   # `prune_log_gap` states the same cut in nats -- the units the screened
   # surface is measured in -- and replaces the tolerance when set.
   prune_tol          <- .nl_prune_tol_from_control(

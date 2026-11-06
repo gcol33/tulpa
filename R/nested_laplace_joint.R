@@ -1895,7 +1895,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # cell's axis neighbours on the solved grid, and a dropped neighbour carries
     # no log-marginal to read, so a fit that asks for it solves every cell
     # unless its caller asked for the screen outright.
-    prune                     <- control$prune %||%
+    prune                     <- control[["prune"]] %||%
         (.nl_screen("prune")[["joint"]] && is.null(control$local_ccd))
     # `prune_log_gap` states the same screening cut in nats and replaces the
     # tolerance when set; the two together are refused rather than ranked.
