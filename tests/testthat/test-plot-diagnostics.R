@@ -92,6 +92,8 @@ test_that("the divergence count and the divergent rows come from one record", {
                 diag_count = 3L, flat_count = 7L, none = 0L)
   has_idx <- c(flat = TRUE, diag_flags = TRUE, diag_idx = TRUE,
                diag_count = FALSE, flat_count = FALSE, none = FALSE)
+  expected_idx <- list(flat = c(2L, 4L), diag_flags = c(1L, 3L),
+                       diag_idx = c(2L, 5L))
 
   for (nm in names(shapes)) {
     fit <- structure(c(list(backend = "hmc"), shapes[[nm]]), class = "tulpa_fit")
@@ -99,7 +101,7 @@ test_that("the divergence count and the divergent rows come from one record", {
     expect_equal(tulpa:::n_divergent(fit), expected[[nm]], info = nm)
     expect_equal(!is.null(idx), has_idx[[nm]], info = nm)
     # Where indices exist at all, they account for every counted divergence.
-    if (!is.null(idx)) expect_length(idx, expected[[nm]])
+    if (!is.null(idx)) expect_identical(idx, expected_idx[[nm]])
   }
 
   # And a fit whose indices are locatable never reports them unavailable.

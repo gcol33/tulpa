@@ -537,8 +537,8 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
     i <- which(as.logical(v))
     list(n = length(i), idx = i)
   }
-  if (!is.null(fit$divergent))   return(flags(fit$divergent))
-  if (!is.null(d$divergent))     return(flags(d$divergent))
+  if (!is.null(fit[["divergent"]])) return(flags(fit[["divergent"]]))
+  if (!is.null(d[["divergent"]]))   return(flags(d[["divergent"]]))
   if (!is.null(d$divergent_idx)) {
     i <- as.integer(d$divergent_idx)
     return(list(n = length(i), idx = i))
