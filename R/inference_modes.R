@@ -709,13 +709,9 @@ tulpa_dispatch <- function(mode,
   fit$draws_kind <- fit$draws_kind %||% draws_kind %||% reg$emits
 
   if (!is.null(data)) {
-    fit$y            <- fit$y %||% data$y
-    fit$n_trials     <- fit$n_trials %||% data$n_trials
-    fit$model_matrix <- fit$model_matrix %||% data$model_matrix
-    fit$family       <- fit$family %||% data$family
-    fit$offset       <- fit$offset %||% data$offset
-    fit$phi          <- fit$phi %||% data$phi
-    fit$phi2         <- fit$phi2 %||% data$phi2
+    for (nm in c("y", "n_trials", "model_matrix", "family", "offset", "phi", "phi2")) {
+      fit[[nm]] <- fit[[nm]] %||% data[[nm]]
+    }
     # Was that `phi` estimated or conditioned on? Only `tulpa_eb()` set the
     # field, so on every other door a consumer could not tell a fitted
     # dispersion from the default (gcol33/tulpa#849). FALSE is the answer

@@ -41,6 +41,18 @@ test_that(".finalize_fit attaches class, layout, and provenance", {
   expect_identical(.finalize_fit(42), 42)
 })
 
+test_that("observation dispersion is distinct from GP parameter fields", {
+  fields <- list(phi_gp = 3, phi_gp_grid = c(.5, 1, 2), phi_basis = matrix(1, 2, 2))
+  for (nm in names(fields)) {
+    fit <- .finalize_fit(stats::setNames(list(fields[[nm]]), nm), backend = "laplace",
+      data = list(family = "gaussian", phi = .25))
+    expect_identical(fit$phi, .25)
+  }
+  fit <- .finalize_fit(list(phi = .75, phi_gp_grid = c(.5, 1, 2)), backend = "laplace",
+    data = list(family = "gaussian", phi = .25))
+  expect_identical(fit$phi, .75)
+})
+
 skip_on_cran()
 
 test_that("directly-called tulpa_laplace() is classed and provenance-tagged", {
