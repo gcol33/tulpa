@@ -274,6 +274,25 @@
   covariance under coordinate rescaling.
 - The conditional covariance kept per outer cell skips the cells whose log marginal is not finite, the same cells the
   integration gives zero weight.
+- The physical spatial range's posterior mean and SD exist only where the model says they do: under the
+  dimension-two PC range prior with a likelihood that stays positive as the range grows, both diverge, and they are
+  now reported as `Inf` with the reason kept on the fit, where they had been finite numbers set by the integration
+  window. Quantiles and log-range moments, which exist, are unchanged. HSGP basis diagnostics read the posterior
+  median (#1147).
+- SPDE precision matrices stored as one symmetric triangle are expanded to the full operator before use; the log
+  likelihood had been evaluated on one triangle (#1147).
+- Multiscale importance quadrature grows independently scrambled blocks until the estimated precision target
+  (`control$qmc_tol`, default 0.05 posterior SD) or the point ceiling is reached. The quantile error estimate is a
+  pooled leave-one-scramble jackknife, and print and `diagnostics()` report whether the target was attained (#1149,
+  #1152). Posterior summaries over large designs group the axis values once (49.9 s to 0.4 s, byte-identical).
+- Wide HSGP Gaussian bases are solved in exact observation-space coordinates, with the orthogonal predictive residual
+  kept; a default single-scale fit on n = 250 fell from 1,766 s to 32 s with quantiles equal to 1e-12 SD (#1139).
+  Cell-dependent HSGP screens use the full inner iteration budget, so the screen no longer ranks cells on a partial
+  Newton solve (#1153). Space-time HSGP `spatial_effects` apply the spectral loading.
+- Subspace debiasing reuses each node's random-effect precision and skips unused Newton derivatives; its draws are
+  unchanged (#1148).
+- Exact slot reads for `phi`, `n_threads`, `prune`, the soft-constraint cache and the divergence flags. The divergence
+  read had matched `divergent_idx` and returned the wrong rows (#1151).
 
 ## Package
 
