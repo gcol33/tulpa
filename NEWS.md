@@ -293,6 +293,13 @@
   unchanged (#1148).
 - Exact slot reads for `phi`, `n_threads`, `prune`, the soft-constraint cache and the divergence flags. The divergence
   read had matched `divergent_idx` and returned the wrong rows (#1151).
+- Multi-component HSGP fits solve the summed field in one exact observation-space block of at most n coordinates (252
+  in place of 502 at n = 250), keeping component covariances and correlated prediction residuals; identical outer
+  cells agree to 2e-9 nats. A two-scale n = 40 fit fell from 343 s to 203 s, and the default n = 250 two-scale fit
+  completes in about 53 min (#1139).
+- Importance quadrature skips the fixed-effect quantile error check while the evidence or hyperparameter error
+  already rules out stopping, and runs it in full before stopping and at the ceiling. Answers and error bounds are
+  identical; the default multiscale test file fell from 8,172 s to 3,597 s (#1149).
 
 ## Package
 
