@@ -43,6 +43,7 @@ reference:
   - tulpa_hyper_grid
   - tulpa_re_cov_nested
   - tulpa_re_aghq
+  - tulpa_re_em
   - tulpa_eb
   - tulpa_em_laplace
   - tulpa_em_mc

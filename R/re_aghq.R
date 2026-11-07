@@ -245,22 +245,9 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     stop("`n_obs` is required for the `make_site` path.", call. = FALSE)
   }
 
-  layout <- .re_cov_block_layout(.as_re_terms_list(re_terms), n_obs)
-
-  # One shared grouping factor (the per-group integral factorizes only then).
-  # The make_group path may omit the per-observation `idx`; the layout then
-  # carries `idx = NULL`, and the shared-factor check reduces to matching
-  # `n_groups` (identical(NULL, NULL) is TRUE).
+  layout <- .aghq_layout(re_terms, n_obs)
   idx1 <- layout[[1L]]$idx
   ng   <- layout[[1L]]$n_groups
-  same <- all(vapply(layout, function(b)
-    identical(b$idx, idx1) && identical(b$n_groups, ng), logical(1)))
-  if (!same) {
-    stop("`re_terms` must share one grouping factor (identical `idx` / ",
-         "`n_groups` across terms): the per-group AGHQ integral factorizes ",
-         "only then. For multiple grouping factors use tulpa_re_cov_nested() ",
-         "or tulpa_re_cov_gibbs().", call. = FALSE)
-  }
 
   nc_terms <- vapply(layout, function(b) b$nc, integer(1))
   dtot     <- sum(nc_terms)
@@ -285,69 +272,14 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   re_par0 <- .re_cov_L_list_to_theta(lapply(Sigma0, .re_chol_spd), layout)
   n_theta <- length(theta0)
 
-  # Block dimensions / correlated flags for the compiled engine. `cl` is shared
-  # with the single-arm oracle assembly below; the quadrature grid, log-Cholesky
-  # packing and LKJ penalty all live in C++ (src/aghq_re*.{h,cpp}).
+  # Block dimensions / correlated flags for the compiled engine; the quadrature
+  # grid, log-Cholesky packing and LKJ penalty all live in C++
+  # (src/aghq_re*.{h,cpp}).
   full_vec <- vapply(layout, function(b) isTRUE(b$full), logical(1))
-  cl <- function(e) pmin(pmax(e, -30), 30)
 
-  # -------------------------------------------------------------------------
-  # Per-group conditional-likelihood oracle. `build_oracle(theta)` returns
-  #   grad_hess(g, b) -> list(logL, grad, negH)   data-only value/score/info
-  #   node_ll(g, B)   -> numeric over node rows    data log-lik at nodes
-  # The compiled core is identical for both callback forms; only the oracle
-  # differs. For make_site the engine assembles it from the per-row marginal and
-  # the RE design; for make_group the caller supplies it directly. The R-closure
-  # bridge (cpp_aghq_make_rclosure_oracle) marshals it into the C++ engine.
-  # -------------------------------------------------------------------------
-  if (single_arm) {
-    Zc <- do.call(cbind, lapply(layout, function(b) b$Z))   # n_obs x dtot
-    if (is.null(keep)) keep <- rep(TRUE, n_obs)
-    if (is.logical(keep)) keep <- which(keep)
-    rows_by_g <- lapply(seq_len(ng), function(g) {
-      r <- which(idx1 == g); r[r %in% keep]
-    })
-
-    build_oracle <- function(theta) {
-      site <- make_site(theta)
-      aRE  <- cl(site$eta_re)
-      list(
-        grad_hess = function(g, b) {
-          rows <- rows_by_g[[g]]
-          Zg <- Zc[rows, , drop = FALSE]
-          gv <- site$deriv(rows, cl(aRE[rows] + as.numeric(Zg %*% b)))
-          list(logL = sum(gv$logL),
-               grad = as.numeric(crossprod(Zg, gv$d1)),
-               negH = -crossprod(Zg, gv$d2 * Zg))
-        },
-        node_ll = function(g, B) {
-          rows <- rows_by_g[[g]]
-          Zg <- Zc[rows, , drop = FALSE]
-          ETA <- cl(matrix(aRE[rows], length(rows), nrow(B)) + Zg %*% t(B))
-          colSums(site$lmat(rows, ETA))
-        })
-    }
-  } else {
-    build_oracle <- function(theta) make_group(theta)
-  }
-
-  # -------------------------------------------------------------------------
-  # Optimize sum_g log M_g (+ optional LKJ) over [theta ; log-Cholesky Sigma]
-  # with the compiled AGHQ engine. cpp_aghq_objective returns a large finite
-  # penalty on a failed solve so stats::optim rejects it.
-  #   gradient = "fd"        -- optim finite-differences the objective
-  #                             (consistent at every n_quad, incl. n_quad = 1).
-  #   gradient = "analytic"  -- supply the Fisher-identity gradient
-  #                             (cpp_aghq_objective_grad). It is the gradient of
-  #                             the true marginal: it omits the node-placement
-  #                             terms (O(AGHQ truncation)), so it is consistent
-  #                             with the objective only for n_quad > 1 and is
-  #                             cheap (one group sweep, no per-coordinate
-  #                             re-solve). The objective + gradient share one
-  #                             evaluation per par via a small cache.
-  # -------------------------------------------------------------------------
-  orc   <- if (native) oracle
-           else cpp_aghq_make_rclosure_oracle(build_oracle, ng, dtot, n_theta)
+  orc <- .aghq_oracle(layout, n_theta, make_site = make_site,
+                      make_group = make_group, oracle = oracle, n_obs = n_obs,
+                      keep = keep)
   ridge <- if (is.finite(theta_prior_sd)) 0.5 / theta_prior_sd^2 else 0
 
   # A group whose solve fails takes the whole objective to the failure sentinel,
@@ -698,4 +630,72 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
       g
     }
   )
+}
+
+
+# The RE-term layout an oracle-driven fit runs on (tulpa_re_aghq(),
+# tulpa_re_em()), checked for the one shared grouping factor the per-group
+# integral factorizes over. The make_group path may omit the per-observation
+# `idx`; the layout then carries `idx = NULL`, and the shared-factor check
+# reduces to matching `n_groups` (identical(NULL, NULL) is TRUE).
+.aghq_layout <- function(re_terms, n_obs) {
+  layout <- .re_cov_block_layout(.as_re_terms_list(re_terms), n_obs)
+  idx1 <- layout[[1L]]$idx
+  ng   <- layout[[1L]]$n_groups
+  same <- all(vapply(layout, function(b)
+    identical(b$idx, idx1) && identical(b$n_groups, ng), logical(1)))
+  if (!same) {
+    stop("`re_terms` must share one grouping factor (identical `idx` / ",
+         "`n_groups` across terms): the per-group AGHQ integral factorizes ",
+         "only then. For multiple grouping factors use tulpa_re_cov_nested() ",
+         "or tulpa_re_cov_gibbs().", call. = FALSE)
+  }
+  layout
+}
+
+# The per-group conditional-likelihood oracle an oracle-driven fit evaluates:
+# the prebuilt native `oracle`, or the R-closure bridge over `make_site`
+# (single arm: the engine assembles the oracle from the per-row marginal and
+# the RE design) or `make_group` (the caller supplies it per group).
+# `build_oracle(theta)` returns
+#   grad_hess(g, b) -> list(logL, grad, negH)   data-only value/score/info
+#   node_ll(g, B)   -> numeric over node rows    data log-lik at nodes
+# and cpp_aghq_make_rclosure_oracle marshals it into the C++ engine.
+.aghq_oracle <- function(layout, n_theta, make_site = NULL, make_group = NULL,
+                         oracle = NULL, n_obs = NULL, keep = NULL) {
+  if (!is.null(oracle)) return(oracle)
+  idx1 <- layout[[1L]]$idx
+  ng   <- layout[[1L]]$n_groups
+  dtot <- sum(vapply(layout, function(b) b$nc, integer(1)))
+  cl <- function(e) pmin(pmax(e, -30), 30)
+  if (!is.null(make_site)) {
+    Zc <- do.call(cbind, lapply(layout, function(b) b$Z))   # n_obs x dtot
+    if (is.null(keep)) keep <- rep(TRUE, n_obs)
+    if (is.logical(keep)) keep <- which(keep)
+    rows_by_g <- lapply(seq_len(ng), function(g) {
+      r <- which(idx1 == g); r[r %in% keep]
+    })
+    build_oracle <- function(theta) {
+      site <- make_site(theta)
+      aRE  <- cl(site$eta_re)
+      list(
+        grad_hess = function(g, b) {
+          rows <- rows_by_g[[g]]
+          Zg <- Zc[rows, , drop = FALSE]
+          gv <- site$deriv(rows, cl(aRE[rows] + as.numeric(Zg %*% b)))
+          list(logL = sum(gv$logL),
+               grad = as.numeric(crossprod(Zg, gv$d1)),
+               negH = -crossprod(Zg, gv$d2 * Zg))
+        },
+        node_ll = function(g, B) {
+          rows <- rows_by_g[[g]]
+          Zg <- Zc[rows, , drop = FALSE]
+          ETA <- cl(matrix(aRE[rows], length(rows), nrow(B)) + Zg %*% t(B))
+          colSums(site$lmat(rows, ETA))
+        })
+    }
+  } else {
+    build_oracle <- function(theta) make_group(theta)
+  }
+  cpp_aghq_make_rclosure_oracle(build_oracle, ng, dtot, n_theta)
 }

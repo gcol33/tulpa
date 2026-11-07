@@ -2,6 +2,14 @@
 
 ## Models and inference
 
+* `tulpa_re_em()`: grouped random effects by Laplace-EM on the per-group
+  oracle `tulpa_re_aghq()` takes (native, `make_site` or `make_group`), the
+  `n_quad = 1` sibling of the exact-marginal fit. Closed-form covariance
+  update from the per-group posterior moments (diagonal for an uncorrelated
+  term, eigenvalue floor), a Laplace-marginal step for the fixed parameters,
+  and the fixed-parameter covariance from that marginal's curvature
+  (gcol33/tulpaObs#431).
+
 * The engine default fixed-effect prior is N(0, 2.5^2) on every door
   (`DEFAULT_SIGMA_BETA`); `beta_prior` overrides it, including on the SPDE
   Laplace path (#1045, #1056).
