@@ -8,6 +8,9 @@
 #include "shim_guard.h"
 #include "tulpa/likelihood.h"
 #include "tulpa/nuts_api.h"
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 // ============================================================================
 // Copy one pure-C++ chain result into a flat NUTSResult (caller owns the
@@ -202,6 +205,22 @@ static int tulpa_get_abi_version_impl() {
     return tulpa::TULPA_ABI_VERSION;
 }
 
+// The OpenMP thread cap of THIS DLL's runtime: sets it to `n` when n > 0 and
+// returns the cap in force before the call (n <= 0 only reads it). A model
+// package linking its own OpenMP runtime cannot reach tulpa's cap with its own
+// omp_set_num_threads(), so the width of tulpa's teams (the multi-chain NUTS
+// runner's included) is set through here.
+static int tulpa_omp_max_threads_impl(int n) {
+#ifdef _OPENMP
+    const int prev = omp_get_max_threads();
+    if (n > 0) omp_set_num_threads(n);
+    return prev;
+#else
+    (void)n;
+    return 1;
+#endif
+}
+
 // Set the global gradient mode from a string. Single source of truth: parses
 // via tulpa_hmc::parse_gradient_mode (the same function R-level entry points
 // hmc_rcpp_fit / vi_sampler use), then forwards to set_gradient_mode. Returns
@@ -259,6 +278,8 @@ void tulpa_register_callables(DllInfo* dll) {
                         (DL_FUNC)&tulpa_get_abi_version_impl);
     R_RegisterCCallable("tulpa", "tulpa_set_gradient_mode_str",
                         (DL_FUNC)&tulpa_set_gradient_mode_str_impl);
+    R_RegisterCCallable("tulpa", "tulpa_omp_max_threads",
+                        (DL_FUNC)&tulpa_omp_max_threads_impl);
 
     tulpa_register_shims(dll);
     tulpa_register_tgmrf_callables(dll);

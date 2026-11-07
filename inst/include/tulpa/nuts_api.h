@@ -207,6 +207,29 @@ inline int set_gradient_mode_str(const char* mode_str) {
     return get_set_gradient_mode_fn()(mode_str);
 }
 
+// ============================================================================
+// tulpa's OpenMP thread cap. A model package linking its own OpenMP runtime
+// cannot set the width of tulpa's teams with its own omp_set_num_threads();
+// this sets tulpa's cap to `n` (n > 0) and returns the cap before the call
+// (n <= 0 only reads it). The multi-chain runner's chain team is
+// min(n_chains, this cap). OmpCapScope restores the cap on scope exit.
+// ============================================================================
+typedef int (*OmpMaxThreadsFn)(int n);
+
+inline int omp_max_threads(int n) {
+    static OmpMaxThreadsFn fn = nullptr;
+    if (!fn) fn = (OmpMaxThreadsFn)R_GetCCallable("tulpa", "tulpa_omp_max_threads");
+    return fn(n);
+}
+
+struct OmpCapScope {
+    int prev;
+    explicit OmpCapScope(int n) : prev(omp_max_threads(n)) {}
+    ~OmpCapScope() { omp_max_threads(prev); }
+    OmpCapScope(const OmpCapScope&) = delete;
+    OmpCapScope& operator=(const OmpCapScope&) = delete;
+};
+
 // Function signature for compute_param_layout
 typedef void (*ComputeLayoutFn)(const ModelData* data, ParamLayout* layout_out);
 
