@@ -32,6 +32,21 @@
   diagonal projection for an uncorrelated block, eigenvalue floor) every
   grouped-RE EM takes, compiled consumers included (gcol33/tulpaObs#431).
 
+* `tulpa_hyper_grid()` takes per-cell `extras` from `inner_fit` (named numeric
+  vectors such as a latent field's mode or a per-observation offset) and
+  returns their weighted means as `extras_mean`, returns the per-cell
+  fixed-effect posteriors it pools as `mixture`, and integrates on a
+  mode-centred central composite design with `design = "ccd"` (falling back
+  to the tensor grid, with the reason in `ccd_declined`, when the design
+  declines). The design itself is exported as `tulpa_ccd_outer_grid()`
+  (gcol33/tulpaObs#430).
+
+* `tulpa::omp_max_threads()` / `tulpa::OmpCapScope` (`<tulpa/nuts_api.h>`, C
+  callable `tulpa_omp_max_threads`) set the OpenMP thread cap of tulpa's own
+  runtime, which a model package linking its own OpenMP runtime cannot reach
+  with `omp_set_num_threads()`; the multi-chain NUTS runner's chain team is
+  `min(n_chains, cap)` (gcol33/tulpaObs#429).
+
 * The engine default fixed-effect prior is N(0, 2.5^2) on every door
   (`DEFAULT_SIGMA_BETA`); `beta_prior` overrides it, including on the SPDE
   Laplace path (#1045, #1056).

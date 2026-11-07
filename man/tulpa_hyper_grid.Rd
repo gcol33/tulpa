@@ -11,6 +11,8 @@ tulpa_hyper_grid(
   n_draws = 2000L,
   seed = NULL,
   beta_names = NULL,
+  design = c("grid", "ccd"),
+  ccd_start = NULL,
   control = list()
 )
 }
@@ -30,6 +32,10 @@ Non-finite values are mapped to \code{-Inf} (the cell gets zero weight).
 cell. Required when \code{combine != "none"}.
 \item \code{beta_cov} -- \verb{p x p} numeric matrix of fixed-effect marginal
 covariance at the cell. Required when \code{combine = "law_of_total_cov"}.
+\item \code{extras} -- optional named list of numeric vectors (one length per
+name across cells): per-cell quantities the fit reports as their
+posterior mean over the grid (a latent field's mode, a per-observation
+offset), returned in \code{extras_mean} under the same weights as \code{beta}.
 \code{hypers} is a named numeric vector with the current cell's axis values
 (names match \verb{vapply(hyper_specs, }[[\verb{, character(1), "name")}).
 Errors thrown by \code{inner_fit} are caught and treated as a failed cell
@@ -61,6 +67,19 @@ law-of-total-cov mean and covariance are still returned).}
 coordinates. When \code{NULL} (default) the names are taken from the first
 successful cell's \code{beta_mean} (or \code{beta1}, \code{beta2}, ... if it is
 unnamed).}
+
+\item{design}{\code{"grid"} (default) integrates on the Cartesian product of the
+axis grids. \code{"ccd"} places a mode-centred central composite design
+(\code{\link[=tulpa_ccd_outer_grid]{tulpa_ccd_outer_grid()}}) over the axes whose grid has more than one
+level (log-scale axes in the log, the grid's range as the box, the others
+held at their single level), weighting each node by its design weight
+times its marginal; when the design declines, or no node is finite, the
+tensor grid is used and \code{ccd_declined} says why. The refinement passes in
+\code{control} apply to the tensor grid only.}
+
+\item{ccd_start}{Optional named physical starting values of the CCD
+mode-find; an axis left out starts at the centre of its grid (in its
+integration coordinate).}
 
 \item{control}{Optional list of refinement / tuning knobs:
 \itemize{
@@ -125,6 +144,14 @@ and \code{draws} are \code{NULL}.
 \item \code{means}, \code{param_names}, \code{process_info}, \code{n_samples}, \code{n_params},
 \code{N} -- the \code{tulpa_fit} accessor surface, populated when a
 fixed-effect posterior is assembled.
+\item \code{extras_mean} -- named list, the weighted mean of each \code{extras}
+quantity \code{inner_fit} returned (\code{NULL} when it returned none).
+\item \code{mixture} -- \code{list(weights, modes, covs)} over the cells carrying mass,
+the per-cell fixed-effect posteriors \code{beta} / \code{beta_cov} pool (\code{covs}
+\code{NULL} unless \code{combine = "law_of_total_cov"}).
+\item \code{design}, \code{ccd_declined}, \code{pareto_k} -- the integration design used,
+the reason a requested CCD fell back to the grid (\code{NULL} otherwise),
+and the CCD's outer PSIS k-hat (\code{NA} on the grid).
 \item \code{hyper_specs} -- echoed list of \code{hyper_axis_spec} objects (the
 normalised form).
 \item \code{combine}, \code{n_failed}, \code{n_grid}, \code{refining_axis} -- diagnostic fields.

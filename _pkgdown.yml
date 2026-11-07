@@ -197,6 +197,7 @@ reference:
     axis-provenance surface, and the small numerical helpers.
   contents:
   - ccd_grid
+  - tulpa_ccd_outer_grid
   - hyper_axis_spec
   - auto_grid
   - is_auto_grid

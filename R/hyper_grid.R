@@ -63,6 +63,9 @@
              state$beta_dim, ".", call. = FALSE)
       }
       cell_extra <- list(beta_mean = bm)
+      if (!is.null(fit_i$extras)) {
+        cell_extra$extras <- lapply(fit_i$extras, as.numeric)
+      }
       if (store_cov) {
         bc <- fit_i$beta_cov
         if (is.null(bc)) {
@@ -144,6 +147,10 @@
 #'     cell. Required when `combine != "none"`.
 #'   * `beta_cov` -- `p x p` numeric matrix of fixed-effect marginal
 #'     covariance at the cell. Required when `combine = "law_of_total_cov"`.
+#'   * `extras` -- optional named list of numeric vectors (one length per
+#'     name across cells): per-cell quantities the fit reports as their
+#'     posterior mean over the grid (a latent field's mode, a per-observation
+#'     offset), returned in `extras_mean` under the same weights as `beta`.
 #'   `hypers` is a named numeric vector with the current cell's axis values
 #'   (names match `vapply(hyper_specs, `[[`, character(1), "name")`).
 #'   Errors thrown by `inner_fit` are caught and treated as a failed cell
@@ -168,6 +175,17 @@
 #'   coordinates. When `NULL` (default) the names are taken from the first
 #'   successful cell's `beta_mean` (or `beta1`, `beta2`, ... if it is
 #'   unnamed).
+#' @param design `"grid"` (default) integrates on the Cartesian product of the
+#'   axis grids. `"ccd"` places a mode-centred central composite design
+#'   ([tulpa_ccd_outer_grid()]) over the axes whose grid has more than one
+#'   level (log-scale axes in the log, the grid's range as the box, the others
+#'   held at their single level), weighting each node by its design weight
+#'   times its marginal; when the design declines, or no node is finite, the
+#'   tensor grid is used and `ccd_declined` says why. The refinement passes in
+#'   `control` apply to the tensor grid only.
+#' @param ccd_start Optional named physical starting values of the CCD
+#'   mode-find; an axis left out starts at the centre of its grid (in its
+#'   integration coordinate).
 #' @param control Optional list of refinement / tuning knobs:
 #'   * `adaptive_grid` (`FALSE`) -- run the boundary / interior refinement
 #'     pass on every axis whose spec has `refinable = TRUE`. New cells are
@@ -225,6 +243,14 @@
 #'   * `means`, `param_names`, `process_info`, `n_samples`, `n_params`,
 #'     `N` -- the `tulpa_fit` accessor surface, populated when a
 #'     fixed-effect posterior is assembled.
+#'   * `extras_mean` -- named list, the weighted mean of each `extras`
+#'     quantity `inner_fit` returned (`NULL` when it returned none).
+#'   * `mixture` -- `list(weights, modes, covs)` over the cells carrying mass,
+#'     the per-cell fixed-effect posteriors `beta` / `beta_cov` pool (`covs`
+#'     `NULL` unless `combine = "law_of_total_cov"`).
+#'   * `design`, `ccd_declined`, `pareto_k` -- the integration design used,
+#'     the reason a requested CCD fell back to the grid (`NULL` otherwise),
+#'     and the CCD's outer PSIS k-hat (`NA` on the grid).
 #'   * `hyper_specs` -- echoed list of `hyper_axis_spec` objects (the
 #'     normalised form).
 #'   * `combine`, `n_failed`, `n_grid`, `refining_axis` -- diagnostic fields.
@@ -263,8 +289,10 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
                                          "none"),
                              n_draws = 2000L, seed = NULL,
                              beta_names = NULL,
+                             design = c("grid", "ccd"), ccd_start = NULL,
                              control = list()) {
   combine <- match.arg(combine)
+  design  <- match.arg(design)
   if (!is.function(inner_fit)) {
     stop("`inner_fit` must be a function(hypers) -> list(log_marginal, ...).",
          call. = FALSE)
@@ -298,6 +326,16 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
                               stringsAsFactors = FALSE)))
   theta_grid <- as.matrix(gr)
   colnames(theta_grid) <- axis_names
+
+  ccd_declined <- NULL
+  if (design == "ccd") {
+    ccd <- .hyper_grid_ccd(specs, axis_names, kernel_fn, hp_fn, ccd_start)
+    if (isTRUE(ccd$ok)) {
+      return(.hyper_grid_ccd_result(ccd, specs, axis_names, combine, state,
+                                    n_draws))
+    }
+    ccd_declined <- ccd$reason
+  }
 
   init <- kernel_fn(theta_grid, warm_start = NULL,
                     store_extras = combine != "none")
@@ -411,69 +449,11 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   theta_ci_lo  <- qs$ci_lo
   theta_ci_hi  <- qs$ci_hi
 
-  # Fixed-effect posterior from extras_list.
-  beta_mean_out <- NULL; beta_cov_out <- NULL; draws_out <- NULL
-  hyper_lp_out  <- NULL
-  param_names   <- NULL
-  if (combine != "none") {
-    if (is.na(state$beta_dim)) {
-      warning("No cell produced a finite `inner_fit` result; ",
-              "fixed-effect posterior unavailable.", call. = FALSE)
-    } else {
-      beta_dim <- state$beta_dim
-      have_beta <- !vapply(extras_list, function(e)
-        is.null(e) || is.null(e$beta_mean), logical(1))
-      beta_mat <- matrix(NA_real_, length(extras_list), beta_dim)
-      if (any(have_beta)) {
-        beta_mat[have_beta, ] <- do.call(rbind,
-          lapply(extras_list[have_beta], `[[`, "beta_mean"))
-      }
-      w_eff <- weights_for_summary
-      w_eff[!have_beta] <- 0
-      w_total <- sum(w_eff)
-      if (w_total > 0) {
-        w_eff <- w_eff / w_total
-        beta_mean_out <- as.numeric(crossprod(w_eff[have_beta],
-                                              beta_mat[have_beta, ,
-                                                       drop = FALSE]))
-        names(beta_mean_out) <- state$beta_names
-        param_names <- state$beta_names
-
-        if (combine == "law_of_total_cov") {
-          E_V <- matrix(0, beta_dim, beta_dim)
-          V_E <- matrix(0, beta_dim, beta_dim)
-          for (i in which(have_beta)) {
-            wi <- w_eff[i]; if (wi <= 0) next
-            bc <- extras_list[[i]]$beta_cov
-            if (!is.null(bc)) E_V <- E_V + wi * bc
-            d_i <- beta_mat[i, ] - beta_mean_out
-            V_E <- V_E + wi * tcrossprod(d_i)
-          }
-          beta_cov_out <- E_V + V_E
-          rownames(beta_cov_out) <- colnames(beta_cov_out) <- state$beta_names
-
-          if (n_draws > 0L) {
-            beta_cov_list <- lapply(extras_list, function(e)
-              if (is.null(e)) NULL else e$beta_cov)
-            ds <- .re_cov_nested_beta_draws(
-              beta_nodes      = beta_mat,
-              beta_cov_nodes  = beta_cov_list,
-              w               = w_eff,
-              n_draws         = as.integer(n_draws),
-              beta_names      = state$beta_names
-            )
-            draws_out <- ds$draws
-            # Per-draw hyperparameter log-prior at the drawn cell, for the
-            # input power-scaling (tulpa_powerscale_sensitivity).
-            if (!is.null(ds)) hyper_lp_out <- log_prior_cell[ds$picks]
-          }
-        }
-      } else {
-        warning("No cell carries both finite mass and a `beta_mean`; ",
-                "fixed-effect posterior unavailable.", call. = FALSE)
-      }
-    }
-  }
+  pool <- .hyper_grid_pool(extras_list, weights_for_summary, combine, state,
+                           n_draws)
+  beta_mean_out <- pool$beta; beta_cov_out <- pool$beta_cov
+  draws_out <- pool$draws; param_names <- pool$param_names
+  hyper_lp_out <- if (is.null(pool$picks)) NULL else log_prior_cell[pool$picks]
 
   # The caller's specs declare each axis's prior: a density folded through
   # `log_prior`, or a uniform on a declared `slab_bounds`. An axis carrying
@@ -516,6 +496,11 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     n_samples      = if (!is.null(draws_out)) nrow(draws_out) else 0L,
     n_params       = if (!is.null(param_names)) length(param_names) else 0L,
     N              = NA_integer_,
+    extras_mean    = pool$extras_mean,
+    mixture        = pool$mixture,
+    design         = "grid",
+    ccd_declined   = ccd_declined,
+    pareto_k       = NA_real_,
     hyper_specs    = specs,
     combine        = combine,
     n_failed       = state$n_failed,
@@ -526,4 +511,149 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   )
   class(out) <- c("tulpa_fit", "list")
   .hyper_attach_moments(out)
+}
+
+
+# Pool the per-cell fixed-effect posteriors and extras under the normalised
+# cell weights `w` (NA-free): the weighted mean, the law of total covariance
+# (E[V] + V[E]) and mixture draws per `combine`, each `extras` quantity's
+# weighted mean, and the mixture itself. A cell without a `beta_mean` carries
+# no weight here.
+.hyper_grid_pool <- function(extras_list, w, combine, state, n_draws) {
+  out <- list(beta = NULL, beta_cov = NULL, draws = NULL, picks = NULL,
+              param_names = NULL, extras_mean = NULL, mixture = NULL)
+  if (combine == "none") return(out)
+  if (is.na(state$beta_dim)) {
+    warning("No cell produced a finite `inner_fit` result; ",
+            "fixed-effect posterior unavailable.", call. = FALSE)
+    return(out)
+  }
+  beta_dim <- state$beta_dim
+  have_beta <- !vapply(extras_list, function(e)
+    is.null(e) || is.null(e$beta_mean), logical(1))
+  beta_mat <- matrix(NA_real_, length(extras_list), beta_dim)
+  if (any(have_beta)) {
+    beta_mat[have_beta, ] <- do.call(rbind,
+      lapply(extras_list[have_beta], `[[`, "beta_mean"))
+  }
+  w_eff <- w
+  w_eff[!have_beta] <- 0
+  w_total <- sum(w_eff)
+  if (!(w_total > 0)) {
+    warning("No cell carries both finite mass and a `beta_mean`; ",
+            "fixed-effect posterior unavailable.", call. = FALSE)
+    return(out)
+  }
+  w_eff <- w_eff / w_total
+  beta_mean <- as.numeric(crossprod(w_eff[have_beta],
+                                    beta_mat[have_beta, , drop = FALSE]))
+  names(beta_mean) <- state$beta_names
+  out$beta <- beta_mean
+  out$param_names <- state$beta_names
+  live <- which(have_beta & w_eff > 0)
+  covs <- if (combine == "law_of_total_cov")
+    lapply(extras_list[live], `[[`, "beta_cov") else NULL
+  out$mixture <- list(weights = w_eff[live],
+                      modes = beta_mat[live, , drop = FALSE], covs = covs)
+  ex_names <- unique(unlist(lapply(extras_list[live], function(e) names(e$extras))))
+  if (length(ex_names)) {
+    out$extras_mean <- stats::setNames(lapply(ex_names, function(nm) {
+      vals <- lapply(extras_list[live], function(e) e$extras[[nm]])
+      as.numeric(crossprod(w_eff[live], do.call(rbind, vals)))
+    }), ex_names)
+  }
+  if (combine == "law_of_total_cov") {
+    E_V <- matrix(0, beta_dim, beta_dim)
+    V_E <- matrix(0, beta_dim, beta_dim)
+    for (i in which(have_beta)) {
+      wi <- w_eff[i]; if (wi <= 0) next
+      bc <- extras_list[[i]]$beta_cov
+      if (!is.null(bc)) E_V <- E_V + wi * bc
+      d_i <- beta_mat[i, ] - beta_mean
+      V_E <- V_E + wi * tcrossprod(d_i)
+    }
+    out$beta_cov <- E_V + V_E
+    rownames(out$beta_cov) <- colnames(out$beta_cov) <- state$beta_names
+    if (n_draws > 0L) {
+      ds <- .re_cov_nested_beta_draws(
+        beta_nodes     = beta_mat,
+        beta_cov_nodes = lapply(extras_list, function(e)
+          if (is.null(e)) NULL else e$beta_cov),
+        w              = w_eff,
+        n_draws        = as.integer(n_draws),
+        beta_names     = state$beta_names)
+      out$draws <- ds$draws
+      if (!is.null(ds)) out$picks <- ds$picks
+    }
+  }
+  out
+}
+
+# The mode-centred CCD over the multi-level axes (tulpa_ccd_outer_grid()), the
+# single-level axes held at their value. The outer integrand is the cell's log
+# marginal plus its log prior, as on the grid.
+.hyper_grid_ccd <- function(specs, axis_names, kernel_fn, hp_fn, ccd_start) {
+  levels <- lapply(specs, function(sp) sort(unique(as.numeric(sp$grid))))
+  vary <- which(lengths(levels) > 1L)
+  fixed <- vapply(levels, `[`, 0.0, 1L)
+  axes <- lapply(vary, function(j) {
+    lv <- levels[[j]]; ls <- isTRUE(specs[[j]]$log_scale) && min(lv) > 0
+    st <- ccd_start[[axis_names[j]]]
+    if (is.null(st)) st <- if (ls) exp(mean(log(range(lv)))) else mean(range(lv))
+    list(name = axis_names[j], log_scale = ls, lower = min(lv),
+         upper = max(lv), start = as.numeric(st))
+  })
+  full <- function(theta_vary) { th <- fixed; th[vary] <- theta_vary; th }
+  eval_logm <- function(theta_vary) {
+    row <- matrix(full(theta_vary), 1L, dimnames = list(NULL, axis_names))
+    lm <- kernel_fn(row, store_extras = FALSE)$log_marginal
+    if (!is.null(hp_fn)) lm <- lm + hp_fn(row)
+    lm
+  }
+  cc <- tulpa_ccd_outer_grid(eval_logm, axes)
+  if (!isTRUE(cc$ok)) return(cc)
+  grid <- t(apply(cc$nodes, 1L, full))
+  colnames(grid) <- axis_names
+  ev <- kernel_fn(grid, store_extras = TRUE)
+  lm <- ev$log_marginal
+  if (!is.null(hp_fn)) lm <- lm + hp_fn(grid)
+  if (!any(is.finite(lm))) return(list(ok = FALSE, reason = "no finite CCD node"))
+  logw <- log(cc$dnode) + lm
+  w <- exp(logw - max(logw[is.finite(logw)]))
+  w[!is.finite(w)] <- 0
+  w <- w / sum(w)
+  list(ok = TRUE, grid = grid, log_marginal = lm, weights = w,
+       extras = ev$extras, pareto_k = cc$pareto_k, kind = cc$kind)
+}
+
+# The result of a CCD integration in tulpa_hyper_grid()'s shape: the
+# hyperparameter moments read off the node weights (the CCD carries no tensor
+# quadrature, so no quantiles), and the fixed-effect / extras pooling the grid
+# path uses.
+.hyper_grid_ccd_result <- function(ccd, specs, axis_names, combine, state,
+                                   n_draws) {
+  w <- ccd$weights
+  theta_mean <- stats::setNames(as.numeric(crossprod(w, ccd$grid)), axis_names)
+  theta_sd <- stats::setNames(sqrt(pmax(0, as.numeric(crossprod(w, ccd$grid^2)) -
+                                          theta_mean^2)), axis_names)
+  pool <- .hyper_grid_pool(ccd$extras, w, combine, state, n_draws)
+  na <- stats::setNames(rep(NA_real_, length(axis_names)), axis_names)
+  out <- list(
+    theta_grid = ccd$grid, theta_names = axis_names,
+    log_marginal = ccd$log_marginal, weights = w,
+    theta_mean = theta_mean, theta_sd = theta_sd,
+    theta_median = na, theta_ci_lo = na, theta_ci_hi = na,
+    beta = pool$beta, beta_cov = pool$beta_cov, draws = pool$draws,
+    means = pool$beta, param_names = pool$param_names,
+    process_info = if (!is.null(pool$param_names))
+      list(list(name = "fixed_effects", p = length(pool$param_names),
+                coef_names = pool$param_names)) else NULL,
+    n_samples = if (!is.null(pool$draws)) nrow(pool$draws) else 0L,
+    n_params = length(pool$param_names), N = NA_integer_,
+    extras_mean = pool$extras_mean, mixture = pool$mixture,
+    design = "ccd", ccd_declined = NULL, pareto_k = ccd$pareto_k,
+    ccd_kind = ccd$kind, hyper_specs = specs, combine = combine,
+    n_failed = state$n_failed, n_grid = nrow(ccd$grid))
+  class(out) <- c("tulpa_fit", "list")
+  out
 }
