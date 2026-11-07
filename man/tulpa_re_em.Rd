@@ -17,7 +17,8 @@ tulpa_re_em(
   sigma_floor = 1e-04,
   tol = 1e-08,
   max_iter = 200L,
-  theta_iter = 100L
+  theta_iter = 3L,
+  n_threads = 1L
 )
 }
 \arguments{
@@ -88,15 +89,18 @@ to the eigenvalues of each covariance update.}
 
 \item{max_iter}{Maximum EM iterations.}
 
-\item{theta_iter}{Maximum BFGS iterations of each \code{theta} step.}
+\item{theta_iter}{Maximum BFGS steps on \code{theta} per EM iteration.}
+
+\item{n_threads}{Threads for the per-group loops, used only when the
+oracle declares itself thread-safe. The result does not depend on it.}
 }
 \value{
 A list with \code{theta}, \code{theta_cov}, \code{theta_se}, \code{Sigma_list},
 \code{log_marginal} (Laplace), \code{blup}, \code{blup_var}, \code{blup_cov_g} (per-group
 posterior covariances), \code{blup_cross_g} (mode/theta cross-Hessian blocks,
 the \code{Bf} of \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}}), \code{group_ok}, \code{converged}, \code{n_iter},
-\code{log_marginal_trace}; \code{NULL} with a warning when the per-group solve fails
-at the start.
+\code{blup_cross_available}, \code{log_marginal_trace}; \code{NULL} with a warning when
+the per-group solve fails at the start.
 }
 \description{
 The \code{n_quad = 1} sibling of \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} on the same per-group oracle:
@@ -110,8 +114,8 @@ per-group solve the AGHQ engine reports as its BLUPs);
 \item updates each random-effect covariance in closed form,
 \verb{Sigma_k = mean_g(b_gk b_gk' + C_gk)}, projected to its diagonal for an
 uncorrelated term and floored at \code{sigma_floor^2} on its eigenvalues;
-\item maximises the Laplace marginal over the fixed parameters \code{theta} at
-that covariance.
+\item moves the fixed parameters \code{theta} by BFGS on the Laplace marginal
+at that covariance, with its exact (envelope) gradient.
 }
 It stops when the Laplace log-marginal changes by less than \code{tol} relative to
 its size. The fixed-parameter covariance is the inverse curvature of the

@@ -186,9 +186,10 @@ struct AghqGroupSolve {
 
 inline AghqGroupSolve aghq_group_solve(const REGroupOracle& orc, int g,
                                        const Eigen::MatrixXd& P, int d,
-                                       bool want_chol) {
+                                       bool want_chol,
+                                       const Eigen::VectorXd* b0 = nullptr) {
     AghqGroupSolve out;
-    out.mode = aghq_group_mode(orc, g, P);
+    out.mode = aghq_group_mode(orc, g, P, 50, 1e-9, b0);
     if (!out.mode.ok) return out;
     Eigen::LLT<Eigen::MatrixXd> lltN(out.mode.negH);
     if (lltN.info() != Eigen::Success) return out;

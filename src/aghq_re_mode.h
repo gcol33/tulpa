@@ -38,12 +38,16 @@ struct GroupMode {
 };
 
 // orc must already be rebind()-ed to the active theta. P is Sigma^{-1} (d x d).
+// `b0`, when given (length d), starts the Newton there instead of at 0: a
+// caller re-solving the same group at a nearby parameter passes its last mode.
 inline GroupMode aghq_group_mode(const REGroupOracle& orc, int g,
                                  const Eigen::MatrixXd& P,
-                                 int max_it = 50, double tol = 1e-9) {
+                                 int max_it = 50, double tol = 1e-9,
+                                 const Eigen::VectorXd* b0 = nullptr) {
     const int d = orc.d;
     GroupMode out;
-    out.b = Eigen::VectorXd::Zero(d);
+    out.b = (b0 && b0->size() == d && b0->allFinite()) ? *b0
+                                                        : Eigen::VectorXd::Zero(d);
 
     std::vector<double> grad(d), negH(d * d);
     double logL = 0.0;

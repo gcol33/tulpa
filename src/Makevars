@@ -50,6 +50,7 @@ unity_glmm.o: \
   aghq_re.cpp \
   re_cov_gibbs.cpp \
   re_cov_grad_export.cpp \
+  re_em.cpp \
   tulpa_glmm_eta_draws.cpp \
   tulpa_glmm_layout_probe.cpp \
   tulpa_sample_glmm.cpp \

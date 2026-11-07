@@ -64,3 +64,12 @@ test_that("tulpa_re_em projects an uncorrelated term and applies the floor", {
   expect_error(tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc,
                            sigma_floor = 0), "sigma_floor")
 })
+
+test_that("tulpa_re_em does not depend on the thread count", {
+  fx <- .re_em_glmm("poisson", 14L, d_re = 2L)
+  e1 <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc, n_threads = 1L)
+  e2 <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc, n_threads = 2L)
+  expect_identical(e1$theta, e2$theta)
+  expect_identical(e1$Sigma_list, e2$Sigma_list)
+  expect_identical(e1$log_marginal, e2$log_marginal)
+})

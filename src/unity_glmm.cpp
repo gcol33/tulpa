@@ -10,6 +10,7 @@
 #include "aghq_re.cpp"
 #include "re_cov_gibbs.cpp"
 #include "re_cov_grad_export.cpp"
+#include "re_em.cpp"
 #include "tulpa_glmm_eta_draws.cpp"
 #include "tulpa_glmm_layout_probe.cpp"
 #include "tulpa_sample_glmm.cpp"

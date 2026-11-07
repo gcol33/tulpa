@@ -11,8 +11,8 @@
 #'   \item updates each random-effect covariance in closed form,
 #'     `Sigma_k = mean_g(b_gk b_gk' + C_gk)`, projected to its diagonal for an
 #'     uncorrelated term and floored at `sigma_floor^2` on its eigenvalues;
-#'   \item maximises the Laplace marginal over the fixed parameters `theta` at
-#'     that covariance.
+#'   \item moves the fixed parameters `theta` by BFGS on the Laplace marginal
+#'     at that covariance, with its exact (envelope) gradient.
 #' }
 #' It stops when the Laplace log-marginal changes by less than `tol` relative to
 #' its size. The fixed-parameter covariance is the inverse curvature of the
@@ -24,13 +24,15 @@
 #'   to the eigenvalues of each covariance update.
 #' @param tol Relative tolerance on the change in the Laplace log-marginal.
 #' @param max_iter Maximum EM iterations.
-#' @param theta_iter Maximum BFGS iterations of each `theta` step.
+#' @param theta_iter Maximum BFGS steps on `theta` per EM iteration.
+#' @param n_threads Threads for the per-group loops, used only when the
+#'   oracle declares itself thread-safe. The result does not depend on it.
 #' @return A list with `theta`, `theta_cov`, `theta_se`, `Sigma_list`,
 #'   `log_marginal` (Laplace), `blup`, `blup_var`, `blup_cov_g` (per-group
 #'   posterior covariances), `blup_cross_g` (mode/theta cross-Hessian blocks,
 #'   the `Bf` of [tulpa_re_aghq()]), `group_ok`, `converged`, `n_iter`,
-#'   `log_marginal_trace`; `NULL` with a warning when the per-group solve fails
-#'   at the start.
+#'   `blup_cross_available`, `log_marginal_trace`; `NULL` with a warning when
+#'   the per-group solve fails at the start.
 #' @seealso [tulpa_re_aghq()] for the exact-marginal (adaptive Gauss-Hermite)
 #'   fit on the same oracle.
 #' @export
@@ -38,7 +40,8 @@ tulpa_re_em <- function(theta0, re_terms, Sigma0,
                         make_site = NULL, make_group = NULL, oracle = NULL,
                         n_obs = NULL, keep = NULL,
                         theta_prior_sd = Inf, sigma_floor = 1e-4,
-                        tol = 1e-8, max_iter = 200L, theta_iter = 100L) {
+                        tol = 1e-8, max_iter = 200L, theta_iter = 3L,
+                        n_threads = 1L) {
   native <- !is.null(oracle)
   if (!native && (is.null(make_site) == is.null(make_group))) {
     stop("Supply exactly one of `make_site` (single-arm), `make_group` ",
@@ -61,18 +64,15 @@ tulpa_re_em <- function(theta0, re_terms, Sigma0,
   orc <- .aghq_oracle(layout, n_theta, make_site = make_site,
                       make_group = make_group, oracle = oracle, n_obs = n_obs,
                       keep = keep)
-  ridge <- if (is.finite(theta_prior_sd)) 0.5 / theta_prior_sd^2 else 0
+  prec <- if (is.finite(theta_prior_sd)) 1 / theta_prior_sd^2 else 0
 
-  pack <- function(theta, Sigma_list)
-    c(theta, .re_cov_L_list_to_theta(lapply(Sigma_list, .re_chol_spd), layout))
-  laplace <- function(par) cpp_aghq_objective(par, orc, nc_terms, full_vec, 1L, 1.0)
-
-  theta <- as.numeric(theta0)
-  Sigma <- lapply(Sigma0, as.matrix)
-  par <- pack(theta, Sigma)
-  lm_cur <- laplace(par)
-  if (.aghq_is_fail(lm_cur)) {
-    gok <- .aghq_group_status(par, orc, nc_terms, full_vec)
+  res <- cpp_re_em(orc, as.numeric(theta0), lapply(Sigma0, as.matrix),
+                   nc_terms, full_vec, prec, sigma_floor, tol,
+                   as.integer(max_iter), as.integer(theta_iter),
+                   as.integer(n_threads))
+  if (!isTRUE(res$ok)) {
+    par0 <- c(theta0, .re_cov_L_list_to_theta(lapply(Sigma0, .re_chol_spd), layout))
+    gok <- .aghq_group_status(par0, orc, nc_terms, full_vec)
     warning("tulpa_re_em: the Laplace marginal is not defined at the starting ",
             "parameters -- the per-group solve failed for ",
             if (is.null(gok)) "at least one group"
@@ -80,87 +80,40 @@ tulpa_re_em <- function(theta0, re_terms, Sigma0,
             ". Returning NULL.", call. = FALSE)
     return(NULL)
   }
-
-  # Closed-form covariance update from the per-group posterior moments.
-  sigma_update <- function(bl) {
-    lapply(seq_along(layout), function(m) {
-      cols <- coef_off[m] + seq_len(nc_terms[m])
-      B <- bl$bhat[, cols, drop = FALSE]
-      S <- crossprod(B)
-      for (g in seq_len(ng))
-        S <- S + matrix(bl$bcov[g, cols, cols], nc_terms[m], nc_terms[m])
-      S <- S / ng
-      if (!full_vec[m]) S <- diag(diag(S), nc_terms[m])
-      ee <- eigen((S + t(S)) / 2, symmetric = TRUE)
-      ee$vectors %*% (pmax(ee$values, sigma_floor^2) * t(ee$vectors))
-    })
+  group_ok <- as.logical(res$group_ok)
+  if (!all(group_ok)) {
+    warning("tulpa_re_em: the per-group posterior solve failed for ",
+            .aghq_failed_group_phrase(group_ok), " at the final parameters; ",
+            "their blup entries are NA.", call. = FALSE)
   }
-
-  trace <- lm_cur
-  converged <- FALSE
-  it <- 0L
-  for (it in seq_len(max_iter)) {
-    bl <- cpp_aghq_blups(par, orc, nc_terms, full_vec)
-    if (!all(as.logical(bl$group_ok))) {
-      warning("tulpa_re_em: the per-group posterior solve failed for ",
-              .aghq_failed_group_phrase(as.logical(bl$group_ok)),
-              " at iteration ", it, "; stopping at the last complete ",
-              "iterate.", call. = FALSE)
-      break
-    }
-    Sigma <- sigma_update(bl)
-    re_par <- .re_cov_L_list_to_theta(lapply(Sigma, .re_chol_spd), layout)
-    if (n_theta > 0L) {
-      negf <- function(th) -laplace(c(th, re_par)) + ridge * sum(th^2)
-      opt <- stats::optim(theta, negf, method = "BFGS",
-                          control = list(maxit = theta_iter, reltol = 1e-10))
-      theta <- opt$par
-    }
-    par <- c(theta, re_par)
-    lm_new <- laplace(par)
-    if (.aghq_is_fail(lm_new)) {
-      warning("tulpa_re_em: the Laplace marginal became undefined at iteration ",
-              it, "; stopping.", call. = FALSE)
-      break
-    }
-    trace <- c(trace, lm_new)
-    if (abs(lm_new - lm_cur) < tol * (1 + abs(lm_cur))) {
-      lm_cur <- lm_new; converged <- TRUE; break
-    }
-    lm_cur <- lm_new
-  }
-
-  # Fixed-parameter covariance: inverse curvature of the Laplace marginal in
-  # theta at the converged covariance.
-  re_par <- par[-seq_len(n_theta)]
-  theta_cov <- NULL
-  if (n_theta > 0L) {
-    negf <- function(th) -laplace(c(th, re_par)) + ridge * sum(th^2)
-    H <- tryCatch(stats::optimHess(theta, negf), error = function(e) NULL)
-    if (!is.null(H)) theta_cov <- tryCatch(.spd_inverse(H), error = function(e) NULL)
-  }
+  theta <- as.numeric(res$theta)
+  theta_cov <- if (n_theta > 0L && isTRUE(res$theta_hessian_ok))
+    tryCatch(.spd_inverse(res$theta_hessian), error = function(e) NULL) else NULL
+  Sigma_list <- lapply(res$Sigma_list, as.matrix)
+  # BLUP block (modes, covariances, and the mode/theta cross-Hessian where the
+  # oracle supplies a theta-score) through the same extractor as tulpa_re_aghq().
+  par <- c(theta, .re_cov_L_list_to_theta(lapply(Sigma_list, .re_chol_spd), layout))
   bl <- cpp_aghq_blups(par, orc, nc_terms, full_vec)
   BHAT <- bl$bhat; BVAR <- bl$bvar; BCOV <- bl$bcov; BCROSS <- bl$bcross
-  blup     <- lapply(seq_along(layout), function(m)
-    BHAT[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
-  blup_var <- lapply(seq_along(layout), function(m)
-    BVAR[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
   list(
     theta        = theta,
     theta_cov    = theta_cov,
     theta_se     = if (is.null(theta_cov)) rep(NA_real_, n_theta)
                    else sqrt(pmax(diag(theta_cov), 0)),
-    Sigma_list   = lapply(.re_cov_theta_to_L_list(re_par, layout), tcrossprod),
-    log_marginal = lm_cur,
-    blup         = blup,
-    blup_var     = blup_var,
+    Sigma_list   = Sigma_list,
+    log_marginal = res$log_marginal,
+    blup         = lapply(seq_along(layout), function(m)
+      BHAT[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE]),
+    blup_var     = lapply(seq_along(layout), function(m)
+      BVAR[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE]),
     blup_cov_g   = lapply(seq_len(ng), function(g)
       array(BCOV[g, , ], dim = c(dtot, dtot))),
     blup_cross_g = lapply(seq_len(ng), function(g)
       array(BCROSS[g, , ], dim = c(n_theta, dtot))),
+    blup_cross_available = isTRUE(bl$bcross_available),
     group_ok     = as.logical(bl$group_ok),
-    converged    = converged,
-    n_iter       = it,
-    log_marginal_trace = trace
+    converged    = isTRUE(res$converged),
+    n_iter       = as.integer(res$n_iter),
+    log_marginal_trace = as.numeric(res$trace)
   )
 }
