@@ -18,13 +18,21 @@
 namespace tulpa {
 
 // builder(theta) -> list(grad_hess = function(g, b) -> list(logL, grad, negH),
-//                        node_ll   = function(g, B) -> numeric over node rows).
-// Group index passed to R is 1-based. theta_score is unused (the A-C optimizer
-// is FD over the objective). Not thread-safe: R is single-threaded.
+//                        node_ll   = function(g, B) -> numeric over node rows,
+//                        joint     = optional function(g, b) -> list(logL, grad,
+//                                    negH, theta_grad, theta_info, cross)).
+// Group index passed to R is 1-based. `joint` supplies, in one call, the theta
+// score d ell_g / d theta, the theta-space observed information
+// -d^2 ell_g / d theta^2 and the cross block -d^2 ell_g / d theta db (n_theta x
+// d) beside grad_hess's b-space value / score / information; with it the bridge
+// has a genuine theta_score, and tulpa_re_em(theta_update = "latent") runs its
+// joint Newton on one R call per group. Not thread-safe: R is single-threaded.
 struct RClosureOracle : REGroupOracle {
     Rcpp::Function builder;
     Rcpp::Function gh_fn;     // current bound grad_hess (placeholder until rebind)
     Rcpp::Function nll_fn;    // current bound node_ll
+    Rcpp::Function joint_fn;  // current bound joint (valid when has_joint)
+    bool has_joint = false;
 
     // Optional PSD mode-find curvature, cached from the most recent grad_hess
     // call (the R oracle may return a `fisher` block alongside `negH`). The
@@ -34,7 +42,7 @@ struct RClosureOracle : REGroupOracle {
     mutable bool fisher_present = false;
 
     RClosureOracle(Rcpp::Function builder_, int ng, int d_, int nth)
-        : builder(builder_), gh_fn(builder_), nll_fn(builder_) {
+        : builder(builder_), gh_fn(builder_), nll_fn(builder_), joint_fn(builder_) {
         n_groups = ng; d = d_; n_theta = nth;
     }
 
@@ -43,6 +51,27 @@ struct RClosureOracle : REGroupOracle {
         Rcpp::List o = builder(th);
         gh_fn  = Rcpp::as<Rcpp::Function>(o["grad_hess"]);
         nll_fn = Rcpp::as<Rcpp::Function>(o["node_ll"]);
+        has_joint = o.containsElementNamed("joint") && !Rf_isNull(o["joint"]);
+        if (has_joint) joint_fn = Rcpp::as<Rcpp::Function>(o["joint"]);
+    }
+
+    // The `joint` closure at (g, b): b-space value / score / information plus the
+    // theta score, theta information and theta-b cross block (all data-only).
+    void joint(int g, const double* b, double& logL, double* grad, double* negH,
+               double* tgrad, double* tinfo, double* cross) const {
+        Rcpp::NumericVector bb(b, b + d);
+        Rcpp::List r = joint_fn(g + 1, bb);
+        logL = Rcpp::as<double>(r["logL"]);
+        Rcpp::NumericVector gv = r["grad"], tg = r["theta_grad"];
+        Rcpp::NumericMatrix H = r["negH"], A = r["theta_info"], X = r["cross"];
+        for (int i = 0; i < d; ++i) grad[i] = gv[i];
+        for (int i = 0; i < d; ++i)
+            for (int j = 0; j < d; ++j) negH[(std::size_t)i * d + j] = H(i, j);
+        for (int i = 0; i < n_theta; ++i) tgrad[i] = tg[i];
+        for (int i = 0; i < n_theta; ++i)
+            for (int j = 0; j < n_theta; ++j) tinfo[(std::size_t)i * n_theta + j] = A(i, j);
+        for (int i = 0; i < n_theta; ++i)
+            for (int j = 0; j < d; ++j) cross[(std::size_t)j * n_theta + i] = X(i, j);
     }
 
     void grad_hess(int g, const double* b, double& logL,
@@ -81,8 +110,14 @@ struct RClosureOracle : REGroupOracle {
         return true;
     }
 
-    void theta_score(int, const double*, double*) const override {}  // unused (FD optimizer)
-    bool has_theta_score() const override { return false; }
+    void theta_score(int g, const double* b, double* dl) const override {
+        if (!has_joint) return;
+        double l = 0.0;
+        std::vector<double> gr(d), nh((std::size_t)d * d), A((std::size_t)n_theta * n_theta),
+            X((std::size_t)n_theta * d);
+        joint(g, b, l, gr.data(), nh.data(), dl, A.data(), X.data());
+    }
+    bool has_theta_score() const override { return has_joint; }
     bool thread_safe() const override { return false; }
 };
 

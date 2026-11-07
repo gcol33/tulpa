@@ -10,6 +10,19 @@
   and the fixed-parameter covariance from that marginal's curvature
   (gcol33/tulpaObs#431).
 
+* `tulpa_re_em(theta_update = "latent")` treats the fixed parameters as latent
+  Gaussian variables under their prior, as INLA treats fixed effects: one
+  damped joint Newton over `theta` and every group mode (arrowhead Hessian,
+  Schur complement of the group blocks, Levenberg escalation, a `stuck` flag
+  instead of false convergence), with the `theta` covariance from that Schur
+  complement. It needs first and second derivatives only, where the marginal
+  rule differentiates each group's Hessian once more. A `make_group` callback
+  supplies the theta score and the theta and cross information through an
+  optional `joint` closure, which also gives the R-closure oracle a genuine
+  theta score. `theta_prior_sd` takes one value per coordinate, `b0` warm-starts
+  the group modes, and the `tulpa.nl_progress` option reaches the EM loop
+  (gcol33/tulpaObs#431).
+
 * The engine default fixed-effect prior is N(0, 2.5^2) on every door
   (`DEFAULT_SIGMA_BETA`); `beta_prior` overrides it, including on the SPDE
   Laplace path (#1045, #1056).

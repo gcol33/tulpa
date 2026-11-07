@@ -18,7 +18,11 @@ tulpa_re_em(
   tol = 1e-08,
   max_iter = 200L,
   theta_iter = 3L,
-  n_threads = 1L
+  n_threads = 1L,
+  theta_update = c("marginal", "latent"),
+  b0 = NULL,
+  newton_max = 30L,
+  progress_label = "re-em"
 )
 }
 \arguments{
@@ -44,22 +48,12 @@ the RE-arm predictor \code{eta}, used for the per-group mode), and \verb{lmat = 
 per-observation log-likelihoods over the quadrature node columns. Supply
 this or \code{make_group}, not both.}
 
-\item{make_group}{\verb{function(theta)} for the general / multi-arm case,
-returning a list with two per-group closures (let \code{d = sum(n_coefs)} be the
-group RE dimension):
-\itemize{
-\item \code{grad_hess(g, b)} -- for group \code{g} at RE value \code{b} (length \code{d}), the list
-\code{list(logL, grad, negH)}: the group conditional log-likelihood
-\eqn{\ell_g(b)}, its gradient \eqn{\partial \ell_g/\partial b} (length
-\code{d}), and the \strong{data-only} observed information
-\eqn{-\partial^2 \ell_g/\partial b^2} (\verb{d x d}; the engine adds the
-\eqn{\Sigma^{-1}} prior curvature).
-\item \code{node_ll(g, B)} -- for group \code{g}, a numeric vector of length \code{nrow(B)}
-giving \eqn{\ell_g} at each quadrature node (rows of the \verb{nrow x d}
-matrix \code{B} are candidate \code{b} vectors).
-The callback owns all arm / design / clamping bookkeeping. Supply this or
-\code{make_site}, not both.
-}}
+\item{make_group}{As in \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}}; the list it returns may also
+carry \code{joint(g, b)}, returning \code{list(logL, grad, negH, theta_grad, theta_info, cross)}: the \code{grad_hess} blocks plus the data theta score
+\eqn{\partial \ell_g / \partial\theta}, the theta observed information
+\eqn{-\partial^2 \ell_g / \partial\theta^2} (\verb{n_theta x n_theta}) and the
+cross block \eqn{-\partial^2 \ell_g / \partial\theta \partial b}
+(\verb{n_theta x d}). \code{theta_update = "latent"} requires it.}
 
 \item{oracle}{Optional prebuilt native (compiled) oracle, an external pointer
 to a \code{REGroupOracle} (constructed in a consumer package's src/ via
@@ -76,11 +70,8 @@ for the \code{make_site} path; ignored for \code{make_group}.}
 (default all; \code{make_site} path only). Rows outside \code{keep} are dropped from
 every group.}
 
-\item{theta_prior_sd}{Optional Gaussian ridge SD on the fixed parameters
-\code{theta} (a mean-zero \code{N(0, theta_prior_sd^2)} prior, added to the optimized
-objective and hence the marginal Hessian). \code{Inf} (default) is pure ML on
-\code{theta}; a large finite value (e.g. 100) is a weak ridge that stabilizes a
-weakly-identified fixed effect without materially shifting the estimate.}
+\item{theta_prior_sd}{Prior standard deviation of \code{theta}, one value or one
+per coordinate; \code{Inf} leaves a coordinate unpenalized.}
 
 \item{sigma_floor}{Floor on every random-effect standard deviation, applied
 to the eigenvalues of each covariance update.}
@@ -93,14 +84,31 @@ to the eigenvalues of each covariance update.}
 
 \item{n_threads}{Threads for the per-group loops, used only when the
 oracle declares itself thread-safe. The result does not depend on it.}
+
+\item{theta_update}{\code{"marginal"} (default) or \code{"latent"}; see Details.}
+
+\item{b0}{Optional \verb{n_groups x d} matrix of starting group modes (\code{d} the
+total random-effect dimension, terms in \code{re_terms} order). Absent, the
+latent rule starts every group at zero and the marginal rule at each
+group's own solve.}
+
+\item{newton_max}{Maximum joint Newton steps per iteration
+(\code{theta_update = "latent"}).}
+
+\item{progress_label}{Label of the progress line and heartbeat (the
+\code{tulpa.nl_progress} option sets whether they are written).}
 }
 \value{
-A list with \code{theta}, \code{theta_cov}, \code{theta_se}, \code{Sigma_list},
+A list with \code{theta}, \code{theta_cov}, \code{theta_hessian} (the \code{theta}
+curvature \code{theta_cov} inverts; \code{theta_cov} is \code{NULL} when it is not
+positive definite), \code{theta_se}, \code{Sigma_list},
 \code{log_marginal} (Laplace), \code{blup}, \code{blup_var}, \code{blup_cov_g} (per-group
 posterior covariances), \code{blup_cross_g} (mode/theta cross-Hessian blocks,
 the \code{Bf} of \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}}), \code{group_ok}, \code{converged}, \code{n_iter},
-\code{blup_cross_available}, \code{log_marginal_trace}; \code{NULL} with a warning when
-the per-group solve fails at the start.
+\code{blup_cross_available}, \code{log_marginal_trace}, \code{stuck} (latent rule: the
+final joint Newton accepted no step at any damping, so \code{converged} is
+\code{FALSE}); \code{NULL} with a warning when the per-group solve fails at the
+start.
 }
 \description{
 The \code{n_quad = 1} sibling of \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} on the same per-group oracle:
@@ -114,13 +122,28 @@ per-group solve the AGHQ engine reports as its BLUPs);
 \item updates each random-effect covariance in closed form,
 \verb{Sigma_k = mean_g(b_gk b_gk' + C_gk)}, projected to its diagonal for an
 uncorrelated term and floored at \code{sigma_floor^2} on its eigenvalues;
-\item moves the fixed parameters \code{theta} by BFGS on the Laplace marginal
-at that covariance, with its exact (envelope) gradient.
+\item moves the fixed parameters \code{theta} (see \code{theta_update}).
 }
 It stops when the Laplace log-marginal changes by less than \code{tol} relative to
-its size. The fixed-parameter covariance is the inverse curvature of the
-Laplace marginal in \code{theta} at the converged covariance, which is the Schur
-complement of the random-effect block of the joint observed information.
+its size.
+}
+\details{
+\code{theta_update = "marginal"} moves \code{theta} by BFGS on the Laplace marginal at
+the current covariance, with its exact (envelope) gradient, and reports the
+inverse curvature of that marginal as the \code{theta} covariance. Its gradient
+differentiates each group's Hessian in \code{theta}, which the engine does by
+central differences.
+
+\code{theta_update = "latent"} treats \code{theta} as a latent Gaussian variable with
+prior \code{N(0, theta_prior_sd^2)}, as INLA treats fixed effects: \code{theta} and
+every group's mode are solved jointly by a damped Newton on the penalized
+joint log-density (the Hessian is an arrowhead, solved through the Schur
+complement of the random-effect blocks), and the \code{theta} covariance is the
+inverse of that Schur complement. It needs only first and second derivatives
+of the group log-likelihood, including its \code{theta} score: a native oracle
+supplies it, and a \code{make_group} callback through its optional \code{joint}
+closure (below). With a Gaussian conditional and \code{theta} entering the linear
+predictor, the two rules reach the same \code{theta}.
 }
 \seealso{
 \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} for the exact-marginal (adaptive Gauss-Hermite)

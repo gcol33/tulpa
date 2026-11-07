@@ -73,3 +73,76 @@ test_that("tulpa_re_em does not depend on the thread count", {
   expect_identical(e1$Sigma_list, e2$Sigma_list)
   expect_identical(e1$log_marginal, e2$log_marginal)
 })
+
+test_that("the latent theta rule reaches the marginal rule's theta on a Gaussian GLMM", {
+  # theta enters the linear predictor of a Gaussian conditional, so the
+  # per-group log-determinant does not depend on it and the joint mode in theta
+  # is the Laplace-marginal maximum.
+  fx <- .re_em_glmm("gaussian", 11L)
+  m <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc, tol = 1e-12)
+  l <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc, tol = 1e-12,
+                   theta_update = "latent")
+  expect_true(l$converged)
+  expect_false(l$stuck)
+  expect_equal(l$theta, m$theta, tolerance = 1e-5)
+  expect_equal(l$Sigma_list[[1]], m$Sigma_list[[1]], tolerance = 1e-5)
+  expect_equal(l$theta_se, m$theta_se, tolerance = 1e-4)
+  expect_equal(l$log_marginal, m$log_marginal, tolerance = 1e-8)
+})
+
+test_that("a make_group joint closure drives the latent rule like the native oracle", {
+  fx <- .re_em_glmm("poisson", 12L, d_re = 2L)
+  set.seed(12L)
+  ng <- 20L; nper <- 8L; n <- ng * nper
+  group <- rep(seq_len(ng), each = nper)
+  x <- as.numeric(scale(rnorm(n))); X <- cbind(1, x); Z <- cbind(1, x)
+  B <- matrix(rnorm(ng * 2L), ng, 2L) %*% chol(fx$Sig)
+  y <- stats::rpois(n, exp(pmin(as.numeric(X %*% fx$beta) + rowSums(Z * B[group, ]), 5)))
+  orc <- tulpa:::cpp_glmm_oracle_make("poisson", 1, as.numeric(y), rep(1, n), X, Z,
+                                      group, ng)
+  rows <- split(seq_len(n), group)
+  make_group <- function(theta) {
+    eta0 <- as.numeric(X %*% theta)
+    joint <- function(g, b) {
+      r <- rows[[g]]; Zg <- Z[r, , drop = FALSE]; Xg <- X[r, , drop = FALSE]
+      mu <- exp(eta0[r] + as.numeric(Zg %*% b))
+      list(logL = sum(stats::dpois(y[r], mu, log = TRUE)),
+           grad = as.numeric(crossprod(Zg, y[r] - mu)), negH = crossprod(Zg, mu * Zg),
+           theta_grad = as.numeric(crossprod(Xg, y[r] - mu)),
+           theta_info = crossprod(Xg, mu * Xg), cross = crossprod(Xg, mu * Zg))
+    }
+    list(grad_hess = function(g, b) joint(g, b)[c("logL", "grad", "negH")],
+         node_ll = function(g, Bn) apply(Bn, 1L, function(b) joint(g, b)$logL),
+         joint = joint)
+  }
+  ln <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = orc,
+                    theta_update = "latent")
+  lr <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), make_group = make_group,
+                    theta_update = "latent")
+  expect_true(lr$converged)
+  expect_equal(lr$theta, ln$theta, tolerance = 1e-8)
+  expect_equal(lr$Sigma_list, ln$Sigma_list, tolerance = 1e-8)
+  expect_equal(lr$theta_se, ln$theta_se, tolerance = 1e-8)
+  # The native cross block is a central difference of the theta score.
+  expect_equal(lr$blup_cross_g, ln$blup_cross_g, tolerance = 1e-6)
+  expect_true(lr$blup_cross_available)
+  # Without `joint` the closure has no theta score for the latent rule.
+  bare <- function(theta) make_group(theta)[c("grad_hess", "node_ll")]
+  expect_error(tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), make_group = bare,
+                           theta_update = "latent"), "theta score")
+  # A warm start at the converged modes lands on the same fit.
+  lw <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), make_group = make_group,
+                    theta_update = "latent", b0 = lr$blup[[1]])
+  expect_equal(lw$theta, lr$theta, tolerance = 1e-6)
+})
+
+test_that("tulpa_re_em takes a per-coordinate theta prior and checks b0", {
+  fx <- .re_em_glmm("binomial", 13L)
+  a <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc,
+                   theta_prior_sd = c(Inf, 0.05))
+  expect_lt(abs(a$theta[2]), 0.1)
+  expect_error(tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc,
+                           theta_prior_sd = c(1, 2, 3)), "theta_prior_sd")
+  expect_error(tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc,
+                           b0 = matrix(0, 3, 1)), "b0")
+})

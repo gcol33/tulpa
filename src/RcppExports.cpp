@@ -2557,8 +2557,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_re_em
-List cpp_re_em(SEXP oracle, NumericVector theta0, List Sigma0, IntegerVector nc, LogicalVector full, double theta_prior_prec, double sigma_floor, double tol, int max_iter, int theta_iter, int n_threads);
-RcppExport SEXP _tulpa_cpp_re_em(SEXP oracleSEXP, SEXP theta0SEXP, SEXP Sigma0SEXP, SEXP ncSEXP, SEXP fullSEXP, SEXP theta_prior_precSEXP, SEXP sigma_floorSEXP, SEXP tolSEXP, SEXP max_iterSEXP, SEXP theta_iterSEXP, SEXP n_threadsSEXP) {
+List cpp_re_em(SEXP oracle, NumericVector theta0, List Sigma0, IntegerVector nc, LogicalVector full, NumericVector theta_prior_prec, double sigma_floor, double tol, int max_iter, int theta_iter, int n_threads, int theta_mode, SEXP b0, int newton_max, List progress);
+RcppExport SEXP _tulpa_cpp_re_em(SEXP oracleSEXP, SEXP theta0SEXP, SEXP Sigma0SEXP, SEXP ncSEXP, SEXP fullSEXP, SEXP theta_prior_precSEXP, SEXP sigma_floorSEXP, SEXP tolSEXP, SEXP max_iterSEXP, SEXP theta_iterSEXP, SEXP n_threadsSEXP, SEXP theta_modeSEXP, SEXP b0SEXP, SEXP newton_maxSEXP, SEXP progressSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -2567,13 +2567,17 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< List >::type Sigma0(Sigma0SEXP);
     Rcpp::traits::input_parameter< IntegerVector >::type nc(ncSEXP);
     Rcpp::traits::input_parameter< LogicalVector >::type full(fullSEXP);
-    Rcpp::traits::input_parameter< double >::type theta_prior_prec(theta_prior_precSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type theta_prior_prec(theta_prior_precSEXP);
     Rcpp::traits::input_parameter< double >::type sigma_floor(sigma_floorSEXP);
     Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
     Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
     Rcpp::traits::input_parameter< int >::type theta_iter(theta_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_re_em(oracle, theta0, Sigma0, nc, full, theta_prior_prec, sigma_floor, tol, max_iter, theta_iter, n_threads));
+    Rcpp::traits::input_parameter< int >::type theta_mode(theta_modeSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type b0(b0SEXP);
+    Rcpp::traits::input_parameter< int >::type newton_max(newton_maxSEXP);
+    Rcpp::traits::input_parameter< List >::type progress(progressSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_re_em(oracle, theta0, Sigma0, nc, full, theta_prior_prec, sigma_floor, tol, max_iter, theta_iter, n_threads, theta_mode, b0, newton_max, progress));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3455,7 +3459,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_glmm_oracle_make", (DL_FUNC) &_tulpa_cpp_glmm_oracle_make, 9},
     {"_tulpa_cpp_re_cov_gibbs_sweep", (DL_FUNC) &_tulpa_cpp_re_cov_gibbs_sweep, 13},
     {"_tulpa_cpp_recov_block_grad", (DL_FUNC) &_tulpa_cpp_recov_block_grad, 4},
-    {"_tulpa_cpp_re_em", (DL_FUNC) &_tulpa_cpp_re_em, 11},
+    {"_tulpa_cpp_re_em", (DL_FUNC) &_tulpa_cpp_re_em, 15},
     {"_tulpa_tulpa_set_integrator_cpp", (DL_FUNC) &_tulpa_tulpa_set_integrator_cpp, 2},
     {"_tulpa_tulpa_get_integrator_cpp", (DL_FUNC) &_tulpa_tulpa_get_integrator_cpp, 0},
     {"_tulpa_cpp_selected_inversion_diagonal", (DL_FUNC) &_tulpa_cpp_selected_inversion_diagonal, 4},
