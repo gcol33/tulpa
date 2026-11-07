@@ -300,6 +300,13 @@
 - Importance quadrature skips the fixed-effect quantile error check while the evidence or hyperparameter error
   already rules out stopping, and runs it in full before stopping and at the ceiling. Answers and error bounds are
   identical; the default multiscale test file fell from 8,172 s to 3,597 s (#1149).
+- Spatial and temporal posterior accessors keep the newest solved cells that fit the session cache when a solved batch
+  exceeds its size limit, so a repeated prediction re-solves 31 of 63 cells in place of all 63; draws are identical
+  (#1149).
+- Articles and shipped vignettes render from precomputed model caches built from their own fit chunks; a cache whose
+  chunk code or tulpa version no longer matches stops the render. Every page renders in full on CRAN, and the 13
+  unpublished articles are on the site (#1150). The temporal article and the spatial vignette request population-level
+  predictions with `include_field = FALSE`, as their text describes.
 
 ## Package
 
