@@ -452,19 +452,41 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 
 # --- Proper-CAR precision + marginal H_beta -------------------------------
 
-#' Proper-CAR precision Q = tau * (D - rho W) at fixed (tau, rho)
+#' CAR precision matrix of an adjacency graph
 #'
-#' D is the diagonal degree matrix (neighbour counts) and W the adjacency, so
-#' Q has the same nonzero structure as the ICAR precision with rho scaling the
-#' off-diagonals. Matches `tulpa::add_car_proper_prior` / the nested CAR_proper
+#' The conditional autoregressive precision `Q = tau * (D - rho * W)`, with `W`
+#' the adjacency matrix and `D` the diagonal matrix of neighbour counts. At
+#' `rho = 1` it is the intrinsic (ICAR) precision, the graph Laplacian, whose
+#' null space holds one constant direction per connected component; it is
+#' returned without an identifying augmentation, so a caller imposes the
+#' sum-to-zero constraints itself. For `rho` strictly inside the range set by
+#' the eigenvalues of `D^{-1/2} W D^{-1/2}` (in particular `0 <= rho < 1` on a
+#' graph without isolated nodes) it is a proper, full-rank precision.
+#'
+#' @param adjacency Square symmetric 0/1 adjacency matrix (dense or sparse).
+#' @param rho Spatial dependence parameter.
+#' @param tau Precision scale.
+#' @return A sparse symmetric precision matrix (`dsCMatrix`).
+#' @seealso [spatial_car()], [spatial_car_proper()], [tulpa_latent_ascent()]
+#' @examples
+#' A <- matrix(0, 4, 4); A[cbind(1:3, 2:4)] <- 1; A <- A + t(A)
+#' tulpa_car_precision_Q(A)              # path-graph Laplacian
+#' tulpa_car_precision_Q(A, rho = 0.9)   # proper CAR
+#' @export
+tulpa_car_precision_Q <- function(adjacency, rho = 1, tau = 1) {
+  W   <- as(Matrix::Matrix(as.matrix(adjacency), sparse = TRUE),
+            "CsparseMatrix")
+  deg <- Matrix::rowSums(W)
+  Matrix::forceSymmetric(tau * (Matrix::Diagonal(nrow(W), deg) - rho * W))
+}
+
+#' Proper-CAR precision Q = tau * (D - rho W) at fixed (tau, rho) for a spatial
+#' spec, matching `tulpa::add_car_proper_prior` / the nested CAR_proper
 #' precision builder.
 #'
 #' @noRd
 .car_proper_precision_Q <- function(spatial, tau, rho) {
-  W   <- as(Matrix::Matrix(as.matrix(spatial$adjacency), sparse = TRUE),
-            "CsparseMatrix")
-  deg <- Matrix::rowSums(W)
-  Matrix::forceSymmetric(tau * (Matrix::Diagonal(nrow(W), deg) - rho * W))
+  tulpa_car_precision_Q(spatial$adjacency, rho = rho, tau = tau)
 }
 
 #' @keywords internal

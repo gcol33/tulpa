@@ -353,6 +353,17 @@
   unpublished articles are on the site (#1150). The temporal article and the spatial vignette request population-level
   predictions with `include_field = FALSE`, as their text describes.
 
+* `tulpa_latent_ascent()`: block-coordinate ascent for a grouped model with a
+  shared GMRF field (any precision supplied as a builder, with per-component
+  sum-to-zero constraints, a node-from-site map and covariate weights; BYM2 as
+  a two-block field) and / or latent factors, the family entering through one
+  oracle callback. The loadings are estimated by marginal maximum likelihood on
+  the adaptive Gauss-Hermite joint site marginal, the coefficient offset
+  matches the integrated score, and the field hyperparameters are profiled
+  through `tulpa_hyper_grid()`. Exported with it: `tulpa_gauss_hermite()`, the
+  standard-normal Gauss-Hermite rule, and `tulpa_car_precision_Q()`, the
+  `tau (D - rho W)` precision of an adjacency graph (gcol33/tulpaObs#428).
+
 ## Package
 
 * C++ test fixtures live in `tests/testthat/cpp` and compile per test file;

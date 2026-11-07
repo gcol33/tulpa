@@ -45,10 +45,12 @@ reference:
   - tulpa_re_aghq
   - tulpa_re_em
   - tulpa_re_cov_update
+  - tulpa_latent_ascent
   - tulpa_eb
   - tulpa_em_laplace
   - tulpa_em_mc
   - agq_fit
+  - tulpa_gauss_hermite
   - fit_spde
   - tulpa_ep
   - tulpa_multinomial
@@ -77,6 +79,7 @@ reference:
   - spatial
   - spatial_car
   - spatial_car_proper
+  - tulpa_car_precision_Q
   - spatial_bym2
   - spatial_gp
   - spatial_multiscale

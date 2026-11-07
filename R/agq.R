@@ -267,6 +267,27 @@ agq_fit <- function(y, X, group,
 }
 
 
+#' Gauss-Hermite rule for the standard normal
+#'
+#' Nodes and weights of the `n`-point Gauss-Hermite rule for the probabilists'
+#' weight, normalised to the standard normal density, so that
+#' `sum(weights * f(nodes))` approximates `E[f(Z)]` for `Z ~ N(0, 1)` and is
+#' exact for polynomials of degree up to `2n - 1`. Computed by Golub-Welsch:
+#' the nodes are the eigenvalues of the symmetric tridiagonal Jacobi matrix of
+#' the probabilists' Hermite recurrence (zero diagonal, off-diagonal
+#' `sqrt(k)`), the weights the squared first components of its eigenvectors.
+#' A normal `N(m, s^2)` is integrated at `m + s * nodes` with the same weights.
+#'
+#' @param n Number of nodes (a positive integer).
+#' @return A list with `nodes` (increasing) and `weights` (summing to one),
+#'   each of length `n`.
+#' @seealso [tulpa_re_aghq()], [tulpa_latent_ascent()]
+#' @examples
+#' gh <- tulpa_gauss_hermite(5)
+#' sum(gh$weights * gh$nodes^4)   # E[Z^4] = 3
+#' @export
+tulpa_gauss_hermite <- function(n) gauss_hermite_prob(n)
+
 #' Gauss-Hermite quadrature (probabilist's, exp(-z^2/2) weight)
 #'
 #' Computes nodes and weights for `\int f(z) (2\pi)^{-1/2} exp(-z^2/2) dz`
