@@ -1317,10 +1317,10 @@
 # ---- the session cache of solved cells -----------------------------------------
 
 # Solved cells by record key: each entry holds the cells' precisions, the modes
-# they were solved at and the constraint groups. Entries are dropped oldest
-# first past `.FIELD_SOLVE_CACHE_MAX` stored values (the precisions' indices
-# and entries, at most 200 MB as doubles); a record whose cells alone exceed it
-# is not cached.
+# they were solved at and the constraint groups. Each insertion retains the
+# newest cells within a record. Older records are dropped first to keep the
+# precisions' indices and entries plus modes within `.FIELD_SOLVE_CACHE_MAX`
+# stored values.
 .FIELD_SOLVE_CACHE <- new.env(parent = emptyenv())
 .FIELD_SOLVE_CACHE_MAX <- 2.5e7
 
@@ -1359,32 +1359,51 @@
   out
 }
 
+.field_solve_cache_cost <- function(e) {
+  2 * lengths(e$Q_x) + lengths(e$Q_p) + ncol(e$modes)
+}
+
+.field_solve_cache_keep <- function(cost, budget) {
+  keep <- integer(length(cost))
+  n <- 0L
+  for (i in rev(seq_along(cost))) {
+    if (cost[i] <= budget) {
+      n <- n + 1L
+      keep[n] <- i
+      budget <- budget - cost[i]
+    }
+  }
+  sort(keep[seq_len(n)])
+}
+
 # Adds the solved cells `cells` (`res`, solved at the fit's modes `M`) to the
 # entry of `key`, replacing any it held for them; the entry becomes the newest,
 # and the oldest entries are dropped until the cache is within its size.
 #' @keywords internal
 .field_solve_cache_put <- function(key, cells, res, M) {
   if (!is.character(key)) return(invisible())
-  size <- function(e) {
-    2 * sum(lengths(e$Q_x)) + sum(lengths(e$Q_p)) + length(e$modes)
-  }
   ent <- .FIELD_SOLVE_CACHE$entries %||% list()
   e <- ent[[key]] %||% list(cells = integer(0), Q_p = list(), Q_i = list(),
                             Q_x = list(), soft_D = list(), modes = NULL)
   keep <- !(e$cells %in% cells)
-  e$cells <- c(e$cells[keep], as.integer(cells))
-  e$Q_p <- c(e$Q_p[keep], res$Q_p)
-  e$Q_i <- c(e$Q_i[keep], res$Q_i)
-  e$Q_x <- c(e$Q_x[keep], res$Q_x)
-  e$soft_D <- c(e$soft_D[keep],
-                res$constraint$soft_D %||% vector("list", length(cells)))
-  e$modes <- rbind(e$modes[keep, , drop = FALSE], unname(M))
+  incoming <- list(cells = as.integer(cells), Q_p = res$Q_p,
+                   Q_i = res$Q_i, Q_x = res$Q_x,
+                   soft_D = res$constraint$soft_D %||% vector("list", length(cells)))
+  for (field in names(incoming)) {
+    e[[field]] <- c(e[[field]][keep], incoming[[field]])
+  }
+  previous <- if (is.null(e$modes)) NULL else e$modes[keep, , drop = FALSE]
+  e$modes <- rbind(previous, unname(M))
   e$hard <- res$constraint$hard
   e$soft <- res$constraint$soft
+  keep <- .field_solve_cache_keep(.field_solve_cache_cost(e), .FIELD_SOLVE_CACHE_MAX)
+  for (field in names(incoming)) e[[field]] <- e[[field]][keep]
+  e$modes <- e$modes[keep, , drop = FALSE]
   ent[[key]] <- NULL
-  if (size(e) <= .FIELD_SOLVE_CACHE_MAX) ent[[key]] <- e
-  while (length(ent) > 1L &&
-         sum(vapply(ent, size, numeric(1))) > .FIELD_SOLVE_CACHE_MAX) {
+  if (length(e$cells)) ent[[key]] <- e
+  while (length(ent) && sum(vapply(ent, function(x) {
+    sum(.field_solve_cache_cost(x))
+  }, numeric(1))) > .FIELD_SOLVE_CACHE_MAX) {
     ent[[1L]] <- NULL
   }
   assign("entries", ent, envir = .FIELD_SOLVE_CACHE)
